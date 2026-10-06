@@ -19,7 +19,7 @@ cc -std=gnu99 -O0 -w -I"$repo" -I"$repo/include" -DHAL_ARCH_AMD64 -o "$work/dump
 python3 - "$repo" "$work" <<'PY'
 import re, struct, sys
 repo, work = sys.argv[1], sys.argv[2]
-for header, names in (('userland/desktop/wayland/shaders.h', ('zwl_panel_frag', 'zwl_quad_frag')),
+for header, names in (('userland/desktop/wayland/shaders.h', ('kwl_panel_frag', 'kwl_quad_frag')),
                       ('userland/desktop/libbrowser/paint/shaders.h', ('paint_display_frag',))):
     text = open(f'{repo}/{header}').read()
     for name in names:
@@ -39,7 +39,7 @@ if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
 	echo "NOTE: no brw_disasm/brw_asm under $tools (plan/ws101/tests/host/mesa-tools.sh builds them, or set BRW_TOOLS);" \
 		"the disassembly checks are NOT RUN"
 fi
-for module in zwl_panel_frag zwl_quad_frag paint_display_frag switch.frag switch-O.frag loop.frag; do
+for module in kwl_panel_frag kwl_quad_frag paint_display_frag switch.frag switch-O.frag loop.frag; do
 	"$work/dump" fragment "$work/$module.spv" "$work/$module.bin" > "$work/$module.dump" || { echo "$module: FAIL"; cat "$work/$module.dump"; status=1; continue; }
 	# ws075-p022: the scoreboard is sound, and the checker finds a fault once the waits are taken out.
 	grep -q 'scoreboard sound' "$work/$module.dump" || { echo "$module: FAIL scoreboard"; status=1; continue; }
@@ -74,7 +74,7 @@ PY
 	echo "$module: $1 IF, $2 sampler sends inside an IF, $3 outside"
 	[ "$4" = 0 ] || { echo "$module: FAIL IF and ENDIF do not pair"; status=1; }
 	case $module in
-	zwl_quad_frag) [ "$1" = 0 ] || { echo "$module: FAIL a module every channel runs has an IF"; status=1; } ;;
+	kwl_quad_frag) [ "$1" = 0 ] || { echo "$module: FAIL a module every channel runs has an IF"; status=1; } ;;
 	switch*) ;;
 	loop.frag)
 		[ "$3" = 0 ] && [ "$2" != 0 ] || { echo "$module: FAIL a sampler send in a branch is not guarded"; status=1; }

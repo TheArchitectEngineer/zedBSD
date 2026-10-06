@@ -11,35 +11,35 @@
  * (viewport.c).
  */
 
-#ifndef ZWL_EXTRAS_H
-#define ZWL_EXTRAS_H
+#ifndef KWL_EXTRAS_H
+#define KWL_EXTRAS_H
 
 #include "compose.h"
 
-int zwl_decoration_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_decoration_object_gone(struct zwl_object *object);
-int zwl_decoration_configure(struct zwl_object *surface, uint32_t serial);
-int zwl_decoration_ack(struct zwl_object *surface, uint32_t serial);
-void zwl_decoration_commit(struct zwl_object *surface);
-int zwl_decoration_server(const struct zwl_object *surface);
-int zwl_decoration_native_changed(struct zwl_object *toplevel);
-int zwl_decoration_kde_bind(struct zwl_object *manager);
-void zwl_decoration_geometry(const struct zwl_object *surface, uint32_t *width, uint32_t *height);
+int kwl_decoration_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_decoration_object_gone(struct kwl_object *object);
+int kwl_decoration_configure(struct kwl_object *surface, uint32_t serial);
+int kwl_decoration_ack(struct kwl_object *surface, uint32_t serial);
+void kwl_decoration_commit(struct kwl_object *surface);
+int kwl_decoration_server(const struct kwl_object *surface);
+int kwl_decoration_native_changed(struct kwl_object *toplevel);
+int kwl_decoration_kde_bind(struct kwl_object *manager);
+void kwl_decoration_geometry(const struct kwl_object *surface, uint32_t *width, uint32_t *height);
 
-int zwl_cursor_shape_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_cursor_shape_object_gone(struct zwl_object *object);
-void zwl_cursor_images_destroy(struct zwl_server *server);
-const struct zwl_import *zwl_cursor_image(const struct zwl_server *server, int32_t *hotspot_x, int32_t *hotspot_y);
-void zwl_cursor_frame(struct zwl_server *server, uint32_t edges);
+int kwl_cursor_shape_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_cursor_shape_object_gone(struct kwl_object *object);
+void kwl_cursor_images_destroy(struct kwl_server *server);
+const struct kwl_import *kwl_cursor_image(const struct kwl_server *server, int32_t *hotspot_x, int32_t *hotspot_y);
+void kwl_cursor_frame(struct kwl_server *server, uint32_t edges);
 
-int zwl_viewport_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_viewport_commit(struct zwl_object *surface);
-void zwl_viewport_object_gone(struct zwl_object *object);
-void zwl_surface_size(const struct zwl_object *surface, uint32_t *width, uint32_t *height);
-void zwl_viewport_source(const struct zwl_object *surface, float *uv);
+int kwl_viewport_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_viewport_commit(struct kwl_object *surface);
+void kwl_viewport_object_gone(struct kwl_object *object);
+void kwl_surface_size(const struct kwl_object *surface, uint32_t *width, uint32_t *height);
+void kwl_viewport_source(const struct kwl_object *surface, float *uv);
 
-int zwl_content_type_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_content_type_commit(struct zwl_object *surface);
-void zwl_content_type_object_gone(struct zwl_object *object);
+int kwl_content_type_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_content_type_commit(struct kwl_object *surface);
+void kwl_content_type_object_gone(struct kwl_object *object);
 
 #endif

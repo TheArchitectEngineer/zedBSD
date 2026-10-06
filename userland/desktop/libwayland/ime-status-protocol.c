@@ -7,7 +7,7 @@
 
 /*
  * Describes and marshals zdesktop's input method status protocol
- * (keiland_ime_status_manager_v1 and keiland_ime_status_v1, version 2;
+ * (kl_ime_status_manager_v1 and kl_ime_status_v1, version 2;
  * ws095-p004, plan/ws095/design.md section 8).  Only the input method
  * zdesktop starts may bind the manager.  Version 2 (ws166-p002) adds the
  * on-screen keyboard's predictions: zdesktop asks for the words a reading
@@ -25,7 +25,7 @@ static const struct wl_interface *ime_status_plain_types[] = {
 	NULL,
 };
 
-/* The requests of keiland_ime_status_v1, in wire opcode order. */
+/* The requests of kl_ime_status_v1, in wire opcode order. */
 static const struct wl_message ime_status_requests[] = {
 	{ "destroy", "", NULL },
 	{ "language", "ss", ime_status_plain_types },
@@ -33,7 +33,7 @@ static const struct wl_message ime_status_requests[] = {
 	{ "predictions", "2us", ime_status_plain_types },
 };
 
-/* The events of keiland_ime_status_v1, in wire opcode order. */
+/* The events of kl_ime_status_v1, in wire opcode order. */
 static const struct wl_message ime_status_events[] = {
 	{ "next", "", NULL },
 	{ "select", "s", ime_status_plain_types },
@@ -41,36 +41,36 @@ static const struct wl_message ime_status_events[] = {
 	{ "learn", "2ss", ime_status_plain_types },
 };
 
-/* The immutable keiland_ime_status_v1 description. */
-const struct wl_interface keiland_ime_status_v1_interface = {
-	"keiland_ime_status_v1", 2, 4, ime_status_requests,
+/* The immutable kl_ime_status_v1 description. */
+const struct wl_interface kl_ime_status_v1_interface = {
+	"kl_ime_status_v1", 2, 4, ime_status_requests,
 	4, ime_status_events
 };
 
-/* The arguments of keiland_ime_status_manager_v1.get_status. */
+/* The arguments of kl_ime_status_manager_v1.get_status. */
 static const struct wl_interface *ime_status_manager_get_status_types[] = {
-	&keiland_ime_status_v1_interface,
+	&kl_ime_status_v1_interface,
 };
 
-/* The requests of keiland_ime_status_manager_v1, in wire opcode order. */
+/* The requests of kl_ime_status_manager_v1, in wire opcode order. */
 static const struct wl_message ime_status_manager_requests[] = {
 	{ "destroy", "", NULL },
 	{ "get_status", "n", ime_status_manager_get_status_types },
 };
 
-/* The immutable keiland_ime_status_manager_v1 description. */
-const struct wl_interface keiland_ime_status_manager_v1_interface = {
-	"keiland_ime_status_manager_v1", 2, 2, ime_status_manager_requests,
+/* The immutable kl_ime_status_manager_v1 description. */
+const struct wl_interface kl_ime_status_manager_v1_interface = {
+	"kl_ime_status_manager_v1", 2, 2, ime_status_manager_requests,
 	0, NULL
 };
 
 /*
- * Installs a listener of keiland_ime_status_v1 (next, select).
+ * Installs a listener of kl_ime_status_v1 (next, select).
  */
 int
-keiland_ime_status_v1_add_listener(
-	struct keiland_ime_status_v1 *object,
-	const struct keiland_ime_status_v1_listener *listener,
+kl_ime_status_v1_add_listener(
+	struct kl_ime_status_v1 *object,
+	const struct kl_ime_status_v1_listener *listener,
 	void *data)
 {
 	int error;
@@ -85,22 +85,22 @@ keiland_ime_status_v1_add_listener(
 }
 
 /*
- * Sends keiland_ime_status_v1.destroy: the status is gone.
+ * Sends kl_ime_status_v1.destroy: the status is gone.
  */
 void
-keiland_ime_status_v1_destroy(
-	struct keiland_ime_status_v1 *object)
+kl_ime_status_v1_destroy(
+	struct kl_ime_status_v1 *object)
 {
 	/* Queues the destructor and retires the proxy. */
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KL_IME_STATUS_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
 }
 
 /*
- * Sends keiland_ime_status_v1.language: the language chosen now ("direct", "ja") and its short label.
+ * Sends kl_ime_status_v1.language: the language chosen now ("direct", "ja") and its short label.
  */
 void
-keiland_ime_status_v1_language(
-	struct keiland_ime_status_v1 *object,
+kl_ime_status_v1_language(
+	struct kl_ime_status_v1 *object,
 	const char *id,
 	const char *label)
 {
@@ -109,32 +109,32 @@ keiland_ime_status_v1_language(
 	/* The arguments in wire order. */
 	arguments[0].s = id;
 	arguments[1].s = label;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_V1_LANGUAGE, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KL_IME_STATUS_V1_LANGUAGE, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends keiland_ime_status_v1.composing: whether text is being composed (1) or not (0).
+ * Sends kl_ime_status_v1.composing: whether text is being composed (1) or not (0).
  */
 void
-keiland_ime_status_v1_composing(
-	struct keiland_ime_status_v1 *object,
+kl_ime_status_v1_composing(
+	struct kl_ime_status_v1 *object,
 	uint32_t composing)
 {
 	union wl_argument arguments[1];
 
 	/* The arguments in wire order. */
 	arguments[0].u = composing;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_V1_COMPOSING, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KL_IME_STATUS_V1_COMPOSING, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends keiland_ime_status_v1.predictions (version 2): the answer to the
+ * Sends kl_ime_status_v1.predictions (version 2): the answer to the
  * predict event of the serial, the words one a line, each "WORD\tREADING"
  * (an empty list for none).
  */
 void
-keiland_ime_status_v1_predictions(
-	struct keiland_ime_status_v1 *object,
+kl_ime_status_v1_predictions(
+	struct kl_ime_status_v1 *object,
 	uint32_t serial,
 	const char *list)
 {
@@ -143,36 +143,36 @@ keiland_ime_status_v1_predictions(
 	/* The arguments in wire order. */
 	arguments[0].u = serial;
 	arguments[1].s = list;
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_V1_PREDICTIONS, NULL, 0, 0, arguments);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KL_IME_STATUS_V1_PREDICTIONS, NULL, 0, 0, arguments);
 }
 
 /*
- * Sends keiland_ime_status_manager_v1.destroy: the status it gave stays.
+ * Sends kl_ime_status_manager_v1.destroy: the status it gave stays.
  */
 void
-keiland_ime_status_manager_v1_destroy(
-	struct keiland_ime_status_manager_v1 *object)
+kl_ime_status_manager_v1_destroy(
+	struct kl_ime_status_manager_v1 *object)
 {
 	/* Queues the destructor and retires the proxy. */
-	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_MANAGER_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
+	wl_proxy_marshal_array_flags((struct wl_proxy *)object, KL_IME_STATUS_MANAGER_V1_DESTROY, NULL, 0, WL_MARSHAL_FLAG_DESTROY, NULL);
 }
 
 /*
- * Sends keiland_ime_status_manager_v1.get_status: the status object.
+ * Sends kl_ime_status_manager_v1.get_status: the status object.
  */
-struct keiland_ime_status_v1 *
-keiland_ime_status_manager_v1_get_status(
-	struct keiland_ime_status_manager_v1 *object)
+struct kl_ime_status_v1 *
+kl_ime_status_manager_v1_get_status(
+	struct kl_ime_status_manager_v1 *object)
 {
 	union wl_argument arguments[1];
 	struct wl_proxy *created;
 
 	/* The arguments in wire order; the status has the manager's version (version 2 has the predictions, ws166-p002). */
 	arguments[0].n = 0;
-	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KEILAND_IME_STATUS_MANAGER_V1_GET_STATUS, &keiland_ime_status_v1_interface, wl_proxy_get_version((struct wl_proxy *)object), 0, arguments);
+	created = wl_proxy_marshal_array_flags((struct wl_proxy *)object, KL_IME_STATUS_MANAGER_V1_GET_STATUS, &kl_ime_status_v1_interface, wl_proxy_get_version((struct wl_proxy *)object), 0, arguments);
 	if (created == NULL)
 		return NULL;
 
 	/* Succeeded: the caller owns the new object. */
-	return (struct keiland_ime_status_v1 *)created;
+	return (struct kl_ime_status_v1 *)created;
 }

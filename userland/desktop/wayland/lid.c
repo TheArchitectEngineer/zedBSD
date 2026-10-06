@@ -17,8 +17,8 @@
  * login screen) not yet locked is locked by it.  Returns the actions.
  */
 unsigned
-zwl_lid_close(
-	struct zwl_lid *lid,
+kwl_lid_close(
+	struct kwl_lid *lid,
 	uint64_t now_ms,
 	int session,
 	int locked)
@@ -32,21 +32,21 @@ zwl_lid_close(
 	lid->closed_ms = now_ms;
 	lid->lock_is_lid = 0;
 	if (!session || locked)
-		return ZWL_LID_SCREEN_OFF;
+		return KWL_LID_SCREEN_OFF;
 
 	/* Succeeded: out, and locked by the lid. */
 	lid->lock_is_lid = 1;
-	return ZWL_LID_SCREEN_OFF | ZWL_LID_LOCK;
+	return KWL_LID_SCREEN_OFF | KWL_LID_LOCK;
 }
 
 /*
  * Takes the lid's opening: the screen lights, and the closing's own lock,
  * still standing, goes without the password when the lid opens within
- * ZWL_LID_GRACE_MS of the closing.  Returns the actions.
+ * KWL_LID_GRACE_MS of the closing.  Returns the actions.
  */
 unsigned
-zwl_lid_open(
-	struct zwl_lid *lid,
+kwl_lid_open(
+	struct kwl_lid *lid,
 	uint64_t now_ms,
 	int locked)
 {
@@ -64,17 +64,17 @@ zwl_lid_open(
 
 	/* Another lock, or none standing: only the light. */
 	if (!lock_is_lid || !locked)
-		return ZWL_LID_SCREEN_ON;
+		return KWL_LID_SCREEN_ON;
 
 	/* Too late (or a clock that went back): the password is asked. */
 	if (now_ms < lid->closed_ms)
-		return ZWL_LID_SCREEN_ON;
+		return KWL_LID_SCREEN_ON;
 	elapsed = now_ms - lid->closed_ms;
-	if (elapsed > ZWL_LID_GRACE_MS)
-		return ZWL_LID_SCREEN_ON;
+	if (elapsed > KWL_LID_GRACE_MS)
+		return KWL_LID_SCREEN_ON;
 
 	/* Succeeded: lit and unlocked. */
-	return ZWL_LID_SCREEN_ON | ZWL_LID_UNLOCK;
+	return KWL_LID_SCREEN_ON | KWL_LID_UNLOCK;
 }
 
 /*
@@ -82,8 +82,8 @@ zwl_lid_open(
  * manager to unlock it).
  */
 void
-zwl_lid_lock_failed(
-	struct zwl_lid *lid)
+kwl_lid_lock_failed(
+	struct kwl_lid *lid)
 {
 	/* No lock is the lid's. */
 	lid->lock_is_lid = 0;
@@ -94,8 +94,8 @@ zwl_lid_lock_failed(
  * password on the lock screen).
  */
 void
-zwl_lid_unlocked(
-	struct zwl_lid *lid)
+kwl_lid_unlocked(
+	struct kwl_lid *lid)
 {
 	/* A later lock is not the lid's. */
 	lid->lock_is_lid = 0;

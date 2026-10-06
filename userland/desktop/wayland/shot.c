@@ -31,7 +31,7 @@
  * send timeout, which a test image can afford.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "compose.h"
 
 #include <errno.h>
@@ -76,13 +76,13 @@ struct shot_state {
 static struct shot_state shot = { -1, { 0 }, -1, SHOT_IDLE, 0, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, 0, 0 };
 
 static void shot_answer(int connection, const char *line);
-static void shot_finish(struct zwl_server *server, const char *error);
-static int shot_buffer(struct zwl_compose *compose);
-static void shot_buffer_free(struct zwl_compose *compose);
+static void shot_finish(struct kwl_server *server, const char *error);
+static int shot_buffer(struct kwl_compose *compose);
+static void shot_buffer_free(struct kwl_compose *compose);
 
 /* Tells whether this compositor was built with the capture (it was). */
 int
-zwl_shot_enabled(
+kwl_shot_enabled(
 	void)
 {
 	return 1;
@@ -90,7 +90,7 @@ zwl_shot_enabled(
 
 /* Tells whether a capture waits for the next composed frame (the game mode composes one for it, scanout.c). */
 int
-zwl_shot_waiting(
+kwl_shot_waiting(
 	void)
 {
 	/* A request not yet copied. */
@@ -103,8 +103,8 @@ zwl_shot_waiting(
 
 /* Opens the capture's socket. */
 void
-zwl_shot_open(
-	struct zwl_server *server)
+kwl_shot_open(
+	struct kwl_server *server)
 {
 	struct sockaddr_un address;
 	const char *runtime;
@@ -142,8 +142,8 @@ zwl_shot_open(
 
 /* Closes the capture's socket and gives back its buffer. */
 void
-zwl_shot_close(
-	struct zwl_server *server)
+kwl_shot_close(
+	struct kwl_server *server)
 {
 	/* A request still waiting is answered. */
 	if (shot.client >= 0)
@@ -162,8 +162,8 @@ zwl_shot_close(
  * limit of a request waiting for its frame.
  */
 void
-zwl_shot_tick(
-	struct zwl_server *server)
+kwl_shot_tick(
+	struct kwl_server *server)
 {
 	struct timeval timeout;
 	char line[16];
@@ -175,7 +175,7 @@ zwl_shot_tick(
 	int error;
 
 	/* A request whose frame did not come. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (shot.client >= 0 && now - shot.asked_ms > SHOT_WAIT_MS) {
 		shot_finish(server, "timeout");
 		return;
@@ -247,7 +247,7 @@ zwl_shot_tick(
 	/* The next frame copies its image; a frame is asked for. */
 	shot.client = connection;
 	shot.stage = SHOT_REQUESTED;
-	shot.asked_ms = zwl_milliseconds();
+	shot.asked_ms = kwl_milliseconds();
 	server->dirty = 1;
 	printf("ZWL SHOT requested width=%u height=%u\n", shot.width, shot.height);
 }
@@ -258,8 +258,8 @@ zwl_shot_tick(
  * request waits; the image goes back to the presentation layout.
  */
 void
-zwl_shot_record(
-	struct zwl_server *server,
+kwl_shot_record(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	VkImage image)
 {
@@ -323,8 +323,8 @@ zwl_shot_record(
 
 /* Sends the copied frame once its fence signaled. */
 void
-zwl_shot_complete(
-	struct zwl_server *server)
+kwl_shot_complete(
+	struct kwl_server *server)
 {
 	char header[96];
 	void *map;
@@ -376,7 +376,7 @@ shot_answer(
 /* Ends the request: an error's answer when there is one, the connection closed, the buffer given back. */
 static void
 shot_finish(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *error)
 {
 	char line[64];
@@ -400,7 +400,7 @@ shot_finish(
 /* Makes the host-visible buffer for one frame of the output (kept from an earlier request of the same size). */
 static int
 shot_buffer(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	VkPhysicalDeviceMemoryProperties memory;
 	VkMemoryRequirements requirements;
@@ -466,7 +466,7 @@ shot_buffer(
 /* Gives back the buffer (no frame in flight uses it). */
 static void
 shot_buffer_free(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	/* The buffer and its memory. */
 	if (shot.buffer != VK_NULL_HANDLE)

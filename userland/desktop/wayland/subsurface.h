@@ -10,21 +10,21 @@
  * shown with a parent surface, at a place relative to it, below or above it.
  */
 
-#ifndef ZWL_SUBSURFACE_H
-#define ZWL_SUBSURFACE_H
+#ifndef KWL_SUBSURFACE_H
+#define KWL_SUBSURFACE_H
 
 #include "compose.h"
 
-int zwl_subcompositor_request(struct zwl_object *subcompositor, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_subsurface_request(struct zwl_object *subsurface, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_subsurface_commit(struct zwl_object *surface);
-void zwl_subsurface_applied(struct zwl_object *surface);
-void zwl_subsurface_object_gone(struct zwl_object *object);
-void zwl_subsurface_draw(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above);
-unsigned zwl_subsurface_collect(struct zwl_server *server, struct zwl_object **surfaces, unsigned capacity);
-struct zwl_object *zwl_subsurface_at(struct zwl_object *root, int32_t x, int32_t y);
+int kwl_subcompositor_request(struct kwl_object *subcompositor, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_subsurface_request(struct kwl_object *subsurface, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_subsurface_commit(struct kwl_object *surface);
+void kwl_subsurface_applied(struct kwl_object *surface);
+void kwl_subsurface_object_gone(struct kwl_object *object);
+void kwl_subsurface_draw(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above);
+unsigned kwl_subsurface_collect(struct kwl_server *server, struct kwl_object **surfaces, unsigned capacity);
+struct kwl_object *kwl_subsurface_at(struct kwl_object *root, int32_t x, int32_t y);
 
 /* What subsurface.c needs from protocol.c: a commit of a surface without a shell role, applied now. */
-int zwl_surface_queue(struct zwl_object *surface);
+int kwl_surface_queue(struct kwl_object *surface);
 
 #endif

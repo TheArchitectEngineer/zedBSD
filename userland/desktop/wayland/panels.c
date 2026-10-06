@@ -6,7 +6,7 @@
  */
 
 /*
- * keiland_glass_v1 (ws035-p083, plan/ws035/glass-design.md): a surface names
+ * kl_glass_v1 (ws035-p083, plan/ws035/glass-design.md): a surface names
  * the parts of itself that stand on the system's frosted glass -- cards
  * floating in the window -- and zdesktop draws the glass under them: the
  * desktop behind, blurred and lightened, with a bright rim, and the card's
@@ -16,7 +16,7 @@
  *
  * The panels are double-buffered like the surface's other state:
  * set_panels changes the pending list, and the surface's commit applies
- * it (zwl_panels_commit), so a window's panels move with the frame drawn
+ * it (kwl_panels_commit), so a window's panels move with the frame drawn
  * for them.  The client says what the parts are, not how glass looks.
  *
  * Version 2 (ws075-p029): set_blur chooses whether the window's glass (its
@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The requests of keiland_glass_manager_v1 and of a surface's keiland_glass_v1. */
+/* The requests of kl_glass_manager_v1 and of a surface's kl_glass_v1. */
 #define GLASS_MANAGER_DESTROY		0U
 #define GLASS_MANAGER_GET_GLASS		1U
 #define GLASS_DESTROY			0U
@@ -55,31 +55,31 @@
 #define GLASS_SHADOW_DROP		6.0f
 #define GLASS_SHADOW_ALPHA		0.16f
 
-static int panels_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int panels_set(struct zwl_object *glass, struct zwl_object *surface, const unsigned char *bytes, size_t size);
-static int panels_check(const struct zwl_panel *panel);
-static void panels_shadow(struct zwl_server *server, VkCommandBuffer command, const struct zwl_panel *panel, const float *place, float opacity);
-static void panels_glass(struct zwl_server *server, VkCommandBuffer command, const struct zwl_panel *panel, const float *place, float opacity, unsigned light);
+static int panels_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int panels_set(struct kwl_object *glass, struct kwl_object *surface, const unsigned char *bytes, size_t size);
+static int panels_check(const struct kwl_panel *panel);
+static void panels_shadow(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panel *panel, const float *place, float opacity);
+static void panels_glass(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panel *panel, const float *place, float opacity, unsigned light);
 static uint32_t panels_word(const unsigned char *bytes, size_t offset);
 
 /*
- * Carries out a request of keiland_glass_manager_v1 or of a surface's
- * keiland_glass_v1.
+ * Carries out a request of kl_glass_manager_v1 or of a surface's
+ * kl_glass_v1.
  */
 int
-zwl_panels_request(
-	struct zwl_object *object,
+kwl_panels_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int error;
 
 	/* The manager: it goes, or it gives a surface its glass. */
-	if (object->kind == ZWL_GLASS_MANAGER) {
+	if (object->kind == KWL_GLASS_MANAGER) {
 		if (opcode == GLASS_MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -92,18 +92,18 @@ zwl_panels_request(
 		return 0;
 	}
 
-	/* The glass goes; the surface's next commit shows it without panels (zwl_panels_object_gone). */
+	/* The glass goes; the surface's next commit shows it without panels (kwl_panels_object_gone). */
 	if (opcode == GLASS_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
 	/* set_panels needs the surface. */
 	surface = object->surface;
 	if (surface == NULL) {
-		(void)zwl_error_code(object->client, object->id, GLASS_ERROR_NO_SURFACE, "the surface has gone");
+		(void)kwl_error_code(object->client, object->id, GLASS_ERROR_NO_SURFACE, "the surface has gone");
 		return EPROTO;
 	}
 
@@ -131,11 +131,11 @@ zwl_panels_request(
  * Applies a surface's pending panels with its commit.
  */
 void
-zwl_panels_commit(
-	struct zwl_object *surface)
+kwl_panels_commit(
+	struct kwl_object *surface)
 {
-	struct zwl_panels *panels;
-	const struct zwl_panel *panel;
+	struct kwl_panels *panels;
+	const struct kwl_panel *panel;
 	unsigned index;
 
 	/* A surface without glass, or whose panels did not change. */
@@ -166,18 +166,18 @@ zwl_panels_commit(
 }
 
 /*
- * Unties an object that is going from the glass: a keiland_glass_v1's surface
+ * Unties an object that is going from the glass: a kl_glass_v1's surface
  * loses its panels with its next commit; a surface's glass names nothing,
  * and its panels' record goes with it.
  */
 void
-zwl_panels_object_gone(
-	struct zwl_object *object)
+kwl_panels_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* The glass: its surface's pending list empties. */
-	if (object->kind == ZWL_GLASS) {
+	if (object->kind == KWL_GLASS) {
 		surface = object->surface;
 		object->surface = NULL;
 		if (surface == NULL)
@@ -194,7 +194,7 @@ zwl_panels_object_gone(
 	}
 
 	/* A surface: its glass names nothing, and the record is freed. */
-	if (object->kind != ZWL_SURFACE)
+	if (object->kind != KWL_SURFACE)
 		return;
 	if (object->glass != NULL) {
 		object->glass->surface = NULL;
@@ -210,8 +210,8 @@ zwl_panels_object_gone(
  * Returns how many glass panels a surface's last commit gave it.
  */
 unsigned
-zwl_panels_count(
-	const struct zwl_object *surface)
+kwl_panels_count(
+	const struct kwl_object *surface)
 {
 	/* No glass, no panels. */
 	if (surface->panels == NULL)
@@ -226,8 +226,8 @@ zwl_panels_count(
  * windows under it blurred (set_blur); 0 for a surface without glass.
  */
 unsigned
-zwl_panels_blur(
-	const struct zwl_object *surface)
+kwl_panels_blur(
+	const struct kwl_object *surface)
 {
 	/* No glass, the blurred wallpaper. */
 	if (surface->panels == NULL)
@@ -245,15 +245,15 @@ zwl_panels_blur(
  * another panel's glass.
  */
 void
-zwl_panels_draw(
-	struct zwl_server *server,
+kwl_panels_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	const float *place,
 	float opacity,
 	unsigned shadows)
 {
-	const struct zwl_panels *panels;
+	const struct kwl_panels *panels;
 	unsigned index;
 	unsigned light;
 
@@ -279,28 +279,28 @@ zwl_panels_draw(
 		panels_glass(server, command, &panels->current[index], place, opacity, light);
 }
 
-/* Gives a surface its keiland_glass_v1 (one per surface) and the record of its panels. */
+/* Gives a surface its kl_glass_v1 (one per surface) and the record of its panels. */
 static int
 panels_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
-	struct zwl_object *created;
+	struct kwl_object *surface;
+	struct kwl_object *created;
 	uint32_t id;
 
 	/* The new ID and the client's surface. */
 	if (size != 8U)
 		return EPROTO;
 	id = panels_word(bytes, 0U);
-	surface = zwl_find(manager->client, panels_word(bytes, 4U));
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(manager->client, panels_word(bytes, 4U));
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* One glass per surface. */
 	if (surface->glass != NULL) {
-		(void)zwl_error_code(manager->client, manager->id, GLASS_MANAGER_ERROR_EXISTS, "the surface has glass");
+		(void)kwl_error_code(manager->client, manager->id, GLASS_MANAGER_ERROR_EXISTS, "the surface has glass");
 		return EPROTO;
 	}
 
@@ -312,7 +312,7 @@ panels_create(
 	}
 
 	/* The glass, tied to its surface both ways. */
-	created = zwl_create(manager->client, id, ZWL_GLASS, manager->version);
+	created = kwl_create(manager->client, id, KWL_GLASS, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->surface = surface;
@@ -325,12 +325,12 @@ panels_create(
 /* Takes a list of panels for the surface's next commit (an array of six words a panel). */
 static int
 panels_set(
-	struct zwl_object *glass,
-	struct zwl_object *surface,
+	struct kwl_object *glass,
+	struct kwl_object *surface,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_panel list[ZWL_PANELS_MAX];
+	struct kwl_panel list[KWL_PANELS_MAX];
 	uint32_t length;
 	unsigned count;
 	unsigned index;
@@ -346,8 +346,8 @@ panels_set(
 
 	/* Whole panels, no more than a surface may have. */
 	count = length / GLASS_PANEL_BYTES;
-	if (length % GLASS_PANEL_BYTES != 0U || count > ZWL_PANELS_MAX) {
-		(void)zwl_error_code(glass->client, glass->id, GLASS_ERROR_BAD_PANELS, "not a list of panels");
+	if (length % GLASS_PANEL_BYTES != 0U || count > KWL_PANELS_MAX) {
+		(void)kwl_error_code(glass->client, glass->id, GLASS_ERROR_BAD_PANELS, "not a list of panels");
 		return EPROTO;
 	}
 
@@ -362,7 +362,7 @@ panels_set(
 		list[index].kind = panels_word(bytes, offset + 20U);
 		error = panels_check(&list[index]);
 		if (error != 0) {
-			(void)zwl_error_code(glass->client, glass->id, GLASS_ERROR_BAD_PANELS, "a panel is out of range");
+			(void)kwl_error_code(glass->client, glass->id, GLASS_ERROR_BAD_PANELS, "a panel is out of range");
 			return EPROTO;
 		}
 	}
@@ -380,18 +380,18 @@ panels_set(
 /* Checks one panel: a positive size, a radius in range and a known kind. */
 static int
 panels_check(
-	const struct zwl_panel *panel)
+	const struct kwl_panel *panel)
 {
 	/* An empty panel. */
 	if (panel->width <= 0 || panel->height <= 0)
 		return EINVAL;
 
 	/* A radius that is negative or past the largest. */
-	if (panel->radius < 0 || panel->radius > ZWL_PANEL_RADIUS_MAX)
+	if (panel->radius < 0 || panel->radius > KWL_PANEL_RADIUS_MAX)
 		return EINVAL;
 
 	/* A kind that does not exist. */
-	if (panel->kind != ZWL_PANEL_CARD)
+	if (panel->kind != KWL_PANEL_CARD)
 		return EINVAL;
 
 	/* Succeeded. */
@@ -401,9 +401,9 @@ panels_check(
 /* Draws a card's shadow, a little below it, soft around its edges. */
 static void
 panels_shadow(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_panel *panel,
+	const struct kwl_panel *panel,
 	const float *place,
 	float opacity)
 {
@@ -444,9 +444,9 @@ panels_shadow(
  */
 static void
 panels_glass(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_panel *panel,
+	const struct kwl_panel *panel,
 	const float *place,
 	float opacity,
 	unsigned light)

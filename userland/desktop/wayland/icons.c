@@ -16,7 +16,7 @@
  *
  * Each icon is a few strokes, arcs, rings, dots and rounded boxes (filled
  * or outlined) on a grid of 24 units, and a hole may be cut out of what
- * they cover.  zwl_icon_raster turns one into a square of coverage at a
+ * they cover.  kwl_icon_raster turns one into a square of coverage at a
  * size in pixels by measuring, for each pixel's centre, how far it is from
  * the nearest part: a stroke covers the pixel as far as the pixel lies
  * within half its width, which gives smooth edges without an outline
@@ -27,7 +27,7 @@
  * user's montage 4): a square with rounded corners in three diagonal bands
  * of two pastel-leaning colours with a light stripe across the middle one,
  * the picture cut out of it so that whatever is behind the tile shows
- * through.  zwl_icon_tile draws the whole tile in colour; glass.c keeps the
+ * through.  kwl_icon_tile draws the whole tile in colour; glass.c keeps the
  * tiles at the sizes the compositor draws them.
  */
 
@@ -619,7 +619,7 @@ static void icon_channels(uint32_t rgb, float *channels);
  * pixels, a byte a pixel (255 fully covered), rows stride bytes apart.
  */
 void
-zwl_icon_raster(
+kwl_icon_raster(
 	unsigned icon,
 	unsigned pixels,
 	uint8_t *coverage,
@@ -712,7 +712,7 @@ zwl_icon_raster(
  * GLASS_ICON_TILE_MOST, leaves the square transparent.
  */
 void
-zwl_icon_tile(
+kwl_icon_tile(
 	unsigned icon,
 	unsigned pixels,
 	uint32_t *argb,
@@ -752,7 +752,7 @@ zwl_icon_tile(
 	if (((pixels - picture_pixels) & 1U) != 0U)
 		picture_pixels++;
 	offset = (pixels - picture_pixels) / 2U;
-	zwl_icon_raster(icon, picture_pixels, picture, picture_pixels);
+	kwl_icon_raster(icon, picture_pixels, picture, picture_pixels);
 
 	/* Each pixel of the tile: its band colour, as much of it as the rounded square covers less the picture's cover. */
 	bands = &icon_app_bands[icon - GLASS_ICON_FIRST_APP];
@@ -792,7 +792,7 @@ zwl_icon_tile(
  * Returns the icon (GLASS_ICON_APP_*), or -1 for a name no picture has.
  */
 int
-zwl_icon_named(
+kwl_icon_named(
 	const char *name)
 {
 	unsigned index;
@@ -816,7 +816,7 @@ zwl_icon_named(
  * to.
  */
 int
-zwl_icon_for_app_id(
+kwl_icon_for_app_id(
 	const char *app_id)
 {
 	unsigned index;

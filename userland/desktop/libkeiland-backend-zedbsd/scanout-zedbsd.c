@@ -66,7 +66,7 @@ static struct kl_backend_scanout *scanout_open;
 static uint64_t scanout_claims;
 
 static int scanout_display(struct kl_backend_scanout *scanout);
-static int scanout_import(struct kl_backend_scanout *scanout, struct zwl_gpu_buffer_record *record);
+static int scanout_import(struct kl_backend_scanout *scanout, struct kwl_gpu_buffer_record *record);
 
 /*
  * Claims the display for an output of a size.  Returns 0, EBUSY while
@@ -146,7 +146,7 @@ kl_backend_scanout_present(
 	const struct kl_backend_protocol_host *host,
 	struct kl_backend_resource *buffer)
 {
-	struct zwl_gpu_buffer_record *record;
+	struct kwl_gpu_buffer_record *record;
 	struct gpu_display_present present;
 	struct gpu_image_descriptor image;
 	unsigned role;
@@ -239,8 +239,8 @@ kl_backend_scanout_close(
  * fd).
  */
 void
-zwl_scanout_forget(
-	struct zwl_gpu_buffer_record *record)
+kwl_scanout_forget(
+	struct kwl_gpu_buffer_record *record)
 {
 	struct gpu_resource_destroy destroy;
 
@@ -320,7 +320,7 @@ scanout_display(
 static int
 scanout_import(
 	struct kl_backend_scanout *scanout,
-	struct zwl_gpu_buffer_record *record)
+	struct kwl_gpu_buffer_record *record)
 {
 	struct gpu_resource_import import;
 	int error;

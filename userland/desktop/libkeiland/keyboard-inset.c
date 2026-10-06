@@ -7,7 +7,7 @@
 
 /*
  * The keyboard inset (ws102-p015, plan/ws102/design.md section 2.8): the
- * wrapper of zdesktop's keiland_keyboard_inset_v1 protocol.  A window hears
+ * wrapper of zdesktop's kl_keyboard_inset_v1 protocol.  A window hears
  * how much of it the on-screen keyboard covers, from its right and bottom
  * edges, when the keyboard opens, closes or changes the window.  With a
  * compositor that does not have the protocol nothing is made (ENOTSUP) and
@@ -29,20 +29,20 @@
 #define INSET_VERSION		1U
 
 /*
- * One window's inset: its keiland_keyboard_inset_v1, and the application's
+ * One window's inset: its kl_keyboard_inset_v1, and the application's
  * callback and its data.
  */
 struct kl_keyboard_inset {
-	struct keiland_keyboard_inset_v1 *proxy;
+	struct kl_keyboard_inset_v1 *proxy;
 	kl_keyboard_inset_fn callback;
 	void *data;
 };
 
-static struct keiland_keyboard_inset_manager_v1 *inset_bind(struct wl_display *display);
-static void inset_event(void *data, struct keiland_keyboard_inset_v1 *object, int32_t right, int32_t bottom, uint32_t reason);
+static struct kl_keyboard_inset_manager_v1 *inset_bind(struct wl_display *display);
+static void inset_event(void *data, struct kl_keyboard_inset_v1 *object, int32_t right, int32_t bottom, uint32_t reason);
 
 /* The inset's callback. */
-static const struct keiland_keyboard_inset_v1_listener inset_listener = {
+static const struct kl_keyboard_inset_v1_listener inset_listener = {
 	inset_event
 };
 
@@ -58,7 +58,7 @@ kl_keyboard_inset_create(
 	kl_keyboard_inset_fn callback,
 	void *data)
 {
-	struct keiland_keyboard_inset_manager_v1 *manager;
+	struct kl_keyboard_inset_manager_v1 *manager;
 	struct kl_keyboard_inset *inset;
 	int error;
 
@@ -76,7 +76,7 @@ kl_keyboard_inset_create(
 	/* The record. */
 	inset = calloc(1, sizeof(*inset));
 	if (inset == NULL) {
-		keiland_keyboard_inset_manager_v1_destroy(manager);
+		kl_keyboard_inset_manager_v1_destroy(manager);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -84,8 +84,8 @@ kl_keyboard_inset_create(
 	inset->data = data;
 
 	/* The protocol object; the binding is not needed after it (the inset stays). */
-	inset->proxy = keiland_keyboard_inset_manager_v1_get_inset(manager, toplevel);
-	keiland_keyboard_inset_manager_v1_destroy(manager);
+	inset->proxy = kl_keyboard_inset_manager_v1_get_inset(manager, toplevel);
+	kl_keyboard_inset_manager_v1_destroy(manager);
 	if (inset->proxy == NULL) {
 		free(inset);
 		errno = ENOMEM;
@@ -93,9 +93,9 @@ kl_keyboard_inset_create(
 	}
 
 	/* Its events come to the callback. */
-	error = keiland_keyboard_inset_v1_add_listener(inset->proxy, &inset_listener, inset);
+	error = kl_keyboard_inset_v1_add_listener(inset->proxy, &inset_listener, inset);
 	if (error != 0) {
-		keiland_keyboard_inset_v1_destroy(inset->proxy);
+		kl_keyboard_inset_v1_destroy(inset->proxy);
 		free(inset);
 		errno = ENOMEM;
 		return NULL;
@@ -117,7 +117,7 @@ kl_keyboard_inset_destroy(
 		return;
 
 	/* The protocol object, then the record. */
-	keiland_keyboard_inset_v1_destroy(inset->proxy);
+	kl_keyboard_inset_v1_destroy(inset->proxy);
 	free(inset);
 }
 
@@ -125,7 +125,7 @@ kl_keyboard_inset_destroy(
 static void
 inset_event(
 	void *data,
-	struct keiland_keyboard_inset_v1 *object,
+	struct kl_keyboard_inset_v1 *object,
 	int32_t right,
 	int32_t bottom,
 	uint32_t reason)
@@ -141,16 +141,16 @@ inset_event(
 }
 
 /* Binds zdesktop's inset manager: from an application's registry, or found by a search of the library's own. */
-static struct keiland_keyboard_inset_manager_v1 *
+static struct kl_keyboard_inset_manager_v1 *
 inset_bind(
 	struct wl_display *display)
 {
-	struct keiland_keyboard_inset_manager_v1 *manager;
+	struct kl_keyboard_inset_manager_v1 *manager;
 	struct keiui_global_search search;
 	int error;
 
 	/* The manager's global. */
-	error = keiui_global_find(&search, display, "keiland_keyboard_inset_manager_v1");
+	error = keiui_global_find(&search, display, "kl_keyboard_inset_manager_v1");
 	if (error != 0) {
 		keiui_global_end(&search);
 		errno = error;
@@ -158,7 +158,7 @@ inset_bind(
 	}
 
 	/* The manager, bound when announced; the search ends. */
-	manager = keiui_global_bind(&search, &keiland_keyboard_inset_manager_v1_interface, INSET_VERSION);
+	manager = keiui_global_bind(&search, &kl_keyboard_inset_manager_v1_interface, INSET_VERSION);
 	keiui_global_end(&search);
 
 	/* A compositor without the protocol. */

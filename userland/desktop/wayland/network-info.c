@@ -29,9 +29,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static const struct kl_backend_network_link *info_link(const struct zwl_network_info_input *input);
-static const struct kl_backend_network_link *info_link_named(const struct zwl_network_info_input *input, const char *name);
-static unsigned info_add(struct zwl_network_info_row *rows, unsigned count, unsigned capacity, const char *label, const char *value);
+static const struct kl_backend_network_link *info_link(const struct kwl_network_info_input *input);
+static const struct kl_backend_network_link *info_link_named(const struct kwl_network_info_input *input, const char *name);
+static unsigned info_add(struct kwl_network_info_row *rows, unsigned count, unsigned capacity, const char *label, const char *value);
 static void info_transfer(uint64_t bytes, uint64_t before, uint64_t elapsed_ms, int rated, char *text, size_t size);
 
 /*
@@ -39,15 +39,15 @@ static void info_transfer(uint64_t bytes, uint64_t before, uint64_t elapsed_ms, 
  * reading's sample in previous.
  */
 unsigned
-zwl_network_info_build(
-	const struct zwl_network_info_input *input,
-	struct zwl_network_info_sample *previous,
-	struct zwl_network_info_row *rows,
+kwl_network_info_build(
+	const struct kwl_network_info_input *input,
+	struct kwl_network_info_sample *previous,
+	struct kwl_network_info_row *rows,
 	unsigned capacity)
 {
 	const struct kl_backend_network_state *state;
 	const struct kl_backend_network_link *link;
-	char value[ZWL_NETWORK_INFO_VALUE];
+	char value[KWL_NETWORK_INFO_VALUE];
 	uint64_t elapsed;
 	unsigned count;
 	size_t index;
@@ -153,7 +153,7 @@ zwl_network_info_build(
 
 /* Writes a count of bytes as B, KB, MB or GB. */
 void
-zwl_network_info_bytes(
+kwl_network_info_bytes(
 	uint64_t bytes,
 	char *text,
 	size_t size)
@@ -183,7 +183,7 @@ zwl_network_info_bytes(
 /* Chooses the interface to show: the connection's, the Wi-Fi's, the wired one, or the first not the loopback. */
 static const struct kl_backend_network_link *
 info_link(
-	const struct zwl_network_info_input *input)
+	const struct kwl_network_info_input *input)
 {
 	const struct kl_backend_network_link *link;
 	size_t index;
@@ -216,7 +216,7 @@ info_link(
 /* Finds an interface by its name; NULL for an empty name or none of that name. */
 static const struct kl_backend_network_link *
 info_link_named(
-	const struct zwl_network_info_input *input,
+	const struct kwl_network_info_input *input,
 	const char *name)
 {
 	size_t index;
@@ -240,7 +240,7 @@ info_link_named(
 /* Adds a row when its value is known and there is room; returns the new count. */
 static unsigned
 info_add(
-	struct zwl_network_info_row *rows,
+	struct kwl_network_info_row *rows,
 	unsigned count,
 	unsigned capacity,
 	const char *label,
@@ -277,7 +277,7 @@ info_transfer(
 	uint64_t per_second;
 
 	/* The total. */
-	zwl_network_info_bytes(bytes, total, sizeof(total));
+	kwl_network_info_bytes(bytes, total, sizeof(total));
 
 	/* Without a rate. */
 	if (!rated || elapsed_ms == 0U || bytes < before) {
@@ -287,6 +287,6 @@ info_transfer(
 
 	/* Succeeded: the total and the rate. */
 	per_second = (bytes - before) * 1000U / elapsed_ms;
-	zwl_network_info_bytes(per_second, rate, sizeof(rate));
+	kwl_network_info_bytes(per_second, rate, sizeof(rate));
 	(void)snprintf(text, size, "%s (%s/s)", total, rate);
 }

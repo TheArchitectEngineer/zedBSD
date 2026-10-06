@@ -23,7 +23,7 @@
  *   sh plan/ws132/tests/run-host-lid.sh
  */
 
-#include "userland/desktop/wayland/zwl.h"
+#include "userland/desktop/wayland/kwl.h"
 #include "userland/desktop/wayland/lid.h"
 
 #include <errno.h>
@@ -50,7 +50,7 @@ static unsigned releases;
 static unsigned backlight_sets;
 
 /* The compositor (most of it unused here). */
-static struct zwl_server server;
+static struct kwl_server server;
 
 static void check(int condition, const char *what);
 static void start_case(int backlight, int lockable, int greeter);
@@ -95,55 +95,55 @@ start_case(
 static void
 test_logic(void)
 {
-	struct zwl_lid lid;
+	struct kwl_lid lid;
 	unsigned actions;
 
 	/* Closing a session not locked: out and locked; opening at once: lit and unlocked. */
 	memset(&lid, 0, sizeof(lid));
-	actions = zwl_lid_close(&lid, 100, 1, 0);
-	check(actions == (ZWL_LID_SCREEN_OFF | ZWL_LID_LOCK), "logic: closing locks");
-	actions = zwl_lid_close(&lid, 200, 1, 1);
+	actions = kwl_lid_close(&lid, 100, 1, 0);
+	check(actions == (KWL_LID_SCREEN_OFF | KWL_LID_LOCK), "logic: closing locks");
+	actions = kwl_lid_close(&lid, 200, 1, 1);
 	check(actions == 0U, "logic: closed twice does nothing");
-	actions = zwl_lid_open(&lid, 300, 1);
-	check(actions == (ZWL_LID_SCREEN_ON | ZWL_LID_UNLOCK), "logic: opening at once unlocks");
-	actions = zwl_lid_open(&lid, 400, 0);
+	actions = kwl_lid_open(&lid, 300, 1);
+	check(actions == (KWL_LID_SCREEN_ON | KWL_LID_UNLOCK), "logic: opening at once unlocks");
+	actions = kwl_lid_open(&lid, 400, 0);
 	check(actions == 0U, "logic: open twice does nothing");
 
 	/* Exactly 15 minutes unlocks; one millisecond more does not. */
-	(void)zwl_lid_close(&lid, 1000, 1, 0);
-	actions = zwl_lid_open(&lid, 1000 + ZWL_LID_GRACE_MS, 1);
-	check(actions == (ZWL_LID_SCREEN_ON | ZWL_LID_UNLOCK), "logic: 15 minutes unlocks");
-	(void)zwl_lid_close(&lid, 1000, 1, 0);
-	actions = zwl_lid_open(&lid, 1001 + ZWL_LID_GRACE_MS, 1);
-	check(actions == ZWL_LID_SCREEN_ON, "logic: past 15 minutes keeps the lock");
+	(void)kwl_lid_close(&lid, 1000, 1, 0);
+	actions = kwl_lid_open(&lid, 1000 + KWL_LID_GRACE_MS, 1);
+	check(actions == (KWL_LID_SCREEN_ON | KWL_LID_UNLOCK), "logic: 15 minutes unlocks");
+	(void)kwl_lid_close(&lid, 1000, 1, 0);
+	actions = kwl_lid_open(&lid, 1001 + KWL_LID_GRACE_MS, 1);
+	check(actions == KWL_LID_SCREEN_ON, "logic: past 15 minutes keeps the lock");
 
 	/* A lock that was there before the closing is not the lid's. */
-	(void)zwl_lid_close(&lid, 1000, 1, 1);
-	actions = zwl_lid_open(&lid, 1001, 1);
-	check(actions == ZWL_LID_SCREEN_ON, "logic: an earlier lock stays");
+	(void)kwl_lid_close(&lid, 1000, 1, 1);
+	actions = kwl_lid_open(&lid, 1001, 1);
+	check(actions == KWL_LID_SCREEN_ON, "logic: an earlier lock stays");
 
 	/* Unlocked with the password meanwhile, then locked otherwise: that lock stays. */
-	(void)zwl_lid_close(&lid, 1000, 1, 0);
-	zwl_lid_unlocked(&lid);
-	actions = zwl_lid_open(&lid, 1001, 1);
-	check(actions == ZWL_LID_SCREEN_ON, "logic: a lock after an unlock is not the lid's");
+	(void)kwl_lid_close(&lid, 1000, 1, 0);
+	kwl_lid_unlocked(&lid);
+	actions = kwl_lid_open(&lid, 1001, 1);
+	check(actions == KWL_LID_SCREEN_ON, "logic: a lock after an unlock is not the lid's");
 
 	/* The login screen: only out. */
-	actions = zwl_lid_close(&lid, 1000, 0, 0);
-	check(actions == ZWL_LID_SCREEN_OFF, "logic: the login screen is not locked");
-	actions = zwl_lid_open(&lid, 1001, 0);
-	check(actions == ZWL_LID_SCREEN_ON, "logic: the login screen lights");
+	actions = kwl_lid_close(&lid, 1000, 0, 0);
+	check(actions == KWL_LID_SCREEN_OFF, "logic: the login screen is not locked");
+	actions = kwl_lid_open(&lid, 1001, 0);
+	check(actions == KWL_LID_SCREEN_ON, "logic: the login screen lights");
 
 	/* A clock that went back keeps the lock. */
-	(void)zwl_lid_close(&lid, 5000, 1, 0);
-	actions = zwl_lid_open(&lid, 4000, 1);
-	check(actions == ZWL_LID_SCREEN_ON, "logic: a clock that went back keeps the lock");
+	(void)kwl_lid_close(&lid, 5000, 1, 0);
+	actions = kwl_lid_open(&lid, 4000, 1);
+	check(actions == KWL_LID_SCREEN_ON, "logic: a clock that went back keeps the lock");
 
 	/* A failed lock leaves nothing to unlock. */
-	(void)zwl_lid_close(&lid, 1000, 1, 0);
-	zwl_lid_lock_failed(&lid);
-	actions = zwl_lid_open(&lid, 1001, 1);
-	check(actions == ZWL_LID_SCREEN_ON, "logic: a failed lock unlocks nothing");
+	(void)kwl_lid_close(&lid, 1000, 1, 0);
+	kwl_lid_lock_failed(&lid);
+	actions = kwl_lid_open(&lid, 1001, 1);
+	check(actions == KWL_LID_SCREEN_ON, "logic: a failed lock unlocks nothing");
 }
 
 /* Runs every case. */
@@ -155,71 +155,71 @@ main(void)
 
 	/* 2. A session with a backlight: closed, opened 5 minutes later. */
 	start_case(1, 1, 0);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	check(server.locked == 1U && locks == 1U, "closed: the session locks");
 	check(server.screen_off == 1U, "closed: the screen is black");
 	check(fake_backlight.percent == 0U && server.backlight_saved == 70U, "closed: the backlight off, 70% kept");
 	fake_now += 5U * 60U * 1000U;
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(server.locked == 0U && releases == 1U, "opened in 5 minutes: unlocked without the password");
 	check(server.screen_off == 0U && fake_backlight.percent == 70U, "opened: lit at 70%");
 
 	/* 3. Opened 16 minutes later: lit, still locked. */
 	start_case(1, 1, 0);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	fake_now += 16U * 60U * 1000U;
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(server.locked == 1U && releases == 0U, "opened in 16 minutes: the lock screen stays");
 	check(server.screen_off == 0U && fake_backlight.percent == 70U, "opened late: lit");
 
 	/* 4. Already locked before the closing: the lock stays. */
 	start_case(1, 1, 0);
 	server.locked = 1U;
-	zwl_backend_lid_changed(&server, 0U);
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(server.locked == 1U && releases == 0U && locks == 0U, "an earlier lock stays");
 
 	/* 5. Unlocked meanwhile with the password, locked again by the idle time: that lock stays. */
 	start_case(1, 1, 0);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	server.locked = 0U;
-	zwl_lid_unlocked(&server.lid);
+	kwl_lid_unlocked(&server.lid);
 	server.locked = 1U;
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(server.locked == 1U && releases == 0U, "a lock after a password unlock stays");
 
 	/* 6. The login screen: black and lit, never locked. */
 	start_case(1, 1, 1);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	check(server.locked == 0U && locks == 0U && server.screen_off == 1U, "login screen: black, not locked");
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(server.screen_off == 0U && fake_backlight.percent == 70U, "login screen: lit");
 
 	/* 7. No backlight: only black. */
 	start_case(0, 1, 0);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	check(server.screen_off == 1U && server.backlight == NULL && backlight_sets == 0U, "no backlight: black only");
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(server.screen_off == 0U && server.locked == 0U, "no backlight: lit and unlocked");
 
 	/* 8. The same state twice: nothing more. */
 	start_case(1, 1, 0);
-	zwl_backend_lid_changed(&server, 0U);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	check(locks == 1U && backlight_sets == 1U, "closed twice: one lock, one dimming");
 
 	/* 9. A session that cannot be locked: black, and the opening unlocks nothing. */
 	start_case(1, 0, 0);
-	zwl_backend_lid_changed(&server, 0U);
+	kwl_backend_lid_changed(&server, 0U);
 	check(server.locked == 0U && server.screen_off == 1U, "unlockable session: black only");
 	server.locked = 1U;
-	zwl_backend_lid_changed(&server, 1U);
+	kwl_backend_lid_changed(&server, 1U);
 	check(releases == 0U, "unlockable session: the opening unlocks nothing");
 
 	/* 10. The compositor ending with the lid closed lights the panel for the next session. */
 	start_case(1, 1, 0);
-	zwl_backend_lid_changed(&server, 0U);
-	zwl_lid_screen_restore(&server);
+	kwl_backend_lid_changed(&server, 0U);
+	kwl_lid_screen_restore(&server);
 	check(fake_backlight.percent == 70U && server.screen_off == 0U, "the end lights the panel");
 
 	/* The result. */
@@ -237,7 +237,7 @@ main(void)
 
 /* The fake clock. */
 uint64_t
-zwl_milliseconds(void)
+kwl_milliseconds(void)
 {
 	/* Its time. */
 	return fake_now;
@@ -245,8 +245,8 @@ zwl_milliseconds(void)
 
 /* Locks, when the session can be. */
 int
-zwl_lock(
-	struct zwl_server *compositor,
+kwl_lock(
+	struct kwl_server *compositor,
 	const char *reason)
 {
 	/* Not possible: not locked. */
@@ -262,8 +262,8 @@ zwl_lock(
 
 /* Unlocks without the password. */
 void
-zwl_lock_release(
-	struct zwl_server *compositor,
+kwl_lock_release(
+	struct kwl_server *compositor,
 	const char *reason)
 {
 	/* Unlocked. */

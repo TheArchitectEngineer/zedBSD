@@ -59,7 +59,7 @@ main(
 	failures = 0;
 	for (row = 0; row < sizeof(sizes) / sizeof(sizes[0]); row++) {
 		for (icon = 0; icon < GLASS_ICON_COUNT; icon++) {
-			zwl_icon_raster(icon, sizes[row], coverage, sizes[row]);
+			kwl_icon_raster(icon, sizes[row], coverage, sizes[row]);
 			left = icon * 72U + (72U - sizes[row]) / 2U;
 			top = row * 72U + (72U - sizes[row]) / 2U;
 			covered = 0;

@@ -11,7 +11,7 @@
 
 #include "language.h"
 #include "desktop.h"
-#include "zwl.h"
+#include "kwl.h"
 #include "role.h"
 #include "toplevel.h"
 #include "keymap.h"
@@ -40,14 +40,14 @@ static volatile sig_atomic_t stop_requested;
 
 static void stop_service(int signal_number);
 static void log_append(int descriptor);
-static int parse_options(struct zwl_server *server, int count, char **arguments);
+static int parse_options(struct kwl_server *server, int count, char **arguments);
 static int unsigned_option(const char *text, uint64_t maximum, uint64_t *number);
-static int listen_socket(struct zwl_server *server);
-static void unlink_socket(struct zwl_server *server);
-static int accept_client(struct zwl_server *server);
-static void zwl_perf_report(struct zwl_server *server, uint64_t now);
-static int event_loop(struct zwl_server *server);
-static void service_cleanup(struct zwl_server *server);
+static int listen_socket(struct kwl_server *server);
+static void unlink_socket(struct kwl_server *server);
+static int accept_client(struct kwl_server *server);
+static void kwl_perf_report(struct kwl_server *server, uint64_t now);
+static int event_loop(struct kwl_server *server);
+static void service_cleanup(struct kwl_server *server);
 static uint64_t startup_step(const char *step, uint64_t since);
 
 /*
@@ -58,7 +58,7 @@ main(
 	int count,
 	char **arguments)
 {
-	struct zwl_server server;
+	struct kwl_server server;
 	struct kl_backend_options backend_options;
 	struct kl_backend_host backend_host;
 	void (*previous_handler)(int);
@@ -77,10 +77,10 @@ main(
 	server.fallback_font_path = KEILAND_DATADIR "/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
 	server.mouse_speed = 150;
-	server.mouse_acceleration = ZWL_ACCEL_STRONG;
+	server.mouse_acceleration = KWL_ACCEL_STRONG;
 	server.mouse_natural = 0;
 	server.touchpad_speed = 100;
-	server.touchpad_acceleration = ZWL_ACCEL_MEDIUM;
+	server.touchpad_acceleration = KWL_ACCEL_MEDIUM;
 	server.touchpad_natural = 1;
 	server.repeat_rate = 25;
 	server.repeat_delay_ms = 400;
@@ -98,19 +98,19 @@ main(
 	memset(&backend_options, 0, sizeof(backend_options));
 	memset(&backend_host, 0, sizeof(backend_host));
 	backend_host.data = &server;
-	backend_host.session_stop = zwl_handoff_stop;
-	backend_host.session_answer = zwl_handoff_answer;
-	backend_host.session_paused = zwl_backend_session_paused;
-	backend_host.session_resumed = zwl_backend_session_resumed;
-	backend_host.input_paused = zwl_backend_input_paused;
-	backend_host.input_resumed = zwl_backend_input_resumed;
-	backend_host.input_gone = zwl_backend_input_gone;
-	backend_host.input_known = zwl_backend_input_known;
-	backend_host.input_found = zwl_backend_input_found;
-	backend_host.input_changed = zwl_backend_input_changed;
-	backend_host.power_changed = zwl_backend_power_changed;
-	backend_host.power_button = zwl_backend_power_button;
-	backend_host.lid_changed = zwl_backend_lid_changed;
+	backend_host.session_stop = kwl_handoff_stop;
+	backend_host.session_answer = kwl_handoff_answer;
+	backend_host.session_paused = kwl_backend_session_paused;
+	backend_host.session_resumed = kwl_backend_session_resumed;
+	backend_host.input_paused = kwl_backend_input_paused;
+	backend_host.input_resumed = kwl_backend_input_resumed;
+	backend_host.input_gone = kwl_backend_input_gone;
+	backend_host.input_known = kwl_backend_input_known;
+	backend_host.input_found = kwl_backend_input_found;
+	backend_host.input_changed = kwl_backend_input_changed;
+	backend_host.power_changed = kwl_backend_power_changed;
+	backend_host.power_button = kwl_backend_power_button;
+	backend_host.lid_changed = kwl_backend_lid_changed;
 
 	/* Reads the command line; a mistake ends the run with the usage. */
 	error = parse_options(&server, count, arguments);
@@ -122,7 +122,7 @@ main(
 	/* A login session locks after ten minutes without input unless told otherwise (ws035-p102). */
 	if (server.session && !server.lock_idle_given)
 		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
-	server.lock_input_ms = zwl_milliseconds();
+	server.lock_input_ms = kwl_milliseconds();
 
 	/* The session's descriptor to sessiond does not go to the programs the compositor starts, and is read without waiting. */
 	if (server.control_fd >= 0) {
@@ -147,14 +147,14 @@ main(
 	 * that the picture is read once.
 	 */
 	if (!server.greeter)
-		zwl_settings_open(&server);
+		kwl_settings_open(&server);
 
 	/* The login screen's text is in the system's language; a session's comes with its settings (WS158). */
 	if (server.greeter)
-		zwl_language_system(&server);
+		kwl_language_system(&server);
 
 	/* A test image's screen capture listens (shot.c; nothing elsewhere, ws173-p002). */
-	zwl_shot_open(&server);
+	kwl_shot_open(&server);
 
 	/* Catch normal termination without performing allocation or I/O inside a signal handler. */
 	previous_handler = signal(SIGINT, stop_service);
@@ -188,28 +188,28 @@ main(
 		printf("ZWL BACKEND unavailable errno=%d\n", error);
 
 	/* The power as the backend knows it now, for the bar's battery (ws132-p003). */
-	zwl_power_read(&server);
+	kwl_power_read(&server);
 
 	/* Takes the OS's seat resources before Vulkan opens the display. */
 	if (error == 0) {
-		error = zwl_os_open(&server);
+		error = kwl_os_open(&server);
 		if (error != 0)
 			printf("ZWL OS unavailable errno=%d\n", error);
 	}
 
 	/* Reads the wallpaper while Vulkan starts, only after OS startup succeeded. */
 	if (error == 0)
-		zwl_glass_prefetch(&server);
+		kwl_glass_prefetch(&server);
 
 	/* The start is timed from the Vulkan device on (ZWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
-	step_start = zwl_milliseconds();
+	step_start = kwl_milliseconds();
 
 	/*
 	 * Window mode's Vulkan device, which also gives the display's size and
 	 * refresh.  Without it nothing can be shown, so zdesktop does not start.
 	 */
 	if (error == 0) {
-		error = zwl_compose_open(&server);
+		error = kwl_compose_open(&server);
 		if (error != 0)
 			printf("ZWL COMPOSE unavailable errno=%d\n", error);
 
@@ -224,13 +224,13 @@ main(
 
 	/* Input devices are found before READY; a seat without devices is still valid. */
 	if (error == 0) {
-		zwl_input_scan(&server);
+		kwl_input_scan(&server);
 		step_start = startup_step("input", step_start);
 	}
 
 	/* The keyboards' XKB keymap (keymap.c); without it they say there is none. */
 	if (error == 0) {
-		keymap_error = zwl_keymap_open();
+		keymap_error = kwl_keymap_open();
 		if (keymap_error == 0) {
 			printf("ZWL KEYMAP format=xkb_v1 errno=0\n");
 		} else {
@@ -243,7 +243,7 @@ main(
 
 	/* The login screen's users and sessiond's answers (greeter.c). */
 	if (error == 0 && server.greeter)
-		error = zwl_greeter_open(&server);
+		error = kwl_greeter_open(&server);
 
 	/* The endpoint is published last; the login screen has none. */
 	if (error == 0 && !server.greeter) {
@@ -253,18 +253,18 @@ main(
 
 	/* The system's input method starts on a connection of its own (input-method.c). */
 	if (error == 0)
-		zwl_ime_start(&server);
+		kwl_ime_start(&server);
 
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
-		printf("ZWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), zwl_role_name(server.role));
+		printf("ZWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), kwl_role_name(server.role));
 		error = event_loop(&server);
 	}
 
 	/* No exit path leaves a lease, imported image or owned socket generation behind. */
 	service_cleanup(&server);
 	cleanup_failed = server.failed;
-	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)zwl_milliseconds());
+	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)kwl_milliseconds());
 	if (error != 0 || cleanup_failed)
 		return 1;
 
@@ -277,7 +277,7 @@ main(
  * screen after a login, a session at its Log Out.
  */
 void
-zwl_request_stop(
+kwl_request_stop(
 	void)
 {
 	/* The loop sees this at its next pass. */
@@ -300,12 +300,12 @@ stop_service(
 /* Parses explicit bounded service settings without depending on environment state. */
 static int
 parse_options(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int count,
 	char **arguments)
 {
-	struct zwl_role_request request;
-	struct zwl_role role;
+	struct kwl_role_request request;
+	struct kwl_role role;
 	const char *argument;
 	const char *text;
 	uint64_t number;
@@ -362,7 +362,7 @@ parse_options(
 		}
 
 		/* The desktop surface's program and token (desktop.c, ws094-p002). */
-		match = zwl_desktop_option(server, argument);
+		match = kwl_desktop_option(server, argument);
 		if (match == 1)
 			continue;
 		if (match != 0)
@@ -517,7 +517,7 @@ parse_options(
 	}
 
 	/* The role, decided once whatever the options' order (WS110). */
-	error = zwl_role_resolve(&request, &role);
+	error = kwl_role_resolve(&request, &role);
 	if (error != 0) {
 		fprintf(stderr, "wayland: %s\n", role.refusal);
 		return error;
@@ -533,7 +533,7 @@ parse_options(
 	server->session = 0;
 
 	/* Only the normal role is a login session (the test run and the login screen are not). */
-	if (role.role == ZWL_ROLE_NORMAL)
+	if (role.role == KWL_ROLE_NORMAL)
 		server->session = 1;
 
 	/* Succeeded: every option is explicit, bounded and understood. */
@@ -583,7 +583,7 @@ unsigned_option(
 /* Publishes a new Unix endpoint without deleting or replacing an existing server path. */
 static int
 listen_socket(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct sockaddr_un address;
 	struct stat status;
@@ -624,7 +624,7 @@ listen_socket(
 /* Removes only the pathname identity created by this service instance. */
 static void
 unlink_socket(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct stat status;
 	int error;
@@ -655,10 +655,10 @@ unlink_socket(
 /* Accepts one client and creates its required display object before processing requests. */
 static int
 accept_client(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *display;
+	struct kwl_client *client;
+	struct kwl_object *display;
 	int descriptor;
 
 	/* Nonblocking acceptance cannot stall already connected clients. */
@@ -685,12 +685,12 @@ accept_client(
 	client->fd = descriptor;
 	client->server = server;
 	client->number = ++server->client_serial;
-	client->connected_ms = zwl_milliseconds();
+	client->connected_ms = kwl_milliseconds();
 	client->next = server->clients;
 	server->clients = client;
-	display = zwl_create(client, 1, ZWL_DISPLAY, 1);
+	display = kwl_create(client, 1, KWL_DISPLAY, 1);
 	if (display == NULL) {
-		zwl_client_destroy(client);
+		kwl_client_destroy(client);
 		return ENOMEM;
 	}
 
@@ -704,13 +704,13 @@ accept_client(
 /* Services independent client streams and schedules bounded fullscreen presentations. */
 static int
 event_loop(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_client **clients;
-	struct zwl_object *surface;
-	struct zwl_input_device *devices[ZWL_INPUT_MAX];
-	struct zwl_input_device *ready_devices[ZWL_INPUT_MAX];
+	struct kwl_client *client;
+	struct kwl_client **clients;
+	struct kwl_object *surface;
+	struct kwl_input_device *devices[KWL_INPUT_MAX];
+	struct kwl_input_device *ready_devices[KWL_INPUT_MAX];
 	size_t ready_count;
 	struct pollfd *descriptors;
 	uint64_t started;
@@ -735,14 +735,14 @@ event_loop(
 	const char *why;
 
 	/* A finite monotonic deadline covers both idle service and active clients. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	if (started == UINT64_MAX)
 		return EIO;
 
 	/* Each pass rebuilds the descriptor generation snapshot after prior cleanup. */
 	while (!stop_requested && !server->failed) {
 		/* Clock failure must not turn the configured service deadline into an endless run. */
-		now = zwl_milliseconds();
+		now = kwl_milliseconds();
 		if (now == UINT64_MAX)
 			return EIO;
 
@@ -752,26 +752,26 @@ event_loop(
 			break;
 
 		/* Evdev nodes that appeared since the last scan join the seat. */
-		if (server->os_paused == 0 && now - server->input_scan_time >= ZWL_INPUT_SCAN_MS)
-			zwl_input_scan(server);
+		if (server->os_paused == 0 && now - server->input_scan_time >= KWL_INPUT_SCAN_MS)
+			kwl_input_scan(server);
 
 		/* The touch pads' timers: a tap's click completes when no drag came (input.c, ws159-p004). */
-		zwl_input_tick(server, now);
+		kwl_input_tick(server, now);
 
 		/* A client that has left a ping unanswered too long is not responding (toplevel.c). */
-		zwl_ping_check(server, now);
+		kwl_ping_check(server, now);
 
 		/* The windows hear new bounds when the space for bodies changed (the glass look given up, protocol.c). */
-		zwl_window_bounds_refresh(server);
+		kwl_window_bounds_refresh(server);
 
 		/* The settings: a wallpaper read meanwhile, audiod's sound, and the changes told to the clients (settings.c). */
-		zwl_settings_tick(server);
+		kwl_settings_tick(server);
 
 		/* The system extension: its threads' work taken, the sound's changes told (system.c). */
-		zwl_system_tick(server);
+		kwl_system_tick(server);
 
 		/* The input method is looked after: started again, passed by when it does not answer (input-method.c). */
-		zwl_ime_tick(server, now);
+		kwl_ime_tick(server, now);
 
 		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;
@@ -781,7 +781,7 @@ event_loop(
 
 		/* Input devices follow the clients in the same poll snapshot. */
 		first_input = count;
-		for (slot = 0; slot < ZWL_INPUT_MAX; slot++) {
+		for (slot = 0; slot < KWL_INPUT_MAX; slot++) {
 			/* Only open devices are polled; the table keeps each slot's address stable. */
 			if (server->inputs[slot].live) {
 				devices[count - first_input] = &server->inputs[slot];
@@ -813,14 +813,14 @@ event_loop(
 
 			/* Each live surface's pending fences. */
 			for (surface = client->objects; surface != NULL; surface = surface->next) {
-				if (surface->kind == ZWL_SURFACE && !surface->dead)
+				if (surface->kind == KWL_SURFACE && !surface->dead)
 					count += surface->fence_count;
 			}
 		}
 
 		/* Counts the OS entries after the input and fence descriptors. */
 		first_os = count;
-		os_count = zwl_os_poll_count(server);
+		os_count = kwl_os_poll_count(server);
 		count += os_count;
 
 		/* Allocation failure leaves all live clients owned by service cleanup. */
@@ -839,7 +839,7 @@ event_loop(
 		descriptors[0].fd = server->listener;
 		descriptors[0].events = POLLIN;
 		timeout = 10;
-		waiting = zwl_compose_waiting(server);
+		waiting = kwl_compose_waiting(server);
 		if (waiting)
 			timeout = 2;
 		index = 1;
@@ -883,7 +883,7 @@ event_loop(
 
 			/* Each live surface's pending fences. */
 			for (surface = client->objects; surface != NULL; surface = surface->next) {
-				if (surface->kind != ZWL_SURFACE || surface->dead)
+				if (surface->kind != KWL_SURFACE || surface->dead)
 					continue;
 				for (fence = 0; fence < surface->fence_count; fence++) {
 					descriptors[index].fd = surface->fences[fence].fd;
@@ -894,13 +894,13 @@ event_loop(
 		}
 
 		/* Lets the OS populate its entries in this descriptor snapshot. */
-		zwl_os_poll_fill(server, descriptors + first_os);
+		kwl_os_poll_fill(server, descriptors + first_os);
 
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
-		mark = zwl_cycles();
+		mark = kwl_cycles();
 		ready = poll(descriptors, count, timeout);
-		server->perf.poll_cycles += zwl_cycles() - mark;
-		mark = zwl_cycles();
+		server->perf.poll_cycles += kwl_cycles() - mark;
+		mark = kwl_cycles();
 		server->perf.passes++;
 		if (ready == 0)
 			server->perf.timeouts++;
@@ -927,12 +927,12 @@ event_loop(
 			error = EIO;
 
 		/* Device authority changes before the old snapshot can read revoked input or complete a frame. */
-		zwl_os_poll_done(server, descriptors + first_os);
+		kwl_os_poll_done(server, descriptors + first_os);
 
 		/* A finished frame releases its buffers and sends its callbacks; a fence without an fd is asked. */
 		if (frame_slot != 0 && descriptors[frame_slot].revents != 0)
-			zwl_frame_done(server);
-		zwl_compose_poll(server);
+			kwl_frame_done(server);
+		kwl_compose_poll(server);
 
 		/*
 		 * Device events are applied before clients are flushed, so they leave in this pass.  A readable, failed or
@@ -947,7 +947,7 @@ event_loop(
 
 		/* Reads them together. */
 		if (ready_count != 0)
-			zwl_input_read_devices(server, ready_devices, ready_count);
+			kwl_input_read_devices(server, ready_devices, ready_count);
 
 		/* Process only the clients captured by this poll snapshot. */
 		for (index = 1; index < first_input; index++) {
@@ -957,11 +957,11 @@ event_loop(
 			why = "read";
 			if ((descriptors[index].revents & POLLIN) != 0 && !client->fatal) {
 				/* Decode all complete requests while retaining partial bytes and ancillary ownership. */
-				ready = zwl_read(client);
+				ready = kwl_read(client);
 				if (ready != 0 && !client->fatal) {
 					/* Malformed ancillary data gets a terminal protocol event before withdrawal. */
 					if (ready == EPROTO)
-						(void)zwl_error(client, 1, "malformed ancillary input");
+						(void)kwl_error(client, 1, "malformed ancillary input");
 					else
 						remove = 1;
 				}
@@ -976,7 +976,7 @@ event_loop(
 			/* Flush events produced by requests even when POLLOUT was absent from this snapshot. */
 			if (!remove) {
 				/* Preserve unsent suffixes, but close a stream that can no longer accept events. */
-				ready = zwl_flush(client);
+				ready = kwl_flush(client);
 				if (ready != 0) {
 					remove = 1;
 					why = "flush";
@@ -994,15 +994,15 @@ event_loop(
 			/* Withdrawal releases unread rights and scanout ownership before fd reuse (the log line BUG-121's test reads). */
 			if (remove) {
 				printf("ZWL CLIENT gone client=%llu reason=%s\n", (unsigned long long)client->number, why);
-				zwl_client_destroy(client);
+				kwl_client_destroy(client);
 			}
 		}
 
 		/* The clipboard's history reads what a source has written so far (clipboard.c; the pass is at most 10 ms). */
-		zwl_clipboard_poll(server);
+		kwl_clipboard_poll(server);
 
 		/* A test image's screen capture takes its requests (shot.c, ws173-p002). */
-		zwl_shot_tick(server);
+		kwl_shot_tick(server);
 
 		/* The snapshot contains no ownership references beyond this iteration. */
 		free(clients);
@@ -1011,7 +1011,7 @@ event_loop(
 			return error;
 
 		/* The scheduler takes the committed images and draws a frame when one is due. */
-		zwl_schedule(server);
+		kwl_schedule(server);
 
 		/*
 		 * The presentation queued frame callbacks and buffer releases; they
@@ -1022,16 +1022,16 @@ event_loop(
 			/* A connection that cannot take its events is retired on the next pass. */
 			if (client->fatal)
 				continue;
-			flushed = zwl_flush(client);
+			flushed = kwl_flush(client);
 			if (flushed != 0) {
 				client->fatal = 1;
-				client->fatal_time = zwl_milliseconds();
+				client->fatal_time = kwl_milliseconds();
 			}
 		}
 
 		/* The pass's work. */
-		server->perf.work_cycles += zwl_cycles() - mark;
-		zwl_perf_report(server, now);
+		server->perf.work_cycles += kwl_cycles() - mark;
+		kwl_perf_report(server, now);
 	}
 
 	/* A hardware cleanup failure is distinct from a normal finite timeout or signal exit. */
@@ -1045,7 +1045,7 @@ event_loop(
 /* Withdraws display ownership, client generations and the service's own pathname in order. */
 static void
 service_cleanup(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* No new client should observe a service whose cleanup has begun. */
 	unlink_socket(server);
@@ -1055,31 +1055,31 @@ service_cleanup(
 	}
 
 	/* Window mode's frame in flight finishes before the clients it holds go; the capture answers what waits. */
-	zwl_compose_quiesce(server);
-	zwl_shot_close(server);
+	kwl_compose_quiesce(server);
+	kwl_shot_close(server);
 
 	/* Each client cleanup closes both user-received and still-kernel-queued rights. */
 	while (server->clients != NULL)
-		zwl_client_destroy(server->clients);
+		kwl_client_destroy(server->clients);
 
 	/* The swapchain and the Vulkan device go after every buffer's image. */
-	zwl_compose_close(server);
+	kwl_compose_close(server);
 
 	/* No client remains to hear from the seat, so its devices close quietly. */
-	zwl_input_cleanup(server);
+	kwl_input_cleanup(server);
 
 	/* The session's volume and settings are kept for the next login (volume.c, BUG-161; settings.c, WS135). */
-	zwl_volume_keep(server, "end");
-	zwl_settings_close(server);
+	kwl_volume_keep(server, "end");
+	kwl_settings_close(server);
 
 	/* The system extension's threads end before the backend closes (system.c). */
-	zwl_system_close(server);
+	kwl_system_close(server);
 
 	/* Returns the OS resources after input and display cleanup. */
-	zwl_os_close(server);
+	kwl_os_close(server);
 
 	/* A screen the lid put out is lit for whoever comes next, and the backlight closed (backend-host.c, ws132-p008). */
-	zwl_lid_screen_restore(server);
+	kwl_lid_screen_restore(server);
 	kl_backend_backlight_close(server->backlight);
 	server->backlight = NULL;
 
@@ -1093,7 +1093,7 @@ service_cleanup(
 
 /* Reads the processor's cycle counter (the millisecond clock has only tick resolution). */
 uint64_t
-zwl_cycles(
+kwl_cycles(
 	void)
 {
 	uint32_t low;
@@ -1108,11 +1108,11 @@ zwl_cycles(
 
 /* Prints the loop's timing every five seconds and starts a new window. */
 static void
-zwl_perf_report(
-	struct zwl_server *server,
+kwl_perf_report(
+	struct kwl_server *server,
 	uint64_t now)
 {
-	struct zwl_perf *perf;
+	struct kwl_perf *perf;
 	uint64_t cycles;
 	double per_ms;
 
@@ -1120,7 +1120,7 @@ zwl_perf_report(
 	perf = &server->perf;
 	if (perf->window_start_ms == 0) {
 		perf->window_start_ms = now;
-		perf->window_start_cycles = zwl_cycles();
+		perf->window_start_cycles = kwl_cycles();
 		return;
 	}
 
@@ -1129,7 +1129,7 @@ zwl_perf_report(
 		return;
 
 	/* The window's length in cycles scales the counters to milliseconds. */
-	cycles = zwl_cycles() - perf->window_start_cycles;
+	cycles = kwl_cycles() - perf->window_start_cycles;
 	per_ms = (double)cycles / (double)(now - perf->window_start_ms);
 
 	/* The loop's line. */
@@ -1161,7 +1161,7 @@ zwl_perf_report(
 	fflush(stdout);
 	memset(perf, 0, sizeof(*perf));
 	perf->window_start_ms = now;
-	perf->window_start_cycles = zwl_cycles();
+	perf->window_start_cycles = kwl_cycles();
 }
 
 /*
@@ -1176,7 +1176,7 @@ startup_step(
 	uint64_t now;
 
 	/* The step's length, and the monotonic time the hand-over's lines use too. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	printf("ZWL STARTUP step=%s ms=%llu at_ms=%llu\n", step, (unsigned long long)(now - since), (unsigned long long)now);
 
 	/* Succeeded: the next step starts now. */

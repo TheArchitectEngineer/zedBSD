@@ -152,8 +152,8 @@ struct glass_prefetch {
  * its own (WS135, plan/ws135/design.md section 4.4) so that the event loop
  * never waits on the disk: the path, the picture or the error once the
  * thread is done, and whether it runs or has not been joined yet.  lock
- * guards done; only the event loop starts it (zwl_glass_wallpaper_begin)
- * and joins it (zwl_glass_wallpaper_poll, zwl_glass_close).
+ * guards done; only the event loop starts it (kwl_glass_wallpaper_begin)
+ * and joins it (kwl_glass_wallpaper_poll, kwl_glass_close).
  */
 struct glass_loader {
 	pthread_t thread;
@@ -199,13 +199,13 @@ struct glass_cached {
  * at, cache_count the cells that fit under it, clock the count of cached
  * glyphs drawn (the cells' use is ordered by it).
  */
-struct zwl_glass {
-	struct zwl_import wallpaper;
-	struct zwl_import blurred;
-	struct zwl_import atlas;
+struct kwl_glass {
+	struct kwl_import wallpaper;
+	struct kwl_import blurred;
+	struct kwl_import atlas;
 	struct glass_glyph glyphs[GLASS_SIZES][GLASS_GLYPHS];
 	struct glass_glyph icons[GLASS_ICON_SIZES][GLASS_ICON_COUNT];
-	struct zwl_import tiles;
+	struct kwl_import tiles;
 	struct glass_glyph app_tiles[GLASS_TILE_SIZES][GLASS_ICON_APPS];
 	unsigned tiles_ready;
 	struct glass_glyph mark[KEILAND_MARK_LAYERS];
@@ -232,31 +232,31 @@ static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 /* The applications' tiles' sizes in pixels, smallest first. */
 static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U };
 
-static int wallpaper_create(struct zwl_server *server, struct zwl_glass *glass);
-static int wallpaper_fill(struct zwl_server *server, struct zwl_glass *glass, const char *path);
-static int wallpaper_draw(struct zwl_server *server, struct zwl_glass *glass, struct wallpaper_picture *given);
+static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass);
+static int wallpaper_fill(struct kwl_server *server, struct kwl_glass *glass, const char *path);
+static int wallpaper_draw(struct kwl_server *server, struct kwl_glass *glass, struct wallpaper_picture *given);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
 static float ridge(float x, float base, float amplitude, float phase);
-static int blur_create(struct zwl_server *server, struct zwl_glass *glass);
+static int blur_create(struct kwl_server *server, struct kwl_glass *glass);
 static void wallpaper_row(const struct wallpaper_picture *picture, const uint32_t *columns, uint32_t source_y, uint32_t *line, uint32_t width);
 static void landscape_row(uint32_t y, uint32_t width, uint32_t height, uint32_t *line);
 static void blur_add(const uint32_t *line, uint32_t *sums, uint32_t small_width);
 static void blur_average(uint32_t *sums, float *small, uint32_t small_width);
-static int blur_fill(struct zwl_server *server, struct zwl_glass *glass, float *small);
+static int blur_fill(struct kwl_server *server, struct kwl_glass *glass, float *small);
 static void blur_pass(float *pixels, float *scratch, uint32_t width, uint32_t height, int horizontal);
 static uint32_t pack_pixel(const float *rgb);
-static int atlas_create(struct zwl_server *server, struct zwl_glass *glass);
-static int atlas_fill(struct zwl_glass *glass, struct truetype_face *face);
-static int atlas_icons(struct zwl_glass *glass, uint32_t *pen_y);
-static int atlas_mark(struct zwl_glass *glass, uint32_t *pen_y);
-static int tiles_create(struct zwl_server *server, struct zwl_glass *glass);
-static void atlas_put(struct zwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
-static int glass_open_face(struct zwl_glass *glass, const char *path);
-static const struct glass_glyph *glass_glyph_of(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
-static const struct glass_glyph *glass_cache_glyph(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint);
-static const struct glass_glyph *glass_cache_color(struct zwl_glass *glass, enum glass_size size, uint32_t codepoint, unsigned id, unsigned slot);
+static int atlas_create(struct kwl_server *server, struct kwl_glass *glass);
+static int atlas_fill(struct kwl_glass *glass, struct truetype_face *face);
+static int atlas_icons(struct kwl_glass *glass, uint32_t *pen_y);
+static int atlas_mark(struct kwl_glass *glass, uint32_t *pen_y);
+static int tiles_create(struct kwl_server *server, struct kwl_glass *glass);
+static void atlas_put(struct kwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+static int glass_open_face(struct kwl_glass *glass, const char *path);
+static const struct glass_glyph *glass_glyph_of(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint);
+static const struct glass_glyph *glass_cache_glyph(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint);
+static const struct glass_glyph *glass_cache_color(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint, unsigned id, unsigned slot);
 static uint32_t glass_utf8_next(const char **text);
-static void glass_draw_glyph_at(struct zwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
+static void glass_draw_glyph_at(struct kwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
 static int wallpaper_read(const char *path, struct wallpaper_picture *picture);
@@ -267,7 +267,7 @@ static int prefetch_take(const char *path, struct wallpaper_picture *picture);
 static void prefetch_drop(void);
 static void glass_dark_color(const float *color, float *dark);
 
-/* The wallpaper read ahead, when zwl_glass_prefetch started it (only the main thread starts and takes it). */
+/* The wallpaper read ahead, when kwl_glass_prefetch started it (only the main thread starts and takes it). */
 static struct glass_prefetch glass_prefetch;
 
 /*
@@ -286,8 +286,8 @@ static int glass_loader_ready;
  * itself.
  */
 void
-zwl_glass_prefetch(
-	struct zwl_server *server)
+kwl_glass_prefetch(
+	struct kwl_server *server)
 {
 	int error;
 
@@ -311,10 +311,10 @@ zwl_glass_prefetch(
  * Makes the wallpaper, its blurred copy and the glyph atlas.
  */
 int
-zwl_glass_open(
-	struct zwl_server *server)
+kwl_glass_open(
+	struct kwl_server *server)
 {
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	uint64_t started;
 	int error;
 
@@ -325,25 +325,25 @@ zwl_glass_open(
 	server->compose->glass = glass;
 
 	/* The wallpaper and the frosted glass made from it. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	error = wallpaper_create(server, glass);
 	if (error != 0)
 		return error;
-	printf("ZWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The glyphs; the look is drawn without text when the font cannot be read. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	error = atlas_create(server, glass);
 	if (error != 0)
 		printf("ZWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
-	printf("ZWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The applications' tiles; without them the marks are drawn without pictures. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	error = tiles_create(server, glass);
 	if (error != 0)
 		printf("ZWL GLASS no tiles: errno=%d\n", error);
-	printf("ZWL STARTUP step=tiles ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=tiles ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded. */
 	printf("ZWL GLASS ready text=%u\n", glass->text);
@@ -354,10 +354,10 @@ zwl_glass_open(
  * Releases the look's images.
  */
 void
-zwl_glass_close(
-	struct zwl_server *server)
+kwl_glass_close(
+	struct kwl_server *server)
 {
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	unsigned face;
 
 	/* A wallpaper still being read is waited for, and its picture let go. */
@@ -380,10 +380,10 @@ zwl_glass_close(
 	}
 
 	/* The images, then the record. */
-	zwl_host_image_release(server->compose, &glass->wallpaper);
-	zwl_host_image_release(server->compose, &glass->blurred);
-	zwl_host_image_release(server->compose, &glass->atlas);
-	zwl_host_image_release(server->compose, &glass->tiles);
+	kwl_host_image_release(server->compose, &glass->wallpaper);
+	kwl_host_image_release(server->compose, &glass->blurred);
+	kwl_host_image_release(server->compose, &glass->atlas);
+	kwl_host_image_release(server->compose, &glass->tiles);
 	free(glass);
 	server->compose->glass = NULL;
 }
@@ -392,15 +392,15 @@ zwl_glass_close(
  * Draws the landscape into the look again (ws089-p007, the desktop's
  * preferences going back to no picture).  No file is read, so the event
  * loop does it at once; a picture is read on a thread instead
- * (zwl_glass_wallpaper_begin, ws138-p001 U7).
+ * (kwl_glass_wallpaper_begin, ws138-p001 U7).
  *
  * The images keep their size and their descriptors, so only their pixels
  * change; the device finishes what it is drawing from them first.  The
  * whole output is drawn again.  Returns 0 or an errno value.
  */
 int
-zwl_glass_landscape(
-	struct zwl_server *server)
+kwl_glass_landscape(
+	struct kwl_server *server)
 {
 	struct wallpaper_picture picture;
 	uint64_t started;
@@ -411,7 +411,7 @@ zwl_glass_landscape(
 		return ENODEV;
 
 	/* The frames in flight read the images; they end first. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	(void)vkDeviceWaitIdle(server->compose->device);
 
 	/* The landscape is a picture without pixels. */
@@ -426,7 +426,7 @@ zwl_glass_landscape(
 	server->dirty = 1;
 
 	/* The log names the landscape ("-") and how long it took. */
-	printf("ZWL GLASS wallpaper path=- ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL GLASS wallpaper path=- ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded: the landscape is shown from the next frame. */
 	return 0;
@@ -434,15 +434,15 @@ zwl_glass_landscape(
 
 /*
  * Starts reading a wallpaper chosen during the session on a thread of its
- * own (WS135): the event loop goes on, and zwl_glass_wallpaper_poll shows
+ * own (WS135): the event loop goes on, and kwl_glass_wallpaper_poll shows
  * the picture once it is read.  Returns 0, EBUSY while another is being
  * read, EINVAL for a path that is not an ordinary file (a FIFO, a device,
  * a folder) or too long, ENODEV without the look, or the errno value of
  * looking at the file or of the thread.
  */
 int
-zwl_glass_wallpaper_begin(
-	struct zwl_server *server,
+kwl_glass_wallpaper_begin(
+	struct kwl_server *server,
 	const char *path)
 {
 	struct stat status;
@@ -512,14 +512,14 @@ zwl_glass_wallpaper_begin(
 }
 
 /*
- * Shows a wallpaper zwl_glass_wallpaper_begin read, once its thread is
+ * Shows a wallpaper kwl_glass_wallpaper_begin read, once its thread is
  * done.  Returns 0 while there is none or it is still being read, or 1
  * with *error 0 (the picture is shown) or the errno value of reading or
  * drawing it (the wallpaper shown stays).
  */
 int
-zwl_glass_wallpaper_poll(
-	struct zwl_server *server,
+kwl_glass_wallpaper_poll(
+	struct kwl_server *server,
 	int *error)
 {
 	struct wallpaper_picture picture;
@@ -565,7 +565,7 @@ zwl_glass_wallpaper_poll(
 	}
 
 	/* The frames in flight read the images; they end first, then the picture is drawn. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	(void)vkDeviceWaitIdle(server->compose->device);
 	*error = wallpaper_draw(server, server->compose->glass, &picture);
 	if (*error != 0)
@@ -575,7 +575,7 @@ zwl_glass_wallpaper_poll(
 	server->dirty = 1;
 
 	/* Logs how long the drawing took, for the tests. */
-	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded: the new wallpaper is shown from the next frame. */
 	return 1;
@@ -584,14 +584,14 @@ zwl_glass_wallpaper_poll(
 /* Makes the wallpaper's image and its blurred copy, and draws them. */
 static int
 wallpaper_create(
-	struct zwl_server *server,
-	struct zwl_glass *glass)
+	struct kwl_server *server,
+	struct kwl_glass *glass)
 {
 	VkResult result;
 	int error;
 
 	/* The output-sized image. */
-	result = zwl_host_image_create(server->compose, server->width, server->height, server->compose->sampler, &glass->wallpaper);
+	result = kwl_host_image_create(server->compose, server->width, server->height, server->compose->sampler, &glass->wallpaper);
 	if (result != VK_SUCCESS)
 		return EIO;
 
@@ -619,12 +619,12 @@ wallpaper_create(
  * packed, copied into the image (which is only written, never read), and
  * added to the frosted glass's block averages, so no output-sized copy of
  * the picture is kept.  A wallpaper chosen later is read on a thread
- * (zwl_glass_wallpaper_begin) and drawn by wallpaper_draw.
+ * (kwl_glass_wallpaper_begin) and drawn by wallpaper_draw.
  */
 static int
 wallpaper_fill(
-	struct zwl_server *server,
-	struct zwl_glass *glass,
+	struct kwl_server *server,
+	struct kwl_glass *glass,
 	const char *path)
 {
 	struct wallpaper_picture picture;
@@ -654,8 +654,8 @@ wallpaper_fill(
  */
 static int
 wallpaper_draw(
-	struct zwl_server *server,
-	struct zwl_glass *glass,
+	struct kwl_server *server,
+	struct kwl_glass *glass,
 	struct wallpaper_picture *given)
 {
 	struct wallpaper_picture picture;
@@ -680,7 +680,7 @@ wallpaper_draw(
 	given->data = NULL;
 
 	/* The sizes: the output's, and the frosted glass's. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	width = server->width;
 	height = server->height;
 	small_width = width / GLASS_BLUR_SCALE;
@@ -743,7 +743,7 @@ wallpaper_draw(
 	free(columns);
 	free(sums);
 	free(picture.data);
-	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The frosted glass. */
 	error = blur_fill(server, glass, small);
@@ -950,13 +950,13 @@ ridge(
 /* Makes the frosted glass's small image, sampled linearly (blur_fill draws it). */
 static int
 blur_create(
-	struct zwl_server *server,
-	struct zwl_glass *glass)
+	struct kwl_server *server,
+	struct kwl_glass *glass)
 {
 	VkResult result;
 
 	/* The output's size divided by GLASS_BLUR_SCALE. */
-	result = zwl_host_image_create(server->compose, server->width / GLASS_BLUR_SCALE, server->height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &glass->blurred);
+	result = kwl_host_image_create(server->compose, server->width / GLASS_BLUR_SCALE, server->height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &glass->blurred);
 	if (result != VK_SUCCESS)
 		return EIO;
 
@@ -971,8 +971,8 @@ blur_create(
  */
 static int
 blur_fill(
-	struct zwl_server *server,
-	struct zwl_glass *glass,
+	struct kwl_server *server,
+	struct kwl_glass *glass,
 	float *small)
 {
 	uint32_t *row;
@@ -1123,8 +1123,8 @@ pack_pixel(
  */
 static int
 atlas_create(
-	struct zwl_server *server,
-	struct zwl_glass *glass)
+	struct kwl_server *server,
+	struct kwl_glass *glass)
 {
 	VkResult result;
 	int error;
@@ -1146,7 +1146,7 @@ atlas_create(
 	glass->fallback_tried = 0;
 
 	/* The atlas image, transparent where nothing is drawn. */
-	result = zwl_host_image_create(server->compose, GLASS_ATLAS_WIDTH, GLASS_ATLAS_HEIGHT, server->compose->sampler, &glass->atlas);
+	result = kwl_host_image_create(server->compose, GLASS_ATLAS_WIDTH, GLASS_ATLAS_HEIGHT, server->compose->sampler, &glass->atlas);
 	if (result != VK_SUCCESS)
 		return EIO;
 
@@ -1163,7 +1163,7 @@ atlas_create(
 /* Renders every glyph at every size into the atlas, row by row. */
 static int
 atlas_fill(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	struct truetype_face *face)
 {
 	static uint8_t bitmap[64U * 64U];
@@ -1184,7 +1184,7 @@ atlas_fill(
 	int error;
 
 	/* The pen starts at the top left; each row is as tall as its tallest glyph. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	memset(glass->atlas.map, 0, glass->atlas.row_pitch * GLASS_ATLAS_HEIGHT);
 	pen_x = 0;
 	pen_y = 0;
@@ -1256,20 +1256,20 @@ atlas_fill(
 	}
 
 	/* The icons in the rows after the glyphs. */
-	printf("ZWL STARTUP step=glyphs-text ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	started = zwl_milliseconds();
+	printf("ZWL STARTUP step=glyphs-text ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	started = kwl_milliseconds();
 	pen_y += line + 1U;
 	error = atlas_icons(glass, &pen_y);
 	if (error != 0)
 		return error;
-	printf("ZWL STARTUP step=glyphs-icons ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	started = zwl_milliseconds();
+	printf("ZWL STARTUP step=glyphs-icons ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	started = kwl_milliseconds();
 
 	/* The Kei mark's layers in the row after them. */
 	error = atlas_mark(glass, &pen_y);
 	if (error != 0)
 		return error;
-	printf("ZWL STARTUP step=glyphs-mark ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=glyphs-mark ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The cache's cells in the rest of the atlas. */
 	glass->cache_top = pen_y;
@@ -1569,12 +1569,12 @@ glass_shape_init(
 /* Records one shape: its constants for both shader stages and the strip. */
 void
 glass_shape_draw(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct glass_shape *shape)
 {
-	struct zwl_compose *compose;
-	float constants[ZWL_PANEL_CONSTANTS];
+	struct kwl_compose *compose;
+	float constants[KWL_PANEL_CONSTANTS];
 	float quad[4];
 	float box[4];
 	float radius;
@@ -1662,13 +1662,13 @@ glass_shape_draw(
 	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_pipeline);
 	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
 	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(command, ZWL_QUAD_VERTICES, 1U, 0U, 0U);
+	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 }
 
 /* Draws a rounded rectangle in a solid color. */
 void
 glass_draw_solid(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float x,
 	float y,
@@ -1690,12 +1690,12 @@ glass_draw_solid(
 /* The width of a line of UTF-8 text in pixels (0 without text). */
 int32_t
 glass_text_width(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	enum glass_size size,
 	const char *text)
 {
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	uint32_t codepoint;
 	int32_t width;
 
@@ -1723,7 +1723,7 @@ glass_text_width(
  */
 void
 glass_draw_text(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	enum glass_size size,
 	int32_t x,
@@ -1733,7 +1733,7 @@ glass_draw_text(
 	const float *color)
 {
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	uint32_t codepoint;
 	int32_t start;
 	int32_t width;
@@ -1785,7 +1785,7 @@ glass_draw_text(
  */
 void
 glass_draw_text_middle(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	enum glass_size size,
 	int32_t x,
@@ -1795,7 +1795,7 @@ glass_draw_text_middle(
 	const float *color)
 {
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	const char *tail;
 	const char *next;
 	uint32_t codepoint;
@@ -1898,7 +1898,7 @@ glass_draw_text_middle(
 /* Draws one glyph of the atlas with its origin at x on the baseline. */
 void
 glass_draw_glyph(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	enum glass_size size,
 	unsigned index,
@@ -1906,7 +1906,7 @@ glass_draw_glyph(
 	int32_t baseline,
 	const float *color)
 {
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 
 	/* The atlas's glyph, drawn where it goes. */
 	glass = server->compose->glass;
@@ -1916,11 +1916,11 @@ glass_draw_glyph(
 /* The advance of one glyph of the atlas (0 without text). */
 int32_t
 glass_glyph_advance(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	enum glass_size size,
 	unsigned index)
 {
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 
 	/* Nothing without glyphs. */
 	glass = server->compose->glass;
@@ -1939,7 +1939,7 @@ glass_glyph_advance(
  */
 void
 glass_draw_icon(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	unsigned icon,
 	int32_t x,
@@ -1949,7 +1949,7 @@ glass_draw_icon(
 {
 	struct glass_shape shape;
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	unsigned size;
 
 	/* Nothing without the atlas, or for an icon the atlas does not have. */
@@ -1983,7 +1983,7 @@ glass_draw_icon(
  */
 void
 glass_draw_app_tile_reflection(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	unsigned icon,
 	float x,
@@ -1994,7 +1994,7 @@ glass_draw_app_tile_reflection(
 {
 	struct glass_shape shape;
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	unsigned size;
 	unsigned slice;
 	float top;
@@ -2056,7 +2056,7 @@ glass_draw_app_tile_reflection(
  */
 void
 glass_draw_app_tile(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	unsigned icon,
 	float x,
@@ -2068,7 +2068,7 @@ glass_draw_app_tile(
 {
 	struct glass_shape shape;
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	unsigned size;
 	float inset;
 
@@ -2162,7 +2162,7 @@ glass_draw_app_tile(
  */
 void
 glass_draw_mark(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int32_t y,
@@ -2205,7 +2205,7 @@ glass_draw_mark(
 	struct glass_shape shape;
 	const struct glass_glyph *layers;
 	const struct glass_glyph *glyph;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 	unsigned layer;
 
 	/* Nothing without the atlas. */
@@ -2242,7 +2242,7 @@ glass_draw_mark(
 /* The descriptor set of the wallpaper, for pictures of it (the desktops). */
 VkDescriptorSet
 glass_wallpaper_set(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The full-size image. */
 	return server->compose->glass->wallpaper.set;
@@ -2255,7 +2255,7 @@ glass_wallpaper_set(
  */
 static int
 atlas_icons(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	uint32_t *pen_y)
 {
 	static uint8_t bitmap[GLASS_BITMAP * GLASS_BITMAP];
@@ -2283,7 +2283,7 @@ atlas_icons(
 				return ENOSPC;
 
 			/* The icon's coverage, into the atlas. */
-			zwl_icon_raster(icon, pixels, bitmap, pixels);
+			kwl_icon_raster(icon, pixels, bitmap, pixels);
 			atlas_put(glass, bitmap, pen_x, *pen_y, pixels, pixels);
 
 			/* Its place, square, drawn from its top left. */
@@ -2315,8 +2315,8 @@ atlas_icons(
  */
 static int
 tiles_create(
-	struct zwl_server *server,
-	struct zwl_glass *glass)
+	struct kwl_server *server,
+	struct kwl_glass *glass)
 {
 	struct glass_glyph *glyph;
 	VkResult result;
@@ -2328,7 +2328,7 @@ tiles_create(
 	unsigned icon;
 
 	/* The image, transparent where no tile is, sampled smoothly for the sizes between those kept. */
-	result = zwl_host_image_create(server->compose, GLASS_TILE_WIDTH, GLASS_TILE_HEIGHT, server->compose->linear_sampler, &glass->tiles);
+	result = kwl_host_image_create(server->compose, GLASS_TILE_WIDTH, GLASS_TILE_HEIGHT, server->compose->linear_sampler, &glass->tiles);
 	if (result != VK_SUCCESS)
 		return EIO;
 	memset(glass->tiles.map, 0, glass->tiles.row_pitch * GLASS_TILE_HEIGHT);
@@ -2351,7 +2351,7 @@ tiles_create(
 
 			/* The tile, drawn straight into the image. */
 			place = (uint32_t *)((unsigned char *)glass->tiles.map + (size_t)pen_y * glass->tiles.row_pitch) + pen_x;
-			zwl_icon_tile(GLASS_ICON_FIRST_APP + icon, pixels, place, glass->tiles.row_pitch / sizeof(uint32_t));
+			kwl_icon_tile(GLASS_ICON_FIRST_APP + icon, pixels, place, glass->tiles.row_pitch / sizeof(uint32_t));
 
 			/* Its place, square. */
 			glyph = &glass->app_tiles[size][icon];
@@ -2382,7 +2382,7 @@ tiles_create(
  */
 static int
 atlas_mark(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	uint32_t *pen_y)
 {
 	static uint8_t bitmap[GLASS_MARK_PIXELS * GLASS_MARK_PIXELS];
@@ -2442,7 +2442,7 @@ atlas_mark(
 /* Writes a bitmap of coverage into the atlas at a place, as premultiplied white. */
 static void
 atlas_put(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	const uint8_t *bitmap,
 	uint32_t x,
 	uint32_t y,
@@ -2470,7 +2470,7 @@ atlas_put(
  */
 static int
 glass_open_face(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	const char *path)
 {
 	struct truetype_face *face;
@@ -2506,7 +2506,7 @@ glass_open_face(
 /* Finds the glyph of a character at a size: the atlas's for ASCII, the cache's for any other; NULL for none. */
 static const struct glass_glyph *
 glass_glyph_of(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	enum glass_size size,
 	uint32_t codepoint)
 {
@@ -2531,7 +2531,7 @@ glass_glyph_of(
  */
 static const struct glass_glyph *
 glass_cache_glyph(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	enum glass_size size,
 	uint32_t codepoint)
 {
@@ -2674,7 +2674,7 @@ glass_cache_glyph(
  */
 static const struct glass_glyph *
 glass_cache_color(
-	struct zwl_glass *glass,
+	struct kwl_glass *glass,
 	enum glass_size size,
 	uint32_t codepoint,
 	unsigned id,
@@ -2775,7 +2775,7 @@ glass_utf8_next(
 /* Draws one glyph with its origin at x on the baseline, one to one with the atlas. */
 static void
 glass_draw_glyph_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct glass_glyph *glyph,
 	int32_t x,
@@ -2783,7 +2783,7 @@ glass_draw_glyph_at(
 	const float *color)
 {
 	struct glass_shape shape;
-	struct zwl_glass *glass;
+	struct kwl_glass *glass;
 
 	/* A space draws nothing. */
 	glass = server->compose->glass;

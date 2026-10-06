@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ws099-p034: host montage of the system bar as the code on this branch draws it (shell.c draw_system_bar,
 # draw_bar_strip, draw_bar_group, draw_desktops, draw_status; apps-bar.c; network.c's fan; volume.c; input-method.c's
-# chip), with the montage-4 tiles (icons.c zwl_icon_tile, 26 px in the bar, 20 px by a title).  Each shape is drawn
+# chip), with the montage-4 tiles (icons.c kwl_icon_tile, 26 px in the bar, 20 px by a title).  Each shape is drawn
 # with the panel shader's formula (shaders/panel.frag: glass with the dark glass's darkening, shadow, solid, ring,
 # image, text coverage) and its blend (premultiplied over), at the code's places and colours.  Not the real
 # compositor: the blur of the wallpaper is approximated, the text is Inter through PIL (not the glass's rasterizer),
@@ -22,8 +22,8 @@ WALLPAPERS = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers')
 W = 1280
 H = 800
 SHOWN = 190                      # the height of the screen shown under each bar's top
-BAR = 44                         # ZWL_GLASS_BAR
-MID = BAR // 2                   # ZWL_GLASS_BAR_MIDDLE
+BAR = 44                         # KWL_GLASS_BAR
+MID = BAR // 2                   # KWL_GLASS_BAR_MIDDLE
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 
 # shell.c's layout constants (ws099-p034).

@@ -8,7 +8,7 @@
 /*
  * The window's glass in zdesktop (Files' glass.c): the editor's card floats
  * on zdesktop's frosted glass, and the desktop shows around it.  zdesktop
- * draws the glass, its rim and the card's shadow (keiland_glass_v1 through
+ * draws the glass, its rim and the card's shadow (kl_glass_v1 through
  * libkeiland); the frame leaves its ground clear around the card.
  *
  * The window is glass when its swapchain is see-through and zdesktop has

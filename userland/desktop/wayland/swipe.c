@@ -15,13 +15,13 @@ static int32_t swipe_magnitude(int32_t value);
 
 /*
  * Takes the fingers' travel since the last report: once the swipe's travel
- * across or down passes ZWL_SWIPE_STEP_UM, it decides by the way it went
+ * across or down passes KWL_SWIPE_STEP_UM, it decides by the way it went
  * most (left or right across, down or up), and decides nothing more until
- * it ends.  Returns what it decided now (ZWL_SWIPE_NONE otherwise).
+ * it ends.  Returns what it decided now (KWL_SWIPE_NONE otherwise).
  */
 unsigned
-zwl_swipe_take(
-	struct zwl_swipe *swipe,
+kwl_swipe_take(
+	struct kwl_swipe *swipe,
 	int32_t across_um,
 	int32_t down_um)
 {
@@ -30,15 +30,15 @@ zwl_swipe_take(
 
 	/* A swipe that decided already waits for its end. */
 	if (swipe->decided)
-		return ZWL_SWIPE_NONE;
+		return KWL_SWIPE_NONE;
 
 	/* The travel so far; not far enough yet decides nothing. */
 	swipe->across_um += across_um;
 	swipe->down_um += down_um;
 	across = swipe_magnitude(swipe->across_um);
 	down = swipe_magnitude(swipe->down_um);
-	if (across < ZWL_SWIPE_STEP_UM && down < ZWL_SWIPE_STEP_UM)
-		return ZWL_SWIPE_NONE;
+	if (across < KWL_SWIPE_STEP_UM && down < KWL_SWIPE_STEP_UM)
+		return KWL_SWIPE_NONE;
 
 	/* Decided, once. */
 	swipe->decided = 1U;
@@ -46,22 +46,22 @@ zwl_swipe_take(
 	/* Across when it went across most. */
 	if (across >= down) {
 		if (swipe->across_um < 0)
-			return ZWL_SWIPE_LEFT;
-		return ZWL_SWIPE_RIGHT;
+			return KWL_SWIPE_LEFT;
+		return KWL_SWIPE_RIGHT;
 	}
 
 	/* Otherwise down or up. */
 	if (swipe->down_um > 0)
-		return ZWL_SWIPE_DOWN;
-	return ZWL_SWIPE_UP;
+		return KWL_SWIPE_DOWN;
+	return KWL_SWIPE_UP;
 }
 
 /*
  * Ends a swipe (the fingers lifted): the next travel begins another.
  */
 void
-zwl_swipe_end(
-	struct zwl_swipe *swipe)
+kwl_swipe_end(
+	struct kwl_swipe *swipe)
 {
 	/* Nothing travelled, nothing decided. */
 	swipe->across_um = 0;
@@ -73,18 +73,18 @@ zwl_swipe_end(
  * Names what a swipe decided, for the log.
  */
 const char *
-zwl_swipe_name(
+kwl_swipe_name(
 	unsigned direction)
 {
 	/* Each direction. */
 	switch (direction) {
-	case ZWL_SWIPE_LEFT:
+	case KWL_SWIPE_LEFT:
 		return "left";
-	case ZWL_SWIPE_RIGHT:
+	case KWL_SWIPE_RIGHT:
 		return "right";
-	case ZWL_SWIPE_DOWN:
+	case KWL_SWIPE_DOWN:
 		return "down";
-	case ZWL_SWIPE_UP:
+	case KWL_SWIPE_UP:
 		return "up";
 	default:
 		return "none";

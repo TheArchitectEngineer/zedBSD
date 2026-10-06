@@ -41,7 +41,7 @@ class Wire:
         self.compositor = self.bind('wl_compositor', 4)
         self.shell = self.bind('xdg_wm_base', 1)
         self.manager = self.bind('zxdg_decoration_manager_v1', 1)
-        self.native = self.bind('keiland_titlebar_manager_v1', 1)
+        self.native = self.bind('kl_titlebar_manager_v1', 1)
         self.kde_manager = self.bind('org_kde_kwin_server_decoration_manager', 1) if kde else None
         self.surface = self.new()
         self.send(self.compositor, 0, word(self.surface))

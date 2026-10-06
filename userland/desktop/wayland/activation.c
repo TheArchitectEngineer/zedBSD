@@ -20,7 +20,7 @@
  * could show a window of its own on top anyway, so handing that right to
  * another program's window grants nothing new.  A token not granted is
  * still given (a client cannot tell), and its activation does nothing.
- * The launcher (zwl_spawn) gives each program it starts a granted token in
+ * The launcher (kwl_spawn) gives each program it starts a granted token in
  * XDG_ACTIVATION_TOKEN.
  */
 
@@ -63,7 +63,7 @@
  * one activation, and whether that activation may bring a window.
  */
 struct activation_token {
-	char text[ZWL_ACTIVATION_TOKEN_SIZE];
+	char text[KWL_ACTIVATION_TOKEN_SIZE];
 	char app_id[64];
 	uint64_t issued_ms;
 	unsigned live;
@@ -78,13 +78,13 @@ struct activation_token {
  */
 static struct activation_token activation_tokens[ACTIVATION_TOKENS];
 
-static int activation_create_token(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int activation_activate(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int activation_token_request(struct zwl_object *token, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int activation_commit(struct zwl_object *token);
-static int activation_grant(struct zwl_client *client, const char **reason);
-static int activation_shows_window(const struct zwl_client *client);
-static int activation_window(const struct zwl_object *surface);
+static int activation_create_token(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int activation_activate(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int activation_token_request(struct kwl_object *token, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int activation_commit(struct kwl_object *token);
+static int activation_grant(struct kwl_client *client, const char **reason);
+static int activation_shows_window(const struct kwl_client *client);
+static int activation_window(const struct kwl_object *surface);
 static struct activation_token *activation_slot(uint64_t now);
 static int activation_text(char *text, size_t size);
 static int activation_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
@@ -94,8 +94,8 @@ static uint32_t activation_word(const unsigned char *bytes, size_t offset);
  * Carries out a request of xdg_activation_v1 or of one of its tokens.
  */
 int
-zwl_activation_request(
-	struct zwl_object *object,
+kwl_activation_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -103,7 +103,7 @@ zwl_activation_request(
 	int error;
 
 	/* A token's own requests. */
-	if (object->kind == ZWL_ACTIVATION_TOKEN) {
+	if (object->kind == KWL_ACTIVATION_TOKEN) {
 		error = activation_token_request(object, opcode, bytes, size);
 		if (error != 0)
 			return error;
@@ -114,7 +114,7 @@ zwl_activation_request(
 	if (opcode == ACTIVATION_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -141,8 +141,8 @@ zwl_activation_request(
  * token's text in token, or the error that kept it from being made.
  */
 int
-zwl_activation_issue(
-	struct zwl_server *server,
+kwl_activation_issue(
+	struct kwl_server *server,
 	const char *app_id,
 	const char *via,
 	char *token,
@@ -153,12 +153,12 @@ zwl_activation_issue(
 	int error;
 
 	/* Room for the text. */
-	if (size < ZWL_ACTIVATION_TOKEN_SIZE)
+	if (size < KWL_ACTIVATION_TOKEN_SIZE)
 		return ENOSPC;
 
 	/* A slot for it. */
 	(void)server;
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	slot = activation_slot(now);
 
 	/* Its text, from random bytes. */
@@ -181,18 +181,18 @@ zwl_activation_issue(
 /* Makes a token object for the client (get_activation_token: its new ID). */
 static int
 activation_create_token(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
+	struct kwl_object *created;
 
 	/* The new ID alone. */
 	if (size != 4U)
 		return EPROTO;
 
 	/* The token object, with nothing set yet and not committed. */
-	created = zwl_create(manager->client, activation_word(bytes, 0U), ZWL_ACTIVATION_TOKEN, manager->version);
+	created = kwl_create(manager->client, activation_word(bytes, 0U), KWL_ACTIVATION_TOKEN, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->app_id[0] = '\0';
@@ -211,13 +211,13 @@ activation_create_token(
  */
 static int
 activation_activate(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
 	struct activation_token *found;
-	struct zwl_server *server;
-	struct zwl_object *surface;
+	struct kwl_server *server;
+	struct kwl_object *surface;
 	const char *reason;
 	const char *text;
 	uint64_t now;
@@ -235,13 +235,13 @@ activation_activate(
 		return EPROTO;
 
 	/* One of the client's surfaces. */
-	surface = zwl_find(manager->client, activation_word(bytes, offset));
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(manager->client, activation_word(bytes, offset));
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* The token, which this activation uses up whatever comes of it. */
 	server = manager->client->server;
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	found = NULL;
 	for (index = 0; index < ACTIVATION_TOKENS; index++) {
 		if (!activation_tokens[index].live)
@@ -277,7 +277,7 @@ activation_activate(
 
 	/* The window, on its desktop, in front with the keyboard's focus. */
 	printf("ZWL ACTIVATION activate client=%llu surface=%u app=%s result=activated token_app=%s at_ms=%llu\n", (unsigned long long)manager->client->number, surface->id, surface->app_id, found->app_id, (unsigned long long)now);
-	zwl_glass_activate(server, surface, "activation");
+	kwl_glass_activate(server, surface, "activation");
 
 	/* Succeeded: the window is in front. */
 	return 0;
@@ -286,7 +286,7 @@ activation_activate(
 /* Carries out a request of a token object: its description, its commit, or its end. */
 static int
 activation_token_request(
-	struct zwl_object *token,
+	struct kwl_object *token,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -299,13 +299,13 @@ activation_token_request(
 	if (opcode == TOKEN_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(token);
+		kwl_object_destroy(token);
 		return 0;
 	}
 
 	/* After the commit nothing else may be asked of it. */
 	if (token->activation_committed) {
-		(void)zwl_error_code(token->client, token->id, TOKEN_ERROR_ALREADY_USED, "the token was already committed");
+		(void)kwl_error_code(token->client, token->id, TOKEN_ERROR_ALREADY_USED, "the token was already committed");
 		return EPROTO;
 	}
 
@@ -350,9 +350,9 @@ activation_token_request(
 /* Makes the token a committed token object stands for, and sends its text (done). */
 static int
 activation_commit(
-	struct zwl_object *token)
+	struct kwl_object *token)
 {
-	unsigned char payload[4U + ZWL_ACTIVATION_TOKEN_SIZE + 3U];
+	unsigned char payload[4U + KWL_ACTIVATION_TOKEN_SIZE + 3U];
 	struct activation_token *slot;
 	const char *reason;
 	uint32_t length;
@@ -365,7 +365,7 @@ activation_commit(
 	token->activation_committed = 1;
 
 	/* A slot, and the token's text from random bytes. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	slot = activation_slot(now);
 	error = activation_text(slot->text, sizeof(slot->text));
 	if (error != 0)
@@ -385,7 +385,7 @@ activation_commit(
 	memset(payload, 0, sizeof(payload));
 	memcpy(payload, &length, sizeof(length));
 	memcpy(payload + 4U, slot->text, (size_t)length - 1U);
-	error = zwl_emit(token->client, token->id, TOKEN_EVENT_DONE, payload, 4U + aligned);
+	error = kwl_emit(token->client, token->id, TOKEN_EVENT_DONE, payload, 4U + aligned);
 	if (error != 0)
 		return error;
 
@@ -400,10 +400,10 @@ activation_commit(
  */
 static int
 activation_grant(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	const char **reason)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint64_t now;
 	int shows;
 
@@ -417,7 +417,7 @@ activation_grant(
 	}
 
 	/* A program that has just started and shows no window yet. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	shows = activation_shows_window(client);
 	if (!shows && now - client->connected_ms <= ACTIVATION_FRESH_MS) {
 		*reason = "new-program";
@@ -432,13 +432,13 @@ activation_grant(
 /* Tells whether a client shows a window (a mapped surface of its own). */
 static int
 activation_shows_window(
-	const struct zwl_client *client)
+	const struct kwl_client *client)
 {
-	const struct zwl_object *object;
+	const struct kwl_object *object;
 
 	/* Each of its surfaces. */
 	for (object = client->objects; object != NULL; object = object->next) {
-		if (object->kind == ZWL_SURFACE && !object->dead && object->mapped)
+		if (object->kind == KWL_SURFACE && !object->dead && object->mapped)
 			return 1;
 	}
 
@@ -449,7 +449,7 @@ activation_shows_window(
 /* Tells whether a surface is a shown window: a mapped toplevel. */
 static int
 activation_window(
-	const struct zwl_object *surface)
+	const struct kwl_object *surface)
 {
 	/* Shown. */
 	if (surface->dead || !surface->mapped)
@@ -458,7 +458,7 @@ activation_window(
 	/* A toplevel's surface (not a popup's, a cursor's or the desktop's icons). */
 	if (surface->role == NULL ||
 	    surface->role->top == NULL ||
-	    surface->role->top->kind != ZWL_TOPLEVEL)
+	    surface->role->top->kind != KWL_TOPLEVEL)
 		return 0;
 
 	/* Succeeded: it is a window. */

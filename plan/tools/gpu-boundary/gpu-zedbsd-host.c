@@ -9,7 +9,7 @@
  * Host test of libkeiland-backend's check of a GPU buffer's description
  * (userland/desktop/libkeiland-backend-zedbsd/gpu-zedbsd.c, ws103-p004).
  *
- * zwl_gpu_buffer_decode must accept a description Vulkan can make an image
+ * kwl_gpu_buffer_decode must accept a description Vulkan can make an image
  * of and refuse, before any value reaches Vulkan, every description a client
  * could send to break it: a zero or too large size, another format or
  * tiling, a short or unaligned row, rows past the allocation, an offset that
@@ -171,8 +171,8 @@ decode_run(
 	const struct gpu_image_descriptor *image,
 	size_t size)
 {
-	struct zwl_gpu_limits limits;
-	struct zwl_buffer_layout layout;
+	struct kwl_gpu_limits limits;
+	struct kwl_buffer_layout layout;
 	unsigned char bytes[sizeof(*image)];
 	int error;
 	int accepted;
@@ -184,7 +184,7 @@ decode_run(
 	/* The description as it arrives on the wire. */
 	memcpy(bytes, image, sizeof(bytes));
 	memset(&layout, 0, sizeof(layout));
-	error = zwl_gpu_buffer_decode(bytes, size, &limits, &layout);
+	error = kwl_gpu_buffer_decode(bytes, size, &limits, &layout);
 	accepted = 0;
 	if (error == 0)
 		accepted = 1;

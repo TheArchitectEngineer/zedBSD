@@ -22,7 +22,7 @@
  */
 
 #include "desktop.h"
-#include "zwl.h"
+#include "kwl.h"
 #include "popup.h"
 #include "toplevel.h"
 #include "extras.h"
@@ -32,9 +32,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static void adopt_commit(struct zwl_server *server, struct zwl_object *surface);
-static void place_window(struct zwl_server *server, struct zwl_object *surface);
-static int enter_window_mode(struct zwl_server *server);
+static void adopt_commit(struct kwl_server *server, struct kwl_object *surface);
+static void place_window(struct kwl_server *server, struct kwl_object *surface);
+static int enter_window_mode(struct kwl_server *server);
 
 /*
  * Reports whether a surface's queued image may be used: each of its acquire
@@ -47,9 +47,9 @@ static int enter_window_mode(struct zwl_server *server);
  * for.  The same holds for a sync_file on other systems.
  */
 int
-zwl_fence_ready(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_fence_ready(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	struct pollfd check;
 	unsigned index;
@@ -93,7 +93,7 @@ zwl_fence_ready(
 
 	/* Succeeded: all done. */
 	if (server->log_frames && surface->fence_waited)
-		printf("ZWL ACQUIRED surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(zwl_milliseconds() - surface->fence_ms));
+		printf("ZWL ACQUIRED surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(kwl_milliseconds() - surface->fence_ms));
 	return 1;
 }
 
@@ -102,12 +102,12 @@ zwl_fence_ready(
  * composed frame of window mode, fullscreen windows included.
  */
 void
-zwl_schedule(
-	struct zwl_server *server)
+kwl_schedule(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *top;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
 	uint64_t now;
 	int direct;
 	int ready;
@@ -119,10 +119,10 @@ zwl_schedule(
 
 	/* The glass look's clock turns over. */
 	if (server->glass)
-		zwl_glass_tick(server);
+		kwl_glass_tick(server);
 
 	/* The desktop surface's program and place (desktop.c). */
-	zwl_desktop_tick(server);
+	kwl_desktop_tick(server);
 
 	/* Every committed surface takes its new image. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -130,21 +130,21 @@ zwl_schedule(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only a live surface with a commit. */
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    !surface->ready ||
 			    surface->dead)
 				continue;
 
 			/* A commit whose image is still being drawn waits for a later pass. */
-			ready = zwl_fence_ready(server, surface);
+			ready = kwl_fence_ready(server, surface);
 			if (ready)
 				adopt_commit(server, surface);
 		}
 	}
 
 	/* A fullscreen video or game alone on the output is shown straight (the game mode, scanout.c); then nothing is composed. */
-	top = zwl_top_window(server);
-	direct = zwl_scanout_pass(server, top);
+	top = kwl_top_window(server);
+	direct = kwl_scanout_pass(server, top);
 	if (direct)
 		return;
 
@@ -162,18 +162,18 @@ zwl_schedule(
 	}
 
 	/* Input goes to the topmost window, or to the desktop pressed last (desktop.c). */
-	server->front_surface = zwl_desktop_front(server, top);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_desktop_front(server, top);
+	kwl_seat_focus(server);
 
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
-	(void)zwl_shm_upload(server);
+	(void)kwl_shm_upload(server);
 
 	/*
 	 * The windows the last frame told get a moment to commit (frame
 	 * pacing), unless the pointer moved and waits to be shown, or App Home
 	 * or Wiseview was asked to open or close (ws099-p002).
 	 */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (server->awaiting != 0 &&
 	    !server->pointer_moved &&
 	    server->transition == NULL &&
@@ -182,7 +182,7 @@ zwl_schedule(
 
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
 	if (server->dirty || server->damaged) {
-		error = zwl_compose_draw(server);
+		error = kwl_compose_draw(server);
 		if (error != 0) {
 			printf("ZWL FAILED site=compose_draw errno=%d\n", error);
 			server->failed = 1;
@@ -196,13 +196,13 @@ zwl_schedule(
  * time from the request to its submission is logged (ws099-p002, C5).
  */
 void
-zwl_transition_request(
-	struct zwl_server *server,
+kwl_transition_request(
+	struct kwl_server *server,
 	const char *what)
 {
 	/* The request, the latest one if two come before a frame. */
 	server->transition = what;
-	server->transition_ms = zwl_milliseconds();
+	server->transition_ms = kwl_milliseconds();
 	server->dirty = 1;
 }
 
@@ -210,13 +210,13 @@ zwl_transition_request(
  * Ends the frame in flight when its fence fd became readable.
  */
 void
-zwl_frame_done(
-	struct zwl_server *server)
+kwl_frame_done(
+	struct kwl_server *server)
 {
 	int error;
 
 	/* The frame's held buffers and callbacks are released. */
-	error = zwl_compose_complete(server);
+	error = kwl_compose_complete(server);
 	if (error != 0) {
 		printf("ZWL FAILED site=frame_done errno=%d\n", error);
 		server->failed = 1;
@@ -226,13 +226,13 @@ zwl_frame_done(
 /*
  * Returns the topmost mapped window of a live client, or NULL.
  */
-struct zwl_object *
-zwl_top_window(
-	struct zwl_server *server)
+struct kwl_object *
+kwl_top_window(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *top;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
 	int desktop_surface;
 
 	/* The highest map order on the desktop shown wins. */
@@ -241,13 +241,13 @@ zwl_top_window(
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
 				continue;
 			if (surface->desktop != server->desktop || surface->minimized)
 				continue;
 
 			/* The desktop's icons are never a window, so a closed last window does not give them the keyboard (desktop.c). */
-			desktop_surface = zwl_desktop_is(surface);
+			desktop_surface = kwl_desktop_is(surface);
 			if (desktop_surface)
 				continue;
 			if (top == NULL || surface->map_order > top->map_order)
@@ -265,9 +265,9 @@ zwl_top_window(
  * output (ws035-p138).
  */
 void
-zwl_window_centre(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_window_centre(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	int32_t space_width;
 	int32_t space_height;
@@ -278,14 +278,14 @@ zwl_window_centre(
 	width = server->width;
 	height = server->height;
 	if (surface->current != NULL)
-		zwl_surface_size(surface, &width, &height);
+		kwl_surface_size(surface, &width, &height);
 
 	/* The glass look: the space's centre, the title bar under the system bar. */
 	if (server->glass) {
-		zwl_glass_space(server, &space_width, &space_height);
+		kwl_glass_space(server, &space_width, &space_height);
 		surface->x = ((int32_t)server->width - (int32_t)width) / 2;
-		surface->y = ZWL_GLASS_TOP + (space_height - (int32_t)height) / 2;
-		zwl_glass_fit(server, (int32_t)width, (int32_t)height, &surface->x, &surface->y);
+		surface->y = KWL_GLASS_TOP + (space_height - (int32_t)height) / 2;
+		kwl_glass_fit(server, (int32_t)width, (int32_t)height, &surface->x, &surface->y);
 		return;
 	}
 
@@ -305,10 +305,10 @@ zwl_window_centre(
  */
 static void
 adopt_commit(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_object *previous;
+	struct kwl_object *previous;
 	uint32_t new_width;
 	uint32_t new_height;
 
@@ -316,7 +316,7 @@ adopt_commit(
 	previous = surface->current;
 	surface->current = surface->queued;
 	surface->queued = NULL;
-	zwl_damage_commit(server, surface, previous);
+	kwl_damage_commit(server, surface, previous);
 	surface->ready = 0;
 	surface->fresh = 1;
 	if (surface->current != NULL && surface->current->shm != NULL)
@@ -324,7 +324,7 @@ adopt_commit(
 
 	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
 	if (server->log_frames)
-		printf("ZWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)zwl_microseconds());
+		printf("ZWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)kwl_microseconds());
 
 	/* An awaited window has committed. */
 	if (surface->awaited) {
@@ -334,17 +334,17 @@ adopt_commit(
 
 	/* A cursor, or a surface with no role, is not a window. */
 	if (surface->cursor_role || surface->role == NULL) {
-		zwl_buffer_put(previous);
+		kwl_buffer_put(previous);
 		return;
 	}
 
 	/* Nor is a popup (popup.c): its first image shows it with its parent, a null one hides it. */
-	if (surface->role->top != NULL && surface->role->top->kind == ZWL_POPUP) {
+	if (surface->role->top != NULL && surface->role->top->kind == KWL_POPUP) {
 		if (previous == NULL && surface->current != NULL)
-			zwl_popup_mapped(server, surface);
+			kwl_popup_mapped(server, surface);
 		if (previous != NULL && surface->current == NULL)
-			zwl_callbacks_done(&surface->committed_callbacks);
-		zwl_buffer_put(previous);
+			kwl_callbacks_done(&surface->committed_callbacks);
+		kwl_buffer_put(previous);
 		return;
 	}
 
@@ -357,10 +357,10 @@ adopt_commit(
 		surface->desktop = server->desktop;
 		place_window(server, surface);
 		printf("ZWL MAP client=%llu surface=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, surface->x, surface->y);
-		zwl_glass_mapped(server, surface);
+		kwl_glass_mapped(server, surface);
 	} else if (surface->current == NULL && surface->mapped) {
 		surface->mapped = 0;
-		zwl_callbacks_done(&surface->committed_callbacks);
+		kwl_callbacks_done(&surface->committed_callbacks);
 		printf("ZWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}
 
@@ -370,34 +370,34 @@ adopt_commit(
 	 * size after the configure; ws035-p138).
 	 */
 	if (surface->place_pending && surface->mapped && !surface->fullscreen && surface->current != NULL) {
-		zwl_surface_size(surface, &new_width, &new_height);
+		kwl_surface_size(surface, &new_width, &new_height);
 		if (new_width != server->width || new_height != server->height) {
 			surface->place_pending = 0;
-			zwl_window_centre(server, surface);
+			kwl_window_centre(server, surface);
 			surface->placed = 1;
 			printf("ZWL WINDOW centred surface=%u x=%d y=%d width=%u height=%u client=%llu\n", surface->id, surface->x, surface->y, new_width, new_height, (unsigned long long)surface->client->number);
 		}
 	}
 
 	/* A window resized from its left or top edge keeps its other edges where they were (toplevel.c). */
-	zwl_toplevel_committed(server, surface);
+	kwl_toplevel_committed(server, surface);
 
 	/* A window docked or brought back by the glass look waits for its image of the new size (shell.c). */
 	if (server->glass)
-		zwl_glass_committed(server, surface);
+		kwl_glass_committed(server, surface);
 
 	/* The replaced image. */
-	zwl_buffer_put(previous);
+	kwl_buffer_put(previous);
 }
 
 /*
  * Places a new window: a fullscreen one at the origin, others centred and
- * cascaded by ZWL_CASCADE_STEP (design D6).
+ * cascaded by KWL_CASCADE_STEP (design D6).
  */
 static void
 place_window(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	int32_t step;
 	int32_t width;
@@ -422,19 +422,19 @@ place_window(
 	width = (int32_t)server->width;
 	height = (int32_t)server->height;
 	if (surface->current != NULL) {
-		zwl_surface_size(surface, &buffer_width, &buffer_height);
+		kwl_surface_size(surface, &buffer_width, &buffer_height);
 		width = (int32_t)buffer_width;
 		height = (int32_t)buffer_height;
 	}
 
 	/* The cascade step of this window, which now has a place to come back to from fullscreen. */
-	step = ZWL_CASCADE_STEP * (int32_t)(server->windows % 8U);
+	step = KWL_CASCADE_STEP * (int32_t)(server->windows % 8U);
 	server->windows++;
 	surface->placed = 1;
 
 	/* The glass look keeps the space of the system bar and a title bar free. */
 	if (server->glass) {
-		zwl_glass_place(server, surface, width, height, step);
+		kwl_glass_place(server, surface, width, height, step);
 		return;
 	}
 
@@ -453,33 +453,33 @@ place_window(
  */
 static int
 enter_window_mode(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t start;
 	int error;
 
 	/* The switch is timed from here (ZWL MODE). */
-	start = zwl_milliseconds();
+	start = kwl_milliseconds();
 
 	/*
 	 * The display surface and the pipelines need no lease, so they are made
 	 * while the display is still another's (ws035-p130); a failure is tried
 	 * again below, after the hand-over.
 	 */
-	(void)zwl_compose_output_prepare(server);
+	(void)kwl_compose_output_prepare(server);
 
 	/* The first time, sessiond hands the display over (the greeter goes first). */
-	zwl_handoff_wait(server);
+	kwl_handoff_wait(server);
 
 	/* The swapchain over the display. */
-	error = zwl_compose_output_open(server);
+	error = kwl_compose_output_open(server);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the next pass draws a frame. */
 	server->windowed = 1;
 	server->dirty = 1;
-	server->mode_switch_ms = zwl_milliseconds() - start;
-	printf("ZWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)zwl_milliseconds());
+	server->mode_switch_ms = kwl_milliseconds() - start;
+	printf("ZWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)kwl_milliseconds());
 	return 0;
 }

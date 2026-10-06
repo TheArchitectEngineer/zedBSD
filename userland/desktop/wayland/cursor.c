@@ -78,7 +78,7 @@
 #define IMAGE_MOVE			7U
 #define IMAGE_NOT_ALLOWED		8U
 #define IMAGE_WAIT			9U
-#define IMAGE_NONE			ZWL_CURSOR_IMAGES
+#define IMAGE_NONE			KWL_CURSOR_IMAGES
 
 /* The size of every image, and its middle (the hotspot of most). */
 #define CURSOR_SIZE			24
@@ -93,7 +93,7 @@ struct cursor_mask {
 };
 
 /* The hotspot of each image (x, y), by index: the middle, the hand's fingertip. */
-static const int32_t cursor_hotspots[ZWL_CURSOR_IMAGES][2] = {
+static const int32_t cursor_hotspots[KWL_CURSOR_IMAGES][2] = {
 	{ CURSOR_MIDDLE, CURSOR_MIDDLE },
 	{ 9, 1 },
 	{ CURSOR_MIDDLE, CURSOR_MIDDLE },
@@ -106,8 +106,8 @@ static const int32_t cursor_hotspots[ZWL_CURSOR_IMAGES][2] = {
 	{ CURSOR_MIDDLE, CURSOR_MIDDLE }
 };
 
-static int device_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int device_set_shape(struct zwl_object *device, const unsigned char *bytes, size_t size);
+static int device_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int device_set_shape(struct kwl_object *device, const unsigned char *bytes, size_t size);
 static unsigned shape_image(uint32_t shape);
 static uint32_t frame_shape(uint32_t edges);
 static void mask_figure(unsigned index, struct cursor_mask *mask);
@@ -116,7 +116,7 @@ static void mask_arrow_heads(struct cursor_mask *mask, unsigned horizontal);
 static void mask_diagonal(struct cursor_mask *mask, unsigned falling);
 static void mask_ring(struct cursor_mask *mask);
 static void mask_hourglass(struct cursor_mask *mask);
-static int image_make(struct zwl_server *server, unsigned index);
+static int image_make(struct kwl_server *server, unsigned index);
 static uint32_t cursor_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -124,8 +124,8 @@ static uint32_t cursor_word(const unsigned char *bytes, size_t offset);
  * wp_cursor_shape_device_v1.
  */
 int
-zwl_cursor_shape_request(
-	struct zwl_object *object,
+kwl_cursor_shape_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -133,9 +133,9 @@ zwl_cursor_shape_request(
 	int error;
 
 	/* The manager: it goes, or it makes a pointer's device (tablet tools are not offered). */
-	if (object->kind == ZWL_CURSOR_SHAPE_MANAGER) {
+	if (object->kind == KWL_CURSOR_SHAPE_MANAGER) {
 		if (opcode == MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -152,7 +152,7 @@ zwl_cursor_shape_request(
 	if (opcode == DEVICE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -172,19 +172,19 @@ zwl_cursor_shape_request(
  * it.
  */
 void
-zwl_cursor_shape_object_gone(
-	struct zwl_object *object)
+kwl_cursor_shape_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *other;
+	struct kwl_object *other;
 
 	/* Only a pointer is named by devices. */
-	if (object->kind != ZWL_POINTER)
+	if (object->kind != KWL_POINTER)
 		return;
 
 	/* Its client's devices of it. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
 		/* A device of this pointer names nothing now. */
-		if (other->kind == ZWL_CURSOR_SHAPE_DEVICE && other->shape_pointer == object)
+		if (other->kind == KWL_CURSOR_SHAPE_DEVICE && other->shape_pointer == object)
 			other->shape_pointer = NULL;
 	}
 }
@@ -193,19 +193,19 @@ zwl_cursor_shape_object_gone(
  * Releases the images of the cursor shapes.
  */
 void
-zwl_cursor_images_destroy(
-	struct zwl_server *server)
+kwl_cursor_images_destroy(
+	struct kwl_server *server)
 {
 	unsigned index;
 
 	/* Each image made. */
-	for (index = 0; index < ZWL_CURSOR_IMAGES; index++) {
+	for (index = 0; index < KWL_CURSOR_IMAGES; index++) {
 		/* An empty slot. */
 		if (server->cursor_images[index] == NULL)
 			continue;
 
 		/* Its Vulkan objects, then the record. */
-		zwl_host_image_release(server->compose, server->cursor_images[index]);
+		kwl_host_image_release(server->compose, server->cursor_images[index]);
 		free(server->cursor_images[index]);
 		server->cursor_images[index] = NULL;
 	}
@@ -215,9 +215,9 @@ zwl_cursor_images_destroy(
  * Finds the image of the shape the cursor has now, and its hotspot; NULL
  * when the cursor is zdesktop's arrow.
  */
-const struct zwl_import *
-zwl_cursor_image(
-	const struct zwl_server *server,
+const struct kwl_import *
+kwl_cursor_image(
+	const struct kwl_server *server,
 	int32_t *hotspot_x,
 	int32_t *hotspot_y)
 {
@@ -248,8 +248,8 @@ zwl_cursor_image(
  * asked for, its shape or its cursor surface, until the edges are 0 again.
  */
 void
-zwl_cursor_frame(
-	struct zwl_server *server,
+kwl_cursor_frame(
+	struct kwl_server *server,
 	uint32_t edges)
 {
 	unsigned index;
@@ -288,10 +288,10 @@ zwl_cursor_frame(
  * zdesktop's own cursor, and the plain look, are always shown.
  */
 int
-zwl_cursor_client_shown(
-	struct zwl_server *server)
+kwl_cursor_client_shown(
+	struct kwl_server *server)
 {
-	struct zwl_object *window;
+	struct kwl_object *window;
 	unsigned shown;
 
 	/* zdesktop's own cursor, or the plain look (one window at its place): as it is. */
@@ -302,7 +302,7 @@ zwl_cursor_client_shown(
 	shown = 1U;
 	if (!server->pointer_grabbed) {
 		/* The window whose body is under the pointer must be the client's. */
-		window = zwl_glass_body_at(server, server->pointer_x, server->pointer_y);
+		window = kwl_glass_body_at(server, server->pointer_x, server->pointer_y);
 		if (window == NULL || window->client != server->cursor_client)
 			shown = 0U;
 	}
@@ -322,12 +322,12 @@ zwl_cursor_client_shown(
 /* Makes a pointer's cursor-shape device. */
 static int
 device_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *pointer;
-	struct zwl_object *created;
+	struct kwl_object *pointer;
+	struct kwl_object *created;
 	uint32_t id;
 	uint32_t pointer_id;
 
@@ -336,12 +336,12 @@ device_create(
 		return EPROTO;
 	id = cursor_word(bytes, 0U);
 	pointer_id = cursor_word(bytes, 4U);
-	pointer = zwl_find(manager->client, pointer_id);
-	if (pointer == NULL || pointer->kind != ZWL_POINTER)
+	pointer = kwl_find(manager->client, pointer_id);
+	if (pointer == NULL || pointer->kind != KWL_POINTER)
 		return EPROTO;
 
 	/* Succeeded: the device, naming its pointer. */
-	created = zwl_create(manager->client, id, ZWL_CURSOR_SHAPE_DEVICE, manager->version);
+	created = kwl_create(manager->client, id, KWL_CURSOR_SHAPE_DEVICE, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->shape_pointer = pointer;
@@ -351,11 +351,11 @@ device_create(
 /* Takes a shape a client asks for (with the serial of the pointer's enter). */
 static int
 device_set_shape(
-	struct zwl_object *device,
+	struct kwl_object *device,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t shape;
 	unsigned index;
 	int error;
@@ -365,7 +365,7 @@ device_set_shape(
 		return EPROTO;
 	shape = cursor_word(bytes, 4U);
 	if (shape == 0U || shape > SHAPE_LAST) {
-		(void)zwl_error_code(device->client, device->id, DEVICE_ERROR_INVALID_SHAPE, "not a cursor shape");
+		(void)kwl_error_code(device->client, device->id, DEVICE_ERROR_INVALID_SHAPE, "not a cursor shape");
 		return EPROTO;
 	}
 
@@ -462,21 +462,21 @@ frame_shape(
 	uint32_t edges)
 {
 	/* The corners, by the diagonal they drag along. */
-	if (edges == (ZWL_EDGE_TOP | ZWL_EDGE_LEFT))
+	if (edges == (KWL_EDGE_TOP | KWL_EDGE_LEFT))
 		return SHAPE_NW_RESIZE;
-	if (edges == (ZWL_EDGE_BOTTOM | ZWL_EDGE_RIGHT))
+	if (edges == (KWL_EDGE_BOTTOM | KWL_EDGE_RIGHT))
 		return SHAPE_SE_RESIZE;
-	if (edges == (ZWL_EDGE_TOP | ZWL_EDGE_RIGHT))
+	if (edges == (KWL_EDGE_TOP | KWL_EDGE_RIGHT))
 		return SHAPE_NE_RESIZE;
-	if (edges == (ZWL_EDGE_BOTTOM | ZWL_EDGE_LEFT))
+	if (edges == (KWL_EDGE_BOTTOM | KWL_EDGE_LEFT))
 		return SHAPE_SW_RESIZE;
 
 	/* The sides. */
-	if (edges == ZWL_EDGE_TOP)
+	if (edges == KWL_EDGE_TOP)
 		return SHAPE_N_RESIZE;
-	if (edges == ZWL_EDGE_BOTTOM)
+	if (edges == KWL_EDGE_BOTTOM)
 		return SHAPE_S_RESIZE;
-	if (edges == ZWL_EDGE_LEFT)
+	if (edges == KWL_EDGE_LEFT)
 		return SHAPE_W_RESIZE;
 
 	/* The right side, the only one left. */
@@ -702,11 +702,11 @@ mask_diagonal(
 /* Makes one image: its figure white, a black edge around it, transparent elsewhere. */
 static int
 image_make(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned index)
 {
 	struct cursor_mask mask;
-	struct zwl_import *image;
+	struct kwl_import *image;
 	uint32_t *row;
 	int x;
 	int y;
@@ -719,9 +719,9 @@ image_make(
 	image = calloc(1, sizeof(*image));
 	if (image == NULL)
 		return ENOMEM;
-	result = zwl_host_image_create(server->compose, CURSOR_SIZE, CURSOR_SIZE, server->compose->sampler, image);
+	result = kwl_host_image_create(server->compose, CURSOR_SIZE, CURSOR_SIZE, server->compose->sampler, image);
 	if (result != VK_SUCCESS) {
-		zwl_host_image_release(server->compose, image);
+		kwl_host_image_release(server->compose, image);
 		free(image);
 		return EIO;
 	}
@@ -762,7 +762,7 @@ image_make(
 	}
 
 	/* Succeeded: drawn with alpha. */
-	image->draw = ZWL_DRAW_ALPHA;
+	image->draw = KWL_DRAW_ALPHA;
 	server->cursor_images[index] = image;
 	return 0;
 }

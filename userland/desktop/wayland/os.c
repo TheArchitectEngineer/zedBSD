@@ -18,7 +18,7 @@
  */
 
 #include "compose.h"
-#include "zwl.h"
+#include "kwl.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend-display.h"
@@ -27,15 +27,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static void os_vulkan(const struct zwl_server *server, struct kl_backend_vulkan *vulkan);
+static void os_vulkan(const struct kwl_server *server, struct kl_backend_vulkan *vulkan);
 
 /*
  * Takes the seat and its primary node before Vulkan opens, and chooses the
  * default socket.
  */
 int
-zwl_os_open(
-	struct zwl_server *server)
+kwl_os_open(
+	struct kwl_server *server)
 {
 	const char *path;
 	int descriptor;
@@ -70,8 +70,8 @@ zwl_os_open(
  * Returns the seat after the display and the inputs have been given back.
  */
 void
-zwl_os_close(
-	struct zwl_server *server)
+kwl_os_close(
+	struct kwl_server *server)
 {
 	/* The seat (the virtual terminal is restored with it on Linux). */
 	kl_backend_seat_close(server->backend);
@@ -82,8 +82,8 @@ zwl_os_close(
  * Counts the backend's descriptors for the next poll.
  */
 size_t
-zwl_os_poll_count(
-	const struct zwl_server *server)
+kwl_os_poll_count(
+	const struct kwl_server *server)
 {
 	size_t count;
 
@@ -96,8 +96,8 @@ zwl_os_poll_count(
  * Fills the backend's poll descriptors.
  */
 void
-zwl_os_poll_fill(
-	struct zwl_server *server,
+kwl_os_poll_fill(
+	struct kwl_server *server,
 	struct pollfd *descriptors)
 {
 	/* The backend fills its own range. */
@@ -109,8 +109,8 @@ zwl_os_poll_fill(
  * backend-host.c).
  */
 void
-zwl_os_poll_done(
-	struct zwl_server *server,
+kwl_os_poll_done(
+	struct kwl_server *server,
 	const struct pollfd *descriptors)
 {
 	/* The backend dispatches and calls back. */
@@ -121,8 +121,8 @@ zwl_os_poll_done(
  * Lets Vulkan acquire the chosen display.
  */
 VkResult
-zwl_os_display_acquire(
-	struct zwl_server *server,
+kwl_os_display_acquire(
+	struct kwl_server *server,
 	VkPhysicalDevice physical,
 	VkDisplayKHR display)
 {
@@ -139,8 +139,8 @@ zwl_os_display_acquire(
  * Returns an acquired display after its swapchain is destroyed.
  */
 void
-zwl_os_display_release(
-	struct zwl_server *server,
+kwl_os_display_release(
+	struct kwl_server *server,
 	VkPhysicalDevice physical,
 	VkDisplayKHR display)
 {
@@ -157,7 +157,7 @@ zwl_os_display_release(
 /* The compositor's Vulkan as the backend needs it. */
 static void
 os_vulkan(
-	const struct zwl_server *server,
+	const struct kwl_server *server,
 	struct kl_backend_vulkan *vulkan)
 {
 	/* The instance and the lookup that resolves its extensions. */

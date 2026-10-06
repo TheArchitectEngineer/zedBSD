@@ -50,7 +50,7 @@ check(
 int
 main(void)
 {
-	struct zwl_power_layout layout;
+	struct kwl_power_layout layout;
 	unsigned all;
 	unsigned session;
 	int choice;
@@ -58,11 +58,11 @@ main(void)
 	int ordered;
 
 	/* 1. The card in the middle, its buttons inside it, from the top. */
-	zwl_power_layout(1280, 800, &layout);
+	kwl_power_layout(1280, 800, &layout);
 	check(layout.card[0] + layout.card[2] / 2 == 640, "the card in the middle across");
 	check(layout.card[1] + layout.card[3] / 2 == 400 || layout.card[1] + layout.card[3] / 2 == 399, "the card in the middle down");
 	ordered = 1;
-	for (choice = 0; choice < ZWL_POWER_CHOICES; choice++) {
+	for (choice = 0; choice < KWL_POWER_CHOICES; choice++) {
 		if (layout.buttons[choice][0] < layout.card[0] || layout.buttons[choice][1] < layout.card[1])
 			ordered = 0;
 		if (layout.buttons[choice][0] + layout.buttons[choice][2] > layout.card[0] + layout.card[2])
@@ -77,37 +77,37 @@ main(void)
 	check(ordered, "the buttons inside the card, one under the other");
 
 	/* 2. What is at a point: each button, between two, beside the card. */
-	for (choice = 0; choice < ZWL_POWER_CHOICES; choice++) {
-		hit = zwl_power_hit(&layout, layout.buttons[choice][0] + 10, layout.buttons[choice][1] + 10);
+	for (choice = 0; choice < KWL_POWER_CHOICES; choice++) {
+		hit = kwl_power_hit(&layout, layout.buttons[choice][0] + 10, layout.buttons[choice][1] + 10);
 		check(hit == choice, "a point on a button is its choice");
 	}
 
 	/* Between two buttons, and beside the card. */
-	hit = zwl_power_hit(&layout, layout.card[0] + layout.card[2] / 2, layout.buttons[1][1] - 2);
-	check(hit == ZWL_POWER_IN_CARD, "between two buttons: the card");
-	hit = zwl_power_hit(&layout, layout.card[0] - 1, 400);
-	check(hit == ZWL_POWER_OUTSIDE, "left of the card: outside");
-	hit = zwl_power_hit(&layout, 640, layout.card[1] + layout.card[3]);
-	check(hit == ZWL_POWER_OUTSIDE, "just under the card: outside");
+	hit = kwl_power_hit(&layout, layout.card[0] + layout.card[2] / 2, layout.buttons[1][1] - 2);
+	check(hit == KWL_POWER_IN_CARD, "between two buttons: the card");
+	hit = kwl_power_hit(&layout, layout.card[0] - 1, 400);
+	check(hit == KWL_POWER_OUTSIDE, "left of the card: outside");
+	hit = kwl_power_hit(&layout, 640, layout.card[1] + layout.card[3]);
+	check(hit == KWL_POWER_OUTSIDE, "just under the card: outside");
 
 	/* 3. The keys' choice with every choice: down and up, round the ends. */
-	all = ZWL_POWER_BIT(ZWL_POWER_POWEROFF) | ZWL_POWER_BIT(ZWL_POWER_RESTART) | ZWL_POWER_BIT(ZWL_POWER_LOGOUT) | ZWL_POWER_BIT(ZWL_POWER_CANCEL);
-	check(zwl_power_focus_step(ZWL_POWER_CANCEL, 1, all) == ZWL_POWER_POWEROFF, "down from Cancel: round to Power Off");
-	check(zwl_power_focus_step(ZWL_POWER_POWEROFF, -1, all) == ZWL_POWER_CANCEL, "up from Power Off: round to Cancel");
-	check(zwl_power_focus_step(ZWL_POWER_RESTART, 1, all) == ZWL_POWER_LOGOUT, "down from Restart: Log Out");
+	all = KWL_POWER_BIT(KWL_POWER_POWEROFF) | KWL_POWER_BIT(KWL_POWER_RESTART) | KWL_POWER_BIT(KWL_POWER_LOGOUT) | KWL_POWER_BIT(KWL_POWER_CANCEL);
+	check(kwl_power_focus_step(KWL_POWER_CANCEL, 1, all) == KWL_POWER_POWEROFF, "down from Cancel: round to Power Off");
+	check(kwl_power_focus_step(KWL_POWER_POWEROFF, -1, all) == KWL_POWER_CANCEL, "up from Power Off: round to Cancel");
+	check(kwl_power_focus_step(KWL_POWER_RESTART, 1, all) == KWL_POWER_LOGOUT, "down from Restart: Log Out");
 
 	/* 4. A session without Power Off and Restart: between Log Out and Cancel only. */
-	session = ZWL_POWER_BIT(ZWL_POWER_LOGOUT) | ZWL_POWER_BIT(ZWL_POWER_CANCEL);
-	check(zwl_power_focus_step(ZWL_POWER_CANCEL, 1, session) == ZWL_POWER_LOGOUT, "session: down from Cancel past the faint ones: Log Out");
-	check(zwl_power_focus_step(ZWL_POWER_LOGOUT, -1, session) == ZWL_POWER_CANCEL, "session: up from Log Out past the faint ones: Cancel");
-	check(zwl_power_focus_step(ZWL_POWER_LOGOUT, 1, session) == ZWL_POWER_CANCEL, "session: down from Log Out: Cancel");
-	check(zwl_power_focus_step(ZWL_POWER_CANCEL, 1, 0U) == ZWL_POWER_CANCEL, "nothing but Cancel: stays");
-	check(zwl_power_focus_step(7, 1, session) == ZWL_POWER_LOGOUT, "out of range: from Cancel");
+	session = KWL_POWER_BIT(KWL_POWER_LOGOUT) | KWL_POWER_BIT(KWL_POWER_CANCEL);
+	check(kwl_power_focus_step(KWL_POWER_CANCEL, 1, session) == KWL_POWER_LOGOUT, "session: down from Cancel past the faint ones: Log Out");
+	check(kwl_power_focus_step(KWL_POWER_LOGOUT, -1, session) == KWL_POWER_CANCEL, "session: up from Log Out past the faint ones: Cancel");
+	check(kwl_power_focus_step(KWL_POWER_LOGOUT, 1, session) == KWL_POWER_CANCEL, "session: down from Log Out: Cancel");
+	check(kwl_power_focus_step(KWL_POWER_CANCEL, 1, 0U) == KWL_POWER_CANCEL, "nothing but Cancel: stays");
+	check(kwl_power_focus_step(7, 1, session) == KWL_POWER_LOGOUT, "out of range: from Cancel");
 
 	/* 5. The names the log uses. */
-	check(strcmp(zwl_power_choice_name(ZWL_POWER_POWEROFF), "poweroff") == 0, "poweroff's name");
-	check(strcmp(zwl_power_choice_name(ZWL_POWER_CANCEL), "cancel") == 0, "cancel's name");
-	check(strcmp(zwl_power_choice_name(9), "none") == 0, "no choice's name");
+	check(strcmp(kwl_power_choice_name(KWL_POWER_POWEROFF), "poweroff") == 0, "poweroff's name");
+	check(strcmp(kwl_power_choice_name(KWL_POWER_CANCEL), "cancel") == 0, "cancel's name");
+	check(strcmp(kwl_power_choice_name(9), "none") == 0, "no choice's name");
 
 	/* The result. */
 	if (failures != 0) {

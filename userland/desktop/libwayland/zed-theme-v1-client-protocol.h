@@ -6,7 +6,7 @@
  */
 
 /*
- * Declares zdesktop's appearance protocol (keiland_theme_v1, version 1;
+ * Declares zdesktop's appearance protocol (kl_theme_v1, version 1;
  * ws089-p017): the desktop's appearance, light or dark, told when the
  * global is bound and whenever it changes.
  *
@@ -26,23 +26,23 @@ extern "C" {
 #endif
 
 /* The object the protocol names; only libwayland knows what is in it. */
-struct keiland_theme_v1;
+struct kl_theme_v1;
 
 /* The interface's description (theme-protocol.c). */
-extern const struct wl_interface keiland_theme_v1_interface;
+extern const struct wl_interface kl_theme_v1_interface;
 
 /*
- * keiland_theme_v1: the global.  appearance is 0 for light and 1 for dark
+ * kl_theme_v1: the global.  appearance is 0 for light and 1 for dark
  * (a value a client does not know is taken as light).
  */
-#define KEILAND_THEME_V1_APPEARANCE_LIGHT 0U
-#define KEILAND_THEME_V1_APPEARANCE_DARK 1U
-struct keiland_theme_v1_listener {
-	void (*appearance)(void *data, struct keiland_theme_v1 *object, uint32_t appearance);
+#define KL_THEME_V1_APPEARANCE_LIGHT 0U
+#define KL_THEME_V1_APPEARANCE_DARK 1U
+struct kl_theme_v1_listener {
+	void (*appearance)(void *data, struct kl_theme_v1 *object, uint32_t appearance);
 };
-int keiland_theme_v1_add_listener(struct keiland_theme_v1 *object, const struct keiland_theme_v1_listener *listener, void *data);
-#define KEILAND_THEME_V1_DESTROY 0U
-void keiland_theme_v1_destroy(struct keiland_theme_v1 *object);
+int kl_theme_v1_add_listener(struct kl_theme_v1 *object, const struct kl_theme_v1_listener *listener, void *data);
+#define KL_THEME_V1_DESTROY 0U
+void kl_theme_v1_destroy(struct kl_theme_v1 *object);
 
 #ifdef __cplusplus
 }

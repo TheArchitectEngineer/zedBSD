@@ -15,7 +15,7 @@
  * exists (reading the memory walks the kernel's pages, and a disk's
  * statistics may wait on a lock: the event loop never does either).  The
  * thread keeps the latest sample and the latest info under a lock; the
- * event loop takes them once a pass (zwl_sysmon_tick) and tells every
+ * event loop takes them once a pass (kwl_sysmon_tick) and tells every
  * monitor object.
  *
  * The flow is held by the clients (design.md review 2): an object hears
@@ -25,7 +25,7 @@
  * covers the time.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -87,10 +87,10 @@ static struct sysmon_state sysmon_state;
 static void *sysmon_run(void *argument);
 static int sysmon_start(void);
 static void sysmon_stop(void);
-static void sysmon_scan(struct zwl_server *server);
-static void sysmon_tell(struct zwl_server *server);
-static void sysmon_send_info(struct zwl_object *object);
-static void sysmon_send_sample(struct zwl_object *object);
+static void sysmon_scan(struct kwl_server *server);
+static void sysmon_tell(struct kwl_server *server);
+static void sysmon_send_info(struct kwl_object *object);
+static void sysmon_send_sample(struct kwl_object *object);
 static size_t sysmon_sample_bytes(const struct kl_backend_monitor_sample *sample);
 static uint32_t sysmon_period(uint32_t period_ms);
 static size_t sysmon_put_word(unsigned char *payload, size_t offset, uint32_t word);
@@ -104,12 +104,12 @@ static uint32_t sysmon_word(const unsigned char *bytes, size_t offset);
  * on.  Returns 0, or EPROTO for a malformed request.
  */
 int
-zwl_sysmon_create(
-	struct zwl_object *manager,
+kwl_sysmon_create(
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
+	struct kwl_object *created;
 	uint32_t id;
 	uint32_t period;
 
@@ -120,7 +120,7 @@ zwl_sysmon_create(
 	period = sysmon_word(bytes, 4U);
 
 	/* The object, under the ID the client chose. */
-	created = zwl_create(manager->client, id, ZWL_SYSTEM_MONITOR, 1U);
+	created = kwl_create(manager->client, id, KWL_SYSTEM_MONITOR, 1U);
 	if (created == NULL)
 		return EPROTO;
 	created->monitor_period = sysmon_period(period);
@@ -145,8 +145,8 @@ zwl_sysmon_create(
  * request.
  */
 int
-zwl_sysmon_request(
-	struct zwl_object *object,
+kwl_sysmon_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -157,7 +157,7 @@ zwl_sysmon_request(
 	if (opcode == KL_SYSTEM_MONITOR_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		sysmon_state.scanned_ms = 0;
 		return 0;
 	}
@@ -188,13 +188,13 @@ zwl_sysmon_request(
  * shortest period asked), and a new sample told to every object.
  */
 void
-zwl_sysmon_tick(
-	struct zwl_server *server)
+kwl_sysmon_tick(
+	struct kwl_server *server)
 {
 	uint64_t now;
 
 	/* The objects, every SYSMON_SCAN_MS or after one came or went. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (sysmon_state.scanned_ms == 0U || now >= sysmon_state.scanned_ms + SYSMON_SCAN_MS) {
 		sysmon_state.scanned_ms = now;
 		sysmon_scan(server);
@@ -209,8 +209,8 @@ zwl_sysmon_tick(
  * Stops the sampling at the compositor's end, waiting for the thread.
  */
 void
-zwl_sysmon_close(
-	struct zwl_server *server)
+kwl_sysmon_close(
+	struct kwl_server *server)
 {
 	UNUSED_PARAMETER(server);
 
@@ -410,10 +410,10 @@ sysmon_stop(void)
  */
 static void
 sysmon_scan(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	uint32_t period;
 	unsigned count;
 	unsigned ended;
@@ -426,7 +426,7 @@ sysmon_scan(
 		if (client->fatal)
 			continue;
 		for (object = client->objects; object != NULL; object = object->next) {
-			if (object->kind != ZWL_SYSTEM_MONITOR || object->dead)
+			if (object->kind != KWL_SYSTEM_MONITOR || object->dead)
 				continue;
 			count++;
 			if (object->monitor_period < period)
@@ -487,10 +487,10 @@ sysmon_scan(
 /* Takes the thread's new sample (and info) and tells every monitor object that may hear it. */
 static void
 sysmon_tell(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	uint32_t sample_serial;
 	uint32_t info_serial;
 	size_t needed;
@@ -524,7 +524,7 @@ sysmon_tell(
 		if (client->fatal)
 			continue;
 		for (object = client->objects; object != NULL; object = object->next) {
-			if (object->kind != ZWL_SYSTEM_MONITOR || object->dead)
+			if (object->kind != KWL_SYSTEM_MONITOR || object->dead)
 				continue;
 
 			/* The info it has not heard. */
@@ -536,7 +536,7 @@ sysmon_tell(
 				continue;
 			if (object->monitor_waiting != 0U)
 				continue;
-			if (client->output_bytes + needed > ZWL_OUTPUT_MAX)
+			if (client->output_bytes + needed > KWL_OUTPUT_MAX)
 				continue;
 			sysmon_send_sample(object);
 		}
@@ -549,7 +549,7 @@ sysmon_tell(
 /* Sends an object the info: the machine, a device a GPU, disk or link, and the done. */
 static void
 sysmon_send_info(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	const struct kl_backend_monitor_info *info;
 	unsigned char payload[SYSMON_EVENT_MAX];
@@ -561,7 +561,7 @@ sysmon_send_info(
 	offset = sysmon_put_word(payload, 0U, info->cpu_count);
 	offset = sysmon_put_string(payload, offset, info->host);
 	offset = sysmon_put_wide(payload, offset, info->generation);
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_INFO, payload, offset);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_INFO, payload, offset);
 
 	/* Each GPU. */
 	for (index = 0; index < info->gpu_count; index++) {
@@ -571,7 +571,7 @@ sysmon_send_info(
 		offset = sysmon_put_word(payload, offset, 0U);
 		offset = sysmon_put_string(payload, offset, info->gpu[index].name);
 		offset = sysmon_put_string(payload, offset, info->gpu[index].driver);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DEVICE, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DEVICE, payload, offset);
 	}
 
 	/* Each disk, with its kind. */
@@ -582,7 +582,7 @@ sysmon_send_info(
 		offset = sysmon_put_word(payload, offset, info->disk[index].kind);
 		offset = sysmon_put_string(payload, offset, info->disk[index].name);
 		offset = sysmon_put_string(payload, offset, "");
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DEVICE, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DEVICE, payload, offset);
 	}
 
 	/* Each link. */
@@ -593,19 +593,19 @@ sysmon_send_info(
 		offset = sysmon_put_word(payload, offset, 0U);
 		offset = sysmon_put_string(payload, offset, info->link[index].name);
 		offset = sysmon_put_string(payload, offset, "");
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DEVICE, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DEVICE, payload, offset);
 	}
 
 	/* The done: the info is whole. */
 	offset = sysmon_put_word(payload, 0U, sysmon_state.taken_info);
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_INFO_DONE, payload, offset);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_INFO_DONE, payload, offset);
 	object->monitor_info = sysmon_state.taken_info;
 }
 
 /* Sends an object the current sample: each CPU, the memory, each link, disk and GPU, and the done it acks. */
 static void
 sysmon_send_sample(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	const struct kl_backend_monitor_sample *sample;
 	unsigned char payload[SYSMON_EVENT_MAX];
@@ -621,7 +621,7 @@ sysmon_send_sample(
 		offset = sysmon_put_wide(payload, offset, sample->cpu[index].system);
 		offset = sysmon_put_wide(payload, offset, sample->cpu[index].idle);
 		offset = sysmon_put_wide(payload, offset, sample->cpu[index].other);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_CPU, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_CPU, payload, offset);
 	}
 
 	/* The memory. */
@@ -631,7 +631,7 @@ sysmon_send_sample(
 	offset = sysmon_put_wide(payload, offset, sample->memory_reclaimable);
 	offset = sysmon_put_wide(payload, offset, sample->swap_total);
 	offset = sysmon_put_wide(payload, offset, sample->swap_used);
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_MEMORY, payload, offset);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_MEMORY, payload, offset);
 
 	/* Each link. */
 	for (index = 0; index < sample->link_count; index++) {
@@ -639,7 +639,7 @@ sysmon_send_sample(
 		offset = sysmon_put_wide(payload, offset, sample->link[index].rx_bytes);
 		offset = sysmon_put_wide(payload, offset, sample->link[index].tx_bytes);
 		offset = sysmon_put_word(payload, offset, sample->link[index].up);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_LINK, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_LINK, payload, offset);
 	}
 
 	/* Each disk. */
@@ -652,7 +652,7 @@ sysmon_send_sample(
 		offset = sysmon_put_wide(payload, offset, sample->disk[index].read_ns);
 		offset = sysmon_put_wide(payload, offset, sample->disk[index].write_ns);
 		offset = sysmon_put_wide(payload, offset, sample->disk[index].busy_ns);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DISK, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_DISK, payload, offset);
 	}
 
 	/* Each GPU. */
@@ -666,7 +666,7 @@ sysmon_send_sample(
 		offset = sysmon_put_word(payload, offset, sample->gpu[index].max_mhz);
 		offset = sysmon_put_word(payload, offset, (uint32_t)sample->gpu[index].milli_celsius);
 		offset = sysmon_put_word(payload, offset, sample->gpu[index].milli_watts);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_GPU, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_GPU, payload, offset);
 	}
 
 	/* The done, which the client acks: the sample is whole. */
@@ -676,7 +676,7 @@ sysmon_send_sample(
 	offset = sysmon_put_wide(payload, offset, sample->valid);
 	offset = sysmon_put_word(payload, offset, (uint32_t)sample->cpu_hz);
 	offset = sysmon_put_word(payload, offset, (uint32_t)sample->cpu_milli_celsius);
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_SAMPLE_DONE, payload, offset);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_MONITOR_EVENT_SAMPLE_DONE, payload, offset);
 	object->monitor_waiting = serial;
 }
 

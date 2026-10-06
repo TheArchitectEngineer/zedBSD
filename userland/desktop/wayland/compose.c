@@ -33,36 +33,36 @@
 /* Room for the common Vulkan extensions and those requested by the OS. */
 #define COMPOSE_EXTENSIONS_MAX	16U
 
-static VkResult compose_device(struct zwl_compose *compose);
-static VkResult compose_display(struct zwl_server *server);
-static void compose_limits(struct zwl_server *server);
-static VkResult compose_refresh(struct zwl_server *server, VkDisplayKHR display, uint32_t *refresh);
-static VkResult compose_objects(struct zwl_compose *compose);
-static VkResult compose_pass(struct zwl_compose *compose);
-static VkResult compose_pipeline(struct zwl_compose *compose, enum zwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
-static VkResult compose_panel_pipeline(struct zwl_compose *compose);
-static VkResult compose_corners(struct zwl_compose *compose);
-static VkResult compose_targets(struct zwl_compose *compose);
-static void compose_targets_destroy(struct zwl_compose *compose);
-static unsigned compose_windows(struct zwl_server *server, struct zwl_object **windows, unsigned capacity);
-static void compose_quad(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *import, int32_t x, int32_t y);
-static void compose_quad_part(struct zwl_server *server, VkCommandBuffer command, const struct zwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
-static const struct zwl_import *surface_image(const struct zwl_object *surface);
-static void compose_cursor(struct zwl_server *server, VkCommandBuffer command);
-static VkResult compose_record(struct zwl_server *server, uint32_t image, struct zwl_object **windows, unsigned count, const VkRect2D *region);
-static int compose_region(struct zwl_server *server, uint32_t image, VkRect2D *region);
-static VkResult compose_submit(struct zwl_server *server, uint32_t image);
-static void compose_hold(struct zwl_server *server, struct zwl_object **windows, unsigned count);
+static VkResult compose_device(struct kwl_compose *compose);
+static VkResult compose_display(struct kwl_server *server);
+static void compose_limits(struct kwl_server *server);
+static VkResult compose_refresh(struct kwl_server *server, VkDisplayKHR display, uint32_t *refresh);
+static VkResult compose_objects(struct kwl_compose *compose);
+static VkResult compose_pass(struct kwl_compose *compose);
+static VkResult compose_pipeline(struct kwl_compose *compose, enum kwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
+static VkResult compose_panel_pipeline(struct kwl_compose *compose);
+static VkResult compose_corners(struct kwl_compose *compose);
+static VkResult compose_targets(struct kwl_compose *compose);
+static void compose_targets_destroy(struct kwl_compose *compose);
+static unsigned compose_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
+static void compose_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y);
+static void compose_quad_part(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
+static const struct kwl_import *surface_image(const struct kwl_object *surface);
+static void compose_cursor(struct kwl_server *server, VkCommandBuffer command);
+static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const VkRect2D *region);
+static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region);
+static VkResult compose_submit(struct kwl_server *server, uint32_t image);
+static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
  * synchronization; the output is opened separately.
  */
 int
-zwl_compose_open(
-	struct zwl_server *server)
+kwl_compose_open(
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	uint64_t started;
 	VkResult result;
 	int error;
@@ -74,7 +74,7 @@ zwl_compose_open(
 	server->compose = compose;
 
 	/* The instance, the device and its graphics queue. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	result = compose_device(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=device result=%d\n", (int)result);
@@ -92,8 +92,8 @@ zwl_compose_open(
 	compose_limits(server);
 
 	/* How long the device took (ZWL STARTUP, ws035-p129). */
-	printf("ZWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	started = zwl_milliseconds();
+	printf("ZWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	started = kwl_milliseconds();
 
 	/* The layouts, sampler, pools and synchronization of a frame. */
 	result = compose_objects(compose);
@@ -103,19 +103,19 @@ zwl_compose_open(
 	}
 
 	/* The start's images (the arrow, the wallpaper, the glyphs) are moved to their layout together (ws035-p131). */
-	zwl_host_image_batch_begin(compose);
+	kwl_host_image_batch_begin(compose);
 
 	/* the compositor's arrow cursor. */
-	error = zwl_arrow_create(server);
+	error = kwl_arrow_create(server);
 	if (error != 0) {
 		printf("ZWL VULKAN_ERROR operation=arrow\n");
 		return EIO;
 	}
 
 	/* The glass look's wallpaper and glyphs; without them the plain look is drawn. */
-	printf("ZWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	if (server->glass) {
-		error = zwl_glass_open(server);
+		error = kwl_glass_open(server);
 		if (error != 0) {
 			printf("ZWL GLASS unavailable errno=%d\n", error);
 			server->glass = 0;
@@ -123,7 +123,7 @@ zwl_compose_open(
 	}
 
 	/* The start's images' layout moves, submitted and waited for once. */
-	result = zwl_host_image_batch_end(compose);
+	result = kwl_host_image_batch_end(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=setup-layout result=%d\n", (int)result);
 		return EIO;
@@ -143,10 +143,10 @@ zwl_compose_open(
  * the hand-over waits only for the swapchain.
  */
 int
-zwl_compose_output_prepare(
-	struct zwl_server *server)
+kwl_compose_output_prepare(
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	uint64_t started;
 	VkResult result;
 
@@ -156,7 +156,7 @@ zwl_compose_output_prepare(
 		return 0;
 
 	/* The display plane's surface at the compositor's size. */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	result = vkdemo_display_open(compose->instance, compose->physical, server->width, server->height, &compose->output);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
@@ -165,8 +165,8 @@ zwl_compose_output_prepare(
 	}
 
 	/* The swapchain's format, which the pass and pipelines follow. */
-	printf("ZWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	started = zwl_milliseconds();
+	printf("ZWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	started = kwl_milliseconds();
 	result = vkdemo_display_choose_format(compose->physical, &compose->output);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=format result=%d\n", (int)result);
@@ -187,7 +187,7 @@ zwl_compose_output_prepare(
 
 	/* Succeeded: only the swapchain is left, which claims the display. */
 	compose->output_prepared = 1;
-	printf("ZWL STARTUP step=output-pipelines ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=output-pipelines ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	return 0;
 }
 
@@ -196,10 +196,10 @@ zwl_compose_output_prepare(
  * surface first when that was not done), which claims the display.
  */
 int
-zwl_compose_output_open(
-	struct zwl_server *server)
+kwl_compose_output_open(
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	uint64_t started;
 	VkResult result;
 	int readback;
@@ -211,12 +211,12 @@ zwl_compose_output_open(
 		return 0;
 
 	/* The surface, and the pass and pipelines for its format. */
-	error = zwl_compose_output_prepare(server);
+	error = kwl_compose_output_prepare(server);
 	if (error != 0)
 		return error;
 
 	/* Gives Vulkan the display permission before creating its swapchain. */
-	result = zwl_os_display_acquire(server, compose->physical, compose->display);
+	result = kwl_os_display_acquire(server, compose->physical, compose->display);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=display-acquire result=%d\n", (int)result);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
@@ -225,8 +225,8 @@ zwl_compose_output_open(
 	}
 
 	/* Its FIFO swapchain, in the format the pipelines were made for. */
-	started = zwl_milliseconds();
-	readback = zwl_shot_enabled();
+	started = kwl_milliseconds();
+	readback = kwl_shot_enabled();
 	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
 	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
 		/* A display whose images cannot be read back still shows the desktop, without the capture (ws173-p002). */
@@ -236,30 +236,30 @@ zwl_compose_output_open(
 	}
 	compose->readback = (unsigned)readback;
 	if (result != VK_SUCCESS ||
-	    compose->output.image_count > ZWL_SWAPCHAIN_MAX ||
+	    compose->output.image_count > KWL_SWAPCHAIN_MAX ||
 	    compose->output.format != compose->format) {
 		printf("ZWL VULKAN_ERROR operation=swapchain result=%d images=%u format=%d\n", (int)result, compose->output.image_count, (int)compose->output.format);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
-		zwl_os_display_release(server, compose->physical, compose->display);
+		kwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
 		return EIO;
 	}
 
 	/* A view, framebuffer and semaphore for each swapchain image. */
-	printf("ZWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
-	started = zwl_milliseconds();
+	printf("ZWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	started = kwl_milliseconds();
 	result = compose_targets(compose);
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
 		compose_targets_destroy(compose);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
-		zwl_os_display_release(server, compose->physical, compose->display);
+		kwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
 		return EIO;
 	}
 
 	/* No image has been drawn yet: the first frame of each is drawn whole. */
-	printf("ZWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	memset(compose->image_frames, 0, sizeof(compose->image_frames));
 
 	/* Succeeded: window mode owns the display through the swapchain. */
@@ -274,10 +274,10 @@ zwl_compose_output_open(
  * which gives the display back (to the greeter's hand-over, or at exit).
  */
 void
-zwl_compose_output_close(
-	struct zwl_server *server)
+kwl_compose_output_close(
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 
 	/* A closed output has nothing to destroy. */
 	compose = server->compose;
@@ -296,12 +296,12 @@ zwl_compose_output_close(
 	(void)vkDeviceWaitIdle(compose->device);
 
 	/* The backdrop, the targets, then the swapchain and surface. */
-	zwl_backdrop_destroy(compose);
+	kwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
 
 	/* Gives back the display only after its acquired swapchain is gone. */
-	zwl_os_display_release(server, compose->physical, compose->display);
+	kwl_os_display_release(server, compose->physical, compose->display);
 
 	/* Marks the output as available for the next handoff. */
 	compose->output_prepared = 0;
@@ -317,11 +317,11 @@ zwl_compose_output_close(
  * drawing while a frame is in flight or the output is closed.
  */
 int
-zwl_compose_draw(
-	struct zwl_server *server)
+kwl_compose_draw(
+	struct kwl_server *server)
 {
-	struct zwl_object *windows[ZWL_FRAME_WINDOWS];
-	struct zwl_compose *compose;
+	struct kwl_object *windows[KWL_FRAME_WINDOWS];
+	struct kwl_compose *compose;
 	const VkRect2D *region_drawn;
 	VkRect2D region;
 	uint64_t mark;
@@ -342,30 +342,30 @@ zwl_compose_draw(
 	server->pointer_moved = 0U;
 
 	/* The windows to draw, bottom to top. */
-	compose->frame_start_cycles = zwl_cycles();
-	compose->frame_start_ms = zwl_milliseconds();
-	count = compose_windows(server, windows, ZWL_FRAME_WINDOWS);
+	compose->frame_start_cycles = kwl_cycles();
+	compose->frame_start_ms = kwl_milliseconds();
+	count = compose_windows(server, windows, KWL_FRAME_WINDOWS);
 
 	/* The popups follow the windows in the list the frame holds (popup.c draws them). */
-	popups = zwl_popup_collect(server, windows + count, ZWL_FRAME_WINDOWS - count);
+	popups = kwl_popup_collect(server, windows + count, KWL_FRAME_WINDOWS - count);
 
 	/* The sub-surfaces follow them, held and told like them (subsurface.c draws them with their parents). */
-	subsurfaces = zwl_subsurface_collect(server, windows + count + popups, ZWL_FRAME_WINDOWS - count - popups);
+	subsurfaces = kwl_subsurface_collect(server, windows + count + popups, KWL_FRAME_WINDOWS - count - popups);
 
 	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
 	if (server->log_frames)
-		printf("ZWL LAT draw frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)zwl_microseconds());
+		printf("ZWL LAT draw frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* The next swapchain image (the wait for it is measured apart). */
-	mark = zwl_cycles();
+	mark = kwl_cycles();
 	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, UINT64_MAX, compose->acquired, VK_NULL_HANDLE, &image);
-	server->perf.compose_acquire_cycles += zwl_cycles() - mark;
+	server->perf.compose_acquire_cycles += kwl_cycles() - mark;
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		printf("ZWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
 		return EIO;
 	}
 	if (server->log_frames)
-		printf("ZWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)zwl_microseconds());
+		printf("ZWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
 	partial = compose_region(server, image, &region);
@@ -380,22 +380,22 @@ zwl_compose_draw(
 		return EIO;
 	}
 	if (server->log_frames)
-		printf("ZWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)zwl_microseconds());
+		printf("ZWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* Submitted and presented; the fence fd tells the event loop when it is done. */
-	mark = zwl_cycles();
+	mark = kwl_cycles();
 	result = compose_submit(server, image);
-	server->perf.compose_present_cycles += zwl_cycles() - mark;
+	server->perf.compose_present_cycles += kwl_cycles() - mark;
 	if (result != VK_SUCCESS) {
 		printf("ZWL VULKAN_ERROR operation=submit result=%d\n", (int)result);
 		return EIO;
 	}
 
 	/* The new images' layouts went with the frame. */
-	zwl_import_layouts_done(compose);
+	kwl_import_layouts_done(compose);
 
 	/* The CPU time of recording and submitting the frame. */
-	server->perf.compose_draw_cycles += zwl_cycles() - compose->frame_start_cycles;
+	server->perf.compose_draw_cycles += kwl_cycles() - compose->frame_start_cycles;
 
 	/* The frame holds what it sampled until its fence signals, the popups and sub-surfaces too. */
 	compose_hold(server, windows, count + popups + subsurfaces);
@@ -404,14 +404,14 @@ zwl_compose_draw(
 	server->frame++;
 	/* The first frame after App Home or Wiseview was asked to open or close, logged once (C5, also without --log-frames). */
 	if (server->transition != NULL) {
-		now = zwl_milliseconds();
+		now = kwl_milliseconds();
 		printf("ZWL FIRST_FRAME what=%s frame=%llu request_ms=%llu ms=%llu\n", server->transition, (unsigned long long)server->frame,
 		       (unsigned long long)server->transition_ms, (unsigned long long)(now - server->transition_ms));
 		server->transition = NULL;
 	}
 	if (server->log_frames) {
-		printf("ZWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)zwl_milliseconds());
-		printf("ZWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
+		printf("ZWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)kwl_milliseconds());
+		printf("ZWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
 	}
 
 	/* Succeeded: one frame is in flight. */
@@ -424,10 +424,10 @@ zwl_compose_draw(
  * callbacks of the surfaces it showed are sent.
  */
 int
-zwl_compose_complete(
-	struct zwl_server *server)
+kwl_compose_complete(
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	uint64_t elapsed;
 	unsigned index;
 	VkResult result;
@@ -454,23 +454,23 @@ zwl_compose_complete(
 
 	/* The sampled buffers, and the frame callbacks. */
 	for (index = 0; index < compose->held_count; index++)
-		zwl_buffer_put(compose->held[index]);
+		kwl_buffer_put(compose->held[index]);
 	compose->held_count = 0;
-	zwl_callbacks_done(&compose->callbacks);
+	kwl_callbacks_done(&compose->callbacks);
 	compose->in_flight = 0;
 
 	/* A test image's capture sends the frame it copied (shot.c, ws173-p002). */
-	zwl_shot_complete(server);
+	kwl_shot_complete(server);
 	if (server->log_frames)
-		printf("ZWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)zwl_microseconds());
+		printf("ZWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
 
 	/* The time from the start of the frame to its completion (reported by ZWL PERF). */
-	elapsed = zwl_cycles() - compose->frame_start_cycles;
+	elapsed = kwl_cycles() - compose->frame_start_cycles;
 	server->perf.compose_frames++;
 	server->perf.compose_cycles += elapsed;
 
 	/* The next frame waits a moment for the windows this one told (half its time, 4 to 50 ms). */
-	server->frame_done_ms = zwl_milliseconds();
+	server->frame_done_ms = kwl_milliseconds();
 	server->frame_wait_ms = (server->frame_done_ms - compose->frame_start_ms) / 2U;
 	if (server->frame_wait_ms < 4U)
 		server->frame_wait_ms = 4U;
@@ -483,11 +483,11 @@ zwl_compose_complete(
 
 /*
  * Tells whether a frame is in flight whose fence has no fd, so the event
- * loop must ask its status (zwl_compose_poll) rather than poll an fd.
+ * loop must ask its status (kwl_compose_poll) rather than poll an fd.
  */
 int
-zwl_compose_waiting(
-	struct zwl_server *server)
+kwl_compose_waiting(
+	struct kwl_server *server)
 {
 	/* Only window mode's frame without an exported fence. */
 	if (server->compose == NULL || !server->compose->in_flight || server->compose->fence_fd)
@@ -501,21 +501,21 @@ zwl_compose_waiting(
  * Ends the frame in flight when its fence (without an fd) has signaled.
  */
 void
-zwl_compose_poll(
-	struct zwl_server *server)
+kwl_compose_poll(
+	struct kwl_server *server)
 {
 	VkResult result;
 	int waiting;
 
 	/* Nothing to ask. */
-	waiting = zwl_compose_waiting(server);
+	waiting = kwl_compose_waiting(server);
 	if (!waiting)
 		return;
 
 	/* A signaled fence ends the frame; otherwise a later pass asks again. */
 	result = vkGetFenceStatus(server->compose->device, server->compose->fence);
 	if (result == VK_SUCCESS)
-		zwl_frame_done(server);
+		kwl_frame_done(server);
 }
 
 /*
@@ -523,8 +523,8 @@ zwl_compose_poll(
  * buffers and callbacks it may hold is destroyed, and at exit.
  */
 void
-zwl_compose_quiesce(
-	struct zwl_server *server)
+kwl_compose_quiesce(
+	struct kwl_server *server)
 {
 	int error;
 
@@ -533,7 +533,7 @@ zwl_compose_quiesce(
 		return;
 
 	/* The frame completes; a failure is the compositor's. */
-	error = zwl_compose_complete(server);
+	error = kwl_compose_complete(server);
 	if (error != 0) {
 		printf("ZWL FAILED site=compose_poll errno=%d\n", error);
 		server->failed = 1;
@@ -544,10 +544,10 @@ zwl_compose_quiesce(
  * Releases every Vulkan object, after the output (at compositor exit).
  */
 void
-zwl_compose_close(
-	struct zwl_server *server)
+kwl_compose_close(
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	unsigned index;
 
 	/* Nothing was opened. */
@@ -558,10 +558,10 @@ zwl_compose_close(
 	/* The frame in flight and the output first, then the arrow. */
 	if (compose->device != VK_NULL_HANDLE)
 		(void)vkDeviceWaitIdle(compose->device);
-	(void)zwl_compose_complete(server);
-	zwl_compose_output_close(server);
-	zwl_arrow_destroy(server);
-	zwl_glass_close(server);
+	(void)kwl_compose_complete(server);
+	kwl_compose_output_close(server);
+	kwl_arrow_destroy(server);
+	kwl_glass_close(server);
 
 	/* The device's objects. */
 	if (compose->device != VK_NULL_HANDLE) {
@@ -602,7 +602,7 @@ zwl_compose_close(
 /* Creates the instance, picks the first device with a graphics queue, and creates the device. */
 static VkResult
 compose_device(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	static const char *const instance_extensions[] = {
 		VK_KHR_SURFACE_EXTENSION_NAME,
@@ -764,9 +764,9 @@ compose_device(
  */
 static VkResult
 compose_display(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	VkDisplayPropertiesKHR *properties;
 	VkPhysicalDeviceProperties device;
 	VkDisplayKHR display;
@@ -855,7 +855,7 @@ compose_display(
 /* Records the device's largest 2D image and its number of memory types, which bound a client buffer's description. */
 static void
 compose_limits(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	VkPhysicalDeviceProperties device;
 	VkPhysicalDeviceMemoryProperties memory;
@@ -884,11 +884,11 @@ compose_limits(
  */
 static VkResult
 compose_refresh(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkDisplayKHR display,
 	uint32_t *refresh)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	VkDisplayModePropertiesKHR *modes;
 	VkResult result;
 	uint32_t count;
@@ -947,7 +947,7 @@ compose_refresh(
 /* Creates the descriptor and pipeline layouts, the sampler, the pools and the frame's synchronization. */
 static VkResult
 compose_objects(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	VkDescriptorSetLayoutBinding binding;
 	VkDescriptorSetLayoutCreateInfo set_layout;
@@ -1014,7 +1014,7 @@ compose_objects(
 
 	/* The glass look's constants (place, image part, box, color, shape, output) reach both stages. */
 	range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	range.size = ZWL_PANEL_CONSTANTS * sizeof(float);
+	range.size = KWL_PANEL_CONSTANTS * sizeof(float);
 	result = vkCreatePipelineLayout(compose->device, &layout, NULL, &compose->panel_layout);
 	if (result != VK_SUCCESS)
 		return result;
@@ -1022,11 +1022,11 @@ compose_objects(
 	/* A descriptor set for each imported buffer, freed with it. */
 	memset(&pool_size, 0, sizeof(pool_size));
 	pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	pool_size.descriptorCount = ZWL_DESCRIPTOR_MAX;
+	pool_size.descriptorCount = KWL_DESCRIPTOR_MAX;
 	memset(&pool, 0, sizeof(pool));
 	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	pool.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-	pool.maxSets = ZWL_DESCRIPTOR_MAX;
+	pool.maxSets = KWL_DESCRIPTOR_MAX;
 	pool.poolSizeCount = 1U;
 	pool.pPoolSizes = &pool_size;
 	result = vkCreateDescriptorPool(compose->device, &pool, NULL, &compose->descriptors);
@@ -1079,9 +1079,9 @@ compose_objects(
 /* Creates the vertex buffer of a quad's two triangles, written once by the CPU. */
 static VkResult
 compose_corners(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
-	static const float corners[ZWL_QUAD_VERTICES * 2U] = {
+	static const float corners[KWL_QUAD_VERTICES * 2U] = {
 		0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
 		0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f
 	};
@@ -1144,7 +1144,7 @@ compose_corners(
 /* Creates the render pass for the output's format and the two pipelines. */
 static VkResult
 compose_pass(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	VkAttachmentDescription attachment;
 	VkAttachmentReference reference;
@@ -1196,13 +1196,13 @@ compose_pass(
 	/* The shaders, needed only while the pipelines are created. */
 	memset(&module, 0, sizeof(module));
 	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	module.codeSize = sizeof(zwl_quad_vert);
-	module.pCode = zwl_quad_vert;
+	module.codeSize = sizeof(kwl_quad_vert);
+	module.pCode = kwl_quad_vert;
 	result = vkCreateShaderModule(compose->device, &module, NULL, &vertex);
 	if (result != VK_SUCCESS)
 		return result;
-	module.codeSize = sizeof(zwl_quad_frag);
-	module.pCode = zwl_quad_frag;
+	module.codeSize = sizeof(kwl_quad_frag);
+	module.pCode = kwl_quad_frag;
 	result = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
 	if (result != VK_SUCCESS) {
 		vkDestroyShaderModule(compose->device, vertex, NULL);
@@ -1210,9 +1210,9 @@ compose_pass(
 	}
 
 	/* The opaque and the alpha pipelines. */
-	result = compose_pipeline(compose, ZWL_DRAW_OPAQUE, vertex, fragment, compose->layout, &compose->pipelines[ZWL_DRAW_OPAQUE]);
+	result = compose_pipeline(compose, KWL_DRAW_OPAQUE, vertex, fragment, compose->layout, &compose->pipelines[KWL_DRAW_OPAQUE]);
 	if (result == VK_SUCCESS)
-		result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->layout, &compose->pipelines[ZWL_DRAW_ALPHA]);
+		result = compose_pipeline(compose, KWL_DRAW_ALPHA, vertex, fragment, compose->layout, &compose->pipelines[KWL_DRAW_ALPHA]);
 	vkDestroyShaderModule(compose->device, vertex, NULL);
 	vkDestroyShaderModule(compose->device, fragment, NULL);
 	if (result != VK_SUCCESS)
@@ -1226,7 +1226,7 @@ compose_pass(
 /* Creates the glass look's pipeline: its shaders, blended with premultiplied alpha. */
 static VkResult
 compose_panel_pipeline(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	VkShaderModuleCreateInfo module;
 	VkShaderModule vertex;
@@ -1236,13 +1236,13 @@ compose_panel_pipeline(
 	/* The shaders, needed only while the pipeline is created. */
 	memset(&module, 0, sizeof(module));
 	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	module.codeSize = sizeof(zwl_panel_vert);
-	module.pCode = zwl_panel_vert;
+	module.codeSize = sizeof(kwl_panel_vert);
+	module.pCode = kwl_panel_vert;
 	result = vkCreateShaderModule(compose->device, &module, NULL, &vertex);
 	if (result != VK_SUCCESS)
 		return result;
-	module.codeSize = sizeof(zwl_panel_frag);
-	module.pCode = zwl_panel_frag;
+	module.codeSize = sizeof(kwl_panel_frag);
+	module.pCode = kwl_panel_frag;
 	result = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
 	if (result != VK_SUCCESS) {
 		vkDestroyShaderModule(compose->device, vertex, NULL);
@@ -1250,7 +1250,7 @@ compose_panel_pipeline(
 	}
 
 	/* Every shape is blended: the shader's output is premultiplied. */
-	result = compose_pipeline(compose, ZWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &compose->panel_pipeline);
+	result = compose_pipeline(compose, KWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &compose->panel_pipeline);
 	vkDestroyShaderModule(compose->device, vertex, NULL);
 	vkDestroyShaderModule(compose->device, fragment, NULL);
 	return result;
@@ -1259,8 +1259,8 @@ compose_panel_pipeline(
 /* Creates a pipeline that draws a quad the given way, with the given layout. */
 static VkResult
 compose_pipeline(
-	struct zwl_compose *compose,
-	enum zwl_draw draw,
+	struct kwl_compose *compose,
+	enum kwl_draw draw,
 	VkShaderModule vertex,
 	VkShaderModule fragment,
 	VkPipelineLayout layout,
@@ -1336,7 +1336,7 @@ compose_pipeline(
 	memset(&blend_attachment, 0, sizeof(blend_attachment));
 	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
 	    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	if (draw == ZWL_DRAW_ALPHA) {
+	if (draw == KWL_DRAW_ALPHA) {
 		blend_attachment.blendEnable = VK_TRUE;
 		blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 		blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
@@ -1376,7 +1376,7 @@ compose_pipeline(
 /* Creates a view, a framebuffer and a present semaphore for each swapchain image. */
 static VkResult
 compose_targets(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	VkImageViewCreateInfo view;
 	VkFramebufferCreateInfo framebuffer;
@@ -1426,12 +1426,12 @@ compose_targets(
 /* Destroys the per-image views, framebuffers and semaphores. */
 static void
 compose_targets_destroy(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	uint32_t index;
 
 	/* Each image's objects, those that were made. */
-	for (index = 0; index < ZWL_SWAPCHAIN_MAX; index++) {
+	for (index = 0; index < KWL_SWAPCHAIN_MAX; index++) {
 		if (compose->framebuffers[index] != VK_NULL_HANDLE)
 			vkDestroyFramebuffer(compose->device, compose->framebuffers[index], NULL);
 		if (compose->views[index] != VK_NULL_HANDLE)
@@ -1450,13 +1450,13 @@ compose_targets_destroy(
  */
 static unsigned
 compose_windows(
-	struct zwl_server *server,
-	struct zwl_object **windows,
+	struct kwl_server *server,
+	struct kwl_object **windows,
 	unsigned capacity)
 {
-	const struct zwl_import *image;
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	const struct kwl_import *image;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 	unsigned count;
 	unsigned index;
 	unsigned at;
@@ -1467,7 +1467,7 @@ compose_windows(
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    !surface->mapped ||
 			    surface->current == NULL)
@@ -1499,9 +1499,9 @@ compose_windows(
  * Returns the image window mode samples for a surface: its GPU buffer's
  * import, or its copy of a wl_shm image; NULL when there is none yet.
  */
-static const struct zwl_import *
+static const struct kwl_import *
 surface_image(
-	const struct zwl_object *surface)
+	const struct kwl_object *surface)
 {
 	/* A wl_shm buffer is drawn from the surface's copy. */
 	if (surface->current == NULL)
@@ -1518,8 +1518,8 @@ surface_image(
  * a new one from the pool.
  */
 VkResult
-zwl_compose_set_get(
-	struct zwl_compose *compose,
+kwl_compose_set_get(
+	struct kwl_compose *compose,
 	VkDescriptorSet *result)
 {
 	VkDescriptorSetAllocateInfo set;
@@ -1548,12 +1548,12 @@ zwl_compose_set_get(
  * vkFreeDescriptorSets); the pool frees them all at the end.
  */
 void
-zwl_compose_set_put(
-	struct zwl_compose *compose,
+kwl_compose_set_put(
+	struct kwl_compose *compose,
 	VkDescriptorSet set)
 {
 	/* Nothing to keep, or no room (the pool frees it at the end). */
-	if (set == VK_NULL_HANDLE || compose->spare_count == ZWL_DESCRIPTOR_MAX)
+	if (set == VK_NULL_HANDLE || compose->spare_count == KWL_DESCRIPTOR_MAX)
 		return;
 
 	/* Kept for the next image. */
@@ -1567,16 +1567,16 @@ zwl_compose_set_put(
  * image's own.
  */
 VkResult
-zwl_compose_linear_set(
-	struct zwl_compose *compose,
-	struct zwl_import *import)
+kwl_compose_linear_set(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
 {
 	VkDescriptorImageInfo image_info;
 	VkWriteDescriptorSet write;
 	VkResult result;
 
 	/* The set (a spare one when there is one). */
-	result = zwl_compose_set_get(compose, &import->linear_set);
+	result = kwl_compose_set_get(compose, &import->linear_set);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -1601,11 +1601,11 @@ zwl_compose_linear_set(
 /*
  * Returns the image window mode samples for a surface, for the glass look.
  */
-const struct zwl_import *
-zwl_compose_surface_image(
-	const struct zwl_object *surface)
+const struct kwl_import *
+kwl_compose_surface_image(
+	const struct kwl_object *surface)
 {
-	const struct zwl_import *image;
+	const struct kwl_import *image;
 
 	/* The same image as the plain look's. */
 	image = surface_image(surface);
@@ -1618,11 +1618,11 @@ zwl_compose_surface_image(
  * or a sub-surface in the plain look, a popup (popup.c, subsurface.c).
  */
 void
-zwl_compose_surface_quad(
-	struct zwl_server *server,
+kwl_compose_surface_quad(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_object *surface,
-	const struct zwl_import *import,
+	const struct kwl_object *surface,
+	const struct kwl_import *import,
 	int32_t x,
 	int32_t y)
 {
@@ -1631,14 +1631,14 @@ zwl_compose_surface_quad(
 	float uv[4];
 
 	/* The surface's size (the image's own without one). */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	if (width == 0U || height == 0U) {
 		width = import->width;
 		height = import->height;
 	}
 
 	/* The part of its buffer shown. */
-	zwl_viewport_source(surface, uv);
+	kwl_viewport_source(surface, uv);
 
 	/* The quad. */
 	compose_quad_part(server, command, import, x, y, width, height, uv);
@@ -1647,9 +1647,9 @@ zwl_compose_surface_quad(
 /* Draws an image as a quad at a place on the output, its own size, all of it. */
 static void
 compose_quad(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_import *import,
+	const struct kwl_import *import,
 	int32_t x,
 	int32_t y)
 {
@@ -1662,9 +1662,9 @@ compose_quad(
 /* Draws a part of an image (uv: left, top, right, bottom as fractions) as a quad at a place and size on the output. */
 static void
 compose_quad_part(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_import *import,
+	const struct kwl_import *import,
 	int32_t x,
 	int32_t y,
 	uint32_t quad_width,
@@ -1688,7 +1688,7 @@ compose_quad_part(
 	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->pipelines[import->draw]);
 	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->layout, 0U, 1U, &import->set, 0U, NULL);
 	vkCmdPushConstants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(command, ZWL_QUAD_VERTICES, 1U, 0U, 0U);
+	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 }
 
 /*
@@ -1700,11 +1700,11 @@ compose_quad_part(
  */
 static int
 compose_region(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t image,
 	VkRect2D *region)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	int32_t box[4];
 	uint64_t frame;
 	uint64_t last;
@@ -1715,7 +1715,7 @@ compose_region(
 	/* This frame's number and its damage, kept for the images that miss it. */
 	compose = server->compose;
 	frame = server->frame + 1U;
-	slot = (unsigned)(frame % ZWL_DAMAGE_HISTORY);
+	slot = (unsigned)(frame % KWL_DAMAGE_HISTORY);
 	compose->history_whole[slot] = 1;
 	if (!server->dirty && server->damaged) {
 		compose->history_whole[slot] = 0;
@@ -1724,19 +1724,19 @@ compose_region(
 
 	/* The image is drawn in this frame. */
 	last = 0;
-	if (image < ZWL_SWAPCHAIN_MAX) {
+	if (image < KWL_SWAPCHAIN_MAX) {
 		last = compose->image_frames[image];
 		compose->image_frames[image] = frame;
 	}
 
 	/* An image never drawn, or not for longer than the history, is drawn whole. */
-	if (last == 0U || frame - last >= ZWL_DAMAGE_HISTORY)
+	if (last == 0U || frame - last >= KWL_DAMAGE_HISTORY)
 		return 0;
 
 	/* The damage of each frame it missed and of this one; a whole one makes it whole. */
 	memcpy(box, compose->history[slot], sizeof(box));
 	for (index = last + 1U; index <= frame; index++) {
-		slot = (unsigned)(index % ZWL_DAMAGE_HISTORY);
+		slot = (unsigned)(index % KWL_DAMAGE_HISTORY);
 		if (compose->history_whole[slot])
 			return 0;
 		if (compose->history[slot][0] < box[0])
@@ -1766,7 +1766,7 @@ compose_region(
 		return 0;
 
 	/* The pass that keeps the image's pixels, made the first time. */
-	result = zwl_compose_load_pass(compose);
+	result = kwl_compose_load_pass(compose);
 	if (result != VK_SUCCESS)
 		return 0;
 
@@ -1783,13 +1783,13 @@ compose_region(
 /* Records a frame: the background, then each window from the bottom. */
 static VkResult
 compose_record(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t image,
-	struct zwl_object **windows,
+	struct kwl_object **windows,
 	unsigned count,
 	const VkRect2D *region)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	VkCommandBufferBeginInfo begin;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear;
@@ -1813,13 +1813,13 @@ compose_record(
 		return result;
 
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
-	zwl_import_layouts_record(compose, compose->command);
+	kwl_import_layouts_record(compose, compose->command);
 
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));
-	clear.color.float32[0] = ZWL_BACKGROUND_RED;
-	clear.color.float32[1] = ZWL_BACKGROUND_GREEN;
-	clear.color.float32[2] = ZWL_BACKGROUND_BLUE;
+	clear.color.float32[0] = KWL_BACKGROUND_RED;
+	clear.color.float32[1] = KWL_BACKGROUND_GREEN;
+	clear.color.float32[2] = KWL_BACKGROUND_BLUE;
 	clear.color.float32[3] = 1.0f;
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1859,32 +1859,32 @@ compose_record(
 	 * cursor over them.
 	 */
 	if (server->glass) {
-		zwl_glass_draw(server, compose->command, windows, count);
+		kwl_glass_draw(server, compose->command, windows, count);
 	} else {
 		/* The desktop's icons under the windows (desktop.c). */
-		zwl_desktop_draw(server, compose->command);
+		kwl_desktop_draw(server, compose->command);
 
 		/* Each window. */
 		for (index = 0; index < count; index++) {
 			/* A window between its sub-surfaces below and above it (subsurface.c). */
-			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
-			zwl_compose_surface_quad(server, compose->command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
-			zwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
+			kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
+			kwl_compose_surface_quad(server, compose->command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
+			kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
 		}
 
 		/* The popups over the windows. */
-		zwl_popup_draw(server, compose->command);
+		kwl_popup_draw(server, compose->command);
 	}
 
 	/* The input method's candidate window over the windows and their popups, in both looks (input-method.c). */
-	zwl_ime_popup_draw(server, compose->command);
+	kwl_ime_popup_draw(server, compose->command);
 
 	/* The cursor over everything. */
 	compose_cursor(server, compose->command);
 	vkCmdEndRenderPass(compose->command);
 
 	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
-	zwl_shot_record(server, compose->command, compose->output.images[image]);
+	kwl_shot_record(server, compose->command, compose->output.images[image]);
 
 	/* The recording is complete. */
 	return vkEndCommandBuffer(compose->command);
@@ -1897,12 +1897,12 @@ compose_record(
  */
 static void
 compose_cursor(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	const struct zwl_import *image;
-	struct zwl_object *surface;
-	struct zwl_import alpha;
+	const struct kwl_import *image;
+	struct kwl_object *surface;
+	struct kwl_import alpha;
 	int32_t hotspot_x;
 	int32_t hotspot_y;
 	int shown;
@@ -1915,10 +1915,10 @@ compose_cursor(
 			image = surface_image(surface);
 		if (image != NULL) {
 			alpha = *image;
-			alpha.draw = ZWL_DRAW_ALPHA;
+			alpha.draw = KWL_DRAW_ALPHA;
 			compose_quad(server, command, &alpha, server->pointer_x, server->pointer_y);
 		} else if (server->glass) {
-			zwl_glass_draw_drag_badge(server, command);
+			kwl_glass_draw_drag_badge(server, command);
 		}
 	}
 
@@ -1927,10 +1927,10 @@ compose_cursor(
 		return;
 
 	/* A client's cursor only over its own window (BUG-118): elsewhere the frame's arrow or zdesktop's. */
-	shown = zwl_cursor_client_shown(server);
+	shown = kwl_cursor_client_shown(server);
 	if (!shown) {
 		if (server->frame_edges != 0U) {
-			image = zwl_cursor_image(server, &hotspot_x, &hotspot_y);
+			image = kwl_cursor_image(server, &hotspot_x, &hotspot_y);
 			if (image != NULL) {
 				compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
 				return;
@@ -1949,7 +1949,7 @@ compose_cursor(
 
 	/* A window frame's resize arrow, over the client's own cursor (shell.c, cursor.c). */
 	if (server->frame_edges != 0U) {
-		image = zwl_cursor_image(server, &hotspot_x, &hotspot_y);
+		image = kwl_cursor_image(server, &hotspot_x, &hotspot_y);
 		if (image != NULL) {
 			compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
 			return;
@@ -1963,13 +1963,13 @@ compose_cursor(
 		if (image == NULL)
 			return;
 		alpha = *image;
-		alpha.draw = ZWL_DRAW_ALPHA;
+		alpha.draw = KWL_DRAW_ALPHA;
 		compose_quad(server, command, &alpha, server->pointer_x - server->cursor_hotspot_x, server->pointer_y - server->cursor_hotspot_y);
 		return;
 	}
 
 	/* A shape the client asked for, its hotspot at the pointer (cursor.c, ws035-p080). */
-	image = zwl_cursor_image(server, &hotspot_x, &hotspot_y);
+	image = kwl_cursor_image(server, &hotspot_x, &hotspot_y);
 	if (image != NULL) {
 		compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
 		return;
@@ -1983,10 +1983,10 @@ compose_cursor(
 /* Submits the frame, presents it, and exports its fence as the fd the event loop polls. */
 static VkResult
 compose_submit(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t image)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	VkPipelineStageFlags stage;
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
@@ -2050,19 +2050,19 @@ compose_submit(
  */
 static void
 compose_hold(
-	struct zwl_server *server,
-	struct zwl_object **windows,
+	struct kwl_server *server,
+	struct kwl_object **windows,
 	unsigned count)
 {
-	struct zwl_compose *compose;
-	struct zwl_object *surface;
-	struct zwl_object **tail;
+	struct kwl_compose *compose;
+	struct kwl_object *surface;
+	struct kwl_object **tail;
 	unsigned index;
 
 	/* Each window's current buffer is held by the frame. */
 	compose = server->compose;
 	for (index = 0; index < count; index++) {
-		zwl_buffer_get(windows[index]->current);
+		kwl_buffer_get(windows[index]->current);
 		compose->held[compose->held_count++] = windows[index]->current;
 		windows[index]->fresh = 0;
 
@@ -2083,7 +2083,7 @@ compose_hold(
 	/* A drag's icon surface is held and told too. */
 	surface = server->dnd_icon;
 	if (server->dnd_active && surface != NULL && !surface->dead && surface->current != NULL) {
-		zwl_buffer_get(surface->current);
+		kwl_buffer_get(surface->current);
 		compose->held[compose->held_count++] = surface->current;
 
 		/* Its frame callbacks after the windows'. */
@@ -2095,9 +2095,9 @@ compose_hold(
 	}
 
 	/* The desktop surface is held and told too (desktop.c). */
-	surface = zwl_desktop_surface(server);
+	surface = kwl_desktop_surface(server);
 	if (surface != NULL && surface->current != NULL) {
-		zwl_buffer_get(surface->current);
+		kwl_buffer_get(surface->current);
 		compose->held[compose->held_count++] = surface->current;
 
 		/* Its frame callbacks after the windows'. */
@@ -2111,7 +2111,7 @@ compose_hold(
 	/* A client's cursor surface is held and told too. */
 	surface = server->cursor_surface;
 	if (surface != NULL && !surface->dead && surface->current != NULL) {
-		zwl_buffer_get(surface->current);
+		kwl_buffer_get(surface->current);
 		compose->held[compose->held_count++] = surface->current;
 
 		/* Its frame callbacks after the windows'. */

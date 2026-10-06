@@ -238,46 +238,46 @@ static const char home_characters[HOME_KEYS] = {
 	'z', 'x', 'c', 'v', 'b', 'n', 'm', 0, '.', '/', 0, 0, 0, ' '
 };
 
-static void home_read_apps(struct zwl_server *server);
+static void home_read_apps(struct kwl_server *server);
 static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
-static void home_draw_letter(struct zwl_server *server, VkCommandBuffer command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
-static void home_draw_tile(struct zwl_server *server, VkCommandBuffer command, float left, float top, float size, const float *color);
+static void home_draw_letter(struct kwl_server *server, VkCommandBuffer command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
+static void home_draw_tile(struct kwl_server *server, VkCommandBuffer command, float left, float top, float size, const float *color);
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
-static void home_layout(struct zwl_server *server);
+static void home_layout(struct kwl_server *server);
 static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
-static int home_icon_at(struct zwl_server *server, int32_t x, int32_t y);
-static void home_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned slot, float opacity, float rise);
-static float home_content(struct zwl_server *server, unsigned order, float progress, float *rise);
-static void home_prepare(struct zwl_server *server);
-static void home_draw_floors(struct zwl_server *server, VkCommandBuffer command, float opacity);
-static void home_draw_floor(struct zwl_server *server, VkCommandBuffer command, float left, float right, float y, float opacity);
-static void home_draw_spotlight(struct zwl_server *server, VkCommandBuffer command, float middle, float floor, float strength);
-static void home_draw_search(struct zwl_server *server, VkCommandBuffer command, float opacity);
-static void home_open(struct zwl_server *server, float from, const char *via);
-static void home_close(struct zwl_server *server, float from, const char *via);
-static void home_settle(struct zwl_server *server, float from, float to);
-static int home_launch(struct zwl_server *server, unsigned app);
-static struct zwl_object *home_running_window(struct zwl_server *server, unsigned app);
-static void home_search_changed(struct zwl_server *server);
+static int home_icon_at(struct kwl_server *server, int32_t x, int32_t y);
+static void home_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned slot, float opacity, float rise);
+static float home_content(struct kwl_server *server, unsigned order, float progress, float *rise);
+static void home_prepare(struct kwl_server *server);
+static void home_draw_floors(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_draw_floor(struct kwl_server *server, VkCommandBuffer command, float left, float right, float y, float opacity);
+static void home_draw_spotlight(struct kwl_server *server, VkCommandBuffer command, float middle, float floor, float strength);
+static void home_draw_search(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_open(struct kwl_server *server, float from, const char *via);
+static void home_close(struct kwl_server *server, float from, const char *via);
+static void home_settle(struct kwl_server *server, float from, float to);
+static int home_launch(struct kwl_server *server, unsigned app);
+static struct kwl_object *home_running_window(struct kwl_server *server, unsigned app);
+static void home_search_changed(struct kwl_server *server);
 static void home_log_icons(void);
 static float home_ease(float t);
-static float home_page_position(struct zwl_server *server);
-static void home_page_turn(struct zwl_server *server, int target, const char *via);
-static void home_page_release(struct zwl_server *server, float progress);
-static void home_draw_dots(struct zwl_server *server, VkCommandBuffer command, float opacity);
-static void home_select(struct zwl_server *server, int selected);
-static void home_bottom_release(struct zwl_server *server);
+static float home_page_position(struct kwl_server *server);
+static void home_page_turn(struct kwl_server *server, int target, const char *via);
+static void home_page_release(struct kwl_server *server, float progress);
+static void home_draw_dots(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_select(struct kwl_server *server, int selected);
+static void home_bottom_release(struct kwl_server *server);
 
 /*
  * Returns how far Home is open now: 0 closed, 1 open, between while the
  * drag or the animation moves it.
  */
 float
-zwl_home_progress(
-	struct zwl_server *server)
+kwl_home_progress(
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	uint64_t length;
@@ -295,7 +295,7 @@ zwl_home_progress(
 	length = HOME_CLOSE_MS;
 	if (server->home_to > server->home_from)
 		length = HOME_OPEN_MS;
-	elapsed = zwl_milliseconds() - server->home_start_ms;
+	elapsed = kwl_milliseconds() - server->home_start_ms;
 	t = (float)elapsed / (float)length;
 	if (t > 1.0f)
 		t = 1.0f;
@@ -310,8 +310,8 @@ zwl_home_progress(
  * (more when the pointer is near) of its corner in view.
  */
 void
-zwl_home_layer(
-	struct zwl_server *server,
+kwl_home_layer(
+	struct kwl_server *server,
 	float progress,
 	float *x,
 	float *y,
@@ -339,8 +339,8 @@ zwl_home_layer(
  * icons, and the search text while there is one.
  */
 void
-zwl_home_draw(
-	struct zwl_server *server,
+kwl_home_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float progress)
 {
@@ -387,7 +387,7 @@ zwl_home_draw(
 	/* The stage's first frame since Home was asked to open (BUG-225's wait, measured). */
 	if (!server->home_cover_logged && server->home_to > 0.0f) {
 		server->home_cover_logged = 1U;
-		printf("ZWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(zwl_milliseconds() - server->home_asked_ms));
+		printf("ZWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
 	/* The rows' floors, under the icons, coming in with the first of them. */
@@ -408,7 +408,7 @@ zwl_home_draw(
 	content = home_content(server, 0U, progress, &rise);
 	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
 		server->home_content_logged = 1U;
-		printf("ZWL HOME layer=content after_ms=%llu\n", (unsigned long long)(zwl_milliseconds() - server->home_asked_ms));
+		printf("ZWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
 	/* The search text, while something has been typed; the pages' dots, when there are pages. */
@@ -429,8 +429,8 @@ zwl_home_draw(
  * the bottom right follows the pointer.  Returns 1 when the button is Home's.
  */
 int
-zwl_home_button(
-	struct zwl_server *server,
+kwl_home_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -442,7 +442,7 @@ zwl_home_button(
 	/* Only the left button acts. */
 	x = server->pointer_x;
 	y = server->pointer_y;
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 
 	/* The end of a press that may have been the gesture. */
 	if (state == 0 && server->home_press) {
@@ -489,11 +489,11 @@ zwl_home_button(
 		return progress > 0.0f;
 
 	/* The other buttons do nothing while Home shows, and are the desktop's otherwise. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return progress > 0.0f;
 
 	/* A press on the launcher or in the top-left corner: a click or the start of the gesture. */
-	if ((x < 40 && y < ZWL_GLASS_BAR) || (x < HOME_CORNER && y < HOME_CORNER)) {
+	if ((x < 40 && y < KWL_GLASS_BAR) || (x < HOME_CORNER && y < HOME_CORNER)) {
 		server->home_press = 1;
 		server->home_dragging = 0;
 		server->home_start_x = x;
@@ -535,8 +535,8 @@ zwl_home_button(
  * Follows the corner gesture.  Returns 1 when the motion is Home's.
  */
 int
-zwl_home_motion(
-	struct zwl_server *server)
+kwl_home_motion(
+	struct kwl_server *server)
 {
 	int32_t dx;
 	int32_t dy;
@@ -593,7 +593,7 @@ zwl_home_motion(
 
 	/* Without a press Home may start from, the motion is Home's only while it shows (for the hover). */
 	if (!server->home_press) {
-		progress = zwl_home_progress(server);
+		progress = kwl_home_progress(server);
 		if (progress > 0.0f) {
 			server->dirty = 1;
 			return 1;
@@ -634,8 +634,8 @@ zwl_home_motion(
  * (every key while Home shows), 0 otherwise.
  */
 int
-zwl_home_key(
-	struct zwl_server *server,
+kwl_home_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -644,7 +644,7 @@ zwl_home_key(
 	int closed;
 
 	/* Home takes the keys only while it shows or is opening. */
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 	if (progress <= 0.0f && server->home_to <= 0.0f)
 		return 0;
 
@@ -745,8 +745,8 @@ zwl_home_key(
  * applications Home started that have ended.
  */
 void
-zwl_home_tick(
-	struct zwl_server *server)
+kwl_home_tick(
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	uint64_t length;
@@ -773,7 +773,7 @@ zwl_home_tick(
 	}
 
 	/* A page turn draws every frame until it is done; then where the icons are is logged. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (server->home_page_moving) {
 		server->dirty = 1;
 		if (now - server->home_page_start_ms >= HOME_PAGE_MS) {
@@ -797,7 +797,7 @@ zwl_home_tick(
 	length = HOME_CLOSE_MS;
 	if (server->home_to > server->home_from)
 		length = HOME_OPEN_MS;
-	elapsed = zwl_milliseconds() - server->home_start_ms;
+	elapsed = kwl_milliseconds() - server->home_start_ms;
 	if (elapsed < length)
 		return;
 
@@ -806,10 +806,10 @@ zwl_home_tick(
 	server->home = server->home_to;
 	if (server->home > 0.0f) {
 		home_layout(server);
-		printf("ZWL HOME opened apps=%u pages=%u page=%u at_ms=%llu\n", home_shown_count, home_pages, server->home_page + 1U, (unsigned long long)zwl_milliseconds());
+		printf("ZWL HOME opened apps=%u pages=%u page=%u at_ms=%llu\n", home_shown_count, home_pages, server->home_page + 1U, (unsigned long long)kwl_milliseconds());
 		home_log_icons();
 	} else {
-		printf("ZWL HOME closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+		printf("ZWL HOME closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	}
 }
 
@@ -818,8 +818,8 @@ zwl_home_tick(
  * while Home shows.  Returns 1 when the scrolling is Home's.
  */
 int
-zwl_home_axis(
-	struct zwl_server *server,
+kwl_home_axis(
+	struct kwl_server *server,
 	int32_t vertical,
 	int32_t horizontal)
 {
@@ -827,7 +827,7 @@ zwl_home_axis(
 	int32_t steps;
 
 	/* Home takes the wheel only while it shows. */
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 	if (progress <= 0.0f && server->home_to <= 0.0f)
 		return 0;
 
@@ -848,8 +848,8 @@ zwl_home_axis(
  * grow), and 0 when no launch waits.
  */
 int
-zwl_home_launched(
-	struct zwl_server *server,
+kwl_home_launched(
+	struct kwl_server *server,
 	int32_t *rect)
 {
 	uint64_t waited;
@@ -858,17 +858,17 @@ zwl_home_launched(
 	if (!server->home_launching)
 		return 0;
 	server->home_launching = 0;
-	waited = zwl_milliseconds() - server->home_launch_ms;
+	waited = kwl_milliseconds() - server->home_launch_ms;
 
 	/* A window that came too late to grow out of the icon is still the launch's. */
 	if (waited > HOME_LAUNCH_WAIT_MS) {
-		printf("ZWL HOME launched-late waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)zwl_milliseconds());
+		printf("ZWL HOME launched-late waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)kwl_milliseconds());
 		memcpy(rect, server->home_launch_rect, sizeof(server->home_launch_rect));
 		return 2;
 	}
 
 	/* The time from the icon's click to the window's first image (ws099-p016 measures it). */
-	printf("ZWL HOME launched waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)zwl_milliseconds());
+	printf("ZWL HOME launched waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: the icon's place. */
 	memcpy(rect, server->home_launch_rect, sizeof(server->home_launch_rect));
@@ -881,11 +881,11 @@ zwl_home_launched(
  * environment.  Returns the child's process ID, or -1 with errno set.
  */
 pid_t
-zwl_spawn(
-	struct zwl_server *server,
+kwl_spawn(
+	struct kwl_server *server,
 	const char *command)
 {
-	char token[ZWL_ACTIVATION_TOKEN_SIZE];
+	char token[KWL_ACTIVATION_TOKEN_SIZE];
 	char directory[108];
 	const char *name;
 	char *slash;
@@ -899,7 +899,7 @@ zwl_spawn(
 	 * running copy of itself it hands its request to.  A program starts
 	 * without one when none can be made.
 	 */
-	error = zwl_activation_issue(server, command, "spawn", token, sizeof(token));
+	error = kwl_activation_issue(server, command, "spawn", token, sizeof(token));
 	if (error != 0)
 		token[0] = '\0';
 
@@ -953,16 +953,16 @@ zwl_spawn(
  * key pressed alone, ws142-p002, seat.c).
  */
 void
-zwl_home_toggle(
-	struct zwl_server *server,
+kwl_home_toggle(
+	struct kwl_server *server,
 	const char *via)
 {
 	float progress;
 
 	/* Showing or opening: it closes, the way its launcher closes it. */
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 	if (progress > 0.0f && server->home_to > 0.0f) {
-		zwl_home_dismiss(server, via);
+		kwl_home_dismiss(server, via);
 		return;
 	}
 
@@ -975,14 +975,14 @@ zwl_home_toggle(
  * (for the top-right corner's swipe, which brings Notes over Home).
  */
 void
-zwl_home_dismiss(
-	struct zwl_server *server,
+kwl_home_dismiss(
+	struct kwl_server *server,
 	const char *via)
 {
 	float progress;
 
 	/* Closed, or already closing: nothing to do. */
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 	if (progress <= 0.0f && server->home_to <= 0.0f)
 		return;
 	if (server->home_moving && server->home_to <= 0.0f)
@@ -1004,7 +1004,7 @@ zwl_home_dismiss(
 /* Reads the applications' list once: the file, or the built-in list when there is none; a login session adds Log Out. */
 static void
 home_read_apps(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	char line[320];
 	FILE *file;
@@ -1095,7 +1095,7 @@ home_add_app(
 	app->color[3] = 1.0f;
 
 	/* The picture on its tile; a name icons.c does not know leaves the first letter. */
-	app->picture = zwl_icon_named(picture);
+	app->picture = kwl_icon_named(picture);
 	home_app_count++;
 }
 
@@ -1202,7 +1202,7 @@ home_hex(
  */
 static void
 home_layout(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned index;
 	unsigned columns;
@@ -1250,8 +1250,8 @@ home_layout(
 	if (home_pages > 1U)
 		rows = HOME_ROWS;
 	left = ((int32_t)server->width - (int32_t)columns * HOME_CELL_WIDTH) / 2;
-	space = (int32_t)server->height - ZWL_GLASS_BAR;
-	top = ZWL_GLASS_BAR + (space - (int32_t)rows * HOME_CELL_HEIGHT) * 2 / 5;
+	space = (int32_t)server->height - KWL_GLASS_BAR;
+	top = KWL_GLASS_BAR + (space - (int32_t)rows * HOME_CELL_HEIGHT) * 2 / 5;
 
 	/* Where the pages are: the page shown, or between two while dragged or turning. */
 	position = 0.0f;
@@ -1335,7 +1335,7 @@ home_contains(
 /* Returns the application whose icon (or label) is under a point, or -1. */
 static int
 home_icon_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
@@ -1358,14 +1358,14 @@ home_icon_at(
 /* Draws one icon: its tile with its picture (or the name's first letter), the selection's ring, and the name under it. */
 static void
 home_draw_icon(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	unsigned slot,
 	float opacity,
 	float rise)
 {
 	const struct home_app *app;
-	struct zwl_object *running;
+	struct kwl_object *running;
 	const char *label;
 	struct glass_shape shape;
 	float color[4];
@@ -1461,7 +1461,7 @@ home_draw_icon(
  */
 static float
 home_content(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned order,
 	float progress,
 	float *rise)
@@ -1476,7 +1476,7 @@ home_content(
 		return progress;
 
 	/* Not begun yet. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	start = server->home_content_ms + (uint64_t)order * HOME_CONTENT_STEP_MS;
 	if (now <= start) {
 		*rise = HOME_CONTENT_RISE;
@@ -1504,7 +1504,7 @@ home_content(
  */
 static void
 home_prepare(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const char *label;
 	unsigned app;
@@ -1530,7 +1530,7 @@ home_prepare(
  */
 static void
 home_draw_floors(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float opacity)
 {
@@ -1583,7 +1583,7 @@ home_draw_floors(
  */
 static void
 home_draw_floor(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float left,
 	float right,
@@ -1618,7 +1618,7 @@ home_draw_floor(
 /* Draws a tile's spotlight: a soft elliptic pool of white light on the floor behind it. */
 static void
 home_draw_spotlight(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float middle,
 	float floor,
@@ -1652,7 +1652,7 @@ home_draw_spotlight(
  */
 static void
 home_draw_letter(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct home_app *app,
 	int32_t x,
@@ -1714,7 +1714,7 @@ home_draw_letter(
  */
 static void
 home_draw_tile(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float left,
 	float top,
@@ -1774,7 +1774,7 @@ home_draw_tile(
 /* Draws the search text at the top, on a faint pill (no search box). */
 static void
 home_draw_search(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float opacity)
 {
@@ -1788,7 +1788,7 @@ home_draw_search(
 	/* The text's width, and the pill a little wider, centred under the system bar. */
 	width = glass_text_width(server, SIZE_SEARCH, server->home_query);
 	x = ((int32_t)server->width - width) / 2;
-	y = ZWL_GLASS_BAR + 44;
+	y = KWL_GLASS_BAR + 44;
 	memcpy(color, pill, sizeof(color));
 	color[3] = pill[3] * opacity;
 	glass_draw_solid(server, command, (float)(x - 22), (float)y, (float)(width + 44), 40.0f, 20.0f, color);
@@ -1802,7 +1802,7 @@ home_draw_search(
 /* Opens Home, from where it is now. */
 static void
 home_open(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float from,
 	const char *via)
 {
@@ -1819,43 +1819,43 @@ home_open(
 	 * partly open (a drag let go) shows it whole at once.  The first frames
 	 * of both are logged (the time from the request).
 	 */
-	server->home_asked_ms = zwl_milliseconds();
+	server->home_asked_ms = kwl_milliseconds();
 	server->home_content_ms = server->home_asked_ms;
 	if (from > 0.0f)
 		server->home_content_ms = 0U;
 	server->home_cover_logged = 0U;
 	server->home_content_logged = 0U;
-	printf("ZWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
-	zwl_transition_request(server, "home-open");
+	printf("ZWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+	kwl_transition_request(server, "home-open");
 	home_settle(server, from, 1.0f);
 }
 
 /* Closes Home, from where it is now; the search is forgotten. */
 static void
 home_close(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float from,
 	const char *via)
 {
 	/* The search goes with it. */
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
-	printf("ZWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
-	zwl_transition_request(server, "home-close");
+	printf("ZWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+	kwl_transition_request(server, "home-close");
 	home_settle(server, from, 0.0f);
 }
 
 /* Starts the animation from one position to another. */
 static void
 home_settle(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float from,
 	float to)
 {
-	/* The animation's ends and its start; the frames follow in zwl_home_tick. */
+	/* The animation's ends and its start; the frames follow in kwl_home_tick. */
 	server->home_from = from;
 	server->home_to = to;
-	server->home_start_ms = zwl_milliseconds();
+	server->home_start_ms = kwl_milliseconds();
 	server->home_moving = 1;
 	server->dirty = 1;
 }
@@ -1868,10 +1868,10 @@ home_settle(
  */
 static int
 home_launch(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned app)
 {
-	struct zwl_object *running;
+	struct kwl_object *running;
 	pid_t child;
 	unsigned slot;
 	int differs;
@@ -1879,7 +1879,7 @@ home_launch(
 	/* Lock Screen locks the session (App Home closes behind it). */
 	differs = strcmp(home_apps[app].command, HOME_LOCK);
 	if (differs == 0) {
-		(void)zwl_lock(server, "home");
+		(void)kwl_lock(server, "home");
 		return 0;
 	}
 
@@ -1890,7 +1890,7 @@ home_launch(
 	 */
 	differs = strcmp(home_apps[app].command, HOME_POWER);
 	if (differs == 0) {
-		zwl_power_dialog_open(server, "home");
+		kwl_power_dialog_open(server, "home");
 		return 0;
 	}
 
@@ -1903,12 +1903,12 @@ home_launch(
 	running = home_running_window(server, app);
 	if (running != NULL) {
 		printf("ZWL HOME switch name=%s surface=%u client=%llu\n", home_apps[app].name, running->id, (unsigned long long)running->client->number);
-		zwl_glass_activate(server, running, "home");
+		kwl_glass_activate(server, running, "home");
 		return 1;
 	}
 
 	/* The application, in its own session with the compositor's socket. */
-	child = zwl_spawn(server, home_apps[app].command);
+	child = kwl_spawn(server, home_apps[app].command);
 	if (child < 0) {
 		printf("ZWL HOME launch name=%s error=%d\n", home_apps[app].name, errno);
 		return 0;
@@ -1921,7 +1921,7 @@ home_launch(
 		if (home_shown[slot] != app)
 			continue;
 		server->home_launching = 1;
-		server->home_launch_ms = zwl_milliseconds();
+		server->home_launch_ms = kwl_milliseconds();
 		server->home_launch_rect[0] = home_icon_x[slot];
 		server->home_launch_rect[1] = home_icon_y[slot];
 		server->home_launch_rect[2] = HOME_ICON;
@@ -1940,14 +1940,14 @@ home_launch(
  * a picture the name of its program (the command's first word's last part,
  * not a shell).  Returns NULL when it does not run.
  */
-static struct zwl_object *
+static struct kwl_object *
 home_running_window(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned app)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *found;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *found;
 	char program[64];
 	const char *start;
 	size_t length;
@@ -1969,7 +1969,7 @@ home_running_window(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* A mapped window with an application ID, not a dialog or a sheet. */
-			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
 				continue;
 			if (surface->role == NULL || surface->cursor_role || surface->parent_window != NULL)
 				continue;
@@ -1978,7 +1978,7 @@ home_running_window(
 
 			/* The application's: by its picture, or by its program's name (a shell starts many). */
 			if (home_apps[app].picture >= 0) {
-				picture = zwl_icon_for_app_id(surface->app_id);
+				picture = kwl_icon_for_app_id(surface->app_id);
 				if (picture != home_apps[app].picture)
 					continue;
 			} else {
@@ -2003,7 +2003,7 @@ home_running_window(
 /* Lays the icons out again for a changed search, selects the first result and says what was found. */
 static void
 home_search_changed(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned slot;
 
@@ -2046,7 +2046,7 @@ home_ease(
 /* Returns where the pages are, as a page number: the page shown, dragged by the pointer, or turning. */
 static float
 home_page_position(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	float t;
@@ -2060,7 +2060,7 @@ home_page_position(
 		return (float)server->home_page;
 
 	/* Turning: eased from where the pages were to the page. */
-	elapsed = zwl_milliseconds() - server->home_page_start_ms;
+	elapsed = kwl_milliseconds() - server->home_page_start_ms;
 	t = (float)elapsed / (float)HOME_PAGE_MS;
 	if (t > 1.0f)
 		t = 1.0f;
@@ -2070,7 +2070,7 @@ home_page_position(
 /* Turns to a page (clamped to those there are), from where the pages are now. */
 static void
 home_page_turn(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int target,
 	const char *via)
 {
@@ -2088,7 +2088,7 @@ home_page_turn(
 	server->home_page = (unsigned)target;
 	server->home_page_from = from;
 	server->home_page_to = (float)target;
-	server->home_page_start_ms = zwl_milliseconds();
+	server->home_page_start_ms = kwl_milliseconds();
 	server->home_page_moving = 1;
 	server->home_page_offset = 0;
 	server->dirty = 1;
@@ -2103,7 +2103,7 @@ home_page_turn(
  */
 static void
 home_page_release(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float progress)
 {
 	int32_t dx;
@@ -2151,7 +2151,7 @@ home_page_release(
 /* Ends a swipe up from the bottom edge: far enough up, Home closes to the desktop; otherwise it opens again. */
 static void
 home_bottom_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int32_t up;
 
@@ -2177,7 +2177,7 @@ home_bottom_release(
 /* Draws the pages' dots at the bottom centre, the page shown in zedBSD's blue. */
 static void
 home_draw_dots(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	float opacity)
 {
@@ -2203,7 +2203,7 @@ home_draw_dots(
 /* Selects an application shown (clamped), and turns to its page when it is on another. */
 static void
 home_select(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int selected)
 {
 	unsigned page;

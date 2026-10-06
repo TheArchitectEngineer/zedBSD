@@ -17,7 +17,7 @@
 #include <errno.h>
 #include <stddef.h>
 
-static const char *role_refusal(const struct zwl_role_request *request);
+static const char *role_refusal(const struct kwl_role_request *request);
 
 /*
  * Decides the role and the deadline from what the options asked for.
@@ -25,9 +25,9 @@ static const char *role_refusal(const struct zwl_role_request *request);
  * contradict each other.
  */
 int
-zwl_role_resolve(
-	const struct zwl_role_request *request,
-	struct zwl_role *role)
+kwl_role_resolve(
+	const struct kwl_role_request *request,
+	struct kwl_role *role)
 {
 	const char *refusal;
 
@@ -41,8 +41,8 @@ zwl_role_resolve(
 
 	/* A test run ends at its deadline: the one given, else the default. */
 	if (request->testing) {
-		role->role = ZWL_ROLE_TESTING;
-		role->timeout_ms = ZWL_ROLE_TESTING_TIMEOUT_MS;
+		role->role = KWL_ROLE_TESTING;
+		role->timeout_ms = KWL_ROLE_TESTING_TIMEOUT_MS;
 
 		/* The deadline --timeout gave replaces the default. */
 		if (request->timeout)
@@ -54,11 +54,11 @@ zwl_role_resolve(
 
 	/* The login screen and a user's desktop have no deadline. */
 	role->timeout_ms = UINT64_MAX;
-	role->role = ZWL_ROLE_NORMAL;
+	role->role = KWL_ROLE_NORMAL;
 
 	/* --greeter asks for the login screen; anything else is a desktop. */
 	if (request->greeter)
-		role->role = ZWL_ROLE_GREETER;
+		role->role = KWL_ROLE_GREETER;
 
 	/* Succeeded: the role is decided. */
 	return 0;
@@ -68,15 +68,15 @@ zwl_role_resolve(
  * Names a role as the compositor's READY line prints it.
  */
 const char *
-zwl_role_name(
+kwl_role_name(
 	unsigned role)
 {
 	/* A test run. */
-	if (role == ZWL_ROLE_TESTING)
+	if (role == KWL_ROLE_TESTING)
 		return "testing";
 
 	/* The login screen. */
-	if (role == ZWL_ROLE_GREETER)
+	if (role == KWL_ROLE_GREETER)
 		return "greeter";
 
 	/* A user's desktop. */
@@ -88,7 +88,7 @@ zwl_role_name(
  */
 static const char *
 role_refusal(
-	const struct zwl_role_request *request)
+	const struct kwl_role_request *request)
 {
 	/* A test run is not a login session, which sessiond starts. */
 	if (request->testing && request->session)

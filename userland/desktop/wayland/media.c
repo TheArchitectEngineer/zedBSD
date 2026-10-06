@@ -68,8 +68,8 @@ static struct media_view media_view;
  * icon and starts its blinks.  Returns the changed bits.
  */
 unsigned
-zwl_media_tick(
-	struct zwl_server *server)
+kwl_media_tick(
+	struct kwl_server *server)
 {
 	struct kl_backend_volume list[KL_BACKEND_VOLUMES_MAX];
 	uint64_t now;
@@ -96,7 +96,7 @@ zwl_media_tick(
 	/* The blinks ask for frames until they are over. */
 	if (media_view.blink_ms != 0U) {
 		server->dirty = 1;
-		now = zwl_milliseconds();
+		now = kwl_milliseconds();
 		if (now - media_view.blink_ms >= MEDIA_BLINKS * MEDIA_BLINK_MS)
 			media_view.blink_ms = 0U;
 	}
@@ -114,7 +114,7 @@ zwl_media_tick(
 		shown = 1U;
 		known = media_fresh(list[index].id);
 		if (!known) {
-			media_view.blink_ms = zwl_milliseconds();
+			media_view.blink_ms = kwl_milliseconds();
 			printf("ZWL MEDIA new id=%s label=%s\n", list[index].id, list[index].label);
 		}
 	}
@@ -134,7 +134,7 @@ zwl_media_tick(
  * Copies the volumes of the last report.
  */
 size_t
-zwl_media_volumes(
+kwl_media_volumes(
 	struct kl_backend_volume *list,
 	size_t capacity)
 {
@@ -155,7 +155,7 @@ zwl_media_volumes(
  * backend's request number, or an errno value.
  */
 int
-zwl_media_ask(
+kwl_media_ask(
 	int mount,
 	const char *id,
 	uint32_t *request)
@@ -185,7 +185,7 @@ zwl_media_ask(
  * Takes the oldest answer of the backend; 1 with one, 0 without.
  */
 int
-zwl_media_take_result(
+kwl_media_take_result(
 	uint32_t *request,
 	int *error,
 	char *user,
@@ -206,7 +206,7 @@ zwl_media_take_result(
  * The bar's room for the icon: none while no fresh volume is there.
  */
 int32_t
-zwl_media_width(
+kwl_media_width(
 	void)
 {
 	/* The icon only while it shows. */
@@ -223,8 +223,8 @@ zwl_media_width(
  * did not show), fading out and back in for each of its three blinks.
  */
 void
-zwl_media_draw_icon(
-	struct zwl_server *server,
+kwl_media_draw_icon(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	const float *ink)
@@ -237,7 +237,7 @@ zwl_media_draw_icon(
 	media_view.icon_x = x - 5;
 	media_view.icon_y = 3;
 	media_view.icon_width = MEDIA_ICON_ROOM - 4;
-	media_view.icon_height = ZWL_GLASS_BAR - 6;
+	media_view.icon_height = KWL_GLASS_BAR - 6;
 	if (!media_view.shown) {
 		media_view.icon_logged = 0U;
 		return;
@@ -252,7 +252,7 @@ zwl_media_draw_icon(
 	/* The ink, fading in each blink's first half and coming back in its second. */
 	memcpy(color, ink, sizeof(color));
 	if (media_view.blink_ms != 0U) {
-		elapsed = zwl_milliseconds() - media_view.blink_ms;
+		elapsed = kwl_milliseconds() - media_view.blink_ms;
 		phase = elapsed % MEDIA_BLINK_MS;
 		if (phase < MEDIA_BLINK_MS / 2U) {
 			color[3] *= 1.0f - 0.85f * (float)phase / (float)(MEDIA_BLINK_MS / 2U);
@@ -262,7 +262,7 @@ zwl_media_draw_icon(
 	}
 
 	/* The trident, at the size of the bar's other icons (the volume's). */
-	glass_draw_icon(server, command, GLASS_ICON_USB, x, ZWL_GLASS_BAR_MIDDLE - 10, MEDIA_ICON_PIXELS, color);
+	glass_draw_icon(server, command, GLASS_ICON_USB, x, KWL_GLASS_BAR_MIDDLE - 10, MEDIA_ICON_PIXELS, color);
 }
 
 /*
@@ -270,8 +270,8 @@ zwl_media_draw_icon(
  * when the press was the icon's, 0 otherwise.
  */
 int
-zwl_media_button(
-	struct zwl_server *server,
+kwl_media_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -279,7 +279,7 @@ zwl_media_button(
 	int inside;
 
 	/* Only a left press, on the icon while it shows. */
-	if (!media_view.shown || state == 0U || button != ZWL_BUTTON_LEFT)
+	if (!media_view.shown || state == 0U || button != KWL_BUTTON_LEFT)
 		return 0;
 	inside = media_in_icon(server->pointer_x, server->pointer_y);
 	if (!inside)
@@ -287,7 +287,7 @@ zwl_media_button(
 
 	/* Files on its devices; the blinks end. */
 	media_view.blink_ms = 0U;
-	child = zwl_spawn(server, MEDIA_FILES);
+	child = kwl_spawn(server, MEDIA_FILES);
 	printf("ZWL MEDIA files pid=%d\n", (int)child);
 
 	/* Succeeded: the press was the icon's. */

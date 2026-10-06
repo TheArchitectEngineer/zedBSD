@@ -25,7 +25,7 @@
 #include <string.h>
 
 static void check(int condition, const char *what);
-static const char *value_of(const struct zwl_network_info_row *rows, unsigned count, const char *label);
+static const char *value_of(const struct kwl_network_info_row *rows, unsigned count, const char *label);
 
 /* The checks that failed, and those that ran. */
 static int failures;
@@ -50,7 +50,7 @@ check(
 /* The value of the row of a label, or "" when there is none. */
 static const char *
 value_of(
-	const struct zwl_network_info_row *rows,
+	const struct kwl_network_info_row *rows,
 	unsigned count,
 	const char *label)
 {
@@ -75,9 +75,9 @@ main(void)
 	struct kl_backend_network_state state;
 	struct kl_backend_network_ap scan[2];
 	struct kl_backend_network_link links[3];
-	struct zwl_network_info_input input;
-	struct zwl_network_info_sample sample;
-	struct zwl_network_info_row rows[ZWL_NETWORK_INFO_ROWS];
+	struct kwl_network_info_input input;
+	struct kwl_network_info_sample sample;
+	struct kwl_network_info_row rows[KWL_NETWORK_INFO_ROWS];
 	char text[32];
 	unsigned count;
 
@@ -118,7 +118,7 @@ main(void)
 	input.dns_count = 3;
 	input.now_ms = 10000;
 	memset(&sample, 0, sizeof(sample));
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(count == 12U, "twelve rows for a connected Wi-Fi");
 	check(rows[0].label[0] == '\0' && strcmp(rows[0].value, "Wi-Fi") == 0, "the title Wi-Fi");
 	check(strcmp(value_of(rows, count, "Network"), "Kei Lab") == 0, "the network");
@@ -138,14 +138,14 @@ main(void)
 	links[2].received_bytes += 2048U;
 	links[2].sent_bytes += 100U;
 	input.now_ms = 11000;
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(strcmp(value_of(rows, count, "Received"), "3.0 MB (2.0 KB/s)") == 0, "the received rate");
 	check(strcmp(value_of(rows, count, "Sent"), "612 B (100 B/s)") == 0, "the sent rate");
 
 	/* A counter that went back shows no rate. */
 	links[2].sent_bytes = 10U;
 	input.now_ms = 12000;
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(strcmp(value_of(rows, count, "Sent"), "10 B") == 0, "no rate from a counter that went back");
 
 	/* Wired: no network row, no signal; the interface is the wired one. */
@@ -155,7 +155,7 @@ main(void)
 	strcpy(links[1].address, "10.0.2.15");
 	links[1].mtu = 1500;
 	input.now_ms = 13000;
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(strcmp(rows[0].value, "Ethernet") == 0, "the title Ethernet");
 	check(strcmp(value_of(rows, count, "Interface"), "ue0") == 0, "the wired interface");
 	check(value_of(rows, count, "Network")[0] == '\0' && value_of(rows, count, "Signal")[0] == '\0', "no network, no signal");
@@ -166,35 +166,35 @@ main(void)
 	state.connected = 0;
 	state.kind = KL_BACKEND_NETWORK_NONE;
 	state.interface[0] = '\0';
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(strcmp(rows[0].value, "Network") == 0, "the title Network");
 	check(strcmp(value_of(rows, count, "Interface"), "wlan0") == 0, "the Wi-Fi's interface");
 	check(strcmp(value_of(rows, count, "Status"), "Not connected") == 0, "not connected");
 
 	/* The daemon not running. */
 	state.reachable = 0;
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(strcmp(value_of(rows, count, "Status"), "Network service not running") == 0, "the service not running");
 
 	/* No interface: title and status (and the DNS), and no sample. */
 	input.link_count = 1;
 	state.wifi_interface[0] = '\0';
 	state.wired[0] = '\0';
-	count = zwl_network_info_build(&input, &sample, rows, ZWL_NETWORK_INFO_ROWS);
+	count = kwl_network_info_build(&input, &sample, rows, KWL_NETWORK_INFO_ROWS);
 	check(count == 3U && sample.valid == 0U, "only the title, the status and the DNS without an interface");
 
 	/* The capacity. */
 	input.link_count = 3;
 	strcpy(state.wifi_interface, "wlan0");
-	count = zwl_network_info_build(&input, &sample, rows, 4U);
+	count = kwl_network_info_build(&input, &sample, rows, 4U);
 	check(count == 4U, "no more rows than the capacity");
 
 	/* The units. */
-	zwl_network_info_bytes(1023U, text, sizeof(text));
+	kwl_network_info_bytes(1023U, text, sizeof(text));
 	check(strcmp(text, "1023 B") == 0, "bytes");
-	zwl_network_info_bytes(1536U, text, sizeof(text));
+	kwl_network_info_bytes(1536U, text, sizeof(text));
 	check(strcmp(text, "1.5 KB") == 0, "kilobytes");
-	zwl_network_info_bytes((uint64_t)5U * 1024U * 1024U * 1024U, text, sizeof(text));
+	kwl_network_info_bytes((uint64_t)5U * 1024U * 1024U * 1024U, text, sizeof(text));
 	check(strcmp(text, "5.0 GB") == 0, "gigabytes");
 
 	/* The result. */

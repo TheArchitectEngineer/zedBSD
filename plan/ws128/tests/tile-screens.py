@@ -135,7 +135,7 @@ def home(dump, out):
     for x, y, name in places:
         width = draw.textlength(name, font=font)
         draw.text((x + 36 - width / 2, y + 72 + 26), name, fill=INK, font=font, anchor='ls')
-    draw.text((20, HEIGHT - 16), 'App Home (host picture, tiles from icons.c zwl_icon_tile at 72 px; Settings lit as under the pointer)',
+    draw.text((20, HEIGHT - 16), 'App Home (host picture, tiles from icons.c kwl_icon_tile at 72 px; Settings lit as under the pointer)',
               fill=INK, font=ImageFont.truetype(FONT, 12), anchor='ls')
     image.save(out)
 

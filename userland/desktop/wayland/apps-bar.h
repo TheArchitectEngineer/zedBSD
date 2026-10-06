@@ -12,10 +12,10 @@
  * the bar's previews shown and hidden.
  */
 
-#ifndef ZWL_APPS_BAR_H
-#define ZWL_APPS_BAR_H
+#ifndef KWL_APPS_BAR_H
+#define KWL_APPS_BAR_H
 
-#include "zwl.h"
+#include "kwl.h"
 #include "apps.h"
 
 #include <stdint.h>
@@ -48,9 +48,9 @@ struct apps_rect {
 
 /* The desktop's applications this moment, and (with room in the bar) where their icons go. */
 struct apps_view {
-	struct zwl_apps apps;
-	struct zwl_apps_window described[VIEW_WINDOWS];
-	struct zwl_object *surfaces[VIEW_WINDOWS];
+	struct kwl_apps apps;
+	struct kwl_apps_window described[VIEW_WINDOWS];
+	struct kwl_object *surfaces[VIEW_WINDOWS];
 	unsigned window_count;
 	int32_t left;
 	int32_t right;
@@ -63,18 +63,18 @@ struct apps_view {
 struct apps_panel {
 	int app;
 	unsigned count;
-	struct zwl_object *surfaces[ZWL_APPS_WINDOWS];
-	struct apps_rect tiles[ZWL_APPS_WINDOWS];
+	struct kwl_object *surfaces[KWL_APPS_WINDOWS];
+	struct apps_rect tiles[KWL_APPS_WINDOWS];
 	struct apps_rect rect;
 };
 
-int zwl_apps_view_build(struct zwl_server *server, struct apps_view *view);
-int zwl_apps_view_collect(struct zwl_server *server, struct apps_view *view);
-void zwl_apps_tiles_layout(struct zwl_server *server, const struct apps_view *view, unsigned found, struct apps_panel *panel);
-int zwl_apps_tile_at(const struct apps_rect *tiles, unsigned count, int32_t x, int32_t y);
-int zwl_apps_inside(const struct apps_rect *rect, int32_t x, int32_t y);
-void zwl_apps_bar_show(struct zwl_server *server, const struct apps_view *view, const char *key, unsigned via);
-void zwl_apps_bar_hide(struct zwl_server *server, const char *why);
-int zwl_apps_bar_panel(struct zwl_server *server, const struct apps_view *view, const char *key, struct apps_panel *panel);
+int kwl_apps_view_build(struct kwl_server *server, struct apps_view *view);
+int kwl_apps_view_collect(struct kwl_server *server, struct apps_view *view);
+void kwl_apps_tiles_layout(struct kwl_server *server, const struct apps_view *view, unsigned found, struct apps_panel *panel);
+int kwl_apps_tile_at(const struct apps_rect *tiles, unsigned count, int32_t x, int32_t y);
+int kwl_apps_inside(const struct apps_rect *rect, int32_t x, int32_t y);
+void kwl_apps_bar_show(struct kwl_server *server, const struct apps_view *view, const char *key, unsigned via);
+void kwl_apps_bar_hide(struct kwl_server *server, const char *why);
+int kwl_apps_bar_panel(struct kwl_server *server, const struct apps_view *view, const char *key, struct apps_panel *panel);
 
 #endif

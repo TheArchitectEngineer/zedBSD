@@ -7,7 +7,7 @@
 
 /*
  * ws128-p012: draws every application's tile with the compositor's own
- * zwl_icon_tile (userland/desktop/wayland/icons.c, compiled unchanged) at
+ * kwl_icon_tile (userland/desktop/wayland/icons.c, compiled unchanged) at
  * one size and writes each one as raw premultiplied RGBA
  * (DIR/NN-PIXELS.rgba, NN the icon's number), for the host pictures of
  * App Home and the bar (tile-screens.py).  It also checks each tile: its
@@ -62,7 +62,7 @@ main(
 
 	/* A titlebar icon has no tile: its square stays transparent. */
 	argb[0] = 1U;
-	zwl_icon_tile(0U, pixels, argb, pixels);
+	kwl_icon_tile(0U, pixels, argb, pixels);
 	if (argb[0] != 0U || argb[(pixels / 2U) * pixels + pixels / 2U] != 0U) {
 		printf("titlebar icon 0 has a tile FAIL\n");
 		failures++;
@@ -99,7 +99,7 @@ dump_tile(
 	FILE *file;
 
 	/* The tile, rows packed. */
-	zwl_icon_tile(icon, pixels, argb, pixels);
+	kwl_icon_tile(icon, pixels, argb, pixels);
 
 	/* Its four corners are outside the rounded square. */
 	if (argb[0] != 0U ||

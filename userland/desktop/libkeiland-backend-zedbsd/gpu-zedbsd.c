@@ -11,7 +11,7 @@
  *
  * On zedBSD a client's GPU buffer is a kernel image capability fd with the
  * kernel's description of the image (struct gpu_image_descriptor, 64 bytes,
- * as keiland_gpu_buffer_v1.create_buffer's array).  The fd is imported as
+ * as kl_gpu_buffer_v1.create_buffer's array).  The fd is imported as
  * Vulkan OPAQUE_FD memory; libvulkan checks the description against the
  * kernel's own record of the capability when the import names the image
  * (a dedicated import).  This file is the only one of the desktop that
@@ -28,7 +28,7 @@
  * Reports how many bytes a buffer's description takes on the wire.
  */
 size_t
-zwl_gpu_buffer_wire_bytes(
+kwl_gpu_buffer_wire_bytes(
 	void)
 {
 	/* Succeeded: the kernel's image description. */
@@ -45,11 +45,11 @@ zwl_gpu_buffer_wire_bytes(
  * the device has.  Returns EINVAL for anything else.
  */
 int
-zwl_gpu_buffer_decode(
+kwl_gpu_buffer_decode(
 	const unsigned char *bytes,
 	size_t size,
-	const struct zwl_gpu_limits *limits,
-	struct zwl_buffer_layout *layout)
+	const struct kwl_gpu_limits *limits,
+	struct kwl_buffer_layout *layout)
 {
 	struct gpu_image_descriptor image;
 	VkFormat format;
@@ -133,7 +133,7 @@ zwl_gpu_buffer_decode(
  * Reports the Vulkan handle type a buffer's fd is imported as.
  */
 VkExternalMemoryHandleTypeFlagBits
-zwl_gpu_buffer_handle_type(
+kwl_gpu_buffer_handle_type(
 	void)
 {
 	/* Succeeded: a kernel image capability is libvulkan's OPAQUE_FD. */

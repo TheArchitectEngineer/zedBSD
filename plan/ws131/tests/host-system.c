@@ -17,14 +17,14 @@
  *    host's libwayland-client) against the compositor's system.c, served
  *    by a small server thread that stands in for the compositor's event
  *    loop (wl_display's sync and get_registry, the registry's bind, then
- *    zwl_system_request and zwl_system_tick each pass).  The network
+ *    kwl_system_request and kwl_system_tick each pass).  The network
  *    daemon, the sound service, the power and the key store are fakes
  *    the test controls.
  *
  * Exit 0 when every check passes; each failure is printed.
  */
 
-#include "userland/desktop/wayland/zwl.h"
+#include "userland/desktop/wayland/kwl.h"
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland/system/system-private.h"
@@ -116,13 +116,13 @@ static struct {
 static int fake_watch;
 
 struct kl_backend_network *
-zwl_network_watch(void)
+kwl_network_watch(void)
 {
 	return (struct kl_backend_network *)&fake_watch;
 }
 
 void
-zwl_network_state(struct kl_backend_network_state *state)
+kwl_network_state(struct kl_backend_network_state *state)
 {
 	pthread_mutex_lock(&world.lock);
 	*state = world.network;
@@ -130,7 +130,7 @@ zwl_network_state(struct kl_backend_network_state *state)
 }
 
 size_t
-zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity)
+kwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity)
 {
 	size_t count;
 
@@ -212,7 +212,7 @@ kl_backend_network_save_key(const char *ssid, const char *key)
 }
 
 void
-zwl_network_key_failed(struct zwl_server *server, const char *ssid, int error)
+kwl_network_key_failed(struct kwl_server *server, const char *ssid, int error)
 {
 	(void)server;
 	(void)ssid;
@@ -223,7 +223,7 @@ zwl_network_key_failed(struct zwl_server *server, const char *ssid, int error)
 }
 
 void
-zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count)
+kwl_network_saved(struct kwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count)
 {
 	(void)server;
 	pthread_mutex_lock(&world.lock);
@@ -236,7 +236,7 @@ zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SS
 
 /* The system bar's network details (ws099-p032): nothing to show here. */
 void
-zwl_network_details(struct zwl_server *server, const struct kl_backend_network_link *links, size_t link_count, const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX], size_t dns_count)
+kwl_network_details(struct kwl_server *server, const struct kl_backend_network_link *links, size_t link_count, const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX], size_t dns_count)
 {
 	(void)server;
 	(void)links;
@@ -318,7 +318,7 @@ kl_backend_session_reason(const struct kl_backend *backend)
 
 /* The user's home: the test's scratch folder. */
 int
-zwl_settings_home(char *home, size_t size)
+kwl_settings_home(char *home, size_t size)
 {
 	snprintf(home, size, "%s", world.home);
 	return 0;
@@ -342,7 +342,7 @@ kl_backend_account_administer(const char *password, const char *operation, char 
 }
 
 void
-zwl_network_scan_hold(unsigned on)
+kwl_network_scan_hold(unsigned on)
 {
 	pthread_mutex_lock(&world.lock);
 	if (on != 0U)
@@ -466,7 +466,7 @@ static uint64_t clock_ahead_ms;
 
 /* The compositor's clock (main.c), for the monitor's tick and the scans' minute. */
 uint64_t
-zwl_milliseconds(void)
+kwl_milliseconds(void)
 {
 	struct timespec now;
 
@@ -475,7 +475,7 @@ zwl_milliseconds(void)
 }
 
 void
-zwl_volume_audio_state(struct kl_backend_audio_state *state)
+kwl_volume_audio_state(struct kl_backend_audio_state *state)
 {
 	pthread_mutex_lock(&world.lock);
 	*state = world.audio;
@@ -484,14 +484,14 @@ zwl_volume_audio_state(struct kl_backend_audio_state *state)
 
 /* The removable media (media.c, ws132-p004): none here, and a request is not offered (as on a system without volumed). */
 unsigned
-zwl_media_tick(struct zwl_server *server)
+kwl_media_tick(struct kwl_server *server)
 {
 	(void)server;
 	return 0U;
 }
 
 size_t
-zwl_media_volumes(struct kl_backend_volume *list, size_t capacity)
+kwl_media_volumes(struct kl_backend_volume *list, size_t capacity)
 {
 	/* One FAT stick, not mounted (ws132-p009: its file system and size reach the client). */
 	if (capacity == 0U)
@@ -506,7 +506,7 @@ zwl_media_volumes(struct kl_backend_volume *list, size_t capacity)
 }
 
 int
-zwl_media_ask(int mount, const char *id, uint32_t *request)
+kwl_media_ask(int mount, const char *id, uint32_t *request)
 {
 	(void)mount;
 	(void)id;
@@ -515,7 +515,7 @@ zwl_media_ask(int mount, const char *id, uint32_t *request)
 }
 
 int
-zwl_media_take_result(uint32_t *request, int *error, char *user, size_t size)
+kwl_media_take_result(uint32_t *request, int *error, char *user, size_t size)
 {
 	(void)request;
 	(void)error;
@@ -525,7 +525,7 @@ zwl_media_take_result(uint32_t *request, int *error, char *user, size_t size)
 }
 
 int
-zwl_volume_feedback(void)
+kwl_volume_feedback(void)
 {
 	pthread_mutex_lock(&world.lock);
 	world.feedback_count++;
@@ -534,7 +534,7 @@ zwl_volume_feedback(void)
 }
 
 int
-zwl_volume_request_channels(struct zwl_server *server, unsigned left, unsigned right, unsigned muted)
+kwl_volume_request_channels(struct kwl_server *server, unsigned left, unsigned right, unsigned muted)
 {
 	(void)server;
 	pthread_mutex_lock(&world.lock);
@@ -547,7 +547,7 @@ zwl_volume_request_channels(struct zwl_server *server, unsigned left, unsigned r
 }
 
 int
-zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size)
+kwl_settings_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size)
 {
 	(void)object;
 	(void)opcode;
@@ -558,9 +558,9 @@ zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsigned 
 
 /* ------------------------------------------------- the compositor's objects */
 
-static struct zwl_server server;
-static struct zwl_client capture_client;
-static struct zwl_client socket_client;
+static struct kwl_server server;
+static struct kwl_client capture_client;
+static struct kwl_client socket_client;
 
 /* What a capture client was sent: the events, each its object, opcode and payload. */
 static struct {
@@ -574,7 +574,7 @@ static unsigned captured_count;
 static void emit_raw(int fd, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 
 int
-zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size)
+kwl_emit(struct kwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size)
 {
 	if (client->fd < 0) {
 		if (captured_count < 64U && size <= sizeof(captured[0].payload)) {
@@ -591,10 +591,10 @@ zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void
 	return 0;
 }
 
-struct zwl_object *
-zwl_find(struct zwl_client *client, uint32_t id)
+struct kwl_object *
+kwl_find(struct kwl_client *client, uint32_t id)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	for (object = client->objects; object != NULL; object = object->next) {
 		if (object->id == id && !object->dead)
@@ -603,12 +603,12 @@ zwl_find(struct zwl_client *client, uint32_t id)
 	return NULL;
 }
 
-struct zwl_object *
-zwl_create(struct zwl_client *client, uint32_t id, enum zwl_kind kind, uint32_t version)
+struct kwl_object *
+kwl_create(struct kwl_client *client, uint32_t id, enum kwl_kind kind, uint32_t version)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
-	if (id == 0U || zwl_find(client, id) != NULL)
+	if (id == 0U || kwl_find(client, id) != NULL)
 		return NULL;
 	object = calloc(1, sizeof(*object));
 	if (object == NULL)
@@ -623,12 +623,12 @@ zwl_create(struct zwl_client *client, uint32_t id, enum zwl_kind kind, uint32_t 
 }
 
 void
-zwl_object_destroy(struct zwl_object *object)
+kwl_object_destroy(struct kwl_object *object)
 {
 	uint32_t id;
 
-	if (object->kind == ZWL_SYSTEM_NETWORK)
-		zwl_system_network_gone(object);
+	if (object->kind == KWL_SYSTEM_NETWORK)
+		kwl_system_network_gone(object);
 	object->dead = 1U;
 	id = object->id;
 	if (object->client->fd >= 0)
@@ -636,9 +636,9 @@ zwl_object_destroy(struct zwl_object *object)
 }
 
 static void
-free_objects(struct zwl_client *client)
+free_objects(struct kwl_client *client)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	while (client->objects != NULL) {
 		object = client->objects;
@@ -706,7 +706,7 @@ static void
 serve_message(uint32_t id, uint32_t opcode, const unsigned char *bytes, size_t size)
 {
 	unsigned char payload[128];
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t serial;
 	uint32_t length;
 	size_t offset;
@@ -733,20 +733,20 @@ serve_message(uint32_t id, uint32_t opcode, const unsigned char *bytes, size_t s
 	if (id == registry_id) {
 		length = word_at(bytes, 4);
 		offset = 8U + ((length + 3U) & ~3U);
-		object = zwl_create(&socket_client, word_at(bytes, offset + 4U), ZWL_SYSTEM_MANAGER, word_at(bytes, offset));
-		if (object == NULL || zwl_system_bind(object) != 0)
+		object = kwl_create(&socket_client, word_at(bytes, offset + 4U), KWL_SYSTEM_MANAGER, word_at(bytes, offset));
+		if (object == NULL || kwl_system_bind(object) != 0)
 			protocol_errors++;
 		return;
 	}
 
 	/* The extension's objects. */
-	object = zwl_find(&socket_client, id);
+	object = kwl_find(&socket_client, id);
 	if (object == NULL) {
 		printf("FAIL serve: no object %u (opcode %u)\n", id, opcode);
 		protocol_errors++;
 		return;
 	}
-	error = zwl_system_request(object, opcode, bytes, size);
+	error = kwl_system_request(object, opcode, bytes, size);
 	if (error != 0) {
 		printf("FAIL serve: object %u opcode %u error %d\n", id, opcode, error);
 		protocol_errors++;
@@ -777,14 +777,14 @@ serve_pass(void)
 	world.command_bar_saved = 0U;
 	pthread_mutex_unlock(&world.lock);
 	if (bar_key) {
-		error = zwl_system_bar_save_key(&server, "Bar", "barpass1");
+		error = kwl_system_bar_save_key(&server, "Bar", "barpass1");
 		pthread_mutex_lock(&world.lock);
 		world.bar_key_error = error;
 		world.bar_key_called = 1U;
 		pthread_mutex_unlock(&world.lock);
 	}
 	if (bar_saved)
-		zwl_system_bar_saved(&server);
+		kwl_system_bar_saved(&server);
 
 	/* The test's commands. */
 	pthread_mutex_lock(&world.lock);
@@ -824,9 +824,9 @@ serve_pass(void)
 
 	/* As network.c's tick does: the state and scan told, then the answer offered to the extension. */
 	if (changed != 0U)
-		zwl_system_network_changed(&server, KL_BACKEND_NETWORK_CHANGED_STATE | KL_BACKEND_NETWORK_CHANGED_SCAN);
+		kwl_system_network_changed(&server, KL_BACKEND_NETWORK_CHANGED_STATE | KL_BACKEND_NETWORK_CHANGED_SCAN);
 	if (answer != KL_BACKEND_NETWORK_REQUEST_NONE) {
-		owned = zwl_system_network_done(&server, answer, error);
+		owned = kwl_system_network_done(&server, answer, error);
 		if (!owned) {
 			pthread_mutex_lock(&world.lock);
 			world.bar_done_count++;
@@ -852,12 +852,12 @@ serve_pass(void)
 	memset(world.pin_value, 0, sizeof(world.pin_value));
 	pthread_mutex_unlock(&world.lock);
 	if (unlock)
-		(void)zwl_system_pin_answer(&server, unlock_error);
+		(void)kwl_system_pin_answer(&server, unlock_error);
 	if (enrolled)
-		zwl_system_enrolled_answer(&server, 0);
+		kwl_system_enrolled_answer(&server, 0);
 
 	/* The extension's own pass. */
-	zwl_system_tick(&server);
+	kwl_system_tick(&server);
 }
 
 static void *
@@ -1094,34 +1094,34 @@ static void
 test_server_alone(void)
 {
 	unsigned char bytes[64];
-	struct zwl_object *manager;
-	struct zwl_object *network;
-	struct zwl_object *audio;
-	struct zwl_object *power;
+	struct kwl_object *manager;
+	struct kwl_object *network;
+	struct kwl_object *audio;
+	struct kwl_object *power;
 	size_t size;
 	uint32_t word;
 
 	capture_client.fd = -1;
 	capture_client.server = &server;
 	capture_client.number = 1U;
-	manager = zwl_create(&capture_client, 2U, ZWL_SYSTEM_MANAGER, 1U);
-	CHECK(zwl_system_bind(manager) == 0 && captured_count == 1U && word_at(captured[0].payload, 0) == 0x1fU, "alone: capabilities");
+	manager = kwl_create(&capture_client, 2U, KWL_SYSTEM_MANAGER, 1U);
+	CHECK(kwl_system_bind(manager) == 0 && captured_count == 1U && word_at(captured[0].payload, 0) == 0x1fU, "alone: capabilities");
 
 	/* A get without its new ID, and an unknown opcode, are malformed. */
-	CHECK(zwl_system_request(manager, KL_SYSTEM_MANAGER_GET_NETWORK, bytes, 0U) == EPROTO, "alone: get without an ID");
-	CHECK(zwl_system_request(manager, 9U, bytes, 0U) == EPROTO, "alone: unknown opcode");
+	CHECK(kwl_system_request(manager, KL_SYSTEM_MANAGER_GET_NETWORK, bytes, 0U) == EPROTO, "alone: get without an ID");
+	CHECK(kwl_system_request(manager, 9U, bytes, 0U) == EPROTO, "alone: unknown opcode");
 
 	/* The objects. */
 	word = 3U;
-	CHECK(zwl_system_request(manager, KL_SYSTEM_MANAGER_GET_NETWORK, (unsigned char *)&word, 4U) == 0, "alone: network");
-	CHECK(zwl_system_request(manager, KL_SYSTEM_MANAGER_GET_NETWORK, (unsigned char *)&word, 4U) == EPROTO, "alone: ID taken");
+	CHECK(kwl_system_request(manager, KL_SYSTEM_MANAGER_GET_NETWORK, (unsigned char *)&word, 4U) == 0, "alone: network");
+	CHECK(kwl_system_request(manager, KL_SYSTEM_MANAGER_GET_NETWORK, (unsigned char *)&word, 4U) == EPROTO, "alone: ID taken");
 	word = 4U;
-	CHECK(zwl_system_request(manager, KL_SYSTEM_MANAGER_GET_AUDIO, (unsigned char *)&word, 4U) == 0, "alone: audio");
+	CHECK(kwl_system_request(manager, KL_SYSTEM_MANAGER_GET_AUDIO, (unsigned char *)&word, 4U) == 0, "alone: audio");
 	word = 5U;
-	CHECK(zwl_system_request(manager, KL_SYSTEM_MANAGER_GET_POWER, (unsigned char *)&word, 4U) == 0, "alone: power");
-	network = zwl_find(&capture_client, 3U);
-	audio = zwl_find(&capture_client, 4U);
-	power = zwl_find(&capture_client, 5U);
+	CHECK(kwl_system_request(manager, KL_SYSTEM_MANAGER_GET_POWER, (unsigned char *)&word, 4U) == 0, "alone: power");
+	network = kwl_find(&capture_client, 3U);
+	audio = kwl_find(&capture_client, 4U);
+	power = kwl_find(&capture_client, 5U);
 	CHECK(network != NULL && audio != NULL && power != NULL, "alone: objects made");
 	if (network == NULL || audio == NULL || power == NULL)
 		return;
@@ -1130,25 +1130,25 @@ test_server_alone(void)
 	size = put_word(bytes, 0U, 11U);
 	size = put_word(bytes, size, 9U);
 	size = put_string(bytes, size, "");
-	CHECK(zwl_system_request(network, KL_SYSTEM_NETWORK_REQUEST, bytes, size) == 0, "alone: unknown what accepted");
+	CHECK(kwl_system_request(network, KL_SYSTEM_NETWORK_REQUEST, bytes, size) == 0, "alone: unknown what accepted");
 	CHECK(captured_applied(KL_SYSTEM_NETWORK_EVENT_RESULT) == KL_SYSTEM_RESULT_INVALID, "alone: unknown what invalid");
 	size = put_word(bytes, 0U, 12U);
 	size = put_word(bytes, size, KL_SYSTEM_NETWORK_SCAN);
 	size = put_word(bytes, size, 4U);
 	memcpy(bytes + size, "abcd", 4);
 	size += 4U;
-	CHECK(zwl_system_request(network, KL_SYSTEM_NETWORK_REQUEST, bytes, size) == EPROTO, "alone: string without NUL");
+	CHECK(kwl_system_request(network, KL_SYSTEM_NETWORK_REQUEST, bytes, size) == EPROTO, "alone: string without NUL");
 
 	/* A short key is invalid; a join without a network is invalid. */
 	size = put_word(bytes, 0U, 13U);
 	size = put_string(bytes, size, "Cafe");
 	size = put_string(bytes, size, "short");
-	CHECK(zwl_system_request(network, KL_SYSTEM_NETWORK_SAVE_KEY, bytes, size) == 0, "alone: short key accepted");
+	CHECK(kwl_system_request(network, KL_SYSTEM_NETWORK_SAVE_KEY, bytes, size) == 0, "alone: short key accepted");
 	CHECK(captured_applied(KL_SYSTEM_NETWORK_EVENT_RESULT) == KL_SYSTEM_RESULT_INVALID, "alone: short key invalid");
 	size = put_word(bytes, 0U, 14U);
 	size = put_word(bytes, size, KL_SYSTEM_NETWORK_JOIN);
 	size = put_string(bytes, size, "");
-	CHECK(zwl_system_request(network, KL_SYSTEM_NETWORK_REQUEST, bytes, size) == 0, "alone: join accepted");
+	CHECK(kwl_system_request(network, KL_SYSTEM_NETWORK_REQUEST, bytes, size) == 0, "alone: join accepted");
 	CHECK(captured_applied(KL_SYSTEM_NETWORK_EVENT_RESULT) == KL_SYSTEM_RESULT_INVALID, "alone: join without a network invalid");
 
 	/* A volume over 100 and an unknown action are invalid; a short set is malformed. */
@@ -1156,17 +1156,17 @@ test_server_alone(void)
 	size = put_word(bytes, size, 101U);
 	size = put_word(bytes, size, 0U);
 	size = put_word(bytes, size, 0U);
-	CHECK(zwl_system_request(audio, KL_SYSTEM_AUDIO_SET_VOLUME, bytes, size) == 0, "alone: loud accepted");
+	CHECK(kwl_system_request(audio, KL_SYSTEM_AUDIO_SET_VOLUME, bytes, size) == 0, "alone: loud accepted");
 	CHECK(captured_applied(KL_SYSTEM_AUDIO_EVENT_RESULT) == KL_SYSTEM_RESULT_INVALID, "alone: volume 101 invalid");
-	CHECK(zwl_system_request(audio, KL_SYSTEM_AUDIO_SET_VOLUME, bytes, 12U) == EPROTO, "alone: short set");
+	CHECK(kwl_system_request(audio, KL_SYSTEM_AUDIO_SET_VOLUME, bytes, 12U) == EPROTO, "alone: short set");
 	size = put_word(bytes, 0U, 16U);
 	size = put_word(bytes, size, 7U);
-	CHECK(zwl_system_request(power, KL_SYSTEM_POWER_ACTION, bytes, size) == 0, "alone: action accepted");
+	CHECK(kwl_system_request(power, KL_SYSTEM_POWER_ACTION, bytes, size) == 0, "alone: action accepted");
 	CHECK(captured_applied(KL_SYSTEM_POWER_EVENT_RESULT) == KL_SYSTEM_RESULT_INVALID, "alone: action 7 invalid");
 
 	/* No network work was left waiting. */
 	CHECK(outstanding_now() == KL_BACKEND_NETWORK_REQUEST_NONE, "alone: nothing sent to the daemon");
-	zwl_system_close(&server);
+	kwl_system_close(&server);
 	free_objects(&capture_client);
 	server.clients = NULL;
 }
@@ -1483,7 +1483,7 @@ test_both_ends(void)
 	pthread_mutex_unlock(&world.lock);
 	pthread_join(thread, NULL);
 	wl_display_disconnect(display);
-	zwl_system_close(&server);
+	kwl_system_close(&server);
 	close(sockets[0]);
 	free_objects(&socket_client);
 }

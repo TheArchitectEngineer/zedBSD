@@ -7,7 +7,7 @@
 
 /*
  * The clipboard's history (ws102-p018, plan/ws102/design.md section 2.10):
- * the text of the last ZWL_CLIPBOARD_HISTORY selections, newest first, in
+ * the text of the last KWL_CLIPBOARD_HISTORY selections, newest first, in
  * memory only.
  *
  * When a client sets a selection with a text type, zdesktop reads the text
@@ -17,13 +17,13 @@
  * of a selection made while the focused field is secret (the source marked
  * with the x-kde-passwordManagerHint type, the convention password
  * managers use), of an empty one, or of one larger than
- * ZWL_CLIPBOARD_TEXT_MAX.  The lock screen and Log Out empty the history
+ * KWL_CLIPBOARD_TEXT_MAX.  The lock screen and Log Out empty the history
  * (the texts are wiped before they are freed).
  *
- * zwl_clipboard_history_paste makes an item the selection -- zdesktop's
+ * kwl_clipboard_history_paste makes an item the selection -- zdesktop's
  * own, offered as text (data.c) -- and sends the focused window the paste
  * operation (edit.c).  The on-screen keyboard's history tab (ws102-p016)
- * lists the items with zwl_clipboard_history_count and _get; until it
+ * lists the items with kwl_clipboard_history_count and _get; until it
  * exists, Super+Alt+H logs the list and Super+Alt+1 ... 0 pastes an item
  * (edit.c).  The log names an item by its length and a checksum, never
  * its text.
@@ -63,7 +63,7 @@ struct clipboard_item {
  * The history, newest first, and how many items it has; the event loop
  * alone touches it.
  */
-static struct clipboard_item clipboard_history[ZWL_CLIPBOARD_HISTORY];
+static struct clipboard_item clipboard_history[KWL_CLIPBOARD_HISTORY];
 static unsigned clipboard_count;
 
 /*
@@ -95,9 +95,9 @@ static uint32_t clipboard_sum(const char *text, size_t length);
  * clipboard) changes nothing.
  */
 void
-zwl_clipboard_selected(
-	struct zwl_server *server,
-	struct zwl_object *source)
+kwl_clipboard_selected(
+	struct kwl_server *server,
+	struct kwl_object *source)
 {
 	const char *type;
 	unsigned index;
@@ -152,8 +152,8 @@ zwl_clipboard_selected(
 	clipboard_read.fd = pipes[0];
 	clipboard_read.text = NULL;
 	clipboard_read.length = 0U;
-	clipboard_read.started = zwl_milliseconds();
-	error = zwl_data_send(source, type, pipes[1]);
+	clipboard_read.started = kwl_milliseconds();
+	error = kwl_data_send(source, type, pipes[1]);
 	if (error != 0) {
 		clipboard_read_end(0);
 		return;
@@ -169,8 +169,8 @@ zwl_clipboard_selected(
  * up (called each pass of the event loop).
  */
 void
-zwl_clipboard_poll(
-	struct zwl_server *server)
+kwl_clipboard_poll(
+	struct kwl_server *server)
 {
 	char chunk[1024];
 	char *grown;
@@ -187,7 +187,7 @@ zwl_clipboard_poll(
 
 		/* Nothing more for now: another pass, unless it has taken too long. */
 		if (got < 0 && (errno == EAGAIN || errno == EINTR)) {
-			if (zwl_milliseconds() - clipboard_read.started > CLIPBOARD_READ_MS) {
+			if (kwl_milliseconds() - clipboard_read.started > CLIPBOARD_READ_MS) {
 				printf("ZWL CLIP skip reason=timeout\n");
 				clipboard_read_end(0);
 			}
@@ -207,7 +207,7 @@ zwl_clipboard_poll(
 		}
 
 		/* Too much text is not kept. */
-		if (clipboard_read.length + (size_t)got > ZWL_CLIPBOARD_TEXT_MAX) {
+		if (clipboard_read.length + (size_t)got > KWL_CLIPBOARD_TEXT_MAX) {
 			printf("ZWL CLIP skip reason=size\n");
 			clipboard_read_end(0);
 			return;
@@ -229,8 +229,8 @@ zwl_clipboard_poll(
  * Reports how many items the history has.
  */
 unsigned
-zwl_clipboard_history_count(
-	struct zwl_server *server)
+kwl_clipboard_history_count(
+	struct kwl_server *server)
 {
 	/* Succeeded: the count. */
 	(void)server;
@@ -243,8 +243,8 @@ zwl_clipboard_history_count(
  * history's (valid until the history changes).
  */
 const char *
-zwl_clipboard_history_get(
-	struct zwl_server *server,
+kwl_clipboard_history_get(
+	struct kwl_server *server,
 	unsigned index,
 	size_t *length)
 {
@@ -266,8 +266,8 @@ zwl_clipboard_history_get(
  * ENOMEM, or the paste's error (edit.c).
  */
 int
-zwl_clipboard_history_paste(
-	struct zwl_server *server,
+kwl_clipboard_history_paste(
+	struct kwl_server *server,
 	unsigned index)
 {
 	struct clipboard_item item;
@@ -296,9 +296,9 @@ zwl_clipboard_history_paste(
 	clipboard_history[0] = item;
 
 	/* It is the selection, and the focused window pastes it. */
-	zwl_data_select_offered(server);
+	kwl_data_select_offered(server);
 	printf("ZWL CLIP paste index=%u length=%zu sum=%08x\n", index, item.length, clipboard_sum(item.text, item.length));
-	error = zwl_edit_action(server, ZWL_EDIT_PASTE);
+	error = kwl_edit_action(server, KWL_EDIT_PASTE);
 	if (error != 0)
 		return error;
 
@@ -312,7 +312,7 @@ zwl_clipboard_history_paste(
  * not take it all within a moment gets what fitted.
  */
 void
-zwl_clipboard_offer_write(
+kwl_clipboard_offer_write(
 	int descriptor)
 {
 	uint64_t started;
@@ -322,7 +322,7 @@ zwl_clipboard_offer_write(
 	/* The descriptor must not hold the event loop long. */
 	(void)fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK);
 	written = 0U;
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 
 	/* All of the text, in as many writes as it takes (a full pipe is tried again for a moment). */
 	while (clipboard_offered != NULL && written < clipboard_offered_length) {
@@ -333,7 +333,7 @@ zwl_clipboard_offer_write(
 		}
 		if (count < 0 && errno != EAGAIN && errno != EINTR)
 			break;
-		if (zwl_milliseconds() - started > 100U)
+		if (kwl_milliseconds() - started > 100U)
 			break;
 	}
 
@@ -346,8 +346,8 @@ zwl_clipboard_offer_write(
  * Empties the history, wiping each text (the lock screen, Log Out).
  */
 void
-zwl_clipboard_history_clear(
-	struct zwl_server *server,
+kwl_clipboard_history_clear(
+	struct kwl_server *server,
 	const char *reason)
 {
 	unsigned index;
@@ -383,8 +383,8 @@ zwl_clipboard_history_clear(
  * (Super+Alt+H, edit.c).
  */
 void
-zwl_clipboard_history_log(
-	struct zwl_server *server)
+kwl_clipboard_history_log(
+	struct kwl_server *server)
 {
 	unsigned index;
 
@@ -440,8 +440,8 @@ clipboard_add(
 	}
 
 	/* A full history lets its oldest item go. */
-	if (last == clipboard_count && clipboard_count == ZWL_CLIPBOARD_HISTORY) {
-		clipboard_wipe(clipboard_history[ZWL_CLIPBOARD_HISTORY - 1U].text, clipboard_history[ZWL_CLIPBOARD_HISTORY - 1U].length);
+	if (last == clipboard_count && clipboard_count == KWL_CLIPBOARD_HISTORY) {
+		clipboard_wipe(clipboard_history[KWL_CLIPBOARD_HISTORY - 1U].text, clipboard_history[KWL_CLIPBOARD_HISTORY - 1U].length);
 		clipboard_count--;
 		last = clipboard_count;
 	}

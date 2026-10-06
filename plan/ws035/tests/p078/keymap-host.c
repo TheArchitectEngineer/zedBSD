@@ -83,7 +83,7 @@ main(void)
 	int fd;
 
 	/* The keymap compiles. */
-	text = zwl_keymap_text();
+	text = kwl_keymap_text();
 	context = xkb_context_new(XKB_CONTEXT_NO_DEFAULT_INCLUDES | XKB_CONTEXT_NO_ENVIRONMENT_NAMES);
 	keymap = xkb_keymap_new_from_string(context, text, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	check(keymap != NULL, "compiles");
@@ -142,8 +142,8 @@ main(void)
 	(void)xkb_state_update_key(state, 125U + 8U, XKB_KEY_UP);
 
 	/* The keymap file holds the text, NUL and all. */
-	check(zwl_keymap_open() == 0, "file made");
-	fd = zwl_keymap_descriptor(&size);
+	check(kwl_keymap_open() == 0, "file made");
+	fd = kwl_keymap_descriptor(&size);
 	check(fd >= 0 && size == strlen(text) + 1U, "descriptor and size");
 	mapped = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
 	check(mapped != MAP_FAILED && memcmp(mapped, text, size) == 0, "file holds the text");

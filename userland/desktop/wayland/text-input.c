@@ -58,20 +58,20 @@
  * Every live text input, newest first.
  *
  * A record is added by get_text_input and removed when its object goes
- * (zwl_text_input_object_gone); the compositor has one seat, so one list
+ * (kwl_text_input_object_gone); the compositor has one seat, so one list
  * serves it.
  */
-static struct zwl_text_input *text_inputs;
+static struct kwl_text_input *text_inputs;
 
-static struct zwl_text_input *input_find(struct zwl_object *object);
-static int manager_get_text_input(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int input_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int input_set_surrounding(struct zwl_text_input *input, const unsigned char *bytes, size_t size);
-static void input_commit(struct zwl_text_input *input);
-static void input_clear(struct zwl_text_input *input);
-static int input_secret(const struct zwl_text_input *input);
-static void input_send_surface(struct zwl_text_input *input, uint32_t opcode, struct zwl_object *surface);
-static void input_emit(struct zwl_object *object, uint32_t opcode, const void *payload, size_t size);
+static struct kwl_text_input *input_find(struct kwl_object *object);
+static int manager_get_text_input(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int input_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int input_set_surrounding(struct kwl_text_input *input, const unsigned char *bytes, size_t size);
+static void input_commit(struct kwl_text_input *input);
+static void input_clear(struct kwl_text_input *input);
+static int input_secret(const struct kwl_text_input *input);
+static void input_send_surface(struct kwl_text_input *input, uint32_t opcode, struct kwl_object *surface);
+static void input_emit(struct kwl_object *object, uint32_t opcode, const void *payload, size_t size);
 static size_t input_put_string(unsigned char *payload, size_t offset, const char *text);
 static uint32_t input_word(const unsigned char *bytes, size_t offset);
 
@@ -79,8 +79,8 @@ static uint32_t input_word(const unsigned char *bytes, size_t offset);
  * Carries out a request of zwp_text_input_manager_v3 or zwp_text_input_v3.
  */
 int
-zwl_text_input_request(
-	struct zwl_object *object,
+kwl_text_input_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -88,7 +88,7 @@ zwl_text_input_request(
 	int error;
 
 	/* A text input's own requests. */
-	if (object->kind == ZWL_TEXT_INPUT) {
+	if (object->kind == KWL_TEXT_INPUT) {
 		error = input_request(object, opcode, bytes, size);
 		if (error != 0)
 			return error;
@@ -99,7 +99,7 @@ zwl_text_input_request(
 
 	/* The manager's destroy leaves the text inputs it made. */
 	if (opcode == MANAGER_DESTROY && size == 0U) {
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -121,14 +121,14 @@ zwl_text_input_request(
  * Forgets a text input whose object goes.
  */
 void
-zwl_text_input_object_gone(
-	struct zwl_object *object)
+kwl_text_input_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_text_input **link;
-	struct zwl_text_input *input;
+	struct kwl_text_input **link;
+	struct kwl_text_input *input;
 
 	/* Only a text input has a record. */
-	if (object->kind != ZWL_TEXT_INPUT)
+	if (object->kind != KWL_TEXT_INPUT)
 		return;
 
 	/* Finds the record's link. */
@@ -142,7 +142,7 @@ zwl_text_input_object_gone(
 
 	/* The input method stops serving it, then the record goes. */
 	input = *link;
-	zwl_ime_text_input_gone(object->client->server, input);
+	kwl_ime_text_input_gone(object->client->server, input);
 	*link = input->next;
 	free(input->pending_text);
 	free(input->text);
@@ -155,11 +155,11 @@ zwl_text_input_object_gone(
  * client of the surface that has it now are told enter.
  */
 void
-zwl_text_input_focus(
-	struct zwl_server *server,
-	struct zwl_object *previous)
+kwl_text_input_focus(
+	struct kwl_server *server,
+	struct kwl_object *previous)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 
 	/* The surface that lost the keyboard: its text inputs hear leave and are disabled. */
 	for (input = text_inputs; input != NULL; input = input->next) {
@@ -195,11 +195,11 @@ zwl_text_input_focus(
  *
  * Returns NULL when there is none.
  */
-struct zwl_text_input *
-zwl_text_input_current(
-	struct zwl_server *server)
+struct kwl_text_input *
+kwl_text_input_current(
+	struct kwl_server *server)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 	int secret;
 
 	/* Nothing has the keyboard. */
@@ -239,8 +239,8 @@ zwl_text_input_current(
  * cursor.
  */
 void
-zwl_text_input_deliver(
-	struct zwl_text_input *input,
+kwl_text_input_deliver(
+	struct kwl_text_input *input,
 	const char *preedit,
 	int32_t begin,
 	int32_t end,
@@ -248,7 +248,7 @@ zwl_text_input_deliver(
 	uint32_t before,
 	uint32_t after)
 {
-	unsigned char payload[ZWL_IME_TEXT_MAX + 16U];
+	unsigned char payload[KWL_IME_TEXT_MAX + 16U];
 	size_t offset;
 	uint32_t words[2];
 
@@ -287,11 +287,11 @@ zwl_text_input_deliver(
 /*
  * Finds the record of a text input object.
  */
-static struct zwl_text_input *
+static struct kwl_text_input *
 input_find(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 
 	/* Looks through the live text inputs. */
 	for (input = text_inputs; input != NULL; input = input->next) {
@@ -309,13 +309,13 @@ input_find(
  */
 static int
 manager_get_text_input(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_object *object;
-	struct zwl_text_input *input;
+	struct kwl_server *server;
+	struct kwl_object *object;
+	struct kwl_text_input *input;
 	uint32_t id;
 
 	/* The request carries the new ID and the seat. */
@@ -324,7 +324,7 @@ manager_get_text_input(
 
 	/* The new object. */
 	id = input_word(bytes, 0);
-	object = zwl_create(manager->client, id, ZWL_TEXT_INPUT, manager->version);
+	object = kwl_create(manager->client, id, KWL_TEXT_INPUT, manager->version);
 	if (object == NULL)
 		return EPROTO;
 
@@ -353,19 +353,19 @@ manager_get_text_input(
  */
 static int
 input_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 	int error;
 
 	/* destroy retires the object (and the record with it). */
 	if (opcode == INPUT_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -437,7 +437,7 @@ input_request(
  */
 static int
 input_set_surrounding(
-	struct zwl_text_input *input,
+	struct kwl_text_input *input,
 	const unsigned char *bytes,
 	size_t size)
 {
@@ -451,7 +451,7 @@ input_set_surrounding(
 
 	length = input_word(bytes, 0);
 	padded = ((size_t)length + 3U) & ~(size_t)3U;
-	if (length == 0U || length > ZWL_IME_TEXT_MAX || 4U + padded + 8U != size)
+	if (length == 0U || length > KWL_IME_TEXT_MAX || 4U + padded + 8U != size)
 		return EPROTO;
 
 	/* The text must end with its NUL. */
@@ -482,9 +482,9 @@ input_set_surrounding(
  */
 static void
 input_commit(
-	struct zwl_text_input *input)
+	struct kwl_text_input *input)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* The commit's number is the serial of the dones that follow. */
 	input->commits++;
@@ -518,7 +518,7 @@ input_commit(
 
 	/* The input method follows (input-method.c). */
 	server = input->object->client->server;
-	zwl_ime_update(server, input);
+	kwl_ime_update(server, input);
 }
 
 /*
@@ -526,7 +526,7 @@ input_commit(
  */
 static void
 input_clear(
-	struct zwl_text_input *input)
+	struct kwl_text_input *input)
 {
 	/* Nothing enabled and no state. */
 	input->enabled = 0;
@@ -546,7 +546,7 @@ input_clear(
  */
 static int
 input_secret(
-	const struct zwl_text_input *input)
+	const struct kwl_text_input *input)
 {
 	/* A password or a PIN. */
 	if (input->purpose == INPUT_PURPOSE_PASSWORD || input->purpose == INPUT_PURPOSE_PIN)
@@ -565,9 +565,9 @@ input_secret(
  */
 static void
 input_send_surface(
-	struct zwl_text_input *input,
+	struct kwl_text_input *input,
 	uint32_t opcode,
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	uint32_t word;
 
@@ -581,7 +581,7 @@ input_send_surface(
  */
 static void
 input_emit(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const void *payload,
 	size_t size)
@@ -593,10 +593,10 @@ input_emit(
 		return;
 
 	/* A client that stopped reading loses its connection. */
-	error = zwl_emit(object->client, object->id, opcode, payload, size);
+	error = kwl_emit(object->client, object->id, opcode, payload, size);
 	if (error != 0) {
 		object->client->fatal = 1;
-		object->client->fatal_time = zwl_milliseconds();
+		object->client->fatal_time = kwl_milliseconds();
 	}
 }
 
@@ -621,8 +621,8 @@ input_put_string(
 
 	/* The length with the NUL, the bytes, and zeros to a four-byte boundary. */
 	length = (uint32_t)strlen(text) + 1U;
-	if (length > ZWL_IME_TEXT_MAX)
-		length = ZWL_IME_TEXT_MAX;
+	if (length > KWL_IME_TEXT_MAX)
+		length = KWL_IME_TEXT_MAX;
 	padded = ((size_t)length + 3U) & ~(size_t)3U;
 	memcpy(payload + offset, &length, 4);
 	memset(payload + offset + 4U, 0, padded);

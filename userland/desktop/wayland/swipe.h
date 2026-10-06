@@ -10,7 +10,7 @@
  * ws142-p009, BUG-215 and BUG-216): while Wiseview or the switcher shows,
  * the two fingers' scrolling is not the client's; from the fingers landing
  * to their lifting it is one swipe, which becomes one step left or right,
- * or a swipe down or up, once its travel passes ZWL_SWIPE_STEP_UM, and
+ * or a swipe down or up, once its travel passes KWL_SWIPE_STEP_UM, and
  * nothing more until the fingers lift.
  *
  * It knows nothing of the server: the caller hands it the fingers' travel
@@ -19,34 +19,34 @@
  * alone.
  */
 
-#ifndef ZWL_SWIPE_H
-#define ZWL_SWIPE_H
+#ifndef KWL_SWIPE_H
+#define KWL_SWIPE_H
 
 #include <stdint.h>
 
 /* The travel that decides a swipe (micrometres; the edges' gestures need as much, p007). */
-#define ZWL_SWIPE_STEP_UM	8000
+#define KWL_SWIPE_STEP_UM	8000
 
 /* What a swipe decided: nothing yet, a step to the left or the right, down or up. */
-#define ZWL_SWIPE_NONE		0U
-#define ZWL_SWIPE_LEFT		1U
-#define ZWL_SWIPE_RIGHT		2U
-#define ZWL_SWIPE_DOWN		3U
-#define ZWL_SWIPE_UP		4U
+#define KWL_SWIPE_NONE		0U
+#define KWL_SWIPE_LEFT		1U
+#define KWL_SWIPE_RIGHT		2U
+#define KWL_SWIPE_DOWN		3U
+#define KWL_SWIPE_UP		4U
 
 /*
  * A swipe under way: the fingers' travel across and down since it began
  * (micrometres, right and down positive), and whether it has decided (it
  * then decides nothing more until it ends).
  */
-struct zwl_swipe {
+struct kwl_swipe {
 	int32_t across_um;
 	int32_t down_um;
 	unsigned decided;
 };
 
-unsigned zwl_swipe_take(struct zwl_swipe *swipe, int32_t across_um, int32_t down_um);
-void zwl_swipe_end(struct zwl_swipe *swipe);
-const char *zwl_swipe_name(unsigned direction);
+unsigned kwl_swipe_take(struct kwl_swipe *swipe, int32_t across_um, int32_t down_um);
+void kwl_swipe_end(struct kwl_swipe *swipe);
+const char *kwl_swipe_name(unsigned direction);
 
 #endif

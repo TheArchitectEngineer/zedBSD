@@ -24,10 +24,10 @@
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
 static int factory_fence(const struct kl_backend_protocol_host *host, struct kl_backend_resource *factory, const unsigned char *bytes, size_t size);
 static int factory_alpha(const struct kl_backend_protocol_host *host, struct kl_backend_resource *factory, const unsigned char *bytes, size_t size);
-static int buffer_import(const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer, const struct zwl_buffer_layout *layout, int descriptor);
-static VkResult buffer_image(const struct kl_backend_gpu_device *device, const struct zwl_buffer_layout *image, int descriptor, VkImage *created, VkDeviceMemory *memory);
+static int buffer_import(const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer, const struct kwl_buffer_layout *layout, int descriptor);
+static VkResult buffer_image(const struct kl_backend_gpu_device *device, const struct kwl_buffer_layout *image, int descriptor, VkImage *created, VkDeviceMemory *memory);
 static void buffer_image_release(const struct kl_backend_gpu_device *device, VkImage *image, VkDeviceMemory *memory);
-static void buffer_keep(const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer, const struct zwl_buffer_layout *layout, const unsigned char *description, size_t size, int descriptor);
+static void buffer_keep(const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer, const struct kwl_buffer_layout *layout, const unsigned char *description, size_t size, int descriptor);
 
 /*
  * Names the zedBSD GPU buffer global.
@@ -37,7 +37,7 @@ kl_backend_gpu_global_interface(
 	void)
 {
 	/* Succeeded: zedBSD clients share kernel image capabilities. */
-	return "keiland_gpu_buffer_v1";
+	return "kl_gpu_buffer_v1";
 }
 
 /*
@@ -64,8 +64,8 @@ kl_backend_gpu_request(
 {
 	const struct kl_backend_gpu_device *device;
 	struct kl_backend_resource *buffer;
-	struct zwl_buffer_layout layout;
-	struct zwl_gpu_limits limits;
+	struct kwl_buffer_layout layout;
+	struct kwl_gpu_limits limits;
 	unsigned role;
 	size_t wire_bytes;
 	uint32_t id;
@@ -105,7 +105,7 @@ kl_backend_gpu_request(
 	}
 
 	/* The nha signature has new_id and array bytes; h contributes no wire word. */
-	wire_bytes = zwl_gpu_buffer_wire_bytes();
+	wire_bytes = kwl_gpu_buffer_wire_bytes();
 	if (opcode != 1U || size != 8U + wire_bytes)
 		return EPROTO;
 
@@ -138,7 +138,7 @@ kl_backend_gpu_request(
 	/* The description's values, each checked before any reaches Vulkan (gpu-zedbsd.c). */
 	limits.max_dimension = device->max_dimension;
 	limits.memory_type_count = device->memory_type_count;
-	error = zwl_gpu_buffer_decode(bytes + 8U, length, &limits, &layout);
+	error = kwl_gpu_buffer_decode(bytes + 8U, length, &limits, &layout);
 
 	/*
 	 * Window mode's Vulkan image, made once for the buffer's lifetime (design
@@ -255,7 +255,7 @@ kl_backend_gpu_resource_free(
 	const struct kl_backend_protocol_host *host,
 	struct kl_backend_resource *resource)
 {
-	struct zwl_gpu_buffer_record *record;
+	struct kwl_gpu_buffer_record *record;
 	unsigned role;
 	void **owned;
 
@@ -270,7 +270,7 @@ kl_backend_gpu_resource_free(
 	/* The scanout's handle, the fd and the record go. */
 	record = *owned;
 	*owned = NULL;
-	zwl_scanout_forget(record);
+	kwl_scanout_forget(record);
 	if (record->descriptor >= 0)
 		close(record->descriptor);
 	free(record);
@@ -378,7 +378,7 @@ static int
 buffer_import(
 	const struct kl_backend_protocol_host *host,
 	struct kl_backend_resource *buffer,
-	const struct zwl_buffer_layout *layout,
+	const struct kwl_buffer_layout *layout,
 	int descriptor)
 {
 	const struct kl_backend_gpu_device *device;
@@ -430,17 +430,17 @@ static void
 buffer_keep(
 	const struct kl_backend_protocol_host *host,
 	struct kl_backend_resource *buffer,
-	const struct zwl_buffer_layout *layout,
+	const struct kwl_buffer_layout *layout,
 	const unsigned char *description,
 	size_t size,
 	int descriptor)
 {
-	struct zwl_gpu_buffer_record *record;
+	struct kwl_gpu_buffer_record *record;
 	void **owned;
 
 	/* The resource's place for the record, and a description that fits. */
 	owned = host->resource_private(buffer);
-	if (owned == NULL || *owned != NULL || size > ZWL_GPU_DESCRIPTION_MAX)
+	if (owned == NULL || *owned != NULL || size > KWL_GPU_DESCRIPTION_MAX)
 		return;
 
 	/* The record, with its own copy of the fd. */
@@ -465,7 +465,7 @@ buffer_keep(
 static VkResult
 buffer_image(
 	const struct kl_backend_gpu_device *device,
-	const struct zwl_buffer_layout *image,
+	const struct kwl_buffer_layout *image,
 	int descriptor,
 	VkImage *created,
 	VkDeviceMemory *memory)
@@ -485,13 +485,13 @@ buffer_image(
 	*created = VK_NULL_HANDLE;
 	*memory = VK_NULL_HANDLE;
 
-	/* The channel order is the client's (a linear four-channel format, checked by zwl_gpu_buffer_decode). */
+	/* The channel order is the client's (a linear four-channel format, checked by kwl_gpu_buffer_decode). */
 	format = image->format;
 
 	/* The image, sampled, with external memory. */
 	memset(&external, 0, sizeof(external));
 	external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-	external.handleTypes = zwl_gpu_buffer_handle_type();
+	external.handleTypes = kwl_gpu_buffer_handle_type();
 
 	/* Describe the linear image whose dedicated allocation is imported. */
 	memset(&create, 0, sizeof(create));
@@ -560,7 +560,7 @@ buffer_image(
 	memset(&import_info, 0, sizeof(import_info));
 	import_info.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
 	import_info.pNext = &dedicated;
-	import_info.handleType = zwl_gpu_buffer_handle_type();
+	import_info.handleType = kwl_gpu_buffer_handle_type();
 	import_info.fd = descriptor;
 
 	/* Allocate the memory with the dedicated import chained to it. */

@@ -27,7 +27,7 @@
  * decided when it starts and holds until it ends.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "tablet.h"
 #include "extras.h"
 #include "popup.h"
@@ -118,14 +118,14 @@ struct tablet_tool {
  * One pen tablet: its evdev node, what the node says about its axes, the
  * state its reports have left, and where the pen's events go.
  *
- * A slot is in use while input is set; it lives from zwl_tablet_add to
- * zwl_tablet_remove.  focus is cleared before the surface it names is freed
- * (zwl_tablet_object_gone).  The pressure and tilt last sent to the focus
+ * A slot is in use while input is set; it lives from kwl_tablet_add to
+ * kwl_tablet_remove.  focus is cleared before the surface it names is freed
+ * (kwl_tablet_object_gone).  The pressure and tilt last sent to the focus
  * are kept so an unchanged value is not sent again; axes_fresh says the
  * focus has just heard proximity_in and must hear every axis once.
  */
 struct tablet_device {
-	struct zwl_input_device *input;
+	struct kwl_input_device *input;
 	struct input_absinfo axis_x;
 	struct input_absinfo axis_y;
 	struct input_absinfo axis_pressure;
@@ -146,7 +146,7 @@ struct tablet_device {
 	unsigned barrels;
 	int tool;
 	int route;
-	struct zwl_object *focus;
+	struct kwl_object *focus;
 	unsigned axes_fresh;
 	uint32_t sent_pressure;
 	int32_t sent_tilt_x;
@@ -186,45 +186,45 @@ static struct tablet_device tablets[TABLET_MAX];
  */
 static uint64_t tablet_seat_next = 1;
 
-static struct tablet_device *device_of(struct zwl_input_device *input);
+static struct tablet_device *device_of(struct kwl_input_device *input);
 static unsigned device_slot(const struct tablet_device *device);
 static unsigned tool_slot(const struct tablet_device *device, int tool);
 static int read_axes(struct tablet_device *device);
 static void read_report(struct tablet_device *device, struct tablet_change *change);
-static void apply_report(struct zwl_server *server, struct tablet_device *device, const struct tablet_change *change, uint32_t time);
-static void touch_press(struct zwl_server *server, struct tablet_device *device, uint32_t time, unsigned *sent, unsigned *pointer_activity);
-static void touch_end(struct zwl_server *server, struct tablet_device *device, uint32_t time, unsigned *sent, unsigned *pointer_activity);
-static void hover(struct zwl_server *server, struct tablet_device *device, uint32_t time, unsigned *sent, unsigned *pointer_activity);
-static void barrel_changes(struct zwl_server *server, struct tablet_device *device, unsigned changed, uint32_t time, unsigned *sent, unsigned *pointer_activity);
-static struct zwl_object *tablet_target(struct zwl_server *server, struct tablet_device *device);
-static int client_has_tool(struct zwl_client *client, unsigned slot);
-static void place_pointer(struct zwl_server *server, struct tablet_device *device);
+static void apply_report(struct kwl_server *server, struct tablet_device *device, const struct tablet_change *change, uint32_t time);
+static void touch_press(struct kwl_server *server, struct tablet_device *device, uint32_t time, unsigned *sent, unsigned *pointer_activity);
+static void touch_end(struct kwl_server *server, struct tablet_device *device, uint32_t time, unsigned *sent, unsigned *pointer_activity);
+static void hover(struct kwl_server *server, struct tablet_device *device, uint32_t time, unsigned *sent, unsigned *pointer_activity);
+static void barrel_changes(struct kwl_server *server, struct tablet_device *device, unsigned changed, uint32_t time, unsigned *sent, unsigned *pointer_activity);
+static struct kwl_object *tablet_target(struct kwl_server *server, struct tablet_device *device);
+static int client_has_tool(struct kwl_client *client, unsigned slot);
+static void place_pointer(struct kwl_server *server, struct tablet_device *device);
 static int32_t scale_fixed(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
-static void focus_set(struct zwl_server *server, struct tablet_device *device, struct zwl_object *surface);
+static void focus_set(struct kwl_server *server, struct tablet_device *device, struct kwl_object *surface);
 static void send_axes(struct tablet_device *device, unsigned motion, unsigned pressure, unsigned tilt);
 static void send_tool(struct tablet_device *device, uint32_t opcode, const void *payload, size_t size);
 static uint32_t normalized_pressure(const struct tablet_device *device);
 static int32_t tilt_fixed(const struct input_absinfo *axis, int32_t value);
-static void tool_use(struct zwl_server *server, struct tablet_device *device);
-static void announce_tablet(struct zwl_object *seat, struct tablet_device *device);
-static void announce_tool(struct zwl_object *seat, struct tablet_device *device, int tool);
-static int seat_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int tool_set_cursor(struct zwl_object *tool, const unsigned char *bytes, size_t size);
-static void emit(struct zwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
-static void emit_string(struct zwl_client *client, uint32_t id, uint32_t opcode, const char *text);
+static void tool_use(struct kwl_server *server, struct tablet_device *device);
+static void announce_tablet(struct kwl_object *seat, struct tablet_device *device);
+static void announce_tool(struct kwl_object *seat, struct tablet_device *device, int tool);
+static int seat_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int tool_set_cursor(struct kwl_object *tool, const unsigned char *bytes, size_t size);
+static void emit(struct kwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
+static void emit_string(struct kwl_client *client, uint32_t id, uint32_t opcode, const char *text);
 
 /*
  * Takes an evdev node classified as a pen tablet: reads its axes, name and
  * USB identity, and announces it to every tablet seat.
  */
 int
-zwl_tablet_add(
-	struct zwl_server *server,
-	struct zwl_input_device *input)
+kwl_tablet_add(
+	struct kwl_server *server,
+	struct kwl_input_device *input)
 {
 	struct tablet_device *device;
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	unsigned index;
 	int error;
 
@@ -260,7 +260,7 @@ zwl_tablet_add(
 		/* Each live tablet seat of the client. */
 		for (object = client->objects; object != NULL; object = object->next) {
 			/* Only tablet seats announce tablets. */
-			if (object->kind != ZWL_TABLET_SEAT || object->dead)
+			if (object->kind != KWL_TABLET_SEAT || object->dead)
 				continue;
 
 			/* The seat gets a zwp_tablet_v2 for it. */
@@ -280,14 +280,14 @@ zwl_tablet_add(
  * its surface and every tablet and tool object of it hears removed.
  */
 void
-zwl_tablet_remove(
-	struct zwl_server *server,
-	struct zwl_input_device *input,
+kwl_tablet_remove(
+	struct kwl_server *server,
+	struct kwl_input_device *input,
 	int notify)
 {
 	struct tablet_device *device;
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	unsigned slot;
 	unsigned first_tool;
 	unsigned sent;
@@ -305,7 +305,7 @@ zwl_tablet_remove(
 		touch_end(server, device, 0, &sent, &pointer_activity);
 		focus_set(server, device, NULL);
 		if (pointer_activity)
-			zwl_seat_frame(server);
+			kwl_seat_frame(server);
 	}
 
 	/* Every object of this tablet and its tools hears removed and names nothing any more. */
@@ -319,19 +319,19 @@ zwl_tablet_remove(
 				continue;
 
 			/* A tool of this tablet. */
-			if (object->kind == ZWL_TABLET_TOOL &&
+			if (object->kind == KWL_TABLET_TOOL &&
 			    object->tool_slot >= first_tool &&
 			    object->tool_slot < first_tool + TABLET_TOOLS) {
 				if (notify)
 					emit(client, object->id, TOOL_REMOVED, NULL, 0);
-				object->tool_slot = ZWL_TABLET_SLOT_NONE;
+				object->tool_slot = KWL_TABLET_SLOT_NONE;
 			}
 
 			/* The tablet itself. */
-			if (object->kind == ZWL_TABLET && object->tablet_slot == slot) {
+			if (object->kind == KWL_TABLET && object->tablet_slot == slot) {
 				if (notify)
 					emit(client, object->id, TABLET_REMOVED, NULL, 0);
-				object->tablet_slot = ZWL_TABLET_SLOT_NONE;
+				object->tablet_slot = KWL_TABLET_SLOT_NONE;
 			}
 		}
 	}
@@ -346,9 +346,9 @@ zwl_tablet_remove(
  * Applies one completed report of a pen tablet.
  */
 void
-zwl_tablet_frame(
-	struct zwl_server *server,
-	struct zwl_input_device *input,
+kwl_tablet_frame(
+	struct kwl_server *server,
+	struct kwl_input_device *input,
 	uint32_t time)
 {
 	struct tablet_device *device;
@@ -360,7 +360,7 @@ zwl_tablet_frame(
 		return;
 
 	/* The pen is input: the lock screen's idle time starts again. */
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 
 	/* Reads what the report changed, then delivers it. */
 	read_report(device, &change);
@@ -372,8 +372,8 @@ zwl_tablet_frame(
  * zwp_tablet_v2 or zwp_tablet_tool_v2.
  */
 int
-zwl_tablet_request(
-	struct zwl_object *object,
+kwl_tablet_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -381,10 +381,10 @@ zwl_tablet_request(
 	int error;
 
 	/* The manager makes a seat's tablet seat, or goes. */
-	if (object->kind == ZWL_TABLET_MANAGER) {
+	if (object->kind == KWL_TABLET_MANAGER) {
 		/* destroy: what it made stays. */
 		if (opcode == MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -398,7 +398,7 @@ zwl_tablet_request(
 	}
 
 	/* A tool names its cursor, or goes. */
-	if (object->kind == ZWL_TABLET_TOOL) {
+	if (object->kind == KWL_TABLET_TOOL) {
 		/* set_cursor. */
 		if (opcode == TOOL_SET_CURSOR) {
 			error = tool_set_cursor(object, bytes, size);
@@ -410,14 +410,14 @@ zwl_tablet_request(
 		/* Only destroy is left. */
 		if (opcode != TOOL_DESTROY || size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
 	/* A tablet seat and a tablet only go (their destroy is opcode 0). */
 	if (opcode != SEAT_DESTROY || size != 0U)
 		return EPROTO;
-	zwl_object_destroy(object);
+	kwl_object_destroy(object);
 
 	/* Succeeded: the request was carried out. */
 	return 0;
@@ -428,14 +428,14 @@ zwl_tablet_request(
  * and a touch delivered to it ends without an up.
  */
 void
-zwl_tablet_object_gone(
-	struct zwl_object *object)
+kwl_tablet_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	unsigned index;
 
 	/* Only surfaces are named by the tablets. */
-	if (object->kind != ZWL_SURFACE)
+	if (object->kind != KWL_SURFACE)
 		return;
 
 	/* Every tablet whose tool is on the surface. */
@@ -455,7 +455,7 @@ zwl_tablet_object_gone(
 /* Finds the tablet slot of an input device, NULL when there is none. */
 static struct tablet_device *
 device_of(
-	struct zwl_input_device *input)
+	struct kwl_input_device *input)
 {
 	unsigned index;
 
@@ -660,7 +660,7 @@ read_report(
  */
 static void
 apply_report(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device,
 	const struct tablet_change *change,
 	uint32_t time)
@@ -691,7 +691,7 @@ apply_report(
 	/* Without a tool near there is nothing more to deliver. */
 	if (tool == TOOL_NONE) {
 		if (pointer_activity)
-			zwl_seat_frame(server);
+			kwl_seat_frame(server);
 		return;
 	}
 
@@ -718,7 +718,7 @@ apply_report(
 	} else if (device->route == ROUTE_POINTER) {
 		/* A touch delivered as the pointer's left button moves and clicks like the pointer. */
 		if (change->moved) {
-			zwl_seat_motion(server, time);
+			kwl_seat_motion(server, time);
 			pointer_activity = 1;
 		}
 
@@ -753,7 +753,7 @@ apply_report(
 	if (sent && device->focus != NULL)
 		send_tool(device, TOOL_FRAME, &time, sizeof(time));
 	if (pointer_activity)
-		zwl_seat_frame(server);
+		kwl_seat_frame(server);
 }
 
 /*
@@ -762,18 +762,18 @@ apply_report(
  */
 static void
 touch_press(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device,
 	uint32_t time,
 	unsigned *sent,
 	unsigned *pointer_activity)
 {
-	struct zwl_object *target;
+	struct kwl_object *target;
 	uint32_t serial;
 	int taken;
 
 	/* zdesktop's grabs, screens and title bars see the press first. */
-	taken = zwl_seat_button_shell(server, time, ZWL_BUTTON_LEFT, 1U);
+	taken = kwl_seat_button_shell(server, time, KWL_BUTTON_LEFT, 1U);
 	if (taken) {
 		focus_set(server, device, NULL);
 		device->route = ROUTE_POINTER;
@@ -790,7 +790,7 @@ touch_press(
 		}
 
 		/* down, whose serial a move or a resize the client asks for names. */
-		serial = zwl_next_serial(server);
+		serial = kwl_next_serial(server);
 		send_tool(device, TOOL_DOWN, &serial, sizeof(serial));
 		server->press_serial = serial;
 		device->route = ROUTE_TABLET;
@@ -800,7 +800,7 @@ touch_press(
 
 	/* Any other client hears the pointer's left button. */
 	focus_set(server, device, NULL);
-	zwl_seat_button_deliver(server, time, ZWL_BUTTON_LEFT, 1U);
+	kwl_seat_button_deliver(server, time, KWL_BUTTON_LEFT, 1U);
 	device->route = ROUTE_POINTER;
 	*pointer_activity = 1;
 }
@@ -808,7 +808,7 @@ touch_press(
 /* Ends a touch in progress the way it was delivered. */
 static void
 touch_end(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device,
 	uint32_t time,
 	unsigned *sent,
@@ -830,7 +830,7 @@ touch_end(
 
 	/* A touch as the pointer releases its left button, through zdesktop first. */
 	if (device->route == ROUTE_POINTER) {
-		zwl_seat_button(server, time, ZWL_BUTTON_LEFT, 0U);
+		kwl_seat_button(server, time, KWL_BUTTON_LEFT, 0U);
 		device->route = ROUTE_NONE;
 		*pointer_activity = 1;
 	}
@@ -843,19 +843,19 @@ touch_end(
  */
 static void
 hover(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device,
 	uint32_t time,
 	unsigned *sent,
 	unsigned *pointer_activity)
 {
-	struct zwl_object *target;
-	struct zwl_object *surface;
+	struct kwl_object *target;
+	struct kwl_object *surface;
 	int taken;
 	int bound;
 
 	/* zdesktop's grabs and screens take the motion first; the tool leaves any surface. */
-	taken = zwl_seat_motion_shell(server, time);
+	taken = kwl_seat_motion_shell(server, time);
 	if (taken) {
 		focus_set(server, device, NULL);
 		return;
@@ -887,7 +887,7 @@ hover(
 	bound = client_has_tool(surface->client, tool_slot(device, device->tool));
 	if (bound)
 		return;
-	zwl_seat_motion_deliver(server, time);
+	kwl_seat_motion_deliver(server, time);
 	*pointer_activity = 1;
 }
 
@@ -897,7 +897,7 @@ hover(
  */
 static void
 barrel_changes(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device,
 	unsigned changed,
 	uint32_t time,
@@ -924,7 +924,7 @@ barrel_changes(
 
 		/* The tool's button, with the Linux BTN_ code, to a surface with the tool. */
 		if (device->focus != NULL) {
-			words[0] = zwl_next_serial(server);
+			words[0] = kwl_next_serial(server);
 			words[1] = tool_codes[index];
 			words[2] = state;
 			send_tool(device, TOOL_BUTTON, words, sizeof(words));
@@ -933,7 +933,7 @@ barrel_changes(
 		}
 
 		/* Otherwise the pointer's right or middle button. */
-		zwl_seat_button(server, time, pointer_codes[index], state);
+		kwl_seat_button(server, time, pointer_codes[index], state);
 		*pointer_activity = 1;
 	}
 }
@@ -942,18 +942,18 @@ barrel_changes(
  * Finds the surface the pen's tablet events go to: the surface under the
  * pointer, when the pen is on it and its client has the tool.
  */
-static struct zwl_object *
+static struct kwl_object *
 tablet_target(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t width;
 	uint32_t height;
 	int bound;
 
 	/* The surface the pointer belongs to now (seat.c). */
-	zwl_seat_pointer_update(server);
+	kwl_seat_pointer_update(server);
 	surface = server->pointer_surface;
 	if (surface == NULL || surface->dead)
 		return NULL;
@@ -964,7 +964,7 @@ tablet_target(
 		return NULL;
 
 	/* The pen must be on the surface. */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	if (server->pointer_x < surface->x || server->pointer_y < surface->y)
 		return NULL;
 	if (server->pointer_x >= surface->x + (int32_t)width)
@@ -979,10 +979,10 @@ tablet_target(
 /* Reports whether a client has a live object for a tool. */
 static int
 client_has_tool(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	unsigned slot)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* A failed client has nothing. */
 	if (client->fatal)
@@ -991,7 +991,7 @@ client_has_tool(
 	/* Looks for the tool among the client's objects. */
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* A live object of the tool. */
-		if (object->kind == ZWL_TABLET_TOOL &&
+		if (object->kind == KWL_TABLET_TOOL &&
 		    !object->dead &&
 		    object->tool_slot == slot)
 			return 1;
@@ -1004,7 +1004,7 @@ client_has_tool(
 /* Moves the pointer to the pen's place, mapping the whole tablet onto the output. */
 static void
 place_pointer(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device)
 {
 	int32_t old_x;
@@ -1020,7 +1020,7 @@ place_pointer(
 	server->pointer_x = device->place_x / 256;
 	server->pointer_y = device->place_y / 256;
 	if (old_x != server->pointer_x || old_y != server->pointer_y)
-		zwl_damage_pointer(server, old_x, old_y);
+		kwl_damage_pointer(server, old_x, old_y);
 }
 
 /* Maps one axis value onto 0 .. size - 1 pixels in 24.8 fixed point. */
@@ -1057,12 +1057,12 @@ scale_fixed(
  */
 static void
 focus_set(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device,
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *object;
-	struct zwl_object *tablet;
+	struct kwl_object *object;
+	struct kwl_object *tablet;
 	uint32_t words[3];
 	unsigned slot;
 	unsigned device_number;
@@ -1074,10 +1074,10 @@ focus_set(
 	/* The old surface's tools hear proximity_out and a frame; a cursor the tool set gives way to the arrow. */
 	if (device->focus != NULL) {
 		send_tool(device, TOOL_PROXIMITY_OUT, NULL, 0);
-		words[0] = (uint32_t)zwl_milliseconds();
+		words[0] = (uint32_t)kwl_milliseconds();
 		send_tool(device, TOOL_FRAME, words, sizeof(words[0]));
 		if (device->cursor_set) {
-			zwl_cursor_default(server);
+			kwl_cursor_default(server);
 			device->cursor_set = 0;
 		}
 	}
@@ -1089,13 +1089,13 @@ focus_set(
 		return;
 
 	/* Each tool object of the new client hears proximity_in with its seat's tablet. */
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	words[2] = surface->id;
 	slot = tool_slot(device, device->tool);
 	device_number = device_slot(device);
 	for (object = surface->client->objects; object != NULL; object = object->next) {
 		/* Only live objects of this tool. */
-		if (object->kind != ZWL_TABLET_TOOL ||
+		if (object->kind != KWL_TABLET_TOOL ||
 		    object->dead ||
 		    object->tool_slot != slot)
 			continue;
@@ -1103,7 +1103,7 @@ focus_set(
 		/* The zwp_tablet_v2 announced on the same seat. */
 		for (tablet = surface->client->objects; tablet != NULL; tablet = tablet->next) {
 			/* The tablet of this device on the tool's seat. */
-			if (tablet->kind == ZWL_TABLET &&
+			if (tablet->kind == KWL_TABLET &&
 			    !tablet->dead &&
 			    tablet->tablet_slot == device_number &&
 			    tablet->tablet_seat_number == object->tablet_seat_number)
@@ -1148,7 +1148,7 @@ send_axes(
 
 		/* The time the place went out, when the per-frame lines were asked for (ws099-p015's pen latency). */
 		if (device->focus->client->server->log_frames)
-			printf("ZWL LAT pen surface=%u at_us=%llu\n", device->focus->id, (unsigned long long)zwl_microseconds());
+			printf("ZWL LAT pen surface=%u at_us=%llu\n", device->focus->id, (unsigned long long)kwl_microseconds());
 	}
 
 	/* The pressure, 0..65535, when it differs from what was sent. */
@@ -1184,7 +1184,7 @@ send_tool(
 	const void *payload,
 	size_t size)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	unsigned slot;
 
 	/* Nobody hears without a focus. */
@@ -1195,7 +1195,7 @@ send_tool(
 	slot = tool_slot(device, device->tool);
 	for (object = device->focus->client->objects; object != NULL; object = object->next) {
 		/* Only live objects of this tool. */
-		if (object->kind != ZWL_TABLET_TOOL ||
+		if (object->kind != KWL_TABLET_TOOL ||
 		    object->dead ||
 		    object->tool_slot != slot)
 			continue;
@@ -1260,11 +1260,11 @@ tilt_fixed(
 /* Announces a tool coming near for the first time to every tablet seat. */
 static void
 tool_use(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct tablet_device *device)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 
 	/* A tool already announced is known to every seat. */
 	if (device->tools[device->tool].used)
@@ -1276,7 +1276,7 @@ tool_use(
 		/* Each live tablet seat of the client. */
 		for (object = client->objects; object != NULL; object = object->next) {
 			/* Only tablet seats announce tools. */
-			if (object->kind != ZWL_TABLET_SEAT || object->dead)
+			if (object->kind != KWL_TABLET_SEAT || object->dead)
 				continue;
 
 			/* The seat hears tool_added and the tool's description. */
@@ -1291,24 +1291,24 @@ tool_use(
  */
 static void
 announce_tablet(
-	struct zwl_object *seat,
+	struct kwl_object *seat,
 	struct tablet_device *device)
 {
-	struct zwl_object *tablet;
+	struct kwl_object *tablet;
 	uint32_t words[2];
 
 	/* The server-made object the event carries. */
-	tablet = zwl_create_server(seat->client, ZWL_TABLET, seat->version);
+	tablet = kwl_create_server(seat->client, KWL_TABLET, seat->version);
 	if (tablet == NULL) {
 		seat->client->fatal = 1;
-		seat->client->fatal_time = zwl_milliseconds();
+		seat->client->fatal_time = kwl_milliseconds();
 		return;
 	}
 
 	/* It names its seat and its tablet, and no tool. */
 	tablet->tablet_seat_number = seat->tablet_seat_number;
 	tablet->tablet_slot = device_slot(device);
-	tablet->tool_slot = ZWL_TABLET_SLOT_NONE;
+	tablet->tool_slot = KWL_TABLET_SLOT_NONE;
 
 	/* tablet_added introduces it. */
 	words[0] = tablet->id;
@@ -1333,18 +1333,18 @@ announce_tablet(
  */
 static void
 announce_tool(
-	struct zwl_object *seat,
+	struct kwl_object *seat,
 	struct tablet_device *device,
 	int tool)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t word;
 
 	/* The server-made object the event carries. */
-	object = zwl_create_server(seat->client, ZWL_TABLET_TOOL, seat->version);
+	object = kwl_create_server(seat->client, KWL_TABLET_TOOL, seat->version);
 	if (object == NULL) {
 		seat->client->fatal = 1;
-		seat->client->fatal_time = zwl_milliseconds();
+		seat->client->fatal_time = kwl_milliseconds();
 		return;
 	}
 
@@ -1381,12 +1381,12 @@ announce_tool(
  */
 static int
 seat_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *seat;
-	struct zwl_object *wl_seat;
+	struct kwl_object *seat;
+	struct kwl_object *wl_seat;
 	uint32_t words[2];
 	unsigned index;
 	int tool;
@@ -1397,18 +1397,18 @@ seat_create(
 	memcpy(words, bytes, sizeof(words));
 
 	/* The wl_seat must be one of the client's seats. */
-	wl_seat = zwl_find(manager->client, words[1]);
-	if (wl_seat == NULL || wl_seat->kind != ZWL_SEAT)
+	wl_seat = kwl_find(manager->client, words[1]);
+	if (wl_seat == NULL || wl_seat->kind != KWL_SEAT)
 		return EPROTO;
 
 	/* The tablet seat, with a number its tablets and tools will name. */
-	seat = zwl_create(manager->client, words[0], ZWL_TABLET_SEAT, manager->version);
+	seat = kwl_create(manager->client, words[0], KWL_TABLET_SEAT, manager->version);
 	if (seat == NULL)
 		return EPROTO;
 	seat->tablet_seat_number = tablet_seat_next;
 	tablet_seat_next++;
-	seat->tablet_slot = ZWL_TABLET_SLOT_NONE;
-	seat->tool_slot = ZWL_TABLET_SLOT_NONE;
+	seat->tablet_slot = KWL_TABLET_SLOT_NONE;
+	seat->tool_slot = KWL_TABLET_SLOT_NONE;
 
 	/* Every tablet, and each of its tools already used. */
 	for (index = 0; index < TABLET_MAX; index++) {
@@ -1439,12 +1439,12 @@ seat_create(
  */
 static int
 tool_set_cursor(
-	struct zwl_object *tool,
+	struct kwl_object *tool,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_object *surface;
+	struct kwl_server *server;
+	struct kwl_object *surface;
 	struct tablet_device *device;
 	uint32_t words[2];
 	int32_t hotspot[2];
@@ -1460,8 +1460,8 @@ tool_set_cursor(
 	/* A surface must be the client's own and have no other role. */
 	surface = NULL;
 	if (words[1] != 0U) {
-		surface = zwl_find(tool->client, words[1]);
-		if (surface == NULL || surface->kind != ZWL_SURFACE)
+		surface = kwl_find(tool->client, words[1]);
+		if (surface == NULL || surface->kind != KWL_SURFACE)
 			return EPROTO;
 		if (surface->role != NULL || surface->sub_role != NULL)
 			return EPROTO;
@@ -1516,7 +1516,7 @@ tool_set_cursor(
 /* Queues one event and marks the client failed when the queue refuses it. */
 static void
 emit(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const void *payload,
@@ -1529,10 +1529,10 @@ emit(
 		return;
 
 	/* A client that stopped reading loses its connection rather than compositor memory. */
-	error = zwl_emit(client, id, opcode, payload, size);
+	error = kwl_emit(client, id, opcode, payload, size);
 	if (error != 0) {
 		client->fatal = 1;
-		client->fatal_time = zwl_milliseconds();
+		client->fatal_time = kwl_milliseconds();
 		return;
 	}
 
@@ -1543,7 +1543,7 @@ emit(
 /* Queues one event whose only argument is a string. */
 static void
 emit_string(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const char *text)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # BUG-237: host picture and check of what an application tile's cut-out picture shows.
-# The tiles are the compositor's own pixels (tile-dump, icons.c zwl_icon_tile); the grounds are drawn with the panel
+# The tiles are the compositor's own pixels (tile-dump, icons.c kwl_icon_tile); the grounds are drawn with the panel
 # shader's formulas (shaders/panel.frag: MODE_GLASS with the luma lift and the sheen, MODE_SOLID, MODE_IMAGE) and its
 # blend (premultiplied over), in the order the compositor draws them:
 #   App Home: white glass 0.48 over the blurred wallpaper, the blue tint 0.22, then each tile (home.c);
@@ -222,7 +222,7 @@ def main():
     draw = ImageDraw.Draw(sheet)
     draw.text((20, 14), 'BUG-237: what the cut-out picture shows. Left: main (the hole shows the near-white glass under the tile). '
               'Right: fixed (the hole shows the blurred scene the glass frosts).', fill=ink, font=font)
-    draw.text((20, 36), 'Tiles: icons.c zwl_icon_tile pixels; grounds: panel.frag formulas and premultiplied over; '
+    draw.text((20, 36), 'Tiles: icons.c kwl_icon_tile pixels; grounds: panel.frag formulas and premultiplied over; '
               'blurred wallpaper approximated.', fill=ink, font=small)
     top = 70
     for title, left_image, right_image in panels:

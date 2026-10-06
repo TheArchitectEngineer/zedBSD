@@ -44,16 +44,16 @@ static int failures;
 static int checks;
 
 /* The pad, the fake clock and the next tracking identifier. */
-static struct zwl_touchpad pad;
+static struct kwl_touchpad pad;
 static uint64_t now_ms;
 static int32_t next_tracking;
 
 /* The actions of the whole of one case, gathered from every call. */
-static struct zwl_touchpad_action seen[256];
+static struct kwl_touchpad_action seen[256];
 static unsigned seen_count;
 
 static void check(int condition, const char *what);
-static void gather(const struct zwl_touchpad_actions *actions);
+static void gather(const struct kwl_touchpad_actions *actions);
 static void frame(void);
 static void tick(uint64_t milliseconds);
 static void finger_down(int32_t slot, int32_t x, int32_t y);
@@ -85,7 +85,7 @@ check(
 /* Keeps the actions one call gave. */
 static void
 gather(
-	const struct zwl_touchpad_actions *actions)
+	const struct kwl_touchpad_actions *actions)
 {
 	unsigned index;
 
@@ -102,11 +102,11 @@ gather(
 static void
 frame(void)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 
 	/* Time passes, then the report ends. */
 	now_ms += 8U;
-	zwl_touchpad_frame(&pad, now_ms, &actions);
+	kwl_touchpad_frame(&pad, now_ms, &actions);
 	gather(&actions);
 }
 
@@ -115,14 +115,14 @@ static void
 tick(
 	uint64_t milliseconds)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 	uint64_t end;
 
 	/* One tick a millisecond until the time is over. */
 	end = now_ms + milliseconds;
 	while (now_ms < end) {
 		now_ms++;
-		zwl_touchpad_tick(&pad, now_ms, &actions);
+		kwl_touchpad_tick(&pad, now_ms, &actions);
 		gather(&actions);
 	}
 }
@@ -135,11 +135,11 @@ finger_down(
 	int32_t y)
 {
 	/* Its slot, its new identifier and its place. */
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, next_tracking);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, next_tracking);
 	next_tracking++;
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
 }
 
 /* A finger moves to a place. */
@@ -150,9 +150,9 @@ finger_move(
 	int32_t y)
 {
 	/* Its slot and its place. */
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
 }
 
 /* A finger lifts. */
@@ -161,8 +161,8 @@ finger_up(
 	int32_t slot)
 {
 	/* Its slot ends its identifier. */
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, -1);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, -1);
 }
 
 /* The pad pressed or let go. */
@@ -171,7 +171,7 @@ button(
 	int32_t pressed)
 {
 	/* BTN_LEFT. */
-	zwl_touchpad_event(&pad, EV_KEY_TYPE, CODE_BUTTON, pressed);
+	kwl_touchpad_event(&pad, EV_KEY_TYPE, CODE_BUTTON, pressed);
 }
 
 /* Starts a case on a fresh pad, long after any earlier one. */
@@ -179,7 +179,7 @@ static void
 start_case(void)
 {
 	/* A pad with nothing on it, and no action seen. */
-	zwl_touchpad_init(&pad, RESOLUTION, RESOLUTION);
+	kwl_touchpad_init(&pad, RESOLUTION, RESOLUTION);
 	now_ms += 10000U;
 	seen_count = 0;
 }
@@ -196,7 +196,7 @@ button_count(
 	/* Every button action of that button and state. */
 	count = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_BUTTON && seen[index].button == code && seen[index].pressed == pressed)
+		if (seen[index].kind == KWL_TOUCHPAD_BUTTON && seen[index].button == code && seen[index].pressed == pressed)
 			count++;
 	}
 
@@ -216,7 +216,7 @@ button_at(
 		return 0;
 
 	/* The button and its state. */
-	if (seen[index].kind != ZWL_TOUCHPAD_BUTTON)
+	if (seen[index].kind != KWL_TOUCHPAD_BUTTON)
 		return 0;
 	if (seen[index].button != code || seen[index].pressed != pressed)
 		return 0;
@@ -233,7 +233,7 @@ motion_x(void)
 	/* Every motion action. */
 	total = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_MOTION)
+		if (seen[index].kind == KWL_TOUCHPAD_MOTION)
 			total += seen[index].dx;
 	}
 
@@ -251,7 +251,7 @@ scroll_vertical(void)
 	/* Every scroll action. */
 	total = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_SCROLL)
+		if (seen[index].kind == KWL_TOUCHPAD_SCROLL)
 			total += seen[index].vertical;
 	}
 
@@ -279,7 +279,7 @@ main(void)
 	/* The slow stroke's motion. */
 	slow = motion_x();
 	check(slow > 0, "a finger moving right moves the pointer right");
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 0U, "a moving finger presses nothing");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 0U, "a moving finger presses nothing");
 	finger_up(0);
 	frame();
 	start_case();
@@ -302,12 +302,12 @@ main(void)
 	frame();
 	finger_up(0);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U, "a tap presses the left button at the lift");
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 0U) == 0U, "the tap's release waits");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U, "a tap presses the left button at the lift");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 0U) == 0U, "the tap's release waits");
 	tick(250U);
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 0U) == 0U, "still held 250 ms after the lift");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 0U) == 0U, "still held 250 ms after the lift");
 	tick(60U);
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 0U) == 1U, "released after 300 ms");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 0U) == 1U, "released after 300 ms");
 
 	/* 3. A tap and a touch within 300 ms that moves: a drag with the button held until the lift. */
 	start_case();
@@ -325,11 +325,11 @@ main(void)
 
 	/* The finger stays down a while. */
 	tick(500U);
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 0U) == 0U, "the drag holds the button while the finger is down");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 0U) == 0U, "the drag holds the button while the finger is down");
 	check(motion_x() > 0, "the drag moves the pointer");
 	finger_up(0);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U && button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 0U) == 1U, "the lift ends the drag: one press, one release");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U && button_count(KWL_TOUCHPAD_BUTTON_LEFT, 0U) == 1U, "the lift ends the drag: one press, one release");
 
 	/* 4. Two quick taps: a double click (press, release, press, release). */
 	start_case();
@@ -343,8 +343,8 @@ main(void)
 	finger_up(0);
 	frame();
 	check(seen_count == 4U, "two taps give four button actions");
-	check(button_at(0, ZWL_TOUCHPAD_BUTTON_LEFT, 1U) && button_at(1, ZWL_TOUCHPAD_BUTTON_LEFT, 0U), "the first click");
-	check(button_at(2, ZWL_TOUCHPAD_BUTTON_LEFT, 1U) && button_at(3, ZWL_TOUCHPAD_BUTTON_LEFT, 0U), "the second click");
+	check(button_at(0, KWL_TOUCHPAD_BUTTON_LEFT, 1U) && button_at(1, KWL_TOUCHPAD_BUTTON_LEFT, 0U), "the first click");
+	check(button_at(2, KWL_TOUCHPAD_BUTTON_LEFT, 1U) && button_at(3, KWL_TOUCHPAD_BUTTON_LEFT, 0U), "the second click");
 
 	/* 5. A tap of two fingers clicks the right button. */
 	start_case();
@@ -354,8 +354,8 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 1U && button_count(ZWL_TOUCHPAD_BUTTON_RIGHT, 0U) == 1U, "a two-finger tap is a right click");
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 0U, "and no left press");
+	check(button_count(KWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 1U && button_count(KWL_TOUCHPAD_BUTTON_RIGHT, 0U) == 1U, "a two-finger tap is a right click");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 0U, "and no left press");
 
 	/* 6. The pad pressed and moved: a left drag, the first millimetre still. */
 	start_case();
@@ -364,7 +364,7 @@ main(void)
 	button(1);
 	finger_move(0, 506, 600);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U, "the press is the left button");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U, "the press is the left button");
 	check(motion_x() == 0, "half a millimetre after the press does not move the pointer");
 	for (step = 1; step <= 10; step++) {
 		finger_move(0, 506 + step * 12, 600);
@@ -378,8 +378,8 @@ main(void)
 	finger_up(0);
 	frame();
 	tick(400U);
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 0U) == 1U, "letting go releases it once");
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U, "a pressed touch is no tap");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 0U) == 1U, "letting go releases it once");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 1U, "a pressed touch is no tap");
 
 	/* 7. Two fingers moving down 10 mm: notches the natural way (the content follows: scrolling up, negative). */
 	start_case();
@@ -399,7 +399,7 @@ main(void)
 	finger_up(1);
 	frame();
 	tick(400U);
-	check(button_count(ZWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 0U, "a scroll is no tap");
+	check(button_count(KWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 0U, "a scroll is no tap");
 
 	/* 8. A finger held 300 ms without moving is no tap. */
 	start_case();
@@ -409,7 +409,7 @@ main(void)
 	finger_up(0);
 	frame();
 	tick(400U);
-	check(button_count(ZWL_TOUCHPAD_BUTTON_LEFT, 1U) == 0U, "a long touch presses nothing");
+	check(button_count(KWL_TOUCHPAD_BUTTON_LEFT, 1U) == 0U, "a long touch presses nothing");
 
 	/* 9. The pad pressed with two fingers on it is the right button. */
 	start_case();
@@ -420,7 +420,7 @@ main(void)
 	frame();
 	button(0);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 1U && button_count(ZWL_TOUCHPAD_BUTTON_RIGHT, 0U) == 1U, "a two-finger press is the right button");
+	check(button_count(KWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 1U && button_count(KWL_TOUCHPAD_BUTTON_RIGHT, 0U) == 1U, "a two-finger press is the right button");
 
 	/* The verdict. */
 	if (failures != 0) {

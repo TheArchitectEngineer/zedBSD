@@ -14,24 +14,24 @@
  * tests run it alone.
  */
 
-#ifndef ZWL_ROLE_H
-#define ZWL_ROLE_H
+#ifndef KWL_ROLE_H
+#define KWL_ROLE_H
 
 #include <stdint.h>
 
 /* The roles. */
-#define ZWL_ROLE_NORMAL		0U
-#define ZWL_ROLE_TESTING	1U
-#define ZWL_ROLE_GREETER	2U
+#define KWL_ROLE_NORMAL		0U
+#define KWL_ROLE_TESTING	1U
+#define KWL_ROLE_GREETER	2U
 
 /* How long a test run lasts when --timeout does not say. */
-#define ZWL_ROLE_TESTING_TIMEOUT_MS	150000U
+#define KWL_ROLE_TESTING_TIMEOUT_MS	150000U
 
 /*
  * What the options asked for: a flag for each option that bears on the
  * role (given or not), and the --timeout value in milliseconds.
  */
-struct zwl_role_request {
+struct kwl_role_request {
 	unsigned testing;
 	unsigned session;
 	unsigned greeter;
@@ -46,13 +46,13 @@ struct zwl_role_request {
  * What was decided: the role, the deadline (UINT64_MAX for none), and for
  * a refusal the sentence that says why.
  */
-struct zwl_role {
+struct kwl_role {
 	unsigned role;
 	uint64_t timeout_ms;
 	const char *refusal;
 };
 
-int zwl_role_resolve(const struct zwl_role_request *request, struct zwl_role *role);
-const char *zwl_role_name(unsigned role);
+int kwl_role_resolve(const struct kwl_role_request *request, struct kwl_role *role);
+const char *kwl_role_name(unsigned role);
 
 #endif

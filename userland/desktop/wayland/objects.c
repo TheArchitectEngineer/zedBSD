@@ -10,7 +10,7 @@
  */
 
 #include "desktop.h"
-#include "zwl.h"
+#include "kwl.h"
 #include "compose.h"
 #include "menu.h"
 #include "titlebar.h"
@@ -31,17 +31,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void object_free(struct zwl_object *object);
+static void object_free(struct kwl_object *object);
 
 /*
  * Finds a live identity only within its originating client namespace.
  */
-struct zwl_object *
-zwl_find(
-	struct zwl_client *client,
+struct kwl_object *
+kwl_find(
+	struct kwl_client *client,
 	uint32_t id)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* Dead buffer wrappers retain GPU ownership but no longer own protocol IDs. */
 	for (object = client->objects; object != NULL; object = object->next) {
@@ -57,21 +57,21 @@ zwl_find(
 /*
  * Creates one checked client-side protocol identity with no implicit GPU allocation.
  */
-struct zwl_object *
-zwl_create(
-	struct zwl_client *client,
+struct kwl_object *
+kwl_create(
+	struct kwl_client *client,
 	uint32_t id,
-	enum zwl_kind kind,
+	enum kwl_kind kind,
 	uint32_t version)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* Zero and the server-created ID range cannot be chosen by a client request. */
-	if (id == 0 || id >= 0xff000000U || client->object_count >= ZWL_OBJECT_MAX)
+	if (id == 0 || id >= 0xff000000U || client->object_count >= KWL_OBJECT_MAX)
 		return NULL;
 
 	/* Reusing a live identity is a protocol error even when the type would match. */
-	object = zwl_find(client, id);
+	object = kwl_find(client, id);
 	if (object != NULL)
 		return NULL;
 
@@ -98,32 +98,32 @@ zwl_create(
  * event), with the next free ID of the server's range.  NULL when the
  * client has too many objects or no memory is left.
  */
-struct zwl_object *
-zwl_create_server(
-	struct zwl_client *client,
-	enum zwl_kind kind,
+struct kwl_object *
+kwl_create_server(
+	struct kwl_client *client,
+	enum kwl_kind kind,
 	uint32_t version)
 {
-	struct zwl_object *object;
-	struct zwl_object *used;
+	struct kwl_object *object;
+	struct kwl_object *used;
 	uint32_t id;
 	unsigned tries;
 
 	/* A client at its bound gets no more. */
-	if (client->object_count >= ZWL_OBJECT_MAX)
+	if (client->object_count >= KWL_OBJECT_MAX)
 		return NULL;
 
 	/* The next ID of the server's range that is not in use (the range wraps within itself). */
 	id = 0;
-	for (tries = 0; tries <= ZWL_OBJECT_MAX; tries++) {
+	for (tries = 0; tries <= KWL_OBJECT_MAX; tries++) {
 		/* The candidate, from the start of the range again after its end. */
-		if (client->server_id_next < ZWL_SERVER_ID_FIRST || client->server_id_next == UINT32_MAX)
-			client->server_id_next = ZWL_SERVER_ID_FIRST;
+		if (client->server_id_next < KWL_SERVER_ID_FIRST || client->server_id_next == UINT32_MAX)
+			client->server_id_next = KWL_SERVER_ID_FIRST;
 		id = client->server_id_next;
 		client->server_id_next++;
 
 		/* A free one ends the search. */
-		used = zwl_find(client, id);
+		used = kwl_find(client, id);
 		if (used == NULL)
 			break;
 		id = 0;
@@ -153,8 +153,8 @@ zwl_create_server(
  * Retains a buffer while pending state, committed content or scanout may use it.
  */
 void
-zwl_buffer_get(
-	struct zwl_object *buffer)
+kwl_buffer_get(
+	struct kwl_object *buffer)
 {
 	/* A null attach denotes an unmapped surface and retains no allocation. */
 	if (buffer == NULL)
@@ -171,8 +171,8 @@ zwl_buffer_get(
  * Reports a buffer's size: a wl_shm buffer's, or a GPU image's.
  */
 void
-zwl_buffer_size(
-	const struct zwl_object *buffer,
+kwl_buffer_size(
+	const struct kwl_object *buffer,
 	uint32_t *width,
 	uint32_t *height)
 {
@@ -192,8 +192,8 @@ zwl_buffer_size(
  * Drops a compositor use and reports release only after every use is finished.
  */
 void
-zwl_buffer_put(
-	struct zwl_object *buffer)
+kwl_buffer_put(
+	struct kwl_object *buffer)
 {
 	int error;
 
@@ -224,10 +224,10 @@ zwl_buffer_put(
 		/* Only a surviving protocol identity may tell its producer to reuse storage. */
 		if (!buffer->dead && !buffer->client->fatal) {
 			/* Queue reuse notification before a possible final wrapper retirement. */
-			error = zwl_emit(buffer->client, buffer->id, 0, NULL, 0);
+			error = kwl_emit(buffer->client, buffer->id, 0, NULL, 0);
 			if (error != 0) {
 				buffer->client->fatal = 1;
-				buffer->client->fatal_time = zwl_milliseconds();
+				buffer->client->fatal_time = kwl_milliseconds();
 			}
 		}
 	}
@@ -244,15 +244,15 @@ zwl_buffer_put(
  * Completes an ordered set of one-shot frame callbacks after presentation progress.
  */
 void
-zwl_callbacks_done(
-	struct zwl_object **callbacks)
+kwl_callbacks_done(
+	struct kwl_object **callbacks)
 {
-	struct zwl_object *callback;
+	struct kwl_object *callback;
 	uint32_t milliseconds;
 	int error;
 
 	/* Completion time is independent from wl_buffer release and its storage lifetime. */
-	milliseconds = (uint32_t)zwl_milliseconds();
+	milliseconds = (uint32_t)kwl_milliseconds();
 	while (*callbacks != NULL) {
 		callback = *callbacks;
 		*callbacks = callback->callback_next;
@@ -261,15 +261,15 @@ zwl_callbacks_done(
 		/* A disconnected client needs cleanup but has no event recipient. */
 		if (!callback->client->fatal) {
 			/* Queue this callback exactly once before withdrawing its object ID. */
-			error = zwl_emit(callback->client, callback->id, 0, &milliseconds, sizeof(milliseconds));
+			error = kwl_emit(callback->client, callback->id, 0, &milliseconds, sizeof(milliseconds));
 			if (error != 0) {
 				callback->client->fatal = 1;
-				callback->client->fatal_time = zwl_milliseconds();
+				callback->client->fatal_time = kwl_milliseconds();
 			}
 		}
 
 		/* One-shot callbacks retire only after their ordered done event was queued. */
-		zwl_object_destroy(callback);
+		kwl_object_destroy(callback);
 	}
 
 	/* Succeeded: the completed callback list has no remaining owners. */
@@ -280,10 +280,10 @@ zwl_callbacks_done(
  * Retires a protocol object and detaches everything that names it.
  */
 void
-zwl_object_destroy(
-	struct zwl_object *object)
+kwl_object_destroy(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	unsigned index;
 
 	/* Repeated cleanup of an already-dead buffer changes no ownership. */
@@ -291,91 +291,91 @@ zwl_object_destroy(
 		return;
 
 	/* Seat leave events must name the surface before its identity is retired; a resize of it ends. */
-	if (object->kind == ZWL_SURFACE) {
-		zwl_seat_surface_gone(object);
-		zwl_toplevel_surface_gone(object);
-		zwl_tablet_object_gone(object);
-		zwl_touch_object_gone(object);
+	if (object->kind == KWL_SURFACE) {
+		kwl_seat_surface_gone(object);
+		kwl_toplevel_surface_gone(object);
+		kwl_tablet_object_gone(object);
+		kwl_touch_object_gone(object);
 	}
 
 	/* Destroying a toplevel role also cancels its borrowed interactive operation. */
-	if (object->kind == ZWL_TOPLEVEL && object->surface != NULL)
-		zwl_toplevel_surface_gone(object->surface);
+	if (object->kind == KWL_TOPLEVEL && object->surface != NULL)
+		kwl_toplevel_surface_gone(object->surface);
 
 	/* The popups stop naming this one: a positioner's rules go, a popup's grab ends, a parent's popups close (popup.c). */
-	if (object->kind == ZWL_SURFACE ||
-	    object->kind == ZWL_POSITIONER ||
-	    object->kind == ZWL_POPUP)
-		zwl_popup_object_gone(object);
+	if (object->kind == KWL_SURFACE ||
+	    object->kind == KWL_POSITIONER ||
+	    object->kind == KWL_POPUP)
+		kwl_popup_object_gone(object);
 
 	/* A toplevel, a surface and their decorations, a pointer and its cursor-shape devices, a surface and its viewport part (ws035-p080). */
-	if (object->kind == ZWL_TOPLEVEL ||
-	    object->kind == ZWL_DECORATION ||
-	    object->kind == ZWL_KDE_DECORATION ||
-	    object->kind == ZWL_SURFACE)
-		zwl_decoration_object_gone(object);
-	if (object->kind == ZWL_POINTER)
-		zwl_cursor_shape_object_gone(object);
-	if (object->kind == ZWL_SURFACE || object->kind == ZWL_VIEWPORT)
-		zwl_viewport_object_gone(object);
+	if (object->kind == KWL_TOPLEVEL ||
+	    object->kind == KWL_DECORATION ||
+	    object->kind == KWL_KDE_DECORATION ||
+	    object->kind == KWL_SURFACE)
+		kwl_decoration_object_gone(object);
+	if (object->kind == KWL_POINTER)
+		kwl_cursor_shape_object_gone(object);
+	if (object->kind == KWL_SURFACE || object->kind == KWL_VIEWPORT)
+		kwl_viewport_object_gone(object);
 
 	/* A surface and its content type (content-type.c), and the game mode that shows it (scanout.c). */
-	if (object->kind == ZWL_SURFACE || object->kind == ZWL_CONTENT_TYPE)
-		zwl_content_type_object_gone(object);
-	if (object->kind == ZWL_SURFACE)
-		zwl_scanout_surface_gone(object->client->server, object);
+	if (object->kind == KWL_SURFACE || object->kind == KWL_CONTENT_TYPE)
+		kwl_content_type_object_gone(object);
+	if (object->kind == KWL_SURFACE)
+		kwl_scanout_surface_gone(object->client->server, object);
 
 	/* A surface and its glass panels (panels.c). */
-	if (object->kind == ZWL_SURFACE || object->kind == ZWL_GLASS)
-		zwl_panels_object_gone(object);
+	if (object->kind == KWL_SURFACE || object->kind == KWL_GLASS)
+		kwl_panels_object_gone(object);
 
 	/* A network object that asked for scans asks no longer (system.c, ws089-p021). */
-	if (object->kind == ZWL_SYSTEM_NETWORK)
-		zwl_system_network_gone(object);
+	if (object->kind == KWL_SYSTEM_NETWORK)
+		kwl_system_network_gone(object);
 
 	/* A toplevel's keyboard insets name nothing (inset.c). */
-	if (object->kind == ZWL_TOPLEVEL)
-		zwl_inset_object_gone(object);
+	if (object->kind == KWL_TOPLEVEL)
+		kwl_inset_object_gone(object);
 
 	/* A toplevel's edit objects name nothing (edit.c). */
-	if (object->kind == ZWL_TOPLEVEL)
-		zwl_edit_object_gone(object);
+	if (object->kind == KWL_TOPLEVEL)
+		kwl_edit_object_gone(object);
 
 	/* A data source leaves the clipboard and its offers, and a drag loses what goes (data.c). */
-	if (object->kind == ZWL_DATA_SOURCE ||
-	    object->kind == ZWL_DATA_OFFER ||
-	    object->kind == ZWL_DATA_DEVICE ||
-	    object->kind == ZWL_SURFACE ||
-	    object->kind == ZWL_TITLEBAR)
-		zwl_data_object_gone(object);
+	if (object->kind == KWL_DATA_SOURCE ||
+	    object->kind == KWL_DATA_OFFER ||
+	    object->kind == KWL_DATA_DEVICE ||
+	    object->kind == KWL_SURFACE ||
+	    object->kind == KWL_TITLEBAR)
+		kwl_data_object_gone(object);
 
 	/* The text input and input method objects stop being named (text-input.c, input-method.c). */
-	if (object->kind >= ZWL_TEXT_INPUT_MANAGER && object->kind <= ZWL_IME_STATUS)
-		zwl_ime_object_gone(object);
+	if (object->kind >= KWL_TEXT_INPUT_MANAGER && object->kind <= KWL_IME_STATUS)
+		kwl_ime_object_gone(object);
 
 	/* A primary selection source leaves the selection and its offers (primary.c). */
-	if (object->kind == ZWL_PRIMARY_SOURCE)
-		zwl_primary_object_gone(object);
+	if (object->kind == KWL_PRIMARY_SOURCE)
+		kwl_primary_object_gone(object);
 
 	/* A sub-surface leaves its parent, a parent's sub-surfaces lose it (subsurface.c). */
-	if (object->kind == ZWL_SURFACE || object->kind == ZWL_SUBSURFACE)
-		zwl_subsurface_object_gone(object);
+	if (object->kind == KWL_SURFACE || object->kind == KWL_SUBSURFACE)
+		kwl_subsurface_object_gone(object);
 
 	/* The System Menu's objects stop naming this one, and a menu open on it closes. */
-	if (object->kind == ZWL_SURFACE ||
-	    object->kind == ZWL_TOPLEVEL ||
-	    object->kind == ZWL_TOPLEVEL_MENU ||
-	    object->kind == ZWL_CONTEXT_MENU ||
-	    object->kind == ZWL_MENU)
-		zwl_menu_object_gone(object);
+	if (object->kind == KWL_SURFACE ||
+	    object->kind == KWL_TOPLEVEL ||
+	    object->kind == KWL_TOPLEVEL_MENU ||
+	    object->kind == KWL_CONTEXT_MENU ||
+	    object->kind == KWL_MENU)
+		kwl_menu_object_gone(object);
 
 	/* The desktop surface's role ends with its surface or its object (desktop.c). */
-	if (object->kind == ZWL_SURFACE || object->kind == ZWL_DESKTOP_SURFACE)
-		zwl_desktop_object_gone(object);
+	if (object->kind == KWL_SURFACE || object->kind == KWL_DESKTOP_SURFACE)
+		kwl_desktop_object_gone(object);
 
 	/* The Titlebar Presentation's objects stop naming this one (titlebar.c). */
-	if (object->kind == ZWL_SURFACE || object->kind == ZWL_TOPLEVEL || object->kind == ZWL_TITLEBAR)
-		zwl_titlebar_object_gone(object);
+	if (object->kind == KWL_SURFACE || object->kind == KWL_TOPLEVEL || object->kind == KWL_TITLEBAR)
+		kwl_titlebar_object_gone(object);
 
 	/*
 	 * Destroyed IDs become reusable only through ordered delete_id
@@ -384,11 +384,11 @@ zwl_object_destroy(
 	 */
 	server = object->client->server;
 	object->dead = 1;
-	if (object->id < ZWL_SERVER_ID_FIRST)
-		zwl_delete_id(object->client, object->id);
+	if (object->id < KWL_SERVER_ID_FIRST)
+		kwl_delete_id(object->client, object->id);
 
 	/* A surface's shell objects stop referring to it before its storage goes. */
-	if (object->kind == ZWL_SURFACE) {
+	if (object->kind == KWL_SURFACE) {
 		/* Detach surviving shell objects before this surface storage disappears. */
 		if (object->role != NULL) {
 			object->role->surface = NULL;
@@ -430,28 +430,28 @@ zwl_object_destroy(
 		object->fence_count = 0;
 
 		/* Its wl_shm image goes; a cursor surface gives the arrow back. */
-		zwl_shm_image_destroy(server, object);
+		kwl_shm_image_destroy(server, object);
 		if (server->cursor_surface == object)
-			zwl_cursor_default(server);
+			kwl_cursor_default(server);
 
 		/* Pending state and current surface content own independent image holds. */
-		zwl_buffer_put(object->pending);
-		zwl_buffer_put(object->queued);
-		zwl_buffer_put(object->current);
-		zwl_callbacks_done(&object->callbacks);
-		zwl_callbacks_done(&object->committed_callbacks);
+		kwl_buffer_put(object->pending);
+		kwl_buffer_put(object->queued);
+		kwl_buffer_put(object->current);
+		kwl_callbacks_done(&object->callbacks);
+		kwl_callbacks_done(&object->committed_callbacks);
 	}
 
 	/* Removing a shell role makes the surviving surface available for orderly destruction. */
-	if (object->kind == ZWL_XDG_SURFACE && object->surface != NULL)
+	if (object->kind == KWL_XDG_SURFACE && object->surface != NULL)
 		object->surface->role = NULL;
 
 	/* A toplevel is the sole child retained by its xdg_surface role. */
-	if (object->kind == ZWL_TOPLEVEL && object->role != NULL)
+	if (object->kind == KWL_TOPLEVEL && object->role != NULL)
 		object->role->top = NULL;
 
 	/* Destroy does not withdraw an image currently borrowed by pending or scanout state. */
-	if (object->kind == ZWL_BUFFER && object->holds != 0)
+	if (object->kind == KWL_BUFFER && object->holds != 0)
 		return;
 
 	/* Unborrowed objects need no deferred lifetime beyond their protocol ID. */
@@ -465,26 +465,26 @@ zwl_object_destroy(
  * Releases every connection-owned descriptor, protocol object and unsent event.
  */
 void
-zwl_client_destroy(
-	struct zwl_client *client)
+kwl_client_destroy(
+	struct kwl_client *client)
 {
-	struct zwl_server *server;
-	struct zwl_client **link;
-	struct zwl_object *object;
-	struct zwl_object *surface;
-	struct zwl_packet *packet;
+	struct kwl_server *server;
+	struct kwl_client **link;
+	struct kwl_object *object;
+	struct kwl_object *surface;
+	struct kwl_packet *packet;
 	unsigned index;
 
 	/* A frame in flight may hold this client's buffers and callbacks; it finishes first. */
 	server = client->server;
-	zwl_compose_quiesce(server);
+	kwl_compose_quiesce(server);
 
 	/* The input method's connection lets go of what it held (input-method.c). */
-	zwl_ime_client_gone(client);
+	kwl_ime_client_gone(client);
 
 	/* The cursor this client chose goes back to the arrow (BUG-118). */
 	if (server->cursor_client == client)
-		zwl_cursor_default(server);
+		kwl_cursor_default(server);
 
 	/* Fatal status suppresses events while destructors unwind dependent objects. */
 	client->fatal = 1;
@@ -496,7 +496,7 @@ zwl_client_destroy(
 		surface = NULL;
 		for (object = client->objects; object != NULL; object = object->next) {
 			/* Other object kinds cannot own the connection's surface-use references. */
-			if (object->kind == ZWL_SURFACE && !object->dead) {
+			if (object->kind == KWL_SURFACE && !object->dead) {
 				surface = object;
 				break;
 			}
@@ -507,7 +507,7 @@ zwl_client_destroy(
 			break;
 
 		/* The surface destructor also withdraws any active physical scanout. */
-		zwl_object_destroy(surface);
+		kwl_object_destroy(surface);
 	}
 
 	/* Toplevel and popup backreferences must retire before their xdg_surface storage. */
@@ -515,8 +515,8 @@ zwl_client_destroy(
 		/* Find the next child before allowing any shell parent to retire. */
 		object = client->objects;
 		while (object != NULL &&
-		       object->kind != ZWL_TOPLEVEL &&
-		       object->kind != ZWL_POPUP)
+		       object->kind != KWL_TOPLEVEL &&
+		       object->kind != KWL_POPUP)
 			object = object->next;
 
 		/* All remaining shell parents can retire once no child points at them. */
@@ -524,7 +524,7 @@ zwl_client_destroy(
 			break;
 
 		/* The parent role remains allocated until this child is gone. */
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 	}
 
 	/* Unused imports and protocol globals have no remaining dependent owners. */
@@ -534,7 +534,7 @@ zwl_client_destroy(
 		if (object->dead)
 			object_free(object);
 		else
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 	}
 
 	/* Rights never consumed by a valid request still belong to this connection. */
@@ -545,7 +545,7 @@ zwl_client_destroy(
 	while (client->output_head != NULL) {
 		packet = client->output_head;
 		client->output_head = packet->next;
-		zwl_packet_free(packet);
+		kwl_packet_free(packet);
 	}
 
 	/* Unlink the client before closing its descriptor so reuse cannot select this generation. */
@@ -568,28 +568,28 @@ zwl_client_destroy(
 /* Releases an unborrowed object and its Vulkan import, then withdraws list ownership. */
 static void
 object_free(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
-	struct zwl_object **link;
-	struct zwl_client *client;
+	struct kwl_object **link;
+	struct kwl_client *client;
 
 	/* Window mode's Vulkan image goes with the buffer; a wl_shm buffer or pool drops its pool's memory. */
 	client = object->client;
-	zwl_import_destroy(object);
+	kwl_import_destroy(object);
 
 	/* OS buffer descriptors (libkeiland-backend's) remain alive until the final Vulkan image use has retired. */
-	kl_backend_gpu_resource_free(zwl_gpu_host(), zwl_gpu_resource(object));
+	kl_backend_gpu_resource_free(kwl_gpu_host(), kwl_gpu_resource(object));
 
 	/* Shared-memory buffer storage returns its separate pool reference. */
 	if (object->shm != NULL) {
-		zwl_pool_put(object->shm->pool);
+		kwl_pool_put(object->shm->pool);
 		free(object->shm);
 		object->shm = NULL;
 	}
 
 	/* A pool object drops its own reference. */
 	if (object->pool != NULL) {
-		zwl_pool_put(object->pool);
+		kwl_pool_put(object->pool);
 		object->pool = NULL;
 	}
 

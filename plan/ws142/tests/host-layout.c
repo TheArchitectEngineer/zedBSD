@@ -48,18 +48,18 @@ struct layout_case {
 
 /* The table: every kind in both modes (the 2026-10-06 user decisions of ws142-p007). */
 static const struct layout_case cases[] = {
-	{ FLOATING, ZWL_LAYOUT_WINDOWED, ZWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a floating window stays" },
-	{ DOCKED, ZWL_LAYOUT_WINDOWED, ZWL_LAYOUT_FLOAT, 0, 0, 0, "windowed: a docked window floats again" },
-	{ FULLSCREEN, ZWL_LAYOUT_WINDOWED, ZWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a fullscreen window stays, floats after" },
-	{ CHILD, ZWL_LAYOUT_WINDOWED, ZWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a dialog stays over its parent" },
-	{ FIXED, ZWL_LAYOUT_WINDOWED, ZWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a window of one size floats" },
-	{ FIXED_DOCKED, ZWL_LAYOUT_WINDOWED, ZWL_LAYOUT_FLOAT, 0, 0, 1, "windowed: a docked window of one size floats again" },
-	{ FLOATING, ZWL_LAYOUT_DOCKED, ZWL_LAYOUT_DOCK, 1, 1, 0, "docked: a floating window docks" },
-	{ DOCKED, ZWL_LAYOUT_DOCKED, ZWL_LAYOUT_KEEP, 0, 1, 0, "docked: a docked window stays" },
-	{ FULLSCREEN, ZWL_LAYOUT_DOCKED, ZWL_LAYOUT_KEEP, 0, 1, 0, "docked: a fullscreen window stays, docks after" },
-	{ CHILD, ZWL_LAYOUT_DOCKED, ZWL_LAYOUT_KEEP, 0, 0, 1, "docked: a dialog is never docked, in the middle" },
-	{ FIXED, ZWL_LAYOUT_DOCKED, ZWL_LAYOUT_DOCK, 1, 1, 0, "docked: a window of one size docks too" },
-	{ FIXED_DOCKED, ZWL_LAYOUT_DOCKED, ZWL_LAYOUT_KEEP, 0, 1, 1, "docked: a docked window of one size is in the middle" },
+	{ FLOATING, KWL_LAYOUT_WINDOWED, KWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a floating window stays" },
+	{ DOCKED, KWL_LAYOUT_WINDOWED, KWL_LAYOUT_FLOAT, 0, 0, 0, "windowed: a docked window floats again" },
+	{ FULLSCREEN, KWL_LAYOUT_WINDOWED, KWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a fullscreen window stays, floats after" },
+	{ CHILD, KWL_LAYOUT_WINDOWED, KWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a dialog stays over its parent" },
+	{ FIXED, KWL_LAYOUT_WINDOWED, KWL_LAYOUT_KEEP, 0, 0, 0, "windowed: a window of one size floats" },
+	{ FIXED_DOCKED, KWL_LAYOUT_WINDOWED, KWL_LAYOUT_FLOAT, 0, 0, 1, "windowed: a docked window of one size floats again" },
+	{ FLOATING, KWL_LAYOUT_DOCKED, KWL_LAYOUT_DOCK, 1, 1, 0, "docked: a floating window docks" },
+	{ DOCKED, KWL_LAYOUT_DOCKED, KWL_LAYOUT_KEEP, 0, 1, 0, "docked: a docked window stays" },
+	{ FULLSCREEN, KWL_LAYOUT_DOCKED, KWL_LAYOUT_KEEP, 0, 1, 0, "docked: a fullscreen window stays, docks after" },
+	{ CHILD, KWL_LAYOUT_DOCKED, KWL_LAYOUT_KEEP, 0, 0, 1, "docked: a dialog is never docked, in the middle" },
+	{ FIXED, KWL_LAYOUT_DOCKED, KWL_LAYOUT_DOCK, 1, 1, 0, "docked: a window of one size docks too" },
+	{ FIXED_DOCKED, KWL_LAYOUT_DOCKED, KWL_LAYOUT_KEEP, 0, 1, 1, "docked: a docked window of one size is in the middle" },
 };
 
 /* The number of checks that failed, and of those that ran. */
@@ -67,7 +67,7 @@ static int failures;
 static int checks;
 
 static void check(int condition, const char *what, const char *rule);
-static void describe(unsigned kind, struct zwl_layout_window *window);
+static void describe(unsigned kind, struct kwl_layout_window *window);
 
 /* Counts one check, and reports it when it failed. */
 static void
@@ -90,7 +90,7 @@ check(
 static void
 describe(
 	unsigned kind,
-	struct zwl_layout_window *window)
+	struct kwl_layout_window *window)
 {
 	/* Nothing set: a floating window of many sizes without a parent. */
 	window->docked = 0U;
@@ -113,7 +113,7 @@ describe(
 int
 main(void)
 {
-	struct zwl_layout_window window;
+	struct kwl_layout_window window;
 	unsigned index;
 	unsigned action;
 	int answer;
@@ -123,32 +123,32 @@ main(void)
 	/* 1. The table: each rule for each kind in each mode. */
 	for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index++) {
 		describe(cases[index].kind, &window);
-		action = zwl_layout_switch_action(cases[index].mode, &window);
+		action = kwl_layout_switch_action(cases[index].mode, &window);
 		check(action == cases[index].action, cases[index].what, "switch");
-		answer = zwl_layout_opens_docked(cases[index].mode, &window);
+		answer = kwl_layout_opens_docked(cases[index].mode, &window);
 		check(answer == cases[index].opens_docked, cases[index].what, "opens docked");
-		answer = zwl_layout_unfullscreen_docked(cases[index].mode, &window);
+		answer = kwl_layout_unfullscreen_docked(cases[index].mode, &window);
 		check(answer == cases[index].unfullscreen_docked, cases[index].what, "after fullscreen");
-		answer = zwl_layout_centred(cases[index].mode, &window);
+		answer = kwl_layout_centred(cases[index].mode, &window);
 		check(answer == cases[index].centred, cases[index].what, "centred");
 	}
 
 	/* 2. Hidden: only another application's window in the docked mode, without an overview. */
-	check(!zwl_layout_hidden(ZWL_LAYOUT_WINDOWED, 0, 0), "windowed: another application shows", "hidden");
-	check(!zwl_layout_hidden(ZWL_LAYOUT_WINDOWED, 1, 0), "windowed: the current application shows", "hidden");
-	check(zwl_layout_hidden(ZWL_LAYOUT_DOCKED, 0, 0), "docked: another application is hidden", "hidden");
-	check(!zwl_layout_hidden(ZWL_LAYOUT_DOCKED, 1, 0), "docked: the current application's other windows show", "hidden");
-	check(!zwl_layout_hidden(ZWL_LAYOUT_DOCKED, 0, 1), "docked: an overview shows every application", "hidden");
+	check(!kwl_layout_hidden(KWL_LAYOUT_WINDOWED, 0, 0), "windowed: another application shows", "hidden");
+	check(!kwl_layout_hidden(KWL_LAYOUT_WINDOWED, 1, 0), "windowed: the current application shows", "hidden");
+	check(kwl_layout_hidden(KWL_LAYOUT_DOCKED, 0, 0), "docked: another application is hidden", "hidden");
+	check(!kwl_layout_hidden(KWL_LAYOUT_DOCKED, 1, 0), "docked: the current application's other windows show", "hidden");
+	check(!kwl_layout_hidden(KWL_LAYOUT_DOCKED, 0, 1), "docked: an overview shows every application", "hidden");
 
 	/* 3. The middle of a space; a body larger than it starts at its corner. */
-	zwl_layout_centre(0, 48, 1280, 752, 640, 400, &x, &y);
+	kwl_layout_centre(0, 48, 1280, 752, 640, 400, &x, &y);
 	check(x == 320 && y == 224, "a 640x400 body in the 1280x752 space under the bar", "centre");
-	zwl_layout_centre(0, 48, 1280, 752, 1400, 900, &x, &y);
+	kwl_layout_centre(0, 48, 1280, 752, 1400, 900, &x, &y);
 	check(x == 0 && y == 48, "a body larger than the space", "centre");
 
 	/* 4. The names the log uses. */
-	check(zwl_layout_name(ZWL_LAYOUT_DOCKED)[0] == 'd', "the docked mode's name", "name");
-	check(zwl_layout_name(ZWL_LAYOUT_WINDOWED)[0] == 'w', "the windowed mode's name", "name");
+	check(kwl_layout_name(KWL_LAYOUT_DOCKED)[0] == 'd', "the docked mode's name", "name");
+	check(kwl_layout_name(KWL_LAYOUT_WINDOWED)[0] == 'w', "the windowed mode's name", "name");
 
 	/* The result. */
 	if (failures != 0) {

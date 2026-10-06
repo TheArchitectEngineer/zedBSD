@@ -7,7 +7,7 @@
 
 /*
  * The desktop surface (ws094-p003, plan/ws094/design.md §3): the wrapper
- * of zdesktop's keiland_desktop_v1 protocol, which gives the program the
+ * of zdesktop's kl_desktop_v1 protocol, which gives the program the
  * compositor started for the desktop's icons the surface over the
  * wallpaper and under every window.
  *
@@ -35,7 +35,7 @@
 #define DESKTOP_SURFACE_ACK	1U
 
 /*
- * The desktop surface of a program: its keiland_desktop_surface_v1 and the
+ * The desktop surface of a program: its kl_desktop_surface_v1 and the
  * program's listener with its data.
  */
 struct kl_desktop {
@@ -50,7 +50,7 @@ struct desktop_search {
 };
 
 /*
- * The listener of keiland_desktop_surface_v1's one event, as libwayland
+ * The listener of kl_desktop_surface_v1's one event, as libwayland
  * calls it.
  */
 struct desktop_proxy_listener {
@@ -61,12 +61,12 @@ static void desktop_global(void *data, struct wl_registry *registry, uint32_t na
 static void desktop_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void desktop_configure(void *data, struct wl_proxy *proxy, uint32_t serial, int32_t x, int32_t y, int32_t width, int32_t height);
 
-extern const struct wl_interface keiland_desktop_manager_v1_interface;
-extern const struct wl_interface keiland_desktop_surface_v1_interface;
+extern const struct wl_interface kl_desktop_manager_v1_interface;
+extern const struct wl_interface kl_desktop_surface_v1_interface;
 
 /* get_desktop_surface: the new desktop surface, the surface and the token. */
 static const struct wl_interface *desktop_get_types[] = {
-	&keiland_desktop_surface_v1_interface,
+	&kl_desktop_surface_v1_interface,
 	&wl_surface_interface,
 	NULL,
 };
@@ -80,15 +80,15 @@ static const struct wl_interface *desktop_plain_types[] = {
 	NULL,
 };
 
-/* The requests of keiland_desktop_manager_v1. */
+/* The requests of kl_desktop_manager_v1. */
 static const struct wl_message desktop_manager_requests[] = {
 	{ "destroy", "", NULL },
 	{ "get_desktop_surface", "nos", desktop_get_types },
 };
 
-/* keiland_desktop_manager_v1. */
-const struct wl_interface keiland_desktop_manager_v1_interface = {
-	"keiland_desktop_manager_v1",
+/* kl_desktop_manager_v1. */
+const struct wl_interface kl_desktop_manager_v1_interface = {
+	"kl_desktop_manager_v1",
 	1,
 	2,
 	desktop_manager_requests,
@@ -96,20 +96,20 @@ const struct wl_interface keiland_desktop_manager_v1_interface = {
 	NULL
 };
 
-/* The requests of keiland_desktop_surface_v1. */
+/* The requests of kl_desktop_surface_v1. */
 static const struct wl_message desktop_surface_requests[] = {
 	{ "destroy", "", NULL },
 	{ "ack_configure", "u", desktop_plain_types },
 };
 
-/* The events of keiland_desktop_surface_v1. */
+/* The events of kl_desktop_surface_v1. */
 static const struct wl_message desktop_surface_events[] = {
 	{ "configure", "uiiii", desktop_plain_types },
 };
 
-/* keiland_desktop_surface_v1. */
-const struct wl_interface keiland_desktop_surface_v1_interface = {
-	"keiland_desktop_surface_v1",
+/* kl_desktop_surface_v1. */
+const struct wl_interface kl_desktop_surface_v1_interface = {
+	"kl_desktop_surface_v1",
 	1,
 	2,
 	desktop_surface_requests,
@@ -175,7 +175,7 @@ kl_desktop_create(
 	desktop->data = data;
 
 	/* The protocol object; the binding is not needed after it. */
-	desktop->proxy = wl_proxy_marshal_constructor(manager, DESKTOP_MANAGER_GET, &keiland_desktop_surface_v1_interface, NULL, surface, token);
+	desktop->proxy = wl_proxy_marshal_constructor(manager, DESKTOP_MANAGER_GET, &kl_desktop_surface_v1_interface, NULL, surface, token);
 	if (desktop->proxy == NULL) {
 		wl_proxy_marshal(manager, DESKTOP_MANAGER_DESTROY);
 		wl_proxy_destroy(manager);
@@ -299,7 +299,7 @@ desktop_bind(
 	/* The manager, bound when announced, is moved to the application's default queue. */
 	manager = NULL;
 	if (registry != NULL && search.name != 0U) {
-		manager = wl_registry_bind(registry, search.name, &keiland_desktop_manager_v1_interface, DESKTOP_VERSION);
+		manager = wl_registry_bind(registry, search.name, &kl_desktop_manager_v1_interface, DESKTOP_VERSION);
 		if (manager != NULL)
 			wl_proxy_set_queue(manager, NULL);
 	}
@@ -337,7 +337,7 @@ desktop_global(
 
 	/* Only the desktop manager is looked for. */
 	search = data;
-	match = strcmp(interface, "keiland_desktop_manager_v1");
+	match = strcmp(interface, "kl_desktop_manager_v1");
 	if (match == 0)
 		search->name = name;
 

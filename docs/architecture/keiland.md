@@ -57,14 +57,14 @@ extensions, for example:
 
 | Extension | What it carries |
 | --- | --- |
-| `keiland_titlebar_manager_v1` | The window's titlebar presentation: menu, controls (navigation, breadcrumb, search, view selector) or tabs |
+| `kl_titlebar_manager_v1` | The window's titlebar presentation: menu, controls (navigation, breadcrumb, search, view selector) or tabs |
 | `xdg_menu_manager_v1` | The application's menus as a tree of items, drawn by the compositor in the titlebar or the system bar |
-| `keiland_glass_manager_v1` | Which parts of a surface stand on the desktop's frosted glass, and whether the glass blurs what is under it |
-| `keiland_desktop_manager_v1` | The desktop surface (the icons of `~/Desktop`) between the wallpaper and the windows |
-| `keiland_edit_manager_v1` | Editing operations (copy, paste, select all) that the system UI can ask a window to perform |
-| `keiland_keyboard_inset_manager_v1` | How much of a window the on-screen keyboard covers, so the window can keep the caret in view |
-| `keiland_ime_status_manager_v1` | The input method's state (language, mode) for the system bar's indicator, and the on-screen keyboard's predictions: the compositor asks for the words a reading starts and has the word chosen learned (version 2) |
-| `keiland_theme_v1` | The desktop's appearance, light or dark: told when a client binds it and again whenever the user changes it, so that applications draw in it and redraw when it changes |
+| `kl_glass_manager_v1` | Which parts of a surface stand on the desktop's frosted glass, and whether the glass blurs what is under it |
+| `kl_desktop_manager_v1` | The desktop surface (the icons of `~/Desktop`) between the wallpaper and the windows |
+| `kl_edit_manager_v1` | Editing operations (copy, paste, select all) that the system UI can ask a window to perform |
+| `kl_keyboard_inset_manager_v1` | How much of a window the on-screen keyboard covers, so the window can keep the caret in view |
+| `kl_ime_status_manager_v1` | The input method's state (language, mode) for the system bar's indicator, and the on-screen keyboard's predictions: the compositor asks for the words a reading starts and has the word chosen learned (version 2) |
+| `kl_theme_v1` | The desktop's appearance, light or dark: told when a client binds it and again whenever the user changes it, so that applications draw in it and redraw when it changes |
 
 **These extensions are not an application interface.** An application never
 binds them itself. libkeiland wraps every one of them, and the protocols are
@@ -87,7 +87,7 @@ include:
 | Family | Examples |
 | --- | --- |
 | Window UI | System Menu (`keiland_menu_*`), titlebar presentation (`keiland_titlebar_*`, including sheets), context menus, glass panels, the desktop surface, window operations |
-| Appearance | The desktop's appearance, light or dark (`kl_theme_*`): the colours of the current theme, and a notice to redraw when the user changes it, carried by `keiland_theme_v1` |
+| Appearance | The desktop's appearance, light or dark (`kl_theme_*`): the colours of the current theme, and a notice to redraw when the user changes it, carried by `kl_theme_v1` |
 | Touch | The touch motion, the scroller and the gestures (`keiland_motion_*`, `keiland_scroller_*`, `keiland_gesture_*`), so that a finger feels the same in every program |
 | Input | The keyboard inset of the on-screen keyboard, editing operations |
 | System | The network, including Wi-Fi control, saved keys, links and DNS (`keiland_network_*`); the sound output's volume and mute (`keiland_audio_*`); the desktop's preferences; recent files |

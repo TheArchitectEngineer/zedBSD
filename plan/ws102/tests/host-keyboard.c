@@ -58,7 +58,7 @@ main(void)
 		if (index >= 26U)
 			one[0] = (char)('0' + index - 26U);
 		one[1] = '\0';
-		found = face_has(ZWL_FLICK_ALPHA, one) || face_has(ZWL_FLICK_NUMBER, one);
+		found = face_has(KWL_FLICK_ALPHA, one) || face_has(KWL_FLICK_NUMBER, one);
 		if (!found) {
 			printf("missing: %s\n", one);
 			missing++;
@@ -71,13 +71,13 @@ main(void)
 	for (index = 0; index < strlen(host_symbols); index++) {
 		one[0] = host_symbols[index];
 		one[1] = '\0';
-		found = face_has(ZWL_FLICK_ALPHA, one) || face_has(ZWL_FLICK_NUMBER, one);
+		found = face_has(KWL_FLICK_ALPHA, one) || face_has(KWL_FLICK_NUMBER, one);
 		if (!found) {
 			printf("missing: %s\n", one);
 			missing++;
 		}
 	}
-	found = face_has(ZWL_FLICK_ALPHA, " ");
+	found = face_has(KWL_FLICK_ALPHA, " ");
 	check(missing == 0 && strlen(host_symbols) == 32U && found, "32 ASCII symbols and the space");
 
 	/* The 46 kana and the long vowel mark on the kana face. */
@@ -85,82 +85,82 @@ main(void)
 	for (index = 0; index < strlen(host_kana); index += 3U) {
 		memcpy(one, host_kana + index, 3U);
 		one[3] = '\0';
-		found = face_has(ZWL_FLICK_KANA, one);
+		found = face_has(KWL_FLICK_KANA, one);
 		if (!found) {
 			printf("missing: %s\n", one);
 			missing++;
 		}
 	}
-	found = face_has(ZWL_FLICK_KANA, "ー");
+	found = face_has(KWL_FLICK_KANA, "ー");
 	check(missing == 0 && strlen(host_kana) == 46U * 3U && found, "46 kana and the long vowel mark");
 
 	/* No face types a character twice. */
-	for (index = 0; index < ZWL_FLICK_FACES; index++) {
+	for (index = 0; index < KWL_FLICK_FACES; index++) {
 		repeats = face_repeats((unsigned)index);
-		check(repeats == 0, zwl_flick_face_name((unsigned)index));
+		check(repeats == 0, kwl_flick_face_name((unsigned)index));
 	}
 
 	/* The flick's direction on a 72-pixel key (the distance 21) and a 40-pixel one (the minimum 16). */
-	check(zwl_flick_direction(0, 0, 72) == ZWL_FLICK_CENTER, "no movement: centre");
-	check(zwl_flick_direction(10, 5, 72) == ZWL_FLICK_CENTER, "11 px on a 72 px key: centre");
-	check(zwl_flick_direction(30, 0, 72) == ZWL_FLICK_RIGHT, "30 px right: right");
-	check(zwl_flick_direction(-30, 5, 72) == ZWL_FLICK_LEFT, "30 px left: left");
-	check(zwl_flick_direction(5, -30, 72) == ZWL_FLICK_UP, "30 px up: up");
-	check(zwl_flick_direction(0, 30, 72) == ZWL_FLICK_DOWN, "30 px down: down");
-	check(zwl_flick_direction(25, 25, 72) == ZWL_FLICK_RIGHT, "a tie goes across");
-	check(zwl_flick_direction(0, 17, 40) == ZWL_FLICK_DOWN, "17 px on a 40 px key (the minimum 16): down");
-	check(zwl_flick_direction(0, 15, 40) == ZWL_FLICK_CENTER, "15 px on a 40 px key: centre");
+	check(kwl_flick_direction(0, 0, 72) == KWL_FLICK_CENTER, "no movement: centre");
+	check(kwl_flick_direction(10, 5, 72) == KWL_FLICK_CENTER, "11 px on a 72 px key: centre");
+	check(kwl_flick_direction(30, 0, 72) == KWL_FLICK_RIGHT, "30 px right: right");
+	check(kwl_flick_direction(-30, 5, 72) == KWL_FLICK_LEFT, "30 px left: left");
+	check(kwl_flick_direction(5, -30, 72) == KWL_FLICK_UP, "30 px up: up");
+	check(kwl_flick_direction(0, 30, 72) == KWL_FLICK_DOWN, "30 px down: down");
+	check(kwl_flick_direction(25, 25, 72) == KWL_FLICK_RIGHT, "a tie goes across");
+	check(kwl_flick_direction(0, 17, 40) == KWL_FLICK_DOWN, "17 px on a 40 px key (the minimum 16): down");
+	check(kwl_flick_direction(0, 15, 40) == KWL_FLICK_CENTER, "15 px on a 40 px key: centre");
 
 	/* The key in a direction: か's left is き, abc's right types nothing. */
-	check(strcmp(zwl_flick_text(zwl_flick_key(ZWL_FLICK_KANA, 0, 1), ZWL_FLICK_LEFT), "き") == 0, "か left: き");
-	check(zwl_flick_text(zwl_flick_key(ZWL_FLICK_ALPHA, 0, 1), ZWL_FLICK_RIGHT) == NULL, "abc right: nothing");
+	check(strcmp(kwl_flick_text(kwl_flick_key(KWL_FLICK_KANA, 0, 1), KWL_FLICK_LEFT), "き") == 0, "か left: き");
+	check(kwl_flick_text(kwl_flick_key(KWL_FLICK_ALPHA, 0, 1), KWL_FLICK_RIGHT) == NULL, "abc right: nothing");
 
 	/* The voice key: か が か, は ば ぱ は, つ っ づ つ; な has no other form. */
-	found = zwl_flick_voice("か", next, sizeof(next));
+	found = kwl_flick_voice("か", next, sizeof(next));
 	check(found && strcmp(next, "が") == 0, "か -> が");
-	found = zwl_flick_voice("が", next, sizeof(next));
+	found = kwl_flick_voice("が", next, sizeof(next));
 	check(found && strcmp(next, "か") == 0, "が -> か");
-	found = zwl_flick_voice("ば", next, sizeof(next));
+	found = kwl_flick_voice("ば", next, sizeof(next));
 	check(found && strcmp(next, "ぱ") == 0, "ば -> ぱ");
-	found = zwl_flick_voice("ぱ", next, sizeof(next));
+	found = kwl_flick_voice("ぱ", next, sizeof(next));
 	check(found && strcmp(next, "は") == 0, "ぱ -> は");
-	found = zwl_flick_voice("っ", next, sizeof(next));
+	found = kwl_flick_voice("っ", next, sizeof(next));
 	check(found && strcmp(next, "づ") == 0, "っ -> づ");
-	found = zwl_flick_voice("な", next, sizeof(next));
+	found = kwl_flick_voice("な", next, sizeof(next));
 	check(!found, "な has no other form");
 
 	/* The case key. */
-	found = zwl_flick_case("a", next, sizeof(next));
+	found = kwl_flick_case("a", next, sizeof(next));
 	check(found && strcmp(next, "A") == 0, "a -> A");
-	found = zwl_flick_case("Z", next, sizeof(next));
+	found = kwl_flick_case("Z", next, sizeof(next));
 	check(found && strcmp(next, "z") == 0, "Z -> z");
-	found = zwl_flick_case("1", next, sizeof(next));
+	found = kwl_flick_case("1", next, sizeof(next));
 	check(!found, "1 has no case");
 
 	/* The US layout's keys (ws102-p004): a, A, 1, !, space, newline, backslash, bar; none for あ. */
-	found = zwl_flick_us_key("a", &code, &shift);
+	found = kwl_flick_us_key("a", &code, &shift);
 	check(found && code == 30U && !shift, "a: key 30");
-	found = zwl_flick_us_key("A", &code, &shift);
+	found = kwl_flick_us_key("A", &code, &shift);
 	check(found && code == 30U && shift, "A: key 30 with Shift");
-	found = zwl_flick_us_key("1", &code, &shift);
+	found = kwl_flick_us_key("1", &code, &shift);
 	check(found && code == 2U && !shift, "1: key 2");
-	found = zwl_flick_us_key("!", &code, &shift);
+	found = kwl_flick_us_key("!", &code, &shift);
 	check(found && code == 2U && shift, "!: key 2 with Shift");
-	found = zwl_flick_us_key(" ", &code, &shift);
+	found = kwl_flick_us_key(" ", &code, &shift);
 	check(found && code == 57U && !shift, "space: key 57");
-	found = zwl_flick_us_key("\n", &code, &shift);
+	found = kwl_flick_us_key("\n", &code, &shift);
 	check(found && code == 28U && !shift, "newline: key 28");
-	found = zwl_flick_us_key("\\", &code, &shift);
+	found = kwl_flick_us_key("\\", &code, &shift);
 	check(found && code == 43U && !shift, "backslash: key 43");
-	found = zwl_flick_us_key("|", &code, &shift);
+	found = kwl_flick_us_key("|", &code, &shift);
 	check(found && code == 43U && shift, "bar: key 43 with Shift");
-	found = zwl_flick_us_key("あ", &code, &shift);
+	found = kwl_flick_us_key("あ", &code, &shift);
 	check(!found, "あ: no key");
 
 	/* Every character of the alpha and number faces but the non-ASCII ones has a key. */
 	missing = 0;
 	for (index = 0; index < 2U; index++) {
-		missing += face_keys(ZWL_FLICK_ALPHA + (unsigned)index);
+		missing += face_keys(KWL_FLICK_ALPHA + (unsigned)index);
 	}
 	check(missing == 0, "every ASCII character of the alpha and number faces has a key");
 
@@ -231,18 +231,18 @@ face_has(
 	unsigned face,
 	const char *text)
 {
-	const struct zwl_flick_key *key;
+	const struct kwl_flick_key *key;
 	const char *typed;
 	unsigned row;
 	unsigned column;
 	unsigned direction;
 
 	/* Each key and direction. */
-	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
-		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
-			key = zwl_flick_key(face, row, column);
-			for (direction = 0; direction < ZWL_FLICK_DIRECTIONS; direction++) {
-				typed = zwl_flick_text(key, direction);
+	for (row = 0; row < KWL_FLICK_ROWS; row++) {
+		for (column = 0; column < KWL_FLICK_COLUMNS; column++) {
+			key = kwl_flick_key(face, row, column);
+			for (direction = 0; direction < KWL_FLICK_DIRECTIONS; direction++) {
+				typed = kwl_flick_text(key, direction);
 				if (typed != NULL && strcmp(typed, text) == 0)
 					return 1;
 			}
@@ -258,8 +258,8 @@ static int
 face_repeats(
 	unsigned face)
 {
-	const char *texts[ZWL_FLICK_ROWS * ZWL_FLICK_COLUMNS * ZWL_FLICK_DIRECTIONS];
-	const struct zwl_flick_key *key;
+	const char *texts[KWL_FLICK_ROWS * KWL_FLICK_COLUMNS * KWL_FLICK_DIRECTIONS];
+	const struct kwl_flick_key *key;
 	const char *typed;
 	unsigned count;
 	unsigned other;
@@ -270,11 +270,11 @@ face_repeats(
 
 	/* Every text of the face. */
 	count = 0;
-	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
-		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
-			key = zwl_flick_key(face, row, column);
-			for (direction = 0; direction < ZWL_FLICK_DIRECTIONS; direction++) {
-				typed = zwl_flick_text(key, direction);
+	for (row = 0; row < KWL_FLICK_ROWS; row++) {
+		for (column = 0; column < KWL_FLICK_COLUMNS; column++) {
+			key = kwl_flick_key(face, row, column);
+			for (direction = 0; direction < KWL_FLICK_DIRECTIONS; direction++) {
+				typed = kwl_flick_text(key, direction);
 				if (typed != NULL)
 					texts[count++] = typed;
 			}
@@ -286,7 +286,7 @@ face_repeats(
 	for (row = 0; row < count; row++) {
 		for (other = row + 1U; other < count; other++) {
 			if (strcmp(texts[row], texts[other]) == 0) {
-				printf("repeat: %s on %s\n", texts[row], zwl_flick_face_name(face));
+				printf("repeat: %s on %s\n", texts[row], kwl_flick_face_name(face));
 				repeats++;
 			}
 		}
@@ -301,7 +301,7 @@ static int
 face_keys(
 	unsigned face)
 {
-	const struct zwl_flick_key *key;
+	const struct kwl_flick_key *key;
 	const char *typed;
 	unsigned row;
 	unsigned column;
@@ -313,14 +313,14 @@ face_keys(
 
 	/* Each ASCII text of the face. */
 	missing = 0;
-	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
-		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
-			key = zwl_flick_key(face, row, column);
-			for (direction = 0; direction < ZWL_FLICK_DIRECTIONS; direction++) {
-				typed = zwl_flick_text(key, direction);
+	for (row = 0; row < KWL_FLICK_ROWS; row++) {
+		for (column = 0; column < KWL_FLICK_COLUMNS; column++) {
+			key = kwl_flick_key(face, row, column);
+			for (direction = 0; direction < KWL_FLICK_DIRECTIONS; direction++) {
+				typed = kwl_flick_text(key, direction);
 				if (typed == NULL || (unsigned char)typed[0] >= 0x80U)
 					continue;
-				found = zwl_flick_us_key(typed, &code, &shift);
+				found = kwl_flick_us_key(typed, &code, &shift);
 				if (!found) {
 					printf("no key: %s\n", typed);
 					missing++;
@@ -338,16 +338,16 @@ static int
 qwerty_has(
 	const char *text)
 {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	unsigned face;
 	unsigned row;
 	unsigned count;
 	unsigned index;
 
 	/* Each key of each row of each face, without and with Shift. */
-	for (face = 0; face < ZWL_QWERTY_FACES; face++) {
-		for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
-			keys = zwl_qwerty_row(face, row, &count);
+	for (face = 0; face < KWL_QWERTY_FACES; face++) {
+		for (row = 0; row < KWL_QWERTY_ROWS; row++) {
+			keys = kwl_qwerty_row(face, row, &count);
 			for (index = 0; index < count; index++) {
 				if (keys[index].text != NULL && strcmp(keys[index].text, text) == 0)
 					return 1;
@@ -365,7 +365,7 @@ qwerty_has(
 static int
 qwerty_keys(void)
 {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	unsigned face;
 	unsigned row;
 	unsigned count;
@@ -376,13 +376,13 @@ qwerty_keys(void)
 
 	/* Each character of each key. */
 	missing = 0;
-	for (face = 0; face < ZWL_QWERTY_FACES; face++) {
-		for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
-			keys = zwl_qwerty_row(face, row, &count);
+	for (face = 0; face < KWL_QWERTY_FACES; face++) {
+		for (row = 0; row < KWL_QWERTY_ROWS; row++) {
+			keys = kwl_qwerty_row(face, row, &count);
 			for (index = 0; index < count; index++) {
-				if (keys[index].text != NULL && !zwl_flick_us_key(keys[index].text, &code, &shift))
+				if (keys[index].text != NULL && !kwl_flick_us_key(keys[index].text, &code, &shift))
 					missing++;
-				if (keys[index].shifted != NULL && !zwl_flick_us_key(keys[index].shifted, &code, &shift))
+				if (keys[index].shifted != NULL && !kwl_flick_us_key(keys[index].shifted, &code, &shift))
 					missing++;
 			}
 		}
@@ -396,7 +396,7 @@ qwerty_keys(void)
 static int
 qwerty_widths(void)
 {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	unsigned face;
 	unsigned row;
 	unsigned count;
@@ -406,14 +406,14 @@ qwerty_widths(void)
 
 	/* Each row of each face. */
 	wrong = 0;
-	for (face = 0; face < ZWL_QWERTY_FACES; face++) {
-		for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
-			keys = zwl_qwerty_row(face, row, &count);
+	for (face = 0; face < KWL_QWERTY_FACES; face++) {
+		for (row = 0; row < KWL_QWERTY_ROWS; row++) {
+			keys = kwl_qwerty_row(face, row, &count);
 			units = 0;
 			for (index = 0; index < count; index++)
 				units += keys[index].width;
-			if (units > ZWL_QWERTY_ROW_UNITS || count > ZWL_QWERTY_ROW_KEYS) {
-				printf("row %u of %s: %u quarters, %u keys\n", row, zwl_qwerty_face_name(face), units, count);
+			if (units > KWL_QWERTY_ROW_UNITS || count > KWL_QWERTY_ROW_KEYS) {
+				printf("row %u of %s: %u quarters, %u keys\n", row, kwl_qwerty_face_name(face), units, count);
 				wrong++;
 			}
 		}
@@ -427,47 +427,47 @@ qwerty_widths(void)
 static void
 check_hand(void)
 {
-	static struct zwl_hand_ink ink;
-	struct zwl_hand_result result;
+	static struct kwl_hand_ink ink;
+	struct kwl_hand_result result;
 	int32_t rect[4];
 	unsigned index;
 	int kept;
 
 	/* No ink: no candidates, empty bounds. */
-	zwl_hand_clear(&ink);
-	zwl_hand_recognize(&ink, &result);
-	zwl_hand_bounds(&ink, rect);
+	kwl_hand_clear(&ink);
+	kwl_hand_recognize(&ink, &result);
+	kwl_hand_bounds(&ink, rect);
 	check(result.count == 0U && rect[2] == 0 && rect[3] == 0, "no ink: no candidates, no bounds");
-	kept = zwl_hand_add(&ink, 1, 1);
+	kept = kwl_hand_add(&ink, 1, 1);
 	check(kept == 0, "no point without a stroke");
 
 	/* A stroke of three points, a point that does not move is not kept. */
-	kept = zwl_hand_begin(&ink, 10, 20);
-	kept &= zwl_hand_add(&ink, 30, 25);
-	kept &= zwl_hand_add(&ink, 50, 60);
+	kept = kwl_hand_begin(&ink, 10, 20);
+	kept &= kwl_hand_add(&ink, 30, 25);
+	kept &= kwl_hand_add(&ink, 50, 60);
 	check(kept == 1, "a stroke's points kept");
-	kept = zwl_hand_add(&ink, 50, 60);
-	check(kept == 0 && zwl_hand_points(&ink) == 3U, "a point that does not move is not kept");
+	kept = kwl_hand_add(&ink, 50, 60);
+	check(kept == 0 && kwl_hand_points(&ink) == 3U, "a point that does not move is not kept");
 
 	/* A second stroke; the bounds cover both. */
-	(void)zwl_hand_begin(&ink, 5, 70);
-	(void)zwl_hand_add(&ink, 8, 90);
-	zwl_hand_bounds(&ink, rect);
+	(void)kwl_hand_begin(&ink, 5, 70);
+	(void)kwl_hand_add(&ink, 8, 90);
+	kwl_hand_bounds(&ink, rect);
 	check(ink.count == 2U && rect[0] == 5 && rect[1] == 20 && rect[2] == 46 && rect[3] == 71, "bounds of two strokes 5,20 46x71");
 
 	/* The stub: three candidates (あ first) and its note. */
-	zwl_hand_recognize(&ink, &result);
+	kwl_hand_recognize(&ink, &result);
 	check(result.count == 3U && strcmp(result.candidates[0], "あ") == 0 && strcmp(result.note, "認識はまだ") == 0, "stub: あ い う and its note");
 
-	/* The limits: a stroke keeps ZWL_HAND_POINTS points, the ink ZWL_HAND_STROKES strokes. */
-	zwl_hand_clear(&ink);
-	(void)zwl_hand_begin(&ink, 0, 0);
-	for (index = 1; index < ZWL_HAND_POINTS + 10U; index++)
-		(void)zwl_hand_add(&ink, (int32_t)index, 0);
-	check(ink.strokes[0].count == ZWL_HAND_POINTS, "a stroke keeps 512 points");
-	for (index = 1; index < ZWL_HAND_STROKES + 5U; index++)
-		(void)zwl_hand_begin(&ink, 0, (int32_t)index);
-	check(ink.count == ZWL_HAND_STROKES, "the ink keeps 64 strokes");
+	/* The limits: a stroke keeps KWL_HAND_POINTS points, the ink KWL_HAND_STROKES strokes. */
+	kwl_hand_clear(&ink);
+	(void)kwl_hand_begin(&ink, 0, 0);
+	for (index = 1; index < KWL_HAND_POINTS + 10U; index++)
+		(void)kwl_hand_add(&ink, (int32_t)index, 0);
+	check(ink.strokes[0].count == KWL_HAND_POINTS, "a stroke keeps 512 points");
+	for (index = 1; index < KWL_HAND_STROKES + 5U; index++)
+		(void)kwl_hand_begin(&ink, 0, (int32_t)index);
+	check(ink.count == KWL_HAND_STROKES, "the ink keeps 64 strokes");
 }
 
 /*
@@ -493,16 +493,16 @@ check_emoji(void)
 
 	/* Each category's count and names, and each emoji's bytes. */
 	bad = 0U;
-	for (category = 0U; category < ZWL_EMOJI_CATEGORIES; category++) {
+	for (category = 0U; category < KWL_EMOJI_CATEGORIES; category++) {
 		/* The category is full. */
-		count = zwl_emoji_count(category);
-		if (count != ZWL_EMOJI_PER_CATEGORY)
+		count = kwl_emoji_count(category);
+		if (count != KWL_EMOJI_PER_CATEGORY)
 			bad++;
 
 		/* Its emoji. */
-		for (index = 0U; index < ZWL_EMOJI_PER_CATEGORY; index++) {
+		for (index = 0U; index < KWL_EMOJI_PER_CATEGORY; index++) {
 			/* An emoji of one character: a lead byte above ASCII and its continuation bytes. */
-			text = zwl_emoji(category, index);
+			text = kwl_emoji(category, index);
 			if (text == NULL) {
 				bad++;
 				continue;
@@ -520,20 +520,20 @@ check_emoji(void)
 
 	/* The table's shape, the edges, and a name. */
 	check(bad == 0U, "emoji: 4 categories of 20, each a single UTF-8 character");
-	check(zwl_emoji_count(ZWL_EMOJI_CATEGORIES) == 0U && zwl_emoji(0U, ZWL_EMOJI_PER_CATEGORY) == NULL, "emoji: out of range is none");
-	check(strcmp(zwl_emoji_category_name(ZWL_EMOJI_FACES), "顔") == 0, "emoji: the first category is 顔");
+	check(kwl_emoji_count(KWL_EMOJI_CATEGORIES) == 0U && kwl_emoji(0U, KWL_EMOJI_PER_CATEGORY) == NULL, "emoji: out of range is none");
+	check(strcmp(kwl_emoji_category_name(KWL_EMOJI_FACES), "顔") == 0, "emoji: the first category is 顔");
 
 	/* No emoji twice. */
 	repeats = 0U;
-	for (category = 0U; category < ZWL_EMOJI_CATEGORIES; category++) {
-		for (index = 0U; index < ZWL_EMOJI_PER_CATEGORY; index++) {
-			text = zwl_emoji(category, index);
-			for (other_category = 0U; other_category < ZWL_EMOJI_CATEGORIES; other_category++) {
-				for (other_index = 0U; other_index < ZWL_EMOJI_PER_CATEGORY; other_index++) {
+	for (category = 0U; category < KWL_EMOJI_CATEGORIES; category++) {
+		for (index = 0U; index < KWL_EMOJI_PER_CATEGORY; index++) {
+			text = kwl_emoji(category, index);
+			for (other_category = 0U; other_category < KWL_EMOJI_CATEGORIES; other_category++) {
+				for (other_index = 0U; other_index < KWL_EMOJI_PER_CATEGORY; other_index++) {
 					/* The same place is not a repeat. */
 					if (other_category == category && other_index == index)
 						continue;
-					other = zwl_emoji(other_category, other_index);
+					other = kwl_emoji(other_category, other_index);
 					same = strcmp(text, other);
 					if (same == 0)
 						repeats++;

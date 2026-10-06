@@ -12,15 +12,15 @@
  * token of its own.
  */
 
-#ifndef ZWL_ACTIVATION_H
-#define ZWL_ACTIVATION_H
+#ifndef KWL_ACTIVATION_H
+#define KWL_ACTIVATION_H
 
-#include "zwl.h"
+#include "kwl.h"
 
 /* The room a token's text takes, its NUL counted. */
-#define ZWL_ACTIVATION_TOKEN_SIZE	33U
+#define KWL_ACTIVATION_TOKEN_SIZE	33U
 
-int zwl_activation_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_activation_issue(struct zwl_server *server, const char *app_id, const char *via, char *token, size_t size);
+int kwl_activation_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_activation_issue(struct kwl_server *server, const char *app_id, const char *via, char *token, size_t size);
 
 #endif

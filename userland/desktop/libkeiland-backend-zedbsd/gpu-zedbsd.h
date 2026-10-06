@@ -6,8 +6,8 @@
  */
 
 /* The image description used only inside the zedBSD GPU module (libkeiland-backend, WS131 p009). */
-#ifndef ZWL_GPU_ZEDBSD_H
-#define ZWL_GPU_ZEDBSD_H
+#ifndef KWL_GPU_ZEDBSD_H
+#define KWL_GPU_ZEDBSD_H
 
 #include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
 
@@ -16,7 +16,7 @@
  * is checked before any of its values reaches Vulkan (from the device the
  * protocol host lends, for one request).
  */
-struct zwl_gpu_limits {
+struct kwl_gpu_limits {
 	uint32_t max_dimension;
 	uint32_t memory_type_count;
 };
@@ -29,7 +29,7 @@ struct zwl_gpu_limits {
  * format and row layout; the import checks that the description is the
  * allocation's real one.
  */
-struct zwl_buffer_layout {
+struct kwl_buffer_layout {
 	uint32_t width;
 	uint32_t height;
 	VkFormat format;
@@ -47,10 +47,10 @@ struct zwl_buffer_layout {
  * scanout's handle of the imported capability (0 for none) with the claim
  * it belongs to.
  */
-#define ZWL_GPU_DESCRIPTION_MAX	64U
-struct zwl_gpu_buffer_record {
+#define KWL_GPU_DESCRIPTION_MAX	64U
+struct kwl_gpu_buffer_record {
 	int descriptor;
-	unsigned char description[ZWL_GPU_DESCRIPTION_MAX];
+	unsigned char description[KWL_GPU_DESCRIPTION_MAX];
 	size_t description_size;
 	uint32_t width;
 	uint32_t height;
@@ -59,13 +59,13 @@ struct zwl_gpu_buffer_record {
 };
 
 /* Forgets a buffer's scanout handle when the buffer goes (scanout-zedbsd.c). */
-void zwl_scanout_forget(struct zwl_gpu_buffer_record *record);
+void kwl_scanout_forget(struct kwl_gpu_buffer_record *record);
 
 /* Reports the zedBSD description's wire length. */
-size_t zwl_gpu_buffer_wire_bytes(void);
+size_t kwl_gpu_buffer_wire_bytes(void);
 /* Decodes and checks every field before it reaches Vulkan. */
-int zwl_gpu_buffer_decode(const unsigned char *bytes, size_t size, const struct zwl_gpu_limits *limits, struct zwl_buffer_layout *layout);
+int kwl_gpu_buffer_decode(const unsigned char *bytes, size_t size, const struct kwl_gpu_limits *limits, struct kwl_buffer_layout *layout);
 /* Reports the memory handle type of a zedBSD image capability. */
-VkExternalMemoryHandleTypeFlagBits zwl_gpu_buffer_handle_type(void);
+VkExternalMemoryHandleTypeFlagBits kwl_gpu_buffer_handle_type(void);
 
 #endif

@@ -15,7 +15,7 @@
  * samples; after a commit the rows the client damaged are copied into it
  * with the CPU, only while no frame is in flight, and the buffer is then
  * released at once: the client can draw its next frame without waiting for
- * the GPU.  The GPU path (keiland_gpu_buffer_v1) is not touched by any of this.
+ * the GPU.  The GPU path (kl_gpu_buffer_v1) is not touched by any of this.
  */
 
 #include "compose.h"
@@ -32,34 +32,34 @@
 #define ARROW_WIDTH	12U
 #define ARROW_HEIGHT	19U
 
-static int pool_create(struct zwl_object *shm, const unsigned char *bytes, size_t size);
-static int pool_buffer(struct zwl_object *pool, const unsigned char *bytes, size_t size);
-static int pool_resize(struct zwl_object *pool, const unsigned char *bytes, size_t size);
-static int surface_upload(struct zwl_server *server, struct zwl_object *surface);
-static VkResult image_create(struct zwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct zwl_import *import);
-static VkResult image_layout(struct zwl_compose *compose, VkImage image);
+static int pool_create(struct kwl_object *shm, const unsigned char *bytes, size_t size);
+static int pool_buffer(struct kwl_object *pool, const unsigned char *bytes, size_t size);
+static int pool_resize(struct kwl_object *pool, const unsigned char *bytes, size_t size);
+static int surface_upload(struct kwl_server *server, struct kwl_object *surface);
+static VkResult image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
+static VkResult image_layout(struct kwl_compose *compose, VkImage image);
 static VkResult image_layout_record(VkCommandBuffer command, VkImage image);
-static void image_release(struct zwl_compose *compose, struct zwl_import *import);
+static void image_release(struct kwl_compose *compose, struct kwl_import *import);
 static uint32_t word(const unsigned char *bytes, size_t offset);
-static uint32_t zwl_row_sum(const unsigned char *row, uint32_t width);
+static uint32_t kwl_row_sum(const unsigned char *row, uint32_t width);
 
 /*
  * Tells a new wl_shm binding the two formats it may use.
  */
 int
-zwl_shm_bind(
-	struct zwl_object *shm)
+kwl_shm_bind(
+	struct kwl_object *shm)
 {
 	uint32_t format;
 	int error;
 
 	/* ARGB8888, then XRGB8888. */
-	format = ZWL_SHM_ARGB8888;
-	error = zwl_emit(shm->client, shm->id, 0, &format, sizeof(format));
+	format = KWL_SHM_ARGB8888;
+	error = kwl_emit(shm->client, shm->id, 0, &format, sizeof(format));
 	if (error != 0)
 		return error;
-	format = ZWL_SHM_XRGB8888;
-	error = zwl_emit(shm->client, shm->id, 0, &format, sizeof(format));
+	format = KWL_SHM_XRGB8888;
+	error = kwl_emit(shm->client, shm->id, 0, &format, sizeof(format));
 	return error;
 }
 
@@ -68,8 +68,8 @@ zwl_shm_bind(
  * (create_buffer, destroy, resize).
  */
 int
-zwl_shm_request(
-	struct zwl_object *object,
+kwl_shm_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -77,7 +77,7 @@ zwl_shm_request(
 	int error;
 
 	/* wl_shm has one request. */
-	if (object->kind == ZWL_SHM) {
+	if (object->kind == KWL_SHM) {
 		if (opcode != 0U)
 			return EPROTO;
 		error = pool_create(object, bytes, size);
@@ -93,7 +93,7 @@ zwl_shm_request(
 		/* The pool's memory stays for the buffers made from it. */
 		if (size != 0)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		error = 0;
 		break;
 	case 2:
@@ -112,8 +112,8 @@ zwl_shm_request(
  * Drops a reference to a pool's memory; the last one unmaps it.
  */
 void
-zwl_pool_put(
-	struct zwl_pool *pool)
+kwl_pool_put(
+	struct kwl_pool *pool)
 {
 	/* Other holders keep the mapping. */
 	if (pool == NULL)
@@ -134,11 +134,11 @@ zwl_pool_put(
  * is in flight: the frame may be sampling those images.
  */
 int
-zwl_shm_upload(
-	struct zwl_server *server)
+kwl_shm_upload(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 	int error;
 
 	/* Without window mode, or with a frame in flight, the copies wait. */
@@ -150,13 +150,13 @@ zwl_shm_upload(
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->shm_upload)
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->shm_upload)
 				continue;
 
 			/* A surface that cannot be copied is the client's protocol error. */
 			error = surface_upload(server, surface);
 			if (error != 0) {
-				(void)zwl_error(client, surface->id, "wl_shm image could not be copied");
+				(void)kwl_error(client, surface->id, "wl_shm image could not be copied");
 				surface->shm_upload = 0;
 			}
 		}
@@ -171,11 +171,11 @@ zwl_shm_upload(
  * otherwise after the frame (it may be sampling it).
  */
 void
-zwl_shm_image_destroy(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_shm_image_destroy(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 
 	/* A surface without an image has nothing to release. */
 	compose = server->compose;
@@ -183,7 +183,7 @@ zwl_shm_image_destroy(
 		return;
 
 	/* A frame in flight finishes first. */
-	zwl_compose_quiesce(server);
+	kwl_compose_quiesce(server);
 
 	/* The Vulkan objects, then the record. */
 	image_release(compose, surface->shm_image);
@@ -196,8 +196,8 @@ zwl_shm_image_destroy(
  * hotspot at (0, 0).
  */
 int
-zwl_arrow_create(
-	struct zwl_server *server)
+kwl_arrow_create(
+	struct kwl_server *server)
 {
 	static const char *const shape[ARROW_HEIGHT] = {
 		"X           ",
@@ -220,7 +220,7 @@ zwl_arrow_create(
 		"      X..X  ",
 		"       XX   "
 	};
-	struct zwl_import *arrow;
+	struct kwl_import *arrow;
 	uint32_t *row;
 	uint32_t x;
 	uint32_t y;
@@ -251,7 +251,7 @@ zwl_arrow_create(
 	}
 
 	/* Succeeded: drawn with alpha (the other cursor shapes are made when first asked for, cursor.c). */
-	arrow->draw = ZWL_DRAW_ALPHA;
+	arrow->draw = KWL_DRAW_ALPHA;
 	server->arrow = arrow;
 	return 0;
 }
@@ -260,15 +260,15 @@ zwl_arrow_create(
  * Releases the arrow cursor.
  */
 void
-zwl_arrow_destroy(
-	struct zwl_server *server)
+kwl_arrow_destroy(
+	struct kwl_server *server)
 {
 	/* No arrow was made. */
 	if (server->arrow == NULL || server->compose == NULL)
 		return;
 
 	/* The shapes' images first (cursor.c). */
-	zwl_cursor_images_destroy(server);
+	kwl_cursor_images_destroy(server);
 
 	/* Its Vulkan objects, then the record. */
 	image_release(server->compose, server->arrow);
@@ -281,12 +281,12 @@ zwl_arrow_destroy(
  * sampled with the given sampler.
  */
 VkResult
-zwl_host_image_create(
-	struct zwl_compose *compose,
+kwl_host_image_create(
+	struct kwl_compose *compose,
 	uint32_t width,
 	uint32_t height,
 	VkSampler sampler,
-	struct zwl_import *import)
+	struct kwl_import *import)
 {
 	VkResult result;
 
@@ -296,12 +296,12 @@ zwl_host_image_create(
 }
 
 /*
- * Releases an image zwl_host_image_create made.
+ * Releases an image kwl_host_image_create made.
  */
 void
-zwl_host_image_release(
-	struct zwl_compose *compose,
-	struct zwl_import *import)
+kwl_host_image_release(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
 {
 	/* Whatever part of it was made. */
 	image_release(compose, import);
@@ -309,23 +309,23 @@ zwl_host_image_release(
 
 /*
  * Starts recording the start's host images' layout moves into one command
- * buffer (ws035-p131), submitted by zwl_host_image_batch_end.
+ * buffer (ws035-p131), submitted by kwl_host_image_batch_end.
  */
 void
-zwl_host_image_batch_begin(
-	struct zwl_compose *compose)
+kwl_host_image_batch_begin(
+	struct kwl_compose *compose)
 {
 	/* The next images' moves wait in setup_command. */
 	compose->setup_batching = 1;
 }
 
 /*
- * Submits the layout moves recorded since zwl_host_image_batch_begin and
+ * Submits the layout moves recorded since kwl_host_image_batch_begin and
  * waits for them once, before the first frame samples those images.
  */
 VkResult
-zwl_host_image_batch_end(
-	struct zwl_compose *compose)
+kwl_host_image_batch_end(
+	struct kwl_compose *compose)
 {
 	VkSubmitInfo submit;
 	VkCommandBuffer command;
@@ -364,12 +364,12 @@ zwl_host_image_batch_end(
 /* Maps a client's fd as a new pool (wl_shm.create_pool). */
 static int
 pool_create(
-	struct zwl_object *shm,
+	struct kwl_object *shm,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *object;
-	struct zwl_pool *pool;
+	struct kwl_object *object;
+	struct kwl_pool *pool;
 	uint32_t id;
 	int32_t length;
 	int descriptor;
@@ -381,7 +381,7 @@ pool_create(
 	length = (int32_t)word(bytes, 4);
 	if (length <= 0)
 		return EPROTO;
-	descriptor = zwl_take_fd(shm->client);
+	descriptor = kwl_take_fd(shm->client);
 	if (descriptor < 0)
 		return EAGAIN;
 
@@ -403,7 +403,7 @@ pool_create(
 	}
 
 	/* The pool object holds the first reference. */
-	object = zwl_create(shm->client, id, ZWL_SHM_POOL, 1);
+	object = kwl_create(shm->client, id, KWL_SHM_POOL, 1);
 	if (object == NULL) {
 		(void)munmap(pool->map, pool->size);
 		close(descriptor);
@@ -422,12 +422,12 @@ pool_create(
 /* Makes a wl_buffer of part of a pool (wl_shm_pool.create_buffer). */
 static int
 pool_buffer(
-	struct zwl_object *pool,
+	struct kwl_object *pool,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_shm_buffer *shm;
-	struct zwl_object *buffer;
+	struct kwl_shm_buffer *shm;
+	struct kwl_object *buffer;
 	uint64_t end;
 	int32_t offset;
 	int32_t width;
@@ -445,7 +445,7 @@ pool_buffer(
 	format = word(bytes, 20);
 
 	/* A known format, a positive size, rows of whole pixels, inside the pool. */
-	if (format != ZWL_SHM_ARGB8888 && format != ZWL_SHM_XRGB8888)
+	if (format != KWL_SHM_ARGB8888 && format != KWL_SHM_XRGB8888)
 		return EPROTO;
 	if (offset < 0 || width <= 0 || height <= 0 || stride < width * 4)
 		return EPROTO;
@@ -457,7 +457,7 @@ pool_buffer(
 	shm = calloc(1, sizeof(*shm));
 	if (shm == NULL)
 		return ENOMEM;
-	buffer = zwl_create(pool->client, word(bytes, 0), ZWL_BUFFER, 1);
+	buffer = kwl_create(pool->client, word(bytes, 0), KWL_BUFFER, 1);
 	if (buffer == NULL) {
 		free(shm);
 		return EPROTO;
@@ -480,11 +480,11 @@ pool_buffer(
 /* Maps a pool again at its new, larger size (wl_shm_pool.resize). */
 static int
 pool_resize(
-	struct zwl_object *pool,
+	struct kwl_object *pool,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_pool *memory;
+	struct kwl_pool *memory;
 	int32_t length;
 	void *map;
 
@@ -514,12 +514,12 @@ pool_resize(
  */
 static int
 surface_upload(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	const struct zwl_shm_buffer *shm;
-	struct zwl_object *buffer;
-	struct zwl_import *image;
+	const struct kwl_shm_buffer *shm;
+	struct kwl_object *buffer;
+	struct kwl_import *image;
 	const unsigned char *source;
 	unsigned char *target;
 	uint64_t mark;
@@ -542,7 +542,7 @@ surface_upload(
 	first = 0;
 	last = (int32_t)shm->height;
 	if (image == NULL || image->width != shm->width || image->height != shm->height) {
-		zwl_shm_image_destroy(server, surface);
+		kwl_shm_image_destroy(server, surface);
 		image = calloc(1, sizeof(*image));
 		if (image == NULL)
 			return ENOMEM;
@@ -567,18 +567,18 @@ surface_upload(
 	}
 
 	/* XRGB8888's unused byte is not alpha. */
-	image->draw = ZWL_DRAW_ALPHA;
-	if (shm->format == ZWL_SHM_XRGB8888)
-		image->draw = ZWL_DRAW_OPAQUE;
+	image->draw = KWL_DRAW_ALPHA;
+	if (shm->format == KWL_SHM_XRGB8888)
+		image->draw = KWL_DRAW_OPAQUE;
 
 	/* The rows, from the pool into the image (same byte order: B, G, R, A). */
-	mark = zwl_cycles();
+	mark = kwl_cycles();
 	source = (const unsigned char *)shm->pool->map + shm->offset;
 	target = image->map;
 	for (y = first; y < last; y++)
 		memcpy(target + (size_t)y * image->row_pitch, source + (size_t)y * shm->stride, (size_t)shm->width * 4U);
 	server->perf.shm_copies++;
-	server->perf.shm_copy_cycles += zwl_cycles() - mark;
+	server->perf.shm_copy_cycles += kwl_cycles() - mark;
 	surface->committed_damaged = 0;
 
 	/* The commit that brought the image marked what is drawn again (damage.c); the log follows. */
@@ -586,7 +586,7 @@ surface_upload(
 		/* With the sum of every sixteenth row copied, so that changing pictures can be told from still ones. */
 		sum = 2166136261U;
 		for (y = first; y < last; y += 16)
-			sum = (sum ^ zwl_row_sum(target + (size_t)y * image->row_pitch, shm->width)) * 16777619U;
+			sum = (sum ^ kwl_row_sum(target + (size_t)y * image->row_pitch, shm->width)) * 16777619U;
 		printf("ZWL SHM_COPY client=%llu surface=%u buffer=%u rows=%d-%d sum=%08x\n", (unsigned long long)surface->client->number, surface->id,
 		       buffer->id, first, last, (unsigned)sum);
 	}
@@ -595,10 +595,10 @@ surface_upload(
 	if (buffer->busy) {
 		buffer->busy = 0;
 		if (!buffer->dead && !buffer->client->fatal) {
-			error = zwl_emit(buffer->client, buffer->id, 0, NULL, 0);
+			error = kwl_emit(buffer->client, buffer->id, 0, NULL, 0);
 			if (error != 0) {
 				buffer->client->fatal = 1;
-				buffer->client->fatal_time = zwl_milliseconds();
+				buffer->client->fatal_time = kwl_milliseconds();
 			}
 		}
 	}
@@ -613,11 +613,11 @@ surface_upload(
  */
 static VkResult
 image_create(
-	struct zwl_compose *compose,
+	struct kwl_compose *compose,
 	uint32_t width,
 	uint32_t height,
 	VkSampler sampler,
-	struct zwl_import *import)
+	struct kwl_import *import)
 {
 	VkPhysicalDeviceMemoryProperties memory;
 	VkImageCreateInfo create;
@@ -708,7 +708,7 @@ image_create(
 		return result;
 
 	/* Its descriptor set (a spare one when there is one). */
-	result = zwl_compose_set_get(compose, &import->set);
+	result = kwl_compose_set_get(compose, &import->set);
 	if (result != VK_SUCCESS)
 		return result;
 	memset(&image_info, 0, sizeof(image_info));
@@ -725,7 +725,7 @@ image_create(
 	vkUpdateDescriptorSets(compose->device, 1U, &write, 0U, NULL);
 
 	/* And the same image sampled linearly. */
-	result = zwl_compose_linear_set(compose, import);
+	result = kwl_compose_linear_set(compose, import);
 	return result;
 }
 
@@ -736,7 +736,7 @@ image_create(
  */
 static VkResult
 image_layout(
-	struct zwl_compose *compose,
+	struct kwl_compose *compose,
 	VkImage image)
 {
 	VkCommandBufferAllocateInfo allocate;
@@ -769,7 +769,7 @@ image_layout(
 	if (result == VK_SUCCESS)
 		result = image_layout_record(command, image);
 
-	/* In the batch, the command buffer waits for the others (zwl_host_image_batch_end). */
+	/* In the batch, the command buffer waits for the others (kwl_host_image_batch_end). */
 	if (result == VK_SUCCESS && compose->setup_batching) {
 		compose->setup_command = command;
 		return VK_SUCCESS;
@@ -829,14 +829,14 @@ image_layout_record(
 /* Destroys what image_create made, whatever part of it was made. */
 static void
 image_release(
-	struct zwl_compose *compose,
-	struct zwl_import *import)
+	struct kwl_compose *compose,
+	struct kwl_import *import)
 {
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
-		zwl_compose_set_put(compose, import->set);
+		kwl_compose_set_put(compose, import->set);
 	if (import->linear_set != VK_NULL_HANDLE)
-		zwl_compose_set_put(compose, import->linear_set);
+		kwl_compose_set_put(compose, import->linear_set);
 	if (import->view != VK_NULL_HANDLE)
 		vkDestroyImageView(compose->device, import->view, NULL);
 	if (import->image != VK_NULL_HANDLE)
@@ -861,7 +861,7 @@ word(
 
 /* Returns a sum of a row's pixels (for the frame log). */
 static uint32_t
-zwl_row_sum(
+kwl_row_sum(
 	const unsigned char *row,
 	uint32_t width)
 {

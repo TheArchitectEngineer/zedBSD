@@ -13,40 +13,40 @@
  * dates of the system bar and the login screen in it.
  */
 
-#ifndef ZWL_LANGUAGE_H
-#define ZWL_LANGUAGE_H
+#ifndef KWL_LANGUAGE_H
+#define KWL_LANGUAGE_H
 
 #include <stddef.h>
 #include <time.h>
 
-struct zwl_server;
+struct kwl_server;
 
 /* The domain of the compositor's own text. */
-#define ZWL_LANGUAGE_DOMAIN	"wayland"
+#define KWL_LANGUAGE_DOMAIN	"wayland"
 
 /* The system's language before a login (the login screen's), set by an administrator. */
-#define ZWL_LANGUAGE_SYSTEM_PATH	KEILAND_SYSCONFDIR "/keiland/language"
+#define KWL_LANGUAGE_SYSTEM_PATH	KEILAND_SYSCONFDIR "/keiland/language"
 
 /* The two forms of a date: the system bar's short one, and the login screen's long one. */
-#define ZWL_LANGUAGE_DATE_SHORT	0
-#define ZWL_LANGUAGE_DATE_LONG	1
+#define KWL_LANGUAGE_DATE_SHORT	0
+#define KWL_LANGUAGE_DATE_LONG	1
 
 /*
  * Reads the system's language for the login screen (English when the
  * file is not there).
  */
-void zwl_language_system(struct zwl_server *server);
+void kwl_language_system(struct kwl_server *server);
 
 /*
  * Takes the session's language from the setting ui.language (0 English,
  * 1 Japanese): the catalogs are read and the screen drawn again.
  */
-void zwl_language_set(struct zwl_server *server, int setting);
+void kwl_language_set(struct kwl_server *server, int setting);
 
 /*
  * Writes a date in the language: the short form "Mon Oct 5  14:05" with
  * the time, or the long "Monday, October 5" without it.
  */
-void zwl_language_date(const struct tm *local, int form, char *out, size_t size);
+void kwl_language_date(const struct tm *local, int form, char *out, size_t size);
 
 #endif

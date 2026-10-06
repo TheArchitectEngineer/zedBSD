@@ -29,7 +29,7 @@ done < "$work/common" > "$work/C2"
 find userland/desktop/wayland userland/desktop/libkeiland userland/desktop/libkeiland-backend \
     userland/desktop/libkeiland-backend-linux userland/desktop/libkeiland-backend-freebsd -name '*.[ch]' -print |
 while IFS= read -r file; do
-    awk '/zwl_buffer_layout|gpu_image_descriptor|[<"]uapi\/gpu/ {print FILENAME ":" FNR ": " $0}' "$file"
+    awk '/kwl_buffer_layout|gpu_image_descriptor|[<"]uapi\/gpu/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/C3"
 
 # Inspect each literal so a system-shell exception cannot hide another path.

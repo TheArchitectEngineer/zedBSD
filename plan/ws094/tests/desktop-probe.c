@@ -6,7 +6,7 @@
  */
 
 /*
- * ws094-p002: a desktop surface client for zdesktop's keiland_desktop_v1,
+ * ws094-p002: a desktop surface client for zdesktop's kl_desktop_v1,
  * with protocol code of its own (as wayland-scanner would make it) over
  * libwayland's marshalling.
  *
@@ -110,32 +110,32 @@ static const struct wl_interface *probe_plain_types[] = {
 	NULL,
 };
 
-/* The requests of keiland_desktop_manager_v1. */
+/* The requests of kl_desktop_manager_v1. */
 static const struct wl_message manager_requests[] = {
 	{ "destroy", "", NULL },
 	{ "get_desktop_surface", "nos", manager_get_types },
 };
 
-/* keiland_desktop_manager_v1, as the probe describes it. */
+/* kl_desktop_manager_v1, as the probe describes it. */
 const struct wl_interface probe_desktop_manager_interface = {
-	"keiland_desktop_manager_v1", 1, 2, manager_requests,
+	"kl_desktop_manager_v1", 1, 2, manager_requests,
 	0, NULL
 };
 
-/* The requests of keiland_desktop_surface_v1. */
+/* The requests of kl_desktop_surface_v1. */
 static const struct wl_message surface_requests[] = {
 	{ "destroy", "", NULL },
 	{ "ack_configure", "u", probe_plain_types },
 };
 
-/* The events of keiland_desktop_surface_v1. */
+/* The events of kl_desktop_surface_v1. */
 static const struct wl_message surface_events[] = {
 	{ "configure", "uiiii", probe_plain_types },
 };
 
-/* keiland_desktop_surface_v1, as the probe describes it. */
+/* kl_desktop_surface_v1, as the probe describes it. */
 const struct wl_interface probe_desktop_surface_interface = {
-	"keiland_desktop_surface_v1", 1, 2, surface_requests,
+	"kl_desktop_surface_v1", 1, 2, surface_requests,
 	1, surface_events
 };
 
@@ -541,8 +541,8 @@ registry_global(
 		return;
 	}
 
-	/* keiland_desktop_manager_v1. */
-	match = strcmp(interface, "keiland_desktop_manager_v1");
+	/* kl_desktop_manager_v1. */
+	match = strcmp(interface, "kl_desktop_manager_v1");
 	if (match == 0) {
 		probe.manager = wl_registry_bind(registry, name, &probe_desktop_manager_interface, 1);
 		if (probe.manager == NULL) {

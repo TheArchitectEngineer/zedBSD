@@ -51,7 +51,7 @@
  * (SYSTEM_SCAN_MS).
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "media.h"
 
 #include "userland/desktop/keiland/kl-system-protocol.h"
@@ -78,7 +78,7 @@
  * user's decision of 2026-10-05): a client asks again more often while it
  * shows the networks around, and an asking it does not renew ends, so that
  * a client that stopped without saying so (hung) cannot keep the radios
- * scanning.  A client that ends is let go at once (zwl_system_network_gone).
+ * scanning.  A client that ends is let go at once (kwl_system_network_gone).
  */
 #define SYSTEM_SCAN_MS		60000U
 
@@ -198,7 +198,7 @@ struct system_details_wait {
  * The extension's state that is no object's:
  *
  *   - the network work waiting, and what of the network is being told
- *     (network.c's changed bits, during zwl_system_network_changed only);
+ *     (network.c's changed bits, during kwl_system_network_changed only);
  *   - the objects waiting for the details (waiting, counted by
  *     details_count, bar for the system bar's saved networks) and those
  *     the reading under way answers (serving, serving_count, serving_bar);
@@ -255,53 +255,53 @@ struct system_state {
 /* The one state of the process, zero until the first use; the event loop's thread's (see struct system_state). */
 static struct system_state system_state;
 
-static int system_manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_sharing_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static void system_sharing_state(struct zwl_object *object);
-static int system_network_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_audio_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_power_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_devices_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_account_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_account_pin(struct zwl_object *object, const unsigned char *bytes, size_t size);
-static int system_pin_begin(struct zwl_object *object, uint32_t number, const char *current, const char *pin);
+static int system_manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_sharing_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static void system_sharing_state(struct kwl_object *object);
+static int system_network_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_audio_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_power_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_devices_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_account_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int system_account_pin(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static int system_pin_begin(struct kwl_object *object, uint32_t number, const char *current, const char *pin);
 static int system_pin_valid(const char *pin);
-static void system_account_enrolled(struct zwl_object *object);
-static void system_enrolled_tick(struct zwl_server *server);
-static void system_account_take(struct zwl_server *server);
+static void system_account_enrolled(struct kwl_object *object);
+static void system_enrolled_tick(struct kwl_server *server);
+static void system_account_take(struct kwl_server *server);
 static void *system_account_run(void *argument);
-static uint32_t system_network_send(struct zwl_object *object, uint32_t number, uint32_t what, const char *ssid);
-static int system_network_save_key(struct zwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
-static uint32_t system_network_details(struct zwl_object *object, uint32_t number);
-static int system_network_wired(struct zwl_object *object, const unsigned char *bytes, size_t size);
-static uint32_t system_network_wired_send(struct zwl_object *object, uint32_t number, const struct kl_backend_wired_config *config);
-static void system_network_scanning(struct zwl_object *object, uint32_t on);
-static void system_scanning_expire(struct zwl_server *server);
-static void system_network_step(struct zwl_server *server, unsigned request);
-static void system_network_snapshot(struct zwl_object *object);
-static void system_network_change(struct zwl_object *object);
-static void system_network_state(struct zwl_object *object);
-static void system_network_scan(struct zwl_object *object);
-static void system_network_details_send(struct zwl_object *object);
-static void system_network_finish(struct zwl_server *server, int error);
-static void system_network_job_take(struct zwl_server *server);
-static void system_network_job_next(struct zwl_server *server);
-static void system_details_take(struct zwl_server *server);
-static void system_power_job_take(struct zwl_server *server);
-static void system_power_read(struct zwl_server *server);
+static uint32_t system_network_send(struct kwl_object *object, uint32_t number, uint32_t what, const char *ssid);
+static int system_network_save_key(struct kwl_server *server, uint64_t client, uint32_t object, uint32_t number, unsigned bar, const char *ssid, const char *key);
+static uint32_t system_network_details(struct kwl_object *object, uint32_t number);
+static int system_network_wired(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static uint32_t system_network_wired_send(struct kwl_object *object, uint32_t number, const struct kl_backend_wired_config *config);
+static void system_network_scanning(struct kwl_object *object, uint32_t on);
+static void system_scanning_expire(struct kwl_server *server);
+static void system_network_step(struct kwl_server *server, unsigned request);
+static void system_network_snapshot(struct kwl_object *object);
+static void system_network_change(struct kwl_object *object);
+static void system_network_state(struct kwl_object *object);
+static void system_network_scan(struct kwl_object *object);
+static void system_network_details_send(struct kwl_object *object);
+static void system_network_finish(struct kwl_server *server, int error);
+static void system_network_job_take(struct kwl_server *server);
+static void system_network_job_next(struct kwl_server *server);
+static void system_details_take(struct kwl_server *server);
+static void system_power_job_take(struct kwl_server *server);
+static void system_power_read(struct kwl_server *server);
 static int system_job_finished(struct system_job *job);
 static int system_job_start(struct system_job *job, unsigned kind, const char *ssid, const char *key);
 static void system_job_wait(struct system_job *job);
 static void *system_job_run(void *argument);
-static void system_audio_state(struct zwl_object *object);
-static void system_power_state(struct zwl_object *object);
-static void system_devices_state(struct zwl_object *object);
-static void system_devices_answers(struct zwl_server *server);
-static struct zwl_object *system_devices_object(struct zwl_server *server, uint64_t number, uint32_t id);
-static void system_tell(struct zwl_server *server, enum zwl_kind kind, void (*tell)(struct zwl_object *object), uint32_t done_opcode);
-static struct zwl_object *system_network_object(struct zwl_server *server, uint64_t number, uint32_t id);
-static void system_result(struct zwl_object *object, uint32_t opcode, uint32_t number, uint32_t applied);
-static void system_done(struct zwl_object *object, uint32_t opcode);
+static void system_audio_state(struct kwl_object *object);
+static void system_power_state(struct kwl_object *object);
+static void system_devices_state(struct kwl_object *object);
+static void system_devices_answers(struct kwl_server *server);
+static struct kwl_object *system_devices_object(struct kwl_server *server, uint64_t number, uint32_t id);
+static void system_tell(struct kwl_server *server, enum kwl_kind kind, void (*tell)(struct kwl_object *object), uint32_t done_opcode);
+static struct kwl_object *system_network_object(struct kwl_server *server, uint64_t number, uint32_t id);
+static void system_result(struct kwl_object *object, uint32_t opcode, uint32_t number, uint32_t applied);
+static void system_done(struct kwl_object *object, uint32_t opcode);
 static uint32_t system_result_of(int error);
 static uint32_t system_network_result_of(int error);
 static unsigned system_network_what(uint32_t what);
@@ -316,8 +316,8 @@ static uint32_t system_word(const unsigned char *bytes, size_t offset);
  * network, the sound, the power and the devices' frame.
  */
 int
-zwl_system_bind(
-	struct zwl_object *manager)
+kwl_system_bind(
+	struct kwl_object *manager)
 {
 	uint32_t bits;
 	int administer;
@@ -350,7 +350,7 @@ zwl_system_bind(
 	managed = kl_backend_session_managed(manager->client->server->backend);
 	if (manager->version >= KL_SYSTEM_SINCE_PIN && managed)
 		bits |= KL_SYSTEM_CAPABILITY_PIN;
-	error = zwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
+	error = kwl_emit(manager->client, manager->id, KL_SYSTEM_MANAGER_EVENT_CAPABILITIES, &bits, sizeof(bits));
 	if (error != 0)
 		return error;
 
@@ -363,8 +363,8 @@ zwl_system_bind(
  * devices object (a settings object's are settings.c's).
  */
 int
-zwl_system_request(
-	struct zwl_object *object,
+kwl_system_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -373,25 +373,25 @@ zwl_system_request(
 
 	/* Each kind of the extension's objects. */
 	switch (object->kind) {
-	case ZWL_SYSTEM_MANAGER:
+	case KWL_SYSTEM_MANAGER:
 		error = system_manager_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_NETWORK:
+	case KWL_SYSTEM_NETWORK:
 		error = system_network_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_AUDIO:
+	case KWL_SYSTEM_AUDIO:
 		error = system_audio_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_POWER:
+	case KWL_SYSTEM_POWER:
 		error = system_power_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_DEVICES:
+	case KWL_SYSTEM_DEVICES:
 		error = system_devices_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_ACCOUNT:
+	case KWL_SYSTEM_ACCOUNT:
 		error = system_account_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_SHARING:
+	case KWL_SYSTEM_SHARING:
 		error = system_sharing_request(object, opcode, bytes, size);
 		break;
 	default:
@@ -413,8 +413,8 @@ zwl_system_request(
  * the sound told when it changed.
  */
 void
-zwl_system_tick(
-	struct zwl_server *server)
+kwl_system_tick(
+	struct kwl_server *server)
 {
 	struct kl_backend_audio_state audio;
 	unsigned changed;
@@ -449,22 +449,22 @@ zwl_system_tick(
 	system_enrolled_tick(server);
 
 	/* The monitor's samples, to the monitor objects (sysmon.c, WS134 p012). */
-	zwl_sysmon_tick(server);
+	kwl_sysmon_tick(server);
 
 	/* The removable media: a new list to every devices object, and volumed's answers (media.c, ws132-p004). */
-	changed = zwl_media_tick(server);
+	changed = kwl_media_tick(server);
 	if ((changed & KL_BACKEND_VOLUMES_CHANGED_LIST) != 0U)
-		system_tell(server, ZWL_SYSTEM_DEVICES, system_devices_state, KL_SYSTEM_DEVICES_EVENT_DONE);
+		system_tell(server, KWL_SYSTEM_DEVICES, system_devices_state, KL_SYSTEM_DEVICES_EVENT_DONE);
 	if ((changed & KL_BACKEND_VOLUMES_CHANGED_RESULT) != 0U)
 		system_devices_answers(server);
 
 	/* The sound as volume.c has it, told to every sound object when it changed. */
-	zwl_volume_audio_state(&audio);
+	kwl_volume_audio_state(&audio);
 	differs = memcmp(&audio, &system_state.audio, sizeof(audio));
 	if (differs != 0 || !system_state.audio_told) {
 		system_state.audio = audio;
 		system_state.audio_told = 1U;
-		system_tell(server, ZWL_SYSTEM_AUDIO, system_audio_state, KL_SYSTEM_AUDIO_EVENT_DONE);
+		system_tell(server, KWL_SYSTEM_AUDIO, system_audio_state, KL_SYSTEM_AUDIO_EVENT_DONE);
 	}
 }
 
@@ -473,8 +473,8 @@ zwl_system_tick(
  * state, the scan); network.c calls it after it read them.
  */
 void
-zwl_system_network_changed(
-	struct zwl_server *server,
+kwl_system_network_changed(
+	struct kwl_server *server,
 	unsigned changed)
 {
 	/* Nothing a network object shows. */
@@ -483,7 +483,7 @@ zwl_system_network_changed(
 
 	/* The new state and the new scan, with one done: one change. */
 	system_state.network_changed = changed;
-	system_tell(server, ZWL_SYSTEM_NETWORK, system_network_change, KL_SYSTEM_NETWORK_EVENT_DONE);
+	system_tell(server, KWL_SYSTEM_NETWORK, system_network_change, KL_SYSTEM_NETWORK_EVENT_DONE);
 	system_state.network_changed = 0U;
 }
 
@@ -495,8 +495,8 @@ zwl_system_network_changed(
  * key the bar saved, which network.c follows as its own join.
  */
 int
-zwl_system_network_done(
-	struct zwl_server *server,
+kwl_system_network_done(
+	struct kwl_server *server,
 	unsigned request,
 	int error)
 {
@@ -534,12 +534,12 @@ zwl_system_network_done(
  * Saves a key the system bar's key field took, on the network's thread,
  * then tells the daemon and joins the network as a client's save_key
  * does; the join's answer comes to network.c as its own, a failure before
- * it as zwl_network_key_failed.  Returns 0, EBUSY while other network work
+ * it as kwl_network_key_failed.  Returns 0, EBUSY while other network work
  * of the extension waits, EINVAL, or ENODEV without the daemon's watch.
  */
 int
-zwl_system_bar_save_key(
-	struct zwl_server *server,
+kwl_system_bar_save_key(
+	struct kwl_server *server,
 	const char *ssid,
 	const char *key)
 {
@@ -566,11 +566,11 @@ zwl_system_bar_save_key(
 
 /*
  * Asks the network's thread for the saved networks, which come to network.c
- * as zwl_network_saved (with the next reading of the details).
+ * as kwl_network_saved (with the next reading of the details).
  */
 void
-zwl_system_bar_saved(
-	struct zwl_server *server)
+kwl_system_bar_saved(
+	struct kwl_server *server)
 {
 	/* The bar waits for the next reading. */
 	system_state.details_bar = 1U;
@@ -582,8 +582,8 @@ zwl_system_bar_saved(
  * calls it for every network object's destroy, its client's end included).
  */
 void
-zwl_system_network_gone(
-	struct zwl_object *object)
+kwl_system_network_gone(
+	struct kwl_object *object)
 {
 	/* An object that asks no longer has the same end as one that never asked. */
 	system_network_scanning(object, 0U);
@@ -594,13 +594,13 @@ zwl_system_network_gone(
  * closes (the power's thread uses it).
  */
 void
-zwl_system_close(
-	struct zwl_server *server)
+kwl_system_close(
+	struct kwl_server *server)
 {
 	UNUSED_PARAMETER(server);
 
 	/* The monitor's sampling. */
-	zwl_sysmon_close(server);
+	kwl_sysmon_close(server);
 
 	/* A job under way ends on its own (a file read or written to its end, a bus call answered). */
 	system_job_wait(&system_state.network_job);
@@ -625,13 +625,13 @@ zwl_system_close(
 /* Carries out a request of the manager: it goes, or it makes one of its objects. */
 static int
 system_manager_request(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	enum zwl_kind kind;
+	struct kwl_object *created;
+	enum kwl_kind kind;
 	uint32_t id;
 	int error;
 
@@ -639,7 +639,7 @@ system_manager_request(
 	if (opcode == KL_SYSTEM_MANAGER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(manager);
+		kwl_object_destroy(manager);
 		return 0;
 	}
 
@@ -647,7 +647,7 @@ system_manager_request(
 	if (opcode == KL_SYSTEM_MANAGER_GET_MONITOR) {
 		if (manager->version < 2U)
 			return EPROTO;
-		error = zwl_sysmon_create(manager, bytes, size);
+		error = kwl_sysmon_create(manager, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;
@@ -655,7 +655,7 @@ system_manager_request(
 
 	/* The settings are settings.c's. */
 	if (opcode == KL_SYSTEM_MANAGER_GET_SETTINGS) {
-		error = zwl_settings_request(manager, opcode, bytes, size);
+		error = kwl_settings_request(manager, opcode, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;
@@ -664,28 +664,28 @@ system_manager_request(
 	/* Which object the request makes. */
 	switch (opcode) {
 	case KL_SYSTEM_MANAGER_GET_NETWORK:
-		kind = ZWL_SYSTEM_NETWORK;
+		kind = KWL_SYSTEM_NETWORK;
 		break;
 	case KL_SYSTEM_MANAGER_GET_AUDIO:
-		kind = ZWL_SYSTEM_AUDIO;
+		kind = KWL_SYSTEM_AUDIO;
 		break;
 	case KL_SYSTEM_MANAGER_GET_POWER:
-		kind = ZWL_SYSTEM_POWER;
+		kind = KWL_SYSTEM_POWER;
 		break;
 	case KL_SYSTEM_MANAGER_GET_DEVICES:
-		kind = ZWL_SYSTEM_DEVICES;
+		kind = KWL_SYSTEM_DEVICES;
 		break;
 	case KL_SYSTEM_MANAGER_GET_ACCOUNT:
 		/* Since version 4 (ws160-p002). */
 		if (manager->version < 4U)
 			return EPROTO;
-		kind = ZWL_SYSTEM_ACCOUNT;
+		kind = KWL_SYSTEM_ACCOUNT;
 		break;
 	case KL_SYSTEM_MANAGER_GET_SHARING:
 		/* Since version 7 (ws089-p025). */
 		if (manager->version < KL_SYSTEM_SINCE_SHARING)
 			return EPROTO;
-		kind = ZWL_SYSTEM_SHARING;
+		kind = KWL_SYSTEM_SHARING;
 		break;
 	default:
 		return EPROTO;
@@ -695,33 +695,33 @@ system_manager_request(
 	if (size != 4U)
 		return EPROTO;
 	id = system_word(bytes, 0U);
-	created = zwl_create(manager->client, id, kind, manager->version);
+	created = kwl_create(manager->client, id, kind, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	printf("ZWL SYSTEM object client=%llu get=%u id=%u\n", (unsigned long long)manager->client->number, (unsigned)opcode, id);
 
 	/* Its first state and a done. */
 	switch (kind) {
-	case ZWL_SYSTEM_NETWORK:
+	case KWL_SYSTEM_NETWORK:
 		system_network_snapshot(created);
 		break;
-	case ZWL_SYSTEM_AUDIO:
+	case KWL_SYSTEM_AUDIO:
 		system_audio_state(created);
 		system_done(created, KL_SYSTEM_AUDIO_EVENT_DONE);
 		break;
-	case ZWL_SYSTEM_POWER:
+	case KWL_SYSTEM_POWER:
 		/* Before the first read ends there is no state yet: the read's end tells it, with its done. */
 		if (!system_state.power_read)
 			break;
 		system_power_state(created);
 		system_done(created, KL_SYSTEM_POWER_EVENT_DONE);
 		break;
-	case ZWL_SYSTEM_ACCOUNT:
+	case KWL_SYSTEM_ACCOUNT:
 		/* What the user has enrolled, when known (no done), and asked again for it. */
 		system_account_enrolled(created);
 		system_state.enrolled_wanted = 1U;
 		break;
-	case ZWL_SYSTEM_SHARING:
+	case KWL_SYSTEM_SHARING:
 		/* The state last known, then read again (its answer comes to every object). */
 		system_sharing_state(created);
 		system_done(created, KL_SYSTEM_SHARING_EVENT_DONE);
@@ -734,7 +734,7 @@ system_manager_request(
 	}
 
 	/* The power is read again, by its thread, for the new object (a change comes as its state and a done). */
-	if (kind == ZWL_SYSTEM_POWER && system_state.power_read)
+	if (kind == KWL_SYSTEM_POWER && system_state.power_read)
 		system_power_read(manager->client->server);
 
 	/* Succeeded: the object is the client's. */
@@ -747,17 +747,17 @@ system_manager_request(
  * asked its result.
  */
 void
-zwl_system_sharing_answer(
-	struct zwl_server *server,
+kwl_system_sharing_answer(
+	struct kwl_server *server,
 	int error)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	struct system_devices_wait *wait;
 
 	/* Every sharing object, the state and a done. */
 	printf("ZWL SYSTEM sharing answer error=%d\n", error);
-	system_tell(server, ZWL_SYSTEM_SHARING, system_sharing_state, KL_SYSTEM_SHARING_EVENT_DONE);
+	system_tell(server, KWL_SYSTEM_SHARING, system_sharing_state, KL_SYSTEM_SHARING_EVENT_DONE);
 
 	/* The result of the request that waited. */
 	if (!system_state.sharing_waiting)
@@ -767,8 +767,8 @@ zwl_system_sharing_answer(
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->number != wait->client || client->fatal)
 			continue;
-		object = zwl_find(client, wait->object);
-		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_SHARING)
+		object = kwl_find(client, wait->object);
+		if (object == NULL || object->dead || object->kind != KWL_SYSTEM_SHARING)
 			return;
 		system_result(object, KL_SYSTEM_SHARING_EVENT_RESULT, wait->number, system_result_of(error));
 		return;
@@ -781,12 +781,12 @@ zwl_system_sharing_answer(
  * enrolled is asked again.  Returns 1 when a change waited, 0 when not.
  */
 int
-zwl_system_pin_answer(
-	struct zwl_server *server,
+kwl_system_pin_answer(
+	struct kwl_server *server,
 	int error)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	struct system_devices_wait *wait;
 	unsigned char payload[64];
 	const char *reason;
@@ -807,15 +807,15 @@ zwl_system_pin_answer(
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->number != wait->client || client->fatal)
 			continue;
-		object = zwl_find(client, wait->object);
-		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_ACCOUNT)
+		object = kwl_find(client, wait->object);
+		if (object == NULL || object->dead || object->kind != KWL_SYSTEM_ACCOUNT)
 			return 1;
 
 		/* A refusal's word first, then the result. */
 		if (error != 0 && reason[0] != '\0' && object->version >= KL_SYSTEM_SINCE_ADMINISTER) {
 			offset = system_put_word(payload, 0U, wait->number);
 			offset = system_put_string(payload, offset, reason);
-			(void)zwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_REFUSED, payload, offset);
+			(void)kwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_REFUSED, payload, offset);
 		}
 
 		/* The result. */
@@ -832,12 +832,12 @@ zwl_system_pin_answer(
  * account object hears what the user has enrolled.
  */
 void
-zwl_system_enrolled_answer(
-	struct zwl_server *server,
+kwl_system_enrolled_answer(
+	struct kwl_server *server,
 	int error)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	unsigned pin;
 	unsigned keys;
 
@@ -864,7 +864,7 @@ zwl_system_enrolled_answer(
 		for (object = client->objects;
 		     object != NULL;
 		     object = object->next) {
-			if (object->kind != ZWL_SYSTEM_ACCOUNT || object->dead)
+			if (object->kind != KWL_SYSTEM_ACCOUNT || object->dead)
 				continue;
 			system_account_enrolled(object);
 		}
@@ -874,7 +874,7 @@ zwl_system_enrolled_answer(
 /* Carries out a request of a sharing object (ws089-p025). */
 static int
 system_sharing_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -888,7 +888,7 @@ system_sharing_request(
 	if (opcode == KL_SYSTEM_SHARING_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -913,7 +913,7 @@ system_sharing_request(
 		return 0;
 	}
 
-	/* Asked of sessiond; the answer comes through zwl_system_sharing_answer. */
+	/* Asked of sessiond; the answer comes through kwl_system_sharing_answer. */
 	error = kl_backend_sharing_request(object->client->server->backend, action);
 	printf("ZWL SYSTEM sharing client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
 	if (error != 0) {
@@ -934,7 +934,7 @@ system_sharing_request(
 /* Tells a sharing object Remote Login's state (without its done). */
 static void
 system_sharing_state(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	struct kl_backend_sharing sharing;
 	unsigned char payload[SYSTEM_EVENT_MAX];
@@ -950,13 +950,13 @@ system_sharing_state(
 	offset = system_put_word(payload, offset, sharing.port);
 	offset = system_put_word(payload, offset, sharing.allowed);
 	offset = system_put_string(payload, offset, sharing.fingerprint);
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_SHARING_EVENT_STATE, payload, offset);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_SHARING_EVENT_STATE, payload, offset);
 }
 
 /* Carries out a request of a network object. */
 static int
 system_network_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -978,7 +978,7 @@ system_network_request(
 		wait = &system_state.wait;
 		if (wait->stage != SYSTEM_NETWORK_IDLE && !wait->bar && wait->client == object->client->number && wait->object == object->id)
 			wait->object = 0U;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -1070,7 +1070,7 @@ system_network_request(
  */
 static void
 system_network_scanning(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t on)
 {
 	unsigned asked;
@@ -1079,7 +1079,7 @@ system_network_scanning(
 	asked = 0U;
 	if (on != 0U) {
 		asked = 1U;
-		object->network_scanning_until = zwl_milliseconds() + SYSTEM_SCAN_MS;
+		object->network_scanning_until = kwl_milliseconds() + SYSTEM_SCAN_MS;
 	}
 
 	/* No change: an object is counted once however often it asks. */
@@ -1091,26 +1091,26 @@ system_network_scanning(
 	 * radios are kept scanning while any holder is there.
 	 */
 	object->network_scanning = asked;
-	zwl_network_scan_hold(asked);
+	kwl_network_scan_hold(asked);
 	printf("ZWL SYSTEM scanning client=%llu id=%u on=%u\n", (unsigned long long)object->client->number, object->id, asked);
 }
 
 /* Lets go of each network object's asking for scans that was not asked again within its minute. */
 static void
 system_scanning_expire(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	uint64_t now;
 
 	/* The time once for the whole walk. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 
 	/* Every live network object that asks, of every client. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (object = client->objects; object != NULL; object = object->next) {
-			if (object->kind != ZWL_SYSTEM_NETWORK || object->dead)
+			if (object->kind != KWL_SYSTEM_NETWORK || object->dead)
 				continue;
 			if (object->network_scanning == 0U || now < object->network_scanning_until)
 				continue;
@@ -1125,7 +1125,7 @@ system_scanning_expire(
 /* Carries out a request of a sound object. */
 static int
 system_audio_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -1140,7 +1140,7 @@ system_audio_request(
 	if (opcode == KL_SYSTEM_AUDIO_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -1149,7 +1149,7 @@ system_audio_request(
 		if (size != 4U)
 			return EPROTO;
 		number = system_word(bytes, 0U);
-		error = zwl_volume_feedback();
+		error = kwl_volume_feedback();
 		system_result(object, KL_SYSTEM_AUDIO_EVENT_RESULT, number, system_result_of(error));
 		return 0;
 	}
@@ -1167,7 +1167,7 @@ system_audio_request(
 	}
 
 	/* Shown in the system bar and sent to the sound service (its report comes back as the state). */
-	error = zwl_volume_request_channels(object->client->server, left, right, muted);
+	error = kwl_volume_request_channels(object->client->server, left, right, muted);
 	system_result(object, KL_SYSTEM_AUDIO_EVENT_RESULT, number, system_result_of(error));
 
 	/* Succeeded: the request is answered. */
@@ -1177,7 +1177,7 @@ system_audio_request(
 /* Carries out a request of a power object. */
 static int
 system_power_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -1190,7 +1190,7 @@ system_power_request(
 	if (opcode == KL_SYSTEM_POWER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -1220,7 +1220,7 @@ system_power_request(
 /* Carries out a request of a devices object: an eject, or a mount (since version 5), sent to volumed. */
 static int
 system_devices_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -1237,7 +1237,7 @@ system_devices_request(
 	if (opcode == KL_SYSTEM_DEVICES_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -1265,7 +1265,7 @@ system_devices_request(
 
 	/* Sent to volumed; the answer comes later, or the failure to send now. */
 	request = 0U;
-	error = zwl_media_ask(mount, id, &request);
+	error = kwl_media_ask(mount, id, &request);
 	printf("ZWL SYSTEM devices client=%llu mount=%d id=%s error=%d\n", (unsigned long long)object->client->number, mount, id, error);
 	free(id);
 	if (error != 0) {
@@ -1294,7 +1294,7 @@ system_devices_request(
  */
 static int
 system_account_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -1315,7 +1315,7 @@ system_account_request(
 	if (opcode == KL_SYSTEM_ACCOUNT_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -1466,12 +1466,12 @@ system_account_run(
 /* Takes the account's finished job: the passwords wiped, the answer to the asking object if it is still there. */
 static void
 system_account_take(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned char payload[SYSTEM_EVENT_MAX];
 	struct system_account_job *job;
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	unsigned done;
 	size_t offset;
 
@@ -1501,15 +1501,15 @@ system_account_take(
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->number != job->client || client->fatal)
 			continue;
-		object = zwl_find(client, job->object);
-		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_ACCOUNT)
+		object = kwl_find(client, job->object);
+		if (object == NULL || object->dead || object->kind != KWL_SYSTEM_ACCOUNT)
 			return;
 
 		/* A refusal's word first (an administration's), then the result. */
 		if (job->administer && job->reason[0] != '\0') {
 			offset = system_put_word(payload, 0U, job->number);
 			offset = system_put_string(payload, offset, job->reason);
-			(void)zwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_REFUSED, payload, offset);
+			(void)kwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_REFUSED, payload, offset);
 		}
 
 		/* The result. */
@@ -1525,7 +1525,7 @@ system_account_take(
  */
 static int
 system_account_pin(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	const unsigned char *bytes,
 	size_t size)
 {
@@ -1587,7 +1587,7 @@ system_account_pin(
  */
 static int
 system_pin_begin(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t number,
 	const char *current,
 	const char *pin)
@@ -1618,7 +1618,7 @@ system_pin_begin(
 	if (!managed)
 		return ENOTSUP;
 
-	/* The change; the answer comes through zwl_system_pin_answer. */
+	/* The change; the answer comes through kwl_system_pin_answer. */
 	error = kl_backend_session_set_pin(backend, current, pin);
 	printf("ZWL SYSTEM account pin client=%llu number=%u remove=%d error=%d\n", (unsigned long long)object->client->number, number, pin[0] == '\0', error);
 	if (error != 0)
@@ -1658,7 +1658,7 @@ system_pin_valid(
 /* Tells an account object what the user has enrolled, when it is known and the object is new enough to hear it. */
 static void
 system_account_enrolled(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	uint32_t words[2];
 
@@ -1671,7 +1671,7 @@ system_account_enrolled(
 	/* Whether a PIN is set, and the security keys. */
 	words[0] = system_state.enrolled_pin;
 	words[1] = system_state.enrolled_keys;
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_ENROLLED, words, sizeof(words));
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_ACCOUNT_EVENT_ENROLLED, words, sizeof(words));
 }
 
 /*
@@ -1682,7 +1682,7 @@ system_account_enrolled(
  */
 static void
 system_enrolled_tick(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	char home[SYSTEM_HOME_MAX];
 	char path[SYSTEM_HOME_MAX + 32U];
@@ -1697,7 +1697,7 @@ system_enrolled_tick(
 	/* The mock's PIN file goes once (ws172-p002: it is not carried over). */
 	if (!system_state.pin_file_gone) {
 		system_state.pin_file_gone = 1U;
-		error = zwl_settings_home(home, sizeof(home));
+		error = kwl_settings_home(home, sizeof(home));
 		if (error == 0) {
 			snprintf(path, sizeof(path), "%s/.config/keiland/pin", home);
 			error = unlink(path);
@@ -1724,7 +1724,7 @@ system_enrolled_tick(
 /* Sends a client's request to the network daemon; the result comes with the daemon's answer. */
 static uint32_t
 system_network_send(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t number,
 	uint32_t what,
 	const char *ssid)
@@ -1750,7 +1750,7 @@ system_network_send(
 	wait = &system_state.wait;
 	if (wait->stage != SYSTEM_NETWORK_IDLE)
 		return KL_SYSTEM_RESULT_BUSY;
-	watch = zwl_network_watch();
+	watch = kwl_network_watch();
 	if (watch == NULL)
 		return KL_SYSTEM_RESULT_UNAVAILABLE;
 
@@ -1784,7 +1784,7 @@ system_network_send(
  */
 static int
 system_network_wired(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	const unsigned char *bytes,
 	size_t size)
 {
@@ -1864,7 +1864,7 @@ system_network_wired(
 /* Sends a client's wired configuration to the network daemon; the result comes with the daemon's answer. */
 static uint32_t
 system_network_wired_send(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t number,
 	const struct kl_backend_wired_config *config)
 {
@@ -1882,7 +1882,7 @@ system_network_wired_send(
 	wait = &system_state.wait;
 	if (wait->stage != SYSTEM_NETWORK_IDLE)
 		return KL_SYSTEM_RESULT_BUSY;
-	watch = zwl_network_watch();
+	watch = kwl_network_watch();
 	if (watch == NULL)
 		return KL_SYSTEM_RESULT_UNAVAILABLE;
 
@@ -1912,7 +1912,7 @@ system_network_wired_send(
  */
 static int
 system_network_save_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint64_t client,
 	uint32_t object,
 	uint32_t number,
@@ -1937,7 +1937,7 @@ system_network_save_key(
 	wait = &system_state.wait;
 	if (wait->stage != SYSTEM_NETWORK_IDLE)
 		return EBUSY;
-	watch = zwl_network_watch();
+	watch = kwl_network_watch();
 	if (watch == NULL)
 		return ENODEV;
 
@@ -1961,7 +1961,7 @@ system_network_save_key(
 /* Asks the network's thread for the details for an object; it hears them before its result. */
 static uint32_t
 system_network_details(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t number)
 {
 	struct system_details_wait *waiting;
@@ -1988,7 +1988,7 @@ system_network_details(
  */
 static void
 system_network_step(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned request)
 {
 	struct system_network_wait *wait;
@@ -1998,7 +1998,7 @@ system_network_step(
 
 	/* The daemon's watch; it does not go while the compositor runs. */
 	wait = &system_state.wait;
-	watch = zwl_network_watch();
+	watch = kwl_network_watch();
 	if (watch == NULL) {
 		system_network_finish(server, ENODEV);
 		return;
@@ -2034,7 +2034,7 @@ system_network_step(
 /* Tells a new network object the state, the scan and a done. */
 static void
 system_network_snapshot(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	/* The state and the scan, then the done that makes them one state. */
 	system_network_state(object);
@@ -2045,7 +2045,7 @@ system_network_snapshot(
 /* Sends what of the network changed: the state, the scan, or both. */
 static void
 system_network_change(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	/* The state. */
 	if ((system_state.network_changed & KL_BACKEND_NETWORK_CHANGED_STATE) != 0U)
@@ -2059,14 +2059,14 @@ system_network_change(
 /* Sends the network's state. */
 static void
 system_network_state(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	struct kl_backend_network_state state;
 	unsigned char payload[SYSTEM_EVENT_MAX];
 	size_t offset;
 
 	/* The state as network.c's watch last reported it. */
-	zwl_network_state(&state);
+	kwl_network_state(&state);
 
 	/* reachable, connected, kind, interface, wired, wifi, wifi_interface, ssid. */
 	offset = system_put_word(payload, 0U, state.reachable);
@@ -2077,13 +2077,13 @@ system_network_state(
 	offset = system_put_word(payload, offset, state.wifi);
 	offset = system_put_string(payload, offset, state.wifi_interface);
 	offset = system_put_string(payload, offset, state.ssid);
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_STATE, payload, offset);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_STATE, payload, offset);
 }
 
 /* Sends the networks of the last scan and the end of the list. */
 static void
 system_network_scan(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	struct kl_backend_network_ap aps[KL_BACKEND_NETWORK_SCAN_MAX];
 	unsigned char payload[SYSTEM_EVENT_MAX];
@@ -2092,24 +2092,24 @@ system_network_scan(
 	size_t index;
 
 	/* The scan as network.c's watch last reported it. */
-	count = zwl_network_scan(aps, KL_BACKEND_NETWORK_SCAN_MAX);
+	count = kwl_network_scan(aps, KL_BACKEND_NETWORK_SCAN_MAX);
 
 	/* Each network: ssid, rssi, secured. */
 	for (index = 0; index < count; index++) {
 		offset = system_put_string(payload, 0U, aps[index].ssid);
 		offset = system_put_word(payload, offset, (uint32_t)aps[index].rssi);
 		offset = system_put_word(payload, offset, aps[index].secured);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_ACCESS_POINT, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_ACCESS_POINT, payload, offset);
 	}
 
 	/* The end of the list. */
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_SCAN_DONE, NULL, 0U);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_SCAN_DONE, NULL, 0U);
 }
 
 /* Sends the details the thread read: the interfaces, the DNS servers, the saved networks and the end. */
 static void
 system_network_details_send(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	const struct kl_backend_network_link *link;
 	const struct system_job *job;
@@ -2144,38 +2144,38 @@ system_network_details_send(
 		offset = system_put_word(payload, offset, (uint32_t)link->received_bytes);
 		offset = system_put_word(payload, offset, (uint32_t)(link->sent_bytes >> 32));
 		offset = system_put_word(payload, offset, (uint32_t)link->sent_bytes);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_LINK, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_LINK, payload, offset);
 
 		/* A wired one's configuration, to a client that knows it (since version 6, ws089-p022). */
 		if (object->version >= KL_SYSTEM_NETWORK_SINCE_WIRED && link->wired_mode != KL_BACKEND_WIRED_UNKNOWN) {
 			offset = system_put_string(payload, 0U, link->name);
 			offset = system_put_word(payload, offset, link->wired_mode);
 			offset = system_put_string(payload, offset, link->router);
-			(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_WIRED, payload, offset);
+			(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_WIRED, payload, offset);
 		}
 
 		/* Its link's speed, when known, to a client that knows it (since version 12, BUG-222). */
 		if (object->version >= KL_SYSTEM_NETWORK_SINCE_LINK_SPEED && link->link_mbps != 0U) {
 			offset = system_put_string(payload, 0U, link->name);
 			offset = system_put_word(payload, offset, link->link_mbps);
-			(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_LINK_SPEED, payload, offset);
+			(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_LINK_SPEED, payload, offset);
 		}
 	}
 
 	/* Each DNS server. */
 	for (index = 0; index < job->dns_count && index < KL_BACKEND_NETWORK_DNS_MAX; index++) {
 		offset = system_put_string(payload, 0U, job->dns[index]);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_DNS, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_DNS, payload, offset);
 	}
 
 	/* Each saved network. */
 	for (index = 0; index < job->saved_count && index < KL_BACKEND_NETWORK_SCAN_MAX; index++) {
 		offset = system_put_string(payload, 0U, job->saved[index]);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_SAVED, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_SAVED, payload, offset);
 	}
 
 	/* The end of the details. */
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_DETAILS_DONE, NULL, 0U);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_DETAILS_DONE, NULL, 0U);
 }
 
 /*
@@ -2185,17 +2185,17 @@ system_network_details_send(
  */
 static void
 system_network_finish(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int error)
 {
 	struct system_network_wait *wait;
-	struct zwl_object *object;
+	struct kwl_object *object;
 
-	/* The bar hears only a failure (its join's answer is its own, zwl_system_network_done). */
+	/* The bar hears only a failure (its join's answer is its own, kwl_system_network_done). */
 	wait = &system_state.wait;
 	if (wait->bar) {
 		if (error != 0)
-			zwl_network_key_failed(server, wait->ssid, error);
+			kwl_network_key_failed(server, wait->ssid, error);
 	} else {
 		/* The asking object's result (nothing of the network is kept by the compositor: saved follows applied). */
 		object = system_network_object(server, wait->client, wait->object);
@@ -2213,7 +2213,7 @@ system_network_finish(
 /* Takes the network thread's finished job: the details sent, or the key saved and the daemon told. */
 static void
 system_network_job_take(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct system_job *job;
 	int finished;
@@ -2250,7 +2250,7 @@ system_network_job_take(
  */
 static void
 system_network_job_next(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct system_network_wait *wait;
 	int error;
@@ -2292,11 +2292,11 @@ system_network_job_next(
 /* Sends a finished reading of the details to each object it answers, with its result, and the saved networks to the bar. */
 static void
 system_details_take(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const struct system_details_wait *waiting;
 	struct system_job *job;
-	struct zwl_object *object;
+	struct kwl_object *object;
 	size_t count;
 	unsigned index;
 
@@ -2320,10 +2320,10 @@ system_details_take(
 		count = job->saved_count;
 		if (count > KL_BACKEND_NETWORK_SCAN_MAX)
 			count = KL_BACKEND_NETWORK_SCAN_MAX;
-		zwl_network_saved(server, job->saved, count);
+		kwl_network_saved(server, job->saved, count);
 
 		/* The interfaces and the DNS servers, for the bar's details (network.c, ws099-p032). */
-		zwl_network_details(server, job->links, job->link_count, (const char (*)[KL_BACKEND_NETWORK_ADDRESS_MAX])job->dns,
+		kwl_network_details(server, job->links, job->link_count, (const char (*)[KL_BACKEND_NETWORK_ADDRESS_MAX])job->dns,
 				    job->dns_count);
 	}
 }
@@ -2331,7 +2331,7 @@ system_details_take(
 /* Takes the power thread's finished read, and tells every power object the first state and each change. */
 static void
 system_power_job_take(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct system_job *job;
 	int finished;
@@ -2363,7 +2363,7 @@ system_power_job_take(
 	system_state.power = job->power;
 	system_state.power_read = 1U;
 	if (differs != 0 || first)
-		system_tell(server, ZWL_SYSTEM_POWER, system_power_state, KL_SYSTEM_POWER_EVENT_DONE);
+		system_tell(server, KWL_SYSTEM_POWER, system_power_state, KL_SYSTEM_POWER_EVENT_DONE);
 }
 
 /*
@@ -2371,8 +2371,8 @@ system_power_job_take(
  * read again at the next tick, after any read under way.
  */
 void
-zwl_system_power_changed(
-	struct zwl_server *server)
+kwl_system_power_changed(
+	struct kwl_server *server)
 {
 	/* The next tick reads. */
 	(void)server;
@@ -2382,7 +2382,7 @@ zwl_system_power_changed(
 /* Starts reading the power's state on its thread, unless a read is under way. */
 static void
 system_power_read(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct system_job *job;
 	int error;
@@ -2536,13 +2536,13 @@ system_job_run(
 /* Sends the sound's state. */
 static void
 system_audio_state(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	struct kl_backend_audio_state state;
 	uint32_t words[7];
 
 	/* The state as volume.c has it. */
-	zwl_volume_audio_state(&state);
+	kwl_volume_audio_state(&state);
 
 	/* reachable, device, rate, channels, left, right, muted. */
 	words[0] = state.reachable;
@@ -2552,13 +2552,13 @@ system_audio_state(
 	words[4] = state.left;
 	words[5] = state.right;
 	words[6] = state.muted;
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_AUDIO_EVENT_STATE, words, sizeof(words));
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_AUDIO_EVENT_STATE, words, sizeof(words));
 }
 
 /* Sends a devices object every volume: its ID, kind, state, name and where it is mounted, and (version 9) its file system and size. */
 static void
 system_devices_state(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	struct kl_backend_volume volumes[KL_BACKEND_VOLUMES_MAX];
 	unsigned char payload[SYSTEM_EVENT_MAX];
@@ -2569,7 +2569,7 @@ system_devices_state(
 	size_t offset;
 
 	/* Each volume. */
-	count = zwl_media_volumes(volumes, KL_BACKEND_VOLUMES_MAX);
+	count = kwl_media_volumes(volumes, KL_BACKEND_VOLUMES_MAX);
 	for (index = 0U; index < count; index++) {
 		/* Mounted, or new (inserted and never mounted since). */
 		state = 0U;
@@ -2589,7 +2589,7 @@ system_devices_state(
 		offset = system_put_word(payload, offset, state);
 		offset = system_put_string(payload, offset, name);
 		offset = system_put_string(payload, offset, volumes[index].path);
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_DEVICE, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_DEVICE, payload, offset);
 
 		/* Since version 9 (ws132-p009): its file system and size, for the mount's confirmation. */
 		if (object->version < KL_SYSTEM_DEVICES_SINCE_VOLUME)
@@ -2598,17 +2598,17 @@ system_devices_state(
 		offset = system_put_string(payload, offset, volumes[index].fs);
 		offset = system_put_word(payload, offset, (uint32_t)(volumes[index].bytes >> 32));
 		offset = system_put_word(payload, offset, (uint32_t)(volumes[index].bytes & 0xffffffffU));
-		(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_VOLUME, payload, offset);
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_VOLUME, payload, offset);
 	}
 }
 
 /* Answers the mounts and ejects volumed has answered, to the objects still there. */
 static void
 system_devices_answers(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct system_devices_wait wait;
-	struct zwl_object *object;
+	struct kwl_object *object;
 	unsigned char payload[SYSTEM_EVENT_MAX];
 	char user[64];
 	uint32_t request;
@@ -2619,7 +2619,7 @@ system_devices_answers(
 
 	/* Each answer. */
 	for (;;) {
-		taken = zwl_media_take_result(&request, &error, user, sizeof(user));
+		taken = kwl_media_take_result(&request, &error, user, sizeof(user));
 		if (!taken)
 			break;
 
@@ -2644,7 +2644,7 @@ system_devices_answers(
 		if (error == EBUSY && user[0] != '\0' && object->version >= KL_SYSTEM_DEVICES_SINCE_MOUNT) {
 			offset = system_put_word(payload, 0U, wait.number);
 			offset = system_put_string(payload, offset, user);
-			(void)zwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_BUSY, payload, offset);
+			(void)kwl_emit(object->client, object->id, KL_SYSTEM_DEVICES_EVENT_BUSY, payload, offset);
 		}
 
 		/* The result. */
@@ -2653,14 +2653,14 @@ system_devices_answers(
 }
 
 /* Finds a client's devices object by the client's number and the object's ID, if it is still there. */
-static struct zwl_object *
+static struct kwl_object *
 system_devices_object(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint64_t number,
 	uint32_t id)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 
 	/* The client by its number, and its devices object of that ID. */
 	for (client = server->clients;
@@ -2668,8 +2668,8 @@ system_devices_object(
 	     client = client->next) {
 		if (client->number != number || client->fatal)
 			continue;
-		object = zwl_find(client, id);
-		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_DEVICES)
+		object = kwl_find(client, id);
+		if (object == NULL || object->dead || object->kind != KWL_SYSTEM_DEVICES)
 			return NULL;
 		return object;
 	}
@@ -2681,7 +2681,7 @@ system_devices_object(
 /* Sends the power's state as last read (sent only after the first read). */
 static void
 system_power_state(
-	struct zwl_object *object)
+	struct kwl_object *object)
 {
 	const struct kl_backend_power_state *state;
 	uint32_t words[4];
@@ -2692,19 +2692,19 @@ system_power_state(
 	words[1] = (uint32_t)state->percent;
 	words[2] = state->charging;
 	words[3] = state->actions;
-	(void)zwl_emit(object->client, object->id, KL_SYSTEM_POWER_EVENT_STATE, words, sizeof(words));
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_POWER_EVENT_STATE, words, sizeof(words));
 }
 
 /* Tells every live object of a kind its state and a done. */
 static void
 system_tell(
-	struct zwl_server *server,
-	enum zwl_kind kind,
-	void (*tell)(struct zwl_object *object),
+	struct kwl_server *server,
+	enum kwl_kind kind,
+	void (*tell)(struct kwl_object *object),
 	uint32_t done_opcode)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 
 	/* Each client that is not ending. */
 	for (client = server->clients;
@@ -2726,14 +2726,14 @@ system_tell(
 }
 
 /* Finds a client's network object by the client's number and the object's ID, if it is still there. */
-static struct zwl_object *
+static struct kwl_object *
 system_network_object(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint64_t number,
 	uint32_t id)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 
 	/* The object went. */
 	if (id == 0U)
@@ -2745,8 +2745,8 @@ system_network_object(
 	     client = client->next) {
 		if (client->number != number || client->fatal)
 			continue;
-		object = zwl_find(client, id);
-		if (object == NULL || object->dead || object->kind != ZWL_SYSTEM_NETWORK)
+		object = kwl_find(client, id);
+		if (object == NULL || object->dead || object->kind != KWL_SYSTEM_NETWORK)
 			return NULL;
 		return object;
 	}
@@ -2758,7 +2758,7 @@ system_network_object(
 /* Answers a request; nothing of the system's is kept in a file by the compositor, so saved follows applied. */
 static void
 system_result(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	uint32_t number,
 	uint32_t applied)
@@ -2769,14 +2769,14 @@ system_result(
 	words[0] = number;
 	words[1] = applied;
 	words[2] = applied;
-	(void)zwl_emit(object->client, object->id, opcode, words, sizeof(words));
+	(void)kwl_emit(object->client, object->id, opcode, words, sizeof(words));
 	printf("ZWL SYSTEM result client=%llu object=%u request=%u applied=%u\n", (unsigned long long)object->client->number, object->id, number, applied);
 }
 
 /* Sends a done with the serial of the state it closes. */
 static void
 system_done(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode)
 {
 	uint32_t serial;
@@ -2784,7 +2784,7 @@ system_done(
 	/* The next serial: each done of the extension has its own. */
 	system_state.serial++;
 	serial = system_state.serial;
-	(void)zwl_emit(object->client, object->id, opcode, &serial, sizeof(serial));
+	(void)kwl_emit(object->client, object->id, opcode, &serial, sizeof(serial));
 }
 
 /* Gives the protocol's result for an errno value. */

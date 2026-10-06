@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws102-p015: the keyboard inset (keiland_keyboard_inset_v1, libkeiland's default) on the Venus guest of the inset image
+# ws102-p015: the keyboard inset (kl_keyboard_inset_v1, libkeiland's default) on the Venus guest of the inset image
 # (plan/ws102/tests/build-inset-image.sh: the WS079 demo image with Text Editor).  zdesktop --glass at 1280x800.
 #  1. Text Editor on a document of 200 lines ("L001" ...; line 150 is a row of M's), the caret put on line 150 with the
 #     keys (Ctrl+End to the empty line 201, then Up 51 times).  before.png.
