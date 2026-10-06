@@ -25,7 +25,7 @@ sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userlan
 	userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
 	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c
-	userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c
+	userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c
 	userland/base/libpdf/font.c userland/base/libpdf/encoding.c userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c
 	userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c plan/ws175/tests/host-notes-edit.c"
 status=0

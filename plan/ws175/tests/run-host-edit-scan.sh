@@ -16,16 +16,22 @@ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 python3 plan/ws175/tests/make-edit-samples.py "$out" >/dev/null
+# ws175-p005: the replacement fonts as the desktop installs them, in a folder of the test's own.
+mkdir -p "$out/fonts"
+ln -sf "$(pwd)/userland/desktop/fonts/Mahora-Regular.ttf" "$out/fonts/keiland.ttf"
+ln -sf "$(pwd)/userland/desktop/fonts/Mahora-Mono.ttf" "$out/fonts/keiland-mono.ttf"
+ln -sf "$(pwd)/userland/desktop/fonts/JetBrainsMono-Regular.ttf" "$out/fonts/keiland-fallback-mono.ttf"
+ln -sf "$(pwd)/userland/desktop/fonts/DroidSansFallbackFull.ttf" "$out/fonts/keiland-fallback.ttf"
 convert -size 8x4 gradient:blue-green -quality 90 "$out/insert.jpg"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c
+	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c
 	userland/base/libpdf/stroke.c userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
 	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c
 	userland/base/libpdf/cffdata.c"
 status=0
 for variant in plain asan ubsan; do
-	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
+	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -DPDF_EDIT_FONT_DIRECTORY=\"$out/fonts\""
 	if [ "$variant" = asan ]; then
 		flags="$flags -fsanitize=address -fno-omit-frame-pointer"
 	fi
@@ -128,6 +134,26 @@ for variant in plain asan ubsan; do
 			status=1
 		fi
 	done
+done
+# ws175-p005: the TrueType subset of DejaVu (composites), JetBrains Mono, Droid Sans Fallback and Mahora, read by fontTools.
+"$cc" -std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -I"$out/include" -Iuserland/base/libpdf \
+	userland/base/libpdf/subset.c plan/ws175/tests/host-truetype-subset.c -o "$out/host-truetype-subset"
+for pair in "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf|Héllo Ǻ" "userland/desktop/fonts/DroidSansFallbackFull.ttf|日本語テスト" \
+	"userland/desktop/fonts/JetBrainsMono-Regular.ttf|Hello é" "userland/desktop/fonts/Mahora-Regular.ttf|Hello"; do
+	font=${pair%%|*}
+	words=${pair#*|}
+	gids=$(python3 -c 'import sys
+from fontTools.ttLib import TTFont
+t = TTFont(sys.argv[1]); c = t.getBestCmap(); o = t.getGlyphOrder()
+print(" ".join(str(o.index(c[ord(ch)])) for ch in sys.argv[2] if ord(ch) in c))' "$font" "$words")
+	# shellcheck disable=SC2086
+	if "$out/host-truetype-subset" "$font" "$out/subset.ttf" $gids > "$out/subset.txt" 2>&1 &&
+		python3 plan/ws175/tests/check-subset.py "$font" "$out/subset.ttf" "$words" >> "$out/subset.txt" 2>&1; then
+		echo "subset $(basename "$font"): $(tail -1 "$out/subset.txt")"
+	else
+		cat "$out/subset.txt"
+		status=1
+	fi
 done
 [ $status -eq 0 ] && echo "run-host-edit-scan: PASS" || echo "run-host-edit-scan: FAIL"
 exit $status
