@@ -110,8 +110,13 @@ for variant in plain asan ubsan; do
 	# The rewritten lines as another reader reads them.
 	words=$(pdftotext "$out/texted-$variant.pdf" - 2>/dev/null | tr '\n' ' ')
 	case "$words" in
-	*"Changed!"*) echo "pdftotext texted-$variant.pdf: Changed! is there" ;;
+	*"Changed!"*"Marker"*"Namer"*) echo "pdftotext texted-$variant.pdf: Changed!, Marker and Namer are there" ;;
 	*) echo "FAIL pdftotext texted-$variant.pdf: $words"; status=1 ;;
+	esac
+	# The stale /ActualText went with the words it stood for (design.md [M10][N15]): no Old, no Older.
+	case "$words" in
+	*Old*) echo "FAIL pdftotext texted-$variant.pdf still reads an /ActualText: $words"; status=1 ;;
+	*) echo "pdftotext texted-$variant.pdf: no stale /ActualText" ;;
 	esac
 	# The only error qpdf may find is the sample's own: page 3's stream of a filter no reader decodes here.
 	for saved in edited imaged intake blank texted; do

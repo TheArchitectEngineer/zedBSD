@@ -1132,12 +1132,15 @@ replay(
 			return error;
 		if ((read.flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
 			read.image = table_find(table, image);
-			if (read.image == NULL)
+			if (read.image == NULL) {
+				free(read.text);
 				return EINVAL;
+			}
 		}
 
-		/* The edit on the page. */
+		/* The edit on the page (its words copied). */
 		edit = notes_edit_copy(&read);
+		free(read.text);
 		if (edit == NULL)
 			return ENOMEM;
 		error = notes_document_put_edit(document, (size_t)first, (size_t)second, edit);
@@ -1152,6 +1155,8 @@ replay(
 		error = notes_decode_edit(body + offset, length - offset, &used, &read, &image);
 		if (error != 0)
 			return error;
+		free(read.text);
+		read.text = NULL;
 		edit = notes_document_take_edit(document, (size_t)first, &read, &place);
 		if (edit == NULL)
 			return EINVAL;

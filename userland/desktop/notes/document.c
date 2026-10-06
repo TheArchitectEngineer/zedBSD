@@ -890,8 +890,12 @@ notes_document_edit_object(
 	/* A page that is there, a state of known flags. */
 	if (page >= document->page_count || state == NULL)
 		return EINVAL;
-	known = NOTES_EDIT_DELETED | NOTES_EDIT_PLACED | NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED;
+	known = NOTES_EDIT_KNOWN;
 	if ((state->flags & ~known) != 0U)
+		return EINVAL;
+
+	/* New words are a line's of the page, UTF-8 there (ws175-p004). */
+	if ((state->flags & NOTES_EDIT_TEXT) != 0U && (state->text == NULL || (state->flags & NOTES_EDIT_INSERTED) != 0U))
 		return EINVAL;
 
 	/* An inserted object is an image that is there; a page's own is of a page of the base. */

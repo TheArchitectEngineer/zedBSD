@@ -109,20 +109,25 @@ def text_objects() -> list[bytes]:
 	F1 is the host's DejaVu Sans whole as a simple TrueType font in WinAnsiEncoding (embedded: new words in it), F2
 	Helvetica (not embedded: new words need a replacement font), F3 DejaVu Sans as a CIDFontType2 in Identity-H. The
 	first text object moves by Td, T* and TD (whose -14 sets the leading the later text objects' T* and ' use, [H1]);
-	the third has a ' and a " (which sets Tw 2 and Tc 1); the last is invisible (Tr 3).
+	the third has a ' and a " (which sets Tw 2 and Tc 1); then an invisible one (Tr 3); "Marked" in marked content whose
+	inline properties have /ActualText (Old), and "Named" in one whose named properties (/P0) have /ActualText (Older)
+	(design.md [M10][N15]).
 	"""
 	content = (b"BT /F1 10 Tf 12 TL 10 180 Td (Line one) Tj T* (Line two) Tj 0 -14 TD (Line three) Tj ET\n"
 		b"BT /F1 10 Tf 10 120 Td T* (After TL) Tj ET\n"
 		b"BT /F1 10 Tf 10 90 Td (Quote) Tj (Next) ' 2 1 (Dq) \" ET\n"
 		b"BT /F2 10 Tf 10 50 Td (Helvetica) Tj ET\n"
 		b"BT /F3 10 Tf 10 30 Td <0024> Tj ET\n"
-		b"BT 3 Tr /F1 10 Tf 150 30 Td (Hidden) Tj ET\n")
+		b"BT 3 Tr /F1 10 Tf 150 30 Td (Hidden) Tj ET\n"
+		b"/Span << /ActualText (Old) >> BDC BT 0 Tr /F1 10 Tf 150 180 Td (Marked) Tj ET EMC\n"
+		b"/Span /P0 BDC BT /F1 10 Tf 150 160 Td (Named) Tj ET EMC\n")
 	descriptor = (b"<< /Type /FontDescriptor /FontName /DejaVuSans /Flags 32 /FontBBox [0 -200 1000 900] /ItalicAngle 0 /Ascent 900"
 		b" /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 9 0 R >>")
 	return [
 		b"<< /Type /Catalog /Pages 2 0 R >>",
 		b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R /F2 7 0 R /F3 10 0 R >> >>"
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R /F2 7 0 R /F3 10 0 R >>"
+			b" /Properties << /P0 << /ActualText (Older) /Lang (en) >> >> >>"
 			b" /Contents 4 0 R >>",
 		stream(b"<< >>", content),
 		b"<< /Type /Font /Subtype /TrueType /BaseFont /DejaVuSans /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths ["

@@ -174,6 +174,10 @@ struct pdf_writer {
 	size_t last_source;
 };
 
+/* A dictionary written without one of its keys (update.c, ws175-p004). */
+struct pdf_object;
+void pdf_writer_write_dictionary_except(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *key);
+
 /* Bytes compressed into a zlib stream, when that is shorter (update.c, ws175-p006). */
 int pdf_writer_pack(const unsigned char *data, size_t size, unsigned char **packed, size_t *packed_size);
 

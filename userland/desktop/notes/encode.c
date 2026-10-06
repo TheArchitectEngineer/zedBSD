@@ -58,6 +58,9 @@
 #define ENCODE_IMAGES_MAX	100000U
 #define ENCODE_EDITS_MAX	100000U
 
+/* The longest new words of a line, in bytes. */
+#define ENCODE_TEXT_MAX		65536U
+
 /* The stroke flags: the samples carry the tilt, and their times. */
 #define ENCODE_STROKE_TILT	0x01U
 #define ENCODE_STROKE_TIME	0x02U
@@ -1309,6 +1312,7 @@ notes_encode_edit(
 	struct notes_buffer *buffer,
 	const struct notes_edit *edit)
 {
+	size_t length;
 	size_t item;
 
 	/* Its flags and its object. */
@@ -1328,6 +1332,16 @@ notes_encode_edit(
 			notes_buffer_zigzag(buffer, (int64_t)floor((double)edit->transform[item] * ENCODE_SCALE_UNITS + 0.5));
 		notes_buffer_zigzag(buffer, units(edit->transform[4]));
 		notes_buffer_zigzag(buffer, units(edit->transform[5]));
+	}
+
+	/* A line's new words: their length, bytes and font (ws175-p004). */
+	if ((edit->flags & NOTES_EDIT_TEXT) != 0U) {
+		length = 0;
+		if (edit->text != NULL)
+			length = strlen(edit->text);
+		notes_buffer_varint(buffer, length);
+		notes_buffer_bytes(buffer, edit->text, length);
+		notes_buffer_u8(buffer, edit->font);
 	}
 
 	/* Its image's number (0: none, as the journal names an object it takes off). */
@@ -1357,6 +1371,9 @@ notes_decode_edit(
 	unsigned known;
 	size_t item;
 	double scale;
+	const void *zero;
+	int has_zero;
+	int error;
 
 	/* A reader over the bytes, an empty edit. */
 	memset(&reader, 0, sizeof(reader));
@@ -1366,7 +1383,7 @@ notes_decode_edit(
 	*image = 0U;
 
 	/* Its flags (known ones), and its object. */
-	known = NOTES_EDIT_DELETED | NOTES_EDIT_PLACED | NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED;
+	known = NOTES_EDIT_KNOWN;
 	edit->flags = read_u8(&reader);
 	if (reader.error != 0 || (edit->flags & ~known) != 0U)
 		return EINVAL;
@@ -1407,17 +1424,43 @@ notes_decode_edit(
 		}
 	}
 
+	/* A line's new words, UTF-8 without a zero, and their font: the edit's own copy. */
+	if ((edit->flags & NOTES_EDIT_TEXT) != 0U) {
+		value = read_varint(&reader);
+		if (reader.error != 0 || value > ENCODE_TEXT_MAX || value > reader.length - reader.offset)
+			return EINVAL;
+		zero = memchr(reader.data + reader.offset, 0, (size_t)value);
+		has_zero = zero != NULL;
+		if (has_zero)
+			return EINVAL;
+		edit->text = malloc((size_t)value + 1U);
+		if (edit->text == NULL)
+			return ENOMEM;
+		memcpy(edit->text, reader.data + reader.offset, (size_t)value);
+		edit->text[value] = '\0';
+		reader.offset += (size_t)value;
+		edit->font = read_u8(&reader);
+	}
+
 	/* Its image's number (0: none). */
+	error = 0;
 	if ((edit->flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
 		value = read_varint(&reader);
 		if (value > 0xffffffffU)
-			return EINVAL;
+			error = EINVAL;
 		*image = (uint32_t)value;
 	}
 
-	/* All of it read. */
+	/* All of it read (a failure lets the words go). */
 	if (reader.error != 0)
-		return EINVAL;
+		error = EINVAL;
+	if (error != 0) {
+		free(edit->text);
+		edit->text = NULL;
+		return error;
+	}
+
+	/* Succeeded: the bytes it took. */
 	*used = reader.offset;
 	return 0;
 }
@@ -1554,18 +1597,23 @@ decode_edits(
 		if (error != 0)
 			return error;
 		reader->offset += used;
-		if ((read.flags & NOTES_EDIT_INSERTED) == 0U && page->origin != NOTES_ORIGIN_OVER)
+		if ((read.flags & NOTES_EDIT_INSERTED) == 0U && page->origin != NOTES_ORIGIN_OVER) {
+			free(read.text);
 			return EINVAL;
+		}
 
 		/* Its image, one of IMAG's, when it needs one. */
 		if ((read.flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
 			read.image = images_find(images, image);
-			if (read.image == NULL)
+			if (read.image == NULL) {
+				free(read.text);
 				return EINVAL;
+			}
 		}
 
-		/* The edit, its image held once more, on the page. */
+		/* The edit, its image held once more, its words copied, on the page. */
 		edit = notes_edit_copy(&read);
+		free(read.text);
 		if (edit == NULL)
 			return ENOMEM;
 		error = notes_document_put_edit(document, (size_t)number, page->edit_count, edit);
