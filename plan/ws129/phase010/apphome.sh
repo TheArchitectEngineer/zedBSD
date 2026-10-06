@@ -5,7 +5,7 @@
 # zdesktop --glass at 1280x800 with the wallpaper; Home opens from the launcher (top left) and each application
 # starts from its icon, one after another; a screenshot after each (NN-NAME.png) makes the sheet:
 #  00-home.png, then one per application in Home's order, and 99-all.png with every window.
-# Checks: every launch maps a window (ZWL MAP), zdesktop logs no ERROR; the pictures are judged by eye.
+# Checks: every launch maps a window (KWL MAP), zdesktop logs no ERROR; the pictures are judged by eye.
 #
 #   plan/tools/files/files-guest.sh start IMAGE     (the guest must be up; GUEST_RUNTIME names its runtime)
 #   plan/ws129/phase010/apphome.sh [OUTDIR]
@@ -25,12 +25,12 @@ status=0
 
 # The centre of an icon, from zdesktop's log.
 icon() {
-	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
 # How many windows zdesktop has mapped.
 maps() {
-	guest "grep -c 'ZWL MAP ' /tmp/zdesktop.log" | tail -1
+	guest "grep -c 'KWL MAP ' /tmp/zdesktop.log" | tail -1
 }
 
 shot() {
@@ -50,12 +50,12 @@ else
 	status=1
 fi
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 
 # Home, and its icons.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 shot 00-home.png
-names=$(guest "grep -o 'ZWL HOME icon name=\"[^\"]*\"' /tmp/zdesktop.log | sed 's/.*name=\"//; s/\"\$//' | awk '!seen[\$0]++'")
+names=$(guest "grep -o 'KWL HOME icon name=\"[^\"]*\"' /tmp/zdesktop.log | sed 's/.*name=\"//; s/\"\$//' | awk '!seen[\$0]++'")
 keys '<esc>'
 sleep 1
 echo "Home: $(echo "$names" | tr '\n' '|')"
@@ -85,7 +85,7 @@ shot 99-all.png
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -E "ZWL (MAP|HOME|TITLE|CLIENT|BOUNDS|ERROR)|ZWL GLASS (placed|moved)" /tmp/zdesktop.log' > "$out/zdesktop.log"
+guest 'grep -E "KWL (MAP|HOME|TITLE|CLIENT|BOUNDS|ERROR)|KWL GLASS (placed|moved)" /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "apphome: PASS (and judge the sheet)" || echo "apphome: FAIL"
 exit $status
