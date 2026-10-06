@@ -121,7 +121,7 @@ P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴�
 
 ## 2026-10-06 p034b の実装（q794、P2）
 
-Status（p034b）: test-wait（T1 依頼中。実装・build まで）
+Status（p034b）: cleared（2026-10-06 Q1 判定: T1-228 は fail 無し（pass・needs-person）。PNG を Q1 が目視: light の bar は title bar と同じ白い glass、dark は黒、dock の時は button の pill が右上の端（buttons=1252,1218,1184）で時計がその左。実機は UAT）
 
 | 所 | 内容 |
 | --- | --- |

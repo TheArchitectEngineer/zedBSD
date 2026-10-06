@@ -57,3 +57,24 @@ Queue: Q1 の指示（2026-10-05 夜、P2 g17 の Task 1、最優先）
 3. `plan/tools/aat/aat --qemu check`。root で入れなければ（lock された root）、`plan/ws173/tests/config-amd64-aat-root.mk` で作り直して 1 から。
 4. `plan/tools/aat/run-aat.sh qemu OUTDIR smoke`、続けて `plan/tools/aat/run-aat.sh qemu OUTDIR2 full`（長いので分けてよい、log out と shutdown は最後）。
 5. 合格（runner の自己試験として）: smoke の 8 本が pass か needs-person（fail が無い）。full は結果の一覧を返す（fail は P2 が補助かシナリオか機能かを調べる）。`OUTDIR/summary.md`・`records/`・`png/`・`errors.txt` の path を返す。
+
+## q788（2026-10-06 P2）: T1-202c の full の fail 13 件の切り分け
+
+証拠は `/home/awe/zedBSD-worktrees/t1/build/t1-202c-full/`（records・png・errors.txt。session の log は無かった）。
+
+| scenario | 判定 | 原因と直し |
+| --- | --- | --- |
+| `apps.settings.pages`（wifi・display）・`apps.settings.about`・`apps.settings.sound-page` | 機能（試験のための log） | Settings は page の controls が前の list と違う時だけ `ZSETTINGS LAYOUT` を出す。control の無い page から control の無い page（sound → display、home → about）や、今の page を頼み直す時（wifi）は出ず、helper が待つ行が来ない。→ `se_ui_go`（settings/ui.c）で page を頼まれる度に次の frame で list を出し直す（`logged_count = -1`）、今の page を頼まれた時も `ZSETTINGS PAGE` を出す |
+| `apps.settings.change-password` | helper | 1 回目の後の Esc は、欄が空なら「戻る」で Users の頁を離れ、2・3 回目は Settings の概要の頁に打っていた（right.png）。→ Esc の後に Users の頁を頼み直して controls を読み直す（`users_page_again`） |
+| `apps.settings.manage-users` | helper | users の一覧の最後の行が窓の下（window 座標 y 1294）にあり click が画面の外。→ wheel で頁を下へ送ってから click（`reveal_control`、Remove の button も） |
+| `apps.terminal.fullscreen-f11` | helper | F11 は compositor の menu の Fullscreen の項が取り（BUG-194）、Terminal は `ZTERM MENU state … fullscreen=1` を出す（`ZTERM FULLSCREEN key` は menu の無い desktop の時だけ）。→ どちらも受ける |
+| `apps.emacs.edit-save` | helper（と小さな機能の差） | REmacs は `-nw` を持たず、`-nw` という buffer を開いた（emacs.png）。→ helper とシナリオを `emacs FILE` に。REmacs が GNU と同じく `-nw` を黙って受けるかは別（Q1 に報告） |
+| `apps.videoplayer.play` | helper | `VIDEOPLAYER FRAMES` は最初と 100 枚ごとだけ。1.6 s では 1 行。→ Space の `PAUSE shown=N` の N > 1 で確かめる |
+| `apps.pdfviewer.open-turn` | helper | viewer の最初の mode は scroll で、Page Down は 1 画面送るだけ（`PAGE shown` を出さない）。→ PAGE が無い時は 2 枚の撮影が違うこと（動いた）を確かめて needs-person |
+| `desktop.bar.volume-slider` | 試験の場（設計どおり） | QEMU に音の device が無く popup は `sound=0`、その時 slider は何もしない（volume.c）。→ `sound=0` なら撮影して needs-person（音のある machine で） |
+| `desktop.input-method.skk-textedit` | helper | SKK の engine の言語は `skk`（`ZWL IME language=skk`）、helper は `ja` を待った。→ method 2 は `skk` |
+| `apps.terminal.japanese-history` | 未解決 | Languages の頁の switch の click が何も起こさなかった（`None; None`）。同じ run の `desktop.input-method.choose-method` は同じ操作で pass。log が無く原因は分からない |
+| `apps.terminal.type-command` | 未解決 | Windows キーで `ZWL HOME open` が来なかった（20 個の Terminal の後）。log が無く原因は分からない |
+
+- runner の改善: 各シナリオの間の session の log を `OUTDIR/logs/ID.log` に残す（`Run.log_start`・`save_log`、aatlib.py）。次の run から fail の原因を log で追える。host の試験に 1 項目（run-host.sh）。
+- 確認: Settings の build warning 0、style-check 0、aat run-host PASS、check-scenarios PASS。QEMU は T1 の full の流し直しで。

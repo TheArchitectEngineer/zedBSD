@@ -102,7 +102,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-232](bugs/BUG-232.md) | App Home で起動中の app を選ぶと、新しく起動せずに切り替えたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home）・WS089 p016（単一の instance） |
 | [BUG-233](bugs/BUG-233.md) | Files で動画の file を開くと動画の player でなく Terminal が開くように見える | reproduced（実機） / scheduled（q782: x の bit の付いた動画を Terminal で実行していた、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の関連付け）・WS122 |
 | [BUG-234](bugs/BUG-234.md) | Files で /bin の file を開くと何も起きないように見える（Terminal が一瞬起動しているのか、起動していないのか分からない） | reproduced（実機） / scheduled（q782: Run in Terminal の window が終了で消えていた・GUI の app は Open で直接、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の開き方） |
-| [BUG-235](bugs/BUG-235.md) | Log Out の icon で確認なしに session が終わる（desktop を暗くする演出で、終了するか選ばせる） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099・WS131 |
+| [BUG-235](bugs/BUG-235.md) | Log Out の icon で確認なしに session が終わる（desktop を暗くする演出で、終了するか選ばせる） | reproduced（実機） / tracking | UAT 2026-10-06・2026-10-06 ws099-p037・ws131-p027 cleared（QEMU） | WS099・WS131 |
 | [BUG-236](bugs/BUG-236.md) | App Home の見た目: 暗い背景の stage に icon、各 icon に spotlight、光沢の床に icon が反射する effect（montage を作る） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home） |
 | [BUG-237](bugs/BUG-237.md) | app の icon の白抜き（記号）の部分が透過になっていないように見える | reproduced（実機） / tracking | UAT 2026-10-06 | WS128 p012（icon） |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |

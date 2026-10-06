@@ -18,7 +18,7 @@
 | --- | --- |
 | `run-aat.sh TARGET OUTDIR [SUITE\|ID\|PATTERN\|area:NAME ...] [--record PATH] [--no-samples]` | suite（既定 `smoke`）か id を順に流す。TARGET は `5330`・`qemu`・`user@host[:port]`。前に `aat check`・session の `ZWL READY`・`aat start`・試験の file。各シナリオは補助があれば補助が流し、無ければ `by-agent`（エージェントが文書で行う）、`human: hands` は `needs-person`、QEMU の `machine: hardware` は `not-run`。`OUTDIR/summary.md` が実行の記録（`--record plan/ws173/runs/<日付>-<suite>.md` で写す） |
 | `check-scenarios.py [--list]` | 文書と suite の形（header・節・各操作の 4 項目・path の実在・suite の各行）を確かめる |
-| `scenarios/helpers_os.py`・`helpers_desktop.py`・`helpers_apps.py` | 補助（`--list` で持つ id）。各 step の action・見た物・撮影を `OUTDIR/records/ID.md`、判定を `OUTDIR/verdicts.tsv` |
+| `scenarios/helpers_os.py`・`helpers_desktop.py`・`helpers_apps.py` | 補助（`--list` で持つ id）。各 step の action・見た物・撮影を `OUTDIR/records/ID.md`、判定を `OUTDIR/verdicts.tsv`、その scenario の間の session の log を `OUTDIR/logs/ID.log`（q788） |
 | `scenarios/aatlib.py`・`common.py` | 補助の共通: App Home からの起動（`ZWL HOME icon` の位置を click）、窓（`aat windows`）、Settings の頁と control（`ZSETTINGS CONTROL`）、入力方式、前後の片付け（app を閉じる、`/etc/shadow` を戻す） |
 | `scenarios/samples.py` | 試験の file（PNG・JPEG・2 頁の PDF・4 秒の MP4）を host で作り target の `/tmp/aat-samples` に置く（image に入れない） |
 
