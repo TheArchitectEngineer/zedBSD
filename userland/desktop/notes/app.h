@@ -98,6 +98,18 @@
 #define NOTES_ACTION_COLOR		20U
 #define NOTES_ACTION_WIDTH		30U
 
+/*
+ * ws175-p008: the Select tool (the PDF's images and graphics chosen,
+ * moved, sized), and what it does to the object chosen: an image inserted
+ * (a file chosen), the object's image replaced, the object deleted, the
+ * page's own object put back as the page has it.
+ */
+#define NOTES_ACTION_SELECT		16U
+#define NOTES_ACTION_INSERT_IMAGE	17U
+#define NOTES_ACTION_REPLACE_IMAGE	18U
+#define NOTES_ACTION_DELETE_OBJECT	19U
+#define NOTES_ACTION_RESET_OBJECT	40U
+
 /* The pipelines a draw uses (render.c). */
 #define NOTES_PIPE_STENCIL	0U
 #define NOTES_PIPE_FRINGE	1U
@@ -252,7 +264,9 @@ struct notes_button {
  * parts, the colour's and the width's index, the page and the count,
  * whether undo and redo can go, whether there are unsaved changes and
  * fullscreen, whether one finger writes (the toolbar's Finger,
- * ws081-p015), and a status line.
+ * ws081-p015), and a status line.  ws175-p008: whether the page takes an
+ * inserted image, and whether an object is chosen, its image can be
+ * replaced and it has an edit to reset.
  */
 struct notes_ui_state {
 	unsigned tool;
@@ -267,6 +281,10 @@ struct notes_ui_state {
 	int fullscreen;
 	int finger_write;
 	const char *status;
+	int can_insert;
+	int selected;
+	int can_replace;
+	int can_reset;
 };
 
 /*
@@ -490,6 +508,9 @@ void notes_frame_clip(struct notes_frame *frame, int enabled, float x, float y, 
 void notes_frame_polygon(struct notes_frame *frame, const struct pdf_point *points, size_t count, const struct notes_view *view, uint32_t color);
 void notes_frame_texture(struct notes_frame *frame, unsigned texture, float x, float y, float width, float height);
 void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height, float page_width, float page_height);
+
+/* The image files put on a page (picture-file.c, ws175-p008). */
+int notes_picture_load(struct notes_document *document, const char *path, struct notes_image **image);
 
 /* The toolbar (ui.c). */
 int notes_ui_open(struct notes_ui *ui, const char *font_path);

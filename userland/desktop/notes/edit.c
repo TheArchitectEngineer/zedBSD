@@ -375,9 +375,11 @@ notes_document_put_edit(
 	if (edit->image != NULL && edit->image->id >= document->next_id)
 		document->next_id = edit->image->id + 1U;
 
-	/* Succeeded: the page's editor is old, the document changed. */
+	/* Succeeded: the page's editor is old, the document and its pages' look changed. */
 	target->editor_stale = 1;
 	document->dirty = 1;
+	document->reshaped++;
+	document->edit_serial++;
 	return 0;
 }
 
@@ -429,9 +431,11 @@ notes_document_take_edit(
 	memmove(&target->edits[index], &target->edits[index + 1U], (target->edit_count - index - 1U) * sizeof(target->edits[0]));
 	target->edit_count--;
 
-	/* Succeeded: the page's editor is old, the document changed. */
+	/* Succeeded: the page's editor is old, the document and its pages' look changed. */
 	target->editor_stale = 1;
 	document->dirty = 1;
+	document->reshaped++;
+	document->edit_serial++;
 	*place = index;
 	return edit;
 }

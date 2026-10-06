@@ -367,6 +367,12 @@ struct notes_document {
 	 */
 	uint64_t reshaped;
 
+	/*
+	 * Counts the changes of the pages' edits (ws175-p008): the screen draws
+	 * a page's background again when it grew.  It only ever grows.
+	 */
+	uint64_t edit_serial;
+
 	/* The journal every change is logged to (NULL: none). */
 	struct notes_journal *journal;
 };
