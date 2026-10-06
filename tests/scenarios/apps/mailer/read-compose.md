@@ -13,12 +13,12 @@ since: ws169
 Mail の IMAP・SMTP（TLS は STARTTLS）で、account の追加・受信・本文・送信が通ることを確かめる（WS169 p003・p004）。
 
 ## 準備
-host で `plan/tools/mail/fake-mail-server.py` を動かす（試験の CA と mail.test の証明書、target から届く address で）。target の `/etc/hosts` に `ADDRESS mail.test`、CA を `/tmp/aat-work/mail-ca.pem` に。kei の Mail の account は無い（`~/.config/keiland/mailer.conf`・`mailer-accounts` を消す）。Mail は `env SSL_CERT_FILE=/tmp/aat-work/mail-ca.pem /bin/mailer` で起動する。
+host で `plan/tools/mail/fake-mail-server.py` を動かす（試験の CA と、mail.test と target から届く address（QEMU なら 10.0.2.2）の証明書、その address で）。server は address で指す（zedBSD の resolver は `/etc/hosts` を読まない）。CA を `/tmp/aat-work/mail-ca.pem` に。kei の Mail の account は無い（`~/.config/keiland/mailer.conf`・`mailer-accounts` を消す）。Mail は `env SSL_CERT_FILE=/tmp/aat-work/mail-ca.pem /bin/mailer` で起動する。
 
 ## 操作と確認
 1. 操作: Mail を起動する。
    確認事項: account が無い。正解: 「Add an Account」の form。`MAIL ACCOUNTS count=0`。確認方法: log、撮影。
-2. 操作: Your name に `Kei Example`、Email に `kei@example.net`、Password に `secret 1`、IMAP server に `mail.test:IMAP の port`、SMTP server に `mail.test:submission の port` を入れ、Sign In。
+2. 操作: Your name に `Kei Example`、Email に `kei@example.net`、Password に `secret 1`、IMAP server に `ADDRESS:IMAP の port`、SMTP server に `ADDRESS:submission の port` を入れ、Sign In。
    確認事項: login と受信。正解: `MAIL SIGNED-IN account=0`・`MAIL REFRESHED account=0`、受信箱に 3 通（`MAIL MESSAGE account=0 folder=Inbox` が 3 行以上）。`MAIL FAILED` が無い。確認方法: log、撮影。
 3. 操作: 一覧の最初の行を click。
    確認事項: 本文。正解: `MAIL OPEN message=N`。確認方法: log、撮影。
