@@ -46,3 +46,4 @@ Settings に Languages の頁を足して、使う IME を「日本語」「SKK�
 | [ws154-p004](phase004/phase.md) | SKK を選択に加え、QEMU（T1）と実機の UAT、全文の規約 | in-progress（実装済み、T1 待ち） | p002、p003 |
 
 - 2026-10-05 Q1: p001〜p004 を cleared（T1-173b・T1-174b PASS、T1-173・174 の FAIL は試験の期待の誤りだった）。残り: 5330 の UAT の操作感、範囲の判断（`>`・`/`・`#`・Tab・注釈）、全文規約の見直し。
+- 2026-10-06 P2: `tools/release/license-components.json` に `ime-dict-skk`（Zlib、project の license の下）を登録した（license-inventory の「unlisted external package: ime-dict-skk」の解消、Q1 の依頼）。
