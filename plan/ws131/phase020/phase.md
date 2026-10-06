@@ -38,3 +38,9 @@ Files の自前の窓（`window.c` 1,340 行、toplevel と desktop surface の 
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+## q807（P1、2026-10-06）: 途中（q813 の優先の投入で中断）
+
+- libkeiland（KL_VERSION 46、b755b18d3・6fe75b7ca・この commit）: desktop surface の役（`kl_window_options` の `role`・`token`、`KL_WINDOW_ROLE_DESKTOP`、`kl_window_desktop_place`）、drag and drop の一般化（`kl_window_answer_drop`・`_receive_drop`・`_finish_drop`・`_start_drag`、input `KL_WINDOW_DROP_MOTION`・`_DROP_ACTION`・`_CONTROL_DROP`・`_POPUP_DONE`、`KL_DND_*`）、`kl_window_set_control_value`・`_control_suggestions`・`_focus_control_mode`。
+- Files: `window.c`・`window.h`・`dnd.c`・`present.c`・`menu.c`・`titlebar.c`・`glass.c` を libkeiland の上に、`main.c` の調整（repeat・raw の flush を除く）。zedBSD の build と keiland-linux の gcc は exit 0・warning 0、`plan/tools/files/host-build.sh` built。
+- 残り: 他の Files の source（ui-*.c など）の旧名 72 か所、行数の記録、clang の build、info.c の xattr の表示（D14）、確認と T1 の依頼。
