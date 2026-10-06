@@ -47,6 +47,7 @@
 #include "pointer-accel.h"
 #include "apps.h"
 #include "switcher.h"
+#include "swipe.h"
 #include "lid.h"
 #include "super-tap.h"
 #include <stdint.h>
@@ -1106,6 +1107,12 @@ struct zwl_server {
 	 */
 	unsigned layout_mode;
 	/*
+	 * The touch pad's swipe of two fingers while Wiseview or the switcher
+	 * shows (swipe.h, ws142-p009): one swipe a step, from the fingers
+	 * landing until their lifting (the gesture SWIPE2's end).
+	 */
+	struct zwl_swipe pad_swipe;
+	/*
 	 * App Home's pages (ws035-p071): the page shown; a press on Home that
 	 * may become a page drag (where it started, the application under it,
 	 * whether it has moved enough) and the drag's offset in pixels; the
@@ -1415,7 +1422,8 @@ void zwl_switch_commit(struct zwl_server *server, const char *how);
 void zwl_switch_cancel(struct zwl_server *server, const char *why);
 int zwl_switch_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_switch_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_switch_pad_scroll(struct zwl_server *server, int32_t horizontal, int natural);
+int zwl_switch_pad_swipe(struct zwl_server *server, unsigned direction);
+int zwl_glass_pad_scroll(struct zwl_server *server, int32_t vertical, int32_t horizontal, int natural);
 void zwl_switch_tick(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);

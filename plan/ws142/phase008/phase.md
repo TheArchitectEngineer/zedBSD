@@ -2,7 +2,7 @@
 
 # ws142-p008: 最大化を desktop の session の状態にする（layout_mode と切り替えの入口の集約）
 
-Status: in-progress（2026-10-06 q781-i01 P2: 実装・build・host 試験まで。QEMU は p010 の AAT のシナリオとまとめて T1 に依頼する。結果の判定まで cleared にしない）
+Status: test-wait（T1 依頼中、p010-guest.sh。以前: in-progress、2026-10-06 q781-i01 P2: 実装・build・host 試験まで。QEMU は p010 の AAT のシナリオとまとめて T1 に依頼する。結果の判定まで cleared にしない）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q781 / q781-i01（2026-10-06 user「このqueueで実行してください。」）
@@ -22,7 +22,7 @@ Related: [BUG-217](../../bugs/BUG-217.md)
 ## 判断（Q1 経由、2026-10-06）
 
 - (a) WINDOWED の時、後ろに dock のまま残った別の app の窓を click で前に出すのも切り替え（窓に戻す）。その press は client に渡さない。Q1「案のとおりでよい」。
-- (b) DOCKED の間に前の窓を閉じる・最小化した時に次に前に来る窓を dock するか: ユーザーの返事待ち。今は変えない（次の窓はそのまま）。
+- (b) DOCKED の間に前の窓を閉じる・最小化した時に次に前に来る窓: 2026-10-06 ユーザー「最大化の状態でほかの窓を閉じる操作はできないです。窓が自分から閉じることはあります。最大化状態で今の窓を閉じたときは、次の窓は最大化状態にします。最大化はウィンドウの状態というより、デスクトップ環境がタブレットモードであるという解釈をします。」→ 次の窓も dock する。`layout_keep_front`（`zwl_glass_tick` で毎回、DOCKED の間、overview・move・pull の間を除き、前の窓（sheet は親）が浮いた dock できる窓なら `window_dock(…, "front")`、log `ZWL LAYOUT front surface= action=dock client=`）。
 - Super+↑ で dock する key は無い（p007 の表の Super+↑ は無い操作として扱う、Q1）。
 
 ## 実装（2026-10-06）
@@ -53,5 +53,4 @@ Related: [BUG-217](../../bugs/BUG-217.md)
 
 ## 残り
 
-- 判断 (b) の返事。
 - p008b（中央の窓の下の blur）、p009（gesture）、p010（AAT のシナリオ・T1・規約の見直し）。

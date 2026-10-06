@@ -20,9 +20,9 @@
  * fullscreen window, the login or lock screen, App Home or Wiseview.
  *
  * Tab and the right arrow (Shift+Tab and the left arrow back), another tap
- * of three fingers, and two fingers across the pad (ZWL_SWITCHER_STEP_UM a
- * step, the way the fingers go) move the selection one icon to the right
- * (or the left), around at the ends.
+ * of three fingers, and a swipe of two fingers across the pad (one swipe a
+ * step, the way the fingers go, ws142-p009) move the selection one icon to
+ * the right (or the left), around at the ends; a swipe down brings it.
  * Letting Alt go, Enter, and for the pad's switcher a tap or a click bring
  * the selected application's latest window to the top (back from
  * minimized); a click on a preview brings that window, on an icon of the
@@ -52,9 +52,6 @@
 #define CENTER_ICON		56
 #define CENTER_MARK		48
 #define CENTER_GAP		12
-
-/* The scroll notch of the touch pad's two fingers (touchpad.c's SCROLL_NOTCH_UM). */
-#define NOTCH_UM		2500
 
 /* The switcher in the middle of the output: the selected application's previews and the row of icons. */
 struct switch_center {
@@ -117,8 +114,9 @@ zwl_switch_open(
 	if (error != 0)
 		return 0;
 
-	/* When it opened: a quick Alt+Tab is told from it. */
+	/* When it opened: a quick Alt+Tab is told from it; a swipe begins afresh. */
 	server->switcher.opened_ms = zwl_milliseconds();
+	zwl_swipe_end(&server->pad_swipe);
 
 	/* The bar's own previews give way to it. */
 	zwl_apps_bar_hide(server, "switch");
@@ -385,34 +383,30 @@ zwl_switch_button(
 }
 
 /*
- * Takes the touch pad's two-finger scroll while the switcher is on: notches
- * the way the fingers went (natural scrolling turned back), a step for
- * each ZWL_SWITCHER_STEP_UM across.  Returns 1 when it took them.
+ * Takes a swipe of two fingers on the pad while the switcher is on (one
+ * swipe a step, swipe.c, ws142-p009, BUG-215): to the right the next
+ * application, to the left the one before, down brings the selection.
+ * Returns 1 when it took the swipe (the switcher is on).
  */
 int
-zwl_switch_pad_scroll(
+zwl_switch_pad_swipe(
 	struct zwl_server *server,
-	int32_t horizontal,
-	int natural)
+	unsigned direction)
 {
-	int32_t fingers;
-	int steps;
-
 	/* Only while on. */
 	if (!server->switcher.on)
 		return 0;
 
-	/* The fingers' way, then the steps. */
-	fingers = horizontal;
-	if (natural)
-		fingers = -horizontal;
-	steps = zwl_switcher_travel(&server->switcher, fingers * NOTCH_UM);
-	if (steps != 0) {
-		printf("ZWL SWITCH step index=%u app=%s via=pad at_ms=%llu\n", server->switcher.index, zwl_switcher_selected(&server->switcher), (unsigned long long)zwl_milliseconds());
-		present(server);
+	/* Each swipe's work; up, or no decision yet, does nothing. */
+	if (direction == ZWL_SWIPE_RIGHT) {
+		zwl_switch_step(server, 1, "pad");
+	} else if (direction == ZWL_SWIPE_LEFT) {
+		zwl_switch_step(server, -1, "pad");
+	} else if (direction == ZWL_SWIPE_DOWN) {
+		zwl_switch_commit(server, "pad-swipe");
 	}
 
-	/* Succeeded: the scroll is the switcher's (the vertical too). */
+	/* Succeeded: the swipe is the switcher's. */
 	return 1;
 }
 
