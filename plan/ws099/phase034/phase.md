@@ -105,3 +105,11 @@ P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴�
 
 「モンタージュの画面上部のバーですが、ダークモードではこの黒い色でOKです。ライトモードでは、ウィンドウタイトルバーと同じ色味にしてほしいです。」
 → 同日の前の回答「light の外観でも暗い bar（案 A）」を置き換える。dark の外観は今の黒い glass の bar のまま。light の外観では、bar の地を窓の title bar と同じ色味（light の title bar の glass の色・透明度）にし、icon・文字・pill の色も light の title bar に合わせて読めるようにする。App Home の stage は light でも暗いまま（別の決定、ws099-p035）。p034b で実装する。
+
+## 2026-10-06 p034b の montage（q794、P2）
+
+- 道具: [p034b-bar-host.sh](../tests/p034b-bar-host.sh)・[p034b-bar-host.py](../tests/p034b-bar-host.py)（p034-bar-host.py の描き方を流用）→ [bar-montage-5-light.png](images/bar-montage-5-light.png)。
+- light の外観: bar の地は窓の浮いた title bar と同じ白い glass（0.64）、文字・記号・desktop の点は title bar の暗い ink（0.12, 0.16, 0.24）、pill は ink の 0.06 の地と 0.10 の縁、Kei の mark は bar の色（light の bar 向けの色）。app の tile の中抜きの記号は title bar の ink の地が透ける（淡い tile の上でも記号が読めるように。dark の bar は今の GLASS_HOLE_GROUND）。
+- dark の外観: p034 の暗い glass の bar のまま。
+- dock の時: 窓の button の pill（最小化・restore・閉じる）を右上の端（今の時計の位置）に、状態と時計の pill をその左へ。中央の desktop の点は動かさない。（animation は実装の時。）
+- 待ち: ユーザーの確認（light の bar の色味、tile の記号の地）。
