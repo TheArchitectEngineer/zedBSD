@@ -16,11 +16,11 @@ Mail が受けた新しいメールの認証 code が compositor（kl_system_mai
 read-compose と同じ偽の server（`--arrivals 1`: Mail が IDLE に入ると 0.5 秒後に code 7351 のメールが 1 通届く）と target の準備。page `/tmp/aat-work/code.html`（autofocus の input、入力の長さを console に出す）。
 
 ## 操作と確認
-1. 操作: Browser で `/tmp/aat-work/code.html` を開き、page を click。
+1. 操作: Browser で `/tmp/aat-work/code.html` を開き、page の欄を click（欄の外の click は欄から keyboard を外し、code が入らない）。
    確認事項: 聞く。正解: `ZBROWSER MAIL listen error=0`。確認方法: log。
 2. 操作: Mail を起動し、form に read-compose と同じく入れ、「Sign-in codes」の switch を on（`MAIL CODES allowed=1`）、Sign In。
    確認事項: 新着と code。正解: `MAIL MESSAGE account=0 folder=Inbox uid=N arrived=1 code=1`、`KWL MAIL arrived … code=4 told=1`、`ZBROWSER MAIL code length=4 titlebar=1`。どの log の行にも `7351` が無い。確認方法: log。
-3. 操作: Mail を閉じ、Browser を前に。titlebar の先頭の control「Code 7351」を click。
+3. 操作: Mail を閉じ、page の欄を click して Browser を前に。titlebar の先頭の control「Code 7351」を click。
    確認事項: 入力。正解: `ZBROWSER MAIL fill length=4 error=0`、`ZBROWSER CONSOLE` の `code-length=4`、欄に 7351。titlebar の control が消える（`ZBROWSER TITLEBAR code=0`）。確認方法: log、撮影。
 
 ## 合格
