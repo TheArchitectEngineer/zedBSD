@@ -72,6 +72,10 @@ for file in userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/sc
 	objects="$objects $object"
 done
 
+# libkeiland's translations (files' words go through kl_tr since ws158-p004; without catalogs the English shows).
+"$cc" $flags -Iuserland/desktop/libkeiland -c userland/desktop/libkeiland/translate.c -o "$out/obj/keiland-translate.o"
+objects="$objects $out/obj/keiland-translate.o"
+
 # files without the window, the presenter, the menus, the titlebar and the glass.
 # The shared mount-table adapter supplies the same real table on the host and zedBSD.
 for file in $src/*.c $src/mntent/*.c; do
