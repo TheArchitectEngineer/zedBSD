@@ -27,7 +27,8 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q790 / q790-i01 | P1 | [ws090-p017](ws090/phase017/phase.md)（[BUG-211](bugs/BUG-211.md)・[BUG-218](bugs/BUG-218.md)） | libkeiland の慣性 scroll を全ての窓に、開始の遅れを 50 ms 以内（最大 80 ms）、Phone の padding。p017 の設計の範囲 | なし | pending |
 | q791 / q791-i01 | P1 | [ws090-p018](ws090/phase018/phase.md)（[BUG-226](bugs/BUG-226.md)・[BUG-221](bugs/BUG-221.md)） | hover・drag の範囲選択の再描画を一定の frame rate に。p018 の設計の範囲 | q790 | pending |
 | q792 / q792-i01 | P1 | [BUG-214](bugs/BUG-214.md) | 2026-10-06 ユーザーの決定: slider の初期の位置を磨りガラスの実際の値に（既定の見た目は変えない） | なし | pending |
-| q793 / q793-i01 | P2（p037 の後） | [ws131-p027](ws131/phase027/phase.md) | sessiond が session の socket で Power Off・Restart を受ける、backend の power_actions、D12 の改訂（2026-10-06 ユーザー「sessiond に口を足す（別の Phase）」） | ws099-p037 | 実装済み（P2 4718bbd2 → main）、test-wait（T1-227）。誰が頼めるかの規則はユーザーの確認へ |
+| q793 / q793-i01 | P2（p037 の後） | [ws131-p027](ws131/phase027/phase.md) | sessiond が session の socket で Power Off・Restart を受ける、backend の power_actions、D12 の改訂（2026-10-06 ユーザー「sessiond に口を足す（別の Phase）」） | ws099-p037 | uncleared（ユーザーが規則を「wheel だけ」に変更、q793-i02 へ） |
+| q793 / q793-i02 | P2（q794 の montage の後すぐ） | [ws131-p027](ws131/phase027/phase.md) | 2026-10-06 ユーザー「wheel だけに限る」: power-rules を root・wheel だけに、wheel でない利用者の dialog は Power Off・Restart を押せない形に、host の試験、T1-227 の期待を直す（試験の image の kei が wheel か確かめる） | q793-i01 | pending |
 | q794 / q794-i01 | P2（q793 の後、p035b の前） | ws099-p034b（[phase034](ws099/phase034/phase.md) の第 2 版） | 上部の bar: light の外観で窓の title bar と同じ色味（dark は黒のまま、2026-10-06 ユーザー）、dock の時の窓の button を右上へ、時計を左へ、animation。まず light の bar の montage をユーザーに見せる | ws099-p034（main） | pending |
 
 
