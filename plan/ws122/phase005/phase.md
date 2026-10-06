@@ -97,3 +97,26 @@ Status（p005b）: 判断待ち（Guardrail「compositor は libvulkan だけ」
 - 合成に戻る条件: popup・OSK・通知・App Home・WiseView・電源の dialog・pointer の cursor 以外の overlay が出た時、buffer が出力の大きさでない、形式・modifier が出せない、alpha がある時。log `ZWL SCANOUT direct=1 surface=N` / `direct=0 reason=…`。
 
 2026-10-06 ユーザー（クリック）: p005b は **B**（libkeiland-backend-zedbsd に direct の口、old の ioctl をそこへ移す）。Guardrail の例外の表に記録（game mode の時だけ、ioctl は backend の zedBSD の tree の中だけ）。
+
+## 2026-10-06 q802 P2: p005b の設計（ユーザーの決定 B）
+
+ユーザーの決定（Q1 経由、Guardrail の例外の表に記録済み）: **B** — libkeiland-backend-zedbsd に display の直接の口を置き、old の ioctl をそこへ。game mode の時だけ。普通の全画面と全ての合成は libvulkan だけのまま。ioctl は backend の zedBSD の tree の中だけ。
+
+| 段 | 内容 |
+| --- | --- |
+| 1. 頼み方 | 標準の `wp_content_type_v1`（staging、version 1: manager の `get_surface_content_type`、object の `set_content_type(none/photo/video/game)`、double-buffered で次の commit から）。libwayland に client の protocol（`content-type-protocol.c` と header）、compositor に server（`content-type.c`、surface の `content_type`、log `ZWL CONTENT surface=N type=video`）、libkeiland に `kl_window_set_content_type()`。player は window を作った時に video を付ける（compositor は全画面の時だけ使う） |
+| 2. backend の口 | `keiland-backend-display.h` に `kl_backend_scanout_open`（display を claim）・`present`（client の buffer を出す）・`close`（release）。zedBSD の実装は新しい `scanout-zedbsd.c`（`<uapi/gpu*.h>` と GPU の ioctl はこの file と今の `gpu-zedbsd.c` だけ）: 自分の GPU の fd、`GPU_DISPLAY_QUERY`・`CLAIM`・`RELEASE`、buffer の fd を `GPU_RESOURCE_IMPORT` した handle を `GPU_DISPLAY_PRESENT`（FIFO・BLOB）。buffer の fd は `gpu-buffer-zedbsd.c` が import の時に dup して backend の record に持ち、free で閉じる。Linux・FreeBSD は ENOTSUP（今のまま合成）。`plan/tools/gpu-boundary/v1-check.sh` を例外に合わせる（reader・ioctl を `scanout-zedbsd.c` に許す） |
+| 3. compositor | 入る条件（毎 pass）: 一番上の窓が全画面、content type が video か game、その上に何も無い（popup・menu・OSK・通知・App Home・WiseView・電源の dialog・system bar・gesture の途中・lock が無い）、image が出力と同じ大きさ、dmabuf（shm でない）、pointer が 2 秒動いていない。入る: frame の無い時に swapchain を閉じ（`zwl_compose_output_close`、libvulkan が lease を返す）、backend が claim、以後その surface の commit ごとに present、frame callback を返し、前に出していた buffer を release。出る: 条件が崩れた pass で backend が release、swapchain を作り直し（`zwl_compose_output_open`）、合成の frame を描く。log `ZWL SCANOUT direct=1 surface=N switch_ms=…` / `direct=0 reason=overlay|size|content|pointer|gesture|backend|…` |
+| 4. 端の操作 | input は direct の間も compositor が受けるので、端の swipe は今のまま拾う。gesture が始まった pass で合成に戻る（gesture の絵を描くため）。Esc は app へ（player は全画面を出る）。pointer が動くと合成に戻り（cursor を描くため、cursor plane は無い）、2 秒止まると direct に戻る |
+| 5. 試験 | host: 入る条件の判定の表（compositor の関数を host で）。QEMU（T1）: player の F11 で `ZWL SCANOUT direct=1`、撮影で全画面の動画、Esc・端の swipe・pointer で `direct=0` と合成の絵。Venus の display が BLOB を出せない時は `direct=0 reason=backend`。実機（5330、UAT）: i915 で direct=1 |
+
+## 2026-10-06 q802 P2: p005b の実装
+
+Status（p005b）: test-wait（T1 依頼中。QEMU の Venus の display が BLOB を出せなければ `reason=backend`、i915 の direct=1 は UAT）
+
+- 段 1（f44887ef2）: `wp_content_type_v1` を libwayland（`content-type-protocol.c`・`content-type-v1-client-protocol.h`、exports、3 つの Makefile、API-PROVENANCE に XML の SHA-256）、compositor（`content-type.c`、globals の 28、commit で適用、object の破棄で none、log `ZWL CONTENT surface=N type=video`）、libkeiland（KL_VERSION 41 `kl_window_set_content_type`、`KL_CONTENT_*`）に。player は window を作った時に video を付ける。
+- 段 2（ea75eeb76）: `keiland-backend-display.h` に `kl_backend_scanout_open`・`present`・`close`。zedBSD は `scanout-zedbsd.c`（自分の `/dev/gpu0`、`GPU_DISPLAY_QUERY`・`MODE`（VALIDATE、refresh）・`CLAIM`・`RESOURCE_IMPORT`・`DISPLAY_PRESENT`（FIFO・BLOB）・`RESOURCE_DESTROY`・`DISPLAY_RELEASE`）。`gpu-buffer-zedbsd.c` は import した buffer ごとに fd の dup と client の description を backend の record に持ち、free で閉じる（handle も消す）。Linux・FreeBSD は `display-drm.c` で ENOTSUP。`plan/tools/gpu-boundary/v1-check.sh` を例外に合わせた（`scanout-zedbsd.c` だけに UAPI・GPU の ioctl・GPU の node を許す）→ PASS（75 source）。
+- 段 3: compositor の `scanout.c`（pass ごとの判定・入る・出る・present・frame callback）と `scanout-rules.c`（判定の表、host で試せる）。`display.c` の `zwl_schedule` は commit を取った後に `zwl_scanout_pass`、direct の pass は合成しない。overlay の判定は `zwl_glass_overlay`（端の gesture・App Home・WiseView・keyboard・corner）、menu・network・volume・電源の dialog・switcher・lock・anim・transition・system bar が出ている・popup か sub-surface の image。screenshot（`zwl_shot_waiting`、shot.c・shot-none.c）の間は合成。pointer が 2 秒止まるまで合成。surface が消えると出る。log `ZWL SCANOUT direct=1 surface=N client=C switch_ms=M` / `direct=0 reason=R surface=N frames=F`。
+- 試験: `plan/ws122/tests/run-host-scanout-rules.sh` → 17 passed, 0 failed（ASan・UBSan）。AAT の apps.videoplayer.fullscreen に game mode の step（F11 の後 8 秒以内に `direct=1` か `reason=backend|refused`、撮影の前の `reason=shot`）。
+- build: zedBSD の wayland・libwayland・libkeiland・videoplayer、keiland-linux の warning 0、style-check 0、v1-check PASS、keiland-os-boundary は既存の FAIL だけ、aat run-host PASS、check-scenarios PASS。FreeBSD の build は未実施。
+- 制限: pointer が動くたびに swapchain を閉じ・作り直す（QEMU で数百 ms かかりうる）。cursor plane は無い。direct の間は隠れた窓の frame callback も毎 frame 返す（old と同じ）。

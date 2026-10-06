@@ -565,7 +565,7 @@ refusals(
 	pdf_writer_destroy(writer);
 	pdf_document_close(document);
 
-	/* A name the page's resources already use. */
+	/* A name the page's resources already use: the update takes another prefix (ws175-p003, design.md [M4]) and saves. */
 	sprintf(path, "%s/taken.pdf", folder);
 	(void)make_base(path, VARIANT_TAKEN_NAME);
 	error = pdf_document_open(path, &document);
@@ -581,7 +581,7 @@ refusals(
 	(void)pdf_writer_keep_page(writer, 2);
 	sprintf(path, "%s/taken-out.pdf", folder);
 	error = pdf_writer_save(writer, path);
-	check(error == EEXIST, "a name the page uses refused");
+	check(error == 0, "a name the page uses: another prefix, saved");
 	pdf_writer_destroy(writer);
 	pdf_document_close(document);
 

@@ -88,6 +88,19 @@ zwl_shot_enabled(
 	return 1;
 }
 
+/* Tells whether a capture waits for the next composed frame (the game mode composes one for it, scanout.c). */
+int
+zwl_shot_waiting(
+	void)
+{
+	/* A request not yet copied. */
+	if (shot.stage == SHOT_REQUESTED)
+		return 1;
+
+	/* None. */
+	return 0;
+}
+
 /* Opens the capture's socket. */
 void
 zwl_shot_open(

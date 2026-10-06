@@ -50,6 +50,21 @@
 		pdf_page_render;
 		pdf_display_list_destroy;
 		pdf_display_list_rasterize;
+		pdf_page_editor_open;
+		pdf_page_editor_close;
+		pdf_page_editor_status;
+		pdf_page_editor_count;
+		pdf_page_editor_object;
+		pdf_page_editor_key;
+		pdf_page_editor_find;
+		pdf_page_editor_hit;
+		pdf_page_editor_reset;
+		pdf_page_editor_delete;
+		pdf_page_editor_place;
+		pdf_page_editor_render;
+		pdf_page_editor_set_image;
+		pdf_page_editor_insert_image;
+		pdf_writer_begin_page_edited;
 	local:
 		*;
 };

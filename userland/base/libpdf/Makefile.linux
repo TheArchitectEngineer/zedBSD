@@ -10,6 +10,7 @@ KEILAND_LINUX_LIBPDF_SOURCES := userland/base/libpdf/writer.c \
 	userland/base/libpdf/image.c \
 	userland/base/libpdf/display.c \
 	userland/base/libpdf/content.c \
+	userland/base/libpdf/editor.c \
 	userland/base/libpdf/stroke.c \
 	userland/base/libpdf/raster.c \
 	userland/base/libpdf/font.c \

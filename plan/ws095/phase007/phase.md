@@ -2,7 +2,7 @@
 
 # ws095-p007: Text Editor と Notes の確認と不足の修正
 
-Status: test-wait（q804、P1、2026-10-06: Text Editor の試験を足し T1 の試験待ち。Notes の範囲は Q1 の判断待ち。下の「q804（P1）」）
+Status: cleared（2026-10-06 Q1 判定: T1-241 で Text Editor の ime-p007 PASS。Notes の text input はユーザーの決定で別の Phase ws079-p017 に移した。Settings の検索の日本語は記録だけ）
 Disposition: normal
 Parent: [WS095](../ws.md)
 Queue: q804（P1）

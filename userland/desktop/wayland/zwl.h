@@ -156,6 +156,8 @@ enum zwl_kind {
 	ZWL_CURSOR_SHAPE_DEVICE,
 	ZWL_VIEWPORTER,
 	ZWL_VIEWPORT,
+	ZWL_CONTENT_TYPE_MANAGER,
+	ZWL_CONTENT_TYPE,
 	ZWL_GLASS_MANAGER,
 	ZWL_GLASS,
 	ZWL_CONTEXT_MENU,
@@ -607,6 +609,15 @@ struct zwl_object {
 	int32_t destination[2];
 	unsigned viewport_changed;
 	/*
+	 * ws122-p005b (content-type.c): a surface's wp_content_type_v1 (whose
+	 * own surface field names it back), and its type (0 none, 1 photo, 2
+	 * video, 3 game), pending and applied by the commit.
+	 */
+	struct zwl_object *content_type_object;
+	uint32_t pending_content_type;
+	uint32_t content_type;
+	unsigned content_type_changed;
+	/*
 	 * ws035-p083 (panels.c): a surface's keiland_glass_v1 (whose own surface
 	 * field names it back; each cleared from both ends when either goes),
 	 * and the record of its glass panels, pending and applied by the
@@ -1018,6 +1029,23 @@ struct zwl_server {
 	 */
 	unsigned bar_hidden;
 	/*
+	 * The game mode (scanout.c, ws122-p005b): the backend's direct scanout
+	 * while a fullscreen video or game shows alone (NULL in window mode),
+	 * the window it shows and the image the display holds, the frames
+	 * presented, the last reason it was left or not entered (logged once),
+	 * a window the display refused, the window last logged, and the
+	 * pointer's place and when it last moved.
+	 */
+	struct kl_backend_scanout *scanout;
+	struct zwl_object *scanout_surface;
+	struct zwl_object *scanout_front;
+	uint64_t scanout_frames;
+	unsigned scanout_reason;
+	struct zwl_object *scanout_refused;
+	struct zwl_object *scanout_noted;
+	int32_t scanout_pointer[2];
+	uint64_t scanout_motion_ms;
+	/*
 	 * Wiseview (shell.c): how far it is open (0 closed, 1 open) when settled,
 	 * a gesture from the bottom edge and where it started, the animation to
 	 * a settled value (from, to, when it started), and the window that was
@@ -1383,6 +1411,13 @@ int zwl_compose_complete(struct zwl_server *server);
 
 /* The test images' screen capture (shot.c, or shot-none.c elsewhere; ws173-p002). */
 int zwl_shot_enabled(void);
+int zwl_shot_waiting(void);
+
+/* The game mode: a fullscreen video or game shown without composing (scanout.c, ws122-p005b). */
+struct kl_backend_scanout;
+int zwl_scanout_pass(struct zwl_server *server, struct zwl_object *top);
+void zwl_scanout_leave(struct zwl_server *server, unsigned reason);
+void zwl_scanout_surface_gone(struct zwl_server *server, struct zwl_object *surface);
 void zwl_shot_open(struct zwl_server *server);
 void zwl_shot_close(struct zwl_server *server);
 void zwl_shot_tick(struct zwl_server *server);
