@@ -72,6 +72,9 @@ main(void)
 		return 1;
 	keiui_declare_window_init(window);
 
+	/* A toplevel's window (the stubs never use the object; a desktop surface has no titlebar). */
+	window->toplevel = (struct xdg_toplevel *)&titlebar_object;
+
 	/* Two tabs: the titlebar in the tabs mode, both added and set, the options, the mode, one commit. */
 	error = kl_window_set_tabs(window, two, 2U, KL_TABS_NEW_BUTTON);
 	check(error == 0, "two tabs are shown");
