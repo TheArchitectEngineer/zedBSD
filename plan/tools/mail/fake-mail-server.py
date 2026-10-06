@@ -2,14 +2,16 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""ws169-p003: a small IMAP4rev1 and SMTP server for the host test of Mail's backend (host-mail-backend.c).
+"""A small IMAP4rev1 and SMTP server for Mail's tests (ws169-p003): the host tests (plan/ws169/tests/run-host-mail-backend.sh)
+and the AAT helper of tests/scenarios/apps/mailer/ (plan/tools/aat/scenarios/helpers_mailer.py).
 
-    fake-mail-server.py CERT KEY OUTDIR
+    fake-mail-server.py CERT KEY OUTDIR [--bind ADDRESS] [--arrivals N]
 
-Listens on 127.0.0.1 with four free ports: IMAP with TLS from the start, IMAP with STARTTLS, SMTP with TLS
+Listens on 127.0.0.1 (or ADDRESS: the AAT helper's address the target reaches the host at) with four free ports: IMAP with TLS from the start, IMAP with STARTTLS, SMTP with TLS
 from the start and SMTP submission with STARTTLS, and prints "PORTS imaps imap smtps submission" when ready.
 One user (kei@example.net, password "secret 1") with INBOX, Sent, Drafts, Archive and Trash (marked with
-their special use), three messages in INBOX.  IDLE tells a fourth message 0.5 s after it starts.  The
+their special use), three messages in INBOX.  IDLE tells a new message (a sign-in code) 0.5 s after it starts,
+the first N times only with --arrivals (Mail idles again after each).  The
 messages SMTP receives are written to OUTDIR/smtp-N.eml with their envelope in OUTDIR/smtp-N.env, and the
 messages APPENDed to OUTDIR/append-N.eml.  Runs until it is killed.
 """
@@ -99,7 +101,8 @@ class Store:
 
 
 STORE = Store()
-COUNTERS = {"smtp": 0, "append": 0}
+COUNTERS = {"smtp": 0, "append": 0, "arrivals": 0}
+ARRIVALS_MAX = None
 OUTDIR = "."
 
 
@@ -276,9 +279,13 @@ def imap_session(conn, context, secure):
             io.send(b"+ idling\r\n")
             time.sleep(0.5)
             with STORE.lock:
-                STORE.add("INBOX", NEW_MESSAGE, set())
+                arrive = ARRIVALS_MAX is None or COUNTERS["arrivals"] < ARRIVALS_MAX
+                if arrive:
+                    COUNTERS["arrivals"] += 1
+                    STORE.add("INBOX", NEW_MESSAGE, set())
                 count = len(STORE.boxes["INBOX"])
-            io.send(("* %d EXISTS\r\n" % count).encode())
+            if arrive:
+                io.send(("* %d EXISTS\r\n" % count).encode())
             done = io.line()
             if done is None:
                 return
@@ -378,15 +385,25 @@ def run_session(handler, conn, context, secure):
 
 
 def main():
-    global OUTDIR
+    global OUTDIR, ARRIVALS_MAX
     cert, key, OUTDIR = sys.argv[1:4]
+    bind = "127.0.0.1"
+    options = sys.argv[4:]
+    while options:
+        name = options.pop(0)
+        if name == "--bind":
+            bind = options.pop(0)
+        elif name == "--arrivals":
+            ARRIVALS_MAX = int(options.pop(0))
+        else:
+            sys.exit("fake-mail-server.py: unknown option " + name)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
     ports = []
     for handler, secure in ((imap_session, True), (imap_session, False), (smtp_session, True), (smtp_session, False)):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind(("127.0.0.1", 0))
+        listener.bind((bind, 0))
         listener.listen(8)
         ports.append(listener.getsockname()[1])
         threading.Thread(target=serve, args=(listener, handler, context, secure), daemon=True).start()

@@ -17,6 +17,9 @@
  * KL_WINDOW_CONTROL_DONE) for the main loop.  A compositor without the
  * titlebar leaves the window with zdesktop's plain titlebar and the
  * keyboard's shortcuts.
+ *
+ * WS169 p005: while a sign-in code that came by mail is offered, a fifth
+ * control at the front, "Code 482913", types it into the page.
  */
 
 #include "shell/internal.h"
@@ -41,6 +44,9 @@ static const struct kl_control_entry titlebar_controls[] = {
 	{ SHELL_CONTROL_RELOAD, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, 0U, "Reload", TITLEBAR_ACTION + SHELL_CONTROL_RELOAD },
 	{ SHELL_CONTROL_LOCATION, KL_CONTROL_BREADCRUMB, KL_PRIORITY_NORMAL, 0U, "Location", TITLEBAR_ACTION + SHELL_CONTROL_LOCATION }
 };
+
+/* The control of a sign-in code offered, put before the others while it is (its label is the code's). */
+#define TITLEBAR_CONTROLS_MAX	5U
 
 static void titlebar_queue(struct shell_titlebar *titlebar, int kind, uint32_t id, uint32_t detail, const char *text);
 static int titlebar_state(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
@@ -124,6 +130,56 @@ shell_titlebar_edit_location(
 		return error;
 
 	/* Succeeded: the URL can be edited. */
+	return 0;
+}
+
+/*
+ * Offers a sign-in code as a control at the front of the titlebar with a
+ * label, or (NULL) takes the offer away: the controls are declared again,
+ * so the caller shows the browser's state after.
+ *
+ * Returns 0, or an errno value (ENOTSUP without a titlebar).
+ */
+int
+shell_titlebar_offer_code(
+	struct shell_titlebar *titlebar,
+	const char *label)
+{
+	struct kl_control_entry entries[TITLEBAR_CONTROLS_MAX];
+	size_t count;
+	size_t index;
+	int error;
+
+	/* Without a titlebar there is nowhere to offer it. */
+	if (titlebar->kui == NULL)
+		return ENOTSUP;
+
+	/* The code's control first, while there is one. */
+	count = 0;
+	if (label != NULL) {
+		memset(&entries[count], 0, sizeof(entries[count]));
+		entries[count].id = SHELL_CONTROL_CODE;
+		entries[count].role = KL_CONTROL_GENERIC;
+		entries[count].priority = KL_PRIORITY_PRIMARY;
+		entries[count].label = label;
+		entries[count].action = TITLEBAR_ACTION + SHELL_CONTROL_CODE;
+		count++;
+	}
+
+	/* The browser's own controls. */
+	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
+		entries[count] = titlebar_controls[index];
+		count++;
+	}
+
+	/* Declared again. */
+	error = kl_window_set_controls(titlebar->kui, entries, count);
+	if (error != 0)
+		return error;
+
+	/* The line the tests read (not the code). */
+	printf("ZBROWSER TITLEBAR code=%d\n", label != NULL);
+	fflush(stdout);
 	return 0;
 }
 

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws169 -->
 # WS169: メーラの app と compositor のメールの API
 
-Status: planning（2026-10-05 追加。まず UI の mock（p000）を優先、q744。段は未定（ユーザーに確認）、見積もり 6 LW（Q1 の概算: 設計 1・API 1・IMAP/SMTP 2・app 2。Gmail・Outlook は別に））
+Status: incomplete（2026-10-07 q831 で p001〜p005 を実装、T1 の QEMU 待ち。p006 は今回作らない、p007 は規約の見直し（後回し）。2026-10-05 追加。まず UI の mock（p000）を優先、q744。段は未定（ユーザーに確認）、見積もり 6 LW（Q1 の概算: 設計 1・API 1・IMAP/SMTP 2・app 2。Gmail・Outlook は別に））
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -35,9 +35,9 @@ Primary Milestone: MG006
 | --- | --- | --- | --- |
 | p000 | **UI の mock（夕方の UAT にあると嬉しい・必須でない）**: メーラの app の外側だけ。account・folder の一覧、メールの一覧、読む画面、書く画面（送信は「backend が無い」）。data は固定の試験 data。API・backend は作らない | in-progress（q744、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase000/phase.md)） | — |
 | p001 | 要件と設計（API・許可・backend・app） | cleared（q831、P2、[phase](phase001/phase.md)） | — |
-| p002 | compositor のメールの API と許可（host の試験） | in-progress（q831、P2、実装・host 試験済み、QEMU は WS の最後に T1。[phase](phase002/phase.md)） | p001 |
-| p003 | IMAP4・SMTP の backend | in-progress（q831、P2、実装・host 試験済み、app への結線は p004。[phase](phase003/phase.md)） | p001 |
-| p004 | メーラの app（一覧・読む・書く） | planning | p002・p003 |
-| p005 | browser の認証 code の自動入力 | planning | p002（WS の browser の担当と調整） |
+| p002 | compositor のメールの API と許可（host の試験） | test-wait（T1-291、q831、P2、[phase](phase002/phase.md)） | p001 |
+| p003 | IMAP4・SMTP の backend | test-wait（T1-291、q831、P2、[phase](phase003/phase.md)） | p001 |
+| p004 | メーラの app（一覧・読む・書く） | test-wait（T1-291、q831、P2、[phase](phase004/phase.md)） | p002・p003 |
+| p005 | browser の認証 code の自動入力 | test-wait（T1-291、q831、P2、[phase](phase005/phase.md)） | p002・p004 |
 | p006 | Gmail・Outlook（OAuth2） | planning（2026-10-06 夜 ユーザー「今は IMAP/SMTP だけ」: 今回は作らない、ベータ2 から外す） | p003 |
 | p007 | 全文規約の見直し | planning | 上の全部 |
