@@ -65,6 +65,9 @@
  *   event   9 wired(string name, uint mode, string router)    since version 6: after a wired interface's link in
  *                                                              the details, how it is configured (KL_SYSTEM_WIRED_*)
  *                                                              and the router it was given (empty when none)
+ *   event  10 link_speed(string name, uint mbps)  since version 12 (BUG-222): after an interface's link in the
+ *                                                              details, the speed its driver last heard, in Mb/s
+ *                                                              (not sent while it is not known)
  *   One request of the network is outstanding at a time, the system bar's
  *   included; another is answered busy.  query_details is no request of
  *   the daemon's: every object that asked hears the next reading.  A join
@@ -205,7 +208,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		11U
+#define KL_SYSTEM_MANAGER_VERSION		12U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -288,9 +291,11 @@
 #define KL_SYSTEM_NETWORK_EVENT_DONE		7U
 #define KL_SYSTEM_NETWORK_EVENT_RESULT		8U
 #define KL_SYSTEM_NETWORK_EVENT_WIRED		9U
+#define KL_SYSTEM_NETWORK_EVENT_LINK_SPEED	10U
 
-/* Since when the network has configure_wired and wired (ws089-p022). */
+/* Since when the network has configure_wired and wired (ws089-p022), and link_speed (BUG-222). */
 #define KL_SYSTEM_NETWORK_SINCE_WIRED		6U
+#define KL_SYSTEM_NETWORK_SINCE_LINK_SPEED	12U
 
 /* How a wired interface is configured (configure_wired's mode and wired's). */
 #define KL_SYSTEM_WIRED_UNKNOWN			0U

@@ -1198,6 +1198,9 @@ ecm_notification_process(
 	const uint8_t *notification = adapter->notification_buffer;
 	size_t length = drv_usb_urb_actual_length(adapter->notification_urb);
 	uint16_t interface_number;
+	uint32_t downstream;
+	uint32_t upstream;
+	int connected;
 
 	/* Checks the drv usb urb status result. */
 	if (drv_usb_urb_status(adapter->notification_urb) !=
@@ -1220,16 +1223,32 @@ ecm_notification_process(
 	/* Checks the ecm le16 result. */
 	if (notification[1] == ECM_NOTIFICATION_NETWORK_CONNECTION &&
 	    ecm_le16(notification + 6U) == 0U && length == 8U) {
-		(void)net_device_set_carrier(adapter->net_device,
-					     ecm_le16(notification + 2U) != 0U);
+		connected = ecm_le16(notification + 2U);
+		(void)net_device_set_carrier(adapter->net_device, connected);
+
+		/* A link that went has no speed until the device tells the next one (BUG-222). */
+		if (!connected && adapter->net_device != NULL)
+			adapter->net_device->link_mbps = 0U;
 	} else if (notification[1] == ECM_NOTIFICATION_SPEED_CHANGE &&
 		   ecm_le16(notification + 2U) == 0U &&
 		   ecm_le16(notification + 6U) == 8U && length == 16U) {
+		downstream = ecm_le32(notification + 8U);
+		upstream = ecm_le32(notification + 12U);
 		irq = spin_lock_irqsave(&adapter->lock);
 
-		adapter->downstream_bps = ecm_le32(notification + 8U);
-		adapter->upstream_bps = ecm_le32(notification + 12U);
+		adapter->downstream_bps = downstream;
+		adapter->upstream_bps = upstream;
+
 		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/*
+		 * The interface reports the faster direction as its link's
+		 * speed, in Mb/s, which is what Settings shows (BUG-222).
+		 */
+		if (upstream > downstream)
+			downstream = upstream;
+		if (adapter->net_device != NULL)
+			adapter->net_device->link_mbps = downstream / 1000000U;
 	}
 }
 

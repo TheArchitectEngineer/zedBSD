@@ -331,11 +331,12 @@ link_read(
 	if (error == 0 && link->address[0] != '\0')
 		link_address(&request, link->netmask, sizeof(link->netmask));
 
-	/* The bytes received and sent. */
+	/* The bytes received and sent, and the link's speed the driver last heard (BUG-222). */
 	error = link_request(descriptor, name, SIOCGIFSTATS, &request);
 	if (error == 0) {
 		link->received_bytes = request.ifr_data.ifi_ibytes;
 		link->sent_bytes = request.ifr_data.ifi_obytes;
+		link->link_mbps = request.ifr_data.ifi_link_mbps;
 	}
 
 	/* Succeeded: the interface holds every available attribute. */
