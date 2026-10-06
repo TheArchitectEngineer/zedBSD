@@ -51,24 +51,24 @@ struct titlebar_control {
  * segmented group as a pill with its label.
  */
 static const struct titlebar_control titlebar_controls[] = {
-	{ CONTROL_PREVIOUS, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Previous Image", IV_ACTION_PREVIOUS },
-	{ CONTROL_NEXT, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Next Image", IV_ACTION_NEXT },
-	{ CONTROL_PLACE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_NORMAL, 0U, "No image", IV_ACTION_NONE },
-	{ CONTROL_ZOOM_OUT, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "\xe2\x88\x92", IV_ACTION_ZOOM_OUT },
-	{ CONTROL_ZOOM_IN, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "+", IV_ACTION_ZOOM_IN },
-	{ CONTROL_FIT, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "Fit", IV_ACTION_FIT },
-	{ CONTROL_ROTATE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "Rotate", IV_ACTION_ROTATE_RIGHT },
-	{ CONTROL_FULLSCREEN, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_PRIMARY, 0U, "Full Screen", IV_ACTION_FULLSCREEN }
+	{ CONTROL_PREVIOUS, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Previous Image", IV_ACTION_PREVIOUS },
+	{ CONTROL_NEXT, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Next Image", IV_ACTION_NEXT },
+	{ CONTROL_PLACE, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, 0U, "No image", IV_ACTION_NONE },
+	{ CONTROL_ZOOM_OUT, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "\xe2\x88\x92", IV_ACTION_ZOOM_OUT },
+	{ CONTROL_ZOOM_IN, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "+", IV_ACTION_ZOOM_IN },
+	{ CONTROL_FIT, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "Fit", IV_ACTION_FIT },
+	{ CONTROL_ROTATE, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "Rotate", IV_ACTION_ROTATE_RIGHT },
+	{ CONTROL_FULLSCREEN, KL_CONTROL_GENERIC, KL_PRIORITY_PRIMARY, 0U, "Full Screen", IV_ACTION_FULLSCREEN }
 };
 
-static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void titlebar_activated(void *data, struct kl_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static int titlebar_build(struct iv_titlebar *titlebar);
-static int titlebar_build_controls(struct keiland_titlebar *object);
+static int titlebar_build_controls(struct kl_titlebar *object);
 static int titlebar_state(struct iv_titlebar *titlebar, const struct iv_state *state);
-static int titlebar_state_controls(struct keiland_titlebar *object, const struct iv_state *state);
+static int titlebar_state_controls(struct kl_titlebar *object, const struct iv_state *state);
 
 /* What the titlebar tells the viewer: the controls chosen. */
-static const struct keiland_titlebar_listener titlebar_listener = {
+static const struct kl_titlebar_listener titlebar_listener = {
 	titlebar_activated,
 	NULL,
 	NULL,
@@ -98,7 +98,7 @@ iv_titlebar_open(
 	titlebar->window = window;
 
 	/* The window's titlebar object; a compositor without one leaves the menus and the keys. */
-	titlebar->titlebar = keiland_titlebar_create(kui_window_display(window->kui), kui_window_toplevel(window->kui), &titlebar_listener, titlebar);
+	titlebar->titlebar = kl_titlebar_create(kl_window_display(window->kui), kl_window_toplevel(window->kui), &titlebar_listener, titlebar);
 	if (titlebar->titlebar == NULL) {
 		iv_log("TITLEBAR none errno=%d", errno);
 		return 0;
@@ -156,7 +156,7 @@ iv_titlebar_close(
 {
 	/* The titlebar object, when there is one. */
 	if (titlebar->titlebar != NULL)
-		keiland_titlebar_destroy(titlebar->titlebar);
+		kl_titlebar_destroy(titlebar->titlebar);
 
 	/* Nothing of the titlebar is left. */
 	memset(titlebar, 0, sizeof(*titlebar));
@@ -166,7 +166,7 @@ iv_titlebar_close(
 static void
 titlebar_activated(
 	void *data,
-	struct keiland_titlebar *object,
+	struct kl_titlebar *object,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -205,19 +205,19 @@ titlebar_build(
 	int error;
 
 	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
+	error = kl_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
 	/* The presentation and the controls; a refused one still ends the transaction. */
 	error = titlebar_build_controls(titlebar->titlebar);
 	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
+		(void)kl_titlebar_commit(titlebar->titlebar);
 		return error;
 	}
 
 	/* The controls are shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
+	error = kl_titlebar_commit(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
@@ -228,14 +228,14 @@ titlebar_build(
 /* Sets the controls presentation and adds each control inside an open transaction; stops at the first refusal. */
 static int
 titlebar_build_controls(
-	struct keiland_titlebar *object)
+	struct kl_titlebar *object)
 {
 	const struct titlebar_control *control;
 	size_t index;
 	int error;
 
 	/* The controls presentation, which zdesktop draws as pills that give way when the room runs short. */
-	error = keiland_titlebar_set_mode(object, KEILAND_TITLEBAR_CONTROLS);
+	error = kl_titlebar_set_mode(object, KL_TITLEBAR_CONTROLS);
 	if (error != 0)
 		return error;
 
@@ -243,7 +243,7 @@ titlebar_build_controls(
 	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
 		/* The control with its role, priority, group and label. */
 		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(object, control->id, control->role, control->priority, control->group, control->label);
+		error = kl_titlebar_add_control(object, control->id, control->role, control->priority, control->group, control->label);
 		if (error != 0)
 			return error;
 	}
@@ -262,24 +262,24 @@ titlebar_state(
 	struct iv_titlebar *titlebar,
 	const struct iv_state *state)
 {
-	struct keiland_titlebar *object;
+	struct kl_titlebar *object;
 	int error;
 
 	/* The transaction. */
 	object = titlebar->titlebar;
-	error = keiland_titlebar_begin(object);
+	error = kl_titlebar_begin(object);
 	if (error != 0)
 		return error;
 
 	/* The controls' states; a refused change still ends the transaction. */
 	error = titlebar_state_controls(object, state);
 	if (error != 0) {
-		(void)keiland_titlebar_commit(object);
+		(void)kl_titlebar_commit(object);
 		return error;
 	}
 
 	/* The state is shown together. */
-	error = keiland_titlebar_commit(object);
+	error = kl_titlebar_commit(object);
 	if (error != 0)
 		return error;
 
@@ -294,7 +294,7 @@ titlebar_state(
 /* Sets the place's text and each control's state inside an open transaction; stops at the first refusal. */
 static int
 titlebar_state_controls(
-	struct keiland_titlebar *object,
+	struct kl_titlebar *object,
 	const struct iv_state *state)
 {
 	char label[64];
@@ -320,47 +320,47 @@ titlebar_state_controls(
 	}
 
 	/* The place's text. */
-	error = keiland_titlebar_set_control_label(object, CONTROL_PLACE, label);
+	error = kl_titlebar_set_control_label(object, CONTROL_PLACE, label);
 	if (error != 0)
 		return error;
 
 	/* The previous image, when there is one. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
 	if (error != 0)
 		return error;
 
 	/* The next image, when there is one. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
 	if (error != 0)
 		return error;
 
 	/* The place, while an image is shown. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_PLACE, state->has_image, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_PLACE, state->has_image, 0);
 	if (error != 0)
 		return error;
 
 	/* Zooming out needs an image that can be shown. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->can_show, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->can_show, 0);
 	if (error != 0)
 		return error;
 
 	/* So does zooming in. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->can_show, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->can_show, 0);
 	if (error != 0)
 		return error;
 
 	/* So does the fit, checked while the image follows the window. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_FIT, state->can_show, state->fit);
+	error = kl_titlebar_set_control_state(object, CONTROL_FIT, state->can_show, state->fit);
 	if (error != 0)
 		return error;
 
 	/* So does a turn. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_ROTATE, state->can_show, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_ROTATE, state->can_show, 0);
 	if (error != 0)
 		return error;
 
 	/* The full screen is always there, checked while the window fills it. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_FULLSCREEN, 1, state->fullscreen);
+	error = kl_titlebar_set_control_state(object, CONTROL_FULLSCREEN, 1, state->fullscreen);
 	if (error != 0)
 		return error;
 

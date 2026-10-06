@@ -108,8 +108,8 @@ iv_present_open(
 	/* The window's surface. */
 	memset(&surface, 0, sizeof(surface));
 	surface.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-	surface.display = kui_window_display(window->kui);
-	surface.surface = kui_window_surface(window->kui);
+	surface.display = kl_window_display(window->kui);
+	surface.surface = kl_window_surface(window->kui);
 	present->operation = "vkCreateWaylandSurfaceKHR";
 	error = vkCreateWaylandSurfaceKHR(present->instance, &surface, NULL, &present->surface);
 	if (error != VK_SUCCESS)
@@ -121,7 +121,7 @@ iv_present_open(
 		return error;
 
 	/* The swapchain at the window's size. */
-	kui_window_size(window->kui, &width, &height);
+	kl_window_size(window->kui, &width, &height);
 	error = present_swapchain(present, width, height, VK_NULL_HANDLE);
 	if (error != VK_SUCCESS)
 		return error;

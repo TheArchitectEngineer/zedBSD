@@ -56,25 +56,25 @@ struct titlebar_control {
  * Annotate are ungrouped generic controls; the modes are the view pair.
  */
 static const struct titlebar_control titlebar_controls[] = {
-	{ CONTROL_THUMBNAILS, KEILAND_CONTROL_SIDEBAR, KEILAND_PRIORITY_PRIMARY, 0U, "Page Thumbnails", PV_ACTION_THUMBNAILS },
-	{ CONTROL_PREVIOUS, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Previous Page", PV_ACTION_PREVIOUS },
-	{ CONTROL_NEXT, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Next Page", PV_ACTION_NEXT },
-	{ CONTROL_PAGE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_NORMAL, 0U, "No document", PV_ACTION_NONE },
-	{ CONTROL_SCROLL, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_NORMAL, 1U, "Continuous Scroll", PV_ACTION_MODE_SCROLL },
-	{ CONTROL_PAGES, KEILAND_CONTROL_VIEW_COLUMNS, KEILAND_PRIORITY_NORMAL, 1U, "Single Page", PV_ACTION_MODE_PAGE },
-	{ CONTROL_ZOOM_OUT, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "\xe2\x88\x92", PV_ACTION_ZOOM_OUT },
-	{ CONTROL_ZOOM_IN, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "+", PV_ACTION_ZOOM_IN },
-	{ CONTROL_FIT_WIDTH, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "Fit Width", PV_ACTION_FIT_WIDTH },
-	{ CONTROL_FIT_PAGE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, 0U, "Fit Page", PV_ACTION_FIT_PAGE },
-	{ CONTROL_ANNOTATE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_PRIMARY, 0U, "Annotate in Notes", PV_ACTION_ANNOTATE }
+	{ CONTROL_THUMBNAILS, KL_CONTROL_SIDEBAR, KL_PRIORITY_PRIMARY, 0U, "Page Thumbnails", PV_ACTION_THUMBNAILS },
+	{ CONTROL_PREVIOUS, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Previous Page", PV_ACTION_PREVIOUS },
+	{ CONTROL_NEXT, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Next Page", PV_ACTION_NEXT },
+	{ CONTROL_PAGE, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, 0U, "No document", PV_ACTION_NONE },
+	{ CONTROL_SCROLL, KL_CONTROL_VIEW_LIST, KL_PRIORITY_NORMAL, 1U, "Continuous Scroll", PV_ACTION_MODE_SCROLL },
+	{ CONTROL_PAGES, KL_CONTROL_VIEW_COLUMNS, KL_PRIORITY_NORMAL, 1U, "Single Page", PV_ACTION_MODE_PAGE },
+	{ CONTROL_ZOOM_OUT, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "\xe2\x88\x92", PV_ACTION_ZOOM_OUT },
+	{ CONTROL_ZOOM_IN, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "+", PV_ACTION_ZOOM_IN },
+	{ CONTROL_FIT_WIDTH, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "Fit Width", PV_ACTION_FIT_WIDTH },
+	{ CONTROL_FIT_PAGE, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "Fit Page", PV_ACTION_FIT_PAGE },
+	{ CONTROL_ANNOTATE, KL_CONTROL_GENERIC, KL_PRIORITY_PRIMARY, 0U, "Annotate in Notes", PV_ACTION_ANNOTATE }
 };
 
-static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void titlebar_activated(void *data, struct kl_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static int titlebar_build(struct pv_titlebar *titlebar);
 static int titlebar_state(struct pv_titlebar *titlebar, const struct pv_state *state);
 
 /* What the titlebar tells the viewer: the controls chosen. */
-static const struct keiland_titlebar_listener titlebar_listener = {
+static const struct kl_titlebar_listener titlebar_listener = {
 	titlebar_activated, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
@@ -97,7 +97,7 @@ pv_titlebar_open(
 	titlebar->window = window;
 
 	/* The window's titlebar object; a compositor without one leaves the menus and the keys. */
-	titlebar->titlebar = keiland_titlebar_create(kui_window_display(window->kui), kui_window_toplevel(window->kui), &titlebar_listener, titlebar);
+	titlebar->titlebar = kl_titlebar_create(kl_window_display(window->kui), kl_window_toplevel(window->kui), &titlebar_listener, titlebar);
 	if (titlebar->titlebar == NULL) {
 		pv_log("TITLEBAR none errno=%d", errno);
 		return 0;
@@ -153,7 +153,7 @@ pv_titlebar_close(
 {
 	/* The titlebar object, when there is one. */
 	if (titlebar->titlebar != NULL)
-		keiland_titlebar_destroy(titlebar->titlebar);
+		kl_titlebar_destroy(titlebar->titlebar);
 	memset(titlebar, 0, sizeof(*titlebar));
 }
 
@@ -161,7 +161,7 @@ pv_titlebar_close(
 static void
 titlebar_activated(
 	void *data,
-	struct keiland_titlebar *object,
+	struct kl_titlebar *object,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -198,27 +198,27 @@ titlebar_build(
 	int error;
 
 	/* The transaction and the presentation. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
+	error = kl_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
 		return error;
-	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
+	error = kl_titlebar_set_mode(titlebar->titlebar, KL_TITLEBAR_CONTROLS);
 
 	/* Each control. */
 	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
 		if (error != 0)
 			break;
 		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
+		error = kl_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
 	}
 
 	/* A refused control still ends the transaction. */
 	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
+		(void)kl_titlebar_commit(titlebar->titlebar);
 		return error;
 	}
 
 	/* The controls are shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
+	error = kl_titlebar_commit(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
@@ -236,7 +236,7 @@ titlebar_state(
 	struct pv_titlebar *titlebar,
 	const struct pv_state *state)
 {
-	struct keiland_titlebar *object;
+	struct kl_titlebar *object;
 	char label[64];
 	int can_previous;
 	int can_next;
@@ -274,43 +274,43 @@ titlebar_state(
 
 	/* The transaction. */
 	object = titlebar->titlebar;
-	error = keiland_titlebar_begin(object);
+	error = kl_titlebar_begin(object);
 	if (error != 0)
 		return error;
 
 	/* The page's text and the controls' states. */
-	error = keiland_titlebar_set_control_label(object, CONTROL_PAGE, label);
+	error = kl_titlebar_set_control_label(object, CONTROL_PAGE, label);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PAGE, state->has_document, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_PAGE, state->has_document, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_SCROLL, 1, scrolling);
+		error = kl_titlebar_set_control_state(object, CONTROL_SCROLL, 1, scrolling);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_PAGES, 1, paging);
+		error = kl_titlebar_set_control_state(object, CONTROL_PAGES, 1, paging);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->has_document, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->has_document, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->has_document, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->has_document, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_WIDTH, state->has_document, fitting_width);
+		error = kl_titlebar_set_control_state(object, CONTROL_FIT_WIDTH, state->has_document, fitting_width);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_FIT_PAGE, state->has_document, fitting_page);
+		error = kl_titlebar_set_control_state(object, CONTROL_FIT_PAGE, state->has_document, fitting_page);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_ANNOTATE, state->has_document, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_ANNOTATE, state->has_document, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_THUMBNAILS, state->has_document, state->thumbnails);
+		error = kl_titlebar_set_control_state(object, CONTROL_THUMBNAILS, state->has_document, state->thumbnails);
 
 	/* A refused change still ends the transaction. */
 	if (error != 0) {
-		(void)keiland_titlebar_commit(object);
+		(void)kl_titlebar_commit(object);
 		return error;
 	}
 
 	/* The state is shown together. */
-	error = keiland_titlebar_commit(object);
+	error = kl_titlebar_commit(object);
 	if (error != 0)
 		return error;
 

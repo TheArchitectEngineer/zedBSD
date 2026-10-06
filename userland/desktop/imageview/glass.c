@@ -25,8 +25,8 @@
 #include <errno.h>
 #include <string.h>
 
-static size_t glass_panels(const struct iv_app *app, struct keiland_glass_panel *panels, size_t capacity);
-static int glass_same(const struct iv_glass *glass, const struct keiland_glass_panel *panels, size_t count);
+static size_t glass_panels(const struct iv_app *app, struct kl_glass_panel *panels, size_t capacity);
+static int glass_same(const struct iv_glass *glass, const struct kl_glass_panel *panels, size_t count);
 
 /*
  * Makes the window glass when it can be: returns 1 when it is, 0 when it
@@ -49,7 +49,7 @@ iv_glass_open(
 	}
 
 	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(kui_window_display(window->kui), kui_window_surface(window->kui));
+	glass->glass = kl_glass_create(kl_window_display(window->kui), kl_window_surface(window->kui));
 	if (glass->glass == NULL) {
 		iv_log("GLASS off reason=compositor errno=%d", errno);
 		return 0;
@@ -71,7 +71,7 @@ iv_glass_update(
 	struct iv_glass *glass,
 	const struct iv_app *app)
 {
-	struct keiland_glass_panel panels[2];
+	struct kl_glass_panel panels[2];
 	size_t count;
 	int same;
 	int error;
@@ -87,7 +87,7 @@ iv_glass_update(
 		return;
 
 	/* Sent with the frame; a refused list is logged and the old panels stay. */
-	error = keiland_glass_set_panels(glass->glass, panels, count);
+	error = kl_glass_set_panels(glass->glass, panels, count);
 	if (error != 0) {
 		iv_log("GLASS refused errno=%d count=%lu", error, (unsigned long)count);
 		return;
@@ -109,7 +109,7 @@ iv_glass_close(
 {
 	/* The glass object, when there is one. */
 	if (glass->glass != NULL)
-		keiland_glass_destroy(glass->glass);
+		kl_glass_destroy(glass->glass);
 
 	/* The window is not glass any more. */
 	glass->glass = NULL;
@@ -119,7 +119,7 @@ iv_glass_close(
 static size_t
 glass_panels(
 	const struct iv_app *app,
-	struct keiland_glass_panel *panels,
+	struct kl_glass_panel *panels,
 	size_t capacity)
 {
 	size_t count;
@@ -136,7 +136,7 @@ glass_panels(
 		panels[count].width = app->window_width - 2 * IV_CARD_INSET;
 		panels[count].height = app->window_height - 2 * IV_CARD_INSET;
 		panels[count].radius = IV_CARD_RADIUS;
-		panels[count].kind = KEILAND_GLASS_CARD;
+		panels[count].kind = KL_GLASS_CARD;
 
 		/* A window too small for a card has none. */
 		if (panels[count].width > 0 && panels[count].height > 0)
@@ -152,7 +152,7 @@ glass_panels(
 		panels[count].width = app->chip_width;
 		panels[count].height = app->chip_height;
 		panels[count].radius = app->chip_height / 2;
-		panels[count].kind = KEILAND_GLASS_CARD;
+		panels[count].kind = KL_GLASS_CARD;
 		count++;
 	}
 
@@ -164,7 +164,7 @@ glass_panels(
 static int
 glass_same(
 	const struct iv_glass *glass,
-	const struct keiland_glass_panel *panels,
+	const struct kl_glass_panel *panels,
 	size_t count)
 {
 	size_t index;

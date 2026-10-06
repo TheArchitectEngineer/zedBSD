@@ -7,7 +7,7 @@
 
 /*
  * The parts of Image Viewer that speak Wayland, Vulkan and zdesktop's
- * extensions: the window (libkeiland's kui_window since ws090-p008: the
+ * extensions: the window (libkeiland's kl_window since ws090-p008: the
  * toplevel and the seat's input; its surface is left to the presenter),
  * the presenter of the image and the drawn canvas (present.c), the menus
  * (menu.c), the titlebar's controls (titlebar.c) and the window's glass
@@ -25,19 +25,18 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include <keiland.h>
-#include <keiui.h>
 
 /*
  * The window: libkeiland's window, which queues the input (the menus' and
  * the titlebar's actions among it, posted in the order they came).  The
- * viewer's own presenter draws on its surface (KUI_PRESENT_NONE): the
+ * viewer's own presenter draws on its surface (KL_PRESENT_NONE): the
  * image is a texture under the canvas, which libkeiland's presenter does not
  * have.
  *
  * One lives for the whole run.
  */
 struct iv_window {
-	struct kui_window *kui;
+	struct kl_window *kui;
 };
 
 /*
@@ -162,8 +161,8 @@ struct iv_state {
  * glass), and the panels last sent.
  */
 struct iv_glass {
-	struct keiland_glass *glass;
-	struct keiland_glass_panel panels[2];
+	struct kl_glass *glass;
+	struct kl_glass_panel panels[2];
 	size_t count;
 	int sent;
 };
@@ -176,13 +175,13 @@ struct iv_glass {
  * shown (ws128-p005).
  */
 struct iv_menu {
-	struct keiland_menu_service *service;
-	struct keiland_menu *menu;
-	struct keiland_window_menu *window_menu;
+	struct kl_menu_service *service;
+	struct kl_menu *menu;
+	struct kl_window_menu *window_menu;
 	struct iv_state shown;
 	struct iv_window *window;
-	struct keiland_menu *context;
-	struct keiland_context_menu *popup;
+	struct kl_menu *context;
+	struct kl_context_menu *popup;
 	char openers[IV_OPENERS][IV_OPENER_NAME];
 	int opener_count;
 };
@@ -194,7 +193,7 @@ struct iv_menu {
  */
 struct iv_titlebar {
 	struct iv_window *window;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	struct iv_state shown;
 	int sent;
 };

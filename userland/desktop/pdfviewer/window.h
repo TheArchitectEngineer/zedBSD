@@ -7,7 +7,7 @@
 
 /*
  * The parts of PDF Viewer that speak Wayland and zdesktop's extensions:
- * the window (libkeiland's kui_window since ws090-p008: the toplevel, the
+ * the window (libkeiland's kl_window since ws090-p008: the toplevel, the
  * seat's input and the frames shown with Vulkan), the menus (menu.c) and
  * the titlebar's controls (titlebar.c).  The host tests build the rest of
  * the program without them.
@@ -22,7 +22,6 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include <keiland.h>
-#include <keiui.h>
 
 /*
  * The window: libkeiland's window, which queues the input (the menus' and
@@ -32,7 +31,7 @@
  * One lives for the whole run.
  */
 struct pv_window {
-	struct kui_window *kui;
+	struct kl_window *kui;
 };
 
 /*
@@ -55,9 +54,9 @@ struct pv_state {
  * last showed.
  */
 struct pv_menu {
-	struct keiland_menu_service *service;
-	struct keiland_menu *menu;
-	struct keiland_window_menu *window_menu;
+	struct kl_menu_service *service;
+	struct kl_menu *menu;
+	struct kl_window_menu *window_menu;
 	struct pv_state shown;
 	struct pv_window *window;
 };
@@ -69,7 +68,7 @@ struct pv_menu {
  */
 struct pv_titlebar {
 	struct pv_window *window;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	struct pv_state shown;
 	int sent;
 };

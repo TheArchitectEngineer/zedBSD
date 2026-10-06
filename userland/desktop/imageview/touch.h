@@ -24,7 +24,6 @@
 #include "imageview.h"
 
 #include <keiland.h>
-#include <keiui.h>
 
 /*
  * The fingers and what they are doing: the gestures over the image, the
@@ -45,8 +44,8 @@
  * set.
  */
 struct iv_touch {
-	struct keiland_gesture *gesture;
-	struct keiland_scroller *scroller;
+	struct kl_gesture *gesture;
+	struct kl_scroller *scroller;
 	int pointer;
 	int32_t pointer_id;
 	int pointer_x;
@@ -73,7 +72,7 @@ struct iv_touch {
 /* The touch screen (touch.c). */
 int iv_touch_open(struct iv_touch *touch);
 void iv_touch_close(struct iv_touch *touch);
-void iv_touch_event(struct iv_touch *touch, struct iv_app *app, const struct kui_window_event *event);
+void iv_touch_event(struct iv_touch *touch, struct iv_app *app, const struct kl_window_event *event);
 int iv_touch_tick(struct iv_touch *touch, struct iv_app *app, uint64_t now);
 
 #endif
