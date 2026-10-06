@@ -215,6 +215,9 @@ for step in "$@"; do
 		# The colour emoji font (ws102-p019), which the compositor and libkeiland open.
 		emoji=build/distfiles/NotoColorEmoji-2.047.ttf
 		[ -f "$emoji" ] && put "$emoji" /usr/share/fonts/keiland-emoji.ttf
+		# The handwriting templates (ws165-p003, the package hand-hershey: make hand-hershey).
+		hand=build/packages/hand-hershey/hershey.txt
+		[ -f "$hand" ] && guest 'mkdir -p /usr/share/keiland/hand' >/dev/null && put "$hand" /usr/share/keiland/hand/hershey.txt
 		guest 'chmod 755 /bin/wayland' >/dev/null
 		;;
 	start)
@@ -491,7 +494,9 @@ up 1
 hold 1500'
 		expect_log 'KWL OSK hand stroke-end strokes=3 '
 		expect_text 'KWL OSK hand recognize strokes=3 '
-		expect_text 'candidates=3 first=あ note=認識はまだ'
+		# The recognizer of ws165-p003 with the templates: some candidates and no note.
+		expect_text 'KWL OSK hand templates path=/usr/share/keiland/hand/hershey.txt count=228 error=0'
+		grep -E 'KWL OSK hand recognize strokes=3 .* candidates=[1-4] first=[^ ]+ note=$' "$out/osk-now.txt" >/dev/null || { echo "hand: no candidates"; status=1; }
 		pointer move 700 300 sleep 300
 		shot hand.png
 		# Every frame that drew new points came within one frame of their input: its lag is shorter than the time since

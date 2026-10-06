@@ -11,30 +11,57 @@
  *
  * The ink is the strokes written since it was last cleared, each the
  * points the pen or finger passed through (a point that does not move from
- * the last is not kept).  kwl_hand_recognize is the one place a real
- * recognizer is to be put in later: it takes the ink and answers
- * candidates, the likeliest first.  Until then it is a stub that answers
- * three fixed candidates and a note saying recognition is not there yet;
- * it still measures the ink (its strokes, points and bounds) for the log.
+ * the last is not kept).  kwl_hand_recognize answers the candidates, the
+ * likeliest first (ws165-p003): the point clouds of hand-cloud.c against
+ * the templates of the package hand-hershey, read the first time; then
+ * the characters that differ only by their size are put in the order the
+ * ink's size on the writing area says (a small c before C), and a small
+ * kana is offered before its full size one when the ink is small.  It
+ * also measures the ink (its strokes, points and bounds) for the log.
  */
 
 #include "keyboard.h"
+#include "hand-cloud.h"
 
+#include "userland/desktop/paths.h"
+
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/* The stub's note over its candidates. */
-#define HAND_STUB_NOTE		"認識はまだ"
+/* The templates' file (the package hand-hershey), and the largest one read. */
+#define HAND_TEMPLATES_PATH	KEILAND_DATADIR "/keiland/hand/hershey.txt"
+#define HAND_TEMPLATES_MAX	(1024U * 1024U)
+
+/* The note when no template could be read. */
+#define HAND_NO_DATA_NOTE	"No handwriting data"
+
+/* The share of the writing area's height under which ink is small, and the most candidates looked at. */
+#define HAND_SMALL_SHARE	0.40f
+#define HAND_LOOKED		8U
 
 /*
- * The stub recognizer's candidates, the same for any ink (fixed, for the
- * tests); they live as long as the program.
+ * The pairs that differ only by size, the small one first (a small ink
+ * takes the small one).
  */
-static const char *const hand_stub_candidates[] = {
-	"あ",
-	"い",
-	"う"
+static const uint32_t hand_sizes[][2] = {
+	{ 'c', 'C' }, { 's', 'S' }, { 'v', 'V' }, { 'w', 'W' }, { 'x', 'X' }, { 'z', 'Z' }, { 'o', 'O' }, { 'p', 'P' },
+	{ 0x3041, 0x3042 }, { 0x3043, 0x3044 }, { 0x3045, 0x3046 }, { 0x3047, 0x3048 }, { 0x3049, 0x304a }, { 0x3063, 0x3064 },
+	{ 0x3083, 0x3084 }, { 0x3085, 0x3086 }, { 0x3087, 0x3088 }, { 0x308e, 0x308f },
+	{ 0x30a1, 0x30a2 }, { 0x30a3, 0x30a4 }, { 0x30a5, 0x30a6 }, { 0x30a7, 0x30a8 }, { 0x30a9, 0x30aa }, { 0x30c3, 0x30c4 },
+	{ 0x30e3, 0x30e4 }, { 0x30e5, 0x30e6 }, { 0x30e7, 0x30e8 }, { 0x30ee, 0x30ef }, { 0x30f5, 0x30ab }, { 0x30f6, 0x30b1 }
 };
+
+/*
+ * The templates, read the first time a recognition needs them (hand_state:
+ * 0 not tried, 1 read, -1 failed); the event loop's alone.
+ */
+static struct hand_templates hand_templates;
+static int hand_state;
+
+static void hand_sized(uint32_t *codes, size_t *count, int small);
+static void hand_utf8(uint32_t code, char *text, size_t size);
 
 /*
  * Clears the ink: no strokes.
@@ -192,17 +219,73 @@ kwl_hand_bounds(
 }
 
 /*
+ * Reads the templates from a file (the package hand-hershey's).  Returns 0,
+ * or an errno value (the recognition then answers no candidates).
+ */
+int
+kwl_hand_load(
+	const char *path)
+{
+	FILE *file;
+	char *text;
+	size_t length;
+	int error;
+
+	/* The file, whole. */
+	hand_templates_free(&hand_templates);
+	hand_state = -1;
+	file = fopen(path, "r");
+	if (file == NULL) {
+		error = errno;
+		printf("KWL OSK hand templates path=%s error=%d\n", path, error);
+		return error;
+	}
+
+	/* Room for its text. */
+	text = malloc(HAND_TEMPLATES_MAX);
+	if (text == NULL) {
+		fclose(file);
+		return ENOMEM;
+	}
+
+	/* Its text. */
+	length = fread(text, 1U, HAND_TEMPLATES_MAX, file);
+	fclose(file);
+
+	/* The templates of it. */
+	error = hand_templates_parse(&hand_templates, text, length);
+	free(text);
+	printf("KWL OSK hand templates path=%s count=%lu error=%d\n", path, (unsigned long)hand_templates.count, error);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: read. */
+	hand_state = 1;
+	return 0;
+}
+
+/*
  * Recognizes the ink: the candidates for the character written, the
- * likeliest first.  This is a stub until a recognizer is put in: without
- * ink it answers nothing, with ink three fixed candidates and a note that
- * recognition is not there yet.
+ * likeliest first.  area is the writing area's height (0 when it is not
+ * known: the sizes are then not used).
  */
 void
 kwl_hand_recognize(
 	const struct kwl_hand_ink *ink,
+	int32_t area,
 	struct kwl_hand_result *result)
 {
-	unsigned index;
+	static float xs[HAND_CLOUD_INPUT_MAX];
+	static float ys[HAND_CLOUD_INPUT_MAX];
+	static unsigned char starts[HAND_CLOUD_INPUT_MAX];
+	struct hand_cloud_input input;
+	uint32_t codes[HAND_LOOKED];
+	float distances[HAND_LOOKED];
+	int32_t bounds[4];
+	size_t count;
+	unsigned stroke;
+	unsigned point;
+	int small;
 
 	/* Nothing yet. */
 	memset(result, 0, sizeof(*result));
@@ -211,12 +294,126 @@ kwl_hand_recognize(
 	if (ink->count == 0U)
 		return;
 
-	/* The stub's candidates. */
-	for (index = 0; index < sizeof(hand_stub_candidates) / sizeof(hand_stub_candidates[0]) && index < KWL_HAND_CANDIDATES; index++) {
-		(void)snprintf(result->candidates[index], sizeof(result->candidates[index]), "%s", hand_stub_candidates[index]);
-		result->count++;
+	/* The templates, read the first time. */
+	if (hand_state == 0)
+		(void)kwl_hand_load(HAND_TEMPLATES_PATH);
+	if (hand_state != 1) {
+		(void)snprintf(result->note, sizeof(result->note), "%s", HAND_NO_DATA_NOTE);
+		return;
 	}
 
-	/* The note that recognition is not there yet. */
-	(void)snprintf(result->note, sizeof(result->note), "%s", HAND_STUB_NOTE);
+	/* The ink's points, each stroke's first marked. */
+	input.count = 0U;
+	for (stroke = 0U; stroke < ink->count; stroke++) {
+		for (point = 0U; point < ink->strokes[stroke].count && input.count < HAND_CLOUD_INPUT_MAX; point++) {
+			xs[input.count] = (float)ink->strokes[stroke].points[point].x;
+			ys[input.count] = (float)ink->strokes[stroke].points[point].y;
+			starts[input.count] = (unsigned char)(point == 0U);
+			input.count++;
+		}
+	}
+
+	/* The points as the recognizer takes them. */
+	input.x = xs;
+	input.y = ys;
+	input.starts = starts;
+
+	/* The nearest characters, put in the order the ink's size says. */
+	count = hand_recognize_strokes(&hand_templates, &input, codes, distances, HAND_LOOKED);
+	kwl_hand_bounds(ink, bounds);
+	small = 0;
+	if (area > 0 && (float)bounds[3] < HAND_SMALL_SHARE * (float)area && (float)bounds[2] < HAND_SMALL_SHARE * (float)area)
+		small = 1;
+	if (area > 0)
+		hand_sized(codes, &count, small);
+
+	/* The first ones, as text. */
+	for (point = 0U; point < count && result->count < KWL_HAND_CANDIDATES; point++) {
+		hand_utf8(codes[point], result->candidates[result->count], sizeof(result->candidates[0]));
+		result->count++;
+	}
+}
+
+/*
+ * Puts the characters that differ only by size in the order the ink's size
+ * says: the first candidate's pair, its small one first for small ink and
+ * its large one otherwise, the other right after it (added when it was not
+ * among the candidates).
+ */
+static void
+hand_sized(
+	uint32_t *codes,
+	size_t *count,
+	int small)
+{
+	uint32_t chosen;
+	uint32_t other;
+	size_t pair;
+	size_t index;
+
+	/* The first candidate's pair. */
+	if (*count == 0U)
+		return;
+	for (pair = 0U; pair < sizeof(hand_sizes) / sizeof(hand_sizes[0]); pair++) {
+		if (codes[0] == hand_sizes[pair][0] || codes[0] == hand_sizes[pair][1])
+			break;
+	}
+
+	/* Not one of the pairs. */
+	if (pair == sizeof(hand_sizes) / sizeof(hand_sizes[0]))
+		return;
+
+	/* The one the size says, then the other. */
+	chosen = hand_sizes[pair][1];
+	other = hand_sizes[pair][0];
+	if (small) {
+		chosen = hand_sizes[pair][0];
+		other = hand_sizes[pair][1];
+	}
+
+	/* Both taken out of the list where they are. */
+	for (index = 0U; index < *count;) {
+		if (codes[index] == chosen || codes[index] == other) {
+			memmove(&codes[index], &codes[index + 1U], (*count - index - 1U) * sizeof(codes[0]));
+			(*count)--;
+			continue;
+		}
+
+		/* The next one. */
+		index++;
+	}
+
+	/* Put first, the list kept within its room. */
+	if (*count > HAND_LOOKED - 2U)
+		*count = HAND_LOOKED - 2U;
+	memmove(&codes[2], &codes[0], *count * sizeof(codes[0]));
+	codes[0] = chosen;
+	codes[1] = other;
+	*count += 2U;
+}
+
+/* Writes a code point as UTF-8 (one to three bytes, as the templates have). */
+static void
+hand_utf8(
+	uint32_t code,
+	char *text,
+	size_t size)
+{
+	unsigned char bytes[4];
+
+	/* Its bytes. */
+	memset(bytes, 0, sizeof(bytes));
+	if (code < 0x80U) {
+		bytes[0] = (unsigned char)code;
+	} else if (code < 0x800U) {
+		bytes[0] = (unsigned char)(0xc0U | (code >> 6));
+		bytes[1] = (unsigned char)(0x80U | (code & 0x3fU));
+	} else {
+		bytes[0] = (unsigned char)(0xe0U | (code >> 12));
+		bytes[1] = (unsigned char)(0x80U | ((code >> 6) & 0x3fU));
+		bytes[2] = (unsigned char)(0x80U | (code & 0x3fU));
+	}
+
+	/* As text. */
+	(void)snprintf(text, size, "%s", (const char *)bytes);
 }

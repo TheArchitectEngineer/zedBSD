@@ -435,7 +435,7 @@ check_hand(void)
 
 	/* No ink: no candidates, empty bounds. */
 	kwl_hand_clear(&ink);
-	kwl_hand_recognize(&ink, &result);
+	kwl_hand_recognize(&ink, 0, &result);
 	kwl_hand_bounds(&ink, rect);
 	check(result.count == 0U && rect[2] == 0 && rect[3] == 0, "no ink: no candidates, no bounds");
 	kept = kwl_hand_add(&ink, 1, 1);
@@ -455,9 +455,10 @@ check_hand(void)
 	kwl_hand_bounds(&ink, rect);
 	check(ink.count == 2U && rect[0] == 5 && rect[1] == 20 && rect[2] == 46 && rect[3] == 71, "bounds of two strokes 5,20 46x71");
 
-	/* The stub: three candidates (あ first) and its note. */
-	kwl_hand_recognize(&ink, &result);
-	check(result.count == 3U && strcmp(result.candidates[0], "あ") == 0 && strcmp(result.note, "認識はまだ") == 0, "stub: あ い う and its note");
+	/* Without the templates (ws165-p003): no candidates, and a note that says so. */
+	(void)kwl_hand_load("/nonexistent/hershey.txt");
+	kwl_hand_recognize(&ink, 0, &result);
+	check(result.count == 0U && strcmp(result.note, "No handwriting data") == 0, "no templates: no candidates and its note");
 
 	/* The limits: a stroke keeps KWL_HAND_POINTS points, the ink KWL_HAND_STROKES strokes. */
 	kwl_hand_clear(&ink);

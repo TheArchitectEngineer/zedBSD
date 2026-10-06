@@ -56,3 +56,6 @@
 | WS165 ws165-p002 | templates の file が無い・壊れている | 手書きの面に「認識の data が無い」と出す（今は読みの失敗で template 0 個） | p003 の compositor の読み、`hand_templates_parse` | 2026-10-06 |
 | WS165 ws165-p002 | Hershey の太さの重ね線が濁点の位置に来る字（ほ・ぼ） | 手本から重ね線を除く（変換の時に近い平行の線をまとめる） | `packages/fonts/hand-hershey/convert.py` | 2026-10-06 |
 | WS165 ws165-p002 | 濁点・半濁点の位置が本体の中・左上に書かれた | 位置に依らず小さな印を探す（今は右上の 45% の範囲） | `wayland/hand-cloud.c` の `strokes_mark` | 2026-10-06 |
+| WS165 ws165-p003（compositor の手書き） | templates の読みが重い・大きい file | 起動の時ではなく別の thread で読む・最初の認識が遅れないようにする（今は最初の認識の時に event loop で読む、228 字で数 ms） | `wayland/keyboard-hand.c` の `kwl_hand_load` | 2026-10-06 |
+| WS165 ws165-p003 | ink が 8,192 点を越える | 点を間引いて全部の線を使う（今は越えた点を捨てる） | `wayland/keyboard-hand.c` の `kwl_hand_recognize` | 2026-10-06 |
+| WS165 ws165-p003 | 「No handwriting data」の note | 日本語の UI で訳す（今は英語のまま） | `wayland/keyboard-hand.c`、`locale/ja/wayland.tr` | 2026-10-06 |

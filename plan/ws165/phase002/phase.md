@@ -4,7 +4,7 @@
 
 Phase ID: `ws165-p002`
 Parent: [WS165](../ws.md)
-Status: in-progress（2026-10-06 P2: data・照合・host 試験を実装。§ 結果の top-1 の判定はユーザーに確かめる）
+Status: cleared（2026-10-06 ユーザー H5「いったんacceptして、追加のフェーズを第2段でやりましょう。」。組を分ける改善は [p005](../phase005/phase.md)）
 Phase disposition: normal
 Queue: Q1 の P2 の列（2026-10-06、WS172 の後）
 
