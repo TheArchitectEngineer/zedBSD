@@ -112,3 +112,4 @@
 | WS120 ws120-p009 | 正方形でない cover、壊れた cover、大きな cover | 切り抜き・知らせ（今は正方形に引き伸ばす、壊れた物は灰色の tile、4096 px まで） | `music/cover.c` | 2026-10-07 |
 | WS120 ws120-p009 | 再生中の decode の失敗、audiod の切断、曲の file の消失、Files から開いた曲が再生できない時 | 理由を出して次へ・再接続（今は失敗の notice だけ、切断は止まる） | `music/play.c`・`main.c` | 2026-10-07 |
 | WS120 ws120-p009 | 検索の field に focus がある時の Space、Previous の 3 秒の規則、Next の連打 | 振る舞いの見直し（今は field が Space を取る、3 秒より後は曲の始めへ） | `music/view.c`・`main.c` | 2026-10-07 |
+| WS169 ws169-p005（Browser の code の入力） | titlebar の「Code NNNN」を押した時に page の欄に keyboard が無い（欄の外を click した後など） | 欄が無い・focus が無い時は clipboard に写して知らせる、または page の最初の code の欄（`autocomplete=one-time-code`）に入れる（今は focus の無い page に key を送り、何も入らない） | `browser/shell/mail.c` の `shell_mail_fill` | 2026-10-07 |
