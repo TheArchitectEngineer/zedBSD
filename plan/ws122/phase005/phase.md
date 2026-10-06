@@ -72,3 +72,26 @@ P2 の調べ（compositor は VK_KHR_display の swapchain だけで出し、cli
   - helper: 切り替えのたびに、その窓の `ZWL CONFIGURE` の大きさの `PRESENTED`（か `FAILED`）を待ってから撮る（10 秒まで）。来なければ step にそう残る。
 - 症状 2（log で見つけた。Esc の後の Alt+Enter → F11 で窓が 1280x800 の floating に、x=12 で戻った）: Esc で window の大きさ 960x600 を送ったが、player がまだ描かないうちに Alt+Enter が来た。`zwl_window_enter_fullscreen` が戻り先を「今の image の大きさ」（まだ全画面の 1280x800）で覚えていた。→ protocol.c: 今の image が出力と同じ大きさで、送った窓の大きさがある時は、送った大きさを戻り先にする。helper は全画面から出た `CONFIGURE` が出力の大きさでないことも確かめる。
 - 確認: wayland・videoplayer の build warning 0、keiland-linux の build warning 0、style-check 0、aat run-host PASS、check-scenarios PASS。QEMU は T1（未実施）。
+
+## 2026-10-06 q802 P2: old の fullscreen mode の調べ（p005b、止めて Q1 へ）
+
+Status（p005b）: 判断待ち（Guardrail「compositor は libvulkan だけ」に当たる。Q1・ユーザーの判断を待つ）
+
+読んだもの: GitHub の `old`（`git fetch origin old`、読むだけ）の削除の commit `64da5e52f`（2026-09-30、ws099-p015）の親の `userland/desktop/wayland/display.c`。
+
+- old の経路: 全画面の窓があると compositor は「fullscreen mode」に入る。VK_KHR_display の swapchain を閉じ（`zwl_compose_output_close`、`ZWL MODE fullscreen switch_ms=`）、kernel の GPU の UAPI を **compositor が直に ioctl** する。`GPU_DISPLAY_CLAIM` で表示の lease を取り、client の buffer の resource（`GPU_RESOURCE_IMPORT` で取った handle）を `GPU_DISPLAY_PRESENT`（`FIFO | BLOB`）で毎 frame 出す（`present_current`）。window mode に戻る時は `zwl_unscan`、swapchain の作り直し（`enter_window_mode`）。そのほかに `GPU_GET_INFO`・`GPU_DISPLAY_QUERY`・`GPU_DISPLAY_MODE`・`GPU_FENCE_QUERY`・`GPU_DISPLAY_RELEASE` も使う。
+- Guardrail（2026-09-30 ユーザー、WS103 で移行済み）: compositor は GPU と表示を libvulkan だけで扱い、`include/uapi/gpu*.h` を ioctl で直に呼ばない。OS に固有の code は `libkeiland-backend-zedbsd/` だけ。old の経路はそのままでは戻せない。Q1 の指示どおりここで止める。
+- 今の表示の道: libvulkan の `wsi-display.c` が swapchain の自分の image を `GPU_DISPLAY_PRESENT`（BLOB）で出している（ioctl は libvulkan の中）。
+
+選択肢（P2 の案。決めるのは Q1・ユーザー）:
+
+| 案 | 中身 | 規則との関係 | 費用の目安 |
+| --- | --- | --- | --- |
+| A | libvulkan に zedBSD の私的な拡張を足す（例 `VK_ZEDBSD_display_direct_image`）。compositor は client の dmabuf を import した VkImage（今の import.c）を、vkQueuePresentKHR の chain で表示の swapchain に「この image をそのまま出す」と渡す。libvulkan の wsi-display.c はその image の resource を `GPU_DISPLAY_PRESENT` する。swapchain は閉じないので、合成への戻りは次の present だけで済む（old の mode switch・作り直しが無い） | compositor は Vulkan だけのまま。libvulkan の API の追加（私的な拡張）が要る | 1〜1.5 LW。Venus（QEMU）では拡張を出さず、今の合成のまま |
+| B | `libkeiland-backend-zedbsd/` に表示の direct の口（`kl_backend_display_scanout` など）を足し、old の ioctl をそこへ移す | OS の code の配置の規則は満たす。「compositor は libvulkan だけ」の例外になる（Guardrail の「最適化にどうしても要る直の ioctl は macro で」の扱い）。swapchain との表示の lease の取り合いを backend と libvulkan の間で調整する必要がある | 1.5 LW 以上 |
+| C | 直の scanout はしない。game mode の全画面は合成のまま、glass の効果を全部外して 1 回の blit だけにする（今の `whole` の描き方にほぼ近い） | 規則に触れない | 0.2 LW。ユーザーの言う「直接の scanout」ではない |
+
+どの案でも共通の設計（判断が出たらこのまま書き足す）:
+- game mode の頼み方: app の明示の要求。標準の `wp_content_type_v1`（content type `video` / `game`）と xdg の set_fullscreen の両方がある時だけ。player は F11・Alt+Enter・double click の全画面でこれを付ける。普通の全画面（Terminal の F11 など）は合成のまま。
+- 端の操作: input は direct の間も compositor が受けるので、端の swipe（解除・WiseView）は今のまま拾える。gesture が始まった frame で合成に戻り、gesture の絵を描く。Esc は app に届く（player は Esc で全画面を出る）。
+- 合成に戻る条件: popup・OSK・通知・App Home・WiseView・電源の dialog・pointer の cursor 以外の overlay が出た時、buffer が出力の大きさでない、形式・modifier が出せない、alpha がある時。log `ZWL SCANOUT direct=1 surface=N` / `direct=0 reason=…`。
