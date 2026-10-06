@@ -105,7 +105,7 @@
  * decision), and where its body starts: just under the system bar.  In
  * logical pixels at the default DPI; DPI scaling multiplies it here.
  */
-#define KWL_GLASS_DOCK_PAD	4
+#define KWL_GLASS_DOCK_PAD	8
 #define KWL_GLASS_DOCK_TOP	(KWL_GLASS_BAR + KWL_GLASS_DOCK_PAD)
 #define KWL_BUTTON_LEFT		0x110U
 #define KWL_TITLE_MAX		64U

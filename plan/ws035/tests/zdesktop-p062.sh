@@ -9,7 +9,7 @@
 # fits in zdesktop's 400 ms.
 #  1. floating.png: both windows floating.
 #  2. A double click on m's title bar docks it: zdesktop logs the dock, m is told
-#     1272x748 (4 pixels in from every side, ws099-p038), the animation draws frames, and m fills the output under the
+#     1264x740 (8 pixels in from every side, ws099-p038), the animation draws frames, and m fills the output under the
 #     bar (docked.png, and docked-hover.png with the pointer on restore).
 #  3. A double click on the title in the bar brings m back where it was
 #     (told 640x460).
@@ -69,7 +69,7 @@ pointer move $((mx + 150)) $title_y sleep 400 down sleep 60 up sleep 60 down sle
 check "$out/docking.png" >/dev/null
 sleep 3
 expect_log "GLASS dock surface=$surface via=double-click"
-expect_log "CONFIGURE client=$zc2 surface=$surface serial=[0-9]* width=1272 height=748"
+expect_log "CONFIGURE client=$zc2 surface=$surface serial=[0-9]* width=1264 height=740"
 frames=$(count "GLASS anim surface=$surface docking=1")
 echo "animation frames while docking: $frames"
 [ "$frames" -ge 1 ] || status=1

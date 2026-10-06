@@ -100,7 +100,7 @@ guest 'for p in $(ps -A -o pid,args | grep "[p]opup-probe" | awk "{print \$1}");
 double_click $((tx + tw / 2)) $((ty - 8 - 22))
 expect_log /tmp/zdesktop.log 'ZWL GLASS dock surface=[0-9]+ via='
 set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) w=\([0-9]*\) h=\([0-9]*\).*/\1 \2 \3 \4/p')
-dx=${1:-4}; dy=${2:-48}; dw=${3:-1272}; dh=${4:-748}
+dx=${1:-8}; dy=${2:-52}; dw=${3:-1264}; dh=${4:-740}
 echo "docked at $dx,$dy size ${dw}x$dh"
 sleep 1.5
 pointer move 1200 400 sleep 600
