@@ -35,10 +35,10 @@
 #             qwerty-plan.py), saved by Ctrl+S: the file is the text; Shift twice locks it (ABC typed as capitals);
 #             an arrow key moves the caret (qwerty.png, qwerty-symbols.png)
 #   hand      (p008) the QWERTY panel's band button (1144,472 84x28) opens the handwriting face (writing area 962x288 at
-#             6,506): two strokes of the pointer and one of a finger are drawn (hand.png), the stub recognizes them
-#             600 ms after the last (3 candidates, あ first, its note); every frame that draws new points does so within
-#             17 ms of their input (the lag logged by zdesktop); the candidate あ is sent to ime-probe; clear empties the
-#             ink; the band button goes back to the keys
+#             6,506): two strokes of the pointer and one of a finger are drawn (hand.png), the recognizer (ws165-p003,
+#             the hand-hershey templates) gives 1 to 4 candidates 600 ms after the last, without a note; every frame that
+#             draws new points does so within one frame of their input (the lag logged by zdesktop); the first
+#             candidate, whatever it is, is sent to ime-probe; clear empties the ink; the band button goes back to the keys
 #   extra     (p020) the QWERTY panel's extra keys' row: in Text Editor "bc", Home, "a", End, "|" (from the extra
 #             row), Tab: "abc|<tab>"; then Ctrl (held for one key) and a select all, "z" replaces it: the file is "z";
 #             Alt then Esc lets go of Alt with the key (extra.png)
@@ -508,10 +508,12 @@ hold 1500'
 		worst=$(sed -n 's/.*lag_ms=\([0-9]*\).*/\1/p' "$out/hand-frames.txt" | sort -n | tail -1)
 		gaps=$(sed -n 's/.*gap_ms=\([0-9]*\).*/\1/p' "$out/hand-frames.txt" | sort -n | awk '{ a[NR] = $1 } END { print a[int((NR + 1) / 2)] }')
 		[ "${frames:-0}" -ge 5 ] && [ "${late:-1}" = 0 ] && echo "hand: $frames frames, each within one frame of its input (worst lag $worst ms, median frame interval $gaps ms) ok" || { echo "hand: $frames frames, $late late (worst lag $worst ms, median interval $gaps ms) MISSING"; status=1; }
-		# The candidate あ (1010,591) to ime-probe; the ink is cleared.
+		# The first candidate (1010,591), whatever the recognizer made of the strokes, to ime-probe; the ink is cleared.
+		first=$(sed -n 's/.*KWL OSK hand recognize strokes=3 .* first=\([^ ]*\) note=$/\1/p' "$out/osk-now.txt" | tail -1)
 		pointer move 1022 577 sleep 200 down sleep 60 up sleep 800
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-hand.log"
-		grep -qF 'PROBE TEXT text=あ' "$out/ime-probe-hand.log" && echo "hand: あ sent ok" || { echo "hand: あ MISSING"; status=1; }
+		[ -n "$first" ] && grep -qF "PROBE TEXT text=$first" "$out/ime-probe-hand.log" && echo "hand: the first candidate $first sent ok" ||
+			{ echo "hand: the first candidate ($first) MISSING"; status=1; }
 		# A stroke, then clear (1035,668): no recognition follows.
 		recognized=$(count 'KWL OSK hand recognize')
 		pointer move 300 600 sleep 150 down sleep 16 move 330 610 sleep 16 move 360 620 sleep 60 up sleep 150
