@@ -2,7 +2,7 @@
 
 # ws095-p006: Terminal の text-input と CJK の font
 
-Status: test-wait（q804、P1、2026-10-06 実装済み・T1 の試験待ち。下の「q804（P1）」）
+Status: cleared（2026-10-06 Q1 判定: QEMU の T1 PASS（T1-245・T1-240b・T1-242/246）。実機は UAT）
 Disposition: normal
 Parent: [WS095](../ws.md)
 Queue: q804（Q1 の beta1/2 の残りの Queue、P1）
