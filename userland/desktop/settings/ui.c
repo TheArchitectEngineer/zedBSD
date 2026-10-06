@@ -18,6 +18,7 @@
 
 #include "settings.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +34,14 @@
 #define UI_MARGIN		12
 #define UI_GAP			10
 #define UI_GLASS_GAP		8
+
+/*
+ * A touch pad's scrolling that flies on (BUG-211, plan/ws090/phase017): its
+ * velocity falls by e every UI_KINETIC_TAU_MS milliseconds, and it stops
+ * below UI_KINETIC_SLOWEST pixels a second (or at a pane's end).
+ */
+#define UI_KINETIC_TAU_MS	325.0
+#define UI_KINETIC_SLOWEST	20.0
 
 /* The list of pages' width, narrower in a narrow window, and the width that counts as narrow. */
 #define UI_SIDEBAR_WIDTH	248
@@ -77,6 +86,9 @@ static void ui_touch_move(struct se_app *app, const struct se_event *event);
 static int ui_touch_release(struct se_app *app);
 static const char *ui_touch_pane_word(unsigned pane);
 static void ui_scroll(struct se_app *app, const struct se_event *event);
+static void ui_scroll_stop(struct se_app *app, const struct se_event *event);
+static int ui_scroll_by(struct se_app *app, int pane, int amount);
+static void ui_kinetic_step(struct se_app *app, uint64_t now);
 static void ui_key(struct se_app *app, const struct se_event *event);
 static void ui_step_page(struct se_app *app, int direction);
 static void ui_scroll_page(struct se_app *app, int amount);
@@ -139,6 +151,9 @@ se_ui_event(
 		break;
 	case SE_EVENT_AXIS:
 		ui_scroll(app, event);
+		break;
+	case SE_EVENT_AXIS_STOP:
+		ui_scroll_stop(app, event);
 		break;
 	case SE_EVENT_LEAVE:
 		/* Nothing is lit once the pointer is gone. */
@@ -224,6 +239,9 @@ se_ui_tick(
 	uint64_t now)
 {
 	uint64_t minute;
+
+	/* A touch pad's scrolling that flies on moves (BUG-211). */
+	ui_kinetic_step(app, now);
 
 	/* The minute now, and the time for whatever is drawn. */
 	minute = now / 60000U;
@@ -1101,29 +1119,155 @@ ui_touch_pane_word(
 	return "page";
 }
 
-/* Scrolls the pane under the pointer by the wheel. */
+/*
+ * Scrolls the pane under the pointer by the wheel.  A touch pad's fingers
+ * (BUG-211) hold the pane they began on until they lift, their moves kept
+ * for their velocity; a wheel ends a flight.
+ */
 static void
 ui_scroll(
 	struct se_app *app,
 	const struct se_event *event)
 {
-	const struct fm_rect *pane;
+	const struct fm_rect *list;
+	int pane;
+
+	/* The list when the pointer is over it, else the page. */
+	list = &app->layout.sidebar;
+	pane = SE_KINETIC_PAGE;
+	if (event->x >= list->x &&
+	    event->x < list->x + list->width &&
+	    event->y >= list->y &&
+	    event->y < list->y + list->height)
+		pane = SE_KINETIC_SIDEBAR;
+
+	/* The fingers keep the pane they began on, and their track; a wheel stops what flies. */
+	if (event->source == SE_SOURCE_FINGER) {
+		if (app->kinetic.holding == 0) {
+			app->kinetic.holding = 1;
+			app->kinetic.pane = pane;
+			kl_axis_track_reset(&app->kinetic.track);
+		}
+		pane = app->kinetic.pane;
+		kl_axis_track_add(&app->kinetic.track, 0.0, (double)event->scroll, event->time * 1000U);
+	} else {
+		app->kinetic.holding = 0;
+	}
+	app->kinetic.flying = 0;
+
+	/* The pane moves at once. */
+	(void)ui_scroll_by(app, pane, event->scroll);
+}
+
+/*
+ * The touch pad's fingers lift (BUG-211): the pane they held flies on at
+ * their velocity, slowing as libkeiland's scrolls do, unless they rested.
+ */
+static void
+ui_scroll_stop(
+	struct se_app *app,
+	const struct se_event *event)
+{
+	double vx;
+	double vy;
+
+	/* Only a pane the fingers hold. */
+	if (app->kinetic.holding == 0)
+		return;
+	app->kinetic.holding = 0;
+
+	/* Their velocity; too slow a one throws nothing. */
+	kl_axis_track_velocity(&app->kinetic.track, event->time * 1000U, &vx, &vy);
+	if (fabs(vy) < UI_KINETIC_SLOWEST)
+		return;
+
+	/* The flight, from now. */
+	app->kinetic.flying = 1;
+	app->kinetic.velocity = vy;
+	app->kinetic.remainder = 0.0;
+	app->kinetic.last_ms = event->time;
+	app->dirty = 1;
+	se_log("KINETIC start pane=%s velocity=%.0f", app->kinetic.pane == SE_KINETIC_SIDEBAR ? "list" : "page", vy);
+}
+
+/*
+ * Scrolls a pane (SE_KINETIC_PAGE or SE_KINETIC_SIDEBAR) by an amount
+ * within its ends; returns 1 when it moved.
+ */
+static int
+ui_scroll_by(
+	struct se_app *app,
+	int pane,
+	int amount)
+{
+	int before;
 	int limit;
 
-	/* The list scrolls when the pointer is over it. */
-	pane = &app->layout.sidebar;
-	if (event->x >= pane->x &&
-	    event->x < pane->x + pane->width &&
-	    event->y >= pane->y &&
-	    event->y < pane->y + pane->height) {
-		limit = app->sidebar_extent - pane->height;
-		app->sidebar_scroll = ui_clamp(app->sidebar_scroll + event->scroll, 0, limit);
-		app->dirty = 1;
-		return;
+	/* The page. */
+	if (pane != SE_KINETIC_SIDEBAR) {
+		before = app->page_scroll;
+		ui_scroll_page(app, amount);
+		if (app->page_scroll == before)
+			return 0;
+		return 1;
 	}
 
-	/* Anywhere else the page scrolls. */
-	ui_scroll_page(app, event->scroll);
+	/* The list. */
+	before = app->sidebar_scroll;
+	limit = app->sidebar_extent - app->layout.sidebar.height;
+	app->sidebar_scroll = ui_clamp(app->sidebar_scroll + amount, 0, limit);
+	if (app->sidebar_scroll == before)
+		return 0;
+	app->dirty = 1;
+
+	/* Succeeded: the list moved. */
+	return 1;
+}
+
+/*
+ * Moves a flight on to a time (BUG-211): the velocity falls by e every
+ * UI_KINETIC_TAU_MS, the distance being its exact integral over the step;
+ * the flight ends when it is slower than UI_KINETIC_SLOWEST or the pane
+ * reaches an end.  Each step asks for a frame.
+ */
+static void
+ui_kinetic_step(
+	struct se_app *app,
+	uint64_t now)
+{
+	double seconds;
+	double decay;
+	double distance;
+	int whole;
+	int moved;
+
+	/* Nothing flies, or no time passed. */
+	if (app->kinetic.flying == 0)
+		return;
+	app->dirty = 1;
+	if (now <= app->kinetic.last_ms)
+		return;
+
+	/* The distance of the step and the velocity after it. */
+	seconds = (double)(now - app->kinetic.last_ms) / 1000.0;
+	app->kinetic.last_ms = now;
+	decay = exp(-seconds * 1000.0 / UI_KINETIC_TAU_MS);
+	distance = app->kinetic.velocity * (UI_KINETIC_TAU_MS / 1000.0) * (1.0 - decay);
+	app->kinetic.velocity *= decay;
+
+	/* The whole pixels of it, the fraction kept. */
+	app->kinetic.remainder += distance;
+	whole = (int)app->kinetic.remainder;
+	app->kinetic.remainder -= (double)whole;
+	moved = 1;
+	if (whole != 0)
+		moved = ui_scroll_by(app, app->kinetic.pane, whole);
+
+	/* An end reached, or too slow: the flight is over. */
+	if (moved == 0 || fabs(app->kinetic.velocity) < UI_KINETIC_SLOWEST) {
+		app->kinetic.flying = 0;
+		se_log("KINETIC stop pane=%s", app->kinetic.pane == SE_KINETIC_SIDEBAR ? "list" : "page");
+	}
 }
 
 /* Carries out a key: the history, the pages in the list's order, the page's scroll, and closing. */

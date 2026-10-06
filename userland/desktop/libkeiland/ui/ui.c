@@ -158,6 +158,14 @@ struct kl_ui {
 	/* The time of the frame being drawn (kl_ui_begin's). */
 	uint64_t now_us;
 
+	/*
+	 * The scroll a touch pad's two fingers hold (KL_VERSION 40, BUG-211):
+	 * the one under the pointer when they began, until they lift.  It is
+	 * the application's; it is looked for among the frame's scrolls before
+	 * each use, as the application may have let it go.  NULL when none.
+	 */
+	struct kl_scroll *axis_scroll;
+
 	/* The keyboard inset last acted on (ui_inset's serial, ws102-p015). */
 	unsigned inset_serial;
 
@@ -203,6 +211,7 @@ static struct {
 } ui_inset;
 
 static const struct ui_record *ui_find(const struct kl_ui *ui, double x, double y, int regions);
+static int ui_scroll_shown(const struct kl_ui *ui, const struct kl_scroll *scroll);
 static int ui_inside(const struct kl_rect *rect, double x, double y);
 static int ui_same(const struct ui_key *key, uint32_t id, uint32_t index);
 static int ui_target(const struct ui_key *target, uint32_t id, uint32_t index);
@@ -418,6 +427,73 @@ kl_ui_wheel(
 		return 0;
 	event->dx = dx;
 	event->dy = dy;
+	return 1;
+}
+
+/*
+ * Takes a window's scrolling input (KL_VERSION 40, BUG-211): a wheel's
+ * axis event glides the scroll under the pointer as kl_ui_wheel does; a
+ * touch pad's fingers hold the scroll under the pointer when they began
+ * and move it at once, and their end (KL_WINDOW_AXIS_STOP) lets it fly on.
+ * Scrolling with nothing to scroll is the application's wheel.  Returns 1
+ * when the input was taken (or queued for the application).
+ */
+int
+kl_ui_axis(
+	struct kl_ui *ui,
+	const struct kl_window_event *event)
+{
+	const struct ui_record *record;
+	struct kl_scroll *scroll;
+	int shown;
+	int taken;
+
+	/* The fingers' end: the scroll they held flies on, if the frame still has it. */
+	if (event->kind == KL_WINDOW_AXIS_STOP) {
+		scroll = ui->axis_scroll;
+		ui->axis_scroll = NULL;
+		if (scroll == NULL)
+			return 0;
+		shown = ui_scroll_shown(ui, scroll);
+		if (shown)
+			kl_scroll_axis_stop(scroll, event->time_us);
+		return 1;
+	}
+
+	/* Nothing else but scrolling. */
+	if (event->kind != KL_WINDOW_AXIS)
+		return 0;
+
+	/* A wheel's, or something continuous: the glide under the pointer. */
+	if (event->axis_source != KL_AXIS_SOURCE_FINGER) {
+		taken = kl_ui_wheel(ui, event->dx, event->dy, event->arrival_us);
+		return taken;
+	}
+
+	/* The fingers: the scroll they already hold, while the frame has it, else the one under the pointer. */
+	scroll = ui->axis_scroll;
+	if (scroll != NULL) {
+		shown = ui_scroll_shown(ui, scroll);
+		if (!shown)
+			scroll = NULL;
+	}
+	if (scroll == NULL) {
+		record = ui_find(ui, ui->pointer_x, ui->pointer_y, 1);
+		if (record != NULL)
+			scroll = record->scroll;
+	}
+
+	/* Nothing scrolls there: the application's wheel. */
+	if (scroll == NULL) {
+		taken = kl_ui_wheel(ui, event->dx, event->dy, event->arrival_us);
+		return taken;
+	}
+
+	/* The scroll held and moved at once. */
+	ui->axis_scroll = scroll;
+	kl_scroll_axis(scroll, event->dx, event->dy, KL_AXIS_SOURCE_FINGER, event->time_us);
+
+	/* Succeeded: the fingers' scrolling is taken. */
 	return 1;
 }
 
@@ -1921,4 +1997,22 @@ ui_inset_center(
 	/* Succeeded: the scroll goes there at once. */
 	kl_scroll_move_to(scroll, scroll->x, target, 0, now_us);
 	return 1;
+}
+
+/* Tells whether a scroll is one of the frame on the screen's (an application's scroll may have gone since). */
+static int
+ui_scroll_shown(
+	const struct kl_ui *ui,
+	const struct kl_scroll *scroll)
+{
+	size_t index;
+
+	/* Each record of the frame shown. */
+	for (index = 0; index < ui->shown_count; index++) {
+		if (ui->shown[index].scroll == scroll)
+			return 1;
+	}
+
+	/* Not among them. */
+	return 0;
 }

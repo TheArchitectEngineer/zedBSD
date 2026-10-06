@@ -201,6 +201,9 @@
 		kl_icon_folder;
 		kl_icon_file;
 		kl_icon_tag;
+		kl_axis_track_reset;
+		kl_axis_track_add;
+		kl_axis_track_velocity;
 		kl_scroll_init;
 		kl_scroll_release;
 		kl_scroll_set_size;
@@ -212,6 +215,8 @@
 		kl_scroll_drag;
 		kl_scroll_fling;
 		kl_scroll_cancel;
+		kl_scroll_axis;
+		kl_scroll_axis_stop;
 		kl_scroll_step;
 		kl_scroll_limit_x;
 		kl_scroll_limit_y;
@@ -242,6 +247,7 @@
 		kl_ui_pointer_leave;
 		kl_ui_pointer_button;
 		kl_ui_wheel;
+		kl_ui_axis;
 		kl_ui_touch_down;
 		kl_ui_touch_motion;
 		kl_ui_touch_up;

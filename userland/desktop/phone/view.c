@@ -38,9 +38,13 @@
 #define PH_VIEW_TITLE		96
 #define PH_VIEW_ROW		68
 
-/* The cards on glass: the margin round them, the gap between, their corner. */
-#define PH_VIEW_MARGIN		12
-#define PH_VIEW_GAP		10
+/*
+ * The cards on glass: the margin round them, the gap between, their corner.
+ * As Settings has them (BUG-218): no margin, the window's own edges and the
+ * titlebar's gap being the space round them, and the titlebar's gap between.
+ */
+#define PH_VIEW_MARGIN		0
+#define PH_VIEW_GAP		8
 #define PH_VIEW_CARD_RADIUS	16.0f
 
 /* The timeline's header, the field's band, a bubble's margins and corner, and its widest share. */

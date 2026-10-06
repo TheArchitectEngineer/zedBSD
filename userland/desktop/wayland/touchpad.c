@@ -150,7 +150,7 @@ static int64_t gesture_along(uint32_t gesture, int64_t dx_um, int64_t dy_um);
 static void push_gesture(struct zwl_touchpad_actions *actions, uint32_t gesture, uint32_t phase, int64_t travel_um, int64_t speed);
 static void push_button(struct zwl_touchpad_actions *actions, uint32_t button, uint32_t pressed);
 static void push_motion(struct zwl_touchpad_actions *actions, int32_t dx, int32_t dy);
-static void push_scroll(struct zwl_touchpad_actions *actions, int32_t vertical, int32_t horizontal);
+static void push_scroll(struct zwl_touchpad_actions *actions, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units);
 static int64_t magnitude(int64_t value);
 
 /*
@@ -496,6 +496,8 @@ touch_begin(
 		pad->touch_clicked = 1;
 	pad->scroll_travel_x_um = 0;
 	pad->scroll_travel_y_um = 0;
+	pad->scroll_units_x = 0;
+	pad->scroll_units_y = 0;
 	pad->scrolled = 0U;
 
 	/* No gesture yet; two fingers that came at once start deciding, with the edges they touched. */
@@ -619,6 +621,8 @@ touch_end(
 	/* The scrolling's remainder goes with the touch, and a touch that scrolled says it has lifted. */
 	pad->scroll_travel_x_um = 0;
 	pad->scroll_travel_y_um = 0;
+	pad->scroll_units_x = 0;
+	pad->scroll_units_y = 0;
 	swipe_finish(pad, actions);
 
 	/* A gesture ends with its fingers. */
@@ -725,8 +729,12 @@ pointer_motion(
 }
 
 /*
- * Scrolls by two fingers' motion: one notch for every SCROLL_NOTCH_UM, the
- * content following the fingers when the scrolling is natural.
+ * Scrolls by two fingers' motion: one notch for every SCROLL_NOTCH_UM, and
+ * the same travel in the wheel's units, ZWL_TOUCHPAD_NOTCH_UNITS a notch
+ * (BUG-218: a client hears the fingers at once and smoothly, not a notch
+ * of 2.5 mm later); the content follows the fingers when the scrolling is
+ * natural.  The notches stay for the desktop's own uses of the wheel (App
+ * Home's pages, the volume, the tabs).
  */
 static void
 scroll(
@@ -737,10 +745,14 @@ scroll(
 {
 	int64_t vertical;
 	int64_t horizontal;
+	int64_t vertical_units;
+	int64_t horizontal_units;
 
 	/* The fingers' travel, with what earlier reports left over; the touch has scrolled. */
 	pad->scroll_travel_x_um += dx_um;
 	pad->scroll_travel_y_um += dy_um;
+	pad->scroll_units_x += dx_um * ZWL_TOUCHPAD_NOTCH_UNITS;
+	pad->scroll_units_y += dy_um * ZWL_TOUCHPAD_NOTCH_UNITS;
 	pad->scrolled = 1U;
 
 	/* Whole notches; the rest waits. */
@@ -749,15 +761,23 @@ scroll(
 	pad->scroll_travel_y_um -= vertical * SCROLL_NOTCH_UM;
 	pad->scroll_travel_x_um -= horizontal * SCROLL_NOTCH_UM;
 
+	/* Whole units; the rest waits too. */
+	vertical_units = pad->scroll_units_y / SCROLL_NOTCH_UM;
+	horizontal_units = pad->scroll_units_x / SCROLL_NOTCH_UM;
+	pad->scroll_units_y -= vertical_units * SCROLL_NOTCH_UM;
+	pad->scroll_units_x -= horizontal_units * SCROLL_NOTCH_UM;
+
 	/* Natural scrolling moves the content with the fingers: the other way from the fingers' direction. */
 	if (pad->natural_scroll) {
 		vertical = -vertical;
 		horizontal = -horizontal;
+		vertical_units = -vertical_units;
+		horizontal_units = -horizontal_units;
 	}
 
-	/* The notches, when there are any. */
-	if (vertical != 0 || horizontal != 0)
-		push_scroll(actions, (int32_t)vertical, (int32_t)horizontal);
+	/* The scrolling, when there is any. */
+	if (vertical_units != 0 || horizontal_units != 0)
+		push_scroll(actions, (int32_t)vertical, (int32_t)horizontal, (int32_t)vertical_units, (int32_t)horizontal_units);
 }
 
 /*
@@ -1117,7 +1137,9 @@ static void
 push_scroll(
 	struct zwl_touchpad_actions *actions,
 	int32_t vertical,
-	int32_t horizontal)
+	int32_t horizontal,
+	int32_t vertical_units,
+	int32_t horizontal_units)
 {
 	struct zwl_touchpad_action *action;
 
@@ -1131,6 +1153,8 @@ push_scroll(
 	action->kind = ZWL_TOUCHPAD_SCROLL;
 	action->vertical = vertical;
 	action->horizontal = horizontal;
+	action->vertical_units = vertical_units;
+	action->horizontal_units = horizontal_units;
 	actions->count++;
 }
 
