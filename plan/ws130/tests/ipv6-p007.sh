@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws130-p007: dhcpc -6 on a running zedBSD guest of plan/ws130/tests/config-amd64-ipv6.mk (with p006's networkd), its USB
 # network adapter on QEMU's user network, whose DHCPv6 answers only Information-Request (its DNS server fec0::3).
-#  1. dhcpc -6 -i IF: exit 0, "dhcpc: IF: dns fec0::3" and "DHCPv6 information renew 86400" (no refresh time given).
+#  1. dhcpc -6 -i -v IF: exit 0, "dhcpc: IF: dns fec0::3" and "DHCPv6 information renew 86400" (no refresh time given).
+#     The user network's packets meanwhile are kept in OUTDIR/dhcp6.pcap (QMP filter-dump on net0).
 #  2. /var/db/dhcpc/duid: 18 bytes beginning 00 04 (a DUID-UUID); /var/db/dhcpc/IF.dhcp6: "mode stateless".
 #  3. /etc/resolv.conf: a "nameserver fec0::3" line (from the RDNSS or DHCPv6), recorded.
 #  4. dhcpc -6 -i IF again: the same DUID.
@@ -28,8 +29,14 @@ iface=$(guest "ifconfig -a | sed -n 's/^\([a-z]*[0-9]*\): flags=.*UP.*/\1/p' | g
 echo "interface: $iface"
 guest 'sleep 5; echo waited' >/dev/null
 
-# 1. The information.
-guest "dhcpc -6 -i $iface; echo exit=\$?" > "$out/information.txt"
+# 1. The information, with -v, the user network's traffic meanwhile in dhcp6.pcap (QEMU's filter-dump by QMP).
+monitor=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["monitor"])' \
+    "${GUEST_RUNTIME:-build/guest}/session.json" 2>/dev/null)
+pcap=$(realpath "$out")/dhcp6.pcap
+[ -S "$monitor" ] && python3 plan/tools/qmp.py "$monitor" object-add \
+    "{\"qom-type\":\"filter-dump\",\"id\":\"p007dump\",\"netdev\":\"net0\",\"file\":\"$pcap\"}" >/dev/null
+guest "dhcpc -6 -i -v $iface; echo exit=\$?" > "$out/information.txt"
+[ -S "$monitor" ] && python3 plan/tools/qmp.py "$monitor" object-del '{"id":"p007dump"}' >/dev/null
 cat "$out/information.txt"
 grep -q '^exit=0' "$out/information.txt" && ok "dhcpc -6 -i: exit 0" || bad "dhcpc -6 -i: exit"
 grep -q "^dhcpc: $iface: dns fec0::3" "$out/information.txt" && ok "the DNS server fec0::3" || bad "DNS server"

@@ -27,6 +27,11 @@ Status: test-wait（q832、P1、2026-10-07: 正常系を実装、host の試験 
 
 未実施: QEMU（T1: `ipv6-p006.sh`）、5330 の実機（p008）、規約の見直し（p009）。
 
+## T1-289 の FAIL（2026-10-07）
+
+`the secret`・`stable after a restart`（ほかは ok）。原因: image に `/var/db` が無く、`/var/db/networkd` を作れず秘密を保存できない。networkd は毎回新しい秘密で別の安定な address を作っていた。
+修正: `/var/db` を先に作る（`ipv6.c`、p007 の修正と同じ commit）。再試験は p007 と一緒に。
+
 ## 積み残し
 
 [WS177 backlog-p1](../../ws177/backlog-p1.md) に書いた（DAD の失敗の作り直し、一時的な address の更新、優先の interface だけの既定の route、DHCPv4 の resolv.conf の書き直しで RDNSS が消える、carrier が落ちた時の掃除、M・O の flag での `dhcpc -6` は p007）。

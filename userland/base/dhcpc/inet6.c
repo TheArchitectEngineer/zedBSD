@@ -34,7 +34,8 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Where dhcpc keeps its identifier and each interface's record. */
+/* Where dhcpc keeps its identifier and each interface's record (/var/db made too: images lack it). */
+#define INET6_STATE_PARENT	"/var/db"
 #define INET6_STATE_DIRECTORY	"/var/db/dhcpc"
 #define INET6_DUID_PATH		"/var/db/dhcpc/duid"
 #define INET6_PATH_MAX		64U
@@ -231,6 +232,7 @@ inet6_duid(
 	if (status != 0)
 		return -1;
 	dhcp6_duid_uuid(random, duid);
+	(void)mkdir(INET6_STATE_PARENT, 0755);
 	(void)mkdir(INET6_STATE_DIRECTORY, 0755);
 	descriptor = open(INET6_DUID_PATH, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
 	if (descriptor < 0) {
@@ -330,6 +332,9 @@ inet6_exchange(
 		status = inet6_send(session, packet, length, deadline);
 		if (status != 0)
 			return -1;
+		if (session->verbose)
+			printf("dhcpc: %s: sent type %u xid %06x length %zu\n", session->interface, request->type,
+			    (unsigned)(request->xid & 0x00ffffffU), length);
 
 		/* The answers until the round ends. */
 		round_end = netutil_monotonic_us() + round;
@@ -340,6 +345,9 @@ inet6_exchange(
 			if (received < 0)
 				break;
 			status = dhcp6_parse(packet, (size_t)received, request->xid, &session->client, &answer);
+			if (session->verbose)
+				printf("dhcpc: %s: received type %u length %zd %s\n", session->interface, packet[0], received,
+				    status == 0 ? "read" : "not ours");
 			if (status != 0 || answer.type != expected)
 				continue;
 			if (!collect) {
@@ -449,6 +457,9 @@ inet6_receive(
 			return -1;
 		if (source.sin6_family == AF_INET6 && source.sin6_port == htons(DHCP6_SERVER_PORT))
 			return received;
+		if (session->verbose)
+			printf("dhcpc: %s: passed over a datagram from port %u\n", session->interface,
+			    (unsigned)ntohs(source.sin6_port));
 	}
 }
 
@@ -697,6 +708,7 @@ inet6_record(
 	}
 
 	/* Succeeded when it is in place. */
+	(void)mkdir(INET6_STATE_PARENT, 0755);
 	(void)mkdir(INET6_STATE_DIRECTORY, 0755);
 	return inet6_replace(path, text);
 }
