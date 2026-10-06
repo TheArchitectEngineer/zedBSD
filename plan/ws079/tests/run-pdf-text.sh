@@ -35,6 +35,10 @@
 set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws079-p007-host
+# Each run gets a new directory behind the fixed name (2026-10-06 user: deleting is Q1's step, so this script removes
+# nothing; plan/tools/q1-clean.sh removes the old runs).
+. plan/tools/fresh-out.sh
+fresh_out "$out"
 cc=${CC:-cc}
 iterations=${1:-300}
 mkdir -p "$out/include" "$out/fonts" "$out/real"
@@ -136,7 +140,6 @@ for entry in text-simple:embedded text-cid:embedded text-std14:substitute shadin
 	doc=${entry%%:*}
 	class=${entry#*:}
 	qpdf --check "$out/$doc.pdf" > "$out/qpdf-$doc.txt" 2>&1 || { echo "qpdf: $doc"; cat "$out/qpdf-$doc.txt"; status=1; }
-	rm -f "$out/$doc"-100-*.ppm
 	render_three "$out/$doc.pdf" "$out/$doc-100" 100
 	grep -h "^page" "$out/$doc-100-plain.log" | sed "s|^|$doc: |"
 	pages=$(grep -c "^page" "$out/$doc-100-plain.log")
@@ -154,7 +157,6 @@ for doc in text-simple text-cid text-std14 shading filters programs; do
 	python3 -c "import sys; d=open(sys.argv[1],'rb').read(); i=d.rindex(b'startxref'); open(sys.argv[2],'wb').write(d[:i]+b'startxref\n1\n%%EOF\n')" \
 	    "$out/$doc.pdf" "$out/$doc-broken.pdf"
 	for copy in objstm broken; do
-		rm -f "$out/$doc-$copy"-*.ppm
 		"$render" render "$out/$doc-$copy.pdf" "$out/$doc-$copy" 100 > "$out/$doc-$copy.log"
 		for picture in "$out/$doc-100-plain"-*.ppm; do
 			cmp "$picture" "$out/$doc-$copy-${picture##*-}" || { echo "$copy $doc: pixels differ"; status=1; }
@@ -176,7 +178,6 @@ for doc in text-simple programs; do
 	qpdf --encrypt --user-password= --owner-password=owner --bits=256 -- --object-streams=generate "$out/$doc.pdf" \
 	    "$out/crypt/$doc-aes-256-objstm.pdf"
 	for kind in rc4-40 rc4-128 aes-128 aes-128-meta aes-256-r5 aes-256 aes-256-objstm; do
-		rm -f "$out/crypt/$doc-$kind"-*.ppm
 		for variant in plain asan ubsan; do
 			"$out/host-pdf-render-$variant" render "$out/crypt/$doc-$kind.pdf" "$out/crypt/$doc-$kind-$variant" 100 > /dev/null ||
 			    { echo "encrypted $doc $kind: $variant failed"; status=1; }
@@ -211,7 +212,6 @@ for kind in rc4-40 rc4-128 aes-128 aes-256-r5 aes-256; do
 	qpdf $options "$out/programs.pdf" "$out/crypt/programs-pw-$kind.pdf"
 	for password in secret owner; do
 		for variant in plain asan ubsan; do
-			rm -f "$out/crypt/pw-$kind-$variant"-*.ppm
 			"$out/host-pdf-render-$variant" renderpassword "$out/crypt/programs-pw-$kind.pdf" "$password" "$out/crypt/pw-$kind-$variant" 100 \
 			    > /dev/null || { echo "password $kind $password: $variant failed"; status=1; }
 			for picture in "$out/programs-100-plain"-*.ppm; do
@@ -236,7 +236,6 @@ qpdf --encrypt --user-password="pässwörd" --owner-password="öwner" --bits=256
 for entry in "long-256:$long" "long-256:$long, the owner's" "long-128:$long" "long-128:owner $long" "utf8:pässwörd" "utf8:öwner"; do
 	file=${entry%%:*}
 	password=${entry#*:}
-	rm -f "$out/crypt/pw-$file"-*.ppm
 	"$render" renderpassword "$out/crypt/programs-pw-$file.pdf" "$password" "$out/crypt/pw-$file" 100 > /dev/null ||
 	    { echo "password $file [$password]: failed"; status=1; }
 	for picture in "$out/programs-100-plain"-*.ppm; do
@@ -257,7 +256,6 @@ for file in /usr/share/doc/quilt/quilt.pdf /usr/share/doc/shared-mime-info/share
 done
 for document in "$out"/real/*.pdf; do
 	name=$(basename "$document" .pdf)
-	rm -f "$out/real/$name"-80-*.ppm
 	start=$(date +%s.%N)
 	render_three "$document" "$out/real/$name-80" 80
 	end=$(date +%s.%N)

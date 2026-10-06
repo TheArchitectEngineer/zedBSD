@@ -9,8 +9,9 @@
 set -u
 cd "$(dirname -- "$0")/../../../.."
 here=plan/tools/aat/tests
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+tmp=$(mktemp -d "$(pwd)/build/tmp/aat-run-host.XXXXXX")
 export AAT_RUN_DIR="$tmp/run" AAT_STATE="$tmp/state" AAT_LOG="$tmp/session.log" FAKE_AAT_DIR="$tmp"
 export AAT_INPUT="python3 $PWD/$here/fake-aat-input.py" AAT_SHOT="python3 $PWD/$here/fake-shot.py {path}"
 aat() { timeout 60 python3 plan/tools/aat/aat --local "$@"; }
