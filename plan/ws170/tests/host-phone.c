@@ -17,7 +17,7 @@
  * view logs are checked: sending and calling report that there is no
  * backend.
  *
- *     host-phone FONT FALLBACK PREFIX
+ *     host-phone FONT FALLBACK PREFIX FOLDER   (the folder of the test data's store, made empty)
  *
  * Writes PREFIX-NAME.ppm for each picture and prints "PASS name" or
  * "FAIL name ..." for each check; exits with 1 when one failed.
@@ -54,6 +54,7 @@ static int test_failures;
 static uint64_t test_now = 1000000U;
 
 int main(int argc, char **argv);
+int test_phone_data_load(const char *folder);
 unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void test_frame(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height);
 static void test_click(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, int x, int y);
@@ -87,8 +88,8 @@ main(
 	int error;
 
 	/* The fonts and the prefix of the pictures. */
-	if (argc != 4) {
-		fprintf(stderr, "usage: host-phone FONT FALLBACK PREFIX\n");
+	if (argc != 5) {
+		fprintf(stderr, "usage: host-phone FONT FALLBACK PREFIX FOLDER\n");
 		return 2;
 	}
 
@@ -127,7 +128,12 @@ main(
 	style.theme = kl_theme_default();
 	style.glass = 0;
 
-	/* The view at the start: the first contact's timeline, at its end. */
+	/* The view at the start: the test data in a store in a folder, the first contact's timeline, at its end. */
+	error = test_phone_data_load(argv[4]);
+	if (error != 0) {
+		fprintf(stderr, "host-phone: store error=%d\n", error);
+		return 2;
+	}
 	error = ph_view_init(&view);
 	if (error != 0)
 		return 2;
@@ -146,18 +152,18 @@ main(
 	(void)test_save(&canvas, argv[3], "ben");
 	test_check("select-ben", "SELECT contact=1");
 
-	/* A message written in the field and sent: there is no backend. */
+	/* A message written in the field and sent: a request for the window. */
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 600, 630);
 	test_type(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, hello, sizeof(hello) / sizeof(hello[0]));
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 952, 630);
 	(void)test_save(&canvas, argv[3], "send");
-	test_check("send", "NOBACKEND action=send contact=1 length=5");
+	test_check("send", "REQUEST action=send contact=1 length=5");
 
-	/* The call button: there is no backend. */
+	/* The call button: a request for the window. */
 	test_now += 5000000U;
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 942, 32);
 	(void)test_save(&canvas, argv[3], "call");
-	test_check("call", "NOBACKEND action=call contact=1");
+	test_check("call", "REQUEST action=call contact=1");
 
 	/* The message field with the keyboard asks for an input method's text, with its caret (BUG-203). */
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 600, 630);
@@ -255,6 +261,17 @@ main(
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 160, 108 + 1 * 68 + 32);
 	(void)test_save_glass(&view, &canvas, argv[3], "glass-ben");
 	test_check("glass-ben", "SELECT contact=1");
+
+	/* "+": the form of a new contact; Save with a number asks the window. */
+	test_now += 5000000U;
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 301, 30);
+	test_check("add-open", "ADD open");
+	kl_field_set(&view.new_name, "Sam Lee");
+	kl_field_set(&view.new_number, "+44 20 5555 0175");
+	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
+	(void)test_save_glass(&view, &canvas, argv[3], "glass-add");
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 333 + 8 + (980 - 333 - 8 - 420) / 2 + 420 - 45, 70 + 24 + 42 + 52 + 17);
+	test_check("add-save", "REQUEST action=save name=7 number=16");
 
 	/* Everything goes. */
 	ph_view_release(&view);

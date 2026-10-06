@@ -43,6 +43,14 @@ Resume point: p011（Terminal・Notes の窓、KUI_VERSION 11）uncleared（2026
 | ws090-p014 | file chooser を親の窓の title bar にぶら下がる sheet にする（2026-09-30 ユーザー、下の節）: compositor が `xdg_toplevel.set_parent` の親を覚え、libkeiui の chooser が sheet を求めた子の窓を、自分の title bar を持たず親の title bar の下に付けて前面に出す（親と一緒に動く・前に出る・最小化する、親への入力は sheet が閉じるまで止める、開閉の動き）。親が無いときは今の独立の窓 | cleared（2026-09-30、P4、QEMU。[phase.md](phase014/phase.md)。Titlebar の mode 3 SHEET（version 3、KEILAND_VERSION 20）、chooser は不透明） | p006 |
 | ws090-p012 | 規約の全文との照合と回帰 | planning | 全て |
 | [ws090-p016](phase016/phase.md) | File Chooser の右の pane の白い背景を左と揃える、または左右とも desktop を少し透かす（2026-10-05 ユーザー） | cleared（2026-10-05 Q1） | p014 |
+| [ws090-p017](phase017/phase.md) | 設計 — libkeiland の慣性 scroll（全ての窓）と開始の遅れ | test-wait（詳細は phase.md） | — |
+| [ws090-p018](phase018/phase.md) | 設計 — pointer の追従の再描画を一定の frame rate に（hover・drag の範囲選択） | test-wait（詳細は phase.md） | — |
+| [ws090-p019](phase019/phase.md) | 慣性 scroll を libkeiland に一本化する（全ての app） | cleared（詳細は phase.md） | — |
+| [ws090-p020](phase020/phase.md) | UI の font を Mahora へ（Regular・Mono・Bold） | test-wait（詳細は phase.md） | — |
+| [ws090-p021](phase021/phase.md) | 全ての app の窓の中身の padding を 0 に（title bar と同じ幅、title bar との間は compositor の定数） | planned（詳細は phase.md） | — |
+| [ws090-p022](phase022/phase.md) | 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ | in-progress（詳細は phase.md） | — |
+| [ws090-p023](phase023/phase.md) | Files・Settings の残りの自前の UI 部品を libkeiland の部品へ | planned（詳細は phase.md） | — |
+| [ws090-p024](phase024/phase.md) | libkeiland に複数選択の list と icon の grid の部品を足し、Files の list・grid の view を置き換える | cleared（詳細は phase.md） | — |
 
 p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。
 

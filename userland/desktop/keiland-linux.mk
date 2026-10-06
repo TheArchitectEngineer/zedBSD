@@ -83,7 +83,7 @@ KEILAND_LINUX_STATIC_OBJS_$(1) := $$(patsubst %.c,$(KEILAND_LINUX_BUILD)/obj/%.o
 $(KEILAND_LINUX_BUILD)/lib/$(2): $$(KEILAND_LINUX_STATIC_OBJS_$(1))
 	@mkdir -p $$(dir $$@)
 	rm -f $$@
-	ar rcs $$@ $$(KEILAND_LINUX_STATIC_OBJS_$(1))
+	$$(AR) rcs $$@ $$(KEILAND_LINUX_STATIC_OBJS_$(1))
 KEILAND_LINUX_ALL += $(KEILAND_LINUX_BUILD)/lib/$(2)
 endef
 

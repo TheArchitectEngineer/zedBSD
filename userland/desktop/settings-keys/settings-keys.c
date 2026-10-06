@@ -28,7 +28,8 @@
  * (kl_tr_language_code).  welcome.done (ws164-p002) is 1 once an account
  * has taken or skipped the Welcome.  mail.codes.browser (ws169-p002) lets
  * the browser hear the arrivals of mail and their sign-in codes, off until
- * the user allows it in Mail.  The one
+ * the user allows it in Mail.  phone.backend (ws170-p004) chooses the
+ * phone's backend: 0 none, 1 loopback (the tests' and a demo's).  The one
  * pointer setting of before (pointer.*) is only read, to be moved to the
  * mouse's (settings.c).  Files keeps the width of each list column the
  * user dragged (BUG-220), in pixels, 0 for the column's own width.
@@ -55,6 +56,7 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "sound.muted", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "sound.available", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_READ_ONLY },
 	{ "mail.codes.browser", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
+	{ "phone.backend", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U },
 	{ "terminal.font-size", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 8, 32, 16, 0U },
 	{ "terminal.theme", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2, 0, 0U },
