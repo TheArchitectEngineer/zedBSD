@@ -1676,6 +1676,10 @@ lan_take_down(
 	char diagnostic[CHILD_OUTPUT_MAX];
 	char *arguments[4];
 
+	/* Says in the log when a cable went, so that what follows (the Wi-Fi taking the default) can be read against it (BUG-212). */
+	fprintf(stderr, "networkd: %s: cable out; taking it down\n", name);
+
+	/* Takes the interface down. */
 	diagnostic[0] = '\0';
 	arguments[0] = (char *)"/sbin/ifconfig";
 	arguments[1] = (char *)name;
@@ -2300,6 +2304,10 @@ process_route_event(
 	action = networkd_managed_wlan_event(&managed_wlan, event);
 	connection = &managed_wlan.connection;
 
+	/* Says in the log when the joined network's link went, which starts a reconnect (BUG-212). */
+	if (action == NETWORKD_WLAN_ACTION_RECOVER)
+		fprintf(stderr, "networkd: %s: Wi-Fi link lost; reconnecting\n", connection->interface);
+
 	/* A manual teardown target survives carrier, overflow and removal events. */
 	if (managed_wlan.state == NETWORKD_WLAN_RETIRING) {
 		if (action == NETWORKD_WLAN_ACTION_RETIRE)
@@ -2462,6 +2470,7 @@ recover_managed_connection(
 	if (succeeded) {
 		networkd_managed_wlan_recovery_complete(&managed_wlan, 1);
 	} else {
+		fprintf(stderr, "networkd: %s: Wi-Fi reconnect failed; searching again\n", interface);
 		if (retire_managed_connection(
 		    NETWORKD_WLAN_AUTO_SEARCHING, 1) != 0)
 			return;

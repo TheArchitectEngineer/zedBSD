@@ -78,6 +78,7 @@ struct system_network_listener {
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 	void (*wired)(void *data, struct wl_proxy *proxy, const char *name, uint32_t mode, const char *router);
+	void (*link_speed)(void *data, struct wl_proxy *proxy, const char *name, uint32_t mbps);
 };
 
 /* The listener of kl_system_audio_v1's events, in their order. */
@@ -126,6 +127,7 @@ static void system_scan_done(void *data, struct wl_proxy *proxy);
 static void system_link(void *data, struct wl_proxy *proxy, const char *name, uint32_t flags, const char *address, const char *netmask, const char *hardware, uint32_t mtu, uint32_t received_high, uint32_t received_low, uint32_t sent_high, uint32_t sent_low);
 static void system_dns(void *data, struct wl_proxy *proxy, const char *address);
 static void system_wired(void *data, struct wl_proxy *proxy, const char *name, uint32_t mode, const char *router);
+static void system_link_speed(void *data, struct wl_proxy *proxy, const char *name, uint32_t mbps);
 static void system_saved_network(void *data, struct wl_proxy *proxy, const char *ssid);
 static void system_details_done(void *data, struct wl_proxy *proxy);
 static void system_network_done(void *data, struct wl_proxy *proxy, uint32_t serial);
@@ -169,7 +171,8 @@ static const struct system_network_listener system_network_listener = {
 	system_details_done,
 	system_network_done,
 	system_result,
-	system_wired
+	system_wired,
+	system_link_speed
 };
 
 /* The sound object's callbacks. */
@@ -1327,6 +1330,23 @@ system_wired(
 	/* Given to the pending interface of that name. */
 	system = data;
 	system_view_wired(&system->view, name, mode, router);
+}
+
+/* Gives an interface of the details its link's speed (BUG-222). */
+static void
+system_link_speed(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *name,
+	uint32_t mbps)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Given to the pending interface of that name. */
+	system = data;
+	system_view_link_speed(&system->view, name, mbps);
 }
 
 /* Keeps Remote Login's state until its done (ws089-p025). */

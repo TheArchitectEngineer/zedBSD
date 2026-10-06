@@ -168,6 +168,37 @@ system_view_wired(
 }
 
 /*
+ * Gives a pending interface of the details its link's speed in Mb/s.
+ *
+ * The speed comes after the interface's link, as its wired configuration
+ * does, and is kept only while those details are being received (BUG-222).
+ */
+void
+system_view_link_speed(
+	struct system_view *view,
+	const char *name,
+	unsigned mbps)
+{
+	struct kl_network_link *link;
+	size_t index;
+	int differs;
+
+	/* Only within details being received. */
+	if (!view->details_open)
+		return;
+
+	/* The pending interface of that name. */
+	for (index = 0; index < view->links_pending_count; index++) {
+		link = &view->links_pending[index];
+		differs = strcmp(link->name, name);
+		if (differs != 0)
+			continue;
+		link->link_mbps = mbps;
+		return;
+	}
+}
+
+/*
  * Adds a DNS server to the pending details.
  */
 void

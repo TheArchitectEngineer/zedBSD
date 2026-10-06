@@ -79,8 +79,8 @@ remain as traceable history and are not new implementation work.
 | [BUG-209](bugs/BUG-209.md) | Alt+Tab の順が bar の icon の並びと合わない（今の app から始め、押す度に 1 つ右へ） | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 実装: bar の並び・今の app から。wrap と Shift は仮定、T1 待ち） | UAT 2026-10-05 夜 | WS142 |
 | [BUG-210](bugs/BUG-210.md) | 5330 の LPSS I2C の BAR0 が 0（firmware が割り当てない）で I2C-HID の touchpad が付かない | reproduced（実機） / **resolved**（2026-10-06 ユーザー「タッチパッドがI2Cで使えるようになりました。2本指でスクロールができています。」）（P1 2026-10-06 修正: 未割り当ての BAR を `_CRS` の窓に置く、実機の確認待ち） | ユーザー 2026-10-06 | WS159 |
 | [BUG-211](bugs/BUG-211.md) | 慣性スクロールが無い（Settings の WiFi の AP の一覧など）。libkeiland の UI の scroll に入れ、どの窓の scroll でも使えるように | reproduced（実機） / tracking | UAT 2026-10-06 | WS090（libkeiland の widget）・WS081 |
-| [BUG-212](bugs/BUG-212.md) | 有線 LAN の接続中に WiFi に接続し、有線を link down すると WiFi が切れ、WiFi を off・on するまで再接続できない | reproduced（実機） / tracking | UAT 2026-10-06 | WS005・WS033（networkd） |
-| [BUG-213](bugs/BUG-213.md) | ue0 の link down の後に interface が残ると Settings に「Status No address」と出るのに IP address も表示される | reproduced（実機） / tracking | UAT 2026-10-06 | WS089（Settings の Network）・networkd |
+| [BUG-212](bugs/BUG-212.md) | 有線 LAN の接続中に WiFi に接続し、有線を link down すると WiFi が切れ、WiFi を off・on するまで再接続できない | reproduced（実機） / tracking（q780: 有線の address の消去と log を追加、本命は AX211 の recovery の見込み、次の UAT の log 待ち・T1 依頼中） | UAT 2026-10-06 | WS005・WS033（networkd）・WS004（AX211） |
+| [BUG-213](bugs/BUG-213.md) | ue0 の link down の後に interface が残ると Settings に「Status No address」と出るのに IP address も表示される | reproduced（実機） / scheduled（q780: 直し e2d6099b、test-wait） | UAT 2026-10-06 | WS089（Settings の Network）・networkd |
 | [BUG-214](bugs/BUG-214.md) | Settings の窓の透明度の slider が初期値 100% なのに実際はもっと透けている（動かして 100% に戻すと不透明） | reproduced（実機） / tracking | UAT 2026-10-06 | WS089・BUG-171 |
 | [BUG-215](bugs/BUG-215.md) | 3 本指の tap の窓の preview で、左右の移動が 2 本指の scroll の量で連続的に切り替わる（swipe 1 回で 1 つにしたい） | reproduced（実機） / tracking | UAT 2026-10-06 | WS142 |
 | [BUG-216](bugs/BUG-216.md) | Wiseview: 画面に「Wiseview」の文字を出さない、「Swipe down to return your window」が効かない、2 本指の左右で focus の app を切り替え 2 本指の下 swipe で決定して戻りたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS142・WS099 |
@@ -89,7 +89,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-219](bugs/BUG-219.md) | title bar の題と menu（File など）が同じ字で、何が押せるか分からない（menu の項に薄い下線） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（title bar）・WS090 |
 | [BUG-220](bugs/BUG-220.md) | Files の詳細の list で Name・Size・Date の列の幅を drag で変えたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS127（Files） |
 | [BUG-221](bugs/BUG-221.md) | Files と desktop の drag の範囲選択が pointer に遅れて追従する（再描画を一定の frame rate（15〜30 fps）に丸める） | reproduced（実機） / tracking | UAT 2026-10-06 | WS127・WS099 |
-| [BUG-222](bugs/BUG-222.md) | ue0 の SCP が約 950 KB/s（約 10 Mbps）。link の速度を Settings に出し、RTL8822BU（実は USB の LAN の device）が 10 Mbps の mode になっていないか確かめる | reproduced（実機） / tracking | UAT 2026-10-06 | WS033（USB LAN）・WS089（Settings の Network） |
+| [BUG-222](bugs/BUG-222.md) | ue0 の SCP が約 950 KB/s（約 10 Mbps）。link の速度を Settings に出し、RTL8822BU（実は USB の LAN の device）が 10 Mbps の mode になっていないか確かめる | reproduced（実機） / scheduled（q780: Settings に link の速度 ab0699b6、test-wait。律速は TCP の受信 window 8 KB の見込み → q786） | UAT 2026-10-06 | WS033（USB LAN）・WS089（Settings の Network） |
 | [BUG-223](bugs/BUG-223.md) | 動画の player で F11・Alt+Enter で全画面（composition を通さない直接の scanout、game mode）にしたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS122（動画の player）・WS099（compositor の direct scanout） |
 | [BUG-224](bugs/BUG-224.md) | touchpad の上端から 2 本指で下に swipe すると、最大化の app を窓の mode にしたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS142・WS099 |
 | [BUG-225](bugs/BUG-225.md) | App Home の表示が約 0.7 秒遅れる。すぐ描ける texture で覆う animation を先に始め、裏で準備して icon を後から浮かび上がらせる 2 層の animation に | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home） |
