@@ -100,8 +100,8 @@ remain as traceable history and are not new implementation work.
 | [BUG-230](bugs/BUG-230.md) | 画面 keyboard を swipe で引き出す時の領域が真っ白な四角。Notes の引き出しと同じ扇形＋文字に | reproduced（実機） / tracking | UAT 2026-10-06 | WS102 |
 | [BUG-231](bugs/BUG-231.md) | 画面の full keyboard で IME の有効の状態を反映し、a で「あ」、漢字の変換もできるように | reproduced（実機） / tracking | UAT 2026-10-06 | WS102・WS095（IME） |
 | [BUG-232](bugs/BUG-232.md) | App Home で起動中の app を選ぶと、新しく起動せずに切り替えたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home）・WS089 p016（単一の instance） |
-| [BUG-233](bugs/BUG-233.md) | Files で動画の file を開くと動画の player でなく Terminal が開くように見える | reproduced（実機） / tracking | UAT 2026-10-06 | WS127（Files の関連付け）・WS122 |
-| [BUG-234](bugs/BUG-234.md) | Files で /bin の file を開くと何も起きないように見える（Terminal が一瞬起動しているのか、起動していないのか分からない） | reproduced（実機） / tracking | UAT 2026-10-06 | WS127（Files の開き方） |
+| [BUG-233](bugs/BUG-233.md) | Files で動画の file を開くと動画の player でなく Terminal が開くように見える | reproduced（実機） / scheduled（q782: x の bit の付いた動画を Terminal で実行していた、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の関連付け）・WS122 |
+| [BUG-234](bugs/BUG-234.md) | Files で /bin の file を開くと何も起きないように見える（Terminal が一瞬起動しているのか、起動していないのか分からない） | reproduced（実機） / scheduled（q782: Run in Terminal の window が終了で消えていた・GUI の app は Open で直接、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の開き方） |
 | [BUG-235](bugs/BUG-235.md) | Log Out の icon で確認なしに session が終わる（desktop を暗くする演出で、終了するか選ばせる） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099・WS131 |
 | [BUG-236](bugs/BUG-236.md) | App Home の見た目: 暗い背景の stage に icon、各 icon に spotlight、光沢の床に icon が反射する effect（montage を作る） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home） |
 | [BUG-237](bugs/BUG-237.md) | app の icon の白抜き（記号）の部分が透過になっていないように見える | reproduced（実機） / tracking | UAT 2026-10-06 | WS128 p012（icon） |
