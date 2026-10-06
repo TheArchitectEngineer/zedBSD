@@ -17,7 +17,7 @@ KEILAND_LINUX_EXTRA_CPPFLAGS ?=
 KEILAND_LINUX_CPPFLAGS := -D_GNU_SOURCE \
 	-DKEILAND_BINDIR='"$(KEILAND_PREFIX)/bin"' -DKEILAND_LIBEXECDIR='"$(KEILAND_PREFIX)/libexec"' \
 	-DKEILAND_DATADIR='"$(KEILAND_PREFIX)/share"' -DKEILAND_SYSCONFDIR='"$(KEILAND_PREFIX)/etc"' \
-	$(KEILAND_LINUX_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/keiland -I$(KEILAND_LINUX_BUILD)/include
+	$(KEILAND_LINUX_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/include -I$(KEILAND_LINUX_BUILD)/include
 # -Wno-format-truncation: gcc's guess that a display string may be cut short (the strings are cut on purpose; D24).
 KEILAND_LINUX_CFLAGS := $(KEILAND_LINUX_OPT) -std=gnu17 -Wall -Wextra -Werror -Wno-format-truncation -fPIC
 KEILAND_LINUX_LDFLAGS := -Wl,-rpath,$(KEILAND_PREFIX)/lib -Wl,--enable-new-dtags \
@@ -141,10 +141,10 @@ KEILAND_LINUX_WALLPAPER_NAMES := Aurora Dawn Lagoon Meadow Twilight
 KEILAND_LINUX_WALLPAPERS := $(addprefix $(KEILAND_LINUX_BUILD)/share/keiland/wallpapers/,$(addsuffix .png,$(KEILAND_LINUX_WALLPAPER_NAMES)))
 $(KEILAND_LINUX_WALLPAPERS) &: userland/desktop/wallpapers/generate.py
 	python3 $< $(KEILAND_LINUX_BUILD)/share/keiland/wallpapers
-KEILAND_LINUX_WALLPAPER ?= userland/desktop/keiland/wallpapers/Birch-Lake.png
+KEILAND_LINUX_WALLPAPER ?= userland/desktop/wallpapers/Birch-Lake.png
 $(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpaper.png,$(KEILAND_LINUX_WALLPAPER)))
 # The compositor's own landscape is offered in the catalogue too (ws099-p019, 2026-10-05 user).
-$(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpapers/Lakeside.png,userland/desktop/keiland/wallpapers/Lakeside.png))
+$(eval $(call KEILAND_LINUX_DATA,share/keiland/wallpapers/Lakeside.png,userland/desktop/wallpapers/Lakeside.png))
 KEILAND_LINUX_ALL += $(KEILAND_LINUX_WALLPAPERS)
 KEILAND_LINUX_INSTALL += $(addprefix share/keiland/wallpapers/,$(addsuffix .png,$(KEILAND_LINUX_WALLPAPER_NAMES)))
 

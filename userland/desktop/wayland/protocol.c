@@ -11,7 +11,7 @@
 
 #include "desktop.h"
 #include "kwl.h"
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 #include "menu.h"
 #include "titlebar.h"
 #include "inset.h"

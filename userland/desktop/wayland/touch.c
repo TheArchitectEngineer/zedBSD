@@ -76,7 +76,7 @@
 #include "extras.h"
 #include "popup.h"
 #include "subsurface.h"
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>

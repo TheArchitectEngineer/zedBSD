@@ -3,7 +3,7 @@ id: os.boot.session-up
 title: 起動の後に kei の desktop が出る
 status: active
 areas: [boot, sessiond, compositor]
-paths: [src/, userland/desktop/sessiond/, userland/desktop/wayland/, userland/desktop/keiland/]
+paths: [src/, userland/desktop/sessiond/, userland/desktop/wayland/, userland/desktop/include/]
 machine: either
 human: none
 since: ws159-p005

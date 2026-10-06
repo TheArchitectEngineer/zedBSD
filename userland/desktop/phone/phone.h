@@ -20,7 +20,7 @@
 #ifndef PHONE_PHONE_H
 #define PHONE_PHONE_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <stddef.h>
 #include <stdint.h>

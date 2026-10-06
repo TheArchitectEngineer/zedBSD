@@ -11,7 +11,7 @@
  * The version of the desktop's system library.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /*
  * Reports the interface version of this library.

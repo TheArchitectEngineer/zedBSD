@@ -14,7 +14,7 @@
  * the window hears nothing, as before.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "ui/internal.h"
 

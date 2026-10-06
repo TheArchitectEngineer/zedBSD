@@ -69,7 +69,7 @@
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <stdio.h>

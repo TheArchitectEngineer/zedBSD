@@ -19,7 +19,7 @@
 
 #include "textedit.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* How many inputs wait for the editor at most. */
 #define TE_WINDOW_EVENTS	256U

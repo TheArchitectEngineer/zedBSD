@@ -37,7 +37,7 @@ Queue: なし
    2026-10-01 の時点: Terminal は create・destroy・`set_position`（:132・:479）・`drag`（:271）・`step`（:275）・`set_bounds`（:455、
    `0.0, 0.0, top, 0.0, 1.0, height`: x は動かず、y は `top`（負）〜0、rubber band の幅 1・高さ `grid_height`）・`press`（:483）・`release`（:558・:582）・
    `cancel`（:570）。Notes は同じ組で、`set_bounds`（:975、`0, largest_x, 0, largest_y, width, height`）と `set_position`（:162・:490・:668・:1024・:1074）。
-3. libkeiui に足す（`userland/desktop/libkeiui/scroll.c`・`include/libc/keiui.h`（ws104-p001 の後は `userland/desktop/keiland/keiui.h`）・`exports.map`）:
+3. libkeiui に足す（`userland/desktop/libkeiui/scroll.c`・`include/libc/keiui.h`（ws104-p001 の後は `userland/desktop/include/keiui.h`）・`exports.map`）:
    - `void kui_scroll_set_bounds(struct kui_scroll *scroll, double minimum_x, double maximum_x, double minimum_y, double maximum_y, double band_width, double band_height);`
      （`kui_scroll_set_size` の一般の形。`scroll_bounds()`（scroll.c:550 付近）が今 `keiland_scroller_set_bounds(0, limit_x, 0, limit_y, width, height)` を呼ぶ所を
      この値で呼ぶ。`kui_scroll_limit_*`・`scroll_clamp` も最小の値を見る。`kui_scroll_set_size` は最小 0 のこの関数の呼び出しにする）。

@@ -18,7 +18,7 @@ design.md §4 の拡張 `kl_system_manager_v1`（settings・network・audio・po
 
 1. backend: `kl_backend_peer_uid`（zedBSD は `getpeereid`、`src/libc/openbsd.c:261`。compositor の socket で動くかを最初に確かめる）。device の枠は unsupported。
 2. compositor: `system.c`（global の 25 番、registry で同じ uid の client にだけ見せる（`zwl_ime_global_visible` の仕組み）、snapshot・`done`・`request_id`・`result(applied, saved)`・error の列挙、network の要求は一度に一つ・PROFILES は `save_key` の中、design.md §4.1・§4.2）。`settings-store.c`（`libkeiland/preferences.c` の書式を移す）、`worker.c`（store の書き、`save_key`・`get_saved`・`query_details`、250 ms のまとめ、終了・log out の前の flush）。`volume.c` の記録と `network.c:1164`・`:1283` の同期の読み書きを worker へ。
-3. compositor と libkeiland（D4 の決定）: compositor は libkeiland の link を続けてよい（touch IME の UI と motion のため）。循環を作らない条件（design.md §9 の D4）: compositor は libkeiland の Wayland の client の部分（`kl_system_*`・`kl_app_*`・`kl_window_*`・file chooser・protocol の wrapper）を使わず、拡張の protocol の定数は `userland/desktop/keiland/` の共有の header から取る。`desktop.conf` の store は compositor の中だけ。
+3. compositor と libkeiland（D4 の決定）: compositor は libkeiland の link を続けてよい（touch IME の UI と motion のため）。循環を作らない条件（design.md §9 の D4）: compositor は libkeiland の Wayland の client の部分（`kl_system_*`・`kl_app_*`・`kl_window_*`・file chooser・protocol の wrapper）を使わず、拡張の protocol の定数は `userland/desktop/include/` の共有の header から取る。`desktop.conf` の store は compositor の中だけ。
 4. libkeiland: `system/`（`kl_system_*`、protocol の `wl_interface` の表は static）、exports.map。
 5. 試験（`plan/ws131/tests/`）: host の試験（store の書式・lock・まとめ・flush、protocol の encode と decode、snapshot の途中を見せない、busy）と guest の probe（`kl_system_*` で設定・音量を変える → compositor が記録・別の client に届く・範囲外は invalid・uid の違う client には global が見えない。probe は小さな Wayland の client で、SSH かシリアルで起動し、結果を client の終了の値と guest の file で判定する）。
 
@@ -46,7 +46,7 @@ design.md §4 の拡張 `kl_system_manager_v1`（settings・network・audio・po
 
 ### 実装
 
-- `userland/desktop/keiland/kl-system-protocol.h`: manager の request 2〜5（`get_network`・`get_audio`・`get_power`・`get_devices`）、capability の bit、4 つの interface の opcode と値。
+- `userland/desktop/libkeiland/system/kl-system-protocol.h`: manager の request 2〜5（`get_network`・`get_audio`・`get_power`・`get_devices`）、capability の bit、4 つの interface の opcode と値。
 - `userland/desktop/wayland/system.c`（新しい file）:
   - manager の dispatch（`get_settings` は settings.c へ渡す）と、capabilities 0x1f。
   - object を作ると、最初の state と `done` を送る。変化は「変わった event と `done` 一つ」で送る（network の state と scan も `done` 一つにまとめる）。

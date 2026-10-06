@@ -8,7 +8,7 @@ Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q820（P1）
 依存: p016〜p020・p025・p022 cleared。PnP の部分は WS132 の kernel の通知が main にある時だけ
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
-所有 path: keiland-ime・kuidemo・xserver・probe・その他の残りの改名、`userland/desktop/keiland/`（`keiui.h` の削除、`keiland-ui.h` の `keiland.h` への統合、互換の block の除去）、backend の device 領域、`wayland/system.c` の devices、`libkeiland/system/`、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: `keiui.h` を使う host の試験 13 file（design.md §2.4）、`plan/tools/keiland-os-boundary/`（B5）
+所有 path: keiland-ime・kuidemo・xserver・probe・その他の残りの改名、`userland/desktop/include/`（`keiui.h` の削除、`keiland-ui.h` の `keiland.h` への統合、互換の block の除去）、backend の device 領域、`wayland/system.c` の devices、`libkeiland/system/`、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: `keiui.h` を使う host の試験 13 file（design.md §2.4）、`plan/tools/keiland-os-boundary/`（B5）
 
 ## 目的と結果
 
@@ -53,7 +53,7 @@ Queue: q820（P1）
 - `libkeiland/exports.py` は `keiland.h` だけを読む。`exports.map` の関数の集合は変わらない（差は comment の 1 行）。
 - FreeBSD: `keiland-freebsd.mk` の公開の header の表から `keiland-ui.h`・`keiui.h` を除き、古い install の物を消す一覧（RETIRED、make の規則の rm）に足した。`native-build-audit.py` は `keiland.h` があり `keiui.h`・`keiland-ui.h` が無いことを確かめる。Linux は公開の header を install しない。
 - checker: B5 を足した（FAIL の条件）。C の source の旧名（上の残す名前を除く）と、`#include`・script の複写の `keiui.h`・`keiland-ui.h`。C5 に `keiland-ui.h` を足した。
-- **`userland/desktop/keiland/keiui.h` と `keiland-ui.h` の file の削除は Q1 に依頼**（rm は Q1 の手順、2026-10-06 user）。今は誰も include しないが file が残るので、B5 は keiui.h の行だけで FAIL（削除の後に PASS の見込み）。
+- **`userland/desktop/include/keiui.h` と `keiland-ui.h` の file の削除は Q1 に依頼**（rm は Q1 の手順、2026-10-06 user）。今は誰も include しないが file が残るので、B5 は keiui.h の行だけで FAIL（削除の後に PASS の見込み）。
 
 ### 範囲 3: PnP
 

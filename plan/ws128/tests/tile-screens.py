@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
-WALLPAPER = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers/Birch-Lake.png')
+WALLPAPER = os.path.join(ROOT, 'userland/desktop/wallpapers/Birch-Lake.png')
 APPS_CONF = os.path.join(ROOT, 'userland/desktop/wayland/apps.conf')
 
 WIDTH = 1280

@@ -24,7 +24,7 @@
 
 #include "internal.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <stdlib.h>

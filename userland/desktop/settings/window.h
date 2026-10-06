@@ -21,7 +21,7 @@
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* How many inputs wait for the main loop at most. */
 #define SE_WINDOW_EVENTS	256U

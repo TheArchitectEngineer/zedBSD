@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws135/host-settings}
 mkdir -p "$(dirname "$out")"
 ${CC:-clang} -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -Wdeclaration-after-statement \
-	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -I. -Iuserland/desktop/keiland \
+	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -I. -Iuserland/desktop/include \
 	-Iuserland/desktop/libkeiland plan/tools/settings/host-settings.c userland/desktop/libkeiland/settings-cache.c \
 	userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c -o "$out"
 "$out"

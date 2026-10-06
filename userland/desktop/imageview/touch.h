@@ -23,7 +23,7 @@
 
 #include "imageview.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /*
  * The fingers and what they are doing: the gestures over the image, the

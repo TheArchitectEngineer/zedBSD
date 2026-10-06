@@ -11,9 +11,10 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 out=${1:-$root/build/ws081-p003}
 mkdir -p "$out/include"
 
-# Only <keiland.h> is taken from include/libc: the rest of that directory is
+# Only <keiland/keiland.h> is taken from include/libc: the rest of that directory is
 # zedBSD's C library, which must not stand in for the host's.
-ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+mkdir -p "$out/include/keiland"
+ln -sf "$root/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
 
 cc=${CC:-clang}
 extra=${EXTRA_CFLAGS:-}

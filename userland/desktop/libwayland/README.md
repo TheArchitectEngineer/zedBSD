@@ -2,7 +2,7 @@
 
 `libwayland-client.so` supplies the selected standard client transport for
 Vulkan Wayland WSI and ordinary applications. Public headers live below
-`userland/desktop/keiland/wayland/`; thin `<wayland-client.h>` and
+`userland/desktop/include/wayland/`; thin `<wayland-client.h>` and
 `<xdg-shell-client-protocol.h>` entry headers preserve standard include spelling.
 The base package is `libwayland-client` in `desktop/libwayland`, installed at
 `/lib/libwayland-client.so` with the same SONAME.

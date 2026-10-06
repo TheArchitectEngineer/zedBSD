@@ -41,7 +41,7 @@
 #include "../picture/color-glyph.h"
 #include "../picture/wallpaper.h"
 
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 #include "userland/desktop/paths.h"
 

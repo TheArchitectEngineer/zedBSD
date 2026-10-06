@@ -72,7 +72,7 @@ From an application to the compositor:
 | Layer | What it is | Who uses it | Stability |
 | --- | --- | --- | --- |
 | Applications | Programs with windows: Files, Settings, Terminal, Notes, the browser and others, plus X11 programs through the X server | The user | — |
-| [libkeiland](../../userland/desktop/keiland/keiland.h) | The public C library of the desktop | Applications | **Stable public API** (`KEILAND_VERSION`) |
+| [libkeiland](../../userland/desktop/include/keiland/keiland.h) | The public C library of the desktop | Applications | **Stable public API** (`KEILAND_VERSION`) |
 | Standard Wayland and Vulkan | Core Wayland, `xdg-shell` and other standard protocols; Vulkan for drawing | Applications | Upstream standards |
 | Keiland's own Wayland extensions | `keiland_*_v1` protocols spoken between libkeiland and the compositor | libkeiland only | **Internal**; may change at any time |
 | Keiland compositor | The Wayland compositor: windows, input, system bar, on-screen keyboard, input method host | — | — |
@@ -114,7 +114,7 @@ libkeiland API it serves keeps its meaning.
 
 ## libkeiland: the stable public API
 
-[libkeiland](../../userland/desktop/keiland/keiland.h) is the one interface an
+[libkeiland](../../userland/desktop/include/keiland/keiland.h) is the one interface an
 application uses to reach anything Keiland offers beyond standard Wayland and
 Vulkan. Its API is public and stable. `KEILAND_VERSION` (21 at the time of
 writing) increases when calls are added, and `keiland_version()` reports the

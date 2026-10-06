@@ -13,7 +13,7 @@ SC=$(pkg-config --variable=wayland_scanner wayland-scanner)
 "$SC" server-header "$X" "$T/gen/linux-dmabuf-v1-server-protocol.h"
 "$SC" private-code "$X" "$T/gen/linux-dmabuf-v1-protocol.c"
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -O2 -I"$T/gen" $(pkg-config --cflags wayland-server) -o "$T/dmabuf-probe" plan/tools/keiland-linux/dmabuf-probe.c "$T/gen/linux-dmabuf-v1-protocol.c" $(pkg-config --libs wayland-server)
-${CC:-cc} -std=gnu17 -Wall -Wextra -Werror -o "$T/wsi-probe-client" plan/tools/keiland-linux/wsi-probe-client.c -Iuserland/desktop/keiland -L"$BUILD/lib" -l:libwayland-client.so -l:libvulkan.so.1 -Wl,-rpath-link,"$BUILD/lib" -Wl,-rpath,/opt/keiland/lib
+${CC:-cc} -std=gnu17 -Wall -Wextra -Werror -o "$T/wsi-probe-client" plan/tools/keiland-linux/wsi-probe-client.c -Iuserland/desktop/include -L"$BUILD/lib" -l:libwayland-client.so -l:libvulkan.so.1 -Wl,-rpath-link,"$BUILD/lib" -Wl,-rpath,/opt/keiland/lib
 ${CC:-cc} -std=gnu17 -Wall -Wextra -Werror -fPIC -shared -o "$T/libsync-observe.so" plan/tools/keiland-linux/sync-unavailable.c -ldl
 ${CC:-cc} -std=gnu17 -Wall -Wextra -Werror -fPIC -shared -DCOMPAT_TEST_SYNC_UNAVAILABLE=1 -o "$T/libsync-unavailable.so" plan/tools/keiland-linux/sync-unavailable.c -ldl
 export XDG_RUNTIME_DIR=$T/xdg

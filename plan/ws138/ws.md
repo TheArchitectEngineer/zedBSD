@@ -25,7 +25,7 @@ desktop の背景を PPM から PNG にする。ユーザーの決定 U4（2026-
 | Settings | Wallpaper の頁は `.png`・`.jpg`・`.jpeg` を一覧し、同じ名前は png→jpg→jpeg の順で 1 つ。縮小は全体の復号から。`wallpaper.c` と libpng・libjpeg・libz-compat を link |
 | Files | Today の hero を `fm_image_load` に（Files の縮小表示と同じ復号） |
 | 既定と data | 既定の背景は `/usr/share/keiland/wallpaper.png`（sessiond・session.sh・Settings・Files・Linux と FreeBSD の launcher・deb の smoke）。Linux・FreeBSD の既定は tree の `Birch-Lake.png`（U3）、過去の build を見る道は消した |
-| tree の背景 | `userland/desktop/keiland/wallpapers/Birch-Lake.png`・`Lakeside.png`。元の PPM から可逆に変換（画素は同じ、行ごとに best の filter、zlib 9: U5）。PPM は消した（git の履歴にある） |
+| tree の背景 | `userland/desktop/wallpapers/Birch-Lake.png`・`Lakeside.png`。元の PPM から可逆に変換（画素は同じ、行ごとに best の filter、zlib 9: U5）。PPM は消した（git の履歴にある） |
 | 生成の背景 | `generate.py` が 5 枚を PNG（best の filter、zlib 9）で、5 つの process で並べて作る（15.9 s、旧 PPM は 14.5 s）。画素は旧 PPM と同じ |
 | 道具 | `userland/desktop/wallpapers/ppm-to-png.py`（PPM を PNG に、書いた PNG を自分で復号して元の画素と比べる。`write_png`・`read_png` は generate.py と試験が使う） |
 | 他の WS の file | 試験と道具の script 196 file の `wallpaper.ppm` などの置き換え、ws089 の host build、vmunix.mk の link、c7 の測る箱は、Q1 が main で掛けた（U2） |

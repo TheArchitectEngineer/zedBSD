@@ -17,7 +17,7 @@
 
 #include "engine.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include <wayland/wayland-client.h>
 #include <wayland/input-method-unstable-v2-client-protocol.h>
 #include <wayland/virtual-keyboard-unstable-v1-client-protocol.h>

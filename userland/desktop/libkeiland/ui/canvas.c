@@ -20,7 +20,7 @@
  * edge is smooth in both directions.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <math.h>

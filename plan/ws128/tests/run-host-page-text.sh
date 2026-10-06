@@ -16,7 +16,8 @@ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 for header in pdf.h sha2.h md5.h sha1.h; do
 	ln -sf "$(pwd)/include/libc/$header" "$out/include/$header"
 done
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 sources=$(ls userland/base/libpdf/*.c)
 status=0
 # The files this Phase changed, as the zedBSD build compiles libpdf (C89).

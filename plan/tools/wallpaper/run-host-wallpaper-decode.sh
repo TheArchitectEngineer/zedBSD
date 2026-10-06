@@ -33,7 +33,7 @@ done
 "$cc" $flags -o "$out/decode" $objects
 run="$out/decode"
 data="$out/data"
-tree=userland/desktop/keiland/wallpapers
+tree=userland/desktop/wallpapers
 failed=0
 check() {
 	if [ "$2" = "$3" ]; then

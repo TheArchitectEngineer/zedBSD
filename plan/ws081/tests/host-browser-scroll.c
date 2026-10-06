@@ -6,7 +6,7 @@
  */
 
 /*
- * ws081-p006: the host test of the view's placed scroll (<browser.h>
+ * ws081-p006: the host test of the view's placed scroll (<browser/browser.h>
  * version 2) on plan/ws081/tests/pages/scroll.html: a green canvas, a red
  * block at the top, a 3000-pixel gap and a blue block at the end, and a
  * listener that writes each wheel event to the console.
@@ -21,7 +21,7 @@
  * calls say ENOENT.  Prints one line per failed check and a summary.
  */
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <errno.h>
 #include <stdio.h>

@@ -7,7 +7,7 @@
 
 /*
  * The system extension's monitor (WS134 p012, plan/ws134/design.md section
- * 1.3; keiland/kl-system-protocol.h's kl_system_monitor_v1): the machine's
+ * 1.3; libkeiland/system/kl-system-protocol.h's kl_system_monitor_v1): the machine's
  * counters, sampled by libkeiland-backend's monitor area, for the System
  * Monitor.
  *
@@ -27,7 +27,7 @@
 
 #include "kwl.h"
 
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>

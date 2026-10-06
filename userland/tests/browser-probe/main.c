@@ -8,7 +8,7 @@
 /*
  * browser-probe: the second program over libbrowser (ws074-p057), which
  * shows that the engine works as a component without /bin/browser's
- * window: it uses <browser.h> only, and links libbrowser.so and the C
+ * window: it uses <browser/browser.h> only, and links libbrowser.so and the C
  * library, not Wayland.
  *
  *   browser-probe [--width=N] [--height=N] [--gpu] [--tab=N] [--font=PATH]
@@ -25,7 +25,7 @@
  * for a misuse.
  */
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <errno.h>
 #include <stdio.h>

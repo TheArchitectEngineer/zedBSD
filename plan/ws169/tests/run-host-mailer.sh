@@ -8,7 +8,10 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws169/host-mailer}
 dir=$(dirname "$out")
 mkdir -p "$dir/inc"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$dir/inc/"
+mkdir -p "$dir/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$dir/inc/truetype/"
+mkdir -p "$dir/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$dir/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$dir/inc/compat"
 U=userland/desktop
 K=$U/libkeiland/ui
@@ -28,7 +31,7 @@ done
 # The frames on glass laid on a wallpaper as zdesktop would, roughly: under each panel the wallpaper blurred and
 # lightened, the frame over it by its alpha (premultiplied).
 for p in "$out"-glass*.pam; do
-	python3 - "$p" "${p%.pam}.panels" userland/desktop/keiland/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
+	python3 - "$p" "${p%.pam}.panels" userland/desktop/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
 import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 data = open(sys.argv[1], 'rb').read()

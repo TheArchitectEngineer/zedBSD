@@ -13,7 +13,7 @@
  * Files and Settings.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "internal.h"
 

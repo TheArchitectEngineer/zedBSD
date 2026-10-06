@@ -23,7 +23,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 static void titlebar_copy(char *text, size_t size, const char *source);
 static void titlebar_activated(struct fm_app *app, uint32_t id, uint32_t detail);

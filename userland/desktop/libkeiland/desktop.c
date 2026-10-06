@@ -16,7 +16,7 @@
  * alone and has no generated code in libwayland).
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 

@@ -18,7 +18,7 @@
 
 #include "window.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* The evdev codes of the keys an operation stands for, and of those that move the caret. */
 #define EDIT_KEY_A		30U

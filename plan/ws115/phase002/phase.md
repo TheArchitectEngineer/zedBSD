@@ -29,7 +29,7 @@ Event ws114-gtk-qt-port-plan-20261002: 2026-10-02 user指示から作成。plann
 
 ## q614-i01 の結果（2026-10-03、P3）
 
-承認: Q1 の継続 dispatch（q614、時限 4h）。user「まずは素のGTK4を移植してください。移植できないところがないか、ノウハウを蓄積します。」。base は main b73021f5b（前回統合済み ad993eb6a）。所有 path に `userland/desktop/keiland/wayland/wayland-util.h` を Q1 が加えた（追加だけ）。
+承認: Q1 の継続 dispatch（q614、時限 4h）。user「まずは素のGTK4を移植してください。移植できないところがないか、ノウハウを蓄積します。」。base は main b73021f5b（前回統合済み ad993eb6a）。所有 path に `userland/desktop/include/wayland/wayland-util.h` を Q1 が加えた（追加だけ）。
 
 ### commit
 

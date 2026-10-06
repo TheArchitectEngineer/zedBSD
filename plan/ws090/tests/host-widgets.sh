@@ -9,7 +9,10 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws090/host-widgets}
 shots=build/ws090-shots
 mkdir -p "$(dirname "$out")/inc" "$shots"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$(dirname "$out")/inc/"
+mkdir -p "$(dirname "$out")/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$(dirname "$out")/inc/truetype/"
+mkdir -p "$(dirname "$out")/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$(dirname "$out")/inc/keiland/"
 # ws090-p008: the text's colour emoji (KUI_VERSION 9) read their PNG pictures through picture/color-glyph.c and
 # libpng-compat, whose headers are the C library's compat ones.
 ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"

@@ -23,7 +23,7 @@ Queue: なし
 | `userland/desktop/browser/data/start.html` | 5・26・27・33・34・59 | 「zedBSD Browser」（title と見出し。窓の title にも出る）、「The Web browser of the zedBSD desktop」、「written for zedBSD」、「in a zdesktop window」、footer「zedBSD · browser」 |
 | `plan/ws074/tests/browser-start.sh` | 62 | `expect_navigate "path=$pages/start.html title=zedBSD Browser"`（上と一緒に直す。WS074 の file なので main が当てる） |
 | `docs/reference/kernel-boot-parameters.md` | 325 | `login=graphical  the greeter (zdesktop --greeter) on the display` |
-| `include/libc/wayland/API-PROVENANCE.md` | 69〜71 | `zed-gpu-buffer-v1-client-protocol.h`、「Other zdesktop clients」「zdesktop extension」。**WS104 p001 の後**は `userland/desktop/keiland/wayland/API-PROVENANCE.md`。file 名の行は p008（提案）と一緒 |
+| `include/libc/wayland/API-PROVENANCE.md` | 69〜71 | `zed-gpu-buffer-v1-client-protocol.h`、「Other zdesktop clients」「zdesktop extension」。**WS104 p001 の後**は `userland/desktop/libwayland/API-PROVENANCE.md`。file 名の行は p008（提案）と一緒 |
 
 範囲の外: 注釈（p007 提案）、make の変数と header の file 名（p008 提案）、`TERM=zed`（p009 提案）、retro の名前（ユーザーの判断待ち）、試験の log の印（当面は変えない）。
 

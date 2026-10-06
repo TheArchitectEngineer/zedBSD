@@ -15,7 +15,7 @@
 #ifndef KEIUI_WINDOW_H
 #define KEIUI_WINDOW_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "declare.h"
 

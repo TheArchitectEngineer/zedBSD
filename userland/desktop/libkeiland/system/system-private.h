@@ -16,9 +16,9 @@
 #ifndef KEILAND_SYSTEM_PRIVATE_H
 #define KEILAND_SYSTEM_PRIVATE_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <stddef.h>
 #include <stdint.h>

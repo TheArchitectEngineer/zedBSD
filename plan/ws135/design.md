@@ -193,7 +193,7 @@ WS131 p015 の `kl_app` は `kl_app_settings(app)` でこの object を持つ（
 
 compositor は libkeiland の client の部分を使わない（WS131 D4 (a)・(c)）。key の表（key・解決の先・型・最小・最大・既定の決め方）は client でも server でも無い
 小さな共有の source `userland/desktop/settings-keys/settings-keys.c`・`.h`（`picture/` と同じ形の中立の dir）に置き、libkeiland と compositor がそれぞれ compile する。
-表は `static const` の配列と探す関数（macro の列にしない）。protocol の opcode・列挙の定数は WS131 D4 (c) のとおり `userland/desktop/keiland/` の共有の header。
+表は `static const` の配列と探す関数（macro の列にしない）。protocol の opcode・列挙の定数は WS131 D4 (c) のとおり `userland/desktop/include/` の共有の header。
 
 ## 4. compositor
 

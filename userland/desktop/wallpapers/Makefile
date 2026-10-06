@@ -20,8 +20,8 @@ $(ZEDBSD_KEILAND_WALLPAPER_FILES) &: userland/desktop/wallpapers/generate.py
 
 # The pictures as DESTINATION=SOURCE, and those the image takes: all of them, less any a test's extra files name.
 ZEDBSD_KEILAND_WALLPAPER_DATA := \
-	/usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png \
-	/usr/share/keiland/wallpapers/Lakeside.png=userland/desktop/keiland/wallpapers/Lakeside.png \
+	/usr/share/keiland/wallpaper.png=userland/desktop/wallpapers/Birch-Lake.png \
+	/usr/share/keiland/wallpapers/Lakeside.png=userland/desktop/wallpapers/Lakeside.png \
 	$(foreach name,$(ZEDBSD_KEILAND_WALLPAPER_NAMES),/usr/share/keiland/wallpapers/$(name).png=$(BUILD)/wallpapers/$(name).png)
 ZEDBSD_KEILAND_WALLPAPER_TAKEN := $(if $(filter y,$(ZEDBSD_KEILAND_WALLPAPERS)),$(foreach item,$(ZEDBSD_KEILAND_WALLPAPER_DATA),\
 	$(if $(findstring $(firstword $(subst =, ,$(item)))=,$(ZEDBSD_TEST_EXTRA_FILES)),,$(item))))

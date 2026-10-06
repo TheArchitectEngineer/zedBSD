@@ -12,7 +12,8 @@ cc=${CC:-cc}
 mkdir -p "$out/include" "$out/lib"
 for header in pdf.h sha2.h md5.h sha1.h; do ln -sf "$(pwd)/include/libc/$header" "$out/include/$header"; done
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 python3 plan/ws127/tests/make-pdf.py "$out/good.pdf" >/dev/null
 flags="-std=gnu11 -O1 -g -fPIC -w -D_DEFAULT_SOURCE -I$out/include"
 sources="userland/base/libpdf/*.c src/libc/openbsd-sha2.c src/libc/openbsd-digest.c userland/base/libz-compat/*.c

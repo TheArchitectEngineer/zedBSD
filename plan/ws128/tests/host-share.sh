@@ -7,8 +7,10 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws128-share-host
 mkdir -p "$out/include"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
-ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
+mkdir -p "$out/include/keiland"
+ln -sf "$(pwd)/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 "$cc" -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I"$out/include" -I. -Iuserland/desktop/libkeiland \

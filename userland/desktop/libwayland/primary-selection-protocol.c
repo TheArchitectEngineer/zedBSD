@@ -15,7 +15,7 @@
  * Their events reach listeners through the generic dispatch (event.c);
  * zwp_primary_selection_device_v1.data_offer creates a server-made offer.
  * The descriptions follow the pinned wayland-protocols description
- * (userland/desktop/keiland/wayland/API-PROVENANCE.md).
+ * (userland/desktop/libwayland/API-PROVENANCE.md).
  */
 
 #include "internal.h"

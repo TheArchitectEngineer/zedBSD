@@ -10,7 +10,7 @@
  * WS070 p008).
  *
  * The header is private: it is not installed, and applications reach the
- * protocol through libkeiland (<keiland.h>) only.  libkeiland and the
+ * protocol through libkeiland (<keiland/keiland.h>) only.  libkeiland and the
  * library's own event dispatch include it by its path in the tree.  The
  * protocol is defined in plan/ws070/titlebar-design.md.
  */

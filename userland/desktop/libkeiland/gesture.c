@@ -20,7 +20,7 @@
  * frame being drawn and gives the last finger's velocity at the lift.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <math.h>

@@ -22,7 +22,7 @@
  *   KEILAND-SETTINGS done status=S
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 

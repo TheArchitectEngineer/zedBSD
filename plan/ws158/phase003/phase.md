@@ -47,7 +47,7 @@ compositor（system bar の時計・音量の popup・network の menu と詳細
 
 ## T1 への依頼（Q1 経由）
 
-image: main（この Phase の merge の後）で `plan/tools/guest/test-image.sh plan/ws158/tests/config-amd64-tr.mk BUILD --file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png`。起動 `plan/tools/files/files-guest.sh start BUILD/hdd-image.img`。試験 `plan/ws158/tests/tr-p003-guest.sh OUTDIR`。合格: 最後の行 `tr-p003: status=0`、PNG（ja-bar・ja-volume・ja-network・ja-network-details・ja-wiseview・ja-lock）に日本語が描かれている（Q1 が見る）。
+image: main（この Phase の merge の後）で `plan/tools/guest/test-image.sh plan/ws158/tests/config-amd64-tr.mk BUILD --file /usr/share/keiland/wallpaper.png=userland/desktop/wallpapers/Birch-Lake.png`。起動 `plan/tools/files/files-guest.sh start BUILD/hdd-image.img`。試験 `plan/ws158/tests/tr-p003-guest.sh OUTDIR`。合格: 最後の行 `tr-p003: status=0`、PNG（ja-bar・ja-volume・ja-network・ja-network-details・ja-wiseview・ja-lock）に日本語が描かれている（Q1 が見る）。
 
 ## 再開の地点（2026-10-05 夜、P2 g17 のラップアップ）
 

@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
-WALLPAPERS = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers')
+WALLPAPERS = os.path.join(ROOT, 'userland/desktop/wallpapers')
 W = 1280
 H = 800
 SHOWN = 190                      # the height of the screen shown under each bar's top

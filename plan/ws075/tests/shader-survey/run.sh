@@ -21,7 +21,7 @@ mkdir -p "$out/apps" "$out/scenes" "$out/programs" "$out/shim"
 
 # The tools: zedBSD's GLSL compiler's driver, libGLESv2's gl_Position rewrite, the i915 compiler on the host.
 for h in EGL GLES2 GLES3 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
-ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ln -sfn "$root/userland/desktop/include/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
 cc -std=c11 -O1 -w -o "$out/glsl-test" "$root/plan/ws068/tests/glsl-host/glsl-test.c" "$root"/userland/desktop/libglesv2/glsl/*.c -lm || exit 1
 cc -std=c99 -w -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" "$root/userland/desktop/libglesv2/spirv.c" || exit 1
 cc -std=gnu99 -O0 -w -I"$root" -I"$root/include" -DHAL_ARCH_AMD64 -o "$out/i915-check" \

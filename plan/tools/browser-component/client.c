@@ -11,7 +11,7 @@
  * failure ownership without adding switches to the production engine.
  */
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <dlfcn.h>
 #include <errno.h>

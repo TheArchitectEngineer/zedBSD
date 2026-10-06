@@ -13,7 +13,7 @@
  * only; the program never has it.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <stdio.h>

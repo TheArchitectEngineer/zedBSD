@@ -9,7 +9,10 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/keiui/host-chooser}
 shots=build/keiui-shots
 mkdir -p "$(dirname "$out")/inc" "$shots"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$(dirname "$out")/inc/"
+mkdir -p "$(dirname "$out")/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$(dirname "$out")/inc/truetype/"
+mkdir -p "$(dirname "$out")/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$(dirname "$out")/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 U=userland/desktop
 K=$U/libkeiland/ui

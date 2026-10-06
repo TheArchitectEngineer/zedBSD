@@ -33,7 +33,8 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 cc -std=gnu99 -O1 -D_DEFAULT_SOURCE -I"$out/include" -c src/libc/openbsd-sha2.c -o "$out/sha2.o" || exit 1
 cc -std=gnu99 -O1 -w -D_DEFAULT_SOURCE -I"$out/include" -c src/libc/openbsd-digest.c -o "$out/digest.o" || exit 1
 # ws079-p007: the reader needs filter.c and libz-compat (cross-reference and object streams); p014: save.c needs update.c.
