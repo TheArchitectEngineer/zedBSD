@@ -52,7 +52,7 @@ ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" $base/include/truetype.h
 # The engine's own public header (libbrowser, ws074-p057), which the host's C library lacks too.
 ln -sf "$(pwd)/userland/desktop/keiland/browser.h" $base/include/browser.h
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/outline.c \
-    userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c; do
+    userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c; do
 	object=$out/obj/truetype-$(basename "$file" .c).o
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ "$out/flags" -nt "$object" ]; then
 		"$cc" $flags -Wno-error -Iuserland/desktop/libtruetype -c "$file" -o "$object"
