@@ -570,6 +570,7 @@ zwl_glass_draw(
 		server->layer_on = 0;
 		zwl_backdrop_reset(server);
 		zwl_popup_draw(server, command);
+		zwl_power_dialog_draw(server, command);
 		return;
 	}
 
@@ -669,6 +670,9 @@ zwl_glass_draw(
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
 
+	/* The power dialog over everything (power-dialog.c, ws099-p037). */
+	zwl_power_dialog_draw(server, command);
+
 	/* The suggestions under a titlebar's field with the keyboard (titlebar-shell.c, ws127-p010). */
 	zwl_titlebar_draw_suggestions(server, command);
 
@@ -726,6 +730,11 @@ zwl_glass_button(
 		pressed = zwl_greeter_button(server, button, state);
 		return pressed;
 	}
+
+	/* The power dialog, while it shows, takes every button (power-dialog.c, ws099-p037). */
+	pressed = zwl_power_dialog_button(server, button, state);
+	if (pressed)
+		return 1;
 
 	/* The switcher, while on, takes every button, and the release of a press it took (switcher-shell.c). */
 	pressed = zwl_switch_button(server, button, state);
@@ -2310,6 +2319,11 @@ zwl_glass_key(
 	int step;
 	int taken;
 
+	/* The power dialog, while it shows, takes every key (power-dialog.c, ws099-p037). */
+	taken = zwl_power_dialog_key(server, key, state);
+	if (taken)
+		return 1;
+
 	/* The switcher: Alt+Tab, and its keys while it is on (switcher-shell.c, ws142-p005). */
 	taken = zwl_switch_key(server, key, state);
 	if (taken)
@@ -2408,6 +2422,9 @@ zwl_glass_tick(
 
 	/* The sheets where their parents are (ws090-p014). */
 	sheet_place(server);
+
+	/* The power dialog's darkening, and its end (power-dialog.c). */
+	zwl_power_dialog_tick(server);
 
 	/* In the docked mode the window that came to the front (the one before closed or was minimized) docks. */
 	layout_keep_front(server);
@@ -6715,13 +6732,16 @@ zwl_glass_pad_scroll(
 	int32_t across_um;
 	int32_t down_um;
 	int showing;
+	int dialog;
 	int taken;
+	int down;
 
-	/* Only while the switcher or Wiseview (its opening gesture done) shows. */
+	/* Only while the power dialog, the switcher or Wiseview (its opening gesture done) shows. */
+	dialog = zwl_power_dialog_showing(server);
 	showing = wiseview_showing(server);
 	if (server->wiseview_gesture)
 		showing = 0;
-	if (!server->switcher.on && !showing)
+	if (!dialog && !server->switcher.on && !showing)
 		return 0;
 
 	/* The fingers' way (natural scrolling turned back), notches back to travel. */
@@ -6737,7 +6757,16 @@ zwl_glass_pad_scroll(
 	if (direction != ZWL_SWIPE_NONE)
 		printf("ZWL SWIPE %s via=pad\n", zwl_swipe_name(direction));
 
-	/* The switcher first, else Wiseview. */
+	/* The power dialog first: a swipe down cancels it. */
+	if (dialog) {
+		down = 0;
+		if (direction == ZWL_SWIPE_DOWN)
+			down = 1;
+		(void)zwl_power_dialog_swipe(server, down);
+		return 1;
+	}
+
+	/* The switcher, else Wiseview. */
 	taken = zwl_switch_pad_swipe(server, direction);
 	if (!taken)
 		(void)wiseview_pad_swipe(server, direction);
@@ -6767,6 +6796,7 @@ zwl_glass_gesture(
 	const char *phase_name;
 	unsigned direction;
 	int switching;
+	int dialog;
 	int taken;
 	int may;
 
@@ -6778,6 +6808,15 @@ zwl_glass_gesture(
 	/* A scrolling touch lifted: the next swipe of Wiseview or the switcher is another (ws142-p009). */
 	if (gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2) {
 		zwl_swipe_end(&server->pad_swipe);
+		return;
+	}
+
+	/* While the power dialog shows, two fingers down from the top edge cancel it, and nothing else starts. */
+	dialog = zwl_power_dialog_showing(server);
+	if (dialog) {
+		direction = gesture_as_swipe(gesture);
+		if (phase == ZWL_TOUCHPAD_PHASE_BEGIN && direction == ZWL_SWIPE_DOWN)
+			(void)zwl_power_dialog_swipe(server, 1);
 		return;
 	}
 
@@ -7368,6 +7407,11 @@ glass_motion_take(
 		server->dirty = 1;
 		return 1;
 	}
+
+	/* So does the power dialog while it shows (power-dialog.c). */
+	taken = zwl_power_dialog_motion(server);
+	if (taken)
+		return 1;
 
 	/* Wiseview follows the gesture, and hears the pointer while it is open; a pressed tile that moves is dragged. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {

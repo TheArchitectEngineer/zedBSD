@@ -45,6 +45,45 @@ def home_super_key(item):
 	item.passed()
 
 
+def power_dialog(item):
+	"""Opens App Home's Power Off dialog: Home by the Windows key, "power" typed, the Power Off icon clicked."""
+	since = run.home_open(item)
+	run.type("power")
+	item.check(run.wait(r'ZWL HOME search query="power"', since, 10), "Home did not search for power")
+	icons = run.lines(r'ZWL HOME icon name="Power Off" x=-?\d+ y=-?\d+', since)
+	item.step("typed 'power' in App Home", icons[-1] if icons else "no icon")
+	item.check(icons, "Home shows no Power Off icon")
+	x, y = (int(value) for value in re.search(r"x=(-?\d+) y=(-?\d+)", icons[-1]).groups())
+	mark = run.mark()
+	run.click(x, y)
+	opened = run.wait(r"ZWL POWER dialog open source=home ", mark, 10)
+	time.sleep(0.6)
+	item.step(f"clicked the Power Off icon at {x},{y}", opened)
+	item.check(opened, "no ZWL POWER dialog open")
+	item.check(not run.lines(r"ZWL SESSION logout", mark), "the session ended without asking")
+	return opened
+
+
+@run.define("desktop.home.power-off-dialog")
+def home_power_off(item):
+	opened = power_dialog(item)
+	run.shot(item, "dialog")
+	mark = run.mark()
+	run.key("esc")
+	cancelled = run.wait(r"ZWL POWER choice=cancel via=escape", mark, 10)
+	time.sleep(0.5)
+	item.step("Esc", cancelled)
+	run.shot(item, "cancelled")
+	item.check(cancelled, "Esc did not cancel")
+	power_dialog(item)
+	mark = run.mark()
+	run.click(20, 400)
+	outside = run.wait(r"ZWL POWER choice=cancel via=outside", mark, 10)
+	item.step("clicked outside the card", outside)
+	item.check(outside, "a click outside did not cancel")
+	item.person(f"the darkened desktop and the card in the first screenshot ({opened}); Log Out by hand (step 4)")
+
+
 @run.define("desktop.home.launcher-button")
 def home_launcher(item):
 	since = run.mark()

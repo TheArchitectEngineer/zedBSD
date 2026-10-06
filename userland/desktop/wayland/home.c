@@ -87,8 +87,8 @@
 /* The applications' list, and how many it may hold. */
 #define HOME_APPS_PATH		KEILAND_SYSCONFDIR "/keiland/apps.conf"
 
-/* The command of a login session's Log Out, which the compositor carries out itself. */
-#define HOME_LOGOUT		"@logout"
+/* The command of a login session's Power Off, whose dialog the compositor shows itself (ws099-p037). */
+#define HOME_POWER		"@power"
 #define HOME_LOCK		"@lock"
 
 /* The page the built-in list's browser opens (shown only when the page is there). */
@@ -968,14 +968,14 @@ home_read_apps(
 		home_add_app("Browser", KEILAND_BINDIR "/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
 	}
 
-	/* A login's session locks (ws035-p102) and ends with Log Out (ws035-p095), the last icons. */
+	/* A login's session locks (ws035-p102) and ends with Power Off's dialog (ws099-p037, Log Out in it), the last icons. */
 	managed = 0;
 	if (server->session)
 		managed = kl_backend_session_managed(server->backend);
 	if (managed)
 		home_add_app("Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U, "lock");
 	if (server->session)
-		home_add_app("Log Out", HOME_LOGOUT, "logout log out sign out exit session end", 0x6a7488U, "logout");
+		home_add_app("Power Off", HOME_POWER, "power off shut down shutdown restart reboot logout log out sign out exit session end", 0x6a7488U, "power");
 }
 
 /* Adds an application to the list, when there is room; its picture is named as icons.c names it ("" for none). */
@@ -1558,27 +1558,23 @@ home_launch(
 {
 	pid_t child;
 	unsigned slot;
-	int logout;
+	int differs;
 
-	/*
-	 * Log Out ends the session: the compositor ends, and sessiond shows the
-	 * login screen again (started first, when sessiond started the compositor,
-	 * so the display goes straight to it: handoff.c).
-	 */
 	/* Lock Screen locks the session (App Home closes behind it). */
-	logout = strcmp(home_apps[app].command, HOME_LOCK);
-	if (logout == 0) {
+	differs = strcmp(home_apps[app].command, HOME_LOCK);
+	if (differs == 0) {
 		(void)zwl_lock(server, "home");
 		return;
 	}
 
-	/* Log Out. */
-	logout = strcmp(home_apps[app].command, HOME_LOGOUT);
-	if (logout == 0) {
-		printf("ZWL SESSION logout\n");
-		logout = zwl_handoff_logout(server);
-		if (!logout)
-			zwl_request_stop();
+	/*
+	 * Power Off: its dialog over the desktop (Power Off, Restart, Log Out,
+	 * Cancel; power-dialog.c), Home closing behind.  Its Log Out ends the
+	 * session as this icon did before (handoff.c).
+	 */
+	differs = strcmp(home_apps[app].command, HOME_POWER);
+	if (differs == 0) {
+		zwl_power_dialog_open(server, "home");
 		return;
 	}
 
