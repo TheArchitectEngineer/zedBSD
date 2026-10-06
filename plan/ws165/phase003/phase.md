@@ -4,7 +4,7 @@
 
 Phase ID: `ws165-p003`
 Parent: [WS165](../ws.md)
-Status: in-progress（2026-10-06 P2: 実装と host 試験。T1 待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-280 で templates count=228 error=0 と認識の行は ok。osk-guest の FAIL は script が stub の候補「あ」を待つ古さで、P2 が試験を直す）（旧: in-progress（2026-10-06 P2: 実装と host 試験。T1 待ち））
 Phase disposition: normal
 Queue: Q1 の P2 の列（2026-10-06）
 

@@ -2,7 +2,7 @@
 
 # ws131-p016: Text Editor を新しい API へ（最初の移行）
 
-Status: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。下の「q807（P1）」）
+Status: cleared（2026-10-07 Q1 の判定: T1-248 の FAIL は T1-251 で PASS（READY を focus の後に）、後の回帰（T1-281: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress、T1-295 menu-p003、Linux の 8 app の PNG、FreeBSD の backend-test）も PASS）（旧: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。下の「q807（P1）」））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q807（P1）

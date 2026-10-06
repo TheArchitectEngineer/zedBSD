@@ -5,8 +5,9 @@ set -eu
 STAGE=${1:-build/keiland-linux/stage}
 TOOLS=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 test -d "$STAGE/opt/keiland"
-ARCHIVE=$(mktemp)
-trap 'rm -f "$ARCHIVE"' EXIT HUP INT TERM
+# The archive stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes build/tmp).
+mkdir -p build/tmp
+ARCHIVE=$(mktemp build/tmp/keiland-install.XXXXXX)
 tar -C "$STAGE/opt" -cf "$ARCHIVE" keiland
 sh "$TOOLS/guest.sh" put "$ARCHIVE" /tmp/keiland-install.tar
 sh "$TOOLS/guest.sh" ssh 'mkdir -p /opt; rm -rf /opt/keiland; tar -C /opt -xf /tmp/keiland-install.tar; rm /tmp/keiland-install.tar'

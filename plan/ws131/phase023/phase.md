@@ -2,7 +2,7 @@
 
 # ws131-p023: 互換の除去・header の一本化・PnP の接続
 
-Status: in-progress（2026-10-06 q820、P1。Q1 の指示で開始。host の確認まで済み、keiui.h・keiland-ui.h の削除（git rm）を Q1 に、QEMU と FreeBSD の native build を T1 に依頼）
+Status: cleared（2026-10-07 Q1 の判定: T1-275 の PNG、後の回帰（T1-281: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress、T1-295 menu-p003、Linux の 8 app の PNG、FreeBSD の backend-test）も PASS）（旧: in-progress（2026-10-06 q820、P1。Q1 の指示で開始。host の確認まで済み、keiui.h・keiland-ui.h の削除（git rm）を Q1 に、QEMU と FreeBSD の native build を T1 に依頼））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q820（P1）

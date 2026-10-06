@@ -103,3 +103,16 @@
 | WS155 ws155-p003 | app が止まっている間の開始の通知、日をまたいだ時の今日の更新 | 通知の daemon か compositor の予定の知らせ、0 時の今日の更新（今は起動の時の今日、app が動いている間だけ通知） | `calendar/main.c` | 2026-10-07 |
 | WS155 ws155-p003 | 時刻の欄の誤り（25:00 など）、終わりが始まりより前 | 欄に誤りを示す（今は notice と、終わりを始まりにする） | `calendar/view.c` の `view_edit_save` | 2026-10-07 |
 | WS155 ws155-p004（時計から開く） | 時計の長押し・右 click、App Home に Calendar が無い image | 予定の簡単な一覧の popover、無い時の知らせ（今は click で起動だけ、無ければ log だけ） | `wayland/shell.c` の `bar_press`、`home.c` | 2026-10-07 |
+| WS120 ws120-p008（tags と collection） | m4a 以外（MP3・FLAC・WAV・Ogg）、音と映像のある .mp4 の音だけ、4096 曲を超える collection、深さ 4 より下 | 形式ごとの tags の reader、上限の撤去（今は m4a と映像の無い .mp4、4096 曲、深さ 4） | `music/tags.c`・`library.c` | 2026-10-07 |
+| WS120 ws120-p008 | 起動ごとの全 file の走査、Music の folder の変化 | tags の cache、folder の監視で一覧を更新（今は起動の時に読むだけ） | `music/library.c` | 2026-10-07 |
+| WS120 ws120-p008 | 同じ album 名・artist の別の album、album の artist の表記揺れ、ASCII 以外の大小 | 区別と寄せ（今は名前の完全一致で 1 つ、並びは ASCII の大小だけ無視） | `music/library.c` の `library_album`・`library_compare_text` | 2026-10-07 |
+| WS120 ws120-p009（Music の app） | 独自の AAC-LC の decoder（D-AAC「独自は後」）、他 OS（Linux・FreeBSD）の build と音 | 独自 decoder の Phase、他 OS の音の出口（今は libavcodec の add-in と audiod だけ、zedBSD だけ） | `music/play.c`、`videoplayer/codec.c` | 2026-10-07 |
+| WS120 ws120-p009 | 既存の音楽 service との連携（D-SVC、ベータ4） | ベータ4 の Phase（今は作らない。外部 service の icon・名前も出さない） | `music/` | 2026-10-07 |
+| WS120 ws120-p009 | playlist・shuffle・repeat・gapless・窓を閉じた後の背景再生・media key・app の音量 | 作る（今は album の順に次へ、最後で止まる。音量は system の音量） | `music/main.c`・`view.c` | 2026-10-07 |
+| WS120 ws120-p009 | 正方形でない cover、壊れた cover、大きな cover | 切り抜き・知らせ（今は正方形に引き伸ばす、壊れた物は灰色の tile、4096 px まで） | `music/cover.c` | 2026-10-07 |
+| WS120 ws120-p009 | 再生中の decode の失敗、audiod の切断、曲の file の消失、Files から開いた曲が再生できない時 | 理由を出して次へ・再接続（今は失敗の notice だけ、切断は止まる） | `music/play.c`・`main.c` | 2026-10-07 |
+| WS120 ws120-p009 | 検索の field に focus がある時の Space、Previous の 3 秒の規則、Next の連打 | 振る舞いの見直し（今は field が Space を取る、3 秒より後は曲の始めへ） | `music/view.c`・`main.c` | 2026-10-07 |
+| WS169 ws169-p005（Browser の code の入力） | titlebar の「Code NNNN」を押した時に page の欄に keyboard が無い（欄の外を click した後など） | 欄が無い・focus が無い時は clipboard に写して知らせる、または page の最初の code の欄（`autocomplete=one-time-code`）に入れる（今は focus の無い page に key を送り、何も入らない） | `browser/shell/mail.c` の `shell_mail_fill` | 2026-10-07 |
+| WS122 ws122-p003（mediafile） | fragmented MP4（moof）、MPEG-TS・AVI・Ogg、壊れた index | 読む・知らせる（今は MP4・MOV・Matroska・WebM の普通の index だけ） | `mediafile/mp4.c`・`mkv.c` | 2026-10-07 |
+| WS122 ws122-p004（player） | libavcodec が無い時の映像と音 | GPU の decode（WS083 の Vulkan Video）、独自の AAC の decoder（D-AAC「独自は後」）（今は libavcodec の add-in が無ければ「Playing needs libavcodec」） | `videoplayer/codec.c` | 2026-10-07 |
+| WS122 ws122-p005b（game mode） | pointer が動くたびの swapchain の閉じ・作り直し、cursor の描画 | cursor plane、閉じずに直と合成を行き来（今は pointer が動くと合成に戻り、2 秒止まると直に戻る。QEMU で数百 ms） | `wayland/scanout.c` | 2026-10-07 |

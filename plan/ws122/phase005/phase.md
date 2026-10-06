@@ -2,7 +2,7 @@
 # ws122-p005: 設計 — 動画の全画面と合成を通さない直接の scanout（game mode）
 
 Parent: [WS122](../ws.md)
-Status: planned（2026-10-06 Q1 の設計の第 1 版。実装に取りかかれる。compositor の側は WS099）
+Status: cleared（2026-10-07 Q1 の判定: T1-237（全画面）・T1-244（game mode の direct scanout、QEMU）・AAT の fullscreen。i915 の実機の direct=1 は UAT（第 3 段の外の実機の確認））（旧: test-wait（2026-10-07 q831 P2: p005a・p005b は実装と T1（T1-237・T1-244）済み、p005c の AAT も済み。i915 の実機の direct=1 は UAT。判定は Q1））
 Disposition: normal
 Related: [BUG-223](../../bugs/BUG-223.md)・[BUG-208](../../bugs/BUG-208.md)・[ws142-p007](../../ws142/phase007/phase.md)
 
@@ -120,3 +120,10 @@ Status（p005b）: test-wait（T1 依頼中。QEMU の Venus の display が BLO
 - 試験: `plan/ws122/tests/run-host-scanout-rules.sh` → 17 passed, 0 failed（ASan・UBSan）。AAT の apps.videoplayer.fullscreen に game mode の step（F11 の後 8 秒以内に `direct=1` か `reason=backend|refused`、撮影の前の `reason=shot`）。
 - build: zedBSD の wayland・libwayland・libkeiland・videoplayer、keiland-linux の warning 0、style-check 0、v1-check PASS、keiland-os-boundary は既存の FAIL だけ、aat run-host PASS、check-scenarios PASS。FreeBSD の build は未実施。
 - 制限: pointer が動くたびに swapchain を閉じ・作り直す（QEMU で数百 ms かかりうる）。cursor plane は無い。direct の間は隠れた窓の frame callback も毎 frame 返す（old と同じ）。
+
+## 2026-10-07 q831 P2: T1 の結果のまとめ（p005c）
+
+- p005a: T1-237（main 342c0218）で apps.videoplayer.fullscreen が needs-person、自動の部分は fail 0。f11.png・double-click.png は 1280x800 の全画面、bar-hidden.png で bar 無し、各段の `VIDEOPLAYER PRESENTED` と `CONFIGURE` の大きさが合う。T1-237 で見つかった after_ms の 2^64 に近い値は `vp_draw` の比較（`shown_us > resized_us`）で直してある。
+- p005b: T1-244（main edd905ef）で F11 の後 `ZWL SCANOUT direct=1 surface=17 client=3 switch_ms=678`（QEMU の Venus でも直の scanout）、撮影の前に `direct=0 reason=shot`、f11.png は全画面の動画、Esc・double click の段も含め FAILED・MODE_ERROR 無し。
+- p005c: AAT の [apps.videoplayer.fullscreen](../../../tests/scenarios/apps/videoplayer/fullscreen.md) と T1 の上の 2 回。実機（5330 の i915 で direct=1、tearing と frame の落ちが無い）は UAT（未実施）。
+- 制限（backlog）: pointer が動くたびに swapchain を閉じ・作り直す、cursor plane 無し。

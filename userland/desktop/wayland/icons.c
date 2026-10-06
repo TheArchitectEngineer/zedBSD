@@ -531,6 +531,15 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT | ICON_CUT, 13.2f, 13.6f, 14.8f, 10.5f, 1.6f, 0.0f },
 		{ ICON_SEGMENT | ICON_CUT, 14.8f, 10.5f, 18.0f, 10.5f, 1.6f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Music: two notes joined by a beam. */
+	{
+		{ ICON_DOT, 7.6f, 17.6f, 3.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 16.6f, 15.6f, 3.0f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 9.6f, 17.4f, 9.6f, 6.6f, 2.0f, 0.0f },
+		{ ICON_SEGMENT, 18.6f, 15.4f, 18.6f, 4.6f, 2.0f, 0.0f },
+		{ ICON_SEGMENT, 9.6f, 6.4f, 18.6f, 4.4f, 3.2f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	}
 };
 
@@ -556,7 +565,8 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"phone",
 	"calendar",
 	"mail",
-	"monitor"
+	"monitor",
+	"music"
 };
 
 /*
@@ -582,7 +592,8 @@ static const struct icon_bands icon_app_bands[GLASS_ICON_APPS] = {
 	{ 0x7ee89aU, 0x3fcb6bU },
 	{ 0x7fb3ffU, 0x4a8bf5U },
 	{ 0xc49bffU, 0x9c6cf0U },
-	{ 0xff9ec4U, 0xf06a9bU }
+	{ 0xff9ec4U, 0xf06a9bU },
+	{ 0xff8a9cU, 0xf0465eU }
 };
 
 /* The known programs' windows, found by their exact application ID. */
@@ -602,7 +613,8 @@ static const struct icon_app_id icon_app_ids[] = {
 	{ "phone", GLASS_ICON_APP_PHONE },
 	{ "calendar", GLASS_ICON_APP_CALENDAR },
 	{ "mailer", GLASS_ICON_APP_MAIL },
-	{ "monitor", GLASS_ICON_APP_MONITOR }
+	{ "monitor", GLASS_ICON_APP_MONITOR },
+	{ "music", GLASS_ICON_APP_MUSIC }
 };
 
 static float icon_distance(const struct icon_part *part, float x, float y);

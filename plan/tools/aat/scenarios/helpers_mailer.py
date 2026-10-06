@@ -121,6 +121,12 @@ def open_mail(item):
 	return window, gap
 
 
+def field_point(browser):
+	"""The page's field in Browser (below "Sign-in code:" at the body's top left): a click there gives it the keyboard
+	(a click elsewhere in the page takes the keyboard from it, and the code is then typed into nothing, T1-299)."""
+	return browser.x + 80, browser.y + 60
+
+
 def form_place(window, gap):
 	"""The left and the width of the form of a new account."""
 	left = SIDEBAR + gap
@@ -210,7 +216,8 @@ def sign_in_code(item):
 		# The page with a field that has the keyboard, in Browser.
 		page = run.outdir / "mail-server" / "code.html"
 		page.write_text("<!doctype html><title>Code</title><p>Sign-in code:</p>"
-			"<input id=c autofocus oninput=\"console.log('code-length=' + this.value.length)\">\n")
+			"<input id=c autofocus style=\"font-size:24px;width:300px;height:40px\" "
+			"oninput=\"console.log('code-length=' + this.value.length)\">\n")
 		run.aat("put", str(page), f"{aatlib.WORK}/code.html")
 		run.sh(f"chmod 644 {aatlib.WORK}/code.html")
 		mark = run.mark()
@@ -218,7 +225,7 @@ def sign_in_code(item):
 		listening = run.wait(r"ZBROWSER MAIL listen error=0", mark, 15)
 		item.step("Browser opened the page", listening or "")
 		item.check(listening, "Browser does not listen to the mail")
-		run.click(*browser.middle())
+		run.click(*field_point(browser))
 		# Mail with the codes allowed: its idling inbox gets a message with a code.
 		window, gap = open_mail(item)
 		mark = sign_in(item, window, gap, server, codes=True)
@@ -231,7 +238,7 @@ def sign_in_code(item):
 		item.check(not code_lines, "the code is in the log")
 		# Browser in front: its titlebar's first control is the code.
 		run.close(item, window)
-		run.click(*browser.middle())
+		run.click(*field_point(browser))
 		time.sleep(0.8)
 		run.shot(item, "offered")
 		item.person("Browser's titlebar shows a control 'Code 7351' at the front; click it: the field gets 7351 "

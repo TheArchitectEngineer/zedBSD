@@ -2,7 +2,7 @@
 
 # ws131-p026: 公開の header の置き場所と名前の整理（userland/desktop/include/、<keiland/keiland.h>）
 
-Status: test-wait（2026-10-07 T1-295 で menu-p003 PASS。残りは Linux の PNG と FreeBSD の guest（T1-281 の残り）。T1-281 の一部: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress PASS、menu-p003 FAIL（P1 が調べる）、Linux の PNG と FreeBSD の guest は未実施、2026-10-07）（旧: in-progress（2026-10-06 q820、P1。host の確認まで済み、QEMU・FreeBSD の native build は T1 に依頼））
+Status: cleared（2026-10-07 Q1 の判定: T1-281（boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress、Linux の 8 app の PNG を Q1 が目視、FreeBSD の backend-test・native-build-audit PASS）と T1-295 menu-p003 PASS）（旧: test-wait（2026-10-07 T1-295 で menu-p003 PASS。残りは Linux の PNG と FreeBSD の guest（T1-281 の残り）。T1-281 の一部: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress PASS、menu-p003 FAIL（P1 が調べる）、Linux の PNG と FreeBSD の guest は未実施、2026-10-07）（旧: in-progress（2026-10-06 q820、P1。host の確認まで済み、QEMU・FreeBSD の native build は T1 に依頼）））
 Disposition: normal
 Parent: [WS131](../ws.md)
 Queue: q820（P1）
