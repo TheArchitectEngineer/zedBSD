@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws094-p002: zdesktop's desktop surface (keiland_desktop_v1) on the Venus guest, with the probe client
+# ws094-p002: zdesktop's desktop surface (kl_desktop_v1) on the Venus guest, with the probe client
 # (desktop-probe.c, built by build-probe.sh).  The running guest gets this worktree's compositor and the probe;
 # zdesktop --glass at 1280x800 with --desktop-token=T and no program of its own.
 #   role      the probe with the token takes the role: configured under the system bar (0,44 1280x756), its image

@@ -1350,7 +1350,7 @@ kwl_titlebar_draw_suggestions(
 }
 
 /*
- * Finds a window's presentation mode, its model and its keiland_titlebar_v1
+ * Finds a window's presentation mode, its model and its kl_titlebar_v1
  * (menu mode, and NULLs, for a window without one).
  */
 static unsigned

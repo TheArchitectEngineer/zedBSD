@@ -100,11 +100,11 @@ struct program {
 	struct wl_shm *shm;
 	struct zwp_input_method_manager_v2 *method_manager;
 	struct zwp_virtual_keyboard_manager_v1 *keyboard_manager;
-	struct keiland_ime_status_manager_v1 *status_manager;
+	struct kl_ime_status_manager_v1 *status_manager;
 	struct zwp_input_method_v2 *method;
 	struct zwp_input_method_keyboard_grab_v2 *grab;
 	struct zwp_virtual_keyboard_v1 *keyboard;
-	struct keiland_ime_status_v1 *status;
+	struct kl_ime_status_v1 *status;
 	unsigned keymap_sent;
 	struct ime_engine engines[PROGRAM_ENGINES_MAX];
 	unsigned engine_count;

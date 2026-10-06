@@ -62,18 +62,18 @@ static const struct kwl_global globals[] = {
 	{ 13, "zwp_text_input_manager_v3", 1, KWL_TEXT_INPUT_MANAGER },
 	{ 14, "zwp_input_method_manager_v2", 1, KWL_INPUT_METHOD_MANAGER },
 	{ 15, "zwp_virtual_keyboard_manager_v1", 1, KWL_VIRTUAL_KEYBOARD_MANAGER },
-	{ 16, "keiland_titlebar_manager_v1", 4, KWL_TITLEBAR_MANAGER },
-	{ 17, "keiland_glass_manager_v1", 2, KWL_GLASS_MANAGER },
+	{ 16, "kl_titlebar_manager_v1", 4, KWL_TITLEBAR_MANAGER },
+	{ 17, "kl_glass_manager_v1", 2, KWL_GLASS_MANAGER },
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, KWL_PRIMARY_MANAGER },
 	{ 19, "zwp_tablet_manager_v2", 1, KWL_TABLET_MANAGER },
-	{ 20, "keiland_ime_status_manager_v1", 2, KWL_IME_STATUS_MANAGER },
-	{ 21, "keiland_desktop_manager_v1", 1, KWL_DESKTOP_MANAGER },
-	{ 22, "keiland_keyboard_inset_manager_v1", 1, KWL_KEYBOARD_INSET_MANAGER },
-	{ 23, "keiland_edit_manager_v1", 1, KWL_EDIT_MANAGER },
+	{ 20, "kl_ime_status_manager_v1", 2, KWL_IME_STATUS_MANAGER },
+	{ 21, "kl_desktop_manager_v1", 1, KWL_DESKTOP_MANAGER },
+	{ 22, "kl_keyboard_inset_manager_v1", 1, KWL_KEYBOARD_INSET_MANAGER },
+	{ 23, "kl_edit_manager_v1", 1, KWL_EDIT_MANAGER },
 	{ 24, "org_kde_kwin_server_decoration_manager", 1, KWL_KDE_DECORATION_MANAGER },
 	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, KWL_SYSTEM_MANAGER },
 	{ 26, "xdg_activation_v1", 1, KWL_ACTIVATION_MANAGER },
-	{ 27, "keiland_theme_v1", 1, KWL_THEME },
+	{ 27, "kl_theme_v1", 1, KWL_THEME },
 	{ 28, "wp_content_type_manager_v1", 1, KWL_CONTENT_TYPE_MANAGER },
 };
 
@@ -345,7 +345,7 @@ kwl_dispatch(
 		error = kwl_activation_request(object, opcode, bytes, size);
 		break;
 	case KWL_THEME:
-		/* keiland_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
+		/* kl_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
 		error = kwl_theme_request(object, opcode, bytes, size);
 		break;
 	default:
@@ -435,7 +435,7 @@ global_identity(
 	const char **interface,
 	uint32_t *version)
 {
-	/* libkeiland-backend names its GPU buffer global (keiland_gpu_buffer_v1 version 3 on zedBSD, zwp_linux_dmabuf_v1 elsewhere). */
+	/* libkeiland-backend names its GPU buffer global (kl_gpu_buffer_v1 version 3 on zedBSD, zwp_linux_dmabuf_v1 elsewhere). */
 	if (global->kind == KWL_FACTORY) {
 		*interface = kl_backend_gpu_global_interface();
 		*version = kl_backend_gpu_global_version();

@@ -205,13 +205,13 @@ enum kwl_kind {
 	/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
 	KWL_ACTIVATION_MANAGER,
 	KWL_ACTIVATION_TOKEN,
-	/* keiland_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
+	/* kl_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
 	KWL_THEME,
 };
 
 /*
- * The editing operations (edit.c, ws102-p017; keiland_edit_v1's actions,
- * in its order) and a window's state's bits (keiland_edit_v1.set_state).
+ * The editing operations (edit.c, ws102-p017; kl_edit_v1's actions,
+ * in its order) and a window's state's bits (kl_edit_v1.set_state).
  */
 #define KWL_EDIT_COPY			0U
 #define KWL_EDIT_CUT			1U
@@ -407,7 +407,7 @@ struct kwl_object {
 	/* The glass look: the toplevel's title and application ID, and a maximized window's place and size to go back to. */
 	char title[KWL_TITLE_MAX];
 	char app_id[64];
-	/* A keiland_edit_v1's operations (bit 1 << KWL_EDIT_*) and state (KWL_EDIT_HAS_SELECTION ...; edit.c). */
+	/* A kl_edit_v1's operations (bit 1 << KWL_EDIT_*) and state (KWL_EDIT_HAS_SELECTION ...; edit.c). */
 	uint32_t edit_actions;
 	uint32_t edit_flags;
 	unsigned maximized;
@@ -443,7 +443,7 @@ struct kwl_object {
 	/* A window told its frame is done whose next commit the next frame waits for a moment. */
 	unsigned awaited;
 	/*
-	 * Acquire fences (keiland_gpu_buffer_v1 revision two): those for the next
+	 * Acquire fences (kl_gpu_buffer_v1 revision two): those for the next
 	 * commit, and the committed ones the queued image waits for.
 	 */
 	struct kwl_fence acquire[KWL_FENCE_MAX];
@@ -464,7 +464,7 @@ struct kwl_object {
 	struct kwl_object *shown_menu;
 	/*
 	 * The Titlebar Presentation (titlebar.c, WS070 p008): a
-	 * keiland_titlebar_v1's model, and a toplevel's keiland_titlebar_v1 (whose own
+	 * kl_titlebar_v1's model, and a toplevel's kl_titlebar_v1 (whose own
 	 * top names the toplevel back).  Each link is cleared from both ends
 	 * when either object goes.
 	 */
@@ -618,7 +618,7 @@ struct kwl_object {
 	uint32_t content_type;
 	unsigned content_type_changed;
 	/*
-	 * ws035-p083 (panels.c): a surface's keiland_glass_v1 (whose own surface
+	 * ws035-p083 (panels.c): a surface's kl_glass_v1 (whose own surface
 	 * field names it back; each cleared from both ends when either goes),
 	 * and the record of its glass panels, pending and applied by the
 	 * commit, which the surface owns from its first glass to its end.
@@ -717,7 +717,7 @@ struct kwl_client {
 	unsigned peer_checked;
 	unsigned peer_same;
 	/*
-	 * Nonzero once the client bound keiland_theme_v1 (theme.c,
+	 * Nonzero once the client bound kl_theme_v1 (theme.c,
 	 * ws089-p017): it draws in the desktop's appearance, so its windows'
 	 * glass takes the dark appearance's colour too; a client that does
 	 * not know the appearance keeps light glass under its light drawing.
@@ -974,7 +974,7 @@ struct kwl_server {
 	/*
 	 * The desktop's appearance (appearance.dark, ws089-p017): 0 light, 1
 	 * dark.  The glass's drawing maps its colours by it (glass.c) and
-	 * keiland_theme_v1 tells the clients (theme.c).
+	 * kl_theme_v1 tells the clients (theme.c).
 	 */
 	int32_t dark;
 	/*

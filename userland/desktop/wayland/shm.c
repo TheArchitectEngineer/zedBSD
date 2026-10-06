@@ -15,7 +15,7 @@
  * samples; after a commit the rows the client damaged are copied into it
  * with the CPU, only while no frame is in flight, and the buffer is then
  * released at once: the client can draw its next frame without waiting for
- * the GPU.  The GPU path (keiland_gpu_buffer_v1) is not touched by any of this.
+ * the GPU.  The GPU path (kl_gpu_buffer_v1) is not touched by any of this.
  */
 
 #include "compose.h"

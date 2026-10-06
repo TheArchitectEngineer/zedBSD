@@ -6,7 +6,7 @@
  */
 
 /*
- * A window's glass panels (keiland_glass_v1, panels.c): the parts of a
+ * A window's glass panels (kl_glass_v1, panels.c): the parts of a
  * surface that stand on the system's frosted glass, shared with the
  * drawing of windows (shell.c).
  */
@@ -41,7 +41,7 @@ struct kwl_panel {
 /*
  * A surface's glass panels: those set for its next commit and those its
  * last commit applied.  The surface owns the record from its first
- * keiland_glass_v1 to its own end.
+ * kl_glass_v1 to its own end.
  */
 struct kwl_panels {
 	struct kwl_panel pending[KWL_PANELS_MAX];
@@ -51,7 +51,7 @@ struct kwl_panels {
 	unsigned count;
 	/*
 	 * Whether the surface's glass shows the windows under it blurred
-	 * (keiland_glass_v1.set_blur, version 2, ws075-p029): pending, and
+	 * (kl_glass_v1.set_blur, version 2, ws075-p029): pending, and
 	 * committed.  0, the default, is the blurred wallpaper alone.
 	 */
 	unsigned pending_blur;

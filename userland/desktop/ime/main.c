@@ -240,12 +240,12 @@ main_global(
 	}
 
 	/* zdesktop's status: version 2 for the on-screen keyboard's predictions (ws166-p002) when zdesktop has it. */
-	order = strcmp(interface, "keiland_ime_status_manager_v1");
+	order = strcmp(interface, "kl_ime_status_manager_v1");
 	if (order == 0) {
 		wanted = 1U;
 		if (version >= MAIN_STATUS_VERSION)
 			wanted = MAIN_STATUS_VERSION;
-		program->status_manager = wl_registry_bind(registry, name, &keiland_ime_status_manager_v1_interface, wanted);
+		program->status_manager = wl_registry_bind(registry, name, &kl_ime_status_manager_v1_interface, wanted);
 		return;
 	}
 

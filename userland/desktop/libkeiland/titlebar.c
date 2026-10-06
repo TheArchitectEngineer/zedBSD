@@ -7,7 +7,7 @@
 
 /*
  * The Titlebar Presentation (WS070 p008, plan/ws070/titlebar-design.md
- * section 4): the wrapper of zdesktop's keiland_titlebar_v1 protocol.
+ * section 4): the wrapper of zdesktop's kl_titlebar_v1 protocol.
  *
  * A titlebar keeps a mirror of its controls' IDs and roles and of its tabs'
  * IDs as the requests sent so far leave them, so that a call the
@@ -57,12 +57,12 @@ struct titlebar_entry {
 };
 
 /*
- * One window's titlebar: its keiland_titlebar_v1, the application's listener,
+ * One window's titlebar: its kl_titlebar_v1, the application's listener,
  * the mirror of its controls and tabs, whether a transaction is open, and
  * the serial of the last one.
  */
 struct kl_titlebar {
-	struct keiland_titlebar_v1 *proxy;
+	struct kl_titlebar_v1 *proxy;
 	const struct kl_titlebar_listener *listener;
 	void *data;
 	struct titlebar_entry controls[TITLEBAR_CONTROLS_MAX];
@@ -73,21 +73,21 @@ struct kl_titlebar {
 	uint32_t serial;
 };
 
-static struct keiland_titlebar_manager_v1 *titlebar_bind(struct wl_display *display);
-static void titlebar_activated(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_text_changed(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, const char *text);
-static void titlebar_text_done(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, const char *text, uint32_t how);
-static void titlebar_tab_activated(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t serial);
-static void titlebar_tab_close(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id);
-static void titlebar_new_tab(void *data, struct keiland_titlebar_v1 *proxy, uint32_t serial);
-static void titlebar_overflow(void *data, struct keiland_titlebar_v1 *proxy);
-static void titlebar_drop_target(void *data, struct keiland_titlebar_v1 *proxy, uint32_t id, uint32_t detail);
+static struct kl_titlebar_manager_v1 *titlebar_bind(struct wl_display *display);
+static void titlebar_activated(void *data, struct kl_titlebar_v1 *proxy, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void titlebar_text_changed(void *data, struct kl_titlebar_v1 *proxy, uint32_t id, const char *text);
+static void titlebar_text_done(void *data, struct kl_titlebar_v1 *proxy, uint32_t id, const char *text, uint32_t how);
+static void titlebar_tab_activated(void *data, struct kl_titlebar_v1 *proxy, uint32_t id, uint32_t serial);
+static void titlebar_tab_close(void *data, struct kl_titlebar_v1 *proxy, uint32_t id);
+static void titlebar_new_tab(void *data, struct kl_titlebar_v1 *proxy, uint32_t serial);
+static void titlebar_overflow(void *data, struct kl_titlebar_v1 *proxy);
+static void titlebar_drop_target(void *data, struct kl_titlebar_v1 *proxy, uint32_t id, uint32_t detail);
 static struct titlebar_entry *titlebar_control(struct kl_titlebar *titlebar, uint32_t id);
 static int titlebar_tab(const struct kl_titlebar *titlebar, uint32_t id);
 static int titlebar_text_ok(const char *text);
 
 /* The titlebar's events, handed on to the application's listener. */
-static const struct keiland_titlebar_v1_listener titlebar_listener = {
+static const struct kl_titlebar_v1_listener titlebar_listener = {
 	titlebar_activated,
 	titlebar_text_changed,
 	titlebar_text_done,
@@ -110,7 +110,7 @@ kl_titlebar_create(
 	const struct kl_titlebar_listener *listener,
 	void *data)
 {
-	struct keiland_titlebar_manager_v1 *manager;
+	struct kl_titlebar_manager_v1 *manager;
 	struct kl_titlebar *titlebar;
 	struct wl_event_queue *queue;
 	int status;
@@ -123,7 +123,7 @@ kl_titlebar_create(
 	/* The record with the application's listener and an empty mirror. */
 	titlebar = calloc(1, sizeof(*titlebar));
 	if (titlebar == NULL) {
-		keiland_titlebar_manager_v1_destroy(manager);
+		kl_titlebar_manager_v1_destroy(manager);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -133,8 +133,8 @@ kl_titlebar_create(
 	titlebar->data = data;
 
 	/* The protocol object; the binding is not needed after it (the titlebar stays). */
-	titlebar->proxy = keiland_titlebar_manager_v1_get_titlebar(manager, toplevel);
-	keiland_titlebar_manager_v1_destroy(manager);
+	titlebar->proxy = kl_titlebar_manager_v1_get_titlebar(manager, toplevel);
+	kl_titlebar_manager_v1_destroy(manager);
 	if (titlebar->proxy == NULL) {
 		free(titlebar);
 		errno = ENOMEM;
@@ -146,9 +146,9 @@ kl_titlebar_create(
 	wl_proxy_set_queue((struct wl_proxy *)titlebar->proxy, queue);
 
 	/* The library's listener hands them on. */
-	status = keiland_titlebar_v1_add_listener(titlebar->proxy, &titlebar_listener, titlebar);
+	status = kl_titlebar_v1_add_listener(titlebar->proxy, &titlebar_listener, titlebar);
 	if (status != 0) {
-		keiland_titlebar_v1_destroy(titlebar->proxy);
+		kl_titlebar_v1_destroy(titlebar->proxy);
 		free(titlebar);
 		errno = EINVAL;
 		return NULL;
@@ -170,7 +170,7 @@ kl_titlebar_destroy(
 		return;
 
 	/* The protocol object, then the record. */
-	keiland_titlebar_v1_destroy(titlebar->proxy);
+	kl_titlebar_v1_destroy(titlebar->proxy);
 	free(titlebar);
 }
 
@@ -188,7 +188,7 @@ kl_titlebar_begin(
 	/* A new serial names the transaction. */
 	titlebar->serial++;
 	titlebar->updating = 1;
-	keiland_titlebar_v1_begin_update(titlebar->proxy, titlebar->serial);
+	kl_titlebar_v1_begin_update(titlebar->proxy, titlebar->serial);
 
 	/* Succeeded: changes may follow. */
 	return 0;
@@ -213,7 +213,7 @@ kl_titlebar_commit(
 
 	/* The commit names the transaction's serial. */
 	titlebar->updating = 0;
-	keiland_titlebar_v1_commit(titlebar->proxy, titlebar->serial);
+	kl_titlebar_v1_commit(titlebar->proxy, titlebar->serial);
 
 	/* Succeeded: the changes are shown together. */
 	return 0;
@@ -239,7 +239,7 @@ kl_titlebar_set_mode(
 		return ENOTSUP;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_mode(titlebar->proxy, mode);
+	kl_titlebar_v1_set_mode(titlebar->proxy, mode);
 	return 0;
 }
 
@@ -282,7 +282,7 @@ kl_titlebar_add_control(
 	titlebar->control_count++;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_add_control(titlebar->proxy, id, role, priority, group, label);
+	kl_titlebar_v1_add_control(titlebar->proxy, id, role, priority, group, label);
 	return 0;
 }
 
@@ -310,7 +310,7 @@ kl_titlebar_remove_control(
 	titlebar->control_count--;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_remove_control(titlebar->proxy, id);
+	kl_titlebar_v1_remove_control(titlebar->proxy, id);
 	return 0;
 }
 
@@ -339,7 +339,7 @@ kl_titlebar_set_control_label(
 		return E2BIG;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_control_label(titlebar->proxy, id, label);
+	kl_titlebar_v1_set_control_label(titlebar->proxy, id, label);
 	return 0;
 }
 
@@ -373,7 +373,7 @@ kl_titlebar_set_control_state(
 		checked_word = 1;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_control_state(titlebar->proxy, id, enabled_word, checked_word);
+	kl_titlebar_v1_set_control_state(titlebar->proxy, id, enabled_word, checked_word);
 	return 0;
 }
 
@@ -398,7 +398,7 @@ kl_titlebar_set_control_value(
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_control_value(titlebar->proxy, id, value);
+	kl_titlebar_v1_set_control_value(titlebar->proxy, id, value);
 	return 0;
 }
 
@@ -438,7 +438,7 @@ kl_titlebar_set_control_text(
 		return E2BIG;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_control_text(titlebar->proxy, id, text, placeholder);
+	kl_titlebar_v1_set_control_text(titlebar->proxy, id, text, placeholder);
 	return 0;
 }
 
@@ -494,7 +494,7 @@ kl_titlebar_set_breadcrumb(
 	}
 
 	/* The request, then the array goes. */
-	keiland_titlebar_v1_set_breadcrumb(titlebar->proxy, id, &parts);
+	kl_titlebar_v1_set_breadcrumb(titlebar->proxy, id, &parts);
 	wl_array_release(&parts);
 
 	/* Succeeded: the request is sent. */
@@ -532,7 +532,7 @@ kl_titlebar_add_tab(
 	titlebar->tab_count++;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_add_tab(titlebar->proxy, id, title);
+	kl_titlebar_v1_add_tab(titlebar->proxy, id, title);
 	return 0;
 }
 
@@ -558,7 +558,7 @@ kl_titlebar_remove_tab(
 	titlebar->tab_count--;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_remove_tab(titlebar->proxy, id);
+	kl_titlebar_v1_remove_tab(titlebar->proxy, id);
 	return 0;
 }
 
@@ -592,7 +592,7 @@ kl_titlebar_set_tab(
 		return E2BIG;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_tab(titlebar->proxy, id, title, flags);
+	kl_titlebar_v1_set_tab(titlebar->proxy, id, title, flags);
 	return 0;
 }
 
@@ -611,7 +611,7 @@ kl_titlebar_set_tabs_options(
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_set_tabs_options(titlebar->proxy, options);
+	kl_titlebar_v1_set_tabs_options(titlebar->proxy, options);
 	return 0;
 }
 
@@ -640,7 +640,7 @@ kl_titlebar_focus_control(
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
-	keiland_titlebar_v1_focus_control(titlebar->proxy, id, mode);
+	kl_titlebar_v1_focus_control(titlebar->proxy, id, mode);
 	return 0;
 }
 
@@ -714,7 +714,7 @@ kl_titlebar_set_suggestions(
 	}
 
 	/* The request, then the array goes. */
-	keiland_titlebar_v1_set_suggestions(titlebar->proxy, id, &items);
+	kl_titlebar_v1_set_suggestions(titlebar->proxy, id, &items);
 	wl_array_release(&items);
 
 	/* Succeeded: the request is sent. */
@@ -722,23 +722,23 @@ kl_titlebar_set_suggestions(
 }
 
 /*
- * Binds zdesktop's keiland_titlebar_manager_v1 at the newest version both
+ * Binds zdesktop's kl_titlebar_manager_v1 at the newest version both
  * sides speak: from an application's registry, or found by a search of the
  * library's own (on a queue of its own, so that no event of the
  * application's is dispatched by it); the binding is on the display's
  * default queue.  Returns NULL with errno set.
  */
-static struct keiland_titlebar_manager_v1 *
+static struct kl_titlebar_manager_v1 *
 titlebar_bind(
 	struct wl_display *display)
 {
-	struct keiland_titlebar_manager_v1 *manager;
+	struct kl_titlebar_manager_v1 *manager;
 	struct keiui_global_search search;
 	uint32_t version;
 	int error;
 
 	/* The manager's global. */
-	error = keiui_global_find(&search, display, "keiland_titlebar_manager_v1");
+	error = keiui_global_find(&search, display, "kl_titlebar_manager_v1");
 	if (error != 0) {
 		keiui_global_end(&search);
 		errno = error;
@@ -755,7 +755,7 @@ titlebar_bind(
 		version = TITLEBAR_VERSION_SUGGEST;
 
 	/* The manager, bound when announced; the search ends. */
-	manager = keiui_global_bind(&search, &keiland_titlebar_manager_v1_interface, version);
+	manager = keiui_global_bind(&search, &kl_titlebar_manager_v1_interface, version);
 	keiui_global_end(&search);
 
 	/* A compositor without the Titlebar Presentation. */
@@ -778,7 +778,7 @@ titlebar_bind(
 static void
 titlebar_activated(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -800,7 +800,7 @@ titlebar_activated(
 static void
 titlebar_text_changed(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t id,
 	const char *text)
 {
@@ -820,7 +820,7 @@ titlebar_text_changed(
 static void
 titlebar_text_done(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t id,
 	const char *text,
 	uint32_t how)
@@ -841,7 +841,7 @@ titlebar_text_done(
 static void
 titlebar_tab_activated(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t id,
 	uint32_t serial)
 {
@@ -861,7 +861,7 @@ titlebar_tab_activated(
 static void
 titlebar_tab_close(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t id)
 {
 	struct kl_titlebar *titlebar;
@@ -880,7 +880,7 @@ titlebar_tab_close(
 static void
 titlebar_new_tab(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t serial)
 {
 	struct kl_titlebar *titlebar;
@@ -899,7 +899,7 @@ titlebar_new_tab(
 static void
 titlebar_overflow(
 	void *data,
-	struct keiland_titlebar_v1 *proxy)
+	struct kl_titlebar_v1 *proxy)
 {
 	struct kl_titlebar *titlebar;
 
@@ -917,7 +917,7 @@ titlebar_overflow(
 static void
 titlebar_drop_target(
 	void *data,
-	struct keiland_titlebar_v1 *proxy,
+	struct kl_titlebar_v1 *proxy,
 	uint32_t id,
 	uint32_t detail)
 {

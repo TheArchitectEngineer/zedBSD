@@ -6,7 +6,7 @@
  */
 
 /*
- * The keyboard inset protocol (keiland_keyboard_inset_v1, ws102-p015,
+ * The keyboard inset protocol (kl_keyboard_inset_v1, ws102-p015,
  * plan/ws102/design.md section 2.8): the part of a window the on-screen
  * keyboard covers, told to the window before the keyboard changes it.
  */
@@ -16,7 +16,7 @@
 
 #include "kwl.h"
 
-/* The reasons of keiland_keyboard_inset_v1.inset: no keyboard, the right column's (flick), the bottom row's (QWERTY, handwriting). */
+/* The reasons of kl_keyboard_inset_v1.inset: no keyboard, the right column's (flick), the bottom row's (QWERTY, handwriting). */
 #define KWL_INSET_REASON_NONE		0U
 #define KWL_INSET_REASON_RIGHT		1U
 #define KWL_INSET_REASON_BOTTOM		2U

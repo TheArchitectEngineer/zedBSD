@@ -7,15 +7,15 @@
 
 /*
  * The server side of the Titlebar Presentation protocol (WS070 p008,
- * plan/ws070/titlebar-design.md section 2): keiland_titlebar_manager_v1 and
- * keiland_titlebar_v1.
+ * plan/ws070/titlebar-design.md section 2): kl_titlebar_manager_v1 and
+ * kl_titlebar_v1.
  *
  * A client gives one window's titlebar a mode (menu, controls or tabs) and
  * the models of controls and tabs, in transactions as it builds menus:
  * begin_update copies the state shown, the changes go to the copy, and
  * commit shows the copy at once.  Both models may exist whatever the mode;
  * only the mode's is drawn (titlebar-shell.c).  What the user does with a
- * control or a tab comes back as keiland_titlebar_v1's events.
+ * control or a tab comes back as kl_titlebar_v1's events.
  */
 
 #include "extras.h"
@@ -40,12 +40,12 @@
 /* The longest event: a control, a text of the longest, and a word after it. */
 #define TITLEBAR_EVENT_MAX		(12U + KWL_TITLEBAR_TEXT_MAX + 4U)
 
-/* keiland_titlebar_manager_v1's requests and error. */
+/* kl_titlebar_manager_v1's requests and error. */
 #define MANAGER_DESTROY			0U
 #define MANAGER_GET_TITLEBAR		1U
 #define MANAGER_ERROR_ALREADY_EXISTS	0U
 
-/* keiland_titlebar_v1's requests. */
+/* kl_titlebar_v1's requests. */
 #define REQUEST_DESTROY			0U
 #define REQUEST_BEGIN_UPDATE		1U
 #define REQUEST_COMMIT			2U
@@ -64,7 +64,7 @@
 #define REQUEST_FOCUS_CONTROL		15U
 #define REQUEST_SET_SUGGESTIONS		16U
 
-/* keiland_titlebar_v1's errors. */
+/* kl_titlebar_v1's errors. */
 #define ERROR_INVALID_ID		0U
 #define ERROR_INVALID_VALUE		1U
 #define ERROR_NOT_UPDATING		2U
@@ -72,7 +72,7 @@
 #define ERROR_BAD_SERIAL		4U
 #define ERROR_TOO_LARGE			5U
 
-/* keiland_titlebar_v1's events. */
+/* kl_titlebar_v1's events. */
 #define EVENT_CONTROL_ACTIVATED		0U
 #define EVENT_TEXT_CHANGED		1U
 #define EVENT_TEXT_DONE			2U
@@ -211,7 +211,7 @@ kwl_titlebar_object_gone(
 
 /*
  * Finds the titlebar model a window's surface shows, and the
- * keiland_titlebar_v1 its events go to; NULL when the window has none.
+ * kl_titlebar_v1 its events go to; NULL when the window has none.
  */
 struct kwl_titlebar_model *
 kwl_titlebar_of_surface(
@@ -476,7 +476,7 @@ titlebar_string(
 	return 0;
 }
 
-/* Carries out a request of keiland_titlebar_manager_v1. */
+/* Carries out a request of kl_titlebar_manager_v1. */
 static int
 manager_request(
 	struct kwl_object *manager,
@@ -508,7 +508,7 @@ manager_request(
 
 	/* A window has one titlebar at a time. */
 	if (toplevel->titlebar != NULL) {
-		error = kwl_error_code(manager->client, manager->id, MANAGER_ERROR_ALREADY_EXISTS, "the toplevel already has a keiland_titlebar_v1");
+		error = kwl_error_code(manager->client, manager->id, MANAGER_ERROR_ALREADY_EXISTS, "the toplevel already has a kl_titlebar_v1");
 		return error;
 	}
 
@@ -539,7 +539,7 @@ manager_request(
 	return 0;
 }
 
-/* Carries out a request of keiland_titlebar_v1. */
+/* Carries out a request of kl_titlebar_v1. */
 static int
 titlebar_request(
 	struct kwl_object *titlebar,
@@ -1265,7 +1265,7 @@ titlebar_suggest(
 	return 0;
 }
 
-/* Sends a keiland_titlebar_v1 protocol error. */
+/* Sends a kl_titlebar_v1 protocol error. */
 static int
 titlebar_fail(
 	struct kwl_object *titlebar,
@@ -1274,7 +1274,7 @@ titlebar_fail(
 {
 	int error;
 
-	/* The error names the titlebar and the keiland_titlebar_v1 error code. */
+	/* The error names the titlebar and the kl_titlebar_v1 error code. */
 	error = kwl_error_code(titlebar->client, titlebar->id, code, reason);
 
 	/* Reports the refusal. */

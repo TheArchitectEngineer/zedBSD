@@ -22,7 +22,7 @@
  * Drag and drop (ws035-p084): start_drag while a button is held takes the
  * pointer from the clients.  The surface under the pointer -- a window's
  * body, or the part of a breadcrumb in a window's titlebar, whose titlebar
- * is told the part first (keiland_titlebar_v1 version 2) -- hears enter with a
+ * is told the part first (kl_titlebar_v1 version 2) -- hears enter with a
  * new offer of the source's types and actions, then motion, and leave when
  * the pointer goes elsewhere.  The target accepts a type and says the
  * actions it takes; zdesktop chooses one (Ctrl prefers copy, Alt asks) and tells the

@@ -38,7 +38,7 @@ struct wayland_surface {
 	struct wl_surface *native;
 	struct wl_event_queue *queue;
 	struct wl_registry *registry;
-	struct keiland_gpu_buffer_v1 *factory;
+	struct kl_gpu_buffer_v1 *factory;
 	struct wayland_lease *active;
 	pthread_mutex_t mutex;
 	VkBool32 mutex_ready;
@@ -306,7 +306,7 @@ wayland_capabilities(
 	    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
 	    VK_IMAGE_USAGE_SAMPLED_BIT;
 
-	/* A compositor that reads a buffer's alpha (keiland_gpu_buffer_v1 revision three) also takes see-through images. */
+	/* A compositor that reads a buffer's alpha (kl_gpu_buffer_v1 revision three) also takes see-through images. */
 	if (native->factory_version >= 3U)
 		capabilities->supportedCompositeAlpha |= VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
 
@@ -564,7 +564,7 @@ wayland_destroy(
 
 	/* Ends the image factory before retiring its registry and queue. */
 	if (surface->factory != NULL)
-		keiland_gpu_buffer_v1_destroy(surface->factory);
+		kl_gpu_buffer_v1_destroy(surface->factory);
 
 	/* Suppresses registry events before their surface listener data is freed. */
 	if (surface->registry != NULL)
@@ -630,7 +630,7 @@ wayland_import(
 	pthread_mutex_lock(&surface->mutex);
 
 	/* The marshaller duplicates fd; the caller keeps its independent original. */
-	image->buffer = keiland_gpu_buffer_v1_create_buffer(surface->factory, fd, &metadata);
+	image->buffer = kl_gpu_buffer_v1_create_buffer(surface->factory, fd, &metadata);
 	if (image->buffer == NULL) {
 		pthread_mutex_unlock(&surface->mutex);
 		vulkan_free(&surface->surface->object.allocator, image);
@@ -648,7 +648,7 @@ wayland_import(
 
 	/* A see-through swapchain's buffer is blended by its premultiplied alpha. */
 	if (lease->premultiplied != VK_FALSE)
-		keiland_gpu_buffer_v1_set_alpha(surface->factory, image->buffer, KEILAND_GPU_BUFFER_V1_ALPHA_PREMULTIPLIED);
+		kl_gpu_buffer_v1_set_alpha(surface->factory, image->buffer, KL_GPU_BUFFER_V1_ALPHA_PREMULTIPLIED);
 
 	/* Partial-chain and ordinary teardown now find this buffer through its lease. */
 	image->next = lease->images;
@@ -678,7 +678,7 @@ wayland_present(
 
 /*
  * Commits a GPU image with the fence of its rendering when the compositor
- * takes acquire fences (keiland_gpu_buffer_v1 revision two); otherwise the
+ * takes acquire fences (kl_gpu_buffer_v1 revision two); otherwise the
  * caller waited for the fence and the image is complete.
  */
 static VkResult
@@ -818,7 +818,7 @@ wayland_commit(
 
 	/* The fence the compositor waits for before it uses this commit. */
 	if (wait_fd >= 0)
-		keiland_gpu_buffer_v1_set_acquire_fence(surface->factory, surface->native, wait_fd, wait_generation);
+		kl_gpu_buffer_v1_set_acquire_fence(surface->factory, surface->native, wait_fd, wait_generation);
 
 	/* Commits the GPU image with full-surface damage on the native wrapper. */
 	wl_surface_attach(surface->native, image->buffer, 0, 0);
@@ -1077,7 +1077,7 @@ wayland_global(
 
 	/* Other advertised interfaces remain the application's concern. */
 	surface = data;
-	match = strcmp(interface, "keiland_gpu_buffer_v1");
+	match = strcmp(interface, "kl_gpu_buffer_v1");
 	if (match != 0)
 		return;
 
@@ -1090,7 +1090,7 @@ wayland_global(
 		version = 3U;
 
 	/* Binds the selected interface through the registry's inherited private queue. */
-	surface->factory = wl_registry_bind(registry, name, &keiland_gpu_buffer_v1_interface, version);
+	surface->factory = wl_registry_bind(registry, name, &kl_gpu_buffer_v1_interface, version);
 	if (surface->factory == NULL)
 		return;
 	surface->factory_version = version;
@@ -1230,7 +1230,7 @@ wayland_display_supported(
 cleanup:
 	/* Retires the temporary binding before discarding its discovery queue. */
 	if (native.factory != NULL)
-		keiland_gpu_buffer_v1_destroy(native.factory);
+		kl_gpu_buffer_v1_destroy(native.factory);
 
 	/* Suppresses pending registry callbacks before stack-owned listener data expires. */
 	if (native.registry != NULL)

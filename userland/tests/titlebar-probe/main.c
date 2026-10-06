@@ -10,7 +10,7 @@
  * libkeiland's checks.
  *
  * Each server case opens its own connection, makes a toplevel and its
- * keiland_titlebar_v1 through the private protocol header, sends a few
+ * kl_titlebar_v1 through the private protocol header, sends a few
  * requests, and checks the protocol error zdesktop answers with (its
  * interface and code), or that there is none.  The library case checks
  * that libkeiland refuses the same mistakes itself and sends nothing that
@@ -72,12 +72,12 @@ struct probe_connection {
 	struct wl_registry *registry;
 	struct wl_compositor *compositor;
 	struct xdg_wm_base *shell;
-	struct keiland_titlebar_manager_v1 *manager;
+	struct kl_titlebar_manager_v1 *manager;
 	struct wl_shm *shm;
 	struct wl_surface *surface;
 	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
-	struct keiland_titlebar_v1 *titlebar;
+	struct kl_titlebar_v1 *titlebar;
 	int configured;
 	uint32_t configure_serial;
 };
@@ -173,18 +173,18 @@ static const struct keiland_titlebar_listener probe_titlebar_listener = {
 
 /* The server cases, each on its own connection. */
 static const struct probe_case probe_cases[] = {
-	{ "outside", send_outside, "keiland_titlebar_v1", 2U },
-	{ "zero-id", send_zero_id, "keiland_titlebar_v1", 0U },
-	{ "duplicate", send_duplicate, "keiland_titlebar_v1", 0U },
-	{ "role", send_role, "keiland_titlebar_v1", 1U },
-	{ "mode", send_mode, "keiland_titlebar_v1", 1U },
-	{ "serial", send_serial, "keiland_titlebar_v1", 4U },
-	{ "nested", send_nested, "keiland_titlebar_v1", 3U },
-	{ "breadcrumb-role", send_breadcrumb_role, "keiland_titlebar_v1", 1U },
-	{ "value-role", send_value_role, "keiland_titlebar_v1", 1U },
-	{ "tab-flags", send_tab_flags, "keiland_titlebar_v1", 1U },
-	{ "focus-uncommitted", send_focus_uncommitted, "keiland_titlebar_v1", 0U },
-	{ "exists", send_exists, "keiland_titlebar_manager_v1", 0U },
+	{ "outside", send_outside, "kl_titlebar_v1", 2U },
+	{ "zero-id", send_zero_id, "kl_titlebar_v1", 0U },
+	{ "duplicate", send_duplicate, "kl_titlebar_v1", 0U },
+	{ "role", send_role, "kl_titlebar_v1", 1U },
+	{ "mode", send_mode, "kl_titlebar_v1", 1U },
+	{ "serial", send_serial, "kl_titlebar_v1", 4U },
+	{ "nested", send_nested, "kl_titlebar_v1", 3U },
+	{ "breadcrumb-role", send_breadcrumb_role, "kl_titlebar_v1", 1U },
+	{ "value-role", send_value_role, "kl_titlebar_v1", 1U },
+	{ "tab-flags", send_tab_flags, "kl_titlebar_v1", 1U },
+	{ "focus-uncommitted", send_focus_uncommitted, "kl_titlebar_v1", 0U },
+	{ "exists", send_exists, "kl_titlebar_manager_v1", 0U },
 	{ "good", send_good, NULL, PROBE_NO_ERROR }
 };
 
@@ -305,9 +305,9 @@ probe_global(
 	}
 
 	/* The Titlebar Presentation. */
-	same = strcmp(interface, "keiland_titlebar_manager_v1");
+	same = strcmp(interface, "kl_titlebar_manager_v1");
 	if (same == 0)
-		connection->manager = wl_registry_bind(registry, name, &keiland_titlebar_manager_v1_interface, 1U);
+		connection->manager = wl_registry_bind(registry, name, &kl_titlebar_manager_v1_interface, 1U);
 }
 
 /* A global going away does not matter to a short case. */
@@ -423,7 +423,7 @@ probe_connect(
 	connection->surface = wl_compositor_create_surface(connection->compositor);
 	connection->role = xdg_wm_base_get_xdg_surface(connection->shell, connection->surface);
 	connection->toplevel = xdg_surface_get_toplevel(connection->role);
-	connection->titlebar = keiland_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
+	connection->titlebar = kl_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
 	if (connection->titlebar == NULL)
 		return -1;
 
@@ -448,7 +448,7 @@ send_outside(
 	struct probe_connection *connection)
 {
 	/* No begin_update before it. */
-	keiland_titlebar_v1_set_mode(connection->titlebar, KEILAND_TITLEBAR_V1_MODE_CONTROLS);
+	kl_titlebar_v1_set_mode(connection->titlebar, KL_TITLEBAR_V1_MODE_CONTROLS);
 }
 
 /* A control ID of zero. */
@@ -457,8 +457,8 @@ send_zero_id(
 	struct probe_connection *connection)
 {
 	/* Zero is not a control's ID. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_control(connection->titlebar, 0U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_control(connection->titlebar, 0U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
 }
 
 /* The same control ID twice. */
@@ -467,9 +467,9 @@ send_duplicate(
 	struct probe_connection *connection)
 {
 	/* The second add reuses the first's ID. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
-	keiland_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_FORWARD, 0U, 0U, "Forward");
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	kl_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_FORWARD, 0U, 0U, "Forward");
 }
 
 /* A role the protocol does not name. */
@@ -478,8 +478,8 @@ send_role(
 	struct probe_connection *connection)
 {
 	/* Role 99. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_control(connection->titlebar, 1U, 99U, 0U, 0U, "What");
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, 99U, 0U, 0U, "What");
 }
 
 /* A mode the protocol does not name. */
@@ -488,8 +488,8 @@ send_mode(
 	struct probe_connection *connection)
 {
 	/* Mode 5. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_set_mode(connection->titlebar, 5U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_set_mode(connection->titlebar, 5U);
 }
 
 /* A commit that names another serial. */
@@ -498,8 +498,8 @@ send_serial(
 	struct probe_connection *connection)
 {
 	/* Begun as 7, committed as 8. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 7U);
-	keiland_titlebar_v1_commit(connection->titlebar, 8U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 7U);
+	kl_titlebar_v1_commit(connection->titlebar, 8U);
 }
 
 /* A transaction inside a transaction. */
@@ -508,8 +508,8 @@ send_nested(
 	struct probe_connection *connection)
 {
 	/* Two begins. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_begin_update(connection->titlebar, 2U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 2U);
 }
 
 /* Breadcrumb parts for a search control. */
@@ -527,9 +527,9 @@ send_breadcrumb_role(
 		memcpy(place, "Home", 5U);
 
 	/* The search is not a breadcrumb. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
-	keiland_titlebar_v1_set_breadcrumb(connection->titlebar, 1U, &parts);
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	kl_titlebar_v1_set_breadcrumb(connection->titlebar, 1U, &parts);
 	wl_array_release(&parts);
 }
 
@@ -539,9 +539,9 @@ send_value_role(
 	struct probe_connection *connection)
 {
 	/* A back button has no value. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
-	keiland_titlebar_v1_set_control_value(connection->titlebar, 1U, 500U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	kl_titlebar_v1_set_control_value(connection->titlebar, 1U, 500U);
 }
 
 /* Tab flags the protocol does not name. */
@@ -550,9 +550,9 @@ send_tab_flags(
 	struct probe_connection *connection)
 {
 	/* Flag 8. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_tab(connection->titlebar, 1U, "One");
-	keiland_titlebar_v1_set_tab(connection->titlebar, 1U, "One", 8U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_tab(connection->titlebar, 1U, "One");
+	kl_titlebar_v1_set_tab(connection->titlebar, 1U, "One", 8U);
 }
 
 /* The keyboard asked for a control that is not shown yet. */
@@ -561,9 +561,9 @@ send_focus_uncommitted(
 	struct probe_connection *connection)
 {
 	/* The search is only in the open transaction. */
-	keiland_titlebar_v1_begin_update(connection->titlebar, 1U);
-	keiland_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
-	keiland_titlebar_v1_focus_control(connection->titlebar, 1U, 0U);
+	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	kl_titlebar_v1_focus_control(connection->titlebar, 1U, 0U);
 }
 
 /* A second titlebar on one window. */
@@ -572,7 +572,7 @@ send_exists(
 	struct probe_connection *connection)
 {
 	/* The connection's window has one already. */
-	(void)keiland_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
+	(void)kl_titlebar_manager_v1_get_titlebar(connection->manager, connection->toplevel);
 }
 
 /*
@@ -585,7 +585,7 @@ send_good(
 	struct probe_connection *connection)
 {
 	static const char parts_bytes[] = "Home\0Projects\0zedBSD";
-	struct keiland_titlebar_v1 *titlebar;
+	struct kl_titlebar_v1 *titlebar;
 	struct wl_array parts;
 	char *place;
 
@@ -597,42 +597,42 @@ send_good(
 
 	/* The controls. */
 	titlebar = connection->titlebar;
-	keiland_titlebar_v1_begin_update(titlebar, 1U);
-	keiland_titlebar_v1_set_mode(titlebar, KEILAND_TITLEBAR_V1_MODE_CONTROLS);
-	keiland_titlebar_v1_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back");
-	keiland_titlebar_v1_add_control(titlebar, 2U, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward");
-	keiland_titlebar_v1_add_control(titlebar, 3U, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location");
-	keiland_titlebar_v1_add_control(titlebar, 4U, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search");
-	keiland_titlebar_v1_add_control(titlebar, 5U, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons");
-	keiland_titlebar_v1_add_control(titlebar, 6U, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List");
-	keiland_titlebar_v1_add_control(titlebar, 7U, KEILAND_CONTROL_PROGRESS, KEILAND_PRIORITY_NORMAL, 0U, "Copying");
+	kl_titlebar_v1_begin_update(titlebar, 1U);
+	kl_titlebar_v1_set_mode(titlebar, KL_TITLEBAR_V1_MODE_CONTROLS);
+	kl_titlebar_v1_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back");
+	kl_titlebar_v1_add_control(titlebar, 2U, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward");
+	kl_titlebar_v1_add_control(titlebar, 3U, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location");
+	kl_titlebar_v1_add_control(titlebar, 4U, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search");
+	kl_titlebar_v1_add_control(titlebar, 5U, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons");
+	kl_titlebar_v1_add_control(titlebar, 6U, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List");
+	kl_titlebar_v1_add_control(titlebar, 7U, KEILAND_CONTROL_PROGRESS, KEILAND_PRIORITY_NORMAL, 0U, "Copying");
 
 	/* Their states, texts, parts and value. */
-	keiland_titlebar_v1_set_control_state(titlebar, 2U, 0U, 0U);
-	keiland_titlebar_v1_set_control_state(titlebar, 5U, 1U, 1U);
-	keiland_titlebar_v1_set_control_text(titlebar, 4U, "", "Search");
-	keiland_titlebar_v1_set_breadcrumb(titlebar, 3U, &parts);
-	keiland_titlebar_v1_set_control_value(titlebar, 7U, 420U);
-	keiland_titlebar_v1_set_control_label(titlebar, 7U, "Copying 3 of 7 items");
-	keiland_titlebar_v1_remove_control(titlebar, 7U);
+	kl_titlebar_v1_set_control_state(titlebar, 2U, 0U, 0U);
+	kl_titlebar_v1_set_control_state(titlebar, 5U, 1U, 1U);
+	kl_titlebar_v1_set_control_text(titlebar, 4U, "", "Search");
+	kl_titlebar_v1_set_breadcrumb(titlebar, 3U, &parts);
+	kl_titlebar_v1_set_control_value(titlebar, 7U, 420U);
+	kl_titlebar_v1_set_control_label(titlebar, 7U, "Copying 3 of 7 items");
+	kl_titlebar_v1_remove_control(titlebar, 7U);
 
 	/* Tabs, kept while the mode is controls. */
-	keiland_titlebar_v1_add_tab(titlebar, 1U, "README.md");
-	keiland_titlebar_v1_add_tab(titlebar, 2U, "main.c");
-	keiland_titlebar_v1_set_tab(titlebar, 2U, "main.c", KEILAND_TAB_ACTIVE | KEILAND_TAB_CLOSABLE);
-	keiland_titlebar_v1_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
-	keiland_titlebar_v1_remove_tab(titlebar, 1U);
-	keiland_titlebar_v1_commit(titlebar, 1U);
+	kl_titlebar_v1_add_tab(titlebar, 1U, "README.md");
+	kl_titlebar_v1_add_tab(titlebar, 2U, "main.c");
+	kl_titlebar_v1_set_tab(titlebar, 2U, "main.c", KEILAND_TAB_ACTIVE | KEILAND_TAB_CLOSABLE);
+	kl_titlebar_v1_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
+	kl_titlebar_v1_remove_tab(titlebar, 1U);
+	kl_titlebar_v1_commit(titlebar, 1U);
 	wl_array_release(&parts);
 
 	/* The keyboard for the search, then the mode switched to tabs and back in transactions. */
-	keiland_titlebar_v1_focus_control(titlebar, 4U, 0U);
-	keiland_titlebar_v1_begin_update(titlebar, 2U);
-	keiland_titlebar_v1_set_mode(titlebar, KEILAND_TITLEBAR_V1_MODE_TABS);
-	keiland_titlebar_v1_commit(titlebar, 2U);
-	keiland_titlebar_v1_begin_update(titlebar, 3U);
-	keiland_titlebar_v1_set_mode(titlebar, KEILAND_TITLEBAR_V1_MODE_CONTROLS);
-	keiland_titlebar_v1_commit(titlebar, 3U);
+	kl_titlebar_v1_focus_control(titlebar, 4U, 0U);
+	kl_titlebar_v1_begin_update(titlebar, 2U);
+	kl_titlebar_v1_set_mode(titlebar, KL_TITLEBAR_V1_MODE_TABS);
+	kl_titlebar_v1_commit(titlebar, 2U);
+	kl_titlebar_v1_begin_update(titlebar, 3U);
+	kl_titlebar_v1_set_mode(titlebar, KL_TITLEBAR_V1_MODE_CONTROLS);
+	kl_titlebar_v1_commit(titlebar, 3U);
 }
 
 /*
@@ -658,7 +658,7 @@ probe_library(void)
 	}
 
 	/* The window's titlebar through the library (the probe's own is let go first). */
-	keiland_titlebar_v1_destroy(connection.titlebar);
+	kl_titlebar_v1_destroy(connection.titlebar);
 	connection.titlebar = NULL;
 	titlebar = keiland_titlebar_create(connection.display, connection.toplevel, NULL, NULL);
 	if (titlebar == NULL) {

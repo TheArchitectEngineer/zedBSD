@@ -7,7 +7,7 @@
 
 /*
  * Sheets (ws090-p014): a window that has a parent (xdg_toplevel.set_parent)
- * and asks for the titlebar's sheet mode (keiland_titlebar_v1 version 3,
+ * and asks for the titlebar's sheet mode (kl_titlebar_v1 version 3,
  * titlebar.c) has no title bar of its own and hangs under its parent's,
  * in front of it (shell.c places, draws and raises it, and keeps the
  * parent's body from input while it is open).  This keeps who is whose

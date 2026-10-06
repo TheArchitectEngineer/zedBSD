@@ -10,7 +10,7 @@
  * plan/ws102/design.md section 2.10), the compositor's side of the
  * on-screen keyboard's tool face (its buttons come with ws102-p016).
  *
- * keiland_edit_v1: a window that asks for it (keiland_edit_manager_v1.get_edit;
+ * kl_edit_v1: a window that asks for it (kl_edit_manager_v1.get_edit;
  * libkeiland's windows do) tells which editing operations it carries out and
  * its state -- whether it has a selection, something to paste, something
  * to undo or redo, and whether a selection is being made -- and hears the
@@ -40,7 +40,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The requests of keiland_edit_manager_v1 and of keiland_edit_v1, and the event. */
+/* The requests of kl_edit_manager_v1 and of kl_edit_v1, and the event. */
 #define EDIT_MANAGER_DESTROY		0U
 #define EDIT_MANAGER_GET_EDIT		1U
 #define EDIT_DESTROY			0U
@@ -116,8 +116,8 @@ static uint32_t edit_enabled(uint32_t actions, uint32_t flags);
 static uint32_t edit_word(const unsigned char *bytes, size_t offset);
 
 /*
- * Carries out a request of keiland_edit_manager_v1 or of a window's
- * keiland_edit_v1.
+ * Carries out a request of kl_edit_manager_v1 or of a window's
+ * kl_edit_v1.
  */
 int
 kwl_edit_request(

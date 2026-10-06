@@ -6,15 +6,15 @@
  */
 
 /*
- * The desktop surface (keiland_desktop_v1, ws094-p002, plan/ws094/design.md
+ * The desktop surface (kl_desktop_v1, ws094-p002, plan/ws094/design.md
  * §3): one client's surface that lies over the wallpaper and under every
  * window, on every virtual desktop, where Files shows the icons of
  * ~/Desktop.
  *
- * keiland_desktop_manager_v1.get_desktop_surface(id, surface, token) gives
+ * kl_desktop_manager_v1.get_desktop_surface(id, surface, token) gives
  * a surface the role, once, to the client that shows the token the
  * compositor gave the program it started (KEILAND_DESKTOP_TOKEN); the new
- * keiland_desktop_surface_v1 hears configure(serial, x, y, width, height):
+ * kl_desktop_surface_v1 hears configure(serial, x, y, width, height):
  * where on the output it is (the work area under the system bar), and the
  * client acknowledges it before it draws.  The surface has no window: it
  * is not in the windows' list, Wiseview, the system bar or the focus
@@ -50,7 +50,7 @@
 /* Marks a parameter a function's signature requires but it does not use. */
 #define UNUSED_PARAMETER(name)	((void)(name))
 
-/* The requests of keiland_desktop_manager_v1 and of keiland_desktop_surface_v1, and the surface's one event. */
+/* The requests of kl_desktop_manager_v1 and of kl_desktop_surface_v1, and the surface's one event. */
 #define DESKTOP_MANAGER_DESTROY		0U
 #define DESKTOP_MANAGER_GET		1U
 #define DESKTOP_SURFACE_DESTROY		0U
@@ -81,7 +81,7 @@
  * The one desktop surface of the compositor and the program that shows it.
  *
  * surface and object are the surface with the role and its
- * keiland_desktop_surface_v1 (both NULL when no client has the role); they
+ * kl_desktop_surface_v1 (both NULL when no client has the role); they
  * are cleared when either goes (kwl_desktop_object_gone).  x, y, width and
  * height are the place last configured, serial the configure's.  focused
  * says the desktop has the keyboard, since focus_top was the top window
@@ -179,8 +179,8 @@ kwl_desktop_option(
 }
 
 /*
- * Carries out a request of keiland_desktop_manager_v1 or of
- * keiland_desktop_surface_v1.
+ * Carries out a request of kl_desktop_manager_v1 or of
+ * kl_desktop_surface_v1.
  */
 int
 kwl_desktop_request(
@@ -229,7 +229,7 @@ kwl_desktop_request(
 
 /*
  * Unties an object that is going from the desktop: the surface with the
- * role or its keiland_desktop_surface_v1 ends the role, and the keyboard
+ * role or its kl_desktop_surface_v1 ends the role, and the keyboard
  * goes back to the windows.
  */
 void

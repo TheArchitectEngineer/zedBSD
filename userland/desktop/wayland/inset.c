@@ -6,8 +6,8 @@
  */
 
 /*
- * keiland_keyboard_inset_v1 (ws102-p015, plan/ws102/design.md section 2.8):
- * a window that asks for it (keiland_keyboard_inset_manager_v1.get_inset,
+ * kl_keyboard_inset_v1 (ws102-p015, plan/ws102/design.md section 2.8):
+ * a window that asks for it (kl_keyboard_inset_manager_v1.get_inset,
  * libkeiland does) hears how much of it the on-screen keyboard covers, in its
  * own pixels from its right and bottom edges, whenever the keyboard opens,
  * closes or changes the windows (the work area of ws102-p007 calls this
@@ -24,7 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The requests of keiland_keyboard_inset_manager_v1 and of keiland_keyboard_inset_v1, and the event. */
+/* The requests of kl_keyboard_inset_manager_v1 and of kl_keyboard_inset_v1, and the event. */
 #define INSET_MANAGER_DESTROY		0U
 #define INSET_MANAGER_GET_INSET		1U
 #define INSET_DESTROY			0U
@@ -35,8 +35,8 @@ static void inset_covered(struct kwl_server *server, struct kwl_object *surface,
 static uint32_t inset_word(const unsigned char *bytes, size_t offset);
 
 /*
- * Carries out a request of keiland_keyboard_inset_manager_v1 or of a
- * window's keiland_keyboard_inset_v1.
+ * Carries out a request of kl_keyboard_inset_manager_v1 or of a
+ * window's kl_keyboard_inset_v1.
  */
 int
 kwl_inset_request(

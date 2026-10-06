@@ -6,7 +6,7 @@
  */
 
 /*
- * keiland_theme_v1 (ws089-p017): the desktop's appearance, light or dark,
+ * kl_theme_v1 (ws089-p017): the desktop's appearance, light or dark,
  * told to a client when it binds the global and again whenever the
  * setting appearance.dark changes (settings.c calls kwl_theme_changed),
  * so that libkeiland's applications draw in it and redraw.  The
@@ -18,14 +18,14 @@
 #include <errno.h>
 #include <stdio.h>
 
-/* The request and the event of keiland_theme_v1. */
+/* The request and the event of kl_theme_v1. */
 #define THEME_DESTROY		0U
 #define THEME_EVENT_APPEARANCE	0U
 
 static int theme_send(struct kwl_object *theme);
 
 /*
- * Carries out a request of keiland_theme_v1: destroy is the only one.
+ * Carries out a request of kl_theme_v1: destroy is the only one.
  */
 int
 kwl_theme_request(

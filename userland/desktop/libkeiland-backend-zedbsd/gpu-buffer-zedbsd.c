@@ -37,7 +37,7 @@ kl_backend_gpu_global_interface(
 	void)
 {
 	/* Succeeded: zedBSD clients share kernel image capabilities. */
-	return "keiland_gpu_buffer_v1";
+	return "kl_gpu_buffer_v1";
 }
 
 /*

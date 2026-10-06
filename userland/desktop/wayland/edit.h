@@ -6,7 +6,7 @@
  */
 
 /*
- * The editing operations of the on-screen keyboard's tool face (keiland_edit_v1,
+ * The editing operations of the on-screen keyboard's tool face (kl_edit_v1,
  * ws102-p017, plan/ws102/design.md section 2.10): the protocol's requests and
  * the keyboard shortcuts that stand in for the face's buttons until p016.
  */

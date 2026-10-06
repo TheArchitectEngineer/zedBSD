@@ -6,7 +6,7 @@
  */
 
 /*
- * The desktop surface (keiland_desktop_v1, desktop.c, ws094-p002): one
+ * The desktop surface (kl_desktop_v1, desktop.c, ws094-p002): one
  * client's surface over the wallpaper and under every window, which shows
  * the icons of ~/Desktop; shared with the drawing, the input and the
  * display pass.

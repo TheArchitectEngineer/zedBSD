@@ -55,7 +55,7 @@
  * The candidates' tab (ws166-p003) predicts words: the hiragana the flick
  * panel commits one after another are a reading (keyboard.reading); each
  * time it changes the input method is asked for the words it starts
- * (kwl_ime_predict, keiland_ime_status_v1 version 2: the reading's own
+ * (kwl_ime_predict, kl_ime_status_v1 version 2: the reading's own
  * words first, then longer ones, the user's choices before the
  * dictionary's), and the answer fills the tab, which comes up by itself
  * when a reading begins.  A word tapped replaces the reading before the
@@ -4441,7 +4441,7 @@ keyboard_source_name(
 
 /*
  * Takes the predictions the input method gave for a reading
- * (keiland_ime_status_v1.predictions, ws166-p003): the words of the
+ * (kl_ime_status_v1.predictions, ws166-p003): the words of the
  * latest request fill the candidates' tab, "WORD\tREADING" a line; an
  * answer to an older request is dropped.
  */

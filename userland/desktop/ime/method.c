@@ -60,10 +60,10 @@ static void grab_keymap(void *data, struct zwp_input_method_keyboard_grab_v2 *gr
 static void grab_key(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
 static void grab_modifiers(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 static void grab_repeat_info(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, int32_t rate, int32_t delay);
-static void status_next(void *data, struct keiland_ime_status_v1 *status);
-static void status_select(void *data, struct keiland_ime_status_v1 *status, const char *id);
-static void status_predict(void *data, struct keiland_ime_status_v1 *status, uint32_t serial, const char *reading);
-static void status_learn(void *data, struct keiland_ime_status_v1 *status, const char *reading, const char *word);
+static void status_next(void *data, struct kl_ime_status_v1 *status);
+static void status_select(void *data, struct kl_ime_status_v1 *status, const char *id);
+static void status_predict(void *data, struct kl_ime_status_v1 *status, uint32_t serial, const char *reading);
+static void status_learn(void *data, struct kl_ime_status_v1 *status, const char *reading, const char *word);
 static void method_send(struct program *program);
 static void method_press(struct program *program, uint32_t time, uint32_t key, int repeated);
 static int method_repeats(uint32_t key);
@@ -96,7 +96,7 @@ static const struct zwp_input_method_keyboard_grab_v2_listener grab_listener = {
 /*
  * zdesktop's status events.
  */
-static const struct keiland_ime_status_v1_listener status_listener = {
+static const struct kl_ime_status_v1_listener status_listener = {
 	status_next,
 	status_select,
 	status_predict,
@@ -139,11 +139,11 @@ program_method_start(
 		return -1;
 
 	/* zdesktop's status. */
-	program->status = keiland_ime_status_manager_v1_get_status(program->status_manager);
+	program->status = kl_ime_status_manager_v1_get_status(program->status_manager);
 	if (program->status == NULL)
 		return -1;
 
-	status = keiland_ime_status_v1_add_listener(program->status, &status_listener, program);
+	status = kl_ime_status_v1_add_listener(program->status, &status_listener, program);
 	if (status != 0)
 		return -1;
 
@@ -173,7 +173,7 @@ program_announce_language(
 		id = ops->mode(engine, &label);
 
 	/* Told to zdesktop, and kept so that a change of mode is told too. */
-	keiland_ime_status_v1_language(program->status, id, label);
+	kl_ime_status_v1_language(program->status, id, label);
 	snprintf(program->announced, sizeof(program->announced), "%s", id);
 	printf("KEI-IME LANGUAGE id=%s\n", id);
 }
@@ -412,7 +412,7 @@ method_done(
 		for (i = 0; i < program->engine_count; i++)
 			program->engines[i].ops->reset(&program->engines[i], false, program->out);
 		program->composing = 0;
-		keiland_ime_status_v1_composing(program->status, 0);
+		kl_ime_status_v1_composing(program->status, 0);
 		printf("KEI-IME %s\n", program->active ? "ACTIVATE" : "DEACTIVATE");
 
 		/* The candidate window goes, and no key repeats into the new text input. */
@@ -559,7 +559,7 @@ grab_repeat_info(
 static void
 status_next(
 	void *data,
-	struct keiland_ime_status_v1 *status)
+	struct kl_ime_status_v1 *status)
 {
 	struct program *program;
 
@@ -576,7 +576,7 @@ status_next(
 static void
 status_select(
 	void *data,
-	struct keiland_ime_status_v1 *status,
+	struct kl_ime_status_v1 *status,
 	const char *id)
 {
 	struct program *program;
@@ -641,7 +641,7 @@ method_send(
 		composing = 1;
 	if (composing != program->composing) {
 		program->composing = composing;
-		keiland_ime_status_v1_composing(program->status, composing);
+		kl_ime_status_v1_composing(program->status, composing);
 	}
 
 	/* The candidate window shows the engine's candidates, or goes (popup.c). */
@@ -803,7 +803,7 @@ method_repeats(
 static void
 status_predict(
 	void *data,
-	struct keiland_ime_status_v1 *status,
+	struct kl_ime_status_v1 *status,
 	uint32_t serial,
 	const char *reading)
 {
@@ -828,7 +828,7 @@ status_predict(
 	}
 
 	/* The answer, with the request's serial. */
-	keiland_ime_status_v1_predictions(status, serial, list);
+	kl_ime_status_v1_predictions(status, serial, list);
 	printf("KEI-IME PREDICT serial=%u reading=%s bytes=%zu\n", serial, reading, length);
 }
 
@@ -840,7 +840,7 @@ status_predict(
 static void
 status_learn(
 	void *data,
-	struct keiland_ime_status_v1 *status,
+	struct kl_ime_status_v1 *status,
 	const char *reading,
 	const char *word)
 {

@@ -596,7 +596,7 @@ settings_apply(
 
 /*
  * Sets the desktop's appearance the settings hold (0 light, 1 dark): the
- * glass is drawn again in it and the clients that bound keiland_theme_v1
+ * glass is drawn again in it and the clients that bound kl_theme_v1
  * are told (theme.c).  Nothing is bound at the start.
  */
 static void

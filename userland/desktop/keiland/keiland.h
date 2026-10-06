@@ -1855,7 +1855,7 @@ int kl_activate(struct wl_display *display, struct wl_surface *surface, const ch
 /*
  * The desktop's appearance (KL_VERSION 35, ws089-p017): light or dark, as
  * the user chose in Settings.  The compositor tells it when the program
- * asks and again whenever it changes (keiland_theme_v1); a program draws
+ * asks and again whenever it changes (kl_theme_v1); a program draws
  * in it and draws again when it changes.  kl_theme_default gives the
  * theme of the appearance the program was told last (the same pointer,
  * its contents changed), and an application of kl_app_open is told with

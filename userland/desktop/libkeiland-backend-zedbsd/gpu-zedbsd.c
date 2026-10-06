@@ -11,7 +11,7 @@
  *
  * On zedBSD a client's GPU buffer is a kernel image capability fd with the
  * kernel's description of the image (struct gpu_image_descriptor, 64 bytes,
- * as keiland_gpu_buffer_v1.create_buffer's array).  The fd is imported as
+ * as kl_gpu_buffer_v1.create_buffer's array).  The fd is imported as
  * Vulkan OPAQUE_FD memory; libvulkan checks the description against the
  * kernel's own record of the capability when the import names the image
  * (a dedicated import).  This file is the only one of the desktop that

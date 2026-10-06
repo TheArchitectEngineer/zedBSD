@@ -16,7 +16,7 @@
  * connection sees and binds the input method's globals: the input method
  * manager (input-method-unstable-v2), the virtual keyboard manager
  * (virtual-keyboard-unstable-v1) and zdesktop's own status
- * (keiland_ime_status_v1).  When it dies it is started again after a
+ * (kl_ime_status_v1).  When it dies it is started again after a
  * second, three times a minute at most.
  *
  * Keys: Alt+Space asks the input method for its next language (and the
@@ -113,7 +113,7 @@
 #define KEYBOARD_DESTROY		3U
 #define KEYBOARD_ERROR_NO_KEYMAP	0U
 
-/* The requests and events of keiland_ime_status_manager_v1 and keiland_ime_status_v1. */
+/* The requests and events of kl_ime_status_manager_v1 and kl_ime_status_v1. */
 #define STATUSES_DESTROY		0U
 #define STATUSES_GET_STATUS		1U
 #define STATUS_DESTROY			0U
@@ -125,7 +125,7 @@
 #define STATUS_PREDICT			2U
 #define STATUS_LEARN			3U
 
-/* The version of keiland_ime_status_v1 with the on-screen keyboard's predictions (ws166-p002). */
+/* The version of kl_ime_status_v1 with the on-screen keyboard's predictions (ws166-p002). */
 #define STATUS_VERSION_PREDICT		2U
 
 /* The longest reading or word sent with predict and learn, with its NUL (a candidate is at most 160 bytes in the input method). */
@@ -1447,7 +1447,7 @@ ime_keyboard_request(
 }
 
 /*
- * Carries out a request of keiland_ime_status_v1.
+ * Carries out a request of kl_ime_status_v1.
  */
 static int
 ime_status_request(
@@ -2000,7 +2000,7 @@ ime_select(
 
 /*
  * Asks the input method for the words a reading of the on-screen keyboard
- * starts (keiland_ime_status_v1.predict, version 2; ws166-p002); the
+ * starts (kl_ime_status_v1.predict, version 2; ws166-p002); the
  * answer comes as a predictions request with the same serial.  Returns 0
  * when asked, ENOTSUP without an input method that predicts.
  */
@@ -2034,7 +2034,7 @@ kwl_ime_predict(
 
 /*
  * Tells the input method the word chosen for a reading of the on-screen
- * keyboard, which it learns as if it had converted it (keiland_ime_status_v1.learn,
+ * keyboard, which it learns as if it had converted it (kl_ime_status_v1.learn,
  * version 2; ws166-p002).
  */
 void

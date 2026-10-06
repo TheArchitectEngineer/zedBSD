@@ -2,24 +2,24 @@
 	global:
 		wl_*;
 		xdg_*;
-		keiland_gpu_buffer_v1_*;
-		keiland_titlebar_manager_v1_*;
-		keiland_titlebar_v1_*;
-		keiland_glass_manager_v1_*;
-		keiland_glass_v1_*;
+		kl_gpu_buffer_v1_*;
+		kl_titlebar_manager_v1_*;
+		kl_titlebar_v1_*;
+		kl_glass_manager_v1_*;
+		kl_glass_v1_*;
 		zwp_primary_selection_*;
 		zwp_tablet_*;
 		zwp_text_input_*;
 		zwp_input_method_*;
 		zwp_input_popup_surface_*;
 		zwp_virtual_keyboard_*;
-		keiland_ime_status_manager_v1_*;
-		keiland_ime_status_v1_*;
-		keiland_keyboard_inset_manager_v1_*;
-		keiland_keyboard_inset_v1_*;
-		keiland_edit_manager_v1_*;
-		keiland_edit_v1_*;
-		keiland_theme_v1_*;
+		kl_ime_status_manager_v1_*;
+		kl_ime_status_v1_*;
+		kl_keyboard_inset_manager_v1_*;
+		kl_keyboard_inset_v1_*;
+		kl_edit_manager_v1_*;
+		kl_edit_v1_*;
+		kl_theme_v1_*;
 		wp_content_type_*;
 	local:
 		*;
