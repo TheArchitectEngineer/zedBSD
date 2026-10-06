@@ -19,9 +19,10 @@
  *   plain    draws without the stencil;
  *   texture  draws a picture without the stencil.
  *
- * There are three pictures.  The toolbar's is drawn on the CPU into a linear
+ * There are four pictures.  The toolbar's is drawn on the CPU into a linear
  * image, and so is the background: the page of the PDF the notebook writes
- * on, which libpdf draws on the CPU.  The page's holds the page (with its
+ * on, which libpdf draws on the CPU; and so is the overlay, the window's
+ * size, which shows the text box over the page (ws175-p008).  The page's holds the page (with its
  * background) and its finished strokes: a second list
  * of draws, the page frame, is drawn into it with the same pipelines before
  * the frame when the page changed -- from a cleared picture after the page
@@ -69,6 +70,7 @@ static VkResult render_descriptors(struct notes_renderer *renderer);
 static VkResult render_toolbar(struct notes_renderer *renderer);
 static VkResult render_linear(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkDescriptorSet set, VkImage *made, VkDeviceMemory *memory, VkImageView *made_view, unsigned char **pixels, size_t *pitch);
 static void render_background_free(struct notes_renderer *renderer);
+static void render_overlay_free(struct notes_renderer *renderer);
 static void render_toolbar_free(struct notes_renderer *renderer);
 static VkResult render_vertices(struct notes_renderer *renderer, size_t count);
 static void render_vertices_free(struct notes_renderer *renderer);
@@ -553,6 +555,71 @@ notes_renderer_background(
 }
 
 /*
+ * Gives the pixels of the overlay picture (B8G8R8A8, straight alpha) at a
+ * size, and their row pitch, for the host to draw the text box into
+ * between frames (ws175-p008); the frame shows it with
+ * NOTES_TEXTURE_OVERLAY.  made is 1 when the image was made anew (its
+ * pixels are transparent), 0 when it keeps what the host drew last.
+ */
+VkResult
+notes_renderer_overlay(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height,
+	unsigned char **pixels,
+	size_t *pitch,
+	int *made)
+{
+	VkResult error;
+	uint32_t row;
+
+	/* An image of the size stands. */
+	*made = 0;
+	if (renderer->overlay != VK_NULL_HANDLE &&
+	    renderer->overlay_width == width &&
+	    renderer->overlay_height == height) {
+		*pixels = renderer->overlay_pixels;
+		*pitch = renderer->overlay_pitch;
+		return VK_SUCCESS;
+	}
+
+	/* The old image goes once nothing uses it. */
+	renderer->operation = "vkDeviceWaitIdle";
+	error = vkDeviceWaitIdle(renderer->device);
+	if (error != VK_SUCCESS)
+		return error;
+	render_overlay_free(renderer);
+
+	/* The new image, named in the overlay's set. */
+	error = render_linear(renderer,
+			      width,
+			      height,
+			      renderer->sets[NOTES_TEXTURE_OVERLAY],
+			      &renderer->overlay,
+			      &renderer->overlay_memory,
+			      &renderer->overlay_view,
+			      &renderer->overlay_pixels,
+			      &renderer->overlay_pitch);
+	if (error != VK_SUCCESS) {
+		render_overlay_free(renderer);
+		return error;
+	}
+
+	/* Transparent all over. */
+	for (row = 0; row < height; row++)
+		memset(renderer->overlay_pixels + (size_t)row * renderer->overlay_pitch, 0, (size_t)width * 4U);
+
+	/* Succeeded: the next frame moves the image to the general layout. */
+	renderer->overlay_width = width;
+	renderer->overlay_height = height;
+	renderer->overlay_ready = 0;
+	*pixels = renderer->overlay_pixels;
+	*pitch = renderer->overlay_pitch;
+	*made = 1;
+	return VK_SUCCESS;
+}
+
+/*
  * Gives the toolbar's pixels (B8G8R8A8, the swapchain's width by
  * NOTES_TOOLBAR_IMAGE_HEIGHT) and their row pitch, for the toolbar to draw into
  * between frames.
@@ -585,6 +652,7 @@ notes_renderer_close(
 		render_stencil_free(renderer);
 		render_toolbar_free(renderer);
 		render_background_free(renderer);
+		render_overlay_free(renderer);
 		render_vertices_free(renderer);
 
 		/* The pipelines and what they bind. */
@@ -1387,6 +1455,7 @@ render_descriptors(
 	layouts[NOTES_TEXTURE_TOOLBAR] = renderer->set_layout;
 	layouts[NOTES_TEXTURE_PAGE] = renderer->set_layout;
 	layouts[NOTES_TEXTURE_BACKGROUND] = renderer->set_layout;
+	layouts[NOTES_TEXTURE_OVERLAY] = renderer->set_layout;
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocate.descriptorPool = renderer->descriptor_pool;
@@ -1550,6 +1619,27 @@ render_background_free(
 	renderer->background_pitch = 0;
 	renderer->background_width = 0;
 	renderer->background_height = 0;
+}
+
+/* Releases the overlay's image. */
+static void
+render_overlay_free(
+	struct notes_renderer *renderer)
+{
+	/* The view, the image and the memory (which unmaps it), where made. */
+	if (renderer->overlay_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->overlay_view, NULL);
+	if (renderer->overlay != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->overlay, NULL);
+	if (renderer->overlay_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->overlay_memory, NULL);
+	renderer->overlay_view = VK_NULL_HANDLE;
+	renderer->overlay = VK_NULL_HANDLE;
+	renderer->overlay_memory = VK_NULL_HANDLE;
+	renderer->overlay_pixels = NULL;
+	renderer->overlay_pitch = 0;
+	renderer->overlay_width = 0;
+	renderer->overlay_height = 0;
 }
 
 /* Releases the toolbar's image. */
@@ -1948,6 +2038,24 @@ render_record(
 		renderer->background_ready = 1;
 	}
 
+	/* And a new overlay image (ws175-p008). */
+	if (renderer->overlay != VK_NULL_HANDLE && renderer->overlay_ready == 0) {
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = renderer->overlay;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1U;
+		barrier.subresourceRange.layerCount = 1U;
+		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		renderer->overlay_ready = 1;
+	}
+
 	/* The vertices of both lists, the page frame's first. */
 	offset = 0U;
 	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
@@ -2060,6 +2168,8 @@ render_draws(
 			if (draw->texture == NOTES_TEXTURE_PAGE && renderer->page == VK_NULL_HANDLE)
 				continue;
 			if (draw->texture == NOTES_TEXTURE_BACKGROUND && renderer->background == VK_NULL_HANDLE)
+				continue;
+			if (draw->texture == NOTES_TEXTURE_OVERLAY && renderer->overlay == VK_NULL_HANDLE)
 				continue;
 			vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U,
 						&renderer->sets[draw->texture], 0U, NULL);

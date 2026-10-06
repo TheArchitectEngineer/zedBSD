@@ -23,6 +23,10 @@
  * window's repeat off).  The menus' choices come as KL_WINDOW_ACTION
  * inputs (menu.c).  ws081-p013: the touch screen's events queue for
  * touch.c.  The compositor decorates the window (its title bar, ws114-p008).
+ *
+ * ws175-p008: while the text box is open (notes_window_box), the pointer's
+ * inputs, the keys -- held keys repeating -- and an input method's text
+ * also queue as they came for the box (box.c), and the keys reach only it.
  */
 
 #include "app.h"
@@ -41,6 +45,7 @@ static void window_button(struct notes_window *window, const struct kl_window_ev
 static void window_key(struct notes_window *window, const struct kl_window_event *event);
 static void window_pointer_event(struct notes_window *window, unsigned kind, const struct kl_window_event *event);
 static void window_touch_push(struct notes_window *window, unsigned type, const struct kl_window_event *event);
+static void window_box_push(struct notes_window *window, const struct kl_window_event *event);
 static uint32_t window_modifiers(unsigned modifiers);
 
 /*
@@ -118,7 +123,8 @@ notes_window_dispatch(
 	/* Nothing to wait for when events are already queued for the main loop. */
 	if (window->input_count != 0U ||
 	    window->key_count != 0U ||
-	    window->action_count != 0U)
+	    window->action_count != 0U ||
+	    window->box_count != 0U)
 		timeout = 0;
 
 	/* The compositor's events. */
@@ -201,6 +207,29 @@ notes_window_set_fullscreen(
 }
 
 /*
+ * Opens the window's input to the text box, or closes it (ws175-p008):
+ * while it is open a held key repeats and the box's inputs queue for it.
+ */
+void
+notes_window_box(
+	struct notes_window *window,
+	int open)
+{
+	/* Already so. */
+	if (window->box_open == open)
+		return;
+
+	/* The keys repeat for the box's typing only; the box's queue starts empty. */
+	window->box_open = open;
+	window->box_count = 0;
+	(void)kl_window_set_repeat(window->kui, open);
+
+	/* A closed box takes no input method's text. */
+	if (!open)
+		kl_window_text_input(window->kui, 0);
+}
+
+/*
  * Returns a monotonic time in milliseconds (0 when the clock cannot be read).
  */
 uint64_t
@@ -247,6 +276,29 @@ window_event(
 {
 	/* Every input carries the modifiers held. */
 	window->modifiers = window_modifiers(event->modifiers);
+
+	/* The text box's inputs while it is open: the keys and the text are only its own (ws175-p008). */
+	if (window->box_open) {
+		switch (event->kind) {
+		case KL_WINDOW_KEY:
+		case KL_WINDOW_TEXT_COMMIT:
+		case KL_WINDOW_TEXT_PREEDIT:
+		case KL_WINDOW_TEXT_DELETE:
+			window_box_push(window, event);
+			return;
+		case KL_WINDOW_MOTION:
+		case KL_WINDOW_BUTTON:
+			/* Not over the toolbar, whose buttons (the box's font, size, colour) leave the box the keyboard. */
+			if (event->y >= (double)NOTES_TOOLBAR_HEIGHT)
+				window_box_push(window, event);
+			break;
+		case KL_WINDOW_LEAVE:
+			window_box_push(window, event);
+			break;
+		default:
+			break;
+		}
+	}
 
 	/* What it is. */
 	switch (event->kind) {
@@ -384,6 +436,21 @@ window_touch_push(
 	kept->y = (float)event->y;
 	kept->time = (uint32_t)(event->time_us / 1000U);
 	kept->arrival = event->arrival_us;
+}
+
+/* Queues an input for the text box; a full queue drops it. */
+static void
+window_box_push(
+	struct notes_window *window,
+	const struct kl_window_event *event)
+{
+	/* The box is far behind: the input goes. */
+	if (window->box_count >= NOTES_BOX_EVENTS)
+		return;
+
+	/* Succeeded: after the ones before it. */
+	window->box_events[window->box_count] = *event;
+	window->box_count++;
 }
 
 /* Turns libkeiland's modifier bits into wl_keyboard's, which the shortcuts read. */

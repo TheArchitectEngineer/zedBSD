@@ -103,6 +103,18 @@
 #define NOTES_ACTION_DELETE_OBJECT	19U
 #define NOTES_ACTION_RESET_OBJECT	40U
 
+/*
+ * ws175-p008 (with ws079-p017): the Text tool (words put on the page in a
+ * box), the box opened on the chosen line of text, the font of the box or
+ * of the chosen text changed to the next one, and its size made smaller
+ * or larger.
+ */
+#define NOTES_ACTION_TEXT		41U
+#define NOTES_ACTION_EDIT_TEXT		42U
+#define NOTES_ACTION_FONT		43U
+#define NOTES_ACTION_SIZE_DOWN		44U
+#define NOTES_ACTION_SIZE_UP		45U
+
 /* The pipelines a draw uses (render.c). */
 #define NOTES_PIPE_STENCIL	0U
 #define NOTES_PIPE_FRINGE	1U
@@ -116,13 +128,18 @@
 
 /*
  * The pictures a texture draw shows: the toolbar, the page with its
- * finished strokes, and the page of the PDF the notebook writes on (drawn
- * into the page's picture under the strokes).
+ * finished strokes, the page of the PDF the notebook writes on (drawn
+ * into the page's picture under the strokes), and the overlay the text box
+ * is drawn on (ws175-p008, the window's size).
  */
 #define NOTES_TEXTURE_TOOLBAR	0U
 #define NOTES_TEXTURE_PAGE	1U
 #define NOTES_TEXTURE_BACKGROUND	2U
-#define NOTES_TEXTURES		3U
+#define NOTES_TEXTURE_OVERLAY	3U
+#define NOTES_TEXTURES		4U
+
+/* How many of the window's inputs wait for the text box at most (ws175-p008). */
+#define NOTES_BOX_EVENTS	64U
 
 /*
  * One key press for the main loop: the evdev code and the modifiers held.
@@ -185,6 +202,15 @@ struct notes_window {
 
 	/* Whether the window shows the menus (menu.c; not without the System Menu). */
 	int menu_shown;
+
+	/*
+	 * ws175-p008: while the text box is open, the window's inputs it takes
+	 * (the pointer, the keys with their repeats, an input method's text) wait
+	 * for it here, oldest first; the keys then do not reach the main loop's.
+	 */
+	int box_open;
+	struct kl_window_event box_events[NOTES_BOX_EVENTS];
+	unsigned box_count;
 };
 
 /*
@@ -225,6 +251,16 @@ struct notes_ui_state {
 	int selected;
 	int can_replace;
 	int can_reset;
+
+	/*
+	 * ws175-p008: whether the chosen object is a line of text and its words
+	 * can be changed; the font's name the toolbar shows (the Text tool's, the
+	 * box's, the chosen text's) and the size in points (0: not shown).
+	 */
+	int text_selected;
+	int can_edit_text;
+	const char *font_label;
+	float text_size;
 };
 
 /*
@@ -254,6 +290,34 @@ struct notes_ui {
 	/* The buttons, as last laid out. */
 	struct notes_button buttons[NOTES_BUTTONS];
 	unsigned button_count;
+};
+
+/*
+ * The text box (box.c, ws175-p008 with ws079-p017): libkeiland's widget
+ * over the page, drawn on the renderer's overlay -- a field for a line's
+ * words (NOTES_BOX_LINE), or a text area for the words put on a page
+ * (NOTES_BOX_AREA, several lines).  It holds its widgets' state, its own
+ * font, the canvas over the overlay, the words as they were when it was
+ * opened, whether it is open and its rectangle in the window, the
+ * rectangle it covered when last drawn (with its shadow), and what the
+ * widget reported since taken (KL_FIELD_*).
+ */
+#define NOTES_BOX_LINE		0U
+#define NOTES_BOX_AREA		1U
+struct notes_box {
+	struct kl_ui *ui;
+	struct kl_text text;
+	int font_ready;
+	struct kl_canvas canvas;
+	int canvas_ready;
+	unsigned shape;
+	struct kl_field field;
+	struct kl_text_area area;
+	char initial[KL_TEXT_AREA_MAX];
+	int open;
+	struct kl_rect rect;
+	struct kl_rect drawn;
+	unsigned reported;
 };
 
 /*
@@ -395,6 +459,19 @@ struct notes_renderer {
 	uint32_t background_height;
 	int background_ready;
 
+	/*
+	 * The overlay's image (ws175-p008), like the background's: the text box
+	 * as the host drew it at the window's size.
+	 */
+	VkImage overlay;
+	VkDeviceMemory overlay_memory;
+	VkImageView overlay_view;
+	unsigned char *overlay_pixels;
+	size_t overlay_pitch;
+	uint32_t overlay_width;
+	uint32_t overlay_height;
+	int overlay_ready;
+
 	/* The vertices of one frame, in host-visible memory mapped for good. */
 	VkBuffer vertices;
 	VkDeviceMemory vertex_memory;
@@ -418,6 +495,7 @@ void notes_window_close(struct notes_window *window);
 void notes_window_input(struct notes_window *window, const struct notes_input *input);
 void notes_window_set_title(struct notes_window *window, const char *title);
 void notes_window_set_fullscreen(struct notes_window *window, int fullscreen);
+void notes_window_box(struct notes_window *window, int open);
 uint64_t notes_clock(void);
 
 /* The pen through the tablet protocol (tablet.c). */
@@ -436,6 +514,7 @@ VkResult notes_renderer_page(struct notes_renderer *renderer, uint32_t width, ui
 VkResult notes_renderer_draw(struct notes_renderer *renderer, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
 void notes_renderer_toolbar(struct notes_renderer *renderer, unsigned char **pixels, size_t *pitch);
 VkResult notes_renderer_background(struct notes_renderer *renderer, uint32_t width, uint32_t height, unsigned char **pixels, size_t *pitch);
+VkResult notes_renderer_overlay(struct notes_renderer *renderer, uint32_t width, uint32_t height, unsigned char **pixels, size_t *pitch, int *made);
 void notes_renderer_close(struct notes_renderer *renderer);
 
 /* The frame's geometry (geometry.c). */
@@ -450,6 +529,19 @@ void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height,
 
 /* The image files put on a page (picture-file.c, ws175-p008). */
 int notes_picture_load(struct notes_document *document, const char *path, struct notes_image **image);
+
+/* The text box (box.c, ws175-p008). */
+int notes_box_open(struct notes_box *box, unsigned shape, const struct kl_rect *rect, const char *text);
+void notes_box_close(struct notes_box *box);
+void notes_box_input(struct notes_box *box, const struct kl_window_event *event);
+int notes_box_draw(struct notes_box *box, struct notes_renderer *renderer, struct kl_window *window, uint64_t now_us);
+unsigned notes_box_take(struct notes_box *box);
+const char *notes_box_text(const struct notes_box *box);
+const char *notes_box_initial(const struct notes_box *box);
+void notes_box_revert(struct notes_box *box);
+void notes_box_focus(struct notes_box *box);
+int notes_box_hit(const struct notes_box *box, float x, float y);
+void notes_box_free(struct notes_box *box);
 
 /* The toolbar (ui.c). */
 int notes_ui_open(struct notes_ui *ui, const char *font_path);
