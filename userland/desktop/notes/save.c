@@ -145,6 +145,75 @@ notes_save_pdf(
 }
 
 /*
+ * Writes a clean copy of a saved notebook (File > Save Clean Copy,
+ * ws175-p009, plan/ws175/phase001/design.md D1): the PDF at from, as it
+ * reads, written whole at path without its earlier revisions, without the
+ * resources its pages no longer use (a deleted image's bytes go) and
+ * without Notes' edit data, so the copy opens as another program's PDF
+ * with the edits part of its pages.  The copy is written under a temporary
+ * name, put on the disk and renamed, as a save is; from stays as it is.
+ * Tells the copy's size, its objects and the resources it left out.
+ * Returns 0, or an errno value (an old file at path is then unchanged).
+ */
+int
+notes_save_clean_copy(
+	const char *from,
+	const char *path,
+	size_t *bytes,
+	size_t *objects,
+	size_t *dropped)
+{
+	char temporary[SAVE_PATH_MAX + 8U];
+	struct pdf_clean_counts counts;
+	struct pdf_document *file;
+	struct stat status;
+	int written;
+	int result;
+	int error;
+
+	/* The temporary name beside the copy. */
+	written = snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+	if (written < 0 || (size_t)written >= sizeof(temporary))
+		return ENAMETOOLONG;
+
+	/* The saved notebook, read. */
+	error = pdf_document_open(from, &file);
+	if (error != 0)
+		return error;
+
+	/* The copy, without the edit data. */
+	memset(&counts, 0, sizeof(counts));
+	error = pdf_document_save_clean(file, temporary, NOTES_ATTACHMENT_NAME, &counts);
+	pdf_document_close(file);
+	if (error == 0)
+		error = save_sync(temporary);
+	if (error != 0) {
+		(void)unlink(temporary);
+		return error;
+	}
+
+	/* Replaces an old file of the name in one step. */
+	result = rename(temporary, path);
+	if (result != 0) {
+		error = errno;
+		(void)unlink(temporary);
+		return error;
+	}
+
+	/* Puts the new name on the disk. */
+	(void)save_sync_folder(path);
+
+	/* The copy's size and counts. */
+	*bytes = 0;
+	result = stat(path, &status);
+	if (result == 0)
+		*bytes = (size_t)status.st_size;
+	*objects = counts.objects;
+	*dropped = counts.dropped;
+	return 0;
+}
+
+/*
  * Opens a PDF into an empty document, and tells what it found (one of
  * NOTES_OPENED_*).
  *

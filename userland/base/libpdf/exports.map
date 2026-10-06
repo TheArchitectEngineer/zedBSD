@@ -28,6 +28,7 @@
 		pdf_writer_get_page_content_hash;
 		pdf_writer_save;
 		pdf_writer_create_update;
+		pdf_document_save_clean;
 		pdf_writer_keep_page;
 		pdf_writer_begin_page_over;
 		pdf_outline_stroke;

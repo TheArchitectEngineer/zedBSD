@@ -47,7 +47,7 @@ for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userl
 done
 cc -std=c99 -pedantic -O1 -Wall -Wextra -Werror -Wno-overlength-strings -D_DEFAULT_SOURCE -I"$out/include" -Iuserland/desktop/notes \
     userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c \
-    userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
+    userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/clean.c userland/base/libpdf/outline.c \
     userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c \
     userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c \
     userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \

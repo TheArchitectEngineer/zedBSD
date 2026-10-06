@@ -501,5 +501,6 @@ int notes_journal_newest(char *path, size_t size);
 int notes_save_pdf(struct notes_document *document, const char *path, size_t *bytes);
 int notes_open_pdf(const char *path, struct notes_document *document, unsigned *opened);
 int notes_attach_base(const char *path, struct notes_document *document);
+int notes_save_clean_copy(const char *from, const char *path, size_t *bytes, size_t *objects, size_t *dropped);
 
 #endif

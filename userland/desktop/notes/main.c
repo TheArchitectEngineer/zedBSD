@@ -212,10 +212,11 @@
 #define MAIN_SIZE_MAX		144.0f
 #define MAIN_SIZE_DEFAULT	12.0f
 
-/* What the file chooser is shown for: a PDF (Open, Save As), an image to insert, an image for the chosen object. */
+/* What the file chooser is shown for: a PDF (Open, Save As), an image to insert, an image for the chosen object, a clean copy (ws175-p009). */
 #define MAIN_CHOOSE_DOCUMENT	0U
 #define MAIN_CHOOSE_INSERT	1U
 #define MAIN_CHOOSE_REPLACE	2U
+#define MAIN_CHOOSE_CLEAN	3U
 
 /*
  * Everything Notes holds for the one notebook it shows.
@@ -470,6 +471,7 @@ static void app_chooser_done(void *data, struct kl_file_chooser *chooser, unsign
 static void app_chosen(struct notes_app *app);
 static void app_open_file(struct notes_app *app, const char *path);
 static void app_save_as(struct notes_app *app, const char *path);
+static void app_save_clean(struct notes_app *app, const char *path);
 static void app_place_page(struct notes_app *app);
 static void app_appearance_changed(void *data, unsigned appearance);
 static const char *app_tool_name(unsigned tool);
@@ -1474,6 +1476,10 @@ app_action(
 	case NOTES_ACTION_SAVE_AS:
 		/* The notebook as another file, chosen in the file chooser (ws128-p002). */
 		app_choose(app, KL_FILE_CHOOSER_SAVE, MAIN_CHOOSE_DOCUMENT);
+		break;
+	case NOTES_ACTION_SAVE_CLEAN:
+		/* A clean copy as another file, chosen in the file chooser (ws175-p009). */
+		app_choose(app, KL_FILE_CHOOSER_SAVE, MAIN_CHOOSE_CLEAN);
 		break;
 	case NOTES_ACTION_CLOSE:
 		/* The main loop saves and ends. */
@@ -2789,8 +2795,11 @@ app_choose(
 	};
 	struct kl_file_chooser_options options;
 	char folder[MAIN_PATH_MAX];
+	char clean_name[MAIN_PATH_MAX];
 	const char *word;
 	char *slash;
+	size_t length;
+	int has_extension;
 
 	/* One chooser at a time; this one's purpose (MAIN_CHOOSE_*). */
 	if (app->chooser != NULL)
@@ -2817,8 +2826,24 @@ app_choose(
 		options.name = app->name;
 	}
 
+	/* A clean copy starts with the notebook's name and "-clean" (ws175-p009). */
+	if (app->chooser_purpose == MAIN_CHOOSE_CLEAN) {
+		/* The name without its .pdf, then the suffix. */
+		(void)snprintf(clean_name, sizeof(clean_name), "%s", app->name);
+		length = strlen(clean_name);
+		has_extension = 0;
+		if (length > 4U)
+			has_extension = strcmp(clean_name + length - 4U, ".pdf") == 0;
+		if (has_extension)
+			clean_name[length - 4U] = '\0';
+		length = strlen(clean_name);
+		(void)snprintf(clean_name + length, sizeof(clean_name) - length, "-clean.pdf");
+		options.title = "Save Clean Copy";
+		options.name = clean_name;
+	}
+
 	/* An image's chooser shows the images (ws175-p008). */
-	if (app->chooser_purpose != MAIN_CHOOSE_DOCUMENT) {
+	if (app->chooser_purpose == MAIN_CHOOSE_INSERT || app->chooser_purpose == MAIN_CHOOSE_REPLACE) {
 		options.filters = image_filters;
 		options.filter_count = sizeof(image_filters) / sizeof(image_filters[0]);
 		options.title = "Insert Image";
@@ -2843,6 +2868,8 @@ app_choose(
 		word = "insert";
 	if (app->chooser_purpose == MAIN_CHOOSE_REPLACE)
 		word = "replace";
+	if (app->chooser_purpose == MAIN_CHOOSE_CLEAN)
+		word = "clean";
 	printf("NOTES CHOOSER open mode=%s folder=%s\n", word, folder);
 }
 
@@ -2888,6 +2915,12 @@ app_chosen(
 	if (path[0] == '\0') {
 		printf("NOTES CHOOSER cancelled\n");
 		fflush(stdout);
+		return;
+	}
+
+	/* A clean copy written there (ws175-p009). */
+	if (app->chosen_purpose == MAIN_CHOOSE_CLEAN) {
+		app_save_clean(app, path);
 		return;
 	}
 
@@ -3020,6 +3053,59 @@ app_save_as(
 	(void)app_save(app, "save-as");
 	app->toolbar_dirty = 1;
 	app->redraw = 1;
+}
+
+/*
+ * Writes a clean copy of the notebook to another file (File > Save Clean
+ * Copy, ws175-p009): the notebook is saved first, then its PDF is written
+ * whole at the path without the earlier revisions, the resources no page
+ * uses and the edit data.  The notebook stays at its own path; the copy
+ * opens as another program's PDF.
+ */
+static void
+app_save_clean(
+	struct notes_app *app,
+	const char *path)
+{
+	struct stat status;
+	size_t bytes;
+	size_t objects;
+	size_t dropped;
+	int same;
+	int found;
+	int error;
+
+	/* The notebook's own file cannot be its copy. */
+	same = strcmp(path, app->path);
+	if (same == 0) {
+		app_status(app, "Choose another file for the clean copy");
+		return;
+	}
+
+	/* The notebook saved, when it has changes or no file yet (a stroke being drawn ends first). */
+	if (app->live != NULL)
+		app_end_contact(app, NULL);
+	found = stat(app->path, &status);
+	if (app->document.dirty || found != 0) {
+		error = app_save(app, "clean-copy");
+		if (error != 0)
+			return;
+	}
+
+	/* The copy; a failure is shown and logged. */
+	error = notes_save_clean_copy(app->path, path, &bytes, &objects, &dropped);
+	if (error != 0) {
+		printf("NOTES CLEAN-COPY failed error=%d path=%s\n", error, path);
+		fflush(stdout);
+		app_status(app, "Could not save the clean copy");
+		return;
+	}
+
+	/* The copy is among the recent files; the tests' line and the status. */
+	(void)kl_recent_add(path, MAIN_APPLICATION);
+	printf("NOTES CLEAN-COPY bytes=%lu objects=%lu dropped=%lu path=%s\n", (unsigned long)bytes, (unsigned long)objects, (unsigned long)dropped, path);
+	fflush(stdout);
+	app_status(app, "Saved a clean copy");
 }
 
 /* Places the notebook's first page in the window, for the pointer and the fingers (at the start, and after Open). */

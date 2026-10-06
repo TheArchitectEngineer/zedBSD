@@ -2338,6 +2338,27 @@ write_real(
 	pdf_buffer_append(file, text, (size_t)length);
 }
 
+/* Writes a name with its escapes, for the clean copy (clean.c, ws175-p009). */
+void
+pdf_writer_write_name(
+	struct pdf_buffer *file,
+	const unsigned char *bytes,
+	size_t length)
+{
+	/* The update's own writing. */
+	write_name(file, bytes, length);
+}
+
+/* Writes a real number as an update does, for the clean copy (clean.c, ws175-p009). */
+void
+pdf_writer_write_real(
+	struct pdf_buffer *file,
+	double value)
+{
+	/* The update's own writing. */
+	write_real(file, value);
+}
+
 /* Tells whether a dictionary key is a name. */
 static int
 key_is(

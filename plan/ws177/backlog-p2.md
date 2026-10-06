@@ -59,3 +59,6 @@
 | WS165 ws165-p003（compositor の手書き） | templates の読みが重い・大きい file | 起動の時ではなく別の thread で読む・最初の認識が遅れないようにする（今は最初の認識の時に event loop で読む、228 字で数 ms） | `wayland/keyboard-hand.c` の `kwl_hand_load` | 2026-10-06 |
 | WS165 ws165-p003 | ink が 8,192 点を越える | 点を間引いて全部の線を使う（今は越えた点を捨てる） | `wayland/keyboard-hand.c` の `kwl_hand_recognize` | 2026-10-06 |
 | WS165 ws165-p003 | 「No handwriting data」の note | 日本語の UI で訳す（今は英語のまま） | `wayland/keyboard-hand.c`、`locale/ja/wayland.tr` | 2026-10-06 |
+| WS175 ws175-p009（Save Clean Copy） | 刈り込みは page の resource だけ | form XObject・Type 3 font・tiling pattern の中の /Resources も使う名で刈り込む | `libpdf/clean.c` の `clean_write_resources` | 2026-10-06 |
+| WS175 ws175-p009 | attachment を落とした name tree の /Limits が古いまま、直接の file specification は落ちない | 葉の /Limits を書き直す・直接の filespec の対も落とす | `libpdf/clean.c` の `clean_drop_names`・`clean_write_value` | 2026-10-06 |
+| WS175 ws175-p009 | Save Clean Copy の後の案内が無い | copy を開くかの提案、増分の更新で消した物が残る旨の一度だけの注意（D1 (a)） | `notes/main.c` の `app_save_clean` | 2026-10-06 |
