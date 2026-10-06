@@ -59,11 +59,17 @@
 /* The largest side of a blank editor's page, in points (Notes' own largest). */
 #define EDITOR_BLANK_SIDE_MAX	100000.0
 
+/* The size of new words as ws175-p004 gave them, before their size and colour. */
+#define EDITOR_TEXT_SIZE_P004	offsetof(struct pdf_edit_text, font_size)
+
 /* The size of a source as ws175-p003 gave it, before its orientation and id. */
 #define EDITOR_SOURCE_SIZE_P003	offsetof(struct pdf_image_source, orientation)
 
 /* The prefix of the preview's names of the images (its own resources, never written). */
 #define EDITOR_PREVIEW_PREFIX	"ZedPreviewIm"
+
+/* The prefix of the preview's names of the replacement fonts (ws175-p005; the font's file follows). */
+#define EDITOR_PREVIEW_FONT_PREFIX	"ZedPreviewF"
 
 /*
  * One image the editor was given: its bytes (a JPEG's as they are, a PNG's
@@ -94,8 +100,16 @@ struct editor_image {
  * inserted), and for an inserted object the map of an image's unit square
  * onto the shown space.  A line of text given new words (ws175-p004) has
  * them (text, UTF-8) and their codes in its font (codes, code_length
- * bytes), the editor's copies.
+ * bytes), the editor's copies; ws175-p005: or their glyphs in the
+ * replacement fonts (glyphs, glyph_count).
  */
+
+/* One glyph of new words in a replacement font (ws175-p005): its font's file, its number, its character. */
+struct editor_glyph {
+	unsigned file;
+	unsigned glyph;
+	uint32_t character;
+};
 struct editor_change {
 	unsigned state;
 	double placement[6];
@@ -105,6 +119,8 @@ struct editor_change {
 	char *text;
 	unsigned char *codes;
 	size_t code_length;
+	struct editor_glyph *glyphs;
+	size_t glyph_count;
 };
 
 /*
@@ -175,8 +191,12 @@ static void editor_forget_text(struct editor_change *change);
 static int editor_encode(struct pdf_page_editor *editor, const struct editor_line *line, const char *utf8, unsigned char **codes, size_t *length);
 static size_t editor_utf8(const unsigned char *bytes, size_t length, uint32_t *character);
 static int editor_patch_objects(const struct pdf_page_editor *editor, size_t hidden, const char *prefix, const size_t *names, struct editor_patches *patches);
-static int editor_patch_text(const struct pdf_page_editor *editor, size_t hidden, struct editor_patches *patches);
-static int editor_write_show(const struct pdf_page_editor *editor, size_t at, size_t line_index, size_t hidden, struct pdf_buffer *out);
+static int editor_patch_text(const struct pdf_page_editor *editor, size_t hidden, const char *font_prefix, struct editor_patches *patches);
+static int editor_write_show(const struct pdf_page_editor *editor, size_t at, size_t line_index, size_t hidden, const char *font_prefix, struct pdf_buffer *out);
+static void editor_write_glyphs(const struct editor_change *change, const struct pdf_scan_show *show, const char *font_prefix, struct pdf_buffer *out);
+static int editor_glyphs(struct pdf_page_editor *editor, unsigned file, const char *utf8, struct editor_glyph **glyphs, size_t *count, int *missing);
+static unsigned editor_fonts_used(const struct pdf_page_editor *editor);
+static int editor_use_glyphs(struct pdf_writer *writer, const struct pdf_page_editor *editor);
 static int editor_show_string(const struct pdf_page_editor *editor, const struct pdf_scan_show *show, size_t *from, size_t *length);
 static int editor_write_mark(const struct pdf_page_editor *editor, const struct pdf_scan_mark *mark, struct pdf_buffer *out, int *replaced);
 static int editor_has_reference(const struct pdf_object *object, int depth);
@@ -848,6 +868,7 @@ pdf_page_editor_render(
 	struct pdf_buffer content;
 	size_t *names;
 	size_t at;
+	unsigned fonts;
 	int error;
 
 	/* Refuses a missing editor or list. */
@@ -868,16 +889,17 @@ pdf_page_editor_render(
 			names[at] = at;
 	}
 
-	/* The page's resources with the images. */
+	/* The page's resources with the images and the replacement fonts. */
 	resources = NULL;
 	error = 0;
-	if (editor->image_count > 0)
+	fonts = editor_fonts_used(editor);
+	if (editor->image_count > 0 || fonts != 0U)
 		error = editor_preview_resources(editor, &resources);
 
 	/* The new content, then the page drawn with it. */
 	memset(&content, 0, sizeof(content));
 	if (error == 0)
-		error = pdf_editor_content(editor, hidden, EDITOR_PREVIEW_PREFIX, names, &content);
+		error = pdf_editor_content(editor, hidden, EDITOR_PREVIEW_PREFIX, names, EDITOR_PREVIEW_FONT_PREFIX, &content);
 	if (error == 0)
 		error = pdf_content_render(editor->document, editor->index, content.data, content.length, resources, list);
 	free(content.data);
@@ -907,6 +929,7 @@ pdf_editor_content(
 	size_t hidden,
 	const char *prefix,
 	const size_t *names,
+	const char *font_prefix,
 	struct pdf_buffer *out)
 {
 	struct editor_patches patches;
@@ -922,7 +945,7 @@ pdf_editor_content(
 	memset(&patches, 0, sizeof(patches));
 	error = editor_patch_objects(editor, hidden, prefix, names, &patches);
 	if (error == 0)
-		error = editor_patch_text(editor, hidden, &patches);
+		error = editor_patch_text(editor, hidden, font_prefix, &patches);
 	if (error == 0 && patches.text.error != 0)
 		error = patches.text.error;
 	if (error != 0) {
@@ -1076,6 +1099,7 @@ static int
 editor_patch_text(
 	const struct pdf_page_editor *editor,
 	size_t hidden,
+	const char *font_prefix,
 	struct editor_patches *patches)
 {
 	const struct editor_line *line;
@@ -1172,7 +1196,7 @@ editor_patch_text(
 		if (show->block >= editor->scan.block_count || touched[show->block] == 0U)
 			continue;
 		from = text->length;
-		error = editor_write_show(editor, at, owner[at], hidden, text);
+		error = editor_write_show(editor, at, owner[at], hidden, font_prefix, text);
 		if (error == 0)
 			error = editor_patch_add(patches, show->offset, show->length, from);
 	}
@@ -1195,6 +1219,7 @@ editor_write_show(
 	size_t at,
 	size_t line_index,
 	size_t hidden,
+	const char *font_prefix,
 	struct pdf_buffer *out)
 {
 	const struct pdf_scan_show *show;
@@ -1255,7 +1280,13 @@ editor_write_show(
 	/* Its operator. */
 	pdf_buffer_append(out, "Tm ", 3);
 
-	/* The line's new words, in hexadecimal. */
+	/* The line's new words in a replacement font (ws175-p005). */
+	if (change != NULL && change->glyphs != NULL) {
+		editor_write_glyphs(change, show, font_prefix, out);
+		return 0;
+	}
+
+	/* The line's new words in its own font, in hexadecimal. */
 	if (change != NULL && change->text != NULL) {
 		pdf_buffer_append_hex_string(out, change->codes, change->code_length);
 		pdf_buffer_append(out, " Tj ", 4);
@@ -1538,6 +1569,7 @@ pdf_writer_begin_page_edited(
 {
 	struct pdf_buffer edited;
 	char prefix[32];
+	char font_prefix[32];
 	size_t *names;
 	size_t object;
 	size_t at;
@@ -1579,10 +1611,18 @@ pdf_writer_begin_page_edited(
 		}
 	}
 
-	/* The page's new content, the images named as the writer names them (its prefix, "Im", the index), which the update's page takes. */
+	/* The replacement fonts' glyphs the new words use, the document's (ws175-p005). */
+	error = editor_use_glyphs(writer, editor);
+	if (error != 0) {
+		free(names);
+		return error;
+	}
+
+	/* The page's new content, the images and the fonts named as the writer names them (its prefix, "Im" or "F", the index), which the update's page takes. */
 	(void)snprintf(prefix, sizeof(prefix), "%sIm", writer->name_prefix);
+	(void)snprintf(font_prefix, sizeof(font_prefix), "%sF", writer->name_prefix);
 	memset(&edited, 0, sizeof(edited));
-	error = pdf_editor_content(editor, EDITOR_NONE, prefix, names, &edited);
+	error = pdf_editor_content(editor, EDITOR_NONE, prefix, names, font_prefix, &edited);
 	free(names);
 	if (error != 0) {
 		free(edited.data);
@@ -1711,19 +1751,22 @@ pdf_writer_draw_page_editor(
 }
 
 /*
- * Gives a line of text new words in its own font (ws175-p004, design.md
- * section 3.4): each character of text->utf8 must have a code in the
- * line's font (the font's characters read backward) whose glyph the
- * font's embedded program draws (design.md [L5]: one with an outline, but
- * for white space); the line's other strings go, its first shows the
+ * Gives a line of text new words (ws175-p004, p005; design.md section
+ * 3.4): in its own font when the font is asked for and can write them --
+ * each character a code of the font (its characters read backward) whose
+ * glyph the font's embedded program draws (design.md [L5]: an outline,
+ * but for white space) --, otherwise in a replacement font (the one asked
+ * for, Sans when the line's own could not), each character a font lacks
+ * drawn by the fallbacks (JetBrains Mono, then Droid Sans Fallback), one
+ * no font has left out.  The line's other strings go; its first shows the
  * words where it starts, in its state (colour and spacing, design.md
- * [M3]).  *result tells whether the font could (PDF_EDIT_TEXT_ORIGINAL) or
- * a replacement font is needed (PDF_EDIT_TEXT_NEEDS_FONT, ENOTSUP: a font
- * not embedded, a character it lacks, words that are not known, a font
- * other than the line's asked for; ws175-p005 writes those).  Returns 0,
- * EINVAL (not a line, words that are not UTF-8 or that break the line),
- * ENOTSUP, EPERM (an invisible line, a page that cannot be edited), or
- * ENOMEM.
+ * [M3]), a replacement font chosen around them and the line's own font
+ * chosen again after them (the plan's change of 2026-10-06: the text
+ * object is not split).  *result says ORIGINAL, or REPLACED (and MISSING).
+ * Returns 0, EINVAL (not a line, words that are not UTF-8 or that break
+ * the line), ENOTSUP (no replacement font is installed: NEEDS_FONT, or the
+ * line's font has a name too long to choose again), EPERM (an invisible
+ * line, a page that cannot be edited), or ENOMEM.
  */
 int
 pdf_page_editor_set_text(
@@ -1733,17 +1776,31 @@ pdf_page_editor_set_text(
 	unsigned *result)
 {
 	const struct editor_line *line;
+	const struct pdf_scan_show *show;
 	struct editor_change *change;
+	struct editor_glyph *glyphs;
+	struct pdf_edit_text given;
 	unsigned char *codes;
+	size_t glyph_count;
+	size_t copied;
 	size_t length;
 	size_t bytes;
+	unsigned file;
 	char *copy;
+	int missing;
 	int error;
 
-	/* A line of a page that can be edited, new words, a result. */
-	if (text == NULL || result == NULL || text->size < sizeof(*text) || text->utf8 == NULL)
+	/* New words (a caller of ws175-p004's size has no size or colour), a result. */
+	if (text == NULL || result == NULL || text->size < EDITOR_TEXT_SIZE_P004 || text->utf8 == NULL)
 		return EINVAL;
+	memset(&given, 0, sizeof(given));
+	copied = text->size;
+	if (copied > sizeof(given))
+		copied = sizeof(given);
+	memcpy(&given, text, copied);
 	*result = PDF_EDIT_TEXT_ORIGINAL;
+
+	/* A line of a page that can be edited, visible. */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
@@ -1753,29 +1810,52 @@ pdf_page_editor_set_text(
 	if ((line->flags & PDF_EDIT_OBJECT_INVISIBLE) != 0U)
 		return EPERM;
 
-	/* The line's own font, for words it knows (another font is ws175-p005's). */
-	if (text->font != PDF_EDIT_FONT_ORIGINAL || (line->flags & PDF_EDIT_OBJECT_TEXT_FIXED) != 0U) {
-		*result = PDF_EDIT_TEXT_NEEDS_FONT;
-		return ENOTSUP;
-	}
-
-	/* The words' codes in it. */
-	error = editor_encode(editor, line, text->utf8, &codes, &length);
-	if (error == ENOTSUP)
-		*result = PDF_EDIT_TEXT_NEEDS_FONT;
-	if (error != 0)
+	/* The line's own font, asked for, for words it knows. */
+	codes = NULL;
+	length = 0;
+	error = ENOTSUP;
+	if (given.font == PDF_EDIT_FONT_ORIGINAL && (line->flags & PDF_EDIT_OBJECT_TEXT_FIXED) == 0U)
+		error = editor_encode(editor, line, given.utf8, &codes, &length);
+	if (error != 0 && error != ENOTSUP)
 		return error;
 
+	/* Otherwise a replacement font: the one asked for, or Sans; the line's own chosen again after it. */
+	glyphs = NULL;
+	glyph_count = 0;
+	if (error == ENOTSUP) {
+		show = &editor->scan.shows[line->first];
+		if (show->font_resource_length == 0) {
+			*result = PDF_EDIT_TEXT_NEEDS_FONT;
+			return ENOTSUP;
+		}
+
+		/* The font asked for. */
+		file = PDF_EDIT_FILE_SANS;
+		if (given.font == PDF_EDIT_FONT_MONO)
+			file = PDF_EDIT_FILE_MONO;
+		if (given.font == PDF_EDIT_FONT_CJK)
+			file = PDF_EDIT_FILE_FALLBACK;
+		error = editor_glyphs(editor, file, given.utf8, &glyphs, &glyph_count, &missing);
+		if (error == ENOTSUP)
+			*result = PDF_EDIT_TEXT_NEEDS_FONT;
+		if (error != 0)
+			return error;
+		*result = PDF_EDIT_TEXT_REPLACED;
+		if (missing)
+			*result |= PDF_EDIT_TEXT_MISSING;
+	}
+
 	/* The words, the editor's copy. */
-	bytes = strlen(text->utf8);
+	bytes = strlen(given.utf8);
 	copy = malloc(bytes + 1U);
 	if (copy == NULL) {
 		free(codes);
+		free(glyphs);
 		return ENOMEM;
 	}
 
 	/* The words' bytes. */
-	memcpy(copy, text->utf8, bytes + 1U);
+	memcpy(copy, given.utf8, bytes + 1U);
 
 	/* Succeeded: the line's new words (a deleted line comes back with them). */
 	change = &editor->changes[index];
@@ -1783,8 +1863,197 @@ pdf_page_editor_set_text(
 	change->text = copy;
 	change->codes = codes;
 	change->code_length = length;
+	change->glyphs = glyphs;
+	change->glyph_count = glyph_count;
 	if (change->state == EDITOR_DELETED)
 		change->state = EDITOR_KEPT;
+	return 0;
+}
+
+/*
+ * Turns words (UTF-8, one line) into glyphs of the replacement fonts: each
+ * character the first font's, else the fallbacks' (JetBrains Mono, then
+ * Droid Sans Fallback); one no font has is left out (*missing).  Returns
+ * 0, EINVAL for words that are not UTF-8 or that break the line, ENOTSUP
+ * when none of the fonts is installed, or ENOMEM.
+ */
+static int
+editor_glyphs(
+	struct pdf_page_editor *editor,
+	unsigned file,
+	const char *utf8,
+	struct editor_glyph **glyphs,
+	size_t *count,
+	int *missing)
+{
+	static const unsigned fallbacks[2] = { PDF_EDIT_FILE_FALLBACK_MONO, PDF_EDIT_FILE_FALLBACK };
+	struct pdf_edit_fonts *fonts;
+	struct editor_glyph *made;
+	const unsigned char *bytes;
+	uint32_t character;
+	unsigned glyph;
+	unsigned order[3];
+	unsigned tried;
+	size_t total;
+	size_t position;
+	size_t used;
+	size_t made_count;
+	int installed;
+	int error;
+
+	/* The document's replacement fonts: the first one, then the fallbacks; one of them installed at least. */
+	error = pdf_edit_fonts_of(editor->document, &fonts);
+	if (error != 0)
+		return error;
+	order[0] = file;
+	order[1] = fallbacks[0];
+	order[2] = fallbacks[1];
+	installed = 0;
+	for (tried = 0; tried < 3U; tried++)
+		installed |= pdf_edit_font_present(fonts, order[tried]);
+	if (!installed)
+		return ENOTSUP;
+
+	/* Room for a glyph a byte at most. */
+	total = strlen(utf8);
+	made = malloc((total + 1U) * sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
+	/* Each character, by the first font that has it. */
+	bytes = (const unsigned char *)utf8;
+	position = 0;
+	made_count = 0;
+	*missing = 0;
+	while (position < total) {
+		used = editor_utf8(bytes + position, total - position, &character);
+		if (used == 0 || character == '\n' || character == '\r') {
+			free(made);
+			return EINVAL;
+		}
+
+		/* Past it. */
+		position += used;
+
+		/* The fonts in turn. */
+		glyph = 0;
+		for (tried = 0; tried < 3U && glyph == 0; tried++) {
+			error = pdf_edit_font_glyph(fonts, order[tried], character, &glyph);
+			if (error == ENOMEM) {
+				free(made);
+				return ENOMEM;
+			}
+		}
+
+		/* None has it: left out. */
+		if (glyph == 0) {
+			*missing = 1;
+			continue;
+		}
+
+		/* The glyph. */
+		made[made_count].file = order[tried - 1U];
+		made[made_count].glyph = glyph;
+		made[made_count].character = character;
+		made_count++;
+	}
+
+	/* Succeeded: the glyphs. */
+	*glyphs = made;
+	*count = made_count;
+	return 0;
+}
+
+/*
+ * Writes a line's new words in the replacement fonts: each run of one
+ * font's glyphs after that font chosen at the line's size (its first
+ * string's), the glyphs as two-byte CIDs (their numbers), then the line's
+ * own font chosen again for what follows.
+ */
+static void
+editor_write_glyphs(
+	const struct editor_change *change,
+	const struct pdf_scan_show *show,
+	const char *font_prefix,
+	struct pdf_buffer *out)
+{
+	unsigned char pair[2];
+	size_t at;
+	size_t run;
+
+	/* Each run of one font. */
+	at = 0;
+	while (at < change->glyph_count) {
+		pdf_buffer_printf(out, "/%s%u ", font_prefix, change->glyphs[at].file);
+		editor_number(out, show->font_size);
+		pdf_buffer_append(out, " Tf <", 5);
+		for (run = at; run < change->glyph_count && change->glyphs[run].file == change->glyphs[at].file; run++) {
+			pair[0] = (unsigned char)(change->glyphs[run].glyph >> 8);
+			pair[1] = (unsigned char)change->glyphs[run].glyph;
+			pdf_buffer_printf(out, "%02X%02X", pair[0], pair[1]);
+		}
+
+		/* The run shown. */
+		pdf_buffer_append(out, "> Tj ", 5);
+		at = run;
+	}
+
+	/* The line's own font again. */
+	pdf_buffer_append(out, "/", 1);
+	pdf_buffer_append(out, show->font_resource, show->font_resource_length);
+	pdf_buffer_append(out, " ", 1);
+	editor_number(out, show->font_size);
+	pdf_buffer_append(out, " Tf ", 4);
+}
+
+/* Tells which replacement fonts the editor's new words use (a bit a font's file). */
+static unsigned
+editor_fonts_used(
+	const struct pdf_page_editor *editor)
+{
+	unsigned used;
+	size_t object;
+	size_t at;
+
+	/* Each change's glyphs. */
+	used = 0;
+	for (object = 0; object < editor->count; object++) {
+		for (at = 0; at < editor->changes[object].glyph_count; at++)
+			used |= 1U << editor->changes[object].glyphs[at].file;
+	}
+
+	/* The fonts. */
+	return used;
+}
+
+/*
+ * Makes the glyphs of the editor's new words in the replacement fonts the
+ * writer's document's (their fonts embedded).  Returns 0 or the failure
+ * of pdf_writer_use_glyph.
+ */
+static int
+editor_use_glyphs(
+	struct pdf_writer *writer,
+	const struct pdf_page_editor *editor)
+{
+	const struct editor_glyph *glyph;
+	size_t object;
+	size_t at;
+	int error;
+
+	/* Each change's glyphs. */
+	for (object = 0; object < editor->count; object++) {
+		if (editor->changes[object].state == EDITOR_DELETED)
+			continue;
+		for (at = 0; at < editor->changes[object].glyph_count; at++) {
+			glyph = &editor->changes[object].glyphs[at];
+			error = pdf_writer_use_glyph(writer, glyph->file, glyph->glyph, glyph->character);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Succeeded: the document has them. */
 	return 0;
 }
 
@@ -1808,9 +2077,12 @@ editor_forget_text(
 	/* The words and their codes. */
 	free(change->text);
 	free(change->codes);
+	free(change->glyphs);
 	change->text = NULL;
 	change->codes = NULL;
 	change->code_length = 0;
+	change->glyphs = NULL;
+	change->glyph_count = 0;
 }
 
 /*
@@ -2629,12 +2901,20 @@ editor_preview_resources(
 	struct pdf_object *xobjects;
 	struct pdf_object *image;
 	struct pdf_object *key;
+	struct pdf_object *own_fonts;
+	struct pdf_object *fonts;
+	struct pdf_object *font;
+	struct pdf_edit_fonts *edit_fonts;
 	char name[64];
 	size_t capacity;
 	size_t xcapacity;
+	size_t fcapacity;
 	size_t at;
+	unsigned used;
+	unsigned file;
 	int same;
 	int error;
+	int error2;
 
 	/* The page's resources and their XObject dictionary (none for a page without). */
 	error = pdf_reader_page(editor->document, editor->index, &page, &own);
@@ -2649,8 +2929,17 @@ editor_preview_resources(
 			own_xobjects = NULL;
 	}
 
+	/* The page's fonts, when replacement fonts are added to them (ws175-p005). */
+	used = editor_fonts_used(editor);
+	own_fonts = NULL;
+	if (own != NULL && used != 0U) {
+		error = pdf_reader_resolve_key(editor->document, own, "Font", &own_fonts);
+		if (error != 0 || own_fonts->type != PDF_OBJECT_DICTIONARY)
+			own_fonts = NULL;
+	}
+
 	/* The merged dictionaries. */
-	capacity = 1;
+	capacity = 2;
 	if (own != NULL)
 		capacity += own->count;
 	xcapacity = editor->image_count;
@@ -2661,9 +2950,11 @@ editor_preview_resources(
 	if (merged == NULL || xobjects == NULL)
 		return ENOMEM;
 
-	/* The page's entries but XObject, then the merged XObject dictionary. */
+	/* The page's entries but XObject (and Font when fonts are added), then the merged XObject dictionary. */
 	for (at = 0; own != NULL && at < own->count; at++) {
 		same = pdf_object_is_name(own->keys[at], "XObject");
+		if (!same && used != 0U)
+			same = pdf_object_is_name(own->keys[at], "Font");
 		if (same)
 			continue;
 		error = editor_put(merged, capacity, own->keys[at], own->values[at]);
@@ -2694,6 +2985,36 @@ editor_preview_resources(
 		if (image == NULL || key == NULL)
 			return ENOMEM;
 		error = editor_put(xobjects, xcapacity, key, image);
+		if (error != 0)
+			return error;
+	}
+
+	/* The page's fonts and the replacement fonts under the preview's names (ws175-p005). */
+	if (used != 0U) {
+		fcapacity = PDF_EDIT_FILES;
+		if (own_fonts != NULL)
+			fcapacity += own_fonts->count;
+		fonts = editor_dictionary(&editor->arena, fcapacity);
+		key = editor_object(&editor->arena, PDF_OBJECT_NAME, "Font", 0);
+		if (fonts == NULL || key == NULL)
+			return ENOMEM;
+		error = editor_put(merged, capacity, key, fonts);
+		for (at = 0; error == 0 && own_fonts != NULL && at < own_fonts->count; at++)
+			error = editor_put(fonts, fcapacity, own_fonts->keys[at], own_fonts->values[at]);
+		error2 = pdf_edit_fonts_of(editor->document, &edit_fonts);
+		if (error == 0)
+			error = error2;
+		for (file = 0; error == 0 && file < PDF_EDIT_FILES; file++) {
+			if ((used & (1U << file)) == 0U)
+				continue;
+			error = pdf_edit_font_object(edit_fonts, file, &font);
+			(void)snprintf(name, sizeof(name), "%s%u", EDITOR_PREVIEW_FONT_PREFIX, file);
+			key = editor_object(&editor->arena, PDF_OBJECT_NAME, name, 0);
+			if (error == 0)
+				error = editor_put(fonts, fcapacity, key, font);
+		}
+
+		/* A font that could not be added fails the preview. */
 		if (error != 0)
 			return error;
 	}

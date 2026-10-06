@@ -2,7 +2,7 @@
 # WS175: Notes で PDF の画像と文字を編集する
 
 Master: [master](../master.md)
-Status: incomplete（2026-10-06: p001 設計・p003・p006 cleared、p002（a・b）実装、p007（Notes の model、画像の段）を実装。p008（UI、画像の段）・p004（文字の書き換え）を実装。次は p005（置き換えの font）
+Status: incomplete（2026-10-06: p001 設計・p003・p006 cleared、p002（a・b）実装、p007（Notes の model、画像の段）を実装。p008（UI、画像の段）・p004（文字の書き換え）・p005a（置き換えの font）を実装。次は p005b（文字の挿入）
 Primary Milestone: MG006
 
 ## 由来
@@ -31,7 +31,8 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 | [ws175-p007](phase007/phase.md) | Notes の model: 物の編集と画像、undo・Reset、ZNOT 2.0、journal 版 2、保存（PLACE_EDIT・blank）と開く時の照合・rebase・読み戻し | cleared（2026-10-06 Q1、画像の段。QEMU は p010） | p006 |
 | [ws175-p008](phase008/phase.md) | Notes の UI（画像の段）: Select の道具・挿入・差し替え・削除・Reset・drag・描画・log | 実装済み（2026-10-06、build と host PASS、画面は p010）、判定待ち | p007 |
 | [ws175-p004](phase004/phase.md) | libpdf の文字の書き換え（移動・削除・元の font での内容の変更・正規化 [H1]・ActualText [M10]）と Notes の文字の model | 実装済み（2026-10-06、host PASS）、判定待ち | p003・p007 |
-| p005・p009〜p011 | design.md §10 のとおり（p005 置き換えの font、p010 T1 → p011 規約） | 未作成 | — |
+| [ws175-p005](phase005/phase.md) | 置き換えの font（subset・埋め込み・fallback・font の変更）、文字の挿入 | p005a 実装済み（2026-10-06、host PASS）、p005b はこれから | p004 |
+| p009〜p011 | design.md §10 のとおり（p010 T1 → p011 規約） | 未作成 | — |
 
 見積もり: design.md §10（全体 17.5〜21.5 LW、画像を先にする段は約 10 LW）。Q1 の当初の概算は 6 LW。
 

@@ -437,9 +437,16 @@ int pdf_page_editor_read_image(const struct pdf_page_editor *editor, unsigned lo
 /*
  * New words for a line of text (ws175-p004, design.md section 3.3): size
  * is the caller's sizeof; utf8 the words (one line); font the line's own
- * (ORIGINAL) or a replacement (ws175-p005).  set_text's result says
- * whether the line's own font writes them (ORIGINAL) or a replacement
- * font is needed (NEEDS_FONT, with ENOTSUP).
+ * (ORIGINAL) or a replacement (ws175-p005: SANS Mahora Regular, MONO
+ * Mahora Mono, CJK Droid Sans Fallback; a character a font lacks drawn by
+ * JetBrains Mono, then Droid Sans Fallback).  set_text's result says
+ * whether the line's own font writes them (ORIGINAL), or a replacement
+ * did (REPLACED: the line's font lacks a character, is not embedded, or
+ * another was asked for), and whether some characters no font has were
+ * left out (MISSING).  NEEDS_FONT (with ENOTSUP): no replacement font is
+ * installed.  ws175-p005: font_size, red, green, blue and box_width are an
+ * inserted text's (its size in points as shown, its colour from 0 to 1,
+ * the width its lines wrap at; 0 does not wrap).
  */
 enum pdf_edit_font {
 	PDF_EDIT_FONT_ORIGINAL = 0,
@@ -451,9 +458,16 @@ struct pdf_edit_text {
 	size_t size;
 	const char *utf8;
 	enum pdf_edit_font font;
+	double font_size;
+	double red;
+	double green;
+	double blue;
+	double box_width;
 };
 #define PDF_EDIT_TEXT_ORIGINAL		0U
 #define PDF_EDIT_TEXT_NEEDS_FONT	1U
+#define PDF_EDIT_TEXT_REPLACED		2U
+#define PDF_EDIT_TEXT_MISSING		4U
 int pdf_page_editor_set_text(struct pdf_page_editor *editor, size_t index, const struct pdf_edit_text *text, unsigned *result);
 
 /*

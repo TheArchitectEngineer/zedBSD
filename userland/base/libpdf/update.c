@@ -173,6 +173,7 @@ static void write_cross_reference_update(struct update_layout *layout);
 static unsigned long changed_generation(const struct update_layout *layout, unsigned long number);
 static void write_entries_except(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *first, const char *second, int depth);
 static void write_object(struct pdf_buffer *file, const struct pdf_object *object, int depth);
+static void write_entries_but(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *first, const char *second, const char *third);
 static void write_name(struct pdf_buffer *file, const unsigned char *bytes, size_t length);
 static void write_real(struct pdf_buffer *file, double value);
 static int key_is(const struct pdf_object *key, const char *name);
@@ -541,6 +542,13 @@ lay_out_update(
 	pdf_writer_write_opacities(writer, file, layout.offsets);
 	for (index = 0; index < writer->images_count; index++)
 		pdf_writer_write_image_objects(&writer->images[index], file, layout.offsets);
+	if (writer->font_layout != NULL) {
+		error = writer->font_layout(writer, file, layout.offsets);
+		if (error != 0)
+			pdf_buffer_fail(file, error);
+	}
+
+	/* The attachment. */
 	if (writer->has_attachment)
 		pdf_writer_write_attachment_objects(writer, file, layout.offsets, layout.file_object);
 
@@ -745,6 +753,9 @@ number_objects(
 		if (writer->images[index].alpha != NULL)
 			next++;
 	}
+
+	/* Then the embedded fonts (ws175-p005). */
+	next = pdf_writer_number_fonts(writer, next);
 
 	/* Then the attached file and its specification. */
 	layout->file_object = next;
@@ -1343,6 +1354,7 @@ write_merged_resources(
 	struct pdf_object *page,
 	struct pdf_object *resources)
 {
+	size_t fonts;
 	struct pdf_writer *writer;
 	struct pdf_object *own;
 	struct pdf_buffer *file;
@@ -1351,7 +1363,8 @@ write_merged_resources(
 	/* Nothing to add: the page keeps its own resources as it names them, or the ones it inherits. */
 	writer = layout->writer;
 	file = layout->file;
-	if (writer->alphas_count == 0 && writer->images_count == 0) {
+	fonts = pdf_writer_font_count(writer);
+	if (writer->alphas_count == 0 && writer->images_count == 0 && fonts == 0) {
 		own = pdf_object_get(page, "Resources");
 		if (own != NULL) {
 			write_object(file, own, 0);
@@ -1365,10 +1378,10 @@ write_merged_resources(
 		return 0;
 	}
 
-	/* The page's entries but the two dictionaries the update adds to. */
+	/* The page's entries but the three dictionaries the update adds to. */
 	pdf_buffer_printf(file, "<<");
 	if (resources->type == PDF_OBJECT_DICTIONARY)
-		write_entries_except(file, resources, "ExtGState", "XObject", 0);
+		write_entries_but(file, resources, "ExtGState", "XObject", "Font");
 
 	/* The graphics states: the page's own and the opacities. */
 	error = write_merged_category(layout, resources, "ExtGState", 0);
@@ -1377,6 +1390,11 @@ write_merged_resources(
 
 	/* The external objects: the page's own and the images. */
 	error = write_merged_category(layout, resources, "XObject", 1);
+	if (error != 0)
+		return error;
+
+	/* The fonts: the page's own and the embedded ones (ws175-p005). */
+	error = write_merged_category(layout, resources, "Font", 2);
 	if (error != 0)
 		return error;
 
@@ -1389,8 +1407,9 @@ write_merged_resources(
 
 /*
  * Writes one category of a page's resources with the update's own entries
- * added: the ExtGState dictionary with the opacities, or the XObject one
- * with the images.  A category the update adds nothing to is written as
+ * added: the ExtGState dictionary with the opacities, the XObject one with
+ * the images (images 1), or the Font one with the embedded fonts (images
+ * 2, ws175-p005).  A category the update adds nothing to is written as
  * the page had it.  An update's name the page uses already is refused
  * (EEXIST).
  */
@@ -1408,6 +1427,7 @@ write_merged_category(
 	struct pdf_buffer *file;
 	char name[64];
 	size_t count;
+	size_t limit;
 	size_t index;
 	int error;
 
@@ -1415,8 +1435,10 @@ write_merged_category(
 	writer = layout->writer;
 	file = layout->file;
 	count = writer->alphas_count;
-	if (images)
+	if (images == 1)
 		count = writer->images_count;
+	if (images == 2)
+		count = pdf_writer_font_count(writer);
 
 	/* The page's own dictionary of the category (null when it has none). */
 	dictionary = NULL;
@@ -1438,10 +1460,17 @@ write_merged_category(
 		return 0;
 	}
 
-	/* Refuses an update's name that the page already uses. */
-	for (index = 0; index < count; index++) {
-		if (images)
+	/* Refuses an update's name that the page already uses (a font's is its file's, F0 to F3). */
+	limit = count;
+	if (images == 2)
+		limit = PDF_WRITER_FONT_FILES;
+	for (index = 0; index < limit; index++) {
+		if (images == 2 && !writer->fonts[index].any)
+			continue;
+		if (images == 1)
 			(void)snprintf(name, sizeof(name), "%sIm%lu", writer->name_prefix, (unsigned long)index);
+		else if (images == 2)
+			(void)snprintf(name, sizeof(name), "%sF%lu", writer->name_prefix, (unsigned long)index);
 		else
 			(void)snprintf(name, sizeof(name), "%sGS%lu", writer->name_prefix, (unsigned long)index);
 		taken = pdf_object_get(dictionary, name);
@@ -1453,8 +1482,10 @@ write_merged_category(
 	pdf_buffer_printf(file, " /%s <<", category);
 	if (dictionary->type == PDF_OBJECT_DICTIONARY)
 		write_entries_except(file, dictionary, NULL, NULL, 0);
-	if (images)
+	if (images == 1)
 		pdf_writer_write_image_entries(writer, file);
+	else if (images == 2)
+		pdf_writer_write_font_entries(writer, file);
 	else
 		pdf_writer_write_opacity_entries(writer, file);
 	pdf_buffer_printf(file, " >>");
@@ -2104,6 +2135,36 @@ write_entries_except(
 		write_name(file, dictionary->keys[index]->bytes, dictionary->keys[index]->length);
 		pdf_buffer_append(file, " ", 1);
 		write_object(file, dictionary->values[index], depth + 1);
+	}
+}
+
+/* Writes a dictionary's entries but three keys (ws175-p005: a page's resources but the categories the update adds to). */
+static void
+write_entries_but(
+	struct pdf_buffer *file,
+	const struct pdf_object *dictionary,
+	const char *first,
+	const char *second,
+	const char *third)
+{
+	size_t index;
+	int skipped;
+
+	/* Each entry but the three. */
+	for (index = 0; index < dictionary->count; index++) {
+		skipped = key_is(dictionary->keys[index], first);
+		if (!skipped)
+			skipped = key_is(dictionary->keys[index], second);
+		if (!skipped)
+			skipped = key_is(dictionary->keys[index], third);
+		if (skipped)
+			continue;
+
+		/* The key and its value, as the reader read them. */
+		pdf_buffer_append(file, " ", 1);
+		write_name(file, dictionary->keys[index]->bytes, dictionary->keys[index]->length);
+		pdf_buffer_append(file, " ", 1);
+		write_object(file, dictionary->values[index], 1);
 	}
 }
 

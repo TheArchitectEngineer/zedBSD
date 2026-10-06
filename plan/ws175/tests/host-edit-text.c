@@ -17,7 +17,7 @@
  * Their text, font, size and flags, their keys again, the hit (the visible
  * line over the invisible one); ws175-p004: a line deleted, the invisible
  * one not moved (ENOTSUP) nor given words (EPERM), Helvetica (not
- * embedded) needs a replacement font.
+ * embedded) given words in a replacement font (ws175-p005).
  */
 
 #include <errno.h>
@@ -110,7 +110,7 @@ main(
 	words.size = sizeof(words);
 	words.utf8 = "Hi";
 	check(pdf_page_editor_set_text(editor, 4, &words, &result) == EPERM, "the invisible line given words: EPERM");
-	check(pdf_page_editor_set_text(editor, 1, &words, &result) == ENOTSUP && result == PDF_EDIT_TEXT_NEEDS_FONT, "Helvetica (not embedded) given words: it needs a replacement font");
+	check(pdf_page_editor_set_text(editor, 1, &words, &result) == 0 && result == PDF_EDIT_TEXT_REPLACED, "Helvetica (not embedded) given words: in a replacement font (ws175-p005)");
 
 	/* The summary. */
 	pdf_page_editor_close(editor);

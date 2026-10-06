@@ -207,6 +207,8 @@ struct content_state {
 	double dash_phase;
 	size_t clips;
 	struct pdf_font *font;
+	char font_resource[PDF_SCAN_FONT_NAME_MAX];
+	size_t font_resource_length;
 	double font_size;
 	double character_spacing;
 	double word_spacing;
@@ -2708,6 +2710,13 @@ set_font(
 		return;
 	state->font_size = size;
 
+	/* The font's name in the resources, as the editor writes it again (ws175-p005; a name too long is not kept). */
+	state->font_resource_length = 0;
+	if (run->operands[run->operand_count - 2].length < sizeof(state->font_resource) && run->operands[run->operand_count - 2].bytes != NULL) {
+		state->font_resource_length = run->operands[run->operand_count - 2].length;
+		memcpy(state->font_resource, run->operands[run->operand_count - 2].bytes, state->font_resource_length);
+	}
+
 	/* Finds the font dictionary the name gives. */
 	state->font = NULL;
 	error = find_named_resource(run, resources, "Font", &run->operands[run->operand_count - 2], &dictionary);
@@ -4800,8 +4809,10 @@ scan_show(
 	memcpy(show->end, run->text_matrix, sizeof(show->end));
 	memcpy(show->ctm, state->ctm, sizeof(show->ctm));
 
-	/* The state it was shown in. */
+	/* The state it was shown in (the font's name in the resources too, ws175-p005). */
 	show->font = state->font;
+	show->font_resource_length = state->font_resource_length;
+	memcpy(show->font_resource, state->font_resource, state->font_resource_length);
 	show->font_size = state->font_size;
 	show->character_spacing = state->character_spacing;
 	show->word_spacing = state->word_spacing;
