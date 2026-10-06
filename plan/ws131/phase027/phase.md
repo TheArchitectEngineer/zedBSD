@@ -50,3 +50,7 @@ libkeiland-backend-zedbsd の power_actions も session では 0（ENOTSUP）。
 | style-check（変えた file） | 新しい指摘 0（session.c の既存の 1 つは触っていない所） |
 | keiland-os-boundary | 既存の FAIL だけ |
 | QEMU | 未実施。T1 に依頼: AAT の image で App Home の Power Off → dialog で Power Off が押せる（`poweroff=1`）→ 押すと guest が止まる |
+
+## 2026-10-06 ユーザーの決定（誰が頼めるか）
+
+P2 の既定（他の利用者がいなければ誰でも、いれば root・wheel だけ）を見せた質問へのクリックの回答「wheel だけに限る」: 他の利用者の有無に関わらず、Power Off・Restart を頼めるのは root と wheel の利用者だけ（console の session の control socket から）。wheel でない利用者の dialog では Power Off・Restart を押せない形にする。
