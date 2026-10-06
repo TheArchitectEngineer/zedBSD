@@ -10,6 +10,8 @@
 #  6. networkd's DHCPv6 lines (recorded only: it runs dhcpc -6 when an advertisement's M flag, or its O flag without
 #     RDNSS, asks; QEMU's advertisements carry RDNSS).
 #  7. IPv4 unchanged: ping -c 1 10.0.2.2.
+#  8. /etc/hosts before the DNS: with "2001:db8::77 zb-hosts-test" and "192.0.2.77 zb-hosts-test alias-test" added,
+#     ping names 2001:db8::77 for zb-hosts-test and 192.0.2.77 for alias-test (the file is put back after).
 # PASS: every "ok" line and the last line ipv6-p007: PASS.
 #
 #   plan/tools/guest/test-image.sh plan/ws130/tests/config-amd64-ipv6.mk BUILD; plan/tools/files/files-guest.sh start IMAGE
@@ -71,6 +73,14 @@ took=$(sed -n 's/^took=//p' "$out/stateful.txt")
 # 6. networkd's DHCPv6 (recorded).
 guest "grep -h 'DHCPv6' /var/log/networkd.log /var/log/messages 2>/dev/null | tail -3" > "$out/networkd.txt"
 cat "$out/networkd.txt"
+
+# 8. /etc/hosts before the DNS (getaddrinfo, ping names its address): an IPv6 line, then an IPv4 one by -4.
+guest "cp /etc/hosts /tmp/hosts.saved 2>/dev/null || : > /tmp/hosts.saved; \
+{ cat /tmp/hosts.saved; echo '2001:db8::77 zb-hosts-test'; echo '192.0.2.77 zb-hosts-test alias-test'; } > /etc/hosts; \
+ping -c 1 -W 1 zb-hosts-test; ping -4 -c 1 -W 1 alias-test; cat /tmp/hosts.saved > /etc/hosts" > "$out/hosts.txt"
+cat "$out/hosts.txt"
+grep -q 'PING6 zb-hosts-test (2001:db8::77)' "$out/hosts.txt" && ok "/etc/hosts: the IPv6 line" || bad "/etc/hosts IPv6"
+grep -q 'PING alias-test (192.0.2.77)' "$out/hosts.txt" && ok "/etc/hosts: the IPv4 line by an alias" || bad "/etc/hosts IPv4"
 
 # 7. IPv4 unchanged.
 guest 'ping -c 1 10.0.2.2 >/dev/null 2>&1 && echo yes' | tail -1 | grep -q yes && ok "IPv4 still works" || bad "IPv4"

@@ -81,6 +81,32 @@ main(void)
 	check(preferred("::1", "::1") == 1, "the loopback from the loopback");
 	check(preferred("2001:db8::1", "::1") == 0, "the loopback as a source beyond the host: IPv4 first");
 
+	/* Lines of /etc/hosts: IPv4 and IPv6, aliases, case, comments, a zone, a name not there. */
+	{
+		struct resolver_hosts_entry entry;
+		char line[128];
+		int named;
+
+		strcpy(line, "192.0.2.10\tnas.example nas # the file server\n");
+		named = resolver_hosts_line(line, "NAS", &entry);
+		check(named && entry.family == AF_INET && memcmp(entry.address, "\xc0\x00\x02\x0a", 4U) == 0, "hosts: an IPv4 line by an alias, any case");
+		check(named && strcmp(entry.canonical, "nas.example") == 0, "hosts: the canonical name is the first");
+		strcpy(line, "2001:db8::10 nas.example\n");
+		named = resolver_hosts_line(line, "nas.example", &entry);
+		(void)inet_pton(AF_INET6, "2001:db8::10", address);
+		check(named && entry.family == AF_INET6 && memcmp(entry.address, address, 16U) == 0, "hosts: an IPv6 line");
+		strcpy(line, "# 192.0.2.11 nas\n");
+		check(!resolver_hosts_line(line, "nas", &entry), "hosts: a comment names nothing");
+		strcpy(line, "192.0.2.12 nasa\n");
+		check(!resolver_hosts_line(line, "nas", &entry), "hosts: another name");
+		strcpy(line, "fe80::1%lo0 linklocal\n");
+		check(!resolver_hosts_line(line, "linklocal", &entry), "hosts: an address with a zone not taken");
+		strcpy(line, "not-an-address nas\n");
+		check(!resolver_hosts_line(line, "nas", &entry), "hosts: no address");
+		strcpy(line, "127.0.0.1\n");
+		check(!resolver_hosts_line(line, "127.0.0.1", &entry), "hosts: a line without a name");
+	}
+
 	/* The result. */
 	if (test_failures != 0) {
 		printf("host-libc6: %d failed\n", test_failures);

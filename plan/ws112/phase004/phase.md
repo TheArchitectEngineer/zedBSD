@@ -4,7 +4,7 @@
 
 Parent: [WS112](../ws.md)
 Status: planned
-Disposition: normal
+Disposition: canceled（2026-10-07: Fedora 44 rpm はゴールの設定し直しで取りやめ）
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認
 Goal: make keiland-linux-fedora44とFedora 44 rpm成果物
@@ -48,3 +48,7 @@ Resume: prerequisitesの実出力と判断を照合し、当PhaseだけのQueue�
 2026-10-02 / ws112-package-plan-20261002-ws112-p004-created: userの5OS package計画をこの有限Phaseへ分割、Status planned・Queue none。RPi arm64回答を契約に反映。詳細とscopeはWS/design参照。GitHub body/comment/Project公開は保留、local/outboxに記録。
 
 2026-10-02 / ws112-q585-contract-detail: [p001](../phase001/phase.md)の一次資料/実source調査で当Phaseのprocedure/command/証拠を具体化。上記のnative環境/形式/CI契約へ対応づけ、既存prerequisites・受け入れ・Queue none・Status plannedを保持。再開はp001残件と必要な実出力を照合後の当Phaseだけの承認済Queue。[WS要約](../ws.md#event-history)。GitHub deliveryはmain canonical outboxへ。
+
+## Event history（2026-10-07 の組み替え）
+
+2026-10-07 / ws112-reset-20261007: 2026-10-06 夜のユーザーのゴールの設定し直し（deb の 3 つだけ、Fedora・Arch・rpm・pacman は取りやめ）と、2026-10-07 のユーザーの回答（D-a「mmdebstrap の rootfs」、D-b「生成＋形式・依存の解決」、Q1 経由のクリック）により、Q1 の指示でこの Phase をcanceled にする。ユーザーが取りやめた。

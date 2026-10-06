@@ -3,11 +3,11 @@
 # ws112-p002: Debian/Ubuntu package生成を動作試験から分離
 
 Parent: [WS112](../ws.md)
-Status: planned
+Status: in-progress（2026-10-07 P1）
 Disposition: normal
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認
-Goal: 既存2 targetでbuild/形式検証だけのdeb生成と共通stage/記録契約を提供
+Goal: Debian 13・Ubuntu 26.04 の両方に入る amd64 と arm64 の deb を、mmdebstrap の Debian 13 の rootfs の中の native の build で生成し、形式・ELF・依存の解決（Debian 13・Ubuntu 26.04 の rootfs で apt の simulate）を確かめる
 Prerequisites: ws112-p001 cleared / 確定したinputsとmanifest
 Investigation bound: 90分の有限1Phase Queue案。具体的なscope/timebox/commandを選定時に再確認する。
 
@@ -51,3 +51,7 @@ Resume: prerequisitesの実出力と判断を照合し、当PhaseだけのQueue�
 2026-10-02 / ws112-q585-contract-detail: [p001](../phase001/phase.md)の一次資料/実source調査で当Phaseのprocedure/command/証拠を具体化。上記のnative環境/形式/CI契約へ対応づけ、既存prerequisites・受け入れ・Queue none・Status plannedを保持。再開はp001残件と必要な実出力を照合後の当Phaseだけの承認済Queue。[WS要約](../ws.md#event-history)。GitHub deliveryはmain canonical outboxへ。
 
 2026-10-02 / ws112-q591-p002-candidate: main指示で後続候補のexact scope/必要出力/資源/command/有限verificationを別documentへ具体化。現行Status planned・Queue none、実装未実行を保持。origin p001とWSへ準備eventを保存、mainが後続Queue選択/承認を所有する。
+
+## Event history（2026-10-07 の組み替え）
+
+2026-10-07 / ws112-reset-20261007: 2026-10-06 夜のユーザーのゴールの設定し直し（deb の 3 つだけ、Fedora・Arch・rpm・pacman は取りやめ）と、2026-10-07 のユーザーの回答（D-a「mmdebstrap の rootfs」、D-b「生成＋形式・依存の解決」、Q1 経由のクリック）により、Q1 の指示でこの Phase をamd64・arm64 の共通の deb の生成に定義し直す。QEMU の VM の build と GUI の試験は既存の `make keiland-linux-debian`・`-ubuntu2604` に残し、必須の経路から外す。

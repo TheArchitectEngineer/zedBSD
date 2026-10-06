@@ -43,6 +43,7 @@ ZEDBSD_CONFIG ?= config.mk
 # saved. Every build target requires the target information from config.mk.
 ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	keiland-linux keiland-linux-install keiland-linux-install-session keiland-linux-clean \
+	keiland-deb-amd64 keiland-deb-arm64 keiland-deb-rpi \
 	keiland-freebsd keiland-freebsd-install \
 	menuconfig-host-test rtl8822b-firmware-fixture-cache \
 	intelax211-firmware-fixture-cache i915-firmware-fixture-cache \
@@ -479,6 +480,16 @@ keiland-linux-debian:
 keiland-linux-ubuntu2604:
 	$(PYTHON) tools/release/keiland-linux-deb/run.py ubuntu2604
 
+# The three debs (WS112): built natively in a throwaway target rootfs (mmdebstrap), checked for
+# their format and that apt resolves their dependencies; no VM.
+.PHONY: keiland-deb-amd64 keiland-deb-arm64 keiland-deb-rpi
+keiland-deb-amd64:
+	$(PYTHON) tools/release/keiland-linux-deb/rootfs.py deb13-amd64
+keiland-deb-arm64:
+	$(PYTHON) tools/release/keiland-linux-deb/rootfs.py deb13-arm64
+keiland-deb-rpi:
+	$(PYTHON) tools/release/keiland-linux-deb/rootfs.py rpios13-arm64
+
 .PHONY: validate-image-config
 validate-image-config:
 	@:
@@ -505,6 +516,9 @@ help:
  ' make keiland-linux-clean Remove Linux build outputs, retaining guest images' \
  ' make keiland-linux-debian Build and verify a Debian 13 deb in QEMU' \
  ' make keiland-linux-ubuntu2604 Build and verify an Ubuntu 26.04 deb in QEMU' \
+ ' make keiland-deb-amd64 Build the amd64 deb for Debian 13 and Ubuntu 26.04' \
+ ' make keiland-deb-arm64 Build the arm64 deb for Debian 13 and Ubuntu 26.04' \
+ ' make keiland-deb-rpi Build the arm64 deb for Raspberry Pi OS' \
  ' make keiland-freebsd Build the native FreeBSD desktop (no target toolchain)' \
  ' sudo make keiland-freebsd-install Install the FreeBSD desktop under /opt/keiland' \
  ' make help Show this summary'

@@ -7,7 +7,7 @@ Status: planned
 Disposition: normal
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認
-Goal: make keiland-linux-rpiと実arm64/RPi OS成果物
+Goal: Raspberry Pi OS（trixie）arm64 の deb を、mmdebstrap の RPi OS の rootfs（Debian trixie ＋ archive.raspberrypi.com）の中の native の build で生成し、形式・ELF・依存の解決を確かめる（runtime・GUI は対象外）
 Prerequisites: ws112-p002 cleared / 共通stage・成果物契約（p001のRPi確定入力を使用）
 Investigation bound: 90分の有限1Phase Queue案。具体的なscope/timebox/commandを選定時に再確認する。
 
@@ -54,3 +54,7 @@ Resume: prerequisitesの実出力と判断を照合し、当PhaseだけのQueue�
 2026-10-02 / ws112-q585-contract-detail: [p001](../phase001/phase.md)の一次資料/実source調査で当Phaseのprocedure/command/証拠を具体化。上記のnative環境/形式/CI契約へ対応づけ、既存prerequisites・受け入れ・Queue none・Status plannedを保持。再開はp001残件と必要な実出力を照合後の当Phaseだけの承認済Queue。[WS要約](../ws.md#event-history)。GitHub deliveryはmain canonical outboxへ。
 
 2026-10-02 / ws112-q585-rpi-environment-selected: [origin p001](../phase001/phase.md)でmainのdelegated判断により外側既存Debian13 QEMU VM＋内側公式RPi rootfs/arm64 native compiler/QEMU-userを採用。環境成立/ABI/source/CPU/形式の実証commandは環境契約、bootは外側既存Debian例外。p002 clearedの共通stage/outputと当Phaseのexact Queueを引き続き必要とし、planned/実行未承認を保持。[WS](../ws.md#event-history)。
+
+## Event history（2026-10-07 の組み替え）
+
+2026-10-07 / ws112-reset-20261007: 2026-10-06 夜のユーザーのゴールの設定し直し（deb の 3 つだけ、Fedora・Arch・rpm・pacman は取りやめ）と、2026-10-07 のユーザーの回答（D-a「mmdebstrap の rootfs」、D-b「生成＋形式・依存の解決」、Q1 経由のクリック）により、Q1 の指示でこの Phase をmmdebstrap の RPi OS の rootfs での生成に定義し直す。p001 の「外側の Debian 13 の VM ＋内側の RPi rootfs」は D-a で置き換え。真の RPi rootfs の native compiler・headers・libc を使う条件は保つ（arm64 は host の qemu-user の binfmt）。

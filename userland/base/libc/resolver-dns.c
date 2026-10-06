@@ -13,6 +13,7 @@
 
 #include "userland/base/libc/resolver-internal.h"
 
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <string.h>
 
@@ -22,6 +23,7 @@ static uint16_t read16(const uint8_t *p);
 static int rcode_error(unsigned rcode);
 static int decode_name(const uint8_t *message, size_t length, size_t *offset, char *output, size_t capacity);
 static uint32_t read32(const uint8_t *p);
+static int hosts_same_name(const char *one, const char *other);
 
 /*
  * Implements the resolver dns build query operation.
@@ -489,3 +491,94 @@ resolver_inet6_preferred(
 	return 1;
 }
 
+/*
+ * Reads a line of /etc/hosts ("ADDRESS NAME [ALIAS...]", '#' to the end
+ * of the line a comment; the line is cut up in place) and tells whether it
+ * names the host, ignoring case.  Returns 1 with the address and the
+ * canonical name, or 0.  An IPv6 address with a zone is not taken.
+ */
+int
+resolver_hosts_line(
+	char *line,
+	const char *name,
+	struct resolver_hosts_entry *entry)
+{
+	char *words[2];
+	char *cursor;
+	char *word;
+	char *comment;
+	int found;
+	int ok;
+
+	/* The line without its comment, and its address. */
+	comment = strchr(line, '#');
+	if (comment != NULL)
+		*comment = '\0';
+	cursor = line;
+	found = 0;
+	words[0] = NULL;
+	words[1] = NULL;
+	for (;;) {
+		/* The next word. */
+		while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n')
+			cursor++;
+		if (*cursor == '\0')
+			break;
+		word = cursor;
+		while (*cursor != '\0' && *cursor != ' ' && *cursor != '\t' && *cursor != '\r' && *cursor != '\n')
+			cursor++;
+		if (*cursor != '\0')
+			*cursor++ = '\0';
+
+		/* The address, the canonical name, then the aliases; the host among the names. */
+		if (words[0] == NULL) {
+			words[0] = word;
+			continue;
+		}
+		if (words[1] == NULL)
+			words[1] = word;
+		if (hosts_same_name(word, name))
+			found = 1;
+	}
+	if (!found)
+		return 0;
+
+	/* The address of either family. */
+	memset(entry, 0, sizeof(*entry));
+	ok = inet_pton(AF_INET, words[0], entry->address);
+	entry->family = AF_INET;
+	if (ok != 1) {
+		ok = inet_pton(AF_INET6, words[0], entry->address);
+		entry->family = AF_INET6;
+	}
+	if (ok != 1)
+		return 0;
+
+	/* Succeeded: the canonical name, cut to fit. */
+	strncpy(entry->canonical, words[1], sizeof(entry->canonical) - 1U);
+	return 1;
+}
+
+/* Tells whether two host names are the same, ignoring the case of ASCII letters. */
+static int
+hosts_same_name(
+	const char *one,
+	const char *other)
+{
+	unsigned char left;
+	unsigned char right;
+
+	/* Each character, folded to lower case. */
+	for (;;) {
+		left = (unsigned char)*one++;
+		right = (unsigned char)*other++;
+		if (left >= 'A' && left <= 'Z')
+			left = (unsigned char)(left - 'A' + 'a');
+		if (right >= 'A' && right <= 'Z')
+			right = (unsigned char)(right - 'A' + 'a');
+		if (left != right)
+			return 0;
+		if (left == '\0')
+			return 1;
+	}
+}

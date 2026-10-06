@@ -10,6 +10,33 @@ compiler and dpkg, then install the deb in a second fresh guest. The checks cove
 runtime dependencies, the public Vulkan client, an actual KMS desktop and Terminal
 keyboard input, reinstall, upgrade, removal and preservation of user data.
 
+## The three debs without a VM
+
+```sh
+make keiland-deb-amd64   # Debian 13 and Ubuntu 26.04, amd64
+make keiland-deb-arm64   # Debian 13 and Ubuntu 26.04, arm64
+make keiland-deb-rpi     # Raspberry Pi OS (trixie), arm64
+```
+
+[rootfs.py](rootfs.py) makes a throwaway rootfs of the target with mmdebstrap (unshare mode, no
+root; a subordinate uid range in /etc/subuid) from the archives in [rootfs.json](rootfs.json), and
+[build.py](build.py) builds the deb inside it with the target's own compiler, headers and C library.
+arm64 runs through the host's qemu-aarch64 binfmt (user-mode emulation, not a VM). One deb serves
+Debian 13 and Ubuntu 26.04: it is built against Debian 13's C library, the older of the two. The
+Raspberry Pi OS rootfs adds archive.raspberrypi.com, whose key is checked against the fingerprint
+in rootfs.json.
+
+Each deb is then checked, not run: its fields, the machine of every ELF in it, no test program, and
+`apt-get install --simulate` of it in a fresh rootfs of each distribution it is for (Debian 13 and
+Ubuntu 26.04, or Raspberry Pi OS). Each run writes a new directory
+`KEILAND_DEB_BUILD/rootfs/TARGET/STAMP/` (default `build/keiland-deb`): `out/` with the deb, its
+manifest, buildinfo and checksums, `build.log`, `check-*/simulate.txt` and `check.json`. The
+rootfs is made under `KEILAND_DEB_TMPDIR` (default `/var/tmp`; the namespace's root cannot enter a
+private home) and mmdebstrap removes it. The host needs mmdebstrap, the qemu-user binfmt for arm64,
+gpg, curl and the Ubuntu archive keyring (`ubuntu-keyring`).
+
+## The QEMU smoke
+
 The host needs Python 3.12+, Git, curl, OpenSSH, QEMU (`qemu-system-x86_64` and
 `qemu-img`), and xorriso. KVM is used when accessible; otherwise QEMU uses TCG.
 `KEILAND_DEB_ACCEL=auto|kvm|tcg` explicitly selects emulator acceleration;

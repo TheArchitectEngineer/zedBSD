@@ -424,7 +424,12 @@ inet6_send(
 	}
 }
 
-/* Reads a message from a server's port until a time; its length, or -1 when none came. */
+/*
+ * Reads a message until a time; its length, or -1 when none came.  Any
+ * source port is taken (the transaction and the client's identifier
+ * decide): QEMU's user network answers from port 8962, its 547 with the
+ * bytes swapped (T1-296's capture).
+ */
 static ssize_t
 inet6_receive(
 	struct inet6_session *session,
@@ -439,7 +444,7 @@ inet6_receive(
 	ssize_t received;
 	int status;
 
-	/* Until one comes from port 547, or the time is up. */
+	/* Until one comes, or the time is up. */
 	for (;;) {
 		now = netutil_monotonic_us();
 		if (now >= until)
@@ -455,11 +460,10 @@ inet6_receive(
 			continue;
 		if (received < 0)
 			return -1;
-		if (source.sin6_family == AF_INET6 && source.sin6_port == htons(DHCP6_SERVER_PORT))
-			return received;
 		if (session->verbose)
-			printf("dhcpc: %s: passed over a datagram from port %u\n", session->interface,
-			    (unsigned)ntohs(source.sin6_port));
+			printf("dhcpc: %s: datagram from port %u\n", session->interface, (unsigned)ntohs(source.sin6_port));
+		if (source.sin6_family == AF_INET6)
+			return received;
 	}
 }
 
