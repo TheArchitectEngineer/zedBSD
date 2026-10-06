@@ -507,6 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー（クリック）: BUG-214 は「slider と switch に分ける」（slider は窓の中身の不透明度 85〜100・既定 100、「Frosted glass」の switch は既定 on・off で不透明の地）。BUG-220 の列の幅は「保存する」（Files の設定に）。BUG-223:「フルスクリーンモードではappのbufferをscanoutしているはずです。確認して教えてください。」→ Q1 が確認（ws099-p015 が 2026-09-30 のユーザーの指示で fullscreen mode の直の scanout を削除、display.c の注記、code は GitHub の old）→ ユーザーの選択「動画・game mode だけ戻す」: app が明示に頼む全画面（game mode）の時だけ直の scanout を戻す、普通の全画面は合成のまま・端の swipe を保つ。
 - 2026-10-06 ユーザー: light の bar は montage-5 の「このまま実装」。app の icon の中抜きは「デスクトップ背景が透けて見えるとうれしいです。ライトもダークも、Apps一覧も。」（bar の light・dark と App Home の Apps の一覧で、記号の部分から壁紙が透ける）。
 - 2026-10-06 ユーザー（クリック）: session からの Power Off・Restart は「wheel だけに限る」（root と wheel、他の利用者の有無に関わらず）。ws131-p027 の新しい attempt（q793-i02）。
 - 2026-10-06 ユーザー（クリック）: BUG-227 の残り（challenge.js に要る typed array・crypto・Worker/Blob・fetch の POST・canvas）は「ベータ2 の後に回す」。header の直しで止める。

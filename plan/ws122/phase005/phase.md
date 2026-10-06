@@ -57,3 +57,8 @@ Status（p005a）: test-wait（T1 依頼中。実装・build・AAT の host 試�
 - 足した物（`userland/desktop/videoplayer/main.c`）: F11（menu の無い desktop でも）と Alt+Enter で切り替え、picture の double click（bar の上でない所、400 ms・8 px 以内の 2 回目の press）で切り替え、全画面の時の bar は pointer の後 2 秒（`VP_BAR_FULL_US`）。log `VIDEOPLAYER FULLSCREEN toggle via=f11|alt-enter|double-click`・`VIDEOPLAYER FULLSCREEN on=0|1`。全画面から F11 で出るのは compositor（BUG-194）。
 - AAT: [apps.videoplayer.fullscreen](../../../tests/scenarios/apps/videoplayer/fullscreen.md)（helper つき、needs-person で撮影を見る）。
 - 確認: videoplayer の build warning 0、style-check 0、check-scenarios PASS、aat run-host PASS。QEMU は T1。
+
+## 2026-10-06 ユーザーとの確認（p005b）
+
+P2 の調べ（compositor は VK_KHR_display の swapchain だけで出し、client の buffer を直に出す経路が無い）に対し、ユーザー「フルスクリーンモードではappのbufferをscanoutしているはずです。確認して教えてください。」→ Q1 の確認: 直の scanout の fullscreen mode は WS035 の D0 にあったが、2026-09-30 のユーザーの指示（「全画面でコンポジット無効のモードになっているなら、それは使わないように修正して、コンポジットを有効にした上で、スワイプ操作を可能にします。」）で ws099-p015 が削除した（`userland/desktop/wayland/display.c` の冒頭の注記）。削除の前の code は GitHub の `old` branch。
+ユーザーの選択（クリック）「動画・game mode だけ戻す」: app が明示に頼む全画面（game mode、動画の player の F11・Alt+Enter など）の時だけ、old の fullscreen mode を読んで直の scanout を戻す。普通の全画面は合成のまま、端の swipe を保つ。game mode の間の端の操作（解除の swipe・Esc）をどう拾うかを p005b の設計に書く。Guardrail の「compositor は libvulkan だけ」の範囲で（old の経路がどの口を使っていたかを確かめ、直の ioctl なら止めて Q1 へ）。
