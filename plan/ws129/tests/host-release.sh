@@ -14,8 +14,9 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 top=$(pwd)
 build=${1:-build/ws129-p004-host}
-rm -rf "$build"
-mkdir -p "$build"
+# Each run starts in a new directory behind the name (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh).
+. plan/tools/fresh-out.sh
+fresh_out "$build"
 build=$(cd "$build" && pwd)
 passed=0
 failed=0
@@ -62,7 +63,7 @@ cp tools/release/release-tag.sh "$clone/tools/release/release-tag.sh"
 tag() { (cd "$clone" && sh tools/release/release-tag.sh "$@"); }
 ok "classify rc2" sh -c "cd '$clone' && sh tools/release/release-tag.sh classify zedbsd-1.0.0-beta2-rc2 | grep -qx 'kind=build' && sh tools/release/release-tag.sh classify zedbsd-1.0.0-beta2-rc2 | grep -qx 'rc=2'"
 ok "classify final" sh -c "cd '$clone' && sh tools/release/release-tag.sh classify zedbsd-1.0.0-beta2 | grep -qx 'kind=promote'"
-refused "classify another version" tag classify zedbsd-1.0.0-beta2-rc1
+refused "classify another version" tag classify zedbsd-1.0.0-beta3-rc1
 refused "classify rc0" tag classify zedbsd-1.0.0-beta2-rc0
 refused "classify rc without a number" tag classify zedbsd-1.0.0-beta2-rcx
 ok "rc highest" sh -c "cd '$clone' && test \"\$(sh tools/release/release-tag.sh rc zedbsd-1.0.0-beta2)\" = zedbsd-1.0.0-beta2-rc2"

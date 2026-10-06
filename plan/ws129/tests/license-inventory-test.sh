@@ -11,8 +11,9 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+work=$(mktemp -d "$(pwd)/build/tmp/license-inventory.XXXXXX")
 status=0
 config=config/ci/config-amd64.mk
 run() { timeout 300 python3 tools/release/license-inventory.py --config "$config" "$@" 2> "$work/err" > "$work/out"; }
