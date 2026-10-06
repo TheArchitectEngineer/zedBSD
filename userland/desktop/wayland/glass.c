@@ -1974,7 +1974,10 @@ glass_draw_icon(
  * smallest kept larger (the largest when none is) scaled, as opaque as
  * asked (0..1).  Its picture is cut out: with GLASS_HOLE_GROUND what was
  * drawn under the tile shows through it, with GLASS_HOLE_SCENE the blurred
- * scene under the glass the tile is on, unwhitened (BUG-237).  lighten
+ * scene under the glass the tile is on, unwhitened (BUG-237), with
+ * GLASS_HOLE_WALLPAPER the desktop's wallpaper itself, sharp, as if the
+ * picture were a real hole through the bar or App Home (ws099-p034b, the
+ * 2026-10-06 user decision).  lighten
  * (0..1) whitens the tile itself, as a lit button.
  */
 void
@@ -2025,6 +2028,26 @@ glass_draw_app_tile(
 		shape.soft = 1.0f;
 		shape.opacity = opacity;
 		shape.light = 1U;
+		glass_shape_draw(server, command, &shape);
+	}
+
+	/*
+	 * Through to the wallpaper: the part of the wallpaper under the tile
+	 * (the wallpaper is drawn over the whole output), inside the tile,
+	 * where only the cut-out picture leaves it seen.
+	 */
+	if (hole == GLASS_HOLE_WALLPAPER) {
+		inset = pixels * GLASS_TILE_SCENE_INSET;
+		glass_shape_init(&shape, x + inset, y + inset, pixels - 2.0f * inset, pixels - 2.0f * inset);
+		shape.mode = MODE_IMAGE;
+		shape.opaque = 1.0f;
+		shape.radius = pixels * GLASS_ICON_TILE_RADIUS - inset;
+		shape.uv[0] = (x + inset) / (float)server->width;
+		shape.uv[1] = (y + inset) / (float)server->height;
+		shape.uv[2] = (x + pixels - inset) / (float)server->width;
+		shape.uv[3] = (y + pixels - inset) / (float)server->height;
+		shape.opacity = opacity;
+		shape.set = glass_wallpaper_set(server);
 		glass_shape_draw(server, command, &shape);
 	}
 
