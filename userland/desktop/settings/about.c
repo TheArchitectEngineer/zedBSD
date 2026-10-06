@@ -28,7 +28,9 @@
 
 static void about_processor(char *name, size_t size);
 static void about_unquote(char *value);
+#if defined(__x86_64__) || defined(__i386__)
 static void about_trim(char *text);
+#endif
 
 /*
  * Reads what About shows of the machine; a value that cannot be read is
@@ -194,6 +196,7 @@ about_processor(
 #endif
 }
 
+#if defined(__x86_64__) || defined(__i386__)
 /* Takes the spaces off a text's start and end, and runs of spaces inside it down to one. */
 static void
 about_trim(
@@ -228,6 +231,7 @@ about_trim(
 	/* The text ends after its last word. */
 	text[written] = '\0';
 }
+#endif
 
 /*
  * Takes the quotes off an os-release value in place: within double quotes

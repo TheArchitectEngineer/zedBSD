@@ -2416,11 +2416,23 @@ renderer_buffer_free(
 	return;
 }
 
-/* Reads the processor's cycle counter; the clock a user program can read has only tick resolution. */
+/*
+ * Reads the processor's cycle counter; the clock a user program can read
+ * has only tick resolution.  On arm64 (the Linux arm64 package, WS112) the
+ * virtual counter of the generic timer.
+ */
 static uint64_t
 renderer_cycles(
 	void)
 {
+#if defined(__aarch64__)
+	uint64_t value;
+
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(value));
+
+	/* Succeeded: the counter. */
+	return value;
+#else
 	uint32_t low;
 	uint32_t high;
 
@@ -2428,6 +2440,7 @@ renderer_cycles(
 
 	/* Succeeded: the counter as one 64-bit value. */
 	return ((uint64_t)high << 32) | low;
+#endif
 }
 
 /* Adds the cycles since `mark` to one stage and moves the mark to now. */
