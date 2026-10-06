@@ -38,14 +38,15 @@
 #define COMPANION_FILE_MAX	(64U * 1024U * 1024U)
 
 static int companion_open(const char *path, struct truetype_face **face);
+static int companion_same_widths(const struct truetype_face *face, const struct truetype_face *bold);
 static int companion_read(const char *path, void **data, size_t *size);
 
 /*
  * Opens a face's companions from their files: bold_path, the same glyphs in
  * a bold weight, and next_path, the face that draws the characters this one
  * lacks.  Either may be NULL.  A file that is missing or unreadable, and a
- * bold face whose glyphs are not the face's (another count or another em),
- * is left out.  Returns 0, or EINVAL for a missing face or one that has
+ * bold face whose glyphs are not the face's (another count, em or width:
+ * Mahora Bold is no bold of Mahora Mono), is left out.  Returns 0, or EINVAL for a missing face or one that has
  * companions already.
  */
 int
@@ -57,6 +58,7 @@ truetype_open_companions(
 	struct truetype_face *bold;
 	struct truetype_face *next;
 	int error;
+	int same;
 
 	/* A face without companions yet. */
 	if (face == NULL)
@@ -71,11 +73,12 @@ truetype_open_companions(
 		if (error != 0)
 			bold = NULL;
 	}
-	if (bold != NULL &&
-	    (bold->glyph_count != face->glyph_count ||
-	     bold->units_per_em != face->units_per_em)) {
-		truetype_close(bold);
-		bold = NULL;
+	if (bold != NULL) {
+		same = companion_same_widths(face, bold);
+		if (!same) {
+			truetype_close(bold);
+			bold = NULL;
+		}
 	}
 
 	/* The face for the characters this one lacks. */
@@ -145,6 +148,39 @@ truetype_resolve_const(
 
 	/* Succeeded: the face that draws it. */
 	return face;
+}
+
+/* Tells whether a bold face has the face's glyphs: as many, in the same em, each as wide (1), or not (0). */
+static int
+companion_same_widths(
+	const struct truetype_face *face,
+	const struct truetype_face *bold)
+{
+	unsigned glyph;
+	int regular_width;
+	int bold_width;
+	int error;
+
+	/* The same count and em. */
+	if (bold->glyph_count != face->glyph_count)
+		return 0;
+	if (bold->units_per_em != face->units_per_em)
+		return 0;
+
+	/* Each glyph as wide in both. */
+	for (glyph = 0; glyph < face->glyph_count; glyph++) {
+		error = truetype_glyph_design_advance(face, glyph, &regular_width);
+		if (error != 0)
+			return 0;
+		error = truetype_glyph_design_advance(bold, glyph, &bold_width);
+		if (error != 0)
+			return 0;
+		if (regular_width != bold_width)
+			return 0;
+	}
+
+	/* Succeeded: the bold face draws the same glyphs. */
+	return 1;
 }
 
 /* Opens a companion's file as a face that owns the bytes it reads. */

@@ -17,6 +17,8 @@
 
 #include "viewer.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,6 +90,9 @@ pv_text_open(
 		pv_text_close(text);
 		return error;
 	}
+
+	/* Its companions: Mahora Bold, and the monospaced fallback for the signs it lacks (ws090-p020). */
+	(void)truetype_open_companions(text->face, KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
 
 	/* Succeeded: text can be drawn. */
 	return 0;
