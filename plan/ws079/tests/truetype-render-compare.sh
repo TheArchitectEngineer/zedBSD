@@ -21,7 +21,7 @@ cp userland/desktop/keiland/truetype.h "$out/include/"
 git show "$revision:userland/desktop/libtruetype/outline.c" > "$out/old/outline.c"
 cp userland/desktop/libtruetype/internal.h "$out/old/"
 others="userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/render.c
-	userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/contour.c"
+	userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/contour.c userland/desktop/libtruetype/companion.c"
 flags="-std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -I$out/include"
 # shellcheck disable=SC2086
 cc $flags -Werror -O2 $others userland/desktop/libtruetype/outline.c plan/ws079/tests/truetype-render-dump.c -lm -o "$out/new"

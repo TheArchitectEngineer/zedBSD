@@ -28,7 +28,7 @@ flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/i
 objects=""
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c \
     userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c \
-    userland/desktop/libtruetype/glyph.c; do
+    userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c; do
 	object="$out/obj/truetype-$(basename "$file" .c).o"
 	"$cc" $flags -Wno-error -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	objects="$objects $object"

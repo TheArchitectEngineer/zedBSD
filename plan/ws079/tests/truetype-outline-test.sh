@@ -18,7 +18,7 @@ cp userland/desktop/keiland/truetype.h "$out/include/"
 src="userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c
      userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c
      userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c
-     userland/desktop/libtruetype/contour.c plan/ws079/tests/truetype-outline-dump.c"
+     userland/desktop/libtruetype/contour.c userland/desktop/libtruetype/companion.c plan/ws079/tests/truetype-outline-dump.c"
 flags="-std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -I$out/include"
 # shellcheck disable=SC2086
 cc $flags -O2 $src -lm -o "$out/dump"
