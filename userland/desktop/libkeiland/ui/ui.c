@@ -443,6 +443,7 @@ kl_ui_axis(
 	struct kl_ui *ui,
 	const struct kl_window_event *event)
 {
+	int flung;
 	const struct ui_record *record;
 	struct kl_scroll *scroll;
 	int shown;
@@ -455,8 +456,11 @@ kl_ui_axis(
 		if (scroll == NULL)
 			return 0;
 		shown = ui_scroll_shown(ui, scroll);
+		flung = 0;
 		if (shown)
-			(void)kl_scroll_axis_stop(scroll, event->time_us);
+			flung = kl_scroll_axis_stop(scroll, event->time_us);
+		if (flung)
+			return KL_UI_AXIS_FLUNG;
 		return 1;
 	}
 

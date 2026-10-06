@@ -343,7 +343,7 @@ titlebar_state_controls(
 
 	/* The search's query, and what the field shows when empty. */
 	if (error == 0)
-		error = keiland_titlebar_set_control_text(object, SE_CONTROL_SEARCH, state->query, "Search settings");
+		error = keiland_titlebar_set_control_text(object, SE_CONTROL_SEARCH, state->query, kl_tr("Search settings"));
 
 	/* The list of pages, checked while it is shown. */
 	if (error == 0)

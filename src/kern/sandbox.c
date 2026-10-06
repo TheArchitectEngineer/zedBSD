@@ -34,6 +34,7 @@
 #include <uapi/sandbox.h>
 #include <uapi/signal.h>
 #include <uapi/syscall.h>
+#include <uapi/termios.h>
 
 /* The calls every sandbox allows. */
 static const uint16_t sandbox_base[] = {
@@ -156,6 +157,28 @@ sandbox_permits(
 	}
 
 	/* Succeeded: allowed. */
+	return 1;
+}
+
+/*
+ * Answers, without the call, the one question a sandbox's process may ask
+ * of a file it holds that the set does not let it make: whether it is a
+ * terminal (ioctl TCGETS, which the C library's start asks of fd 1).  It
+ * is told "not a terminal" (ENOTTY), which reveals nothing and reaches no
+ * file or driver.  Returns 1 with the answer, 0 for any other call.
+ */
+int
+sandbox_answers(
+	uint32_t number,
+	const uintptr_t args[6],
+	intptr_t *result)
+{
+	/* Only the terminal query. */
+	if (number != KERN_SYS_ioctl || args[1] != (uintptr_t)TCGETS)
+		return 0;
+
+	/* Succeeded: not a terminal. */
+	*result = -ENOTTY;
 	return 1;
 }
 

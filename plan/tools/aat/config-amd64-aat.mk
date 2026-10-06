@@ -11,3 +11,6 @@ ZEDBSD_USER_PROGRAMS += aat-input
 # The compositor's test-only capture (ws173-p002, P1: userland/desktop/wayland/shot.c) and its client keiland-shot.
 ZEDBSD_TEST_SCREEN_CAPTURE := y
 ZEDBSD_USER_PROGRAMS += keiland-shot
+# The desktop's settings from the command line (userland/tests/keiland-settings): desktop.language.lock-japanese sets
+# ui.language with it (q809).
+ZEDBSD_USER_PROGRAMS += keiland-settings

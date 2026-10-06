@@ -74,6 +74,22 @@ struct exec_target {
 	unsigned mount_flags;
 };
 
+/*
+ * What a sandboxed spawn holds while it builds the child, released by
+ * process_spawn_sandbox whatever the outcome: the resolved image, the
+ * parent's credential, the child's prospective credential and its
+ * reservation, the unpublished child, and the stage reached (for the
+ * log).
+ */
+struct exec_sandbox_build {
+	struct exec_target target;
+	struct ucred *access_cred;
+	struct ucred *prospective_cred;
+	struct process_cred_reservation *cred_reservation;
+	struct process *process;
+	const char *stage;
+};
+
 static int exec_bounded_length(const char *string, size_t maximum, size_t *result);
 static int script_argv_count(const char *value, size_t table_bytes, size_t *string_bytes);
 static void script_argv_copy(char **vector, unsigned *index, char **cursor, const char *value);
@@ -86,7 +102,6 @@ static void fill_auxv_info(struct exec_auxv_info *aux, const EXEC_IMAGE_INFO *im
 static int setup_standard_files(struct process *parent, struct process *process, const struct ucred *credential);
 static int process_exec_file(struct process *process, const char *path, struct file *provided_file, int reopenable_path, char *const argv[], char *const envp[]);
 static int exec_thread_retired(const struct thread *thread);
-struct exec_sandbox_build;
 static int exec_sandbox_start(struct process *parent, struct sandbox_spawn_plan *plan, struct exec_sandbox_build *build);
 static void exec_sandbox_limit(struct rlimit_record *record, uint64_t requested);
 
@@ -726,22 +741,6 @@ out:
 	/* Succeeded. */
 	return 0;
 }
-
-/*
- * What a sandboxed spawn holds while it builds the child, released by
- * process_spawn_sandbox whatever the outcome: the resolved image, the
- * parent's credential, the child's prospective credential and its
- * reservation, the unpublished child, and the stage reached (for the
- * log).
- */
-struct exec_sandbox_build {
-	struct exec_target target;
-	struct ucred *access_cred;
-	struct ucred *prospective_cred;
-	struct process_cred_reservation *cred_reservation;
-	struct process *process;
-	const char *stage;
-};
 
 /*
  * Spawns a sandboxed child of a parent (ws168-p002, sandbox_spawn; uapi/

@@ -26,7 +26,6 @@ F=$U/fonts
 "$out" $F/Inter.ttf $F/DroidSansFallbackFull.ttf "$out"
 for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
-	rm -f "$p"
 done
 for p in "$out"-*.pam; do
 	python3 - "$p" "${p%.pam}.panels" userland/desktop/keiland/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
@@ -51,7 +50,6 @@ gr, gg, gb = ground.split()
 out = Image.merge('RGB', [ImageChops.add(c, ImageChops.multiply(gc, inv)) for c, gc in ((r, gr), (g, gg), (b, gb))])
 out.save(sys.argv[4])
 PY
-	rm -f "$p" "${p%.pam}.panels"
 done
 # The small desk calendar's page turning (the day's card at the panel's bottom) as one animated GIF.
 python3 - "$out" <<'PY'

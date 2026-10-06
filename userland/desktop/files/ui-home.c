@@ -114,6 +114,10 @@ fm_home_gather(
 	char path[FM_PATH_MAX];
 	char line[FM_PATH_MAX];
 	char free_text[32];
+	char free_line[64];
+	char number[32];
+	const char *greeting;
+	const char *named;
 	char *newline;
 	char *read;
 	FILE *file;
@@ -206,24 +210,31 @@ fm_home_gather(
 		fclose(file);
 
 	/* The greeting by the time of day, and the line about the files. */
-	if (today.tm_hour < 12)
-		snprintf(board->greeting, sizeof(board->greeting), "Good morning");
-	else if (today.tm_hour < 18)
-		snprintf(board->greeting, sizeof(board->greeting), "Good afternoon");
-	else
-		snprintf(board->greeting, sizeof(board->greeting), "Good evening");
+	if (today.tm_hour < 12) {
+		greeting = kl_tr("Good morning");
+		named = kl_tr("Good morning, {1}");
+	} else if (today.tm_hour < 18) {
+		greeting = kl_tr("Good afternoon");
+		named = kl_tr("Good afternoon, {1}");
+	} else {
+		greeting = kl_tr("Good evening");
+		named = kl_tr("Good evening, {1}");
+	}
+
+	/* With the user's name when it is known (the language puts it where its grammar wants). */
+	snprintf(board->greeting, sizeof(board->greeting), "%s", greeting);
 	if (app->user[0] != '\0')
-		snprintf(board->greeting + strlen(board->greeting), sizeof(board->greeting) - strlen(board->greeting), ", %s", app->user);
+		(void)kl_tr_format(board->greeting, sizeof(board->greeting), named, app->user, (const char *)NULL);
 	free_text[0] = '\0';
 	error = statvfs(app->home, &volume);
 	if (error == 0)
 		fm_dir_size_text((uint64_t)volume.f_bavail * (uint64_t)volume.f_frsize, free_text, sizeof(free_text));
-	if (opened_today == 1)
-		snprintf(board->summary, sizeof(board->summary), "1 file opened today");
-	else
-		snprintf(board->summary, sizeof(board->summary), "%d files opened today", opened_today);
-	if (free_text[0] != '\0')
-		snprintf(board->summary + strlen(board->summary), sizeof(board->summary) - strlen(board->summary), " \xc2\xb7 %s free", free_text);
+	snprintf(number, sizeof(number), "%d", opened_today);
+	(void)kl_tr_format(board->summary, sizeof(board->summary), kl_trn("{1} file opened today", "{1} files opened today", (unsigned long)opened_today), number, (const char *)NULL);
+	if (free_text[0] != '\0') {
+		(void)kl_tr_format(free_line, sizeof(free_line), kl_tr("{1} free"), free_text, (const char *)NULL);
+		snprintf(board->summary + strlen(board->summary), sizeof(board->summary) - strlen(board->summary), " \xc2\xb7 %s", free_line);
+	}
 }
 
 /*
@@ -311,16 +322,16 @@ fm_home_draw(
 	}
 
 	/* The folders. */
-	y = home_section(app, canvas, x, y, width, "Folders", 0);
+	y = home_section(app, canvas, x, y, width, kl_tr("Folders"), 0);
 	y = home_cards(app, canvas, x, y, width) + HOME_SECTION_GAP;
 
 	/* The recent files. */
-	y = home_section(app, canvas, x, y, width, "Recent Files", 1);
+	y = home_section(app, canvas, x, y, width, kl_tr("Recent Files"), 1);
 	y = home_recents(app, canvas, x, y, width) + HOME_SECTION_GAP;
 
 	/* The recent folders. */
 	if (app->dashboard.folder_count > 0) {
-		y = home_section(app, canvas, x, y, width, "Recent Folders", -1);
+		y = home_section(app, canvas, x, y, width, kl_tr("Recent Folders"), -1);
 		y = home_folder_pills(app, canvas, x, y, width) + HOME_SECTION_GAP;
 	}
 
@@ -631,7 +642,7 @@ home_section(
 
 	/* The link at the right, when the section has one. */
 	if (link >= 0) {
-		label = "Show all \xe2\x86\x92";
+		label = kl_tr("Show all \xe2\x86\x92");
 		label_width = fm_text_width(app->text, label, strlen(label), 13U, 0);
 		rect.x = x + width - label_width - 8;
 		rect.y = y;
@@ -685,7 +696,7 @@ home_cards(
 		if (app->hover_kind == FM_HIT_CARD && app->hover_index == index)
 			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_HOVER);
 		fm_icon_folder(canvas, (float)rect.x + 12.0f, (float)rect.y + 10.0f, 44.0f, FM_COLOR_FOLDER);
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, card->label, 14U, 1, rect.width - 28, FM_COLOR_TEXT);
+		(void)fm_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, kl_tr(card->label), 14U, 1, rect.width - 28, FM_COLOR_TEXT);
 		fm_dir_items_text((long)card->count, count, sizeof(count));
 		(void)fm_text_draw_fit(app->text, canvas, rect.x + 64, rect.y + 36, count, 12U, 0, rect.width - 72, FM_COLOR_TEXT_SECONDARY);
 		fm_ui_hit(app, &rect, FM_HIT_CARD, index);
@@ -777,13 +788,15 @@ home_recents(
 	struct fm_rect rect;
 	char where[FM_PATH_MAX];
 	char when[64];
+	const char *empty;
 	const char *name;
 	int when_width;
 	int index;
 
 	/* Nothing opened yet. */
 	if (app->dashboard.recent_count == 0) {
-		(void)fm_text_draw(app->text, canvas, x + 4, y + 18, "Files you open appear here.", 27, 13U, 0, FM_COLOR_TEXT_FAINT);
+		empty = kl_tr("Files you open appear here.");
+		(void)fm_text_draw(app->text, canvas, x + 4, y + 18, empty, strlen(empty), 13U, 0, FM_COLOR_TEXT_FAINT);
 		return y + 28;
 	}
 
@@ -850,7 +863,7 @@ home_folder_pills(
 	for (index = 0; index < app->dashboard.folder_count; index++) {
 		location.kind = FM_LOCATION_FOLDER;
 		snprintf(location.path, sizeof(location.path), "%s", app->dashboard.folders[index]);
-		name = fm_location_name(&location, app->home);
+		name = kl_tr(fm_location_name(&location, app->home));
 		label_width = fm_text_width(app->text, name, strlen(name), 13U, 0);
 		if (label_width > 220)
 			label_width = 220;

@@ -3,7 +3,7 @@
 
 Phase ID: `ws168-p002`
 Parent: [WS168](../ws.md)
-Status: in-progress（2026-10-05 夜 P1 generation19。kernel の部分を書いて build（-Werror）まで。libc・試験・T1 は未着手。ユーザーの指示で中断）
+Status: in-progress（2026-10-06 P1、q804 で再開。libc・試験まで書いた。libc の起動の isatty（ioctl TCGETS）の扱いが判断待ち、下の「2026-10-06」）
 設計: [p001](../phase001/phase.md) §3（H1〜H7 はユーザーが案のとおり承認、2026-10-05 夜。`sandbox_spawn` の system call 170 と `include/uapi/sandbox.h` の追加を含む）
 
 ## 済んだこと（commit は下の SHA）
@@ -38,6 +38,22 @@ Status: in-progress（2026-10-05 夜 P1 generation19。kernel の部分を書い
    `SANDBOX PASS` を出す。静的 libc の起動が集合の外の call を呼ばないかは、子の最初の run の klog（`SANDBOX deny`）で確かめる。
 4. `plan/ws168/tests/config-amd64-sandbox.mk`（Files の image ＋ sandboxtest・sandbox-child・runas）と `plan/ws168/tests/sandbox-p002.sh`、T1 の依頼。
 
-## 2026-10-06 ユーザーの決定（isatty）
+## 2026-10-06（P1、q804 で再開）
 
-static link の子が libc の起動の isatty（ioctl TCGETS）で既定の kill に当たる件。P1 の案 (a)・(b)・(c) へのクリックの回答「(a) TCGETS だけ ENOTTY（推奨）」: sandbox の中では ioctl(fd, TCGETS) だけを sandbox の検査が ENOTTY で答える（file・driver に届かず klog も書かない）。他の ioctl は拒否のまま。p001 §3.3 に 1 文足す。
+- 再開の点 1 の直し: `include/uapi/sandbox.h` の `_Static_assert` の前に comment、`struct exec_sandbox_build` を `src/kern/exec.c` の型の所へ、
+  `sys_sandbox_spawn_call` の 6 節の条件を 2 つの判定に分けて行に（ba7015eeb）。amd64・arm64（rpi4）の kernel の build（-Werror）。
+  sparcv9・x68k: `ZEDBSD_CONFIG=/dev/null` では `src/hal/pmem-constraints.c` が無く（この Phase と無関係の今の tree の状態）、platform の config も要るので未実施。
+- 2: libc の `sandbox_spawn()`（`userland/base/libc/posix.c`）と `include/libc/sandbox.h`（c114c814d）。sysroot には入れない（toolchain の lock）。
+  試験は `#include "include/libc/sandbox.h"`。libc.so に `sandbox_spawn` が export されるのを `llvm-nm -D` で確かめた。
+- 3: `userland/tests/sandbox-child`（新しい class `static`、`usr/libexec`、`platform/amd64/vmunix.mk` に `AMD64_USER_STATIC_COMMAND` と image への追加）と
+  `userland/tests/sandboxtest`（basic、`sandbox-child` を require）。§6 の 1〜6（要求の確かめ 11、子の状態 7、DENY_ERRNO の 23 の call、許す call と threads、
+  memory の 4、既定の KILL と集合を守る子）。どちらも build（warning 0）。
+- 4: `plan/ws168/tests/config-amd64-sandbox.mk`・`sandbox-p002.sh`（root と root でない利用者で `SANDBOX PASS`、klog の `SANDBOX deny`）。
+
+### 判断待ち（Q1 に報告済み）
+
+静的 link の子の libc の起動（sysroot の libc.o の `__libc_init`）が `isatty(STDOUT_FILENO)` = `ioctl(fd, TCGETS)` を呼ぶ。ioctl は集合の外なので、既定の
+KILL では**全ての子が main の前に SIGKILL** で終わる（preview の command も）。案: (a) sandbox の中では `ioctl(fd, TCGETS)` だけを sandbox の確かめが
+ENOTTY で答える（file にも driver にも届かない、klog も書かない、他の ioctl は今どおり断る）、(b) libc が sandbox の process では isatty を飛ばす（sysroot の
+libc.o の作り直し = toolchain、main の許可が要る）、(c) 試験の子だけ自前の `_start`（preview の command に効かないので勧めない）。推奨は (a)。
+試験の `test_kill` の 2 つ目（KILL の子が集合を守って走る）がこの判断の確かめになる。

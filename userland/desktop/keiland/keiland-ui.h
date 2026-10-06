@@ -686,6 +686,12 @@ int kl_ui_pointer_motion(struct kl_ui *ui, double x, double y);
 int kl_ui_pointer_leave(struct kl_ui *ui);
 int kl_ui_pointer_button(struct kl_ui *ui, int pressed, uint64_t now_us);
 int kl_ui_wheel(struct kl_ui *ui, double dx, double dy, uint64_t now_us);
+/*
+ * Takes a window's scrolling (KL_WINDOW_AXIS, KL_WINDOW_AXIS_STOP): 0 when
+ * nothing took it, 1 when a scroll did, KL_UI_AXIS_FLUNG (KL_VERSION 43)
+ * when the fingers' lift threw the content (it flies on).
+ */
+#define KL_UI_AXIS_FLUNG	2
 int kl_ui_axis(struct kl_ui *ui, const struct kl_window_event *event);
 int kl_ui_touch_down(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
 int kl_ui_touch_motion(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);

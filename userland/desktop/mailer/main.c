@@ -360,6 +360,7 @@ ml_input(
 	const struct kl_window_event *event)
 {
 	int redraw;
+	int taken;
 
 	/*
 	 * Any input may change the view, but a motion of the pointer only when
@@ -394,7 +395,9 @@ ml_input(
 	case KL_WINDOW_AXIS:
 	case KL_WINDOW_AXIS_STOP:
 		/* The wheel glides; a touch pad's fingers hold the content, and it flies on when they lift (BUG-211). */
-		(void)kl_ui_axis(mailer->ui, event);
+		taken = kl_ui_axis(mailer->ui, event);
+		if (taken == KL_UI_AXIS_FLUNG)
+			ml_log("KINETIC fling source=finger");
 		break;
 	case KL_WINDOW_TOUCH_DOWN:
 		(void)kl_ui_touch_down(mailer->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
