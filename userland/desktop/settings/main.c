@@ -437,9 +437,8 @@ main_loop(
 			return 0;
 		}
 
-		/* The held key's repeat, and every input queued (the menus' choices among them). */
+		/* Every input queued (the menus' choices and a held key's repeats among them). */
 		now = se_clock();
-		(void)se_window_repeat(&main_window, now);
 		inputs = 0;
 		for (;;) {
 			taken = se_window_take(&main_window, &event);
@@ -601,12 +600,11 @@ main_canvas_make(void)
 	return 0;
 }
 
-/* Reports how long the loop may sleep: not at all while a frame is due, else until a key repeats, or the idle limit. */
+/* Reports how long the loop may sleep: not at all while a frame is due, else the idle limit. */
 static int
 main_timeout(
 	uint64_t now)
 {
-	uint64_t wait;
 	int network;
 	int sound;
 	int look;
@@ -642,20 +640,8 @@ main_timeout(
 	if (storage >= 0 && storage < limit)
 		limit = storage;
 
-	/* No key is held: the limit. */
-	if (main_window.repeat_key == 0U)
-		return limit;
-
-	/* A repeat already due is due now. */
-	if (main_window.repeat_at <= now)
-		return 0;
-
-	/* A held key repeats soon. */
-	wait = main_window.repeat_at - now;
-	if (wait < (uint64_t)limit)
-		return (int)wait;
-
-	/* Otherwise the limit. */
+	/* The limit (a held key's repeat shortens the wait within the application's). */
+	(void)now;
 	return limit;
 }
 

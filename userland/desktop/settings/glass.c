@@ -9,8 +9,8 @@
  * The window's glass in zdesktop (the file manager's, ws071-p015): the list
  * of pages and the page float as cards on zdesktop's frosted glass, and the
  * desktop shows between them.  zdesktop draws the glass, its rim
- * and the cards' shadows (keiland_glass_v1 through libkeiland); the frame
- * leaves its ground clear and only tints the cards.
+ * and the cards' shadows (through libkeiland's window, kl_window_set_glass,
+ * WS131 p019); the frame leaves its ground clear and only tints the cards.
  *
  * The window is glass when its swapchain is see-through and zdesktop has
  * glass; otherwise it keeps its own opaque ground.  The panels are worked
@@ -40,6 +40,7 @@ se_glass_open(
 
 	/* Nothing sent yet. */
 	memset(glass, 0, sizeof(*glass));
+	glass->window = window;
 
 	/* A frame that zdesktop does not blend cannot let the desktop through. */
 	if (present->premultiplied == 0) {
@@ -47,22 +48,21 @@ se_glass_open(
 		return 0;
 	}
 
-	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(window->display, window->surface);
-	if (glass->glass == NULL) {
-		se_log("GLASS off reason=compositor errno=%d", errno);
+	/*
+	 * zdesktop's glass for the window, which shows the windows under it
+	 * blurred (Settings is not open all the time, the user's choice of
+	 * 2026-09-30, ws075-p029); a compositor whose glass has no such choice
+	 * shows the blurred wallpaper.
+	 */
+	error = kl_window_set_glass_blur(window->kui, 1);
+	if (error == ENODEV) {
+		se_log("GLASS off reason=compositor errno=%d", error);
 		return 0;
 	}
-
-	/*
-	 * Settings is not open all the time, so its glass shows the windows
-	 * under it blurred (the user's choice of 2026-09-30, ws075-p029); a
-	 * compositor whose glass has no such choice shows the blurred wallpaper.
-	 */
-	error = keiland_glass_set_blur(glass->glass, 1);
 	se_log("GLASS blur=%d", error == 0);
 
 	/* Succeeded: the window is glass. */
+	glass->on = 1;
 	se_log("GLASS on");
 	return 1;
 }
@@ -76,7 +76,7 @@ se_glass_refresh(
 	struct se_glass *glass,
 	struct se_app *app)
 {
-	struct keiland_glass_panel sent[SE_PANELS];
+	struct kl_glass_panel sent[SE_PANELS];
 	struct se_panel panels[SE_PANELS];
 	size_t count;
 	size_t index;
@@ -84,7 +84,7 @@ se_glass_refresh(
 	int error;
 
 	/* A window that is not glass has no panels. */
-	if (glass->glass == NULL)
+	if (!glass->on)
 		return;
 
 	/* The frame's panels, unless they are the ones zdesktop has. */
@@ -94,17 +94,18 @@ se_glass_refresh(
 		return;
 
 	/* Each panel in zdesktop's terms. */
+	memset(sent, 0, sizeof(sent));
 	for (index = 0; index < count; index++) {
 		sent[index].x = panels[index].rect.x;
 		sent[index].y = panels[index].rect.y;
 		sent[index].width = panels[index].rect.width;
 		sent[index].height = panels[index].rect.height;
 		sent[index].radius = panels[index].radius;
-		sent[index].kind = KEILAND_GLASS_CARD;
+		sent[index].kind = KL_GLASS_CARD;
 	}
 
 	/* Sent with the frame; a refused list is logged and the old panels stay. */
-	error = keiland_glass_set_panels(glass->glass, sent, count);
+	error = kl_window_set_glass(glass->window->kui, sent, count);
 	if (error != 0) {
 		se_log("GLASS refused errno=%d count=%lu", error, (unsigned long)count);
 		return;
@@ -124,9 +125,12 @@ void
 se_glass_close(
 	struct se_glass *glass)
 {
-	/* The glass object, when there is one. */
-	keiland_glass_destroy(glass->glass);
-	glass->glass = NULL;
+	/* The panels, when the window is glass (the glass goes with the window). */
+	if (glass->on &&
+	    glass->window != NULL &&
+	    glass->window->kui != NULL)
+		(void)kl_window_set_glass(glass->window->kui, NULL, 0U);
+	glass->on = 0;
 }
 
 /* Tells whether a list of panels is the one sent last. */
