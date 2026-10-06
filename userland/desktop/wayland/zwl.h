@@ -1065,6 +1065,16 @@ struct zwl_server {
 	float home_from;
 	float home_to;
 	uint64_t home_start_ms;
+	/*
+	 * App Home's two layers (ws099-p035c, BUG-225): when its content (the
+	 * icons, rising one after another) began to come in (0: shown at once,
+	 * after a drag), when it was asked to open, and whether its first frame
+	 * of the stage and of the content have been logged since.
+	 */
+	uint64_t home_content_ms;
+	uint64_t home_asked_ms;
+	unsigned home_cover_logged;
+	unsigned home_content_logged;
 	char home_query[48];
 	unsigned home_query_length;
 	int home_selected;

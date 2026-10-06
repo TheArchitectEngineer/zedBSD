@@ -78,3 +78,18 @@ Status（p035b）: test-wait（T1 依頼中。実装・build まで）
 | 中抜き | tile の中抜きから壁紙（`GLASS_HOLE_WALLPAPER`、p034b と同じ） |
 
 確認: zedBSD・Linux の build warning 0、style-check（home.c・glass.c・glass.h）指摘 0。QEMU は T1 に依頼。p035c（2 層の animation・準備の先回り・遅れの測定・BUG-232）は次。
+
+## p035c の実装（2026-10-06 P2）
+
+Status（p035c）: test-wait（T1 依頼中。実装・build・AAT の host 試験まで）
+
+| 所 | 内容 |
+| --- | --- |
+| 2 層（BUG-225） | stage（第 1 層）は開いた最初の frame から全部（desktop の層が横へ滑って現れる今の動きのまま）。icon（第 2 層）は `home_content`: 開いた時から 1 つ 30 ms ずつ遅れて、12 px 下から 180 ms で浮かび上がり fade（ease-out）。床は最初の icon と一緒に。閉じる時・drag の間・drag で開いた時は今のまま Home の進みと一緒 |
+| 測定 | log `ZWL HOME layer=cover after_ms=`（開く要求から stage の最初の frame）・`ZWL HOME layer=content after_ms=`（最初の icon が見え始めた frame） |
+| 先回り | `home_prepare`（tick、最初の frame の後に 1 回）: 名前の glyph を測って atlas に（ASCII の外の文字、日本語の名前は初めての時に描かれるので）。log `ZWL HOME prepared names=N`。tile は起動時の atlas、反射は tile の反転なので texture は要らない |
+| BUG-232 | `home_running_window`: 一覧の app の窓（picture のある app は app_id の picture が同じ、無い app は program の名前、shell は除く、dialog は除く）で map の順の一番新しい窓。あれば起動せず `ZWL HOME switch name= surface= client=` と `zwl_glass_activate`（desktop を出し、最小化から戻し、layout mode に合わせる）。起動中の app の名前の下に短い線 |
+| `home_launch` | Home を閉じたかを返す（切り替えの時は activate が閉じる）、呼ぶ側は 2 度閉じない |
+| AAT | `tests/scenarios/desktop/home/switch-running.md`・`open-latency.md`（新）と helpers_desktop.py の helper |
+
+確認: zedBSD・Linux の build warning 0、style-check（home.c）0、check-scenarios PASS（87）、aat run-host PASS。QEMU は T1 に依頼。遅れの目標（cover 16 ms・content 150 ms）は QEMU と実機で測る。
