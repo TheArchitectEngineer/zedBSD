@@ -280,7 +280,7 @@ test_login_screen(
 	(void)close(ends[1]);
 }
 
-/* A session: LOGOUT and QUIT with RELEASED after the stop, UNLOCK, STYLES, ENROLLED, the PIN, and sessiond leaving. */
+/* A session: POWER, LOGOUT and QUIT with RELEASED after the stop, UNLOCK, STYLES, ENROLLED, the PIN, and sessiond leaving. */
 static void
 test_session(
 	void)
@@ -302,8 +302,23 @@ test_session(
 	check(kl_backend_session_managed(backend) == 1, "a session sessiond started is managed");
 	error = kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PASSWORD, "x");
 	check(error == ENOTSUP, "a session has no log in");
+
+	/*
+	 * Power Off from a session (ws131-p027): POWER written; sessiond's
+	 * refusal (other users logged in) is EACCES and lets the action be
+	 * asked again; its OK answers it.
+	 */
 	error = kl_backend_power_action(backend, KL_BACKEND_POWER_POWEROFF);
-	check(error == ENOTSUP, "a session has no power action");
+	check(error == 0 && read_line(ends[0], "POWER poweroff\n"), "a session's POWER poweroff written");
+	(void)write(ends[0], "FAIL others\n", 12U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_POWER && answer_error == EACCES, "FAIL others answers POWER as EACCES");
+	error = kl_backend_power_action(backend, KL_BACKEND_POWER_REBOOT);
+	check(error == 0 && read_line(ends[0], "POWER reboot\n"), "refused: the action may be asked again");
+	(void)write(ends[0], "OK\n", 3U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 2U && answer_request == KL_BACKEND_SESSION_POWER && answer_error == 0, "OK answers POWER");
+	answer_count = 0U;
 
 	/* UNLOCK and OK. */
 	error = kl_backend_session_unlock(backend, KL_BACKEND_STYLE_PIN, "123456");

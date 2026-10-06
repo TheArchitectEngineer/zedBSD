@@ -1,6 +1,6 @@
 # ws131-p027: sessiond が session の socket で Power Off・Restart を受ける
 
-Status: planned（2026-10-06 Q1 が作成）
+Status: test-wait（T1 依頼中、2026-10-06 q793 P2: 実装・build・host 試験まで。以前: planned（Q1 が作成））
 WS: [WS131](../ws.md)
 Related: [ws099-p037](../../ws099/phase037/phase.md)（App Home の Power Off と確認の dialog）・[BUG-235](../../bugs/BUG-235.md)
 
@@ -16,3 +16,37 @@ libkeiland-backend-zedbsd の power_actions も session では 0（ENOTSUP）。
 - libkeiland-backend-zedbsd: power_actions に poweroff・reboot を出し、session の socket へ頼む。
 - WS131 design D12 を改訂する。Linux（logind）・FreeBSD は変えない。
 - 試験: host の sessiond の試験、QEMU の確認は T1（dialog の Power Off で guest が止まる）。
+
+## 設計（2026-10-06 P2）
+
+- 頼めるのは console の session だけ: sessiond が session の script に渡す control の socket（--control-fd）で来た `POWER poweroff|reboot`。他の経路は無い（ssh の利用者は socket に届かない）。
+- 権利: 他の利用者が login していない（utmpx の USER_PROCESS の ut_user が session の利用者と違う物が 0）時は session の利用者が誰でも可。他の利用者がいる時は root か wheel の利用者だけ（logind の power-off-multiple-sessions が管理者を求めるのと同じ考え）。それ以外は `FAIL others`。違う言葉は `ERROR`。
+- 実行は login の画面の POWER と同じ（`/sbin/poweroff`・`/sbin/reboot` を fork して exec、init が sessiond を含めて止める）。sessiond の log `SESSIOND POWER what from=user`、拒否は `refused others=N`、syslog の auth の log にも。
+- backend（zedBSD）: `power_actions` は sessiond の descriptor（login の画面か session）があれば poweroff・reboot を出す。`kl_backend_power_action` は `kl_backend_session_send`（login の画面か session の descriptor）で送る。断り（FAIL・ERROR）の答えで `power_asked` を戻し、再び頼める。
+- compositor: session の POWER の答えは `ZWL POWER answer error=`（handoff.c）。dialog（ws099-p037）は actions に出たので Power Off・Restart が押せるようになる。
+- D12 の改訂: plan/ws131/design.md の D12 の行（表 2 つ）と §4.2 の電源の段。
+
+## 実装
+
+| 所 | 内容 |
+| --- | --- |
+| `userland/desktop/sessiond/power-rules.c`・`.h`（新、純粋） | `sessiond_power_program`（言葉 → program）、`sessiond_power_decide`（言葉、他の利用者の数、root・wheel） |
+| `userland/desktop/sessiond/power.c`（新） | `sessiond_power_run`（log・syslog・fork・exec）、`sessiond_power_session`（utmpx で他の利用者を数え、`account_in_wheel`、答え） |
+| `sessiond/greeter.c` | login の画面の POWER を `sessiond_power_program`・`sessiond_power_run` に（動作は同じ、log に from=） |
+| `sessiond/session.c` | `POWER ` の行を `sessiond_power_session` へ、先頭の protocol の説明 |
+| `sessiond/sessiond.h`・`Makefile` | 宣言、source |
+| `userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c`・`session-zedbsd.c` | 上の backend の変更、条件の中の呼び出しの直し（既存の指摘 1 つ） |
+| `userland/desktop/libkeiland-backend/keiland-backend.h` | power の説明の comment だけ（API は不変） |
+| `userland/desktop/wayland/handoff.c` | `ZWL POWER answer error=` |
+
+## 確認
+
+| 確認 | 結果 |
+| --- | --- |
+| sessiond・compositor（zedBSD）・Linux の Keiland の build | 成功、warning 0 |
+| `sh plan/ws131/tests/host-power-rules.sh`（ASan・UBSan でも） | 11 checks ok |
+| `sh plan/ws131/tests/host-power.sh` | 17/17・6/6（session に sessiond の descriptor が無い時は何も出さない、に直した） |
+| `sh plan/ws131/tests/host-session.sh` | 54/54（新: session の POWER poweroff を書く、FAIL others で EACCES、再び頼める、OK で答え） |
+| style-check（変えた file） | 新しい指摘 0（session.c の既存の 1 つは触っていない所） |
+| keiland-os-boundary | 既存の FAIL だけ |
+| QEMU | 未実施。T1 に依頼: AAT の image で App Home の Power Off → dialog で Power Off が押せる（`poweroff=1`）→ 押すと guest が止まる |

@@ -33,6 +33,7 @@
  */
 
 #include "auth.h"
+#include "power-rules.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -548,39 +549,30 @@ greeter_request(
 	greeter_reply(greeter, "ERROR");
 }
 
-/* Ends the machine the way the greeter's power button asks. */
+/* Ends the machine the way the greeter's power button asks (no one is logged in on the console). */
 static void
 greeter_power(
 	struct greeter *greeter,
 	const char *what)
 {
 	const char *program;
-	pid_t child;
-	int match;
+	int error;
 
-	/* Which program ends the machine that way. */
-	program = NULL;
-	match = strcmp(what, "poweroff");
-	if (match == 0)
-		program = "/sbin/poweroff";
-	match = strcmp(what, "reboot");
-	if (match == 0)
-		program = "/sbin/reboot";
+	/* Which program ends the machine that way (power-rules.c). */
+	program = sessiond_power_program(what);
 	if (program == NULL) {
 		greeter_reply(greeter, "ERROR");
 		return;
 	}
 
 	/* Runs it; it asks init, which stops sessiond among the rest. */
-	sessiond_log("SESSIOND POWER %s", what);
-	syslog(LOG_NOTICE, "%s from the graphical login", what);
-	child = fork();
-	if (child == 0) {
-		(void)execl(program, program, (char *)NULL);
-		_exit(127);
+	error = sessiond_power_run(program, what, "the graphical login");
+	if (error != 0) {
+		greeter_reply(greeter, "ERROR");
+		return;
 	}
 
-	/* The greeter hears that the machine is ending. */
+	/* Succeeded: the greeter hears that the machine is ending. */
 	greeter_reply(greeter, "OK");
 }
 
