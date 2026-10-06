@@ -241,6 +241,7 @@ main(
 	se_sound_close(&main_app);
 	se_system_close(&main_app);
 	se_look_close(&main_app);
+	se_ui_close(&main_app);
 	kl_appearance_close(main_appearance);
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);

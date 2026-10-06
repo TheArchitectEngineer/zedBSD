@@ -11,6 +11,6 @@ cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userla
 U=userland/desktop
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiland/ui \
 	plan/ws090/tests/host-input.c \
-	$U/libkeiland/ui/canvas.c $U/libkeiland/ui/theme.c $U/libkeiland/ui/input.c $U/libkeiland/ui/scroll.c $U/libkeiland/ui/axis-track.c $U/libkeiland/ui/scroll-bar.c $U/libkeiland/ui/text-touch.c $U/libkeiland/ui/ui.c \
+	$U/libkeiland/ui/canvas.c $U/libkeiland/ui/theme.c $U/libkeiland/ui/input.c $U/libkeiland/ui/scroll.c $U/libkeiland/ui/scroll-bar.c $U/libkeiland/ui/text-touch.c $U/libkeiland/ui/ui.c \
 	$U/libkeiland/gesture.c $U/libkeiland/motion.c $U/libkeiland/scroll.c -lm -o "$out"
 "$out"

@@ -38,6 +38,8 @@ static void touch_bounds(struct terminal_touch *touch);
 static void touch_press(struct terminal_touch *touch, uint64_t now);
 static void touch_gestures(struct terminal_touch *touch, uint64_t now);
 static void touch_pointer(struct terminal_touch *touch, unsigned kind, double x, double y, uint64_t now);
+static void touch_pad(struct terminal_touch *touch, double dy, uint64_t time, uint64_t now);
+static void touch_pad_stop(struct terminal_touch *touch, uint64_t time, uint64_t now);
 
 /*
  * Makes the gestures and the scroller.
@@ -203,6 +205,14 @@ terminal_touch_event(
 
 		/* Nothing else. */
 		break;
+	case TERMINAL_TOUCH_PAD:
+		/* A touch pad's fingers scroll the view (ws090-p019). */
+		touch_pad(touch, event->y, time, event->arrival);
+		break;
+	case TERMINAL_TOUCH_PAD_STOP:
+		/* They lift: the view flies on. */
+		touch_pad_stop(touch, time, event->arrival);
+		break;
 	case TERMINAL_TOUCH_CANCEL:
 		/* The compositor took every finger: a selection ends where it is. */
 		keiland_gesture_cancel(touch->gesture);
@@ -241,6 +251,7 @@ terminal_touch_tick(
 	unsigned view;
 	int offset;
 	int animating;
+	int holding;
 	int error;
 
 	/* Nothing without the gestures. */
@@ -282,18 +293,21 @@ terminal_touch_tick(
 		}
 	}
 
-	/* The view rests once it stops with no finger on it. */
+	/* The view rests once it stops with no finger on it, on the screen or on a touch pad. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
 	if (!animating &&
 	    !touch->pressed &&
 	    touch->followed == 0U &&
+	    !holding &&
 	    touch->moving) {
 		touch->moving = 0;
 		printf("ZTERM TOUCH rest view=%u offset=%d\n", touch->view, touch->offset);
 		fflush(stdout);
 	}
 
-	/* Fingers down or a gliding view want the next tick soon. */
+	/* Fingers down (on the screen or a touch pad) or a gliding view want the next tick soon. */
 	if (animating ||
+	    holding ||
 	    touch->followed > 0U)
 		return TOUCH_TICK_MS;
 
@@ -511,6 +525,7 @@ touch_gestures(
 {
 	struct keiland_gesture_event gesture;
 	int found;
+	int flung;
 
 	/* Each gesture in turn. */
 	for (;;) {
@@ -555,8 +570,10 @@ touch_gestures(
 		case KEILAND_GESTURE_DRAG_END:
 			/* The view glides on at the finger's velocity. */
 			if (touch->dragging) {
-				keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
+				flung = keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
 				printf("ZTERM TOUCH release vy=%.0f view=%u offset=%d\n", gesture.vy, touch->view, touch->offset);
+				if (flung)
+					printf("ZTERM KINETIC fling source=touch vy=%.0f\n", gesture.vy);
 				fflush(stdout);
 				touch->pressed = 0;
 			}
@@ -608,4 +625,61 @@ touch_pointer(
 	pointer->y = (int32_t)floor(y);
 	pointer->time = (uint32_t)(now / 1000U);
 	pointer->serial = touch->serial;
+}
+
+/*
+ * A touch pad's two fingers move the view by dy (pixels, as a wheel
+ * scrolls: down toward the live screen) at the compositor's time
+ * (ws090-p019): libkeiland's scroller takes the view at their first move
+ * (from where the screen has it, unless it already owns it; a glide is
+ * caught) and follows them.  Fingers on the screen keep it from them.
+ */
+static void
+touch_pad(
+	struct terminal_touch *touch,
+	double dy,
+	uint64_t time,
+	uint64_t now)
+{
+	double position;
+	int holding;
+	int caught;
+
+	/* Fingers on the screen hold the view. */
+	if (touch->followed > 0U || touch->scroller == NULL)
+		return;
+
+	/* The first move: the scroller from the view the screen shows, unless it owns it already. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
+	if (!holding && !touch->moving) {
+		position = touch_position(touch, touch->view, touch->offset);
+		keiland_scroller_set_position(touch->scroller, 0.0, -position);
+	}
+
+	/* The scroller follows the fingers and owns the view until it rests. */
+	caught = keiland_scroller_axis(touch->scroller, 0.0, dy, time, now);
+	touch->moving = 1;
+	if (caught) {
+		printf("ZTERM TOUCH caught source=finger view=%u offset=%d\n", touch->view, touch->offset);
+		fflush(stdout);
+	}
+}
+
+/* The touch pad's fingers lift: the view flies on at their velocity, as libkeiland's scroller throws it (ws090-p019). */
+static void
+touch_pad_stop(
+	struct terminal_touch *touch,
+	uint64_t time,
+	uint64_t now)
+{
+	double vx;
+	double vy;
+	int flung;
+
+	/* The scroller throws the view the fingers held. */
+	flung = keiland_scroller_axis_stop(touch->scroller, time, now, &vx, &vy);
+	if (flung) {
+		printf("ZTERM KINETIC fling source=finger vy=%.0f\n", vy);
+		fflush(stdout);
+	}
 }

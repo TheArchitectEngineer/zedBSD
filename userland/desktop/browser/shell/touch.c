@@ -34,6 +34,8 @@
 #define TOUCH_CHANGE_MIN	0.01
 
 static uint64_t touch_time(const struct shell_touch_event *event);
+static void touch_pad(struct shell_touch *touch, const struct shell_touch_event *event, uint64_t time);
+static void touch_pad_stop(struct shell_touch *touch, const struct shell_touch_event *event, uint64_t time);
 static void touch_bounds(struct shell_touch *touch);
 static void touch_press(struct shell_touch *touch, uint64_t now);
 static void touch_place(struct shell_touch *touch, double y);
@@ -204,6 +206,14 @@ shell_touch_event(
 
 		/* Nothing else. */
 		break;
+	case SHELL_TOUCH_PAD:
+		/* A touch pad's fingers scroll the page (ws090-p019). */
+		touch_pad(touch, event, time);
+		break;
+	case SHELL_TOUCH_PAD_STOP:
+		/* They lift: the page flies on. */
+		touch_pad_stop(touch, event, time);
+		break;
 	case SHELL_TOUCH_CANCEL:
 		/* The compositor took the fingers: whatever they did ends without its lift. */
 		keiland_gesture_cancel(touch->gesture);
@@ -238,6 +248,7 @@ shell_touch_tick(
 	double dx;
 	double dy;
 	int animating;
+	int holding;
 	int error;
 
 	/* Nothing without the gestures. */
@@ -273,18 +284,21 @@ shell_touch_tick(
 	if (touch->moving)
 		touch_place(touch, y);
 
-	/* The scroll rests once it stops with no finger on it. */
+	/* The scroll rests once it stops with no finger on it, on the screen or on a touch pad. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
 	if (!animating &&
 	    !touch->pressed &&
 	    touch->followed == 0U &&
+	    !holding &&
 	    touch->moving) {
 		touch->moving = 0;
 		printf("ZBROWSER TOUCH rest scroll=%.0f\n", touch->scroll);
 		fflush(stdout);
 	}
 
-	/* Fingers down or a glide want the next tick soon. */
+	/* Fingers down (on the screen or a touch pad) or a glide want the next tick soon. */
 	if (animating ||
+	    holding ||
 	    touch->followed > 0U)
 		return TOUCH_TICK_MS;
 
@@ -492,6 +506,7 @@ touch_gestures(
 {
 	struct keiland_gesture_event gesture;
 	int found;
+	int flung;
 
 	/* Each gesture in turn. */
 	for (;;) {
@@ -532,8 +547,10 @@ touch_gestures(
 		case KEILAND_GESTURE_DRAG_END:
 			/* The page glides on at the fingers' velocity. */
 			if (touch->dragging) {
-				keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
+				flung = keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
 				printf("ZBROWSER TOUCH release vy=%.0f scroll=%.0f\n", gesture.vy, touch->scroll);
+				if (flung)
+					printf("ZBROWSER KINETIC fling source=touch vy=%.0f\n", gesture.vy);
 				fflush(stdout);
 				touch->pressed = 0;
 			}
@@ -598,4 +615,57 @@ touch_click(
 	touch_pointer(touch, SHELL_TOUCH_POINTER_MOTION, button, x, y);
 	touch_pointer(touch, SHELL_TOUCH_POINTER_PRESS, button, x, y);
 	touch_pointer(touch, SHELL_TOUCH_POINTER_RELEASE, button, x, y);
+}
+
+/*
+ * A touch pad's two fingers move the page by the event's y (pixels, as a
+ * wheel scrolls) at the compositor's time (ws090-p019): libkeiland's
+ * scroller takes the page at their first move (from where it is, unless
+ * it already owns it; a glide is caught) and follows them.  Fingers on the
+ * screen keep it from them.
+ */
+static void
+touch_pad(
+	struct shell_touch *touch,
+	const struct shell_touch_event *event,
+	uint64_t time)
+{
+	int holding;
+	int caught;
+
+	/* Fingers on the screen hold the page. */
+	if (touch->followed > 0U || touch->scroller == NULL)
+		return;
+
+	/* The first move: the scroller from the page's scroll, unless it owns it already. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
+	if (!holding && !touch->moving)
+		keiland_scroller_set_position(touch->scroller, 0.0, touch->scroll);
+
+	/* The scroller follows the fingers and owns the scroll until it rests. */
+	caught = keiland_scroller_axis(touch->scroller, 0.0, (double)event->y, time, event->arrival);
+	touch->moving = 1;
+	if (caught) {
+		printf("ZBROWSER TOUCH caught source=finger scroll=%.0f\n", touch->scroll);
+		fflush(stdout);
+	}
+}
+
+/* The touch pad's fingers lift: the page flies on at their velocity, as libkeiland's scroller throws it (ws090-p019). */
+static void
+touch_pad_stop(
+	struct shell_touch *touch,
+	const struct shell_touch_event *event,
+	uint64_t time)
+{
+	double vx;
+	double vy;
+	int flung;
+
+	/* The scroller throws the page the fingers held. */
+	flung = keiland_scroller_axis_stop(touch->scroller, time, event->arrival, &vx, &vy);
+	if (flung) {
+		printf("ZBROWSER KINETIC fling source=finger vy=%.0f\n", vy);
+		fflush(stdout);
+	}
 }

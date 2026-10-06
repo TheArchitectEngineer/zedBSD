@@ -78,6 +78,9 @@
 		kl_scroller_press;
 		kl_scroller_drag;
 		kl_scroller_release;
+		kl_scroller_axis;
+		kl_scroller_axis_stop;
+		kl_scroller_axis_holding;
 		kl_scroller_cancel;
 		kl_scroller_step;
 		kl_gesture_create;

@@ -1115,6 +1115,8 @@ main_touch_round(void)
 		event = &main_window.touches[index];
 		if (event->type == FM_TOUCH_DOWN)
 			event->area = main_touch_area((int)event->x, (int)event->y);
+		if (event->type == FM_TOUCH_PAD)
+			event->area = main_touch_area(main_window.pointer_x, main_window.pointer_y);
 		fm_touch_event(&main_touch, event);
 	}
 

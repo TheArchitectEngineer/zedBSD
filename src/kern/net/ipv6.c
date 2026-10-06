@@ -345,6 +345,81 @@ ipv6_output(
 }
 
 /*
+ * Finds what ipv6_output would send a packet to a destination with (the
+ * transports, ws130-p003, need the source for their checksums before the
+ * packet is built): the source address (RFC 6724; the destination itself
+ * for one of the host's), and the path MTU when mtu is not NULL.  device
+ * (may be NULL, but not for a group) is the interface asked for.
+ * Returns 0, EINVAL, ENETUNREACH, EHOSTUNREACH, EADDRNOTAVAIL or ENODEV.
+ */
+int
+ipv6_route_source(
+	struct net_device *device,
+	const struct in6_addr *destination,
+	struct in6_addr *source,
+	unsigned *mtu)
+{
+	struct ipv6_link link;
+	struct in6_addr next_hop;
+	int multicast;
+	int local;
+	int error;
+
+	/* A destination, and the interface of a group. */
+	if (destination == NULL || source == NULL)
+		return EINVAL;
+	multicast = in6_is_multicast(destination);
+	if (multicast && device == NULL)
+		return EINVAL;
+
+	/* The interface, as ipv6_output chooses it. */
+	local = 0;
+	if (!multicast) {
+		local = in6_is_loopback(destination);
+		if (!local)
+			local = ipv6_address_is_local(destination);
+	}
+
+	/* The device held while it is asked. */
+	if (multicast) {
+		net_device_ref(device);
+	} else if (local) {
+		device = net_loopback_ref();
+		if (device == NULL)
+			return ENETUNREACH;
+	} else {
+		error = ipv6_next_hop(&device, destination, &next_hop);
+		if (error != 0)
+			return error;
+	}
+
+	/* The source: the host's own destination itself, or the chosen one. */
+	if (local) {
+		*source = *destination;
+	} else {
+		error = ipv6_source_select(device, destination, source);
+		if (error != 0) {
+			net_device_release(device);
+			return error;
+		}
+	}
+
+	/* The path MTU, when it is asked for. */
+	if (mtu != NULL) {
+		error = ipv6_link_get(device, &link);
+		if (error != 0) {
+			net_device_release(device);
+			return error;
+		}
+		*mtu = icmp6_path_mtu(destination, link.mtu);
+	}
+
+	/* Succeeded: the source (and the MTU). */
+	net_device_release(device);
+	return 0;
+}
+
+/*
  * Chooses the source address for a destination (RFC 6724): among the
  * addresses of every interface where IPv6 is on, or of device alone for
  * a link-local or link-scope destination; device (may be NULL) is the

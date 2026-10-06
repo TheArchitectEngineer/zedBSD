@@ -20,9 +20,17 @@
  * damped spring on the raw distance, d(t) = (d0 + (v0 + w d0) t) e^(-w t),
  * and a spring that crosses the bound inwards hands its velocity back to a
  * fling.  The position is a closed form of the time within each phase.
+ *
+ * It is the one inertia of every program (ws090-p019, BUG-211): a touch
+ * screen's finger drags and flings it (kl_scroller_press, _drag,
+ * _release); a touch pad's two fingers drag it too, and their velocity,
+ * worked out from their last moves at the compositor's times (the track
+ * below, kl_axis_track), flings it when they lift (kl_scroller_axis,
+ * _axis_stop).
  */
 
 #include <keiland.h>
+#include <keiland-ui.h>
 
 #include <errno.h>
 #include <math.h>
@@ -106,6 +114,17 @@ struct kl_scroller {
 	double caught_vx;
 	double caught_vy;
 	uint64_t caught_us;
+
+	/*
+	 * A touch pad's fingers that hold the content (kl_scroller_axis): the
+	 * moves since they took it (a wheel's way), and their track for the
+	 * velocity when they lift.  A press, a release, a cancel or a new
+	 * position lets go of them.
+	 */
+	int axis_holding;
+	double axis_total_x;
+	double axis_total_y;
+	struct kl_axis_track axis_track;
 };
 
 static int axis_scrolls(const struct scroll_axis *axis);
@@ -121,6 +140,7 @@ static void fling_at(const struct scroll_axis *axis, double t, double *position,
 static void spring_at(const struct scroll_axis *axis, double t, double *distance, double *velocity);
 static double seconds_since(uint64_t now_us, uint64_t start_us);
 static double angle_between(double ax, double ay, double bx, double by);
+static unsigned axis_track_slot(const struct kl_axis_track *track, unsigned age);
 
 /*
  * Creates a scroller at 0 that scrolls nowhere yet.
@@ -227,6 +247,9 @@ kl_scroller_set_position(
 	if (scroller == NULL)
 		return;
 
+	/* Fingers on a touch pad let go of it. */
+	scroller->axis_holding = 0;
+
 	/* Each axis at its place, clamped, at rest. */
 	wanted[0] = x;
 	wanted[1] = y;
@@ -285,8 +308,9 @@ kl_scroller_press(
 		axis->locked = 0;
 	}
 
-	/* The drag decides its lock afresh. */
+	/* The drag decides its lock afresh; a touch pad's fingers holding it let go. */
 	scroller->lock_decided = 0;
+	scroller->axis_holding = 0;
 
 	/* Succeeded: whether moving content was caught. */
 	return scroller->caught;
@@ -350,7 +374,7 @@ kl_scroller_drag(
  * The finger lifts with a velocity: a fling when fast enough, otherwise the
  * content settles (springs back from past a bound).
  */
-void
+int
 kl_scroller_release(
 	struct kl_scroller *scroller,
 	uint64_t now_us,
@@ -369,7 +393,10 @@ kl_scroller_release(
 
 	/* Nothing to release. */
 	if (scroller == NULL)
-		return;
+		return 0;
+
+	/* A touch pad's fingers holding it let go. */
+	scroller->axis_holding = 0;
 
 	/* The content's velocity is against the finger's; a locked or fixed axis has none. */
 	velocity[0] = -vx;
@@ -389,7 +416,7 @@ kl_scroller_release(
 		for (index = 0; index < 2; index++)
 			axis_settle(&scroller->axes[index], now_us, velocity[index]);
 		scroller->caught = 0;
-		return;
+		return 0;
 	}
 
 	/* A fling soon after a catch, the same way, adds the caught speed. */
@@ -430,6 +457,203 @@ kl_scroller_release(
 			axis->mode = SCROLL_REST;
 		}
 	}
+
+	/* Succeeded: a fling. */
+	return 1;
+}
+
+/*
+ * A touch pad's two fingers move the content by dx, dy (pixels, as a wheel
+ * scrolls: down and right positive) at the compositor's time event_us:
+ * their first move presses the scroller at now_us (the time its steps
+ * use), catching moving content, and each move drags it on and is kept for
+ * their velocity.  Returns 1 when the first move caught moving content.
+ */
+int
+kl_scroller_axis(
+	struct kl_scroller *scroller,
+	double dx,
+	double dy,
+	uint64_t event_us,
+	uint64_t now_us)
+{
+	int caught;
+
+	/* Nothing to move. */
+	if (scroller == NULL)
+		return 0;
+
+	/* The fingers' first move takes the content (stopping a flight) and starts their track. */
+	caught = 0;
+	if (!scroller->axis_holding) {
+		caught = kl_scroller_press(scroller, now_us);
+		scroller->axis_holding = 1;
+		scroller->axis_total_x = 0.0;
+		scroller->axis_total_y = 0.0;
+		kl_axis_track_reset(&scroller->axis_track);
+	}
+
+	/* The move, kept for the velocity, and the content dragged the wheel's way (a finger's drag goes the other way). */
+	scroller->axis_total_x += dx;
+	scroller->axis_total_y += dy;
+	kl_axis_track_add(&scroller->axis_track, dx, dy, event_us);
+	kl_scroller_drag(scroller, -scroller->axis_total_x, -scroller->axis_total_y);
+
+	/* Succeeded: whether moving content was caught. */
+	return caught;
+}
+
+/*
+ * A touch pad's fingers lift (the compositor's axis stop at event_us): the
+ * content flies on from now_us at their velocity, as a finger's release
+ * throws it (none when they rested before lifting), or settles.  Gives the
+ * velocity (a wheel's way, px/s; may be NULL) and returns 1 for a fling, 0
+ * when it settles or no fingers held it.
+ */
+int
+kl_scroller_axis_stop(
+	struct kl_scroller *scroller,
+	uint64_t event_us,
+	uint64_t now_us,
+	double *vx,
+	double *vy)
+{
+	double velocity_x;
+	double velocity_y;
+	int flung;
+
+	/* None thrown yet. */
+	if (vx != NULL)
+		*vx = 0.0;
+	if (vy != NULL)
+		*vy = 0.0;
+
+	/* Only content the fingers hold. */
+	if (scroller == NULL || !scroller->axis_holding)
+		return 0;
+
+	/* Their velocity the wheel's way, thrown the finger's way. */
+	kl_axis_track_velocity(&scroller->axis_track, event_us, &velocity_x, &velocity_y);
+	if (vx != NULL)
+		*vx = velocity_x;
+	if (vy != NULL)
+		*vy = velocity_y;
+	flung = kl_scroller_release(scroller, now_us, -velocity_x, -velocity_y);
+	if (flung == 0)
+		return 0;
+
+	/* Succeeded: the content flies. */
+	return 1;
+}
+
+/*
+ * Tells whether a touch pad's fingers hold the content (kl_scroller_axis
+ * since their last stop).
+ */
+int
+kl_scroller_axis_holding(
+	const struct kl_scroller *scroller)
+{
+	/* No scroller, no fingers. */
+	if (scroller == NULL)
+		return 0;
+
+	/* Succeeded: whether they hold it. */
+	return scroller->axis_holding;
+}
+
+/*
+ * Empties a track of a touch pad's scrolling.
+ */
+void
+kl_axis_track_reset(
+	struct kl_axis_track *track)
+{
+	/* No moves. */
+	memset(track, 0, sizeof(*track));
+}
+
+/*
+ * Adds one move of the fingers (pixels, as a wheel scrolls) at a time to
+ * the track; the oldest goes when it is full.
+ */
+void
+kl_axis_track_add(
+	struct kl_axis_track *track,
+	double dx,
+	double dy,
+	uint64_t now_us)
+{
+	/* The move in the next slot. */
+	track->dx[track->next] = dx;
+	track->dy[track->next] = dy;
+	track->us[track->next] = now_us;
+	track->next = (track->next + 1U) % KL_AXIS_TRACK_SAMPLES;
+
+	/* One more, up to the slots. */
+	if (track->count < KL_AXIS_TRACK_SAMPLES)
+		track->count++;
+}
+
+/*
+ * Works out the fingers' velocity (pixels a second, as a wheel scrolls) at
+ * a time: the moves of the last KL_AXIS_TRACK_WINDOW_US after the oldest
+ * of them, over the time since it.  Fingers that rested
+ * KL_AXIS_TRACK_REST_US or longer, or a single move, give none.
+ */
+void
+kl_axis_track_velocity(
+	const struct kl_axis_track *track,
+	uint64_t now_us,
+	double *vx,
+	double *vy)
+{
+	unsigned age;
+	unsigned slot;
+	unsigned newer;
+	unsigned used;
+	uint64_t newest_us;
+	uint64_t oldest_us;
+	double sum_x;
+	double sum_y;
+	double seconds;
+
+	/* None until there is something to go by. */
+	*vx = 0.0;
+	*vy = 0.0;
+	if (track->count < 2U)
+		return;
+
+	/* Fingers that rested before lifting throw nothing. */
+	slot = axis_track_slot(track, 0U);
+	newest_us = track->us[slot];
+	if (now_us > newest_us && now_us - newest_us >= KL_AXIS_TRACK_REST_US)
+		return;
+
+	/* The moves within the window, newest first; the oldest of them starts the time and is not counted. */
+	sum_x = 0.0;
+	sum_y = 0.0;
+	used = 0U;
+	oldest_us = newest_us;
+	for (age = 0U; age < track->count; age++) {
+		slot = axis_track_slot(track, age);
+		if (newest_us - track->us[slot] > KL_AXIS_TRACK_WINDOW_US)
+			break;
+		if (age != 0U) {
+			newer = axis_track_slot(track, age - 1U);
+			sum_x += track->dx[newer];
+			sum_y += track->dy[newer];
+			used++;
+		}
+		oldest_us = track->us[slot];
+	}
+
+	/* The distance after the oldest move counted, over the time since it. */
+	if (used == 0U || newest_us <= oldest_us)
+		return;
+	seconds = (double)(newest_us - oldest_us) / 1000000.0;
+	*vx = sum_x / seconds;
+	*vy = sum_y / seconds;
 }
 
 /*
@@ -446,7 +670,8 @@ kl_scroller_cancel(
 	if (scroller == NULL)
 		return;
 
-	/* Every axis settles where the finger left it. */
+	/* A touch pad's fingers holding it let go, and every axis settles where the finger left it. */
+	scroller->axis_holding = 0;
 	for (index = 0; index < 2; index++)
 		axis_settle(&scroller->axes[index], now_us, 0.0);
 	scroller->caught = 0;
@@ -803,4 +1028,19 @@ angle_between(
 	/* Succeeded: the angle. */
 	angle = acos(cosine) * SCROLL_HALF_TURN / M_PI;
 	return angle;
+}
+
+/* Finds the slot of a track's move of an age (0 the newest). */
+static unsigned
+axis_track_slot(
+	const struct kl_axis_track *track,
+	unsigned age)
+{
+	unsigned slot;
+
+	/* Back from the next free slot. */
+	slot = (track->next + KL_AXIS_TRACK_SAMPLES - 1U - age) % KL_AXIS_TRACK_SAMPLES;
+
+	/* Reports the slot. */
+	return slot;
 }

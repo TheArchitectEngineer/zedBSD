@@ -59,6 +59,7 @@ static void app_pointer(struct te_app *app, const struct te_event *event);
 static void app_press(struct te_app *app, const struct te_event *event);
 static void app_drag(struct te_app *app);
 static void app_wheel(struct te_app *app, const struct te_event *event);
+static void app_axis_stop(struct te_app *app, const struct te_event *event);
 static size_t app_view_position(void *data, double x, double y);
 static void app_view_caret(void *data, size_t position, struct kui_rect *rect);
 static void app_text(struct te_app *app, const struct te_event *event);
@@ -284,6 +285,9 @@ te_app_event(
 		break;
 	case TE_EVENT_AXIS:
 		app_wheel(app, event);
+		break;
+	case TE_EVENT_AXIS_STOP:
+		app_axis_stop(app, event);
 		break;
 	case TE_EVENT_KEY:
 		app_key(app, event);
@@ -1130,9 +1134,31 @@ app_wheel(
 		return;
 	}
 
+	/* A touch pad's fingers move the view with them, and it flies on when they lift (libkeiland's scroller, ws090-p019). */
+	if (event->axis_source == KL_AXIS_SOURCE_FINGER) {
+		kl_scroll_axis(&app->scroll, event->axis_dx, event->axis_dy, KL_AXIS_SOURCE_FINGER, event->axis_us);
+		app->dirty = 1;
+		return;
+	}
+
 	/* Otherwise the view glides to the new place, within the text (libkeiland's scroll). */
 	kui_scroll_wheel(&app->scroll, (double)event->scroll_x, (double)event->scroll, app->now * 1000U);
 	app->dirty = 1;
+}
+
+/* The touch pad's fingers lift: the view flies on at their velocity (libkeiland's scroller, ws090-p019). */
+static void
+app_axis_stop(
+	struct te_app *app,
+	const struct te_event *event)
+{
+	int flung;
+
+	/* The view the fingers held, thrown. */
+	flung = kl_scroll_axis_stop(&app->scroll, event->axis_us);
+	app->dirty = 1;
+	if (flung)
+		te_log("KINETIC fling source=finger");
 }
 
 /* Takes a key: a dialog's, F3, or the text's. */

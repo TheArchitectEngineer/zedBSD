@@ -37,6 +37,15 @@
 #define FM_TOUCH_UP		2U
 #define FM_TOUCH_CANCEL		3U
 
+/*
+ * A touch pad's two fingers (ws090-p019): a move of the scroll (y as a
+ * wheel scrolls, surface pixels; the area under the pointer) and their
+ * lift, which libkeiland's scroller turns into the same flight as a
+ * finger's on the screen.
+ */
+#define FM_TOUCH_PAD		4U
+#define FM_TOUCH_PAD_STOP	5U
+
 /* What is under a finger: something that is not scrolled, the items (the content), the sidebar. */
 #define FM_TOUCH_OTHER		0U
 #define FM_TOUCH_CONTENT	1U

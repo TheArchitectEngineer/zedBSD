@@ -12,6 +12,11 @@
  * with its IP header, to the raw sockets whose local and remote address
  * filters match, and a raw socket sends messages with the checksum
  * filled in.
+ *
+ * The raw ICMPv6 sockets (AF_INET6, IPPROTO_ICMPV6; ws130-p003) are the
+ * same sockets of the second family: every ICMPv6 message is copied to
+ * them without its IPv6 header (RFC 3542 section 3), and they send
+ * messages whose checksum, over the IPv6 pseudo-header, is filled in.
  */
 
 #include "kern/net/inet-socket.h"
@@ -20,6 +25,7 @@
 #include "kern/net/packet-buf.h"
 #include "kern/kmem.h"
 #include "internal.h"
+#include "ipv6.h"
 #include "wire.h"
 #include <kern/kcrt.h>
 
@@ -47,6 +53,9 @@ static int icmp_getpeername(struct socket *socket, struct sockaddr *address, soc
 static void icmp_close(struct socket *socket);
 static void icmp_deliver(struct packet_buf *packet, uint32_t source, uint32_t destination);
 static int icmp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
+static int icmp_register(int protocol, struct socket **result);
+static ssize_t icmp6_sendto(struct icmp_endpoint *endpoint, const void *buffer, size_t length, const struct sockaddr *address, socklen_t address_length);
+static int icmp6_accepts(const struct icmp_endpoint *endpoint, const struct in6_addr *source, const struct in6_addr *destination);
 
 static const struct socket_ops icmp_ops = {
 	.bind = icmp_bind,
@@ -67,51 +76,119 @@ icmp_socket_create(
 	int protocol,
 	struct socket **result)
 {
-	struct icmp_endpoint *endpoint;
-	struct icmp_endpoint *other;
-	unsigned registered;
-	unsigned long irq;
+	int error;
 
 	/* Rejects a missing result or another protocol. */
 	if (result == NULL || (protocol != 0 && protocol != IPPROTO_ICMP))
 		return EPROTONOSUPPORT;
 
-	/* Allocates the endpoint as a raw internet socket. */
-	endpoint = kern_calloc(1, sizeof(*endpoint));
-	if (endpoint == NULL)
-		return ENOMEM;
-	inet_socket_object_init(&endpoint->inet, SOCK_RAW, IPPROTO_ICMP,
-	    &icmp_ops);
+	/* Reports why the socket could not be made. */
+	error = icmp_register(IPPROTO_ICMP, result);
+	if (error != 0)
+		return error;
 
-	/*
-	 * Registers it for delivery, unless the delivery snapshot is already
-	 * as large as it can be.
-	 */
+	/* Succeeded: the created socket. */
+	return 0;
+}
+
+/*
+ * Creates a raw ICMPv6 socket (ws130-p003); the caller makes it an
+ * AF_INET6 one.
+ */
+int
+icmp6_socket_create(
+	int protocol,
+	struct socket **result)
+{
+	int error;
+
+	/* Rejects a missing result or another protocol. */
+	if (result == NULL || (protocol != 0 && protocol != IPPROTO_ICMPV6))
+		return EPROTONOSUPPORT;
+
+	/* Reports why the socket could not be made. */
+	error = icmp_register(IPPROTO_ICMPV6, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the created socket. */
+	return 0;
+}
+
+/*
+ * Queues a copy of an ICMPv6 message (from its ICMPv6 header, without the
+ * IPv6 one) on every raw ICMPv6 socket whose addresses match, named by
+ * its sender with the interface of a link-local one (ws130-p003).
+ */
+void
+icmp6_raw_deliver(
+	struct packet_buf *packet,
+	const struct in6_addr *source,
+	const struct in6_addr *destination)
+{
+	struct icmp_endpoint *endpoint;
+	struct icmp_endpoint *snapshot[SOCKET_BROADCAST_MAX];
+	struct packet_buf *copy;
+	unsigned count;
+	unsigned index;
+	unsigned arrived;
+	unsigned long irq;
+	int referenced;
+	int accepts;
+
+	count = 0;
+
+	/* References every ICMPv6 socket under the registry lock. */
 	irq = spin_lock_irqsave(&icmp_registry_lock);
 
-	/* Counts the sockets already registered. */
-	registered = 0;
-	for (other = icmp_sockets; other != NULL; other = other->next)
-		registered++;
+	for (endpoint = icmp_sockets; endpoint != NULL; endpoint = endpoint->next) {
+		/* Stops at a full snapshot, which creation keeps from happening. */
+		if (count >= SOCKET_BROADCAST_MAX)
+			break;
 
-	/* Links the new socket while the snapshot can still hold it. */
-	if (registered < SOCKET_BROADCAST_MAX) {
-		endpoint->next = icmp_sockets;
-		icmp_sockets = endpoint;
+		/* Only the second family's sockets, and not one whose closing has begun. */
+		if (endpoint->inet.family != AF_INET6)
+			continue;
+		referenced = socket_tryref(&endpoint->inet.socket);
+		if (!referenced)
+			continue;
+
+		/* Keeps the referenced socket in the snapshot. */
+		snapshot[count] = endpoint;
+		count++;
 	}
 
 	spin_unlock_irqrestore(&icmp_registry_lock, irq);
 
-	/* Refuses a socket the delivery could not reach. */
-	if (registered >= SOCKET_BROADCAST_MAX) {
-		kern_free(endpoint);
-		return ENFILE;
+	/* The interface it came in on, for a link-local sender's name. */
+	arrived = 0;
+	if (packet->device != NULL)
+		arrived = packet->device->ifindex;
+
+	/* Queues a copy on each socket whose addresses match. */
+	for (index = 0; index < count; index++) {
+		/* Skips a socket bound or connected to other addresses. */
+		endpoint = snapshot[index];
+		accepts = icmp6_accepts(endpoint, source, destination);
+		if (!accepts) {
+			socket_release(&endpoint->inet.socket);
+			continue;
+		}
+
+		/* Copies the message. */
+		copy = packet_buf_copy_region(packet, (size_t)(packet->data - packet->storage), packet->length);
+		if (copy == NULL) {
+			socket_release(&endpoint->inet.socket);
+			continue;
+		}
+
+		/* Names the sender, and queues the copy. */
+		copy->l3_offset = PACKET_OFFSET_NONE;
+		copy->l4_offset = 0;
+		inet_socket_peer_name(&endpoint->inet, 0, source, arrived, 0, copy->source_address, &copy->source_length);
+		(void)socket_enqueue_packet(&endpoint->inet.socket, copy);
+		socket_release(&endpoint->inet.socket);
 	}
-
-	*result = &endpoint->inet.socket;
-
-	/* Reports the created socket. */
-	return 0;
 }
 
 /*
@@ -209,6 +286,7 @@ icmp_sendto(
 	uint8_t *payload;
 	uint32_t destination;
 	uint16_t checksum;
+	ssize_t sent;
 	int error;
 
 	endpoint = icmp_endpoint(socket);
@@ -218,6 +296,14 @@ icmp_sendto(
 	    buffer == NULL ||
 	    length < sizeof(struct icmp_wire))
 		return -EINVAL;
+
+	/* An ICMPv6 socket sends over IPv6 (ws130-p003). */
+	if (endpoint->inet.family == AF_INET6) {
+		sent = icmp6_sendto(endpoint, buffer, length, address, address_length);
+		if (sent < 0)
+			return sent;
+		return sent;
+	}
 
 	/* Takes the destination from the address, else from the connection. */
 	if (address != NULL) {
@@ -414,7 +500,9 @@ icmp_deliver(
 		if (count >= SOCKET_BROADCAST_MAX)
 			break;
 
-		/* Skips a socket whose closing has begun. */
+		/* Skips an ICMPv6 socket, and one whose closing has begun. */
+		if (endpoint->inet.family != AF_INET)
+			continue;
 		referenced = socket_tryref(&endpoint->inet.socket);
 		if (!referenced)
 			continue;
@@ -534,4 +622,181 @@ icmp_input(
 
 	/* Reports the consumed message. */
 	return 0;
+}
+
+/*
+ * Allocates a raw ICMP or ICMPv6 socket and registers it for delivery,
+ * unless the delivery snapshot is already as large as it can be.
+ */
+static int
+icmp_register(
+	int protocol,
+	struct socket **result)
+{
+	struct icmp_endpoint *endpoint;
+	struct icmp_endpoint *other;
+	unsigned registered;
+	unsigned long irq;
+
+	/* Allocates the endpoint as a raw internet socket. */
+	endpoint = kern_calloc(1, sizeof(*endpoint));
+	if (endpoint == NULL)
+		return ENOMEM;
+	inet_socket_object_init(&endpoint->inet, SOCK_RAW, protocol, &icmp_ops);
+
+	/* Registers it while the snapshot can still hold it. */
+	irq = spin_lock_irqsave(&icmp_registry_lock);
+
+	/* Counts the sockets already registered. */
+	registered = 0;
+	for (other = icmp_sockets; other != NULL; other = other->next)
+		registered++;
+
+	/* Links the new socket while the snapshot can still hold it. */
+	if (registered < SOCKET_BROADCAST_MAX) {
+		endpoint->next = icmp_sockets;
+		icmp_sockets = endpoint;
+	}
+
+	spin_unlock_irqrestore(&icmp_registry_lock, irq);
+
+	/* Refuses a socket the delivery could not reach. */
+	if (registered >= SOCKET_BROADCAST_MAX) {
+		kern_free(endpoint);
+		return ENFILE;
+	}
+
+	*result = &endpoint->inet.socket;
+
+	/* Succeeded: the registered socket. */
+	return 0;
+}
+
+/*
+ * Sends an ICMPv6 message from a raw ICMPv6 socket (ws130-p003): to the
+ * address given or the peer, out of the bound interface or the one a
+ * link-local or group destination's scope names, from the bound address
+ * or the one chosen; the checksum is filled in.
+ */
+static ssize_t
+icmp6_sendto(
+	struct icmp_endpoint *endpoint,
+	const void *buffer,
+	size_t length,
+	const struct sockaddr *address,
+	socklen_t address_length)
+{
+	struct sockaddr_in6 output;
+	struct in6_addr destination;
+	struct packet_buf *packet;
+	struct net_device *device;
+	const struct in6_addr *source;
+	uint8_t *payload;
+	unsigned scope;
+	unsigned ifindex;
+	int unspecified;
+	int mapped;
+	int linklocal;
+	int multicast;
+	int error;
+
+	/* Takes the destination from the address, else from the connection. */
+	if (address != NULL) {
+		if (address_length < sizeof(output) || address->sa_family != AF_INET6)
+			return -EINVAL;
+		kern_memcpy(&output, address, sizeof(output));
+		destination = output.sin6_addr;
+		scope = output.sin6_scope_id;
+	} else if (endpoint->inet.inet_flags & INET_SOCKET_CONNECTED) {
+		destination = endpoint->inet.remote6;
+		scope = endpoint->inet.scope6;
+	} else {
+		return -EDESTADDRREQ;
+	}
+
+	/* A specific destination; an IPv4-mapped one is not for ICMPv6. */
+	unspecified = in6_is_unspecified(&destination);
+	if (unspecified)
+		return -EADDRNOTAVAIL;
+	mapped = in6_is_v4mapped(&destination);
+	if (mapped)
+		return -EAFNOSUPPORT;
+
+	/* The interface: the bound one, or the scope of a destination on a link. */
+	ifindex = endpoint->inet.ifindex;
+	linklocal = in6_is_linklocal(&destination);
+	multicast = in6_is_multicast(&destination);
+	if (ifindex == 0 &&
+	    (linklocal ||
+	     multicast))
+		ifindex = scope;
+	if (ifindex == 0 && linklocal)
+		return -EINVAL;
+
+	/* The device of that interface, held for the send. */
+	device = NULL;
+	if (ifindex != 0) {
+		device = net_device_find_by_index_ref(ifindex);
+		if (device == NULL)
+			return -ENXIO;
+	}
+
+	/* Copies the message into a packet. */
+	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	if (packet == NULL) {
+		if (device != NULL)
+			net_device_release(device);
+		return -ENOBUFS;
+	}
+
+	payload = packet_buf_append(packet, length);
+	if (payload == NULL) {
+		packet_buf_free(packet);
+		if (device != NULL)
+			net_device_release(device);
+		return -EMSGSIZE;
+	}
+
+	kern_memcpy(payload, buffer, length);
+
+	/* Sends it from the bound address, or the chosen one, with the checksum filled in. */
+	source = NULL;
+	unspecified = in6_is_unspecified(&endpoint->inet.local6);
+	if (!unspecified)
+		source = &endpoint->inet.local6;
+	error = icmp6_send(device, source, &destination, 0U, packet);
+	if (device != NULL)
+		net_device_release(device);
+	if (error != 0)
+		return -error;
+
+	/* Succeeded: the sent length. */
+	return (ssize_t)length;
+}
+
+/* Tells whether a raw ICMPv6 socket's bound and connected addresses take a message. */
+static int
+icmp6_accepts(
+	const struct icmp_endpoint *endpoint,
+	const struct in6_addr *source,
+	const struct in6_addr *destination)
+{
+	int unspecified;
+	int same;
+
+	/* A socket bound to another address. */
+	unspecified = in6_is_unspecified(&endpoint->inet.local6);
+	same = in6_equal(&endpoint->inet.local6, destination);
+	if (!unspecified && !same)
+		return 0;
+
+	/* A socket connected to another peer. */
+	if ((endpoint->inet.inet_flags & INET_SOCKET_CONNECTED) != 0) {
+		same = in6_equal(&endpoint->inet.remote6, source);
+		if (!same)
+			return 0;
+	}
+
+	/* Succeeded: the socket takes it. */
+	return 1;
 }

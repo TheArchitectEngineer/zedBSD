@@ -976,10 +976,9 @@ struct se_sound {
 
 /*
  * A touch pad's two fingers scrolling a pane, and its flight after they
- * lift (BUG-211): whether they hold a pane and which (SE_KINETIC_*), their
- * track (libkeiland's kl_axis_track, for their velocity), and while it
- * flies its velocity (pixels a second, as a wheel scrolls), the fraction
- * of a pixel not yet moved and the time of its last step (milliseconds).
+ * lift (BUG-211, ws090-p019): whether they hold a pane and which
+ * (SE_KINETIC_*), and whether it flies.  libkeiland's scroller does the
+ * rest, as for every program: their velocity and the flight's slowing.
  */
 #define SE_KINETIC_NONE		0
 #define SE_KINETIC_PAGE		1
@@ -988,11 +987,8 @@ struct se_sound {
 struct se_kinetic {
 	int holding;
 	int pane;
-	struct kl_axis_track track;
 	int flying;
-	double velocity;
-	double remainder;
-	uint64_t last_ms;
+	struct kl_scroller *scroller;
 };
 
 /*
@@ -1134,6 +1130,7 @@ const struct se_page *se_page_find(const char *word);
 
 /* The interface (ui.c). */
 void se_ui_init(struct se_app *app, struct fm_text *text, unsigned page);
+void se_ui_close(struct se_app *app);
 void se_ui_event(struct se_app *app, const struct se_event *event);
 void se_ui_action(struct se_app *app, uint32_t action);
 void se_ui_tick(struct se_app *app, uint64_t now);
