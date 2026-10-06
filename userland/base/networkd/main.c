@@ -17,6 +17,7 @@
 #include "userland/base/net/publication-trace.h"
 #include "userland/base/net/wifi-store.h"
 #include "userland/base/networkd/confirmed.h"
+#include "userland/base/networkd/ipv6.h"
 #include "userland/base/networkd/lan-configure.h"
 #include "userland/base/networkd/managed-lan.h"
 #include "userland/base/networkd/managed-wlan.h"
@@ -265,6 +266,8 @@ static size_t known_wlan_radio_count;
 static int wifi_disable_pending;
 static struct networkd_confirmed confirmed;
 static int route_events = -1;
+/* The route socket of IPv6's events (ws130-p006), -1 without it. */
+static int ipv6_events = -1;
 static uint64_t route_event_sequence;
 static uint64_t automatic_retry_at;
 static unsigned retirement_retry_seconds = NETWORKD_WLAN_RESCAN_SECONDS;
@@ -540,7 +543,8 @@ main(
 	int poll_result;
 	int poll_timeout;
 	size_t index;
-	struct pollfd descriptors[2U + NETWORKD_SUBSCRIBER_MAX];
+	struct pollfd descriptors[3U + NETWORKD_SUBSCRIBER_MAX];
+	unsigned ipv6_slot;
 	nfds_t descriptor_count;
 	size_t slot;
 	struct kern_peercred peer;
@@ -592,6 +596,12 @@ main(
 	notify_init("READY\n");
 	control_listener = listener.descriptor;
 
+	/* IPv6 (ws130-p006): its events, and the interfaces already up. */
+	ipv6_events = networkd_ipv6_open();
+	if (ipv6_events < 0)
+		fprintf(stderr, "networkd: IPv6 route socket: %s\n", strerror(errno));
+	networkd_ipv6_start();
+
 	/*
 	 * Records the state as it is before anyone can watch, so that the
 	 * first comparison after a watcher arrives measures a change and not
@@ -640,6 +650,13 @@ main(
 			descriptors[descriptor_count].revents = 0;
 			descriptor_count++;
 		}
+
+		/* The IPv6 events, after the watchers (ws130-p006). */
+		ipv6_slot = descriptor_count;
+		descriptors[descriptor_count].fd = ipv6_events;
+		descriptors[descriptor_count].events = POLLIN;
+		descriptors[descriptor_count].revents = 0;
+		descriptor_count++;
 		poll_result = poll(descriptors, descriptor_count, poll_timeout);
 		if (poll_result < 0) {
 			if (errno == EINTR)
@@ -669,6 +686,11 @@ main(
 			    (POLLERR | POLLHUP | POLLNVAL)) == 0)
 				continue;
 			subscriber_drop(slot);
+		}
+		if ((descriptors[ipv6_slot].revents & (POLLIN | POLLERR | POLLHUP)) != 0 &&
+		    networkd_ipv6_events(ipv6_events) != 0) {
+			(void)close(ipv6_events);
+			ipv6_events = -1;
 		}
 		if ((descriptors[1].revents & (POLLIN | POLLERR | POLLHUP)) != 0 &&
 		    process_route_events() != 0) {
@@ -8595,7 +8617,8 @@ write_resolver(
 {
 	int length;
 	struct in_addr parsed;
-	char temporary[128], line[64];
+	struct in6_addr parsed6;
+	char temporary[128], line[80];
 	int descriptor, index, prior;
 
 	/* Handles a failed snprintf operation. */
@@ -8620,8 +8643,9 @@ write_resolver(
 
 	/* Process each remaining element. */
 	for (index = 0; index < count; index++) {
-		/* Handles a failed netutil parse ipv4 operation. */
-		if (netutil_parse_ipv4(addresses[index], &parsed) != 0)
+		/* An IPv4 server, or an IPv6 one (ws130-p005). */
+		if (netutil_parse_ipv4(addresses[index], &parsed) != 0 &&
+		    inet_pton(AF_INET6, addresses[index], &parsed6) != 1)
 			goto fail;
 
 		/* Process each remaining element. */
