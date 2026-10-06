@@ -120,11 +120,13 @@ truetype_glyph_outline(
 	/* The face among its companions that draws the glyph, and the outline in its units. */
 	drawn = truetype_resolve_const(face, &glyph);
 	error = contour_outline(drawn, glyph, outline);
-	if (error != 0)
+	if (error != 0 && error != ENOSPC)
 		return error;
 
-	/* In the units of the face asked. */
+	/* In the units of the face asked (also what arrays too small were given, with the counts). */
 	contour_scale(outline, drawn->units_per_em, face->units_per_em);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the outline holds every contour of the glyph. */
 	return 0;

@@ -116,6 +116,12 @@ int truetype_set_bold(struct truetype_face *face, int bold);
  */
 int truetype_open_companions(struct truetype_face *face,
 			     const char *bold_path, const char *next_path);
+/*
+ * Tells whether a glyph is drawn from the face's bold companion while the
+ * face is bold (1), so that a caller widening bold glyphs itself leaves it
+ * as it is, or not (0).
+ */
+int truetype_glyph_bold_face(const struct truetype_face *face, unsigned glyph);
 
 int truetype_metrics(const struct truetype_face *face,
 		     struct truetype_metrics *metrics);

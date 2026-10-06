@@ -104,6 +104,26 @@ truetype_open_companions(
 }
 
 /*
+ * Tells whether a glyph number of a face is drawn from its bold companion
+ * while the face is bold (1: drawn as it is, not widened), or not (0: a
+ * glyph of the next companion's, or a face without a bold one).
+ */
+int
+truetype_glyph_bold_face(
+	const struct truetype_face *face,
+	unsigned glyph)
+{
+	/* A face without a bold companion, or a glyph not of its own. */
+	if (face == NULL || face->bold_face == NULL)
+		return 0;
+	if (glyph >= face->glyph_count)
+		return 0;
+
+	/* Succeeded: the bold companion has the glyph. */
+	return 1;
+}
+
+/*
  * Finds the face that draws a glyph number of a face: a number past the
  * face's own glyphs is the next companion's (less the face's count), and
  * while the face is bold, one of its own is its bold companion's.  *glyph
@@ -194,6 +214,8 @@ companion_open(
 	int error;
 
 	/* The whole file. */
+	data = NULL;
+	size = 0;
 	error = companion_read(path, &data, &size);
 	if (error != 0)
 		return error;

@@ -17,8 +17,9 @@
  * under a panel do not).
  *
  * Text is drawn from a glyph atlas made with libtruetype from the font at
- * server->font_path (printable ASCII and the multiplication sign); without a
- * font the look is drawn without text.  Any other character (WS070 p009) is
+ * server->font_path (printable ASCII and the multiplication sign) and its
+ * companions (ws090-p020: Mahora Bold, and the monospaced fallback for the
+ * signs Mahora lacks); without a font the look is drawn without text.  Any other character (WS070 p009) is
  * rendered when it is first drawn, from that font or else from the fallback
  * font (server->fallback_font_path, for Japanese), into a cell of the
  * atlas's cache, the least recently drawn cell making room; text is UTF-8.
@@ -1132,6 +1133,9 @@ atlas_create(
 	error = glass_open_face(glass, server->font_path);
 	if (error != 0)
 		return error;
+
+	/* Its companions: Mahora Bold, and the monospaced fallback for the signs it lacks (ws090-p020). */
+	(void)truetype_open_companions(glass->faces[0], KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
 
 	/*
 	 * The fallback font is opened on the first character the first font

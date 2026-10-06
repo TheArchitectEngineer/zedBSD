@@ -16,6 +16,7 @@
  */
 
 #include "userland/desktop/xserver/internal.h"
+#include "userland/desktop/paths.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -66,6 +67,9 @@ x11_glyphs_open(
 		x11_glyphs_close(glyphs);
 		return error;
 	}
+
+	/* Its companion, the monospaced fallback, for the signs it lacks (ws090-p020). */
+	(void)truetype_open_companions(glyphs->face, NULL, KEILAND_FONT_FALLBACK_MONO);
 
 	/* At the cell's size. */
 	error = truetype_set_pixel_size(glyphs->face, GLYPHS_PIXELS);
