@@ -59,7 +59,7 @@ def main():
         assert font["name"].getDebugName(1) == family
         assert font["name"].getDebugName(2) == style
         assert font["name"].getDebugName(4) == full_name
-        assert font["name"].getDebugName(5) == "Version 0.300"
+        assert font["name"].getDebugName(5) == "Version 0.301"
         assert bool(font["post"].isFixedPitch) == mono
         assert font["OS/2"].usWeightClass == (700 if style == "Bold" else 400)
         assert bool(font["OS/2"].fsSelection & 0x20) == (style == "Bold")

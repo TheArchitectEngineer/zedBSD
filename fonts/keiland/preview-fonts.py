@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render specimens directly from the three delivered TrueType fonts."""
 
+import argparse
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -16,12 +17,40 @@ def text(canvas, content, x, baseline, size, font_path):
     ImageDraw.Draw(canvas).text((x, baseline), content, font=face, fill="#15202b", anchor="ls")
 
 
+def q_review(before_directory):
+    canvas = Image.new("RGB", (1540, 1050), "#fafbfc")
+    draw = ImageDraw.Draw(canvas)
+    heading = ImageFont.truetype(LABEL, 24)
+    small = ImageFont.truetype(LABEL, 18)
+    draw.text((50, 28), "Keiland / q height alignment", font=heading, fill="#15202b")
+    draw.text((50, 73), "Before 0.300 / After 0.301. Same size and shared baseline guides.",
+              font=small, fill="#617386")
+    for row, name in enumerate(FONTS):
+        top = 140 + row * 290
+        draw.text((50, top), name.replace("-", " "), font=heading, fill="#15202b")
+        for index, (title, path) in enumerate([
+            ("Before", before_directory / f"{name}.ttf"),
+            ("After", ROOT / f"{name}.ttf"),
+        ]):
+            x = 50 + index * 760
+            draw.text((x, top + 44), title, font=small, fill="#617386")
+            draw.line((x, top + 183, x + 650, top + 183), fill="#aac7df")
+            draw.line((x, top + 99, x + 650, top + 99), fill="#d4e0ea")
+            text(canvas, "anopqg", x + 15, top + 183, 170, path)
+            text(canvas, "quick equal glyphs", x + 15, top + 250, 32, path)
+    canvas.save(ROOT / "q-height-review.png")
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--q-before-directory", type=Path,
+                        help="Previous TTF directory for the q-height comparison")
+    arguments = parser.parse_args()
     specimen = Image.new("RGB", (1600, 1650), "#fafbfc")
     draw = ImageDraw.Draw(specimen)
     heading = ImageFont.truetype(LABEL, 25)
     small = ImageFont.truetype(LABEL, 17)
-    draw.text((56, 24), "Keiland / Unicode ASCII typefaces 0.300", font=heading, fill="#15202b")
+    draw.text((56, 24), "Keiland / Unicode ASCII typefaces 0.301", font=heading, fill="#15202b")
     for index, name in enumerate(FONTS):
         path = ROOT / f"{name}.ttf"
         top = 85 + index * 515
@@ -56,6 +85,8 @@ def main():
             grid_draw.text((x + 12, y + 120), f"U+{codepoint:04X}", font=label, fill="#617386")
         grid.save(ROOT / f"{name}-ascii.png")
     specimen.save(ROOT / "keiland-specimen.png")
+    if arguments.q_before_directory:
+        q_review(arguments.q_before_directory)
     print("Rendered the three TTF specimens and all ASCII glyphs.")
 
 

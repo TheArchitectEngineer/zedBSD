@@ -3,7 +3,7 @@
 
 Phase ID: `ws168-p002`
 Parent: [WS168](../ws.md)
-Status: in-progress（2026-10-06 P1、q804 で再開。libc・試験まで書いた。libc の起動の isatty（ioctl TCGETS）の扱いが判断待ち、下の「2026-10-06」）
+Status: test-wait（2026-10-06 P1、q804。実装済み、isatty は案 (a) で決定・実装、T1 の試験待ち）
 設計: [p001](../phase001/phase.md) §3（H1〜H7 はユーザーが案のとおり承認、2026-10-05 夜。`sandbox_spawn` の system call 170 と `include/uapi/sandbox.h` の追加を含む）
 
 ## 済んだこと（commit は下の SHA）
@@ -57,3 +57,13 @@ KILL では**全ての子が main の前に SIGKILL** で終わる（preview の
 ENOTTY で答える（file にも driver にも届かない、klog も書かない、他の ioctl は今どおり断る）、(b) libc が sandbox の process では isatty を飛ばす（sysroot の
 libc.o の作り直し = toolchain、main の許可が要る）、(c) 試験の子だけ自前の `_start`（preview の command に効かないので勧めない）。推奨は (a)。
 試験の `test_kill` の 2 つ目（KILL の子が集合を守って走る）がこの判断の確かめになる。
+
+## 2026-10-06 ユーザーの決定（isatty）
+
+static link の子が libc の起動の isatty（ioctl TCGETS）で既定の kill に当たる件。P1 の案 (a)・(b)・(c) へのクリックの回答「(a) TCGETS だけ ENOTTY（推奨）」: sandbox の中では ioctl(fd, TCGETS) だけを sandbox の検査が ENOTTY で答える（file・driver に届かず klog も書かない）。他の ioctl は拒否のまま。p001 §3.3 に 1 文足す。
+
+## 2026-10-06（P1）: 案 (a) の実装
+
+`src/kern/sandbox.c` に `sandbox_answers`（`ioctl` の request が `TCGETS` の時だけ `-ENOTTY` を返す、file・driver に届かず klog も書かない）、
+`syscall_dispatch_body` の sandbox の確かめの先頭で使う（`include/kern/sandbox.h`）。他の ioctl は今どおり集合の外（`sandboxtest` の `deny ioctl`（FIONBIO）は EPERM）。
+amd64 の kernel の build（warning 0）。p001 §3.3 に 1 文足した。試験の `test_kill` の 2 つ目と `allowed`（`isatty(1)` が 0）が確かめになる。T1 に依頼する。

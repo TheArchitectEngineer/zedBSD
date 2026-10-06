@@ -299,6 +299,15 @@ enum pdf_edit_kind {
 #define PDF_EDIT_OBJECT_INSERTED	0x4U
 
 /*
+ * A line of text's flags (ws175-p002b): its characters are not all known
+ * or its font draws procedures (Type 3), or it is vertical, so its words
+ * cannot be changed (TEXT_FIXED: moved, sized, deleted or typed anew
+ * only); it is invisible (rendering mode 3, an OCR layer: deleted only).
+ */
+#define PDF_EDIT_OBJECT_TEXT_FIXED	0x8U
+#define PDF_EDIT_OBJECT_INVISIBLE	0x10U
+
+/*
  * An image given to the editor (ws175-p003): a JPEG of one or three
  * components, its bytes as they are (a four-component JPEG is refused), or
  * 8-bit RGBA, rows of width pixels, straight alpha.  size is the caller's

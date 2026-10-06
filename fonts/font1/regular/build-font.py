@@ -151,10 +151,10 @@ def build_font():
     builder.setupNameTable({
         "familyName": "Font1",
         "styleName": "Regular",
-        "uniqueFontIdentifier": "Font1-Regular-0.202",
+        "uniqueFontIdentifier": "Font1-Regular-0.203",
         "fullName": "Font1 Regular",
         "psName": "Font1-Regular",
-        "version": "Version 0.202",
+        "version": "Version 0.203",
         "typographicFamily": "Font1",
         "typographicSubfamily": "Regular",
         "description": "Font1 Regular. Unicode-encoded ASCII design prototype.",
@@ -180,7 +180,7 @@ def build_font():
         isFixedPitch=1, underlinePosition=-180, underlineThickness=70,
     )
     builder.setupMaxp()
-    builder.setupHead(unitsPerEm=UNITS_PER_EM, fontRevision=0.202, macStyle=0)
+    builder.setupHead(unitsPerEm=UNITS_PER_EM, fontRevision=0.203, macStyle=0)
     builder.font["gasp"] = newTable("gasp")
     builder.font["gasp"].version = 1
     builder.font["gasp"].gaspRange = {65535: 10}
@@ -192,7 +192,7 @@ def build_font():
     builder.save(FONT_PATH)
 
     report = {
-        "family": "Font1", "style": "Regular", "version": "0.202",
+        "family": "Font1", "style": "Regular", "version": "0.203",
         "font": FONT_PATH.name,
         "font_sha256": hashlib.sha256(FONT_PATH.read_bytes()).hexdigest(),
         "units_per_em": UNITS_PER_EM, "advance_units": ADVANCE,
