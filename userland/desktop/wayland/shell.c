@@ -3408,7 +3408,6 @@ draw_system_bar(
 	int32_t limit;
 	int32_t end;
 	int32_t left;
-	float label[4];
 	float progress;
 	float home;
 	int button;
@@ -3474,13 +3473,8 @@ draw_system_bar(
 			draw_sign(server, command, button, bar->buttons[button], ZWL_GLASS_BAR / 2, 1, over == button, 1.0f, ink);
 	}
 
-	/* Wiseview's name where a docked title would be. */
+	/* Wiseview shows no name of its own, in the bar either (BUG-216: the name stays in the code and the documents). */
 	progress = wiseview_progress(server);
-	if (progress > 0.0f) {
-		memcpy(label, ink, sizeof(label));
-		label[3] = progress;
-		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, kl_tr("Wiseview"), 200, label);
-	}
 
 	/* Without a docked title, the applications' pill in its place (apps-bar.c, ws142-p004). */
 	if (docked == NULL && progress <= 0.0f)

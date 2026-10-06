@@ -54,3 +54,7 @@ Related: [BUG-215](../../bugs/BUG-215.md)・[BUG-216](../../bugs/BUG-216.md)・[
 | keiland-os-boundary | 既存の FAIL だけ（swipe.c は 3 つの Makefile に揃う） |
 | QEMU | 未実施。p010 で T1 に（touchinject の pad で TOP2・WiseView の swipe・全画面の BOTTOM2） |
 | 実機 5330 | 未実施（ユーザーの UAT: 感触、8 mm の閾値） |
+
+## 2026-10-06 追加（P2）
+
+- BUG-216 の「画面に Wiseview の文字を出さない」に、bar の題の場所の「Wiseview」の文字（`draw_system_bar`）も含めて消した（WiseView の画面の上の題は p009 で消し済み）。catalog の `Wiseview` は使わなくなった（comment で残る）。zedBSD の build warning 0、tr.py check 0 problems。
