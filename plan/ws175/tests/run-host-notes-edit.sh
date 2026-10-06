@@ -20,6 +20,13 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+# ws175-p005: the replacement fonts as the desktop installs them, in a folder of the test's own.
+mkdir -p "$out/fonts"
+ln -sf "$(pwd)/userland/desktop/fonts/Mahora-Regular.ttf" "$out/fonts/keiland.ttf"
+ln -sf "$(pwd)/userland/desktop/fonts/Mahora-Mono.ttf" "$out/fonts/keiland-mono.ttf"
+ln -sf "$(pwd)/userland/desktop/fonts/JetBrainsMono-Regular.ttf" "$out/fonts/keiland-fallback-mono.ttf"
+ln -sf "$(pwd)/userland/desktop/fonts/DroidSansFallbackFull.ttf" "$out/fonts/keiland-fallback.ttf"
+fonts=$(cd "$out/fonts" && pwd)
 sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c
 	userland/desktop/notes/journal.c userland/desktop/notes/save.c
 	userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
@@ -30,7 +37,7 @@ sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userlan
 	userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c plan/ws175/tests/host-notes-edit.c"
 status=0
 for variant in plain asan ubsan; do
-	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -Wno-overlength-strings -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes"
+	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -Wno-overlength-strings -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes -DPDF_EDIT_FONT_DIRECTORY=\"$fonts\""
 	if [ "$variant" = asan ]; then
 		flags="$flags -fsanitize=address -fno-omit-frame-pointer"
 	fi

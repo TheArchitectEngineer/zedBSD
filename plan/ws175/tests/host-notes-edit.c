@@ -22,7 +22,8 @@
  * names an object the page does not have opens as it is shown (rebased),
  * and its journal does not recover (set aside).  ws175-p004: a line of
  * edit-text.pdf given new words in its own font (and words it cannot
- * write refused by the page's editor), saved and opened again with them.
+ * write in a replacement font, ws175-p005), saved and opened again with
+ * them; a text inserted, saved and opened again.
  * Prints each check and
  * exits 0 when all passed.
  */
@@ -289,7 +290,7 @@ main(
 	check(error == 0 && count_images(&document, 0) == 0, "Line two given \"Changed!\" (the page's editor takes it)");
 	state.text = "\xe6\x97\xa5";
 	error = notes_document_edit_object(&document, 0, &state);
-	check(error == 0 && count_images(&document, 0) == (size_t)-1, "Japanese the line's own font cannot write: the page's editor refuses it");
+	check(error == 0 && count_images(&document, 0) == 0, "Japanese the line's own font cannot write: in a replacement font (ws175-p005)");
 	error = notes_document_undo(&document, &page);
 	check(error == 0 && count_images(&document, 0) == 0, "undo: \"Changed!\" again");
 	error = notes_save_pdf(&document, saved_path, &bytes);
@@ -297,6 +298,34 @@ main(
 	error = notes_open_pdf(saved_path, &opened, &kind);
 	check(error == 0 && kind == NOTES_OPENED_ANNOTATED && opened.pages[0]->edit_count == 1 && (opened.pages[0]->edits[0]->flags & NOTES_EDIT_TEXT) != 0U &&
 	      strcmp(opened.pages[0]->edits[0]->text, "Changed!") == 0, "opened again: the line's new words");
+	if (error == 0)
+		notes_document_free(&opened);
+
+	/* ws175-p005: a text inserted on the page (Sans, 10 points, blue, wrapped at 80), saved, opened again with it. */
+	memset(&inserted, 0, sizeof(inserted));
+	inserted.flags = NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT;
+	inserted.id = document.next_id;
+	document.next_id++;
+	inserted.text = "Inserted words";
+	inserted.font = PDF_EDIT_FONT_SANS;
+	inserted.text_size = 10.0f;
+	inserted.color = 0x0000ffffU;
+	inserted.box_width = 80.0f;
+	inserted.transform[0] = 1.0f;
+	inserted.transform[3] = 1.0f;
+	inserted.transform[4] = 150.0f;
+	inserted.transform[5] = 100.0f;
+	error = notes_document_edit_object(&document, 0, &inserted);
+	check(error == 0 && document.pages[0]->edit_count == 2, "a text inserted (the model takes it)");
+	inserted.text_size = 0.0f;
+	check(notes_document_edit_object(&document, 0, &inserted) == EINVAL, "an inserted text of no size: EINVAL");
+	error = notes_save_pdf(&document, saved_path, &bytes);
+	if (error == 0)
+		error = notes_open_pdf(saved_path, &opened, &kind);
+	check(error == 0 && kind == NOTES_OPENED_ANNOTATED && same_edits(document.pages[0], opened.pages[0]) &&
+	      strcmp(opened.pages[0]->edits[1]->text, "Inserted words") == 0 && opened.pages[0]->edits[1]->color == 0x0000ffffU &&
+	      opened.pages[0]->edits[1]->text_size == 10.0f && opened.pages[0]->edits[1]->box_width == 80.0f,
+	      "saved and opened again: the inserted text, its size, colour and width");
 	if (error == 0)
 		notes_document_free(&opened);
 

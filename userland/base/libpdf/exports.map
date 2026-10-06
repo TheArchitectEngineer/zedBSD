@@ -69,6 +69,7 @@
 		pdf_page_editor_blank;
 		pdf_writer_draw_page_editor;
 		pdf_page_editor_set_text;
+		pdf_page_editor_insert_text;
 	local:
 		*;
 };

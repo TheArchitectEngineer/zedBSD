@@ -217,6 +217,10 @@ struct notes_image {
  * 1/64 point, so that saving and reading back gives the same edit.  image
  * holds a reference.  A line's new words (TEXT, ws175-p004) are text, UTF-8
  * the edit owns, written in font (enum pdf_edit_font; 0 the line's own).
+ * ws175-p005: an inserted text (INSERTED and TEXT) also has its size in
+ * points, its colour (0xRRGGBBAA) and the width its lines wrap at (0: not
+ * wrapped); its transform maps its box's space (points, the top left the
+ * origin, y downward) onto the page's shown space.
  */
 struct notes_edit {
 	struct pdf_edit_key key;
@@ -226,6 +230,9 @@ struct notes_edit {
 	struct notes_image *image;
 	char *text;
 	unsigned font;
+	float text_size;
+	uint32_t color;
+	float box_width;
 };
 
 /*
