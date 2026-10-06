@@ -469,6 +469,7 @@ struct pdf_edit_text {
 #define PDF_EDIT_TEXT_REPLACED		2U
 #define PDF_EDIT_TEXT_MISSING		4U
 int pdf_page_editor_set_text(struct pdf_page_editor *editor, size_t index, const struct pdf_edit_text *text, unsigned *result);
+int pdf_page_editor_insert_text(struct pdf_page_editor *editor, const struct pdf_edit_text *text, const double placement[6], size_t *index, unsigned *result);
 
 /*
  * A blank editor (ws175-p007): an empty page of a size (points), for the

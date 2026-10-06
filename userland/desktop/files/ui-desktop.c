@@ -330,6 +330,12 @@ fm_desktop_event(
 		/* A choice of the context menu. */
 		fm_desktop_action(app, event->action);
 		break;
+	case FM_EVENT_TEXT:
+	case FM_EVENT_TEXT_DELETE:
+	case FM_EVENT_PREEDIT:
+		/* An input method's text, for the name being changed (ws090-p022). */
+		fm_field_text_input(app, event);
+		break;
 	default:
 		break;
 	}

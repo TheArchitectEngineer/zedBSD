@@ -185,6 +185,7 @@ static int main_desktop_prepare(struct main_options *options);
 static int main_open_decorations(void);
 static void main_open_context_menus(void);
 static void main_dispatch(const struct fm_event *event);
+static void main_text_input(void);
 static void main_devices_open(const struct main_options *options);
 static void main_appearance_changed(void *data, unsigned appearance);
 static void main_language_changed(void *data, const char *language);
@@ -744,8 +745,10 @@ main_frame(void)
 		/* A slow frame is logged (a diagnostic: where the time of a frame goes). */
 		if (shown - started > MAIN_SLOW_FRAME_MS)
 			fm_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u", (unsigned long)(drawn - started), (unsigned long)(shown - drawn), main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms);
-		if (result == VK_SUCCESS)
+		if (result == VK_SUCCESS) {
+			main_text_input();
 			return 0;
+		}
 
 		/* Anything but a stale swapchain is a failure. */
 		if (result != VK_ERROR_OUT_OF_DATE_KHR) {
@@ -1341,6 +1344,28 @@ main_open_context_menus(void)
 
 	/* Succeeded: the desktop menu service is available or its failure logged. */
 	return;
+}
+
+/*
+ * Asks for the window's text input while a name is being changed, with
+ * where its cursor was drawn, so that an input method's text reaches it
+ * (ws090-p022); off otherwise, and what was being composed goes.
+ */
+static void
+main_text_input(void)
+{
+	/* No name being changed: off. */
+	if (main_app.focus != FM_FOCUS_RENAME) {
+		main_app.preedit[0] = '\0';
+		main_app.caret_known = 0;
+		kl_window_text_input(main_window.kui, 0);
+		return;
+	}
+
+	/* On, at the name's cursor once it was drawn. */
+	kl_window_text_input(main_window.kui, 1);
+	if (main_app.caret_known)
+		kl_window_text_cursor(main_window.kui, main_app.caret.x, main_app.caret.y, main_app.caret.width, main_app.caret.height);
 }
 
 /* Hands an input to the desktop (files --desktop) or to the window's file manager. */

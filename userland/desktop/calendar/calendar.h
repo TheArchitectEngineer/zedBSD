@@ -116,8 +116,8 @@ struct cal_cell {
  * kind, CAL_DRAG_MEMO for the memo, -1 for none, and whether it has moved
  * off its card).
  *
- * The memo of the application (its words and whether it has the
- * keyboard) and the memos kept on dates.
+ * The memo of the application (libkeiland's text area, ws090-p022) and
+ * the memos kept on dates.
  *
  * The events dropped, the cells of the last frame, the notice shown at the
  * bottom until a time (empty for none), whether the window stands on glass, and whether
@@ -151,9 +151,7 @@ struct cal_view {
 	double drag_from_x;
 	double drag_from_y;
 
-	char memo[CAL_MEMO_MAX];
-	size_t memo_length;
-	int memo_focus;
+	struct kl_text_area memo;
 	struct cal_memo memos[CAL_MEMOS_MAX];
 	size_t memo_count;
 

@@ -24,6 +24,7 @@
 #include "window.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -33,6 +34,7 @@
 
 static void window_event(struct se_window *window, const struct kl_window_event *event);
 static void window_axis(struct se_window *window, const struct kl_window_event *event);
+static void window_text(struct se_window *window, const struct kl_window_event *event);
 static void window_touch(struct se_window *window, const struct kl_window_event *event);
 static void window_touch_place(struct se_window *window, double x, double y);
 static void window_touch_button(struct se_window *window, uint32_t serial, int pressed);
@@ -324,6 +326,12 @@ window_event(
 		input->key = event->code;
 		input->pressed = event->pressed;
 		break;
+	case KL_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_DELETE:
+		/* An input method's text, for the field that takes it (ws090-p022). */
+		window_text(window, event);
+		break;
 	case KL_WINDOW_FOCUS:
 		/* The page shown is drawn in the accent while the window has the focus, grey otherwise. */
 		input = se_window_push(window, SE_EVENT_FOCUS);
@@ -518,4 +526,28 @@ window_modifiers(
 
 	/* Reports them. */
 	return bits;
+}
+
+/* Queues an input method's text, the bytes it deletes before the caret, or the text it composes (ws090-p022). */
+static void
+window_text(
+	struct se_window *window,
+	const struct kl_window_event *event)
+{
+	struct se_event *input;
+	unsigned type;
+
+	/* Its kind. */
+	type = SE_EVENT_TEXT;
+	if (event->kind == KL_WINDOW_TEXT_DELETE)
+		type = SE_EVENT_TEXT_DELETE;
+	else if (event->kind == KL_WINDOW_TEXT_PREEDIT)
+		type = SE_EVENT_PREEDIT;
+
+	/* Queued with the other input, in its place. */
+	input = se_window_push(window, type);
+	if (input == NULL)
+		return;
+	(void)snprintf(input->text, sizeof(input->text), "%s", event->text);
+	input->before = event->before;
 }

@@ -1130,7 +1130,7 @@ replay(
 			error = notes_decode_edit(body + offset, length - offset, &used, &read, &image);
 		if (error != 0)
 			return error;
-		if ((read.flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
+		if ((read.flags & NOTES_EDIT_IMAGE) != 0U || (read.flags & (NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT)) == NOTES_EDIT_INSERTED) {
 			read.image = table_find(table, image);
 			if (read.image == NULL) {
 				free(read.text);

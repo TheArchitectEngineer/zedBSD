@@ -1395,6 +1395,22 @@ struct kl_field {
 };
 
 /*
+ * KL_VERSION 47 (ws090-p022): a text area's state, text of several lines
+ * (kl_text_area): its UTF-8 text, the caret and the other end of the
+ * selection (byte offsets on character boundaries), how far it is scrolled
+ * down, and the place across Up and Down keep (-1 for none).
+ */
+#define KL_TEXT_AREA_MAX	8192U
+struct kl_text_area {
+	char text[KL_TEXT_AREA_MAX];
+	size_t length;
+	size_t caret;
+	size_t anchor;
+	int scroll;
+	int goal_x;
+};
+
+/*
  * A list's state: how many items it has, the one selected (-1 for none),
  * and its scroll.
  */
@@ -1424,6 +1440,20 @@ void kl_ui_pointer(const struct kl_ui *ui, double *x, double *y);
 int kl_ui_text(struct kl_ui *ui, const struct kl_window_event *event);
 int kl_ui_text_wanted(const struct kl_ui *ui, struct kl_rect *caret);
 
+/*
+ * KL_VERSION 47 (ws090-p022): the wiring every program with widgets on a
+ * window needs, so that each field takes an input method's text.
+ * kl_ui_window_input gives one input of the window to the widgets (the
+ * pointer, the main button, the wheel, the keys, the fingers and the text
+ * input's KL_WINDOW_TEXT_*) and returns 1 when it was theirs, 0 for another
+ * kind (the program's).  kl_ui_window_text, after each frame, asks for the
+ * window's text input while the focused widget takes text and tells where
+ * its caret is (kl_ui_text_wanted, kl_window_text_input and
+ * kl_window_text_cursor); a secret field takes none.
+ */
+int kl_ui_window_input(struct kl_ui *ui, const struct kl_window_event *event);
+void kl_ui_window_text(const struct kl_ui *ui, struct kl_window *window);
+
 /* The widgets, each drawn and asked by one call during a frame. */
 int kl_button(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, const char *label, unsigned flags);
 int kl_button_width(const struct kl_style *style, const char *label);
@@ -1431,6 +1461,8 @@ int kl_switch(struct kl_ui *ui, const struct kl_style *style, uint32_t id, int x
 int kl_slider(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, double minimum, double maximum, double step, double *value);
 void kl_field_set(struct kl_field *field, const char *text);
 unsigned kl_field(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, struct kl_field *field, const char *placeholder);
+void kl_text_area_set(struct kl_text_area *area, const char *text);
+unsigned kl_text_area(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, struct kl_text_area *area, const char *placeholder);
 int kl_list_init(struct kl_list *list);
 void kl_list_release(struct kl_list *list);
 unsigned kl_list_begin(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, struct kl_list *list, size_t count, size_t *first, size_t *last);

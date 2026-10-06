@@ -249,6 +249,12 @@ fm_ui_event(
 		/* A drag and drop from zdesktop (ui-drag.c). */
 		fm_drop_event(app, event);
 		break;
+	case FM_EVENT_TEXT:
+	case FM_EVENT_TEXT_DELETE:
+	case FM_EVENT_PREEDIT:
+		/* An input method's text, for the name being changed (ws090-p022). */
+		fm_field_text_input(app, event);
+		break;
 	default:
 		break;
 	}

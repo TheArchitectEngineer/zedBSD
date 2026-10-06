@@ -1334,7 +1334,7 @@ notes_encode_edit(
 		notes_buffer_zigzag(buffer, units(edit->transform[5]));
 	}
 
-	/* A line's new words: their length, bytes and font (ws175-p004). */
+	/* A line's new words: their length, bytes and font (ws175-p004); an inserted text's also its size, colour and width (p005). */
 	if ((edit->flags & NOTES_EDIT_TEXT) != 0U) {
 		length = 0;
 		if (edit->text != NULL)
@@ -1342,6 +1342,11 @@ notes_encode_edit(
 		notes_buffer_varint(buffer, length);
 		notes_buffer_bytes(buffer, edit->text, length);
 		notes_buffer_u8(buffer, edit->font);
+		if ((edit->flags & NOTES_EDIT_INSERTED) != 0U) {
+			notes_buffer_varint(buffer, (uint64_t)units(edit->text_size));
+			notes_buffer_u32(buffer, edit->color);
+			notes_buffer_varint(buffer, (uint64_t)units(edit->box_width));
+		}
 	}
 
 	/* Its image's number (0: none, as the journal names an object it takes off). */
@@ -1440,6 +1445,11 @@ notes_decode_edit(
 		edit->text[value] = '\0';
 		reader.offset += (size_t)value;
 		edit->font = read_u8(&reader);
+		if ((edit->flags & NOTES_EDIT_INSERTED) != 0U) {
+			edit->text_size = read_length(&reader);
+			edit->color = read_u32(&reader);
+			edit->box_width = read_length(&reader);
+		}
 	}
 
 	/* Its image's number (0: none). */
@@ -1602,8 +1612,8 @@ decode_edits(
 			return EINVAL;
 		}
 
-		/* Its image, one of IMAG's, when it needs one. */
-		if ((read.flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
+		/* Its image, one of IMAG's, when it needs one (an image's, or an inserted one that is not a text). */
+		if ((read.flags & NOTES_EDIT_IMAGE) != 0U || (read.flags & (NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT)) == NOTES_EDIT_INSERTED) {
 			read.image = images_find(images, image);
 			if (read.image == NULL) {
 				free(read.text);

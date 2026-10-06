@@ -345,12 +345,16 @@
 		kl_ui_pointer;
 		kl_ui_text;
 		kl_ui_text_wanted;
+		kl_ui_window_input;
+		kl_ui_window_text;
 		kl_button;
 		kl_button_width;
 		kl_switch;
 		kl_slider;
 		kl_field_set;
 		kl_field;
+		kl_text_area_set;
+		kl_text_area;
 		kl_list_init;
 		kl_list_release;
 		kl_list_begin;

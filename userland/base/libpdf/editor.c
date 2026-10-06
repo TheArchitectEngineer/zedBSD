@@ -59,6 +59,10 @@
 /* The largest side of a blank editor's page, in points (Notes' own largest). */
 #define EDITOR_BLANK_SIDE_MAX	100000.0
 
+/* An inserted text's line height and its baseline under a line's top, in sizes (ws175-p005). */
+#define EDITOR_TEXT_LEADING	1.2
+#define EDITOR_TEXT_ASCENT	0.8
+
 /* The size of new words as ws175-p004 gave them, before their size and colour. */
 #define EDITOR_TEXT_SIZE_P004	offsetof(struct pdf_edit_text, font_size)
 
@@ -101,14 +105,24 @@ struct editor_image {
  * onto the shown space.  A line of text given new words (ws175-p004) has
  * them (text, UTF-8) and their codes in its font (codes, code_length
  * bytes), the editor's copies; ws175-p005: or their glyphs in the
- * replacement fonts (glyphs, glyph_count).
+ * replacement fonts (glyphs, glyph_count).  An inserted text (is_text)
+ * has its size in points, its colour, and its box (width, height; the box's
+ * top left at its square's origin, y downward).
  */
 
-/* One glyph of new words in a replacement font (ws175-p005): its font's file, its number, its character. */
+/*
+ * One glyph of new words in a replacement font (ws175-p005): its font's
+ * file, its number, its character; an inserted text's also its line,
+ * where on it it starts (points from the box's left), and whether it is
+ * not drawn (the space a line breaks at).
+ */
 struct editor_glyph {
 	unsigned file;
 	unsigned glyph;
 	uint32_t character;
+	size_t line;
+	double x;
+	int hidden;
 };
 struct editor_change {
 	unsigned state;
@@ -121,6 +135,10 @@ struct editor_change {
 	size_t code_length;
 	struct editor_glyph *glyphs;
 	size_t glyph_count;
+	int is_text;
+	double text_size;
+	double color[3];
+	double box[2];
 };
 
 /*
@@ -194,9 +212,13 @@ static int editor_patch_objects(const struct pdf_page_editor *editor, size_t hid
 static int editor_patch_text(const struct pdf_page_editor *editor, size_t hidden, const char *font_prefix, struct editor_patches *patches);
 static int editor_write_show(const struct pdf_page_editor *editor, size_t at, size_t line_index, size_t hidden, const char *font_prefix, struct pdf_buffer *out);
 static void editor_write_glyphs(const struct editor_change *change, const struct pdf_scan_show *show, const char *font_prefix, struct pdf_buffer *out);
-static int editor_glyphs(struct pdf_page_editor *editor, unsigned file, const char *utf8, struct editor_glyph **glyphs, size_t *count, int *missing);
+static int editor_glyphs(struct pdf_page_editor *editor, unsigned file, const char *utf8, int breaks, struct editor_glyph **glyphs, size_t *count, int *missing);
 static unsigned editor_fonts_used(const struct pdf_page_editor *editor);
 static int editor_use_glyphs(struct pdf_writer *writer, const struct pdf_page_editor *editor);
+static int editor_draw_text(const struct pdf_page_editor *editor, const struct editor_change *change, const double square[6], const double ctm[6], const char *font_prefix, struct pdf_buffer *out);
+static int editor_lay_out(struct pdf_page_editor *editor, struct editor_change *change);
+static unsigned editor_first_file(const struct editor_change *change);
+static int editor_text_glyphs(struct pdf_page_editor *editor, unsigned file, const char *utf8, struct editor_glyph **glyphs, size_t *count, int *missing);
 static int editor_show_string(const struct pdf_page_editor *editor, const struct pdf_scan_show *show, size_t *from, size_t *length);
 static int editor_write_mark(const struct pdf_page_editor *editor, const struct pdf_scan_mark *mark, struct pdf_buffer *out, int *replaced);
 static int editor_has_reference(const struct pdf_object *object, int depth);
@@ -469,6 +491,12 @@ pdf_page_editor_object(
 	object->kind = PDF_EDIT_IMAGE;
 	if (change->inserted) {
 		object->flags |= PDF_EDIT_OBJECT_INSERTED;
+		if (change->is_text) {
+			object->kind = PDF_EDIT_TEXT;
+			object->text = change->text;
+			(void)snprintf(object->font_name, sizeof(object->font_name), "%s", pdf_edit_font_name(editor_first_file(change)));
+			object->font_size = change->text_size;
+		}
 	} else if (index >= editor->scan.count) {
 		/* A line of text: its characters, its font and size, its flags. */
 		line = &editor->lines[index - editor->scan.count];
@@ -784,11 +812,13 @@ pdf_page_editor_set_image(
 	size_t taken;
 	int error;
 
-	/* An object of a page that can be edited (not a line of text), and an image. */
+	/* An object of a page that can be edited (not a line of text, nor an inserted text), and an image. */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
 	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count)
+		return ENOTSUP;
+	if (editor->changes[index].is_text)
 		return ENOTSUP;
 	error = editor_take_image(editor, image, &taken);
 	if (error != 0)
@@ -849,6 +879,109 @@ pdf_page_editor_insert_image(
 	memcpy(change->square, placement, sizeof(change->square));
 	*index = editor->count;
 	editor->count++;
+	return 0;
+}
+
+/*
+ * Inserts a text over the page's objects (ws175-p005, design.md section
+ * 3.6): text->utf8 (a break starts a line) in the replacement font asked
+ * for (ORIGINAL is Sans; a character a font lacks drawn by the fallbacks),
+ * text->font_size points high, in text->red, green and blue, its lines
+ * wrapped at text->box_width points (0: not wrapped).  placement maps the
+ * box's space (points, its top left the origin, y downward) onto the
+ * shown space.  The new object comes after every other; *result says
+ * REPLACED (and MISSING).  Returns 0, EINVAL, EPERM, ENOTSUP (no
+ * replacement font installed), or ENOMEM.
+ */
+int
+pdf_page_editor_insert_text(
+	struct pdf_page_editor *editor,
+	const struct pdf_edit_text *text,
+	const double placement[6],
+	size_t *index,
+	unsigned *result)
+{
+	struct editor_change *change;
+	struct editor_change made;
+	struct pdf_edit_text given;
+	double inverse[6];
+	size_t copied;
+	size_t bytes;
+	unsigned file;
+	int missing;
+	int error;
+
+	/* A page that can be edited, words of a size and a colour, where they go. */
+	if (editor == NULL || text == NULL || placement == NULL || index == NULL || result == NULL || text->size < sizeof(*text) || text->utf8 == NULL)
+		return EINVAL;
+	memset(&given, 0, sizeof(given));
+	copied = text->size;
+	if (copied > sizeof(given))
+		copied = sizeof(given);
+	memcpy(&given, text, copied);
+	if (!(given.font_size > 0.0 && given.font_size < 10000.0) || !(given.box_width >= 0.0 && given.box_width < 1e6))
+		return EINVAL;
+	if ((editor->status & PDF_EDIT_PAGE_READ_ONLY) != 0U)
+		return EPERM;
+	error = editor_invert(placement, inverse);
+	if (error != 0)
+		return EINVAL;
+
+	/* Room for one more object. */
+	if (editor->count == editor->capacity) {
+		error = editor_grow(editor);
+		if (error != 0)
+			return error;
+	}
+
+	/* The words' glyphs, each line's, in the font asked for. */
+	memset(&made, 0, sizeof(made));
+	file = PDF_EDIT_FILE_SANS;
+	if (given.font == PDF_EDIT_FONT_MONO)
+		file = PDF_EDIT_FILE_MONO;
+	if (given.font == PDF_EDIT_FONT_CJK)
+		file = PDF_EDIT_FILE_FALLBACK;
+	error = editor_text_glyphs(editor, file, given.utf8, &made.glyphs, &made.glyph_count, &missing);
+	if (error != 0)
+		return error;
+
+	/* The words, the editor's copy. */
+	bytes = strlen(given.utf8);
+	made.text = malloc(bytes + 1U);
+	if (made.text == NULL) {
+		free(made.glyphs);
+		return ENOMEM;
+	}
+
+	/* The words' bytes. */
+	memcpy(made.text, given.utf8, bytes + 1U);
+
+	/* The text's size, colour and width, laid out in lines. */
+	made.is_text = 1;
+	made.text_size = given.font_size;
+	made.color[0] = given.red;
+	made.color[1] = given.green;
+	made.color[2] = given.blue;
+	made.box[0] = given.box_width;
+	error = editor_lay_out(editor, &made);
+	if (error != 0) {
+		free(made.glyphs);
+		free(made.text);
+		return error;
+	}
+
+	/* Succeeded: the new object, the last. */
+	change = &editor->changes[editor->count];
+	*change = made;
+	change->state = EDITOR_KEPT;
+	change->image = EDITOR_NONE;
+	change->inserted = 1;
+	memcpy(change->square, placement, sizeof(change->square));
+	*index = editor->count;
+	editor->count++;
+	*result = PDF_EDIT_TEXT_REPLACED;
+	if (missing)
+		*result |= PDF_EDIT_TEXT_MISSING;
 	return 0;
 }
 
@@ -989,7 +1122,10 @@ pdf_editor_content(
 		memcpy(square, change->square, sizeof(square));
 		if (change->state == EDITOR_PLACED)
 			editor_multiply(change->square, change->placement, square);
-		error = editor_draw_image(out, &editor->images[change->image], square, editor->scan.base, prefix, names[change->image]);
+		if (change->is_text)
+			error = editor_draw_text(editor, change, square, editor->scan.base, font_prefix, out);
+		else
+			error = editor_draw_image(out, &editor->images[change->image], square, editor->scan.base, prefix, names[change->image]);
 		if (error != 0)
 			return error;
 		pdf_buffer_append(out, "\n", 1);
@@ -1713,6 +1849,7 @@ pdf_writer_draw_page_editor(
 	struct pdf_buffer *content;
 	double square[6];
 	char prefix[32];
+	char font_prefix[32];
 	size_t object;
 	size_t name;
 	int error;
@@ -1722,15 +1859,30 @@ pdf_writer_draw_page_editor(
 		return EINVAL;
 	content = &writer->pages[writer->pages_count - 1U]->content;
 	(void)snprintf(prefix, sizeof(prefix), "%sIm", writer->name_prefix);
+	(void)snprintf(font_prefix, sizeof(font_prefix), "%sF", writer->name_prefix);
 
-	/* Each inserted image still there, where it is now. */
+	/* The replacement fonts' glyphs the inserted texts use, the document's (ws175-p005). */
+	error = editor_use_glyphs(writer, editor);
+	if (error != 0)
+		return error;
+
+	/* Each inserted image or text still there, where it is now. */
 	for (object = editor->scan.count + editor->line_count; object < editor->count; object++) {
 		change = &editor->changes[object];
-		if (change->state == EDITOR_DELETED || change->image == EDITOR_NONE)
+		if (change->state == EDITOR_DELETED || (change->image == EDITOR_NONE && !change->is_text))
 			continue;
 		memcpy(square, change->square, sizeof(square));
 		if (change->state == EDITOR_PLACED)
 			editor_multiply(change->square, change->placement, square);
+
+		/* A text, in the shown space (ws175-p005). */
+		if (change->is_text) {
+			error = editor_draw_text(editor, change, square, identity, font_prefix, content);
+			if (error != 0)
+				return error;
+			pdf_buffer_append(content, "\n", 1);
+			continue;
+		}
 
 		/* The document's image, drawn in the shown space. */
 		error = editor_write_image(writer, &editor->images[change->image], &name);
@@ -1835,7 +1987,7 @@ pdf_page_editor_set_text(
 			file = PDF_EDIT_FILE_MONO;
 		if (given.font == PDF_EDIT_FONT_CJK)
 			file = PDF_EDIT_FILE_FALLBACK;
-		error = editor_glyphs(editor, file, given.utf8, &glyphs, &glyph_count, &missing);
+		error = editor_glyphs(editor, file, given.utf8, 0, &glyphs, &glyph_count, &missing);
 		if (error == ENOTSUP)
 			*result = PDF_EDIT_TEXT_NEEDS_FONT;
 		if (error != 0)
@@ -1871,17 +2023,20 @@ pdf_page_editor_set_text(
 }
 
 /*
- * Turns words (UTF-8, one line) into glyphs of the replacement fonts: each
+ * Turns words (UTF-8) into glyphs of the replacement fonts: each
  * character the first font's, else the fallbacks' (JetBrains Mono, then
- * Droid Sans Fallback); one no font has is left out (*missing).  Returns
- * 0, EINVAL for words that are not UTF-8 or that break the line, ENOTSUP
- * when none of the fonts is installed, or ENOMEM.
+ * Droid Sans Fallback); one no font has is left out (*missing); a line
+ * break, where breaks are allowed (an inserted text), a glyph of no font
+ * (file PDF_EDIT_FILES).  Returns 0, EINVAL for words that are not UTF-8
+ * or that break a line where they may not, ENOTSUP when none of the fonts
+ * is installed, or ENOMEM.
  */
 static int
 editor_glyphs(
 	struct pdf_page_editor *editor,
 	unsigned file,
 	const char *utf8,
+	int breaks,
 	struct editor_glyph **glyphs,
 	size_t *count,
 	int *missing)
@@ -1914,9 +2069,9 @@ editor_glyphs(
 	if (!installed)
 		return ENOTSUP;
 
-	/* Room for a glyph a byte at most. */
+	/* Room for a glyph a byte at most, each on the first line, drawn. */
 	total = strlen(utf8);
-	made = malloc((total + 1U) * sizeof(*made));
+	made = calloc(total + 1U, sizeof(*made));
 	if (made == NULL)
 		return ENOMEM;
 
@@ -1927,13 +2082,26 @@ editor_glyphs(
 	*missing = 0;
 	while (position < total) {
 		used = editor_utf8(bytes + position, total - position, &character);
-		if (used == 0 || character == '\n' || character == '\r') {
+		if (used == 0 || (!breaks && (character == '\n' || character == '\r'))) {
 			free(made);
 			return EINVAL;
 		}
 
 		/* Past it. */
 		position += used;
+
+		/* A break (an inserted text's) is a glyph of no font, which starts a line. */
+		if (character == '\n') {
+			made[made_count].file = PDF_EDIT_FILES;
+			made[made_count].glyph = 0;
+			made[made_count].character = character;
+			made_count++;
+			continue;
+		}
+
+		/* A carriage return is part of a break. */
+		if (character == '\r')
+			continue;
 
 		/* The fonts in turn. */
 		glyph = 0;
@@ -1962,6 +2130,230 @@ editor_glyphs(
 	*glyphs = made;
 	*count = made_count;
 	return 0;
+}
+
+/* Turns an inserted text's words into glyphs, its breaks kept. */
+static int
+editor_text_glyphs(
+	struct pdf_page_editor *editor,
+	unsigned file,
+	const char *utf8,
+	struct editor_glyph **glyphs,
+	size_t *count,
+	int *missing)
+{
+	/* The glyphs, breaks allowed. */
+	return editor_glyphs(editor, file, utf8, 1, glyphs, count, missing);
+}
+
+/*
+ * Lays an inserted text out in lines: each glyph's line and place on it,
+ * at the text's size; a line breaks at a break, and past the box's width
+ * (when it has one) after the last space of the line, or before the glyph
+ * that does not fit when the line has none.  The box is as wide as asked
+ * (or as the longest line) and as high as its lines (1.2 of the size
+ * each).  Returns 0, or the failure of a font.
+ */
+static int
+editor_lay_out(
+	struct pdf_page_editor *editor,
+	struct editor_change *change)
+{
+	struct pdf_edit_fonts *fonts;
+	struct editor_glyph *glyph;
+	double width;
+	double x;
+	double widest;
+	size_t line;
+	size_t start;
+	size_t space;
+	size_t at;
+	size_t back;
+	int error;
+
+	/* The fonts; each glyph after the one before on its line. */
+	error = pdf_edit_fonts_of(editor->document, &fonts);
+	if (error != 0)
+		return error;
+	line = 0;
+	x = 0.0;
+	start = 0;
+	space = EDITOR_NONE;
+	widest = 0.0;
+	for (at = 0; at < change->glyph_count; at++) {
+		glyph = &change->glyphs[at];
+
+		/* A break starts the next line. */
+		if (glyph->file >= PDF_EDIT_FILES) {
+			glyph->line = line;
+			glyph->x = x;
+			if (x > widest)
+				widest = x;
+			line++;
+			x = 0.0;
+			start = at + 1U;
+			space = EDITOR_NONE;
+			continue;
+		}
+
+		/* The glyph's advance at the size. */
+		error = pdf_edit_font_advance(fonts, glyph->file, glyph->glyph, &width);
+		if (error != 0)
+			return error;
+		width *= change->text_size;
+
+		/* Past the box: the line breaks after its last space, or before the glyph. */
+		if (change->box[0] > 0.0 && x + width > change->box[0] && at > start) {
+			if (space != EDITOR_NONE && space + 1U < at) {
+				/* The space is not drawn; the glyphs after it go to the next line, from its start. */
+				change->glyphs[space].hidden = 1;
+				line++;
+				x = 0.0;
+				for (back = space + 1U; back < at; back++) {
+					change->glyphs[back].line = line;
+					change->glyphs[back].x = x;
+					error = pdf_edit_font_advance(fonts, change->glyphs[back].file, change->glyphs[back].glyph, &width);
+					if (error != 0)
+						return error;
+					x += width * change->text_size;
+				}
+
+				/* The next line starts after the space. */
+				start = space + 1U;
+			} else {
+				line++;
+				x = 0.0;
+				start = at;
+			}
+
+			/* The glyph's own advance again. */
+			space = EDITOR_NONE;
+			error = pdf_edit_font_advance(fonts, glyph->file, glyph->glyph, &width);
+			if (error != 0)
+				return error;
+			width *= change->text_size;
+		}
+
+		/* The glyph on its line. */
+		glyph->line = line;
+		glyph->x = x;
+		x += width;
+		if (x > widest)
+			widest = x;
+		if (glyph->character == ' ')
+			space = at;
+	}
+
+	/* The box: as wide as asked or as the longest line, as high as the lines. */
+	if (change->box[0] <= 0.0)
+		change->box[0] = widest;
+	if (change->box[0] <= 0.0)
+		change->box[0] = change->text_size;
+	change->box[1] = (double)(line + 1U) * change->text_size * EDITOR_TEXT_LEADING;
+	return 0;
+}
+
+/*
+ * Draws an inserted text in the space in force (ctm, the shown space's
+ * matrix from it): its colour, then each line's runs after a Tm that puts
+ * the line's start on its baseline in the box (the box's space mapped by
+ * square), each run of one font as two-byte CIDs.  Returns 0 or EINVAL.
+ */
+static int
+editor_draw_text(
+	const struct pdf_page_editor *editor,
+	const struct editor_change *change,
+	const double square[6],
+	const double ctm[6],
+	const char *font_prefix,
+	struct pdf_buffer *out)
+{
+	double inverse[6];
+	double line_matrix[6];
+	double matrix[6];
+	unsigned char pair[2];
+	size_t at;
+	size_t run;
+	size_t item;
+	int error;
+
+	/* The space in force's inverse. */
+	(void)editor;
+	error = editor_invert(ctm, inverse);
+	if (error != 0)
+		return EINVAL;
+
+	/* Its own level, its colour, a text object. */
+	pdf_buffer_append(out, " q ", 3);
+	for (item = 0; item < 3; item++) {
+		editor_number(out, change->color[item]);
+		pdf_buffer_append(out, " ", 1);
+	}
+
+	/* The colour's operator, and the text object. */
+	pdf_buffer_append(out, "rg BT ", 6);
+
+	/* Each run: a line's start or a font's change. */
+	at = 0;
+	while (at < change->glyph_count) {
+		/* A break, and the space a line breaks at, draw nothing. */
+		if (change->glyphs[at].file >= PDF_EDIT_FILES || change->glyphs[at].hidden) {
+			at++;
+			continue;
+		}
+
+		/* The run's start: its place on its line's baseline, the text's y upward, through square and the space's inverse. */
+		line_matrix[0] = 1.0;
+		line_matrix[1] = 0.0;
+		line_matrix[2] = 0.0;
+		line_matrix[3] = -1.0;
+		line_matrix[4] = change->glyphs[at].x;
+		line_matrix[5] = ((double)change->glyphs[at].line * EDITOR_TEXT_LEADING + EDITOR_TEXT_ASCENT) * change->text_size;
+		editor_multiply(line_matrix, square, matrix);
+		editor_multiply(matrix, inverse, matrix);
+		for (item = 0; item < 6; item++) {
+			editor_number(out, matrix[item]);
+			pdf_buffer_append(out, " ", 1);
+		}
+
+		/* The run's font at the text's size. */
+		pdf_buffer_printf(out, "Tm /%s%u ", font_prefix, change->glyphs[at].file);
+		editor_number(out, change->text_size);
+		pdf_buffer_append(out, " Tf <", 5);
+
+		/* The glyphs of one font on the line. */
+		for (run = at; run < change->glyph_count && change->glyphs[run].file == change->glyphs[at].file && change->glyphs[run].line == change->glyphs[at].line &&
+		     !change->glyphs[run].hidden; run++) {
+			pair[0] = (unsigned char)(change->glyphs[run].glyph >> 8);
+			pair[1] = (unsigned char)change->glyphs[run].glyph;
+			pdf_buffer_printf(out, "%02X%02X", pair[0], pair[1]);
+		}
+
+		/* The run shown. */
+		pdf_buffer_append(out, "> Tj ", 5);
+		at = run;
+	}
+
+	/* The text object and the level end. */
+	pdf_buffer_append(out, "ET Q ", 5);
+	return 0;
+}
+
+/* Gives the font file of a change's first glyph (Sans when it has none). */
+static unsigned
+editor_first_file(
+	const struct editor_change *change)
+{
+	size_t at;
+
+	/* The first glyph of a font. */
+	for (at = 0; at < change->glyph_count; at++) {
+		if (change->glyphs[at].file < PDF_EDIT_FILES)
+			return change->glyphs[at].file;
+	}
+
+	/* None. */
+	return PDF_EDIT_FILE_SANS;
 }
 
 /*
@@ -2018,8 +2410,10 @@ editor_fonts_used(
 	/* Each change's glyphs. */
 	used = 0;
 	for (object = 0; object < editor->count; object++) {
-		for (at = 0; at < editor->changes[object].glyph_count; at++)
-			used |= 1U << editor->changes[object].glyphs[at].file;
+		for (at = 0; at < editor->changes[object].glyph_count; at++) {
+			if (editor->changes[object].glyphs[at].file < PDF_EDIT_FILES)
+				used |= 1U << editor->changes[object].glyphs[at].file;
+		}
 	}
 
 	/* The fonts. */
@@ -2047,6 +2441,8 @@ editor_use_glyphs(
 			continue;
 		for (at = 0; at < editor->changes[object].glyph_count; at++) {
 			glyph = &editor->changes[object].glyphs[at];
+			if (glyph->file >= PDF_EDIT_FILES)
+				continue;
 			error = pdf_writer_use_glyph(writer, glyph->file, glyph->glyph, glyph->character);
 			if (error != 0)
 				return error;
@@ -2721,16 +3117,31 @@ editor_quad(
 {
 	static const double unit[8] = { 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0 };
 	const struct editor_change *change;
+	double box[8];
 	double square[6];
 	double placed[8];
 	int fitted;
 
-	/* An inserted image: its square where its placement takes it. */
+	/* An inserted image: its square where its placement takes it; an inserted text: its box (ws175-p005). */
 	change = &editor->changes[index];
 	if (change->inserted) {
 		memcpy(square, change->square, sizeof(square));
 		if (change->state == EDITOR_PLACED)
 			editor_multiply(change->square, change->placement, square);
+		if (change->is_text) {
+			box[0] = 0.0;
+			box[1] = 0.0;
+			box[2] = change->box[0];
+			box[3] = 0.0;
+			box[4] = change->box[0];
+			box[5] = change->box[1];
+			box[6] = 0.0;
+			box[7] = change->box[1];
+			editor_corners(square, box, quad);
+			return;
+		}
+
+		/* An image's unit square. */
 		editor_corners(square, unit, quad);
 		return;
 	}

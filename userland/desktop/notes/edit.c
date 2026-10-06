@@ -723,6 +723,20 @@ edit_apply(
 	for (at = 0; at < 6U; at++)
 		transform[at] = (double)edit->transform[at];
 
+	/* An inserted text (ws175-p005): its words, font, size, colour and width, its box placed by the transform. */
+	if ((edit->flags & (NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT)) == (NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT)) {
+		memset(&words, 0, sizeof(words));
+		words.size = sizeof(words);
+		words.utf8 = edit->text;
+		words.font = (enum pdf_edit_font)edit->font;
+		words.font_size = (double)edit->text_size;
+		words.red = (double)((edit->color >> 24) & 0xffU) / 255.0;
+		words.green = (double)((edit->color >> 16) & 0xffU) / 255.0;
+		words.blue = (double)((edit->color >> 8) & 0xffU) / 255.0;
+		words.box_width = (double)edit->box_width;
+		return pdf_page_editor_insert_text(editor, &words, transform, &index, &result);
+	}
+
 	/* An inserted image. */
 	if ((edit->flags & NOTES_EDIT_INSERTED) != 0U) {
 		if (edit->image == NULL)

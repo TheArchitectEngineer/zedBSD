@@ -176,6 +176,15 @@
 static struct kwl_text_input ime_field;
 static char ime_field_text[KWL_TITLEBAR_TEXT_MAX + 1U];
 
+/*
+ * Which of zdesktop's own fields ime_field stands for: a title bar's
+ * (its window's surface), or App Home's search (ws090-p022: no surface,
+ * its rectangle the output's).
+ */
+#define IME_FIELD_TITLEBAR		1U
+#define IME_FIELD_HOME			2U
+static unsigned ime_field_kind;
+
 static void ime_spawn(struct kwl_server *server, uint64_t now);
 static struct kwl_client *ime_connect(struct kwl_server *server, int descriptor);
 static void ime_lost(struct kwl_server *server);
@@ -831,6 +840,29 @@ kwl_ime_field_key(
 
 	/* Succeeded: the input method has it. */
 	return 1;
+}
+
+/*
+ * Gives a key press to the input method before App Home takes it, while
+ * Home's search is the text input served (ws090-p022).  Returns nonzero
+ * when taken.
+ */
+int
+kwl_ime_home_key(
+	struct kwl_server *server,
+	uint32_t time,
+	uint32_t key,
+	uint32_t state)
+{
+	int taken;
+
+	/* Only while Home's search is served. */
+	if (ime_field_kind != IME_FIELD_HOME)
+		return 0;
+
+	/* As zdesktop's other own field. */
+	taken = kwl_ime_field_key(server, time, key, state);
+	return taken;
 }
 
 /*
@@ -1681,7 +1713,11 @@ ime_activate(
 	ime_rectangles(server);
 	server->dirty = 1;
 
-	/* Logged: zdesktop's own field has no object of its own. */
+	/* Logged: zdesktop's own field has no object of its own (Home's search no window either). */
+	if (input == &ime_field && ime_field_kind == IME_FIELD_HOME) {
+		printf("ZWL IME activate field home\n");
+		return;
+	}
 	if (input == &ime_field) {
 		printf("ZWL IME activate field client=%llu surface=%u\n", (unsigned long long)input->surface->client->number, input->surface->id);
 		return;
@@ -1855,22 +1891,30 @@ ime_popup_place(
 	struct kwl_object *window;
 	uint32_t width;
 	uint32_t height;
+	int32_t origin_x;
+	int32_t origin_y;
 	int32_t below;
 	int32_t above;
 
-	/* The text input's surface, where the rectangle is. */
+	/* The text input's surface, where the rectangle is (Home's search has none: the rectangle is the output's). */
 	input = server->ime->active;
 	window = input->surface;
-	if (window == NULL || window->dead)
-		return 0;
+	origin_x = 0;
+	origin_y = 0;
+	if (input != &ime_field || ime_field_kind != IME_FIELD_HOME) {
+		if (window == NULL || window->dead)
+			return 0;
+		origin_x = window->x;
+		origin_y = window->y;
+	}
 
 	/* The popup's size. */
 	kwl_surface_size(surface, &width, &height);
 
 	/* Below the rectangle, at its left. */
-	*x = window->x + input->rectangle[0];
-	below = window->y + input->rectangle[1] + input->rectangle[3] + IME_POPUP_GAP;
-	above = window->y + input->rectangle[1] - IME_POPUP_GAP - (int32_t)height;
+	*x = origin_x + input->rectangle[0];
+	below = origin_y + input->rectangle[1] + input->rectangle[3] + IME_POPUP_GAP;
+	above = origin_y + input->rectangle[1] - IME_POPUP_GAP - (int32_t)height;
 	*y = below;
 	if (below + (int32_t)height > (int32_t)server->height && above >= 0)
 		*y = above;
@@ -1905,6 +1949,13 @@ ime_keyboard_key(
 	if (key >= KWL_IME_KEYS) {
 		kwl_seat_key_deliver(server, time, key, state);
 		return;
+	}
+
+	/* Home's search served: every key is Home's while it is open (home.c, ws090-p022). */
+	if (ime->active == &ime_field && ime_field_kind == IME_FIELD_HOME) {
+		taken = kwl_home_key(server, key, state);
+		if (taken)
+			return;
 	}
 
 	/* zdesktop's own field served: its keys are the field's (titlebar-shell.c), the rest the application's. */
@@ -2507,11 +2558,25 @@ ime_current(
 	struct kwl_object *surface;
 	int known;
 
+	/* App Home's search, while Home is open (ws090-p022). */
+	known = kwl_home_field_state(server, ime_field_text, sizeof(ime_field_text), &ime_field.cursor, &ime_field.anchor, ime_field.rectangle);
+	if (known) {
+		ime_field_kind = IME_FIELD_HOME;
+		ime_field.surface = NULL;
+		ime_field.text = ime_field_text;
+		ime_field.enabled = 1;
+		ime_field.cause = 0;
+		ime_field.hint = 0;
+		ime_field.purpose = 0;
+		return &ime_field;
+	}
+
 	/* zdesktop's own field, when one has the keyboard. */
 	surface = kwl_titlebar_field_surface(server);
 	if (surface != NULL) {
 		known = kwl_titlebar_field_state(server, ime_field_text, sizeof(ime_field_text), &ime_field.cursor, &ime_field.anchor, ime_field.rectangle);
 		if (known) {
+			ime_field_kind = IME_FIELD_TITLEBAR;
 			ime_field.surface = surface;
 			ime_field.text = ime_field_text;
 			ime_field.enabled = 1;
@@ -2544,6 +2609,12 @@ ime_deliver(
 	uint32_t before,
 	uint32_t after)
 {
+	/* App Home's search (ws090-p022). */
+	if (input == &ime_field && ime_field_kind == IME_FIELD_HOME) {
+		kwl_home_field_input(server, preedit, commit, before);
+		return;
+	}
+
 	/* zdesktop's own field. */
 	if (input == &ime_field) {
 		kwl_titlebar_field_input(server, preedit, commit, before, after);

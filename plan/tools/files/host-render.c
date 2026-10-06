@@ -23,6 +23,7 @@
  *   move=X,Y  click=X,Y[:MODS]  double=X,Y  right=X,Y  press=X,Y  release=X,Y  scroll=PIXELS
  *   key=CODE[:MODS]  (evdev code; MODS a sum of 1 shift, 2 ctrl, 4 alt)
  *   text=STRING      (types ASCII letters, digits, '.', '-', '_' and ' ' as keys)
+ *   commit=TEXT  compose=TEXT  (an input method's text committed, or being composed, ws090-p022)
  *   wait=MS          (lets time pass and runs the ticks)
  *   hits             (prints the clickable regions of the last frame)
  *   draw=PATH        (draws the frame into a PPM picture)
@@ -234,6 +235,15 @@ main(
 				printf("hit kind=%u index=%d x=%d y=%d width=%d height=%d\n", app.hits[x].kind, app.hits[x].index, app.hits[x].rect.x, app.hits[x].rect.y, app.hits[x].rect.width, app.hits[x].rect.height);
 		} else if (strncmp(argv[index], "text=", 5) == 0) {
 			host_type(&app, argv[index] + 5, &now);
+		} else if (strncmp(argv[index], "commit=", 7) == 0 || strncmp(argv[index], "compose=", 8) == 0) {
+			/* An input method's text, committed or being composed (ws090-p022). */
+			memset(&event, 0, sizeof(event));
+			event.type = FM_EVENT_TEXT;
+			if (argv[index][1] == 'o' && argv[index][2] == 'm' && argv[index][3] == 'p')
+				event.type = FM_EVENT_PREEDIT;
+			(void)snprintf(event.text, sizeof(event.text), "%s", strchr(argv[index], '=') + 1);
+			event.time = now;
+			fm_ui_event(&app, &event);
 		} else if (sscanf(argv[index], "wait=%d", &x) == 1) {
 			now += (uint64_t)x;
 			fm_ui_tick(&app, now);

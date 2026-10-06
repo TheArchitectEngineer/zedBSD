@@ -1063,8 +1063,11 @@ kwl_seat_key(
 	if (taken)
 		return;
 
-	/* The glass look's own keys, in that order. */
+	/* The glass look's own keys, in that order (Home's search first to the input method serving it, ws090-p022). */
 	if (server->glass) {
+		taken = kwl_ime_home_key(server, time, key, state);
+		if (taken)
+			return;
 		taken = kwl_home_key(server, key, state);
 		if (taken)
 			return;

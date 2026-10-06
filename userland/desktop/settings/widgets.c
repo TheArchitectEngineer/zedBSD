@@ -613,12 +613,10 @@ se_field_key(
 	if ((event->modifiers & (SE_MOD_CTRL | SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
 		return 0;
 
-	/* Backspace takes the last character away. */
+	/* Backspace takes the last character away, all its bytes. */
 	if (event->key == SE_KEY_BACKSPACE) {
-		if (field->length > 0) {
-			field->length--;
-			field->text[field->length] = '\0';
-		}
+		if (field->length > 0)
+			se_field_delete_before(field, 1U);
 
 		/* The field used the key, also when it was empty. */
 		return 1;
@@ -652,6 +650,59 @@ se_field_key(
 
 	/* The field used the key. */
 	return 1;
+}
+
+/*
+ * Puts an input method's committed text at the end of a field (ws090-p022):
+ * without control characters, as much as fits, cut at a character's start.
+ */
+void
+se_field_insert(
+	struct se_field *field,
+	const char *text)
+{
+	size_t at;
+	size_t length;
+	unsigned char byte;
+
+	/* Each byte that is no control character, while there is room. */
+	length = field->length;
+	for (at = 0; text[at] != '\0' && length + 1U < sizeof(field->text); at++) {
+		byte = (unsigned char)text[at];
+		if (byte < 0x20U || byte == 0x7fU)
+			continue;
+		field->text[length] = (char)byte;
+		length++;
+	}
+
+	/* A character the room cut goes whole. */
+	while (((unsigned char)text[at] & 0xc0U) == 0x80U && length > field->length) {
+		at--;
+		length--;
+	}
+	field->text[length] = '\0';
+	field->length = length;
+}
+
+/*
+ * Deletes at least a number of bytes from a field's end, back to a
+ * character's start (Backspace, or an input method's deletion).
+ */
+void
+se_field_delete_before(
+	struct se_field *field,
+	size_t bytes)
+{
+	/* The bytes, or all of them. */
+	if (bytes >= field->length)
+		field->length = 0;
+	else
+		field->length -= bytes;
+
+	/* Back to a character's start. */
+	while (field->length > 0 && ((unsigned char)field->text[field->length] & 0xc0U) == 0x80U)
+		field->length--;
+	field->text[field->length] = '\0';
 }
 
 /*
