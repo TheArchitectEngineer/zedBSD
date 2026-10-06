@@ -3,11 +3,13 @@
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
-    make-m4a.py FOLDER     (writes the tests' collection under FOLDER/Music and two files beside it)
+    make-m4a.py FOLDER          (writes the tests' collection under FOLDER/Music and two files beside it)
+    make-m4a.py --view FOLDER   (a collection for the view's pictures, with covers PIL draws, under FOLDER/Music)
 
 The files have a movie header, tracks with their handlers (sound, pictures), the iTunes-style list of tags, and an
 empty media box; tags.c reads only those.  Their packets are not there: Music's player is not tested with them.
 """
+import io
 import struct
 import sys
 from pathlib import Path
@@ -100,5 +102,49 @@ def main() -> None:
 	m4a(folder / "film.m4a", {"\xa9nam": "Film"}, handlers=(b"vide",))
 
 
+def cover(top, bottom, shape, kind="JPEG") -> bytes:
+	"""A cover of 300 pixels: a gradient with a shape on it, as a JPEG or a PNG."""
+	from PIL import Image, ImageDraw
+	image = Image.new("RGB", (300, 300))
+	draw = ImageDraw.Draw(image)
+	for y in range(300):
+		mix = y / 299
+		draw.line([(0, y), (299, y)], fill=tuple(int(a + (b - a) * mix) for a, b in zip(top, bottom)))
+	if shape == "sun":
+		draw.ellipse((90, 70, 210, 190), fill=(255, 236, 170))
+		draw.rectangle((0, 220, 299, 299), fill=(40, 52, 90))
+	elif shape == "waves":
+		for index in range(5):
+			draw.arc((-60, 60 + index * 40, 360, 200 + index * 40), 200, 340, fill=(255, 255, 255), width=6)
+	else:
+		draw.polygon([(150, 40), (260, 250), (40, 250)], fill=(250, 250, 250))
+	data = io.BytesIO()
+	image.save(data, kind)
+	return data.getvalue()
+
+
+def view_collection(folder: Path) -> None:
+	"""Three albums with covers (JPEG and PNG), one without, for the view's pictures."""
+	music = folder / "Music"
+	sunrise = cover((255, 140, 90), (120, 60, 160), "sun")
+	tides = cover((40, 170, 200), (20, 60, 120), "waves", "PNG")
+	peaks = cover((90, 90, 100), (30, 30, 40), "peak")
+	songs = [
+		("Sunrise", "Aiko Mori", ["Morning Light", "Golden Hour", "Coffee and Rain", "Slow Walk Home", "Sunrise"], sunrise),
+		("Tides", "The Harbour", ["Low Tide", "Lighthouse", "Salt Air", "Northern Pier"], tides),
+		("Peaks", "Ben Carter", ["First Snow", "The Ridge", "Thin Air"], peaks),
+	]
+	for album, artist, titles, art in songs:
+		for number, title in enumerate(titles, 1):
+			m4a(music / album / f"{number:02d} {title}.m4a", {"\xa9nam": title, "\xa9ART": artist, "\xa9alb": album,
+				"trkn": number, "covr": art}, 150000 + number * 23000)
+	m4a(music / "Demos/rough.m4a", {"\xa9nam": "Rough Idea", "\xa9ART": "Carol Diaz", "\xa9alb": "Demos", "trkn": 1}, 95000)
+	m4a(music / "Demos/guest.m4a", {"\xa9nam": "Guest Verse", "\xa9ART": "Ben Carter", "aART": "Carol Diaz",
+		"\xa9alb": "Demos", "trkn": 2}, 132000)
+
+
 if __name__ == "__main__":
-	main()
+	if len(sys.argv) == 3 and sys.argv[1] == "--view":
+		view_collection(Path(sys.argv[2]))
+	else:
+		main()

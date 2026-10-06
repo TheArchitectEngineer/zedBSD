@@ -16,10 +16,21 @@ Queue: q831（2026-10-07、P2）
 - build: `Makefile`（package `music`）、`platform/amd64/vmunix.mk` の link の規則と filter-out の一覧。Files の `audio/mp4` → Music（`userland/desktop/files/apps.c`）、App Home の「Music」（`userland/desktop/wayland/apps.conf`）。
 - 試験: host の view の PNG（`plan/ws120/tests/run-host-music.sh`）、QEMU は T1（AAT の `apps.music.*`）。
 
-## 確かめ
+## 実装（2026-10-07、P2）
 
-- host の PNG、zedBSD の build の warning 0、style-check 0。
-- QEMU: T1（未依頼）。
+- `music/play.c`・`play.h`（再生の thread、mediafile と videoplayer の codec.c・audio.c）、`cover.c`（JPEG・PNG の cover を 160 px の正方形に）、`view.c`、`main.c`、`Makefile`。
+- `platform/amd64/vmunix.mk`: `music` の link の規則（png・z・jpeg・gif の compat）と filter-out の一覧。
+- Files: `userland/desktop/files/apps.c` の built-in に `audio/mp4` → Music。App Home: `userland/desktop/wayland/apps.conf` に Music、`icons.c`・`icons.h` に音符の picture（`GLASS_ICON_APP_MUSIC`、名前 `music`、app ID `music`）。
+- AAT: `plan/tools/aat/scenarios/aatlib.py`（APPS・PROGRAMS に Music）、`helpers_apps.py`（open-from-home）、`helpers_music.py`（`apps.music.play`）、`tests/scenarios/apps/music/{open-from-home,play}.md`。
+- 試験の image: `plan/ws120/tests/config-amd64-music.mk`（AAT の image＋music。AAT の image は beta2 の config で libavcodec・audiod 入り）。
+
+## 確かめ（2026-10-07、P2）
+
+- host: `sh plan/ws120/tests/run-host-music.sh` → PASS 10（cover の JPEG・PNG の decode、album の選択、Play、Next、再生・一時停止の button、1 回の click は選ぶだけ・double click で再生、Space、All Songs）。PNG: all・album・playing・glass・search・no-codec・empty（`build/review/ws120/`）。
+- host: ffmpeg で作った m4a（AAC、cover 付き）を tags.c が読む（題・artist・album・番号・8000 ms・cover 857 byte・音だけ）。
+- zedBSD: `make -j16 ZEDBSD_CONFIG=plan/ws120/tests/config-amd64-music.mk BUILD=build/ws120-zed build/ws120-zed/bin/music build/ws120-zed/bin/files build/ws120-zed/bin/wayland` warning 0。
+- style-check 0（music の全 file）。check-scenarios PASS。
+- QEMU: T1（AAT の `apps.music.open-from-home`・`apps.music.play`）、未実施。
 
 ## 積み残し
 

@@ -22,7 +22,7 @@ run = aatlib.Run.from_command_line("helpers_apps")
 # The scenario's directory under apps/ for each application App Home lists.
 DIRECTORIES = {
 	"files": "Files", "notes": "Notes", "settings": "Settings", "terminal": "Terminal", "pdfviewer": "PDF Viewer",
-	"imageview": "Image Viewer", "videoplayer": "Video Player", "phone": "Phone", "calendar": "Calendar",
+	"imageview": "Image Viewer", "videoplayer": "Video Player", "music": "Music", "phone": "Phone", "calendar": "Calendar",
 	"mailer": "Mail", "textedit": "Text Editor", "monitor": "System Monitor", "browser": "Browser",
 }
 

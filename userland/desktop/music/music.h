@@ -108,28 +108,47 @@ struct mu_request {
 #define MU_PAUSED		2U
 
 /* The most songs a list shows. */
-#define MU_LIST_MAX		1024U
+#define MU_LIST_MAX		4096U
+
+/* The side of an album's picture made from its cover (pixels). */
+#define MU_COVER_SIDE		160
 
 /*
- * The view's state: the album chosen (-1 for every song), the search, the
- * scrolls of the albums and of the songs, the song playing (-1 for none)
- * and the player's state, position and length (seconds, as the window last
- * told), what the position slider holds while it is dragged, the reason
- * playing cannot be (empty for none), the requests for the window, the
- * notice at the bottom until a time, whether the window stands on glass,
- * and whether the program is to end.
+ * The view's state.
+ *
+ * What is shown: the album chosen (-1 for every song), the search, the
+ * scrolls of the albums and of the songs, and the song chosen in the list
+ * (-1 for none).
+ *
+ * What plays, as the window last told: the song (-1 for none), the
+ * player's state (MU_*), its position and the song's length (seconds),
+ * and why playing cannot be (empty for nothing).
+ *
+ * The position's slider: its value, which follows the position except for
+ * a while after the user moved it (until then), and a seek it asked that
+ * is not yet sent with when the last one was.
+ *
+ * The requests for the window, the notice at the bottom until a time,
+ * whether the window stands on glass, and whether the program is to end.
  */
 struct mu_view {
 	long album;
 	struct kl_field search;
 	struct kl_scroll albums_scroll;
 	struct kl_scroll songs_scroll;
+	long chosen;
+
 	long playing;
 	unsigned state;
 	double position;
 	double length;
-	double slider;
 	char problem[MU_TEXT_MAX];
+
+	double slider;
+	uint64_t slider_until;
+	int seek_pending;
+	uint64_t seek_at;
+
 	struct mu_request requests[MU_REQUESTS_MAX];
 	size_t request_count;
 	char notice[160];
@@ -151,16 +170,21 @@ size_t mu_library_list(long album, const char *search, size_t *indices, size_t c
 long mu_library_next(long song, int step);
 void mu_library_release(void);
 
+/* The picture of a cover (cover.c). */
+int mu_cover_picture(const unsigned char *data, size_t size, int side, struct kl_image *image);
+
 /* The view (view.c). */
 int mu_view_init(struct mu_view *view);
 void mu_view_release(struct mu_view *view);
 void mu_view_action(struct mu_view *view, unsigned action, uint64_t now_us);
+void mu_view_key(struct mu_view *view, uint32_t key, unsigned modifiers, uint64_t now_us);
+int mu_view_wait(const struct mu_view *view, uint64_t now_us);
 void mu_view_draw(struct mu_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 size_t mu_view_panels(const struct mu_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int mu_view_take_request(struct mu_view *view, struct mu_request *request);
 void mu_view_notice(struct mu_view *view, const char *message, uint64_t now_us);
 
 /* The log for the tests (main.c, and the host tests' own). */
-void mu_log(const char *format, ...);
+void mu_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
 #endif
