@@ -93,7 +93,7 @@ finish form.log
 # 2. amazon.co.jp: the search field, typing, Enter, the results.
 if [ $amazon = 1 ]; then
 	f=userland/desktop/fonts
-	field=$(build/ws074-host/plain/browser --dump=layout --width=1200 --height=690 --font=$f/Inter.ttf \
+	field=$(build/ws074-host/plain/browser --dump=layout --width=1200 --height=690 --font=$f/Mahora-Regular.ttf \
 	    --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf build/ws074-amazon/top-local-noscript.html 2>/dev/null |
 	    awk '$1 == "line" { y = $3; h = $5 } $1 == "replaced" && $NF == "text" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }
 	        $1 == "block" && $2 == "<input>" && $NF == "text" { printf "%d %d\n", $3 + $5 / 2, $4 + 20; exit }')

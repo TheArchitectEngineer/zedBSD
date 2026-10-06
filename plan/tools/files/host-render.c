@@ -12,7 +12,7 @@
  *   files-render [OPTION]... ACTION...
  *
  * Options (before the actions):
- *   --font=PATH --fallback=PATH   the fonts (default userland/desktop/fonts/Inter.ttf, the tree's)
+ *   --font=PATH --fallback=PATH   the fonts (default userland/desktop/fonts/Mahora-Regular.ttf, the tree's)
  *   --size=WxH                    the window's size (default 1120x720)
  *   --start=PATH                  the folder shown first (default: the home dashboard)
  *   --wallpaper=PATH              the dashboard's picture (default /usr/share/keiland/wallpaper.png)
@@ -78,7 +78,7 @@ main(
 	int y;
 
 	/* The options. */
-	font = "userland/desktop/fonts/Inter.ttf";
+	font = "userland/desktop/fonts/Mahora-Regular.ttf";
 	fallback = NULL;
 	start = NULL;
 	wallpaper = NULL;

@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 
 # The tiles, the wallpaper and App Home's list as ws128's host pictures read them.
 SPEC = importlib.util.spec_from_file_location('tile_screens', os.path.join(ROOT, 'plan/ws128/tests/tile-screens.py'))

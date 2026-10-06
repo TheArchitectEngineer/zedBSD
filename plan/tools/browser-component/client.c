@@ -154,7 +154,7 @@ main(
 	memset(&b, 0, sizeof(b));
 
 	/* Keeps borrowed font paths alive for both views. */
-	fonts.sans = "build/ws035-fonts/Inter.ttf";
+	fonts.sans = "build/ws035-fonts/Mahora-Regular.ttf";
 	fonts.mono = "build/ws035-fonts/JetBrainsMono-Regular.ttf";
 	fonts.fallback = "build/ws035-fonts/DroidSansFallbackFull.ttf";
 

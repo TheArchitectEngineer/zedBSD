@@ -8,7 +8,7 @@
 set -eu
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 out=${1:-$root/build/ws081-p012-host}
-font=${2:-userland/desktop/fonts/Inter.ttf}
+font=${2:-userland/desktop/fonts/Mahora-Regular.ttf}
 cc=${CC:-clang}
 mkdir -p "$out/include"
 ln -sfn "$root/include/libc/compat" "$out/include/compat"

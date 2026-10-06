@@ -45,7 +45,7 @@ shot() {
 # The linked image's middle in the page at 900 wide, from the host's layout: "x y".
 f=userland/desktop/fonts
 python3 plan/ws074/tests/make-test-images.py >/dev/null
-link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
+link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Mahora-Regular.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf "$(pwd)/build/ws074-images/images.html" |
     awk '$1 == "line" { y = $3; h = $5; b = $7 } $1 == "replaced" && $4 == "24.00" { printf "%d %d\n", $2 + $4 / 2, b - $6 / 2; exit }')
 echo "linked image: at $link in the page"

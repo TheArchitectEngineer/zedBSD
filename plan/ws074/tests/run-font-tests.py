@@ -48,7 +48,7 @@ def main():
     fonts = os.path.join(ROOT, "userland/desktop/fonts")
     page = os.path.join(ROOT, "build/ws074-images/fonts.html")
     dump = subprocess.run([arguments.program, "--dump=paint", "--width=800", "--height=400",
-                           "--font=" + os.path.join(fonts, "Inter.ttf"),
+                           "--font=" + os.path.join(fonts, "Mahora-Regular.ttf"),
                            "--mono-font=" + os.path.join(fonts, "JetBrainsMono-Regular.ttf"),
                            "--fallback-font=" + os.path.join(fonts, "DroidSansFallbackFull.ttf"), page],
                           check=True, capture_output=True, text=True, timeout=120).stdout

@@ -148,7 +148,7 @@ main(
 		goto cleanup;
 
 	/* Install ordinary host display resources on the complete parent. */
-	fonts.sans = "userland/desktop/fonts/Inter.ttf";
+	fonts.sans = "userland/desktop/fonts/Mahora-Regular.ttf";
 	fonts.mono = "userland/desktop/fonts/JetBrainsMono-Regular.ttf";
 	fonts.fallback = "userland/desktop/fonts/DroidSansFallbackFull.ttf";
 	page_set_console(page, svg_console, NULL);

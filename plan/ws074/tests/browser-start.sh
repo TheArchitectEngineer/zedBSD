@@ -42,7 +42,7 @@ shot() {
 
 # The link's middle in the page at 1000 wide, from the host's layout: "x y".
 f=userland/desktop/fonts
-link=$(build/ws074-host/plain/browser --dump=layout --width=1000 --height=700 --font=$f/Inter.ttf \
+link=$(build/ws074-host/plain/browser --dump=layout --width=1000 --height=700 --font=$f/Mahora-Regular.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf \
     userland/desktop/browser/data/start.html |
     awk '$1 == "line" { y = $3; h = $5 } $1 == "text" && $NF == "\"About\"" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }')

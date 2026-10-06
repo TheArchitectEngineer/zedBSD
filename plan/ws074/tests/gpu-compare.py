@@ -35,7 +35,7 @@ def draw(program, mode, page, width, height, out):
     if not os.path.isdir(fonts):
         fonts = os.path.join(ROOT, "userland/desktop/fonts")
     subprocess.run([program, mode, "--output=" + out, "--width=%d" % width, "--height=%d" % height,
-                    "--font=" + os.path.join(fonts, "Inter.ttf"),
+                    "--font=" + os.path.join(fonts, "Mahora-Regular.ttf"),
                     "--mono-font=" + os.path.join(fonts, "JetBrainsMono-Regular.ttf"),
                     "--fallback-font=" + os.path.join(fonts, "DroidSansFallbackFull.ttf"), page], check=True)
 

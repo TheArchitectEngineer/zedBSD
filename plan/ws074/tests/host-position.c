@@ -13,7 +13,7 @@
  *
  *   host-position PAGES SANS MONO FALLBACK
  *
- * (PAGES: plan/ws074/tests/pages; the fonts: build/ws035-fonts/Inter.ttf,
+ * (PAGES: plan/ws074/tests/pages; the fonts: build/ws035-fonts/Mahora-Regular.ttf,
  * JetBrainsMono-Regular.ttf, DroidSansFallbackFull.ttf).  The expected
  * places are Chromium's for the same page at 800 by 450.  Prints one line
  * per failed check and a summary.
