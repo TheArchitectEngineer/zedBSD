@@ -2,7 +2,7 @@
 
 # ws122-p003: 独自の container の読み込み（MP4・Matroska/WebM の demux）
 
-Status: in-progress（実装と host の試験は済み。player への接続は p004、判定は Q1）
+Status: test-wait（2026-10-07 q831 P2: 実装と host の試験は済み、p004 が player に接続し T1-191 PASS（mp4 の container で再生・seek）。cleared の判定は Q1）
 Disposition: normal
 Parent: [WS122](../ws.md)
 Queue: Q1（ベータ2 の割り当て、P2 の 2 番目）
@@ -41,3 +41,7 @@ ws.md の段 2 の前半: FFmpeg を使わずに file を読み、track と pack
   - 変異の試験（手で 1 回、host、ASan・UBSan・leak）: 5 つの file の切り詰めと byte の書き換え 640 通りで、crash・ASan・UBSan の報告 0。
   - zedBSD の target の clang（amd64 の sysroot）で 3 つの file が warning 0 で compile できる。style-check は違反 0。
 - 未実施: QEMU（player につないだ後の p004 で）。fragmented MP4、MPEG-TS・Ogg・AVI。
+
+## 2026-10-07 q831 P2: 記録
+
+- 成果は p004（cleared、T1-191: `container=mp4`、dlopen の libavcodec で再生・seek）と WS120 の Music（m4a の音の track）が使っている。fragmented MP4・MPEG-TS・AVI・Ogg は範囲外のまま（[WS177 backlog-p2](../../ws177/backlog-p2.md) の WS122 の行）。

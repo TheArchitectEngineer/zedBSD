@@ -113,3 +113,6 @@
 | WS120 ws120-p009 | 再生中の decode の失敗、audiod の切断、曲の file の消失、Files から開いた曲が再生できない時 | 理由を出して次へ・再接続（今は失敗の notice だけ、切断は止まる） | `music/play.c`・`main.c` | 2026-10-07 |
 | WS120 ws120-p009 | 検索の field に focus がある時の Space、Previous の 3 秒の規則、Next の連打 | 振る舞いの見直し（今は field が Space を取る、3 秒より後は曲の始めへ） | `music/view.c`・`main.c` | 2026-10-07 |
 | WS169 ws169-p005（Browser の code の入力） | titlebar の「Code NNNN」を押した時に page の欄に keyboard が無い（欄の外を click した後など） | 欄が無い・focus が無い時は clipboard に写して知らせる、または page の最初の code の欄（`autocomplete=one-time-code`）に入れる（今は focus の無い page に key を送り、何も入らない） | `browser/shell/mail.c` の `shell_mail_fill` | 2026-10-07 |
+| WS122 ws122-p003（mediafile） | fragmented MP4（moof）、MPEG-TS・AVI・Ogg、壊れた index | 読む・知らせる（今は MP4・MOV・Matroska・WebM の普通の index だけ） | `mediafile/mp4.c`・`mkv.c` | 2026-10-07 |
+| WS122 ws122-p004（player） | libavcodec が無い時の映像と音 | GPU の decode（WS083 の Vulkan Video）、独自の AAC の decoder（D-AAC「独自は後」）（今は libavcodec の add-in が無ければ「Playing needs libavcodec」） | `videoplayer/codec.c` | 2026-10-07 |
+| WS122 ws122-p005b（game mode） | pointer が動くたびの swapchain の閉じ・作り直し、cursor の描画 | cursor plane、閉じずに直と合成を行き来（今は pointer が動くと合成に戻り、2 秒止まると直に戻る。QEMU で数百 ms） | `wayland/scanout.c` | 2026-10-07 |
