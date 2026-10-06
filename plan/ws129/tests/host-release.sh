@@ -50,7 +50,7 @@ git clone -q --no-tags "$top" "$clone"
 cp tools/release/release-tag.sh "$clone/tools/release/release-tag.sh"
 (
 	cd "$clone"
-	printf '1.0.0-beta1\n' > VERSION
+	printf '1.0.0-beta2\n' > VERSION
 	git add -A && git -c user.name=t -c user.email=t@t commit -qm WIP --allow-empty
 	git tag zedbsd-1.0.0-beta2-rc1
 	echo x > note && git add note && git -c user.name=t -c user.email=t@t commit -qm WIP
@@ -94,9 +94,9 @@ EOF
 mkdir -p "$build/run/artifacts" "$build/run/docs/release"
 printf 'image\n' > "$build/run/artifacts/zedbsd-1.0.0-beta2-amd64.img.gz"
 printf 'zip\n' > "$build/run/artifacts/zedbsd-1.0.0-beta2-windows.zip"
-refused "step without notes" sh -c "cd '$build/run' && VERSION=1.0.0-beta1 sh '$build/step.sh'"
+refused "step without notes" sh -c "cd '$build/run' && VERSION=1.0.0-beta2 sh '$build/step.sh'"
 printf 'notes\n' > "$build/run/docs/release/zedbsd-1.0.0-beta2.md"
-ok "step" sh -c "cd '$build/run' && VERSION=1.0.0-beta1 sh '$build/step.sh'"
+ok "step" sh -c "cd '$build/run' && VERSION=1.0.0-beta2 sh '$build/step.sh'"
 ok "SHA256SUMS" sh -c "cd '$build/run/artifacts' && sha256sum -c SHA256SUMS && test \$(wc -l < SHA256SUMS) = 2"
 ok "notes taken" cmp -s "$build/run/docs/release/zedbsd-1.0.0-beta2.md" "$build/run/artifacts/notes.md"
 
