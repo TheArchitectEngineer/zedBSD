@@ -2,4 +2,5 @@ wheel:x:0:root,kei
 network:x:69:kei
 sshd:x:22:
 _greeter:x:78:
+_passkey:x:79:
 kei:x:1000:

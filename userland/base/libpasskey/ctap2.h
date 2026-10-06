@@ -127,7 +127,9 @@ struct pk_make_request {
 /*
  * The new credential, read from the key's authenticator data by the
  * library itself: its ID, its COSE public key (ES256 on P-256, checked to
- * be on the curve), its signature count, and the flags.
+ * be on the curve), its signature count, and the flags; and the
+ * authenticator data as the key gave it (ws172-p003: the process that
+ * keeps the credential reads it again with pk_ctap2_read_made).
  */
 struct pk_made_credential {
 	uint8_t flags;
@@ -136,6 +138,8 @@ struct pk_made_credential {
 	uint8_t cose_key[PK_COSE_KEY_MAX];
 	size_t cose_key_size;
 	uint32_t sign_count;
+	uint8_t auth_data[PK_AUTH_DATA_MAX];
+	size_t auth_data_size;
 };
 
 /*
@@ -187,5 +191,6 @@ int pk_ctap2_make_credential(struct pk_device *device, const struct pk_make_requ
 int pk_ctap2_get_assertion(struct pk_device *device, const struct pk_assertion_request *request,
     struct pk_assertion_reply *reply);
 int pk_ctap2_selection(struct pk_device *device);
+int pk_ctap2_read_made(const char *rp_id, const uint8_t *data, size_t size, struct pk_made_credential *credential);
 
 #endif

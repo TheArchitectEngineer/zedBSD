@@ -26,6 +26,9 @@
 
 static int record_line_is(const char *line, size_t length, const char *name, const char *uid, const char *kind);
 static int record_append(char *output, size_t capacity, size_t *used, const char *text, size_t length);
+static int record_rewrite(const char *text, size_t length, const char *name, const char *kind, const char *field, int every,
+    const char *added, char *output, size_t capacity, size_t *written);
+static int record_field_is(const char *line, size_t length, const char *field);
 
 /* Gives the version the file's first line names (1 for a file without it, or an empty one). */
 int
@@ -126,12 +129,73 @@ passkey_record_replace(
 	size_t capacity,
 	size_t *written)
 {
+	int error;
+
+	/* Every line of the name and kind goes. */
+	error = record_rewrite(text, length, name, kind, NULL, 1, added, output, capacity, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the new text. */
+	return 0;
+}
+
+/*
+ * Writes the file again for one credential (ws172-p003): every line kept
+ * but the name's lines of the kind whose first field after the kind is
+ * field (none when field is NULL), and added at the end when it is not
+ * NULL.  So a security key's line is added (field NULL), its count changed
+ * (field its ID, added its new line) or removed (added NULL).  Returns 0
+ * or ENOSPC.
+ */
+int
+passkey_record_edit(
+	const char *text,
+	size_t length,
+	const char *name,
+	const char *kind,
+	const char *field,
+	const char *added,
+	char *output,
+	size_t capacity,
+	size_t *written)
+{
+	int error;
+
+	/* Only the credential's line goes. */
+	error = record_rewrite(text, length, name, kind, field, 0, added, output, capacity, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the new text. */
+	return 0;
+}
+
+/*
+ * Writes the header, the lines kept and added: a line of the name and kind
+ * goes when every is set, or when its field after the kind is field.
+ */
+static int
+record_rewrite(
+	const char *text,
+	size_t length,
+	const char *name,
+	const char *kind,
+	const char *field,
+	int every,
+	const char *added,
+	char *output,
+	size_t capacity,
+	size_t *written)
+{
 	char header[64];
 	const char *start;
 	const char *end;
 	size_t line_length;
 	size_t used;
 	size_t header_length;
+	int is_header;
+	int dropped;
 	int error;
 
 	/* The header. */
@@ -149,15 +213,27 @@ passkey_record_replace(
 		if (end == NULL)
 			end = text + length;
 		line_length = (size_t)(end - start);
-		if (line_length != 0U &&
-		    !(line_length >= header_length && strncmp(start, PASSKEY_HEADER, header_length) == 0) &&
-		    !record_line_is(start, line_length, name, NULL, kind)) {
+
+		/* An empty line and the old header are not kept. */
+		is_header = line_length >= header_length && strncmp(start, PASSKEY_HEADER, header_length) == 0;
+		if (line_length == 0U || is_header) {
+			start = end + 1;
+			continue;
+		}
+
+		/* The lines that go. */
+		dropped = record_line_is(start, line_length, name, NULL, kind);
+		if (dropped && !every)
+			dropped = field != NULL && record_field_is(start, line_length, field);
+		if (!dropped) {
 			error = record_append(output, capacity, &used, start, line_length);
 			if (error == 0)
 				error = record_append(output, capacity, &used, "\n", 1U);
 			if (error != 0)
 				return error;
 		}
+
+		/* The next line. */
 		start = end + 1;
 	}
 
@@ -173,6 +249,39 @@ passkey_record_replace(
 	/* Succeeded: the new text. */
 	*written = used;
 	return 0;
+}
+
+/* Tells whether a line's fourth field (the first after name, uid and kind) is field. */
+static int
+record_field_is(
+	const char *line,
+	size_t length,
+	const char *field)
+{
+	const char *start;
+	const char *end;
+	unsigned colons;
+	size_t field_length;
+
+	/* After the third colon. */
+	start = line;
+	for (colons = 0U; colons < 3U; colons++) {
+		start = memchr(start, ':', (size_t)(line + length - start));
+		if (start == NULL)
+			return 0;
+		start++;
+	}
+
+	/* Up to the next colon or the end. */
+	end = memchr(start, ':', (size_t)(line + length - start));
+	if (end == NULL)
+		end = line + length;
+	field_length = strlen(field);
+	if ((size_t)(end - start) != field_length || memcmp(start, field, field_length) != 0)
+		return 0;
+
+	/* The field is the one. */
+	return 1;
 }
 
 /*

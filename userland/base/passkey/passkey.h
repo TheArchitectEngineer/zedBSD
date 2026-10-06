@@ -63,5 +63,7 @@ int passkey_record_find(const char *text, size_t length, const char *name, uid_t
 int passkey_record_count(const char *text, size_t length, const char *name, uid_t uid, const char *kind);
 int passkey_record_replace(const char *text, size_t length, const char *name, const char *kind, const char *added,
     char *output, size_t capacity, size_t *written);
+int passkey_record_edit(const char *text, size_t length, const char *name, const char *kind, const char *field,
+    const char *added, char *output, size_t capacity, size_t *written);
 
 #endif
