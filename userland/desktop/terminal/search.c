@@ -17,6 +17,7 @@
  */
 
 #include "terminal.h"
+#include "width.h"
 
 #include <string.h>
 
@@ -36,6 +37,37 @@ static int search_read(struct terminal_screen *screen, unsigned long line, struc
 static int search_matches(const struct search_text *text, size_t at, const uint32_t *query, size_t count);
 static uint32_t search_fold(uint32_t codepoint);
 static void search_bounds(const struct terminal_screen *screen, unsigned long *oldest, unsigned long *newest);
+
+/*
+ * Reports the column of the search bar's caret (ws090-p022): after
+ * "Find: " and the cells of the text looked for (UTF-8, length bytes), as
+ * the bar draws them; the input method's composed text starts there.
+ */
+unsigned
+terminal_search_bar_column(
+	const char *text,
+	size_t length,
+	int ambiguous_wide)
+{
+	uint32_t query[TERMINAL_SEARCH_LENGTH];
+	size_t count;
+	size_t i;
+	unsigned column;
+	int wide;
+
+	/* "Find: ", then each character's cells. */
+	count = terminal_search_decode(text, length, query, TERMINAL_SEARCH_LENGTH);
+	column = 6U;
+	for (i = 0; i < count; i++) {
+		wide = terminal_width_wide(query[i], ambiguous_wide);
+		column++;
+		if (wide)
+			column++;
+	}
+
+	/* Succeeded: the caret's column. */
+	return column;
+}
 
 /*
  * Reads a text (UTF-8, length bytes) into the code points the search

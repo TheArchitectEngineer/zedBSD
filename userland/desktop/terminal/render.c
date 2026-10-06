@@ -1281,11 +1281,11 @@ render_build(
 		}
 	}
 
-	/* The input method's text being composed, over the cells from the cursor (BUG-155). */
-	vertex = render_preedit(renderer, screen, font, window, vertex, first_row, last_row);
-
 	/* The search bar over the last row, while it is open (ws128-p006). */
 	vertex = render_search_bar(renderer, screen, font, window, theme, vertex);
+
+	/* The input method's text being composed, over the cells from the cursor (BUG-155), or from the search bar's caret while it is open (ws090-p022). */
+	vertex = render_preedit(renderer, screen, font, window, vertex, first_row, last_row);
 
 	/* Reports how many vertices the frame draws. */
 	return (uint32_t)((size_t)(vertex - start) / RENDER_VERTEX_FLOATS);
@@ -1327,15 +1327,21 @@ render_preedit(
 	if (window == NULL || window->preedit[0] == '\0')
 		return vertex;
 
-	/* The cursor's row in the view; a cursor the view does not show shows no composed text. */
-	row = (long long)screen->cursor_row + (long long)screen->view;
-	if (row < (long long)first_row || row > (long long)last_row)
-		return vertex;
-	y = (float)((int)TERMINAL_PADDING + (int)row * (int)font->cell_height + screen->view_offset);
+	/* While the search bar is open: from its caret, on the grid's last row (as the bar draws it). */
+	if (window->search_open && screen->rows != 0U) {
+		y = (float)(TERMINAL_PADDING + (screen->rows - 1U) * font->cell_height);
+		column = terminal_search_bar_column(window->search_query, window->search_length, screen->ambiguous_wide);
+	} else {
+		/* The cursor's row in the view; a cursor the view does not show shows no composed text. */
+		row = (long long)screen->cursor_row + (long long)screen->view;
+		if (row < (long long)first_row || row > (long long)last_row)
+			return vertex;
+		y = (float)((int)TERMINAL_PADDING + (int)row * (int)font->cell_height + screen->view_offset);
+		column = screen->cursor_column;
+	}
 
-	/* Each character, from the cursor's cell, while it fits the grid and the vertex buffer. */
+	/* Each character, from there, while it fits the grid and the vertex buffer. */
 	start = renderer->vertex_map;
-	column = screen->cursor_column;
 	at = 0U;
 	while (window->preedit[at] != '\0') {
 		/* The character, and where the next one starts. */
