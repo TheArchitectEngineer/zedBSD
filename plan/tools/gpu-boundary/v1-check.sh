@@ -34,8 +34,9 @@ backend_calls=$(grep -c 'ioctl(' $backend)
 [ "$backend_calls" = 0 ] || fail "the backend calls ioctl"
 
 # 2. Every source but the backend compiles with the GPU UAPI headers poisoned.
-work=$(mktemp -d /tmp/zedbsd-v1-check.XXXXXX)
-trap 'rm -rf -- "$work"' EXIT HUP INT TERM
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+work=$(mktemp -d "$(pwd)/build/tmp/v1-check.XXXXXX")
 mkdir -p "$work/uapi"
 for header in include/uapi/gpu*.h; do
 	name=$(basename "$header")
