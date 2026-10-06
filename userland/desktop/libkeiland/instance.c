@@ -24,7 +24,7 @@
  * the wait), and an activation with one.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "ui/internal.h"
 

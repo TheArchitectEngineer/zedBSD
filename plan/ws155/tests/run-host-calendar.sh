@@ -9,7 +9,10 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws155/host-calendar}
 dir=$(dirname "$out")
 mkdir -p "$dir/inc"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$dir/inc/"
+mkdir -p "$dir/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$dir/inc/truetype/"
+mkdir -p "$dir/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$dir/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$dir/inc/compat"
 U=userland/desktop
 K=$U/libkeiland/ui
@@ -28,7 +31,7 @@ for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
 done
 for p in "$out"-*.pam; do
-	python3 - "$p" "${p%.pam}.panels" userland/desktop/keiland/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
+	python3 - "$p" "${p%.pam}.panels" userland/desktop/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
 import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 data = open(sys.argv[1], 'rb').read()

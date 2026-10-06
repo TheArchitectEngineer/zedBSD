@@ -6,7 +6,7 @@ Prerequisites: p011/q582 cleared、B main統合cea10fd7とlane ACK3bed3013。全
 
 ## Exact scope / ownership
 
-全WS094 sourceのinventoryをPhase記録と実commitから作る。旧include/libc/keiland.hは現行userland/desktop/keiland/keiland.hへ対応し、WS094差分・後続変更・所有・現行SHAを分類する。inventory全体を全文C/Guardrailでreviewする。
+全WS094 sourceのinventoryをPhase記録と実commitから作る。旧include/libc/keiland.hは現行userland/desktop/include/keiland/keiland.hへ対応し、WS094差分・後続変更・所有・現行SHAを分類する。inventory全体を全文C/Guardrailでreviewする。
 
 編集はuserland/desktop/filesのdesktop-layout.c、ui-desktop.c、ui-desktop-drag.c、ui-desktop-actions.c、main.c/present.c/window.c/files.h/window.hのWS094関連部分、userland/desktop/picture/picture.c/h、userland/desktop/libkeiland/desktop.c、plan/ws094/tests/*.cのin-scope規約違反修正。既存挙動を維持し新機能/APIを追加しない。修正する機械findingが実違反かを全文/由来で判定する。
 

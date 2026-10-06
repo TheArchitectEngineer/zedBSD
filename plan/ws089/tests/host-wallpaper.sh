@@ -3,7 +3,7 @@
 #
 # Builds the host Settings (host-build.sh) and then look.c again with KEILAND_DATADIR pointing at a folder of the
 # test's own under build/ws089-host/wallpaper/data: the default picture and three in the folder (the two of
-# userland/desktop/keiland/wallpapers and one that is not a PPM).  Draws the Wallpaper page and checks the log:
+# userland/desktop/wallpapers and one that is not a PPM).  Draws the Wallpaper page and checks the log:
 #   - the page lists the four pictures and starts the loader before any small copy is read
 #     (LOOK pictures count=4, then LOOK loader started count=4, and only then LOOK picture path=...);
 #   - three copies are read (error=0), the broken file reports EINVAL (error=22), and LOOK pictures ready count=4.
@@ -22,9 +22,9 @@ out=$(mktemp -d "$host/wallpaper.XXXXXX")
 out=${out#$(pwd)/}
 data=$(pwd)/$out/data
 mkdir -p "$out/obj" "$data/keiland/wallpapers"
-ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.png" "$data/keiland/wallpaper.png"
-ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.png" "$data/keiland/wallpapers/Lakeside.png"
-ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Birch-Lake.png" "$data/keiland/wallpapers/Birch-Lake.png"
+ln -s "$(pwd)/userland/desktop/wallpapers/Lakeside.png" "$data/keiland/wallpaper.png"
+ln -s "$(pwd)/userland/desktop/wallpapers/Lakeside.png" "$data/keiland/wallpapers/Lakeside.png"
+ln -s "$(pwd)/userland/desktop/wallpapers/Birch-Lake.png" "$data/keiland/wallpapers/Birch-Lake.png"
 printf 'not a picture\n' > "$data/keiland/wallpapers/Broken.png"
 
 cc=${CC:-cc}

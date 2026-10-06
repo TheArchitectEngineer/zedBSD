@@ -14,8 +14,10 @@ cd "$(dirname -- "$0")/../../.."
 out=build/ws071-host
 src=userland/desktop/files
 mkdir -p "$out/include" "$out/obj"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
-ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
+mkdir -p "$out/include/keiland"
+ln -sf "$(pwd)/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"

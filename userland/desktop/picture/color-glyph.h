@@ -16,7 +16,7 @@
 #define KEILAND_COLOR_GLYPH_H
 
 #include <stdint.h>
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 /*
  * A colour glyph at a size: its premultiplied 0xAARRGGBB pixels (malloc'd,

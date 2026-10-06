@@ -79,7 +79,7 @@ libkeiui の source を `libkeiland/ui/` に移し、`libkeiui.so` を無くす�
 - `userland/desktop/pdfviewer/Makefile`（2）
 - `userland/desktop/notes/app.h`（2）
 - `userland/desktop/libkeiui/shaders/regenerate.py`（2）
-- `userland/desktop/keiland/keiland.h`（2）
+- `userland/desktop/include/keiland/keiland.h`（2）
 - `userland/desktop/imageview/Makefile`（2）
 - `userland/desktop/files/Makefile`（2）
 - `plan/ws127/tests/scroll-bar-test.sh`（2）

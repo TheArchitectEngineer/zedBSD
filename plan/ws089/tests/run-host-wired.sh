@@ -9,8 +9,9 @@ cd "$(dirname -- "$0")/../../.."
 mkdir -p build/tmp
 work=$(mktemp -d "$(pwd)/build/tmp/run-host-wired.XXXXXX")
 mkdir -p "$work/include"
-for header in truetype.h keiland.h; do
-	ln -sf "$(pwd)/userland/desktop/keiland/$header" "$work/include/$header"
+for header in truetype/truetype.h keiland/keiland.h; do
+	mkdir -p "$work/include/$(dirname "$header")"
+	ln -sf "$(pwd)/userland/desktop/include/$header" "$work/include/$header"
 done
 cc -std=gnu89 -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -fsanitize=address,undefined -fno-omit-frame-pointer \
     -I"$work/include" -Iuserland/desktop/settings -I. \

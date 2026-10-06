@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <truetype.h>
+#include <truetype/truetype.h>
 #include <unistd.h>
 
 /* How many glyphs the cache holds before it is emptied. */

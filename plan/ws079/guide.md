@@ -276,10 +276,10 @@ sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-pt passthrough > build/<W>
   いつも `GUEST_RUNTIME=$PWD/build/<W>-...` を前に付ける。`zdesktop-guest.sh stop` を `GUEST_RUNTIME` なしで呼ぶと、`build/.zdesktop-guest-runtime` に記録された
   最後の guest（他の agent の物かもしれない）を止める（`zdesktop-guest.sh` の頭の注記）。
 - **5330 の lock**: passthrough は `flock /tmp/i915-hw.lock`（`hdmi-h4-hw.sh` の start が待つ）。start を `timeout` で切らない（script の注記）。
-- **WS104 の後の path の変更**: ws104-p001 が `include/libc/keiland.h`・`keiui.h`・`truetype.h`・wayland の header を `userland/desktop/keiland/` へ移す。
+- **WS104 の後の path の変更**: ws104-p001 が `include/libc/keiland.h`・`keiui.h`・`truetype.h`・wayland の header を `userland/desktop/include/` へ移す。
   WS079 の host の script（`run-pdf-ccitt.sh`・`run-pdf-render.sh`・`run-pdf-text.sh`・`run-pdf-update.sh`・`run-pdfviewer-host.sh`・`truetype-outline-test.sh`・
   `truetype-render-compare.sh`）の header の path は [plan/ws104/patches/p001-paths.patch](../ws104/patches/p001-paths.patch) で直る。ws104-p001 の適用の後は、
-  §5.1 の command はそのまま、script の中の `include/libc/truetype.h` などが `userland/desktop/keiland/` を指す。`pdf.h`・`sha2.h`・`compat/` は動かない。
+  §5.1 の command はそのまま、script の中の `include/libc/truetype.h` などが `userland/desktop/include/` を指す。`pdf.h`・`sha2.h`・`compat/` は動かない。
   ws104-p003（libkeiland の OS の file）・p007（install の path の macro、`notes`・`pdfviewer` の path の文字列）も WS079 の source に触れうるので、
   WS079 の source を変える Phase は WS104 と同時に走らせず、main に順を確かめる。
 - **ユーザーの判断**（ws.md）: 名前（notes・pdfviewer・libpdf）、PDF Viewer の段階、keyboard の shortcut は標準、自動保存と journal、`pdf_outline_stroke()` を

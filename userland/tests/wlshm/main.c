@@ -26,7 +26,7 @@
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <fcntl.h>

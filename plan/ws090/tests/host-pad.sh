@@ -8,7 +8,8 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 out=${1:-$root/build/ws090-pad-host}
 cc=${CC:-cc}
 mkdir -p "$out/include"
-ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+mkdir -p "$out/include/keiland"
+ln -sf "$root/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
 flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -I$out/include"
 for name in motion scroll gesture; do
 	"$cc" $flags -c "$root/userland/desktop/libkeiland/$name.c" -o "$out/keiland-$name.o"

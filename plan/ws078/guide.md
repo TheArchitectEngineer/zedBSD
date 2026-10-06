@@ -73,7 +73,7 @@ toolchain と package の patch の `zedbsd` の target 名、試験の log の�
 | --- | --- | --- | --- |
 | `userland/desktop/browser/data/start.html` | 5・26・27・33・34・59（6 行） | `<title>zedBSD Browser</title>`、`<h1>zedBSD Browser</h1>`、「The Web browser of the zedBSD desktop」、「written for zedBSD」、「in a zdesktop window」、footer「zedBSD · browser」 | **`plan/ws074/tests/browser-start.sh:62`** が `title=zedBSD Browser` を待つ（一緒に直す。WS074 の file なので main が当てる） |
 | `docs/reference/kernel-boot-parameters.md` | 325 | `login=graphical  the greeter (zdesktop --greeter) on the display` | なし |
-| `include/libc/wayland/API-PROVENANCE.md` | 69〜71 | 「zed-gpu-buffer-v1-client-protocol.h」「Other zdesktop clients」「zdesktop extension」 | なし。**WS104 p001 がこの directory を `userland/desktop/keiland/wayland/` へ `git mv` する**ので、WS104 p001 の後に新しい path で直す |
+| `include/libc/wayland/API-PROVENANCE.md` | 69〜71 | 「zed-gpu-buffer-v1-client-protocol.h」「Other zdesktop clients」「zdesktop extension」 | なし。**WS104 p001 がこの directory を `userland/desktop/include/wayland/` へ `git mv` する**ので、WS104 p001 の後に新しい path で直す |
 
 画面に出る文字列（C の文字列の literal）に `zdesktop` は 0 行、「Keiland」も 0 行（2026-10-01）。`zedBSD` の literal は上の「残すと決まったもの」と試験だけ。
 Settings の検索の語 `"version kernel release zedbsd operating system"`（`userland/desktop/settings/search.c:82`）は利用者が「zedbsd」と打っても About が出る
@@ -250,7 +250,7 @@ WS078 に固有の確かめ（p004 の graphical な表示。ユーザーの目�
   作業が無いことを main が確かめる。終わったら main が各 agent に新しい名前を知らせる。
 - **WS104 の patch との衝突**: `plan/ws104/patches/p001-paths.patch`・`p003.patch`・`p003-after-gitmv.patch`・`p007.patch` は `zdesktop` を含む行を文脈に持つ
   （`git grep -c -i zdesktop -- plan/ws104/patches` で 3・4・4・1 行）。p007・p008 は WS104 の p001〜p007 が入った後にする。WS104 p001 は `include/libc/keiland.h` と
-  `include/libc/wayland/`（API-PROVENANCE.md を含む）を `userland/desktop/keiland/` へ移すので、§2.3 の path はその後に変わる。
+  `include/libc/wayland/`（API-PROVENANCE.md を含む）を `userland/desktop/include/` へ移すので、§2.3 の path はその後に変わる。
 - **IME（`userland/desktop/ime/`）は人間が作業中**（master 2026-09-30）。注釈の置き換えと header の改名で `ime/` を除き、残りを main に記録する。
 - **WS074 は動いている**（2026-09-30「Run ws074」）。`userland/desktop/browser/` と `plan/ws074/tests/browser-start.sh` を変える時は main が WS074 の worktree の有無を確かめる。
   `browser-start.sh` は WS074 の file なので、subagent は変えず main に頼む（AGENTS.md「subagent の修正可能範囲」）。

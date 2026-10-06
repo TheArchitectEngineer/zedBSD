@@ -2,7 +2,7 @@
 
 # ws099-p021: C2 の geometry の不一致と BUG-127（最小化の直後の画像）
 
-Status: uncleared（q620-i01、2026-10-03 P2。C2 の geometry の不一致と BUG-127 は再現しなかった。C2 の FAIL 0 は、BUG-147 の起動の検出の失敗 1 回で満たさない。判断は下の「判定の提案」）
+Status: cleared（2026-10-06 ユーザーのクリック「Clearにします。」: C2 の geometry の不一致と BUG-127 は再現せず（C2 9 回、BUG-127 は criteria 3 回＋単独 10 回）、BUG-127 は Bug Board に残したまま非阻害。修正の確認ではない。旧: uncleared（q620-i01、2026-10-03 P2。C2 の geometry の不一致と BUG-127 は再現しなかった。C2 の FAIL 0 は、BUG-147 の起動の検出の失敗 1 回で満たさない。判断は下の「判定の提案」））
 Disposition: normal
 Parent: [WS099](../ws.md)
 Queue: q620 / q620-i01（自走の指示による Q1 の dispatch、時限 3h）
@@ -61,3 +61,7 @@ worktree `/home/awe/zedBSD-worktrees/p2`（main `a53205d3b`）。image は `buil
 - q538 の C2 の geometry の不一致は再現しない（9 回）。BUG-127 は criteria 3 回と単独 10 回で再現しない。reproduced/tracking のまま証拠を足した。WS099 のベータ1 で非阻害にしてよいかは、ユーザーの確認が要る（phase.md の未決の判断）。
 - 受け入れの「C2 の FAIL 0」は、1 回目の BUG-147 の形の失敗で厳密には満たさない。製品 source を変えていないので、C3・C4・C8・p076 の追加の回帰はしていない（criteria の中では C3・C4・C8・p076 も各回 PASS）。
 - 次の手の案（別の Phase）: BUG-147 として、(a) 試験が `GLASS launch` だけでなく、起動した client の `ZWL MAP` からも窓を見つけられるようにする、または (b) launch の待ちと log の出し方を見直す。どちらも BUG-135（guest の stall）を直すまでの回避策。
+
+## 判断（2026-10-06）
+
+- ユーザー（Q1 のクリックの質問）:「Clearにします。」→ cleared。BUG-127 は Bug Board の記録のまま（再び見えたら reopen）。C2 の geometry の不一致の修正は行っていない（再現しないため）。

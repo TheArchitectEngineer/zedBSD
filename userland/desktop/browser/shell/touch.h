@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* The kinds of touch input the window queues. */
 #define SHELL_TOUCH_DOWN	0U
@@ -50,7 +50,7 @@
 #define SHELL_TOUCH_POINTER_PRESS	1U
 #define SHELL_TOUCH_POINTER_RELEASE	2U
 
-/* The buttons the fingers press (the DOM's numbers, <browser.h>'s BROWSER_BUTTON_PRIMARY and _SECONDARY). */
+/* The buttons the fingers press (the DOM's numbers, <browser/browser.h>'s BROWSER_BUTTON_PRIMARY and _SECONDARY). */
 #define SHELL_TOUCH_PRIMARY	0
 #define SHELL_TOUCH_SECONDARY	2
 

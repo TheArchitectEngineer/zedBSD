@@ -20,7 +20,7 @@ fail() { echo "FAIL: $*"; status=1; }
 
 # The tools: the compiler's driver (with the sanitizers), libGLESv2's reflection, the i915 compiler.
 for h in EGL GLES2 GLES3 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
-ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ln -sfn "$root/userland/desktop/include/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
 cc -std=c11 -g -O1 -Wall -Wextra -Werror -Wdeclaration-after-statement -fsanitize=address,undefined \
 	-o "$out/glsl-test" "$here/glsl-test.c" "$root"/userland/desktop/libglesv2/glsl/*.c -lm || exit 1
 cc -std=c99 -Wall -Wextra -I"$out/shim" -o "$out/spirv-test" "$root/plan/ws068/tests/spirv-host/main.c" \

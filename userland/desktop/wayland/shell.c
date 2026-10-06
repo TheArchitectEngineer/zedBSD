@@ -90,7 +90,7 @@
 #include "media.h"
 #include "layout.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <stdio.h>
 #include <string.h>

@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 INTER = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 JAPANESE = os.path.join(ROOT, 'userland/desktop/fonts/DroidSansFallbackFull.ttf')
-WALLPAPERS = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers')
+WALLPAPERS = os.path.join(ROOT, 'userland/desktop/wallpapers')
 
 W = 1280
 H = 44                   # KWL_GLASS_BAR (ws099-p031)

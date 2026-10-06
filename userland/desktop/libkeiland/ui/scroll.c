@@ -24,7 +24,7 @@
  * the same inertia and rubber band as a finger's.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <math.h>

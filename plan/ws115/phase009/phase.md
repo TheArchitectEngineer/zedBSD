@@ -34,7 +34,7 @@ Event ws115-beta1-plan-20261002: 2026-10-02 計画担当が依存 package の移
 
 ## q613-i01 の結果（2026-10-03、P3）
 
-承認: Q1 の継続 dispatch（q613、時限 4h）。base は main 396756c61（前回統合済み 581021c3e）。所有 path に `userland/desktop/keiland/wayland/`（libwayland-client の公開 header）を Q1 が加えた（2026-10-02、方針は追加だけ）。compositor の server 側（`userland/desktop/wayland/`、P2）は変えていない。
+承認: Q1 の継続 dispatch（q613、時限 4h）。base は main 396756c61（前回統合済み 581021c3e）。所有 path に `userland/desktop/include/wayland/`（libwayland-client の公開 header）を Q1 が加えた（2026-10-02、方針は追加だけ）。compositor の server 側（`userland/desktop/wayland/`、P2）は変えていない。
 
 ### commit
 
@@ -71,7 +71,7 @@ Event ws115-beta1-plan-20261002: 2026-10-02 計画担当が依存 package の移
   - `plan/ws035/tests/p075/run-host.sh`（generic な event の配送と server が作る object）: PASS（CLIENT DONE failures=0、SERVER DONE children_destroyed=4）。
   - `plan/ws073/tests/wayland-dispatch-once.sh`（全 source を host の gcc の -Werror と ASan/UBSan で）: PASS 2 回。
   - 新しい `plan/ws115/tests/wl-log.sh`: socketpair の偽の server が `wl_display.error` を送る。handler が `wl_display@1: error 3: boom` を 1 回受け、dispatch は -1、error 71（EPROTO）。通常と ASan/UBSan（leak 検出あり）の両方で PASS。
-  - `plan/ws014/phase006/tests/run-wayland-client.sh` は移設前の path（`libc/include`）を指していて古いので、走らせていない。
+  - `plan/ws014/phase006/tests/run-wayland-client.sh` は移設前の path（`libc/include`）を指していて古いので、走らせていない（2026-10-06 削除）。
 - **受け入れの試験（QEMU の Venus の desktop guest、`zdesktop-guest.sh`、renderer は main の build の物を読み取りで使った）**:
   - `plan/ws115/tests/xdg-probe.sh`: host の upstream wayland-scanner 1.23.1 が wayland-protocols 1.49 の xdg-shell.xml から client-header と private-code を作る。zedBSD の sysroot の header と `-lwayland-client` で link した。xdg の interface は program の中で local（`d`）で、`xdg_` の export は無い。
   - image: `build-desktop-image.sh`（criteria の image ＋ probe）。
@@ -104,4 +104,4 @@ Event ws115-beta1-plan-20261002: 2026-10-02 計画担当が依存 package の移
 
 - compositor が wl_compositor v5/v6・xdg_wm_base v5 以降を広告するときの作業: interface の version を上げる、xdg の型付きの表に v5 の event を足す（P2・後の Phase）。
 - GTK の build で wayland-protocols 1.49 の XML が scanner 1.23 の非 strict の生成で通るかは p002 で確かめる。
-- `run-wayland-client.sh` の古い path（main の道具）。
+- `run-wayland-client.sh` の古い path（main の道具。2026-10-06 削除）。

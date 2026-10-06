@@ -4,7 +4,7 @@
 **改訂 2（2026-10-01）**: 6 つの survey（zedBSD の command、WS104 の編集、compositor の編集、host の試しの compile、host の Vulkan・dma-buf・ELF の実験、Linux の guest・protocol）と
 design-reviewer の敵対的な見直し（blocker 3・major 15）の結果を入れた。実験の code は [survey/](../history/ws105/q538/survey/README.md)。
 code の行番号は 2026-10-01 の main（`0eb5e118`）の物で、WS104 の後は変わっている。WS104 が作る境界（`zwl-gpu.h`・`zwl-input.h`・`zwl-os.h`・
-`libkeiland/zedbsd/`・`userland/desktop/paths.h`・`userland/desktop/keiland/`）を前提にする。
+`libkeiland/zedbsd/`・`userland/desktop/paths.h`・`userland/desktop/include/`）を前提にする。
 
 ## 0. 読み方と用語
 
@@ -135,7 +135,7 @@ KEILAND_LINUX_EXTRA_CPPFLAGS ?=
 KEILAND_LINUX_CPPFLAGS := -D_GNU_SOURCE \
 	-DKEILAND_BINDIR='"$(KEILAND_PREFIX)/bin"' -DKEILAND_LIBEXECDIR='"$(KEILAND_PREFIX)/libexec"' \
 	-DKEILAND_DATADIR='"$(KEILAND_PREFIX)/share"' -DKEILAND_SYSCONFDIR='"$(KEILAND_PREFIX)/etc"' \
-	$(KEILAND_LINUX_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/keiland -I$(KEILAND_LINUX_BUILD)/include
+	$(KEILAND_LINUX_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/include -I$(KEILAND_LINUX_BUILD)/include
 # -Wno-format-truncation: gcc's guess that a display string may be cut short (the strings are cut on purpose; D24).
 KEILAND_LINUX_CFLAGS := $(KEILAND_LINUX_OPT) -std=gnu17 -Wall -Wextra -Werror -Wno-format-truncation -fPIC
 KEILAND_LINUX_LDFLAGS := -Wl,-rpath,$(KEILAND_PREFIX)/lib -Wl,--enable-new-dtags \
@@ -212,7 +212,7 @@ clean:
 
 要点:
 
-- `-I.`（repo の root）: tree の慣習の `#include "userland/..."` のため。`-Iuserland/desktop/keiland`: desktop の公開の header（WS104 p001 で移した物）。
+- `-I.`（repo の root）: tree の慣習の `#include "userland/..."` のため。`-Iuserland/desktop/include`: desktop の公開の header（WS104 p001 で移した物）。
 - `-I$(KEILAND_LINUX_BUILD)/include`: zedBSD の libc の側にあって Linux の build にも要る header の**複写**: `include/libc/compat/`、`pdf.h`、`sha2.h`・`md5.h`・`sha1.h`
   （glibc に無い OpenBSD の digest の API。`sha1.h` は `src/libc/openbsd-digest.c` が要る、2026-10-01 確かめ）。**`include/libc` を `-I` に入れてはいけない**（glibc と衝突する）。
 - Vulkan・DRM・dma-buf・evdev・ALSA の header は host の物（`/usr/include/vulkan`、linux-libc-dev の `/usr/include/drm`・`linux/`・`sound/`）。
@@ -894,7 +894,7 @@ header の field の配列 `a(yv)`（1 PATH `o`、2 INTERFACE `s`、3 MEMBER `s`
 | `struct zwl_object` に OS の module の記録の pointer（`void *gpu_private`）と、`object_free` の中で OS の module を呼ぶ `zwl_gpu_object_free(object)`（zedBSD の module は何もしない） | dma-buf の fd を buffer に残すため | p007 |
 | `userland/desktop/mview/renderer.c`: `#include <stdio.h>` | glibc では他の header から来ない | p007 |
 | `userland/base/libpdf/font.c` の `convert_contours()`: `control[0] = 0.0; control[1] = 0.0;` を loop の前に | gcc の `-Wmaybe-uninitialized`（誤検出） | p008 |
-| `userland/desktop/keiland/keiui.h:73` の `KUI_TEXT_EMOJI` と `libkeiui/text.c:595`: emoji の font の path を `paths.h` から（公開の header は repo の `paths.h` を include できないので、`text.c` の中で `KEILAND_DATADIR "/fonts/keiland-emoji.ttf"` を使い、header の macro はそのまま残す） | WS104 p007 で残した物（公開の header の path） | p008 |
+| `userland/desktop/include/keiui.h:73` の `KUI_TEXT_EMOJI` と `libkeiui/text.c:595`: emoji の font の path を `paths.h` から（公開の header は repo の `paths.h` を include できないので、`text.c` の中で `KEILAND_DATADIR "/fonts/keiland-emoji.ttf"` を使い、header の macro はそのまま残す） | WS104 p007 で残した物（公開の header の path） | p008 |
 | `userland/desktop/files/apps.c:111` の `apps_program_folders[]`（Open With の program を探す directory）に `KEILAND_BINDIR` を先頭に足す | Linux では program が `/opt/keiland/bin` にある（WS104 p007 で残した物） | p008 |
 | `terminal/main.c:main_menu_state` は最初の tab 前の NULL screen を選択なしとして扱う | p008 の Linux 起動139で発見した common startup bug（Q1のbounded補完、起動順・API不変） | p008 |
 | `struct zwl_server` の `os_paused` と、`zwl_schedule` の paused の扱い、resume の swapchain の作り直し、paused の間の入力の再走査の停止 | logind の pause | p009 |
@@ -1077,7 +1077,7 @@ process は SSH が切れても残る。`chvt N` で VT を切り替える。
        plan/tools/keiland-linux/dmabuf-probe.c build/keiland-linux/test/gen/linux-dmabuf-v1-protocol.c $(pkg-config --libs wayland-server)
     ```
 - `wsi-probe-client.c`: libvulkan-compat の Wayland の WSI で、frame ごとに決まった色（frame 番号で赤・緑・青を巡る）で clear して present する client。
-  我々の libwayland-client に link する（**system の `wayland-client.h` を使わない**: `-Iuserland/desktop/keiland` を先に置き、`pkg-config wayland-client` を使わない）。xdg-shell は使わない。
+  我々の libwayland-client に link する（**system の `wayland-client.h` を使わない**: `-Iuserland/desktop/include` を先に置き、`pkg-config wayland-client` を使わない）。xdg-shell は使わない。
 - `interpose-check.sh`: §4.11 の確かめ (a)〜(c)。行の形と grep:
   ```
   env -u WAYLAND_DISPLAY -u DISPLAY KEILAND_DRM_DEVICE=none LD_LIBRARY_PATH=$STAGE LD_DEBUG=bindings LD_DEBUG_OUTPUT=$OUT/ld build/keiland-linux/test/vk-chain-test

@@ -17,7 +17,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 /* The smallest and largest pixel size a font is drawn at. */
 #define FONT_PIXELS_MIN		1U

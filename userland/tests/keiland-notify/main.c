@@ -23,7 +23,7 @@
  * the notification closed; with --withdraw-after-ms it takes it back then.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 

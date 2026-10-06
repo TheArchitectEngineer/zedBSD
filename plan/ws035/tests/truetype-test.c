@@ -20,7 +20,7 @@
  *     truetype-test FONT
  */
 
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 #include <errno.h>
 #include <stdio.h>

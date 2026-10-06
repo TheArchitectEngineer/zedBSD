@@ -46,9 +46,11 @@ engine=""
 # The base libraries the engine links on zedBSD, built from their sources (their public headers
 # are linked into $base/include, since the host's C library does not have them).
 mkdir -p $base/include
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" $base/include/truetype.h
+mkdir -p $base/include/truetype
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" $base/include/truetype/truetype.h
 # The engine's own public header (libbrowser, ws074-p057), which the host's C library lacks too.
-ln -sf "$(pwd)/userland/desktop/keiland/browser.h" $base/include/browser.h
+mkdir -p $base/include/browser
+ln -sf "$(pwd)/userland/desktop/include/browser/browser.h" $base/include/browser/browser.h
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c userland/desktop/libtruetype/outline.c \
     userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c; do
 	object=$out/obj/truetype-$(basename "$file" .c).o
@@ -74,7 +76,7 @@ done
 
 for file in $sources; do
 	object=$out/obj/$(printf '%s' "${file#userland/desktop/}" | tr '/' '_' | sed 's/\.c$/.o/')
-	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ "$out/flags" -nt "$object" ] || [ -n "$(find "$src" "$app" userland/desktop/keiland -name '*.h' -newer "$object" | head -1)" ]; then
+	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ "$out/flags" -nt "$object" ] || [ -n "$(find "$src" "$app" userland/desktop/include -name '*.h' -newer "$object" | head -1)" ]; then
 		"$cc" $flags -c "$file" -o "$object"
 	fi
 	objects="$objects $object"
@@ -93,7 +95,7 @@ done
     -L"$out" -Wl,-rpath,'$ORIGIN' -l:libbrowser.so -lvulkan -lm
 echo "built $out/browser"
 
-# The second program over the engine (ws074-p057), built from <browser.h> only (on the host it links the
+# The second program over the engine (ws074-p057), built from <browser/browser.h> only (on the host it links the
 # engine's shared library, as on the target).
 "$cc" $flags -I$base/include -o "$out/browser-probe" userland/tests/browser-probe/main.c -L"$out" -Wl,-rpath,'$ORIGIN' -l:libbrowser.so -lm
 echo "built $out/browser-probe"

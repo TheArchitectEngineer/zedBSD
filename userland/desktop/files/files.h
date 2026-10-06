@@ -21,7 +21,7 @@
 #ifndef FILES_H
 #define FILES_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include "ops.h"
 
 #include "userland/desktop/paths.h"

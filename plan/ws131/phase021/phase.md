@@ -8,7 +8,7 @@ Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q814（2026-10-06 ユーザー「全部進める」）
 依存: p009・p011 cleared。compositor に他の作業が無い時（P2・WS113・WS099 と同時に流さない）。判断 D15
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
-所有 path: `userland/desktop/wayland/`（全 file、`zwl.h`・`zwl-*.h` の名前）、D15 を採る時は libkeiland の protocol の wrapper・`userland/desktop/keiland/wayland/` と libwayland の protocol の header・keiland-ime、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: compositor の source を compile する道具（`plan/tools/gpu-boundary/`・`plan/tools/titlebar/`・`plan/ws035/tests/`・`plan/ws102/tests/`・`plan/tools/keiland-freebsd/` の各 1 file）
+所有 path: `userland/desktop/wayland/`（全 file、`zwl.h`・`zwl-*.h` の名前）、D15 を採る時は libkeiland の protocol の wrapper・`userland/desktop/include/wayland/` と libwayland の protocol の header・keiland-ime、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: compositor の source を compile する道具（`plan/tools/gpu-boundary/`・`plan/tools/titlebar/`・`plan/ws035/tests/`・`plan/ws102/tests/`・`plan/tools/keiland-freebsd/` の各 1 file）
 
 ## 目的と結果
 

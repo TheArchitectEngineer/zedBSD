@@ -11,7 +11,7 @@
  * global is bound and whenever it changes.
  *
  * The header is private: it is not installed, and applications reach the
- * protocol through libkeiland (<keiland.h>) only.  libkeiland includes it
+ * protocol through libkeiland (<keiland/keiland.h>) only.  libkeiland includes it
  * by its path in the tree.
  */
 

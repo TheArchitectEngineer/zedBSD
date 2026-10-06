@@ -73,6 +73,6 @@ QEMU と実機: 全て QEMU（KVM の SSH の guest と Venus の guest）。533
 
 ## 残課題
 
-- plan/ws014/phase006/tests/run-wayland-client.sh の include の path が古い（`libc/include` → `include/libc`、protocol の header の場所）。WS014 の
+- plan/ws014/phase006/tests/run-wayland-client.sh の include の path が古い（`libc/include` → `include/libc`、protocol の header の場所）。WS014 の（2026-10-06: この script は試験の整理の基準で削除）
   試験なので直していない（同じ命令を path を直して `build/ws073-p044/wlc.sh` で回した）。
 - 試験の file（poll-timeout.c・wayland-dispatch-once.c）の規約の指摘（前方宣言・条件の中の呼出し）は、既存の guest の試験と同じ形で残した。

@@ -36,7 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <truetype.h>
+#include <truetype/truetype.h>
 #include <unistd.h>
 
 /*

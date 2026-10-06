@@ -15,7 +15,7 @@
  * failed call instead.  The protocol has no events.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "ui/internal.h"
 

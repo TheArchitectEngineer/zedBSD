@@ -23,7 +23,7 @@ Resume point: p001（設計）が planned。p001 は下の D1〜D4 を選択肢�
 ## 調べた現状（2026-10-02）
 
 - **audiod**（`userland/base/audiod`、[設計](../ws035/audiod-design.md)）: mix する process。制御は `/run/audiod.sock`、音は stream ごとの共有メモリの ring（`AUDIOD_STREAM_CREATE` で SCM_RIGHTS の fd）。format は S16_LE・S32_LE・F32_LE、rate は線形補間で device（HDA は S16・2ch・48000 Hz）へ変換、stream の音量・drain・underrun の通知がある。**再生の stream を作る client の library は無い**（試験の `plan/ws035/tests/audiod-client.c` だけ）。
-- **libkeiland の audio**（`userland/desktop/keiland/keiland.h` の `keiland_audio_*`、WS100 p003）: device の音量・mute・確かめの音・変化の通知だけ。zedBSD は audiod、Linux は ALSA の mixer の ioctl（PCM 再生なし）、FreeBSD は OSS の mixer。**PCM の再生の API は無い**。`KEILAND_VERSION` は 21。
+- **libkeiland の audio**（`userland/desktop/include/keiland/keiland.h` の `keiland_audio_*`、WS100 p003）: device の音量・mute・確かめの音・変化の通知だけ。zedBSD は audiod、Linux は ALSA の mixer の ioctl（PCM 再生なし）、FreeBSD は OSS の mixer。**PCM の再生の API は無い**。`KEILAND_VERSION` は 21。
 - **音量**: system bar（WS100 p004）と Settings の Sound（p005）が `keiland_audio_set_volume` で device の音量を共有し、`desktop.conf` の `sound.volume`・`sound.muted` に保存。
 - **既存の app の構成**: `userland/desktop/<app>/`（imageview・textedit・pdfviewer・notes など。`Makefile`・`Makefile.linux`・`Makefile.freebsd` で 3 OS を build、libkeiui の canvas・titlebar・menu・touch）。Files の関連付けは `userland/desktop/files/apps.c`（`APPS_IMAGE_TYPES` 等）と `mime.c`。
 - **decoder の先例**: base の `libpng-compat`・`libjpeg-compat`・`libgif-compat`・`libz-compat` は、外部の code を使わない独自実装（Zlib）で、3 OS で build される。画像 viewer はこれを使う。

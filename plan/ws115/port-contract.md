@@ -21,7 +21,7 @@ tarball はすべて P3 の worktree の `build/p3-q597/dist/`（ignored）に�
 1. WS114 で Linux（Debian 13）で実測したのが同じ 4.18.6。zedBSD と Linux の差を、版の差なしに比べられる（WS115 acceptance 3）。
 2. host の meson 1.7.0 で足りる（4.24 は 1.8 が要る）。
 3. glib を host の道具と同じ 2.84.4 にでき、host 用の glib を別に build しなくてよい（§4）。
-4. 要る wayland-client の版が 1.23.0 で、zedBSD の libwayland の ABI の基準（wayland 1.23.1、[API-PROVENANCE](../../userland/desktop/keiland/wayland/API-PROVENANCE.md)）と一致する。4.20 以降は 1.24 を要求する。
+4. 要る wayland-client の版が 1.23.0 で、zedBSD の libwayland の ABI の基準（wayland 1.23.1、[API-PROVENANCE](../../userland/desktop/libwayland/API-PROVENANCE.md)）と一致する。4.20 以降は 1.24 を要求する。
 
 4.24 との差（`[判断]` D-VER）:
 - 4.24.1 は最新安定版で、上流の修正が入っている。ただし meson ≥ 1.8 と glib ≥ 2.89.3（2.90 系）が要る。
@@ -132,7 +132,7 @@ memfd_create（任意、§3.2）・shm_open・mkostemp・posix_fallocate・memme
 | `wl_data_device_manager_get_version` | 関数 | DnD の版の判定 | 足す |
 | pkg-config の `wayland-client.pc`（Version 1.23.1）・`wayland-egl.pc` | metadata | `dependency('wayland-client', version: '>= 1.23.0')`、`dependency('wayland-egl')` | 足す。版は ABI の基準の 1.23.1 とする |
 
-- **p009 の結果（2026-10-03、q613）**: 上の表の不足は全部足した（`userland/desktop/libwayland` と `userland/desktop/keiland/wayland`。追加だけで、既存の member・値・signature は変えていない）。
+- **p009 の結果（2026-10-03、q613）**: 上の表の不足は全部足した（`userland/desktop/libwayland` と `userland/desktop/include/wayland`。追加だけで、既存の member・値・signature は変えていない）。
   - `wl_shm_format`・`wl_output_mode`・`wl_output_subpixel`・`wl_output_transform` は upstream 1.23.1 の `wayland.xml` から生成した enum で、前の macro と同じ値。
   - `wl_surface` の表は v6 まで（offset・preferred_buffer_*）を記述する。ただし interface の version は 4 のまま（compositor が広告する wl_compositor v4 に合わせる）。
   - `wayland-client.pc`（1.23.1）・`wayland-egl.pc`（18.1.0）は `make wayland-client` の stage にある。
@@ -180,7 +180,7 @@ GTK 4.18 は GL が使えなければ Cairo に落ちる。最初の目標は Ca
 | L2 | libc に関数を足すか | **足さない**（memfd_create・eventfd・inotify・getifaddrs は fallback で動く） | file monitor が polling になる（性能だけ） |
 | **R1** | renderer の目標 | **Cairo＋wl_shm を最初に**、次に GL（epoxy の patch）。Vulkan は header の判断の後 | Vulkan 1.3 の header の拡張は libc/GPU の境界にかかる |
 | P1 | portal・D-Bus | 入れない（WS114 p004 の推奨と同じ） | FileDialog は gsettings schema しだい |
-| S1 | 共有 path の割当 | p004 は `userland/packages/external.mk`・`tools/`、p009 は `userland/desktop/libwayland/`・`userland/desktop/keiland/wayland/` | main が割り当てる。libwayland は全 Keiland app と libvulkan の WSI が使う |
+| S1 | 共有 path の割当 | p004 は `userland/packages/external.mk`・`tools/`、p009 は `userland/desktop/libwayland/`・`userland/desktop/include/wayland/` | main が割り当てる。libwayland は全 Keiland app と libvulkan の WSI が使う |
 
 ## 9. Phase の範囲（確定と改訂）
 

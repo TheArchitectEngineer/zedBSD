@@ -2,10 +2,10 @@
 
 # ws131-p026: 公開の header の置き場所と名前の整理（userland/desktop/include/、<keiland/keiland.h>）
 
-Status: planned（2026-10-04 Q1 が詳細化、同日ユーザーと置き場所を決めて改訂。能力の低いセッションが機械的に進められる手順）
+Status: in-progress（2026-10-06 q820、P1。host の確認まで済み、QEMU・FreeBSD の native build は T1 に依頼）
 Disposition: normal
 Parent: [WS131](../ws.md)
-Queue: none（開始は Q1 が Queue を作ってから）
+Queue: q820（P1）
 依存: **ws131-p013・p014 が main に統合済み**（agent/p2 40b242a、[test-queue](../../test-queue.md) の TQ-1 の PASS の後に Q1 が merge）。統合前に始めない。
 目安: 3〜4h。実行者は 1 人（他の担当が `userland/desktop/` の header を触っていない時に。WS131 の D8 の単独走行）。
 
@@ -173,6 +173,43 @@ git grep -l 'desktop/include/\(keiland\|keiland-ui\|truetype\|browser\)\.h' -- .
 ### 段 7: 試験の依頼（QEMU は自分で起動しない）
 
 [test-queue](../../test-queue.md) に「TQ-n: ws131-p026」を Q1 に足してもらう。中身は TQ-1 と同じ組（zedBSD の boot-test・textinput-p013・viewers-p008・demo-s8-s9・files-regress・titlebar-p010・menu-p003、Linux の app の PNG、FreeBSD の backend-test）と、FreeBSD の install に `include/keiui.h` が無いこと。
+
+## 実施（2026-10-06、P1）
+
+### 計画からの変更（Q1 の了承 2026-10-06）
+
+- **`keiland/ui.h`・`keiland/compat.h` は作らない。** p023 で `keiland-ui.h` を `keiland.h` に統合し互換の macro も除いたので、公開の header は `include/keiland/keiland.h` 一つ。ユーザーの「アプリは `<keiland/keiland.h>` だけ」（2026-10-04）と「公開の header を一つに」（2026-10-03）の両方を満たす。段 5 の 1〜4（`KEILAND_INSIDE_KEILAND_H`・`#error`）と段 6 の `#error` の確かめは不要になった。
+- 段 3 の find を `-name '*.h'` にするのはやめた（Q1: include/libc の Vulkan・EGL の header の license の notice、`LICENSE-API`・`API-PROVENANCE.md` を sysroot に残す）。`toolchain/llvm/sysroot.mk` は path の 3 か所と comment だけ（Q1 の許可で P1 の worktree に当てた、main へは p026 の merge と同時に）。`userland/desktop/include/` には `.h` しか無いので、sysroot に写る物は header だけ。
+- 壁紙は今 `.png`（`.ppm` ではない）。`Lakeside.png`・`Birch-Lake.png`・`README.md` を `userland/desktop/wallpapers/` へ。
+
+### 段 0（main 96f3b4056＋p023 の後）
+
+`desktop/keiland/` の参照 471 行、旧い綴りの include 161 行、`kl-system-protocol.h` 43 行（一覧は `build/ws131-p026/before-*.txt`、一時）。
+
+### 段 1・2・4・5
+
+- 段 1: `kl-system-protocol.h` を `libkeiland/system/` へ（include 12 と comment の path）。
+- 段 2: 壁紙 3 と `API-PROVENANCE.md` を移し、path を直した（82 file、image を作る script・config を含む）。
+- 段 4: `git mv` で `userland/desktop/include/` に（`keiland/keiland.h`・`truetype/truetype.h`・`browser/browser.h`、wayland の header はそのまま）。path の置き換えは `plan/history`・証拠（`evidence`・`*.log`・`*.txt`・`*.json`）を除く 108 file。header を写す試験の script 40 本は `include/` と同じ相対 path（`keiland/keiland.h` など）に置く形に直した。FreeBSD の公開の表は `keiland/keiland.h`・`truetype/truetype.h`、RETIRED に `include/keiland.h`・`include/truetype.h`。`native-build-audit.py` は新しい path があり旧い 4 本が無いことを確かめる。`exports.py` は `include/keiland/keiland.h` を読む（exports.map は同じ）。
+- 段 5: `#include <keiland.h>`・`<truetype.h>`・`<browser.h>` を `<keiland/keiland.h>`・`<truetype/truetype.h>`・`<browser/browser.h>` に（118 file、libbrowser の include の行を含む）。comment の中の旧い綴りも直した（`plan/ws131/tools/rename-map.py` と履歴の文を除く）。
+- checker: B5 に旧い綴り（`<keiland.h>`・`<truetype.h>`・`<browser.h>`、script の `userland/desktop/keiland`）を足した。B1 は `<keiland/keiland.h>` も見る。
+- 取りこぼしの直し: `wayland/Makefile.linux` に `keiland-linux-sync: skip userland/desktop/wayland/shot.c`（ws173-p002 の zedBSD だけの画面の撮影。makefile-sync が前から FAIL だった）。
+
+### 確認（host、2026-10-06）
+
+| 確認 | 結果 |
+| --- | --- |
+| `make -j16 disk-image`（zedBSD amd64） | exit 0、自前の warning 0 |
+| sysroot | `usr/include/keiland/keiland.h`・`truetype/truetype.h`・`browser/browser.h`・`wayland/wayland-client.h`・`wayland-client.h` がある。直下の `keiland.h`・`keiui.h`・`keiland-ui.h`・`truetype.h`・`browser.h`・`kl-system-protocol.h`、`wallpapers` が無い |
+| image 外の 9 本（monitor・keiland-ime・videoplayer・kuidemo・titlebar-probe・menu-probe・popup-probe・wlshm・browser-probe） | exit 0、warning 0 |
+| `nm -D --defined-only libkeiland.so` | 370（exports.py の check が一致） |
+| `make keiland-linux`（gcc）・`CC=clang` | 両方 exit 0、warning 0 |
+| `header-check.sh`・`makefile-sync.sh`・`elf-check.sh`（`make keiland-linux-install` の stage） | PASS（449 sources）・PASS・PASS（24 ELF） |
+| FreeBSD: `keiland-freebsd.mk` の `-n install-headers`・`print-sources` | 通る。公開の表と RETIRED は上のとおり |
+| `keiland-os-boundary/check.sh` | PASS（B5 を含む） |
+| grep: `userland/desktop/keiland` の参照（履歴・証拠を除く）、旧い綴りの `#include` | 0、0 |
+| host の試験（p026 で直した script のうち host だけの物 57 本と、main の merge 後の WS131 の 4 本） | 52 PASS。直した: `ws131/tests/host-system.sh`・`.c`（header の複写の形と `kl-system-protocol.h` の path）、`ws134/tests/host/run.sh`（rate-test に `-I.`）。前からの FAIL（変更前の tree でも同じ）: `browser-component/run.sh`（Vulkan と CPU の参照の差、前は 216・後は 40 の画素、GPU の非決定）、`ws090/host-input.sh` 77/78（q827）、`ws127/host-column-widths.sh` 9 失敗、`ws079/truetype-render-compare.sh`（引数の git revision が要る）、`ws079/run-pdf-text.sh`（900 秒の timeout、fuzz の asan が長い）。main の merge 後: host-system PASS、host-session 63/63、host-declare 22/22、host-tabs PASS |
+| main（P2 の WS172 段 B、KL_VERSION 52）の merge の後 | disk-image・image 外の 9 本・keiland-linux（gcc）が exit 0・warning 0、keiland-os-boundary PASS（merge で入った `settings/page-users-keys.c` の `<keiland.h>` と `ws172/tests/build-fido2-image.sh` の壁紙の path を直した） |
 
 ## 受け入れ
 

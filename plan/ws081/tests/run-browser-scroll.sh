@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws081-p006: the host test of the view's placed scroll (<browser.h> version 2: browser_view_scroll_to,
+# ws081-p006: the host test of the view's placed scroll (<browser/browser.h> version 2: browser_view_scroll_to,
 # browser_view_scroll_range, browser_view_set_overscroll), linked with the engine's objects of WS074's host
 # build, and the browser shell's touch screen (userland/desktop/browser/shell/touch.c) on libkeiland.
 #   sh plan/ws074/tests/host-build.sh plain      (first: the engine's objects)

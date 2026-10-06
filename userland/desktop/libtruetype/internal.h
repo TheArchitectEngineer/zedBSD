@@ -17,7 +17,7 @@
 #ifndef LIBTRUETYPE_INTERNAL_H
 #define LIBTRUETYPE_INTERNAL_H
 
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 #include <stddef.h>
 #include <stdint.h>

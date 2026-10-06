@@ -11,6 +11,6 @@ lib=${KEILAND_LINUX_BUILD:-build/keiland-linux}/lib
 mkdir -p build/tmp
 work=$(mktemp -d "$(pwd)/build/tmp/run-host-instance.XXXXXX")
 mkdir -m 700 "$work/run"
-cc -std=gnu89 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -Iuserland/desktop/keiland \
+cc -std=gnu89 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -Iuserland/desktop/include \
     plan/ws089/tests/host-instance.c -L"$lib" -Wl,-rpath,"$(pwd)/$lib" -lkeiland -o "$work/host-instance"
 LD_LIBRARY_PATH="$(pwd)/$lib" XDG_RUNTIME_DIR="$work/run" timeout 30 "$work/host-instance"

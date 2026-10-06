@@ -7,7 +7,10 @@ set -e
 cd "$(dirname "$0")/../../.."
 out=${1:-build/ws102/host-inset}
 mkdir -p "$(dirname "$out")/inc"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$(dirname "$out")/inc/"
+mkdir -p "$(dirname "$out")/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$(dirname "$out")/inc/truetype/"
+mkdir -p "$(dirname "$out")/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$(dirname "$out")/inc/keiland/"
 U=userland/desktop
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc" -I$U/libkeiland/ui \
 	plan/ws102/tests/host-inset.c \

@@ -7,7 +7,7 @@
 
 /*
  * ws074-p032: the host test of the form controls through the view
- * (<browser.h>): the focus moving into fields with Tab and a click, typing,
+ * (<browser/browser.h>): the focus moving into fields with Tab and a click, typing,
  * Backspace, Delete, the arrows, Home and End, maxlength, a password, the
  * placeholder, a textarea's new lines, checkboxes and radio buttons with
  * Space and a click, and the submission by Enter in a field and by a
@@ -21,7 +21,7 @@
  * Prints one line per failed check and a summary.
  */
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <stdio.h>
 #include <stdlib.h>

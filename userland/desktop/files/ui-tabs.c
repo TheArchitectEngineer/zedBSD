@@ -18,7 +18,7 @@
 
 #include "files.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <stdio.h>
 #include <stdlib.h>

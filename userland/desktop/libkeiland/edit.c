@@ -14,7 +14,7 @@
  * keyboard sends such a window the keys instead.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "ui/internal.h"
 

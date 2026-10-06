@@ -17,7 +17,9 @@ cp $F/Mahora-Bold.ttf "$out/share/fonts/keiland-bold.ttf"
 cp $F/Mahora-Mono.ttf "$out/share/fonts/keiland-mono.ttf"
 cp $F/JetBrainsMono-Regular.ttf "$out/share/fonts/keiland-fallback-mono.ttf"
 cp $F/DroidSansFallbackFull.ttf "$out/share/fonts/keiland-fallback.ttf"
-cp $U/keiland/truetype.h $U/keiland/keiland.h "$out/inc/"
+mkdir -p "$out/inc/truetype" "$out/inc/keiland"
+cp $U/include/truetype/truetype.h "$out/inc/truetype/"
+cp $U/include/keiland/keiland.h "$out/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$out/inc/compat"
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -DKEILAND_DATADIR="\"$(pwd)/$out/share\"" \
 	-I"$out/inc" -I. -I$K -I$U/libtruetype \

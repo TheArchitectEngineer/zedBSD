@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the calls <truetype.h> declares leave the library. */
+/* Only the calls <truetype/truetype.h> declares leave the library. */
 {
 	global:
 		truetype_open;

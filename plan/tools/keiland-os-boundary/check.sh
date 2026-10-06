@@ -102,7 +102,7 @@ find userland/desktop/libkeiland-backend userland/desktop/libkeiland-backend-zed
     userland/desktop/libkeiland-backend-linux userland/desktop/libkeiland-backend-freebsd \
     -name '*.[ch]' -print 2>/dev/null |
 while IFS= read -r file; do
-    awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*([<"]userland\/desktop\/wayland\/|"[^"]*zwl[^"]*\.h"|<keiland\.h>|<keiui\.h>)/ {print FILENAME ":" FNR ": " $0}' "$file"
+    awk '/^[[:space:]]*#[[:space:]]*include[[:space:]]*([<"]userland\/desktop\/wayland\/|"[^"]*zwl[^"]*\.h"|<keiland\/keiland\.h>|<keiland\.h>|<keiui\.h>)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/B1"
 
 # Only the compositor uses libkeiland-backend: no other desktop source includes its headers, and no other Makefile
@@ -198,18 +198,19 @@ PY
 
 # The old names are gone (WS131 B5, ws131-p023): no C source of the tree or of the plan's tests (the history and
 # libbrowser, another component, aside) uses kui_, KUI_, keiland_ or KEILAND_, and nothing includes or copies the
-# old headers keiui.h and keiland-ui.h.  Kept: the install paths' macros (paths.h, KEILAND_PREFIX), the environment's
+# old headers keiui.h and keiland-ui.h, or names the public headers as they were before their directories
+# (<keiland.h>, <truetype.h>, <browser.h>, userland/desktop/keiland/; ws131-p026).  Kept: the install paths' macros (paths.h, KEILAND_PREFIX), the environment's
 # variables (KEILAND_DRM_DEVICE, KEILAND_SEAT, KEILAND_DESKTOP_TOKEN, KEILAND_VULKAN_*), include guards (D16), and the
 # WS035 p075 test's own protocol (keiland_generic_*_v1, ws131-p021).
 git ls-files userland plan | grep -E '\.(c|h|inc)$' | grep -v -e '^plan/history/' -e '^userland/desktop/libbrowser/' |
 while IFS= read -r file; do
-    grep -noE '\b(kui|KUI|keiland|KEILAND)_[A-Za-z0-9_]*|[<"](keiui|keiland-ui)\.h[>"]' "$file" |
+    grep -noE '\b(kui|KUI|keiland|KEILAND)_[A-Za-z0-9_]*|[<"](keiui|keiland-ui|keiland|truetype|browser)\.h[>"]' "$file" |
         grep -vE ':(KEILAND_(BINDIR|DATADIR|LIBEXECDIR|SYSCONFDIR|PREFIX|FONT_BOLD|FONT_FALLBACK_MONO|DRM_DEVICE|SEAT|DESKTOP_TOKEN|VULKAN_BACKEND|VULKAN_BACKEND_PATHS|VULKAN_NO_DEEPBIND)|KEILAND_([A-Z0-9_]+_)?H|keiland_generic_[a-z0-9_]+)$' |
         sed "s|^|$file:|"
 done > "$work/B5"
-git ls-files userland plan | grep -E '(\.sh|\.py|Makefile[a-z.]*|\.mk)$' | grep -v -e '^plan/history/' -e '^plan/ws131/tools/rename-map\.py$' |
+git ls-files userland plan | grep -E '(\.sh|\.py|Makefile[a-z.]*|\.mk)$' | grep -v -e '^plan/history/' -e '^plan/ws131/tools/rename-map\.py$' -e '^plan/tools/keiland-os-boundary/check\.sh$' |
 while IFS= read -r file; do
-    grep -nE 'keiland/(keiui|keiland-ui)\.h' "$file" | sed "s|^|$file:|"
+    grep -nE 'keiland/(keiui|keiland-ui)\.h|userland/desktop/keiland([^-a-z.]|$)' "$file" | sed "s|^|$file:|"
 done >> "$work/B5"
 
 # Report every violated condition before returning the aggregate outcome.

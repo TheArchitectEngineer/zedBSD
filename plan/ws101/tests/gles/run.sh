@@ -11,7 +11,7 @@ root=$here/../../../..
 out=${1:-$root/build/ws101-gles-host}
 mkdir -p "$out/shim"
 for h in EGL GLES2 GLES3 KHR; do ln -sfn "$root/include/libc/$h" "$out/shim/$h"; done
-ln -sfn "$root/userland/desktop/keiland/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
+ln -sfn "$root/userland/desktop/include/wayland-egl-core.h" "$out/shim/wayland-egl-core.h"
 status=0
 cc -std=c11 -g -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -I"$out/shim" \
 	-o "$out/reflect-host" "$here/reflect-host.c" "$root/userland/desktop/libglesv2/spirv.c" \

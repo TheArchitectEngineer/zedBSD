@@ -24,7 +24,7 @@
 #include "storage-scan.h"
 #include "storage-trash.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <pthread.h>
 #include <stddef.h>

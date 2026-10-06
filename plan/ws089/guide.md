@@ -220,7 +220,7 @@ sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-pt passthrough > build/<W>
   設定の file（WS089 が main の許可で足した行を除く）は読むだけで、変更は main に依頼する。
 - **WS104 と同じ file**: ws104-p002 が `settings/look.c`・`settings.h`・`page-home.c`・`page-input.c`（`se_look_sound()` → `keiland_audio_available()`）、
   ws104-p003 が `plan/ws089/tests/host-build.sh:37`、ws104-p007 が settings の install の path の文字列、ws104-p001 の patch が `plan/ws089/tests/host-build.sh`・
-  `host-preferences.sh` の header の path（`include/libc/keiland.h`・`truetype.h` → `userland/desktop/keiland/`）を変える（[plan/ws104/patches/](../ws104/patches/)）。
+  `host-preferences.sh` の header の path（`include/libc/keiland.h`・`truetype.h` → `userland/desktop/include/`）を変える（[plan/ws104/patches/](../ws104/patches/)）。
   ws104-p001 の後は §5.1 の command はそのまま、script の中の header の path が変わる。**Settings の source や `plan/ws089/tests/` を変える Phase は WS104 と同時に
   走らせず、main に順を確かめる。** WS104・WS105 の Phase はこの WS の作業で触らない。
 - **WS090 の p007**（Settings の libkeiui への移行）はこの WS の完了の後。手順は [plan/ws090/phase007/phase.md](../ws090/phase007/phase.md)。

@@ -19,7 +19,7 @@ Resume point: p001（棚卸しと移行）。
 ## 完了の条件
 
 1. 試験の image を作る script（`plan/*/tests/build-*image*.sh`・`plan/tools/*/build-*image*.sh` など、2026-10-04 に 24 本、`build/ws0xx-*` を読む script は 59 本）が、その WS の `tests/` の config.mk での build と、tree の中の file の複写だけで image を作る。
-2. `build/ws035-fonts`・`build/ws035-wallpaper`・`build/ws071-fonts` などの過去の build の成果を、image の入力として読まない（font は `userland/desktop/fonts/`、壁紙は `userland/desktop/keiland/wallpapers/` など tree の物を使う）。
+2. `build/ws035-fonts`・`build/ws035-wallpaper`・`build/ws071-fonts` などの過去の build の成果を、image の入力として読まない（font は `userland/desktop/fonts/`、壁紙は `userland/desktop/wallpapers/` など tree の物を使う）。
 3. 共通の手順は 1 つの小さな helper（config.mk と `--file` の一覧を受けて `make disk-image` を呼ぶだけ）にまとめてよいが、試験ごとの特殊な build の段を増やさない。
 4. 移した script のうち代表（login・files・ime・settings・criteria・demo）を build し、T1・T2 の boot-test で確かめる。
 

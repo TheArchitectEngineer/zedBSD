@@ -11,7 +11,7 @@
  * which without a display gives nothing.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 

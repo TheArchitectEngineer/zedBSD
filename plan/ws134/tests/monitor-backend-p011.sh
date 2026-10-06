@@ -62,7 +62,7 @@ EOF
 # Linux: the probe built here and run under a busy loop.
 if [ "$which" = linux ] || [ "$which" = all ]; then
 	mkdir -p "$out/linux-bin"
-	if gcc -std=gnu17 -D_GNU_SOURCE -O1 -Wall -Wextra -Werror -Wno-format-truncation -I. -Iuserland/desktop/keiland \
+	if gcc -std=gnu17 -D_GNU_SOURCE -O1 -Wall -Wextra -Werror -Wno-format-truncation -I. -Iuserland/desktop/include \
 	    userland/tests/monitor-probe/main.c userland/desktop/libkeiland-backend-linux/monitor-linux.c \
 	    userland/desktop/libkeiland-backend-linux/network-link-linux.c userland/desktop/libkeiland-backend/wpa/network-wpa.c \
 	    userland/desktop/libkeiland-backend/wpa/network-config-wpa.c -o "$out/linux-bin/probe" > "$out/linux-build.log" 2>&1; then
@@ -92,9 +92,9 @@ if [ "$which" = freebsd ] || [ "$which" = all ]; then
 		started=1
 	fi
 	src=/root/keiland-p011
-	guest copy "$src" include userland/desktop/keiland userland/desktop/libkeiland-backend userland/desktop/libkeiland-backend-freebsd \
+	guest copy "$src" include userland/desktop/include userland/desktop/libkeiland-backend userland/desktop/libkeiland-backend-freebsd \
 	    userland/tests/monitor-probe > "$out/freebsd-copy.log" 2>&1
-	guest ssh "cd $src && mkdir -p build && cc -std=gnu17 -Wall -Wextra -Werror -I. -Iuserland/desktop/keiland -I/usr/local/include \
+	guest ssh "cd $src && mkdir -p build && cc -std=gnu17 -Wall -Wextra -Werror -I. -Iuserland/desktop/include -I/usr/local/include \
 	    userland/tests/monitor-probe/main.c userland/desktop/libkeiland-backend-freebsd/monitor-freebsd.c \
 	    userland/desktop/libkeiland-backend-freebsd/network-link-freebsd.c userland/desktop/libkeiland-backend/wpa/network-wpa.c \
 	    userland/desktop/libkeiland-backend/wpa/network-config-wpa.c -o build/probe" > "$out/freebsd-build.log" 2>&1

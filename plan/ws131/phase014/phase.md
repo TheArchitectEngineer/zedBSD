@@ -8,7 +8,7 @@ Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q675
 依存: p013 cleared、p011 cleared（旧 network・audio・preferences を除いた後）。判断 D16
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
-所有 path: `userland/desktop/libkeiland/`、`userland/desktop/keiland/keiland.h`、共有の source の内部の名前（`userland/desktop/picture/`・`artwork/` の `keiland_*`）、`plan/ws131/`
+所有 path: `userland/desktop/libkeiland/`、`userland/desktop/include/keiland/keiland.h`、共有の source の内部の名前（`userland/desktop/picture/`・`artwork/` の `keiland_*`）、`plan/ws131/`
 
 ## 目的と結果
 

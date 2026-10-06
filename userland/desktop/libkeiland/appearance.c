@@ -19,7 +19,7 @@
  * own too, so that each is called when its own changes.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "ui/internal.h"
 

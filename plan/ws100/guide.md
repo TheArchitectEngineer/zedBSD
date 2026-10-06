@@ -156,7 +156,7 @@ sh plan/ws100/tests/host-audio.sh; echo "exit=$?"
 
 - PASS: `host-audio: 14/14 passed`、exit 0（3 秒、2026-10-01 確かめ）。`build/ws100-host/` に作る。
 - WS104 の p003 が `libkeiland/audio.c` を `libkeiland/zedbsd/audio-zedbsd.c` へ移すと、`host-audio.sh:13` の path を main が直す（`plan/ws104/phase003/phase.md`）。
-  WS104 の p001 で `include/libc/keiland.h` が `userland/desktop/keiland/` へ移ると `host-audio.sh:10` の `ln -sf …/include/libc/keiland.h` も変わる（WS104 の担当）。
+  WS104 の p001 で `include/libc/keiland.h` が `userland/desktop/include/` へ移ると `host-audio.sh:10` の `ln -sf …/include/libc/keiland.h` も変わる（WS104 の担当）。
 
 ### 5.3 QEMU の guest 試験
 
@@ -226,7 +226,7 @@ passthrough（README §1）は iGPU（`0000:00:02.0`）だけを QEMU に渡し�
 - toolchain（`build/llvm` ほか）を変えない。`audiod-feedback` の compile は `build/llvm/bin/clang` を使うだけで、toolchain の tree に書かない。
 - `pci-hda.c` は kernel の driver で HAL の API ではないので、事前承認は要らない（AGENTS.md「禁止と承認」）。`include/hal/hal.h` は変えない。
 - **WS104 との関係**（WS104 は planned、master の 1 番）:
-  - WS104 p001 は `include/libc/keiland.h` などを `userland/desktop/keiland/` へ移す。WS100 の source が `<keiland.h>` を読む所は変わらないが、`host-audio.sh:10` の
+  - WS104 p001 は `include/libc/keiland.h` などを `userland/desktop/include/` へ移す。WS100 の source が `<keiland.h>` を読む所は変わらないが、`host-audio.sh:10` の
     symlink の元の path が変わる（WS104 の Phase が直す）。
   - WS104 p002 は `keiland_audio_available()`（audiod の socket があるか）を `libkeiland/audio.c` に足し、Settings の `se_look_sound()` を置き換え、
     KEILAND_VERSION を 21 にする。WS100 の後の Phase で `keiland_audio_*` を足すときは、WS104 の p002 の後の版から続け（version を 1 つ上げる）、`exports.map` の順を合わせる。

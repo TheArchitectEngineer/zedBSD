@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws127/host-column-widths}
 mkdir -p "$out"
 ${CC:-clang} -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -Wdeclaration-after-statement \
-	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -I. -Iuserland/desktop/keiland \
+	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -I. -Iuserland/desktop/include \
 	-Iuserland/desktop/libkeiland plan/ws127/tests/host-column-widths.c userland/desktop/libkeiland/settings-cache.c \
 	userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c -o "$out/host-column-widths"
 "$out/host-column-widths" "$out"

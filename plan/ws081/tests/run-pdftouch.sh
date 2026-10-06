@@ -15,8 +15,9 @@ ln -sfn "$root/include/libc/compat" "$out/include/compat"
 for header in pdf.h sha2.h md5.h sha1.h; do
 	ln -sf "$root/include/libc/$header" "$out/include/$header"
 done
-for header in truetype.h keiland.h; do
-	ln -sf "$root/userland/desktop/keiland/$header" "$out/include/$header"
+for header in truetype/truetype.h keiland/keiland.h; do
+	mkdir -p "$out/include/$(dirname "$header")"
+	ln -sf "$root/userland/desktop/include/$header" "$out/include/$header"
 done
 
 # The test document: eight Letter pages, each with bands of colour and as many squares as its number.

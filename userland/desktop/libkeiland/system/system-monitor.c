@@ -7,7 +7,7 @@
 
 /*
  * The machine's monitor for applications (WS134 p012, plan/ws134/design.md
- * section 1.3; keiland/kl-system-protocol.h's kl_system_monitor_v1): the
+ * section 1.3; libkeiland/system/kl-system-protocol.h's kl_system_monitor_v1): the
  * compositor's samples, taken on the kl_system's queue by
  * kl_system_dispatch, made into frames of rates (system-monitor-rate.c).
  *
@@ -17,12 +17,12 @@
  * only then).  The info comes the same way, ended by info_done.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 
 #include "system-private.h"
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <errno.h>
 #include <stdlib.h>

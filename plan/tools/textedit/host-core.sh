@@ -8,7 +8,10 @@ set -e
 cd "$(dirname "$0")/../../.."
 out=${1:-build/textedit/host-core}
 mkdir -p "$(dirname "$out")/inc"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$(dirname "$out")/inc/"
+mkdir -p "$(dirname "$out")/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$(dirname "$out")/inc/truetype/"
+mkdir -p "$(dirname "$out")/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$(dirname "$out")/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$(dirname "$out")/inc/compat"
 D=userland/desktop/textedit
 cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -I$D -I. -I"$(dirname "$out")/inc" -Iuserland/desktop/libtruetype \

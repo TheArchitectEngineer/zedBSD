@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws074-p057: the engine as libbrowser.so on the Venus guest (build-browser-image.sh).
 # Checks:
-#  1. On the host, from the image's build: libbrowser.so exports only the calls of <browser.h> (browser_*); /bin/browser
+#  1. On the host, from the image's build: libbrowser.so exports only the calls of <browser/browser.h> (browser_*); /bin/browser
 #     needs libbrowser.so and not the engine's libraries (libtruetype, the image libraries); browser-probe needs only
 #     libbrowser.so and the C library (no Wayland, no Vulkan of its own).
 #  2. In the guest: browser-probe draws test pages with the CPU and with the engine's offscreen GPU image (Venus), each
@@ -27,11 +27,11 @@ status=0
 
 # 1. The library's exports and the programs' needs.
 $nm -D --defined-only "$build/dynamic/libbrowser.so" | awk '{print $NF}' | sort > "$out/exported.txt"
-sed -n 's/^[a-z].*[ *]\(browser_[a-z_]*\)(.*/\1/p' userland/desktop/keiland/browser.h | sort > "$out/declared.txt"
+sed -n 's/^[a-z].*[ *]\(browser_[a-z_]*\)(.*/\1/p' userland/desktop/include/browser/browser.h | sort > "$out/declared.txt"
 if cmp -s "$out/exported.txt" "$out/declared.txt"; then
-	echo "exports: the $(wc -l < "$out/declared.txt") calls <browser.h> declares, and nothing else, ok"
+	echo "exports: the $(wc -l < "$out/declared.txt") calls <browser/browser.h> declares, and nothing else, ok"
 else
-	echo "exports: differ from <browser.h>:"
+	echo "exports: differ from <browser/browser.h>:"
 	diff "$out/declared.txt" "$out/exported.txt"
 	status=1
 fi

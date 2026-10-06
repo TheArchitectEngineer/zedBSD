@@ -9,7 +9,7 @@
  * The desktop's system for applications (keiland.h's kl_system_*; WS131
  * p010, plan/ws131/design.md section 4.4): the client of Keiland's system
  * extension (kl_system_manager_v1 and its network, sound, power, devices
- * and account objects; keiland/kl-system-protocol.h).
+ * and account objects; libkeiland/system/kl-system-protocol.h).
  *
  * As the settings do (settings.c), the objects live on a queue of the
  * library's own, which stays theirs, so that a change sent right after the
@@ -18,13 +18,13 @@
  * the view (system-view.c), and reports what changed.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 
 #include "system-private.h"
 #include "system-protocol.h"
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <errno.h>
 #include <stdlib.h>

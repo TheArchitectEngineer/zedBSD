@@ -19,13 +19,13 @@
  * Vulkan instance.
  */
 
-/* The Vulkan header first, so that <keiland.h> declares the Vulkan surface. */
+/* The Vulkan header first, so that <keiland/keiland.h> declares the Vulkan surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
 
 #include "window.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <stdio.h>

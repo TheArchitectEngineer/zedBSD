@@ -28,7 +28,7 @@
  * the one thread that uses the library's windows.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/paths.h"
 

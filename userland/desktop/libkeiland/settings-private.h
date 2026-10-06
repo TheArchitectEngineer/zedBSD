@@ -16,7 +16,7 @@
 #ifndef KEILAND_SETTINGS_PRIVATE_H
 #define KEILAND_SETTINGS_PRIVATE_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/settings-keys/settings-keys.h"
 

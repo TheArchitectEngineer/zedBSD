@@ -26,7 +26,7 @@
  *           [--width=N] [--height=N] [--timeout-s=N] [--shm]
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/paths.h"
 

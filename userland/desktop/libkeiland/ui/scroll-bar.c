@@ -18,7 +18,7 @@
  * (kl_scroll_bar_draw in scroll.c draws it on a kl_canvas).
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <string.h>
 

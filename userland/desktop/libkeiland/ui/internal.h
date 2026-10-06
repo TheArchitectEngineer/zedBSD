@@ -7,13 +7,13 @@
 
 /*
  * What the library's files share among themselves and do not export
- * (exports.map lets only the kl_ calls of <keiland.h> out).
+ * (exports.map lets only the kl_ calls of <keiland/keiland.h> out).
  */
 
 #ifndef KEIUI_INTERNAL_H
 #define KEIUI_INTERNAL_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 struct wl_display;
 struct wl_registry;
