@@ -15,7 +15,7 @@ ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
 ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+ln -sfn "$(pwd)/userland/desktop/include/truetype" "$out/include/truetype"
 python3 plan/ws175/tests/make-clean-sample.py "$out/sample-plain.pdf"
 qpdf --object-streams=generate --compress-streams=n "$out/sample-plain.pdf" "$out/clean-sample.pdf"
 libpdf=$(ls userland/base/libpdf/*.c)

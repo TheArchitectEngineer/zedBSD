@@ -27,5 +27,6 @@ extern const struct wl_interface kl_system_monitor_v1_interface;
 extern const struct wl_interface kl_system_account_v1_interface;
 extern const struct wl_interface kl_system_sharing_v1_interface;
 extern const struct wl_interface kl_system_notify_v1_interface;
+extern const struct wl_interface kl_system_mail_v1_interface;
 
 #endif

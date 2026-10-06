@@ -541,6 +541,60 @@ system_view_take_notify_event(
 }
 
 /*
+ * Keeps an arrival of mail told to this listener (ws169-p002) for
+ * kl_system_take_mail_event, its strings cut to their rooms; a full ring
+ * drops its oldest.
+ */
+void
+system_view_mail_event(
+	struct system_view *view,
+	const char *from,
+	const char *subject,
+	const char *code)
+{
+	struct kl_mail_event *event;
+	unsigned slot;
+
+	/* A full ring drops its oldest. */
+	if (view->mail_count == SYSTEM_VIEW_MAIL_EVENTS) {
+		view->mail_head = (view->mail_head + 1U) % SYSTEM_VIEW_MAIL_EVENTS;
+		view->mail_count--;
+	}
+
+	/* The arrival after the newest. */
+	slot = (view->mail_head + view->mail_count) % SYSTEM_VIEW_MAIL_EVENTS;
+	event = &view->mail_events[slot];
+	system_view_copy(event->from, sizeof(event->from), from);
+	system_view_copy(event->subject, sizeof(event->subject), subject);
+	system_view_copy(event->code, sizeof(event->code), code);
+
+	/* Counted, and told as a change. */
+	view->mail_count++;
+	view->changed |= KL_SYSTEM_CHANGED_MAIL;
+}
+
+/*
+ * Takes the oldest arrival of mail: 1 with it, 0 when none waits.
+ */
+int
+system_view_take_mail_event(
+	struct system_view *view,
+	struct kl_mail_event *event)
+{
+	/* None waits. */
+	if (view->mail_count == 0U)
+		return 0;
+
+	/* The oldest, out of the ring. */
+	*event = view->mail_events[view->mail_head];
+	view->mail_head = (view->mail_head + 1U) % SYSTEM_VIEW_MAIL_EVENTS;
+	view->mail_count--;
+
+	/* Succeeded: one arrival taken. */
+	return 1;
+}
+
+/*
  * Gives what changed since the last take, and starts again from nothing.
  */
 unsigned

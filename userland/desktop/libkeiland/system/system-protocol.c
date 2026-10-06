@@ -49,6 +49,9 @@ static const struct wl_interface *system_get_sharing_types[] = {
 static const struct wl_interface *system_get_notify_types[] = {
 	&kl_system_notify_v1_interface,
 };
+static const struct wl_interface *system_get_mail_types[] = {
+	&kl_system_mail_v1_interface,
+};
 
 /* The arguments of messages that name no interface (at most sixteen, a monitor's disk's). */
 static const struct wl_interface *system_plain_types[] = {
@@ -82,6 +85,7 @@ static const struct wl_message system_manager_requests[] = {
 	{ "get_account", "4n", system_get_account_types },
 	{ "get_sharing", "7n", system_get_sharing_types },
 	{ "get_notify", "13n", system_get_notify_types },
+	{ "get_mail", "15n", system_get_mail_types },
 };
 
 /* The events of kl_system_manager_v1. */
@@ -89,11 +93,11 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: ten requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13) and one event.  It lives for the program. */
+/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: eleven requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
 	KL_SYSTEM_MANAGER_VERSION,
-	10,
+	11,
 	system_manager_requests,
 	1,
 	system_manager_events
@@ -337,4 +341,27 @@ const struct wl_interface kl_system_notify_v1_interface = {
 	system_notify_requests,
 	4,
 	system_notify_events
+};
+
+/* The requests of kl_system_mail_v1 (ws169-p002). */
+static const struct wl_message system_mail_requests[] = {
+	{ "destroy", "", NULL },
+	{ "arrived", "ussss", system_plain_types },
+	{ "listen", "us", system_plain_types },
+};
+
+/* The events of kl_system_mail_v1. */
+static const struct wl_message system_mail_events[] = {
+	{ "mail", "sss", system_plain_types },
+	{ "result", "uuu", system_plain_types },
+};
+
+/* kl_system_mail_v1, made at the manager's version (15): three requests and two events.  It lives for the program. */
+const struct wl_interface kl_system_mail_v1_interface = {
+	KL_SYSTEM_MAIL_NAME,
+	KL_SYSTEM_SINCE_MAIL,
+	3,
+	system_mail_requests,
+	2,
+	system_mail_events
 };
