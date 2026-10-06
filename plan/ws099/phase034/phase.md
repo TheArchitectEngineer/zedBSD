@@ -113,3 +113,8 @@ P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴�
 - dark の外観: p034 の暗い glass の bar のまま。
 - dock の時: 窓の button の pill（最小化・restore・閉じる）を右上の端（今の時計の位置）に、状態と時計の pill をその左へ。中央の desktop の点は動かさない。（animation は実装の時。）
 - 待ち: ユーザーの確認（light の bar の色味、tile の記号の地）。
+
+## 2026-10-06 ユーザーの回答（bar-montage-5-light）
+
+- 「このまま実装」: light の bar を montage-5 の形で実装してよい。
+- app の icon の中抜きの記号: 「デスクトップ背景が透けて見えるとうれしいです。ライトもダークも、Apps一覧も。」→ bar（light・dark）と App Home の Apps の一覧の icon は、中抜きの記号の部分を本当に透明にし、そこから desktop の背景（壁紙）が透けて見えるようにする（ink の地や白で塗らない）。title bar の小さな tile の扱いは別（変えるならユーザーに確かめる）。
