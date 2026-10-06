@@ -256,7 +256,15 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		# Projects (1216,90), notes.txt (1216,194), photo.png (1216,298), report.pdf (1216,402), script.sh (1216,506).
 		# Rows are numbered 1000 + the action: New Folder 1002, Copy 1010, Paste 1011, Rename 1014, Show in Files 1055,
 		# Clean Up 1056, Change Wallpaper 1057.
-		guest 'rm -rf /tmp/dhome/.local/share/Trash; rm -f /tmp/files.clipboard' >/dev/null
+		# A fresh desktop and no saved places, the compositor started again with Files (T1-261: the prune step had left
+		# notes.txt at column 3, row 3 and the overflow's files, so the places below were not the ones this step expects).
+		guest "$stop_all" >/dev/null
+		fresh_desktop
+		guest 'rm -rf /tmp/dhome/.local/share/Trash /tmp/dhome/.config/keiland/desktop-layout; rm -f /tmp/files.clipboard' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
+i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
+		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=notes.txt column=0 row=1 '
 		rclick 700 400
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=700 y=356'
 		expect_log /tmp/zdesktop.log 'KWL MENU row item=1056 depth=1 '

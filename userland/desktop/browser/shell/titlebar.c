@@ -10,11 +10,13 @@
  * forward, reload, and the location of the page (the parts of its path,
  * which zdesktop turns into a field for the whole URL when it is edited).
  *
- * zdesktop draws the controls and edits the field; this file gives it the
- * model and the browser's state in transactions, the same way as
- * files' titlebar, and queues what zdesktop tells the window for
- * the main loop.  A compositor without the titlebar leaves the window with
- * zdesktop's plain titlebar and the keyboard's shortcuts.
+ * zdesktop draws the controls and edits the field; this file declares them
+ * on the window (libkeiland's controls, WS131 p025; zdesktop's titlebar
+ * object in transactions before) with the browser's state, and queues what
+ * the window hears from them (a control's KL_WINDOW_ACTION, the field's
+ * KL_WINDOW_CONTROL_DONE) for the main loop.  A compositor without the
+ * titlebar leaves the window with zdesktop's plain titlebar and the
+ * keyboard's shortcuts.
  */
 
 #include "shell/internal.h"
@@ -29,38 +31,24 @@
 /* The scheme put before the location's text when it is a file's path (a URL keeps its own). */
 #define TITLEBAR_FILE_SCHEME	"file://"
 
-/*
- * One control of the model: its ID, role, priority and label.
- */
-struct titlebar_control {
-	uint32_t id;
-	unsigned role;
-	unsigned priority;
-	const char *label;
+/* The actions of the controls: this base and the control's ID. */
+#define TITLEBAR_ACTION		0x100U
+
+/* The controls, in their order: ID, role, priority, group, label and action. */
+static const struct kl_control_entry titlebar_controls[] = {
+	{ SHELL_CONTROL_BACK, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back", TITLEBAR_ACTION + SHELL_CONTROL_BACK },
+	{ SHELL_CONTROL_FORWARD, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward", TITLEBAR_ACTION + SHELL_CONTROL_FORWARD },
+	{ SHELL_CONTROL_RELOAD, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, 0U, "Reload", TITLEBAR_ACTION + SHELL_CONTROL_RELOAD },
+	{ SHELL_CONTROL_LOCATION, KL_CONTROL_BREADCRUMB, KL_PRIORITY_NORMAL, 0U, "Location", TITLEBAR_ACTION + SHELL_CONTROL_LOCATION }
 };
 
-/* The controls, in their order. */
-static const struct titlebar_control titlebar_controls[] = {
-	{ SHELL_CONTROL_BACK, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, "Back" },
-	{ SHELL_CONTROL_FORWARD, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, "Forward" },
-	{ SHELL_CONTROL_RELOAD, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_NORMAL, "Reload" },
-	{ SHELL_CONTROL_LOCATION, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, "Location" }
-};
-
-static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_done(void *data, struct keiland_titlebar *object, uint32_t id, const char *text, unsigned how);
 static void titlebar_queue(struct shell_titlebar *titlebar, int kind, uint32_t id, uint32_t detail, const char *text);
-static int titlebar_build(struct shell_titlebar *titlebar);
 static int titlebar_state(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
 static size_t titlebar_scheme_length(const char *location);
 
-/* What the titlebar tells the window: the controls chosen and the end of the location's editing. */
-static const struct keiland_titlebar_listener titlebar_listener = {
-	titlebar_activated, NULL, titlebar_done, NULL, NULL, NULL, NULL, NULL
-};
-
 /*
- * Gives zdesktop the window's titlebar with its controls.
+ * Declares the window's titlebar controls; the window gives the titlebar
+ * what is done with them.
  *
  * Returns 0, or an errno value (ENOTSUP for a compositor without the
  * titlebar).
@@ -75,17 +63,14 @@ shell_titlebar_open(
 	/* Nothing yet. */
 	memset(titlebar, 0, sizeof(*titlebar));
 
-	/* The window's titlebar object. */
-	titlebar->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
-	if (titlebar->titlebar == NULL)
-		return errno;
-
-	/* The controls in one transaction. */
-	error = titlebar_build(titlebar);
+	/* The controls, in their order. */
+	error = kl_window_set_controls(window->kui, titlebar_controls, sizeof(titlebar_controls) / sizeof(titlebar_controls[0]));
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the titlebar is zdesktop's to show. */
+	/* Succeeded: the titlebar is zdesktop's to show, and the window's inputs from it come here. */
+	titlebar->kui = window->kui;
+	window->titlebar = titlebar;
 	return 0;
 }
 
@@ -103,10 +88,10 @@ shell_titlebar_show(
 	int error;
 
 	/* Without a titlebar nothing is shown. */
-	if (titlebar->titlebar == NULL)
+	if (titlebar->kui == NULL)
 		return 0;
 
-	/* The state in one transaction. */
+	/* The state. */
 	error = titlebar_state(titlebar, can_back, can_forward, path);
 	if (error != 0)
 		return error;
@@ -130,11 +115,11 @@ shell_titlebar_edit_location(
 	int error;
 
 	/* Without a titlebar there is no field. */
-	if (titlebar->titlebar == NULL)
+	if (titlebar->kui == NULL)
 		return ENOTSUP;
 
 	/* The field takes the keyboard. */
-	error = keiland_titlebar_focus_control(titlebar->titlebar, SHELL_CONTROL_LOCATION, KEILAND_FOCUS_EDIT);
+	error = kl_window_focus_control_mode(titlebar->kui, SHELL_CONTROL_LOCATION, KL_FOCUS_EDIT);
 	if (error != 0)
 		return error;
 
@@ -165,51 +150,37 @@ shell_titlebar_take(
 }
 
 /*
- * Takes the titlebar away from zdesktop (before the window goes).
+ * Queues what the window heard from the titlebar: a control chosen (its
+ * action, with a breadcrumb's part in begin), or the end of the location's
+ * editing (how in code, with its text).
+ */
+void
+shell_titlebar_post(
+	struct shell_titlebar *titlebar,
+	const struct kl_window_event *event)
+{
+	/* A control chosen: its ID from its action. */
+	if (event->kind == KL_WINDOW_ACTION) {
+		if (event->code <= TITLEBAR_ACTION)
+			return;
+		titlebar_queue(titlebar, SHELL_TITLEBAR_ACTIVATED, event->code - TITLEBAR_ACTION, (uint32_t)event->begin, "");
+		return;
+	}
+
+	/* The field's editing ended, and how. */
+	if (event->kind == KL_WINDOW_CONTROL_DONE)
+		titlebar_queue(titlebar, SHELL_TITLEBAR_DONE, (uint32_t)event->id, event->code, event->text);
+}
+
+/*
+ * Takes the controls away (before the window goes).
  */
 void
 shell_titlebar_close(
 	struct shell_titlebar *titlebar)
 {
-	/* The titlebar object. */
-	if (titlebar->titlebar != NULL)
-		keiland_titlebar_destroy(titlebar->titlebar);
-
-	/* Nothing is left. */
+	/* The controls go with the window; nothing is left here. */
 	memset(titlebar, 0, sizeof(*titlebar));
-}
-
-/* Queues a control chosen. */
-static void
-titlebar_activated(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	uint32_t detail,
-	struct wl_seat *seat,
-	uint32_t serial)
-{
-	UNUSED_PARAMETER(object);
-	UNUSED_PARAMETER(seat);
-	UNUSED_PARAMETER(serial);
-
-	/* The event, for the main loop. */
-	titlebar_queue(data, SHELL_TITLEBAR_ACTIVATED, id, detail, "");
-}
-
-/* Queues the end of the location's editing. */
-static void
-titlebar_done(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	const char *text,
-	unsigned how)
-{
-	UNUSED_PARAMETER(object);
-
-	/* The event, for the main loop. */
-	titlebar_queue(data, SHELL_TITLEBAR_DONE, id, how, text);
 }
 
 /* Puts an event at the end of the queue; a full queue drops it. */
@@ -236,45 +207,7 @@ titlebar_queue(
 	titlebar->event_count++;
 }
 
-/* Gives zdesktop the mode and every control in one transaction; returns 0 or an errno value. */
-static int
-titlebar_build(
-	struct shell_titlebar *titlebar)
-{
-	const struct titlebar_control *control;
-	size_t index;
-	int error;
-
-	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* The controls' presentation. */
-	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
-
-	/* Each control in its order. */
-	for (index = 0; error == 0 && index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
-		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, 0U, control->label);
-	}
-
-	/* A refused change still ends the transaction, which is reported. */
-	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The controls are shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the controls are there. */
-	return 0;
-}
-
-/* Shows the history's steps and the page's location in one transaction; returns 0 or an errno value. */
+/* Shows the history's steps and the page's location; returns 0 or an errno value. */
 static int
 titlebar_state(
 	struct shell_titlebar *titlebar,
@@ -287,6 +220,8 @@ titlebar_state(
 	char url[SHELL_TITLEBAR_TEXT + 8U];
 	size_t scheme_length;
 	size_t count;
+	unsigned back;
+	unsigned forward;
 	char *part;
 	char *next;
 	int error;
@@ -330,28 +265,22 @@ titlebar_state(
 		part = next;
 	}
 
-	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* The history's steps, the location's parts and its URL. */
-	error = keiland_titlebar_set_control_state(titlebar->titlebar, SHELL_CONTROL_BACK, can_back, 0);
+	/* The history's steps. */
+	back = KL_ACTION_DISABLED;
+	if (can_back)
+		back = 0U;
+	forward = KL_ACTION_DISABLED;
+	if (can_forward)
+		forward = 0U;
+	error = kl_window_set_action_state(titlebar->kui, TITLEBAR_ACTION + SHELL_CONTROL_BACK, back);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(titlebar->titlebar, SHELL_CONTROL_FORWARD, can_forward, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_breadcrumb(titlebar->titlebar, SHELL_CONTROL_LOCATION, parts, count);
-	if (error == 0)
-		error = keiland_titlebar_set_control_text(titlebar->titlebar, SHELL_CONTROL_LOCATION, url, "URL or file path");
+		error = kl_window_set_action_state(titlebar->kui, TITLEBAR_ACTION + SHELL_CONTROL_FORWARD, forward);
 
-	/* A refused change still ends the transaction, which is reported. */
-	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The state is shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
+	/* The location's parts and its URL. */
+	if (error == 0)
+		error = kl_window_set_control_parts(titlebar->kui, SHELL_CONTROL_LOCATION, parts, count);
+	if (error == 0)
+		error = kl_window_set_control_text(titlebar->kui, SHELL_CONTROL_LOCATION, url, "URL or file path");
 	if (error != 0)
 		return error;
 

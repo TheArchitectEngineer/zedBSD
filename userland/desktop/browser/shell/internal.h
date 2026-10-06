@@ -6,21 +6,20 @@
  */
 
 /*
- * The parts of the shell that speak Wayland and Vulkan: the window
- * (window.c), the names of its keys for the view (keys.c) and the
- * presenter that shows the view's frames in it (present.c).  The host
- * build leaves the whole directory out.
+ * The parts of the shell that speak to the desktop and to Vulkan: the
+ * window (window.c, a window of libkeiland's application, WS131 p025), the
+ * names of its keys for the view (keys.c) and the presenter that shows the
+ * view's frames in it (present.c).  The host build leaves the whole
+ * directory out.
  */
 
 #ifndef KEILAND_BROWSER_SHELL_INTERNAL_H
 #define KEILAND_BROWSER_SHELL_INTERNAL_H
 
-/* The Wayland platform's parts of Vulkan, declared before anything includes vulkan.h. */
+/* The Wayland platform's parts of Vulkan (the instance's surface extension), declared before anything includes vulkan.h. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
 #include <poll.h>
-#include <wayland-client.h>
-#include <xdg-shell-client-protocol.h>
 
 #include "shell/shell.h"
 #include "shell/touch.h"
@@ -90,41 +89,28 @@ struct shell_key_names {
 	const char *text;
 };
 
+struct shell_titlebar;
+
 /*
- * The Wayland window: its globals, its surface and roles, the size the
- * compositor gave it, and the input waiting for the main loop.
+ * The window: libkeiland's application and its one window (shown with
+ * KL_PRESENT_NONE; the presenter draws on its surface), the size the
+ * compositor gave it, the network's descriptors the application watches,
+ * and the input waiting for the main loop.  What is done with the titlebar
+ * goes to the titlebar's queue (titlebar.c).
  *
  * One lives for the whole run.
  */
 struct shell_window {
-	/* The connection and the globals bound from it. */
-	struct wl_display *display;
-	struct wl_registry *registry;
-	struct wl_compositor *compositor;
-	struct xdg_wm_base *shell;
-	struct wl_seat *seat;
-	struct wl_pointer *pointer;
-	struct wl_keyboard *keyboard;
-	struct wl_touch *touch;
-
-	/* The window: its surface and roles. */
-	struct wl_surface *surface;
-	struct xdg_surface *role;
-	struct xdg_toplevel *toplevel;
+	/* The application (the connection to the compositor) and its window. */
+	struct kl_app *app;
+	struct kl_window *kui;
 
 	/* The size the compositor asked for, and whether it changed since it was last taken. */
 	uint32_t width;
 	uint32_t height;
 	int resized;
 
-	/* The largest size the window may choose for itself (xdg-shell's bounds; 0 when not known), and the size it would like. */
-	uint32_t bounds_width;
-	uint32_t bounds_height;
-	uint32_t preferred_width;
-	uint32_t preferred_height;
-
-	/* Whether the first configure arrived and whether the compositor asked to close. */
-	int configured;
+	/* Whether the compositor asked to close. */
 	int closed;
 
 	/* The modifiers held (SHELL_MOD_*), and the pointer's place in the window. */
@@ -132,14 +118,12 @@ struct shell_window {
 	int pointer_x;
 	int pointer_y;
 
-	/* What the scrolling of the pointer's frame comes from (wl_pointer's axis source; a wheel until one is said, ws090-p019). */
-	uint32_t axis_source;
+	/* The network's descriptors the application watches now. */
+	int watched[SHELL_NET_FDS];
+	unsigned watched_count;
 
-	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
-	uint32_t repeat_key;
-	uint64_t repeat_at;
-	uint32_t repeat_delay;
-	uint32_t repeat_interval;
+	/* The titlebar that hears its controls' inputs (NULL until it opens). */
+	struct shell_titlebar *titlebar;
 
 	/* The inputs waiting, a ring: the oldest's slot and how many. */
 	struct shell_event events[SHELL_WINDOW_EVENTS];
@@ -218,7 +202,7 @@ enum shell_titlebar_kind {
 /*
  * One thing done with the titlebar: a control chosen (detail is a
  * breadcrumb's part), or a text control's editing ended (detail is how,
- * KEILAND_TEXT_*, and text is its text).
+ * KL_TEXT_*, and text is its text).
  */
 struct shell_titlebar_event {
 	int kind;
@@ -228,12 +212,13 @@ struct shell_titlebar_event {
 };
 
 /*
- * The window's titlebar as given to zdesktop (titlebar.c): zdesktop's
- * titlebar object (NULL when the compositor has none) and what the user did
- * with it and the main loop has not yet carried out, oldest first.
+ * The window's titlebar controls (titlebar.c): the window they are
+ * declared on (NULL when the compositor has no titlebar for them) and what
+ * the user did with them and the main loop has not yet carried out, oldest
+ * first.
  */
 struct shell_titlebar {
-	struct keiland_titlebar *titlebar;
+	struct kl_window *kui;
 	struct shell_titlebar_event events[SHELL_TITLEBAR_EVENTS];
 	unsigned event_count;
 };
@@ -242,7 +227,6 @@ struct shell_titlebar {
 int shell_window_open(struct shell_window *window, const char *display, uint32_t width, uint32_t height, const char *title);
 int shell_window_dispatch(struct shell_window *window, int timeout, struct pollfd *extra, size_t extra_count);
 int shell_window_take(struct shell_window *window, struct shell_event *event);
-int shell_window_repeat(struct shell_window *window, uint64_t now);
 void shell_window_title(struct shell_window *window, const char *title);
 void shell_window_close(struct shell_window *window);
 uint64_t shell_clock(void);
@@ -257,6 +241,7 @@ int shell_titlebar_open(struct shell_titlebar *titlebar, struct shell_window *wi
 int shell_titlebar_show(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
 int shell_titlebar_edit_location(struct shell_titlebar *titlebar);
 int shell_titlebar_take(struct shell_titlebar *titlebar, struct shell_titlebar_event *event);
+void shell_titlebar_post(struct shell_titlebar *titlebar, const struct kl_window_event *event);
 void shell_titlebar_close(struct shell_titlebar *titlebar);
 
 /* The presenter (present.c). */

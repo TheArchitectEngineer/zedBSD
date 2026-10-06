@@ -57,3 +57,7 @@ Files の自前の窓（`window.c` 1,340 行、toplevel と desktop surface の 
 - build: zedBSD amd64 の libkeiland・files（exit 0、warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）、`exports.py --check` OK。
 - host: `plan/tools/files/host-build.sh` built、`build/ws071-host/files-model` を worktree の build の中の新しい folder で直に実行 PASS（`host-model.sh` は host の `rm` を含むので P1 は走らせない、2 つ目・3 つ目の volume の試験は未実施）、`plan/ws081/tests/run-filestouch.sh` ok (20)、glass の files-render の描画。
 - 未実施: FreeBSD の native build と `native-build-audit.py`、`keiland-os-boundary/check.sh`（Q1）、QEMU（T1）: `files-regress.sh`・`files-open.sh`、`plan/ws094/tests/desktop-guest.sh`・`files-desktop-guest.sh`、`plan/ws127/tests/files-p002.sh`、boot-test、Linux の Files の窓と desktop の PNG。
+
+## q825（P1、2026-10-06）: files-desktop-guest の menu の段（T1-261、試験の側）
+
+- 7 行（untitled folder・Plans の place、notes.txt の context と rename、photo 2.png の place、script.sh の select・trash）: menu の段が前の段（prune: notes.txt を column 3・row 3 へ動かし、保存した配置を残す）の desktop をそのまま使っていた（rename-field.png で notes.txt が 3,3、新しい folder が row 4）。menu の段の初めに compositor と Files を止め、`fresh_desktop`・保存した配置と ごみ箱 と clipboard を消して起動し直し、`place name=notes.txt column=0 row=1` を待つ。

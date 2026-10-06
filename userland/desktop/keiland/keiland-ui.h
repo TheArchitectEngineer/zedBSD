@@ -996,8 +996,8 @@ struct kl_app;
 struct kl_system;
 struct kl_glass_panel;
 
-/* The most descriptors an application watches. */
-#define KL_APP_FDS_MAX		16U
+/* The most descriptors an application watches (16 before KL_VERSION 51, WS131 p025: the browser's network). */
+#define KL_APP_FDS_MAX		64U
 
 /* What a watched descriptor is waited for, and what it became (a hang-up or an error is always told). */
 #define KL_APP_FD_READ		1U

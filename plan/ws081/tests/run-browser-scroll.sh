@@ -13,6 +13,6 @@ cc=${CC:-cc}
 fonts=userland/desktop/fonts
 mkdir -p "$out"
 flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -Iuserland/desktop/browser -Ibuild/ws074-host/include"
-engine=$(ls $host/obj/*.o | grep -v '/main\.o$')
+engine=$(ls $host/obj/*.o | grep -v -e '/main\.o$' -e '/browser_main\.o$')
 "$cc" $flags -o "$out/host-browser-scroll" plan/ws081/tests/host-browser-scroll.c $engine -lvulkan -lm
 "$out/host-browser-scroll" plan/ws081/tests/pages $fonts/Mahora-Regular.ttf $fonts/JetBrainsMono-Regular.ttf $fonts/DroidSansFallbackFull.ttf
