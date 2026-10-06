@@ -41,6 +41,16 @@ stateful（M=1）の確かめは p008 の tap と network namespace の dnsmasq 
 | `information-request: Connection timed out`（exit・DNS・renew・resolv.conf） | 未確定。libslirp の `dhcpv6.c` は Information-Request に CLIENTID を返して答える（SERVERID 無し、送り元は `fec0::2`）。static には送り・受けの道に誤りを見つけられなかった | 証拠を取る: `-v` で送った・受けた datagram を 1 行ずつ、試験は手順 1 の間 QMP の `filter-dump` で net0 の pcap（`OUTDIR/dhcp6.pcap`） |
 | （見つけた別の不具合） | kernel: IPv6 の socket を `[::]` に bind すると `SO_BINDTODEVICE` の interface が消える（IPv4 の wildcard は保つ） | `src/kern/net/inet-socket.c`: wildcard・IPv4-mapped の wildcard の bind は interface を保つ |
 
+## T1-296 の結果と修正（2026-10-07）
+
+DUID・記録の 3 行は直った（/var/db）。残る 5 行（exit・DNS・renew・record・resolv.conf）は pcap で原因が分かった: QEMU の slirp の Reply は送り元の port が 8962（547 の byte を入れ替えた値、libslirp の `dhcpv6.c` が port を host の順のまま入れている）。
+Reply は届き、中身も正しい（4 回とも type 7・46 byte）が、`dhcpc -6` は port 547 からの物だけを受けていた。修正: 送り元の port で選ばない（transaction と CLIENTID で決める、RFC 8415 も送り元の port を求めない）。
+
+## 追加: /etc/hosts（2026-10-07、Q1 の依頼、P2 が見つけた）
+
+libc の `getaddrinfo` が `/etc/hosts` を読まず DNS だけを引いていた。正常系として、数値でない名前は DNS の前に `/etc/hosts` を引く（`resolver.c` の `gai_hosts`: IPv6 の行は AF_INET 以外、IPv4 の行は AF_INET6 以外（AF_INET6 は AI_V4MAPPED で、IPv6 が無いか AI_ALL の時に v4-mapped）、file の順、canonical は最初の行の最初の名前）。
+行の読みは純粋な `resolver_hosts_line`（`resolver-dns.c`: comment、alias、大小文字を区別しない、zone つきの address は取らない）。host の試験 `host-libc6.sh` に 8 checks（plain・ASan とも PASS）。guest の試験は `ipv6-p007.sh` の手順 8（ping が `/etc/hosts` の address を名乗る）。
+
 ## T1 への依頼（文面）
 
 config-amd64-ipv6.mk を p007 を含む main から作り、`files-guest.sh start` で起動し、`plan/ws130/tests/ipv6-p007.sh build/<dir>/p007` を流す。PASS は最後の行 `ipv6-p007: PASS`。

@@ -7,7 +7,7 @@ Primary Milestone: MG007
 Related Milestones: MG001（追跡可能なbuild/配布記録）、MG006（既存Keilandの配布）
 Parent: [Master](../master.md)
 Queue: q585 / A2（p001契約調査のみ）
-Resume point: **ベータ1（fg019）で優先度は最下位（2026-10-02 user）**。q585-i01/p001 uncleared（有限契約調査終了、D1 Fedora/Arch boot適用のuser返答待ち）。5OS input/署名/形式契約とRPi採用環境を保存。D1判断元/共有Guardrail反映後p001再評価、q591/p002は候補のみ、実装未承認。
+Resume point: 2026-10-07 組み替え（下の節）。p002 を P1 が実行中（mmdebstrap の rootfs、amd64 から）。
 
 
 ## 目標の設定し直し（2026-10-06 夜 ユーザー）
@@ -17,7 +17,13 @@ Resume point: **ベータ1（fg019）で優先度は最下位（2026-10-02 user�
 - Fedora・Arch・rpm・pacman の package は取りやめる。段はベータ2（第 2 段）、2026-10-05 の「ベータ4 以降」を置き換える。
 - 以下の Objective / scope は以前の 5 種類の計画の記録（取りやめた部分を含む）。
 
-## Objective / scope
+## 組み替え（2026-10-07、ユーザーの回答と Q1 の指示）
+
+- D-a（build の環境）: mmdebstrap の rootfs（ユーザー、2026-10-07）。対象の rootfs（Debian 13、RPi OS trixie）の中で native に build する。amd64 はそのまま、arm64 は host の既存の qemu-aarch64 の binfmt（user-mode、VM ではない）。kernel は host のもの。
+- D-b（確かめる範囲）: 生成＋形式・依存の解決（ユーザー、2026-10-07）。runtime・GUI の試験は無し（既存の QEMU の smoke は任意の経路として残す）。
+- Phase: p001 は superseded（canceled）、p004・p005・p006 は canceled、p002 は amd64・arm64 の共通の deb、p003 は RPi OS の deb、p007 は規約の見直し。CI は Future Work。
+
+## Objective / scope（以前の 5 種類の計画の記録）
 
 指定5つのmake targetでDebian 13、Ubuntu 26.04、Raspberry Pi OS、Fedora 44、Arch LinuxのKeiland binary packageを作り、既存CIで全5種類をrelease filesへ含める。
 Raspberry Pi OSはuser回答によりarm64、追加指示でbuild/deb生成のみで受け入れ、GPU/GUI/表示確認は不要。Debian/Ubuntuは既存amd64、Fedora/Archは既存方針と同じx86_64を計画案とする。
@@ -49,13 +55,13 @@ Debian/Ubuntu QEMU buildは継承し、新OS環境/入力/依存/format/pinsをp
 
 | ID / link | Purpose | Goal | Status | Dependencies |
 | --- | --- | --- | --- | --- |
-| [ws112-p001](phase001/phase.md) | 共通契約・対象OS入力・形式を確定 | 5 targetのpayload/CPU/format/依存・build環境・成果物/CI契約を具体化 | uncleared / q585 | なし（WS108/WS105/WS111の実出力をcontextとして照合） |
-| [ws112-p002](phase002/phase.md) | Debian/Ubuntu package生成を動作試験から分離 | 既存2 targetでbuild/形式検証だけのdeb生成と共通stage/記録契約を提供 | planned | ws112-p001 cleared / 確定したinputsとmanifest |
-| [ws112-p003](phase003/phase.md) | Raspberry Pi OS arm64 deb | make keiland-linux-rpiと実arm64/RPi OS成果物 | planned | ws112-p002 cleared / 共通stage・成果物契約（p001のRPi確定入力を使用） |
-| [ws112-p004](phase004/phase.md) | Fedora 44 rpm | make keiland-linux-fedora44とFedora 44 rpm成果物 | planned | ws112-p002 cleared / 共通stage・成果物契約（p001のFedora確定入力を使用） |
-| [ws112-p005](phase005/phase.md) | Arch Linux binary package | make keiland-linux-archとArch成果物 | planned | ws112-p002 cleared / 共通stage・成果物契約（p001のArch確定入力を使用） |
-| [ws112-p006](phase006/phase.md) | CI 5 target・release添付 | 全5 packageを既存CIからrelease filesへ渡す定義と失敗関門 | planned | ws112-p002/p003/p004/p005 cleared / 5種類の実package・記録 |
-| [ws112-p007](phase007/phase.md) | 最終全文規約・WS受け入れ | P1〜P5を最終変更sourceと5成果物で照合 | planned | ws112-p006 cleared / 全最終source・5種類の成果物とCI定義 |
+| [ws112-p001](phase001/phase.md) | 共通契約・対象OS入力・形式を確定 | 5 targetの契約（superseded） | uncleared・canceled（2026-10-07 superseded） | なし |
+| [ws112-p002](phase002/phase.md) | amd64・arm64 の共通の deb | Debian 13・Ubuntu 26.04 の両方に入る amd64・arm64 の deb を mmdebstrap の rootfs で生成、形式・依存の解決 | in-progress（2026-10-07 P1） | D-a・D-b |
+| [ws112-p003](phase003/phase.md) | Raspberry Pi OS arm64 deb | RPi OS trixie の rootfs で arm64 の deb を生成、形式・依存の解決 | planned | p002 の道具 |
+| [ws112-p004](phase004/phase.md) | Fedora 44 rpm | make keiland-linux-fedora44とFedora 44 rpm成果物 | canceled（2026-10-07） | ws112-p002 cleared / 共通stage・成果物契約（p001のFedora確定入力を使用） |
+| [ws112-p005](phase005/phase.md) | Arch Linux binary package | make keiland-linux-archとArch成果物 | canceled（2026-10-07） | ws112-p002 cleared / 共通stage・成果物契約（p001のArch確定入力を使用） |
+| [ws112-p006](phase006/phase.md) | CI 5 target・release添付 | 全5 packageを既存CIからrelease filesへ渡す定義と失敗関門 | canceled（2026-10-07） | ws112-p002/p003/p004/p005 cleared / 5種類の実package・記録 |
+| [ws112-p007](phase007/phase.md) | 最終全文規約・WS受け入れ | 変えた source と 3 つの deb を照合 | planned | p002・p003 |
 
 Dependency graph: WS105/WS108/WS111（context）→ p001 → p002 → {p003, p004, p005} → p006 → p007。
 p006はp002を含む全4package Phaseの実出力を必要とする。各Phaseは1 Queueずつ、表は実行許可ではない。
