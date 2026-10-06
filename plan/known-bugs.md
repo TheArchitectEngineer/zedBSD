@@ -94,11 +94,11 @@ remain as traceable history and are not new implementation work.
 | [BUG-224](bugs/BUG-224.md) | touchpad の上端から 2 本指で下に swipe すると、最大化の app を窓の mode にしたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS142・WS099 |
 | [BUG-225](bugs/BUG-225.md) | App Home の表示が約 0.7 秒遅れる。すぐ描ける texture で覆う animation を先に始め、裏で準備して icon を後から浮かび上がらせる 2 層の animation に | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home） |
 | [BUG-226](bugs/BUG-226.md) | 左の pane（Files・Mail・Calendar・Settings）で pointer の hover の描画が遅れる。CPU の合成の疑い、無ければ FPS の安定化 | reproduced（実機） / tracking | UAT 2026-10-06 | WS090（libkeiland の UI）・WS127・WS169・WS155・WS089 |
-| [BUG-227](bugs/BUG-227.md) | Browser で https://www.amazon.co.jp を開くと白い画面のまま（libbrowser か browser の shell か） | reproduced（実機） / tracking（q782: 原因は Chrome の UA への AWS WAF の challenge（202・空の本文）。UA の方針の判断待ち） | UAT 2026-10-06 | WS074（browser） |
+| [BUG-227](bugs/BUG-227.md) | Browser で https://www.amazon.co.jp を開くと白い画面のまま（libbrowser か browser の shell か） | reproduced（実機） / tracking（q782: 原因は Chrome の UA への AWS WAF の challenge（202・空の本文）。UA の方針の判断待ち）・2026-10-06: Accept の header を直し challenge の page は届く。JS の機能（typed array など）はベータ2 の後（ユーザー） | UAT 2026-10-06 | WS074（browser） |
 | [BUG-228](bugs/BUG-228.md) | 全画面の Notes から touchpad の下端の 2 本指の上 swipe で最大化（窓の mode でなく）にしたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS142・WS099 |
-| [BUG-229](bugs/BUG-229.md) | 画面 keyboard を出したまま App Home を出して戻ると画面 keyboard が消える（残したい） | reproduced（実機） / tracking | UAT 2026-10-06 | WS102（画面 keyboard） |
-| [BUG-230](bugs/BUG-230.md) | 画面 keyboard を swipe で引き出す時の領域が真っ白な四角。Notes の引き出しと同じ扇形＋文字に | reproduced（実機） / tracking | UAT 2026-10-06 | WS102 |
-| [BUG-231](bugs/BUG-231.md) | 画面の full keyboard で IME の有効の状態を反映し、a で「あ」、漢字の変換もできるように | reproduced（実機） / tracking | UAT 2026-10-06 | WS102・WS095（IME） |
+| [BUG-229](bugs/BUG-229.md) | 画面 keyboard を出したまま App Home を出して戻ると画面 keyboard が消える（残したい） | reproduced（実機） / scheduled（q789: 直し 4b956b9d、test-wait） | UAT 2026-10-06 | WS102（画面 keyboard） |
+| [BUG-230](bugs/BUG-230.md) | 画面 keyboard を swipe で引き出す時の領域が真っ白な四角。Notes の引き出しと同じ扇形＋文字に | reproduced（実機） / scheduled（q789: 直し 4b956b9d、test-wait） | UAT 2026-10-06 | WS102 |
+| [BUG-231](bugs/BUG-231.md) | 画面の full keyboard で IME の有効の状態を反映し、a で「あ」、漢字の変換もできるように | reproduced（実機） / scheduled（q789: 直し 4b956b9d、test-wait） | UAT 2026-10-06 | WS102・WS095（IME） |
 | [BUG-232](bugs/BUG-232.md) | App Home で起動中の app を選ぶと、新しく起動せずに切り替えたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home）・WS089 p016（単一の instance） |
 | [BUG-233](bugs/BUG-233.md) | Files で動画の file を開くと動画の player でなく Terminal が開くように見える | reproduced（実機） / scheduled（q782: x の bit の付いた動画を Terminal で実行していた、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の関連付け）・WS122 |
 | [BUG-234](bugs/BUG-234.md) | Files で /bin の file を開くと何も起きないように見える（Terminal が一瞬起動しているのか、起動していないのか分からない） | reproduced（実機） / scheduled（q782: Run in Terminal の window が終了で消えていた・GUI の app は Open で直接、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の開き方） |

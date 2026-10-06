@@ -118,4 +118,4 @@ Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p01
 
 ## Phase（2026-10-06 追加: 再設計）
 
-- [ws102-p025](phase025/phase.md) 設計: OSK の残り（App Home で消える・引き出し・full keyboard の IME）（planned、実装 p026）
+- [ws102-p025](phase025/phase.md) 設計と実装: OSK の残り（App Home で消える・引き出し・full keyboard の IME）（test-wait、q789 で実装 4b956b9d）

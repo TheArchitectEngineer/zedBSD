@@ -1,0 +1,1448 @@
+{
+  "source_filename": "DroidSans.ttf",
+  "source_reference": "https://android.googlesource.com/platform/frameworks/base/+/android-2.3.7_r1/data/fonts/DroidSans.ttf",
+  "source_sha256": "f51b88945f4c1b236f44b8d55a2d304316869127e95248c435c23f1e4142a7db",
+  "family": "Droid Sans",
+  "style": "Regular",
+  "copyright": "Digitized data copyright © 2007, Google Corporation.",
+  "range": "U+0020-U+007E (printable ASCII, including SPACE)",
+  "units_per_em": 2048,
+  "rendering": {
+    "renderer": "Pillow / FreeType",
+    "font_size_pixels": 768,
+    "canvas_pixels": [
+      1024,
+      1024
+    ],
+    "baseline_origin_pixels": [
+      282,
+      745
+    ],
+    "color": "black",
+    "background": "transparent",
+    "anchor": "left baseline",
+    "individual_glyph_guides": false
+  },
+  "glyphs": [
+    {
+      "codepoint": "U+0020",
+      "character": " ",
+      "glyph_name": "space",
+      "image": "glyphs/U0020.png",
+      "advance_units": 532,
+      "left_side_bearing_units": 0,
+      "advance_pixels": 199.5,
+      "ink_bbox_pixels": null
+    },
+    {
+      "codepoint": "U+0021",
+      "character": "!",
+      "glyph_name": "exclam",
+      "image": "glyphs/U0021.png",
+      "advance_units": 551,
+      "left_side_bearing_units": 147,
+      "advance_pixels": 206.625,
+      "ink_bbox_pixels": [
+        337,
+        197,
+        433,
+        756
+      ]
+    },
+    {
+      "codepoint": "U+0022",
+      "character": "\"",
+      "glyph_name": "quotedbl",
+      "image": "glyphs/U0022.png",
+      "advance_units": 823,
+      "left_side_bearing_units": 133,
+      "advance_pixels": 308.625,
+      "ink_bbox_pixels": [
+        331,
+        197,
+        541,
+        395
+      ]
+    },
+    {
+      "codepoint": "U+0023",
+      "character": "#",
+      "glyph_name": "numbersign",
+      "image": "glyphs/U0023.png",
+      "advance_units": 1323,
+      "left_side_bearing_units": 51,
+      "advance_pixels": 496.125,
+      "ink_bbox_pixels": [
+        301,
+        197,
+        759,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0024",
+      "character": "$",
+      "glyph_name": "dollar",
+      "image": "glyphs/U0024.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 123,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        328,
+        162,
+        652,
+        790
+      ]
+    },
+    {
+      "codepoint": "U+0025",
+      "character": "%",
+      "glyph_name": "percent",
+      "image": "glyphs/U0025.png",
+      "advance_units": 1690,
+      "left_side_bearing_units": 102,
+      "advance_pixels": 633.75,
+      "ink_bbox_pixels": [
+        320,
+        189,
+        878,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0026",
+      "character": "&",
+      "glyph_name": "ampersand",
+      "image": "glyphs/U0026.png",
+      "advance_units": 1438,
+      "left_side_bearing_units": 109,
+      "advance_pixels": 539.25,
+      "ink_bbox_pixels": [
+        322,
+        188,
+        809,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0027",
+      "character": "'",
+      "glyph_name": "quotesingle",
+      "image": "glyphs/U0027.png",
+      "advance_units": 463,
+      "left_side_bearing_units": 133,
+      "advance_pixels": 173.625,
+      "ink_bbox_pixels": [
+        331,
+        197,
+        406,
+        395
+      ]
+    },
+    {
+      "codepoint": "U+0028",
+      "character": "(",
+      "glyph_name": "parenleft",
+      "image": "glyphs/U0028.png",
+      "advance_units": 616,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 231.0,
+      "ink_bbox_pixels": [
+        312,
+        197,
+        491,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+0029",
+      "character": ")",
+      "glyph_name": "parenright",
+      "image": "glyphs/U0029.png",
+      "advance_units": 616,
+      "left_side_bearing_units": 61,
+      "advance_pixels": 231.0,
+      "ink_bbox_pixels": [
+        304,
+        197,
+        483,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+002A",
+      "character": "*",
+      "glyph_name": "asterisk",
+      "image": "glyphs/U002A.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        312,
+        161,
+        674,
+        508
+      ]
+    },
+    {
+      "codepoint": "U+002B",
+      "character": "+",
+      "glyph_name": "plus",
+      "image": "glyphs/U002B.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 102,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        320,
+        300,
+        667,
+        647
+      ]
+    },
+    {
+      "codepoint": "U+002C",
+      "character": ",",
+      "glyph_name": "comma",
+      "image": "glyphs/U002C.png",
+      "advance_units": 512,
+      "left_side_bearing_units": 63,
+      "advance_pixels": 192.0,
+      "ink_bbox_pixels": [
+        305,
+        656,
+        424,
+        844
+      ]
+    },
+    {
+      "codepoint": "U+002D",
+      "character": "-",
+      "glyph_name": "hyphen",
+      "image": "glyphs/U002D.png",
+      "advance_units": 659,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 247.125,
+      "ink_bbox_pixels": [
+        312,
+        508,
+        499,
+        571
+      ]
+    },
+    {
+      "codepoint": "U+002E",
+      "character": ".",
+      "glyph_name": "period",
+      "image": "glyphs/U002E.png",
+      "advance_units": 549,
+      "left_side_bearing_units": 147,
+      "advance_pixels": 205.875,
+      "ink_bbox_pixels": [
+        337,
+        651,
+        433,
+        756
+      ]
+    },
+    {
+      "codepoint": "U+002F",
+      "character": "/",
+      "glyph_name": "slash",
+      "image": "glyphs/U002F.png",
+      "advance_units": 764,
+      "left_side_bearing_units": 20,
+      "advance_pixels": 286.5,
+      "ink_bbox_pixels": [
+        289,
+        197,
+        561,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0030",
+      "character": "0",
+      "glyph_name": "zero",
+      "image": "glyphs/U0030.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 98,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        318,
+        188,
+        669,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0031",
+      "character": "1",
+      "glyph_name": "one",
+      "image": "glyphs/U0031.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 178,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        348,
+        197,
+        549,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0032",
+      "character": "2",
+      "glyph_name": "two",
+      "image": "glyphs/U0032.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 96,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        318,
+        189,
+        660,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0033",
+      "character": "3",
+      "glyph_name": "three",
+      "image": "glyphs/U0033.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        312,
+        189,
+        660,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0034",
+      "character": "4",
+      "glyph_name": "four",
+      "image": "glyphs/U0034.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 23,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        290,
+        194,
+        690,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0035",
+      "character": "5",
+      "glyph_name": "five",
+      "image": "glyphs/U0035.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 131,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        331,
+        197,
+        663,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0036",
+      "character": "6",
+      "glyph_name": "six",
+      "image": "glyphs/U0036.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 113,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        324,
+        189,
+        670,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0037",
+      "character": "7",
+      "glyph_name": "seven",
+      "image": "glyphs/U0037.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 90,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        315,
+        197,
+        669,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0038",
+      "character": "8",
+      "glyph_name": "eight",
+      "image": "glyphs/U0038.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 106,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        321,
+        188,
+        666,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0039",
+      "character": "9",
+      "glyph_name": "nine",
+      "image": "glyphs/U0039.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 106,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        321,
+        189,
+        668,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+003A",
+      "character": ":",
+      "glyph_name": "colon",
+      "image": "glyphs/U003A.png",
+      "advance_units": 549,
+      "left_side_bearing_units": 147,
+      "advance_pixels": 205.875,
+      "ink_bbox_pixels": [
+        337,
+        323,
+        433,
+        756
+      ]
+    },
+    {
+      "codepoint": "U+003B",
+      "character": ";",
+      "glyph_name": "semicolon",
+      "image": "glyphs/U003B.png",
+      "advance_units": 549,
+      "left_side_bearing_units": 63,
+      "advance_pixels": 205.875,
+      "ink_bbox_pixels": [
+        305,
+        323,
+        433,
+        844
+      ]
+    },
+    {
+      "codepoint": "U+003C",
+      "character": "<",
+      "glyph_name": "less",
+      "image": "glyphs/U003C.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 102,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        320,
+        278,
+        667,
+        656
+      ]
+    },
+    {
+      "codepoint": "U+003D",
+      "character": "=",
+      "glyph_name": "equal",
+      "image": "glyphs/U003D.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 102,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        320,
+        370,
+        667,
+        580
+      ]
+    },
+    {
+      "codepoint": "U+003E",
+      "character": ">",
+      "glyph_name": "greater",
+      "image": "glyphs/U003E.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 102,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        320,
+        278,
+        667,
+        656
+      ]
+    },
+    {
+      "codepoint": "U+003F",
+      "character": "?",
+      "glyph_name": "question",
+      "image": "glyphs/U003F.png",
+      "advance_units": 872,
+      "left_side_bearing_units": 37,
+      "advance_pixels": 327.0,
+      "ink_bbox_pixels": [
+        295,
+        189,
+        584,
+        756
+      ]
+    },
+    {
+      "codepoint": "U+0040",
+      "character": "@",
+      "glyph_name": "at",
+      "image": "glyphs/U0040.png",
+      "advance_units": 1774,
+      "left_side_bearing_units": 109,
+      "advance_pixels": 665.25,
+      "ink_bbox_pixels": [
+        322,
+        197,
+        907,
+        813
+      ]
+    },
+    {
+      "codepoint": "U+0041",
+      "character": "A",
+      "glyph_name": "A",
+      "image": "glyphs/U0041.png",
+      "advance_units": 1245,
+      "left_side_bearing_units": 0,
+      "advance_pixels": 466.875,
+      "ink_bbox_pixels": [
+        282,
+        194,
+        749,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0042",
+      "character": "B",
+      "glyph_name": "B",
+      "image": "glyphs/U0042.png",
+      "advance_units": 1272,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 477.0,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        717,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0043",
+      "character": "C",
+      "glyph_name": "C",
+      "image": "glyphs/U0043.png",
+      "advance_units": 1235,
+      "left_side_bearing_units": 125,
+      "advance_pixels": 463.125,
+      "ink_bbox_pixels": [
+        328,
+        189,
+        723,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0044",
+      "character": "D",
+      "glyph_name": "D",
+      "image": "glyphs/U0044.png",
+      "advance_units": 1401,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 525.375,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        761,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0045",
+      "character": "E",
+      "glyph_name": "E",
+      "image": "glyphs/U0045.png",
+      "advance_units": 1081,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 405.375,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        642,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0046",
+      "character": "F",
+      "glyph_name": "F",
+      "image": "glyphs/U0046.png",
+      "advance_units": 1006,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 377.25,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        642,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0047",
+      "character": "G",
+      "glyph_name": "G",
+      "image": "glyphs/U0047.png",
+      "advance_units": 1413,
+      "left_side_bearing_units": 125,
+      "advance_pixels": 529.875,
+      "ink_bbox_pixels": [
+        328,
+        189,
+        757,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0048",
+      "character": "H",
+      "glyph_name": "H",
+      "image": "glyphs/U0048.png",
+      "advance_units": 1436,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 538.5,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        746,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0049",
+      "character": "I",
+      "glyph_name": "I",
+      "image": "glyphs/U0049.png",
+      "advance_units": 694,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 260.25,
+      "ink_bbox_pixels": [
+        312,
+        197,
+        512,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+004A",
+      "character": "J",
+      "glyph_name": "J",
+      "image": "glyphs/U004A.png",
+      "advance_units": 555,
+      "left_side_bearing_units": -184,
+      "advance_pixels": 208.125,
+      "ink_bbox_pixels": [
+        213,
+        197,
+        422,
+        891
+      ]
+    },
+    {
+      "codepoint": "U+004B",
+      "character": "K",
+      "glyph_name": "K",
+      "image": "glyphs/U004B.png",
+      "advance_units": 1186,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 444.75,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        727,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+004C",
+      "character": "L",
+      "glyph_name": "L",
+      "image": "glyphs/U004C.png",
+      "advance_units": 1006,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 377.25,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        642,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+004D",
+      "character": "M",
+      "glyph_name": "M",
+      "image": "glyphs/U004D.png",
+      "advance_units": 1782,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 668.25,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        876,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+004E",
+      "character": "N",
+      "glyph_name": "N",
+      "image": "glyphs/U004E.png",
+      "advance_units": 1493,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 559.875,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        768,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+004F",
+      "character": "O",
+      "glyph_name": "O",
+      "image": "glyphs/U004F.png",
+      "advance_units": 1520,
+      "left_side_bearing_units": 125,
+      "advance_pixels": 570.0,
+      "ink_bbox_pixels": [
+        328,
+        188,
+        805,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0050",
+      "character": "P",
+      "glyph_name": "P",
+      "image": "glyphs/U0050.png",
+      "advance_units": 1180,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 442.5,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        686,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0051",
+      "character": "Q",
+      "glyph_name": "Q",
+      "image": "glyphs/U0051.png",
+      "advance_units": 1520,
+      "left_side_bearing_units": 125,
+      "advance_pixels": 570.0,
+      "ink_bbox_pixels": [
+        328,
+        188,
+        805,
+        876
+      ]
+    },
+    {
+      "codepoint": "U+0052",
+      "character": "R",
+      "glyph_name": "R",
+      "image": "glyphs/U0052.png",
+      "advance_units": 1208,
+      "left_side_bearing_units": 199,
+      "advance_pixels": 453.0,
+      "ink_bbox_pixels": [
+        356,
+        197,
+        726,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0053",
+      "character": "S",
+      "glyph_name": "S",
+      "image": "glyphs/U0053.png",
+      "advance_units": 1063,
+      "left_side_bearing_units": 104,
+      "advance_pixels": 398.625,
+      "ink_bbox_pixels": [
+        321,
+        189,
+        646,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0054",
+      "character": "T",
+      "glyph_name": "T",
+      "image": "glyphs/U0054.png",
+      "advance_units": 1063,
+      "left_side_bearing_units": 20,
+      "advance_pixels": 398.625,
+      "ink_bbox_pixels": [
+        289,
+        197,
+        673,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0055",
+      "character": "U",
+      "glyph_name": "U",
+      "image": "glyphs/U0055.png",
+      "advance_units": 1430,
+      "left_side_bearing_units": 184,
+      "advance_pixels": 536.25,
+      "ink_bbox_pixels": [
+        351,
+        196,
+        749,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0056",
+      "character": "V",
+      "glyph_name": "V",
+      "image": "glyphs/U0056.png",
+      "advance_units": 1163,
+      "left_side_bearing_units": 0,
+      "advance_pixels": 436.125,
+      "ink_bbox_pixels": [
+        282,
+        197,
+        719,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0057",
+      "character": "W",
+      "glyph_name": "W",
+      "image": "glyphs/U0057.png",
+      "advance_units": 1810,
+      "left_side_bearing_units": 20,
+      "advance_pixels": 678.75,
+      "ink_bbox_pixels": [
+        289,
+        197,
+        954,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0058",
+      "character": "X",
+      "glyph_name": "X",
+      "image": "glyphs/U0058.png",
+      "advance_units": 1120,
+      "left_side_bearing_units": 0,
+      "advance_pixels": 420.0,
+      "ink_bbox_pixels": [
+        282,
+        197,
+        702,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0059",
+      "character": "Y",
+      "glyph_name": "Y",
+      "image": "glyphs/U0059.png",
+      "advance_units": 1079,
+      "left_side_bearing_units": 0,
+      "advance_pixels": 404.625,
+      "ink_bbox_pixels": [
+        282,
+        197,
+        687,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+005A",
+      "character": "Z",
+      "glyph_name": "Z",
+      "image": "glyphs/U005A.png",
+      "advance_units": 1104,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 414.0,
+      "ink_bbox_pixels": [
+        312,
+        197,
+        666,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+005B",
+      "character": "[",
+      "glyph_name": "bracketleft",
+      "image": "glyphs/U005B.png",
+      "advance_units": 621,
+      "left_side_bearing_units": 164,
+      "advance_pixels": 232.875,
+      "ink_bbox_pixels": [
+        343,
+        197,
+        496,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+005C",
+      "character": "\\",
+      "glyph_name": "backslash",
+      "image": "glyphs/U005C.png",
+      "advance_units": 764,
+      "left_side_bearing_units": 23,
+      "advance_pixels": 286.5,
+      "ink_bbox_pixels": [
+        290,
+        197,
+        562,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+005D",
+      "character": "]",
+      "glyph_name": "bracketright",
+      "image": "glyphs/U005D.png",
+      "advance_units": 621,
+      "left_side_bearing_units": 51,
+      "advance_pixels": 232.875,
+      "ink_bbox_pixels": [
+        301,
+        197,
+        454,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+005E",
+      "character": "^",
+      "glyph_name": "asciicircum",
+      "image": "glyphs/U005E.png",
+      "advance_units": 1090,
+      "left_side_bearing_units": 41,
+      "advance_pixels": 408.75,
+      "ink_bbox_pixels": [
+        297,
+        193,
+        676,
+        540
+      ]
+    },
+    {
+      "codepoint": "U+005F",
+      "character": "_",
+      "glyph_name": "underscore",
+      "image": "glyphs/U005F.png",
+      "advance_units": 842,
+      "left_side_bearing_units": -4,
+      "advance_pixels": 315.75,
+      "ink_bbox_pixels": [
+        280,
+        814,
+        600,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+0060",
+      "character": "`",
+      "glyph_name": "grave",
+      "image": "glyphs/U0060.png",
+      "advance_units": 1182,
+      "left_side_bearing_units": 393,
+      "advance_pixels": 443.25,
+      "ink_bbox_pixels": [
+        429,
+        157,
+        577,
+        280
+      ]
+    },
+    {
+      "codepoint": "U+0061",
+      "character": "a",
+      "glyph_name": "a",
+      "image": "glyphs/U0061.png",
+      "advance_units": 1087,
+      "left_side_bearing_units": 94,
+      "advance_pixels": 407.625,
+      "ink_bbox_pixels": [
+        317,
+        326,
+        629,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0062",
+      "character": "b",
+      "glyph_name": "b",
+      "image": "glyphs/U0062.png",
+      "advance_units": 1200,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 450.0,
+      "ink_bbox_pixels": [
+        347,
+        161,
+        690,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0063",
+      "character": "c",
+      "glyph_name": "c",
+      "image": "glyphs/U0063.png",
+      "advance_units": 948,
+      "left_side_bearing_units": 113,
+      "advance_pixels": 355.5,
+      "ink_bbox_pixels": [
+        324,
+        326,
+        612,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0064",
+      "character": "d",
+      "glyph_name": "d",
+      "image": "glyphs/U0064.png",
+      "advance_units": 1200,
+      "left_side_bearing_units": 113,
+      "advance_pixels": 450.0,
+      "ink_bbox_pixels": [
+        324,
+        161,
+        667,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0065",
+      "character": "e",
+      "glyph_name": "e",
+      "image": "glyphs/U0065.png",
+      "advance_units": 1096,
+      "left_side_bearing_units": 113,
+      "advance_pixels": 411.0,
+      "ink_bbox_pixels": [
+        324,
+        326,
+        655,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0066",
+      "character": "f",
+      "glyph_name": "f",
+      "image": "glyphs/U0066.png",
+      "advance_units": 674,
+      "left_side_bearing_units": 29,
+      "advance_pixels": 252.75,
+      "ink_bbox_pixels": [
+        292,
+        157,
+        564,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0067",
+      "character": "g",
+      "glyph_name": "g",
+      "image": "glyphs/U0067.png",
+      "advance_units": 1061,
+      "left_side_bearing_units": 37,
+      "advance_pixels": 397.875,
+      "ink_bbox_pixels": [
+        295,
+        326,
+        665,
+        930
+      ]
+    },
+    {
+      "codepoint": "U+0068",
+      "character": "h",
+      "glyph_name": "h",
+      "image": "glyphs/U0068.png",
+      "advance_units": 1206,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 452.25,
+      "ink_bbox_pixels": [
+        347,
+        161,
+        673,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0069",
+      "character": "i",
+      "glyph_name": "i",
+      "image": "glyphs/U0069.png",
+      "advance_units": 530,
+      "left_side_bearing_units": 160,
+      "advance_pixels": 198.75,
+      "ink_bbox_pixels": [
+        342,
+        179,
+        422,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+006A",
+      "character": "j",
+      "glyph_name": "j",
+      "image": "glyphs/U006A.png",
+      "advance_units": 530,
+      "left_side_bearing_units": -68,
+      "advance_pixels": 198.75,
+      "ink_bbox_pixels": [
+        256,
+        179,
+        422,
+        930
+      ]
+    },
+    {
+      "codepoint": "U+006B",
+      "character": "k",
+      "glyph_name": "k",
+      "image": "glyphs/U006B.png",
+      "advance_units": 1016,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 381.0,
+      "ink_bbox_pixels": [
+        347,
+        161,
+        660,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+006C",
+      "character": "l",
+      "glyph_name": "l",
+      "image": "glyphs/U006C.png",
+      "advance_units": 530,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 198.75,
+      "ink_bbox_pixels": [
+        347,
+        161,
+        416,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+006D",
+      "character": "m",
+      "glyph_name": "m",
+      "image": "glyphs/U006D.png",
+      "advance_units": 1835,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 688.125,
+      "ink_bbox_pixels": [
+        347,
+        326,
+        909,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+006E",
+      "character": "n",
+      "glyph_name": "n",
+      "image": "glyphs/U006E.png",
+      "advance_units": 1206,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 452.25,
+      "ink_bbox_pixels": [
+        347,
+        326,
+        673,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+006F",
+      "character": "o",
+      "glyph_name": "o",
+      "image": "glyphs/U006F.png",
+      "advance_units": 1182,
+      "left_side_bearing_units": 113,
+      "advance_pixels": 443.25,
+      "ink_bbox_pixels": [
+        324,
+        326,
+        683,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0070",
+      "character": "p",
+      "glyph_name": "p",
+      "image": "glyphs/U0070.png",
+      "advance_units": 1200,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 450.0,
+      "ink_bbox_pixels": [
+        347,
+        326,
+        690,
+        930
+      ]
+    },
+    {
+      "codepoint": "U+0071",
+      "character": "q",
+      "glyph_name": "q",
+      "image": "glyphs/U0071.png",
+      "advance_units": 1200,
+      "left_side_bearing_units": 113,
+      "advance_pixels": 450.0,
+      "ink_bbox_pixels": [
+        324,
+        326,
+        667,
+        930
+      ]
+    },
+    {
+      "codepoint": "U+0072",
+      "character": "r",
+      "glyph_name": "r",
+      "image": "glyphs/U0072.png",
+      "advance_units": 817,
+      "left_side_bearing_units": 174,
+      "advance_pixels": 306.375,
+      "ink_bbox_pixels": [
+        347,
+        326,
+        573,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0073",
+      "character": "s",
+      "glyph_name": "s",
+      "image": "glyphs/U0073.png",
+      "advance_units": 924,
+      "left_side_bearing_units": 90,
+      "advance_pixels": 346.5,
+      "ink_bbox_pixels": [
+        315,
+        326,
+        594,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0074",
+      "character": "t",
+      "glyph_name": "t",
+      "image": "glyphs/U0074.png",
+      "advance_units": 694,
+      "left_side_bearing_units": 33,
+      "advance_pixels": 260.25,
+      "ink_bbox_pixels": [
+        294,
+        238,
+        528,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0075",
+      "character": "u",
+      "glyph_name": "u",
+      "image": "glyphs/U0075.png",
+      "advance_units": 1206,
+      "left_side_bearing_units": 164,
+      "advance_pixels": 452.25,
+      "ink_bbox_pixels": [
+        343,
+        333,
+        669,
+        753
+      ]
+    },
+    {
+      "codepoint": "U+0076",
+      "character": "v",
+      "glyph_name": "v",
+      "image": "glyphs/U0076.png",
+      "advance_units": 981,
+      "left_side_bearing_units": 0,
+      "advance_pixels": 367.875,
+      "ink_bbox_pixels": [
+        282,
+        333,
+        650,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0077",
+      "character": "w",
+      "glyph_name": "w",
+      "image": "glyphs/U0077.png",
+      "advance_units": 1528,
+      "left_side_bearing_units": 20,
+      "advance_pixels": 573.0,
+      "ink_bbox_pixels": [
+        289,
+        333,
+        848,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0078",
+      "character": "x",
+      "glyph_name": "x",
+      "image": "glyphs/U0078.png",
+      "advance_units": 1024,
+      "left_side_bearing_units": 35,
+      "advance_pixels": 384.0,
+      "ink_bbox_pixels": [
+        295,
+        333,
+        653,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+0079",
+      "character": "y",
+      "glyph_name": "y",
+      "image": "glyphs/U0079.png",
+      "advance_units": 1001,
+      "left_side_bearing_units": 10,
+      "advance_pixels": 375.375,
+      "ink_bbox_pixels": [
+        285,
+        333,
+        654,
+        930
+      ]
+    },
+    {
+      "codepoint": "U+007A",
+      "character": "z",
+      "glyph_name": "z",
+      "image": "glyphs/U007A.png",
+      "advance_units": 903,
+      "left_side_bearing_units": 82,
+      "advance_pixels": 338.625,
+      "ink_bbox_pixels": [
+        312,
+        333,
+        590,
+        745
+      ]
+    },
+    {
+      "codepoint": "U+007B",
+      "character": "{",
+      "glyph_name": "braceleft",
+      "image": "glyphs/U007B.png",
+      "advance_units": 725,
+      "left_side_bearing_units": 61,
+      "advance_pixels": 271.875,
+      "ink_bbox_pixels": [
+        304,
+        197,
+        535,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+007C",
+      "character": "|",
+      "glyph_name": "bar",
+      "image": "glyphs/U007C.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 489,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        465,
+        161,
+        522,
+        930
+      ]
+    },
+    {
+      "codepoint": "U+007D",
+      "character": "}",
+      "glyph_name": "braceright",
+      "image": "glyphs/U007D.png",
+      "advance_units": 725,
+      "left_side_bearing_units": 51,
+      "advance_pixels": 271.875,
+      "ink_bbox_pixels": [
+        301,
+        197,
+        531,
+        867
+      ]
+    },
+    {
+      "codepoint": "U+007E",
+      "character": "~",
+      "glyph_name": "asciitilde",
+      "image": "glyphs/U007E.png",
+      "advance_units": 1128,
+      "left_side_bearing_units": 102,
+      "advance_pixels": 423.0,
+      "ink_bbox_pixels": [
+        320,
+        423,
+        667,
+        526
+      ]
+    }
+  ]
+}
