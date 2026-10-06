@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p007`
 Parent: [WS130](../ws.md)
-Status: uncleared（2026-10-07 T1-296 FAIL 5 行: dhcpc -6 -i の exit・DNS server・renew・record・resolv.conf。DUID の 3 行は直った。pcap は T1 の build/t1-296/p007/dhcp6.pcap。P1 が調べる）（旧: test-wait（2026-10-07 P1: T1-292 FAIL 9 行の修正と証拠取り、再試験待ち。旧: uncleared（T1-292 FAIL）、test-wait（正常系を実装、host PASS）））
+Status: cleared（2026-10-07 Q1 の判定: T1-300 PASS（QEMU、新しい起動、/etc/hosts の段を含む））（旧: uncleared（2026-10-07 T1-296 FAIL 5 行: dhcpc -6 -i の exit・DNS server・renew・record・resolv.conf。DUID の 3 行は直った。pcap は T1 の build/t1-296/p007/dhcp6.pcap。P1 が調べる）（旧: test-wait（2026-10-07 P1: T1-292 FAIL 9 行の修正と証拠取り、再試験待ち。旧: uncleared（T1-292 FAIL）、test-wait（正常系を実装、host PASS））））
 設計: [p001](../phase001/phase.md) §5、H7（DUID-UUID）・H5（DNS の順）（2026-10-05 ユーザー決定）
 依存: [p006](../phase006/phase.md)（networkd の RA の処理、T1-289/290）
 
@@ -40,6 +40,16 @@ stateful（M=1）の確かめは p008 の tap と network namespace の dnsmasq 
 | `/var/db/dhcpc/duid: No such file or directory`、記録・DUID の 4 行 | image に `/var/db` が無い（`make-arch-overlay-*` が作るのは `var`・`var/run` だけ）。`mkdir("/var/db/dhcpc")` が親の無さで失敗 | `/var/db` を先に作る（`inet6.c`）。p006 の `/var/db/networkd` も同じ（`ipv6.c`、p006 の `the secret`・`stable after a restart` の原因） |
 | `information-request: Connection timed out`（exit・DNS・renew・resolv.conf） | 未確定。libslirp の `dhcpv6.c` は Information-Request に CLIENTID を返して答える（SERVERID 無し、送り元は `fec0::2`）。static には送り・受けの道に誤りを見つけられなかった | 証拠を取る: `-v` で送った・受けた datagram を 1 行ずつ、試験は手順 1 の間 QMP の `filter-dump` で net0 の pcap（`OUTDIR/dhcp6.pcap`） |
 | （見つけた別の不具合） | kernel: IPv6 の socket を `[::]` に bind すると `SO_BINDTODEVICE` の interface が消える（IPv4 の wildcard は保つ） | `src/kern/net/inet-socket.c`: wildcard・IPv4-mapped の wildcard の bind は interface を保つ |
+
+## T1-296 の結果と修正（2026-10-07）
+
+DUID・記録の 3 行は直った（/var/db）。残る 5 行（exit・DNS・renew・record・resolv.conf）は pcap で原因が分かった: QEMU の slirp の Reply は送り元の port が 8962（547 の byte を入れ替えた値、libslirp の `dhcpv6.c` が port を host の順のまま入れている）。
+Reply は届き、中身も正しい（4 回とも type 7・46 byte）が、`dhcpc -6` は port 547 からの物だけを受けていた。修正: 送り元の port で選ばない（transaction と CLIENTID で決める、RFC 8415 も送り元の port を求めない）。
+
+## 追加: /etc/hosts（2026-10-07、Q1 の依頼、P2 が見つけた）
+
+libc の `getaddrinfo` が `/etc/hosts` を読まず DNS だけを引いていた。正常系として、数値でない名前は DNS の前に `/etc/hosts` を引く（`resolver.c` の `gai_hosts`: IPv6 の行は AF_INET 以外、IPv4 の行は AF_INET6 以外（AF_INET6 は AI_V4MAPPED で、IPv6 が無いか AI_ALL の時に v4-mapped）、file の順、canonical は最初の行の最初の名前）。
+行の読みは純粋な `resolver_hosts_line`（`resolver-dns.c`: comment、alias、大小文字を区別しない、zone つきの address は取らない）。host の試験 `host-libc6.sh` に 8 checks（plain・ASan とも PASS）。guest の試験は `ipv6-p007.sh` の手順 8（ping が `/etc/hosts` の address を名乗る）。
 
 ## T1 への依頼（文面）
 

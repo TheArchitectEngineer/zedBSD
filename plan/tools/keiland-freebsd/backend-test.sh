@@ -31,9 +31,10 @@ guest() {
 	python3 "$TOOLS/guest.py" "$@"
 }
 
-mkdir -p "$OUT"
+# Each run starts in a new directory behind the name (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh).
+. "$ROOT/plan/tools/fresh-out.sh"
+fresh_out "$OUT"
 OUT=$(cd "$OUT" && pwd)
-rm -f "$OUT"/*.log "$OUT/summary.txt"
 started=0
 if ! guest status | grep -q '^ssh: ready'; then
 	guest start

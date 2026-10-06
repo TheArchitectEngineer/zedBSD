@@ -2,7 +2,7 @@
 
 # ws155-p002: 予定とメモの保存（iCalendar）
 
-Status: test-wait（T1-297）
+Status: cleared（2026-10-07 Q1 の判定: T1-297 の AAT（needs-person）を Q1 が PNG で目視: Calendar の EVENT saved・時計の click の log と保存の PNG（.ics の中身は未確認））（旧: test-wait（T1-297））
 Disposition: normal
 Parent: [WS155](../ws.md)
 Queue: q831（2026-10-07、P2）

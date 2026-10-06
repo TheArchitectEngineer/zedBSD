@@ -4,7 +4,7 @@
 
 Parent: [WS112](../ws.md)
 Status: uncleared
-Disposition: normal
+Disposition: canceled（2026-10-07 superseded: ゴールの設定し直しで 5 種類の契約と D1（Fedora・Arch の boot）が不要に）
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: q585 / q585-i01 / A2（契約調査のみ）
 Goal: 5 targetのpayload/CPU/format/依存・build環境・成果物/CI契約を具体化
@@ -62,3 +62,7 @@ Reason / resume: D1 Fedora/Arch loopback SSH/QMP PNG方式適用がuser返答待
 2026-10-02 / ws112-q585-evidence-checkpoint: D2選択後のcurrent procedure参照を更新、source識別version契約とnative parser検証を明示。既存WS108にelapsed未保存/新OS方式未実測の限界を保存、基準別evidence/commands/results/skips/resumeをcriteriaへ追加。D1返答待ちのためin-progress保持、終端clearはまだ宣言しない。
 
 2026-10-02 08:11 UTC / ws112-q585-outcome: q585-i01/p001 uncleared。有限契約調査は終了、5OS inputs/署名/環境/形式/依存/共通payload/source/CI契約と後続commandを保存、mainへ5小checkpoint統合済み。D1 user返答未受領により人間判断の残件を解除しない。実image/guest/build/package/runtime/CI/公開は未実施、理由/基準別証拠/再開はcriteriaと上記。p002〜007 planned、WS incomplete、q591候補だけを保持し同sessionでmain次指示を待機。Phase event/GitHubとQueue/共有投影のcanonical反映はmainへ依頼。
+
+## Event history（2026-10-07 の組み替え）
+
+2026-10-07 / ws112-reset-20261007: 2026-10-06 夜のユーザーのゴールの設定し直し（deb の 3 つだけ、Fedora・Arch・rpm・pacman は取りやめ）と、2026-10-07 のユーザーの回答（D-a「mmdebstrap の rootfs」、D-b「生成＋形式・依存の解決」、Q1 経由のクリック）により、Q1 の指示でこの Phase をsuperseded として閉じる（状態 uncleared の記録は保つ）。q585-i01 の調査の結果（入力・署名・形式の契約）は p002・p003 が参照する。

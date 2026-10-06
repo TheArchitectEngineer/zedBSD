@@ -67,6 +67,7 @@ static void gai_add4(struct gai_list *list, struct in_addr address, int mapped);
 static void gai_add6(struct gai_list *list, const struct in6_addr *address, uint32_t scope);
 static void gai_unnamed(struct gai_list *list, int family, int flags);
 static int gai_numeric(const char *node, int family, int flags, struct gai_list *list);
+static int gai_hosts(const char *node, int family, int flags, struct gai_list *list);
 static int gai_lookup(const char *node, int family, int flags, struct gai_list *list);
 static int gai_source(const struct gai_address *item, struct sockaddr_storage *source);
 static void gai_reachable_only(struct gai_list *list);
@@ -272,6 +273,8 @@ getaddrinfo(
 		gai_unnamed(&list, family, flags);
 	} else {
 		error = gai_numeric(node, family, flags, &list);
+		if (error == EAI_NONAME && (flags & AI_NUMERICHOST) == 0)
+			error = gai_hosts(node, family, flags, &list);
 		if (error == EAI_NONAME && (flags & AI_NUMERICHOST) == 0)
 			error = gai_lookup(node, family, flags, &list);
 		if (error != 0)
@@ -784,6 +787,71 @@ gai_numeric(
 	/* Succeeded: the address. */
 	gai_add6(list, &address6, scope);
 	strncpy(list->canonical, node, sizeof(list->canonical) - 1U);
+	return 0;
+}
+
+/*
+ * Looks a name up in /etc/hosts, before the DNS: every line that names it,
+ * IPv6 ones unless AF_INET, IPv4 ones unless AF_INET6 (for AF_INET6 with
+ * AI_V4MAPPED as v4-mapped ones, when there is no IPv6 one or with
+ * AI_ALL), in the file's order.  The canonical name is the first matching
+ * line's.  Returns 0 when one was found, or EAI_NONAME.
+ */
+static int
+gai_hosts(
+	const char *node,
+	int family,
+	int flags,
+	struct gai_list *list)
+{
+	struct resolver_hosts_entry entry;
+	struct in_addr address;
+	struct in6_addr address6;
+	char line[512];
+	FILE *file;
+	unsigned v4;
+	unsigned v6;
+	unsigned pass;
+	int mapped;
+	int named;
+
+	/* The file. */
+	file = fopen("/etc/hosts", "r");
+	if (file == NULL)
+		return EAI_NONAME;
+
+	/* Two passes: IPv6 lines, then IPv4 ones (mapped for AF_INET6 when allowed). */
+	v4 = 0;
+	v6 = 0;
+	mapped = family == AF_INET6;
+	for (pass = 0; pass < 2U; pass++) {
+		if (pass == 0U && family == AF_INET)
+			continue;
+		if (pass == 1U && mapped && ((flags & AI_V4MAPPED) == 0 || (v6 != 0U && (flags & AI_ALL) == 0)))
+			continue;
+		rewind(file);
+		while (fgets(line, sizeof(line), file) != NULL) {
+			named = resolver_hosts_line(line, node, &entry);
+			if (!named || entry.family != (pass == 0U ? AF_INET6 : AF_INET))
+				continue;
+			if (list->canonical[0] == '\0')
+				strncpy(list->canonical, entry.canonical, sizeof(list->canonical) - 1U);
+			if (pass == 0U) {
+				memcpy(address6.s6_addr, entry.address, sizeof(address6.s6_addr));
+				gai_add6(list, &address6, 0);
+				v6++;
+			} else {
+				memcpy(&address.s_addr, entry.address, sizeof(address.s_addr));
+				gai_add4(list, address, mapped);
+				v4++;
+			}
+		}
+	}
+	fclose(file);
+
+	/* Succeeded when the file named it. */
+	if (v4 + v6 == 0U)
+		return EAI_NONAME;
 	return 0;
 }
 
