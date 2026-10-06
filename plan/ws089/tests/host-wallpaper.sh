@@ -15,9 +15,12 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 sh plan/ws089/tests/host-build.sh >/dev/null
 host=build/ws089-host
-out=$host/wallpaper
+# Each run gets a new directory (2026-10-06 user: deleting is Q1's step, so this script removes nothing); Q1 removes
+# the old wallpaper.* directories.
+mkdir -p "$host"
+out=$(mktemp -d "$host/wallpaper.XXXXXX")
+out=${out#$(pwd)/}
 data=$(pwd)/$out/data
-rm -rf "$out"
 mkdir -p "$out/obj" "$data/keiland/wallpapers"
 ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.png" "$data/keiland/wallpaper.png"
 ln -s "$(pwd)/userland/desktop/keiland/wallpapers/Lakeside.png" "$data/keiland/wallpapers/Lakeside.png"
@@ -27,7 +30,7 @@ printf 'not a picture\n' > "$data/keiland/wallpapers/Broken.png"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$host/include -Iuserland/desktop/settings -I."
 "$cc" $flags "-DKEILAND_DATADIR=\"$data\"" -c userland/desktop/settings/look.c -o "$out/obj/look.o"
-objects=$(ls "$host"/obj/truetype-*.o "$host"/obj/shared-*.o "$host"/obj/settings-*.o | grep -v '/settings-look.o$')
+objects=$(grep -E '/(truetype|shared|settings)-[^/]*\.o$' "$host/objects.list" | grep -v '/settings-look.o$')
 "$cc" -o "$out/settings-render" "$host/obj/host-render.o" "$host/obj/host-network.o" "$out/obj/look.o" $objects -lm -pthread
 
 status=0
