@@ -9,7 +9,7 @@
 #  4. The network's menu, then its details (Alt and a click): ja-network.png, ja-network-details.png (状態, IPv4 アドレス).
 #  5. Wiseview (Super+Tab) with one window: ja-wiseview.png (ほかのウインドウはありません).
 #  6. (The lock screen in Japanese is the AAT's desktop.language.lock-japanese: zdesktop locks only a session sessiond
-#     started, which can unlock it (greeter.c zwl_lock), and this guest's zdesktop runs alone -- T1-207's MISSING line.)
+#     started, which can unlock it (greeter.c kwl_lock), and this guest's zdesktop runs alone -- T1-207's MISSING line.)
 #  7. ui.language 0: "ZWL LANGUAGE language=en"; no ERROR in zdesktop's log.
 # PASS: the last line "tr-p003: status=0", and the pictures show the Japanese text (to Q1).
 #   plan/tools/files/files-guest.sh start BUILD/hdd-image.img

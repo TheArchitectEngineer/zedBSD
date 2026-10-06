@@ -13,7 +13,7 @@
 #include "userland/desktop/paths.h"
 
 #include "language.h"
-#include "zwl.h"
+#include "kwl.h"
 
 #include <keiland.h>
 
@@ -24,7 +24,7 @@
 /* The longest line of the system's language file read. */
 #define LANGUAGE_LINE_MAX	32U
 
-static void language_open(struct zwl_server *server, const char *language, const char *why);
+static void language_open(struct kwl_server *server, const char *language, const char *why);
 static const char *language_weekday(int day, int form);
 static const char *language_month(int month, int form);
 
@@ -32,8 +32,8 @@ static const char *language_month(int month, int form);
  * Reads the system's language for the login screen.
  */
 void
-zwl_language_system(
-	struct zwl_server *server)
+kwl_language_system(
+	struct kwl_server *server)
 {
 	char line[LANGUAGE_LINE_MAX];
 	FILE *file;
@@ -41,7 +41,7 @@ zwl_language_system(
 	size_t length;
 
 	/* No file is English. */
-	file = fopen(ZWL_LANGUAGE_SYSTEM_PATH, "r");
+	file = fopen(KWL_LANGUAGE_SYSTEM_PATH, "r");
 	if (file == NULL) {
 		language_open(server, "en", "system");
 		return;
@@ -67,8 +67,8 @@ zwl_language_system(
  * Takes the session's language from the setting.
  */
 void
-zwl_language_set(
-	struct zwl_server *server,
+kwl_language_set(
+	struct kwl_server *server,
 	int setting)
 {
 	const char *language;
@@ -92,7 +92,7 @@ zwl_language_set(
  * Writes a date in the language.
  */
 void
-zwl_language_date(
+kwl_language_date(
 	const struct tm *local,
 	int form,
 	char *out,
@@ -111,7 +111,7 @@ zwl_language_date(
 	(void)snprintf(time_of_day, sizeof(time_of_day), "%02d:%02d", local->tm_hour, local->tm_min);
 
 	/* The order the language puts them in. */
-	if (form == ZWL_LANGUAGE_DATE_LONG) {
+	if (form == KWL_LANGUAGE_DATE_LONG) {
 		pattern = kl_trc("long date", "{1}, {2} {3}");
 	} else {
 		pattern = kl_trc("short date", "{1} {2} {3}  {4}");
@@ -124,14 +124,14 @@ zwl_language_date(
 /* Reads the catalogs of a language and draws the screen again in it. */
 static void
 language_open(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *language,
 	const char *why)
 {
 	int error;
 
 	/* The compositor's catalogs (and the shared one); a failure leaves English. */
-	error = kl_tr_open(ZWL_LANGUAGE_DOMAIN, language);
+	error = kl_tr_open(KWL_LANGUAGE_DOMAIN, language);
 	server->language_set = 1;
 	server->dirty = 1;
 
@@ -148,31 +148,31 @@ language_weekday(
 	/* Each day. */
 	switch (day) {
 	case 0:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Sunday");
 		return kl_trc("weekday", "Sun");
 	case 1:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Monday");
 		return kl_trc("weekday", "Mon");
 	case 2:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Tuesday");
 		return kl_trc("weekday", "Tue");
 	case 3:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Wednesday");
 		return kl_trc("weekday", "Wed");
 	case 4:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Thursday");
 		return kl_trc("weekday", "Thu");
 	case 5:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Friday");
 		return kl_trc("weekday", "Fri");
 	case 6:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("weekday", "Saturday");
 		return kl_trc("weekday", "Sat");
 	default:
@@ -192,50 +192,50 @@ language_month(
 	/* Each month. */
 	switch (month) {
 	case 0:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "January");
 		return kl_trc("month", "Jan");
 	case 1:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "February");
 		return kl_trc("month", "Feb");
 	case 2:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "March");
 		return kl_trc("month", "Mar");
 	case 3:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "April");
 		return kl_trc("month", "Apr");
 	case 4:
 		/* May is the same word in both forms. */
 		return kl_trc("month", "May");
 	case 5:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "June");
 		return kl_trc("month", "Jun");
 	case 6:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "July");
 		return kl_trc("month", "Jul");
 	case 7:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "August");
 		return kl_trc("month", "Aug");
 	case 8:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "September");
 		return kl_trc("month", "Sep");
 	case 9:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "October");
 		return kl_trc("month", "Oct");
 	case 10:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "November");
 		return kl_trc("month", "Nov");
 	case 11:
-		if (form == ZWL_LANGUAGE_DATE_LONG)
+		if (form == KWL_LANGUAGE_DATE_LONG)
 			return kl_trc("month", "December");
 		return kl_trc("month", "Dec");
 	default:

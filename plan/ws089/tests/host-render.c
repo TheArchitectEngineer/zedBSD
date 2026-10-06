@@ -15,7 +15,7 @@
  * (HOME is set to it; run from the top of the tree).
  *
  * Options (before the actions):
- *   --font=PATH        the font (default userland/desktop/fonts/Inter.ttf)
+ *   --font=PATH        the font (default userland/desktop/fonts/Mahora-Regular.ttf)
  *   --size=WxH         the window's size (default 1180x800)
  *   --page=WORD        the page shown first (default Home)
  *   --network=SCENARIO a made-up network (host-network.c: wifi, wired, absent, down; default wifi)
@@ -89,7 +89,7 @@ main(
 	int error;
 
 	/* The options. */
-	font = "userland/desktop/fonts/Inter.ttf";
+	font = "userland/desktop/fonts/Mahora-Regular.ttf";
 	width = SE_WIDTH;
 	height = SE_HEIGHT;
 	start = SE_PAGE_HOME;

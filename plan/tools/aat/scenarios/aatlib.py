@@ -53,7 +53,7 @@ PASSWORD = os.environ.get("AAT_USER_PASSWORD", "kei")
 SAMPLES = "/tmp/aat-samples"
 WORK = "/tmp/aat-work"
 
-# A floating window's title bar: 44 pixels high, its bottom 8 above the body (zwl.h, shell.c floating_title); the
+# A floating window's title bar: 44 pixels high, its bottom 8 above the body (kwl.h, shell.c floating_title); the
 # buttons from the right edge (shell.c button_centre).
 TITLE_HEIGHT = 44
 TITLE_GAP = 8

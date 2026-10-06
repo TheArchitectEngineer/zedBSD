@@ -107,6 +107,8 @@ test_page1(
 		same = content[scan.stray_restores[0]] == 'Q';
 		check(same, "page 1: the stray Q's offset is a Q");
 	}
+
+	/* The scan goes. */
 	pdf_scan_free(&scan);
 	free(content);
 
@@ -139,6 +141,8 @@ test_page1(
 		error = pdf_page_editor_find(editor, &keys[i], &index);
 		check(error == 0 && index == i, "page 1: find gives the key's object");
 	}
+
+	/* A key of other bytes finds nothing. */
 	keys[0].fingerprint[0] ^= 1;
 	error = pdf_page_editor_find(editor, &keys[0], &index);
 	check(error == ENOENT, "page 1: a key with other bytes finds nothing");
@@ -170,9 +174,11 @@ test_render(
 	double placed[8];
 	double corners[8];
 	size_t images;
+	size_t count;
 	size_t i;
 	size_t k;
 	int matched;
+	int near;
 	int error;
 
 	/* The render, and the editor. */
@@ -188,7 +194,8 @@ test_render(
 
 	/* Every object that is an image has an image item of the same corners. */
 	images = 0;
-	for (k = 0; k < pdf_page_editor_count(editor); k++) {
+	count = pdf_page_editor_count(editor);
+	for (k = 0; k < count; k++) {
 		/* An image of the page. */
 		memset(&object, 0, sizeof(object));
 		object.size = sizeof(object);
@@ -212,11 +219,16 @@ test_render(
 			corners[6] = item->matrix[2] + item->matrix[4];
 			corners[7] = item->matrix[3] + item->matrix[5];
 			memcpy(placed, object.quad, sizeof(placed));
-			if (near_quad(corners, placed))
+			near = near_quad(corners, placed);
+			if (near)
 				matched = 1;
 		}
+
+		/* The image's corners matched. */
 		check(matched, "render: an image's corners are where the render draws it");
 	}
+
+	/* Both images compared. */
 	check(images == 2, "render: the page's two images were compared");
 	pdf_page_editor_close(editor);
 	pdf_display_list_destroy(list);
@@ -287,6 +299,8 @@ test_again(
 		error = pdf_page_editor_find(editor, &keys[i], &index);
 		check(error == 0 && index == i, "again: the key finds the same object");
 	}
+
+	/* The editor and the document go. */
 	pdf_page_editor_close(editor);
 	pdf_document_close(document);
 }
@@ -297,11 +311,13 @@ near_quad(
 	const double quad[8],
 	const double expected[8])
 {
+	double difference;
 	size_t i;
 
 	/* Each coordinate. */
 	for (i = 0; i < 8; i++) {
-		if (fabs(quad[i] - expected[i]) > 0.01)
+		difference = fabs(quad[i] - expected[i]);
+		if (difference > 0.01)
 			return 0;
 	}
 

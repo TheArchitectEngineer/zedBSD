@@ -13,6 +13,9 @@ KEILAND_FREEBSD_LIBPDF_SOURCES := userland/base/libpdf/writer.c \
 	userland/base/libpdf/editor.c \
 	userland/base/libpdf/tounicode.c \
 	userland/base/libpdf/intake.c \
+	userland/base/libpdf/replace.c \
+	userland/base/libpdf/embed.c \
+	userland/base/libpdf/subset.c \
 	userland/base/libpdf/stroke.c \
 	userland/base/libpdf/raster.c \
 	userland/base/libpdf/font.c \

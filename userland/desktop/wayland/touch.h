@@ -10,16 +10,16 @@
  * compositor's own gestures of the fingers.
  */
 
-#ifndef ZWL_TOUCH_H
-#define ZWL_TOUCH_H
+#ifndef KWL_TOUCH_H
+#define KWL_TOUCH_H
 
-#include "zwl.h"
+#include "kwl.h"
 
-int zwl_touch_add(struct zwl_input_device *device);
-void zwl_touch_remove(struct zwl_server *server, struct zwl_input_device *device, int notify);
-void zwl_touch_frame(struct zwl_server *server, struct zwl_input_device *device, uint32_t time);
-void zwl_touch_tick(struct zwl_server *server);
-void zwl_touch_object_gone(struct zwl_object *object);
-int zwl_touch_drag_start(struct zwl_server *server, struct zwl_client *client, uint32_t serial);
+int kwl_touch_add(struct kwl_input_device *device);
+void kwl_touch_remove(struct kwl_server *server, struct kwl_input_device *device, int notify);
+void kwl_touch_frame(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
+void kwl_touch_tick(struct kwl_server *server);
+void kwl_touch_object_gone(struct kwl_object *object);
+int kwl_touch_drag_start(struct kwl_server *server, struct kwl_client *client, uint32_t serial);
 
 #endif

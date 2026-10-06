@@ -17,7 +17,7 @@
  * surface being the whole output of --width by --height pixels.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "menu.h"
 #include "titlebar.h"
 #include "popup.h"
@@ -86,27 +86,27 @@
 /* One wheel notch scrolls this many surface units, as common compositors do. */
 #define WHEEL_STEP			15
 
-static int create_device(struct zwl_object *seat, enum zwl_kind kind, const unsigned char *bytes, size_t size);
-static void seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units, uint32_t source);
-static void deliver(struct zwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
-static void pointer_enter(struct zwl_object *pointer, struct zwl_object *surface, uint32_t serial);
-static void keyboard_enter(struct zwl_object *keyboard, struct zwl_object *surface, uint32_t serial);
-static void keyboard_modifiers(struct zwl_object *keyboard, uint32_t serial);
-static void send_leave(struct zwl_object *surface);
-static void motion_taken_leave(struct zwl_server *server);
-static void set_cursor(struct zwl_server *server, struct zwl_client *client, struct zwl_object *surface, const unsigned char *bytes);
-static void send_enter(struct zwl_object *surface);
-static void report_seat(struct zwl_client *client);
-static int keyboard_keymap(struct zwl_object *keyboard);
-static uint32_t pointer_button(struct zwl_object *target, uint32_t time, uint32_t button, uint32_t state, unsigned complete);
-static void interactive_clear(struct zwl_server *server);
+static int create_device(struct kwl_object *seat, enum kwl_kind kind, const unsigned char *bytes, size_t size);
+static void seat_axis(struct kwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units, uint32_t source);
+static void deliver(struct kwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
+static void pointer_enter(struct kwl_object *pointer, struct kwl_object *surface, uint32_t serial);
+static void keyboard_enter(struct kwl_object *keyboard, struct kwl_object *surface, uint32_t serial);
+static void keyboard_modifiers(struct kwl_object *keyboard, uint32_t serial);
+static void send_leave(struct kwl_object *surface);
+static void motion_taken_leave(struct kwl_server *server);
+static void set_cursor(struct kwl_server *server, struct kwl_client *client, struct kwl_object *surface, const unsigned char *bytes);
+static void send_enter(struct kwl_object *surface);
+static void report_seat(struct kwl_client *client);
+static int keyboard_keymap(struct kwl_object *keyboard);
+static uint32_t pointer_button(struct kwl_object *target, uint32_t time, uint32_t button, uint32_t state, unsigned complete);
+static void interactive_clear(struct kwl_server *server);
 
 /*
  * Reserves the next nonzero event serial shared by configure and input events.
  */
 uint32_t
-zwl_next_serial(
-	struct zwl_server *server)
+kwl_next_serial(
+	struct kwl_server *server)
 {
 	/* Zero is never a valid serial, so the wrap skips it. */
 	server->serial++;
@@ -121,8 +121,8 @@ zwl_next_serial(
  * Sends a newly bound seat its capabilities and, from version 2, its name.
  */
 int
-zwl_seat_bind(
-	struct zwl_object *seat)
+kwl_seat_bind(
+	struct kwl_object *seat)
 {
 	unsigned char name[12];
 	uint32_t word;
@@ -130,7 +130,7 @@ zwl_seat_bind(
 
 	/* The capability bits describe the devices open right now. */
 	word = seat->client->server->capabilities;
-	error = zwl_emit(seat->client, seat->id, SEAT_CAPABILITIES, &word, sizeof(word));
+	error = kwl_emit(seat->client, seat->id, SEAT_CAPABILITIES, &word, sizeof(word));
 	if (error != 0)
 		return error;
 
@@ -143,7 +143,7 @@ zwl_seat_bind(
 	word = 6;
 	memcpy(name, &word, sizeof(word));
 	memcpy(name + 4, "seat0", 6);
-	error = zwl_emit(seat->client, seat->id, SEAT_NAME, name, sizeof(name));
+	error = kwl_emit(seat->client, seat->id, SEAT_NAME, name, sizeof(name));
 	if (error != 0)
 		return error;
 
@@ -155,38 +155,38 @@ zwl_seat_bind(
  * Applies one wl_seat, wl_pointer or wl_keyboard request.
  */
 int
-zwl_seat_request(
-	struct zwl_object *object,
+kwl_seat_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
 	uint32_t surface_id;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int error;
 
 	/* Each interface validates its own requests; anything unmatched is refused. */
 	error = EPROTO;
 	switch (object->kind) {
-	case ZWL_SEAT:
+	case KWL_SEAT:
 		/* The seat creates device objects or retires its own binding. */
 		if (opcode == 0U) {
 			/* get_pointer carries one new_id. */
-			error = create_device(object, ZWL_POINTER, bytes, size);
+			error = create_device(object, KWL_POINTER, bytes, size);
 		} else if (opcode == 1U) {
 			/* get_keyboard carries one new_id. */
-			error = create_device(object, ZWL_KEYBOARD, bytes, size);
+			error = create_device(object, KWL_KEYBOARD, bytes, size);
 		} else if (opcode == 2U) {
 			/* get_touch carries one new_id (the fingers are delivered by touch.c). */
-			error = create_device(object, ZWL_TOUCH, bytes, size);
+			error = create_device(object, KWL_TOUCH, bytes, size);
 		} else if (opcode == 3U && size == 0 && object->version >= SEAT_RELEASE_VERSION) {
 			/* release exists from version 5. */
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
 		break;
-	case ZWL_POINTER:
+	case KWL_POINTER:
 		/* A pointer names a cursor image or retires its own binding. */
 		if (opcode == 0U && size == 16U) {
 			/* set_cursor names a surface of the client's own, or none (hides the cursor). */
@@ -195,9 +195,9 @@ zwl_seat_request(
 			surface = NULL;
 			if (surface_id != 0) {
 				/* A foreign object, or a surface with a window role, cannot become a cursor. */
-				surface = zwl_find(object->client, surface_id);
+				surface = kwl_find(object->client, surface_id);
 				if (surface == NULL ||
-				    surface->kind != ZWL_SURFACE ||
+				    surface->kind != KWL_SURFACE ||
 				    surface->role != NULL ||
 				    surface->sub_role != NULL)
 					error = EPROTO;
@@ -210,16 +210,16 @@ zwl_seat_request(
 				set_cursor(object->client->server, object->client, surface, bytes);
 		} else if (opcode == 1U && size == 0 && object->version >= RELEASE_VERSION) {
 			/* release exists from version 3. */
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
 		break;
-	case ZWL_KEYBOARD:
-	case ZWL_TOUCH:
+	case KWL_KEYBOARD:
+	case KWL_TOUCH:
 		/* release, from version 3, is the only keyboard or touch request. */
 		if (opcode == 0U && size == 0 && object->version >= RELEASE_VERSION) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
@@ -242,8 +242,8 @@ zwl_seat_request(
  * the cursor surface goes).
  */
 void
-zwl_cursor_default(
-	struct zwl_server *server)
+kwl_cursor_default(
+	struct kwl_server *server)
 {
 	/* The arrow, shown (no client's surface or shape). */
 	if (server->cursor_surface != NULL)
@@ -259,11 +259,11 @@ zwl_cursor_default(
  * Moves input focus to the surface currently on the display.
  */
 void
-zwl_seat_focus(
-	struct zwl_server *server)
+kwl_seat_focus(
+	struct kwl_server *server)
 {
-	struct zwl_object *target;
-	struct zwl_object *previous;
+	struct kwl_object *target;
+	struct kwl_object *previous;
 
 	/* A dying surface or a failed client cannot take focus. */
 	target = server->front_surface;
@@ -274,14 +274,14 @@ zwl_seat_focus(
 	}
 
 	/* A popup holding the grab has the keyboard of its client's window (popup.c). */
-	target = zwl_popup_focus(server, target);
+	target = kwl_popup_focus(server, target);
 
 	/* A new focus: the old surface's keyboards hear leave before the new one's hear enter; the arrow comes back. */
 	if (target != server->focus) {
 		previous = server->focus;
 		if (server->focus != NULL)
 			send_leave(server->focus);
-		zwl_cursor_default(server);
+		kwl_cursor_default(server);
 
 		/*
 		 * The focus names the surface whose client's keyboard objects have
@@ -289,17 +289,17 @@ zwl_seat_focus(
 		 */
 		server->focus = target;
 		if (target != NULL) {
-			zwl_data_focus(server, target);
-			zwl_primary_focus(server, target);
+			kwl_data_focus(server, target);
+			kwl_primary_focus(server, target);
 			send_enter(target);
 		}
 
 		/* The text inputs and the input method follow the focus (input-method.c). */
-		zwl_ime_focus(server, previous);
+		kwl_ime_focus(server, previous);
 	}
 
 	/* Succeeded: the pointer follows (the focused window, or the surface of it under the pointer). */
-	zwl_seat_pointer_update(server);
+	kwl_seat_pointer_update(server);
 }
 
 /*
@@ -310,16 +310,16 @@ zwl_seat_focus(
  * (subsurface.c).  The surface it leaves hears leave, the new one enter.
  */
 void
-zwl_seat_pointer_update(
-	struct zwl_server *server)
+kwl_seat_pointer_update(
+	struct kwl_server *server)
 {
-	struct zwl_object *base;
-	struct zwl_object *target;
-	struct zwl_object *deeper;
+	struct kwl_object *base;
+	struct kwl_object *target;
+	struct kwl_object *deeper;
 
 	/* The surface the pointer belongs to: the grab's chain, or the focus. */
 	if (server->pointer_grabbed) {
-		base = zwl_popup_chain_at(server);
+		base = kwl_popup_chain_at(server);
 	} else {
 		base = server->focus;
 	}
@@ -327,7 +327,7 @@ zwl_seat_pointer_update(
 	/* Its sub-surface under the pointer, when there is one. */
 	target = base;
 	if (base != NULL) {
-		deeper = zwl_subsurface_at(base, server->pointer_x, server->pointer_y);
+		deeper = kwl_subsurface_at(base, server->pointer_x, server->pointer_y);
 		if (deeper != NULL)
 			target = deeper;
 	}
@@ -337,7 +337,7 @@ zwl_seat_pointer_update(
 		return;
 
 	/* Succeeded: the last surface hears leave, the new one enter. */
-	zwl_seat_pointer_move(server, server->pointer_surface, target);
+	kwl_seat_pointer_move(server, server->pointer_surface, target);
 	server->pointer_surface = target;
 }
 
@@ -345,11 +345,11 @@ zwl_seat_pointer_update(
  * Withdraws focus from a surface whose protocol identity is about to retire.
  */
 void
-zwl_seat_surface_gone(
-	struct zwl_object *surface)
+kwl_seat_surface_gone(
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
-	struct zwl_object *window;
+	struct kwl_server *server;
+	struct kwl_object *window;
 
 	/* Borrowed press and interactive origins cannot outlive this surface. */
 	server = surface->client->server;
@@ -376,7 +376,7 @@ zwl_seat_surface_gone(
 
 	/* The surface the pointer is on: its pointers hear leave while the surface is still named. */
 	if (server->pointer_surface == surface) {
-		zwl_seat_pointer_move(server, surface, NULL);
+		kwl_seat_pointer_move(server, surface, NULL);
 		server->pointer_surface = NULL;
 	}
 
@@ -398,22 +398,22 @@ zwl_seat_surface_gone(
  * second's hear enter at the pointer's place (for the popups, popup.c).
  */
 void
-zwl_seat_pointer_move(
-	struct zwl_server *server,
-	struct zwl_object *from,
-	struct zwl_object *to)
+kwl_seat_pointer_move(
+	struct kwl_server *server,
+	struct kwl_object *from,
+	struct kwl_object *to)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t words[2];
 	uint32_t serial;
 
 	/* The surface the pointer leaves, when it was over one. */
 	if (from != NULL && !from->dead) {
-		words[0] = zwl_next_serial(server);
+		words[0] = kwl_next_serial(server);
 		words[1] = from->id;
 		for (object = from->client->objects; object != NULL; object = object->next) {
 			/* Only live pointers. */
-			if (object->kind != ZWL_POINTER || object->dead)
+			if (object->kind != KWL_POINTER || object->dead)
 				continue;
 
 			/* Leave, and from version 5 a frame closing it. */
@@ -426,10 +426,10 @@ zwl_seat_pointer_move(
 	/* The surface the pointer enters, when there is one. */
 	if (to == NULL || to->dead)
 		return;
-	serial = zwl_next_serial(server);
+	serial = kwl_next_serial(server);
 	for (object = to->client->objects; object != NULL; object = object->next) {
 		/* Only live pointers. */
-		if (object->kind != ZWL_POINTER || object->dead)
+		if (object->kind != KWL_POINTER || object->dead)
 			continue;
 
 		/* Enter at the pointer's place on the surface. */
@@ -441,11 +441,11 @@ zwl_seat_pointer_move(
  * Tells every bound seat that the set of open devices changed.
  */
 void
-zwl_seat_capabilities(
-	struct zwl_server *server)
+kwl_seat_capabilities(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	uint32_t word;
 
 	/* Every client with a seat binding learns the new capability bits. */
@@ -454,7 +454,7 @@ zwl_seat_capabilities(
 		/* Each live seat object of this client gets the same event. */
 		for (object = client->objects; object != NULL; object = object->next) {
 			/* Only seat objects carry capabilities. */
-			if (object->kind != ZWL_SEAT || object->dead)
+			if (object->kind != KWL_SEAT || object->dead)
 				continue;
 
 			/* Queue the new bits for this binding. */
@@ -470,14 +470,14 @@ zwl_seat_capabilities(
  * Reports the current pointer position to the focused client.
  */
 void
-zwl_seat_motion(
-	struct zwl_server *server,
+kwl_seat_motion(
+	struct kwl_server *server,
 	uint32_t time)
 {
 	int taken;
 
 	/* zdesktop's own grabs and screens take the motion first. */
-	taken = zwl_seat_motion_shell(server, time);
+	taken = kwl_seat_motion_shell(server, time);
 	if (taken) {
 		/* The client loses the pointer to zdesktop's own screens and menus (BUG-141). */
 		motion_taken_leave(server);
@@ -485,7 +485,7 @@ zwl_seat_motion(
 	}
 
 	/* Succeeded: otherwise the surface under the pointer hears it. */
-	zwl_seat_motion_deliver(server, time);
+	kwl_seat_motion_deliver(server, time);
 }
 
 /*
@@ -495,8 +495,8 @@ zwl_seat_motion(
  * here first too (tablet.c).
  */
 int
-zwl_seat_motion_shell(
-	struct zwl_server *server,
+kwl_seat_motion_shell(
+	struct kwl_server *server,
 	uint32_t time)
 {
 	int fullscreen;
@@ -515,10 +515,10 @@ zwl_seat_motion_shell(
 	    server->popup_grab != NULL ||
 	    server->locked ||
 	    server->dnd_active)
-		zwl_cursor_frame(server, 0U);
+		kwl_cursor_frame(server, 0U);
 
 	/* The lock screen has the pointer: only its buttons light up (ws035-p102). */
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 	if (server->locked) {
 		server->dirty = 1;
 		return 1;
@@ -526,25 +526,25 @@ zwl_seat_motion_shell(
 
 	/* A drag and drop has the pointer (data.c). */
 	if (server->dnd_active) {
-		zwl_data_drag_motion(server, time);
+		kwl_data_drag_motion(server, time);
 		return 1;
 	}
 
 	/* A window being resized follows the pointer (toplevel.c). */
-	taken = zwl_toplevel_motion(server);
+	taken = kwl_toplevel_motion(server);
 	if (taken)
 		return 1;
 
 	/* The glass look takes the motion it follows (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
-		fullscreen = zwl_glass_fullscreen_input(server);
+		fullscreen = kwl_glass_fullscreen_input(server);
 		if (fullscreen) {
 			/* Over a fullscreen window only the edges' gestures are zdesktop's, and no frame shows its arrow (shell.c). */
-			zwl_cursor_frame(server, 0U);
-			taken = zwl_glass_edge_motion(server);
+			kwl_cursor_frame(server, 0U);
+			taken = kwl_glass_edge_motion(server);
 		} else {
 			/* Elsewhere its windows' moves, screens, gestures and menus. */
-			taken = zwl_glass_motion(server);
+			taken = kwl_glass_motion(server);
 		}
 
 		/* A shell operation consumed this event before ordinary client delivery. */
@@ -560,16 +560,16 @@ zwl_seat_motion_shell(
  * Tells the surface under the pointer where the pointer is now.
  */
 void
-zwl_seat_motion_deliver(
-	struct zwl_server *server,
+kwl_seat_motion_deliver(
+	struct kwl_server *server,
 	uint32_t time)
 {
-	struct zwl_object *object;
-	struct zwl_object *target;
+	struct kwl_object *object;
+	struct kwl_object *target;
 	uint32_t words[3];
 
 	/* The surface under the pointer hears it (enter and leave as it changes); nobody without one. */
-	zwl_seat_pointer_update(server);
+	kwl_seat_pointer_update(server);
 	target = server->pointer_surface;
 	if (target == NULL)
 		return;
@@ -580,7 +580,7 @@ zwl_seat_motion_deliver(
 	words[2] = (uint32_t)((server->pointer_y - target->y) * 256);
 	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects receive motion. */
-		if (object->kind != ZWL_POINTER || object->dead)
+		if (object->kind != KWL_POINTER || object->dead)
 			continue;
 
 		/* Queue the motion for this pointer. */
@@ -595,8 +595,8 @@ zwl_seat_motion_deliver(
  * Reports one pointer button press or release to the focused client.
  */
 void
-zwl_seat_button(
-	struct zwl_server *server,
+kwl_seat_button(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t button,
 	uint32_t state)
@@ -605,15 +605,15 @@ zwl_seat_button(
 
 	/* A button while the Windows key is down: no tap of its own (ws142-p002). */
 	if (state != 0U)
-		zwl_super_tap_cancel(&server->super_tap);
+		kwl_super_tap_cancel(&server->super_tap);
 
 	/* zdesktop's own grabs, screens and title bars take the button first. */
-	taken = zwl_seat_button_shell(server, time, button, state);
+	taken = kwl_seat_button_shell(server, time, button, state);
 	if (taken)
 		return;
 
 	/* Succeeded: otherwise the surface under the pointer hears it. */
-	zwl_seat_button_deliver(server, time, button, state);
+	kwl_seat_button_deliver(server, time, button, state);
 }
 
 /*
@@ -622,14 +622,14 @@ zwl_seat_button(
  * passes here first as BTN_LEFT (tablet.c).
  */
 int
-zwl_seat_button_shell(
-	struct zwl_server *server,
+kwl_seat_button_shell(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_object *origin;
-	struct zwl_object *window;
+	struct kwl_object *origin;
+	struct kwl_object *window;
 	uint32_t bit;
 	int fullscreen;
 	int taken;
@@ -639,8 +639,8 @@ zwl_seat_button_shell(
 
 	/* The buttons held now, which a move or a resize a client asks for needs (toplevel.c). */
 	bit = 0;
-	if (button >= ZWL_BUTTON_LEFT && button - ZWL_BUTTON_LEFT < 32U)
-		bit = 1U << (button - ZWL_BUTTON_LEFT);
+	if (button >= KWL_BUTTON_LEFT && button - KWL_BUTTON_LEFT < 32U)
+		bit = 1U << (button - KWL_BUTTON_LEFT);
 	if (state != 0U) {
 		server->buttons_down |= bit;
 	} else {
@@ -661,11 +661,11 @@ zwl_seat_button_shell(
 		interactive_clear(server);
 
 	/* The lock screen takes every button (ws035-p102). */
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 	if (server->locked) {
 		/* The lock owns this input; retire any client operation destination. */
 		interactive_clear(server);
-		(void)zwl_greeter_button(server, button, state);
+		(void)kwl_greeter_button(server, button, state);
 		return 1;
 	}
 
@@ -674,7 +674,7 @@ zwl_seat_button_shell(
 		/* Drag-and-drop ownership supersedes a previous window operation. */
 		interactive_clear(server);
 		if (state == 0U && server->buttons_down == 0U)
-			zwl_data_drag_release(server);
+			kwl_data_drag_release(server);
 		return 1;
 	}
 
@@ -690,9 +690,9 @@ zwl_seat_button_shell(
 
 		/* The original resize or move finishes through its existing shell contract. */
 		if (server->resize == window) {
-			taken = zwl_toplevel_button(server, state);
+			taken = kwl_toplevel_button(server, state);
 		} else {
-			zwl_glass_toplevel_move_end(server, window);
+			kwl_glass_toplevel_move_end(server, window);
 		}
 
 		/* The matching release reaches the original client even outside its window. */
@@ -703,24 +703,24 @@ zwl_seat_button_shell(
 	}
 
 	/* A window being resized takes the buttons until the release ends the resize (toplevel.c). */
-	taken = zwl_toplevel_button(server, state);
+	taken = kwl_toplevel_button(server, state);
 	if (taken)
 		return 1;
 
 	/* While a popup holds the grab, a press outside its chain closes the popups (popup.c). */
-	taken = zwl_popup_button(server, button, state);
+	taken = kwl_popup_button(server, button, state);
 	if (taken)
 		return 1;
 
 	/* The glass look takes the buttons it acts on (not while a popup holds the grab). */
 	if (server->glass && server->windowed && server->popup_grab == NULL) {
-		fullscreen = zwl_glass_fullscreen_input(server);
+		fullscreen = kwl_glass_fullscreen_input(server);
 		if (fullscreen) {
 			/* Over a fullscreen window only the edges' gestures take their buttons (shell.c). */
-			taken = zwl_glass_edge_button(server, button, state);
+			taken = kwl_glass_edge_button(server, button, state);
 		} else {
 			/* Elsewhere the title bars, the frames and the desktop. */
-			taken = zwl_glass_button(server, button, state);
+			taken = kwl_glass_button(server, button, state);
 		}
 
 		/* A shell operation consumed this event before ordinary client delivery. */
@@ -736,17 +736,17 @@ zwl_seat_button_shell(
  * Tells the surface under the pointer about one button press or release.
  */
 void
-zwl_seat_button_deliver(
-	struct zwl_server *server,
+kwl_seat_button_deliver(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_object *target;
+	struct kwl_object *target;
 	uint32_t serial;
 
 	/* The ordinary event goes to the current pointer surface. */
-	zwl_seat_pointer_update(server);
+	kwl_seat_pointer_update(server);
 	target = server->pointer_surface;
 	if (target == NULL)
 		return;
@@ -763,7 +763,7 @@ zwl_seat_button_deliver(
 		server->press_button = button;
 		server->press_x = server->pointer_x;
 		server->press_y = server->pointer_y;
-		zwl_ping_send(target->client);
+		kwl_ping_send(target->client);
 	}
 
 	/* Succeeded: the focused client has heard the button. */
@@ -777,8 +777,8 @@ zwl_seat_button_deliver(
  * positive horizontal scrolls right.  Each notch is WHEEL_STEP units.
  */
 void
-zwl_seat_axis(
-	struct zwl_server *server,
+kwl_seat_axis(
+	struct kwl_server *server,
 	uint32_t time,
 	int32_t vertical,
 	int32_t horizontal)
@@ -791,12 +791,12 @@ zwl_seat_axis(
  * Reports two fingers' scrolling on a touch pad to the focused client, in
  * the wheel's units (BUG-218): the client hears them as the fingers move,
  * a unit at a time, with the finger as their source, and the end of the
- * scrolling as axis_stop (zwl_seat_axis_stop).  The whole notches are the
+ * scrolling as axis_stop (kwl_seat_axis_stop).  The whole notches are the
  * desktop's own uses' (App Home's pages, the volume, the tabs).
  */
 void
-zwl_seat_axis_finger(
-	struct zwl_server *server,
+kwl_seat_axis_finger(
+	struct kwl_server *server,
 	uint32_t time,
 	int32_t vertical,
 	int32_t horizontal,
@@ -813,12 +813,12 @@ zwl_seat_axis_finger(
  * fly on from there (BUG-211).
  */
 void
-zwl_seat_axis_stop(
-	struct zwl_server *server,
+kwl_seat_axis_stop(
+	struct kwl_server *server,
 	uint32_t time)
 {
-	struct zwl_object *object;
-	struct zwl_object *target;
+	struct kwl_object *object;
+	struct kwl_object *target;
 	uint32_t words[2];
 	uint32_t word;
 
@@ -830,7 +830,7 @@ zwl_seat_axis_stop(
 	/* Each version 5 pointer hears the source and the end of both axes, then the frame's end. */
 	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects of version 5 or later. */
-		if (object->kind != ZWL_POINTER || object->dead)
+		if (object->kind != KWL_POINTER || object->dead)
 			continue;
 		if (object->version < POINTER_FRAME_VERSION)
 			continue;
@@ -848,7 +848,7 @@ zwl_seat_axis_stop(
 	}
 
 	/* The group of events ends. */
-	zwl_seat_frame(server);
+	kwl_seat_frame(server);
 	printf("ZWL AXIS stop\n");
 }
 
@@ -859,7 +859,7 @@ zwl_seat_axis_stop(
  */
 static void
 seat_axis(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time,
 	int32_t vertical,
 	int32_t horizontal,
@@ -867,33 +867,33 @@ seat_axis(
 	int32_t horizontal_units,
 	uint32_t source)
 {
-	struct zwl_object *object;
-	struct zwl_object *target;
+	struct kwl_object *object;
+	struct kwl_object *target;
 	uint32_t words[3];
 	uint32_t word;
 	int taken;
 
 	/* The wheel while the Windows key is down: no tap of its own (ws142-p002). */
-	zwl_super_tap_cancel(&server->super_tap);
+	kwl_super_tap_cancel(&server->super_tap);
 
 	/* The wheel does nothing during a drag and drop, nor on the lock screen. */
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 	if (server->dnd_active || server->locked)
 		return;
 
 	/* App Home, while it shows, turns its pages with the wheel. */
-	taken = zwl_home_axis(server, vertical, horizontal);
+	taken = kwl_home_axis(server, vertical, horizontal);
 	if (taken)
 		return;
 
 	/* The volume's icon (and its open popup) takes the wheel (volume.c, ws100-p004). */
-	taken = zwl_volume_axis(server, vertical, horizontal);
+	taken = kwl_volume_axis(server, vertical, horizontal);
 	if (taken)
 		return;
 
 	/* A tab strip under the pointer scrolls with it (titlebar-shell.c). */
 	if (server->glass) {
-		taken = zwl_titlebar_axis(server, vertical, horizontal);
+		taken = kwl_titlebar_axis(server, vertical, horizontal);
 		if (taken)
 			return;
 	}
@@ -906,7 +906,7 @@ seat_axis(
 	/* Each pointer hears the source first, then per-axis discrete steps (a wheel's) and values. */
 	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects receive scrolling. */
-		if (object->kind != ZWL_POINTER || object->dead)
+		if (object->kind != KWL_POINTER || object->dead)
 			continue;
 
 		/* Version 5 pointers learn what produced this frame's scrolling. */
@@ -956,11 +956,11 @@ seat_axis(
  * Ends one group of pointer events for version 5 pointers of the focused client.
  */
 void
-zwl_seat_frame(
-	struct zwl_server *server)
+kwl_seat_frame(
+	struct kwl_server *server)
 {
-	struct zwl_object *object;
-	struct zwl_object *target;
+	struct kwl_object *object;
+	struct kwl_object *target;
 
 	/* A frame goes to the surface the pointer is on; without one it reaches nobody. */
 	target = server->pointer_surface;
@@ -970,7 +970,7 @@ zwl_seat_frame(
 	/* Pointers older than version 5 have no frame event. */
 	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live version 5 pointers are told where a group ends. */
-		if (object->kind != ZWL_POINTER ||
+		if (object->kind != KWL_POINTER ||
 		    object->dead ||
 		    object->version < POINTER_FRAME_VERSION)
 			continue;
@@ -987,8 +987,8 @@ zwl_seat_frame(
  * Reports one key press or release to the focused client.
  */
 void
-zwl_seat_key(
-	struct zwl_server *server,
+kwl_seat_key(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state)
@@ -1009,7 +1009,7 @@ zwl_seat_key(
 	 * being composed).
 	 */
 	if (server->dnd_active && key == SEAT_KEY_ESC && state != 0U) {
-		zwl_data_drag_cancel(server);
+		kwl_data_drag_cancel(server);
 		return;
 	}
 
@@ -1019,13 +1019,13 @@ zwl_seat_key(
 	 * is no tap).
 	 */
 	others = server->modifiers & (SEAT_MODIFIER_SHIFT | SEAT_MODIFIER_CONTROL | SEAT_MODIFIER_ALT);
-	tapped = zwl_super_tap_key(&server->super_tap, key, state, others, zwl_milliseconds());
+	tapped = kwl_super_tap_key(&server->super_tap, key, state, others, kwl_milliseconds());
 	if (tapped &&
 	    server->glass &&
 	    !server->locked &&
 	    !server->greeter) {
 		printf("ZWL SUPER home\n");
-		zwl_home_toggle(server, "super");
+		kwl_home_toggle(server, "super");
 	}
 
 	/*
@@ -1033,87 +1033,87 @@ zwl_seat_key(
 	 * 2026-10-05 user decision D9, plan/ws142/phase001); the modifier mask
 	 * the clients hear with other keys still carries it (input.c).
 	 */
-	if (key == ZWL_SUPER_TAP_LEFT || key == ZWL_SUPER_TAP_RIGHT) {
+	if (key == KWL_SUPER_TAP_LEFT || key == KWL_SUPER_TAP_RIGHT) {
 		if (!server->locked && !server->greeter)
 			return;
 	}
 
 	/* The lock screen takes every key; Super+L locks a session (ws035-p102). */
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 	if (server->locked) {
-		(void)zwl_greeter_key(server, key, state);
+		(void)kwl_greeter_key(server, key, state);
 		return;
 	}
 
 	/* Super+L locks it. */
 	if (key == SEAT_KEY_L && state != 0U && (server->modifiers & SEAT_MODIFIER_SUPER) != 0U) {
-		taken = zwl_lock(server, "key");
+		taken = kwl_lock(server, "key");
 		if (taken)
 			return;
 	}
 
 	/* The login screen takes every key; it has no clients to give one to (greeter.c). */
 	if (server->greeter) {
-		(void)zwl_greeter_key(server, key, state);
+		(void)kwl_greeter_key(server, key, state);
 		return;
 	}
 
 	/* The input method's keys come first: Alt+Space, and a release whose press went to it (input-method.c). */
-	taken = zwl_ime_key_early(server, time, key, state);
+	taken = kwl_ime_key_early(server, time, key, state);
 	if (taken)
 		return;
 
 	/* The glass look's own keys, in that order. */
 	if (server->glass) {
-		taken = zwl_home_key(server, key, state);
+		taken = kwl_home_key(server, key, state);
 		if (taken)
 			return;
-		taken = zwl_network_key(server, key, state);
+		taken = kwl_network_key(server, key, state);
 		if (taken)
 			return;
-		taken = zwl_menu_grab_key(server, key, state);
+		taken = kwl_menu_grab_key(server, key, state);
 		if (taken)
 			return;
-		taken = zwl_ime_field_key(server, time, key, state);
+		taken = kwl_ime_field_key(server, time, key, state);
 		if (taken)
 			return;
-		taken = zwl_titlebar_key(server, key, state);
+		taken = kwl_titlebar_key(server, key, state);
 		if (taken)
 			return;
-		taken = zwl_glass_key(server, key, state);
+		taken = kwl_glass_key(server, key, state);
 		if (taken)
 			return;
-		taken = zwl_ime_key_grab(server, time, key, state, 1);
+		taken = kwl_ime_key_grab(server, time, key, state, 1);
 		if (taken)
 			return;
-		taken = zwl_menu_key(server, key, state);
+		taken = kwl_menu_key(server, key, state);
 		if (taken)
 			return;
-		taken = zwl_titlebar_tab_key(server, key, state);
+		taken = kwl_titlebar_tab_key(server, key, state);
 		if (taken)
 			return;
 	}
 
 	/* The input method takes the key while it serves a text input (input-method.c). */
-	taken = zwl_ime_key_grab(server, time, key, state, 0);
+	taken = kwl_ime_key_grab(server, time, key, state, 0);
 	if (taken)
 		return;
 
 	/* The focused client hears the key. */
-	zwl_seat_key_deliver(server, time, key, state);
+	kwl_seat_key_deliver(server, time, key, state);
 }
 
 /*
  * Sends one key press or release to the focused client's keyboards.
  */
 void
-zwl_seat_key_deliver(
-	struct zwl_server *server,
+kwl_seat_key_deliver(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t words[4];
 
 	/* A key without focus reaches nobody. */
@@ -1121,13 +1121,13 @@ zwl_seat_key_deliver(
 		return;
 
 	/* The key event carries a new serial, the time, the evdev key code and the state. */
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	words[1] = time;
 	words[2] = key;
 	words[3] = state;
 	for (object = server->focus->client->objects; object != NULL; object = object->next) {
 		/* Only live keyboard objects receive keys. */
-		if (object->kind != ZWL_KEYBOARD || object->dead)
+		if (object->kind != KWL_KEYBOARD || object->dead)
 			continue;
 
 		/* Queue the key for this keyboard. */
@@ -1142,24 +1142,24 @@ zwl_seat_key_deliver(
  * Reports the depressed modifier mask in server->modifiers to the focused client.
  */
 void
-zwl_seat_modifiers(
-	struct zwl_server *server)
+kwl_seat_modifiers(
+	struct kwl_server *server)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t serial;
 
 	/* The input method's keyboard grab hears the modifiers too (input-method.c). */
-	zwl_ime_modifiers(server);
+	kwl_ime_modifiers(server);
 
 	/* A modifier change without focus reaches nobody; enter will carry it later. */
 	if (server->focus == NULL)
 		return;
 
 	/* One serial covers the modifier report on every keyboard of the client. */
-	serial = zwl_next_serial(server);
+	serial = kwl_next_serial(server);
 	for (object = server->focus->client->objects; object != NULL; object = object->next) {
 		/* Only live keyboard objects receive modifiers. */
-		if (object->kind != ZWL_KEYBOARD || object->dead)
+		if (object->kind != KWL_KEYBOARD || object->dead)
 			continue;
 
 		/* Queue the new modifier state for this keyboard. */
@@ -1176,11 +1176,11 @@ zwl_seat_modifiers(
  * the new rate from now on, not only a keyboard bound later.
  */
 void
-zwl_seat_repeat_changed(
-	struct zwl_server *server)
+kwl_seat_repeat_changed(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	int32_t repeat[2];
 
 	/* Builds wl_keyboard.repeat_info's arguments: the rate, then the delay. */
@@ -1200,7 +1200,7 @@ zwl_seat_repeat_changed(
 		     object != NULL;
 		     object = object->next) {
 			/* Only a live keyboard is told. */
-			if (object->kind != ZWL_KEYBOARD || object->dead)
+			if (object->kind != KWL_KEYBOARD || object->dead)
 				continue;
 
 			/* A keyboard bound before version 4 has no repeat_info. */
@@ -1216,13 +1216,13 @@ zwl_seat_repeat_changed(
 /* Creates a pointer, keyboard or touch object and introduces it to the current focus. */
 static int
 create_device(
-	struct zwl_object *seat,
-	enum zwl_kind kind,
+	struct kwl_object *seat,
+	enum kwl_kind kind,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *device;
-	struct zwl_server *server;
+	struct kwl_object *device;
+	struct kwl_server *server;
 	int32_t repeat[2];
 	uint32_t id;
 	uint32_t serial;
@@ -1234,12 +1234,12 @@ create_device(
 
 	/* The child inherits the seat's negotiated version. */
 	memcpy(&id, bytes, sizeof(id));
-	device = zwl_create(seat->client, id, kind, seat->version);
+	device = kwl_create(seat->client, id, kind, seat->version);
 	if (device == NULL)
 		return EPROTO;
 
 	/* A keyboard first learns that no keymap applies: keys are evdev codes. */
-	if (kind == ZWL_KEYBOARD) {
+	if (kind == KWL_KEYBOARD) {
 		/* The keymap event must carry a descriptor even when there is no keymap. */
 		error = keyboard_keymap(device);
 		if (error != 0)
@@ -1259,18 +1259,18 @@ create_device(
 
 	/* A pointer created while the pointer is on one of its client's surfaces is entered there at once. */
 	server = seat->client->server;
-	if (kind == ZWL_POINTER &&
+	if (kind == KWL_POINTER &&
 	    server->pointer_surface != NULL &&
 	    server->pointer_surface->client == seat->client) {
-		serial = zwl_next_serial(server);
+		serial = kwl_next_serial(server);
 		pointer_enter(device, server->pointer_surface, serial);
 	}
 
 	/* A keyboard created while its client has the focus is entered at once (the others already were). */
-	if (kind == ZWL_KEYBOARD &&
+	if (kind == KWL_KEYBOARD &&
 	    server->focus != NULL &&
 	    server->focus->client == seat->client) {
-		serial = zwl_next_serial(server);
+		serial = kwl_next_serial(server);
 		keyboard_enter(device, server->focus, serial);
 	}
 
@@ -1284,13 +1284,13 @@ create_device(
 /* Queues one event and marks the client failed when the queue refuses it. */
 static void
 deliver(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const void *payload,
 	size_t size)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	int error;
 
 	/* A failed client is only waiting for cleanup and hears nothing further. */
@@ -1298,10 +1298,10 @@ deliver(
 		return;
 
 	/* A client that stopped reading loses its connection rather than compositor memory. */
-	error = zwl_emit(client, id, opcode, payload, size);
+	error = kwl_emit(client, id, opcode, payload, size);
 	if (error != 0) {
 		client->fatal = 1;
-		client->fatal_time = zwl_milliseconds();
+		client->fatal_time = kwl_milliseconds();
 		return;
 	}
 
@@ -1316,11 +1316,11 @@ deliver(
 /* Tells one pointer that it is over the focused surface, and where. */
 static void
 pointer_enter(
-	struct zwl_object *pointer,
-	struct zwl_object *surface,
+	struct kwl_object *pointer,
+	struct kwl_object *surface,
 	uint32_t serial)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t words[4];
 
 	/* Enter carries the serial, the surface and the surface-local position (the window's place taken off). */
@@ -1342,8 +1342,8 @@ pointer_enter(
 /* Tells one keyboard that the focused surface has keyboard focus. */
 static void
 keyboard_enter(
-	struct zwl_object *keyboard,
-	struct zwl_object *surface,
+	struct kwl_object *keyboard,
+	struct kwl_object *surface,
 	uint32_t serial)
 {
 	uint32_t words[3];
@@ -1355,7 +1355,7 @@ keyboard_enter(
 	deliver(keyboard->client, keyboard->id, KEYBOARD_ENTER, words, sizeof(words));
 
 	/* The modifier state that applies from now on follows enter. */
-	serial = zwl_next_serial(keyboard->client->server);
+	serial = kwl_next_serial(keyboard->client->server);
 	keyboard_modifiers(keyboard, serial);
 
 	/* Succeeded: the keyboard is focused on the surface. */
@@ -1365,7 +1365,7 @@ keyboard_enter(
 /* Sends one keyboard the current depressed modifier mask. */
 static void
 keyboard_modifiers(
-	struct zwl_object *keyboard,
+	struct kwl_object *keyboard,
 	uint32_t serial)
 {
 	uint32_t words[5];
@@ -1389,11 +1389,11 @@ keyboard_modifiers(
  * it heard, and the item it lit there (BUG-141).  A window being moved,
  * resized, pulled or swiped, and a drag and drop, keep the pointer as before
  * (data.c has its own leave); the next motion that is the client's enters
- * again (zwl_seat_pointer_update).
+ * again (kwl_seat_pointer_update).
  */
 static void
 motion_taken_leave(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Nothing to leave. */
 	if (server->pointer_surface == NULL)
@@ -1409,24 +1409,24 @@ motion_taken_leave(
 		return;
 
 	/* The surface hears leave; none has the pointer until a motion is a client's again. */
-	zwl_seat_pointer_move(server, server->pointer_surface, NULL);
+	kwl_seat_pointer_move(server, server->pointer_surface, NULL);
 	server->pointer_surface = NULL;
 }
 
-/* Tells every keyboard of a surface's client that the focus left it (the pointer is zwl_seat_pointer_update's). */
+/* Tells every keyboard of a surface's client that the focus left it (the pointer is kwl_seat_pointer_update's). */
 static void
 send_leave(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t words[2];
 
 	/* Leave carries one serial and the surface. */
-	words[0] = zwl_next_serial(surface->client->server);
+	words[0] = kwl_next_serial(surface->client->server);
 	words[1] = surface->id;
 	for (object = surface->client->objects; object != NULL; object = object->next) {
 		/* Only live keyboards. */
-		if (object->dead || object->kind != ZWL_KEYBOARD)
+		if (object->dead || object->kind != KWL_KEYBOARD)
 			continue;
 
 		/* The keyboard hears leave. */
@@ -1434,19 +1434,19 @@ send_leave(
 	}
 }
 
-/* Tells every keyboard of a surface's client that the focus arrived (the pointer is zwl_seat_pointer_update's). */
+/* Tells every keyboard of a surface's client that the focus arrived (the pointer is kwl_seat_pointer_update's). */
 static void
 send_enter(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t serial;
 
 	/* One serial covers the enter on every keyboard of the client. */
-	serial = zwl_next_serial(surface->client->server);
+	serial = kwl_next_serial(surface->client->server);
 	for (object = surface->client->objects; object != NULL; object = object->next) {
 		/* Only live keyboards. */
-		if (object->dead || object->kind != ZWL_KEYBOARD)
+		if (object->dead || object->kind != KWL_KEYBOARD)
 			continue;
 
 		/* The keyboard hears enter, with the keys and modifiers held. */
@@ -1457,9 +1457,9 @@ send_enter(
 /* Prints which input objects one client currently holds. */
 static void
 report_seat(
-	struct zwl_client *client)
+	struct kwl_client *client)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned touch;
@@ -1474,11 +1474,11 @@ report_seat(
 			continue;
 
 		/* Record the three device kinds the log line reports. */
-		if (object->kind == ZWL_POINTER)
+		if (object->kind == KWL_POINTER)
 			pointer = 1;
-		if (object->kind == ZWL_KEYBOARD)
+		if (object->kind == KWL_KEYBOARD)
 			keyboard = 1;
-		if (object->kind == ZWL_TOUCH)
+		if (object->kind == KWL_TOUCH)
 			touch = 1;
 	}
 
@@ -1492,7 +1492,7 @@ report_seat(
 /* Sends a keyboard the no_keymap format with a descriptor of an empty file. */
 static int
 keyboard_keymap(
-	struct zwl_object *keyboard)
+	struct kwl_object *keyboard)
 {
 	uint32_t words[2];
 	uint32_t size;
@@ -1501,7 +1501,7 @@ keyboard_keymap(
 
 	/* The US XKB keymap (keymap.c, ws035-p078): a read-only descriptor of its file and its size. */
 	words[0] = KEYMAP_XKB_V1;
-	descriptor = zwl_keymap_descriptor(&size);
+	descriptor = kwl_keymap_descriptor(&size);
 	words[1] = size;
 
 	/* Without it the protocol still requires a descriptor: /dev/null is an empty file, and no keymap applies. */
@@ -1514,7 +1514,7 @@ keyboard_keymap(
 	}
 
 	/* The payload words are the format and the size; the descriptor travels beside them. */
-	error = zwl_emit_fd(keyboard->client, keyboard->id, KEYBOARD_KEYMAP, words, sizeof(words), descriptor);
+	error = kwl_emit_fd(keyboard->client, keyboard->id, KEYBOARD_KEYMAP, words, sizeof(words), descriptor);
 	if (error != 0)
 		return error;
 
@@ -1531,9 +1531,9 @@ keyboard_keymap(
  */
 static void
 set_cursor(
-	struct zwl_server *server,
-	struct zwl_client *client,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_client *client,
+	struct kwl_object *surface,
 	const unsigned char *bytes)
 {
 	int32_t hotspot[2];
@@ -1564,15 +1564,15 @@ set_cursor(
 /* Sends one button directly to a live origin and returns its nonzero serial. */
 static uint32_t
 pointer_button(
-    struct zwl_object *target,
+    struct kwl_object *target,
     uint32_t time,
     uint32_t button,
     uint32_t state,
     unsigned complete)
 {
-	struct zwl_object *object;
-	struct zwl_client *client;
-	struct zwl_server *server;
+	struct kwl_object *object;
+	struct kwl_client *client;
+	struct kwl_server *server;
 	uint32_t words[4];
 
 	/* Teardown or a failed connection has no live pointer destination. */
@@ -1586,13 +1586,13 @@ pointer_button(
 
 	/* The existing pointer protocol carries serial, time, physical button and state. */
 	server = client->server;
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	words[1] = time;
 	words[2] = button;
 	words[3] = state;
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* Dead objects and interfaces other than wl_pointer receive no event. */
-		if (object->kind != ZWL_POINTER || object->dead)
+		if (object->kind != KWL_POINTER || object->dead)
 			continue;
 
 		/* Reuses the established buffered delivery and failure contract. */
@@ -1610,7 +1610,7 @@ pointer_button(
 /* Retires borrowed client-operation identities before any later input delivery. */
 static void
 interactive_clear(
-    struct zwl_server *server)
+    struct kwl_server *server)
 {
 	/* The compositor owns these links, never the objects they borrow. */
 	server->interactive_window = NULL;

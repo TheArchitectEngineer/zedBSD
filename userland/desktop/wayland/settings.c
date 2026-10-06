@@ -27,7 +27,7 @@
  */
 
 #include "language.h"
-#include "zwl.h"
+#include "kwl.h"
 #include "settings-store.h"
 #include "ime.h"
 
@@ -67,37 +67,37 @@ struct settings_waiting {
  * thread touches it.
  */
 struct settings_state {
-	unsigned announce[ZWL_SETTINGS_ENTRIES];
+	unsigned announce[KWL_SETTINGS_ENTRIES];
 	uint32_t serial;
 	struct settings_waiting waiting;
 };
 
 /*
- * The one state of the process: zeroed by zwl_settings_open and kept for
+ * The one state of the process: zeroed by kwl_settings_open and kept for
  * the process's life; only the event loop's thread touches it.
  */
 static struct settings_state settings_state;
 
-static void settings_migrate(struct zwl_settings_store *store, const char *old_name, const char *new_name);
-static void settings_apply(struct zwl_server *server, const char *name, int starting);
-static void settings_apply_all(struct zwl_server *server, int starting);
-static void settings_apply_wallpaper(struct zwl_server *server, int starting);
-static void settings_apply_opacity(struct zwl_server *server);
-static void settings_apply_number(struct zwl_server *server, const char *name, int32_t *target);
-static void settings_apply_repeat(struct zwl_server *server, int starting);
-static void settings_apply_appearance(struct zwl_server *server, int starting);
-static void settings_mark(struct zwl_server *server, const char *name);
-static void settings_flush(struct zwl_server *server);
-static int settings_emit_value(struct zwl_client *client, uint32_t id, const struct zwl_settings_entry *entry);
-static void settings_emit_done(struct zwl_client *client, uint32_t id);
-static void settings_result(struct zwl_client *client, uint32_t id, uint32_t request, uint32_t applied, int stored);
-static int settings_set(struct zwl_object *object, const unsigned char *bytes, size_t size, int reset);
-static uint32_t settings_change(struct zwl_object *object, uint32_t request, const char *name, const char *value, int reset, int *answered);
-static uint32_t settings_change_sound(struct zwl_server *server, const struct kl_settings_key *key, const char *value, int reset);
-static uint32_t settings_change_wallpaper(struct zwl_object *object, uint32_t request, const char *value, int reset, int *answered);
-static void settings_wallpaper_done(struct zwl_server *server, int error);
-static void settings_sound(struct zwl_server *server);
-static int settings_snapshot(struct zwl_object *settings);
+static void settings_migrate(struct kwl_settings_store *store, const char *old_name, const char *new_name);
+static void settings_apply(struct kwl_server *server, const char *name, int starting);
+static void settings_apply_all(struct kwl_server *server, int starting);
+static void settings_apply_wallpaper(struct kwl_server *server, int starting);
+static void settings_apply_opacity(struct kwl_server *server);
+static void settings_apply_number(struct kwl_server *server, const char *name, int32_t *target);
+static void settings_apply_repeat(struct kwl_server *server, int starting);
+static void settings_apply_appearance(struct kwl_server *server, int starting);
+static void settings_mark(struct kwl_server *server, const char *name);
+static void settings_flush(struct kwl_server *server);
+static int settings_emit_value(struct kwl_client *client, uint32_t id, const struct kwl_settings_entry *entry);
+static void settings_emit_done(struct kwl_client *client, uint32_t id);
+static void settings_result(struct kwl_client *client, uint32_t id, uint32_t request, uint32_t applied, int stored);
+static int settings_set(struct kwl_object *object, const unsigned char *bytes, size_t size, int reset);
+static uint32_t settings_change(struct kwl_object *object, uint32_t request, const char *name, const char *value, int reset, int *answered);
+static uint32_t settings_change_sound(struct kwl_server *server, const struct kl_settings_key *key, const char *value, int reset);
+static uint32_t settings_change_wallpaper(struct kwl_object *object, uint32_t request, const char *value, int reset, int *answered);
+static void settings_wallpaper_done(struct kwl_server *server, int error);
+static void settings_sound(struct kwl_server *server);
+static int settings_snapshot(struct kwl_object *settings);
 static uint32_t settings_result_of(int error);
 static size_t settings_put_string(unsigned char *payload, size_t offset, const char *text);
 static int settings_read_string(const unsigned char *bytes, size_t size, size_t offset, char **text, size_t *next);
@@ -110,11 +110,11 @@ static uint32_t settings_word(const unsigned char *bytes, size_t offset);
  * has none.
  */
 void
-zwl_settings_open(
-	struct zwl_server *server)
+kwl_settings_open(
+	struct kwl_server *server)
 {
-	struct zwl_settings_store *store;
-	char home[ZWL_SETTINGS_PATH_MAX];
+	struct kwl_settings_store *store;
+	char home[KWL_SETTINGS_PATH_MAX];
 	char opacity[16];
 	int percent;
 	int error;
@@ -135,26 +135,26 @@ zwl_settings_open(
 	}
 
 	/* Finds the user's home; without one the settings live for the session only. */
-	error = zwl_settings_home(home, sizeof(home));
+	error = kwl_settings_home(home, sizeof(home));
 	if (error != 0)
 		home[0] = '\0';
 
 	/* Opens the store on the home's desktop.conf. */
-	error = zwl_settings_store_open(store, home);
+	error = kwl_settings_store_open(store, home);
 	if (error != 0)
 		printf("ZWL SETTINGS home errno=%d\n", error);
 
 	/* Makes the command line's wallpaper the wallpaper's default. */
 	if (server->wallpaper_path != NULL)
-		zwl_settings_store_default(store, "wallpaper", server->wallpaper_path);
+		kwl_settings_store_default(store, "wallpaper", server->wallpaper_path);
 
 	/* Makes the command line's opacity, in whole percent, the opacity's default. */
 	percent = (int)(server->window_opacity * 100.0f + 0.5f);
 	(void)snprintf(opacity, sizeof(opacity), "%d", percent);
-	zwl_settings_store_default(store, "window.opacity", opacity);
+	kwl_settings_store_default(store, "window.opacity", opacity);
 
 	/* Reads desktop.conf, once for the session. */
-	error = zwl_settings_store_load(store);
+	error = kwl_settings_store_load(store);
 	if (error != 0)
 		printf("ZWL SETTINGS read-failed errno=%d\n", error);
 
@@ -175,8 +175,8 @@ zwl_settings_open(
  * sound audiod reported, and the changes to tell the settings objects.
  */
 void
-zwl_settings_tick(
-	struct zwl_server *server)
+kwl_settings_tick(
+	struct kwl_server *server)
 {
 	int finished;
 	int error;
@@ -186,7 +186,7 @@ zwl_settings_tick(
 		return;
 
 	/* Takes a wallpaper glass.c finished reading, and answers its request. */
-	finished = zwl_glass_wallpaper_poll(server, &error);
+	finished = kwl_glass_wallpaper_poll(server, &error);
 	if (finished)
 		settings_wallpaper_done(server, error);
 
@@ -202,8 +202,8 @@ zwl_settings_tick(
  * loop waiting (the session goes on showing until its manager ends it).
  */
 void
-zwl_settings_logout(
-	struct zwl_server *server)
+kwl_settings_logout(
+	struct kwl_server *server)
 {
 	int error;
 
@@ -212,7 +212,7 @@ zwl_settings_logout(
 		return;
 
 	/* Starts merging the session's settings into desktop.conf on the store's thread. */
-	error = zwl_settings_store_save_later(server->settings);
+	error = kwl_settings_store_save_later(server->settings);
 
 	/* Logs how the start went, for the tests. */
 	printf("ZWL SETTINGS logout-save error=%d\n", error);
@@ -223,8 +223,8 @@ zwl_settings_logout(
  * compositor's end.
  */
 void
-zwl_settings_close(
-	struct zwl_server *server)
+kwl_settings_close(
+	struct kwl_server *server)
 {
 	int error;
 
@@ -233,13 +233,13 @@ zwl_settings_close(
 		return;
 
 	/* Waits for the writer, then writes whatever changed after it (or everything, without it). */
-	error = zwl_settings_store_finish(server->settings);
+	error = kwl_settings_store_finish(server->settings);
 
 	/* Logs how the writing went, for the tests. */
 	printf("ZWL SETTINGS saved error=%d\n", error);
 
 	/* Lets the store go; the server has no settings from now on. */
-	zwl_settings_store_close(server->settings);
+	kwl_settings_store_close(server->settings);
 	free(server->settings);
 	server->settings = NULL;
 }
@@ -250,12 +250,12 @@ zwl_settings_close(
  * the file did not hold it.
  */
 int
-zwl_settings_kept(
-	struct zwl_server *server,
+kwl_settings_kept(
+	struct kwl_server *server,
 	const char *name,
 	int *number)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	int error;
 
 	/* Without settings (the login screen) nothing was kept. */
@@ -263,7 +263,7 @@ zwl_settings_kept(
 		return ENOENT;
 
 	/* Finds the setting; one the file did not hold was not kept. */
-	entry = zwl_settings_store_find(server->settings, name);
+	entry = kwl_settings_store_find(server->settings, name);
 	if (entry == NULL || !entry->start_chosen)
 		return ENOENT;
 
@@ -282,16 +282,16 @@ zwl_settings_kept(
  * compositor's own user (WS131 D5).  Every other global is everyone's.
  */
 int
-zwl_settings_global_visible(
-	struct zwl_client *client,
-	enum zwl_kind kind)
+kwl_settings_global_visible(
+	struct kwl_client *client,
+	enum kwl_kind kind)
 {
 	uid_t uid;
 	uid_t own;
 	int error;
 
 	/* Only the system manager is limited. */
-	if (kind != ZWL_SYSTEM_MANAGER)
+	if (kind != KWL_SYSTEM_MANAGER)
 		return 1;
 
 	/* The login screen has no settings. */
@@ -332,25 +332,25 @@ zwl_settings_global_visible(
  * get_settings (system.c hands it on, WS131 p010).
  */
 int
-zwl_settings_request(
-	struct zwl_object *object,
+kwl_settings_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
+	struct kwl_object *created;
 	uint32_t id;
 	int error;
 
 	/* The manager's get_settings makes a settings object. */
-	if (object->kind == ZWL_SYSTEM_MANAGER) {
+	if (object->kind == KWL_SYSTEM_MANAGER) {
 		/* get_settings, with its new ID. */
 		if (opcode != KL_SYSTEM_MANAGER_GET_SETTINGS || size != 4U)
 			return EPROTO;
 
 		/* Makes the settings object under the ID the client chose. */
 		id = settings_word(bytes, 0U);
-		created = zwl_create(object->client, id, ZWL_SYSTEM_SETTINGS, object->version);
+		created = kwl_create(object->client, id, KWL_SYSTEM_SETTINGS, object->version);
 		if (created == NULL)
 			return EPROTO;
 
@@ -371,7 +371,7 @@ zwl_settings_request(
 			return EPROTO;
 
 		/* Lets the settings object go. */
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 
 		/* Succeeded: the settings object is gone. */
 		return 0;
@@ -399,7 +399,7 @@ zwl_settings_request(
 
 /* Finds the user's home: $HOME, else the password file's; returns 0 or ENOENT. */
 int
-zwl_settings_home(
+kwl_settings_home(
 	char *home,
 	size_t size)
 {
@@ -439,31 +439,31 @@ zwl_settings_home(
  */
 static void
 settings_migrate(
-	struct zwl_settings_store *store,
+	struct kwl_settings_store *store,
 	const char *old_name,
 	const char *new_name)
 {
-	struct zwl_settings_entry *old_entry;
-	struct zwl_settings_entry *new_entry;
+	struct kwl_settings_entry *old_entry;
+	struct kwl_settings_entry *new_entry;
 	int error;
 
 	/* Both settings, the old one read from the file and the new one not. */
-	old_entry = zwl_settings_store_find(store, old_name);
-	new_entry = zwl_settings_store_find(store, new_name);
+	old_entry = kwl_settings_store_find(store, old_name);
+	new_entry = kwl_settings_store_find(store, new_name);
 	if (old_entry == NULL || new_entry == NULL)
 		return;
 	if (!old_entry->start_chosen || new_entry->start_chosen)
 		return;
 
 	/* The old value, chosen under the new name. */
-	error = zwl_settings_store_choose(store, new_name, old_entry->start);
+	error = kwl_settings_store_choose(store, new_name, old_entry->start);
 	printf("ZWL SETTINGS migrated %s=%s to %s error=%d\n", old_name, old_entry->start, new_name, error);
 }
 
 /* Puts every setting into effect (starting: before the look is made). */
 static void
 settings_apply_all(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int starting)
 {
 	unsigned index;
@@ -476,7 +476,7 @@ settings_apply_all(
 /* Puts one setting into effect; the sound is audiod's (volume.c) and needs nothing here. */
 static void
 settings_apply(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *name,
 	int starting)
 {
@@ -536,7 +536,7 @@ settings_apply(
 	differs = strcmp(name, "touchpad.acceleration");
 	if (differs == 0) {
 		settings_apply_number(server, name, &server->touchpad_acceleration);
-		zwl_input_touchpads_changed(server);
+		kwl_input_touchpads_changed(server);
 		return;
 	}
 
@@ -544,7 +544,7 @@ settings_apply(
 	differs = strcmp(name, "touchpad.natural");
 	if (differs == 0) {
 		settings_apply_number(server, name, &server->touchpad_natural);
-		zwl_input_touchpads_changed(server);
+		kwl_input_touchpads_changed(server);
 		return;
 	}
 
@@ -576,7 +576,7 @@ settings_apply(
 	if (differs == 0) {
 		language = 0;
 		settings_apply_number(server, name, &language);
-		zwl_language_set(server, (int)language);
+		kwl_language_set(server, (int)language);
 		return;
 	}
 
@@ -587,7 +587,7 @@ settings_apply(
 
 		/* At the start the input method has not been started yet; it starts with the choice. */
 		if (!starting)
-			zwl_ime_method_changed(server);
+			kwl_ime_method_changed(server);
 
 		/* Applied. */
 		return;
@@ -596,12 +596,12 @@ settings_apply(
 
 /*
  * Sets the desktop's appearance the settings hold (0 light, 1 dark): the
- * glass is drawn again in it and the clients that bound keiland_theme_v1
+ * glass is drawn again in it and the clients that bound kl_theme_v1
  * are told (theme.c).  Nothing is bound at the start.
  */
 static void
 settings_apply_appearance(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int starting)
 {
 	int32_t dark;
@@ -622,13 +622,13 @@ settings_apply_appearance(
 
 	/* Tells the clients, once anything can be bound. */
 	if (!starting)
-		zwl_theme_changed(server);
+		kwl_theme_changed(server);
 }
 
 /* Tells the keyboards bound already the repeat again (nothing is bound before the look is made). */
 static void
 settings_apply_repeat(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int starting)
 {
 	/* Before anything is bound there is nobody to tell. */
@@ -636,8 +636,8 @@ settings_apply_repeat(
 		return;
 
 	/* The applications' keyboards, then the input method's grab. */
-	zwl_seat_repeat_changed(server);
-	zwl_ime_repeat_changed(server);
+	kwl_seat_repeat_changed(server);
+	kwl_ime_repeat_changed(server);
 }
 
 /*
@@ -648,17 +648,17 @@ settings_apply_repeat(
  */
 static void
 settings_apply_wallpaper(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int starting)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	const char *path;
 	const char *chosen;
 	int differs;
 	int error;
 
 	/* The choice: the setting's path when chosen, else none (the command line's). */
-	entry = zwl_settings_store_find(server->settings, "wallpaper");
+	entry = kwl_settings_store_find(server->settings, "wallpaper");
 	chosen = "";
 	if (entry != NULL && entry->chosen)
 		chosen = entry->value;
@@ -685,12 +685,12 @@ settings_apply_wallpaper(
 
 	/*
 	 * Afterwards the landscape is drawn now; a picture is read on glass.c's
-	 * thread (ws138-p001 U7) and shown when zwl_glass_wallpaper_poll takes it.
+	 * thread (ws138-p001 U7) and shown when kwl_glass_wallpaper_poll takes it.
 	 */
 	if (path == NULL) {
-		error = zwl_glass_landscape(server);
+		error = kwl_glass_landscape(server);
 	} else {
-		error = zwl_glass_wallpaper_begin(server, path);
+		error = kwl_glass_wallpaper_begin(server, path);
 	}
 
 	/* A refusal leaves the wallpaper shown. */
@@ -714,9 +714,9 @@ settings_apply_wallpaper(
  */
 static void
 settings_apply_opacity(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	unsigned panels_opaque;
 	const char *panels;
 	float opacity;
@@ -725,7 +725,7 @@ settings_apply_opacity(
 	int error;
 
 	/* The command line's opacity while the setting is at its default. */
-	entry = zwl_settings_store_find(server->settings, "window.opacity");
+	entry = kwl_settings_store_find(server->settings, "window.opacity");
 	opacity = server->window_opacity_started;
 	percent = (int)(opacity * 100.0f + 0.5f);
 	if (entry != NULL && entry->chosen) {
@@ -737,7 +737,7 @@ settings_apply_opacity(
 
 	/* The panels frosted unless window.frosted is chosen off. */
 	panels_opaque = 0U;
-	entry = zwl_settings_store_find(server->settings, "window.frosted");
+	entry = kwl_settings_store_find(server->settings, "window.frosted");
 	if (entry != NULL && entry->chosen) {
 		error = kl_settings_key_number(entry->key, entry->value, &frosted);
 		if (error == 0 && frosted == 0)
@@ -763,16 +763,16 @@ settings_apply_opacity(
 /* Sets a number the desktop uses to the setting's value when it differs, and logs it. */
 static void
 settings_apply_number(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *name,
 	int32_t *target)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	int number;
 	int error;
 
 	/* Finds the setting; one the store does not hold changes nothing. */
-	entry = zwl_settings_store_find(server->settings, name);
+	entry = kwl_settings_store_find(server->settings, name);
 	if (entry == NULL)
 		return;
 
@@ -795,7 +795,7 @@ settings_apply_number(
 /* Marks a setting to be told to every settings object at the next flush. */
 static void
 settings_mark(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *name)
 {
 	unsigned index;
@@ -816,10 +816,10 @@ settings_mark(
 /* Tells every settings object the marked settings' values and a done. */
 static void
 settings_flush(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	unsigned marked;
 	unsigned index;
 
@@ -851,7 +851,7 @@ settings_flush(
 		     object != NULL;
 		     object = object->next) {
 			/* Only a live settings object is told. */
-			if (object->kind != ZWL_SYSTEM_SETTINGS || object->dead)
+			if (object->kind != KWL_SYSTEM_SETTINGS || object->dead)
 				continue;
 
 			/* Sends each marked value. */
@@ -872,9 +872,9 @@ settings_flush(
 /* Sends a setting's value event: its key, its value (empty while not known) and its flags. */
 static int
 settings_emit_value(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
-	const struct zwl_settings_entry *entry)
+	const struct kwl_settings_entry *entry)
 {
 	unsigned char payload[16U + KL_SETTINGS_KEY_MAX + KL_SETTINGS_VALUE_MAX];
 	const char *value;
@@ -901,7 +901,7 @@ settings_emit_value(
 	offset += sizeof(flags);
 
 	/* Queues the event to the client. */
-	error = zwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_VALUE, payload, offset);
+	error = kwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_VALUE, payload, offset);
 	if (error != 0)
 		return error;
 
@@ -912,20 +912,20 @@ settings_emit_value(
 /* Sends a done with the serial of the state it closes. */
 static void
 settings_emit_done(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id)
 {
 	uint32_t serial;
 
 	/* Queues the done with the serial of the state told last. */
 	serial = settings_state.serial;
-	(void)zwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_DONE, &serial, sizeof(serial));
+	(void)kwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_DONE, &serial, sizeof(serial));
 }
 
 /* Answers a request: whether it was applied, and whether it will be kept (stored: the session's end writes the file). */
 static void
 settings_result(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t request,
 	uint32_t applied,
@@ -946,7 +946,7 @@ settings_result(
 		words[2] = KL_SYSTEM_RESULT_NOT_SAVED;
 
 	/* Queues the answer to the client. */
-	(void)zwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_RESULT, words, sizeof(words));
+	(void)kwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_RESULT, words, sizeof(words));
 
 	/* Logs the answer, for the tests. */
 	printf("ZWL SETTINGS result client=%llu request=%u applied=%u saved=%u\n", (unsigned long long)client->number, request, words[1], words[2]);
@@ -955,7 +955,7 @@ settings_result(
 /* Reads a set (request, key, value) or a reset (request, key) and answers it; returns 0 or EPROTO for a malformed request. */
 static int
 settings_set(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	const unsigned char *bytes,
 	size_t size,
 	int reset)
@@ -1029,14 +1029,14 @@ settings_set(
  */
 static uint32_t
 settings_change(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t request,
 	const char *name,
 	const char *value,
 	int reset,
 	int *answered)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	const struct kl_settings_key *key;
 	uint32_t applied;
 	int differs;
@@ -1087,9 +1087,9 @@ settings_change(
 
 	/* Puts any other setting in the store. */
 	if (reset) {
-		error = zwl_settings_store_reset(server->settings, name);
+		error = kwl_settings_store_reset(server->settings, name);
 	} else {
-		error = zwl_settings_store_choose(server->settings, name, value);
+		error = kwl_settings_store_choose(server->settings, name, value);
 	}
 
 	/* Answers a change the store refused with its reason. */
@@ -1110,7 +1110,7 @@ settings_change(
 /* Sends a client's volume or mute to audiod (through volume.c); the store takes audiod's report. */
 static uint32_t
 settings_change_sound(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct kl_settings_key *key,
 	const char *value,
 	int reset)
@@ -1125,7 +1125,7 @@ settings_change_sound(
 	int error;
 
 	/* Takes the volume and mute as they are. */
-	zwl_volume_report(&restored, &available, &volume, &muted);
+	kwl_volume_report(&restored, &available, &volume, &muted);
 
 	/* Reads the number asked for; a reset asks for the table's default. */
 	number = key->fallback;
@@ -1141,7 +1141,7 @@ settings_change_sound(
 	}
 
 	/* Sends the volume and mute to audiod; a refusal is answered with its reason. */
-	error = zwl_volume_request(server, volume, muted);
+	error = kwl_volume_request(server, volume, muted);
 	if (error != 0) {
 		applied = settings_result_of(error);
 		return applied;
@@ -1154,14 +1154,14 @@ settings_change_sound(
 /* Starts reading a client's wallpaper (or the default's) on glass.c's thread; the answer waits for it. */
 static uint32_t
 settings_change_wallpaper(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t request,
 	const char *value,
 	int reset,
 	int *answered)
 {
-	struct zwl_server *server;
-	struct zwl_settings_entry *entry;
+	struct kwl_server *server;
+	struct kwl_settings_entry *entry;
 	const char *path;
 	uint32_t applied;
 	int error;
@@ -1181,14 +1181,14 @@ settings_change_wallpaper(
 	/* A reset to the landscape needs no file: in effect now. */
 	if (path == NULL) {
 		/* Puts the setting back at its default; a refusal is answered with its reason. */
-		error = zwl_settings_store_reset(server->settings, "wallpaper");
+		error = kwl_settings_store_reset(server->settings, "wallpaper");
 		if (error != 0) {
 			applied = settings_result_of(error);
 			return applied;
 		}
 
 		/* Shows the landscape when the store holds the setting. */
-		entry = zwl_settings_store_find(server->settings, "wallpaper");
+		entry = kwl_settings_store_find(server->settings, "wallpaper");
 		if (entry != NULL)
 			settings_apply_wallpaper(server, 0);
 
@@ -1201,7 +1201,7 @@ settings_change_wallpaper(
 	}
 
 	/* Starts glass.c's thread; a path that is not an ordinary file is refused now. */
-	error = zwl_glass_wallpaper_begin(server, path);
+	error = kwl_glass_wallpaper_begin(server, path);
 	if (error != 0) {
 		applied = settings_result_of(error);
 		return applied;
@@ -1228,12 +1228,12 @@ settings_change_wallpaper(
 /* Takes the wallpaper glass.c read: in the store and told when it is shown, and the waiting client answered either way. */
 static void
 settings_wallpaper_done(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int error)
 {
 	struct settings_waiting *waiting;
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 	uint32_t applied;
 	int stored;
 
@@ -1253,10 +1253,10 @@ settings_wallpaper_done(
 
 		/* The setting holds the choice now: its default after a reset, else the path. */
 		if (waiting->reset) {
-			(void)zwl_settings_store_reset(server->settings, "wallpaper");
+			(void)kwl_settings_store_reset(server->settings, "wallpaper");
 			server->wallpaper_chosen[0] = '\0';
 		} else {
-			(void)zwl_settings_store_choose(server->settings, "wallpaper", waiting->path);
+			(void)kwl_settings_store_choose(server->settings, "wallpaper", waiting->path);
 			(void)snprintf(server->wallpaper_chosen, sizeof(server->wallpaper_chosen), "%s", waiting->path);
 		}
 
@@ -1283,10 +1283,10 @@ settings_wallpaper_done(
 			continue;
 
 		/* Its settings object must still be alive to hear the answer. */
-		object = zwl_find(client, waiting->object);
+		object = kwl_find(client, waiting->object);
 		if (object == NULL ||
 		    object->dead ||
-		    object->kind != ZWL_SYSTEM_SETTINGS)
+		    object->kind != KWL_SYSTEM_SETTINGS)
 			break;
 
 		/* Sends the answer. */
@@ -1298,9 +1298,9 @@ settings_wallpaper_done(
 /* Takes the sound as audiod reports it into the store (once audiod took the kept volume), and marks what changed. */
 static void
 settings_sound(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	unsigned restored;
 	unsigned available;
 	unsigned value;
@@ -1309,16 +1309,16 @@ settings_sound(
 	int differs;
 
 	/* Takes what volume.c knows of the sound. */
-	zwl_volume_report(&restored, &available, &value, &muted);
+	kwl_volume_report(&restored, &available, &value, &muted);
 
 	/* Whether there is sound, told when it changes. */
 	(void)snprintf(text, sizeof(text), "%u", available);
-	entry = zwl_settings_store_find(server->settings, "sound.available");
+	entry = kwl_settings_store_find(server->settings, "sound.available");
 	if (entry != NULL) {
 		/* Reports a value that changed, or that was not known yet. */
 		differs = strcmp(entry->value, text);
 		if (differs != 0 || !entry->known) {
-			zwl_settings_store_report(server->settings, "sound.available", text);
+			kwl_settings_store_report(server->settings, "sound.available", text);
 			settings_mark(server, "sound.available");
 		}
 	}
@@ -1329,24 +1329,24 @@ settings_sound(
 
 	/* Takes the volume, told when it changes. */
 	(void)snprintf(text, sizeof(text), "%u", value);
-	entry = zwl_settings_store_find(server->settings, "sound.volume");
+	entry = kwl_settings_store_find(server->settings, "sound.volume");
 	if (entry != NULL) {
 		/* Reports a value that changed, or that was not known yet. */
 		differs = strcmp(entry->value, text);
 		if (differs != 0 || !entry->known) {
-			zwl_settings_store_report(server->settings, "sound.volume", text);
+			kwl_settings_store_report(server->settings, "sound.volume", text);
 			settings_mark(server, "sound.volume");
 		}
 	}
 
 	/* Takes the mute, told when it changes. */
 	(void)snprintf(text, sizeof(text), "%u", muted);
-	entry = zwl_settings_store_find(server->settings, "sound.muted");
+	entry = kwl_settings_store_find(server->settings, "sound.muted");
 	if (entry != NULL) {
 		/* Reports a value that changed, or that was not known yet. */
 		differs = strcmp(entry->value, text);
 		if (differs != 0 || !entry->known) {
-			zwl_settings_store_report(server->settings, "sound.muted", text);
+			kwl_settings_store_report(server->settings, "sound.muted", text);
 			settings_mark(server, "sound.muted");
 		}
 	}
@@ -1355,9 +1355,9 @@ settings_sound(
 /* Tells a new settings object every setting and a done. */
 static int
 settings_snapshot(
-	struct zwl_object *settings)
+	struct kwl_object *settings)
 {
-	struct zwl_settings_store *store;
+	struct kwl_settings_store *store;
 	unsigned index;
 	int error;
 

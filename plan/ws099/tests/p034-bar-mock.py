@@ -16,12 +16,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-INTER = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+INTER = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 JAPANESE = os.path.join(ROOT, 'userland/desktop/fonts/DroidSansFallbackFull.ttf')
 WALLPAPERS = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers')
 
 W = 1280
-H = 44                   # ZWL_GLASS_BAR (ws099-p031)
+H = 44                   # KWL_GLASS_BAR (ws099-p031)
 MID = H // 2
 K = 4                    # drawn 4 times larger, then reduced (smooth edges, as the shader's coverage)
 CONTEXT = 70             # wallpaper shown under the bar

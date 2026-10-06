@@ -10,23 +10,23 @@
  * plan/ws102/design.md section 2.10), the compositor's side of the
  * on-screen keyboard's tool face (its buttons come with ws102-p016).
  *
- * keiland_edit_v1: a window that asks for it (keiland_edit_manager_v1.get_edit;
+ * kl_edit_v1: a window that asks for it (kl_edit_manager_v1.get_edit;
  * libkeiland's windows do) tells which editing operations it carries out and
  * its state -- whether it has a selection, something to paste, something
  * to undo or redo, and whether a selection is being made -- and hears the
- * operations as actions.  zwl_edit_action sends an operation to the
+ * operations as actions.  kwl_edit_action sends an operation to the
  * focused window: as an action to a window with the protocol, otherwise as
  * the keys it stands for (Ctrl+C, X, V, Z, Y, A; Ctrl+Shift+C and V for a
- * terminal, by its application ID).  zwl_edit_state reads which operations
+ * terminal, by its application ID).  kwl_edit_state reads which operations
  * the focused window can take now, for the buttons' grey.
  *
- * zwl_focus_previous brings the window focused before the one on top
+ * kwl_focus_previous brings the window focused before the one on top
  * forward (the second in the stacking order, which a raise and the focus
  * follow): twice goes back.  The on-screen keyboard stays open.
  *
  * Until the tool face exists, Super+Alt with C, X, V, Z, Y, A, S (select
  * begin), E (select end) and P (the previous application) call these, and
- * Super+Alt+Q logs what zwl_edit_state reads; Super+Alt+H logs the
+ * Super+Alt+Q logs what kwl_edit_state reads; Super+Alt+H logs the
  * clipboard's history and Super+Alt+1 ... 0 pastes its items 1 ... 10
  * (clipboard.c; the tests use them).
  */
@@ -40,7 +40,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The requests of keiland_edit_manager_v1 and of keiland_edit_v1, and the event. */
+/* The requests of kl_edit_manager_v1 and of kl_edit_v1, and the event. */
 #define EDIT_MANAGER_DESTROY		0U
 #define EDIT_MANAGER_GET_EDIT		1U
 #define EDIT_DESTROY			0U
@@ -80,8 +80,8 @@ struct edit_keys {
 	uint32_t terminal_modifiers;
 };
 
-/* Each operation's keys, in ZWL_EDIT_* order. */
-static const struct edit_keys edit_keys[ZWL_EDIT_ACTIONS] = {
+/* Each operation's keys, in KWL_EDIT_* order. */
+static const struct edit_keys edit_keys[KWL_EDIT_ACTIONS] = {
 	{ EDIT_KEY_C, EDIT_CONTROL, EDIT_KEY_C, EDIT_CONTROL | EDIT_SHIFT },
 	{ EDIT_KEY_X, EDIT_CONTROL, 0U, 0U },
 	{ EDIT_KEY_V, EDIT_CONTROL, EDIT_KEY_V, EDIT_CONTROL | EDIT_SHIFT },
@@ -93,7 +93,7 @@ static const struct edit_keys edit_keys[ZWL_EDIT_ACTIONS] = {
 };
 
 /* The operations' names, for the log. */
-static const char *const edit_names[ZWL_EDIT_ACTIONS] = {
+static const char *const edit_names[KWL_EDIT_ACTIONS] = {
 	"copy", "cut", "paste", "undo", "redo", "select_all", "select_begin", "select_end"
 };
 
@@ -105,23 +105,23 @@ static const char *const edit_terminals[] = {
 };
 
 /* The shortcuts that call the operations until the tool face exists (Super+Alt with the key). */
-static const uint32_t edit_shortcut_keys[ZWL_EDIT_ACTIONS] = {
+static const uint32_t edit_shortcut_keys[KWL_EDIT_ACTIONS] = {
 	EDIT_KEY_C, EDIT_KEY_X, EDIT_KEY_V, EDIT_KEY_Z, EDIT_KEY_Y, EDIT_KEY_A, EDIT_KEY_S, EDIT_KEY_E
 };
 
-static int edit_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static struct zwl_object *edit_focused(struct zwl_server *server, struct zwl_object **window);
-static int edit_terminal(const struct zwl_object *window);
+static int edit_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static struct kwl_object *edit_focused(struct kwl_server *server, struct kwl_object **window);
+static int edit_terminal(const struct kwl_object *window);
 static uint32_t edit_enabled(uint32_t actions, uint32_t flags);
 static uint32_t edit_word(const unsigned char *bytes, size_t offset);
 
 /*
- * Carries out a request of keiland_edit_manager_v1 or of a window's
- * keiland_edit_v1.
+ * Carries out a request of kl_edit_manager_v1 or of a window's
+ * kl_edit_v1.
  */
 int
-zwl_edit_request(
-	struct zwl_object *object,
+kwl_edit_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -131,9 +131,9 @@ zwl_edit_request(
 	int error;
 
 	/* The manager: it goes, or it gives a window its edit object. */
-	if (object->kind == ZWL_EDIT_MANAGER) {
+	if (object->kind == KWL_EDIT_MANAGER) {
 		if (opcode == EDIT_MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -148,15 +148,15 @@ zwl_edit_request(
 
 	/* The edit object goes. */
 	if (opcode == EDIT_DESTROY && size == 0U) {
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
 	/* Only set_state is left: the operations and the state, a word each. */
 	if (opcode != EDIT_SET_STATE || size != 8U)
 		return EPROTO;
-	actions = edit_word(bytes, 0U) & ((1U << ZWL_EDIT_ACTIONS) - 1U);
-	flags = edit_word(bytes, 4U) & ZWL_EDIT_FLAGS_ALL;
+	actions = edit_word(bytes, 0U) & ((1U << KWL_EDIT_ACTIONS) - 1U);
+	flags = edit_word(bytes, 4U) & KWL_EDIT_FLAGS_ALL;
 
 	/* A change is logged (the tests read it). */
 	if (actions != object->edit_actions || flags != object->edit_flags) {
@@ -174,36 +174,36 @@ zwl_edit_request(
  * from now on.
  */
 void
-zwl_edit_object_gone(
-	struct zwl_object *object)
+kwl_edit_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *other;
+	struct kwl_object *other;
 
 	/* Only a toplevel is named by an edit object. */
-	if (object->kind != ZWL_TOPLEVEL)
+	if (object->kind != KWL_TOPLEVEL)
 		return;
 
 	/* Each edit object of the client that names it. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
-		if (other->kind == ZWL_EDIT && other->top == object)
+		if (other->kind == KWL_EDIT && other->top == object)
 			other->top = NULL;
 	}
 }
 
 /*
- * Sends an editing operation (ZWL_EDIT_*) to the focused window: an action
+ * Sends an editing operation (KWL_EDIT_*) to the focused window: an action
  * to a window with the protocol that carries it out, otherwise the keys it
  * stands for.  Returns 0 when it was sent, ENOENT without a focused
  * window, ENOTSUP when the window cannot take it (no keys stand for it).
  */
 int
-zwl_edit_action(
-	struct zwl_server *server,
+kwl_edit_action(
+	struct kwl_server *server,
 	unsigned action)
 {
 	const struct edit_keys *keys;
-	struct zwl_object *window;
-	struct zwl_object *edit;
+	struct kwl_object *window;
+	struct kwl_object *edit;
 	uint32_t modifiers;
 	uint32_t word;
 	uint32_t time;
@@ -212,7 +212,7 @@ zwl_edit_action(
 	int terminal;
 
 	/* An operation there is. */
-	if (action >= ZWL_EDIT_ACTIONS)
+	if (action >= KWL_EDIT_ACTIONS)
 		return EINVAL;
 
 	/* The focused window, and its edit object if it has one. */
@@ -225,7 +225,7 @@ zwl_edit_action(
 	/* A window with the protocol that carries the operation out hears it as an action. */
 	if (edit != NULL && (edit->edit_actions & (1U << action)) != 0U) {
 		word = action;
-		(void)zwl_emit(edit->client, edit->id, EDIT_EVENT_ACTION, &word, sizeof(word));
+		(void)kwl_emit(edit->client, edit->id, EDIT_EVENT_ACTION, &word, sizeof(word));
 		printf("ZWL EDIT action=%s via=protocol surface=%u app=%s\n", edit_names[action], window->id, window->app_id);
 		return 0;
 	}
@@ -247,12 +247,12 @@ zwl_edit_action(
 	/* The modifiers for the key alone, the press and the release through the seat (the window's menu shortcuts too), and the modifiers as they were. */
 	modifiers = server->modifiers;
 	server->modifiers = with;
-	zwl_seat_modifiers(server);
-	time = (uint32_t)zwl_milliseconds();
-	zwl_seat_key(server, time, key, 1U);
-	zwl_seat_key(server, time, key, 0U);
+	kwl_seat_modifiers(server);
+	time = (uint32_t)kwl_milliseconds();
+	kwl_seat_key(server, time, key, 1U);
+	kwl_seat_key(server, time, key, 0U);
 	server->modifiers = modifiers;
-	zwl_seat_modifiers(server);
+	kwl_seat_modifiers(server);
 
 	/* Succeeded: the keys were sent. */
 	printf("ZWL EDIT action=%s via=keys key=%u modifiers=0x%x terminal=%d surface=%u app=%s\n", edit_names[action], key, with, terminal, window->id, window->app_id);
@@ -267,12 +267,12 @@ zwl_edit_action(
  * (none).
  */
 int
-zwl_edit_state(
-	struct zwl_server *server,
+kwl_edit_state(
+	struct kwl_server *server,
 	uint32_t *enabled)
 {
-	struct zwl_object *window;
-	struct zwl_object *edit;
+	struct kwl_object *window;
+	struct kwl_object *edit;
 	unsigned action;
 	int terminal;
 
@@ -290,7 +290,7 @@ zwl_edit_state(
 
 	/* Without it: each operation that has keys. */
 	terminal = edit_terminal(window);
-	for (action = 0; action < ZWL_EDIT_ACTIONS; action++) {
+	for (action = 0; action < KWL_EDIT_ACTIONS; action++) {
 		if ((!terminal && edit_keys[action].key != 0U) || (terminal && edit_keys[action].terminal_key != 0U))
 			*enabled |= 1U << action;
 	}
@@ -306,15 +306,15 @@ zwl_edit_state(
  * such window.
  */
 int
-zwl_focus_previous(
-	struct zwl_server *server)
+kwl_focus_previous(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *top;
-	struct zwl_object *second;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
+	struct kwl_object *second;
 
-	/* The two highest windows of the desktop shown, as zwl_top_window counts them. */
+	/* The two highest windows of the desktop shown, as kwl_top_window counts them. */
 	top = NULL;
 	second = NULL;
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -322,11 +322,11 @@ zwl_focus_previous(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* A shown window, not the desktop's icons. */
-			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
 				continue;
 			if (surface->desktop != server->desktop || surface->minimized)
 				continue;
-			if (zwl_desktop_is(surface))
+			if (kwl_desktop_is(surface))
 				continue;
 
 			/* Kept in order. */
@@ -346,7 +346,7 @@ zwl_focus_previous(
 	}
 
 	/* It comes forward and has the focus (the keyboard, if open, stays). */
-	zwl_glass_raise(server, second);
+	kwl_glass_raise(server, second);
 	printf("ZWL FOCUS previous surface=%u app=%s from=%u client=%llu\n", second->id, second->app_id, top->id, (unsigned long long)second->client->number);
 
 	/* Succeeded. */
@@ -361,8 +361,8 @@ zwl_focus_previous(
  * one.
  */
 int
-zwl_edit_key(
-	struct zwl_server *server,
+kwl_edit_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -377,39 +377,39 @@ zwl_edit_key(
 	/* P: the previous application, on the press. */
 	if (key == EDIT_KEY_P) {
 		if (state != 0U)
-			(void)zwl_focus_previous(server);
+			(void)kwl_focus_previous(server);
 		return 1;
 	}
 
 	/* H: the clipboard's history, logged on the press (clipboard.c). */
 	if (key == EDIT_KEY_H) {
 		if (state != 0U)
-			zwl_clipboard_history_log(server);
+			kwl_clipboard_history_log(server);
 		return 1;
 	}
 
 	/* 1 ... 9 and 0: the history's items 0 ... 9 pasted, on the press. */
 	if (key >= EDIT_KEY_1 && key <= EDIT_KEY_0) {
 		if (state != 0U)
-			(void)zwl_clipboard_history_paste(server, key - EDIT_KEY_1);
+			(void)kwl_clipboard_history_paste(server, key - EDIT_KEY_1);
 		return 1;
 	}
 
 	/* Q: what the buttons would show, logged on the press. */
 	if (key == EDIT_KEY_Q) {
 		if (state != 0U) {
-			protocol = zwl_edit_state(server, &enabled);
+			protocol = kwl_edit_state(server, &enabled);
 			printf("ZWL EDIT enabled=0x%x protocol=%d\n", enabled, protocol);
 		}
 		return 1;
 	}
 
 	/* An operation's key, on the press. */
-	for (action = 0; action < ZWL_EDIT_ACTIONS; action++) {
+	for (action = 0; action < KWL_EDIT_ACTIONS; action++) {
 		if (key != edit_shortcut_keys[action])
 			continue;
 		if (state != 0U)
-			(void)zwl_edit_action(server, action);
+			(void)kwl_edit_action(server, action);
 		return 1;
 	}
 
@@ -420,24 +420,24 @@ zwl_edit_key(
 /* Makes a window's edit object (get_edit: the new ID and the window's xdg_toplevel). */
 static int
 edit_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *toplevel;
-	struct zwl_object *created;
+	struct kwl_object *toplevel;
+	struct kwl_object *created;
 	uint32_t id;
 
 	/* The new ID and one of the client's toplevels. */
 	if (size != 8U)
 		return EPROTO;
 	id = edit_word(bytes, 0U);
-	toplevel = zwl_find(manager->client, edit_word(bytes, 4U));
-	if (toplevel == NULL || toplevel->kind != ZWL_TOPLEVEL)
+	toplevel = kwl_find(manager->client, edit_word(bytes, 4U));
+	if (toplevel == NULL || toplevel->kind != KWL_TOPLEVEL)
 		return EPROTO;
 
 	/* The edit object, naming its window, with no operations yet. */
-	created = zwl_create(manager->client, id, ZWL_EDIT, manager->version);
+	created = kwl_create(manager->client, id, KWL_EDIT, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->top = toplevel;
@@ -453,13 +453,13 @@ edit_create(
  * Finds the focused window (*window, NULL for none) and its edit object
  * (returned, NULL for none).
  */
-static struct zwl_object *
+static struct kwl_object *
 edit_focused(
-	struct zwl_server *server,
-	struct zwl_object **window)
+	struct kwl_server *server,
+	struct kwl_object **window)
 {
-	struct zwl_object *object;
-	struct zwl_object *focus;
+	struct kwl_object *object;
+	struct kwl_object *focus;
 
 	/* The window with the keyboard's focus. */
 	focus = server->focus;
@@ -470,7 +470,7 @@ edit_focused(
 
 	/* Its client's edit object that names its toplevel. */
 	for (object = focus->client->objects; object != NULL; object = object->next) {
-		if (object->kind != ZWL_EDIT || object->dead || object->top == NULL)
+		if (object->kind != KWL_EDIT || object->dead || object->top == NULL)
 			continue;
 		if (object->top->surface == focus)
 			return object;
@@ -483,7 +483,7 @@ edit_focused(
 /* Tells whether a window is a terminal's (its application ID in edit_terminals). */
 static int
 edit_terminal(
-	const struct zwl_object *window)
+	const struct kwl_object *window)
 {
 	size_t index;
 	int same;
@@ -514,18 +514,18 @@ edit_enabled(
 
 	/* Every operation it carries out, then those its state rules out. */
 	enabled = actions;
-	if ((flags & ZWL_EDIT_HAS_SELECTION) == 0U)
-		enabled &= ~((1U << ZWL_EDIT_COPY) | (1U << ZWL_EDIT_CUT));
-	if ((flags & ZWL_EDIT_CAN_PASTE) == 0U)
-		enabled &= ~(1U << ZWL_EDIT_PASTE);
-	if ((flags & ZWL_EDIT_CAN_UNDO) == 0U)
-		enabled &= ~(1U << ZWL_EDIT_UNDO);
-	if ((flags & ZWL_EDIT_CAN_REDO) == 0U)
-		enabled &= ~(1U << ZWL_EDIT_REDO);
-	if ((flags & ZWL_EDIT_SELECTING) != 0U)
-		enabled &= ~(1U << ZWL_EDIT_SELECT_BEGIN);
+	if ((flags & KWL_EDIT_HAS_SELECTION) == 0U)
+		enabled &= ~((1U << KWL_EDIT_COPY) | (1U << KWL_EDIT_CUT));
+	if ((flags & KWL_EDIT_CAN_PASTE) == 0U)
+		enabled &= ~(1U << KWL_EDIT_PASTE);
+	if ((flags & KWL_EDIT_CAN_UNDO) == 0U)
+		enabled &= ~(1U << KWL_EDIT_UNDO);
+	if ((flags & KWL_EDIT_CAN_REDO) == 0U)
+		enabled &= ~(1U << KWL_EDIT_REDO);
+	if ((flags & KWL_EDIT_SELECTING) != 0U)
+		enabled &= ~(1U << KWL_EDIT_SELECT_BEGIN);
 	else
-		enabled &= ~(1U << ZWL_EDIT_SELECT_END);
+		enabled &= ~(1U << KWL_EDIT_SELECT_END);
 
 	/* Succeeded: what the buttons show as usable. */
 	return enabled;

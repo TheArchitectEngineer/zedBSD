@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 WALLPAPER = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers/Birch-Lake.png')
 APPS_CONF = os.path.join(ROOT, 'userland/desktop/wayland/apps.conf')
 
@@ -135,7 +135,7 @@ def home(dump, out):
     for x, y, name in places:
         width = draw.textlength(name, font=font)
         draw.text((x + 36 - width / 2, y + 72 + 26), name, fill=INK, font=font, anchor='ls')
-    draw.text((20, HEIGHT - 16), 'App Home (host picture, tiles from icons.c zwl_icon_tile at 72 px; Settings lit as under the pointer)',
+    draw.text((20, HEIGHT - 16), 'App Home (host picture, tiles from icons.c kwl_icon_tile at 72 px; Settings lit as under the pointer)',
               fill=INK, font=ImageFont.truetype(FONT, 12), anchor='ls')
     image.save(out)
 

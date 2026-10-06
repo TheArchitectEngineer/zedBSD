@@ -17,4 +17,4 @@ ${CC:-cc} -O1 -g -Wall -Wextra -Werror -I"$out/include" -I. -Iuserland/desktop/l
     userland/desktop/libtruetype/render.c userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c \
     userland/desktop/libtruetype/contour.c userland/desktop/libtruetype/color.c userland/desktop/libtruetype/companion.c \
     userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm
-exec "$out/host-emoji" "$font" userland/desktop/fonts/Inter.ttf
+exec "$out/host-emoji" "$font" userland/desktop/fonts/Mahora-Regular.ttf

@@ -12,7 +12,7 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 root=$(pwd)
 fonts=$(readlink -f userland/desktop/fonts)
-if [ ! -f "$fonts/Inter.ttf" ] || [ ! -f "$fonts/JetBrainsMono-Regular.ttf" ] ||
+if [ ! -f "$fonts/Mahora-Regular.ttf" ] || [ ! -f "$fonts/JetBrainsMono-Regular.ttf" ] ||
     [ ! -f "$fonts/DroidSansFallbackFull.ttf" ]; then
 	fonts=$root/userland/desktop/fonts
 fi

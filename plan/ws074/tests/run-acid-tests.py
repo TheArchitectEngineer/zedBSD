@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WPT = ROOT / "build/ws074-suites/wpt"
 ACID = WPT / "acid"
 WPT_COMMIT = "2d66b9b7998bb58c336138c178323ddee857b586"
-FONT_NAMES = ("Inter.ttf", "JetBrainsMono-Regular.ttf",
+FONT_NAMES = ("Mahora-Regular.ttf", "JetBrainsMono-Regular.ttf",
               "DroidSansFallbackFull.ttf")
 SETTLE_MS = 15000
 RESULT_PREFIX = "WS074_ACID3 "

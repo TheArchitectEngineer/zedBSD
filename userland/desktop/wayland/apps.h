@@ -23,19 +23,19 @@
  * alone.
  */
 
-#ifndef ZWL_APPS_H
-#define ZWL_APPS_H
+#ifndef KWL_APPS_H
+#define KWL_APPS_H
 
 #include <stddef.h>
 #include <stdint.h>
 
 /* The most applications of a desktop, windows of an application, and bytes of an application's key. */
-#define ZWL_APPS_MAX		32U
-#define ZWL_APPS_WINDOWS	16U
-#define ZWL_APPS_KEY		72U
+#define KWL_APPS_MAX		32U
+#define KWL_APPS_WINDOWS	16U
+#define KWL_APPS_KEY		72U
 
 /* One window as the caller describes it. */
-struct zwl_apps_window {
+struct kwl_apps_window {
 	/* Its application ID ("" for none) and its client's number. */
 	const char *app_id;
 	uint64_t client;
@@ -47,11 +47,11 @@ struct zwl_apps_window {
 };
 
 /* One application. */
-struct zwl_app {
+struct kwl_app {
 	/* Its key: the application ID, or "client:N" for a window without one. */
-	char key[ZWL_APPS_KEY];
+	char key[KWL_APPS_KEY];
 	/* Its windows (indexes into the caller's windows), the most recently raised first. */
-	unsigned windows[ZWL_APPS_WINDOWS];
+	unsigned windows[KWL_APPS_WINDOWS];
 	unsigned window_count;
 	/* Its first window's opening, and its latest raise. */
 	uint64_t open_order;
@@ -61,23 +61,23 @@ struct zwl_app {
 };
 
 /* The applications of a desktop. */
-struct zwl_apps {
+struct kwl_apps {
 	/* In the bar's order. */
-	struct zwl_app apps[ZWL_APPS_MAX];
+	struct kwl_app apps[KWL_APPS_MAX];
 	unsigned count;
 	/* Indexes into apps, the most recently used first (the switcher's order). */
-	unsigned recent[ZWL_APPS_MAX];
+	unsigned recent[KWL_APPS_MAX];
 };
 
 /* A desktop's bar order, kept by the caller: the applications' keys from the left. */
-struct zwl_apps_order {
-	char keys[ZWL_APPS_MAX][ZWL_APPS_KEY];
+struct kwl_apps_order {
+	char keys[KWL_APPS_MAX][KWL_APPS_KEY];
 	unsigned count;
 };
 
-void zwl_apps_key(const char *app_id, uint64_t client, char *key, size_t size);
-void zwl_apps_build(const struct zwl_apps_window *windows, unsigned count, struct zwl_apps_order *order, struct zwl_apps *apps);
-int zwl_apps_move(struct zwl_apps_order *order, unsigned from, unsigned to);
-int zwl_apps_find(const struct zwl_apps *apps, const char *key);
+void kwl_apps_key(const char *app_id, uint64_t client, char *key, size_t size);
+void kwl_apps_build(const struct kwl_apps_window *windows, unsigned count, struct kwl_apps_order *order, struct kwl_apps *apps);
+int kwl_apps_move(struct kwl_apps_order *order, unsigned from, unsigned to);
+int kwl_apps_find(const struct kwl_apps *apps, const char *key);
 
 #endif

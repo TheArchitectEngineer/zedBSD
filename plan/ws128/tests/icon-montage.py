@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ws128-p012: the montage of the applications' icons as the compositor draws them: each picture's coverage from
 # icon-dump (userland/desktop/wayland/icons.c's own rasterizer), white on a circle of the application's colour (the
-# picture's 24-unit grid PICTURE of the diameter, as shell.c's zwl_glass_draw_app_mark; the 2026-10-06 user decision:
+# picture's 24-unit grid PICTURE of the diameter, as shell.c's kwl_glass_draw_app_mark; the 2026-10-06 user decision:
 # a circle, one colour, a white knocked-out symbol), on a
 # light and a dark ground, at the sizes of the bar (26), Wiseview's labels (32) and App Home (64), and one large.
 #   icon-montage.py DUMP_DIR OUT.png
@@ -12,7 +12,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 
 # The standard applications of App Home (userland/desktop/wayland/apps.conf): name, picture (icons.h's order from
 # GLASS_ICON_FIRST_APP, the names of icon_app_names), colour.

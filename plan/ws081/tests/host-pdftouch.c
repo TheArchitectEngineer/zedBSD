@@ -69,7 +69,7 @@ static unsigned failures;
 static void check(int passed, const char *format, ...);
 static void frame_tick(void);
 static void run(double milliseconds);
-static void finger(enum pv_touch_type type, int32_t id, double x, double y);
+static void finger(unsigned kind, int32_t id, double x, double y);
 static void stroke(int32_t id, double x, double y, double dx, double dy, double milliseconds, int down, int up);
 static void frame(const char *name);
 static void draw(void);
@@ -187,21 +187,21 @@ run(
 /* Sends one touch input at the clock's time. */
 static void
 finger(
-	enum pv_touch_type type,
+	unsigned kind,
 	int32_t id,
 	double x,
 	double y)
 {
-	struct pv_touch_event event;
+	struct kl_window_event event;
 
-	/* The input, read as it is made. */
+	/* The input (libkeiland's window's), read as it is made; the compositor's time is whole milliseconds. */
 	memset(&event, 0, sizeof(event));
-	event.type = type;
+	event.kind = kind;
 	event.id = id;
 	event.x = x;
 	event.y = y;
-	event.time = (uint32_t)(clock_us / 1000U);
-	event.arrival = clock_us;
+	event.time_us = clock_us / 1000U * 1000U;
+	event.arrival_us = clock_us;
 	pv_touch_event(&touch, &app, &event);
 }
 
@@ -227,7 +227,7 @@ stroke(
 
 	/* The touch. */
 	if (down)
-		finger(PV_TOUCH_DOWN, id, x, y);
+		finger(KL_WINDOW_TOUCH_DOWN, id, x, y);
 	start = clock_us;
 
 	/* The reports along the way, frames between them. */
@@ -237,14 +237,14 @@ stroke(
 			frame_tick();
 		clock_us = next;
 		share = (double)(next - start) / (milliseconds * 1000.0);
-		finger(PV_TOUCH_MOTION, id, x + dx * share, y + dy * share);
+		finger(KL_WINDOW_TOUCH_MOTION, id, x + dx * share, y + dy * share);
 		next += TEST_REPORT_US;
 	}
 
 	/* The lift, a few milliseconds after the last report. */
 	if (up) {
 		clock_us += 4000U;
-		finger(PV_TOUCH_UP, id, 0.0, 0.0);
+		finger(KL_WINDOW_TOUCH_UP, id, 0.0, 0.0);
 	}
 }
 
@@ -371,7 +371,7 @@ test_edges(void)
 
 	/* Let go still: back to the top within a second, never below it. */
 	clock_us += 4000U;
-	finger(PV_TOUCH_UP, 1, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 0.0, 0.0);
 	passed = 1;
 	peak = app.scroll_y;
 	run(1000.0);
@@ -407,12 +407,12 @@ test_catch(void)
 	reset(1000.0);
 	stroke(1, 500.0, 600.0, 0.0, -300.0, 100.0, 1, 1);
 	run(150.0);
-	finger(PV_TOUCH_DOWN, 2, 500.0, 400.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 500.0, 400.0);
 	caught = app.scroll_y;
 	run(300.0);
 	check(touch.caught && app.scroll_y == caught, "the touch caught the glide: %.1f then %.1f", caught, app.scroll_y);
 	clock_us += 4000U;
-	finger(PV_TOUCH_UP, 2, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 0.0, 0.0);
 	run(500.0);
 	check(app.scroll_y == caught && app.fit == PV_FIT_WIDTH, "the caught touch tapped nothing");
 
@@ -420,7 +420,7 @@ test_catch(void)
 	reset(1000.0);
 	stroke(1, 500.0, 600.0, 0.0, -300.0, 100.0, 1, 0);
 	caught = app.scroll_y;
-	finger(PV_TOUCH_CANCEL, -1, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_CANCEL, -1, 0.0, 0.0);
 	run(1000.0);
 	check(fabs(app.scroll_y - caught) < 20.0 && !touch.moving, "a cancelled drag does not glide: %.1f then %.1f", caught,
 	      app.scroll_y);
@@ -459,20 +459,20 @@ test_pinch(void)
 	pv_app_place_at(&app, 500.0, 380.0, &before);
 
 	/* Two fingers 200 px apart spread to 400 px in 20 reports. */
-	finger(PV_TOUCH_DOWN, 1, 400.0, 380.0);
-	finger(PV_TOUCH_DOWN, 2, 600.0, 380.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 1, 400.0, 380.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 600.0, 380.0);
 	for (k = 1; k <= 20; k++) {
 		clock_us += TEST_REPORT_US;
-		finger(PV_TOUCH_MOTION, 1, 400.0 - 5.0 * k, 380.0);
-		finger(PV_TOUCH_MOTION, 2, 600.0 + 5.0 * k, 380.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 1, 400.0 - 5.0 * k, 380.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 2, 600.0 + 5.0 * k, 380.0);
 		frame_tick();
 	}
 
 	/* They hold still for 100 ms, reported at 60 Hz as a touch screen does while it is touched. */
 	for (k = 1; k <= 6; k++) {
 		clock_us += TEST_REPORT_US;
-		finger(PV_TOUCH_MOTION, 1, 300.0, 380.0);
-		finger(PV_TOUCH_MOTION, 2, 700.0, 380.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 1, 300.0, 380.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 2, 700.0, 380.0);
 		frame_tick();
 	}
 
@@ -495,8 +495,8 @@ test_pinch(void)
 
 	/* The fingers lift: the zoom ends, the pages are drawn at the new scale. */
 	clock_us += 4000U;
-	finger(PV_TOUCH_UP, 1, 0.0, 0.0);
-	finger(PV_TOUCH_UP, 2, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 0.0, 0.0);
 	run(1500.0);
 	check(!app.zooming && !touch.pinching && app.fit == PV_FIT_CUSTOM, "the zoom ended at the user's zoom");
 	frame("pinch-done");
@@ -504,25 +504,25 @@ test_pinch(void)
 	      app.zoom, app.document.pages[page].raster_scale);
 
 	/* A double tap goes back to the fit; another zooms in twice about the tap. */
-	finger(PV_TOUCH_DOWN, 3, 500.0, 380.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 3, 500.0, 380.0);
 	clock_us += 60000U;
-	finger(PV_TOUCH_UP, 3, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 3, 0.0, 0.0);
 	run(120.0);
-	finger(PV_TOUCH_DOWN, 4, 502.0, 381.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 4, 502.0, 381.0);
 	clock_us += 60000U;
-	finger(PV_TOUCH_UP, 4, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 4, 0.0, 0.0);
 	run(200.0);
 	check(app.fit == PV_FIT_WIDTH, "a double tap went back to the fit");
 	run(400.0);
 	scale = pv_app_scale(&app, pv_app_current_page(&app));
 	pv_app_place_at(&app, 300.0, 300.0, &before);
-	finger(PV_TOUCH_DOWN, 5, 300.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 5, 300.0, 300.0);
 	clock_us += 60000U;
-	finger(PV_TOUCH_UP, 5, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 5, 0.0, 0.0);
 	run(120.0);
-	finger(PV_TOUCH_DOWN, 6, 300.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 6, 300.0, 300.0);
 	clock_us += 60000U;
-	finger(PV_TOUCH_UP, 6, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 6, 0.0, 0.0);
 	run(200.0);
 	pv_app_place_at(&app, 300.0, 300.0, &after);
 	check(app.fit == PV_FIT_CUSTOM && fabs(app.zoom / scale - 2.0) < 1e-6, "a double tap zoomed in twice: %.3f from %.3f",
@@ -551,7 +551,7 @@ test_swipe(void)
 	run(100.0);
 	check(app.swipe > 30.0, "the page follows the finger: %.1f", app.swipe);
 	clock_us += 150000U;
-	finger(PV_TOUCH_UP, 1, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 0.0, 0.0);
 	run(600.0);
 	check(app.page == 1 && app.swipe == 0.0, "a short slow drag slid back to page %lu", (unsigned long)app.page + 1);
 }
@@ -574,9 +574,9 @@ test_sidebar(void)
 
 	/* A tap on page 3's thumbnail. */
 	pv_thumbnail_place(&app, 2, &x, &y, &width, &height);
-	finger(PV_TOUCH_DOWN, 1, (double)(x + width / 2), (double)(y + height / 2));
+	finger(KL_WINDOW_TOUCH_DOWN, 1, (double)(x + width / 2), (double)(y + height / 2));
 	clock_us += 80000U;
-	finger(PV_TOUCH_UP, 1, 0.0, 0.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 0.0, 0.0);
 	run(300.0);
 	shown = pv_app_current_page(&app);
 	check(shown == 2, "a tap on the thumbnail showed page %lu", (unsigned long)shown + 1);

@@ -15,11 +15,11 @@
 #include <sys/ioccom.h>
 #include <sys/ioctl.h>
 
-#define FREEBSD_DMA_EXPORT _IOWR('b', 2, struct zwl_freebsd_dma_sync)
+#define FREEBSD_DMA_EXPORT _IOWR('b', 2, struct kwl_freebsd_dma_sync)
 #define FREEBSD_DMA_READ 1U
 
 /* One native export request borrows the buffer and receives an owned sync descriptor. */
-struct zwl_freebsd_dma_sync {
+struct kwl_freebsd_dma_sync {
 	uint32_t flags;
 	int32_t fd;
 };
@@ -32,7 +32,7 @@ kl_backend_dmabuf_export_read(
 	int buffer_fd,
 	int *sync_fd)
 {
-	struct zwl_freebsd_dma_sync request;
+	struct kwl_freebsd_dma_sync request;
 	int error;
 	int native_error;
 

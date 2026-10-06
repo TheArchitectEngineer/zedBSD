@@ -52,29 +52,29 @@
 /* How deep sub-surfaces may be nested, which bounds every walk of a tree. */
 #define SUBSURFACE_DEPTH		16U
 
-static int subsurface_create(struct zwl_object *subcompositor, const unsigned char *bytes, size_t size);
-static int subsurface_place(struct zwl_object *subsurface, struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
-static unsigned is_ancestor(const struct zwl_object *surface, const struct zwl_object *other);
-static unsigned effective_sync(const struct zwl_object *surface);
-static void cache_commit(struct zwl_object *surface);
-static void flush_cached(struct zwl_object *surface);
-static void drop_cached(struct zwl_object *surface);
-static void unlink_child(struct zwl_object *surface);
-static void insert_child(struct zwl_object *parent, struct zwl_object *surface, struct zwl_object *before, unsigned above);
-static void draw_tree(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, float x, float y, float scale_x, float scale_y, unsigned depth);
-static void draw_image(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct zwl_import *image, float x, float y, float scale_x, float scale_y);
-static void draw_group(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above, unsigned depth);
-static struct zwl_object *tree_at(struct zwl_object *surface, int32_t x, int32_t y, unsigned depth);
-static struct zwl_object *group_at(struct zwl_object *parent, int32_t x, int32_t y, unsigned above, unsigned depth);
-static struct zwl_object *tree_root(struct zwl_object *surface);
+static int subsurface_create(struct kwl_object *subcompositor, const unsigned char *bytes, size_t size);
+static int subsurface_place(struct kwl_object *subsurface, struct kwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
+static unsigned is_ancestor(const struct kwl_object *surface, const struct kwl_object *other);
+static unsigned effective_sync(const struct kwl_object *surface);
+static void cache_commit(struct kwl_object *surface);
+static void flush_cached(struct kwl_object *surface);
+static void drop_cached(struct kwl_object *surface);
+static void unlink_child(struct kwl_object *surface);
+static void insert_child(struct kwl_object *parent, struct kwl_object *surface, struct kwl_object *before, unsigned above);
+static void draw_tree(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, float x, float y, float scale_x, float scale_y, unsigned depth);
+static void draw_image(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct kwl_import *image, float x, float y, float scale_x, float scale_y);
+static void draw_group(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above, unsigned depth);
+static struct kwl_object *tree_at(struct kwl_object *surface, int32_t x, int32_t y, unsigned depth);
+static struct kwl_object *group_at(struct kwl_object *parent, int32_t x, int32_t y, unsigned above, unsigned depth);
+static struct kwl_object *tree_root(struct kwl_object *surface);
 static uint32_t subsurface_word(const unsigned char *bytes, size_t offset);
 
 /*
  * Carries out a request of wl_subcompositor: destroy, or get_subsurface.
  */
 int
-zwl_subcompositor_request(
-	struct zwl_object *subcompositor,
+kwl_subcompositor_request(
+	struct kwl_object *subcompositor,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -85,7 +85,7 @@ zwl_subcompositor_request(
 	if (opcode == SUBCOMPOSITOR_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(subcompositor);
+		kwl_object_destroy(subcompositor);
 		return 0;
 	}
 
@@ -107,13 +107,13 @@ zwl_subcompositor_request(
  * place_above, place_below, set_sync and set_desync.
  */
 int
-zwl_subsurface_request(
-	struct zwl_object *subsurface,
+kwl_subsurface_request(
+	struct kwl_object *subsurface,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	unsigned synchronized;
 	int error;
 
@@ -122,7 +122,7 @@ zwl_subsurface_request(
 	if (opcode == SUBSURFACE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(subsurface);
+		kwl_object_destroy(subsurface);
 		return 0;
 	}
 
@@ -176,8 +176,8 @@ zwl_subsurface_request(
  * own children's.
  */
 int
-zwl_subsurface_commit(
-	struct zwl_object *surface)
+kwl_subsurface_commit(
+	struct kwl_object *surface)
 {
 	unsigned synchronized;
 	int error;
@@ -190,12 +190,12 @@ zwl_subsurface_commit(
 	}
 
 	/* A desynchronized one shows it now. */
-	error = zwl_surface_queue(surface);
+	error = kwl_surface_queue(surface);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: its children's positions and cached commits go with it. */
-	zwl_subsurface_applied(surface);
+	kwl_subsurface_applied(surface);
 	return 0;
 }
 
@@ -205,10 +205,10 @@ zwl_subsurface_commit(
  * own children).
  */
 void
-zwl_subsurface_applied(
-	struct zwl_object *surface)
+kwl_subsurface_applied(
+	struct kwl_object *surface)
 {
-	struct zwl_object *child;
+	struct kwl_object *child;
 	unsigned synchronized;
 
 	/* Each child. */
@@ -234,15 +234,15 @@ zwl_subsurface_applied(
  * lose their parent (they are not shown until they get another).
  */
 void
-zwl_subsurface_object_gone(
-	struct zwl_object *object)
+kwl_subsurface_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *surface;
-	struct zwl_object *child;
-	struct zwl_object *next;
+	struct kwl_object *surface;
+	struct kwl_object *child;
+	struct kwl_object *next;
 
 	/* A wl_subsurface: its surface is role-free again and not shown. */
-	if (object->kind == ZWL_SUBSURFACE) {
+	if (object->kind == KWL_SUBSURFACE) {
 		surface = object->surface;
 		object->surface = NULL;
 		if (surface == NULL)
@@ -256,7 +256,7 @@ zwl_subsurface_object_gone(
 	}
 
 	/* Only a surface is left that sub-surfaces can name. */
-	if (object->kind != ZWL_SURFACE)
+	if (object->kind != KWL_SURFACE)
 		return;
 
 	/* A sub-surface's surface leaves its parent, and its wl_subsurface names nothing. */
@@ -288,10 +288,10 @@ zwl_subsurface_object_gone(
  * scale_x, scale_y times its size.
  */
 void
-zwl_subsurface_draw(
-	struct zwl_server *server,
+kwl_subsurface_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *parent,
+	struct kwl_object *parent,
 	float x,
 	float y,
 	float scale_x,
@@ -308,15 +308,15 @@ zwl_subsurface_draw(
  * were stored.
  */
 unsigned
-zwl_subsurface_collect(
-	struct zwl_server *server,
-	struct zwl_object **surfaces,
+kwl_subsurface_collect(
+	struct kwl_server *server,
+	struct kwl_object **surfaces,
 	unsigned capacity)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *root;
-	const struct zwl_import *image;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *root;
+	const struct kwl_import *image;
 	unsigned count;
 
 	/* Every client's live sub-surfaces. */
@@ -329,14 +329,14 @@ zwl_subsurface_collect(
 		/* Its sub-surfaces. */
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only a live sub-surface in a tree, with an image. */
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    surface->sub_parent == NULL ||
 			    surface->current == NULL)
 				continue;
 
 			/* One window mode can sample. */
-			image = zwl_compose_surface_image(surface);
+			image = kwl_compose_surface_image(surface);
 			if (image == NULL)
 				continue;
 
@@ -363,13 +363,13 @@ zwl_subsurface_collect(
  * surface's place on the output is kept for the pointer's surface-local
  * position.
  */
-struct zwl_object *
-zwl_subsurface_at(
-	struct zwl_object *root,
+struct kwl_object *
+kwl_subsurface_at(
+	struct kwl_object *root,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *found;
+	struct kwl_object *found;
 
 	/* No tree. */
 	if (root == NULL || root->dead)
@@ -385,13 +385,13 @@ zwl_subsurface_at(
 /* Gives a surface the sub-surface role under a parent (wl_subcompositor.get_subsurface). */
 static int
 subsurface_create(
-	struct zwl_object *subcompositor,
+	struct kwl_object *subcompositor,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *surface;
-	struct zwl_object *parent;
+	struct kwl_object *created;
+	struct kwl_object *surface;
+	struct kwl_object *parent;
 	uint32_t id;
 	uint32_t surface_id;
 	uint32_t parent_id;
@@ -405,32 +405,32 @@ subsurface_create(
 	parent_id = subsurface_word(bytes, 8U);
 
 	/* The surface must be one of the client's without a role. */
-	surface = zwl_find(subcompositor->client, surface_id);
+	surface = kwl_find(subcompositor->client, surface_id);
 	if (surface == NULL ||
-	    surface->kind != ZWL_SURFACE ||
+	    surface->kind != KWL_SURFACE ||
 	    surface->role != NULL ||
 	    surface->sub_role != NULL ||
 	    surface->cursor_role) {
-		(void)zwl_error_code(subcompositor->client, subcompositor->id, SUBCOMPOSITOR_ERROR_BAD_SURFACE, "the surface cannot be a sub-surface");
+		(void)kwl_error_code(subcompositor->client, subcompositor->id, SUBCOMPOSITOR_ERROR_BAD_SURFACE, "the surface cannot be a sub-surface");
 		return EPROTO;
 	}
 
 	/* The parent must be another surface of the client, not one under the surface. */
-	parent = zwl_find(subcompositor->client, parent_id);
-	if (parent == NULL || parent->kind != ZWL_SURFACE || parent == surface) {
-		(void)zwl_error_code(subcompositor->client, subcompositor->id, SUBCOMPOSITOR_ERROR_BAD_PARENT, "the parent cannot be one");
+	parent = kwl_find(subcompositor->client, parent_id);
+	if (parent == NULL || parent->kind != KWL_SURFACE || parent == surface) {
+		(void)kwl_error_code(subcompositor->client, subcompositor->id, SUBCOMPOSITOR_ERROR_BAD_PARENT, "the parent cannot be one");
 		return EPROTO;
 	}
 
 	/* A parent under the surface would make a loop. */
 	ancestor = is_ancestor(surface, parent);
 	if (ancestor) {
-		(void)zwl_error_code(subcompositor->client, subcompositor->id, SUBCOMPOSITOR_ERROR_BAD_PARENT, "the parent is under the surface");
+		(void)kwl_error_code(subcompositor->client, subcompositor->id, SUBCOMPOSITOR_ERROR_BAD_PARENT, "the parent is under the surface");
 		return EPROTO;
 	}
 
 	/* The wl_subsurface, at the subcompositor's version. */
-	created = zwl_create(subcompositor->client, id, ZWL_SUBSURFACE, subcompositor->version);
+	created = kwl_create(subcompositor->client, id, KWL_SUBSURFACE, subcompositor->version);
 	if (created == NULL)
 		return EPROTO;
 
@@ -454,15 +454,15 @@ subsurface_create(
 /* Places a sub-surface right above or right below a sibling or its parent. */
 static int
 subsurface_place(
-	struct zwl_object *subsurface,
-	struct zwl_object *surface,
+	struct kwl_object *subsurface,
+	struct kwl_object *surface,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *sibling;
-	struct zwl_object *parent;
-	struct zwl_object *before;
+	struct kwl_object *sibling;
+	struct kwl_object *parent;
+	struct kwl_object *before;
 	uint32_t id;
 	unsigned above;
 
@@ -477,11 +477,11 @@ subsurface_place(
 
 	/* The other surface must be the parent or another child of it. */
 	id = subsurface_word(bytes, 0U);
-	sibling = zwl_find(subsurface->client, id);
+	sibling = kwl_find(subsurface->client, id);
 	if (sibling == NULL ||
 	    sibling == surface ||
 	    (sibling != parent && sibling->sub_parent != parent)) {
-		(void)zwl_error_code(subsurface->client, subsurface->id, SUBSURFACE_ERROR_BAD_SURFACE, "not a sibling or the parent");
+		(void)kwl_error_code(subsurface->client, subsurface->id, SUBSURFACE_ERROR_BAD_SURFACE, "not a sibling or the parent");
 		return EPROTO;
 	}
 
@@ -515,10 +515,10 @@ subsurface_place(
 /* Tells whether a surface is an ancestor of another (their chain of parents). */
 static unsigned
 is_ancestor(
-	const struct zwl_object *surface,
-	const struct zwl_object *other)
+	const struct kwl_object *surface,
+	const struct kwl_object *other)
 {
-	const struct zwl_object *link;
+	const struct kwl_object *link;
 	unsigned depth;
 
 	/* Up the other's parents. */
@@ -541,9 +541,9 @@ is_ancestor(
 /* Tells whether a sub-surface is synchronized: itself, or any sub-surface above it. */
 static unsigned
 effective_sync(
-	const struct zwl_object *surface)
+	const struct kwl_object *surface)
 {
-	const struct zwl_object *link;
+	const struct kwl_object *link;
 	unsigned depth;
 
 	/* Up the chain of sub-surfaces. */
@@ -566,10 +566,10 @@ effective_sync(
 /* Keeps a synchronized sub-surface's commit (its buffer and frame callbacks) until its parent's state is applied. */
 static void
 cache_commit(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *previous;
-	struct zwl_object **tail;
+	struct kwl_object *previous;
+	struct kwl_object **tail;
 
 	/* A newly attached buffer replaces the cached one. */
 	if (surface->attached) {
@@ -578,7 +578,7 @@ cache_commit(
 		surface->sub_cached_attached = 1;
 		surface->pending = NULL;
 		surface->attached = 0;
-		zwl_buffer_put(previous);
+		kwl_buffer_put(previous);
 	}
 
 	/* The frame callbacks follow those already cached. */
@@ -598,10 +598,10 @@ cache_commit(
  */
 static void
 flush_cached(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *pending;
-	struct zwl_object *callbacks;
+	struct kwl_object *pending;
+	struct kwl_object *callbacks;
 	unsigned attached;
 	int error;
 
@@ -622,7 +622,7 @@ flush_cached(
 	surface->sub_cached = 0;
 
 	/* The cached commit is applied. */
-	error = zwl_surface_queue(surface);
+	error = kwl_surface_queue(surface);
 	if (error != 0)
 		printf("ZWL SUBSURFACE flush surface=%u errno=%d\n", surface->id, error);
 
@@ -630,30 +630,30 @@ flush_cached(
 	surface->pending = pending;
 	surface->attached = attached;
 	surface->callbacks = callbacks;
-	zwl_subsurface_applied(surface);
+	kwl_subsurface_applied(surface);
 }
 
 /* Drops a cached commit whose sub-surface goes: its buffer, and its callbacks, which are told done. */
 static void
 drop_cached(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	/* The cached buffer's hold. */
-	zwl_buffer_put(surface->sub_cached_buffer);
+	kwl_buffer_put(surface->sub_cached_buffer);
 	surface->sub_cached_buffer = NULL;
 	surface->sub_cached_attached = 0;
 
 	/* The callbacks, which will never be shown. */
-	zwl_callbacks_done(&surface->sub_cached_callbacks);
+	kwl_callbacks_done(&surface->sub_cached_callbacks);
 	surface->sub_cached = 0;
 }
 
 /* Takes a sub-surface out of its parent's list of children. */
 static void
 unlink_child(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object **link;
+	struct kwl_object **link;
 
 	/* Only a child of a parent is in a list. */
 	if (surface->sub_parent == NULL)
@@ -673,12 +673,12 @@ unlink_child(
 /* Puts a sub-surface into its parent's list right before another child (at the end for none), below or above the parent. */
 static void
 insert_child(
-	struct zwl_object *parent,
-	struct zwl_object *surface,
-	struct zwl_object *before,
+	struct kwl_object *parent,
+	struct kwl_object *surface,
+	struct kwl_object *before,
 	unsigned above)
 {
-	struct zwl_object **link;
+	struct kwl_object **link;
 
 	/* The link that names the child it goes before. */
 	link = &parent->sub_children;
@@ -694,16 +694,16 @@ insert_child(
 /* Draws a sub-surface at (x, y): its children below, its image, its children above. */
 static void
 draw_tree(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	float x,
 	float y,
 	float scale_x,
 	float scale_y,
 	unsigned depth)
 {
-	const struct zwl_import *image;
+	const struct kwl_import *image;
 
 	/* Its place, kept for the pointer. */
 	surface->x = (int32_t)x;
@@ -715,7 +715,7 @@ draw_tree(
 	/* Its image, when it has one. */
 	image = NULL;
 	if (surface->current != NULL)
-		image = zwl_compose_surface_image(surface);
+		image = kwl_compose_surface_image(surface);
 	if (image != NULL)
 		draw_image(server, command, surface, image, x, y, scale_x, scale_y);
 
@@ -726,9 +726,9 @@ draw_tree(
 /* Draws the children of one side of a parent, bottom to top. */
 static void
 draw_group(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *parent,
+	struct kwl_object *parent,
 	float x,
 	float y,
 	float scale_x,
@@ -736,7 +736,7 @@ draw_group(
 	unsigned above,
 	unsigned depth)
 {
-	struct zwl_object *child;
+	struct kwl_object *child;
 	float child_x;
 	float child_y;
 
@@ -764,10 +764,10 @@ draw_group(
  */
 static void
 draw_image(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
-	const struct zwl_import *image,
+	struct kwl_object *surface,
+	const struct kwl_import *image,
 	float x,
 	float y,
 	float scale_x,
@@ -779,32 +779,32 @@ draw_image(
 
 	/* The plain look draws it unscaled. */
 	if (!server->glass) {
-		zwl_compose_surface_quad(server, command, surface, image, (int32_t)x, (int32_t)y);
+		kwl_compose_surface_quad(server, command, surface, image, (int32_t)x, (int32_t)y);
 		return;
 	}
 
 	/* The glass look scales it with its window, square-cornered, as opaque as the window. */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	glass_shape_init(&shape, x, y, (float)width * scale_x, (float)height * scale_y);
-	zwl_viewport_source(surface, shape.uv);
+	kwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
 	shape.mode = MODE_IMAGE;
 	shape.radius = 0.0f;
 	shape.set = image->set;
-	if (image->draw == ZWL_DRAW_OPAQUE)
+	if (image->draw == KWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
 	glass_shape_draw(server, command, &shape);
 }
 
 /* Finds the topmost surface of a tree at a point: children above, the surface itself, children below. */
-static struct zwl_object *
+static struct kwl_object *
 tree_at(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t y,
 	unsigned depth)
 {
-	struct zwl_object *found;
+	struct kwl_object *found;
 	uint32_t width;
 	uint32_t height;
 
@@ -815,7 +815,7 @@ tree_at(
 
 	/* Then its own image, at its size (a viewport's, viewport.c, as it is drawn). */
 	if (surface->current != NULL) {
-		zwl_surface_size(surface, &width, &height);
+		kwl_surface_size(surface, &width, &height);
 
 		/* The point inside that size from its place. */
 		if (x >= surface->x &&
@@ -833,17 +833,17 @@ tree_at(
 }
 
 /* Finds the topmost child of one side of a parent (with its own children) at a point. */
-static struct zwl_object *
+static struct kwl_object *
 group_at(
-	struct zwl_object *parent,
+	struct kwl_object *parent,
 	int32_t x,
 	int32_t y,
 	unsigned above,
 	unsigned depth)
 {
-	struct zwl_object *child;
-	struct zwl_object *found;
-	struct zwl_object *best;
+	struct kwl_object *child;
+	struct kwl_object *found;
+	struct kwl_object *best;
 
 	/* Deeper than allowed is not hit. */
 	if (depth >= SUBSURFACE_DEPTH)
@@ -869,9 +869,9 @@ group_at(
 }
 
 /* Finds the top surface of a sub-surface's tree; NULL for a chain deeper than allowed or broken. */
-static struct zwl_object *
+static struct kwl_object *
 tree_root(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	unsigned depth;
 

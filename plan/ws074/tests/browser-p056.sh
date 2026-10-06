@@ -54,7 +54,7 @@ shot() {
 
 # The middle of the first link's first word in the page at 900 wide, from the host's layout: "x y".
 f=userland/desktop/fonts
-link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Inter.ttf \
+link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Mahora-Regular.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf plan/ws074/tests/pages/keys.html 2>/dev/null |
     awk '$1 == "line" { y = $3; h = $5 } $1 == "text" && $NF == "\"The\"" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }')
 echo "link: at $link in the page"

@@ -15,7 +15,7 @@
  * on a touch screen (touch.c passes it through the shell as the pointer's
  * left button, with server->shell_source saying it is a finger), and later
  * the tip of a pen; each source feeds the same recogniser through
- * zwl_corner_contact_begin, _move and _end.  A contact that begins
+ * kwl_corner_contact_begin, _move and _end.  A contact that begins
  * in the corner belongs to the gesture until it ends.  It arms once it has
  * moved left and down by CORNER_ARM each, within CORNER_ARM_MS of the
  * press; it commits when it ends near the diagonal, either far enough along
@@ -114,7 +114,7 @@ struct corner_sample {
  */
 struct corner_contact {
 	unsigned active;
-	enum zwl_contact_source source;
+	enum kwl_contact_source source;
 	int32_t start_x;
 	int32_t start_y;
 	uint32_t start_time;
@@ -154,16 +154,16 @@ struct corner_state {
  */
 static struct corner_state corner;
 
-static int corner_in_zone(struct zwl_server *server, int32_t x, int32_t y);
+static int corner_in_zone(struct kwl_server *server, int32_t x, int32_t y);
 static void corner_sample(int32_t x, int32_t y, uint32_t time);
 static float corner_speed(void);
 static int corner_on_diagonal(int32_t dx, int32_t dy);
-static void corner_finish(struct zwl_server *server, unsigned committed, const char *reason);
-static void corner_act(struct zwl_server *server);
-static struct zwl_object *corner_find_notes(struct zwl_server *server);
+static void corner_finish(struct kwl_server *server, unsigned committed, const char *reason);
+static void corner_act(struct kwl_server *server);
+static struct kwl_object *corner_find_notes(struct kwl_server *server);
 static float corner_radius(void);
 static float corner_ease(float t);
-static const char *corner_source_name(enum zwl_contact_source source);
+static const char *corner_source_name(enum kwl_contact_source source);
 
 /*
  * Starts following a contact that begins in the top-right corner.
@@ -172,9 +172,9 @@ static const char *corner_source_name(enum zwl_contact_source source);
  * and the end of the contact), 0 when it goes on to the rest of the desktop.
  */
 int
-zwl_corner_contact_begin(
-	struct zwl_server *server,
-	enum zwl_contact_source source,
+kwl_corner_contact_begin(
+	struct kwl_server *server,
+	enum kwl_contact_source source,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -196,10 +196,10 @@ zwl_corner_contact_begin(
 		return 0;
 
 	/* An open menu closes on a press anywhere, the corner too, before the gesture could start. */
-	open = zwl_network_is_open();
+	open = kwl_network_is_open();
 	if (open)
 		return 0;
-	open = zwl_menu_is_open();
+	open = kwl_menu_is_open();
 	if (open)
 		return 0;
 
@@ -210,7 +210,7 @@ zwl_corner_contact_begin(
 	corner.contact.start_x = x;
 	corner.contact.start_y = y;
 	corner.contact.start_time = time;
-	corner.contact.start_clock_ms = zwl_milliseconds();
+	corner.contact.start_clock_ms = kwl_milliseconds();
 	corner.contact.x = x;
 	corner.contact.y = y;
 	corner_sample(x, y, time);
@@ -225,8 +225,8 @@ zwl_corner_contact_begin(
  * contact is the gesture's.
  */
 int
-zwl_corner_contact_move(
-	struct zwl_server *server,
+kwl_corner_contact_move(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -282,8 +282,8 @@ zwl_corner_contact_move(
  * otherwise.  Returns 1 when the contact was the gesture's.
  */
 int
-zwl_corner_contact_end(
-	struct zwl_server *server,
+kwl_corner_contact_end(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -354,25 +354,25 @@ zwl_corner_contact_end(
  * the release ends it.  Returns 1 when the button is the gesture's.
  */
 int
-zwl_corner_button(
-	struct zwl_server *server,
+kwl_corner_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
 	int taken;
 
 	/* Only the left button is a contact. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return 0;
 
 	/* A release ends the contact, when it is the gesture's (at the time of the button's event). */
 	if (state == 0) {
-		taken = zwl_corner_contact_end(server, server->pointer_x, server->pointer_y, server->input_time);
+		taken = kwl_corner_contact_end(server, server->pointer_x, server->pointer_y, server->input_time);
 		return taken;
 	}
 
 	/* Succeeded: a press may begin one (the mouse's, or a finger's passed as the pointer, touch.c). */
-	taken = zwl_corner_contact_begin(server, server->shell_source, server->pointer_x, server->pointer_y, server->input_time);
+	taken = kwl_corner_contact_begin(server, server->shell_source, server->pointer_x, server->pointer_y, server->input_time);
 	return taken;
 }
 
@@ -381,8 +381,8 @@ zwl_corner_button(
  * contact is followed.  Returns 1 when the movement is the gesture's.
  */
 int
-zwl_corner_motion(
-	struct zwl_server *server)
+kwl_corner_motion(
+	struct kwl_server *server)
 {
 	int taken;
 
@@ -391,7 +391,7 @@ zwl_corner_motion(
 		return 0;
 
 	/* Succeeded: the contact moves with the pointer (at the time of the motion's event). */
-	taken = zwl_corner_contact_move(server, server->pointer_x, server->pointer_y, server->input_time);
+	taken = kwl_corner_contact_move(server, server->pointer_x, server->pointer_y, server->input_time);
 	return taken;
 }
 
@@ -401,8 +401,8 @@ zwl_corner_motion(
  * window never came is forgotten.
  */
 void
-zwl_corner_tick(
-	struct zwl_server *server)
+kwl_corner_tick(
+	struct kwl_server *server)
 {
 	uint64_t now;
 
@@ -418,7 +418,7 @@ zwl_corner_tick(
 	 * corner is not held forever.
 	 */
 	if (corner.contact.active &&
-	    corner.contact.source != ZWL_CONTACT_PEN &&
+	    corner.contact.source != KWL_CONTACT_PEN &&
 	    (server->buttons_down & 1U) == 0U) {
 		corner.contact.active = 0;
 		corner.settling = 0;
@@ -427,7 +427,7 @@ zwl_corner_tick(
 	}
 
 	/* A contact that is still waiting to arm times out. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (corner.contact.active &&
 	    !corner.contact.armed &&
 	    !corner.contact.expired &&
@@ -456,7 +456,7 @@ zwl_corner_tick(
  * over a fullscreen window, so the hint can be drawn.
  */
 int
-zwl_corner_showing(
+kwl_corner_showing(
 	void)
 {
 	/* An armed contact that has not timed out. */
@@ -478,8 +478,8 @@ zwl_corner_showing(
  * contact, with Notes' name in it once it is large enough.
  */
 void
-zwl_corner_draw(
-	struct zwl_server *server,
+kwl_corner_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float ink[4] = { 0.10f, 0.16f, 0.30f, 1.0f };
@@ -498,7 +498,7 @@ zwl_corner_draw(
 	uint64_t elapsed;
 
 	/* Nothing to draw without the hint. */
-	ready = zwl_corner_showing();
+	ready = kwl_corner_showing();
 	if (!ready)
 		return;
 
@@ -506,7 +506,7 @@ zwl_corner_draw(
 	radius = corner_radius();
 	opacity = 1.0f;
 	if (corner.settling) {
-		elapsed = zwl_milliseconds() - corner.settle_ms;
+		elapsed = kwl_milliseconds() - corner.settle_ms;
 		t = (float)elapsed / (float)CORNER_SETTLE_MS;
 		if (t > 1.0f)
 			t = 1.0f;
@@ -606,7 +606,7 @@ zwl_corner_draw(
 /* Tells whether a point is in the top-right corner a contact may start the gesture from. */
 static int
 corner_in_zone(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
@@ -720,14 +720,14 @@ corner_on_diagonal(
 /* Ends the followed contact: the hint settles back into the corner, or grows and fades on a commit. */
 static void
 corner_finish(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned committed,
 	const char *reason)
 {
 	/* The hint starts settling from the size it had. */
 	corner.settle_radius = corner_radius();
 	corner.settle_committed = committed;
-	corner.settle_ms = zwl_milliseconds();
+	corner.settle_ms = kwl_milliseconds();
 	corner.settling = 1;
 	server->dirty = 1;
 
@@ -743,16 +743,16 @@ corner_finish(
  */
 static void
 corner_act(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
-	struct zwl_object *top;
+	struct kwl_object *surface;
+	struct kwl_object *top;
 	pid_t child;
 	int error;
 	int missing;
 
 	/* App Home, when it shows, closes as Notes comes: the swipe works on Home too. */
-	zwl_home_dismiss(server, "notes");
+	kwl_home_dismiss(server, "notes");
 
 	/* Notes' window, when it has one. */
 	surface = corner_find_notes(server);
@@ -760,7 +760,7 @@ corner_act(
 		corner.launching = 0;
 
 		/* Already on top and fullscreen here: nothing to do. */
-		top = zwl_top_window(server);
+		top = kwl_top_window(server);
 		if (surface == top && surface->fullscreen) {
 			printf("ZWL CORNER notes surface=%u already client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 			return;
@@ -771,10 +771,10 @@ corner_act(
 		surface->desktop = server->desktop;
 
 		/* It comes to the top and takes the focus, the way a click on it does. */
-		zwl_glass_raise(server, surface);
+		kwl_glass_raise(server, surface);
 
 		/* The compositor makes it fullscreen, and tells it (a fullscreen window is only raised). */
-		error = zwl_window_enter_fullscreen(surface);
+		error = kwl_window_enter_fullscreen(surface);
 		if (error != 0) {
 			printf("ZWL CORNER notes surface=%u fullscreen error=%d client=%llu\n", surface->id, error, (unsigned long long)surface->client->number);
 			return;
@@ -800,7 +800,7 @@ corner_act(
 	}
 
 	/* Notes is started, and asks for fullscreen itself before its window first shows. */
-	child = zwl_spawn(server, CORNER_COMMAND);
+	child = kwl_spawn(server, CORNER_COMMAND);
 	if (child < 0) {
 		printf("ZWL CORNER notes launch error=%d\n", errno);
 		return;
@@ -808,18 +808,18 @@ corner_act(
 
 	/* Succeeded: its window is waited for. */
 	corner.launching = 1;
-	corner.launch_ms = zwl_milliseconds();
+	corner.launch_ms = kwl_milliseconds();
 	printf("ZWL CORNER notes launch pid=%d\n", (int)child);
 }
 
 /* Finds Notes' window: the most recently raised mapped toplevel whose app_id is "notes"; NULL for none. */
-static struct zwl_object *
+static struct kwl_object *
 corner_find_notes(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *found;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *found;
 	int differs;
 
 	/* Every window of every client, the highest map order kept. */
@@ -829,7 +829,7 @@ corner_find_notes(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only a live, mapped toplevel. */
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    !surface->mapped ||
 			    surface->role == NULL ||
@@ -894,15 +894,15 @@ corner_ease(
 /* Names a contact's source for the log. */
 static const char *
 corner_source_name(
-	enum zwl_contact_source source)
+	enum kwl_contact_source source)
 {
 	/* One name per source. */
 	switch (source) {
-	case ZWL_CONTACT_PEN:
+	case KWL_CONTACT_PEN:
 		return "pen";
-	case ZWL_CONTACT_TOUCH:
+	case KWL_CONTACT_TOUCH:
 		return "touch";
-	case ZWL_CONTACT_POINTER:
+	case KWL_CONTACT_POINTER:
 	default:
 		return "pointer";
 	}

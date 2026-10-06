@@ -30,9 +30,9 @@
  * KEYBOARD_SLIDE_MS, eased out.
  *
  * While a panel is out, the work area is the screen less the panel
- * (ws102-p007, design §2.8): zwl_keyboard_reserved gives the column or row
+ * (ws102-p007, design §2.8): kwl_keyboard_reserved gives the column or row
  * a panel takes, which the glass look's space and the desktop take away,
- * and zwl_keyboard_reserved_now the part of it out at this moment of the
+ * and kwl_keyboard_reserved_now the part of it out at this moment of the
  * slide, which the docked windows' place takes away (so that a docked
  * window narrows or shortens with the panel).  When the panel comes or goes,
  * every docked window is told its new size once; a floating window that
@@ -46,21 +46,21 @@
  * tools' tabs (edit now; candidates, history and emoji to come), and the
  * edit tools -- the arrows, line start and end, page up and down (keys,
  * with Shift while selecting), selecting (a toggle), select all, undo,
- * redo, copy, cut and paste (zwl_edit_action, edit.c: the window's own edit
+ * redo, copy, cut and paste (kwl_edit_action, edit.c: the window's own edit
  * operations, or their keys).  A tool the focused window cannot do now is
- * drawn faint (zwl_edit_state).  The history tab (ws102-p024) lists the
+ * drawn faint (kwl_edit_state).  The history tab (ws102-p024) lists the
  * clipboard's history (clipboard.c, the newest first, each on one line); a
  * tap pastes an item into the focused window.
  *
  * The candidates' tab (ws166-p003) predicts words: the hiragana the flick
  * panel commits one after another are a reading (keyboard.reading); each
  * time it changes the input method is asked for the words it starts
- * (zwl_ime_predict, keiland_ime_status_v1 version 2: the reading's own
+ * (kwl_ime_predict, kl_ime_status_v1 version 2: the reading's own
  * words first, then longer ones, the user's choices before the
  * dictionary's), and the answer fills the tab, which comes up by itself
  * when a reading begins.  A word tapped replaces the reading before the
  * cursor (the text input deletes the reading's bytes and commits the
- * word, as the voice key does) and is learned (zwl_ime_learn).  When the
+ * word, as the voice key does) and is learned (kwl_ime_learn).  When the
  * field tells its text, the reading must be what is before the cursor, or
  * nothing is replaced.  Any other key or tool, another field, a secret
  * field (a password, a PIN, hidden or sensitive text) or the panel's
@@ -102,11 +102,11 @@
  * What a key types goes to the focused application (ws102-p004, design
  * §2.5) by one of two ways, without the input method's own files changing:
  * a character of the US layout (letters, digits, ASCII symbols, space,
- * enter, delete) as the key's press and release (zwl_seat_key_deliver,
+ * enter, delete) as the key's press and release (kwl_seat_key_deliver,
  * Shift held around it when needed), which every application hears; any
  * other character (kana, full-width signs) as the commit of the focused
- * field's text input (text-input-v3, zwl_text_input_current and
- * zwl_text_input_deliver of ime.h).  A field without a text input cannot
+ * field's text input (text-input-v3, kwl_text_input_current and
+ * kwl_text_input_deliver of ime.h).  A field without a text input cannot
  * take such a character, nor can one the input method is composing in;
  * the keyboard then says so in the log and sends nothing.  The voice key
  * replaces the kana it sent last by its next form (the text input deletes
@@ -126,8 +126,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The corners a contact starts in: this many pixels from the bottom and from the side (zwl.h). */
-#define KEYBOARD_ZONE		ZWL_KEYBOARD_ZONE
+/* The corners a contact starts in: this many pixels from the bottom and from the side (kwl.h). */
+#define KEYBOARD_ZONE		KWL_KEYBOARD_ZONE
 
 /* How far a contact moves each way (inwards and up) before it is the gesture, and how soon. */
 #define KEYBOARD_ARM		14
@@ -334,7 +334,7 @@ struct keyboard_sample {
 struct keyboard_contact {
 	unsigned active;
 	enum keyboard_kind corner;
-	enum zwl_contact_source source;
+	enum kwl_contact_source source;
 	int32_t start_x;
 	int32_t start_y;
 	uint32_t start_time;
@@ -369,7 +369,7 @@ struct keyboard_tool {
  * whether it is going back.
  */
 struct keyboard_move {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int32_t home_x;
 	int32_t home_y;
 	int32_t from_x;
@@ -384,12 +384,12 @@ struct keyboard_move {
  * panel open (and its rectangle on the output), a press that began on the
  * panel (it is the panel's until its release), whether the corners'
  * places have been logged (once, for the tests), the flick panel's face
- * (ZWL_FLICK_*), the key held (key_active: its row and column, where
+ * (KWL_FLICK_*), the key held (key_active: its row and column, where
  * the press began and where the pointer is now), and the last character
  * sent and how (KEYBOARD_SENT_*), which the voice and case keys change,
  * a press held on the title band (where it began), which closes the
  * panel when dragged far enough towards its edge, and the QWERTY panel's
- * face (ZWL_QWERTY_*) and Shift (KEYBOARD_SHIFT_*, and when it was last
+ * face (KWL_QWERTY_*) and Shift (KEYBOARD_SHIFT_*, and when it was last
  * pressed), and Ctrl and Alt held for the next key (held, their modifier
  * bits).  On the QWERTY panel the key held is key_row and key_column
  * (the key's place in its row).  The handwriting face (hand): a stroke
@@ -426,7 +426,7 @@ struct keyboard_move {
  * movement on the writing area, and cleared by the clear key, a candidate,
  * or the panel closing; only the compositor's thread touches it.
  */
-static struct zwl_hand_ink keyboard_ink;
+static struct kwl_hand_ink keyboard_ink;
 
 /*
  * The flick panel's tools, row by row (fixed; they live as long as the
@@ -483,7 +483,7 @@ struct keyboard_state {
 	unsigned writing;
 	uint64_t stroke_end_ms;
 	unsigned recognized;
-	struct zwl_hand_result result;
+	struct kwl_hand_result result;
 	unsigned hand_key_active;
 	unsigned hand_key;
 	unsigned lag_pending;
@@ -509,7 +509,7 @@ struct keyboard_state {
 	unsigned emoji_active;
 	unsigned emoji_slot;
 	char reading[KEYBOARD_READING];
-	struct zwl_text_input *reading_input;
+	struct kwl_text_input *reading_input;
 	uint32_t reading_commit;
 	uint32_t predict_serial;
 	char predictions[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
@@ -524,7 +524,7 @@ struct keyboard_state {
 	 * focus again, the panel comes back.  PANEL_NONE when nothing waits.
 	 */
 	enum keyboard_kind restore;
-	struct zwl_object *restore_focus;
+	struct kwl_object *restore_focus;
 };
 
 /*
@@ -536,98 +536,98 @@ struct keyboard_state {
  */
 static struct keyboard_state keyboard;
 
-static int keyboard_contact_begin(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
-static int keyboard_contact_move(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
-static int keyboard_contact_end(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
-static enum keyboard_kind keyboard_corner_at(struct zwl_server *server, int32_t x, int32_t y);
+static int keyboard_contact_begin(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
+static int keyboard_contact_move(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
+static int keyboard_contact_end(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
+static enum keyboard_kind keyboard_corner_at(struct kwl_server *server, int32_t x, int32_t y);
 static void keyboard_travel(int32_t *inwards, int32_t *upwards);
 static void keyboard_sample(int32_t x, int32_t y, uint32_t time);
 static float keyboard_speed(void);
 static int keyboard_on_diagonal(int32_t inwards, int32_t upwards);
-static void keyboard_commit(struct zwl_server *server, const char *via, float progress);
-static void keyboard_open(struct zwl_server *server, enum keyboard_kind kind);
-static void keyboard_put_away(struct zwl_server *server, const char *reason);
-static void keyboard_restore(struct zwl_server *server, float home);
-static void keyboard_place(struct zwl_server *server, enum keyboard_kind kind, int32_t *rect);
-static int keyboard_panel_button(struct zwl_server *server, uint32_t button, uint32_t state);
+static void keyboard_commit(struct kwl_server *server, const char *via, float progress);
+static void keyboard_open(struct kwl_server *server, enum keyboard_kind kind);
+static void keyboard_put_away(struct kwl_server *server, const char *reason);
+static void keyboard_restore(struct kwl_server *server, float home);
+static void keyboard_place(struct kwl_server *server, enum keyboard_kind kind, int32_t *rect);
+static int keyboard_panel_button(struct kwl_server *server, uint32_t button, uint32_t state);
 static int keyboard_contains(const int32_t *rect, int32_t x, int32_t y);
-static int keyboard_key_size(struct zwl_server *server);
-static void keyboard_key_rect(struct zwl_server *server, unsigned row, unsigned column, int32_t *rect);
-static int keyboard_key_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *column);
-static unsigned keyboard_key_direction(struct zwl_server *server);
-static void keyboard_key_release(struct zwl_server *server);
-static void keyboard_draw_keys(struct zwl_server *server, VkCommandBuffer command);
-static void keyboard_draw_key(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
-static void keyboard_draw_petals(struct zwl_server *server, VkCommandBuffer command);
+static int keyboard_key_size(struct kwl_server *server);
+static void keyboard_key_rect(struct kwl_server *server, unsigned row, unsigned column, int32_t *rect);
+static int keyboard_key_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *column);
+static unsigned keyboard_key_direction(struct kwl_server *server);
+static void keyboard_key_release(struct kwl_server *server);
+static void keyboard_draw_keys(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_key(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
+static void keyboard_draw_petals(struct kwl_server *server, VkCommandBuffer command);
 static unsigned keyboard_characters(const char *text);
 static int keyboard_band_swiped(int32_t x, int32_t y);
-static void keyboard_qwerty_rect(struct zwl_server *server, unsigned row, unsigned index, int32_t *rect);
-static int keyboard_qwerty_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *index);
-static const struct zwl_qwerty_key *keyboard_qwerty_key(unsigned row, unsigned index);
-static void keyboard_qwerty_release(struct zwl_server *server);
+static void keyboard_qwerty_rect(struct kwl_server *server, unsigned row, unsigned index, int32_t *rect);
+static int keyboard_qwerty_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *index);
+static const struct kwl_qwerty_key *keyboard_qwerty_key(unsigned row, unsigned index);
+static void keyboard_qwerty_release(struct kwl_server *server);
 static void keyboard_qwerty_shift(void);
-static void keyboard_qwerty_log(struct zwl_server *server);
-static void keyboard_draw_qwerty(struct zwl_server *server, VkCommandBuffer command);
-static void keyboard_draw_bubble(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_qwerty_log(struct kwl_server *server);
+static void keyboard_draw_qwerty(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_bubble(struct kwl_server *server, VkCommandBuffer command);
 static void keyboard_band_button_rect(int32_t *rect);
 static void keyboard_hand_area(int32_t *rect);
 static void keyboard_hand_key_rect(unsigned key, int32_t *rect);
 static int keyboard_hand_key_at(int32_t x, int32_t y, unsigned *key);
-static void keyboard_hand_toggle(struct zwl_server *server);
-static void keyboard_hand_point(struct zwl_server *server, int32_t x, int32_t y, int begin);
-static void keyboard_hand_release(struct zwl_server *server);
-static void keyboard_hand_key_release(struct zwl_server *server);
-static void keyboard_hand_recognize(struct zwl_server *server);
-static void keyboard_draw_hand(struct zwl_server *server, VkCommandBuffer command);
-static void keyboard_send(struct zwl_server *server, const char *text);
-static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
-static void keyboard_key_event(struct zwl_server *server, uint32_t time, unsigned code, uint32_t state);
-static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
-static void keyboard_voice(struct zwl_server *server);
-static void keyboard_case(struct zwl_server *server);
+static void keyboard_hand_toggle(struct kwl_server *server);
+static void keyboard_hand_point(struct kwl_server *server, int32_t x, int32_t y, int begin);
+static void keyboard_hand_release(struct kwl_server *server);
+static void keyboard_hand_key_release(struct kwl_server *server);
+static void keyboard_hand_recognize(struct kwl_server *server);
+static void keyboard_draw_hand(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_send(struct kwl_server *server, const char *text);
+static int keyboard_send_key(struct kwl_server *server, unsigned code, int shift);
+static void keyboard_key_event(struct kwl_server *server, uint32_t time, unsigned code, uint32_t state);
+static int keyboard_send_commit(struct kwl_server *server, const char *text, uint32_t before);
+static void keyboard_voice(struct kwl_server *server);
+static void keyboard_case(struct kwl_server *server);
 static void keyboard_remember(const char *text, unsigned sent);
-static void keyboard_reading_sent(struct zwl_server *server, const char *text, unsigned sent);
-static void keyboard_reading_back(struct zwl_server *server);
-static void keyboard_reading_replace(struct zwl_server *server, const char *before, const char *after);
-static void keyboard_reading_end(struct zwl_server *server, const char *why);
-static void keyboard_reading_predict(struct zwl_server *server);
+static void keyboard_reading_sent(struct kwl_server *server, const char *text, unsigned sent);
+static void keyboard_reading_back(struct kwl_server *server);
+static void keyboard_reading_replace(struct kwl_server *server, const char *before, const char *after);
+static void keyboard_reading_end(struct kwl_server *server, const char *why);
+static void keyboard_reading_predict(struct kwl_server *server);
 static int keyboard_hiragana(const char *text);
-static int keyboard_secret(const struct zwl_text_input *input);
-static void keyboard_candidate_rect(struct zwl_server *server, unsigned slot, int32_t *rect);
-static int keyboard_candidate_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *slot);
-static void keyboard_candidate_release(struct zwl_server *server);
-static void keyboard_draw_candidates(struct zwl_server *server, VkCommandBuffer command);
+static int keyboard_secret(const struct kwl_text_input *input);
+static void keyboard_candidate_rect(struct kwl_server *server, unsigned slot, int32_t *rect);
+static int keyboard_candidate_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *slot);
+static void keyboard_candidate_release(struct kwl_server *server);
+static void keyboard_draw_candidates(struct kwl_server *server, VkCommandBuffer command);
 static void keyboard_close_rect(int32_t *rect);
-static void keyboard_draw_panel(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
-static void keyboard_draw_hint(struct zwl_server *server, VkCommandBuffer command);
-static void keyboard_draw_sliding(struct zwl_server *server, VkCommandBuffer command, int leaving);
+static void keyboard_draw_panel(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
+static void keyboard_draw_hint(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_sliding(struct kwl_server *server, VkCommandBuffer command, int leaving);
 static float keyboard_slide(void);
-static void keyboard_work_area(struct zwl_server *server);
-static int keyboard_is_window(const struct zwl_object *surface);
-static void keyboard_fit_floating(struct zwl_server *server, struct zwl_object *surface);
-static void keyboard_move_back(struct zwl_server *server);
-static void keyboard_move_step(struct zwl_server *server, float t);
-static int keyboard_window_live(struct zwl_server *server, const struct zwl_object *window);
-static void keyboard_moves_at_end(struct zwl_server *server, int end);
-static void keyboard_tool_rect(struct zwl_server *server, unsigned index, int32_t *rect);
-static int keyboard_tool_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *index);
-static int keyboard_tool_enabled(struct zwl_server *server, unsigned index, uint32_t enabled, int state);
-static void keyboard_tool_release(struct zwl_server *server);
-static void keyboard_tool_move(struct zwl_server *server, unsigned code);
-static void keyboard_tool_edit(struct zwl_server *server, unsigned action);
-static void keyboard_draw_tools(struct zwl_server *server, VkCommandBuffer command);
-static void keyboard_history_rect(struct zwl_server *server, unsigned row, int32_t *rect);
-static int keyboard_history_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *row);
-static void keyboard_history_release(struct zwl_server *server);
-static void keyboard_draw_history(struct zwl_server *server, VkCommandBuffer command);
-static void keyboard_emoji_rect(struct zwl_server *server, unsigned slot, int32_t *rect);
-static int keyboard_emoji_at(struct zwl_server *server, int32_t x, int32_t y, unsigned *slot);
-static void keyboard_emoji_release(struct zwl_server *server);
-static void keyboard_emoji_log(struct zwl_server *server);
-static void keyboard_draw_emoji(struct zwl_server *server, VkCommandBuffer command);
+static void keyboard_work_area(struct kwl_server *server);
+static int keyboard_is_window(const struct kwl_object *surface);
+static void keyboard_fit_floating(struct kwl_server *server, struct kwl_object *surface);
+static void keyboard_move_back(struct kwl_server *server);
+static void keyboard_move_step(struct kwl_server *server, float t);
+static int keyboard_window_live(struct kwl_server *server, const struct kwl_object *window);
+static void keyboard_moves_at_end(struct kwl_server *server, int end);
+static void keyboard_tool_rect(struct kwl_server *server, unsigned index, int32_t *rect);
+static int keyboard_tool_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *index);
+static int keyboard_tool_enabled(struct kwl_server *server, unsigned index, uint32_t enabled, int state);
+static void keyboard_tool_release(struct kwl_server *server);
+static void keyboard_tool_move(struct kwl_server *server, unsigned code);
+static void keyboard_tool_edit(struct kwl_server *server, unsigned action);
+static void keyboard_draw_tools(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_history_rect(struct kwl_server *server, unsigned row, int32_t *rect);
+static int keyboard_history_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row);
+static void keyboard_history_release(struct kwl_server *server);
+static void keyboard_draw_history(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_emoji_rect(struct kwl_server *server, unsigned slot, int32_t *rect);
+static int keyboard_emoji_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *slot);
+static void keyboard_emoji_release(struct kwl_server *server);
+static void keyboard_emoji_log(struct kwl_server *server);
+static void keyboard_draw_emoji(struct kwl_server *server, VkCommandBuffer command);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
-static const char *keyboard_source_name(enum zwl_contact_source source);
-static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y, uint32_t state);
+static const char *keyboard_source_name(enum kwl_contact_source source);
+static int keyboard_touch_button(struct kwl_server *server, int32_t x, int32_t y, uint32_t state);
 
 /*
  * Feeds the left pointer button (the mouse's, or a finger's passed as the
@@ -636,15 +636,15 @@ static int keyboard_touch_button(struct zwl_server *server, int32_t x, int32_t y
  * whichever began.  Returns 1 when the button is the keyboard's.
  */
 int
-zwl_keyboard_button(
-	struct zwl_server *server,
+kwl_keyboard_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
 	int taken;
 
 	/* Only the left button. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return 0;
 
 	/* A release ends the corner's contact, when it is the keyboard's. */
@@ -674,8 +674,8 @@ zwl_keyboard_button(
  * movement is the keyboard's.
  */
 int
-zwl_keyboard_motion(
-	struct zwl_server *server)
+kwl_keyboard_motion(
+	struct kwl_server *server)
 {
 	int taken;
 
@@ -713,8 +713,8 @@ zwl_keyboard_motion(
  * finger.
  */
 int
-zwl_keyboard_touch_down(
-	struct zwl_server *server,
+kwl_keyboard_touch_down(
+	struct kwl_server *server,
 	uint32_t id,
 	int32_t x,
 	int32_t y,
@@ -754,8 +754,8 @@ zwl_keyboard_touch_down(
  * holds it (a flick's petals, a stroke).  Returns 1.
  */
 int
-zwl_keyboard_touch_motion(
-	struct zwl_server *server,
+kwl_keyboard_touch_motion(
+	struct kwl_server *server,
 	uint32_t id,
 	int32_t x,
 	int32_t y,
@@ -776,7 +776,7 @@ zwl_keyboard_touch_motion(
 	saved_y = server->pointer_y;
 	server->pointer_x = x;
 	server->pointer_y = y;
-	(void)zwl_keyboard_motion(server);
+	(void)kwl_keyboard_motion(server);
 	server->pointer_x = saved_x;
 	server->pointer_y = saved_y;
 	return 1;
@@ -788,8 +788,8 @@ zwl_keyboard_touch_motion(
  * Returns 1.
  */
 int
-zwl_keyboard_touch_up(
-	struct zwl_server *server,
+kwl_keyboard_touch_up(
+	struct kwl_server *server,
 	uint32_t id,
 	int32_t x,
 	int32_t y,
@@ -817,8 +817,8 @@ zwl_keyboard_touch_up(
  * ends without acting.
  */
 void
-zwl_keyboard_touch_cancel(
-	struct zwl_server *server,
+kwl_keyboard_touch_cancel(
+	struct kwl_server *server,
 	uint32_t id)
 {
 	/* Only the finger holding the press. */
@@ -844,7 +844,7 @@ zwl_keyboard_touch_cancel(
  */
 static int
 keyboard_touch_button(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t state)
@@ -858,7 +858,7 @@ keyboard_touch_button(
 	saved_y = server->pointer_y;
 	server->pointer_x = x;
 	server->pointer_y = y;
-	taken = keyboard_panel_button(server, ZWL_BUTTON_LEFT, state);
+	taken = keyboard_panel_button(server, KWL_BUTTON_LEFT, state);
 	server->pointer_x = saved_x;
 	server->pointer_y = saved_y;
 	return taken;
@@ -870,8 +870,8 @@ keyboard_touch_button(
  * is let go.  The panel follows a change of the screen's size.
  */
 void
-zwl_keyboard_tick(
-	struct zwl_server *server)
+kwl_keyboard_tick(
+	struct kwl_server *server)
 {
 	int32_t rect[4];
 	uint64_t now;
@@ -898,7 +898,7 @@ zwl_keyboard_tick(
 		keyboard.pressing = 0;
 
 	/* A contact still waiting to arm times out. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (keyboard.contact.active &&
 	    !keyboard.contact.armed &&
 	    !keyboard.contact.expired &&
@@ -924,7 +924,7 @@ zwl_keyboard_tick(
 	}
 
 	/* A panel App Home or Wiseview put away comes back when they are gone (BUG-229). */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (keyboard.open == PANEL_NONE && keyboard.restore != PANEL_NONE)
 		keyboard_restore(server, home);
 
@@ -934,10 +934,10 @@ zwl_keyboard_tick(
 
 	/* The login and lock screens close it; App Home and Wiseview put it away until they are gone. */
 	if (server->greeter) {
-		zwl_keyboard_close(server, "greeter");
+		kwl_keyboard_close(server, "greeter");
 		return;
 	} else if (server->locked) {
-		zwl_keyboard_close(server, "lock");
+		kwl_keyboard_close(server, "lock");
 		return;
 	} else if (home > 0.0f || server->home_to > 0.0f) {
 		keyboard_put_away(server, "home");
@@ -971,7 +971,7 @@ zwl_keyboard_tick(
  * composed, even over a fullscreen window.
  */
 int
-zwl_keyboard_showing(
+kwl_keyboard_showing(
 	void)
 {
 	/* An open panel, or one going back into its edge. */
@@ -993,7 +993,7 @@ zwl_keyboard_showing(
  * is the keyboard's, not a window's).
  */
 int
-zwl_keyboard_at(
+kwl_keyboard_at(
 	int32_t x,
 	int32_t y)
 {
@@ -1012,8 +1012,8 @@ zwl_keyboard_at(
  * Closes the open panel, saying why in the log.
  */
 void
-zwl_keyboard_close(
-	struct zwl_server *server,
+kwl_keyboard_close(
+	struct kwl_server *server,
 	const char *reason)
 {
 	/* No panel. */
@@ -1023,7 +1023,7 @@ zwl_keyboard_close(
 	/* The panel goes, going back into its edge (drawn until it is in). */
 	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
 	keyboard.leaving = keyboard.open;
-	keyboard.slide_ms = zwl_milliseconds();
+	keyboard.slide_ms = kwl_milliseconds();
 	keyboard.open = PANEL_NONE;
 	keyboard.tool_active = 0;
 	keyboard.history_active = 0;
@@ -1039,7 +1039,7 @@ zwl_keyboard_close(
 	keyboard.band_active = 0;
 	keyboard.writing = 0;
 	keyboard.hand_key_active = 0;
-	zwl_hand_clear(&keyboard_ink);
+	kwl_hand_clear(&keyboard_ink);
 	keyboard.recognized = 0;
 	memset(&keyboard.result, 0, sizeof(keyboard.result));
 	server->dirty = 1;
@@ -1051,7 +1051,7 @@ zwl_keyboard_close(
  * panel).  The glass look's space and the desktop's place take these away.
  */
 void
-zwl_keyboard_reserved(
+kwl_keyboard_reserved(
 	int32_t *right,
 	int32_t *bottom)
 {
@@ -1067,7 +1067,7 @@ zwl_keyboard_reserved(
  * shorten with the panel.
  */
 void
-zwl_keyboard_reserved_now(
+kwl_keyboard_reserved_now(
 	int32_t *right,
 	int32_t *bottom)
 {
@@ -1103,8 +1103,8 @@ zwl_keyboard_reserved_now(
  * an armed contact growing from its corner.
  */
 void
-zwl_keyboard_draw(
-	struct zwl_server *server,
+kwl_keyboard_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	/* The open panel, grown out of its edge as far as its slide has come. */
@@ -1131,7 +1131,7 @@ zwl_keyboard_draw(
  */
 static int
 keyboard_contact_begin(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -1143,7 +1143,7 @@ keyboard_contact_begin(
 	/* The login and lock screens, App Home and Wiseview have no keyboard. */
 	if (server->greeter || server->locked)
 		return 0;
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return 0;
 	if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving)
@@ -1159,13 +1159,13 @@ keyboard_contact_begin(
 		return 0;
 
 	/* An open menu closes on a press anywhere, the corners too, before the gesture could start. */
-	open = zwl_network_is_open();
+	open = kwl_network_is_open();
 	if (open)
 		return 0;
-	open = zwl_menu_is_open();
+	open = kwl_menu_is_open();
 	if (open)
 		return 0;
-	open = zwl_volume_is_open();
+	open = kwl_volume_is_open();
 	if (open)
 		return 0;
 
@@ -1177,7 +1177,7 @@ keyboard_contact_begin(
 	keyboard.contact.start_x = x;
 	keyboard.contact.start_y = y;
 	keyboard.contact.start_time = time;
-	keyboard.contact.start_clock_ms = zwl_milliseconds();
+	keyboard.contact.start_clock_ms = kwl_milliseconds();
 	keyboard.contact.x = x;
 	keyboard.contact.y = y;
 	keyboard_sample(x, y, time);
@@ -1193,7 +1193,7 @@ keyboard_contact_begin(
  */
 static int
 keyboard_contact_move(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -1248,7 +1248,7 @@ keyboard_contact_move(
  */
 static int
 keyboard_contact_end(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -1314,7 +1314,7 @@ keyboard_contact_end(
 /* Finds the bottom corner a point is in: the flick panel's (right), the QWERTY panel's (left), or none. */
 static enum keyboard_kind
 keyboard_corner_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
@@ -1442,7 +1442,7 @@ keyboard_on_diagonal(
  */
 static void
 keyboard_commit(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *via,
 	float progress)
 {
@@ -1455,7 +1455,7 @@ keyboard_commit(
 
 	/* The same panel again closes it. */
 	if (keyboard.open == corner) {
-		zwl_keyboard_close(server, "gesture");
+		kwl_keyboard_close(server, "gesture");
 		return;
 	}
 
@@ -1466,7 +1466,7 @@ keyboard_commit(
 /* Opens a panel at its place for the screen's size. */
 static void
 keyboard_open(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	enum keyboard_kind kind)
 {
 	/* A panel opened is no longer one waiting to come back. */
@@ -1476,7 +1476,7 @@ keyboard_open(
 	/* The panel and its rectangle, growing out of its edge from now (one going back is done with). */
 	keyboard.open = kind;
 	keyboard.leaving = PANEL_NONE;
-	keyboard.slide_ms = zwl_milliseconds();
+	keyboard.slide_ms = kwl_milliseconds();
 	keyboard.pressing = 0;
 	keyboard_place(server, kind, keyboard.panel);
 	server->dirty = 1;
@@ -1496,14 +1496,14 @@ keyboard_open(
  */
 static void
 keyboard_put_away(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *reason)
 {
 	enum keyboard_kind kind;
 
 	/* The panel and the focus to come back to. */
 	kind = keyboard.open;
-	zwl_keyboard_close(server, reason);
+	kwl_keyboard_close(server, reason);
 	keyboard.restore = kind;
 	keyboard.restore_focus = server->focus;
 	printf("ZWL OSK put-away kind=%s reason=%s\n", keyboard_kind_name(kind), reason);
@@ -1516,7 +1516,7 @@ keyboard_put_away(
  */
 static void
 keyboard_restore(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float home)
 {
 	enum keyboard_kind kind;
@@ -1561,7 +1561,7 @@ keyboard_restore(
  */
 static void
 keyboard_place(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	enum keyboard_kind kind,
 	int32_t *rect)
 {
@@ -1591,9 +1591,9 @@ keyboard_place(
 
 	/* The whole right column under the system bar, as wide as the keys and their gaps. */
 	rect[2] = KEYBOARD_FLICK_COLUMNS * key + (KEYBOARD_FLICK_COLUMNS + 1) * KEYBOARD_KEY_GAP;
-	rect[3] = height - ZWL_GLASS_BAR;
+	rect[3] = height - KWL_GLASS_BAR;
 	rect[0] = width - rect[2];
-	rect[1] = ZWL_GLASS_BAR;
+	rect[1] = KWL_GLASS_BAR;
 }
 
 /*
@@ -1603,7 +1603,7 @@ keyboard_place(
  */
 static int
 keyboard_panel_button(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -1626,7 +1626,7 @@ keyboard_panel_button(
 			keyboard.band_active = 0;
 			swiped = keyboard_band_swiped(server->pointer_x, server->pointer_y);
 			if (swiped) {
-				zwl_keyboard_close(server, "swipe");
+				kwl_keyboard_close(server, "swipe");
 				return 1;
 			}
 		}
@@ -1693,12 +1693,12 @@ keyboard_panel_button(
 		keyboard_close_rect(close);
 		inside = keyboard_contains(close, server->pointer_x, server->pointer_y);
 		if (inside)
-			zwl_keyboard_close(server, "key");
+			kwl_keyboard_close(server, "key");
 		return 1;
 	}
 
 	/* A press off the panel is not the panel's. */
-	inside = zwl_keyboard_at(server->pointer_x, server->pointer_y);
+	inside = kwl_keyboard_at(server->pointer_x, server->pointer_y);
 	if (!inside)
 		return 0;
 
@@ -1841,7 +1841,7 @@ keyboard_close_rect(
  */
 static void
 keyboard_draw_panel(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const int32_t *rect,
 	float opacity)
@@ -1882,13 +1882,13 @@ keyboard_draw_panel(
 
 	/* The title at the left of the band: the flick panel's face, or the keyboard. */
 	title = "かな";
-	if (keyboard.face == ZWL_FLICK_ALPHA)
+	if (keyboard.face == KWL_FLICK_ALPHA)
 		title = "ABC";
-	if (keyboard.face == ZWL_FLICK_NUMBER)
+	if (keyboard.face == KWL_FLICK_NUMBER)
 		title = "123";
 	if (keyboard.open == PANEL_QWERTY)
 		title = "ABC";
-	if (keyboard.open == PANEL_QWERTY && keyboard.qface == ZWL_QWERTY_SYMBOLS)
+	if (keyboard.open == PANEL_QWERTY && keyboard.qface == KWL_QWERTY_SYMBOLS)
 		title = "?123";
 	if (keyboard.open == PANEL_QWERTY && keyboard.hand)
 		title = "手書き";
@@ -1937,7 +1937,7 @@ keyboard_draw_panel(
  */
 static void
 keyboard_draw_hint(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float ink[4] = { 0.10f, 0.16f, 0.30f, 1.0f };
@@ -2052,7 +2052,7 @@ keyboard_draw_hint(
  */
 static void
 keyboard_draw_sliding(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int leaving)
 {
@@ -2062,7 +2062,7 @@ keyboard_draw_sliding(
 	float out;
 
 	/* How far the slide has come, eased out (0 at its start, 1 at its end). */
-	elapsed = zwl_milliseconds() - keyboard.slide_ms;
+	elapsed = kwl_milliseconds() - keyboard.slide_ms;
 	t = 1.0f;
 	if (elapsed < KEYBOARD_SLIDE_MS)
 		t = (float)elapsed / (float)KEYBOARD_SLIDE_MS;
@@ -2086,7 +2086,7 @@ keyboard_draw_sliding(
 /* Works out the flick panel's key side for the screen's height (a share of it, within limits). */
 static int
 keyboard_key_size(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int key;
 
@@ -2104,7 +2104,7 @@ keyboard_key_size(
 /* Works out a key's rectangle on the open flick panel: the keys fill the bottom of its column. */
 static void
 keyboard_key_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned row,
 	unsigned column,
 	int32_t *rect)
@@ -2114,7 +2114,7 @@ keyboard_key_rect(
 	/* The key's side, and its place in the grid at the bottom of the column (the tools' area above it, §2.10). */
 	key = keyboard_key_size(server);
 	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)column * (key + KEYBOARD_KEY_GAP);
-	rect[1] = keyboard.panel[1] + keyboard.panel[3] - (int32_t)(ZWL_FLICK_ROWS - row) * (key + KEYBOARD_KEY_GAP);
+	rect[1] = keyboard.panel[1] + keyboard.panel[3] - (int32_t)(KWL_FLICK_ROWS - row) * (key + KEYBOARD_KEY_GAP);
 	rect[2] = key;
 	rect[3] = key;
 }
@@ -2122,7 +2122,7 @@ keyboard_key_rect(
 /* Finds the flick panel's key at a point.  Returns 1 with its row and column, or 0 (a gap, the band). */
 static int
 keyboard_key_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	unsigned *row,
@@ -2134,8 +2134,8 @@ keyboard_key_at(
 	int inside;
 
 	/* Each key of the grid. */
-	for (r = 0; r < ZWL_FLICK_ROWS; r++) {
-		for (c = 0; c < ZWL_FLICK_COLUMNS; c++) {
+	for (r = 0; r < KWL_FLICK_ROWS; r++) {
+		for (c = 0; c < KWL_FLICK_COLUMNS; c++) {
 			/* The point on this key. */
 			keyboard_key_rect(server, r, c, rect);
 			inside = keyboard_contains(rect, x, y);
@@ -2156,7 +2156,7 @@ keyboard_key_at(
 /* Works out the direction the held key's press has moved (the flick), from where it began. */
 static unsigned
 keyboard_key_direction(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned direction;
 	int dx;
@@ -2169,7 +2169,7 @@ keyboard_key_direction(
 	key = keyboard_key_size(server);
 
 	/* The flick's direction (keyboard-layout.c). */
-	direction = zwl_flick_direction(dx, dy, key);
+	direction = kwl_flick_direction(dx, dy, key);
 	return direction;
 }
 
@@ -2181,9 +2181,9 @@ keyboard_key_direction(
  */
 static void
 keyboard_key_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	const struct zwl_flick_key *key;
+	const struct kwl_flick_key *key;
 	const char *text;
 	const char *shown;
 	unsigned direction;
@@ -2193,40 +2193,40 @@ keyboard_key_release(
 	/* The key and the flick's direction. */
 	keyboard.key_active = 0;
 	server->dirty = 1;
-	key = zwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
+	key = kwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
 	if (key == NULL)
 		return;
 	direction = keyboard_key_direction(server);
 
 	/* The character in that direction (a newline is logged as \n), for the log line the tests read. */
-	text = zwl_flick_text(key, direction);
+	text = kwl_flick_text(key, direction);
 	shown = text;
 	if (shown == NULL)
 		shown = "";
 	newline = strcmp(shown, "\n");
 	if (newline == 0)
 		shown = "\\n";
-	printf("ZWL OSK key face=%s row=%u column=%u dir=%s action=%u text=%s\n", zwl_flick_face_name(keyboard.face), keyboard.key_row, keyboard.key_column, zwl_flick_direction_name(direction), key->action, shown);
+	printf("ZWL OSK key face=%s row=%u column=%u dir=%s action=%u text=%s\n", kwl_flick_face_name(keyboard.face), keyboard.key_row, keyboard.key_column, kwl_flick_direction_name(direction), key->action, shown);
 
 	/* What the key does. */
 	switch (key->action) {
-	case ZWL_FLICK_FACE:
+	case KWL_FLICK_FACE:
 		/* The next face. */
-		keyboard.face = zwl_flick_face_next(keyboard.face);
-		printf("ZWL OSK face name=%s\n", zwl_flick_face_name(keyboard.face));
+		keyboard.face = kwl_flick_face_next(keyboard.face);
+		printf("ZWL OSK face name=%s\n", kwl_flick_face_name(keyboard.face));
 		break;
-	case ZWL_FLICK_BACKSPACE:
+	case KWL_FLICK_BACKSPACE:
 		/* The delete key; the last character is gone, from the reading too. */
-		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
 		if (!sent)
 			break;
 		keyboard_remember("", KEYBOARD_SENT_NONE);
 		keyboard_reading_back(server);
 		break;
-	case ZWL_FLICK_VOICE:
+	case KWL_FLICK_VOICE:
 		keyboard_voice(server);
 		break;
-	case ZWL_FLICK_CASE:
+	case KWL_FLICK_CASE:
 		keyboard_case(server);
 		break;
 	default:
@@ -2240,7 +2240,7 @@ keyboard_key_release(
 /* Draws the flick panel's keys: character keys pale white, the fixed keys a little darker, the held one blue. */
 static void
 keyboard_draw_keys(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
@@ -2248,7 +2248,7 @@ keyboard_draw_keys(
 	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	const struct zwl_flick_key *key;
+	const struct kwl_flick_key *key;
 	const float *ground;
 	const float *ink;
 	enum glass_size size;
@@ -2258,14 +2258,14 @@ keyboard_draw_keys(
 	unsigned column;
 
 	/* Each key of the face. */
-	for (row = 0; row < ZWL_FLICK_ROWS; row++) {
-		for (column = 0; column < ZWL_FLICK_COLUMNS; column++) {
+	for (row = 0; row < KWL_FLICK_ROWS; row++) {
+		for (column = 0; column < KWL_FLICK_COLUMNS; column++) {
 			/* The key, its place, its colours: the held one blue, the acting ones grey. */
-			key = zwl_flick_key(keyboard.face, row, column);
+			key = kwl_flick_key(keyboard.face, row, column);
 			keyboard_key_rect(server, row, column, rect);
 			ground = white;
 			ink = dark;
-			if (key->action != ZWL_FLICK_TYPE)
+			if (key->action != KWL_FLICK_TYPE)
 				ground = grey;
 			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == column) {
 				ground = blue;
@@ -2285,7 +2285,7 @@ keyboard_draw_keys(
 /* Draws one key: its rounded ground and its label in the middle. */
 static void
 keyboard_draw_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const int32_t *rect,
 	const char *label,
@@ -2314,7 +2314,7 @@ keyboard_draw_key(
  */
 static void
 keyboard_draw_petals(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -2322,7 +2322,7 @@ keyboard_draw_petals(
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	struct glass_shape shape;
-	const struct zwl_flick_key *key;
+	const struct kwl_flick_key *key;
 	const char *text;
 	unsigned direction;
 	unsigned side;
@@ -2333,8 +2333,8 @@ keyboard_draw_petals(
 	/* Only a held character key. */
 	if (!keyboard.key_active)
 		return;
-	key = zwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
-	if (key == NULL || key->action != ZWL_FLICK_TYPE)
+	key = kwl_flick_key(keyboard.face, keyboard.key_row, keyboard.key_column);
+	if (key == NULL || key->action != KWL_FLICK_TYPE)
 		return;
 
 	/* The key, the petals' side and the direction pointed at. */
@@ -2343,9 +2343,9 @@ keyboard_draw_petals(
 	direction = keyboard_key_direction(server);
 
 	/* Each side's petal that has a character. */
-	for (side = ZWL_FLICK_LEFT; side < ZWL_FLICK_DIRECTIONS; side++) {
+	for (side = KWL_FLICK_LEFT; side < KWL_FLICK_DIRECTIONS; side++) {
 		/* A side without a character has no petal. */
-		text = zwl_flick_text(key, side);
+		text = kwl_flick_text(key, side);
 		if (text == NULL)
 			continue;
 
@@ -2354,11 +2354,11 @@ keyboard_draw_petals(
 		petal[3] = size;
 		petal[0] = rect[0] + (rect[2] - size) / 2;
 		petal[1] = rect[1] + (rect[3] - size) / 2;
-		if (side == ZWL_FLICK_LEFT)
+		if (side == KWL_FLICK_LEFT)
 			petal[0] = rect[0] - size - 2;
-		else if (side == ZWL_FLICK_RIGHT)
+		else if (side == KWL_FLICK_RIGHT)
 			petal[0] = rect[0] + rect[2] + 2;
-		else if (side == ZWL_FLICK_UP)
+		else if (side == KWL_FLICK_UP)
 			petal[1] = rect[1] - size - 2;
 		else
 			petal[1] = rect[1] + rect[3] + 2;
@@ -2394,7 +2394,7 @@ keyboard_draw_petals(
  */
 static void
 keyboard_send(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *text)
 {
 	unsigned code;
@@ -2403,7 +2403,7 @@ keyboard_send(
 	int sent;
 
 	/* A character of the US layout: its key. */
-	found = zwl_flick_us_key(text, &code, &shift);
+	found = kwl_flick_us_key(text, &code, &shift);
 	if (found) {
 		sent = keyboard_send_key(server, code, shift);
 		if (sent)
@@ -2434,7 +2434,7 @@ keyboard_send(
  */
 static int
 keyboard_send_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned code,
 	int shift)
 {
@@ -2458,18 +2458,18 @@ keyboard_send_key(
 	keyboard.held = 0;
 	if (wanted != modifiers) {
 		server->modifiers = wanted;
-		zwl_seat_modifiers(server);
+		kwl_seat_modifiers(server);
 	}
 
 	/* The press and the release, at the compositor's time. */
-	time = (uint32_t)zwl_milliseconds();
+	time = (uint32_t)kwl_milliseconds();
 	keyboard_key_event(server, time, code, 1U);
 	keyboard_key_event(server, time, code, 0U);
 
 	/* The modifiers as they were. */
 	if (server->modifiers != modifiers) {
 		server->modifiers = modifiers;
-		zwl_seat_modifiers(server);
+		kwl_seat_modifiers(server);
 	}
 
 	/* Succeeded: the key was sent. */
@@ -2487,7 +2487,7 @@ keyboard_send_key(
  */
 static void
 keyboard_key_event(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time,
 	unsigned code,
 	uint32_t state)
@@ -2496,10 +2496,10 @@ keyboard_key_event(
 
 	/* The QWERTY panel's key: the input method's first (a release goes where its press went). */
 	if (keyboard.open == PANEL_QWERTY) {
-		taken = zwl_ime_key_early(server, time, code, state);
+		taken = kwl_ime_key_early(server, time, code, state);
 		if (taken)
 			return;
-		taken = zwl_ime_key_grab(server, time, code, state, 0);
+		taken = kwl_ime_key_grab(server, time, code, state, 0);
 		if (taken) {
 			printf("ZWL OSK send via=ime code=%u\n", code);
 			return;
@@ -2507,7 +2507,7 @@ keyboard_key_event(
 	}
 
 	/* The focused application hears it. */
-	zwl_seat_key_deliver(server, time, code, state);
+	kwl_seat_key_deliver(server, time, code, state);
 }
 
 /*
@@ -2518,14 +2518,14 @@ keyboard_key_event(
  */
 static int
 keyboard_send_commit(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *text,
 	uint32_t before)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 
 	/* The focused field's text input. */
-	input = zwl_text_input_current(server);
+	input = kwl_text_input_current(server);
 	if (input == NULL) {
 		printf("ZWL OSK refused reason=no-text-input text=%s\n", text);
 		return 0;
@@ -2538,7 +2538,7 @@ keyboard_send_commit(
 	}
 
 	/* The deletion and the commit, applied together. */
-	zwl_text_input_deliver(input, NULL, 0, 0, text, before, 0U);
+	kwl_text_input_deliver(input, NULL, 0, 0, text, before, 0U);
 
 	/* Succeeded: the field has the text. */
 	printf("ZWL OSK send via=commit text=%s before=%u\n", text, before);
@@ -2548,7 +2548,7 @@ keyboard_send_commit(
 /* Replaces the last kana sent (committed) by its next voiced, half-voiced or small form. */
 static void
 keyboard_voice(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	char next[KEYBOARD_LAST];
 	int found;
@@ -2561,7 +2561,7 @@ keyboard_voice(
 	}
 
 	/* Its next form, if it has one. */
-	found = zwl_flick_voice(keyboard.last, next, sizeof(next));
+	found = kwl_flick_voice(keyboard.last, next, sizeof(next));
 	if (!found) {
 		printf("ZWL OSK voice none\n");
 		return;
@@ -2578,7 +2578,7 @@ keyboard_voice(
 /* Replaces the last letter sent (as a key) by its other case: the delete key, then the letter's key. */
 static void
 keyboard_case(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	char next[KEYBOARD_LAST];
 	unsigned code;
@@ -2593,17 +2593,17 @@ keyboard_case(
 	}
 
 	/* Its other case, if it is a letter. */
-	found = zwl_flick_case(keyboard.last, next, sizeof(next));
+	found = kwl_flick_case(keyboard.last, next, sizeof(next));
 	if (!found) {
 		printf("ZWL OSK case none\n");
 		return;
 	}
 
 	/* The letter before the cursor deleted, and the other one typed. */
-	sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+	sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
 	if (!sent)
 		return;
-	found = zwl_flick_us_key(next, &code, &shift);
+	found = kwl_flick_us_key(next, &code, &shift);
 	if (!found)
 		return;
 	sent = keyboard_send_key(server, code, shift);
@@ -2645,18 +2645,18 @@ keyboard_band_swiped(
 
 /*
  * Works out a QWERTY key's rectangle: the panel's width is
- * ZWL_QWERTY_ROW_UNITS quarter keys, a narrower row is centred, the rows
+ * KWL_QWERTY_ROW_UNITS quarter keys, a narrower row is centred, the rows
  * share the height under the title band (with room for the extra keys'
  * row above them).
  */
 static void
 keyboard_qwerty_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned row,
 	unsigned index,
 	int32_t *rect)
 {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	unsigned count;
 	unsigned units;
 	unsigned before;
@@ -2669,7 +2669,7 @@ keyboard_qwerty_rect(
 
 	/* The row's keys: the whole row's width in quarters, and the quarters before the key. */
 	(void)server;
-	keys = zwl_qwerty_row(keyboard.qface, row, &count);
+	keys = kwl_qwerty_row(keyboard.qface, row, &count);
 	units = 0;
 	before = 0;
 	for (key = 0; key < count; key++) {
@@ -2680,11 +2680,11 @@ keyboard_qwerty_rect(
 	}
 
 	/* A quarter's width across the panel, and the row's left end (a narrower row centred). */
-	unit = (float)(keyboard.panel[2] - KEYBOARD_KEY_GAP) / (float)ZWL_QWERTY_ROW_UNITS;
-	left = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)((float)(ZWL_QWERTY_ROW_UNITS - units) * unit / 2.0f);
+	unit = (float)(keyboard.panel[2] - KEYBOARD_KEY_GAP) / (float)KWL_QWERTY_ROW_UNITS;
+	left = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)((float)(KWL_QWERTY_ROW_UNITS - units) * unit / 2.0f);
 
 	/* The rows' height under the band: the extra keys' row a share of the others'. */
-	rows = ZWL_QWERTY_ROWS;
+	rows = KWL_QWERTY_ROWS;
 	height = (int32_t)((float)(keyboard.panel[3] - KEYBOARD_BAND - (int32_t)(rows + 1U) * KEYBOARD_KEY_GAP) / ((float)(rows - 1U) + KEYBOARD_EXTRA_SHARE));
 	extra = (int32_t)((float)height * KEYBOARD_EXTRA_SHARE);
 
@@ -2693,7 +2693,7 @@ keyboard_qwerty_rect(
 	rect[1] = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP;
 	rect[2] = (int32_t)((float)keys[index].width * unit) - KEYBOARD_KEY_GAP;
 	rect[3] = extra;
-	if (row != ZWL_QWERTY_EXTRA_ROW) {
+	if (row != KWL_QWERTY_EXTRA_ROW) {
 		rect[1] += extra + KEYBOARD_KEY_GAP + (int32_t)(row - 1U) * (height + KEYBOARD_KEY_GAP);
 		rect[3] = height;
 	}
@@ -2702,7 +2702,7 @@ keyboard_qwerty_rect(
 /* Finds the QWERTY key at a point.  Returns 1 with its row and its place in the row, or 0. */
 static int
 keyboard_qwerty_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	unsigned *row,
@@ -2715,8 +2715,8 @@ keyboard_qwerty_at(
 	int inside;
 
 	/* Each key of each row. */
-	for (r = 0; r < ZWL_QWERTY_ROWS; r++) {
-		(void)zwl_qwerty_row(keyboard.qface, r, &count);
+	for (r = 0; r < KWL_QWERTY_ROWS; r++) {
+		(void)kwl_qwerty_row(keyboard.qface, r, &count);
 		for (i = 0; i < count; i++) {
 			/* The point on this key. */
 			keyboard_qwerty_rect(server, r, i, rect);
@@ -2736,16 +2736,16 @@ keyboard_qwerty_at(
 }
 
 /* Returns a key of the QWERTY panel's face; NULL outside its row. */
-static const struct zwl_qwerty_key *
+static const struct kwl_qwerty_key *
 keyboard_qwerty_key(
 	unsigned row,
 	unsigned index)
 {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	unsigned count;
 
 	/* The row, and the key in it. */
-	keys = zwl_qwerty_row(keyboard.qface, row, &count);
+	keys = kwl_qwerty_row(keyboard.qface, row, &count);
 	if (keys == NULL || index >= count)
 		return NULL;
 
@@ -2760,9 +2760,9 @@ keyboard_qwerty_key(
  */
 static void
 keyboard_qwerty_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	const struct zwl_qwerty_key *key;
+	const struct kwl_qwerty_key *key;
 	const char *text;
 	int sent;
 
@@ -2774,35 +2774,35 @@ keyboard_qwerty_release(
 		return;
 
 	/* The log line the tests read, with the time (the rate of typing). */
-	printf("ZWL OSK qkey face=%s row=%u index=%u label=%s shift=%u ms=%llu\n", zwl_qwerty_face_name(keyboard.qface), keyboard.key_row, keyboard.key_column, key->label, keyboard.shift, (unsigned long long)zwl_milliseconds());
+	printf("ZWL OSK qkey face=%s row=%u index=%u label=%s shift=%u ms=%llu\n", kwl_qwerty_face_name(keyboard.qface), keyboard.key_row, keyboard.key_column, key->label, keyboard.shift, (unsigned long long)kwl_milliseconds());
 
 	/* What the key does. */
 	switch (key->action) {
-	case ZWL_FLICK_SHIFT:
+	case KWL_FLICK_SHIFT:
 		keyboard_qwerty_shift();
 		break;
-	case ZWL_FLICK_FACE:
+	case KWL_FLICK_FACE:
 		/* The other face; Shift goes. */
-		keyboard.qface = (keyboard.qface + 1U) % ZWL_QWERTY_FACES;
+		keyboard.qface = (keyboard.qface + 1U) % KWL_QWERTY_FACES;
 		keyboard.shift = KEYBOARD_SHIFT_OFF;
-		printf("ZWL OSK qface name=%s\n", zwl_qwerty_face_name(keyboard.qface));
+		printf("ZWL OSK qface name=%s\n", kwl_qwerty_face_name(keyboard.qface));
 		keyboard_qwerty_log(server);
 		break;
-	case ZWL_FLICK_BACKSPACE:
+	case KWL_FLICK_BACKSPACE:
 		/* The delete key; the last character is gone. */
-		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
 		if (sent)
 			keyboard_remember("", KEYBOARD_SENT_NONE);
 		break;
-	case ZWL_FLICK_ARROW:
+	case KWL_FLICK_ARROW:
 		(void)keyboard_send_key(server, key->code, 0);
 		break;
-	case ZWL_FLICK_CTRL:
+	case KWL_FLICK_CTRL:
 		/* Ctrl for the next key, or no more. */
 		keyboard.held ^= KEYBOARD_CTRL;
 		printf("ZWL OSK held=%u\n", keyboard.held);
 		break;
-	case ZWL_FLICK_ALT:
+	case KWL_FLICK_ALT:
 		/* Alt for the next key, or no more. */
 		keyboard.held ^= KEYBOARD_ALT;
 		printf("ZWL OSK held=%u\n", keyboard.held);
@@ -2828,7 +2828,7 @@ keyboard_qwerty_shift(
 	uint64_t now;
 
 	/* The time of this press. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 
 	/* The next state. */
 	if (keyboard.shift == KEYBOARD_SHIFT_OFF) {
@@ -2847,20 +2847,20 @@ keyboard_qwerty_shift(
 /* Logs the QWERTY panel's keys' places for its face (the tests find the keys by them). */
 static void
 keyboard_qwerty_log(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	int32_t rect[4];
 	unsigned count;
 	unsigned row;
 	unsigned index;
 
 	/* Each key of each row. */
-	for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
-		keys = zwl_qwerty_row(keyboard.qface, row, &count);
+	for (row = 0; row < KWL_QWERTY_ROWS; row++) {
+		keys = kwl_qwerty_row(keyboard.qface, row, &count);
 		for (index = 0; index < count; index++) {
 			keyboard_qwerty_rect(server, row, index, rect);
-			printf("ZWL OSK qrect face=%s row=%u index=%u x=%d y=%d width=%d height=%d label=%s\n", zwl_qwerty_face_name(keyboard.qface), row, index, rect[0], rect[1], rect[2], rect[3], keys[index].label);
+			printf("ZWL OSK qrect face=%s row=%u index=%u x=%d y=%d width=%d height=%d label=%s\n", kwl_qwerty_face_name(keyboard.qface), row, index, rect[0], rect[1], rect[2], rect[3], keys[index].label);
 		}
 	}
 }
@@ -2868,7 +2868,7 @@ keyboard_qwerty_log(
 /* Draws the QWERTY panel's keys: typing keys white, acting keys grey, Shift blue while on, the held key blue. */
 static void
 keyboard_draw_qwerty(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
@@ -2877,7 +2877,7 @@ keyboard_draw_qwerty(
 	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	const float *ground;
 	const float *ink;
 	const char *label;
@@ -2889,8 +2889,8 @@ keyboard_draw_qwerty(
 	unsigned index;
 
 	/* Each key of each row. */
-	for (row = 0; row < ZWL_QWERTY_ROWS; row++) {
-		keys = zwl_qwerty_row(keyboard.qface, row, &count);
+	for (row = 0; row < KWL_QWERTY_ROWS; row++) {
+		keys = kwl_qwerty_row(keyboard.qface, row, &count);
 		for (index = 0; index < count; index++) {
 			/* The key's place, colours and label (the Shift form while Shift is on). */
 			keyboard_qwerty_rect(server, row, index, rect);
@@ -2899,15 +2899,15 @@ keyboard_draw_qwerty(
 			label = keys[index].label;
 			if (keyboard.shift != KEYBOARD_SHIFT_OFF)
 				label = keys[index].shifted_label;
-			if (keys[index].action != ZWL_FLICK_TYPE)
+			if (keys[index].action != KWL_FLICK_TYPE)
 				ground = grey;
-			if (keys[index].action == ZWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_ONCE)
+			if (keys[index].action == KWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_ONCE)
 				ground = pale;
-			if (keys[index].action == ZWL_FLICK_CTRL && (keyboard.held & KEYBOARD_CTRL) != 0U)
+			if (keys[index].action == KWL_FLICK_CTRL && (keyboard.held & KEYBOARD_CTRL) != 0U)
 				ground = pale;
-			if (keys[index].action == ZWL_FLICK_ALT && (keyboard.held & KEYBOARD_ALT) != 0U)
+			if (keys[index].action == KWL_FLICK_ALT && (keyboard.held & KEYBOARD_ALT) != 0U)
 				ground = pale;
-			if (keys[index].action == ZWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_LOCKED) {
+			if (keys[index].action == KWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_LOCKED) {
 				ground = blue;
 				ink = light;
 			}
@@ -2931,12 +2931,12 @@ keyboard_draw_qwerty(
 /* Draws the bubble over the held QWERTY key that types: its character, larger, above it. */
 static void
 keyboard_draw_bubble(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	const struct zwl_qwerty_key *key;
+	const struct kwl_qwerty_key *key;
 	struct glass_shape shape;
 	const char *label;
 	int32_t rect[4];
@@ -2946,7 +2946,7 @@ keyboard_draw_bubble(
 	if (!keyboard.key_active)
 		return;
 	key = keyboard_qwerty_key(keyboard.key_row, keyboard.key_column);
-	if (key == NULL || key->action != ZWL_FLICK_TYPE)
+	if (key == NULL || key->action != KWL_FLICK_TYPE)
 		return;
 
 	/* Above the key, a little wider, as high as it. */
@@ -3074,7 +3074,7 @@ keyboard_hand_key_at(
 /* Changes the QWERTY panel to the handwriting face or back; the ink and its answer go. */
 static void
 keyboard_hand_toggle(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int32_t area[4];
 
@@ -3082,7 +3082,7 @@ keyboard_hand_toggle(
 	keyboard.hand = !keyboard.hand;
 	keyboard.writing = 0;
 	keyboard.recognized = 0;
-	zwl_hand_clear(&keyboard_ink);
+	kwl_hand_clear(&keyboard_ink);
 	memset(&keyboard.result, 0, sizeof(keyboard.result));
 	server->dirty = 1;
 
@@ -3104,7 +3104,7 @@ keyboard_hand_toggle(
  */
 static void
 keyboard_hand_point(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	int begin)
@@ -3125,11 +3125,11 @@ keyboard_hand_point(
 
 	/* The first point of a stroke, or the next one. */
 	if (begin) {
-		kept = zwl_hand_begin(&keyboard_ink, x, y);
+		kept = kwl_hand_begin(&keyboard_ink, x, y);
 		keyboard.writing = 1;
 		keyboard.recognized = 0;
 	} else {
-		kept = zwl_hand_add(&keyboard_ink, x, y);
+		kept = kwl_hand_add(&keyboard_ink, x, y);
 	}
 
 	/* A point not kept (no move, no room) draws nothing new. */
@@ -3139,7 +3139,7 @@ keyboard_hand_point(
 	/* A kept point is drawn in the next frame; its input time is kept for the lag (the oldest waiting). */
 	if (!keyboard.lag_pending) {
 		keyboard.lag_pending = 1;
-		keyboard.lag_input_ms = zwl_milliseconds();
+		keyboard.lag_input_ms = kwl_milliseconds();
 	}
 
 	/* The frame. */
@@ -3149,13 +3149,13 @@ keyboard_hand_point(
 /* Ends the stroke being written; the ink is recognized after a wait. */
 static void
 keyboard_hand_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The stroke is over, and when. */
 	keyboard.writing = 0;
-	keyboard.stroke_end_ms = zwl_milliseconds();
+	keyboard.stroke_end_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL OSK hand stroke-end strokes=%u points=%u\n", keyboard_ink.count, zwl_hand_points(&keyboard_ink));
+	printf("ZWL OSK hand stroke-end strokes=%u points=%u\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink));
 }
 
 /*
@@ -3165,7 +3165,7 @@ keyboard_hand_release(
  */
 static void
 keyboard_hand_key_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned key;
 	int sent;
@@ -3181,7 +3181,7 @@ keyboard_hand_key_release(
 		if (key >= keyboard.result.count)
 			return;
 		keyboard_send(server, keyboard.result.candidates[key]);
-		zwl_hand_clear(&keyboard_ink);
+		kwl_hand_clear(&keyboard_ink);
 		keyboard.recognized = 0;
 		memset(&keyboard.result, 0, sizeof(keyboard.result));
 		return;
@@ -3191,13 +3191,13 @@ keyboard_hand_key_release(
 	switch (key) {
 	case KEYBOARD_HAND_CLEAR:
 		/* The ink and the answer go. */
-		zwl_hand_clear(&keyboard_ink);
+		kwl_hand_clear(&keyboard_ink);
 		keyboard.recognized = 0;
 		memset(&keyboard.result, 0, sizeof(keyboard.result));
 		printf("ZWL OSK hand clear\n");
 		break;
 	case KEYBOARD_HAND_DELETE:
-		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
 		if (sent)
 			keyboard_remember("", KEYBOARD_SENT_NONE);
 		break;
@@ -3213,22 +3213,22 @@ keyboard_hand_key_release(
 /* Recognizes the ink (keyboard-hand.c) and shows the candidates. */
 static void
 keyboard_hand_recognize(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const char *first;
 	int32_t bounds[4];
 
 	/* The answer, once for this ink. */
-	zwl_hand_recognize(&keyboard_ink, &keyboard.result);
+	kwl_hand_recognize(&keyboard_ink, &keyboard.result);
 	keyboard.recognized = 1;
 	server->dirty = 1;
 
 	/* The log line the tests read: the ink measured, and the answer (its first candidate). */
-	zwl_hand_bounds(&keyboard_ink, bounds);
+	kwl_hand_bounds(&keyboard_ink, bounds);
 	first = "";
 	if (keyboard.result.count > 0U)
 		first = keyboard.result.candidates[0];
-	printf("ZWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", keyboard_ink.count, zwl_hand_points(&keyboard_ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
+	printf("ZWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
 }
 
 /*
@@ -3239,7 +3239,7 @@ keyboard_hand_recognize(
  */
 static void
 keyboard_draw_hand(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float paper[4] = { 1.0f, 1.0f, 1.0f, 0.80f };
@@ -3252,7 +3252,7 @@ keyboard_draw_hand(
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
 	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const char *const labels[KEYBOARD_HAND_KEYS] = { "", "", "", "消す", "Del", "space", "Enter" };
-	const struct zwl_hand_stroke *stroke;
+	const struct kwl_hand_stroke *stroke;
 	const float *ground;
 	const float *text_ink;
 	const char *label;
@@ -3328,8 +3328,8 @@ keyboard_draw_hand(
 	/* A frame that draws a waiting point: its lag behind the input, and the time since the last such frame. */
 	if (!keyboard.lag_pending)
 		return;
-	now = zwl_milliseconds();
-	printf("ZWL OSK hand frame lag_ms=%llu gap_ms=%llu points=%u\n", (unsigned long long)(now - keyboard.lag_input_ms), (unsigned long long)(now - keyboard.lag_frame_ms), zwl_hand_points(&keyboard_ink));
+	now = kwl_milliseconds();
+	printf("ZWL OSK hand frame lag_ms=%llu gap_ms=%llu points=%u\n", (unsigned long long)(now - keyboard.lag_input_ms), (unsigned long long)(now - keyboard.lag_frame_ms), kwl_hand_points(&keyboard_ink));
 	keyboard.lag_pending = 0;
 	keyboard.lag_frame_ms = now;
 }
@@ -3342,7 +3342,7 @@ keyboard_slide(void)
 	float t;
 
 	/* The time since the slide began, a share of its length. */
-	elapsed = zwl_milliseconds() - keyboard.slide_ms;
+	elapsed = kwl_milliseconds() - keyboard.slide_ms;
 	if (elapsed >= KEYBOARD_SLIDE_MS)
 		return 1.0f;
 	t = (float)elapsed / (float)KEYBOARD_SLIDE_MS;
@@ -3359,10 +3359,10 @@ keyboard_slide(void)
  */
 static void
 keyboard_work_area(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 	int32_t right;
 	int32_t bottom;
 	int window;
@@ -3395,10 +3395,10 @@ keyboard_work_area(
 			if (!window || surface->fullscreen)
 				continue;
 
-			/* A docked window: the docked size less the panel (or whole again). */
+			/* A docked window: the docked size (KWL_GLASS_DOCK_PAD in from every side) less the panel (or whole again). */
 			if (surface->maximized) {
-				surface->window_width = server->width - (uint32_t)right;
-				surface->window_height = server->height - ZWL_GLASS_DOCK_TOP - (uint32_t)bottom;
+				surface->window_width = server->width - (uint32_t)right - 2U * KWL_GLASS_DOCK_PAD;
+				surface->window_height = server->height - KWL_GLASS_DOCK_TOP - (uint32_t)bottom - KWL_GLASS_DOCK_PAD;
 				continue;
 			}
 
@@ -3415,9 +3415,9 @@ keyboard_work_area(
 	 */
 	keyboard_moves_at_end(server, 1);
 	if (right != 0 || bottom != 0) {
-		zwl_keyboard_inset_notify(server, keyboard.panel);
+		kwl_keyboard_inset_notify(server, keyboard.panel);
 	} else {
-		zwl_keyboard_inset_notify(server, NULL);
+		kwl_keyboard_inset_notify(server, NULL);
 	}
 
 	/* The moved windows back where their moves start. */
@@ -3432,7 +3432,7 @@ keyboard_work_area(
 				continue;
 
 			/* The configure, and the log line the tests read. */
-			(void)zwl_window_send_configure(surface);
+			(void)kwl_window_send_configure(surface);
 			printf("ZWL OSK work docked surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
 		}
 	}
@@ -3445,7 +3445,7 @@ keyboard_work_area(
  */
 static void
 keyboard_moves_at_end(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int end)
 {
 	struct keyboard_move *move;
@@ -3475,11 +3475,11 @@ keyboard_moves_at_end(
  */
 static int
 keyboard_window_live(
-	struct zwl_server *server,
-	const struct zwl_object *window)
+	struct kwl_server *server,
+	const struct kwl_object *window)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 	int alive;
 
 	/* Each client's objects. */
@@ -3502,18 +3502,18 @@ keyboard_window_live(
 /* Tells whether an object is a window (a mapped toplevel's surface, not the desktop's). */
 static int
 keyboard_is_window(
-	const struct zwl_object *surface)
+	const struct kwl_object *surface)
 {
 	int desktop;
 
 	/* Only a live, mapped surface with a toplevel. */
-	if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
+	if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
 		return 0;
 	if (surface->role == NULL || surface->role->top == NULL)
 		return 0;
 
 	/* The desktop's icons are not a window. */
-	desktop = zwl_desktop_is(surface);
+	desktop = kwl_desktop_is(surface);
 	if (desktop)
 		return 0;
 
@@ -3529,8 +3529,8 @@ keyboard_is_window(
  */
 static void
 keyboard_fit_floating(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	struct keyboard_move *move;
 	uint32_t image_width;
@@ -3546,13 +3546,13 @@ keyboard_fit_floating(
 	/* The window's size (its image's), and the area's right and bottom edges for a body. */
 	if (surface->current == NULL)
 		return;
-	zwl_surface_size(surface, &image_width, &image_height);
+	kwl_surface_size(surface, &image_width, &image_height);
 	width = (int32_t)image_width;
 	height = (int32_t)image_height;
 	if (width <= 0 || height <= 0)
 		return;
-	right_edge = (int32_t)server->width - ZWL_GLASS_MARGIN - keyboard.reserved_right;
-	bottom_edge = (int32_t)server->height - ZWL_GLASS_MARGIN - keyboard.reserved_bottom;
+	right_edge = (int32_t)server->width - KWL_GLASS_MARGIN - keyboard.reserved_right;
+	bottom_edge = (int32_t)server->height - KWL_GLASS_MARGIN - keyboard.reserved_bottom;
 
 	/*
 	 * A window the work area moved before (another panel was out), and
@@ -3584,10 +3584,10 @@ keyboard_fit_floating(
 		x = right_edge - width;
 	if (y + height > bottom_edge)
 		y = bottom_edge - height;
-	if (x < ZWL_GLASS_MARGIN)
-		x = ZWL_GLASS_MARGIN;
-	if (y < ZWL_GLASS_TOP)
-		y = ZWL_GLASS_TOP;
+	if (x < KWL_GLASS_MARGIN)
+		x = KWL_GLASS_MARGIN;
+	if (y < KWL_GLASS_TOP)
+		y = KWL_GLASS_TOP;
 
 	/* A window moved before goes on from where it is to the new place (back to its first one if that fits now). */
 	if (move != NULL) {
@@ -3631,7 +3631,7 @@ keyboard_fit_floating(
  */
 static void
 keyboard_move_back(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct keyboard_move *move;
 	unsigned index;
@@ -3675,7 +3675,7 @@ keyboard_move_back(
  */
 static void
 keyboard_move_step(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float t)
 {
 	struct keyboard_move *move;
@@ -3718,7 +3718,7 @@ keyboard_move_step(
  */
 static void
 keyboard_tool_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned index,
 	int32_t *rect)
 {
@@ -3752,7 +3752,7 @@ keyboard_tool_rect(
 /* Finds the flick panel's tool at a point.  Returns 1 with its index, or 0. */
 static int
 keyboard_tool_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	unsigned *index)
@@ -3785,12 +3785,12 @@ keyboard_tool_at(
 /*
  * Tells whether a tool can do something now: a tab always; an edit
  * operation only when the focused window can do it
- * (enabled, the bits zwl_edit_state gave; state is its answer, -1 without
+ * (enabled, the bits kwl_edit_state gave; state is its answer, -1 without
  * a focused window).
  */
 static int
 keyboard_tool_enabled(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned index,
 	uint32_t enabled,
 	int state)
@@ -3805,22 +3805,22 @@ keyboard_tool_enabled(
 	case TOOL_TAB_EMOJI:
 		return 1;
 	case TOOL_UNDO:
-		action = ZWL_EDIT_UNDO;
+		action = KWL_EDIT_UNDO;
 		break;
 	case TOOL_REDO:
-		action = ZWL_EDIT_REDO;
+		action = KWL_EDIT_REDO;
 		break;
 	case TOOL_COPY:
-		action = ZWL_EDIT_COPY;
+		action = KWL_EDIT_COPY;
 		break;
 	case TOOL_CUT:
-		action = ZWL_EDIT_CUT;
+		action = KWL_EDIT_CUT;
 		break;
 	case TOOL_PASTE:
-		action = ZWL_EDIT_PASTE;
+		action = KWL_EDIT_PASTE;
 		break;
 	case TOOL_SELECT_ALL:
-		action = ZWL_EDIT_SELECT_ALL;
+		action = KWL_EDIT_SELECT_ALL;
 		break;
 	default:
 		return 1;
@@ -3844,7 +3844,7 @@ keyboard_tool_enabled(
  */
 static void
 keyboard_tool_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const struct keyboard_tool *tool;
 	int error;
@@ -3863,37 +3863,37 @@ keyboard_tool_release(
 	/* What it does. */
 	switch (tool->kind) {
 	case TOOL_PREVIOUS:
-		error = zwl_focus_previous(server);
+		error = kwl_focus_previous(server);
 		printf("ZWL OSK tool previous error=%d\n", error);
 		break;
 	case TOOL_DELETE:
-		sent = keyboard_send_key(server, ZWL_FLICK_KEY_BACKSPACE, 0);
+		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
 		if (sent)
 			keyboard_reading_back(server);
 		break;
 	case TOOL_LEFT:
-		keyboard_tool_move(server, ZWL_KEY_LEFT);
+		keyboard_tool_move(server, KWL_KEY_LEFT);
 		break;
 	case TOOL_UP:
-		keyboard_tool_move(server, ZWL_KEY_UP);
+		keyboard_tool_move(server, KWL_KEY_UP);
 		break;
 	case TOOL_DOWN:
-		keyboard_tool_move(server, ZWL_KEY_DOWN);
+		keyboard_tool_move(server, KWL_KEY_DOWN);
 		break;
 	case TOOL_RIGHT:
-		keyboard_tool_move(server, ZWL_KEY_RIGHT);
+		keyboard_tool_move(server, KWL_KEY_RIGHT);
 		break;
 	case TOOL_LINE_START:
-		keyboard_tool_move(server, ZWL_KEY_HOME);
+		keyboard_tool_move(server, KWL_KEY_HOME);
 		break;
 	case TOOL_LINE_END:
-		keyboard_tool_move(server, ZWL_KEY_END);
+		keyboard_tool_move(server, KWL_KEY_END);
 		break;
 	case TOOL_PAGE_UP:
-		keyboard_tool_move(server, ZWL_KEY_PAGE_UP);
+		keyboard_tool_move(server, KWL_KEY_PAGE_UP);
 		break;
 	case TOOL_PAGE_DOWN:
-		keyboard_tool_move(server, ZWL_KEY_PAGE_DOWN);
+		keyboard_tool_move(server, KWL_KEY_PAGE_DOWN);
 		break;
 	case TOOL_SELECT:
 		/* Selecting on or off: the movements go with Shift while it is on. */
@@ -3901,24 +3901,24 @@ keyboard_tool_release(
 		printf("ZWL OSK tool selecting=%u\n", keyboard.selecting);
 		break;
 	case TOOL_SELECT_ALL:
-		keyboard_tool_edit(server, ZWL_EDIT_SELECT_ALL);
+		keyboard_tool_edit(server, KWL_EDIT_SELECT_ALL);
 		break;
 	case TOOL_UNDO:
-		keyboard_tool_edit(server, ZWL_EDIT_UNDO);
+		keyboard_tool_edit(server, KWL_EDIT_UNDO);
 		break;
 	case TOOL_REDO:
-		keyboard_tool_edit(server, ZWL_EDIT_REDO);
+		keyboard_tool_edit(server, KWL_EDIT_REDO);
 		break;
 	case TOOL_COPY:
 		keyboard.selecting = 0;
-		keyboard_tool_edit(server, ZWL_EDIT_COPY);
+		keyboard_tool_edit(server, KWL_EDIT_COPY);
 		break;
 	case TOOL_CUT:
 		keyboard.selecting = 0;
-		keyboard_tool_edit(server, ZWL_EDIT_CUT);
+		keyboard_tool_edit(server, KWL_EDIT_CUT);
 		break;
 	case TOOL_PASTE:
-		keyboard_tool_edit(server, ZWL_EDIT_PASTE);
+		keyboard_tool_edit(server, KWL_EDIT_PASTE);
 		break;
 	case TOOL_TAB_EDIT:
 		keyboard.tools_face = KEYBOARD_FACE_EDIT;
@@ -3926,7 +3926,7 @@ keyboard_tool_release(
 		break;
 	case TOOL_TAB_HISTORY:
 		keyboard.tools_face = KEYBOARD_FACE_HISTORY;
-		printf("ZWL OSK tool face=history items=%u\n", zwl_clipboard_history_count(server));
+		printf("ZWL OSK tool face=history items=%u\n", kwl_clipboard_history_count(server));
 		break;
 	case TOOL_TAB_EMOJI:
 		/* The emoji face, at the category shown last; the log gives the tests its places. */
@@ -3947,7 +3947,7 @@ keyboard_tool_release(
 /* Sends a movement's key to the focused window, with Shift while selecting (the selection grows). */
 static void
 keyboard_tool_move(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned code)
 {
 	int shift;
@@ -3964,13 +3964,13 @@ keyboard_tool_move(
 /* Sends an edit operation to the focused window (edit.c: its own operation, or its key). */
 static void
 keyboard_tool_edit(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned action)
 {
 	int error;
 
 	/* The operation, and the log line the tests read. */
-	error = zwl_edit_action(server, action);
+	error = kwl_edit_action(server, action);
 	printf("ZWL OSK tool edit action=%u error=%d\n", action, error);
 }
 
@@ -3981,7 +3981,7 @@ keyboard_tool_edit(
  */
 static void
 keyboard_draw_tools(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
@@ -4002,7 +4002,7 @@ keyboard_draw_tools(
 
 	/* What the focused window can do now. */
 	enabled = 0;
-	state = zwl_edit_state(server, &enabled);
+	state = kwl_edit_state(server, &enabled);
 
 	/* Each tool. */
 	for (index = 0; index < sizeof(keyboard_tools) / sizeof(keyboard_tools[0]); index++) {
@@ -4046,7 +4046,7 @@ keyboard_draw_tools(
  */
 static void
 keyboard_history_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned row,
 	int32_t *rect)
 {
@@ -4058,7 +4058,7 @@ keyboard_history_rect(
 	/* From under the tabs to over the keys. */
 	key = keyboard_key_size(server);
 	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
-	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)ZWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
 	height = (bottom - top - (int32_t)(KEYBOARD_HISTORY_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_HISTORY_ROWS;
 
 	/* The row. */
@@ -4071,7 +4071,7 @@ keyboard_history_rect(
 /* Finds the history's row at a point (only rows with an item).  Returns 1 with the row, or 0. */
 static int
 keyboard_history_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	unsigned *row)
@@ -4082,7 +4082,7 @@ keyboard_history_at(
 	int inside;
 
 	/* Each row with an item. */
-	count = zwl_clipboard_history_count(server);
+	count = kwl_clipboard_history_count(server);
 	for (index = 0; index < count && index < KEYBOARD_HISTORY_ROWS; index++) {
 		/* The point on this row. */
 		keyboard_history_rect(server, index, rect);
@@ -4102,7 +4102,7 @@ keyboard_history_at(
 /* Pastes the held row's item into the focused window (clipboard.c). */
 static void
 keyboard_history_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int error;
 
@@ -4110,7 +4110,7 @@ keyboard_history_release(
 	keyboard.history_active = 0;
 	server->dirty = 1;
 	keyboard_reading_end(server, "paste");
-	error = zwl_clipboard_history_paste(server, keyboard.history_row);
+	error = kwl_clipboard_history_paste(server, keyboard.history_row);
 	printf("ZWL OSK history paste index=%u error=%d\n", keyboard.history_row, error);
 }
 
@@ -4122,7 +4122,7 @@ keyboard_history_release(
  */
 static void
 keyboard_draw_history(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
@@ -4141,7 +4141,7 @@ keyboard_draw_history(
 	unsigned index;
 
 	/* An empty history: a note in the first row's place. */
-	count = zwl_clipboard_history_count(server);
+	count = kwl_clipboard_history_count(server);
 	if (count == 0U) {
 		keyboard_history_rect(server, 0U, rect);
 		glass_draw_text(server, command, SIZE_BAR, rect[0] + 8, rect[1] + rect[3] / 2 + 5, "履歴はまだありません", rect[2] - 16, soft);
@@ -4151,7 +4151,7 @@ keyboard_draw_history(
 	/* Each item, the newest first. */
 	for (index = 0; index < count && index < KEYBOARD_HISTORY_ROWS; index++) {
 		/* The item's text, on one line (cut to the room of the copy). */
-		text = zwl_clipboard_history_get(server, index, &length);
+		text = kwl_clipboard_history_get(server, index, &length);
 		if (text == NULL)
 			continue;
 		if (length > KEYBOARD_HISTORY_TEXT)
@@ -4181,12 +4181,12 @@ keyboard_draw_history(
 /*
  * Works out a place of the emoji face, which shares the flick panel's
  * column between the tabs and the keys with the history: the category
- * tabs on a row at the top (slots 0 to ZWL_EMOJI_CATEGORIES - 1), the
+ * tabs on a row at the top (slots 0 to KWL_EMOJI_CATEGORIES - 1), the
  * emoji's grid under them (the following slots, row by row).
  */
 static void
 keyboard_emoji_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned slot,
 	int32_t *rect)
 {
@@ -4203,12 +4203,12 @@ keyboard_emoji_rect(
 	/* From under the tools' tabs to over the keys, as the history's rows. */
 	key = keyboard_key_size(server);
 	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
-	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)ZWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
 	width = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
 
 	/* A category's tab: an equal share of the top row. */
-	if (slot < ZWL_EMOJI_CATEGORIES) {
-		tab_width = (width - (int32_t)(ZWL_EMOJI_CATEGORIES - 1U) * KEYBOARD_KEY_GAP) / (int32_t)ZWL_EMOJI_CATEGORIES;
+	if (slot < KWL_EMOJI_CATEGORIES) {
+		tab_width = (width - (int32_t)(KWL_EMOJI_CATEGORIES - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KWL_EMOJI_CATEGORIES;
 		rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)slot * (tab_width + KEYBOARD_KEY_GAP);
 		rect[1] = top;
 		rect[2] = tab_width;
@@ -4217,7 +4217,7 @@ keyboard_emoji_rect(
 	}
 
 	/* An emoji's cell: its column and row in the grid under the tabs. */
-	cell = slot - ZWL_EMOJI_CATEGORIES;
+	cell = slot - KWL_EMOJI_CATEGORIES;
 	grid_top = top + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
 	cell_width = (width - (int32_t)(KEYBOARD_EMOJI_COLUMNS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_EMOJI_COLUMNS;
 	cell_height = (bottom - grid_top - (int32_t)(KEYBOARD_EMOJI_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_EMOJI_ROWS;
@@ -4230,7 +4230,7 @@ keyboard_emoji_rect(
 /* Finds the emoji face's tab or emoji at a point (only cells with an emoji).  Returns 1 with its slot, or 0. */
 static int
 keyboard_emoji_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	unsigned *slot)
@@ -4241,7 +4241,7 @@ keyboard_emoji_at(
 	int inside;
 
 	/* The tabs, then the cells of the category shown. */
-	count = ZWL_EMOJI_CATEGORIES + zwl_emoji_count(keyboard.emoji_category);
+	count = KWL_EMOJI_CATEGORIES + kwl_emoji_count(keyboard.emoji_category);
 	for (index = 0; index < count; index++) {
 		/* The point on this place. */
 		keyboard_emoji_rect(server, index, rect);
@@ -4265,7 +4265,7 @@ keyboard_emoji_at(
  */
 static void
 keyboard_emoji_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const char *text;
 	int sent;
@@ -4275,7 +4275,7 @@ keyboard_emoji_release(
 	server->dirty = 1;
 
 	/* A tab: its category, and its places for the tests. */
-	if (keyboard.emoji_slot < ZWL_EMOJI_CATEGORIES) {
+	if (keyboard.emoji_slot < KWL_EMOJI_CATEGORIES) {
 		keyboard.emoji_category = keyboard.emoji_slot;
 		printf("ZWL OSK emoji category=%u\n", keyboard.emoji_category);
 		keyboard_emoji_log(server);
@@ -4283,7 +4283,7 @@ keyboard_emoji_release(
 	}
 
 	/* The emoji of the cell. */
-	text = zwl_emoji(keyboard.emoji_category, keyboard.emoji_slot - ZWL_EMOJI_CATEGORIES);
+	text = kwl_emoji(keyboard.emoji_category, keyboard.emoji_slot - KWL_EMOJI_CATEGORIES);
 	if (text == NULL)
 		return;
 
@@ -4303,22 +4303,22 @@ keyboard_emoji_release(
 /* Logs the emoji face's places (its tabs and the cells of the category shown) for the tests. */
 static void
 keyboard_emoji_log(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int32_t rect[4];
 	unsigned count;
 	unsigned slot;
 
 	/* The tabs. */
-	for (slot = 0; slot < ZWL_EMOJI_CATEGORIES; slot++) {
+	for (slot = 0; slot < KWL_EMOJI_CATEGORIES; slot++) {
 		keyboard_emoji_rect(server, slot, rect);
 		printf("ZWL OSK etab category=%u x=%d y=%d width=%d height=%d\n", slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
 	}
 
 	/* The cells of the category shown. */
-	count = zwl_emoji_count(keyboard.emoji_category);
+	count = kwl_emoji_count(keyboard.emoji_category);
 	for (slot = 0; slot < count; slot++) {
-		keyboard_emoji_rect(server, ZWL_EMOJI_CATEGORIES + slot, rect);
+		keyboard_emoji_rect(server, KWL_EMOJI_CATEGORIES + slot, rect);
 		printf("ZWL OSK erect category=%u index=%u x=%d y=%d width=%d height=%d\n", keyboard.emoji_category, slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
 	}
 }
@@ -4330,7 +4330,7 @@ keyboard_emoji_log(
  */
 static void
 keyboard_draw_emoji(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
@@ -4347,7 +4347,7 @@ keyboard_draw_emoji(
 	unsigned slot;
 
 	/* The tabs: the category shown pale, the held one blue. */
-	for (slot = 0; slot < ZWL_EMOJI_CATEGORIES; slot++) {
+	for (slot = 0; slot < KWL_EMOJI_CATEGORIES; slot++) {
 		keyboard_emoji_rect(server, slot, rect);
 		ground = white;
 		ink = dark;
@@ -4359,22 +4359,22 @@ keyboard_draw_emoji(
 		}
 
 		/* The tab with its category's name. */
-		keyboard_draw_key(server, command, rect, zwl_emoji_category_name(slot), ground, ink, SIZE_TITLE);
+		keyboard_draw_key(server, command, rect, kwl_emoji_category_name(slot), ground, ink, SIZE_TITLE);
 	}
 
 	/* The emoji large when the cells have the room, a size smaller otherwise. */
-	keyboard_emoji_rect(server, ZWL_EMOJI_CATEGORIES, rect);
+	keyboard_emoji_rect(server, KWL_EMOJI_CATEGORIES, rect);
 	size = SIZE_SEARCH;
 	if (rect[3] >= KEYBOARD_EMOJI_LARGE)
 		size = SIZE_ICON;
 
 	/* Each emoji of the category on its cell, the held one blue. */
-	count = zwl_emoji_count(keyboard.emoji_category);
+	count = kwl_emoji_count(keyboard.emoji_category);
 	for (slot = 0; slot < count; slot++) {
-		text = zwl_emoji(keyboard.emoji_category, slot);
-		keyboard_emoji_rect(server, ZWL_EMOJI_CATEGORIES + slot, rect);
+		text = kwl_emoji(keyboard.emoji_category, slot);
+		keyboard_emoji_rect(server, KWL_EMOJI_CATEGORIES + slot, rect);
 		ground = white;
-		if (keyboard.emoji_active && keyboard.emoji_slot == ZWL_EMOJI_CATEGORIES + slot)
+		if (keyboard.emoji_active && keyboard.emoji_slot == KWL_EMOJI_CATEGORIES + slot)
 			ground = blue;
 		keyboard_draw_key(server, command, rect, text, ground, dark, size);
 	}
@@ -4423,13 +4423,13 @@ keyboard_kind_name(
 /* Names a contact's source for the log. */
 static const char *
 keyboard_source_name(
-	enum zwl_contact_source source)
+	enum kwl_contact_source source)
 {
 	/* Each source. */
 	switch (source) {
-	case ZWL_CONTACT_TOUCH:
+	case KWL_CONTACT_TOUCH:
 		return "touch";
-	case ZWL_CONTACT_PEN:
+	case KWL_CONTACT_PEN:
 		return "pen";
 	default:
 		break;
@@ -4441,13 +4441,13 @@ keyboard_source_name(
 
 /*
  * Takes the predictions the input method gave for a reading
- * (keiland_ime_status_v1.predictions, ws166-p003): the words of the
+ * (kl_ime_status_v1.predictions, ws166-p003): the words of the
  * latest request fill the candidates' tab, "WORD\tREADING" a line; an
  * answer to an older request is dropped.
  */
 void
-zwl_keyboard_predictions(
-	struct zwl_server *server,
+kwl_keyboard_predictions(
+	struct kwl_server *server,
 	uint32_t serial,
 	const char *list)
 {
@@ -4517,11 +4517,11 @@ zwl_keyboard_predictions(
  */
 static void
 keyboard_reading_sent(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *text,
 	unsigned sent)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 	size_t length;
 	size_t added;
 	int kana;
@@ -4535,7 +4535,7 @@ keyboard_reading_sent(
 	}
 
 	/* A secret field keeps no reading. */
-	input = zwl_text_input_current(server);
+	input = kwl_text_input_current(server);
 	secret = keyboard_secret(input);
 	if (input == NULL || secret) {
 		keyboard_reading_end(server, "secret");
@@ -4568,7 +4568,7 @@ keyboard_reading_sent(
 /* Takes the last character off the reading (the delete key), asking again for what is left. */
 static void
 keyboard_reading_back(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	size_t length;
 
@@ -4597,7 +4597,7 @@ keyboard_reading_back(
 /* Replaces the reading's last character (the voice key's change), asking again. */
 static void
 keyboard_reading_replace(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *before,
 	const char *after)
 {
@@ -4630,7 +4630,7 @@ keyboard_reading_replace(
 /* Ends the reading: no reading, no words (the request in flight is dropped when it answers). */
 static void
 keyboard_reading_end(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *why)
 {
 	/* Nothing to end. */
@@ -4650,19 +4650,19 @@ keyboard_reading_end(
 /* Asks the input method for the reading's words; the old words stay until they come. */
 static void
 keyboard_reading_predict(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 	int error;
 
 	/* The field's text known so far is older than this reading (the field read only while it is current). */
-	input = zwl_text_input_current(server);
+	input = kwl_text_input_current(server);
 	if (input != NULL && input == keyboard.reading_input)
 		keyboard.reading_commit = input->commits;
 
 	/* A new request: an answer to an older one is dropped. */
 	keyboard.predict_serial++;
-	error = zwl_ime_predict(server, keyboard.predict_serial, keyboard.reading);
+	error = kwl_ime_predict(server, keyboard.predict_serial, keyboard.reading);
 	printf("ZWL OSK reading=%s serial=%u error=%d\n", keyboard.reading, keyboard.predict_serial, error);
 
 	/* Without an input method that predicts there are no words. */
@@ -4701,7 +4701,7 @@ keyboard_hiragana(
 /* Tells whether a field holds a secret: a password, a PIN, hidden or sensitive text. */
 static int
 keyboard_secret(
-	const struct zwl_text_input *input)
+	const struct kwl_text_input *input)
 {
 	/* No field, no secret. */
 	if (input == NULL)
@@ -4724,7 +4724,7 @@ keyboard_secret(
  */
 static void
 keyboard_candidate_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned slot,
 	int32_t *rect)
 {
@@ -4738,7 +4738,7 @@ keyboard_candidate_rect(
 	/* From under the tools' tabs to over the keys, as the history's rows. */
 	key = keyboard_key_size(server);
 	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
-	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)ZWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
 	width = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
 
 	/* The cell's column and row. */
@@ -4753,7 +4753,7 @@ keyboard_candidate_rect(
 /* Finds the word of the candidates' face at a point.  Returns 1 with its slot, or 0. */
 static int
 keyboard_candidate_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	unsigned *slot)
@@ -4791,9 +4791,9 @@ keyboard_candidate_at(
  */
 static void
 keyboard_candidate_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_text_input *input;
+	struct kwl_text_input *input;
 	char word[KEYBOARD_PREDICTION_TEXT];
 	char reading[KEYBOARD_PREDICTION_TEXT];
 	size_t length;
@@ -4808,7 +4808,7 @@ keyboard_candidate_release(
 		return;
 
 	/* The field the reading was typed into. */
-	input = zwl_text_input_current(server);
+	input = kwl_text_input_current(server);
 	if (input == NULL || input != keyboard.reading_input) {
 		printf("ZWL OSK candidate refused reason=field\n");
 		keyboard_reading_end(server, "field");
@@ -4841,7 +4841,7 @@ keyboard_candidate_release(
 		return;
 
 	/* Learned, and nothing for the voice key to change. */
-	zwl_ime_learn(server, reading, word);
+	kwl_ime_learn(server, reading, word);
 	keyboard_remember("", KEYBOARD_SENT_NONE);
 }
 
@@ -4851,7 +4851,7 @@ keyboard_candidate_release(
  */
 static void
 keyboard_draw_candidates(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };

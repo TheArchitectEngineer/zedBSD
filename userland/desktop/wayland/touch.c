@@ -25,7 +25,7 @@
  *   ("go away", the 2026-09-28 user's words: both move up at least
  *   TITLE_FLICK_DISTANCE, more up than sideways, and the first lifts within
  *   TITLE_FLICK_MS of the second's touch) send the window to the back, as a
- *   triple click does (zwl_glass_lower).  Anything else of the two fingers
+ *   triple click does (kwl_glass_lower).  Anything else of the two fingers
  *   (slow, down, sideways, too short) does nothing.  A single finger that
  *   lifts in time is a tap (a click: the window comes forward); one that
  *   stays longer drags the title bar like the mouse.
@@ -50,7 +50,7 @@
  *
  * ws081-p014: a client's finger starts a drag and drop
  * (wl_data_device.start_drag with its wl_touch.down's serial, data.c,
- * zwl_touch_drag_start).  The finger then drives the drag as the pointer
+ * kwl_touch_drag_start).  The finger then drives the drag as the pointer
  * would: each report moves the pointer to it (the drag's icon and target
  * follow), its lift drops, and a screen that goes cancels the drag.  The
  * client hears wl_touch.cancel (the finger is the drag's now), and its
@@ -70,7 +70,7 @@
  */
 
 #include "desktop.h"
-#include "zwl.h"
+#include "kwl.h"
 #include "touch.h"
 #include "data.h"
 #include "extras.h"
@@ -135,7 +135,7 @@
  * ended say what the report being applied did to it.  route is decided when
  * the finger touches; surface names the surface that heard wl_touch.down
  * (ROUTE_CLIENT) and is cleared before that surface is freed
- * (zwl_touch_object_gone), and down_serial is the serial of that
+ * (kwl_touch_object_gone), and down_serial is the serial of that
  * wl_touch.down (a drag names it, ws081-p014).  motion holds the finger's reports (made the
  * first time the slot has a finger, kept for the next ones); following says
  * the shell has the finger and the pointer follows the motion's point, the
@@ -151,7 +151,7 @@ struct touch_contact {
 	unsigned moved;
 	unsigned ended;
 	int route;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t down_serial;
 	int32_t start_x;
 	int32_t start_y;
@@ -169,10 +169,10 @@ struct touch_contact {
  * and that report's time in microseconds.
  *
  * A slot of the table is in use while input is set; it lives from
- * zwl_touch_add to zwl_touch_remove, which frees the motions.
+ * kwl_touch_add to kwl_touch_remove, which frees the motions.
  */
 struct touch_screen {
-	struct zwl_input_device *input;
+	struct kwl_input_device *input;
 	struct input_absinfo axis_x;
 	struct input_absinfo axis_y;
 	int32_t slot;
@@ -187,7 +187,7 @@ struct touch_screen {
  * The fingers on a floating title bar: the state (TITLE_*), their screen
  * and slots, the window, and when each touched, in the input events' time
  * (the evdev time Wayland carries) and in the compositor's clock (for the
- * wait that passes without an event, zwl_touch_tick).
+ * wait that passes without an event, kwl_touch_tick).
  *
  * window is cleared (and the gesture given up) before the window is freed.
  */
@@ -196,7 +196,7 @@ struct touch_title {
 	struct touch_screen *screen;
 	unsigned first;
 	unsigned second;
-	struct zwl_object *window;
+	struct kwl_object *window;
 	uint32_t first_time;
 	uint64_t first_clock;
 	uint32_t pair_time;
@@ -212,7 +212,7 @@ struct touch_title {
  */
 struct touch_report {
 	uint32_t time;
-	struct zwl_client *heard[TOUCH_HEARD_MAX];
+	struct kwl_client *heard[TOUCH_HEARD_MAX];
 	unsigned heard_count;
 	unsigned pointer_activity;
 };
@@ -232,50 +232,50 @@ static struct touch_screen screens[TOUCH_SCREENS];
  */
 static struct touch_title title;
 
-static struct touch_screen *screen_of(struct zwl_input_device *input);
+static struct touch_screen *screen_of(struct kwl_input_device *input);
 static int read_axes(struct touch_screen *screen);
-static void read_report(struct zwl_server *server, struct touch_screen *screen);
-static void contact_begin(struct zwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
-static void contact_move(struct zwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
-static void contact_end(struct zwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
-static void deliver_first(struct zwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
-static void title_check(struct zwl_server *server, uint32_t time);
-static void title_lift(struct zwl_server *server, unsigned slot, struct touch_report *report);
-static void title_flick(struct zwl_server *server, uint32_t time);
+static void read_report(struct kwl_server *server, struct touch_screen *screen);
+static void contact_begin(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
+static void contact_move(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
+static void contact_end(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
+static void deliver_first(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
+static void title_check(struct kwl_server *server, uint32_t time);
+static void title_lift(struct kwl_server *server, unsigned slot, struct touch_report *report);
+static void title_flick(struct kwl_server *server, uint32_t time);
 static void title_refuse(const char *reason, uint32_t elapsed);
-static void title_promote(struct zwl_server *server, uint32_t time);
-static void title_tap(struct zwl_server *server, uint32_t time);
-static int shell_press(struct zwl_server *server, int32_t x, int32_t y, uint32_t time, uint32_t state);
-static void shell_motion(struct zwl_server *server, const struct touch_contact *contact, uint32_t time);
-static void shell_motion_at(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
+static void title_promote(struct kwl_server *server, uint32_t time);
+static void title_tap(struct kwl_server *server, uint32_t time);
+static int shell_press(struct kwl_server *server, int32_t x, int32_t y, uint32_t time, uint32_t state);
+static void shell_motion(struct kwl_server *server, const struct touch_contact *contact, uint32_t time);
+static void shell_motion_at(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
 static void motion_begin(struct touch_screen *screen, struct touch_contact *contact);
 static void motion_add(struct touch_screen *screen, struct touch_contact *contact);
 static void follow_start(struct touch_contact *contact);
-static void follow_step(struct zwl_server *server, struct touch_screen *screen, unsigned slot, uint32_t time);
+static void follow_step(struct kwl_server *server, struct touch_screen *screen, unsigned slot, uint32_t time);
 static void screen_forget_motions(struct touch_screen *screen);
 static uint64_t now_microseconds(void);
 static int shell_busy(void);
-static struct zwl_object *surface_at(struct zwl_server *server, int32_t x, int32_t y);
-static int surface_contains(const struct zwl_object *surface, int32_t x, int32_t y);
-static int client_has_touch(struct zwl_client *client);
-static void touch_down(struct zwl_server *server, struct touch_screen *screen, unsigned slot, struct zwl_object *surface, struct touch_report *report);
+static struct kwl_object *surface_at(struct kwl_server *server, int32_t x, int32_t y);
+static int surface_contains(const struct kwl_object *surface, int32_t x, int32_t y);
+static int client_has_touch(struct kwl_client *client);
+static void touch_down(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct kwl_object *surface, struct touch_report *report);
 static void cancel_clients(const char *reason);
-static void cancel_client(struct zwl_client *client, const char *reason);
-static void place_pointer(struct zwl_server *server, int32_t x, int32_t y);
-static void send_touch(struct zwl_client *client, uint32_t opcode, const void *payload, size_t size);
-static void report_heard(struct touch_report *report, struct zwl_client *client);
+static void cancel_client(struct kwl_client *client, const char *reason);
+static void place_pointer(struct kwl_server *server, int32_t x, int32_t y);
+static void send_touch(struct kwl_client *client, uint32_t opcode, const void *payload, size_t size);
+static void report_heard(struct touch_report *report, struct kwl_client *client);
 static uint32_t contact_id(const struct touch_screen *screen, unsigned slot);
 static int32_t scale_fixed(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
 static int32_t magnitude(int32_t value);
-static void emit(struct zwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
+static void emit(struct kwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
 
 /*
  * Takes an evdev node classified as a touch screen: reads the range of its
  * fingers' places and the slot its reports start in.
  */
 int
-zwl_touch_add(
-	struct zwl_input_device *input)
+kwl_touch_add(
+	struct kwl_input_device *input)
 {
 	struct touch_screen *screen;
 	unsigned index;
@@ -332,9 +332,9 @@ zwl_touch_add(
  * pointer's button lets it go.
  */
 void
-zwl_touch_remove(
-	struct zwl_server *server,
-	struct zwl_input_device *input,
+kwl_touch_remove(
+	struct kwl_server *server,
+	struct kwl_input_device *input,
 	int notify)
 {
 	struct touch_screen *screen;
@@ -365,12 +365,12 @@ zwl_touch_remove(
 		if (contact->route == ROUTE_SHELL) {
 			(void)shell_press(server, contact->place_x / 256, contact->place_y / 256, 0, 0U);
 		} else if (contact->route == ROUTE_POINTER) {
-			zwl_seat_button(server, 0, ZWL_BUTTON_LEFT, 0U);
-			zwl_seat_frame(server);
+			kwl_seat_button(server, 0, KWL_BUTTON_LEFT, 0U);
+			kwl_seat_frame(server);
 		} else if (contact->route == ROUTE_DRAG) {
-			zwl_data_drag_cancel(server);
+			kwl_data_drag_cancel(server);
 		} else if (contact->route == ROUTE_OSK) {
-			zwl_keyboard_touch_cancel(server, contact_id(screen, slot));
+			kwl_keyboard_touch_cancel(server, contact_id(screen, slot));
 		}
 
 		/* The finger no longer has a route of its own. */
@@ -394,9 +394,9 @@ zwl_touch_remove(
  * Applies one completed report of a touch screen.
  */
 void
-zwl_touch_frame(
-	struct zwl_server *server,
-	struct zwl_input_device *input,
+kwl_touch_frame(
+	struct kwl_server *server,
+	struct kwl_input_device *input,
 	uint32_t time)
 {
 	struct touch_screen *screen;
@@ -412,7 +412,7 @@ zwl_touch_frame(
 		return;
 
 	/* A finger is input: the lock screen's idle time starts again. */
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 
 	/* The report's changes to the fingers, before anything is delivered. */
 	read_report(server, screen);
@@ -484,7 +484,7 @@ zwl_touch_frame(
 
 	/* The pointer's events for a client end with the pointer's frame. */
 	if (report.pointer_activity)
-		zwl_seat_frame(server);
+		kwl_seat_frame(server);
 
 	/* The next report starts with nothing changed. */
 	for (slot = 0; slot < TOUCH_SLOTS; slot++) {
@@ -500,8 +500,8 @@ zwl_touch_frame(
  * have not flicked in time are let go.
  */
 void
-zwl_touch_tick(
-	struct zwl_server *server)
+kwl_touch_tick(
+	struct kwl_server *server)
 {
 	struct touch_screen *screen;
 	uint64_t now;
@@ -510,7 +510,7 @@ zwl_touch_tick(
 	unsigned slot;
 
 	/* The pointer follows each finger the shell has to where its motion says it is now. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	for (index = 0; index < TOUCH_SCREENS; index++) {
 		screen = &screens[index];
 		if (screen->input == NULL)
@@ -537,15 +537,15 @@ zwl_touch_tick(
  * delivered, and a gesture on its title bar is given up.
  */
 void
-zwl_touch_object_gone(
-	struct zwl_object *object)
+kwl_touch_object_gone(
+	struct kwl_object *object)
 {
 	struct touch_contact *contact;
 	unsigned index;
 	unsigned slot;
 
 	/* Only surfaces are named by the fingers. */
-	if (object->kind != ZWL_SURFACE)
+	if (object->kind != KWL_SURFACE)
 		return;
 
 	/* Every finger delivered to the surface goes nowhere until it lifts. */
@@ -587,9 +587,9 @@ zwl_touch_object_gone(
  * serial down.
  */
 int
-zwl_touch_drag_start(
-	struct zwl_server *server,
-	struct zwl_client *client,
+kwl_touch_drag_start(
+	struct kwl_server *server,
+	struct kwl_client *client,
 	uint32_t serial)
 {
 	struct touch_contact *contact;
@@ -638,7 +638,7 @@ zwl_touch_drag_start(
 /* Finds the touch screen slot of an input device, NULL when there is none. */
 static struct touch_screen *
 screen_of(
-	struct zwl_input_device *input)
+	struct kwl_input_device *input)
 {
 	unsigned index;
 
@@ -696,7 +696,7 @@ read_axes(
  */
 static void
 read_report(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen)
 {
 	const struct input_event *event;
@@ -790,14 +790,14 @@ read_report(
  */
 static void
 contact_begin(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen,
 	unsigned slot,
 	struct touch_report *report)
 {
 	struct touch_contact *contact;
-	struct zwl_object *window;
-	struct zwl_object *target;
+	struct kwl_object *window;
+	struct kwl_object *target;
 	uint32_t elapsed;
 	int32_t x;
 	int32_t y;
@@ -807,7 +807,7 @@ contact_begin(
 	int inside;
 
 	/* A touch while the Windows key is down: no tap of its own (ws142-p002). */
-	zwl_super_tap_cancel(&server->super_tap);
+	kwl_super_tap_cancel(&server->super_tap);
 
 	/* Where the finger touched. */
 	contact = &screen->contacts[slot];
@@ -823,12 +823,12 @@ contact_begin(
 	 * the corner's swipe (the shell's, below), also where the panel reaches
 	 * the corner.
 	 */
-	inside = zwl_keyboard_at(x, y);
-	if (y >= (int32_t)server->height - ZWL_KEYBOARD_ZONE &&
-	    (x < ZWL_KEYBOARD_ZONE || x >= (int32_t)server->width - ZWL_KEYBOARD_ZONE))
+	inside = kwl_keyboard_at(x, y);
+	if (y >= (int32_t)server->height - KWL_KEYBOARD_ZONE &&
+	    (x < KWL_KEYBOARD_ZONE || x >= (int32_t)server->width - KWL_KEYBOARD_ZONE))
 		inside = 0;
 	if (inside) {
-		taken = zwl_keyboard_touch_down(server, contact_id(screen, slot), x, y, report->time);
+		taken = kwl_keyboard_touch_down(server, contact_id(screen, slot), x, y, report->time);
 		if (taken) {
 			contact->route = ROUTE_OSK;
 			printf("ZWL TOUCH osk contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
@@ -838,7 +838,7 @@ contact_begin(
 
 	/* A finger joining one that waits on a title bar may make the pair of the flick. */
 	if (title.state == TITLE_HELD) {
-		window = zwl_glass_title_at(server, x, y);
+		window = kwl_glass_title_at(server, x, y);
 		elapsed = report->time - title.first_time;
 		if (window == title.window &&
 		    title.screen == screen &&
@@ -846,7 +846,7 @@ contact_begin(
 			title.state = TITLE_PAIR;
 			title.second = slot;
 			title.pair_time = report->time;
-			title.pair_clock = zwl_milliseconds();
+			title.pair_clock = kwl_milliseconds();
 			contact->route = ROUTE_TITLE;
 			printf("ZWL TOUCH title pair window=%llu:%u contact=%u x=%d y=%d after_ms=%u\n", (unsigned long long)window->client->number, window->id, contact_id(screen, slot), x, y, elapsed);
 			return;
@@ -880,14 +880,14 @@ contact_begin(
 	}
 
 	/* A first finger on a floating title bar waits a moment for a second one. */
-	window = zwl_glass_title_at(server, x, y);
+	window = kwl_glass_title_at(server, x, y);
 	if (window != NULL) {
 		title.state = TITLE_HELD;
 		title.screen = screen;
 		title.first = slot;
 		title.window = window;
 		title.first_time = report->time;
-		title.first_clock = zwl_milliseconds();
+		title.first_clock = kwl_milliseconds();
 		contact->route = ROUTE_TITLE;
 		printf("ZWL TOUCH title held window=%llu:%u contact=%u x=%d y=%d\n", (unsigned long long)window->client->number, window->id, contact_id(screen, slot), x, y);
 		return;
@@ -914,13 +914,13 @@ contact_begin(
  */
 static void
 deliver_first(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen,
 	unsigned slot,
 	struct touch_report *report)
 {
 	struct touch_contact *contact;
-	struct zwl_object *target;
+	struct kwl_object *target;
 	int32_t x;
 	int32_t y;
 	int inside;
@@ -930,7 +930,7 @@ deliver_first(
 	contact = &screen->contacts[slot];
 	x = contact->place_x / 256;
 	y = contact->place_y / 256;
-	zwl_seat_pointer_update(server);
+	kwl_seat_pointer_update(server);
 	target = server->pointer_surface;
 
 	/* The finger must be on it. */
@@ -962,8 +962,8 @@ deliver_first(
 	 * Succeeded: any other client hears the pointer come to the finger,
 	 * then its left button, and the finger moves the pointer from now on.
 	 */
-	zwl_seat_motion_deliver(server, report->time);
-	zwl_seat_button_deliver(server, report->time, ZWL_BUTTON_LEFT, 1U);
+	kwl_seat_motion_deliver(server, report->time);
+	kwl_seat_button_deliver(server, report->time, KWL_BUTTON_LEFT, 1U);
 	contact->route = ROUTE_POINTER;
 	report->pointer_activity = 1;
 	printf("ZWL TOUCH pointer client=%llu surface=%u contact=%u x=%d y=%d\n", (unsigned long long)target->client->number, target->id, contact_id(screen, slot), x, y);
@@ -972,13 +972,13 @@ deliver_first(
 /* Moves a finger the way it is delivered. */
 static void
 contact_move(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen,
 	unsigned slot,
 	struct touch_report *report)
 {
 	struct touch_contact *contact;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t words[4];
 
 	/* The finger and where it goes. */
@@ -1005,19 +1005,19 @@ contact_move(
 	case ROUTE_POINTER:
 		/* The pointer moves, through the shell to the client. */
 		place_pointer(server, contact->place_x / 256, contact->place_y / 256);
-		server->shell_source = ZWL_CONTACT_TOUCH;
-		zwl_seat_motion(server, report->time);
-		server->shell_source = ZWL_CONTACT_POINTER;
+		server->shell_source = KWL_CONTACT_TOUCH;
+		kwl_seat_motion(server, report->time);
+		server->shell_source = KWL_CONTACT_POINTER;
 		report->pointer_activity = 1;
 		break;
 	case ROUTE_DRAG:
 		/* The drag follows the finger: the pointer goes there, and the target under it hears the drag (ws081-p014). */
 		place_pointer(server, contact->place_x / 256, contact->place_y / 256);
-		zwl_data_drag_motion(server, report->time);
+		kwl_data_drag_motion(server, report->time);
 		break;
 	case ROUTE_OSK:
 		/* The keyboard's press follows its finger (ws102-p009). */
-		(void)zwl_keyboard_touch_motion(server, contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256, report->time);
+		(void)kwl_keyboard_touch_motion(server, contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256, report->time);
 		break;
 	default:
 		break;
@@ -1027,13 +1027,13 @@ contact_move(
 /* Ends a finger the way it was delivered; the slot is empty afterwards. */
 static void
 contact_end(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen,
 	unsigned slot,
 	struct touch_report *report)
 {
 	struct touch_contact *contact;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t words[3];
 
 	/* The finger and where it went. */
@@ -1046,7 +1046,7 @@ contact_end(
 		surface = contact->surface;
 		if (surface == NULL || surface->dead)
 			break;
-		words[0] = zwl_next_serial(server);
+		words[0] = kwl_next_serial(server);
 		words[1] = report->time;
 		words[2] = contact_id(screen, slot);
 		send_touch(surface->client, TOUCH_UP, words, sizeof(words));
@@ -1059,9 +1059,9 @@ contact_end(
 		break;
 	case ROUTE_POINTER:
 		/* The button is released, through the shell to the client. */
-		server->shell_source = ZWL_CONTACT_TOUCH;
-		zwl_seat_button(server, report->time, ZWL_BUTTON_LEFT, 0U);
-		server->shell_source = ZWL_CONTACT_POINTER;
+		server->shell_source = KWL_CONTACT_TOUCH;
+		kwl_seat_button(server, report->time, KWL_BUTTON_LEFT, 0U);
+		server->shell_source = KWL_CONTACT_POINTER;
 		report->pointer_activity = 1;
 		break;
 	case ROUTE_TITLE:
@@ -1071,13 +1071,13 @@ contact_end(
 	case ROUTE_DRAG:
 		/* The lift drops where the finger was last reported (ws081-p014). */
 		place_pointer(server, contact->place_x / 256, contact->place_y / 256);
-		zwl_data_drag_motion(server, report->time);
-		zwl_data_drag_release(server);
+		kwl_data_drag_motion(server, report->time);
+		kwl_data_drag_release(server);
 		printf("ZWL TOUCH drag lift contact=%u x=%d y=%d\n", contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256);
 		break;
 	case ROUTE_OSK:
 		/* The keyboard's press ends where the finger was last reported (ws102-p009). */
-		(void)zwl_keyboard_touch_up(server, contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256, report->time);
+		(void)kwl_keyboard_touch_up(server, contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256, report->time);
 		break;
 	default:
 		break;
@@ -1099,7 +1099,7 @@ contact_end(
  */
 static void
 title_check(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time)
 {
 	struct touch_contact *first;
@@ -1164,7 +1164,7 @@ title_check(
  */
 static void
 title_lift(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned slot,
 	struct touch_report *report)
 {
@@ -1210,12 +1210,12 @@ title_lift(
  */
 static void
 title_flick(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time)
 {
 	struct touch_contact *first;
 	struct touch_contact *second;
-	struct zwl_object *window;
+	struct kwl_object *window;
 	uint32_t elapsed;
 	int32_t first_dx;
 	int32_t first_dy;
@@ -1269,7 +1269,7 @@ title_flick(
 	cancel_clients("flick");
 
 	/* Succeeded: the same as a triple click on its title bar. */
-	zwl_glass_lower(server, window, "two-finger-flick");
+	kwl_glass_lower(server, window, "two-finger-flick");
 }
 
 /* Gives up the two fingers' flick: they wait to lift without an effect. */
@@ -1292,7 +1292,7 @@ title_refuse(
  */
 static void
 title_promote(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time)
 {
 	struct touch_contact *contact;
@@ -1331,7 +1331,7 @@ title_promote(
  */
 static void
 title_tap(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time)
 {
 	struct touch_contact *contact;
@@ -1363,7 +1363,7 @@ title_tap(
  */
 static int
 shell_press(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time,
@@ -1373,9 +1373,9 @@ shell_press(
 
 	/* The pointer is where the finger is, and the shell knows a finger is its source. */
 	place_pointer(server, x, y);
-	server->shell_source = ZWL_CONTACT_TOUCH;
-	taken = zwl_seat_button_shell(server, time, ZWL_BUTTON_LEFT, state);
-	server->shell_source = ZWL_CONTACT_POINTER;
+	server->shell_source = KWL_CONTACT_TOUCH;
+	taken = kwl_seat_button_shell(server, time, KWL_BUTTON_LEFT, state);
+	server->shell_source = KWL_CONTACT_POINTER;
 
 	/* Succeeded: whether the shell took it. */
 	return taken;
@@ -1384,7 +1384,7 @@ shell_press(
 /* Passes a finger's movement through the shell as the pointer's, to where it was last reported. */
 static void
 shell_motion(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct touch_contact *contact,
 	uint32_t time)
 {
@@ -1395,7 +1395,7 @@ shell_motion(
 /* Passes a movement to a point through the shell as the pointer's. */
 static void
 shell_motion_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	uint32_t time)
@@ -1404,9 +1404,9 @@ shell_motion_at(
 	place_pointer(server, x, y);
 
 	/* The shell's move, gesture or screen follows the pointer. */
-	server->shell_source = ZWL_CONTACT_TOUCH;
-	(void)zwl_seat_motion_shell(server, time);
-	server->shell_source = ZWL_CONTACT_POINTER;
+	server->shell_source = KWL_CONTACT_TOUCH;
+	(void)kwl_seat_motion_shell(server, time);
+	server->shell_source = KWL_CONTACT_POINTER;
 }
 
 /*
@@ -1481,7 +1481,7 @@ follow_start(
  */
 static void
 follow_step(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen,
 	unsigned slot,
 	uint32_t time)
@@ -1609,14 +1609,14 @@ shell_busy(
  * outside the glass look's window mode), or its sub-surface there; NULL
  * when there is none or a popup's grab has the input.
  */
-static struct zwl_object *
+static struct kwl_object *
 surface_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *window;
-	struct zwl_object *deeper;
+	struct kwl_object *window;
+	struct kwl_object *deeper;
 	int inside;
 
 	/* A popup's grab has the input. */
@@ -1625,14 +1625,14 @@ surface_at(
 
 	/* The window: the glass look's topmost body at the point, otherwise the focused one. */
 	if (server->glass && server->windowed) {
-		window = zwl_glass_body_at(server, x, y);
+		window = kwl_glass_body_at(server, x, y);
 	} else {
 		window = server->focus;
 	}
 
 	/* Where no window is, the desktop's icons (desktop.c). */
 	if (window == NULL)
-		window = zwl_desktop_at(server, x, y);
+		window = kwl_desktop_at(server, x, y);
 
 	/* No window, or one that is going. */
 	if (window == NULL ||
@@ -1641,7 +1641,7 @@ surface_at(
 		return NULL;
 
 	/* Its sub-surface at the point, when there is one. */
-	deeper = zwl_subsurface_at(window, x, y);
+	deeper = kwl_subsurface_at(window, x, y);
 	if (deeper != NULL)
 		window = deeper;
 
@@ -1657,7 +1657,7 @@ surface_at(
 /* Reports whether a point of the output is on a surface. */
 static int
 surface_contains(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	int32_t x,
 	int32_t y)
 {
@@ -1665,7 +1665,7 @@ surface_contains(
 	uint32_t height;
 
 	/* The surface's size (its viewport's, else its buffer's). */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 
 	/* Left of it or above it. */
 	if (x < surface->x || y < surface->y)
@@ -1684,9 +1684,9 @@ surface_contains(
 /* Reports whether a client has a live wl_touch. */
 static int
 client_has_touch(
-	struct zwl_client *client)
+	struct kwl_client *client)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* A failed client has nothing. */
 	if (client->fatal)
@@ -1695,7 +1695,7 @@ client_has_touch(
 	/* Looks for a wl_touch among the client's objects. */
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* A live wl_touch. */
-		if (object->kind == ZWL_TOUCH && !object->dead)
+		if (object->kind == KWL_TOUCH && !object->dead)
 			return 1;
 	}
 
@@ -1709,10 +1709,10 @@ client_has_touch(
  */
 static void
 touch_down(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct touch_screen *screen,
 	unsigned slot,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	struct touch_report *report)
 {
 	struct touch_contact *contact;
@@ -1720,7 +1720,7 @@ touch_down(
 
 	/* The serial, the time, the surface, the finger's number and the surface-local place. */
 	contact = &screen->contacts[slot];
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	words[1] = report->time;
 	words[2] = surface->id;
 	words[3] = contact_id(screen, slot);
@@ -1747,7 +1747,7 @@ static void
 cancel_clients(
 	const char *reason)
 {
-	struct zwl_client *clients[TOUCH_HEARD_MAX];
+	struct kwl_client *clients[TOUCH_HEARD_MAX];
 	struct touch_contact *contact;
 	unsigned count;
 	unsigned index;
@@ -1804,7 +1804,7 @@ cancel_clients(
 /* Cancels the fingers one client hears by wl_touch: it hears wl_touch.cancel once, and they go nowhere until they lift. */
 static void
 cancel_client(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	const char *reason)
 {
 	struct touch_contact *contact;
@@ -1838,7 +1838,7 @@ cancel_client(
 /* Moves the pointer to a point, redrawing the cursor where it was and is. */
 static void
 place_pointer(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
@@ -1854,23 +1854,23 @@ place_pointer(
 	old_y = server->pointer_y;
 	server->pointer_x = x;
 	server->pointer_y = y;
-	zwl_damage_pointer(server, old_x, old_y);
+	kwl_damage_pointer(server, old_x, old_y);
 }
 
 /* Sends one event to every live wl_touch of a client. */
 static void
 send_touch(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t opcode,
 	const void *payload,
 	size_t size)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* Each live wl_touch of the client. */
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* Only live wl_touch objects. */
-		if (object->kind != ZWL_TOUCH || object->dead)
+		if (object->kind != KWL_TOUCH || object->dead)
 			continue;
 
 		/* Queues the event. */
@@ -1882,7 +1882,7 @@ send_touch(
 static void
 report_heard(
 	struct touch_report *report,
-	struct zwl_client *client)
+	struct kwl_client *client)
 {
 	unsigned index;
 
@@ -1956,7 +1956,7 @@ magnitude(
 /* Queues one event and marks the client failed when the queue refuses it. */
 static void
 emit(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const void *payload,
@@ -1969,10 +1969,10 @@ emit(
 		return;
 
 	/* A client that stopped reading loses its connection rather than compositor memory. */
-	error = zwl_emit(client, id, opcode, payload, size);
+	error = kwl_emit(client, id, opcode, payload, size);
 	if (error != 0) {
 		client->fatal = 1;
-		client->fatal_time = zwl_milliseconds();
+		client->fatal_time = kwl_milliseconds();
 		return;
 	}
 

@@ -38,8 +38,8 @@
  * case) or a symbol (the same with Shift), a key wide; and one row of the
  * panel's table from its array of keys.
  */
-#define LAYOUT_LETTER(lower, upper)	{ lower, upper, lower, upper, ZWL_FLICK_TYPE, 0U, 4U }
-#define LAYOUT_SYMBOL(symbol)		{ symbol, symbol, symbol, symbol, ZWL_FLICK_TYPE, 0U, 4U }
+#define LAYOUT_LETTER(lower, upper)	{ lower, upper, lower, upper, KWL_FLICK_TYPE, 0U, 4U }
+#define LAYOUT_SYMBOL(symbol)		{ symbol, symbol, symbol, symbol, KWL_FLICK_TYPE, 0U, 4U }
 #define LAYOUT_ROW(keys)		{ keys, sizeof(keys) / sizeof(keys[0]) }
 
 /*
@@ -47,7 +47,7 @@
  * are [face][row].
  */
 struct layout_qwerty_row {
-	const struct zwl_qwerty_key *keys;
+	const struct kwl_qwerty_key *keys;
 	unsigned count;
 };
 
@@ -55,83 +55,83 @@ struct layout_qwerty_row {
  * The keys of every face, row by row, column by column: [face][row][column].
  * The texts are centre, left, up, right, down.
  */
-static const struct zwl_flick_key layout_keys[ZWL_FLICK_FACES][ZWL_FLICK_ROWS][ZWL_FLICK_COLUMNS] = {
+static const struct kwl_flick_key layout_keys[KWL_FLICK_FACES][KWL_FLICK_ROWS][KWL_FLICK_COLUMNS] = {
 	{
 		{
-			{ "あ", ZWL_FLICK_TYPE, { "あ", "い", "う", "え", "お" } },
-			{ "か", ZWL_FLICK_TYPE, { "か", "き", "く", "け", "こ" } },
-			{ "さ", ZWL_FLICK_TYPE, { "さ", "し", "す", "せ", "そ" } },
-			{ "Del", ZWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "あ", KWL_FLICK_TYPE, { "あ", "い", "う", "え", "お" } },
+			{ "か", KWL_FLICK_TYPE, { "か", "き", "く", "け", "こ" } },
+			{ "さ", KWL_FLICK_TYPE, { "さ", "し", "す", "せ", "そ" } },
+			{ "Del", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "た", ZWL_FLICK_TYPE, { "た", "ち", "つ", "て", "と" } },
-			{ "な", ZWL_FLICK_TYPE, { "な", "に", "ぬ", "ね", "の" } },
-			{ "は", ZWL_FLICK_TYPE, { "は", "ひ", "ふ", "へ", "ほ" } },
-			{ "空白", ZWL_FLICK_SPACE, { " ", NULL, NULL, NULL, NULL } }
+			{ "た", KWL_FLICK_TYPE, { "た", "ち", "つ", "て", "と" } },
+			{ "な", KWL_FLICK_TYPE, { "な", "に", "ぬ", "ね", "の" } },
+			{ "は", KWL_FLICK_TYPE, { "は", "ひ", "ふ", "へ", "ほ" } },
+			{ "空白", KWL_FLICK_SPACE, { " ", NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "ま", ZWL_FLICK_TYPE, { "ま", "み", "む", "め", "も" } },
-			{ "や", ZWL_FLICK_TYPE, { "や", "（", "ゆ", "）", "よ" } },
-			{ "ら", ZWL_FLICK_TYPE, { "ら", "り", "る", "れ", "ろ" } },
-			{ "改行", ZWL_FLICK_ENTER, { "\n", NULL, NULL, NULL, NULL } }
+			{ "ま", KWL_FLICK_TYPE, { "ま", "み", "む", "め", "も" } },
+			{ "や", KWL_FLICK_TYPE, { "や", "（", "ゆ", "）", "よ" } },
+			{ "ら", KWL_FLICK_TYPE, { "ら", "り", "る", "れ", "ろ" } },
+			{ "改行", KWL_FLICK_ENTER, { "\n", NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "゛゜小", ZWL_FLICK_VOICE, { NULL, NULL, NULL, NULL, NULL } },
-			{ "わ", ZWL_FLICK_TYPE, { "わ", "を", "ん", "ー", "〜" } },
-			{ "、", ZWL_FLICK_TYPE, { "、", "。", "？", "！", "…" } },
-			{ "A", ZWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "゛゜小", KWL_FLICK_VOICE, { NULL, NULL, NULL, NULL, NULL } },
+			{ "わ", KWL_FLICK_TYPE, { "わ", "を", "ん", "ー", "〜" } },
+			{ "、", KWL_FLICK_TYPE, { "、", "。", "？", "！", "…" } },
+			{ "A", KWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
 		}
 	},
 	{
 		{
-			{ "@", ZWL_FLICK_TYPE, { "@", "#", "/", "&", "_" } },
-			{ "abc", ZWL_FLICK_TYPE, { "a", "b", "c", NULL, NULL } },
-			{ "def", ZWL_FLICK_TYPE, { "d", "e", "f", NULL, NULL } },
-			{ "Del", ZWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "@", KWL_FLICK_TYPE, { "@", "#", "/", "&", "_" } },
+			{ "abc", KWL_FLICK_TYPE, { "a", "b", "c", NULL, NULL } },
+			{ "def", KWL_FLICK_TYPE, { "d", "e", "f", NULL, NULL } },
+			{ "Del", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "ghi", ZWL_FLICK_TYPE, { "g", "h", "i", NULL, NULL } },
-			{ "jkl", ZWL_FLICK_TYPE, { "j", "k", "l", NULL, NULL } },
-			{ "mno", ZWL_FLICK_TYPE, { "m", "n", "o", NULL, NULL } },
-			{ "space", ZWL_FLICK_SPACE, { " ", NULL, NULL, NULL, NULL } }
+			{ "ghi", KWL_FLICK_TYPE, { "g", "h", "i", NULL, NULL } },
+			{ "jkl", KWL_FLICK_TYPE, { "j", "k", "l", NULL, NULL } },
+			{ "mno", KWL_FLICK_TYPE, { "m", "n", "o", NULL, NULL } },
+			{ "space", KWL_FLICK_SPACE, { " ", NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "pqrs", ZWL_FLICK_TYPE, { "p", "q", "r", "s", NULL } },
-			{ "tuv", ZWL_FLICK_TYPE, { "t", "u", "v", NULL, NULL } },
-			{ "wxyz", ZWL_FLICK_TYPE, { "w", "x", "y", "z", NULL } },
-			{ "Enter", ZWL_FLICK_ENTER, { "\n", NULL, NULL, NULL, NULL } }
+			{ "pqrs", KWL_FLICK_TYPE, { "p", "q", "r", "s", NULL } },
+			{ "tuv", KWL_FLICK_TYPE, { "t", "u", "v", NULL, NULL } },
+			{ "wxyz", KWL_FLICK_TYPE, { "w", "x", "y", "z", NULL } },
+			{ "Enter", KWL_FLICK_ENTER, { "\n", NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "a/A", ZWL_FLICK_CASE, { NULL, NULL, NULL, NULL, NULL } },
-			{ "'\"()", ZWL_FLICK_TYPE, { "'", "\"", "(", ")", ":" } },
-			{ ".,?!", ZWL_FLICK_TYPE, { ".", ",", "?", "!", "-" } },
-			{ "1", ZWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "a/A", KWL_FLICK_CASE, { NULL, NULL, NULL, NULL, NULL } },
+			{ "'\"()", KWL_FLICK_TYPE, { "'", "\"", "(", ")", ":" } },
+			{ ".,?!", KWL_FLICK_TYPE, { ".", ",", "?", "!", "-" } },
+			{ "1", KWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
 		}
 	},
 	{
 		{
-			{ "1", ZWL_FLICK_TYPE, { "1", "+", "-", "*", "/" } },
-			{ "2", ZWL_FLICK_TYPE, { "2", "=", "%", "<", ">" } },
-			{ "3", ZWL_FLICK_TYPE, { "3", "[", "]", "{", "}" } },
-			{ "Del", ZWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "1", KWL_FLICK_TYPE, { "1", "+", "-", "*", "/" } },
+			{ "2", KWL_FLICK_TYPE, { "2", "=", "%", "<", ">" } },
+			{ "3", KWL_FLICK_TYPE, { "3", "[", "]", "{", "}" } },
+			{ "Del", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "4", ZWL_FLICK_TYPE, { "4", "$", "^", "~", "\\" } },
-			{ "5", ZWL_FLICK_TYPE, { "5", "|", ";", "`", ":" } },
-			{ "6", ZWL_FLICK_TYPE, { "6", "(", ")", "'", "\"" } },
-			{ "space", ZWL_FLICK_SPACE, { " ", NULL, NULL, NULL, NULL } }
+			{ "4", KWL_FLICK_TYPE, { "4", "$", "^", "~", "\\" } },
+			{ "5", KWL_FLICK_TYPE, { "5", "|", ";", "`", ":" } },
+			{ "6", KWL_FLICK_TYPE, { "6", "(", ")", "'", "\"" } },
+			{ "space", KWL_FLICK_SPACE, { " ", NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "7", ZWL_FLICK_TYPE, { "7", "!", "?", "@", "#" } },
-			{ "8", ZWL_FLICK_TYPE, { "8", "&", "_", ".", "," } },
-			{ "9", ZWL_FLICK_TYPE, { "9", NULL, NULL, NULL, NULL } },
-			{ "Enter", ZWL_FLICK_ENTER, { "\n", NULL, NULL, NULL, NULL } }
+			{ "7", KWL_FLICK_TYPE, { "7", "!", "?", "@", "#" } },
+			{ "8", KWL_FLICK_TYPE, { "8", "&", "_", ".", "," } },
+			{ "9", KWL_FLICK_TYPE, { "9", NULL, NULL, NULL, NULL } },
+			{ "Enter", KWL_FLICK_ENTER, { "\n", NULL, NULL, NULL, NULL } }
 		},
 		{
-			{ "「」", ZWL_FLICK_TYPE, { "「", "」", "・", "。", "、" } },
-			{ "0", ZWL_FLICK_TYPE, { "0", NULL, NULL, NULL, NULL } },
-			{ "¥€°", ZWL_FLICK_TYPE, { "¥", "€", "°", "±", "×" } },
-			{ "あ", ZWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "「」", KWL_FLICK_TYPE, { "「", "」", "・", "。", "、" } },
+			{ "0", KWL_FLICK_TYPE, { "0", NULL, NULL, NULL, NULL } },
+			{ "¥€°", KWL_FLICK_TYPE, { "¥", "€", "°", "±", "×" } },
+			{ "あ", KWL_FLICK_FACE, { NULL, NULL, NULL, NULL, NULL } }
 		}
 	}
 };
@@ -141,95 +141,95 @@ static const struct zwl_flick_key layout_keys[ZWL_FLICK_FACES][ZWL_FLICK_ROWS][Z
  * keys' row on top of both faces, p020): label,
  * label with Shift, text, text with Shift, action, arrow code, width in
  * quarter keys.  The rows are LAYOUT_QWERTY_* long; a row narrower than
- * ZWL_QWERTY_ROW_UNITS is centred.
+ * KWL_QWERTY_ROW_UNITS is centred.
  */
 
-static const struct zwl_qwerty_key layout_extra[] = {
-	{ "Esc", "Esc", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_ESC, 4U },
-	{ "Tab", "Tab", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_TAB, 4U },
-	{ "Ctrl", "Ctrl", NULL, NULL, ZWL_FLICK_CTRL, 0U, 4U },
-	{ "Alt", "Alt", NULL, NULL, ZWL_FLICK_ALT, 0U, 4U },
-	{ "|", "|", "|", "|", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "~", "~", "~", "~", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "/", "/", "/", "/", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "-", "-", "-", "-", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "Home", "Home", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_HOME, 3U },
-	{ "End", "End", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_END, 3U },
-	{ "PgUp", "PgUp", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_PAGE_UP, 3U },
-	{ "PgDn", "PgDn", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_PAGE_DOWN, 3U }
+static const struct kwl_qwerty_key layout_extra[] = {
+	{ "Esc", "Esc", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_ESC, 4U },
+	{ "Tab", "Tab", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_TAB, 4U },
+	{ "Ctrl", "Ctrl", NULL, NULL, KWL_FLICK_CTRL, 0U, 4U },
+	{ "Alt", "Alt", NULL, NULL, KWL_FLICK_ALT, 0U, 4U },
+	{ "|", "|", "|", "|", KWL_FLICK_TYPE, 0U, 3U },
+	{ "~", "~", "~", "~", KWL_FLICK_TYPE, 0U, 3U },
+	{ "/", "/", "/", "/", KWL_FLICK_TYPE, 0U, 3U },
+	{ "-", "-", "-", "-", KWL_FLICK_TYPE, 0U, 3U },
+	{ "Home", "Home", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_HOME, 3U },
+	{ "End", "End", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_END, 3U },
+	{ "PgUp", "PgUp", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_PAGE_UP, 3U },
+	{ "PgDn", "PgDn", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_PAGE_DOWN, 3U }
 };
 
-static const struct zwl_qwerty_key layout_digits[] = {
-	{ "1", "!", "1", "!", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "2", "@", "2", "@", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "3", "#", "3", "#", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "4", "$", "4", "$", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "5", "%", "5", "%", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "6", "^", "6", "^", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "7", "&", "7", "&", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "8", "*", "8", "*", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "9", "(", "9", "(", ZWL_FLICK_TYPE, 0U, 4U },
-	{ "0", ")", "0", ")", ZWL_FLICK_TYPE, 0U, 4U }
+static const struct kwl_qwerty_key layout_digits[] = {
+	{ "1", "!", "1", "!", KWL_FLICK_TYPE, 0U, 4U },
+	{ "2", "@", "2", "@", KWL_FLICK_TYPE, 0U, 4U },
+	{ "3", "#", "3", "#", KWL_FLICK_TYPE, 0U, 4U },
+	{ "4", "$", "4", "$", KWL_FLICK_TYPE, 0U, 4U },
+	{ "5", "%", "5", "%", KWL_FLICK_TYPE, 0U, 4U },
+	{ "6", "^", "6", "^", KWL_FLICK_TYPE, 0U, 4U },
+	{ "7", "&", "7", "&", KWL_FLICK_TYPE, 0U, 4U },
+	{ "8", "*", "8", "*", KWL_FLICK_TYPE, 0U, 4U },
+	{ "9", "(", "9", "(", KWL_FLICK_TYPE, 0U, 4U },
+	{ "0", ")", "0", ")", KWL_FLICK_TYPE, 0U, 4U }
 };
 
-static const struct zwl_qwerty_key layout_letters_top[] = {
+static const struct kwl_qwerty_key layout_letters_top[] = {
 	LAYOUT_LETTER("q", "Q"), LAYOUT_LETTER("w", "W"), LAYOUT_LETTER("e", "E"), LAYOUT_LETTER("r", "R"), LAYOUT_LETTER("t", "T"),
 	LAYOUT_LETTER("y", "Y"), LAYOUT_LETTER("u", "U"), LAYOUT_LETTER("i", "I"), LAYOUT_LETTER("o", "O"), LAYOUT_LETTER("p", "P")
 };
 
-static const struct zwl_qwerty_key layout_letters_middle[] = {
+static const struct kwl_qwerty_key layout_letters_middle[] = {
 	LAYOUT_LETTER("a", "A"), LAYOUT_LETTER("s", "S"), LAYOUT_LETTER("d", "D"), LAYOUT_LETTER("f", "F"), LAYOUT_LETTER("g", "G"),
 	LAYOUT_LETTER("h", "H"), LAYOUT_LETTER("j", "J"), LAYOUT_LETTER("k", "K"), LAYOUT_LETTER("l", "L")
 };
 
-static const struct zwl_qwerty_key layout_letters_bottom[] = {
-	{ "Shift", "Shift", NULL, NULL, ZWL_FLICK_SHIFT, 0U, 6U },
+static const struct kwl_qwerty_key layout_letters_bottom[] = {
+	{ "Shift", "Shift", NULL, NULL, KWL_FLICK_SHIFT, 0U, 6U },
 	LAYOUT_LETTER("z", "Z"), LAYOUT_LETTER("x", "X"), LAYOUT_LETTER("c", "C"), LAYOUT_LETTER("v", "V"),
 	LAYOUT_LETTER("b", "B"), LAYOUT_LETTER("n", "N"), LAYOUT_LETTER("m", "M"),
-	{ "Del", "Del", NULL, NULL, ZWL_FLICK_BACKSPACE, 0U, 6U }
+	{ "Del", "Del", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 6U }
 };
 
-static const struct zwl_qwerty_key layout_letters_space[] = {
-	{ "?123", "?123", NULL, NULL, ZWL_FLICK_FACE, 0U, 5U },
-	{ ",", ",", ",", ",", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "space", "space", " ", " ", ZWL_FLICK_SPACE, 0U, 12U },
-	{ ".", ".", ".", ".", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "Enter", "Enter", "\n", "\n", ZWL_FLICK_ENTER, 0U, 5U },
-	{ "←", "←", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_LEFT, 3U },
-	{ "↑", "↑", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_UP, 3U },
-	{ "↓", "↓", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_DOWN, 3U },
-	{ "→", "→", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_RIGHT, 3U }
+static const struct kwl_qwerty_key layout_letters_space[] = {
+	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
+	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 3U },
+	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
+	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 3U },
+	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
+	{ "↑", "↑", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_UP, 3U },
+	{ "↓", "↓", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_DOWN, 3U },
+	{ "→", "→", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_RIGHT, 3U }
 };
 
-static const struct zwl_qwerty_key layout_symbols_top[] = {
+static const struct kwl_qwerty_key layout_symbols_top[] = {
 	LAYOUT_SYMBOL("-"), LAYOUT_SYMBOL("/"), LAYOUT_SYMBOL(":"), LAYOUT_SYMBOL(";"), LAYOUT_SYMBOL("<"),
 	LAYOUT_SYMBOL(">"), LAYOUT_SYMBOL("["), LAYOUT_SYMBOL("]"), LAYOUT_SYMBOL("{"), LAYOUT_SYMBOL("}")
 };
 
-static const struct zwl_qwerty_key layout_symbols_middle[] = {
+static const struct kwl_qwerty_key layout_symbols_middle[] = {
 	LAYOUT_SYMBOL("."), LAYOUT_SYMBOL(","), LAYOUT_SYMBOL("?"), LAYOUT_SYMBOL("!"), LAYOUT_SYMBOL("'"),
 	LAYOUT_SYMBOL("\""), LAYOUT_SYMBOL("`"), LAYOUT_SYMBOL("_"), LAYOUT_SYMBOL("\\"), LAYOUT_SYMBOL("|")
 };
 
-static const struct zwl_qwerty_key layout_symbols_bottom[] = {
+static const struct kwl_qwerty_key layout_symbols_bottom[] = {
 	LAYOUT_SYMBOL("~"), LAYOUT_SYMBOL("+"), LAYOUT_SYMBOL("="), LAYOUT_SYMBOL("*"),
 	LAYOUT_SYMBOL("#"), LAYOUT_SYMBOL("%"), LAYOUT_SYMBOL("^"), LAYOUT_SYMBOL("&"),
-	{ "Del", "Del", NULL, NULL, ZWL_FLICK_BACKSPACE, 0U, 8U }
+	{ "Del", "Del", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 8U }
 };
 
-static const struct zwl_qwerty_key layout_symbols_space[] = {
-	{ "ABC", "ABC", NULL, NULL, ZWL_FLICK_FACE, 0U, 5U },
-	{ ",", ",", ",", ",", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "space", "space", " ", " ", ZWL_FLICK_SPACE, 0U, 12U },
-	{ ".", ".", ".", ".", ZWL_FLICK_TYPE, 0U, 3U },
-	{ "Enter", "Enter", "\n", "\n", ZWL_FLICK_ENTER, 0U, 5U },
-	{ "←", "←", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_LEFT, 3U },
-	{ "↑", "↑", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_UP, 3U },
-	{ "↓", "↓", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_DOWN, 3U },
-	{ "→", "→", NULL, NULL, ZWL_FLICK_ARROW, ZWL_KEY_RIGHT, 3U }
+static const struct kwl_qwerty_key layout_symbols_space[] = {
+	{ "ABC", "ABC", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
+	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 3U },
+	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
+	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 3U },
+	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
+	{ "↑", "↑", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_UP, 3U },
+	{ "↓", "↓", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_DOWN, 3U },
+	{ "→", "→", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_RIGHT, 3U }
 };
 
-static const struct layout_qwerty_row layout_qwerty[ZWL_QWERTY_FACES][ZWL_QWERTY_ROWS] = {
+static const struct layout_qwerty_row layout_qwerty[KWL_QWERTY_FACES][KWL_QWERTY_ROWS] = {
 	{
 		LAYOUT_ROW(layout_extra),
 		LAYOUT_ROW(layout_digits),
@@ -249,20 +249,20 @@ static const struct layout_qwerty_row layout_qwerty[ZWL_QWERTY_FACES][ZWL_QWERTY
 };
 
 /* The QWERTY panel's faces' names, for the log. */
-static const char *const layout_qwerty_names[ZWL_QWERTY_FACES] = {
+static const char *const layout_qwerty_names[KWL_QWERTY_FACES] = {
 	"letters",
 	"symbols"
 };
 
 /* The faces' names, for the log and the title band. */
-static const char *const layout_face_names[ZWL_FLICK_FACES] = {
+static const char *const layout_face_names[KWL_FLICK_FACES] = {
 	"kana",
 	"alpha",
 	"number"
 };
 
 /* The directions' names, for the log. */
-static const char *const layout_direction_names[ZWL_FLICK_DIRECTIONS] = {
+static const char *const layout_direction_names[KWL_FLICK_DIRECTIONS] = {
 	"center",
 	"left",
 	"up",
@@ -304,7 +304,7 @@ static const char layout_us_shifted[] =
  * no joined sequence), and each has a colour glyph in Noto Color Emoji
  * 2.047 (the host's test checks both).
  */
-static const char *const layout_emoji[ZWL_EMOJI_CATEGORIES][ZWL_EMOJI_PER_CATEGORY] = {
+static const char *const layout_emoji[KWL_EMOJI_CATEGORIES][KWL_EMOJI_PER_CATEGORY] = {
 	{
 		"\xf0\x9f\x98\x80", "\xf0\x9f\x98\x83", "\xf0\x9f\x98\x84", "\xf0\x9f\x98\x81", "\xf0\x9f\x98\x86",
 		"\xf0\x9f\x98\x85", "\xf0\x9f\x98\x82", "\xf0\x9f\x99\x82", "\xf0\x9f\x98\x89", "\xf0\x9f\x98\x8a",
@@ -332,7 +332,7 @@ static const char *const layout_emoji[ZWL_EMOJI_CATEGORIES][ZWL_EMOJI_PER_CATEGO
 };
 
 /* The emoji face's categories' names, shown on their tabs. */
-static const char *const layout_emoji_names[ZWL_EMOJI_CATEGORIES] = {
+static const char *const layout_emoji_names[KWL_EMOJI_CATEGORIES] = {
 	"顔",
 	"手と人",
 	"物",
@@ -342,16 +342,16 @@ static const char *const layout_emoji_names[ZWL_EMOJI_CATEGORIES] = {
 /*
  * Returns a key of a face by its row and column; NULL outside the grid.
  */
-const struct zwl_flick_key *
-zwl_flick_key(
+const struct kwl_flick_key *
+kwl_flick_key(
 	unsigned face,
 	unsigned row,
 	unsigned column)
 {
 	/* Only the faces and the grid. */
-	if (face >= ZWL_FLICK_FACES)
+	if (face >= KWL_FLICK_FACES)
 		return NULL;
-	if (row >= ZWL_FLICK_ROWS || column >= ZWL_FLICK_COLUMNS)
+	if (row >= KWL_FLICK_ROWS || column >= KWL_FLICK_COLUMNS)
 		return NULL;
 
 	/* The key. */
@@ -362,11 +362,11 @@ zwl_flick_key(
  * Returns a face's name (kana, alpha, number); "?" for none.
  */
 const char *
-zwl_flick_face_name(
+kwl_flick_face_name(
 	unsigned face)
 {
 	/* Only the faces. */
-	if (face >= ZWL_FLICK_FACES)
+	if (face >= KWL_FLICK_FACES)
 		return "?";
 
 	/* The name. */
@@ -377,11 +377,11 @@ zwl_flick_face_name(
  * Returns the face that follows one (kana, alpha, number, then kana again).
  */
 unsigned
-zwl_flick_face_next(
+kwl_flick_face_next(
 	unsigned face)
 {
 	/* The next, wrapping. */
-	return (face + 1U) % ZWL_FLICK_FACES;
+	return (face + 1U) % KWL_FLICK_FACES;
 }
 
 /*
@@ -390,7 +390,7 @@ zwl_flick_face_next(
  * than the flick's distance, otherwise the nearer axis's direction.
  */
 unsigned
-zwl_flick_direction(
+kwl_flick_direction(
 	int dx,
 	int dy,
 	int key_size)
@@ -408,7 +408,7 @@ zwl_flick_direction(
 	/* Shorter than that: a tap. */
 	distance = (long)dx * dx + (long)dy * dy;
 	if (distance < threshold * threshold)
-		return ZWL_FLICK_CENTER;
+		return KWL_FLICK_CENTER;
 
 	/* The nearer axis (a tie goes across). */
 	across = dx;
@@ -421,14 +421,14 @@ zwl_flick_direction(
 	/* Across: left or right. */
 	if (across >= down) {
 		if (dx < 0)
-			return ZWL_FLICK_LEFT;
-		return ZWL_FLICK_RIGHT;
+			return KWL_FLICK_LEFT;
+		return KWL_FLICK_RIGHT;
 	}
 
 	/* Up or down (the screen's y grows down). */
 	if (dy < 0)
-		return ZWL_FLICK_UP;
-	return ZWL_FLICK_DOWN;
+		return KWL_FLICK_UP;
+	return KWL_FLICK_DOWN;
 }
 
 /*
@@ -436,12 +436,12 @@ zwl_flick_direction(
  * (a direction without a character, or a key that only acts).
  */
 const char *
-zwl_flick_text(
-	const struct zwl_flick_key *key,
+kwl_flick_text(
+	const struct kwl_flick_key *key,
 	unsigned direction)
 {
 	/* Only a key and a direction. */
-	if (key == NULL || direction >= ZWL_FLICK_DIRECTIONS)
+	if (key == NULL || direction >= KWL_FLICK_DIRECTIONS)
 		return NULL;
 
 	/* The character, or none. */
@@ -454,7 +454,7 @@ zwl_flick_text(
  * next form (UTF-8) in next, or 0 when the text is not such a kana.
  */
 int
-zwl_flick_voice(
+kwl_flick_voice(
 	const char *previous,
 	char *next,
 	size_t size)
@@ -503,7 +503,7 @@ zwl_flick_voice(
  * it in next, or 0 when the text is not one ASCII letter.
  */
 int
-zwl_flick_case(
+kwl_flick_case(
 	const char *previous,
 	char *next,
 	size_t size)
@@ -537,11 +537,11 @@ zwl_flick_case(
  * Returns a direction's name (center, left, up, right, down); "?" for none.
  */
 const char *
-zwl_flick_direction_name(
+kwl_flick_direction_name(
 	unsigned direction)
 {
 	/* Only the directions. */
-	if (direction >= ZWL_FLICK_DIRECTIONS)
+	if (direction >= KWL_FLICK_DIRECTIONS)
 		return "?";
 
 	/* The name. */
@@ -554,7 +554,7 @@ zwl_flick_direction_name(
  * Shift must be held, or 0 when no key types it (any other text).
  */
 int
-zwl_flick_us_key(
+kwl_flick_us_key(
 	const char *text,
 	unsigned *code,
 	int *shift)
@@ -569,7 +569,7 @@ zwl_flick_us_key(
 
 	/* A newline is the enter key. */
 	if (character == '\n') {
-		*code = ZWL_FLICK_KEY_ENTER;
+		*code = KWL_FLICK_KEY_ENTER;
 		*shift = 0;
 		return 1;
 	}
@@ -599,15 +599,15 @@ zwl_flick_us_key(
  * Returns a row of a QWERTY face and how many keys it has; NULL outside
  * the faces and rows.
  */
-const struct zwl_qwerty_key *
-zwl_qwerty_row(
+const struct kwl_qwerty_key *
+kwl_qwerty_row(
 	unsigned face,
 	unsigned row,
 	unsigned *count)
 {
 	/* Only the faces and their rows. */
 	*count = 0;
-	if (face >= ZWL_QWERTY_FACES || row >= ZWL_QWERTY_ROWS)
+	if (face >= KWL_QWERTY_FACES || row >= KWL_QWERTY_ROWS)
 		return NULL;
 
 	/* The row's keys. */
@@ -619,11 +619,11 @@ zwl_qwerty_row(
  * Returns a QWERTY face's name (letters, symbols); "?" for none.
  */
 const char *
-zwl_qwerty_face_name(
+kwl_qwerty_face_name(
 	unsigned face)
 {
 	/* Only the faces. */
-	if (face >= ZWL_QWERTY_FACES)
+	if (face >= KWL_QWERTY_FACES)
 		return "?";
 
 	/* The name. */
@@ -635,15 +635,15 @@ zwl_qwerty_face_name(
  * such category).
  */
 unsigned
-zwl_emoji_count(
+kwl_emoji_count(
 	unsigned category)
 {
 	/* Only the categories. */
-	if (category >= ZWL_EMOJI_CATEGORIES)
+	if (category >= KWL_EMOJI_CATEGORIES)
 		return 0U;
 
 	/* Every category is full. */
-	return ZWL_EMOJI_PER_CATEGORY;
+	return KWL_EMOJI_PER_CATEGORY;
 }
 
 /*
@@ -651,12 +651,12 @@ zwl_emoji_count(
  * none.
  */
 const char *
-zwl_emoji(
+kwl_emoji(
 	unsigned category,
 	unsigned index)
 {
 	/* Only the categories and their places. */
-	if (category >= ZWL_EMOJI_CATEGORIES || index >= ZWL_EMOJI_PER_CATEGORY)
+	if (category >= KWL_EMOJI_CATEGORIES || index >= KWL_EMOJI_PER_CATEGORY)
 		return NULL;
 
 	/* The emoji. */
@@ -667,11 +667,11 @@ zwl_emoji(
  * Returns a category's name for its tab; "?" for none.
  */
 const char *
-zwl_emoji_category_name(
+kwl_emoji_category_name(
 	unsigned category)
 {
 	/* Only the categories. */
-	if (category >= ZWL_EMOJI_CATEGORIES)
+	if (category >= KWL_EMOJI_CATEGORIES)
 		return "?";
 
 	/* The name. */

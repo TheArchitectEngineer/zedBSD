@@ -35,7 +35,7 @@
  * The kept volume is the compositor's settings store's (settings.c, WS135):
  * the store gives the volume the file held, takes audiod's volume as the
  * session's, and writes it at the session's end.  A client's set of the
- * volume (kl_system_settings_v1) comes here as zwl_volume_request.
+ * volume (kl_system_settings_v1) comes here as kwl_volume_request.
  */
 
 #include "glass.h"
@@ -69,7 +69,7 @@
 #define VOLUME_TRACK_HEIGHT	6
 #define VOLUME_KNOB		18
 
-/* The wheel: percent a notch (zwl_seat_axis counts notches, as evdev's wheel does). */
+/* The wheel: percent a notch (kwl_seat_axis counts notches, as evdev's wheel does). */
 #define VOLUME_WHEEL_STEP	5
 
 /* How often a drag sends the volume, in milliseconds. */
@@ -124,26 +124,26 @@ struct volume_view {
  */
 static struct volume_view volume_view;
 
-static void volume_open_popup(struct zwl_server *server);
-static void volume_close_popup(struct zwl_server *server, const char *via);
-static void volume_set(struct zwl_server *server, unsigned value, unsigned muted, const char *via, unsigned final);
-static void volume_send(struct zwl_server *server);
-static void volume_restore(struct zwl_server *server);
+static void volume_open_popup(struct kwl_server *server);
+static void volume_close_popup(struct kwl_server *server, const char *via);
+static void volume_set(struct kwl_server *server, unsigned value, unsigned muted, const char *via, unsigned final);
+static void volume_send(struct kwl_server *server);
+static void volume_restore(struct kwl_server *server);
 static int volume_sound(void);
 static int volume_in_icon(int32_t x, int32_t y);
 static int volume_in_popup(int32_t x, int32_t y);
 static unsigned volume_slider_value(int32_t x);
 static int32_t volume_slider_top(void);
 static int32_t volume_mute_top(void);
-static void volume_draw_switch(struct zwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on, float fade);
+static void volume_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on, float fade);
 
 /*
  * Reads what audiod has reported since the last tick, and sends a volume a
  * drag held back.  The link is made on the desktop's first tick.
  */
 void
-zwl_volume_tick(
-	struct zwl_server *server)
+kwl_volume_tick(
+	struct kwl_server *server)
 {
 	unsigned changed;
 	uint64_t now;
@@ -187,7 +187,7 @@ zwl_volume_tick(
 	}
 
 	/* A volume a drag held back. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (volume_view.send_waiting && now - volume_view.sent_ms >= VOLUME_SEND_MS)
 		volume_send(server);
 }
@@ -199,8 +199,8 @@ zwl_volume_tick(
  * screen) or before the volume was known.
  */
 void
-zwl_volume_keep(
-	struct zwl_server *server,
+kwl_volume_keep(
+	struct kwl_server *server,
 	const char *why)
 {
 	unsigned value;
@@ -227,11 +227,11 @@ zwl_volume_keep(
 
 	/* Hands the volume to the store, which writes it as the session ends (settings.c). */
 	(void)snprintf(text, sizeof(text), "%u", value);
-	zwl_settings_store_report(server->settings, VOLUME_KEY_VOLUME, text);
+	kwl_settings_store_report(server->settings, VOLUME_KEY_VOLUME, text);
 
 	/* Hands the mute to the store the same way. */
 	(void)snprintf(text, sizeof(text), "%u", muted);
-	zwl_settings_store_report(server->settings, VOLUME_KEY_MUTED, text);
+	kwl_settings_store_report(server->settings, VOLUME_KEY_MUTED, text);
 
 	/*
 	 * Remembers what the store now holds, so that a later keep with the
@@ -251,7 +251,7 @@ zwl_volume_keep(
  * volume), whether there is sound, and audiod's volume and mute.
  */
 void
-zwl_volume_report(
+kwl_volume_report(
 	unsigned *restored,
 	unsigned *available,
 	unsigned *value,
@@ -284,8 +284,8 @@ zwl_volume_report(
  * volume must not be overtaken), or ENODEV without sound.
  */
 int
-zwl_volume_request(
-	struct zwl_server *server,
+kwl_volume_request(
+	struct kwl_server *server,
 	unsigned value,
 	unsigned muted)
 {
@@ -304,7 +304,7 @@ zwl_volume_request(
 	server->dirty = 1;
 
 	/* Logs the set for the tests. */
-	printf("ZWL VOLUME set value=%u muted=%u via=settings final=1 at_ms=%llu\n", value, muted, (unsigned long long)zwl_milliseconds());
+	printf("ZWL VOLUME set value=%u muted=%u via=settings final=1 at_ms=%llu\n", value, muted, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: audiod has the volume (its report comes back to the settings). */
 	return 0;
@@ -317,8 +317,8 @@ zwl_volume_request(
  * the kept volume, ENODEV without sound, or the error of sending.
  */
 int
-zwl_volume_request_channels(
-	struct zwl_server *server,
+kwl_volume_request_channels(
+	struct kwl_server *server,
 	unsigned left,
 	unsigned right,
 	unsigned muted)
@@ -337,7 +337,7 @@ zwl_volume_request_channels(
 	volume_view.value = left;
 	volume_view.muted = muted;
 	volume_view.send_waiting = 0U;
-	volume_view.sent_ms = zwl_milliseconds();
+	volume_view.sent_ms = kwl_milliseconds();
 	server->dirty = 1;
 	error = kl_backend_audio_set_volume(volume_view.audio, left, right, muted);
 	printf("ZWL VOLUME set left=%u right=%u muted=%u via=system error=%d\n", left, right, muted, error);
@@ -353,7 +353,7 @@ zwl_volume_request_channels(
  * Returns 0, ENODEV without sound, or the error of sending.
  */
 int
-zwl_volume_feedback(
+kwl_volume_feedback(
 	void)
 {
 	int error;
@@ -376,7 +376,7 @@ zwl_volume_feedback(
  * link: not reached).
  */
 void
-zwl_volume_audio_state(
+kwl_volume_audio_state(
 	struct kl_backend_audio_state *state)
 {
 	/* The state last read. */
@@ -388,8 +388,8 @@ zwl_volume_audio_state(
  * bar's ink.
  */
 void
-zwl_volume_draw_icon(
-	struct zwl_server *server,
+kwl_volume_draw_icon(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	const float *ink)
@@ -403,7 +403,7 @@ zwl_volume_draw_icon(
 	volume_view.icon_x = x - 5;
 	volume_view.icon_y = 3;
 	volume_view.icon_width = 30;
-	volume_view.icon_height = ZWL_GLASS_BAR - 6;
+	volume_view.icon_height = KWL_GLASS_BAR - 6;
 	if (!volume_view.icon_logged) {
 		volume_view.icon_logged = 1U;
 		printf("ZWL VOLUME icon x=%d y=%d width=%d height=%d\n", volume_view.icon_x, volume_view.icon_y, volume_view.icon_width, volume_view.icon_height);
@@ -411,15 +411,15 @@ zwl_volume_draw_icon(
 
 	/* While the popup is open its icon has a pale blue back, on the bar's middle. */
 	if (volume_view.open)
-		glass_draw_solid(server, command, (float)volume_view.icon_x, (float)(ZWL_GLASS_BAR_MIDDLE - 14), (float)volume_view.icon_width, 28.0f, 7.0f, blue);
+		glass_draw_solid(server, command, (float)volume_view.icon_x, (float)(KWL_GLASS_BAR_MIDDLE - 14), (float)volume_view.icon_width, 28.0f, 7.0f, blue);
 
 	/* No sound: a pale speaker, struck through. */
 	sound = volume_sound();
 	if (!sound) {
 		memcpy(faint, ink, sizeof(faint));
 		faint[3] *= 0.35f;
-		glass_draw_icon(server, command, GLASS_ICON_VOLUME_0, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, faint);
-		glass_draw_solid(server, command, (float)(x + 1), (float)(ZWL_GLASS_BAR_MIDDLE - 1), 18.0f, 2.0f, 1.0f, ink);
+		glass_draw_icon(server, command, GLASS_ICON_VOLUME_0, x, KWL_GLASS_BAR_MIDDLE - 10, 20U, faint);
+		glass_draw_solid(server, command, (float)(x + 1), (float)(KWL_GLASS_BAR_MIDDLE - 1), 18.0f, 2.0f, 1.0f, ink);
 		return;
 	}
 
@@ -436,7 +436,7 @@ zwl_volume_draw_icon(
 	}
 
 	/* The icon. */
-	glass_draw_icon(server, command, icon, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, ink);
+	glass_draw_icon(server, command, icon, x, KWL_GLASS_BAR_MIDDLE - 10, 20U, ink);
 }
 
 /*
@@ -445,8 +445,8 @@ zwl_volume_draw_icon(
  * no sound.
  */
 void
-zwl_volume_draw_popup(
-	struct zwl_server *server,
+kwl_volume_draw_popup(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
@@ -546,8 +546,8 @@ zwl_volume_draw_popup(
  * elsewhere closes the popup.  Returns 1 when the button was the volume's.
  */
 int
-zwl_volume_button(
-	struct zwl_server *server,
+kwl_volume_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -560,7 +560,7 @@ zwl_volume_button(
 	/* With the popup closed, only a left press on the icon. */
 	if (!volume_view.open) {
 		/* A release, or another button, goes on. */
-		if (state == 0U || button != ZWL_BUTTON_LEFT)
+		if (state == 0U || button != KWL_BUTTON_LEFT)
 			return 0;
 
 		/* A press off the icon goes on. */
@@ -600,7 +600,7 @@ zwl_volume_button(
 
 	/* Without sound, or with another button, the controls do nothing. */
 	sound = volume_sound();
-	if (!sound || button != ZWL_BUTTON_LEFT)
+	if (!sound || button != KWL_BUTTON_LEFT)
 		return 1;
 
 	/* The rows' tops, and where the press is. */
@@ -630,8 +630,8 @@ zwl_volume_button(
  * Returns 1 when the motion was the volume's.
  */
 int
-zwl_volume_motion(
-	struct zwl_server *server)
+kwl_volume_motion(
+	struct kwl_server *server)
 {
 	/* A closed popup does not follow the pointer. */
 	if (!volume_view.open)
@@ -650,8 +650,8 @@ zwl_volume_motion(
  * the popup's too.  Returns 1 when the key was the volume's.
  */
 int
-zwl_volume_key(
-	struct zwl_server *server,
+kwl_volume_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -673,8 +673,8 @@ zwl_volume_key(
  * volume's.
  */
 int
-zwl_volume_axis(
-	struct zwl_server *server,
+kwl_volume_axis(
+	struct kwl_server *server,
 	int32_t vertical,
 	int32_t horizontal)
 {
@@ -716,7 +716,7 @@ zwl_volume_axis(
  * Tells whether the popup is open (the look is not still while it is).
  */
 int
-zwl_volume_is_open(
+kwl_volume_is_open(
 	void)
 {
 	/* Open or not. */
@@ -726,7 +726,7 @@ zwl_volume_is_open(
 /* Opens the popup under the icon, kept on the output. */
 static void
 volume_open_popup(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int sound;
 
@@ -736,7 +736,7 @@ volume_open_popup(
 		volume_view.popup_x = (int32_t)server->width - 8 - VOLUME_POPUP_WIDTH;
 	if (volume_view.popup_x < 8)
 		volume_view.popup_x = 8;
-	volume_view.popup_y = ZWL_GLASS_BAR + 6;
+	volume_view.popup_y = KWL_GLASS_BAR + 6;
 
 	/* Its height: the title, the slider, the mute row, and a note without sound. */
 	volume_view.popup_height = VOLUME_PADDING + VOLUME_TITLE_HEIGHT + VOLUME_SLIDER_HEIGHT + VOLUME_ROW_HEIGHT;
@@ -754,7 +754,7 @@ volume_open_popup(
 /* Closes the popup. */
 static void
 volume_close_popup(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *via)
 {
 	/* A drag in progress ends with its volume. */
@@ -777,7 +777,7 @@ volume_close_popup(
  */
 static void
 volume_set(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned value,
 	unsigned muted,
 	const char *via,
@@ -794,10 +794,10 @@ volume_set(
 	volume_view.muted = muted;
 	volume_view.send_waiting = 1U;
 	server->dirty = 1;
-	printf("ZWL VOLUME set value=%u muted=%u via=%s final=%u at_ms=%llu\n", value, muted, via, final, (unsigned long long)zwl_milliseconds());
+	printf("ZWL VOLUME set value=%u muted=%u via=%s final=%u at_ms=%llu\n", value, muted, via, final, (unsigned long long)kwl_milliseconds());
 
 	/* Sent now when final, or when a drag's wait is over (audiod holds it; nothing is written). */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (final || now - volume_view.sent_ms >= VOLUME_SEND_MS)
 		volume_send(server);
 
@@ -813,7 +813,7 @@ volume_set(
 /* Sends the volume shown to audiod. */
 static void
 volume_send(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int error;
 
@@ -821,7 +821,7 @@ volume_send(
 
 	/* The request; one that cannot go is logged and dropped (the next report shows audiod's). */
 	volume_view.send_waiting = 0U;
-	volume_view.sent_ms = zwl_milliseconds();
+	volume_view.sent_ms = kwl_milliseconds();
 	error = kl_backend_audio_set_volume(volume_view.audio, volume_view.value, volume_view.value, volume_view.muted);
 	if (error != 0)
 		printf("ZWL VOLUME send errno=%d\n", error);
@@ -834,7 +834,7 @@ volume_send(
  */
 static void
 volume_restore(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int value;
 	int muted;
@@ -855,13 +855,13 @@ volume_restore(
 		return;
 
 	/* Takes the volume the file kept; without a kept volume, audiod's stays. */
-	error = zwl_settings_kept(server, VOLUME_KEY_VOLUME, &value);
+	error = kwl_settings_kept(server, VOLUME_KEY_VOLUME, &value);
 	if (error != 0)
 		return;
 
 	/* Takes the kept mute, which stays off when the file holds none. */
 	muted = 0;
-	(void)zwl_settings_kept(server, VOLUME_KEY_MUTED, &muted);
+	(void)kwl_settings_kept(server, VOLUME_KEY_MUTED, &muted);
 
 	/* What the file holds, so that the end writes only a change. */
 	volume_view.kept = 1U;
@@ -974,7 +974,7 @@ volume_mute_top(
 /* Draws a switch, its right edge at right, on or off, faded when it cannot be used. */
 static void
 volume_draw_switch(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t right,
 	int32_t middle,

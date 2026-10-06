@@ -39,7 +39,7 @@ shot() { timeout 60 python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --r
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$qmp" "$@" >/dev/null; }
 key() { send input-send-event "{\"events\":[{\"type\":\"key\",\"data\":{\"down\":$2,\"key\":{\"type\":\"qcode\",\"data\":\"$1\"}}}]}"; }
 tap() { key "$1" true; sleep 0.12; key "$1" false; sleep 0.6; }
-# Alt+Tab pressed and let go at once (well within ZWL_SWITCHER_QUICK_MS, 500 ms), two events a QMP command.
+# Alt+Tab pressed and let go at once (well within KWL_SWITCHER_QUICK_MS, 500 ms), two events a QMP command.
 quick_alt_tab() {
 	send input-send-event '{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"alt"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"tab"}}}]}'
 	sleep 0.05

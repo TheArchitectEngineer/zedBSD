@@ -8,7 +8,7 @@
 /*
  * The desktop's appearance, light or dark (ws089-p017).
  *
- * The compositor's keiland_theme_v1 tells the appearance when it is bound
+ * The compositor's kl_theme_v1 tells the appearance when it is bound
  * and again whenever the user changes it.  A watch binds it on a queue of
  * the library's own, takes the first appearance with a roundtrip of that
  * queue (no event of the program's runs in it), and then moves to the
@@ -31,7 +31,7 @@
 
 /* One watch: the compositor's object, the watch's appearance, and whom to call. */
 struct kl_appearance {
-	struct keiland_theme_v1 *theme;
+	struct kl_theme_v1 *theme;
 	unsigned appearance;
 	kl_appearance_fn changed;
 	void *data;
@@ -41,10 +41,10 @@ struct kl_appearance {
 /* The program's appearance, told last on any watch. */
 static unsigned appearance_program;
 
-static void appearance_told(void *data, struct keiland_theme_v1 *theme, uint32_t appearance);
+static void appearance_told(void *data, struct kl_theme_v1 *theme, uint32_t appearance);
 
 /* The object's callbacks. */
-static const struct keiland_theme_v1_listener appearance_listener = {
+static const struct kl_theme_v1_listener appearance_listener = {
 	appearance_told
 };
 
@@ -73,7 +73,7 @@ kl_appearance_open(
 		return EINVAL;
 
 	/* The global. */
-	error = keiui_global_find(&search, display, "keiland_theme_v1");
+	error = keiui_global_find(&search, display, "kl_theme_v1");
 	if (error != 0) {
 		keiui_global_end(&search);
 		return error;
@@ -117,7 +117,7 @@ kl_appearance_open(
 	wl_proxy_set_queue((struct wl_proxy *)wrapper, queue);
 
 	/* The binding, on the library's queue. */
-	watch->theme = wl_registry_bind(wrapper, search.name, &keiland_theme_v1_interface, 1U);
+	watch->theme = wl_registry_bind(wrapper, search.name, &kl_theme_v1_interface, 1U);
 	wl_proxy_wrapper_destroy(wrapper);
 	keiui_global_end(&search);
 	if (watch->theme == NULL) {
@@ -127,7 +127,7 @@ kl_appearance_open(
 	}
 
 	/* The appearance told on the binding, without calling the program. */
-	status = keiland_theme_v1_add_listener(watch->theme, &appearance_listener, watch);
+	status = kl_theme_v1_add_listener(watch->theme, &appearance_listener, watch);
 	watch->opening = 1;
 	if (status == 0)
 		status = wl_display_roundtrip_queue(display, queue);
@@ -174,7 +174,7 @@ kl_appearance_close(
 
 	/* The compositor's object, then the watch. */
 	if (appearance->theme != NULL)
-		keiland_theme_v1_destroy(appearance->theme);
+		kl_theme_v1_destroy(appearance->theme);
 	free(appearance);
 }
 
@@ -187,7 +187,7 @@ kl_appearance_close(
 static void
 appearance_told(
 	void *data,
-	struct keiland_theme_v1 *theme,
+	struct kl_theme_v1 *theme,
 	uint32_t appearance)
 {
 	struct kl_appearance *watch;
@@ -197,7 +197,7 @@ appearance_told(
 	(void)theme;
 	watch = data;
 	told = KL_APPEARANCE_LIGHT;
-	if (appearance == KEILAND_THEME_V1_APPEARANCE_DARK)
+	if (appearance == KL_THEME_V1_APPEARANCE_DARK)
 		told = KL_APPEARANCE_DARK;
 
 	/* The program's, and the theme it is handed. */

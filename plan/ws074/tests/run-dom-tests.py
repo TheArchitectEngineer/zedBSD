@@ -31,7 +31,7 @@ def fonts():
     # Geometry needs the same comparison fonts on hosts without the guest font paths.
     # Use staged artifacts or their checked-in sources; missing fonts must not silently
     # turn every geometry answer into zero.
-    names = ("Inter.ttf", "JetBrainsMono-Regular.ttf", "DroidSansFallbackFull.ttf")
+    names = ("Mahora-Regular.ttf", "JetBrainsMono-Regular.ttf", "DroidSansFallbackFull.ttf")
     for directory in ("userland/desktop/fonts",):
         paths = [os.path.join(ROOT, directory, name) for name in names]
         if all(os.path.isfile(path) for path in paths):

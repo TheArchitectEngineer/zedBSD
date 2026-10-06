@@ -29,7 +29,7 @@ check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNT
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 0.8; }
 corners() { python3 plan/ws035/tests/p134-corners.py "$@" | tail -1; python3 plan/ws035/tests/p134-corners.py "$@" >/dev/null || status=1; }
-# A floating title bar is ZWL_GLASS_TITLE (44) high, ZWL_GLASS_GAP (8) above the body.
+# A floating title bar is KWL_GLASS_TITLE (44) high, KWL_GLASS_GAP (8) above the body.
 title_y() { echo $(($1 - 8 - 44)); }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[t]erminal|[p]opup-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[t]erminal|[p]opup-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 status=0
@@ -62,7 +62,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/t.log 'ZTERM START'
-zwl_app_clients
+kwl_app_clients
 set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-0}; ty=${2:-0}
 set -- $(guest "grep 'ZTERM START' /tmp/t.log | tail -1" | sed -n 's/.* columns=\([0-9]*\) .* window=\([0-9]*\)x\([0-9]*\).*/\1 \2 \3/p')
@@ -100,12 +100,12 @@ guest 'for p in $(ps -A -o pid,args | grep "[p]opup-probe" | awk "{print \$1}");
 double_click $((tx + tw / 2)) $((ty - 8 - 22))
 expect_log /tmp/zdesktop.log 'ZWL GLASS dock surface=[0-9]+ via='
 set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) w=\([0-9]*\) h=\([0-9]*\).*/\1 \2 \3 \4/p')
-dx=${1:-0}; dy=${2:-48}; dw=${3:-1280}; dh=${4:-752}
+dx=${1:-4}; dy=${2:-48}; dw=${3:-1272}; dh=${4:-748}
 echo "docked at $dx,$dy size ${dw}x$dh"
 sleep 1.5
 pointer move 1200 400 sleep 600
 check "$out/maximized.png" >/dev/null
-corners "$out/maximized.png" "$dx" "$dy" "$dw" $((800 - dy)) square docked-body
+corners "$out/maximized.png" "$dx" "$dy" "$dw" "$dh" square docked-body
 set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* title=\([0-9]*\) .*/\1/p')
 double_click $((${1:-400} + 20)) 17
 expect_log /tmp/zdesktop.log 'ZWL GLASS undock surface=[0-9]+ via='

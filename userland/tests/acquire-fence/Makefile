@@ -1,6 +1,6 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
-# Acquire fences of keiland_gpu_buffer_v1 revision two (WS035 p054): wltest's window
+# Acquire fences of kl_gpu_buffer_v1 revision two (WS035 p054): wltest's window
 # and renderer, with one more fence the test signals itself.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 ACQUIRE_FENCE_TEST_SOURCES := userland/tests/acquire-fence/main.c \

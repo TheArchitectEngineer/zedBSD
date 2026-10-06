@@ -23,7 +23,7 @@ import tempfile
 from comparison_config import CHROME_USER_AGENT
 
 ROOT = Path(__file__).resolve().parents[3]
-FONT_NAMES = ("Inter.ttf", "JetBrainsMono-Regular.ttf", "DroidSansFallbackFull.ttf")
+FONT_NAMES = ("Mahora-Regular.ttf", "JetBrainsMono-Regular.ttf", "DroidSansFallbackFull.ttf")
 RECORD_START = re.compile(r"(?m)^\| (?= *)")
 ELEMENT = re.compile(r"^(?:svg |math )?<([^>]+)>$")
 ATTRIBUTE = re.compile(r'^([^=]+)="(.*)"$', re.S)

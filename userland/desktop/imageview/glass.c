@@ -10,7 +10,7 @@
  * glass.c): the images float on one frosted card inside the window, and
  * the chip, while it is shown, on a small card of its own; the desktop
  * shows around the card.  zdesktop draws the glass, its rim and the
- * cards' shadows (keiland_glass_v1 through libkeiland); the frame leaves
+ * cards' shadows (kl_glass_v1 through libkeiland); the frame leaves
  * its ground clear.
  *
  * The window is glass when its swapchain is see-through and zdesktop has

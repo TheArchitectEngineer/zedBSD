@@ -15,26 +15,26 @@
  * decides where each key goes.
  */
 
-#ifndef ZWL_IME_H
-#define ZWL_IME_H
+#ifndef KWL_IME_H
+#define KWL_IME_H
 
-#include "zwl.h"
+#include "kwl.h"
 
 #include <vulkan/vulkan.h>
 
 /* The evdev codes whose presses are remembered, so that a release goes where its press went. */
-#define ZWL_IME_KEYS		768U
+#define KWL_IME_KEYS		768U
 
 /* The longest text one message carries (the protocols' 4000 bytes), with its NUL. */
-#define ZWL_IME_TEXT_MAX	4001U
+#define KWL_IME_TEXT_MAX	4001U
 
 /*
  * Where the press of a key went, so that its release goes there too.
  */
-enum zwl_ime_route {
-	ZWL_IME_ROUTE_NONE,
-	ZWL_IME_ROUTE_GRAB,
-	ZWL_IME_ROUTE_TAKEN
+enum kwl_ime_route {
+	KWL_IME_ROUTE_NONE,
+	KWL_IME_ROUTE_GRAB,
+	KWL_IME_ROUTE_TAKEN
 };
 
 /*
@@ -48,10 +48,10 @@ enum zwl_ime_route {
  * it sent (ws166-p003).  The record lives as long as the object and is
  * freed with it.
  */
-struct zwl_text_input {
-	struct zwl_text_input *next;
-	struct zwl_object *object;
-	struct zwl_object *surface;
+struct kwl_text_input {
+	struct kwl_text_input *next;
+	struct kwl_object *object;
+	struct kwl_object *surface;
 	unsigned pending_enable;
 	unsigned pending_disable;
 	char *pending_text;
@@ -75,8 +75,8 @@ struct zwl_text_input {
 };
 
 /* The most applications whose language is remembered (ws095-p016), and an application key's longest text. */
-#define ZWL_IME_APPS			32U
-#define ZWL_IME_APP_KEY			80U
+#define KWL_IME_APPS			32U
+#define KWL_IME_APP_KEY			80U
 
 /*
  * The language one application last had (ws095-p016): its key -- "app:" and
@@ -84,8 +84,8 @@ struct zwl_text_input {
  * when its window names none -- and the language's ID.  A key empty means
  * the entry is free.
  */
-struct zwl_ime_app {
-	char key[ZWL_IME_APP_KEY];
+struct kwl_ime_app {
+	char key[KWL_IME_APP_KEY];
 	char language[16];
 };
 
@@ -104,29 +104,29 @@ struct zwl_ime_app {
  * its language.  An application's entry goes when its last connection
  * ends.
  *
- * It is made by zwl_ime_start when the program exists, and lives for the
+ * It is made by kwl_ime_start when the program exists, and lives for the
  * compositor's lifetime; the connection and the objects come and go with
  * the process, which is started again after a crash a few times.
  */
-struct zwl_ime {
+struct kwl_ime {
 	pid_t pid;
-	struct zwl_client *client;
+	struct kwl_client *client;
 	uint64_t starts[3];
 	unsigned start_index;
 	uint64_t restart_ms;
 	unsigned given_up;
-	struct zwl_object *method;
-	struct zwl_object *grab;
-	struct zwl_object *keyboard;
+	struct kwl_object *method;
+	struct kwl_object *grab;
+	struct kwl_object *keyboard;
 	unsigned keyboard_keymap;
-	struct zwl_object *status;
-	struct zwl_object *popups[4];
+	struct kwl_object *status;
+	struct kwl_object *popups[4];
 	char language[16];
 	char label[16];
 	int32_t indicator_x;
 	unsigned indicator_shown;
 	unsigned composing;
-	struct zwl_text_input *active;
+	struct kwl_text_input *active;
 	unsigned activated;
 	uint32_t done_count;
 	char *pending_commit;
@@ -136,16 +136,16 @@ struct zwl_ime {
 	uint32_t pending_before;
 	uint32_t pending_after;
 	char *preedit_shown;
-	unsigned char route[ZWL_IME_KEYS];
-	unsigned char keyboard_down[ZWL_IME_KEYS];
-	unsigned char keyboard_taken[ZWL_IME_KEYS];
+	unsigned char route[KWL_IME_KEYS];
+	unsigned char keyboard_down[KWL_IME_KEYS];
+	unsigned char keyboard_taken[KWL_IME_KEYS];
 	unsigned watching;
 	uint64_t watch_ms;
 	unsigned bypass;
-	struct zwl_ime_app apps[ZWL_IME_APPS];
+	struct kwl_ime_app apps[KWL_IME_APPS];
 	char desktop_language[16];
 	unsigned desktop_known;
-	char focus_key[ZWL_IME_APP_KEY];
+	char focus_key[KWL_IME_APP_KEY];
 	/*
 	 * Nonzero from a change of the input method chosen (WS154) until the
 	 * program is started again with it: that start does not wait, nor
@@ -156,35 +156,35 @@ struct zwl_ime {
 };
 
 /* text-input.c */
-int zwl_text_input_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_text_input_object_gone(struct zwl_object *object);
-void zwl_text_input_focus(struct zwl_server *server, struct zwl_object *previous);
-struct zwl_text_input *zwl_text_input_current(struct zwl_server *server);
-void zwl_text_input_deliver(struct zwl_text_input *input, const char *preedit, int32_t begin, int32_t end, const char *commit, uint32_t before, uint32_t after);
+int kwl_text_input_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_text_input_object_gone(struct kwl_object *object);
+void kwl_text_input_focus(struct kwl_server *server, struct kwl_object *previous);
+struct kwl_text_input *kwl_text_input_current(struct kwl_server *server);
+void kwl_text_input_deliver(struct kwl_text_input *input, const char *preedit, int32_t begin, int32_t end, const char *commit, uint32_t before, uint32_t after);
 
 /* input-method.c */
-void zwl_ime_start(struct zwl_server *server);
-void zwl_ime_tick(struct zwl_server *server, uint64_t now);
-int zwl_ime_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_ime_object_gone(struct zwl_object *object);
-void zwl_ime_client_gone(struct zwl_client *client);
-int zwl_ime_global_visible(struct zwl_client *client, enum zwl_kind kind);
-int zwl_ime_predict(struct zwl_server *server, uint32_t serial, const char *reading);
-void zwl_ime_learn(struct zwl_server *server, const char *reading, const char *word);
-void zwl_ime_repeat_changed(struct zwl_server *server);
-void zwl_ime_method_changed(struct zwl_server *server);
-int zwl_ime_key_early(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
-int zwl_ime_key_grab(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state, int composing_only);
-void zwl_ime_modifiers(struct zwl_server *server);
-void zwl_ime_focus(struct zwl_server *server, struct zwl_object *previous);
-void zwl_ime_update(struct zwl_server *server, struct zwl_text_input *committed);
-void zwl_ime_field_changed(struct zwl_server *server);
-int zwl_ime_field_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
-void zwl_ime_text_input_gone(struct zwl_server *server, struct zwl_text_input *input);
-void zwl_ime_surface_commit(struct zwl_object *surface);
-void zwl_ime_popup_draw(struct zwl_server *server, VkCommandBuffer command);
-int32_t zwl_ime_indicator_width(struct zwl_server *server);
-void zwl_ime_indicator_draw(struct zwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
-int zwl_ime_indicator_button(struct zwl_server *server, uint32_t button, uint32_t state);
+void kwl_ime_start(struct kwl_server *server);
+void kwl_ime_tick(struct kwl_server *server, uint64_t now);
+int kwl_ime_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_ime_object_gone(struct kwl_object *object);
+void kwl_ime_client_gone(struct kwl_client *client);
+int kwl_ime_global_visible(struct kwl_client *client, enum kwl_kind kind);
+int kwl_ime_predict(struct kwl_server *server, uint32_t serial, const char *reading);
+void kwl_ime_learn(struct kwl_server *server, const char *reading, const char *word);
+void kwl_ime_repeat_changed(struct kwl_server *server);
+void kwl_ime_method_changed(struct kwl_server *server);
+int kwl_ime_key_early(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+int kwl_ime_key_grab(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state, int composing_only);
+void kwl_ime_modifiers(struct kwl_server *server);
+void kwl_ime_focus(struct kwl_server *server, struct kwl_object *previous);
+void kwl_ime_update(struct kwl_server *server, struct kwl_text_input *committed);
+void kwl_ime_field_changed(struct kwl_server *server);
+int kwl_ime_field_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+void kwl_ime_text_input_gone(struct kwl_server *server, struct kwl_text_input *input);
+void kwl_ime_surface_commit(struct kwl_object *surface);
+void kwl_ime_popup_draw(struct kwl_server *server, VkCommandBuffer command);
+int32_t kwl_ime_indicator_width(struct kwl_server *server);
+void kwl_ime_indicator_draw(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
+int kwl_ime_indicator_button(struct kwl_server *server, uint32_t button, uint32_t state);
 
 #endif

@@ -190,7 +190,7 @@ struct network_row {
  * "Looking for networks..." until the first one comes.
  *
  * The details (ws099-p032): info_open while they show, when they were
- * last asked to be read (info_asked_ms, zwl_milliseconds' clock), their
+ * last asked to be read (info_asked_ms, kwl_milliseconds' clock), their
  * height, their rows as last worked out (info_rows, info_count), and the
  * sample of the last reading for the rates (info_sample).  They take the
  * menu's place (menu_x, menu_y).
@@ -237,9 +237,9 @@ struct network_view {
 	unsigned info_open;
 	uint64_t info_asked_ms;
 	int32_t info_height;
-	struct zwl_network_info_row info_rows[ZWL_NETWORK_INFO_ROWS];
+	struct kwl_network_info_row info_rows[KWL_NETWORK_INFO_ROWS];
 	unsigned info_count;
-	struct zwl_network_info_sample info_sample;
+	struct kwl_network_info_sample info_sample;
 };
 
 /*
@@ -265,57 +265,57 @@ static const char network_shifted[NETWORK_KEYS] = {
 	'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, 0, 0, ' '
 };
 
-static void network_open_menu(struct zwl_server *server);
-static void network_close_menu(struct zwl_server *server, const char *via);
-static void network_layout(struct zwl_server *server);
-static unsigned network_layout_rows(struct zwl_server *server, unsigned limit);
+static void network_open_menu(struct kwl_server *server);
+static void network_close_menu(struct kwl_server *server, const char *via);
+static void network_layout(struct kwl_server *server);
+static unsigned network_layout_rows(struct kwl_server *server, unsigned limit);
 static int network_is_current(const struct network_row *row);
 static int network_in_disconnect(const struct network_row *row, int32_t x, int32_t y);
 static void network_add_row(enum network_row_kind kind, const char *text, int32_t height, unsigned ap);
 static void network_add_key_rows(void);
 static void network_state_text(const struct kl_backend_network_state *state, char *text, size_t size);
-static void network_act(struct zwl_server *server, const struct network_row *row);
-static void network_request(struct zwl_server *server, unsigned request, const char *ssid);
+static void network_act(struct kwl_server *server, const struct network_row *row);
+static void network_request(struct kwl_server *server, unsigned request, const char *ssid);
 static const struct network_row *network_row_at(int32_t x, int32_t y, int32_t *top);
 static int network_in_icon(int32_t x, int32_t y);
 static void network_log_state(void);
 static unsigned network_switch_on(void);
-static void network_switch_settle(struct zwl_server *server);
+static void network_switch_settle(struct kwl_server *server);
 static void network_log_layout(void);
-static void network_draw_bars(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t bottom, unsigned lit, const float *ink, float faint);
-static void network_draw_fan(struct zwl_server *server, VkCommandBuffer command, int32_t x, unsigned lit, const float *ink, float faint);
-static void network_draw_wired(struct zwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
-static void network_draw_row(struct zwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over);
-static void network_draw_check(struct zwl_server *server, VkCommandBuffer command, int32_t left, int32_t middle, int32_t baseline, const float *ink);
-static void network_draw_disconnect(struct zwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, int on_button);
-static void network_draw_switch(struct zwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on);
-static void network_draw_lock(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, const float *ink);
+static void network_draw_bars(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t bottom, unsigned lit, const float *ink, float faint);
+static void network_draw_fan(struct kwl_server *server, VkCommandBuffer command, int32_t x, unsigned lit, const float *ink, float faint);
+static void network_draw_wired(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
+static void network_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over);
+static void network_draw_check(struct kwl_server *server, VkCommandBuffer command, int32_t left, int32_t middle, int32_t baseline, const float *ink);
+static void network_draw_disconnect(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, int on_button);
+static void network_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on);
+static void network_draw_lock(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, const float *ink);
 static unsigned network_strength(int rssi);
 static const char *network_request_name(unsigned request);
 static const char *network_request_phrase(unsigned request);
 static const char *network_wifi_name(unsigned wifi);
-static void network_choose_ap(struct zwl_server *server, unsigned ap);
+static void network_choose_ap(struct kwl_server *server, unsigned ap);
 static int network_key_saved(const char *ssid);
-static void network_key_open(struct zwl_server *server, const char *ssid);
+static void network_key_open(struct kwl_server *server, const char *ssid);
 static void network_key_close(void);
-static void network_key_type(struct zwl_server *server, uint32_t key);
-static void network_key_submit(struct zwl_server *server);
+static void network_key_type(struct kwl_server *server, uint32_t key);
+static void network_key_submit(struct kwl_server *server);
 static void network_key_wipe(void);
-static void network_finished(struct zwl_server *server, unsigned request, int error);
-static void network_send_waiting(struct zwl_server *server);
+static void network_finished(struct kwl_server *server, unsigned request, int error);
+static void network_send_waiting(struct kwl_server *server);
 static void network_connecting(const char *ssid);
-static void network_info_open(struct zwl_server *server);
-static void network_info_close(struct zwl_server *server, const char *via);
-static void network_info_place(struct zwl_server *server);
-static void network_info_draw(struct zwl_server *server, VkCommandBuffer command);
+static void network_info_open(struct kwl_server *server);
+static void network_info_close(struct kwl_server *server, const char *via);
+static void network_info_place(struct kwl_server *server);
+static void network_info_draw(struct kwl_server *server, VkCommandBuffer command);
 
 /*
  * Reads what the network watch has brought since the last tick, and makes
  * the watch on the desktop's first tick.
  */
 void
-zwl_network_tick(
-	struct zwl_server *server)
+kwl_network_tick(
+	struct kwl_server *server)
 {
 	unsigned changed;
 	unsigned request;
@@ -326,7 +326,7 @@ zwl_network_tick(
 	/* The watch, once (libkeiland-backend connects to the daemon when it can); holders before it are told to it. */
 	if (!network_view.opened) {
 		network_view.opened = 1;
-		network_view.opened_ms = zwl_milliseconds();
+		network_view.opened_ms = kwl_milliseconds();
 		network_view.watch = kl_backend_network_open();
 		network_view.icon_x = -1;
 		if (network_view.watch != NULL && network_view.scan_holders != 0U)
@@ -335,16 +335,16 @@ zwl_network_tick(
 
 	/* The details, read again each second while they show. */
 	if (network_view.info_open) {
-		now = zwl_milliseconds();
+		now = kwl_milliseconds();
 		if (now - network_view.info_asked_ms >= NETWORK_INFO_REFRESH_MS) {
 			network_view.info_asked_ms = now;
-			zwl_system_bar_saved(server);
+			kwl_system_bar_saved(server);
 		}
 	}
 
 	/* The start's grace ran out with the daemon still silent: the menu says it is unavailable now. */
 	if (!network_view.heard && !network_view.grace_over) {
-		now = zwl_milliseconds();
+		now = kwl_milliseconds();
 		if (now - network_view.opened_ms >= NETWORK_START_GRACE_MS) {
 			network_view.grace_over = 1U;
 			server->dirty = 1;
@@ -383,7 +383,7 @@ zwl_network_tick(
 	}
 
 	/* The system extension's network objects hear the new state and scan (system.c). */
-	zwl_system_network_changed(server, changed);
+	kwl_system_network_changed(server, changed);
 
 	/*
 	 * A request that finished: the extension's goes to it (and what waits in
@@ -393,7 +393,7 @@ zwl_network_tick(
 	if ((changed & KL_BACKEND_NETWORK_CHANGED_DONE) != 0) {
 		request = kl_backend_network_get_request(network_view.watch, &error);
 		printf("ZWL NETWORK done request=%s error=%d\n", network_request_name(request), error);
-		owned = zwl_system_network_done(server, request, error);
+		owned = kwl_system_network_done(server, request, error);
 		if (owned) {
 			network_send_waiting(server);
 		} else {
@@ -410,8 +410,8 @@ zwl_network_tick(
  * bar's ink: Wi-Fi bars or the wired tree.
  */
 void
-zwl_network_draw_icon(
-	struct zwl_server *server,
+kwl_network_draw_icon(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	const float *ink)
@@ -426,7 +426,7 @@ zwl_network_draw_icon(
 	network_view.icon_x = x - 5;
 	network_view.icon_y = 3;
 	network_view.icon_width = 30;
-	network_view.icon_height = ZWL_GLASS_BAR - 6;
+	network_view.icon_height = KWL_GLASS_BAR - 6;
 	if (!network_view.icon_logged) {
 		network_view.icon_logged = 1;
 		printf("ZWL NETWORK icon x=%d y=%d width=%d height=%d\n", network_view.icon_x, network_view.icon_y, network_view.icon_width, network_view.icon_height);
@@ -434,7 +434,7 @@ zwl_network_draw_icon(
 
 	/* While the menu is open its icon has a pale blue back, on the bar's middle. */
 	if (network_view.open)
-		glass_draw_solid(server, command, (float)network_view.icon_x, (float)(ZWL_GLASS_BAR_MIDDLE - 14), (float)network_view.icon_width, 28.0f, 7.0f, blue);
+		glass_draw_solid(server, command, (float)network_view.icon_x, (float)(KWL_GLASS_BAR_MIDDLE - 14), (float)network_view.icon_width, 28.0f, 7.0f, blue);
 
 	/* A wired connection is the tree. */
 	state = &network_view.state;
@@ -460,7 +460,7 @@ zwl_network_draw_icon(
 	/* Anything else is a pale fan; Wi-Fi that is off is struck through. */
 	network_draw_fan(server, command, x, 0, ink, 0.30f);
 	if (state->reachable && state->wifi == KL_BACKEND_WIFI_OFF)
-		glass_draw_solid(server, command, (float)(x - 1), (float)(ZWL_GLASS_BAR_MIDDLE - 1), 22.0f, 2.0f, 1.0f, ink);
+		glass_draw_solid(server, command, (float)(x - 1), (float)(KWL_GLASS_BAR_MIDDLE - 1), 22.0f, 2.0f, 1.0f, ink);
 }
 
 /*
@@ -468,8 +468,8 @@ zwl_network_draw_icon(
  * the row under the pointer lit.
  */
 void
-zwl_network_draw_menu(
-	struct zwl_server *server,
+kwl_network_draw_menu(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	struct glass_shape shape;
@@ -531,8 +531,8 @@ zwl_network_draw_menu(
  * network's.
  */
 int
-zwl_network_button(
-	struct zwl_server *server,
+kwl_network_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -551,7 +551,7 @@ zwl_network_button(
 	/* With the menu closed, only a left press on the icon. */
 	if (!network_view.open) {
 		/* A release, or another button, goes on. */
-		if (state == 0 || button != ZWL_BUTTON_LEFT)
+		if (state == 0 || button != KWL_BUTTON_LEFT)
 			return 0;
 
 		/* A press off the icon goes on. */
@@ -560,7 +560,7 @@ zwl_network_button(
 			return 0;
 
 		/* With Alt held, the details open (ws099-p032); otherwise the menu. */
-		alt = zwl_input_alt_held(server);
+		alt = kwl_input_alt_held(server);
 		if (alt) {
 			network_info_open(server);
 			return 1;
@@ -596,7 +596,7 @@ zwl_network_button(
 
 	/* A left press on a row acts on it. */
 	row = network_row_at(server->pointer_x, server->pointer_y, &top);
-	if (row != NULL && button == ZWL_BUTTON_LEFT)
+	if (row != NULL && button == KWL_BUTTON_LEFT)
 		network_act(server, row);
 
 	/* Succeeded: the press was the menu's. */
@@ -608,8 +608,8 @@ zwl_network_button(
  * the menu's too.  Returns 1 when the key was the network's.
  */
 int
-zwl_network_key(
-	struct zwl_server *server,
+kwl_network_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -644,8 +644,8 @@ zwl_network_key(
  * Returns 1 when the motion was the menu's.
  */
 int
-zwl_network_motion(
-	struct zwl_server *server)
+kwl_network_motion(
+	struct kwl_server *server)
 {
 	/* A closed menu does not follow the pointer. */
 	if (!network_view.open)
@@ -663,7 +663,7 @@ zwl_network_motion(
  * the desktop's first tick or when it could not be made.
  */
 struct kl_backend_network *
-zwl_network_watch(
+kwl_network_watch(
 	void)
 {
 	/* The watch, shared. */
@@ -675,7 +675,7 @@ zwl_network_watch(
  * before the first report: the daemon not reached).
  */
 void
-zwl_network_state(
+kwl_network_state(
 	struct kl_backend_network_state *state)
 {
 	/* The state last read. */
@@ -687,7 +687,7 @@ zwl_network_state(
  * were copied.
  */
 size_t
-zwl_network_scan(
+kwl_network_scan(
 	struct kl_backend_network_ap *aps,
 	size_t capacity)
 {
@@ -708,8 +708,8 @@ zwl_network_scan(
  * be saved, or its network not told or joined, and gives up the join.
  */
 void
-zwl_network_key_failed(
-	struct zwl_server *server,
+kwl_network_key_failed(
+	struct kwl_server *server,
 	const char *ssid,
 	int error)
 {
@@ -724,8 +724,8 @@ zwl_network_key_failed(
  * Keeps the saved networks the system extension's thread read.
  */
 void
-zwl_network_saved(
-	struct zwl_server *server,
+kwl_network_saved(
+	struct kwl_server *server,
 	char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX],
 	size_t count)
 {
@@ -743,7 +743,7 @@ zwl_network_saved(
  * Tells whether the menu is open (the look is not still while it is).
  */
 int
-zwl_network_is_open(
+kwl_network_is_open(
 	void)
 {
 	/* Open or not, the menu or the details. */
@@ -758,7 +758,7 @@ zwl_network_is_open(
  * watch is asked to keep the radios scanning while any holder is there.
  */
 void
-zwl_network_scan_hold(
+kwl_network_scan_hold(
 	unsigned on)
 {
 	/* One more: the first holder starts the asking. */
@@ -787,14 +787,14 @@ zwl_network_scan_hold(
  * it while they show.
  */
 void
-zwl_network_details(
-	struct zwl_server *server,
+kwl_network_details(
+	struct kwl_server *server,
 	const struct kl_backend_network_link *links,
 	size_t link_count,
 	const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX],
 	size_t dns_count)
 {
-	struct zwl_network_info_input input;
+	struct kwl_network_info_input input;
 	unsigned index;
 
 	/* Only while the details show. */
@@ -816,8 +816,8 @@ zwl_network_details(
 	input.link_count = link_count;
 	input.dns = dns;
 	input.dns_count = dns_count;
-	input.now_ms = zwl_milliseconds();
-	network_view.info_count = zwl_network_info_build(&input, &network_view.info_sample, network_view.info_rows, ZWL_NETWORK_INFO_ROWS);
+	input.now_ms = kwl_milliseconds();
+	network_view.info_count = kwl_network_info_build(&input, &network_view.info_sample, network_view.info_rows, KWL_NETWORK_INFO_ROWS);
 
 	/* Shown, and logged for the tests. */
 	network_info_place(server);
@@ -830,7 +830,7 @@ zwl_network_details(
 /* Opens the menu, which holds the radios scanning while it is open. */
 static void
 network_open_menu(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The menu; a failure stays until the user's next request (BUG-187). */
 	network_view.open = 1;
@@ -839,17 +839,17 @@ network_open_menu(
 	printf("ZWL NETWORK open\n");
 
 	/* The saved networks, read again by the system extension's thread. */
-	zwl_system_bar_saved(server);
+	kwl_system_bar_saved(server);
 
 	/* The menu holds the radios scanning until it closes (the daemon scans only a radio that is on). */
 	network_view.scan_fresh = 0U;
-	zwl_network_scan_hold(1U);
+	kwl_network_scan_hold(1U);
 }
 
 /* Closes the menu. */
 static void
 network_close_menu(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *via)
 {
 	/* A key half typed goes with the menu. */
@@ -857,7 +857,7 @@ network_close_menu(
 
 	/* The menu goes, and with it its holding of the scans; the icon's back goes too. */
 	if (network_view.open)
-		zwl_network_scan_hold(0U);
+		kwl_network_scan_hold(0U);
 	network_view.open = 0;
 	server->dirty = 1;
 	printf("ZWL NETWORK close via=%s\n", via);
@@ -870,7 +870,7 @@ network_close_menu(
  */
 static void
 network_layout(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned limit;
 	unsigned listed;
@@ -886,7 +886,7 @@ network_layout(
 		network_view.menu_x = (int32_t)server->width - 8 - NETWORK_MENU_WIDTH;
 	if (network_view.menu_x < 8)
 		network_view.menu_x = 8;
-	network_view.menu_y = ZWL_GLASS_BAR + 6;
+	network_view.menu_y = KWL_GLASS_BAR + 6;
 
 	/*
 	 * A menu taller than the screen under it lists fewer networks: as many
@@ -913,7 +913,7 @@ network_layout(
  */
 static unsigned
 network_layout_rows(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned limit)
 {
 	const struct kl_backend_network_state *state;
@@ -1138,7 +1138,7 @@ network_state_text(
 /* Acts on a row: the switch turns the Wi-Fi on or off, a network is joined, disconnect leaves. */
 static void
 network_act(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct network_row *row)
 {
 	unsigned wanted;
@@ -1190,7 +1190,7 @@ network_act(
 /* Sends a request through libkeiland-backend, and says in the menu when it cannot be sent. */
 static void
 network_request(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned request,
 	const char *ssid)
 {
@@ -1367,7 +1367,7 @@ network_log_layout(
  */
 static void
 network_draw_fan(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	unsigned lit,
@@ -1379,7 +1379,7 @@ network_draw_fan(
 	/* The whole fan, faint. */
 	memcpy(color, ink, sizeof(color));
 	color[3] = ink[3] * faint;
-	glass_draw_icon(server, command, GLASS_ICON_WIFI_4, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, color);
+	glass_draw_icon(server, command, GLASS_ICON_WIFI_4, x, KWL_GLASS_BAR_MIDDLE - 10, 20U, color);
 
 	/* Nothing lit. */
 	if (lit == 0U)
@@ -1388,13 +1388,13 @@ network_draw_fan(
 	/* The lit parts over it. */
 	if (lit > 4U)
 		lit = 4U;
-	glass_draw_icon(server, command, GLASS_ICON_WIFI_1 + lit - 1U, x, ZWL_GLASS_BAR_MIDDLE - 10, 20U, ink);
+	glass_draw_icon(server, command, GLASS_ICON_WIFI_1 + lit - 1U, x, KWL_GLASS_BAR_MIDDLE - 10, 20U, ink);
 }
 
 /* Draws four rising bars from x, the first lit ones in the ink and the rest faint. */
 static void
 network_draw_bars(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int32_t bottom,
@@ -1419,29 +1419,29 @@ network_draw_bars(
 /* Draws the wired connection's icon: a box above two, joined by lines. */
 static void
 network_draw_wired(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	const float *ink)
 {
 	/* The upper box, and the stem from it. */
-	glass_draw_solid(server, command, (float)(x + 5), (float)(ZWL_GLASS_BAR_MIDDLE - 9), 8.0f, 6.0f, 1.5f, ink);
-	glass_draw_solid(server, command, (float)(x + 8), (float)(ZWL_GLASS_BAR_MIDDLE - 3), 2.0f, 3.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 5), (float)(KWL_GLASS_BAR_MIDDLE - 9), 8.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(x + 8), (float)(KWL_GLASS_BAR_MIDDLE - 3), 2.0f, 3.0f, 0.0f, ink);
 
 	/* The bar across, and the legs down. */
-	glass_draw_solid(server, command, (float)(x + 2), (float)ZWL_GLASS_BAR_MIDDLE, 14.0f, 2.0f, 0.0f, ink);
-	glass_draw_solid(server, command, (float)(x + 2), (float)ZWL_GLASS_BAR_MIDDLE, 2.0f, 3.0f, 0.0f, ink);
-	glass_draw_solid(server, command, (float)(x + 14), (float)ZWL_GLASS_BAR_MIDDLE, 2.0f, 3.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 2), (float)KWL_GLASS_BAR_MIDDLE, 14.0f, 2.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 2), (float)KWL_GLASS_BAR_MIDDLE, 2.0f, 3.0f, 0.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 14), (float)KWL_GLASS_BAR_MIDDLE, 2.0f, 3.0f, 0.0f, ink);
 
 	/* The two lower boxes. */
-	glass_draw_solid(server, command, (float)(x - 1), (float)(ZWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
-	glass_draw_solid(server, command, (float)(x + 11), (float)(ZWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(x - 1), (float)(KWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
+	glass_draw_solid(server, command, (float)(x + 11), (float)(KWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
 }
 
 /* Draws one row at top: its band when lit, and what the row shows. */
 static void
 network_draw_row(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct network_row *row,
 	int32_t top,
@@ -1581,7 +1581,7 @@ network_draw_row(
 /* Draws the Wi-Fi's switch ending at right: a pill, blue when on, with its knob. */
 static void
 network_draw_switch(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t right,
 	int32_t middle,
@@ -1611,7 +1611,7 @@ network_draw_switch(
 /* Draws a small padlock: a body and its shackle. */
 static void
 network_draw_lock(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int32_t middle,
@@ -1655,7 +1655,7 @@ network_strength(
 /* Lets the switch show the state again once it agrees with what was asked, or a while after the answer (BUG-183). */
 static void
 network_switch_settle(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t now;
 	int agrees;
@@ -1668,7 +1668,7 @@ network_switch_settle(
 	agrees = 0;
 	if ((network_view.switch_wanted == 2U) == (network_view.state.wifi != KL_BACKEND_WIFI_OFF))
 		agrees = 1;
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (network_view.switch_until != 0U && now >= network_view.switch_until)
 		agrees = 1;
 	if (!agrees)
@@ -1788,7 +1788,7 @@ network_wifi_name(
  */
 static void
 network_choose_ap(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned ap)
 {
 	const struct kl_backend_network_ap *chosen;
@@ -1830,7 +1830,7 @@ network_key_saved(
 /* Opens the key field for a network, empty. */
 static void
 network_key_open(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *ssid)
 {
 	/* The field, for this network, with nothing typed and no failure from before. */
@@ -1855,7 +1855,7 @@ network_key_close(
 /* Types one key into the field: a character, Backspace, Enter or Esc. */
 static void
 network_key_type(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t key)
 {
 	char character;
@@ -1919,7 +1919,7 @@ network_key_type(
  */
 static void
 network_key_submit(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int error;
 
@@ -1931,7 +1931,7 @@ network_key_submit(
 	}
 
 	/* The key, handed to the system extension's thread, which saves it, tells the daemon and joins. */
-	error = zwl_system_bar_save_key(server, network_view.key_ssid, network_view.key);
+	error = kwl_system_bar_save_key(server, network_view.key_ssid, network_view.key);
 	network_key_wipe();
 	if (error != 0) {
 		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not save the key ({1})"), strerror(error), (const char *)NULL);
@@ -1973,7 +1973,7 @@ network_key_wipe(
  */
 static void
 network_finished(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned request,
 	int error)
 {
@@ -1985,7 +1985,7 @@ network_finished(
 
 	/* The switch's answer: a failure puts it back at once, a success leaves the state a few seconds to agree. */
 	if (request == KL_BACKEND_NETWORK_REQUEST_WIFI_ON || request == KL_BACKEND_NETWORK_REQUEST_WIFI_OFF) {
-		network_view.switch_until = zwl_milliseconds() + NETWORK_SWITCH_HOLD_MS;
+		network_view.switch_until = kwl_milliseconds() + NETWORK_SWITCH_HOLD_MS;
 		if (error != 0)
 			network_view.switch_wanted = 0U;
 		server->dirty = 1;
@@ -2030,7 +2030,7 @@ network_finished(
 /* Sends the request that waited in the slot, if one did. */
 static void
 network_send_waiting(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned waiting;
 
@@ -2133,7 +2133,7 @@ network_in_disconnect(
 /* Draws the check of the network it is on, or a small square without the glyph. */
 static void
 network_draw_check(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t left,
 	int32_t middle,
@@ -2154,7 +2154,7 @@ network_draw_check(
 /* Draws the Disconnect button at the right of the row of the network it is on: an outline, filled blue under the pointer. */
 static void
 network_draw_disconnect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct network_row *row,
 	int32_t top,
@@ -2195,7 +2195,7 @@ network_draw_disconnect(
  */
 static void
 network_info_open(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* No reading yet: the title alone, and no rate from an earlier showing. */
 	network_view.info_open = 1U;
@@ -2208,14 +2208,14 @@ network_info_open(
 	printf("ZWL NETWORK info open\n");
 
 	/* The first reading. */
-	network_view.info_asked_ms = zwl_milliseconds();
-	zwl_system_bar_saved(server);
+	network_view.info_asked_ms = kwl_milliseconds();
+	kwl_system_bar_saved(server);
 }
 
 /* Closes the details. */
 static void
 network_info_close(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *via)
 {
 	/* Gone. */
@@ -2227,7 +2227,7 @@ network_info_close(
 /* Places the details where the menu goes, as tall as their rows. */
 static void
 network_info_place(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Under the icon, its right edge a little in from the output's (the menu's place). */
 	network_view.menu_x = network_view.icon_x + network_view.icon_width - NETWORK_MENU_WIDTH + 60;
@@ -2235,7 +2235,7 @@ network_info_place(
 		network_view.menu_x = (int32_t)server->width - 8 - NETWORK_MENU_WIDTH;
 	if (network_view.menu_x < 8)
 		network_view.menu_x = 8;
-	network_view.menu_y = ZWL_GLASS_BAR + 6;
+	network_view.menu_y = KWL_GLASS_BAR + 6;
 
 	/* The title, then the rows. */
 	network_view.info_height = NETWORK_MENU_PADDING + NETWORK_INFO_TITLE + NETWORK_MENU_PADDING;
@@ -2249,13 +2249,13 @@ network_info_place(
  */
 static void
 network_info_draw(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
-	const struct zwl_network_info_row *row;
+	const struct kwl_network_info_row *row;
 	const char *value;
 	struct glass_shape shape;
 	unsigned index;

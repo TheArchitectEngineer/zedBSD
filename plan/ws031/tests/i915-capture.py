@@ -495,7 +495,7 @@ def zdesktop(args, qmp, capture, report, wait):
     time_limit = time.monotonic() + args.timeout
     # Where zdesktop places the window on top: all are 800x560 (plan/ws031/tests/zdesktop/), each mapped one
     # cascade step of 32 after the one before, centred under the system bar and a title bar
-    # (userland/desktop/wayland/shell.c zwl_glass_place).  The viewer is the fourth mapped: two wl_shm windows
+    # (userland/desktop/wayland/shell.c kwl_glass_place).  The viewer is the fourth mapped: two wl_shm windows
     # and the Vulkan window killed while it draws (wlkill) come before it.
     top = 44 + 12 + 44 + 8
     mview_x = (width - 800) // 2 + 32 * 3
@@ -862,7 +862,7 @@ def keiland_files(args, qmp, capture, report):
     grid_top = 44 + (height - 44 - 2 * 152) * 2 // 5
     files_icon = (left + 72, grid_top + 152 + 20 + 36)
     # Where zdesktop places the file manager depends on the windows mapped before it (a cascade step
-    # each, shell.c zwl_glass_place), so the window is found in the picture instead: what changed from the
+    # each, shell.c kwl_glass_place), so the window is found in the picture instead: what changed from the
     # desktop, its top left the title bar's (ZWL MAP client=4 x=496 y=319 on the 5330, the title bar
     # 274 .. 304, found at 496, 267).  The title bar is Files' own (TABS/CONTROLS): the empty stretch
     # between the path and the search field, 262 .. 644 into it, takes the double click.

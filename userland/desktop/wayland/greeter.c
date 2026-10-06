@@ -24,9 +24,9 @@
  * these lines (ws131-p006): this screen asks through
  * kl_backend_session_authenticate, kl_backend_session_unlock and
  * kl_backend_power_action, and the answers come back through handoff.c as
- * zwl_greeter_answer.
+ * kwl_greeter_answer.
  *
- * The same screen is a session's lock (ws035-p102, zwl_lock): the session's
+ * The same screen is a session's lock (ws035-p102, kwl_lock): the session's
  * user only, no power buttons, and the secret goes to sessiond on the
  * session's descriptor (--control-fd) as UNLOCK style; OK unlocks, FAIL
  * (after sessiond's delay) asks again.
@@ -220,36 +220,36 @@ static const char greeter_shifted[GREETER_KEYS] = {
 
 static void greeter_read_users(void);
 static void greeter_add_user(const char *name, const char *gecos);
-static void greeter_layout(struct zwl_server *server, struct greeter_layout *layout);
-static enum greeter_hit greeter_hit(struct zwl_server *server, const struct greeter_layout *layout, unsigned *user);
+static void greeter_layout(struct kwl_server *server, struct greeter_layout *layout);
+static enum greeter_hit greeter_hit(struct kwl_server *server, const struct greeter_layout *layout, unsigned *user);
 static int greeter_inside(const int32_t *rect, int32_t x, int32_t y);
-static void greeter_draw_card(struct zwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
-static void greeter_draw_field(struct zwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
-static void greeter_draw_button(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, int strong);
-static void greeter_draw_clock(struct zwl_server *server, VkCommandBuffer command);
-static void greeter_draw_brand(struct zwl_server *server, VkCommandBuffer command);
-static void greeter_draw_centered(struct zwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t middle, int32_t baseline, const char *text, int32_t limit, const float *color);
-static void greeter_select(struct zwl_server *server, unsigned user);
-static void greeter_type(struct zwl_server *server, uint32_t key);
-static void greeter_submit(struct zwl_server *server);
-static void greeter_power(struct zwl_server *server, const char *what);
-static void greeter_power_send(struct zwl_server *server);
-static void greeter_draw_power(struct zwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
-static void greeter_answered(struct zwl_server *server, int error);
-static void greeter_unlock(struct zwl_server *server);
-static void greeter_refused(struct zwl_server *server);
+static void greeter_draw_card(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
+static void greeter_draw_field(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
+static void greeter_draw_button(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, int strong);
+static void greeter_draw_clock(struct kwl_server *server, VkCommandBuffer command);
+static void greeter_draw_brand(struct kwl_server *server, VkCommandBuffer command);
+static void greeter_draw_centered(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t middle, int32_t baseline, const char *text, int32_t limit, const float *color);
+static void greeter_select(struct kwl_server *server, unsigned user);
+static void greeter_type(struct kwl_server *server, uint32_t key);
+static void greeter_submit(struct kwl_server *server);
+static void greeter_power(struct kwl_server *server, const char *what);
+static void greeter_power_send(struct kwl_server *server);
+static void greeter_draw_power(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
+static void greeter_answered(struct kwl_server *server, int error);
+static void greeter_unlock(struct kwl_server *server);
+static void greeter_refused(struct kwl_server *server);
 static void greeter_styles_reset(void);
-static void greeter_styles_ask(struct zwl_server *server);
-static void greeter_styles_take(struct zwl_server *server);
-static void greeter_style_switch(struct zwl_server *server);
+static void greeter_styles_ask(struct kwl_server *server);
+static void greeter_styles_take(struct kwl_server *server);
+static void greeter_style_switch(struct kwl_server *server);
 static void greeter_erase(void);
 
 /*
  * Prepares the login screen: the users, and the answers' descriptor.
  */
 int
-zwl_greeter_open(
-	struct zwl_server *server)
+kwl_greeter_open(
+	struct kwl_server *server)
 {
 	int flags;
 	int error;
@@ -286,8 +286,8 @@ zwl_greeter_open(
  * sessiond to check the password) and so is not locked.
  */
 int
-zwl_lock(
-	struct zwl_server *server,
+kwl_lock(
+	struct kwl_server *server,
 	const char *reason)
 {
 	struct passwd *entry;
@@ -319,7 +319,7 @@ zwl_lock(
 	greeter_styles_reset();
 
 	/* The clipboard's history goes (clipboard.c). */
-	zwl_clipboard_history_clear(server, "lock");
+	kwl_clipboard_history_clear(server, "lock");
 
 	/* Succeeded: the lock screen shows. */
 	server->locked = 1U;
@@ -333,8 +333,8 @@ zwl_lock(
  * locked it, ws132-p008): what was typed is erased and the desktop shows.
  */
 void
-zwl_lock_release(
-	struct zwl_server *server,
+kwl_lock_release(
+	struct kwl_server *server,
 	const char *reason)
 {
 	/* Only a locked session. */
@@ -349,7 +349,7 @@ zwl_lock_release(
 
 	/* Succeeded: the desktop shows; the idle time starts again. */
 	server->locked = 0U;
-	server->lock_input_ms = zwl_milliseconds();
+	server->lock_input_ms = kwl_milliseconds();
 	server->dirty = 1;
 	printf("ZWL LOCK unlocked reason=%s\n", reason);
 }
@@ -360,8 +360,8 @@ zwl_lock_release(
  * on).  request is the KL_BACKEND_SESSION_* it answers.
  */
 void
-zwl_greeter_answer(
-	struct zwl_server *server,
+kwl_greeter_answer(
+	struct kwl_server *server,
 	unsigned request,
 	int error)
 {
@@ -391,8 +391,8 @@ zwl_greeter_answer(
  * Draws the login screen over the whole output.
  */
 void
-zwl_greeter_draw(
-	struct zwl_server *server,
+kwl_greeter_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	struct greeter_layout layout;
@@ -441,8 +441,8 @@ zwl_greeter_draw(
  * Handles a pointer button on the login screen: every button is the screen's.
  */
 int
-zwl_greeter_button(
-	struct zwl_server *server,
+kwl_greeter_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -491,8 +491,8 @@ zwl_greeter_button(
  * Handles a key on the login screen: every key is the screen's.
  */
 int
-zwl_greeter_key(
-	struct zwl_server *server,
+kwl_greeter_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -542,11 +542,11 @@ zwl_greeter_key(
 
 /*
  * Redraws when the minute changes, and sends a power request once its
- * picture is shown (the answers come through zwl_greeter_answer).
+ * picture is shown (the answers come through kwl_greeter_answer).
  */
 void
-zwl_greeter_tick(
-	struct zwl_server *server)
+kwl_greeter_tick(
+	struct kwl_server *server)
 {
 	int64_t minute;
 
@@ -666,7 +666,7 @@ greeter_add_user(
 /* Lays the screen out for the output's size and the number of users. */
 static void
 greeter_layout(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct greeter_layout *layout)
 {
 	int32_t width;
@@ -739,7 +739,7 @@ greeter_layout(
 /* Says what the pointer is on, and which user's row when it is one. */
 static enum greeter_hit
 greeter_hit(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct greeter_layout *layout,
 	unsigned *user)
 {
@@ -798,7 +798,7 @@ greeter_inside(
 /* Draws the frosted card: the avatar and name, the users' rows, the field and the message. */
 static void
 greeter_draw_card(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct greeter_layout *layout)
 {
@@ -903,7 +903,7 @@ greeter_draw_card(
 /* Draws the password field (dots for the characters, or its hint) and the Log In button. */
 static void
 greeter_draw_field(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct greeter_layout *layout)
 {
@@ -946,7 +946,7 @@ greeter_draw_field(
 /* Draws one button: frosted, or blue when it is the strong one; lit under the pointer. */
 static void
 greeter_draw_button(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const int32_t *rect,
 	const char *label,
@@ -997,7 +997,7 @@ greeter_draw_button(
  */
 static void
 greeter_draw_brand(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float slate[4] = { 0.17f, 0.23f, 0.31f, 0.95f };
@@ -1016,7 +1016,7 @@ greeter_draw_brand(
 /* Draws the time, large, and the date under it, at the top of the output. */
 static void
 greeter_draw_clock(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float slate[4] = { 0.15f, 0.21f, 0.29f, 1.0f };
@@ -1059,14 +1059,14 @@ greeter_draw_clock(
 	greeter_draw_centered(server, command, SIZE_ICON, middle, top + 36, text, (int32_t)server->width, slate);
 
 	/* The date. */
-	zwl_language_date(&local, ZWL_LANGUAGE_DATE_LONG, text, sizeof(text));
+	kwl_language_date(&local, KWL_LANGUAGE_DATE_LONG, text, sizeof(text));
 	greeter_draw_centered(server, command, SIZE_SEARCH, middle, top + 76, text, (int32_t)server->width, soft);
 }
 
 /* Draws a line of text centred on a point of its baseline, no wider than limit. */
 static void
 greeter_draw_centered(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	enum glass_size size,
 	int32_t middle,
@@ -1089,7 +1089,7 @@ greeter_draw_centered(
 /* Selects a user, clearing what was typed for the one before. */
 static void
 greeter_select(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned user)
 {
 	/* A user that is not there. */
@@ -1108,7 +1108,7 @@ greeter_select(
 /* Types a key's character into the password. */
 static void
 greeter_type(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t key)
 {
 	char character;
@@ -1152,7 +1152,7 @@ greeter_type(
 /* Sends the selected user's password to the session manager and erases it. */
 static void
 greeter_submit(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int error;
 
@@ -1207,14 +1207,14 @@ greeter_submit(
  */
 static void
 greeter_power(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *what)
 {
 	/* The request to send, and when it was asked for. */
 	(void)snprintf(greeter_powering, sizeof(greeter_powering), "%s", what);
 	greeter_power_sent = 0U;
 	greeter_power_frame = server->frame;
-	greeter_power_ms = zwl_milliseconds();
+	greeter_power_ms = kwl_milliseconds();
 	server->dirty = 1;
 	printf("ZWL GREETER powering=%s frame=%llu\n", what, (unsigned long long)server->frame);
 }
@@ -1226,7 +1226,7 @@ greeter_power(
  */
 static void
 greeter_power_send(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	unsigned action;
@@ -1238,7 +1238,7 @@ greeter_power_send(
 		return;
 
 	/* The picture is shown once two frames have gone since the press, or after the longest wait. */
-	elapsed = zwl_milliseconds() - greeter_power_ms;
+	elapsed = kwl_milliseconds() - greeter_power_ms;
 	if (server->frame < greeter_power_frame + 2U && elapsed < GREETER_POWER_MS)
 		return;
 
@@ -1259,7 +1259,7 @@ greeter_power_send(
 /* Draws the card of a machine that is ending: "Shutting down..." or "Restarting...", and a turning ring of dots. */
 static void
 greeter_draw_power(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct greeter_layout *layout)
 {
@@ -1298,7 +1298,7 @@ greeter_draw_power(
 	/* The spinner under them: dots on a ring, the brightest turning with the time. */
 	cx = (float)middle;
 	cy = (float)(layout->card[1] + layout->card[3] * 2 / 3);
-	phase = (float)(zwl_milliseconds() % GREETER_SPINNER_MS) / (float)GREETER_SPINNER_MS;
+	phase = (float)(kwl_milliseconds() % GREETER_SPINNER_MS) / (float)GREETER_SPINNER_MS;
 	for (index = 0U; index < GREETER_SPINNER_DOTS; index++) {
 		angle = 6.2831853f * (float)index / (float)GREETER_SPINNER_DOTS;
 		dot[0] = 0.26f;
@@ -1316,7 +1316,7 @@ greeter_draw_power(
  */
 static void
 greeter_answered(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int error)
 {
 	const char *answer;
@@ -1371,7 +1371,7 @@ greeter_answered(
  */
 static void
 greeter_refused(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const char *reason;
 	int same;
@@ -1421,13 +1421,13 @@ greeter_refused(
 /* Takes the lock screen away: the desktop shows, and the idle time starts again. */
 static void
 greeter_unlock(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* No answer is awaited any more. */
 	greeter_waiting = 0;
 	server->locked = 0U;
-	server->lock_input_ms = zwl_milliseconds();
-	zwl_lid_unlocked(&server->lid);
+	server->lock_input_ms = kwl_milliseconds();
+	kwl_lid_unlocked(&server->lid);
 }
 
 /* Starts the styles again for a new user or screen: the password until sessiond says more. */
@@ -1445,7 +1445,7 @@ greeter_styles_reset(
 /* Asks sessiond the selected user's styles (the session's own on the lock screen). */
 static void
 greeter_styles_ask(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const char *user;
 	int error;
@@ -1470,7 +1470,7 @@ greeter_styles_ask(
  */
 static void
 greeter_styles_take(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned styles;
 
@@ -1496,7 +1496,7 @@ greeter_styles_take(
 /* Switches the field between the PIN and the password (the link under it). */
 static void
 greeter_style_switch(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Only while the PIN is offered and no answer is awaited. */
 	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U || greeter_waiting)

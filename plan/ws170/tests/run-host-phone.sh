@@ -21,7 +21,7 @@ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
 	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
 F=$U/fonts
-"$out" $F/Inter.ttf $F/DroidSansFallbackFull.ttf "$out"
+"$out" $F/Mahora-Regular.ttf $F/DroidSansFallbackFull.ttf "$out"
 for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
 done

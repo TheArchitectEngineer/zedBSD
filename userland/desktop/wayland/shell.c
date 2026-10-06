@@ -70,7 +70,7 @@
  * bottom edge Wiseview (over Home the same swipe closes Home instead,
  * home.c).  Each counts only when it starts in its corner or edge, so a
  * stroke that starts inside a window never becomes one.  They work over a
- * fullscreen window too (zwl_glass_edge_button), except that there the
+ * fullscreen window too (kwl_glass_edge_button), except that there the
  * bottom edge's swipe takes the window back to a window instead of opening
  * Wiseview (ws099-p015).  A fullscreen window is composed like any other.
  */
@@ -155,18 +155,18 @@ static uint32_t fullscreen_leave_eaten;
  */
 #define BAR_LAUNCHER_X		10
 #define BAR_LAUNCHER_SIZE	26
-#define BAR_LAUNCHER_Y		(ZWL_GLASS_BAR_MIDDLE - BAR_LAUNCHER_SIZE / 2)
+#define BAR_LAUNCHER_Y		(KWL_GLASS_BAR_MIDDLE - BAR_LAUNCHER_SIZE / 2)
 
 /*
  * The parts of the system bar placed from its middle line (ws099-p031): a
  * separator's top and length, the desktops' pill's top and height, and the
  * baseline of the bar's text (the clock, the docked title's "Wiseview").
  */
-#define BAR_LINE_TOP		(ZWL_GLASS_BAR_MIDDLE - 8)
+#define BAR_LINE_TOP		(KWL_GLASS_BAR_MIDDLE - 8)
 #define BAR_LINE_LENGTH		16
-#define BAR_PILL_TOP		(ZWL_GLASS_BAR_MIDDLE - 13)
+#define BAR_PILL_TOP		(KWL_GLASS_BAR_MIDDLE - 13)
 #define BAR_PILL_HEIGHT		26
-#define BAR_BASELINE		(ZWL_GLASS_BAR_MIDDLE + 5)
+#define BAR_BASELINE		(KWL_GLASS_BAR_MIDDLE + 5)
 
 /*
  * The system bar's groups (ws099-p034, the 2026-10-06 user decisions): each
@@ -213,7 +213,7 @@ static uint32_t fullscreen_leave_eaten;
 #define RESIZED_HOLD_MS		1000U
 
 /* A docked body starts this far under the top of the output. */
-#define DOCK_TOP		ZWL_GLASS_DOCK_TOP
+#define DOCK_TOP		KWL_GLASS_DOCK_TOP
 
 /*
  * The virtual desktops in the middle of the bar (ws099-p034): how many, each
@@ -294,7 +294,7 @@ static uint32_t fullscreen_leave_eaten;
 
 /* Wiseview's grid: side, top (under the header) and bottom margins, the gutter, the label under a tile. */
 #define WISEVIEW_SIDE		56
-#define WISEVIEW_TOP		(ZWL_GLASS_BAR + 56)
+#define WISEVIEW_TOP		(KWL_GLASS_BAR + 56)
 #define WISEVIEW_BOTTOM		72
 #define WISEVIEW_GUTTER		24
 #define WISEVIEW_LABEL		46
@@ -362,114 +362,114 @@ struct shell_bar {
 	int32_t title_x;
 };
 
-static void bar_layout(struct zwl_server *server, struct shell_bar *bar);
-static void draw_window(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned focused, const struct shell_bar *bar);
-static int window_shown(struct zwl_server *server, struct zwl_object *surface, float home, float position);
-static void window_layer(struct zwl_server *server, struct zwl_object *surface, float home, float position);
-static void draw_backdrop(struct zwl_server *server, VkCommandBuffer command, struct zwl_object **windows, unsigned below, float position);
-static void draw_window_blurred(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface);
-static void draw_body(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *body, unsigned docked, unsigned focused);
-static void draw_title_bar(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
-static void draw_title(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
-static int draw_picture_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, const float *ink);
-static enum glass_hole mark_hole(struct zwl_server *server);
-static void draw_letter_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const char *title, int32_t x, int32_t middle);
-static int32_t title_end(struct zwl_server *server, struct zwl_object *surface, int32_t limit);
+static void bar_layout(struct kwl_server *server, struct shell_bar *bar);
+static void draw_window(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned focused, const struct shell_bar *bar);
+static int window_shown(struct kwl_server *server, struct kwl_object *surface, float home, float position);
+static void window_layer(struct kwl_server *server, struct kwl_object *surface, float home, float position);
+static void draw_backdrop(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned below, float position);
+static void draw_window_blurred(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface);
+static void draw_body(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
+static void draw_title_bar(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
+static void draw_title(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
+static int draw_picture_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
+static enum glass_hole mark_hole(struct kwl_server *server);
+static void draw_letter_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const char *title, int32_t x, int32_t middle);
+static int32_t title_end(struct kwl_server *server, struct kwl_object *surface, int32_t limit);
 static const char *mark_name(const char *app_id);
-static unsigned window_square(const struct zwl_object *surface);
-static int glass_crowd(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
-static void glass_clear_edges(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
-static int glass_top(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
-static int glass_placed(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *other);
-static void shown_title(const struct zwl_object *surface, char *title, size_t size);
-static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
-static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
-static void draw_bar_strip(struct zwl_server *server, VkCommandBuffer command, const struct glass_bar_colours *colours);
-static void draw_bar_buttons(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, struct zwl_object *docked, const struct glass_bar_colours *colours);
-static void draw_bar_group_faded(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height, float opacity);
-static void bar_dock_follow(struct zwl_server *server);
-static void draw_bar_group(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
-static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
-static void draw_status(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
-static void draw_battery(struct zwl_server *server, VkCommandBuffer command, int32_t x, int percent, unsigned charging, const float *ink);
-static void draw_dock_hint(struct zwl_server *server, VkCommandBuffer command);
-static float animation_progress(struct zwl_server *server);
+static unsigned window_square(const struct kwl_object *surface);
+static int glass_crowd(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
+static void glass_clear_edges(struct kwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
+static int glass_top(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
+static int glass_placed(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *other);
+static void shown_title(const struct kwl_object *surface, char *title, size_t size);
+static void draw_sign(struct kwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
+static void draw_system_bar(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
+static void draw_bar_strip(struct kwl_server *server, VkCommandBuffer command, const struct glass_bar_colours *colours);
+static void draw_bar_buttons(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, struct kwl_object *docked, const struct glass_bar_colours *colours);
+static void draw_bar_group_faded(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height, float opacity);
+static void bar_dock_follow(struct kwl_server *server);
+static void draw_bar_group(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
+static void draw_desktops(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
+static void draw_status(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
+static void draw_battery(struct kwl_server *server, VkCommandBuffer command, int32_t x, int percent, unsigned charging, const float *ink);
+static void draw_dock_hint(struct kwl_server *server, VkCommandBuffer command);
+static float animation_progress(struct kwl_server *server);
 static void lerp_rect(const struct shell_rect *from, const struct shell_rect *to, float t, struct shell_rect *result);
-static void body_rect(struct zwl_server *server, const struct zwl_object *surface, struct shell_rect *body);
-static void docked_rect(struct zwl_server *server, struct shell_rect *body);
-static void pulled_rect(struct zwl_server *server, const struct zwl_object *surface, struct shell_rect *body);
-static void pull_back(struct zwl_server *server);
-static void window_minimize(struct zwl_server *server, struct zwl_object *surface);
-static void window_to_desktop(struct zwl_server *server, struct zwl_object *surface, unsigned desktop, const char *via);
-static int desktop_picture_at(struct zwl_server *server, int32_t x, int32_t y);
+static void body_rect(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
+static void docked_rect(struct kwl_server *server, struct shell_rect *body);
+static void pulled_rect(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
+static void pull_back(struct kwl_server *server);
+static void window_minimize(struct kwl_server *server, struct kwl_object *surface);
+static void window_to_desktop(struct kwl_server *server, struct kwl_object *surface, unsigned desktop, const char *via);
+static int desktop_picture_at(struct kwl_server *server, int32_t x, int32_t y);
 static void floating_title(const struct shell_rect *body, struct shell_rect *panel);
-static void bar_title_slot(struct zwl_server *server, const struct shell_bar *bar, struct shell_rect *slot);
-static void window_size(const struct zwl_object *surface, int32_t *width, int32_t *height);
-static int damage_near(struct zwl_server *server, struct zwl_object *surface, const struct shell_rect *near);
-static enum shell_hit window_hit(struct zwl_server *server, const struct zwl_object *surface, int32_t x, int32_t y);
-static uint32_t frame_edges(struct zwl_server *server, const struct zwl_object *surface, int32_t x, int32_t y);
-static uint32_t frame_under_pointer(struct zwl_server *server);
-static int glass_motion_take(struct zwl_server *server);
-static int button_at(const struct zwl_object *surface, int32_t x, int32_t y);
-static void button_centre(const struct zwl_object *surface, int button, int32_t *x, int32_t *y);
+static void bar_title_slot(struct kwl_server *server, const struct shell_bar *bar, struct shell_rect *slot);
+static void window_size(const struct kwl_object *surface, int32_t *width, int32_t *height);
+static int damage_near(struct kwl_server *server, struct kwl_object *surface, const struct shell_rect *near);
+static enum shell_hit window_hit(struct kwl_server *server, const struct kwl_object *surface, int32_t x, int32_t y);
+static uint32_t frame_edges(struct kwl_server *server, const struct kwl_object *surface, int32_t x, int32_t y);
+static uint32_t frame_under_pointer(struct kwl_server *server);
+static int glass_motion_take(struct kwl_server *server);
+static int button_at(const struct kwl_object *surface, int32_t x, int32_t y);
+static void button_centre(const struct kwl_object *surface, int button, int32_t *x, int32_t *y);
 static int bar_button_at(const struct shell_bar *bar, int32_t x, int32_t y);
-static struct zwl_object *window_at(struct zwl_server *server, int32_t x, int32_t y, enum shell_hit *hit);
-static struct zwl_object *docked_window(struct zwl_server *server);
-static void window_raise(struct zwl_server *server, struct zwl_object *surface);
-static void sheet_place(struct zwl_server *server);
-static struct zwl_object *sheet_owner(struct zwl_object *surface);
-static void sheet_narrow(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *parent, int32_t width, int32_t height);
-static void sheet_anchor(struct zwl_server *server, struct zwl_object *parent, int32_t width, int32_t height, int32_t *x, int32_t *top);
-static int sheet_centred(struct zwl_server *server, const struct zwl_object *parent);
-static void draw_sheet(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, struct zwl_object *parent, unsigned focused);
-static void window_dock(struct zwl_server *server, struct zwl_object *surface, int32_t restore_x, int32_t restore_y, const char *via);
-static void window_undock(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, const char *via);
-static void window_configure(struct zwl_object *surface);
-static void layout_window(const struct zwl_object *surface, struct zwl_layout_window *window);
-static void layout_set(struct zwl_server *server, unsigned mode, const char *via);
-static void layout_match(struct zwl_server *server, struct zwl_object *surface, const char *via);
-static int layout_hides(struct zwl_server *server, const struct zwl_object *surface);
-static int layout_takes_press(struct zwl_server *server);
-static int layout_press_switches(struct zwl_server *server, struct zwl_object *surface);
-static void layout_keep_front(struct zwl_server *server);
-static void docked_body(struct zwl_server *server, const struct zwl_object *surface, struct shell_rect *body);
-static void dock_restore_default(struct zwl_server *server, struct zwl_object *surface);
-static int window_centred_over(struct zwl_server *server, const struct zwl_object *surface);
-static void draw_centred_cover(struct zwl_server *server, VkCommandBuffer command);
-static unsigned double_click(struct zwl_server *server, struct zwl_object *surface);
-static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surface);
-static int click_docked_third(struct zwl_server *server);
-static void window_resized(struct zwl_object *surface);
-static void window_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
-static int bar_press(struct zwl_server *server);
-static struct zwl_object *bar_cover(struct zwl_server *server);
-static void bar_cover_log(struct zwl_server *server, const struct zwl_object *cover);
-static int home_without_bar(struct zwl_server *server, uint32_t button, uint32_t state);
-static float wiseview_progress(struct zwl_server *server);
-static void wiseview_settle(struct zwl_server *server, float from, float to);
-static void wiseview_choose(struct zwl_server *server, const char *via);
-static void wiseview_move(struct zwl_server *server, int step);
-static int wiseview_pad_swipe(struct zwl_server *server, unsigned direction);
-static int gesture_fullscreen(struct zwl_server *server, uint32_t gesture);
-static int gesture_undock(struct zwl_server *server);
+static struct kwl_object *window_at(struct kwl_server *server, int32_t x, int32_t y, enum shell_hit *hit);
+static struct kwl_object *docked_window(struct kwl_server *server);
+static void window_raise(struct kwl_server *server, struct kwl_object *surface);
+static void sheet_place(struct kwl_server *server);
+static struct kwl_object *sheet_owner(struct kwl_object *surface);
+static void sheet_narrow(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *parent, int32_t width, int32_t height);
+static void sheet_anchor(struct kwl_server *server, struct kwl_object *parent, int32_t width, int32_t height, int32_t *x, int32_t *top);
+static int sheet_centred(struct kwl_server *server, const struct kwl_object *parent);
+static void draw_sheet(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, struct kwl_object *parent, unsigned focused);
+static void window_dock(struct kwl_server *server, struct kwl_object *surface, int32_t restore_x, int32_t restore_y, const char *via);
+static void window_undock(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, const char *via);
+static void window_configure(struct kwl_object *surface);
+static void layout_window(const struct kwl_object *surface, struct kwl_layout_window *window);
+static void layout_set(struct kwl_server *server, unsigned mode, const char *via);
+static void layout_match(struct kwl_server *server, struct kwl_object *surface, const char *via);
+static int layout_hides(struct kwl_server *server, const struct kwl_object *surface);
+static int layout_takes_press(struct kwl_server *server);
+static int layout_press_switches(struct kwl_server *server, struct kwl_object *surface);
+static void layout_keep_front(struct kwl_server *server);
+static void docked_body(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
+static void dock_restore_default(struct kwl_server *server, struct kwl_object *surface);
+static int window_centred_over(struct kwl_server *server, const struct kwl_object *surface);
+static void draw_centred_cover(struct kwl_server *server, VkCommandBuffer command);
+static unsigned double_click(struct kwl_server *server, struct kwl_object *surface);
+static unsigned title_clicks(struct kwl_server *server, struct kwl_object *surface);
+static int click_docked_third(struct kwl_server *server);
+static void window_resized(struct kwl_object *surface);
+static void window_lower(struct kwl_server *server, struct kwl_object *surface, const char *via);
+static int bar_press(struct kwl_server *server);
+static struct kwl_object *bar_cover(struct kwl_server *server);
+static void bar_cover_log(struct kwl_server *server, const struct kwl_object *cover);
+static int home_without_bar(struct kwl_server *server, uint32_t button, uint32_t state);
+static float wiseview_progress(struct kwl_server *server);
+static void wiseview_settle(struct kwl_server *server, float from, float to);
+static void wiseview_choose(struct kwl_server *server, const char *via);
+static void wiseview_move(struct kwl_server *server, int step);
+static int wiseview_pad_swipe(struct kwl_server *server, unsigned direction);
+static int gesture_fullscreen(struct kwl_server *server, uint32_t gesture);
+static int gesture_undock(struct kwl_server *server);
 static unsigned gesture_as_swipe(uint32_t gesture);
-static void gesture_wiseview(struct zwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
-static void gesture_desktop(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
-static int gesture_may_start(struct zwl_server *server);
+static void gesture_wiseview(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
+static void gesture_desktop(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
+static int gesture_may_start(struct kwl_server *server);
 static const char *gesture_name(uint32_t gesture);
 static const char *gesture_phase_name(uint32_t phase);
-static int wiseview_showing(struct zwl_server *server);
-static int fullscreen_leave_key(struct zwl_server *server, uint32_t key, uint32_t state);
-static void wiseview_open_key(struct zwl_server *server);
-static void wiseview_key(struct zwl_server *server, uint32_t key, uint32_t state);
-static void wiseview_close_key(struct zwl_server *server);
-static unsigned wiseview_windows(struct zwl_server *server, struct zwl_object **windows, unsigned capacity);
-static void wiseview_layout(struct zwl_server *server, struct zwl_object **windows, unsigned count, struct shell_rect *tiles);
-static void draw_wiseview(struct zwl_server *server, VkCommandBuffer command, struct zwl_object **stacked, unsigned stacked_count, float progress);
-static void draw_tile(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
-static int wiseview_button(struct zwl_server *server, uint32_t button, uint32_t state);
-static void wiseview_log(struct zwl_server *server);
-static int wiseview_edge_press(struct zwl_server *server, uint32_t button, uint32_t state);
+static int wiseview_showing(struct kwl_server *server);
+static int fullscreen_leave_key(struct kwl_server *server, uint32_t key, uint32_t state);
+static void wiseview_open_key(struct kwl_server *server);
+static void wiseview_key(struct kwl_server *server, uint32_t key, uint32_t state);
+static void wiseview_close_key(struct kwl_server *server);
+static unsigned wiseview_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
+static void wiseview_layout(struct kwl_server *server, struct kwl_object **windows, unsigned count, struct shell_rect *tiles);
+static void draw_wiseview(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **stacked, unsigned stacked_count, float progress);
+static void draw_tile(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
+static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
+static void wiseview_log(struct kwl_server *server);
+static int wiseview_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
@@ -485,30 +485,30 @@ static struct {
 	int done;
 	int32_t start_y;
 } unfullscreen_swipe;
-static struct zwl_object *fullscreen_top(struct zwl_server *server);
-static int fullscreen_whole(struct zwl_server *server, float home);
-static int unfullscreen_press(struct zwl_server *server, uint32_t button, uint32_t state);
-static int unfullscreen_motion(struct zwl_server *server);
-static float desktop_position(struct zwl_server *server);
-static void desktop_turn(struct zwl_server *server, int target, const char *via);
-static void desktop_release(struct zwl_server *server);
-static unsigned desktop_windows(struct zwl_server *server, unsigned desktop);
+static struct kwl_object *fullscreen_top(struct kwl_server *server);
+static int fullscreen_whole(struct kwl_server *server, float home);
+static int unfullscreen_press(struct kwl_server *server, uint32_t button, uint32_t state);
+static int unfullscreen_motion(struct kwl_server *server);
+static float desktop_position(struct kwl_server *server);
+static void desktop_turn(struct kwl_server *server, int target, const char *via);
+static void desktop_release(struct kwl_server *server);
+static unsigned desktop_windows(struct kwl_server *server, unsigned desktop);
 
 /*
  * Draws the wallpaper, the windows from the bottom with their shadows and
  * title bars, and the system bar over them.
  */
 void
-zwl_glass_draw(
-	struct zwl_server *server,
+kwl_glass_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object **windows,
+	struct kwl_object **windows,
 	unsigned count)
 {
 	static const float screen_black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	struct glass_shape shape;
-	struct zwl_object *top;
-	struct zwl_object *cover;
+	struct kwl_object *top;
+	struct kwl_object *cover;
 	struct shell_bar bar;
 	unsigned index;
 	unsigned focused;
@@ -530,7 +530,7 @@ zwl_glass_draw(
 
 	/* The login screen, or a session's lock screen, is all there is to draw (greeter.c). */
 	if (server->greeter || server->locked) {
-		zwl_greeter_draw(server, command);
+		kwl_greeter_draw(server, command);
 		return;
 	}
 
@@ -539,17 +539,17 @@ zwl_glass_draw(
 	bar_cover_log(server, cover);
 
 	/* The menus' and the controls' places are those this frame draws them at (menu-shell.c, titlebar-shell.c). */
-	zwl_menu_frame(server);
-	zwl_titlebar_frame(server);
+	kwl_menu_frame(server);
+	kwl_titlebar_frame(server);
 
 	/*
 	 * App Home, opening, open or closing, lies under the desktop layer,
 	 * which slides aside over it with its shadow (home.c).
 	 */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f) {
-		zwl_home_draw(server, command, home);
-		zwl_home_layer(server, home, &server->layer_x, &server->layer_y, &server->layer_scale);
+		kwl_home_draw(server, command, home);
+		kwl_home_layer(server, home, &server->layer_x, &server->layer_y, &server->layer_scale);
 		glass_shape_init(&shape, server->layer_x, server->layer_y, (float)server->width * server->layer_scale, (float)server->height * server->layer_scale);
 		shape.quad[0] -= 80.0f;
 		shape.quad[1] -= 80.0f;
@@ -573,13 +573,13 @@ zwl_glass_draw(
 	 */
 	whole = fullscreen_whole(server, home);
 	if (whole) {
-		top = zwl_top_window(server);
+		top = kwl_top_window(server);
 		window_layer(server, top, home, (float)server->desktop);
 		draw_window(server, command, top, 1U, NULL);
 		server->layer_on = 0;
-		zwl_backdrop_reset(server);
-		zwl_popup_draw(server, command);
-		zwl_power_dialog_draw(server, command);
+		kwl_backdrop_reset(server);
+		kwl_popup_draw(server, command);
+		kwl_power_dialog_draw(server, command);
 		return;
 	}
 
@@ -605,7 +605,7 @@ zwl_glass_draw(
 	}
 
 	/* The desktop's icons over the wallpaper, with the layer (desktop.c). */
-	zwl_desktop_draw(server, command);
+	kwl_desktop_draw(server, command);
 
 	/*
 	 * The windows; the top one has the focus; where a dragged one would
@@ -613,7 +613,7 @@ zwl_glass_draw(
 	 * the desktops slide or are swiped, the neighbour's too, a screen's
 	 * width to the side (Home, when it shows, has the desktop shown only).
 	 */
-	top = zwl_top_window(server);
+	top = kwl_top_window(server);
 	position = desktop_position(server);
 	drawn = 0;
 	for (index = 0; index < count; index++) {
@@ -627,7 +627,7 @@ zwl_glass_draw(
 		 * layer; any other window's glass shows the blurred wallpaper alone,
 		 * which costs nothing more (the default).
 		 */
-		blur = zwl_panels_blur(windows[index]);
+		blur = kwl_panels_blur(windows[index]);
 		centred = window_centred_over(server, windows[index]);
 		if (centred && home <= 0.0f) {
 			/*
@@ -641,7 +641,7 @@ zwl_glass_draw(
 		} else if (drawn > 0U && home <= 0.0f && blur) {
 			draw_backdrop(server, command, windows, index, position);
 		} else {
-			zwl_backdrop_reset(server);
+			kwl_backdrop_reset(server);
 		}
 
 		/* One more window drawn. */
@@ -661,8 +661,8 @@ zwl_glass_draw(
 
 	/* The windows' popups over all the windows (popup.c); the glass from here is on the blurred wallpaper. */
 	server->layer_on = 0;
-	zwl_backdrop_reset(server);
-	zwl_popup_draw(server, command);
+	kwl_backdrop_reset(server);
+	kwl_popup_draw(server, command);
 
 	/*
 	 * The system bar over everything but the cursor, where it always is,
@@ -673,37 +673,37 @@ zwl_glass_draw(
 		draw_system_bar(server, command, &bar);
 
 	/* The previews of an application's icon in the bar, over the windows (apps-bar.c), or the switcher in the middle (switcher-shell.c). */
-	zwl_apps_bar_draw_popup(server, command);
-	zwl_switch_draw(server, command);
+	kwl_apps_bar_draw_popup(server, command);
+	kwl_switch_draw(server, command);
 
 	/* An open menu's popups over the system bar (menu-shell.c). */
-	zwl_menu_draw_popups(server, command);
+	kwl_menu_draw_popups(server, command);
 
 	/* The power dialog over everything (power-dialog.c, ws099-p037). */
-	zwl_power_dialog_draw(server, command);
+	kwl_power_dialog_draw(server, command);
 
 	/* The suggestions under a titlebar's field with the keyboard (titlebar-shell.c, ws127-p010). */
-	zwl_titlebar_draw_suggestions(server, command);
+	kwl_titlebar_draw_suggestions(server, command);
 
 	/* The network's menu, when open (network.c). */
-	zwl_network_draw_menu(server, command);
+	kwl_network_draw_menu(server, command);
 
 	/* The volume's popup, when open (volume.c). */
-	zwl_volume_draw_popup(server, command);
+	kwl_volume_draw_popup(server, command);
 
 	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
-	zwl_corner_draw(server, command);
+	kwl_corner_draw(server, command);
 
 	/*
 	 * The on-screen keyboard over everything (keyboard.c, ws102).  Its glass
 	 * shows the scene under it blurred when zdesktop was started so
 	 * (--keyboard-blur, ws075-p029), else the blurred wallpaper.
 	 */
-	showing = zwl_keyboard_showing();
+	showing = kwl_keyboard_showing();
 	if (server->keyboard_blur && showing && home <= 0.0f)
 		draw_backdrop(server, command, windows, count, position);
-	zwl_keyboard_draw(server, command);
-	zwl_backdrop_reset(server);
+	kwl_keyboard_draw(server, command);
+	kwl_backdrop_reset(server);
 
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
@@ -719,14 +719,14 @@ zwl_glass_draw(
  * Returns 1 when the button is zdesktop's, 0 when it goes to the client.
  */
 int
-zwl_glass_button(
-	struct zwl_server *server,
+kwl_glass_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_object *surface;
-	struct zwl_object *cover;
-	struct zwl_object *sheet;
+	struct kwl_object *surface;
+	struct kwl_object *cover;
+	struct kwl_object *sheet;
 	enum shell_hit hit;
 	uint32_t edges;
 	unsigned clicks;
@@ -736,17 +736,17 @@ zwl_glass_button(
 
 	/* The login screen takes every button (greeter.c). */
 	if (server->greeter) {
-		pressed = zwl_greeter_button(server, button, state);
+		pressed = kwl_greeter_button(server, button, state);
 		return pressed;
 	}
 
 	/* The power dialog, while it shows, takes every button (power-dialog.c, ws099-p037). */
-	pressed = zwl_power_dialog_button(server, button, state);
+	pressed = kwl_power_dialog_button(server, button, state);
 	if (pressed)
 		return 1;
 
 	/* The switcher, while on, takes every button, and the release of a press it took (switcher-shell.c). */
-	pressed = zwl_switch_button(server, button, state);
+	pressed = kwl_switch_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -757,7 +757,7 @@ zwl_glass_button(
 	}
 
 	/* A third quick press after a double click that docked a window takes the dock back (ws079-p013). */
-	if (state != 0 && button == ZWL_BUTTON_LEFT) {
+	if (state != 0 && button == KWL_BUTTON_LEFT) {
 		pressed = click_docked_third(server);
 		if (pressed)
 			return 1;
@@ -768,7 +768,7 @@ zwl_glass_button(
 	 * starts in the corner, and that contact's release; before Home, so
 	 * that it works over Home too (its corner is not Home's).
 	 */
-	pressed = zwl_corner_button(server, button, state);
+	pressed = kwl_corner_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -778,7 +778,7 @@ zwl_glass_button(
 	 * bottom edge and the desktops' side edges, which start outside the
 	 * corners.
 	 */
-	pressed = zwl_keyboard_button(server, button, state);
+	pressed = kwl_keyboard_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -792,12 +792,12 @@ zwl_glass_button(
 	pressed = 0;
 	if (cover == NULL) {
 		/* App Home takes the launcher, the top-left corner, and every button while it shows. */
-		pressed = zwl_home_button(server, button, state);
+		pressed = kwl_home_button(server, button, state);
 	} else {
 		/* Only the corner's press, and the rest of one of Home's own presses. */
 		open = home_without_bar(server, button, state);
 		if (open)
-			pressed = zwl_home_button(server, button, state);
+			pressed = kwl_home_button(server, button, state);
 	}
 
 	/* A button Home took goes no further. */
@@ -806,46 +806,46 @@ zwl_glass_button(
 
 	/* The removable media's icon takes a press on it: Files on its devices (media.c). */
 	if (cover == NULL) {
-		pressed = zwl_media_button(server, button, state);
+		pressed = kwl_media_button(server, button, state);
 		if (pressed)
 			return 1;
 	}
 
 	/* The input method's indicator takes a press on it: the next language (input-method.c). */
 	if (cover == NULL) {
-		pressed = zwl_ime_indicator_button(server, button, state);
+		pressed = kwl_ime_indicator_button(server, button, state);
 		if (pressed)
 			return 1;
 	}
 
 	/* The volume takes a press on its icon, and every button while its popup is open (volume.c). */
-	open = zwl_volume_is_open();
+	open = kwl_volume_is_open();
 	if (cover == NULL || open) {
-		pressed = zwl_volume_button(server, button, state);
+		pressed = kwl_volume_button(server, button, state);
 		if (pressed)
 			return 1;
 	}
 
 	/* The network takes a press on its icon, and every button while its menu is open (network.c). */
-	open = zwl_network_is_open();
+	open = kwl_network_is_open();
 	if (cover == NULL || open) {
-		pressed = zwl_network_button(server, button, state);
+		pressed = kwl_network_button(server, button, state);
 		if (pressed)
 			return 1;
 	}
 
 	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
-	pressed = zwl_menu_button(server, button, state);
+	pressed = kwl_menu_button(server, button, state);
 	if (pressed)
 		return 1;
 
 	/* The bar's applications take a press on an icon or a preview, and its release (apps-bar.c). */
-	pressed = zwl_apps_bar_button(server, button, state);
+	pressed = kwl_apps_bar_button(server, button, state);
 	if (pressed)
 		return 1;
 
 	/* A titlebar's controls take a press on one, and its release (titlebar-shell.c). */
-	pressed = zwl_titlebar_button(server, button, state);
+	pressed = kwl_titlebar_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -857,8 +857,8 @@ zwl_glass_button(
 
 	/* A left press at the left or right edge (under the system bar) may become the desktops' swipe. */
 	if (state != 0 &&
-	    button == ZWL_BUTTON_LEFT &&
-	    server->pointer_y >= ZWL_GLASS_BAR &&
+	    button == KWL_BUTTON_LEFT &&
+	    server->pointer_y >= KWL_GLASS_BAR &&
 	    (server->pointer_x < DESKTOP_EDGE || server->pointer_x >= (int32_t)server->width - DESKTOP_EDGE)) {
 		server->desktop_press = 1;
 		server->desktop_dragging = 0;
@@ -884,14 +884,14 @@ zwl_glass_button(
 			return 0;
 
 		/* The accepted move finishes without another widget receiving its release. */
-		zwl_glass_toplevel_move_end(server, server->drag);
+		kwl_glass_toplevel_move_end(server, server->drag);
 
 		/* The release belonged to this server-owned move. */
 		return 1;
 	}
 
 	/* The system bar is zdesktop's, where it is drawn. */
-	if (server->pointer_y < ZWL_GLASS_BAR && cover == NULL) {
+	if (server->pointer_y < KWL_GLASS_BAR && cover == NULL) {
 		pressed = bar_press(server);
 		return pressed;
 	}
@@ -912,17 +912,17 @@ zwl_glass_button(
 
 	/* A press where no window is goes to the desktop's icons when there are any (desktop.c); a window's press takes the keyboard back from them. */
 	if (surface == NULL) {
-		open = zwl_desktop_press(server);
+		open = kwl_desktop_press(server);
 		if (open)
 			return 0;
 	} else {
-		zwl_desktop_unfocus(server);
+		kwl_desktop_unfocus(server);
 	}
 
 	/* A window with a sheet open takes no press but its title bar's, which still moves it (ws090-p014). */
 	sheet = NULL;
 	if (surface != NULL && hit != HIT_TITLE)
-		sheet = zwl_sheet_of(surface);
+		sheet = kwl_sheet_of(surface);
 	if (sheet != NULL) {
 		window_raise(server, surface);
 		printf("ZWL GLASS sheet holds surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
@@ -930,7 +930,7 @@ zwl_glass_button(
 	}
 
 	/* Another button is the client's on a body, zdesktop's elsewhere. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return hit != HIT_BODY;
 
 	/* A press on the desktop is zdesktop's. */
@@ -944,7 +944,7 @@ zwl_glass_button(
 	 */
 	open = layout_press_switches(server, surface);
 	if (open) {
-		zwl_glass_switch_to(server, surface, "press");
+		kwl_glass_switch_to(server, surface, "press");
 		return 1;
 	}
 
@@ -958,7 +958,7 @@ zwl_glass_button(
 	/* On the frame a resize by its side or corner starts, until the button is let go (toplevel.c). */
 	if (hit == HIT_FRAME) {
 		edges = frame_edges(server, surface, server->pointer_x, server->pointer_y);
-		error = zwl_toplevel_resize_start(server, surface, edges);
+		error = kwl_toplevel_resize_start(server, surface, edges);
 		if (error != 0)
 			printf("ZWL GLASS frame refused surface=%u edges=%u\n", surface->id, edges);
 		return 1;
@@ -967,7 +967,7 @@ zwl_glass_button(
 	/* On a button, its action. */
 	pressed = button_at(surface, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
-		(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
+		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
 		printf("ZWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
@@ -1025,8 +1025,8 @@ zwl_glass_button(
  * Returns 1 when the motion is zdesktop's.
  */
 int
-zwl_glass_motion(
-	struct zwl_server *server)
+kwl_glass_motion(
+	struct kwl_server *server)
 {
 	uint32_t edges;
 	int taken;
@@ -1038,14 +1038,14 @@ zwl_glass_motion(
 	edges = 0U;
 	if (!taken)
 		edges = frame_under_pointer(server);
-	zwl_cursor_frame(server, edges);
+	kwl_cursor_frame(server, edges);
 
 	/* Succeeded: whether the motion was zdesktop's. */
 	return taken;
 }
 
 /*
- * Handles a pointer button over a fullscreen window (zwl_glass_fullscreen_input),
+ * Handles a pointer button over a fullscreen window (kwl_glass_fullscreen_input),
  * which the rest of the glass look does not see: only the edges' gestures
  * (the top-left corner's App Home, the top-right corner's Notes, the bottom
  * corners' keyboard, the bottom edge's swipe back to a window) and what
@@ -1053,8 +1053,8 @@ zwl_glass_motion(
  * the fullscreen window.
  */
 int
-zwl_glass_edge_button(
-	struct zwl_server *server,
+kwl_glass_edge_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -1079,35 +1079,35 @@ zwl_glass_edge_button(
 	}
 
 	/* The top-right corner's swipe to Notes (corner.c). */
-	pressed = zwl_corner_button(server, button, state);
+	pressed = kwl_corner_button(server, button, state);
 	if (pressed)
 		return 1;
 
 	/* The on-screen keyboard's panel and its bottom corners' swipe (keyboard.c), before the bottom edge's swipe. */
-	pressed = zwl_keyboard_button(server, button, state);
+	pressed = kwl_keyboard_button(server, button, state);
 	if (pressed)
 		return 1;
 
 	/* App Home, when it shows or follows a press of its own, has the button as in window mode. */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f ||
 	    server->home_to > 0.0f ||
 	    server->home_press ||
 	    server->home_page_press ||
 	    server->home_bottom_press) {
-		pressed = zwl_home_button(server, button, state);
+		pressed = kwl_home_button(server, button, state);
 		return pressed;
 	}
 
 	/* A left press in the top-left corner may open App Home (the launcher is under the window). */
 	corner_press = 0;
 	if (state != 0 &&
-	    button == ZWL_BUTTON_LEFT &&
+	    button == KWL_BUTTON_LEFT &&
 	    server->pointer_x < HOME_EDGE_CORNER &&
 	    server->pointer_y < HOME_EDGE_CORNER)
 		corner_press = 1;
 	if (corner_press) {
-		pressed = zwl_home_button(server, button, state);
+		pressed = kwl_home_button(server, button, state);
 		return pressed;
 	}
 
@@ -1125,8 +1125,8 @@ zwl_glass_edge_button(
  * motion is zdesktop's, 0 when it goes to the fullscreen window.
  */
 int
-zwl_glass_edge_motion(
-	struct zwl_server *server)
+kwl_glass_edge_motion(
+	struct kwl_server *server)
 {
 	int taken;
 
@@ -1146,17 +1146,17 @@ zwl_glass_edge_motion(
 	}
 
 	/* The top-right corner's swipe (corner.c). */
-	taken = zwl_corner_motion(server);
+	taken = kwl_corner_motion(server);
 	if (taken)
 		return 1;
 
 	/* The on-screen keyboard's swipe and a press on its panel (keyboard.c). */
-	taken = zwl_keyboard_motion(server);
+	taken = kwl_keyboard_motion(server);
 	if (taken)
 		return 1;
 
 	/* App Home's gesture from the top-left corner (home.c). */
-	taken = zwl_home_motion(server);
+	taken = kwl_home_motion(server);
 	if (taken)
 		return 1;
 
@@ -1166,16 +1166,16 @@ zwl_glass_edge_motion(
 
 /*
  * Tells whether the pointer and the fingers go to the fullscreen window
- * with only the edges' gestures for zdesktop (zwl_glass_edge_button): the
+ * with only the edges' gestures for zdesktop (kwl_glass_edge_button): the
  * top window is fullscreen and nothing shows over it, or the bottom edge's
  * swipe holds its contact.  seat.c chooses by it (until ws099-p015 it
  * chose by fullscreen mode, the direct scanout, which is gone).
  */
 int
-zwl_glass_fullscreen_input(
-	struct zwl_server *server)
+kwl_glass_fullscreen_input(
+	struct kwl_server *server)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 
 	/* The swipe's contact stays the edges' until its release. */
 	if (unfullscreen_swipe.pressing)
@@ -1191,11 +1191,11 @@ zwl_glass_fullscreen_input(
 }
 
 /* Finds the top window when it is fullscreen with nothing shown over it; NULL otherwise. */
-static struct zwl_object *
+static struct kwl_object *
 fullscreen_top(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 	int overlay;
 
 	/* Only the glass look's composed output, not the login or the lock screen. */
@@ -1205,12 +1205,12 @@ fullscreen_top(
 		return NULL;
 
 	/* An edge's gesture showing something (App Home, Wiseview, the hints, the keyboard) has the input as in window mode. */
-	overlay = zwl_glass_overlay(server);
+	overlay = kwl_glass_overlay(server);
 	if (overlay)
 		return NULL;
 
 	/* The top window, fullscreen with an image. */
-	top = zwl_top_window(server);
+	top = kwl_top_window(server);
 	if (top == NULL || !top->fullscreen || top->current == NULL)
 		return NULL;
 
@@ -1220,16 +1220,16 @@ fullscreen_top(
 
 /*
  * Tells whether a frame draws only the fullscreen window on top
- * (zwl_glass_draw): with nothing shown over it or moving, it covers the
+ * (kwl_glass_draw): with nothing shown over it or moving, it covers the
  * output with an opaque image, so what is under it is not seen.
  */
 static int
 fullscreen_whole(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float home)
 {
-	struct zwl_object *top;
-	const struct zwl_import *image;
+	struct kwl_object *top;
+	const struct kwl_import *image;
 	struct shell_rect body;
 	unsigned panels;
 	float progress;
@@ -1243,16 +1243,16 @@ fullscreen_whole(
 	if (progress > 0.0f)
 		return 0;
 
-	/* Nothing moves or is open over it: no animation, drag, sliding desktops, popup or menu (zwl_glass_still). */
-	still = zwl_glass_still(server);
+	/* Nothing moves or is open over it: no animation, drag, sliding desktops, popup or menu (kwl_glass_still). */
+	still = kwl_glass_still(server);
 	if (!still)
 		return 0;
 
 	/* Its image is opaque, with no sub-surfaces under it and no glass panels. */
-	image = zwl_compose_surface_image(top);
-	if (image == NULL || image->draw != ZWL_DRAW_OPAQUE)
+	image = kwl_compose_surface_image(top);
+	if (image == NULL || image->draw != KWL_DRAW_OPAQUE)
 		return 0;
-	panels = zwl_panels_count(top);
+	panels = kwl_panels_count(top);
 	if (top->sub_children != NULL || panels > 0U)
 		return 0;
 
@@ -1274,12 +1274,12 @@ fullscreen_whole(
  */
 static int
 unfullscreen_press(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
 	/* Another button while the swipe holds its contact is the swipe's too. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return unfullscreen_swipe.pressing;
 
 	/* The release ends it. */
@@ -1308,14 +1308,14 @@ unfullscreen_press(
 /*
  * Follows the bottom edge's swipe: once its contact has moved up
  * UNFULLSCREEN_DISTANCE, the fullscreen window goes back to a window, where
- * zwl_window_leave_fullscreen puts it (BUG-114's rule).  Returns 1 while the
+ * kwl_window_leave_fullscreen puts it (BUG-114's rule).  Returns 1 while the
  * swipe holds the contact.
  */
 static int
 unfullscreen_motion(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 	int error;
 
 	/* No swipe, or one that has done its work already. */
@@ -1335,8 +1335,8 @@ unfullscreen_motion(
 		return 1;
 
 	/* It becomes a window again. */
-	error = zwl_window_leave_fullscreen(top);
-	printf("ZWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu client=%llu\n", top->id, error, (unsigned long long)zwl_milliseconds(), (unsigned long long)top->client->number);
+	error = kwl_window_leave_fullscreen(top);
+	printf("ZWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu client=%llu\n", top->id, error, (unsigned long long)kwl_milliseconds(), (unsigned long long)top->client->number);
 
 	/* Succeeded: the contact stays the swipe's until its release. */
 	return 1;
@@ -1346,11 +1346,11 @@ unfullscreen_motion(
  * Tells whether an edge's gesture shows something over the windows (the
  * top-right corner's hint, App Home, Wiseview, the keyboard), so that the
  * input goes to it as in window mode even while the top window is
- * fullscreen (zwl_glass_fullscreen_input).
+ * fullscreen (kwl_glass_fullscreen_input).
  */
 int
-zwl_glass_overlay(
-	struct zwl_server *server)
+kwl_glass_overlay(
+	struct kwl_server *server)
 {
 	float progress;
 	int showing;
@@ -1360,17 +1360,17 @@ zwl_glass_overlay(
 		return 0;
 
 	/* The top-right corner's hint (corner.c). */
-	showing = zwl_corner_showing();
+	showing = kwl_corner_showing();
 	if (showing)
 		return 1;
 
 	/* The on-screen keyboard's panel or its swipe's hint (keyboard.c). */
-	showing = zwl_keyboard_showing();
+	showing = kwl_keyboard_showing();
 	if (showing)
 		return 1;
 
 	/* App Home, opening, open or closing. */
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 	if (progress > 0.0f || server->home_to > 0.0f)
 		return 1;
 
@@ -1394,9 +1394,9 @@ zwl_glass_overlay(
  * press on a title bar does what a press on it does).
  */
 void
-zwl_glass_raise(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_glass_raise(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	/* The same as a press on the window. */
 	window_raise(server, surface);
@@ -1407,13 +1407,13 @@ zwl_glass_raise(
  * menus, whose items in a title bar another window may cover); NULL when
  * there is none.
  */
-struct zwl_object *
-zwl_glass_window_at(
-	struct zwl_server *server,
+struct kwl_object *
+kwl_glass_window_at(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	enum shell_hit hit;
 
 	/* The same search a press makes. */
@@ -1429,11 +1429,11 @@ zwl_glass_window_at(
  * ws099-p030): two pixels for a mouse or a pen, eight for a finger.
  */
 int
-zwl_glass_press_moved(
-	struct zwl_server *server,
+kwl_glass_press_moved(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
-	enum zwl_contact_source source)
+	enum kwl_contact_source source)
 {
 	int32_t least;
 	int32_t dx;
@@ -1441,7 +1441,7 @@ zwl_glass_press_moved(
 
 	/* The distance a press of its kind may wander and still click. */
 	least = PRESS_MOVE_POINTER;
-	if (source == ZWL_CONTACT_TOUCH)
+	if (source == KWL_CONTACT_TOUCH)
 		least = PRESS_MOVE_TOUCH;
 
 	/* How far the pointer is from the press. */
@@ -1461,9 +1461,9 @@ zwl_glass_press_moved(
  * a docked window's title in the system bar starts a pull.
  */
 void
-zwl_glass_press_move(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_press_move(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	unsigned docked,
 	int32_t x,
 	int32_t y)
@@ -1508,13 +1508,13 @@ zwl_glass_press_move(
  * point in the glass look; NULL for none (a drag and drop's target,
  * data.c).
  */
-struct zwl_object *
-zwl_glass_body_at(
-	struct zwl_server *server,
+struct kwl_object *
+kwl_glass_body_at(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	enum shell_hit hit;
 
 	/* The same search a press makes; only a body counts. */
@@ -1533,13 +1533,13 @@ zwl_glass_body_at(
  * to a screen or a menu over the windows, to an edge's gesture, to the
  * system bar, to a body, or to the desktop.
  */
-struct zwl_object *
-zwl_glass_title_at(
-	struct zwl_server *server,
+struct kwl_object *
+kwl_glass_title_at(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	enum shell_hit hit;
 	float home;
 	int fullscreen;
@@ -1556,7 +1556,7 @@ zwl_glass_title_at(
 		return NULL;
 
 	/* A fullscreen window has no title bar; only the edges' gestures are over it. */
-	fullscreen = zwl_glass_fullscreen_input(server);
+	fullscreen = kwl_glass_fullscreen_input(server);
 	if (fullscreen)
 		return NULL;
 
@@ -1565,31 +1565,31 @@ zwl_glass_title_at(
 		return NULL;
 
 	/* App Home takes every press while it shows or follows one. */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return NULL;
 
 	/* The on-screen keyboard's panel and its bottom corners are the keyboard's (keyboard.c). */
-	open = zwl_keyboard_at(x, y);
+	open = kwl_keyboard_at(x, y);
 	if (open)
 		return NULL;
-	if (y >= (int32_t)server->height - ZWL_KEYBOARD_ZONE &&
-	    (x < ZWL_KEYBOARD_ZONE || x >= (int32_t)server->width - ZWL_KEYBOARD_ZONE))
+	if (y >= (int32_t)server->height - KWL_KEYBOARD_ZONE &&
+	    (x < KWL_KEYBOARD_ZONE || x >= (int32_t)server->width - KWL_KEYBOARD_ZONE))
 		return NULL;
 
 	/* An open menu closes on a press anywhere. */
-	open = zwl_network_is_open();
+	open = kwl_network_is_open();
 	if (open)
 		return NULL;
-	open = zwl_volume_is_open();
+	open = kwl_volume_is_open();
 	if (open)
 		return NULL;
-	open = zwl_menu_is_open();
+	open = kwl_menu_is_open();
 	if (open)
 		return NULL;
 
 	/* The system bar, the desktops' swipe at the side edges and Wiseview's bottom edge come before the windows. */
-	if (y < ZWL_GLASS_BAR)
+	if (y < KWL_GLASS_BAR)
 		return NULL;
 	if (x < DESKTOP_EDGE || x >= (int32_t)server->width - DESKTOP_EDGE)
 		return NULL;
@@ -1611,9 +1611,9 @@ zwl_glass_title_at(
  * "go away").
  */
 void
-zwl_glass_lower(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_lower(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const char *via)
 {
 	/* A run of clicks, or a double click's dock a third press could take back, on the window is over. */
@@ -1634,8 +1634,8 @@ zwl_glass_lower(
  * outline and two lines of text, so the user sees something being carried.
  */
 void
-zwl_glass_draw_drag_badge(
-	struct zwl_server *server,
+kwl_glass_draw_drag_badge(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float edge[4] = { 0.12f, 0.16f, 0.24f, 0.35f };
@@ -1664,10 +1664,10 @@ zwl_glass_draw_drag_badge(
  * can be drawn in a rectangle of its own.
  */
 int
-zwl_glass_still(
-	struct zwl_server *server)
+kwl_glass_still(
+	struct kwl_server *server)
 {
-	struct zwl_object *popups[1];
+	struct kwl_object *popups[1];
 	float home;
 	unsigned open;
 
@@ -1680,17 +1680,17 @@ zwl_glass_still(
 		return 0;
 
 	/* Home, even closing. */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f)
 		return 0;
 
 	/* The top-right corner's hint (corner.c). */
-	open = (unsigned)zwl_corner_showing();
+	open = (unsigned)kwl_corner_showing();
 	if (open)
 		return 0;
 
 	/* The on-screen keyboard (keyboard.c). */
-	open = (unsigned)zwl_keyboard_showing();
+	open = (unsigned)kwl_keyboard_showing();
 	if (open)
 		return 0;
 
@@ -1699,16 +1699,16 @@ zwl_glass_still(
 		return 0;
 
 	/* A popup or a menu open over the windows. */
-	open = zwl_popup_collect(server, popups, 1U);
+	open = kwl_popup_collect(server, popups, 1U);
 	if (open > 0U)
 		return 0;
-	open = zwl_menu_is_open();
+	open = kwl_menu_is_open();
 	if (open)
 		return 0;
-	open = (unsigned)zwl_network_is_open();
+	open = (unsigned)kwl_network_is_open();
 	if (open)
 		return 0;
-	open = (unsigned)zwl_volume_is_open();
+	open = (unsigned)kwl_volume_is_open();
 	if (open)
 		return 0;
 
@@ -1724,20 +1724,20 @@ zwl_glass_still(
  * rectangle, 0 when the whole output must be drawn.
  */
 int
-zwl_glass_body_damage(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_body_damage(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t *rect)
 {
-	struct zwl_client *client;
-	struct zwl_object *other;
+	struct kwl_client *client;
+	struct kwl_object *other;
 	struct shell_rect body;
 	struct shell_rect near;
 	int still;
 	int close;
 
 	/* A still look, and a window on the desktop shown. */
-	still = zwl_glass_still(server);
+	still = kwl_glass_still(server);
 	if (!still || !surface->mapped || surface->minimized || surface->desktop != server->desktop)
 		return 0;
 
@@ -1751,7 +1751,7 @@ zwl_glass_body_damage(
 	/* No window above it within the reach (its body and its title bar). */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (other = client->objects; other != NULL; other = other->next) {
-			if (other == surface || other->kind != ZWL_SURFACE || !other->mapped)
+			if (other == surface || other->kind != KWL_SURFACE || !other->mapped)
 				continue;
 			if (other->map_order < surface->map_order || other->minimized || other->desktop != server->desktop)
 				continue;
@@ -1775,17 +1775,17 @@ zwl_glass_body_damage(
  * follows the pointer but the cursor (ws035-p055).
  */
 int
-zwl_glass_pointer_calm(
-	struct zwl_server *server,
+kwl_glass_pointer_calm(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	enum shell_hit hit;
 	int still;
 
 	/* A still look. */
-	still = zwl_glass_still(server);
+	still = kwl_glass_still(server);
 	if (!still)
 		return 0;
 
@@ -1804,9 +1804,9 @@ zwl_glass_pointer_calm(
  * Returns 0.
  */
 int
-zwl_glass_body_origin(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_body_origin(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t *x,
 	int32_t *y)
 {
@@ -1827,9 +1827,9 @@ zwl_glass_body_origin(
  * and minimize.
  */
 void
-zwl_glass_toplevel_request(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_toplevel_request(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int request)
 {
 	/* Only a shown window of the desktop shown. */
@@ -1838,7 +1838,7 @@ zwl_glass_toplevel_request(
 
 	/* What was asked. */
 	switch (request) {
-	case ZWL_TOPLEVEL_MOVE:
+	case KWL_TOPLEVEL_MOVE:
 		/* A move as a press on the title bar starts one, until the button is let go (a docked window stays). */
 		if (surface->maximized || server->drag != NULL)
 			break;
@@ -1850,15 +1850,15 @@ zwl_glass_toplevel_request(
 		server->drag_start_y = surface->y;
 		printf("ZWL GLASS request move surface=%u\n", surface->id);
 		break;
-	case ZWL_TOPLEVEL_MAXIMIZE:
+	case KWL_TOPLEVEL_MAXIMIZE:
 		/* Docked where it is. */
 		window_dock(server, surface, surface->x, surface->y, "request");
 		break;
-	case ZWL_TOPLEVEL_UNMAXIMIZE:
+	case KWL_TOPLEVEL_UNMAXIMIZE:
 		/* Back to its place before it docked. */
 		window_undock(server, surface, surface->restore_x, surface->restore_y, "request");
 		break;
-	case ZWL_TOPLEVEL_MINIMIZE:
+	case KWL_TOPLEVEL_MINIMIZE:
 		/* Hidden until Wiseview brings it back. */
 		window_minimize(server, surface);
 		break;
@@ -1871,9 +1871,9 @@ zwl_glass_toplevel_request(
  * Ends an accepted move without dispatching its release through unrelated widgets.
  */
 void
-zwl_glass_toplevel_move_end(
-    struct zwl_server *server,
-    struct zwl_object *surface)
+kwl_glass_toplevel_move_end(
+    struct kwl_server *server,
+    struct kwl_object *surface)
 {
 	/* Only the borrowed window currently moving can complete this operation. */
 	if (surface == NULL || server->drag != surface)
@@ -1881,7 +1881,7 @@ zwl_glass_toplevel_move_end(
 
 	/* Retires the moving identity before docking or emitting diagnostics. */
 	server->drag = NULL;
-	if (server->pointer_y < ZWL_GLASS_BAR) {
+	if (server->pointer_y < KWL_GLASS_BAR) {
 		window_dock(server, surface, server->drag_start_x, server->drag_start_y, "drag");
 
 		/* The system bar keeps the previous position as the restore point. */
@@ -1905,15 +1905,15 @@ zwl_glass_toplevel_move_end(
  * some, the one that hides the fewest.
  */
 void
-zwl_glass_place(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_place(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t width,
 	int32_t height,
 	int32_t step)
 {
 	int32_t places[1 + 2 * GLASS_CASCADE_ROUNDS][2];
-	struct zwl_layout_window window;
+	struct kwl_layout_window window;
 	int centred;
 	int32_t space_width;
 	int32_t space_height;
@@ -1929,16 +1929,16 @@ zwl_glass_place(
 
 	/* The centre of the space for bodies under the system bar and a title bar (the plain look's cascade step is not used). */
 	(void)step;
-	zwl_glass_space(server, &space_width, &space_height);
+	kwl_glass_space(server, &space_width, &space_height);
 	places[0][0] = ((int32_t)server->width - width) / 2;
-	places[0][1] = ZWL_GLASS_TOP + (space_height - height) / 2;
+	places[0][1] = KWL_GLASS_TOP + (space_height - height) / 2;
 	count = 1U;
 
 	/* In the docked mode a dialog shows in the middle of the screen, over its docked parent (ws142-p008). */
 	layout_window(surface, &window);
-	centred = zwl_layout_centred(server->layout_mode, &window);
+	centred = kwl_layout_centred(server->layout_mode, &window);
 	if (centred) {
-		zwl_glass_fit(server, width, height, &places[0][0], &places[0][1]);
+		kwl_glass_fit(server, width, height, &places[0][0], &places[0][1]);
 		surface->x = places[0][0];
 		surface->y = places[0][1];
 		return;
@@ -1954,8 +1954,8 @@ zwl_glass_place(
 
 	/* Down and right of the space's top-left corner. */
 	for (round = 0; round < GLASS_CASCADE_ROUNDS; round++) {
-		places[count][0] = ZWL_GLASS_MARGIN + round * GLASS_CASCADE;
-		places[count][1] = ZWL_GLASS_TOP + round * GLASS_CASCADE;
+		places[count][0] = KWL_GLASS_MARGIN + round * GLASS_CASCADE;
+		places[count][1] = KWL_GLASS_TOP + round * GLASS_CASCADE;
 		count++;
 	}
 
@@ -1963,7 +1963,7 @@ zwl_glass_place(
 	best = 0U;
 	least = -1;
 	for (index = 0U; index < count; index++) {
-		zwl_glass_fit(server, width, height, &places[index][0], &places[index][1]);
+		kwl_glass_fit(server, width, height, &places[index][0], &places[index][1]);
 		glass_clear_edges(server, width, height, &places[index][0], &places[index][1]);
 		crowd = glass_crowd(server, surface, places[index][0], places[index][1], width, height);
 		if (least < 0 || crowd < least) {
@@ -1992,7 +1992,7 @@ zwl_glass_place(
  */
 static void
 glass_clear_edges(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t width,
 	int32_t height,
 	int32_t *x,
@@ -2004,7 +2004,7 @@ glass_clear_edges(
 
 	/* The bottom band above Wiseview's edge, unless the title bar would go under the system bar. */
 	lowest = (int32_t)server->height - WISEVIEW_EDGE - FRAME_BAND - height;
-	if (*y > lowest && lowest >= ZWL_GLASS_TOP)
+	if (*y > lowest && lowest >= KWL_GLASS_TOP)
 		*y = lowest;
 
 	/* The side bands inside the desktops' edges. */
@@ -2034,15 +2034,15 @@ glass_clear_edges(
  */
 static int
 glass_crowd(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t y,
 	int32_t width,
 	int32_t height)
 {
-	struct zwl_client *client;
-	struct zwl_object *other;
+	struct kwl_client *client;
+	struct kwl_object *other;
 	struct shell_rect body;
 	int32_t title_x;
 	int32_t title_y;
@@ -2062,8 +2062,8 @@ glass_crowd(
 
 			/* Its title's first letters (their lower half), under the new window and its title bar. */
 			title_x = body.x + GLASS_TITLE_START;
-			title_y = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE / 2 + GLASS_TITLE_LOW;
-			if (title_x >= x && title_x < x + width && title_y >= y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE && title_y < y + height)
+			title_y = body.y - KWL_GLASS_GAP - KWL_GLASS_TITLE / 2 + GLASS_TITLE_LOW;
+			if (title_x >= x && title_x < x + width && title_y >= y - KWL_GLASS_GAP - KWL_GLASS_TITLE && title_y < y + height)
 				crowd++;
 
 			/* Its corner, near the new one's. */
@@ -2081,14 +2081,14 @@ glass_crowd(
 /* Gives the corner of the top window of the desktop shown other than surface; 0 when there is none. */
 static int
 glass_top(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t *x,
 	int32_t *y)
 {
-	struct zwl_client *client;
-	struct zwl_object *other;
-	struct zwl_object *top;
+	struct kwl_client *client;
+	struct kwl_object *other;
+	struct kwl_object *top;
 	struct shell_rect body;
 	int placed;
 
@@ -2116,12 +2116,12 @@ glass_top(
 /* Tells whether an object is a window placement looks at: shown on the desktop shown, not docked, and not the new one. */
 static int
 glass_placed(
-	struct zwl_server *server,
-	struct zwl_object *surface,
-	struct zwl_object *other)
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	struct kwl_object *other)
 {
 	/* A mapped window of the desktop shown. */
-	if (other == surface || other->kind != ZWL_SURFACE || other->dead || !other->mapped)
+	if (other == surface || other->kind != KWL_SURFACE || other->dead || !other->mapped)
 		return 0;
 	if (other->role == NULL || other->cursor_role || other->minimized || other->maximized || other->fullscreen)
 		return 0;
@@ -2137,8 +2137,8 @@ glass_placed(
  * configure_bounds tells windows this size (protocol.c).
  */
 void
-zwl_glass_space(
-	struct zwl_server *server,
+kwl_glass_space(
+	struct kwl_server *server,
 	int32_t *width,
 	int32_t *height)
 {
@@ -2148,15 +2148,15 @@ zwl_glass_space(
 	int32_t bottom;
 
 	/* What the on-screen keyboard's panel takes at the right or the bottom (keyboard.c, ws102-p007). */
-	zwl_keyboard_reserved(&right, &bottom);
+	kwl_keyboard_reserved(&right, &bottom);
 
 	/* The output less a margin at each side, and the keyboard's column. */
-	space_width = (int32_t)server->width - 2 * ZWL_GLASS_MARGIN - right;
+	space_width = (int32_t)server->width - 2 * KWL_GLASS_MARGIN - right;
 	if (space_width < 0)
 		space_width = 0;
 
 	/* The output under the system bar and a title bar, less the bottom margin and the keyboard's row. */
-	space_height = (int32_t)server->height - ZWL_GLASS_TOP - ZWL_GLASS_MARGIN - bottom;
+	space_height = (int32_t)server->height - KWL_GLASS_TOP - KWL_GLASS_MARGIN - bottom;
 	if (space_height < 0)
 		space_height = 0;
 
@@ -2172,8 +2172,8 @@ zwl_glass_space(
  * floating title bar, so the title bar is never under the system bar.
  */
 void
-zwl_glass_fit(
-	struct zwl_server *server,
+kwl_glass_fit(
+	struct kwl_server *server,
 	int32_t width,
 	int32_t height,
 	int32_t *x,
@@ -2185,21 +2185,21 @@ zwl_glass_fit(
 	int32_t bottom;
 
 	/* Its right edge inside the space. */
-	zwl_glass_space(server, &space_width, &space_height);
-	right = ZWL_GLASS_MARGIN + space_width;
+	kwl_glass_space(server, &space_width, &space_height);
+	right = KWL_GLASS_MARGIN + space_width;
 	if (*x + width > right)
 		*x = right - width;
 
 	/* And its bottom edge. */
-	bottom = ZWL_GLASS_TOP + space_height;
+	bottom = KWL_GLASS_TOP + space_height;
 	if (*y + height > bottom)
 		*y = bottom - height;
 
 	/* Never above the space, nor left of it. */
-	if (*x < ZWL_GLASS_MARGIN)
-		*x = ZWL_GLASS_MARGIN;
-	if (*y < ZWL_GLASS_TOP)
-		*y = ZWL_GLASS_TOP;
+	if (*x < KWL_GLASS_MARGIN)
+		*x = KWL_GLASS_MARGIN;
+	if (*y < KWL_GLASS_TOP)
+		*y = KWL_GLASS_TOP;
 }
 
 /*
@@ -2207,9 +2207,9 @@ zwl_glass_fit(
  * it is the window of an application Home just started (ws035-p071).
  */
 void
-zwl_glass_mapped(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_glass_mapped(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	struct shell_rect to;
 	int32_t from[4];
@@ -2218,7 +2218,7 @@ zwl_glass_mapped(
 	/* Only the glass look animates, and only the window a launch waits for. */
 	if (!server->glass)
 		return;
-	launched = zwl_home_launched(server, from);
+	launched = kwl_home_launched(server, from);
 	if (!launched)
 		return;
 
@@ -2235,7 +2235,7 @@ zwl_glass_mapped(
 	memcpy(server->anim_to, &to, sizeof(server->anim_to));
 	server->anim = surface;
 	server->anim_docking = ANIM_LAUNCH;
-	server->anim_start_ms = zwl_milliseconds();
+	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
 	printf("ZWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
 }
@@ -2246,9 +2246,9 @@ zwl_glass_mapped(
  * size (BUG-180).  The log says how long the client took (BUG-179).
  */
 void
-zwl_glass_committed(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_glass_committed(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	struct shell_rect docked;
 	uint32_t width;
@@ -2269,7 +2269,7 @@ zwl_glass_committed(
 		return;
 
 	/* The new image's size, and the docked space's. */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	docked_rect(server, &docked);
 
 	/*
@@ -2293,7 +2293,7 @@ zwl_glass_committed(
 		return;
 
 	/* The client has drawn the new size; the log says how long after it was sent, and when it acknowledged (BUG-179). */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	acked = 0U;
 	if (surface->resized_acked_ms >= surface->resized_ms)
 		acked = surface->resized_acked_ms - surface->resized_ms;
@@ -2317,34 +2317,34 @@ zwl_glass_committed(
  * every key is Wiseview's).  Returns 1 when the key is zdesktop's.
  */
 int
-zwl_glass_key(
-	struct zwl_server *server,
+kwl_glass_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int showing;
 	int target;
 	int step;
 	int taken;
 
 	/* The power dialog, while it shows, takes every key (power-dialog.c, ws099-p037). */
-	taken = zwl_power_dialog_key(server, key, state);
+	taken = kwl_power_dialog_key(server, key, state);
 	if (taken)
 		return 1;
 
 	/* The switcher: Alt+Tab, and its keys while it is on (switcher-shell.c, ws142-p005). */
-	taken = zwl_switch_key(server, key, state);
+	taken = kwl_switch_key(server, key, state);
 	if (taken)
 		return 1;
 
 	/* The volume's open popup takes every key (volume.c). */
-	taken = zwl_volume_key(server, key, state);
+	taken = kwl_volume_key(server, key, state);
 	if (taken)
 		return 1;
 
 	/* Esc hides the previews of an application's icon (apps-bar.c). */
-	taken = zwl_apps_bar_key(server, key, state);
+	taken = kwl_apps_bar_key(server, key, state);
 	if (taken)
 		return 1;
 
@@ -2363,7 +2363,7 @@ zwl_glass_key(
 	}
 
 	/* Super+Alt with a letter: the editing operations and the previous application (edit.c, ws102-p017). */
-	taken = zwl_edit_key(server, key, state);
+	taken = kwl_edit_key(server, key, state);
 	if (taken)
 		return 1;
 
@@ -2383,7 +2383,7 @@ zwl_glass_key(
 	if (key == SHORTCUT_LEFT)
 		step = -1;
 	if (state != 0U && (server->modifiers & MODIFIER_SHIFT) != 0U) {
-		surface = sheet_owner(zwl_top_window(server));
+		surface = sheet_owner(kwl_top_window(server));
 		target = (int)server->desktop + step;
 		if (surface != NULL && target >= 0 && target < DESKTOPS)
 			window_to_desktop(server, surface, (unsigned)target, "key");
@@ -2400,8 +2400,8 @@ zwl_glass_key(
  * (ending it after DOCK_MS), and when the clock shows a new minute.
  */
 void
-zwl_glass_tick(
-	struct zwl_server *server)
+kwl_glass_tick(
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	uint64_t idle;
@@ -2410,30 +2410,30 @@ zwl_glass_tick(
 
 	/* The login screen has only its clock (greeter.c) and the session manager's answers (handoff.c). */
 	if (server->greeter) {
-		zwl_greeter_tick(server);
-		zwl_handoff_tick(server);
+		kwl_greeter_tick(server);
+		kwl_handoff_tick(server);
 		return;
 	}
 
 	/* What the session manager sent the session (handoff.c). */
-	zwl_handoff_tick(server);
+	kwl_handoff_tick(server);
 
 	/* The lock screen has only its clock (its answers came above). */
 	if (server->locked) {
-		zwl_greeter_tick(server);
+		kwl_greeter_tick(server);
 		return;
 	}
 
 	/* A session left without input for long enough locks (ws035-p102). */
-	idle = zwl_milliseconds() - server->lock_input_ms;
+	idle = kwl_milliseconds() - server->lock_input_ms;
 	if (server->lock_idle_ms != 0U && idle >= server->lock_idle_ms)
-		(void)zwl_lock(server, "idle");
+		(void)kwl_lock(server, "idle");
 
 	/* The sheets where their parents are (ws090-p014). */
 	sheet_place(server);
 
 	/* The power dialog's darkening, and its end (power-dialog.c). */
-	zwl_power_dialog_tick(server);
+	kwl_power_dialog_tick(server);
 
 	/* The bar's layout follows a docked window coming or going (ws099-p034b). */
 	bar_dock_follow(server);
@@ -2442,34 +2442,34 @@ zwl_glass_tick(
 	layout_keep_front(server);
 
 	/* The previews of the bar's applications show and hide in time (apps-bar.c), and the switcher goes when it may not show. */
-	zwl_apps_bar_tick(server);
-	zwl_switch_tick(server);
+	kwl_apps_bar_tick(server);
+	kwl_switch_tick(server);
 
 	/* App Home's animation, and the applications it started that have ended. */
-	zwl_home_tick(server);
+	kwl_home_tick(server);
 
 	/* The top-right corner's swipe: its time limit, its hint settling, and Notes being waited for (corner.c). */
-	zwl_corner_tick(server);
+	kwl_corner_tick(server);
 
 	/* The on-screen keyboard's swipe and its panel's place (keyboard.c). */
-	zwl_keyboard_tick(server);
+	kwl_keyboard_tick(server);
 
 	/* A finger on a title bar that has waited long enough for a second one, or two that did not flick in time (touch.c). */
-	zwl_touch_tick(server);
+	kwl_touch_tick(server);
 
 	/* An open menu closes when what it belongs to changed (menu-shell.c). */
-	zwl_menu_tick(server);
+	kwl_menu_tick(server);
 
 	/* What the network watch brought (network.c). */
-	zwl_network_tick(server);
+	kwl_network_tick(server);
 
 	/* What audiod reported, and the volume's sends held back (volume.c). */
-	zwl_volume_tick(server);
+	kwl_volume_tick(server);
 
 	/* The desktops' slide draws every frame until it is done. */
 	if (server->desktop_moving) {
 		server->dirty = 1;
-		elapsed = zwl_milliseconds() - server->desktop_start_ms;
+		elapsed = kwl_milliseconds() - server->desktop_start_ms;
 		if (elapsed >= DESKTOP_MS) {
 			server->desktop_moving = 0;
 			printf("ZWL GLASS desktop settled desktop=%u windows=%u\n", server->desktop + 1U, desktop_windows(server, server->desktop));
@@ -2487,14 +2487,14 @@ zwl_glass_tick(
 	/* Wiseview draws every frame while it settles; at the end its value is where it went. */
 	if (server->wiseview_moving) {
 		server->dirty = 1;
-		elapsed = zwl_milliseconds() - server->wiseview_start_ms;
+		elapsed = kwl_milliseconds() - server->wiseview_start_ms;
 		if (elapsed >= WISEVIEW_MS) {
 			server->wiseview_moving = 0;
 			server->wiseview = server->wiseview_to;
 			if (server->wiseview > 0.0f)
 				wiseview_log(server);
 			else
-				printf("ZWL WISEVIEW closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+				printf("ZWL WISEVIEW closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 		}
 	}
 
@@ -2517,7 +2517,7 @@ zwl_glass_tick(
  */
 static void
 bar_layout(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct shell_bar *bar)
 {
 	struct tm local;
@@ -2535,7 +2535,7 @@ bar_layout(
 	memset(&local, 0, sizeof(local));
 	(void)localtime_r(&now, &local);
 	bar->clock[0] = '\0';
-	zwl_language_date(&local, ZWL_LANGUAGE_DATE_SHORT, bar->clock, sizeof(bar->clock));
+	kwl_language_date(&local, KWL_LANGUAGE_DATE_SHORT, bar->clock, sizeof(bar->clock));
 	bar->clock_pill_width = glass_text_width(server, SIZE_BAR, bar->clock) + 2 * BAR_CLOCK_PAD;
 	bar->clock_pill_x = (int32_t)server->width - BAR_EDGE - bar->clock_pill_width;
 	bar->clock_x = bar->clock_pill_x + BAR_CLOCK_PAD;
@@ -2559,8 +2559,8 @@ bar_layout(
 	 * battery on a machine that has one (the 2026-10-05 user decision), a
 	 * little wider while it charges for the "+".
 	 */
-	ime_width = zwl_ime_indicator_width(server);
-	media_width = zwl_media_width();
+	ime_width = kwl_ime_indicator_width(server);
+	media_width = kwl_media_width();
 	slots = 2 * BAR_SLOT;
 	if (ime_width > 0)
 		slots += BAR_SLOT;
@@ -2609,8 +2609,8 @@ bar_layout(
  */
 static int
 window_shown(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	float home,
 	float position)
 {
@@ -2638,8 +2638,8 @@ window_shown(
 /* Moves the layer with a window's desktop while the desktops slide (Home, when open, has the layer instead). */
 static void
 window_layer(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	float home,
 	float position)
 {
@@ -2666,9 +2666,9 @@ window_layer(
  */
 static void
 draw_backdrop(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object **windows,
+	struct kwl_object **windows,
 	unsigned below,
 	float position)
 {
@@ -2678,7 +2678,7 @@ draw_backdrop(
 	int shown;
 
 	/* The backdrop's pass; a device without it keeps the blurred wallpaper. */
-	started = zwl_backdrop_begin(server, command);
+	started = kwl_backdrop_begin(server, command);
 	if (!started)
 		return;
 
@@ -2691,7 +2691,7 @@ draw_backdrop(
 	glass_shape_draw(server, command, &shape);
 
 	/* The desktop's icons on it (desktop.c). */
-	zwl_desktop_draw(server, command);
+	kwl_desktop_draw(server, command);
 
 	/* The windows below, as the blur will show them. */
 	for (index = 0; index < below; index++) {
@@ -2703,7 +2703,7 @@ draw_backdrop(
 	}
 
 	/* The output's pass again, and the scene blurred for the glass. */
-	zwl_backdrop_end(server, command);
+	kwl_backdrop_end(server, command);
 }
 
 /*
@@ -2713,23 +2713,23 @@ draw_backdrop(
  */
 static void
 draw_window_blurred(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	struct shell_rect body;
 	struct shell_rect panel;
 	struct glass_shape shape;
 	int decorated;
 
-	/* The body where it is now (docked, its lower corners below the output). */
+	/* The body where it is now. */
 	body_rect(server, surface, &body);
-	draw_body(server, command, surface, &body, surface->maximized, 0U);
+	draw_body(server, command, surface, &body, 0U);
 	if (surface->maximized)
 		return;
 
 	/* Blurred scenes must not recreate the titlebar removed from CSD windows. */
-	decorated = zwl_decoration_server(surface);
+	decorated = kwl_decoration_server(surface);
 	if (!decorated)
 		return;
 
@@ -2752,9 +2752,9 @@ draw_window_blurred(
  */
 static void
 draw_window(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned focused,
 	const struct shell_bar *bar)
 {
@@ -2763,12 +2763,12 @@ draw_window(
 	struct shell_rect to;
 	struct shell_rect panel;
 	struct shell_rect slot;
-	struct zwl_object *parent;
+	struct kwl_object *parent;
 	float t;
 	int decorated;
 
 	/* A sheet has only its body, under its parent's title bar (ws090-p014). */
-	parent = zwl_sheet_parent(surface);
+	parent = kwl_sheet_parent(surface);
 	if (parent != NULL) {
 		draw_sheet(server, command, surface, parent, focused);
 		return;
@@ -2778,9 +2778,9 @@ draw_window(
 	body_rect(server, surface, &body);
 
 	/* Client-decorated windows supply their own frame, controls and animation content. */
-	decorated = zwl_decoration_server(surface);
+	decorated = kwl_decoration_server(surface);
 	if (!decorated) {
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 
 		/* The client image is the entire decorated window. */
 		return;
@@ -2789,7 +2789,7 @@ draw_window(
 	/* A window a launch from Home started grows out of the icon; its title bar fades in on it. */
 	if (server->anim == surface && server->anim_docking == ANIM_LAUNCH) {
 		t = animation_progress(server);
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		floating_title(&body, &panel);
 		draw_title_bar(server, command, surface, &panel, t, t, focused);
 		return;
@@ -2798,7 +2798,7 @@ draw_window(
 	/* While docking or coming back, the title bar slides between its two places and its glass fades. */
 	if (server->anim == surface) {
 		t = animation_progress(server);
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		bar_title_slot(server, bar, &slot);
 		memcpy(&from, server->anim_from, sizeof(from));
 		memcpy(&to, server->anim_to, sizeof(to));
@@ -2819,7 +2819,7 @@ draw_window(
 	/* A docked window being pulled has round corners and its floating title bar, fading in with the pull. */
 	if (surface->maximized && surface == server->pull && server->pull_distance > 0) {
 		t = (float)server->pull_distance / (float)PULL_DISTANCE;
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		floating_title(&body, &panel);
 		draw_title_bar(server, command, surface, &panel, t, t, focused);
 		return;
@@ -2832,25 +2832,18 @@ draw_window(
 	 * draw_centred_cover).
 	 */
 	if (surface->maximized) {
-		docked_rect(server, &slot);
-		if (body.width != slot.width || body.height != slot.height) {
-			draw_body(server, command, surface, &body, 0, focused);
-			return;
-		}
-
-		/* One that fills the space has its lower corners below the output. */
-		draw_body(server, command, surface, &body, 1, focused);
+		draw_body(server, command, surface, &body, focused);
 		return;
 	}
 
 	/* A fullscreen window has only its body, whole (draw_body). */
 	if (surface->fullscreen) {
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		return;
 	}
 
 	/* A floating window. */
-	draw_body(server, command, surface, &body, 0, focused);
+	draw_body(server, command, surface, &body, focused);
 	floating_title(&body, &panel);
 	draw_title_bar(server, command, surface, &panel, 1.0f, 1.0f, focused);
 }
@@ -2858,22 +2851,21 @@ draw_window(
 /*
  * Draws a window's body in a rectangle: its shadow, the frosted glass under
  * a see-through body, and its image with rounded corners (a docked body's
- * lower corners are below the output).  A window with glass panels
+ * too: it keeps KWL_GLASS_DOCK_PAD from the output's edges, ws099-p038).  A window with glass panels
  * (panels.c) is not one slab: its panels cast the shadows and stand on the
  * glass, and its image is blended over them by its alpha.  A sheet's upper
  * corners are square, flush with its parent's title bar (ws090-p014).
  */
 static void
 draw_body(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	const struct shell_rect *body,
-	unsigned docked,
 	unsigned focused)
 {
-	const struct zwl_import *image;
-	struct zwl_object *parent;
+	const struct kwl_import *image;
+	struct kwl_object *parent;
 	struct glass_shape shape;
 	float place[4];
 	unsigned panels;
@@ -2889,7 +2881,7 @@ draw_body(
 	float raise;
 
 	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
-	image = zwl_compose_surface_image(surface);
+	image = kwl_compose_surface_image(surface);
 	window_size(surface, &width, &height);
 	if (width <= 0 || height <= 0) {
 		width = (int32_t)image->width;
@@ -2901,13 +2893,13 @@ draw_body(
 	scale_y = (float)body->height / (float)height;
 
 	/* A window with glass panels: their shadows and glass instead of the body's (panels.c). */
-	panels = zwl_panels_count(surface);
+	panels = kwl_panels_count(surface);
 	if (panels > 0U) {
 		place[0] = (float)body->x;
 		place[1] = (float)body->y;
 		place[2] = scale_x;
 		place[3] = scale_y;
-		zwl_panels_draw(server, command, surface, place, server->window_opacity, 1U);
+		kwl_panels_draw(server, command, surface, place, server->window_opacity, 1U);
 	}
 
 	/* The corners: rounded, or square for a window that keeps them (window_square). */
@@ -2928,7 +2920,7 @@ draw_body(
 	}
 
 	/* CSD owns its alpha, shadows and corners; server embellishments must not clip them. */
-	decorated = zwl_decoration_server(surface);
+	decorated = kwl_decoration_server(surface);
 	if (!decorated) {
 		whole = 1;
 		radius = 0.0f;
@@ -2936,7 +2928,7 @@ draw_body(
 
 	/* A sheet's rounding reaches above its top, so that its upper corners are square. */
 	raise = 0.0f;
-	parent = zwl_sheet_parent(surface);
+	parent = kwl_sheet_parent(surface);
 	if (parent != NULL)
 		raise = 2.0f * radius;
 
@@ -2962,8 +2954,6 @@ draw_body(
 	/* A see-through body lies on frosted glass (a window with panels has its own). */
 	if (server->window_opacity < 1.0f && panels == 0U && !whole) {
 		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
-		if (docked)
-			shape.box[3] += 2.0f * radius;
 		shape.box[1] -= raise;
 		shape.box[3] += raise;
 		shape.mode = MODE_GLASS;
@@ -2977,27 +2967,25 @@ draw_body(
 	}
 
 	/* The sub-surfaces below the image, scaled with it from the window's size (subsurface.c). */
-	zwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 0U);
+	kwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 0U);
 
 	/* The image (its viewport's source), stretched to the rectangle while it changes, as opaque as asked. */
 	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
-	if (docked)
-		shape.box[3] += 2.0f * radius;
 	shape.box[1] -= raise;
 	shape.box[3] += raise;
-	zwl_viewport_source(surface, shape.uv);
+	kwl_viewport_source(surface, shape.uv);
 	shape.opacity = server->window_opacity;
 	if (whole)
 		shape.opacity = 1.0f;
 	shape.mode = MODE_IMAGE;
 	shape.radius = radius;
 	shape.set = image->set;
-	if (image->draw == ZWL_DRAW_OPAQUE)
+	if (image->draw == KWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
 	glass_shape_draw(server, command, &shape);
 
 	/* The sub-surfaces above the image. */
-	zwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 1U);
+	kwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 1U);
 }
 
 /*
@@ -3007,9 +2995,9 @@ draw_body(
  */
 static void
 draw_title_bar(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	const struct shell_rect *panel,
 	float fade,
 	float buttons,
@@ -3017,7 +3005,7 @@ draw_title_bar(
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float faint[4] = { 0.30f, 0.35f, 0.44f, 1.0f };
-	struct zwl_menu_area area;
+	struct kwl_menu_area area;
 	struct glass_shape shape;
 	const float *ink;
 	int32_t available;
@@ -3067,7 +3055,7 @@ draw_title_bar(
 	if (focused)
 		ink = dark;
 	available = panel->width - 44 - BUTTON_SPACING * BUTTON_COUNT - 12;
-	limit = zwl_titlebar_title_limit(server, surface, available);
+	limit = kwl_titlebar_title_limit(server, surface, available);
 	draw_title(server, command, surface, panel->x + 14, panel->y + panel->height / 2, limit, ink);
 
 	/* The window's presentation after the title (its menu or its controls), faded with the buttons (titlebar-shell.c). */
@@ -3077,7 +3065,7 @@ draw_title_bar(
 	area.right = panel->x + 44 + available;
 	area.height = panel->height;
 	area.origin = panel->x;
-	zwl_titlebar_draw(server, command, surface, 0, &area, ink, buttons);
+	kwl_titlebar_draw(server, command, surface, 0, &area, ink, buttons);
 
 	/* The buttons, as they fade. */
 	if (buttons <= 0.0f)
@@ -3097,15 +3085,15 @@ draw_title_bar(
  */
 static void
 draw_title(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t middle,
 	int32_t limit,
 	const float *ink)
 {
-	char title[ZWL_TITLE_MAX + 24];
+	char title[KWL_TITLE_MAX + 24];
 	int drawn;
 
 	/* The title as the title bar shows it. */
@@ -3128,9 +3116,9 @@ draw_title(
  */
 static int
 draw_picture_mark(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t middle,
 	const float *ink)
@@ -3139,7 +3127,7 @@ draw_picture_mark(
 	int picture;
 
 	/* The picture that belongs to the window's application ID. */
-	picture = zwl_icon_for_app_id(surface->app_id);
+	picture = kwl_icon_for_app_id(surface->app_id);
 	if (picture < 0)
 		return 0;
 
@@ -3161,7 +3149,7 @@ draw_picture_mark(
  */
 static enum glass_hole
 mark_hole(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The system bar's tiles are holes through to the wallpaper, in both appearances (ws099-p034b, the 2026-10-06 user decision). */
 	if (server->keep_colours != 0U)
@@ -3182,9 +3170,9 @@ mark_hole(
  */
 static void
 draw_letter_mark(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	const char *title,
 	int32_t x,
 	int32_t middle)
@@ -3227,7 +3215,7 @@ draw_letter_mark(
 /* Tells whether a window's body keeps square corners (its application ID is in shell_square_apps). */
 static unsigned
 window_square(
-	const struct zwl_object *surface)
+	const struct kwl_object *surface)
 {
 	unsigned index;
 	int same;
@@ -3276,11 +3264,11 @@ mark_name(
 /* Tells how far a window's title, drawn by draw_title within a limit, reaches after its start. */
 static int32_t
 title_end(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t limit)
 {
-	char title[ZWL_TITLE_MAX + 24];
+	char title[KWL_TITLE_MAX + 24];
 	int32_t width;
 
 	/* The title as draw_title shows it. */
@@ -3301,7 +3289,7 @@ title_end(
  */
 static void
 shown_title(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	char *title,
 	size_t size)
 {
@@ -3329,7 +3317,7 @@ shown_title(
  */
 static void
 draw_sign(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int button,
 	int32_t cx,
@@ -3417,14 +3405,14 @@ draw_sign(
  */
 static void
 draw_system_bar(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct shell_bar *bar)
 {
 	struct glass_bar_colours colours;
-	struct zwl_menu_area area;
+	struct kwl_menu_area area;
 	struct glass_shape shape;
-	struct zwl_object *docked;
+	struct kwl_object *docked;
 	int32_t available;
 	int32_t limit;
 	int32_t end;
@@ -3433,7 +3421,7 @@ draw_system_bar(
 
 	/* The docked window, if one is on top and not moving (not while App Home shows). */
 	docked = docked_window(server);
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f)
 		docked = NULL;
 
@@ -3442,7 +3430,7 @@ draw_system_bar(
 	 * glass in the dark appearance, the floating title bar's dark ink on its
 	 * white glass in the light one.
 	 */
-	zwl_glass_bar_colours(server, &colours);
+	kwl_glass_bar_colours(server, &colours);
 	server->keep_colours = 1U;
 
 	/* The strip. */
@@ -3475,18 +3463,18 @@ draw_system_bar(
 	if (docked != NULL) {
 		/* The title shares the room before the desktops with the window's menu. */
 		available = bar->desktops_line - 12 - bar->title_x - 30;
-		limit = zwl_titlebar_title_limit(server, docked, available);
+		limit = kwl_titlebar_title_limit(server, docked, available);
 		end = title_end(server, docked, limit);
 		draw_bar_group(server, command, bar->title_x - 7, 30 + end + 7 + 12, BAR_GROUP_HEIGHT);
-		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, colours.ink);
+		draw_title(server, command, docked, bar->title_x, KWL_GLASS_BAR / 2, limit, colours.ink);
 
 		/* The presentation after the title: its menu or its controls (titlebar-shell.c). */
 		area.x = bar->title_x + 30 + end + 24;
 		area.top = 0;
 		area.right = bar->title_x + 30 + available;
-		area.height = ZWL_GLASS_BAR;
+		area.height = KWL_GLASS_BAR;
 		area.origin = 0;
-		zwl_titlebar_draw(server, command, docked, 1, &area, colours.ink, 1.0f);
+		kwl_titlebar_draw(server, command, docked, 1, &area, colours.ink, 1.0f);
 	}
 
 	/* The docked window's buttons at the right end, as far as the docked layout has come in (ws099-p034b). */
@@ -3497,7 +3485,7 @@ draw_system_bar(
 
 	/* Without a docked title, the applications' pill in its place (apps-bar.c, ws142-p004). */
 	if (docked == NULL && progress <= 0.0f)
-		(void)zwl_apps_bar_draw(server, command);
+		(void)kwl_apps_bar_draw(server, command);
 
 	/* The desktops, then the status. */
 	draw_desktops(server, command, bar, &colours);
@@ -3516,7 +3504,7 @@ draw_system_bar(
  */
 static void
 draw_bar_strip(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct glass_bar_colours *colours)
 {
@@ -3532,7 +3520,7 @@ draw_bar_strip(
 	 */
 	width = (float)server->width;
 	if (colours->light) {
-		glass_shape_init(&shape, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR);
+		glass_shape_init(&shape, 0.0f, 0.0f, width, (float)KWL_GLASS_BAR);
 		shape.mode = MODE_GLASS;
 		shape.soft = 1.0f;
 		shape.color[0] = 1.0f;
@@ -3540,14 +3528,14 @@ draw_bar_strip(
 		shape.color[2] = 1.0f;
 		shape.color[3] = 0.64f;
 		glass_shape_draw(server, command, &shape);
-		if (server->drag != NULL && server->pointer_y < ZWL_GLASS_BAR)
-			glass_draw_solid(server, command, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR, 0.0f, colours->lit);
-		glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), width, 1.0f, 0.0f, light_hairline);
+		if (server->drag != NULL && server->pointer_y < KWL_GLASS_BAR)
+			glass_draw_solid(server, command, 0.0f, 0.0f, width, (float)KWL_GLASS_BAR, 0.0f, colours->lit);
+		glass_draw_solid(server, command, 0.0f, (float)(KWL_GLASS_BAR - 1), width, 1.0f, 0.0f, light_hairline);
 		return;
 	}
 
 	/* The dark glass, a little bluish. */
-	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR);
+	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)KWL_GLASS_BAR);
 	shape.mode = MODE_GLASS;
 	shape.dark_glass = 1U;
 	shape.soft = 1.0f;
@@ -3561,29 +3549,29 @@ draw_bar_strip(
 	 * The lighter middle: a soft white band, whole over the middle third and
 	 * fading out over a third of the width on each side, clipped to the bar.
 	 */
-	glass_shape_init(&shape, width / 3.0f, -200.0f, width / 3.0f, (float)ZWL_GLASS_BAR + 400.0f);
+	glass_shape_init(&shape, width / 3.0f, -200.0f, width / 3.0f, (float)KWL_GLASS_BAR + 400.0f);
 	shape.quad[0] = 0.0f;
 	shape.quad[1] = 0.0f;
 	shape.quad[2] = width;
-	shape.quad[3] = (float)ZWL_GLASS_BAR;
+	shape.quad[3] = (float)KWL_GLASS_BAR;
 	shape.mode = MODE_SHADOW;
 	shape.soft = width / 3.0f;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
 	shape.color[3] = 0.07f;
-	if (server->drag != NULL && server->pointer_y < ZWL_GLASS_BAR)
+	if (server->drag != NULL && server->pointer_y < KWL_GLASS_BAR)
 		shape.color[3] = 0.16f;
 	glass_shape_draw(server, command, &shape);
 
 	/* The hairline. */
-	glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), width, 1.0f, 0.0f, hairline);
+	glass_draw_solid(server, command, 0.0f, (float)(KWL_GLASS_BAR - 1), width, 1.0f, 0.0f, hairline);
 }
 
 /* Draws one of the bar's group pills: a little darker than the bar, with a faint edge, centred on the bar's middle. */
 static void
 draw_bar_group(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int32_t width,
@@ -3596,7 +3584,7 @@ draw_bar_group(
 /* Draws one of the bar's group pills at an opacity (the bar's colours in the appearance shown, ws099-p034b). */
 static void
 draw_bar_group_faded(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int32_t width,
@@ -3609,10 +3597,10 @@ draw_bar_group_faded(
 	float top;
 
 	/* The pill. */
-	zwl_glass_bar_colours(server, &colours);
+	kwl_glass_bar_colours(server, &colours);
 	memcpy(fill, colours.fill, sizeof(fill));
 	fill[3] *= opacity;
-	top = (float)(ZWL_GLASS_BAR_MIDDLE - height / 2);
+	top = (float)(KWL_GLASS_BAR_MIDDLE - height / 2);
 	glass_draw_solid(server, command, (float)x, top, (float)width, (float)height, (float)height * 0.5f, fill);
 
 	/* Its edge. */
@@ -3633,10 +3621,10 @@ draw_bar_group_faded(
  */
 static void
 draw_bar_buttons(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct shell_bar *bar,
-	struct zwl_object *docked,
+	struct kwl_object *docked,
 	const struct glass_bar_colours *colours)
 {
 	float ink[4];
@@ -3668,7 +3656,7 @@ draw_bar_buttons(
 		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
 	for (button = 0; button < BUTTON_COUNT; button++) {
 		cx = middle + (int32_t)((float)(bar->buttons[button] - middle) * scale);
-		draw_sign(server, command, button, cx, ZWL_GLASS_BAR / 2, 1, over == button, t, ink);
+		draw_sign(server, command, button, cx, KWL_GLASS_BAR / 2, 1, over == button, t, ink);
 	}
 }
 
@@ -3679,7 +3667,7 @@ draw_bar_buttons(
  */
 static void
 draw_desktops(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct shell_bar *bar,
 	const struct glass_bar_colours *colours)
@@ -3719,7 +3707,7 @@ draw_desktops(
 	for (desktop = 0; desktop < DESKTOPS; desktop++) {
 		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
 		if (desktop == (int)server->desktop) {
-			glass_shape_init(&shape, (float)x, (float)(ZWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
+			glass_shape_init(&shape, (float)x, (float)(KWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
 			shape.mode = MODE_RING;
 			shape.radius = (float)DESKTOP_SHOWN_HEIGHT * 0.5f;
 			shape.soft = 1.6f;
@@ -3727,7 +3715,7 @@ draw_desktops(
 			shape.color[3] = 0.95f;
 			glass_shape_draw(server, command, &shape);
 		} else {
-			glass_draw_solid(server, command, (float)(x + (DESKTOP_WIDTH - DESKTOP_DOT_WIDTH) / 2), (float)ZWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT_HEIGHT * 0.5f,
+			glass_draw_solid(server, command, (float)(x + (DESKTOP_WIDTH - DESKTOP_DOT_WIDTH) / 2), (float)KWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT_HEIGHT * 0.5f,
 					 (float)DESKTOP_DOT_WIDTH, (float)DESKTOP_DOT_HEIGHT, (float)DESKTOP_DOT_HEIGHT * 0.5f, colours->faint);
 		}
 	}
@@ -3740,7 +3728,7 @@ draw_desktops(
  */
 static void
 draw_status(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct shell_bar *bar,
 	const float *ink)
@@ -3757,16 +3745,16 @@ draw_status(
 		draw_battery(server, command, bar->battery_x, server->power.percent, server->power.charging, ink);
 
 	/* The network: Wi-Fi's fan or the wired tree, which opens its menu (network.c). */
-	zwl_network_draw_icon(server, command, bar->signal_x, ink);
+	kwl_network_draw_icon(server, command, bar->signal_x, ink);
 
 	/* The volume's speaker, which opens its popup (volume.c, ws100-p004). */
-	zwl_volume_draw_icon(server, command, bar->volume_x, ink);
+	kwl_volume_draw_icon(server, command, bar->volume_x, ink);
 
 	/* The removable media's stick, which starts Files (media.c). */
-	zwl_media_draw_icon(server, command, bar->media_x, ink);
+	kwl_media_draw_icon(server, command, bar->media_x, ink);
 
 	/* The input method's language (A, あ), which a click changes (input-method.c). */
-	zwl_ime_indicator_draw(server, command, bar->ime_x, ink);
+	kwl_ime_indicator_draw(server, command, bar->ime_x, ink);
 }
 
 /*
@@ -3776,7 +3764,7 @@ draw_status(
  */
 static void
 draw_battery(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int percent,
@@ -3787,7 +3775,7 @@ draw_battery(
 	float fill;
 
 	/* The outline. */
-	glass_shape_init(&shape, (float)x, (float)(ZWL_GLASS_BAR_MIDDLE - 6), 22.0f, 12.0f);
+	glass_shape_init(&shape, (float)x, (float)(KWL_GLASS_BAR_MIDDLE - 6), 22.0f, 12.0f);
 	shape.quad[0] -= 1.0f;
 	shape.quad[1] -= 1.0f;
 	shape.quad[2] += 2.0f;
@@ -3805,15 +3793,15 @@ draw_battery(
 	if (percent > 0 && fill < 2.0f)
 		fill = 2.0f;
 	if (fill > 0.0f)
-		glass_draw_solid(server, command, (float)(x + 3), (float)(ZWL_GLASS_BAR_MIDDLE - 3), fill, 6.0f, 1.5f, ink);
+		glass_draw_solid(server, command, (float)(x + 3), (float)(KWL_GLASS_BAR_MIDDLE - 3), fill, 6.0f, 1.5f, ink);
 
 	/* The terminal. */
-	glass_draw_solid(server, command, (float)(x + 23), (float)(ZWL_GLASS_BAR_MIDDLE - 2), 2.0f, 4.0f, 1.0f, ink);
+	glass_draw_solid(server, command, (float)(x + 23), (float)(KWL_GLASS_BAR_MIDDLE - 2), 2.0f, 4.0f, 1.0f, ink);
 
 	/* Charging: a "+" between the terminal and the clock. */
 	if (charging != 0U) {
-		glass_draw_solid(server, command, (float)(x + 29), (float)ZWL_GLASS_BAR_MIDDLE - 0.75f, 7.0f, 1.5f, 0.5f, ink);
-		glass_draw_solid(server, command, (float)(x + 31.75f), (float)(ZWL_GLASS_BAR_MIDDLE - 3) - 0.5f, 1.5f, 7.0f, 0.5f, ink);
+		glass_draw_solid(server, command, (float)(x + 29), (float)KWL_GLASS_BAR_MIDDLE - 0.75f, 7.0f, 1.5f, 0.5f, ink);
+		glass_draw_solid(server, command, (float)(x + 31.75f), (float)(KWL_GLASS_BAR_MIDDLE - 3) - 0.5f, 1.5f, 7.0f, 0.5f, ink);
 	}
 }
 
@@ -3824,7 +3812,7 @@ draw_battery(
  */
 static void
 draw_dock_hint(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float fill[4] = { 1.0f, 1.0f, 1.0f, 0.22f };
@@ -3833,7 +3821,7 @@ draw_dock_hint(
 	struct shell_rect body;
 
 	/* Only while a move is in the system bar. */
-	if (server->drag == NULL || server->pointer_y >= ZWL_GLASS_BAR)
+	if (server->drag == NULL || server->pointer_y >= KWL_GLASS_BAR)
 		return;
 
 	/* The space, filled and outlined. */
@@ -3854,7 +3842,7 @@ draw_dock_hint(
 /* How far the dock animation is, from 0 to 1, eased (1 without an animation). */
 static float
 animation_progress(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t duration;
 	uint64_t elapsed;
@@ -3870,7 +3858,7 @@ animation_progress(
 		duration = LAUNCH_MS;
 
 	/* The time since it started, as a fraction of its duration. */
-	elapsed = zwl_milliseconds() - server->anim_start_ms;
+	elapsed = kwl_milliseconds() - server->anim_start_ms;
 	if (elapsed >= duration)
 		return 1.0f;
 	t = (float)elapsed / (float)duration;
@@ -3897,8 +3885,8 @@ lerp_rect(
 /* Tells whether a window (its body and floating title bar) comes into a rectangle. */
 static int
 damage_near(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const struct shell_rect *near)
 {
 	struct shell_rect body;
@@ -3908,7 +3896,7 @@ damage_near(
 	body_rect(server, surface, &body);
 	top = body.y;
 	if (!surface->maximized)
-		top = body.y - ZWL_GLASS_TITLE - ZWL_GLASS_GAP;
+		top = body.y - KWL_GLASS_TITLE - KWL_GLASS_GAP;
 
 	/* Apart across or down. */
 	if (body.x + body.width <= near->x || near->x + near->width <= body.x)
@@ -3923,8 +3911,8 @@ damage_near(
 /* Where a window's body is drawn: on its way while animated, the docked space, or its own place and size. */
 static void
 body_rect(
-	struct zwl_server *server,
-	const struct zwl_object *surface,
+	struct kwl_server *server,
+	const struct kwl_object *surface,
 	struct shell_rect *body)
 {
 	struct shell_rect from;
@@ -3959,7 +3947,7 @@ body_rect(
 	 * shows the docked size again on its way back (BUG-180).
 	 */
 	if (surface->resized_ms != 0U) {
-		held = zwl_milliseconds() - surface->resized_ms;
+		held = kwl_milliseconds() - surface->resized_ms;
 		if (held < RESIZED_HOLD_MS) {
 			body->x = surface->x;
 			body->y = surface->y;
@@ -3978,20 +3966,20 @@ body_rect(
 /* The space a docked body takes: the output under the system bar. */
 static void
 docked_rect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct shell_rect *body)
 {
 	int32_t right;
 	int32_t bottom;
 
 	/* What the on-screen keyboard's panel takes now, as it slides (keyboard.c, ws102-p007). */
-	zwl_keyboard_reserved_now(&right, &bottom);
+	kwl_keyboard_reserved_now(&right, &bottom);
 
-	/* Edge to edge, from just under the bar to the bottom, less the keyboard's column or row. */
-	body->x = 0;
+	/* Under the bar to the bottom, less the keyboard's column or row, KWL_GLASS_DOCK_PAD in from every side (ws099-p038). */
+	body->x = KWL_GLASS_DOCK_PAD;
 	body->y = DOCK_TOP;
-	body->width = (int32_t)server->width - right;
-	body->height = (int32_t)server->height - DOCK_TOP - bottom;
+	body->width = (int32_t)server->width - right - 2 * KWL_GLASS_DOCK_PAD;
+	body->height = (int32_t)server->height - DOCK_TOP - bottom - KWL_GLASS_DOCK_PAD;
 }
 
 /* The floating title bar of a body: as wide as it, a gap above it. */
@@ -4002,9 +3990,9 @@ floating_title(
 {
 	/* Above the body. */
 	panel->x = body->x;
-	panel->y = body->y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE;
+	panel->y = body->y - KWL_GLASS_GAP - KWL_GLASS_TITLE;
 	panel->width = body->width;
-	panel->height = ZWL_GLASS_TITLE;
+	panel->height = KWL_GLASS_TITLE;
 }
 
 /*
@@ -4013,7 +4001,7 @@ floating_title(
  */
 static void
 bar_title_slot(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct shell_bar *bar,
 	struct shell_rect *slot)
 {
@@ -4022,13 +4010,13 @@ bar_title_slot(
 	slot->x = bar->title_x - 14;
 	slot->y = 0;
 	slot->width = bar->buttons[BUTTON_CLOSE] + 26 - slot->x;
-	slot->height = ZWL_GLASS_BAR;
+	slot->height = KWL_GLASS_BAR;
 }
 
 /* The size of a window's image: its viewport's size, else its buffer's (viewport.c); 0 by 0 without an image. */
 static void
 window_size(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	int32_t *width,
 	int32_t *height)
 {
@@ -4042,7 +4030,7 @@ window_size(
 		return;
 
 	/* The surface's size (ws035-p081: a viewport's destination or source). */
-	zwl_surface_size(surface, &surface_width, &surface_height);
+	kwl_surface_size(surface, &surface_width, &surface_height);
 	*width = (int32_t)surface_width;
 	*height = (int32_t)surface_height;
 }
@@ -4050,20 +4038,20 @@ window_size(
 /* Tells whether a point is on a window's title bar, its body, its frame, or none of them (the gap is none). */
 static enum shell_hit
 window_hit(
-	struct zwl_server *server,
-	const struct zwl_object *surface,
+	struct kwl_server *server,
+	const struct kwl_object *surface,
 	int32_t x,
 	int32_t y)
 {
 	struct shell_rect body;
-	struct zwl_object *parent;
+	struct kwl_object *parent;
 	uint32_t edges;
 	int32_t top;
 	int decorated;
 
 	/* A sheet has only its body: no title bar, no frame (ws090-p014). */
 	body_rect(server, surface, &body);
-	parent = zwl_sheet_parent(surface);
+	parent = kwl_sheet_parent(surface);
 	if (parent != NULL) {
 		if (x >= body.x &&
 		    x < body.x + body.width &&
@@ -4074,7 +4062,7 @@ window_hit(
 	}
 
 	/* A CSD surface has no hidden titlebar or server resize band to consume input. */
-	decorated = zwl_decoration_server(surface);
+	decorated = kwl_decoration_server(surface);
 	if (!decorated) {
 		if (x >= body.x &&
 		    x < body.x + body.width &&
@@ -4090,8 +4078,8 @@ window_hit(
 	if (x >= body.x && x < body.x + body.width) {
 		if (y >= body.y && y < body.y + body.height)
 			return HIT_BODY;
-		top = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE;
-		if (!surface->maximized && y >= top && y < top + ZWL_GLASS_TITLE)
+		top = body.y - KWL_GLASS_GAP - KWL_GLASS_TITLE;
+		if (!surface->maximized && y >= top && y < top + KWL_GLASS_TITLE)
 			return HIT_TITLE;
 	}
 
@@ -4105,7 +4093,7 @@ window_hit(
 }
 
 /*
- * Tells which edges of a floating window's frame are at a point (ZWL_EDGE_*
+ * Tells which edges of a floating window's frame are at a point (KWL_EDGE_*
  * bits of toplevel.h: one side, or a corner's two), or 0 off its frame.
  *
  * The frame is the band FRAME_BAND wide around the title bar and the body.
@@ -4115,13 +4103,13 @@ window_hit(
  */
 static uint32_t
 frame_edges(
-	struct zwl_server *server,
-	const struct zwl_object *surface,
+	struct kwl_server *server,
+	const struct kwl_object *surface,
 	int32_t x,
 	int32_t y)
 {
 	struct shell_rect body;
-	struct zwl_object *parent;
+	struct kwl_object *parent;
 	uint32_t edges;
 	int32_t left;
 	int32_t right;
@@ -4130,7 +4118,7 @@ frame_edges(
 	int decorated;
 
 	/* CSD clients request interactive resize from their own visible edges. */
-	decorated = zwl_decoration_server(surface);
+	decorated = kwl_decoration_server(surface);
 	if (!decorated)
 		return 0U;
 
@@ -4144,7 +4132,7 @@ frame_edges(
 		return 0U;
 
 	/* Nor a sheet (ws090-p014). */
-	parent = zwl_sheet_parent(surface);
+	parent = kwl_sheet_parent(surface);
 	if (parent != NULL)
 		return 0U;
 
@@ -4152,7 +4140,7 @@ frame_edges(
 	body_rect(server, surface, &body);
 	left = body.x;
 	right = body.x + body.width;
-	top = body.y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE;
+	top = body.y - KWL_GLASS_GAP - KWL_GLASS_TITLE;
 	bottom = body.y + body.height;
 
 	/* Nothing beyond the band around the outline. */
@@ -4168,35 +4156,35 @@ frame_edges(
 	/* The side the point is beyond, or the two sides at a corner. */
 	edges = 0U;
 	if (x < left)
-		edges |= ZWL_EDGE_LEFT;
+		edges |= KWL_EDGE_LEFT;
 	if (x >= right)
-		edges |= ZWL_EDGE_RIGHT;
+		edges |= KWL_EDGE_RIGHT;
 	if (y < top)
-		edges |= ZWL_EDGE_TOP;
+		edges |= KWL_EDGE_TOP;
 	if (y >= bottom)
-		edges |= ZWL_EDGE_BOTTOM;
+		edges |= KWL_EDGE_BOTTOM;
 
 	/* Above or below the outline, near its left or right end: that corner. */
-	if ((edges & (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM)) != 0U) {
+	if ((edges & (KWL_EDGE_TOP | KWL_EDGE_BOTTOM)) != 0U) {
 		if (x < left + FRAME_CORNER)
-			edges |= ZWL_EDGE_LEFT;
+			edges |= KWL_EDGE_LEFT;
 		if (x >= right - FRAME_CORNER)
-			edges |= ZWL_EDGE_RIGHT;
+			edges |= KWL_EDGE_RIGHT;
 	}
 
 	/* Left or right of the outline, near its top or bottom: that corner. */
-	if ((edges & (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) != 0U) {
+	if ((edges & (KWL_EDGE_LEFT | KWL_EDGE_RIGHT)) != 0U) {
 		if (y < top + FRAME_CORNER)
-			edges |= ZWL_EDGE_TOP;
+			edges |= KWL_EDGE_TOP;
 		if (y >= bottom - FRAME_CORNER)
-			edges |= ZWL_EDGE_BOTTOM;
+			edges |= KWL_EDGE_BOTTOM;
 	}
 
 	/* A window narrower or shorter than two corners keeps one side of each pair: the right, the bottom. */
-	if ((edges & (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) == (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT))
-		edges &= ~ZWL_EDGE_LEFT;
-	if ((edges & (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM)) == (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM))
-		edges &= ~ZWL_EDGE_TOP;
+	if ((edges & (KWL_EDGE_LEFT | KWL_EDGE_RIGHT)) == (KWL_EDGE_LEFT | KWL_EDGE_RIGHT))
+		edges &= ~KWL_EDGE_LEFT;
+	if ((edges & (KWL_EDGE_TOP | KWL_EDGE_BOTTOM)) == (KWL_EDGE_TOP | KWL_EDGE_BOTTOM))
+		edges &= ~KWL_EDGE_TOP;
 
 	/* Succeeded: the frame's edges at the point. */
 	return edges;
@@ -4205,18 +4193,18 @@ frame_edges(
 /* Tells which frame edges of the top window at the pointer the pointer is on, or 0. */
 static uint32_t
 frame_under_pointer(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	enum shell_hit hit;
 	uint32_t edges;
 
 	/*
-	 * The screen's own strips take a press before any frame (zwl_glass_button):
+	 * The screen's own strips take a press before any frame (kwl_glass_button):
 	 * the system bar, the desktops' swipe at the left and right edges, and
 	 * Wiseview's at the bottom.  A frame there shows no resize arrow.
 	 */
-	if (server->pointer_y < ZWL_GLASS_BAR)
+	if (server->pointer_y < KWL_GLASS_BAR)
 		return 0U;
 	if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE)
 		return 0U;
@@ -4238,7 +4226,7 @@ frame_under_pointer(
 /* Returns the floating title bar button at a point, or -1. */
 static int
 button_at(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	int32_t x,
 	int32_t y)
 {
@@ -4265,7 +4253,7 @@ button_at(
 /* The centre of a floating title bar button (counted from the right edge). */
 static void
 button_centre(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	int button,
 	int32_t *x,
 	int32_t *y)
@@ -4276,7 +4264,7 @@ button_centre(
 	/* From the bar's right edge, in the middle of its height. */
 	window_size(surface, &width, &height);
 	*x = surface->x + width - 26 - button * BUTTON_SPACING;
-	*y = surface->y - ZWL_GLASS_GAP - ZWL_GLASS_TITLE / 2;
+	*y = surface->y - KWL_GLASS_GAP - KWL_GLASS_TITLE / 2;
 }
 
 /* Returns the docked window's button in the system bar at a point, or -1. */
@@ -4289,7 +4277,7 @@ bar_button_at(
 	int button;
 
 	/* Each button's box in the bar. */
-	if (y < 0 || y >= ZWL_GLASS_BAR)
+	if (y < 0 || y >= KWL_GLASS_BAR)
 		return -1;
 	for (button = 0; button < BUTTON_COUNT; button++) {
 		if (x >= bar->buttons[button] - BUTTON_WIDTH / 2 && x < bar->buttons[button] + BUTTON_WIDTH / 2)
@@ -4301,16 +4289,16 @@ bar_button_at(
 }
 
 /* Finds the topmost window whose title bar or body is at a point. */
-static struct zwl_object *
+static struct kwl_object *
 window_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	enum shell_hit *hit)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *found;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *found;
 	enum shell_hit place;
 	int hidden;
 
@@ -4322,7 +4310,7 @@ window_at(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only mapped windows of the desktop shown. */
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    !surface->mapped ||
 			    surface->role == NULL ||
@@ -4352,12 +4340,12 @@ window_at(
 }
 
 /* The docked window whose title the system bar shows: the top window, docked and not moving. */
-static struct zwl_object *
+static struct kwl_object *
 docked_window(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *parent;
-	struct zwl_object *top;
+	struct kwl_object *parent;
+	struct kwl_object *top;
 	int decorated;
 
 	/* None while Wiseview shows. */
@@ -4365,8 +4353,8 @@ docked_window(
 		return NULL;
 
 	/* The top window (a sheet's parent for a sheet, ws090-p014). */
-	top = zwl_top_window(server);
-	parent = zwl_sheet_parent(top);
+	top = kwl_top_window(server);
+	parent = kwl_sheet_parent(top);
 	if (parent != NULL)
 		top = parent;
 	if (top == NULL || !top->maximized || server->anim == top)
@@ -4375,7 +4363,7 @@ docked_window(
 		return NULL;
 
 	/* CSD windows retain their own controls when maximized; the system bar adds none. */
-	decorated = zwl_decoration_server(top);
+	decorated = kwl_decoration_server(top);
 	if (!decorated)
 		return NULL;
 
@@ -4386,24 +4374,24 @@ docked_window(
 /* Brings a window to the top and gives it the focus. */
 static void
 window_raise(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_object *top;
-	struct zwl_object *parent;
-	struct zwl_object *sheet;
+	struct kwl_object *top;
+	struct kwl_object *parent;
+	struct kwl_object *sheet;
 
 	/* A sheet comes with its parent, and a parent with its sheet, which has the focus (ws090-p014). */
-	parent = zwl_sheet_parent(surface);
+	parent = kwl_sheet_parent(surface);
 	if (parent != NULL) {
 		sheet = surface;
 		surface = parent;
 	} else {
-		sheet = zwl_sheet_of(surface);
+		sheet = kwl_sheet_of(surface);
 	}
 
 	/* Already on top. */
-	top = zwl_top_window(server);
+	top = kwl_top_window(server);
 	if (surface == top || (sheet != NULL && sheet == top))
 		return;
 
@@ -4418,7 +4406,7 @@ window_raise(
 	}
 
 	/* The keyboard goes to the front window. */
-	zwl_seat_focus(server);
+	kwl_seat_focus(server);
 	server->dirty = 1;
 }
 
@@ -4430,11 +4418,11 @@ window_raise(
  */
 static void
 sheet_place(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *parent;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *parent;
 	uint64_t now;
 	int32_t width;
 	int32_t height;
@@ -4445,14 +4433,14 @@ sheet_place(
 	float t;
 
 	/* Every window that is a sheet now. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind != ZWL_SURFACE)
+			if (surface->kind != KWL_SURFACE)
 				continue;
-			parent = zwl_sheet_parent(surface);
+			parent = kwl_sheet_parent(surface);
 			if (parent == NULL)
 				continue;
 
@@ -4493,14 +4481,14 @@ sheet_place(
 }
 
 /* The window a surface is shown with: a sheet's parent, or the surface itself (ws090-p014). */
-static struct zwl_object *
+static struct kwl_object *
 sheet_owner(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *parent;
+	struct kwl_object *parent;
 
 	/* A sheet is its parent's. */
-	parent = zwl_sheet_parent(surface);
+	parent = kwl_sheet_parent(surface);
 	if (parent != NULL)
 		return parent;
 	return surface;
@@ -4513,9 +4501,9 @@ sheet_owner(
  */
 static void
 sheet_narrow(
-	struct zwl_server *server,
-	struct zwl_object *surface,
-	struct zwl_object *parent,
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	struct kwl_object *parent,
 	int32_t width,
 	int32_t height)
 {
@@ -4545,8 +4533,8 @@ sheet_narrow(
  */
 static void
 sheet_anchor(
-	struct zwl_server *server,
-	struct zwl_object *parent,
+	struct kwl_server *server,
+	struct kwl_object *parent,
 	int32_t width,
 	int32_t height,
 	int32_t *x,
@@ -4562,12 +4550,12 @@ sheet_anchor(
 	/* The middle of the docked parent's body, in the docked mode. */
 	centred = sheet_centred(server, parent);
 	if (centred) {
-		zwl_layout_centre(body.x, body.y, body.width, body.height, width, height, x, top);
+		kwl_layout_centre(body.x, body.y, body.width, body.height, width, height, x, top);
 		return;
 	}
 
 	/* A floating parent's title bar ends a gap above its body; a docked or fullscreen one has none there. */
-	*top = body.y - ZWL_GLASS_GAP;
+	*top = body.y - KWL_GLASS_GAP;
 	if (parent->maximized || parent->fullscreen)
 		*top = body.y;
 }
@@ -4575,15 +4563,15 @@ sheet_anchor(
 /* Tells whether a parent's sheet is in the middle of the screen: the parent docked, in the docked mode. */
 static int
 sheet_centred(
-	struct zwl_server *server,
-	const struct zwl_object *parent)
+	struct kwl_server *server,
+	const struct kwl_object *parent)
 {
 	/* A floating or fullscreen parent hangs its sheet under its title bar. */
 	if (!parent->maximized)
 		return 0;
 
 	/* So does a docked parent left behind in the windowed mode. */
-	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* Succeeded: the sheet is in the middle. */
@@ -4597,10 +4585,10 @@ sheet_centred(
  */
 static void
 draw_sheet(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
-	struct zwl_object *parent,
+	struct kwl_object *surface,
+	struct kwl_object *parent,
 	unsigned focused)
 {
 	static const float seam[4] = { 0.12f, 0.16f, 0.24f, 0.14f };
@@ -4616,7 +4604,7 @@ draw_sheet(
 	body_rect(server, surface, &body);
 	centred = sheet_centred(server, parent);
 	if (centred) {
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		return;
 	}
 
@@ -4636,7 +4624,7 @@ draw_sheet(
 	vkCmdSetScissor(command, 0U, 1U, &cut);
 
 	/* The body, and a hairline along the seam with the title bar. */
-	draw_body(server, command, surface, &body, 0, focused);
+	draw_body(server, command, surface, &body, focused);
 	glass_draw_solid(server, command, (float)body.x, (float)top, (float)body.width, 1.0f, 0.0f, seam);
 
 	/* The frame's scissor back. */
@@ -4651,8 +4639,8 @@ draw_sheet(
  */
 static void
 window_dock(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t restore_x,
 	int32_t restore_y,
 	const char *via)
@@ -4674,7 +4662,7 @@ window_dock(
 	/* The place and size to come back to, and where the body is now. */
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
-	zwl_decoration_geometry(surface, &geometry_width, &geometry_height);
+	kwl_decoration_geometry(surface, &geometry_width, &geometry_height);
 	surface->restore_width = geometry_width;
 	surface->restore_height = geometry_height;
 	body_rect(server, surface, &from);
@@ -4693,7 +4681,7 @@ window_dock(
 	memcpy(server->anim_to, &to, sizeof(server->anim_to));
 	server->anim = surface;
 	server->anim_docking = 1;
-	server->anim_start_ms = zwl_milliseconds();
+	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
 
 	/* The client draws the new size; the log gives where the bar's buttons are (close, restore, minimize) and the docked body. */
@@ -4707,7 +4695,7 @@ window_dock(
 	window_resized(surface);
 
 	/* A window docked makes the session's mode docked (ws142-p008, BUG-217). */
-	layout_set(server, ZWL_LAYOUT_DOCKED, via);
+	layout_set(server, KWL_LAYOUT_DOCKED, via);
 }
 
 /*
@@ -4716,8 +4704,8 @@ window_dock(
  */
 static void
 window_undock(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t y,
 	const char *via)
@@ -4730,7 +4718,7 @@ window_undock(
 		return;
 
 	/* The place asked for, inside the space: its title bar never under the system bar (ws035-p138). */
-	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &x, &y);
+	kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &x, &y);
 
 	/*
 	 * From where the body is drawn now -- the docked space, part of the way
@@ -4754,7 +4742,7 @@ window_undock(
 	memcpy(server->anim_to, &to, sizeof(server->anim_to));
 	server->anim = surface;
 	server->anim_docking = 0;
-	server->anim_start_ms = zwl_milliseconds();
+	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
 
 	/* The client draws the size it had. */
@@ -4765,18 +4753,18 @@ window_undock(
 	window_resized(surface);
 
 	/* A window brought back makes the session's mode windowed (ws142-p008, BUG-217). */
-	layout_set(server, ZWL_LAYOUT_WINDOWED, via);
+	layout_set(server, KWL_LAYOUT_WINDOWED, via);
 }
 
 /* Tells a window its new size. */
 static void
 window_configure(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	int error;
 
 	/* A failure is reported; the window keeps drawing its old size. */
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		printf("ZWL GLASS configure errno=%d\n", error);
 }
@@ -4787,10 +4775,10 @@ window_configure(
  */
 static void
 window_resized(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	/* An image drawn after this configure was acknowledged ends the wait (zwl_glass_committed). */
-	surface->resized_ms = zwl_milliseconds();
+	/* An image drawn after this configure was acknowledged ends the wait (kwl_glass_committed). */
+	surface->resized_ms = kwl_milliseconds();
 	surface->resized_serial = surface->configure_serial;
 	surface->resized_acked_ms = 0U;
 	surface->resized_commit_ms = 0U;
@@ -4802,8 +4790,8 @@ window_resized(
 /* Describes a window to the layout's rules (layout.c): docked, fullscreen, with a parent, of one size. */
 static void
 layout_window(
-	const struct zwl_object *surface,
-	struct zwl_layout_window *window)
+	const struct kwl_object *surface,
+	struct kwl_layout_window *window)
 {
 	/* Docked and fullscreen as the shell keeps them. */
 	window->docked = surface->maximized;
@@ -4828,7 +4816,7 @@ layout_window(
  */
 static void
 layout_set(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned mode,
 	const char *via)
 {
@@ -4839,7 +4827,7 @@ layout_set(
 	/* The new mode, drawn from the next frame (another application's windows show or go). */
 	server->layout_mode = mode;
 	server->dirty = 1;
-	printf("ZWL LAYOUT mode=%s reason=%s at_ms=%llu\n", zwl_layout_name(mode), via, (unsigned long long)zwl_milliseconds());
+	printf("ZWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
 }
 
 /*
@@ -4849,13 +4837,13 @@ layout_set(
  */
 static void
 layout_match(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const char *via)
 {
 	static const char *const actions[] = { "keep", "dock", "float" };
-	struct zwl_layout_window window;
-	struct zwl_object *owner;
+	struct kwl_layout_window window;
+	struct kwl_object *owner;
 	unsigned action;
 
 	/* A dialog or a sheet follows the mode through its parent, while the parent is shown. */
@@ -4867,17 +4855,17 @@ layout_match(
 
 	/* What the mode makes of it. */
 	layout_window(owner, &window);
-	action = zwl_layout_switch_action(server->layout_mode, &window);
+	action = kwl_layout_switch_action(server->layout_mode, &window);
 
 	/* Docked where it floats, or floating again where it was before it docked. */
-	if (action == ZWL_LAYOUT_DOCK) {
+	if (action == KWL_LAYOUT_DOCK) {
 		window_dock(server, owner, owner->x, owner->y, via);
-	} else if (action == ZWL_LAYOUT_FLOAT) {
+	} else if (action == KWL_LAYOUT_FLOAT) {
 		window_undock(server, owner, owner->restore_x, owner->restore_y, via);
 	}
 
 	/* The log says what the switch did (the tests read it). */
-	printf("ZWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], zwl_layout_name(server->layout_mode), via, (unsigned long long)owner->client->number);
+	printf("ZWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], kwl_layout_name(server->layout_mode), via, (unsigned long long)owner->client->number);
 }
 
 /*
@@ -4888,10 +4876,10 @@ layout_match(
  */
 static int
 layout_hides(
-	struct zwl_server *server,
-	const struct zwl_object *surface)
+	struct kwl_server *server,
+	const struct kwl_object *surface)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 	float home;
 	int desktop_surface;
 	int same_application;
@@ -4899,7 +4887,7 @@ layout_hides(
 	int hidden;
 
 	/* The windowed mode hides nothing (and needs no search for the top window). */
-	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* Only the desktop shown has a current application; a neighbour sliding in shows whole. */
@@ -4907,19 +4895,19 @@ layout_hides(
 		return 0;
 
 	/* The desktop's icons are no application's window. */
-	desktop_surface = zwl_desktop_is(surface);
+	desktop_surface = kwl_desktop_is(surface);
 	if (desktop_surface)
 		return 0;
 
 	/* The current application is the top window's client (none: every window is its). */
-	top = zwl_top_window(server);
+	top = kwl_top_window(server);
 	same_application = 0;
 	if (top == NULL || top->client == surface->client)
 		same_application = 1;
 
 	/* App Home, Wiseview and the switcher show every application. */
 	overview = 0;
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f) {
 		overview = 1;
 	} else if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
@@ -4929,7 +4917,7 @@ layout_hides(
 	}
 
 	/* The rule (layout.c). */
-	hidden = zwl_layout_hidden(server->layout_mode, same_application, overview);
+	hidden = kwl_layout_hidden(server->layout_mode, same_application, overview);
 
 	/* Succeeded: whether the window is hidden. */
 	return hidden;
@@ -4943,17 +4931,17 @@ layout_hides(
  */
 static int
 layout_takes_press(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 	struct shell_rect space;
 
 	/* Only the docked mode hides windows under the docked one. */
-	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* The window in front (a sheet's parent for a sheet), docked. */
-	top = sheet_owner(zwl_top_window(server));
+	top = sheet_owner(kwl_top_window(server));
 	if (top == NULL || !top->maximized)
 		return 0;
 
@@ -4977,14 +4965,14 @@ layout_takes_press(
  */
 static int
 layout_press_switches(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_object *owner;
-	struct zwl_object *top;
+	struct kwl_object *owner;
+	struct kwl_object *top;
 
 	/* Only the windowed mode brings a docked window back by a press. */
-	if (server->layout_mode != ZWL_LAYOUT_WINDOWED)
+	if (server->layout_mode != KWL_LAYOUT_WINDOWED)
 		return 0;
 
 	/* A docked window (a sheet's parent for a sheet), not a fullscreen one. */
@@ -4993,7 +4981,7 @@ layout_press_switches(
 		return 0;
 
 	/* Of another application than the window in front. */
-	top = sheet_owner(zwl_top_window(server));
+	top = sheet_owner(kwl_top_window(server));
 	if (top == NULL || top == owner)
 		return 0;
 	if (top->client == owner->client)
@@ -5013,20 +5001,20 @@ layout_press_switches(
  */
 static void
 layout_keep_front(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_layout_window window;
-	struct zwl_object *top;
+	struct kwl_layout_window window;
+	struct kwl_object *top;
 	unsigned action;
 	float home;
 	int showing;
 
 	/* Only the docked mode has a front to keep. */
-	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
 		return;
 
 	/* App Home, Wiseview and the switcher show every window as it is. */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f)
 		return;
 	showing = wiseview_showing(server);
@@ -5040,14 +5028,14 @@ layout_keep_front(
 		return;
 
 	/* The window in front (a sheet's parent for a sheet), shown with an image. */
-	top = sheet_owner(zwl_top_window(server));
+	top = sheet_owner(kwl_top_window(server));
 	if (top == NULL || top->dead || !top->mapped || top->current == NULL)
 		return;
 
 	/* What a switch to it would do; only a floating window that docks changes. */
 	layout_window(top, &window);
-	action = zwl_layout_switch_action(server->layout_mode, &window);
-	if (action != ZWL_LAYOUT_DOCK)
+	action = kwl_layout_switch_action(server->layout_mode, &window);
+	if (action != KWL_LAYOUT_DOCK)
 		return;
 
 	/* Docked where it floats, and the log says why. */
@@ -5062,11 +5050,11 @@ layout_keep_front(
  */
 static void
 docked_body(
-	struct zwl_server *server,
-	const struct zwl_object *surface,
+	struct kwl_server *server,
+	const struct kwl_object *surface,
 	struct shell_rect *body)
 {
-	struct zwl_layout_window window;
+	struct kwl_layout_window window;
 	int32_t width;
 	int32_t height;
 	int32_t x;
@@ -5079,7 +5067,7 @@ docked_body(
 	/* Only a docked window of one size is centred. */
 	layout_window(surface, &window);
 	window.docked = 1U;
-	centred = zwl_layout_centred(server->layout_mode, &window);
+	centred = kwl_layout_centred(server->layout_mode, &window);
 	if (!centred)
 		return;
 
@@ -5091,7 +5079,7 @@ docked_body(
 		return;
 
 	/* The middle of the space at that size. */
-	zwl_layout_centre(body->x, body->y, body->width, body->height, width, height, &x, &y);
+	kwl_layout_centre(body->x, body->y, body->width, body->height, width, height, &x, &y);
 	body->x = x;
 	body->y = y;
 	body->width = width;
@@ -5106,12 +5094,12 @@ docked_body(
  */
 static int
 window_centred_over(
-	struct zwl_server *server,
-	const struct zwl_object *surface)
+	struct kwl_server *server,
+	const struct kwl_object *surface)
 {
 	struct shell_rect body;
 	struct shell_rect space;
-	struct zwl_object *parent;
+	struct kwl_object *parent;
 
 	/* A docked window: centred when its body is smaller than the docked space. */
 	if (surface->maximized) {
@@ -5123,7 +5111,7 @@ window_centred_over(
 	}
 
 	/* Otherwise only the docked mode centres anything. */
-	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* A dialog or a sheet over a docked parent that is shown. */
@@ -5144,7 +5132,7 @@ window_centred_over(
  */
 static void
 draw_centred_cover(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float shade[4] = { 0.02f, 0.03f, 0.06f, 0.32f };
@@ -5169,9 +5157,9 @@ draw_centred_cover(
  */
 static void
 bar_dock_follow(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 	uint64_t now;
 	uint64_t elapsed;
 	float target;
@@ -5180,13 +5168,13 @@ bar_dock_follow(
 
 	/* Docked: a docked window on top, not fullscreen, outside App Home and Wiseview. */
 	target = 0.0f;
-	top = sheet_owner(zwl_top_window(server));
-	home = zwl_home_progress(server);
+	top = sheet_owner(kwl_top_window(server));
+	home = kwl_home_progress(server);
 	if (top != NULL && top->maximized && !top->fullscreen && home <= 0.0f && server->wiseview <= 0.0f && !server->wiseview_gesture)
 		target = 1.0f;
 
 	/* A new target: from where the layout is now. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (target != server->bar_dock_to) {
 		server->bar_dock_from = server->bar_dock;
 		server->bar_dock_to = target;
@@ -5215,8 +5203,8 @@ bar_dock_follow(
  */
 static void
 dock_restore_default(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	struct shell_rect docked;
 	int32_t restore_x;
@@ -5230,7 +5218,7 @@ dock_restore_default(
 	/* In its middle, inside the space for floating windows. */
 	restore_x = docked.x + (docked.width - (int32_t)surface->restore_width) / 2;
 	restore_y = docked.y + (docked.height - (int32_t)surface->restore_height) / 2;
-	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
+	kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
 }
@@ -5242,13 +5230,13 @@ dock_restore_default(
  */
 static unsigned
 double_click(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	uint64_t now;
 
 	/* The second press of a pair. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
 		server->click_surface = NULL;
 		server->click_count = 0;
@@ -5271,13 +5259,13 @@ double_click(
  */
 static unsigned
 title_clicks(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	uint64_t now;
 
 	/* A quick press after the one before on the same window goes on the run. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
 		server->click_count++;
 	} else {
@@ -5302,9 +5290,9 @@ title_clicks(
  */
 static int
 click_docked_third(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint64_t now;
 	int32_t dx;
 	int32_t dy;
@@ -5315,7 +5303,7 @@ click_docked_third(
 		return 0;
 
 	/* The time a third press had is over. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (now >= server->click_docked_due_ms) {
 		server->click_docked = NULL;
 		return 0;
@@ -5356,31 +5344,31 @@ click_docked_third(
  */
 static void
 window_lower(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const char *via)
 {
-	struct zwl_client *client;
-	struct zwl_object *other;
-	struct zwl_object *top;
+	struct kwl_client *client;
+	struct kwl_object *other;
+	struct kwl_object *top;
 	uint64_t lowest;
 	unsigned found;
 	uint64_t next_client;
 	uint32_t next;
 	uint64_t focus_client;
 	uint32_t focus;
-	struct zwl_object *parent;
-	struct zwl_object *sheet;
+	struct kwl_object *parent;
+	struct kwl_object *sheet;
 
 	/*
 	 * A sheet goes with its parent, and a parent with its sheet (ws090-p014):
 	 * the sheet goes under every window first, then the parent under it.
 	 */
 	if (!sheet_lowering) {
-		parent = zwl_sheet_parent(surface);
+		parent = kwl_sheet_parent(surface);
 		if (parent != NULL)
 			surface = parent;
-		sheet = zwl_sheet_of(surface);
+		sheet = kwl_sheet_of(surface);
 		if (sheet != NULL) {
 			sheet_lowering = 1;
 			window_lower(server, sheet, via);
@@ -5397,7 +5385,7 @@ window_lower(
 		for (other = client->objects; other != NULL; other = other->next) {
 			/* Only the other live mapped surfaces. */
 			if (other == surface ||
-			    other->kind != ZWL_SURFACE ||
+			    other->kind != KWL_SURFACE ||
 			    other->dead ||
 			    !other->mapped)
 				continue;
@@ -5425,7 +5413,7 @@ window_lower(
 			for (other = client->objects; other != NULL; other = other->next) {
 				/* Only the other mapped surfaces hold a place. */
 				if (other == surface ||
-				    other->kind != ZWL_SURFACE ||
+				    other->kind != KWL_SURFACE ||
 				    !other->mapped)
 					continue;
 				other->map_order++;
@@ -5441,9 +5429,9 @@ window_lower(
 	surface->map_order = lowest - 1U;
 
 	/* The window now on top takes the focus. */
-	top = zwl_top_window(server);
+	top = kwl_top_window(server);
 	server->front_surface = top;
-	zwl_seat_focus(server);
+	kwl_seat_focus(server);
 	server->dirty = 1;
 
 	/*
@@ -5485,9 +5473,9 @@ window_lower(
  */
 static int
 bar_press(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	struct shell_bar bar;
 	unsigned second;
 	int32_t picture;
@@ -5509,7 +5497,7 @@ bar_press(
 	/* Its buttons. */
 	pressed = bar_button_at(&bar, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
-		(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
+		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
 		printf("ZWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
@@ -5554,17 +5542,17 @@ bar_press(
  * window above it has the bar, which holds its title.  Returns NULL when
  * the bar is drawn.
  */
-static struct zwl_object *
+static struct kwl_object *
 bar_cover(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *cover;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *cover;
 	float progress;
 
 	/* App Home shows the bar, opening, open or closing. */
-	progress = zwl_home_progress(server);
+	progress = kwl_home_progress(server);
 	if (progress > 0.0f || server->home_to > 0.0f)
 		return NULL;
 
@@ -5580,7 +5568,7 @@ bar_cover(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only mapped windows of the desktop shown. */
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    !surface->mapped ||
 			    surface->role == NULL ||
@@ -5611,8 +5599,8 @@ bar_cover(
 /* Logs the system bar leaving or coming back for a fullscreen window, once per change (for the tests). */
 static void
 bar_cover_log(
-	struct zwl_server *server,
-	const struct zwl_object *cover)
+	struct kwl_server *server,
+	const struct kwl_object *cover)
 {
 	/* The bar went away. */
 	if (cover != NULL && !server->bar_hidden) {
@@ -5635,7 +5623,7 @@ bar_cover_log(
  */
 static int
 home_without_bar(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -5644,7 +5632,7 @@ home_without_bar(
 		return 1;
 
 	/* Only a left press starts one. */
-	if (state == 0 || button != ZWL_BUTTON_LEFT)
+	if (state == 0 || button != KWL_BUTTON_LEFT)
 		return 0;
 
 	/* In the corner, where Home's gesture starts. */
@@ -5661,7 +5649,7 @@ home_without_bar(
  */
 static float
 wiseview_progress(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	float t;
@@ -5686,7 +5674,7 @@ wiseview_progress(
 		return server->wiseview;
 
 	/* Settling, eased out. */
-	elapsed = zwl_milliseconds() - server->wiseview_start_ms;
+	elapsed = kwl_milliseconds() - server->wiseview_start_ms;
 	t = 1.0f;
 	if (elapsed < WISEVIEW_MS)
 		t = (float)elapsed / (float)WISEVIEW_MS;
@@ -5697,12 +5685,12 @@ wiseview_progress(
 /* Starts the swipe up from the bottom edge that opens Wiseview, for a left press in that edge.  Returns 1 when it started. */
 static int
 wiseview_edge_press(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
 	/* Only a left press. */
-	if (state == 0 || button != ZWL_BUTTON_LEFT)
+	if (state == 0 || button != KWL_BUTTON_LEFT)
 		return 0;
 
 	/* Only in the bottom edge: a stroke that starts above it is not the gesture. */
@@ -5712,7 +5700,7 @@ wiseview_edge_press(
 	/* The gesture starts; the window on top is the current tile. */
 	server->wiseview_gesture = 1;
 	server->wiseview_start_y = server->pointer_y;
-	server->wiseview_current = sheet_owner(zwl_top_window(server));
+	server->wiseview_current = sheet_owner(kwl_top_window(server));
 	server->dirty = 1;
 
 	/* Succeeded: the press is the gesture's. */
@@ -5722,14 +5710,14 @@ wiseview_edge_press(
 /* Starts Wiseview settling from one value to another (0 closed, 1 open). */
 static void
 wiseview_settle(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	float from,
 	float to)
 {
-	/* The animation, drawn every frame by zwl_glass_tick. */
+	/* The animation, drawn every frame by kwl_glass_tick. */
 	server->wiseview_from = from;
 	server->wiseview_to = to;
-	server->wiseview_start_ms = zwl_milliseconds();
+	server->wiseview_start_ms = kwl_milliseconds();
 	server->wiseview_moving = 1;
 	server->wiseview = from;
 	server->dirty = 1;
@@ -5738,7 +5726,7 @@ wiseview_settle(
 /* Tells whether Wiseview is open or on its way open (while it closes, keys go to the windows again). */
 static int
 wiseview_showing(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The gesture from the bottom edge holds it open. */
 	if (server->wiseview_gesture)
@@ -5762,15 +5750,15 @@ wiseview_showing(
 /* Opens Wiseview from the keyboard (Super+Tab), with the window on top as the current tile. */
 static void
 wiseview_open_key(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The window on top is the one Enter comes back to (a sheet's parent for a sheet); a swipe in it begins afresh. */
-	server->wiseview_current = sheet_owner(zwl_top_window(server));
-	zwl_swipe_end(&server->pad_swipe);
+	server->wiseview_current = sheet_owner(kwl_top_window(server));
+	kwl_swipe_end(&server->pad_swipe);
 
 	/* Wiseview opens as it does at the end of the gesture. */
-	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
-	zwl_transition_request(server, "wiseview-open");
+	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+	kwl_transition_request(server, "wiseview-open");
 	wiseview_settle(server, 0.0f, 1.0f);
 }
 
@@ -5781,7 +5769,7 @@ wiseview_open_key(
  */
 static void
 wiseview_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -5836,10 +5824,10 @@ wiseview_key(
  */
 static void
 wiseview_choose(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *via)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	float progress;
 
 	/* Without a current window there is nothing to come back to: Wiseview only closes. */
@@ -5850,7 +5838,7 @@ wiseview_choose(
 	}
 
 	/* A minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
-	zwl_glass_switch_to(server, surface, "wiseview");
+	kwl_glass_switch_to(server, surface, "wiseview");
 	printf("ZWL WISEVIEW select surface=%u via=%s client=%llu\n", surface->id, via, (unsigned long long)surface->client->number);
 	progress = wiseview_progress(server);
 	wiseview_settle(server, progress, 0.0f);
@@ -5859,10 +5847,10 @@ wiseview_choose(
 /* Moves Wiseview's current tile a step on (1) or back (-1), round the ends; without a current tile, to the first. */
 static void
 wiseview_move(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int step)
 {
-	struct zwl_object *windows[WISEVIEW_WINDOWS];
+	struct kwl_object *windows[WISEVIEW_WINDOWS];
 	unsigned count;
 	unsigned index;
 	int position;
@@ -5897,7 +5885,7 @@ wiseview_move(
 /* Closes Wiseview from the keyboard, from wherever it is on its way. */
 static void
 wiseview_close_key(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	float progress;
 
@@ -5906,8 +5894,8 @@ wiseview_close_key(
 	server->wiseview_gesture = 0;
 
 	/* Wiseview settles closed. */
-	printf("ZWL WISEVIEW close key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
-	zwl_transition_request(server, "wiseview-close");
+	printf("ZWL WISEVIEW close key at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+	kwl_transition_request(server, "wiseview-close");
 	wiseview_settle(server, progress, 0.0f);
 }
 
@@ -5917,13 +5905,13 @@ wiseview_close_key(
  */
 static unsigned
 wiseview_windows(
-	struct zwl_server *server,
-	struct zwl_object **windows,
+	struct kwl_server *server,
+	struct kwl_object **windows,
 	unsigned capacity)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *parent;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *parent;
 	unsigned count;
 	unsigned index;
 	unsigned at;
@@ -5935,7 +5923,7 @@ wiseview_windows(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only a window with an image, of the desktop shown. */
-			if (surface->kind != ZWL_SURFACE ||
+			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    !surface->mapped ||
 			    surface->role == NULL ||
@@ -5945,7 +5933,7 @@ wiseview_windows(
 				continue;
 
 			/* A sheet is not a window of its own there: it comes back with its parent (ws090-p014). */
-			parent = zwl_sheet_parent(surface);
+			parent = kwl_sheet_parent(surface);
 			if (parent != NULL)
 				continue;
 
@@ -5975,8 +5963,8 @@ wiseview_windows(
  */
 static void
 wiseview_layout(
-	struct zwl_server *server,
-	struct zwl_object **windows,
+	struct kwl_server *server,
+	struct kwl_object **windows,
 	unsigned count,
 	struct shell_rect *tiles)
 {
@@ -6056,15 +6044,15 @@ wiseview_layout(
  */
 static void
 draw_wiseview(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object **stacked,
+	struct kwl_object **stacked,
 	unsigned stacked_count,
 	float progress)
 {
 	static const float shade[4] = { 0.0f, 0.02f, 0.06f, 0.08f };
 	static const float dark[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
-	struct zwl_object *windows[WISEVIEW_WINDOWS];
+	struct kwl_object *windows[WISEVIEW_WINDOWS];
 	struct shell_rect tiles[WISEVIEW_WINDOWS];
 	struct glass_shape shape;
 	struct shell_rect body;
@@ -6139,7 +6127,7 @@ draw_wiseview(
 	memcpy(ink, dark, sizeof(ink));
 	ink[3] = progress;
 	if (count == 1U)
-		glass_draw_text(server, command, SIZE_BAR, WISEVIEW_SIDE, ZWL_GLASS_BAR + 34, kl_tr("No other windows"), 400, ink);
+		glass_draw_text(server, command, SIZE_BAR, WISEVIEW_SIDE, KWL_GLASS_BAR + 34, kl_tr("No other windows"), 400, ink);
 
 	/* The footer: a handle and how to choose (two fingers across, then down, ws142-p009). */
 	ink[3] = progress * 0.35f;
@@ -6162,9 +6150,9 @@ draw_wiseview(
  */
 static void
 draw_tile(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	const struct shell_rect *tile,
 	float progress,
 	unsigned current,
@@ -6173,7 +6161,7 @@ draw_tile(
 	static const float glow[4] = { 0.25f, 0.52f, 0.98f, 0.45f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float button[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
-	const struct zwl_import *image;
+	const struct kwl_import *image;
 	struct glass_shape shape;
 	struct shell_rect panel;
 	float place[4];
@@ -6218,8 +6206,8 @@ draw_tile(
 	}
 
 	/* Drawn under the tile, unless the window is glass panels, whose own glass shows under the image. */
-	image = zwl_compose_surface_image(surface);
-	panels = zwl_panels_count(surface);
+	image = kwl_compose_surface_image(surface);
+	panels = kwl_panels_count(surface);
 	if (panels == 0U || current || over)
 		glass_shape_draw(server, command, &shape);
 
@@ -6235,17 +6223,17 @@ draw_tile(
 	place[1] = (float)tile->y;
 	place[2] = (float)tile->width / (float)width;
 	place[3] = (float)tile->height / (float)height;
-	zwl_panels_draw(server, command, surface, place, 1.0f, 0U);
+	kwl_panels_draw(server, command, surface, place, 1.0f, 0U);
 
 	/* The image (its viewport's source), sampled linearly. */
 	glass_shape_init(&shape, (float)tile->x, (float)tile->y, (float)tile->width, (float)tile->height);
-	zwl_viewport_source(surface, shape.uv);
+	kwl_viewport_source(surface, shape.uv);
 	shape.mode = MODE_IMAGE;
 	shape.radius = radius;
 	shape.set = image->linear_set;
 	if (shape.set == VK_NULL_HANDLE)
 		shape.set = image->set;
-	if (image->draw == ZWL_DRAW_OPAQUE)
+	if (image->draw == KWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
 	glass_shape_draw(server, command, &shape);
 
@@ -6266,7 +6254,7 @@ draw_tile(
 	}
 
 	/* Only an SSD title bar fades as its window goes to a tile. */
-	decorated = zwl_decoration_server(surface);
+	decorated = kwl_decoration_server(surface);
 	if (decorated &&
 	    !surface->maximized &&
 	    progress < 1.0f) {
@@ -6318,13 +6306,13 @@ draw_tile(
  */
 static int
 wiseview_button(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_object *windows[WISEVIEW_WINDOWS];
+	struct kwl_object *windows[WISEVIEW_WINDOWS];
 	struct shell_rect tiles[WISEVIEW_WINDOWS];
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	unsigned count;
 	unsigned index;
 	float progress;
@@ -6364,14 +6352,14 @@ wiseview_button(
 		/* A click: a minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
 		if (surface->dead || !surface->mapped)
 			return 1;
-		zwl_glass_switch_to(server, surface, "wiseview");
+		kwl_glass_switch_to(server, surface, "wiseview");
 		printf("ZWL WISEVIEW select surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		wiseview_settle(server, 1.0f, 0.0f);
 		return 1;
 	}
 
 	/* Only a left press on the settled Wiseview acts. */
-	if (state == 0 || button != ZWL_BUTTON_LEFT || server->wiseview_moving)
+	if (state == 0 || button != KWL_BUTTON_LEFT || server->wiseview_moving)
 		return 1;
 
 	/* The tile under the pointer. */
@@ -6402,7 +6390,7 @@ wiseview_button(
 
 	/* Its close button closes the window. */
 	if (server->pointer_x >= tiles[index].x + tiles[index].width - 26 && server->pointer_y < tiles[index].y + 26) {
-		(void)zwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
+		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
 		printf("ZWL WISEVIEW close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
@@ -6418,9 +6406,9 @@ wiseview_button(
 /* Reports that Wiseview is open, and where each window's tile is. */
 static void
 wiseview_log(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *windows[WISEVIEW_WINDOWS];
+	struct kwl_object *windows[WISEVIEW_WINDOWS];
 	struct shell_rect tiles[WISEVIEW_WINDOWS];
 	unsigned count;
 	unsigned index;
@@ -6428,7 +6416,7 @@ wiseview_log(
 	/* The tiles as they are laid out now. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
 	wiseview_layout(server, windows, count, tiles);
-	printf("ZWL WISEVIEW open windows=%u at_ms=%llu\n", count, (unsigned long long)zwl_milliseconds());
+	printf("ZWL WISEVIEW open windows=%u at_ms=%llu\n", count, (unsigned long long)kwl_milliseconds());
 	for (index = 0; index < count; index++)
 		printf("ZWL WISEVIEW tile client=%llu surface=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)windows[index]->client->number, windows[index]->id, tiles[index].x, tiles[index].y, tiles[index].width, tiles[index].height);
 }
@@ -6436,7 +6424,7 @@ wiseview_log(
 /* Returns where the desktops are, as a desktop number: the one shown, swiped by the pointer, or sliding. */
 static float
 desktop_position(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t elapsed;
 	float t;
@@ -6450,7 +6438,7 @@ desktop_position(
 		return (float)server->desktop;
 
 	/* Sliding: eased (cubic ease-out) from where the desktops were to the desktop. */
-	elapsed = zwl_milliseconds() - server->desktop_start_ms;
+	elapsed = kwl_milliseconds() - server->desktop_start_ms;
 	t = (float)elapsed / (float)DESKTOP_MS;
 	if (t > 1.0f)
 		t = 1.0f;
@@ -6461,7 +6449,7 @@ desktop_position(
 /* Switches to a desktop (clamped to those there are), sliding from where the desktops are; its top window takes the focus. */
 static void
 desktop_turn(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int target,
 	const char *via)
 {
@@ -6478,7 +6466,7 @@ desktop_turn(
 	server->desktop = (unsigned)target;
 	server->desktop_from = from;
 	server->desktop_to = (float)target;
-	server->desktop_start_ms = zwl_milliseconds();
+	server->desktop_start_ms = kwl_milliseconds();
 	server->desktop_moving = 1;
 	server->desktop_dragging = 0;
 	server->desktop_offset = 0;
@@ -6487,8 +6475,8 @@ desktop_turn(
 	server->dirty = 1;
 
 	/* The focus goes to the desktop's top window (or nobody). */
-	server->front_surface = zwl_top_window(server);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_top_window(server);
+	kwl_seat_focus(server);
 	printf("ZWL GLASS desktop=%u via=%s\n", server->desktop + 1U, via);
 }
 
@@ -6500,14 +6488,14 @@ desktop_turn(
  * the launcher's line to before the desktops' line.
  */
 int
-zwl_glass_apps_room(
-	struct zwl_server *server,
+kwl_glass_apps_room(
+	struct kwl_server *server,
 	int32_t *left,
 	int32_t *right)
 {
 	struct shell_bar bar;
-	struct zwl_object *cover;
-	struct zwl_object *docked;
+	struct kwl_object *cover;
+	struct kwl_object *docked;
 	float home;
 
 	/* Only the glass look's window mode has the bar, and not over the login or lock screen. */
@@ -6524,7 +6512,7 @@ zwl_glass_apps_room(
 		return 0;
 
 	/* App Home, or Wiseview (open, opening or closing). */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return 0;
 	if (server->wiseview_gesture ||
@@ -6549,18 +6537,18 @@ zwl_glass_apps_room(
  * in the docked mode, floating again in the windowed mode.
  */
 void
-zwl_glass_switch_to(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_switch_to(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const char *via)
 {
 	/* Back, on top. */
 	surface->minimized = 0;
 	window_raise(server, surface);
-	server->front_surface = zwl_top_window(server);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_top_window(server);
+	kwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu client=%llu\n", surface->id, via, (unsigned long long)zwl_milliseconds(), (unsigned long long)surface->client->number);
+	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu client=%llu\n", surface->id, via, (unsigned long long)kwl_milliseconds(), (unsigned long long)surface->client->number);
 
 	/* Docked or floating as the mode is. */
 	layout_match(server, surface, via);
@@ -6573,20 +6561,20 @@ zwl_glass_switch_to(
  * focus.
  */
 void
-zwl_glass_activate(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_glass_activate(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const char *via)
 {
 	/* App Home, when it shows, closes the way its launcher closes it. */
-	zwl_home_dismiss(server, via);
+	kwl_home_dismiss(server, via);
 
 	/* A window on another desktop: that desktop slides in. */
 	if (surface->desktop != server->desktop)
 		desktop_turn(server, (int)surface->desktop, via);
 
 	/* Back, on top, with the focus, as the session's layout mode is. */
-	zwl_glass_switch_to(server, surface, via);
+	kwl_glass_switch_to(server, surface, via);
 }
 
 /*
@@ -6599,12 +6587,12 @@ zwl_glass_activate(
  * Returns 1 when the window opens docked.
  */
 int
-zwl_glass_open_docked(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_glass_open_docked(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_layout_window window;
-	struct zwl_object *front;
+	struct kwl_layout_window window;
+	struct kwl_object *front;
 	struct shell_rect docked;
 	unsigned long long front_client;
 	unsigned front_id;
@@ -6619,7 +6607,7 @@ zwl_glass_open_docked(
 
 	/* Docked when the session's mode is and the window is one that docks. */
 	layout_window(surface, &window);
-	opens = zwl_layout_opens_docked(server->layout_mode, &window);
+	opens = kwl_layout_opens_docked(server->layout_mode, &window);
 	if (!opens)
 		return 0;
 
@@ -6635,7 +6623,7 @@ zwl_glass_open_docked(
 	surface->window_height = (uint32_t)docked.height;
 
 	/* The window in front it opens over (none: 0). */
-	front = sheet_owner(zwl_top_window(server));
+	front = sheet_owner(kwl_top_window(server));
 	front_client = 0ULL;
 	front_id = 0U;
 	if (front != NULL) {
@@ -6662,11 +6650,11 @@ zwl_glass_open_docked(
  * floats (the caller places it).
  */
 int
-zwl_glass_unfullscreen_docks(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_glass_unfullscreen_docks(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_layout_window window;
+	struct kwl_layout_window window;
 	struct shell_rect docked;
 	int docks;
 
@@ -6676,7 +6664,7 @@ zwl_glass_unfullscreen_docks(
 
 	/* Docked when the mode is and the window is one that docks. */
 	layout_window(surface, &window);
-	docks = zwl_layout_unfullscreen_docked(server->layout_mode, &window);
+	docks = kwl_layout_unfullscreen_docked(server->layout_mode, &window);
 	if (!docks)
 		return 0;
 
@@ -6710,8 +6698,8 @@ zwl_glass_unfullscreen_docks(
  * dark glass, the light one takes the floating title bar's dark ink.
  */
 void
-zwl_glass_bar_colours(
-	struct zwl_server *server,
+kwl_glass_bar_colours(
+	struct kwl_server *server,
 	struct glass_bar_colours *colours)
 {
 	static const float dark_ink[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
@@ -6753,14 +6741,14 @@ zwl_glass_bar_colours(
  * Opens Wiseview for the bar's "+N" place, as Super+Tab does.
  */
 void
-zwl_glass_open_wiseview(
-	struct zwl_server *server,
+kwl_glass_open_wiseview(
+	struct kwl_server *server,
 	const char *via)
 {
 	/* The window on top is the one Enter comes back to. */
-	server->wiseview_current = sheet_owner(zwl_top_window(server));
-	printf("ZWL WISEVIEW opening via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
-	zwl_transition_request(server, "wiseview-open");
+	server->wiseview_current = sheet_owner(kwl_top_window(server));
+	printf("ZWL WISEVIEW opening via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+	kwl_transition_request(server, "wiseview-open");
 	wiseview_settle(server, 0.0f, 1.0f);
 }
 
@@ -6771,12 +6759,12 @@ zwl_glass_open_wiseview(
  * window (its title has the bar), otherwise at the bar's icons.
  */
 int
-zwl_glass_switch_place(
-	struct zwl_server *server,
+kwl_glass_switch_place(
+	struct kwl_server *server,
 	unsigned *placement)
 {
-	struct zwl_object *cover;
-	struct zwl_object *docked;
+	struct kwl_object *cover;
+	struct kwl_object *docked;
 	float home;
 
 	/* Only the glass look's window mode, and not over the login or lock screen. */
@@ -6792,7 +6780,7 @@ zwl_glass_switch_place(
 		return 0;
 
 	/* Not with App Home, or Wiseview. */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return 0;
 	if (server->wiseview_gesture ||
@@ -6802,9 +6790,9 @@ zwl_glass_switch_place(
 
 	/* In the middle with a docked window. */
 	docked = docked_window(server);
-	*placement = ZWL_SWITCHER_BAR;
+	*placement = KWL_SWITCHER_BAR;
 	if (docked != NULL)
-		*placement = ZWL_SWITCHER_CENTER;
+		*placement = KWL_SWITCHER_CENTER;
 
 	/* Succeeded: it may. */
 	return 1;
@@ -6816,10 +6804,10 @@ zwl_glass_switch_place(
  * letter.
  */
 void
-zwl_glass_draw_app_mark(
-	struct zwl_server *server,
+kwl_glass_draw_app_mark(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t middle,
 	int32_t size,
@@ -6843,7 +6831,7 @@ zwl_glass_draw_app_mark(
 	white[3] = alpha;
 
 	/* The tile of the picture that belongs to the window's application ID, its picture showing through the glass it is on. */
-	picture = zwl_icon_for_app_id(surface->app_id);
+	picture = kwl_icon_for_app_id(surface->app_id);
 	if (picture >= 0) {
 		hole = mark_hole(server);
 		glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - size / 2), (float)size, alpha, 0.0f, hole);
@@ -6884,10 +6872,10 @@ zwl_glass_draw_app_mark(
  * Draws a window's preview for the bar's applications: Wiseview's tile, settled.
  */
 void
-zwl_glass_draw_preview(
-	struct zwl_server *server,
+kwl_glass_draw_preview(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t y,
 	int32_t width,
@@ -6911,8 +6899,8 @@ zwl_glass_draw_preview(
  * chooses (swipe.c).  Returns 1 when the scroll was taken.
  */
 int
-zwl_glass_pad_scroll(
-	struct zwl_server *server,
+kwl_glass_pad_scroll(
+	struct kwl_server *server,
 	int32_t vertical,
 	int32_t horizontal,
 	int natural)
@@ -6926,7 +6914,7 @@ zwl_glass_pad_scroll(
 	int down;
 
 	/* Only while the power dialog, the switcher or Wiseview (its opening gesture done) shows. */
-	dialog = zwl_power_dialog_showing(server);
+	dialog = kwl_power_dialog_showing(server);
 	showing = wiseview_showing(server);
 	if (server->wiseview_gesture)
 		showing = 0;
@@ -6934,29 +6922,29 @@ zwl_glass_pad_scroll(
 		return 0;
 
 	/* The fingers' way (natural scrolling turned back), notches back to travel. */
-	across_um = horizontal * ZWL_TOUCHPAD_NOTCH_UM;
-	down_um = vertical * ZWL_TOUCHPAD_NOTCH_UM;
+	across_um = horizontal * KWL_TOUCHPAD_NOTCH_UM;
+	down_um = vertical * KWL_TOUCHPAD_NOTCH_UM;
 	if (natural) {
 		across_um = -across_um;
 		down_um = -down_um;
 	}
 
 	/* What the swipe decided now, if anything. */
-	direction = zwl_swipe_take(&server->pad_swipe, across_um, down_um);
-	if (direction != ZWL_SWIPE_NONE)
-		printf("ZWL SWIPE %s via=pad\n", zwl_swipe_name(direction));
+	direction = kwl_swipe_take(&server->pad_swipe, across_um, down_um);
+	if (direction != KWL_SWIPE_NONE)
+		printf("ZWL SWIPE %s via=pad\n", kwl_swipe_name(direction));
 
 	/* The power dialog first: a swipe down cancels it. */
 	if (dialog) {
 		down = 0;
-		if (direction == ZWL_SWIPE_DOWN)
+		if (direction == KWL_SWIPE_DOWN)
 			down = 1;
-		(void)zwl_power_dialog_swipe(server, down);
+		(void)kwl_power_dialog_swipe(server, down);
 		return 1;
 	}
 
 	/* The switcher, else Wiseview. */
-	taken = zwl_switch_pad_swipe(server, direction);
+	taken = kwl_switch_pad_swipe(server, direction);
 	if (!taken)
 		(void)wiseview_pad_swipe(server, direction);
 
@@ -6974,8 +6962,8 @@ zwl_glass_pad_scroll(
  * Home, an open Wiseview or another swipe.
  */
 void
-zwl_glass_gesture(
-	struct zwl_server *server,
+kwl_glass_gesture(
+	struct kwl_server *server,
 	uint32_t gesture,
 	uint32_t phase,
 	int32_t travel_um,
@@ -6995,17 +6983,17 @@ zwl_glass_gesture(
 	printf("ZWL GESTURE kind=%s phase=%s travel_um=%d speed=%d\n", name, phase_name, travel_um, speed);
 
 	/* A scrolling touch lifted: the next swipe of Wiseview or the switcher is another (ws142-p009). */
-	if (gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2) {
-		zwl_swipe_end(&server->pad_swipe);
+	if (gesture == KWL_TOUCHPAD_GESTURE_SWIPE2) {
+		kwl_swipe_end(&server->pad_swipe);
 		return;
 	}
 
 	/* While the power dialog shows, two fingers down from the top edge cancel it, and nothing else starts. */
-	dialog = zwl_power_dialog_showing(server);
+	dialog = kwl_power_dialog_showing(server);
 	if (dialog) {
 		direction = gesture_as_swipe(gesture);
-		if (phase == ZWL_TOUCHPAD_PHASE_BEGIN && direction == ZWL_SWIPE_DOWN)
-			(void)zwl_power_dialog_swipe(server, 1);
+		if (phase == KWL_TOUCHPAD_PHASE_BEGIN && direction == KWL_SWIPE_DOWN)
+			(void)kwl_power_dialog_swipe(server, 1);
 		return;
 	}
 
@@ -7014,13 +7002,13 @@ zwl_glass_gesture(
 	 * edge's swipe of two fingers is a swipe of it (ws142-p009), and
 	 * nothing else starts (switcher-shell.c).
 	 */
-	switching = zwl_switch_on(server);
+	switching = kwl_switch_on(server);
 	if (switching) {
-		if (gesture == ZWL_TOUCHPAD_GESTURE_TAP3) {
-			zwl_switch_step(server, 1, "tap3");
-		} else if (phase == ZWL_TOUCHPAD_PHASE_BEGIN) {
+		if (gesture == KWL_TOUCHPAD_GESTURE_TAP3) {
+			kwl_switch_step(server, 1, "tap3");
+		} else if (phase == KWL_TOUCHPAD_PHASE_BEGIN) {
 			direction = gesture_as_swipe(gesture);
-			(void)zwl_switch_pad_swipe(server, direction);
+			(void)kwl_switch_pad_swipe(server, direction);
 		}
 
 		/* Nothing else while the switcher is on. */
@@ -7040,11 +7028,11 @@ zwl_glass_gesture(
 	}
 
 	/* Otherwise only a beginning, or a tap, starts anything. */
-	if (phase != ZWL_TOUCHPAD_PHASE_BEGIN && gesture != ZWL_TOUCHPAD_GESTURE_TAP3)
+	if (phase != KWL_TOUCHPAD_PHASE_BEGIN && gesture != KWL_TOUCHPAD_GESTURE_TAP3)
 		return;
 
 	/* While Wiseview shows, an edge's swipe of two fingers is a swipe of its tiles (from the top edge down chooses). */
-	if (phase == ZWL_TOUCHPAD_PHASE_BEGIN) {
+	if (phase == KWL_TOUCHPAD_PHASE_BEGIN) {
 		direction = gesture_as_swipe(gesture);
 		taken = wiseview_pad_swipe(server, direction);
 		if (taken)
@@ -7062,25 +7050,25 @@ zwl_glass_gesture(
 		return;
 
 	/* Two fingers from the top edge down: the docked window floats again (BUG-224), nothing otherwise. */
-	if (gesture == ZWL_TOUCHPAD_GESTURE_TOP2) {
+	if (gesture == KWL_TOUCHPAD_GESTURE_TOP2) {
 		(void)gesture_undock(server);
 		return;
 	}
 
 	/* Each gesture. */
 	switch (gesture) {
-	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
-	case ZWL_TOUCHPAD_GESTURE_UP3:
+	case KWL_TOUCHPAD_GESTURE_BOTTOM2:
+	case KWL_TOUCHPAD_GESTURE_UP3:
 		/* Wiseview starts opening; the window on top is the current tile; a swipe in it begins afresh. */
 		server->wiseview_gesture = 1;
 		server->wiseview_pad = 1;
-		server->wiseview_current = sheet_owner(zwl_top_window(server));
-		zwl_swipe_end(&server->pad_swipe);
+		server->wiseview_current = sheet_owner(kwl_top_window(server));
+		kwl_swipe_end(&server->pad_swipe);
 		printf("ZWL WISEVIEW gesture via=pad\n");
 		gesture_wiseview(server, phase, travel_um, speed);
 		break;
-	case ZWL_TOUCHPAD_GESTURE_LEFT2:
-	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
+	case KWL_TOUCHPAD_GESTURE_LEFT2:
+	case KWL_TOUCHPAD_GESTURE_RIGHT2:
 		/* The desktops start sliding. */
 		server->desktop_pad = 1;
 		server->desktop_dragging = 1;
@@ -7090,7 +7078,7 @@ zwl_glass_gesture(
 		break;
 	default:
 		/* TAP3: the switcher (D1). */
-		(void)zwl_switch_open(server, ZWL_SWITCHER_VIA_PAD);
+		(void)kwl_switch_open(server, KWL_SWITCHER_VIA_PAD);
 		break;
 	}
 }
@@ -7098,7 +7086,7 @@ zwl_glass_gesture(
 /* Follows the touch pad's Wiseview gesture: opening with the travel, and open or closed at its end. */
 static void
 gesture_wiseview(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t phase,
 	int32_t travel_um,
 	int32_t speed)
@@ -7107,7 +7095,7 @@ gesture_wiseview(
 
 	/* A button may have ended the gesture already: the rest of it does nothing. */
 	if (!server->wiseview_gesture) {
-		if (phase == ZWL_TOUCHPAD_PHASE_END || phase == ZWL_TOUCHPAD_PHASE_CANCEL)
+		if (phase == KWL_TOUCHPAD_PHASE_END || phase == KWL_TOUCHPAD_PHASE_CANCEL)
 			server->wiseview_pad = 0;
 		return;
 	}
@@ -7122,13 +7110,13 @@ gesture_wiseview(
 	server->dirty = 1;
 
 	/* Under way: it follows. */
-	if (phase == ZWL_TOUCHPAD_PHASE_BEGIN || phase == ZWL_TOUCHPAD_PHASE_UPDATE)
+	if (phase == KWL_TOUCHPAD_PHASE_BEGIN || phase == KWL_TOUCHPAD_PHASE_UPDATE)
 		return;
 
 	/* The end: past the threshold or flicked up it opens, otherwise (or given up) it closes. */
 	server->wiseview_gesture = 0;
 	server->wiseview_pad = 0;
-	if (phase == ZWL_TOUCHPAD_PHASE_END &&
+	if (phase == KWL_TOUCHPAD_PHASE_END &&
 	    (progress > WISEVIEW_THRESHOLD || speed >= GESTURE_FLICK)) {
 		printf("ZWL WISEVIEW opening from=%.2f\n", (double)progress);
 		wiseview_settle(server, progress, 1.0f);
@@ -7146,7 +7134,7 @@ gesture_wiseview(
  */
 static void
 gesture_desktop(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t gesture,
 	uint32_t phase,
 	int32_t travel_um,
@@ -7158,7 +7146,7 @@ gesture_desktop(
 
 	/* Something else may have ended the slide already: the rest of the gesture does nothing. */
 	if (!server->desktop_dragging) {
-		if (phase == ZWL_TOUCHPAD_PHASE_END || phase == ZWL_TOUCHPAD_PHASE_CANCEL)
+		if (phase == KWL_TOUCHPAD_PHASE_END || phase == KWL_TOUCHPAD_PHASE_CANCEL)
 			server->desktop_pad = 0;
 		return;
 	}
@@ -7167,7 +7155,7 @@ gesture_desktop(
 	travel = (int32_t)((int64_t)travel_um * (int32_t)server->width / GESTURE_DESKTOP_UM);
 	offset = travel;
 	target = (int)server->desktop - 1;
-	if (gesture == ZWL_TOUCHPAD_GESTURE_RIGHT2) {
+	if (gesture == KWL_TOUCHPAD_GESTURE_RIGHT2) {
 		offset = -travel;
 		target = (int)server->desktop + 1;
 	}
@@ -7180,12 +7168,12 @@ gesture_desktop(
 	server->dirty = 1;
 
 	/* Under way: it follows. */
-	if (phase == ZWL_TOUCHPAD_PHASE_BEGIN || phase == ZWL_TOUCHPAD_PHASE_UPDATE)
+	if (phase == KWL_TOUCHPAD_PHASE_BEGIN || phase == KWL_TOUCHPAD_PHASE_UPDATE)
 		return;
 
 	/* The end: far enough or flicked, the neighbour (desktop_turn keeps the end desktops); otherwise, or given up, back. */
 	server->desktop_pad = 0;
-	if (phase == ZWL_TOUCHPAD_PHASE_END &&
+	if (phase == KWL_TOUCHPAD_PHASE_END &&
 	    (travel >= (int32_t)server->width / 2 || (speed >= GESTURE_FLICK && travel > 0))) {
 		desktop_turn(server, target, "pad");
 	} else {
@@ -7201,7 +7189,7 @@ gesture_desktop(
  */
 static int
 wiseview_pad_swipe(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned direction)
 {
 	int showing;
@@ -7212,13 +7200,13 @@ wiseview_pad_swipe(
 		return 0;
 
 	/* Each swipe's work; up, or no decision yet, does nothing. */
-	if (direction == ZWL_SWIPE_RIGHT) {
+	if (direction == KWL_SWIPE_RIGHT) {
 		printf("ZWL WISEVIEW select step=+1 via=swipe\n");
 		wiseview_move(server, 1);
-	} else if (direction == ZWL_SWIPE_LEFT) {
+	} else if (direction == KWL_SWIPE_LEFT) {
 		printf("ZWL WISEVIEW select step=-1 via=swipe\n");
 		wiseview_move(server, -1);
-	} else if (direction == ZWL_SWIPE_DOWN) {
+	} else if (direction == KWL_SWIPE_DOWN) {
 		wiseview_choose(server, "swipe");
 	}
 
@@ -7234,32 +7222,32 @@ wiseview_pad_swipe(
  */
 static int
 gesture_fullscreen(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t gesture)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 	float home;
 	int error;
 
 	/* Only the edges' two fingers up from the bottom and down from the top. */
-	if (gesture != ZWL_TOUCHPAD_GESTURE_BOTTOM2 && gesture != ZWL_TOUCHPAD_GESTURE_TOP2)
+	if (gesture != KWL_TOUCHPAD_GESTURE_BOTTOM2 && gesture != KWL_TOUCHPAD_GESTURE_TOP2)
 		return 0;
 
 	/* Not over the login and lock screens, nor App Home. */
 	if (server->greeter || server->locked)
 		return 0;
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f)
 		return 0;
 
 	/* The window on top, fullscreen. */
-	top = zwl_top_window(server);
+	top = kwl_top_window(server);
 	if (top == NULL || !top->fullscreen)
 		return 0;
 
-	/* Docked from now on: the window leaves fullscreen into the docked space (zwl_glass_unfullscreen_docks). */
-	layout_set(server, ZWL_LAYOUT_DOCKED, gesture_name(gesture));
-	error = zwl_window_leave_fullscreen(top);
+	/* Docked from now on: the window leaves fullscreen into the docked space (kwl_glass_unfullscreen_docks). */
+	layout_set(server, KWL_LAYOUT_DOCKED, gesture_name(gesture));
+	error = kwl_window_leave_fullscreen(top);
 	printf("ZWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", top->id, gesture_name(gesture), error, (unsigned long long)top->client->number);
 
 	/* Succeeded: the gesture was the fullscreen window's way out. */
@@ -7273,12 +7261,12 @@ gesture_fullscreen(
  */
 static int
 gesture_undock(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *top;
+	struct kwl_object *top;
 
 	/* The window on top (a sheet's parent for a sheet), docked and not fullscreen. */
-	top = sheet_owner(zwl_top_window(server));
+	top = sheet_owner(kwl_top_window(server));
 	if (top == NULL || !top->maximized || top->fullscreen)
 		return 0;
 
@@ -7300,25 +7288,25 @@ gesture_as_swipe(
 {
 	/* Each edge's way. */
 	switch (gesture) {
-	case ZWL_TOUCHPAD_GESTURE_LEFT2:
-		return ZWL_SWIPE_RIGHT;
-	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
-		return ZWL_SWIPE_LEFT;
-	case ZWL_TOUCHPAD_GESTURE_TOP2:
-		return ZWL_SWIPE_DOWN;
-	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
-		return ZWL_SWIPE_UP;
+	case KWL_TOUCHPAD_GESTURE_LEFT2:
+		return KWL_SWIPE_RIGHT;
+	case KWL_TOUCHPAD_GESTURE_RIGHT2:
+		return KWL_SWIPE_LEFT;
+	case KWL_TOUCHPAD_GESTURE_TOP2:
+		return KWL_SWIPE_DOWN;
+	case KWL_TOUCHPAD_GESTURE_BOTTOM2:
+		return KWL_SWIPE_UP;
 	default:
-		return ZWL_SWIPE_NONE;
+		return KWL_SWIPE_NONE;
 	}
 }
 
 /* Tells whether a touch pad gesture may start: not over the login and lock screens, a fullscreen window (D6), App Home, Wiseview or another swipe. */
 static int
 gesture_may_start(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *cover;
+	struct kwl_object *cover;
 	float home;
 
 	/* The login and lock screens. */
@@ -7341,7 +7329,7 @@ gesture_may_start(
 		return 0;
 
 	/* App Home shown or following its gesture. */
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f || server->home_to > 0.0f)
 		return 0;
 
@@ -7356,19 +7344,19 @@ gesture_name(
 {
 	/* Each one. */
 	switch (gesture) {
-	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
+	case KWL_TOUCHPAD_GESTURE_BOTTOM2:
 		return "bottom2";
-	case ZWL_TOUCHPAD_GESTURE_UP3:
+	case KWL_TOUCHPAD_GESTURE_UP3:
 		return "up3";
-	case ZWL_TOUCHPAD_GESTURE_LEFT2:
+	case KWL_TOUCHPAD_GESTURE_LEFT2:
 		return "left2";
-	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
+	case KWL_TOUCHPAD_GESTURE_RIGHT2:
 		return "right2";
-	case ZWL_TOUCHPAD_GESTURE_TAP3:
+	case KWL_TOUCHPAD_GESTURE_TAP3:
 		return "tap3";
-	case ZWL_TOUCHPAD_GESTURE_TOP2:
+	case KWL_TOUCHPAD_GESTURE_TOP2:
 		return "top2";
-	case ZWL_TOUCHPAD_GESTURE_SWIPE2:
+	case KWL_TOUCHPAD_GESTURE_SWIPE2:
 		return "swipe2";
 	default:
 		return "none";
@@ -7382,11 +7370,11 @@ gesture_phase_name(
 {
 	/* Each one. */
 	switch (phase) {
-	case ZWL_TOUCHPAD_PHASE_BEGIN:
+	case KWL_TOUCHPAD_PHASE_BEGIN:
 		return "begin";
-	case ZWL_TOUCHPAD_PHASE_UPDATE:
+	case KWL_TOUCHPAD_PHASE_UPDATE:
 		return "update";
-	case ZWL_TOUCHPAD_PHASE_END:
+	case KWL_TOUCHPAD_PHASE_END:
 		return "end";
 	default:
 		return "cancel";
@@ -7396,7 +7384,7 @@ gesture_phase_name(
 /* Ends a press at the edge: a swipe of a quarter of the output switches to the neighbour, a shorter one goes back. */
 static void
 desktop_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int32_t dx;
 
@@ -7419,11 +7407,11 @@ desktop_release(
 /* Counts the mapped windows of a desktop. */
 static unsigned
 desktop_windows(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned desktop)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 	unsigned count;
 
 	/* Every live, mapped window with a role on that desktop. */
@@ -7432,7 +7420,7 @@ desktop_windows(
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped || surface->role == NULL || surface->cursor_role)
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped || surface->role == NULL || surface->cursor_role)
 				continue;
 			if (surface->desktop == desktop)
 				count++;
@@ -7450,8 +7438,8 @@ desktop_windows(
  */
 static void
 pulled_rect(
-	struct zwl_server *server,
-	const struct zwl_object *surface,
+	struct kwl_server *server,
+	const struct kwl_object *surface,
 	struct shell_rect *body)
 {
 	struct shell_rect docked;
@@ -7465,7 +7453,7 @@ pulled_rect(
 	own.width = (int32_t)surface->restore_width;
 	own.height = (int32_t)surface->restore_height;
 	own.x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
-	own.y = server->pointer_y + ZWL_GLASS_GAP + ZWL_GLASS_TITLE / 2;
+	own.y = server->pointer_y + KWL_GLASS_GAP + KWL_GLASS_TITLE / 2;
 
 	/* Eased out along the pull. */
 	t = (float)server->pull_distance / (float)PULL_DISTANCE;
@@ -7482,9 +7470,9 @@ pulled_rect(
  */
 static void
 pull_back(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	struct shell_rect from;
 	struct shell_rect to;
 
@@ -7506,7 +7494,7 @@ pull_back(
 	memcpy(server->anim_to, &to, sizeof(server->anim_to));
 	server->anim = surface;
 	server->anim_docking = 1;
-	server->anim_start_ms = zwl_milliseconds();
+	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
 	printf("ZWL GLASS pull back surface=%u\n", surface->id);
 }
@@ -7514,8 +7502,8 @@ pull_back(
 /* Hides a window (it keeps its place, and comes back from Wiseview); the next window takes the focus. */
 static void
 window_minimize(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	/* Hidden, not moved or pulled any more. */
 	surface->minimized = 1;
@@ -7525,8 +7513,8 @@ window_minimize(
 		server->pull = NULL;
 
 	/* The focus goes to the window under it. */
-	server->front_surface = zwl_top_window(server);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_top_window(server);
+	kwl_seat_focus(server);
 	server->dirty = 1;
 	printf("ZWL GLASS minimize surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 }
@@ -7534,8 +7522,8 @@ window_minimize(
 /* Moves a window to another desktop (shown when that desktop is), and gives the focus to the top window of the desktop shown. */
 static void
 window_to_desktop(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	unsigned desktop,
 	const char *via)
 {
@@ -7545,8 +7533,8 @@ window_to_desktop(
 	surface->map_order = server->map_order;
 
 	/* The focus on the desktop shown. */
-	server->front_surface = zwl_top_window(server);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_top_window(server);
+	kwl_seat_focus(server);
 	server->dirty = 1;
 	printf("ZWL GLASS move-desktop surface=%u desktop=%u via=%s client=%llu\n", surface->id, desktop + 1U, via, (unsigned long long)surface->client->number);
 }
@@ -7554,7 +7542,7 @@ window_to_desktop(
 /* Returns the desktop whose picture in the system bar is under a point, or -1. */
 static int
 desktop_picture_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
@@ -7562,7 +7550,7 @@ desktop_picture_at(
 	int32_t offset;
 
 	/* In the bar, over the pictures. */
-	if (y < 0 || y >= ZWL_GLASS_BAR)
+	if (y < 0 || y >= KWL_GLASS_BAR)
 		return -1;
 	bar_layout(server, &bar);
 	offset = x - (bar.desktops_x + DESKTOPS_PAD);
@@ -7576,9 +7564,9 @@ desktop_picture_at(
 /* Follows the pointer for the glass look's screens, gestures, menus and moves; returns 1 when the motion is theirs. */
 static int
 glass_motion_take(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int32_t lowest;
 	int32_t x;
 	int32_t y;
@@ -7587,7 +7575,7 @@ glass_motion_take(
 	int calm;
 
 	/* The hover of buttons, the dock hint and the moves are redrawn (over a window's own area only the cursor is, damage.c). */
-	calm = zwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
+	calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 	if (!calm)
 		server->dirty = 1;
 
@@ -7598,7 +7586,7 @@ glass_motion_take(
 	}
 
 	/* So does the power dialog while it shows (power-dialog.c). */
-	taken = zwl_power_dialog_motion(server);
+	taken = kwl_power_dialog_motion(server);
 	if (taken)
 		return 1;
 
@@ -7618,42 +7606,42 @@ glass_motion_take(
 	}
 
 	/* The top-right corner's swipe follows the pointer (corner.c). */
-	taken = zwl_corner_motion(server);
+	taken = kwl_corner_motion(server);
 	if (taken)
 		return 1;
 
 	/* The on-screen keyboard's swipe and a press on its panel (keyboard.c). */
-	taken = zwl_keyboard_motion(server);
+	taken = kwl_keyboard_motion(server);
 	if (taken)
 		return 1;
 
 	/* App Home follows its gesture, and hears the pointer while it shows. */
-	taken = zwl_home_motion(server);
+	taken = kwl_home_motion(server);
 	if (taken)
 		return 1;
 
 	/* The network's open menu lights the row under the pointer (network.c). */
-	taken = zwl_network_motion(server);
+	taken = kwl_network_motion(server);
 	if (taken)
 		return 1;
 
 	/* The volume's open popup follows a drag of its slider (volume.c). */
-	taken = zwl_volume_motion(server);
+	taken = kwl_volume_motion(server);
 	if (taken)
 		return 1;
 
 	/* An open menu follows the pointer (menu-shell.c). */
-	taken = zwl_menu_motion(server);
+	taken = kwl_menu_motion(server);
 	if (taken)
 		return 1;
 
 	/* The bar's applications: the rest on an icon, its drag, the previews (apps-bar.c). */
-	taken = zwl_apps_bar_motion(server);
+	taken = kwl_apps_bar_motion(server);
 	if (taken)
 		return 1;
 
 	/* A press on a titlebar's search field selects text, or waits to be a click or a move (titlebar-shell.c). */
-	taken = zwl_titlebar_motion(server);
+	taken = kwl_titlebar_motion(server);
 	if (taken)
 		return 1;
 
@@ -7699,7 +7687,7 @@ glass_motion_take(
 		 * distance is forgotten only after.
 		 */
 		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
-		y = server->pointer_y + ZWL_GLASS_GAP + ZWL_GLASS_TITLE / 2;
+		y = server->pointer_y + KWL_GLASS_GAP + KWL_GLASS_TITLE / 2;
 		window_undock(server, surface, x, y, "pull");
 		server->pull_distance = 0;
 		server->pull = NULL;
@@ -7725,7 +7713,7 @@ glass_motion_take(
 	/* The body follows the pointer; the title bar stays below the system bar. */
 	surface->x = server->pointer_x - server->drag_dx;
 	surface->y = server->pointer_y - server->drag_dy;
-	lowest = ZWL_GLASS_BAR + ZWL_GLASS_GAP + ZWL_GLASS_TITLE;
+	lowest = KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
 	if (surface->y < lowest)
 		surface->y = lowest;
 
@@ -7742,11 +7730,11 @@ glass_motion_take(
  */
 static int
 fullscreen_leave_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	const char *via;
 	int error;
 
@@ -7774,7 +7762,7 @@ fullscreen_leave_key(
 		return 0;
 
 	/* A window again, told so (a refused configure leaves the window as the compositor draws it). */
-	error = zwl_window_leave_fullscreen(surface);
+	error = kwl_window_leave_fullscreen(surface);
 	fullscreen_leave_eaten = key;
 	printf("ZWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", surface->id, via, error, (unsigned long long)surface->client->number);
 

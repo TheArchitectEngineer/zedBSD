@@ -23,7 +23,7 @@
  * here too and go to greeter.c.
  */
 
-#include "userland/desktop/wayland/zwl.h"
+#include "userland/desktop/wayland/kwl.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
@@ -35,8 +35,8 @@
  * first taken.
  */
 void
-zwl_handoff_wait(
-	struct zwl_server *server)
+kwl_handoff_wait(
+	struct kwl_server *server)
 {
 	uint64_t started;
 	int error;
@@ -49,7 +49,7 @@ zwl_handoff_wait(
 	server->handed_over = 1;
 
 	/* Ready, and the wait for the manager (none: the display is taken at once). */
-	started = zwl_milliseconds();
+	started = kwl_milliseconds();
 	error = kl_backend_session_ready(server->backend);
 	if (error == ENOTSUP || error == EINVAL)
 		return;
@@ -59,7 +59,7 @@ zwl_handoff_wait(
 	}
 
 	/* The display can be taken (with or without the manager's word). */
-	printf("ZWL HANDOFF go=%d waited_ms=%llu at_ms=%llu\n", error == 0, (unsigned long long)(zwl_milliseconds() - started), (unsigned long long)zwl_milliseconds());
+	printf("ZWL HANDOFF go=%d waited_ms=%llu at_ms=%llu\n", error == 0, (unsigned long long)(kwl_milliseconds() - started), (unsigned long long)kwl_milliseconds());
 }
 
 /*
@@ -68,8 +68,8 @@ zwl_handoff_wait(
  * should simply end.
  */
 int
-zwl_handoff_logout(
-	struct zwl_server *server)
+kwl_handoff_logout(
+	struct kwl_server *server)
 {
 	int error;
 
@@ -85,12 +85,12 @@ zwl_handoff_logout(
 		return 0;
 
 	/* The clipboard's history goes (clipboard.c), and the session's volume and settings are kept for the next login (volume.c, settings.c). */
-	zwl_clipboard_history_clear(server, "logout");
-	zwl_volume_keep(server, "logout");
-	zwl_settings_logout(server);
+	kwl_clipboard_history_clear(server, "logout");
+	kwl_volume_keep(server, "logout");
+	kwl_settings_logout(server);
 
 	/* Succeeded: the quit will come. */
-	server->logout_ms = zwl_milliseconds();
+	server->logout_ms = kwl_milliseconds();
 	printf("ZWL HANDOFF logout at_ms=%llu\n", (unsigned long long)server->logout_ms);
 	return 1;
 }
@@ -99,11 +99,11 @@ zwl_handoff_logout(
  * Reads what the manager sent (the backend calls back below).
  */
 void
-zwl_handoff_tick(
-	struct zwl_server *server)
+kwl_handoff_tick(
+	struct kwl_server *server)
 {
 	/* The backend reads the manager's lines and keeps the Log Out's deadline. */
-	kl_backend_tick(server->backend, zwl_milliseconds());
+	kl_backend_tick(server->backend, kwl_milliseconds());
 }
 
 /*
@@ -111,11 +111,11 @@ zwl_handoff_tick(
  * compositor (the backend then tells the manager the display is free).
  */
 void
-zwl_handoff_stop(
+kwl_handoff_stop(
 	void *data,
 	unsigned reason)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* The compositor the backend was opened for. */
 	server = data;
@@ -131,21 +131,21 @@ zwl_handoff_stop(
 	if (reason == KL_BACKEND_SESSION_UNANSWERED) {
 		printf("ZWL HANDOFF logout unanswered\n");
 		server->logout_ms = 0U;
-		zwl_request_stop();
+		kwl_request_stop();
 		return;
 	}
 
 	/* Which end: the session's quit, or the login screen's manager done with it. */
 	if (reason == KL_BACKEND_SESSION_QUIT)
-		printf("ZWL HANDOFF quit at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+		printf("ZWL HANDOFF quit at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	else
-		printf("ZWL GREETER closed at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+		printf("ZWL GREETER closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 
 	/* The swapchain goes, and with it the display's lease, before anything slower. */
-	zwl_compose_output_close(server);
-	printf("ZWL HANDOFF released at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+	kwl_compose_output_close(server);
+	printf("ZWL HANDOFF released at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	server->logout_ms = 0U;
-	zwl_request_stop();
+	kwl_request_stop();
 }
 
 /*
@@ -153,12 +153,12 @@ zwl_handoff_stop(
  * lock screen.
  */
 void
-zwl_handoff_answer(
+kwl_handoff_answer(
 	void *data,
 	unsigned request,
 	int error)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	int taken;
 
 	/* The compositor the backend was opened for. */
@@ -166,26 +166,26 @@ zwl_handoff_answer(
 
 	/* Remote Login's answer is the system extension's, also while the screen is locked (ws089-p025). */
 	if (request == KL_BACKEND_SESSION_SERVICE) {
-		zwl_system_sharing_answer(server, error);
+		kwl_system_sharing_answer(server, error);
 		return;
 	}
 
 	/* A PIN's change and what the user has enrolled are the system extension's, also while the screen is locked (ws172-p002). */
 	if (request == KL_BACKEND_SESSION_ENROLL) {
-		taken = zwl_system_pin_answer(server, error);
+		taken = kwl_system_pin_answer(server, error);
 		if (taken)
 			return;
 	}
 
 	/* What the user has enrolled. */
 	if (request == KL_BACKEND_SESSION_ENROLLED) {
-		zwl_system_enrolled_answer(server, error);
+		kwl_system_enrolled_answer(server, error);
 		return;
 	}
 
 	/* The login screen and a locked session's lock screen act on it (greeter.c). */
 	if (server->greeter || server->locked) {
-		zwl_greeter_answer(server, request, error);
+		kwl_greeter_answer(server, request, error);
 		return;
 	}
 

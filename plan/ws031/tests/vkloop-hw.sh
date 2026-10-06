@@ -219,7 +219,7 @@ if [ "$KEILAND_RUN" = 1 ]; then
 	if [ "${KEILAND_APP:-mview}" = egltest6 ]; then
 		FILES="$FILES --file /etc/keiland/run-mview.sh=plan/ws031/tests/zdesktop/run-egltest6.sh"
 	fi
-	FILES="$FILES --file /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.ttf"
+	FILES="$FILES --file /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Mahora-Regular.ttf"
 	FILES="$FILES --file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png"
 	RC_CONF=plan/ws031/tests/zdesktop/rc.conf
 fi

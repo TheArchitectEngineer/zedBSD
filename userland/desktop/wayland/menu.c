@@ -82,27 +82,27 @@
 
 static uint32_t menu_word(const unsigned char *bytes, size_t offset);
 static int menu_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
-static int manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int model_request(struct zwl_object *menu, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int model_edit(struct zwl_object *menu, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int place_request(struct zwl_object *place, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int context_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int model_begin(struct zwl_object *menu, uint32_t serial);
-static int model_commit(struct zwl_object *menu, uint32_t serial);
-static int model_add(struct zwl_object *menu, uint32_t id, uint32_t parent, uint32_t before, uint32_t type, const char *label, uint32_t action);
-static int model_remove(struct zwl_object *menu, uint32_t id);
-static int model_set_number(struct zwl_object *menu, uint32_t opcode, uint32_t id, uint32_t value);
-static int model_set_text(struct zwl_object *menu, uint32_t opcode, uint32_t id, const char *text);
-static int model_set_shortcut(struct zwl_object *menu, uint32_t id, uint32_t modifiers, uint32_t keysym);
-static void model_fail(struct zwl_object *menu, uint32_t code, const char *reason);
-static void model_free(struct zwl_menu_model *model);
-static int pending_index(const struct zwl_menu_model *model, uint32_t id);
-static unsigned pending_depth(const struct zwl_menu_model *model, uint32_t id);
-static int pending_room(struct zwl_menu_model *model);
-static int items_copy(struct zwl_menu_item *to, const struct zwl_menu_item *from, unsigned count);
-static void items_free(struct zwl_menu_item *items, unsigned count);
+static int manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int model_request(struct kwl_object *menu, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int model_edit(struct kwl_object *menu, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int place_request(struct kwl_object *place, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int context_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int model_begin(struct kwl_object *menu, uint32_t serial);
+static int model_commit(struct kwl_object *menu, uint32_t serial);
+static int model_add(struct kwl_object *menu, uint32_t id, uint32_t parent, uint32_t before, uint32_t type, const char *label, uint32_t action);
+static int model_remove(struct kwl_object *menu, uint32_t id);
+static int model_set_number(struct kwl_object *menu, uint32_t opcode, uint32_t id, uint32_t value);
+static int model_set_text(struct kwl_object *menu, uint32_t opcode, uint32_t id, const char *text);
+static int model_set_shortcut(struct kwl_object *menu, uint32_t id, uint32_t modifiers, uint32_t keysym);
+static void model_fail(struct kwl_object *menu, uint32_t code, const char *reason);
+static void model_free(struct kwl_menu_model *model);
+static int pending_index(const struct kwl_menu_model *model, uint32_t id);
+static unsigned pending_depth(const struct kwl_menu_model *model, uint32_t id);
+static int pending_room(struct kwl_menu_model *model);
+static int items_copy(struct kwl_menu_item *to, const struct kwl_menu_item *from, unsigned count);
+static void items_free(struct kwl_menu_item *items, unsigned count);
 static char *text_copy(const char *text);
-static uint32_t place_seat(struct zwl_object *place);
+static uint32_t place_seat(struct kwl_object *place);
 
 /*
  * Carries out one request on a System Menu object.
@@ -111,8 +111,8 @@ static uint32_t place_seat(struct zwl_object *place);
  * when the object's interface names it, otherwise the caller's generic one).
  */
 int
-zwl_menu_request(
-	struct zwl_object *object,
+kwl_menu_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -121,20 +121,20 @@ zwl_menu_request(
 
 	/* Each interface has its own requests. */
 	switch (object->kind) {
-	case ZWL_MENU_MANAGER:
+	case KWL_MENU_MANAGER:
 		error = manager_request(object, opcode, bytes, size);
 		break;
-	case ZWL_MENU:
+	case KWL_MENU:
 		error = model_request(object, opcode, bytes, size);
 		break;
-	case ZWL_TOPLEVEL_MENU:
+	case KWL_TOPLEVEL_MENU:
 		error = place_request(object, opcode, bytes, size);
 		break;
-	case ZWL_CONTEXT_MENU:
-		/* A context menu has only destroy; an open one closes without an event (zwl_menu_forget). */
+	case KWL_CONTEXT_MENU:
+		/* A context menu has only destroy; an open one closes without an event (kwl_menu_forget). */
 		error = EPROTO;
 		if (opcode == CONTEXT_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
@@ -161,29 +161,29 @@ zwl_menu_request(
  * A model goes with its xdg_menu_v1.
  */
 void
-zwl_menu_object_gone(
-	struct zwl_object *object)
+kwl_menu_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *other;
+	struct kwl_object *other;
 
 	/* A menu drawn or open from the object closes while its links still say whose it was. */
-	zwl_menu_forget(object->client->server, object);
+	kwl_menu_forget(object->client->server, object);
 
 	/* A toplevel's place for a menu is left without a window. */
-	if (object->kind == ZWL_TOPLEVEL && object->toplevel_menu != NULL) {
+	if (object->kind == KWL_TOPLEVEL && object->toplevel_menu != NULL) {
 		object->toplevel_menu->top = NULL;
 		object->toplevel_menu = NULL;
 		return;
 	}
 
 	/* A context menu stops naming its menu. */
-	if (object->kind == ZWL_CONTEXT_MENU) {
+	if (object->kind == KWL_CONTEXT_MENU) {
 		object->shown_menu = NULL;
 		return;
 	}
 
 	/* A place leaves its window, and shows nothing. */
-	if (object->kind == ZWL_TOPLEVEL_MENU) {
+	if (object->kind == KWL_TOPLEVEL_MENU) {
 		if (object->top != NULL)
 			object->top->toplevel_menu = NULL;
 		object->top = NULL;
@@ -192,13 +192,13 @@ zwl_menu_object_gone(
 	}
 
 	/* Nothing else is tied to anything but a model. */
-	if (object->kind != ZWL_MENU)
+	if (object->kind != KWL_MENU)
 		return;
 
 	/* The places and context menus that showed this menu show nothing. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
 		/* Only a place or a context menu can show a menu. */
-		if (other->kind != ZWL_TOPLEVEL_MENU && other->kind != ZWL_CONTEXT_MENU)
+		if (other->kind != KWL_TOPLEVEL_MENU && other->kind != KWL_CONTEXT_MENU)
 			continue;
 
 		/* It stops naming the menu. */
@@ -217,13 +217,13 @@ zwl_menu_object_gone(
  * xdg_toplevel_menu_v1 (place) its activations go to.  Returns NULL when the
  * window shows none.
  */
-struct zwl_menu_model *
-zwl_menu_of_surface(
-	struct zwl_object *surface,
-	struct zwl_object **place)
+struct kwl_menu_model *
+kwl_menu_of_surface(
+	struct kwl_object *surface,
+	struct kwl_object **place)
 {
-	struct zwl_object *toplevel;
-	struct zwl_object *menu;
+	struct kwl_object *toplevel;
+	struct kwl_object *menu;
 
 	/* Nothing is found until the whole chain is. */
 	*place = NULL;
@@ -254,9 +254,9 @@ zwl_menu_of_surface(
 /*
  * Finds a committed item by its ID; NULL when the model has none.
  */
-const struct zwl_menu_item *
-zwl_menu_item(
-	const struct zwl_menu_model *model,
+const struct kwl_menu_item *
+kwl_menu_item(
+	const struct kwl_menu_model *model,
 	uint32_t id)
 {
 	unsigned index;
@@ -273,19 +273,19 @@ zwl_menu_item(
 }
 
 /*
- * Lists the visible children of an item (ZWL_MENU_ROOT for the top level)
+ * Lists the visible children of an item (KWL_MENU_ROOT for the top level)
  * in their order, as they are shown: a separator only between two other
  * items, never two together.  Returns how many were stored.
  */
 unsigned
-zwl_menu_children(
-	const struct zwl_menu_model *model,
+kwl_menu_children(
+	const struct kwl_menu_model *model,
 	uint32_t parent,
-	const struct zwl_menu_item **children,
+	const struct kwl_menu_item **children,
 	unsigned capacity)
 {
-	const struct zwl_menu_item *separator;
-	const struct zwl_menu_item *item;
+	const struct kwl_menu_item *separator;
+	const struct kwl_menu_item *item;
 	unsigned index;
 	unsigned count;
 
@@ -301,7 +301,7 @@ zwl_menu_children(
 			break;
 
 		/* A separator is kept only after something, and once. */
-		if (item->type == ZWL_MENU_SEPARATOR) {
+		if (item->type == KWL_MENU_SEPARATOR) {
 			if (count != 0)
 				separator = item;
 			continue;
@@ -330,12 +330,12 @@ zwl_menu_children(
  * the client's seat and a new serial for the input that chose it.
  */
 void
-zwl_menu_send_activated(
-	struct zwl_object *place,
-	const struct zwl_menu_item *item,
+kwl_menu_send_activated(
+	struct kwl_object *place,
+	const struct kwl_menu_item *item,
 	const char *via)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t words[4];
 	int error;
 
@@ -348,13 +348,13 @@ zwl_menu_send_activated(
 	words[0] = item->id;
 	words[1] = item->action;
 	words[2] = place_seat(place);
-	words[3] = zwl_next_serial(server);
+	words[3] = kwl_next_serial(server);
 
 	/* The event; a client that cannot take it is failed. */
-	error = zwl_emit(place->client, place->id, PLACE_ACTIVATED, words, sizeof(words));
+	error = kwl_emit(place->client, place->id, PLACE_ACTIVATED, words, sizeof(words));
 	if (error != 0) {
 		place->client->fatal = 1;
-		place->client->fatal_time = zwl_milliseconds();
+		place->client->fatal_time = kwl_milliseconds();
 	}
 
 	/* The log line the tests read. */
@@ -367,12 +367,12 @@ zwl_menu_send_activated(
  * action and a new serial for the input that chose it.
  */
 void
-zwl_menu_send_context_activated(
-	struct zwl_object *context,
-	const struct zwl_menu_item *item,
+kwl_menu_send_context_activated(
+	struct kwl_object *context,
+	const struct kwl_menu_item *item,
 	const char *via)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t words[3];
 	int error;
 
@@ -384,13 +384,13 @@ zwl_menu_send_context_activated(
 	/* The item, its action and the serial. */
 	words[0] = item->id;
 	words[1] = item->action;
-	words[2] = zwl_next_serial(server);
+	words[2] = kwl_next_serial(server);
 
 	/* The event; a client that cannot take it is failed. */
-	error = zwl_emit(context->client, context->id, CONTEXT_ACTIVATED, words, sizeof(words));
+	error = kwl_emit(context->client, context->id, CONTEXT_ACTIVATED, words, sizeof(words));
 	if (error != 0) {
 		context->client->fatal = 1;
-		context->client->fatal_time = zwl_milliseconds();
+		context->client->fatal_time = kwl_milliseconds();
 	}
 
 	/* The log line the tests read. */
@@ -403,8 +403,8 @@ zwl_menu_send_context_activated(
  * one); it is told once, and shows nothing afterwards.
  */
 void
-zwl_menu_send_context_done(
-	struct zwl_object *context)
+kwl_menu_send_context_done(
+	struct kwl_object *context)
 {
 	int error;
 
@@ -413,10 +413,10 @@ zwl_menu_send_context_done(
 		return;
 
 	/* The event has no arguments. */
-	error = zwl_emit(context->client, context->id, CONTEXT_DONE, NULL, 0U);
+	error = kwl_emit(context->client, context->id, CONTEXT_DONE, NULL, 0U);
 	if (error != 0) {
 		context->client->fatal = 1;
-		context->client->fatal_time = zwl_milliseconds();
+		context->client->fatal_time = kwl_milliseconds();
 	}
 
 	/* It shows nothing more. */
@@ -428,8 +428,8 @@ zwl_menu_send_context_done(
  * Tells a window's client that the popup of a submenu opened or closed.
  */
 void
-zwl_menu_send_popup(
-	struct zwl_object *place,
+kwl_menu_send_popup(
+	struct kwl_object *place,
 	uint32_t item,
 	unsigned opened)
 {
@@ -444,10 +444,10 @@ zwl_menu_send_popup(
 	opcode = PLACE_CLOSED;
 	if (opened)
 		opcode = PLACE_OPENED;
-	error = zwl_emit(place->client, place->id, opcode, &item, sizeof(item));
+	error = kwl_emit(place->client, place->id, opcode, &item, sizeof(item));
 	if (error != 0) {
 		place->client->fatal = 1;
-		place->client->fatal_time = zwl_milliseconds();
+		place->client->fatal_time = kwl_milliseconds();
 	}
 }
 
@@ -511,13 +511,13 @@ menu_string(
 /* Carries out a request of xdg_menu_manager_v1. */
 static int
 manager_request(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *toplevel;
+	struct kwl_object *created;
+	struct kwl_object *toplevel;
 	uint32_t id;
 	int error;
 
@@ -527,7 +527,7 @@ manager_request(
 			return EPROTO;
 
 		/* Succeeded: the binding is gone. */
-		zwl_object_destroy(manager);
+		kwl_object_destroy(manager);
 		return 0;
 	}
 
@@ -538,12 +538,12 @@ manager_request(
 
 		/* The object; its model is allocated with it. */
 		id = menu_word(bytes, 0U);
-		created = zwl_create(manager->client, id, ZWL_MENU, manager->version);
+		created = kwl_create(manager->client, id, KWL_MENU, manager->version);
 		if (created == NULL)
 			return EPROTO;
 		created->menu_model = calloc(1, sizeof(*created->menu_model));
 		if (created->menu_model == NULL) {
-			zwl_object_destroy(created);
+			kwl_object_destroy(created);
 			return EPROTO;
 		}
 
@@ -565,19 +565,19 @@ manager_request(
 
 	/* The window must be one of the client's toplevels. */
 	id = menu_word(bytes, 4U);
-	toplevel = zwl_find(manager->client, id);
-	if (toplevel == NULL || toplevel->kind != ZWL_TOPLEVEL)
+	toplevel = kwl_find(manager->client, id);
+	if (toplevel == NULL || toplevel->kind != KWL_TOPLEVEL)
 		return EPROTO;
 
 	/* A window has one place for a menu at a time. */
 	if (toplevel->toplevel_menu != NULL) {
-		(void)zwl_error_code(manager->client, manager->id, MANAGER_ERROR_ALREADY_EXISTS, "the toplevel already has an xdg_toplevel_menu_v1");
+		(void)kwl_error_code(manager->client, manager->id, MANAGER_ERROR_ALREADY_EXISTS, "the toplevel already has an xdg_toplevel_menu_v1");
 		return EPROTO;
 	}
 
 	/* The place, tied to the window from both ends. */
 	id = menu_word(bytes, 0U);
-	created = zwl_create(manager->client, id, ZWL_TOPLEVEL_MENU, manager->version);
+	created = kwl_create(manager->client, id, KWL_TOPLEVEL_MENU, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->top = toplevel;
@@ -590,7 +590,7 @@ manager_request(
 /* Carries out a request of xdg_menu_v1. */
 static int
 model_request(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -598,13 +598,13 @@ model_request(
 	uint32_t serial;
 	int error;
 
-	/* The menu goes; windows showing it show nothing (zwl_menu_object_gone). */
+	/* The menu goes; windows showing it show nothing (kwl_menu_object_gone). */
 	if (opcode == MENU_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
 
 		/* Succeeded: the menu is gone. */
-		zwl_object_destroy(menu);
+		kwl_object_destroy(menu);
 		return 0;
 	}
 
@@ -658,7 +658,7 @@ model_request(
 /* Decodes one change of a model in a transaction and applies it to the pending copy. */
 static int
 model_edit(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -745,22 +745,22 @@ model_edit(
 /* Carries out a request of xdg_toplevel_menu_v1. */
 static int
 place_request(
-	struct zwl_object *place,
+	struct kwl_object *place,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *menu;
+	struct kwl_object *menu;
 	uint32_t id;
 
-	/* The place goes; its window shows no menu (zwl_menu_object_gone). */
+	/* The place goes; its window shows no menu (kwl_menu_object_gone). */
 	if (opcode == PLACE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
 
 		/* Succeeded: the place is gone, and the window is drawn without its menu. */
 		place->client->server->dirty = 1;
-		zwl_object_destroy(place);
+		kwl_object_destroy(place);
 		return 0;
 	}
 
@@ -772,8 +772,8 @@ place_request(
 	id = menu_word(bytes, 0U);
 	menu = NULL;
 	if (id != 0U) {
-		menu = zwl_find(place->client, id);
-		if (menu == NULL || menu->kind != ZWL_MENU)
+		menu = kwl_find(place->client, id);
+		if (menu == NULL || menu->kind != KWL_MENU)
 			return EPROTO;
 	}
 
@@ -799,15 +799,15 @@ place_request(
  */
 static int
 context_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *menu;
-	struct zwl_object *surface;
-	struct zwl_object *desktop;
-	struct zwl_server *server;
+	struct kwl_object *created;
+	struct kwl_object *menu;
+	struct kwl_object *surface;
+	struct kwl_object *desktop;
+	struct kwl_server *server;
 	uint32_t serial;
 	int32_t x;
 	int32_t y;
@@ -820,13 +820,13 @@ context_create(
 		return EPROTO;
 
 	/* The menu must be one of the client's. */
-	menu = zwl_find(manager->client, menu_word(bytes, 4U));
-	if (menu == NULL || menu->kind != ZWL_MENU)
+	menu = kwl_find(manager->client, menu_word(bytes, 4U));
+	if (menu == NULL || menu->kind != KWL_MENU)
 		return EPROTO;
 
 	/* The surface must be one of the client's. */
-	surface = zwl_find(manager->client, menu_word(bytes, 8U));
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(manager->client, menu_word(bytes, 8U));
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* The point on the surface and the press's serial. */
@@ -835,17 +835,17 @@ context_create(
 	serial = menu_word(bytes, 24U);
 
 	/* The context menu, showing the menu on the surface. */
-	created = zwl_create(manager->client, menu_word(bytes, 0U), ZWL_CONTEXT_MENU, manager->version);
+	created = kwl_create(manager->client, menu_word(bytes, 0U), KWL_CONTEXT_MENU, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->shown_menu = menu;
 
 	/* Only a window (a toplevel's surface) or the desktop surface (desktop.c) shows one. */
-	desktop = zwl_desktop_surface(server);
+	desktop = kwl_desktop_surface(server);
 	if ((surface->role == NULL || surface->role->top == NULL) &&
 	    surface != desktop) {
 		printf("ZWL MENU context-refused client=%llu context=%u surface=%u reason=window\n", (unsigned long long)manager->client->number, created->id, surface->id);
-		zwl_menu_send_context_done(created);
+		kwl_menu_send_context_done(created);
 		return 0;
 	}
 
@@ -857,18 +857,18 @@ context_create(
 		answers = 1;
 	if (!answers) {
 		printf("ZWL MENU context-refused client=%llu context=%u serial=%u press=%u\n", (unsigned long long)manager->client->number, created->id, serial, server->press_serial);
-		zwl_menu_send_context_done(created);
+		kwl_menu_send_context_done(created);
 		return 0;
 	}
 
 	/* A drop's window comes to the top for its choice (a menu is only open on the window on top). */
 	if (server->glass && serial != server->press_serial)
-		zwl_glass_raise(server, surface);
+		kwl_glass_raise(server, surface);
 
 	/* The popup at the point (menu-shell.c); one with nothing to show is done at once. */
-	error = zwl_menu_open_context(server, created, surface, x, y);
+	error = kwl_menu_open_context(server, created, surface, x, y);
 	if (error != 0)
-		zwl_menu_send_context_done(created);
+		kwl_menu_send_context_done(created);
 
 	/* Succeeded: the client owns the context menu. */
 	return 0;
@@ -877,10 +877,10 @@ context_create(
 /* Starts a transaction: the changes that follow go to a copy of the shown model. */
 static int
 model_begin(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t serial)
 {
-	struct zwl_menu_model *model;
+	struct kwl_menu_model *model;
 	unsigned capacity;
 	int error;
 
@@ -919,10 +919,10 @@ model_begin(
 /* Ends a transaction: the copy becomes the shown model at once. */
 static int
 model_commit(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t serial)
 {
-	struct zwl_menu_model *model;
+	struct kwl_menu_model *model;
 
 	/* Only an open transaction, under the serial it was opened with. */
 	model = menu->menu_model;
@@ -964,7 +964,7 @@ model_commit(
 /* Adds an item to the pending copy, before a sibling or after the last child. */
 static int
 model_add(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t id,
 	uint32_t parent,
 	uint32_t before,
@@ -972,8 +972,8 @@ model_add(
 	const char *label,
 	uint32_t action)
 {
-	struct zwl_menu_model *model;
-	struct zwl_menu_item *item;
+	struct kwl_menu_model *model;
+	struct kwl_menu_item *item;
 	unsigned depth;
 	size_t length;
 	int position;
@@ -989,15 +989,15 @@ model_add(
 	}
 
 	/* One of the five types. */
-	if (type > ZWL_MENU_SUBMENU) {
+	if (type > KWL_MENU_SUBMENU) {
 		model_fail(menu, MENU_ERROR_INVALID_TYPE, "an unknown item type");
 		return EPROTO;
 	}
 
 	/* The parent is the top level or a submenu. */
-	if (parent != ZWL_MENU_ROOT) {
+	if (parent != KWL_MENU_ROOT) {
 		found = pending_index(model, parent);
-		if (found < 0 || model->pending[found].type != ZWL_MENU_SUBMENU) {
+		if (found < 0 || model->pending[found].type != KWL_MENU_SUBMENU) {
 			model_fail(menu, MENU_ERROR_INVALID_PARENT, "a parent that is not a submenu");
 			return EPROTO;
 		}
@@ -1057,10 +1057,10 @@ model_add(
 /* Removes an item and everything under it from the pending copy. */
 static int
 model_remove(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t id)
 {
-	struct zwl_menu_model *model;
+	struct kwl_menu_model *model;
 	unsigned char *doomed;
 	unsigned index;
 	unsigned kept;
@@ -1119,12 +1119,12 @@ model_remove(
 /* Sets one numeric attribute of an item in the pending copy. */
 static int
 model_set_number(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t opcode,
 	uint32_t id,
 	uint32_t value)
 {
-	struct zwl_menu_item *item;
+	struct kwl_menu_item *item;
 	int found;
 
 	/* The item must be there. */
@@ -1165,7 +1165,7 @@ model_set_number(
 	} else if (opcode == MENU_SET_VISIBLE) {
 		item->visible = value;
 	} else {
-		if (item->type != ZWL_MENU_CHECKBOX && item->type != ZWL_MENU_RADIO) {
+		if (item->type != KWL_MENU_CHECKBOX && item->type != KWL_MENU_RADIO) {
 			model_fail(menu, MENU_ERROR_INVALID_TYPE, "set_checked on an item that cannot be checked");
 			return EPROTO;
 		}
@@ -1181,12 +1181,12 @@ model_set_number(
 /* Sets an item's label or icon name in the pending copy. */
 static int
 model_set_text(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t opcode,
 	uint32_t id,
 	const char *text)
 {
-	struct zwl_menu_item *item;
+	struct kwl_menu_item *item;
 	char *copy;
 	size_t length;
 	int found;
@@ -1227,12 +1227,12 @@ model_set_text(
 /* Sets an item's shortcut in the pending copy (keysym 0 removes it). */
 static int
 model_set_shortcut(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t id,
 	uint32_t modifiers,
 	uint32_t keysym)
 {
-	struct zwl_menu_item *item;
+	struct kwl_menu_item *item;
 	int found;
 
 	/* The item must be there. */
@@ -1262,18 +1262,18 @@ model_set_shortcut(
 /* Queues a menu's protocol error with its code and returns EPROTO. */
 static void
 model_fail(
-	struct zwl_object *menu,
+	struct kwl_object *menu,
 	uint32_t code,
 	const char *reason)
 {
 	/* The error names the menu and the xdg_menu_v1 error code; the caller refuses the request with EPROTO. */
-	(void)zwl_error_code(menu->client, menu->id, code, reason);
+	(void)kwl_error_code(menu->client, menu->id, code, reason);
 }
 
 /* Frees a model: its shown items and any pending copy. */
 static void
 model_free(
-	struct zwl_menu_model *model)
+	struct kwl_menu_model *model)
 {
 	/* No model, nothing to free. */
 	if (model == NULL)
@@ -1290,13 +1290,13 @@ model_free(
 /* Finds an item of the pending copy by its ID; -1 when there is none (and for the root, 0). */
 static int
 pending_index(
-	const struct zwl_menu_model *model,
+	const struct kwl_menu_model *model,
 	uint32_t id)
 {
 	unsigned index;
 
 	/* The root is not an item. */
-	if (id == ZWL_MENU_ROOT)
+	if (id == KWL_MENU_ROOT)
 		return -1;
 
 	/* A search of at most MENU_ITEMS_MAX items. */
@@ -1313,7 +1313,7 @@ pending_index(
 /* Tells how deep an item of the pending copy is (the root 0, a top-level item 1). */
 static unsigned
 pending_depth(
-	const struct zwl_menu_model *model,
+	const struct kwl_menu_model *model,
 	uint32_t id)
 {
 	unsigned depth;
@@ -1321,7 +1321,7 @@ pending_depth(
 
 	/* Up the parents to the root; the bound keeps a broken chain from looping. */
 	depth = 0;
-	while (id != ZWL_MENU_ROOT && depth <= MENU_DEPTH_MAX) {
+	while (id != KWL_MENU_ROOT && depth <= MENU_DEPTH_MAX) {
 		found = pending_index(model, id);
 		if (found < 0)
 			break;
@@ -1336,9 +1336,9 @@ pending_depth(
 /* Makes room for one more item in the pending copy; ENOMEM when it cannot. */
 static int
 pending_room(
-	struct zwl_menu_model *model)
+	struct kwl_menu_model *model)
 {
-	struct zwl_menu_item *grown;
+	struct kwl_menu_item *grown;
 	unsigned capacity;
 
 	/* There is room already. */
@@ -1362,8 +1362,8 @@ pending_room(
 /* Copies items with their strings into storage with room for them; ENOMEM when a string cannot be copied. */
 static int
 items_copy(
-	struct zwl_menu_item *to,
-	const struct zwl_menu_item *from,
+	struct kwl_menu_item *to,
+	const struct kwl_menu_item *from,
 	unsigned count)
 {
 	unsigned index;
@@ -1393,7 +1393,7 @@ items_copy(
 /* Frees the strings of items (not the array they are in). */
 static void
 items_free(
-	struct zwl_menu_item *items,
+	struct kwl_menu_item *items,
 	unsigned count)
 {
 	unsigned index;
@@ -1429,14 +1429,14 @@ text_copy(
 /* Finds the ID of a seat the place's client bound (0 when it bound none). */
 static uint32_t
 place_seat(
-	struct zwl_object *place)
+	struct kwl_object *place)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* The first live seat of the client. */
 	for (object = place->client->objects; object != NULL; object = object->next) {
 		/* Only a live wl_seat. */
-		if (object->kind == ZWL_SEAT && !object->dead)
+		if (object->kind == KWL_SEAT && !object->dead)
 			return object->id;
 	}
 

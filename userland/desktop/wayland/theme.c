@@ -6,30 +6,30 @@
  */
 
 /*
- * keiland_theme_v1 (ws089-p017): the desktop's appearance, light or dark,
+ * kl_theme_v1 (ws089-p017): the desktop's appearance, light or dark,
  * told to a client when it binds the global and again whenever the
- * setting appearance.dark changes (settings.c calls zwl_theme_changed),
+ * setting appearance.dark changes (settings.c calls kwl_theme_changed),
  * so that libkeiland's applications draw in it and redraw.  The
  * compositor's own drawing follows server->dark (glass.c).
  */
 
-#include "zwl.h"
+#include "kwl.h"
 
 #include <errno.h>
 #include <stdio.h>
 
-/* The request and the event of keiland_theme_v1. */
+/* The request and the event of kl_theme_v1. */
 #define THEME_DESTROY		0U
 #define THEME_EVENT_APPEARANCE	0U
 
-static int theme_send(struct zwl_object *theme);
+static int theme_send(struct kwl_object *theme);
 
 /*
- * Carries out a request of keiland_theme_v1: destroy is the only one.
+ * Carries out a request of kl_theme_v1: destroy is the only one.
  */
 int
-zwl_theme_request(
-	struct zwl_object *object,
+kwl_theme_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -38,7 +38,7 @@ zwl_theme_request(
 	(void)bytes;
 	if (opcode != THEME_DESTROY || size != 0U)
 		return EPROTO;
-	zwl_object_destroy(object);
+	kwl_object_destroy(object);
 
 	/* Succeeded. */
 	return 0;
@@ -48,8 +48,8 @@ zwl_theme_request(
  * Tells a client that bound the global the appearance now.
  */
 int
-zwl_theme_bind(
-	struct zwl_object *theme)
+kwl_theme_bind(
+	struct kwl_object *theme)
 {
 	int error;
 
@@ -71,18 +71,18 @@ zwl_theme_bind(
  * changed.
  */
 void
-zwl_theme_changed(
-	struct zwl_server *server)
+kwl_theme_changed(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 
 	/* Each live object of each client. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
 			continue;
 		for (object = client->objects; object != NULL; object = object->next) {
-			if (object->kind == ZWL_THEME && !object->dead)
+			if (object->kind == KWL_THEME && !object->dead)
 				(void)theme_send(object);
 		}
 	}
@@ -94,7 +94,7 @@ zwl_theme_changed(
 /* Sends one object the appearance: 0 light, 1 dark. */
 static int
 theme_send(
-	struct zwl_object *theme)
+	struct kwl_object *theme)
 {
 	uint32_t appearance;
 	int error;
@@ -103,7 +103,7 @@ theme_send(
 	appearance = 0U;
 	if (theme->client->server->dark != 0)
 		appearance = 1U;
-	error = zwl_emit(theme->client, theme->id, THEME_EVENT_APPEARANCE, &appearance, sizeof(appearance));
+	error = kwl_emit(theme->client, theme->id, THEME_EVENT_APPEARANCE, &appearance, sizeof(appearance));
 	if (error != 0)
 		return error;
 

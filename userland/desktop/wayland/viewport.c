@@ -14,8 +14,8 @@
  * set_destination change the pending state, and the surface's commit
  * applies it.  A surface's size is then the destination when one is set,
  * else the source's size when that is whole pixels, else the buffer's
- * (zwl_surface_size); the source is where the drawing samples the buffer
- * (zwl_viewport_source).
+ * (kwl_surface_size); the source is where the drawing samples the buffer
+ * (kwl_viewport_source).
  */
 
 #include "extras.h"
@@ -39,28 +39,28 @@
 /* -1 in 24.8 fixed point, which unsets the source. */
 #define FIXED_MINUS_ONE			(-256)
 
-static int viewport_create(struct zwl_object *viewporter, const unsigned char *bytes, size_t size);
-static int viewport_source(struct zwl_object *viewport, struct zwl_object *surface, const unsigned char *bytes, size_t size);
-static int viewport_destination(struct zwl_object *viewport, struct zwl_object *surface, const unsigned char *bytes, size_t size);
+static int viewport_create(struct kwl_object *viewporter, const unsigned char *bytes, size_t size);
+static int viewport_source(struct kwl_object *viewport, struct kwl_object *surface, const unsigned char *bytes, size_t size);
+static int viewport_destination(struct kwl_object *viewport, struct kwl_object *surface, const unsigned char *bytes, size_t size);
 static uint32_t viewport_word(const unsigned char *bytes, size_t offset);
 
 /*
  * Carries out a request of wp_viewporter or of a surface's wp_viewport.
  */
 int
-zwl_viewport_request(
-	struct zwl_object *object,
+kwl_viewport_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int error;
 
 	/* The viewporter: it goes, or it makes a surface's viewport. */
-	if (object->kind == ZWL_VIEWPORTER) {
+	if (object->kind == KWL_VIEWPORTER) {
 		if (opcode == VIEWPORTER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -73,18 +73,18 @@ zwl_viewport_request(
 		return 0;
 	}
 
-	/* The viewport goes; the surface's next commit shows it without one (zwl_viewport_object_gone). */
+	/* The viewport goes; the surface's next commit shows it without one (kwl_viewport_object_gone). */
 	if (opcode == VIEWPORT_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
 	/* The other requests need the surface. */
 	surface = object->surface;
 	if (surface == NULL) {
-		(void)zwl_error_code(object->client, object->id, VIEWPORT_ERROR_NO_SURFACE, "the surface has gone");
+		(void)kwl_error_code(object->client, object->id, VIEWPORT_ERROR_NO_SURFACE, "the surface has gone");
 		return EPROTO;
 	}
 
@@ -109,8 +109,8 @@ zwl_viewport_request(
  * Applies a surface's pending viewport state with its commit.
  */
 void
-zwl_viewport_commit(
-	struct zwl_object *surface)
+kwl_viewport_commit(
+	struct kwl_object *surface)
 {
 	/* Nothing changed since the last commit. */
 	if (!surface->viewport_changed)
@@ -132,13 +132,13 @@ zwl_viewport_commit(
  * surface's viewport names nothing.
  */
 void
-zwl_viewport_object_gone(
-	struct zwl_object *object)
+kwl_viewport_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* A viewport: its surface's pending state is reset. */
-	if (object->kind == ZWL_VIEWPORT) {
+	if (object->kind == KWL_VIEWPORT) {
 		surface = object->surface;
 		object->surface = NULL;
 		if (surface == NULL)
@@ -151,7 +151,7 @@ zwl_viewport_object_gone(
 	}
 
 	/* A surface: its viewport names nothing. */
-	if (object->kind == ZWL_SURFACE && object->viewport != NULL) {
+	if (object->kind == KWL_SURFACE && object->viewport != NULL) {
 		object->viewport->surface = NULL;
 		object->viewport = NULL;
 	}
@@ -163,8 +163,8 @@ zwl_viewport_object_gone(
  * one).
  */
 void
-zwl_surface_size(
-	const struct zwl_object *surface,
+kwl_surface_size(
+	const struct kwl_object *surface,
 	uint32_t *width,
 	uint32_t *height)
 {
@@ -188,7 +188,7 @@ zwl_surface_size(
 	*width = 0;
 	*height = 0;
 	if (surface->current != NULL)
-		zwl_buffer_size(surface->current, width, height);
+		kwl_buffer_size(surface->current, width, height);
 }
 
 /*
@@ -197,8 +197,8 @@ zwl_surface_size(
  * The source is kept inside the buffer.
  */
 void
-zwl_viewport_source(
-	const struct zwl_object *surface,
+kwl_viewport_source(
+	const struct kwl_object *surface,
 	float *uv)
 {
 	uint32_t width;
@@ -213,7 +213,7 @@ zwl_viewport_source(
 	uv[3] = 1.0f;
 	if (surface->source[2] <= 0 || surface->current == NULL)
 		return;
-	zwl_buffer_size(surface->current, &width, &height);
+	kwl_buffer_size(surface->current, &width, &height);
 	if (width == 0U || height == 0U)
 		return;
 
@@ -235,12 +235,12 @@ zwl_viewport_source(
 /* Makes a surface's viewport (one per surface). */
 static int
 viewport_create(
-	struct zwl_object *viewporter,
+	struct kwl_object *viewporter,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
-	struct zwl_object *created;
+	struct kwl_object *surface;
+	struct kwl_object *created;
 	uint32_t id;
 	uint32_t surface_id;
 
@@ -249,18 +249,18 @@ viewport_create(
 		return EPROTO;
 	id = viewport_word(bytes, 0U);
 	surface_id = viewport_word(bytes, 4U);
-	surface = zwl_find(viewporter->client, surface_id);
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(viewporter->client, surface_id);
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* One viewport per surface. */
 	if (surface->viewport != NULL) {
-		(void)zwl_error_code(viewporter->client, viewporter->id, VIEWPORTER_ERROR_VIEWPORT_EXISTS, "the surface has a viewport");
+		(void)kwl_error_code(viewporter->client, viewporter->id, VIEWPORTER_ERROR_VIEWPORT_EXISTS, "the surface has a viewport");
 		return EPROTO;
 	}
 
 	/* Succeeded: the viewport, tied to its surface both ways. */
-	created = zwl_create(viewporter->client, id, ZWL_VIEWPORT, viewporter->version);
+	created = kwl_create(viewporter->client, id, KWL_VIEWPORT, viewporter->version);
 	if (created == NULL)
 		return EPROTO;
 	created->surface = surface;
@@ -271,8 +271,8 @@ viewport_create(
 /* Takes the source rectangle (24.8 fixed point; all -1 unsets it). */
 static int
 viewport_source(
-	struct zwl_object *viewport,
-	struct zwl_object *surface,
+	struct kwl_object *viewport,
+	struct kwl_object *surface,
 	const unsigned char *bytes,
 	size_t size)
 {
@@ -300,7 +300,7 @@ viewport_source(
 	    rectangle[1] < 0 ||
 	    rectangle[2] <= 0 ||
 	    rectangle[3] <= 0) {
-		(void)zwl_error_code(viewport->client, viewport->id, VIEWPORT_ERROR_BAD_VALUE, "not a source rectangle");
+		(void)kwl_error_code(viewport->client, viewport->id, VIEWPORT_ERROR_BAD_VALUE, "not a source rectangle");
 		return EPROTO;
 	}
 
@@ -313,8 +313,8 @@ viewport_source(
 /* Takes the destination size (-1 by -1 unsets it). */
 static int
 viewport_destination(
-	struct zwl_object *viewport,
-	struct zwl_object *surface,
+	struct kwl_object *viewport,
+	struct kwl_object *surface,
 	const unsigned char *bytes,
 	size_t size)
 {
@@ -337,7 +337,7 @@ viewport_destination(
 
 	/* Otherwise both must be positive. */
 	if (width <= 0 || height <= 0) {
-		(void)zwl_error_code(viewport->client, viewport->id, VIEWPORT_ERROR_BAD_VALUE, "not a destination size");
+		(void)kwl_error_code(viewport->client, viewport->id, VIEWPORT_ERROR_BAD_VALUE, "not a destination size");
 		return EPROTO;
 	}
 

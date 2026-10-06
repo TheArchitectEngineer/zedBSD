@@ -45,8 +45,8 @@ static int64_t accel_magnitude(int64_t value);
  * Starts a mouse's acceleration: nothing left over, no report yet.
  */
 void
-zwl_pointer_accel_init(
-	struct zwl_pointer_accel *accel)
+kwl_pointer_accel_init(
+	struct kwl_pointer_accel *accel)
 {
 	/* Nothing left over and no time yet. */
 	accel->remainder_x = 0;
@@ -60,17 +60,17 @@ zwl_pointer_accel_init(
  * second; a level out of range is taken as the nearest one.
  */
 int64_t
-zwl_pointer_accel_gain(
+kwl_pointer_accel_gain(
 	int64_t counts_per_second,
 	int32_t level)
 {
 	int64_t most;
 
 	/* The level, kept in the table. */
-	if (level < ZWL_ACCEL_NONE)
-		level = ZWL_ACCEL_NONE;
-	if (level > ZWL_ACCEL_STRONG)
-		level = ZWL_ACCEL_STRONG;
+	if (level < KWL_ACCEL_NONE)
+		level = KWL_ACCEL_NONE;
+	if (level > KWL_ACCEL_STRONG)
+		level = KWL_ACCEL_STRONG;
 	most = accel_most[level];
 
 	/* Slow, fast, or between them in proportion. */
@@ -89,8 +89,8 @@ zwl_pointer_accel_gain(
  * next report.
  */
 void
-zwl_pointer_accel_move(
-	struct zwl_pointer_accel *accel,
+kwl_pointer_accel_move(
+	struct kwl_pointer_accel *accel,
 	int64_t dx,
 	int64_t dy,
 	uint64_t time_us,
@@ -124,7 +124,7 @@ zwl_pointer_accel_move(
 
 	/* The mouse's speed and the gain it gives. */
 	counts_per_second = (accel_magnitude(dx) + accel_magnitude(dy)) * 1000000 / (int64_t)elapsed;
-	gain = zwl_pointer_accel_gain(counts_per_second, level);
+	gain = kwl_pointer_accel_gain(counts_per_second, level);
 
 	/* The motion in 1/25600 pixels, with what the last reports left over. */
 	x = dx * speed * gain + accel->remainder_x;

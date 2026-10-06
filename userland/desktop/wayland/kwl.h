@@ -17,7 +17,7 @@
  *
  * - Every /dev/input/eventN reporting REL_X+REL_Y or ABS_X+ABS_Y is a
  *   pointer and every one reporting KEY_A and KEY_Z is a keyboard.  Nodes are
- *   scanned at start-up and again every ZWL_INPUT_SCAN_MS; a node that fails
+ *   scanned at start-up and again every KWL_INPUT_SCAN_MS; a node that fails
  *   a read is closed.  Capabilities follow the open nodes.
  * - Focus is the surface currently on the display; its client's pointer and
  *   keyboard objects get enter when it is shown and leave when it is replaced,
@@ -37,8 +37,8 @@
  * - A touch screen (multitouch protocol B) is offered as wl_touch (touch.c,
  *   WS079 p013); the compositor's own gestures see its fingers first.
  */
-#ifndef ZWL_H
-#define ZWL_H
+#ifndef KWL_H
+#define KWL_H
 
 #include "userland/desktop/libkeiland-backend/keiland-backend-gpu.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend-evdev.h"
@@ -56,27 +56,27 @@
 #include <sys/types.h>
 
 /* Bound each connection's wire, descriptor, object and queued-event storage. */
-#define ZWL_WIRE_MAX		65532U
-#define ZWL_RIGHTS_MAX		32U
-#define ZWL_OBJECT_MAX		4096U
-#define ZWL_OUTPUT_MAX		1048576U
+#define KWL_WIRE_MAX		65532U
+#define KWL_RIGHTS_MAX		32U
+#define KWL_OBJECT_MAX		4096U
+#define KWL_OUTPUT_MAX		1048576U
 
 /* The first ID of the range the compositor gives the objects it makes for a client. */
-#define ZWL_SERVER_ID_FIRST	0xff000000U
+#define KWL_SERVER_ID_FIRST	0xff000000U
 
 /* How many cursor images zdesktop draws for the shapes clients ask for (cursor.c). */
-#define ZWL_CURSOR_IMAGES	10U
+#define KWL_CURSOR_IMAGES	10U
 
 /* Bound the evdev nodes the seat reads and the events one report may carry. */
-#define ZWL_INPUT_MAX		16U
-#define ZWL_INPUT_FRAME_MAX	64U
-#define ZWL_INPUT_PATH_MAX	KL_BACKEND_INPUT_PATH_MAX
+#define KWL_INPUT_MAX		16U
+#define KWL_INPUT_FRAME_MAX	64U
+#define KWL_INPUT_PATH_MAX	KL_BACKEND_INPUT_PATH_MAX
 
 /* Rescan period for evdev nodes that appear after start-up, in milliseconds. */
-#define ZWL_INPUT_SCAN_MS	2000U
+#define KWL_INPUT_SCAN_MS	2000U
 
 /* A window's place when the client chooses its size: cascaded from the centre by this step. */
-#define ZWL_CASCADE_STEP	32
+#define KWL_CASCADE_STEP	32
 
 /*
  * The glass look (glass.c): a title bar's height, the system bar's height,
@@ -86,169 +86,175 @@
  * The system bar is as high as a window's title bar (ws099-p031, the
  * 2026-10-04 user: the two are one height), so it is defined from it.
  */
-#define ZWL_GLASS_TITLE		44
-#define ZWL_GLASS_BAR		ZWL_GLASS_TITLE
-#define ZWL_GLASS_GAP		8
-#define ZWL_GLASS_MARGIN	12
-#define ZWL_GLASS_TOP		(ZWL_GLASS_BAR + ZWL_GLASS_MARGIN + ZWL_GLASS_TITLE + ZWL_GLASS_GAP)
+#define KWL_GLASS_TITLE		44
+#define KWL_GLASS_BAR		KWL_GLASS_TITLE
+#define KWL_GLASS_GAP		8
+#define KWL_GLASS_MARGIN	12
+#define KWL_GLASS_TOP		(KWL_GLASS_BAR + KWL_GLASS_MARGIN + KWL_GLASS_TITLE + KWL_GLASS_GAP)
 
 /*
  * The system bar's middle line.  What is drawn in the bar (its icons, its
  * text's baseline, its separators and pills) keeps its size and is placed
  * from this line, so it stays centred whatever the bar's height.
  */
-#define ZWL_GLASS_BAR_MIDDLE	(ZWL_GLASS_BAR / 2)
+#define KWL_GLASS_BAR_MIDDLE	(KWL_GLASS_BAR / 2)
 
-/* Where a docked (maximized) window's body starts: just under the system bar (shell.c, keyboard.c). */
-#define ZWL_GLASS_DOCK_TOP	(ZWL_GLASS_BAR + 4)
-#define ZWL_BUTTON_LEFT		0x110U
-#define ZWL_TITLE_MAX		64U
+/*
+ * How far a docked (maximized) window's body keeps from the screen's edges
+ * and the system bar on every side (ws099-p038, the 2026-10-06 user
+ * decision), and where its body starts: just under the system bar.  In
+ * logical pixels at the default DPI; DPI scaling multiplies it here.
+ */
+#define KWL_GLASS_DOCK_PAD	4
+#define KWL_GLASS_DOCK_TOP	(KWL_GLASS_BAR + KWL_GLASS_DOCK_PAD)
+#define KWL_BUTTON_LEFT		0x110U
+#define KWL_TITLE_MAX		64U
 
-struct zwl_server;
-struct zwl_client;
-struct zwl_object;
-struct zwl_compose;
+struct kwl_server;
+struct kwl_client;
+struct kwl_object;
+struct kwl_compose;
 struct kl_backend;
-struct zwl_import;
-struct zwl_panels;
-struct zwl_ime;
+struct kwl_import;
+struct kwl_panels;
+struct kwl_ime;
 
 /* Each live protocol identity has one immutable interface and negotiated version. */
-enum zwl_kind {
-	ZWL_DISPLAY,
-	ZWL_REGISTRY,
-	ZWL_COMPOSITOR,
-	ZWL_SURFACE,
-	ZWL_REGION,
-	ZWL_CALLBACK,
-	ZWL_BUFFER,
-	ZWL_OUTPUT,
-	ZWL_WM,
-	ZWL_XDG_SURFACE,
-	ZWL_TOPLEVEL,
-	ZWL_FACTORY,
-	ZWL_GPU_OBJECT,
-	ZWL_SEAT,
-	ZWL_POINTER,
-	ZWL_KEYBOARD,
-	ZWL_SHM,
-	ZWL_SHM_POOL,
-	ZWL_MENU_MANAGER,
-	ZWL_MENU,
-	ZWL_TOPLEVEL_MENU,
-	ZWL_POSITIONER,
-	ZWL_POPUP,
-	ZWL_SUBCOMPOSITOR,
-	ZWL_SUBSURFACE,
-	ZWL_TITLEBAR_MANAGER,
-	ZWL_TITLEBAR,
-	ZWL_DATA_MANAGER,
-	ZWL_DATA_SOURCE,
-	ZWL_DATA_DEVICE,
-	ZWL_DATA_OFFER,
-	ZWL_PRIMARY_MANAGER,
-	ZWL_PRIMARY_SOURCE,
-	ZWL_PRIMARY_DEVICE,
-	ZWL_PRIMARY_OFFER,
-	ZWL_DECORATION_MANAGER,
-	ZWL_DECORATION,
-	ZWL_CURSOR_SHAPE_MANAGER,
-	ZWL_CURSOR_SHAPE_DEVICE,
-	ZWL_VIEWPORTER,
-	ZWL_VIEWPORT,
-	ZWL_CONTENT_TYPE_MANAGER,
-	ZWL_CONTENT_TYPE,
-	ZWL_GLASS_MANAGER,
-	ZWL_GLASS,
-	ZWL_CONTEXT_MENU,
-	ZWL_TABLET_MANAGER,
-	ZWL_TABLET_SEAT,
-	ZWL_TABLET,
-	ZWL_TABLET_TOOL,
-	ZWL_TOUCH,
+enum kwl_kind {
+	KWL_DISPLAY,
+	KWL_REGISTRY,
+	KWL_COMPOSITOR,
+	KWL_SURFACE,
+	KWL_REGION,
+	KWL_CALLBACK,
+	KWL_BUFFER,
+	KWL_OUTPUT,
+	KWL_WM,
+	KWL_XDG_SURFACE,
+	KWL_TOPLEVEL,
+	KWL_FACTORY,
+	KWL_GPU_OBJECT,
+	KWL_SEAT,
+	KWL_POINTER,
+	KWL_KEYBOARD,
+	KWL_SHM,
+	KWL_SHM_POOL,
+	KWL_MENU_MANAGER,
+	KWL_MENU,
+	KWL_TOPLEVEL_MENU,
+	KWL_POSITIONER,
+	KWL_POPUP,
+	KWL_SUBCOMPOSITOR,
+	KWL_SUBSURFACE,
+	KWL_TITLEBAR_MANAGER,
+	KWL_TITLEBAR,
+	KWL_DATA_MANAGER,
+	KWL_DATA_SOURCE,
+	KWL_DATA_DEVICE,
+	KWL_DATA_OFFER,
+	KWL_PRIMARY_MANAGER,
+	KWL_PRIMARY_SOURCE,
+	KWL_PRIMARY_DEVICE,
+	KWL_PRIMARY_OFFER,
+	KWL_DECORATION_MANAGER,
+	KWL_DECORATION,
+	KWL_CURSOR_SHAPE_MANAGER,
+	KWL_CURSOR_SHAPE_DEVICE,
+	KWL_VIEWPORTER,
+	KWL_VIEWPORT,
+	KWL_CONTENT_TYPE_MANAGER,
+	KWL_CONTENT_TYPE,
+	KWL_GLASS_MANAGER,
+	KWL_GLASS,
+	KWL_CONTEXT_MENU,
+	KWL_TABLET_MANAGER,
+	KWL_TABLET_SEAT,
+	KWL_TABLET,
+	KWL_TABLET_TOOL,
+	KWL_TOUCH,
 	/* The text input and input method protocols (text-input.c, input-method.c, ws095-p004). */
-	ZWL_TEXT_INPUT_MANAGER,
-	ZWL_TEXT_INPUT,
-	ZWL_INPUT_METHOD_MANAGER,
-	ZWL_INPUT_METHOD,
-	ZWL_INPUT_POPUP,
-	ZWL_KEYBOARD_GRAB,
-	ZWL_VIRTUAL_KEYBOARD_MANAGER,
-	ZWL_VIRTUAL_KEYBOARD,
-	ZWL_IME_STATUS_MANAGER,
-	ZWL_IME_STATUS,
+	KWL_TEXT_INPUT_MANAGER,
+	KWL_TEXT_INPUT,
+	KWL_INPUT_METHOD_MANAGER,
+	KWL_INPUT_METHOD,
+	KWL_INPUT_POPUP,
+	KWL_KEYBOARD_GRAB,
+	KWL_VIRTUAL_KEYBOARD_MANAGER,
+	KWL_VIRTUAL_KEYBOARD,
+	KWL_IME_STATUS_MANAGER,
+	KWL_IME_STATUS,
 	/* The desktop surface (desktop.c, ws094-p002). */
-	ZWL_DESKTOP_MANAGER,
-	ZWL_DESKTOP_SURFACE,
+	KWL_DESKTOP_MANAGER,
+	KWL_DESKTOP_SURFACE,
 	/* The keyboard inset (inset.c, ws102-p015). */
-	ZWL_KEYBOARD_INSET_MANAGER,
-	ZWL_KEYBOARD_INSET,
+	KWL_KEYBOARD_INSET_MANAGER,
+	KWL_KEYBOARD_INSET,
 	/* The editing operations (edit.c, ws102-p017). */
-	ZWL_EDIT_MANAGER,
-	ZWL_EDIT,
+	KWL_EDIT_MANAGER,
+	KWL_EDIT,
 	/* KDE's server decoration, which GTK declares its decoration with (decoration.c, ws114-p008). */
-	ZWL_KDE_DECORATION_MANAGER,
-	ZWL_KDE_DECORATION,
+	KWL_KDE_DECORATION_MANAGER,
+	KWL_KDE_DECORATION,
 	/* Keiland's system extension: the manager and the settings (settings.c, WS135), the network, the sound, the power and the devices (system.c, WS131 p010). */
-	ZWL_SYSTEM_MANAGER,
-	ZWL_SYSTEM_SETTINGS,
-	ZWL_SYSTEM_NETWORK,
-	ZWL_SYSTEM_AUDIO,
-	ZWL_SYSTEM_POWER,
-	ZWL_SYSTEM_DEVICES,
+	KWL_SYSTEM_MANAGER,
+	KWL_SYSTEM_SETTINGS,
+	KWL_SYSTEM_NETWORK,
+	KWL_SYSTEM_AUDIO,
+	KWL_SYSTEM_POWER,
+	KWL_SYSTEM_DEVICES,
 	/* The system extension's account (system.c, ws160-p002). */
-	ZWL_SYSTEM_ACCOUNT,
+	KWL_SYSTEM_ACCOUNT,
 	/* The system extension's Remote Login (system.c, ws089-p025). */
-	ZWL_SYSTEM_SHARING,
+	KWL_SYSTEM_SHARING,
 	/* The system extension's monitor (sysmon.c, WS134 p012). */
-	ZWL_SYSTEM_MONITOR,
+	KWL_SYSTEM_MONITOR,
 	/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
-	ZWL_ACTIVATION_MANAGER,
-	ZWL_ACTIVATION_TOKEN,
-	/* keiland_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
-	ZWL_THEME,
+	KWL_ACTIVATION_MANAGER,
+	KWL_ACTIVATION_TOKEN,
+	/* kl_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
+	KWL_THEME,
 };
 
 /*
- * The editing operations (edit.c, ws102-p017; keiland_edit_v1's actions,
- * in its order) and a window's state's bits (keiland_edit_v1.set_state).
+ * The editing operations (edit.c, ws102-p017; kl_edit_v1's actions,
+ * in its order) and a window's state's bits (kl_edit_v1.set_state).
  */
-#define ZWL_EDIT_COPY			0U
-#define ZWL_EDIT_CUT			1U
-#define ZWL_EDIT_PASTE			2U
-#define ZWL_EDIT_UNDO			3U
-#define ZWL_EDIT_REDO			4U
-#define ZWL_EDIT_SELECT_ALL		5U
-#define ZWL_EDIT_SELECT_BEGIN		6U
-#define ZWL_EDIT_SELECT_END		7U
-#define ZWL_EDIT_ACTIONS		8U
-#define ZWL_EDIT_HAS_SELECTION		1U
-#define ZWL_EDIT_CAN_PASTE		2U
-#define ZWL_EDIT_CAN_UNDO		4U
-#define ZWL_EDIT_CAN_REDO		8U
-#define ZWL_EDIT_SELECTING		16U
-#define ZWL_EDIT_FLAGS_ALL		31U
+#define KWL_EDIT_COPY			0U
+#define KWL_EDIT_CUT			1U
+#define KWL_EDIT_PASTE			2U
+#define KWL_EDIT_UNDO			3U
+#define KWL_EDIT_REDO			4U
+#define KWL_EDIT_SELECT_ALL		5U
+#define KWL_EDIT_SELECT_BEGIN		6U
+#define KWL_EDIT_SELECT_END		7U
+#define KWL_EDIT_ACTIONS		8U
+#define KWL_EDIT_HAS_SELECTION		1U
+#define KWL_EDIT_CAN_PASTE		2U
+#define KWL_EDIT_CAN_UNDO		4U
+#define KWL_EDIT_CAN_REDO		8U
+#define KWL_EDIT_SELECTING		16U
+#define KWL_EDIT_FLAGS_ALL		31U
 
 /*
  * Where a contact the edge gestures hear comes from (ws079-p010): the
  * pointer's left button, the tip of a pen, or a finger.
  */
-enum zwl_contact_source {
-	ZWL_CONTACT_POINTER,
-	ZWL_CONTACT_PEN,
-	ZWL_CONTACT_TOUCH
+enum kwl_contact_source {
+	KWL_CONTACT_POINTER,
+	KWL_CONTACT_PEN,
+	KWL_CONTACT_TOUCH
 };
 
 /* The wl_shm formats (ARGB8888 has alpha; XRGB8888's top byte is unused). */
-#define ZWL_SHM_ARGB8888	0U
-#define ZWL_SHM_XRGB8888	1U
+#define KWL_SHM_ARGB8888	0U
+#define KWL_SHM_XRGB8888	1U
 
 /*
  * A wl_shm_pool's memory: the client's fd, mapped read-only once at
  * creation and again at resize.  The pool object and each buffer made from
  * it hold a reference; the mapping goes with the last.
  */
-struct zwl_pool {
+struct kwl_pool {
 	int fd;
 	void *map;
 	size_t size;
@@ -256,8 +262,8 @@ struct zwl_pool {
 };
 
 /* Where a wl_shm buffer's pixels are in its pool. */
-struct zwl_shm_buffer {
-	struct zwl_pool *pool;
+struct kwl_shm_buffer {
+	struct kwl_pool *pool;
 	uint32_t offset;
 	uint32_t width;
 	uint32_t height;
@@ -272,8 +278,8 @@ struct zwl_shm_buffer {
  * packet's first byte and is closed once that byte has been sent; -1 means
  * the event carries no descriptor.
  */
-struct zwl_packet {
-	struct zwl_packet *next;
+struct kwl_packet {
+	struct kwl_packet *next;
 	size_t size;
 	size_t sent;
 	int descriptor;
@@ -287,7 +293,7 @@ struct zwl_packet {
  * address stable while the event loop holds it in a poll snapshot.  Events
  * are gathered into frame[] until SYN_REPORT, then applied together.
  */
-struct zwl_input_device {
+struct kwl_input_device {
 	int fd;
 	unsigned live;
 	unsigned pointer;
@@ -303,9 +309,9 @@ struct zwl_input_device {
 	 * scroll; pad is that layer's state while the device is attached.
 	 */
 	unsigned touchpad;
-	struct zwl_touchpad pad;
+	struct kwl_touchpad pad;
 	/* A relative mouse's acceleration (pointer-accel.c, ws089-p024): its fractions and its last report's time. */
-	struct zwl_pointer_accel accel;
+	struct kwl_pointer_accel accel;
 	unsigned discarding;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
@@ -314,15 +320,15 @@ struct zwl_input_device {
 	int32_t abs_x;
 	int32_t abs_y;
 	unsigned frame_count;
-	struct input_event frame[ZWL_INPUT_FRAME_MAX];
+	struct input_event frame[KWL_INPUT_FRAME_MAX];
 	/* The evdev time of the report being applied (its SYN_REPORT), in microseconds (WS081). */
 	uint64_t frame_time_us;
-	char path[ZWL_INPUT_PATH_MAX];
+	char path[KWL_INPUT_PATH_MAX];
 };
 
 /* One acquire fence: a fence fd and the payload generation the image waits for. */
-#define ZWL_FENCE_MAX 4U
-struct zwl_fence {
+#define KWL_FENCE_MAX 4U
+struct kwl_fence {
 	int fd;
 	uint64_t generation;
 };
@@ -331,31 +337,31 @@ struct zwl_fence {
  * One client-owned protocol object; destroyed buffers remain until all pending,
  * current and scanout holds are gone. Surface state is double-buffered.
  */
-struct zwl_object {
-	struct zwl_object *next;
-	struct zwl_client *client;
+struct kwl_object {
+	struct kwl_object *next;
+	struct kwl_client *client;
 	uint32_t id;
-	enum zwl_kind kind;
+	enum kwl_kind kind;
 	uint32_t version;
 	unsigned dead;
 	unsigned holds;
 	unsigned busy;
-	struct zwl_object *surface;
-	struct zwl_object *role;
-	struct zwl_object *top;
+	struct kwl_object *surface;
+	struct kwl_object *role;
+	struct kwl_object *top;
 	/*
 	 * An xdg_surface's xdg_wm_base, the binding get_xdg_surface was asked
 	 * of (ws035-p132, BUG-112): only its own live xdg_surfaces keep that
 	 * binding from being destroyed.  Compared, never followed: a binding
 	 * outlives every live xdg_surface made from it.
 	 */
-	struct zwl_object *wm_base;
-	struct zwl_object *pending;
-	struct zwl_object *queued;
-	struct zwl_object *current;
-	struct zwl_object *callbacks;
-	struct zwl_object *committed_callbacks;
-	struct zwl_object *callback_next;
+	struct kwl_object *wm_base;
+	struct kwl_object *pending;
+	struct kwl_object *queued;
+	struct kwl_object *current;
+	struct kwl_object *callbacks;
+	struct kwl_object *committed_callbacks;
+	struct kwl_object *callback_next;
 	unsigned attached;
 	unsigned ready;
 	unsigned configured;
@@ -363,7 +369,7 @@ struct zwl_object {
 	uint32_t configure_serial;
 	uint64_t commit_order;
 	/* A buffer's Vulkan image for window mode. */
-	struct zwl_import *import;
+	struct kwl_import *import;
 	/* The OS module retains buffer descriptors or protocol params until final object retirement. */
 	void *gpu_private;
 	/* A surface's window: place, stacking (map order, lowest at the bottom), virtual desktop and fullscreen state. */
@@ -402,12 +408,12 @@ struct zwl_object {
 	 * NULL for none or once it has gone), and for a sheet (ws090-p014,
 	 * sheet.c) when it began to show under the parent (0: not shown yet).
 	 */
-	struct zwl_object *parent_window;
+	struct kwl_object *parent_window;
 	uint64_t sheet_ms;
 	/* The glass look: the toplevel's title and application ID, and a maximized window's place and size to go back to. */
-	char title[ZWL_TITLE_MAX];
+	char title[KWL_TITLE_MAX];
 	char app_id[64];
-	/* A keiland_edit_v1's operations (bit 1 << ZWL_EDIT_*) and state (ZWL_EDIT_HAS_SELECTION ...; edit.c). */
+	/* A kl_edit_v1's operations (bit 1 << KWL_EDIT_*) and state (KWL_EDIT_HAS_SELECTION ...; edit.c). */
 	uint32_t edit_actions;
 	uint32_t edit_flags;
 	unsigned maximized;
@@ -428,27 +434,27 @@ struct zwl_object {
 	uint64_t resized_acked_ms;
 	uint64_t resized_commit_ms;
 	/* A wl_shm buffer's place in its pool (NULL for a GPU buffer), and a pool object's memory. */
-	struct zwl_shm_buffer *shm;
-	struct zwl_pool *pool;
+	struct kwl_shm_buffer *shm;
+	struct kwl_pool *pool;
 	/* A surface's damage in buffer pixels, pending and committed (x0, y0, x1, y1), and whether any was given. */
 	int32_t damage[4];
 	unsigned damaged;
 	int32_t committed_damage[4];
 	unsigned committed_damaged;
 	/* A surface's copy of its wl_shm image that window mode samples, and whether it must be copied again. */
-	struct zwl_import *shm_image;
+	struct kwl_import *shm_image;
 	unsigned shm_upload;
 	/* A surface used as the pointer's cursor (wl_pointer.set_cursor). */
 	unsigned cursor_role;
 	/* A window told its frame is done whose next commit the next frame waits for a moment. */
 	unsigned awaited;
 	/*
-	 * Acquire fences (keiland_gpu_buffer_v1 revision two): those for the next
+	 * Acquire fences (kl_gpu_buffer_v1 revision two): those for the next
 	 * commit, and the committed ones the queued image waits for.
 	 */
-	struct zwl_fence acquire[ZWL_FENCE_MAX];
+	struct kwl_fence acquire[KWL_FENCE_MAX];
 	unsigned acquire_count;
-	struct zwl_fence fences[ZWL_FENCE_MAX];
+	struct kwl_fence fences[KWL_FENCE_MAX];
 	unsigned fence_count;
 	/* When the queued fences were committed, and whether a pass found one still pending. */
 	uint64_t fence_ms;
@@ -459,17 +465,17 @@ struct zwl_object {
 	 * xdg_menu_v1 an xdg_toplevel_menu_v1 shows.  Each link is cleared from
 	 * both ends when either object goes.
 	 */
-	struct zwl_menu_model *menu_model;
-	struct zwl_object *toplevel_menu;
-	struct zwl_object *shown_menu;
+	struct kwl_menu_model *menu_model;
+	struct kwl_object *toplevel_menu;
+	struct kwl_object *shown_menu;
 	/*
 	 * The Titlebar Presentation (titlebar.c, WS070 p008): a
-	 * keiland_titlebar_v1's model, and a toplevel's keiland_titlebar_v1 (whose own
+	 * kl_titlebar_v1's model, and a toplevel's kl_titlebar_v1 (whose own
 	 * top names the toplevel back).  Each link is cleared from both ends
 	 * when either object goes.
 	 */
-	struct zwl_titlebar_model *titlebar_model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *titlebar_model;
+	struct kwl_object *titlebar;
 	/*
 	 * xdg_popup (popup.c, ws035-p076): an xdg_positioner's rules; a popup's
 	 * parent surface (NULL once the parent has gone), its place relative to
@@ -480,8 +486,8 @@ struct zwl_object {
 	 * geometry (xdg_surface.set_window_geometry: x, y, width, height),
 	 * pending and committed, and whether one was set.
 	 */
-	struct zwl_positioner *positioner;
-	struct zwl_object *popup_parent;
+	struct kwl_positioner *positioner;
+	struct kwl_object *popup_parent;
 	int32_t popup_x;
 	int32_t popup_y;
 	int32_t popup_width;
@@ -524,10 +530,10 @@ struct zwl_object {
 	 * its parent's state is applied.  Each link is cleared from both ends
 	 * when either object goes.
 	 */
-	struct zwl_object *sub_role;
-	struct zwl_object *sub_parent;
-	struct zwl_object *sub_children;
-	struct zwl_object *sub_next;
+	struct kwl_object *sub_role;
+	struct kwl_object *sub_parent;
+	struct kwl_object *sub_children;
+	struct kwl_object *sub_next;
 	unsigned sub_above;
 	int32_t sub_x;
 	int32_t sub_y;
@@ -536,9 +542,9 @@ struct zwl_object {
 	unsigned sub_moved;
 	unsigned sub_sync;
 	unsigned sub_cached;
-	struct zwl_object *sub_cached_buffer;
+	struct kwl_object *sub_cached_buffer;
 	unsigned sub_cached_attached;
-	struct zwl_object *sub_cached_callbacks;
+	struct kwl_object *sub_cached_callbacks;
 	/*
 	 * The clipboard (data.c, ws035-p079): a wl_data_source's MIME types
 	 * (allocated strings, freed with it); a wl_data_offer's source (NULL
@@ -546,7 +552,7 @@ struct zwl_object {
 	 */
 	char **mime_types;
 	unsigned mime_count;
-	struct zwl_object *data_source;
+	struct kwl_object *data_source;
 	/* An offer of zdesktop's own selection, an item of the clipboard's history (clipboard.c). */
 	unsigned data_offered;
 	/*
@@ -571,8 +577,8 @@ struct zwl_object {
 	 * width of 0 for none) and the destination size (0 for none), and
 	 * whether the pending state changed since the last commit.
 	 */
-	struct zwl_object *decoration;
-	struct zwl_object *decoration_toplevel;
+	struct kwl_object *decoration;
+	struct kwl_object *decoration_toplevel;
 
 	/*
 	 * The toplevel owns its decoration negotiation and outstanding configure
@@ -589,7 +595,7 @@ struct zwl_object {
 	uint64_t decoration_generation;
 	unsigned decoration_acked;
 	unsigned decoration_reset;
-	struct zwl_decoration_configure *decoration_configures;
+	struct kwl_decoration_configure *decoration_configures;
 	/*
 	 * ws114-p008: a toplevel whose xdg-decoration object was destroyed keeps
 	 * the client's decoration (withdrawn, until a new object is made).  A
@@ -598,11 +604,11 @@ struct zwl_object {
 	 * decoration.c); each is cleared from both ends when either goes.
 	 */
 	unsigned decoration_withdrawn;
-	struct zwl_object *kde_decoration;
-	struct zwl_object *kde_surface;
+	struct kwl_object *kde_decoration;
+	struct kwl_object *kde_surface;
 	uint32_t kde_mode;
-	struct zwl_object *shape_pointer;
-	struct zwl_object *viewport;
+	struct kwl_object *shape_pointer;
+	struct kwl_object *viewport;
 	int32_t pending_source[4];
 	int32_t source[4];
 	int32_t pending_destination[2];
@@ -613,24 +619,24 @@ struct zwl_object {
 	 * own surface field names it back), and its type (0 none, 1 photo, 2
 	 * video, 3 game), pending and applied by the commit.
 	 */
-	struct zwl_object *content_type_object;
+	struct kwl_object *content_type_object;
 	uint32_t pending_content_type;
 	uint32_t content_type;
 	unsigned content_type_changed;
 	/*
-	 * ws035-p083 (panels.c): a surface's keiland_glass_v1 (whose own surface
+	 * ws035-p083 (panels.c): a surface's kl_glass_v1 (whose own surface
 	 * field names it back; each cleared from both ends when either goes),
 	 * and the record of its glass panels, pending and applied by the
 	 * commit, which the surface owns from its first glass to its end.
 	 */
-	struct zwl_object *glass;
-	struct zwl_panels *panels;
+	struct kwl_object *glass;
+	struct kwl_panels *panels;
 	/*
 	 * The tablet protocol (tablet.c, WS079 p003): the number of the
 	 * zwp_tablet_seat_v2 a tablet or a tool object was announced on (a
 	 * seat's own number; unique for the compositor's life), and the slot of
 	 * the tablet device and of the tool the object stands for
-	 * (ZWL_TABLET_SLOT_NONE once the device or the tool has gone).
+	 * (KWL_TABLET_SLOT_NONE once the device or the tool has gone).
 	 */
 	uint64_t tablet_seat_number;
 	unsigned tablet_slot;
@@ -649,8 +655,8 @@ struct zwl_object {
 	 * 1 while its client shows the networks around and asked for scans
 	 * (set_scanning), counted once in network.c's holders until it asks
 	 * no longer, goes, or lets its asking run out: network_scanning_until
-	 * is when an asking not asked again ends (zwl_milliseconds' clock,
-	 * ZWL_SYSTEM_SCAN_MS after the last set_scanning(1)).
+	 * is when an asking not asked again ends (kwl_milliseconds' clock,
+	 * KWL_SYSTEM_SCAN_MS after the last set_scanning(1)).
 	 */
 	unsigned network_scanning;
 	uint64_t network_scanning_until;
@@ -665,21 +671,21 @@ struct zwl_object {
 };
 
 /* One stream has independent byte and fd FIFOs, plus its own protocol namespace. */
-struct zwl_client {
-	struct zwl_client *next;
-	struct zwl_server *server;
+struct kwl_client {
+	struct kwl_client *next;
+	struct kwl_server *server;
 	int fd;
 	uint64_t number;
 	unsigned fatal;
 	uint64_t fatal_time;
-	struct zwl_object *objects;
+	struct kwl_object *objects;
 	unsigned object_count;
-	unsigned char input[ZWL_WIRE_MAX];
+	unsigned char input[KWL_WIRE_MAX];
 	size_t input_size;
-	int rights[ZWL_RIGHTS_MAX];
+	int rights[KWL_RIGHTS_MAX];
 	unsigned right_count;
-	struct zwl_packet *output_head;
-	struct zwl_packet *output_tail;
+	struct kwl_packet *output_head;
+	struct kwl_packet *output_tail;
 	size_t output_bytes;
 	/*
 	 * The ping (toplevel.c): the serial of the ping waiting for its answer
@@ -717,14 +723,14 @@ struct zwl_client {
 	unsigned peer_checked;
 	unsigned peer_same;
 	/*
-	 * Nonzero once the client bound keiland_theme_v1 (theme.c,
+	 * Nonzero once the client bound kl_theme_v1 (theme.c,
 	 * ws089-p017): it draws in the desktop's appearance, so its windows'
 	 * glass takes the dark appearance's colour too; a client that does
 	 * not know the appearance keeps light glass under its light drawing.
 	 */
 	unsigned theme_bound;
 	/*
-	 * When the client connected (zwl_milliseconds' clock): a program that
+	 * When the client connected (kwl_milliseconds' clock): a program that
 	 * has just started may hand its right to show a window on top to
 	 * another program's window (activation.c, ws089-p016).
 	 */
@@ -732,7 +738,7 @@ struct zwl_client {
 };
 
 /* Cycle counts of the event loop, reported every few seconds (ZWL PERF). */
-struct zwl_perf {
+struct kwl_perf {
 	uint64_t window_start_ms;
 	uint64_t window_start_cycles;
 	uint64_t poll_cycles;
@@ -750,7 +756,7 @@ struct zwl_perf {
 	uint64_t shm_copy_cycles;
 };
 
-uint64_t zwl_cycles(void);
+uint64_t kwl_cycles(void);
 
 /*
  * The compositor: one per process, alive from start to exit.
@@ -759,15 +765,15 @@ uint64_t zwl_cycles(void);
  * clients.
  */
 /* The virtual desktops that keep a bar order of their own (shell.c has as many). */
-#define ZWL_APPS_DESKTOPS	4U
+#define KWL_APPS_DESKTOPS	4U
 
 /* Whether the previews of an application's icon show: not, waiting on the pointer's rest, or shown (by the rest or a click). */
-#define ZWL_APPS_IDLE		0U
-#define ZWL_APPS_ARMED		1U
-#define ZWL_APPS_SHOWN		2U
-#define ZWL_APPS_VIA_HOVER	0U
-#define ZWL_APPS_VIA_CLICK	1U
-#define ZWL_APPS_VIA_SWITCH	2U
+#define KWL_APPS_IDLE		0U
+#define KWL_APPS_ARMED		1U
+#define KWL_APPS_SHOWN		2U
+#define KWL_APPS_VIA_HOVER	0U
+#define KWL_APPS_VIA_CLICK	1U
+#define KWL_APPS_VIA_SWITCH	2U
 
 /*
  * The bar's applications (apps-bar.c): each desktop's bar order; the
@@ -776,22 +782,22 @@ uint64_t zwl_cycles(void);
  * a press on an icon (its application, where it began, whether it became
  * the icon's drag); and the bar as last logged.
  */
-struct zwl_apps_bar {
-	struct zwl_apps_order orders[ZWL_APPS_DESKTOPS];
+struct kwl_apps_bar {
+	struct kwl_apps_order orders[KWL_APPS_DESKTOPS];
 	unsigned state;
 	unsigned via;
-	char key[ZWL_APPS_KEY];
+	char key[KWL_APPS_KEY];
 	uint64_t since_ms;
 	unsigned left;
 	unsigned pressed;
-	char press_key[ZWL_APPS_KEY];
+	char press_key[KWL_APPS_KEY];
 	int32_t press_x;
 	unsigned dragging;
 	char logged[512];
 };
 
-struct zwl_server {
-	struct zwl_perf perf;
+struct kwl_server {
+	struct kwl_perf perf;
 	int listener;
 	char socket_path[108];
 	/* An explicit socket overrides the OS module's runtime-directory default. */
@@ -799,8 +805,8 @@ struct zwl_server {
 	dev_t socket_device;
 	ino_t socket_inode;
 	unsigned socket_owned;
-	struct zwl_client *clients;
-	struct zwl_object *front_surface;
+	struct kwl_client *clients;
+	struct kwl_object *front_surface;
 	uint64_t frame;
 	uint64_t commit_order;
 	uint64_t client_serial;
@@ -815,7 +821,7 @@ struct zwl_server {
 	 */
 	struct kl_backend_gpu_device gpu_device;
 	/*
-	 * The role (role.h: ZWL_ROLE_NORMAL, _TESTING or _GREETER, WS110), and
+	 * The role (role.h: KWL_ROLE_NORMAL, _TESTING or _GREETER, WS110), and
 	 * the deadline it gives: none for a desktop and the login screen,
 	 * --timeout or 150 s for a test run, which --max-frames can end sooner.
 	 */
@@ -854,22 +860,22 @@ struct zwl_server {
 	uint64_t lock_input_ms;
 	unsigned size_given;
 	unsigned failed;
-	struct zwl_input_device inputs[ZWL_INPUT_MAX];
+	struct kwl_input_device inputs[KWL_INPUT_MAX];
 	uint64_t input_scan_time;
 	uint64_t input_events;
 	uint64_t seat_events;
 	unsigned capabilities;
-	struct zwl_object *focus;
+	struct kwl_object *focus;
 	int32_t pointer_x;
 	int32_t pointer_y;
 	unsigned modifier_keys;
 	uint32_t modifiers;
 	/* The Windows key pressed alone (super-tap.c, ws142-p002): armed from its press until something else happens. */
-	struct zwl_super_tap super_tap;
+	struct kwl_super_tap super_tap;
 	/* The locked modifiers (Caps Lock 0x2, Num Lock 0x10), each toggled by a press of its key (ws035-p078). */
 	uint32_t locked_modifiers;
 	/* Window mode: the Vulkan output, whether a frame is due, and the fence fd of the frame in flight. */
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 	/* The operating system's side (libkeiland-backend, WS131): opened before the OS resources, closed after them; NULL before. */
 	struct kl_backend *backend;
 	/* The power as last read (ws132-p003): at start-up and at each power_changed; the bar shows the battery when percent >= 0. */
@@ -881,7 +887,7 @@ struct zwl_server {
 	 * on a machine without one, or before the first closing), the
 	 * brightness to give back at the opening, and whether it was put out.
 	 */
-	struct zwl_lid lid;
+	struct kwl_lid lid;
 	unsigned screen_off;
 	struct kl_backend_backlight *backlight;
 	unsigned backlight_saved;
@@ -943,7 +949,7 @@ struct zwl_server {
 	 * WS135): NULL for the login screen.  Made before the look, freed at
 	 * the compositor's end after the session's settings are written.
 	 */
-	struct zwl_settings_store *settings;
+	struct kwl_settings_store *settings;
 	/*
 	 * The settings' effects (settings.c, WS135): window_opacity_started and
 	 * wallpaper_started are what the command line gave, which a setting
@@ -974,7 +980,7 @@ struct zwl_server {
 	/*
 	 * The desktop's appearance (appearance.dark, ws089-p017): 0 light, 1
 	 * dark.  The glass's drawing maps its colours by it (glass.c) and
-	 * keiland_theme_v1 tells the clients (theme.c).
+	 * kl_theme_v1 tells the clients (theme.c).
 	 */
 	int32_t dark;
 	/*
@@ -989,7 +995,7 @@ struct zwl_server {
 	int32_t ime_method;
 	/* Whether the language of the compositor's text was read once (language.c, WS158); its catalogs are libkeiland's. */
 	unsigned language_set;
-	struct zwl_object *drag;
+	struct kwl_object *drag;
 	int32_t drag_dx;
 	int32_t drag_dy;
 	int64_t clock_minute;
@@ -1001,7 +1007,7 @@ struct zwl_server {
 	 */
 	int32_t drag_start_x;
 	int32_t drag_start_y;
-	struct zwl_object *click_surface;
+	struct kwl_object *click_surface;
 	uint64_t click_ms;
 	/*
 	 * The presses of the latest run of quick clicks on click_surface's
@@ -1011,14 +1017,14 @@ struct zwl_server {
 	 * sends the window to the back instead (ws079-p013).
 	 */
 	unsigned click_count;
-	struct zwl_object *click_docked;
+	struct kwl_object *click_docked;
 	uint64_t click_docked_due_ms;
 	int32_t click_docked_x;
 	int32_t click_docked_y;
-	struct zwl_object *pull;
+	struct kwl_object *pull;
 	int32_t pull_start_y;
 	int32_t pull_distance;
-	struct zwl_object *anim;
+	struct kwl_object *anim;
 	uint64_t anim_start_ms;
 	unsigned anim_docking;
 	int32_t anim_from[4];
@@ -1037,12 +1043,12 @@ struct zwl_server {
 	 * pointer's place and when it last moved.
 	 */
 	struct kl_backend_scanout *scanout;
-	struct zwl_object *scanout_surface;
-	struct zwl_object *scanout_front;
+	struct kwl_object *scanout_surface;
+	struct kwl_object *scanout_front;
 	uint64_t scanout_frames;
 	unsigned scanout_reason;
-	struct zwl_object *scanout_refused;
-	struct zwl_object *scanout_noted;
+	struct kwl_object *scanout_refused;
+	struct kwl_object *scanout_noted;
 	int32_t scanout_pointer[2];
 	uint64_t scanout_motion_ms;
 	/*
@@ -1061,9 +1067,9 @@ struct zwl_server {
 	float wiseview_from;
 	float wiseview_to;
 	uint64_t wiseview_start_ms;
-	struct zwl_object *wiseview_current;
+	struct kwl_object *wiseview_current;
 	/* A press on a Wiseview tile that may become its drag to a desktop (ws035-p072): the window, where it started, whether it moved. */
-	struct zwl_object *wiseview_press;
+	struct kwl_object *wiseview_press;
 	int32_t wiseview_press_x;
 	int32_t wiseview_press_y;
 	unsigned wiseview_dragging;
@@ -1134,12 +1140,12 @@ struct zwl_server {
 	float desktop_to;
 	uint64_t desktop_start_ms;
 	/* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004). */
-	struct zwl_apps_bar apps_bar;
+	struct kwl_apps_bar apps_bar;
 	/* The application switcher (switcher-shell.c, ws142-p005), and a button whose press it took (its release is kept from the windows). */
-	struct zwl_switcher switcher;
+	struct kwl_switcher switcher;
 	uint32_t switch_swallow;
 	/*
-	 * The session's layout mode (ZWL_LAYOUT_WINDOWED or ZWL_LAYOUT_DOCKED of
+	 * The session's layout mode (KWL_LAYOUT_WINDOWED or KWL_LAYOUT_DOCKED of
 	 * layout.h, ws142-p008, BUG-217): set by the person docking a window or
 	 * bringing one back, followed by every window switched to, opened or
 	 * leaving fullscreen.  Windowed from the session's start.
@@ -1150,9 +1156,9 @@ struct zwl_server {
 	 * shows (swipe.h, ws142-p009): one swipe a step, from the fingers
 	 * landing until their lifting (the gesture SWIPE2's end).
 	 */
-	struct zwl_swipe pad_swipe;
+	struct kwl_swipe pad_swipe;
 	/* App Home's Power Off dialog (power-dialog.c, ws099-p037): shown over everything while open. */
-	struct zwl_power_dialog power_dialog;
+	struct kwl_power_dialog power_dialog;
 	/*
 	 * The system bar's docked layout (ws099-p034b): how far it is (0, a
 	 * floating window's: the status and the clock at the right end; 1, a
@@ -1190,20 +1196,20 @@ struct zwl_server {
 	uint64_t home_launch_ms;
 	int32_t home_launch_rect[4];
 	/* The cursor: a client's surface, zdesktop's arrow when there is none, or hidden. */
-	struct zwl_object *cursor_surface;
+	struct kwl_object *cursor_surface;
 	/*
 	 * The client whose request (a cursor surface, none to hide it, or a
 	 * shape) the cursor state is; NULL for zdesktop's own.  Its state is
 	 * shown only while the pointer is over that client's window (BUG-118);
 	 * cleared when the state goes back to the arrow or the client goes.
 	 */
-	struct zwl_client *cursor_client;
+	struct kwl_client *cursor_client;
 	/* What the log last said about showing that client's cursor (0 none said, 1 not shown, 2 shown), for the tests. */
 	unsigned cursor_client_logged;
 	int32_t cursor_hotspot_x;
 	int32_t cursor_hotspot_y;
 	unsigned cursor_hidden;
-	struct zwl_import *arrow;
+	struct kwl_import *arrow;
 	/*
 	 * Nonzero from the start until the pointer first moves (input.c): the
 	 * cursor is not drawn before, so a touch screen shows no arrow resting
@@ -1217,14 +1223,14 @@ struct zwl_server {
 	 * has the pointer, the surface of the grab's chain under it, or none.
 	 * It is cleared before that surface is freed.
 	 */
-	struct zwl_object *pointer_surface;
+	struct kwl_object *pointer_surface;
 	/*
 	 * Popups (popup.c): the topmost popup holding the seat's grab (NULL for
 	 * none); whether the grab has the pointer (from its first popup shown
 	 * until the grab ends); a button whose press dismissed the popups (its
 	 * release is eaten too); the order the next popup is made in.
 	 */
-	struct zwl_object *popup_grab;
+	struct kwl_object *popup_grab;
 	unsigned pointer_grabbed;
 	uint32_t popup_eaten_button;
 	uint64_t popup_order;
@@ -1244,7 +1250,7 @@ struct zwl_server {
 	 * The window and origin may differ for a subsurface. Both are cleared
 	 * before either identity is freed, or when the operation ends.
 	 */
-	struct zwl_object *press_surface;
+	struct kwl_object *press_surface;
 	uint32_t press_button;
 	/*
 	 * Where the pointer was on the output when that press was delivered.  A
@@ -1254,31 +1260,31 @@ struct zwl_server {
 	 */
 	int32_t press_x;
 	int32_t press_y;
-	struct zwl_object *interactive_window;
-	struct zwl_object *interactive_surface;
+	struct kwl_object *interactive_window;
+	struct kwl_object *interactive_surface;
 	uint32_t interactive_button;
 	/*
 	 * The time of the pointer event being handled (evdev's, in the wrapping
-	 * milliseconds Wayland carries), set by zwl_seat_motion and
-	 * zwl_seat_button before anything hears the event; the corner's swipe
+	 * milliseconds Wayland carries), set by kwl_seat_motion and
+	 * kwl_seat_button before anything hears the event; the corner's swipe
 	 * measures its speed with it (corner.c).
 	 */
 	uint32_t input_time;
 	/*
 	 * Where the contact the shell's pointer path carries comes from: the
 	 * pointer, except while touch.c passes a finger through the shell as
-	 * the pointer's left button (it sets ZWL_CONTACT_TOUCH around each call
-	 * and puts ZWL_CONTACT_POINTER back), so the edge gestures know the
+	 * the pointer's left button (it sets KWL_CONTACT_TOUCH around each call
+	 * and puts KWL_CONTACT_POINTER back), so the edge gestures know the
 	 * finger's contact from the mouse's (corner.c).
 	 */
-	enum zwl_contact_source shell_source;
+	enum kwl_contact_source shell_source;
 	/*
 	 * The clipboard (data.c): the wl_data_source set as the selection (NULL
 	 * for an empty clipboard), and the number of the client last told it
 	 * (the keyboard's client; 0 for none), so a focus change tells the new
 	 * one.
 	 */
-	struct zwl_object *selection;
+	struct kwl_object *selection;
 	uint64_t selection_client;
 	/* Whether the selection is zdesktop's own, an item of the clipboard's history (clipboard.c, ws102-p018; selection is NULL then). */
 	unsigned selection_offered;
@@ -1287,7 +1293,7 @@ struct zwl_server {
 	 * (NULL for none), and the number of the client last told it (0 for
 	 * none), kept like the clipboard's.
 	 */
-	struct zwl_object *primary;
+	struct kwl_object *primary;
 	uint64_t primary_client;
 	/*
 	 * The bounds last sent to windows (xdg_toplevel.configure_bounds,
@@ -1306,13 +1312,13 @@ struct zwl_server {
 	 * Each is cleared when its object goes.
 	 */
 	unsigned dnd_active;
-	struct zwl_object *dnd_source;
-	struct zwl_object *dnd_origin;
-	struct zwl_object *dnd_icon;
-	struct zwl_object *dnd_target;
-	struct zwl_object *dnd_target_device;
-	struct zwl_object *dnd_offer;
-	struct zwl_object *dnd_titlebar;
+	struct kwl_object *dnd_source;
+	struct kwl_object *dnd_origin;
+	struct kwl_object *dnd_icon;
+	struct kwl_object *dnd_target;
+	struct kwl_object *dnd_target_device;
+	struct kwl_object *dnd_offer;
+	struct kwl_object *dnd_titlebar;
 	uint32_t dnd_part_id;
 	uint32_t dnd_part_detail;
 	/*
@@ -1331,15 +1337,15 @@ struct zwl_server {
 	 * made).
 	 */
 	uint32_t cursor_shape;
-	struct zwl_import *cursor_images[ZWL_CURSOR_IMAGES];
+	struct kwl_import *cursor_images[KWL_CURSOR_IMAGES];
 	/*
 	 * The edges of the window frame under the pointer, or of the resize it
-	 * started (the glass look's frames, shell.c; ZWL_EDGE_* bits of
+	 * started (the glass look's frames, shell.c; KWL_EDGE_* bits of
 	 * toplevel.h, 0 over no frame): while not 0 the cursor is that frame's
 	 * resize arrow, over the client's own cursor (cursor.c).
 	 */
 	uint32_t frame_edges;
-	struct zwl_object *resize;
+	struct kwl_object *resize;
 	int32_t resize_pointer_x;
 	int32_t resize_pointer_y;
 	int32_t resize_width;
@@ -1347,330 +1353,330 @@ struct zwl_server {
 	/*
 	 * The system's input method and the text inputs it serves
 	 * (input-method.c, text-input.c, ws095-p004); NULL until
-	 * zwl_ime_start makes it.
+	 * kwl_ime_start makes it.
 	 */
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 };
 
-uint64_t zwl_milliseconds(void);
-uint64_t zwl_microseconds(void);
-void zwl_request_stop(void);
-int zwl_greeter_open(struct zwl_server *server);
-int zwl_greeter_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_greeter_key(struct zwl_server *server, uint32_t key, uint32_t state);
-void zwl_greeter_tick(struct zwl_server *server);
-void zwl_handoff_wait(struct zwl_server *server);
-int zwl_handoff_logout(struct zwl_server *server);
-void zwl_handoff_tick(struct zwl_server *server);
-void zwl_handoff_stop(void *data, unsigned reason);
-void zwl_handoff_answer(void *data, unsigned request, int error);
-void zwl_backend_session_paused(void *data);
-void zwl_backend_session_resumed(void *data);
-void zwl_backend_input_paused(void *data, const char *path);
-void zwl_backend_input_resumed(void *data, const char *path, int descriptor);
-void zwl_backend_input_gone(void *data, const char *path);
-int zwl_backend_input_known(void *data, const char *path);
-int zwl_backend_input_found(void *data, int descriptor, const char *path, const struct kl_backend_input_caps *caps);
-void zwl_backend_input_changed(void *data);
-void zwl_backend_power_changed(void *data);
-void zwl_backend_power_button(void *data, unsigned button);
-void zwl_backend_lid_changed(void *data, unsigned open);
-void zwl_power_read(struct zwl_server *server);
-int zwl_lock(struct zwl_server *server, const char *reason);
-void zwl_lock_release(struct zwl_server *server, const char *reason);
-void zwl_lid_screen_restore(struct zwl_server *server);
-void zwl_greeter_answer(struct zwl_server *server, unsigned request, int error);
-int zwl_emit(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
-int zwl_emit_fd(struct zwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);
-void zwl_packet_free(struct zwl_packet *packet);
-int zwl_flush(struct zwl_client *client);
-int zwl_read(struct zwl_client *client);
-int zwl_dispatch(struct zwl_client *client, uint32_t id, uint32_t opcode, const unsigned char *payload, size_t size);
-int zwl_error(struct zwl_client *client, uint32_t object, const char *reason);
-int zwl_error_code(struct zwl_client *client, uint32_t object, uint32_t code, const char *reason);
-int zwl_take_fd(struct zwl_client *client);
-void zwl_delete_id(struct zwl_client *client, uint32_t id);
-void zwl_client_destroy(struct zwl_client *client);
-struct zwl_object *zwl_find(struct zwl_client *client, uint32_t id);
-struct zwl_object *zwl_create(struct zwl_client *client, uint32_t id, enum zwl_kind kind, uint32_t version);
-struct zwl_object *zwl_create_server(struct zwl_client *client, enum zwl_kind kind, uint32_t version);
-void zwl_object_destroy(struct zwl_object *object);
-void zwl_buffer_get(struct zwl_object *buffer);
-void zwl_buffer_put(struct zwl_object *buffer);
-void zwl_buffer_size(const struct zwl_object *buffer, uint32_t *width, uint32_t *height);
-void zwl_callbacks_done(struct zwl_object **callbacks);
-void zwl_schedule(struct zwl_server *server);
-void zwl_transition_request(struct zwl_server *server, const char *what);
-void zwl_frame_done(struct zwl_server *server);
-int zwl_compose_open(struct zwl_server *server);
-int zwl_compose_output_prepare(struct zwl_server *server);
-int zwl_compose_output_open(struct zwl_server *server);
-void zwl_compose_output_close(struct zwl_server *server);
-int zwl_compose_draw(struct zwl_server *server);
-int zwl_compose_complete(struct zwl_server *server);
+uint64_t kwl_milliseconds(void);
+uint64_t kwl_microseconds(void);
+void kwl_request_stop(void);
+int kwl_greeter_open(struct kwl_server *server);
+int kwl_greeter_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_greeter_key(struct kwl_server *server, uint32_t key, uint32_t state);
+void kwl_greeter_tick(struct kwl_server *server);
+void kwl_handoff_wait(struct kwl_server *server);
+int kwl_handoff_logout(struct kwl_server *server);
+void kwl_handoff_tick(struct kwl_server *server);
+void kwl_handoff_stop(void *data, unsigned reason);
+void kwl_handoff_answer(void *data, unsigned request, int error);
+void kwl_backend_session_paused(void *data);
+void kwl_backend_session_resumed(void *data);
+void kwl_backend_input_paused(void *data, const char *path);
+void kwl_backend_input_resumed(void *data, const char *path, int descriptor);
+void kwl_backend_input_gone(void *data, const char *path);
+int kwl_backend_input_known(void *data, const char *path);
+int kwl_backend_input_found(void *data, int descriptor, const char *path, const struct kl_backend_input_caps *caps);
+void kwl_backend_input_changed(void *data);
+void kwl_backend_power_changed(void *data);
+void kwl_backend_power_button(void *data, unsigned button);
+void kwl_backend_lid_changed(void *data, unsigned open);
+void kwl_power_read(struct kwl_server *server);
+int kwl_lock(struct kwl_server *server, const char *reason);
+void kwl_lock_release(struct kwl_server *server, const char *reason);
+void kwl_lid_screen_restore(struct kwl_server *server);
+void kwl_greeter_answer(struct kwl_server *server, unsigned request, int error);
+int kwl_emit(struct kwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
+int kwl_emit_fd(struct kwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);
+void kwl_packet_free(struct kwl_packet *packet);
+int kwl_flush(struct kwl_client *client);
+int kwl_read(struct kwl_client *client);
+int kwl_dispatch(struct kwl_client *client, uint32_t id, uint32_t opcode, const unsigned char *payload, size_t size);
+int kwl_error(struct kwl_client *client, uint32_t object, const char *reason);
+int kwl_error_code(struct kwl_client *client, uint32_t object, uint32_t code, const char *reason);
+int kwl_take_fd(struct kwl_client *client);
+void kwl_delete_id(struct kwl_client *client, uint32_t id);
+void kwl_client_destroy(struct kwl_client *client);
+struct kwl_object *kwl_find(struct kwl_client *client, uint32_t id);
+struct kwl_object *kwl_create(struct kwl_client *client, uint32_t id, enum kwl_kind kind, uint32_t version);
+struct kwl_object *kwl_create_server(struct kwl_client *client, enum kwl_kind kind, uint32_t version);
+void kwl_object_destroy(struct kwl_object *object);
+void kwl_buffer_get(struct kwl_object *buffer);
+void kwl_buffer_put(struct kwl_object *buffer);
+void kwl_buffer_size(const struct kwl_object *buffer, uint32_t *width, uint32_t *height);
+void kwl_callbacks_done(struct kwl_object **callbacks);
+void kwl_schedule(struct kwl_server *server);
+void kwl_transition_request(struct kwl_server *server, const char *what);
+void kwl_frame_done(struct kwl_server *server);
+int kwl_compose_open(struct kwl_server *server);
+int kwl_compose_output_prepare(struct kwl_server *server);
+int kwl_compose_output_open(struct kwl_server *server);
+void kwl_compose_output_close(struct kwl_server *server);
+int kwl_compose_draw(struct kwl_server *server);
+int kwl_compose_complete(struct kwl_server *server);
 
 /* The test images' screen capture (shot.c, or shot-none.c elsewhere; ws173-p002). */
-int zwl_shot_enabled(void);
-int zwl_shot_waiting(void);
+int kwl_shot_enabled(void);
+int kwl_shot_waiting(void);
 
 /* The game mode: a fullscreen video or game shown without composing (scanout.c, ws122-p005b). */
 struct kl_backend_scanout;
-int zwl_scanout_pass(struct zwl_server *server, struct zwl_object *top);
-void zwl_scanout_leave(struct zwl_server *server, unsigned reason);
-void zwl_scanout_surface_gone(struct zwl_server *server, struct zwl_object *surface);
-void zwl_shot_open(struct zwl_server *server);
-void zwl_shot_close(struct zwl_server *server);
-void zwl_shot_tick(struct zwl_server *server);
-void zwl_shot_complete(struct zwl_server *server);
-void zwl_compose_quiesce(struct zwl_server *server);
-void zwl_compose_close(struct zwl_server *server);
-VkResult zwl_import_adopt(struct zwl_object *buffer, VkImage image, VkDeviceMemory memory, uint32_t width, uint32_t height, VkFormat format);
-void zwl_import_destroy(struct zwl_object *buffer);
-void zwl_import_set_alpha(struct zwl_object *buffer, uint32_t alpha);
-int zwl_shm_upload(struct zwl_server *server);
-void zwl_shm_image_destroy(struct zwl_server *server, struct zwl_object *surface);
-void zwl_pool_put(struct zwl_pool *pool);
-int zwl_shm_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_shm_bind(struct zwl_object *shm);
-void zwl_cursor_default(struct zwl_server *server);
-int zwl_cursor_client_shown(struct zwl_server *server);
-int zwl_arrow_create(struct zwl_server *server);
-void zwl_arrow_destroy(struct zwl_server *server);
-struct zwl_object *zwl_top_window(struct zwl_server *server);
-int zwl_glass_still(struct zwl_server *server);
-int zwl_glass_body_damage(struct zwl_server *server, struct zwl_object *surface, int32_t *rect);
-int zwl_glass_pointer_calm(struct zwl_server *server, int32_t x, int32_t y);
-void zwl_damage_pointer(struct zwl_server *server, int32_t old_x, int32_t old_y);
-void zwl_damage_commit(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *previous);
-void zwl_window_bounds_refresh(struct zwl_server *server);
-int zwl_window_send_configure(struct zwl_object *surface);
-int zwl_window_enter_fullscreen(struct zwl_object *surface);
-int zwl_window_leave_fullscreen(struct zwl_object *surface);
-void zwl_window_centre(struct zwl_server *server, struct zwl_object *surface);
-int zwl_fence_ready(struct zwl_server *server, struct zwl_object *surface);
-int zwl_compose_waiting(struct zwl_server *server);
-void zwl_compose_poll(struct zwl_server *server);
-int zwl_glass_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_glass_motion(struct zwl_server *server);
-void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
-int zwl_glass_apps_room(struct zwl_server *server, int32_t *left, int32_t *right);
-void zwl_glass_switch_to(struct zwl_server *server, struct zwl_object *surface, const char *via);
-int zwl_glass_unfullscreen_docks(struct zwl_server *server, struct zwl_object *surface);
-void zwl_glass_activate(struct zwl_server *server, struct zwl_object *surface, const char *via);
+int kwl_scanout_pass(struct kwl_server *server, struct kwl_object *top);
+void kwl_scanout_leave(struct kwl_server *server, unsigned reason);
+void kwl_scanout_surface_gone(struct kwl_server *server, struct kwl_object *surface);
+void kwl_shot_open(struct kwl_server *server);
+void kwl_shot_close(struct kwl_server *server);
+void kwl_shot_tick(struct kwl_server *server);
+void kwl_shot_complete(struct kwl_server *server);
+void kwl_compose_quiesce(struct kwl_server *server);
+void kwl_compose_close(struct kwl_server *server);
+VkResult kwl_import_adopt(struct kwl_object *buffer, VkImage image, VkDeviceMemory memory, uint32_t width, uint32_t height, VkFormat format);
+void kwl_import_destroy(struct kwl_object *buffer);
+void kwl_import_set_alpha(struct kwl_object *buffer, uint32_t alpha);
+int kwl_shm_upload(struct kwl_server *server);
+void kwl_shm_image_destroy(struct kwl_server *server, struct kwl_object *surface);
+void kwl_pool_put(struct kwl_pool *pool);
+int kwl_shm_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_shm_bind(struct kwl_object *shm);
+void kwl_cursor_default(struct kwl_server *server);
+int kwl_cursor_client_shown(struct kwl_server *server);
+int kwl_arrow_create(struct kwl_server *server);
+void kwl_arrow_destroy(struct kwl_server *server);
+struct kwl_object *kwl_top_window(struct kwl_server *server);
+int kwl_glass_still(struct kwl_server *server);
+int kwl_glass_body_damage(struct kwl_server *server, struct kwl_object *surface, int32_t *rect);
+int kwl_glass_pointer_calm(struct kwl_server *server, int32_t x, int32_t y);
+void kwl_damage_pointer(struct kwl_server *server, int32_t old_x, int32_t old_y);
+void kwl_damage_commit(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *previous);
+void kwl_window_bounds_refresh(struct kwl_server *server);
+int kwl_window_send_configure(struct kwl_object *surface);
+int kwl_window_enter_fullscreen(struct kwl_object *surface);
+int kwl_window_leave_fullscreen(struct kwl_object *surface);
+void kwl_window_centre(struct kwl_server *server, struct kwl_object *surface);
+int kwl_fence_ready(struct kwl_server *server, struct kwl_object *surface);
+int kwl_compose_waiting(struct kwl_server *server);
+void kwl_compose_poll(struct kwl_server *server);
+int kwl_glass_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_glass_motion(struct kwl_server *server);
+void kwl_glass_gesture(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
+int kwl_glass_apps_room(struct kwl_server *server, int32_t *left, int32_t *right);
+void kwl_glass_switch_to(struct kwl_server *server, struct kwl_object *surface, const char *via);
+int kwl_glass_unfullscreen_docks(struct kwl_server *server, struct kwl_object *surface);
+void kwl_glass_activate(struct kwl_server *server, struct kwl_object *surface, const char *via);
 
 /* The desktop's appearance (theme.c, ws089-p017). */
-int zwl_theme_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_theme_bind(struct zwl_object *theme);
-void zwl_theme_changed(struct zwl_server *server);
-int zwl_glass_open_docked(struct zwl_server *server, struct zwl_object *surface);
-void zwl_glass_open_wiseview(struct zwl_server *server, const char *via);
+int kwl_theme_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_theme_bind(struct kwl_object *theme);
+void kwl_theme_changed(struct kwl_server *server);
+int kwl_glass_open_docked(struct kwl_server *server, struct kwl_object *surface);
+void kwl_glass_open_wiseview(struct kwl_server *server, const char *via);
 
 /* The applications' icons in the system bar and their previews (apps-bar.c, ws142-p004; the drawing is in glass.h). */
-int zwl_apps_bar_motion(struct zwl_server *server);
-int zwl_apps_bar_button(struct zwl_server *server, uint32_t button, uint32_t state_value);
-int zwl_apps_bar_key(struct zwl_server *server, uint32_t key, uint32_t state_value);
-void zwl_apps_bar_tick(struct zwl_server *server);
+int kwl_apps_bar_motion(struct kwl_server *server);
+int kwl_apps_bar_button(struct kwl_server *server, uint32_t button, uint32_t state_value);
+int kwl_apps_bar_key(struct kwl_server *server, uint32_t key, uint32_t state_value);
+void kwl_apps_bar_tick(struct kwl_server *server);
 
 /* The application switcher (switcher-shell.c, ws142-p005; the drawing is in glass.h). */
-int zwl_glass_switch_place(struct zwl_server *server, unsigned *placement);
-int zwl_switch_on(struct zwl_server *server);
-int zwl_switch_open(struct zwl_server *server, unsigned via);
-void zwl_switch_step(struct zwl_server *server, int delta, const char *how);
-void zwl_switch_commit(struct zwl_server *server, const char *how);
-void zwl_switch_cancel(struct zwl_server *server, const char *why);
-int zwl_switch_key(struct zwl_server *server, uint32_t key, uint32_t state);
-int zwl_switch_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_switch_pad_swipe(struct zwl_server *server, unsigned direction);
-int zwl_glass_pad_scroll(struct zwl_server *server, int32_t vertical, int32_t horizontal, int natural);
-void zwl_power_dialog_open(struct zwl_server *server, const char *source);
-int zwl_power_dialog_showing(struct zwl_server *server);
-int zwl_power_dialog_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_power_dialog_key(struct zwl_server *server, uint32_t key, uint32_t state);
-int zwl_power_dialog_motion(struct zwl_server *server);
-int zwl_power_dialog_swipe(struct zwl_server *server, int down);
-void zwl_power_dialog_tick(struct zwl_server *server);
-void zwl_switch_tick(struct zwl_server *server);
-void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
-void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
-void zwl_glass_fit(struct zwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
-void zwl_glass_tick(struct zwl_server *server);
-void zwl_glass_prefetch(struct zwl_server *server);
-int zwl_glass_landscape(struct zwl_server *server);
-const struct kl_backend_protocol_host *zwl_gpu_host(void);
-struct kl_backend_resource *zwl_gpu_resource(struct zwl_object *object);
-int zwl_glass_wallpaper_begin(struct zwl_server *server, const char *path);
-int zwl_glass_wallpaper_poll(struct zwl_server *server, int *error);
-void zwl_settings_open(struct zwl_server *server);
-void zwl_settings_tick(struct zwl_server *server);
-void zwl_settings_logout(struct zwl_server *server);
-void zwl_settings_close(struct zwl_server *server);
-int zwl_settings_kept(struct zwl_server *server, const char *name, int *number);
-int zwl_settings_global_visible(struct zwl_client *client, enum zwl_kind kind);
-int zwl_settings_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_settings_home(char *home, size_t size);
-int zwl_system_bind(struct zwl_object *manager);
-int zwl_system_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_system_tick(struct zwl_server *server);
-void zwl_system_power_changed(struct zwl_server *server);
-void zwl_system_sharing_answer(struct zwl_server *server, int error);
-int zwl_system_pin_answer(struct zwl_server *server, int error);
-void zwl_system_enrolled_answer(struct zwl_server *server, int error);
-void zwl_system_network_changed(struct zwl_server *server, unsigned changed);
-int zwl_system_network_done(struct zwl_server *server, unsigned request, int error);
-int zwl_system_bar_save_key(struct zwl_server *server, const char *ssid, const char *key);
-void zwl_system_bar_saved(struct zwl_server *server);
-void zwl_system_network_gone(struct zwl_object *object);
-void zwl_system_close(struct zwl_server *server);
-int zwl_sysmon_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-int zwl_sysmon_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_sysmon_tick(struct zwl_server *server);
-void zwl_sysmon_close(struct zwl_server *server);
-float zwl_home_progress(struct zwl_server *server);
-void zwl_home_layer(struct zwl_server *server, float progress, float *x, float *y, float *scale);
-int zwl_home_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_home_motion(struct zwl_server *server);
-int zwl_home_key(struct zwl_server *server, uint32_t key, uint32_t state);
-void zwl_home_tick(struct zwl_server *server);
-int zwl_home_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
-int zwl_home_launched(struct zwl_server *server, int32_t *rect);
-void zwl_home_dismiss(struct zwl_server *server, const char *via);
-void zwl_home_toggle(struct zwl_server *server, const char *via);
-pid_t zwl_spawn(struct zwl_server *server, const char *command);
+int kwl_glass_switch_place(struct kwl_server *server, unsigned *placement);
+int kwl_switch_on(struct kwl_server *server);
+int kwl_switch_open(struct kwl_server *server, unsigned via);
+void kwl_switch_step(struct kwl_server *server, int delta, const char *how);
+void kwl_switch_commit(struct kwl_server *server, const char *how);
+void kwl_switch_cancel(struct kwl_server *server, const char *why);
+int kwl_switch_key(struct kwl_server *server, uint32_t key, uint32_t state);
+int kwl_switch_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_switch_pad_swipe(struct kwl_server *server, unsigned direction);
+int kwl_glass_pad_scroll(struct kwl_server *server, int32_t vertical, int32_t horizontal, int natural);
+void kwl_power_dialog_open(struct kwl_server *server, const char *source);
+int kwl_power_dialog_showing(struct kwl_server *server);
+int kwl_power_dialog_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_power_dialog_key(struct kwl_server *server, uint32_t key, uint32_t state);
+int kwl_power_dialog_motion(struct kwl_server *server);
+int kwl_power_dialog_swipe(struct kwl_server *server, int down);
+void kwl_power_dialog_tick(struct kwl_server *server);
+void kwl_switch_tick(struct kwl_server *server);
+void kwl_glass_place(struct kwl_server *server, struct kwl_object *surface, int32_t width, int32_t height, int32_t step);
+void kwl_glass_space(struct kwl_server *server, int32_t *width, int32_t *height);
+void kwl_glass_fit(struct kwl_server *server, int32_t width, int32_t height, int32_t *x, int32_t *y);
+void kwl_glass_tick(struct kwl_server *server);
+void kwl_glass_prefetch(struct kwl_server *server);
+int kwl_glass_landscape(struct kwl_server *server);
+const struct kl_backend_protocol_host *kwl_gpu_host(void);
+struct kl_backend_resource *kwl_gpu_resource(struct kwl_object *object);
+int kwl_glass_wallpaper_begin(struct kwl_server *server, const char *path);
+int kwl_glass_wallpaper_poll(struct kwl_server *server, int *error);
+void kwl_settings_open(struct kwl_server *server);
+void kwl_settings_tick(struct kwl_server *server);
+void kwl_settings_logout(struct kwl_server *server);
+void kwl_settings_close(struct kwl_server *server);
+int kwl_settings_kept(struct kwl_server *server, const char *name, int *number);
+int kwl_settings_global_visible(struct kwl_client *client, enum kwl_kind kind);
+int kwl_settings_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_settings_home(char *home, size_t size);
+int kwl_system_bind(struct kwl_object *manager);
+int kwl_system_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_system_tick(struct kwl_server *server);
+void kwl_system_power_changed(struct kwl_server *server);
+void kwl_system_sharing_answer(struct kwl_server *server, int error);
+int kwl_system_pin_answer(struct kwl_server *server, int error);
+void kwl_system_enrolled_answer(struct kwl_server *server, int error);
+void kwl_system_network_changed(struct kwl_server *server, unsigned changed);
+int kwl_system_network_done(struct kwl_server *server, unsigned request, int error);
+int kwl_system_bar_save_key(struct kwl_server *server, const char *ssid, const char *key);
+void kwl_system_bar_saved(struct kwl_server *server);
+void kwl_system_network_gone(struct kwl_object *object);
+void kwl_system_close(struct kwl_server *server);
+int kwl_sysmon_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+int kwl_sysmon_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_sysmon_tick(struct kwl_server *server);
+void kwl_sysmon_close(struct kwl_server *server);
+float kwl_home_progress(struct kwl_server *server);
+void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale);
+int kwl_home_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_home_motion(struct kwl_server *server);
+int kwl_home_key(struct kwl_server *server, uint32_t key, uint32_t state);
+void kwl_home_tick(struct kwl_server *server);
+int kwl_home_axis(struct kwl_server *server, int32_t vertical, int32_t horizontal);
+int kwl_home_launched(struct kwl_server *server, int32_t *rect);
+void kwl_home_dismiss(struct kwl_server *server, const char *via);
+void kwl_home_toggle(struct kwl_server *server, const char *via);
+pid_t kwl_spawn(struct kwl_server *server, const char *command);
 
 /* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
-int zwl_corner_contact_begin(struct zwl_server *server, enum zwl_contact_source source, int32_t x, int32_t y, uint32_t time);
-int zwl_corner_contact_move(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
-int zwl_corner_contact_end(struct zwl_server *server, int32_t x, int32_t y, uint32_t time);
-int zwl_corner_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_corner_motion(struct zwl_server *server);
-void zwl_corner_tick(struct zwl_server *server);
-int zwl_corner_showing(void);
+int kwl_corner_contact_begin(struct kwl_server *server, enum kwl_contact_source source, int32_t x, int32_t y, uint32_t time);
+int kwl_corner_contact_move(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
+int kwl_corner_contact_end(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
+int kwl_corner_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_corner_motion(struct kwl_server *server);
+void kwl_corner_tick(struct kwl_server *server);
+int kwl_corner_showing(void);
 
 /*
  * The on-screen keyboard (keyboard.c, ws102; the drawing is in glass.h):
  * its bottom corners' swipe, its panel, and the side of the square in each
  * bottom corner where the swipe starts.
  */
-#define ZWL_KEYBOARD_ZONE	28
-int zwl_keyboard_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_keyboard_motion(struct zwl_server *server);
-void zwl_keyboard_tick(struct zwl_server *server);
-int zwl_keyboard_showing(void);
-int zwl_keyboard_at(int32_t x, int32_t y);
-void zwl_keyboard_close(struct zwl_server *server, const char *reason);
-void zwl_keyboard_reserved(int32_t *right, int32_t *bottom);
-void zwl_keyboard_reserved_now(int32_t *right, int32_t *bottom);
+#define KWL_KEYBOARD_ZONE	28
+int kwl_keyboard_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_keyboard_motion(struct kwl_server *server);
+void kwl_keyboard_tick(struct kwl_server *server);
+int kwl_keyboard_showing(void);
+int kwl_keyboard_at(int32_t x, int32_t y);
+void kwl_keyboard_close(struct kwl_server *server, const char *reason);
+void kwl_keyboard_reserved(int32_t *right, int32_t *bottom);
+void kwl_keyboard_reserved_now(int32_t *right, int32_t *bottom);
 /* A window hung under its parent's title bar (sheet.c, ws090-p014). */
-struct zwl_object *zwl_sheet_parent(const struct zwl_object *surface);
-struct zwl_object *zwl_sheet_of(const struct zwl_object *parent);
-void zwl_sheet_set_parent(struct zwl_object *surface, struct zwl_object *parent);
-void zwl_sheet_surface_gone(struct zwl_object *surface);
-int zwl_keyboard_touch_down(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
-int zwl_keyboard_touch_motion(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
-int zwl_keyboard_touch_up(struct zwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
-void zwl_keyboard_touch_cancel(struct zwl_server *server, uint32_t id);
-void zwl_keyboard_inset_notify(struct zwl_server *server, const int32_t *panel);
-void zwl_keyboard_predictions(struct zwl_server *server, uint32_t serial, const char *list);
+struct kwl_object *kwl_sheet_parent(const struct kwl_object *surface);
+struct kwl_object *kwl_sheet_of(const struct kwl_object *parent);
+void kwl_sheet_set_parent(struct kwl_object *surface, struct kwl_object *parent);
+void kwl_sheet_surface_gone(struct kwl_object *surface);
+int kwl_keyboard_touch_down(struct kwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
+int kwl_keyboard_touch_motion(struct kwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
+int kwl_keyboard_touch_up(struct kwl_server *server, uint32_t id, int32_t x, int32_t y, uint32_t time);
+void kwl_keyboard_touch_cancel(struct kwl_server *server, uint32_t id);
+void kwl_keyboard_inset_notify(struct kwl_server *server, const int32_t *panel);
+void kwl_keyboard_predictions(struct kwl_server *server, uint32_t serial, const char *list);
 
 /* The editing operations and the previous application, for the keyboard's tool face (edit.c, ws102-p017). */
-int zwl_edit_action(struct zwl_server *server, unsigned action);
-int zwl_edit_state(struct zwl_server *server, uint32_t *enabled);
-int zwl_focus_previous(struct zwl_server *server);
+int kwl_edit_action(struct kwl_server *server, unsigned action);
+int kwl_edit_state(struct kwl_server *server, uint32_t *enabled);
+int kwl_focus_previous(struct kwl_server *server);
 
 /*
  * The clipboard's history (clipboard.c, ws102-p018): the last
- * ZWL_CLIPBOARD_HISTORY selections' text, newest first, in memory only, for
+ * KWL_CLIPBOARD_HISTORY selections' text, newest first, in memory only, for
  * the keyboard's history tab; an item is pasted by making it the
  * selection and sending the paste operation.  The lock screen and Log Out
  * empty it.
  */
-#define ZWL_CLIPBOARD_HISTORY		10U
-#define ZWL_CLIPBOARD_TEXT_MAX		(64U * 1024U)
-unsigned zwl_clipboard_history_count(struct zwl_server *server);
-const char *zwl_clipboard_history_get(struct zwl_server *server, unsigned index, size_t *length);
-int zwl_clipboard_history_paste(struct zwl_server *server, unsigned index);
-void zwl_clipboard_history_clear(struct zwl_server *server, const char *reason);
+#define KWL_CLIPBOARD_HISTORY		10U
+#define KWL_CLIPBOARD_TEXT_MAX		(64U * 1024U)
+unsigned kwl_clipboard_history_count(struct kwl_server *server);
+const char *kwl_clipboard_history_get(struct kwl_server *server, unsigned index, size_t *length);
+int kwl_clipboard_history_paste(struct kwl_server *server, unsigned index);
+void kwl_clipboard_history_clear(struct kwl_server *server, const char *reason);
 
 /* The edge gestures over a fullscreen window, whether the input is theirs, and whether one shows something (shell.c). */
-int zwl_glass_fullscreen_input(struct zwl_server *server);
-int zwl_glass_edge_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_glass_edge_motion(struct zwl_server *server);
-int zwl_glass_overlay(struct zwl_server *server);
-struct zwl_object *zwl_glass_title_at(struct zwl_server *server, int32_t x, int32_t y);
-void zwl_glass_lower(struct zwl_server *server, struct zwl_object *surface, const char *via);
-void zwl_glass_mapped(struct zwl_server *server, struct zwl_object *surface);
-void zwl_glass_committed(struct zwl_server *server, struct zwl_object *surface);
-int zwl_glass_key(struct zwl_server *server, uint32_t key, uint32_t state);
+int kwl_glass_fullscreen_input(struct kwl_server *server);
+int kwl_glass_edge_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_glass_edge_motion(struct kwl_server *server);
+int kwl_glass_overlay(struct kwl_server *server);
+struct kwl_object *kwl_glass_title_at(struct kwl_server *server, int32_t x, int32_t y);
+void kwl_glass_lower(struct kwl_server *server, struct kwl_object *surface, const char *via);
+void kwl_glass_mapped(struct kwl_server *server, struct kwl_object *surface);
+void kwl_glass_committed(struct kwl_server *server, struct kwl_object *surface);
+int kwl_glass_key(struct kwl_server *server, uint32_t key, uint32_t state);
 
 /* The network's icon in the system bar and its menu (network.c, ws035-p013; the drawing is in glass.h). */
-void zwl_network_tick(struct zwl_server *server);
-int zwl_network_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_network_key(struct zwl_server *server, uint32_t key, uint32_t state);
-int zwl_network_motion(struct zwl_server *server);
-int zwl_network_is_open(void);
-struct kl_backend_network *zwl_network_watch(void);
-void zwl_network_state(struct kl_backend_network_state *state);
-size_t zwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
-void zwl_network_key_failed(struct zwl_server *server, const char *ssid, int error);
-void zwl_network_saved(struct zwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count);
-void zwl_network_details(struct zwl_server *server, const struct kl_backend_network_link *links, size_t link_count, const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX], size_t dns_count);
-void zwl_network_scan_hold(unsigned on);
-void zwl_volume_tick(struct zwl_server *server);
-void zwl_volume_keep(struct zwl_server *server, const char *why);
-void zwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);
-int zwl_volume_request(struct zwl_server *server, unsigned value, unsigned muted);
-int zwl_volume_request_channels(struct zwl_server *server, unsigned left, unsigned right, unsigned muted);
-int zwl_volume_feedback(void);
-void zwl_volume_audio_state(struct kl_backend_audio_state *state);
-int zwl_volume_button(struct zwl_server *server, uint32_t button, uint32_t state);
-int zwl_volume_key(struct zwl_server *server, uint32_t key, uint32_t state);
-int zwl_volume_motion(struct zwl_server *server);
-int zwl_volume_axis(struct zwl_server *server, int32_t vertical, int32_t horizontal);
-int zwl_volume_is_open(void);
+void kwl_network_tick(struct kwl_server *server);
+int kwl_network_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_network_key(struct kwl_server *server, uint32_t key, uint32_t state);
+int kwl_network_motion(struct kwl_server *server);
+int kwl_network_is_open(void);
+struct kl_backend_network *kwl_network_watch(void);
+void kwl_network_state(struct kl_backend_network_state *state);
+size_t kwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
+void kwl_network_key_failed(struct kwl_server *server, const char *ssid, int error);
+void kwl_network_saved(struct kwl_server *server, char (*ssids)[KL_BACKEND_NETWORK_SSID_MAX], size_t count);
+void kwl_network_details(struct kwl_server *server, const struct kl_backend_network_link *links, size_t link_count, const char (*dns)[KL_BACKEND_NETWORK_ADDRESS_MAX], size_t dns_count);
+void kwl_network_scan_hold(unsigned on);
+void kwl_volume_tick(struct kwl_server *server);
+void kwl_volume_keep(struct kwl_server *server, const char *why);
+void kwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);
+int kwl_volume_request(struct kwl_server *server, unsigned value, unsigned muted);
+int kwl_volume_request_channels(struct kwl_server *server, unsigned left, unsigned right, unsigned muted);
+int kwl_volume_feedback(void);
+void kwl_volume_audio_state(struct kl_backend_audio_state *state);
+int kwl_volume_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_volume_key(struct kwl_server *server, uint32_t key, uint32_t state);
+int kwl_volume_motion(struct kwl_server *server);
+int kwl_volume_axis(struct kwl_server *server, int32_t vertical, int32_t horizontal);
+int kwl_volume_is_open(void);
 
 /* What a toplevel asks the glass look's shell to do (xdg_toplevel requests, ws035-p076). */
-#define ZWL_TOPLEVEL_MOVE		1
-#define ZWL_TOPLEVEL_MAXIMIZE		2
-#define ZWL_TOPLEVEL_UNMAXIMIZE		3
-#define ZWL_TOPLEVEL_MINIMIZE		4
-void zwl_glass_toplevel_request(struct zwl_server *server, struct zwl_object *surface, int request);
-void zwl_glass_toplevel_move_end(struct zwl_server *server, struct zwl_object *surface);
-uint32_t zwl_next_serial(struct zwl_server *server);
-int zwl_seat_bind(struct zwl_object *seat);
-int zwl_seat_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_seat_focus(struct zwl_server *server);
-void zwl_seat_surface_gone(struct zwl_object *surface);
-void zwl_seat_capabilities(struct zwl_server *server);
-void zwl_seat_repeat_changed(struct zwl_server *server);
-void zwl_seat_motion(struct zwl_server *server, uint32_t time);
-int zwl_seat_motion_shell(struct zwl_server *server, uint32_t time);
-void zwl_seat_motion_deliver(struct zwl_server *server, uint32_t time);
-void zwl_seat_button(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
-int zwl_seat_button_shell(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
-void zwl_seat_button_deliver(struct zwl_server *server, uint32_t time, uint32_t button, uint32_t state);
-void zwl_seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal);
-void zwl_seat_axis_finger(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units);
-void zwl_seat_axis_stop(struct zwl_server *server, uint32_t time);
-void zwl_seat_frame(struct zwl_server *server);
-void zwl_seat_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
-void zwl_seat_key_deliver(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
-void zwl_seat_modifiers(struct zwl_server *server);
+#define KWL_TOPLEVEL_MOVE		1
+#define KWL_TOPLEVEL_MAXIMIZE		2
+#define KWL_TOPLEVEL_UNMAXIMIZE		3
+#define KWL_TOPLEVEL_MINIMIZE		4
+void kwl_glass_toplevel_request(struct kwl_server *server, struct kwl_object *surface, int request);
+void kwl_glass_toplevel_move_end(struct kwl_server *server, struct kwl_object *surface);
+uint32_t kwl_next_serial(struct kwl_server *server);
+int kwl_seat_bind(struct kwl_object *seat);
+int kwl_seat_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_seat_focus(struct kwl_server *server);
+void kwl_seat_surface_gone(struct kwl_object *surface);
+void kwl_seat_capabilities(struct kwl_server *server);
+void kwl_seat_repeat_changed(struct kwl_server *server);
+void kwl_seat_motion(struct kwl_server *server, uint32_t time);
+int kwl_seat_motion_shell(struct kwl_server *server, uint32_t time);
+void kwl_seat_motion_deliver(struct kwl_server *server, uint32_t time);
+void kwl_seat_button(struct kwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+int kwl_seat_button_shell(struct kwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+void kwl_seat_button_deliver(struct kwl_server *server, uint32_t time, uint32_t button, uint32_t state);
+void kwl_seat_axis(struct kwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal);
+void kwl_seat_axis_finger(struct kwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units);
+void kwl_seat_axis_stop(struct kwl_server *server, uint32_t time);
+void kwl_seat_frame(struct kwl_server *server);
+void kwl_seat_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+void kwl_seat_key_deliver(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+void kwl_seat_modifiers(struct kwl_server *server);
 /* The operating system through libkeiland-backend (os.c, ws131-p008; the display's two in compose.h). */
 struct pollfd;
-int zwl_os_open(struct zwl_server *server);
-void zwl_os_close(struct zwl_server *server);
-size_t zwl_os_poll_count(const struct zwl_server *server);
-void zwl_os_poll_fill(struct zwl_server *server, struct pollfd *descriptors);
-void zwl_os_poll_done(struct zwl_server *server, const struct pollfd *descriptors);
-void zwl_input_scan(struct zwl_server *server);
-int zwl_input_probe(struct zwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
-int zwl_input_alt_held(const struct zwl_server *server);
-int zwl_input_attach(struct zwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
-void zwl_input_read_devices(struct zwl_server *server, struct zwl_input_device **devices, size_t count);
-void zwl_input_tick(struct zwl_server *server, uint64_t now);
-void zwl_input_touchpads_changed(struct zwl_server *server);
-void zwl_input_close(struct zwl_server *server, struct zwl_input_device *device);
-void zwl_input_forget(struct zwl_server *server, struct zwl_input_device *device);
-void zwl_input_cleanup(struct zwl_server *server);
+int kwl_os_open(struct kwl_server *server);
+void kwl_os_close(struct kwl_server *server);
+size_t kwl_os_poll_count(const struct kwl_server *server);
+void kwl_os_poll_fill(struct kwl_server *server, struct pollfd *descriptors);
+void kwl_os_poll_done(struct kwl_server *server, const struct pollfd *descriptors);
+void kwl_input_scan(struct kwl_server *server);
+int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
+int kwl_input_alt_held(const struct kwl_server *server);
+int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
+void kwl_input_read_devices(struct kwl_server *server, struct kwl_input_device **devices, size_t count);
+void kwl_input_tick(struct kwl_server *server, uint64_t now);
+void kwl_input_touchpads_changed(struct kwl_server *server);
+void kwl_input_close(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_forget(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_cleanup(struct kwl_server *server);
 
 #endif

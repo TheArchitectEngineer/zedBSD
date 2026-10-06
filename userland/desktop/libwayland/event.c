@@ -695,8 +695,8 @@ wlc_event_dispatch(
 		return error;
 	}
 
-	/* Dispatches keiland_titlebar_v1 events (the Titlebar Presentation, titlebar-protocol.c). */
-	same = strcmp(proxy->interface->name, "keiland_titlebar_v1");
+	/* Dispatches kl_titlebar_v1 events (the Titlebar Presentation, titlebar-protocol.c). */
+	same = strcmp(proxy->interface->name, "kl_titlebar_v1");
 	if (same == 0) {
 		error = wlc_titlebar_dispatch(event, listener, data);
 		return error;

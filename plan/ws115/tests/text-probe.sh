@@ -37,4 +37,4 @@ python3 tools/build/check-dynamic-elf.py --machine "$machine" --role application
 # image carries fonts without the compositor; the colour emoji font comes
 # with the noto-color-emoji package.
 fonts=userland/desktop/fonts
-echo "ZEDBSD_TEST_EXTRA_FILES=--file /usr/bin/text-probe=$work/text-probe --mode /usr/bin/text-probe=0755 --file /usr/share/fonts/keiland.ttf=$PWD/$fonts/Inter.ttf --file /usr/share/fonts/keiland-mono.ttf=$PWD/$fonts/JetBrainsMono-Regular.ttf --file /usr/share/fonts/keiland-fallback.ttf=$PWD/$fonts/DroidSansFallbackFull.ttf"
+echo "ZEDBSD_TEST_EXTRA_FILES=--file /usr/bin/text-probe=$work/text-probe --mode /usr/bin/text-probe=0755 --file /usr/share/fonts/keiland.ttf=$PWD/$fonts/Mahora-Regular.ttf --file /usr/share/fonts/keiland-mono.ttf=$PWD/$fonts/JetBrainsMono-Regular.ttf --file /usr/share/fonts/keiland-fallback.ttf=$PWD/$fonts/DroidSansFallbackFull.ttf"

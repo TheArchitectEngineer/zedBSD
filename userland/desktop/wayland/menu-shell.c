@@ -91,7 +91,7 @@
  * and where a popup under it starts.
  */
 struct shell_hit {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t item;
 	unsigned docked;
 	unsigned first_hidden;
@@ -129,17 +129,17 @@ struct shell_popup {
  * whether in the system bar, and where and by what it was pressed.
  */
 struct shell_wait {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t item;
 	unsigned docked;
 	int32_t x;
 	int32_t y;
-	enum zwl_contact_source source;
+	enum kwl_contact_source source;
 };
 
 /* The last bar layout logged for a window (a checksum), so a layout is logged once. */
 struct shell_logged {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t checksum;
 };
 
@@ -151,7 +151,7 @@ struct shell_logged {
  * popups from the top-level one down.  pressing says the press that opened
  * or entered the menu is still down, so that its release on a row chooses
  * it.  eaten_key is a key whose press zdesktop took, so that its release is
- * taken too.  The hits are rebuilt every frame (zwl_menu_frame).
+ * taken too.  The hits are rebuilt every frame (kwl_menu_frame).
  *
  * A titlebar's "..." (titlebar-shell.c) records the rows of its hidden
  * controls with its hit, in extras (rebuilt every frame too); the popup it
@@ -173,9 +173,9 @@ struct shell_logged {
  * a press that goes far enough moves the window instead (shell.c).
  */
 struct shell_menu {
-	struct zwl_object *surface;
-	struct zwl_object *context;
-	struct zwl_object *desktop_top;
+	struct kwl_object *surface;
+	struct kwl_object *context;
+	struct kwl_object *desktop_top;
 	unsigned docked;
 	unsigned depth;
 	struct shell_popup popups[SHELL_DEPTH];
@@ -184,10 +184,10 @@ struct shell_menu {
 	unsigned hit_count;
 	struct shell_hit hits[SHELL_HITS];
 	struct shell_logged logged[SHELL_LOGGED];
-	struct zwl_menu_item extras[SHELL_EXTRAS];
+	struct kwl_menu_item extras[SHELL_EXTRAS];
 	char extra_labels[SHELL_EXTRAS][SHELL_EXTRA_LABEL];
 	unsigned extra_count;
-	struct zwl_menu_item open_extras[SHELL_OPEN_EXTRAS];
+	struct kwl_menu_item open_extras[SHELL_OPEN_EXTRAS];
 	char open_extra_labels[SHELL_OPEN_EXTRAS][SHELL_EXTRA_LABEL];
 	unsigned open_extra_count;
 	struct shell_wait waiting;
@@ -204,11 +204,11 @@ static struct shell_menu shell_menu;
  * The model of a window without a menu whose "..." holds only hidden
  * controls: empty, so the popups have a model to read.  It never changes.
  */
-static const struct zwl_menu_model shell_empty_model;
+static const struct kwl_menu_model shell_empty_model;
 
 /* The line between the hidden controls' rows and the menu's in "...". */
-static const struct zwl_menu_item shell_extra_line = {
-	0xefffffffU, ZWL_MENU_ROOT, ZWL_MENU_SEPARATOR, 0U, 1U, 1U, 0U, 0U, 0U, 0U, (char *)"", NULL
+static const struct kwl_menu_item shell_extra_line = {
+	0xefffffffU, KWL_MENU_ROOT, KWL_MENU_SEPARATOR, 0U, 1U, 1U, 0U, 0U, 0U, 0U, (char *)"", NULL
 };
 
 /*
@@ -237,45 +237,45 @@ static const uint32_t shell_shifted_keysyms[SHELL_KEY_LAST + 1U] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static void shell_open(struct zwl_server *server, const struct shell_hit *hit, unsigned keyboard);
-static void shell_close_from(struct zwl_server *server, unsigned level, unsigned notify);
-static void shell_activate(struct zwl_server *server, const struct zwl_menu_item *item, const char *via);
-static unsigned shell_rows(const struct zwl_menu_model *model, const struct shell_popup *popup, const struct zwl_menu_item **rows);
-static void shell_layout(struct zwl_server *server, const struct zwl_menu_model *model, unsigned level);
-static const struct zwl_menu_item *shell_row_at(struct zwl_server *server, const struct zwl_menu_model *model, unsigned level, int32_t x, int32_t y, int32_t *row_y);
+static void shell_open(struct kwl_server *server, const struct shell_hit *hit, unsigned keyboard);
+static void shell_close_from(struct kwl_server *server, unsigned level, unsigned notify);
+static void shell_activate(struct kwl_server *server, const struct kwl_menu_item *item, const char *via);
+static unsigned shell_rows(const struct kwl_menu_model *model, const struct shell_popup *popup, const struct kwl_menu_item **rows);
+static void shell_layout(struct kwl_server *server, const struct kwl_menu_model *model, unsigned level);
+static const struct kwl_menu_item *shell_row_at(struct kwl_server *server, const struct kwl_menu_model *model, unsigned level, int32_t x, int32_t y, int32_t *row_y);
 static int shell_popup_at(int32_t x, int32_t y);
-static void shell_select_step(struct zwl_server *server, const struct zwl_menu_model *model, int step);
-static void shell_select_letter(struct zwl_server *server, const struct zwl_menu_model *model, uint32_t keysym);
-static void shell_open_child(struct zwl_server *server, const struct zwl_menu_model *model, unsigned level, const struct zwl_menu_item *item, int32_t row_y, unsigned keyboard);
-static void shell_choose_row(struct zwl_server *server, const struct zwl_menu_model *model, const struct zwl_menu_item *row, int32_t row_y, unsigned level, const char *via);
-static void shell_step_top(struct zwl_server *server, int step);
-static void shell_menu_key(struct zwl_server *server, const struct zwl_menu_model *model, uint32_t key);
-static unsigned shell_selectable(const struct zwl_menu_item *item);
-static unsigned shell_usable(const struct zwl_menu_model *model, const struct zwl_menu_item *item);
-static const struct shell_hit *shell_hit_at(struct zwl_server *server, int32_t x, int32_t y);
-static void shell_wait_release(struct zwl_server *server);
-static int shell_wait_motion(struct zwl_server *server);
-static const struct shell_hit *shell_first_hit(struct zwl_object *surface);
-static void shell_add_hit(struct zwl_object *surface, uint32_t item, unsigned docked, unsigned first_hidden, const struct zwl_menu_area *area, int32_t x, int32_t width);
-static void shell_log_bar(struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, uint32_t checksum);
+static void shell_select_step(struct kwl_server *server, const struct kwl_menu_model *model, int step);
+static void shell_select_letter(struct kwl_server *server, const struct kwl_menu_model *model, uint32_t keysym);
+static void shell_open_child(struct kwl_server *server, const struct kwl_menu_model *model, unsigned level, const struct kwl_menu_item *item, int32_t row_y, unsigned keyboard);
+static void shell_choose_row(struct kwl_server *server, const struct kwl_menu_model *model, const struct kwl_menu_item *row, int32_t row_y, unsigned level, const char *via);
+static void shell_step_top(struct kwl_server *server, int step);
+static void shell_menu_key(struct kwl_server *server, const struct kwl_menu_model *model, uint32_t key);
+static unsigned shell_selectable(const struct kwl_menu_item *item);
+static unsigned shell_usable(const struct kwl_menu_model *model, const struct kwl_menu_item *item);
+static const struct shell_hit *shell_hit_at(struct kwl_server *server, int32_t x, int32_t y);
+static void shell_wait_release(struct kwl_server *server);
+static int shell_wait_motion(struct kwl_server *server);
+static const struct shell_hit *shell_first_hit(struct kwl_object *surface);
+static void shell_add_hit(struct kwl_object *surface, uint32_t item, unsigned docked, unsigned first_hidden, const struct kwl_menu_area *area, int32_t x, int32_t width);
+static void shell_log_bar(struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, uint32_t checksum);
 static uint32_t shell_mix(uint32_t checksum, uint32_t value);
-static void shell_log_popup(struct zwl_server *server, const struct zwl_menu_model *model, unsigned level);
+static void shell_log_popup(struct kwl_server *server, const struct kwl_menu_model *model, unsigned level);
 static int shell_keysym(uint32_t key, uint32_t seat_modifiers, uint32_t *keysym, uint32_t *modifiers);
-static const struct zwl_menu_item *shell_shortcut_item(const struct zwl_menu_model *model, uint32_t keysym, uint32_t modifiers);
-static void shell_shortcut_text(const struct zwl_menu_item *item, char *text, size_t size);
+static const struct kwl_menu_item *shell_shortcut_item(const struct kwl_menu_model *model, uint32_t keysym, uint32_t modifiers);
+static void shell_shortcut_text(const struct kwl_menu_item *item, char *text, size_t size);
 static void shell_key_name(uint32_t keysym, char *text, size_t size);
-static void shell_draw_popup(struct zwl_server *server, VkCommandBuffer command, const struct zwl_menu_model *model, unsigned level);
-static void shell_draw_row(struct zwl_server *server, VkCommandBuffer command, const struct shell_popup *popup, const struct zwl_menu_item *row, int32_t row_y);
-static const struct zwl_menu_model *shell_model(struct zwl_object *surface, struct zwl_object **place);
-static const struct zwl_menu_item *shell_item(const struct zwl_menu_model *model, uint32_t id);
-static struct zwl_object *shell_place(struct zwl_object *surface);
+static void shell_draw_popup(struct kwl_server *server, VkCommandBuffer command, const struct kwl_menu_model *model, unsigned level);
+static void shell_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct shell_popup *popup, const struct kwl_menu_item *row, int32_t row_y);
+static const struct kwl_menu_model *shell_model(struct kwl_object *surface, struct kwl_object **place);
+static const struct kwl_menu_item *shell_item(const struct kwl_menu_model *model, uint32_t id);
+static struct kwl_object *shell_place(struct kwl_object *surface);
 
 /*
  * Starts a frame: the top-level items are hit-tested where this frame draws them.
  */
 void
-zwl_menu_frame(
-	struct zwl_server *server)
+kwl_menu_frame(
+	struct kwl_server *server)
 {
 	/* The server is the one this file's state belongs to. */
 	(void)server;
@@ -290,26 +290,26 @@ zwl_menu_frame(
  * room after it: two fifths of the room with a menu, all of it without.
  */
 int32_t
-zwl_menu_title_limit(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_menu_title_limit(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t available)
 {
-	const struct zwl_menu_item *tops[1];
-	const struct zwl_menu_model *model;
-	struct zwl_object *place;
+	const struct kwl_menu_item *tops[1];
+	const struct kwl_menu_model *model;
+	struct kwl_object *place;
 	unsigned count;
 
 	/* The server is the one this file's state belongs to. */
 	(void)server;
 
 	/* A window without a menu keeps the whole room for its title. */
-	model = zwl_menu_of_surface(surface, &place);
+	model = kwl_menu_of_surface(surface, &place);
 	if (model == NULL)
 		return available;
 
 	/* A menu with no visible top-level item takes no room either. */
-	count = zwl_menu_children(model, ZWL_MENU_ROOT, tops, 1U);
+	count = kwl_menu_children(model, KWL_MENU_ROOT, tops, 1U);
 	if (count == 0U)
 		return available;
 
@@ -323,20 +323,20 @@ zwl_menu_title_limit(
  * and the open item marked, and records where they are for the pointer.
  */
 void
-zwl_menu_draw_bar(
-	struct zwl_server *server,
+kwl_menu_draw_bar(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	const float *ink,
 	float fade)
 {
 	static const float hover[4] = { 1.0f, 1.0f, 1.0f, 0.62f };
 	static const float opened[4] = { 0.25f, 0.52f, 0.98f, 0.20f };
-	const struct zwl_menu_item *tops[SHELL_ROWS];
-	const struct zwl_menu_model *model;
-	struct zwl_object *place;
+	const struct kwl_menu_item *tops[SHELL_ROWS];
+	const struct kwl_menu_model *model;
+	struct kwl_object *place;
 	float colour[4];
 	float pill[4];
 	unsigned count;
@@ -354,14 +354,14 @@ zwl_menu_draw_bar(
 	int32_t baseline;
 
 	/* The window's menu, and its top-level items that are not separators. */
-	model = zwl_menu_of_surface(surface, &place);
+	model = kwl_menu_of_surface(surface, &place);
 	if (model == NULL)
 		return;
-	count = zwl_menu_children(model, ZWL_MENU_ROOT, tops, SHELL_ROWS);
+	count = kwl_menu_children(model, KWL_MENU_ROOT, tops, SHELL_ROWS);
 	shown = 0;
 	for (index = 0; index < count; index++) {
 		/* A separator has no place among the top-level items. */
-		if (tops[index]->type == ZWL_MENU_SEPARATOR)
+		if (tops[index]->type == KWL_MENU_SEPARATOR)
 			continue;
 		tops[shown] = tops[index];
 		widths[shown] = glass_text_width(server, SIZE_BAR, tops[index]->label) + 2 * ITEM_PADDING;
@@ -489,12 +489,12 @@ zwl_menu_draw_bar(
  * one down.
  */
 void
-zwl_menu_draw_popups(
-	struct zwl_server *server,
+kwl_menu_draw_popups(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	const struct zwl_menu_model *model;
-	struct zwl_object *place;
+	const struct kwl_menu_model *model;
+	struct kwl_object *place;
 	unsigned level;
 
 	/* Nothing is open. */
@@ -521,22 +521,22 @@ zwl_menu_draw_popups(
  * every button.  Returns 1 when the button was the menus'.
  */
 int
-zwl_menu_button(
-	struct zwl_server *server,
+kwl_menu_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	const struct zwl_menu_model *model;
-	const struct zwl_menu_item *row;
+	const struct kwl_menu_model *model;
+	const struct kwl_menu_item *row;
 	const struct shell_hit *hit;
-	struct zwl_object *place;
+	struct kwl_object *place;
 	int32_t row_y;
 	int level;
 
 	/* With no menu open only a left press on a top-level item, and its release, are the menus'. */
 	if (shell_menu.surface == NULL) {
 		/* Another button goes on. */
-		if (button != ZWL_BUTTON_LEFT)
+		if (button != KWL_BUTTON_LEFT)
 			return 0;
 
 		/* The release of a waiting press opens its item's popup. */
@@ -554,7 +554,7 @@ zwl_menu_button(
 
 		/* A floating window comes to the top. */
 		if (!hit->docked)
-			zwl_glass_raise(server, hit->surface);
+			kwl_glass_raise(server, hit->surface);
 
 		/* The press waits for its release, or to go far enough to move the window. */
 		shell_menu.waiting.surface = hit->surface;
@@ -630,13 +630,13 @@ zwl_menu_button(
  * (ws099-p030).  Returns 1 when the motion is the menus', 0 otherwise.
  */
 int
-zwl_menu_motion(
-	struct zwl_server *server)
+kwl_menu_motion(
+	struct kwl_server *server)
 {
-	const struct zwl_menu_model *model;
-	const struct zwl_menu_item *row;
+	const struct kwl_menu_model *model;
+	const struct kwl_menu_item *row;
 	const struct shell_hit *hit;
-	struct zwl_object *place;
+	struct kwl_object *place;
 	unsigned selectable;
 	int32_t row_y;
 	int level;
@@ -696,7 +696,7 @@ zwl_menu_motion(
 	shell_menu.popups[level].selected = row->id;
 
 	/* A submenu's popup opens beside its row. */
-	if (row->type == ZWL_MENU_SUBMENU)
+	if (row->type == KWL_MENU_SUBMENU)
 		shell_open_child(server, model, (unsigned)level, row, row_y, 0);
 
 	/* Succeeded: the motion was the menus'. */
@@ -709,13 +709,13 @@ zwl_menu_motion(
  * the menus'.
  */
 int
-zwl_menu_grab_key(
-	struct zwl_server *server,
+kwl_menu_grab_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
-	const struct zwl_menu_model *model;
-	struct zwl_object *place;
+	const struct kwl_menu_model *model;
+	struct kwl_object *place;
 
 	/* The release of a key the menus took is theirs too. */
 	if (state == 0U &&
@@ -757,15 +757,15 @@ zwl_menu_grab_key(
  * before the client.  Returns 1 when the key was the menus'.
  */
 int
-zwl_menu_key(
-	struct zwl_server *server,
+kwl_menu_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
-	const struct zwl_menu_model *model;
-	const struct zwl_menu_item *item;
+	const struct kwl_menu_model *model;
+	const struct kwl_menu_item *item;
 	const struct shell_hit *hit;
-	struct zwl_object *place;
+	struct kwl_object *place;
 	uint32_t keysym;
 	uint32_t modifiers;
 	int known;
@@ -775,7 +775,7 @@ zwl_menu_key(
 		return 0;
 
 	/* The window's menu; a window without one leaves its keys to the others. */
-	model = zwl_menu_of_surface(server->focus, &place);
+	model = kwl_menu_of_surface(server->focus, &place);
 	if (model == NULL)
 		return 0;
 
@@ -804,7 +804,7 @@ zwl_menu_key(
 
 	/* The item is chosen and the key's press and release go no further. */
 	shell_menu.eaten_key = key;
-	zwl_menu_send_activated(place, item, "shortcut");
+	kwl_menu_send_activated(place, item, "shortcut");
 	server->dirty = 1;
 
 	/* Succeeded: the key was the menus'. */
@@ -818,16 +818,16 @@ zwl_menu_key(
  * that can no longer be chosen.
  */
 void
-zwl_menu_tick(
-	struct zwl_server *server)
+kwl_menu_tick(
+	struct kwl_server *server)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
-	const struct zwl_menu_model *model;
-	const struct zwl_menu_item *item;
-	struct zwl_object *surface;
-	struct zwl_object *desktop;
-	struct zwl_object *place;
-	struct zwl_object *top;
+	const struct kwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_model *model;
+	const struct kwl_menu_item *item;
+	struct kwl_object *surface;
+	struct kwl_object *desktop;
+	struct kwl_object *place;
+	struct kwl_object *top;
 	unsigned level;
 	unsigned count;
 	unsigned index;
@@ -841,15 +841,15 @@ zwl_menu_tick(
 
 	/* The window, its state and what covers it. */
 	model = shell_model(surface, &place);
-	home = zwl_home_progress(server);
-	top = zwl_top_window(server);
+	home = kwl_home_progress(server);
+	top = kwl_top_window(server);
 
 	/*
 	 * The desktop surface is never the window on top (desktop.c): its
 	 * context menu stays open while the window on top is the one that was
 	 * when it opened (ws094-p005).
 	 */
-	desktop = zwl_desktop_surface(server);
+	desktop = kwl_desktop_surface(server);
 	if (surface == desktop && top == shell_menu.desktop_top)
 		top = surface;
 
@@ -874,16 +874,16 @@ zwl_menu_tick(
 			continue;
 
 		/* Nor do a context menu's first popup's. */
-		if (shell_menu.popups[level].parent == ZWL_MENU_ROOT && shell_menu.context != NULL)
+		if (shell_menu.popups[level].parent == KWL_MENU_ROOT && shell_menu.context != NULL)
 			continue;
 
 		/* The popup's item must still be a visible, enabled submenu. */
-		item = zwl_menu_item(model, shell_menu.popups[level].parent);
+		item = kwl_menu_item(model, shell_menu.popups[level].parent);
 		found = 0;
 		if (item != NULL &&
 		    item->visible &&
 		    item->enabled &&
-		    item->type == ZWL_MENU_SUBMENU)
+		    item->type == KWL_MENU_SUBMENU)
 			found = 1;
 
 		/* A submenu popup's item is one of the rows above it. */
@@ -928,13 +928,13 @@ zwl_menu_tick(
  * No event is sent; the object may be the one that would receive it.
  */
 void
-zwl_menu_forget(
-	struct zwl_server *server,
-	struct zwl_object *object)
+kwl_menu_forget(
+	struct kwl_server *server,
+	struct kwl_object *object)
 {
-	struct zwl_object *surface;
-	struct zwl_object *place;
-	struct zwl_object *toplevel;
+	struct kwl_object *surface;
+	struct kwl_object *place;
+	struct kwl_object *toplevel;
 	unsigned index;
 	unsigned kept;
 	unsigned mine;
@@ -987,7 +987,7 @@ zwl_menu_forget(
 	}
 
 	/* The open menu's place, and its window's toplevel. */
-	(void)zwl_menu_of_surface(surface, &place);
+	(void)kwl_menu_of_surface(surface, &place);
 	toplevel = NULL;
 	if (surface->role != NULL)
 		toplevel = surface->role->top;
@@ -1020,17 +1020,17 @@ zwl_menu_forget(
  * context menu it is done).
  */
 int
-zwl_menu_open_context(
-	struct zwl_server *server,
-	struct zwl_object *context,
-	struct zwl_object *surface,
+kwl_menu_open_context(
+	struct kwl_server *server,
+	struct kwl_object *context,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t y)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
-	const struct zwl_menu_model *model;
+	const struct kwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_model *model;
 	struct shell_popup *popup;
-	struct zwl_object *desktop;
+	struct kwl_object *desktop;
 	int32_t left;
 	int32_t top;
 	unsigned count;
@@ -1041,7 +1041,7 @@ zwl_menu_open_context(
 
 	/* Nor has one whose menu has no rows. */
 	model = context->shown_menu->menu_model;
-	count = zwl_menu_children(model, ZWL_MENU_ROOT, rows, SHELL_ROWS);
+	count = kwl_menu_children(model, KWL_MENU_ROOT, rows, SHELL_ROWS);
 	if (count == 0U)
 		return ENOENT;
 
@@ -1053,21 +1053,21 @@ zwl_menu_open_context(
 	left = surface->x;
 	top = surface->y;
 	if (server->glass)
-		(void)zwl_glass_body_origin(server, surface, &left, &top);
+		(void)kwl_glass_body_origin(server, surface, &left, &top);
 
 	/* The popup at the point, with the context menu's rows; on the desktop, the window on top then. */
 	shell_menu.surface = surface;
 	shell_menu.context = context;
 	shell_menu.desktop_top = NULL;
-	desktop = zwl_desktop_surface(server);
+	desktop = kwl_desktop_surface(server);
 	if (surface == desktop)
-		shell_menu.desktop_top = zwl_top_window(server);
+		shell_menu.desktop_top = kwl_top_window(server);
 	shell_menu.docked = surface->maximized;
 	shell_menu.depth = 1;
 	shell_menu.pressing = 0;
 	popup = &shell_menu.popups[0];
 	memset(popup, 0, sizeof(*popup));
-	popup->parent = ZWL_MENU_ROOT;
+	popup->parent = KWL_MENU_ROOT;
 	popup->anchor_x = left + x;
 	popup->anchor_y = top + y;
 	popup->flip_x = left + x;
@@ -1087,7 +1087,7 @@ zwl_menu_open_context(
  * is open.
  */
 int
-zwl_menu_is_open(void)
+kwl_menu_is_open(void)
 {
 	/* A menu open has its window. */
 	if (shell_menu.surface != NULL)
@@ -1103,17 +1103,17 @@ zwl_menu_is_open(void)
  * labels) before the window's menu.
  */
 void
-zwl_menu_add_overflow(
-	struct zwl_object *surface,
+kwl_menu_add_overflow(
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	int32_t x,
 	int32_t width,
 	const uint32_t *ids,
 	const char *const *labels,
 	unsigned count)
 {
-	struct zwl_menu_item *extra;
+	struct kwl_menu_item *extra;
 	struct shell_hit *hit;
 	unsigned start;
 	unsigned index;
@@ -1133,12 +1133,12 @@ zwl_menu_add_overflow(
 	/* The rows of the hidden controls, as many as the frame's table holds. */
 	start = shell_menu.extra_count;
 	for (index = 0; index < count && shell_menu.extra_count < SHELL_EXTRAS; index++) {
-		/* A plain row, told apart from the menu's items by ZWL_MENU_EXTRA_BASE, with a copy of its label. */
+		/* A plain row, told apart from the menu's items by KWL_MENU_EXTRA_BASE, with a copy of its label. */
 		extra = &shell_menu.extras[shell_menu.extra_count];
 		memset(extra, 0, sizeof(*extra));
-		extra->id = ZWL_MENU_EXTRA_BASE | ids[index];
-		extra->parent = ZWL_MENU_ROOT;
-		extra->type = ZWL_MENU_NORMAL;
+		extra->id = KWL_MENU_EXTRA_BASE | ids[index];
+		extra->parent = KWL_MENU_ROOT;
+		extra->type = KWL_MENU_NORMAL;
 		extra->enabled = 1;
 		extra->visible = 1;
 		(void)snprintf(shell_menu.extra_labels[shell_menu.extra_count], SHELL_EXTRA_LABEL, "%s", labels[index]);
@@ -1157,7 +1157,7 @@ zwl_menu_add_overflow(
  * one.
  */
 int
-zwl_menu_keysym(
+kwl_menu_keysym(
 	uint32_t key,
 	uint32_t seat_modifiers,
 	uint32_t *keysym)
@@ -1171,7 +1171,7 @@ zwl_menu_keysym(
 		return 0;
 
 	/* A letter typed with Shift is its capital. */
-	if ((modifiers & ZWL_MENU_SHIFT) != 0U &&
+	if ((modifiers & KWL_MENU_SHIFT) != 0U &&
 	    *keysym >= 'a' &&
 	    *keysym <= 'z')
 		*keysym -= 'a' - 'A';
@@ -1187,18 +1187,18 @@ zwl_menu_keysym(
  */
 static void
 shell_open(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct shell_hit *hit,
 	unsigned keyboard)
 {
-	const struct zwl_menu_model *model;
-	const struct zwl_menu_item *item;
+	const struct kwl_menu_model *model;
+	const struct kwl_menu_item *item;
 	struct shell_popup *popup;
-	struct zwl_object *place;
+	struct kwl_object *place;
 	unsigned index;
 
 	/* The window's model; a "..." holding only hidden controls reads the empty one. */
-	model = zwl_menu_of_surface(hit->surface, &place);
+	model = kwl_menu_of_surface(hit->surface, &place);
 	if (model == NULL && hit->extra_count > 0U)
 		model = &shell_empty_model;
 
@@ -1209,7 +1209,7 @@ shell_open(
 	/* The top-level item (none for the overflow); one that went or is disabled does not open. */
 	item = NULL;
 	if (hit->item != SHELL_OVERFLOW) {
-		item = zwl_menu_item(model, hit->item);
+		item = kwl_menu_item(model, hit->item);
 		if (item == NULL || !item->enabled)
 			return;
 	}
@@ -1229,7 +1229,7 @@ shell_open(
 	}
 
 	/* An item with no children is chosen at once. */
-	if (item != NULL && item->type != ZWL_MENU_SUBMENU) {
+	if (item != NULL && item->type != KWL_MENU_SUBMENU) {
 		shell_activate(server, item, "pointer");
 		return;
 	}
@@ -1248,9 +1248,9 @@ shell_open(
 
 	/* The client hears that the submenu opened, or that a titlebar's "..." did (a chance to update its menu). */
 	if (item != NULL) {
-		zwl_menu_send_popup(place, item->id, 1U);
+		kwl_menu_send_popup(place, item->id, 1U);
 	} else {
-		zwl_titlebar_overflow_opened(hit->surface);
+		kwl_titlebar_overflow_opened(hit->surface);
 	}
 
 	/* The log gives the popup and its rows. */
@@ -1270,11 +1270,11 @@ shell_open(
  */
 static void
 shell_close_from(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	unsigned level,
 	unsigned notify)
 {
-	struct zwl_object *place;
+	struct kwl_object *place;
 	uint32_t parent;
 
 	/* Nothing that deep is open. */
@@ -1292,7 +1292,7 @@ shell_close_from(
 		if (notify &&
 		    place != NULL &&
 		    parent != SHELL_OVERFLOW)
-			zwl_menu_send_popup(place, parent, 0U);
+			kwl_menu_send_popup(place, parent, 0U);
 
 		/* The log line the tests read. */
 		printf("ZWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
@@ -1302,7 +1302,7 @@ shell_close_from(
 	if (shell_menu.depth == 0U) {
 		/* A context menu is told it is done. */
 		if (shell_menu.context != NULL && notify)
-			zwl_menu_send_context_done(shell_menu.context);
+			kwl_menu_send_context_done(shell_menu.context);
 
 		/* Menu mode ends: no context menu, no window, no press. */
 		shell_menu.context = NULL;
@@ -1317,19 +1317,19 @@ shell_close_from(
 /* Chooses an item: the menu closes and its client hears the choice. */
 static void
 shell_activate(
-	struct zwl_server *server,
-	const struct zwl_menu_item *item,
+	struct kwl_server *server,
+	const struct kwl_menu_item *item,
 	const char *via)
 {
-	struct zwl_object *context;
-	struct zwl_object *surface;
-	struct zwl_object *place;
+	struct kwl_object *context;
+	struct kwl_object *surface;
+	struct kwl_object *place;
 	uint32_t id;
 
 	/* A context menu's choice goes to it; it closes (told done) after the choice. */
 	context = shell_menu.context;
 	if (context != NULL) {
-		zwl_menu_send_context_activated(context, item, via);
+		kwl_menu_send_context_activated(context, item, via);
 		shell_close_from(server, 0U, 1U);
 		return;
 	}
@@ -1337,16 +1337,16 @@ shell_activate(
 	/* The window of the choice: the open menu's, or the one on top for a shortcut. */
 	surface = shell_menu.surface;
 	if (surface == NULL)
-		surface = zwl_top_window(server);
+		surface = kwl_top_window(server);
 
 	/* The place the choice goes to, found before the menu closes. */
-	(void)zwl_menu_of_surface(surface, &place);
+	(void)kwl_menu_of_surface(surface, &place);
 
 	/* A hidden control's row goes to the titlebar (its row is gone once the menu closes). */
-	if ((item->id & ZWL_MENU_EXTRA_BASE) == ZWL_MENU_EXTRA_BASE && item->id != shell_extra_line.id) {
-		id = item->id & ~ZWL_MENU_EXTRA_BASE;
+	if ((item->id & KWL_MENU_EXTRA_BASE) == KWL_MENU_EXTRA_BASE && item->id != shell_extra_line.id) {
+		id = item->id & ~KWL_MENU_EXTRA_BASE;
 		shell_close_from(server, 0U, 1U);
-		zwl_titlebar_overflow_chosen(server, surface, id);
+		kwl_titlebar_overflow_chosen(server, surface, id);
 		return;
 	}
 
@@ -1355,17 +1355,17 @@ shell_activate(
 
 	/* Then the choice is sent to the window's menu. */
 	if (place != NULL)
-		zwl_menu_send_activated(place, item, via);
+		kwl_menu_send_activated(place, item, via);
 }
 
 /* Lists a popup's rows: a submenu's visible children, or the overflow's top-level items. */
 static unsigned
 shell_rows(
-	const struct zwl_menu_model *model,
+	const struct kwl_menu_model *model,
 	const struct shell_popup *popup,
-	const struct zwl_menu_item **rows)
+	const struct kwl_menu_item **rows)
 {
-	const struct zwl_menu_item *tops[SHELL_ROWS];
+	const struct kwl_menu_item *tops[SHELL_ROWS];
 	unsigned count;
 	unsigned index;
 	unsigned seen;
@@ -1373,7 +1373,7 @@ shell_rows(
 
 	/* A submenu's rows are its children. */
 	if (popup->parent != SHELL_OVERFLOW) {
-		count = zwl_menu_children(model, popup->parent, rows, SHELL_ROWS);
+		count = kwl_menu_children(model, popup->parent, rows, SHELL_ROWS);
 		return count;
 	}
 
@@ -1385,7 +1385,7 @@ shell_rows(
 	}
 
 	/* The overflow holds the top-level items from the first the bar had no room for. */
-	count = zwl_menu_children(model, ZWL_MENU_ROOT, tops, SHELL_ROWS);
+	count = kwl_menu_children(model, KWL_MENU_ROOT, tops, SHELL_ROWS);
 
 	/* A line between the hidden controls' rows and the menu's. */
 	if (kept > 0U && count > 0U) {
@@ -1397,7 +1397,7 @@ shell_rows(
 	seen = 0;
 	for (index = 0; index < count; index++) {
 		/* The bar skips separators, and so does the count of what it showed. */
-		if (tops[index]->type == ZWL_MENU_SEPARATOR)
+		if (tops[index]->type == KWL_MENU_SEPARATOR)
 			continue;
 
 		/* One the bar had no room for is a row of the overflow. */
@@ -1421,11 +1421,11 @@ shell_rows(
  */
 static void
 shell_layout(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	unsigned level)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *rows[SHELL_ROWS];
 	struct shell_popup *popup;
 	char shortcut[48];
 	unsigned count;
@@ -1444,7 +1444,7 @@ shell_layout(
 	height = 2 * POPUP_PADDING;
 	for (index = 0; index < count; index++) {
 		/* A separator is short and takes no width. */
-		if (rows[index]->type == ZWL_MENU_SEPARATOR) {
+		if (rows[index]->type == KWL_MENU_SEPARATOR) {
 			height += SEPARATOR_HEIGHT;
 			continue;
 		}
@@ -1457,7 +1457,7 @@ shell_layout(
 		width = POPUP_GUTTER + label + 40 + hint + 14;
 
 		/* A submenu's row has its arrow too. */
-		if (rows[index]->type == ZWL_MENU_SUBMENU)
+		if (rows[index]->type == KWL_MENU_SUBMENU)
 			width += 16;
 
 		/* The popup is as wide as its widest row. */
@@ -1491,21 +1491,21 @@ shell_layout(
 		popup->y = bottom - popup->height;
 
 	/* Never over the system bar. */
-	if (popup->y < ZWL_GLASS_BAR + 4)
-		popup->y = ZWL_GLASS_BAR + 4;
+	if (popup->y < KWL_GLASS_BAR + 4)
+		popup->y = KWL_GLASS_BAR + 4;
 }
 
 /* Finds the row of a popup at a point, and the row's top; NULL off its rows. */
-static const struct zwl_menu_item *
+static const struct kwl_menu_item *
 shell_row_at(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	unsigned level,
 	int32_t x,
 	int32_t y,
 	int32_t *row_y)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *rows[SHELL_ROWS];
 	struct shell_popup *popup;
 	unsigned count;
 	unsigned index;
@@ -1526,7 +1526,7 @@ shell_row_at(
 	for (index = 0; index < count; index++) {
 		/* The row's height: a separator is thinner. */
 		height = ROW_HEIGHT;
-		if (rows[index]->type == ZWL_MENU_SEPARATOR)
+		if (rows[index]->type == KWL_MENU_SEPARATOR)
 			height = SEPARATOR_HEIGHT;
 
 		/* The row the point is in. */
@@ -1574,11 +1574,11 @@ shell_popup_at(
 /* Moves the deepest popup's selection to the next (step 1) or previous (-1) row that can be chosen, around the ends. */
 static void
 shell_select_step(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	int step)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *rows[SHELL_ROWS];
 	struct shell_popup *popup;
 	unsigned count;
 	unsigned tried;
@@ -1624,11 +1624,11 @@ shell_select_step(
 /* Moves the deepest popup's selection to the next row whose label starts with a letter or digit. */
 static void
 shell_select_letter(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	uint32_t keysym)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *rows[SHELL_ROWS];
 	struct shell_popup *popup;
 	unsigned count;
 	unsigned tried;
@@ -1676,16 +1676,16 @@ shell_select_letter(
 /* Opens a submenu row's popup beside it, one level below the row's popup. */
 static void
 shell_open_child(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	unsigned level,
-	const struct zwl_menu_item *item,
+	const struct kwl_menu_item *item,
 	int32_t row_y,
 	unsigned keyboard)
 {
 	struct shell_popup *parent;
 	struct shell_popup *popup;
-	struct zwl_object *place;
+	struct kwl_object *place;
 
 	/* It is open already. */
 	if (shell_menu.depth > level + 1U && shell_menu.popups[level + 1U].parent == item->id)
@@ -1712,7 +1712,7 @@ shell_open_child(
 	/* The client hears that the submenu opened. */
 	place = shell_place(shell_menu.surface);
 	if (place != NULL)
-		zwl_menu_send_popup(place, item->id, 1U);
+		kwl_menu_send_popup(place, item->id, 1U);
 
 	/* The log gives the popup and its rows. */
 	shell_log_popup(server, model, level + 1U);
@@ -1728,9 +1728,9 @@ shell_open_child(
 /* Acts on a chosen row: a submenu opens, an item that can be chosen is activated. */
 static void
 shell_choose_row(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
-	const struct zwl_menu_item *row,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
+	const struct kwl_menu_item *row,
 	int32_t row_y,
 	unsigned level,
 	const char *via)
@@ -1743,7 +1743,7 @@ shell_choose_row(
 		return;
 
 	/* A submenu opens (from the keyboard, with its first row selected). */
-	if (row->type == ZWL_MENU_SUBMENU) {
+	if (row->type == KWL_MENU_SUBMENU) {
 		shell_open_child(server, model, level, row, row_y, 1);
 		return;
 	}
@@ -1755,7 +1755,7 @@ shell_choose_row(
 /* Opens the next (step 1) or previous (-1) top-level item of the open bar, around the ends. */
 static void
 shell_step_top(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int step)
 {
 	const struct shell_hit *tops[SHELL_HITS];
@@ -1796,12 +1796,12 @@ shell_step_top(
 /* Acts on a key pressed in menu mode. */
 static void
 shell_menu_key(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	uint32_t key)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
-	const struct zwl_menu_item *row;
+	const struct kwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *row;
 	struct shell_popup *popup;
 	unsigned level;
 	unsigned count;
@@ -1827,7 +1827,7 @@ shell_menu_key(
 
 		/* The next row starts under this one. */
 		row_y += ROW_HEIGHT;
-		if (rows[index]->type == ZWL_MENU_SEPARATOR)
+		if (rows[index]->type == KWL_MENU_SEPARATOR)
 			row_y += SEPARATOR_HEIGHT - ROW_HEIGHT;
 	}
 
@@ -1849,7 +1849,7 @@ shell_menu_key(
 		break;
 	case KEY_RIGHT:
 		/* Into a selected submenu, otherwise to the next top-level menu. */
-		if (row != NULL && row->type == ZWL_MENU_SUBMENU) {
+		if (row != NULL && row->type == KWL_MENU_SUBMENU) {
 			shell_open_child(server, model, level, row, row_y, 1);
 			break;
 		}
@@ -1896,10 +1896,10 @@ shell_menu_key(
 /* Tells whether a row can be selected and chosen: not a separator, and enabled. */
 static unsigned
 shell_selectable(
-	const struct zwl_menu_item *item)
+	const struct kwl_menu_item *item)
 {
 	/* A separator is never chosen. */
-	if (item->type == ZWL_MENU_SEPARATOR)
+	if (item->type == KWL_MENU_SEPARATOR)
 		return 0;
 
 	/* A disabled item is shown but not chosen. */
@@ -1913,8 +1913,8 @@ shell_selectable(
 /* Tells whether an item and all its submenus up to the top are visible and enabled. */
 static unsigned
 shell_usable(
-	const struct zwl_menu_model *model,
-	const struct zwl_menu_item *item)
+	const struct kwl_menu_model *model,
+	const struct kwl_menu_item *item)
 {
 	unsigned depth;
 
@@ -1925,11 +1925,11 @@ shell_usable(
 			return 0;
 
 		/* The top is reached with every level usable. */
-		if (item->parent == ZWL_MENU_ROOT)
+		if (item->parent == KWL_MENU_ROOT)
 			return 1;
 
 		/* Up to the submenu it is in. */
-		item = zwl_menu_item(model, item->parent);
+		item = kwl_menu_item(model, item->parent);
 	}
 
 	/* A broken chain is not usable. */
@@ -1943,7 +1943,7 @@ shell_usable(
  */
 static void
 shell_wait_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const struct shell_hit *hit;
 	struct shell_wait waiting;
@@ -1954,7 +1954,7 @@ shell_wait_release(
 	shell_menu.waiting.surface = NULL;
 
 	/* A release far from the press is no click. */
-	moved = zwl_glass_press_moved(server, waiting.x, waiting.y, waiting.source);
+	moved = kwl_glass_press_moved(server, waiting.x, waiting.y, waiting.source);
 	if (moved)
 		return;
 
@@ -1976,7 +1976,7 @@ shell_wait_release(
  */
 static int
 shell_wait_motion(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct shell_wait waiting;
 	int moved;
@@ -1993,14 +1993,14 @@ shell_wait_motion(
 
 	/* Not far enough yet: the press keeps the pointer. */
 	waiting = shell_menu.waiting;
-	moved = zwl_glass_press_moved(server, waiting.x, waiting.y, waiting.source);
+	moved = kwl_glass_press_moved(server, waiting.x, waiting.y, waiting.source);
 	if (!moved)
 		return 1;
 
 	/* The window moves instead, and its move follows this motion (shell.c). */
 	shell_menu.waiting.surface = NULL;
 	printf("ZWL MENU press moves client=%llu surface=%u item=%u docked=%u\n", (unsigned long long)waiting.surface->client->number, waiting.surface->id, waiting.item, waiting.docked);
-	zwl_glass_press_move(server, waiting.surface, waiting.docked, waiting.x, waiting.y);
+	kwl_glass_press_move(server, waiting.surface, waiting.docked, waiting.x, waiting.y);
 
 	/* Succeeded: the motion goes on to the move. */
 	return 0;
@@ -2013,12 +2013,12 @@ shell_wait_motion(
  */
 static const struct shell_hit *
 shell_hit_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
 	const struct shell_hit *hit;
-	struct zwl_object *top;
+	struct kwl_object *top;
 	unsigned index;
 
 	/* Drawn later is drawn over, so the last one wins. */
@@ -2034,7 +2034,7 @@ shell_hit_at(
 
 		/* An item in a title bar counts only where its window is the one on top. */
 		if (!hit->docked) {
-			top = zwl_glass_window_at(server, x, y);
+			top = kwl_glass_window_at(server, x, y);
 			if (top != hit->surface)
 				return NULL;
 		}
@@ -2050,7 +2050,7 @@ shell_hit_at(
 /* Finds a window's first top-level item as last drawn (in the system bar when it is docked). */
 static const struct shell_hit *
 shell_first_hit(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	unsigned index;
 
@@ -2068,11 +2068,11 @@ shell_first_hit(
 /* Records where a top-level item was drawn: the bar's whole height over the item's width. */
 static void
 shell_add_hit(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	uint32_t item,
 	unsigned docked,
 	unsigned first_hidden,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	int32_t x,
 	int32_t width)
 {
@@ -2101,9 +2101,9 @@ shell_add_hit(
 /* Logs a window's top-level items when their layout differs from the last one logged for it. */
 static void
 shell_log_bar(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	uint32_t checksum)
 {
 	const struct shell_hit *hit;
@@ -2178,11 +2178,11 @@ shell_mix(
 /* Logs a popup that opened, and its rows, for the tests that click them. */
 static void
 shell_log_popup(
-	struct zwl_server *server,
-	const struct zwl_menu_model *model,
+	struct kwl_server *server,
+	const struct kwl_menu_model *model,
 	unsigned level)
 {
-	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *rows[SHELL_ROWS];
 	const struct shell_popup *popup;
 	unsigned count;
 	unsigned index;
@@ -2209,7 +2209,7 @@ shell_log_popup(
 	for (index = 0; index < count; index++) {
 		/* The row's height: a separator is thinner. */
 		height = ROW_HEIGHT;
-		if (rows[index]->type == ZWL_MENU_SEPARATOR)
+		if (rows[index]->type == KWL_MENU_SEPARATOR)
 			height = SEPARATOR_HEIGHT;
 
 		/* Its line, and the next row under it. */
@@ -2246,20 +2246,20 @@ shell_keysym(
 	/* The modifiers in the protocol's bits. */
 	*modifiers = 0;
 	if ((seat_modifiers & SEAT_SHIFT) != 0U)
-		*modifiers |= ZWL_MENU_SHIFT;
+		*modifiers |= KWL_MENU_SHIFT;
 	if ((seat_modifiers & SEAT_CTRL) != 0U)
-		*modifiers |= ZWL_MENU_CTRL;
+		*modifiers |= KWL_MENU_CTRL;
 	if ((seat_modifiers & SEAT_ALT) != 0U)
-		*modifiers |= ZWL_MENU_ALT;
+		*modifiers |= KWL_MENU_ALT;
 	if ((seat_modifiers & SEAT_META) != 0U)
-		*modifiers |= ZWL_MENU_SUPER;
+		*modifiers |= KWL_MENU_SUPER;
 
 	/* Shift changes the symbol of a digit or a punctuation key, and is then part of it. */
 	*keysym = plain;
 	shifted = shell_shifted_keysyms[key];
-	if ((*modifiers & ZWL_MENU_SHIFT) != 0U && shifted != 0U) {
+	if ((*modifiers & KWL_MENU_SHIFT) != 0U && shifted != 0U) {
 		*keysym = shifted;
-		*modifiers &= ~ZWL_MENU_SHIFT;
+		*modifiers &= ~KWL_MENU_SHIFT;
 	}
 
 	/* Succeeded: the keysym and modifiers. */
@@ -2267,13 +2267,13 @@ shell_keysym(
 }
 
 /* Finds the usable item whose shortcut is a keysym with modifiers; NULL when none is. */
-static const struct zwl_menu_item *
+static const struct kwl_menu_item *
 shell_shortcut_item(
-	const struct zwl_menu_model *model,
+	const struct kwl_menu_model *model,
 	uint32_t keysym,
 	uint32_t modifiers)
 {
-	const struct zwl_menu_item *item;
+	const struct kwl_menu_item *item;
 	uint32_t wanted;
 	unsigned index;
 	unsigned usable;
@@ -2295,7 +2295,7 @@ shell_shortcut_item(
 			continue;
 
 		/* A submenu or a separator is not chosen by a key. */
-		if (item->type == ZWL_MENU_SUBMENU || item->type == ZWL_MENU_SEPARATOR)
+		if (item->type == KWL_MENU_SUBMENU || item->type == KWL_MENU_SEPARATOR)
 			continue;
 
 		/* Nor an item that cannot be chosen now (it, or a submenu above it, hidden or disabled). */
@@ -2311,7 +2311,7 @@ shell_shortcut_item(
 /* Writes an item's shortcut as it is shown ("Ctrl+Shift+C"), or an empty string for none. */
 static void
 shell_shortcut_text(
-	const struct zwl_menu_item *item,
+	const struct kwl_menu_item *item,
 	char *text,
 	size_t size)
 {
@@ -2323,13 +2323,13 @@ shell_shortcut_text(
 		return;
 
 	/* The modifiers in a fixed order: Ctrl, Alt, Shift, Super. */
-	if ((item->modifiers & ZWL_MENU_CTRL) != 0U)
+	if ((item->modifiers & KWL_MENU_CTRL) != 0U)
 		(void)strncat(text, "Ctrl+", size - strlen(text) - 1U);
-	if ((item->modifiers & ZWL_MENU_ALT) != 0U)
+	if ((item->modifiers & KWL_MENU_ALT) != 0U)
 		(void)strncat(text, "Alt+", size - strlen(text) - 1U);
-	if ((item->modifiers & ZWL_MENU_SHIFT) != 0U)
+	if ((item->modifiers & KWL_MENU_SHIFT) != 0U)
 		(void)strncat(text, "Shift+", size - strlen(text) - 1U);
-	if ((item->modifiers & ZWL_MENU_SUPER) != 0U)
+	if ((item->modifiers & KWL_MENU_SUPER) != 0U)
 		(void)strncat(text, "Super+", size - strlen(text) - 1U);
 
 	/* Then the key's name. */
@@ -2422,13 +2422,13 @@ shell_key_name(
 /* Draws one popup: its shadow, its glass and its rows. */
 static void
 shell_draw_popup(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_menu_model *model,
+	const struct kwl_menu_model *model,
 	unsigned level)
 {
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
-	const struct zwl_menu_item *rows[SHELL_ROWS];
+	const struct kwl_menu_item *rows[SHELL_ROWS];
 	const struct shell_popup *popup;
 	struct glass_shape shape;
 	unsigned count;
@@ -2467,7 +2467,7 @@ shell_draw_popup(
 	top = popup->y + POPUP_PADDING;
 	for (index = 0; index < count; index++) {
 		/* A separator is a thin line across the popup. */
-		if (rows[index]->type == ZWL_MENU_SEPARATOR) {
+		if (rows[index]->type == KWL_MENU_SEPARATOR) {
 			glass_draw_solid(server, command, (float)(popup->x + 12), (float)(top + SEPARATOR_HEIGHT / 2), (float)(popup->width - 24), 1.0f, 0.0f, line);
 			top += SEPARATOR_HEIGHT;
 			continue;
@@ -2485,10 +2485,10 @@ shell_draw_popup(
  */
 static void
 shell_draw_row(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const struct shell_popup *popup,
-	const struct zwl_menu_item *row,
+	const struct kwl_menu_item *row,
 	int32_t row_y)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
@@ -2523,7 +2523,7 @@ shell_draw_row(
 	}
 
 	/* A checked checkbox has a check mark in the gutter (a small square without the glyph). */
-	if (row->type == ZWL_MENU_CHECKBOX && row->checked) {
+	if (row->type == KWL_MENU_CHECKBOX && row->checked) {
 		present = glass_glyph_advance(server, SIZE_BAR, GLASS_CHECK_GLYPH);
 		if (present > 0)
 			glass_draw_glyph(server, command, SIZE_BAR, GLASS_CHECK_GLYPH, popup->x + 12, baseline, ink);
@@ -2532,14 +2532,14 @@ shell_draw_row(
 	}
 
 	/* A checked radio item has a dot. */
-	if (row->type == ZWL_MENU_RADIO && row->checked)
+	if (row->type == KWL_MENU_RADIO && row->checked)
 		glass_draw_solid(server, command, (float)(popup->x + 13), (float)(middle - 4), 8.0f, 8.0f, 4.0f, ink);
 
 	/* The label after the gutter. */
 	glass_draw_text(server, command, SIZE_BAR, popup->x + POPUP_GUTTER, baseline, row->label, popup->width - POPUP_GUTTER - 14, ink);
 
 	/* A submenu's arrow at the right edge ("›", or ">" without the glyph). */
-	if (row->type == ZWL_MENU_SUBMENU) {
+	if (row->type == KWL_MENU_SUBMENU) {
 		present = glass_glyph_advance(server, SIZE_BAR, GLASS_ARROW_GLYPH);
 		if (present > 0)
 			glass_draw_glyph(server, command, SIZE_BAR, GLASS_ARROW_GLYPH, right - present, baseline, hint);
@@ -2559,13 +2559,13 @@ shell_draw_row(
 }
 
 /* Finds the model of a window's open menu: its own, or the empty one while "..." holds only hidden controls. */
-static const struct zwl_menu_model *
+static const struct kwl_menu_model *
 shell_model(
-	struct zwl_object *surface,
-	struct zwl_object **place)
+	struct kwl_object *surface,
+	struct kwl_object **place)
 {
-	const struct zwl_menu_model *model;
-	const struct zwl_object *menu;
+	const struct kwl_menu_model *model;
+	const struct kwl_object *menu;
 
 	/* An open context menu's model, with no place (its choice goes to the context menu). */
 	if (surface != NULL &&
@@ -2581,7 +2581,7 @@ shell_model(
 	}
 
 	/* The window's menu. */
-	model = zwl_menu_of_surface(surface, place);
+	model = kwl_menu_of_surface(surface, place);
 	if (model != NULL)
 		return model;
 
@@ -2596,12 +2596,12 @@ shell_model(
 }
 
 /* Finds a row by its ID: a hidden control's row of the open "...", or an item of the model. */
-static const struct zwl_menu_item *
+static const struct kwl_menu_item *
 shell_item(
-	const struct zwl_menu_model *model,
+	const struct kwl_menu_model *model,
 	uint32_t id)
 {
-	const struct zwl_menu_item *item;
+	const struct kwl_menu_item *item;
 	unsigned index;
 
 	/* The open "..."'s rows of the hidden controls. */
@@ -2611,22 +2611,22 @@ shell_item(
 	}
 
 	/* The model's items. */
-	item = zwl_menu_item(model, id);
+	item = kwl_menu_item(model, id);
 	return item;
 }
 
 /* Finds where a window's menu events go: its menu's place, or none while a context menu is open. */
-static struct zwl_object *
+static struct kwl_object *
 shell_place(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *place;
+	struct kwl_object *place;
 
 	/* A context menu has no place. */
 	if (shell_menu.context != NULL)
 		return NULL;
 
 	/* The window's menu's place. */
-	(void)zwl_menu_of_surface(surface, &place);
+	(void)kwl_menu_of_surface(surface, &place);
 	return place;
 }

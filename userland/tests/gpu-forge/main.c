@@ -11,7 +11,7 @@
  *
  * The test exports an ordinary Vulkan allocation (an allocation capability,
  * not an image capability) and sends it with a plausible image description
- * through keiland_gpu_buffer_v1.create_buffer.  The compositor imports a
+ * through kl_gpu_buffer_v1.create_buffer.  The compositor imports a
  * client buffer only as a dedicated import of an image capability, checked
  * against the kernel's record of it, so it must end the connection with a
  * protocol error.  A renderer that cannot export an allocation (the native
@@ -38,7 +38,7 @@
 struct forge_wayland {
 	struct wl_display *display;
 	struct wl_registry *registry;
-	struct keiland_gpu_buffer_v1 *factory;
+	struct kl_gpu_buffer_v1 *factory;
 };
 
 /*
@@ -129,7 +129,7 @@ main(
 	memcpy(slot, &described, sizeof(described));
 
 	/* Sends the forged buffer; the compositor answers on the next round trip. */
-	buffer = keiland_gpu_buffer_v1_create_buffer(wayland.factory, fd, &metadata);
+	buffer = kl_gpu_buffer_v1_create_buffer(wayland.factory, fd, &metadata);
 	(void)buffer;
 
 	/* Drops the local copies of the array and the fd (the request holds its own). */
@@ -173,12 +173,12 @@ registry_global(
 
 	/* Only the GPU buffer factory is needed. */
 	wayland = data;
-	match = strcmp(interface, "keiland_gpu_buffer_v1");
+	match = strcmp(interface, "kl_gpu_buffer_v1");
 	if (match != 0)
 		return;
 
 	/* Revision one has create_buffer. */
-	wayland->factory = wl_registry_bind(registry, name, &keiland_gpu_buffer_v1_interface, 1U);
+	wayland->factory = wl_registry_bind(registry, name, &kl_gpu_buffer_v1_interface, 1U);
 
 	/* Succeeded: the factory is bound. */
 	return;

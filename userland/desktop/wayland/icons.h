@@ -13,8 +13,8 @@
  * needs nothing of the compositor, so the host's tests build icons.c alone.
  */
 
-#ifndef ZWL_ICONS_H
-#define ZWL_ICONS_H
+#ifndef KWL_ICONS_H
+#define KWL_ICONS_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -82,15 +82,15 @@ enum glass_icon {
 #define GLASS_ICON_FIRST_APP	GLASS_ICON_APP_FILES
 #define GLASS_ICON_APPS		(GLASS_ICON_COUNT - GLASS_ICON_FIRST_APP)
 
-/* The largest application tile zwl_icon_tile draws, in pixels a side. */
+/* The largest application tile kwl_icon_tile draws, in pixels a side. */
 #define GLASS_ICON_TILE_MOST	256U
 
 /* The corner radius of an application's tile, a part of its side (glass.c fits the see-through window under it). */
 #define GLASS_ICON_TILE_RADIUS	0.24f
 
-void zwl_icon_raster(unsigned icon, unsigned pixels, uint8_t *coverage, size_t stride);
-void zwl_icon_tile(unsigned icon, unsigned pixels, uint32_t *argb, size_t stride);
-int zwl_icon_named(const char *name);
-int zwl_icon_for_app_id(const char *app_id);
+void kwl_icon_raster(unsigned icon, unsigned pixels, uint8_t *coverage, size_t stride);
+void kwl_icon_tile(unsigned icon, unsigned pixels, uint32_t *argb, size_t stride);
+int kwl_icon_named(const char *name);
+int kwl_icon_for_app_id(const char *app_id);
 
 #endif

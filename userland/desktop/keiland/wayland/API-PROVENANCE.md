@@ -61,7 +61,7 @@ Server-created new_id event objects are outside these selected interfaces and
 are rejected rather than silently synthesized. The fd count per outgoing
 message is limited by zedBSD's existing SCM_RIGHTS maximum of eight.
 
-The zedBSD-original `keiland_gpu_buffer_v1` factory is version 1. Opcode 0 destroys
+The zedBSD-original `kl_gpu_buffer_v1` factory is version 1. Opcode 0 destroys
 the factory. Opcode 1 has signature `nha`: a new wl_buffer, one SCM_RIGHTS fd,
 and a metadata array. The fd has no in-band placeholder word. Metadata is an
 opaque versioned GPU descriptor verified by the server against the immutable

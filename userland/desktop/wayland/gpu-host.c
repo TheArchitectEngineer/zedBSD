@@ -10,10 +10,10 @@
  * libkeiland-backend/keiland-backend-gpu.h): the wire objects, the
  * buffers' images and the surfaces' acquire fences lent to the backend,
  * which owns the protocol itself.  A struct kl_backend_resource is a
- * struct zwl_object; nothing of the backend's records is read here.
+ * struct kwl_object; nothing of the backend's records is read here.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 
 #include <errno.h>
 
@@ -35,8 +35,8 @@ static int host_surface_fence(struct kl_backend_resource *surface, int fd, uint6
 static int host_surface_fence_full(const struct kl_backend_resource *surface);
 static const struct kl_backend_gpu_device *host_device(const struct kl_backend_resource *any);
 static int host_log_frames(const struct kl_backend_resource *any);
-static enum zwl_kind host_kind_of(unsigned role);
-static struct zwl_object *host_object(const struct kl_backend_resource *resource);
+static enum kwl_kind host_kind_of(unsigned role);
+static struct kwl_object *host_object(const struct kl_backend_resource *resource);
 
 /*
  * The functions the backend reaches the compositor's objects through; one
@@ -67,7 +67,7 @@ static const struct kl_backend_protocol_host gpu_host = {
  * Gives the table the GPU buffers' calls take.
  */
 const struct kl_backend_protocol_host *
-zwl_gpu_host(
+kwl_gpu_host(
 	void)
 {
 	/* The one table. */
@@ -78,46 +78,46 @@ zwl_gpu_host(
  * Gives an object as the backend sees it.
  */
 struct kl_backend_resource *
-zwl_gpu_resource(
-	struct zwl_object *object)
+kwl_gpu_resource(
+	struct kwl_object *object)
 {
 	/* The same object behind an opaque name. */
 	return (struct kl_backend_resource *)object;
 }
 
 /* Gives the object behind a resource. */
-static struct zwl_object *
+static struct kwl_object *
 host_object(
 	const struct kl_backend_resource *resource)
 {
-	/* The resource is the object (zwl_gpu_resource). */
-	return (struct zwl_object *)resource;
+	/* The resource is the object (kwl_gpu_resource). */
+	return (struct kwl_object *)resource;
 }
 
 /* Gives the compositor's kind of a role. */
-static enum zwl_kind
+static enum kwl_kind
 host_kind_of(
 	unsigned role)
 {
 	/* Each role the backend makes or looks for. */
 	switch (role) {
 	case KL_BACKEND_ROLE_FACTORY:
-		return ZWL_FACTORY;
+		return KWL_FACTORY;
 	case KL_BACKEND_ROLE_GPU_OBJECT:
-		return ZWL_GPU_OBJECT;
+		return KWL_GPU_OBJECT;
 	case KL_BACKEND_ROLE_BUFFER:
-		return ZWL_BUFFER;
+		return KWL_BUFFER;
 	case KL_BACKEND_ROLE_SURFACE:
-		return ZWL_SURFACE;
+		return KWL_SURFACE;
 	default:
 		break;
 	}
 
 	/* No kind the backend may make. */
-	return ZWL_DISPLAY;
+	return KWL_DISPLAY;
 }
 
-/* Makes a client's new object of a role (zwl_create). */
+/* Makes a client's new object of a role (kwl_create). */
 static struct kl_backend_resource *
 host_create(
 	struct kl_backend_resource *parent,
@@ -125,29 +125,29 @@ host_create(
 	unsigned role,
 	uint32_t version)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* The object of the parent's client. */
-	object = zwl_create(host_object(parent)->client, id, host_kind_of(role), version);
+	object = kwl_create(host_object(parent)->client, id, host_kind_of(role), version);
 
 	/* The new object, or NULL for an id the client may not use. */
-	return zwl_gpu_resource(object);
+	return kwl_gpu_resource(object);
 }
 
-/* Makes an object the server numbers (zwl_create_server). */
+/* Makes an object the server numbers (kwl_create_server). */
 static struct kl_backend_resource *
 host_create_server(
 	struct kl_backend_resource *parent,
 	unsigned role,
 	uint32_t version)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* The object of the parent's client. */
-	object = zwl_create_server(host_object(parent)->client, host_kind_of(role), version);
+	object = kwl_create_server(host_object(parent)->client, host_kind_of(role), version);
 
 	/* The new object, or NULL. */
-	return zwl_gpu_resource(object);
+	return kwl_gpu_resource(object);
 }
 
 /* Finds a client's live object of a role; a shared-memory buffer is not a GPU buffer. */
@@ -157,11 +157,11 @@ host_find(
 	uint32_t id,
 	unsigned role)
 {
-	struct zwl_object *object;
-	enum zwl_kind kind;
+	struct kwl_object *object;
+	enum kwl_kind kind;
 
 	/* The client's object of that id. */
-	object = zwl_find(host_object(any)->client, id);
+	object = kwl_find(host_object(any)->client, id);
 	if (object == NULL)
 		return NULL;
 
@@ -175,16 +175,16 @@ host_find(
 		return NULL;
 
 	/* Succeeded: the object. */
-	return zwl_gpu_resource(object);
+	return kwl_gpu_resource(object);
 }
 
-/* Destroys an object (zwl_object_destroy). */
+/* Destroys an object (kwl_object_destroy). */
 static void
 host_destroy(
 	struct kl_backend_resource *resource)
 {
 	/* The object goes (a buffer stays until the frames that hold it are done). */
-	zwl_object_destroy(host_object(resource));
+	kwl_object_destroy(host_object(resource));
 }
 
 /* Gives an object's role. */
@@ -194,13 +194,13 @@ host_role(
 {
 	/* Each kind the backend knows. */
 	switch (host_object(resource)->kind) {
-	case ZWL_FACTORY:
+	case KWL_FACTORY:
 		return KL_BACKEND_ROLE_FACTORY;
-	case ZWL_GPU_OBJECT:
+	case KWL_GPU_OBJECT:
 		return KL_BACKEND_ROLE_GPU_OBJECT;
-	case ZWL_BUFFER:
+	case KWL_BUFFER:
 		return KL_BACKEND_ROLE_BUFFER;
-	case ZWL_SURFACE:
+	case KWL_SURFACE:
 		return KL_BACKEND_ROLE_SURFACE;
 	default:
 		break;
@@ -246,7 +246,7 @@ host_private(
 	return &host_object(resource)->gpu_private;
 }
 
-/* Sends an event of an object (zwl_emit). */
+/* Sends an event of an object (kwl_emit). */
 static int
 host_emit(
 	struct kl_backend_resource *resource,
@@ -254,12 +254,12 @@ host_emit(
 	const void *payload,
 	size_t size)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	int error;
 
 	/* The event, queued for the client. */
 	object = host_object(resource);
-	error = zwl_emit(object->client, object->id, opcode, payload, size);
+	error = kwl_emit(object->client, object->id, opcode, payload, size);
 	if (error != 0)
 		return error;
 
@@ -267,29 +267,29 @@ host_emit(
 	return 0;
 }
 
-/* Sends a protocol error that ends the client (zwl_error_code, or zwl_error for the generic code). */
+/* Sends a protocol error that ends the client (kwl_error_code, or kwl_error for the generic code). */
 static int
 host_post_error(
 	struct kl_backend_resource *resource,
 	uint32_t code,
 	const char *reason)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 	int error;
 
 	/* The generic invalid request, or the interface's own code. */
 	object = host_object(resource);
 	if (code == KL_BACKEND_ERROR_INVALID) {
-		error = zwl_error(object->client, object->id, reason);
+		error = kwl_error(object->client, object->id, reason);
 	} else {
-		error = zwl_error_code(object->client, object->id, code, reason);
+		error = kwl_error_code(object->client, object->id, code, reason);
 	}
 
 	/* The error the dispatcher returns. */
 	return error;
 }
 
-/* Takes the next fd the client sent (zwl_take_fd). */
+/* Takes the next fd the client sent (kwl_take_fd). */
 static int
 host_take_fd(
 	struct kl_backend_resource *resource)
@@ -297,11 +297,11 @@ host_take_fd(
 	int descriptor;
 
 	/* The fd, or -1 when it has not arrived. */
-	descriptor = zwl_take_fd(host_object(resource)->client);
+	descriptor = kwl_take_fd(host_object(resource)->client);
 	return descriptor;
 }
 
-/* Gives a buffer its imported image (zwl_import_adopt). */
+/* Gives a buffer its imported image (kwl_import_adopt). */
 static VkResult
 host_buffer_adopt(
 	struct kl_backend_resource *buffer,
@@ -314,7 +314,7 @@ host_buffer_adopt(
 	VkResult status;
 
 	/* The view, the descriptor sets and the buffer's import record; the image and memory go on failure. */
-	status = zwl_import_adopt(host_object(buffer), image, memory, width, height, format);
+	status = kwl_import_adopt(host_object(buffer), image, memory, width, height, format);
 	return status;
 }
 
@@ -324,11 +324,11 @@ host_buffer_set_alpha(
 	struct kl_backend_resource *buffer,
 	uint32_t alpha)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* The window's drawing blends the buffer by its alpha, or covers what is under it (import.c). */
 	object = host_object(buffer);
-	zwl_import_set_alpha(object, alpha);
+	kwl_import_set_alpha(object, alpha);
 
 	/* The next frame shows it. */
 	object->client->server->dirty = 1;
@@ -341,11 +341,11 @@ host_surface_fence(
 	int fd,
 	uint64_t generation)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* A full list keeps the fd the caller's. */
 	object = host_object(surface);
-	if (object->acquire_count >= ZWL_FENCE_MAX)
+	if (object->acquire_count >= KWL_FENCE_MAX)
 		return ENOSPC;
 
 	/* The fence is the surface's; the common commit waits for it and closes it. */
@@ -362,11 +362,11 @@ static int
 host_surface_fence_full(
 	const struct kl_backend_resource *surface)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* As many as a commit takes. */
 	object = host_object(surface);
-	if (object->acquire_count >= ZWL_FENCE_MAX)
+	if (object->acquire_count >= KWL_FENCE_MAX)
 		return 1;
 
 	/* Room for another. */
@@ -378,7 +378,7 @@ static const struct kl_backend_gpu_device *
 host_device(
 	const struct kl_backend_resource *any)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* Before the device is made there is nothing to import into. */
 	server = host_object(any)->client->server;
@@ -394,7 +394,7 @@ static int
 host_log_frames(
 	const struct kl_backend_resource *any)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* --log-frames. */
 	object = host_object(any);

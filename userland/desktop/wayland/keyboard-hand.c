@@ -11,7 +11,7 @@
  *
  * The ink is the strokes written since it was last cleared, each the
  * points the pen or finger passed through (a point that does not move from
- * the last is not kept).  zwl_hand_recognize is the one place a real
+ * the last is not kept).  kwl_hand_recognize is the one place a real
  * recognizer is to be put in later: it takes the ink and answers
  * candidates, the likeliest first.  Until then it is a stub that answers
  * three fixed candidates and a note saying recognition is not there yet;
@@ -40,8 +40,8 @@ static const char *const hand_stub_candidates[] = {
  * Clears the ink: no strokes.
  */
 void
-zwl_hand_clear(
-	struct zwl_hand_ink *ink)
+kwl_hand_clear(
+	struct kwl_hand_ink *ink)
 {
 	/* No stroke is kept (their points are left as they were, unread). */
 	ink->count = 0;
@@ -52,15 +52,15 @@ zwl_hand_clear(
  * for another stroke (the stroke is then not kept).
  */
 int
-zwl_hand_begin(
-	struct zwl_hand_ink *ink,
+kwl_hand_begin(
+	struct kwl_hand_ink *ink,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_hand_stroke *stroke;
+	struct kwl_hand_stroke *stroke;
 
 	/* No room for another stroke. */
-	if (ink->count >= ZWL_HAND_STROKES)
+	if (ink->count >= KWL_HAND_STROKES)
 		return 0;
 
 	/* The new stroke with its first point. */
@@ -79,13 +79,13 @@ zwl_hand_begin(
  * 0 when there is no stroke, it did not move, or the stroke is full.
  */
 int
-zwl_hand_add(
-	struct zwl_hand_ink *ink,
+kwl_hand_add(
+	struct kwl_hand_ink *ink,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_hand_stroke *stroke;
-	const struct zwl_hand_point *last;
+	struct kwl_hand_stroke *stroke;
+	const struct kwl_hand_point *last;
 
 	/* The stroke being written. */
 	if (ink->count == 0U)
@@ -98,7 +98,7 @@ zwl_hand_add(
 		return 0;
 
 	/* A full stroke keeps no more. */
-	if (stroke->count >= ZWL_HAND_POINTS)
+	if (stroke->count >= KWL_HAND_POINTS)
 		return 0;
 
 	/* The point. */
@@ -114,8 +114,8 @@ zwl_hand_add(
  * Counts the points of all the ink's strokes.
  */
 unsigned
-zwl_hand_points(
-	const struct zwl_hand_ink *ink)
+kwl_hand_points(
+	const struct kwl_hand_ink *ink)
 {
 	unsigned stroke;
 	unsigned total;
@@ -134,11 +134,11 @@ zwl_hand_points(
  * all zero without ink.
  */
 void
-zwl_hand_bounds(
-	const struct zwl_hand_ink *ink,
+kwl_hand_bounds(
+	const struct kwl_hand_ink *ink,
 	int32_t *rect)
 {
-	const struct zwl_hand_point *point;
+	const struct kwl_hand_point *point;
 	unsigned stroke;
 	unsigned index;
 	int32_t left;
@@ -198,9 +198,9 @@ zwl_hand_bounds(
  * recognition is not there yet.
  */
 void
-zwl_hand_recognize(
-	const struct zwl_hand_ink *ink,
-	struct zwl_hand_result *result)
+kwl_hand_recognize(
+	const struct kwl_hand_ink *ink,
+	struct kwl_hand_result *result)
 {
 	unsigned index;
 
@@ -212,7 +212,7 @@ zwl_hand_recognize(
 		return;
 
 	/* The stub's candidates. */
-	for (index = 0; index < sizeof(hand_stub_candidates) / sizeof(hand_stub_candidates[0]) && index < ZWL_HAND_CANDIDATES; index++) {
+	for (index = 0; index < sizeof(hand_stub_candidates) / sizeof(hand_stub_candidates[0]) && index < KWL_HAND_CANDIDATES; index++) {
 		(void)snprintf(result->candidates[index], sizeof(result->candidates[index]), "%s", hand_stub_candidates[index]);
 		result->count++;
 	}

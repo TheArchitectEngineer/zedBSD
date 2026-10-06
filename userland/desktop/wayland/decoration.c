@@ -64,41 +64,41 @@
  * toplevel owns this list; an acknowledgment retires the acknowledged and
  * older snapshots, and toplevel teardown frees everything still pending.
  */
-struct zwl_decoration_configure {
-	struct zwl_decoration_configure *next;
+struct kwl_decoration_configure {
+	struct kwl_decoration_configure *next;
 	uint32_t serial;
 	uint32_t mode;
 	uint64_t generation;
 };
 
-static int decoration_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static int kde_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int kde_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static uint32_t decoration_wanted(const struct zwl_object *toplevel);
-static int decoration_propose(struct zwl_object *toplevel);
-static int decoration_answer(struct zwl_object *decoration);
-static struct zwl_object *decoration_top(const struct zwl_object *surface);
-static void decoration_reset(struct zwl_object *toplevel);
-static void decoration_invalidate(struct zwl_object *toplevel);
-static void decoration_free(struct zwl_object *toplevel);
+static int decoration_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int kde_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int kde_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static uint32_t decoration_wanted(const struct kwl_object *toplevel);
+static int decoration_propose(struct kwl_object *toplevel);
+static int decoration_answer(struct kwl_object *decoration);
+static struct kwl_object *decoration_top(const struct kwl_object *surface);
+static void decoration_reset(struct kwl_object *toplevel);
+static void decoration_invalidate(struct kwl_object *toplevel);
+static void decoration_free(struct kwl_object *toplevel);
 static uint32_t decoration_word(const unsigned char *bytes, size_t offset);
 
 /*
  * Dispatches decoration requests while keeping preferred and visible modes apart.
  */
 int
-zwl_decoration_request(
-    struct zwl_object *object,
+kwl_decoration_request(
+    struct kwl_object *object,
     uint32_t opcode,
 	const unsigned char *bytes,
     size_t size)
 {
-	struct zwl_object *toplevel;
+	struct kwl_object *toplevel;
 	uint32_t mode;
 	int error;
 
 	/* KDE's server decoration has requests of its own. */
-	if (object->kind == ZWL_KDE_DECORATION_MANAGER || object->kind == ZWL_KDE_DECORATION) {
+	if (object->kind == KWL_KDE_DECORATION_MANAGER || object->kind == KWL_KDE_DECORATION) {
 		error = kde_request(object, opcode, bytes, size);
 		if (error != 0)
 			return error;
@@ -108,9 +108,9 @@ zwl_decoration_request(
 	}
 
 	/* The manager either retires or associates one decoration with a toplevel. */
-	if (object->kind == ZWL_DECORATION_MANAGER) {
+	if (object->kind == KWL_DECORATION_MANAGER) {
 		if (opcode == MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 
 			/* Succeeded: existing decoration objects retain their ownership. */
 			return 0;
@@ -135,7 +135,7 @@ zwl_decoration_request(
 			return EPROTO;
 
 		/* Detaches the object and stages client ownership. */
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 
 		/* Succeeded: the toplevel remains alive. */
 		return 0;
@@ -144,7 +144,7 @@ zwl_decoration_request(
 	/* An orphaned decoration cannot configure a window that has gone. */
 	toplevel = object->decoration_toplevel;
 	if (toplevel == NULL) {
-		error = zwl_error_code(object->client, object->id, DECORATION_ERROR_ORPHANED, "the toplevel is gone");
+		error = kwl_error_code(object->client, object->id, DECORATION_ERROR_ORPHANED, "the toplevel is gone");
 		if (error != 0)
 			return error;
 
@@ -161,7 +161,7 @@ zwl_decoration_request(
 		/* Decodes the client's decoration ownership preference. */
 		mode = decoration_word(bytes, 0U);
 		if (mode != MODE_CLIENT_SIDE && mode != MODE_SERVER_SIDE) {
-			error = zwl_error_code(object->client, object->id, DECORATION_ERROR_INVALID_MODE, "not a decoration mode");
+			error = kwl_error_code(object->client, object->id, DECORATION_ERROR_INVALID_MODE, "not a decoration mode");
 			if (error != 0)
 				return error;
 
@@ -194,14 +194,14 @@ zwl_decoration_request(
  * Detaches decoration identities and frees toplevel-owned configure snapshots.
  */
 void
-zwl_decoration_object_gone(
-    struct zwl_object *object)
+kwl_decoration_object_gone(
+    struct kwl_object *object)
 {
-	struct zwl_object *toplevel;
-	struct zwl_object *surface;
+	struct kwl_object *toplevel;
+	struct kwl_object *surface;
 
 	/* A destroyed decoration withdraws SSD at the next commit of its surviving window. */
-	if (object->kind == ZWL_DECORATION) {
+	if (object->kind == KWL_DECORATION) {
 		toplevel = object->decoration_toplevel;
 		if (toplevel != NULL) {
 			toplevel->decoration = NULL;
@@ -219,7 +219,7 @@ zwl_decoration_object_gone(
 	}
 
 	/* A released KDE decoration leaves its surviving window to the compositor's default. */
-	if (object->kind == ZWL_KDE_DECORATION) {
+	if (object->kind == KWL_KDE_DECORATION) {
 		surface = object->kde_surface;
 		object->kde_surface = NULL;
 		if (surface != NULL && surface->kde_decoration == object) {
@@ -236,7 +236,7 @@ zwl_decoration_object_gone(
 	}
 
 	/* A surface that goes leaves its KDE decoration orphaned. */
-	if (object->kind == ZWL_SURFACE) {
+	if (object->kind == KWL_SURFACE) {
 		if (object->kde_decoration != NULL)
 			object->kde_decoration->kde_surface = NULL;
 		object->kde_decoration = NULL;
@@ -246,7 +246,7 @@ zwl_decoration_object_gone(
 	}
 
 	/* A toplevel's pending configuration history dies with its identity. */
-	if (object->kind == ZWL_TOPLEVEL) {
+	if (object->kind == KWL_TOPLEVEL) {
 		decoration_free(object);
 		if (object->decoration != NULL)
 			object->decoration->decoration_toplevel = NULL;
@@ -263,13 +263,13 @@ zwl_decoration_object_gone(
  * Captures the decoration proposal belonging to one xdg_surface configure serial.
  */
 int
-zwl_decoration_configure(
-    struct zwl_object *surface,
+kwl_decoration_configure(
+    struct kwl_object *surface,
     uint32_t serial)
 {
-	struct zwl_decoration_configure *snapshot;
-	struct zwl_decoration_configure **link;
-	struct zwl_object *toplevel;
+	struct kwl_decoration_configure *snapshot;
+	struct kwl_decoration_configure **link;
+	struct kwl_object *toplevel;
 
 	/* Popups and surfaces without a toplevel have no decoration negotiation. */
 	toplevel = decoration_top(surface);
@@ -307,14 +307,14 @@ zwl_decoration_configure(
  * Stages the mode from an acknowledged configure and retires older proposals.
  */
 int
-zwl_decoration_ack(
-    struct zwl_object *surface,
+kwl_decoration_ack(
+    struct kwl_object *surface,
     uint32_t serial)
 {
-	struct zwl_decoration_configure *snapshot;
-	struct zwl_decoration_configure *retired;
-	struct zwl_decoration_configure *after;
-	struct zwl_object *toplevel;
+	struct kwl_decoration_configure *snapshot;
+	struct kwl_decoration_configure *retired;
+	struct kwl_decoration_configure *after;
+	struct kwl_object *toplevel;
 	uint32_t mode;
 	uint64_t generation;
 
@@ -363,10 +363,10 @@ zwl_decoration_ack(
  * Applies acknowledged decoration ownership with the surface's committed state.
  */
 void
-zwl_decoration_commit(
-    struct zwl_object *surface)
+kwl_decoration_commit(
+    struct kwl_object *surface)
 {
-	struct zwl_object *toplevel;
+	struct kwl_object *toplevel;
 	uint32_t mode;
 
 	/* Only toplevels carry decoration ownership. */
@@ -401,10 +401,10 @@ zwl_decoration_commit(
  * Reports whether the compositor owns the committed decoration of a surface.
  */
 int
-zwl_decoration_server(
-	const struct zwl_object *surface)
+kwl_decoration_server(
+	const struct kwl_object *surface)
 {
-	struct zwl_object *toplevel;
+	struct kwl_object *toplevel;
 
 	/* Surfaces outside a toplevel's role have no server decoration. */
 	toplevel = decoration_top(surface);
@@ -426,8 +426,8 @@ zwl_decoration_server(
  * changes only when another declaration says otherwise.
  */
 int
-zwl_decoration_native_changed(
-    struct zwl_object *toplevel)
+kwl_decoration_native_changed(
+    struct kwl_object *toplevel)
 {
 	int error;
 
@@ -445,8 +445,8 @@ zwl_decoration_native_changed(
  * the compositor's decoration.
  */
 int
-zwl_decoration_kde_bind(
-	struct zwl_object *manager)
+kwl_decoration_kde_bind(
+	struct kwl_object *manager)
 {
 	uint32_t mode;
 	int error;
@@ -459,7 +459,7 @@ zwl_decoration_kde_bind(
 
 	/* The default a new decoration object has until the client asks for another. */
 	mode = KDE_MODE_SERVER;
-	error = zwl_emit(manager->client, manager->id, KDE_MANAGER_DEFAULT_MODE, &mode, sizeof(mode));
+	error = kwl_emit(manager->client, manager->id, KDE_MANAGER_DEFAULT_MODE, &mode, sizeof(mode));
 	if (error != 0)
 		return error;
 
@@ -471,13 +471,13 @@ zwl_decoration_kde_bind(
  * Reports the xdg window geometry used for configure sizes and state restoration.
  */
 void
-zwl_decoration_geometry(
-	const struct zwl_object *surface,
+kwl_decoration_geometry(
+	const struct kwl_object *surface,
     uint32_t *width,
     uint32_t *height)
 {
 	/* Starts with the buffer or viewport extent for windows without geometry. */
-	zwl_surface_size(surface, width, height);
+	kwl_surface_size(surface, width, height);
 
 	/* Client shadows lie outside the extent specified by xdg_surface geometry. */
 	if (surface->geometry_set) {
@@ -492,13 +492,13 @@ zwl_decoration_geometry(
 /* Creates one decoration before the first committed buffer and offers CSD ownership. */
 static int
 decoration_create(
-    struct zwl_object *manager,
+    struct kwl_object *manager,
 	const unsigned char *bytes,
     size_t size)
 {
-	struct zwl_object *toplevel;
-	struct zwl_object *created;
-	struct zwl_object *surface;
+	struct kwl_object *toplevel;
+	struct kwl_object *created;
+	struct kwl_object *surface;
 	uint32_t id;
 	uint32_t toplevel_id;
 	int error;
@@ -510,17 +510,17 @@ decoration_create(
 	/* Decodes each wire identity before consulting object ownership. */
 	id = decoration_word(bytes, 0U);
 	toplevel_id = decoration_word(bytes, 4U);
-	toplevel = zwl_find(manager->client, toplevel_id);
+	toplevel = kwl_find(manager->client, toplevel_id);
 	if (toplevel == NULL)
 		return EPROTO;
 
 	/* Refuses roles which cannot own toplevel decoration. */
-	if (toplevel->kind != ZWL_TOPLEVEL)
+	if (toplevel->kind != KWL_TOPLEVEL)
 		return EPROTO;
 
 	/* The protocol permits exactly one decoration object on this toplevel. */
 	if (toplevel->decoration != NULL) {
-		error = zwl_error_code(manager->client, manager->id, DECORATION_ERROR_ALREADY_CONSTRUCTED, "the toplevel has a decoration");
+		error = kwl_error_code(manager->client, manager->id, DECORATION_ERROR_ALREADY_CONSTRUCTED, "the toplevel has a decoration");
 		if (error != 0)
 			return error;
 
@@ -534,7 +534,7 @@ decoration_create(
 		if (surface->current != NULL ||
 		    surface->queued != NULL ||
 		    surface->pending != NULL) {
-			error = zwl_error_code(manager->client, manager->id, DECORATION_ERROR_UNCONFIGURED_BUFFER, "the toplevel already has content");
+			error = kwl_error_code(manager->client, manager->id, DECORATION_ERROR_UNCONFIGURED_BUFFER, "the toplevel already has content");
 			if (error != 0)
 				return error;
 
@@ -544,7 +544,7 @@ decoration_create(
 	}
 
 	/* The object registry retains the associated decoration until its destructor. */
-	created = zwl_create(manager->client, id, ZWL_DECORATION, manager->version);
+	created = kwl_create(manager->client, id, KWL_DECORATION, manager->version);
 	if (created == NULL)
 		return EPROTO;
 
@@ -569,10 +569,10 @@ decoration_create(
 /* Offers the preferred mode and sends its corresponding surface configure. */
 static int
 decoration_answer(
-    struct zwl_object *decoration)
+    struct kwl_object *decoration)
 {
-	struct zwl_object *toplevel;
-	struct zwl_object *surface;
+	struct kwl_object *toplevel;
+	struct kwl_object *surface;
 	uint32_t mode;
 	int error;
 
@@ -588,7 +588,7 @@ decoration_answer(
 	toplevel->decoration_configured = mode;
 
 	/* Decoration configure precedes the matching xdg_surface configure. */
-	error = zwl_emit(decoration->client, decoration->id, DECORATION_CONFIGURE, &mode, sizeof(mode));
+	error = kwl_emit(decoration->client, decoration->id, DECORATION_CONFIGURE, &mode, sizeof(mode));
 	if (error != 0)
 		return error;
 
@@ -605,7 +605,7 @@ decoration_answer(
 		return 0;
 
 	/* Subsequent proposals receive their own acknowledgment serial. */
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		return error;
 
@@ -616,17 +616,17 @@ decoration_answer(
 /* Carries out a request of KDE's server decoration manager or of one of its decorations. */
 static int
 kde_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *toplevel;
+	struct kwl_object *toplevel;
 	uint32_t mode;
 	int error;
 
 	/* The manager only creates decorations. */
-	if (object->kind == ZWL_KDE_DECORATION_MANAGER) {
+	if (object->kind == KWL_KDE_DECORATION_MANAGER) {
 		if (opcode != KDE_MANAGER_CREATE)
 			return EPROTO;
 
@@ -644,8 +644,8 @@ kde_request(
 		if (size != 0U)
 			return EPROTO;
 
-		/* Detaches it from its surface (zwl_decoration_object_gone). */
-		zwl_object_destroy(object);
+		/* Detaches it from its surface (kwl_decoration_object_gone). */
+		kwl_object_destroy(object);
 
 		/* Succeeded: the surface survives. */
 		return 0;
@@ -660,7 +660,7 @@ kde_request(
 
 	/* The client's choice, answered with the mode event as KDE's protocol does. */
 	object->kde_mode = mode;
-	error = zwl_emit(object->client, object->id, KDE_DECORATION_MODE, &mode, sizeof(mode));
+	error = kwl_emit(object->client, object->id, KDE_DECORATION_MODE, &mode, sizeof(mode));
 	if (error != 0)
 		return error;
 	printf("ZWL DECORATION kde client=%llu mode=%u\n", (unsigned long long)object->client->number, mode);
@@ -684,13 +684,13 @@ kde_request(
 /* Creates KDE's server decoration of a surface; it starts in the compositor's mode. */
 static int
 kde_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *surface;
-	struct zwl_object *toplevel;
+	struct kwl_object *created;
+	struct kwl_object *surface;
+	struct kwl_object *toplevel;
 	uint32_t id;
 	uint32_t surface_id;
 	uint32_t mode;
@@ -701,8 +701,8 @@ kde_create(
 		return EPROTO;
 	id = decoration_word(bytes, 0U);
 	surface_id = decoration_word(bytes, 4U);
-	surface = zwl_find(manager->client, surface_id);
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(manager->client, surface_id);
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* One decoration per surface. */
@@ -710,7 +710,7 @@ kde_create(
 		return EPROTO;
 
 	/* The object, tied to its surface from both ends. */
-	created = zwl_create(manager->client, id, ZWL_KDE_DECORATION, manager->version);
+	created = kwl_create(manager->client, id, KWL_KDE_DECORATION, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->kde_surface = surface;
@@ -719,7 +719,7 @@ kde_create(
 
 	/* The mode it starts in. */
 	mode = KDE_MODE_SERVER;
-	error = zwl_emit(created->client, created->id, KDE_DECORATION_MODE, &mode, sizeof(mode));
+	error = kwl_emit(created->client, created->id, KDE_DECORATION_MODE, &mode, sizeof(mode));
 	if (error != 0)
 		return error;
 
@@ -738,9 +738,9 @@ kde_create(
 /* Tells the mode the declarations give a toplevel: the client's when it declared so, the compositor's otherwise. */
 static uint32_t
 decoration_wanted(
-	const struct zwl_object *toplevel)
+	const struct kwl_object *toplevel)
 {
-	const struct zwl_object *kde;
+	const struct kwl_object *kde;
 
 	/* An xdg-decoration object's choice comes first: client_side, else (server_side or unset) SSD. */
 	if (toplevel->decoration != NULL) {
@@ -778,9 +778,9 @@ decoration_wanted(
 /* Offers a toplevel the mode its declarations give now, when it differs from the one offered last. */
 static int
 decoration_propose(
-	struct zwl_object *toplevel)
+	struct kwl_object *toplevel)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t mode;
 	int error;
 
@@ -803,7 +803,7 @@ decoration_propose(
 		return 0;
 
 	/* A shown window must acknowledge the new ownership before it is drawn so. */
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		return error;
 
@@ -814,7 +814,7 @@ decoration_propose(
 /* Withdraws decoration proposals while preserving the last visible mode until commit. */
 static void
 decoration_reset(
-    struct zwl_object *toplevel)
+    struct kwl_object *toplevel)
 {
 	/* Older snapshots must never resurrect an identity that no longer exists. */
 	decoration_invalidate(toplevel);
@@ -830,9 +830,9 @@ decoration_reset(
 /* Invalidates old identity proposals even when the lifecycle generation wraps. */
 static void
 decoration_invalidate(
-	struct zwl_object *toplevel)
+	struct kwl_object *toplevel)
 {
-	struct zwl_decoration_configure *snapshot;
+	struct kwl_decoration_configure *snapshot;
 
 	/* Zero marks retired proposals; active lifecycle generations always remain nonzero. */
 	snapshot = toplevel->decoration_configures;
@@ -853,9 +853,9 @@ decoration_invalidate(
 /* Frees every configure snapshot owned by a retired toplevel. */
 static void
 decoration_free(
-    struct zwl_object *toplevel)
+    struct kwl_object *toplevel)
 {
-	struct zwl_decoration_configure *snapshot;
+	struct kwl_decoration_configure *snapshot;
 
 	/* The toplevel is the sole owner of this pending history. */
 	while (toplevel->decoration_configures != NULL) {
@@ -869,11 +869,11 @@ decoration_free(
 }
 
 /* Finds the toplevel whose committed surface owns decoration state. */
-static struct zwl_object *
+static struct kwl_object *
 decoration_top(
-	const struct zwl_object *surface)
+	const struct kwl_object *surface)
 {
-	struct zwl_object *toplevel;
+	struct kwl_object *toplevel;
 
 	/* A surface without a shell role has no toplevel identity. */
 	if (surface == NULL)
@@ -889,7 +889,7 @@ decoration_top(
 		return NULL;
 
 	/* Refuses roles which cannot own toplevel decoration. */
-	if (toplevel->kind != ZWL_TOPLEVEL)
+	if (toplevel->kind != KWL_TOPLEVEL)
 		return NULL;
 
 	/* Succeeded: its toplevel owns every decoration field. */

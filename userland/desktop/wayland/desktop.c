@@ -6,15 +6,15 @@
  */
 
 /*
- * The desktop surface (keiland_desktop_v1, ws094-p002, plan/ws094/design.md
+ * The desktop surface (kl_desktop_v1, ws094-p002, plan/ws094/design.md
  * §3): one client's surface that lies over the wallpaper and under every
  * window, on every virtual desktop, where Files shows the icons of
  * ~/Desktop.
  *
- * keiland_desktop_manager_v1.get_desktop_surface(id, surface, token) gives
+ * kl_desktop_manager_v1.get_desktop_surface(id, surface, token) gives
  * a surface the role, once, to the client that shows the token the
  * compositor gave the program it started (KEILAND_DESKTOP_TOKEN); the new
- * keiland_desktop_surface_v1 hears configure(serial, x, y, width, height):
+ * kl_desktop_surface_v1 hears configure(serial, x, y, width, height):
  * where on the output it is (the work area under the system bar), and the
  * client acknowledges it before it draws.  The surface has no window: it
  * is not in the windows' list, Wiseview, the system bar or the focus
@@ -50,7 +50,7 @@
 /* Marks a parameter a function's signature requires but it does not use. */
 #define UNUSED_PARAMETER(name)	((void)(name))
 
-/* The requests of keiland_desktop_manager_v1 and of keiland_desktop_surface_v1, and the surface's one event. */
+/* The requests of kl_desktop_manager_v1 and of kl_desktop_surface_v1, and the surface's one event. */
 #define DESKTOP_MANAGER_DESTROY		0U
 #define DESKTOP_MANAGER_GET		1U
 #define DESKTOP_SURFACE_DESTROY		0U
@@ -81,8 +81,8 @@
  * The one desktop surface of the compositor and the program that shows it.
  *
  * surface and object are the surface with the role and its
- * keiland_desktop_surface_v1 (both NULL when no client has the role); they
- * are cleared when either goes (zwl_desktop_object_gone).  x, y, width and
+ * kl_desktop_surface_v1 (both NULL when no client has the role); they
+ * are cleared when either goes (kwl_desktop_object_gone).  x, y, width and
  * height are the place last configured, serial the configure's.  focused
  * says the desktop has the keyboard, since focus_top was the top window
  * (another top window takes it back).  command is the program to start
@@ -93,15 +93,15 @@
  * once with its time, ws094-p009).
  */
 struct desktop_state {
-	struct zwl_object *surface;
-	struct zwl_object *object;
+	struct kwl_object *surface;
+	struct kwl_object *object;
 	uint32_t serial;
 	int32_t x;
 	int32_t y;
 	int32_t width;
 	int32_t height;
 	int focused;
-	struct zwl_object *focus_top;
+	struct kwl_object *focus_top;
 	const char *command;
 	char token[DESKTOP_TOKEN_MAX + 1U];
 	int fixed;
@@ -121,12 +121,12 @@ struct desktop_state {
  */
 static struct desktop_state desk;
 
-static int desktop_get(struct zwl_object *manager, const unsigned char *bytes, size_t size);
+static int desktop_get(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 static int desktop_string(const unsigned char *bytes, size_t size, size_t offset, const char **text);
-static void desktop_place(struct zwl_server *server, int32_t *x, int32_t *y, int32_t *width, int32_t *height);
-static int desktop_configure(struct zwl_server *server);
-static void desktop_start(struct zwl_server *server);
-static void desktop_watch(struct zwl_server *server);
+static void desktop_place(struct kwl_server *server, int32_t *x, int32_t *y, int32_t *width, int32_t *height);
+static int desktop_configure(struct kwl_server *server);
+static void desktop_start(struct kwl_server *server);
+static void desktop_watch(struct kwl_server *server);
 static int desktop_switched_off(void);
 static void desktop_new_token(void);
 static uint32_t desktop_word(const unsigned char *bytes, size_t offset);
@@ -139,8 +139,8 @@ static uint32_t desktop_word(const unsigned char *bytes, size_t offset);
  * another option, EINVAL for a bad value.
  */
 int
-zwl_desktop_option(
-	struct zwl_server *server,
+kwl_desktop_option(
+	struct kwl_server *server,
 	const char *argument)
 {
 	size_t length;
@@ -179,12 +179,12 @@ zwl_desktop_option(
 }
 
 /*
- * Carries out a request of keiland_desktop_manager_v1 or of
- * keiland_desktop_surface_v1.
+ * Carries out a request of kl_desktop_manager_v1 or of
+ * kl_desktop_surface_v1.
  */
 int
-zwl_desktop_request(
-	struct zwl_object *object,
+kwl_desktop_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -192,10 +192,10 @@ zwl_desktop_request(
 	int error;
 
 	/* The manager: it goes, or it gives a surface the role. */
-	if (object->kind == ZWL_DESKTOP_MANAGER) {
+	if (object->kind == KWL_DESKTOP_MANAGER) {
 		/* destroy. */
 		if (opcode == DESKTOP_MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -214,7 +214,7 @@ zwl_desktop_request(
 	if (opcode == DESKTOP_SURFACE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -229,14 +229,14 @@ zwl_desktop_request(
 
 /*
  * Unties an object that is going from the desktop: the surface with the
- * role or its keiland_desktop_surface_v1 ends the role, and the keyboard
+ * role or its kl_desktop_surface_v1 ends the role, and the keyboard
  * goes back to the windows.
  */
 void
-zwl_desktop_object_gone(
-	struct zwl_object *object)
+kwl_desktop_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* Only the role's surface and its object end the role. */
 	if (object != desk.surface && object != desk.object)
@@ -245,7 +245,7 @@ zwl_desktop_object_gone(
 	/* The role ends; the windows have the keyboard again. */
 	server = object->client->server;
 	printf("ZWL DESKTOP gone client=%llu\n", (unsigned long long)object->client->number);
-	zwl_desktop_unfocus(server);
+	kwl_desktop_unfocus(server);
 	desk.surface = NULL;
 	desk.object = NULL;
 	desk.focus_top = NULL;
@@ -261,8 +261,8 @@ zwl_desktop_object_gone(
  * answers its frame callbacks while it is not drawn.
  */
 void
-zwl_desktop_tick(
-	struct zwl_server *server)
+kwl_desktop_tick(
+	struct kwl_server *server)
 {
 	int32_t x;
 	int32_t y;
@@ -293,7 +293,7 @@ zwl_desktop_tick(
 	if (!server->windowed ||
 	    server->locked ||
 	    server->greeter)
-		zwl_callbacks_done(&desk.surface->committed_callbacks);
+		kwl_callbacks_done(&desk.surface->committed_callbacks);
 
 	/* Succeeded: the desktop is in step with the pass. */
 	return;
@@ -305,33 +305,33 @@ zwl_desktop_tick(
  * desktop layer (App Home).
  */
 void
-zwl_desktop_draw(
-	struct zwl_server *server,
+kwl_desktop_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	const struct zwl_import *image;
-	struct zwl_import alpha;
+	const struct kwl_import *image;
+	struct kwl_import alpha;
 	struct glass_shape shape;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t width;
 	uint32_t height;
 
 	/* Only a surface with an image. */
-	surface = zwl_desktop_surface(server);
+	surface = kwl_desktop_surface(server);
 	if (surface == NULL)
 		return;
-	image = zwl_compose_surface_image(surface);
+	image = kwl_compose_surface_image(surface);
 	if (image == NULL)
 		return;
 
 	/* The first image since the program started, with its time (the tests read it). */
 	if (!desk.drawn) {
 		desk.drawn = 1;
-		printf("ZWL DESKTOP drawn at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
+		printf("ZWL DESKTOP drawn at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	}
 
 	/* Its size (its viewport's, else its image's). */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	if (width == 0U || height == 0U) {
 		width = image->width;
 		height = image->height;
@@ -340,17 +340,17 @@ zwl_desktop_draw(
 	/* The plain look: a quad by its alpha. */
 	if (!server->glass) {
 		alpha = *image;
-		alpha.draw = ZWL_DRAW_ALPHA;
-		zwl_compose_surface_quad(server, command, surface, &alpha, surface->x, surface->y);
+		alpha.draw = KWL_DRAW_ALPHA;
+		kwl_compose_surface_quad(server, command, surface, &alpha, surface->x, surface->y);
 		return;
 	}
 
 	/* The glass look: the image, by its alpha unless it is opaque, with the layer. */
 	glass_shape_init(&shape, (float)surface->x, (float)surface->y, (float)width, (float)height);
-	zwl_viewport_source(surface, shape.uv);
+	kwl_viewport_source(surface, shape.uv);
 	shape.mode = MODE_IMAGE;
 	shape.set = image->set;
-	if (image->draw == ZWL_DRAW_OPAQUE)
+	if (image->draw == KWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
 	glass_shape_draw(server, command, &shape);
 
@@ -362,11 +362,11 @@ zwl_desktop_draw(
  * Returns the desktop surface when it has an image to show, NULL
  * otherwise.
  */
-struct zwl_object *
-zwl_desktop_surface(
-	struct zwl_server *server)
+struct kwl_object *
+kwl_desktop_surface(
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	UNUSED_PARAMETER(server);
 
@@ -390,8 +390,8 @@ zwl_desktop_surface(
  * it has an image yet.
  */
 int
-zwl_desktop_is(
-	const struct zwl_object *surface)
+kwl_desktop_is(
+	const struct kwl_object *surface)
 {
 	/* Only the surface with the role. */
 	if (surface == NULL || surface != desk.surface)
@@ -406,19 +406,19 @@ zwl_desktop_is(
  * while it was pressed last and the top window is the same as then,
  * otherwise the top window (which then takes the keyboard back).
  */
-struct zwl_object *
-zwl_desktop_front(
-	struct zwl_server *server,
-	struct zwl_object *top)
+struct kwl_object *
+kwl_desktop_front(
+	struct kwl_server *server,
+	struct kwl_object *top)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* The desktop was not pressed last. */
 	if (!desk.focused)
 		return top;
 
 	/* A desktop surface that went, or another top window, gives the keyboard back. */
-	surface = zwl_desktop_surface(server);
+	surface = kwl_desktop_surface(server);
 	if (surface == NULL || top != desk.focus_top) {
 		desk.focused = 0;
 		printf("ZWL DESKTOP unfocus via=window\n");
@@ -435,26 +435,26 @@ zwl_desktop_front(
  * Returns 1 when the desktop takes it, 0 when there is no desktop there.
  */
 int
-zwl_desktop_press(
-	struct zwl_server *server)
+kwl_desktop_press(
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* A desktop surface under the pointer. */
-	surface = zwl_desktop_at(server, server->pointer_x, server->pointer_y);
+	surface = kwl_desktop_at(server, server->pointer_x, server->pointer_y);
 	if (surface == NULL)
 		return 0;
 
 	/* It has the keyboard until another window comes on top or is pressed. */
 	if (!desk.focused) {
 		desk.focused = 1;
-		desk.focus_top = zwl_top_window(server);
+		desk.focus_top = kwl_top_window(server);
 		printf("ZWL DESKTOP focus client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}
 
 	/* The focus follows now, so that the press reaches the desktop. */
 	server->front_surface = surface;
-	zwl_seat_focus(server);
+	kwl_seat_focus(server);
 	server->dirty = 1;
 
 	/* Succeeded: the desktop hears the press. */
@@ -466,8 +466,8 @@ zwl_desktop_press(
  * window was pressed).
  */
 void
-zwl_desktop_unfocus(
-	struct zwl_server *server)
+kwl_desktop_unfocus(
+	struct kwl_server *server)
 {
 	/* Only a desktop with the keyboard gives it back. */
 	if (!desk.focused)
@@ -475,8 +475,8 @@ zwl_desktop_unfocus(
 
 	/* The top window takes it at once, before the press that caused this is delivered. */
 	desk.focused = 0;
-	server->front_surface = zwl_top_window(server);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_top_window(server);
+	kwl_seat_focus(server);
 	printf("ZWL DESKTOP unfocus via=press\n");
 
 	/* Succeeded: the top window has the keyboard. */
@@ -488,24 +488,24 @@ zwl_desktop_unfocus(
  * (for a press, a finger, a drag and drop's target); NULL when a window,
  * its title bar or the system bar is there, or there is no desktop.
  */
-struct zwl_object *
-zwl_desktop_at(
-	struct zwl_server *server,
+struct kwl_object *
+kwl_desktop_at(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *surface;
-	struct zwl_object *window;
+	struct kwl_object *surface;
+	struct kwl_object *window;
 	uint32_t width;
 	uint32_t height;
 
 	/* A desktop with an image, in the windows' mode. */
-	surface = zwl_desktop_surface(server);
+	surface = kwl_desktop_surface(server);
 	if (surface == NULL || !server->windowed)
 		return NULL;
 
 	/* The point must be on it. */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	if (x < surface->x || y < surface->y)
 		return NULL;
 	if (x >= surface->x + (int32_t)width || y >= surface->y + (int32_t)height)
@@ -513,9 +513,9 @@ zwl_desktop_at(
 
 	/* No window there: in the glass look any window or title bar at the point, in the plain look any window at all. */
 	if (server->glass) {
-		window = zwl_glass_window_at(server, x, y);
+		window = kwl_glass_window_at(server, x, y);
 	} else {
-		window = zwl_top_window(server);
+		window = kwl_top_window(server);
 	}
 
 	/* A window covers the desktop there. */
@@ -529,13 +529,13 @@ zwl_desktop_at(
 /* Gives a surface the desktop's role (one surface, for the token given), and configures it. */
 static int
 desktop_get(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
-	struct zwl_object *created;
-	struct zwl_server *server;
+	struct kwl_object *surface;
+	struct kwl_object *created;
+	struct kwl_server *server;
 	const char *token;
 	uint32_t id;
 	uint32_t surface_id;
@@ -548,8 +548,8 @@ desktop_get(
 		return EPROTO;
 	id = desktop_word(bytes, 0U);
 	surface_id = desktop_word(bytes, 4U);
-	surface = zwl_find(manager->client, surface_id);
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(manager->client, surface_id);
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 	error = desktop_string(bytes, size, 8U, &token);
 	if (error != 0)
@@ -561,7 +561,7 @@ desktop_get(
 		differs = strcmp(token, desk.token);
 	if (differs != 0) {
 		printf("ZWL DESKTOP refused client=%llu reason=token\n", (unsigned long long)manager->client->number);
-		(void)zwl_error_code(manager->client, manager->id, DESKTOP_ERROR_TOKEN, "not the desktop's token");
+		(void)kwl_error_code(manager->client, manager->id, DESKTOP_ERROR_TOKEN, "not the desktop's token");
 		return EPROTO;
 	}
 
@@ -571,12 +571,12 @@ desktop_get(
 	    surface->sub_role != NULL ||
 	    surface->cursor_role) {
 		printf("ZWL DESKTOP refused client=%llu reason=role\n", (unsigned long long)manager->client->number);
-		(void)zwl_error_code(manager->client, manager->id, DESKTOP_ERROR_ROLE, "the desktop has a surface, or the surface has a role");
+		(void)kwl_error_code(manager->client, manager->id, DESKTOP_ERROR_ROLE, "the desktop has a surface, or the surface has a role");
 		return EPROTO;
 	}
 
 	/* The desktop surface, tied to its surface. */
-	created = zwl_create(manager->client, id, ZWL_DESKTOP_SURFACE, manager->version);
+	created = kwl_create(manager->client, id, KWL_DESKTOP_SURFACE, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->surface = surface;
@@ -630,7 +630,7 @@ desktop_string(
 /* Works out where the desktop is: the output under the system bar in the glass look, the whole output otherwise. */
 static void
 desktop_place(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t *x,
 	int32_t *y,
 	int32_t *width,
@@ -640,7 +640,7 @@ desktop_place(
 	int32_t bottom;
 
 	/* What the on-screen keyboard's panel takes at the right or the bottom (keyboard.c, ws102-p007). */
-	zwl_keyboard_reserved(&right, &bottom);
+	kwl_keyboard_reserved(&right, &bottom);
 
 	/* The left edge, the whole width less the keyboard's column. */
 	*x = 0;
@@ -649,7 +649,7 @@ desktop_place(
 	/* Under the system bar in the glass look. */
 	*y = 0;
 	if (server->glass)
-		*y = ZWL_GLASS_BAR;
+		*y = KWL_GLASS_BAR;
 
 	/* The rest of the height, less the keyboard's row. */
 	*height = (int32_t)server->height - *y - bottom;
@@ -661,7 +661,7 @@ desktop_place(
 /* Tells the desktop surface its place (configure) and moves it there. */
 static int
 desktop_configure(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint32_t words[5];
 	int error;
@@ -672,13 +672,13 @@ desktop_configure(
 	desk.surface->y = desk.y;
 
 	/* configure(serial, x, y, width, height). */
-	desk.serial = zwl_next_serial(server);
+	desk.serial = kwl_next_serial(server);
 	words[0] = desk.serial;
 	words[1] = (uint32_t)desk.x;
 	words[2] = (uint32_t)desk.y;
 	words[3] = (uint32_t)desk.width;
 	words[4] = (uint32_t)desk.height;
-	error = zwl_emit(desk.object->client, desk.object->id, DESKTOP_SURFACE_CONFIGURE, words, sizeof(words));
+	error = kwl_emit(desk.object->client, desk.object->id, DESKTOP_SURFACE_CONFIGURE, words, sizeof(words));
 	if (error != 0)
 		return error;
 
@@ -695,7 +695,7 @@ desktop_configure(
  */
 static void
 desktop_start(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	char line[DESKTOP_LINE_MAX];
 	uint64_t now;
@@ -720,7 +720,7 @@ desktop_start(
 		return;
 
 	/* Not before two seconds after the last one ended. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (desk.gone_ms != 0U && now - desk.gone_ms < DESKTOP_RESTART_MS)
 		return;
 
@@ -743,7 +743,7 @@ desktop_start(
 
 	/* The program, its token in its environment only. */
 	snprintf(line, sizeof(line), "KEILAND_DESKTOP_TOKEN=%s exec %s", desk.token, desk.command);
-	desk.pid = zwl_spawn(server, line);
+	desk.pid = kwl_spawn(server, line);
 	if (desk.pid < 0) {
 		printf("ZWL DESKTOP start-failed errno=%d\n", errno);
 		desk.starts++;
@@ -757,7 +757,7 @@ desktop_start(
 
 	/* The log the tests read; its first image is logged when drawn. */
 	desk.drawn = 0;
-	printf("ZWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)zwl_milliseconds());
+	printf("ZWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: the program is running. */
 	return;
@@ -766,7 +766,7 @@ desktop_start(
 /* Notices that the desktop program ended (its own wait, or App Home's collecting every child). */
 static void
 desktop_watch(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	pid_t ended;
 	int status;
@@ -789,7 +789,7 @@ desktop_watch(
 	/* The program is gone; it is started again after a while. */
 	printf("ZWL DESKTOP exited pid=%d\n", (int)desk.pid);
 	desk.pid = 0;
-	desk.gone_ms = zwl_milliseconds();
+	desk.gone_ms = kwl_milliseconds();
 
 	/* Succeeded: the end is noted. */
 	return;

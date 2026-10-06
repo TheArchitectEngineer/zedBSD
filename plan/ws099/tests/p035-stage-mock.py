@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ws099-p035a: host mock of App Home's stage (BUG-236, the design of plan/ws099/phase035 §1) in three strengths of
 # the spotlights and the reflections, for the user to choose, before the stage is built.  The tiles are the
-# compositor's own pixels (icons.c zwl_icon_tile at 72 px, tile-dump); the stage is drawn here as the compositor
+# compositor's own pixels (icons.c kwl_icon_tile at 72 px, tile-dump); the stage is drawn here as the compositor
 # would draw it with its shapes: the blurred desktop under dark glass (black, 0.82) a little lighter in the top's
 # middle, then for each row of tiles a glossy floor line under them, a soft elliptic spotlight on the floor behind
 # each tile, the tile, its reflection (the tile upside down under the floor, fading out downwards) and its name in
@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 
 # The tiles, the wallpaper and App Home's list as ws128's host pictures read them.
 SPEC = importlib.util.spec_from_file_location('tile_screens', os.path.join(ROOT, 'plan/ws128/tests/tile-screens.py'))

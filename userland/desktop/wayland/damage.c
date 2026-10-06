@@ -18,14 +18,14 @@
  * buffer age) and draws the frame inside it alone.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "popup.h"
 
 /* How far around the pointer a cursor may draw (zdesktop's shapes and arrow are smaller). */
 #define DAMAGE_CURSOR		64
 
-static void damage_add(struct zwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
-static int cursor_unseen(struct zwl_server *server, int32_t x, int32_t y);
+static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
+static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
 
 /*
  * Marks the damage of the pointer's move from an old place: the cursor's
@@ -33,8 +33,8 @@ static int cursor_unseen(struct zwl_server *server, int32_t x, int32_t y);
  * there; otherwise the whole output.
  */
 void
-zwl_damage_pointer(
-	struct zwl_server *server,
+kwl_damage_pointer(
+	struct kwl_server *server,
 	int32_t old_x,
 	int32_t old_y)
 {
@@ -63,9 +63,9 @@ zwl_damage_pointer(
 
 	/* In the glass look both places must be over windows' own areas, in a still look. */
 	if (server->glass) {
-		calm = zwl_glass_pointer_calm(server, old_x, old_y);
+		calm = kwl_glass_pointer_calm(server, old_x, old_y);
 		if (calm)
-			calm = zwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
+			calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 		if (!calm) {
 			server->dirty = 1;
 			return;
@@ -84,10 +84,10 @@ zwl_damage_pointer(
  * whole output.
  */
 void
-zwl_damage_commit(
-	struct zwl_server *server,
-	struct zwl_object *surface,
-	struct zwl_object *previous)
+kwl_damage_commit(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	struct kwl_object *previous)
 {
 	int32_t rect[4];
 	uint32_t old_width;
@@ -109,8 +109,8 @@ zwl_damage_commit(
 	}
 
 	/* An image of another size changes the window's place on the output. */
-	zwl_buffer_size(previous, &old_width, &old_height);
-	zwl_buffer_size(surface->current, &width, &height);
+	kwl_buffer_size(previous, &old_width, &old_height);
+	kwl_buffer_size(surface->current, &width, &height);
 	if (old_width != width || old_height != height) {
 		server->dirty = 1;
 		return;
@@ -118,7 +118,7 @@ zwl_damage_commit(
 
 	/* The glass look: the body, when no window near it is glass (shell.c). */
 	if (server->glass) {
-		alone = zwl_glass_body_damage(server, surface, rect);
+		alone = kwl_glass_body_damage(server, surface, rect);
 		if (!alone) {
 			server->dirty = 1;
 			return;
@@ -136,7 +136,7 @@ zwl_damage_commit(
 /* Adds a rectangle (left, top, right, bottom) to the damage the next frame draws. */
 static void
 damage_add(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t left,
 	int32_t top,
 	int32_t right,
@@ -171,11 +171,11 @@ damage_add(
  */
 static int
 cursor_unseen(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *window;
+	struct kwl_object *window;
 	int calm;
 
 	/* A hidden client's cursor, and nothing else that follows the pointer. */
@@ -189,12 +189,12 @@ cursor_unseen(
 		return 0;
 
 	/* Over a window's body in a still look. */
-	calm = zwl_glass_pointer_calm(server, x, y);
+	calm = kwl_glass_pointer_calm(server, x, y);
 	if (!calm)
 		return 0;
 
 	/* The client's own window. */
-	window = zwl_glass_body_at(server, x, y);
+	window = kwl_glass_body_at(server, x, y);
 	if (window == NULL || window->client != server->cursor_client)
 		return 0;
 

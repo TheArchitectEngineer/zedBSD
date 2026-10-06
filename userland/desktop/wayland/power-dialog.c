@@ -21,7 +21,7 @@
  * "ZWL POWER choice=poweroff|restart|logout|cancel via=V error=E".
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "glass.h"
 #include "power-layout.h"
 
@@ -42,13 +42,13 @@
 #define POWER_BUTTON_RADIUS	14.0f
 #define POWER_CARD_RADIUS	24.0f
 
-static float power_progress(struct zwl_server *server);
-static void power_close(struct zwl_server *server);
-static void power_choose(struct zwl_server *server, int choice, const char *via);
-static void power_logout(struct zwl_server *server);
-static void power_draw_button(struct zwl_server *server, VkCommandBuffer command, const int32_t *rect, int choice, int lit, float progress);
+static float power_progress(struct kwl_server *server);
+static void power_close(struct kwl_server *server);
+static void power_choose(struct kwl_server *server, int choice, const char *via);
+static void power_logout(struct kwl_server *server);
+static void power_draw_button(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, int choice, int lit, float progress);
 static const char *power_words(int choice);
-static int power_enabled(struct zwl_server *server, int choice);
+static int power_enabled(struct kwl_server *server, int choice);
 
 /*
  * Opens the power dialog (App Home's Power Off, "home"; the power button
@@ -56,11 +56,11 @@ static int power_enabled(struct zwl_server *server, int choice);
  * Cancel, the darkening from now.
  */
 void
-zwl_power_dialog_open(
-	struct zwl_server *server,
+kwl_power_dialog_open(
+	struct kwl_server *server,
 	const char *source)
 {
-	struct zwl_power_dialog *dialog;
+	struct kwl_power_dialog *dialog;
 	struct kl_backend_power_state state;
 	unsigned poweroff_bit;
 	unsigned reboot_bit;
@@ -75,7 +75,7 @@ zwl_power_dialog_open(
 
 	/* The choices: Log Out and Cancel always, Power Off and Restart when the session's backend offers them. */
 	memset(dialog, 0, sizeof(*dialog));
-	dialog->enabled = ZWL_POWER_BIT(ZWL_POWER_LOGOUT) | ZWL_POWER_BIT(ZWL_POWER_CANCEL);
+	dialog->enabled = KWL_POWER_BIT(KWL_POWER_LOGOUT) | KWL_POWER_BIT(KWL_POWER_CANCEL);
 	memset(&state, 0, sizeof(state));
 	error = kl_backend_power_get_state(server->backend, &state);
 	poweroff_bit = KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_POWEROFF);
@@ -87,14 +87,14 @@ zwl_power_dialog_open(
 	if (error == 0 && (state.actions & reboot_bit) != 0U)
 		restart = 1U;
 	if (poweroff)
-		dialog->enabled |= ZWL_POWER_BIT(ZWL_POWER_POWEROFF);
+		dialog->enabled |= KWL_POWER_BIT(KWL_POWER_POWEROFF);
 	if (restart)
-		dialog->enabled |= ZWL_POWER_BIT(ZWL_POWER_RESTART);
+		dialog->enabled |= KWL_POWER_BIT(KWL_POWER_RESTART);
 
 	/* Open from now, the keys on Cancel, no press yet. */
 	dialog->open = 1U;
-	dialog->start_ms = zwl_milliseconds();
-	dialog->focus = ZWL_POWER_CANCEL;
+	dialog->start_ms = kwl_milliseconds();
+	dialog->focus = KWL_POWER_CANCEL;
 	dialog->pressed = -1;
 	(void)snprintf(dialog->source, sizeof(dialog->source), "%s", source);
 	server->dirty = 1;
@@ -105,8 +105,8 @@ zwl_power_dialog_open(
  * Tells whether the power dialog shows (opening, open or closing).
  */
 int
-zwl_power_dialog_showing(
-	struct zwl_server *server)
+kwl_power_dialog_showing(
+	struct kwl_server *server)
 {
 	/* Shut. */
 	if (!server->power_dialog.open)
@@ -123,13 +123,13 @@ zwl_power_dialog_showing(
  * shows).
  */
 int
-zwl_power_dialog_button(
-	struct zwl_server *server,
+kwl_power_dialog_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_power_dialog *dialog;
-	struct zwl_power_layout layout;
+	struct kwl_power_dialog *dialog;
+	struct kwl_power_layout layout;
 	int enabled;
 	int hit;
 
@@ -141,12 +141,12 @@ zwl_power_dialog_button(
 		return 1;
 
 	/* Only the left button (a finger's tap is one) acts. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return 1;
 
 	/* What is under the pointer. */
-	zwl_power_layout((int32_t)server->width, (int32_t)server->height, &layout);
-	hit = zwl_power_hit(&layout, server->pointer_x, server->pointer_y);
+	kwl_power_layout((int32_t)server->width, (int32_t)server->height, &layout);
+	hit = kwl_power_hit(&layout, server->pointer_x, server->pointer_y);
 
 	/* A release on the button pressed takes it; elsewhere nothing. */
 	if (state == 0U) {
@@ -158,8 +158,8 @@ zwl_power_dialog_button(
 	}
 
 	/* A press outside the card cancels. */
-	if (hit == ZWL_POWER_OUTSIDE) {
-		power_choose(server, ZWL_POWER_CANCEL, "outside");
+	if (hit == KWL_POWER_OUTSIDE) {
+		power_choose(server, KWL_POWER_CANCEL, "outside");
 		return 1;
 	}
 
@@ -180,12 +180,12 @@ zwl_power_dialog_button(
  * the dialog's (every one while it shows).
  */
 int
-zwl_power_dialog_key(
-	struct zwl_server *server,
+kwl_power_dialog_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_power_dialog *dialog;
+	struct kwl_power_dialog *dialog;
 	int step;
 
 	/* Only while it shows; a release, or a key while it closes, does nothing. */
@@ -197,7 +197,7 @@ zwl_power_dialog_key(
 
 	/* Esc cancels. */
 	if (key == KEY_ESC) {
-		power_choose(server, ZWL_POWER_CANCEL, "escape");
+		power_choose(server, KWL_POWER_CANCEL, "escape");
 		return 1;
 	}
 
@@ -221,7 +221,7 @@ zwl_power_dialog_key(
 
 	/* The new choice, drawn lit. */
 	if (step != 0) {
-		dialog->focus = zwl_power_focus_step(dialog->focus, step, dialog->enabled);
+		dialog->focus = kwl_power_focus_step(dialog->focus, step, dialog->enabled);
 		server->dirty = 1;
 	}
 
@@ -234,8 +234,8 @@ zwl_power_dialog_key(
  * drawn lit).  Returns 1 when the motion was the dialog's.
  */
 int
-zwl_power_dialog_motion(
-	struct zwl_server *server)
+kwl_power_dialog_motion(
+	struct kwl_server *server)
 {
 	/* Only while it shows. */
 	if (!server->power_dialog.open)
@@ -251,8 +251,8 @@ zwl_power_dialog_motion(
  * down cancels.  Returns 1 when the swipe was the dialog's.
  */
 int
-zwl_power_dialog_swipe(
-	struct zwl_server *server,
+kwl_power_dialog_swipe(
+	struct kwl_server *server,
 	int down)
 {
 	/* Only while it shows, and not while it closes. */
@@ -263,7 +263,7 @@ zwl_power_dialog_swipe(
 
 	/* Down cancels. */
 	if (down)
-		power_choose(server, ZWL_POWER_CANCEL, "swipe");
+		power_choose(server, KWL_POWER_CANCEL, "swipe");
 
 	/* Succeeded: the swipe was the dialog's. */
 	return 1;
@@ -274,10 +274,10 @@ zwl_power_dialog_swipe(
  * login or lock screen closes it at once.
  */
 void
-zwl_power_dialog_tick(
-	struct zwl_server *server)
+kwl_power_dialog_tick(
+	struct kwl_server *server)
 {
-	struct zwl_power_dialog *dialog;
+	struct kwl_power_dialog *dialog;
 	float progress;
 
 	/* Shut: nothing. */
@@ -312,12 +312,12 @@ zwl_power_dialog_tick(
  * closes.
  */
 void
-zwl_power_dialog_draw(
-	struct zwl_server *server,
+kwl_power_dialog_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	struct zwl_power_dialog *dialog;
-	struct zwl_power_layout layout;
+	struct kwl_power_dialog *dialog;
+	struct kwl_power_layout layout;
 	struct glass_shape shape;
 	float dark[4];
 	float progress;
@@ -340,7 +340,7 @@ zwl_power_dialog_draw(
 	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, dark);
 
 	/* The card's frosted glass in the middle. */
-	zwl_power_layout((int32_t)server->width, (int32_t)server->height, &layout);
+	kwl_power_layout((int32_t)server->width, (int32_t)server->height, &layout);
 	glass_shape_init(&shape, (float)layout.card[0], (float)layout.card[1], (float)layout.card[2], (float)layout.card[3]);
 	shape.mode = MODE_GLASS;
 	shape.radius = POWER_CARD_RADIUS;
@@ -354,8 +354,8 @@ zwl_power_dialog_draw(
 	glass_shape_draw(server, command, &shape);
 
 	/* The buttons, the one under the pointer (or pressed, or the keys' choice) lit. */
-	hover = zwl_power_hit(&layout, server->pointer_x, server->pointer_y);
-	for (choice = 0; choice < ZWL_POWER_CHOICES; choice++) {
+	hover = kwl_power_hit(&layout, server->pointer_x, server->pointer_y);
+	for (choice = 0; choice < KWL_POWER_CHOICES; choice++) {
 		lit = 0;
 		if (choice == hover || choice == dialog->pressed || choice == dialog->focus)
 			lit = 1;
@@ -366,15 +366,15 @@ zwl_power_dialog_draw(
 /* Tells how far the dialog has opened (0 to 1), or how much of it is left while it closes. */
 static float
 power_progress(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_power_dialog *dialog;
+	struct kwl_power_dialog *dialog;
 	uint64_t elapsed;
 	float t;
 
 	/* The time since it began to open or to close. */
 	dialog = &server->power_dialog;
-	elapsed = zwl_milliseconds() - dialog->start_ms;
+	elapsed = kwl_milliseconds() - dialog->start_ms;
 
 	/* Closing: from 1 down to 0. */
 	if (dialog->closing) {
@@ -391,14 +391,14 @@ power_progress(
 	return t;
 }
 
-/* Starts closing the dialog: it lightens and goes (zwl_power_dialog_tick). */
+/* Starts closing the dialog: it lightens and goes (kwl_power_dialog_tick). */
 static void
 power_close(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Closing from now; no press holds a button. */
 	server->power_dialog.closing = 1U;
-	server->power_dialog.start_ms = zwl_milliseconds();
+	server->power_dialog.start_ms = kwl_milliseconds();
 	server->power_dialog.pressed = -1;
 	server->dirty = 1;
 }
@@ -410,7 +410,7 @@ power_close(
  */
 static void
 power_choose(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int choice,
 	const char *via)
 {
@@ -428,13 +428,13 @@ power_choose(
 	/* Each choice's work. */
 	error = 0;
 	switch (choice) {
-	case ZWL_POWER_POWEROFF:
+	case KWL_POWER_POWEROFF:
 		error = kl_backend_power_action(server->backend, KL_BACKEND_POWER_POWEROFF);
 		break;
-	case ZWL_POWER_RESTART:
+	case KWL_POWER_RESTART:
 		error = kl_backend_power_action(server->backend, KL_BACKEND_POWER_REBOOT);
 		break;
-	case ZWL_POWER_LOGOUT:
+	case KWL_POWER_LOGOUT:
 		power_logout(server);
 		break;
 	default:
@@ -442,7 +442,7 @@ power_choose(
 	}
 
 	/* The log says what was chosen and how it went. */
-	printf("ZWL POWER choice=%s via=%s error=%d\n", zwl_power_choice_name(choice), via, error);
+	printf("ZWL POWER choice=%s via=%s error=%d\n", kwl_power_choice_name(choice), via, error);
 }
 
 /*
@@ -452,15 +452,15 @@ power_choose(
  */
 static void
 power_logout(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	int handed;
 
 	/* Through sessiond, or the compositor stops. */
 	printf("ZWL SESSION logout\n");
-	handed = zwl_handoff_logout(server);
+	handed = kwl_handoff_logout(server);
 	if (!handed)
-		zwl_request_stop();
+		kwl_request_stop();
 }
 
 /*
@@ -470,7 +470,7 @@ power_logout(
  */
 static void
 power_draw_button(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	const int32_t *rect,
 	int choice,
@@ -491,7 +491,7 @@ power_draw_button(
 		alpha = progress * 0.35f;
 
 	/* Power Off red with white words; the others white with dark words. */
-	if (choice == ZWL_POWER_POWEROFF) {
+	if (choice == KWL_POWER_POWEROFF) {
 		fill[0] = 0.86f;
 		fill[1] = 0.25f;
 		fill[2] = 0.24f;
@@ -514,7 +514,7 @@ power_draw_button(
 	/* Lit: a little more opaque (Power Off) or whiter. */
 	if (lit && alpha >= progress) {
 		fill[3] = fill[3] + (1.0f - fill[3]) * 0.45f;
-		if (choice == ZWL_POWER_POWEROFF) {
+		if (choice == KWL_POWER_POWEROFF) {
 			fill[0] = 0.92f;
 			fill[1] = 0.30f;
 		}
@@ -536,11 +536,11 @@ power_words(
 {
 	/* Each one (the catalog's texts, WS158). */
 	switch (choice) {
-	case ZWL_POWER_POWEROFF:
+	case KWL_POWER_POWEROFF:
 		return kl_tr("Power Off");
-	case ZWL_POWER_RESTART:
+	case KWL_POWER_RESTART:
 		return kl_tr("Restart");
-	case ZWL_POWER_LOGOUT:
+	case KWL_POWER_LOGOUT:
 		return kl_tr("Log Out");
 	default:
 		return kl_tr("Cancel");
@@ -550,17 +550,17 @@ power_words(
 /* Tells whether a choice may be taken now (a choice out of range may not). */
 static int
 power_enabled(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int choice)
 {
 	unsigned bit;
 
 	/* No such choice. */
-	if (choice < 0 || choice >= ZWL_POWER_CHOICES)
+	if (choice < 0 || choice >= KWL_POWER_CHOICES)
 		return 0;
 
 	/* One the session does not offer. */
-	bit = ZWL_POWER_BIT(choice);
+	bit = KWL_POWER_BIT(choice);
 	if ((server->power_dialog.enabled & bit) == 0U)
 		return 0;
 

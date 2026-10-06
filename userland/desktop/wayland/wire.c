@@ -9,7 +9,7 @@
  * Wayland framing with independent stream-byte and SCM_RIGHTS ownership.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -19,15 +19,15 @@
 #include <string.h>
 #include <time.h>
 
-static int receive_rights(struct zwl_client *client, const struct msghdr *message);
-static int decode_messages(struct zwl_client *client);
-static ssize_t send_packet(struct zwl_client *client, struct zwl_packet *packet);
+static int receive_rights(struct kwl_client *client, const struct msghdr *message);
+static int decode_messages(struct kwl_client *client);
+static ssize_t send_packet(struct kwl_client *client, struct kwl_packet *packet);
 
 /*
  * Reads a monotonic time for frame callbacks and finite service deadlines.
  */
 uint64_t
-zwl_milliseconds(
+kwl_milliseconds(
 	void)
 {
 	struct timespec now;
@@ -47,7 +47,7 @@ zwl_milliseconds(
  * time the pen's input to the frame that shows it (ws099-p015).
  */
 uint64_t
-zwl_microseconds(
+kwl_microseconds(
 	void)
 {
 	struct timespec now;
@@ -66,8 +66,8 @@ zwl_microseconds(
  * Queues one aligned protocol event without blocking the other clients.
  */
 int
-zwl_emit(
-	struct zwl_client *client,
+kwl_emit(
+	struct kwl_client *client,
 	uint32_t object,
 	uint32_t opcode,
 	const void *payload,
@@ -76,7 +76,7 @@ zwl_emit(
 	int error;
 
 	/* An ordinary event carries no descriptor. */
-	error = zwl_emit_fd(client, object, opcode, payload, size, -1);
+	error = kwl_emit_fd(client, object, opcode, payload, size, -1);
 	if (error != 0)
 		return error;
 
@@ -91,20 +91,20 @@ zwl_emit(
  * once sent, when the client is destroyed, or here when queuing fails.
  */
 int
-zwl_emit_fd(
-	struct zwl_client *client,
+kwl_emit_fd(
+	struct kwl_client *client,
 	uint32_t object,
 	uint32_t opcode,
 	const void *payload,
 	size_t size,
 	int descriptor)
 {
-	struct zwl_packet *packet;
+	struct kwl_packet *packet;
 	uint32_t header[2];
 	size_t total;
 
 	/* Refuse malformed or excessive event storage before allocating a packet. */
-	if (size > ZWL_WIRE_MAX - 8U || (size & 3U) != 0) {
+	if (size > KWL_WIRE_MAX - 8U || (size & 3U) != 0) {
 		if (descriptor >= 0)
 			close(descriptor);
 
@@ -114,7 +114,7 @@ zwl_emit_fd(
 
 	/* A client that never reads cannot consume unbounded compositor memory. */
 	total = size + 8U;
-	if (client->output_bytes > ZWL_OUTPUT_MAX - total) {
+	if (client->output_bytes > KWL_OUTPUT_MAX - total) {
 		if (descriptor >= 0)
 			close(descriptor);
 
@@ -161,10 +161,10 @@ zwl_emit_fd(
  * Drains queued events while retaining every unsent suffix after EAGAIN.
  */
 int
-zwl_flush(
-	struct zwl_client *client)
+kwl_flush(
+	struct kwl_client *client)
 {
-	struct zwl_packet *packet;
+	struct kwl_packet *packet;
 	ssize_t sent;
 
 	/* A positive stream write may consume only part of a protocol message. */
@@ -197,7 +197,7 @@ zwl_flush(
 		/* Complete packets release their memory charge and list ownership. */
 		client->output_head = packet->next;
 		client->output_bytes -= packet->size;
-		zwl_packet_free(packet);
+		kwl_packet_free(packet);
 	}
 
 	/* An empty queue has no last packet. */
@@ -211,8 +211,8 @@ zwl_flush(
  * Releases one queued event and any descriptor it has not yet sent.
  */
 void
-zwl_packet_free(
-	struct zwl_packet *packet)
+kwl_packet_free(
+	struct kwl_packet *packet)
 {
 	/* An unsent descriptor still belongs to the packet. */
 	if (packet->descriptor >= 0)
@@ -229,8 +229,8 @@ zwl_packet_free(
  * Reads one available stream fragment and decodes every complete request.
  */
 int
-zwl_read(
-	struct zwl_client *client)
+kwl_read(
+	struct kwl_client *client)
 {
 	struct msghdr message;
 	struct iovec vector;
@@ -242,8 +242,8 @@ zwl_read(
 	int error;
 
 	/* A maximal incomplete request cannot accept another byte indefinitely. */
-	if (client->input_size == ZWL_WIRE_MAX) {
-		error = zwl_error(client, 1, "request exceeds wire limit");
+	if (client->input_size == KWL_WIRE_MAX) {
+		error = kwl_error(client, 1, "request exceeds wire limit");
 		return error;
 	}
 
@@ -251,7 +251,7 @@ zwl_read(
 	memset(&message, 0, sizeof(message));
 	memset(&control, 0, sizeof(control));
 	vector.iov_base = client->input + client->input_size;
-	vector.iov_len = ZWL_WIRE_MAX - client->input_size;
+	vector.iov_len = KWL_WIRE_MAX - client->input_size;
 	message.msg_iov = &vector;
 	message.msg_iovlen = 1;
 	message.msg_control = control.bytes;
@@ -289,8 +289,8 @@ zwl_read(
  * Records a protocol error and queues the standard wl_display.error event.
  */
 int
-zwl_error(
-	struct zwl_client *client,
+kwl_error(
+	struct kwl_client *client,
 	uint32_t object,
 	const char *reason)
 {
@@ -316,9 +316,9 @@ zwl_error(
 	word = (uint32_t)bytes + 1U;
 	memcpy(payload + 8, &word, 4);
 	memcpy(payload + 12, reason, bytes);
-	error = zwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
+	error = kwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
 	client->fatal = 1;
-	client->fatal_time = zwl_milliseconds();
+	client->fatal_time = kwl_milliseconds();
 	printf("ZWL ERROR client=%llu object=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, reason, error);
 
 	/* Succeeded: EPROTO directs the loop to flush this terminal error before disconnect. */
@@ -328,14 +328,14 @@ zwl_error(
 /*
  * Queues wl_display.error naming the object at fault and its interface's error code.
  *
- * zwl_error names the display with code 1 because the request it reports may
+ * kwl_error names the display with code 1 because the request it reports may
  * have named no live object; a request that failed on a live object of an
  * interface with its own error enum uses this instead, so that the client
- * learns which object and which error.  Returns EPROTO, like zwl_error.
+ * learns which object and which error.  Returns EPROTO, like kwl_error.
  */
 int
-zwl_error_code(
-	struct zwl_client *client,
+kwl_error_code(
+	struct kwl_client *client,
 	uint32_t object,
 	uint32_t code,
 	const char *reason)
@@ -363,9 +363,9 @@ zwl_error_code(
 	memcpy(payload + 12, reason, bytes);
 
 	/* The event goes out before the connection is closed; nothing more is taken from it. */
-	error = zwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
+	error = kwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
 	client->fatal = 1;
-	client->fatal_time = zwl_milliseconds();
+	client->fatal_time = kwl_milliseconds();
 	printf("ZWL ERROR client=%llu object=%u code=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, code, reason, error);
 
 	/* Succeeded: EPROTO makes the loop flush the error before it disconnects. */
@@ -376,8 +376,8 @@ zwl_error_code(
  * Transfers the next ancillary descriptor from connection ownership to a request.
  */
 int
-zwl_take_fd(
-	struct zwl_client *client)
+kwl_take_fd(
+	struct kwl_client *client)
 {
 	int descriptor;
 
@@ -398,8 +398,8 @@ zwl_take_fd(
  * Returns a retired client object ID through the canonical display event.
  */
 void
-zwl_delete_id(
-	struct zwl_client *client,
+kwl_delete_id(
+	struct kwl_client *client,
 	uint32_t id)
 {
 	int error;
@@ -409,10 +409,10 @@ zwl_delete_id(
 		return;
 
 	/* The client may reuse the ID only after this ordered event is received. */
-	error = zwl_emit(client, 1, 1, &id, sizeof(id));
+	error = kwl_emit(client, 1, 1, &id, sizeof(id));
 	if (error != 0) {
 		client->fatal = 1;
-		client->fatal_time = zwl_milliseconds();
+		client->fatal_time = kwl_milliseconds();
 	}
 
 	/* Succeeded: the retired identity is queued for ordered client reuse. */
@@ -422,7 +422,7 @@ zwl_delete_id(
 /* Captures all received descriptors before reporting malformed ancillary state. */
 static int
 receive_rights(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	const struct msghdr *message)
 {
 	struct cmsghdr *header;
@@ -454,7 +454,7 @@ receive_rights(
 		for (index = 0; index + sizeof(int) <= bytes; index += sizeof(int)) {
 			/* Every delivered descriptor is either retained or closed before rejecting overflow. */
 			memcpy(&descriptor, (unsigned char *)CMSG_DATA(header) + index, sizeof(descriptor));
-			if (client->right_count == ZWL_RIGHTS_MAX) {
+			if (client->right_count == KWL_RIGHTS_MAX) {
 				close(descriptor);
 				error = EPROTO;
 			} else {
@@ -490,8 +490,8 @@ receive_rights(
  */
 static ssize_t
 send_packet(
-	struct zwl_client *client,
-	struct zwl_packet *packet)
+	struct kwl_client *client,
+	struct kwl_packet *packet)
 {
 	struct msghdr message;
 	struct iovec vector;
@@ -537,7 +537,7 @@ send_packet(
 /* Decodes complete native-endian requests without reading beyond an incomplete suffix. */
 static int
 decode_messages(
-	struct zwl_client *client)
+	struct kwl_client *client)
 {
 	uint32_t header[2];
 	size_t size;
@@ -550,8 +550,8 @@ decode_messages(
 		size = header[1] >> 16;
 		if (size < 8U ||
 		    (size & 3U) != 0 ||
-		    size > ZWL_WIRE_MAX) {
-			error = zwl_error(client, header[0], "invalid request size");
+		    size > KWL_WIRE_MAX) {
+			error = kwl_error(client, header[0], "invalid request size");
 			return error;
 		}
 
@@ -560,7 +560,7 @@ decode_messages(
 			return 0;
 
 		/* Each request consumes only the descriptors specified by its interface signature. */
-		error = zwl_dispatch(client, header[0], header[1] & 65535U, client->input + 8U, size - 8U);
+		error = kwl_dispatch(client, header[0], header[1] & 65535U, client->input + 8U, size - 8U);
 		if (error == EAGAIN)
 			return 0;
 

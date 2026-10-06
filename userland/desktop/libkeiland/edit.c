@@ -7,7 +7,7 @@
 
 /*
  * The editing operations (ws102-p017, plan/ws102/design.md section 2.10):
- * the wrapper of zdesktop's keiland_edit_v1 protocol.  A window says which
+ * the wrapper of zdesktop's kl_edit_v1 protocol.  A window says which
  * editing operations it carries out and its state, and hears the
  * operations the on-screen keyboard's buttons ask for.  With a compositor
  * that does not have the protocol nothing is made (ENOTSUP) and the
@@ -29,12 +29,12 @@
 #define EDIT_VERSION		1U
 
 /*
- * One window's edit object: its keiland_edit_v1, the application's
+ * One window's edit object: its kl_edit_v1, the application's
  * callback and its data, and the operations and the state last sent (so
  * that an unchanged state is not sent again).
  */
 struct kl_edit {
-	struct keiland_edit_v1 *proxy;
+	struct kl_edit_v1 *proxy;
 	kl_edit_fn callback;
 	void *data;
 	int sent;
@@ -42,11 +42,11 @@ struct kl_edit {
 	uint32_t state;
 };
 
-static struct keiland_edit_manager_v1 *edit_bind(struct wl_display *display);
-static void edit_event(void *data, struct keiland_edit_v1 *object, uint32_t action);
+static struct kl_edit_manager_v1 *edit_bind(struct wl_display *display);
+static void edit_event(void *data, struct kl_edit_v1 *object, uint32_t action);
 
 /* The edit object's callback. */
-static const struct keiland_edit_v1_listener edit_listener = {
+static const struct kl_edit_v1_listener edit_listener = {
 	edit_event
 };
 
@@ -63,7 +63,7 @@ kl_edit_create(
 	kl_edit_fn callback,
 	void *data)
 {
-	struct keiland_edit_manager_v1 *manager;
+	struct kl_edit_manager_v1 *manager;
 	struct kl_edit *edit;
 	int error;
 
@@ -81,7 +81,7 @@ kl_edit_create(
 	/* The record. */
 	edit = calloc(1, sizeof(*edit));
 	if (edit == NULL) {
-		keiland_edit_manager_v1_destroy(manager);
+		kl_edit_manager_v1_destroy(manager);
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -89,8 +89,8 @@ kl_edit_create(
 	edit->data = data;
 
 	/* The protocol object; the binding is not needed after it (the edit object stays). */
-	edit->proxy = keiland_edit_manager_v1_get_edit(manager, toplevel);
-	keiland_edit_manager_v1_destroy(manager);
+	edit->proxy = kl_edit_manager_v1_get_edit(manager, toplevel);
+	kl_edit_manager_v1_destroy(manager);
 	if (edit->proxy == NULL) {
 		free(edit);
 		errno = ENOMEM;
@@ -98,9 +98,9 @@ kl_edit_create(
 	}
 
 	/* Its events come to the callback. */
-	error = keiland_edit_v1_add_listener(edit->proxy, &edit_listener, edit);
+	error = kl_edit_v1_add_listener(edit->proxy, &edit_listener, edit);
 	if (error != 0) {
-		keiland_edit_v1_destroy(edit->proxy);
+		kl_edit_v1_destroy(edit->proxy);
 		free(edit);
 		errno = ENOMEM;
 		return NULL;
@@ -128,7 +128,7 @@ kl_edit_set_state(
 		return;
 
 	/* Sent, and kept. */
-	keiland_edit_v1_set_state(edit->proxy, actions, state);
+	kl_edit_v1_set_state(edit->proxy, actions, state);
 	edit->sent = 1;
 	edit->actions = actions;
 	edit->state = state;
@@ -146,7 +146,7 @@ kl_edit_destroy(
 		return;
 
 	/* The protocol object, then the record. */
-	keiland_edit_v1_destroy(edit->proxy);
+	kl_edit_v1_destroy(edit->proxy);
 	free(edit);
 }
 
@@ -154,7 +154,7 @@ kl_edit_destroy(
 static void
 edit_event(
 	void *data,
-	struct keiland_edit_v1 *object,
+	struct kl_edit_v1 *object,
 	uint32_t action)
 {
 	struct kl_edit *edit;
@@ -168,16 +168,16 @@ edit_event(
 }
 
 /* Binds zdesktop's edit manager: from an application's registry, or found by a search of the library's own. */
-static struct keiland_edit_manager_v1 *
+static struct kl_edit_manager_v1 *
 edit_bind(
 	struct wl_display *display)
 {
-	struct keiland_edit_manager_v1 *manager;
+	struct kl_edit_manager_v1 *manager;
 	struct keiui_global_search search;
 	int error;
 
 	/* The manager's global. */
-	error = keiui_global_find(&search, display, "keiland_edit_manager_v1");
+	error = keiui_global_find(&search, display, "kl_edit_manager_v1");
 	if (error != 0) {
 		keiui_global_end(&search);
 		errno = error;
@@ -185,7 +185,7 @@ edit_bind(
 	}
 
 	/* The manager, bound when announced; the search ends. */
-	manager = keiui_global_bind(&search, &keiland_edit_manager_v1_interface, EDIT_VERSION);
+	manager = keiui_global_bind(&search, &kl_edit_manager_v1_interface, EDIT_VERSION);
 	keiui_global_end(&search);
 
 	/* A compositor without the protocol. */

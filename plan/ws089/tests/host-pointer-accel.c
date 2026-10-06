@@ -55,7 +55,7 @@ travel(
 	unsigned reports,
 	uint64_t gap_us)
 {
-	struct zwl_pointer_accel accel;
+	struct kwl_pointer_accel accel;
 	uint64_t time_us;
 	int64_t total;
 	int64_t x;
@@ -63,13 +63,13 @@ travel(
 	unsigned index;
 
 	/* Each report, after a first that starts the clock. */
-	zwl_pointer_accel_init(&accel);
+	kwl_pointer_accel_init(&accel);
 	time_us = 1000000;
-	zwl_pointer_accel_move(&accel, 0, 0, time_us, speed, level, &x, &y);
+	kwl_pointer_accel_move(&accel, 0, 0, time_us, speed, level, &x, &y);
 	total = 0;
 	for (index = 0; index < reports; index++) {
 		time_us += gap_us;
-		zwl_pointer_accel_move(&accel, counts, 0, time_us, speed, level, &x, &y);
+		kwl_pointer_accel_move(&accel, counts, 0, time_us, speed, level, &x, &y);
 		total += x;
 	}
 
@@ -83,46 +83,46 @@ travel(
 int
 main(void)
 {
-	struct zwl_pointer_accel accel;
+	struct kwl_pointer_accel accel;
 	int64_t slow;
 	int64_t fast;
 	int64_t x;
 	int64_t y;
 
 	/* No acceleration at 100%: one pixel a count, slow or fast. */
-	check("none 100% slow", travel(100, ZWL_ACCEL_NONE, 2, 50, 8000) == 100);
-	check("none 100% fast", travel(100, ZWL_ACCEL_NONE, 40, 50, 8000) == 2000);
+	check("none 100% slow", travel(100, KWL_ACCEL_NONE, 2, 50, 8000) == 100);
+	check("none 100% fast", travel(100, KWL_ACCEL_NONE, 40, 50, 8000) == 2000);
 
 	/* The gain curve. */
-	check("gain 1 when slow", zwl_pointer_accel_gain(300, ZWL_ACCEL_STRONG) == 256);
-	check("gain strong when fast", zwl_pointer_accel_gain(10000, ZWL_ACCEL_STRONG) == 768);
-	check("gain between", zwl_pointer_accel_gain(2200, ZWL_ACCEL_STRONG) == 512);
-	check("stronger gives more", zwl_pointer_accel_gain(3000, ZWL_ACCEL_MILD) < zwl_pointer_accel_gain(3000, ZWL_ACCEL_MEDIUM) && zwl_pointer_accel_gain(3000, ZWL_ACCEL_MEDIUM) < zwl_pointer_accel_gain(3000, ZWL_ACCEL_STRONG));
-	check("level out of range is kept", zwl_pointer_accel_gain(10000, 9) == 768 && zwl_pointer_accel_gain(10000, -1) == 256);
+	check("gain 1 when slow", kwl_pointer_accel_gain(300, KWL_ACCEL_STRONG) == 256);
+	check("gain strong when fast", kwl_pointer_accel_gain(10000, KWL_ACCEL_STRONG) == 768);
+	check("gain between", kwl_pointer_accel_gain(2200, KWL_ACCEL_STRONG) == 512);
+	check("stronger gives more", kwl_pointer_accel_gain(3000, KWL_ACCEL_MILD) < kwl_pointer_accel_gain(3000, KWL_ACCEL_MEDIUM) && kwl_pointer_accel_gain(3000, KWL_ACCEL_MEDIUM) < kwl_pointer_accel_gain(3000, KWL_ACCEL_STRONG));
+	check("level out of range is kept", kwl_pointer_accel_gain(10000, 9) == 768 && kwl_pointer_accel_gain(10000, -1) == 256);
 
 	/* The same 2000 counts slow (2 a report, 250 a second) and fast (40 a report, 5000 a second). */
-	slow = travel(100, ZWL_ACCEL_STRONG, 2, 1000, 8000);
-	fast = travel(100, ZWL_ACCEL_STRONG, 40, 50, 8000);
+	slow = travel(100, KWL_ACCEL_STRONG, 2, 1000, 8000);
+	fast = travel(100, KWL_ACCEL_STRONG, 40, 50, 8000);
 	printf("strong: slow %lld px, fast %lld px for 2000 counts\n", (long long)slow, (long long)fast);
 	check("slow is the speed alone", slow == 2000);
 	check("fast goes about three times as far (the first report slow)", fast > 5900 && fast <= 6000);
-	check("a stronger level goes further", travel(100, ZWL_ACCEL_MILD, 40, 50, 8000) < travel(100, ZWL_ACCEL_STRONG, 40, 50, 8000));
+	check("a stronger level goes further", travel(100, KWL_ACCEL_MILD, 40, 50, 8000) < travel(100, KWL_ACCEL_STRONG, 40, 50, 8000));
 
 	/* 150% when slow: two counts are three pixels; one count a pixel and a half carried. */
-	check("150% slow", travel(150, ZWL_ACCEL_STRONG, 2, 10, 8000) == 30);
-	zwl_pointer_accel_init(&accel);
-	zwl_pointer_accel_move(&accel, 1, 0, 1000000, 150, ZWL_ACCEL_NONE, &x, &y);
+	check("150% slow", travel(150, KWL_ACCEL_STRONG, 2, 10, 8000) == 30);
+	kwl_pointer_accel_init(&accel);
+	kwl_pointer_accel_move(&accel, 1, 0, 1000000, 150, KWL_ACCEL_NONE, &x, &y);
 	check("half carried", x == 1);
-	zwl_pointer_accel_move(&accel, 1, 0, 1100000, 150, ZWL_ACCEL_NONE, &x, &y);
+	kwl_pointer_accel_move(&accel, 1, 0, 1100000, 150, KWL_ACCEL_NONE, &x, &y);
 	check("half added", x == 2);
-	zwl_pointer_accel_move(&accel, -1, -1, 1200000, 150, ZWL_ACCEL_NONE, &x, &y);
+	kwl_pointer_accel_move(&accel, -1, -1, 1200000, 150, KWL_ACCEL_NONE, &x, &y);
 	check("backwards", x == -1 && y == -1);
 
 	/* The first report after a pause is measured over 50 ms: 40 counts are 800 a second (48 px), not 5000 (120 px). */
-	zwl_pointer_accel_init(&accel);
-	zwl_pointer_accel_move(&accel, 40, 0, 5000000, 100, ZWL_ACCEL_STRONG, &x, &y);
+	kwl_pointer_accel_init(&accel);
+	kwl_pointer_accel_move(&accel, 40, 0, 5000000, 100, KWL_ACCEL_STRONG, &x, &y);
 	check("first report slow", x == 48);
-	zwl_pointer_accel_move(&accel, 40, 0, 5008000, 100, ZWL_ACCEL_STRONG, &x, &y);
+	kwl_pointer_accel_move(&accel, 40, 0, 5008000, 100, KWL_ACCEL_STRONG, &x, &y);
 	check("the next report fast", x == 120);
 
 	/* The verdict. */

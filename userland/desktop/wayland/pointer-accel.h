@@ -15,16 +15,16 @@
  * (input.c).  So the host tests run it alone.
  */
 
-#ifndef ZWL_POINTER_ACCEL_H
-#define ZWL_POINTER_ACCEL_H
+#ifndef KWL_POINTER_ACCEL_H
+#define KWL_POINTER_ACCEL_H
 
 #include <stdint.h>
 
 /* The acceleration's levels, as the settings mouse.acceleration and touchpad.acceleration hold them. */
-#define ZWL_ACCEL_NONE		0
-#define ZWL_ACCEL_MILD		1
-#define ZWL_ACCEL_MEDIUM	2
-#define ZWL_ACCEL_STRONG	3
+#define KWL_ACCEL_NONE		0
+#define KWL_ACCEL_MILD		1
+#define KWL_ACCEL_MEDIUM	2
+#define KWL_ACCEL_STRONG	3
 
 /*
  * One mouse's acceleration: the fractions of a pixel the last reports left
@@ -32,15 +32,15 @@
  * gain), and the time of the last report that moved (started is zero
  * before the first).
  */
-struct zwl_pointer_accel {
+struct kwl_pointer_accel {
 	int64_t remainder_x;
 	int64_t remainder_y;
 	uint64_t last_us;
 	unsigned started;
 };
 
-void zwl_pointer_accel_init(struct zwl_pointer_accel *accel);
-int64_t zwl_pointer_accel_gain(int64_t counts_per_second, int32_t level);
-void zwl_pointer_accel_move(struct zwl_pointer_accel *accel, int64_t dx, int64_t dy, uint64_t time_us, int32_t speed, int32_t level, int64_t *pixels_x, int64_t *pixels_y);
+void kwl_pointer_accel_init(struct kwl_pointer_accel *accel);
+int64_t kwl_pointer_accel_gain(int64_t counts_per_second, int32_t level);
+void kwl_pointer_accel_move(struct kwl_pointer_accel *accel, int64_t dx, int64_t dy, uint64_t time_us, int32_t speed, int32_t level, int64_t *pixels_x, int64_t *pixels_y);
 
 #endif

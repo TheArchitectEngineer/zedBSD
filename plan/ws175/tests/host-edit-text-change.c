@@ -118,10 +118,10 @@ main(
 	/* What its own font cannot write. */
 	words.utf8 = "Arial";
 	error = pdf_page_editor_set_text(editor, lines[7], &words, &result);
-	check(error == ENOTSUP && result == PDF_EDIT_TEXT_NEEDS_FONT, "Helvetica (not embedded): needs a replacement font");
+	check(error == 0 && result == PDF_EDIT_TEXT_REPLACED, "Helvetica (not embedded) given \"Arial\": in a replacement font (ws175-p005)");
 	words.utf8 = "\xe6\x97\xa5\xe6\x9c\xac";
 	error = pdf_page_editor_set_text(editor, lines[2], &words, &result);
-	check(error == ENOTSUP && result == PDF_EDIT_TEXT_NEEDS_FONT, "Japanese in WinAnsiEncoding: needs a replacement font");
+	check(error == 0 && result == PDF_EDIT_TEXT_REPLACED, "Japanese in WinAnsiEncoding: in a replacement font (Droid Sans Fallback)");
 	words.utf8 = "two\nlines";
 	check(pdf_page_editor_set_text(editor, lines[2], &words, &result) == EINVAL, "words with a line break: EINVAL");
 
@@ -165,6 +165,8 @@ main(
 	check(find_line(editor, "Line two") == (size_t)-1, "saved: Line two is gone");
 	check(find_line(editor, "Next") == (size_t)-1, "saved: Next is gone");
 	check(find_line(editor, "Marker") != (size_t)-1 && find_line(editor, "Namer") != (size_t)-1, "saved: Marker and Namer");
+	check(find_line(editor, "Arial") != (size_t)-1, "saved: Arial, read back through its ToUnicode");
+	check(find_line(editor, "\xe6\x97\xa5\xe6\x9c\xac") != (size_t)-1, "saved: the Japanese words, read back");
 	at = find_line(editor, doubled);
 	check(at != (size_t)-1, "saved: the Identity-H line's words twice");
 	at = find_line(editor, "Quote");
@@ -172,7 +174,7 @@ main(
 	width = object.quad[2] - object.quad[0];
 	check(at != (size_t)-1 && error == 0 && fabs(width - 2.0 * (quads[4][2] - quads[4][0])) < 0.05 && fabs(object.quad[6] - quads[4][6]) < 0.01 &&
 	      fabs(object.quad[7] - quads[4][7]) < 0.01, "saved: Quote twice as wide from where it started");
-	for (at = 2; at < sizeof(names) / sizeof(names[0]); at++) {
+	for (at = 3; at < sizeof(names) / sizeof(names[0]) - 1U; at++) {
 		if (at == 4 || at == 5)
 			continue;
 		lines[at] = find_line(editor, names[at]);
@@ -246,13 +248,15 @@ same_quad(
 {
 	size_t at;
 	double expected;
+	double difference;
 
 	/* Each number. */
 	for (at = 0; at < 8; at++) {
 		expected = other[at];
 		if (at % 2U == 0U)
 			expected += dx;
-		if (fabs(one[at] - expected) > 0.01)
+		difference = fabs(one[at] - expected);
+		if (difference > 0.01)
 			return 0;
 	}
 
