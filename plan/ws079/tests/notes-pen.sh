@@ -2,7 +2,7 @@
 # ws079-p005: Notes with the pen, through the tablet protocol, on the Venus guest (the lean image with Notes and
 # the test pen, plan/ws079/tests/build-notes-image.sh).  zdesktop --glass at 1280x800 and
 # /bin/notes --fullscreen /tmp/notes-pen/pen.pdf; the pen is replayed by peninject (/dev/input-inject):
-#  1. Notes binds the tablet seat and hears the pen (NOTES TABLET seat, NOTES TABLET tool type=0x140).
+#  1. Notes binds the tablet seat and hears the pen (NOTES TABLET seat; the strokes' pressure and tilt).
 #  2. pressure.png: a stroke across the page with the pressure rising from 0 to 4095 and falling back, the pen
 #     tilted: one stroke whose samples carry the pressure (NOTES STROKE ... pressure=0..6xxxx tilt=1) and whose
 #     width follows it (thin ends, a thick middle).
@@ -132,7 +132,7 @@ pointer move "${1:-519}" "${2:-26}" sleep 100 down sleep 60 up sleep 300
 
 # 1-3. The pen's strokes.
 guest 'timeout 60 /bin/peninject /tmp/pen.pen; echo peninject=$?' | tail -1
-expect_log /tmp/notes-pen.log 'NOTES TABLET tool type=0x140 pressure=1 tilt=1'
+# The tool's announcement is libkeiland's since WS131 p018 (no line of Notes'); the strokes' pressure and tilt below show the pen.
 expect_log /tmp/notes-pen.log 'NOTES STROKE page=0 id=1 tool=0 points=[0-9]+ strokes=1 pressure=[0-9]+\.\.6[0-9]{4} tilt=1'
 expect_log /tmp/notes-pen.log 'NOTES STROKE page=0 id=2 tool=0 points=[0-9]+ strokes=2 pressure=[0-9]+\.\.9[0-9]{3} tilt=1'
 pointer move 1270 790 sleep 300

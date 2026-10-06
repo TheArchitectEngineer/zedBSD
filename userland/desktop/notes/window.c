@@ -6,20 +6,23 @@
  */
 
 /*
- * The Wayland window of Notes: libkeiland's window (ws090-p011), whose
- * surface Notes draws on with its own Vulkan (KUI_PRESENT_NONE), and the
- * queue of input events the main loop draws from.
+ * The Wayland window of Notes: a window of libkeiland's application
+ * (WS131 p018, kl_app; ws090-p011 before), whose surface Notes draws on
+ * with its own Vulkan (KL_PRESENT_NONE), and the queue of input events the
+ * main loop draws from.
  *
  * The pointer's left button draws: its press, the motions while it is
  * held, and its release become NOTES_INPUT_DOWN, _MOTION and _UP events
  * from NOTES_SOURCE_POINTER with a fixed pressure, at the compositor's
  * time.  Every motion is kept, not only the last of a frame, because each
- * one is a sample of the stroke.  A pen tablet's tools (tablet.c, the
- * tablet protocol, bound from a registry of Notes' own on the window's
- * seat) feed the same queue through notes_window_input() with the pen's
- * own pressure and tilt; a pen without the tablet protocol arrives as the
- * pointer.  Keys are queued as pressed (Notes does not repeat them).
- * ws081-p013: the touch screen's events queue for touch.c.
+ * one is a sample of the stroke.  A pen tablet's tools come as the
+ * window's KL_WINDOW_TABLET_* inputs (libkeiland's tablet protocol, taken
+ * with kl_window_accept_tablet) and feed the same queue (tablet.c) with
+ * the pen's own pressure and tilt; a pen without the tablet protocol
+ * arrives as the pointer.  Keys are queued as pressed (Notes turns the
+ * window's repeat off).  The menus' choices come as KL_WINDOW_ACTION
+ * inputs (menu.c).  ws081-p013: the touch screen's events queue for
+ * touch.c.  The compositor decorates the window (its title bar, ws114-p008).
  */
 
 #include "app.h"
@@ -32,25 +35,13 @@
 /* The evdev code of the left button. */
 #define WINDOW_BUTTON_LEFT	0x110U
 
-static void window_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void window_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void window_take(struct notes_window *window);
-static void window_event(struct notes_window *window, const struct kui_window_event *event);
-static void window_button(struct notes_window *window, const struct kui_window_event *event);
-static void window_key(struct notes_window *window, const struct kui_window_event *event);
-static void window_pointer_event(struct notes_window *window, unsigned kind, const struct kui_window_event *event);
-static void window_touch_push(struct notes_window *window, unsigned type, const struct kui_window_event *event);
+static void window_event(struct notes_window *window, const struct kl_window_event *event);
+static void window_button(struct notes_window *window, const struct kl_window_event *event);
+static void window_key(struct notes_window *window, const struct kl_window_event *event);
+static void window_pointer_event(struct notes_window *window, unsigned kind, const struct kl_window_event *event);
+static void window_touch_push(struct notes_window *window, unsigned type, const struct kl_window_event *event);
 static uint32_t window_modifiers(unsigned modifiers);
-
-/* The titlebar's events: Notes' titlebar shows only its menus (menu.c), so it hears none. */
-static const struct keiland_titlebar_listener titlebar_listener = {
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-};
-
-/* Notes' registry: the tablet manager. */
-static const struct wl_registry_listener registry_listener = {
-	window_global, window_global_remove
-};
 
 /*
  * Connects to the compositor and makes a toplevel window of a size,
@@ -64,60 +55,46 @@ notes_window_open(
 	uint32_t height,
 	int fullscreen)
 {
-	struct kui_window_options options;
-	int status;
+	struct kl_window_options options;
+	struct kl_app_options app_options;
+	int error;
 
 	/* Nothing held yet. */
 	memset(window, 0, sizeof(*window));
 
-	/* libkeiland's window: the title, the application's identity (the gesture finds Notes by it), the size and the full screen asked for. */
+	/* The application: the connection, and the identity the gesture finds Notes by. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "notes";
+	window->app = kl_app_open(&app_options);
+	if (window->app == NULL)
+		return -1;
+
+	/* Its window: the title, the size and the full screen asked for. */
 	memset(&options, 0, sizeof(options));
 	options.title = "Notes";
-	options.application = "notes";
 	options.width = width;
 	options.height = height;
-	options.present = KUI_PRESENT_NONE;
+	options.present = KL_PRESENT_NONE;
 	options.fullscreen = fullscreen;
-	window->kui = kui_window_open(&options);
+	window->kui = kl_app_window_create(window->app, &options);
 	if (window->kui == NULL)
 		return -1;
 
-	/* The window's objects Notes' parts use, and the size and the full screen it was given. */
-	window->display = kui_window_display(window->kui);
-	window->seat = kui_window_seat(window->kui);
-	window->surface = kui_window_surface(window->kui);
-	window->toplevel = kui_window_toplevel(window->kui);
-	kui_window_size(window->kui, &window->width, &window->height);
-	window->fullscreen = kui_window_fullscreen(window->kui);
+	/* The connection and the toplevel the file chooser opens on, and the size and the full screen given. */
+	window->display = kl_app_display(window->app);
+	window->toplevel = kl_window_toplevel(window->kui);
+	kl_window_size(window->kui, &window->width, &window->height);
+	window->fullscreen = kl_window_fullscreen(window->kui);
 
-	/*
-	 * zdesktop's titlebar, asked for before anything is drawn: the
-	 * roundtrip below acknowledges the configure it brings, so the first
-	 * image is shown with it.
-	 */
-	window->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, window);
-	if (window->titlebar == NULL)
-		printf("NOTES TITLEBAR none errno=%d\n", errno);
+	/* Each key once (a held key does not repeat), and the pen with its pressure and tilt where the compositor has the tablet protocol. */
+	(void)kl_window_set_repeat(window->kui, 0);
+	error = kl_window_accept_tablet(window->kui);
+	if (error == 0) {
+		printf("NOTES TABLET seat\n");
+		fflush(stdout);
+	}
 
-	/* Notes' registry, for the tablet manager. */
-	window->registry = wl_display_get_registry(window->display);
-	if (window->registry == NULL)
-		return -1;
-
-	/* Listens for the globals the compositor announces. */
-	status = wl_registry_add_listener(window->registry, &registry_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* Waits until every global has been announced. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* The seat's tablets, when the compositor has the tablet protocol. */
-	notes_tablet_start(window);
-
-	/* What the first configure left in the window's queue (its size is already known). */
+	/* What the window's making left queued (its size is already known). */
 	window_take(window);
 	window->resized = 0;
 
@@ -145,7 +122,7 @@ notes_window_dispatch(
 		timeout = 0;
 
 	/* The compositor's events. */
-	status = kui_window_dispatch(window->kui, timeout);
+	status = kl_app_dispatch(window->app, timeout);
 	if (status != 0)
 		return -1;
 
@@ -163,19 +140,15 @@ void
 notes_window_close(
 	struct notes_window *window)
 {
-	/* The menus, before the window they are shown on, and the pen before the seat. */
-	notes_menu_close(window);
-	notes_tablet_close(window);
-
-	/* The titlebar, before the toplevel it is tied to. */
-	if (window->titlebar != NULL)
-		keiland_titlebar_destroy(window->titlebar);
-
-	/* Notes' registry, then the window and its connection. */
-	if (window->registry != NULL)
-		wl_registry_destroy(window->registry);
+	/* The menus, before the window they are shown on. */
 	if (window->kui != NULL)
-		kui_window_close(window->kui);
+		notes_menu_close(window);
+
+	/* The window, then the application and its connection. */
+	if (window->kui != NULL)
+		kl_window_close(window->kui);
+	if (window->app != NULL)
+		kl_app_close(window->app);
 	memset(window, 0, sizeof(*window));
 }
 
@@ -211,7 +184,7 @@ notes_window_set_title(
 	const char *title)
 {
 	/* The toplevel's title. */
-	kui_window_set_title(window->kui, title);
+	kl_window_set_title(window->kui, title);
 }
 
 /*
@@ -224,7 +197,7 @@ notes_window_set_fullscreen(
 	int fullscreen)
 {
 	/* On the default output, or back to a window. */
-	kui_window_set_fullscreen(window->kui, fullscreen);
+	kl_window_set_fullscreen(window->kui, fullscreen);
 }
 
 /*
@@ -245,101 +218,81 @@ notes_clock(void)
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
 
-/* Binds the tablet manager (the window has the rest). */
-static void
-window_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
-{
-	struct notes_window *window;
-	int match;
-
-	/* The tablet manager gives the pen with its pressure and tilt (tablet.c). */
-	(void)version;
-	window = data;
-	match = strcmp(interface, "zwp_tablet_manager_v2");
-	if (match == 0)
-		notes_tablet_bind(window, registry, name);
-}
-
-/* A global going away does not matter to a window that already bound what it needs. */
-static void
-window_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)registry;
-	(void)name;
-}
-
-/* Takes every input the window queued, and its full screen as the compositor left it. */
+/* Takes every input the application queued for the window, and its full screen as the compositor left it. */
 static void
 window_take(
 	struct notes_window *window)
 {
-	struct kui_window_event event;
+	struct kl_app_event event;
 	int taken;
 
-	/* Each input, oldest first. */
+	/* Each input, oldest first (the desktop's appearance is main.c's own watch). */
 	for (;;) {
-		taken = kui_window_take(window->kui, &event);
+		taken = kl_app_take(window->app, &event);
 		if (taken == 0)
 			break;
-		window_event(window, &event);
+		if (event.kind == KL_APP_WINDOW && event.window == window->kui)
+			window_event(window, &event.input);
 	}
 
 	/* Whether the compositor made the window fullscreen. */
-	window->fullscreen = kui_window_fullscreen(window->kui);
+	window->fullscreen = kl_window_fullscreen(window->kui);
 }
 
 /* Turns one input of the window into Notes'. */
 static void
 window_event(
 	struct notes_window *window,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* Every input carries the modifiers held. */
 	window->modifiers = window_modifiers(event->modifiers);
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
+	case KL_WINDOW_MOTION:
 		/* The pointer's place; while the button is held, a sample of the contact. */
 		window->pointer_x = (float)event->x;
 		window->pointer_y = (float)event->y;
 		if (window->pointer_down)
 			window_pointer_event(window, NOTES_INPUT_MOTION, event);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		window_button(window, event);
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		window_key(window, event);
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		window_touch_push(window, NOTES_TOUCH_DOWN, event);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_MOTION:
 		window_touch_push(window, NOTES_TOUCH_MOTION, event);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		window_touch_push(window, NOTES_TOUCH_UP, event);
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_CANCEL:
 		window_touch_push(window, NOTES_TOUCH_CANCEL, event);
 		break;
-	case KUI_WINDOW_RESIZE:
+	case KL_WINDOW_TABLET_DOWN:
+	case KL_WINDOW_TABLET_MOTION:
+	case KL_WINDOW_TABLET_UP:
+	case KL_WINDOW_TABLET_HOVER:
+	case KL_WINDOW_TABLET_LEAVE:
+		/* A pen tablet's tool (tablet.c). */
+		notes_tablet_input(window, event);
+		break;
+	case KL_WINDOW_ACTION:
+		/* A menu's item, for the main loop (menu.c). */
+		notes_menu_chosen(window, event);
+		break;
+	case KL_WINDOW_RESIZE:
 		/* The size the compositor gave, drawn at from the next frame. */
-		kui_window_size(window->kui, &window->width, &window->height);
+		kl_window_size(window->kui, &window->width, &window->height);
 		window->resized = 1;
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		/* The main loop ends Notes. */
 		window->closed = 1;
 		break;
@@ -352,7 +305,7 @@ window_event(
 static void
 window_button(
 	struct notes_window *window,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* Only the left button draws. */
 	if (event->code != WINDOW_BUTTON_LEFT)
@@ -372,7 +325,7 @@ window_button(
 static void
 window_key(
 	struct notes_window *window,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* Only first presses, while the queue has room. */
 	if (!event->pressed || event->repeated)
@@ -391,7 +344,7 @@ static void
 window_pointer_event(
 	struct notes_window *window,
 	unsigned kind,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct notes_input input;
 
@@ -413,7 +366,7 @@ static void
 window_touch_push(
 	struct notes_window *window,
 	unsigned type,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct notes_touch_event *kept;
 
@@ -442,11 +395,11 @@ window_modifiers(
 
 	/* Shift, Control and Alt. */
 	bits = 0U;
-	if ((modifiers & KUI_MOD_SHIFT) != 0U)
+	if ((modifiers & KL_MOD_SHIFT) != 0U)
 		bits |= NOTES_MODIFIER_SHIFT;
-	if ((modifiers & KUI_MOD_CTRL) != 0U)
+	if ((modifiers & KL_MOD_CTRL) != 0U)
 		bits |= NOTES_MODIFIER_CONTROL;
-	if ((modifiers & KUI_MOD_ALT) != 0U)
+	if ((modifiers & KL_MOD_ALT) != 0U)
 		bits |= NOTES_MODIFIER_ALT;
 
 	/* Reports them. */

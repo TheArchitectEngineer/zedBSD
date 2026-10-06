@@ -16,11 +16,7 @@
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
-#include <wayland-client.h>
-#include <xdg-shell-client-protocol.h>
-#include <tablet-unstable-v2-client-protocol.h>
 #include <keiland.h>
-#include <keiui.h>
 
 #include "notes.h"
 #include "touch.h"
@@ -49,9 +45,6 @@
 
 /* How many touch inputs wait for the main loop at most (ws081-p013). */
 #define NOTES_TOUCH_EVENTS	256U
-
-/* The most tablet tools (a pen's tip and eraser end are two) Notes follows. */
-#define NOTES_TABLET_TOOLS	8U
 
 /* The most buttons the toolbar has. */
 #define NOTES_BUTTONS		32U
@@ -142,71 +135,26 @@ struct notes_key {
 struct notes_window;
 
 /*
- * One tool of a tablet (tablet.c): its kind, what it can report, and the
- * state its events build up until a frame turns it into input events.
+ * The Wayland window and what arrived for the main loop.
  *
- * It lives from the seat's tool_added to the tool's removal or Notes' end.
- */
-struct notes_tablet_tool {
-	struct notes_window *window;
-	struct zwp_tablet_tool_v2 *tool;
-
-	/* The kind (ZWP_TABLET_TOOL_V2_TYPE_*) and whether it reports pressure and tilt. */
-	uint32_t type;
-	int has_pressure;
-	int has_tilt;
-
-	/* Whether it is over the window, touching, in a contact Notes has started, and lifting in this frame. */
-	int near;
-	int touching;
-	int down;
-	int lifting;
-
-	/* Whether it moved in this frame, whether it left the window in it, and whether its first barrel button is held. */
-	int moved;
-	int leaving;
-	int stylus;
-
-	/* Its place (surface pixels), pressure (0 to 1) and tilt (degrees). */
-	float x;
-	float y;
-	float pressure;
-	float tilt_x;
-	float tilt_y;
-};
-
-/*
- * The Wayland window, its seat and what arrived for the main loop.
- *
- * The window is libkeiland's (ws090-p011: the toplevel and the seat's input;
- * Notes draws on its surface with its own Vulkan).  The pointer's left
- * button is turned into NOTES_SOURCE_POINTER input events (window.c); a
- * tablet's tools add pen and eraser events with their pressure and tilt
- * through notes_window_input() (tablet.c).  ws081-p013: the touch screen's
- * events wait in a queue of their own for touch.c (a window with wl_touch
- * hears fingers only by it, so a finger no longer writes as the pointer).
+ * The window is libkeiland's application's (WS131 p018: the toplevel, the
+ * seat's input, the menus and a pen tablet; Notes draws on its surface with
+ * its own Vulkan).  The pointer's left button is turned into
+ * NOTES_SOURCE_POINTER input events (window.c); a tablet's tools add pen
+ * and eraser events with their pressure and tilt through
+ * notes_window_input() (tablet.c).  ws081-p013: the touch screen's events
+ * wait in a queue of their own for touch.c (a window with wl_touch hears
+ * fingers only by it, so a finger no longer writes as the pointer).
  */
 struct notes_window {
 	/*
-	 * libkeiland's window, and the objects it owns that Notes' parts use
-	 * (borrowed, never destroyed here): the connection, the seat, the
-	 * surface and its toplevel.  The registry is Notes' own, for the tablet
-	 * manager.
+	 * libkeiland's application and window, and the connection and the
+	 * toplevel they own (borrowed, for the file chooser).
 	 */
-	struct kui_window *kui;
+	struct kl_app *app;
+	struct kl_window *kui;
 	struct wl_display *display;
-	struct wl_registry *registry;
-	struct wl_seat *seat;
-	struct wl_surface *surface;
 	struct xdg_toplevel *toplevel;
-
-	/*
-	 * zdesktop's titlebar, Notes' explicit request for the compositor's
-	 * decoration (NULL from a compositor without it).  Without it zdesktop
-	 * leaves the decoration to the client and Notes would have no title
-	 * bar (ws114-p007, ws099-p023).
-	 */
-	struct keiland_titlebar *titlebar;
 
 	/* The size the compositor gave, whether it changed since taken, and whether the window is fullscreen. */
 	uint32_t width;
@@ -235,16 +183,8 @@ struct notes_window {
 	struct notes_touch_event touches[NOTES_TOUCH_EVENTS];
 	unsigned touch_count;
 
-	/* The System Menu (menu.c): the service (NULL without one), the menu and its place on the window. */
-	struct keiland_menu_service *menu_service;
-	struct keiland_menu *menu;
-	struct keiland_window_menu *window_menu;
-
-	/* The pen (tablet.c): the tablet manager and the seat's tablets (NULL without them), and the tools. */
-	struct zwp_tablet_manager_v2 *tablet_manager;
-	struct zwp_tablet_seat_v2 *tablet_seat;
-	struct notes_tablet_tool *tools[NOTES_TABLET_TOOLS];
-	unsigned tool_count;
+	/* Whether the window shows the menus (menu.c; not without the System Menu). */
+	int menu_shown;
 };
 
 /*
@@ -481,14 +421,13 @@ void notes_window_set_fullscreen(struct notes_window *window, int fullscreen);
 uint64_t notes_clock(void);
 
 /* The pen through the tablet protocol (tablet.c). */
-void notes_tablet_bind(struct notes_window *window, struct wl_registry *registry, uint32_t name);
-void notes_tablet_start(struct notes_window *window);
-void notes_tablet_close(struct notes_window *window);
+void notes_tablet_input(struct notes_window *window, const struct kl_window_event *event);
 
 /* The menus (menu.c). */
 int notes_menu_open(struct notes_window *window);
 void notes_menu_refresh(struct notes_window *window, const struct notes_ui_state *state);
 void notes_menu_close(struct notes_window *window);
+void notes_menu_chosen(struct notes_window *window, const struct kl_window_event *event);
 
 /* The drawing (render.c). */
 VkResult notes_renderer_open(struct notes_renderer *renderer, struct notes_window *window);

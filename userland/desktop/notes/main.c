@@ -331,7 +331,7 @@ struct notes_app {
 	 * kept until the main loop carries it out (ready says it waits; an empty
 	 * path is a cancel).
 	 */
-	struct kui_file_chooser *chooser;
+	struct kl_file_chooser *chooser;
 	unsigned chooser_mode;
 	char chosen[MAIN_PATH_MAX];
 	unsigned chosen_mode;
@@ -379,7 +379,7 @@ static int app_timeout(const struct notes_app *app, uint64_t now);
 static uint64_t app_unix_ms(void);
 static uint64_t app_microseconds(void);
 static void app_choose(struct notes_app *app, unsigned mode, unsigned purpose);
-static void app_chooser_done(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void app_chooser_done(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static void app_chosen(struct notes_app *app);
 static void app_open_file(struct notes_app *app, const char *path);
 static void app_save_as(struct notes_app *app, const char *path);
@@ -612,7 +612,7 @@ main(
 	fflush(stdout);
 
 	/* Everything goes; the journal stays only when the last save failed. */
-	kui_file_chooser_destroy(app.chooser);
+	kl_file_chooser_destroy(app.chooser);
 	app.chooser = NULL;
 	notes_touch_close(&app.touch);
 	notes_ui_close(&app.ui);
@@ -1144,13 +1144,13 @@ app_action(
 		break;
 	case NOTES_ACTION_INSERT_IMAGE:
 		/* An image file to insert on the page, chosen in the file chooser (ws175-p008). */
-		app_choose(app, KUI_FILE_CHOOSER_OPEN, MAIN_CHOOSE_INSERT);
+		app_choose(app, KL_FILE_CHOOSER_OPEN, MAIN_CHOOSE_INSERT);
 		break;
 	case NOTES_ACTION_REPLACE_IMAGE:
 		/* An image file for the chosen object. */
 		if (app->selected == MAIN_NONE)
 			break;
-		app_choose(app, KUI_FILE_CHOOSER_OPEN, MAIN_CHOOSE_REPLACE);
+		app_choose(app, KL_FILE_CHOOSER_OPEN, MAIN_CHOOSE_REPLACE);
 		break;
 	case NOTES_ACTION_DELETE_OBJECT:
 		/* The chosen object deleted. */
@@ -1230,11 +1230,11 @@ app_action(
 		break;
 	case NOTES_ACTION_OPEN:
 		/* Another PDF, chosen in libkeiland's file chooser (ws128-p002). */
-		app_choose(app, KUI_FILE_CHOOSER_OPEN, MAIN_CHOOSE_DOCUMENT);
+		app_choose(app, KL_FILE_CHOOSER_OPEN, MAIN_CHOOSE_DOCUMENT);
 		break;
 	case NOTES_ACTION_SAVE_AS:
 		/* The notebook as another file, chosen in the file chooser (ws128-p002). */
-		app_choose(app, KUI_FILE_CHOOSER_SAVE, MAIN_CHOOSE_DOCUMENT);
+		app_choose(app, KL_FILE_CHOOSER_SAVE, MAIN_CHOOSE_DOCUMENT);
 		break;
 	case NOTES_ACTION_CLOSE:
 		/* The main loop saves and ends. */
@@ -1861,7 +1861,7 @@ app_save(
 		(void)notes_journal_discard(app->document.journal);
 
 	/* The file is among the recent ones. */
-	(void)keiland_recent_add(app->path, "notes");
+	(void)kl_recent_add(app->path, "notes");
 
 	/* The tests' line and the status. */
 	app_count_edits(app, &edits, &edited_pages);
@@ -2454,8 +2454,8 @@ app_microseconds(void)
 }
 
 /*
- * Shows libkeiland's file chooser for File > Open (KUI_FILE_CHOOSER_OPEN) or
- * Save As (KUI_FILE_CHOOSER_SAVE), at the notebook's folder, the PDFs
+ * Shows libkeiland's file chooser for File > Open (KL_FILE_CHOOSER_OPEN) or
+ * Save As (KL_FILE_CHOOSER_SAVE), at the notebook's folder, the PDFs
  * shown first (ws128-p002).  One already shown answers in its time.
  * ws175-p008: for an image to insert or put in the chosen object's place
  * (purpose), the images shown first.
@@ -2466,18 +2466,18 @@ app_choose(
 	unsigned mode,
 	unsigned purpose)
 {
-	static const struct kui_file_filter filters[] = {
+	static const struct kl_file_filter filters[] = {
 		{ "PDF documents", "pdf" },
 		{ "All files", NULL }
 	};
-	static const struct kui_file_filter image_filters[] = {
+	static const struct kl_file_filter image_filters[] = {
 		{ "Images", "png jpg jpeg jpe" },
 		{ "All files", NULL }
 	};
-	static const struct kui_file_chooser_listener listener = {
+	static const struct kl_file_chooser_listener listener = {
 		app_chooser_done
 	};
-	struct kui_file_chooser_options options;
+	struct kl_file_chooser_options options;
 	char folder[MAIN_PATH_MAX];
 	const char *word;
 	char *slash;
@@ -2502,7 +2502,7 @@ app_choose(
 	options.filter_count = sizeof(filters) / sizeof(filters[0]);
 	options.filter = 0;
 	options.font = MAIN_FONT;
-	if (mode == KUI_FILE_CHOOSER_SAVE) {
+	if (mode == KL_FILE_CHOOSER_SAVE) {
 		options.title = "Save As";
 		options.name = app->name;
 	}
@@ -2517,7 +2517,7 @@ app_choose(
 	}
 
 	/* The chooser's window over Notes'; without it the status says why. */
-	app->chooser = kui_file_chooser_open(app->window.display, app->window.toplevel, &options, &listener, app);
+	app->chooser = kl_file_chooser_open(app->window.display, app->window.toplevel, &options, &listener, app);
 	if (app->chooser == NULL) {
 		printf("NOTES CHOOSER failed errno=%d\n", errno);
 		app_status(app, "The file chooser could not be shown");
@@ -2527,7 +2527,7 @@ app_choose(
 	/* The tests' line. */
 	app->chooser_mode = mode;
 	word = "open";
-	if (mode == KUI_FILE_CHOOSER_SAVE)
+	if (mode == KL_FILE_CHOOSER_SAVE)
 		word = "save";
 	if (app->chooser_purpose == MAIN_CHOOSE_INSERT)
 		word = "insert";
@@ -2540,7 +2540,7 @@ app_choose(
 static void
 app_chooser_done(
 	void *data,
-	struct kui_file_chooser *chooser,
+	struct kl_file_chooser *chooser,
 	unsigned result,
 	const char *path,
 	size_t filter)
@@ -2551,14 +2551,14 @@ app_chooser_done(
 	(void)filter;
 	app = data;
 	app->chosen[0] = '\0';
-	if (result == KUI_FILE_CHOOSER_CHOSEN && path != NULL)
+	if (result == KL_FILE_CHOOSER_CHOSEN && path != NULL)
 		(void)snprintf(app->chosen, sizeof(app->chosen), "%s", path);
 	app->chosen_mode = app->chooser_mode;
 	app->chosen_purpose = app->chooser_purpose;
 	app->chosen_ready = 1;
 
 	/* The chooser is spent. */
-	kui_file_chooser_destroy(chooser);
+	kl_file_chooser_destroy(chooser);
 	if (chooser == app->chooser)
 		app->chooser = NULL;
 }
@@ -2588,7 +2588,7 @@ app_chosen(
 	}
 
 	/* Save As, or Open. */
-	if (app->chosen_mode == KUI_FILE_CHOOSER_SAVE) {
+	if (app->chosen_mode == KL_FILE_CHOOSER_SAVE) {
 		app_save_as(app, path);
 	} else {
 		app_open_file(app, path);
@@ -2658,7 +2658,7 @@ app_open_file(
 	/* The new notebook shown from its first page, named in the title, and among the recent files. */
 	app_place_page(app);
 	app_set_title(app);
-	(void)keiland_recent_add(app->path, MAIN_APPLICATION);
+	(void)kl_recent_add(app->path, MAIN_APPLICATION);
 	if (app->status[0] == '\0')
 		app_status(app, "Opened");
 	printf("NOTES OPENED pages=%lu strokes=%lu path=%s\n", (unsigned long)app->document.page_count,
