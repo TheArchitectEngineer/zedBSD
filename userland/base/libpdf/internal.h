@@ -196,6 +196,7 @@ size_t pdf_reader_size(const struct pdf_document *document);
 void pdf_reader_roots(struct pdf_document *document, struct pdf_object **trailer, struct pdf_object **catalog);
 unsigned long pdf_reader_next_number(const struct pdf_document *document);
 int pdf_reader_page_reference(struct pdf_document *document, size_t index, struct pdf_object **reference);
+int pdf_reader_page_inherited(struct pdf_document *document, size_t index, struct pdf_object **media_box, struct pdf_object **crop_box, struct pdf_object **rotate);
 
 /* The stream filters (filter.c). */
 int pdf_filter_decode(struct pdf_document *document, const struct pdf_object *stream, int stop_at_dct, const unsigned char **data, size_t *size, unsigned char **owned, int *dct);

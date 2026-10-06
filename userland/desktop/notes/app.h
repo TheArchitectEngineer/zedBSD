@@ -115,6 +115,9 @@
 #define NOTES_ACTION_SIZE_DOWN		44U
 #define NOTES_ACTION_SIZE_UP		45U
 
+/* ws175-p009: a clean copy of the notebook saved as another file (File > Save Clean Copy). */
+#define NOTES_ACTION_SAVE_CLEAN	46U
+
 /* The pipelines a draw uses (render.c). */
 #define NOTES_PIPE_STENCIL	0U
 #define NOTES_PIPE_FRINGE	1U

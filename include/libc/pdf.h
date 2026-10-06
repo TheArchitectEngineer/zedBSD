@@ -279,6 +279,21 @@ int pdf_document_signed(struct pdf_document *document, int *is_signed);
 int pdf_document_encrypted(const char *path, int *encrypted);
 
 /*
+ * A clean copy of a document (ws175-p009, design.md D1 and [M11]): the
+ * document as it reads now, written whole into a new file -- the objects
+ * its catalog and information dictionary reach, numbered again, without
+ * its earlier revisions, its object streams or the resources of a page
+ * that the page's content never names.  attachment names an attached file
+ * left out (NULL: none).  counts tells how many objects the copy has and
+ * how many resources it left out.
+ */
+struct pdf_clean_counts {
+	size_t objects;
+	size_t dropped;
+};
+int pdf_document_save_clean(struct pdf_document *document, const char *path, const char *attachment, struct pdf_clean_counts *counts);
+
+/*
  * The editor of a page's objects (ws175, plan/ws175/phase001/design.md
  * section 3): the images and graphics (form XObjects) of the page's
  * content, at its top level, listed in the order they are drawn
