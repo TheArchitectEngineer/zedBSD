@@ -969,6 +969,7 @@ main_secret_follow(
 	else
 		kui_window_text_input(main_window.kui, 1);
 	printf("ZTERM IME secret=%d\n", secret);
+	fflush(stdout);
 }
 
 /* Writes the keys typed to the shell; returns nonzero once the shell has gone. */
