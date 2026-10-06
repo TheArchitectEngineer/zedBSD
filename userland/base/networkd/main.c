@@ -3778,6 +3778,10 @@ execute_wired_request(
 		if (interface_exists(request->interface) == 0)
 			result = run_command_until(arguments, 10, deadline, diagnostic);
 		*error = errno;
+
+		/* On again: its link-local address back (the kernel says nothing of it). */
+		if (result == 0 && strcmp(request->address, "on") == 0)
+			(void)networkd_ipv6_link_local(request->interface);
 	} else if (request->header.opcode == NETWORKD_OP_STATIC6) {
 		/* A static IPv6 address, ADDRESS/LENGTH (ws130-p005). */
 		arguments[0] = "/sbin/ifconfig";

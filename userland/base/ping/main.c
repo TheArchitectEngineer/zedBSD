@@ -107,18 +107,16 @@ main(
 
 	/* -4 and -6 choose the family (ws130-p005; either by the name's addresses otherwise). */
 	family = AF_UNSPEC;
-	while (arg < (unsigned)argc) {
-		if (strcmp(argv[arg], "-4") == 0)
-			family = AF_INET;
-		else if (strcmp(argv[arg], "-6") == 0)
-			family = AF_INET6;
-		else
-			break;
-		arg++;
-	}
 
 	/* Process each remaining command-line operand. */
 	while (arg < (unsigned)argc && argv[arg][0] == '-') {
+		/* The family, a flag without an argument, anywhere among the options. */
+		if (strcmp(argv[arg], "-4") == 0 || strcmp(argv[arg], "-6") == 0) {
+			family = argv[arg][1] == '4' ? AF_INET : AF_INET6;
+			arg++;
+			continue;
+		}
+
 		/* Validates the command-line arguments. */
 		if (arg + 1U >= (unsigned)argc) {
 			/* Obtains the usage result. */
