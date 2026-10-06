@@ -4,7 +4,7 @@
 
 Parent: [WS120](../ws.md)
 Status: planning
-Disposition: normal
+Disposition: canceled（2026-10-07 q831: ユーザーの決定（形式は m4a だけ、AAC は libavcodec の add-in、独自の decoder は後）で取り下げ。置き換えは [p008](../phase008/phase.md)・[p009](../phase009/phase.md)。[p001](../phase001/phase.md) の「2026-10-07 の決定と設計」）
 Queue / attempts: none
 Goal: app が PCM を再生できる API を libkeiland に足す（zedBSD は audiod の共有メモリの ring）。
 Prerequisites: p001 cleared（API の設計）、D3 の決定。planning の理由はこの 2 つ。
