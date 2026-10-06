@@ -184,3 +184,39 @@ kl_system_sharing_query(struct kl_system *system, uint32_t *request)
 	(void)request;
 	return ENOTSUP;
 }
+
+/*
+ * ws089-p013: the machine's monitor for About.  With HOST_MEMORY in the
+ * environment a monitor opens and its frames say 16 GB of memory, 9.5 GB
+ * free; without it there is none (as on a compositor without the monitor).
+ */
+static int host_monitor;
+
+struct kl_system_monitor *
+kl_system_monitor_open(struct kl_system *system, unsigned period_ms)
+{
+	(void)system;
+	(void)period_ms;
+	if (getenv("HOST_MEMORY") == NULL) {
+		errno = ENOTSUP;
+		return NULL;
+	}
+	return (struct kl_system_monitor *)&host_monitor;
+}
+
+int
+kl_system_monitor_take(struct kl_system_monitor *monitor, struct kl_monitor_frame *frame)
+{
+	(void)monitor;
+	memset(frame, 0, sizeof(*frame));
+	frame->valid = KL_MONITOR_FRAME_MEMORY;
+	frame->memory_total = 16ULL * 1024ULL * 1024ULL * 1024ULL;
+	frame->memory_free = 9ULL * 1024ULL * 1024ULL * 1024ULL + 512ULL * 1024ULL * 1024ULL;
+	return 1;
+}
+
+void
+kl_system_monitor_close(struct kl_system_monitor *monitor)
+{
+	(void)monitor;
+}

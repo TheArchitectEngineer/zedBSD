@@ -701,6 +701,9 @@ struct se_about {
 	char graphics[128];
 	char display[64];
 	unsigned cores;
+	int memory_known;
+	uint64_t memory_total;
+	uint64_t memory_free;
 };
 
 /*
@@ -1097,6 +1100,9 @@ struct se_app {
 	struct kl_system *system;
 	unsigned system_changed;
 
+	/* The machine's monitor while About is shown (ws089-p013: its memory; NULL before About or without one). */
+	struct kl_system_monitor *monitor;
+
 	/* What the network pages show and have asked of the daemon. */
 	struct se_network network;
 
@@ -1307,6 +1313,7 @@ void se_search_press(struct se_app *app, int index);
 int se_home_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_about_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_about_press(struct se_app *app, int index);
+void se_about_follow(struct se_app *app);
 
 /* The Welcome (welcome.c, ws164-p002). */
 void se_welcome_start(struct se_app *app);
