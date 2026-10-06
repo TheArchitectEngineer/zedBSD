@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 static const struct mf_format *format_of(const unsigned char *head, size_t length);
+static int mediafile_start(struct mf_file *opened);
 
 /*
  * Opens a media file and reads its tracks.  Returns 0 with *file set, or
@@ -33,8 +34,6 @@ mf_open(
 {
 	struct mf_file *opened;
 	struct stat status;
-	unsigned char head[12];
-	ssize_t got;
 	int error;
 
 	/* The state, with no descriptor yet. */
@@ -56,28 +55,50 @@ mf_open(
 
 	/* Its size; a file too small to hold a header is not a media file. */
 	error = fstat(opened->fd, &status);
-	if (error != 0 || status.st_size < (off_t)sizeof(head)) {
+	if (error != 0 || status.st_size < 12) {
 		mf_close(opened);
 		return EINVAL;
 	}
 
-	/* The first bytes tell the format. */
+	/* Its format, header and index. */
 	opened->size = (uint64_t)status.st_size;
-	got = pread(opened->fd, head, sizeof(head), 0);
-	if (got != (ssize_t)sizeof(head)) {
+	error = mediafile_start(opened);
+	if (error != 0) {
 		mf_close(opened);
-		return EIO;
+		return error;
 	}
 
-	/* Refuses a format this reader does not know. */
-	opened->format = format_of(head, sizeof(head));
-	if (opened->format == NULL) {
-		mf_close(opened);
+	/* Succeeded: the file is open. */
+	*file = opened;
+	return 0;
+}
+
+/*
+ * Opens a file whose bytes come from a source (ws121-p002) and reads its
+ * header and index through it.  Returns 0 or an errno value as mf_open
+ * does, or the source's (ECANCELED, EIO).
+ */
+int
+mf_open_source(
+	const struct mf_source *source,
+	struct mf_file **file)
+{
+	struct mf_file *opened;
+	int error;
+
+	/* The state, reading through the source. */
+	*file = NULL;
+	if (source == NULL || source->read_at == NULL || source->size < 12U)
 		return EINVAL;
-	}
+	opened = calloc(1, sizeof(*opened));
+	if (opened == NULL)
+		return ENOMEM;
+	opened->fd = -1;
+	opened->source = *source;
+	opened->size = source->size;
 
-	/* The format's header and index. */
-	error = opened->format->open(opened);
+	/* Its format, header and index. */
+	error = mediafile_start(opened);
 	if (error != 0) {
 		mf_close(opened);
 		return error;
@@ -225,10 +246,17 @@ mf_read_at(
 {
 	unsigned char *cursor;
 	ssize_t got;
+	int error;
 
 	/* Refuses a range past the end of the file. */
 	if (offset > file->size || size > file->size - offset)
 		return EINVAL;
+
+	/* A source reads for itself. */
+	if (file->fd < 0 && file->source.read_at != NULL) {
+		error = file->source.read_at(file->source.context, offset, data, size);
+		return error;
+	}
 
 	/* Reads until every byte is in. */
 	cursor = data;
@@ -429,4 +457,27 @@ format_of(
 
 	/* Neither format. */
 	return NULL;
+}
+
+/* Tells the format from the first bytes and reads its header and index; 0 or an errno value. */
+static int
+mediafile_start(
+	struct mf_file *opened)
+{
+	unsigned char head[12];
+	int error;
+
+	/* The first bytes tell the format. */
+	error = mf_read_at(opened, 0, head, sizeof(head));
+	if (error != 0)
+		return error;
+
+	/* Refuses a format this reader does not know. */
+	opened->format = format_of(head, sizeof(head));
+	if (opened->format == NULL)
+		return EINVAL;
+
+	/* The format's header and index. */
+	error = opened->format->open(opened);
+	return error;
 }

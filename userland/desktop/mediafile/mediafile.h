@@ -80,9 +80,23 @@ struct mf_packet {
 	size_t size;
 };
 
+/*
+ * A source of a file's bytes other than a file of the system (ws121-p002:
+ * a page's media read over the network): its reader of bytes at an offset
+ * (all of them; 0, or ECANCELED when the reading was stopped, EIO when
+ * they cannot be had, EINVAL past the end), the whole size, and the
+ * reader's context.  It is called from the thread that reads the file.
+ */
+struct mf_source {
+	int (*read_at)(void *context, uint64_t offset, void *data, size_t size);
+	uint64_t size;
+	void *context;
+};
+
 struct mf_file;
 
 int mf_open(const char *path, struct mf_file **file);
+int mf_open_source(const struct mf_source *source, struct mf_file **file);
 unsigned mf_track_count(const struct mf_file *file);
 const struct mf_track *mf_track(const struct mf_file *file, unsigned index);
 int64_t mf_duration_us(const struct mf_file *file);

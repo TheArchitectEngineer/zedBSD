@@ -47,5 +47,16 @@ else
 	status=1
 fi
 
+# ws121-p002: the same file read through a source (mf_open_source) prints the same.
+HOST_MEDIAFILE_SOURCE=1 UBSAN_OPTIONS=halt_on_error=1 timeout 30 "$out/host-mediafile" plan/ws122/tests/sample.mp4 10000000 \
+    > "$out/sample-source.got" 2>&1
+if cmp -s "$out/sample.got" "$out/sample-source.got"; then
+	echo "sample.mp4 through a source: ok"
+else
+	echo "sample.mp4 through a source: FAILED"
+	diff "$out/sample.got" "$out/sample-source.got" | head -5
+	status=1
+fi
+
 [ $status = 0 ] && echo "host-mediafile: PASS" || echo "host-mediafile: FAIL"
 exit $status

@@ -14,6 +14,8 @@
  *
  *     host-mediafile FILE [SEEK_US]
  *
+ * With HOST_MEDIAFILE_SOURCE=1 in the environment, the file is opened
+ * through a source (mf_open_source, ws121-p002) whose reader is pread.
  * Prints the format, each track, and each packet (track, times, keyframe,
  * size, the sum of its bytes); with SEEK_US, then seeks there and prints
  * the next three packets.  A file the reader refuses prints "OPEN error=N"
@@ -22,11 +24,19 @@
 
 #include "userland/desktop/mediafile/mediafile.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int main(int argc, char **argv);
 static void print_packet(const char *tag, const struct mf_packet *packet);
+static int open_source(const char *path, struct mf_file **file);
+static int source_read_at(void *context, uint64_t offset, void *data, size_t size);
+
+/* The descriptor the source reads (HOST_MEDIAFILE_SOURCE). */
+static int source_fd = -1;
 
 /*
  * Opens the file, prints what is in it, and seeks when asked.
@@ -51,8 +61,11 @@ main(
 		return 2;
 	}
 
-	/* Opens it; a refusal is printed. */
-	error = mf_open(argv[1], &file);
+	/* Opens it (through a source when asked); a refusal is printed. */
+	if (getenv("HOST_MEDIAFILE_SOURCE") != NULL)
+		error = open_source(argv[1], &file);
+	else
+		error = mf_open(argv[1], &file);
 	if (error != 0) {
 		printf("OPEN error=%d\n", error);
 		return 1;
@@ -114,6 +127,50 @@ main(
 
 	/* Succeeded: everything is printed. */
 	mf_close(file);
+	if (source_fd >= 0)
+		(void)close(source_fd);
+	return 0;
+}
+
+/* Opens a file through a source that reads it with pread. */
+static int
+open_source(
+	const char *path,
+	struct mf_file **file)
+{
+	struct mf_source source;
+	struct stat status;
+
+	/* The descriptor and the size. */
+	source_fd = open(path, O_RDONLY);
+	if (source_fd < 0)
+		return errno;
+	if (fstat(source_fd, &status) != 0)
+		return errno;
+
+	/* The source. */
+	source.read_at = source_read_at;
+	source.size = (uint64_t)status.st_size;
+	source.context = &source_fd;
+	return mf_open_source(&source, file);
+}
+
+/* Reads all the bytes asked at an offset. */
+static int
+source_read_at(
+	void *context,
+	uint64_t offset,
+	void *data,
+	size_t size)
+{
+	ssize_t got;
+	int fd;
+
+	/* One read of them all (a test file of the host). */
+	fd = *(int *)context;
+	got = pread(fd, data, size, (off_t)offset);
+	if (got != (ssize_t)size)
+		return EIO;
 	return 0;
 }
 
