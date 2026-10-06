@@ -38,6 +38,6 @@ Primary Milestone: MG006
 | p002 | compositor のメールの API と許可（host の試験） | cleared（2026-10-07、T1-298） | p001 |
 | p003 | IMAP4・SMTP の backend | cleared（2026-10-07、T1-298） | p001 |
 | p004 | メーラの app（一覧・読む・書く） | cleared（2026-10-07、T1-298） | p002・p003 |
-| p005 | browser の認証 code の自動入力 | test-wait（T1-291、q831、P2、[phase](phase005/phase.md)） | p002・p004 |
+| p005 | browser の認証 code の自動入力 | uncleared（2026-10-07 T1-299） | p002・p004 |
 | p006 | Gmail・Outlook（OAuth2） | planning（2026-10-06 夜 ユーザー「今は IMAP/SMTP だけ」: 今回は作らない、ベータ2 から外す） | p003 |
 | p007 | 全文規約の見直し | planning | 上の全部 |

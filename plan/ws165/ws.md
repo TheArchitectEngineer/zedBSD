@@ -19,6 +19,6 @@ Primary Milestone: MG006
 | --- | --- | --- | --- |
 | [ws165-p001](phase001/phase.md) | 要件と段の設計（段 1: 1 文字ずつの英数字・かな・記号、点群の照合） | planning（設計の第 1 版、2026-10-05 P1 q739。判断 H1〜H4 待ち） | — |
 | [ws165-p002](phase002/phase.md) | 手本の data と点群の照合、host 試験 | cleared（2026-10-06 ユーザー H5「いったんacceptして、追加のフェーズを第2段でやりましょう。」: top-1 88%（形が同じ組を 1 字に数えて 91.7%）、top-4 98.3% で受け入れ） | p001、H1〜H3 |
-| [ws165-p003](phase003/phase.md) | compositor の `kwl_hand_recognize`、ink の記録、T1 | in-progress（2026-10-06 P2） | p002 |
+| [ws165-p003](phase003/phase.md) | compositor の `kwl_hand_recognize`、ink の記録、T1 | cleared（2026-10-07、T1-280） | p002 |
 | ws165-p004 | 実機の UAT、全文規約 | planned | p003 |
 | [ws165-p005](phase005/phase.md) | 第 2 段: 区別できない字の組を分けて認識率を上げる（2026-10-06 Q1 が作成、ユーザー H5） | planned | p003 |
