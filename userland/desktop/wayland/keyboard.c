@@ -121,6 +121,7 @@
 #include "keyboard.h"
 #include "menu.h"
 
+#include <keiland.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -143,6 +144,15 @@
 /* How far along the diagonal a letting go commits, and the distance the hint grows over. */
 #define KEYBOARD_COMMIT		108.0f
 #define KEYBOARD_DISTANCE	216.0f
+
+/*
+ * The hint's quarter disc (BUG-230, Notes' corner's numbers): its radius at
+ * the start and its growth for each pixel along the diagonal, and the
+ * radius from which the keyboard's name shows in it.
+ */
+#define KEYBOARD_HINT_RADIUS_MIN	24.0f
+#define KEYBOARD_HINT_GROWTH		1.3f
+#define KEYBOARD_HINT_LABEL_RADIUS	96.0f
 
 /* A flick: at least this far along the diagonal, at this speed (pixels a millisecond) over the last KEYBOARD_FLICK_MS. */
 #define KEYBOARD_FLICK_DISTANCE	40.0f
@@ -507,6 +517,14 @@ struct keyboard_state {
 	unsigned prediction_count;
 	unsigned candidate_active;
 	unsigned candidate_slot;
+
+	/*
+	 * The panel App Home or Wiseview put away, and the window that had
+	 * the focus then (BUG-229): when they are gone and that window has the
+	 * focus again, the panel comes back.  PANEL_NONE when nothing waits.
+	 */
+	enum keyboard_kind restore;
+	struct zwl_object *restore_focus;
 };
 
 /*
@@ -528,6 +546,8 @@ static float keyboard_speed(void);
 static int keyboard_on_diagonal(int32_t inwards, int32_t upwards);
 static void keyboard_commit(struct zwl_server *server, const char *via, float progress);
 static void keyboard_open(struct zwl_server *server, enum keyboard_kind kind);
+static void keyboard_put_away(struct zwl_server *server, const char *reason);
+static void keyboard_restore(struct zwl_server *server, float home);
 static void keyboard_place(struct zwl_server *server, enum keyboard_kind kind, int32_t *rect);
 static int keyboard_panel_button(struct zwl_server *server, uint32_t button, uint32_t state);
 static int keyboard_contains(const int32_t *rect, int32_t x, int32_t y);
@@ -561,6 +581,7 @@ static void keyboard_hand_recognize(struct zwl_server *server);
 static void keyboard_draw_hand(struct zwl_server *server, VkCommandBuffer command);
 static void keyboard_send(struct zwl_server *server, const char *text);
 static int keyboard_send_key(struct zwl_server *server, unsigned code, int shift);
+static void keyboard_key_event(struct zwl_server *server, uint32_t time, unsigned code, uint32_t state);
 static int keyboard_send_commit(struct zwl_server *server, const char *text, uint32_t before);
 static void keyboard_voice(struct zwl_server *server);
 static void keyboard_case(struct zwl_server *server);
@@ -902,12 +923,16 @@ zwl_keyboard_tick(
 		server->dirty = 1;
 	}
 
+	/* A panel App Home or Wiseview put away comes back when they are gone (BUG-229). */
+	home = zwl_home_progress(server);
+	if (keyboard.open == PANEL_NONE && keyboard.restore != PANEL_NONE)
+		keyboard_restore(server, home);
+
 	/* Nothing more without an open panel. */
 	if (keyboard.open == PANEL_NONE)
 		return;
 
-	/* The login and lock screens, App Home and Wiseview close it. */
-	home = zwl_home_progress(server);
+	/* The login and lock screens close it; App Home and Wiseview put it away until they are gone. */
 	if (server->greeter) {
 		zwl_keyboard_close(server, "greeter");
 		return;
@@ -915,10 +940,10 @@ zwl_keyboard_tick(
 		zwl_keyboard_close(server, "lock");
 		return;
 	} else if (home > 0.0f || server->home_to > 0.0f) {
-		zwl_keyboard_close(server, "home");
+		keyboard_put_away(server, "home");
 		return;
 	} else if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving) {
-		zwl_keyboard_close(server, "wiseview");
+		keyboard_put_away(server, "wiseview");
 		return;
 	}
 
@@ -1444,6 +1469,10 @@ keyboard_open(
 	struct zwl_server *server,
 	enum keyboard_kind kind)
 {
+	/* A panel opened is no longer one waiting to come back. */
+	keyboard.restore = PANEL_NONE;
+	keyboard.restore_focus = NULL;
+
 	/* The panel and its rectangle, growing out of its edge from now (one going back is done with). */
 	keyboard.open = kind;
 	keyboard.leaving = PANEL_NONE;
@@ -1459,6 +1488,69 @@ keyboard_open(
 	keyboard_work_area(server);
 	if (kind == PANEL_QWERTY)
 		keyboard_qwerty_log(server);
+}
+
+/*
+ * Puts the open panel away while App Home or Wiseview covers the windows,
+ * keeping which panel it was and which window had the focus (BUG-229).
+ */
+static void
+keyboard_put_away(
+	struct zwl_server *server,
+	const char *reason)
+{
+	enum keyboard_kind kind;
+
+	/* The panel and the focus to come back to. */
+	kind = keyboard.open;
+	zwl_keyboard_close(server, reason);
+	keyboard.restore = kind;
+	keyboard.restore_focus = server->focus;
+	printf("ZWL OSK put-away kind=%s reason=%s\n", keyboard_kind_name(kind), reason);
+}
+
+/*
+ * Brings back the panel App Home or Wiseview put away, once they are gone,
+ * when the window that had the focus has it again (BUG-229).  The login
+ * and lock screens, or another window taking the focus, give it up.
+ */
+static void
+keyboard_restore(
+	struct zwl_server *server,
+	float home)
+{
+	enum keyboard_kind kind;
+	int live;
+
+	/* The login and lock screens end the wait. */
+	if (server->greeter || server->locked) {
+		printf("ZWL OSK restore-dropped reason=%s\n", server->greeter ? "greeter" : "lock");
+		keyboard.restore = PANEL_NONE;
+		keyboard.restore_focus = NULL;
+		return;
+	}
+
+	/* App Home or Wiseview still covers the windows. */
+	if (home > 0.0f || server->home_to > 0.0f)
+		return;
+	if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving)
+		return;
+
+	/* The same window, still a window, must have the focus again. */
+	kind = keyboard.restore;
+	keyboard.restore = PANEL_NONE;
+	live = 0;
+	if (server->focus != NULL && server->focus == keyboard.restore_focus)
+		live = keyboard_window_live(server, server->focus);
+	keyboard.restore_focus = NULL;
+	if (live == 0) {
+		printf("ZWL OSK restore-dropped reason=focus\n");
+		return;
+	}
+
+	/* The panel comes back as it was. */
+	printf("ZWL OSK restore kind=%s\n", keyboard_kind_name(kind));
+	keyboard_open(server, kind);
 }
 
 /*
@@ -1838,30 +1930,118 @@ keyboard_draw_panel(
 }
 
 /*
- * Draws the hint of an armed contact: the corner's panel, faint, its
- * opacity growing with how far the contact has come along the diagonal.
+ * Draws the hint of an armed contact as Notes' corner draws its own
+ * (BUG-230, corner.c): a glass quarter disc from the bottom corner out to
+ * the contact, its rim blue once letting go would open the panel, and the
+ * keyboard's name along the diagonal inside it once there is room.
  */
 static void
 keyboard_draw_hint(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	int32_t rect[4];
+	static const float ink[4] = { 0.10f, 0.16f, 0.30f, 1.0f };
+	struct glass_shape shape;
+	const char *label;
+	float color[4];
+	float corner_x;
+	float corner_y;
+	float progress;
+	float radius;
+	float along;
 	int32_t inwards;
 	int32_t upwards;
-	float progress;
+	int32_t width;
+	int32_t text_x;
+	int diagonal;
+	int ready;
 
-	/* How far along the diagonal. */
+	/* How far along the diagonal, and whether letting go now would open the panel. */
 	keyboard_travel(&inwards, &upwards);
-	progress = ((float)inwards + (float)upwards) * 0.5f / KEYBOARD_DISTANCE;
+	progress = ((float)inwards + (float)upwards) * 0.5f;
 	if (progress < 0.0f)
 		progress = 0.0f;
-	if (progress > 1.0f)
-		progress = 1.0f;
+	if (progress > KEYBOARD_DISTANCE)
+		progress = KEYBOARD_DISTANCE;
+	diagonal = keyboard_on_diagonal(inwards, upwards);
+	ready = 0;
+	if (diagonal && progress >= KEYBOARD_COMMIT)
+		ready = 1;
 
-	/* The corner's panel at its place, faint. */
-	keyboard_place(server, keyboard.contact.corner, rect);
-	keyboard_draw_panel(server, command, rect, 0.2f + 0.6f * progress);
+	/* The disc reaches the contact: a little more than its way along the diagonal from the corner. */
+	radius = KEYBOARD_HINT_RADIUS_MIN + progress * KEYBOARD_HINT_GROWTH;
+
+	/* The corner it grows from: the flick panel's bottom right, the QWERTY panel's bottom left. */
+	corner_x = 0.0f;
+	if (keyboard.contact.corner == PANEL_FLICK)
+		corner_x = (float)server->width;
+	corner_y = (float)server->height;
+
+	/* A soft shadow under the turned-up corner. */
+	glass_shape_init(&shape, corner_x - radius, corner_y - radius, radius * 2.0f, radius * 2.0f);
+	shape.quad[0] -= 40.0f;
+	shape.quad[1] -= 40.0f;
+	shape.quad[2] += 80.0f;
+	shape.quad[3] += 80.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = radius;
+	shape.soft = 18.0f;
+	shape.color[0] = 0.10f;
+	shape.color[1] = 0.18f;
+	shape.color[2] = 0.35f;
+	shape.color[3] = 0.26f;
+	glass_shape_draw(server, command, &shape);
+
+	/* The glass disc about the corner, white, greyer while off the diagonal. */
+	glass_shape_init(&shape, corner_x - radius, corner_y - radius, radius * 2.0f, radius * 2.0f);
+	shape.mode = MODE_GLASS;
+	shape.radius = radius;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.78f;
+	if (!diagonal) {
+		shape.color[0] = 0.86f;
+		shape.color[1] = 0.88f;
+		shape.color[2] = 0.92f;
+		shape.color[3] = 0.60f;
+	}
+
+	/* The disc's edge, drawn. */
+	shape.edge = 0.85f;
+	glass_shape_draw(server, command, &shape);
+
+	/* Its rim, blue once letting go would open the panel. */
+	glass_shape_init(&shape, corner_x - radius, corner_y - radius, radius * 2.0f, radius * 2.0f);
+	shape.mode = MODE_RING;
+	shape.radius = radius;
+	shape.soft = 2.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.70f;
+	if (ready) {
+		shape.color[0] = 0.25f;
+		shape.color[1] = 0.52f;
+		shape.color[2] = 0.95f;
+		shape.color[3] = 0.95f;
+	}
+	glass_shape_draw(server, command, &shape);
+
+	/* The keyboard's name, along the diagonal inside the disc, fading in once there is room for it. */
+	if (radius < KEYBOARD_HINT_LABEL_RADIUS)
+		return;
+	memcpy(color, ink, sizeof(color));
+	color[3] = (radius - KEYBOARD_HINT_LABEL_RADIUS) / 40.0f;
+	if (color[3] > 1.0f)
+		color[3] = 1.0f;
+	label = kl_tr("Keyboard");
+	width = glass_text_width(server, SIZE_TITLE, label);
+	along = radius * 0.42f;
+	text_x = (int32_t)along - width / 2;
+	if (keyboard.contact.corner == PANEL_FLICK)
+		text_x = (int32_t)(corner_x - along) - width / 2;
+	glass_draw_text(server, command, SIZE_TITLE, text_x, (int32_t)(corner_y - along) + 6, label, width + 1, color);
 }
 
 /*
@@ -2283,8 +2463,8 @@ keyboard_send_key(
 
 	/* The press and the release, at the compositor's time. */
 	time = (uint32_t)zwl_milliseconds();
-	zwl_seat_key_deliver(server, time, code, 1U);
-	zwl_seat_key_deliver(server, time, code, 0U);
+	keyboard_key_event(server, time, code, 1U);
+	keyboard_key_event(server, time, code, 0U);
 
 	/* The modifiers as they were. */
 	if (server->modifiers != modifiers) {
@@ -2295,6 +2475,39 @@ keyboard_send_key(
 	/* Succeeded: the key was sent. */
 	printf("ZWL OSK send via=key code=%u shift=%d held=%u\n", code, shift, used);
 	return 1;
+}
+
+/*
+ * Gives one press or release of a key the panel typed to where a key of
+ * the keyboard goes.  The QWERTY panel's keys go through the input method
+ * as the keyboard's do (BUG-231): while it serves the field and is not in
+ * direct input, "a" becomes the preedit "あ" and Space converts.  The
+ * flick panel's keys, which type their own kana, and a key the input
+ * method does not take reach the focused application.
+ */
+static void
+keyboard_key_event(
+	struct zwl_server *server,
+	uint32_t time,
+	unsigned code,
+	uint32_t state)
+{
+	int taken;
+
+	/* The QWERTY panel's key: the input method's first (a release goes where its press went). */
+	if (keyboard.open == PANEL_QWERTY) {
+		taken = zwl_ime_key_early(server, time, code, state);
+		if (taken)
+			return;
+		taken = zwl_ime_key_grab(server, time, code, state, 0);
+		if (taken) {
+			printf("ZWL OSK send via=ime code=%u\n", code);
+			return;
+		}
+	}
+
+	/* The focused application hears it. */
+	zwl_seat_key_deliver(server, time, code, state);
 }
 
 /*

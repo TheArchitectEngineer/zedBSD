@@ -71,6 +71,8 @@ msg	That took too long. Try again.	時間がかかりすぎました。もう一
 msg	Wrong PIN. Try again.	PIN が違います。もう一度お試しください。
 # userland/desktop/wayland/greeter.c:1418
 msg	Wrong password. Try again.	パスワードが違います。もう一度お試しください。
+# userland/desktop/wayland/keyboard.c:2038
+msg	Keyboard	キーボード
 # userland/desktop/wayland/language.c:115
 ctx	long date	{1}, {2} {3}	{2}{3}日 {1}
 # userland/desktop/wayland/language.c:117
