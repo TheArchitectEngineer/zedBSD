@@ -2,7 +2,7 @@
 
 # ws169-p005: browser の認証 code の自動入力
 
-Status: test-wait（T1-291）
+Status: test-wait（2026-10-07 T1-298: titlebar の「Code 7351」と listen は確かめた（Q1 が PNG を目視）。control の click で欄に入る段は QEMU で未実施 → T1-299）（旧: test-wait（T1-291））
 Disposition: normal
 Parent: [WS169](../ws.md)
 Queue: q831（2026-10-07、P2）
