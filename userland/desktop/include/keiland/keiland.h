@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched). */
-#define KL_VERSION	52U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band). */
+#define KL_VERSION	53U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -3545,6 +3545,59 @@ void kl_list_release(struct kl_list *list);
 unsigned kl_list_begin(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, struct kl_list *list, size_t count, size_t *first, size_t *last);
 unsigned kl_list_row(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, struct kl_list *list, size_t index, struct kl_rect *row, kl_color *ink);
 void kl_list_end(struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *rect, struct kl_list *list);
+
+/*
+ * KL_VERSION 53 (ws090-p024): the parts of the views of many items, in
+ * Files' look -- a list of several columns under a header whose titles sort
+ * it, and a grid of icons with their names -- where many items are
+ * selected at once and a rubber band picks them.  The application keeps the
+ * selection and the hits, lays out its columns, and draws each icon; these
+ * draw the rest.  kl_list_header draws the header in its rectangle (each
+ * column's title at its x and width, KL_COLUMN_* flags), kl_list_item a
+ * row's ground for its state (KL_ITEM_* bits) with the inks of its text,
+ * kl_list_cell a cell's text; kl_grid_layout measures a grid (as many
+ * columns as fit, centred), kl_grid_cell places a cell, kl_grid_icon its
+ * icon, and kl_grid_item draws a cell's ground and its name (returning the
+ * name's last baseline); kl_band draws a rubber band.
+ */
+#define KL_ITEM_SELECTED	1U	/* the item is selected */
+#define KL_ITEM_FOCUSED	2U	/* the view has the keyboard: a selection in the accent */
+#define KL_ITEM_HOVER		4U	/* the pointer is over the item */
+
+#define KL_COLUMN_SORTED	1U	/* the list is sorted by the column */
+#define KL_COLUMN_REVERSED	2U	/* ... the other way */
+#define KL_COLUMN_HOVER	4U	/* the pointer is over its title */
+
+#define KL_CELL_RIGHT		1U	/* a cell's text at the column's right (a size) */
+
+/* The longest second line of a grid item's name, with its NUL. */
+#define KL_GRID_NAME_MAX	256U
+
+struct kl_column {
+	const char *title;
+	int x;
+	int width;
+	unsigned flags;
+};
+
+struct kl_grid {
+	int columns;
+	int left;
+	int top;
+	int cell_width;
+	int cell_height;
+	size_t rows;
+	int content_height;
+};
+
+void kl_list_header(const struct kl_style *style, const struct kl_rect *rect, const struct kl_column *columns, size_t count);
+void kl_list_item(const struct kl_style *style, const struct kl_rect *row, unsigned state, kl_color *ink, kl_color *faint);
+void kl_list_cell(const struct kl_style *style, int x, int width, int baseline, const char *text, unsigned pixels, unsigned flags, kl_color ink);
+void kl_grid_layout(const struct kl_rect *rect, int cell_width, int cell_height, size_t count, struct kl_grid *grid);
+void kl_grid_cell(const struct kl_grid *grid, size_t index, int scroll, struct kl_rect *cell);
+void kl_grid_icon(const struct kl_rect *cell, int icon, struct kl_rect *place);
+int kl_grid_item(const struct kl_style *style, const struct kl_rect *cell, int icon, const char *name, unsigned pixels, unsigned state);
+void kl_band(const struct kl_style *style, const struct kl_rect *rect);
 int kl_sidebar_section(const struct kl_style *style, int x, int y, int width, const char *title);
 int kl_sidebar_item(struct kl_ui *ui, const struct kl_style *style, uint32_t id, uint32_t index, const struct kl_rect *rect, enum kl_icon icon, const char *label, int current);
 /* KL_VERSION 48 (ws090-p023): a sidebar's place in the faint ink (not there) or the quiet one (not ready). */

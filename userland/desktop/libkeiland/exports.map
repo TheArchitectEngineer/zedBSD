@@ -373,6 +373,14 @@
 		kl_list_begin;
 		kl_list_row;
 		kl_list_end;
+		kl_list_header;
+		kl_list_item;
+		kl_list_cell;
+		kl_grid_layout;
+		kl_grid_cell;
+		kl_grid_icon;
+		kl_grid_item;
+		kl_band;
 		kl_sidebar_section;
 		kl_sidebar_item;
 		kl_sidebar_place;
