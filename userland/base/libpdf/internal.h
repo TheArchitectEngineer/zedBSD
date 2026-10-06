@@ -15,6 +15,7 @@
 #define LIBPDF_INTERNAL_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* The deepest nesting of arrays and dictionaries, and of page and name trees (design-pdf.md section 4.3). */
 #define PDF_READER_DEPTH_MAX 32
@@ -393,6 +394,12 @@ struct pdf_scan {
 int pdf_content_scan(struct pdf_document *document, size_t index, struct pdf_scan *scan, unsigned char **content, size_t *size, unsigned *read_flags);
 void pdf_scan_free(struct pdf_scan *scan);
 int pdf_content_render(struct pdf_document *document, size_t index, const unsigned char *content, size_t size, struct pdf_object *resources, struct pdf_display_list **list);
+
+/* A font's /ToUnicode CMap (tounicode.c, ws175-p002b): which characters each code stands for. */
+struct pdf_tounicode;
+int pdf_tounicode_parse(const unsigned char *data, size_t size, struct pdf_tounicode **map);
+int pdf_tounicode_lookup(const struct pdf_tounicode *map, unsigned code, unsigned length, uint32_t *characters, size_t capacity, size_t *count);
+void pdf_tounicode_free(struct pdf_tounicode *map);
 
 /* The editor's new content (editor.c). */
 struct pdf_buffer;

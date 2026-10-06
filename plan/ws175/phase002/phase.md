@@ -32,3 +32,9 @@ design.md §10 の p002 の「先の段」の部分を p002a、残りを p002b �
 - `include/libc/pdf.h`・`exports.map`: 上の API と `enum pdf_edit_kind`・`struct pdf_edit_key`・`struct pdf_edit_object`（先頭の `size`）。`internal.h` に `struct pdf_scan_object`・`struct pdf_scan`。Makefile（zedBSD・Linux・FreeBSD）に editor.c。
 - 試験: `plan/ws175/tests/make-edit-samples.py`（edit-images.pdf、4 頁）、`host-edit-scan.c`、`run-host-edit-scan.sh` → plain・ASan・UBSan とも 40 passed, 0 failed（3 つの物の bytes・四辺形・kind・sample、余る Q と開いた q、key と find と開き直し、hit、render の画像の置き方と四辺形の一致、/Rotate 90、読めない stream で READ_ONLY、深い q の後の物が出ず PARTIAL）。
 - build: zedBSD の libpdf.so（新しい 8 つの symbol を export）、keiland-linux の warning 0、host の C89 pedantic の -Werror。style-check 0（content.c・editor.c・internal.h・pdf.h）。FreeBSD の build は未実施（Makefile.freebsd に足しただけ）。QEMU は不要（library だけ、Notes からはまだ使わない）。
+
+## p002b の途中（2026-10-06 q805 P2、p006 の許可待ちの間に）
+
+- `tounicode.c`（新規、internal）: font の /ToUnicode CMap を読む。`beginbfchar`・`beginbfrange`（1 つの文字列で最後の単位を数え上げる形と、文字列の配列の形）、UTF-16BE の宛先（surrogate の対は 1 文字、対の無い surrogate は U+FFFD、合字は複数の文字）、元の code の byte 長を区別、後の entry が前に勝つ。`usecmap` は読まない。entry は 65536 まで、1 code の文字は 8 まで、壊れた section はそこで終わり、それまでの分は残す。Makefile 3 つに足した。
+- 試験: `plan/ws175/tests/host-tounicode.c`（13 項目）を `run-host-edit-scan.sh` に足した → plain・ASan・UBSan とも PASS。
+- 残り（p002b）: font.c の `pdf_font_unicode()`（ToUnicode → 単純な font の encoding と Differences → Identity-H の埋め込みの TrueType の cmap の逆引き → U+FFFD）、文字の行の走査（行のまとめ [M9][N16]、Tr 4〜7 の block [H2]、印付きの内容 [M10]、Tr 3）。

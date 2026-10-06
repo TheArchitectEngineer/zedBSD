@@ -19,7 +19,7 @@ python3 plan/ws175/tests/make-edit-samples.py "$out" >/dev/null
 convert -size 8x4 gradient:blue-green -quality 90 "$out/insert.jpg"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c
+	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c
 	userland/base/libpdf/stroke.c userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
 	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c
 	userland/base/libpdf/cffdata.c"
@@ -48,7 +48,7 @@ for variant in plain asan ubsan; do
 		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
-	for test in host-edit-scan host-edit-change host-edit-image; do
+	for test in host-edit-scan host-edit-change host-edit-image host-tounicode; do
 		# shellcheck disable=SC2086
 		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
 			-o "$out/$test-$variant"
@@ -63,6 +63,12 @@ for variant in plain asan ubsan; do
 		echo "host-edit-change $variant: $(tail -1 "$out/change-$variant.txt")"
 	else
 		grep -v '^ok' "$out/change-$variant.txt"
+		status=1
+	fi
+	if "$out/host-tounicode-$variant" > "$out/tounicode-$variant.txt" 2>&1; then
+		echo "host-tounicode $variant: $(tail -1 "$out/tounicode-$variant.txt")"
+	else
+		grep -v '^ok' "$out/tounicode-$variant.txt"
 		status=1
 	fi
 	if "$out/host-edit-image-$variant" "$out/edit-images.pdf" "$out/insert.jpg" "$out/imaged-$variant.pdf" > "$out/image-$variant.txt" 2>&1; then
