@@ -82,3 +82,14 @@ q812（ws090-p020）の後に再開。Notes は P2 の WS175 p007・p008 の統�
 - build: zedBSD amd64 の libkeiland・terminal・notes（exit 0、warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）。`exports.py --check` OK。
 - host: `sh plan/ws131/tests/host-tabs.sh`（新規、titlebar の stub で tab の表の送信と input）PASS 19 項目。`plan/ws081/tests/run-termtouch.sh` ok (20)、`plan/ws090/tests/host-pad.sh` ok (7)、`plan/ws081/tests/run-notestouch.sh` ok (52)。
 - 未実施: FreeBSD の build、keiland-os-boundary（Q1）、QEMU（T1）: Terminal の clipboard・PRIMARY・drop・drag・tab（zdesktop-p079・p086・p088・p091・p093・p100・p103・p111、ws081 p014-guest）、Notes の pen（ws079 notes-pen・notes-p011、ws128 notes-p002）、run-termtouch の guest、demo-s8-s9、boot-test、Linux の 2 app の PNG と Terminal の shell。
+
+## q807-i03（P1、2026-10-06）: T1-248・T1-254 の残りの FAIL の切り分け
+
+| 試験 | 原因 | 直し |
+| --- | --- | --- |
+| edit-guest step 4（Terminal の copy が `via=keys ... terminal=1` でない） | **機能**（p018）: Terminal が libkeiland の窓になって edit object（全ての操作）を持ち、keyboard の copy が libkeiland の既定の Ctrl+C（shell の割り込み）になっていた | KL 46 に `kl_window_edit_by_keys`（窓の edit object を除き、zdesktop の key の表 = terminal の Ctrl+Shift+C・V に落とす）。Terminal は窓を作った直後に呼ぶ。試験は変えない |
+| sheet-guest の dock（`sheet at x=260 y=48` が無い） | **試験**: ws142-p008 で DOCKED の間の dock した親の sheet は中央に置く設計になった（画面は中央の sheet） | 期待を「最後の `sheet at` が x=260、y=48+(752-高さ)/2」に |
+| zdesktop-p086（`BOUNDS ... height=690` が無い） | **試験**: 2026-10-05 に system bar が 34→44 px（`ZWL_GLASS_BAR = ZWL_GLASS_TITLE`）になり、bounds は 800-108-12 = 680 | 期待を 680 に |
+
+- build: libkeiland・terminal・textedit（exit 0、warning 0）、`make keiland-linux` gcc（0、warning 0）、`exports.py --check` OK、host-tabs PASS。
+- 未実施: QEMU（T1）。同じ system bar の変更で古い `zdesktop-p105.sh`（`height=690`、X11 の `720`）も合わない見込み（WS035 の試験、未確認・未変更）。

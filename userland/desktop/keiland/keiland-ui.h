@@ -801,6 +801,7 @@ struct xdg_toplevel;
  * height are the size asked for until the compositor gives one.
  * fullscreen (KUI_VERSION 11) asks for the full screen before the window
  * is first configured, so that its first configure is the full screen's.
+ * role and token (KL_VERSION 46) make the desktop's surface instead.
  */
 struct kl_window_options {
 	const char *display;
@@ -810,7 +811,19 @@ struct kl_window_options {
 	uint32_t height;
 	unsigned present;
 	int fullscreen;
+	unsigned role;
+	const char *token;
 };
+
+/*
+ * KL_VERSION 46: a window's role (kl_window_options' role): a toplevel
+ * window, or the desktop's surface under every window (Files' desktop,
+ * with the token the compositor gave its program in token).  A desktop
+ * surface has no title, menus, titlebar, full screen or maximized state;
+ * the compositor gives its size.
+ */
+#define KL_WINDOW_ROLE_TOPLEVEL	0U
+#define KL_WINDOW_ROLE_DESKTOP	1U
 
 /*
  * One input: its kind (KL_WINDOW_*), where the pointer or the finger is
@@ -1250,6 +1263,62 @@ const char *kl_window_device_name(const struct kl_window *window);
 void kl_window_present_times(const struct kl_window *window, struct kl_present_times *times);
 int kl_window_set_control_parts(struct kl_window *window, uint32_t id, const char *const *parts, size_t count);
 int kl_window_set_glass_blur(struct kl_window *window, int enabled);
+
+/*
+ * KL_VERSION 46 (WS131 p020, Files' drag and drop and its desktop moved
+ * here): the drag over a window as it moves (KL_WINDOW_DROP_MOTION) and the
+ * compositor's choice of action for it (KL_WINDOW_DROP_ACTION, in code);
+ * the application answers which actions it takes and the one it prefers
+ * (kl_window_answer_drop; until it answers, a drag of a type it accepts is
+ * taken as a copy), reads what was dropped (kl_window_receive_drop, in
+ * memory the caller frees) and finishes the drop with the action carried
+ * out, or gives it up with 0 (kl_window_finish_drop).  A drag out of the
+ * window offers the data of a few types with the actions it allows
+ * (kl_window_start_drag); its KL_WINDOW_DRAG_DONE has the compositor's
+ * choice of action in begin.  A drag over a control of the titlebar comes
+ * as KL_WINDOW_CONTROL_DROP (the control's ID in id, the part in begin,
+ * id 0 when it left the controls).  KL_DROP_ENTER's pressed says the drag
+ * is the window's own.
+ */
+#define KL_WINDOW_DROP_MOTION	32U
+#define KL_WINDOW_DROP_ACTION	33U
+#define KL_WINDOW_CONTROL_DROP	34U
+
+/* The context menu (kl_window_popup_menu) closed, chosen from or not (KL_VERSION 46). */
+#define KL_WINDOW_POPUP_DONE	35U
+
+/* The actions of drag and drop (bits, as wl_data_device_manager's). */
+#define KL_DND_COPY		1U
+#define KL_DND_MOVE		2U
+#define KL_DND_ASK		4U
+
+/* One type a drag offers, and its data. */
+struct kl_drag_data {
+	const char *type;
+	const void *data;
+	size_t length;
+};
+
+void kl_window_answer_drop(struct kl_window *window, unsigned actions, unsigned preferred);
+int kl_window_receive_drop(struct kl_window *window, char **data, size_t *length, unsigned *type);
+void kl_window_finish_drop(struct kl_window *window, unsigned action);
+int kl_window_start_drag(struct kl_window *window, const struct kl_drag_data *data, size_t count, unsigned actions, uint32_t serial);
+
+/* A control's value (a progress's share), a text control's suggestions, and the keyboard given to a control as KL_FOCUS_FIELD or _EDIT (KL_VERSION 46). */
+int kl_window_set_control_value(struct kl_window *window, uint32_t id, unsigned value);
+int kl_window_set_control_suggestions(struct kl_window *window, uint32_t id, const char *const *labels, const char *const *texts, size_t count);
+int kl_window_focus_control_mode(struct kl_window *window, uint32_t id, unsigned mode);
+
+/* Where the desktop's surface is on the screen (KL_VERSION 46). */
+int kl_window_desktop_place(const struct kl_window *window, int32_t *x, int32_t *y);
+
+/*
+ * KL_VERSION 46: a window whose keys mean something else (a terminal's
+ * Ctrl+C) takes the keyboard's editing buttons as the keys the compositor
+ * chooses for it (a terminal's Ctrl+Shift+C and V), not as operations:
+ * its edit object goes, and kl_window_on_edit's callback hears nothing.
+ */
+void kl_window_edit_by_keys(struct kl_window *window);
 int kl_window_set_repeat(struct kl_window *window, int enabled);
 int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
 int kl_window_selection_own(const struct kl_window *window, unsigned which);

@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws035-p086: terminal's tabs in the titlebar's TABS mode, on the Venus guest (the lean image,
 # plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800, terminal with its shell:
-#  1. The terminal binds xdg-shell 4 (ZWL BOUNDS client=1) and shows its menus with one tab (ZTERM TABS count=1
+#  1. The terminal binds xdg-shell 4 (ZWL BOUNDS client=1, 1256x680 under the 44-pixel system bar) and shows its menus with one tab (ZTERM TABS count=1
 #     mode=0); "echo one" typed in it.
 #  2. Ctrl+Shift+T (Shell > New Tab): a second shell (TAB new id=2 count=2), the titlebar shows the tabs
 #     (TABS count=2 mode=2, the strip in zdesktop's log); "echo two" typed there; tabs.png.
@@ -81,7 +81,7 @@ wx=${2:-0}; wy=${3:-0}
 echo "terminal at $wx,$wy"
 
 # 1. One tab, the menus.
-expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=690"
+expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
 expect_log /tmp/t.log 'ZTERM TABS count=1 active=1 mode=0'
 keys 'echo one' '\n'
 

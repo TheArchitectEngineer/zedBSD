@@ -131,6 +131,19 @@ keiui_edit_close(
 }
 
 /*
+ * Lets the compositor send the window the keys it chooses for the editing
+ * operations (a terminal's own) instead of the operations: the window's
+ * edit object goes.
+ */
+void
+kl_window_edit_by_keys(
+	struct kl_window *window)
+{
+	/* No edit object: zdesktop falls back to the keys. */
+	keiui_edit_close(window);
+}
+
+/*
  * Lets the application hear the editing operations first: callback returns
  * 1 when it carried the operation out itself (the default is skipped).
  */

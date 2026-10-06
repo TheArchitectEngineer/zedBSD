@@ -42,11 +42,10 @@
 #define CAL_PI			3.14159265f
 
 /*
- * The cards: the margin round them and the gap between (on glass, Files'
- * own: the cards reach the window's edges and stand 8 pixels apart),
- * their corner, the sidebar's and the panel's widths.
+ * The cards: they reach the window's edges, so that they line up with
+ * the floating titlebar (ws090-p021); the gap between them (on glass,
+ * Files' own: 8 pixels), their corner, the sidebar's and the panel's widths.
  */
-#define CAL_MARGIN		12
 #define CAL_GAP			12
 #define CAL_GLASS_GAP		8
 #define CAL_CARD_RADIUS		16.0f
@@ -666,14 +665,12 @@ view_layout(
 	int left;
 	int right;
 
-	/* The margin and the gap: Files' on glass (the cards reach the window's edges), else room round the cards. */
+	/* No margin (the cards reach the window's edges), and the gap: Files' on glass. */
 	memset(layout, 0, sizeof(layout[0]));
-	margin = CAL_MARGIN;
+	margin = 0;
 	gap = CAL_GAP;
-	if (view->glass) {
-		margin = 0;
+	if (view->glass)
 		gap = CAL_GLASS_GAP;
-	}
 
 	/* The sidebar, when the window is wide enough. */
 	left = margin;

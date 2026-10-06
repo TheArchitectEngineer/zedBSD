@@ -33,8 +33,8 @@
 /* The most tools of a pen tablet a window follows (WS131 p018, Notes' tablet.c moved here). */
 #define KEIUI_TABLET_TOOLS	4U
 
-/* The longest text a drag of the window's own carries (WS131 p018, Terminal's drag of selected text). */
-#define KEIUI_DRAG_TEXT		4096U
+/* The most types a drag of the window's own offers (WS131 p020: Files' file names and their text). */
+#define KEIUI_DRAG_TYPES	4U
 
 /* How many inputs wait at most (the oldest is dropped past it). */
 #define KEIUI_WINDOW_EVENTS	512U
@@ -248,6 +248,11 @@ struct kl_window {
 	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
 
+	/* The desktop's surface role instead of a toplevel (KL_VERSION 46, Files' desktop; NULL for a window), and its place on the screen. */
+	struct kl_desktop *desktop;
+	int32_t desktop_x;
+	int32_t desktop_y;
+
 	/* The size the compositor asked for, the largest the window may choose (0 when not known), and the size it would like. */
 	uint32_t width;
 	uint32_t height;
@@ -361,10 +366,17 @@ struct kl_window {
 	double drop_x;
 	double drop_y;
 
-	/* A drag of the window's text out of it (Terminal's ws035-p093): its source (NULL for none) and its text. */
+	/*
+	 * A drag of the window's own (Terminal's ws035-p093, Files'
+	 * ws035-p084): its source (NULL for none), the types it offers with a
+	 * copy of each one's data, and the action the compositor chose last.
+	 */
 	struct wl_data_source *drag_source;
-	char drag_text[KEIUI_DRAG_TEXT];
-	size_t drag_length;
+	char *drag_types[KEIUI_DRAG_TYPES];
+	char *drag_data[KEIUI_DRAG_TYPES];
+	size_t drag_lengths[KEIUI_DRAG_TYPES];
+	unsigned drag_count;
+	unsigned drag_action;
 
 	/* The compositor's content type manager and the surface's content type object (ws122-p005b), NULL until bound and asked. */
 	struct wp_content_type_manager_v1 *content_manager;
