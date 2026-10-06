@@ -20,9 +20,14 @@
  *                           FAIL reason; ERROR (login screen)
  *   UNLOCK style            then the secret's line: OK; FAIL reason (a
  *                           session's lock screen)
- *   ENROLLED                ENROLLED pin=0|1 fido2=N (a session)
+ *   ENROLLED                ENROLLED pin=0|1 fido2=N[ key=REF/LABEL...]
+ *                           (a session; the label's bytes in hexadecimal)
  *   ENROLL pin / REMOVE pin then the password's line (and the PIN's for
  *                           ENROLL): OK; FAIL reason (a session)
+ *   ENROLL fido2 LABEL      then the password's and the key PIN's lines:
+ *                           TOUCH..., OK id=ID; FAIL reason (ws172-p003)
+ *   REMOVE fido2 REF        then the password's line: OK; FAIL reason
+ *   CANCEL                  (none): a security key's attempt stops
  *   POWER poweroff|reboot   OK; FAIL others; ERROR (login screen and session, power-zedbsd.c)
  *   SERVICE sshd on|off|status  SERVICE available= ...; DENIED; ERROR (a session, sharing-zedbsd.c)
  *   LOGOUT                  QUIT: the greeter is up, the session ends
@@ -44,7 +49,8 @@
  * The descriptors do not block: the tick reads what has come, cuts it into
  * lines and answers the request awaited (one at a time).  A secret goes on
  * a line of its own after its request (ws172-p002), and TOUCH lines (a
- * security key waits to be touched, ws172-p003) answer nothing yet.
+ * security key waits to be touched, ws172-p003) answer nothing yet: the
+ * host hears session_answer(KL_BACKEND_SESSION_TOUCH, 0) for each.
  */
 
 #include "userland/desktop/libkeiland-backend/backend-private.h"
@@ -100,6 +106,8 @@ static int session_name_valid(const char *name);
 static int session_ask(struct kl_backend *backend, unsigned request, char *line, int length);
 static void session_take_styles(struct kl_backend *backend, const char *list);
 static void session_take_enrolled(struct kl_backend *backend, const char *list);
+static int session_take_key(const char *word, struct kl_backend_key *key);
+static int session_hex_value(char digit);
 static int session_send(struct kl_backend *backend, unsigned request, const char *line);
 static void session_answered(struct kl_backend *backend, const char *line);
 static void session_end(struct kl_backend *backend, unsigned reason);
@@ -459,6 +467,146 @@ kl_backend_session_enrolled_get(
 }
 
 /*
+ * Gives the keys of the last ENROLLED answer.
+ */
+size_t
+kl_backend_session_keys_get(
+	const struct kl_backend *backend,
+	struct kl_backend_key *keys,
+	size_t capacity)
+{
+	size_t count;
+
+	/* Nothing before an answer. */
+	if (backend == NULL)
+		return 0U;
+
+	/* As many as fit. */
+	count = backend->session_key_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(keys, backend->session_key_list, count * sizeof(keys[0]));
+	return backend->session_key_count;
+}
+
+/*
+ * Asks sessiond to register the key plugged in for the session user (ENROLL fido2).
+ */
+int
+kl_backend_session_add_key(
+	struct kl_backend *backend,
+	const char *password,
+	const char *label,
+	const char *pin)
+{
+	char line[SESSION_REQUEST_MAX];
+	const char *colon;
+	size_t length;
+	int valid;
+	int written;
+	int error;
+
+	/* Only a session sessiond started and still listens to. */
+	if (backend == NULL || password == NULL || label == NULL || pin == NULL)
+		return EINVAL;
+	if (backend->options.session_descriptor < 0 || backend->session_gone)
+		return ENOTSUP;
+
+	/* The password and the key's PIN, one line each; a label of 1 to 32 bytes without a colon. */
+	valid = session_secret_valid(password);
+	if (!valid || password[0] == '\0')
+		return EINVAL;
+	valid = session_secret_valid(pin);
+	if (!valid || pin[0] == '\0')
+		return EINVAL;
+	valid = session_secret_valid(label);
+	length = strlen(label);
+	colon = strchr(label, ':');
+	if (!valid || length == 0U || length >= KL_BACKEND_KEY_LABEL || colon != NULL)
+		return EINVAL;
+
+	/* The request; nothing of the secrets is kept once it is sent. */
+	written = snprintf(line, sizeof(line), "ENROLL fido2 %s\n%s\n%s\n", label, password, pin);
+	error = session_ask(backend, KL_BACKEND_SESSION_ENROLL, line, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the answer comes through session_answer. */
+	return 0;
+}
+
+/*
+ * Asks sessiond to remove one of the session user's keys (REMOVE fido2).
+ */
+int
+kl_backend_session_remove_key(
+	struct kl_backend *backend,
+	const char *password,
+	const char *ref)
+{
+	char line[SESSION_REQUEST_MAX];
+	size_t length;
+	size_t index;
+	int valid;
+	int written;
+	int error;
+
+	/* Only a session sessiond started and still listens to. */
+	if (backend == NULL || password == NULL || ref == NULL)
+		return EINVAL;
+	if (backend->options.session_descriptor < 0 || backend->session_gone)
+		return ENOTSUP;
+
+	/* The password, and a reference of 16 small hexadecimal digits. */
+	valid = session_secret_valid(password);
+	if (!valid || password[0] == '\0')
+		return EINVAL;
+	length = strlen(ref);
+	if (length != KL_BACKEND_KEY_REF - 1U)
+		return EINVAL;
+	for (index = 0U; index < length; index++) {
+		valid = session_hex_value(ref[index]);
+		if (valid < 0)
+			return EINVAL;
+	}
+
+	/* The request; nothing of the password is kept once it is sent. */
+	written = snprintf(line, sizeof(line), "REMOVE fido2 %s\n%s\n", ref, password);
+	error = session_ask(backend, KL_BACKEND_SESSION_ENROLL, line, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the answer comes through session_answer. */
+	return 0;
+}
+
+/*
+ * Stops a security key's attempt under way (CANCEL); its answer comes as the attempt's.
+ */
+int
+kl_backend_session_cancel(
+	struct kl_backend *backend)
+{
+	int descriptor;
+	int error;
+
+	/* The login screen's or a session's descriptor, while sessiond listens. */
+	if (backend == NULL)
+		return EINVAL;
+	descriptor = session_descriptor(backend);
+	if (descriptor < 0)
+		return ENOTSUP;
+
+	/* The line, awaiting nothing of its own. */
+	error = session_send(backend, KL_BACKEND_SESSION_NONE, "CANCEL\n");
+	if (error != 0)
+		return error;
+
+	/* Succeeded: said. */
+	return 0;
+}
+
+/*
  * Gives the word of the last refusal.
  */
 const char *
@@ -634,10 +782,13 @@ session_answered(
 		return;
 	}
 
-	/* TOUCH: a security key waits to be touched; the request is still under way (ws172-p003 shows it). */
+	/* TOUCH: a security key waits to be touched; the request is still under way and the host shows it (ws172-p003). */
 	same = strcmp(line, "TOUCH");
-	if (same == 0)
+	if (same == 0) {
+		if (backend->host.session_answer != NULL)
+			backend->host.session_answer(backend->host.data, KL_BACKEND_SESSION_TOUCH, 0);
 		return;
+	}
 
 	/* What the answer says: a SERVICE request's is the state, or why not (ws089-p025). */
 	backend->session_reason[0] = '\0';
@@ -752,15 +903,17 @@ session_take_styles(
 	backend->session_styles = styles;
 }
 
-/* Takes ENROLLED's list ("pin=1 fido2=2"): whether a PIN is set and the number of keys. */
+/* Takes ENROLLED's list ("pin=1 fido2=2 key=REF/LABEL ..."): whether a PIN is set, the number of keys and the keys. */
 static void
 session_take_enrolled(
 	struct kl_backend *backend,
 	const char *list)
 {
+	const char *word;
 	unsigned pin;
 	unsigned keys;
 	int scanned;
+	int error;
 
 	/* Both counts, or nothing. */
 	pin = 0U;
@@ -771,11 +924,75 @@ session_take_enrolled(
 		keys = 0U;
 	}
 
-	/* Succeeded: what is enrolled, kept. */
+	/* What is enrolled, kept. */
 	backend->session_pin = 0U;
 	if (pin != 0U)
 		backend->session_pin = 1U;
 	backend->session_keys = keys;
+
+	/* Each key listed, while there is room (one that does not read is left out). */
+	backend->session_key_count = 0U;
+	word = strstr(list, " key=");
+	while (word != NULL && backend->session_key_count < KL_BACKEND_KEYS_MAX) {
+		error = session_take_key(word + 5, &backend->session_key_list[backend->session_key_count]);
+		if (error == 0)
+			backend->session_key_count++;
+		word = strstr(word + 5, " key=");
+	}
+}
+
+/* Takes one "REF/LABEL" word (up to a space or the end), the label's bytes in hexadecimal (no control character).  Returns 0 or EINVAL. */
+static int
+session_take_key(
+	const char *word,
+	struct kl_backend_key *key)
+{
+	const char *slash;
+	size_t length;
+	size_t index;
+	int high;
+	int low;
+	int character;
+
+	/* The reference: 16 digits before the slash. */
+	memset(key, 0, sizeof(*key));
+	slash = strchr(word, '/');
+	if (slash == NULL || (size_t)(slash - word) != KL_BACKEND_KEY_REF - 1U)
+		return EINVAL;
+	memcpy(key->ref, word, KL_BACKEND_KEY_REF - 1U);
+
+	/* The label: two digits a byte, up to a space or the end. */
+	length = strcspn(slash + 1, " ");
+	if (length % 2U != 0U || length / 2U >= sizeof(key->label))
+		return EINVAL;
+	for (index = 0U; index < length / 2U; index++) {
+		high = session_hex_value(slash[1U + 2U * index]);
+		low = session_hex_value(slash[2U + 2U * index]);
+		if (high < 0 || low < 0)
+			return EINVAL;
+		character = high << 4 | low;
+		if (character < 0x20 || character == 0x7f)
+			return EINVAL;
+		key->label[index] = (char)character;
+	}
+
+	/* Succeeded: the key. */
+	return 0;
+}
+
+/* Gives a small hexadecimal digit's value, or -1. */
+static int
+session_hex_value(
+	char digit)
+{
+	/* The digits, then the letters. */
+	if (digit >= '0' && digit <= '9')
+		return digit - '0';
+	if (digit >= 'a' && digit <= 'f')
+		return digit - 'a' + 10;
+
+	/* Not one. */
+	return -1;
 }
 
 /* Gives a style's word in sessiond's requests, or NULL for none. */

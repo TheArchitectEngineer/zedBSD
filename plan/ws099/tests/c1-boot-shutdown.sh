@@ -71,15 +71,17 @@ echo "boot: $(grep -c 'seen=' "$out/boot.txt") moments; after the first picture:
 # 2. Log Out to the greeter (App Home's Log Out, as ws035-p126), then Shut Down at the greeter.
 sleep 3
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+# App Home's Power Off opens the power dialog (ws099-p037); its keys start on Cancel, Up takes Log Out and Enter chooses it.
+set -- $(guest "grep 'KWL HOME icon name=\"Power Off\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 if [ -z "${1:-}" ]; then
-	echo "shutdown: no Log Out icon"
+	echo "shutdown: no Power Off icon"
 	echo "C1 RESULT boot_black=$boot_black boot_text=$boot_text shutdown_black=? shutdown_text=?"
 	echo "C1: FAIL"
 	sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 	exit 1
 fi
 pointer move "$1" "$2" sleep 400 down sleep 60 up
+sleep 1; python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<up>' '\n' >/dev/null
 tries=0
 while [ $tries -lt 20 ]; do
 	found=$(guest "grep -c 'SESSIOND GREETER adopt pid=' /var/log/sessiond.log" | tail -1)

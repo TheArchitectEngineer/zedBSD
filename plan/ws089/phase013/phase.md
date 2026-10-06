@@ -51,3 +51,11 @@ libkeiland の API の追加の許可（main）と採否（ユーザー）。
 | build: zedBSD・keiland-linux の `bin/settings` | warning 0 |
 
 未実施: QEMU（About の memory の値が compositor の monitor から来ること）は T1。
+
+## q830（2026-10-06 P2）: T1-269 で Memory の行が PNG に出なかった
+
+- 証拠: `/home/awe/zedBSD-worktrees/t1/build/t1-269-run/`（`logs/apps.settings.about.log`、`png/apps.settings.about-about.png`）。This computer は 5 行。
+- 原因: 描画の誤りではなかった。log では memory の後に layout が作り直され、「Show Welcome again」の y が 40 下がっている（787 → 827）ので、行は後の frame で描かれている。monitor を 2 秒の周期で開いていたため、最初の memory の到着が About の表示から最大 2 秒遅れ、試験の撮影がその前だった。
+- 修正: `page-about.c`。monitor を 250 ms で開き、最初の memory が来たら 2 秒で開き直す（`ABOUT_MONITOR_FIRST_MS`）。
+- 確認: `run-host-about-memory.sh` に、250 ms で開いてから 2000 ms で開き直すことの確かめを足して PASS。settings の build は warning 0、style-check は 0。T1 の再試験（AAT `apps.settings.about` の PNG に Memory の行）が要る。
+

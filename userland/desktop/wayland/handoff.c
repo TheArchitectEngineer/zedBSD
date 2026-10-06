@@ -177,6 +177,13 @@ kwl_handoff_answer(
 			return;
 	}
 
+	/* A security key's touch: a key's addition's, or the login or lock screen's (ws172-p003). */
+	if (request == KL_BACKEND_SESSION_TOUCH) {
+		taken = kwl_system_key_touch(server);
+		if (taken)
+			return;
+	}
+
 	/* What the user has enrolled. */
 	if (request == KL_BACKEND_SESSION_ENROLLED) {
 		kwl_system_enrolled_answer(server, error);

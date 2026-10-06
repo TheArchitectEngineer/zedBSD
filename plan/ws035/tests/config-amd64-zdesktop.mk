@@ -14,3 +14,6 @@ ZEDBSD_USER_PROGRAMS += libjpeg-compat libpdf pdfviewer textedit
 ZEDBSD_USER_PROGRAMS += libkeiland
 # ws090-p005: the widgets' sampler, in this test image only (not the default image).
 ZEDBSD_USER_PROGRAMS += kuidemo
+# ws035-p134 (q829): the xdg_popup probe, the window without an app_id that zdesktop-p134 opens beside the terminal
+# (and p076, p132, p137 use); it was only in the menu image (plan/tools/titlebar/config-amd64-menu.mk).
+ZEDBSD_USER_PROGRAMS += popup-probe

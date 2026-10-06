@@ -139,8 +139,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 2026-10-06 夜 ユーザーの作業の順（原文の要旨）:「ベータ1のWS＋ベータ2の一部実装をまずすべて実装してください。P1,P2でフルに実装してしまってください。デバッグ項目としてカウントされているものを除きます。正常系が通ればいいです。準正常系と異常系で未実装な部分は、そういった積み残しを管理するWSを作って、そこにPhaseとして積みましょう。それはすべての実装が1パス通って疎通確認できてからでいいです。」「そのあとで、デバッグに専念して、すべてのバグを消化します。」
 
 - **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
-1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS139 速さ、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
-2. **第 2 段**: app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、Linux・package（WS085・088・114・117 はユーザーが検討中）。
+1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
+2. **第 2 段**: WS139 desktop の速さ（最適化、2026-10-06 夜 ユーザー: 第 1 段から移す）、app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、WS112 Debian の package（3 つの deb、2026-10-06 夜 ユーザー）、WS117（Qt6 の Linux の互換、ユーザーが検討中）。
 3. **第 3 段**（不確実性のある hardware 関連、2026-10-06 夜 ユーザー）: WS083 Vulkan Video（第 2 段から移す）、kernel・driver・電源（WS031、WS052、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
 4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
 5. **デバッグに専念**して全ての Bug を消化する。
@@ -505,6 +505,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー: 試験の整理の基準（AGENTS.md の検証の節）。一斉の棚卸しはせず、変更に追従する時にだけ適用:「本当に再利用するテストか」を判断し、master の Tools・試験の一覧・未完了の WS・tests/ のシナリオ・T1 の未実行の依頼から参照されない試験は直さず削除（文書の参照も外す、削除は Q1）、回帰に使う物は master に登録、回帰に使いそうな物は tests/ のシナリオへ。
+- 2026-10-06 夜 ユーザー（クリック）: WS112 の新しいゴールは「3 つ（amd64・arm64・RPi）」の deb（Debian 13・Ubuntu 26.04 共通の amd64・arm64、Raspberry Pi OS の arm64）、段は「第 2 段（ベータ2）」。Fedora・Arch は取りやめ。
+- 2026-10-06 夜 ユーザー: WS139（速さ）は最適化なので第 2 段へ。WS085・WS088・WS114 は「すでにできており、Completeにしてください」→ completed（Q1 が ws.md を完了の形にし、Phase の directory を削除、WS114 の試験は plan/tools/gtk4-linux/ へ）。WS112 は Debian の package だけに目標を設定し直す（下の質問の後に記録）。
 - 2026-10-06 夜 ユーザー: 不確実性のある hardware 関連は第 3 段へ（WS083 を第 3 段に）、WS130 IPv6 の残りは第 2 段へ。WS115 GTK4・WS116 Qt6・WS126 Python はベータ3 へ（理由: OS の価値は tablet と desktop の融合した UI/UX、既存の toolkit は core competence でない、script 言語は Noct がある）。
 - 2026-10-06 夜 ユーザー（クリック）: WS172 の QEMU での鍵の試験は「(c) 実機の鍵だけで確かめる」（P5 の kernel の応答器は作らない、実機の YubiKey の UAT で確かめる）。
 - 2026-10-06 夜 ユーザー（クリック）: Guardrail の OpenSSL の例外を「広げる」→ libpasskey を使う base の道具 fidoctl（WS161）も範囲に（期限は同じ、リリースの前に独自実装へ）。
@@ -689,6 +692,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | tool | 用途 | 使い方 |
 | --- | --- | --- |
 | [q1-clean.sh](tools/q1-clean.sh)・[fresh-out.sh](tools/fresh-out.sh)・[files/host-clean.sh](tools/files/host-clean.sh)（2026-10-06） | 削除は Q1 の pipeline（ユーザーの規則）。host の試験の script は rm を持たず、`fresh_out NAME`（新しい `NAME.run.*` を作り NAME を symlink で向ける）か `build/tmp/` の mktemp を使う。Q1 が `q1-clean.sh WORKTREE` で古い run・tmp・old を消す | `. plan/tools/fresh-out.sh; fresh_out "$out"`、Q1: `sh plan/tools/q1-clean.sh /home/awe/zedBSD-worktrees/p1` |
+| [gtk4-linux/](tools/gtk4-linux/README.md)（WS114 から移した、2026-10-06） | Linux の Keiland の上の標準 GTK4 の装飾（CSD・SSD）の試験と session の起動 | `decoration-wire.py`・`start-session.sh` など、README を参照 |
 | [compositor/](tools/compositor/README.md)（WS110） | compositor の起動の role（--testing・--session・--greeter）の試験 | `run-host-role.sh`、`roles-guest.sh` |
 | [rtld/](tools/rtld/README.md)（WS140） | ld.so の多数の object・依存・handle・TLS の試験 | `rtld-many.sh BUILD`（`config-amd64-rtld.mk` の SSH の image、BUILD/sysroot の symlink） |
 | [wallpaper/](tools/wallpaper/README.md)（WS138） | 背景の PNG・JPEG の復号と読み込みの時間・greeter の背景 | host `run-host-wallpaper-decode.sh`、guest `wallpaper-time.sh`（Settings の image）・`greeter-wallpaper.sh`（criteria の image） |

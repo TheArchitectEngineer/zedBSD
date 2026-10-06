@@ -58,3 +58,7 @@ Related: [BUG-235](../../bugs/BUG-235.md)・[ws132-p008](../../ws132/phase008/ph
 | keiland-os-boundary | 既存の FAIL だけ |
 | QEMU | 未実施。T1 に依頼（AAT の desktop.home.power-off-dialog） |
 | 実機 | 未実施 |
+
+## 追記: 試験の取りこぼし（2026-10-06 q828、P1）
+
+T1-267 の `zdesktop-p101` の FAIL（logout の後に `SESSION end`・greeter が出ない）は、この Phase で App Home の「Log Out」の tile が「Power Off」に替わったのに、試験が `KWL HOME icon name="Log Out"` を探していたため（tile が見つからず logout が起きない）。compositor・sessiond の退行ではない。同じ形の 7 本を直した: `plan/ws035/tests/zdesktop-p095.sh`・`p098.sh`・`p101.sh`・`p126.sh`、`plan/ws099/tests/c1-boot-shutdown.sh`、`plan/ws100/tests/volume-p004.sh`、`plan/ws102/tests/clip-lock.sh`。Power Off の tile を click し、1 秒待って dialog の keys を `<up>`（Cancel から Log Out）と Enter で選ぶ。直さなかった物: `plan/ws005/phase024/venus-session-check.sh` と `plan/ws075/tests/hdmi/h4-cycle.sh`（古い Phase・実機の道具、固定の座標）。確認は T1（`zdesktop-p101` ほか）。

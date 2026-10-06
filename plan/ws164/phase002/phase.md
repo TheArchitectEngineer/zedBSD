@@ -2,7 +2,7 @@
 # ws164-p002: Welcome の実装（設定の key、Settings の welcome の mode、About の button、compositor の起動）
 
 Parent: [WS164](../ws.md)
-Status: in-progress（2026-10-06 q821 P2: Settings の側と compositor の起動を実装し、build warning 0 と host 試験 PASS。QEMU は T1 待ち）
+Status: cleared（2026-10-06 Q1 判定: T1-269 の QEMU で期待どおり。実機は UAT）
 Disposition: normal
 Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
 依存: [p001](../phase001/phase.md)（H1〜H4 決定済み）

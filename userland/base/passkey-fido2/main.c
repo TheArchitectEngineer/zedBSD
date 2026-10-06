@@ -12,7 +12,7 @@
  *
  *   auth NAME fido2 KEY-PIN                   the login with a key
  *   enroll-fido2 NAME PASSWORD LABEL KEY-PIN  a new key for the account
- *   remove-fido2 NAME PASSWORD ID             one of the account's keys goes
+ *   remove-fido2 NAME PASSWORD ID-OR-REF      one of the account's keys goes
  *
  * It runs as root alone (its real user ID), reads nothing from its command
  * line or environment, makes the challenge, opens and claims the keys,
@@ -614,7 +614,7 @@ main_enroll(
 	return main_ok(uid, extra);
 }
 
-/* Removes one of the account's keys by its ID. */
+/* Removes one of the account's keys by its ID or its reference (passkey_record_ref, Settings' list). */
 static int
 main_remove(
 	const char *name,
@@ -622,21 +622,27 @@ main_remove(
 	const char *id)
 {
 	struct main_keys *keys;
+	char ref[PASSKEY_REF_SIZE];
 	size_t index;
+	size_t chosen;
 	int found;
 	int same;
 	int error;
 
-	/* The account's key of that ID. */
+	/* The account's key of that ID or reference. */
 	keys = &main_account_keys;
 	error = main_keys(name, uid, keys);
 	if (error != 0)
 		return main_fail("internal");
 	found = 0;
+	chosen = 0U;
 	for (index = 0U; index < keys->count && !found; index++) {
-		same = strcmp(keys->records[index].id_text, id) == 0;
-		if (same)
+		passkey_record_ref(keys->records[index].id_text, ref, sizeof(ref));
+		same = strcmp(keys->records[index].id_text, id) == 0 || strcmp(ref, id) == 0;
+		if (same) {
 			found = 1;
+			chosen = index;
+		}
 	}
 
 	/* Not one of the account's. */
@@ -644,7 +650,7 @@ main_remove(
 		return main_fail("not-enrolled");
 
 	/* Its line goes, under the lock. */
-	error = main_change(name, id, NULL);
+	error = main_change(name, keys->records[chosen].id_text, NULL);
 	if (error != 0)
 		return main_fail("internal");
 

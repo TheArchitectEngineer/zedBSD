@@ -35,7 +35,8 @@
  * logout_asked and logout_ms say a Log Out was asked and when the first
  * tick after it saw it (0 until then).  session_styles, session_pin,
  * session_keys and session_reason are what the manager last answered to
- * STYLES, ENROLLED and a refusal (ws172-p002).
+ * STYLES, ENROLLED and a refusal (ws172-p002); session_key_list holds the
+ * keys ENROLLED listed (session_key_count of them, ws172-p003).
  *
  * events_descriptor is where the system's events are read (ws132-p003),
  * or -1 when the system has none.
@@ -53,6 +54,8 @@ struct kl_backend {
 	unsigned session_styles;
 	unsigned session_pin;
 	unsigned session_keys;
+	struct kl_backend_key session_key_list[KL_BACKEND_KEYS_MAX];
+	size_t session_key_count;
 	char session_reason[KL_BACKEND_SESSION_REASON];
 	int events_descriptor;
 	/* Remote Login's state as sessiond last answered it (ws089-p025). */

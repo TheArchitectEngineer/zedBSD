@@ -22,7 +22,12 @@
 #define ABOUT_TEXT_NAME		44U
 #define ABOUT_TEXT_TAGLINE	14U
 
-/* How often the machine's monitor samples while About is open, in milliseconds (ws089-p013). */
+/*
+ * How often the machine's monitor samples while About is open, in
+ * milliseconds (ws089-p013): quickly until the first memory has come, so
+ * that the row shows at once (q830), then every two seconds.
+ */
+#define ABOUT_MONITOR_FIRST_MS	250U
 #define ABOUT_MONITOR_MS	2000U
 
 /* The space between two cards, and a button's height. */
@@ -87,7 +92,7 @@ se_about_draw(
 
 	/* The memory follows the machine's monitor from now (ws089-p013). */
 	if (app->monitor == NULL && app->system != NULL) {
-		app->monitor = kl_system_monitor_open(app->system, ABOUT_MONITOR_MS);
+		app->monitor = kl_system_monitor_open(app->system, ABOUT_MONITOR_FIRST_MS);
 		se_log("ABOUT monitor open=%d", app->monitor != NULL);
 	}
 
@@ -265,8 +270,13 @@ se_about_follow(
 	app->about.memory_free = frame.memory_free;
 	if (app->page == SE_PAGE_ABOUT)
 		app->dirty = 1;
-	if (first)
-		se_log("ABOUT memory total=%llu free=%llu", (unsigned long long)frame.memory_total, (unsigned long long)frame.memory_free);
+	if (!first)
+		return;
+
+	/* The first: logged, and the monitor opened again at the slower period. */
+	se_log("ABOUT memory total=%llu free=%llu", (unsigned long long)frame.memory_total, (unsigned long long)frame.memory_free);
+	kl_system_monitor_close(app->monitor);
+	app->monitor = kl_system_monitor_open(app->system, ABOUT_MONITOR_MS);
 }
 
 /* Writes the memory as "16 GB (9.3 GB free)". */

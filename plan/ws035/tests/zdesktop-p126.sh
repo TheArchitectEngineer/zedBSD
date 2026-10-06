@@ -69,15 +69,17 @@ cycle=1
 while [ $cycle -le "$cycles" ]; do
 	# 1. Log Out, from App Home.
 	pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-	set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+	# App Home's Power Off opens the power dialog (ws099-p037); its keys start on Cancel, Up takes Log Out and Enter chooses it.
+	set -- $(guest "grep 'KWL HOME icon name=\"Power Off\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 	if [ -z "${1:-}" ]; then
-		echo "cycle $cycle: no Log Out icon"
+		echo "cycle $cycle: no Power Off icon"
 		status=1
 		break
 	fi
 	frames logout-$cycle 12 &
 	sleep 1
 	pointer move "$1" "$2" sleep 400 down sleep 60 up
+	sleep 1; python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<up>' '\n' >/dev/null
 	wait
 	expect_count /var/log/sessiond.log 'SESSIOND GREETER adopt pid=' "$cycle" 10
 	report logout-$cycle
