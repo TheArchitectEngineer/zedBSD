@@ -75,7 +75,7 @@ Status: **案**（design-reviewer の review を反映した第 2 版、§11）�
 - 最初の job `classify`（`contents: read`）が tag を解析する: `^zedbsd-<VERSION>-rc[0-9]+$` なら **build の経路**、`^zedbsd-<VERSION>$` なら **promote の経路**、どちらでもなければ失敗。`workflow_dispatch` は input の tag が存在しなければ失敗し（softprops が `target_commitish` に新しい tag を作るのを防ぐ）、`ref: refs/tags/<tag>` で checkout する。
 - **build の経路**（rc の tag、`contents: read`）:
   1. tag を checkout。tag と `VERSION` の照合（§2）。
-  2. `make download` → `make toolchain-cache`・`make toolchain`（nightly と同じ）。
+  2. `make toolchain-cache`・`make toolchain`（nightly と同じ。top-level の `make download` は使わない: 2026-10-06 ユーザー、build は config の package の Makefile が個別に取得する）。
   3. `cp config/release/config-amd64-beta1.mk config.mk`、`make`。
   4. 門: `license-inventory.py --config config/release/config-amd64-beta1.mk --rootfs build/amd64/rootfs` の open が 0（open があれば release を作らない）。
   5. `gzip -9` で img.gz、`make kei-nightly-zip` を release の file の名前で（zip の中の名前・文言は base 次第、§1・U6）。**失敗なら job を失敗**。asset の大きさが 2 GiB 未満を確かめる。
