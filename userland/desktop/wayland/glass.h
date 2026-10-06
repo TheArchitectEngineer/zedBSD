@@ -113,6 +113,7 @@ void glass_draw_glyph(struct zwl_server *server, VkCommandBuffer command, enum g
 int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, unsigned index);
 void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
 void glass_draw_app_tile(struct zwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float opacity, float lighten, enum glass_hole hole);
+void glass_draw_app_tile_reflection(struct zwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float height, float opacity);
 void glass_draw_mark(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
 
