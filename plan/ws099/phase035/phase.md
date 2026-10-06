@@ -93,3 +93,9 @@ Status（p035c）: test-wait（T1 依頼中。実装・build・AAT の host 試�
 | AAT | `tests/scenarios/desktop/home/switch-running.md`・`open-latency.md`（新）と helpers_desktop.py の helper |
 
 確認: zedBSD・Linux の build warning 0、style-check（home.c）0、check-scenarios PASS（87）、aat run-host PASS。QEMU は T1 に依頼。遅れの目標（cover 16 ms・content 150 ms）は QEMU と実機で測る。
+
+## p035d（2026-10-06 P2）
+
+- AAT のシナリオ: p035c の `desktop.home.switch-running`・`desktop.home.open-latency`（active、helper つき）。stage の見た目は `desktop.home.super-key` の撮影で（T1-229）。
+- 規約: p035b・p035c で変えた C（home.c・glass.c・glass.h・zwl.h）を coding-style.md と照らし style-check 指摘 0。手での見直し: 宣言は関数の頭、条件の中の呼び出しなし（`home_running_window` の結果は変数に）、Boolean は if で、return の前の comment。
+- 残り: T1 の結果（T1-229 と p035c の依頼）と実機の感触（遅れの値）。Status（p035d）: test-wait。
