@@ -17,68 +17,68 @@
 
 /* The light appearance's colours. */
 static const struct se_palette palette_light = {
-	FM_RGB(0xeef2f7),		/* background_top */
-	FM_RGB(0xe6ebf3),		/* background_bottom */
-	FM_RGBA(0xffffff, 150),		/* panel */
-	FM_RGBA(0xffffff, 170),		/* panel_edge */
-	FM_RGBA(0xffffff, 40),		/* glass_sidebar */
-	FM_RGBA(0xffffff, 60),		/* glass_page */
-	FM_RGBA(0xffffff, 150),		/* card */
-	FM_RGBA(0xffffff, 190),		/* card_edge */
-	FM_RGBA(0xf4f7fb, 190),		/* tile */
-	FM_RGBA(0xdfe7f3, 230),		/* tile_hover */
-	FM_RGB(0x1e2632),		/* text */
-	FM_RGB(0x56606f),		/* text_secondary */
-	FM_RGB(0xa3abb8),		/* text_faint */
-	FM_RGB(0x2e3a4c),		/* title */
-	FM_RGB(0x46526a),		/* icon */
-	FM_RGB(0x2f7cf6),		/* accent */
-	FM_RGBA(0x2f7cf6, 40),		/* selection */
-	FM_RGBA(0x7a8699, 38),		/* selection_inactive */
-	FM_RGBA(0x5a6b85, 18),		/* hover */
-	FM_RGBA(0x8a96aa, 60),		/* separator */
-	FM_RGB(0x2fb45a),		/* good */
-	FM_RGB(0xe0533d),		/* bad */
-	FM_RGBA(0xffffff, 225),		/* control */
-	FM_RGBA(0x8a96aa, 70),		/* control_edge */
-	FM_RGB(0xffffff),		/* field */
-	FM_RGB(0xc9d1dc),		/* track */
-	FM_RGB(0xd3d9e2),		/* rail */
-	FM_RGB(0xeef1f5),		/* faded */
-	FM_RGB(0x1e2632),		/* pressed */
+	KL_RGB(0xeef2f7),		/* background_top */
+	KL_RGB(0xe6ebf3),		/* background_bottom */
+	KL_RGBA(0xffffff, 150),		/* panel */
+	KL_RGBA(0xffffff, 170),		/* panel_edge */
+	KL_RGBA(0xffffff, 40),		/* glass_sidebar */
+	KL_RGBA(0xffffff, 60),		/* glass_page */
+	KL_RGBA(0xffffff, 150),		/* card */
+	KL_RGBA(0xffffff, 190),		/* card_edge */
+	KL_RGBA(0xf4f7fb, 190),		/* tile */
+	KL_RGBA(0xdfe7f3, 230),		/* tile_hover */
+	KL_RGB(0x1e2632),		/* text */
+	KL_RGB(0x56606f),		/* text_secondary */
+	KL_RGB(0xa3abb8),		/* text_faint */
+	KL_RGB(0x2e3a4c),		/* title */
+	KL_RGB(0x46526a),		/* icon */
+	KL_RGB(0x2f7cf6),		/* accent */
+	KL_RGBA(0x2f7cf6, 40),		/* selection */
+	KL_RGBA(0x7a8699, 38),		/* selection_inactive */
+	KL_RGBA(0x5a6b85, 18),		/* hover */
+	KL_RGBA(0x8a96aa, 60),		/* separator */
+	KL_RGB(0x2fb45a),		/* good */
+	KL_RGB(0xe0533d),		/* bad */
+	KL_RGBA(0xffffff, 225),		/* control */
+	KL_RGBA(0x8a96aa, 70),		/* control_edge */
+	KL_RGB(0xffffff),		/* field */
+	KL_RGB(0xc9d1dc),		/* track */
+	KL_RGB(0xd3d9e2),		/* rail */
+	KL_RGB(0xeef1f5),		/* faded */
+	KL_RGB(0x1e2632),		/* pressed */
 };
 
 /* The dark appearance's colours. */
 static const struct se_palette palette_dark = {
-	FM_RGB(0x1b1f26),		/* background_top */
-	FM_RGB(0x16191f),		/* background_bottom */
-	FM_RGBA(0x262b34, 150),		/* panel */
-	FM_RGBA(0x3a404b, 170),		/* panel_edge */
-	FM_RGBA(0x000000, 40),		/* glass_sidebar */
-	FM_RGBA(0x000000, 60),		/* glass_page */
-	FM_RGBA(0x2a2f38, 150),		/* card */
-	FM_RGBA(0x3a404b, 190),		/* card_edge */
-	FM_RGBA(0x2a2f38, 190),		/* tile */
-	FM_RGBA(0x353c48, 230),		/* tile_hover */
-	FM_RGB(0xe9edf3),		/* text */
-	FM_RGB(0xa9b2bf),		/* text_secondary */
-	FM_RGB(0x646d7a),		/* text_faint */
-	FM_RGB(0xdde3ec),		/* title */
-	FM_RGB(0xc1c9d6),		/* icon */
-	FM_RGB(0x2f7cf6),		/* accent */
-	FM_RGBA(0x2f7cf6, 70),		/* selection */
-	FM_RGBA(0x8a96aa, 50),		/* selection_inactive */
-	FM_RGBA(0xffffff, 18),		/* hover */
-	FM_RGBA(0x8a96aa, 50),		/* separator */
-	FM_RGB(0x2fb45a),		/* good */
-	FM_RGB(0xe0533d),		/* bad */
-	FM_RGBA(0x2c313b, 225),		/* control */
-	FM_RGBA(0x8a96aa, 80),		/* control_edge */
-	FM_RGB(0x1f232a),		/* field */
-	FM_RGB(0x4a515d),		/* track */
-	FM_RGB(0x3f4652),		/* rail */
-	FM_RGB(0x2a2e36),		/* faded */
-	FM_RGB(0xffffff),		/* pressed */
+	KL_RGB(0x1b1f26),		/* background_top */
+	KL_RGB(0x16191f),		/* background_bottom */
+	KL_RGBA(0x262b34, 150),		/* panel */
+	KL_RGBA(0x3a404b, 170),		/* panel_edge */
+	KL_RGBA(0x000000, 40),		/* glass_sidebar */
+	KL_RGBA(0x000000, 60),		/* glass_page */
+	KL_RGBA(0x2a2f38, 150),		/* card */
+	KL_RGBA(0x3a404b, 190),		/* card_edge */
+	KL_RGBA(0x2a2f38, 190),		/* tile */
+	KL_RGBA(0x353c48, 230),		/* tile_hover */
+	KL_RGB(0xe9edf3),		/* text */
+	KL_RGB(0xa9b2bf),		/* text_secondary */
+	KL_RGB(0x646d7a),		/* text_faint */
+	KL_RGB(0xdde3ec),		/* title */
+	KL_RGB(0xc1c9d6),		/* icon */
+	KL_RGB(0x2f7cf6),		/* accent */
+	KL_RGBA(0x2f7cf6, 70),		/* selection */
+	KL_RGBA(0x8a96aa, 50),		/* selection_inactive */
+	KL_RGBA(0xffffff, 18),		/* hover */
+	KL_RGBA(0x8a96aa, 50),		/* separator */
+	KL_RGB(0x2fb45a),		/* good */
+	KL_RGB(0xe0533d),		/* bad */
+	KL_RGBA(0x2c313b, 225),		/* control */
+	KL_RGBA(0x8a96aa, 80),		/* control_edge */
+	KL_RGB(0x1f232a),		/* field */
+	KL_RGB(0x4a515d),		/* track */
+	KL_RGB(0x3f4652),		/* rail */
+	KL_RGB(0x2a2e36),		/* faded */
+	KL_RGB(0xffffff),		/* pressed */
 };
 
 /* The set in use: the light one until the compositor tells the dark appearance. */

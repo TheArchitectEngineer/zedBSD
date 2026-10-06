@@ -21,7 +21,6 @@
 #ifndef SETTINGS_SETTINGS_H
 #define SETTINGS_SETTINGS_H
 
-#include "../files/canvas.h"
 #include "storage-scan.h"
 #include "storage-trash.h"
 
@@ -64,49 +63,49 @@
  */
 struct se_palette {
 	/* The window's ground, at the top and at the bottom (a gradient). */
-	fm_color background_top;
-	fm_color background_bottom;
+	kl_color background_top;
+	kl_color background_bottom;
 
 	/* A panel and its edge. */
-	fm_color panel;
-	fm_color panel_edge;
+	kl_color panel;
+	kl_color panel_edge;
 
 	/* The veils over the compositor's glass: the list's and the page's. */
-	fm_color glass_sidebar;
-	fm_color glass_page;
+	kl_color glass_sidebar;
+	kl_color glass_page;
 
 	/* A card, its edge, a tile and a tile under the pointer. */
-	fm_color card;
-	fm_color card_edge;
-	fm_color tile;
-	fm_color tile_hover;
+	kl_color card;
+	kl_color card_edge;
+	kl_color tile;
+	kl_color tile_hover;
 
 	/* The text: the main ink, the secondary, the faint, a heading's and an icon's. */
-	fm_color text;
-	fm_color text_secondary;
-	fm_color text_faint;
-	fm_color title;
-	fm_color icon;
+	kl_color text;
+	kl_color text_secondary;
+	kl_color text_faint;
+	kl_color title;
+	kl_color icon;
 
 	/* The accent, a selection with and without the keyboard, the pointer's hover and a separator. */
-	fm_color accent;
-	fm_color selection;
-	fm_color selection_inactive;
-	fm_color hover;
-	fm_color separator;
+	kl_color accent;
+	kl_color selection;
+	kl_color selection_inactive;
+	kl_color hover;
+	kl_color separator;
 
 	/* Good and bad news. */
-	fm_color good;
-	fm_color bad;
+	kl_color good;
+	kl_color bad;
 
 	/* A control's ground and edge, a field's ground, a switch's track when off, a slider's rail, what a control is faded towards when it does nothing, and the ink a pressed control is darkened (or lightened) with. */
-	fm_color control;
-	fm_color control_edge;
-	fm_color field;
-	fm_color track;
-	fm_color rail;
-	fm_color faded;
-	fm_color pressed;
+	kl_color control;
+	kl_color control_edge;
+	kl_color field;
+	kl_color track;
+	kl_color rail;
+	kl_color faded;
+	kl_color pressed;
 };
 
 /* The set in use, and the choice of the appearance's (KL_APPEARANCE_*; palette.c). */
@@ -327,7 +326,7 @@ struct se_page {
 	const char *word;
 	const char *keywords;
 	int ready;
-	int (*draw)(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+	int (*draw)(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 	void (*press)(struct se_app *app, int index);
 	int (*key)(struct se_app *app, const struct se_event *event);
 	void (*drag)(struct se_app *app, int index, int x, unsigned phase);
@@ -361,7 +360,7 @@ enum se_hit_kind {
  * which one (a page's ID, or a page's own control).
  */
 struct se_hit {
-	struct fm_rect rect;
+	struct kl_rect rect;
 	unsigned kind;
 	int index;
 };
@@ -371,8 +370,8 @@ struct se_hit {
  * card standing on zdesktop's frosted glass.  A hidden list has no size.
  */
 struct se_layout {
-	struct fm_rect sidebar;
-	struct fm_rect page;
+	struct kl_rect sidebar;
+	struct kl_rect page;
 };
 
 /* The kind of glass panel the window has: a card floating in the window. */
@@ -383,7 +382,7 @@ struct se_layout {
  * rectangle in the window, its corners' radius and its kind.
  */
 struct se_panel {
-	struct fm_rect rect;
+	struct kl_rect rect;
 	int radius;
 	unsigned kind;
 };
@@ -866,7 +865,7 @@ struct se_search {
 struct se_wallpaper {
 	char path[SE_PATH];
 	char name[64];
-	struct fm_image thumbnail;
+	struct kl_image thumbnail;
 	int read;
 	int pending;
 };
@@ -891,7 +890,7 @@ struct se_look_loader {
 	int stopping;
 	unsigned count;
 	char paths[SE_WALLPAPERS][SE_PATH];
-	struct fm_image images[SE_WALLPAPERS];
+	struct kl_image images[SE_WALLPAPERS];
 	int errors[SE_WALLPAPERS];
 	long milliseconds[SE_WALLPAPERS];
 	int done[SE_WALLPAPERS];
@@ -948,8 +947,8 @@ struct se_look {
 	int dark;
 	int frosted;
 	int dragging;
-	struct fm_rect slider;
-	struct fm_rect sliders[8];
+	struct kl_rect slider;
+	struct kl_rect sliders[8];
 	char wallpaper[SE_PATH];
 	struct se_wallpaper wallpapers[SE_WALLPAPERS];
 	unsigned wallpaper_count;
@@ -979,7 +978,7 @@ struct se_sound {
 	int dragging;
 	int send_waiting;
 	uint64_t sent_at;
-	struct fm_rect slider;
+	struct kl_rect slider;
 };
 
 /*
@@ -1029,11 +1028,11 @@ struct se_app {
 	 * window's text input (ws090-p022).
 	 */
 	char preedit[SE_TEXT_INPUT_MAX];
-	struct fm_rect caret;
+	struct kl_rect caret;
 	int caret_known;
 
 	/* The fonts, the window's size, the time of the input being handled, and whether a new frame is due. */
-	struct fm_text *text;
+	struct kl_text *text;
 	int width;
 	int height;
 	uint64_t now;
@@ -1074,7 +1073,7 @@ struct se_app {
 	 * Any other change (dirty) draws everything.
 	 */
 	int hover_pending;
-	struct fm_rect hover_damage;
+	struct kl_rect hover_damage;
 
 	/* The panes of the last frame and its clickable regions. */
 	struct se_layout layout;
@@ -1146,14 +1145,14 @@ extern const struct se_page se_pages[SE_PAGES];
 const struct se_page *se_page_find(const char *word);
 
 /* The interface (ui.c). */
-void se_ui_init(struct se_app *app, struct fm_text *text, unsigned page);
+void se_ui_init(struct se_app *app, struct kl_text *text, unsigned page);
 void se_ui_close(struct se_app *app);
 void se_ui_event(struct se_app *app, const struct se_event *event);
 void se_ui_action(struct se_app *app, uint32_t action);
 void se_ui_tick(struct se_app *app, uint64_t now);
-void se_ui_draw(struct se_app *app, struct fm_canvas *canvas);
+void se_ui_draw(struct se_app *app, struct kl_canvas *canvas);
 size_t se_ui_panels(struct se_app *app, struct se_panel *panels, size_t capacity);
-void se_ui_hit(struct se_app *app, const struct fm_rect *rect, unsigned kind, int index);
+void se_ui_hit(struct se_app *app, const struct kl_rect *rect, unsigned kind, int index);
 void se_ui_go(struct se_app *app, unsigned page);
 void se_ui_titlebar_state(struct se_app *app, struct se_titlebar_state *state);
 void se_ui_titlebar(struct se_app *app, const struct se_titlebar_event *event);
@@ -1162,26 +1161,26 @@ int se_ui_lit(const struct se_app *app, unsigned kind, int index);
 void se_log(const char *format, ...);
 
 /* The parts pages are built of (widgets.c). */
-int se_page_header(struct se_app *app, struct fm_canvas *canvas, const struct se_page *page, int x, int top, int width);
-int se_card_begin(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, int height, const char *title, const char *subtitle);
+int se_page_header(struct se_app *app, struct kl_canvas *canvas, const struct se_page *page, int x, int top, int width);
+int se_card_begin(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, int height, const char *title, const char *subtitle);
 int se_card_height(int rows, int titled);
-int se_row_value(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *label, const char *value, int last);
-void se_mark_draw(struct fm_canvas *canvas, int x, int y, unsigned pixels, float opacity);
-void se_toggle_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int on, int enabled, int index);
-int se_button_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, const char *label, int primary, int enabled, int index);
-void se_icon_button_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, unsigned glyph, int index);
+int se_row_value(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, const char *label, const char *value, int last);
+void se_mark_draw(struct kl_canvas *canvas, int x, int y, unsigned pixels, float opacity);
+void se_toggle_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int on, int enabled, int index);
+int se_button_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, const char *label, int primary, int enabled, int index);
+void se_icon_button_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, unsigned glyph, int index);
 int se_button_width(struct se_app *app, const char *label);
-void se_dot_draw(struct fm_canvas *canvas, float cx, float cy, fm_color color);
-void se_signal_draw(struct fm_canvas *canvas, float x, float y, int rssi, fm_color color);
+void se_dot_draw(struct kl_canvas *canvas, float cx, float cy, kl_color color);
+void se_signal_draw(struct kl_canvas *canvas, float x, float y, int rssi, kl_color color);
 void se_bytes_text(uint64_t bytes, char *text, size_t size);
 
 /* The line pictures (glyphs.c). */
-void se_glyph_draw(struct fm_canvas *canvas, unsigned glyph, float x, float y, float size, fm_color color);
+void se_glyph_draw(struct kl_canvas *canvas, unsigned glyph, float x, float y, float size, kl_color color);
 
 /* The network pages (page-network.c). */
-int se_network_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_wifi_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_ethernet_page_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_network_page_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_wifi_page_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_ethernet_page_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_network_press(struct se_app *app, int index);
 int se_network_key(struct se_app *app, const struct se_event *event);
 
@@ -1204,9 +1203,9 @@ void se_network_disconnect(struct se_app *app);
 int se_network_configure_wired(struct se_app *app, const struct kl_network_wired_config *config);
 void se_wired_edit(struct se_app *app, const struct kl_network_link *link);
 void se_storage_analyze(struct se_app *app, const char *root);
-int se_sharing_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_sharing_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_sharing_press(struct se_app *app, int index);
-int se_languages_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_languages_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_languages_press(struct se_app *app, int index);
 int se_languages_key(struct se_app *app, const struct se_event *event);
 int se_languages_result(struct se_app *app, uint32_t request, int error);
@@ -1218,7 +1217,7 @@ void se_storage_poll(struct se_app *app, uint64_t now);
 int se_storage_wait(const struct se_app *app);
 void se_storage_close(struct se_app *app);
 void se_storage_press(struct se_app *app, int index);
-int se_storage_cards(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_storage_cards(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_wired_cancel(struct se_app *app);
 int se_wired_check(const struct se_wired *wired, char *message, size_t size);
 void se_wired_apply(struct se_app *app);
@@ -1226,7 +1225,7 @@ void se_wired_outcome(struct se_app *app, int error);
 int se_wired_type(struct se_wired *wired, const struct se_event *event);
 void se_wired_press(struct se_app *app, int index);
 int se_wired_key(struct se_app *app, const struct se_event *event);
-int se_wired_card(struct se_app *app, struct fm_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
+int se_wired_card(struct se_app *app, struct kl_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
 
 /* The text fields (widgets.c). */
 int se_field_key(struct se_field *field, const struct se_event *event);
@@ -1247,18 +1246,18 @@ void se_look_volumes(struct se_app *app);
 const char *se_look_wallpaper_name(const struct se_app *app);
 
 /* The look's pages (page-look.c). */
-int se_appearance_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_wallpaper_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_display_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_storage_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_appearance_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_wallpaper_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_display_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_storage_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_look_press(struct se_app *app, int index);
 void se_look_drag(struct se_app *app, int index, int x, unsigned phase);
 
 /* The input and sound pages (page-input.c). */
-int se_mouse_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_touchpad_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_keyboard_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_sound_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_mouse_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_touchpad_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_keyboard_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_sound_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_input_press(struct se_app *app, int index);
 void se_input_drag(struct se_app *app, int index, int x, unsigned phase);
 
@@ -1275,8 +1274,8 @@ int se_sound_available(const struct se_app *app);
 int se_sound_running(const struct se_app *app);
 
 /* A slider (widgets.c). */
-void se_slider_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, float fraction, int enabled, int index, struct fm_rect *rect);
-float se_slider_fraction(const struct fm_rect *rect, int x);
+void se_slider_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int width, float fraction, int enabled, int index, struct kl_rect *rect);
+float se_slider_fraction(const struct kl_rect *rect, int x);
 
 /* The search (search.c). */
 void se_search_set(struct se_app *app, const char *query);
@@ -1284,30 +1283,30 @@ void se_search_end(struct se_app *app);
 void se_search_focus(struct se_app *app);
 int se_search_open_chosen(struct se_app *app);
 void se_search_step(struct se_app *app, int direction);
-int se_search_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_search_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_search_press(struct se_app *app, int index);
 
 /* The pages' drawing (page-home.c, page-about.c, page-soon.c). */
-int se_home_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_about_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-int se_soon_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_home_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_about_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_soon_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 
 /* The Users page (page-users.c, ws160-p002). */
-int se_users_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_users_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_users_press(struct se_app *app, int index);
 int se_users_key(struct se_app *app, const struct se_event *event);
 void se_users_load(struct se_users *users);
 int se_users_result(struct se_app *app, uint32_t request, int error);
 void se_users_close(struct se_app *app);
 int se_users_admin_available(const struct se_app *app);
-int se_users_admin_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_users_admin_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_users_admin_press(struct se_app *app, int index);
 int se_users_admin_key(struct se_app *app, const struct se_event *event);
 int se_users_admin_text(struct se_app *app, const struct se_event *event);
 int se_users_admin_text_wanted(const struct se_app *app);
 int se_users_admin_result(struct se_app *app, uint32_t request, int error);
 void se_users_admin_wipe(struct se_users *users);
-int se_users_pin_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+int se_users_pin_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_users_pin_press(struct se_app *app, int index);
 int se_users_pin_key(struct se_app *app, const struct se_event *event);
 int se_users_pin_result(struct se_app *app, uint32_t request, int error);

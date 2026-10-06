@@ -34,12 +34,12 @@
  * and the colour.  It lives for one call of se_glyph_draw.
  */
 struct glyph_pen {
-	struct fm_canvas *canvas;
+	struct kl_canvas *canvas;
 	float x;
 	float y;
 	float size;
 	float thickness;
-	fm_color color;
+	kl_color color;
 };
 
 static void glyph_segment(const struct glyph_pen *pen, float x0, float y0, float x1, float y1);
@@ -56,12 +56,12 @@ static void glyph_refresh(const struct glyph_pen *pen);
  */
 void
 se_glyph_draw(
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	unsigned glyph,
 	float x,
 	float y,
 	float size,
-	fm_color color)
+	kl_color color)
 {
 	static const float bluetooth[] = { 0.30f, 0.32f, 0.70f, 0.68f, 0.50f, 0.86f, 0.50f, 0.14f, 0.70f, 0.32f, 0.30f, 0.68f };
 	static const float shield[] = { 0.50f, 0.10f, 0.82f, 0.22f, 0.80f, 0.50f, 0.66f, 0.74f, 0.50f, 0.90f, 0.34f, 0.74f, 0.20f, 0.50f, 0.18f, 0.22f, 0.50f, 0.10f };
@@ -162,7 +162,7 @@ se_glyph_draw(
 		/* A battery, half full. */
 		glyph_frame(&pen, 0.10f, 0.30f, 0.70f, 0.40f, 0.08f);
 		glyph_frame(&pen, 0.86f, 0.43f, 0.03f, 0.14f, 0.01f);
-		fm_canvas_round(canvas, x + 0.19f * size, y + 0.39f * size, 0.38f * size, 0.22f * size, 0.03f * size, color);
+		kl_canvas_round(canvas, x + 0.19f * size, y + 0.39f * size, 0.38f * size, 0.22f * size, 0.03f * size, color);
 		break;
 	case SE_GLYPH_KEYBOARD:
 		/* A keyboard: two rows of keys and the space bar. */
@@ -263,7 +263,7 @@ glyph_segment(
 	float y1)
 {
 	/* The points in the canvas's pixels. */
-	fm_canvas_line(pen->canvas, pen->x + x0 * pen->size, pen->y + y0 * pen->size, pen->x + x1 * pen->size, pen->y + y1 * pen->size, pen->thickness, pen->color);
+	kl_canvas_line(pen->canvas, pen->x + x0 * pen->size, pen->y + y0 * pen->size, pen->x + x1 * pen->size, pen->y + y1 * pen->size, pen->thickness, pen->color);
 }
 
 /* Draws the lines joining a run of points (x, y pairs) given as fractions of the box. */
@@ -294,7 +294,7 @@ glyph_frame(
 
 	/* The rectangle in the canvas's pixels, the stroke centred on its edge. */
 	thickness = pen->thickness;
-	fm_canvas_round_border(pen->canvas, pen->x + left * pen->size - thickness * 0.5f, pen->y + top * pen->size - thickness * 0.5f, width * pen->size + thickness, height * pen->size + thickness, radius * pen->size + thickness * 0.5f, thickness, pen->color);
+	kl_canvas_round_border(pen->canvas, pen->x + left * pen->size - thickness * 0.5f, pen->y + top * pen->size - thickness * 0.5f, width * pen->size + thickness, height * pen->size + thickness, radius * pen->size + thickness * 0.5f, thickness, pen->color);
 }
 
 /* Draws the outline of a circle given in fractions of the box, the stroke centred on it. */
@@ -306,7 +306,7 @@ glyph_circle(
 	float radius)
 {
 	/* A whole ring. */
-	fm_canvas_ring(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size + pen->thickness * 0.5f, pen->thickness, 1.0f, pen->color);
+	kl_canvas_ring(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size + pen->thickness * 0.5f, pen->thickness, 1.0f, pen->color);
 }
 
 /* Draws a filled dot given in fractions of the box. */
@@ -318,7 +318,7 @@ glyph_dot(
 	float radius)
 {
 	/* A filled circle. */
-	fm_canvas_circle(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size, pen->color);
+	kl_canvas_circle(pen->canvas, pen->x + cx * pen->size, pen->y + cy * pen->size, radius * pen->size, pen->color);
 }
 
 /*
@@ -368,9 +368,9 @@ glyph_arc(
 	}
 
 	/* The band, then its round ends. */
-	fm_canvas_polygon(pen->canvas, points, count, pen->color);
-	fm_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(from), centre_y - radius * pen->size * cosf(from), pen->thickness * 0.5f, pen->color);
-	fm_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(to), centre_y - radius * pen->size * cosf(to), pen->thickness * 0.5f, pen->color);
+	kl_canvas_polygon(pen->canvas, points, count, pen->color);
+	kl_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(from), centre_y - radius * pen->size * cosf(from), pen->thickness * 0.5f, pen->color);
+	kl_canvas_circle(pen->canvas, centre_x + radius * pen->size * sinf(to), centre_y - radius * pen->size * cosf(to), pen->thickness * 0.5f, pen->color);
 }
 
 /* Draws the outline of an ellipse given in fractions of the box, as a run of short lines. */

@@ -58,9 +58,9 @@ struct list_column {
 	int width;
 };
 
-static int list_layout(struct fm_app *app, const struct fm_rect *inner, struct list_column *columns);
-static void list_header(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner, const struct list_column *columns, int count);
-static void list_row(struct fm_app *app, struct fm_canvas *canvas, struct fm_entry *entry, int index, const struct fm_rect *row, const struct list_column *columns, int count);
+static int list_layout(struct fm_app *app, const struct kl_rect *inner, struct list_column *columns);
+static void list_header(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner, const struct list_column *columns, int count);
+static void list_row(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry, int index, const struct kl_rect *row, const struct list_column *columns, int count);
 static void list_cell_text(struct fm_app *app, struct fm_entry *entry, unsigned column, char *text, size_t size);
 static const char *list_title(unsigned column);
 static unsigned list_sort_of(unsigned column);
@@ -88,12 +88,12 @@ static const char *const list_width_keys[FM_COLUMN_COUNT] = {
 void
 fm_list_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *inner)
+	struct kl_canvas *canvas,
+	const struct kl_rect *inner)
 {
 	struct list_column columns[LIST_COLUMNS];
-	struct fm_rect rows;
-	struct fm_rect row;
+	struct kl_rect rows;
+	struct kl_rect row;
 	struct fm_tab *tab;
 	size_t index;
 	int count;
@@ -114,7 +114,7 @@ fm_list_draw(
 	app->layout.content_height = (int)tab->listing.count * LIST_ROW + LIST_HEADER + 64;
 
 	/* Each row in sight. */
-	fm_canvas_clip_push(canvas, &rows);
+	kl_canvas_clip_push(canvas, &rows);
 	for (index = 0; index < tab->listing.count; index++) {
 		row.x = rows.x;
 		row.y = rows.y + (int)index * LIST_ROW - tab->scroll;
@@ -126,7 +126,7 @@ fm_list_draw(
 	}
 
 	/* The rows' clip ends. */
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 }
 
 /*
@@ -375,7 +375,7 @@ list_widths_save(
 static int
 list_layout(
 	struct fm_app *app,
-	const struct fm_rect *inner,
+	const struct kl_rect *inner,
 	struct list_column *columns)
 {
 	unsigned shown;
@@ -430,14 +430,14 @@ list_layout(
 static void
 list_header(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *inner,
+	struct kl_canvas *canvas,
+	const struct kl_rect *inner,
 	const struct list_column *columns,
 	int count)
 {
-	struct fm_rect title;
-	struct fm_rect edge;
-	fm_color ink;
+	struct kl_rect title;
+	struct kl_rect edge;
+	kl_color ink;
 	unsigned sort;
 	int baseline;
 	int width;
@@ -448,10 +448,10 @@ list_header(
 	title.y = inner->y + LIST_HEADER - 1;
 	title.width = inner->width;
 	title.height = 1;
-	fm_canvas_fill(canvas, &title, FM_COLOR_SEPARATOR);
+	kl_canvas_fill(canvas, &title, FM_COLOR_SEPARATOR);
 
 	/* Each column's title. */
-	baseline = fm_text_center(LIST_TEXT_HEADER, inner->y, LIST_HEADER);
+	baseline = kl_text_center(LIST_TEXT_HEADER, inner->y, LIST_HEADER);
 	for (index = 0; index < count; index++) {
 		title.x = columns[index].x;
 		title.y = inner->y;
@@ -464,15 +464,15 @@ list_header(
 		if (sort == app->sort)
 			ink = FM_COLOR_TEXT;
 		if (app->hover_kind == FM_HIT_HEADER && app->hover_index == (int)columns[index].column)
-			fm_canvas_round(canvas, (float)title.x - 4.0f, (float)title.y + 3.0f, (float)title.width, (float)title.height - 6.0f, 6.0f, FM_COLOR_HOVER);
-		width = fm_text_draw_fit(app->text, canvas, title.x + 4, baseline, list_title(columns[index].column), LIST_TEXT_HEADER, 1, title.width - 24, ink);
+			kl_canvas_round(canvas, (float)title.x - 4.0f, (float)title.y + 3.0f, (float)title.width, (float)title.height - 6.0f, 6.0f, FM_COLOR_HOVER);
+		width = kl_text_draw_fit(app->text, canvas, title.x + 4, baseline, list_title(columns[index].column), LIST_TEXT_HEADER, 1, title.width - 24, ink);
 
 		/* The sort's direction after its title. */
 		if (sort == app->sort) {
 			if (app->sort_reverse != 0)
-				fm_icon_draw(canvas, FM_ICON_UP, (float)(title.x + width + 8), (float)(baseline - 11), 12.0f, ink);
+				kl_icon_draw(canvas, KL_ICON_UP, (float)(title.x + width + 8), (float)(baseline - 11), 12.0f, ink);
 			else
-				fm_icon_draw(canvas, FM_ICON_DOWN, (float)(title.x + width + 8), (float)(baseline - 11), 12.0f, ink);
+				kl_icon_draw(canvas, KL_ICON_DOWN, (float)(title.x + width + 8), (float)(baseline - 11), 12.0f, ink);
 		}
 
 		/* A sortable title can be clicked. */
@@ -490,7 +490,7 @@ list_header(
 		edge.y = inner->y + 8;
 		edge.width = 1;
 		edge.height = LIST_HEADER - 16;
-		fm_canvas_fill(canvas, &edge, FM_COLOR_SEPARATOR);
+		kl_canvas_fill(canvas, &edge, FM_COLOR_SEPARATOR);
 		fm_ui_hit(app, &title, FM_HIT_COLUMN_EDGE, (int)columns[index].column);
 	}
 }
@@ -499,17 +499,17 @@ list_header(
 static void
 list_row(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	struct fm_entry *entry,
 	int index,
-	const struct fm_rect *row,
+	const struct kl_rect *row,
 	const struct list_column *columns,
 	int count)
 {
-	struct fm_rect field;
+	struct kl_rect field;
 	char text[FM_PATH_MAX];
-	fm_color ink;
-	fm_color faint;
+	kl_color ink;
+	kl_color faint;
 	int renaming;
 	int match;
 	int baseline;
@@ -521,21 +521,21 @@ list_row(
 	faint = FM_COLOR_TEXT_SECONDARY;
 	if (entry->selected != 0) {
 		if (app->focused != 0) {
-			fm_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_ACCENT);
-			ink = FM_RGB(0xffffff);
-			faint = FM_RGBA(0xffffff, 210);
+			kl_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_ACCENT);
+			ink = KL_RGB(0xffffff);
+			faint = KL_RGBA(0xffffff, 210);
 		} else {
-			fm_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_SELECTION_INACTIVE);
+			kl_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_SELECTION_INACTIVE);
 		}
 	} else if (app->hover_kind == FM_HIT_ITEM && app->hover_index == index) {
-		fm_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_HOVER);
+		kl_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_HOVER);
 	}
 
 	/* The small icon (faded when cut) and the name, or the field while it is being changed. */
-	baseline = fm_text_center(LIST_TEXT, row->y, row->height);
+	baseline = kl_text_center(LIST_TEXT, row->y, row->height);
 	fm_grid_entry_icon(app, canvas, entry, (float)columns[0].x, (float)row->y + 3.0f, 22.0f);
 	if (entry->cut != 0)
-		fm_canvas_round(canvas, (float)columns[0].x, (float)row->y + 3.0f, 22.0f, 22.0f, 4.0f, FM_COLOR_TILE);
+		kl_canvas_round(canvas, (float)columns[0].x, (float)row->y + 3.0f, 22.0f, 22.0f, 4.0f, FM_COLOR_TILE);
 	width = columns[0].width - 34;
 	renaming = 0;
 	if (app->focus == FM_FOCUS_RENAME) {
@@ -550,13 +550,13 @@ list_row(
 		field.y = row->y + 3;
 		field.width = width + 4;
 		field.height = row->height - 6;
-		fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, FM_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, 1.5f, FM_COLOR_ACCENT);
+		kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, FM_COLOR_PANEL);
+		kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, 1.5f, FM_COLOR_ACCENT);
 		field.x += 4;
 		field.width -= 8;
 		fm_field_draw(app, canvas, &app->rename, &field, LIST_TEXT, NULL);
 	} else {
-		(void)fm_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
+		(void)kl_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
 	}
 
 	/* The other columns' cells. */
@@ -565,13 +565,13 @@ list_row(
 
 		/* Sizes are aligned to the right of their column. */
 		if (columns[column].column == FM_COLUMN_SIZE) {
-			width = fm_text_width(app->text, text, strlen(text), LIST_TEXT, 0);
-			(void)fm_text_draw(app->text, canvas, columns[column].x + columns[column].width - 16 - width, baseline, text, strlen(text), LIST_TEXT, 0, faint);
+			width = kl_text_width(app->text, text, strlen(text), LIST_TEXT, 0);
+			(void)kl_text_draw(app->text, canvas, columns[column].x + columns[column].width - 16 - width, baseline, text, strlen(text), LIST_TEXT, 0, faint);
 			continue;
 		}
 
 		/* The others to the left. */
-		(void)fm_text_draw_fit(app->text, canvas, columns[column].x + 4, baseline, text, LIST_TEXT, 0, columns[column].width - 12, faint);
+		(void)kl_text_draw_fit(app->text, canvas, columns[column].x + 4, baseline, text, LIST_TEXT, 0, columns[column].width - 12, faint);
 	}
 
 	/* The row can be clicked. */

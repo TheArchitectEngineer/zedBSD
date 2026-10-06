@@ -57,10 +57,10 @@
 #define LOOK_SWITCH_WIDTH	44
 #define LOOK_SWITCH_HEIGHT	24
 
-static int look_note(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *text);
-static int look_message(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static void look_tile(struct se_app *app, struct fm_canvas *canvas, unsigned index, int x, int y, int width, int height);
-static int look_volume(struct se_app *app, struct fm_canvas *canvas, const struct se_volume *volume, int x, int top, int width);
+static int look_note(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, const char *text);
+static int look_message(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static void look_tile(struct se_app *app, struct kl_canvas *canvas, unsigned index, int x, int y, int width, int height);
+static int look_volume(struct se_app *app, struct kl_canvas *canvas, const struct se_volume *volume, int x, int top, int width);
 
 /*
  * Draws the Appearance page: light or dark, and the windows'
@@ -69,12 +69,12 @@ static int look_volume(struct se_app *app, struct fm_canvas *canvas, const struc
 int
 se_appearance_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	char value[32];
 	float fraction;
 	int enabled;
@@ -91,42 +91,42 @@ se_appearance_draw(
 	if (app->look.writable)
 		enabled = 1;
 	y = se_card_begin(app, canvas, x, card, width, LOOK_DARK_HEIGHT, NULL, NULL);
-	fm_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Dark appearance", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-	fm_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "Dark windows and desktop, easier on the eyes at night.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
+	kl_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Dark appearance", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	kl_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "Dark windows and desktop, easier on the eyes at night.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
 	se_toggle_draw(app, canvas, x + width - LOOK_PAD - LOOK_SWITCH_WIDTH, card + (LOOK_DARK_HEIGHT - LOOK_SWITCH_HEIGHT) / 2, app->look.dark, enabled, LOOK_DARK);
 	card += LOOK_DARK_HEIGHT + LOOK_GAP;
 
 	/* The card of the windows: a title, a line, the slider with its value, and the frosted glass's switch (BUG-214). */
 	height = 150 + LOOK_FROSTED_HEIGHT;
 	y = se_card_begin(app, canvas, x, card, width, height, "Windows", "How much of the desktop shows through the windows.");
-	fm_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Window opacity", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	kl_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Window opacity", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 
 	/* The value at the right, as the slider shows it (the contents' opacity; the panels are the switch's). */
 	(void)snprintf(value, sizeof(value), "%d%%", app->look.opacity);
 
 	/* Drawn against the card's right margin. */
-	value_width = fm_text_width(app->text, value, strlen(value), LOOK_TEXT_TITLE, 0);
-	(void)fm_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + line.ascent, value, strlen(value), LOOK_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
+	value_width = kl_text_width(app->text, value, strlen(value), LOOK_TEXT_TITLE, 0);
+	(void)kl_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + line.ascent, value, strlen(value), LOOK_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
 
 	/* The slider: see-through at the left, opaque at the right; it works only when the settings can be changed. */
 	fraction = (float)(app->look.opacity - LOOK_OPACITY_MIN) / (float)(LOOK_OPACITY_MAX - LOOK_OPACITY_MIN);
 	se_slider_draw(app, canvas, x + LOOK_PAD + 14, y + 26, width - 2 * LOOK_PAD - 28, fraction, enabled, LOOK_OPACITY, &app->look.slider);
 
 	/* The ends' words under the slider. */
-	fm_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
-	(void)fm_text_draw(app->text, canvas, x + LOOK_PAD + 2, y + 66 + line.ascent, "See-through", strlen("See-through"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
-	value_width = fm_text_width(app->text, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0);
-	(void)fm_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + 66 + line.ascent, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	kl_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
+	(void)kl_text_draw(app->text, canvas, x + LOOK_PAD + 2, y + 66 + line.ascent, "See-through", strlen("See-through"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	value_width = kl_text_width(app->text, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0);
+	(void)kl_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + 66 + line.ascent, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
 
 	/* The frosted glass: its name, a line, and the switch (on: the panels show the desktop blurred; off: solid). */
 	y += 100;
-	fm_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Frosted glass", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-	fm_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "The windows' panels show the desktop blurred behind them. Off makes them solid.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
+	kl_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Frosted glass", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	kl_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "The windows' panels show the desktop blurred behind them. Off makes them solid.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
 	se_toggle_draw(app, canvas, x + width - LOOK_PAD - LOOK_SWITCH_WIDTH, y + 8, app->look.frosted, enabled, LOOK_FROSTED);
 
 	/* The edge below the cards. */
@@ -140,7 +140,7 @@ se_appearance_draw(
 int
 se_wallpaper_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -190,7 +190,7 @@ se_wallpaper_draw(
 int
 se_display_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -227,7 +227,7 @@ se_display_draw(
 int
 se_storage_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -323,7 +323,7 @@ se_look_drag(
 static int
 look_note(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -335,8 +335,8 @@ look_note(
 	/* One line in a low card. */
 	height = 56;
 	(void)se_card_begin(app, canvas, x, top, width, height, NULL, NULL);
-	baseline = fm_text_center(LOOK_TEXT_SMALL, top, height);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, baseline, text, LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD, SE_COLOR_TEXT_SECONDARY);
+	baseline = kl_text_center(LOOK_TEXT_SMALL, top, height);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, baseline, text, LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the card. */
 	return top + height;
@@ -346,13 +346,13 @@ look_note(
 static int
 look_message(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
 	const char *text;
-	fm_color ink;
+	kl_color ink;
 
 	/* The message kept, or the lack of a home. */
 	text = app->look.message;
@@ -365,7 +365,7 @@ look_message(
 	ink = SE_COLOR_TEXT_SECONDARY;
 	if (app->look.message_bad != 0 || !app->look.writable)
 		ink = SE_COLOR_BAD;
-	(void)fm_text_draw_fit(app->text, canvas, x + 2, top + 16, text, LOOK_TEXT_SMALL, 0, width, ink);
+	(void)kl_text_draw_fit(app->text, canvas, x + 2, top + 16, text, LOOK_TEXT_SMALL, 0, width, ink);
 
 	/* The edge below the line. */
 	return top + 30;
@@ -375,7 +375,7 @@ look_message(
 static void
 look_tile(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	unsigned index,
 	int x,
 	int y,
@@ -383,7 +383,7 @@ look_tile(
 	int height)
 {
 	const struct se_wallpaper *wallpaper;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	char name[80];
 	int chosen;
 	int lit;
@@ -408,29 +408,29 @@ look_tile(
 	 * with the Kei mark.
 	 */
 	if (wallpaper->read != 0) {
-		fm_canvas_image(canvas, &wallpaper->thumbnail, (float)x, (float)y, (float)width, (float)height, 10.0f, 1.0f);
+		kl_canvas_image(canvas, &wallpaper->thumbnail, (float)x, (float)y, (float)width, (float)height, 10.0f, 1.0f);
 	} else if (wallpaper->pending != 0) {
-		fm_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, (float)height, 10.0f, FM_RGB(0xe9edf3), FM_RGB(0xdde3ec));
+		kl_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, (float)height, 10.0f, KL_RGB(0xe9edf3), KL_RGB(0xdde3ec));
 	} else {
-		fm_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, (float)height, 10.0f, FM_RGB(0xdfeaf7), FM_RGB(0xc8dcc4));
+		kl_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, (float)height, 10.0f, KL_RGB(0xdfeaf7), KL_RGB(0xc8dcc4));
 		se_mark_draw(canvas, x + width / 2 - 24, y + height / 2 - 24, 48U, 0.9f);
 	}
 
 	/* The ring: the accent round the picture shown, a shade under the pointer. */
 	lit = se_ui_lit(app, SE_HIT_CONTROL, LOOK_PICTURE_FIRST + (int)index);
 	if (chosen != 0) {
-		fm_canvas_round_border(canvas, (float)x - 3.0f, (float)y - 3.0f, (float)width + 6.0f, (float)height + 6.0f, 13.0f, 3.0f, SE_COLOR_ACCENT);
+		kl_canvas_round_border(canvas, (float)x - 3.0f, (float)y - 3.0f, (float)width + 6.0f, (float)height + 6.0f, 13.0f, 3.0f, SE_COLOR_ACCENT);
 	} else if (lit != 0) {
-		fm_canvas_round_border(canvas, (float)x - 2.0f, (float)y - 2.0f, (float)width + 4.0f, (float)height + 4.0f, 12.0f, 2.0f, FM_RGBA(0x5a6b85, 90));
+		kl_canvas_round_border(canvas, (float)x - 2.0f, (float)y - 2.0f, (float)width + 4.0f, (float)height + 4.0f, 12.0f, 2.0f, KL_RGBA(0x5a6b85, 90));
 	} else {
-		fm_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)height, 10.0f, 1.0f, SE_COLOR_CARD_EDGE);
+		kl_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)height, 10.0f, 1.0f, SE_COLOR_CARD_EDGE);
 	}
 
 	/* The name under it; the default says so. */
 	(void)snprintf(name, sizeof(name), "%s", wallpaper->name);
 	if (index == 0U && app->look.has_default != 0)
 		(void)snprintf(name, sizeof(name), "%s (default)", wallpaper->name);
-	(void)fm_text_draw_fit(app->text, canvas, x + 2, y + height + 20, name, LOOK_TEXT_SMALL, chosen, width - 4, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + 2, y + height + 20, name, LOOK_TEXT_SMALL, chosen, width - 4, SE_COLOR_TEXT);
 
 	/* A click chooses it. */
 	rect.x = x;
@@ -444,7 +444,7 @@ look_tile(
 static int
 look_volume(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct se_volume *volume,
 	int x,
 	int top,
@@ -470,11 +470,11 @@ look_volume(
 	if (volume->total != 0U)
 		share = (float)((double)volume->used / (double)volume->total);
 	bar = width - 2 * LOOK_PAD;
-	fm_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_RAIL);
+	kl_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_RAIL);
 	if (share > 0.9f) {
-		fm_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar * share, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_BAD);
+		kl_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar * share, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_BAD);
 	} else {
-		fm_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar * share, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_ACCENT);
+		kl_canvas_round(canvas, (float)(x + LOOK_PAD), (float)y, (float)bar * share, (float)LOOK_BAR_HEIGHT, 5.0f, SE_COLOR_ACCENT);
 	}
 
 	/* The bytes used of the whole, and what is left. */
@@ -482,7 +482,7 @@ look_volume(
 	se_bytes_text(volume->total, total, sizeof(total));
 	se_bytes_text(volume->available, available, sizeof(available));
 	(void)snprintf(line, sizeof(line), "%s used of %s  \xc2\xb7  %s available", used, total, available);
-	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + LOOK_BAR_HEIGHT + 26, line, LOOK_TEXT_SMALL, 0, bar, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + LOOK_BAR_HEIGHT + 26, line, LOOK_TEXT_SMALL, 0, bar, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the card. */
 	return top + height;

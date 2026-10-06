@@ -86,14 +86,14 @@ static const struct home_folder home_folders[] = {
  */
 static struct kl_recent_item home_recent_items[FM_HOME_RECENTS * 4];
 
-static void home_hero(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
-static void home_hero_art(struct fm_image *image);
-static void home_hero_brand(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
-static int home_section(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width, const char *title, int link);
-static int home_cards(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
-static int home_devices(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
-static int home_recents(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
-static int home_folder_pills(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
+static void home_hero(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width);
+static void home_hero_art(struct kl_image *image);
+static void home_hero_brand(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width);
+static int home_section(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width, const char *title, int link);
+static int home_cards(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width);
+static int home_devices(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width);
+static int home_recents(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width);
+static int home_folder_pills(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width);
 static void home_where(struct fm_app *app, const char *path, char *text, size_t size);
 static void home_folders_file(char *path, size_t size);
 
@@ -296,8 +296,8 @@ fm_home_folder_opened(
 void
 fm_home_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *inner)
+	struct kl_canvas *canvas,
+	const struct kl_rect *inner)
 {
 	struct fm_tab *tab;
 	int width;
@@ -309,7 +309,7 @@ fm_home_draw(
 	x = inner->x + HOME_PADDING - 16;
 	width = inner->width - 2 * (HOME_PADDING - 16);
 	y = inner->y + 4 - tab->scroll;
-	fm_canvas_clip_push(canvas, inner);
+	kl_canvas_clip_push(canvas, inner);
 
 	/* The hero card. */
 	home_hero(app, canvas, x, y, width);
@@ -336,7 +336,7 @@ fm_home_draw(
 	}
 
 	/* The panel ends. */
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 
 	/* How tall the dashboard is, for the scrolling. */
 	app->layout.content_height = y + tab->scroll - inner->y + 64;
@@ -405,13 +405,13 @@ fm_home_click(
 static void
 home_hero(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
-	struct fm_image view;
-	struct fm_rect band;
+	struct kl_image view;
+	struct kl_rect band;
 	int crop_height;
 	int error;
 
@@ -420,7 +420,7 @@ home_hero(
 		app->hero_tried = 1;
 		error = fm_image_load(app->wallpaper, &app->hero_source);
 		if (error != 0) {
-			error = fm_image_create(&app->hero_source, 960, 360);
+			error = kl_image_create(&app->hero_source, 960, 360);
 			if (error == 0)
 				home_hero_art(&app->hero_source);
 		}
@@ -428,8 +428,8 @@ home_hero(
 
 	/* Scaled once for the card's size: the lower part of the picture, where the lake is, at the card's shape. */
 	if (app->hero_source.pixels != NULL && (app->hero.width != width || app->hero.height != HOME_HERO_HEIGHT)) {
-		fm_image_release(&app->hero);
-		error = fm_image_create(&app->hero, width, HOME_HERO_HEIGHT);
+		kl_image_release(&app->hero);
+		error = kl_image_create(&app->hero, width, HOME_HERO_HEIGHT);
 		if (error == 0) {
 			view = app->hero_source;
 			crop_height = (int)((long)view.width * HOME_HERO_HEIGHT / width);
@@ -437,16 +437,16 @@ home_hero(
 				crop_height = view.height;
 			view.pixels += (size_t)((view.height - crop_height) * 2 / 3) * view.stride;
 			view.height = crop_height;
-			fm_image_scale(&view, &app->hero);
+			kl_image_scale(&view, &app->hero);
 		}
 	}
 
 	/* The card: its shadow, the picture with rounded corners, a veil at the left for the words. */
-	fm_canvas_shadow(canvas, (float)x, (float)y + 6.0f, (float)width, HOME_HERO_HEIGHT, 18.0f, 16.0f, FM_RGBA(0x1f3a66, 45));
+	kl_canvas_shadow(canvas, (float)x, (float)y + 6.0f, (float)width, HOME_HERO_HEIGHT, 18.0f, 16.0f, KL_RGBA(0x1f3a66, 45));
 	if (app->hero.pixels != NULL) {
-		fm_canvas_image(canvas, &app->hero, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, 1.0f);
+		kl_canvas_image(canvas, &app->hero, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, 1.0f);
 	} else {
-		fm_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, FM_RGB(0xbcd9f4), FM_RGB(0xe8f2f6));
+		kl_canvas_round_gradient(canvas, (float)x, (float)y, (float)width, HOME_HERO_HEIGHT, 18.0f, KL_RGB(0xbcd9f4), KL_RGB(0xe8f2f6));
 	}
 
 	/* A veil darkens the lower part, under the words. */
@@ -454,13 +454,13 @@ home_hero(
 	band.y = y;
 	band.width = width;
 	band.height = HOME_HERO_HEIGHT;
-	fm_canvas_clip_push(canvas, &band);
-	fm_canvas_round_gradient(canvas, (float)x, (float)y + HOME_HERO_HEIGHT * 0.35f, (float)width, HOME_HERO_HEIGHT * 0.65f, 18.0f, FM_RGBA(0x0e1a2e, 0), FM_RGBA(0x0e1a2e, 120));
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_push(canvas, &band);
+	kl_canvas_round_gradient(canvas, (float)x, (float)y + HOME_HERO_HEIGHT * 0.35f, (float)width, HOME_HERO_HEIGHT * 0.65f, 18.0f, KL_RGBA(0x0e1a2e, 0), KL_RGBA(0x0e1a2e, 120));
+	kl_canvas_clip_pop(canvas);
 
 	/* The greeting and the line about the files, in white at the lower left. */
-	(void)fm_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 56, app->dashboard.greeting, 26U, 1, width - 56, FM_RGB(0xffffff));
-	(void)fm_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 28, app->dashboard.summary, 14U, 0, width - 56, FM_RGBA(0xffffff, 230));
+	(void)kl_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 56, app->dashboard.greeting, 26U, 1, width - 56, KL_RGB(0xffffff));
+	(void)kl_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 28, app->dashboard.summary, 14U, 0, width - 56, KL_RGBA(0xffffff, 230));
 
 	/* The Kei mark and word at the upper right. */
 	home_hero_brand(app, canvas, x, y, width);
@@ -470,7 +470,7 @@ home_hero(
 static void
 home_hero_brand(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
@@ -479,7 +479,7 @@ home_hero_brand(
 	int left;
 
 	/* The word's width, and where the pair starts so that it ends at the card's right margin. */
-	word = fm_text_width(app->text, "Kei", 3U, 30U, 0);
+	word = kl_text_width(app->text, "Kei", 3U, 30U, 0);
 	left = x + width - 24 - word - 6 - HOME_HERO_MARK;
 
 	/* A card too narrow for the pair keeps only its words. */
@@ -488,7 +488,7 @@ home_hero_brand(
 
 	/* The mark, then the word in slate beside its lower part. */
 	fm_mark_draw(canvas, left, y + 18, (unsigned)HOME_HERO_MARK, 1.0f);
-	(void)fm_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, "Kei", 3U, 30U, 0, FM_COLOR_TITLE);
+	(void)kl_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, "Kei", 3U, 30U, 0, FM_COLOR_TITLE);
 }
 
 /*
@@ -498,7 +498,7 @@ home_hero_brand(
  */
 void
 fm_mark_draw(
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	unsigned pixels,
@@ -545,17 +545,17 @@ fm_mark_draw(
 	/* Each layer in its colour, as opaque as asked. */
 	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
 		alpha = (uint32_t)((float)colours[layer][1] * opacity + 0.5f);
-		fm_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, FM_RGBA(colours[layer][0], alpha));
+		kl_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, KL_RGBA(colours[layer][0], alpha));
 	}
 }
 
 /* Draws a quiet landscape into a picture in the Kei look: a bright sky, hills and a green-edged lake (when there is no wallpaper). */
 static void
 home_hero_art(
-	struct fm_image *image)
+	struct kl_image *image)
 {
-	struct fm_canvas canvas;
-	struct fm_rect whole;
+	struct kl_canvas canvas;
+	struct kl_rect whole;
 	float far_hills[16];
 	float near_hills[16];
 	float width;
@@ -563,7 +563,7 @@ home_hero_art(
 	int error;
 
 	/* A canvas over the picture. */
-	error = fm_canvas_init(&canvas, image->pixels, image->stride, image->width, image->height);
+	error = kl_canvas_init(&canvas, image->pixels, image->stride, image->width, image->height);
 	if (error != 0)
 		return;
 	width = (float)image->width;
@@ -574,10 +574,10 @@ home_hero_art(
 	whole.y = 0;
 	whole.width = image->width;
 	whole.height = image->height * 3 / 5;
-	fm_canvas_gradient(&canvas, &whole, FM_RGB(0xbcd9f4), FM_RGB(0xf1f6fb));
+	kl_canvas_gradient(&canvas, &whole, KL_RGB(0xbcd9f4), KL_RGB(0xf1f6fb));
 	whole.y = whole.height;
 	whole.height = image->height - whole.y;
-	fm_canvas_gradient(&canvas, &whole, FM_RGB(0xd3e6f3), FM_RGB(0xb5d3c0));
+	kl_canvas_gradient(&canvas, &whole, KL_RGB(0xd3e6f3), KL_RGB(0xb5d3c0));
 
 	/* The far hills, pale blue. */
 	far_hills[0] = 0.0f;
@@ -596,7 +596,7 @@ home_hero_art(
 	far_hills[13] = height * 0.44f;
 	far_hills[14] = width;
 	far_hills[15] = height * 0.60f;
-	fm_canvas_polygon(&canvas, far_hills, 8, FM_RGB(0xc2d6ea));
+	kl_canvas_polygon(&canvas, far_hills, 8, KL_RGB(0xc2d6ea));
 
 	/* The near hills, young green (the Kei look, ws035-p108). */
 	near_hills[0] = 0.0f;
@@ -615,43 +615,43 @@ home_hero_art(
 	near_hills[13] = height * 0.60f;
 	near_hills[14] = 0.0f;
 	near_hills[15] = height * 0.60f;
-	fm_canvas_polygon(&canvas, near_hills, 8, FM_RGB(0xa7c9a4));
+	kl_canvas_polygon(&canvas, near_hills, 8, KL_RGB(0xa7c9a4));
 
 	/* The canvas is let go (the pixels are the picture's). */
-	fm_canvas_release(&canvas);
+	kl_canvas_release(&canvas);
 }
 
 /* Draws a section's title (and a "Show all" link when link is 0 or 1), and returns where its content starts. */
 static int
 home_section(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width,
 	const char *title,
 	int link)
 {
-	struct fm_rect rect;
-	fm_color ink;
+	struct kl_rect rect;
+	kl_color ink;
 	const char *label;
 	int label_width;
 
 	/* The title. */
-	(void)fm_text_draw(app->text, canvas, x + 4, y + 16, title, strlen(title), 16U, 1, FM_COLOR_TEXT);
+	(void)kl_text_draw(app->text, canvas, x + 4, y + 16, title, strlen(title), 16U, 1, FM_COLOR_TEXT);
 
 	/* The link at the right, when the section has one. */
 	if (link >= 0) {
 		label = kl_tr("Show all \xe2\x86\x92");
-		label_width = fm_text_width(app->text, label, strlen(label), 13U, 0);
+		label_width = kl_text_width(app->text, label, strlen(label), 13U, 0);
 		rect.x = x + width - label_width - 8;
 		rect.y = y;
 		rect.width = label_width + 8;
 		rect.height = 22;
 		ink = FM_COLOR_ACCENT;
 		if (app->hover_kind == FM_HIT_SHOW_ALL && app->hover_index == link)
-			ink = fm_color_mix(FM_COLOR_ACCENT, FM_RGB(0x000000), 0.25f);
-		(void)fm_text_draw(app->text, canvas, rect.x + 4, y + 16, label, strlen(label), 13U, 0, ink);
+			ink = kl_color_mix(FM_COLOR_ACCENT, KL_RGB(0x000000), 0.25f);
+		(void)kl_text_draw(app->text, canvas, rect.x + 4, y + 16, label, strlen(label), 13U, 0, ink);
 		fm_ui_hit(app, &rect, FM_HIT_SHOW_ALL, link);
 	}
 
@@ -663,13 +663,13 @@ home_section(
 static int
 home_cards(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
 	const struct fm_home_card *card;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	char count[32];
 	int per_row;
 	int card_width;
@@ -690,15 +690,15 @@ home_cards(
 		rect.y = y + (index / per_row) * (HOME_CARD_HEIGHT + HOME_CARD_GAP);
 		rect.width = card_width;
 		rect.height = HOME_CARD_HEIGHT;
-		fm_canvas_shadow(canvas, (float)rect.x, (float)rect.y + 3.0f, (float)rect.width, (float)rect.height, 14.0f, 8.0f, FM_RGBA(0x1f3a66, 22));
-		fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
+		kl_canvas_shadow(canvas, (float)rect.x, (float)rect.y + 3.0f, (float)rect.width, (float)rect.height, 14.0f, 8.0f, KL_RGBA(0x1f3a66, 22));
+		kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_PANEL);
+		kl_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
 		if (app->hover_kind == FM_HIT_CARD && app->hover_index == index)
-			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_HOVER);
-		fm_icon_folder(canvas, (float)rect.x + 12.0f, (float)rect.y + 10.0f, 44.0f, FM_COLOR_FOLDER);
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, kl_tr(card->label), 14U, 1, rect.width - 28, FM_COLOR_TEXT);
+			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_HOVER);
+		kl_icon_folder(canvas, (float)rect.x + 12.0f, (float)rect.y + 10.0f, 44.0f, FM_COLOR_FOLDER);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, kl_tr(card->label), 14U, 1, rect.width - 28, FM_COLOR_TEXT);
 		fm_dir_items_text((long)card->count, count, sizeof(count));
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 64, rect.y + 36, count, 12U, 0, rect.width - 72, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 64, rect.y + 36, count, 12U, 0, rect.width - 72, FM_COLOR_TEXT_SECONDARY);
 		fm_ui_hit(app, &rect, FM_HIT_CARD, index);
 	}
 
@@ -716,13 +716,13 @@ home_cards(
 static int
 home_devices(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
 	const struct fm_device *device;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	const char *where;
 	float bright;
 	int per_row;
@@ -742,24 +742,24 @@ home_devices(
 		rect.y = y + (index / per_row) * (HOME_CARD_HEIGHT + HOME_CARD_GAP);
 		rect.width = card_width;
 		rect.height = HOME_CARD_HEIGHT;
-		fm_canvas_shadow(canvas, (float)rect.x, (float)rect.y + 3.0f, (float)rect.width, (float)rect.height, 14.0f, 8.0f, FM_RGBA(0x1f3a66, 22));
-		fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
+		kl_canvas_shadow(canvas, (float)rect.x, (float)rect.y + 3.0f, (float)rect.width, (float)rect.height, 14.0f, 8.0f, KL_RGBA(0x1f3a66, 22));
+		kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_PANEL);
+		kl_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
 		if (app->hover_kind == FM_HIT_CARD && app->hover_index == HOME_DEVICE_CARD + index)
-			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_HOVER);
+			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_COLOR_HOVER);
 
 		/* A new device blinks: the card lit and dimmed three times. */
 		bright = fm_devices_blink(app, device);
 		if (bright < 1.0f)
-			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, FM_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
+			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, KL_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
 
 		/* The volume, the name, and where it is or how to mount it. */
-		fm_icon_draw(canvas, FM_ICON_VOLUME, (float)rect.x + 14.0f, (float)rect.y + 12.0f, 40.0f, FM_COLOR_ACCENT);
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, device->name, 14U, 1, rect.width - 28, FM_COLOR_TEXT);
+		kl_icon_draw(canvas, KL_ICON_VOLUME, (float)rect.x + 14.0f, (float)rect.y + 12.0f, 40.0f, FM_COLOR_ACCENT);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 14, rect.y + 70, device->name, 14U, 1, rect.width - 28, FM_COLOR_TEXT);
 		where = "Double-click to mount";
 		if (device->mounted)
 			where = device->path;
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 64, rect.y + 36, where, 12U, 0, rect.width - 72, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 64, rect.y + 36, where, 12U, 0, rect.width - 72, FM_COLOR_TEXT_SECONDARY);
 		fm_ui_hit(app, &rect, FM_HIT_CARD, HOME_DEVICE_CARD + index);
 
 		/* A card is logged once after the list changed (the tests click it). */
@@ -778,14 +778,14 @@ home_devices(
 static int
 home_recents(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
 	const struct fm_home_recent *recent;
 	struct fm_entry entry;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	char where[FM_PATH_MAX];
 	char when[64];
 	const char *empty;
@@ -796,13 +796,13 @@ home_recents(
 	/* Nothing opened yet. */
 	if (app->dashboard.recent_count == 0) {
 		empty = kl_tr("Files you open appear here.");
-		(void)fm_text_draw(app->text, canvas, x + 4, y + 18, empty, strlen(empty), 13U, 0, FM_COLOR_TEXT_FAINT);
+		(void)kl_text_draw(app->text, canvas, x + 4, y + 18, empty, strlen(empty), 13U, 0, FM_COLOR_TEXT_FAINT);
 		return y + 28;
 	}
 
 	/* A white panel behind the rows. */
-	fm_canvas_round(canvas, (float)x, (float)y, (float)width, (float)(app->dashboard.recent_count * HOME_ROW_HEIGHT + 8), 14.0f, FM_COLOR_PANEL);
-	fm_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)(app->dashboard.recent_count * HOME_ROW_HEIGHT + 8), 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)width, (float)(app->dashboard.recent_count * HOME_ROW_HEIGHT + 8), 14.0f, FM_COLOR_PANEL);
+	kl_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)(app->dashboard.recent_count * HOME_ROW_HEIGHT + 8), 14.0f, 1.0f, FM_COLOR_PANEL_EDGE);
 
 	/* Each file. */
 	for (index = 0; index < app->dashboard.recent_count; index++) {
@@ -812,7 +812,7 @@ home_recents(
 		rect.width = width - 8;
 		rect.height = HOME_ROW_HEIGHT;
 		if (app->hover_kind == FM_HIT_RECENT && app->hover_index == index)
-			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 10.0f, FM_COLOR_HOVER);
+			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 10.0f, FM_COLOR_HOVER);
 
 		/* Its icon, from its name. */
 		name = strrchr(recent->path, '/');
@@ -828,11 +828,11 @@ home_recents(
 
 		/* Its name and where it is, and when it was opened at the right. */
 		fm_time_text(recent->time, app->wall, when, sizeof(when));
-		when_width = fm_text_width(app->text, when, strlen(when), 12U, 0);
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 50, rect.y + 20, name, 14U, 0, rect.width - 80 - when_width, FM_COLOR_TEXT);
+		when_width = kl_text_width(app->text, when, strlen(when), 12U, 0);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 50, rect.y + 20, name, 14U, 0, rect.width - 80 - when_width, FM_COLOR_TEXT);
 		home_where(app, recent->path, where, sizeof(where));
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 50, rect.y + 36, where, 12U, 0, rect.width - 80 - when_width, FM_COLOR_TEXT_SECONDARY);
-		(void)fm_text_draw(app->text, canvas, rect.x + rect.width - 12 - when_width, rect.y + 27, when, strlen(when), 12U, 0, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 50, rect.y + 36, where, 12U, 0, rect.width - 80 - when_width, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw(app->text, canvas, rect.x + rect.width - 12 - when_width, rect.y + 27, when, strlen(when), 12U, 0, FM_COLOR_TEXT_SECONDARY);
 		fm_ui_hit(app, &rect, FM_HIT_RECENT, index);
 	}
 
@@ -844,13 +844,13 @@ home_recents(
 static int
 home_folder_pills(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
 	struct fm_location location;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	const char *name;
 	int pen;
 	int row;
@@ -864,7 +864,7 @@ home_folder_pills(
 		location.kind = FM_LOCATION_FOLDER;
 		snprintf(location.path, sizeof(location.path), "%s", app->dashboard.folders[index]);
 		name = kl_tr(fm_location_name(&location, app->home));
-		label_width = fm_text_width(app->text, name, strlen(name), 13U, 0);
+		label_width = kl_text_width(app->text, name, strlen(name), 13U, 0);
 		if (label_width > 220)
 			label_width = 220;
 		rect.width = label_width + 50;
@@ -881,12 +881,12 @@ home_folder_pills(
 		rect.y = row;
 
 		/* The pill: a folder and the name. */
-		fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, HOME_PILL_HEIGHT * 0.5f, FM_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, HOME_PILL_HEIGHT * 0.5f, 1.0f, FM_COLOR_PANEL_EDGE);
+		kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, HOME_PILL_HEIGHT * 0.5f, FM_COLOR_PANEL);
+		kl_canvas_round_border(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, HOME_PILL_HEIGHT * 0.5f, 1.0f, FM_COLOR_PANEL_EDGE);
 		if (app->hover_kind == FM_HIT_CARD && app->hover_index == 100 + index)
-			fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, HOME_PILL_HEIGHT * 0.5f, FM_COLOR_HOVER);
-		fm_icon_folder(canvas, (float)rect.x + 10.0f, (float)rect.y + 5.0f, 22.0f, FM_COLOR_FOLDER);
-		(void)fm_text_draw_fit(app->text, canvas, rect.x + 38, fm_text_center(13U, rect.y, rect.height), name, 13U, 0, label_width, FM_COLOR_TEXT);
+			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, HOME_PILL_HEIGHT * 0.5f, FM_COLOR_HOVER);
+		kl_icon_folder(canvas, (float)rect.x + 10.0f, (float)rect.y + 5.0f, 22.0f, FM_COLOR_FOLDER);
+		(void)kl_text_draw_fit(app->text, canvas, rect.x + 38, kl_text_center(13U, rect.y, rect.height), name, 13U, 0, label_width, FM_COLOR_TEXT);
 		fm_ui_hit(app, &rect, FM_HIT_CARD, 100 + index);
 		pen += rect.width + 10;
 	}

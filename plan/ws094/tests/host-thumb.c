@@ -27,7 +27,7 @@ main(
 	int argc,
 	char **argv)
 {
-	struct fm_image image;
+	struct kl_image image;
 	FILE *out;
 	size_t written;
 	size_t row_written;
@@ -51,7 +51,7 @@ main(
 	/* The pixels, row by row. */
 	out = fopen(argv[2], "wb");
 	if (out == NULL) {
-		fm_image_release(&image);
+		kl_image_release(&image);
 		return 1;
 	}
 
@@ -63,7 +63,7 @@ main(
 		row_written = fwrite(image.pixels + (size_t)y * image.stride, sizeof(uint32_t), (size_t)image.width, out);
 		if (row_written != (size_t)image.width) {
 			fclose(out);
-			fm_image_release(&image);
+			kl_image_release(&image);
 			return 1;
 		}
 
@@ -74,12 +74,12 @@ main(
 	/* Flushes the output before releasing the decoded pixel storage. */
 	close_error = fclose(out);
 	if (close_error != 0) {
-		fm_image_release(&image);
+		kl_image_release(&image);
 		return 1;
 	}
 
 	/* The complete output no longer needs the decoded image. */
-	fm_image_release(&image);
+	kl_image_release(&image);
 
 	/* Refuses an incomplete reference image. */
 	if (written != expected)

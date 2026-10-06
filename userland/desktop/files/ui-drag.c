@@ -60,9 +60,9 @@
 
 /* The badges' colors: the count's, a copy's and a link's. */
 #define DRAG_COLOR_COUNT	FM_COLOR_ACCENT
-#define DRAG_COLOR_COPY		FM_RGB(0x2fb45a)
-#define DRAG_COLOR_LINK		FM_RGB(0x6b7585)
-#define DRAG_COLOR_BADGE_TEXT	FM_RGB(0xffffff)
+#define DRAG_COLOR_COPY		KL_RGB(0x2fb45a)
+#define DRAG_COLOR_LINK		KL_RGB(0x6b7585)
+#define DRAG_COLOR_BADGE_TEXT	KL_RGB(0xffffff)
 
 static void drag_start(struct fm_app *app);
 static void drag_start_place(struct fm_app *app);
@@ -77,9 +77,9 @@ static void drag_drop_folder(struct fm_app *app);
 static void drag_drop_favorites(struct fm_app *app);
 static void drag_drop_reorder(struct fm_app *app);
 static void drag_end(struct fm_app *app);
-static void drag_draw_target(struct fm_app *app, struct fm_canvas *canvas);
-static void drag_draw_badges(struct fm_app *app, struct fm_canvas *canvas, float x, float y);
-static void drag_draw_place(struct fm_app *app, struct fm_canvas *canvas);
+static void drag_draw_target(struct fm_app *app, struct kl_canvas *canvas);
+static void drag_draw_badges(struct fm_app *app, struct kl_canvas *canvas, float x, float y);
+static void drag_draw_place(struct fm_app *app, struct kl_canvas *canvas);
 static void drag_go_out(struct fm_app *app);
 static void drop_find(struct fm_app *app);
 static int drag_spring_tick(struct fm_app *app, uint64_t now);
@@ -213,7 +213,7 @@ fm_drag_cancel(
 void
 fm_drag_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct fm_tab *tab;
 	const struct fm_entry *entry;
@@ -250,7 +250,7 @@ fm_drag_draw(
 	/* Its icon below and right of the pointer (the target's name stays in sight), on a soft shadow. */
 	x = (float)(app->pointer_x + DRAG_OFFSET_X);
 	y = (float)(app->pointer_y + DRAG_OFFSET_Y);
-	fm_canvas_shadow(canvas, x + 4.0f, y + 6.0f, DRAG_ICON - 8.0f, DRAG_ICON - 8.0f, 8.0f, 10.0f, FM_COLOR_SHADOW);
+	kl_canvas_shadow(canvas, x + 4.0f, y + 6.0f, DRAG_ICON - 8.0f, DRAG_ICON - 8.0f, 8.0f, 10.0f, FM_COLOR_SHADOW);
 	fm_grid_entry_icon(app, canvas, entry, x, y, (float)DRAG_ICON);
 
 	/* The count and the operation. */
@@ -924,9 +924,9 @@ drag_end(
 static void
 drag_draw_target(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
-	const struct fm_rect *rect;
+	const struct kl_rect *rect;
 	int hit;
 
 	/* Only a target. */
@@ -936,7 +936,7 @@ drag_draw_target(
 	/* A drop into the folder shown lights the content's edge. */
 	if (app->drop_active != 0 && app->drag_hit_kind == FM_HIT_NONE && app->drag_hit_index == -1) {
 		rect = &app->layout.content;
-		fm_canvas_round_border(canvas, (float)rect->x + 2.0f, (float)rect->y + 2.0f, (float)rect->width - 4.0f, (float)rect->height - 4.0f, 16.0f, 2.0f, FM_COLOR_ACCENT);
+		kl_canvas_round_border(canvas, (float)rect->x + 2.0f, (float)rect->y + 2.0f, (float)rect->width - 4.0f, (float)rect->height - 4.0f, 16.0f, 2.0f, FM_COLOR_ACCENT);
 		return;
 	}
 
@@ -954,15 +954,15 @@ drag_draw_target(
 		return;
 
 	/* The tint and the edge. */
-	fm_canvas_round(canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, 8.0f, FM_COLOR_SELECTION);
-	fm_canvas_round_border(canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, 8.0f, 2.0f, FM_COLOR_ACCENT);
+	kl_canvas_round(canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, 8.0f, FM_COLOR_SELECTION);
+	kl_canvas_round_border(canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, 8.0f, 2.0f, FM_COLOR_ACCENT);
 }
 
 /* Draws the dragged icon's badges: how many items (more than one), and a plus for a copy or an arrow for a link. */
 static void
 drag_draw_badges(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	float x,
 	float y)
 {
@@ -978,10 +978,10 @@ drag_draw_badges(
 		cx = x + (float)DRAG_ICON - 2.0f;
 		cy = y + 2.0f;
 		snprintf(count, sizeof(count), "%lu", (unsigned long)app->drag_count);
-		fm_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_COUNT);
-		width = fm_text_width(app->text, count, strlen(count), 11U, 1);
-		baseline = fm_text_center(11U, (int)cy - DRAG_BADGE, 2 * DRAG_BADGE);
-		(void)fm_text_draw(app->text, canvas, (int)cx - width / 2, baseline, count, strlen(count), 11U, 1, DRAG_COLOR_BADGE_TEXT);
+		kl_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_COUNT);
+		width = kl_text_width(app->text, count, strlen(count), 11U, 1);
+		baseline = kl_text_center(11U, (int)cy - DRAG_BADGE, 2 * DRAG_BADGE);
+		(void)kl_text_draw(app->text, canvas, (int)cx - width / 2, baseline, count, strlen(count), 11U, 1, DRAG_COLOR_BADGE_TEXT);
 	}
 
 	/* A folder target's operation; a move has no badge. */
@@ -995,14 +995,14 @@ drag_draw_badges(
 	cx = x + (float)DRAG_ICON - 2.0f;
 	cy = y + (float)DRAG_ICON - 2.0f;
 	if (operation == FM_TASK_COPY) {
-		fm_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_COPY);
-		fm_canvas_line(canvas, cx - 5.0f, cy, cx + 5.0f, cy, 2.0f, DRAG_COLOR_BADGE_TEXT);
-		fm_canvas_line(canvas, cx, cy - 5.0f, cx, cy + 5.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
+		kl_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_COPY);
+		kl_canvas_line(canvas, cx - 5.0f, cy, cx + 5.0f, cy, 2.0f, DRAG_COLOR_BADGE_TEXT);
+		kl_canvas_line(canvas, cx, cy - 5.0f, cx, cy + 5.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
 	} else {
-		fm_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_LINK);
-		fm_canvas_line(canvas, cx - 4.0f, cy + 4.0f, cx + 4.0f, cy - 4.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
-		fm_canvas_line(canvas, cx - 1.0f, cy - 4.0f, cx + 4.0f, cy - 4.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
-		fm_canvas_line(canvas, cx + 4.0f, cy - 4.0f, cx + 4.0f, cy + 1.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
+		kl_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_LINK);
+		kl_canvas_line(canvas, cx - 4.0f, cy + 4.0f, cx + 4.0f, cy - 4.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
+		kl_canvas_line(canvas, cx - 1.0f, cy - 4.0f, cx + 4.0f, cy - 4.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
+		kl_canvas_line(canvas, cx + 4.0f, cy - 4.0f, cx + 4.0f, cy + 1.0f, 2.0f, DRAG_COLOR_BADGE_TEXT);
 	}
 }
 
@@ -1014,10 +1014,10 @@ drag_draw_badges(
 static void
 drag_draw_place(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	const struct fm_place *place;
-	const struct fm_rect *rect;
+	const struct kl_rect *rect;
 	float line;
 	int width;
 	int hit;
@@ -1040,18 +1040,18 @@ drag_draw_place(
 		line = (float)rect->y;
 		if (app->drag_hit_index > app->drag_place)
 			line = (float)(rect->y + rect->height);
-		fm_canvas_round(canvas, (float)rect->x + 4.0f, line - 1.5f, (float)rect->width - 8.0f, 3.0f, 1.5f, FM_COLOR_ACCENT);
-		fm_canvas_circle(canvas, (float)rect->x + 4.0f, line, 4.0f, FM_COLOR_ACCENT);
+		kl_canvas_round(canvas, (float)rect->x + 4.0f, line - 1.5f, (float)rect->width - 8.0f, 3.0f, 1.5f, FM_COLOR_ACCENT);
+		kl_canvas_circle(canvas, (float)rect->x + 4.0f, line, 4.0f, FM_COLOR_ACCENT);
 	}
 
 	/* The favorite's name in a pill beside the pointer. */
 	place = &app->places.items[app->drag_place];
-	width = fm_text_width(app->text, place->label, strlen(place->label), 13U, 0) + 24;
+	width = kl_text_width(app->text, place->label, strlen(place->label), 13U, 0) + 24;
 	x = app->pointer_x + DRAG_OFFSET_X + 8;
 	y = app->pointer_y + DRAG_OFFSET_Y;
-	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 26.0f, 13.0f, 8.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)x, (float)y, (float)width, 26.0f, 13.0f, FM_RGBA(0xffffff, 235));
-	(void)fm_text_draw(app->text, canvas, x + 12, fm_text_center(13U, y, 26), place->label, strlen(place->label), 13U, 0, FM_COLOR_TEXT);
+	kl_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 26.0f, 13.0f, 8.0f, FM_COLOR_SHADOW);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)width, 26.0f, 13.0f, KL_RGBA(0xffffff, 235));
+	(void)kl_text_draw(app->text, canvas, x + 12, kl_text_center(13U, y, 26), place->label, strlen(place->label), 13U, 0, FM_COLOR_TEXT);
 }
 
 /*
@@ -1086,7 +1086,7 @@ drop_find(
 	struct fm_app *app)
 {
 	static struct fm_crumb crumbs[FM_CRUMBS];
-	const struct fm_rect *content;
+	const struct kl_rect *content;
 	const char *shown;
 	unsigned previous;
 	char folder[FM_PATH_MAX];
@@ -1213,7 +1213,7 @@ drag_edge_tick(
 	struct fm_app *app,
 	uint64_t now)
 {
-	const struct fm_rect *content;
+	const struct kl_rect *content;
 	struct fm_tab *tab;
 	uint64_t elapsed;
 	double nearness;

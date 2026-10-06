@@ -23,17 +23,17 @@
 #define GLASS_BLUR_STEP		24
 
 /* The glass's white, its rim, and the cards' shadow, as zdesktop draws them. */
-#define GLASS_WHITE		FM_RGBA(0xffffff, 87)
-#define GLASS_RIM		FM_RGBA(0xffffff, 150)
-#define GLASS_SHADOW		FM_RGBA(0x1a2e59, 41)
+#define GLASS_WHITE		KL_RGBA(0xffffff, 87)
+#define GLASS_RIM		KL_RGBA(0xffffff, 150)
+#define GLASS_SHADOW		KL_RGBA(0x1a2e59, 41)
 #define GLASS_SHADOW_SOFT	16.0f
 #define GLASS_SHADOW_DROP	6.0f
 
 int host_glass_compose(struct fm_app *app, const uint32_t *frame, uint32_t *out, int width, int height, const char *wallpaper);
 
-static int glass_desktop(const char *wallpaper, struct fm_image *desktop);
-static int glass_part(const struct fm_image *source, const struct fm_rect *rect, struct fm_image *part);
-static void glass_panel(struct fm_canvas *canvas, const struct fm_image *blurred, const struct fm_panel *panel);
+static int glass_desktop(const char *wallpaper, struct kl_image *desktop);
+static int glass_part(const struct kl_image *source, const struct kl_rect *rect, struct kl_image *part);
+static void glass_panel(struct kl_canvas *canvas, const struct kl_image *blurred, const struct fm_panel *panel);
 
 /*
  * Draws into out (width by height) the desktop, the glass of the frame's
@@ -50,13 +50,13 @@ host_glass_compose(
 	const char *wallpaper)
 {
 	struct fm_panel panels[FM_PANELS];
-	struct fm_image loaded;
-	struct fm_image desktop;
-	struct fm_image small;
-	struct fm_image blurred;
-	struct fm_image shown;
-	struct fm_canvas canvas;
-	const struct fm_rect *rect;
+	struct kl_image loaded;
+	struct kl_image desktop;
+	struct kl_image small;
+	struct kl_image blurred;
+	struct kl_image shown;
+	struct kl_canvas canvas;
+	const struct kl_rect *rect;
 	size_t count;
 	size_t index;
 	int error;
@@ -65,54 +65,54 @@ host_glass_compose(
 	error = glass_desktop(wallpaper, &loaded);
 	if (error != 0)
 		return error;
-	error = fm_image_create(&desktop, width, height);
+	error = kl_image_create(&desktop, width, height);
 	if (error != 0) {
-		fm_image_release(&loaded);
+		kl_image_release(&loaded);
 		return error;
 	}
 
 	/* The wallpaper scaled into it. */
-	fm_image_scale(&loaded, &desktop);
-	fm_image_release(&loaded);
+	kl_image_scale(&loaded, &desktop);
+	kl_image_release(&loaded);
 
 	/* Its blur: shrunk, then grown back. */
-	error = fm_image_create(&small, width / GLASS_BLUR_STEP + 1, height / GLASS_BLUR_STEP + 1);
+	error = kl_image_create(&small, width / GLASS_BLUR_STEP + 1, height / GLASS_BLUR_STEP + 1);
 	if (error != 0) {
-		fm_image_release(&desktop);
+		kl_image_release(&desktop);
 		return error;
 	}
 
 	/* The blur's picture at full size. */
-	error = fm_image_create(&blurred, width, height);
+	error = kl_image_create(&blurred, width, height);
 	if (error != 0) {
-		fm_image_release(&small);
-		fm_image_release(&desktop);
+		kl_image_release(&small);
+		kl_image_release(&desktop);
 		return error;
 	}
 
 	/* Shrunk and grown back. */
-	fm_image_scale(&desktop, &small);
-	fm_image_scale(&small, &blurred);
-	fm_image_release(&small);
+	kl_image_scale(&desktop, &small);
+	kl_image_scale(&small, &blurred);
+	kl_image_release(&small);
 
 	/* The picture: the desktop first. */
 	memset(out, 0, sizeof(out[0]) * (size_t)width * (size_t)height);
-	error = fm_canvas_init(&canvas, out, (size_t)width, width, height);
+	error = kl_canvas_init(&canvas, out, (size_t)width, width, height);
 	if (error != 0) {
-		fm_image_release(&blurred);
-		fm_image_release(&desktop);
+		kl_image_release(&blurred);
+		kl_image_release(&desktop);
 		return error;
 	}
 
 	/* The desktop at the bottom. */
-	fm_canvas_image(&canvas, &desktop, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
+	kl_canvas_image(&canvas, &desktop, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
 
 	/* The cards' shadows under every panel. */
 	count = fm_ui_panels(app, panels, FM_PANELS);
 	for (index = 0; index < count; index++) {
 		rect = &panels[index].rect;
 		if (panels[index].kind == FM_PANEL_CARD)
-			fm_canvas_shadow(&canvas, (float)rect->x, (float)rect->y + GLASS_SHADOW_DROP, (float)rect->width, (float)rect->height, (float)panels[index].radius, GLASS_SHADOW_SOFT, GLASS_SHADOW);
+			kl_canvas_shadow(&canvas, (float)rect->x, (float)rect->y + GLASS_SHADOW_DROP, (float)rect->width, (float)rect->height, (float)panels[index].radius, GLASS_SHADOW_SOFT, GLASS_SHADOW);
 	}
 
 	/* Each panel's glass. */
@@ -124,12 +124,12 @@ host_glass_compose(
 	shown.width = width;
 	shown.height = height;
 	shown.stride = (size_t)width;
-	fm_canvas_image(&canvas, &shown, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
+	kl_canvas_image(&canvas, &shown, 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
 
 	/* The pictures go. */
-	fm_canvas_release(&canvas);
-	fm_image_release(&blurred);
-	fm_image_release(&desktop);
+	kl_canvas_release(&canvas);
+	kl_image_release(&blurred);
+	kl_image_release(&desktop);
 
 	/* Succeeded: out holds the window on the desktop. */
 	return 0;
@@ -139,10 +139,10 @@ host_glass_compose(
 static int
 glass_desktop(
 	const char *wallpaper,
-	struct fm_image *desktop)
+	struct kl_image *desktop)
 {
-	struct fm_canvas canvas;
-	struct fm_rect whole;
+	struct kl_canvas canvas;
+	struct kl_rect whole;
 	int error;
 
 	/* The wallpaper, when it can be read. */
@@ -151,12 +151,12 @@ glass_desktop(
 		return 0;
 
 	/* Otherwise a gradient with a few round shapes, so that the blur shows. */
-	error = fm_image_create(desktop, 320, 200);
+	error = kl_image_create(desktop, 320, 200);
 	if (error != 0)
 		return error;
-	error = fm_canvas_init(&canvas, desktop->pixels, desktop->stride, desktop->width, desktop->height);
+	error = kl_canvas_init(&canvas, desktop->pixels, desktop->stride, desktop->width, desktop->height);
 	if (error != 0) {
-		fm_image_release(desktop);
+		kl_image_release(desktop);
 		return error;
 	}
 
@@ -165,10 +165,10 @@ glass_desktop(
 	whole.y = 0;
 	whole.width = desktop->width;
 	whole.height = desktop->height;
-	fm_canvas_gradient(&canvas, &whole, FM_RGB(0x7fb4d8), FM_RGB(0x5c8f5a));
-	fm_canvas_circle(&canvas, 80.0f, 60.0f, 40.0f, FM_RGB(0xe8c35a));
-	fm_canvas_circle(&canvas, 240.0f, 140.0f, 50.0f, FM_RGB(0x2f5d3a));
-	fm_canvas_release(&canvas);
+	kl_canvas_gradient(&canvas, &whole, KL_RGB(0x7fb4d8), KL_RGB(0x5c8f5a));
+	kl_canvas_circle(&canvas, 80.0f, 60.0f, 40.0f, KL_RGB(0xe8c35a));
+	kl_canvas_circle(&canvas, 240.0f, 140.0f, 50.0f, KL_RGB(0x2f5d3a));
+	kl_canvas_release(&canvas);
 
 	/* Succeeded: the stand-in. */
 	return 0;
@@ -177,9 +177,9 @@ glass_desktop(
 /* Copies a rectangle of a picture into a new picture of its own. */
 static int
 glass_part(
-	const struct fm_image *source,
-	const struct fm_rect *rect,
-	struct fm_image *part)
+	const struct kl_image *source,
+	const struct kl_rect *rect,
+	struct kl_image *part)
 {
 	int error;
 	int x;
@@ -188,7 +188,7 @@ glass_part(
 	int sy;
 
 	/* The part's picture. */
-	error = fm_image_create(part, rect->width, rect->height);
+	error = kl_image_create(part, rect->width, rect->height);
 	if (error != 0)
 		return error;
 
@@ -216,12 +216,12 @@ glass_part(
 /* Draws one panel's glass: the blurred desktop in its shape, whitened, with a rim. */
 static void
 glass_panel(
-	struct fm_canvas *canvas,
-	const struct fm_image *blurred,
+	struct kl_canvas *canvas,
+	const struct kl_image *blurred,
 	const struct fm_panel *panel)
 {
-	struct fm_image part;
-	struct fm_rect box;
+	struct kl_image part;
+	struct kl_rect box;
 	float radius;
 	int error;
 
@@ -232,11 +232,11 @@ glass_panel(
 	/* The blurred desktop under the shape. */
 	error = glass_part(blurred, &box, &part);
 	if (error == 0) {
-		fm_canvas_image(canvas, &part, (float)box.x, (float)box.y, (float)box.width, (float)box.height, radius, 1.0f);
-		fm_image_release(&part);
+		kl_canvas_image(canvas, &part, (float)box.x, (float)box.y, (float)box.width, (float)box.height, radius, 1.0f);
+		kl_image_release(&part);
 	}
 
 	/* Whitened, with its bright rim. */
-	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, radius, GLASS_WHITE);
-	fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, radius, 1.0f, GLASS_RIM);
+	kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, radius, GLASS_WHITE);
+	kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, radius, 1.0f, GLASS_RIM);
 }

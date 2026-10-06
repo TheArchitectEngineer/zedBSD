@@ -333,9 +333,9 @@ fm_field_text_input(
 void
 fm_field_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct fm_field *field,
-	const struct fm_rect *rect,
+	const struct kl_rect *rect,
 	unsigned pixels,
 	const char *placeholder)
 {
@@ -350,8 +350,8 @@ fm_field_draw(
 	int composing;
 
 	/* The baseline, the text's left end, and the cursor's place in it. */
-	baseline = fm_text_center(pixels, rect->y, rect->height);
-	cursor_x = fm_text_width(app->text, field->text, field->cursor, pixels, 0);
+	baseline = kl_text_center(pixels, rect->y, rect->height);
+	cursor_x = kl_text_width(app->text, field->text, field->cursor, pixels, 0);
 
 	/* The text an input method is composing for the name being changed, shown at the cursor (ws090-p022). */
 	composing = 0;
@@ -361,17 +361,17 @@ fm_field_draw(
 		composing = 1;
 	composed = 0;
 	if (composing)
-		composed = fm_text_width(app->text, app->preedit, strlen(app->preedit), pixels, 0);
+		composed = kl_text_width(app->text, app->preedit, strlen(app->preedit), pixels, 0);
 
 	/* The text moves left when the cursor (after the composed text) would be past the right end. */
 	shift = 0;
 	if (cursor_x + composed > rect->width - 4)
 		shift = cursor_x + composed - (rect->width - 4);
-	fm_canvas_clip_push(canvas, rect);
+	kl_canvas_clip_push(canvas, rect);
 
 	/* An empty field shows its placeholder. */
 	if (field->length == 0 && placeholder != NULL)
-		(void)fm_text_draw(app->text, canvas, rect->x, baseline, placeholder, strlen(placeholder), pixels, 0, FM_COLOR_TEXT_FAINT);
+		(void)kl_text_draw(app->text, canvas, rect->x, baseline, placeholder, strlen(placeholder), pixels, 0, FM_COLOR_TEXT_FAINT);
 
 	/* The selection's ground. */
 	if (field->anchor != field->cursor) {
@@ -383,20 +383,20 @@ fm_field_draw(
 		}
 
 		/* Where the selection starts and ends on the screen. */
-		start_x = fm_text_width(app->text, field->text, first, pixels, 0);
-		end_x = fm_text_width(app->text, field->text, last, pixels, 0);
-		fm_canvas_round(canvas, (float)(rect->x + start_x - shift), (float)(rect->y + 3), (float)(end_x - start_x), (float)(rect->height - 6), 3.0f, FM_RGBA(0x2f7cf6, 70));
+		start_x = kl_text_width(app->text, field->text, first, pixels, 0);
+		end_x = kl_text_width(app->text, field->text, last, pixels, 0);
+		kl_canvas_round(canvas, (float)(rect->x + start_x - shift), (float)(rect->y + 3), (float)(end_x - start_x), (float)(rect->height - 6), 3.0f, KL_RGBA(0x2f7cf6, 70));
 	}
 
 	/* The text, and the text an input method is composing at the cursor, underlined (the name being changed, ws090-p022). */
-	(void)fm_text_draw(app->text, canvas, rect->x - shift, baseline, field->text, field->cursor, pixels, 0, FM_COLOR_TEXT);
+	(void)kl_text_draw(app->text, canvas, rect->x - shift, baseline, field->text, field->cursor, pixels, 0, FM_COLOR_TEXT);
 	if (composing) {
-		(void)fm_text_draw(app->text, canvas, rect->x + cursor_x - shift, baseline, app->preedit, strlen(app->preedit), pixels, 0, FM_COLOR_TEXT);
-		fm_canvas_round(canvas, (float)(rect->x + cursor_x - shift), (float)(baseline + 3), (float)composed, 1.0f, 0.0f, FM_COLOR_TEXT);
+		(void)kl_text_draw(app->text, canvas, rect->x + cursor_x - shift, baseline, app->preedit, strlen(app->preedit), pixels, 0, FM_COLOR_TEXT);
+		kl_canvas_round(canvas, (float)(rect->x + cursor_x - shift), (float)(baseline + 3), (float)composed, 1.0f, 0.0f, FM_COLOR_TEXT);
 	}
-	(void)fm_text_draw(app->text, canvas, rect->x + cursor_x + composed - shift, baseline, field->text + field->cursor, field->length - field->cursor, pixels, 0, FM_COLOR_TEXT);
-	fm_canvas_round(canvas, (float)(rect->x + cursor_x + composed - shift), (float)(rect->y + 4), 1.5f, (float)(rect->height - 8), 0.5f, FM_COLOR_ACCENT);
-	fm_canvas_clip_pop(canvas);
+	(void)kl_text_draw(app->text, canvas, rect->x + cursor_x + composed - shift, baseline, field->text + field->cursor, field->length - field->cursor, pixels, 0, FM_COLOR_TEXT);
+	kl_canvas_round(canvas, (float)(rect->x + cursor_x + composed - shift), (float)(rect->y + 4), 1.5f, (float)(rect->height - 8), 0.5f, FM_COLOR_ACCENT);
+	kl_canvas_clip_pop(canvas);
 
 	/* Where the cursor is, for the window's text input. */
 	if (field == &app->rename) {

@@ -4,9 +4,6 @@ KEILAND_LINUX_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/window.c \
 	userland/desktop/files/dnd.c \
 	userland/desktop/files/present.c \
-	userland/desktop/files/canvas.c \
-	userland/desktop/files/text.c \
-	userland/desktop/files/icons.c \
 	userland/desktop/files/ui.c \
 	userland/desktop/files/palette.c \
 	userland/desktop/files/ui-tabs.c \

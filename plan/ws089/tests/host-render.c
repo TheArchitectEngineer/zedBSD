@@ -58,8 +58,8 @@ main(
 	char **argv)
 {
 	static struct se_app app;
-	static struct fm_text text;
-	struct fm_canvas canvas;
+	static struct kl_text text;
+	struct kl_canvas canvas;
 	struct se_titlebar_state titlebar;
 	struct se_titlebar_event event;
 	struct se_event wheel;
@@ -111,7 +111,7 @@ main(
 	}
 
 	/* The font, the canvas and the interface. */
-	error = fm_text_open(&text, font, NULL);
+	error = kl_text_open(&text, font, NULL);
 	if (error != 0) {
 		fprintf(stderr, "font %s: %d\n", font, error);
 		return 1;
@@ -119,7 +119,7 @@ main(
 	pixels = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
 	if (pixels == NULL)
 		return 1;
-	error = fm_canvas_init(&canvas, pixels, (size_t)width, width, height);
+	error = kl_canvas_init(&canvas, pixels, (size_t)width, width, height);
 	if (error != 0)
 		return 1;
 	se_about_read(&app.about);
@@ -274,9 +274,9 @@ main(
 	}
 
 	/* Done. */
-	fm_canvas_release(&canvas);
+	kl_canvas_release(&canvas);
 	free(pixels);
-	fm_text_close(&text);
+	kl_text_close(&text);
 	return 0;
 }
 

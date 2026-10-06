@@ -59,8 +59,8 @@ kl_icon_draw(
 	float play[6];
 	float thickness;
 
-	/* The line pictures are drawn by their own pen. */
-	if (icon >= KL_ICON_TILES) {
+	/* The line pictures are drawn by their own pen (Today, after them, is this file's). */
+	if (icon >= KL_ICON_TILES && icon <= KL_ICON_DISCLOSURE) {
 		keiui_icon_line_draw(canvas, icon, x, y, size, color);
 		return;
 	}
@@ -179,6 +179,14 @@ kl_icon_draw(
 		break;
 	case KL_ICON_DOWN:
 		icons_polyline(canvas, x, y, size, down, 3, thickness, color);
+		break;
+	case KL_ICON_TODAY:
+		/* A page of a calendar, its two rings, the line under its head and the day marked (Files' sidebar, ws127-p011). */
+		icons_frame(canvas, x, y, size, 0.14f, 0.20f, 0.72f, 0.66f, 0.10f, thickness, color);
+		icons_segment(canvas, x, y, size, 0.14f, 0.40f, 0.86f, 0.40f, thickness, color);
+		icons_segment(canvas, x, y, size, 0.34f, 0.12f, 0.34f, 0.28f, thickness, color);
+		icons_segment(canvas, x, y, size, 0.66f, 0.12f, 0.66f, 0.28f, thickness, color);
+		kl_canvas_circle(canvas, x + 0.62f * size, y + 0.64f * size, 0.08f * size, color);
 		break;
 	default:
 		break;

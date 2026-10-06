@@ -504,7 +504,7 @@ context_destination(
 		if (item->location.kind != FM_LOCATION_FOLDER)
 			return 0;
 	} else if (item->section == FM_SECTION_LOCATIONS) {
-		if (item->location.kind != FM_LOCATION_FOLDER || item->icon != FM_ICON_VOLUME)
+		if (item->location.kind != FM_LOCATION_FOLDER || item->icon != KL_ICON_VOLUME)
 			return 0;
 	} else {
 		return 0;

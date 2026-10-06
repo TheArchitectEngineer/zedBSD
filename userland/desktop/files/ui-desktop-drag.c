@@ -33,8 +33,8 @@
 #define DESKTOP_DRAG_START	6
 
 /* The target's colours: a folder item's ground and ring, and the cell's edge. */
-#define DESKTOP_TARGET_GROUND	FM_RGBA(0x2f7cf6, 60)
-#define DESKTOP_TARGET_RING	FM_RGBA(0x2f7cf6, 200)
+#define DESKTOP_TARGET_GROUND	KL_RGBA(0x2f7cf6, 60)
+#define DESKTOP_TARGET_RING	KL_RGBA(0x2f7cf6, 200)
 
 static void drop_find(struct fm_app *app, int x, int y);
 static int drop_cell_taken(const struct fm_desktop *desk, const struct fm_tab *tab, int column, int row, int moving);
@@ -256,10 +256,10 @@ fm_desktop_drop_event(
 void
 fm_desktop_drop_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct fm_desktop *desk;
-	struct fm_rect cell;
+	struct kl_rect cell;
 	int placed;
 
 	/* Only while a drop with a target is over the desktop. */
@@ -272,8 +272,8 @@ fm_desktop_drop_draw(
 		placed = fm_desktop_cell_rect(desk->places[desk->drop_item].column, desk->places[desk->drop_item].row, canvas->width, canvas->height, &cell);
 		if (!placed)
 			return;
-		fm_canvas_round(canvas, (float)cell.x + 4.0f, (float)cell.y, (float)cell.width - 8.0f, (float)cell.height - 4.0f, 12.0f, DESKTOP_TARGET_GROUND);
-		fm_canvas_round_border(canvas, (float)cell.x + 4.0f, (float)cell.y, (float)cell.width - 8.0f, (float)cell.height - 4.0f, 12.0f, 2.0f, DESKTOP_TARGET_RING);
+		kl_canvas_round(canvas, (float)cell.x + 4.0f, (float)cell.y, (float)cell.width - 8.0f, (float)cell.height - 4.0f, 12.0f, DESKTOP_TARGET_GROUND);
+		kl_canvas_round_border(canvas, (float)cell.x + 4.0f, (float)cell.y, (float)cell.width - 8.0f, (float)cell.height - 4.0f, 12.0f, 2.0f, DESKTOP_TARGET_RING);
 		return;
 	}
 
@@ -281,7 +281,7 @@ fm_desktop_drop_draw(
 	placed = fm_desktop_cell_rect(desk->drop_column, desk->drop_row, canvas->width, canvas->height, &cell);
 	if (!placed)
 		return;
-	fm_canvas_round_border(canvas, (float)cell.x + 4.0f, (float)cell.y, (float)cell.width - 8.0f, (float)cell.height - 4.0f, 12.0f, 2.0f, DESKTOP_TARGET_RING);
+	kl_canvas_round_border(canvas, (float)cell.x + 4.0f, (float)cell.y, (float)cell.width - 8.0f, (float)cell.height - 4.0f, 12.0f, 2.0f, DESKTOP_TARGET_RING);
 
 	/* Succeeded: the drop target is highlighted. */
 	return;

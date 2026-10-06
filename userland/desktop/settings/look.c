@@ -104,7 +104,7 @@ static void *look_load_run(void *argument);
 static void look_load_take(struct se_app *app);
 static void look_load_stop(struct se_app *app);
 static unsigned look_found_add(struct look_found *found, unsigned count, const char *name);
-static int look_thumbnail(const char *path, struct fm_image *image);
+static int look_thumbnail(const char *path, struct kl_image *image);
 static unsigned char *look_file_read(const char *path, size_t *size, int *error);
 static int look_compare_names(const void *left, const void *right);
 
@@ -247,7 +247,7 @@ se_look_close(
 	/* The small copies. */
 	look = &app->look;
 	for (index = 0; index < look->wallpaper_count; index++)
-		fm_image_release(&look->wallpapers[index].thumbnail);
+		kl_image_release(&look->wallpapers[index].thumbnail);
 	look->wallpaper_count = 0;
 
 	/* Closes the settings. */
@@ -701,7 +701,7 @@ look_load_run(
 	void *argument)
 {
 	struct se_look_loader *loader;
-	struct fm_image image;
+	struct kl_image image;
 	struct timespec started;
 	struct timespec finished;
 	unsigned index;
@@ -846,7 +846,7 @@ look_load_stop(
 	/* The copies no tile took are freed. */
 	for (index = 0; index < loader->count; index++) {
 		if (loader->done[index] != 0 && loader->taken[index] == 0)
-			fm_image_release(&loader->images[index]);
+			kl_image_release(&loader->images[index]);
 	}
 }
 
@@ -929,7 +929,7 @@ look_found_add(
 static int
 look_thumbnail(
 	const char *path,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	struct kl_wallpaper_image picture;
 	const unsigned char *row;
@@ -984,7 +984,7 @@ look_thumbnail(
 	crop_top = (height - crop_height) / 2U;
 
 	/* The small image. */
-	error = fm_image_create(image, LOOK_THUMB_WIDTH, LOOK_THUMB_HEIGHT);
+	error = kl_image_create(image, LOOK_THUMB_WIDTH, LOOK_THUMB_HEIGHT);
 	if (error != 0) {
 		free(picture.rgb);
 		return error;
