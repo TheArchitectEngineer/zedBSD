@@ -311,6 +311,8 @@
 		kl_window_set_action_state;
 		kl_window_popup_menu;
 		kl_window_set_glass;
+		kl_window_set_control_text;
+		kl_window_focus_control;
 		kl_window_vulkan_surface;
 		kl_ui_key;
 		kl_ui_set_focus;

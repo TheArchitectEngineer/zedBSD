@@ -5,8 +5,9 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+tmp=$(mktemp -d "$(pwd)/build/tmp/tr-host-test.XXXXXX")
 status=0
 mkdir -p "$tmp/locale/ja" "$tmp/locale/fr-none"
 tab=$(printf '\t')

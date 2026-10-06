@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Keiland Mono and proportional Keiland Regular/Bold from font1."""
+"""Build Mahora Mono and proportional Mahora Regular/Bold from font1."""
 
 import argparse
 from copy import deepcopy
@@ -168,7 +168,7 @@ def generate_bold(settings):
                 commands = pen.getCommands()
                 if not commands:
                     raise ValueError(f"Empty bold glyph: {filename}")
-            write_svg(directory / filename, f"Keiland Bold {filename}", commands)
+            write_svg(directory / filename, f"Mahora Bold {filename}", commands)
 
 
 def svg_to_glyph(path):
@@ -178,10 +178,10 @@ def svg_to_glyph(path):
 
 
 def set_names(font, mono=False, bold=False):
-    family = "Keiland Mono" if mono else "Keiland"
+    family = "Mahora Mono" if mono else "Mahora"
     style = "Bold" if bold else "Regular"
-    full = "Keiland Mono" if mono else f"Keiland {style}"
-    ps_name = "KeilandMono" if mono else f"Keiland-{style}"
+    full = "Mahora Mono" if mono else f"Mahora {style}"
+    ps_name = "MahoraMono" if mono else f"Mahora-{style}"
     names = {1: family, 2: style, 3: f"{ps_name}-{VERSION}", 4: full,
              5: f"Version {VERSION}", 6: ps_name, 16: family, 17: style,
              10: f"{full}. Unicode ASCII font derived from the approved font1 design."}
@@ -246,11 +246,11 @@ def main():
         generate_bold(settings)
     mono = TTFont(SOURCE / "Font1-Regular.ttf")
     set_names(mono, mono=True)
-    mono.save(ROOT / "Keiland-Mono.ttf")
+    mono.save(ROOT / "Mahora-Mono.ttf")
     regular = deepcopy(mono)
     set_names(regular)
     advances = proportional_metrics(regular)
-    regular.save(ROOT / "Keiland-Regular.ttf")
+    regular.save(ROOT / "Mahora-Regular.ttf")
     bold = deepcopy(mono)
     set_names(bold, bold=True)
     cmap = bold.getBestCmap()
@@ -262,7 +262,7 @@ def main():
     bold["OS/2"].sCapHeight = bold["glyf"]["H"].yMax
     bold["OS/2"].sxHeight = bold["glyf"]["x"].yMax
     bold["post"].underlineThickness = 88
-    bold.save(ROOT / "Keiland-Bold.ttf")
+    bold.save(ROOT / "Mahora-Bold.ttf")
     report = {
         "version": VERSION, "coverage": "Unicode U+0020-U+007E / ASCII 95",
         "source_font": "../font1/regular/Font1-Regular.ttf",
@@ -282,7 +282,7 @@ def main():
                             for path in sorted((ROOT / "bold/svg").glob("*.svg"))],
     }
     (ROOT / "font-build.json").write_text(json.dumps(report, indent=2) + "\n")
-    print("Built Keiland Mono / Keiland Regular / Keiland Bold, Unicode ASCII 95.")
+    print("Built Mahora Mono / Mahora Regular / Mahora Bold, Unicode ASCII 95.")
 
 
 if __name__ == "__main__":

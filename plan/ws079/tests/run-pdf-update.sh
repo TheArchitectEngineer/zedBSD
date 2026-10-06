@@ -15,7 +15,10 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws079-p014-host
 cc=${CC:-cc}
-rm -rf "$out"
+# Each run gets a new directory behind the fixed name (2026-10-06 user: deleting is Q1's step, so this script removes
+# nothing; plan/tools/q1-clean.sh removes the old runs).
+. plan/tools/fresh-out.sh
+fresh_out "$out"
 mkdir -p "$out/include" "$out/refusals"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"

@@ -1,14 +1,18 @@
-# Keiland — Mono / Regular / Bold
+# Mahora — Mono / Regular / Bold
 
-2026-10-06、userが承認したfont1 Regular 0.202を**Keiland Mono**へ改名し、同じ字形をもとに可変ピッチの**Keiland Regular**、初案Boldの線幅に合わせた**Keiland Bold**を作成した。3書体ともTrueType **0.301**、Unicode U+0020〜U+007EのASCII 95文字、2048 units/em。
+2026-10-06、userが承認したfont1 Regular 0.202を**Mahora Mono**へ改名し、同じ字形をもとに可変ピッチの**Mahora Regular**、初案Boldの線幅に合わせた**Mahora Bold**を作成した。3書体ともTrueType **0.301**、Unicode U+0020〜U+007EのASCII 95文字、2048 units/em。
 
 | ファイル | full name | アプリでのfamily / style | 送り幅・ウェイト |
 | --- | --- | --- | --- |
-| [Keiland-Mono.ttf](Keiland-Mono.ttf) | Keiland Mono | Keiland Mono / Regular | 等幅1229 units、weight 400 |
-| [Keiland-Regular.ttf](Keiland-Regular.ttf) | Keiland Regular | Keiland / Regular | 可変ピッチ、weight 400 |
-| [Keiland-Bold.ttf](Keiland-Bold.ttf) | Keiland Bold | Keiland / Bold | 可変ピッチ、weight 700 |
+| [Mahora-Mono.ttf](Mahora-Mono.ttf) | Mahora Mono | Mahora Mono / Regular | 等幅1229 units、weight 400 |
+| [Mahora-Regular.ttf](Mahora-Regular.ttf) | Mahora Regular | Mahora / Regular | 可変ピッチ、weight 400 |
+| [Mahora-Bold.ttf](Mahora-Bold.ttf) | Mahora Bold | Mahora / Bold | 可変ピッチ、weight 700 |
 
-TTFをインストールすると、アプリでは`Keiland Mono`と`Keiland`を選べる。`Keiland`のRegular/Boldは同じfamilyにまとめ、通常の太字切り替えで選べるようにした。日本語・非ASCII・制御文字は収録していない。
+TTFをインストールすると、アプリでは`Mahora Mono`と`Mahora`を選べる。`Mahora`のRegular/Boldは同じfamilyにまとめ、通常の太字切り替えで選べるようにした。日本語・非ASCII・制御文字は収録していない。
+
+## Mahoraへ改名（2026-10-06）
+
+userの実使用でq修正版に問題がないことを確認し、KeilandからMahoraへ改名した。TTFの名前情報とファイル名を変更。バージョンは0.301のまま、字形・文字間隔・ウェイト・Unicode対応を保持している。Monoはfamily `Mahora Mono`、可変ピッチ2書体はfamily `Mahora`のRegular/Boldとして登録。保存先`fonts/keiland/`は維持した。q修正比較は改名前の確認履歴として保持する。
 
 ## qの高さを修正（2026-10-06、0.301）
 
@@ -26,8 +30,8 @@ Regular/Monoは承認済みのTTFが生成元。Boldの編集可能な塗り輪�
 ## 見本と記録
 
 - [qの修正前後の比較](q-height-review.png): 0.300と0.301を同じサイズとbaselineで描画。
-- [3書体の文章見本](keiland-specimen.png): 納品するTTFを直接FreeTypeで描画。
-- [MonoのASCII一覧](Keiland-Mono-ascii.png)、[RegularのASCII一覧](Keiland-Regular-ascii.png)、[BoldのASCII一覧](Keiland-Bold-ascii.png)。
+- [3書体の文章見本](mahora-specimen.png): 納品するTTFを直接FreeTypeで描画。
+- [MonoのASCII一覧](Mahora-Mono-ascii.png)、[RegularのASCII一覧](Mahora-Regular-ascii.png)、[BoldのASCII一覧](Mahora-Bold-ascii.png)。
 - `font-build.json`: 元フォントと生成TTFのSHA256、Boldの調整値、kerning、BoldのSVGのSHA256。
 - `font-verification.json`: 名前・Unicode・pitch・輪郭・線幅・描画の確認結果。
 

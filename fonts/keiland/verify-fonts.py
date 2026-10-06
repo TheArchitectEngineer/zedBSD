@@ -43,9 +43,9 @@ def main():
     fonts = {}
     results = {}
     for filename, family, style, full_name, mono in [
-        ("Keiland-Mono.ttf", "Keiland Mono", "Regular", "Keiland Mono", True),
-        ("Keiland-Regular.ttf", "Keiland", "Regular", "Keiland Regular", False),
-        ("Keiland-Bold.ttf", "Keiland", "Bold", "Keiland Bold", False),
+        ("Mahora-Mono.ttf", "Mahora Mono", "Regular", "Mahora Mono", True),
+        ("Mahora-Regular.ttf", "Mahora", "Regular", "Mahora Regular", False),
+        ("Mahora-Bold.ttf", "Mahora", "Bold", "Mahora Bold", False),
     ]:
         path = ROOT / filename
         font = TTFont(path, checkChecksums=2)
@@ -96,9 +96,9 @@ def main():
             "fontconfig": fc, "H_measurement_768px": h_measurement(ink(face, "H")),
         }
 
-    mono = fonts["Keiland-Mono.ttf"]
-    regular = fonts["Keiland-Regular.ttf"]
-    bold = fonts["Keiland-Bold.ttf"]
+    mono = fonts["Mahora-Mono.ttf"]
+    regular = fonts["Mahora-Regular.ttf"]
+    bold = fonts["Mahora-Bold.ttf"]
     for name in source.getGlyphOrder():
         assert source["glyf"][name].compile(source["glyf"]) == mono["glyf"][name].compile(mono["glyf"])
         assert source["hmtx"][name] == mono["hmtx"][name]
@@ -108,20 +108,20 @@ def main():
         offsets = {(x2 - x1, y2 - y1) for (x1, y1), (x2, y2) in zip(a, b)}
         assert not offsets or (len(offsets) == 1 and next(iter(offsets))[1] == 0)
         assert regular["hmtx"][name][0] == bold["hmtx"][name][0]
-    regular_face = ImageFont.truetype(str(ROOT / "Keiland-Regular.ttf"), 768)
-    bold_face = ImageFont.truetype(str(ROOT / "Keiland-Bold.ttf"), 768)
+    regular_face = ImageFont.truetype(str(ROOT / "Mahora-Regular.ttf"), 768)
+    bold_face = ImageFont.truetype(str(ROOT / "Mahora-Bold.ttf"), 768)
     for codepoint in range(33, 127):
         character = chr(codepoint)
         assert topology(ink(regular_face, character)) == topology(ink(bold_face, character)), character
     build = json.loads((ROOT / "font-build.json").read_text())
     target = build["bold"]["reference_saved_bold_H"]["mean_stem_height_ratio"]
-    measured = results["Keiland-Bold.ttf"]["H_measurement_768px"]
+    measured = results["Mahora-Bold.ttf"]["H_measurement_768px"]
     assert abs(measured["mean_stem_height_ratio"] - target) < 0.004
-    assert abs(measured["height_pixels"] - results["Keiland-Regular.ttf"]["H_measurement_768px"]["height_pixels"]) <= 2
+    assert abs(measured["height_pixels"] - results["Mahora-Regular.ttf"]["H_measurement_768px"]["height_pixels"]) <= 2
     if features.check("raqm"):
-        mono_face = ImageFont.truetype(str(ROOT / "Keiland-Mono.ttf"), 64)
-        reg_face = ImageFont.truetype(str(ROOT / "Keiland-Regular.ttf"), 64)
-        bld_face = ImageFont.truetype(str(ROOT / "Keiland-Bold.ttf"), 64)
+        mono_face = ImageFont.truetype(str(ROOT / "Mahora-Mono.ttf"), 64)
+        reg_face = ImageFont.truetype(str(ROOT / "Mahora-Regular.ttf"), 64)
+        bld_face = ImageFont.truetype(str(ROOT / "Mahora-Bold.ttf"), 64)
         assert mono_face.getlength("iii") == mono_face.getlength("MMM")
         assert reg_face.getlength("iii") < reg_face.getlength("MMM")
         assert reg_face.getlength("AV") < reg_face.getlength("AV", features=["-kern"])

@@ -246,7 +246,7 @@ te_edit_key(
 	}
 
 	/* A character. */
-	codepoint = kui_key_character(event->key, event->modifiers);
+	codepoint = kl_key_character(event->key, event->modifiers);
 	if (codepoint == 0U)
 		return 0;
 	done = edit_type(app, codepoint);
