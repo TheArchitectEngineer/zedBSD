@@ -13,9 +13,9 @@
  * Nothing here knows about Wayland or Vulkan.  The window's parts
  * (window.h) hand inputs to the interface and show the frames it draws;
  * the host tests drive the same interface and draw its frames into
- * pictures.  The drawing surface is the file manager's canvas
- * (userland/desktop/files/canvas.c, text.c and icons.c), compiled into
- * this program unchanged (plan/ws089/design.md section 4).
+ * pictures.  The drawing surface is libkeiland's canvas, text and icons
+ * (kl_canvas, kl_text, kl_icon; ws090-p009 replaced the file manager's
+ * copies that were compiled in before).
  */
 
 #ifndef SETTINGS_SETTINGS_H
