@@ -7,8 +7,9 @@
 set -eu
 cd "$(dirname -- "$0")/../../.."
 lib=${KEILAND_LINUX_BUILD:-build/keiland-linux}/lib
-work=$(mktemp -d)
-trap 'chmod 700 "$work/run" 2>/dev/null; rm -rf "$work"' EXIT
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+work=$(mktemp -d "$(pwd)/build/tmp/run-host-instance.XXXXXX")
 mkdir -m 700 "$work/run"
 cc -std=gnu89 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -Iuserland/desktop/keiland \
     plan/ws089/tests/host-instance.c -L"$lib" -Wl,-rpath,"$(pwd)/$lib" -lkeiland -o "$work/host-instance"
