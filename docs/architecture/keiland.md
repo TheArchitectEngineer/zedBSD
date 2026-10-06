@@ -27,6 +27,46 @@ document:
   native desktop of zedBSD and also on Linux and FreeBSD. Everything that
   differs between operating systems is kept behind defined boundaries.
 
+## Desktop modes
+
+Keiland has two desktop modes. The one being built now is the tablet mode;
+the phone mode is planned.
+
+**Tablet mode** is for tablets, laptops and desktops with a screen of about
+7 inches or more.
+
+- A window can move between maximized and windowed without a break.
+- When a window is maximized, its titlebar docks into the dock bar (the
+  system bar at the top of the screen).
+- The UI is designed for a touch screen first, and it can also be used with
+  a trackpad, a mouse and a keyboard.
+
+**Phone mode** is for touch screens up to about 6 inches.
+
+- Only one application is shown at a time, always maximized.
+- Several windows cannot be shown side by side.
+- There is a dock bar, but it is too narrow to show the application's menus.
+
+### Application lifecycle messages
+
+The compositor and applications exchange these messages, so that the same
+application can run in both modes.
+
+From the compositor to an application:
+
+- The application goes to the background. Its process is stopped.
+- The application comes to the foreground. Its process runs again.
+- The application is terminated, by the out-of-memory killer or by a manual
+  kill.
+- The screen size changes, for example when an external display is connected
+  or a foldable display is opened or closed.
+
+From an application to the compositor:
+
+- Which modes the application can run in: phone mode, tablet mode, or both.
+- A request to keep running while in the background. This is honoured only in
+  tablet mode.
+
 ## Layers
 
 | Layer | What it is | Who uses it | Stability |
