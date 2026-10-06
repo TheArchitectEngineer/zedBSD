@@ -58,8 +58,8 @@ def specimen(from_font):
     canvas = Image.new("RGB", (1600, 1320), "#fafbfc")
     draw = ImageDraw.Draw(canvas)
     kind = "TrueType rendering" if from_font else "glyph PNG rendering"
-    draw.text((64, 32), f"Font1 Regular 0.201 / {kind}", font=label(24), fill="#1a2735")
-    draw.text((64, 74), "Refined lowercase / original g and s / shorter i and l bars", font=label(18), fill="#586878")
+    draw.text((64, 32), f"Font1 Regular 0.202 / {kind}", font=label(24), fill="#1a2735")
+    draw.text((64, 74), "Refined lowercase / balanced g and p vertical positions", font=label(18), fill="#586878")
 
     def line(text, y, size, x=64):
         if from_font:
@@ -98,7 +98,7 @@ def comparison():
     draw = ImageDraw.Draw(canvas)
     for row, (title, directory) in enumerate([
         ("Monaco", ROOT.parent.parent / "monaco-ascii"),
-        ("font1 Regular 0.201", ROOT),
+        ("font1 Regular 0.202", ROOT),
         ("Droid Sans", ROOT.parent.parent / "droid"),
         ("JetBrains Mono", ROOT.parent.parent / "jetbrains"),
     ]):
@@ -114,7 +114,7 @@ def lowercase_review(before_font):
     canvas = Image.new("RGB", (1600, 1220), "white")
     draw = ImageDraw.Draw(canvas)
     draw.text((64, 30), "Font1 Regular / lowercase refinement", font=label(28), fill="#1a2735")
-    draw.text((64, 79), "Same size and advance. Before 0.100 / After 0.201", font=label(18), fill="#586878")
+    draw.text((64, 79), "Same size and advance. Before 0.100 / After 0.202", font=label(18), fill="#586878")
     for group, characters in enumerate(["abcdefghijklm", "nopqrstuvwxyz"]):
         for revision, (title, font) in enumerate([
             ("Before", before_font), ("After", ROOT / "Font1-Regular.ttf"),
@@ -136,11 +136,11 @@ def lowercase_review(before_font):
 def weight_comparison():
     canvas = Image.new("RGB", (1600, 990), "#fafbfc")
     draw = ImageDraw.Draw(canvas)
-    draw.text((52, 30), "Font1 / Regular 0.201 and Bold", font=label(26), fill="#1a2735")
+    draw.text((52, 30), "Font1 / Regular 0.202 and Bold", font=label(26), fill="#1a2735")
     draw.text((52, 74), "Cap height matched across all three samples", font=label(18), fill="#586878")
     for index, (title, directory) in enumerate([
         ("Monaco Regular", ROOT.parent.parent / "monaco-ascii"),
-        ("font1 Regular 0.201", ROOT),
+        ("font1 Regular 0.202", ROOT),
         ("font1 Bold", ROOT.parent / "bold"),
     ]):
         alpha = np.asarray(Image.open(directory / "glyphs/U0048.png").getchannel("A"))
@@ -158,10 +158,47 @@ def weight_comparison():
     canvas.save(ROOT.parent / "weights-comparison.png")
 
 
+def position_review(before_font):
+    """Compare the changed bowls against shared baseline and x-height guides."""
+    canvas = Image.new("RGB", (1500, 1160), "#fafbfc")
+    draw = ImageDraw.Draw(canvas)
+    draw.text((56, 30), "Font1 Regular / g and p vertical positions", font=label(27), fill="#1a2735")
+    draw.text((56, 78), "Same shapes and advance. Shared baseline / lowercase-height guides.",
+              font=label(18), fill="#586878")
+    for index, (title, font) in enumerate([
+        ("Before 0.201", before_font), ("After 0.202", ROOT / "Font1-Regular.ttf"),
+    ]):
+        x = 56 + index * 720
+        draw.text((x, 129), title, font=label(20), fill="#405269")
+        draw.line((x, 176, x + 658, 176), fill="#c5d9e9")
+        draw.line((x, 260, x + 658, 260), fill="#a4c2dc")
+        font_line(canvas, "angpo", x + 25, 260, 170, font)
+
+    for index, (title, font) in enumerate([
+        ("Before 0.201", before_font), ("After 0.202", ROOT / "Font1-Regular.ttf"),
+    ]):
+        top = 374 + index * 372
+        draw.rounded_rectangle((40, top, 1460, top + 337), radius=12, fill="#20242b")
+        draw.text((70, top + 22), title, font=label(20), fill="#acbed0")
+        for size, offset in [(32, 76), (36, 207)]:
+            face = ImageFont.truetype(str(font), size)
+            draw.text((70, top + offset - 17), f"{size}px", font=label(13), fill="#acbed0")
+            for line_index, text in enumerate([
+                "So this thing really sends me to the future?",
+                "And the passphrase is...",
+                "Good day, Agent M. How is 1997 treating you?",
+            ]):
+                draw.text((146, top + offset + line_index * 43), text,
+                          font=face, fill="white", anchor="ls")
+    canvas.save(ROOT / "vertical-position-review.png")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--before-font", type=Path,
                         help="Optional previous TTF for lowercase-review.png")
+    parser.add_argument("--before-position-font", type=Path,
+                        help="Previous TTF for the g/p vertical-position review")
     arguments = parser.parse_args()
     for from_font in [False, True]:
         overview(from_font)
@@ -170,6 +207,8 @@ def main():
     weight_comparison()
     if arguments.before_font:
         lowercase_review(arguments.before_font)
+    if arguments.before_position_font:
+        position_review(arguments.before_position_font)
     print("Refreshed PNG/TTF overviews, specimens and reference comparison.")
 
 

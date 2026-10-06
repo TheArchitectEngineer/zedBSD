@@ -1,9 +1,9 @@
 {
   "family": "Font1",
   "style": "Regular",
-  "version": "0.201",
+  "version": "0.202",
   "font": "Font1-Regular.ttf",
-  "font_sha256": "96530e4c20f9ded66cdf8be286e3bfb787804373d9262de76e46e386ff773380",
+  "font_sha256": "b3f7533f80a686782ebd544f9bf950b5b83b6d79ac4e9b8824f4a41ff07eb1b3",
   "units_per_em": 2048,
   "advance_units": 1229,
   "ascent_units": 1638,
@@ -474,7 +474,7 @@
       "codepoint": "U+0067",
       "glyph": "g",
       "file": "svg/U0067.svg",
-      "sha256": "a0a5d285650ae27951b83c4226ae8f15e83e88f07d27e96fbd3f8c42b636e954"
+      "sha256": "7489f6a3f5d5c98f7645947c3a643c504eb23a917b758e94a237559621548958"
     },
     {
       "codepoint": "U+0068",
@@ -528,7 +528,7 @@
       "codepoint": "U+0070",
       "glyph": "p",
       "file": "svg/U0070.svg",
-      "sha256": "fa70c11e60177a3bc959665fe0bbaa8861336d02e12dcf3565f6a7d578d598de"
+      "sha256": "0a13e83c59aa54160930006aa61d3b377194c8465cd1adeacc07b9af061aea09"
     },
     {
       "codepoint": "U+0071",
@@ -617,7 +617,7 @@
   ],
   "lowercase_construction_reference": {
     "file": "lowercase-strokes.json",
-    "sha256": "42cba9e298f52611f0da9942e76b0127136a83ad69e56a0cd807ca09c5a9472e",
+    "sha256": "4bcc4a88f994eb2e81627f16df6c54f13ae5b7b572b28806ca157e6e116bef17",
     "note": "Centerline source; editable filled SVGs remain the direct TTF inputs",
     "outline_trace_tolerance_pixels": 0.2
   }
