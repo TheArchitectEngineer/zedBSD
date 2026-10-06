@@ -422,6 +422,7 @@ static void layout_match(struct zwl_server *server, struct zwl_object *surface, 
 static int layout_hides(struct zwl_server *server, const struct zwl_object *surface);
 static int layout_takes_press(struct zwl_server *server);
 static int layout_press_switches(struct zwl_server *server, struct zwl_object *surface);
+static void layout_keep_front(struct zwl_server *server);
 static void docked_body(struct zwl_server *server, const struct zwl_object *surface, struct shell_rect *body);
 static void dock_restore_default(struct zwl_server *server, struct zwl_object *surface);
 static int window_centred_over(struct zwl_server *server, const struct zwl_object *surface);
@@ -2407,6 +2408,9 @@ zwl_glass_tick(
 
 	/* The sheets where their parents are (ws090-p014). */
 	sheet_place(server);
+
+	/* In the docked mode the window that came to the front (the one before closed or was minimized) docks. */
+	layout_keep_front(server);
 
 	/* The previews of the bar's applications show and hide in time (apps-bar.c), and the switcher goes when it may not show. */
 	zwl_apps_bar_tick(server);
@@ -4884,6 +4888,58 @@ layout_press_switches(
 
 	/* Succeeded: the press switches to it. */
 	return 1;
+}
+
+/*
+ * Keeps the window in front docked in the docked mode (ws142-p008, the
+ * 2026-10-06 user decision: the docked mode is the desktop's tablet mode,
+ * not a window's state): a window that comes to the front because the one
+ * before closed (its application's own close too) or was minimized docks
+ * as a window switched to does.  Not while an overview shows, nor while a
+ * window is moved or pulled.
+ */
+static void
+layout_keep_front(
+	struct zwl_server *server)
+{
+	struct zwl_layout_window window;
+	struct zwl_object *top;
+	unsigned action;
+	float home;
+	int showing;
+
+	/* Only the docked mode has a front to keep. */
+	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+		return;
+
+	/* App Home, Wiseview and the switcher show every window as it is. */
+	home = zwl_home_progress(server);
+	if (home > 0.0f)
+		return;
+	showing = wiseview_showing(server);
+	if (showing || server->wiseview_moving)
+		return;
+	if (server->switcher.on)
+		return;
+
+	/* A window being moved or pulled out of the dock is the person's. */
+	if (server->drag != NULL || server->pull != NULL)
+		return;
+
+	/* The window in front (a sheet's parent for a sheet), shown with an image. */
+	top = sheet_owner(zwl_top_window(server));
+	if (top == NULL || top->dead || !top->mapped || top->current == NULL)
+		return;
+
+	/* What a switch to it would do; only a floating window that docks changes. */
+	layout_window(top, &window);
+	action = zwl_layout_switch_action(server->layout_mode, &window);
+	if (action != ZWL_LAYOUT_DOCK)
+		return;
+
+	/* Docked where it floats, and the log says why. */
+	window_dock(server, top, top->x, top->y, "front");
+	printf("ZWL LAYOUT front surface=%u action=dock client=%llu\n", top->id, (unsigned long long)top->client->number);
 }
 
 /*
