@@ -6,7 +6,7 @@
  */
 
 /*
- * The network's details for Settings (ws089-p003, KEILAND_VERSION 11):
+ * The network's details for Settings (ws089-p003, KL_VERSION 11):
  * the interfaces as the kernel reports them (their addresses, hardware
  * addresses and the bytes they carried), the DNS servers of
  * /etc/resolv.conf, and the keys of the Wi-Fi networks the user saves.

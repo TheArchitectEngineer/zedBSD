@@ -99,7 +99,7 @@ static int probe_server_case(const struct probe_case *test);
 static int probe_connect(struct probe_connection *connection);
 static void probe_disconnect(struct probe_connection *connection);
 static int probe_library(void);
-static int probe_library_calls(struct keiland_titlebar *titlebar);
+static int probe_library_calls(struct kl_titlebar *titlebar);
 static void send_outside(struct probe_connection *connection);
 static void send_zero_id(struct probe_connection *connection);
 static void send_duplicate(struct probe_connection *connection);
@@ -116,18 +116,18 @@ static void send_good(struct probe_connection *connection);
 static int probe_show(const char *title, unsigned seconds, const char *mode);
 static int probe_show_window(struct probe_connection *connection, const char *title);
 static int probe_show_buffer(struct probe_connection *connection);
-static void probe_show_model(struct keiland_titlebar *titlebar, const char *mode);
-static void probe_tabs_start(struct keiland_titlebar *titlebar);
+static void probe_show_model(struct kl_titlebar *titlebar, const char *mode);
+static void probe_tabs_start(struct kl_titlebar *titlebar);
 static int probe_tab_find(uint32_t id);
-static void probe_tab_activate(struct keiland_titlebar *titlebar, int index);
+static void probe_tab_activate(struct kl_titlebar *titlebar, int index);
 static void probe_configure(void *data, struct xdg_surface *role, uint32_t serial);
-static void probe_activated(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void probe_text_changed(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text);
-static void probe_text_done(void *data, struct keiland_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
-static void probe_tab_activated(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t serial);
-static void probe_tab_close(void *data, struct keiland_titlebar *titlebar, uint32_t id);
-static void probe_new_tab(void *data, struct keiland_titlebar *titlebar, uint32_t serial);
-static void probe_overflow(void *data, struct keiland_titlebar *titlebar);
+static void probe_activated(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void probe_text_changed(void *data, struct kl_titlebar *titlebar, uint32_t id, const char *text);
+static void probe_text_done(void *data, struct kl_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+static void probe_tab_activated(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t serial);
+static void probe_tab_close(void *data, struct kl_titlebar *titlebar, uint32_t id);
+static void probe_new_tab(void *data, struct kl_titlebar *titlebar, uint32_t serial);
+static void probe_overflow(void *data, struct kl_titlebar *titlebar);
 
 /*
  * The shown window's width, PROBE_WIDTH unless --width gives another; set
@@ -160,7 +160,7 @@ static const struct xdg_surface_listener probe_role_listener = {
 };
 
 /* What zdesktop tells the shown window's titlebar, printed. */
-static const struct keiland_titlebar_listener probe_titlebar_listener = {
+static const struct kl_titlebar_listener probe_titlebar_listener = {
 	probe_activated,
 	probe_text_changed,
 	probe_text_done,
@@ -458,7 +458,7 @@ send_zero_id(
 {
 	/* Zero is not a control's ID. */
 	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
-	kl_titlebar_v1_add_control(connection->titlebar, 0U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	kl_titlebar_v1_add_control(connection->titlebar, 0U, KL_CONTROL_BACK, 0U, 0U, "Back");
 }
 
 /* The same control ID twice. */
@@ -468,8 +468,8 @@ send_duplicate(
 {
 	/* The second add reuses the first's ID. */
 	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
-	kl_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
-	kl_titlebar_v1_add_control(connection->titlebar, 5U, KEILAND_CONTROL_FORWARD, 0U, 0U, "Forward");
+	kl_titlebar_v1_add_control(connection->titlebar, 5U, KL_CONTROL_BACK, 0U, 0U, "Back");
+	kl_titlebar_v1_add_control(connection->titlebar, 5U, KL_CONTROL_FORWARD, 0U, 0U, "Forward");
 }
 
 /* A role the protocol does not name. */
@@ -528,7 +528,7 @@ send_breadcrumb_role(
 
 	/* The search is not a breadcrumb. */
 	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
-	kl_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, KL_CONTROL_SEARCH, 0U, 0U, "Search");
 	kl_titlebar_v1_set_breadcrumb(connection->titlebar, 1U, &parts);
 	wl_array_release(&parts);
 }
@@ -540,7 +540,7 @@ send_value_role(
 {
 	/* A back button has no value. */
 	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
-	kl_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_BACK, 0U, 0U, "Back");
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, KL_CONTROL_BACK, 0U, 0U, "Back");
 	kl_titlebar_v1_set_control_value(connection->titlebar, 1U, 500U);
 }
 
@@ -562,7 +562,7 @@ send_focus_uncommitted(
 {
 	/* The search is only in the open transaction. */
 	kl_titlebar_v1_begin_update(connection->titlebar, 1U);
-	kl_titlebar_v1_add_control(connection->titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	kl_titlebar_v1_add_control(connection->titlebar, 1U, KL_CONTROL_SEARCH, 0U, 0U, "Search");
 	kl_titlebar_v1_focus_control(connection->titlebar, 1U, 0U);
 }
 
@@ -599,13 +599,13 @@ send_good(
 	titlebar = connection->titlebar;
 	kl_titlebar_v1_begin_update(titlebar, 1U);
 	kl_titlebar_v1_set_mode(titlebar, KL_TITLEBAR_V1_MODE_CONTROLS);
-	kl_titlebar_v1_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back");
-	kl_titlebar_v1_add_control(titlebar, 2U, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward");
-	kl_titlebar_v1_add_control(titlebar, 3U, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location");
-	kl_titlebar_v1_add_control(titlebar, 4U, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search");
-	kl_titlebar_v1_add_control(titlebar, 5U, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons");
-	kl_titlebar_v1_add_control(titlebar, 6U, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List");
-	kl_titlebar_v1_add_control(titlebar, 7U, KEILAND_CONTROL_PROGRESS, KEILAND_PRIORITY_NORMAL, 0U, "Copying");
+	kl_titlebar_v1_add_control(titlebar, 1U, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back");
+	kl_titlebar_v1_add_control(titlebar, 2U, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward");
+	kl_titlebar_v1_add_control(titlebar, 3U, KL_CONTROL_BREADCRUMB, KL_PRIORITY_NORMAL, 0U, "Location");
+	kl_titlebar_v1_add_control(titlebar, 4U, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Search");
+	kl_titlebar_v1_add_control(titlebar, 5U, KL_CONTROL_VIEW_GRID, KL_PRIORITY_SECONDARY, 1U, "Icons");
+	kl_titlebar_v1_add_control(titlebar, 6U, KL_CONTROL_VIEW_LIST, KL_PRIORITY_SECONDARY, 1U, "List");
+	kl_titlebar_v1_add_control(titlebar, 7U, KL_CONTROL_PROGRESS, KL_PRIORITY_NORMAL, 0U, "Copying");
 
 	/* Their states, texts, parts and value. */
 	kl_titlebar_v1_set_control_state(titlebar, 2U, 0U, 0U);
@@ -619,8 +619,8 @@ send_good(
 	/* Tabs, kept while the mode is controls. */
 	kl_titlebar_v1_add_tab(titlebar, 1U, "README.md");
 	kl_titlebar_v1_add_tab(titlebar, 2U, "main.c");
-	kl_titlebar_v1_set_tab(titlebar, 2U, "main.c", KEILAND_TAB_ACTIVE | KEILAND_TAB_CLOSABLE);
-	kl_titlebar_v1_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
+	kl_titlebar_v1_set_tab(titlebar, 2U, "main.c", KL_TAB_ACTIVE | KL_TAB_CLOSABLE);
+	kl_titlebar_v1_set_tabs_options(titlebar, KL_TABS_NEW_BUTTON);
 	kl_titlebar_v1_remove_tab(titlebar, 1U);
 	kl_titlebar_v1_commit(titlebar, 1U);
 	wl_array_release(&parts);
@@ -644,7 +644,7 @@ static int
 probe_library(void)
 {
 	struct probe_connection connection;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	int status;
 	int failed;
 	int error;
@@ -660,7 +660,7 @@ probe_library(void)
 	/* The window's titlebar through the library (the probe's own is let go first). */
 	kl_titlebar_v1_destroy(connection.titlebar);
 	connection.titlebar = NULL;
-	titlebar = keiland_titlebar_create(connection.display, connection.toplevel, NULL, NULL);
+	titlebar = kl_titlebar_create(connection.display, connection.toplevel, NULL, NULL);
 	if (titlebar == NULL) {
 		printf("TITLEBARPROBE case=library FAIL create errno=%d\n", errno);
 		probe_disconnect(&connection);
@@ -679,7 +679,7 @@ probe_library(void)
 	}
 
 	/* The titlebar and the connection go. */
-	keiland_titlebar_destroy(titlebar);
+	kl_titlebar_destroy(titlebar);
 	probe_disconnect(&connection);
 
 	/* Reports a check that failed. */
@@ -694,7 +694,7 @@ probe_library(void)
 /* Makes the library's calls and compares their answers; returns 1 when one was wrong. */
 static int
 probe_library_calls(
-	struct keiland_titlebar *titlebar)
+	struct kl_titlebar *titlebar)
 {
 	static const char *const parts[] = { "Home", "Projects" };
 	int results[PROBE_CALLS];
@@ -703,45 +703,45 @@ probe_library_calls(
 	int failed;
 
 	/* Each call and what it must answer. */
-	results[0] = keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_CONTROLS);
+	results[0] = kl_titlebar_set_mode(titlebar, KL_TITLEBAR_CONTROLS);
 	wanted[0] = EINVAL;
-	results[1] = keiland_titlebar_begin(titlebar);
+	results[1] = kl_titlebar_begin(titlebar);
 	wanted[1] = 0;
-	results[2] = keiland_titlebar_begin(titlebar);
+	results[2] = kl_titlebar_begin(titlebar);
 	wanted[2] = EBUSY;
-	results[3] = keiland_titlebar_add_control(titlebar, 0U, KEILAND_CONTROL_BACK, 0U, 0U, "Zero");
+	results[3] = kl_titlebar_add_control(titlebar, 0U, KL_CONTROL_BACK, 0U, 0U, "Zero");
 	wanted[3] = EINVAL;
-	results[4] = keiland_titlebar_add_control(titlebar, 1U, KEILAND_CONTROL_SEARCH, 0U, 0U, "Search");
+	results[4] = kl_titlebar_add_control(titlebar, 1U, KL_CONTROL_SEARCH, 0U, 0U, "Search");
 	wanted[4] = 0;
-	results[5] = keiland_titlebar_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, 0U, 0U, "Again");
+	results[5] = kl_titlebar_add_control(titlebar, 1U, KL_CONTROL_BACK, 0U, 0U, "Again");
 	wanted[5] = EEXIST;
-	results[6] = keiland_titlebar_add_control(titlebar, 2U, 99U, 0U, 0U, "Role");
+	results[6] = kl_titlebar_add_control(titlebar, 2U, 99U, 0U, 0U, "Role");
 	wanted[6] = EINVAL;
-	results[7] = keiland_titlebar_set_breadcrumb(titlebar, 1U, parts, 2U);
+	results[7] = kl_titlebar_set_breadcrumb(titlebar, 1U, parts, 2U);
 	wanted[7] = EINVAL;
-	results[8] = keiland_titlebar_set_control_value(titlebar, 1U, 5U);
+	results[8] = kl_titlebar_set_control_value(titlebar, 1U, 5U);
 	wanted[8] = EINVAL;
-	results[9] = keiland_titlebar_set_control_label(titlebar, 9U, "Nothing");
+	results[9] = kl_titlebar_set_control_label(titlebar, 9U, "Nothing");
 	wanted[9] = ENOENT;
-	results[10] = keiland_titlebar_focus_control(titlebar, 1U, KEILAND_FOCUS_FIELD);
+	results[10] = kl_titlebar_focus_control(titlebar, 1U, KL_FOCUS_FIELD);
 	wanted[10] = EINVAL;
-	results[11] = keiland_titlebar_add_tab(titlebar, 1U, "One");
+	results[11] = kl_titlebar_add_tab(titlebar, 1U, "One");
 	wanted[11] = 0;
-	results[12] = keiland_titlebar_set_tab(titlebar, 1U, "One", 8U);
+	results[12] = kl_titlebar_set_tab(titlebar, 1U, "One", 8U);
 	wanted[12] = EINVAL;
-	results[13] = keiland_titlebar_remove_tab(titlebar, 2U);
+	results[13] = kl_titlebar_remove_tab(titlebar, 2U);
 	wanted[13] = ENOENT;
-	results[14] = keiland_titlebar_add_control(titlebar, 3U, KEILAND_CONTROL_BREADCRUMB, 1U, 0U, "Location");
+	results[14] = kl_titlebar_add_control(titlebar, 3U, KL_CONTROL_BREADCRUMB, 1U, 0U, "Location");
 	wanted[14] = 0;
-	results[15] = keiland_titlebar_set_breadcrumb(titlebar, 3U, parts, 2U);
+	results[15] = kl_titlebar_set_breadcrumb(titlebar, 3U, parts, 2U);
 	wanted[15] = 0;
-	results[16] = keiland_titlebar_commit(titlebar);
+	results[16] = kl_titlebar_commit(titlebar);
 	wanted[16] = 0;
-	results[17] = keiland_titlebar_commit(titlebar);
+	results[17] = kl_titlebar_commit(titlebar);
 	wanted[17] = EINVAL;
-	results[18] = keiland_titlebar_focus_control(titlebar, 1U, KEILAND_FOCUS_EDIT);
+	results[18] = kl_titlebar_focus_control(titlebar, 1U, KL_FOCUS_EDIT);
 	wanted[18] = 0;
-	results[19] = keiland_titlebar_focus_control(titlebar, 1U, 7U);
+	results[19] = kl_titlebar_focus_control(titlebar, 1U, 7U);
 	wanted[19] = EINVAL;
 
 	/* The answers. */
@@ -769,7 +769,7 @@ probe_show(
 	const char *mode)
 {
 	struct probe_connection connection;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	struct pollfd poll_entry;
 	unsigned tabs_shown;
 	time_t switched;
@@ -786,7 +786,7 @@ probe_show(
 	}
 
 	/* Its titlebar, through the library, with the model of the mode. */
-	titlebar = keiland_titlebar_create(connection.display, connection.toplevel, &probe_titlebar_listener, NULL);
+	titlebar = kl_titlebar_create(connection.display, connection.toplevel, &probe_titlebar_listener, NULL);
 	if (titlebar == NULL) {
 		printf("TITLEBARPROBE show FAIL titlebar errno=%d\n", errno);
 		probe_disconnect(&connection);
@@ -813,17 +813,17 @@ probe_show(
 		/* The mode switched now and then, in one transaction. */
 		if (probe_switch > 0U && now - switched >= (time_t)probe_switch) {
 			tabs_shown = !tabs_shown;
-			(void)keiland_titlebar_begin(titlebar);
+			(void)kl_titlebar_begin(titlebar);
 			if (tabs_shown != 0U) {
-				(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_TABS);
+				(void)kl_titlebar_set_mode(titlebar, KL_TITLEBAR_TABS);
 				printf("TITLEBARPROBE switch mode=tabs\n");
 			} else {
-				(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_CONTROLS);
+				(void)kl_titlebar_set_mode(titlebar, KL_TITLEBAR_CONTROLS);
 				printf("TITLEBARPROBE switch mode=controls\n");
 			}
 
 			/* One commit for the switch. */
-			(void)keiland_titlebar_commit(titlebar);
+			(void)kl_titlebar_commit(titlebar);
 			switched = now;
 			fflush(stdout);
 		}
@@ -862,7 +862,7 @@ probe_show(
 	}
 
 	/* The titlebar and the connection go. */
-	keiland_titlebar_destroy(titlebar);
+	kl_titlebar_destroy(titlebar);
 	probe_disconnect(&connection);
 	printf("TITLEBARPROBE show done\n");
 	return 0;
@@ -973,7 +973,7 @@ probe_show_buffer(
 /* Gives the shown window's titlebar a model: a file manager's controls, three tabs, or the menu mode alone. */
 static void
 probe_show_model(
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	const char *mode)
 {
 	static const char *const parts[] = { "Home", "Projects", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e" };
@@ -985,20 +985,20 @@ probe_show_model(
 	tabs = strcmp(mode, "tabs");
 
 	/* One transaction for the whole model. */
-	(void)keiland_titlebar_begin(titlebar);
+	(void)kl_titlebar_begin(titlebar);
 	if (controls == 0 || probe_switch > 0U) {
-		(void)keiland_titlebar_add_control(titlebar, 1U, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back");
-		(void)keiland_titlebar_add_control(titlebar, 2U, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward");
-		(void)keiland_titlebar_add_control(titlebar, 3U, KEILAND_CONTROL_HOME, KEILAND_PRIORITY_PRIMARY, 0U, "Home");
-		(void)keiland_titlebar_add_control(titlebar, 4U, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location");
-		(void)keiland_titlebar_set_breadcrumb(titlebar, 4U, parts, 3U);
-		(void)keiland_titlebar_add_control(titlebar, 5U, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search");
-		(void)keiland_titlebar_set_control_text(titlebar, 5U, "", "Search");
-		(void)keiland_titlebar_add_control(titlebar, 6U, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons");
-		(void)keiland_titlebar_set_control_state(titlebar, 6U, 1, 1);
-		(void)keiland_titlebar_add_control(titlebar, 7U, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List");
-		(void)keiland_titlebar_add_control(titlebar, 8U, KEILAND_CONTROL_PREVIEW, KEILAND_PRIORITY_SECONDARY, 0U, "Preview");
-		(void)keiland_titlebar_set_control_state(titlebar, 2U, 0, 0);
+		(void)kl_titlebar_add_control(titlebar, 1U, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back");
+		(void)kl_titlebar_add_control(titlebar, 2U, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward");
+		(void)kl_titlebar_add_control(titlebar, 3U, KL_CONTROL_HOME, KL_PRIORITY_PRIMARY, 0U, "Home");
+		(void)kl_titlebar_add_control(titlebar, 4U, KL_CONTROL_BREADCRUMB, KL_PRIORITY_NORMAL, 0U, "Location");
+		(void)kl_titlebar_set_breadcrumb(titlebar, 4U, parts, 3U);
+		(void)kl_titlebar_add_control(titlebar, 5U, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Search");
+		(void)kl_titlebar_set_control_text(titlebar, 5U, "", "Search");
+		(void)kl_titlebar_add_control(titlebar, 6U, KL_CONTROL_VIEW_GRID, KL_PRIORITY_SECONDARY, 1U, "Icons");
+		(void)kl_titlebar_set_control_state(titlebar, 6U, 1, 1);
+		(void)kl_titlebar_add_control(titlebar, 7U, KL_CONTROL_VIEW_LIST, KL_PRIORITY_SECONDARY, 1U, "List");
+		(void)kl_titlebar_add_control(titlebar, 8U, KL_CONTROL_PREVIEW, KL_PRIORITY_SECONDARY, 0U, "Preview");
+		(void)kl_titlebar_set_control_state(titlebar, 2U, 0, 0);
 	}
 
 	/* The tabs. */
@@ -1007,12 +1007,12 @@ probe_show_model(
 
 	/* The mode. */
 	if (controls == 0)
-		(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_CONTROLS);
+		(void)kl_titlebar_set_mode(titlebar, KL_TITLEBAR_CONTROLS);
 	if (tabs == 0)
-		(void)keiland_titlebar_set_mode(titlebar, KEILAND_TITLEBAR_TABS);
+		(void)kl_titlebar_set_mode(titlebar, KL_TITLEBAR_TABS);
 
 	/* The model is shown at once. */
-	(void)keiland_titlebar_commit(titlebar);
+	(void)kl_titlebar_commit(titlebar);
 }
 
 /*
@@ -1022,17 +1022,17 @@ probe_show_model(
  */
 static void
 probe_tabs_start(
-	struct keiland_titlebar *titlebar)
+	struct kl_titlebar *titlebar)
 {
 	static const char *const titles[] = { "README.md", "main.c", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e.txt" };
-	static const uint32_t flags[] = { 0U, KEILAND_TAB_ACTIVE | KEILAND_TAB_CLOSABLE, KEILAND_TAB_ATTENTION | KEILAND_TAB_CLOSABLE };
+	static const uint32_t flags[] = { 0U, KL_TAB_ACTIVE | KL_TAB_CLOSABLE, KL_TAB_ATTENTION | KL_TAB_CLOSABLE };
 	unsigned index;
 
 	/* Each tab, the probe's copy first. */
 	for (index = 0; index < probe_tabs_wanted; index++) {
 		probe_tab_ids[index] = probe_tab_next;
 		probe_tab_next++;
-		probe_tab_flags[index] = KEILAND_TAB_CLOSABLE;
+		probe_tab_flags[index] = KL_TAB_CLOSABLE;
 		if (index < 3U) {
 			probe_tab_flags[index] = flags[index];
 			(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "%s", titles[index]);
@@ -1041,13 +1041,13 @@ probe_tabs_start(
 		}
 
 		/* The titlebar's. */
-		(void)keiland_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
-		(void)keiland_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
+		(void)kl_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
+		(void)kl_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
 	}
 
 	/* How many, and "+". */
 	probe_tab_count = probe_tabs_wanted;
-	(void)keiland_titlebar_set_tabs_options(titlebar, KEILAND_TABS_NEW_BUTTON);
+	(void)kl_titlebar_set_tabs_options(titlebar, KL_TABS_NEW_BUTTON);
 }
 
 /* Finds a tab's place among the probe's by its ID, or -1. */
@@ -1070,7 +1070,7 @@ probe_tab_find(
 /* Makes a tab the active one (it no longer wants attention), in a titlebar being updated. */
 static void
 probe_tab_activate(
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	int chosen)
 {
 	unsigned index;
@@ -1078,13 +1078,13 @@ probe_tab_activate(
 
 	/* Each tab's flags: only the chosen one active. */
 	for (index = 0; index < probe_tab_count; index++) {
-		flags = probe_tab_flags[index] & ~(uint32_t)KEILAND_TAB_ACTIVE;
+		flags = probe_tab_flags[index] & ~(uint32_t)KL_TAB_ACTIVE;
 		if ((int)index == chosen)
-			flags = (flags | KEILAND_TAB_ACTIVE) & ~(uint32_t)KEILAND_TAB_ATTENTION;
+			flags = (flags | KL_TAB_ACTIVE) & ~(uint32_t)KL_TAB_ATTENTION;
 		if (flags == probe_tab_flags[index])
 			continue;
 		probe_tab_flags[index] = flags;
-		(void)keiland_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], flags);
+		(void)kl_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], flags);
 	}
 }
 
@@ -1108,7 +1108,7 @@ probe_configure(
 static void
 probe_activated(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -1126,7 +1126,7 @@ probe_activated(
 static void
 probe_text_changed(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *text)
 {
@@ -1141,7 +1141,7 @@ probe_text_changed(
 static void
 probe_text_done(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	const char *text,
 	unsigned how)
@@ -1157,7 +1157,7 @@ probe_text_done(
 static void
 probe_tab_activated(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	uint32_t serial)
 {
@@ -1172,16 +1172,16 @@ probe_tab_activated(
 	index = probe_tab_find(id);
 	if (index < 0)
 		return;
-	(void)keiland_titlebar_begin(titlebar);
+	(void)kl_titlebar_begin(titlebar);
 	probe_tab_activate(titlebar, index);
-	(void)keiland_titlebar_commit(titlebar);
+	(void)kl_titlebar_commit(titlebar);
 }
 
 /* Prints a tab's close button. */
 static void
 probe_tab_close(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id)
 {
 	unsigned active;
@@ -1196,15 +1196,15 @@ probe_tab_close(
 	index = probe_tab_find(id);
 	if (index < 0)
 		return;
-	active = probe_tab_flags[index] & KEILAND_TAB_ACTIVE;
+	active = probe_tab_flags[index] & KL_TAB_ACTIVE;
 	memmove(&probe_tab_ids[index], &probe_tab_ids[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_ids[0]));
 	memmove(&probe_tab_flags[index], &probe_tab_flags[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_flags[0]));
 	memmove(probe_tab_titles[index], probe_tab_titles[index + 1], (probe_tab_count - (unsigned)index - 1U) * sizeof(probe_tab_titles[0]));
 	probe_tab_count--;
 
 	/* And from the titlebar; its neighbour becomes active when it was. */
-	(void)keiland_titlebar_begin(titlebar);
-	(void)keiland_titlebar_remove_tab(titlebar, id);
+	(void)kl_titlebar_begin(titlebar);
+	(void)kl_titlebar_remove_tab(titlebar, id);
 	if (active != 0U && probe_tab_count > 0U) {
 		if ((unsigned)index == probe_tab_count)
 			index--;
@@ -1212,14 +1212,14 @@ probe_tab_close(
 	}
 
 	/* Shown at once. */
-	(void)keiland_titlebar_commit(titlebar);
+	(void)kl_titlebar_commit(titlebar);
 }
 
 /* Prints the new-tab button. */
 static void
 probe_new_tab(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t serial)
 {
 	unsigned index;
@@ -1235,23 +1235,23 @@ probe_new_tab(
 	index = probe_tab_count;
 	probe_tab_ids[index] = probe_tab_next;
 	probe_tab_next++;
-	probe_tab_flags[index] = KEILAND_TAB_CLOSABLE;
+	probe_tab_flags[index] = KL_TAB_CLOSABLE;
 	(void)snprintf(probe_tab_titles[index], PROBE_TAB_TITLE, "Untitled %u", probe_tab_ids[index]);
 	probe_tab_count++;
 
 	/* The titlebar's. */
-	(void)keiland_titlebar_begin(titlebar);
-	(void)keiland_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
-	(void)keiland_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
+	(void)kl_titlebar_begin(titlebar);
+	(void)kl_titlebar_add_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index]);
+	(void)kl_titlebar_set_tab(titlebar, probe_tab_ids[index], probe_tab_titles[index], probe_tab_flags[index]);
 	probe_tab_activate(titlebar, (int)index);
-	(void)keiland_titlebar_commit(titlebar);
+	(void)kl_titlebar_commit(titlebar);
 }
 
 /* Prints the overflow popup's opening. */
 static void
 probe_overflow(
 	void *data,
-	struct keiland_titlebar *titlebar)
+	struct kl_titlebar *titlebar)
 {
 	/* The event's line. */
 	(void)data;

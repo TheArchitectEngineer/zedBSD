@@ -192,7 +192,7 @@ se_mark_draw(
 	 * light along the edges and the sheen (colour, alpha).  The panes are
 	 * translucent, so what is behind shows through.
 	 */
-	static const uint32_t colours[KEILAND_MARK_LAYERS][2] = {
+	static const uint32_t colours[KL_MARK_LAYERS][2] = {
 		{ 0xa9c3f6U, 175U },
 		{ 0x7fa2f0U, 90U },
 		{ 0xa3d8faU, 170U },
@@ -206,7 +206,7 @@ se_mark_draw(
 	 * The layers at the size last drawn (zero before the first); a new size
 	 * renders them again.  They live for the program's life.
 	 */
-	static uint8_t layers[KEILAND_MARK_LAYERS][WIDGETS_MARK_MAX * WIDGETS_MARK_MAX];
+	static uint8_t layers[KL_MARK_LAYERS][WIDGETS_MARK_MAX * WIDGETS_MARK_MAX];
 	static unsigned layers_pixels;
 	uint32_t alpha;
 	unsigned layer;
@@ -219,13 +219,13 @@ se_mark_draw(
 
 	/* The layers at this size. */
 	if (layers_pixels != pixels) {
-		for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++)
+		for (layer = 0; layer < KL_MARK_LAYERS; layer++)
 			kl_mark_raster(layer, pixels, layers[layer], pixels);
 		layers_pixels = pixels;
 	}
 
 	/* Each layer in its colour, as opaque as asked. */
-	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+	for (layer = 0; layer < KL_MARK_LAYERS; layer++) {
 		alpha = (uint32_t)((float)colours[layer][1] * opacity + 0.5f);
 		kl_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, KL_RGBA(colours[layer][0], alpha));
 	}

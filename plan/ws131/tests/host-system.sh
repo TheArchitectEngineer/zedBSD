@@ -11,7 +11,6 @@ out=${1:-build/ws131-host/host-system}
 mkdir -p "$(dirname -- "$out")/include"
 # Only keiland.h from the tree: the tree's wayland-client.h is zedBSD's, the host's is the one to link with.
 cp userland/desktop/keiland/keiland.h "$(dirname -- "$out")/include/keiland.h"
-cp userland/desktop/keiland/keiland-ui.h "$(dirname -- "$out")/include/keiland-ui.h"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -pthread \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -I"$(dirname -- "$out")/include" \

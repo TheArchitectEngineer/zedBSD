@@ -33,7 +33,7 @@ main(
 	unsigned capabilities;
 
 	/* The desktop contract of WS131 p011 (22), or a later one that only added to it (23: WS134 p012's monitor). */
-	version = keiland_version();
+	version = kl_version();
 	if (version < 22U)
 		return 1;
 

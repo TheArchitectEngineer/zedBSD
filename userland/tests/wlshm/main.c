@@ -18,7 +18,7 @@
  *         [--frames=N] [--cursor=AARRGGBB] [--hide-cursor] [--hold]
  *         [--delay-ms=N] [--token=NAME] [--display=NAME] [--csd]
  *
- * The window asks for zdesktop's titlebar (keiland_titlebar, an explicit
+ * The window asks for zdesktop's titlebar (kl_titlebar, an explicit
  * server-side decoration) before its first commit, as the native
  * applications do; without it zdesktop leaves the decoration to the client
  * (ws114-p007).  --csd leaves it out (ws099-p023).
@@ -79,7 +79,7 @@ struct window {
 	const char *token;
 	const char *name;
 	int csd;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 };
 
 static int options(int count, char **arguments, struct window *window, uint32_t *frames);
@@ -110,7 +110,7 @@ static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t seri
 static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
 
 /* The titlebar's events: the window's titlebar has no controls or tabs, so it hears none. */
-static const struct keiland_titlebar_listener titlebar_listener = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
+static const struct kl_titlebar_listener titlebar_listener = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
 static const struct wl_registry_listener registry_listener = { registry_global, registry_remove };
 static const struct xdg_wm_base_listener shell_listener = { shell_ping };
 static const struct xdg_surface_listener role_listener = { role_configure };
@@ -382,7 +382,7 @@ connect_window(
 
 	/* zdesktop's titlebar, asked for before the first commit so that the first configure carries it. */
 	if (!window->csd) {
-		window->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, window);
+		window->titlebar = kl_titlebar_create(window->display, window->toplevel, &titlebar_listener, window);
 		if (window->titlebar == NULL)
 			printf("WLSHM titlebar none errno=%d\n", errno);
 	}

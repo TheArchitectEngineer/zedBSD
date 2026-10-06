@@ -46,7 +46,7 @@ compat_dma_sync_export(
 	if (error != 0) {
 		/* Preserves the failure while recognizing only the native driver's unavailable transport. */
 		native_error = errno;
-		native_error = keiland_freebsd_dma_error(buffer_fd, native_error);
+		native_error = kl_freebsd_dma_error(buffer_fd, native_error);
 		errno = native_error;
 		return error;
 	}
@@ -85,7 +85,7 @@ compat_dma_sync_import(
 			/* A live borrowed completion is required before recognizing buffer capability. */
 			descriptor_flags = fcntl(sync_fd, F_GETFD);
 			if (descriptor_flags >= 0)
-				native_error = keiland_freebsd_dma_error(buffer_fd, native_error);
+				native_error = kl_freebsd_dma_error(buffer_fd, native_error);
 		}
 
 		/* Reports unsupported transport without publishing a fictitious completion payload. */

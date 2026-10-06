@@ -17,7 +17,7 @@
 
 #include "engine.h"
 
-#include <keiui.h>
+#include <keiland.h>
 #include <wayland/wayland-client.h>
 #include <wayland/input-method-unstable-v2-client-protocol.h>
 #include <wayland/virtual-keyboard-unstable-v1-client-protocol.h>
@@ -63,7 +63,7 @@ struct program_popup {
 	struct wl_surface *surface;
 	struct zwp_input_popup_surface_v2 *role;
 	struct program_popup_buffer buffers[PROGRAM_POPUP_BUFFERS];
-	struct kui_text text;
+	struct kl_text text;
 	unsigned text_open;
 	unsigned ready;
 	unsigned shown;

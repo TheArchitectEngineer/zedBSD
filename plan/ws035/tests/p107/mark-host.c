@@ -34,21 +34,21 @@ main(
 		return 2;
 	}
 	pixels = (unsigned)atoi(argv[2]);
-	layers = malloc((size_t)pixels * pixels * KEILAND_MARK_LAYERS);
+	layers = malloc((size_t)pixels * pixels * KL_MARK_LAYERS);
 	if (layers == NULL)
 		return 1;
 
 	/* Each layer, side by side (the stride is the whole row). */
-	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++)
-		keiland_mark_raster(layer, pixels, layers + layer * pixels, (size_t)pixels * KEILAND_MARK_LAYERS);
+	for (layer = 0; layer < KL_MARK_LAYERS; layer++)
+		kl_mark_raster(layer, pixels, layers + layer * pixels, (size_t)pixels * KL_MARK_LAYERS);
 
 	/* The layers as one grey picture. */
 	file = fopen(argv[1], "wb");
 	if (file == NULL)
 		return 1;
-	fprintf(file, "P5\n%u %u\n255\n", pixels * KEILAND_MARK_LAYERS, pixels);
+	fprintf(file, "P5\n%u %u\n255\n", pixels * KL_MARK_LAYERS, pixels);
 	for (y = 0; y < pixels; y++)
-		fwrite(layers + (size_t)y * pixels * KEILAND_MARK_LAYERS, 1, (size_t)pixels * KEILAND_MARK_LAYERS, file);
+		fwrite(layers + (size_t)y * pixels * KL_MARK_LAYERS, 1, (size_t)pixels * KL_MARK_LAYERS, file);
 	fclose(file);
 
 	/* Succeeded. */

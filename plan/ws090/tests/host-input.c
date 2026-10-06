@@ -13,7 +13,6 @@
  *   host-input
  */
 
-#include <keiui.h>
 #include <keiland.h>
 
 #include <math.h>
@@ -39,7 +38,7 @@ static uint64_t test_now;
 static void check(int condition, const char *what);
 static int near(double value, double expected, double within);
 static size_t view_position_at(void *data, double x, double y);
-static void view_caret_rect(void *data, size_t position, struct kui_rect *rect);
+static void view_caret_rect(void *data, size_t position, struct kl_rect *rect);
 static void view_word_at(void *data, size_t position, size_t *start, size_t *end);
 static void test_scroll(void);
 static void test_scroll_touch(void);
@@ -48,12 +47,12 @@ unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void test_pointer(void);
 static void test_touch(void);
 static void test_text(void);
-static void frame(struct kui_ui *ui, const struct kui_rect *widget, struct kui_scroll *scroll, const struct kui_rect *region, struct kui_text_touch *text, unsigned *state);
-static void finger(struct kui_ui *ui, int32_t id, double x, double y, int down);
-static void swipe(struct kui_ui *ui, int32_t id, double x, double y, double dx, double dy, int steps, struct kui_scroll *scroll, const struct kui_rect *region, struct kui_text_touch *text);
+static void frame(struct kl_ui *ui, const struct kl_rect *widget, struct kl_scroll *scroll, const struct kl_rect *region, struct kl_text_touch *text, unsigned *state);
+static void finger(struct kl_ui *ui, int32_t id, double x, double y, int down);
+static void swipe(struct kl_ui *ui, int32_t id, double x, double y, double dx, double dy, int steps, struct kl_scroll *scroll, const struct kl_rect *region, struct kl_text_touch *text);
 
 /* The fake view's answers. */
-static const struct kui_text_view view_answers = {
+static const struct kl_text_view view_answers = {
 	view_position_at,
 	view_caret_rect,
 	view_word_at
@@ -144,7 +143,7 @@ static void
 view_caret_rect(
 	void *data,
 	size_t position,
-	struct kui_rect *rect)
+	struct kl_rect *rect)
 {
 	/* The line and column of the position. */
 	(void)data;
@@ -178,40 +177,40 @@ static void
 test_scroll(void)
 {
 	static uint32_t pixels[200 * 200];
-	struct kui_scroll scroll;
-	struct kui_canvas canvas;
-	struct kui_rect rect;
+	struct kl_scroll scroll;
+	struct kl_canvas canvas;
+	struct kl_rect rect;
 	int moving;
 	int error;
 	int drawn;
 	int index;
 
 	/* A tall content in a smaller viewport. */
-	error = kui_scroll_init(&scroll, KUI_SCROLL_Y);
+	error = kl_scroll_init(&scroll, KL_SCROLL_Y);
 	check(error == 0, "scroll init");
-	kui_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
-	check(near(kui_scroll_limit_y(&scroll), 4700.0, 0.0), "limit is the content less the viewport");
-	check(kui_scroll_limit_x(&scroll) == 0.0, "no horizontal scroll");
+	kl_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
+	check(near(kl_scroll_limit_y(&scroll), 4700.0, 0.0), "limit is the content less the viewport");
+	check(kl_scroll_limit_x(&scroll) == 0.0, "no horizontal scroll");
 
 	/* The wheel glides: after one time constant 1 - 1/e of the way (Text Editor's 70 ms). */
-	kui_scroll_wheel(&scroll, 0.0, 100.0, test_now);
-	moving = kui_scroll_step(&scroll, test_now + KUI_SCROLL_GLIDE_US);
+	kl_scroll_wheel(&scroll, 0.0, 100.0, test_now);
+	moving = kl_scroll_step(&scroll, test_now + KL_SCROLL_GLIDE_US);
 	check(moving == 1 && near(scroll.y, 100.0 * (1.0 - exp(-1.0)), 0.01), "glide after one time constant");
-	moving = kui_scroll_step(&scroll, test_now + SECOND);
+	moving = kl_scroll_step(&scroll, test_now + SECOND);
 	check(moving == 0 && scroll.y == 100.0 && !scroll.gliding, "glide arrives and stops");
 
 	/* Two turns add up: the second from the first's target. */
 	test_now += 2U * SECOND;
-	kui_scroll_wheel(&scroll, 0.0, 100.0, test_now);
-	kui_scroll_wheel(&scroll, 0.0, 100.0, test_now + 10000U);
-	(void)kui_scroll_step(&scroll, test_now + SECOND);
+	kl_scroll_wheel(&scroll, 0.0, 100.0, test_now);
+	kl_scroll_wheel(&scroll, 0.0, 100.0, test_now + 10000U);
+	(void)kl_scroll_step(&scroll, test_now + SECOND);
 	check(scroll.y == 300.0, "two turns glide 200");
 
 	/* Past the end: the end. */
-	kui_scroll_wheel(&scroll, 0.0, 1.0e6, test_now + SECOND);
-	(void)kui_scroll_step(&scroll, test_now + 3U * SECOND);
+	kl_scroll_wheel(&scroll, 0.0, 1.0e6, test_now + SECOND);
+	(void)kl_scroll_step(&scroll, test_now + 3U * SECOND);
 	check(scroll.y == 4700.0, "the wheel stops at the end");
-	kui_scroll_move_to(&scroll, 0.0, -50.0, 0, test_now);
+	kl_scroll_move_to(&scroll, 0.0, -50.0, 0, test_now);
 	check(scroll.y == 0.0, "a move before the start is the start");
 
 	/* Reveal: a row below the viewport glides just into view; one above glides to its top. */
@@ -219,45 +218,45 @@ test_scroll(void)
 	rect.y = 1000;
 	rect.width = 10;
 	rect.height = 20;
-	kui_scroll_reveal(&scroll, &rect, test_now);
-	(void)kui_scroll_step(&scroll, test_now + SECOND);
+	kl_scroll_reveal(&scroll, &rect, test_now);
+	(void)kl_scroll_step(&scroll, test_now + SECOND);
 	check(scroll.y == 720.0, "reveal below");
 	rect.y = 100;
-	kui_scroll_reveal(&scroll, &rect, test_now + SECOND);
-	(void)kui_scroll_step(&scroll, test_now + 3U * SECOND);
+	kl_scroll_reveal(&scroll, &rect, test_now + SECOND);
+	(void)kl_scroll_step(&scroll, test_now + 3U * SECOND);
 	check(scroll.y == 100.0, "reveal above");
 
 	/* Keys: a line, a page less a line, the end and the start. */
 	test_now += 4U * SECOND;
-	(void)kui_scroll_key(&scroll, KUI_KEY_DOWN, 0U, 20.0, test_now);
-	(void)kui_scroll_step(&scroll, test_now + SECOND);
+	(void)kl_scroll_key(&scroll, KL_KEY_DOWN, 0U, 20.0, test_now);
+	(void)kl_scroll_step(&scroll, test_now + SECOND);
 	check(scroll.y == 120.0, "down a line");
-	(void)kui_scroll_key(&scroll, KUI_KEY_PAGEDOWN, 0U, 20.0, test_now + SECOND);
-	(void)kui_scroll_step(&scroll, test_now + 2U * SECOND);
+	(void)kl_scroll_key(&scroll, KL_KEY_PAGEDOWN, 0U, 20.0, test_now + SECOND);
+	(void)kl_scroll_step(&scroll, test_now + 2U * SECOND);
 	check(scroll.y == 400.0, "down a page less a line");
-	(void)kui_scroll_key(&scroll, KUI_KEY_END, KUI_MOD_CTRL, 20.0, test_now + 2U * SECOND);
-	(void)kui_scroll_step(&scroll, test_now + 3U * SECOND);
+	(void)kl_scroll_key(&scroll, KL_KEY_END, KL_MOD_CTRL, 20.0, test_now + 2U * SECOND);
+	(void)kl_scroll_step(&scroll, test_now + 3U * SECOND);
 	check(scroll.y == 4700.0, "the end");
-	index = kui_scroll_key(&scroll, 30U, 0U, 20.0, test_now);
+	index = kl_scroll_key(&scroll, 30U, 0U, 20.0, test_now);
 	check(index == 0, "a letter is not a scrolling key");
-	(void)kui_scroll_key(&scroll, KUI_KEY_HOME, KUI_MOD_CTRL, 20.0, test_now + 3U * SECOND);
-	(void)kui_scroll_step(&scroll, test_now + 4U * SECOND);
+	(void)kl_scroll_key(&scroll, KL_KEY_HOME, KL_MOD_CTRL, 20.0, test_now + 3U * SECOND);
+	(void)kl_scroll_step(&scroll, test_now + 4U * SECOND);
 	check(scroll.y == 0.0, "the start");
 
 	/* A smaller content keeps the position within the new end. */
-	kui_scroll_move_to(&scroll, 0.0, 4000.0, 0, test_now);
-	kui_scroll_set_size(&scroll, 400.0, 500.0, 400.0, 300.0);
+	kl_scroll_move_to(&scroll, 0.0, 4000.0, 0, test_now);
+	kl_scroll_set_size(&scroll, 400.0, 500.0, 400.0, 300.0);
 	check(scroll.y == 200.0, "a shorter content moves the position back");
 
 	/* The bars show after a move and are gone after the fade. */
-	kui_canvas_init(&canvas, pixels, 200, 200, 200);
-	kui_scroll_set_size(&scroll, 400.0, 5000.0, 200.0, 200.0);
-	kui_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now + 5U * SECOND);
+	kl_canvas_init(&canvas, pixels, 200, 200, 200);
+	kl_scroll_set_size(&scroll, 400.0, 5000.0, 200.0, 200.0);
+	kl_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now + 5U * SECOND);
 	rect.x = 0;
 	rect.y = 0;
 	rect.width = 200;
 	rect.height = 200;
-	moving = kui_scroll_draw_bars(&scroll, &canvas, &rect, kui_theme_default(), test_now + 5U * SECOND + 100000U);
+	moving = kl_scroll_draw_bars(&scroll, &canvas, &rect, kl_theme_default(), test_now + 5U * SECOND + 100000U);
 	drawn = 0;
 	for (index = 0; index < 200 * 200; index++) {
 		if (pixels[index] != 0U)
@@ -266,19 +265,19 @@ test_scroll(void)
 
 	/* Something of the bar was drawn. */
 	check(moving == 1 && drawn > 50, "the bar shows after a move");
-	moving = kui_scroll_draw_bars(&scroll, &canvas, &rect, kui_theme_default(), test_now + 7U * SECOND);
+	moving = kl_scroll_draw_bars(&scroll, &canvas, &rect, kl_theme_default(), test_now + 7U * SECOND);
 	check(moving == 0, "the bar is gone after the fade");
-	kui_canvas_release(&canvas);
+	kl_canvas_release(&canvas);
 
 	/* An axis that does not scroll ignores the wheel on it. */
-	kui_scroll_release(&scroll);
-	error = kui_scroll_init(&scroll, KUI_SCROLL_X);
-	kui_scroll_set_size(&scroll, 2000.0, 1000.0, 400.0, 300.0);
-	kui_scroll_wheel(&scroll, 50.0, 100.0, test_now);
-	(void)kui_scroll_step(&scroll, test_now + SECOND);
+	kl_scroll_release(&scroll);
+	error = kl_scroll_init(&scroll, KL_SCROLL_X);
+	kl_scroll_set_size(&scroll, 2000.0, 1000.0, 400.0, 300.0);
+	kl_scroll_wheel(&scroll, 50.0, 100.0, test_now);
+	(void)kl_scroll_step(&scroll, test_now + SECOND);
 	check(error == 0 && scroll.x == 50.0 && scroll.y == 0.0, "only the scroll's own axis moves");
-	kui_scroll_release(&scroll);
-	error = kui_scroll_init(&scroll, 0U);
+	kl_scroll_release(&scroll);
+	error = kl_scroll_init(&scroll, 0U);
 	check(error != 0, "a scroll with no axis is refused");
 	test_now += 10U * SECOND;
 }
@@ -287,8 +286,8 @@ test_scroll(void)
 static void
 test_scroll_touch(void)
 {
-	struct keiland_scroller *reference;
-	struct kui_scroll scroll;
+	struct kl_scroller *reference;
+	struct kl_scroll scroll;
 	double x;
 	double y;
 	int moving;
@@ -296,29 +295,29 @@ test_scroll_touch(void)
 	int step;
 
 	/* The scroll and a bare scroller with the same bounds, both at 1000. */
-	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
-	kui_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
-	kui_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
-	reference = keiland_scroller_create();
-	(void)keiland_scroller_set_bounds(reference, 0.0, 0.0, 0.0, 4700.0, 400.0, 300.0);
-	keiland_scroller_set_position(reference, 0.0, 1000.0);
+	(void)kl_scroll_init(&scroll, KL_SCROLL_Y);
+	kl_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
+	kl_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
+	reference = kl_scroller_create();
+	(void)kl_scroller_set_bounds(reference, 0.0, 0.0, 0.0, 4700.0, 400.0, 300.0);
+	kl_scroller_set_position(reference, 0.0, 1000.0);
 
 	/* A finger drags up by 200 and flings up at 2000 px/s. */
-	(void)kui_scroll_press(&scroll, test_now);
-	(void)keiland_scroller_press(reference, test_now);
-	kui_scroll_drag(&scroll, 0.0, -200.0);
-	keiland_scroller_drag(reference, 0.0, -200.0);
-	(void)kui_scroll_step(&scroll, test_now + 50000U);
+	(void)kl_scroll_press(&scroll, test_now);
+	(void)kl_scroller_press(reference, test_now);
+	kl_scroll_drag(&scroll, 0.0, -200.0);
+	kl_scroller_drag(reference, 0.0, -200.0);
+	(void)kl_scroll_step(&scroll, test_now + 50000U);
 	check(scroll.y == 1200.0, "the content follows the finger");
-	kui_scroll_fling(&scroll, 0.0, -2000.0, test_now + 60000U);
-	keiland_scroller_release(reference, test_now + 60000U, 0.0, -2000.0);
+	kl_scroll_fling(&scroll, 0.0, -2000.0, test_now + 60000U);
+	kl_scroller_release(reference, test_now + 60000U, 0.0, -2000.0);
 
 	/* Frame by frame both are at the same place until they rest. */
 	same = 1;
 	moving = 1;
 	for (step = 1; step < 400 && moving; step++) {
-		moving = kui_scroll_step(&scroll, test_now + 60000U + (uint64_t)step * 16667U);
-		(void)keiland_scroller_step(reference, test_now + 60000U + (uint64_t)step * 16667U, &x, &y);
+		moving = kl_scroll_step(&scroll, test_now + 60000U + (uint64_t)step * 16667U);
+		(void)kl_scroller_step(reference, test_now + 60000U + (uint64_t)step * 16667U, &x, &y);
 		if (scroll.y != y)
 			same = 0;
 	}
@@ -326,8 +325,8 @@ test_scroll_touch(void)
 	/* The same all the way, and at rest. */
 	check(same, "the flight is the scroller's, frame by frame");
 	check(scroll.y > 1300.0 && !moving && !scroll.touched, "the content flew on and rests");
-	keiland_scroller_destroy(reference);
-	kui_scroll_release(&scroll);
+	kl_scroller_destroy(reference);
+	kl_scroll_release(&scroll);
 	test_now += 10U * SECOND;
 }
 
@@ -342,10 +341,10 @@ test_scroll_axis(void)
 	struct kl_axis_track track;
 	struct kl_window_event event;
 	struct kl_scroller *scroller;
-	struct kui_scroll scroll;
-	struct kui_rect widget;
-	struct kui_rect region;
-	struct kui_ui *ui;
+	struct kl_scroll scroll;
+	struct kl_rect widget;
+	struct kl_rect region;
+	struct kl_ui *ui;
 	unsigned state[2];
 	int taken;
 	double vx;
@@ -371,36 +370,36 @@ test_scroll_axis(void)
 	check(vy == 0.0, "track: fingers that rested throw nothing");
 
 	/* The fingers scroll the content at once, as far as they moved. */
-	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
-	kui_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
-	kui_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
+	(void)kl_scroll_init(&scroll, KL_SCROLL_Y);
+	kl_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
+	kl_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
 	for (index = 0; index < 10; index++)
 		kl_scroll_axis(&scroll, 0.0, 30.0, KL_AXIS_SOURCE_FINGER, test_now + (uint64_t)index * 10000U);
-	(void)kui_scroll_step(&scroll, test_now + 90000U);
+	(void)kl_scroll_step(&scroll, test_now + 90000U);
 	check(scroll.y == 1300.0 && kl_scroller_axis_holding(scroll.scroller), "axis: the fingers move the content at once");
 
 	/* They lift moving: the content flies on further down, and rests. */
 	kl_scroll_axis_stop(&scroll, test_now + 95000U);
 	moving = 1;
 	for (step = 1; step < 400 && moving; step++)
-		moving = kui_scroll_step(&scroll, test_now + 95000U + (uint64_t)step * 16667U);
+		moving = kl_scroll_step(&scroll, test_now + 95000U + (uint64_t)step * 16667U);
 	check(scroll.y > 1600.0 && !moving && !scroll.touched && !kl_scroller_axis_holding(scroll.scroller), "axis: the content flies on when the fingers lift");
 	test_now += 10U * SECOND;
 
 	/* Fingers that rest before lifting leave the content where it is. */
-	kui_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
+	kl_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
 	for (index = 0; index < 10; index++)
 		kl_scroll_axis(&scroll, 0.0, 30.0, KL_AXIS_SOURCE_FINGER, test_now + (uint64_t)index * 10000U);
 	kl_scroll_axis_stop(&scroll, test_now + 200000U);
 	for (step = 1; step < 400; step++)
-		(void)kui_scroll_step(&scroll, test_now + 200000U + (uint64_t)step * 16667U);
+		(void)kl_scroll_step(&scroll, test_now + 200000U + (uint64_t)step * 16667U);
 	check(scroll.y == 1300.0 && !scroll.touched, "axis: rested fingers throw nothing");
 	test_now += 10U * SECOND;
 
 	/* A wheel's axis glides as kl_scroll_wheel does. */
 	kl_scroll_axis(&scroll, 0.0, 100.0, KL_AXIS_SOURCE_WHEEL, test_now);
 	check(scroll.gliding && !kl_scroller_axis_holding(scroll.scroller) && scroll.to_y == 1400.0, "axis: a wheel glides");
-	kui_scroll_release(&scroll);
+	kl_scroll_release(&scroll);
 	test_now += 10U * SECOND;
 
 	/*
@@ -429,9 +428,9 @@ test_scroll_axis(void)
 	test_now += 10U * SECOND;
 
 	/* Through the window's events: the fingers' moves reach the scroll under the pointer, their end lets it fly. */
-	ui = kui_ui_create();
-	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
-	kui_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
+	ui = kl_ui_create();
+	(void)kl_scroll_init(&scroll, KL_SCROLL_Y);
+	kl_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
 	widget.x = 10;
 	widget.y = 10;
 	widget.width = 100;
@@ -441,7 +440,7 @@ test_scroll_axis(void)
 	region.width = 300;
 	region.height = 300;
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	(void)kui_ui_pointer_motion(ui, 300.0, 100.0);
+	(void)kl_ui_pointer_motion(ui, 300.0, 100.0);
 	memset(&event, 0, sizeof(event));
 	event.kind = KL_WINDOW_AXIS;
 	event.axis_source = KL_AXIS_SOURCE_FINGER;
@@ -451,15 +450,15 @@ test_scroll_axis(void)
 		event.arrival_us = event.time_us;
 		taken = kl_ui_axis(ui, &event);
 	}
-	(void)kui_scroll_step(&scroll, test_now + 40000U);
+	(void)kl_scroll_step(&scroll, test_now + 40000U);
 	check(taken == 1 && scroll.y == 200.0, "ui axis: the fingers scroll the region under the pointer");
 	event.kind = KL_WINDOW_AXIS_STOP;
 	event.time_us = test_now + 45000U;
 	taken = kl_ui_axis(ui, &event);
-	moving = kui_scroll_step(&scroll, test_now + 60000U);
+	moving = kl_scroll_step(&scroll, test_now + 60000U);
 	check(taken == 1 && moving && scroll.y > 200.0, "ui axis: the end lets the content fly");
-	kui_scroll_release(&scroll);
-	kui_ui_destroy(ui);
+	kl_scroll_release(&scroll);
+	kl_ui_destroy(ui);
 	test_now += 10U * SECOND;
 }
 
@@ -477,55 +476,55 @@ kl_appearance_get(
 /* Draws one frame of the pointer and touch tests: a widget, a scroll's region (or a text view's), and a widget over the region. */
 static void
 frame(
-	struct kui_ui *ui,
-	const struct kui_rect *widget,
-	struct kui_scroll *scroll,
-	const struct kui_rect *region,
-	struct kui_text_touch *text,
+	struct kl_ui *ui,
+	const struct kl_rect *widget,
+	struct kl_scroll *scroll,
+	const struct kl_rect *region,
+	struct kl_text_touch *text,
 	unsigned *state)
 {
-	struct kui_rect row;
+	struct kl_rect row;
 
 	/* The frame's time. */
-	kui_ui_begin(ui, test_now);
+	kl_ui_begin(ui, test_now);
 
 	/* The region, then a widget: the first alone, and a row in the region. */
 	if (text != NULL)
-		kui_ui_text_region(ui, 20U, region, scroll, text);
+		kl_ui_text_region(ui, 20U, region, scroll, text);
 	else if (scroll != NULL)
-		kui_ui_scroll_region(ui, 10U, region, scroll);
-	state[0] = kui_ui_hit(ui, 1U, 0U, widget);
+		kl_ui_scroll_region(ui, 10U, region, scroll);
+	state[0] = kl_ui_hit(ui, 1U, 0U, widget);
 	state[1] = 0;
 	if (scroll != NULL && text == NULL) {
 		row.x = region->x;
 		row.y = region->y + 40 - (int)scroll->y;
 		row.width = region->width;
 		row.height = 28;
-		state[1] = kui_ui_hit(ui, 2U, 7U, &row);
+		state[1] = kl_ui_hit(ui, 2U, 7U, &row);
 	}
 
 	/* The frame is drawn. */
-	(void)kui_ui_end(ui, test_now);
+	(void)kl_ui_end(ui, test_now);
 }
 
 /* The pointer: hover, click, double click, the wheel and what no part takes. */
 static void
 test_pointer(void)
 {
-	struct kui_scroll scroll;
-	struct kui_event event;
-	struct kui_rect widget;
-	struct kui_rect region;
-	struct kui_ui *ui;
+	struct kl_scroll scroll;
+	struct kl_event event;
+	struct kl_rect widget;
+	struct kl_rect region;
+	struct kl_ui *ui;
 	unsigned state[2];
 	int redraw;
 	int taken;
 
 	/* A widget and a scroll's region beside it. */
-	ui = kui_ui_create();
+	ui = kl_ui_create();
 	check(ui != NULL, "ui create");
-	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
-	kui_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
+	(void)kl_scroll_init(&scroll, KL_SCROLL_Y);
+	kl_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
 	widget.x = 10;
 	widget.y = 10;
 	widget.width = 100;
@@ -537,80 +536,80 @@ test_pointer(void)
 	frame(ui, &widget, &scroll, &region, NULL, state);
 
 	/* Hover: onto the widget draws, moving within it does not, leaving it does. */
-	redraw = kui_ui_pointer_motion(ui, 20.0, 20.0);
+	redraw = kl_ui_pointer_motion(ui, 20.0, 20.0);
 	check(redraw == 1, "the pointer onto a widget redraws");
-	redraw = kui_ui_pointer_motion(ui, 30.0, 25.0);
+	redraw = kl_ui_pointer_motion(ui, 30.0, 25.0);
 	check(redraw == 0, "moving within the widget does not redraw");
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_HOT) != 0U, "the widget is lit");
-	redraw = kui_ui_pointer_motion(ui, 150.0, 100.0);
+	check((state[0] & KL_HIT_HOT) != 0U, "the widget is lit");
+	redraw = kl_ui_pointer_motion(ui, 150.0, 100.0);
 	check(redraw == 1, "leaving the widget redraws");
 
 	/* A press and a release on it click it, for one frame. */
-	(void)kui_ui_pointer_motion(ui, 20.0, 20.0);
-	(void)kui_ui_pointer_button(ui, 1, test_now);
+	(void)kl_ui_pointer_motion(ui, 20.0, 20.0);
+	(void)kl_ui_pointer_button(ui, 1, test_now);
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_ACTIVE) != 0U && (state[0] & KUI_HIT_CLICKED) == 0U, "held, not yet clicked");
-	(void)kui_ui_pointer_button(ui, 0, test_now);
+	check((state[0] & KL_HIT_ACTIVE) != 0U && (state[0] & KL_HIT_CLICKED) == 0U, "held, not yet clicked");
+	(void)kl_ui_pointer_button(ui, 0, test_now);
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_CLICKED) != 0U && (state[0] & KUI_HIT_DOUBLE) == 0U, "clicked");
+	check((state[0] & KL_HIT_CLICKED) != 0U && (state[0] & KL_HIT_DOUBLE) == 0U, "clicked");
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_CLICKED) == 0U, "a click is seen by one frame");
+	check((state[0] & KL_HIT_CLICKED) == 0U, "a click is seen by one frame");
 
 	/* A second click soon after is a double click. */
-	(void)kui_ui_pointer_button(ui, 1, test_now + 200000U);
-	(void)kui_ui_pointer_button(ui, 0, test_now + 250000U);
+	(void)kl_ui_pointer_button(ui, 1, test_now + 200000U);
+	(void)kl_ui_pointer_button(ui, 0, test_now + 250000U);
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_DOUBLE) != 0U, "double click");
+	check((state[0] & KL_HIT_DOUBLE) != 0U, "double click");
 
 	/* A press on the widget released elsewhere clicks nothing. */
 	test_now += SECOND;
-	(void)kui_ui_pointer_button(ui, 1, test_now);
-	(void)kui_ui_pointer_motion(ui, 150.0, 20.0);
-	(void)kui_ui_pointer_button(ui, 0, test_now);
+	(void)kl_ui_pointer_button(ui, 1, test_now);
+	(void)kl_ui_pointer_motion(ui, 150.0, 20.0);
+	(void)kl_ui_pointer_button(ui, 0, test_now);
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_CLICKED) == 0U, "released elsewhere: no click");
+	check((state[0] & KL_HIT_CLICKED) == 0U, "released elsewhere: no click");
 
 	/* The wheel over the region glides its scroll. */
-	(void)kui_ui_pointer_motion(ui, 300.0, 200.0);
-	(void)kui_ui_wheel(ui, 0.0, 120.0, test_now);
+	(void)kl_ui_pointer_motion(ui, 300.0, 200.0);
+	(void)kl_ui_wheel(ui, 0.0, 120.0, test_now);
 	test_now += SECOND;
 	frame(ui, &widget, &scroll, &region, NULL, state);
 	check(scroll.y == 120.0, "the wheel over a scroll glides it");
 
 	/* A press and the wheel over nothing are the application's. */
-	(void)kui_ui_pointer_motion(ui, 150.0, 350.0);
-	(void)kui_ui_wheel(ui, 0.0, 30.0, test_now);
-	(void)kui_ui_pointer_button(ui, 1, test_now);
-	taken = kui_ui_take(ui, &event);
-	check(taken == 1 && event.kind == KUI_EVENT_WHEEL && event.dy == 30.0, "an unclaimed wheel");
-	taken = kui_ui_take(ui, &event);
-	check(taken == 1 && event.kind == KUI_EVENT_PRESS && event.x == 150.0 && event.region == 0U, "an unclaimed press");
-	taken = kui_ui_take(ui, &event);
+	(void)kl_ui_pointer_motion(ui, 150.0, 350.0);
+	(void)kl_ui_wheel(ui, 0.0, 30.0, test_now);
+	(void)kl_ui_pointer_button(ui, 1, test_now);
+	taken = kl_ui_take(ui, &event);
+	check(taken == 1 && event.kind == KL_EVENT_WHEEL && event.dy == 30.0, "an unclaimed wheel");
+	taken = kl_ui_take(ui, &event);
+	check(taken == 1 && event.kind == KL_EVENT_PRESS && event.x == 150.0 && event.region == 0U, "an unclaimed press");
+	taken = kl_ui_take(ui, &event);
 	check(taken == 0, "no more");
 
 	/* A press in the scroll region on no widget names the region. */
-	(void)kui_ui_pointer_button(ui, 0, test_now);
-	(void)kui_ui_take(ui, &event);
-	(void)kui_ui_pointer_motion(ui, 300.0, 250.0);
-	(void)kui_ui_pointer_button(ui, 1, test_now);
-	taken = kui_ui_take(ui, &event);
-	check(taken == 1 && event.kind == KUI_EVENT_PRESS && event.region == 10U, "a press over a region names it");
-	(void)kui_ui_pointer_button(ui, 0, test_now);
-	(void)kui_ui_take(ui, &event);
+	(void)kl_ui_pointer_button(ui, 0, test_now);
+	(void)kl_ui_take(ui, &event);
+	(void)kl_ui_pointer_motion(ui, 300.0, 250.0);
+	(void)kl_ui_pointer_button(ui, 1, test_now);
+	taken = kl_ui_take(ui, &event);
+	check(taken == 1 && event.kind == KL_EVENT_PRESS && event.region == 10U, "a press over a region names it");
+	(void)kl_ui_pointer_button(ui, 0, test_now);
+	(void)kl_ui_take(ui, &event);
 
 	/* The scroll and the input go. */
 	/* The scroll and the input go. */
 	/* The scroll and the input go. */
-	kui_scroll_release(&scroll);
-	kui_ui_destroy(ui);
+	kl_scroll_release(&scroll);
+	kl_ui_destroy(ui);
 	test_now += 10U * SECOND;
 }
 
 /* One finger down or up at a place, at the test's time. */
 static void
 finger(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	int32_t id,
 	double x,
 	double y,
@@ -618,33 +617,33 @@ finger(
 {
 	/* Down, or up. */
 	if (down)
-		(void)kui_ui_touch_down(ui, id, test_now, test_now, x, y);
+		(void)kl_ui_touch_down(ui, id, test_now, test_now, x, y);
 	else
-		(void)kui_ui_touch_up(ui, id, test_now, test_now);
+		(void)kl_ui_touch_up(ui, id, test_now, test_now);
 }
 
 /* A finger that is down moves by dx, dy in steps of a frame (16.7 ms), a frame drawn after each. */
 static void
 swipe(
-	struct kui_ui *ui,
+	struct kl_ui *ui,
 	int32_t id,
 	double x,
 	double y,
 	double dx,
 	double dy,
 	int steps,
-	struct kui_scroll *scroll,
-	const struct kui_rect *region,
-	struct kui_text_touch *text)
+	struct kl_scroll *scroll,
+	const struct kl_rect *region,
+	struct kl_text_touch *text)
 {
-	static const struct kui_rect nowhere = { -100, -100, 1, 1 };
+	static const struct kl_rect nowhere = { -100, -100, 1, 1 };
 	unsigned state[2];
 	int step;
 
 	/* Each step: the report, then a frame. */
 	for (step = 1; step <= steps; step++) {
 		test_now += 16667U;
-		(void)kui_ui_touch_motion(ui, id, test_now, test_now, x + dx * step / steps, y + dy * step / steps);
+		(void)kl_ui_touch_motion(ui, id, test_now, test_now, x + dx * step / steps, y + dy * step / steps);
 		frame(ui, &nowhere, scroll, region, text, state);
 	}
 }
@@ -653,12 +652,12 @@ swipe(
 static void
 test_touch(void)
 {
-	static const struct kui_rect nowhere = { -100, -100, 1, 1 };
-	struct kui_scroll scroll;
-	struct kui_event event;
-	struct kui_rect widget;
-	struct kui_rect region;
-	struct kui_ui *ui;
+	static const struct kl_rect nowhere = { -100, -100, 1, 1 };
+	struct kl_scroll scroll;
+	struct kl_event event;
+	struct kl_rect widget;
+	struct kl_rect region;
+	struct kl_ui *ui;
 	unsigned state[2];
 	double before;
 	double distance;
@@ -669,9 +668,9 @@ test_touch(void)
 	int step;
 
 	/* A widget and a scroll's region with a row in it. */
-	ui = kui_ui_create();
-	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
-	kui_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
+	ui = kl_ui_create();
+	(void)kl_scroll_init(&scroll, KL_SCROLL_Y);
+	kl_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
 	widget.x = 10;
 	widget.y = 10;
 	widget.width = 100;
@@ -687,7 +686,7 @@ test_touch(void)
 	test_now += 60000U;
 	finger(ui, 1, 30.0, 20.0, 0);
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[0] & KUI_HIT_CLICKED) != 0U, "a tap clicks the widget");
+	check((state[0] & KL_HIT_CLICKED) != 0U, "a tap clicks the widget");
 
 	/* A tap on the row in the region clicks the row. */
 	test_now += SECOND;
@@ -695,7 +694,7 @@ test_touch(void)
 	test_now += 60000U;
 	finger(ui, 1, 300.0, 50.0, 0);
 	frame(ui, &widget, &scroll, &region, NULL, state);
-	check((state[1] & KUI_HIT_CLICKED) != 0U, "a tap clicks a row in a scroll");
+	check((state[1] & KL_HIT_CLICKED) != 0U, "a tap clicks a row in a scroll");
 	check(!scroll.touched && scroll.y == 0.0, "the tap leaves the scroll where it was");
 
 	/* A drag over the row scrolls the region (the row does not take a drag), and a fast lift flies on. */
@@ -726,12 +725,12 @@ test_touch(void)
 
 	/* Stopped where it was caught, and no click. */
 	distance = fabs(scroll.y - before);
-	check((state[1] & KUI_HIT_CLICKED) == 0U && distance < 1.0, "a tap stops the flight without a click");
+	check((state[1] & KL_HIT_CLICKED) == 0U && distance < 1.0, "a tap stops the flight without a click");
 
 	/* A drag over nothing is the application's, with its offset. */
 	test_now += SECOND;
 	for (;;) {
-		taken = kui_ui_take(ui, &event);
+		taken = kl_ui_take(ui, &event);
 		if (taken == 0)
 			break;
 	}
@@ -739,17 +738,17 @@ test_touch(void)
 	/* A finger far from every part drags. */
 	finger(ui, 1, 150.0, 400.0, 1);
 	swipe(ui, 1, 150.0, 400.0, 60.0, 0.0, 6, &scroll, &region, NULL);
-	taken = kui_ui_take(ui, &event);
-	check(taken == 1 && event.kind == KUI_EVENT_DRAG_BEGIN, "an unclaimed drag begins");
-	error = kui_ui_drag_offset(ui, test_now, &dx, &dy);
+	taken = kl_ui_take(ui, &event);
+	check(taken == 1 && event.kind == KL_EVENT_DRAG_BEGIN, "an unclaimed drag begins");
+	error = kl_ui_drag_offset(ui, test_now, &dx, &dy);
 	check(error == 0 && dx > 40.0, "its offset");
 	finger(ui, 1, 210.0, 400.0, 0);
-	taken = kui_ui_take(ui, &event);
-	check(taken == 1 && event.kind == KUI_EVENT_DRAG_END, "and ends");
+	taken = kl_ui_take(ui, &event);
+	check(taken == 1 && event.kind == KL_EVENT_DRAG_END, "and ends");
 
 	/* The scroll and the input go. */
-	kui_scroll_release(&scroll);
-	kui_ui_destroy(ui);
+	kl_scroll_release(&scroll);
+	kl_ui_destroy(ui);
 	test_now += 10U * SECOND;
 }
 
@@ -757,11 +756,11 @@ test_touch(void)
 static void
 test_text(void)
 {
-	static const struct kui_rect nowhere = { -100, -100, 1, 1 };
-	struct kui_text_touch text;
-	struct kui_scroll scroll;
-	struct kui_rect region;
-	struct kui_ui *ui;
+	static const struct kl_rect nowhere = { -100, -100, 1, 1 };
+	struct kl_text_touch text;
+	struct kl_scroll scroll;
+	struct kl_rect region;
+	struct kl_ui *ui;
 	unsigned changes;
 	unsigned state[2];
 	size_t anchor;
@@ -769,10 +768,10 @@ test_text(void)
 	int step;
 
 	/* A text view of 100 lines in a 300-pixel viewport at (0, 0). */
-	ui = kui_ui_create();
-	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
-	kui_scroll_set_size(&scroll, 800.0, (double)(VIEW_LINES * VIEW_LINE_HEIGHT), 800.0, 300.0);
-	kui_text_touch_init(&text, &view_answers, NULL);
+	ui = kl_ui_create();
+	(void)kl_scroll_init(&scroll, KL_SCROLL_Y);
+	kl_scroll_set_size(&scroll, 800.0, (double)(VIEW_LINES * VIEW_LINE_HEIGHT), 800.0, 300.0);
+	kl_text_touch_init(&text, &view_answers, NULL);
 	region.x = 0;
 	region.y = 0;
 	region.width = 800;
@@ -783,8 +782,8 @@ test_text(void)
 	finger(ui, 1, 31.0, 45.0, 1);
 	test_now += 60000U;
 	finger(ui, 1, 31.0, 45.0, 0);
-	changes = kui_text_touch_take(&text);
-	check((changes & KUI_TEXT_TOUCH_SELECTION) != 0U && text.caret == 2U * 81U + 3U && text.anchor == text.caret, "a tap puts the caret");
+	changes = kl_text_touch_take(&text);
+	check((changes & KL_TEXT_TOUCH_SELECTION) != 0U && text.caret == 2U * 81U + 3U && text.anchor == text.caret, "a tap puts the caret");
 
 	/* A double tap selects the word there (columns 6 to 11) with handles. */
 	test_now += SECOND;
@@ -827,19 +826,19 @@ test_text(void)
 	/* Two fingers scroll and leave the selection. */
 	test_now += SECOND;
 	anchor = text.anchor;
-	(void)kui_ui_touch_down(ui, 1, test_now, test_now, 300.0, 250.0);
-	(void)kui_ui_touch_down(ui, 2, test_now, test_now, 400.0, 250.0);
+	(void)kl_ui_touch_down(ui, 1, test_now, test_now, 300.0, 250.0);
+	(void)kl_ui_touch_down(ui, 2, test_now, test_now, 400.0, 250.0);
 	for (step = 1; step <= 8; step++) {
 		test_now += 16667U;
-		(void)kui_ui_touch_motion(ui, 1, test_now, test_now, 300.0, 250.0 - 15.0 * step);
-		(void)kui_ui_touch_motion(ui, 2, test_now, test_now, 400.0, 250.0 - 15.0 * step);
+		(void)kl_ui_touch_motion(ui, 1, test_now, test_now, 300.0, 250.0 - 15.0 * step);
+		(void)kl_ui_touch_motion(ui, 2, test_now, test_now, 400.0, 250.0 - 15.0 * step);
 		frame(ui, &nowhere, &scroll, &region, &text, state);
 	}
 
 	/* The content moved with them; they lift. */
 	before = scroll.y;
-	(void)kui_ui_touch_up(ui, 1, test_now, test_now);
-	(void)kui_ui_touch_up(ui, 2, test_now, test_now);
+	(void)kl_ui_touch_up(ui, 1, test_now, test_now);
+	(void)kl_ui_touch_up(ui, 2, test_now, test_now);
 	check(before > 60.0 && text.anchor == anchor, "two fingers scroll and keep the selection");
 	for (step = 0; step < 200 && scroll.touched; step++) {
 		test_now += 16667U;
@@ -851,26 +850,26 @@ test_text(void)
 
 	/* A long press asks for the menu at the finger. */
 	test_now += SECOND;
-	(void)kui_text_touch_take(&text);
+	(void)kl_text_touch_take(&text);
 	finger(ui, 1, 200.0, 150.0, 1);
 	test_now += 600000U;
 	frame(ui, &nowhere, &scroll, &region, &text, state);
-	changes = kui_text_touch_take(&text);
-	check((changes & KUI_TEXT_TOUCH_MENU) != 0U && text.menu_x == 200.0 && text.menu_y == 150.0, "a long press asks for the menu");
+	changes = kl_text_touch_take(&text);
+	check((changes & KL_TEXT_TOUCH_MENU) != 0U && text.menu_x == 200.0 && text.menu_y == 150.0, "a long press asks for the menu");
 	finger(ui, 1, 200.0, 150.0, 0);
 	frame(ui, &nowhere, &scroll, &region, &text, state);
 	check(!scroll.touched, "the long press lets the scroll go");
 
 	/* A selecting finger held near the bottom edge scrolls the content by itself and the selection follows. */
 	test_now += SECOND;
-	kui_scroll_move_to(&scroll, 0.0, 0.0, 0, test_now);
+	kl_scroll_move_to(&scroll, 0.0, 0.0, 0, test_now);
 	frame(ui, &nowhere, &scroll, &region, &text, state);
 	finger(ui, 1, 50.0, 100.0, 1);
 	swipe(ui, 1, 50.0, 100.0, 0.0, 190.0, 6, &scroll, &region, &text);
 	before = scroll.y;
 	for (step = 0; step < 30; step++) {
 		test_now += 16667U;
-		(void)kui_ui_touch_motion(ui, 1, test_now, test_now, 50.0, 290.0);
+		(void)kl_ui_touch_motion(ui, 1, test_now, test_now, 50.0, 290.0);
 		frame(ui, &nowhere, &scroll, &region, &text, state);
 	}
 
@@ -881,14 +880,14 @@ test_text(void)
 	frame(ui, &nowhere, &scroll, &region, &text, state);
 
 	/* A key's selection takes the handles away. */
-	kui_text_touch_set_selection(&text, 3U, 9U);
+	kl_text_touch_set_selection(&text, 3U, 9U);
 	check(!text.handles && text.anchor == 3U && text.caret == 9U, "the view's own selection has no handles");
 
 	/* The keys' characters. */
-	check(kui_key_character(30U, 0U) == 'a' && kui_key_character(30U, KUI_MOD_SHIFT) == 'A', "keys type characters");
-	check(kui_key_character(30U, KUI_MOD_CTRL) == 0U && kui_key_character(200U, 0U) == 0U, "commands and other keys type none");
+	check(kl_key_character(30U, 0U) == 'a' && kl_key_character(30U, KL_MOD_SHIFT) == 'A', "keys type characters");
+	check(kl_key_character(30U, KL_MOD_CTRL) == 0U && kl_key_character(200U, 0U) == 0U, "commands and other keys type none");
 
 	/* The scroll and the input go. */
-	kui_scroll_release(&scroll);
-	kui_ui_destroy(ui);
+	kl_scroll_release(&scroll);
+	kl_ui_destroy(ui);
 }

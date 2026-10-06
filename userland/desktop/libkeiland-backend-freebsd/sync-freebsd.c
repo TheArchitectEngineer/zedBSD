@@ -43,7 +43,7 @@ kl_backend_dmabuf_export_read(
 	if (error != 0) {
 		/* Preserves the failure while recognizing only the native driver's unavailable transport. */
 		native_error = errno;
-		native_error = keiland_freebsd_dma_error(buffer_fd, native_error);
+		native_error = kl_freebsd_dma_error(buffer_fd, native_error);
 		errno = native_error;
 		return error;
 	}

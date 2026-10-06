@@ -48,7 +48,7 @@ main(
 	}
 
 	/* Each layer, drawn by the mark's own rasterizer, into its file. */
-	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+	for (layer = 0; layer < KL_MARK_LAYERS; layer++) {
 		kl_mark_raster(layer, pixels, coverage, pixels);
 		(void)snprintf(path, sizeof(path), "%s/mark-%u.pgm", argv[2], layer);
 		file = fopen(path, "wb");
@@ -64,6 +64,6 @@ main(
 	}
 
 	/* Succeeded. */
-	printf("p034-mark-dump: %u layers at %u pixels\n", (unsigned)KEILAND_MARK_LAYERS, pixels);
+	printf("p034-mark-dump: %u layers at %u pixels\n", (unsigned)KL_MARK_LAYERS, pixels);
 	return 0;
 }

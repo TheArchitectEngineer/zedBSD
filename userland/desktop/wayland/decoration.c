@@ -16,7 +16,7 @@
  * KDE's manager and making no decoration object for the window (KDE's
  * protocol decorates only through objects; GTK4 declares its own
  * decoration so, gdktoplevel-wayland.c set_decorated).  An xdg-decoration
- * object's choice comes first, then KDE's object; a native keiland_titlebar
+ * object's choice comes first, then KDE's object; a native kl_titlebar
  * is the compositor's decoration as well.  A client that uses neither protocol and draws its own frame is
  * not told apart (the user's decision); a fullscreen window is drawn
  * without the decoration (shell.c).

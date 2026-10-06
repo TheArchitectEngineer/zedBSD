@@ -23,7 +23,7 @@ LIBKEILAND_SOURCES := userland/desktop/libkeiland/version.c userland/desktop/lib
 	userland/desktop/libkeiland/system/system-monitor-rate.c
 
 # The desktop's shared widgets and controls (WS090; their own library until WS131 p012, named kl_ since p013,
-# <keiland-ui.h>): the drawing layer, the scroll and the input, the window, the widgets and the file chooser.
+# <keiland.h>): the drawing layer, the scroll and the input, the window, the widgets and the file chooser.
 LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/canvas.c \
 	userland/desktop/libkeiland/ui/text.c \

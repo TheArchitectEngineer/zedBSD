@@ -37,7 +37,7 @@ main(
 	char **argv)
 {
 	struct truetype_color_glyph found;
-	struct keiland_color_image image;
+	struct kl_color_image image;
 	struct truetype_face *face;
 	struct truetype_face *text;
 	unsigned char *bytes;

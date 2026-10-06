@@ -7,7 +7,7 @@
 
 /*
  * The editing operations of the on-screen keyboard's buttons for a window
- * (KUI_VERSION 8, ws102-p017, plan/ws102/design.md section 2.10), through
+ * (libkeiui's version 8, ws102-p017, plan/ws102/design.md section 2.10), through
  * libkeiland's kl_edit.  The window says it carries out every
  * operation, with its state before each wait, and turns each operation
  * into the keys it stands for, queued as its own key inputs, so that an

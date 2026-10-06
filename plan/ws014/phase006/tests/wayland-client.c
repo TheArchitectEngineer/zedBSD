@@ -966,7 +966,7 @@ check_descriptor_transport(void)
 	};
 	struct wl_display *display;
 	struct wl_registry *registry;
-	struct keiland_gpu_buffer_v1 *factory;
+	struct kl_gpu_buffer_v1 *factory;
 	struct wl_buffer *buffer;
 	struct wl_proxy *receiver;
 	struct wl_array metadata;
@@ -1001,7 +1001,7 @@ check_descriptor_transport(void)
 	assert(display != NULL);
 	registry = wl_display_get_registry(display);
 	assert(registry != NULL);
-	factory = wl_registry_bind(registry, 7, &keiland_gpu_buffer_v1_interface, 1);
+	factory = wl_registry_bind(registry, 7, &kl_gpu_buffer_v1_interface, 1);
 	assert(factory != NULL);
 	receiver = wl_registry_bind(registry, 8, &descriptor_interface, 1);
 	assert(receiver != NULL);
@@ -1021,7 +1021,7 @@ check_descriptor_transport(void)
 	metadata.data = bytes;
 	error = pipe(pipes);
 	assert(error == 0);
-	buffer = keiland_gpu_buffer_v1_create_buffer(factory, pipes[0], &metadata);
+	buffer = kl_gpu_buffer_v1_create_buffer(factory, pipes[0], &metadata);
 	assert(buffer != NULL);
 	close(pipes[0]);
 	got = write(pipes[1], "R", 1);
@@ -1135,7 +1135,7 @@ check_descriptor_transport(void)
 	error = pipe(pipes);
 	assert(error == 0);
 	metadata.size = 64;
-	buffer = keiland_gpu_buffer_v1_create_buffer(factory, pipes[0], &metadata);
+	buffer = kl_gpu_buffer_v1_create_buffer(factory, pipes[0], &metadata);
 	assert(buffer != NULL);
 	copied_fd = pipes[0];
 	close(pipes[0]);

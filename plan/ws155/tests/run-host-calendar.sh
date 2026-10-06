@@ -9,7 +9,7 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws155/host-calendar}
 dir=$(dirname "$out")
 mkdir -p "$dir/inc"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h userland/desktop/keiland/keiland-ui.h "$dir/inc/"
+cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$dir/inc/"
 ln -sfn "$(pwd)/include/libc/compat" "$dir/inc/compat"
 U=userland/desktop
 K=$U/libkeiland/ui
