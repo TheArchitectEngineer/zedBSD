@@ -132,3 +132,5 @@
 | WS157 ws157-p003 | 窓の幅が狭い（列 1）、HiDPI の縮小画像の粗さ、全面の表示の拡大・pan、指の swipe・pinch | 狭い窓で左の列を畳む、scale に合わせた縮小画像の大きさ、拡大・pan と指の操作（今は fit だけ） | `view.c` の `view_layout`・`view_whole` | 2026-10-07 |
 | WS157 ws157-p003 | 月の見出しを跨ぐ ↑↓、slideshow の写真の decode が 3 秒を超える | ↑↓ は grid の見た目の列で動く、slideshow は写真が出てから時間を数える（今は一覧の index で ±列数、時間は開いた時から） | `view.c` の `view_step`・`ph_view_tick` | 2026-10-07 |
 | WS157 ws157-p003 | 開いている間に `~/Pictures` が変わる（file の削除・追加） | 見張って一覧を直す（今は F5・File > Refresh で読み直すだけ。消えた file は「This photo cannot be shown.」） | `main.c` の `ph_refresh` | 2026-10-07 |
+| WS165 ws165-p005（認識率） | 利用者が面の高さを Hershey の面と違う割合で書く（面いっぱい・とても小さく）、面の端に寄せて書く | 書き方に合わせて面の割合を学ぶ（直前の数文字の大きさの平均など）。今は「大文字・かなが面の 2/3」の前提で、外れると c/C・o/° の判定が崩れる | `hand-cloud.c` の `framed_penalty`、`keyboard-hand.c` の `kwl_hand_recognize_on` | 2026-10-07 |
+| WS165 ws165-p005 | ひらがなとカタカナで同じ形（へ/ヘ、ぺ/ペ、べ/ベ）、×/x・O/0・れ/わ 等の形の近い組 | 前後の文脈（直前の字の種類、辞書）で選ぶ（今は形と大きさ・位置だけ） | `keyboard-hand.c`（文脈は IME の側） | 2026-10-07 |

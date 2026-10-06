@@ -22,12 +22,18 @@
  *
  * Some characters differ from others only by their size or their place
  * (c and C, o and the degree sign, l and |): with the writing alone the
- * recognizer cannot tell them apart.  The share of top-1 is also printed
- * with each such group counted as one character ("same shape"); the
- * face's box will tell them apart by size (p003).
+ * recognizer cannot tell them apart.  Each sample is written on an area
+ * as the templates are on the Hershey glyphs' (y from -16 to 16), a
+ * little larger or smaller (10%) and higher or lower (5% of the area)
+ * besides the changes above, and recognized with the area
+ * (hand_recognize_framed, ws165-p005), which tells them apart by the
+ * size and the place.  The share of top-1 is also printed with each such
+ * group counted as one character ("same shape").  HOST_HAND_UNFRAMED
+ * recognizes without the area (p002's way).
  *
- * The exit status is 0 when top-1 of the same shapes >= 90% and top-4 >=
- * 98% (the user's goal H1, plan/ws165/phase002/phase.md), 1 otherwise.
+ * The exit status is 0 when top-1 >= 90% and top-4 >= 98% (the user's
+ * goal H1, plan/ws165/phase002/phase.md, without counting the groups as
+ * one: p005), 1 otherwise.
  */
 
 #include "userland/desktop/wayland/hand-cloud.h"
@@ -93,6 +99,7 @@ main(
 	static unsigned missed[400];
 	struct hand_templates templates;
 	struct hand_cloud_input input;
+	struct hand_frame frame;
 	uint32_t codes[4];
 	float distances[4];
 	FILE *file;
@@ -115,6 +122,7 @@ main(
 	double slowest;
 	double one;
 	const char *confusion;
+	const char *unframed;
 	int error;
 	int read;
 	int same;
@@ -166,6 +174,11 @@ main(
 
 	/* Each glyph's samples, recognized (HOST_HAND_CONFUSION prints each miss). */
 	confusion = getenv("HOST_HAND_CONFUSION");
+	unframed = getenv("HOST_HAND_UNFRAMED");
+	frame.top = -16.0f;
+	frame.height = 32.0f;
+	if (unframed != NULL)
+		frame.height = 0.0f;
 	total = 0U;
 	first = 0U;
 	first_shape = 0U;
@@ -180,7 +193,7 @@ main(
 			input.starts = sample.starts;
 			input.count = sample.count;
 			started = test_now();
-			found = hand_recognize_strokes(&templates, &input, codes, distances, 4U);
+			found = hand_recognize_framed(&templates, &input, &frame, codes, distances, 4U);
 			one = test_now() - started;
 			spent += one;
 			if (one > slowest)
@@ -229,7 +242,7 @@ main(
 	printf("host-hand: top-1 %.1f%% (same shape %.1f%%) top-4 %.1f%% of %u, recognition mean %.2f ms slowest %.2f ms\n",
 	    100.0 * first / total, 100.0 * first_shape / total, 100.0 * four / total, total, 1000.0 * spent / total, 1000.0 * slowest);
 	hand_templates_free(&templates);
-	if (first_shape * 100U >= total * 90U && four * 100U >= total * 98U) {
+	if (first * 100U >= total * 90U && four * 100U >= total * 98U) {
 		printf("host-hand: PASS\n");
 		return 0;
 	}
@@ -314,7 +327,11 @@ test_glyph_read(
 	return 0;
 }
 
-/* Makes a sample of a glyph: turned, stretched, shaken, the strokes reordered and reversed, a stroke's end cut. */
+/*
+ * Makes a sample of a glyph: turned, stretched, shaken, the strokes
+ * reordered and reversed, a stroke's end cut, written larger or smaller,
+ * higher or lower and anywhere across.
+ */
 static void
 test_sample(
 	const struct test_glyph *glyph,
@@ -330,6 +347,9 @@ test_sample(
 	size_t swap;
 	size_t cut;
 	float angle;
+	float grown;
+	float lift;
+	float across;
 	float scale_x;
 	float scale_y;
 	float size;
@@ -377,6 +397,9 @@ test_sample(
 	scale_x = test_uniform(0.85f, 1.15f);
 	scale_y = test_uniform(0.85f, 1.15f);
 	cut = test_random() % (strokes + 1U);
+	grown = test_uniform(0.9f, 1.1f);
+	lift = test_uniform(-1.6f, 1.6f);
+	across = test_uniform(-40.0f, 40.0f);
 
 	/* Each stroke in its new order, maybe backwards, a tenth of one cut off its end. */
 	sample->code = glyph->code;
@@ -393,8 +416,8 @@ test_sample(
 				swap = to - 1U - point;
 			x = glyph->x[swap] * scale_x;
 			y = glyph->y[swap] * scale_y;
-			sample->x[sample->count] = x * cosf(angle) - y * sinf(angle) + 0.02f * size * test_normal();
-			sample->y[sample->count] = x * sinf(angle) + y * cosf(angle) + 0.02f * size * test_normal();
+			sample->x[sample->count] = grown * (x * cosf(angle) - y * sinf(angle) + 0.02f * size * test_normal()) + across;
+			sample->y[sample->count] = grown * (x * sinf(angle) + y * cosf(angle) + 0.02f * size * test_normal()) + lift;
 			sample->starts[sample->count] = (unsigned char)(point == 0U);
 			sample->count++;
 		}

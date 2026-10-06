@@ -16,8 +16,11 @@
  * the templates of the package hand-hershey, read the first time; then
  * the characters that differ only by their size are put in the order the
  * ink's size on the writing area says (a small c before C), and a small
- * kana is offered before its full size one when the ink is small.  It
- * also measures the ink (its strokes, points and bounds) for the log.
+ * kana is offered before its full size one when the ink is small.
+ * kwl_hand_recognize_on (ws165-p005) takes the writing area's top too:
+ * the ink's size and place on it count with its shape (hand-cloud.c's
+ * hand_recognize_framed).  It also measures the ink (its strokes, points
+ * and bounds) for the log.
  */
 
 #include "keyboard.h"
@@ -43,8 +46,11 @@
 
 /*
  * The pairs that differ only by size, the small one first (a small ink
- * takes the small one).
+ * takes the small one): the Latin letters' (HAND_SIZES_LATIN of them,
+ * told apart by the area itself when it is known), then the kana's (the
+ * small kana have no templates).
  */
+#define HAND_SIZES_LATIN	8U
 static const uint32_t hand_sizes[][2] = {
 	{ 'c', 'C' }, { 's', 'S' }, { 'v', 'V' }, { 'w', 'W' }, { 'x', 'X' }, { 'z', 'Z' }, { 'o', 'O' }, { 'p', 'P' },
 	{ 0x3041, 0x3042 }, { 0x3043, 0x3044 }, { 0x3045, 0x3046 }, { 0x3047, 0x3048 }, { 0x3049, 0x304a }, { 0x3063, 0x3064 },
@@ -60,7 +66,8 @@ static const uint32_t hand_sizes[][2] = {
 static struct hand_templates hand_templates;
 static int hand_state;
 
-static void hand_sized(uint32_t *codes, size_t *count, int small);
+static void hand_recognize_ink(const struct kwl_hand_ink *ink, const struct hand_frame *frame, int32_t area, size_t first_pair, struct kwl_hand_result *result);
+static void hand_sized(uint32_t *codes, size_t *count, int small, size_t first_pair);
 static void hand_utf8(uint32_t code, char *text, size_t size);
 
 /*
@@ -267,12 +274,52 @@ kwl_hand_load(
 /*
  * Recognizes the ink: the candidates for the character written, the
  * likeliest first.  area is the writing area's height (0 when it is not
- * known: the sizes are then not used).
+ * known: the sizes are then not used); the characters that differ only by
+ * size are put in the order the ink's size says (ws165-p003).
  */
 void
 kwl_hand_recognize(
 	const struct kwl_hand_ink *ink,
 	int32_t area,
+	struct kwl_hand_result *result)
+{
+	/* By the shapes, then the sizes' order. */
+	hand_recognize_ink(ink, NULL, area, 0U, result);
+}
+
+/*
+ * Recognizes the ink written on an area (its top and height, in the ink's
+ * units; ws165-p005): the size and the place of the ink on the area count
+ * with its shape (hand_recognize_framed), so c and C, o and the degree
+ * sign, . and the middle dot are told apart; a small kana (not among the
+ * templates) is offered before its full size one when the ink is small.
+ */
+void
+kwl_hand_recognize_on(
+	const struct kwl_hand_ink *ink,
+	int32_t top,
+	int32_t height,
+	struct kwl_hand_result *result)
+{
+	struct hand_frame frame;
+
+	/* The area, and the small kana by size (the rest is the area's). */
+	frame.top = (float)top;
+	frame.height = (float)height;
+	hand_recognize_ink(ink, &frame, height, HAND_SIZES_LATIN, result);
+}
+
+/*
+ * Recognizes the ink, on an area when frame is not NULL; the pairs of
+ * hand_sizes from the first one given are then put in the order the ink's
+ * size on an area of a height (0: none) says.
+ */
+static void
+hand_recognize_ink(
+	const struct kwl_hand_ink *ink,
+	const struct hand_frame *frame,
+	int32_t area,
+	size_t first_pair,
 	struct kwl_hand_result *result)
 {
 	static float xs[HAND_CLOUD_INPUT_MAX];
@@ -318,14 +365,14 @@ kwl_hand_recognize(
 	input.y = ys;
 	input.starts = starts;
 
-	/* The nearest characters, put in the order the ink's size says. */
-	count = hand_recognize_strokes(&hand_templates, &input, codes, distances, HAND_LOOKED);
+	/* The nearest characters (on the area when there is one), put in the order the ink's size says. */
+	count = hand_recognize_framed(&hand_templates, &input, frame, codes, distances, HAND_LOOKED);
 	kwl_hand_bounds(ink, bounds);
 	small = 0;
 	if (area > 0 && (float)bounds[3] < HAND_SMALL_SHARE * (float)area && (float)bounds[2] < HAND_SMALL_SHARE * (float)area)
 		small = 1;
 	if (area > 0)
-		hand_sized(codes, &count, small);
+		hand_sized(codes, &count, small, first_pair);
 
 	/* The first ones, as text. */
 	for (point = 0U; point < count && result->count < KWL_HAND_CANDIDATES; point++) {
@@ -336,15 +383,16 @@ kwl_hand_recognize(
 
 /*
  * Puts the characters that differ only by size in the order the ink's size
- * says: the first candidate's pair, its small one first for small ink and
- * its large one otherwise, the other right after it (added when it was not
- * among the candidates).
+ * says: the first candidate's pair (of those from first_pair on), its
+ * small one first for small ink and its large one otherwise, the other
+ * right after it (added when it was not among the candidates).
  */
 static void
 hand_sized(
 	uint32_t *codes,
 	size_t *count,
-	int small)
+	int small,
+	size_t first_pair)
 {
 	uint32_t chosen;
 	uint32_t other;
@@ -354,7 +402,7 @@ hand_sized(
 	/* The first candidate's pair. */
 	if (*count == 0U)
 		return;
-	for (pair = 0U; pair < sizeof(hand_sizes) / sizeof(hand_sizes[0]); pair++) {
+	for (pair = first_pair; pair < sizeof(hand_sizes) / sizeof(hand_sizes[0]); pair++) {
 		if (codes[0] == hand_sizes[pair][0] || codes[0] == hand_sizes[pair][1])
 			break;
 	}

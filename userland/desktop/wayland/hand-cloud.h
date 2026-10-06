@@ -30,6 +30,13 @@
  * are taken away, the rest is recognized, and the mark is put on the
  * candidates that take it (か + ゛ is が).
  *
+ * A written character's size and place on the writing area tell apart the
+ * characters of one shape (c and C, o and the degree sign, . and the
+ * middle dot, l and |): hand_recognize_framed takes the area's top and
+ * height, and adds to each candidate's distance how far the ink's size
+ * and the height of its middle on the area are from its template's on the
+ * Hershey glyphs' area (y from -16 to 16; ws165-p005).
+ *
  * It knows nothing of the compositor, so the host tests run it alone.
  */
 
@@ -54,10 +61,25 @@ struct hand_cloud {
 	struct hand_cloud_point points[HAND_CLOUD_POINTS];
 };
 
-/* A template: the character it is (a code point) and its cloud. */
+/* The box a character's points take: its left, top, right and bottom (y grows downwards). */
+struct hand_extent {
+	float left;
+	float top;
+	float right;
+	float bottom;
+};
+
+/* A template: the character it is (a code point), its cloud and its box on the Hershey glyphs' area. */
 struct hand_template {
 	uint32_t code;
 	struct hand_cloud cloud;
+	struct hand_extent extent;
+};
+
+/* The area a character is written on: its top and its height, in the points' units (a height of 0: not known). */
+struct hand_frame {
+	float top;
+	float height;
 };
 
 /* The templates read: a table of count of them. */
@@ -85,5 +107,7 @@ size_t hand_recognize(const struct hand_templates *templates, const struct hand_
     size_t capacity);
 size_t hand_recognize_strokes(const struct hand_templates *templates, const struct hand_cloud_input *input, uint32_t *codes,
     float *distances, size_t capacity);
+size_t hand_recognize_framed(const struct hand_templates *templates, const struct hand_cloud_input *input, const struct hand_frame *frame,
+    uint32_t *codes, float *distances, size_t capacity);
 
 #endif
