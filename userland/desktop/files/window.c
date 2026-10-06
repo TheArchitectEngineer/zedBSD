@@ -25,6 +25,7 @@
 #include "window.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -35,6 +36,7 @@
 static int window_open(struct fm_window *window, const char *display, const struct kl_window_options *options);
 static void window_event(struct fm_window *window, const struct kl_window_event *event);
 static void window_axis(struct fm_window *window, const struct kl_window_event *event);
+static void window_text(struct fm_window *window, const struct kl_window_event *event);
 static void window_drop(struct fm_window *window, const struct kl_window_event *event);
 static void window_desktop_log(struct fm_window *window);
 static void window_pad_push(struct fm_window *window, unsigned type, uint32_t time, double distance);
@@ -366,6 +368,12 @@ window_event(
 		input->key = event->code;
 		input->pressed = event->pressed;
 		break;
+	case KL_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_DELETE:
+		/* An input method's text, for the name being changed (ws090-p022). */
+		window_text(window, event);
+		break;
 	case KL_WINDOW_FOCUS:
 		/* The selection is drawn in the accent while the window has the focus, grey otherwise. */
 		window->activated = event->pressed;
@@ -640,4 +648,28 @@ window_modifiers(
 
 	/* Reports them. */
 	return bits;
+}
+
+/* Queues an input method's text, the bytes it deletes before the caret, or the text it composes (ws090-p022). */
+static void
+window_text(
+	struct fm_window *window,
+	const struct kl_window_event *event)
+{
+	struct fm_event *input;
+	unsigned type;
+
+	/* Its kind. */
+	type = FM_EVENT_TEXT;
+	if (event->kind == KL_WINDOW_TEXT_DELETE)
+		type = FM_EVENT_TEXT_DELETE;
+	else if (event->kind == KL_WINDOW_TEXT_PREEDIT)
+		type = FM_EVENT_PREEDIT;
+
+	/* Queued with the other input, in its place. */
+	input = fm_window_push(window, type);
+	if (input == NULL)
+		return;
+	(void)snprintf(input->text, sizeof(input->text), "%s", event->text);
+	input->before = event->before;
 }
