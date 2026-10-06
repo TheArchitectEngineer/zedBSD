@@ -142,7 +142,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS139 速さ、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS152 更新、WS161 YubiKey、WS172 passkey、WS148・WS149・WS151）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
 2. **第 2 段**: app（WS175 PDF の編集、WS083 Vulkan Video、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、Linux・package・配布（WS116 Qt6、WS115 GTK4、WS009 文書 ほか）。
 3. **第 3 段**: kernel・driver・電源（WS031、WS143、WS052、WS130 の残り、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
-4. **積み残しの WS** を作り準正常系・異常系を Phase に。
+4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
 5. **デバッグに専念**して全ての Bug を消化する。
 - ベータ3 へ: WS068・WS101・WS171・WS176。止める: WS074 の描画（B1）・WS153（U2〜U15）。
 <!-- master:priority:end -->
@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー:「積み残しWSはベータ2積み残しという形でWSを作りましょう。」→ [WS177 ベータ2 積み残し](ws177/ws.md) を作成。各担当は phase.md の「積み残し」の節に書き、第 1〜3 段の後に Q1 が WS177 の Phase に集める。
 - 2026-10-06 夜 ユーザー: 作業の順を第 1 段（ベータ1 の WS ＋ベータ2 の一部）→ 第 2 段（app・Linux）→ 第 3 段（kernel・base）→ 積み残しの WS → デバッグに専念、と決定。正常系だけを実装、準正常系・異常系の未実装は積み残しに（master の priority、q820・q821）。
 - 2026-10-06 ユーザー（クリック）: Files・Settings の残りの自前の UI 部品も「置き換える（別の Phase）」→ [ws090-p023](ws090/phase023/phase.md)（q818、P1、q817 の後）。
 - 2026-10-06 ユーザー（クリック）: Files・Settings の欄は「今 libkeiland の canvas へ移す」→ ws090-p007（Settings）と p009・p010（Files）を前倒し（q817、P1、WS131 p022 より先）。それまでの間の IME は P1 が自前の欄に入れた（q816 の (a)）。
