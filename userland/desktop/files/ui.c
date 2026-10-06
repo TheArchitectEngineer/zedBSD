@@ -689,7 +689,7 @@ fm_ui_crumbs(
 	tab = fm_ui_tab(app);
 	location = &tab->history[tab->history_index].location;
 	if (location->kind != FM_LOCATION_FOLDER) {
-		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "%s", fm_location_name(location, app->home));
+		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "%s", kl_tr(fm_location_name(location, app->home)));
 		crumbs[0].location = *location;
 		return 1;
 	}

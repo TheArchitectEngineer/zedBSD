@@ -722,6 +722,33 @@ def lock_unlock(item):
 	item.passed()
 
 
+@run.define("desktop.language.lock-japanese")
+def lock_japanese(item):
+	# The lock screen in Japanese (ws158-p003, q809: a zdesktop of a session sessiond started, which can unlock it).
+	mark = run.mark()
+	run.as_user("/bin/keiland-settings set ui.language 1")
+	japanese = run.wait(r"ZWL LANGUAGE language=ja ", mark, 10)
+	item.step("ui.language 1", japanese)
+	item.check(japanese, "the desktop did not change to Japanese")
+	mark = run.mark()
+	run.key("super+l")
+	locked = run.wait(r"ZWL LOCK locked ", mark, 10)
+	time.sleep(1.0)
+	item.step("Super+L", locked)
+	run.shot(item, "ja-lock")
+	run.type(aatlib.PASSWORD)
+	run.key("enter")
+	unlocked = run.wait(r"ZWL LOCK unlocked", mark, 15)
+	item.step("typed the password and Enter", unlocked)
+	mark = run.mark()
+	run.as_user("/bin/keiland-settings set ui.language 0")
+	english = run.wait(r"ZWL LANGUAGE language=en ", mark, 10)
+	item.step("ui.language 0", english)
+	item.check(locked and unlocked, "the screen did not lock and unlock")
+	item.check(english, "the desktop did not come back to English")
+	item.person("the lock screen's Japanese words (パスワード) in ja-lock.png")
+
+
 @run.define("desktop.session.logout-login")
 def logout_login(item):
 	before = run.lines(r"ZWL READY socket=\S+ .* role=normal", None)

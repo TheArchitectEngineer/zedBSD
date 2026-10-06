@@ -1,5 +1,5 @@
 # Settings' texts in Japanese (domain settings, WS158 p004). tools/i18n/tr.py update keeps the translations.
-# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:481
+# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:493
 msg	Settings	設定
 # userland/desktop/locale/settings.keys:4
 msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
@@ -157,5 +157,7 @@ msg	Your password is wrong.	パスワードが違います。
 msg	Another change is under way. Try again in a moment.	ほかの変更が進行中です。少し待ってからやり直してください。
 # userland/desktop/settings/search.c:527
 msg	Coming in a later version	今後のバージョンで対応予定
-# userland/desktop/settings/ui.c:484
+# userland/desktop/settings/titlebar.c:346
+msg	Search settings	設定を検索
+# userland/desktop/settings/ui.c:496
 msg	Search	検索

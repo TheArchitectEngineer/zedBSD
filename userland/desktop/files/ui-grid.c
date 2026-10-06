@@ -239,7 +239,7 @@ grid_title(
 	/* The place's name, large (a search says what it looks for). */
 	tab = fm_ui_tab(app);
 	location = &tab->history[tab->history_index].location;
-	name = fm_location_name(location, app->home);
+	name = kl_tr(fm_location_name(location, app->home));
 	if (location->kind == FM_LOCATION_SEARCH) {
 		snprintf(title, sizeof(title), "\u201c%s\u201d", location->path);
 		name = title;
