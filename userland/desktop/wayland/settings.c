@@ -11,7 +11,7 @@
  * into effect (the wallpaper, the windows' opacity, the pointer, the
  * keyboards' repeat, the sound through volume.c), and Keiland's system
  * extension that clients reach them through (kl_system_manager_v1 and
- * kl_system_settings_v1, keiland/kl-system-protocol.h).
+ * kl_system_settings_v1, libkeiland/system/kl-system-protocol.h).
  *
  * The store reads desktop.conf once, before the look draws the wallpaper,
  * and writes it once, at the session's end: a thread merges it at the Log
@@ -31,7 +31,7 @@
 #include "settings-store.h"
 #include "ime.h"
 
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>

@@ -9,7 +9,7 @@
  * The desktop's settings for applications (keiland.h's kl_settings_*;
  * WS135, plan/ws135/design.md section 3): the client of Keiland's system
  * extension (kl_system_manager_v1, kl_system_settings_v1;
- * keiland/kl-system-protocol.h) for the compositor's keys, and the
+ * libkeiland/system/kl-system-protocol.h) for the compositor's keys, and the
  * application's own file (settings-app.c) for its keys.
  *
  * The extension's objects live on a queue of the library's own, which
@@ -30,7 +30,7 @@
 
 #include "settings-private.h"
 #include "system/system-protocol.h"
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <errno.h>
 #include <pwd.h>

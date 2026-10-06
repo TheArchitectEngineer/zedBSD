@@ -30,7 +30,7 @@ put() { timeout 120 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[s]ettings" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[s]ettings" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 
 # The pictures.
-tree=userland/desktop/keiland/wallpapers/Birch-Lake.png
+tree=userland/desktop/wallpapers/Birch-Lake.png
 cp "$tree" "$out/w.png"
 convert "$tree" -quality 92 "$out/w.jpg" || { echo "wallpaper-time: FAIL: no JPEG (ImageMagick)"; exit 1; }
 python3 - "$tree" "$out/w.ppm" <<'EOF'

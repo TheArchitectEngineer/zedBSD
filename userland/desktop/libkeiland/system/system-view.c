@@ -15,7 +15,7 @@
 
 #include "system-private.h"
 
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <errno.h>
 #include <string.h>

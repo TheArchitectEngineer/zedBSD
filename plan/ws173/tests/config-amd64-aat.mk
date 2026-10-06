@@ -3,7 +3,7 @@
 # the compositor's screen capture (ZEDBSD_TEST_SCREEN_CAPTURE, userland/desktop/wayland/shot.c), aat-input and keiland-shot.
 # A test image only.  Build:
 #   plan/tools/guest/test-image.sh plan/ws173/tests/config-amd64-aat.mk BUILD \
-#	--file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png
+#	--file /usr/share/keiland/wallpaper.png=userland/desktop/wallpapers/Birch-Lake.png
 include plan/tools/titlebar/config-amd64-menu.mk
 CONFIG_INPUT_TEST_INJECT := y
 ZEDBSD_TEST_SCREEN_CAPTURE := y

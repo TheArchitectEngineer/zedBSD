@@ -7,7 +7,7 @@
 
 /*
  * Keiland's system extension in the compositor (WS131 p010, plan/ws131/
- * design.md section 4; keiland/kl-system-protocol.h): the manager, and the
+ * design.md section 4; libkeiland/system/kl-system-protocol.h): the manager, and the
  * network, the sound, the power, the devices and the account it gives
  * clients.  The settings are settings.c's.
  *
@@ -54,7 +54,7 @@
 #include "kwl.h"
 #include "media.h"
 
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>

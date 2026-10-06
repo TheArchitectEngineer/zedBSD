@@ -52,7 +52,7 @@ python3 plan/tools/imageview/make-images.py "$out/pictures" >/dev/null 2>&1
 guest 'mkdir -p /root/Documents /root/Pictures; echo ok' >/dev/null
 put "$out/a4.pdf" /root/Documents/manual.pdf
 for f in "$out"/pictures/*; do [ -f "$f" ] && put "$f" "/root/Pictures/$(basename "$f")"; done
-for f in userland/desktop/keiland/wallpapers/*.png; do put "$f" "/root/Pictures/$(basename "$f")"; done
+for f in userland/desktop/wallpapers/*.png; do put "$f" "/root/Pictures/$(basename "$f")"; done
 printf 'zedBSD / Kei 1.0.0 Beta 2\n\nA UNIX-like OS under a permissive license,\nwith its own kernel, desktop and GPU drivers.\n\n- Keiland desktop (Wayland)\n- Vulkan on the i915 driver and Venus\n- Files, Notes, Terminal, PDF Viewer, Image Viewer\n' > "$out/hello.txt"
 put "$out/hello.txt" /root/Documents/hello.txt
 guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png

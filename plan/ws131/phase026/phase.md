@@ -63,14 +63,14 @@ git grep -l 'userland/desktop/keiland/kl-system-protocol.h' -- userland plan/ws*
 ### 段 2: 壁紙と文書を header の置き場所の外へ
 
 ```sh
-git mv userland/desktop/keiland/wallpapers/Lakeside.ppm   userland/desktop/wallpapers/
-git mv userland/desktop/keiland/wallpapers/Birch-Lake.ppm userland/desktop/wallpapers/
-git mv userland/desktop/keiland/wallpapers/README.md      userland/desktop/wallpapers/
-git mv userland/desktop/keiland/wayland/API-PROVENANCE.md userland/desktop/libwayland/API-PROVENANCE.md
-git grep -l 'desktop/keiland/wallpapers' -- . ':!plan/history' ':!plan/*/evidence' \
-  | xargs sed -i 's|desktop/keiland/wallpapers|desktop/wallpapers|g'
+git mv userland/desktop/wallpapers/Lakeside.ppm   userland/desktop/wallpapers/
+git mv userland/desktop/wallpapers/Birch-Lake.ppm userland/desktop/wallpapers/
+git mv userland/desktop/wallpapers/README.md      userland/desktop/wallpapers/
+git mv userland/desktop/libwayland/API-PROVENANCE.md userland/desktop/libwayland/API-PROVENANCE.md
+git grep -l 'desktop/wallpapers' -- . ':!plan/history' ':!plan/*/evidence' \
+  | xargs sed -i 's|desktop/wallpapers|desktop/wallpapers|g'
 git grep -l 'keiland/wayland/API-PROVENANCE.md' -- . ':!plan/history' \
-  | xargs sed -i 's|userland/desktop/keiland/wayland/API-PROVENANCE.md|userland/desktop/libwayland/API-PROVENANCE.md|g'
+  | xargs sed -i 's|userland/desktop/libwayland/API-PROVENANCE.md|userland/desktop/libwayland/API-PROVENANCE.md|g'
 ```
 
 注意: `userland/desktop/wallpapers/` には壁紙を生成する `Makefile`・`generate.py` が既にある。名前が重ならないことを `ls` で確かめる。`plan/ws075/demo/build-demo-image.sh` などの `--file` の元の path がこの sed で直ることを確かめる。

@@ -2,7 +2,7 @@
 # BUG-095: the SSH guest image with a oneshot service that powers the guest off (bug095_poweroff) and its rc.conf.
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
-# userland/desktop/keiland/wallpapers/Birch-Lake.png.
+# userland/desktop/wallpapers/Birch-Lake.png.
 #
 #   plan/ws099/tests/bug095/build-bug095-image.sh BUILD
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

@@ -7,7 +7,7 @@
 
 /*
  * The interfaces of Keiland's system extension as libwayland marshals
- * them (system-protocol.c; keiland/kl-system-protocol.h has the opcodes).
+ * them (system-protocol.c; libkeiland/system/kl-system-protocol.h has the opcodes).
  * The settings (settings.c) and the system (system.c) share them; they
  * stay inside the library (exports.map, WS131 review 17).
  */

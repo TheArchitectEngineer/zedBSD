@@ -6,7 +6,7 @@
 # first of them).  The session's home is /root with the usual folders (run-zdesktop.sh).
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
-# userland/desktop/keiland/wallpapers/Birch-Lake.png.
+# userland/desktop/wallpapers/Birch-Lake.png.
 #
 #   plan/ws035/demo/build-demo-image.sh [BUILD]     (default build/zdesktop-demo)
 #
@@ -20,6 +20,6 @@ plan/tools/guest/test-image.sh --no-harness plan/ws031/tests/config-zdesktop-hw.
 	--file /etc/service.d/zdesktop=$demo/zdesktop \
 	--file /etc/keiland/run-zdesktop.sh=$demo/run-zdesktop.sh \
 	--file /etc/keiland/apps.conf=$demo/apps.conf \
-	--file /usr/share/keiland/wallpaper.png=userland/desktop/keiland/wallpapers/Birch-Lake.png \
+	--file /usr/share/keiland/wallpaper.png=userland/desktop/wallpapers/Birch-Lake.png \
 	ZEDBSD_TEST_RC_CONF=$demo/rc.conf ZEDBSD_TEST_IMAGE_TAG=zdesktop-demo
 echo "zdesktop demo image: $build/hdd-image.img"

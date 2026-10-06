@@ -6,7 +6,7 @@
  */
 
 /*
- * The interfaces of Keiland's system extension (keiland/kl-system-protocol.h;
+ * The interfaces of Keiland's system extension (libkeiland/system/kl-system-protocol.h;
  * WS135 for the manager and the settings, WS131 p010 for the network, the
  * sound, the power and the devices), described as wayland-scanner would
  * make them, over libwayland's marshalling.  They are not static because
@@ -16,7 +16,7 @@
 
 #include "system-protocol.h"
 
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <stddef.h>
 

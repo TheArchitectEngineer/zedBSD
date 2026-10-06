@@ -21,7 +21,7 @@ tarball はすべて P3 の worktree の `build/p3-q597/dist/`（ignored）に�
 1. WS114 で Linux（Debian 13）で実測したのが同じ 4.18.6。zedBSD と Linux の差を、版の差なしに比べられる（WS115 acceptance 3）。
 2. host の meson 1.7.0 で足りる（4.24 は 1.8 が要る）。
 3. glib を host の道具と同じ 2.84.4 にでき、host 用の glib を別に build しなくてよい（§4）。
-4. 要る wayland-client の版が 1.23.0 で、zedBSD の libwayland の ABI の基準（wayland 1.23.1、[API-PROVENANCE](../../userland/desktop/keiland/wayland/API-PROVENANCE.md)）と一致する。4.20 以降は 1.24 を要求する。
+4. 要る wayland-client の版が 1.23.0 で、zedBSD の libwayland の ABI の基準（wayland 1.23.1、[API-PROVENANCE](../../userland/desktop/libwayland/API-PROVENANCE.md)）と一致する。4.20 以降は 1.24 を要求する。
 
 4.24 との差（`[判断]` D-VER）:
 - 4.24.1 は最新安定版で、上流の修正が入っている。ただし meson ≥ 1.8 と glib ≥ 2.89.3（2.90 系）が要る。

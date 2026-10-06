@@ -28,7 +28,7 @@ for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
 done
 for p in "$out"-*.pam; do
-	python3 - "$p" "${p%.pam}.panels" userland/desktop/keiland/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
+	python3 - "$p" "${p%.pam}.panels" userland/desktop/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
 import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 data = open(sys.argv[1], 'rb').read()

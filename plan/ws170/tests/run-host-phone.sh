@@ -28,7 +28,7 @@ done
 # The frames on glass laid on a wallpaper as zdesktop would, roughly: under each panel the wallpaper blurred and
 # lightened, the frame over it by its alpha (premultiplied).
 for p in "$out"-glass*.pam; do
-	python3 - "$p" "${p%.pam}.panels" userland/desktop/keiland/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
+	python3 - "$p" "${p%.pam}.panels" userland/desktop/wallpapers/Birch-Lake.png "${p%.pam}.png" <<'PY'
 import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 data = open(sys.argv[1], 'rb').read()
