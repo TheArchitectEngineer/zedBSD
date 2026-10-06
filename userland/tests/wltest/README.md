@@ -24,6 +24,9 @@ for `next` followed by a newline. Each wait is bounded to 60 seconds. This
 explicit capture mode gives the remote harness time to capture the native
 scanout; it never reads image pixels back in the application. `--token` labels
 one run. `--recreate-at=N` exercises standard old-swapchain replacement.
+`--fixed` makes a window of one size: its smallest and largest sizes are its
+`--size`, and it keeps that size whatever the compositor configures (a
+third-party window that refuses to be resized, ws142-p010).
 
 On another OS, compile these same application sources against that OS's
 Vulkan and Wayland client libraries and the standard generated
