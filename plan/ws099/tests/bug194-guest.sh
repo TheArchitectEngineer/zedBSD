@@ -105,7 +105,9 @@ check "$out/terminal-super-down.png" >/dev/null
 # 5. BUG-208: Terminal docked by a double click on its title bar, then F11 into fullscreen and out of it again.
 full="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1280 height=800 fullscreen=1"
 docked="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1280 height=752 fullscreen=0"
-pointer move $((tx + 150)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500 >/dev/null
+# The point is in the title bar right of Terminal's menus (Shell .. Help end about 410 to the right of its left edge,
+# T1-205: tx + 150 was on "Shell", whose press opens the menu) and left of its buttons (the last 120 of its 916).
+pointer move $((tx + 500)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500 >/dev/null
 expect_log "GLASS dock surface=$t via=double-click"
 fulls=$(count "$full")
 keys "<f11>"
