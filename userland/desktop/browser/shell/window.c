@@ -6,16 +6,20 @@
  */
 
 /*
- * The Wayland window of browser: an xdg-shell toplevel and the
- * seat's pointer and keyboard, whose input becomes shell_event values in a
- * queue the main loop reads: the pointer's moves (the last of a run of
- * moves stands for them all), buttons, wheel and leaving, the keys pressed
- * and let go, and the keyboard's focus coming and going.  The same way as
- * files' window.  ws081-p006: the seat's touch screen queues its wl_touch
- * events for touch.c (a window with wl_touch hears fingers only by it).
+ * The window of browser: a window of libkeiland's application (WS131
+ * p025, kl_app; its own xdg-shell toplevel and seat before), whose surface
+ * the presenter draws on with its own Vulkan (KL_PRESENT_NONE).  The
+ * application waits for the compositor and the network's descriptors
+ * together (kl_app_watch_fd).
  *
- * zdesktop does not repeat keys, so a key held past the repeat delay is
- * pressed again on each interval, marked as a repeat.
+ * The application queues the window's input; this file turns it into the
+ * shell_event values the main loop reads: the pointer's moves (the last of
+ * a run of moves stands for them all), buttons, wheel and leaving, the keys
+ * pressed, repeated and let go (a held key repeats within kl_app_dispatch,
+ * after a release read with it, BUG-111), and the keyboard's focus coming
+ * and going.  The fingers and a touch pad's scrolling are queued for
+ * touch.c (ws081-p006, ws090-p019), and what is done with the titlebar's
+ * controls goes to the titlebar (titlebar.c).
  */
 
 #include "shell/internal.h"
@@ -24,112 +28,27 @@
 #include <poll.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
-/* The seat version the window understands (frames and discrete axes). */
-#define WINDOW_SEAT_VERSION	5U
-
-/* The repeat's delay and interval when the compositor gives none, in milliseconds. */
-#define WINDOW_REPEAT_DELAY	400U
-#define WINDOW_REPEAT_INTERVAL	40U
-
-/* How many pixels one unit of scrolling moves (zdesktop sends 15 units a wheel notch). */
+/*
+ * How the wheel's distance is scaled: libkeiland gives 4 pixels for each
+ * of zdesktop's scroll units, the browser scrolls 3 (15 units a notch,
+ * 45 pixels).
+ */
+#define WINDOW_SCROLL_UNIT	4.0
 #define WINDOW_SCROLL_SCALE	3
 
-/* The modifier bits of wl_keyboard.modifiers as zdesktop reports them. */
-#define WINDOW_WAYLAND_SHIFT	0x01U
-#define WINDOW_WAYLAND_CTRL	0x04U
-#define WINDOW_WAYLAND_ALT	0x08U
-#define WINDOW_WAYLAND_META	0x40U
-
-/* The evdev codes of the modifier keys, which never repeat. */
-#define WINDOW_KEY_LEFTCTRL	29U
-#define WINDOW_KEY_LEFTSHIFT	42U
-#define WINDOW_KEY_RIGHTSHIFT	54U
-#define WINDOW_KEY_LEFTALT	56U
-#define WINDOW_KEY_CAPSLOCK	58U
-#define WINDOW_KEY_RIGHTCTRL	97U
-#define WINDOW_KEY_RIGHTALT	100U
-#define WINDOW_KEY_LEFTMETA	125U
-#define WINDOW_KEY_RIGHTMETA	126U
-
-static void window_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void window_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static void window_ping(void *data, struct xdg_wm_base *shell, uint32_t serial);
-static void window_configure(void *data, struct xdg_surface *surface, uint32_t serial);
-static void window_toplevel_configure(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height, struct wl_array *states);
-static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
-static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
-static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
-static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
-static void window_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
-static void window_pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface);
-static void window_pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
-static void window_pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
-static void window_pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
-static void window_pointer_frame(void *data, struct wl_pointer *pointer);
-static void window_pointer_axis_source(void *data, struct wl_pointer *pointer, uint32_t source);
-static void window_pointer_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis);
-static void window_pointer_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete);
-static void window_keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32_t fd, uint32_t size);
-static void window_keyboard_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys);
-static void window_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface);
-static void window_keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
-static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
-static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
+static void window_watch(struct shell_window *window, const struct pollfd *extra, size_t count);
+static void window_ready(struct pollfd *extra, size_t count, const struct kl_app_event *event);
+static void window_event(struct shell_window *window, const struct kl_window_event *input);
+static void window_button(struct shell_window *window, const struct kl_window_event *input);
+static void window_axis(struct shell_window *window, const struct kl_window_event *input);
+static void window_key(struct shell_window *window, const struct kl_window_event *input);
+static void window_focus(struct shell_window *window, const struct kl_window_event *input);
 static struct shell_event *window_push(struct shell_window *window, int type);
 static void window_push_motion(struct shell_window *window);
-static int window_modifier_key(uint32_t key);
-static void window_pad_push(struct shell_window *window, unsigned type, uint32_t time, double distance);
-static void window_touch_push(struct shell_window *window, unsigned type, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
-static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_touch_frame(void *data, struct wl_touch *touch);
-static void window_touch_cancel(void *data, struct wl_touch *touch);
-
-/* The registry's callbacks, for as long as the registry lives. */
-static const struct wl_registry_listener registry_listener = {
-	window_global, window_global_remove
-};
-
-/* The shell's liveness check. */
-static const struct xdg_wm_base_listener shell_listener = {
-	window_ping
-};
-
-/* The configure acknowledgement of the window's role. */
-static const struct xdg_surface_listener surface_listener = {
-	window_configure
-};
-
-/* The size the compositor gives the window, its request to close, and the largest size the window may choose. */
-static const struct xdg_toplevel_listener toplevel_listener = {
-	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
-};
-
-/* The seat's devices and name. */
-static const struct wl_seat_listener seat_listener = {
-	window_seat_capabilities, window_seat_name
-};
-
-/* The pointer's events of versions 1 to 5 (the later members are never called). */
-static const struct wl_pointer_listener pointer_listener = {
-	window_pointer_enter, window_pointer_leave, window_pointer_motion, window_pointer_button,
-	window_pointer_axis, window_pointer_frame, window_pointer_axis_source, window_pointer_axis_stop,
-	window_pointer_axis_discrete, NULL, NULL
-};
-
-/* The touch screen's events of versions 1 to 5 (shape and orientation, of version 6, are never called). */
-static const struct wl_touch_listener touch_listener = {
-	window_touch_down, window_touch_up, window_touch_motion, window_touch_frame, window_touch_cancel, NULL, NULL
-};
-
-/* The keyboard's events of versions 1 to 5. */
-static const struct wl_keyboard_listener keyboard_listener = {
-	window_keyboard_keymap, window_keyboard_enter, window_keyboard_leave,
-	window_keyboard_key, window_keyboard_modifiers, window_keyboard_repeat
-};
+static void window_pad_push(struct shell_window *window, unsigned type, const struct kl_window_event *input);
+static void window_touch_push(struct shell_window *window, unsigned type, const struct kl_window_event *input);
+static uint32_t window_modifiers(unsigned modifiers);
 
 /*
  * Connects to the compositor and makes a toplevel window of a size with a
@@ -145,82 +64,42 @@ shell_window_open(
 	uint32_t height,
 	const char *title)
 {
-	int status;
+	struct kl_app_options app_options;
+	struct kl_window_options options;
+	struct kl_app_event event;
+	int taken;
 
-	/* The size the window would like, and asks for until the compositor gives one. */
+	/* Nothing held yet. */
 	memset(window, 0, sizeof(*window));
-	window->width = width;
-	window->height = height;
-	window->preferred_width = width;
-	window->preferred_height = height;
-	window->repeat_delay = WINDOW_REPEAT_DELAY;
-	window->repeat_interval = WINDOW_REPEAT_INTERVAL;
 
-	/* The connection. */
-	window->display = wl_display_connect(display);
-	if (window->display == NULL)
+	/* The application: the connection to zdesktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.display = display;
+	app_options.application = "browser";
+	window->app = kl_app_open(&app_options);
+	if (window->app == NULL)
 		return -1;
 
-	/* The globals: the compositor, the shell and the seat. */
-	window->registry = wl_display_get_registry(window->display);
-	if (window->registry == NULL)
+	/* Its window, the size asked for until the compositor gives one; the presenter draws on it itself. */
+	memset(&options, 0, sizeof(options));
+	options.title = title;
+	options.width = width;
+	options.height = height;
+	options.present = KL_PRESENT_NONE;
+	window->kui = kl_app_window_create(window->app, &options);
+	if (window->kui == NULL)
 		return -1;
 
-	/* Listens for the globals the compositor announces. */
-	status = wl_registry_add_listener(window->registry, &registry_listener, window);
-	if (status != 0)
-		return -1;
+	/* The window's size as the first configure left it. */
+	kl_window_size(window->kui, &window->width, &window->height);
 
-	/* Waits until every global has been announced. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* A window needs a compositor and a shell. */
-	if (window->compositor == NULL || window->shell == NULL) {
-		errno = EOPNOTSUPP;
-		return -1;
-	}
-
-	/* The surface. */
-	window->surface = wl_compositor_create_surface(window->compositor);
-	if (window->surface == NULL)
-		return -1;
-
-	/* The surface becomes an xdg surface. */
-	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
-	if (window->role == NULL)
-		return -1;
-
-	/* Listens for its configures. */
-	status = xdg_surface_add_listener(window->role, &surface_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* The xdg surface becomes a toplevel window. */
-	window->toplevel = xdg_surface_get_toplevel(window->role);
-	if (window->toplevel == NULL)
-		return -1;
-
-	/* Listens for its size and its close request. */
-	status = xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* The title the compositor shows and the application's identity. */
-	xdg_toplevel_set_title(window->toplevel, title);
-	xdg_toplevel_set_app_id(window->toplevel, "browser");
-	wl_surface_commit(window->surface);
-
-	/* The first configure (and the seat's devices) before anything is drawn. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* A compositor that did not configure the window cannot take its images. */
-	if (!window->configured) {
-		errno = EPROTO;
-		return -1;
+	/* What the window's making left queued (its size is already known). */
+	for (;;) {
+		taken = kl_app_take(window->app, &event);
+		if (taken == 0)
+			break;
+		if (event.kind == KL_APP_WINDOW)
+			window_event(window, &event.input);
 	}
 
 	/* Succeeded: the window can be drawn into. */
@@ -229,8 +108,11 @@ shell_window_open(
 }
 
 /*
- * Waits up to a timeout (milliseconds, -1 for ever) for the compositor's
- * events and runs them; they queue input for shell_window_take.
+ * Waits up to a timeout (milliseconds, -1 for ever; a held key's repeat
+ * or input already queued waits less) for the compositor's events and the
+ * other descriptors the caller gives (the network's), and takes what
+ * happened: the window's input for shell_window_take, the titlebar's for
+ * the titlebar, and each descriptor's readiness in its revents.
  *
  * Returns 0, or -1 when the connection is broken.
  */
@@ -241,74 +123,43 @@ shell_window_dispatch(
 	struct pollfd *extra,
 	size_t extra_count)
 {
-	struct pollfd descriptors[1U + SHELL_NET_FDS];
-	struct pollfd *descriptor;
+	struct kl_app_event event;
 	size_t index;
 	int status;
-
-	/* Runs what is queued until a read of new events can be reserved. */
-	for (;;) {
-		status = wl_display_dispatch_pending(window->display);
-		if (status < 0)
-			return -1;
-
-		/* A reserved read means nothing is queued any more. */
-		status = wl_display_prepare_read(window->display);
-		if (status == 0)
-			break;
-
-		/* EAGAIN asks for another dispatch; anything else is a broken connection. */
-		if (errno != EAGAIN)
-			return -1;
-	}
-
-	/* Sends what the window asked for. */
-	status = wl_display_flush(window->display);
-	if (status < 0 && errno != EAGAIN) {
-		wl_display_cancel_read(window->display);
-		return -1;
-	}
+	int taken;
 
 	/* Nothing is waited for while input is already queued. */
-	if (window->event_count != 0U)
-		timeout = 0;
-	if (window->touch_count != 0U)
+	if (window->event_count != 0U || window->touch_count != 0U)
 		timeout = 0;
 
-	/* Waits for the compositor, and for the other descriptors the caller gives (the network's). */
+	/* The descriptors watched are the network's now; none is ready yet. */
 	if (extra_count > SHELL_NET_FDS)
 		extra_count = SHELL_NET_FDS;
-	descriptor = &descriptors[0];
-	descriptor->fd = wl_display_get_fd(window->display);
-	descriptor->events = POLLIN;
-	descriptor->revents = 0;
+	window_watch(window, extra, extra_count);
 	for (index = 0; index < extra_count; index++)
-		descriptors[1U + index] = extra[index];
-	status = poll(descriptors, (nfds_t)(1U + extra_count), timeout);
+		extra[index].revents = 0;
 
-	/* The others' readiness goes back to the caller. */
-	for (index = 0; index < extra_count; index++)
-		extra[index].revents = descriptors[1U + index].revents;
-
-	/* Reads the compositor's events, or gives the reservation back. */
-	if (status > 0 && (descriptor->revents & POLLIN) != 0) {
-		status = wl_display_read_events(window->display);
-		if (status < 0)
-			return -1;
-	} else {
-		wl_display_cancel_read(window->display);
-		if (status < 0 && errno != EINTR)
-			return -1;
-
-		/* A hung-up connection has no more events. */
-		if ((descriptor->revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
-			return -1;
-	}
-
-	/* Runs the events read. */
-	status = wl_display_dispatch_pending(window->display);
-	if (status < 0)
+	/* The compositor and the network, together. */
+	status = kl_app_dispatch(window->app, timeout);
+	if (status != 0)
 		return -1;
+
+	/* What happened, in its order: the window's input, and the descriptors that became ready. */
+	for (;;) {
+		taken = kl_app_take(window->app, &event);
+		if (taken == 0)
+			break;
+
+		/* The window's input. */
+		if (event.kind == KL_APP_WINDOW && event.window == window->kui) {
+			window_event(window, &event.input);
+			continue;
+		}
+
+		/* A descriptor of the network. */
+		if (event.kind == KL_APP_FD)
+			window_ready(extra, extra_count, &event);
+	}
 
 	/* Succeeded: the events so far have run. */
 	return 0;
@@ -336,46 +187,6 @@ shell_window_take(
 }
 
 /*
- * Presses the held key again when its repeat is due, and reports in how
- * many milliseconds the next repeat is due (-1 when no key is held).
- */
-int
-shell_window_repeat(
-	struct shell_window *window,
-	uint64_t now)
-{
-	struct shell_event *event;
-
-	/* No key held. */
-	if (window->repeat_key == 0U)
-		return -1;
-
-	/* Not yet time: the wait until it is. */
-	if (now < window->repeat_at)
-		return (int)(window->repeat_at - now);
-
-	/* The key once more, as a repeat; a full queue drops it. */
-	event = window_push(window, SHELL_EVENT_KEY);
-	if (event != NULL) {
-		event->key = window->repeat_key;
-		event->pressed = 1;
-		event->repeat = 1;
-	}
-
-	/*
-	 * The next repeat is one interval after this one was due, so a loop that
-	 * woke a little late keeps the pace (BUG-172); one that fell a whole
-	 * interval behind starts again from now instead of catching up in a burst.
-	 */
-	window->repeat_at += window->repeat_interval;
-	if (window->repeat_at <= now)
-		window->repeat_at = now + window->repeat_interval;
-
-	/* Reports the wait until the next repeat. */
-	return (int)(window->repeat_at - now);
-}
-
-/*
  * Changes the title the compositor shows.
  */
 void
@@ -383,44 +194,22 @@ shell_window_title(
 	struct shell_window *window,
 	const char *title)
 {
-	/* The request, sent with the next flush. */
-	xdg_toplevel_set_title(window->toplevel, title);
+	/* The request, sent with the next dispatch. */
+	kl_window_set_title(window->kui, title);
 }
 
 /*
- * Destroys the window's objects and disconnects.
+ * Closes the window and disconnects.
  */
 void
 shell_window_close(
 	struct shell_window *window)
 {
-	/* The devices and the seat. */
-	if (window->touch != NULL)
-		wl_touch_destroy(window->touch);
-	if (window->pointer != NULL)
-		wl_pointer_destroy(window->pointer);
-	if (window->keyboard != NULL)
-		wl_keyboard_destroy(window->keyboard);
-	if (window->seat != NULL)
-		wl_seat_destroy(window->seat);
-
-	/* The roles before the surface, the surface before the globals that made it. */
-	if (window->toplevel != NULL)
-		xdg_toplevel_destroy(window->toplevel);
-	if (window->role != NULL)
-		xdg_surface_destroy(window->role);
-	if (window->surface != NULL)
-		wl_surface_destroy(window->surface);
-	if (window->shell != NULL)
-		xdg_wm_base_destroy(window->shell);
-	if (window->compositor != NULL)
-		wl_compositor_destroy(window->compositor);
-	if (window->registry != NULL)
-		wl_registry_destroy(window->registry);
-
-	/* The connection last. */
-	if (window->display != NULL)
-		wl_display_disconnect(window->display);
+	/* The window, then the application and its connection. */
+	if (window->kui != NULL)
+		kl_window_close(window->kui);
+	if (window->app != NULL)
+		kl_app_close(window->app);
 	memset(window, 0, sizeof(*window));
 }
 
@@ -442,579 +231,265 @@ shell_clock(void)
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
 
-/* Binds the compositor, the shell and the first seat. */
-static void
-window_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
-{
-	struct shell_window *window;
-	int match;
-
-	/* The compositor makes surfaces; version 4 is enough. */
-	window = data;
-	match = strcmp(interface, "wl_compositor");
-	if (match == 0 && window->compositor == NULL) {
-		if (version > 4U)
-			version = 4U;
-		window->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, version);
-		return;
-	}
-
-	/* The shell gives the surface its window role; version 4 tells the largest size the window may choose. */
-	match = strcmp(interface, "xdg_wm_base");
-	if (match == 0 && window->shell == NULL) {
-		if (version > 4U)
-			version = 4U;
-		window->shell = wl_registry_bind(registry, name, &xdg_wm_base_interface, version);
-		if (window->shell != NULL)
-			(void)xdg_wm_base_add_listener(window->shell, &shell_listener, window);
-		return;
-	}
-
-	/* The seat gives the pointer and the keyboard. */
-	match = strcmp(interface, "wl_seat");
-	if (match == 0 && window->seat == NULL) {
-		if (version > WINDOW_SEAT_VERSION)
-			version = WINDOW_SEAT_VERSION;
-		window->seat = wl_registry_bind(registry, name, &wl_seat_interface, version);
-		if (window->seat != NULL)
-			(void)wl_seat_add_listener(window->seat, &seat_listener, window);
-	}
-}
-
-/* A global going away does not matter to a window that already bound what it needs. */
-static void
-window_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
-	UNUSED_PARAMETER(registry);
-	UNUSED_PARAMETER(name);
-}
-
-/* Answers the compositor's liveness check. */
-static void
-window_ping(
-	void *data,
-	struct xdg_wm_base *shell,
-	uint32_t serial)
-{
-	UNUSED_PARAMETER(data);
-
-	/* The same serial back. */
-	xdg_wm_base_pong(shell, serial);
-}
-
-/* Acknowledges a configure; the next frame is drawn at the size it gave. */
-static void
-window_configure(
-	void *data,
-	struct xdg_surface *surface,
-	uint32_t serial)
-{
-	struct shell_window *window;
-
-	/* The acknowledgement comes before any image of the new state. */
-	window = data;
-	xdg_surface_ack_configure(surface, serial);
-	window->configured = 1;
-}
-
-/* Takes the size the compositor gives; a zero size keeps the window's own. */
-static void
-window_toplevel_configure(
-	void *data,
-	struct xdg_toplevel *toplevel,
-	int32_t width,
-	int32_t height,
-	struct wl_array *states)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(toplevel);
-	UNUSED_PARAMETER(states);
-
-	/* A width left to the window is the one it would like, kept within the compositor's bounds. */
-	window = data;
-	if (width <= 0) {
-		width = (int32_t)window->preferred_width;
-		if (window->bounds_width > 0U && window->preferred_width > window->bounds_width)
-			width = (int32_t)window->bounds_width;
-	}
-
-	/* And so is a height. */
-	if (height <= 0) {
-		height = (int32_t)window->preferred_height;
-		if (window->bounds_height > 0U && window->preferred_height > window->bounds_height)
-			height = (int32_t)window->bounds_height;
-	}
-
-	/* A new width marks the window resized. */
-	if (width > 0 && (uint32_t)width != window->width) {
-		window->width = (uint32_t)width;
-		window->resized = 1;
-	}
-
-	/* And so does a new height. */
-	if (height > 0 && (uint32_t)height != window->height) {
-		window->height = (uint32_t)height;
-		window->resized = 1;
-	}
-}
-
 /*
- * Keeps the largest size the compositor lets the window choose for itself
- * (xdg-shell version 4: the space it can be seen whole in); the configure
- * that follows applies it.  A zero is a size the compositor does not know.
+ * Watches the network's descriptors for what each waits for, as they are
+ * now: one no longer among them stops being watched.
  */
 static void
-window_toplevel_bounds(
-	void *data,
-	struct xdg_toplevel *toplevel,
-	int32_t width,
-	int32_t height)
+window_watch(
+	struct shell_window *window,
+	const struct pollfd *extra,
+	size_t count)
 {
-	struct shell_window *window;
+	unsigned events;
+	unsigned kept;
+	unsigned index;
+	size_t other;
+	int found;
+	int error;
 
-	UNUSED_PARAMETER(toplevel);
+	/* The ones watched that are gone stop being watched. */
+	kept = 0;
+	for (index = 0; index < window->watched_count; index++) {
+		found = 0;
+		for (other = 0; other < count; other++) {
+			if (extra[other].fd == window->watched[index])
+				found = 1;
+		}
+		if (!found) {
+			(void)kl_app_watch_fd(window->app, window->watched[index], 0U);
+			continue;
+		}
 
-	/* The width, when known. */
-	window = data;
-	window->bounds_width = 0U;
-	if (width > 0)
-		window->bounds_width = (uint32_t)width;
-
-	/* The height, when known. */
-	window->bounds_height = 0U;
-	if (height > 0)
-		window->bounds_height = (uint32_t)height;
-}
-
-/* The compositor asks the window to close (its close button). */
-static void
-window_toplevel_close(
-	void *data,
-	struct xdg_toplevel *toplevel)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(toplevel);
-
-	/* The main loop ends the program. */
-	window = data;
-	window->closed = 1;
-}
-
-/* Takes the seat's pointer and keyboard when it has them. */
-static void
-window_seat_capabilities(
-	void *data,
-	struct wl_seat *seat,
-	uint32_t capabilities)
-{
-	struct shell_window *window;
-
-	/* A pointer, once. */
-	window = data;
-	if ((capabilities & WL_SEAT_CAPABILITY_POINTER) != 0U && window->pointer == NULL) {
-		window->pointer = wl_seat_get_pointer(seat);
-		if (window->pointer != NULL)
-			(void)wl_pointer_add_listener(window->pointer, &pointer_listener, window);
+		/* Still among them. */
+		window->watched[kept] = window->watched[index];
+		kept++;
 	}
+	window->watched_count = kept;
 
-	/* A keyboard, once. */
-	if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) != 0U && window->keyboard == NULL) {
-		window->keyboard = wl_seat_get_keyboard(seat);
-		if (window->keyboard != NULL)
-			(void)wl_keyboard_add_listener(window->keyboard, &keyboard_listener, window);
-	}
+	/* Each one now, for what it waits for (a new one is added, a known one updated). */
+	for (other = 0; other < count; other++) {
+		/* What it waits for. */
+		events = 0U;
+		if ((extra[other].events & POLLIN) != 0)
+			events |= KL_APP_FD_READ;
+		if ((extra[other].events & POLLOUT) != 0)
+			events |= KL_APP_FD_WRITE;
 
-	/* A touch screen, once (ws081-p006). */
-	if ((capabilities & WL_SEAT_CAPABILITY_TOUCH) != 0U && window->touch == NULL) {
-		window->touch = wl_seat_get_touch(seat);
-		if (window->touch != NULL)
-			(void)wl_touch_add_listener(window->touch, &touch_listener, window);
+		/* Watched for it; a refused one is not ready (the view's timeout still runs it). */
+		error = kl_app_watch_fd(window->app, extra[other].fd, events);
+		if (error != 0 || events == 0U)
+			continue;
+
+		/* A new one is remembered. */
+		found = 0;
+		for (index = 0; index < window->watched_count; index++) {
+			if (window->watched[index] == extra[other].fd)
+				found = 1;
+		}
+		if (found || window->watched_count == SHELL_NET_FDS)
+			continue;
+		window->watched[window->watched_count] = extra[other].fd;
+		window->watched_count++;
 	}
 }
 
-/* The seat's name is not used. */
+/* Gives the entries of a ready descriptor the poll's answer the view reads. */
 static void
-window_seat_name(
-	void *data,
-	struct wl_seat *seat,
-	const char *name)
+window_ready(
+	struct pollfd *extra,
+	size_t count,
+	const struct kl_app_event *event)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
-	UNUSED_PARAMETER(seat);
-	UNUSED_PARAMETER(name);
+	short revents;
+	size_t index;
+
+	/* What it became, as poll says it. */
+	revents = 0;
+	if ((event->ready & KL_APP_FD_READ) != 0U)
+		revents |= POLLIN;
+	if ((event->ready & KL_APP_FD_WRITE) != 0U)
+		revents |= POLLOUT;
+	if ((event->ready & KL_APP_FD_HANGUP) != 0U)
+		revents |= POLLHUP;
+
+	/* Each entry of the descriptor. */
+	for (index = 0; index < count; index++) {
+		if (extra[index].fd == event->fd)
+			extra[index].revents |= revents;
+	}
 }
 
-/* The pointer comes over the window: its place is kept, and queued as a move. */
+/* Turns one input of the window into the shell's. */
 static void
-window_pointer_enter(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t serial,
-	struct wl_surface *surface,
-	wl_fixed_t x,
-	wl_fixed_t y)
+window_event(
+	struct shell_window *window,
+	const struct kl_window_event *input)
 {
-	struct shell_window *window;
+	/* Every input carries the modifiers held. */
+	window->modifiers = window_modifiers(input->modifiers);
 
-	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(surface);
-
-	/* The place the buttons are pressed at, and the move. */
-	window = data;
-	window->pointer_x = wl_fixed_to_int(x);
-	window->pointer_y = wl_fixed_to_int(y);
-	window_push_motion(window);
-}
-
-/* The pointer leaves the window. */
-static void
-window_pointer_leave(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t serial,
-	struct wl_surface *surface)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(surface);
-
-	/* The input; a full queue drops it. */
-	window = data;
-	(void)window_push(window, SHELL_EVENT_LEAVE);
-}
-
-/* The pointer moves over the window: its place is kept, and queued as a move. */
-static void
-window_pointer_motion(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t time,
-	wl_fixed_t x,
-	wl_fixed_t y)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(time);
-
-	/* The place the buttons are pressed at, and the move. */
-	window = data;
-	window->pointer_x = wl_fixed_to_int(x);
-	window->pointer_y = wl_fixed_to_int(y);
-	window_push_motion(window);
+	/* What it is. */
+	switch (input->kind) {
+	case KL_WINDOW_MOTION:
+		/* The place the buttons are pressed at, and the move. */
+		window->pointer_x = (int)input->x;
+		window->pointer_y = (int)input->y;
+		window_push_motion(window);
+		break;
+	case KL_WINDOW_LEAVE:
+		(void)window_push(window, SHELL_EVENT_LEAVE);
+		break;
+	case KL_WINDOW_BUTTON:
+		window_button(window, input);
+		break;
+	case KL_WINDOW_AXIS:
+		window_axis(window, input);
+		break;
+	case KL_WINDOW_AXIS_STOP:
+		/* The touch pad's fingers lift: the page flies on (ws090-p019). */
+		window_pad_push(window, SHELL_TOUCH_PAD_STOP, input);
+		break;
+	case KL_WINDOW_KEY:
+		window_key(window, input);
+		break;
+	case KL_WINDOW_FOCUS:
+		window_focus(window, input);
+		break;
+	case KL_WINDOW_TOUCH_DOWN:
+		window_touch_push(window, SHELL_TOUCH_DOWN, input);
+		break;
+	case KL_WINDOW_TOUCH_MOTION:
+		window_touch_push(window, SHELL_TOUCH_MOTION, input);
+		break;
+	case KL_WINDOW_TOUCH_UP:
+		window_touch_push(window, SHELL_TOUCH_UP, input);
+		break;
+	case KL_WINDOW_TOUCH_CANCEL:
+		window_touch_push(window, SHELL_TOUCH_CANCEL, input);
+		break;
+	case KL_WINDOW_RESIZE:
+		/* The size the compositor gave, drawn at from the next frame. */
+		kl_window_size(window->kui, &window->width, &window->height);
+		window->resized = 1;
+		break;
+	case KL_WINDOW_CLOSE:
+		/* The main loop ends the program. */
+		window->closed = 1;
+		break;
+	case KL_WINDOW_ACTION:
+	case KL_WINDOW_CONTROL_DONE:
+		/* A titlebar's control, for the main loop (titlebar.c). */
+		if (window->titlebar != NULL)
+			shell_titlebar_post(window->titlebar, input);
+		break;
+	default:
+		break;
+	}
 }
 
 /* A pointer button is pressed or let go, at the pointer's place. */
 static void
-window_pointer_button(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t serial,
-	uint32_t time,
-	uint32_t button,
-	uint32_t state)
+window_button(
+	struct shell_window *window,
+	const struct kl_window_event *input)
 {
-	struct shell_window *window;
 	struct shell_event *event;
 
-	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(time);
+	/* The pointer's place. */
+	window->pointer_x = (int)input->x;
+	window->pointer_y = (int)input->y;
 
 	/* The input; a full queue drops it. */
-	window = data;
 	event = window_push(window, SHELL_EVENT_BUTTON);
 	if (event == NULL)
 		return;
 
-	/* The button, whether it went down, and where. */
-	event->button = button;
+	/* The button and whether it went down. */
+	event->button = input->code;
 	event->pressed = 0;
-	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+	if (input->pressed)
 		event->pressed = 1;
-	event->x = window->pointer_x;
-	event->y = window->pointer_y;
 }
 
-/* The wheel turns: scrolling in pixels, down or right. */
+/* The wheel turns, or a touch pad's fingers scroll: scrolling in pixels, down or right. */
 static void
-window_pointer_axis(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t time,
-	uint32_t axis,
-	wl_fixed_t value)
+window_axis(
+	struct shell_window *window,
+	const struct kl_window_event *input)
 {
-	struct shell_window *window;
 	struct shell_event *event;
-
-	UNUSED_PARAMETER(pointer);
+	int units;
 
 	/* A touch pad's fingers scroll the page as fingers do, with libkeiland's scroller (ws090-p019), unrounded. */
-	window = data;
-	if (window->axis_source == WL_POINTER_AXIS_SOURCE_FINGER && axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
-		window_pad_push(window, SHELL_TOUCH_PAD, time, wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE);
+	if (input->axis_source == KL_AXIS_SOURCE_FINGER && input->dy != 0.0) {
+		window_pad_push(window, SHELL_TOUCH_PAD, input);
 		return;
 	}
 
+	/* The vertical distance as a wheel's, scaled to the window's pixels. */
+	if (input->dy != 0.0) {
+		event = window_push(window, SHELL_EVENT_SCROLL);
+		if (event == NULL)
+			return;
+		units = (int)(input->dy / WINDOW_SCROLL_UNIT);
+		event->scroll = units * WINDOW_SCROLL_SCALE;
+	}
+
+	/* And the horizontal one. */
+	if (input->dx != 0.0) {
+		event = window_push(window, SHELL_EVENT_SCROLL);
+		if (event == NULL)
+			return;
+		units = (int)(input->dx / WINDOW_SCROLL_UNIT);
+		event->scroll_x = units * WINDOW_SCROLL_SCALE;
+	}
+}
+
+/* A key is pressed, repeated or let go. */
+static void
+window_key(
+	struct shell_window *window,
+	const struct kl_window_event *input)
+{
+	struct shell_event *event;
+
 	/* The input; a full queue drops it. */
-	event = window_push(window, SHELL_EVENT_SCROLL);
+	event = window_push(window, SHELL_EVENT_KEY);
 	if (event == NULL)
 		return;
 
-	/* The distance on its axis, scaled to the window's pixels. */
-	if (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL)
-		event->scroll_x = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
-	else
-		event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+	/* The key, whether it went down, and whether it is a held key's repeat. */
+	event->key = input->code;
+	event->pressed = 0;
+	if (input->pressed)
+		event->pressed = 1;
+	event->repeat = 0;
+	if (input->repeated)
+		event->repeat = 1;
 }
 
-/* A group of pointer events ends; each was queued as it came, and the next group says its own source. */
+/* The keyboard's focus comes or goes; without it no modifier is held. */
 static void
-window_pointer_frame(
-	void *data,
-	struct wl_pointer *pointer)
+window_focus(
+	struct shell_window *window,
+	const struct kl_window_event *input)
 {
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(pointer);
-
-	/* A wheel until the next group says otherwise. */
-	window = data;
-	window->axis_source = WL_POINTER_AXIS_SOURCE_WHEEL;
-}
-
-/* What the scrolling of this group comes from: a touch pad's fingers scroll as fingers do (ws090-p019). */
-static void
-window_pointer_axis_source(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t source)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(pointer);
-
-	/* Kept for the group's axis. */
-	window = data;
-	window->axis_source = source;
-}
-
-/* The touch pad's fingers lift (the vertical axis): the page flies on (ws090-p019). */
-static void
-window_pointer_axis_stop(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t time,
-	uint32_t axis)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(pointer);
-
-	/* Only the vertical axis scrolls with the fingers. */
-	window = data;
-	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
-		return;
-
-	/* Queued among the touch inputs, in their order. */
-	window_pad_push(window, SHELL_TOUCH_PAD_STOP, time, 0.0);
-}
-
-/* The wheel's notches are not used (the axis value already says how far). */
-static void
-window_pointer_axis_discrete(
-	void *data,
-	struct wl_pointer *pointer,
-	uint32_t axis,
-	int32_t discrete)
-{
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
-	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(axis);
-	UNUSED_PARAMETER(discrete);
-}
-
-/* Closes the keymap file: keys arrive as evdev codes. */
-static void
-window_keyboard_keymap(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t format,
-	int32_t fd,
-	uint32_t size)
-{
-	UNUSED_PARAMETER(data);
-	UNUSED_PARAMETER(keyboard);
-	UNUSED_PARAMETER(format);
-	UNUSED_PARAMETER(size);
-
-	/* The descriptor is the window's to close. */
-	if (fd >= 0)
-		(void)close(fd);
-}
-
-/* Focus arrives: keys already held when it came are not typed. */
-static void
-window_keyboard_enter(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	struct wl_surface *surface,
-	struct wl_array *keys)
-{
-	struct shell_window *window;
 	struct shell_event *event;
 
-	UNUSED_PARAMETER(keyboard);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(surface);
-	UNUSED_PARAMETER(keys);
+	/* Leaving forgets the modifiers. */
+	if (!input->pressed)
+		window->modifiers = 0U;
 
-	/* Nothing repeats yet. */
-	window = data;
-	window->repeat_key = 0U;
-
-	/* The focus gained, as an input; a full queue drops it. */
+	/* The input; a full queue drops it. */
 	event = window_push(window, SHELL_EVENT_FOCUS);
-	if (event != NULL)
-		event->pressed = 1;
-}
-
-/* Focus leaves: nothing repeats any more and no modifier is held. */
-static void
-window_keyboard_leave(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	struct wl_surface *surface)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(keyboard);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(surface);
-
-	/* The held key stops repeating, and modifiers are forgotten. */
-	window = data;
-	window->repeat_key = 0U;
-	window->modifiers = 0U;
-
-	/* The focus lost, as an input; a full queue drops it. */
-	(void)window_push(window, SHELL_EVENT_FOCUS);
-}
-
-/* A key is pressed (it repeats while held) or let go. */
-static void
-window_keyboard_key(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	uint32_t time,
-	uint32_t key,
-	uint32_t state)
-{
-	struct shell_window *window;
-	struct shell_event *event;
-	int modifier;
-
-	UNUSED_PARAMETER(keyboard);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(time);
-
-	/* A release stops the key repeating, and is an input; a full queue drops it. */
-	window = data;
-	if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
-		if (key == window->repeat_key)
-			window->repeat_key = 0U;
-		event = window_push(window, SHELL_EVENT_KEY);
-		if (event != NULL)
-			event->key = key;
+	if (event == NULL)
 		return;
-	}
 
-	/* The press as an input; a full queue drops it. */
-	event = window_push(window, SHELL_EVENT_KEY);
-	if (event != NULL) {
-		event->key = key;
+	/* Whether it came. */
+	event->pressed = 0;
+	if (input->pressed)
 		event->pressed = 1;
-	}
-
-	/* A key that is not a modifier repeats while held. */
-	modifier = window_modifier_key(key);
-	if (!modifier) {
-		window->repeat_key = key;
-		window->repeat_at = shell_clock() + window->repeat_delay;
-	}
-}
-
-/* Keeps the modifiers held, in the shell's own bits. */
-static void
-window_keyboard_modifiers(
-	void *data,
-	struct wl_keyboard *keyboard,
-	uint32_t serial,
-	uint32_t depressed,
-	uint32_t latched,
-	uint32_t locked,
-	uint32_t group)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(keyboard);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(latched);
-	UNUSED_PARAMETER(locked);
-	UNUSED_PARAMETER(group);
-
-	/* Only the held modifiers count; zdesktop latches and locks nothing. */
-	window = data;
-	window->modifiers = 0U;
-	if ((depressed & WINDOW_WAYLAND_SHIFT) != 0U)
-		window->modifiers |= SHELL_MOD_SHIFT;
-	if ((depressed & WINDOW_WAYLAND_CTRL) != 0U)
-		window->modifiers |= SHELL_MOD_CTRL;
-	if ((depressed & WINDOW_WAYLAND_ALT) != 0U)
-		window->modifiers |= SHELL_MOD_ALT;
-	if ((depressed & WINDOW_WAYLAND_META) != 0U)
-		window->modifiers |= SHELL_MOD_META;
-}
-
-/* Takes the compositor's repeat rate and delay, when it gives a rate. */
-static void
-window_keyboard_repeat(
-	void *data,
-	struct wl_keyboard *keyboard,
-	int32_t rate,
-	int32_t delay)
-{
-	struct shell_window *window;
-
-	UNUSED_PARAMETER(keyboard);
-
-	/* A rate of zero turns repeat off; a positive rate is keys per second. */
-	window = data;
-	if (rate > 0)
-		window->repeat_interval = 1000U / (uint32_t)rate;
-	if (delay > 0)
-		window->repeat_delay = (uint32_t)delay;
 }
 
 /* Queues a new input of a kind with the modifiers held; NULL when the queue is full. */
@@ -1073,42 +548,16 @@ window_push_motion(
 	(void)window_push(window, SHELL_EVENT_MOTION);
 }
 
-/* Tells whether a key is a modifier (which does not repeat). */
-static int
-window_modifier_key(
-	uint32_t key)
-{
-	/* The shifts, controls, alts, metas and caps lock. */
-	switch (key) {
-	case WINDOW_KEY_LEFTCTRL:
-	case WINDOW_KEY_RIGHTCTRL:
-	case WINDOW_KEY_LEFTSHIFT:
-	case WINDOW_KEY_RIGHTSHIFT:
-	case WINDOW_KEY_LEFTALT:
-	case WINDOW_KEY_RIGHTALT:
-	case WINDOW_KEY_LEFTMETA:
-	case WINDOW_KEY_RIGHTMETA:
-	case WINDOW_KEY_CAPSLOCK:
-		return 1;
-	default:
-		break;
-	}
-
-	/* Every other key repeats. */
-	return 0;
-}
-
 /*
  * Queues a touch pad's scrolling among the touch inputs (ws090-p019): a
- * move (as a wheel scrolls) or the fingers' lift, at the compositor's
- * time; a full queue drops it.
+ * move (as the wheel scrolls, unrounded) or the fingers' lift, at the
+ * compositor's time; a full queue drops it.
  */
 static void
 window_pad_push(
 	struct shell_window *window,
 	unsigned type,
-	uint32_t time,
-	double distance)
+	const struct kl_window_event *input)
 {
 	struct shell_touch_event *event;
 
@@ -1116,25 +565,25 @@ window_pad_push(
 	if (window->touch_count >= SHELL_WINDOW_TOUCHES)
 		return;
 
-	/* The input, after the ones before it. */
+	/* The input, after the ones before it: its time and when it was read. */
 	event = &window->touches[window->touch_count];
 	window->touch_count++;
 	memset(event, 0, sizeof(*event));
 	event->type = type;
-	event->y = (float)distance;
-	event->time = time;
-	event->arrival = shell_touch_clock();
+	event->time = (uint32_t)(input->time_us / 1000U);
+	event->arrival = input->arrival_us;
+
+	/* A move's distance at the browser's scale. */
+	if (type == SHELL_TOUCH_PAD)
+		event->y = (float)(input->dy / WINDOW_SCROLL_UNIT * (double)WINDOW_SCROLL_SCALE);
 }
 
-/* Queues a touch input with the time the window read it; a full queue drops it. */
+/* Queues a touch input with its time and when it was read; a full queue drops it. */
 static void
 window_touch_push(
 	struct shell_window *window,
 	unsigned type,
-	uint32_t time,
-	int32_t id,
-	wl_fixed_t x,
-	wl_fixed_t y)
+	const struct kl_window_event *input)
 {
 	struct shell_touch_event *event;
 
@@ -1142,88 +591,44 @@ window_touch_push(
 	if (window->touch_count >= SHELL_WINDOW_TOUCHES)
 		return;
 
-	/* The input, after the ones before it. */
+	/* The input, after the ones before it: the compositor's time in milliseconds (the low 32 bits). */
 	event = &window->touches[window->touch_count];
 	window->touch_count++;
 	memset(event, 0, sizeof(*event));
 	event->type = type;
-	event->id = id;
-	event->x = (float)wl_fixed_to_double(x);
-	event->y = (float)wl_fixed_to_double(y);
-	event->time = time;
-	event->arrival = shell_touch_clock();
+	event->id = input->id;
+	event->x = (float)input->x;
+	event->y = (float)input->y;
+	event->time = (uint32_t)(input->time_us / 1000U);
+	event->arrival = input->arrival_us;
+
+	/* A cancel is every finger's, with no place or time. */
+	if (type == SHELL_TOUCH_CANCEL) {
+		event->id = -1;
+		event->x = 0.0f;
+		event->y = 0.0f;
+		event->time = 0U;
+	}
 }
 
-/* A finger touches the window. */
-static void
-window_touch_down(
-	void *data,
-	struct wl_touch *touch,
-	uint32_t serial,
-	uint32_t time,
-	struct wl_surface *surface,
-	int32_t id,
-	wl_fixed_t x,
-	wl_fixed_t y)
+/* Turns libkeiland's modifier bits into the shell's. */
+static uint32_t
+window_modifiers(
+	unsigned modifiers)
 {
-	UNUSED_PARAMETER(touch);
-	UNUSED_PARAMETER(serial);
-	UNUSED_PARAMETER(surface);
+	uint32_t bits;
 
-	/* Queued; the window has one surface. */
-	window_touch_push(data, SHELL_TOUCH_DOWN, time, id, x, y);
-}
+	/* Shift, Control, Alt and the logo key. */
+	bits = 0U;
+	if ((modifiers & KL_MOD_SHIFT) != 0U)
+		bits |= SHELL_MOD_SHIFT;
+	if ((modifiers & KL_MOD_CTRL) != 0U)
+		bits |= SHELL_MOD_CTRL;
+	if ((modifiers & KL_MOD_ALT) != 0U)
+		bits |= SHELL_MOD_ALT;
+	if ((modifiers & KL_MOD_SUPER) != 0U)
+		bits |= SHELL_MOD_META;
 
-/* A finger lifts. */
-static void
-window_touch_up(
-	void *data,
-	struct wl_touch *touch,
-	uint32_t serial,
-	uint32_t time,
-	int32_t id)
-{
-	UNUSED_PARAMETER(touch);
-	UNUSED_PARAMETER(serial);
-
-	/* Queued, with no place. */
-	window_touch_push(data, SHELL_TOUCH_UP, time, id, 0, 0);
-}
-
-/* A finger moves. */
-static void
-window_touch_motion(
-	void *data,
-	struct wl_touch *touch,
-	uint32_t time,
-	int32_t id,
-	wl_fixed_t x,
-	wl_fixed_t y)
-{
-	UNUSED_PARAMETER(touch);
-
-	/* Queued. */
-	window_touch_push(data, SHELL_TOUCH_MOTION, time, id, x, y);
-}
-
-/* The end of a frame of touch events: each event was queued as it came. */
-static void
-window_touch_frame(
-	void *data,
-	struct wl_touch *touch)
-{
-	UNUSED_PARAMETER(data);
-	UNUSED_PARAMETER(touch);
-}
-
-/* The compositor took the fingers. */
-static void
-window_touch_cancel(
-	void *data,
-	struct wl_touch *touch)
-{
-	UNUSED_PARAMETER(touch);
-
-	/* Queued, for every finger. */
-	window_touch_push(data, SHELL_TOUCH_CANCEL, 0U, -1, 0, 0);
+	/* Reports them. */
+	return bits;
 }

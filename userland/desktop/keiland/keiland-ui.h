@@ -260,6 +260,8 @@ kl_color kl_color_mix(kl_color from, kl_color to, float amount);
 
 /* The text (text.c). */
 int kl_text_open(struct kl_text *text, const char *primary, const char *fallback);
+/* KL_VERSION 48 (ws090-p023): the companions' files for fonts opened from now on (a host test with the tree's fonts); NULL: the installed ones. */
+void kl_text_companions(const char *bold, const char *mono);
 void kl_text_close(struct kl_text *text);
 void kl_text_metrics(struct kl_text *text, unsigned pixels, struct kl_text_line *line);
 int kl_text_center(unsigned pixels, int top, int height);
@@ -994,8 +996,8 @@ struct kl_app;
 struct kl_system;
 struct kl_glass_panel;
 
-/* The most descriptors an application watches. */
-#define KL_APP_FDS_MAX		16U
+/* The most descriptors an application watches (16 before KL_VERSION 51, WS131 p025: the browser's network). */
+#define KL_APP_FDS_MAX		64U
 
 /* What a watched descriptor is waited for, and what it became (a hang-up or an error is always told). */
 #define KL_APP_FD_READ		1U
@@ -1070,6 +1072,13 @@ int kl_app_take(struct kl_app *app, struct kl_app_event *event);
  * with errno set when the compositor has none (kl_system_open).
  */
 struct kl_system *kl_app_system(struct kl_app *app);
+
+/*
+ * KL_VERSION 49 (ws156-p002): posts a notification of the application (its
+ * application ID as the name shown), without waiting for its number.
+ * Returns 0 when asked, ENOTSUP when the compositor takes none, or EINVAL.
+ */
+int kl_app_notify(struct kl_app *app, const char *title, const char *body);
 
 /* The application's connection, for libkeiland's other objects. */
 struct wl_display *kl_app_display(const struct kl_app *app);

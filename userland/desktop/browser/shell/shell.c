@@ -98,7 +98,6 @@ shell_run(
 	struct pollfd net_fds[SHELL_NET_FDS];
 	struct shell_event event;
 	struct shell_titlebar_event titlebar_event;
-	uint64_t now;
 	size_t net_count;
 	int timeout;
 	int network;
@@ -217,9 +216,8 @@ shell_run(
 			state.dirty = 0;
 		}
 
-		/* Waits for the compositor, the view's descriptors, a held key's next repeat, or the view's next work. */
-		now = shell_clock();
-		timeout = shell_window_repeat(&state.window, now);
+		/* Waits for the compositor, the view's descriptors, or the view's next work (a held key's repeat waits less, within the dispatch). */
+		timeout = -1;
 		network = browser_view_timeout(state.view);
 		if (network >= 0 && (timeout < 0 || network < timeout))
 			timeout = network;
@@ -461,7 +459,7 @@ shell_titlebar_input(
 	if (event->kind == SHELL_TITLEBAR_DONE) {
 		if (event->id != SHELL_CONTROL_LOCATION)
 			return;
-		if (event->detail != KEILAND_TEXT_SUBMITTED)
+		if (event->detail != KL_TEXT_SUBMITTED)
 			return;
 		shell_follow(state, event->text);
 		return;
@@ -568,7 +566,7 @@ shell_release(
 	shell_titlebar_close(&state->titlebar);
 
 	/* The window. */
-	if (state->window.display != NULL)
+	if (state->window.app != NULL)
 		shell_window_close(&state->window);
 
 	/* The view, with its page, its history and its network, and the fingers that moved it. */

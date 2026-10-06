@@ -2,7 +2,7 @@
 # ws149-p001: Settings の Security の頁の検討と結論の案
 
 Parent: [WS149](../ws.md)
-Status: in-progress（2026-10-06 q821 P2: 検討と結論の案を書いた。ユーザーの判断待ち）
+Status: cleared（2026-10-06 ユーザーの決定（Q1 経由のクリック）: (a) 頁を無くす。頁を取り除くだけで、他の設定は作らない。実装は [ws148-p002](../../ws148/phase002/phase.md)（q824））
 Disposition: normal
 Queue: q821（P2 の第 1 段の列）
 

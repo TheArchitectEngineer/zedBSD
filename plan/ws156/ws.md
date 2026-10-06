@@ -3,12 +3,12 @@
 # WS156: app の通知（画面の下の中央を流れる headline の popup と、ring の形の通知の log）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: なし（担当と時期は未定）
-Resume point: p001 の設計の第 1 版（2026-10-05 P1）の判断 H1〜H7 の後に p002。今の compositor に app の通知の仕組みは無い（Q1 が source で確かめた、2026-10-04）。
+Resume point: p002 を実装（2026-10-06 P2、口と compositor の model、host 試験 PASS）。T1 の QEMU の確認の後に p003（popup）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -39,7 +39,7 @@ app から通知を出せる仕組みを作り、画面の下の中央を headli
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws156-p001](phase001/phase.md) | 設計（通知の口・内容・popup の動き・log と hotkey・保存・試験の方法） | planning（設計の第 1 版、2026-10-05 P1。判断 H1〜H7 待ち） | — |
-| ws156-p002 | 通知の口（protocol・libkeiland）と compositor の受け取り | planning | p001 |
+| [ws156-p002](phase002/phase.md) | 通知の口（protocol・libkeiland）と compositor の受け取り | in-progress（2026-10-06 P2。host 試験 PASS、QEMU は T1） | p001 |
 | ws156-p003 | popup の描画と動き（右から中央、3 秒、左へ fade-out）、× で消す | planning | p002 |
 | ws156-p004 | log（hotkey、ring の左右、すべて消去、個別に消した物は残さない） | planning | p003 |
 | ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | planning | p002〜p004 |

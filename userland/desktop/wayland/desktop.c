@@ -30,6 +30,11 @@
  * with a new token unless /etc/keiland/desktop says "off", and so does any
  * compositor that --desktop-client names a program for; it is started
  * again two seconds after it ends, at most four times a minute.
+ *
+ * ws164-p002: a login session whose account has not taken the Welcome
+ * (the setting welcome.done is 0) starts Settings' Welcome once, after the
+ * desktop program (settings --welcome; it is not started again when it
+ * ends, and the login screen and --testing never start it).
  */
 
 #include "desktop.h"
@@ -63,6 +68,9 @@
 
 /* The program a login session starts, and the file that turns it off. */
 #define DESKTOP_COMMAND			KEILAND_BINDIR "/files --desktop"
+
+/* Settings' Welcome, started once at a session's start while welcome.done is 0 (ws164-p002). */
+#define DESKTOP_WELCOME			KEILAND_BINDIR "/settings --welcome"
 #define DESKTOP_SWITCH			KEILAND_SYSCONFDIR "/keiland/desktop"
 
 /* How long after it ends the program is started again, and how many starts a minute are allowed. */
@@ -112,6 +120,7 @@ struct desktop_state {
 	uint64_t starts_ms;
 	int limited;
 	int drawn;
+	int welcome_decided;
 };
 
 /*
@@ -127,6 +136,7 @@ static void desktop_place(struct kwl_server *server, int32_t *x, int32_t *y, int
 static int desktop_configure(struct kwl_server *server);
 static void desktop_start(struct kwl_server *server);
 static void desktop_watch(struct kwl_server *server);
+static void desktop_welcome(struct kwl_server *server);
 static int desktop_switched_off(void);
 static void desktop_new_token(void);
 static uint32_t desktop_word(const unsigned char *bytes, size_t offset);
@@ -270,9 +280,10 @@ kwl_desktop_tick(
 	int32_t height;
 	int error;
 
-	/* The program: started, watched, started again. */
+	/* The program: started, watched, started again; the Welcome once after it (ws164-p002). */
 	desktop_watch(server);
 	desktop_start(server);
+	desktop_welcome(server);
 
 	/* Without the surface nothing else is to do. */
 	if (desk.surface == NULL || desk.surface->dead)
@@ -761,6 +772,45 @@ desktop_start(
 
 	/* Succeeded: the program is running. */
 	return;
+}
+
+/*
+ * Starts Settings' Welcome once in a login session, after the desktop
+ * program was started (or was decided against), while welcome.done is 0
+ * (logged either way).
+ */
+static void
+desktop_welcome(
+	struct kwl_server *server)
+{
+	pid_t pid;
+	int done;
+	int error;
+
+	/* Once, in a session that is not the login screen, after the desktop program's decision. */
+	if (desk.welcome_decided || !desk.decided)
+		return;
+	if (!server->session || server->greeter)
+		return;
+	desk.welcome_decided = 1;
+
+	/* The account took or skipped it already (a store that cannot tell starts nothing). */
+	done = 1;
+	error = kwl_settings_number(server, "welcome.done", &done);
+	if (error != 0 || done != 0) {
+		printf("KWL WELCOME skip done=%d error=%d\n", done, error);
+		return;
+	}
+
+	/* Settings in the Welcome's mode (its end sets welcome.done). */
+	pid = kwl_spawn(server, "exec " DESKTOP_WELCOME);
+	if (pid < 0) {
+		printf("KWL WELCOME start-failed errno=%d\n", errno);
+		return;
+	}
+
+	/* The log the tests read. */
+	printf("KWL WELCOME start pid=%d\n", (int)pid);
 }
 
 /* Notices that the desktop program ended (its own wait, or App Home's collecting every child). */

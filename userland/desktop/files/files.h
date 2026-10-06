@@ -1453,6 +1453,7 @@ enum fm_dialog {
 #define FM_BUTTON_KEEP_BOTH	18
 #define FM_BUTTON_APPLY_ALL	19
 #define FM_BUTTON_MERGE		20
+#define FM_BUTTON_CLEAR_RECENTS	21
 #define FM_BUTTON_TASK_CANCEL	100
 #define FM_BUTTON_OPENER	180
 
@@ -1614,6 +1615,7 @@ void fm_action_duplicate(struct fm_app *app);
 void fm_action_trash(struct fm_app *app);
 void fm_action_delete(struct fm_app *app);
 void fm_action_empty_trash(struct fm_app *app);
+void fm_action_clear_recents(struct fm_app *app);
 void fm_action_confirm(struct fm_app *app, int confirmed);
 void fm_action_put_back(struct fm_app *app);
 void fm_action_new_folder(struct fm_app *app);

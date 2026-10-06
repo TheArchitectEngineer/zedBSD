@@ -939,6 +939,13 @@ until_result(struct kl_system *system, unsigned seen)
 }
 
 static int
+until_notify(struct kl_system *system, unsigned seen)
+{
+	(void)system;
+	return (seen & KL_SYSTEM_CHANGED_NOTIFY) != 0U;
+}
+
+static int
 until_enrolled(struct kl_system *system, unsigned seen)
 {
 	(void)system;
@@ -975,6 +982,20 @@ outstanding_now(void)
 	outstanding = world.outstanding;
 	pthread_mutex_unlock(&world.lock);
 	return outstanding;
+}
+
+/* Waits for a notification event; 1 with it. */
+static int
+notify_event(struct wl_display *display, struct kl_system *system, struct kl_notify_event *event)
+{
+	int taken;
+
+	taken = kl_system_take_notify_event(system, event);
+	if (!taken) {
+		(void)pump(display, system, until_notify, 400);
+		taken = kl_system_take_notify_event(system, event);
+	}
+	return taken;
 }
 
 /* Waits for a result and checks its number and error. */
@@ -1190,6 +1211,11 @@ test_both_ends(void)
 	uint32_t second;
 	struct kl_network_wired_config wired;
 	struct kl_sharing_state sharing;
+	struct kl_notification notification;
+	struct kl_notify_event event;
+	struct kl_notify_event second_event;
+	char long_body[600];
+	int notified;
 	uint32_t request;
 	char pin_path[128];
 	char reason[32];
@@ -1222,7 +1248,7 @@ test_both_ends(void)
 		return;
 	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
 	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
@@ -1314,6 +1340,31 @@ test_both_ends(void)
 	CHECK(sharing.port == 22U && sharing.allowed == 1U && strcmp(sharing.fingerprint, "SHA256:test") == 0, "sharing state told");
 	CHECK(kl_system_sharing_set_ssh(system, 1U, &first) == 0, "ssh on asked");
 	expect_result(display, system, first, ENOTSUP, "ssh on without sessiond");
+
+	/* The notifications (ws156-p002): a post numbered, new words for it, a body too long refused, a withdrawal closed and answered. */
+	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_NOTIFY) != 0U, "notify offered");
+	memset(&notification, 0, sizeof(notification));
+	notification.app = "Host";
+	notification.title = "Hello";
+	notification.body = "A notification";
+	CHECK(kl_system_notify(system, &notification, &first) == 0, "notify asked");
+	notified = notify_event(display, system, &event);
+	CHECK(notified && event.kind == KL_NOTIFY_POSTED && event.request == first && event.id != 0U, "notify posted with a number");
+	notification.replaces = event.id;
+	notification.title = "Hello again";
+	CHECK(kl_system_notify(system, &notification, &second) == 0, "notify replace asked");
+	notified = notify_event(display, system, &second_event);
+	CHECK(notified && second_event.kind == KL_NOTIFY_POSTED && second_event.request == second && second_event.id == event.id, "the replacement keeps the number");
+	memset(long_body, 'x', sizeof(long_body) - 1U);
+	long_body[sizeof(long_body) - 1U] = '\0';
+	notification.replaces = 0U;
+	notification.body = long_body;
+	CHECK(kl_system_notify(system, &notification, &second) == 0, "notify too long asked");
+	expect_result(display, system, second, EINVAL, "notify too long refused");
+	CHECK(kl_system_notify_withdraw(system, event.id, &second) == 0, "withdraw asked");
+	notified = notify_event(display, system, &second_event);
+	CHECK(notified && second_event.kind == KL_NOTIFY_CLOSED && second_event.id == event.id && second_event.reason == KL_NOTIFY_WITHDRAWN, "withdrawn: closed");
+	expect_result(display, system, second, 0, "withdraw answered");
 
 	/* The client checks what it can. */
 	CHECK(kl_system_network_request(system, KL_NETWORK_JOIN, "", NULL) == EINVAL, "join without a network");

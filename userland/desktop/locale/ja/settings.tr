@@ -78,72 +78,60 @@ msg	Users	ユーザー
 # userland/desktop/locale/settings.keys:41
 msg	Accounts on this computer.	このコンピューターのアカウント。
 # userland/desktop/locale/settings.keys:42
-msg	Privacy	プライバシー
-# userland/desktop/locale/settings.keys:43
-msg	What applications may use.	アプリケーションが使ってよいもの。
-# userland/desktop/locale/settings.keys:44
-msg	Security	セキュリティ
-# userland/desktop/locale/settings.keys:45
-msg	Locking the screen and protecting your data.	画面のロックとデータの保護。
-# userland/desktop/locale/settings.keys:46
-msg	Accessibility	アクセシビリティ
-# userland/desktop/locale/settings.keys:47
-msg	Make Kei easier to see, hear and use.	Kei を見やすく、聞きやすく、使いやすくします。
-# userland/desktop/locale/settings.keys:48
 msg	Updates	アップデート
-# userland/desktop/locale/settings.keys:49
+# userland/desktop/locale/settings.keys:43
 msg	Keep Kei up to date.	Kei を最新に保ちます。
-# userland/desktop/locale/settings.keys:50
+# userland/desktop/locale/settings.keys:44
 msg	About	情報
-# userland/desktop/locale/settings.keys:51
+# userland/desktop/locale/settings.keys:45
 msg	This computer and the version of Kei.	このコンピューターと Kei のバージョン。
-# userland/desktop/locale/settings.keys:53
+# userland/desktop/locale/settings.keys:47
 msg	Search Results	検索結果
-# userland/desktop/locale/settings.keys:55
+# userland/desktop/locale/settings.keys:49
 msg	Japanese	日本語
-# userland/desktop/locale/settings.keys:56
+# userland/desktop/locale/settings.keys:50
 msg	Kei's input method: romaji to kana, converted a phrase at a time.	Kei の入力方式: ローマ字をかなにし、文節ごとに変換します。
-# userland/desktop/locale/settings.keys:57
+# userland/desktop/locale/settings.keys:51
 msg	SKK	SKK
-# userland/desktop/locale/settings.keys:58
+# userland/desktop/locale/settings.keys:52
 msg	Emacs's SKK: an upper-case letter starts a word, Space converts it.	Emacs の SKK: 大文字で単語を始め、スペースで変換します。
-# userland/desktop/locale/settings.keys:59
+# userland/desktop/locale/settings.keys:53
 msg	None (English)	なし（英語）
-# userland/desktop/locale/settings.keys:60
+# userland/desktop/locale/settings.keys:54
 msg	The keys type as they are; no input method.	キーをそのまま入力します。入力方式は使いません。
-# userland/desktop/locale/settings.keys:62
+# userland/desktop/locale/settings.keys:56
 msg	Connect to a network	ネットワークに接続
-# userland/desktop/locale/settings.keys:63
+# userland/desktop/locale/settings.keys:57
 msg	Join Wi-Fi now, or later in Settings.	今 Wi-Fi に接続するか、あとで設定から接続します。
-# userland/desktop/locale/settings.keys:64
+# userland/desktop/locale/settings.keys:58
 msg	Your network	ネットワーク
-# userland/desktop/locale/settings.keys:65
+# userland/desktop/locale/settings.keys:59
 msg	The wired connection and its address.	有線の接続とそのアドレス。
-# userland/desktop/locale/settings.keys:66
+# userland/desktop/locale/settings.keys:60
 msg	Choose your look	見た目を選ぶ
-# userland/desktop/locale/settings.keys:67
+# userland/desktop/locale/settings.keys:61
 msg	A picture for the desktop, and how clear the windows are.	デスクトップの画像と、ウインドウの透け具合。
-# userland/desktop/locale/settings.keys:68
+# userland/desktop/locale/settings.keys:62
 msg	Keys to know	覚えておきたいキー
-# userland/desktop/locale/settings.keys:69
+# userland/desktop/locale/settings.keys:63
 msg	Kei is quick to use from the keyboard.	Kei はキーボードからすばやく使えます。
-# userland/desktop/locale/settings.keys:70
+# userland/desktop/locale/settings.keys:64
 msg	You are all set	準備ができました
-# userland/desktop/locale/settings.keys:71
+# userland/desktop/locale/settings.keys:65
 msg	Start using Kei opens Files at Today. The Welcome is in Settings > About whenever you want it again.	「Kei を使い始める」でファイルの「今日」を開きます。ようこそは、設定 > 情報 からいつでももう一度見られます。
-# userland/desktop/locale/settings.keys:72
+# userland/desktop/locale/settings.keys:66
 msg	Open App Home (tap the key)	App Home を開く（キーを軽く押す）
-# userland/desktop/locale/settings.keys:73
+# userland/desktop/locale/settings.keys:67
 msg	Wiseview: every window at a glance	Wiseview: すべてのウインドウを一覧
-# userland/desktop/locale/settings.keys:74
+# userland/desktop/locale/settings.keys:68
 msg	Switch between windows	ウインドウを切り替える
-# userland/desktop/locale/settings.keys:75
+# userland/desktop/locale/settings.keys:69
 msg	Lock the screen	画面をロック
-# userland/desktop/locale/settings.keys:76
+# userland/desktop/locale/settings.keys:70
 msg	Move between desktops	デスクトップを移る
-# userland/desktop/locale/settings.keys:77
+# userland/desktop/locale/settings.keys:71
 msg	Switch the input language	入力の言語を切り替える
-# userland/desktop/settings/page-about.c:93
+# userland/desktop/settings/page-about.c:108
 msg	Show Welcome again	ようこそをもう一度見る
 # userland/desktop/settings/page-home.c:60
 msg	Connectivity	接続
@@ -207,6 +195,3 @@ msg	Start using Kei	Kei を使い始める
 msg	Welcome to Kei, {1}	Kei へようこそ、{1} さん
 # userland/desktop/settings/welcome.c:300
 msg	Let's set up a few things. You can change each of them later in Settings.	いくつか設定しましょう。どれもあとで設定から変えられます。
-
-# Not asked for by the source any more (kept for a text that comes back):
-# msg	Welcome to Kei	Kei へようこそ

@@ -250,9 +250,6 @@ enum se_page_id {
 	SE_PAGE_PRINTERS,
 	SE_PAGE_SHARING,
 	SE_PAGE_USERS,
-	SE_PAGE_PRIVACY,
-	SE_PAGE_SECURITY,
-	SE_PAGE_ACCESSIBILITY,
 	SE_PAGE_UPDATES,
 	SE_PAGE_ABOUT,
 	SE_PAGES
@@ -525,7 +522,9 @@ struct se_wired {
  * folder) and its scan with the view last copied, the home; the trash's
  * folder, the scan of its files (its size) and its emptying, whether the
  * Empty button waits for its confirmation, the last message about it, and
- * when the page was last drawn again for a new count.
+ * when the page was last drawn again for a new count; whether the
+ * desktop's recent list is kept (read once, q824) and the last message
+ * about it (red for a failure).
  */
 struct se_storage {
 	char home[SE_SCAN_PATH];
@@ -542,6 +541,10 @@ struct se_storage {
 	int message_bad;
 	uint64_t drawn_generation;
 	uint64_t drawn_at;
+	int recent_known;
+	int recent_keep;
+	char recent_message[SE_MESSAGE];
+	int recent_bad;
 };
 
 /*
@@ -701,6 +704,9 @@ struct se_about {
 	char graphics[128];
 	char display[64];
 	unsigned cores;
+	int memory_known;
+	uint64_t memory_total;
+	uint64_t memory_free;
 };
 
 /*
@@ -1097,6 +1103,9 @@ struct se_app {
 	struct kl_system *system;
 	unsigned system_changed;
 
+	/* The machine's monitor while About is shown (ws089-p013: its memory; NULL before About or without one). */
+	struct kl_system_monitor *monitor;
+
 	/* What the network pages show and have asked of the daemon. */
 	struct se_network network;
 
@@ -1307,6 +1316,7 @@ void se_search_press(struct se_app *app, int index);
 int se_home_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_about_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_about_press(struct se_app *app, int index);
+void se_about_follow(struct se_app *app);
 
 /* The Welcome (welcome.c, ws164-p002). */
 void se_welcome_start(struct se_app *app);

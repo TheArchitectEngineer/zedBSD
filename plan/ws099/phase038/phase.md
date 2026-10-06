@@ -45,3 +45,8 @@ Related: [ws090-p021](../../ws090/phase021/phase.md)（app の padding を 0）
 - `KWL_GLASS_DOCK_PAD` を 8 に。1280x800 で docked の body は 8,52 1264x740（画面の keyboard の QWERTY の時 1264x404、flick の時 946x740）。
 - 試験の期待を新しい値に: zdesktop-p059・p062・p134、sheet-guest（y = 52+(740−高さ)/2、x は 260 のまま）、bug194-guest、ws142 p010-guest、osk-guest。
 - 確認: zedBSD の wayland の build（warning 0）、keiland-linux の gcc、ws142 host-layout。T1 に Files の最大化の撮影 1 枚。
+
+## q822（P1、2026-10-06）: T1-264 の FAIL（試験の側）
+
+- zdesktop-p134: P1 の誤り。p021 で comment の `zwl_` を `kwl_` にした sed が shell の補助関数の呼び出し `zwl_app_clients` まで `kwl_app_clients` にしていた（`not found` → `zc1` が無く、窓の場所が 0,0 になり、角・dock・undock・probe の行が全て崩れた）。`zwl_app_clients` に戻した（他の script に同じ壊れは無い、grep）。
+- zdesktop-p062: docked.png の点 1260,50 が 8 px の余白（body は y=52 から）に入った。1260,60 に。

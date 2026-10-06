@@ -257,6 +257,10 @@ grid_title(
 	if (location->kind == FM_LOCATION_TRASH)
 		grid_trash_buttons(app, canvas, area);
 
+	/* In the recent files: Clear Recents at the right (q824). */
+	if (location->kind == FM_LOCATION_RECENTS)
+		grid_button(app, canvas, area->x + area->width - 20, area->y + 18, "Clear Recents", FM_BUTTON_CLEAR_RECENTS, tab->listing.count != 0U);
+
 	/* A search: where it looks, as three chips at the right. */
 	if (location->kind == FM_LOCATION_SEARCH)
 		grid_scope_chips(app, canvas, area);

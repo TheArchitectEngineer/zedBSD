@@ -55,6 +55,9 @@
 		kl_recent_add;
 		kl_recent_list;
 		kl_recent_remove;
+		kl_recent_clear;
+		kl_recent_set_keep;
+		kl_recent_keep;
 		kl_glass_create;
 		kl_glass_set_panels;
 		kl_glass_set_blur;
@@ -126,6 +129,9 @@
 		kl_system_sharing_get_state;
 		kl_system_sharing_set_ssh;
 		kl_system_sharing_query;
+		kl_system_notify;
+		kl_system_notify_withdraw;
+		kl_system_take_notify_event;
 		kl_system_network_get_links;
 		kl_system_network_get_dns;
 		kl_system_network_get_saved;
@@ -189,6 +195,7 @@
 		kl_image_scale;
 		kl_color_mix;
 		kl_text_open;
+		kl_text_companions;
 		kl_text_close;
 		kl_text_metrics;
 		kl_text_center;
@@ -304,6 +311,7 @@
 		kl_app_watch_fd;
 		kl_app_take;
 		kl_app_system;
+		kl_app_notify;
 		kl_app_display;
 		kl_app_window_create;
 		kl_window_set_menu;

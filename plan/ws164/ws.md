@@ -18,5 +18,5 @@ Primary Milestone: MG006
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws164-p001](phase001/phase.md) | 要件と設計 | planning（設計の第 1 版、2026-10-05 P1 q732。2026-10-05 夜 H1〜H4 決定済み、cleared の判定は Q1） | — |
-| [ws164-p002](phase002/phase.md) | 設定の key・compositor の起動・Settings の welcome の mode・host 試験・T1 | in-progress（2026-10-06 q821 P2: Settings の側を実装、host PASS。compositor の起動は WS131 p022 の後、QEMU は T1） | p001、H1〜H4 |
+| [ws164-p002](phase002/phase.md) | 設定の key・compositor の起動・Settings の welcome の mode・host 試験・T1 | in-progress（2026-10-06 q821 P2: Settings の側と compositor の起動を実装、host PASS。QEMU は T1） | p001、H1〜H4 |
 | ws164-p003 | 全文規約の見直し | planned | p002 |

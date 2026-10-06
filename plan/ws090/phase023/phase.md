@@ -40,3 +40,9 @@ Files と Settings は自前の hit の model（`fm_ui_hit`・`se_ui_hit`）で�
 - build: zedBSD amd64 の libkeiland・files・settings・textedit・mailer・calendar・notes・phone（exit 0、warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）、`exports.py --check` OK、`keiland-os-boundary/check.sh` PASS。
 - host: files-model PASS、run-filestouch ok (20)、host-desktop PASS、host-widgets 94/94、host-account-admin 34/34、host-settings 38/38、host-wired・host-dark・host-instance・host-pointer-accel PASS、host-users 10 checks、settings-render 15 頁の比較（上の差だけ）、files-render の home・grid・list・glass・chip・dialog の前後（前は HEAD の tree を `git archive` で `build/ws090-p023/old` に出して build）。
 - 未実施（T1）: Files・Settings の前後の撮影（glass、1280x800）をユーザーへ、files-regress・settings-regress。
+
+### q822 の追加（P1、2026-10-06）: host の描画の companions
+
+- ユーザーが Settings の Sound の host の絵で音量の「—」（U+2014）が豆腐なのを見つけた。libkeiland の text が companions（Mahora Bold・monospace の fallback）を install の path から開くので、host では無い。
+- libkeiland（KL_VERSION 48）に `kl_text_companions(bold, mono)`（以後に開く font の companions の file を名指す。NULL は install の物、既定の動作は変えない）。host の描画の道具（`plan/ws089/tests/host-render.c`、`plan/tools/files/host-render.c`、ws094 host-desktop、ws155・ws169・ws170 の host）が tree の `userland/desktop/fonts/Mahora-Bold.ttf`・`JetBrainsMono-Regular.ttf` を使う。
+- Sound の頁の描き直し: `build/review/q822/settings-sound.png`（「—」が出る）。host の試験は mailer・calendar・phone・host-desktop・host-widgets 94/94・host-chooser 85/85・host-mahora PASS。
