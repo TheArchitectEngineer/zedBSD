@@ -220,6 +220,8 @@ enum kwl_kind {
 	KWL_SYSTEM_MAIL,
 	/* The system extension's phone (phone-shell.c, ws170-p004). */
 	KWL_SYSTEM_PHONE,
+	/* The system extension's printers (printers-shell.c, ws145-p003). */
+	KWL_SYSTEM_PRINTERS,
 };
 
 /*
@@ -1547,6 +1549,10 @@ int kwl_mail_create(struct kwl_object *manager, const unsigned char *bytes, size
 int kwl_mail_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 int kwl_phone_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 int kwl_phone_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_printers_available(void);
+int kwl_printers_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+int kwl_printers_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_printers_tick(struct kwl_server *server);
 uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);

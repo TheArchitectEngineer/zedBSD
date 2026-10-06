@@ -10,7 +10,7 @@ out=${1:-build/ws145/host-print-backend}
 dir=$(dirname -- "$out")
 mkdir -p "$dir"
 flags="-std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -pthread -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
-cc $flags -I. -Iuserland/desktop/libkeiland-backend plan/ws145/tests/host-print-backend.c \
+cc $flags -I. plan/ws145/tests/host-print-backend.c \
 	userland/desktop/libkeiland-backend/print/print.c -o "$out"
 cc $flags -Iuserland/desktop/printd userland/desktop/printd/*.c -o "$dir/keiland-printd"
 folder=$(mktemp -d "$dir/print-backend.XXXXXX")

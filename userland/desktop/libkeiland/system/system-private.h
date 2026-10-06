@@ -35,6 +35,15 @@
 /* How many phone events wait for kl_system_take_phone_event (ws170-p004). */
 #define SYSTEM_VIEW_PHONE_EVENTS	16U
 
+/* How many prints' jobs are kept for kl_system_print_job_of (ws145-p003), as many as the results. */
+#define SYSTEM_VIEW_PRINT_QUEUED	SYSTEM_VIEW_RESULTS
+
+/* A print's request and its job (queued). */
+struct system_view_queued {
+	uint32_t request;
+	uint32_t job;
+};
+
 /* One answered request and its error. */
 struct system_view_result {
 	uint32_t request;
@@ -55,7 +64,8 @@ struct system_view_result {
  * a ring of answered requests, result_head the oldest, result_count how
  * many wait (the oldest is dropped when it is full).  The notification
  * events, the arrivals of mail and the phone's events are rings of the
- * same kind.
+ * same kind.  The printers and the print jobs are lists sent whole before
+ * their done; queued keeps the jobs of the last prints asked (a ring).
  */
 struct system_view {
 	unsigned capabilities;
@@ -123,6 +133,17 @@ struct system_view {
 	struct kl_phone_event phone_events[SYSTEM_VIEW_PHONE_EVENTS];
 	unsigned phone_head;
 	unsigned phone_count;
+	struct kl_printer printers[KL_PRINTERS_MAX];
+	size_t printer_count;
+	struct kl_printer printers_pending[KL_PRINTERS_MAX];
+	size_t printers_pending_count;
+	struct kl_print_job print_jobs[KL_PRINT_JOBS_MAX];
+	size_t print_job_count;
+	struct kl_print_job print_jobs_pending[KL_PRINT_JOBS_MAX];
+	size_t print_jobs_pending_count;
+	unsigned printers_open;
+	struct system_view_queued queued[SYSTEM_VIEW_PRINT_QUEUED];
+	unsigned queued_next;
 };
 
 /*
@@ -229,6 +250,11 @@ void system_view_mail_event(struct system_view *view, const char *from, const ch
 int system_view_take_mail_event(struct system_view *view, struct kl_mail_event *event);
 void system_view_phone_event(struct system_view *view, const struct kl_phone_event *event);
 int system_view_take_phone_event(struct system_view *view, struct kl_phone_event *event);
+void system_view_printer(struct system_view *view, const struct kl_printer *printer);
+void system_view_print_job(struct system_view *view, const struct kl_print_job *job);
+void system_view_printers_done(struct system_view *view);
+void system_view_print_queued(struct system_view *view, uint32_t request, uint32_t job);
+int system_view_print_job_of(const struct system_view *view, uint32_t request, uint32_t *job);
 unsigned system_view_take_changed(struct system_view *view);
 int system_view_error_of(uint32_t applied);
 void system_view_copy(char *to, size_t size, const char *from);

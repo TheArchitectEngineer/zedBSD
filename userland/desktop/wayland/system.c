@@ -329,6 +329,7 @@ kwl_system_bind(
 {
 	uint32_t bits;
 	int administer;
+	int printers;
 	int managed;
 	int error;
 
@@ -358,6 +359,11 @@ kwl_system_bind(
 	/* The phone, at version 16 (ws170-p004). */
 	if (manager->version >= KL_SYSTEM_SINCE_PHONE)
 		bits |= KL_SYSTEM_CAPABILITY_PHONE;
+
+	/* The printers, at version 17 where the printer daemon is there (ws145-p003). */
+	printers = kwl_printers_available();
+	if (manager->version >= KL_SYSTEM_SINCE_PRINTERS && printers)
+		bits |= KL_SYSTEM_CAPABILITY_PRINTERS;
 
 	/* The administration of the accounts, at version 8 where the system has its tool (ws089-p026). */
 	administer = kl_backend_account_can_administer();
@@ -421,6 +427,9 @@ kwl_system_request(
 	case KWL_SYSTEM_PHONE:
 		error = kwl_phone_request(object, opcode, bytes, size);
 		break;
+	case KWL_SYSTEM_PRINTERS:
+		error = kwl_printers_request(object, opcode, bytes, size);
+		break;
 	default:
 		error = EPROTO;
 		break;
@@ -477,6 +486,9 @@ kwl_system_tick(
 
 	/* The monitor's samples, to the monitor objects (sysmon.c, WS134 p012). */
 	kwl_sysmon_tick(server);
+
+	/* The printers: the daemon's news and the answers (printers-shell.c, ws145-p003). */
+	kwl_printers_tick(server);
 
 	/* The removable media: a new list to every devices object, and volumed's answers (media.c, ws132-p004). */
 	changed = kwl_media_tick(server);
@@ -705,6 +717,16 @@ system_manager_request(
 		if (manager->version < KL_SYSTEM_SINCE_PHONE)
 			return EPROTO;
 		error = kwl_phone_create(manager, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The printers are printers-shell.c's, since version 17 (ws145-p003). */
+	if (opcode == KL_SYSTEM_MANAGER_GET_PRINTERS) {
+		if (manager->version < KL_SYSTEM_SINCE_PRINTERS)
+			return EPROTO;
+		error = kwl_printers_create(manager, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;

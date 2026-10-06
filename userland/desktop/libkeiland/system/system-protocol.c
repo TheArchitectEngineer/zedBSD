@@ -55,6 +55,9 @@ static const struct wl_interface *system_get_mail_types[] = {
 static const struct wl_interface *system_get_phone_types[] = {
 	&kl_system_phone_v1_interface,
 };
+static const struct wl_interface *system_get_printers_types[] = {
+	&kl_system_printers_v1_interface,
+};
 
 /* The arguments of messages that name no interface (at most sixteen, a monitor's disk's). */
 static const struct wl_interface *system_plain_types[] = {
@@ -90,6 +93,7 @@ static const struct wl_message system_manager_requests[] = {
 	{ "get_notify", "13n", system_get_notify_types },
 	{ "get_mail", "15n", system_get_mail_types },
 	{ "get_phone", "16n", system_get_phone_types },
+	{ "get_printers", "17n", system_get_printers_types },
 };
 
 /* The events of kl_system_manager_v1. */
@@ -97,11 +101,11 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: twelve requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15, get_phone since 16) and one event.  It lives for the program. */
+/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: thirteen requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15, get_phone since 16, get_printers since 17) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
 	KL_SYSTEM_MANAGER_VERSION,
-	12,
+	13,
 	system_manager_requests,
 	1,
 	system_manager_events
@@ -392,4 +396,33 @@ const struct wl_interface kl_system_phone_v1_interface = {
 	system_phone_requests,
 	3,
 	system_phone_events
+};
+
+/* The requests of kl_system_printers_v1 (ws145-p003). */
+static const struct wl_message system_printers_requests[] = {
+	{ "destroy", "", NULL },
+	{ "add", "uusus", system_plain_types },
+	{ "remove", "uu", system_plain_types },
+	{ "set_default", "uu", system_plain_types },
+	{ "print", "uush", system_plain_types },
+	{ "cancel", "uu", system_plain_types },
+};
+
+/* The events of kl_system_printers_v1. */
+static const struct wl_message system_printers_events[] = {
+	{ "printer", "uusussu", system_plain_types },
+	{ "job", "uuuss", system_plain_types },
+	{ "done", "u", system_plain_types },
+	{ "queued", "uu", system_plain_types },
+	{ "result", "uuu", system_plain_types },
+};
+
+/* kl_system_printers_v1, made at the manager's version (17): six requests and five events.  It lives for the program. */
+const struct wl_interface kl_system_printers_v1_interface = {
+	KL_SYSTEM_PRINTERS_NAME,
+	KL_SYSTEM_SINCE_PRINTERS,
+	6,
+	system_printers_requests,
+	5,
+	system_printers_events
 };

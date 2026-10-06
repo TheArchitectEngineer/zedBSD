@@ -390,6 +390,14 @@ kwl_settings_home(char *home, size_t size)
 	return 0;
 }
 
+/* A descriptor a client sent (printers-shell.c, ws145-p003): this test sends none. */
+int
+kwl_take_fd(struct kwl_client *client)
+{
+	(void)client;
+	return -1;
+}
+
 /* A setting's number (mail-shell.c, ws169-p002): this fake desktop has no settings. */
 int
 kwl_settings_number(struct kwl_server *server, const char *name, int *number)

@@ -4,6 +4,7 @@
 # ws131-p011 nothing else links it: libkeiland reaches the system only through the compositor.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 KL_BACKEND_ZEDBSD_SOURCES := userland/desktop/libkeiland-backend/backend.c \
+	userland/desktop/libkeiland-backend/print/print.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/network-link-zedbsd.c \
 	userland/desktop/libkeiland-backend-zedbsd/monitor-zedbsd.c \

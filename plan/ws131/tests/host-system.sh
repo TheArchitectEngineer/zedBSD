@@ -15,7 +15,8 @@ ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -pthread \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -I"$(dirname -- "$out")/include" \
 	plan/ws131/tests/host-system.c userland/desktop/wayland/system.c userland/desktop/wayland/sysmon.c \
-	userland/desktop/wayland/notify.c userland/desktop/wayland/notify-shell.c userland/desktop/wayland/mail-shell.c userland/desktop/wayland/phone-shell.c \
+	userland/desktop/wayland/notify.c userland/desktop/wayland/notify-shell.c userland/desktop/wayland/mail-shell.c userland/desktop/wayland/phone-shell.c userland/desktop/wayland/printers-shell.c \
+	userland/desktop/libkeiland-backend/print/print.c \
 	userland/desktop/libkeiland/system/system.c userland/desktop/libkeiland/system/system-view.c \
 	userland/desktop/libkeiland/system/system-protocol.c \
 	$(pkg-config --cflags --libs wayland-client) -o "$out"
