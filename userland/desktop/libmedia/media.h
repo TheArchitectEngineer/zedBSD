@@ -80,6 +80,7 @@ void media_engine_play(struct media_engine *engine);
 void media_engine_pause(struct media_engine *engine);
 void media_engine_seek(struct media_engine *engine, double seconds);
 int media_engine_picture(struct media_engine *engine, uint32_t *pixels, size_t stride, int width, int height, double *next);
+int media_engine_redraw(struct media_engine *engine, uint32_t *pixels, size_t stride, int width, int height);
 void media_engine_close(struct media_engine *engine);
 
 #endif

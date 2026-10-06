@@ -13,11 +13,12 @@
  * second and at two seconds.  The video's place must show a picture, the
  * picture must change, and the layout must take the video's size.
  *
- *     host-video PAGE SCRIPT-PAGE PREFIX
+ *     host-video PAGE SCRIPT-PAGE CONTROLS-PAGE PREFIX
  *
  * SCRIPT-PAGE's script (ws121-p005) asks canPlayType, waits for the
  * metadata, seeks to 16 s and plays, and logs the events up to the end;
- * its console lines are checked.
+ * its console lines are checked.  CONTROLS-PAGE's video has controls
+ * (ws121-p006): a click on it plays, the bar shows, a click pauses.
  * Writes PREFIX-NAME.ppm for each drawing and prints "PASS name" or "FAIL
  * name ..." for each check; exits with 1 when one failed.
  */
@@ -72,8 +73,8 @@ main(
 	int error;
 
 	/* The pages and the prefix. */
-	if (argc != 4) {
-		fprintf(stderr, "usage: host-video PAGE SCRIPT-PAGE PREFIX\n");
+	if (argc != 5) {
+		fprintf(stderr, "usage: host-video PAGE SCRIPT-PAGE CONTROLS-PAGE PREFIX\n");
 		return 2;
 	}
 
@@ -100,12 +101,12 @@ main(
 	/* Before the video opened: its default box. */
 	error = browser_view_draw_pixels(view, first, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
 	check("draw-before", error == 0, "browser_view_draw_pixels");
-	(void)save(argv[3], "before", first);
+	(void)save(argv[4], "before", first);
 
 	/* A second of the loop: the video opened, its size laid out, pictures came. */
 	run_for(view, 1000);
 	error = browser_view_draw_pixels(view, second, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
-	(void)save(argv[3], "playing-1", second);
+	(void)save(argv[4], "playing-1", second);
 	height = browser_view_document_height(view);
 	(void)snprintf(detail, sizeof(detail), "document height %.0f, region sum %lu", height, region_sum(second));
 	check("picture", error == 0 && region_sum(second) > 0UL && height >= 248.0, detail);
@@ -113,7 +114,7 @@ main(
 	/* Another second: the picture moved on. */
 	run_for(view, 1000);
 	error = browser_view_draw_pixels(view, third, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
-	(void)save(argv[3], "playing-2", third);
+	(void)save(argv[4], "playing-2", third);
 	(void)snprintf(detail, sizeof(detail), "%lu pixels changed", region_changes(second, third));
 	check("advances", error == 0 && region_changes(second, third) > 100UL, detail);
 
@@ -133,6 +134,31 @@ main(
 	check("script-metadata", logged("meta 320x240 duration 20"), "loadedmetadata with the size and the length");
 	check("script-play", logged("play resolved") && logged("playing paused false"), "play() resolved, playing");
 	check("script-ended", logged("ended true paused true time 20"), "ended at the end, paused");
+	browser_view_destroy(view);
+
+	/* The controls: the video opens paused with its bar; a click plays, another pauses. */
+	error = browser_view_create(&options, &view);
+	if (error != 0)
+		return 2;
+	error = browser_view_load(view, argv[3]);
+	check("controls-load", error == 0, "browser_view_load");
+	error = browser_view_draw_pixels(view, first, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
+	run_for(view, 800);
+	error = browser_view_draw_pixels(view, second, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
+	(void)save(argv[4], "controls-paused", second);
+	(void)browser_view_pointer_button(view, 168.0f, 100.0f, 0, 1, 0U);
+	(void)browser_view_pointer_button(view, 168.0f, 100.0f, 0, 0, 0U);
+	run_for(view, 1500);
+	(void)browser_view_pointer_button(view, 168.0f, 100.0f, 0, 1, 0U);
+	(void)browser_view_pointer_button(view, 168.0f, 100.0f, 0, 0, 0U);
+	run_for(view, 300);
+	error = browser_view_draw_pixels(view, third, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
+	(void)save(argv[4], "controls-played", third);
+	printf("%s", console_log);
+	check("controls-click", logged("controls play") && (logged("controls pause at 1") || logged("controls pause at 2")), "a click played, another paused");
+	(void)snprintf(detail, sizeof(detail), "bar %08x video %08x", (unsigned)second[(TEST_VIDEO_Y + 235U) * TEST_WIDTH + 200U],
+	    (unsigned)third[(TEST_VIDEO_Y + 235U) * TEST_WIDTH + 200U]);
+	check("controls-bar", (second[(TEST_VIDEO_Y + 228U) * TEST_WIDTH + 200U] & 0xffU) < 0x80U, detail);
 
 	/* The end. */
 	browser_view_destroy(view);

@@ -467,6 +467,11 @@ page_click_control(
 	if (node == NULL || node->type != DOM_ELEMENT)
 		return 0;
 
+	/* A video with controls plays, pauses or goes to a time (ws121-p006). */
+	handled = page_media_click(page, (struct dom_element *)node, x, y);
+	if (handled)
+		return 0;
+
 	/* Its activation as a control (nothing for another element). */
 	error = page_activate_control(page, (struct dom_element *)node, 0, href, found, &handled);
 	if (error != 0)

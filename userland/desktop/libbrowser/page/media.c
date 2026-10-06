@@ -31,6 +31,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -40,6 +41,17 @@
 /* The size of a <video> without a picture yet (HTML's default object size). */
 #define MEDIA_DEFAULT_WIDTH	300
 #define MEDIA_DEFAULT_HEIGHT	150
+
+/* The controls' bar (ws121-p006): its height's share of the video and its limits, in the video's pixels. */
+#define MEDIA_BAR_SHARE		8
+#define MEDIA_BAR_MIN		20
+#define MEDIA_BAR_MAX		48
+
+/* The bar's colours: its ground, its marks, the time played. */
+#define MEDIA_BAR_GROUND	0x000000U
+#define MEDIA_BAR_MARK		0xffffffU
+#define MEDIA_BAR_PLAYED	0x3d8bfdU
+#define MEDIA_BAR_TRACK		0x8a8f98U
 
 /* The largest media fetched whole (plan/ws121/phase001 U7). */
 #define MEDIA_BODY_MAX		((size_t)64 * 1024U * 1024U)
@@ -65,6 +77,9 @@ struct page_media {
 	int play_wanted;
 	int sized;
 	double told_time;
+	int controls;
+	unsigned drawn_state;
+	int drawn_position;
 	struct page *page;
 };
 
@@ -79,9 +94,14 @@ static struct page_media *media_find(const struct page *page, const struct dom_e
 static int media_follow(struct page_media *media);
 static void media_events(struct page_media *media, unsigned before);
 static void media_fire(struct page_media *media, const char *type);
+static void media_log_line(void *context, const char *line);
+static void media_controls(struct page_media *media);
+static int media_bar_height(int height);
+static void media_fill(struct img_bitmap *bitmap, int x, int y, int width, int height, uint32_t color, unsigned alpha);
 
 /*
- * Starts a page's table of media empty.
+ * Starts a page's table of media empty, and sends libmedia's log lines to
+ * standard error as "BROWSER MEDIA" lines (for the tests).
  */
 void
 page_media_init(
@@ -89,6 +109,7 @@ page_media_init(
 {
 	/* No media yet. */
 	wb_vector_init(&page->media, sizeof(struct page_media *));
+	media_set_log(media_log_line, NULL);
 }
 
 /*
@@ -305,6 +326,63 @@ page_media_seek(
 }
 
 /*
+ * The default action of a click on a <video> with controls (ws121-p006):
+ * on the bar's button it plays or pauses, on its track it goes to the time
+ * at that place, elsewhere on the video it plays or pauses.  x and y are
+ * the click's place in the document (pixels).  Returns 1 when the click
+ * was the media's.
+ */
+int
+page_media_click(
+	struct page *page,
+	struct dom_element *element,
+	int x,
+	int y)
+{
+	struct layout_rect rect;
+	struct page_media *media;
+	double left;
+	double top;
+	double width;
+	double height;
+	double bar;
+	double fraction;
+	int found;
+
+	/* A video with controls, and its box. */
+	media = media_find(page, element);
+	if (media == NULL || !media->controls || media->engine == NULL || media->bitmap.pixels == NULL)
+		return 0;
+	found = layout_node_bounds(&page->layout, &element->node, &rect);
+	if (!found)
+		return 0;
+	left = (double)layout_to_px(rect.x);
+	top = (double)layout_to_px(rect.y);
+	width = (double)layout_to_px(rect.width);
+	height = (double)layout_to_px(rect.height);
+	if (width <= 0.0 || height <= 0.0)
+		return 0;
+
+	/* The bar's height in the box, as drawn in the picture. */
+	bar = height * (double)media_bar_height(media->bitmap.height) / (double)media->bitmap.height;
+
+	/* Above the bar, or on its button: play or pause. */
+	if ((double)y < top + height - bar || (double)x < left + bar) {
+		(void)page_media_play(page, element, !media->play_wanted);
+		return 1;
+	}
+
+	/* On the track: the time at that place. */
+	fraction = ((double)x - (left + bar)) / (width - bar * 1.5);
+	if (fraction < 0.0)
+		fraction = 0.0;
+	if (fraction > 1.0)
+		fraction = 1.0;
+	media_engine_seek(media->engine, fraction * media->status.duration);
+	return 1;
+}
+
+/*
  * The scripts' questions about a media element (bind_host.media,
  * ws121-p005): its state, and a play, a pause or a seek.  An element a
  * script asks to play before the page found it is started then.
@@ -425,6 +503,7 @@ media_add(
 	/* Muted, and playing at once when muted with autoplay. */
 	wb_buffer_init(&value);
 	media->muted = media_attribute(page, element, "muted", &value);
+	media->controls = media_attribute(page, element, "controls", &value);
 	autoplay = media_attribute(page, element, "autoplay", &value);
 	if (autoplay && media->muted)
 		media->play_wanted = 1;
@@ -722,8 +801,18 @@ media_follow(
 		return 0;
 	drawn = media_engine_picture(media->engine, media->bitmap.pixels, (size_t)media->bitmap.width, media->bitmap.width,
 	    media->bitmap.height, &next);
+
+	/* The controls changed without a new picture: the picture again under them. */
+	if (!drawn && media->controls &&
+	    (media->drawn_state != media->status.state || media->drawn_position != (int)(media->status.position * 4.0)))
+		drawn = media_engine_redraw(media->engine, media->bitmap.pixels, (size_t)media->bitmap.width, media->bitmap.width,
+		    media->bitmap.height);
 	if (!drawn)
 		return 0;
+
+	/* The controls over it. */
+	if (media->controls)
+		media_controls(media);
 	img_bitmap_renew(&media->bitmap);
 
 	/* The first picture: the page is laid out again at the video's size. */
@@ -797,4 +886,136 @@ media_fire(
 	if (media->page->window == NULL)
 		return;
 	(void)bind_fire_event(media->page->window, &media->element->node, type, 0U, &canceled);
+}
+
+/* The height of the controls' bar for a video of a height (pixels of the video). */
+static int
+media_bar_height(
+	int height)
+{
+	int bar;
+
+	/* A share of the height, within limits, never more than the video. */
+	bar = height / MEDIA_BAR_SHARE;
+	if (bar < MEDIA_BAR_MIN)
+		bar = MEDIA_BAR_MIN;
+	if (bar > MEDIA_BAR_MAX)
+		bar = MEDIA_BAR_MAX;
+	if (bar > height)
+		bar = height;
+	return bar;
+}
+
+/*
+ * Draws the controls over the bottom of the picture: a dark band, at its
+ * left the play sign (paused) or the pause sign (playing), and the track
+ * of the time with the part played.
+ */
+static void
+media_controls(
+	struct page_media *media)
+{
+	struct img_bitmap *bitmap;
+	int bar;
+	int top;
+	int mark;
+	int row;
+	int half;
+	int track_left;
+	int track_width;
+	int played;
+	int line;
+
+	/* The band. */
+	bitmap = &media->bitmap;
+	bar = media_bar_height(bitmap->height);
+	top = bitmap->height - bar;
+	media_fill(bitmap, 0, top, bitmap->width, bar, MEDIA_BAR_GROUND, 150U);
+	media->drawn_state = media->status.state;
+	media->drawn_position = (int)(media->status.position * 4.0);
+
+	/* The sign in a square at the left: two bars while playing, a triangle otherwise. */
+	mark = bar / 2;
+	if (media->play_wanted) {
+		media_fill(bitmap, bar / 2 - mark / 2, top + bar / 4, mark / 3, mark, MEDIA_BAR_MARK, 255U);
+		media_fill(bitmap, bar / 2 + mark / 6, top + bar / 4, mark / 3, mark, MEDIA_BAR_MARK, 255U);
+	} else {
+		half = mark / 2;
+		for (row = 0; row < mark; row++) {
+			/* The triangle's width at the row: widest in its middle. */
+			if (row < half)
+				line = row;
+			else
+				line = mark - 1 - row;
+			media_fill(bitmap, bar / 2 - half / 2, top + bar / 4 + row, line + 1, 1, MEDIA_BAR_MARK, 255U);
+		}
+	}
+
+	/* The track and the part played. */
+	track_left = bar;
+	track_width = bitmap->width - bar - bar / 2;
+	if (track_width <= 0)
+		return;
+	media_fill(bitmap, track_left, top + bar / 2 - 2, track_width, 4, MEDIA_BAR_TRACK, 255U);
+	played = 0;
+	if (media->status.duration > 0.0)
+		played = (int)((double)track_width * media->status.position / media->status.duration);
+	if (played > track_width)
+		played = track_width;
+	media_fill(bitmap, track_left, top + bar / 2 - 2, played, 4, MEDIA_BAR_PLAYED, 255U);
+}
+
+/* Blends a colour (0xRRGGBB) at an opacity over a rectangle of a bitmap, within it. */
+static void
+media_fill(
+	struct img_bitmap *bitmap,
+	int x,
+	int y,
+	int width,
+	int height,
+	uint32_t color,
+	unsigned alpha)
+{
+	uint32_t *pixel;
+	unsigned channel;
+	unsigned below;
+	unsigned over;
+	unsigned shift;
+	uint32_t mixed;
+	int column;
+	int row;
+
+	/* Each pixel inside the bitmap. */
+	for (row = y; row < y + height; row++) {
+		if (row < 0 || row >= bitmap->height)
+			continue;
+		for (column = x; column < x + width; column++) {
+			if (column < 0 || column >= bitmap->width)
+				continue;
+
+			/* Each colour channel mixed; the pixel stays opaque. */
+			pixel = &bitmap->pixels[(size_t)row * (size_t)bitmap->width + (size_t)column];
+			mixed = 0xff000000U;
+			for (shift = 0; shift < 24U; shift += 8U) {
+				below = (*pixel >> shift) & 0xffU;
+				over = (color >> shift) & 0xffU;
+				channel = (over * alpha + below * (255U - alpha)) / 255U;
+				mixed |= (uint32_t)channel << shift;
+			}
+
+			/* The mixed pixel. */
+			*pixel = mixed;
+		}
+	}
+}
+
+/* Writes one of libmedia's log lines on standard error. */
+static void
+media_log_line(
+	void *context,
+	const char *line)
+{
+	/* The line, marked as the browser's. */
+	(void)context;
+	fprintf(stderr, "BROWSER MEDIA %s\n", line);
 }

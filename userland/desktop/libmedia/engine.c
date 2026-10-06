@@ -452,6 +452,34 @@ media_engine_picture(
 }
 
 /*
+ * Scales the latest picture taken into the caller's pixels again (after
+ * the caller drew over them).  Returns 1 when drawn, 0 when there is no
+ * picture yet.
+ */
+int
+media_engine_redraw(
+	struct media_engine *engine,
+	uint32_t *pixels,
+	size_t stride,
+	int width,
+	int height)
+{
+	int status;
+
+	/* No picture yet. */
+	if (engine->shown == NULL || width <= 0 || height <= 0)
+		return 0;
+
+	/* Scaled into the pixels. */
+	status = vp_frame_scale(engine->shown, &engine->scaler, pixels, stride * sizeof(pixels[0]), width, height);
+	if (status != 0)
+		return 0;
+	engine->scaled_width = width;
+	engine->scaled_height = height;
+	return 1;
+}
+
+/*
  * Ends the engine and frees it: the thread is told to end and waited for.
  */
 void

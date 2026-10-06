@@ -300,6 +300,7 @@ int page_media_play(struct page *page, const struct dom_element *element, int pl
 int page_media_status(const struct page *page, const struct dom_element *element, struct media_status *status);
 void page_media_seek(struct page *page, const struct dom_element *element, double seconds);
 int page_media_host(void *context, struct dom_element *element, int request, double value, struct bind_media *state);
+int page_media_click(struct page *page, struct dom_element *element, int x, int y);
 int page_fetch(const char *base, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 /* Fresh response storage receives owned metadata/body, or an empty response on failure. */
 int page_fetch_response(const char *base, const char *href, struct net_response *response);
