@@ -822,7 +822,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify fidoctl,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # Static programs (the class static, ws168-p002): linked with the static C
 # library alone and no runtime linker, as a child that sandbox_spawn starts
@@ -1258,6 +1258,28 @@ $(BUILD)/bin/keiland-notify: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -l:libwayland-client.so -l:libkeiland.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libwayland-client.so --needed libkeiland.so --needed libc.so $@
+
+# The security key tool (ws161-p004): libpasskey's sources, OpenSSL's libcrypto (the package's staged headers and
+# library; the Guardrail's exception until the release, WS172 p005) and the C library.
+DYNAMIC_FIDOCTL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,fidoctl)
+DYNAMIC_FIDOCTL_SSL := $(ZEDBSD_EXT_openssl_STAGEDIR)/usr
+
+$(DYNAMIC_FIDOCTL_OBJS): DYNAMIC_CPPFLAGS += -I$(DYNAMIC_FIDOCTL_SSL)/include
+$(DYNAMIC_FIDOCTL_OBJS): $(ZEDBSD_OPENSSL_STAGED)
+
+$(BUILD)/bin/fidoctl: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_FIDOCTL_OBJS) $(ZEDBSD_OPENSSL_LIBCRYPTO) \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_FIDOCTL_OBJS) \
+ -L$(DYNAMIC_DIR) -L$(DYNAMIC_FIDOCTL_SSL)/lib -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libcrypto.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libcrypto.so --needed libc.so $@
 
 # The Titlebar Presentation probe (WS070 p008): Wayland, libkeiland and the C library.
 DYNAMIC_TITLEBAR_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,titlebar-probe)

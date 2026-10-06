@@ -39,3 +39,8 @@
 | q824 ws148-p002 | 他の app が開いていた「最近の file」の menu | 一覧が空・止められた時に、開いている app の menu も読み直す（今は各 app が次に読む時まで古い） | libkeiland `recent.c`、各 app の open recent | 2026-10-06 |
 | q824 ws148-p002 | Storage の頁の文と Files の Clear Recents の日本語 | 翻訳の catalog に入れる（今は Storage の頁の本文と Files の題の button は翻訳されない、既存の Trash などと同じ） | `settings/page-storage.c`、`files/ui-grid.c`、`locale/ja/*.tr` | 2026-10-06 |
 | q826 ws128-p004（PDF の検索） | Enter の後に field へ戻した時の選択 | caret を末尾に置き、続けて打つと query に足される（今は compositor が query 全体を選んで戻すので、打つと置き換わる） | `wayland/titlebar-shell.c` の `shell_focus`、`pdfviewer/titlebar.c` の `pv_titlebar_input` | 2026-10-06 |
+| WS161 ws161-p004（libpasskey の os 層と fidoctl） | report に番号の付いた FIDO の鍵、64 byte でない report の鍵 | ID の byte を外して読む・report の大きさに合わせる（今は開かない・EIO） | `libpasskey/os-zedbsd.c` の `pk_os_open`、`os-posix.c` の `os_read` | 2026-10-06 |
+| WS161 ws161-p004 | 鍵が 2 本以上ある時の fidoctl | どれかを選ばせる・Selection（触った鍵）で決める（今は `-d` が無ければ一覧の最初） | `fidoctl/main.c` の `fidoctl_open`、`pk_ctap2_selection` | 2026-10-06 |
+| WS161 ws161-p004 | 使っている途中で鍵が抜かれた | 抜かれたことを言って終わる（今は read の ENODEV・EIO をそのまま出す） | `libpasskey/os-posix.c` の `os_read` | 2026-10-06 |
+| WS161 ws161-p004 | PIN の入力 | 端末では echo を切って読む・PIN の長さの規則（4〜63 byte）を先に確かめる（今は標準入力の 1 行をそのまま） | `fidoctl/main.c` の `fidoctl_read_pin` | 2026-10-06 |
+| WS161 ws161-p004 | 鍵の reset、resident の credential の一覧と削除 | `fidoctl reset`・`credentials`（今は無い） | `fidoctl/main.c`、`ctap2.c` | 2026-10-06 |
