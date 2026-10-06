@@ -1310,15 +1310,16 @@ home_draw_icon(
 	/*
 	 * An application with a picture is its banded tile with the picture cut
 	 * out (ws128-p012), lighter under the pointer and without a shadow,
-	 * which would show through the picture; the picture shows the
-	 * wallpaper Home's white glass frosts (BUG-237).  Any other is its
-	 * letter's tile.
+	 * which would show through the picture; the picture is a hole through
+	 * to the desktop's wallpaper (ws099-p034b, the 2026-10-06 user
+	 * decision; BUG-237 showed the blurred one).  Any other is its letter's
+	 * tile.
 	 */
 	if (app->picture >= 0) {
 		lighten = 0.0f;
 		if (over)
 			lighten = HOME_LIT;
-		glass_draw_app_tile(server, command, (unsigned)app->picture, left, top, size, opacity, lighten, GLASS_HOLE_SCENE);
+		glass_draw_app_tile(server, command, (unsigned)app->picture, left, top, size, opacity, lighten, GLASS_HOLE_WALLPAPER);
 	} else {
 		home_draw_letter(server, command, app, x, y, left, top, size, over, opacity);
 	}

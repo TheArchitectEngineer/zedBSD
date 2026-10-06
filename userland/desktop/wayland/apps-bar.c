@@ -72,8 +72,7 @@ zwl_apps_bar_draw(
 	struct zwl_server *server,
 	VkCommandBuffer command)
 {
-	static const float underline[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
-	static const float fill[4] = { 0.0f, 0.0f, 0.0f, 0.25f };
+	struct glass_bar_colours colours;
 	struct glass_shape shape;
 	struct zwl_apps_bar *state;
 	struct apps_view view;
@@ -99,21 +98,21 @@ zwl_apps_bar_draw(
 	/* The bar as it is now, in the log when it changed. */
 	log_bar(server, &view);
 
+	/* The bar's colours in the appearance shown (ws099-p034b). */
+	zwl_glass_bar_colours(server, &colours);
+
 	/* One pill behind all the icons shown and the "+N" place (ws099-p034). */
 	slots = view.shown;
 	if (view.hidden > 0U)
 		slots++;
 	pill_x = view.left + (ICON_WIDTH - ICON_MARK) / 2 - ICON_PILL_PAD;
 	pill_width = (int32_t)slots * ICON_WIDTH - (ICON_WIDTH - ICON_MARK) + 2 * ICON_PILL_PAD;
-	glass_draw_solid(server, command, (float)pill_x, (float)(ZWL_GLASS_BAR / 2 - 17), (float)pill_width, 34.0f, 17.0f, fill);
+	glass_draw_solid(server, command, (float)pill_x, (float)(ZWL_GLASS_BAR / 2 - 17), (float)pill_width, 34.0f, 17.0f, colours.fill);
 	glass_shape_init(&shape, (float)pill_x, (float)(ZWL_GLASS_BAR / 2 - 17), (float)pill_width, 34.0f);
 	shape.mode = MODE_RING;
 	shape.radius = 17.0f;
 	shape.soft = 1.0f;
-	shape.color[0] = 1.0f;
-	shape.color[1] = 1.0f;
-	shape.color[2] = 1.0f;
-	shape.color[3] = 0.12f;
+	memcpy(shape.color, colours.edge, sizeof(shape.color));
 	glass_shape_draw(server, command, &shape);
 
 	/* Each application's icon. */
@@ -151,7 +150,7 @@ zwl_apps_bar_draw(
 
 		/* A short line under the application of the window on top (ws099-p034). */
 		if ((int)slot == view.current)
-			glass_draw_solid(server, command, (float)(x + ICON_WIDTH / 2 - 4), (float)(ZWL_GLASS_BAR / 2 + 14), 8.0f, 2.5f, 1.25f, underline);
+			glass_draw_solid(server, command, (float)(x + ICON_WIDTH / 2 - 4), (float)(ZWL_GLASS_BAR / 2 + 14), 8.0f, 2.5f, 1.25f, colours.ink);
 	}
 
 	/* The "+N" place for the applications without room. */
@@ -1075,20 +1074,20 @@ draw_more(
 	unsigned hidden,
 	float light)
 {
-	static const float pill[4] = { 1.0f, 1.0f, 1.0f, 0.18f };
-	static const float ink[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
+	struct glass_bar_colours colours;
 	char text[16];
 	int32_t width;
 
-	/* A light rounded square the shape of the tiles, lit while pressed. */
+	/* A light rounded square the shape of the tiles (the bar's lit colour), lit while pressed. */
+	zwl_glass_bar_colours(server, &colours);
 	if (light > 0.0f)
 		draw_light(server, command, rect, light);
-	glass_draw_solid(server, command, (float)(rect->x + (ICON_WIDTH - ICON_MARK) / 2), (float)(ZWL_GLASS_BAR / 2 - ICON_MARK / 2), (float)ICON_MARK, (float)ICON_MARK, (float)ICON_MARK * GLASS_ICON_TILE_RADIUS, pill);
+	glass_draw_solid(server, command, (float)(rect->x + (ICON_WIDTH - ICON_MARK) / 2), (float)(ZWL_GLASS_BAR / 2 - ICON_MARK / 2), (float)ICON_MARK, (float)ICON_MARK, (float)ICON_MARK * GLASS_ICON_TILE_RADIUS, colours.lit);
 
 	/* The count in its middle. */
 	(void)snprintf(text, sizeof(text), "+%u", hidden);
 	width = glass_text_width(server, SIZE_BAR, text);
-	glass_draw_text(server, command, SIZE_BAR, rect->x + ICON_WIDTH / 2 - width / 2, ZWL_GLASS_BAR / 2 + 5, text, ICON_WIDTH, ink);
+	glass_draw_text(server, command, SIZE_BAR, rect->x + ICON_WIDTH / 2 - width / 2, ZWL_GLASS_BAR / 2 + 5, text, ICON_WIDTH, colours.ink);
 }
 
 /* Draws the light behind an icon the pointer rests on, or whose previews show. */
@@ -1099,12 +1098,12 @@ draw_light(
 	const struct apps_rect *rect,
 	float strength)
 {
+	struct glass_bar_colours colours;
 	float colour[4];
 
-	/* A soft light rounded square behind the mark, the shape of the tiles, inside the pill. */
-	colour[0] = 1.0f;
-	colour[1] = 1.0f;
-	colour[2] = 1.0f;
-	colour[3] = 0.20f * strength;
+	/* A soft rounded square of the bar's lit colour behind the mark, the shape of the tiles, inside the pill. */
+	zwl_glass_bar_colours(server, &colours);
+	memcpy(colour, colours.lit, sizeof(colour));
+	colour[3] = colours.lit[3] * strength;
 	glass_draw_solid(server, command, (float)(rect->x + 2), (float)(ZWL_GLASS_BAR / 2 - ICON_WIDTH / 2 + 2), (float)(ICON_WIDTH - 4), (float)(ICON_WIDTH - 4), (float)(ICON_WIDTH - 4) * GLASS_ICON_TILE_RADIUS, colour);
 }

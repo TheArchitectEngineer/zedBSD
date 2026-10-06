@@ -118,3 +118,18 @@ P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴�
 
 - 「このまま実装」: light の bar を montage-5 の形で実装してよい。
 - app の icon の中抜きの記号: 「デスクトップ背景が透けて見えるとうれしいです。ライトもダークも、Apps一覧も。」→ bar（light・dark）と App Home の Apps の一覧の icon は、中抜きの記号の部分を本当に透明にし、そこから desktop の背景（壁紙）が透けて見えるようにする（ink の地や白で塗らない）。title bar の小さな tile の扱いは別（変えるならユーザーに確かめる）。
+
+## 2026-10-06 p034b の実装（q794、P2）
+
+Status（p034b）: test-wait（T1 依頼中。実装・build まで）
+
+| 所 | 内容 |
+| --- | --- |
+| `glass.h`・`shell.c` | `struct glass_bar_colours` と `zwl_glass_bar_colours`: dark は p034 の白い ink・暗い pill（0.25）・白い縁（0.12）・lit 0.20・点 0.42、light は title bar の ink（0.12, 0.16, 0.24, 0.94）・線 0.16・pill 0.06・縁 0.10・lit 0.10・点 0.36。`draw_system_bar`・`draw_bar_strip`（light は白い glass 0.64 と暗い hairline 0.10、dock しかけの drag の間は lit で少し暗く。dark は今のまま）・`draw_bar_group`（`draw_bar_group_faded` に）・`draw_desktops`（点と今の desktop の輪を ink から）を両方の外観に |
+| `apps-bar.c` | app の pill の地・縁・今の app の下線・hover の光・「+N」を `zwl_glass_bar_colours` から |
+| `shell.c` の配置 | dock の窓の button の pill を右上の端（`buttons_x`・`buttons_width`、閉じるが一番右）、状態と時計の pill はその左へ `bar_dock` の分だけ寄る。題と menu の場所は desktop の点の手前まで |
+| animation | `bar_dock_follow`（tick）: 前の窓が dock（全画面・App Home・WiseView でない）なら 1、それ以外は 0 へ、180 ms の ease-out（今の位置から始める）。button の pill は `bar_dock` で fade と 0.9 → 1 の scale（`draw_bar_buttons`）、時計と状態は slide。layout_mode の切り替えで dock のまま app が替わる時は 1 のまま動かない |
+| 中抜きの記号（ユーザーの決定） | `GLASS_HOLE_WALLPAPER`（glass.c）: tile の内側に壁紙のその場所を鮮明に描いてから tile を重ね、中抜きから壁紙が透ける。bar の tile（light・dark、`mark_hole` が `keep_colours` の間）と App Home の一覧の tile（home.c）に。title bar の小さな tile は今のまま（SCENE・GROUND） |
+| `zwl.h` | `bar_dock`・`bar_dock_from`・`bar_dock_to`・`bar_dock_ms` |
+
+確認: zedBSD の compositor・Linux の Keiland の build warning 0。style-check（shell.c・glass.c・glass.h・home.c・apps-bar.c・zwl.h）指摘 0。QEMU は T1 に依頼（下）。host の montage（p034b-bar-host.py）は ink の地の版のまま（実装は壁紙の透け）。
