@@ -287,6 +287,10 @@ WINDOW_LINES = (
 # A line's own client field (not front_client=).
 CLIENT_FIELD = re.compile(r"(?<![\w])client=(\d+)")
 
+# A client that left: its windows went with it (an application that ends at its close request commits no null image,
+# so no ZWL UNMAP comes for them).
+CLIENT_GONE = re.compile(r"ZWL CLIENT gone client=(\d+)\b")
+
 
 def windows_from(text: str) -> dict[tuple[int, int], dict]:
 	"""Returns the windows the compositor's lines describe, by (client, surface): the last place and size each line
@@ -296,6 +300,12 @@ def windows_from(text: str) -> dict[tuple[int, int], dict]:
 	windows: dict[tuple[int, int], dict] = {}
 	latest: dict[int, tuple[int, int]] = {}
 	for line in text.splitlines():
+		gone = CLIENT_GONE.search(line)
+		if gone is not None:
+			for key, window in windows.items():
+				if key[0] == int(gone.group(1)):
+					window["mapped"] = False
+			continue
 		for pattern, kind in WINDOW_LINES:
 			match = pattern.search(line)
 			if match is None:

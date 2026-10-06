@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p002`
 Parent: [WS130](../ws.md)
-Status: in-progress（2026-10-05 P1。UAPI 承認・適用、kernel の核を実装、host 試験と build 済み、T1 待ち）
+Status: cleared（2026-10-06 Q1 判定: T1-206b PASS、main 1303ddbb の QEMU、ipv6-p002: PASS。実機は未実施）
 設計: [p001](../phase001/phase.md) §3（判断 H1〜H8 はユーザーが案のとおり承認、2026-10-05）
 
 ## 範囲
