@@ -110,8 +110,8 @@ struct terminal_touch_pointer {
  * taken over under a finger and the next tick presses the scroller again.
  */
 struct terminal_touch {
-	struct keiland_gesture *gesture;
-	struct keiland_scroller *scroller;
+	struct kl_gesture *gesture;
+	struct kl_scroller *scroller;
 	unsigned followed;
 	int pressed;
 	int moving;

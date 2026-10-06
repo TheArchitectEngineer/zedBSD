@@ -83,9 +83,9 @@ terminal_renderer_open(
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
-	VkWaylandSurfaceCreateInfoKHR surface;
 	const char *extensions[2];
 	VkResult error;
+	int failed;
 
 	/* Nothing is owned yet. */
 	memset(renderer, 0, sizeof(*renderer));
@@ -108,15 +108,11 @@ terminal_renderer_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The window's surface. */
-	memset(&surface, 0, sizeof(surface));
-	surface.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-	surface.display = window->display;
-	surface.surface = window->surface;
-	renderer->operation = "vkCreateWaylandSurfaceKHR";
-	error = vkCreateWaylandSurfaceKHR(renderer->instance, &surface, NULL, &renderer->surface);
-	if (error != VK_SUCCESS)
-		return error;
+	/* The window's surface (libkeiland's, WS131 p018). */
+	renderer->operation = "kl_window_vulkan_surface";
+	failed = kl_window_vulkan_surface(window->kui, renderer->instance, &renderer->surface);
+	if (failed != 0)
+		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* A device with a queue that draws and presents to the surface. */
 	error = render_device(renderer);

@@ -34,7 +34,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <pty.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +42,17 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+
+/*
+ * openpty and forkpty: <libutil.h> on FreeBSD, <pty.h> elsewhere (the
+ * terminal's own pseudo-terminals, an application's OS dependency outside
+ * the desktop's boundary, WS131 D14).
+ */
+#if defined(__FreeBSD__)
+#include <libutil.h>
+#else
+#include <pty.h>
+#endif
 
 /* The font the terminal uses unless told otherwise, and its size in pixels. */
 #define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
@@ -344,7 +354,6 @@ main(
 	/* Each tab's shell, if it still runs, is hung up on and reaped. */
 	while (main_tab_count > 0U)
 		(void)main_tab_close(&options, &run, main_tab_count - 1U);
-	terminal_tabs_close(&main_window);
 
 	/* The drawing before the window it draws into, then the font. */
 	terminal_renderer_close(&main_renderer);
@@ -591,18 +600,14 @@ main_loop(
 	int ready[TERMINAL_TABS];
 	int status;
 	int timeout;
-	int repeat_wait;
 
 	/* One round per event: wait, read the shell, send the keys, redraw what changed. */
 	started = terminal_clock();
 	stale = 0U;
 	for (;;) {
-		/* Waits for the compositor or the shell, or until the held key repeats. */
+		/* Waits for the compositor or the shell (or less, until a held key repeats: the application's). */
 		timeout = 1000;
 		now = terminal_clock();
-		repeat_wait = terminal_window_repeat_wait(&main_window);
-		if (repeat_wait >= 0)
-			timeout = repeat_wait;
 
 		/* The fingers' next round, when it comes first (ws081-p011). */
 		if (main_touch_due >= 0 && main_touch_due < timeout)
@@ -681,9 +686,6 @@ main_loop(
 		/* The wheel and Shift+Page Up or Down scroll the view, and a selection past the edge scrolls it (ws035-p114). */
 		main_scroll();
 		main_edge_scroll(terminal_clock());
-
-		/* The held key repeats. */
-		terminal_window_repeat(&main_window, terminal_clock());
 
 		/* A key typed ends the selection (Edit > Select All, or the pointer's range). */
 		if (main_window.input_length != 0U && (main_screen->selected || main_screen->range)) {
@@ -965,9 +967,9 @@ main_secret_follow(
 	/* The text input off for the secret, on again after it. */
 	main_secret = secret;
 	if (secret)
-		kui_window_text_input(main_window.kui, 0);
+		kl_window_text_input(main_window.kui, 0);
 	else
-		kui_window_text_input(main_window.kui, 1);
+		kl_window_text_input(main_window.kui, 1);
 	printf("ZTERM IME secret=%d\n", secret);
 	fflush(stdout);
 }
@@ -1797,7 +1799,7 @@ main_tabs_show(void)
 	if (same == 0)
 		return;
 	main_title_copy(main_window_title, sizeof(main_window_title), title);
-	xdg_toplevel_set_title(main_window.toplevel, main_window_title);
+	kl_window_set_title(main_window.kui, main_window_title);
 	printf("ZTERM TITLE tab=%u title=%s\n", main_tabs[main_active].id, main_window_title);
 	fflush(stdout);
 }
@@ -2348,7 +2350,7 @@ main_selected_log(
 	fflush(stdout);
 
 	/* The selected text is the primary selection (ws035-p100). */
-	terminal_primary_set(&main_window, main_primary, length, main_window.serial);
+	terminal_primary_set(&main_window, main_primary, length);
 }
 
 /*
@@ -2474,5 +2476,5 @@ main_text_cursor(void)
 	y = (int)TERMINAL_PADDING + (int)((main_screen->cursor_row + main_screen->view) * main_font.cell_height) + main_screen->view_offset;
 
 	/* The cell's rectangle. */
-	kui_window_text_cursor(main_window.kui, x, y, (int)main_font.cell_width, (int)main_font.cell_height);
+	kl_window_text_cursor(main_window.kui, x, y, (int)main_font.cell_width, (int)main_font.cell_height);
 }

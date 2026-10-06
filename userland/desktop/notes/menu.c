@@ -9,12 +9,13 @@
  * The menus of Notes: File, Edit, Page, Tool and View (ws175-p008: Edit's
  * images of the PDF and Tool's Select).
  *
- * The compositor draws them from the model given through libkeiland (the
- * System Menu, WS070) and runs their shortcuts: a shortcut's key is the
- * menu's and does not reach the window, so the keys Notes handles itself
- * (main.c) are the ones without a menu item and every key when there is no
- * System Menu.  A choice arrives as an action while the window's events
- * are dispatched and waits in the window's queue for the main loop.
+ * The compositor draws them from the table given to libkeiland's window
+ * (kl_window_set_menu, WS131 p018; the System Menu, WS070) and runs their
+ * shortcuts: a shortcut's key is the menu's and does not reach the window,
+ * so the keys Notes handles itself (main.c) are the ones without a menu
+ * item and every key when there is no System Menu.  A choice arrives among
+ * the window's inputs as a KL_WINDOW_ACTION input and waits in the
+ * window's queue for the main loop; the state shown is the actions'.
  *
  * The shortcuts are the standard ones (design-input-notes.md D8): Ctrl+N a
  * new page, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close, Ctrl+Z undo,
@@ -70,58 +71,37 @@
 #define MENU_KEY_PAGE_DOWN	0xff56U
 #define MENU_KEY_F11		0xffc8U
 
-/*
- * One item of the menus as Notes builds them: its ID, its parent, its
- * type, its label, its action, its role and its shortcut.
- */
-struct menu_item {
-	uint32_t id;
-	uint32_t parent;
-	unsigned type;
-	const char *label;
-	uint32_t action;
-	unsigned role;
-	unsigned modifiers;
-	uint32_t keysym;
-};
-
 /* The menus, in the order they are shown. */
-static const struct menu_item menu_items[] = {
-	{ MENU_FILE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "File", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_NEW_PAGE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "New Page", NOTES_ACTION_NEW_PAGE, KEILAND_MENU_ROLE_NEW, KEILAND_MENU_CTRL, 'n' },
-	{ MENU_OPEN, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Open...", NOTES_ACTION_OPEN, KEILAND_MENU_ROLE_OPEN, KEILAND_MENU_CTRL, 'o' },
-	{ MENU_SAVE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Save", NOTES_ACTION_SAVE, KEILAND_MENU_ROLE_SAVE, KEILAND_MENU_CTRL, 's' },
-	{ MENU_SAVE_AS, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Save As...", NOTES_ACTION_SAVE_AS, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 's' },
-	{ MENU_FILE_LINE, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CLOSE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close", NOTES_ACTION_CLOSE, KEILAND_MENU_ROLE_CLOSE, KEILAND_MENU_CTRL, 'w' },
-	{ MENU_EDIT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Edit", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_UNDO, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Undo", NOTES_ACTION_UNDO, KEILAND_MENU_ROLE_UNDO, KEILAND_MENU_CTRL, 'z' },
-	{ MENU_REDO, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Redo", NOTES_ACTION_REDO, KEILAND_MENU_ROLE_REDO, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'z' },
-	{ MENU_EDIT_LINE, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_INSERT_IMAGE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Insert Image...", NOTES_ACTION_INSERT_IMAGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_REPLACE_IMAGE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Replace Image...", NOTES_ACTION_REPLACE_IMAGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_DELETE_OBJECT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Delete", NOTES_ACTION_DELETE_OBJECT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_RESET_OBJECT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Reset", NOTES_ACTION_RESET_OBJECT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_PAGE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Page", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_PREVIOUS_PAGE, MENU_PAGE, KEILAND_MENU_ITEM_NORMAL, "Previous Page", NOTES_ACTION_PREVIOUS_PAGE, KEILAND_MENU_ROLE_NONE, 0U, MENU_KEY_PAGE_UP },
-	{ MENU_NEXT_PAGE, MENU_PAGE, KEILAND_MENU_ITEM_NORMAL, "Next Page", NOTES_ACTION_NEXT_PAGE, KEILAND_MENU_ROLE_NONE, 0U, MENU_KEY_PAGE_DOWN },
-	{ MENU_TOOL, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Tool", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_PEN, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Pen", NOTES_ACTION_PEN, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_HIGHLIGHTER, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Marker", NOTES_ACTION_HIGHLIGHTER, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ERASER, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Eraser", NOTES_ACTION_ERASER, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SELECT, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Select", NOTES_ACTION_SELECT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_FULLSCREEN, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Fullscreen", NOTES_ACTION_FULLSCREEN, KEILAND_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 }
+static const struct kl_menu_entry menu_items[] = {
+	{ MENU_FILE, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_NEW_PAGE, MENU_FILE, KL_MENU_ITEM_NORMAL, "New Page", NOTES_ACTION_NEW_PAGE, KL_MENU_ROLE_NEW, KL_MENU_CTRL, 'n' },
+	{ MENU_OPEN, MENU_FILE, KL_MENU_ITEM_NORMAL, "Open...", NOTES_ACTION_OPEN, KL_MENU_ROLE_OPEN, KL_MENU_CTRL, 'o' },
+	{ MENU_SAVE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Save", NOTES_ACTION_SAVE, KL_MENU_ROLE_SAVE, KL_MENU_CTRL, 's' },
+	{ MENU_SAVE_AS, MENU_FILE, KL_MENU_ITEM_NORMAL, "Save As...", NOTES_ACTION_SAVE_AS, KL_MENU_ROLE_NONE, KL_MENU_CTRL | KL_MENU_SHIFT, 's' },
+	{ MENU_FILE_LINE, MENU_FILE, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CLOSE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Close", NOTES_ACTION_CLOSE, KL_MENU_ROLE_CLOSE, KL_MENU_CTRL, 'w' },
+	{ MENU_EDIT, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Edit", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_UNDO, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Undo", NOTES_ACTION_UNDO, KL_MENU_ROLE_UNDO, KL_MENU_CTRL, 'z' },
+	{ MENU_REDO, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Redo", NOTES_ACTION_REDO, KL_MENU_ROLE_REDO, KL_MENU_CTRL | KL_MENU_SHIFT, 'z' },
+	{ MENU_EDIT_LINE, MENU_EDIT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_INSERT_IMAGE, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Insert Image...", NOTES_ACTION_INSERT_IMAGE, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_REPLACE_IMAGE, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Replace Image...", NOTES_ACTION_REPLACE_IMAGE, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_DELETE_OBJECT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Delete", NOTES_ACTION_DELETE_OBJECT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_RESET_OBJECT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Reset", NOTES_ACTION_RESET_OBJECT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_PAGE, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Page", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_PREVIOUS_PAGE, MENU_PAGE, KL_MENU_ITEM_NORMAL, "Previous Page", NOTES_ACTION_PREVIOUS_PAGE, KL_MENU_ROLE_NONE, 0U, MENU_KEY_PAGE_UP },
+	{ MENU_NEXT_PAGE, MENU_PAGE, KL_MENU_ITEM_NORMAL, "Next Page", NOTES_ACTION_NEXT_PAGE, KL_MENU_ROLE_NONE, 0U, MENU_KEY_PAGE_DOWN },
+	{ MENU_TOOL, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Tool", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_PEN, MENU_TOOL, KL_MENU_ITEM_RADIO, "Pen", NOTES_ACTION_PEN, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_HIGHLIGHTER, MENU_TOOL, KL_MENU_ITEM_RADIO, "Marker", NOTES_ACTION_HIGHLIGHTER, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ERASER, MENU_TOOL, KL_MENU_ITEM_RADIO, "Eraser", NOTES_ACTION_ERASER, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SELECT, MENU_TOOL, KL_MENU_ITEM_RADIO, "Select", NOTES_ACTION_SELECT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_VIEW, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "View", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FULLSCREEN, MENU_VIEW, KL_MENU_ITEM_CHECKBOX, "Fullscreen", NOTES_ACTION_FULLSCREEN, KL_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 }
 };
 
-static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
-static int menu_build(struct notes_window *window);
+static void menu_action_state(struct notes_window *window, uint32_t action, int enabled, int checked);
 static int menu_is(uint32_t tool, uint32_t action);
-
-/* What the window menu tells Notes: only the choices. */
-static const struct keiland_window_menu_listener menu_listener = {
-	menu_activated, NULL, NULL
-};
 
 /*
  * Gives the compositor the window's menus.
@@ -135,78 +115,39 @@ notes_menu_open(
 {
 	int error;
 
-	/* The connection's menu service. */
-	window->menu_service = keiland_menu_service_open(window->display);
-	if (window->menu_service == NULL)
-		return errno;
-
-	/* The menu. */
-	window->menu = keiland_menu_create(window->menu_service);
-	if (window->menu == NULL) {
-		error = errno;
-		notes_menu_close(window);
+	/* The table, shown on the window. */
+	error = kl_window_set_menu(window->kui, menu_items, sizeof(menu_items) / sizeof(menu_items[0]));
+	if (error != 0)
 		return error;
-	}
-
-	/* Its items. */
-	error = menu_build(window);
-	if (error != 0) {
-		notes_menu_close(window);
-		return error;
-	}
-
-	/* Its place on the window. */
-	window->window_menu = keiland_window_menu_create(window->menu_service, window->toplevel, &menu_listener, window);
-	if (window->window_menu == NULL) {
-		error = errno;
-		notes_menu_close(window);
-		return error;
-	}
-
-	/* Shows it. */
-	error = keiland_window_menu_set(window->window_menu, window->menu);
-	if (error != 0) {
-		notes_menu_close(window);
-		return error;
-	}
 
 	/* Succeeded: the compositor shows the menus. */
+	window->menu_shown = 1;
 	return 0;
 }
 
 /*
- * Shows a state in the menus in one transaction: Undo and Redo enabled,
- * the pages' items, the tool's radio item and Fullscreen checked.
+ * Shows a state in the menus: Undo and Redo enabled, the images' and the
+ * pages' items, the tool's radio item and Fullscreen checked.
  */
 void
 notes_menu_refresh(
 	struct notes_window *window,
 	const struct notes_ui_state *state)
 {
-	struct keiland_menu *menu;
 	int earlier;
 	int later;
-	int error;
 
 	/* Nothing to show without a menu. */
-	menu = window->menu;
-	if (menu == NULL)
+	if (!window->menu_shown)
 		return;
 
-	/* The transaction. */
-	error = keiland_menu_begin(menu);
-	if (error != 0)
-		return;
-
-	/* Undo and Redo while the history allows. */
-	(void)keiland_menu_set_enabled(menu, MENU_UNDO, state->can_undo);
-	(void)keiland_menu_set_enabled(menu, MENU_REDO, state->can_redo);
-
-	/* The images' items while they can do something. */
-	(void)keiland_menu_set_enabled(menu, MENU_INSERT_IMAGE, state->can_insert);
-	(void)keiland_menu_set_enabled(menu, MENU_REPLACE_IMAGE, state->can_replace);
-	(void)keiland_menu_set_enabled(menu, MENU_DELETE_OBJECT, state->selected);
-	(void)keiland_menu_set_enabled(menu, MENU_RESET_OBJECT, state->can_reset);
+	/* Undo and Redo while the history allows, and the images' items while they can do something. */
+	menu_action_state(window, NOTES_ACTION_UNDO, state->can_undo, 0);
+	menu_action_state(window, NOTES_ACTION_REDO, state->can_redo, 0);
+	menu_action_state(window, NOTES_ACTION_INSERT_IMAGE, state->can_insert, 0);
+	menu_action_state(window, NOTES_ACTION_REPLACE_IMAGE, state->can_replace, 0);
+	menu_action_state(window, NOTES_ACTION_DELETE_OBJECT, state->selected, 0);
+	menu_action_state(window, NOTES_ACTION_RESET_OBJECT, state->can_reset, 0);
 
 	/* The page before and the page after, when there are such pages. */
 	earlier = 0;
@@ -215,18 +156,37 @@ notes_menu_refresh(
 	later = 0;
 	if (state->page + 1U < state->page_count)
 		later = 1;
-	(void)keiland_menu_set_enabled(menu, MENU_PREVIOUS_PAGE, earlier);
-	(void)keiland_menu_set_enabled(menu, MENU_NEXT_PAGE, later);
+	menu_action_state(window, NOTES_ACTION_PREVIOUS_PAGE, earlier, 0);
+	menu_action_state(window, NOTES_ACTION_NEXT_PAGE, later, 0);
 
 	/* The tool's radio item, and Fullscreen. */
-	(void)keiland_menu_set_checked(menu, MENU_PEN, menu_is(state->tool, NOTES_ACTION_PEN));
-	(void)keiland_menu_set_checked(menu, MENU_HIGHLIGHTER, menu_is(state->tool, NOTES_ACTION_HIGHLIGHTER));
-	(void)keiland_menu_set_checked(menu, MENU_ERASER, menu_is(state->tool, NOTES_ACTION_ERASER));
-	(void)keiland_menu_set_checked(menu, MENU_SELECT, menu_is(state->tool, NOTES_ACTION_SELECT));
-	(void)keiland_menu_set_checked(menu, MENU_FULLSCREEN, state->fullscreen);
+	menu_action_state(window, NOTES_ACTION_PEN, 1, menu_is(state->tool, NOTES_ACTION_PEN));
+	menu_action_state(window, NOTES_ACTION_HIGHLIGHTER, 1, menu_is(state->tool, NOTES_ACTION_HIGHLIGHTER));
+	menu_action_state(window, NOTES_ACTION_ERASER, 1, menu_is(state->tool, NOTES_ACTION_ERASER));
+	menu_action_state(window, NOTES_ACTION_SELECT, 1, menu_is(state->tool, NOTES_ACTION_SELECT));
+	menu_action_state(window, NOTES_ACTION_FULLSCREEN, 1, state->fullscreen);
+}
 
-	/* The state is shown together. */
-	(void)keiland_menu_commit(menu);
+/*
+ * Queues a choice of the menus (a KL_WINDOW_ACTION input of the window:
+ * its action and the item's ID) for the main loop.
+ */
+void
+notes_menu_chosen(
+	struct notes_window *window,
+	const struct kl_window_event *event)
+{
+	/* The log line the tests read. */
+	printf("NOTES MENU item=%d action=%u serial=%u\n", (int)event->id, event->code, event->serial);
+	fflush(stdout);
+
+	/* A full queue drops the choice. */
+	if (window->action_count >= NOTES_ACTIONS)
+		return;
+
+	/* Succeeded: the choice waits for the main loop. */
+	window->actions[window->action_count] = event->code;
+	window->action_count++;
 }
 
 /*
@@ -236,89 +196,31 @@ void
 notes_menu_close(
 	struct notes_window *window)
 {
-	/* The window's place, the menu and the service, where made. */
-	if (window->window_menu != NULL)
-		keiland_window_menu_destroy(window->window_menu);
-	if (window->menu != NULL)
-		keiland_menu_destroy(window->menu);
-	if (window->menu_service != NULL)
-		keiland_menu_service_close(window->menu_service);
-	window->window_menu = NULL;
-	window->menu = NULL;
-	window->menu_service = NULL;
+	/* The window's menu, where shown. */
+	if (window->menu_shown)
+		(void)kl_window_set_menu(window->kui, NULL, 0U);
+	window->menu_shown = 0;
 }
 
-/* Queues a choice of the menus for the main loop. */
+/* Sets an action's state (enabled, checked) in the window's menu. */
 static void
-menu_activated(
-	void *data,
-	struct keiland_window_menu *window_menu,
-	uint32_t item,
+menu_action_state(
+	struct notes_window *window,
 	uint32_t action,
-	struct wl_seat *seat,
-	uint32_t serial)
+	int enabled,
+	int checked)
 {
-	struct notes_window *window;
+	unsigned state;
 
-	/* The log line the tests read. */
-	(void)window_menu;
-	(void)seat;
-	window = data;
-	printf("NOTES MENU item=%u action=%u serial=%u\n", item, action, serial);
-	fflush(stdout);
+	/* The bits. */
+	state = 0U;
+	if (!enabled)
+		state |= KL_ACTION_DISABLED;
+	if (checked)
+		state |= KL_ACTION_CHECKED;
 
-	/* A full queue drops the choice. */
-	if (window->action_count >= NOTES_ACTIONS)
-		return;
-
-	/* Succeeded: the choice waits for the main loop. */
-	window->actions[window->action_count] = action;
-	window->action_count++;
-}
-
-/* Gives the compositor every item, with its role and shortcut, in one transaction. */
-static int
-menu_build(
-	struct notes_window *window)
-{
-	const struct menu_item *item;
-	unsigned index;
-	int error;
-
-	/* The transaction. */
-	error = keiland_menu_begin(window->menu);
-	if (error != 0)
-		return error;
-
-	/* Each item in its order under its parent. */
-	for (index = 0; index < sizeof(menu_items) / sizeof(menu_items[0]); index++) {
-		item = &menu_items[index];
-		error = keiland_menu_append(window->menu, item->id, item->parent, item->type, item->label, item->action);
-		if (error != 0)
-			return error;
-
-		/* Its role, when it has one. */
-		if (item->role != KEILAND_MENU_ROLE_NONE) {
-			error = keiland_menu_set_role(window->menu, item->id, item->role);
-			if (error != 0)
-				return error;
-		}
-
-		/* Its shortcut, when it has one. */
-		if (item->keysym != 0U) {
-			error = keiland_menu_set_shortcut(window->menu, item->id, item->modifiers, item->keysym);
-			if (error != 0)
-				return error;
-		}
-	}
-
-	/* The items are shown together. */
-	error = keiland_menu_commit(window->menu);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the menus are built. */
-	return 0;
+	/* Kept by the window for its menu. */
+	(void)kl_window_set_action_state(window->kui, action, state);
 }
 
 /* Tells whether the tool chosen is the one an item stands for (1) or not (0). */

@@ -90,7 +90,6 @@ static void window_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, 
 static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay);
 static int window_modifier_key(uint32_t key);
 static void window_touch_push(struct kl_window *window, unsigned kind, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
-static void window_stamp(struct kl_window_event *event, uint32_t time);
 static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
 static void window_touch_motion(void *data, struct wl_touch *touch, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
@@ -247,6 +246,7 @@ kl_window_close(
 	keiui_clipboard_close(window);
 	keiui_primary_close(window);
 	keiui_text_input_close(window);
+	keiui_tablet_close(window);
 	free(window->clipboard);
 	free(window->primary_text);
 
@@ -726,6 +726,30 @@ kl_window_set_content_type(
 	wp_content_type_v1_set_content_type(window->content_type, (uint32_t)type);
 
 	/* Succeeded: told. */
+	return 0;
+}
+
+/*
+ * Turns a held key's repeat on or off for the window (KL_VERSION 44: Notes
+ * takes each key once).  Returns 0, or EINVAL without a window.
+ */
+int
+kl_window_set_repeat(
+	struct kl_window *window,
+	int enabled)
+{
+	/* A window. */
+	if (window == NULL)
+		return EINVAL;
+
+	/* Off: the key held now stops too. */
+	window->repeat_off = 0;
+	if (!enabled) {
+		window->repeat_off = 1;
+		window->repeat_key = 0U;
+	}
+
+	/* Succeeded. */
 	return 0;
 }
 
@@ -1467,6 +1491,13 @@ window_global(
 		return;
 	}
 
+	/* The tablet manager (WS131 p018), bound for a window that takes a pen tablet's tools (tablet.c). */
+	match = strcmp(interface, "zwp_tablet_manager_v2");
+	if (match == 0 && window->tablet_manager == NULL) {
+		keiui_tablet_bind(window, registry, name);
+		return;
+	}
+
 	/* The text input's manager (an input method's and the on-screen keyboard's text). */
 	match = strcmp(interface, "zwp_text_input_manager_v3");
 	if (match == 0 && window->text_manager == NULL) {
@@ -1746,7 +1777,7 @@ window_pointer_motion(
 	window->pointer_y = wl_fixed_to_double(y);
 	event = window_push(window, KL_WINDOW_MOTION);
 	if (event != NULL)
-		window_stamp(event, time);
+		keiui_window_stamp(event, time);
 }
 
 /* A pointer button is pressed or let go. */
@@ -1775,7 +1806,7 @@ window_pointer_button(
 	event = window_push(window, KL_WINDOW_BUTTON);
 	if (event == NULL)
 		return;
-	window_stamp(event, time);
+	keiui_window_stamp(event, time);
 	event->code = button;
 	event->pressed = 0;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED)
@@ -1808,7 +1839,7 @@ window_pointer_axis(
 	event = window_push(window, KL_WINDOW_AXIS);
 	if (event == NULL)
 		return;
-	window_stamp(event, time);
+	keiui_window_stamp(event, time);
 	event->axis_source = window->axis_source;
 	if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
 		event->dy = wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE;
@@ -1873,7 +1904,7 @@ window_pointer_axis_stop(
 	event = window_push(window, KL_WINDOW_AXIS_STOP);
 	if (event == NULL)
 		return;
-	window_stamp(event, time);
+	keiui_window_stamp(event, time);
 	event->axis_source = window->axis_source;
 }
 
@@ -2006,9 +2037,9 @@ window_keyboard_key(
 		return;
 	}
 
-	/* A key that is not a modifier repeats while held. */
+	/* A key that is not a modifier repeats while held (unless the application turned the repeat off). */
 	modifier = window_modifier_key(key);
-	if (modifier == 0) {
+	if (modifier == 0 && !window->repeat_off) {
 		window->repeat_key = key;
 		window->repeat_at = keiui_clock_ms() + window->repeat_delay;
 	}
@@ -2111,7 +2142,7 @@ window_touch_push(
 
 	/* The event's time (a cancel has none: the reading's). */
 	if (kind != KL_WINDOW_TOUCH_CANCEL)
-		window_stamp(event, time);
+		keiui_window_stamp(event, time);
 }
 
 /*
@@ -2120,8 +2151,8 @@ window_touch_push(
  * a time far behind or ahead of it is another clock's, and the reading's
  * time stays.
  */
-static void
-window_stamp(
+void
+keiui_window_stamp(
 	struct kl_window_event *event,
 	uint32_t time)
 {

@@ -12,8 +12,8 @@
  * compile width.c on its own.
  */
 
-#ifndef KEILAND_TERMINAL_WIDTH_H
-#define KEILAND_TERMINAL_WIDTH_H
+#ifndef TERMINAL_WIDTH_H
+#define TERMINAL_WIDTH_H
 
 #include <stdint.h>
 

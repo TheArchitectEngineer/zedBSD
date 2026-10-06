@@ -144,8 +144,8 @@ struct notes_touch_finger {
  * writes are its events not yet taken, oldest first.
  */
 struct notes_touch {
-	struct keiland_gesture *gesture;
-	struct keiland_scroller *scroller;
+	struct kl_gesture *gesture;
+	struct kl_scroller *scroller;
 	struct notes_touch_finger fingers[NOTES_TOUCH_FINGERS];
 	unsigned followed;
 

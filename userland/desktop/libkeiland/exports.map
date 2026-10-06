@@ -313,6 +313,13 @@
 		kl_window_set_glass;
 		kl_window_set_control_text;
 		kl_window_focus_control;
+		kl_window_accept_tablet;
+		kl_window_set_repeat;
+		kl_window_set_tabs;
+		kl_window_selection_own;
+		kl_window_accept_drops;
+		kl_window_take_drop;
+		kl_window_drag_text;
 		kl_window_vulkan_surface;
 		kl_ui_key;
 		kl_ui_set_focus;

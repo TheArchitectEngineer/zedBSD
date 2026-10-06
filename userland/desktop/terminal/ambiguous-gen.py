@@ -127,7 +127,7 @@ def main():
         out.write(" *   %s sha256 %s\n" % (name, digest))
     out.write(" * Mn, Me, Cf and Cc characters are left out.  Do not edit by hand.\n")
     out.write(" */\n\n")
-    out.write("#ifndef KEILAND_TERMINAL_AMBIGUOUS_H\n#define KEILAND_TERMINAL_AMBIGUOUS_H\n\n")
+    out.write("#ifndef TERMINAL_AMBIGUOUS_H\n#define TERMINAL_AMBIGUOUS_H\n\n")
     out.write("/* How many ranges the table has (%d code points). */\n" % len(points))
     out.write("#define AMBIGUOUS_RANGES\t%dU\n\n" % len(merged))
     out.write("/*\n * The ranges, lowest first; they neither overlap nor touch.\n *\n")
