@@ -20,6 +20,8 @@
 
 #include "files.h"
 
+#include <keiland.h>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -339,7 +341,7 @@ preview_place(
 
 	/* The place's name under it. */
 	baseline = area->y + PREVIEW_PADDING + PREVIEW_PICTURE + 24;
-	preview_centered(app, canvas, area, baseline, fm_location_name(location, app->home), PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
+	preview_centered(app, canvas, area, baseline, kl_tr(fm_location_name(location, app->home)), PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
 
 	/* How many items it holds (the dashboard lists none of its own). */
 	if (location->kind != FM_LOCATION_TODAY && tab->listing.error == 0) {

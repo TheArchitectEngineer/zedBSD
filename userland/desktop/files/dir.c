@@ -16,6 +16,8 @@
 
 #include "files.h"
 
+#include <keiland.h>
+
 #include <dirent.h>
 #include <grp.h>
 #include <pwd.h>
@@ -340,20 +342,17 @@ fm_dir_items_text(
 	char *text,
 	size_t length)
 {
+	char number[32];
+
 	/* An unknown count says nothing. */
 	if (count < 0) {
 		text[0] = '\0';
 		return;
 	}
 
-	/* One item is singular. */
-	if (count == 1) {
-		snprintf(text, length, "1 item");
-		return;
-	}
-
-	/* Any other count is plural. */
-	snprintf(text, length, "%ld items", count);
+	/* The count in the language's form for it (one item is singular in English). */
+	snprintf(number, sizeof(number), "%ld", count);
+	(void)kl_tr_format(text, length, kl_trn("{1} item", "{1} items", (unsigned long)count), number, (const char *)NULL);
 }
 
 /*

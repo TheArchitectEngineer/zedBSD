@@ -18,6 +18,8 @@
 
 #include "files.h"
 
+#include <keiland.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -381,7 +383,7 @@ tabs_draw_one(
 	/* The name of the tab's place, cut to fit between the ends' room, centred. */
 	shown = app->tabs[index];
 	location = &shown->history[shown->history_index].location;
-	(void)fm_text_fit(app->text, fm_location_name(location, app->home), TABS_TEXT, current, tab->width - 2 * TABS_PADDING, name, sizeof(name));
+	(void)fm_text_fit(app->text, kl_tr(fm_location_name(location, app->home)), TABS_TEXT, current, tab->width - 2 * TABS_PADDING, name, sizeof(name));
 	text_width = fm_text_width(app->text, name, strlen(name), TABS_TEXT, current);
 	left = tab->x + (tab->width - text_width) / 2;
 	baseline = fm_text_center(TABS_TEXT, tab->y, tab->height);
