@@ -18,7 +18,7 @@ make ARCH=amd64 run
 | `menuconfig` | Edit the configuration and write `config.mk` |
 | `vmunix` | Build `build/<arch>/vmunix` |
 | `bootloader` | Build or validate the platform boot components |
-| `rootfs-bin` | Build `/bin` from `userland/base`, `userland/comp`, and `userland/retro` |
+| `rootfs-bin` | Build `/bin` from `userland/base`, `userland/comp`, and `userland/x11` |
 | `rootfs-usr` | Build `/usr` packages from `userland/packages` |
 | `rootfs` | Assemble the complete root filesystem |
 | `world` | Build `vmunix` and `rootfs` |

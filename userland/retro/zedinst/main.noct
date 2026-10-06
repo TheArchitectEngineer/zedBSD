@@ -1,9 +1,0 @@
-require textui;
-require result;
-func main(args) {
-    var result = 0;
-    if (Array.size(args) == 0) { result = instTextWizard(); }
-    else if (Array.size(args) == 2) { result = instInstall(args[0], args[1]); }
-    else { System.error("usage: zedinst [DISK PAYLOAD-PARTITION]"); }
-    instReportConsole(result);
-}

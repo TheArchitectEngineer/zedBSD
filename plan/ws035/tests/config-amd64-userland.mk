@@ -32,7 +32,7 @@ ZEDBSD_USER_PROGRAMS := lspci lsusb libkeiland Xzed zshell zterm zwm admin ar at
 # ws129-p010 (2026-10-02 user: every desktop application in the CI and the test configurations, and every base
 # program that is not a test): the base programs this list lacked, and the desktop's applications, daemons and
 # libraries with App Home's X11 Gears.  Test clients stay where each test configuration adds them.
-ZEDBSD_USER_PROGRAMS += audiod base64 install mktemp pwd zedinst \
+ZEDBSD_USER_PROGRAMS += audiod base64 install mktemp pwd \
 	libgif-compat libjpeg-compat libpdf libpng-compat libz-compat \
 	libvulkan libwayland-client libwayland-egl libegl libglesv2 libgl libtruetype libkeiland \
 	wayland sessiond terminal files notes pdfviewer imageview textedit settings browser libbrowser xserver zgears \

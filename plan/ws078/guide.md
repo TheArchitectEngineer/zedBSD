@@ -61,7 +61,7 @@ toolchain と package の patch の `zedbsd` の target 名、試験の log の�
 | p001（棚卸し） | planning のまま。棚卸しは ws.md の表とこの手引きの §2.3 で済んでいる。**main に提案: p001 を canceled（理由: ws.md と guide.md §2.3 で代わった）にする**（Awesome Plan §3、履歴は残す） |
 | p004 | incomplete。残り: §2.3 の A（見える文字列）と graphical な表示の確かめ。2026-10-01 に [phase004](phase004/phase.md) を作り手順を書いた |
 | p005 | planning。全 Phase の後 |
-| retro の program の名前（zterm・zwm・zgears・zshell・Xzed・zedinst、`userland/retro/`） | **ユーザーの判断待ち**（ws.md の p004 の行）。変えない |
+| retro の program の名前（zterm・zwm・zgears・zshell・Xzed・zedinst、`userland/x11/`） | **ユーザーの判断待ち**（ws.md の p004 の行）。変えない |
 | `TERM=zed` | main の判断: 低い優先度。名前を決めるのは main かユーザー（§3 の p009 の案） |
 | 古い p069 の demo（`plan/ws035/demo/zdesktop`・`run-zdesktop.sh`・`build-demo-image.sh`） | 廃止の検討（main）。使う物: `plan/ws031/tests/vkloop-hw.sh:174`・`179`、`plan/ws031/tests/zdesktop/` |
 
@@ -90,7 +90,7 @@ Settings の検索の語 `"version kernel release zedbsd operating system"`（`u
 | B5 | 試験の log の印（source の中） | `"ZWL ` 444、`"ZTERM ` 46、`"ZBROWSER ` 31、`"ZFILES ` 24、`"ZSETTINGS ` 11（literal の数） | `userland/desktop/*` | **当面は変えない**（main）。変えるなら試験と同時（下） |
 | B6 | 試験の script の印と `/tmp/zdesktop.log` | plan の script（.sh・.py・.c）で `ZWL` 1126 行 / 182 file、`ZFILES` 344 / 28、`ZTERM` 153 / 20、`ZBROWSER` 110 / 16、`ZSETTINGS` 77 / 8。`zdesktop.log` 1065 行 / 175 file。`zdesktop`（大小無視）2216 行 / 272 file、file 名に `zdesktop` 91 個 | `plan/` | 当面は変えない。plan の記録（`plan/history`・phase.md）は書き換えない |
 | B7 | `TERM=zed` と terminfo の entry | `userland/base/sh/main.c:481`、`userland/base/terminfo/zed.zti`（longname「zedBSD virtual console」）、`terminfo/Makefile:13` | console の端末の種類。Terminal の app は子に `TERM=xterm`（`userland/desktop/terminal/main.c:766`） | p009（提案、名前の判断が要る） |
-| B8 | retro の名前 | `userland/retro/{xzed,zedinst,zgears,zshell,zterm,zwm}`、`"zedBSD Xzed"`（`userland/retro/xzed/main.c:1641`）、App Home の X の app の command（`userland/desktop/wayland/home.c:895`・`896` の `/bin/zterm`・`/bin/zgears`。画面の label は「X terminal」「Gears」） | ユーザーの判断待ち | 変えない |
+| B8 | retro の名前 | `userland/x11/{xzed,zedinst,zgears,zshell,zterm,zwm}`、`"zedBSD Xzed"`（`userland/x11/xzed/main.c:1641`）、App Home の X の app の command（`userland/desktop/wayland/home.c:895`・`896` の `/bin/zterm`・`/bin/zgears`。画面の label は「X terminal」「Gears」） | ユーザーの判断待ち | 変えない |
 | B9 | `keiland-x11` の注釈の「zdesktop-x11」 | `userland/desktop/wayland/keiland-x11:2`、`wayland/Makefile:22` | B1 と一緒 | p007（提案） |
 
 ## 3. 次の作業の順番
@@ -142,8 +142,8 @@ git grep -I -c -i 'zdesktop' -- ':!plan' ':!.internal' | awk -F: '{s+=$2;f++}END
 for d in userland/desktop/wayland userland/desktop/files userland/desktop/settings userland/desktop/libkeiland userland/desktop/ime userland/desktop/imageview userland/desktop/textedit userland/desktop/browser userland/desktop/libwayland userland/desktop/terminal userland/desktop/pdfviewer userland/desktop/libkeiui userland/desktop/sessiond userland/desktop include platform userland/base docs; do printf "%-32s %s\n" $d "$(git grep -I -c -i zdesktop -- $d | awk -F: '{s+=$2;f++}END{print s+0" / "f+0}')"; done
 git grep -I -h -i 'zdesktop' -- ':!plan' ':!.internal' '*.c' '*.h' | awk '{ if ($0 ~ /^[ \t]*(\/\*|\*|\/\/)/) c++; else o++ } END{print "comment-lines",c+0,"other-lines",o+0}'
 git grep -I -n 'ZDESKTOP' -- ':!plan' ':!.internal'
-git ls-files | grep -v '^plan/' | grep -iE 'zed' | grep -v '^userland/retro'
-git grep -I -n -E 'zed-[a-z-]+-v1' -- userland include platform tools ':!userland/retro'
+git ls-files | grep -v '^plan/' | grep -iE 'zed' | grep -v '^userland/x11'
+git grep -I -n -E 'zed-[a-z-]+-v1' -- userland include platform tools ':!userland/x11'
 git grep -I -n -iE 'zedbsd|zdesktop' -- userland/desktop/browser/data docs include/libc/wayland/API-PROVENANCE.md
 git grep -I -n 'zedBSD' -- 'userland/*.c' 'userland/*.h' | grep -vE ':[0-9]+:[[:space:]]*(/\*|\*|//)' | grep '"'
 git grep -I -n -E 'TERM=zed|"zed"' -- userland src

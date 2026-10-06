@@ -1,5 +1,5 @@
 #version 100
-// libGL's fixed-function vertex stage (userland/retro/libGL/shaders/fixed.vert) written in GLSL ES 1.00:
+// libGL's fixed-function vertex stage (userland/x11/libGL/shaders/fixed.vert) written in GLSL ES 1.00:
 // the transforms, per-vertex lighting through a function-like macro, and the colour material.
 #ifndef LIGHTS
 #define LIGHTS 8
