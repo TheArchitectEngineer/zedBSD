@@ -3,13 +3,36 @@
 # ws112-p002: Debian/Ubuntu package生成を動作試験から分離
 
 Parent: [WS112](../ws.md)
-Status: in-progress（2026-10-07 P1）
+Status: cleared 候補（2026-10-07 P1: 3 つのうち amd64・arm64 を生成し、形式・依存の解決を確認。Q1 の判定待ち）
 Disposition: normal
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認
 Goal: Debian 13・Ubuntu 26.04 の両方に入る amd64 と arm64 の deb を、mmdebstrap の Debian 13 の rootfs の中の native の build で生成し、形式・ELF・依存の解決（Debian 13・Ubuntu 26.04 の rootfs で apt の simulate）を確かめる
 Prerequisites: ws112-p001 cleared / 確定したinputsとmanifest
 Investigation bound: 90分の有限1Phase Queue案。具体的なscope/timebox/commandを選定時に再確認する。
+
+## 実装（2026-10-07、P1、D-a・D-b の後）
+
+| 部分 | file | 中身 |
+| --- | --- | --- |
+| 生成の道具 | `tools/release/keiland-linux-deb/rootfs.py`・`rootfs.json` | mmdebstrap（unshare、root 不要、`--format=null` で木は mmdebstrap が消す）で対象の rootfs を作り、hook の中で build.py を走らせ、`sync-out` で deb を出す。続いて deb を検べる: field（Package・Architecture）、全 ELF の machine、試験の program が無いこと、対象の各 distribution の新しい rootfs で `apt-get install --simulate`。1 回ごとに新しい directory（`build/keiland-deb/rootfs/TARGET/STAMP/`）、何も消さない。rootfs は `/var/tmp`（`KEILAND_DEB_TMPDIR`）: namespace の root（subuid）は 0700 の home に入れない |
+| build | `tools/release/keiland-linux-deb/build.py` | target に `deb13-amd64`・`deb13-arm64`・`rpios13-arm64`（rootfs.json）。architecture・版の suffix（`+deb13`・`+rpios13`）・表示名を target から。`make -j` は CPU の数。時間の上限を emulation 向けに |
+| make | `Makefile` | `keiland-deb-amd64`・`keiland-deb-arm64`・`keiland-deb-rpi`（config.mk 不要の goal） |
+| 移植 | `keiland-linux.mk`（`$(AR)`）、`wayland/main.c`・`mview/renderer.c`（arm64 の `cntvct_el0`）、`settings/about.c`（`about_trim` を x86 だけに） | aarch64 で build が通る（dee0721a8） |
+| 文書 | `tools/release/keiland-linux-deb/README.md` | 3 つの deb の節 |
+
+host の準備: `ubuntu-keyring`（sudo apt-get、Ubuntu の archive の鍵）。mmdebstrap 1.5.7、qemu-aarch64 の binfmt、subuid は既にある。
+
+## 確認（host、2026-10-07）
+
+| target | 結果 |
+| --- | --- |
+| `deb13-amd64` | `keiland_0~git20261006.865c749b3c66-1+deb13_amd64.deb`、build 87 秒。48 file・ELF 19（全て x86-64）・試験の program 無し。Depends `libc6 (>= 2.38), libvulkan1, mesa-vulkan-drivers, libpam-systemd, kbd`。simulate: Debian 13 で 41 package・Ubuntu 26.04（resolute）で 47 package、どちらも exit 0 |
+| `deb13-arm64` | `keiland_0~git20261006.96880ce48867-1+deb13_arm64.deb`、build 695 秒（qemu-user）。48 file・ELF 19（全て AArch64）・試験の program 無し。Depends は amd64 と同じ。simulate: Debian 13 で 41・Ubuntu 26.04 で 47 package、どちらも exit 0 |
+
+成果物（host、git の外）: `build/keiland-deb/rootfs/deb13-amd64/20261006T160300-865c749b3c66/`、`build/keiland-deb/rootfs/deb13-arm64/20261006T174209-96880ce48867/`（`out/` に deb・manifest・buildinfo・sha256、`check.json`、`check-*/simulate.txt`、`build.log`）。
+
+未実施: 実際の導入・起動（D-b で対象外。amd64 は既存の `make keiland-linux-debian`・`-ubuntu2604` の QEMU の smoke を任意で使える）、規約の見直し（p007）。
 
 ## Scope / procedure / affected components
 
