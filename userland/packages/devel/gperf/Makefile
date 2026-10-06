@@ -17,11 +17,12 @@ include $(ZEDBSD_GPERF_DIR)/../../external.mk
 
 # 3.3 was the latest release when recorded.  Size and digest are the
 # upstream bytes as measured; the archive's signature was checked against
-# the GNU keyring (WS034 p001).
+# the GNU keyring (WS034 p001).  Fetched from the kernel.org GNU mirror: ftp.gnu.org
+# did not answer (2026-10-06, CI and the build host); the digest is the same.
 ZEDBSD_EXT_gperf_VERSION := 3.3
 ZEDBSD_EXT_gperf_ROOT := gperf-3.3
 ZEDBSD_EXT_gperf_ARCHIVE := gperf-3.3.tar.gz
-ZEDBSD_EXT_gperf_URL := https://ftp.gnu.org/gnu/gperf/gperf-3.3.tar.gz
+ZEDBSD_EXT_gperf_URL := https://mirrors.kernel.org/gnu/gperf/gperf-3.3.tar.gz
 ZEDBSD_EXT_gperf_SIZE := 1831294
 ZEDBSD_EXT_gperf_SHA256 := fd87e0aba7e43ae054837afd6cd4db03a3f2693deb3619085e6ed9d8d9604ad8
 ZEDBSD_EXT_gperf_PATCH_LEVEL := zedbsd0

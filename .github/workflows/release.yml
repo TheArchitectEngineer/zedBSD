@@ -80,9 +80,6 @@ jobs:
             build-essential cmake curl git grub-common gzip ninja-build \
             mtools nasm patch xz-utils
 
-      - name: Acquire verified source inputs
-        run: make download
-
       - name: Install pinned LLVM toolchain cache
         run: |
           make toolchain-cache

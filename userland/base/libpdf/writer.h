@@ -203,6 +203,10 @@ struct pdf_writer {
 struct pdf_object;
 void pdf_writer_write_dictionary_except(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *key);
 
+/* A name and a real number written as an update writes them (update.c; the clean copy's, ws175-p009). */
+void pdf_writer_write_name(struct pdf_buffer *file, const unsigned char *bytes, size_t length);
+void pdf_writer_write_real(struct pdf_buffer *file, double value);
+
 /* Bytes compressed into a zlib stream, when that is shorter (update.c, ws175-p006). */
 int pdf_writer_pack(const unsigned char *data, size_t size, unsigned char **packed, size_t *packed_size);
 

@@ -43,8 +43,12 @@ was installed:
 make -j16 toolchain
 ```
 
-To materialize every declared source and firmware input for a redistributable
-multi-license source tree, run:
+A build does not need `make download`: when a configured package is built, its
+own Makefile fetches and verifies the inputs it needs, so only the packages the
+configuration selects are fetched (CI builds this way too).  The top-level
+`make download` is for something else: it fetches every declared source and
+firmware input, selected or not, to make a complete source tree that can be
+frozen and kept on safe media.  To make that tree, run:
 
 ```sh
 make download
@@ -228,8 +232,7 @@ device, so the reader limitation is not a boot dependency.
 - A UEFI-only amd64 image appears not to boot under `make run`: this is the
   expected SeaBIOS-negative profile; use OVMF or the maintained Variant runner.
 - Noct download/build failure: verify network access, `curl`, `tar`, `patch`,
-  CMake, and the host C compiler, then rerun `make download` and
-  `make toolchain`; do not replace the recorded archive with unverified bytes.
+  CMake, and the host C compiler, then rerun `make toolchain`; do not replace the recorded archive with unverified bytes.
 - `Missing project target tool` or `Missing target sysroot`: on x86_64 Linux,
   run `make toolchain-cache` and then `make toolchain`; otherwise run
   `make toolchain` to bootstrap LLVM from verified source.

@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p003`
 Parent: [WS130](../ws.md)
-Status: test-wait（q804-i01、P1、2026-10-06: 段 a〜d を実装、T1 の試験待ち）
+Status: cleared（2026-10-06 Q1 の判定: T1-243 PASS（QEMU、ipv6-p003 の -t・-T、IPv4 の回帰 ipv6-p002 と tcp-receive-speed）。旧: test-wait（q804-i01、P1、段 a〜d を実装））
 設計: [p001](../phase001/phase.md) §3.1（H2: `IPV6_V6ONLY` の既定は 0、ユーザー承認 2026-10-05）
 依存: [p002](../phase002/phase.md)（cleared、2026-10-06 T1-206b）
 

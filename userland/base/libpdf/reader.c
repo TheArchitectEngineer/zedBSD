@@ -1058,6 +1058,30 @@ pdf_reader_page_reference(
 }
 
 /*
+ * Reports a page's boxes and rotation, its own or those it inherits from
+ * the page tree (ws175-p009: a clean copy writes them on the page); one it
+ * has nowhere is NULL.
+ */
+int
+pdf_reader_page_inherited(
+	struct pdf_document *document,
+	size_t index,
+	struct pdf_object **media_box,
+	struct pdf_object **crop_box,
+	struct pdf_object **rotate)
+{
+	/* Refuses a page the document does not have. */
+	if (index >= document->pages_count)
+		return EINVAL;
+
+	/* Succeeded: the values the walk of the page tree kept. */
+	*media_box = document->pages[index].media_box;
+	*crop_box = document->pages[index].crop_box;
+	*rotate = document->pages[index].rotate;
+	return 0;
+}
+
+/*
  * Reads a document from bytes the document takes over.
  *
  * On failure the bytes are freed.

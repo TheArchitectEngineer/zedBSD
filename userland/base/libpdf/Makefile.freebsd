@@ -1,7 +1,7 @@
 # zedBSD; Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 # The independent FreeBSD build of libpdf; source membership mirrors the target package.
 KEILAND_FREEBSD_LIBPDF_SOURCES := userland/base/libpdf/writer.c \
-	userland/base/libpdf/update.c \
+	userland/base/libpdf/update.c userland/base/libpdf/clean.c \
 	userland/base/libpdf/outline.c \
 	userland/base/libpdf/object.c \
 	userland/base/libpdf/reader.c \
