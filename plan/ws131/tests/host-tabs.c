@@ -352,6 +352,8 @@ int kl_window_menu_set(struct kl_window_menu *window_menu, struct kl_menu *menu)
 struct kl_glass *kl_glass_create(struct wl_display *display, struct wl_surface *surface) { (void)display; (void)surface; return NULL; }
 void kl_glass_destroy(struct kl_glass *glass) { (void)glass; }
 int kl_glass_set_blur(struct kl_glass *glass, int enabled) { (void)glass; (void)enabled; return 0; }
+int kl_titlebar_set_control_value(struct kl_titlebar *titlebar, uint32_t id, unsigned value) { (void)titlebar; (void)id; (void)value; return 0; }
+int kl_titlebar_set_suggestions(struct kl_titlebar *titlebar, uint32_t id, const char *const *labels, const char *const *texts, size_t count) { (void)titlebar; (void)id; (void)labels; (void)texts; (void)count; return 0; }
 int kl_titlebar_set_breadcrumb(struct kl_titlebar *titlebar, uint32_t id, const char *const *segments, size_t count) { (void)titlebar; (void)id; (void)segments; (void)count; return 0; }
 int kl_glass_set_panels(struct kl_glass *glass, const struct kl_glass_panel *panels, size_t count) { (void)glass; (void)panels; (void)count; return 0; }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateWaylandSurfaceKHR(VkInstance instance, const VkWaylandSurfaceCreateInfoKHR *info, const VkAllocationCallbacks *allocator, VkSurfaceKHR *surface) { (void)instance; (void)info; (void)allocator; (void)surface; return VK_ERROR_INITIALIZATION_FAILED; }

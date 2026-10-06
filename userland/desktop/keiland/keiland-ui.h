@@ -1300,6 +1300,11 @@ void kl_window_answer_drop(struct kl_window *window, unsigned actions, unsigned 
 int kl_window_receive_drop(struct kl_window *window, char **data, size_t *length, unsigned *type);
 void kl_window_finish_drop(struct kl_window *window, unsigned action);
 int kl_window_start_drag(struct kl_window *window, const struct kl_drag_data *data, size_t count, unsigned actions, uint32_t serial);
+
+/* A control's value (a progress's share), a text control's suggestions, and the keyboard given to a control as KL_FOCUS_FIELD or _EDIT (KL_VERSION 46). */
+int kl_window_set_control_value(struct kl_window *window, uint32_t id, unsigned value);
+int kl_window_set_control_suggestions(struct kl_window *window, uint32_t id, const char *const *labels, const char *const *texts, size_t count);
+int kl_window_focus_control_mode(struct kl_window *window, uint32_t id, unsigned mode);
 int kl_window_set_repeat(struct kl_window *window, int enabled);
 int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
 int kl_window_selection_own(const struct kl_window *window, unsigned which);

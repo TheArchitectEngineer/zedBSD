@@ -302,6 +302,103 @@ kl_window_set_control_parts(
 }
 
 /*
+ * Sets a control's value (a progress's share, out of 100) in one
+ * transaction of the titlebar (KL_VERSION 46).  Returns 0, EINVAL, ENOTSUP
+ * without the titlebar, or the titlebar's refusal.
+ */
+int
+kl_window_set_control_value(
+	struct kl_window *window,
+	uint32_t id,
+	unsigned value)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL)
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The value. */
+	error = kl_titlebar_begin(window->titlebar);
+	if (error != 0)
+		return error;
+	error = kl_titlebar_set_control_value(window->titlebar, id, value);
+	if (error != 0) {
+		(void)kl_titlebar_commit(window->titlebar);
+		return error;
+	}
+
+	/* Shown. */
+	error = kl_titlebar_commit(window->titlebar);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Gives a text control the suggestions it shows under its field (labels
+ * and the texts they put in it; count 0 takes them away; KL_VERSION 46).
+ * Returns 0, EINVAL, ENOTSUP without the titlebar or its suggestions, or
+ * the titlebar's refusal.
+ */
+int
+kl_window_set_control_suggestions(
+	struct kl_window *window,
+	uint32_t id,
+	const char *const *labels,
+	const char *const *texts,
+	size_t count)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL)
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The suggestions. */
+	error = kl_titlebar_set_suggestions(window->titlebar, id, labels, texts, count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Gives a control the keyboard as a field or, for a breadcrumb, its path
+ * edited as text (KL_FOCUS_*, KL_VERSION 46).  Returns 0, EINVAL, ENOTSUP
+ * without the titlebar, or the titlebar's refusal.
+ */
+int
+kl_window_focus_control_mode(
+	struct kl_window *window,
+	uint32_t id,
+	unsigned mode)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL)
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The control takes the keyboard. */
+	error = kl_titlebar_focus_control(window->titlebar, id, mode);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Gives a control's field the keyboard (KL_VERSION 43).  Returns 0,
  * EINVAL, ENOTSUP without the titlebar, or the titlebar's refusal.
  */

@@ -326,6 +326,9 @@
 		kl_window_receive_drop;
 		kl_window_finish_drop;
 		kl_window_start_drag;
+		kl_window_set_control_value;
+		kl_window_set_control_suggestions;
+		kl_window_focus_control_mode;
 		kl_window_set_repeat;
 		kl_window_set_tabs;
 		kl_window_selection_own;
