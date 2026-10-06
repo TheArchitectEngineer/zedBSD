@@ -2,7 +2,7 @@
 # ws175-p009: Save Clean Copy（古い版を含めない copy の保存）
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2 が実装。build warning 0、host 試験 PASS。QEMU は T1 の結果待ち。ラップアップで返却、再開の情報は下）
+Status: cleared（2026-10-07 Q1 の判定: T1-285 PASS（QEMU、手で: Save Clean Copy の menu、`NOTES CHOOSER open mode=clean`、`NOTES CLEAN-COPY bytes=764955 objects=28 dropped=3`、PDF Viewer で消した画像が無い、Notes で copy は edits=0）。試料は edit-images.pdf で代用、status の文字は未確認。旧: in-progress（2026-10-06 P2 が実装。build warning 0、host 試験 PASS。QEMU は T1 の結果待ち。ラップアップで返却、再開の情報は下））
 Disposition: normal
 Queue: q831（第 2 段、P2 の列の 1 番目、2026-10-06 Q1 ACK「p008 の text の段の判定を待たずに進めてよい」）
 依存: [p008](../phase008/phase.md)（[N17]。libpdf の部分は p008 の判定に依らない。Notes の menu は p008 の main.c・menu.c の上）

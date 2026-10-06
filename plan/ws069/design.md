@@ -27,13 +27,13 @@ zed-gpu-buffer-v1-client-protocol.h もパブリックにしなくていいよ�
 - **非公開の header**: `X11/Xzed.h`（libX11 の Xzed 固有の関数）と `wayland/zed-gpu-buffer-v1-client-protocol.h` は sysroot の
   公開 header から外す。libGL の GLX と xserver の間の private な要求（画像の転送、GLX 拡張）は、それぞれの source の
   中の private な header にする。
-- **Xzed は元に戻す**（p009）: `userland/retro/xzed` を ws069 の前（`cc4433d4`）の状態へ。libX11 の client 側の修正（`XPending` 等）は
+- **Xzed は元に戻す**（p009）: `userland/x11/xzed` を ws069 の前（`cc4433d4`）の状態へ。libX11 の client 側の修正（`XPending` 等）は
   残す。
 - App Home の `zdesktop-x11` は `xserver` を起動する。BUG-057 は新しい server の上で調べ直す（p010）。
 
 ## 1. 構成
 
-- X server は既存の Xzed（`userland/retro/xzed`、X11 core protocol の小さな実装、窓ごとの画素を保持して CPU で合成）。
+- X server は既存の Xzed（`userland/x11/xzed`、X11 core protocol の小さな実装、窓ごとの画素を保持して CPU で合成）。
   これに Wayland backend を足し、`Xzed --wayland` で zwl の client として動く。`/dev/graphics` と `/dev/input` は使わない。
 - X の client は今まで通り `DISPLAY=:0`（`/tmp/.X11-unix/X0`）。App Home からの起動には `DISPLAY` を渡す。
 - 新しい file: `xzed/wayland.c`（Wayland の窓・buffer・seat）、`xzed/glyphs.c`（libtruetype の等幅 font の glyph）。

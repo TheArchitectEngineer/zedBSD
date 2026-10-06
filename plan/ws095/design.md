@@ -634,7 +634,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
   `set_preedit_string`・`commit` を送る（zdesktop の watchdog への答えを兼ねる）。IME の中の key の repeat（変換中の BackSpace の押しっぱなし）は
   まだ無い（p005）。
 - **package**: `keiland-ime`（`userland/desktop/ime/Makefile`、`/usr/libexec/keiland-ime`、既定では選ばない、`ime-dict-ja` を REQUIRE）と
-  試験の `ime-probe`（`userland/desktop/ime-probe/`）。Wayland を使う program は `platform/amd64/vmunix.mk` に一つずつ link の規則を持つ決まりなので、
+  試験の `ime-probe`（`userland/tests/ime-probe/`）。Wayland を使う program は `platform/amd64/vmunix.mk` に一つずつ link の規則を持つ決まりなので、
   2 つを足した（既存の試験の client と同じ形）。既定の image に入れるかは p005 の後に main が決める（入れる image は辞書を取得する）。
 - **気づいたこと（WS095 の外）**: guest の試験で、手前の窓を閉じた後、残った窓に keyboard の focus が戻らなかった（zdesktop の focus の動き。
   試験は新しい窓を出して進めた）。意図した動きかを main に確かめる。

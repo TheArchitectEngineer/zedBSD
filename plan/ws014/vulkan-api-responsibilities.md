@@ -638,11 +638,11 @@ Uの `venus-frame` がVulkan object、wire format 1のcommand、返信、VkResul
 
 実装対象は256×192の2帯をVulkan clear/copyで生成する独立クライアントと、その表示・回収経路。汎用 `libvulkan.so` / ICD、全Vulkan API、Vulkan WSI拡張、device mmap、zero-copy swapchain、汎用sync object、vblank/present完了通知、cursor/hotplug、native i915はこの実装済み一覧に含めない。44 callback案の `submit` / `display_present` / event群などがすべて現行ヘッダーに入ったという意味でもない。
 
-transportと観測の詳細は [Venus transport資料](venus-transport.md)、実行手順は [リモート検証README](tests/README-venus-remote.md)、Uの対応commandと出典は [クライアントREADME](../../userland/gpu/venus/README.md) を参照する。QEMUでVulkan描画を確認できたかどうかはp003の試行記録を正とし、この契約表だけで完了を宣言しない。
+transportと観測の詳細は [Venus transport資料](venus-transport.md)、実行手順は [リモート検証README](tests/README-venus-remote.md)、Uの対応commandと出典は [クライアントREADME](../../userland/tests/venus-frame/README.md) を参照する。QEMUでVulkan描画を確認できたかどうかはp003の試行記録を正とし、この契約表だけで完了を宣言しない。
 
 ## p005の3D描画経路と共有Uクライアント（q307）
 
-`userland/desktop/vkdemo/` は自作のvertex/fragment shader、テクスチャ付き非等辺直方体、depth、時刻のpush constantを使う有限のgraphics client。p003のwire/reply/bootstrapを `userland/gpu/venus/client.[ch]` に共通化し、caller所有のsession構造体へ通信状態を保持する。scene、pipeline、descriptor、画像・buffer・fenceの寿命とframeループは各アプリが所有する。`venus-frame` もこの共通clientを使う。
+`userland/desktop/vkdemo/` は自作のvertex/fragment shader、テクスチャ付き非等辺直方体、depth、時刻のpush constantを使う有限のgraphics client。p003のwire/reply/bootstrapを `userland/tests/venus-frame/client.[ch]` に共通化し、caller所有のsession構造体へ通信状態を保持する。scene、pipeline、descriptor、画像・buffer・fenceの寿命とframeループは各アプリが所有する。`venus-frame` もこの共通clientを使う。
 
 [追加APIの表](phase005/api-coverage.md) はformat照会、shader module、graphics pipeline、image view/sampler、descriptor、renderpass/framebuffer、vertex/descriptor binding、draw、push constant、texture upload、fence/pool再利用を記録する。これらのVulkan状態と符号化はUに属する。Kは既存のcapset/blob/read/write/command/presentを提供する。GPU ioctlやHALの追加はこのデモの実装前提にしていない。
 

@@ -183,7 +183,7 @@ incorporated into the zedBSD base system.
 | Per-source physical/momentary input, console subscription, resync, and detach | [`input-device.c`](../../src/drivers/generic/input.c), [`input-subscriber.c`](../../src/drivers/generic/input.c), [`console.c`](../../src/drivers/generic/console.c) | and |
 | HID descriptor/report parsing | [`hid-report.c`](../../src/drivers/usb/usb-hid.c) | and |
 | USB HID Report-Protocol producers, hotplug, and generation-safe nodes | [`usb-hid.c`](../../src/drivers/usb/usb-hid.c), [`input-device.c`](../../src/drivers/generic/input.c), [`devfs.c`](../../src/kern/devfs.c) | — |
-| Xzed evdev-only consumer | [Xzed input owner](../../userland/retro/xzed/input-posix.c) | and its |
+| Xzed evdev-only consumer | [Xzed input owner](../../userland/x11/xzed/input-posix.c) | and its |
 | Noct 2.0.1 BeUI evdev consumer | [zedBSD BeUI backend](../../userland/base/noct/noct/src/api/api-beui-zedbsd.c) | — |
 
 Registration requires `EV_SYN/SYN_REPORT`; malformed declarations and

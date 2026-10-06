@@ -102,7 +102,7 @@ Chromiumが起動してページを表示する。導入中に見つかったシ
   `include/uapi/graphics.h`（ioctl 1–11。glyph取得の10を含む）。
 - GPUは、共通層 `src/drivers/gpu/gpu.c` と、`venus/`・`i915/`（WS031がdisplay/KMSを実装中）。
 - audio関連のコードは無い（ヒットしたのはi915 displayのaudio power制御だけ）。
-- `zwl` は `userland/base/zwl/`。Xzedは `userland/retro/xzed/`（全ファイル `SPDX: Zlib`）。
+- `zwl` は `userland/base/zwl/`。Xzedは `userland/x11/xzed/`（全ファイル `SPDX: Zlib`）。
   X11側には既存の `zwm`・`zshell`・`zterm` がある。
 - WiFiは `/sbin/wifi` と `include/uapi/wlan.h`。networkdの状態をデスクトップへpushする経路は無い（後述）。
 
@@ -416,7 +416,7 @@ p015は一度では閉じない。後続Phaseで見つかった問題はp015へ�
 - **p011**: `userland/base/zwl/` を改名する（ディレクトリ名もzdesktopにするかはp001で決める）。
   focus、移動・リサイズ、z-order、最小化・最大化、server-side decoration。
 - **p012**: Xzedの既存コード（Zlib）を取り込み、基本requestとXWayland相当の合成を行う。
-  既存 `userland/retro/`（zwm、zshell、zterm）との関係はp001で決める。
+  既存 `userland/x11/`（zwm、zshell、zterm）との関係はp001で決める。
 - **p013/p014**: タスクバーはWiFi（networkdの通知）と音量（audiod）を表示・操作する。
   タイル表示はGPU合成を使う。
 - **p016**: 最大のPhaseで、着手時に分割する前提。GN/ninjaによるcross build、Ozone

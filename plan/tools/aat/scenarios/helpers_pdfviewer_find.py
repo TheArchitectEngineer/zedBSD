@@ -9,8 +9,9 @@ The document is WS175's edit-basic.pdf (plan/ws175/tests/make-edit-samples.py, w
 /tmp/aat-work/pdf-find.pdf).  The viewer's lines (PDFVIEWER ...) say what Find and the selection did; the place of
 the first line's words is the viewer's layout of the scroll mode fitting the width (its margin of 16 pixels; the scale
 fits the widest page, the sample's turned third page of 792 points, and a narrower page is centred: the first, US
-Letter, is 612 points wide), from the window's place.
+Letter, is 612 points wide), from the window's place and the size the viewer's READY line gives.
 """
+import re
 import subprocess
 import sys
 import time
@@ -42,12 +43,16 @@ def find_select(item):
 	run.aat("put", str(local / "edit-basic.pdf"), REMOTE)
 	run.sh(f"chmod 644 {REMOTE}")
 
-	# Opened.
+	# Opened.  A window started outside App Home has only its place in the compositor's lines (KWL MAP), so its
+	# size is the viewer's own READY line's (q826-i03: with 0 by 0 the drag below landed on the window's corner).
 	mark = run.mark()
 	window = run.open_as_user(item, f"/bin/pdfviewer {REMOTE}")
-	ready = run.wait(r"PDFVIEWER (READY|OPEN) .*pages=3", mark, 10)
+	ready = run.wait(r"PDFVIEWER READY width=\d+ height=\d+ pages=3", mark, 10)
 	item.step("opened edit-basic.pdf", ready or "")
 	item.check(ready, "the PDF did not open with 3 pages")
+	if ready and not window.sized():
+		width, height = (int(value) for value in re.search(r"width=(\d+) height=(\d+)", ready).groups())
+		window = aatlib.Window(window.client, window.surface, window.x, window.y, width, height, window.docked)
 	run.click(*window.middle())
 
 	# "lazy" found on page 1.

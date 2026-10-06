@@ -46,6 +46,6 @@ amd64にはhal.h宣言済みのMMIO accessorの実体がなく、初回Venus lin
 - [virglrenderer 1.1.0](https://gitlab.freedesktop.org/virgl/virglrenderer/-/tree/1aeaf5e10a9c89096e96d09599aa419d5c50712f)
 - [QEMU virtio-gpu](https://www.qemu.org/docs/master/system/devices/virtio/virtio-gpu.html)
 
-wire定義の参照と、上流実装のbase systemへの取り込みを区別する。クライアント実装・対応commandの出典詳細は `userland/gpu/venus/README.md`。
+wire定義の参照と、上流実装のbase systemへの取り込みを区別する。クライアント実装・対応commandの出典詳細は `userland/tests/venus-frame/README.md`。
 
 2026-09-13 JST 最終結果: q306で2DとVenusのframe1/2を実行し、GPU readbackとVNC実画面が全件一致。p003の有限受け入れを達成。詳細はphase003/results.mdと証跡JSON。一般的なVulkan実装・native i915・p004の実行とは区別する。

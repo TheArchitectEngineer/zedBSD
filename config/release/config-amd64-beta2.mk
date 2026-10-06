@@ -13,8 +13,7 @@ ZEDBSD_RELEASE_BUILD := y
 # Nobody logs in as root: its password is locked (U10).  kei is the user.
 ZEDBSD_ROOT_LOCKED := y
 
-# The old installer stays out (U2); the development environment (the headers, clang and libc++) and Emacs are in.
-ZEDBSD_USER_PROGRAMS := $(filter-out zedinst,$(ZEDBSD_USER_PROGRAMS))
+# The development environment (the headers, clang and libc++) and Emacs are in.  (The old installer, U2, is gone from the tree.)
 ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),clang libcxx emacs)
 
 # FFmpeg's libraries (LGPL 2.1 or later, ws122-p001) and the simple video player are in the release (the user's decision of 2026-10-05, for the first beta).

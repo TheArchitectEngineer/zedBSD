@@ -9,7 +9,7 @@
  * The character grid of terminal and the VT100 interpreter that
  * fills it from what the shell writes.
  *
- * It started as zterm's (userland/retro/zterm) and takes the same subset:
+ * It started as zterm's (userland/x11/zterm) and takes the same subset:
  * cursor motion, erasing, colours, UTF-8; with the scrolling region, line
  * and character insertion and deletion, the cursor's visibility, 256 and
  * direct colours, and OSC strings added for the programs a shell runs:

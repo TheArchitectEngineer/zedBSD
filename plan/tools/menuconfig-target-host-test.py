@@ -58,7 +58,7 @@ def check_packages() -> None:
     # Where each package is filed, and that the menu reaches it there.
     expected_group = {
         "noct": "packages/lang",
-        "emacs": "packages/editors",
+        "emacs": "base",
         "libcxx": "packages/devel",
         "openssh": "packages/network",
         "openssl": "packages/security",
