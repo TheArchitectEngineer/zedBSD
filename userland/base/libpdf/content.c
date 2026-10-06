@@ -487,6 +487,7 @@ static void scan_operator(struct content_run *run, enum content_operator code, s
 static void scan_corners(const double matrix[6], const double corners[8], double quad[8]);
 static int scan_add_stray(struct pdf_scan *scan, size_t offset);
 static void scan_string(struct content_run *run, const unsigned char *bytes, size_t length);
+static void scan_code(struct content_run *run, unsigned code, int single_byte, const double before[6]);
 static void scan_show(struct content_run *run, enum content_operator code, size_t start, size_t end, const unsigned char *data);
 static void scan_move(struct content_run *run, enum content_operator code, size_t start, size_t end);
 static void scan_mark(struct content_run *run, size_t start, size_t keyword, size_t end, const unsigned char *data);
@@ -616,6 +617,7 @@ pdf_scan_free(
 	free(scan->stray_restores);
 	free(scan->shows);
 	free(scan->characters);
+	free(scan->character_quads);
 	free(scan->block_clips);
 	free(scan->blocks);
 	free(scan->moves);
@@ -2895,6 +2897,7 @@ show_string(
 {
 	struct content_state *state;
 	struct pdf_glyph glyph;
+	double before[6];
 	unsigned code;
 	size_t position;
 	size_t used;
@@ -2971,6 +2974,7 @@ show_string(
 		}
 
 		/* Moves past it: its width, the character spacing, and the word spacing after a one-byte space. */
+		memcpy(before, run->text_matrix, sizeof(before));
 		spacing = state->character_spacing;
 		if (single_byte && code == 32)
 			spacing += state->word_spacing;
@@ -2979,6 +2983,10 @@ show_string(
 		} else {
 			advance_text(run, glyph.width * state->font_size + spacing);
 		}
+
+		/* The scan notes the code's characters, where its glyph was (ws128-p004). */
+		if (scanned)
+			scan_code(run, code, single_byte, before);
 	}
 
 	/* Paints and clips with the glyphs. */
@@ -4684,8 +4692,9 @@ scan_add_stray(
 
 /*
  * Notes a string of the page's own shown string as it starts: the text
- * matrix before its first glyph (the first string of a TJ), and the
- * characters its codes stand for.  A failure of memory fails the scan.
+ * matrix before its first glyph (the first string of a TJ), and its font's
+ * kind.  The characters its codes stand for are noted code by code as the
+ * glyphs are shown (scan_code, ws128-p004).
  */
 static void
 scan_string(
@@ -4694,20 +4703,14 @@ scan_string(
 	size_t length)
 {
 	struct content_state *state;
-	struct pdf_scan *scan;
-	uint32_t characters[8];
-	unsigned code;
-	size_t position;
-	size_t used;
-	size_t count;
-	size_t at;
-	int single_byte;
 	int kind;
-	int error;
+
+	/* The bytes are read code by code as they are shown. */
+	(void)bytes;
+	(void)length;
 
 	/* The first glyph's place. */
 	state = &run->stack[run->depth];
-	scan = run->scan;
 	if (!run->scan_show_started) {
 		run->scan_show_started = 1;
 		memcpy(run->scan_show_start, run->text_matrix, sizeof(run->scan_show_start));
@@ -4720,33 +4723,76 @@ scan_string(
 	kind = pdf_font_vertical(state->font);
 	if (kind)
 		run->scan_show_flags |= PDF_SCAN_SHOW_VERTICAL;
+}
 
-	/* Each code's characters. */
-	position = 0;
-	while (position < length) {
-		/* The next code. */
-		used = pdf_font_next_code(state->font, bytes + position, length - position, &code, &single_byte);
-		position += used;
-		error = pdf_font_unicode(run->document, state->font, code, single_byte, characters, sizeof(characters) / sizeof(characters[0]), &count);
-		if (error != 0) {
-			scan->error = error;
-			return;
-		}
+/*
+ * Notes the characters one code of the page's own shown string stands
+ * for, and the corners of its glyph in the shown space: from the text
+ * matrix before it to the one after it, from the descent to the ascent
+ * (ws128-p004).  An unknown character is noted; a failure of memory fails
+ * the scan.
+ */
+static void
+scan_code(
+	struct content_run *run,
+	unsigned code,
+	int single_byte,
+	const double before[6])
+{
+	struct content_state *state;
+	struct pdf_scan *scan;
+	uint32_t characters[8];
+	double from[6];
+	double to[6];
+	double quad[8];
+	double low;
+	double high;
+	size_t count;
+	size_t at;
+	int error;
 
-		/* Appended; an unknown one is noted. */
-		error = scan_grow((void **)&scan->characters, &scan->character_capacity, scan->character_count + count, sizeof(*scan->characters));
-		if (error != 0) {
-			scan->error = error;
-			return;
-		}
+	/* The characters of the code. */
+	state = &run->stack[run->depth];
+	scan = run->scan;
+	error = pdf_font_unicode(run->document, state->font, code, single_byte, characters, sizeof(characters) / sizeof(characters[0]), &count);
+	if (error != 0) {
+		scan->error = error;
+		return;
+	}
 
-		/* Each character. */
-		for (at = 0; at < count; at++) {
-			if (characters[at] == 0xfffdU)
-				run->scan_show_flags |= PDF_SCAN_SHOW_UNKNOWN;
-			scan->characters[scan->character_count] = characters[at];
-			scan->character_count++;
-		}
+	/* Room for them and their corners. */
+	error = scan_grow((void **)&scan->characters, &scan->character_capacity, scan->character_count + count, sizeof(*scan->characters));
+	if (error == 0)
+		error = scan_grow((void **)&scan->character_quads, &scan->character_quad_capacity, (scan->character_count + count) * 8U,
+				  sizeof(*scan->character_quads));
+	if (error != 0) {
+		scan->error = error;
+		return;
+	}
+
+	/* The glyph's corners: the text space from a descent to an ascent, from where it starts to where the next starts. */
+	low = (-0.2 * state->font_size) + state->rise;
+	high = (0.8 * state->font_size) + state->rise;
+	memcpy(from, state->ctm, sizeof(from));
+	concat_matrix(from, before);
+	memcpy(to, state->ctm, sizeof(to));
+	concat_matrix(to, run->text_matrix);
+	quad[0] = from[2] * high + from[4];
+	quad[1] = from[3] * high + from[5];
+	quad[2] = to[2] * high + to[4];
+	quad[3] = to[3] * high + to[5];
+	quad[4] = to[2] * low + to[4];
+	quad[5] = to[3] * low + to[5];
+	quad[6] = from[2] * low + from[4];
+	quad[7] = from[3] * low + from[5];
+
+	/* Each character, with the corners; an unknown one is noted. */
+	for (at = 0; at < count; at++) {
+		if (characters[at] == 0xfffdU)
+			run->scan_show_flags |= PDF_SCAN_SHOW_UNKNOWN;
+		scan->characters[scan->character_count] = characters[at];
+		memcpy(scan->character_quads + scan->character_count * 8U, quad, sizeof(quad));
+		scan->character_count++;
 	}
 }
 

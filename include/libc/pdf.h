@@ -479,6 +479,29 @@ int pdf_page_editor_insert_text(struct pdf_page_editor *editor, const struct pdf
 int pdf_page_editor_blank(double width, double height, struct pdf_page_editor **editor);
 int pdf_writer_draw_page_editor(struct pdf_writer *writer, const struct pdf_page_editor *editor);
 
+/*
+ * A page's text (ws128-p004): its characters in the order of its lines
+ * (the editor's lines of the page's own content, in the order they are
+ * drawn), each with its corners in the page's shown space (points, the top
+ * left the origin, y downward: top left, top right, bottom right, bottom
+ * left of its glyph from the descent to the ascent).  A space stands where
+ * two strings of a line are apart (its corners the gap between them);
+ * LINE_END marks the last character of each line.  A character the font
+ * does not tell is U+FFFD.  Text inside a form XObject is not read.
+ */
+#define PDF_TEXT_LINE_END	0x1U
+struct pdf_text_character {
+	uint32_t character;
+	unsigned flags;
+	double quad[8];
+};
+struct pdf_page_text {
+	size_t count;
+	struct pdf_text_character *characters;
+};
+int pdf_page_text_open(struct pdf_document *document, size_t index, struct pdf_page_text **text);
+void pdf_page_text_close(struct pdf_page_text *text);
+
 #ifdef __cplusplus
 }
 #endif
