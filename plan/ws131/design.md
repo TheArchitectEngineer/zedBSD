@@ -76,7 +76,7 @@ backend は 1 領域ずつ移し、各 Phase の終わりに 3 OS の build と�
 | D9 | WS090 の残り | WS131 の完了の後に扱う。WS131 の間は WS090 を動かさない。Settings と Files の窓は p019・p020 のまま |
 | D10 | 移動の例外（機械的な改名と path の修正を含む） | 認める |
 | D11 | FreeBSD の実行の証拠 | build と監査は必須、起動は passthrough なしで動く範囲 |
-| D12 | 電源の操作の範囲 | zedBSD の session も sessiond に頼む（2026-10-06 ユーザー「sessiond に口を足す」、ws131-p027: 一人なら session の利用者、他の利用者が login 中なら root か wheel だけ）、Linux は logind |
+| D12 | 電源の操作の範囲 | zedBSD の session も sessiond に頼む（2026-10-06 ユーザー「sessiond に口を足す」、ws131-p027: root と wheel の利用者だけ（ユーザー「wheel だけに限る」））、Linux は logind |
 | D13 | WS113 の表示の設定を同じ manager に | 載せる |
 | D15 | Wayland の protocol の名前（`keiland_*_v1`）も `kl_*_v1` にするか | する（p021 で wire の名前と生成の定数を同時に）。新しい拡張は `kl_system_*_v1` で作る |
 | D16 | app・libbrowser の include guard と、picture・artwork の内部の `keiland_` の名前 | library・compositor・共有の source は `kl_`・`KL_` に、libbrowser と app の include guard は対象外 |
@@ -414,7 +414,7 @@ VkExternalFenceHandleTypeFlagBits kl_backend_gpu_frame_fence_type(void);
 
 - settings の key の検査: 書式（`keiland.h:1082-1086`）と、型のある既知の key の範囲（`wayland/preferences.c:38-50`: `window.opacity` 85〜100・`pointer.speed` 25〜300・`keyboard.repeat.rate` 5〜60・`keyboard.repeat.delay` 150〜1000・`pointer.natural`・`sound.muted` 0/1・`sound.volume` 0〜100・`wallpaper`）。未知の key は書式が正しければ保存。
 - 電源（D12、review 4）: zedBSD の sessiond は session の control の socket で `UNLOCK` と `LOGOUT` だけを受け（`sessiond/session.c:309-324`）、`POWER` は greeter の socket だけ（`sessiond/greeter.c:517`）。よって zedBSD の session の中の電源の操作は `unsupported`（`actions` に出さない）。sessiond に session の `POWER` を足すのは WS131 の外（別の WS、ユーザーの判断）。
-  - **2026-10-06 改訂（ws131-p027、ユーザー「sessiond に口を足す（別の Phase）」）**: sessiond は session の control の socket でも `POWER poweroff|reboot` を受ける（`sessiond/power.c`・`power-rules.c`）。頼めるのは console の session だけ（socket はその session の物）で、他の利用者が login していない（utmpx の USER_PROCESS に別の利用者が無い）時は session の利用者が、他の利用者がいる時は root か wheel の利用者だけ（logind が管理者を求めるのと同じ）。答えは `OK`・`FAIL others`・`ERROR`。backend の `power_actions` は session でも poweroff・reboot を出し、断られた時は再び頼める。log out は電源ではなく session の領域（`kl_backend_session_logout`）で、拡張に出すかは p010 で決める。
+  - **2026-10-06 改訂（ws131-p027、ユーザー「sessiond に口を足す（別の Phase）」）**: sessiond は session の control の socket でも `POWER poweroff|reboot` を受ける（`sessiond/power.c`・`power-rules.c`）。頼めるのは console の session だけ（socket はその session の物）で、root と wheel の利用者だけ（2026-10-06 ユーザー「wheel だけに限る」、他の利用者の有無に関わらず）。答えは `OK`・`FAIL wheel`・`ERROR`。backend の `power_actions` は session では root・wheel の利用者にだけ poweroff・reboot を出し（他の利用者の dialog は押せない）、断られた時は再び頼める。log out は電源ではなく session の領域（`kl_backend_session_logout`）で、拡張に出すかは p010 で決める。
 - protocol の `wl_interface` の表は libkeiland の中で static にし、外に出さない（review 17）。
 
 ### 4.3 compositor の側: 設定の記録と stat の除去

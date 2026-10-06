@@ -10,10 +10,9 @@
  *
  * The login screen may power off and restart (no one is logged in on the
  * console then).  A session's request comes only from the console's
- * session (its socket is the session's alone), and it may be carried out
- * when no other user is logged in (utmpx, an SSH login for one): otherwise
- * only root or a member of wheel may end the machine under the others, as
- * logind asks an administrator then.
+ * session (its socket is the session's alone), and only root or a member
+ * of wheel may end the machine (the 2026-10-06 user decision: wheel only,
+ * whether or not other users are logged in).
  */
 
 #include "power-rules.h"
@@ -48,16 +47,14 @@ sessiond_power_program(
 
 /*
  * Decides a session's POWER request: the word (EINVAL for another), and
- * the right (EPERM when other users are logged in and the session's user
- * is neither root nor a member of wheel).  Returns 0 with the program to
- * run.
+ * the right (EPERM when the session's user is neither root nor a member of
+ * wheel).  Returns 0 with the program to run.
  */
 int
 sessiond_power_decide(
 	const char *what,
 	uid_t uid,
 	int in_wheel,
-	unsigned others,
 	const char **program)
 {
 	/* One of the two words. */
@@ -65,11 +62,7 @@ sessiond_power_decide(
 	if (*program == NULL)
 		return EINVAL;
 
-	/* Alone on the machine, the console's user may. */
-	if (others == 0U)
-		return 0;
-
-	/* Under other users, only root or a member of wheel. */
+	/* Only root or a member of wheel. */
 	if (uid != 0 && !in_wheel)
 		return EPERM;
 

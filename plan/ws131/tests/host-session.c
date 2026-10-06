@@ -18,6 +18,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,6 +31,7 @@ static struct kl_backend *open_backend(int greeter, int session);
 static void heard_stop(void *data, unsigned reason);
 static void heard_answer(void *data, unsigned request, int error);
 static int read_line(int descriptor, const char *expected);
+static int administrator(void);
 static void test_login_screen(void);
 static void test_session(void);
 static void test_unanswered(void);
@@ -290,6 +293,7 @@ test_session(
 	unsigned keys;
 	int ends[2];
 	int error;
+	int admin;
 
 	/* sessiond's end (0) and the session's (1). */
 	error = socketpair(AF_UNIX, SOCK_STREAM, 0, ends);
@@ -304,20 +308,28 @@ test_session(
 	check(error == ENOTSUP, "a session has no log in");
 
 	/*
-	 * Power Off from a session (ws131-p027): POWER written; sessiond's
-	 * refusal (other users logged in) is EACCES and lets the action be
-	 * asked again; its OK answers it.
+	 * Power Off from a session (ws131-p027, root or wheel only): for such a
+	 * user POWER is written, sessiond's refusal is EACCES and lets the
+	 * action be asked again, its OK answers it; for another user nothing is
+	 * offered (this host's user decides which is checked).
 	 */
-	error = kl_backend_power_action(backend, KL_BACKEND_POWER_POWEROFF);
-	check(error == 0 && read_line(ends[0], "POWER poweroff\n"), "a session's POWER poweroff written");
-	(void)write(ends[0], "FAIL others\n", 12U);
-	kl_backend_tick(backend, 2000U);
-	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_POWER && answer_error == EACCES, "FAIL others answers POWER as EACCES");
-	error = kl_backend_power_action(backend, KL_BACKEND_POWER_REBOOT);
-	check(error == 0 && read_line(ends[0], "POWER reboot\n"), "refused: the action may be asked again");
-	(void)write(ends[0], "OK\n", 3U);
-	kl_backend_tick(backend, 2000U);
-	check(answer_count == 2U && answer_request == KL_BACKEND_SESSION_POWER && answer_error == 0, "OK answers POWER");
+	admin = administrator();
+	if (admin) {
+		error = kl_backend_power_action(backend, KL_BACKEND_POWER_POWEROFF);
+		check(error == 0 && read_line(ends[0], "POWER poweroff\n"), "wheel: a session's POWER poweroff written");
+		(void)write(ends[0], "FAIL wheel\n", 11U);
+		kl_backend_tick(backend, 2000U);
+		check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_POWER && answer_error == EACCES, "FAIL wheel answers POWER as EACCES");
+		error = kl_backend_power_action(backend, KL_BACKEND_POWER_REBOOT);
+		check(error == 0 && read_line(ends[0], "POWER reboot\n"), "refused: the action may be asked again");
+		(void)write(ends[0], "OK\n", 3U);
+		kl_backend_tick(backend, 2000U);
+		check(answer_count == 2U && answer_request == KL_BACKEND_SESSION_POWER && answer_error == 0, "OK answers POWER");
+	} else {
+		error = kl_backend_power_action(backend, KL_BACKEND_POWER_POWEROFF);
+		check(error == ENOTSUP, "not in wheel: a session's poweroff is ENOTSUP");
+		check(answer_count == 0U, "not in wheel: nothing asked");
+	}
 	answer_count = 0U;
 
 	/* UNLOCK and OK. */
@@ -404,4 +416,42 @@ test_unanswered(
 	kl_backend_close(backend);
 	(void)close(ends[0]);
 	(void)close(ends[1]);
+}
+
+/* Tells whether this host's user is root or a member of wheel (as the backend decides, power-zedbsd.c). */
+static int
+administrator(void)
+{
+	struct passwd *user;
+	struct group *wheel;
+	unsigned index;
+	uid_t uid;
+	int same;
+
+	/* Root. */
+	uid = getuid();
+	if (uid == 0)
+		return 1;
+
+	/* The user and wheel, known. */
+	user = getpwuid(uid);
+	if (user == NULL)
+		return 0;
+	wheel = getgrnam("wheel");
+	if (wheel == NULL)
+		return 0;
+
+	/* Wheel as its primary group. */
+	if (wheel->gr_gid == user->pw_gid)
+		return 1;
+
+	/* Or a member by name. */
+	for (index = 0U; wheel->gr_mem != NULL && wheel->gr_mem[index] != NULL; index++) {
+		same = strcmp(wheel->gr_mem[index], user->pw_name);
+		if (same == 0)
+			return 1;
+	}
+
+	/* Not in it. */
+	return 0;
 }
