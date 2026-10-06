@@ -62,3 +62,7 @@
 | WS175 ws175-p009（Save Clean Copy） | 刈り込みは page の resource だけ | form XObject・Type 3 font・tiling pattern の中の /Resources も使う名で刈り込む | `libpdf/clean.c` の `clean_write_resources` | 2026-10-06 |
 | WS175 ws175-p009 | attachment を落とした name tree の /Limits が古いまま、直接の file specification は落ちない | 葉の /Limits を書き直す・直接の filespec の対も落とす | `libpdf/clean.c` の `clean_drop_names`・`clean_write_value` | 2026-10-06 |
 | WS175 ws175-p009 | Save Clean Copy の後の案内が無い | copy を開くかの提案、増分の更新で消した物が残る旨の一度だけの注意（D1 (a)） | `notes/main.c` の `app_save_clean` | 2026-10-06 |
+| WS169 ws169-p002（compositor のメールの口） | 17 個目の読み手の listen | 古い・死んだ行を先に掃除して受け入れる（今は 16 行が埋まると BUSY、死んだ行は次の arrived で空く） | `wayland/mail-shell.c` の `mail_listen` | 2026-10-06 |
+| WS169 ws169-p002 | 読み手の許可の変化 | 許可が on・off に変わったことを読み手に知らせる（今は何も送らず、arrived の時に設定を読むだけ） | `wayland/mail-shell.c`、`kl-system-protocol.h` | 2026-10-06 |
+| WS169 ws169-p002 | 許可の UI の置き場 | Settings の Notifications の頁（今は「later」）ができたら mail.codes.* の switch をそちらにも出す（今は Mail の app の中だけ） | `settings/pages.c`、`mailer/` | 2026-10-06 |
+| WS169 ws169-p002 | mail を出せるのは同じ uid の誰でも | arrived を送れる client を Mail に限る（今は system manager の見える client なら誰でも arrived を送れる） | `wayland/mail-shell.c` の `mail_arrived` | 2026-10-06 |

@@ -51,6 +51,7 @@ struct kl_system {
 	struct wl_proxy *account;
 	struct wl_proxy *sharing;
 	struct wl_proxy *notify;
+	struct wl_proxy *mail;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -120,6 +121,12 @@ struct system_notify_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
+/* The listener of kl_system_mail_v1's events (ws169-p002), in their order. */
+struct system_mail_listener {
+	void (*mail)(void *data, struct wl_proxy *proxy, const char *from, const char *subject, const char *code);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
 /* The listener of kl_system_devices_v1's events, in their order. */
 struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
@@ -133,6 +140,8 @@ static void system_global(void *data, struct wl_registry *registry, uint32_t nam
 static void system_notify_posted(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t id);
 static void system_notify_activated(void *data, struct wl_proxy *proxy, uint32_t id);
 static void system_notify_closed(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t reason);
+static void system_mail(void *data, struct wl_proxy *proxy, const char *from, const char *subject, const char *code);
+static void system_mail_cut(char *to, size_t size, const char *from);
 static void system_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void system_capabilities(void *data, struct wl_proxy *proxy, uint32_t bits);
 static void system_network_state(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t connected, uint32_t kind, const char *interface, const char *wired, uint32_t wifi, const char *wifi_interface, const char *ssid);
@@ -230,6 +239,12 @@ static const struct system_notify_listener system_notify_listener = {
 	system_result
 };
 
+/* The mail object's callbacks (ws169-p002). */
+static const struct system_mail_listener system_mail_listener = {
+	system_mail,
+	system_result
+};
+
 /* The devices object's callbacks. */
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
@@ -301,6 +316,7 @@ kl_system_close(
 	system_destroy(system->account, KL_SYSTEM_ACCOUNT_DESTROY);
 	system_destroy(system->sharing, KL_SYSTEM_SHARING_DESTROY);
 	system_destroy(system->notify, KL_SYSTEM_NOTIFY_DESTROY);
+	system_destroy(system->mail, KL_SYSTEM_MAIL_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -371,6 +387,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_SHARING;
 	if (system->notify != NULL)
 		bits |= KL_SYSTEM_HAS_NOTIFY;
+	if (system->mail != NULL)
+		bits |= KL_SYSTEM_HAS_MAIL;
 
 	/* The administration of the accounts, offered with the account to a manager bound at version 8 (ws089-p026). */
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
@@ -695,6 +713,94 @@ kl_system_take_notify_event(
 {
 	/* The view's ring. */
 	return system_view_take_notify_event(&system->view, event);
+}
+
+/*
+ * Tells the compositor of a message that arrived (ws169-p002): the
+ * account, the sender, the subject and a sign-in code, never the body.
+ */
+int
+kl_system_mail_arrived(
+	struct kl_system *system,
+	const struct kl_mail_arrival *arrival,
+	uint32_t *request)
+{
+	char account[KL_MAIL_TEXT_MAX];
+	char from[KL_MAIL_TEXT_MAX];
+	char subject[KL_MAIL_TEXT_MAX];
+	char code[KL_MAIL_CODE_MAX];
+	uint32_t number;
+
+	/* Something to tell. */
+	if (system == NULL || arrival == NULL)
+		return EINVAL;
+
+	/* The compositor's mail object. */
+	if (system->mail == NULL || system->lost)
+		return ENOTSUP;
+
+	/* The words, an absent one empty, each cut to what the compositor takes. */
+	system_mail_cut(account, sizeof(account), arrival->account);
+	system_mail_cut(from, sizeof(from), arrival->from);
+	system_mail_cut(subject, sizeof(subject), arrival->subject);
+	system_mail_cut(code, sizeof(code), arrival->code);
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->mail, KL_SYSTEM_MAIL_ARRIVED, number, account, from, subject, code);
+
+	/* Succeeded: the answer comes as the request's result. */
+	return 0;
+}
+
+/*
+ * Asks to hear the messages that arrive, under the reader's name
+ * (ws169-p002).
+ */
+int
+kl_system_mail_listen(
+	struct kl_system *system,
+	const char *app,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* A reader with a name. */
+	if (system == NULL ||
+	    app == NULL ||
+	    app[0] == '\0')
+		return EINVAL;
+
+	/* The compositor's mail object. */
+	if (system->mail == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->mail, KL_SYSTEM_MAIL_LISTEN, number, app);
+
+	/* Succeeded: the answer comes as the request's result. */
+	return 0;
+}
+
+/*
+ * Takes the oldest arrival of mail told to this reader: 1 with it, 0 when
+ * none waits.
+ */
+int
+kl_system_take_mail_event(
+	struct kl_system *system,
+	struct kl_mail_event *event)
+{
+	int taken;
+
+	/* The view's ring. */
+	taken = system_view_take_mail_event(&system->view, event);
+	if (!taken)
+		return 0;
+
+	/* Succeeded: one arrival taken. */
+	return 1;
 }
 
 /*
@@ -2046,6 +2152,61 @@ system_notify_closed(
 	system_view_notify_event(&system->view, &event);
 }
 
+/* A message arrived, for this reader (ws169-p002). */
+static void
+system_mail(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *from,
+	const char *subject,
+	const char *code)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_take_mail_event. */
+	system = data;
+	system_view_mail_event(&system->view, from, subject, code);
+}
+
+/* Copies a string of a message into a room, cut before a whole UTF-8 character that does not fit; NULL is empty. */
+static void
+system_mail_cut(
+	char *to,
+	size_t size,
+	const char *from)
+{
+	size_t length;
+	int cut;
+
+	/* An absent string is empty. */
+	if (from == NULL) {
+		to[0] = '\0';
+		return;
+	}
+
+	/* As much as fits with the NUL. */
+	cut = 0;
+	length = strlen(from);
+	if (length >= size) {
+		length = size - 1U;
+		cut = 1;
+	}
+
+	/* Not into the middle of a character: a cut backs off the continuation bytes after it. */
+	while (cut && length > 0U) {
+		/* The byte after the cut starts a character: the cut is between two. */
+		if (((unsigned char)from[length] & 0xc0U) != 0x80U)
+			break;
+		length--;
+	}
+
+	/* The bytes and the NUL. */
+	memcpy(to, from, length);
+	to[length] = '\0';
+}
+
 /*
  * Binds the compositor's system manager on the library's queue, makes the
  * objects it offers and waits once for their first state.  Returns 0,
@@ -2133,6 +2294,10 @@ system_bind(
 	/* The notifications, offered to a manager bound at version 13 (ws156-p002). */
 	if (system->manager_version >= KL_SYSTEM_SINCE_NOTIFY)
 		system->notify = system_make(system, KL_SYSTEM_CAPABILITY_NOTIFY, KL_SYSTEM_MANAGER_GET_NOTIFY, &kl_system_notify_v1_interface, &system_notify_listener);
+
+	/* The arrivals of mail, offered to a manager bound at version 15 (ws169-p002). */
+	if (system->manager_version >= KL_SYSTEM_SINCE_MAIL)
+		system->mail = system_make(system, KL_SYSTEM_CAPABILITY_MAIL, KL_SYSTEM_MANAGER_GET_MAIL, &kl_system_mail_v1_interface, &system_mail_listener);
 
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);

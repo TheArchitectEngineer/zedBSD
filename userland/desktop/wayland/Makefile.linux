@@ -60,6 +60,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/sysmon.c \
 	userland/desktop/wayland/notify.c \
 	userland/desktop/wayland/notify-shell.c \
+	userland/desktop/wayland/mail-shell.c \
 	userland/desktop/settings-keys/settings-keys.c \
 	userland/desktop/wayland/text-input.c \
 	userland/desktop/wayland/input-method.c \

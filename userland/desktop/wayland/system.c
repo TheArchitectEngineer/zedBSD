@@ -351,6 +351,10 @@ kwl_system_bind(
 	if (manager->version >= KL_SYSTEM_SINCE_NOTIFY)
 		bits |= KL_SYSTEM_CAPABILITY_NOTIFY;
 
+	/* The arrivals of mail, at version 15 (ws169-p002). */
+	if (manager->version >= KL_SYSTEM_SINCE_MAIL)
+		bits |= KL_SYSTEM_CAPABILITY_MAIL;
+
 	/* The administration of the accounts, at version 8 where the system has its tool (ws089-p026). */
 	administer = kl_backend_account_can_administer();
 	if (manager->version >= KL_SYSTEM_SINCE_ADMINISTER && administer)
@@ -406,6 +410,9 @@ kwl_system_request(
 		break;
 	case KWL_SYSTEM_NOTIFY:
 		error = kwl_notify_request(object, opcode, bytes, size);
+		break;
+	case KWL_SYSTEM_MAIL:
+		error = kwl_mail_request(object, opcode, bytes, size);
 		break;
 	default:
 		error = EPROTO;
@@ -671,6 +678,16 @@ system_manager_request(
 		if (manager->version < KL_SYSTEM_SINCE_NOTIFY)
 			return EPROTO;
 		error = kwl_notify_create(manager, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The arrivals of mail are mail-shell.c's, since version 15 (ws169-p002). */
+	if (opcode == KL_SYSTEM_MANAGER_GET_MAIL) {
+		if (manager->version < KL_SYSTEM_SINCE_MAIL)
+			return EPROTO;
+		error = kwl_mail_create(manager, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;
