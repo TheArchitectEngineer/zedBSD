@@ -97,7 +97,7 @@ struct x11_wayland_window {
 	 * compositor's (NULL from a compositor without it; ws099-p023,
 	 * BUG-136).
 	 */
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 
 	/* Its swapchain when Vulkan shows it (NULL: the wl_shm buffers below do). */
 	struct x11_vulkan_window *vulkan;
@@ -264,7 +264,7 @@ static const struct xdg_surface_listener wayland_surface_listener = {
 };
 
 /* The titlebar's events: an X window's titlebar has no controls or tabs, so it hears none. */
-static const struct keiland_titlebar_listener wayland_titlebar_listener = {
+static const struct kl_titlebar_listener wayland_titlebar_listener = {
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
@@ -816,7 +816,7 @@ x11_wayland_window_open(
 	xdg_toplevel_set_app_id(window->toplevel, app_id);
 
 	/* zdesktop's titlebar, asked for before the first commit so that the first configure carries it. */
-	window->titlebar = keiland_titlebar_create(wayland->display, window->toplevel, &wayland_titlebar_listener, window);
+	window->titlebar = kl_titlebar_create(wayland->display, window->toplevel, &wayland_titlebar_listener, window);
 	if (window->titlebar == NULL)
 		fprintf(stderr, "X11SERVER TITLEBAR none errno=%d\n", errno);
 
@@ -1008,7 +1008,7 @@ x11_wayland_window_close(
 		x11_vulkan_window_close(window->vulkan);
 	wayland_buffers_free(window);
 	if (window->titlebar != NULL)
-		keiland_titlebar_destroy(window->titlebar);
+		kl_titlebar_destroy(window->titlebar);
 	if (window->toplevel != NULL)
 		xdg_toplevel_destroy(window->toplevel);
 	if (window->role != NULL)

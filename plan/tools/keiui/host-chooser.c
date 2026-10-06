@@ -9,14 +9,14 @@
  * Host tests of the file chooser's model and view (ws090-p006, from the
  * tests of libkeiland's chooser of ws092-p003): a tree of folders and
  * files under a temporary home, the keys, clicks and taps a user makes
- * through kui_ui, the frames drawn with the widgets, the answers they lead
+ * through kl_ui, the frames drawn with the widgets, the answers they lead
  * to, and pictures of the window (written as PPM, turned into PNG by
  * host-chooser.sh).
  *
  *   host-chooser FONT FALLBACK OUTPUT-PREFIX
  */
 
-#include <keiui.h>
+#include <keiland.h>
 #include "chooser.h"
 
 #include <errno.h>
@@ -62,9 +62,9 @@
  */
 struct tester {
 	struct keiui_chooser chooser;
-	struct kui_ui *ui;
-	struct kui_canvas canvas;
-	struct kui_style style;
+	struct kl_ui *ui;
+	struct kl_canvas canvas;
+	struct kl_style style;
 	uint32_t *pixels;
 	int width;
 	int height;
@@ -76,7 +76,7 @@ static int test_failed;
 
 /* The temporary home, the text, where pictures go, and the tests' clock. */
 static char test_home[512];
-static struct kui_text test_text;
+static struct kl_text test_text;
 static const char *test_prefix;
 static uint64_t test_now;
 
@@ -84,7 +84,7 @@ static void check(int condition, const char *what);
 static void make_file(const char *relative, const char *contents);
 static void make_folder(const char *relative);
 static void path_of(const char *relative, char *out, size_t size);
-static int start(struct tester *tester, const struct kui_file_chooser_options *options, int width, int height);
+static int start(struct tester *tester, const struct kl_file_chooser_options *options, int width, int height);
 static void finish(struct tester *tester);
 static void frame(struct tester *tester);
 static void click(struct tester *tester, int x, int y);
@@ -118,7 +118,7 @@ main(
 
 	/* The text every frame draws with. */
 	test_prefix = argv[3];
-	error = kui_text_open(&test_text, argv[1], argv[2]);
+	error = kl_text_open(&test_text, argv[1], argv[2]);
 	if (error != 0) {
 		fprintf(stderr, "font %s: %s\n", argv[1], strerror(error));
 		return 2;
@@ -155,7 +155,7 @@ main(
 	test_save();
 	test_path();
 	test_pictures();
-	kui_text_close(&test_text);
+	kl_text_close(&test_text);
 
 	/* The outcome. */
 	printf("host-chooser: %d/%d passed\n", test_count - test_failed, test_count);
@@ -227,7 +227,7 @@ path_of(
 static int
 start(
 	struct tester *tester,
-	const struct kui_file_chooser_options *options,
+	const struct kl_file_chooser_options *options,
 	int width,
 	int height)
 {
@@ -244,12 +244,12 @@ start(
 	/* The input, the frame and the style. */
 	tester->width = width;
 	tester->height = height;
-	tester->ui = kui_ui_create();
+	tester->ui = kl_ui_create();
 	tester->pixels = calloc((size_t)width * (size_t)height, sizeof(tester->pixels[0]));
-	(void)kui_canvas_init(&tester->canvas, tester->pixels, (size_t)width, width, height);
+	(void)kl_canvas_init(&tester->canvas, tester->pixels, (size_t)width, width, height);
 	tester->style.canvas = &tester->canvas;
 	tester->style.text = &test_text;
-	tester->style.theme = kui_theme_default();
+	tester->style.theme = kl_theme_default();
 	tester->style.glass = 0;
 
 	/* The first frame, which records the widgets. */
@@ -265,8 +265,8 @@ finish(
 {
 	/* Everything it holds. */
 	keiui_chooser_fini(&tester->chooser);
-	kui_ui_destroy(tester->ui);
-	kui_canvas_release(&tester->canvas);
+	kl_ui_destroy(tester->ui);
+	kl_canvas_release(&tester->canvas);
 	free(tester->pixels);
 }
 
@@ -295,9 +295,9 @@ click(
 	int y)
 {
 	/* Over it, down and up, and a frame. */
-	(void)kui_ui_pointer_motion(tester->ui, (double)x, (double)y);
-	(void)kui_ui_pointer_button(tester->ui, 1, test_now);
-	(void)kui_ui_pointer_button(tester->ui, 0, test_now);
+	(void)kl_ui_pointer_motion(tester->ui, (double)x, (double)y);
+	(void)kl_ui_pointer_button(tester->ui, 1, test_now);
+	(void)kl_ui_pointer_button(tester->ui, 0, test_now);
 	frame(tester);
 }
 
@@ -309,9 +309,9 @@ tap(
 	int y)
 {
 	/* Down, and up a moment later. */
-	(void)kui_ui_touch_down(tester->ui, 1, test_now, test_now, (double)x, (double)y);
+	(void)kl_ui_touch_down(tester->ui, 1, test_now, test_now, (double)x, (double)y);
 	test_now += 60000U;
-	(void)kui_ui_touch_up(tester->ui, 1, test_now, test_now);
+	(void)kl_ui_touch_up(tester->ui, 1, test_now, test_now);
 	frame(tester);
 }
 
@@ -323,8 +323,8 @@ key(
 	unsigned modifiers)
 {
 	/* Down and up. */
-	(void)kui_ui_key(tester->ui, code, 1, modifiers);
-	(void)kui_ui_key(tester->ui, code, 0, modifiers);
+	(void)kl_ui_key(tester->ui, code, 1, modifiers);
+	(void)kl_ui_key(tester->ui, code, 0, modifiers);
 	frame(tester);
 }
 
@@ -341,11 +341,11 @@ type_text(
 	/* Each character: the key that types it, with Shift or without. */
 	for (; *text != '\0'; text++) {
 		for (code = 1; code < 58U; code++) {
-			typed = kui_key_character(code, 0U);
+			typed = kl_key_character(code, 0U);
 			shift = 0U;
 			if (typed != (uint32_t)(unsigned char)*text) {
-				typed = kui_key_character(code, KUI_MOD_SHIFT);
-				shift = KUI_MOD_SHIFT;
+				typed = kl_key_character(code, KL_MOD_SHIFT);
+				shift = KL_MOD_SHIFT;
 			}
 
 			/* Found. */
@@ -354,7 +354,7 @@ type_text(
 		}
 
 		/* The key. */
-		(void)kui_ui_key(tester->ui, code, 1, shift);
+		(void)kl_ui_key(tester->ui, code, 1, shift);
 	}
 
 	/* One frame for them all. */
@@ -395,11 +395,11 @@ row_y(
 static void
 test_open(void)
 {
-	static const struct kui_file_filter filters[] = {
+	static const struct kl_file_filter filters[] = {
 		{ "Text Files", "txt md" },
 		{ "All Files", NULL }
 	};
-	struct kui_file_chooser_options options;
+	struct kl_file_chooser_options options;
 	struct tester tester;
 	struct keiui_chooser *chooser;
 	char folder[1024];
@@ -409,7 +409,7 @@ test_open(void)
 
 	/* A chooser at Documents with the text filter. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.mode = KL_FILE_CHOOSER_OPEN;
 	path_of("Documents", folder, sizeof(folder));
 	options.folder = folder;
 	options.filters = filters;
@@ -420,7 +420,7 @@ test_open(void)
 	check(error == 0, "open: init");
 	check(strcmp(chooser->folder, folder) == 0, "open: starts in the folder given");
 	check(strcmp(chooser->title, "Open") == 0, "open: title");
-	check(kui_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF), "open: the list has the keyboard");
+	check(kl_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF), "open: the list has the keyboard");
 
 	/* Folders first, then names without regard to case; hidden and filtered items left out. */
 	check(chooser->count == 5U, "open: five items (two folders, three text files)");
@@ -437,10 +437,10 @@ test_open(void)
 	check(strcmp(chooser->places[4].label, "Computer") == 0, "open: Computer last");
 
 	/* Ctrl+H shows the hidden items, and again hides them. */
-	key(&tester, KEY_H, KUI_MOD_CTRL);
+	key(&tester, KEY_H, KL_MOD_CTRL);
 	check(find(chooser, ".hidden.txt") >= 0, "open: Ctrl+H shows hidden files");
 	check(find(chooser, ".secret") >= 0, "open: Ctrl+H shows hidden folders");
-	key(&tester, KEY_H, KUI_MOD_CTRL);
+	key(&tester, KEY_H, KL_MOD_CTRL);
 	check(find(chooser, ".hidden.txt") < 0, "open: Ctrl+H again hides them");
 
 	/* The filter button: All Files shows the picture. */
@@ -456,13 +456,13 @@ test_open(void)
 	check(chooser->answered == 0, "open: the faded Open button does nothing");
 
 	/* Down selects the first item, Enter goes into it, Backspace comes back. */
-	key(&tester, KUI_KEY_DOWN, 0U);
+	key(&tester, KL_KEY_DOWN, 0U);
 	check(chooser->list.selected == 0L, "open: Down selects the first item");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	path_of("Documents/sub", expected, sizeof(expected));
 	check(strcmp(chooser->folder, expected) == 0, "open: Enter goes into sub");
 	check(chooser->answered == 0, "open: going into a folder answers nothing");
-	key(&tester, KUI_KEY_BACKSPACE, 0U);
+	key(&tester, KL_KEY_BACKSPACE, 0U);
 	check(strcmp(chooser->folder, folder) == 0, "open: Backspace goes up");
 
 	/* A letter finds an item; the up button and Alt+Up go up. */
@@ -473,7 +473,7 @@ test_open(void)
 	check(strcmp(chooser->folder, test_home) == 0, "open: the up button goes to the home folder");
 	(void)keiui_chooser_go(chooser, folder);
 	frame(&tester);
-	key(&tester, KUI_KEY_UP, KUI_MOD_ALT);
+	key(&tester, KL_KEY_UP, KL_MOD_ALT);
 	check(strcmp(chooser->folder, test_home) == 0, "open: Alt+Up goes up");
 
 	/* A place: Documents. */
@@ -482,8 +482,8 @@ test_open(void)
 	check(strcmp(chooser->folder, folder) == 0, "open: the Documents place");
 
 	/* A letter and Enter between two frames: the letter selects Zeta first, then Enter goes into it. */
-	(void)kui_ui_key(tester.ui, 44U, 1, 0U);
-	(void)kui_ui_key(tester.ui, KUI_KEY_ENTER, 1, 0U);
+	(void)kl_ui_key(tester.ui, 44U, 1, 0U);
+	(void)kl_ui_key(tester.ui, KL_KEY_ENTER, 1, 0U);
 	frame(&tester);
 	path_of("Documents/Zeta", expected, sizeof(expected));
 	check(strcmp(chooser->folder, expected) == 0, "open: z then Enter goes into Zeta, in order");
@@ -498,10 +498,10 @@ test_open(void)
 	check(keiui_chooser_can_accept(chooser) == 1, "open: a file selected can be opened");
 	click(&tester, LIST_X + 60, row_y(&tester, index));
 	path_of("Documents/a.txt", expected, sizeof(expected));
-	check(chooser->answered == 1 && chooser->result == KUI_FILE_CHOOSER_CHOSEN, "open: double click chooses");
+	check(chooser->answered == 1 && chooser->result == KL_FILE_CHOOSER_CHOSEN, "open: double click chooses");
 	check(strcmp(chooser->answer, expected) == 0, "open: the path of a.txt");
-	key(&tester, KUI_KEY_ESC, 0U);
-	check(chooser->result == KUI_FILE_CHOOSER_CHOSEN, "open: nothing after the answer");
+	key(&tester, KL_KEY_ESC, 0U);
+	check(chooser->result == KL_FILE_CHOOSER_CHOSEN, "open: nothing after the answer");
 	finish(&tester);
 
 	/* Clicks too far apart are two single clicks; a tap on a folder goes into it; a double tap chooses. */
@@ -524,21 +524,21 @@ test_open(void)
 	check(chooser->list.selected == index && chooser->answered == 0, "open: a tap on a file selects it");
 	test_now += 100000U;
 	tap(&tester, LIST_X + 60, row_y(&tester, index));
-	check(chooser->answered == 1 && chooser->result == KUI_FILE_CHOOSER_CHOSEN, "open: a double tap chooses");
+	check(chooser->answered == 1 && chooser->result == KL_FILE_CHOOSER_CHOSEN, "open: a double tap chooses");
 	finish(&tester);
 
 	/* Esc cancels with no path. */
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
-	key(&tester, KUI_KEY_ESC, 0U);
-	check(error == 0 && chooser->answered == 1 && chooser->result == KUI_FILE_CHOOSER_CANCELLED && chooser->answer[0] == '\0', "open: Esc cancels");
+	key(&tester, KL_KEY_ESC, 0U);
+	check(error == 0 && chooser->answered == 1 && chooser->result == KL_FILE_CHOOSER_CANCELLED && chooser->answer[0] == '\0', "open: Esc cancels");
 	finish(&tester);
 
 	/* Recent lists the files added that pass the filter. */
 	path_of("Documents/a.txt", expected, sizeof(expected));
-	(void)keiland_recent_add(expected, "host");
+	(void)kl_recent_add(expected, "host");
 	path_of("Documents/c.png", expected, sizeof(expected));
-	(void)keiland_recent_add(expected, "host");
+	(void)kl_recent_add(expected, "host");
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
 	test_now += SECOND;
@@ -562,11 +562,11 @@ test_open(void)
 static void
 test_save(void)
 {
-	static const struct kui_file_filter filters[] = {
+	static const struct kl_file_filter filters[] = {
 		{ "Text Files", "txt md" },
 		{ "All Files", NULL }
 	};
-	struct kui_file_chooser_options options;
+	struct kl_file_chooser_options options;
 	struct tester tester;
 	struct keiui_chooser *chooser;
 	char folder[1024];
@@ -579,7 +579,7 @@ test_save(void)
 
 	/* A chooser at Documents with the name Untitled.txt, selected up to its extension. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_SAVE;
+	options.mode = KL_FILE_CHOOSER_SAVE;
 	path_of("Documents", folder, sizeof(folder));
 	options.folder = folder;
 	options.name = "Untitled.txt";
@@ -589,14 +589,14 @@ test_save(void)
 	chooser = &tester.chooser;
 	check(error == 0, "save: init");
 	check(strcmp(chooser->title, "Save As") == 0, "save: title");
-	check(kui_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_NAME, 0U), "save: the name has the keyboard");
+	check(kl_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_NAME, 0U), "save: the name has the keyboard");
 	check(chooser->name.anchor == 0U && chooser->name.caret == 8U, "save: the name is selected up to .txt");
 	check(chooser->place_count == 4U, "save: no Recent place");
 
 	/* Typing replaces the selection; Enter saves a new file. */
 	type_text(&tester, "notes");
 	check(strcmp(chooser->name.text, "notes.txt") == 0, "save: typed over the selection");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	path_of("Documents/notes.txt", expected, sizeof(expected));
 	check(chooser->answered == 1 && strcmp(chooser->answer, expected) == 0, "save: Enter answers the new path");
 	finish(&tester);
@@ -611,22 +611,22 @@ test_save(void)
 	click(&tester, ACCEPT_X, BUTTON_Y);
 	check(chooser->confirm == 1 && chooser->answered == 0, "save: replacing asks first");
 	frame(&tester);
-	check(kui_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_CONFIRM, 0xffffffffU), "save: the question has the keyboard");
+	check(kl_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_CONFIRM, 0xffffffffU), "save: the question has the keyboard");
 
 	/* The question's Cancel (the dialog's buttons: Replace at the right, Cancel to its left). */
-	x = 200.0 + (552.0 - 392.0) / 2.0 + 392.0 - 18.0 - (double)kui_button_width(&tester.style, "Replace") - 8.0 - (double)kui_button_width(&tester.style, "Cancel") / 2.0;
+	x = 200.0 + (552.0 - 392.0) / 2.0 + 392.0 - 18.0 - (double)kl_button_width(&tester.style, "Replace") - 8.0 - (double)kl_button_width(&tester.style, "Cancel") / 2.0;
 	y = 8.0 + (464.0 - 170.0) / 2.0 + 170.0 - 16.0 - 16.0;
 	test_now += SECOND;
 	click(&tester, (int)x, (int)y);
 	check(chooser->confirm == 0 && chooser->answered == 0, "save: Cancel in the question keeps the file");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	check(chooser->confirm == 1, "save: Enter asks again");
 	frame(&tester);
-	key(&tester, KUI_KEY_ESC, 0U);
+	key(&tester, KL_KEY_ESC, 0U);
 	check(chooser->confirm == 0 && chooser->answered == 0, "save: Esc in the question keeps the file");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	frame(&tester);
-	x = 200.0 + (552.0 - 392.0) / 2.0 + 392.0 - 18.0 - (double)kui_button_width(&tester.style, "Replace") / 2.0;
+	x = 200.0 + (552.0 - 392.0) / 2.0 + 392.0 - 18.0 - (double)kl_button_width(&tester.style, "Replace") / 2.0;
 	test_now += SECOND;
 	click(&tester, (int)x, (int)y);
 	path_of("Documents/a.txt", expected, sizeof(expected));
@@ -636,27 +636,27 @@ test_save(void)
 	/* The question's Enter replaces. */
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
-	key(&tester, KEY_A, KUI_MOD_CTRL);
+	key(&tester, KEY_A, KL_MOD_CTRL);
 	type_text(&tester, "B.md");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	frame(&tester);
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	check(error == 0 && chooser->answered == 1 && strstr(chooser->answer, "B.md") != NULL, "save: Enter in the question replaces");
 	finish(&tester);
 
 	/* A folder's name goes into it; a slash is refused; an empty name cannot be saved. */
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
-	key(&tester, KEY_A, KUI_MOD_CTRL);
+	key(&tester, KEY_A, KL_MOD_CTRL);
 	type_text(&tester, "sub");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	path_of("Documents/sub", expected, sizeof(expected));
 	check(error == 0 && strcmp(chooser->folder, expected) == 0 && chooser->answered == 0, "save: a folder's name goes into it");
 	check(chooser->name.length == 0U && keiui_chooser_can_accept(chooser) == 0, "save: an empty name cannot be saved");
 	type_text(&tester, "a/b");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	check(chooser->answered == 0 && chooser->message[0] != '\0', "save: a slash is refused with a message");
-	key(&tester, KUI_KEY_BACKSPACE, 0U);
+	key(&tester, KL_KEY_BACKSPACE, 0U);
 	check(strcmp(chooser->name.text, "a/") == 0 && chooser->message[0] == '\0', "save: Backspace erases, the message goes");
 
 	/* A folder that cannot be written to is refused (unless run as root). */
@@ -664,9 +664,9 @@ test_save(void)
 	chmod(locked, 0555);
 	(void)keiui_chooser_go(chooser, locked);
 	frame(&tester);
-	key(&tester, KEY_A, KUI_MOD_CTRL);
+	key(&tester, KEY_A, KL_MOD_CTRL);
 	type_text(&tester, "x.txt");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	root = geteuid();
 	if (root != 0)
 		check(chooser->answered == 0 && strstr(chooser->message, "can't save") != NULL, "save: a folder that cannot be written is refused");
@@ -681,7 +681,7 @@ test_save(void)
 	check(error == 0 && chooser->filter == 1U, "save: the filter button");
 	test_now += SECOND;
 	click(&tester, CANCEL_X, BUTTON_Y);
-	check(chooser->answered == 1 && chooser->result == KUI_FILE_CHOOSER_CANCELLED, "save: Cancel");
+	check(chooser->answered == 1 && chooser->result == KL_FILE_CHOOSER_CANCELLED, "save: Cancel");
 	finish(&tester);
 }
 
@@ -689,7 +689,7 @@ test_save(void)
 static void
 test_path(void)
 {
-	struct kui_file_chooser_options options;
+	struct kl_file_chooser_options options;
 	struct tester tester;
 	struct keiui_chooser *chooser;
 	char expected[1024];
@@ -697,49 +697,49 @@ test_path(void)
 
 	/* Open: ~/Desktop is gone to, then a file's path is chosen. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.mode = KL_FILE_CHOOSER_OPEN;
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
 	check(error == 0 && strcmp(chooser->folder, test_home) == 0, "path: starts at home without a folder");
-	key(&tester, KEY_L, KUI_MOD_CTRL);
+	key(&tester, KEY_L, KL_MOD_CTRL);
 	frame(&tester);
-	check(chooser->typing_path && kui_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_PATH, 0U), "path: Ctrl+L opens the path field");
-	key(&tester, KEY_A, KUI_MOD_CTRL);
+	check(chooser->typing_path && kl_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_PATH, 0U), "path: Ctrl+L opens the path field");
+	key(&tester, KEY_A, KL_MOD_CTRL);
 	type_text(&tester, "~/Desktop");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	frame(&tester);
 	path_of("Desktop", expected, sizeof(expected));
 	check(strcmp(chooser->folder, expected) == 0 && !chooser->typing_path, "path: ~/Desktop is shown");
-	check(kui_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF), "path: the list has the keyboard again");
+	check(kl_ui_has_focus(tester.ui, KEIUI_CHOOSER_ID_LIST, KEIUI_CHOOSER_LIST_SELF), "path: the list has the keyboard again");
 	test_now += SECOND;
 	click(&tester, LOCATION_X, UP_Y);
 	frame(&tester);
 	check(chooser->typing_path, "path: a click on the location opens the field");
 	type_text(&tester, "../Documents/B.md");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	check(chooser->answered == 1 && strstr(chooser->answer, "Documents/B.md") != NULL, "path: a file's path is chosen");
 	finish(&tester);
 
 	/* Esc closes the field, and again cancels. */
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
-	key(&tester, KEY_L, KUI_MOD_CTRL);
+	key(&tester, KEY_L, KL_MOD_CTRL);
 	frame(&tester);
-	key(&tester, KUI_KEY_ESC, 0U);
+	key(&tester, KL_KEY_ESC, 0U);
 	check(error == 0 && !chooser->typing_path && chooser->answered == 0, "path: Esc closes the field");
 	frame(&tester);
-	key(&tester, KUI_KEY_ESC, 0U);
-	check(chooser->answered == 1 && chooser->result == KUI_FILE_CHOOSER_CANCELLED, "path: Esc again cancels");
+	key(&tester, KL_KEY_ESC, 0U);
+	check(chooser->answered == 1 && chooser->result == KL_FILE_CHOOSER_CANCELLED, "path: Esc again cancels");
 	finish(&tester);
 
 	/* Save: a path to a new file in another folder. */
-	options.mode = KUI_FILE_CHOOSER_SAVE;
+	options.mode = KL_FILE_CHOOSER_SAVE;
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	chooser = &tester.chooser;
-	key(&tester, KEY_L, KUI_MOD_CTRL);
+	key(&tester, KEY_L, KL_MOD_CTRL);
 	frame(&tester);
 	type_text(&tester, "Documents/sub/new.txt");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	path_of("Documents/sub/new.txt", expected, sizeof(expected));
 	check(error == 0 && chooser->answered == 1 && strcmp(chooser->answer, expected) == 0, "path: Save to a typed path");
 	finish(&tester);
@@ -749,18 +749,18 @@ test_path(void)
 static void
 test_pictures(void)
 {
-	static const struct kui_file_filter filters[] = {
+	static const struct kl_file_filter filters[] = {
 		{ "Text Files", "txt md" },
 		{ "All Files", NULL }
 	};
-	struct kui_file_chooser_options options;
+	struct kl_file_chooser_options options;
 	struct tester tester;
 	char folder[1024];
 	int error;
 
 	/* Open at Documents: a file selected, the pointer over a place. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.mode = KL_FILE_CHOOSER_OPEN;
 	path_of("Documents", folder, sizeof(folder));
 	options.folder = folder;
 	options.filters = filters;
@@ -769,7 +769,7 @@ test_pictures(void)
 	check(error == 0, "pictures: open");
 	test_now += SECOND;
 	click(&tester, LIST_X + 60, row_y(&tester, find(&tester.chooser, "a.txt")));
-	(void)kui_ui_pointer_motion(tester.ui, 60.0, (double)(PLACES_Y + 30 + 15));
+	(void)kl_ui_pointer_motion(tester.ui, 60.0, (double)(PLACES_Y + 30 + 15));
 	frame(&tester);
 	picture(&tester, "open");
 	tester.style.glass = 1;
@@ -778,7 +778,7 @@ test_pictures(void)
 	finish(&tester);
 
 	/* Save with its name, and the question. */
-	options.mode = KUI_FILE_CHOOSER_SAVE;
+	options.mode = KL_FILE_CHOOSER_SAVE;
 	options.name = "Untitled.txt";
 	error = start(&tester, &options, TEST_WIDTH, TEST_HEIGHT);
 	frame(&tester);
@@ -793,11 +793,11 @@ test_pictures(void)
 
 	/* A narrow window, a message, and the path field. */
 	error = start(&tester, &options, TEST_NARROW_W, TEST_NARROW_H);
-	key(&tester, KEY_A, KUI_MOD_CTRL);
+	key(&tester, KEY_A, KL_MOD_CTRL);
 	type_text(&tester, "/");
-	key(&tester, KUI_KEY_ENTER, 0U);
+	key(&tester, KL_KEY_ENTER, 0U);
 	picture(&tester, "narrow");
-	key(&tester, KEY_L, KUI_MOD_CTRL);
+	key(&tester, KEY_L, KL_MOD_CTRL);
 	frame(&tester);
 	picture(&tester, "path");
 	check(error == 0, "pictures: save");

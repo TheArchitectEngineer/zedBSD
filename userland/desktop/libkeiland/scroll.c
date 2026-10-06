@@ -30,7 +30,6 @@
  */
 
 #include <keiland.h>
-#include <keiland-ui.h>
 
 #include <errno.h>
 #include <math.h>

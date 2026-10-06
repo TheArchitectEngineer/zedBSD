@@ -37,7 +37,7 @@ kl_color_glyph(
 	struct truetype_face *face,
 	unsigned glyph,
 	unsigned pixels,
-	struct keiland_color_image *out)
+	struct kl_color_image *out)
 {
 	struct truetype_color_glyph found;
 	uint32_t *source;

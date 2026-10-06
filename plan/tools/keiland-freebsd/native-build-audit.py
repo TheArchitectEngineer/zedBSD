@@ -39,7 +39,10 @@ assert len(libraries) == 10
 assert not (stage / 'lib/libvulkan.so').exists()
 assert (stage / 'include/libseat.h').is_file()
 assert (stage / 'include/wayland-client.h').is_file()
-assert (stage / 'include/keiui.h').is_file()
+assert (stage / 'include/keiland.h').is_file()
+# One public header of libkeiland since ws131-p023: keiui.h and keiland-ui.h joined keiland.h.
+assert not (stage / 'include/keiui.h').exists()
+assert not (stage / 'include/keiland-ui.h').exists()
 assert (stage / 'include/pdf.h').is_file()
 assert not (stage / 'include/drm').exists()
 print(json.dumps({'status': 'PASS', 'source_memberships': len(sources), 'unique_sources': len(set(sources)), 'header_count': len(headers), 'libraries': libraries}, indent=2))

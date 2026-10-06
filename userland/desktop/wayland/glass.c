@@ -208,8 +208,8 @@ struct kwl_glass {
 	struct kwl_import tiles;
 	struct glass_glyph app_tiles[GLASS_TILE_SIZES][GLASS_ICON_APPS];
 	unsigned tiles_ready;
-	struct glass_glyph mark[KEILAND_MARK_LAYERS];
-	struct glass_glyph mark_small[KEILAND_MARK_LAYERS];
+	struct glass_glyph mark[KL_MARK_LAYERS];
+	struct glass_glyph mark_small[KL_MARK_LAYERS];
 	unsigned text;
 	struct truetype_face *faces[GLASS_FACES];
 	void *font_data[GLASS_FACES];
@@ -2176,7 +2176,7 @@ glass_draw_mark(
 	 * light along the edges and the sheen (ws035-p109).  The panes are
 	 * translucent, so the picture behind shows through as on the splash.
 	 */
-	static const float splash_colours[KEILAND_MARK_LAYERS][4] = {
+	static const float splash_colours[KL_MARK_LAYERS][4] = {
 		{ 0.663f, 0.765f, 0.965f, 0.69f },
 		{ 0.498f, 0.635f, 0.941f, 0.35f },
 		{ 0.639f, 0.847f, 0.980f, 0.67f },
@@ -2192,7 +2192,7 @@ glass_draw_mark(
 	 * the white light and sheen fainter, so that the mark stands out on
 	 * the bar's light glass instead of fading into it.
 	 */
-	static const float bar_colours[KEILAND_MARK_LAYERS][4] = {
+	static const float bar_colours[KL_MARK_LAYERS][4] = {
 		{ 0.455f, 0.600f, 0.925f, 0.92f },
 		{ 0.290f, 0.451f, 0.878f, 0.55f },
 		{ 0.400f, 0.690f, 0.945f, 0.90f },
@@ -2224,7 +2224,7 @@ glass_draw_mark(
 		layers = glass->mark_small;
 
 	/* Each layer's cell of the atlas over the square, in order. */
-	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+	for (layer = 0; layer < KL_MARK_LAYERS; layer++) {
 		glyph = &layers[layer];
 		glass_shape_init(&shape, (float)x, (float)y, (float)pixels, (float)pixels);
 		shape.mode = MODE_TEXT;
@@ -2397,7 +2397,7 @@ atlas_mark(
 
 	/* Each layer's coverage, into the atlas, and its place. */
 	pen_x = 0;
-	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+	for (layer = 0; layer < KL_MARK_LAYERS; layer++) {
 		kl_mark_raster(layer, GLASS_MARK_PIXELS, bitmap, GLASS_MARK_PIXELS);
 		atlas_put(glass, bitmap, pen_x, *pen_y, GLASS_MARK_PIXELS, GLASS_MARK_PIXELS);
 		glyph = &glass->mark[layer];
@@ -2419,7 +2419,7 @@ atlas_mark(
 		return ENOSPC;
 
 	/* Each small layer's coverage, into its cell of the column, and its place. */
-	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+	for (layer = 0; layer < KL_MARK_LAYERS; layer++) {
 		kl_mark_raster(layer, GLASS_MARK_SMALL_PIXELS, bitmap, GLASS_MARK_SMALL_PIXELS);
 		glyph = &glass->mark_small[layer];
 		glyph->x = column_x + (layer % GLASS_MARK_SMALL_ACROSS) * (GLASS_MARK_SMALL_PIXELS + 1U);
@@ -2680,7 +2680,7 @@ glass_cache_color(
 	unsigned id,
 	unsigned slot)
 {
-	struct keiland_color_image image;
+	struct kl_color_image image;
 	struct glass_cached *cell;
 	uint32_t *row;
 	unsigned per_row;

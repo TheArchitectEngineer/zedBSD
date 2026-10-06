@@ -822,7 +822,7 @@ text_render_color(
 	unsigned pixels,
 	struct kl_glyph *glyph)
 {
-	struct keiland_color_image image;
+	struct kl_color_image image;
 	int error;
 
 	/* The glyph's colours at the size (the face's size changes with it). */

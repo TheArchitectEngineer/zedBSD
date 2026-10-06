@@ -52,12 +52,12 @@
 #define POPUP_FORMAT		0U
 
 /* The colours: the ground, the text, the numbers, the chosen row and the page line. */
-#define POPUP_GROUND		KUI_RGB(0xffffff)
-#define POPUP_TEXT		KUI_RGB(0x1e293b)
-#define POPUP_NUMBER		KUI_RGB(0x94a3b8)
-#define POPUP_CHOSEN		KUI_RGB(0x2563eb)
-#define POPUP_CHOSEN_TEXT	KUI_RGB(0xffffff)
-#define POPUP_EDGE		KUI_RGBA(0x334155, 0x30)
+#define POPUP_GROUND		KL_RGB(0xffffff)
+#define POPUP_TEXT		KL_RGB(0x1e293b)
+#define POPUP_NUMBER		KL_RGB(0x94a3b8)
+#define POPUP_CHOSEN		KL_RGB(0x2563eb)
+#define POPUP_CHOSEN_TEXT	KL_RGB(0xffffff)
+#define POPUP_EDGE		KL_RGBA(0x334155, 0x30)
 
 static void popup_buffer_release(void *data, struct wl_buffer *buffer);
 static int popup_buffers_make(struct program_popup *popup);
@@ -93,7 +93,7 @@ program_popup_start(
 		return ENOTSUP;
 
 	/* The fonts. */
-	error = kui_text_open(&popup->text, POPUP_FONT, POPUP_FALLBACK);
+	error = kl_text_open(&popup->text, POPUP_FONT, POPUP_FALLBACK);
 	if (error != 0)
 		return error;
 
@@ -298,21 +298,21 @@ popup_draw(
 	int width,
 	int height)
 {
-	struct kui_canvas canvas;
-	struct kui_rect clip;
+	struct kl_canvas canvas;
+	struct kl_rect clip;
 	char number[8];
 	char page[32];
 	size_t first;
 	size_t index;
 	size_t row;
-	kui_color color;
+	kl_color color;
 	int baseline;
 	int top;
 	int status;
 	int page_width;
 
 	/* A canvas over the buffer's top left, the size of the window, cleared to transparent. */
-	status = kui_canvas_init(&canvas, buffer->pixels, POPUP_MAX_WIDTH, POPUP_MAX_WIDTH, POPUP_MAX_HEIGHT);
+	status = kl_canvas_init(&canvas, buffer->pixels, POPUP_MAX_WIDTH, POPUP_MAX_WIDTH, POPUP_MAX_HEIGHT);
 	if (status != 0)
 		return;
 
@@ -320,12 +320,12 @@ popup_draw(
 	clip.y = 0;
 	clip.width = width;
 	clip.height = height;
-	kui_canvas_clip_push(&canvas, &clip);
-	kui_canvas_clear(&canvas);
+	kl_canvas_clip_push(&canvas, &clip);
+	kl_canvas_clear(&canvas);
 
 	/* The card and its edge. */
-	kui_canvas_round(&canvas, 0.0f, 0.0f, (float)width, (float)height, POPUP_RADIUS, POPUP_GROUND);
-	kui_canvas_round_border(&canvas, 0.5f, 0.5f, (float)width - 1.0f, (float)height - 1.0f, POPUP_RADIUS, 1.0f, POPUP_EDGE);
+	kl_canvas_round(&canvas, 0.0f, 0.0f, (float)width, (float)height, POPUP_RADIUS, POPUP_GROUND);
+	kl_canvas_round_border(&canvas, 0.5f, 0.5f, (float)width - 1.0f, (float)height - 1.0f, POPUP_RADIUS, 1.0f, POPUP_EDGE);
 
 	/* Each candidate of the page with its digit. */
 	first = (out->candidate_selected / POPUP_PAGE) * POPUP_PAGE;
@@ -338,20 +338,20 @@ popup_draw(
 		top = POPUP_PADDING + POPUP_ROW * (int)row;
 		color = POPUP_TEXT;
 		if (index == out->candidate_selected) {
-			kui_canvas_round(&canvas, 4.0f, (float)top + 1.0f, (float)width - 8.0f, (float)POPUP_ROW - 2.0f, 6.0f, POPUP_CHOSEN);
+			kl_canvas_round(&canvas, 4.0f, (float)top + 1.0f, (float)width - 8.0f, (float)POPUP_ROW - 2.0f, 6.0f, POPUP_CHOSEN);
 			color = POPUP_CHOSEN_TEXT;
 		}
 
 		/* The digit, then the candidate. */
-		baseline = kui_text_center(POPUP_PIXELS, top, POPUP_ROW);
+		baseline = kl_text_center(POPUP_PIXELS, top, POPUP_ROW);
 		snprintf(number, sizeof(number), "%lu", (unsigned long)(row + 1U));
 		if (index == out->candidate_selected) {
-			(void)kui_text_draw(&popup->text, &canvas, 14, baseline, number, strlen(number), POPUP_PIXELS - 3U, 0, color);
+			(void)kl_text_draw(&popup->text, &canvas, 14, baseline, number, strlen(number), POPUP_PIXELS - 3U, 0, color);
 		} else {
-			(void)kui_text_draw(&popup->text, &canvas, 14, baseline, number, strlen(number), POPUP_PIXELS - 3U, 0, POPUP_NUMBER);
+			(void)kl_text_draw(&popup->text, &canvas, 14, baseline, number, strlen(number), POPUP_PIXELS - 3U, 0, POPUP_NUMBER);
 		}
 
-		(void)kui_text_draw(&popup->text, &canvas, 36, baseline, out->candidates[index], strlen(out->candidates[index]), POPUP_PIXELS, 0,
+		(void)kl_text_draw(&popup->text, &canvas, 36, baseline, out->candidates[index], strlen(out->candidates[index]), POPUP_PIXELS, 0,
 				    color);
 	}
 
@@ -359,13 +359,13 @@ popup_draw(
 	if (out->candidate_count > POPUP_PAGE) {
 		snprintf(page, sizeof(page), "%lu / %lu", (unsigned long)(first / POPUP_PAGE + 1U),
 			 (unsigned long)((out->candidate_count + POPUP_PAGE - 1U) / POPUP_PAGE));
-		page_width = kui_text_width(&popup->text, page, strlen(page), POPUP_PIXELS - 4U, 0);
-		baseline = kui_text_center(POPUP_PIXELS - 4U, height - POPUP_PADDING - POPUP_ROW, POPUP_ROW);
-		(void)kui_text_draw(&popup->text, &canvas, width - 14 - page_width, baseline, page, strlen(page), POPUP_PIXELS - 4U, 0, POPUP_NUMBER);
+		page_width = kl_text_width(&popup->text, page, strlen(page), POPUP_PIXELS - 4U, 0);
+		baseline = kl_text_center(POPUP_PIXELS - 4U, height - POPUP_PADDING - POPUP_ROW, POPUP_ROW);
+		(void)kl_text_draw(&popup->text, &canvas, width - 14 - page_width, baseline, page, strlen(page), POPUP_PIXELS - 4U, 0, POPUP_NUMBER);
 	}
 
-	kui_canvas_clip_pop(&canvas);
-	kui_canvas_release(&canvas);
+	kl_canvas_clip_pop(&canvas);
+	kl_canvas_release(&canvas);
 }
 
 /* Gives the window's width: the widest candidate of the page, its digit and the padding, within the limits. */
@@ -383,7 +383,7 @@ popup_width(
 	/* The widest candidate of the page. */
 	widest = 0;
 	for (row = 0; row < count; row++) {
-		width = kui_text_width(&popup->text, out->candidates[first + row], strlen(out->candidates[first + row]), POPUP_PIXELS, 0);
+		width = kl_text_width(&popup->text, out->candidates[first + row], strlen(out->candidates[first + row]), POPUP_PIXELS, 0);
 		if (width > widest)
 			widest = width;
 	}

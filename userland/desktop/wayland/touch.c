@@ -155,7 +155,7 @@ struct touch_contact {
 	uint32_t down_serial;
 	int32_t start_x;
 	int32_t start_y;
-	struct keiland_motion *motion;
+	struct kl_motion *motion;
 	unsigned following;
 	int32_t follow_x;
 	int32_t follow_y;
@@ -177,7 +177,7 @@ struct touch_screen {
 	struct input_absinfo axis_y;
 	int32_t slot;
 	struct touch_contact contacts[TOUCH_SLOTS];
-	struct keiland_motion_device *motion_device;
+	struct kl_motion_device *motion_device;
 	unsigned msc_present;
 	uint32_t msc;
 	uint64_t report_us;
@@ -300,7 +300,7 @@ kwl_touch_add(
 	screen->input = input;
 
 	/* The touch motion's device learns this screen from its strokes. */
-	screen->motion_device = keiland_motion_device_create();
+	screen->motion_device = kl_motion_device_create();
 	if (screen->motion_device == NULL) {
 		screen->input = NULL;
 		return ENOMEM;
@@ -313,7 +313,7 @@ kwl_touch_add(
 	/* The range of the fingers' places and the slot the reports address first. */
 	error = read_axes(screen);
 	if (error != 0) {
-		keiland_motion_device_destroy(screen->motion_device);
+		kl_motion_device_destroy(screen->motion_device);
 		screen->motion_device = NULL;
 		screen->input = NULL;
 		return error;
@@ -427,7 +427,7 @@ kwl_touch_frame(
 	if (stamp == 0U)
 		stamp = (uint64_t)time * 1000U;
 	if (screen->msc_present)
-		(void)keiland_motion_device_time(screen->motion_device, stamp, screen->msc, &stamp);
+		(void)kl_motion_device_time(screen->motion_device, stamp, screen->msc, &stamp);
 	screen->report_us = stamp;
 	report.time = (uint32_t)(stamp / 1000U);
 
@@ -1085,7 +1085,7 @@ contact_end(
 
 	/* The stroke teaches the screen's device; the slot holds no finger any more. */
 	if (contact->motion != NULL)
-		keiland_motion_end(contact->motion);
+		kl_motion_end(contact->motion);
 	contact->following = 0;
 	contact->route = ROUTE_NONE;
 	contact->surface = NULL;
@@ -1422,13 +1422,13 @@ motion_begin(
 {
 	/* The slot's motion, made once. */
 	if (contact->motion == NULL)
-		contact->motion = keiland_motion_create(screen->motion_device);
+		contact->motion = kl_motion_create(screen->motion_device);
 	contact->following = 0;
 	if (contact->motion == NULL)
 		return;
 
 	/* A new stroke from this report. */
-	keiland_motion_begin(contact->motion);
+	kl_motion_begin(contact->motion);
 	motion_add(screen, contact);
 }
 
@@ -1447,13 +1447,13 @@ motion_add(
 
 	/* The report, in output pixels, when it was scanned and when it was read. */
 	arrival = now_microseconds();
-	error = keiland_motion_add(contact->motion, screen->report_us, arrival, contact->place_x / 256.0,
+	error = kl_motion_add(contact->motion, screen->report_us, arrival, contact->place_x / 256.0,
 				   contact->place_y / 256.0);
 
 	/* A report older than the last (a clock started again) starts the stroke again from it. */
 	if (error != 0) {
-		keiland_motion_begin(contact->motion);
-		(void)keiland_motion_add(contact->motion, screen->report_us, arrival, contact->place_x / 256.0,
+		kl_motion_begin(contact->motion);
+		(void)kl_motion_add(contact->motion, screen->report_us, arrival, contact->place_x / 256.0,
 					 contact->place_y / 256.0);
 	}
 }
@@ -1507,7 +1507,7 @@ follow_step(
 
 	/* The motion's point for now. */
 	now = now_microseconds();
-	error = keiland_motion_point(contact->motion, now, KEILAND_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
+	error = kl_motion_point(contact->motion, now, KL_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
 	if (error != 0)
 		return;
 
@@ -1546,13 +1546,13 @@ screen_forget_motions(
 
 	/* Each slot's motion, without teaching the device that goes too. */
 	for (slot = 0; slot < TOUCH_SLOTS; slot++) {
-		keiland_motion_destroy(screen->contacts[slot].motion);
+		kl_motion_destroy(screen->contacts[slot].motion);
 		screen->contacts[slot].motion = NULL;
 		screen->contacts[slot].following = 0;
 	}
 
 	/* The device. */
-	keiland_motion_device_destroy(screen->motion_device);
+	kl_motion_device_destroy(screen->motion_device);
 	screen->motion_device = NULL;
 }
 

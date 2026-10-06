@@ -83,9 +83,9 @@ main(
 	app.focus.keyboard = -1;
 
 	/* The fonts and the source. */
-	error = kui_text_open(&app.sans, argv[5], NULL);
+	error = kl_text_open(&app.sans, argv[5], NULL);
 	if (error == 0)
-		error = kui_text_open(&app.mono, argv[6], NULL);
+		error = kl_text_open(&app.mono, argv[6], NULL);
 	if (error != 0) {
 		fprintf(stderr, "preview: fonts: error %d\n", error);
 		return 1;

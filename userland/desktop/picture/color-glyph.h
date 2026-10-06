@@ -23,7 +23,7 @@
  * width by height), where its top-left corner sits from the pen (left, and
  * top up from the baseline) and how far the pen moves, in pixels.
  */
-struct keiland_color_image {
+struct kl_color_image {
 	uint32_t *pixels;
 	int width;
 	int height;
@@ -32,6 +32,6 @@ struct keiland_color_image {
 	int advance;
 };
 
-int kl_color_glyph(struct truetype_face *face, unsigned glyph, unsigned pixels, struct keiland_color_image *out);
+int kl_color_glyph(struct truetype_face *face, unsigned glyph, unsigned pixels, struct kl_color_image *out);
 
 #endif

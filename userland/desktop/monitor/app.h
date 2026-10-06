@@ -19,7 +19,6 @@
 #include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <keiland.h>
-#include <keiui.h>
 
 #include "monitor.h"
 
@@ -279,7 +278,7 @@ struct sm_focus {
  * pointer's press (press_ms by the real clock), and the core's turn.
  */
 struct sm_touch {
-	struct keiland_gesture *gesture;
+	struct kl_gesture *gesture;
 	int32_t ids[SM_FINGERS];
 	float down_x[SM_FINGERS];
 	float down_y[SM_FINGERS];
@@ -343,10 +342,10 @@ struct sm_app {
 	const char *token;
 
 	/* The window, its titlebar, and the frame callback that allows the next frame. */
-	struct kui_window *window;
+	struct kl_window *window;
 	struct wl_display *display;
 	struct wl_surface *surface;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	struct wl_callback *frame_callback;
 	int frame_allowed;
 	int visible;
@@ -371,8 +370,8 @@ struct sm_app {
 	unsigned range;
 
 	/* The drawing. */
-	struct kui_text sans;
-	struct kui_text mono;
+	struct kl_text sans;
+	struct kl_text mono;
 	struct sm_atlas atlas;
 	struct sm_scene scene;
 	struct sm_renderer renderer;
@@ -406,7 +405,7 @@ struct sm_app {
 };
 
 /* atlas.c */
-int sm_atlas_build(struct sm_atlas *atlas, struct kui_text *sans, struct kui_text *mono, float scale);
+int sm_atlas_build(struct sm_atlas *atlas, struct kl_text *sans, struct kl_text *mono, float scale);
 void sm_atlas_release(struct sm_atlas *atlas);
 float sm_atlas_width(const struct sm_atlas *atlas, enum sm_style style, const char *text);
 
@@ -424,7 +423,7 @@ void sm_space_relief(struct sm_app *app, const struct sm_box *box);
 /* interact.c */
 int sm_interact_open(struct sm_app *app);
 void sm_interact_close(struct sm_app *app);
-void sm_interact_event(struct sm_app *app, const struct kui_window_event *event);
+void sm_interact_event(struct sm_app *app, const struct kl_window_event *event);
 int sm_interact_tick(struct sm_app *app, uint64_t now_ms);
 const char *sm_plate_name(enum sm_plate plate);
 void sm_card_box(const struct sm_app *app, float eased, struct sm_box *box);

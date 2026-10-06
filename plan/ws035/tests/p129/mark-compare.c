@@ -7,7 +7,7 @@
 
 /*
  * ws035-p129: renders every layer of the Kei mark with the mark.c under test
- * and with a reference mark.c (built with keiland_mark_raster renamed to
+ * and with a reference mark.c (built with kl_mark_raster renamed to
  * reference_mark_raster), and reports every pixel that differs and how long
  * each took on the host.  run-mark-compare.sh builds and runs it.
  */
@@ -51,12 +51,12 @@ main(
 	reference_seconds = 0.0;
 	for (size_index = 0; size_index < sizeof(compare_sizes) / sizeof(compare_sizes[0]); size_index++) {
 		pixels = compare_sizes[size_index];
-		for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
+		for (layer = 0; layer < KL_MARK_LAYERS; layer++) {
 			/* Both renderings, timed. */
 			memset(tested, 0, sizeof(tested));
 			memset(reference, 0, sizeof(reference));
 			start = compare_seconds();
-			keiland_mark_raster(layer, pixels, tested, pixels);
+			kl_mark_raster(layer, pixels, tested, pixels);
 			tested_seconds += compare_seconds() - start;
 			start = compare_seconds();
 			reference_mark_raster(layer, pixels, reference, pixels);

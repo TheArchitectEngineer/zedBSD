@@ -27,14 +27,14 @@
  * last two are drawn in white.
  */
 enum kl_mark_layer {
-	KEILAND_MARK_BAR,
-	KEILAND_MARK_BAR_SHADE,
-	KEILAND_MARK_LEAF,
-	KEILAND_MARK_LEAF_SHADE,
-	KEILAND_MARK_OVERLAP,
-	KEILAND_MARK_RIM,
-	KEILAND_MARK_SHEEN,
-	KEILAND_MARK_LAYERS
+	KL_MARK_BAR,
+	KL_MARK_BAR_SHADE,
+	KL_MARK_LEAF,
+	KL_MARK_LEAF_SHADE,
+	KL_MARK_OVERLAP,
+	KL_MARK_RIM,
+	KL_MARK_SHEEN,
+	KL_MARK_LAYERS
 };
 
 void kl_mark_raster(unsigned layer, unsigned pixels, uint8_t *coverage, size_t stride);

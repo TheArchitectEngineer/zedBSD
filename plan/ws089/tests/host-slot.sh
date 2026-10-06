@@ -9,7 +9,6 @@ out=build/ws089-host
 mkdir -p "$out/include" "$out/obj"
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
-ln -sf "$(pwd)/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/settings -I."
 "$cc" $flags -c userland/desktop/settings/network.c -o "$out/obj/slot-network.o"

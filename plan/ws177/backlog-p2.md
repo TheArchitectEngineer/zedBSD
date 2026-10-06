@@ -39,3 +39,16 @@
 | q824 ws148-p002 | 他の app が開いていた「最近の file」の menu | 一覧が空・止められた時に、開いている app の menu も読み直す（今は各 app が次に読む時まで古い） | libkeiland `recent.c`、各 app の open recent | 2026-10-06 |
 | q824 ws148-p002 | Storage の頁の文と Files の Clear Recents の日本語 | 翻訳の catalog に入れる（今は Storage の頁の本文と Files の題の button は翻訳されない、既存の Trash などと同じ） | `settings/page-storage.c`、`files/ui-grid.c`、`locale/ja/*.tr` | 2026-10-06 |
 | q826 ws128-p004（PDF の検索） | Enter の後に field へ戻した時の選択 | caret を末尾に置き、続けて打つと query に足される（今は compositor が query 全体を選んで戻すので、打つと置き換わる） | `wayland/titlebar-shell.c` の `shell_focus`、`pdfviewer/titlebar.c` の `pv_titlebar_input` | 2026-10-06 |
+| WS161 ws161-p004（libpasskey の os 層と fidoctl） | report に番号の付いた FIDO の鍵、64 byte でない report の鍵 | ID の byte を外して読む・report の大きさに合わせる（今は開かない・EIO） | `libpasskey/os-zedbsd.c` の `pk_os_open`、`os-posix.c` の `os_read` | 2026-10-06 |
+| WS161 ws161-p004 | 鍵が 2 本以上ある時の fidoctl | どれかを選ばせる・Selection（触った鍵）で決める（今は `-d` が無ければ一覧の最初） | `fidoctl/main.c` の `fidoctl_open`、`pk_ctap2_selection` | 2026-10-06 |
+| WS161 ws161-p004 | 使っている途中で鍵が抜かれた | 抜かれたことを言って終わる（今は read の ENODEV・EIO をそのまま出す） | `libpasskey/os-posix.c` の `os_read` | 2026-10-06 |
+| WS161 ws161-p004 | PIN の入力 | 端末では echo を切って読む・PIN の長さの規則（4〜63 byte）を先に確かめる（今は標準入力の 1 行をそのまま） | `fidoctl/main.c` の `fidoctl_read_pin` | 2026-10-06 |
+| WS161 ws161-p004 | 鍵の reset、resident の credential の一覧と削除 | `fidoctl reset`・`credentials`（今は無い） | `fidoctl/main.c`、`ctap2.c` | 2026-10-06 |
+| WS172 ws172-p003（passkey-fido2） | 複数の鍵が同じ account の credential を持つ | 触れた鍵を選ぶ（selection 0x0B、2.0 では UP だけの GetAssertion）（今は最初に見つかった鍵） | `passkey-fido2/helper.c` の `helper_assert` | 2026-10-06 |
+| WS172 ws172-p003 | 試行の途中に挿した・かざした鍵 | 途中で現れた鍵にも問う（今は開始の時の鍵だけ） | `passkey-fido2/device.c` の `fido2_devices_open`、`helper.c` | 2026-10-06 |
+| WS172 ws172-p003 | CANCEL・親の終わり | helper が親の pipe の EOF で鍵に CANCEL を送って終わる（今は sessiond の TERM・KILL と helper の alarm だけ） | `passkey-fido2/helper.c` | 2026-10-06 |
+| WS172 ws172-p003 | 内蔵の UV（指紋）だけの鍵、PIN の protocol の細部（maxCredentialCountInList、PIN の長さの最小） | UV の鍵を PIN 無しで使う・allowList を鍵の上限で分ける（今は PIN が設定された鍵だけ、allowList は 5 本まで一度に） | `helper.c` の `helper_token`・`helper_assert` | 2026-10-06 |
+| WS172 ws172-p003 | release の image の loopback の鍵 | release の passkey-fido2 は `HIDRAW_BUS_VIRTUAL` の鍵を拒む（設計 P5、今は区別しない） | `passkey-fido2/device.c` | 2026-10-06 |
+| WS172 ws172-p003 | helper が process を作れないこと | zedBSD に RLIMIT_NPROC か同等の制限を入れて helper に掛ける（今は空の root で exec の program が無いことだけ） | `passkey-fido2/helper.c` の `helper_sandbox`、kernel | 2026-10-06 |
+| WS172 ws172-p003 | label の長さ | 32 文字（UTF-8 の文字）で数える（今は 32 byte） | `passkey-fido2/wire.c` の `fido2_label_valid` | 2026-10-06 |
+| WS172 ws172-p003 | 壊れた鍵の行 | 一度だけ log に出す（今は黙って飛ばす） | `passkey-fido2/main.c` の `main_keys` | 2026-10-06 |

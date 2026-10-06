@@ -7,7 +7,7 @@
 
 /*
  * What the library's files share among themselves and do not export
- * (exports.map lets only the kl_ calls of <keiland-ui.h> out).
+ * (exports.map lets only the kl_ calls of <keiland.h> out).
  */
 
 #ifndef KEIUI_INTERNAL_H
