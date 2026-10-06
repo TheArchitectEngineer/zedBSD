@@ -1355,21 +1355,42 @@ zwl_window_enter_fullscreen(
 	struct zwl_object *surface)
 {
 	struct zwl_server *server;
+	uint32_t sent_width;
+	uint32_t sent_height;
+	uint32_t width;
+	uint32_t height;
 	int error;
 
 	/* Already fullscreen: nothing changes. */
 	if (surface->fullscreen)
 		return 0;
 
-	/* Its place and size before fullscreen, to come back to. */
+	/* Its place and its image's size before fullscreen, to come back to. */
 	server = surface->client->server;
+	sent_width = surface->window_width;
+	sent_height = surface->window_height;
 	surface->fullscreen = 1;
 	surface->window_x = surface->x;
 	surface->window_y = surface->y;
-	surface->window_width = 0;
-	surface->window_height = 0;
+	width = 0U;
+	height = 0U;
 	if (surface->current != NULL)
-		zwl_decoration_geometry(surface, &surface->window_width, &surface->window_height);
+		zwl_decoration_geometry(surface, &width, &height);
+
+	/*
+	 * An image still of the output's size is the last fullscreen one: the
+	 * window left fullscreen and has not drawn the size it was sent yet
+	 * (T1-235: Esc, then Alt+Enter within a second, came back at the
+	 * output's size).  The size it was sent is kept instead.
+	 */
+	if (width == server->width && height == server->height && sent_width != 0U && sent_height != 0U) {
+		width = sent_width;
+		height = sent_height;
+	}
+
+	/* The size to come back to. */
+	surface->window_width = width;
+	surface->window_height = height;
 
 	/*
 	 * A docked window is not docked while it is fullscreen: it covers the

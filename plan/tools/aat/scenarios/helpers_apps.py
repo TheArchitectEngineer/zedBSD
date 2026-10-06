@@ -598,9 +598,21 @@ def videoplayer_fullscreen(item):
 		else:
 			run.click(*point, "--count", "2")
 		line = run.wait(rf"VIDEOPLAYER FULLSCREEN on={on}" + (f"|{extra}" if extra else ""), since, 10)
+		# The player's first frame of the new size (a new swapchain first; T1-235's screenshot 0.8 s after the line
+		# still had the window's size), when the size changed; then the compositor's frame.
+		configure = run.wait(rf"ZWL CONFIGURE client={window.client} surface={window.surface} serial=\d+ width=\d+ height=\d+ fullscreen={on}", since, 10)
+		width, height = aatlib.number(configure, "width"), aatlib.number(configure, "height")
+		presented = None
+		if width and height:
+			presented = run.wait(rf"VIDEOPLAYER PRESENTED width={width} height={height}|VIDEOPLAYER FAILED operation=frame", since, 10)
 		time.sleep(0.8)
-		item.step(what, line)
+		item.step(what, f"{line}; {configure}; {presented or 'no new size shown'}")
 		item.check(line, f"{what}: full screen did not turn {'on' if on else 'off'}")
+		# Out of full screen the window comes back to its own size, not the output's (T1-235: Alt+Enter soon after Esc
+		# saved the last fullscreen image's size).
+		output = (int(run.ready().get("width", 0)), int(run.ready().get("height", 0)))
+		if not on:
+			item.check((width, height) != output, f"{what}: the window came back at the output's size {width}x{height}")
 		return line
 
 	toggled("F11", ("f11",), 1)

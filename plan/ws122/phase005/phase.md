@@ -62,3 +62,13 @@ Status（p005a）: test-wait（T1 依頼中。実装・build・AAT の host 試�
 
 P2 の調べ（compositor は VK_KHR_display の swapchain だけで出し、client の buffer を直に出す経路が無い）に対し、ユーザー「フルスクリーンモードではappのbufferをscanoutしているはずです。確認して教えてください。」→ Q1 の確認: 直の scanout の fullscreen mode は WS035 の D0 にあったが、2026-09-30 のユーザーの指示（「全画面でコンポジット無効のモードになっているなら、それは使わないように修正して、コンポジットを有効にした上で、スワイプ操作を可能にします。」）で ws099-p015 が削除した（`userland/desktop/wayland/display.c` の冒頭の注記）。削除の前の code は GitHub の `old` branch。
 ユーザーの選択（クリック）「動画・game mode だけ戻す」: app が明示に頼む全画面（game mode、動画の player の F11・Alt+Enter など）の時だけ、old の fullscreen mode を読んで直の scanout を戻す。普通の全画面は合成のまま、端の swipe を保つ。game mode の間の端の操作（解除の swipe・Esc）をどう拾うかを p005b の設計に書く。Guardrail の「compositor は libvulkan だけ」の範囲で（old の経路がどの口を使っていたかを確かめ、直の ioctl なら止めて Q1 へ）。
+
+## 2026-10-06 q802 P2: p005a の FAIL（T1-235）の直し
+
+証拠: `/home/awe/zedBSD-worktrees/t1/build/t1-234/`（png・logs/apps.videoplayer.fullscreen.log）。
+
+- 症状 1（f11.png が左上の 960x600、残りは壁紙）: 最初の F11 では大きさが 960x600 → 1280x800 に変わり、player は swapchain を作り直す（`ZWL IMPORT … 1280x800` が 3 つ）。撮影は `FULLSCREEN on=1` の 0.8 秒後。compositor は全画面の窓を「今の image の大きさ」で (0,0) に描く（`body_rect`）ので、撮影の時の image はまだ 960x600 だった。double click の時は大きさが変わらず（直前の窓がすでに 1280x800）、全画面に描けていた。→ 新しい swapchain の最初の frame が 0.8 秒より遅いと推定する（QEMU の lavapipe。frame は 100〜250 ms、vkDeviceWaitIdle と 3 つの import、1280x800 の CPU の描画と複写）。止まったのか遅いだけなのかは log からは分からない。
+  - player（main.c）: 新しい大きさの最初の frame を出せた時に `VIDEOPLAYER PRESENTED width=W height=H after_ms=N`。frame を出せなかった時は `VIDEOPLAYER FAILED operation=frame error=E`（同じ error は 1 回だけ。今までは黙って捨てていた）。
+  - helper: 切り替えのたびに、その窓の `ZWL CONFIGURE` の大きさの `PRESENTED`（か `FAILED`）を待ってから撮る（10 秒まで）。来なければ step にそう残る。
+- 症状 2（log で見つけた。Esc の後の Alt+Enter → F11 で窓が 1280x800 の floating に、x=12 で戻った）: Esc で window の大きさ 960x600 を送ったが、player がまだ描かないうちに Alt+Enter が来た。`zwl_window_enter_fullscreen` が戻り先を「今の image の大きさ」（まだ全画面の 1280x800）で覚えていた。→ protocol.c: 今の image が出力と同じ大きさで、送った窓の大きさがある時は、送った大きさを戻り先にする。helper は全画面から出た `CONFIGURE` が出力の大きさでないことも確かめる。
+- 確認: wayland・videoplayer の build warning 0、keiland-linux の build warning 0、style-check 0、aat run-host PASS、check-scenarios PASS。QEMU は T1（未実施）。
