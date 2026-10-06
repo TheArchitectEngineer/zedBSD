@@ -120,8 +120,8 @@ while IFS= read -r file; do
     awk '/libkeiland-backend|userland\/base\/net\// && !/libkeiland-backend[a-z-]*\/Makefile\.(linux|freebsd)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done >> "$work/B3"
 
-# The compositor takes from libkeiland only what D4 allows: the touch motion, the scroller, the gestures and the
-# version (WS131 B2, ws131-p011; `nm -u` of each compositor binary that is built: zedBSD's under $BUILD, default
+# The compositor takes from libkeiland only what D4 allows: the touch motion, the scroller, the gestures, the
+# version and the translations (kl_tr*, translate.c: files and strings, no Wayland client part; q811) (WS131 B2, ws131-p011; `nm -u` of each compositor binary that is built: zedBSD's under $BUILD, default
 # build/amd64, Linux's under $KEILAND_LINUX_BUILD, default build/keiland-linux, and any in $B2_BINARIES).
 for binary in "${BUILD:-build/amd64}/bin/wayland" "${KEILAND_LINUX_BUILD:-build/keiland-linux}/bin/wayland" ${B2_BINARIES:-}; do
     if [ ! -f "$binary" ]; then
@@ -129,7 +129,7 @@ for binary in "${BUILD:-build/amd64}/bin/wayland" "${KEILAND_LINUX_BUILD:-build/
         continue
     fi
     nm -u "$binary" | awk -v binary="$binary" '{name = $NF; sub(/@.*/, "", name)}
-        name ~ /^(keiland_|kl_)/ && name !~ /^(keiland_motion_|keiland_scroller_|keiland_gesture_|kl_motion_|kl_scroller_|kl_gesture_|keiland_version$|kl_version$)/ {
+        name ~ /^(keiland_|kl_)/ && name !~ /^(keiland_motion_|keiland_scroller_|keiland_gesture_|kl_motion_|kl_scroller_|kl_gesture_|keiland_version$|kl_version$|kl_tr$|kl_trc$|kl_tr_)/ {
             print binary ": uses " name " of libkeiland"
         }'
 done > "$work/B2"
@@ -154,9 +154,11 @@ for os_dir in zedbsd linux freebsd dmabuf evdev session drm wpa; do
     fi
 done > "$work/L7"
 
-# The compositor's three Makefiles build the same compositor sources (libkeiland-backend's are each OS's own; ws131-p009).
+# The compositor's three Makefiles build the same compositor sources (libkeiland-backend's are each OS's own; ws131-p009;
+# the zedBSD test image's screen capture, shot.c in place of shot-none.c, is zedBSD's alone, ws173-p002).
 for makefile in Makefile Makefile.linux Makefile.freebsd; do
     grep -oE 'userland/[A-Za-z0-9_/.-]*\.c\b' "userland/desktop/wayland/$makefile" | grep -v '^userland/desktop/libkeiland-backend' |
+        grep -vx 'userland/desktop/wayland/shot\.c' |
         LC_ALL=C sort -u > "$work/sources-$makefile"
 done
 {

@@ -23,13 +23,13 @@ done
 python3 "$root/plan/ws081/tests/make-touch-pdf.py" "$out/touch.pdf"
 
 libpdf="writer.c outline.c object.c reader.c filter.c ccitt.c crypt.c image.c display.c content.c stroke.c raster.c
-	font.c encoding.c shading.c charstrings.c type1.c cff.c cffdata.c"
+	font.c encoding.c shading.c charstrings.c type1.c cff.c cffdata.c tounicode.c"
 viewer="view.c draw.c document.c canvas.c text.c"
 status=0
 for variant in plain asan; do
-	strict="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
-	modern="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
-	loose="-std=gnu11 -O1 -g -w -D_DEFAULT_SOURCE -I$out/include"
+	strict="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -I$root"
+	modern="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -I$root"
+	loose="-std=gnu11 -O1 -g -w -D_DEFAULT_SOURCE -I$out/include -I$root"
 	if [ "$variant" = asan ]; then
 		sanitize="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 		strict="$strict $sanitize"

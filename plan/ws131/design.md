@@ -378,7 +378,7 @@ VkExternalFenceHandleTypeFlagBits kl_backend_gpu_frame_fence_type(void);
 | C3 zedBSD の wire の layout | `zwl_buffer_layout` が `wayland/zedbsd` の外に無い | `<uapi/gpu.h>`・`gpu_image_descriptor`・`zwl_buffer_layout` が `libkeiland-backend-zedbsd/` の外に無い |
 | L1〜L3 | OS の macro、OS の tree の include | backend の tree に合わせて path を改訂 |
 | B1（新） | — | backend が compositor の header・`<keiland.h>` を include しない、`libkeiland-backend.a` の未定義の symbol に `zwl_`・`kwl_` が無い |
-| B2（新、p011 から） | — | compositor の未定義の symbol のうち libkeiland の物が D4 の許可の表（`ui/` の描画の層と部品・motion・scroller・gesture・`kl_version`）の中だけ（3 OS の `nm -u`）。libkeiland の Wayland の client の部分（`kl_system_*`・`kl_app_*`・`kl_window_*`・protocol の wrapper）が 0 |
+| B2（新、p011 から） | — | compositor の未定義の symbol のうち libkeiland の物が D4 の許可の表（`ui/` の描画の層と部品・motion・scroller・gesture・`kl_version`、翻訳の `kl_tr*`（`translate.c`、file と文字列だけで Wayland の client の部分を使わない。zdesktop の画面の文言、q811 で表に足した））の中だけ（3 OS の `nm -u`）。libkeiland の Wayland の client の部分（`kl_system_*`・`kl_app_*`・`kl_window_*`・protocol の wrapper）が 0 |
 | B3（新） | — | app と libkeiland が `keiland-backend.h` を include せず backend を link しない |
 | B4（新） | — | `nm -D libkeiland.so` の集合が公開の header の関数の集合と一致（exports.map は header から生成、§5.4。review 18） |
 | B5（新、p023 から FAIL） | — | 旧名（`kui_`・`KUI_`・`keiland_`・`KEILAND_`（paths.h を除く）・`keiui.h`）の使用が 0 |

@@ -41,8 +41,7 @@
 /* The lines' room: two passwords, their ends and a NUL. */
 #define ACCOUNT_LINES		(2U * (ACCOUNT_PASSWORD_MAX + 1U) + 1U)
 
-/* account-admin, the longest operation given it, and the longest answer read. */
-#define ACCOUNT_ADMIN_PATH	"/usr/libexec/account-admin"
+/* The longest operation given account-admin (ACCOUNT_ADMIN_PATH, the base's account.h), and the longest answer read. */
 #define ACCOUNT_OPERATION_MAX	1024U
 #define ACCOUNT_ANSWER_MAX	64U
 

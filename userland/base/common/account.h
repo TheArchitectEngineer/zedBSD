@@ -38,6 +38,11 @@
 #define ACCOUNT_PASSWD_REFUSED		4
 #define ACCOUNT_PASSWD_MISMATCH		5
 
+/* account-admin, the program that administers the accounts for the desktop's Settings (ws089-p026). */
+#ifndef ACCOUNT_ADMIN_PATH
+#define ACCOUNT_ADMIN_PATH		"/usr/libexec/account-admin"
+#endif
+
 /* The account files, and the lock all three change under (a host test names its own). */
 #ifndef ACCOUNT_SHADOW_PATH
 #define ACCOUNT_SHADOW_PATH		"/etc/shadow"
