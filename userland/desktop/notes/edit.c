@@ -257,12 +257,26 @@ notes_edit_copy(
 	const struct notes_edit *edit)
 {
 	struct notes_edit *copy;
+	size_t length;
 
 	/* The copy. */
 	copy = malloc(sizeof(*copy));
 	if (copy == NULL)
 		return NULL;
 	*copy = *edit;
+
+	/* Its words, its own copy (ws175-p004). */
+	if (edit->text != NULL) {
+		length = strlen(edit->text);
+		copy->text = malloc(length + 1U);
+		if (copy->text == NULL) {
+			free(copy);
+			return NULL;
+		}
+
+		/* The words' bytes. */
+		memcpy(copy->text, edit->text, length + 1U);
+	}
 
 	/* Its image is held once more. */
 	if (copy->image != NULL)
@@ -281,8 +295,9 @@ notes_edit_free(
 	if (edit == NULL)
 		return;
 
-	/* The image's reference, then the edit. */
+	/* The image's reference, the words, then the edit. */
 	notes_image_release(edit->image);
+	free(edit->text);
 	free(edit);
 }
 
@@ -500,7 +515,7 @@ notes_page_editor(
 /*
  * Gives the state of an object of a page's editor by its index there: its
  * edit, or (an object without one) its key as the page has it.  The
- * state's image is the edit's, not held again.  Returns 0, ENOENT for an
+ * state's image and words are the edit's, not held or copied again.  Returns 0, ENOENT for an
  * index the editor does not have, or the failure of making the editor.
  */
 int
@@ -696,10 +711,12 @@ edit_apply(
 	const struct notes_edit *edit)
 {
 	struct pdf_image_source source;
+	struct pdf_edit_text words;
 	double transform[6];
 	void *owned;
 	size_t index;
 	size_t at;
+	unsigned result;
 	int error;
 
 	/* The transform as libpdf takes it. */
@@ -736,6 +753,17 @@ edit_apply(
 			return error;
 		error = pdf_page_editor_set_image(editor, index, &source);
 		free(owned);
+		if (error != 0)
+			return error;
+	}
+
+	/* New words, in the font asked for (ws175-p004). */
+	if ((edit->flags & NOTES_EDIT_TEXT) != 0U && edit->text != NULL) {
+		memset(&words, 0, sizeof(words));
+		words.size = sizeof(words);
+		words.utf8 = edit->text;
+		words.font = (enum pdf_edit_font)edit->font;
+		error = pdf_page_editor_set_text(editor, index, &words, &result);
 		if (error != 0)
 			return error;
 	}
