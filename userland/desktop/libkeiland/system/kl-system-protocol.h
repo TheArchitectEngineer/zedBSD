@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 10; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 15; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -22,6 +22,8 @@
  *   request 6 get_monitor(new_id kl_system_monitor_v1, uint period_ms)    since version 2 (WS134 p012)
  *   request 7 get_account(new_id kl_system_account_v1)    since version 4 (ws160-p002)
  *   request 8 get_sharing(new_id kl_system_sharing_v1)    since version 7 (ws089-p025)
+ *   request 9 get_notify(new_id kl_system_notify_v1)      since version 13 (ws156-p002)
+ *   request 10 get_mail(new_id kl_system_mail_v1)         since version 15 (ws169-p002)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -221,7 +223,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		14U
+#define KL_SYSTEM_MANAGER_VERSION		15U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -235,6 +237,7 @@
 #define KL_SYSTEM_MANAGER_GET_ACCOUNT		7U
 #define KL_SYSTEM_MANAGER_GET_SHARING		8U
 #define KL_SYSTEM_MANAGER_GET_NOTIFY		9U
+#define KL_SYSTEM_MANAGER_GET_MAIL		10U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -249,6 +252,7 @@
 #define KL_SYSTEM_CAPABILITY_ADMINISTER		0x100U
 #define KL_SYSTEM_CAPABILITY_PIN		0x200U
 #define KL_SYSTEM_CAPABILITY_NOTIFY		0x400U
+#define KL_SYSTEM_CAPABILITY_MAIL		0x800U
 
 /* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
@@ -264,6 +268,9 @@
 /* Since when the account has add_key, remove_key, key and touch (ws172-p003). */
 #define KL_SYSTEM_SINCE_KEYS			14U
 
+/* Since when the manager has get_mail (ws169-p002). */
+#define KL_SYSTEM_SINCE_MAIL			15U
+
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
@@ -273,6 +280,7 @@
 #define KL_SYSTEM_ACCOUNT_NAME			"kl_system_account_v1"
 #define KL_SYSTEM_SHARING_NAME			"kl_system_sharing_v1"
 #define KL_SYSTEM_NOTIFY_NAME			"kl_system_notify_v1"
+#define KL_SYSTEM_MAIL_NAME			"kl_system_mail_v1"
 
 /*
  * kl_system_notify_v1's requests and events (ws156-p002,
@@ -295,6 +303,30 @@
 #define KL_SYSTEM_NOTIFY_EXPIRED		2U
 #define KL_SYSTEM_NOTIFY_CLEARED		3U
 #define KL_SYSTEM_NOTIFY_WITHDRAWN		4U
+
+/*
+ * kl_system_mail_v1's requests and events (ws169-p002,
+ * plan/ws169/phase001/phase.md section 1):
+ *   request 0 destroy
+ *   request 1 arrived(uint request, string account, string from, string subject, string code)
+ *       the mail program tells of a new message (no body; code is a
+ *       sign-in code found in it, or empty)
+ *   request 2 listen(uint request, string app)
+ *       a reader asks for the messages' arrivals under its name; only a
+ *       name the settings know (mail.codes.<app>) is taken
+ *   event   0 mail(string from, string subject, string code)
+ *       a message arrived, told to each listener whose mail.codes.<app>
+ *       setting is on when it arrives
+ *   event   1 result(uint request, uint applied, uint saved)
+ */
+#define KL_SYSTEM_MAIL_DESTROY			0U
+#define KL_SYSTEM_MAIL_ARRIVED			1U
+#define KL_SYSTEM_MAIL_LISTEN			2U
+#define KL_SYSTEM_MAIL_EVENT_MAIL		0U
+#define KL_SYSTEM_MAIL_EVENT_RESULT		1U
+
+/* The setting that lets a reader hear the arrivals, before the reader's name (mail.codes.browser). */
+#define KL_SYSTEM_MAIL_SETTING_PREFIX		"mail.codes."
 
 /* kl_system_sharing_v1's requests and events (ws089-p025), and the longest fingerprint it carries. */
 #define KL_SYSTEM_SHARING_DESTROY		0U

@@ -216,6 +216,8 @@ enum kwl_kind {
 	KWL_THEME,
 	/* The system extension's notifications (notify-shell.c, ws156-p002). */
 	KWL_SYSTEM_NOTIFY,
+	/* The system extension's arrivals of mail (mail-shell.c, ws169-p002). */
+	KWL_SYSTEM_MAIL,
 };
 
 /*
@@ -1539,6 +1541,8 @@ void kwl_sysmon_tick(struct kwl_server *server);
 void kwl_sysmon_close(struct kwl_server *server);
 int kwl_notify_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 int kwl_notify_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_mail_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+int kwl_mail_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);

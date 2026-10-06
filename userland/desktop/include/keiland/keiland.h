@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band). */
-#define KL_VERSION	53U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band; 54: the arrivals of mail, kl_system_mail_arrived, kl_system_mail_listen and kl_system_take_mail_event). */
+#define KL_VERSION	54U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1240,6 +1240,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_PIN	0x200U	/* kl_system_account_set_pin (KL_VERSION 34, ws163-p003) */
 #define KL_SYSTEM_HAS_NOTIFY	0x400U	/* kl_system_notify (KL_VERSION 49, ws156-p002) */
 #define KL_SYSTEM_HAS_KEYS	0x800U	/* kl_system_account_add_key and the keys (KL_VERSION 52, ws172-p003) */
+#define KL_SYSTEM_HAS_MAIL	0x1000U	/* kl_system_mail_arrived and kl_system_mail_listen (KL_VERSION 54, ws169-p002) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1253,6 +1254,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_CHANGED_ENROLLED	0x100U	/* the user's PIN and security keys (KL_VERSION 36) */
 #define KL_SYSTEM_CHANGED_NOTIFY	0x200U	/* a notification's event (KL_VERSION 49) */
 #define KL_SYSTEM_CHANGED_TOUCH	0x400U	/* a security key waits to be touched for an addition (KL_VERSION 52) */
+#define KL_SYSTEM_CHANGED_MAIL	0x800U	/* a message arrived for a listener (KL_VERSION 54) */
 
 /*
  * The network: whether the daemon is reached, whether the machine is
@@ -1549,6 +1551,37 @@ struct kl_notify_event {
 int kl_system_notify(struct kl_system *system, const struct kl_notification *notification, uint32_t *request);
 int kl_system_notify_withdraw(struct kl_system *system, uint32_t id, uint32_t *request);
 int kl_system_take_notify_event(struct kl_system *system, struct kl_notify_event *event);
+
+/*
+ * KL_VERSION 54 (ws169-p002, plan/ws169/phase001/phase.md section 1): the
+ * arrivals of mail.  The mail program tells the compositor of a new
+ * message with kl_system_mail_arrived: the account's name, the sender, the
+ * subject and a sign-in code found in it (empty or NULL for none; the body
+ * is never sent).  A reader (the browser) asks with kl_system_mail_listen
+ * under its name; the compositor takes only a name its settings know
+ * (mail.codes.<app>, EINVAL as the request's result otherwise) and tells
+ * a message to the reader only while the user has that setting on.  Each
+ * message told is a KL_SYSTEM_CHANGED_MAIL and one kl_system_take_mail_event.
+ * The strings are cut to KL_MAIL_TEXT_MAX and KL_MAIL_CODE_MAX bytes with
+ * their NUL.  Returns 0 when asked, ENOTSUP without KL_SYSTEM_HAS_MAIL, or
+ * EINVAL.
+ */
+#define KL_MAIL_TEXT_MAX	256U
+#define KL_MAIL_CODE_MAX	16U
+struct kl_mail_arrival {
+	const char *account;
+	const char *from;
+	const char *subject;
+	const char *code;
+};
+struct kl_mail_event {
+	char from[KL_MAIL_TEXT_MAX];
+	char subject[KL_MAIL_TEXT_MAX];
+	char code[KL_MAIL_CODE_MAX];
+};
+int kl_system_mail_arrived(struct kl_system *system, const struct kl_mail_arrival *arrival, uint32_t *request);
+int kl_system_mail_listen(struct kl_system *system, const char *app, uint32_t *request);
+int kl_system_take_mail_event(struct kl_system *system, struct kl_mail_event *event);
 
 /*
  * Copy up to capacity of the details last asked for and return how many

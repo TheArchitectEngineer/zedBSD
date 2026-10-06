@@ -390,6 +390,16 @@ kwl_settings_home(char *home, size_t size)
 	return 0;
 }
 
+/* A setting's number (mail-shell.c, ws169-p002): this fake desktop has no settings. */
+int
+kwl_settings_number(struct kwl_server *server, const char *name, int *number)
+{
+	(void)server;
+	(void)name;
+	(void)number;
+	return ENOENT;
+}
+
 /* The administration of the accounts (ws089-p026): this fake system has no tool. */
 int
 kl_backend_account_can_administer(void)
@@ -1341,7 +1351,7 @@ test_both_ends(void)
 		return;
 	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
 	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY | KL_SYSTEM_HAS_KEYS), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY | KL_SYSTEM_HAS_KEYS | KL_SYSTEM_HAS_MAIL), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
