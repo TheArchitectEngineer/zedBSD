@@ -26,5 +26,4 @@ F=$U/fonts
 "$out" $F/Inter.ttf $F/DroidSansFallbackFull.ttf "$shots/host-widgets"
 for p in "$shots"/host-widgets-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
-	rm -f "$p"
 done

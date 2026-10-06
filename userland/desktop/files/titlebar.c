@@ -397,11 +397,11 @@ titlebar_state_controls(
 	if (error == 0)
 		error = keiland_titlebar_set_breadcrumb(object, FM_CONTROL_PATH, parts, (size_t)state->part_count);
 	if (error == 0)
-		error = keiland_titlebar_set_control_text(object, FM_CONTROL_PATH, state->path, "Go to folder");
+		error = keiland_titlebar_set_control_text(object, FM_CONTROL_PATH, state->path, kl_tr("Go to folder"));
 
 	/* The search's query. */
 	if (error == 0)
-		error = keiland_titlebar_set_control_text(object, FM_CONTROL_SEARCH, state->query, "Search");
+		error = keiland_titlebar_set_control_text(object, FM_CONTROL_SEARCH, state->query, kl_tr("Search"));
 
 	/* The view shown and the preview, checked. */
 	if (error == 0)

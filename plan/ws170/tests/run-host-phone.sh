@@ -24,7 +24,6 @@ F=$U/fonts
 "$out" $F/Inter.ttf $F/DroidSansFallbackFull.ttf "$out"
 for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
-	rm -f "$p"
 done
 # The frames on glass laid on a wallpaper as zdesktop would, roughly: under each panel the wallpaper blurred and
 # lightened, the frame over it by its alpha (premultiplied).
@@ -52,5 +51,4 @@ gr, gg, gb = ground.split()
 out = Image.merge('RGB', [ImageChops.add(c, ImageChops.multiply(gc, inv)) for c, gc in ((r, gr), (g, gg), (b, gb))])
 out.save(sys.argv[4])
 PY
-	rm -f "$p" "${p%.pam}.panels"
 done

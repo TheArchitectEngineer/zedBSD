@@ -443,11 +443,13 @@ def settings_login_language(item):
 	# The login screen's language (ws158-p004): an administrator sets the system's language with the password.
 	_, before = run.sh("cat /etc/keiland/language 2>/dev/null || echo none")
 	window, since = run.settings(item, "languages")
-	controls = reveal_control(window, "languages", 9)
-	item.check(9 in controls, "no Apply (control 9): the user is not an administrator here")
+	# The Login screen card is an administrator's: its password field (control 8; Apply, 9, takes clicks only once a
+	# change and the password are there, T1-239).
+	controls = reveal_control(window, "languages", 8)
+	item.check(8 in controls, "no password field (control 8): the Login screen card is not shown, not an administrator here")
 	results = []
 	for code, switch in (("ja", 7), ("en", 6)):
-		controls = reveal_control(window, "languages", 9)
+		controls = reveal_control(window, "languages", 8)
 		run.click_control(item, window, controls, switch, f"the login screen's switch of {code}")
 		time.sleep(0.4)
 		run.click_control(item, window, controls, 8, "the password's field")
