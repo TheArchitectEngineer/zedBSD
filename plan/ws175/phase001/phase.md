@@ -2,7 +2,7 @@
 # ws175-p001: 設計 — Notes の PDF の編集
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2 が設計を書き design-reviewer が review し、2026-10-06 P2（新しい世代）が review の 33 項目を design.md に反映した。clearance は Q1 の判定・ユーザーの判断 D1〜D7 の後）
+Status: cleared（2026-10-06 Q1 判定: 設計と review の反映済み、ユーザーが D1〜D7 を全部推奨どおりに決定）
 Disposition: normal
 
 由来・目標は [WS175](../ws.md)。設計の正本は [design.md](design.md)。product の code は書かない。
@@ -134,3 +134,5 @@ N1〜N19 を design.md に反映した（印 `[N1]` など）。決めたこと:
 N4 は preview の画像の bytes を libpdf が持ち `pdf_document_release_image()` で解放、N8 は回復の key の不一致で回復を失敗にし journal を残す、
 N17 は Clean Copy（p009）を p008 の後に、N18 は p005 を p006 の後・picture.c を p007・D6 の後の段にも T1 と規約（全体約 19 LW）。上の「ユーザーの判断」の
 表を design.md に合わせた（N19）。high の新しい指摘は無かったので、3 回目の design-reviewer は流していない。
+
+2026-10-06 ユーザー（クリックの回答）「全部推奨どおり」: D1〜D7 を上の表の推奨で決定。

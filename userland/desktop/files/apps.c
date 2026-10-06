@@ -51,9 +51,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* Marks a parameter a function's signature requires but it does not use. */
-#define UNUSED_PARAMETER(name)	((void)(name))
-
 /* The system's list, and the user's under the configuration folder. */
 #define APPS_SYSTEM_LIST	KEILAND_SYSCONFDIR "/keiland/open-with"
 #define APPS_USER_LIST		"keiland/open-with"
@@ -82,6 +79,32 @@
 
 /* The types that read as text for the viewers, beyond text/ itself. */
 #define APPS_TEXT_TYPES		"text/" "*,application/json,application/xml,application/x-shellscript,application/javascript"
+
+/*
+ * The types that are programs: only a file of these runs (BUG-233: every
+ * file of a FAT stick has its x bits, a video too, and ran in a terminal).
+ */
+#define APPS_PROGRAM_TYPE	"application/x-executable"
+#define APPS_SCRIPT_TYPE	"application/x-shellscript"
+
+/*
+ * What Run in Terminal runs: the program, then a line saying it ended,
+ * kept on the screen until Return (BUG-234: a command that ends at once
+ * took its window with it, and looked as if nothing had happened).
+ */
+#define APPS_RUN_IN_TERMINAL	"@terminal %f; status=$?; echo; echo \"[The program ended with status $status. Press Return to close this window.]\"; read reply"
+
+/*
+ * The libraries a program that opens windows of its own links (a Wayland
+ * client, or an X one), which Files starts without a terminal (BUG-234).
+ */
+#define APPS_WAYLAND_LIBRARY	"libwayland-client.so"
+#define APPS_X_LIBRARY		"libX11.so"
+
+/* The most of a program's headers, of its dynamic section and of its string table read to tell what it links. */
+#define APPS_ELF_HEADERS	64U
+#define APPS_ELF_DYNAMIC	512U
+#define APPS_ELF_STRINGS	65536U
 
 /*
  * One built-in way to open files: the types it fits, its name, its command,
@@ -132,6 +155,12 @@ static int apps_parse_line(char *line, char **patterns, char **name, char **comm
 static int apps_matches(const char *patterns, const char *type);
 static void apps_add(struct fm_opener *openers, int capacity, int *count, const char *name, const char *command);
 static int apps_program_exists(const char *program);
+static int apps_is_program(const struct fm_mime *mime, mode_t mode);
+static int apps_opens_windows(const char *path);
+static int apps_elf_needs_window(int descriptor);
+static int apps_elf_file_offset(const unsigned char *headers, unsigned count, uint64_t address, uint64_t *offset);
+static int apps_read_at(int descriptor, uint64_t offset, void *buffer, size_t length);
+static uint64_t apps_le(const unsigned char *bytes, unsigned width);
 static int apps_expand(const char *command, const char *path, char *expanded, size_t size);
 static int apps_quote(const char *path, char *quoted, size_t size);
 static void apps_run(const char *command);
@@ -154,19 +183,26 @@ fm_apps_for(
 	struct fm_opener chosen;
 	char list[FM_PATH_MAX];
 	size_t index;
-	int regular;
+	int program;
+	int windows;
 	int matched;
 	int count;
 	int found;
 	int error;
 
-	UNUSED_PARAMETER(path);
-
-	/* A program runs in a terminal first. */
+	/*
+	 * A program runs first: one that opens windows of its own by itself
+	 * (BUG-234), any other in a terminal that stays when it ends.  Only a
+	 * program's type runs (BUG-233).
+	 */
 	count = 0;
-	regular = S_ISREG(mode);
-	if (regular != 0 && (mode & 0111) != 0)
-		apps_add(openers, capacity, &count, "Run in Terminal", "@terminal %f");
+	program = apps_is_program(mime, mode);
+	if (program != 0) {
+		windows = apps_opens_windows(path);
+		if (windows != 0)
+			apps_add(openers, capacity, &count, "Open", "%f");
+		apps_add(openers, capacity, &count, "Run in Terminal", APPS_RUN_IN_TERMINAL);
+	}
 
 	/* Offers the way the user chose for the type first, when there is one. */
 	error = apps_choice(mime->type, &chosen);
@@ -789,6 +825,268 @@ apps_program_exists(
 
 	/* No folder has it. */
 	return 0;
+}
+
+/* Tells whether a file is a program to run: it may run, and its type is a program's or a script's (BUG-233). */
+static int
+apps_is_program(
+	const struct fm_mime *mime,
+	mode_t mode)
+{
+	int regular;
+	int differs;
+
+	/* A file whose mode does not let it run is no program. */
+	regular = S_ISREG(mode);
+	if (regular == 0)
+		return 0;
+	if ((mode & 0111) == 0)
+		return 0;
+
+	/* A program's type. */
+	differs = strcmp(mime->type, APPS_PROGRAM_TYPE);
+	if (differs == 0)
+		return 1;
+
+	/* A script's type. */
+	differs = strcmp(mime->type, APPS_SCRIPT_TYPE);
+	if (differs == 0)
+		return 1;
+
+	/* Any other type -- a video, a picture -- opens as what it is, whatever its x bits. */
+	return 0;
+}
+
+/*
+ * Tells whether a program opens windows of its own: an ELF program that
+ * links the Wayland or the X client library (BUG-234).  A file that cannot
+ * be read, or that is no ELF program of 64 bits, is taken for one that
+ * does not, and runs in a terminal as before.
+ */
+static int
+apps_opens_windows(
+	const char *path)
+{
+	int descriptor;
+	int windows;
+
+	/* The file. */
+	descriptor = open(path, O_RDONLY);
+	if (descriptor < 0)
+		return 0;
+
+	/* What it links. */
+	windows = apps_elf_needs_window(descriptor);
+	(void)close(descriptor);
+
+	/* Reports what the program links. */
+	return windows;
+}
+
+/*
+ * Reads an ELF program's libraries (its DT_NEEDED names) and tells whether
+ * one of them is a window system's client library.  Only a 64-bit
+ * little-endian ELF file is read; each table is read within a bound.
+ */
+static int
+apps_elf_needs_window(
+	int descriptor)
+{
+	unsigned char header[64];
+	unsigned char headers[APPS_ELF_HEADERS * 56U];
+	unsigned char dynamic[APPS_ELF_DYNAMIC * 16U];
+	unsigned char *strings;
+	uint64_t needed[APPS_ELF_DYNAMIC];
+	uint64_t header_offset;
+	uint64_t dynamic_offset;
+	uint64_t dynamic_size;
+	uint64_t strings_address;
+	uint64_t strings_offset;
+	uint64_t strings_size;
+	uint64_t tag;
+	uint64_t type;
+	unsigned header_count;
+	unsigned header_size;
+	unsigned needed_count;
+	unsigned entries;
+	unsigned index;
+	int windows;
+	int differs;
+	int error;
+
+	/* The ELF header: the magic, 64 bits (class 2), little-endian (data 1). */
+	error = apps_read_at(descriptor, 0U, header, sizeof(header));
+	if (error != 0)
+		return 0;
+	differs = memcmp(header, "\177ELF", 4U);
+	if (differs != 0)
+		return 0;
+	if (header[4] != 2U || header[5] != 1U)
+		return 0;
+
+	/* The program headers, each of the 56 bytes of ELF64. */
+	header_offset = apps_le(header + 0x20U, 8U);
+	header_size = (unsigned)apps_le(header + 0x36U, 2U);
+	header_count = (unsigned)apps_le(header + 0x38U, 2U);
+	if (header_size != 56U || header_count == 0U || header_count > APPS_ELF_HEADERS)
+		return 0;
+	error = apps_read_at(descriptor, header_offset, headers, (size_t)header_count * 56U);
+	if (error != 0)
+		return 0;
+
+	/* The dynamic segment (PT_DYNAMIC, 2); a program without one links nothing. */
+	dynamic_offset = 0U;
+	dynamic_size = 0U;
+	for (index = 0; index < header_count; index++) {
+		type = apps_le(headers + index * 56U, 4U);
+		if (type != 2U)
+			continue;
+		dynamic_offset = apps_le(headers + index * 56U + 8U, 8U);
+		dynamic_size = apps_le(headers + index * 56U + 32U, 8U);
+		break;
+	}
+	if (dynamic_size == 0U)
+		return 0;
+
+	/* The dynamic entries, 16 bytes each, as many as are read. */
+	entries = (unsigned)(dynamic_size / 16U);
+	if (entries > APPS_ELF_DYNAMIC)
+		entries = APPS_ELF_DYNAMIC;
+	error = apps_read_at(descriptor, dynamic_offset, dynamic, (size_t)entries * 16U);
+	if (error != 0)
+		return 0;
+
+	/* The libraries' names (DT_NEEDED, 1) and the string table (DT_STRTAB, 5; DT_STRSZ, 10), until DT_NULL. */
+	needed_count = 0;
+	strings_address = 0U;
+	strings_size = 0U;
+	for (index = 0; index < entries; index++) {
+		tag = apps_le(dynamic + index * 16U, 8U);
+		if (tag == 0U)
+			break;
+		if (tag == 1U) {
+			needed[needed_count] = apps_le(dynamic + index * 16U + 8U, 8U);
+			needed_count++;
+		} else if (tag == 5U) {
+			strings_address = apps_le(dynamic + index * 16U + 8U, 8U);
+		} else if (tag == 10U) {
+			strings_size = apps_le(dynamic + index * 16U + 8U, 8U);
+		}
+	}
+	if (needed_count == 0U || strings_size == 0U)
+		return 0;
+	if (strings_size > APPS_ELF_STRINGS)
+		strings_size = APPS_ELF_STRINGS;
+
+	/* The string table, found in the file through the loaded segment that holds its address. */
+	error = apps_elf_file_offset(headers, header_count, strings_address, &strings_offset);
+	if (error != 0)
+		return 0;
+	strings = malloc((size_t)strings_size + 1U);
+	if (strings == NULL)
+		return 0;
+	error = apps_read_at(descriptor, strings_offset, strings, (size_t)strings_size);
+	if (error != 0) {
+		free(strings);
+		return 0;
+	}
+	strings[strings_size] = '\0';
+
+	/* A library of a window system among the names, with any version after it ("libwayland-client.so.0" on Linux). */
+	windows = 0;
+	for (index = 0; index < needed_count && windows == 0; index++) {
+		if (needed[index] >= strings_size)
+			continue;
+		differs = strncmp((const char *)strings + needed[index], APPS_WAYLAND_LIBRARY, strlen(APPS_WAYLAND_LIBRARY));
+		if (differs == 0)
+			windows = 1;
+		differs = strncmp((const char *)strings + needed[index], APPS_X_LIBRARY, strlen(APPS_X_LIBRARY));
+		if (differs == 0)
+			windows = 1;
+	}
+	free(strings);
+
+	/* Reports whether the program links a window system's library. */
+	return windows;
+}
+
+/* Finds where an address of a program lies in its file, through the loaded segment (PT_LOAD, 1) that holds it; returns 0 or -1. */
+static int
+apps_elf_file_offset(
+	const unsigned char *headers,
+	unsigned count,
+	uint64_t address,
+	uint64_t *offset)
+{
+	const unsigned char *entry;
+	uint64_t type;
+	uint64_t segment_offset;
+	uint64_t segment_address;
+	uint64_t segment_size;
+	unsigned index;
+
+	/* Each loaded segment, for the one that holds the address in its file bytes. */
+	for (index = 0; index < count; index++) {
+		entry = headers + index * 56U;
+		type = apps_le(entry, 4U);
+		if (type != 1U)
+			continue;
+		segment_offset = apps_le(entry + 8U, 8U);
+		segment_address = apps_le(entry + 16U, 8U);
+		segment_size = apps_le(entry + 32U, 8U);
+		if (address < segment_address)
+			continue;
+		if (address - segment_address >= segment_size)
+			continue;
+		*offset = segment_offset + (address - segment_address);
+		return 0;
+	}
+
+	/* No loaded segment holds it. */
+	return -1;
+}
+
+/* Reads bytes at an offset of a file, all of them; returns 0, or -1 for a short or failed read. */
+static int
+apps_read_at(
+	int descriptor,
+	uint64_t offset,
+	void *buffer,
+	size_t length)
+{
+	ssize_t got;
+
+	/* The offset must be one the file can be read at. */
+	if (offset > (uint64_t)0x7fffffffffffffffULL)
+		return -1;
+
+	/* The bytes, in one read. */
+	got = pread(descriptor, buffer, length, (off_t)offset);
+	if (got < 0)
+		return -1;
+	if ((size_t)got != length)
+		return -1;
+
+	/* Succeeded: the bytes are read. */
+	return 0;
+}
+
+/* Reads a little-endian number of a width of bytes (2, 4 or 8). */
+static uint64_t
+apps_le(
+	const unsigned char *bytes,
+	unsigned width)
+{
+	uint64_t value;
+	unsigned index;
+
+	/* The bytes, the last the most significant. */
+	value = 0U;
+	for (index = width; index > 0U; index--)
+		value = (value << 8) | bytes[index - 1U];
+
+	/* Reports the number. */
+	return value;
 }
 
 /*

@@ -3,7 +3,7 @@
 # ws099-p019: 白樺・湖の背景を共通ソースと3 OSの成果物に収録する
 
 Parent: [WS099](../ws.md)
-Status: in-progress（2026-10-06 P1 実装済み・T1 の試験待ち。下の「2026-10-06 P1」）
+Status: cleared（2026-10-06 Q1 判定: T1-220 PASS（QEMU、壁紙 7 件・既定 Birch-Lake・Settings で切り替えと既定への戻り）。抽象版は既存の緑の壁紙とユーザーが確認。実機は UAT）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q593予約（Agent A、未実行。最新user wrap-up指示により後続投入を停止し、再開待ち）

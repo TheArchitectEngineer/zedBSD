@@ -70,13 +70,13 @@ remain as traceable history and are not new implementation work.
 | [BUG-200](bugs/BUG-200.md) | plan/ws081/tests/run-pdftouch.sh が壊れている（古い試験） | reproduced（host） / tracking | P2 2026-10-05 | WS081 の試験 |
 | [BUG-201](bugs/BUG-201.md) | Windows の QEMU（Venus）で desktop がフリーズする | reproduced（ユーザー、1 回） / tracking | ユーザー 2026-10-05 夜 | WS085 |
 | [BUG-202](bugs/BUG-202.md) | 5330 の起動中の scheduler queue underflow / idle thread sleeps | reproduced（実機） / **resolved**（2026-10-06 実機の UAT で起動・使用でき fatal 無し） | ユーザー 2026-10-05〜06 | ws073-p055 / q779: LPSSのD0復帰10ms待ちをidleが実行。device discoveryを通常boot_workerへ移動（e093bebe）、main統合済み、amd64 warning/error 0。userのUAT待ち |
-| [BUG-203](bugs/BUG-203.md) | Phone の app で日本語を入力できない（IME に対応していない見込み） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS170（Phone）・WS095（IME）。2026-10-06 P1 修正済み（libkeiland の kl_field に text-input）、T1 の確認待ち |
-| [BUG-204](bugs/BUG-204.md) | Phone の app で画面 keyboard の日本語のフリック入力が無視される | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS170・WS102（画面 keyboard）。BUG-203 と同じ修正、T1 の確認待ち |
+| [BUG-203](bugs/BUG-203.md) | Phone の app で日本語を入力できない（IME に対応していない見込み） | reproduced（ユーザー、QEMU） / tracking・2026-10-06 T1-217 PASS（QEMU の Phone、Mailer・Calendar は未実施、実機は UAT） | UAT 2026-10-05 夜 | WS170（Phone）・WS095（IME）。2026-10-06 P1 修正済み（libkeiland の kl_field に text-input）、T1 の確認待ち |
+| [BUG-204](bugs/BUG-204.md) | Phone の app で画面 keyboard の日本語のフリック入力が無視される | reproduced（ユーザー、QEMU） / tracking・2026-10-06 T1-217 PASS（QEMU の Phone、Mailer・Calendar は未実施、実機は UAT） | UAT 2026-10-05 夜 | WS170・WS102（画面 keyboard）。BUG-203 と同じ修正、T1 の確認待ち |
 | [BUG-205](bugs/BUG-205.md) | app 全般で太字の font が美しくない（anti-alias が regular と違って見える） | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS090（widget の library）・libtruetype。2026-10-06 P1 修正済み（libtruetype の vector の太字）、T1 の確認待ち |
 | [BUG-206](bugs/BUG-206.md) | Browser で URL を編集すると https:// の前に file:// が付く | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser）。2026-10-06 P1 修正済み（titlebar の location）、T1 の確認待ち |
 | [BUG-207](bugs/BUG-207.md) | Browser が通信中に UI に応答しない | reproduced（ユーザー、QEMU） / tracking | UAT 2026-10-05 夜 | WS074（browser）。2026-10-06 P1 修正済み（parser の外部 script を先読み）、T1 の確認待ち |
 | [BUG-208](bugs/BUG-208.md) | 最大化（dock）中の Terminal で F11 を押すと bar が消えるだけで content の領域が変わらない | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 修正: dock 中の fullscreen は dock を外し、出る時に dock に戻す。T1-205b PASS 2026-10-06（QEMU、試験の点を直した後。実機は UAT）） | UAT 2026-10-05 夜 | WS099・BUG-194 |
-| [BUG-209](bugs/BUG-209.md) | Alt+Tab の順が bar の icon の並びと合わない（今の app から始め、押す度に 1 つ右へ） | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 実装: bar の並び・今の app から。wrap と Shift は仮定、T1 待ち） | UAT 2026-10-05 夜 | WS142 |
+| [BUG-209](bugs/BUG-209.md) | Alt+Tab の順が bar の icon の並びと合わない（今の app から始め、押す度に 1 つ右へ） | reproduced（ユーザー、QEMU） / scheduled（2026-10-06 P2 実装: bar の並び・今の app から。wrap と Shift は仮定、T1 待ち） | UAT 2026-10-05 夜・2026-10-06 T1-216b PASS（QEMU、素早い Alt+Tab を含む）・2026-10-06 T1-216b PASS（QEMU、素早い Alt+Tab を含む） | WS142 |
 | [BUG-210](bugs/BUG-210.md) | 5330 の LPSS I2C の BAR0 が 0（firmware が割り当てない）で I2C-HID の touchpad が付かない | reproduced（実機） / **resolved**（2026-10-06 ユーザー「タッチパッドがI2Cで使えるようになりました。2本指でスクロールができています。」）（P1 2026-10-06 修正: 未割り当ての BAR を `_CRS` の窓に置く、実機の確認待ち） | ユーザー 2026-10-06 | WS159 |
 | [BUG-211](bugs/BUG-211.md) | 慣性スクロールが無い（Settings の WiFi の AP の一覧など）。libkeiland の UI の scroll に入れ、どの窓の scroll でも使えるように | reproduced（実機） / tracking | UAT 2026-10-06 | WS090（libkeiland の widget）・WS081 |
 | [BUG-212](bugs/BUG-212.md) | 有線 LAN の接続中に WiFi に接続し、有線を link down すると WiFi が切れ、WiFi を off・on するまで再接続できない | reproduced（実機） / tracking（q780: 有線の address の消去と log を追加、本命は AX211 の recovery の見込み、次の UAT の log 待ち・T1 依頼中） | UAT 2026-10-06 | WS005・WS033（networkd）・WS004（AX211） |
@@ -94,14 +94,14 @@ remain as traceable history and are not new implementation work.
 | [BUG-224](bugs/BUG-224.md) | touchpad の上端から 2 本指で下に swipe すると、最大化の app を窓の mode にしたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS142・WS099 |
 | [BUG-225](bugs/BUG-225.md) | App Home の表示が約 0.7 秒遅れる。すぐ描ける texture で覆う animation を先に始め、裏で準備して icon を後から浮かび上がらせる 2 層の animation に | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home） |
 | [BUG-226](bugs/BUG-226.md) | 左の pane（Files・Mail・Calendar・Settings）で pointer の hover の描画が遅れる。CPU の合成の疑い、無ければ FPS の安定化 | reproduced（実機） / tracking | UAT 2026-10-06 | WS090（libkeiland の UI）・WS127・WS169・WS155・WS089 |
-| [BUG-227](bugs/BUG-227.md) | Browser で https://www.amazon.co.jp を開くと白い画面のまま（libbrowser か browser の shell か） | reproduced（実機） / tracking | UAT 2026-10-06 | WS074（browser） |
+| [BUG-227](bugs/BUG-227.md) | Browser で https://www.amazon.co.jp を開くと白い画面のまま（libbrowser か browser の shell か） | reproduced（実機） / tracking（q782: 原因は Chrome の UA への AWS WAF の challenge（202・空の本文）。UA の方針の判断待ち） | UAT 2026-10-06 | WS074（browser） |
 | [BUG-228](bugs/BUG-228.md) | 全画面の Notes から touchpad の下端の 2 本指の上 swipe で最大化（窓の mode でなく）にしたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS142・WS099 |
 | [BUG-229](bugs/BUG-229.md) | 画面 keyboard を出したまま App Home を出して戻ると画面 keyboard が消える（残したい） | reproduced（実機） / tracking | UAT 2026-10-06 | WS102（画面 keyboard） |
 | [BUG-230](bugs/BUG-230.md) | 画面 keyboard を swipe で引き出す時の領域が真っ白な四角。Notes の引き出しと同じ扇形＋文字に | reproduced（実機） / tracking | UAT 2026-10-06 | WS102 |
 | [BUG-231](bugs/BUG-231.md) | 画面の full keyboard で IME の有効の状態を反映し、a で「あ」、漢字の変換もできるように | reproduced（実機） / tracking | UAT 2026-10-06 | WS102・WS095（IME） |
 | [BUG-232](bugs/BUG-232.md) | App Home で起動中の app を選ぶと、新しく起動せずに切り替えたい | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home）・WS089 p016（単一の instance） |
-| [BUG-233](bugs/BUG-233.md) | Files で動画の file を開くと動画の player でなく Terminal が開くように見える | reproduced（実機） / tracking | UAT 2026-10-06 | WS127（Files の関連付け）・WS122 |
-| [BUG-234](bugs/BUG-234.md) | Files で /bin の file を開くと何も起きないように見える（Terminal が一瞬起動しているのか、起動していないのか分からない） | reproduced（実機） / tracking | UAT 2026-10-06 | WS127（Files の開き方） |
+| [BUG-233](bugs/BUG-233.md) | Files で動画の file を開くと動画の player でなく Terminal が開くように見える | reproduced（実機） / scheduled（q782: x の bit の付いた動画を Terminal で実行していた、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の関連付け）・WS122 |
+| [BUG-234](bugs/BUG-234.md) | Files で /bin の file を開くと何も起きないように見える（Terminal が一瞬起動しているのか、起動していないのか分からない） | reproduced（実機） / scheduled（q782: Run in Terminal の window が終了で消えていた・GUI の app は Open で直接、直し baec07a1、test-wait） | UAT 2026-10-06 | WS127（Files の開き方） |
 | [BUG-235](bugs/BUG-235.md) | Log Out の icon で確認なしに session が終わる（desktop を暗くする演出で、終了するか選ばせる） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099・WS131 |
 | [BUG-236](bugs/BUG-236.md) | App Home の見た目: 暗い背景の stage に icon、各 icon に spotlight、光沢の床に icon が反射する effect（montage を作る） | reproduced（実機） / tracking | UAT 2026-10-06 | WS099（App Home） |
 | [BUG-237](bugs/BUG-237.md) | app の icon の白抜き（記号）の部分が透過になっていないように見える | reproduced（実機） / tracking | UAT 2026-10-06 | WS128 p012（icon） |
