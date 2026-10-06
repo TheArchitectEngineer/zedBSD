@@ -2,7 +2,7 @@
 # ws099-p035: 設計 — App Home の stage と 2 層の animation
 
 Parent: [WS099](../ws.md)
-Status: planned（2026-10-06 Q1 の設計の第 1 版。最初の実装の段は montage（ユーザーが選ぶ）、その後に実装）
+Status: in-progress（2026-10-06 q783-i01 P2: p035a の montage を作り Q1 経由でユーザーに提示、選択待ち。p035b 以降は選択の後。以前: planned（Q1 の設計の第 1 版））
 Disposition: normal
 Related: [BUG-236](../../bugs/BUG-236.md)・[BUG-225](../../bugs/BUG-225.md)・[BUG-232](../../bugs/BUG-232.md)・[BUG-237](../../bugs/BUG-237.md)・[ws128-p012](../../ws128/phase012/phase.md)
 
@@ -54,3 +54,10 @@ App Home で app を選んだ時、その app id の窓が既にあれば起動�
 
 - spotlight・反射の強さ（p035a の montage で選ぶ）。
 - light の外観でも暗い stage でよいか（案: よい、bar と揃える）。
+
+## p035a の montage（2026-10-06 q783-i01 P2）
+
+- 道具: [p035-stage-mock.sh](../tests/p035-stage-mock.sh)・[p035-stage-mock.py](../tests/p035-stage-mock.py)（tile は compositor の icons.c の zwl_icon_tile の 72 px を tile-dump で。地・床・spotlight・反射・名前は shape の組み合わせを host で近似。実物の compositor ではない）。
+- 出力（P2 の worktree）: `build/ws099-p035a/montage.png`（A・B・C を半分の大きさで横に）、`stage-a.png`・`stage-b.png`・`stage-c.png`（1280x800）。
+- 案: A 弱い（spotlight 0.08、hover 0.16、反射 0.15、床 0.10）、B 中（設計の値: 0.12・0.22・0.25・0.18）、C 強い（0.18・0.30・0.38・0.28 と上からの光の筋 0.07）。Settings を hover の icon として明るく。
+- 未決: ユーザーの選択（A・B・C か調整）と、light の外観でも暗い stage でよいか。選択を待つ間は p037 に進む（Q1 の指示）。
