@@ -89,7 +89,10 @@ for file in "${required[@]}"; do
 	fi
 done
 
-rm -rf "$output"
+# An earlier output is moved aside, not removed (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh).
+if [[ -e $output ]]; then
+	mv -- "$output" "$output.old.$$"
+fi
 mkdir -p "$output"
 
 # The emulator's working files live on a scratch file system, normally the
@@ -101,15 +104,16 @@ mkdir -p "$output"
 work_parent=${BOOT_TEST_WORK:-${TMPDIR:-/tmp}}
 mkdir -p "$work_parent"
 work=$(mktemp -d "$work_parent/boot-test.XXXXXX")
-disk=$work/stick.img
+disk=$work/stick.qcow2
 nvram=$work/uefi-vars.fd
 monitor=$work/qmp.sock
 frame=$work/screen.ppm
 screenshot=$output/login.png
 
-# The guest writes to the stick it booted from, so it is given a copy, and the
-# firmware gets its own variable store.
-cp -- "$image" "$disk"
+# The guest writes to the stick it booted from, so it is given a copy-on-write
+# overlay of the image (small, so that a work directory left for Q1's cleanup
+# costs little), and the firmware gets its own variable store.
+qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 	cp -- "$vars" "$nvram"
 fi
@@ -120,7 +124,7 @@ cleanup()
 		kill "$pid" 2>/dev/null || true
 		wait "$pid" 2>/dev/null || true
 	fi
-	rm -rf -- "$work"
+	# The work directory stays for Q1's cleanup (plan/tools/q1-clean.sh --tmp).
 }
 trap cleanup EXIT INT TERM
 
@@ -141,19 +145,19 @@ if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 		-drive "if=pflash,format=raw,readonly=on,file=$code" \
 		-drive "if=pflash,format=raw,file=$nvram" \
 		-device qemu-xhci,id=xhci \
-		-drive "if=none,id=boot,file=$disk,format=raw" \
+		-drive "if=none,id=boot,file=$disk,format=qcow2" \
 		"${boot_device[@]}" \
 		-device usb-kbd,bus=xhci.0,port=2 \
 		-vga std -display none -no-reboot \
 		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == raspi4b ]]; then
 	"$qemu" -machine raspi4b -m 2G -kernel "$kernel" -dtb "$dtb" \
-		-drive "if=sd,format=raw,file=$disk" \
+		-drive "if=sd,format=qcow2,file=$disk" \
 		-display none -serial null -serial null -no-reboot \
 		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
 else
 	"$qemu" -machine pc -m 256 -cpu max \
-		-drive "if=ide,bus=0,unit=0,format=raw,file=$disk" \
+		-drive "if=ide,bus=0,unit=0,format=qcow2,file=$disk" \
 		-vga std -display none -no-reboot \
 		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
 fi

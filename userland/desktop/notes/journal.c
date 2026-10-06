@@ -24,11 +24,22 @@
  * records up to the first one that is incomplete or damaged (the one a
  * crash cut short).  The snapshot makes recovery independent of the saved
  * PDF: it works before Notes can read PDFs back.
+ *
+ * Version 2 (ws175-p007, plan/ws175/phase001/design.md [H4], [N3], [N10])
+ * logs the edits of the PDF's objects: an edit put at a place on a page and
+ * an edit taken off, and each image an edit uses, once a journal: its
+ * description and the SHA-256 of its bytes in the record, the bytes in a
+ * file of their own beside the journal (<journal>.images/<number>-<hash>),
+ * written before the record.  The snapshot names its images by number only
+ * and is followed by their records, so the journal holds every image the
+ * document uses, also those of the saved file.  A Notes that reads
+ * version 1 only does not recover a version 2 journal.
  */
 
 #include "notes.h"
 
 #include <dirent.h>
+#include <sha2.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -39,7 +50,7 @@
 
 /* The magic and version of a journal file. */
 #define JOURNAL_MAGIC		"ZNJL"
-#define JOURNAL_VERSION		1U
+#define JOURNAL_VERSION		2U
 
 /* The record types. */
 #define JOURNAL_SNAPSHOT	1U
@@ -47,6 +58,13 @@
 #define JOURNAL_REMOVE_STROKE	3U
 #define JOURNAL_ADD_PAGE	4U
 #define JOURNAL_REMOVE_PAGE	5U
+#define JOURNAL_PUT_EDIT	6U
+#define JOURNAL_TAKE_EDIT	7U
+#define JOURNAL_IMAGE		8U
+
+/* The ending of the folder of the images' files beside a journal, and of a journal set aside. */
+#define JOURNAL_IMAGES_SUFFIX	".images"
+#define JOURNAL_KEPT_SUFFIX	".kept"
 
 /* The file name's ending. */
 #define JOURNAL_SUFFIX		".journal"
@@ -60,12 +78,26 @@
  *
  * It lives as long as Notes shows the document.  descriptor is -1 while no
  * journal file is open: before the first change, and after a save or a
- * failure removed it.
+ * failure removed it.  images lists the numbers of the images the open
+ * journal has logged (ws175-p007).
  */
 struct notes_journal {
 	char document_path[JOURNAL_PATH_MAX];
 	char path[JOURNAL_PATH_MAX];
 	int descriptor;
+	uint32_t *images;
+	size_t image_count;
+	size_t image_capacity;
+};
+
+/*
+ * The images a recovery knows (each held once): the snapshot's and those
+ * of the image records, by which the edits' records name them.
+ */
+struct journal_images {
+	struct notes_image **images;
+	size_t count;
+	size_t capacity;
 };
 
 static int journal_start(struct notes_journal *journal, const struct notes_document *document);
@@ -75,7 +107,16 @@ static uint32_t journal_checksum(const unsigned char *data, size_t length);
 static int journal_make_folder(const char *path);
 static int write_all(int descriptor, const unsigned char *data, size_t length);
 static int read_file(const char *path, unsigned char **data, size_t *size);
-static int replay(struct notes_document *document, unsigned type, const unsigned char *body, size_t length);
+static int replay(struct notes_document *document, unsigned type, const unsigned char *body, size_t length, struct journal_images *table, const char *journal_path);
+static int journal_ready(struct notes_journal *journal, const struct notes_document *document);
+static int journal_image(struct notes_journal *journal, const struct notes_document *document, const struct notes_image *image);
+static int journal_logged(const struct notes_journal *journal, uint32_t id);
+static int journal_image_path(const char *journal_path, uint32_t id, const unsigned char digest[32], char *path, size_t size);
+static void journal_remove_images(const char *journal_path);
+static int table_add(struct journal_images *table, struct notes_image *image);
+static struct notes_image *table_find(const struct journal_images *table, uint32_t id);
+static void table_free(struct journal_images *table);
+static int replay_image(const unsigned char *body, size_t length, struct journal_images *table, const char *journal_path);
 static int read_number(const unsigned char *body, size_t length, size_t *offset, uint64_t *value);
 
 /*
@@ -201,9 +242,10 @@ notes_journal_destroy(
 	if (journal == NULL)
 		return;
 
-	/* The file, when one is open. */
+	/* The file, when one is open, and the list of the images it logged. */
 	if (journal->descriptor >= 0)
 		(void)close(journal->descriptor);
+	free(journal->images);
 	free(journal);
 }
 
@@ -352,12 +394,131 @@ notes_journal_discard(
 		journal->descriptor = -1;
 	}
 
+	/* The images' files beside it go first (the next journal writes them again). */
+	journal_remove_images(journal->path);
+	journal->image_count = 0;
+
 	/* Removes the file; one that is not there is already discarded. */
 	status = unlink(journal->path);
 	if (status != 0 && errno != ENOENT)
 		return errno;
 
 	/* Succeeded: no journal is left. */
+	return 0;
+}
+
+/*
+ * Logs an edit put on a page at a place (ws175-p007), and before it the
+ * edit's image when this journal has not logged it yet.  Returns 0, or an
+ * errno value (the change must then not be made).
+ */
+int
+notes_journal_put_edit(
+	struct notes_journal *journal,
+	const struct notes_document *document,
+	size_t page,
+	size_t place,
+	const struct notes_edit *edit)
+{
+	struct notes_buffer body;
+	int logged;
+	int error;
+
+	/* The journal, then the image it does not have. */
+	error = journal_ready(journal, document);
+	if (error != 0)
+		return error;
+	if (edit->image != NULL) {
+		logged = journal_logged(journal, edit->image->id);
+		if (!logged) {
+			error = journal_image(journal, document, edit->image);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* The page, the place and the edit. */
+	notes_buffer_init(&body);
+	notes_buffer_varint(&body, page);
+	notes_buffer_varint(&body, place);
+	notes_encode_edit(&body, edit);
+
+	/* Appends the record. */
+	error = journal_append(journal, document, JOURNAL_PUT_EDIT, &body);
+	notes_buffer_free(&body);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the record is on the disk. */
+	return 0;
+}
+
+/*
+ * Logs the edit of an object taken off a page (ws175-p007): the page and
+ * the object (its number or its key).
+ */
+int
+notes_journal_take_edit(
+	struct notes_journal *journal,
+	const struct notes_document *document,
+	size_t page,
+	const struct notes_edit *which)
+{
+	struct notes_buffer body;
+	struct notes_edit named;
+	int error;
+
+	/* The object alone, without its state. */
+	memset(&named, 0, sizeof(named));
+	named.flags = which->flags & NOTES_EDIT_INSERTED;
+	named.id = which->id;
+	named.key = which->key;
+	named.transform[0] = 1.0f;
+	named.transform[3] = 1.0f;
+
+	/* The page and the object. */
+	notes_buffer_init(&body);
+	notes_buffer_varint(&body, page);
+	notes_encode_edit(&body, &named);
+
+	/* Appends the record. */
+	error = journal_append(journal, document, JOURNAL_TAKE_EDIT, &body);
+	notes_buffer_free(&body);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the record is on the disk. */
+	return 0;
+}
+
+/*
+ * Sets a journal aside (ws175-p007, design.md [N8]): a journal whose edits
+ * no longer match the document's file is not recovered and must not be
+ * written over by the next one; it and its images' files take the names
+ * <journal>.kept and <journal>.kept.images, which no later run looks for.
+ * Returns 0 or the errno value of renaming it.
+ */
+int
+notes_journal_set_aside(
+	const char *journal_path)
+{
+	char kept[JOURNAL_PATH_MAX + 16U];
+	char images[JOURNAL_PATH_MAX + 16U];
+	char kept_images[JOURNAL_PATH_MAX + 32U];
+	int status;
+
+	/* The names. */
+	(void)snprintf(kept, sizeof(kept), "%s%s", journal_path, JOURNAL_KEPT_SUFFIX);
+	(void)snprintf(images, sizeof(images), "%s%s", journal_path, JOURNAL_IMAGES_SUFFIX);
+	(void)snprintf(kept_images, sizeof(kept_images), "%s%s", kept, JOURNAL_IMAGES_SUFFIX);
+
+	/* The journal, then its images' folder (which may not be there). */
+	status = rename(journal_path, kept);
+	if (status != 0)
+		return errno;
+	(void)rename(images, kept_images);
+
+	/* Succeeded: the journal is kept apart. */
 	return 0;
 }
 
@@ -378,11 +539,14 @@ notes_journal_recover(
 	size_t size,
 	size_t *records)
 {
+	struct journal_images table;
 	unsigned char *data;
 	size_t length;
 	size_t offset;
 	size_t path_length;
 	size_t body_length;
+	size_t page;
+	size_t at;
 	uint32_t stored;
 	uint32_t computed;
 	unsigned type;
@@ -423,6 +587,7 @@ notes_journal_recover(
 
 	/* Each record whose bytes are all there and whose checksum holds. */
 	have_snapshot = 0;
+	memset(&table, 0, sizeof(table));
 	while (length - offset >= 9U) {
 		/* The type and the body's length, which must fit with the checksum. */
 		type = data[offset];
@@ -449,11 +614,27 @@ notes_journal_recover(
 				return error;
 			}
 
+			/* The snapshot's images, which the records that follow give their bytes and name. */
+			for (page = 0; page < document->page_count && error == 0; page++) {
+				for (at = 0; at < document->pages[page]->edit_count && error == 0; at++) {
+					if (document->pages[page]->edits[at]->image != NULL)
+						error = table_add(&table, document->pages[page]->edits[at]->image);
+				}
+			}
+
+			/* Memory gone ends the recovery. */
+			if (error != 0) {
+				table_free(&table);
+				notes_document_free(document);
+				free(data);
+				return error;
+			}
+
 			/* The records that follow change it. */
 			have_snapshot = 1;
 		} else {
 			/* A later record is a change; one that does not apply ends the replay. */
-			error = replay(document, type, data + offset + 5U, body_length);
+			error = replay(document, type, data + offset + 5U, body_length, &table, journal_path);
 			if (error != 0)
 				break;
 		}
@@ -463,8 +644,9 @@ notes_journal_recover(
 		offset += 9U + body_length;
 	}
 
-	/* A journal without its snapshot rebuilds nothing. */
+	/* A journal without its snapshot rebuilds nothing; the recovery's hold on the images goes. */
 	free(data);
+	table_free(&table);
 	if (!have_snapshot)
 		return EINVAL;
 
@@ -557,8 +739,12 @@ journal_start(
 	char temporary[JOURNAL_PATH_MAX + 8U];
 	struct notes_buffer snapshot;
 	struct notes_buffer file;
+	const struct notes_image *image;
 	size_t path_length;
+	size_t page;
+	size_t at;
 	int descriptor;
+	int logged;
 	int status;
 	int error;
 
@@ -627,9 +813,25 @@ journal_start(
 	}
 
 	/* Opens it for the records that follow. */
+	journal->image_count = 0;
 	journal->descriptor = open(journal->path, O_WRONLY | O_APPEND);
 	if (journal->descriptor < 0)
 		return errno;
+
+	/* The snapshot's images, each once (ws175-p007). */
+	for (page = 0; page < document->page_count; page++) {
+		for (at = 0; at < document->pages[page]->edit_count; at++) {
+			image = document->pages[page]->edits[at]->image;
+			if (image == NULL)
+				continue;
+			logged = journal_logged(journal, image->id);
+			if (logged)
+				continue;
+			error = journal_image(journal, document, image);
+			if (error != 0)
+				return error;
+		}
+	}
 
 	/* Succeeded: the journal holds the document as it stands. */
 	return 0;
@@ -843,24 +1045,33 @@ read_file(
 	return 0;
 }
 
-/* Applies one recorded change to the document. */
+/* Applies one recorded change to the document (an image record adds an image to the recovery's). */
 static int
 replay(
 	struct notes_document *document,
 	unsigned type,
 	const unsigned char *body,
-	size_t length)
+	size_t length,
+	struct journal_images *table,
+	const char *journal_path)
 {
 	struct notes_stroke *stroke;
 	struct notes_page *page;
+	struct notes_edit read;
+	struct notes_edit *edit;
 	uint64_t first;
 	uint64_t second;
+	uint32_t image;
 	size_t offset;
 	size_t used;
 	size_t place;
 	int error;
 
-	/* Every record starts with one or two numbers. */
+	/* An image: its description, the digest of its bytes, the bytes from their file. */
+	if (type == JOURNAL_IMAGE)
+		return replay_image(body, length, table, journal_path);
+
+	/* Every other record starts with one or two numbers. */
 	offset = 0;
 	error = read_number(body, length, &offset, &first);
 	if (error != 0)
@@ -912,6 +1123,40 @@ replay(
 			return EINVAL;
 		notes_page_free(page);
 		break;
+	case JOURNAL_PUT_EDIT:
+		/* The page, the place, the edit and its image, one the recovery knows. */
+		error = read_number(body, length, &offset, &second);
+		if (error == 0)
+			error = notes_decode_edit(body + offset, length - offset, &used, &read, &image);
+		if (error != 0)
+			return error;
+		if ((read.flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
+			read.image = table_find(table, image);
+			if (read.image == NULL)
+				return EINVAL;
+		}
+
+		/* The edit on the page. */
+		edit = notes_edit_copy(&read);
+		if (edit == NULL)
+			return ENOMEM;
+		error = notes_document_put_edit(document, (size_t)first, (size_t)second, edit);
+		if (error != 0) {
+			notes_edit_free(edit);
+			return error;
+		}
+
+		break;
+	case JOURNAL_TAKE_EDIT:
+		/* The page and the object. */
+		error = notes_decode_edit(body + offset, length - offset, &used, &read, &image);
+		if (error != 0)
+			return error;
+		edit = notes_document_take_edit(document, (size_t)first, &read, &place);
+		if (edit == NULL)
+			return EINVAL;
+		notes_edit_free(edit);
+		break;
 	default:
 		return EINVAL;
 	}
@@ -945,4 +1190,323 @@ read_number(
 
 	/* A number longer than 64 bits is malformed. */
 	return EINVAL;
+}
+
+/* Starts the journal when the change is the first since a save. */
+static int
+journal_ready(
+	struct notes_journal *journal,
+	const struct notes_document *document)
+{
+	/* A journal that is open. */
+	if (journal->descriptor >= 0)
+		return 0;
+
+	/* A new one. */
+	return journal_start(journal, document);
+}
+
+/*
+ * Logs an image: its bytes into their file beside the journal (once: a
+ * file of the same number and digest is there already), then its record
+ * (its description and the digest).  Returns 0, EINVAL for an image whose
+ * bytes are not known, or an errno value.
+ */
+static int
+journal_image(
+	struct notes_journal *journal,
+	const struct notes_document *document,
+	const struct notes_image *image)
+{
+	char path[JOURNAL_PATH_MAX + 64U];
+	char temporary[JOURNAL_PATH_MAX + 72U];
+	unsigned char digest[SHA256_DIGEST_LENGTH];
+	struct notes_buffer body;
+	struct stat status;
+	SHA2_CTX context;
+	uint32_t *grown;
+	size_t capacity;
+	int descriptor;
+	int result;
+	int error;
+
+	/* An image with its bytes, and their digest. */
+	if (image->data == NULL)
+		return EINVAL;
+	SHA256Init(&context);
+	SHA256Update(&context, image->data, image->size);
+	SHA256Final(digest, &context);
+
+	/* The file's path, in the images' folder (made when it is missing). */
+	error = journal_image_path(journal->path, image->id, digest, path, sizeof(path));
+	if (error == 0)
+		error = journal_make_folder(path);
+	if (error != 0)
+		return error;
+
+	/* The bytes, unless a file of the same number and digest is there: a temporary file on the disk, then its name. */
+	result = stat(path, &status);
+	if (result != 0) {
+		(void)snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+		descriptor = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (descriptor < 0)
+			return errno;
+		error = write_all(descriptor, image->data, image->size);
+		if (error == 0) {
+			result = fsync(descriptor);
+			if (result != 0)
+				error = errno;
+		}
+
+		/* The file closed, then named. */
+		(void)close(descriptor);
+		if (error == 0) {
+			result = rename(temporary, path);
+			if (result != 0)
+				error = errno;
+		}
+
+		/* A file that could not be written goes. */
+		if (error != 0) {
+			(void)unlink(temporary);
+			return error;
+		}
+	}
+
+	/* The record: the description and the digest. */
+	notes_buffer_init(&body);
+	notes_encode_image(&body, image);
+	notes_buffer_bytes(&body, digest, sizeof(digest));
+	error = journal_append(journal, document, JOURNAL_IMAGE, &body);
+	notes_buffer_free(&body);
+	if (error != 0)
+		return error;
+
+	/* The number among the logged ones. */
+	if (journal->image_count == journal->image_capacity) {
+		capacity = journal->image_capacity * 2U + 8U;
+		grown = realloc(journal->images, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		journal->images = grown;
+		journal->image_capacity = capacity;
+	}
+
+	/* Succeeded: the image is in the journal. */
+	journal->images[journal->image_count] = image->id;
+	journal->image_count++;
+	return 0;
+}
+
+/* Tells whether the open journal has logged an image. */
+static int
+journal_logged(
+	const struct notes_journal *journal,
+	uint32_t id)
+{
+	size_t at;
+
+	/* Each number logged. */
+	for (at = 0; at < journal->image_count; at++) {
+		if (journal->images[at] == id)
+			return 1;
+	}
+
+	/* Not yet. */
+	return 0;
+}
+
+/* Writes the path of an image's file: <journal>.images/<number>-<the digest's first 8 bytes in hexadecimal>. */
+static int
+journal_image_path(
+	const char *journal_path,
+	uint32_t id,
+	const unsigned char digest[32],
+	char *path,
+	size_t size)
+{
+	int written;
+
+	/* The folder, the number and the digest's start. */
+	written = snprintf(path, size, "%s%s/%lu-%02x%02x%02x%02x%02x%02x%02x%02x", journal_path, JOURNAL_IMAGES_SUFFIX, (unsigned long)id,
+			   digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7]);
+	if (written < 0 || (size_t)written >= size)
+		return ENAMETOOLONG;
+
+	/* Succeeded: the path. */
+	return 0;
+}
+
+/* Removes the images' files beside a journal, and their folder. */
+static void
+journal_remove_images(
+	const char *journal_path)
+{
+	char folder[JOURNAL_PATH_MAX + 16U];
+	char file[JOURNAL_PATH_MAX + 288U];
+	struct dirent *entry;
+	DIR *directory;
+
+	/* The folder, which may not be there. */
+	(void)snprintf(folder, sizeof(folder), "%s%s", journal_path, JOURNAL_IMAGES_SUFFIX);
+	directory = opendir(folder);
+	if (directory == NULL)
+		return;
+
+	/* Each file in it. */
+	for (;;) {
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+		if (entry->d_name[0] == '.')
+			continue;
+		(void)snprintf(file, sizeof(file), "%s/%s", folder, entry->d_name);
+		(void)unlink(file);
+	}
+
+	/* The folder, emptied. */
+	(void)closedir(directory);
+	(void)rmdir(folder);
+}
+
+/* Adds an image to a recovery's, held once more.  Returns 0 or ENOMEM. */
+static int
+table_add(
+	struct journal_images *table,
+	struct notes_image *image)
+{
+	struct notes_image **grown;
+	struct notes_image *found;
+	size_t capacity;
+
+	/* One there already. */
+	found = table_find(table, image->id);
+	if (found != NULL)
+		return 0;
+
+	/* Room for one more. */
+	if (table->count == table->capacity) {
+		capacity = table->capacity * 2U + 8U;
+		grown = realloc(table->images, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		table->images = grown;
+		table->capacity = capacity;
+	}
+
+	/* Succeeded: the image, held. */
+	image->refs++;
+	table->images[table->count] = image;
+	table->count++;
+	return 0;
+}
+
+/* Finds an image of a recovery's by its number; NULL when there is none. */
+static struct notes_image *
+table_find(
+	const struct journal_images *table,
+	uint32_t id)
+{
+	size_t at;
+
+	/* Each image. */
+	for (at = 0; at < table->count; at++) {
+		if (table->images[at]->id == id)
+			return table->images[at];
+	}
+
+	/* None. */
+	return NULL;
+}
+
+/* Lets go of a recovery's images and frees its list. */
+static void
+table_free(
+	struct journal_images *table)
+{
+	size_t at;
+
+	/* Each hold. */
+	for (at = 0; at < table->count; at++)
+		notes_image_release(table->images[at]);
+
+	/* The list. */
+	free(table->images);
+	memset(table, 0, sizeof(*table));
+}
+
+/*
+ * Replays an image's record: its bytes read from their file, which must
+ * have the digest, given to the image the recovery knows by that number
+ * (the snapshot's) or to a new one.  Returns 0, EINVAL, or ENOMEM.
+ */
+static int
+replay_image(
+	const unsigned char *body,
+	size_t length,
+	struct journal_images *table,
+	const char *journal_path)
+{
+	char path[JOURNAL_PATH_MAX + 64U];
+	unsigned char digest[SHA256_DIGEST_LENGTH];
+	struct notes_image *read;
+	struct notes_image *image;
+	unsigned char *bytes;
+	SHA2_CTX context;
+	unsigned kind;
+	size_t used;
+	size_t size;
+	int differs;
+	int error;
+
+	/* The description and the digest. */
+	error = notes_decode_image(body, length, &used, &read);
+	if (error != 0)
+		return error;
+	if (length - used != SHA256_DIGEST_LENGTH) {
+		notes_image_release(read);
+		return EINVAL;
+	}
+
+	/* The bytes from their file, with the digest. */
+	error = journal_image_path(journal_path, read->id, body + used, path, sizeof(path));
+	if (error == 0)
+		error = read_file(path, &bytes, &size);
+	if (error != 0) {
+		notes_image_release(read);
+		return EINVAL;
+	}
+
+	/* The digest of the bytes read. */
+	SHA256Init(&context);
+	SHA256Update(&context, bytes, size);
+	SHA256Final(digest, &context);
+	differs = memcmp(digest, body + used, sizeof(digest));
+	if (differs != 0 || size == 0) {
+		free(bytes);
+		notes_image_release(read);
+		return EINVAL;
+	}
+
+	/* The image the recovery knows by the number, or the new one. */
+	kind = read->kind;
+	image = table_find(table, read->id);
+	if (image == NULL) {
+		error = table_add(table, read);
+		image = read;
+	}
+
+	/* The description's own hold goes (the recovery's stays). */
+	notes_image_release(read);
+	if (error != 0) {
+		free(bytes);
+		return error;
+	}
+
+	/* Its bytes, as they were logged. */
+	free(image->data);
+	image->data = bytes;
+	image->size = size;
+	image->kind = kind;
+	return 0;
 }

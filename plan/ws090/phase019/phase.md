@@ -1,6 +1,6 @@
 # ws090-p019: 慣性 scroll を libkeiland に一本化する（全ての app）
 
-Status: in-progress（q806、P1、2026-10-06）
+Status: cleared（2026-10-06 Q1 判定: QEMU の T1 PASS（T1-245・T1-240b・T1-242/246）。実機は UAT）
 WS: [WS090](../ws.md)
 Related: [BUG-211](../../bugs/BUG-211.md)・[ws090-p017](../phase017/phase.md)
 

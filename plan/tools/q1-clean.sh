@@ -4,9 +4,20 @@
 # fixed name no longer points at, the build/*.old.* directories, and what plan/tools/files/host-clean.sh removes.
 #
 #   sh plan/tools/q1-clean.sh WORKTREE
+#   sh plan/tools/q1-clean.sh --tmp     (boot-test.sh's work directories under ${TMPDIR:-/tmp} that no QEMU uses)
 #
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
+if [ "${1:-}" = --tmp ]; then
+	for dir in "${TMPDIR:-/tmp}"/boot-test.*; do
+		[ -d "$dir" ] || continue
+		if pgrep -f -- "$dir" >/dev/null 2>&1; then
+			continue
+		fi
+		rm -rf -- "$dir"
+	done
+	exit 0
+fi
 [ $# -eq 1 ] || { echo "usage: q1-clean.sh WORKTREE" >&2; exit 2; }
 root=$(cd -- "$1" && pwd)
 build=$root/build

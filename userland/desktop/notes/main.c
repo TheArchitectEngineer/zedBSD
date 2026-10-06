@@ -596,6 +596,20 @@ app_start_document(
 			}
 		}
 
+		/*
+		 * The edits of the PDF's objects must still apply (ws175-p007,
+		 * design.md [N8]); when one does not, the journal is set aside, not
+		 * replayed into a document that would lose it at the next save.
+		 */
+		if (error == 0) {
+			error = notes_document_check_edits(&app->document);
+			if (error != 0) {
+				printf("NOTES RECOVER failed reason=key journal=%s\n", journal_path);
+				(void)notes_journal_set_aside(journal_path);
+				notes_document_free(&app->document);
+			}
+		}
+
 		/* The recovered notebook, or the failure that leaves the file to be opened instead. */
 		if (error == 0) {
 			memcpy(app->path, recovered_path, strlen(recovered_path) + 1U);
@@ -628,7 +642,9 @@ app_start_document(
 				(void)snprintf(app->status, sizeof(app->status), "Writing on the PDF; it stays as it was under your ink");
 			else if (opened == NOTES_OPENED_CHANGED)
 				(void)snprintf(app->status, sizeof(app->status), "Pages changed by another program are now background");
-			if (opened == NOTES_OPENED_FOREIGN || opened == NOTES_OPENED_CHANGED)
+			else if (opened == NOTES_OPENED_REBASED)
+				(void)snprintf(app->status, sizeof(app->status), "The edits no longer match this PDF; it opened as it looks");
+			if (opened == NOTES_OPENED_FOREIGN || opened == NOTES_OPENED_CHANGED || opened == NOTES_OPENED_REBASED)
 				app->status_until = notes_clock() + MAIN_NOTICE_MS;
 		} else {
 			/* A file Notes cannot write on is left as it is, and a new notebook starts. */
@@ -687,6 +703,8 @@ app_opened_name(
 		return "foreign";
 	case NOTES_OPENED_CHANGED:
 		return "changed";
+	case NOTES_OPENED_REBASED:
+		return "rebased";
 	default:
 		break;
 	}

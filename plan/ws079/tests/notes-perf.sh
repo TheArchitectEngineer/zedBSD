@@ -33,18 +33,25 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 cc -std=gnu99 -O1 -D_DEFAULT_SOURCE -I"$out/include" -c src/libc/openbsd-sha2.c -o "$out/sha2.o" || exit 1
 cc -std=gnu99 -O1 -w -D_DEFAULT_SOURCE -I"$out/include" -c src/libc/openbsd-digest.c -o "$out/digest.o" || exit 1
 # ws079-p007: the reader needs filter.c and libz-compat (cross-reference and object streams); p014: save.c needs update.c.
 zlib=
-for file in userland/base/libz-compat/*.c; do
-	cc -std=gnu99 -O1 -w -D_DEFAULT_SOURCE -I"$out/include" -I"$(dirname "$file")" -c "$file" -o "$out/z-$(basename "$file" .c).o" || exit 1
-	zlib="$zlib $out/z-$(basename "$file" .c).o"
+# ws175-p007: the edits (edit.c) use libpdf's editor: the whole of libpdf, with libjpeg-compat and libtruetype.
+for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+	object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c).o"
+	cc -std=gnu11 -O1 -w -D_DEFAULT_SOURCE -I"$out/include" -I"$(dirname "$file")" -c "$file" -o "$object" || exit 1
+	zlib="$zlib $object"
 done
-cc -std=c99 -pedantic -O1 -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I"$out/include" -Iuserland/desktop/notes \
-    userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c \
+cc -std=c99 -pedantic -O1 -Wall -Wextra -Werror -Wno-overlength-strings -D_DEFAULT_SOURCE -I"$out/include" -Iuserland/desktop/notes \
+    userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c \
     userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
-    userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c plan/ws079/tests/notes-many.c \
+    userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c \
+    userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c \
+    userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \
+    userland/base/libpdf/font.c userland/base/libpdf/encoding.c userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c \
+    userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c plan/ws079/tests/notes-many.c \
     "$out/sha2.o" "$out/digest.o" $zlib -lm \
     -o "$out/notes-many" || exit 1
 "$out/notes-many" "$out/many.pdf" "$count" || exit 1
