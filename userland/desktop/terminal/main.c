@@ -2462,18 +2462,27 @@ main_touch_queue(
 
 /*
  * Tells the input method where the cursor's cell is on the window (surface
- * pixels), so that its candidate list opens beside the text being composed
- * (BUG-155); libkeiland sends only a change.
+ * pixels), or the search bar's caret while it is open, so that its
+ * candidate list opens beside the text being composed (BUG-155,
+ * ws090-p022); libkeiland sends only a change.
  */
 static void
 main_text_cursor(void)
 {
+	unsigned column;
 	int x;
 	int y;
 
 	/* The cursor's cell, on the rows the view shows (a view scrolled back moves it down). */
 	x = (int)TERMINAL_PADDING + (int)(main_screen->cursor_column * main_font.cell_width);
 	y = (int)TERMINAL_PADDING + (int)((main_screen->cursor_row + main_screen->view) * main_font.cell_height) + main_screen->view_offset;
+
+	/* While the search bar is open: its caret's cell on the last row, where the composed text shows (ws090-p022). */
+	if (main_window.search_open && main_screen->rows != 0U) {
+		column = terminal_search_bar_column(main_window.search_query, main_window.search_length, main_screen->ambiguous_wide);
+		x = (int)TERMINAL_PADDING + (int)(column * main_font.cell_width);
+		y = (int)TERMINAL_PADDING + (int)((main_screen->rows - 1U) * main_font.cell_height);
+	}
 
 	/* The cell's rectangle. */
 	kl_window_text_cursor(main_window.kui, x, y, (int)main_font.cell_width, (int)main_font.cell_height);

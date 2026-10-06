@@ -17,7 +17,9 @@
  * the window's surface (enter), and each change of that, or of the caret's
  * rectangle, is committed.  What arrives before a done is kept and queued
  * at the done, in the protocol's order: the bytes to delete around the
- * caret, the text to commit, then the text being composed.
+ * caret, the text to commit, then the text being composed.  The widgets'
+ * side (KL_VERSION 47, ws090-p022): a window's input given to its widgets
+ * and the text input asked for while one of their fields has the keyboard.
  */
 
 #include "window.h"
@@ -342,4 +344,83 @@ text_copy(
 	/* The bytes, ended. */
 	memcpy(out, text, length);
 	out[length] = '\0';
+}
+
+/*
+ * Gives one input of a window to the widgets: the pointer and the main
+ * button, the wheel, the keys, the fingers, and the text an input method
+ * sends.  Returns 1 when it was the widgets' input, 0 for another kind.
+ */
+int
+kl_ui_window_input(
+	struct kl_ui *ui,
+	const struct kl_window_event *event)
+{
+	/* What it is. */
+	switch (event->kind) {
+	case KL_WINDOW_MOTION:
+		(void)kl_ui_pointer_motion(ui, event->x, event->y);
+		break;
+	case KL_WINDOW_LEAVE:
+		(void)kl_ui_pointer_leave(ui);
+		break;
+	case KL_WINDOW_BUTTON:
+		/* The main button only, where the pointer is. */
+		(void)kl_ui_pointer_motion(ui, event->x, event->y);
+		if (event->code == KL_BUTTON_LEFT)
+			(void)kl_ui_pointer_button(ui, event->pressed, event->arrival_us);
+		break;
+	case KL_WINDOW_AXIS:
+	case KL_WINDOW_AXIS_STOP:
+		(void)kl_ui_axis(ui, event);
+		break;
+	case KL_WINDOW_KEY:
+		(void)kl_ui_key(ui, event->code, event->pressed, event->modifiers);
+		break;
+	case KL_WINDOW_TOUCH_DOWN:
+		(void)kl_ui_touch_down(ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		break;
+	case KL_WINDOW_TOUCH_MOTION:
+		(void)kl_ui_touch_motion(ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		break;
+	case KL_WINDOW_TOUCH_UP:
+		(void)kl_ui_touch_up(ui, event->id, event->time_us, event->arrival_us);
+		break;
+	case KL_WINDOW_TOUCH_CANCEL:
+		(void)kl_ui_touch_cancel(ui, event->arrival_us);
+		break;
+	case KL_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_DELETE:
+		(void)kl_ui_text(ui, event);
+		break;
+	default:
+		/* Not the widgets' input. */
+		return 0;
+	}
+
+	/* Succeeded: the widgets took it. */
+	return 1;
+}
+
+/*
+ * Asks for a window's text input while the focused widget of the frame
+ * shown takes text, and tells where its caret is, after each frame.
+ */
+void
+kl_ui_window_text(
+	const struct kl_ui *ui,
+	struct kl_window *window)
+{
+	struct kl_rect caret;
+	int wanted;
+
+	/* On while a field has the keyboard, off otherwise. */
+	wanted = kl_ui_text_wanted(ui, &caret);
+	kl_window_text_input(window, wanted);
+	if (!wanted)
+		return;
+
+	/* Where its caret is, for the candidates and the on-screen keyboard. */
+	kl_window_text_cursor(window, caret.x, caret.y, caret.width, caret.height);
 }

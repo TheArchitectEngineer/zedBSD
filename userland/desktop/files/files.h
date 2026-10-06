@@ -171,8 +171,14 @@ enum fm_event_type {
 	FM_EVENT_DROP,
 	FM_EVENT_DROP_PART,
 	FM_EVENT_DROP_ACTION,
-	FM_EVENT_DRAG_DONE
+	FM_EVENT_DRAG_DONE,
+	FM_EVENT_TEXT,
+	FM_EVENT_TEXT_DELETE,
+	FM_EVENT_PREEDIT
 };
+
+/* The longest text an input method sends at once, with its NUL (KL_WINDOW_TEXT_MAX). */
+#define FM_TEXT_INPUT_MAX	256U
 
 /* The drag and drop actions zdesktop chooses between (wl_data_device_manager's dnd_action). */
 #define FM_DND_COPY		1U
@@ -197,6 +203,8 @@ struct fm_event {
 	uint64_t time;
 	int focused;
 	uint32_t action;
+	char text[FM_TEXT_INPUT_MAX];
+	uint32_t before;
 };
 
 /*
@@ -1102,6 +1110,15 @@ enum fm_help {
  * history) and freed with the app.
  */
 struct fm_app {
+	/*
+	 * The text an input method is composing for the name being changed,
+	 * and where the name's caret was last drawn (window pixels; known 0
+	 * until it is), for the window's text input (ws090-p022).
+	 */
+	char preedit[FM_TEXT_INPUT_MAX];
+	struct fm_rect caret;
+	int caret_known;
+
 	/* The fonts, the window's size, the time of the input being handled, and whether a new frame is due. */
 	struct fm_text *text;
 	int width;
@@ -1550,6 +1567,8 @@ void fm_field_set(struct fm_field *field, const char *text);
 void fm_field_select(struct fm_field *field, size_t start, size_t end);
 unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
+void fm_field_delete_before(struct fm_field *field, size_t bytes);
+void fm_field_text_input(struct fm_app *app, const struct fm_event *event);
 void fm_field_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_field *field, const struct fm_rect *rect, unsigned pixels, const char *placeholder);
 
 /* The search (search.c). */

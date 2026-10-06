@@ -179,7 +179,6 @@ static unsigned view_drag_source(struct cal_view *view, struct kl_ui *ui, uint32
 static int view_memo(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, int top, int height, uint64_t now_us);
 static void view_chosen_day(struct cal_view *view, const struct kl_style *style, const struct kl_rect *card, uint64_t now_us);
 static void view_memo_drop(struct cal_view *view, const struct cal_date *date, uint64_t now_us);
-static void view_memo_add(struct cal_view *view, char character);
 static void view_note_icon(struct kl_canvas *canvas, float x, float y, float size);
 static int view_words(const struct kl_style *style, const char *text, int x, int y, int width, unsigned pixels, kl_color color, int draw);
 static void view_ghost(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style);
@@ -225,8 +224,7 @@ cal_view_init(
 	view->scroll_glide = 0;
 	view->dragging = -1;
 	view->started_us = now_us;
-	(void)snprintf(view->memo, sizeof(view->memo), "%s", "Ideas for the weekend:\n- walk along the river\n- call Grandma\n- film for the camera");
-	view->memo_length = strlen(view->memo);
+	kl_text_area_set(&view->memo, "Ideas for the weekend:\n- walk along the river\n- call Grandma\n- film for the camera");
 
 	/* The months' scroll, down only. */
 	error = kl_scroll_init(&view->scroll, KL_SCROLL_Y);
@@ -370,48 +368,12 @@ cal_view_key(
 	uint64_t now_us)
 {
 	struct cal_date date;
-	uint32_t character;
 	int days;
 	int index;
 
 	/* The keys with a modifier are the menu's. */
 	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return;
-
-	/* The memo with the keyboard: Enter breaks the line, Backspace takes a character back, Esc lets it go, the rest type. */
-	if (view->memo_focus) {
-		/* A line's end. */
-		if (key == KL_KEY_ENTER || key == KL_KEY_KPENTER) {
-			view_memo_add(view, '\n');
-			return;
-		}
-
-		/* The character before the end, all its bytes. */
-		if (key == KL_KEY_BACKSPACE) {
-			while (view->memo_length > 0U) {
-				/* One byte back; a byte that does not continue a character starts it. */
-				view->memo_length--;
-				if (((unsigned char)view->memo[view->memo_length] & 0xc0U) != 0x80U)
-					break;
-			}
-
-			/* The new end. */
-			view->memo[view->memo_length] = '\0';
-			return;
-		}
-
-		/* Esc: the memo lets the keyboard go. */
-		if (key == KL_KEY_ESC) {
-			view->memo_focus = 0;
-			return;
-		}
-
-		/* A character the key types (ASCII). */
-		character = kl_key_character(key, modifiers);
-		if (character != 0U && character < 0x80U)
-			view_memo_add(view, (char)character);
-		return;
-	}
 
 	/* Each key. */
 	days = 0;
@@ -890,7 +852,6 @@ view_topbar(
 	int pressed;
 	int middle;
 	int chosen;
-	int focused;
 	int i;
 
 	/* Back and forward: a chevron in a soft circle each. */
@@ -979,10 +940,6 @@ view_topbar(
 	if (field.x > segment.x + segment.width + 12)
 		(void)kl_field(ui, style, CAL_ID_SEARCH, &field, &view->search, "Search events...");
 
-	/* The search with the keyboard: the memo lets it go. */
-	focused = kl_ui_has_focus(ui, CAL_ID_SEARCH, 0U);
-	if (focused)
-		view->memo_focus = 0;
 }
 
 /*
@@ -1182,7 +1139,7 @@ view_cell(
 	if (seen.height > 0)
 		hit = kl_ui_hit(ui, CAL_ID_CELL, (uint32_t)(date->year * 10000 + date->month * 100 + date->day), &seen);
 	if ((hit & KL_HIT_CLICKED) != 0U) {
-		view->memo_focus = 0;
+		kl_ui_clear_focus(ui);
 		view_select(view, date, now_us);
 	}
 
@@ -1700,10 +1657,7 @@ view_memo(
 {
 	struct kl_rect header;
 	struct kl_rect text;
-	struct kl_rect caret;
-	kl_color ground;
 	unsigned hit;
-	int words;
 	int i;
 
 	/* The header, which drags the memo: a note, the title, the grip and a word of what to do. */
@@ -1720,46 +1674,12 @@ view_memo(
 	for (i = 0; i < 6; i++)
 		kl_canvas_circle(style->canvas, (float)(header.x + header.width - 14 + (i % 2) * 5), (float)(header.y + 10 + (i / 2) * 5), 1.4f, style->theme->text_faint);
 
-	/* The words' ground: a click gives them the keyboard (the search loses it). */
+	/* The words, in libkeiland's text area (an input method's text too, ws090-p022). */
 	text.x = area->x + 14;
 	text.y = top + CAL_MEMO_HEADER + 4;
 	text.width = area->width - 28;
 	text.height = height;
-	hit = kl_ui_hit(ui, CAL_ID_MEMO_TEXT, 0U, &text);
-	if ((hit & KL_HIT_CLICKED) != 0U) {
-		kl_ui_clear_focus(ui);
-		view->memo_focus = 1;
-	}
-
-	/* Drawn: white (a lighter veil on glass), its edge in the accent while it has the keyboard. */
-	ground = CAL_COLOR_SURFACE;
-	if (view->glass)
-		ground = CAL_COLOR_KIND_GLASS;
-	kl_canvas_round(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, ground);
-	if (view->memo_focus)
-		kl_canvas_round_border(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, 2.0f, style->theme->accent);
-	else
-		kl_canvas_round_border(style->canvas, (float)text.x, (float)text.y, (float)text.width, (float)text.height, 12.0f, 1.0f, style->theme->panel_edge);
-
-	/* The words, or what goes there; the caret after them while they have the keyboard. */
-	kl_canvas_clip_push(style->canvas, &text);
-	if (view->memo_length == 0U && !view->memo_focus) {
-		(void)kl_text_draw(style->text, style->canvas, text.x + 12, text.y + 24, "Write a memo...", strlen("Write a memo..."), 13U, 0, style->theme->text_faint);
-	} else {
-		words = view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, style->theme->text, 1);
-		if (view->memo_focus) {
-			caret.x = text.x + 12 + view_words(style, view->memo, text.x + 12, text.y + 8, text.width - 24, 13U, 0, -1);
-			caret.y = text.y + 8 + words - 20;
-			caret.width = 2;
-			caret.height = 16;
-			if (view->memo_length == 0U)
-				caret.y = text.y + 10;
-			kl_canvas_fill(style->canvas, &caret, style->theme->accent);
-		}
-	}
-
-	/* The clip goes. */
-	kl_canvas_clip_pop(style->canvas);
+	(void)kl_text_area(ui, style, CAL_ID_MEMO_TEXT, &text, &view->memo, "Write a memo...");
 
 	/* The edge below it. */
 	return text.y + text.height;
@@ -1850,7 +1770,7 @@ view_memo_drop(
 	size_t length;
 
 	/* An empty memo keeps nothing. */
-	if (view->memo_length == 0U) {
+	if (view->memo.length == 0U) {
 		view_notice(view, "Write something in the memo first.", now_us);
 		return;
 	}
@@ -1864,14 +1784,22 @@ view_memo_drop(
 	/* A copy of the memo on the day, its first line its title. */
 	memo = &view->memos[view->memo_count];
 	memo->date = *date;
-	(void)snprintf(memo->text, sizeof(memo->text), "%s", view->memo);
+	length = view->memo.length;
+	if (length >= sizeof(memo->text)) {
+		/* A longer memo is cut at a character's start. */
+		length = sizeof(memo->text) - 1U;
+		while (length > 0U && ((unsigned char)view->memo.text[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+	memcpy(memo->text, view->memo.text, length);
+	memo->text[length] = '\0';
 	length = strcspn(memo->text, "\n");
 	if (length >= sizeof(memo->title))
 		length = sizeof(memo->title) - 1U;
 	memcpy(memo->title, memo->text, length);
 	memo->title[length] = '\0';
 	view->memo_count++;
-	cal_log("MEMO date=%04d-%02d-%02d length=%zu", date->year, date->month, date->day, view->memo_length);
+	cal_log("MEMO date=%04d-%02d-%02d length=%zu", date->year, date->month, date->day, view->memo.length);
 
 	/* The cell sinks (not with the motion reduced). */
 	if (!view->reduce_motion) {
@@ -1884,24 +1812,6 @@ view_memo_drop(
 	view_select(view, date, now_us);
 	(void)snprintf(message, sizeof(message), "Kept the memo on %s %d (until Calendar quits).", cal_month_name(date->month), date->day);
 	view_notice(view, message, now_us);
-}
-
-/*
- * Adds a character to the end of the memo, while there is room.
- */
-static void
-view_memo_add(
-	struct cal_view *view,
-	char character)
-{
-	/* No room left with the NUL. */
-	if (view->memo_length + 1U >= sizeof(view->memo))
-		return;
-
-	/* The character, and the end. */
-	view->memo[view->memo_length] = character;
-	view->memo_length++;
-	view->memo[view->memo_length] = '\0';
 }
 
 /*

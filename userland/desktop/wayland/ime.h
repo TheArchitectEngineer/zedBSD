@@ -180,6 +180,7 @@ void kwl_ime_focus(struct kwl_server *server, struct kwl_object *previous);
 void kwl_ime_update(struct kwl_server *server, struct kwl_text_input *committed);
 void kwl_ime_field_changed(struct kwl_server *server);
 int kwl_ime_field_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+int kwl_ime_home_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 void kwl_ime_text_input_gone(struct kwl_server *server, struct kwl_text_input *input);
 void kwl_ime_surface_commit(struct kwl_object *surface);
 void kwl_ime_popup_draw(struct kwl_server *server, VkCommandBuffer command);

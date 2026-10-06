@@ -93,7 +93,7 @@ struct ml_message {
  * scrolls of the list and of the message.
  *
  * The search, and the message being written: whether it is open, its
- * fields, its body and whether the body has the keyboard.
+ * fields and its body (libkeiland's text area, ws090-p022).
  *
  * The notice shown at the bottom until a time (empty for none), whether
  * the window stands on glass, and whether the program is to end.
@@ -113,9 +113,7 @@ struct ml_view {
 	struct kl_field to;
 	struct kl_field cc;
 	struct kl_field subject;
-	char body[ML_BODY_MAX];
-	size_t body_length;
-	int body_focus;
+	struct kl_text_area body;
 
 	char notice[128];
 	uint64_t notice_until;

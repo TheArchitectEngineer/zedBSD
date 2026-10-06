@@ -184,9 +184,9 @@ main(
 		test_frame(&view, ui, &style);
 	}
 
-	/* The memo: a click gives it the keyboard, " ok" is typed, then it is dragged by its header onto the 26th. */
+	/* The memo: a click after its last line's end gives it the keyboard with the caret there, " ok" is typed, then it is dragged by its header onto the 26th. */
 	test_now += 1000000U;
-	test_click(&view, ui, &style, 1100, 500);
+	test_click(&view, ui, &style, 1240, 500);
 	for (i = 0; i < 3; i++) {
 		/* One key: Space, O, K. */
 		(void)kl_ui_key(ui, memo_keys[i], 1, 0U);

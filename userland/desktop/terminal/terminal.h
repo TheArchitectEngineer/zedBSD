@@ -613,6 +613,7 @@ int terminal_screen_in_range(const struct terminal_screen *screen, unsigned colu
 
 /* Finding text in the scrollback and the screen (search.c). */
 size_t terminal_search_decode(const char *text, size_t length, uint32_t *query, size_t capacity);
+unsigned terminal_search_bar_column(const char *text, size_t length, int ambiguous_wide);
 int terminal_search_find(struct terminal_screen *screen, const uint32_t *query, size_t count, unsigned long line, unsigned column, int direction, unsigned long *found_line, unsigned *found_column, unsigned *cells);
 int terminal_search_line(struct terminal_screen *screen, const uint32_t *query, size_t count, unsigned long line, unsigned char *marks);
 void terminal_search_show(struct terminal_screen *screen, unsigned long line);
