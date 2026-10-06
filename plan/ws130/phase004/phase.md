@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p004`
 Parent: [WS130](../ws.md)
-Status: test-wait（q832、P1、2026-10-06: 正常系を実装、host の試験 PASS、T1 の試験待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-286 PASS（QEMU、ipv6-p002・p003・p004、LOOKUP_NAME=example.com で A と AAAA）。旧: test-wait（q832、P1、正常系を実装））
 設計: [p001](../phase001/phase.md) §7（libc）、H5（DNS の順は p006 の networkd の側）
 依存: [p003](../phase003/phase.md)（T1-243 PASS）
 
