@@ -146,6 +146,7 @@ se_users_draw(
 	if (!available) {
 		(void)kl_text_draw_fit(app->text, canvas, x + 20, y + 24, "This desktop cannot change the password here.", USERS_TEXT_ROW, 0, width - 40, SE_COLOR_TEXT_SECONDARY);
 		bottom = se_users_pin_draw(app, canvas, x, top + height + USERS_GAP, width);
+		bottom = se_users_keys_draw(app, canvas, x, bottom + USERS_GAP, width);
 		return bottom;
 	}
 
@@ -183,8 +184,9 @@ se_users_draw(
 	if (differs != 0)
 		(void)kl_text_draw_fit(app->text, canvas, x + 20, y + 18, "The new password and its repeat differ.", USERS_TEXT_SUB, 0, width - 40, SE_COLOR_TEXT_SECONDARY);
 
-	/* The PIN card under it (ws163-p003). */
+	/* The PIN card under it (ws163-p003), and the security keys card (ws172-p003). */
 	bottom = se_users_pin_draw(app, canvas, x, top + height + USERS_GAP, width);
+	bottom = se_users_keys_draw(app, canvas, x, bottom + USERS_GAP, width);
 
 	/* The edge below the cards. */
 	return bottom;
@@ -208,6 +210,9 @@ se_users_press(
 	if (taken)
 		return;
 	taken = se_users_pin_press(app, index);
+	if (taken)
+		return;
+	taken = se_users_keys_press(app, index);
 	if (taken)
 		return;
 
@@ -254,6 +259,9 @@ se_users_key(
 	if (used)
 		return 1;
 	used = se_users_pin_key(app, event);
+	if (used)
+		return 1;
+	used = se_users_keys_key(app, event);
 	if (used)
 		return 1;
 
@@ -331,6 +339,9 @@ se_users_result(
 	taken = se_users_pin_result(app, request, error);
 	if (taken)
 		return 1;
+	taken = se_users_keys_result(app, request, error);
+	if (taken)
+		return 1;
 
 	/* Only the change the page asked. */
 	users = &app->users;
@@ -399,10 +410,11 @@ void
 se_users_close(
 	struct se_app *app)
 {
-	/* The three fields, the administration's and the PIN card's. */
+	/* The three fields, the administration's, the PIN card's and the keys card's. */
 	users_wipe(&app->users);
 	se_users_admin_wipe(&app->users);
 	se_users_pin_wipe(&app->users);
+	se_users_keys_wipe(&app->users);
 }
 
 /*

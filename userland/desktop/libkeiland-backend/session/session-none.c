@@ -155,6 +155,71 @@ kl_backend_session_enrolled_get(
 }
 
 /*
+ * Gives no key.
+ */
+size_t
+kl_backend_session_keys_get(
+	const struct kl_backend *backend,
+	struct kl_backend_key *keys,
+	size_t capacity)
+{
+	/* Nothing is enrolled without a manager. */
+	(void)backend;
+	(void)keys;
+	(void)capacity;
+	return 0U;
+}
+
+/*
+ * Has no manager to register a key through.
+ */
+int
+kl_backend_session_add_key(
+	struct kl_backend *backend,
+	const char *password,
+	const char *label,
+	const char *pin)
+{
+	/* Nothing is sent, and nothing is kept. */
+	(void)password;
+	(void)label;
+	(void)pin;
+	if (backend == NULL)
+		return EINVAL;
+	return ENOTSUP;
+}
+
+/*
+ * Has no manager to remove a key through.
+ */
+int
+kl_backend_session_remove_key(
+	struct kl_backend *backend,
+	const char *password,
+	const char *ref)
+{
+	/* Nothing is sent. */
+	(void)password;
+	(void)ref;
+	if (backend == NULL)
+		return EINVAL;
+	return ENOTSUP;
+}
+
+/*
+ * Has no attempt to stop.
+ */
+int
+kl_backend_session_cancel(
+	struct kl_backend *backend)
+{
+	/* Nothing is sent. */
+	if (backend == NULL)
+		return EINVAL;
+	return ENOTSUP;
+}
+
+/*
  * Has no refusal to tell.
  */
 const char *

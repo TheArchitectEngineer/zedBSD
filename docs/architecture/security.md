@@ -263,15 +263,17 @@ NUL or another control character. Anything else is answered `bad-request`.
 | --- | --- |
 | `auth` | none |
 | `styles` | none (and no secret): the styles the account has enrolled and may use now |
-| `enrolled` | none (and no secret): the account's PIN and keys, without secrets |
+| `enrolled` | none (and no secret): the account's PIN and keys, without secrets: `pin=0|1 fido2=N`, then `key=REF/LABEL` for each key (its reference and its label's bytes in hexadecimal) |
 | `enroll-pin` | the new PIN |
 | `remove-pin` | none |
 | `enroll-fido2` | a label, the key's PIN |
-| `remove-fido2` | the credential's ID |
+| `remove-fido2` | the credential's ID, or its reference |
 
 The answer is zero or more `status touch` lines (the user should touch or
 tap the key), then `ok uid=<user ID>` (with `id=<credential ID>` after
-`enroll-fido2`) or `fail <reason>`. sessiond compares the user ID with the
+`enroll-fido2`) or `fail <reason>`. A key's reference is the 64-bit FNV-1a hash
+of its credential ID's base64url text in 16 hexadecimal digits: a short name
+for one of an account's few keys, not a secret. sessiond compares the user ID with the
 account it asked about. The reasons are fixed words: `bad-secret`,
 `no-such-user`, `not-enrolled`, `locked-account`, `pin-off`, `no-key`,
 `many-keys`, `key-locked`, `timeout`, `device`, `cloned`, `bad-request`,

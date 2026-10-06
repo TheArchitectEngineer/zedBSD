@@ -1525,6 +1525,7 @@ void kwl_system_tick(struct kwl_server *server);
 void kwl_system_power_changed(struct kwl_server *server);
 void kwl_system_sharing_answer(struct kwl_server *server, int error);
 int kwl_system_pin_answer(struct kwl_server *server, int error);
+int kwl_system_key_touch(struct kwl_server *server);
 void kwl_system_enrolled_answer(struct kwl_server *server, int error);
 void kwl_system_network_changed(struct kwl_server *server, unsigned changed);
 int kwl_system_network_done(struct kwl_server *server, unsigned request, int error);

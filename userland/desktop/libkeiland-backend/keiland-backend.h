@@ -873,6 +873,7 @@ int kl_backend_account_administer(const char *password, const char *operation, c
 #define KL_BACKEND_SESSION_STYLES	5U	/* kl_backend_session_styles (ws172-p002) */
 #define KL_BACKEND_SESSION_ENROLL	6U	/* kl_backend_session_set_pin (ws172-p002) */
 #define KL_BACKEND_SESSION_ENROLLED	7U	/* kl_backend_session_enrolled (ws172-p002) */
+#define KL_BACKEND_SESSION_TOUCH	8U	/* not an answer: a security key waits to be touched (ws172-p003) */
 
 /*
  * The ways to log in or unlock (ws172-p002, docs/architecture/security.md
@@ -884,6 +885,19 @@ int kl_backend_account_administer(const char *password, const char *operation, c
 
 /* The longest reason word of a refusal, with its end. */
 #define KL_BACKEND_SESSION_REASON	24U
+
+/*
+ * A registered security key as ENROLLED lists it (ws172-p003): its
+ * reference (16 hexadecimal digits, what kl_backend_session_remove_key
+ * takes) and its label, and the most an account has.
+ */
+#define KL_BACKEND_KEYS_MAX		5U
+#define KL_BACKEND_KEY_REF		17U
+#define KL_BACKEND_KEY_LABEL		33U
+struct kl_backend_key {
+	char ref[KL_BACKEND_KEY_REF];
+	char label[KL_BACKEND_KEY_LABEL];
+};
 
 /* Why session_stop is called. */
 #define KL_BACKEND_SESSION_QUIT		1U	/* the session's Log Out was answered: end */
@@ -954,6 +968,34 @@ int kl_backend_session_set_pin(struct kl_backend *backend, const char *password,
  */
 int kl_backend_session_enrolled(struct kl_backend *backend);
 void kl_backend_session_enrolled_get(const struct kl_backend *backend, unsigned *pin, unsigned *keys);
+
+/*
+ * Gives the security keys of the last ENROLLED answer (ws172-p003): at
+ * most capacity of them in keys; returns how many there are.
+ */
+size_t kl_backend_session_keys_get(const struct kl_backend *backend, struct kl_backend_key *keys, size_t capacity);
+
+/*
+ * Registers the security key that is plugged in for the session user
+ * (ENROLL fido2), with its label (1 to 32 bytes, no control character and
+ * no colon) and the key's own PIN, checked by the user's password.  While
+ * the key waits to be touched, session_answer(KL_BACKEND_SESSION_TOUCH, 0)
+ * comes; the answer is session_answer(KL_BACKEND_SESSION_ENROLL, error) as
+ * kl_backend_session_set_pin's.  Returns as kl_backend_session_authenticate.
+ */
+int kl_backend_session_add_key(struct kl_backend *backend, const char *password, const char *label, const char *pin);
+
+/*
+ * Removes one of the session user's keys by its reference (REMOVE fido2),
+ * checked by the user's password.  Answered as kl_backend_session_set_pin.
+ */
+int kl_backend_session_remove_key(struct kl_backend *backend, const char *password, const char *ref);
+
+/*
+ * Stops a security key's attempt under way (CANCEL): its answer is a
+ * refusal (timeout).  Returns 0 when said, ENOTSUP, or the error of saying.
+ */
+int kl_backend_session_cancel(struct kl_backend *backend);
 
 /*
  * The word of the last refusal (FAIL reason), empty when it had none.
