@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws155-p000: builds and runs the host test of Calendar's view (host-calendar.c) with its 3D renderer, libkeiland's
+# ws155-p000, p003: builds and runs the host test of Calendar's view (host-calendar.c) with its 3D renderer, libkeiland's
 # drawing, text and widgets and libtruetype, on Linux, and turns the pictures into PNG files (the frames on glass laid
 # on a wallpaper, roughly as zdesktop shows them) and the desk calendar's frames into an animated GIF.
 #   sh plan/ws155/tests/run-host-calendar.sh [OUTPUT]   (default build/ws155/host-calendar; pictures beside it)
@@ -19,14 +19,15 @@ K=$U/libkeiland/ui
 L=$U/libkeiland
 C=$U/calendar
 cc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$U/libtruetype \
-	plan/ws155/tests/host-calendar.c $C/view.c $C/data.c $C/date.c $C/scene.c $C/render3d.c \
+	plan/ws155/tests/host-calendar.c plan/ws155/tests/host-calendar-data.c $C/view.c $C/store.c $C/date.c $C/scene.c $C/render3d.c \
 	$K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/scroll-bar.c \
 	$K/text-touch.c $K/ui.c $K/widgets.c $K/field.c $K/text-area.c $K/list.c $K/cards.c \
 	$L/gesture.c $L/motion.c $L/scroll.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
 	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
 F=$U/fonts
-"$out" $F/Mahora-Regular.ttf $F/DroidSansFallbackFull.ttf "$out"
+folder=$(mktemp -d "$dir/calendar-data.XXXXXX")
+"$out" $F/Mahora-Regular.ttf $F/DroidSansFallbackFull.ttf "$out" "$folder/Calendar"
 for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
 done

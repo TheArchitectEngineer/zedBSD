@@ -96,3 +96,10 @@
 | WS170 ws170-p003 | 日の語が古くなる（Today のまま日をまたぐ） | 描く時に今から作る（今は読んだ・足した時の語） | `phone/store.c` の `store_words` | 2026-10-07 |
 | WS170 ws170-p004（phone の API） | 本物の backend（モデム、スマホの bridge、VoIP、RCS）と、その状態・着信・通話の UI | backend の口を libkeiland-backend に置き、着信・通話中の画面（今は loopback だけ、着信の事象は無い） | `wayland/phone-shell.c`、libkeiland-backend | 2026-10-07 |
 | WS170 ws170-p004 | 受信の時刻の時計の違い、長い本文の UTF-8 の途中の切れ | 送り手の時刻と受けた時刻、文字の境で切る（今は compositor の時刻、Echo は 1024 byte で切る） | `wayland/phone-shell.c` の `phone_loopback_send` | 2026-10-07 |
+| WS155 ws155-p002（Calendar の保存） | 繰り返しの予定（RRULE）、TZID の zone、複数日の予定、VALARM、他の program の 1 file に複数の VEVENT | 展開・zone の変換・複数日の帯・知らせ・全部を読む（今は最初の VEVENT だけ、TZID は local と見なす、1 日の予定だけ） | `calendar/store.c` の `store_parse` | 2026-10-07 |
+| WS155 ws155-p002 | 2 台が同じ予定を書き換える、壊れた .ics | cloud の conflicted copy を見つけて知らせる、壊れた file を飛ばして知らせる（今は黙って飛ばす） | `calendar/store.c` | 2026-10-07 |
+| WS155 ws155-p003（Calendar の app） | calendar の追加・色の変更、Settings、Custom の種類、… の menu | 作る（今は notice） | `calendar/view.c` | 2026-10-07 |
+| WS155 ws155-p003 | 予定の drag での移動・長さの変更、日をまたぐ予定、検索の結果の一覧 | 作る（今は編集の form だけ、検索は月の中を薄くするだけ） | `calendar/view.c` | 2026-10-07 |
+| WS155 ws155-p003 | app が止まっている間の開始の通知、日をまたいだ時の今日の更新 | 通知の daemon か compositor の予定の知らせ、0 時の今日の更新（今は起動の時の今日、app が動いている間だけ通知） | `calendar/main.c` | 2026-10-07 |
+| WS155 ws155-p003 | 時刻の欄の誤り（25:00 など）、終わりが始まりより前 | 欄に誤りを示す（今は notice と、終わりを始まりにする） | `calendar/view.c` の `view_edit_save` | 2026-10-07 |
+| WS155 ws155-p004（時計から開く） | 時計の長押し・右 click、App Home に Calendar が無い image | 予定の簡単な一覧の popover、無い時の知らせ（今は click で起動だけ、無ければ log だけ） | `wayland/shell.c` の `bar_press`、`home.c` | 2026-10-07 |

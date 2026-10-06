@@ -6,14 +6,14 @@
  */
 
 /*
- * Calendar (WS155 p000): the mock of Keiland's calendar.  Only its face
- * exists: the months one under another with the events of four
- * calendars (test data in the program, data.c), a sidebar, a panel to add
- * an event by dragging its kind (an icon drawn in 3D, render3d.h and
- * scene.h) onto a date, the application's one memo (dragged onto a date,
- * it is kept there as a memo), and the day chosen with a small desk
- * calendar in 3D that turns its page when the day changes.  Nothing is
- * stored; what is dropped on a date lasts while the program runs.
+ * Calendar (WS155): Keiland's calendar.  The months one under another, a
+ * week or a day, with the events of four calendars, a sidebar, a panel to
+ * add an event by dragging its kind (an icon drawn in 3D, render3d.h and
+ * scene.h) onto a date and to edit it, the application's one memo
+ * (dragged onto a date, it is kept there as a memo), and the day chosen
+ * with a small desk calendar in 3D that turns its page when the day
+ * changes.  The events and memos are kept under ~/Documents/Calendar as
+ * iCalendar files (store.c, plan/ws155/phase001/phase.md).
  *
  * The view (view.c) draws a frame with libkeiland's canvas and widgets and
  * knows nothing of the window, so that the host tests draw it into
@@ -29,6 +29,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+/* Marks a parameter a function does not use. */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(name) ((void)(name))
+#endif
 
 /* The calendars, in the sidebar's order. */
 enum cal_list {
@@ -47,38 +52,25 @@ struct cal_date {
 };
 
 /*
- * One event of the test data: its month counted from today's (-1 the one
- * before), its day of that month (0 for today itself), its calendar, its
- * title and its time (NULL for all day).
+ * One event or memo kept (store.c): whether it is a memo kept on a day,
+ * its UID, its calendar (an event's), its day, whether it lasts the whole
+ * day, its start and end (minutes of the day, for one with times), its
+ * title, and a memo's words (allocated by the store, NULL for an event).
  */
-struct cal_event {
-	int month_offset;
-	int day;
+struct cal_item {
+	int memo;
+	char uid[96];
 	enum cal_list list;
-	const char *title;
-	const char *time;
-};
-
-/* An event dropped on a date while the program runs. */
-struct cal_added {
 	struct cal_date date;
-	enum cal_list list;
+	int all_day;
+	int start;
+	int end;
+	char title[128];
+	char *text;
 };
 
-/* The longest memo, with its NUL; the most memos kept on dates; the longest title of one. */
+/* The longest memo, with its NUL. */
 #define CAL_MEMO_MAX		1024U
-#define CAL_MEMOS_MAX		16U
-#define CAL_MEMO_TITLE		64U
-
-/*
- * The memo kept on a date (the application's memo dropped there, while
- * the program runs): its day, its first line as its title, and its words.
- */
-struct cal_memo {
-	struct cal_date date;
-	char title[CAL_MEMO_TITLE];
-	char text[CAL_MEMO_MAX];
-};
 
 /* The actions of the menu, the keys and the buttons. */
 #define CAL_ACTION_TODAY	1U
@@ -90,8 +82,12 @@ struct cal_memo {
 /* What a drag of the memo is (a kind of event's is its index). */
 #define CAL_DRAG_MEMO		4
 
-/* The most events dropped, cells remembered from a frame, and months shown. */
-#define CAL_ADDED_MAX		32U
+/* The views of the middle: the months, a week, a day. */
+#define CAL_MODE_MONTH		0
+#define CAL_MODE_WEEK		1
+#define CAL_MODE_DAY		2
+
+/* The most cells remembered from a frame, and months shown. */
 #define CAL_CELLS_MAX		512U
 #define CAL_MONTHS		13
 
@@ -116,10 +112,15 @@ struct cal_cell {
  * kind, CAL_DRAG_MEMO for the memo, -1 for none, and whether it has moved
  * off its card).
  *
- * The memo of the application (libkeiland's text area, ws090-p022) and
- * the memos kept on dates.
+ * The memo of the application (libkeiland's text area, ws090-p022; the
+ * store keeps it).
  *
- * The events dropped, the cells of the last frame, the notice shown at the
+ * The view of the middle (CAL_MODE_*), and an event being edited: whether
+ * the editor shows (in the panel), the store's index of the item (-1 for a
+ * new event), the item as it is being edited (its day, calendar, whether
+ * all day; a memo is only deleted), and the fields of its title and times.
+ *
+ * The cells of the last frame, where today's cell was last logged, the notice shown at the
  * bottom until a time (empty for none), whether the window stands on glass, and whether
  * the program is to end.
  *
@@ -152,13 +153,19 @@ struct cal_view {
 	double drag_from_y;
 
 	struct kl_text_area memo;
-	struct cal_memo memos[CAL_MEMOS_MAX];
-	size_t memo_count;
 
-	struct cal_added added[CAL_ADDED_MAX];
-	size_t added_count;
+	int mode;
+	int editing;
+	long edit_index;
+	struct cal_item edit;
+	struct kl_field edit_title;
+	struct kl_field edit_start;
+	struct kl_field edit_end;
+
 	struct cal_cell cells[CAL_CELLS_MAX];
 	size_t cell_count;
+	int today_x;
+	int today_y;
 	char notice[128];
 	uint64_t notice_until;
 	int glass;
@@ -185,11 +192,17 @@ int cal_month_index(const struct cal_date *first, const struct cal_date *date);
 const char *cal_month_name(int month);
 const char *cal_weekday_name(int weekday);
 
-/* The test data (data.c). */
-const struct cal_event *cal_events(size_t *count);
+/* The events and memos kept (store.c). */
+int cal_store_open(const char *root);
+void cal_store_close(void);
+const struct cal_item *cal_items(size_t *count);
+int cal_store_save_event(long index, const struct cal_item *item, long *kept);
+int cal_store_delete(long index);
+int cal_store_add_memo(const struct cal_date *date, const char *text);
+const char *cal_store_memo(void);
+int cal_store_set_memo(const char *text);
 const char *cal_list_name(enum cal_list list);
 kl_color cal_list_color(enum cal_list list);
-void cal_event_date(const struct cal_event *event, const struct cal_date *today, struct cal_date *date);
 
 /* The view (view.c). */
 int cal_view_init(struct cal_view *view, const struct cal_date *today, uint64_t now_us);

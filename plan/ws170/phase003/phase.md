@@ -2,7 +2,7 @@
 
 # ws170-p003: Phone の app（連絡先の一覧とタイムラインの表示）
 
-Status: in-progress（実装・host の試験・build 済み。QEMU は T1）
+Status: test-wait（T1-294）
 Disposition: normal
 Parent: [WS170](../ws.md)
 Queue: q831（2026-10-07、P2）
