@@ -120,13 +120,35 @@
 #define HOME_BOTTOM_DISTANCE	240.0f
 #define HOME_BOTTOM_THRESHOLD	0.35f
 
-/* The grid: columns, a cell's size, the icon's size and corner, the label's baseline under the icon. */
+/*
+ * The grid: columns, a cell's size, the icon's size and corner, the label's
+ * baseline under the icon (under the floor and the reflection, ws099-p035b).
+ */
 #define HOME_COLUMNS		6
 #define HOME_CELL_WIDTH		144
 #define HOME_CELL_HEIGHT	152
 #define HOME_ICON		72
 #define HOME_ICON_RADIUS	18.0f
-#define HOME_LABEL		26
+#define HOME_LABEL		49
+
+/*
+ * The stage (ws099-p035b, BUG-236, the user's choice A of the p035a
+ * montage, dark in both appearances): the black glass over the blurred
+ * desktop and the light in the top's middle; a row's glossy floor line
+ * HOME_FLOOR_GAP under its tiles and how bright it is; each tile's
+ * spotlight on the floor (brighter under the pointer); its reflection's
+ * opacity at the floor and its height (of the tile's); the labels' white.
+ */
+#define HOME_STAGE_DARK		0.82f
+#define HOME_STAGE_LIGHT	0.10f
+#define HOME_FLOOR_GAP		6
+#define HOME_FLOOR		0.10f
+#define HOME_FLOOR_BANDS	24
+#define HOME_SPOT		0.08f
+#define HOME_SPOT_LIT		0.16f
+#define HOME_REFLECTION		0.15f
+#define HOME_REFLECTION_HEIGHT	0.35f
+#define HOME_NAME_ALPHA		0.90f
 
 /* How much a tile is whitened under the pointer. */
 #define HOME_LIT		0.15f
@@ -212,6 +234,9 @@ static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct zwl_server *server, int32_t x, int32_t y);
 static void home_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned slot, float opacity);
+static void home_draw_floors(struct zwl_server *server, VkCommandBuffer command, float opacity);
+static void home_draw_floor(struct zwl_server *server, VkCommandBuffer command, float left, float right, float y, float opacity);
+static void home_draw_spotlight(struct zwl_server *server, VkCommandBuffer command, float middle, float floor, float strength);
 static void home_draw_search(struct zwl_server *server, VkCommandBuffer command, float opacity);
 static void home_open(struct zwl_server *server, float from, const char *via);
 static void home_close(struct zwl_server *server, float from, const char *via);
@@ -300,31 +325,45 @@ zwl_home_draw(
 	VkCommandBuffer command,
 	float progress)
 {
-	static const float tint[4] = { 0.86f, 0.92f, 1.0f, 0.22f };
 	struct glass_shape shape;
-	float color[4];
+	float width;
 	unsigned slot;
 
 	/* The applications and where they go. */
 	home_read_apps(server);
 	home_layout(server);
 
+	/* The stage keeps its own colours in both appearances (it is always dark, ws099-p035b). */
+	server->keep_colours = 1U;
+
 	/*
-	 * The blurred wallpaper, much whiter, whole from the start: what the
-	 * desktop uncovers is always bright (Home is never dark); only the
-	 * icons fade in.
+	 * The dark stage, whole from the start (only the icons fade in): the
+	 * blurred desktop under black glass.
 	 */
-	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	width = (float)server->width;
+	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)server->height);
 	shape.mode = MODE_GLASS;
-	shape.color[0] = 1.0f;
-	shape.color[1] = 1.0f;
-	shape.color[2] = 1.0f;
-	shape.color[3] = 0.48f;
+	shape.light = 1U;
+	shape.color[3] = HOME_STAGE_DARK;
 	glass_shape_draw(server, command, &shape);
 
-	/* A faint blue over it, the colour of zedBSD. */
-	memcpy(color, tint, sizeof(color));
-	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, color);
+	/* A soft bluish light from the top's middle, as the bar's middle is lighter. */
+	glass_shape_init(&shape, width * 0.3f, -(float)server->height * 0.3f, width * 0.4f, (float)server->height * 0.6f);
+	shape.quad[0] = 0.0f;
+	shape.quad[1] = 0.0f;
+	shape.quad[2] = width;
+	shape.quad[3] = (float)server->height;
+	shape.mode = MODE_SHADOW;
+	shape.radius = (float)server->height * 0.3f;
+	shape.soft = width * 0.3f;
+	shape.color[0] = 0.80f;
+	shape.color[1] = 0.86f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = HOME_STAGE_LIGHT;
+	glass_shape_draw(server, command, &shape);
+
+	/* The rows' floors, under the icons. */
+	home_draw_floors(server, command, progress);
 
 	/* Each icon shown on the output, fading in with Home. */
 	for (slot = 0U; slot < home_shown_count; slot++) {
@@ -338,6 +377,9 @@ zwl_home_draw(
 		home_draw_search(server, command, progress);
 	if (home_pages > 1U)
 		home_draw_dots(server, command, progress);
+
+	/* The rest of the frame is drawn in the appearance's colours again. */
+	server->keep_colours = 0U;
 }
 
 /*
@@ -1278,7 +1320,6 @@ home_draw_icon(
 	unsigned slot,
 	float opacity)
 {
-	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	const struct home_app *app;
 	const char *label;
 	struct glass_shape shape;
@@ -1287,6 +1328,8 @@ home_draw_icon(
 	float left;
 	float top;
 	float lighten;
+	float floor;
+	float spot;
 	int32_t x;
 	int32_t y;
 	int32_t width;
@@ -1315,11 +1358,20 @@ home_draw_icon(
 	 * decision; BUG-237 showed the blurred one).  Any other is its letter's
 	 * tile.
 	 */
+	floor = (float)(y + HOME_ICON + HOME_FLOOR_GAP);
 	if (app->picture >= 0) {
+		/* Brighter under the pointer: the tile whitened, its spotlight stronger. */
 		lighten = 0.0f;
-		if (over)
+		spot = HOME_SPOT;
+		if (over) {
 			lighten = HOME_LIT;
+			spot = HOME_SPOT_LIT;
+		}
+
+		/* Its spotlight on the floor behind it, the tile, its reflection under the floor. */
+		home_draw_spotlight(server, command, left + size * 0.5f, floor, spot * opacity);
 		glass_draw_app_tile(server, command, (unsigned)app->picture, left, top, size, opacity, lighten, GLASS_HOLE_WALLPAPER);
+		glass_draw_app_tile_reflection(server, command, (unsigned)app->picture, left, floor + 2.0f, size, size * HOME_REFLECTION_HEIGHT, HOME_REFLECTION * opacity);
 	} else {
 		home_draw_letter(server, command, app, x, y, left, top, size, over, opacity);
 	}
@@ -1337,14 +1389,136 @@ home_draw_icon(
 		glass_shape_draw(server, command, &shape);
 	}
 
-	/* The name under the icon, centred on it, in the desktop's language (the search keeps the English, WS158). */
-	memcpy(color, ink, sizeof(color));
-	color[3] = opacity;
+	/* The name under the reflection, centred on the icon, white on the stage, in the desktop's language (the search keeps the English, WS158). */
+	color[0] = 1.0f;
+	color[1] = 1.0f;
+	color[2] = 1.0f;
+	color[3] = HOME_NAME_ALPHA * opacity;
 	label = kl_tr(app->name);
 	width = glass_text_width(server, SIZE_TITLE, label);
 	if (width > HOME_CELL_WIDTH - 8)
 		width = HOME_CELL_WIDTH - 8;
 	glass_draw_text(server, command, SIZE_TITLE, x + (HOME_ICON - width) / 2, y + HOME_ICON + HOME_LABEL, label, HOME_CELL_WIDTH - 8, color);
+}
+
+/*
+ * Draws each row's glossy floor under its icons (ws099-p035b): a thin line
+ * across the row's icons shown, fading out towards both ends.
+ */
+static void
+home_draw_floors(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	float opacity)
+{
+	int32_t rows[HOME_APPS_MAX];
+	int32_t lefts[HOME_APPS_MAX];
+	int32_t rights[HOME_APPS_MAX];
+	unsigned count;
+	unsigned slot;
+	unsigned row;
+	int32_t x;
+
+	/* The rows of the icons on the output: their tops, and the leftmost and rightmost icon of each. */
+	count = 0U;
+	for (slot = 0U; slot < home_shown_count; slot++) {
+		x = home_icon_x[slot];
+		if (x + HOME_ICON < 0 || x > (int32_t)server->width)
+			continue;
+
+		/* The row it is in, or a new one. */
+		for (row = 0U; row < count; row++) {
+			if (rows[row] == home_icon_y[slot])
+				break;
+		}
+
+		/* A new row starts with this icon. */
+		if (row == count) {
+			rows[count] = home_icon_y[slot];
+			lefts[count] = x;
+			rights[count] = x + HOME_ICON;
+			count++;
+			continue;
+		}
+
+		/* A row known: wider. */
+		if (x < lefts[row])
+			lefts[row] = x;
+		if (x + HOME_ICON > rights[row])
+			rights[row] = x + HOME_ICON;
+	}
+
+	/* Each row's floor, a little wider than its icons. */
+	for (row = 0U; row < count; row++)
+		home_draw_floor(server, command, (float)(lefts[row] - 36), (float)(rights[row] + 36), (float)(rows[row] + HOME_ICON + HOME_FLOOR_GAP), opacity);
+}
+
+/*
+ * Draws one floor line from left to right at y: bright in the middle and
+ * fading out at both ends (in HOME_FLOOR_BANDS pieces), a pixel above it
+ * and two under it fainter, so it reads as a glossy edge.
+ */
+static void
+home_draw_floor(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	float left,
+	float right,
+	float y,
+	float opacity)
+{
+	static const float weights[4] = { 1.0f, 0.55f, 0.35f, 0.2f };
+	static const float offsets[4] = { 0.0f, 1.0f, -1.0f, 2.0f };
+	float color[4];
+	float piece;
+	float along;
+	unsigned band;
+	unsigned line;
+
+	/* Each line of the edge, each piece along it. */
+	piece = (right - left) / (float)HOME_FLOOR_BANDS;
+	color[0] = 0.86f;
+	color[1] = 0.90f;
+	color[2] = 1.0f;
+	for (line = 0U; line < 4U; line++) {
+		for (band = 0U; band < HOME_FLOOR_BANDS; band++) {
+			/* How far the piece's middle is from the line's middle (0 there, 1 at the ends), its brightness falling. */
+			along = ((float)band + 0.5f) / (float)HOME_FLOOR_BANDS * 2.0f - 1.0f;
+			if (along < 0.0f)
+				along = -along;
+			color[3] = HOME_FLOOR * weights[line] * (1.0f - along) * opacity;
+			glass_draw_solid(server, command, left + piece * (float)band, y + offsets[line], piece, 1.0f, 0.0f, color);
+		}
+	}
+}
+
+/* Draws a tile's spotlight: a soft elliptic pool of white light on the floor behind it. */
+static void
+home_draw_spotlight(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	float middle,
+	float floor,
+	float strength)
+{
+	struct glass_shape shape;
+	float half;
+
+	/* An ellipse 1.6 tiles wide and 36 pixels tall, its middle 8 under the floor, softened by 8. */
+	half = (float)HOME_ICON * 0.8f;
+	glass_shape_init(&shape, middle - half, floor + 8.0f - 18.0f, 2.0f * half, 36.0f);
+	shape.quad[0] -= 16.0f;
+	shape.quad[1] -= 16.0f;
+	shape.quad[2] += 32.0f;
+	shape.quad[3] += 32.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = 18.0f;
+	shape.soft = 8.0f;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = strength;
+	glass_shape_draw(server, command, &shape);
 }
 
 /*
@@ -1784,7 +1958,7 @@ home_draw_dots(
 	float opacity)
 {
 	static const float current[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
-	static const float other[4] = { 0.12f, 0.16f, 0.24f, 0.28f };
+	static const float other[4] = { 1.0f, 1.0f, 1.0f, 0.32f };
 	float color[4];
 	float left;
 	float y;
