@@ -170,6 +170,13 @@ fm_input_motion(
 	if (dragging != 0)
 		return;
 
+	/* A drag of a list column's edge changes the columns' widths (BUG-220). */
+	if (app->pressing != 0) {
+		dragging = fm_list_edge_motion(app, event->x);
+		if (dragging != 0)
+			return;
+	}
+
 	/* A press on an item (or a favorite) drags the selection (or the favorite) once the pointer moves away from it. */
 	if (app->pressing != 0 && (app->press_kind == FM_HIT_ITEM || app->press_kind == FM_HIT_PLACE)) {
 		dragging = fm_drag_motion(app, event->x, event->y);
@@ -778,6 +785,9 @@ input_click(
 	case FM_HIT_HEADER:
 		input_sort(app, index);
 		break;
+	case FM_HIT_COLUMN_EDGE:
+		fm_list_edge_press(app, index, app->press_x);
+		break;
 	case FM_HIT_ITEM:
 		input_press_item(app, index, double_click, modifiers);
 		break;
@@ -869,6 +879,15 @@ input_release(
 {
 	struct fm_tab *tab;
 	int dropped;
+	int edged;
+
+	/* A drag of a list column's edge ends where it is (BUG-220). */
+	edged = fm_list_edge_release(app);
+	if (edged != 0) {
+		app->pressing = 0;
+		app->dirty = 1;
+		return;
+	}
 
 	/* A drag ends with its drop. */
 	dropped = fm_drag_release(app);

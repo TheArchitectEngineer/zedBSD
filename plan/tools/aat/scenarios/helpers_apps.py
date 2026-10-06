@@ -562,6 +562,41 @@ def textedit(item):
 	item.passed()
 
 
+@run.define("apps.videoplayer.fullscreen")
+def videoplayer_fullscreen(item):
+	mark = run.mark()
+	window = run.open_as_user(item, f"/bin/videoplayer {aatlib.SAMPLES}/sample.mp4")
+	item.check(run.wait(r"VIDEOPLAYER OPEN path=", mark, 15), "sample.mp4 did not open")
+	point = window.middle()
+	run.click(*point)
+	time.sleep(0.5)
+
+	def toggled(what: str, keys: tuple, on: int, extra: str = "") -> str:
+		since = run.mark()
+		if keys:
+			run.key(*keys)
+		else:
+			run.click(*point, "--count", "2")
+		line = run.wait(rf"VIDEOPLAYER FULLSCREEN on={on}" + (f"|{extra}" if extra else ""), since, 10)
+		time.sleep(0.8)
+		item.step(what, line)
+		item.check(line, f"{what}: full screen did not turn {'on' if on else 'off'}")
+		return line
+
+	toggled("F11", ("f11",), 1)
+	run.shot(item, "f11")
+	toggled("Esc", ("esc",), 0)
+	toggled("Alt+Enter", ("alt+enter",), 1)
+	toggled("F11 again", ("f11",), 0, r"ZWL GLASS fullscreen-leave surface=\d+ via=f11")
+	time.sleep(0.5)
+	toggled("a double click", (), 1)
+	run.shot(item, "double-click")
+	time.sleep(2.5)
+	run.shot(item, "bar-hidden")
+	toggled("a double click again", (), 0)
+	item.person("the picture over the whole screen in f11.png and double-click.png, the bar gone in bar-hidden.png")
+
+
 @run.define("apps.files.devices")
 def files_devices(item):
 	mark = run.mark()

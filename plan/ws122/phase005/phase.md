@@ -48,3 +48,12 @@ Related: [BUG-223](../../bugs/BUG-223.md)・[BUG-208](../../bugs/BUG-208.md)・[
 ## 5. 未決
 
 無し（ユーザーの要求の範囲で決められる）。
+
+## p005a の実装（2026-10-06 q797 P2）
+
+Status（p005a）: test-wait（T1 依頼中。実装・build・AAT の host 試験まで）
+
+- 前から有った物: View の Full Screen の項（`KL_MENU_ROLE_FULLSCREEN`、compositor の menu は F11 をこの項に当てる）、F の key、全画面の時の Esc、bar は再生中は pointer の後 3 秒で隠れる。
+- 足した物（`userland/desktop/videoplayer/main.c`）: F11（menu の無い desktop でも）と Alt+Enter で切り替え、picture の double click（bar の上でない所、400 ms・8 px 以内の 2 回目の press）で切り替え、全画面の時の bar は pointer の後 2 秒（`VP_BAR_FULL_US`）。log `VIDEOPLAYER FULLSCREEN toggle via=f11|alt-enter|double-click`・`VIDEOPLAYER FULLSCREEN on=0|1`。全画面から F11 で出るのは compositor（BUG-194）。
+- AAT: [apps.videoplayer.fullscreen](../../../tests/scenarios/apps/videoplayer/fullscreen.md)（helper つき、needs-person で撮影を見る）。
+- 確認: videoplayer の build warning 0、style-check 0、check-scenarios PASS、aat run-host PASS。QEMU は T1。
