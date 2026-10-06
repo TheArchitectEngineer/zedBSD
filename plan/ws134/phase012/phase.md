@@ -10,7 +10,7 @@ Parent: [WS134](../ws.md)
 
 ## 実装
 
-- `userland/desktop/include/kl-system-protocol.h`: `KL_SYSTEM_MANAGER_VERSION 2`、request 6 `get_monitor(new_id, period_ms)`（since 2）、
+- `userland/desktop/libkeiland/system/kl-system-protocol.h`: `KL_SYSTEM_MANAGER_VERSION 2`、request 6 `get_monitor(new_id, period_ms)`（since 2）、
   capability `KL_SYSTEM_CAPABILITY_MONITOR 0x20`、`kl_system_monitor_v1`（request destroy・ack(serial)・set_period(ms)、event info・device・
   info_done・cpu・memory・link・disk・gpu・sample_done、u64 は high と low の 2 つの uint）、device の kind（GPU・disk・link）、period の範囲
   250〜10000（既定 1000）。流量の約束を header の comment に書いた。

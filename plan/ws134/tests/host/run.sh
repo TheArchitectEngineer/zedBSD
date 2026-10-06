@@ -16,7 +16,7 @@ cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -I"$m" -
     userland/desktop/libkeiland/motion.c -lm -o "$out/interact-test"
 "$out/interact-test" > "$out/interact.log"
 # ws134-p012: libkeiland's monitor rates (rate-test.c with system-monitor-rate.c).
-cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Iuserland/desktop/include \
+cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -I. -Iuserland/desktop/include \
     -Iuserland/desktop/libkeiland/system plan/ws134/tests/host/rate-test.c userland/desktop/libkeiland/system/system-monitor-rate.c \
     -lm -o "$out/rate-test"
 "$out/rate-test" > "$out/rate.log"

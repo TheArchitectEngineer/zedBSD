@@ -46,7 +46,7 @@ design.md §4 の拡張 `kl_system_manager_v1`（settings・network・audio・po
 
 ### 実装
 
-- `userland/desktop/include/kl-system-protocol.h`: manager の request 2〜5（`get_network`・`get_audio`・`get_power`・`get_devices`）、capability の bit、4 つの interface の opcode と値。
+- `userland/desktop/libkeiland/system/kl-system-protocol.h`: manager の request 2〜5（`get_network`・`get_audio`・`get_power`・`get_devices`）、capability の bit、4 つの interface の opcode と値。
 - `userland/desktop/wayland/system.c`（新しい file）:
   - manager の dispatch（`get_settings` は settings.c へ渡す）と、capabilities 0x1f。
   - object を作ると、最初の state と `done` を送る。変化は「変わった event と `done` 一つ」で送る（network の state と scan も `done` 一つにまとめる）。

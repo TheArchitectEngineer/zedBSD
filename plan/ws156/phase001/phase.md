@@ -19,7 +19,7 @@ Queue: ベータ2 の P1 の列の 3 番目（q は Q1 が振る）
 
 | 項目 | 今 | 場所 |
 | --- | --- | --- |
-| Keiland の拡張の protocol | 手で書いた wire の仕様と opcode（XML も scanner も無い）。`kl_system_manager_v1`（版 7、get_* の opcode 0〜8）から network・audio・power・devices・account・sharing・monitor の object を作る。同じ uid の client にだけ見せ、greeter には見せない | `userland/desktop/include/kl-system-protocol.h`、`wayland/protocol.c` 48〜74、`wayland/system.c` 290・325・582〜695、`wayland/settings.c` 284 |
+| Keiland の拡張の protocol | 手で書いた wire の仕様と opcode（XML も scanner も無い）。`kl_system_manager_v1`（版 7、get_* の opcode 0〜8）から network・audio・power・devices・account・sharing・monitor の object を作る。同じ uid の client にだけ見せ、greeter には見せない | `userland/desktop/libkeiland/system/kl-system-protocol.h`、`wayland/protocol.c` 48〜74、`wayland/system.c` 290・325・582〜695、`wayland/settings.c` 284 |
 | libkeiland の口 | `kl_system_open`・`kl_system_dispatch`・`kl_system_take_result`、要求は番号つきで、答えは後で 1 回（`result(request, applied, saved)`） | `libkeiland/system/system.c`、`keiland.h` 1128〜1523 |
 | overlay の描画 | `zwl_glass_draw` の最後の層（`zwl_volume_draw_popup`・`zwl_corner_draw` の辺り、画面 keyboard の下）。glass の形（`glass_shape`、`.opacity` で fade）、文字（`glass_draw_text`、UTF-8、日本語は fallback の font）、× の glyph（`GLASS_CLOSE_GLYPH`） | `wayland/shell.c` 417〜611、`glass.h`、`volume.c` 448〜540 |
 | animation | main loop が 10 ms ごとに `zwl_glass_tick`、動いている間 `server->dirty = 1`。ease は file ごとの `1-(1-t)^3`（`corner_ease`・`home_ease`） | `shell.c` 2254、`corner.c` 440・882 |

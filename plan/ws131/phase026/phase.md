@@ -34,7 +34,7 @@ userland/desktop/wallpapers/Lakeside.ppm, Birch-Lake.ppm, README.md   （header 
 userland/desktop/libwayland/API-PROVENANCE.md             （同上）
 ```
 
-消すもの: `keiui.h`（旧）、直下の `keiland.h`・`keiland-ui.h`・`truetype.h`・`browser.h`（subdirectory へ移る）、`userland/desktop/include/`（空になる）。
+消すもの: `keiui.h`（旧）、直下の `keiland.h`・`keiland-ui.h`・`truetype.h`・`browser.h`（subdirectory へ移る）、`userland/desktop/keiland/`（空になる）。
 
 ## 手順（上から順に。各段の終わりに build を確かめて `git commit -m WIP`）
 
@@ -53,9 +53,9 @@ git grep -n 'kl-system-protocol.h' > build/ws131-p026/before-proto.txt
 ### 段 1: kl-system-protocol.h を内部へ
 
 ```sh
-git mv userland/desktop/include/kl-system-protocol.h userland/desktop/libkeiland/system/kl-system-protocol.h
-git grep -l 'userland/desktop/include/kl-system-protocol.h' -- userland plan/ws*/tests plan/tools \
-  | xargs sed -i 's|userland/desktop/include/kl-system-protocol.h|userland/desktop/libkeiland/system/kl-system-protocol.h|g'
+git mv userland/desktop/keiland/kl-system-protocol.h userland/desktop/libkeiland/system/kl-system-protocol.h
+git grep -l 'userland/desktop/keiland/kl-system-protocol.h' -- userland plan/ws*/tests plan/tools \
+  | xargs sed -i 's|userland/desktop/keiland/kl-system-protocol.h|userland/desktop/libkeiland/system/kl-system-protocol.h|g'
 ```
 
 確かめ: `git grep -n 'keiland/kl-system-protocol'` が 0。build（段 6 の zedBSD と Linux）。
@@ -63,14 +63,14 @@ git grep -l 'userland/desktop/include/kl-system-protocol.h' -- userland plan/ws*
 ### 段 2: 壁紙と文書を header の置き場所の外へ
 
 ```sh
-git mv userland/desktop/wallpapers/Lakeside.ppm   userland/desktop/wallpapers/
-git mv userland/desktop/wallpapers/Birch-Lake.ppm userland/desktop/wallpapers/
-git mv userland/desktop/wallpapers/README.md      userland/desktop/wallpapers/
-git mv userland/desktop/libwayland/API-PROVENANCE.md userland/desktop/libwayland/API-PROVENANCE.md
-git grep -l 'desktop/wallpapers' -- . ':!plan/history' ':!plan/*/evidence' \
-  | xargs sed -i 's|desktop/wallpapers|desktop/wallpapers|g'
+git mv userland/desktop/keiland/wallpapers/Lakeside.ppm   userland/desktop/wallpapers/
+git mv userland/desktop/keiland/wallpapers/Birch-Lake.ppm userland/desktop/wallpapers/
+git mv userland/desktop/keiland/wallpapers/README.md      userland/desktop/wallpapers/
+git mv userland/desktop/keiland/wayland/API-PROVENANCE.md userland/desktop/libwayland/API-PROVENANCE.md
+git grep -l 'desktop/keiland/wallpapers' -- . ':!plan/history' ':!plan/*/evidence' \
+  | xargs sed -i 's|desktop/keiland/wallpapers|desktop/wallpapers|g'
 git grep -l 'keiland/wayland/API-PROVENANCE.md' -- . ':!plan/history' \
-  | xargs sed -i 's|userland/desktop/libwayland/API-PROVENANCE.md|userland/desktop/libwayland/API-PROVENANCE.md|g'
+  | xargs sed -i 's|userland/desktop/keiland/wayland/API-PROVENANCE.md|userland/desktop/libwayland/API-PROVENANCE.md|g'
 ```
 
 注意: `userland/desktop/wallpapers/` には壁紙を生成する `Makefile`・`generate.py` が既にある。名前が重ならないことを `ls` で確かめる。`plan/ws075/demo/build-demo-image.sh` などの `--file` の元の path がこの sed で直ることを確かめる。
@@ -82,20 +82,20 @@ git grep -l 'keiland/wayland/API-PROVENANCE.md' -- . ':!plan/history' \
 ### 段 4: `userland/desktop/include/` へ移す
 
 ```sh
-git mv userland/desktop/include userland/desktop/include
+git mv userland/desktop/keiland userland/desktop/include
 mkdir -p userland/desktop/include/keiland userland/desktop/include/truetype userland/desktop/include/browser
-git mv userland/desktop/include/keiland/keiland.h    userland/desktop/include/keiland/keiland.h
+git mv userland/desktop/include/keiland.h    userland/desktop/include/keiland/keiland.h
 git mv userland/desktop/include/keiland-ui.h userland/desktop/include/keiland/ui.h
-git mv userland/desktop/include/truetype/truetype.h   userland/desktop/include/truetype/truetype.h
-git mv userland/desktop/include/browser/browser.h    userland/desktop/include/browser/browser.h
+git mv userland/desktop/include/truetype.h   userland/desktop/include/truetype/truetype.h
+git mv userland/desktop/include/browser.h    userland/desktop/include/browser/browser.h
 ```
 
 path の置き換え（段 1・2 で済んだ物の後なので、残りは全て header の置き場所の参照）:
 
 ```sh
-git grep -l 'userland/desktop/include/' -- . ':!plan/history' ':!plan/*/evidence' ':!*.log' \
-  | xargs sed -i 's|userland/desktop/include/|userland/desktop/include/|g'
-git grep -lE -- '-Iuserland/desktop/include( |$)' | xargs sed -i -E 's#-Iuserland/desktop/include( |$)#-Iuserland/desktop/include\1#g'
+git grep -l 'userland/desktop/keiland/' -- . ':!plan/history' ':!plan/*/evidence' ':!*.log' \
+  | xargs sed -i 's|userland/desktop/keiland/|userland/desktop/include/|g'
+git grep -lE -- '-Iuserland/desktop/keiland( |$)' | xargs sed -i -E 's#-Iuserland/desktop/keiland( |$)#-Iuserland/desktop/include\1#g'
 # 個々の file の path（sed の後、移した 4 本の旧い path が残っていれば）
 git grep -l 'desktop/include/\(keiland\|keiland-ui\|truetype\|browser\)\.h' -- . ':!plan/history' ':!plan/*/evidence' \
   | xargs sed -i -e 's|desktop/include/keiland\.h|desktop/include/keiland/keiland.h|g' \
@@ -106,7 +106,7 @@ git grep -l 'desktop/include/\(keiland\|keiland-ui\|truetype\|browser\)\.h' -- .
 
 その後、手で直す所（sed では直らない、または意味を変える所）:
 
-- `toolchain/llvm/sysroot.mk:90,93,103,152`: `userland/desktop/include` → `userland/desktop/include`（`userland/desktop/include/%`・`userland/desktop/include/*` の形も）。段 3 と同じ許可の中で。写し先は `usr/include/` の下にそのまま（`keiland/keiland.h` → `usr/include/keiland/keiland.h`）。
+- `toolchain/llvm/sysroot.mk:90,93,103,152`: `userland/desktop/keiland` → `userland/desktop/include`（`userland/desktop/keiland/%`・`userland/desktop/keiland/*` の形も）。段 3 と同じ許可の中で。写し先は `usr/include/` の下にそのまま（`keiland/keiland.h` → `usr/include/keiland/keiland.h`）。
 - `userland/desktop/keiland-freebsd.mk:172-180`（FreeBSD の公開の表）: `keiland.h`・`keiui.h`・`keiland-ui.h`・`truetype.h` の行を `keiland/keiland.h keiland/ui.h keiland/compat.h truetype/truetype.h` に（install 先は `include/<同じ相対 path>`）。`*_RETIRED` の一覧（古い file を消す規則）に `include/keiland.h include/keiui.h include/keiland-ui.h include/truetype.h` を足す。
 - `userland/desktop/libbrowser/Makefile:5,187`: package の header を `userland/desktop/include/browser/browser.h` に（install 先 `usr/include/browser/browser.h`）。
 - `userland/desktop/libkeiland/exports.py`・`plan/ws131/tools/rename-map.py`: 読む header の path を `include/keiland/keiland.h`・`include/keiland/ui.h` に。
@@ -211,7 +211,7 @@ git grep -l 'desktop/include/\(keiland\|keiland-ui\|truetype\|browser\)\.h' -- .
 
 ## 受け入れ
 
-- 段 6 の全て。tree の中（`plan/history`・証拠を除く）で `userland/desktop/include/` の参照が 0、`userland/desktop/include/` が無い。app の Keiland の include が `<keiland/keiland.h>` だけ（`<keiland/ui.h>`・`<keiland/compat.h>` を app が include しない）。
+- 段 6 の全て。tree の中（`plan/history`・証拠を除く）で `userland/desktop/keiland/` の参照が 0、`userland/desktop/keiland/` が無い。app の Keiland の include が `<keiland/keiland.h>` だけ（`<keiland/ui.h>`・`<keiland/compat.h>` を app が include しない）。
 - QEMU・Linux・FreeBSD の回帰（段 7）PASS。
 
 ## 危険と戻し方

@@ -25,7 +25,7 @@
  */
 
 #include "userland/desktop/wayland/kwl.h"
-#include "userland/desktop/include/kl-system-protocol.h"
+#include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland/system/system-private.h"
 #include "userland/desktop/libkeiland/system/system-protocol.h"
