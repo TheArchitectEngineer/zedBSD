@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws175-p002a, p003a, p003b, p006: builds libpdf (with libz-compat, libjpeg-compat and libtruetype), host-edit-scan,
-# host-edit-change, host-edit-image and host-edit-intake with the host's C compiler (plain, ASan and UBSan), writes edit-images.pdf (make-edit-samples.py) and
-# runs the tests with each build; the updates host-edit-change, host-edit-image and host-edit-intake save are checked with qpdf --check.
+# ws175-p002a, p003a, p003b, p006, p007: builds libpdf (with libz-compat, libjpeg-compat and libtruetype), host-edit-scan,
+# host-edit-change, host-edit-image, host-edit-intake and host-edit-blank with the host's C compiler (plain, ASan and UBSan), writes edit-images.pdf (make-edit-samples.py) and
+# runs the tests with each build; the files host-edit-change, host-edit-image, host-edit-intake and host-edit-blank save are checked with qpdf --check.
 #   sh plan/ws175/tests/run-host-edit-scan.sh [OUTPUT]   (default build/ws175-host)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -48,7 +48,7 @@ for variant in plain asan ubsan; do
 		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
-	for test in host-edit-scan host-edit-change host-edit-image host-edit-intake host-tounicode host-font-unicode host-edit-text; do
+	for test in host-edit-scan host-edit-change host-edit-image host-edit-intake host-edit-blank host-tounicode host-font-unicode host-edit-text; do
 		# shellcheck disable=SC2086
 		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
 			-o "$out/$test-$variant"
@@ -95,8 +95,14 @@ for variant in plain asan ubsan; do
 		grep -v '^ok' "$out/intake-$variant.txt"
 		status=1
 	fi
+	if "$out/host-edit-blank-$variant" "$out/insert.jpg" "$out/blank-$variant.pdf" > "$out/blank-$variant.txt" 2>&1; then
+		echo "host-edit-blank $variant: $(tail -1 "$out/blank-$variant.txt")"
+	else
+		grep -v '^ok' "$out/blank-$variant.txt"
+		status=1
+	fi
 	# The only error qpdf may find is the sample's own: page 3's stream of a filter no reader decodes here.
-	for saved in edited imaged intake; do
+	for saved in edited imaged intake blank; do
 		errors=$(qpdf --check "$out/$saved-$variant.pdf" 2>&1 | grep 'ERROR' | grep -v 'page 3: content stream' || true)
 		if [ -z "$errors" ]; then
 			echo "qpdf --check $saved-$variant.pdf: ok (page 3's own stream only)"
