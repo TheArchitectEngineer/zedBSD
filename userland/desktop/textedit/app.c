@@ -653,7 +653,7 @@ te_app_card(
 	const struct te_app *app,
 	struct te_rect *rect)
 {
-	/* The frame inset on every side. */
+	/* The window, less the inset (none, see TE_CARD_INSET) on every side. */
 	rect->x = TE_CARD_INSET;
 	rect->y = TE_CARD_INSET;
 	rect->width = app->width - 2 * TE_CARD_INSET;

@@ -1138,9 +1138,6 @@ struct fm_app {
 	int desktop;
 	struct fm_desktop desk;
 
-	/* Whether the window is docked (maximized): its panels keep a gap from the screen's edges on glass. */
-	int docked;
-
 	/* The user's home folder, and the name the Home page greets (the display name, ws035-p120). */
 	char home[FM_PATH_MAX];
 	char user[64];

@@ -704,9 +704,8 @@ main_frame(void)
 
 	/* Tries until the frame is shown, remaking a stale swapchain a few times. */
 	for (stale = 0; stale < MAIN_STALE_LIMIT; stale++) {
-		/* The frame on the CPU, laid out for a docked or a floating window. */
+		/* The frame on the CPU. */
 		started = fm_clock();
-		main_app.docked = main_window.maximized;
 		if (main_app.desktop) {
 			fm_desktop_draw(&main_app, &main_canvas);
 		} else {

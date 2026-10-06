@@ -391,9 +391,13 @@ struct iv_place {
 /* How long an animated change of the view takes, in milliseconds. */
 #define IV_ANIMATION_MS		200U
 
-/* The margin around the images in a window (not fullscreen), and the glass card's inset from the window's edge. */
+/*
+ * The margin around the images in a window (not fullscreen), and the glass
+ * card's inset from the window's edge: none, so that the card lines up with
+ * the floating titlebar (ws090-p021).
+ */
 #define IV_MARGIN		24
-#define IV_CARD_INSET		8
+#define IV_CARD_INSET		0
 #define IV_CARD_RADIUS		18
 
 /* The images (image.c). */
