@@ -60,6 +60,12 @@ TITLE_GAP = 8
 BUTTON_FROM_RIGHT = 26
 BUTTON_SPACING = 34
 
+# A window started outside App Home (a program run with a file) has only its place in the compositor's lines (ZWL
+# MAP x= y=), not its size: a point this far inside its body's top-left corner is still in the body of any window an
+# application opens (none is smaller than 320x200).
+UNSIZED_INSET_X = 120
+UNSIZED_INSET_Y = 90
+
 # The applications App Home lists (userland/desktop/wayland/apps.conf): name, what to type, the program's name
 # (for ps), and the line that says it is ready (None: the window's map is enough).
 APPS = {
@@ -157,7 +163,8 @@ class Item:
 
 @dataclass
 class Window:
-	"""A window as the compositor's lines place it: its body (the client's surface) on the screen."""
+	"""A window as the compositor's lines place it: its body (the client's surface) on the screen.  A width and
+	height of 0 mean the lines gave its place but not its size (a window started outside App Home)."""
 	client: int
 	surface: int
 	x: int
@@ -165,6 +172,10 @@ class Window:
 	width: int
 	height: int
 	docked: int = 0
+
+	def sized(self) -> bool:
+		"""Whether the lines gave the window's size."""
+		return self.width > 0 and self.height > 0
 
 	def title_point(self) -> tuple[int, int]:
 		"""A point of the floating title bar left of its controls (the tests' wx + 60)."""
@@ -175,7 +186,9 @@ class Window:
 		return self.x + self.width - BUTTON_FROM_RIGHT - button * BUTTON_SPACING, self.y - TITLE_GAP - TITLE_HEIGHT // 2
 
 	def middle(self) -> tuple[int, int]:
-		"""The middle of the body."""
+		"""The middle of the body (of a window without a known size, a point surely inside its body)."""
+		if not self.sized():
+			return self.x + UNSIZED_INSET_X, self.y + UNSIZED_INSET_Y
 		return self.x + self.width // 2, self.y + self.height // 2
 
 
@@ -347,28 +360,34 @@ class Run:
 			words += ["--since", since]
 		return json.loads(self.aat(*words).stdout or "[]")
 
-	def window(self, client: int, surface: int, since: str | None = None) -> Window | None:
-		"""A window by its client and surface, when its place and size are known."""
+	def window(self, client: int, surface: int, since: str | None = None, unsized: bool = False) -> Window | None:
+		"""A window by its client and surface, when its place and size are known (with unsized, its place is
+		enough: the size is then 0 by 0)."""
 		for window in self.windows(since):
-			if window["client"] == client and window["surface"] == surface and "width" in window and "x" in window:
+			if window["client"] != client or window["surface"] != surface or "x" not in window:
+				continue
+			if "width" in window:
 				return Window(client, surface, window["x"], window["y"], window["width"], window["height"],
 					window.get("docked", 0))
+			if unsized:
+				return Window(client, surface, window["x"], window["y"], 0, 0, window.get("docked", 0))
 		return None
 
-	def mapped_after(self, since: str, timeout: float = 15.0) -> Window | None:
-		"""The first window mapped after a mark, once its place and size are logged."""
+	def mapped_after(self, since: str, timeout: float = 15.0, size_wait: float = 10.0) -> Window | None:
+		"""The first window mapped after a mark, once its place and size are logged.  A window whose size no line
+		gives within size_wait (one started outside App Home has only ZWL MAP) comes back with its place only."""
 		line = self.wait(r"ZWL MAP client=\d+ surface=\d+", since, timeout)
 		if line is None:
 			return None
 		match = re.search(r"client=(\d+) surface=(\d+)", line)
 		client, surface = int(match.group(1)), int(match.group(2))
-		deadline = time.monotonic() + 10.0
+		deadline = time.monotonic() + size_wait
 		while time.monotonic() < deadline:
 			window = self.window(client, surface, since)
 			if window is not None:
 				return window
 			time.sleep(0.5)
-		return None
+		return self.window(client, surface, since, unsized=True)
 
 	def home_open(self, item: Item) -> str:
 		"""Opens App Home with the Windows key (Super pressed alone); returns the mark before it."""
@@ -408,7 +427,7 @@ class Run:
 		"""Starts a program as the session's user (a file to open, a page) and returns its first window."""
 		since = self.mark()
 		self.as_user(command)
-		window = self.mapped_after(since, timeout)
+		window = self.mapped_after(since, timeout, size_wait=2.0)
 		item.step(f"as {USER}: {command}", f"window {window}")
 		item.check(window, f"{command}: no window mapped within {timeout:g} s")
 		if ready:
@@ -417,7 +436,9 @@ class Run:
 		return window
 
 	def close(self, item: Item, window: Window) -> None:
-		"""Closes a window with its title bar's close button (floating), and waits for its unmap."""
+		"""Closes a window with its title bar's close button (floating), and waits for it to go: its unmap, or its
+		client gone (an application that ends at its close request leaves without a null image, so the compositor
+		says only ZWL CLIENT gone)."""
 		since = self.mark()
 		current = self.window(window.client, window.surface) or window
 		if current.docked:
@@ -426,10 +447,15 @@ class Run:
 			item.check(match, "a docked window without its buttons' line")
 			self.click(int(match.group(1)), TITLE_HEIGHT // 2)
 		else:
+			item.check(current.sized(), f"the window {window.client}:{window.surface} has no known size for its buttons")
 			self.click(*current.button_point(0))
-		line = self.wait(rf"ZWL UNMAP client={window.client} surface={window.surface}\b", since, 10)
-		item.step("clicked the close button", line)
-		item.check(line, f"the window {window.client}:{window.surface} did not close")
+		gone = rf"ZWL UNMAP client={window.client} surface={window.surface}\b|ZWL CLIENT gone client={window.client}\b"
+		line = self.wait(gone, since, 10)
+		asked = self.lines(rf"ZWL GLASS close surface={window.surface} client={window.client}\b", since)
+		item.step("clicked the close button", "; ".join(filter(None, [asked[-1] if asked else "no ZWL GLASS close", line])))
+		if not asked:
+			item.check(line, f"the press did not reach the close button of {window.client}:{window.surface}")
+		item.check(line, f"the window {window.client}:{window.surface} was asked to close but did not")
 
 	# Settings.
 

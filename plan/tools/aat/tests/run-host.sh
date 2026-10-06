@@ -75,6 +75,9 @@ aat where 9 | grep -qx '120 60 640 480' && ok where || bad where
 aat windows | grep -q "^9 3 True 120 60 640 480 0$" && ok windows || bad windows
 printf 'ZWL UNMAP client=3 surface=9\n' >> "$AAT_LOG"
 aat windows | grep -q '^9 3 False ' && ok unmap || bad unmap
+# A client that left without unmapping (an application ended by its close button): its window is no longer mapped.
+printf 'ZWL MAP client=5 surface=8 x=10 y=20\nZWL CLIENT gone client=5 reason=hangup\n' >> "$AAT_LOG"
+aat windows | grep -q '^8 5 False 10 20 ' && ok "client gone" || bad "client gone: $(aat windows | grep '^8 5 ')"
 # Where a window goes: launched, moved, docked, undocked; the press's point is not the window's place.
 cat >> "$AAT_LOG" <<'EOF2'
 ZWL MAP client=4 surface=12 x=0 y=0
