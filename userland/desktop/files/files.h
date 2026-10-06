@@ -1314,13 +1314,14 @@ struct fm_app {
 	struct fm_undo undo;
 
 	/*
-	 * The name being changed: libkeiland's field and its own widgets'
-	 * input (rename.c, ws090-p010), what its last frame did
+	 * libkeiland's widgets' input (ui-widgets.c, ws090-p023), and the name
+	 * being changed: libkeiland's field in it (rename.c, ws090-p010), what
+	 * its last frame did
 	 * (KL_FIELD_*), where it was drawn (window pixels; shown 0 until it
 	 * is), and the item's path.
 	 */
 	struct kl_field rename;
-	struct kl_ui *rename_ui;
+	struct kl_ui *ui;
 	unsigned rename_flags;
 	struct kl_rect rename_rect;
 	int rename_shown;
@@ -1567,6 +1568,16 @@ void fm_field_set(struct fm_field *field, const char *text);
 void fm_field_select(struct fm_field *field, size_t start, size_t end);
 unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
+int fm_widgets_begin(struct fm_app *app);
+void fm_widgets_end(struct fm_app *app);
+void fm_widgets_input(struct fm_app *app, const struct fm_event *event);
+void fm_widgets_release(struct fm_app *app);
+void fm_style(struct fm_app *app, struct kl_canvas *canvas, struct kl_style *style);
+int fm_button_width(struct fm_app *app, const char *label);
+void fm_button(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *rect, const char *label, int index, unsigned flags);
+
+/* files' buttons' IDs among libkeiland's widgets (ui-widgets.c), the button's index after it. */
+#define FM_WIDGET_BUTTON	0x20000000U
 int fm_rename_start(struct fm_app *app, const char *name, size_t stem);
 void fm_rename_select_all(struct fm_app *app);
 int fm_rename_input(struct fm_app *app, const struct fm_event *event);

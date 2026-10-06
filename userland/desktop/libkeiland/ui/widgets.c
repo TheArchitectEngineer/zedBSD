@@ -271,7 +271,34 @@ kl_slider(
 	double step,
 	double *value)
 {
+	int changed;
+
+	/* An enabled slider. */
+	changed = kl_slider_flags(ui, style, id, rect, minimum, maximum, step, value, 0U);
+	return changed;
+}
+
+/*
+ * Draws a slider as kl_slider does, with flags (KL_VERSION 48,
+ * ws090-p023): KL_BUTTON_DISABLED draws it faded, takes no input and
+ * leaves the value.  Reports 1 when the value changed.
+ */
+int
+kl_slider_flags(
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	uint32_t id,
+	const struct kl_rect *rect,
+	double minimum,
+	double maximum,
+	double step,
+	double *value,
+	unsigned flags)
+{
 	const struct kl_theme *theme;
+	kl_color fill;
+	kl_color knob_color;
+	int enabled;
 	uint32_t code;
 	unsigned modifiers;
 	unsigned state;
@@ -287,9 +314,14 @@ kl_slider(
 	float knob;
 	int taken;
 
-	/* The record: it takes the keyboard and a drag. */
+	/* The record: it takes the keyboard and a drag (a disabled one nothing). */
 	theme = style->theme;
-	state = keiui_ui_widget(ui, id, 0U, rect, KEIUI_FOCUSABLE | KEIUI_DRAGGABLE);
+	enabled = 1;
+	if ((flags & KL_BUTTON_DISABLED) != 0U)
+		enabled = 0;
+	state = 0U;
+	if (enabled)
+		state = keiui_ui_widget(ui, id, 0U, rect, KEIUI_FOCUSABLE | KEIUI_DRAGGABLE);
 	ring = keiui_ui_focus_ring(ui);
 	before = *value;
 	left = (float)rect->x + WIDGETS_SLIDER_KNOB;
@@ -302,12 +334,14 @@ kl_slider(
 		*value = widgets_snap(minimum + share * (maximum - minimum), minimum, maximum, step);
 	}
 
-	/* The keys while it has the focus: a step, a page, the ends. */
+	/* The keys while it has the focus (a disabled one has none): a step, a page, the ends. */
 	key_step = step;
 	if (key_step <= 0.0)
 		key_step = (maximum - minimum) / 100.0;
 	for (;;) {
-		taken = keiui_ui_take_key(ui, id, 0U, widgets_slider_key, &code, &modifiers);
+		taken = 0;
+		if (enabled)
+			taken = keiui_ui_take_key(ui, id, 0U, widgets_slider_key, &code, &modifiers);
 		if (!taken)
 			break;
 		switch (code) {
@@ -346,11 +380,19 @@ kl_slider(
 	knob = left + (float)share * (right - left);
 	middle = (float)rect->y + (float)rect->height * 0.5f;
 
+	/* The accent and the knob, faded for a slider that does nothing. */
+	fill = theme->accent;
+	knob_color = KL_RGB(0xffffff);
+	if (!enabled) {
+		fill = kl_color_mix(fill, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
+		knob_color = WIDGETS_FADED;
+	}
+
 	/* The track, the part up to the knob in the accent, the knob with a soft edge, and the focus's ring. */
 	kl_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, right - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, theme->track);
-	kl_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, knob - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, theme->accent);
+	kl_canvas_round(style->canvas, left, middle - WIDGETS_TRACK * 0.5f, knob - left, WIDGETS_TRACK, WIDGETS_TRACK * 0.5f, fill);
 	kl_canvas_circle(style->canvas, knob, middle + 1.0f, WIDGETS_SLIDER_KNOB + 1.0f, KL_RGBA(0x1f3a66, 40));
-	kl_canvas_circle(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, KL_RGB(0xffffff));
+	kl_canvas_circle(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, knob_color);
 	kl_canvas_ring(style->canvas, knob, middle, WIDGETS_SLIDER_KNOB, 1.0f, 1.0f, theme->control_edge);
 	if ((state & KL_HIT_FOCUSED) != 0U && ring)
 		widgets_ring(style, rect, (float)rect->height * 0.5f);

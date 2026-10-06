@@ -142,10 +142,11 @@ fm_desktop_draw(
 	desk = &app->desk;
 	desktop_layout(app, canvas->width, canvas->height);
 
-	/* The frame's size, and no clickable part yet (a question's card records its buttons). */
+	/* The frame's size, no clickable part yet (a question's card records its buttons), and libkeiland's widgets' frame (ui-widgets.c). */
 	app->width = canvas->width;
 	app->height = canvas->height;
 	app->hit_count = 0;
+	(void)fm_widgets_begin(app);
 
 	/* The layout is logged when the number of items changed (the tests read it). */
 	logging = 0;
@@ -156,6 +157,7 @@ fm_desktop_draw(
 	if (!logging) {
 		partial = desktop_partial(app, canvas);
 		if (partial) {
+			fm_widgets_end(app);
 			app->dirty = 0;
 			return;
 		}
@@ -191,9 +193,10 @@ fm_desktop_draw(
 	/* The target of a drop over the desktop. */
 	fm_desktop_drop_draw(app, canvas);
 
-	/* The file manager's message, and its question over everything. */
+	/* The file manager's message, and its question over everything; the widgets' frame ends. */
 	desktop_message(app, canvas);
 	fm_overlay_draw(app, canvas);
+	fm_widgets_end(app);
 
 	/* The summary line, once for the layout, with its time and the age of the newest item (ws094-p008). */
 	if (logging) {
@@ -281,8 +284,8 @@ fm_desktop_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_BUTTON:
-		/* The field of the name being changed sees the press too (it places its caret there). */
-		(void)fm_rename_input(app, event);
+		/* libkeiland's widgets see the press too (the field of the name being changed places its caret there). */
+		fm_widgets_input(app, event);
 
 		/* The right button: the context menu of what it is on. */
 		if (event->button == FM_BUTTON_RIGHT) {
@@ -311,8 +314,8 @@ fm_desktop_event(
 		/* Nothing more for a button. */
 		break;
 	case FM_EVENT_MOTION:
-		/* The field of the name being changed follows the pointer; a press held on an item may become a drag. */
-		(void)fm_rename_input(app, event);
+		/* libkeiland's widgets follow the pointer; a press held on an item may become a drag. */
+		fm_widgets_input(app, event);
 		dragging = fm_desktop_drag_motion(app, event->x, event->y);
 		if (dragging)
 			break;
@@ -969,10 +972,8 @@ desktop_message(
 	struct fm_app *app,
 	struct kl_canvas *canvas)
 {
+	struct kl_style style;
 	char text[256];
-	int width;
-	int x;
-	int y;
 
 	/* A message while it lasts, or the first operation's progress. */
 	text[0] = '\0';
@@ -985,13 +986,9 @@ desktop_message(
 	if (text[0] == '\0')
 		return;
 
-	/* The pill, centred at the bottom, and the text on it. */
-	width = kl_text_width(app->text, text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0) + 32;
-	x = (canvas->width - width) / 2;
-	y = canvas->height - DESKTOP_PILL_BOTTOM;
-	kl_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, 8.0f, FM_COLOR_SHADOW);
-	kl_canvas_round(canvas, (float)x, (float)y, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, KL_RGBA(0x2a3345, 225));
-	(void)kl_text_draw(app->text, canvas, x + 16, kl_text_center(DESKTOP_PILL_TEXT_SIZE, y, DESKTOP_PILL_HEIGHT), text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0, KL_RGB(0xffffff));
+	/* libkeiland's chip, centred at the bottom (ws090-p023). */
+	fm_style(app, canvas, &style);
+	kl_chip(&style, canvas->width / 2, canvas->height - DESKTOP_PILL_BOTTOM + DESKTOP_PILL_HEIGHT, text);
 
 	/* Succeeded: the desktop message is visible. */
 	return;

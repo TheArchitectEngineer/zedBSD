@@ -7,10 +7,10 @@
 
 /*
  * The field of the name being changed (ws090-p010): libkeiland's text
- * field (kl_field) under its own widgets' input (kl_ui), drawn where the
+ * field (kl_field) in files' widgets' input (ui-widgets.c), drawn where the
  * name was in the grid, the list or on the desktop.  While a name is being
- * changed the window's keys, the pointer and an input method's text go to
- * it (fm_rename_input); Enter and Esc come back from the frame
+ * changed the window's keys and an input method's text go to it
+ * (fm_rename_input; the pointer goes to the widgets' input always); Enter and Esc come back from the frame
  * (fm_rename_take) and end the change.  The text input is asked for while
  * the field has the keyboard (kl_ui_window_text, main.c).
  */
@@ -34,10 +34,10 @@ fm_rename_start(
 	const char *name,
 	size_t stem)
 {
-	/* The field's own input, made the first time. */
-	if (app->rename_ui == NULL) {
-		app->rename_ui = kl_ui_create();
-		if (app->rename_ui == NULL)
+	/* The widgets' input, made the first time. */
+	if (app->ui == NULL) {
+		app->ui = kl_ui_create();
+		if (app->ui == NULL)
 			return ENOMEM;
 	}
 
@@ -51,7 +51,7 @@ fm_rename_start(
 	app->rename_flags = 0U;
 
 	/* Succeeded: the field has the keyboard. */
-	kl_ui_set_focus(app->rename_ui, RENAME_ID, 0U);
+	kl_ui_set_focus(app->ui, RENAME_ID, 0U);
 	return 0;
 }
 
@@ -81,24 +81,15 @@ fm_rename_input(
 	struct kl_window_event text;
 
 	/* Only while a name is being changed. */
-	if (app->focus != FM_FOCUS_RENAME || app->rename_ui == NULL)
+	if (app->focus != FM_FOCUS_RENAME || app->ui == NULL)
 		return 0;
 	app->dirty = 1;
 
 	/* Each kind of input the field takes. */
 	switch (event->type) {
 	case FM_EVENT_KEY:
-		(void)kl_ui_key(app->rename_ui, event->key, event->pressed, event->modifiers);
+		(void)kl_ui_key(app->ui, event->key, event->pressed, event->modifiers);
 		return 1;
-	case FM_EVENT_MOTION:
-		(void)kl_ui_pointer_motion(app->rename_ui, (double)event->x, (double)event->y);
-		return 0;
-	case FM_EVENT_BUTTON:
-		/* The main button, where the pointer is; the press is also the view's (a press elsewhere ends the change). */
-		(void)kl_ui_pointer_motion(app->rename_ui, (double)event->x, (double)event->y);
-		if (event->button == FM_BUTTON_LEFT)
-			(void)kl_ui_pointer_button(app->rename_ui, event->pressed, event->time * 1000U);
-		return 0;
 	case FM_EVENT_TEXT:
 	case FM_EVENT_TEXT_DELETE:
 	case FM_EVENT_PREEDIT:
@@ -121,7 +112,7 @@ fm_rename_input(
 	text.end = -1;
 
 	/* Succeeded: the field takes it in its next frame. */
-	(void)kl_ui_text(app->rename_ui, &text);
+	(void)kl_ui_text(app->ui, &text);
 	return 1;
 }
 
@@ -140,7 +131,7 @@ fm_rename_draw(
 	unsigned flags;
 
 	/* Nothing without its input. */
-	if (app->rename_ui == NULL)
+	if (app->ui == NULL)
 		return;
 
 	/* libkeiland's field in the window's canvas and text, the desktop's colours. */
@@ -149,10 +140,8 @@ fm_rename_draw(
 	style.text = app->text;
 	style.theme = kl_theme_default();
 
-	/* Its frame of input: the field alone. */
-	kl_ui_begin(app->rename_ui, app->now * 1000U);
-	flags = kl_field(app->rename_ui, &style, RENAME_ID, rect, &app->rename, NULL);
-	(void)kl_ui_end(app->rename_ui, app->now * 1000U);
+	/* In the frame's widgets' input (fm_widgets_begin). */
+	flags = kl_field(app->ui, &style, RENAME_ID, rect, &app->rename, NULL);
 
 	/* What happened, for after the frame, and where it is (a press there stays the field's). */
 	app->rename_flags |= flags;

@@ -1358,13 +1358,13 @@ static void
 main_text_input(void)
 {
 	/* No name being changed: off. */
-	if (main_app.focus != FM_FOCUS_RENAME || main_app.rename_ui == NULL) {
+	if (main_app.focus != FM_FOCUS_RENAME || main_app.ui == NULL) {
 		kl_window_text_input(main_window.kui, 0);
 		return;
 	}
 
 	/* On while its field has the keyboard, at its caret (libkeiland's field, rename.c). */
-	kl_ui_window_text(main_app.rename_ui, main_window.kui);
+	kl_ui_window_text(main_app.ui, main_window.kui);
 }
 
 /* Hands an input to the desktop (files --desktop) or to the window's file manager. */

@@ -520,14 +520,12 @@ grid_status(
 	struct kl_canvas *canvas,
 	const struct kl_rect *area)
 {
+	struct kl_style style;
 	struct fm_tab *tab;
 	uint64_t bytes;
 	size_t count;
 	char text[256];
 	char size[32];
-	int width;
-	int x;
-	int y;
 
 	/* A message while it lasts. */
 	tab = fm_ui_tab(app);
@@ -553,13 +551,9 @@ grid_status(
 		}
 	}
 
-	/* A soft pill, centred at the bottom. */
-	width = kl_text_width(app->text, text, strlen(text), 12U, 0) + 32;
-	x = area->x + (area->width - width) / 2;
-	y = area->y + area->height - 44;
-	kl_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 28.0f, 14.0f, 8.0f, FM_COLOR_SHADOW);
-	kl_canvas_round(canvas, (float)x, (float)y, (float)width, 28.0f, 14.0f, KL_RGBA(0x2a3345, 225));
-	(void)kl_text_draw(app->text, canvas, x + 16, kl_text_center(12U, y, 28), text, strlen(text), 12U, 0, KL_RGB(0xffffff));
+	/* libkeiland's chip, centred at the bottom (ws090-p023). */
+	fm_style(app, canvas, &style);
+	kl_chip(&style, area->x + area->width / 2, area->y + area->height - 16, text);
 }
 
 /* Draws the trash's buttons at the right of the title: Put Back (with a selection) and Empty Trash. */
@@ -594,30 +588,17 @@ grid_button(
 	int enabled)
 {
 	struct kl_rect rect;
-	kl_color ground;
-	kl_color ink;
-	int width;
+	unsigned flags;
 
-	/* The pill fits its label. */
-	width = kl_text_width(app->text, label, strlen(label), 12U, 1) + 28;
-	rect.x = right - width;
+	/* libkeiland's button ending at the right edge (ws090-p023); a disabled one is faded and not clickable. */
+	rect.width = fm_button_width(app, label);
+	rect.x = right - rect.width;
 	rect.y = y;
-	rect.width = width;
 	rect.height = 28;
-
-	/* Its colors: pale when disabled, darker under the pointer. */
-	ground = FM_COLOR_BUTTON;
-	ink = FM_COLOR_TEXT;
+	flags = 0U;
 	if (enabled == 0)
-		ink = FM_COLOR_TEXT_FAINT;
-	else if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
-		ground = FM_COLOR_BUTTON_LIT;
-	kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, ground);
-	(void)kl_text_draw(app->text, canvas, rect.x + 14, kl_text_center(12U, rect.y, rect.height), label, strlen(label), 12U, 1, ink);
-
-	/* An enabled button can be clicked. */
-	if (enabled != 0)
-		fm_ui_hit(app, &rect, FM_HIT_BUTTON, index);
+		flags = KL_BUTTON_DISABLED;
+	fm_button(app, canvas, &rect, label, index, flags);
 }
 
 /* Draws the search's scope as three chips at the right of the title: This Folder, Home, Computer. */
