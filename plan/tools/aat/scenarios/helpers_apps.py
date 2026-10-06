@@ -406,6 +406,65 @@ def settings_sound(item):
 	item.passed(f"value {value}")
 
 
+@run.define("apps.settings.display-language")
+def settings_display_language(item):
+	# The display language (ws158-p004): Japanese on the Languages page, Settings and Files follow at once, English again.
+	window, since = run.settings(item, "languages")
+	controls = run.controls(since, "languages")
+	mark = run.mark()
+	run.click_control(item, window, controls, 5, "the switch of 日本語")
+	chosen = run.wait(r"ZSETTINGS LANGUAGES ui language=ja", mark, 10)
+	followed = run.wait(r"ZSETTINGS LOOK language=ja", mark, 10)
+	time.sleep(1.0)
+	item.step("chose 日本語", f"{chosen}; {followed}")
+	run.shot(item, "settings-ja")
+	item.check(chosen and followed, "Settings did not follow the display language")
+	files = run.launch(item, "Files")
+	time.sleep(1.5)
+	item.step("opened Files", run.lines(r"ZFILES LANGUAGE language=\w+", mark)[-1:] or "no LANGUAGE line")
+	run.shot(item, "files-ja")
+	run.close(item, files)
+	# Settings still runs: its page asked for again brings it to the front and logs its controls anew.
+	mark = run.mark()
+	run.as_user("/bin/settings languages")
+	run.wait(r"ZSETTINGS LAYOUT page=languages controls=", mark, 15)
+	time.sleep(0.5)
+	controls = run.controls(mark, "languages")
+	mark = run.mark()
+	run.click_control(item, window, controls, 4, "the switch of English")
+	back = run.wait(r"ZSETTINGS LOOK language=en", mark, 10)
+	item.step("chose English again", back)
+	item.check(back, "Settings did not come back to English")
+	item.person("the Japanese words of Settings and Files in settings-ja.png and files-ja.png")
+
+
+@run.define("apps.settings.login-language")
+def settings_login_language(item):
+	# The login screen's language (ws158-p004): an administrator sets the system's language with the password.
+	_, before = run.sh("cat /etc/keiland/language 2>/dev/null || echo none")
+	window, since = run.settings(item, "languages")
+	controls = reveal_control(window, "languages", 9)
+	item.check(9 in controls, "no Apply (control 9): the user is not an administrator here")
+	results = []
+	for code, switch in (("ja", 7), ("en", 6)):
+		controls = reveal_control(window, "languages", 9)
+		run.click_control(item, window, controls, switch, f"the login screen's switch of {code}")
+		time.sleep(0.4)
+		run.click_control(item, window, controls, 8, "the password's field")
+		mark = run.mark()
+		run.type(aatlib.PASSWORD)
+		run.key("enter")
+		result = run.wait(r"ZSETTINGS LANGUAGES system result request=\d+ errno=\d+", mark, 20)
+		_, now = run.sh("cat /etc/keiland/language 2>/dev/null || echo none")
+		item.step(f"set the login screen to {code}", f"{result}; file {now.strip()!r}")
+		run.shot(item, f"login-{code}")
+		results.append((code, result, now.strip()))
+	for code, result, now in results:
+		item.check(result and aatlib.number(result, "errno") == 0 and now == code, f"{code}: {result}; the file says {now!r}")
+	item.passed(f"before {before.strip()!r}, ja then en (en is kept)")
+
+
+# The other applications.
 # The other applications.
 
 @run.define("apps.phone.browse")

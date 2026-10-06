@@ -628,21 +628,21 @@ list_title(
 	/* Each column's title. */
 	switch (column) {
 	case FM_COLUMN_NAME:
-		return "Name";
+		return kl_tr("Name");
 	case FM_COLUMN_KIND:
-		return "Kind";
+		return kl_tr("Kind");
 	case FM_COLUMN_SIZE:
-		return "Size";
+		return kl_tr("Size");
 	case FM_COLUMN_MODIFIED:
-		return "Date Modified";
+		return kl_tr("Date Modified");
 	case FM_COLUMN_CHANGED:
-		return "Date Changed";
+		return kl_tr("Date Changed");
 	case FM_COLUMN_OWNER:
-		return "Owner";
+		return kl_tr("Owner");
 	case FM_COLUMN_LOCATION:
-		return "Location";
+		return kl_tr("Location");
 	case FM_COLUMN_DELETED:
-		return "Date Deleted";
+		return kl_tr("Date Deleted");
 	default:
 		break;
 	}

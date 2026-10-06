@@ -561,12 +561,14 @@ struct se_sharing {
 
 /*
  * The Languages page's system language (ws158-p004): the language of the
- * login screen as /etc/keiland/language holds it (-1 not read or not set,
- * else 0 English, 1 Japanese), the one an administrator chose to set,
- * their password, whether the field has the keyboard, the change asked
+ * login screen as /etc/keiland/language holds it (whether it was read, and
+ * -1 not set, else 0 English, 1 Japanese), the one an administrator chose
+ * to set (the system's when it is read), their password, whether the
+ * field has the keyboard, the change asked
  * (its request, 0 for none), and the last message (red for a failure).
  */
 struct se_languages {
+	int system_read;
 	int system;
 	int chosen;
 	struct se_field password;

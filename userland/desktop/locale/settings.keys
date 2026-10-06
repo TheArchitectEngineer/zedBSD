@@ -1,0 +1,60 @@
+# Settings' texts that reach kl_tr through a variable (tools/i18n/tr.py reads this with the source, WS158 p004).
+# The pages' names and summaries (pages.c se_pages), drawn with kl_tr(page->name) and kl_tr(page->summary).
+msg	Settings
+msg	Change how Kei looks and works.
+msg	Wi-Fi
+msg	Join wireless networks and turn the radio on or off.
+msg	Ethernet
+msg	Wired connections and their addresses.
+msg	Bluetooth
+msg	Pair and connect wireless devices.
+msg	VPN
+msg	Connect securely to other networks.
+msg	Network
+msg	Manage connections and internet settings.
+msg	Appearance
+msg	The look of windows and the desktop.
+msg	Wallpaper
+msg	The picture behind your windows.
+msg	Notifications
+msg	Choose which applications may notify you.
+msg	Sound
+msg	Volume and the sound output.
+msg	Display
+msg	Resolution and the screens.
+msg	Languages
+msg	The input method and the display language.
+msg	Storage
+msg	How the disks and folders are used, and the Trash.
+msg	Battery
+msg	Charge and power saving.
+msg	Keyboard
+msg	Key repeat and the layout.
+msg	Mouse
+msg	Pointer speed, acceleration and scrolling.
+msg	Touchpad
+msg	Printers
+msg	Add and manage printers.
+msg	Sharing
+msg	Remote Login and, later, cloud storage.
+msg	Users
+msg	Accounts on this computer.
+msg	Privacy
+msg	What applications may use.
+msg	Security
+msg	Locking the screen and protecting your data.
+msg	Accessibility
+msg	Make Kei easier to see, hear and use.
+msg	Updates
+msg	Keep Kei up to date.
+msg	About
+msg	This computer and the version of Kei.
+# The search's header (search.c, a page of its own drawn by se_page_header).
+msg	Search Results
+# The input methods' choices on the Languages page (page-languages.c languages_choices).
+msg	Japanese
+msg	Kei's input method: romaji to kana, converted a phrase at a time.
+msg	SKK
+msg	Emacs's SKK: an upper-case letter starts a word, Space converts it.
+msg	None (English)
+msg	The keys type as they are; no input method.

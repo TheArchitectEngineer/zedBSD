@@ -478,13 +478,13 @@ se_ui_titlebar_state(
 		state->can_forward = 1;
 
 	/* The breadcrumb: Settings, and the search or the page unless it is Home. */
-	(void)snprintf(state->parts[0], sizeof(state->parts[0]), "%s", "Settings");
+	(void)snprintf(state->parts[0], sizeof(state->parts[0]), "%s", kl_tr("Settings"));
 	state->part_count = 1;
 	if (app->search.active != 0) {
-		(void)snprintf(state->parts[1], sizeof(state->parts[1]), "%s", "Search");
+		(void)snprintf(state->parts[1], sizeof(state->parts[1]), "%s", kl_tr("Search"));
 		state->part_count = 2;
 	} else if (app->page != SE_PAGE_HOME) {
-		(void)snprintf(state->parts[1], sizeof(state->parts[1]), "%s", se_pages[app->page].name);
+		(void)snprintf(state->parts[1], sizeof(state->parts[1]), "%s", kl_tr(se_pages[app->page].name));
 		state->part_count = 2;
 	}
 
@@ -715,7 +715,7 @@ ui_draw_sidebar(
 
 		/* The picture and the name. */
 		se_glyph_draw(canvas, page->glyph, (float)row.x + 10.0f, (float)row.y + 7.0f, 20.0f, glyph);
-		(void)fm_text_draw_fit(app->text, canvas, row.x + 42, fm_text_center(UI_TEXT_ROW, row.y, row.height), page->name, UI_TEXT_ROW, bold, row.width - 50, ink);
+		(void)fm_text_draw_fit(app->text, canvas, row.x + 42, fm_text_center(UI_TEXT_ROW, row.y, row.height), kl_tr(page->name), UI_TEXT_ROW, bold, row.width - 50, ink);
 		se_ui_hit(app, &row, SE_HIT_PAGE_ROW, (int)id);
 		y += UI_ROW_HEIGHT + UI_ROW_GAP;
 	}
