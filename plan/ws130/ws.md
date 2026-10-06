@@ -3,7 +3,7 @@
 # WS130: IPv6 の network stack
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-05: p001 設計 cleared、p002 kernel の核は merge 済みで T1-206 待ち）
+Status: incomplete（2026-10-06: p001・p002 cleared（p002 は T1-206b PASS）、次は p003 transport）
 Primary Milestone: MG005
 Related Milestones: MG002（POSIX の socket API）
 Objectives: O1, O3
@@ -42,7 +42,7 @@ Resume point: p001（2026-10-05 P1 が設計の第 1 版を書いた。UAPI（H1
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（kernel と userland の境界、UAPI の案、`net.conf`、段、試験の方法） | planning（2026-10-05 第 1 版、H1〜H8 待ち） | ユーザーとの議論 |
-| [p002](phase002/phase.md) | kernel の核（UAPI、`ipv6.c`・ICMPv6・NDP・DAD・MLDv2・address と route の表、RS・RA と route socket） | in-progress（2026-10-05 P1。UAPI の正確な差分 `phase002/uapi.diff` の確かめ待ち、kernel の内部から） | p001（H1〜H4・H6、ユーザー承認 2026-10-05） |
+| [p002](phase002/phase.md) | kernel の核（UAPI、`ipv6.c`・ICMPv6・NDP・DAD・MLDv2・address と route の表、RS・RA と route socket） | cleared（2026-10-06、T1-206b PASS） | p001（H1〜H4・H6、ユーザー承認 2026-10-05） |
 | p003 | transport（address を 16 byte に、`AF_INET6` の UDP・TCP・ICMPv6、`IPV6_V6ONLY`、PMTU、source の選択） | planning | p002、H2 |
 | p004 | libc（`inet_pton`・`inet_ntop`・`getaddrinfo`・`getnameinfo`・resolver） | planning | p003 |
 | p005 | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | planning | p003、p004、H3 |
