@@ -5468,7 +5468,8 @@ window_lower(
 /*
  * Handles a press in the system bar: on the docked window's buttons their
  * action, on its title a double click (back) or the start of a pull.  The
- * launcher, the desktops and the status do nothing yet.  The press is
+ * clock opens Calendar (ws155-p004).  The launcher and the status do
+ * nothing yet.  The press is
  * always zdesktop's.
  */
 static int
@@ -5486,6 +5487,12 @@ bar_press(
 	picture = server->pointer_x - (bar.desktops_x + DESKTOPS_PAD);
 	if (picture >= 0 && picture < DESKTOPS * (DESKTOP_WIDTH + DESKTOP_GAP)) {
 		desktop_turn(server, picture / (DESKTOP_WIDTH + DESKTOP_GAP), "bar");
+		return 1;
+	}
+
+	/* The clock opens Calendar (ws155-p004, the 2026-10-04 user request). */
+	if (server->pointer_x >= bar.clock_pill_x && server->pointer_x < bar.clock_pill_x + bar.clock_pill_width) {
+		(void)kwl_home_open_app(server, "Calendar", "clock");
 		return 1;
 	}
 

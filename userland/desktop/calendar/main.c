@@ -6,11 +6,14 @@
  */
 
 /*
- * Calendar's window (WS155 p000; calendar.h): a libkeiland application
- * with one window that shows the view (view.c), its menu (File: Quit;
- * View: Today, Previous Month, Next Month, Reduce Motion), and the view's
- * input; today is the system's day.  Ctrl+Q quits.  What happens is
- * logged on standard error as "CALENDAR" lines for the tests.
+ * Calendar's window (WS155 p000, p003; calendar.h): a libkeiland
+ * application with one window that shows the view (view.c), its menu
+ * (File: Quit; View: Today, Previous Month, Next Month, Reduce Motion),
+ * and the view's input; today is the system's day.  The events and memos
+ * are read from ~/Documents/Calendar at the start (store.c), and while
+ * the program runs an event with a time is told as a notification when it
+ * starts.  Ctrl+Q quits.  What happens is logged on standard error as
+ * "CALENDAR" lines for the tests.
  *
  *   calendar [--width=N] [--height=N] [--timeout-s=N] [--reduce-motion]
  */
@@ -24,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 /* The fonts, the window's first size, and the longest wait for input. */
@@ -39,6 +43,9 @@
 
 /* The key Q, which quits with Ctrl. */
 #define CAL_KEY_Q		16U
+
+/* The folder of the store under the home. */
+#define CAL_STORE_FOLDER	"Documents/Calendar"
 
 /*
  * The window's state: the application, the window and its input, the
@@ -66,6 +73,9 @@ struct cal_window {
 	int moving;
 	int animating;
 	int glass_decided;
+
+	/* The minute of today whose starts were told last (-1 before the first look: nothing before the start is told). */
+	int reminded_minute;
 };
 
 /* The window's menu. */
@@ -89,6 +99,8 @@ static void cal_input(struct cal_window *calendar, const struct kl_window_event 
 static int cal_resize(struct cal_window *calendar);
 static void cal_draw(struct cal_window *calendar, uint64_t now_us);
 static int cal_wait(const struct cal_window *calendar, uint64_t now_us);
+static void cal_store_start(void);
+static void cal_remind(struct cal_window *calendar);
 
 /*
  * Runs Calendar.
@@ -121,7 +133,9 @@ main(
 	if (error != 0)
 		cal_log("FONT missing error=%d", error);
 
-	/* The view's state for today, its motion as asked. */
+	/* The events and memos kept, then the view's state for today, its motion as asked. */
+	cal_store_start();
+	calendar.reminded_minute = -1;
 	cal_today(&today);
 	error = cal_view_init(&calendar.view, &today, kl_clock_us());
 	if (error != 0) {
@@ -184,6 +198,7 @@ main(
 	kl_app_close(calendar.app);
 	cal_view_release(&calendar.view);
 	kl_text_close(&calendar.text);
+	cal_store_close();
 
 	/* Reports how the loop ended. */
 	if (status != 0)
@@ -361,6 +376,9 @@ cal_loop(
 			calendar->view.notice[0] = '\0';
 			calendar->dirty = 1;
 		}
+
+		/* The events that start now. */
+		cal_remind(calendar);
 
 		/* Something of the view moving by itself (a page turning, a cell sinking, a drag): a frame at its pace. */
 		pace = cal_view_wait(&calendar->view, now);
@@ -660,4 +678,76 @@ cal_states(
 	if (calendar->view.reduce_motion)
 		state = KL_ACTION_CHECKED;
 	(void)kl_window_set_action_state(calendar->window, CAL_ACTION_MOTION, state);
+}
+
+/* Opens the store under the home's Documents (an empty one when it cannot). */
+static void
+cal_store_start(void)
+{
+	char root[1024];
+	const char *home;
+	int error;
+
+	/* The home's Documents and Calendar in it. */
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		home = "/tmp";
+	(void)snprintf(root, sizeof(root), "%s/Documents", home);
+	(void)mkdir(root, 0700);
+	(void)snprintf(root, sizeof(root), "%s/%s", home, CAL_STORE_FOLDER);
+
+	/* Everything kept there. */
+	error = cal_store_open(root);
+	cal_log("STORE error=%d", error);
+}
+
+/*
+ * Tells each event of today with a time that has started since the last
+ * look, as a notification (its title, and when it starts).
+ */
+static void
+cal_remind(
+	struct cal_window *calendar)
+{
+	const struct cal_item *items;
+	struct tm local;
+	char line[64];
+	size_t count;
+	size_t index;
+	time_t now;
+	int minute;
+
+	/* The minute of today now. */
+	now = time(NULL);
+	(void)localtime_r(&now, &local);
+	minute = local.tm_hour * 60 + local.tm_min;
+
+	/* The first look, or a new day: only what starts from now on is told. */
+	if (calendar->reminded_minute < 0 || minute < calendar->reminded_minute) {
+		calendar->reminded_minute = minute;
+		return;
+	}
+
+	/* The same minute: told already. */
+	if (minute == calendar->reminded_minute)
+		return;
+
+	/* Each event of today starting after the last look and by now. */
+	items = cal_items(&count);
+	for (index = 0; index < count; index++) {
+		if (items[index].memo || items[index].all_day)
+			continue;
+		if (items[index].date.year != local.tm_year + 1900 || items[index].date.month != local.tm_mon + 1 || items[index].date.day != local.tm_mday)
+			continue;
+		if (items[index].start <= calendar->reminded_minute || items[index].start > minute)
+			continue;
+
+		/* Told. */
+		(void)snprintf(line, sizeof(line), "Starts at %02d:%02d (%s)", items[index].start / 60, items[index].start % 60, cal_list_name(items[index].list));
+		(void)kl_app_notify(calendar->app, items[index].title, line);
+		cal_log("REMIND index=%lu start=%d", (unsigned long)index, items[index].start);
+	}
+
+	/* Looked up to now. */
+	calendar->reminded_minute = minute;
 }
