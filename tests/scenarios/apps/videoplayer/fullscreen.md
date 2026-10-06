@@ -3,7 +3,7 @@ id: apps.videoplayer.fullscreen
 title: Video Player を F11・Alt+Enter・double click で全画面にし、Esc で戻す
 status: active
 areas: [videoplayer, compositor]
-paths: [userland/desktop/videoplayer/main.c, userland/desktop/wayland/protocol.c]
+paths: [userland/desktop/videoplayer/main.c, userland/desktop/wayland/protocol.c, userland/desktop/wayland/scanout.c, userland/desktop/wayland/content-type.c, userland/desktop/libkeiland-backend-zedbsd/scanout-zedbsd.c]
 machine: either
 human: look
 since: ws122-p005a
@@ -18,6 +18,7 @@ kei で `videoplayer /tmp/aat-samples/sample.mp4` を開く。
 ## 操作と確認
 1. 操作: picture を click してから F11。
    確認事項: 全画面。正解: `VIDEOPLAYER FULLSCREEN on=1`（F11 は compositor の menu の Full Screen の項が取ることもある）、`ZWL CONFIGURE … width=1280 height=800 fullscreen=1` の後に `VIDEOPLAYER PRESENTED width=1280 height=800`（新しい大きさの最初の frame。撮影はその後）。確認方法: log、撮影（全画面、2 秒後に bar が消える）。
+   game mode（ws122-p005b）: player は content type video を付ける（`ZWL CONTENT surface=N type=video`）。pointer が 2 秒止まると `ZWL SCANOUT direct=1`（直の scanout）、QEMU の display が共有の image を出せない時は `ZWL SCANOUT direct=0 reason=backend`。撮影の前に `direct=0 reason=shot`（撮影は合成の frame）。
 2. 操作: Esc。
    確認事項: 戻る。正解: `VIDEOPLAYER FULLSCREEN on=0`、`ZWL CONFIGURE … fullscreen=0` の大きさが出力の大きさでない（元の window の大きさ）。確認方法: log。
 3. 操作: Alt+Enter、もう一度 F11。

@@ -21,6 +21,7 @@ LIBWAYLAND_SOURCES := userland/desktop/libwayland/client.c \
 	userland/desktop/libwayland/keyboard-inset-protocol.c \
 	userland/desktop/libwayland/edit-protocol.c \
 	userland/desktop/libwayland/activation-protocol.c \
+	userland/desktop/libwayland/content-type-protocol.c \
 	userland/desktop/libwayland/theme-protocol.c
 
 # The public SONAME follows the standard client library spelling.

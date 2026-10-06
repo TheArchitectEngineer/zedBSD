@@ -176,6 +176,8 @@ static void write_name(struct pdf_buffer *file, const unsigned char *bytes, size
 static void write_real(struct pdf_buffer *file, double value);
 static int key_is(const struct pdf_object *key, const char *name);
 static void free_layout(struct update_layout *layout);
+static void choose_prefix(struct pdf_writer *writer);
+static int prefix_used(struct pdf_document *base, const char *prefix);
 
 /*
  * Creates a writer that adds a revision to a document being read.
@@ -221,10 +223,10 @@ pdf_writer_create_update(
 	if (error != 0)
 		return error;
 
-	/* Saves as a revision of the document, with names of its own for its resources. */
+	/* Saves as a revision of the document, with names of its own for its resources (a prefix no page uses, design.md [M4]). */
 	created->base = base;
 	created->update_layout = lay_out_update;
-	created->name_prefix = PDF_UPDATE_NAME_PREFIX;
+	choose_prefix(created);
 
 	/* Succeeded: the caller owns the writer. */
 	*writer = created;
@@ -359,6 +361,75 @@ pdf_writer_begin_page_over(
 }
 
 /*
+ * Lists the next page of the document an update adds to with its content
+ * changed (ws175-p003, pdf_writer_begin_page_edited in editor.c): edited is
+ * the page's new content, which the page takes (freed on a failure too),
+ * and the page opens for drawing over it, as pdf_writer_begin_page_over
+ * draws (the page as shown).  Returns 0, EINVAL, ENOMEM, or the failure of
+ * the page.
+ */
+int
+pdf_update_begin_edited(
+	struct pdf_writer *writer,
+	size_t index,
+	struct pdf_buffer *edited)
+{
+	struct pdf_writer_page *page;
+	struct pdf_page_box box;
+	struct pdf_buffer prologue;
+	double matrix[6];
+	size_t item;
+	int error;
+
+	/* The page comes next. */
+	error = check_listing(writer, index);
+	if (error != 0) {
+		free(edited->data);
+		return error;
+	}
+
+	/* The page's boxes, which place the drawing on it. */
+	error = pdf_document_page_box(writer->base, index, &box);
+	if (error != 0) {
+		free(edited->data);
+		return error;
+	}
+
+	/* The six numbers from the page as shown to its own space (the new content leaves the state as it found it). */
+	memset(&prologue, 0, sizeof(prologue));
+	shown_to_user(&box, matrix);
+	for (item = 0; item < 6; item++) {
+		pdf_buffer_append_number(&prologue, matrix[item]);
+		pdf_buffer_append(&prologue, " ", 1);
+	}
+
+	/* The operator that makes the matrix the drawing's. */
+	pdf_buffer_printf(&prologue, "cm\n");
+	if (prologue.error != 0) {
+		free(prologue.data);
+		free(edited->data);
+		return ENOMEM;
+	}
+
+	/* Adds the page, open for drawing. */
+	error = pdf_writer_add_page(writer, box.width, box.height, &prologue, &page);
+	free(prologue.data);
+	if (error != 0) {
+		free(edited->data);
+		return error;
+	}
+
+	/* The page stands for the document's page, its content changed. */
+	page->placement = PDF_WRITER_PLACE_EDIT;
+	page->source = index;
+	page->edited = *edited;
+	writer->last_source = index + 1;
+
+	/* Succeeded: drawing now goes over the changed page. */
+	return 0;
+}
+
+/*
  * Lays out an update: the document's bytes, then the revision.
  *
  * It is the writer's update_layout.  Every page of the document must have
@@ -433,6 +504,8 @@ lay_out_update(
 	for (index = 0; index < writer->pages_count; index++) {
 		error = 0;
 		if (writer->pages[index]->placement == PDF_WRITER_PLACE_OVERLAY)
+			error = write_page_over(&layout, index);
+		else if (writer->pages[index]->placement == PDF_WRITER_PLACE_EDIT)
 			error = write_page_over(&layout, index);
 		else if (writer->pages[index]->placement == PDF_WRITER_PLACE_REPLACE)
 			error = write_page_over(&layout, index);
@@ -628,8 +701,8 @@ number_objects(
 			next++;
 		}
 
-		/* A drawn-over page with content first saves the state. */
-		if (page->prefixed) {
+		/* A drawn-over page with content first saves the state; an edited page first has its changed content. */
+		if (page->prefixed || page->placement == PDF_WRITER_PLACE_EDIT) {
 			layout->prefix_objects[index] = next;
 			next++;
 		}
@@ -1167,7 +1240,7 @@ write_page_over(
 
 	/* The resources: the page's own with the new ones, or the new ones alone. */
 	pdf_buffer_printf(file, " /Resources ");
-	if (writer_page->placement == PDF_WRITER_PLACE_OVERLAY) {
+	if (writer_page->placement == PDF_WRITER_PLACE_OVERLAY || writer_page->placement == PDF_WRITER_PLACE_EDIT) {
 		error = write_merged_resources(layout, page, resources);
 		if (error != 0)
 			return error;
@@ -1207,7 +1280,7 @@ write_contents_array(
 	writer_page = layout->writer->pages[index];
 	file = layout->file;
 	pdf_buffer_printf(file, " /Contents [");
-	if (writer_page->prefixed)
+	if (writer_page->prefixed || writer_page->placement == PDF_WRITER_PLACE_EDIT)
 		pdf_buffer_printf(file, " %lu 0 R", (unsigned long)layout->prefix_objects[index]);
 
 	/* A page drawn over keeps its own streams, named as it names them. */
@@ -1459,6 +1532,15 @@ write_content_streams(
 		layout->offsets[object] = file->length;
 		pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)object, (unsigned long)(sizeof(save_state) - 1));
 		pdf_buffer_append(file, save_state, sizeof(save_state) - 1);
+		pdf_buffer_printf(file, "\nendstream\nendobj\n");
+	}
+
+	/* An edited page's changed content (ws175-p003). */
+	if (writer_page->placement == PDF_WRITER_PLACE_EDIT) {
+		object = layout->prefix_objects[index];
+		layout->offsets[object] = file->length;
+		pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)object, (unsigned long)writer_page->edited.length);
+		pdf_buffer_append(file, writer_page->edited.data, writer_page->edited.length);
 		pdf_buffer_printf(file, "\nendstream\nendobj\n");
 	}
 
@@ -2194,4 +2276,80 @@ free_layout(
 	free(layout->page_objects);
 	free(layout->content_objects);
 	free(layout->prefix_objects);
+}
+
+/*
+ * Chooses the prefix of an update's names (design.md [M4]): "Kei", or
+ * "Kei1_" to "Kei9_", the first that begins no name of any page's
+ * ExtGState, XObject or Font resources (Notes' own names of an earlier
+ * revision, for one).  The last is taken when all are used; the
+ * per-page check (EEXIST) still refuses a name met.
+ */
+static void
+choose_prefix(
+	struct pdf_writer *writer)
+{
+	unsigned candidate;
+	int used;
+
+	/* "Kei" first. */
+	(void)snprintf(writer->prefix_buffer, sizeof(writer->prefix_buffer), "%s", PDF_UPDATE_NAME_PREFIX);
+	writer->name_prefix = writer->prefix_buffer;
+	used = prefix_used(writer->base, writer->prefix_buffer);
+	if (!used)
+		return;
+
+	/* Then the numbered ones. */
+	for (candidate = 1U; candidate <= 9U; candidate++) {
+		(void)snprintf(writer->prefix_buffer, sizeof(writer->prefix_buffer), "%s%u_", PDF_UPDATE_NAME_PREFIX, candidate);
+		used = prefix_used(writer->base, writer->prefix_buffer);
+		if (!used)
+			return;
+	}
+}
+
+/* Tells whether any page's ExtGState, XObject or Font resources has a name that begins with a prefix. */
+static int
+prefix_used(
+	struct pdf_document *base,
+	const char *prefix)
+{
+	static const char *const categories[] = { "ExtGState", "XObject", "Font" };
+	struct pdf_object *page;
+	struct pdf_object *resources;
+	struct pdf_object *dictionary;
+	size_t length;
+	size_t count;
+	size_t index;
+	size_t category;
+	size_t key;
+	int differs;
+	int error;
+
+	/* Each page's resources. */
+	length = strlen(prefix);
+	count = pdf_document_page_count(base);
+	for (index = 0; index < count; index++) {
+		error = pdf_reader_page(base, index, &page, &resources);
+		if (error != 0 || resources == NULL || resources->type != PDF_OBJECT_DICTIONARY)
+			continue;
+
+		/* Each category's names. */
+		for (category = 0; category < sizeof(categories) / sizeof(categories[0]); category++) {
+			error = pdf_reader_resolve_key(base, resources, categories[category], &dictionary);
+			if (error != 0 || dictionary->type != PDF_OBJECT_DICTIONARY)
+				continue;
+			for (key = 0; key < dictionary->count; key++) {
+				/* A name that begins with the prefix. */
+				if (dictionary->keys[key]->length < length)
+					continue;
+				differs = memcmp(dictionary->keys[key]->bytes, prefix, length);
+				if (differs == 0)
+					return 1;
+			}
+		}
+	}
+
+	/* No page uses it. */
+	return 0;
 }

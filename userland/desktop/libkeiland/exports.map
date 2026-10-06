@@ -295,6 +295,7 @@
 		kl_window_paste_primary;
 		kl_window_set_fullscreen;
 		kl_window_fullscreen;
+		kl_window_set_content_type;
 		kl_window_dispatch_fds;
 		kl_clock_us;
 		kl_app_open;

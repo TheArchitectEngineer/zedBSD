@@ -38,4 +38,8 @@ void zwl_viewport_object_gone(struct zwl_object *object);
 void zwl_surface_size(const struct zwl_object *surface, uint32_t *width, uint32_t *height);
 void zwl_viewport_source(const struct zwl_object *surface, float *uv);
 
+int zwl_content_type_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void zwl_content_type_commit(struct zwl_object *surface);
+void zwl_content_type_object_gone(struct zwl_object *object);
+
 #endif

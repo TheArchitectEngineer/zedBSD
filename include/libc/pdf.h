@@ -278,10 +278,128 @@ int pdf_document_get_revision(const struct pdf_document *document, size_t *xref_
 int pdf_document_signed(struct pdf_document *document, int *is_signed);
 int pdf_document_encrypted(const char *path, int *encrypted);
 
+/*
+ * The editor of a page's objects (ws175, plan/ws175/phase001/design.md
+ * section 3): the images and graphics (form XObjects) of the page's
+ * content, at its top level, listed in the order they are drawn
+ * (ws175-p002; the text lines come later).  An object is named by a key --
+ * its kind, the place and length of its bytes in the page's decoded
+ * content, and a fingerprint of them -- that stays the same when the
+ * document is opened again.
+ */
+enum pdf_edit_kind {
+	PDF_EDIT_TEXT = 0,
+	PDF_EDIT_IMAGE = 1,
+	PDF_EDIT_GRAPHIC = 2
+};
+
+/* An object's flags: a clip is in force where it is drawn; the editor deleted it (ws175-p003). */
+#define PDF_EDIT_OBJECT_CLIPPED	0x1U
+#define PDF_EDIT_OBJECT_DELETED	0x2U
+#define PDF_EDIT_OBJECT_INSERTED	0x4U
+
+/*
+ * An image given to the editor (ws175-p003): a JPEG of one or three
+ * components, its bytes as they are (a four-component JPEG is refused), or
+ * 8-bit RGBA, rows of width pixels, straight alpha.  size is the caller's
+ * sizeof; data and bytes the image's bytes; width and height its pixels.
+ */
+#define PDF_IMAGE_SOURCE_JPEG	1
+#define PDF_IMAGE_SOURCE_RGBA	2
+struct pdf_image_source {
+	size_t size;
+	int kind;
+	const void *data;
+	size_t bytes;
+	size_t width;
+	size_t height;
+	int components;
+};
+
+/*
+ * The page's state (pdf_page_editor_status): a content stream could not
+ * be decoded (SKIPPED), went past a limit (LIMITED) or is malformed
+ * (DAMAGED) -- the page cannot be edited, since writing its content again
+ * would lose what was not read -- or some objects are not listed (PARTIAL:
+ * past the limit of q's nesting, or after the content stopped).
+ */
+#define PDF_EDIT_PAGE_SKIPPED	0x1U
+#define PDF_EDIT_PAGE_LIMITED	0x2U
+#define PDF_EDIT_PAGE_DAMAGED	0x4U
+#define PDF_EDIT_PAGE_PARTIAL	0x8U
+
+/* The flags that keep a page from being edited. */
+#define PDF_EDIT_PAGE_READ_ONLY	(PDF_EDIT_PAGE_SKIPPED | PDF_EDIT_PAGE_LIMITED | PDF_EDIT_PAGE_DAMAGED)
+
+/* An object's key: its kind, the offset and length of its bytes in the decoded content, and the first bytes of their SHA-256. */
+struct pdf_edit_key {
+	enum pdf_edit_kind kind;
+	uint64_t offset;
+	uint32_t length;
+	unsigned char fingerprint[8];
+};
+
+/*
+ * An object as the editor shows it.  size is the caller's sizeof (fields
+ * added later are left alone for an older caller).  quad is the corners it
+ * covers in the page's shown space (points, the top left the origin, y
+ * downward): an image's top left, top right, bottom right and bottom left
+ * as it is drawn.  text, font_name and font_size are a text line's (empty
+ * for the others); image_width and image_height an image's samples.
+ */
+struct pdf_edit_object {
+	size_t size;
+	enum pdf_edit_kind kind;
+	unsigned flags;
+	double quad[8];
+	const char *text;
+	char font_name[64];
+	double font_size;
+	size_t image_width;
+	size_t image_height;
+};
+
+/* A page's objects, read from a document being read; it lives until pdf_page_editor_close(), not after its document. */
+struct pdf_page_editor;
+
 /* A page interpreted into a display list, and the list drawn into memory. */
 int pdf_page_render(struct pdf_document *document, size_t index, struct pdf_display_list **list);
 void pdf_display_list_destroy(struct pdf_display_list *list);
 int pdf_display_list_rasterize(const struct pdf_display_list *list, uint32_t *pixels, size_t stride, size_t width, size_t height, double scale, double offset_x, double offset_y);
+
+/* The editor of a page's objects: opened on a page, its objects, their keys, what is at a point, and the page's state. */
+int pdf_page_editor_open(struct pdf_document *document, size_t index, struct pdf_page_editor **editor);
+void pdf_page_editor_close(struct pdf_page_editor *editor);
+unsigned pdf_page_editor_status(const struct pdf_page_editor *editor);
+size_t pdf_page_editor_count(const struct pdf_page_editor *editor);
+int pdf_page_editor_object(const struct pdf_page_editor *editor, size_t index, struct pdf_edit_object *object);
+int pdf_page_editor_key(const struct pdf_page_editor *editor, size_t index, struct pdf_edit_key *key);
+int pdf_page_editor_find(const struct pdf_page_editor *editor, const struct pdf_edit_key *key, size_t *index);
+int pdf_page_editor_hit(const struct pdf_page_editor *editor, double x, double y, size_t *index);
+
+/*
+ * The changes (ws175-p003): an object put back, deleted, or moved and sized
+ * by an affine map of the shown space (a point p goes to p times
+ * transform); the page drawn with them (hidden, an object left out of the
+ * drawing, or (size_t)-1); and an update's page written with them, its own
+ * content changed, the drawing that follows going over it (the page as
+ * shown, as pdf_writer_begin_page_over draws).  A page that cannot be
+ * edited (PDF_EDIT_PAGE_READ_ONLY) refuses the changes with EPERM.
+ */
+int pdf_page_editor_reset(struct pdf_page_editor *editor, size_t index);
+int pdf_page_editor_delete(struct pdf_page_editor *editor, size_t index);
+int pdf_page_editor_place(struct pdf_page_editor *editor, size_t index, const double transform[6]);
+int pdf_page_editor_render(struct pdf_page_editor *editor, size_t hidden, struct pdf_display_list **list);
+
+/*
+ * An image put in an object's place (fitted into its corners, its own
+ * proportions kept, centred), and an image inserted over the page's objects
+ * (placement maps its unit square onto the shown space, its top left where
+ * (0, 1) goes); the inserted object's index is the last.
+ */
+int pdf_page_editor_set_image(struct pdf_page_editor *editor, size_t index, const struct pdf_image_source *image);
+int pdf_page_editor_insert_image(struct pdf_page_editor *editor, const struct pdf_image_source *image, const double placement[6], size_t *index);
+int pdf_writer_begin_page_edited(struct pdf_writer *writer, const struct pdf_page_editor *editor);
 
 #ifdef __cplusplus
 }

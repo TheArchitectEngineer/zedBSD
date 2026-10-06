@@ -74,6 +74,7 @@ static const struct zwl_global globals[] = {
 	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, ZWL_SYSTEM_MANAGER },
 	{ 26, "xdg_activation_v1", 1, ZWL_ACTIVATION_MANAGER },
 	{ 27, "keiland_theme_v1", 1, ZWL_THEME },
+	{ 28, "wp_content_type_manager_v1", 1, ZWL_CONTENT_TYPE_MANAGER },
 };
 
 static void global_identity(const struct zwl_global *global, const char **interface, uint32_t *version);
@@ -263,6 +264,11 @@ zwl_dispatch(
 	case ZWL_VIEWPORT:
 		/* viewporter (viewport.c). */
 		error = zwl_viewport_request(object, opcode, bytes, size);
+		break;
+	case ZWL_CONTENT_TYPE_MANAGER:
+	case ZWL_CONTENT_TYPE:
+		/* content-type (content-type.c). */
+		error = zwl_content_type_request(object, opcode, bytes, size);
 		break;
 	case ZWL_GLASS_MANAGER:
 	case ZWL_GLASS:
@@ -876,6 +882,9 @@ surface_commit(
 
 	/* The viewport's pending source and destination apply with the commit (viewport.c). */
 	zwl_viewport_commit(surface);
+
+	/* So does the content type (content-type.c). */
+	zwl_content_type_commit(surface);
 
 	/* So do the glass panels (panels.c). */
 	zwl_panels_commit(surface);
