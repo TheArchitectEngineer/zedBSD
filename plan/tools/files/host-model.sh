@@ -6,11 +6,14 @@
 set -u
 cd "$(dirname -- "$0")/../../.."
 sh plan/tools/files/host-build.sh || exit 1
-temporary=$(mktemp -d)
+# The work folders stay for Q1's cleanup (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh WORKTREE and
+# --tmp remove build/tmp and /dev/shm/zedbsd-host-model.*).
+mkdir -p build/tmp
+temporary=$(mktemp -d "$(pwd)/build/tmp/host-model.XXXXXX")
 # A second folder on another file system when the host has one (/dev/shm): the moves and trashes across volumes (ws127-p003).
 other=""
 if [ -d /dev/shm ] && [ "$(stat -c %d /dev/shm 2>/dev/null)" != "$(stat -c %d "$temporary" 2>/dev/null)" ]; then
-	other=$(mktemp -d -p /dev/shm) || other=""
+	other=$(mktemp -d -p /dev/shm zedbsd-host-model.XXXXXX) || other=""
 fi
 # A third folder on a volume of the user's (a tmpfs mounted with sudo, when sudo needs no password) for the volume's
 # trash (ws127-p003); /dev/shm is a system's mount, which keeps no trash of its own (ws127-p008).
@@ -23,10 +26,7 @@ fi
 # The thumbnails kept on disk go to the temporary folder, not the user's cache (ws127-p002).
 XDG_CACHE_HOME=$temporary/cache timeout 300 build/ws071-host/files-model "$temporary" $other $volume
 status=$?
-rm -rf "$temporary"
-[ -n "$other" ] && rm -rf "$other"
 if [ -n "$volume" ]; then
 	sudo -n umount "$volume"
-	rmdir "$volume"
 fi
 exit $status
