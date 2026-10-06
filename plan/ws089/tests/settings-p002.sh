@@ -102,8 +102,8 @@ expect_log /tmp/s.log 'ZSETTINGS PAGE home back'
 control 2
 expect_log /tmp/s.log 'ZSETTINGS PAGE network forward'
 
-# 4. Down through the list to About (18 rows after Network).
-keys '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>'
+# 4. Down through the list to About (19 rows after Network: Ethernet is the second row).
+keys '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>' '<down>'
 expect_log /tmp/s.log 'ZSETTINGS PAGE about$'
 shot about.png
 
