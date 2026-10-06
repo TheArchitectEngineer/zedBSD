@@ -605,6 +605,7 @@ check_partial(
 	}
 
 	/* The fonts, a 1280x766 canvas and the model in the desktop mode. */
+	kl_text_companions("userland/desktop/fonts/Mahora-Bold.ttf", "userland/desktop/fonts/JetBrainsMono-Regular.ttf");
 	error = kl_text_open(&text, "userland/desktop/fonts/Mahora-Regular.ttf", NULL);
 	check(error == 0, "partial: the font");
 	if (error != 0)
@@ -754,6 +755,7 @@ check_label(void)
 	int error;
 
 	/* The desktop's font (the fallback for the Japanese name). */
+	kl_text_companions("userland/desktop/fonts/Mahora-Bold.ttf", "userland/desktop/fonts/JetBrainsMono-Regular.ttf");
 	error = kl_text_open(&text, "userland/desktop/fonts/Mahora-Regular.ttf", "userland/desktop/fonts/DroidSansFallbackFull.ttf");
 	check(error == 0, "label: the fonts");
 	if (error != 0)

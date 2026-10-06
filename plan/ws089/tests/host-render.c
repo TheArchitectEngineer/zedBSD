@@ -111,6 +111,8 @@ main(
 	}
 
 	/* The font, the canvas and the interface. */
+	/* The tree's companions (Mahora Bold, the monospaced fallback): the host has no installed ones (ws090-p023). */
+	kl_text_companions("userland/desktop/fonts/Mahora-Bold.ttf", "userland/desktop/fonts/JetBrainsMono-Regular.ttf");
 	error = kl_text_open(&text, font, NULL);
 	if (error != 0) {
 		fprintf(stderr, "font %s: %d\n", font, error);

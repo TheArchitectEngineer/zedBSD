@@ -88,6 +88,7 @@ main(
 	}
 
 	/* The fonts. */
+	kl_text_companions("userland/desktop/fonts/Mahora-Bold.ttf", "userland/desktop/fonts/JetBrainsMono-Regular.ttf");
 	error = kl_text_open(&text, argv[1], argv[2]);
 	if (error != 0) {
 		fprintf(stderr, "host-calendar: fonts error=%d\n", error);
