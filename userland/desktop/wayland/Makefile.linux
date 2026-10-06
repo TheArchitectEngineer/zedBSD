@@ -1,6 +1,7 @@
 # zedBSD; Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 # The independent Linux compositor list; target-only device modules and X11 helper are excluded.
 # keiland-linux-sync: only userland/desktop/wayland/shot-none.c (the zedBSD Makefile picks shot.c or shot-none.c by ZEDBSD_TEST_SCREEN_CAPTURE)
+# keiland-linux-sync: skip userland/desktop/wayland/shot.c (the zedBSD test images' screen capture, ws173-p002; Linux builds shot-none.c)
 WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c \
