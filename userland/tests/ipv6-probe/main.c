@@ -75,6 +75,7 @@ main(
 	struct in6_addr router;
 	struct in6_addr prefix;
 	char name[IFNAMSIZ];
+	const char *lookup;
 	unsigned ifindex;
 	unsigned prefixlen;
 	unsigned index;
@@ -87,6 +88,21 @@ main(
 	int through_router;
 	int status;
 	int error;
+
+	/* -l [NAME]: the C library's IPv6 (ws130-p004), and a name's addresses in the DNS. */
+	if (argc >= 2) {
+		same = strcmp(argv[1], "-l");
+		if (same == 0) {
+			lookup = NULL;
+			if (argc >= 3)
+				lookup = argv[2];
+			status = probe_libc(lookup);
+			if (status != 0)
+				return status;
+			printf("IPV6 PASS\n");
+			return 0;
+		}
+	}
 
 	/* -t: the transports on the host itself (ws130-p003). */
 	through_router = 0;

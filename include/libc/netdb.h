@@ -29,6 +29,10 @@ struct addrinfo {
 #define AI_CANONNAME     0x0002
 #define AI_NUMERICHOST   0x0004
 #define AI_NUMERICSERV   0x0008
+/* IPv6 (ws130-p004; FreeBSD's values): every address, IPv4 ones as v4-mapped IPv6 ones, and only the families the host has. */
+#define AI_ALL           0x0100
+#define AI_ADDRCONFIG    0x0400
+#define AI_V4MAPPED      0x0800
 
 /*
  * Buffer sizes for getnameinfo.  These are not POSIX names, but portable
@@ -41,6 +45,10 @@ struct addrinfo {
 #define NI_NUMERICHOST   0x0001
 #define NI_NUMERICSERV   0x0002
 #define NI_NAMEREQD      0x0004
+/* ws130-p004: the host's short name, a datagram service, and a link-local address's zone as a number. */
+#define NI_NOFQDN        0x0008
+#define NI_DGRAM         0x0010
+#define NI_NUMERICSCOPE  0x0020
 
 #define EAI_ADDRFAMILY  (-1)
 #define EAI_AGAIN       (-2)
