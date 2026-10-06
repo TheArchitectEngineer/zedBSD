@@ -74,3 +74,11 @@
 | WS169 ws169-p003 | 宛先の名前が ASCII でない、To・Cc の長い行 | encoded word と header の折り返し（今は打ったまま 1 行） | `mailer/compose.c` の `compose_field` | 2026-10-07 |
 | WS169 ws169-p003 | SMTP の AUTH LOGIN だけの server、8BITMIME の無い server | AUTH LOGIN、EHLO の答えに従う（今は AUTH PLAIN だけ、本文は QP なので 7bit） | `mailer/smtp.c` | 2026-10-07 |
 | WS169 ws169-p003 | code の語が他の語の一部（shipping の pin など） | 語の境で数える（今は部分一致） | `mailer/code.c` の `code_contains` | 2026-10-07 |
+| WS169 ws169-p004（メーラの app） | password の保存 | desktop の秘密の store に置く（今は 0600 の平文の file、2026-10-06 ユーザーの仮置き。`secret.c` の 2 関数を置き換える） | `mailer/secret.c` | 2026-10-07 |
+| WS169 ws169-p004 | 起動ごとの取り直し、offline | local の cache に message を保ち、起動を速く・offline でも読む（今は memory だけ、起動のたびに各 folder の最新 50 通） | `mailer/store.c`・`sync.c` | 2026-10-07 |
+| WS169 ws169-p004 | 一覧の先（51 通目より古い）、server の側の既読・削除の変化 | scroll で古い物を取る、FLAGS・EXPUNGE の変化を一覧に反映する（今は取った時のまま） | `mailer/sync.c`・`imap.c` | 2026-10-07 |
+| WS169 ws169-p004 | Trash の中の Delete、Sent を自分で保つ server（Gmail）で Sent が 2 通 | 完全な削除、APPEND しない（今は Trash で Delete は何もしない、Gmail では 2 通） | `mailer/main.c` の `ml_request_move`、`sync.c` の ML_JOB_SEND | 2026-10-07 |
+| WS169 ws169-p004 | 送信の失敗の後の書きかけ、下書き、添付の保存・送信 | 書きかけを Drafts に保つ、添付を保存・付ける（今は失敗の通知だけ、書いた物は画面に残る） | `mailer/view.c`・`main.c` | 2026-10-07 |
+| WS169 ws169-p004 | account の削除・編集、5 個目の account | Settings か Mail の中で消す・直す（今は追加だけ、4 個まで） | `mailer/account.c`・`view.c` | 2026-10-07 |
+| WS169 ws169-p004 | 日付の語が古くなる（Yesterday のまま日をまたぐ） | 描く時に今から作る（今は取った時の語） | `mailer/store.c` の `store_dates` | 2026-10-07 |
+| WS169 ws169-p004 | 一覧が 512 通を超える | 全部を出す（今は 512 通まで） | `mailer/view.c` の `ML_MESSAGES_MAX` | 2026-10-07 |
