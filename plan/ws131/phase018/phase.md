@@ -37,3 +37,14 @@ Terminal（pty の fd・自前の clipboard 808 行と primary 330 行）と Not
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+## q807（P1、2026-10-06）: 中断の時点
+
+Terminal から始めた（Notes は P2 の WS175 p007 の統合の後、Q1 の指示）。調べただけで code は未変更のまま、q812（ws090-p020、Mahora の font）の優先の投入で止めた。再開の時の設計の案:
+
+- libkeiland（KL_VERSION 44）: 選択の変化の input `KL_WINDOW_SELECTION`（code は clipboard か primary、pressed は text の有無。Terminal の log `ZTERM CLIPBOARD selection text=`・`ZTERM PRIMARY offer text=` はここから）と、自分の選択かの問い合わせ。
+  drop の受け `kl_window_accept_drops(window, types)` と input `KL_WINDOW_DROP_ENTER`・`_LEAVE`・`KL_WINDOW_DROP`、読み出し `kl_window_take_drop`（自分の drag の text は pipe を通さずに渡す、ws035-p093）。
+  text の drag の source `kl_window_drag_text` と input `KL_WINDOW_DRAG_DONE`（dropped か）。titlebar の tab `kl_window_set_tabs`（`struct kl_tab_entry`）と input `KL_WINDOW_TAB`（選択・閉じる・新規）。
+- Terminal: `kl_app` の loop と `kl_app_watch_fd`（shell の pty）、自前の registry・clipboard.c・primary.c を除き、uri-list を quote した語にする所だけ Terminal に残す。menu.c・tabs.c を表に。pty の header は `__FreeBSD__` の macro の block。
+- 試験の log で library の中に移って出せなくなる物: `ZTERM PRIMARY send bytes=`（zdesktop-p100.sh:83）。受け手の `paste received bytes=` で代える案。
+- 窓ごとの repeat の無効・全 motion・tablet は Notes の側で要る物（Notes の時に）。
