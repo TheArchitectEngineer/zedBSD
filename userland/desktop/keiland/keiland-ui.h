@@ -1311,6 +1311,14 @@ int kl_window_focus_control_mode(struct kl_window *window, uint32_t id, unsigned
 
 /* Where the desktop's surface is on the screen (KL_VERSION 46). */
 int kl_window_desktop_place(const struct kl_window *window, int32_t *x, int32_t *y);
+
+/*
+ * KL_VERSION 46: a window whose keys mean something else (a terminal's
+ * Ctrl+C) takes the keyboard's editing buttons as the keys the compositor
+ * chooses for it (a terminal's Ctrl+Shift+C and V), not as operations:
+ * its edit object goes, and kl_window_on_edit's callback hears nothing.
+ */
+void kl_window_edit_by_keys(struct kl_window *window);
 int kl_window_set_repeat(struct kl_window *window, int enabled);
 int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
 int kl_window_selection_own(const struct kl_window *window, unsigned which);

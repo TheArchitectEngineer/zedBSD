@@ -330,6 +330,7 @@
 		kl_window_set_control_suggestions;
 		kl_window_focus_control_mode;
 		kl_window_desktop_place;
+		kl_window_edit_by_keys;
 		kl_window_set_repeat;
 		kl_window_set_tabs;
 		kl_window_selection_own;
