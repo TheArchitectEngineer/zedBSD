@@ -12,11 +12,12 @@
  * for zlib reads the same.  Programs of the packages use the real zlib
  * (/usr/include/zlib.h); base programs include <compat/zlib/zlib.h>.
  *
- * This first part decompresses (inflate, uncompress) and checksums
- * (adler32, crc32); compression (deflate) comes with ws035-p040.  inflate
- * reads zlib streams (RFC 1950) and raw deflate (RFC 1951, windowBits
- * negative).  It keeps the input it is given until the stream is whole,
- * then hands out the output as there is room for it.
+ * It decompresses (inflate, uncompress), compresses (deflate, compress,
+ * compress2; ws175-p006) and checksums (adler32, crc32).  inflate reads
+ * zlib streams (RFC 1950) and raw deflate (RFC 1951, windowBits
+ * negative), and deflate writes them.  Each keeps the input it is given
+ * until the stream is whole, then hands out the output as there is room
+ * for it.
  */
 
 #ifndef KERN_COMPAT_ZLIB_H
