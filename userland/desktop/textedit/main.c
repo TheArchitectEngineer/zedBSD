@@ -175,8 +175,13 @@ static char main_title[MAIN_TITLE_MAX];
  */
 static struct kl_file_chooser *main_chooser;
 
-/* The desktop's appearance watched (ws089-p017): the editor draws in its colours (draw.c); NULL without it. */
-static struct kl_appearance *main_appearance;
+/*
+ * The application (WS131 p016, libkeiland's kl_app): the connection, its
+ * one queue of inputs (the window's, the actions of its menus and
+ * controls), and the desktop's appearance, which the editor draws in
+ * (draw.c, ws089-p017).
+ */
+static struct kl_app *main_kl;
 
 /* The interface's font, which the chooser draws its words with too. */
 static const char *main_ui_font;
@@ -216,7 +221,8 @@ static void main_fingers(uint64_t now_us);
 static int main_dialog_event(const struct kl_window_event *event);
 static int main_resize(void);
 static void main_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
-static void main_appearance_changed(void *data, unsigned appearance);
+static void main_appearance_changed(void);
+static void main_action(const struct kl_window_event *event);
 
 /*
  * Runs Text Editor.
@@ -227,6 +233,7 @@ main(
 	char **argv)
 {
 	struct main_options options;
+	struct kl_app_options app_options;
 	struct kl_window_options window_options;
 	struct te_state state;
 	int status;
@@ -255,17 +262,28 @@ main(
 	/* The chooser draws with the interface's font. */
 	main_ui_font = options.ui_font;
 
+	/* The application: the connection to zdesktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.display = options.display;
+	app_options.application = MAIN_APPLICATION;
+	main_kl = kl_app_open(&app_options);
+	if (main_kl == NULL) {
+		fprintf(stderr, "TEXTEDIT FAILED operation=app error=%d\n", errno);
+		te_text_close(&main_ui);
+		te_text_close(&main_body);
+		return 1;
+	}
+
 	/* The window, its frames shown with Vulkan. */
 	memset(&window_options, 0, sizeof(window_options));
-	window_options.display = options.display;
 	window_options.title = "Text Editor";
-	window_options.application = MAIN_APPLICATION;
 	window_options.width = options.width;
 	window_options.height = options.height;
 	window_options.present = KL_PRESENT_VULKAN;
-	main_window.kui = kl_window_open(&window_options);
+	main_window.kui = kl_app_window_create(main_kl, &window_options);
 	if (main_window.kui == NULL) {
 		fprintf(stderr, "TEXTEDIT FAILED operation=window error=%d\n", errno);
+		kl_app_close(main_kl);
 		te_text_close(&main_ui);
 		te_text_close(&main_body);
 		return 1;
@@ -276,6 +294,7 @@ main(
 	if (error != 0) {
 		fprintf(stderr, "TEXTEDIT FAILED operation=present error=%d\n", error);
 		kl_window_close(main_window.kui);
+		kl_app_close(main_kl);
 		te_text_close(&main_ui);
 		te_text_close(&main_body);
 		return 1;
@@ -284,12 +303,9 @@ main(
 	/* The editor at that size, with the file when one was given, and the window's services. */
 	te_app_init(&main_app, &main_body, &main_ui, (int)main_width, (int)main_height);
 	main_host(&main_app);
-	main_app.glass = te_glass_open(&main_glass, &main_window, kl_window_see_through(main_window.kui));
+	main_app.glass = te_glass_open(&main_glass, &main_window, &main_app, kl_window_see_through(main_window.kui));
 
-	/* The desktop's appearance: the editor's colours follow it (light under a compositor without it). */
-	error = kl_appearance_open(kl_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
-	if (error != 0)
-		te_log("APPEARANCE none errno=%d", error);
+	/* The file given on the command line. */
 	if (options.file != NULL)
 		(void)te_app_open(&main_app, options.file);
 
@@ -310,7 +326,7 @@ main(
 	main_recent_refresh();
 
 	/* The titlebar's controls. */
-	error = te_titlebar_open(&main_titlebar, &main_window, &state);
+	error = te_titlebar_open(&main_titlebar, &main_window);
 	if (error != 0) {
 		te_log("TITLEBAR failed errno=%d", error);
 		te_titlebar_close(&main_titlebar);
@@ -326,12 +342,12 @@ main(
 	te_menu_close(&main_menu);
 	kl_ui_destroy(main_input);
 	te_glass_close(&main_glass);
-	kl_appearance_close(main_appearance);
 	te_app_release(&main_app);
 	if (main_handles_made)
 		kl_canvas_release(&main_handles);
 	free(main_pixels);
 	kl_window_close(main_window.kui);
+	kl_app_close(main_kl);
 	te_text_close(&main_ui);
 	te_text_close(&main_body);
 	if (main_widgets_text)
@@ -520,7 +536,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
-	struct kl_window_event window_event;
+	struct kl_app_event app_event;
 	struct te_event event;
 	struct te_state state;
 	uint64_t started;
@@ -555,32 +571,29 @@ main_loop(
 		due = te_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = kl_window_repeat_wait(main_window.kui, kl_clock_us());
-		if (due >= 0 && due < timeout)
-			timeout = due;
 		if (main_moving && timeout > MAIN_FRAME_MS)
 			timeout = MAIN_FRAME_MS;
 		if (main_app.dirty)
 			timeout = 0;
 
-		/* Waits; a lost connection ends the run. */
-		status = kl_window_dispatch(main_window.kui, timeout);
+		/* Waits (a key held repeats within, after its release if that came, BUG-111); a lost connection ends the run. */
+		status = kl_app_dispatch(main_kl, timeout);
 		if (status != 0) {
 			te_log("DONE reason=disconnected");
 			return 0;
 		}
-
-		/* A key held repeats once the compositor's input is in, so that its release is seen first (BUG-111). */
 		now = te_clock();
 		main_app.now = now;
-		(void)kl_window_repeat(main_window.kui, kl_clock_us());
 
-		/* The window's input: the pointer, the keys and the focus become the editor's, the fingers go to libkeiland. */
+		/* The application's input: the window's (the menus' and the controls' among it), and the desktop's appearance. */
 		for (;;) {
-			taken = kl_window_take(main_window.kui, &window_event);
+			taken = kl_app_take(main_kl, &app_event);
 			if (taken == 0)
 				break;
-			main_window_event(&window_event);
+			if (app_event.kind == KL_APP_THEME)
+				main_appearance_changed();
+			if (app_event.kind == KL_APP_WINDOW && app_event.window == main_window.kui)
+				main_window_event(&app_event.input);
 		}
 
 		/* Every input queued (the menus' and the titlebar's among them). */
@@ -619,7 +632,7 @@ main_loop(
 		main_state(&state);
 		main_edit_state(&state);
 		te_menu_refresh(&main_menu, &state);
-		te_titlebar_refresh(&main_titlebar, &state);
+		te_titlebar_refresh(&main_titlebar);
 
 		/* Close (with nothing unsaved, or dropped) ends the run. */
 		if (main_app.want_close != 0) {
@@ -1241,7 +1254,7 @@ main_choose(
 	options.font = main_ui_font;
 
 	/* The chooser's window over the editor's. */
-	main_chooser = kl_file_chooser_open(kl_window_display(window->kui), kl_window_toplevel(window->kui), &options, &listener, window);
+	main_chooser = kl_file_chooser_open(kl_app_display(main_kl), kl_window_toplevel(window->kui), &options, &listener, window);
 	if (main_chooser == NULL)
 		return errno;
 
@@ -1397,18 +1410,14 @@ main_window_event(
 	case KL_WINDOW_CLOSE:
 		main_closed = 1;
 		break;
-	case KL_WINDOW_POST:
-		/* Select All (zdesktop takes Ctrl+A for the menu) selects the focused field of the Replace panel. */
-		if (event->code == TE_ACTION_SELECT_ALL &&
-		    main_app.dialog == TE_DIALOG_REPLACE &&
-		    main_input != NULL) {
-			(void)kl_ui_key(main_input, MAIN_KEY_A, 1, KL_MOD_CTRL);
-			main_app.dirty = 1;
-			break;
-		}
-
-		/* An action of the menus or the titlebar, in its place among the keys. */
-		te_window_act(&main_window, event->code);
+	case KL_WINDOW_ACTION:
+		/* An item of the menus or a control of the titlebar, in its place among the keys. */
+		main_action(event);
+		break;
+	case KL_WINDOW_CONTROL_TEXT:
+	case KL_WINDOW_CONTROL_DONE:
+		/* The find field's text. */
+		te_titlebar_input(&main_titlebar, event);
 		break;
 	default:
 		break;
@@ -1510,12 +1519,37 @@ main_fingers(
 
 /* Takes the desktop's new appearance: the editor is drawn again in its colours. */
 static void
-main_appearance_changed(
-	void *data,
-	unsigned appearance)
+main_appearance_changed(void)
 {
+	unsigned appearance;
+
 	/* A new frame. */
-	(void)data;
+	appearance = kl_appearance_get(NULL);
 	main_app.dirty = 1;
 	te_log("APPEARANCE appearance=%u", appearance);
+}
+
+/*
+ * Carries out an item of the menus or a control of the titlebar: Select
+ * All (zdesktop takes Ctrl+A for the menu) selects the focused field of
+ * the Replace panel; any other action is the editor's.
+ */
+static void
+main_action(
+	const struct kl_window_event *event)
+{
+	/* The log line of the choice. */
+	te_log("ACTION id=%d action=%u", (int)event->id, (unsigned)event->code);
+
+	/* Select All in the Replace panel's field. */
+	if (event->code == TE_ACTION_SELECT_ALL &&
+	    main_app.dialog == TE_DIALOG_REPLACE &&
+	    main_input != NULL) {
+		(void)kl_ui_key(main_input, MAIN_KEY_A, 1, KL_MOD_CTRL);
+		main_app.dirty = 1;
+		return;
+	}
+
+	/* The editor's action, in its place among the keys. */
+	te_window_act(&main_window, event->code);
 }
