@@ -36,7 +36,7 @@ app が libkeiland に PDF の場所を渡して印刷を依頼すると、netwo
 | [ws145-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | in-progress（第 3.1 版、ユーザーの判断待ち） | — |
 | [ws145-p002](phase002/phase.md) | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host の符号化・通し・寿命の試験 | in-progress（2026-10-07 P2、host 済み） | p001 |
 | [ws145-p003](phase003/phase.md) | backend の print（設定の file・printd の起動と通信・状態遷移）、compositor の printers の object、protocol version 17、libkeiland の口（KL_VERSION 56 の案）、`printtest`、host の backend の試験 | in-progress（2026-10-07 P2、host 済み） | p002 |
-| ws145-p004 | Settings の Printers の頁（IP address・port・protocol） | planning | p003 |
+| [ws145-p004](phase004/phase.md) | Settings の Printers の頁（IP address・port・protocol、詳しい設定の path・queue） | in-progress（2026-10-07 P2） | p003 |
 | ws145-p005 | Linux・FreeBSD の build と install と Debian の QEMU+KVM・FreeBSD 15 の guest の確認 | planning | p003 |
 | ws145-p006 | 全文の規約の確認と回帰、T1 の QEMU の試験（最後） | planning | p002〜p005 |
 | （別の WS の案） | 変換の filter（PDF → PWG raster・PostScript・PCL）。単一目標の外。D4 の機種が PDF を受けなければ受け入れの前に | — | p002 |

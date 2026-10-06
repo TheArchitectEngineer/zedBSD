@@ -560,6 +560,26 @@ struct se_sharing {
 	int message_bad;
 };
 
+/* The Printers page's fields (ws145-p004): the address, the port, the path or queue. */
+#define SE_PRINTER_FIELDS	3
+
+/*
+ * The Printers page (ws145-p004): the protocol chosen for an addition
+ * (KL_PRINTER_IPP or _LPD, 0 for IPP), the fields, the field with the
+ * keyboard and whether one has it, the request asked (0 for none) and its
+ * kind, and the last answer (red for a failure).
+ */
+struct se_printers {
+	unsigned protocol;
+	struct kl_field fields[SE_PRINTER_FIELDS];
+	int focus;
+	int typing;
+	uint32_t request;
+	char doing[16];
+	char message[SE_MESSAGE];
+	int message_bad;
+};
+
 /*
  * The Languages page's system language (ws158-p004): the language of the
  * login screen as /etc/keiland/language holds it (whether it was read, and
@@ -1144,6 +1164,9 @@ struct se_app {
 	/* The Sharing page's Remote Login (ws089-p025). */
 	struct se_sharing sharing;
 
+	/* The Printers page (ws145-p004). */
+	struct se_printers printers;
+
 	/* The Languages page's system language (ws158-p004). */
 	struct se_languages languages;
 
@@ -1238,6 +1261,11 @@ int se_languages_key(struct se_app *app, const struct se_event *event);
 int se_languages_result(struct se_app *app, uint32_t request, int error);
 void se_sharing_poll(struct se_app *app);
 int se_sharing_result(struct se_app *app, uint32_t request, int error);
+int se_printers_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+void se_printers_press(struct se_app *app, int index);
+int se_printers_key(struct se_app *app, const struct se_event *event);
+void se_printers_poll(struct se_app *app);
+int se_printers_result(struct se_app *app, uint32_t request, int error);
 void se_storage_stop(struct se_app *app);
 void se_storage_empty_trash(struct se_app *app);
 void se_storage_poll(struct se_app *app, uint64_t now);
