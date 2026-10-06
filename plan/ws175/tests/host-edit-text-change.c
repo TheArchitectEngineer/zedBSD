@@ -15,7 +15,8 @@
  * start, "Next" (a ') deleted, "Line two" given "Changed!" in its own
  * embedded font, the Identity-H line given its words twice; Helvetica (not
  * embedded) and Japanese in WinAnsiEncoding need a replacement font; the
- * invisible line takes no words.  A reset puts a moved line back.  The
+ * invisible line takes no words; "Marked" and "Named" (in marked content
+ * with /ActualText, inline and named) given "Marker" and "Namer".  A reset puts a moved line back.  The
  * update saved to OUT opens again with the lines where the changes put
  * them and every other line where it was -- the leading a TD set and the
  * spacing a " set still hold (design.md [H1]).  Prints each check and
@@ -107,6 +108,12 @@ main(
 	words.utf8 = doubled;
 	error = pdf_page_editor_set_text(editor, wide, &words, &result);
 	check(error == 0 && result == PDF_EDIT_TEXT_ORIGINAL, "the Identity-H line given its words twice");
+	words.utf8 = "Marker";
+	error = pdf_page_editor_set_text(editor, find_line(editor, "Marked"), &words, &result);
+	words.utf8 = "Namer";
+	if (error == 0)
+		error = pdf_page_editor_set_text(editor, find_line(editor, "Named"), &words, &result);
+	check(error == 0, "Marked and Named given Marker and Namer");
 
 	/* What its own font cannot write. */
 	words.utf8 = "Arial";
@@ -157,6 +164,7 @@ main(
 	check(at != (size_t)-1 && error == 0 && fabs(object.quad[0] - quads[1][0]) < 0.01 && fabs(object.quad[1] - quads[1][1]) < 0.01, "saved: \"Changed!\" where Line two started");
 	check(find_line(editor, "Line two") == (size_t)-1, "saved: Line two is gone");
 	check(find_line(editor, "Next") == (size_t)-1, "saved: Next is gone");
+	check(find_line(editor, "Marker") != (size_t)-1 && find_line(editor, "Namer") != (size_t)-1, "saved: Marker and Namer");
 	at = find_line(editor, doubled);
 	check(at != (size_t)-1, "saved: the Identity-H line's words twice");
 	at = find_line(editor, "Quote");
