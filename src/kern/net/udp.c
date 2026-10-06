@@ -13,6 +13,11 @@
  * the address reuse rules; input delivers each datagram to the best
  * matching socket, preferring a connected one.  The DHCP client is
  * allowed to broadcast from an unconfigured interface.
+ *
+ * An AF_INET6 socket (ws130-p003) sends and receives IPv6 datagrams, whose
+ * checksum is mandatory; one that takes IPv4 too (IPV6_V6ONLY 0) gets the
+ * IPv4 datagrams for its port, named by their IPv4-mapped sources, and
+ * sends to an IPv4-mapped destination over IPv4.
  */
 
 #include "kern/net/inet-socket.h"
@@ -22,6 +27,7 @@
 #include "kern/net/route.h"
 #include "kern/kmem.h"
 #include "internal.h"
+#include "ipv6.h"
 #include "wire.h"
 #include <kern/kcrt.h>
 
@@ -56,6 +62,11 @@ static int udp_setsockopt(struct socket *socket, int level, int option, const vo
 static int udp_getsockopt(struct socket *socket, int level, int option, void *value, socklen_t *length);
 static void udp_close(struct socket *socket);
 static int udp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
+static int udp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
+static int udp6_connect_source(struct udp_endpoint *endpoint);
+static ssize_t udp6_sendto(struct udp_endpoint *endpoint, const void *buffer, size_t length, int flags, const struct sockaddr *address, socklen_t address_length);
+static ssize_t udp_send_ipv4(struct udp_endpoint *endpoint, const void *buffer, size_t length, int flags, uint32_t destination, uint16_t destination_port);
+static ssize_t udp_send_ipv6(struct udp_endpoint *endpoint, const void *buffer, size_t length, const struct in6_addr *destination, unsigned scope, uint16_t destination_port);
 
 static const struct socket_ops udp_ops = {
 	.bind = udp_bind,
@@ -125,6 +136,11 @@ udp_init(
 
 	/* Reports why the registration failed. */
 	error = ipv4_protocol_register(IPPROTO_UDP, udp_input);
+	if (error != 0)
+		return error;
+
+	/* And from IPv6 (ws130-p003). */
+	error = ipv6_protocol_register(IPPROTO_UDP, udp6_input);
 	if (error != 0)
 		return error;
 
@@ -257,6 +273,8 @@ udp_bind(
 		error = EADDRINUSE;
 	if (error != 0) {
 		endpoint->inet.local_address = 0;
+		kern_memset(&endpoint->inet.local6, 0, sizeof(endpoint->inet.local6));
+		endpoint->inet.mapped = 0;
 		endpoint->inet.local_port = 0;
 		endpoint->inet.ifindex = 0;
 		endpoint->inet.bind_reuse_address = 0;
@@ -283,6 +301,8 @@ udp_connect(
 {
 	struct udp_endpoint *endpoint;
 	unsigned long irq;
+	unsigned mapped;
+	int speaks;
 	int error;
 
 	(void)io_flags;
@@ -292,16 +312,26 @@ udp_connect(
 	/* Takes the remote address under the registry lock. */
 	irq = spin_lock_irqsave(&udp_registry_lock);
 
+	/* A source chosen for an earlier peer is chosen again for this one. */
+	if ((endpoint->inet.inet_flags & INET_SOCKET_SOURCE_CHOSEN) != 0) {
+		kern_memset(&endpoint->inet.local6, 0, sizeof(endpoint->inet.local6));
+		endpoint->inet.inet_flags &= ~INET_SOCKET_SOURCE_CHOSEN;
+	}
+
 	/* A remote port is required, and a local one is allocated if missing. */
+	mapped = endpoint->inet.mapped;
 	error = inet_socket_connect(&endpoint->inet, address, length);
 	if (error == 0 && endpoint->inet.remote_port == 0)
 		error = EADDRNOTAVAIL;
 	if (error == 0 && endpoint->inet.local_port == 0)
 		error = udp_allocate_port_locked(endpoint);
 
-	/* Undoes the connection on failure. */
+	/* Undoes the connection on failure (an IPv4-mapped bind stays). */
 	if (error != 0) {
 		endpoint->inet.remote_address = 0;
+		kern_memset(&endpoint->inet.remote6, 0, sizeof(endpoint->inet.remote6));
+		endpoint->inet.scope6 = 0;
+		endpoint->inet.mapped = mapped;
 		endpoint->inet.remote_port = 0;
 		endpoint->inet.inet_flags &= ~INET_SOCKET_CONNECTED;
 	}
@@ -312,8 +342,82 @@ udp_connect(
 	if (error != 0)
 		return error;
 
+	/* An IPv6 peer fixes the local address the datagrams go from (RFC 6724). */
+	speaks = inet_socket_speaks_ipv6(&endpoint->inet);
+	if (speaks) {
+		error = udp6_connect_source(endpoint);
+		if (error != 0)
+			return error;
+	}
+
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Chooses the source address of a connected IPv6 socket that is bound to
+ * [::], for its peer, as getsockname then tells it.  The connection is
+ * undone when there is no way to the peer.
+ */
+static int
+udp6_connect_source(
+	struct udp_endpoint *endpoint)
+{
+	struct net_device *device;
+	struct in6_addr source;
+	unsigned long irq;
+	unsigned ifindex;
+	int unspecified;
+	int error;
+
+	/* A socket bound to an address keeps it. */
+	unspecified = in6_is_unspecified(&endpoint->inet.local6);
+	if (!unspecified)
+		return 0;
+
+	/* The interface asked for: the bound one, or a link-local peer's. */
+	device = NULL;
+	ifindex = endpoint->inet.ifindex;
+	if (ifindex == 0)
+		ifindex = endpoint->inet.scope6;
+	if (ifindex != 0) {
+		device = net_device_find_by_index_ref(ifindex);
+		if (device == NULL) {
+			error = ENXIO;
+			goto undo;
+		}
+	}
+
+	/* The source for the peer. */
+	error = ipv6_route_source(device, &endpoint->inet.remote6, &source, NULL);
+	if (device != NULL)
+		net_device_release(device);
+	if (error != 0)
+		goto undo;
+
+	/* The socket takes datagrams to it from now on. */
+	irq = spin_lock_irqsave(&udp_registry_lock);
+
+	endpoint->inet.local6 = source;
+	endpoint->inet.inet_flags |= INET_SOCKET_SOURCE_CHOSEN;
+
+	spin_unlock_irqrestore(&udp_registry_lock, irq);
+
+	/* Succeeded: the source chosen. */
+	return 0;
+
+undo:
+	irq = spin_lock_irqsave(&udp_registry_lock);
+
+	kern_memset(&endpoint->inet.remote6, 0, sizeof(endpoint->inet.remote6));
+	endpoint->inet.scope6 = 0;
+	endpoint->inet.remote_port = 0;
+	endpoint->inet.inet_flags &= ~INET_SOCKET_CONNECTED;
+
+	spin_unlock_irqrestore(&udp_registry_lock, irq);
+
+	/* Reports why there is no source. */
+	return error;
 }
 
 /* Sends a datagram to the addressed or connected destination. */
@@ -328,19 +432,9 @@ udp_sendto(
 {
 	struct udp_endpoint *endpoint;
 	struct sockaddr_in output;
-	struct net_route route;
-	struct net_device *device;
-	struct packet_buf *packet;
-	struct udp_wire *udp;
 	uint32_t destination;
-	uint32_t source;
-	uint32_t broadcast;
-	uint32_t configured;
 	uint16_t destination_port;
-	uint16_t checksum;
-	void *payload;
-	int have_route;
-	int error;
+	ssize_t sent;
 
 	endpoint = udp_endpoint(socket);
 
@@ -348,6 +442,14 @@ udp_sendto(
 	if ((flags & ~(MSG_DONTWAIT | MSG_NOSIGNAL)) != 0 ||
 	    (buffer == NULL && length != 0))
 		return -EINVAL;
+
+	/* An IPv6 socket takes an IPv6 destination (ws130-p003). */
+	if (endpoint->inet.family == AF_INET6) {
+		sent = udp6_sendto(endpoint, buffer, length, flags, address, address_length);
+		if (sent < 0)
+			return sent;
+		return sent;
+	}
 
 	/* Takes the destination from the address, else from the connection. */
 	if (address != NULL) {
@@ -363,6 +465,112 @@ udp_sendto(
 		return -EDESTADDRREQ;
 	}
 
+	/* Sends it over IPv4. */
+	sent = udp_send_ipv4(endpoint, buffer, length, flags, destination, destination_port);
+	if (sent < 0)
+		return sent;
+
+	/* Succeeded: the sent length. */
+	return sent;
+}
+
+/*
+ * Sends a datagram from an AF_INET6 socket: to the address given or the
+ * peer, over IPv4 when it is IPv4-mapped (for a socket that takes IPv4).
+ */
+static ssize_t
+udp6_sendto(
+	struct udp_endpoint *endpoint,
+	const void *buffer,
+	size_t length,
+	int flags,
+	const struct sockaddr *address,
+	socklen_t address_length)
+{
+	struct sockaddr_in6 output;
+	struct in6_addr destination;
+	uint32_t destination4;
+	uint16_t destination_port;
+	unsigned scope;
+	ssize_t sent;
+	int mapped;
+	int accepts;
+
+	/* An IPv4-mapped peer: the socket speaks IPv4 to it. */
+	if (address == NULL &&
+	    (endpoint->inet.inet_flags & INET_SOCKET_CONNECTED) != 0 &&
+	    endpoint->inet.mapped) {
+		sent = udp_send_ipv4(endpoint, buffer, length, flags, endpoint->inet.remote_address,
+		    endpoint->inet.remote_port);
+		if (sent < 0)
+			return sent;
+		return sent;
+	}
+
+	/* Takes the destination from the address, else from the connection. */
+	if (address != NULL) {
+		if (address_length < sizeof(output) || address->sa_family != AF_INET6)
+			return -EINVAL;
+		kern_memcpy(&output, address, sizeof(output));
+		destination = output.sin6_addr;
+		destination_port = net_ntohs(output.sin6_port);
+		scope = output.sin6_scope_id;
+	} else if (endpoint->inet.inet_flags & INET_SOCKET_CONNECTED) {
+		destination = endpoint->inet.remote6;
+		destination_port = endpoint->inet.remote_port;
+		scope = endpoint->inet.scope6;
+	} else {
+		return -EDESTADDRREQ;
+	}
+
+	/* An IPv4-mapped destination goes over IPv4, from a socket that may speak it. */
+	mapped = in6_is_v4mapped(&destination);
+	if (mapped) {
+		accepts = inet_socket_accepts_ipv4(&endpoint->inet);
+		if (!accepts)
+			return -ENETUNREACH;
+		destination4 = inet_socket_unmapped(&destination);
+		sent = udp_send_ipv4(endpoint, buffer, length, flags, destination4, destination_port);
+		if (sent < 0)
+			return sent;
+		return sent;
+	}
+
+	/* An IPv6 one, from a socket that is not IPv4-mapped. */
+	accepts = inet_socket_accepts_ipv6(&endpoint->inet);
+	if (!accepts)
+		return -ENETUNREACH;
+	sent = udp_send_ipv6(endpoint, buffer, length, &destination, scope, destination_port);
+	if (sent < 0)
+		return sent;
+
+	/* Succeeded: the sent length. */
+	return sent;
+}
+
+/* Sends a datagram over IPv4 (an AF_INET socket's, or an IPv4-mapped AF_INET6 one's). */
+static ssize_t
+udp_send_ipv4(
+	struct udp_endpoint *endpoint,
+	const void *buffer,
+	size_t length,
+	int flags,
+	uint32_t destination,
+	uint16_t destination_port)
+{
+	struct net_route route;
+	struct net_device *device;
+	struct packet_buf *packet;
+	struct udp_wire *udp;
+	uint32_t source;
+	uint32_t broadcast;
+	uint32_t configured;
+	uint16_t checksum;
+	void *payload;
+	int have_route;
+	int error;
+
+	/* A specific destination and port. */
 	if (destination == 0 || destination_port == 0)
 		return -EADDRNOTAVAIL;
 
@@ -466,6 +674,129 @@ udp_sendto(
 
 fail:
 	net_device_release(device);
+
+	/* Reports the failure. */
+	return -error;
+}
+
+/*
+ * Sends a datagram over IPv6: from the bound address or the one chosen
+ * for the destination (RFC 6724), out of the bound interface or the one a
+ * link-local or group destination's scope names, with the checksum IPv6
+ * makes mandatory.
+ */
+static ssize_t
+udp_send_ipv6(
+	struct udp_endpoint *endpoint,
+	const void *buffer,
+	size_t length,
+	const struct in6_addr *destination,
+	unsigned scope,
+	uint16_t destination_port)
+{
+	struct net_device *device;
+	struct packet_buf *packet;
+	struct udp_wire *udp;
+	struct in6_addr source;
+	struct in6_addr chosen;
+	unsigned ifindex;
+	unsigned mtu;
+	uint16_t checksum;
+	void *payload;
+	int unspecified;
+	int linklocal;
+	int multicast;
+	int error;
+
+	/* A specific destination and port. */
+	unspecified = in6_is_unspecified(destination);
+	if (unspecified || destination_port == 0)
+		return -EADDRNOTAVAIL;
+
+	/* Allocates a local port for a socket that never bound. */
+	if (endpoint->inet.local_port == 0) {
+		error = udp_allocate_port(endpoint);
+		if (error != 0)
+			return -error;
+	}
+
+	/* The interface: the bound one, or the scope of a destination on a link. */
+	ifindex = endpoint->inet.ifindex;
+	linklocal = in6_is_linklocal(destination);
+	multicast = in6_is_multicast(destination);
+	if (ifindex == 0 &&
+	    (linklocal ||
+	     multicast))
+		ifindex = scope;
+	if (ifindex == 0 && linklocal)
+		return -EINVAL;
+
+	/* The device of that interface, held for the send. */
+	device = NULL;
+	if (ifindex != 0) {
+		device = net_device_find_by_index_ref(ifindex);
+		if (device == NULL)
+			return -ENXIO;
+	}
+
+	/* The way there: the source it would be sent from, and the path MTU. */
+	error = ipv6_route_source(device, destination, &chosen, &mtu);
+	if (error != 0)
+		goto fail;
+
+	/* The bound address, or the chosen one. */
+	source = chosen;
+	unspecified = in6_is_unspecified(&endpoint->inet.local6);
+	if (!unspecified)
+		source = endpoint->inet.local6;
+
+	/* Refuses a datagram that cannot fit the path with its headers (no fragments are made). */
+	if (length > 0xffffU - sizeof(*udp) ||
+	    length + sizeof(*udp) + IPV6_HEADER_LENGTH > mtu) {
+		error = EMSGSIZE;
+		goto fail;
+	}
+
+	/* Builds the datagram. */
+	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	if (packet == NULL) {
+		error = ENOBUFS;
+		goto fail;
+	}
+
+	udp = packet_buf_append(packet, sizeof(*udp));
+	payload = packet_buf_append(packet, length);
+	if (udp == NULL || payload == NULL) {
+		packet_buf_free(packet);
+		error = ENOBUFS;
+		goto fail;
+	}
+
+	/* Its header, and the checksum over the IPv6 pseudo-header (0 is sent as all ones). */
+	kern_memset(udp, 0, sizeof(*udp));
+	if (length != 0)
+		kern_memcpy(payload, buffer, length);
+	wire_put16(udp->source, endpoint->inet.local_port);
+	wire_put16(udp->destination, destination_port);
+	wire_put16(udp->length, (uint16_t)packet->length);
+	checksum = net_checksum_pseudo6(source.s6_addr, destination->s6_addr, IPPROTO_UDP, packet->data, packet->length);
+	if (checksum == 0)
+		checksum = 0xffffU;
+	wire_put16(udp->checksum, checksum);
+
+	/* Sends it (neighbor discovery holds it until the next hop is known). */
+	error = ipv6_output(device, &source, destination, IPPROTO_UDP, 0U, packet);
+	if (device != NULL)
+		net_device_release(device);
+	if (error != 0)
+		return -error;
+
+	/* Succeeded: the sent length. */
+	return (ssize_t)length;
+
+fail:
+	if (device != NULL)
+		net_device_release(device);
 
 	/* Reports the failure. */
 	return -error;
@@ -680,12 +1011,12 @@ udp_input(
 	const struct udp_wire *udp;
 	struct udp_endpoint *endpoint;
 	struct udp_endpoint *best;
-	struct sockaddr_in address;
 	unsigned long irq;
 	uint16_t source_port;
 	uint16_t destination_port;
 	uint16_t udp_length;
 	uint16_t checksum;
+	int accepts;
 	int error;
 
 	best = NULL;
@@ -718,6 +1049,9 @@ udp_input(
 	irq = spin_lock_irqsave(&udp_registry_lock);
 
 	for (endpoint = udp_sockets; endpoint != NULL; endpoint = endpoint->next) {
+		accepts = inet_socket_accepts_ipv4(&endpoint->inet);
+		if (!accepts)
+			continue;
 		if (endpoint->inet.local_port != destination_port ||
 		    (endpoint->inet.local_address != 0 &&
 		     endpoint->inet.local_address != destination))
@@ -748,17 +1082,155 @@ udp_input(
 	/* Strips the header and trailing padding. */
 	(void)packet_buf_trim(packet, udp_length);
 	if (packet_buf_pull(packet, sizeof(*udp)) == NULL) {
+		socket_release(&best->inet.socket);
 		packet_buf_free(packet);
 		return EINVAL;
 	}
 
-	/* Names the sender in the packet's source address. */
-	kern_memset(&address, 0, sizeof(address));
-	address.sin_family = AF_INET;
-	address.sin_port = net_htons(source_port);
-	address.sin_addr.s_addr = net_htonl(source);
-	kern_memcpy(packet->source_address, &address, sizeof(address));
-	packet->source_length = sizeof(address);
+	/* Names the sender in the packet's source address, IPv4-mapped for an IPv6 socket. */
+	inet_socket_peer_name(&best->inet, source, NULL, 0, source_port, packet->source_address, &packet->source_length);
+
+	/* Queues the datagram on the socket. */
+	error = socket_enqueue_packet(&best->inet.socket, packet);
+	socket_release(&best->inet.socket);
+
+	/* Reports why the queueing failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Receives an IPv6 datagram and queues it on the best matching socket:
+ * one that takes IPv6, on the destination port and address (or [::]), on
+ * the interface it came in on when it is bound to one, preferring one
+ * connected to the sender.  A datagram without a checksum is dropped.
+ */
+static int
+udp6_input(
+	struct packet_buf *packet,
+	const struct in6_addr *source,
+	const struct in6_addr *destination)
+{
+	const struct udp_wire *udp;
+	struct udp_endpoint *endpoint;
+	struct udp_endpoint *best;
+	unsigned long irq;
+	unsigned arrived;
+	unsigned device_flags;
+	uint16_t source_port;
+	uint16_t destination_port;
+	uint16_t udp_length;
+	uint16_t checksum;
+	void *pulled;
+	int accepts;
+	int unspecified;
+	int same;
+	int looped;
+	int referenced;
+	int error;
+
+	best = NULL;
+
+	/* Drops a datagram without a complete header. */
+	if (packet == NULL || packet->length < sizeof(*udp)) {
+		packet_buf_free(packet);
+		return EINVAL;
+	}
+
+	/* Drops a datagram with a bad length. */
+	udp = (const struct udp_wire *)packet->data;
+	udp_length = wire_get16(udp->length);
+	if (udp_length < sizeof(*udp) || udp_length > packet->length) {
+		packet_buf_free(packet);
+		return EINVAL;
+	}
+
+	/* Drops one without the checksum (RFC 8200 section 8.1) or with a failing one. */
+	checksum = wire_get16(udp->checksum);
+	if (checksum == 0) {
+		packet_buf_free(packet);
+		return EINVAL;
+	}
+
+	checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_UDP, packet->data, udp_length);
+	if (checksum != 0) {
+		packet_buf_free(packet);
+		return EINVAL;
+	}
+
+	/* The interface it came in on (round the loopback device: any). */
+	arrived = 0;
+	looped = 1;
+	if (packet->device != NULL) {
+		arrived = packet->device->ifindex;
+		device_flags = net_device_flags_get(packet->device);
+		looped = 0;
+		if ((device_flags & NET_DEVICE_LOOPBACK) != 0U)
+			looped = 1;
+	}
+
+	/* Prefers a socket connected to the sender over a merely bound one. */
+	source_port = wire_get16(udp->source);
+	destination_port = wire_get16(udp->destination);
+	irq = spin_lock_irqsave(&udp_registry_lock);
+
+	for (endpoint = udp_sockets; endpoint != NULL; endpoint = endpoint->next) {
+		accepts = inet_socket_accepts_ipv6(&endpoint->inet);
+		if (!accepts || endpoint->inet.local_port != destination_port)
+			continue;
+
+		/* On the destination address or [::], and on the interface it came in on. */
+		unspecified = in6_is_unspecified(&endpoint->inet.local6);
+		same = in6_equal(&endpoint->inet.local6, destination);
+		if (!unspecified && !same)
+			continue;
+		if (endpoint->inet.ifindex != 0 &&
+		    !looped &&
+		    endpoint->inet.ifindex != arrived)
+			continue;
+
+		/* A connected socket only from its peer, and before the bound ones. */
+		if (endpoint->inet.inet_flags & INET_SOCKET_CONNECTED) {
+			same = in6_equal(&endpoint->inet.remote6, source);
+			if (!same || endpoint->inet.remote_port != source_port)
+				continue;
+			best = endpoint;
+			break;
+		}
+
+		if (best == NULL)
+			best = endpoint;
+	}
+
+	/* The socket held for the queueing, unless it is closing. */
+	if (best != NULL) {
+		referenced = socket_tryref(&best->inet.socket);
+		if (!referenced)
+			best = NULL;
+	}
+
+	spin_unlock_irqrestore(&udp_registry_lock, irq);
+
+	/* Drops a datagram nobody listens for. */
+	if (best == NULL) {
+		packet_buf_free(packet);
+		return 0;
+	}
+
+	/* Strips the header and trailing padding. */
+	(void)packet_buf_trim(packet, udp_length);
+	pulled = packet_buf_pull(packet, sizeof(*udp));
+	if (pulled == NULL) {
+		socket_release(&best->inet.socket);
+		packet_buf_free(packet);
+		return EINVAL;
+	}
+
+	/* Names the sender, with the interface of a link-local one. */
+	inet_socket_peer_name(&best->inet, 0, source, arrived, source_port, packet->source_address, &packet->source_length);
 
 	/* Queues the datagram on the socket. */
 	error = socket_enqueue_packet(&best->inet.socket, packet);

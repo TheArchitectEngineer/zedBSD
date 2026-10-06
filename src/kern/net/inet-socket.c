@@ -37,6 +37,11 @@
 #define INET_IOCTL_SIZE_MASK (0x1fffUL << 16)
 #define INET_IOCTL_GROUP_MASK (0xffUL << 8)
 #define INET_IOCTL_NUMBER_MASK 0xffUL
+/* How two sockets' local addresses of one family overlap: not, one is the wildcard, or the same. */
+#define INET_OVERLAP_NONE	0
+#define INET_OVERLAP_WILDCARD	1
+#define INET_OVERLAP_SAME	2
+
 #define INET_IOCTL_ENCODING_MASK                                               \
 	(INET_IOCTL_DIRECTION_MASK | INET_IOCTL_SIZE_MASK |                     \
 	 INET_IOCTL_GROUP_MASK | INET_IOCTL_NUMBER_MASK)
@@ -82,8 +87,19 @@ static int inet_ioctl_wlan_classify(unsigned long command, size_t *size, bool *q
 static int inet_ioctl_wlan_validate(const struct wlan_ioctl_header *header, size_t size);
 static int inet_ioctl_wlan(unsigned long command, uintptr_t argument);
 static int inet_create(int type, int protocol, struct socket **result);
+static int inet6_create(int type, int protocol, struct socket **result);
+static int inet6_socket_bind(struct inet_socket *inet, const struct sockaddr *address, socklen_t length);
+static int inet6_socket_connect(struct inet_socket *inet, const struct sockaddr *address, socklen_t length);
+static int inet6_socket_name(struct inet_socket *inet, struct sockaddr *address, socklen_t *length, int peer);
+static int inet_ipv4_address_local(uint32_t local, unsigned *ifindex);
+static int inet_overlap_ipv4(const struct inet_socket *existing, const struct inet_socket *candidate);
+static int inet_overlap_ipv6(const struct inet_socket *existing, const struct inet_socket *candidate);
+static void inet6_mapped(struct in6_addr *out, uint32_t address);
 
 static const struct socket_family_ops inet_family = {.create = inet_create};
+
+/* The family of AF_INET6 (ws130-p003): the same sockets, made IPv6 ones. */
+static const struct socket_family_ops inet6_family = {.create = inet6_create};
 
 /*
  * Reads the configured addresses of a device, even when unset.
@@ -224,6 +240,7 @@ inet_socket_object_init(
 {
 	kern_memset(inet, 0, sizeof(*inet));
 	socket_init_object(&inet->socket, AF_INET, type, protocol, ops);
+	inet->family = AF_INET;
 }
 
 /*
@@ -239,13 +256,20 @@ inet_socket_bind(
 	socklen_t length)
 {
 	const struct sockaddr_in *input;
-	bool enabled;
 	uint32_t local;
 	unsigned ifindex;
-	unsigned index;
+	int error;
 
 	input = (const struct sockaddr_in *)address;
 	ifindex = 0;
+
+	/* An IPv6 socket takes an IPv6 address (ws130-p003). */
+	if (inet != NULL && inet->family == AF_INET6) {
+		error = inet6_socket_bind(inet, address, length);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Rejects a missing socket or anything but a complete AF_INET address. */
 	if (inet == NULL ||
@@ -257,19 +281,9 @@ inet_socket_bind(
 	/* A specific address must be configured on a live interface. */
 	local = net_ntohl(input->sin_addr.s_addr);
 	if (local != INADDR_ANY) {
-		enabled = interface_lock();
-		for (index = 0; index < NET_DEVICE_MAX; index++) {
-			if (interfaces[index].device != NULL &&
-			    interfaces[index].address == local &&
-			    net_device_is_live(interfaces[index].device)) {
-				ifindex = interfaces[index].device->ifindex;
-				break;
-			}
-		}
-
-		interface_unlock(enabled);
-		if (ifindex == 0)
-			return EADDRNOTAVAIL;
+		error = inet_ipv4_address_local(local, &ifindex);
+		if (error != 0)
+			return error;
 		inet->ifindex = ifindex;
 	}
 
@@ -292,6 +306,15 @@ inet_socket_connect(
 	socklen_t length)
 {
 	const struct sockaddr_in *input;
+	int error;
+
+	/* An IPv6 socket takes an IPv6 address (ws130-p003). */
+	if (inet != NULL && inet->family == AF_INET6) {
+		error = inet6_socket_connect(inet, address, length);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Rejects a missing socket or anything but a complete AF_INET address. */
 	input = (const struct sockaddr_in *)address;
@@ -326,6 +349,9 @@ inet_socket_local_conflict(
 	const struct inet_socket *candidate,
 	unsigned candidate_reuse)
 {
+	int overlap;
+	int overlap6;
+
 	/* Different or unbound ports never conflict. */
 	if (existing == NULL ||
 	    candidate == NULL ||
@@ -334,19 +360,23 @@ inet_socket_local_conflict(
 	    existing->local_port != candidate->local_port)
 		return 0;
 
-	/* Two different specific addresses never conflict. */
-	if (existing->local_address != 0 &&
-	    candidate->local_address != 0 &&
-	    existing->local_address != candidate->local_address)
+	/* How the addresses both take overlap: the IPv4 ones, and the IPv6 ones (ws130-p003). */
+	overlap = inet_overlap_ipv4(existing, candidate);
+	overlap6 = inet_overlap_ipv6(existing, candidate);
+	if (overlap6 > overlap)
+		overlap = overlap6;
+
+	/* Addresses in common or none. */
+	if (overlap == INET_OVERLAP_NONE)
 		return 0;
+	if (overlap == INET_OVERLAP_SAME)
+		return 1;
 
 	/*
 	 * SO_REUSEADDR permits wildcard/specific coexistence only when every
 	 * participant opted in.  Exact duplicate local endpoints still
 	 * require a future SO_REUSEPORT and are therefore rejected.
 	 */
-	if (existing->local_address == candidate->local_address)
-		return 1;
 	if (existing_reuse == 0)
 		return 1;
 	if (candidate_reuse == 0)
@@ -409,6 +439,20 @@ inet_socket_setsockopt(
 {
 	char name[IFNAMSIZ];
 	struct net_device *device;
+	int enabled;
+
+	/* IPV6_V6ONLY of an IPv6 socket (ws130-p003), only before it is bound. */
+	if (inet != NULL && level == IPPROTO_IPV6 && option == IPV6_V6ONLY) {
+		if (inet->family != AF_INET6)
+			return ENOPROTOOPT;
+		if (value == NULL || length != sizeof(enabled))
+			return EINVAL;
+		if ((inet->inet_flags & (INET_SOCKET_BOUND | INET_SOCKET_CONNECTED)) != 0)
+			return EINVAL;
+		kern_memcpy(&enabled, value, sizeof(enabled));
+		inet->v6only = enabled != 0;
+		return 0;
+	}
 
 	/* Only SO_BINDTODEVICE is handled here. */
 	if (inet == NULL || level != SOL_SOCKET || option != SO_BINDTODEVICE)
@@ -452,6 +496,19 @@ inet_socket_getsockopt(
 {
 	struct net_device *device;
 	size_t required;
+	int enabled;
+
+	/* IPV6_V6ONLY of an IPv6 socket (ws130-p003). */
+	if (inet != NULL && level == IPPROTO_IPV6 && option == IPV6_V6ONLY) {
+		if (inet->family != AF_INET6)
+			return ENOPROTOOPT;
+		if (value == NULL || length == NULL || *length < sizeof(enabled))
+			return EINVAL;
+		enabled = (int)inet->v6only;
+		kern_memcpy(value, &enabled, sizeof(enabled));
+		*length = sizeof(enabled);
+		return 0;
+	}
 
 	/* Only SO_BINDTODEVICE is handled here. */
 	if (inet == NULL || level != SOL_SOCKET || option != SO_BINDTODEVICE)
@@ -753,6 +810,11 @@ inet_socket_init(
 	if (error != 0)
 		return error;
 
+	/* And IPv6's (ws130-p003). */
+	error = socket_family_register(AF_INET6, &inet6_family);
+	if (error != 0)
+		return error;
+
 	/* Succeeded. */
 	return 0;
 }
@@ -788,6 +850,151 @@ inet_interface_purge_device(
 	interface_unlock(enabled);
 	for (index = 0; index < count; index++)
 		net_device_release(references[index]);
+}
+
+/*
+ * Tells whether a socket takes IPv4.
+ *
+ * An AF_INET socket does; an AF_INET6 one (ws130-p003) does when it is
+ * not IPV6_V6ONLY and is IPv4-mapped, or still on [::] with no IPv6 peer.
+ */
+int
+inet_socket_accepts_ipv4(
+	const struct inet_socket *inet)
+{
+	int unspecified;
+
+	/* The first family's sockets do. */
+	if (inet->family == AF_INET)
+		return 1;
+
+	/* An IPv6-only socket does not; an IPv4-mapped one does. */
+	if (inet->v6only)
+		return 0;
+	if (inet->mapped)
+		return 1;
+
+	/* One on an IPv6 address, or with an IPv6 peer, does not. */
+	unspecified = in6_is_unspecified(&inet->local6);
+	if (!unspecified)
+		return 0;
+	if ((inet->inet_flags & INET_SOCKET_CONNECTED) != 0)
+		return 0;
+
+	/* Succeeded: one on [::] does. */
+	return 1;
+}
+
+/*
+ * Tells whether a socket takes IPv6: an AF_INET6 one that is not
+ * IPv4-mapped.
+ */
+int
+inet_socket_accepts_ipv6(
+	const struct inet_socket *inet)
+{
+	/* The first family's sockets and the IPv4-mapped ones do not. */
+	if (inet->family != AF_INET6)
+		return 0;
+	if (inet->mapped)
+		return 0;
+
+	/* Succeeded: an IPv6 one. */
+	return 1;
+}
+
+/*
+ * Tells whether a socket speaks IPv6 to a peer: one that takes IPv6 and
+ * is connected.
+ */
+int
+inet_socket_speaks_ipv6(
+	const struct inet_socket *inet)
+{
+	int accepts;
+
+	/* Not one of IPv4. */
+	accepts = inet_socket_accepts_ipv6(inet);
+	if (!accepts)
+		return 0;
+
+	/* Not one without a peer. */
+	if ((inet->inet_flags & INET_SOCKET_CONNECTED) == 0)
+		return 0;
+
+	/* Succeeded: an IPv6 one with a peer. */
+	return 1;
+}
+
+/*
+ * Names a peer in the socket's own family.
+ *
+ * An AF_INET socket's is the IPv4 address (host order; address6 is NULL).
+ * An AF_INET6 socket's is the IPv6 address address6 with the scope of a
+ * link-local one, or the IPv4 address IPv4-mapped when address6 is NULL.
+ * output holds the name (a packet's source_address).
+ */
+void
+inet_socket_peer_name(
+	const struct inet_socket *inet,
+	uint32_t address,
+	const struct in6_addr *address6,
+	unsigned scope,
+	uint16_t port,
+	uint8_t *output,
+	uint8_t *length)
+{
+	struct sockaddr_in name4;
+	struct sockaddr_in6 name6;
+	int linklocal;
+
+	/* The first family's name. */
+	if (inet->family == AF_INET) {
+		kern_memset(&name4, 0, sizeof(name4));
+		name4.sin_family = AF_INET;
+		name4.sin_port = net_htons(port);
+		name4.sin_addr.s_addr = net_htonl(address);
+		kern_memcpy(output, &name4, sizeof(name4));
+		*length = (uint8_t)sizeof(name4);
+		return;
+	}
+
+	/* The second's: the address, or the IPv4 one mapped. */
+	kern_memset(&name6, 0, sizeof(name6));
+	name6.sin6_family = AF_INET6;
+	name6.sin6_port = net_htons(port);
+	if (address6 != NULL)
+		name6.sin6_addr = *address6;
+	else
+		inet6_mapped(&name6.sin6_addr, address);
+
+	/* A link-local peer is named with its interface. */
+	linklocal = in6_is_linklocal(&name6.sin6_addr);
+	if (linklocal)
+		name6.sin6_scope_id = scope;
+
+	/* The name. */
+	kern_memcpy(output, &name6, sizeof(name6));
+	*length = (uint8_t)sizeof(name6);
+}
+
+/*
+ * Gives the IPv4 address (host order) an IPv4-mapped IPv6 address carries.
+ */
+uint32_t
+inet_socket_unmapped(
+	const struct in6_addr *address)
+{
+	uint32_t value;
+
+	/* The last four bytes, in host order. */
+	value = (uint32_t)address->s6_addr[12] << 24;
+	value |= (uint32_t)address->s6_addr[13] << 16;
+	value |= (uint32_t)address->s6_addr[14] << 8;
+	value |= (uint32_t)address->s6_addr[15];
+
+	/* Succeeded: the IPv4 address. */
+	return value;
 }
 
 /* Disables interrupts, when the HAL is present, and takes the interface lock. */
@@ -946,6 +1153,7 @@ inet_socket_name(
 {
 	struct sockaddr_in output;
 	socklen_t copied;
+	int error;
 
 	/* Rejects a missing operand. */
 	if (inet == NULL || address == NULL || length == NULL)
@@ -954,6 +1162,14 @@ inet_socket_name(
 	/* The remote endpoint exists only on a connected socket. */
 	if (peer && !(inet->inet_flags & INET_SOCKET_CONNECTED))
 		return ENOTCONN;
+
+	/* An IPv6 socket names itself with an IPv6 address (ws130-p003). */
+	if (inet->family == AF_INET6) {
+		error = inet6_socket_name(inet, address, length, peer);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Builds the address in network order. */
 	kern_memset(&output, 0, sizeof(output));
@@ -1369,4 +1585,364 @@ inet_create(
 
 	/* Reports an unsupported type. */
 	return EPROTONOSUPPORT;
+}
+
+
+/*
+ * Creates an AF_INET6 socket (ws130-p003): a UDP one, made IPv6.  TCP and
+ * ICMPv6 come in the later stages of the Phase.
+ */
+static int
+inet6_create(
+	int type,
+	int protocol,
+	struct socket **result)
+{
+	struct inet_socket *inet;
+	int error;
+
+	/* Datagram is UDP; the others are not there yet. */
+	if (type != SOCK_DGRAM)
+		return EPROTONOSUPPORT;
+	error = udp_socket_create(protocol, result);
+	if (error != 0)
+		return error;
+
+	/* The same socket, of the second family. */
+	inet = (struct inet_socket *)*result;
+	inet->family = AF_INET6;
+	inet->socket.family = AF_INET6;
+
+	/* Succeeded: the IPv6 socket. */
+	return 0;
+}
+
+/* Finds the live interface an IPv4 address is configured on (EADDRNOTAVAIL: none). */
+static int
+inet_ipv4_address_local(
+	uint32_t local,
+	unsigned *ifindex)
+{
+	bool enabled;
+	bool live;
+	unsigned index;
+
+	/* The interface that has the address. */
+	*ifindex = 0;
+	enabled = interface_lock();
+	for (index = 0; index < NET_DEVICE_MAX; index++) {
+		if (interfaces[index].device == NULL || interfaces[index].address != local)
+			continue;
+		live = net_device_is_live(interfaces[index].device);
+		if (live) {
+			*ifindex = interfaces[index].device->ifindex;
+			break;
+		}
+	}
+
+	interface_unlock(enabled);
+
+	/* None has it. */
+	if (*ifindex == 0)
+		return EADDRNOTAVAIL;
+
+	/* Succeeded: the interface. */
+	return 0;
+}
+
+/* Tells how two sockets' IPv4 addresses overlap, when both take IPv4. */
+static int
+inet_overlap_ipv4(
+	const struct inet_socket *existing,
+	const struct inet_socket *candidate)
+{
+	int accepts;
+
+	/* Both must take IPv4. */
+	accepts = inet_socket_accepts_ipv4(existing);
+	if (!accepts)
+		return INET_OVERLAP_NONE;
+	accepts = inet_socket_accepts_ipv4(candidate);
+	if (!accepts)
+		return INET_OVERLAP_NONE;
+
+	/* The same address, a wildcard and another, or two different ones. */
+	if (existing->local_address == candidate->local_address)
+		return INET_OVERLAP_SAME;
+	if (existing->local_address == INADDR_ANY)
+		return INET_OVERLAP_WILDCARD;
+	if (candidate->local_address == INADDR_ANY)
+		return INET_OVERLAP_WILDCARD;
+
+	/* Succeeded: two different addresses do not overlap. */
+	return INET_OVERLAP_NONE;
+}
+
+/* Tells how two sockets' IPv6 addresses overlap, when both take IPv6. */
+static int
+inet_overlap_ipv6(
+	const struct inet_socket *existing,
+	const struct inet_socket *candidate)
+{
+	int accepts;
+	int same;
+	int unspecified;
+
+	/* Both must take IPv6. */
+	accepts = inet_socket_accepts_ipv6(existing);
+	if (!accepts)
+		return INET_OVERLAP_NONE;
+	accepts = inet_socket_accepts_ipv6(candidate);
+	if (!accepts)
+		return INET_OVERLAP_NONE;
+
+	/* The same address. */
+	same = in6_equal(&existing->local6, &candidate->local6);
+	if (same)
+		return INET_OVERLAP_SAME;
+
+	/* A wildcard and another. */
+	unspecified = in6_is_unspecified(&existing->local6);
+	if (unspecified)
+		return INET_OVERLAP_WILDCARD;
+	unspecified = in6_is_unspecified(&candidate->local6);
+	if (unspecified)
+		return INET_OVERLAP_WILDCARD;
+
+	/* Succeeded: two different addresses do not overlap. */
+	return INET_OVERLAP_NONE;
+}
+
+/* Makes the IPv4-mapped IPv6 address (::ffff:a.b.c.d) of an IPv4 address in host order. */
+static void
+inet6_mapped(
+	struct in6_addr *out,
+	uint32_t address)
+{
+	kern_memset(out, 0, sizeof(*out));
+	out->s6_addr[10] = 0xffU;
+	out->s6_addr[11] = 0xffU;
+	out->s6_addr[12] = (uint8_t)(address >> 24);
+	out->s6_addr[13] = (uint8_t)(address >> 16);
+	out->s6_addr[14] = (uint8_t)(address >> 8);
+	out->s6_addr[15] = (uint8_t)address;
+}
+
+/*
+ * Binds an AF_INET6 socket.  An IPv4-mapped address makes it an IPv4 one
+ * (refused under IPV6_V6ONLY); [::] leaves it open to both; another
+ * address must be one of the host's that may be used, and a link-local
+ * one names its interface in the scope, which then binds the socket to it.
+ */
+static int
+inet6_socket_bind(
+	struct inet_socket *inet,
+	const struct sockaddr *address,
+	socklen_t length)
+{
+	struct sockaddr_in6 input;
+	struct net_device *device;
+	unsigned flags;
+	unsigned ifindex;
+	uint32_t local;
+	int mapped;
+	int linklocal;
+	int unspecified;
+	int error;
+
+	/* A complete AF_INET6 address. */
+	if (address == NULL ||
+	    length < sizeof(input) ||
+	    address->sa_family != AF_INET6)
+		return EINVAL;
+	kern_memcpy(&input, address, sizeof(input));
+
+	/* An IPv4-mapped address: an IPv4 one is configured on an interface (or the wildcard). */
+	mapped = in6_is_v4mapped(&input.sin6_addr);
+	if (mapped) {
+		if (inet->v6only)
+			return EADDRNOTAVAIL;
+		local = inet_socket_unmapped(&input.sin6_addr);
+		ifindex = 0;
+		if (local != INADDR_ANY) {
+			error = inet_ipv4_address_local(local, &ifindex);
+			if (error != 0)
+				return error;
+		}
+
+		/* The socket speaks IPv4 from now on. */
+		inet->ifindex = ifindex;
+		inet->local_address = local;
+		inet->local6 = input.sin6_addr;
+		inet->mapped = 1;
+		inet->local_port = net_ntohs(input.sin6_port);
+		inet->inet_flags |= INET_SOCKET_BOUND;
+		return 0;
+	}
+
+	/* A link-local address is on the interface its scope names. */
+	ifindex = 0;
+	linklocal = in6_is_linklocal(&input.sin6_addr);
+	if (linklocal) {
+		if (input.sin6_scope_id == 0)
+			return EINVAL;
+		ifindex = input.sin6_scope_id;
+	}
+
+	/* A specific address must be the host's (on that interface), and not one still being checked. */
+	unspecified = in6_is_unspecified(&input.sin6_addr);
+	if (!unspecified) {
+		device = NULL;
+		if (ifindex != 0) {
+			device = net_device_find_by_index_ref(ifindex);
+			if (device == NULL)
+				return EADDRNOTAVAIL;
+		}
+		error = ipv6_address_state(device, &input.sin6_addr, &flags);
+		if (device != NULL)
+			net_device_release(device);
+		if (error != 0)
+			return EADDRNOTAVAIL;
+		if ((flags & (IN6_ADDRESS_TENTATIVE | IN6_ADDRESS_DUPLICATED)) != 0U)
+			return EADDRNOTAVAIL;
+	}
+
+	/* Records the local endpoint. */
+	inet->ifindex = ifindex;
+	inet->local6 = input.sin6_addr;
+	inet->local_address = 0;
+	inet->local_port = net_ntohs(input.sin6_port);
+	inet->inet_flags |= INET_SOCKET_BOUND;
+
+	/* Succeeded: the bound socket. */
+	return 0;
+}
+
+/*
+ * Records the remote endpoint of an AF_INET6 socket.  An IPv4-mapped peer
+ * makes it an IPv4 one (refused under IPV6_V6ONLY or on an IPv6 address);
+ * an IPv6 peer is refused to an IPv4-mapped socket.  A link-local peer
+ * needs its interface: the scope's, or the one the socket is bound to.
+ */
+static int
+inet6_socket_connect(
+	struct inet_socket *inet,
+	const struct sockaddr *address,
+	socklen_t length)
+{
+	struct sockaddr_in6 input;
+	uint32_t remote;
+	unsigned scope;
+	int mapped;
+	int linklocal;
+	int unspecified;
+
+	/* A complete AF_INET6 address. */
+	if (address == NULL ||
+	    length < sizeof(input) ||
+	    address->sa_family != AF_INET6)
+		return EINVAL;
+	kern_memcpy(&input, address, sizeof(input));
+
+	/* An IPv4-mapped peer: only for a socket that may speak IPv4. */
+	mapped = in6_is_v4mapped(&input.sin6_addr);
+	unspecified = in6_is_unspecified(&inet->local6);
+	if (mapped) {
+		if (inet->v6only)
+			return ENETUNREACH;
+		if (!inet->mapped && !unspecified)
+			return EAFNOSUPPORT;
+		remote = inet_socket_unmapped(&input.sin6_addr);
+		if (remote == INADDR_ANY)
+			return EADDRNOTAVAIL;
+
+		/* The socket speaks IPv4 from now on. */
+		inet->remote_address = remote;
+		inet->remote6 = input.sin6_addr;
+		inet->remote_port = net_ntohs(input.sin6_port);
+		inet->mapped = 1;
+		inet->inet_flags |= INET_SOCKET_CONNECTED;
+		return 0;
+	}
+
+	/* An IPv6 peer: not for an IPv4-mapped socket, and a specific one. */
+	if (inet->mapped)
+		return EAFNOSUPPORT;
+	unspecified = in6_is_unspecified(&input.sin6_addr);
+	if (unspecified)
+		return EADDRNOTAVAIL;
+
+	/* A link-local peer: the interface it is on, the one the socket is bound to if any. */
+	scope = 0;
+	linklocal = in6_is_linklocal(&input.sin6_addr);
+	if (linklocal) {
+		scope = input.sin6_scope_id;
+		if (scope == 0)
+			scope = inet->ifindex;
+		if (scope == 0)
+			return EINVAL;
+		if (inet->ifindex != 0 && scope != inet->ifindex)
+			return EINVAL;
+	}
+
+	/* Records the remote endpoint. */
+	inet->remote6 = input.sin6_addr;
+	inet->remote_address = 0;
+	inet->scope6 = scope;
+	inet->remote_port = net_ntohs(input.sin6_port);
+	inet->inet_flags |= INET_SOCKET_CONNECTED;
+
+	/* Succeeded: the connected socket. */
+	return 0;
+}
+
+/* Copies the local or the remote endpoint of an AF_INET6 socket into a socket address. */
+static int
+inet6_socket_name(
+	struct inet_socket *inet,
+	struct sockaddr *address,
+	socklen_t *length,
+	int peer)
+{
+	struct sockaddr_in6 output;
+	socklen_t copied;
+	int linklocal;
+
+	/* The endpoint: IPv4-mapped, or the IPv6 one. */
+	kern_memset(&output, 0, sizeof(output));
+	output.sin6_family = AF_INET6;
+	if (peer) {
+		output.sin6_port = net_htons(inet->remote_port);
+		if (inet->mapped)
+			inet6_mapped(&output.sin6_addr, inet->remote_address);
+		else
+			output.sin6_addr = inet->remote6;
+	} else {
+		output.sin6_port = net_htons(inet->local_port);
+		if (inet->mapped)
+			inet6_mapped(&output.sin6_addr, inet->local_address);
+		else
+			output.sin6_addr = inet->local6;
+	}
+
+	/* A link-local one with its interface: the peer's, or the one the socket is on. */
+	linklocal = in6_is_linklocal(&output.sin6_addr);
+	if (linklocal && peer) {
+		output.sin6_scope_id = inet->scope6;
+	} else if (linklocal) {
+		output.sin6_scope_id = inet->ifindex;
+		if (output.sin6_scope_id == 0)
+			output.sin6_scope_id = inet->scope6;
+	}
+
+	/* Copies as much as fits and reports the full length. */
+	if (*length < sizeof(output))
+		copied = *length;
+	else
+		copied = sizeof(output);
+	kern_memcpy(address, &output, copied);
+	*length = sizeof(output);
+
+	/* Succeeded: the copied address. */
+	return 0;
 }
