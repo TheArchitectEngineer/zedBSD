@@ -50,6 +50,7 @@ main(
 	static uint32_t pixels[160 * 120];
 	struct media_engine *engine;
 	struct media_status status;
+	struct media_status later;
 	struct mf_source source;
 	struct stat file_status;
 	unsigned pictures;
@@ -63,11 +64,16 @@ main(
 		fprintf(stderr, "usage: host-engine VIDEO SONG\n");
 		return 2;
 	}
+
+	/* The library's lines, printed. */
 	media_set_log(log_line, NULL);
 
 	/* The video through a source. */
 	fd = open(argv[1], O_RDONLY);
-	if (fd < 0 || fstat(fd, &file_status) != 0)
+	if (fd < 0)
+		return 2;
+	error = fstat(fd, &file_status);
+	if (error != 0)
 		return 2;
 	source.read_at = read_at;
 	source.size = (uint64_t)file_status.st_size;
@@ -109,13 +115,11 @@ main(
 	media_engine_pause(engine);
 	media_engine_status(engine, &status);
 	(void)play_for(engine, 300, pixels, &pictures);
-	{
-		struct media_status later;
+	media_engine_status(engine, &later);
+	(void)snprintf(detail, sizeof(detail), "%.3f then %.3f", status.position, later.position);
+	check("pause", later.state == MEDIA_PAUSED && later.position == status.position, detail);
 
-		media_engine_status(engine, &later);
-		(void)snprintf(detail, sizeof(detail), "%.3f then %.3f", status.position, later.position);
-		check("pause", later.state == MEDIA_PAUSED && later.position == status.position, detail);
-	}
+	/* The video's engine goes. */
 	media_engine_close(engine);
 	(void)close(fd);
 
@@ -146,6 +150,8 @@ main(
 		printf("host-engine: FAIL %d\n", failures);
 		return 1;
 	}
+
+	/* Every check passed. */
 	printf("host-engine: PASS\n");
 	return 0;
 }
@@ -162,6 +168,8 @@ check(
 		printf("PASS %s\n", name);
 		return;
 	}
+
+	/* A failure. */
 	printf("FAIL %s: %s\n", name, detail);
 	failures++;
 }
@@ -186,6 +194,8 @@ wait_state(
 		poller.events = POLLIN;
 		(void)poll(&poller, 1, 100);
 	}
+
+	/* The last look. */
 	media_engine_status(engine, status);
 	return status->state == state;
 }
@@ -220,6 +230,8 @@ play_for(
 		media_engine_status(engine, &status);
 		waited += wait;
 	}
+
+	/* The time is up. */
 	return 0;
 }
 

@@ -634,12 +634,17 @@ browser_view_poll_fds(
 	struct pollfd *fds,
 	size_t capacity)
 {
-	/* A view without a loader waits on nothing. */
-	if (view->loader == NULL)
-		return 0;
+	size_t count;
 
-	/* The loader's. */
-	return page_net_poll_fds(view->loader, fds, capacity);
+	/* The loader's (none without one). */
+	count = 0;
+	if (view->loader != NULL)
+		count = page_net_poll_fds(view->loader, fds, capacity);
+
+	/* The page's media engines' wakes after them (ws121-p004). */
+	if (view->page != NULL && count < capacity)
+		count += page_media_poll_fds(view->page, fds + count, capacity - count);
+	return count;
 }
 
 /* Reports how long the caller may wait before calling browser_view_process (-1: until a descriptor is ready). */
@@ -651,6 +656,7 @@ browser_view_timeout(
 	double page_now;
 	double wait;
 	int timeout;
+	int media;
 	int found;
 
 	/* The network's earliest time out (none without a loader). */
@@ -659,6 +665,11 @@ browser_view_timeout(
 		timeout = page_net_timeout(view->loader);
 	if (view->page == NULL)
 		return timeout;
+
+	/* A playing video's next picture (ws121-p004). */
+	media = page_media_timeout(view->page);
+	if (media >= 0 && (timeout < 0 || media < timeout))
+		timeout = media;
 
 	/* The page's next timer, in the page's own time. */
 	found = page_next_timer(view->page, &due);
@@ -702,8 +713,13 @@ browser_view_process(
 	if (error != 0 && view->callbacks.script_error != NULL)
 		view->callbacks.script_error(view->callbacks.context, view, error);
 
-	/* A page the scripts and the images left as it was needs nothing more. */
+	/* The media's engines: their states and the pictures due (ws121-p004). */
+	page_media_process(view->page);
+
+	/* A page the scripts, the images and the media left as it was needs nothing more. */
 	changed = page_needs_layout(view->page);
+	if (!changed)
+		changed = page_needs_paint(view->page);
 	if (!changed)
 		return;
 

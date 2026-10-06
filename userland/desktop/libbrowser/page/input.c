@@ -551,6 +551,10 @@ page_needs_paint(
 	if (page->painted_focus != page->focus_generation)
 		return 1;
 
+	/* A picture of a video that came since (ws121-p004). */
+	if (page->painted_media != page->media_generation)
+		return 1;
+
 	/* The display list is up to date. */
 	return 0;
 }

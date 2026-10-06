@@ -311,6 +311,7 @@ mkv_seek(
 	state = file->state;
 	ticks = time_us * 1000 / (int64_t)state->timecode_scale;
 	chosen = state->first_cluster;
+	cluster = 0;
 
 	/* The last cue point not after the time. */
 	if (state->cue_count != 0) {

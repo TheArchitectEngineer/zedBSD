@@ -359,9 +359,11 @@ box_build_element(
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_BR)
 		kind = LAYOUT_LINE_BREAK;
 
-	/* An <img>, or an <object> whose data decoded as an image, is a replaced box. */
+	/* An <img>, a <video> (ws121-p004), or an <object> whose data decoded as an image, is a replaced box. */
 	replaced = 0;
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
+		replaced = 1;
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_VIDEO)
 		replaced = 1;
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_OBJECT && tree->image_lookup != NULL)
 		replaced = tree->image_lookup(tree->image_context, element) != NULL;

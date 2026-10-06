@@ -1,0 +1,674 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A page's media (ws121-p004): each <video> and <audio> with a source (its
+ * src, or the first <source> child's) is played by an engine of libmedia
+ * (userland/desktop/libmedia/media.h), which reads and decodes on a thread
+ * of its own.  A local file is read by its path; an http or https source is
+ * fetched whole with the page's loader (without one, at once) and a data:
+ * URL decoded, and the engine reads those bytes from memory.  The page
+ * polls each engine's wake with the loader's descriptors: when an engine
+ * opened, the video's size lays the page out again; when a picture came,
+ * it is scaled into the element's bitmap (the video's own size, which the
+ * layout and the painting take as an <img>'s) and the page is painted
+ * again.  The engines go with the page.
+ *
+ * Normal playing only (plan/ws121/phase004): autoplay plays a muted
+ * element at once (one with sound waits for a script's play(), ws121-p005);
+ * the media are not given up when an element leaves the document, and an
+ * element's later change of source is not followed.
+ */
+
+#include "page/page.h"
+#include "net/net.h"
+
+#include "userland/desktop/libmedia/media.h"
+
+#include <errno.h>
+#include <poll.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* The deepest element nesting the walk descends (the parser caps nesting too). */
+#define MEDIA_DEPTH		512
+
+/* The size of a <video> without a picture yet (HTML's default object size). */
+#define MEDIA_DEFAULT_WIDTH	300
+#define MEDIA_DEFAULT_HEIGHT	150
+
+/* The largest media fetched whole (plan/ws121/phase001 U7). */
+#define MEDIA_BODY_MAX		((size_t)64 * 1024U * 1024U)
+
+/*
+ * One media element of the page: the element (a root of the page's heap
+ * while the page lives), its location, the request while it is fetched,
+ * the bytes it was fetched into (the engine's source reads them), the
+ * engine, the state last read from it, the element's picture, whether it
+ * failed, whether it is muted and asked to play, and the page.
+ */
+struct page_media {
+	struct dom_element *element;
+	char *location;
+	struct net_request *request;
+	unsigned char *bytes;
+	size_t length;
+	struct media_engine *engine;
+	struct media_status status;
+	struct img_bitmap bitmap;
+	int failed;
+	int muted;
+	int play_wanted;
+	int sized;
+	struct page *page;
+};
+
+static int media_walk(struct page *page, struct dom_node *node, int depth);
+static int media_add(struct page *page, struct dom_element *element);
+static int media_source(struct page *page, const struct dom_element *element, struct wb_buffer *location, int *found);
+static int media_attribute(struct page *page, const struct dom_element *element, const char *name, struct wb_buffer *value);
+static void media_start(struct page_media *media, const unsigned char *bytes, size_t length);
+static void media_arrived(void *context, struct net_request *request);
+static int media_read_at(void *context, uint64_t offset, void *data, size_t size);
+static struct page_media *media_find(const struct page *page, const struct dom_element *element);
+static int media_follow(struct page_media *media);
+
+/*
+ * Starts a page's table of media empty.
+ */
+void
+page_media_init(
+	struct page *page)
+{
+	/* No media yet. */
+	wb_vector_init(&page->media, sizeof(struct page_media *));
+}
+
+/*
+ * Ends every engine of the page and frees the table.
+ */
+void
+page_media_release(
+	struct page *page)
+{
+	struct page_media *media;
+	size_t index;
+
+	/* Each media: its engine first (its thread reads the bytes), then the rest. */
+	for (index = 0; index < page->media.count; index++) {
+		media = *(struct page_media **)wb_vector_at(&page->media, index);
+		media_engine_close(media->engine);
+		net_request_cancel(media->request);
+		vm_heap_remove_root(page->heap, (struct vm_cell **)&media->element);
+		free(media->bytes);
+		free(media->location);
+		img_bitmap_release(&media->bitmap);
+		free(media);
+	}
+
+	/* The table itself. */
+	wb_vector_release(&page->media);
+}
+
+/*
+ * Finds the <video> and <audio> elements of the document that are not in
+ * the table yet and starts their media.
+ */
+int
+page_load_media(
+	struct page *page)
+{
+	int error;
+
+	/* Every element of the document. */
+	error = media_walk(page, &page->document->node, 0);
+	return error;
+}
+
+/*
+ * Finds the picture a <video> shows for the layout and the painting: its
+ * bitmap once a picture came, NULL before (the layout then gives it its
+ * default size).
+ */
+const struct img_bitmap *
+page_media_bitmap(
+	const struct page *page,
+	const struct dom_element *element)
+{
+	struct page_media *media;
+
+	/* The element's media with a picture. */
+	media = media_find(page, element);
+	if (media == NULL || media->bitmap.pixels == NULL)
+		return NULL;
+	return &media->bitmap;
+}
+
+/*
+ * Lists the engines' wakes for the caller's poll, after up to capacity
+ * descriptors; returns how many were written.
+ */
+size_t
+page_media_poll_fds(
+	const struct page *page,
+	struct pollfd *fds,
+	size_t capacity)
+{
+	struct page_media *media;
+	size_t count;
+	size_t index;
+
+	/* Each engine's wake. */
+	count = 0;
+	for (index = 0; index < page->media.count && count < capacity; index++) {
+		media = *(struct page_media **)wb_vector_at(&page->media, index);
+		if (media->engine == NULL)
+			continue;
+		fds[count].fd = media_engine_wake_fd(media->engine);
+		fds[count].events = POLLIN;
+		fds[count].revents = 0;
+		count++;
+	}
+
+	/* The count. */
+	return count;
+}
+
+/*
+ * Reports how long the caller may wait before the next picture of a
+ * playing video is due (ms), or -1 for none.
+ */
+int
+page_media_timeout(
+	const struct page *page)
+{
+	struct page_media *media;
+	size_t index;
+	int timeout;
+
+	/* A playing video's next picture: a frame's time (the engine's wake tells of pictures as they are decoded). */
+	timeout = -1;
+	for (index = 0; index < page->media.count; index++) {
+		media = *(struct page_media **)wb_vector_at(&page->media, index);
+		if (media->engine != NULL && media->status.state == MEDIA_PLAYING && media->status.has_video)
+			timeout = 10;
+	}
+
+	/* The wait. */
+	return timeout;
+}
+
+/*
+ * Follows each engine: its state, the size its video came with (the page
+ * is laid out again), and the picture whose time has come (the page is
+ * painted again).
+ */
+void
+page_media_process(
+	struct page *page)
+{
+	struct page_media *media;
+	size_t index;
+	int drawn;
+
+	/* Each media with an engine. */
+	for (index = 0; index < page->media.count; index++) {
+		media = *(struct page_media **)wb_vector_at(&page->media, index);
+		if (media->engine == NULL)
+			continue;
+		drawn = media_follow(media);
+		if (drawn)
+			page->media_generation++;
+	}
+}
+
+/*
+ * Asks a media element to play or to pause (the scripts' play() and
+ * pause(), and autoplay); one without media does nothing.  Returns 0, or
+ * ENOENT when the element has none.
+ */
+int
+page_media_play(
+	struct page *page,
+	const struct dom_element *element,
+	int play)
+{
+	struct page_media *media;
+
+	/* The element's media. */
+	media = media_find(page, element);
+	if (media == NULL)
+		return ENOENT;
+
+	/* Remembered until the engine is open, or asked of it now. */
+	media->play_wanted = play;
+	if (media->engine == NULL || media->status.state == MEDIA_OPENING)
+		return 0;
+	if (play)
+		media_engine_play(media->engine);
+	else
+		media_engine_pause(media->engine);
+	return 0;
+}
+
+/*
+ * Reports a media element's state as the engine last told (zero for an
+ * element without media); returns 1 when it has media.
+ */
+int
+page_media_status(
+	const struct page *page,
+	const struct dom_element *element,
+	struct media_status *status)
+{
+	struct page_media *media;
+
+	/* The element's media. */
+	memset(status, 0, sizeof(*status));
+	media = media_find(page, element);
+	if (media == NULL)
+		return 0;
+	*status = media->status;
+	if (media->failed)
+		status->state = MEDIA_FAILED;
+	return 1;
+}
+
+/*
+ * Moves a media element to a time (seconds); one without an engine does
+ * nothing.
+ */
+void
+page_media_seek(
+	struct page *page,
+	const struct dom_element *element,
+	double seconds)
+{
+	struct page_media *media;
+
+	/* The element's engine. */
+	media = media_find(page, element);
+	if (media == NULL || media->engine == NULL)
+		return;
+	media_engine_seek(media->engine, seconds);
+}
+
+/* Starts the media of a node's <video> and <audio> descendants (and its own). */
+static int
+media_walk(
+	struct page *page,
+	struct dom_node *node,
+	int depth)
+{
+	struct page_media *known;
+	struct dom_element *element;
+	struct dom_node *child;
+	int error;
+
+	/* Stops at the depth the parser stops at. */
+	if (depth > MEDIA_DEPTH)
+		return 0;
+
+	/* A <video> or an <audio> not in the table yet. */
+	if (node->type == DOM_ELEMENT) {
+		element = (struct dom_element *)node;
+		known = NULL;
+		if (element->ns == DOM_NS_HTML && (element->tag == DOM_TAG_VIDEO || element->tag == DOM_TAG_AUDIO))
+			known = media_find(page, element);
+		if (element->ns == DOM_NS_HTML && (element->tag == DOM_TAG_VIDEO || element->tag == DOM_TAG_AUDIO) && known == NULL) {
+			error = media_add(page, element);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* The children, in document order. */
+	for (child = node->first_child; child != NULL; child = child->next) {
+		error = media_walk(page, child, depth + 1);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the subtree's media are started. */
+	return 0;
+}
+
+/*
+ * Adds a media element to the table and starts its media (a source that
+ * cannot be had marks it failed): a path is played at once, a remote
+ * source fetched first.
+ */
+static int
+media_add(
+	struct page *page,
+	struct dom_element *element)
+{
+	struct page_media *media;
+	struct wb_buffer location;
+	struct wb_buffer value;
+	int autoplay;
+	int remote;
+	int found;
+	int error;
+
+	/* The entry, allocated alone so that its bitmap stays where it is while the table grows. */
+	media = calloc(1, sizeof(*media));
+	if (media == NULL)
+		return ENOMEM;
+	media->element = element;
+	media->page = page;
+
+	/* Muted, and playing at once when muted with autoplay. */
+	wb_buffer_init(&value);
+	media->muted = media_attribute(page, element, "muted", &value);
+	autoplay = media_attribute(page, element, "autoplay", &value);
+	if (autoplay && media->muted)
+		media->play_wanted = 1;
+	wb_buffer_release(&value);
+
+	/* The element is kept while the page lives (the engine's thread reports to it). */
+	error = vm_heap_add_root(page->heap, (struct vm_cell **)&media->element);
+	if (error != 0) {
+		free(media);
+		return error;
+	}
+
+	/* In the table. */
+	error = wb_vector_push(&page->media, &media);
+	if (error != 0) {
+		vm_heap_remove_root(page->heap, (struct vm_cell **)&media->element);
+		free(media);
+		return error;
+	}
+
+	/* Its source; an element without one waits for nothing. */
+	wb_buffer_init(&location);
+	error = media_source(page, element, &location, &found);
+	if (error != 0 || !found) {
+		wb_buffer_release(&location);
+		media->failed = !found;
+		return error;
+	}
+
+	/* The location kept. */
+	media->location = strdup(wb_buffer_string(&location));
+	wb_buffer_release(&location);
+	if (media->location == NULL)
+		return ENOMEM;
+
+	/* A local file by its path. */
+	if (media->location[0] == '/') {
+		media_start(media, NULL, 0U);
+		return 0;
+	}
+
+	/* A remote source with the loader is fetched without blocking. */
+	remote = net_loader_takes(media->location);
+	if (page->loader != NULL && remote) {
+		error = net_loader_fetch(page->loader, media->location, media_arrived, media, &media->request);
+		if (error != 0)
+			media->failed = 1;
+		return 0;
+	}
+
+	/* Otherwise its bytes at once (a data: URL, or no loader). */
+	wb_buffer_init(&value);
+	error = page_fetch(page->base, media->location, &value, NULL);
+	if (error == 0)
+		media_start(media, value.data, value.length);
+	else
+		media->failed = 1;
+	wb_buffer_release(&value);
+	return 0;
+}
+
+/*
+ * Writes a media element's source resolved against the page's location:
+ * its src, or the src of its first <source> child; *found is 0 for none.
+ */
+static int
+media_source(
+	struct page *page,
+	const struct dom_element *element,
+	struct wb_buffer *location,
+	int *found)
+{
+	const struct dom_element *child_element;
+	const struct dom_node *child;
+	struct wb_buffer href;
+	int has;
+	int error;
+
+	/* The element's own src, or the first <source> child's. */
+	*found = 0;
+	wb_buffer_init(&href);
+	has = media_attribute(page, element, "src", &href);
+	for (child = element->node.first_child; child != NULL && !has; child = child->next) {
+		if (child->type != DOM_ELEMENT)
+			continue;
+		child_element = (const struct dom_element *)child;
+		if (child_element->ns != DOM_NS_HTML || child_element->tag != DOM_TAG_SOURCE)
+			continue;
+		has = media_attribute(page, child_element, "src", &href);
+	}
+
+	/* None, or no location to resolve it against. */
+	if (!has || page->base == NULL) {
+		wb_buffer_release(&href);
+		return 0;
+	}
+
+	/* The location it names; a source that is not a URL has none. */
+	error = page_resolve_location(page->base, wb_buffer_string(&href), location);
+	wb_buffer_release(&href);
+	if (error == EINVAL)
+		return 0;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the location is written. */
+	*found = 1;
+	return 0;
+}
+
+/* Reads an attribute of an element into a buffer (emptied first); 1 when the element has it. */
+static int
+media_attribute(
+	struct page *page,
+	const struct dom_element *element,
+	const char *name,
+	struct wb_buffer *value)
+{
+	const struct dom_attribute *attribute;
+	struct vm_string *atom;
+	int error;
+
+	/* The attribute by its name. */
+	wb_buffer_clear(value);
+	atom = vm_atom_from_ascii(page->heap, name);
+	if (atom == NULL)
+		return 0;
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, atom);
+	if (attribute == NULL)
+		return 0;
+
+	/* Its value. */
+	error = vm_string_to_utf8(attribute->value, value);
+	return error == 0;
+}
+
+/*
+ * Starts a media's engine: from its path (bytes NULL), or from a copy of
+ * the bytes fetched, which the engine reads from memory.  A failure marks
+ * the media failed.
+ */
+static void
+media_start(
+	struct page_media *media,
+	const unsigned char *bytes,
+	size_t length)
+{
+	struct mf_source source;
+	unsigned flags;
+	int error;
+
+	/* The sound, unless muted. */
+	flags = MEDIA_SOUND;
+	if (media->muted)
+		flags = 0U;
+
+	/* A local file by its path. */
+	if (bytes == NULL) {
+		error = media_engine_open(media->location, NULL, flags, &media->engine);
+		if (error != 0)
+			media->failed = 1;
+		return;
+	}
+
+	/* The bytes kept, read through a source. */
+	if (length > MEDIA_BODY_MAX || length == 0U) {
+		media->failed = 1;
+		return;
+	}
+
+	/* The copy. */
+	media->bytes = malloc(length);
+	if (media->bytes == NULL) {
+		media->failed = 1;
+		return;
+	}
+
+	/* Read through a source. */
+	memcpy(media->bytes, bytes, length);
+	media->length = length;
+	source.read_at = media_read_at;
+	source.size = length;
+	source.context = media;
+	error = media_engine_open(NULL, &source, flags, &media->engine);
+	if (error != 0)
+		media->failed = 1;
+}
+
+/* The loader's callback for a media: its body played when it came (a failure, or a status other than 2xx, marks it failed). */
+static void
+media_arrived(
+	void *context,
+	struct net_request *request)
+{
+	const struct net_response *response;
+	struct page_media *media;
+	int error;
+
+	/* The media, which waits no longer. */
+	media = context;
+	media->request = NULL;
+
+	/* A response with the media's bytes. */
+	error = net_request_error(request);
+	response = net_request_response(request);
+	if (error == 0 && (response->status < 200 || response->status > 299))
+		error = EINVAL;
+	if (error != 0) {
+		media->failed = 1;
+		return;
+	}
+
+	/* Played from a copy of the body. */
+	media_start(media, (const unsigned char *)response->body.data, response->body.length);
+}
+
+/* The engine's source of fetched bytes: a copy of the bytes asked (they stay while the engine lives). */
+static int
+media_read_at(
+	void *context,
+	uint64_t offset,
+	void *data,
+	size_t size)
+{
+	struct page_media *media;
+
+	/* Within the bytes. */
+	media = context;
+	if (offset > media->length || size > media->length - offset)
+		return EINVAL;
+	memcpy(data, media->bytes + offset, size);
+	return 0;
+}
+
+/* Finds an element's media in the table. */
+static struct page_media *
+media_find(
+	const struct page *page,
+	const struct dom_element *element)
+{
+	struct page_media *media;
+	size_t index;
+
+	/* Each media of the table. */
+	for (index = 0; index < page->media.count; index++) {
+		media = *(struct page_media **)wb_vector_at(&page->media, index);
+		if (media->element == element)
+			return media;
+	}
+
+	/* Not in the table. */
+	return NULL;
+}
+
+/*
+ * Reads an engine's state: when it opened, the video's size (its bitmap
+ * made, the page laid out again) and a play asked meanwhile; then the
+ * picture whose time has come.  Returns 1 when the bitmap was drawn.
+ */
+static int
+media_follow(
+	struct page_media *media)
+{
+	unsigned before;
+	double next;
+	int drawn;
+	int error;
+
+	/* The state. */
+	before = media->status.state;
+	media_engine_status(media->engine, &media->status);
+
+	/* Opened: the video's picture of its size, a play asked meanwhile. */
+	if (before == MEDIA_OPENING && media->status.state == MEDIA_PAUSED) {
+		if (media->status.width > 0 && media->status.height > 0 && media->bitmap.pixels == NULL) {
+			error = img_bitmap_create(&media->bitmap, media->status.width, media->status.height);
+			if (error == 0)
+				media->sized = 1;
+		}
+
+		/* A play asked before it opened. */
+		if (media->play_wanted)
+			media_engine_play(media->engine);
+	}
+
+	/* A failure is kept. */
+	if (media->status.state == MEDIA_FAILED)
+		media->failed = 1;
+
+	/* The picture whose time has come, into the bitmap (a new serial: the GPU takes it anew). */
+	if (media->bitmap.pixels == NULL)
+		return 0;
+	drawn = media_engine_picture(media->engine, media->bitmap.pixels, (size_t)media->bitmap.width, media->bitmap.width,
+	    media->bitmap.height, &next);
+	if (!drawn)
+		return 0;
+	img_bitmap_renew(&media->bitmap);
+
+	/* The first picture: the page is laid out again at the video's size. */
+	if (media->sized) {
+		media->sized = 0;
+		media->page->images_generation++;
+	}
+
+	/* Drawn. */
+	return 1;
+}

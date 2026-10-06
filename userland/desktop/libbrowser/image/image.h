@@ -49,6 +49,7 @@ enum img_kind img_sniff(const unsigned char *bytes, size_t length);
 int img_decode(const unsigned char *bytes, size_t length, struct img_bitmap *bitmap);
 void img_bitmap_release(struct img_bitmap *bitmap);
 int img_bitmap_create(struct img_bitmap *bitmap, int width, int height);
+void img_bitmap_renew(struct img_bitmap *bitmap);
 int img_decode_jpeg(const unsigned char *bytes, size_t length, struct img_bitmap *bitmap);
 int img_decode_png(const unsigned char *bytes, size_t length, struct img_bitmap *bitmap);
 int img_decode_gif(const unsigned char *bytes, size_t length, struct img_bitmap *bitmap);

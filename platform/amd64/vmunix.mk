@@ -1805,22 +1805,23 @@ $(DYNAMIC_DIR)/libmedia.so: $(DYNAMIC_MEDIA_LIBRARY_OBJS) $(DYNAMIC_DIR)/libc.so
 
 # The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of
 # userland/desktop/libbrowser and includes their private headers from that root; it imports standard Vulkan for its
-# GPU renderer (ws074-p014), libtruetype for its text, and libjpeg-compat, libpng-compat (with
-# libz-compat) and libgif-compat for its images (ws074-p021).  Only the calls of <browser.h> leave it.
+# GPU renderer (ws074-p014), libtruetype for its text, libjpeg-compat, libpng-compat (with
+# libz-compat) and libgif-compat for its images (ws074-p021), and libmedia for <video> and <audio> (ws121-p004).  Only the calls of <browser.h> leave it.
 DYNAMIC_BROWSER_LIBRARY_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libbrowser)
 $(DYNAMIC_BROWSER_LIBRARY_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/desktop/libbrowser
 
 $(DYNAMIC_DIR)/libbrowser.so: $(DYNAMIC_BROWSER_LIBRARY_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libmedia.so \
 	$(DYNAMIC_DIR)/libjpeg-compat.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libz-compat.so \
 	$(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libc.so \
 	userland/desktop/libbrowser/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libbrowser.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
  --version-script=userland/desktop/libbrowser/exports.map \
- $(DYNAMIC_BROWSER_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libtruetype.so \
+ $(DYNAMIC_BROWSER_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libvulkan.so -l:libtruetype.so -l:libmedia.so \
  -l:libjpeg-compat.so -l:libpng-compat.so -l:libz-compat.so -l:libgif-compat.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
- --needed libvulkan.so --needed libtruetype.so --needed libjpeg-compat.so --needed libpng-compat.so \
+ --needed libvulkan.so --needed libtruetype.so --needed libmedia.so --needed libjpeg-compat.so --needed libpng-compat.so \
  --needed libz-compat.so --needed libgif-compat.so --needed libc.so --soname libbrowser.so $@
 
 # /bin/browser is the shell over libbrowser (ws074-p057): its command line and headless modes (main.c)

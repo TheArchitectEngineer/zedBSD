@@ -74,6 +74,19 @@ for file in userland/base/libjpeg-compat/*.c userland/base/libpng-compat/*.c use
 	objects="$objects $object"
 done
 
+# libmedia (ws121-p002), which the engine's <video> and <audio> play through: its engine, the container reader and
+# Video Player's decoding add-in (FFmpeg opened with dlopen) and audiod client.
+for file in userland/desktop/libmedia/engine.c userland/desktop/videoplayer/codec.c userland/desktop/videoplayer/bitstream.c \
+    userland/desktop/videoplayer/audio.c userland/desktop/mediafile/mediafile.c userland/desktop/mediafile/mp4.c \
+    userland/desktop/mediafile/mkv.c; do
+	object=$out/obj/media-$(basename "$(dirname "$file")")-$(basename "$file" .c).o
+	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ "$out/flags" -nt "$object" ]; then
+		"$cc" $flags -c "$file" -o "$object"
+	fi
+	engine="$engine $object"
+	objects="$objects $object"
+done
+
 for file in $sources; do
 	object=$out/obj/$(printf '%s' "${file#userland/desktop/}" | tr '/' '_' | sed 's/\.c$/.o/')
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ "$out/flags" -nt "$object" ] || [ -n "$(find "$src" "$app" userland/desktop/include -name '*.h' -newer "$object" | head -1)" ]; then
@@ -90,7 +103,7 @@ done
 "$cc" $flags -c plan/ws074/tests/host-shell.c -o "$out/obj/host-shell.o"
 # The host component has the same public exports as the production library.
 "$cc" $flags -shared -Wl,-z,defs -Wl,-soname,libbrowser.so \
-    -Wl,--version-script=userland/desktop/libbrowser/exports.map -o "$out/libbrowser.so" $engine -lvulkan -lm
+    -Wl,--version-script=userland/desktop/libbrowser/exports.map -o "$out/libbrowser.so" $engine -lvulkan -lm -ldl -lpthread
 "$cc" $flags -o "$out/browser" "$out/obj/browser_main.o" "$out/obj/host-shell.o" \
     -L"$out" -Wl,-rpath,'$ORIGIN' -l:libbrowser.so -lvulkan -lm
 echo "built $out/browser"
@@ -104,6 +117,6 @@ echo "built $out/browser-probe"
 for test in plan/ws074/tests/host-*.c; do
 	name=$(basename "$test" .c)
 	[ "$name" = host-shell ] && continue
-	"$cc" $flags -o "$out/$name" "$test" $engine "$out/obj/host-shell.o" -lvulkan -lm
+	"$cc" $flags -o "$out/$name" "$test" $engine "$out/obj/host-shell.o" -lvulkan -lm -ldl -lpthread
 	echo "built $out/$name"
 done
