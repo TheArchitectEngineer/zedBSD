@@ -407,9 +407,14 @@ void
 truetype_close(
 	struct truetype_face *face)
 {
-	/* Handles the face availability. */
+	/* Nothing to close. */
 	if (face == NULL)
 		return;
+
+	/* The companions first (companion.c), then the bytes the face read itself, then the face. */
+	truetype_close(face->bold_face);
+	truetype_close(face->next);
+	free(face->owned);
 	free(face);
 }
 
@@ -425,6 +430,12 @@ truetype_set_pixel_size(
 	if (face == NULL || pixels == 0 || pixels > TRUETYPE_PIXELS_MAX)
 		return EINVAL;
 	face->pixels = pixels;
+
+	/* The companions draw at the face's size (companion.c). */
+	if (face->bold_face != NULL)
+		face->bold_face->pixels = pixels;
+	if (face->next != NULL)
+		(void)truetype_set_pixel_size(face->next, pixels);
 
 	/* Succeeded. */
 	return 0;
@@ -446,6 +457,10 @@ truetype_set_bold(
 	face->bold = 0U;
 	if (bold != 0)
 		face->bold = 1U;
+
+	/* The next companion draws at the face's weight; the bold one is bold already (companion.c). */
+	if (face->next != NULL)
+		(void)truetype_set_bold(face->next, bold);
 
 	/* Succeeded: the weight is chosen. */
 	return 0;

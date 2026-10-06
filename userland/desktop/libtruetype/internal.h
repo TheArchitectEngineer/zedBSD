@@ -109,6 +109,17 @@ struct truetype_face {
 
 	/* Whether the outlines are made bold (truetype_set_bold, BUG-205): widened as vectors before they are drawn. */
 	unsigned bold;
+
+	/*
+	 * The companions (companion.c, ws090-p020): the face of the same
+	 * glyphs in a bold weight, which draws them while the face is bold;
+	 * the face that draws the characters this one lacks, its glyphs
+	 * numbered after this face's own; and the file's bytes a companion
+	 * read itself, freed when it closes.  NULL for none.
+	 */
+	struct truetype_face *bold_face;
+	struct truetype_face *next;
+	void *owned;
 };
 
 uint16_t truetype_u16(const uint8_t *bytes);
@@ -116,6 +127,15 @@ int16_t truetype_s16(const uint8_t *bytes);
 uint32_t truetype_u32(const uint8_t *bytes);
 
 int truetype_cmap_select(struct truetype_face *face);
+
+/*
+ * Finds the face that draws a glyph number among a face's companions
+ * (companion.c), and the glyph's number in it.
+ */
+struct truetype_face *truetype_resolve(struct truetype_face *face,
+				       unsigned *glyph);
+const struct truetype_face *truetype_resolve_const(
+	const struct truetype_face *face, unsigned *glyph);
 
 int truetype_glyph_range(const struct truetype_face *face, unsigned glyph,
 			uint32_t *offset, uint32_t *length);

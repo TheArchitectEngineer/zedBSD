@@ -57,6 +57,9 @@ truetype_color_glyph(
 	if (face == NULL || out == NULL)
 		return EINVAL;
 	memset(out, 0, sizeof(*out));
+
+	/* The face among its companions that has the glyph (companion.c). */
+	face = truetype_resolve_const(face, &glyph);
 	if (face->cblc == NULL || face->cbdt == NULL)
 		return ENOENT;
 
