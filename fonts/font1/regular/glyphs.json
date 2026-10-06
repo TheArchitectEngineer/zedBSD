@@ -1,8 +1,8 @@
 {
   "name": "font1",
-  "version": "design-04",
+  "version": "design-05",
   "weight": "Regular",
-  "status": "Refined Regular lowercase with original g/s restored; Unicode TrueType 0.201 available",
+  "status": "Regular with corrected g/p vertical positions; Unicode TrueType 0.202 available",
   "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
   "generation": {
     "tool": "built-in image_gen",
@@ -1531,10 +1531,10 @@
       "category": "letters",
       "image": "glyphs/U0067.png",
       "ink_bbox_pixels": [
-        321,
-        282,
-        696,
-        852
+        342,
+        364,
+        675,
+        891
       ],
       "atlas_crop_pixels": [
         170,
@@ -1543,10 +1543,11 @@
         1007
       ],
       "atlas_row_baseline_pixels": 992.0,
-      "status": "Original Regular PNG and SVG restored by user decision",
-      "image_sha256": "8a87563be9075533138741cc7e635b8cbe1764751643d65aa3cb1f5e6cc679f4",
+      "status": "Existing shape translated down; PNG rendered from final SVG",
+      "image_sha256": "09dd727f94bce4ac98b3d780677cc2b8a95fd29ceba5bc59588339219838907c",
       "source": "svg/U0067.svg",
-      "restored_from_commit": "ef9c3295"
+      "restored_from_commit": "ef9c3295",
+      "vertical_shift_pixels": 60
     },
     {
       "codepoint": "U+0068",
@@ -1731,12 +1732,12 @@
       "image": "glyphs/U0070.png",
       "ink_bbox_pixels": [
         351,
-        347,
+        374,
         693,
-        863
+        890
       ],
-      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
-      "image_sha256": "3cafba6d42d438f0ef13493bcd6c094d740130fa54e464b717d105caaa3bd078",
+      "status": "Existing shape translated down; PNG rendered from final SVG",
+      "image_sha256": "8d51049b73c2b5114a8b9f21cf6dc62ac63dd0f2fb008d766a86dcba3c3ce857",
       "previous_atlas_crop_pixels": [
         46,
         1059,
@@ -1744,7 +1745,8 @@
         1131
       ],
       "source": "svg/U0070.svg",
-      "construction_source": "lowercase-strokes.json"
+      "construction_source": "lowercase-strokes.json",
+      "vertical_shift_pixels": 27
     },
     {
       "codepoint": "U+0071",
@@ -2056,20 +2058,25 @@
   "svg_directory": "svg",
   "revision": {
     "date": "2026-10-06",
-    "source": "User requested original g/s; accepted all other lowercase changes",
+    "source": "User reported g/p vertical imbalance in Suika3 screenshots; all other shapes approved",
     "changed_codepoints": [
       "U+0067",
-      "U+0073"
+      "U+0070"
     ],
     "construction_source": "lowercase-strokes.json",
     "stroke_width_pixels": 62,
-    "font_version": "0.201",
+    "font_version": "0.202",
     "review": "lowercase-review.png",
-    "previous_revision_commit": "a42730b5d",
+    "previous_revision_commit": "29d165824",
     "restored_from_commit": "ef9c3295",
     "monoline_exceptions": [
       "g",
       "s"
-    ]
+    ],
+    "vertical_shift_pixels": {
+      "g": 60,
+      "p": 27
+    },
+    "position_review": "vertical-position-review.png"
   }
 }

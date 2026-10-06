@@ -32,6 +32,7 @@ def render(definition, width, size, outline=None):
         SVGPath(str(outline)).draw(pen)
         context.fill()
     else:
+        context.translate(*definition.get("translation_pixels", (0, 0)))
         context.set_line_width(width)
         context.set_line_cap(cairo.LINE_CAP_BUTT)
         context.set_line_join(cairo.LINE_JOIN_ROUND)

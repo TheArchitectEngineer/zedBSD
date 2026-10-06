@@ -1,6 +1,6 @@
 {
-  "font_sha256": "96530e4c20f9ded66cdf8be286e3bfb787804373d9262de76e46e386ff773380",
-  "font_version": "0.201",
+  "font_sha256": "b3f7533f80a686782ebd544f9bf950b5b83b6d79ac4e9b8824f4a41ff07eb1b3",
+  "font_version": "0.202",
   "unicode_mappings": 95,
   "glyphs_including_notdef": 96,
   "svg_files_including_notdef": 96,
@@ -10,14 +10,14 @@
   ],
   "fixed_advance": 1229,
   "fontconfig_spacing": 100,
-  "pixel_overlap_mean": 0.9876796685124739,
+  "pixel_overlap_mean": 0.9876913686399483,
   "pixel_overlap_min": 0.9751897875227957,
   "connected_component_counts_match": true,
   "rebuild_sha256_matches": true,
   "comparison_method": "Pillow/FreeType at 768px, same raster origin and baseline; ink threshold 128; IoU current PNG vs TTF",
   "preserved_asset_sha256_count": 289,
   "preserved_non_lowercase_ttf_outlines_and_metrics": 70,
-  "lowercase_design_revision": "lowercase-02",
+  "lowercase_design_revision": "lowercase-03",
   "lowercase_stroke_width_pixels": 62,
   "straight_stem_samples_pixels": {
     "i": 62,
@@ -418,7 +418,7 @@
     {
       "codepoint": "U+0067",
       "character": "g",
-      "iou": 0.9835619706548968
+      "iou": 0.9846352208015472
     },
     {
       "codepoint": "U+0068",
@@ -463,7 +463,7 @@
     {
       "codepoint": "U+0070",
       "character": "p",
-      "iou": 0.9908627284317892
+      "iou": 0.9908892902677433
     },
     {
       "codepoint": "U+0071",
@@ -541,7 +541,17 @@
     "g",
     "s"
   ],
-  "restored_glyphs_match_original_ttf": true,
-  "other_94_ttf_outlines_and_metrics_match_0_200": true,
-  "validation_scope": "g/s rendered again; other PNGs and TTF outlines unchanged from 0.200, so their earlier pixel comparisons remain applicable"
+  "validation_scope": "g/p rendered again; other PNGs and TTF outlines unchanged from 0.201, so their earlier pixel comparisons remain applicable",
+  "reference_font_version": "0.201",
+  "other_94_ttf_outlines_and_metrics_match_reference": true,
+  "changed_glyph_shapes_and_advances_preserved_under_translation": true,
+  "vertical_shift_svg_pixels": {
+    "g": 60,
+    "p": 27
+  },
+  "vertical_shift_font_units": {
+    "g": -160,
+    "p": -72
+  },
+  "font_bounds_fit_ascent_descent": true
 }
