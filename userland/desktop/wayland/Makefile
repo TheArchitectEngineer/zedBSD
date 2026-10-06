@@ -5,6 +5,11 @@ include $(WAYLAND_MAKEFILE_DIR)../libkeiland-backend-zedbsd/sources.mk
 
 # Wayland compositor: every window composed with Vulkan into a VK_KHR_display swapchain.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+# The screen capture only in a test image (ws173-p002); every other compositor, as on Linux and FreeBSD, has none.
+KEILAND_SHOT_SOURCE := userland/desktop/wayland/shot-none.c
+ifeq ($(ZEDBSD_TEST_SCREEN_CAPTURE),y)
+KEILAND_SHOT_SOURCE := userland/desktop/wayland/shot.c
+endif
 KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire.c \
 	userland/desktop/wayland/objects.c userland/desktop/wayland/protocol.c userland/desktop/wayland/display.c \
 	$(KL_BACKEND_ZEDBSD_SOURCES) userland/desktop/wayland/gpu-host.c \
@@ -17,7 +22,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	userland/desktop/wayland/decoration.c userland/desktop/wayland/cursor.c userland/desktop/wayland/viewport.c userland/desktop/wayland/content-type.c userland/desktop/wayland/scanout.c userland/desktop/wayland/scanout-rules.c userland/desktop/wayland/activation.c userland/desktop/wayland/theme.c \
 	userland/desktop/wayland/panels.c userland/desktop/wayland/backdrop.c userland/desktop/wayland/damage.c userland/desktop/wayland/greeter.c userland/desktop/wayland/handoff.c userland/desktop/wayland/role.c userland/desktop/wayland/backend-host.c userland/desktop/wayland/os.c userland/desktop/wayland/primary.c \
 	userland/desktop/wayland/network.c userland/desktop/wayland/volume.c userland/desktop/wayland/media.c userland/desktop/wayland/language.c \
-	userland/desktop/wayland/settings.c userland/desktop/wayland/settings-store.c userland/desktop/wayland/$(if $(filter y,$(ZEDBSD_TEST_SCREEN_CAPTURE)),shot.c,shot-none.c) userland/desktop/wayland/system.c userland/desktop/wayland/sysmon.c userland/desktop/settings-keys/settings-keys.c \
+	userland/desktop/wayland/settings.c userland/desktop/wayland/settings-store.c $(KEILAND_SHOT_SOURCE) userland/desktop/wayland/system.c userland/desktop/wayland/sysmon.c userland/desktop/settings-keys/settings-keys.c \
 	userland/desktop/wayland/text-input.c userland/desktop/wayland/input-method.c \
 	userland/desktop/wayland/desktop.c userland/desktop/wayland/inset.c userland/desktop/wayland/edit.c userland/desktop/wayland/clipboard.c \
 	userland/tests/vkdemo/display.c userland/desktop/artwork/mark.c userland/desktop/picture/color-glyph.c \
