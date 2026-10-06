@@ -10,7 +10,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 SESSIOND_SOURCES := userland/desktop/sessiond/main.c userland/desktop/sessiond/greeter.c \
 	userland/desktop/sessiond/session.c userland/desktop/sessiond/seat.c userland/desktop/sessiond/auth.c \
-	userland/desktop/sessiond/auth-policy.c \
+	userland/desktop/sessiond/auth-policy.c userland/desktop/sessiond/power.c userland/desktop/sessiond/power-rules.c \
 	userland/desktop/sessiond/service.c userland/desktop/sessiond/service-rules.c userland/base/common/account.c \
 	userland/base/service/rcconf.c userland/base/service/service-config.c userland/base/service/zsv1-client.c \
 	userland/base/service/zsv1-protocol.c

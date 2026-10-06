@@ -88,6 +88,10 @@ void sessiond_seat_give(uid_t uid, gid_t gid, int keys);
 void sessiond_seat_restore(void);
 void sessiond_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
+/* Ending the machine: the login screen's and a session's POWER (power.c, ws131-p027). */
+int sessiond_power_run(const char *program, const char *what, const char *from);
+void sessiond_power_session(const struct sessiond_account *account, int control, const char *what);
+
 /* A session's SERVICE request (service.c, ws089-p025). */
 void sessiond_service(const struct sessiond_account *account, int control, const char *arguments);
 

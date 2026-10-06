@@ -23,7 +23,7 @@
  *   ENROLLED                ENROLLED pin=0|1 fido2=N (a session)
  *   ENROLL pin / REMOVE pin then the password's line (and the PIN's for
  *                           ENROLL): OK; FAIL reason (a session)
- *   POWER poweroff|reboot   OK (login screen, power-zedbsd.c)
+ *   POWER poweroff|reboot   OK; FAIL others; ERROR (login screen and session, power-zedbsd.c)
  *   SERVICE sshd on|off|status  SERVICE available= ...; DENIED; ERROR (a session, sharing-zedbsd.c)
  *   LOGOUT                  QUIT: the greeter is up, the session ends
  *   RELEASED                (none): the display has been given back
@@ -681,9 +681,11 @@ session_answered(
 		break;
 	}
 
-	/* The request it answers is no longer awaited. */
+	/* The request it answers is no longer awaited; a refused power action may be asked again. */
 	request = backend->session_request;
 	backend->session_request = KL_BACKEND_SESSION_NONE;
+	if (request == KL_BACKEND_SESSION_POWER && error != 0)
+		backend->power_asked = 0U;
 	if (backend->host.session_answer != NULL)
 		backend->host.session_answer(backend->host.data, request, error);
 }

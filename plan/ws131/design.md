@@ -76,7 +76,7 @@ backend は 1 領域ずつ移し、各 Phase の終わりに 3 OS の build と�
 | D9 | WS090 の残り | WS131 の完了の後に扱う。WS131 の間は WS090 を動かさない。Settings と Files の窓は p019・p020 のまま |
 | D10 | 移動の例外（機械的な改名と path の修正を含む） | 認める |
 | D11 | FreeBSD の実行の証拠 | build と監査は必須、起動は passthrough なしで動く範囲 |
-| D12 | 電源の操作の範囲 | zedBSD の session は unsupported（sessiond の拡張は別の WS）、Linux は logind |
+| D12 | 電源の操作の範囲 | zedBSD の session も sessiond に頼む（2026-10-06 ユーザー「sessiond に口を足す」、ws131-p027: 一人なら session の利用者、他の利用者が login 中なら root か wheel だけ）、Linux は logind |
 | D13 | WS113 の表示の設定を同じ manager に | 載せる |
 | D15 | Wayland の protocol の名前（`keiland_*_v1`）も `kl_*_v1` にするか | する（p021 で wire の名前と生成の定数を同時に）。新しい拡張は `kl_system_*_v1` で作る |
 | D16 | app・libbrowser の include guard と、picture・artwork の内部の `keiland_` の名前 | library・compositor・共有の source は `kl_`・`KL_` に、libbrowser と app の include guard は対象外 |
@@ -86,7 +86,7 @@ backend は 1 領域ずつ移し、各 Phase の終わりに 3 OS の build と�
 ## 1. 前提
 
 - ユーザーの決定（全文は [ws.md](ws.md)）: libkeiland を libkeiland-backend と libkeiland に分解。app は OS の抽象化を直接持たない（確認 1）。compositor の OS ごとの画面・入力の処理も backend の OS の tree へ（確認 2）。libkeiui は libkeiland に吸収（確認 3）。設定の記録は compositor が行い、毎秒の stat を無くす。移行計画はユーザーがレビューする。
-- 範囲外: HAL・toolchain・kernel（WS132 の `/dev/system` は WS132）、sessiond の protocol の拡張（D12）、libbrowser、外部 package、GTK4/Qt6（§6.4 の要件だけ）。
+- 範囲外: HAL・toolchain・kernel（WS132 の `/dev/system` は WS132）、sessiond の protocol の拡張（D12。session の POWER だけは ws131-p027 で足した）、libbrowser、外部 package、GTK4/Qt6（§6.4 の要件だけ）。
 
 ---
 
@@ -413,7 +413,8 @@ VkExternalFenceHandleTypeFlagBits kl_backend_gpu_frame_fence_type(void);
 | `kl_system_devices_v1` | `eject(id)` | `device(id, kind, state, name, location)`・`done`・`result`（p023 まで枠だけ） |
 
 - settings の key の検査: 書式（`keiland.h:1082-1086`）と、型のある既知の key の範囲（`wayland/preferences.c:38-50`: `window.opacity` 85〜100・`pointer.speed` 25〜300・`keyboard.repeat.rate` 5〜60・`keyboard.repeat.delay` 150〜1000・`pointer.natural`・`sound.muted` 0/1・`sound.volume` 0〜100・`wallpaper`）。未知の key は書式が正しければ保存。
-- 電源（D12、review 4）: zedBSD の sessiond は session の control の socket で `UNLOCK` と `LOGOUT` だけを受け（`sessiond/session.c:309-324`）、`POWER` は greeter の socket だけ（`sessiond/greeter.c:517`）。よって zedBSD の session の中の電源の操作は `unsupported`（`actions` に出さない）。sessiond に session の `POWER` を足すのは WS131 の外（別の WS、ユーザーの判断）。log out は電源ではなく session の領域（`kl_backend_session_logout`）で、拡張に出すかは p010 で決める。
+- 電源（D12、review 4）: zedBSD の sessiond は session の control の socket で `UNLOCK` と `LOGOUT` だけを受け（`sessiond/session.c:309-324`）、`POWER` は greeter の socket だけ（`sessiond/greeter.c:517`）。よって zedBSD の session の中の電源の操作は `unsupported`（`actions` に出さない）。sessiond に session の `POWER` を足すのは WS131 の外（別の WS、ユーザーの判断）。
+  - **2026-10-06 改訂（ws131-p027、ユーザー「sessiond に口を足す（別の Phase）」）**: sessiond は session の control の socket でも `POWER poweroff|reboot` を受ける（`sessiond/power.c`・`power-rules.c`）。頼めるのは console の session だけ（socket はその session の物）で、他の利用者が login していない（utmpx の USER_PROCESS に別の利用者が無い）時は session の利用者が、他の利用者がいる時は root か wheel の利用者だけ（logind が管理者を求めるのと同じ）。答えは `OK`・`FAIL others`・`ERROR`。backend の `power_actions` は session でも poweroff・reboot を出し、断られた時は再び頼める。log out は電源ではなく session の領域（`kl_backend_session_logout`）で、拡張に出すかは p010 で決める。
 - protocol の `wl_interface` の表は libkeiland の中で static にし、外に出さない（review 17）。
 
 ### 4.3 compositor の側: 設定の記録と stat の除去
@@ -631,7 +632,7 @@ QEMU の証拠と実機の証拠を分ける。WS131 は実機を受け入れの
 | D9 | WS090 の残り | **決定**: WS131 の完了の後に扱い、WS131 の間は WS090 を動かさない。Settings と Files の窓は p019・p020 | — | — |
 | D10 | 移動の例外 | WS106・WS107 と同じ範囲を限った例外 ／ 全て全文規約に直す | 例外: 移す既存の code は約 2.8 万行（libkeiui 16,236・libkeiland の OS 5,422・compositor の OS 6,591）。**「変えない移動」に機械的な改名（rename-map の適用）と path・include の修正を含める**と明記する（review 11）。変えた関数と新しい code は全文規約。正本は `plan/standards/`（Q1） | p003・p012 |
 | D11 | FreeBSD の実行の証拠 | build と監査は必須、起動は passthrough なしで ／ passthrough を許す | 前者（2026-10-03 の Guardrail） | p003〜p009 |
-| D12 | 電源の操作 | zedBSD の session は unsupported、sessiond の拡張は別の WS ／ WS131 で sessiond を拡張 | 前者: sessiond は session の socket で POWER を受けない（§4.2）。Linux は logind、FreeBSD は unsupported | p005 |
+| D12 | 電源の操作 | zedBSD の session は unsupported、sessiond の拡張は別の WS ／ WS131 で sessiond を拡張 | 前者で始め（§4.2）、2026-10-06 に後者へ改訂（ws131-p027、ユーザー）。Linux は logind、FreeBSD は unsupported | p005・p027 |
 | D13 | WS113 の表示の設定 | 同じ manager の version 2 ／ 独自の global | 同じ manager | WS113 p005 |
 | D14 | Guardrail の範囲 | **決定済み（2026-10-03 user）**: desktop の OS の抽象化に限る。Terminal の pty は Terminal に残し macro の block（`terminal/main.c:37`・`:42`）、X server は key code の定数を自分の header に（`xserver/keymap.c` の `<uapi/input.h>` を除く、p009）、Files の xattr は app 側に残し情報の panel は名前だけ（p020） | — | p009・p018・p020 |
 | D15 | protocol の名前 | `kl_*_v1` に変える（p021） ／ `keiland_*_v1` のまま | 変える: 「Keiland 関連はすべて KL_」に揃う。全ての client は tree の中で、ABI は変えてよい | p010（新しい拡張の名前）・p021 |
