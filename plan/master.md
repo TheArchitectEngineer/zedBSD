@@ -43,7 +43,7 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **fg019 ベータ1**（RC の commit 10/13）。2026-10-06 の UAT で起動・touchpad・電源オフが実機で動いた。残りは UAT の所見 BUG-211〜237 と、見積もりの表の残り。
+- **fg019 ベータ2 の公開（10/17、2026-10-06 夜 ユーザーがベータ1 から変更）**（RC の commit 10/13）。2026-10-06 の UAT で起動・touchpad・電源オフが実機で動いた。残りは UAT の所見 BUG-211〜237 と、見積もりの表の残り。
 - **AAT**（WS173）: runner は動く（smoke 5/8）、helper の直しが要る。full は 1 日 1 回。
 - **見た目の刷新**: icon（montage-4、merge 済み）、上部の bar（ws099-p034）、App Home の stage（BUG-236）。
 <!-- master:focus:end -->
@@ -96,7 +96,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当の WS | 出典 |
 | --- | --- | --- | --- | --- |
-| **fg019** | **ベータ1 のリリース（目標 2026-10-17）**。凍結なし、できた所までをベータ1 にし、安定化は後のベータの版で。版と tag は `zedbsd-0.1.0-beta1`、CI が Prerelease を作りユーザーが動作確認して Latest に手で昇格、配布物は USB の image と Windows の QEMU/Venus の zip | MG003・MG006・MG007・MG002 | 下の「fg019 の内容」 | 2026-10-02 user「次のFeature Goalはベータ1のリリースにします」ほか |
+| **fg019** | **最初の公開ベータ＝ベータ2 のリリース（目標 2026-10-17、2026-10-06 夜 ユーザー「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」）**。旧: ベータ1 のリリース。凍結なし、できた所までをベータ1 にし、安定化は後のベータの版で。版と tag は `zedbsd-0.1.0-beta1`、CI が Prerelease を作りユーザーが動作確認して Latest に手で昇格、配布物は USB の image と Windows の QEMU/Venus の zip | MG003・MG006・MG007・MG002 | 下の「fg019 の内容」 | 2026-10-02 user「次のFeature Goalはベータ1のリリースにします」ほか |
 | **fg018** | Linux 標準 GTK4 の実測と互換性の改善 | MG006 | [WS114](ws114/ws.md) | 2026-10-02 user。p007・p008 まで達成 |
 
 ### fg019 の内容（2026-10-02〜03 のユーザーとの議論で決定）
@@ -136,19 +136,15 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
 <!-- master:priority:start -->
-2026-10-06 ユーザーの計画の順:「計画としては、Cの設計の見直しをまずやりましょう。そのあと、タイトルバーのデザイン変更、ベータ1の残りとベータ2の残り（再設計含む）を完了させ、デバッグに集中できる期間に入りましょう。」「GL 3.3、GPU compute、hal.h の commentはいったんベータ3に先送りします。」
+2026-10-06 夜 ユーザーの作業の順（原文の要旨）:「ベータ1のWS＋ベータ2の一部実装をまずすべて実装してください。P1,P2でフルに実装してしまってください。デバッグ項目としてカウントされているものを除きます。正常系が通ればいいです。準正常系と異常系で未実装な部分は、そういった積み残しを管理するWSを作って、そこにPhaseとして積みましょう。それはすべての実装が1パス通って疎通確認できてからでいいです。」「そのあとで、デバッグに専念して、すべてのバグを消化します。」
 
-1. **C 設計の見直し**（2026-10-06 Q1 が設計を書いた、全て planned で実装に取りかかれる）:
-   - [ws142-p007](ws142/phase007/phase.md) 最大化の session の状態（BUG-217）と gesture の体系（BUG-215・216・224・228）→ 実装 p008〜p010。
-   - [ws099-p035](ws099/phase035/phase.md) App Home の stage と 2 層の animation（BUG-236・225）、起動中の app の切り替え（BUG-232）→ p035a（montage）〜d。
-   - [ws122-p005](ws122/phase005/phase.md) 動画の全画面と直接の scanout（BUG-223）→ p005a〜c。
-   - [ws099-p037](ws099/phase037/phase.md) Power Off と暗くする確認の dialog（BUG-235）。
-   - [ws090-p017](ws090/phase017/phase.md) 慣性 scroll（全ての窓）と開始の遅れ（BUG-211・218）、[ws090-p018](ws090/phase018/phase.md) hover・drag の再描画の frame rate（BUG-221・226）、[ws102-p025](ws102/phase025/phase.md) OSK の残り（BUG-229・230・231）。
-   - 残りの UAT のバグ（BUG-212・213・214・219・220・222・227・233・234）は設計の要らない直しで、各 ticket の「次」から実装に取りかかれる。
-2. **title bar（上部の bar）のデザインの変更**: ws099-p034 は main に入った（e7a56460）。第 2 版（dock の時の窓の button を右上、時計を左へ、animation）を p034b で。
-3. **ベータ1 の残りとベータ2 の残り**（再設計を含む）。UAT のバグを先に（順は 2026-10-06 の表: BUG-212・222（NCM と ECM の選択の見込み）・213 → 233・234 → 227 → 231・229 → 211・218 → 226・221 → 232 → 214 → 219・220・230）。次にベータ1 の WS159・131・132・089・095・127・128・129、ベータ2 の WS172 p003・158 p004・130 p003・168 p002・161・175（D1〜D7 の判断の後）・156・164・165・167・145・169・170・155・166・154。
-4. **debug に集中する期間**。
-- ベータ3 へ: WS068（GL 3.3）・WS101（GPU compute）・WS171（hal.h の comment）・WS176（Canvas）。止める: WS074 の rendering（B1 はユーザーの指示）・WS153（U2〜U15）。
+- **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
+1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS139 速さ、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS152 更新、WS161 YubiKey、WS172 passkey、WS148・WS149・WS151）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
+2. **第 2 段**: app（WS175 PDF の編集、WS083 Vulkan Video、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、Linux・package・配布（WS116 Qt6、WS115 GTK4、WS009 文書 ほか）。
+3. **第 3 段**: kernel・driver・電源（WS031、WS143、WS052、WS130 の残り、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
+4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
+5. **デバッグに専念**して全ての Bug を消化する。
+- ベータ3 へ: WS068・WS101・WS171・WS176。止める: WS074 の描画（B1）・WS153（U2〜U15）。
 <!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
@@ -509,6 +505,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー: 積み残しは「専用の1つのベータ2積み残しというWSに入れてください」（元の WS に置かず WS177 の backlog-p1.md・backlog-p2.md へ）。「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」→ fg019 を 10/17 のベータ2 の公開に。版の名前と tag（zedbsd-0.1.0-beta1 → beta2、About の 1.0.0 Beta 1 など）は WS129 で P2 が確かめて直す。
+- 2026-10-06 夜 ユーザー:「積み残しWSはベータ2積み残しという形でWSを作りましょう。」→ [WS177 ベータ2 積み残し](ws177/ws.md) を作成。各担当は phase.md の「積み残し」の節に書き、第 1〜3 段の後に Q1 が WS177 の Phase に集める。
+- 2026-10-06 夜 ユーザー: 作業の順を第 1 段（ベータ1 の WS ＋ベータ2 の一部）→ 第 2 段（app・Linux）→ 第 3 段（kernel・base）→ 積み残しの WS → デバッグに専念、と決定。正常系だけを実装、準正常系・異常系の未実装は積み残しに（master の priority、q820・q821）。
 - 2026-10-06 ユーザー（クリック）: Files・Settings の残りの自前の UI 部品も「置き換える（別の Phase）」→ [ws090-p023](ws090/phase023/phase.md)（q818、P1、q817 の後）。
 - 2026-10-06 ユーザー（クリック）: Files・Settings の欄は「今 libkeiland の canvas へ移す」→ ws090-p007（Settings）と p009・p010（Files）を前倒し（q817、P1、WS131 p022 より先）。それまでの間の IME は P1 が自前の欄に入れた（q816 の (a)）。
 - 2026-10-06 ユーザー:「Interの削除はお願いします」→ Q1 が Inter.ttf と Inter-OFL.txt を git rm、試験・道具の 61 file の Inter.ttf の参照を Mahora-Regular.ttf に、licenses-index を更新（main f657b82f3）。履歴の証拠の json・md は元のまま。WS074 の Chrome との画素の比較の試験は font が変わったので基準が変わる（WS074 の描画の改善は止めたまま）。
