@@ -185,8 +185,14 @@ enum se_event_type {
 	SE_EVENT_KEY,
 	SE_EVENT_FOCUS,
 	SE_EVENT_ACTION,
-	SE_EVENT_AXIS_STOP
+	SE_EVENT_AXIS_STOP,
+	SE_EVENT_TEXT,
+	SE_EVENT_TEXT_DELETE,
+	SE_EVENT_PREEDIT
 };
+
+/* The longest text an input method sends at once, with its NUL (KL_WINDOW_TEXT_MAX). */
+#define SE_TEXT_INPUT_MAX	256U
 
 /* What a scroll came from (se_event's source, BUG-211): a wheel, or a touch pad's fingers. */
 #define SE_SOURCE_WHEEL		0U
@@ -216,6 +222,8 @@ struct se_event {
 	int touch;
 	unsigned source;
 	uint32_t axis_ms;
+	char text[SE_TEXT_INPUT_MAX];
+	uint32_t before;
 };
 
 /*
@@ -1014,6 +1022,16 @@ struct se_touch_scroll {
  * One lives for the whole run.
  */
 struct se_app {
+	/*
+	 * The text an input method is composing for the field that takes it
+	 * (the full name of an account being added), and where that field's
+	 * caret was last drawn (window pixels; known 0 until it is), for the
+	 * window's text input (ws090-p022).
+	 */
+	char preedit[SE_TEXT_INPUT_MAX];
+	struct fm_rect caret;
+	int caret_known;
+
 	/* The fonts, the window's size, the time of the input being handled, and whether a new frame is due. */
 	struct fm_text *text;
 	int width;
@@ -1213,6 +1231,8 @@ int se_wired_card(struct se_app *app, struct fm_canvas *canvas, const struct kl_
 /* The text fields (widgets.c). */
 int se_field_key(struct se_field *field, const struct se_event *event);
 void se_field_clear(struct se_field *field);
+void se_field_insert(struct se_field *field, const char *text);
+void se_field_delete_before(struct se_field *field, size_t bytes);
 
 /* The look and the settings (look.c). */
 void se_look_open(struct se_app *app, struct wl_display *display);
@@ -1283,6 +1303,8 @@ int se_users_admin_available(const struct se_app *app);
 int se_users_admin_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
 int se_users_admin_press(struct se_app *app, int index);
 int se_users_admin_key(struct se_app *app, const struct se_event *event);
+int se_users_admin_text(struct se_app *app, const struct se_event *event);
+int se_users_admin_text_wanted(const struct se_app *app);
 int se_users_admin_result(struct se_app *app, uint32_t request, int error);
 void se_users_admin_wipe(struct se_users *users);
 int se_users_pin_draw(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);

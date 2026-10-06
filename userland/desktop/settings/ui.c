@@ -155,6 +155,8 @@ se_ui_event(
 	struct se_app *app,
 	const struct se_event *event)
 {
+	int taken;
+
 	/* The time of the input, for whatever measures time. */
 	app->now = event->time;
 
@@ -180,6 +182,14 @@ se_ui_event(
 		break;
 	case SE_EVENT_KEY:
 		ui_key(app, event);
+		break;
+	case SE_EVENT_TEXT:
+	case SE_EVENT_TEXT_DELETE:
+	case SE_EVENT_PREEDIT:
+		/* An input method's text, for the field that takes it (ws090-p022). */
+		taken = se_users_admin_text(app, event);
+		if (taken)
+			app->dirty = 1;
 		break;
 	case SE_EVENT_FOCUS:
 		/* The chosen page's row is drawn in the accent only while the window has the focus. */

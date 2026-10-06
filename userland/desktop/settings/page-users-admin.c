@@ -331,6 +331,71 @@ se_users_admin_key(
 }
 
 /*
+ * Tells whether the field with the keyboard takes an input method's text
+ * (ws090-p022): the full name of an account being added (a login name, a
+ * password and the administrator's password are typed as keys, and a
+ * secret takes no input method).
+ */
+int
+se_users_admin_text_wanted(
+	const struct se_app *app)
+{
+	const struct se_users *users;
+
+	/* The administration's keyboard, on the full name. */
+	users = &app->users;
+	if (users->keyboard != SE_USERS_KEYBOARD_ADMIN || users->admin_mode == SE_ADMIN_NONE)
+		return 0;
+	if (users->admin_focus != SE_ADMIN_FULL_NAME)
+		return 0;
+
+	/* Succeeded: it takes the text. */
+	return 1;
+}
+
+/*
+ * Takes an input method's text for the field that takes it
+ * (se_users_admin_text_wanted): a commit at its end, bytes deleted before
+ * its end, or the text being composed, drawn after it.  Returns 1 when the
+ * field took it.
+ */
+int
+se_users_admin_text(
+	struct se_app *app,
+	const struct se_event *event)
+{
+	struct se_users *users;
+	int wanted;
+
+	/* Only for that field; a composed text goes with it. */
+	wanted = se_users_admin_text_wanted(app);
+	if (!wanted) {
+		app->preedit[0] = '\0';
+		return 0;
+	}
+	users = &app->users;
+
+	/* The text being composed replaces the one before. */
+	if (event->type == SE_EVENT_PREEDIT) {
+		(void)snprintf(app->preedit, sizeof(app->preedit), "%s", event->text);
+		return 1;
+	}
+
+	/* Bytes before the end, or the text committed at it. */
+	if (event->type == SE_EVENT_TEXT_DELETE)
+		se_field_delete_before(&users->admin_fields[users->admin_focus], (size_t)event->before);
+	else
+		se_field_insert(&users->admin_fields[users->admin_focus], event->text);
+
+	/* A change takes the last answer away. */
+	if (!users->admin_asked)
+		users->admin_message[0] = '\0';
+
+	/* Succeeded: the field took it. */
+	return 1;
+}
+
+/*
  * Takes the answer of the administration's change when it is the page's.
  * Returns 1 when the request was the page's.
  */
@@ -737,6 +802,8 @@ admin_field_draw(
 	size_t count;
 	int focused;
 	int right;
+	int baseline;
+	int composed;
 
 	/* The label. */
 	users = &app->users;
@@ -777,13 +844,31 @@ admin_field_draw(
 		ink = SE_COLOR_TEXT_FAINT;
 	}
 
-	/* The text inside the field, and the cursor after it in the field with the keyboard. */
+	/* The text inside the field. */
 	fm_canvas_clip_push(canvas, &box);
-	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, fm_text_center(ADMIN_TEXT_ROW, box.y, box.height), text, strlen(text), ADMIN_TEXT_ROW, 0, ink);
+	baseline = fm_text_center(ADMIN_TEXT_ROW, box.y, box.height);
+	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, baseline, text, strlen(text), ADMIN_TEXT_ROW, 0, ink);
 	if (field->length == 0)
 		right = box.x + 12;
-	if (focused)
+
+	/* An input method's composed text after it, underlined (ws090-p022). */
+	if (focused &&
+	    app->preedit[0] != '\0' &&
+	    index == SE_ADMIN_FULL_NAME) {
+		composed = fm_text_draw(app->text, canvas, right, baseline, app->preedit, strlen(app->preedit), ADMIN_TEXT_ROW, 0, SE_COLOR_TEXT);
+		fm_canvas_line(canvas, (float)right, (float)baseline + 3.5f, (float)(right + composed), (float)baseline + 3.5f, 1.0f, SE_COLOR_TEXT);
+		right += composed;
+	}
+
+	/* The cursor after them in the field with the keyboard, where the input method's candidates open. */
+	if (focused) {
 		fm_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
+		app->caret.x = right;
+		app->caret.y = box.y + 9;
+		app->caret.width = 2;
+		app->caret.height = box.height - 18;
+		app->caret_known = 1;
+	}
 	fm_canvas_clip_pop(canvas);
 	memset(dots, 0, sizeof(dots));
 }

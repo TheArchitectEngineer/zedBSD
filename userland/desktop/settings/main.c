@@ -115,6 +115,7 @@ static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
+static void main_text_input(void);
 static int main_canvas_make(void);
 static int main_timeout(uint64_t now);
 static void main_request(void);
@@ -545,9 +546,11 @@ main_frame(void)
 		if (shown - started > MAIN_SLOW_FRAME_MS)
 			se_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u", (unsigned long)(drawn - started), (unsigned long)(shown - drawn), main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms);
 
-		/* Succeeded: the frame is shown (the retries below are for a stale swapchain only). */
-		if (result == VK_SUCCESS)
+		/* Succeeded: the frame is shown (the retries below are for a stale swapchain only); the text input follows it. */
+		if (result == VK_SUCCESS) {
+			main_text_input();
 			return 0;
+		}
 
 		/* Anything but a stale swapchain is a failure. */
 		if (result != VK_ERROR_OUT_OF_DATE_KHR) {
@@ -571,6 +574,31 @@ main_frame(void)
 	/* The swapchain stayed out of date. */
 	fprintf(stderr, "ZSETTINGS FAILED operation=stale-swapchain\n");
 	return -1;
+}
+
+/*
+ * Asks for the window's text input while the field with the keyboard takes
+ * an input method's text, with where its caret was drawn (ws090-p022); off
+ * otherwise, and what was being composed goes.
+ */
+static void
+main_text_input(void)
+{
+	int wanted;
+
+	/* No such field: off. */
+	wanted = se_users_admin_text_wanted(&main_app);
+	if (!wanted) {
+		main_app.preedit[0] = '\0';
+		main_app.caret_known = 0;
+		kl_window_text_input(main_window.kui, 0);
+		return;
+	}
+
+	/* On, at its caret once it was drawn. */
+	kl_window_text_input(main_window.kui, 1);
+	if (main_app.caret_known)
+		kl_window_text_cursor(main_window.kui, main_app.caret.x, main_app.caret.y, main_app.caret.width, main_app.caret.height);
 }
 
 /* Makes the frame's memory and canvas at the swapchain's size; nonzero when memory runs out. */
