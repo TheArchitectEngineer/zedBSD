@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー: 試験の整理の基準（AGENTS.md の検証の節）。一斉の棚卸しはせず、変更に追従する時にだけ適用:「本当に再利用するテストか」を判断し、master の Tools・試験の一覧・未完了の WS・tests/ のシナリオ・T1 の未実行の依頼から参照されない試験は直さず削除（文書の参照も外す、削除は Q1）、回帰に使う物は master に登録、回帰に使いそうな物は tests/ のシナリオへ。
 - 2026-10-06 夜 ユーザー（クリック）: WS112 の新しいゴールは「3 つ（amd64・arm64・RPi）」の deb（Debian 13・Ubuntu 26.04 共通の amd64・arm64、Raspberry Pi OS の arm64）、段は「第 2 段（ベータ2）」。Fedora・Arch は取りやめ。
 - 2026-10-06 夜 ユーザー: WS139（速さ）は最適化なので第 2 段へ。WS085・WS088・WS114 は「すでにできており、Completeにしてください」→ completed（Q1 が ws.md を完了の形にし、Phase の directory を削除、WS114 の試験は plan/tools/gtk4-linux/ へ）。WS112 は Debian の package だけに目標を設定し直す（下の質問の後に記録）。
 - 2026-10-06 夜 ユーザー: 不確実性のある hardware 関連は第 3 段へ（WS083 を第 3 段に）、WS130 IPv6 の残りは第 2 段へ。WS115 GTK4・WS116 Qt6・WS126 Python はベータ3 へ（理由: OS の価値は tablet と desktop の融合した UI/UX、既存の toolkit は core competence でない、script 言語は Noct がある）。
