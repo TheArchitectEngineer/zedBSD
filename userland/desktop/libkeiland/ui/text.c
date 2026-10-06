@@ -10,12 +10,14 @@
  * ws090-p002): UTF-8 strings drawn from TrueType fonts
  * (libtruetype) onto the canvas.
  *
- * A main font draws what it can and a fallback font (optional) the
- * characters the main one lacks, such as Japanese in file names.  Every
- * glyph is drawn once per size into a cache of coverage bitmaps.  The fonts
- * come in one weight, so a bold glyph is the regular one's outline widened
- * as a vector by libtruetype (truetype_set_bold, BUG-205), drawn with the
- * same anti-aliasing as a regular one.  There is no kerning and no shaping:
+ * A main font draws what it can, with its companions (ws090-p020,
+ * truetype_open_companions: Mahora Bold for its bold glyphs, the
+ * monospaced fallback for the signs and letters it lacks), and a fallback
+ * font (optional) the characters they lack, such as Japanese in file
+ * names.  Every glyph is drawn once per size into a cache of coverage
+ * bitmaps.  A bold glyph without a bold face is the regular one's outline
+ * widened as a vector by libtruetype (truetype_set_bold, BUG-205), drawn
+ * with the same anti-aliasing as a regular one.  There is no kerning and no shaping:
  * file names and labels are set one character after another.
  *
  * A character neither font has is looked for in the colour emoji font
@@ -84,6 +86,9 @@ kl_text_open(
 		kl_text_close(text);
 		return error;
 	}
+
+	/* Its companions: Mahora Bold for its bold glyphs, the monospaced fallback for the signs it lacks (ws090-p020). */
+	(void)truetype_open_companions(text->faces[0].face, KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
 
 	/* One face so far. */
 	text->face_count = 1;

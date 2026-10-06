@@ -57,6 +57,12 @@
 #define PDF_FONT_DIRECTORY "/usr/share/fonts"
 #endif
 
+/*
+ * The file beside the substitutes that draws the letters and signs they
+ * lack (ws090-p020): the desktop's monospaced fallback.
+ */
+#define PDF_FONT_COMPANION "keiland-fallback-mono.ttf"
+
 /* The most fonts one document keeps, and the largest font file read. */
 #define FONT_COUNT_MAX 4096
 #define FONT_FILE_MAX ((size_t)64 * 1024 * 1024)
@@ -1457,6 +1463,10 @@ open_substitute(
 		file->face = NULL;
 		return ENOENT;
 	}
+
+	/* Its companion, the system's monospaced fallback, for the letters and signs it lacks (ws090-p020: Mahora is ASCII). */
+	snprintf(path, sizeof(path), "%s/%s", PDF_FONT_DIRECTORY, PDF_FONT_COMPANION);
+	(void)truetype_open_companions(file->face, NULL, path);
 
 	/* Succeeded: the file's face. */
 	*face = file->face;

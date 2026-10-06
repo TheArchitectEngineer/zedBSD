@@ -19,11 +19,16 @@
  * into two slots side by side, in a frame two cells wide: a glyph made for
  * two cells fills it, a narrower one is centred in it, and box drawing and
  * block elements are drawn twice as wide so their lines still meet the
- * next cell's.  A character the font has no glyph for (CJK) is drawn from
- * the fallback font when there is one.
+ * next cell's.  A character the font has no glyph for is drawn from its
+ * companion, the monospaced fallback (ws090-p020: the signs and the box
+ * drawing Mahora Mono lacks), and one neither has (CJK) from the fallback
+ * font when there is one.  The cell's line is fixed (FONT_LINE_*), not the
+ * font's.
  */
 
 #include "terminal.h"
+
+#include "userland/desktop/paths.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -33,6 +38,16 @@
 #include <sys/stat.h>
 #include <truetype.h>
 #include <unistd.h>
+
+/*
+ * A cell's line, in thousandths of the size: how far it reaches above the
+ * baseline and below it.  It is the line JetBrains Mono gave the terminal
+ * before Mahora Mono (ws090-p020), kept whatever fonts are installed, so
+ * that the grid keeps its spacing and the fallback's box drawing fills
+ * its cells.
+ */
+#define FONT_LINE_ASCENT	1020U
+#define FONT_LINE_DESCENT	300U
 
 /* The largest font file read, and the largest glyph drawn. */
 #define FONT_FILE_MAX		(32U * 1024U * 1024U)
@@ -85,6 +100,9 @@ terminal_font_open(
 		terminal_font_close(font);
 		return error;
 	}
+
+	/* Its companion, the monospaced fallback, for the signs and the box drawing it lacks (ws090-p020; no bold is drawn). */
+	(void)truetype_open_companions(font->face, NULL, KEILAND_FONT_FALLBACK_MONO);
 
 	/* The cell's size at the size every glyph is drawn at. */
 	error = font_measure(font, pixels);
@@ -411,8 +429,9 @@ font_measure(
 	struct terminal_font *font,
 	unsigned pixels)
 {
-	struct truetype_metrics metrics;
 	struct truetype_glyph glyph;
+	unsigned ascent;
+	unsigned descent;
 	unsigned index;
 	int error;
 
@@ -421,19 +440,18 @@ font_measure(
 	if (error != 0)
 		return error;
 
-	/* The line's height and where its baseline is. */
-	error = truetype_metrics(font->face, &metrics);
-	if (error != 0)
-		return error;
+	/* The line's reach above and below the baseline at the size, in whole pixels rounded out. */
+	ascent = (pixels * FONT_LINE_ASCENT + 999U) / 1000U;
+	descent = (pixels * FONT_LINE_DESCENT + 999U) / 1000U;
 
-	/* The cell is as wide as an M advances and as tall as the font's line. */
+	/* The cell is as wide as an M advances. */
 	index = truetype_glyph_index(font->face, 'M');
 	error = truetype_glyph_metrics(font->face, index, &glyph);
 	if (error != 0)
 		return error;
 
-	/* A font with no width or height is not usable for a grid. */
-	if (glyph.advance <= 0 || metrics.line_height <= 0)
+	/* A font with no width is not usable for a grid. */
+	if (glyph.advance <= 0)
 		return EINVAL;
 
 	/* The fallback is drawn at the same size; one that cannot be leaves its glyphs at the old size. */
@@ -446,8 +464,8 @@ font_measure(
 	/* Succeeded: the cell's size and baseline. */
 	font->pixels_size = pixels;
 	font->cell_width = (unsigned)glyph.advance;
-	font->cell_height = (unsigned)metrics.line_height;
-	font->baseline = metrics.ascent;
+	font->cell_height = ascent + descent;
+	font->baseline = (int)ascent;
 	return 0;
 }
 

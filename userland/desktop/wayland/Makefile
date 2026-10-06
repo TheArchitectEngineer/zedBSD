@@ -30,10 +30,12 @@ ZEDBSD_PACKAGE_FILES += $(if $(filter wayland,$(ZEDBSD_USER_PROGRAMS)),--file /u
 ZEDBSD_PACKAGE_INPUTS += userland/desktop/wayland/apps.conf
 ZEDBSD_PACKAGE_FILES += $(if $(filter wayland,$(ZEDBSD_USER_PROGRAMS)),$(if $(findstring /etc/keiland/apps.conf=,$(ZEDBSD_TEST_EXTRA_FILES)),,\
 	--file /etc/keiland/apps.conf=userland/desktop/wayland/apps.conf --mode /etc/keiland/apps.conf=0644))
-KEILAND_FONT_DATA := /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Inter.ttf \
-	/usr/share/fonts/keiland-mono.ttf=userland/desktop/fonts/JetBrainsMono-Regular.ttf \
+KEILAND_FONT_DATA := /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Mahora-Regular.ttf \
+	/usr/share/fonts/keiland-bold.ttf=userland/desktop/fonts/Mahora-Bold.ttf \
+	/usr/share/fonts/keiland-mono.ttf=userland/desktop/fonts/Mahora-Mono.ttf \
+	/usr/share/fonts/keiland-fallback-mono.ttf=userland/desktop/fonts/JetBrainsMono-Regular.ttf \
 	/usr/share/fonts/keiland-fallback.ttf=userland/desktop/fonts/DroidSansFallbackFull.ttf \
-	/usr/share/licenses/keiland-fonts/Inter-OFL.txt=userland/desktop/fonts/Inter-OFL.txt \
+	/usr/share/licenses/keiland-fonts/Mahora-LICENSE.txt=userland/desktop/fonts/Mahora-LICENSE.txt \
 	/usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt=userland/desktop/fonts/JetBrainsMono-OFL.txt \
 	/usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt=userland/desktop/fonts/DroidSansFallback-LICENSE.txt \
 	/usr/share/licenses/keiland-fonts/Apache-2.0.txt=userland/desktop/fonts/Apache-2.0.txt

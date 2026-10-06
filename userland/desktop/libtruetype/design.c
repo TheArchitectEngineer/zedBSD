@@ -50,24 +50,34 @@ truetype_glyph_design_advance(
 	unsigned glyph,
 	int *advance)
 {
+	const struct truetype_face *drawn;
 	unsigned index;
+	long scaled;
 
-	/* Refuses missing arguments and a font without advance widths. */
+	/* Refuses missing arguments. */
 	if (face == NULL || advance == NULL)
 		return EINVAL;
-	if (face->hmetric_count == 0)
+
+	/* The face among its companions that draws the glyph (companion.c), which must have advance widths. */
+	index = glyph;
+	drawn = truetype_resolve_const(face, &index);
+	if (drawn->hmetric_count == 0)
 		return EINVAL;
 
 	/* Glyphs past the long metrics share the last advance. */
-	index = glyph;
-	if (index >= face->hmetric_count)
-		index = (unsigned)(face->hmetric_count - 1U);
+	if (index >= drawn->hmetric_count)
+		index = (unsigned)(drawn->hmetric_count - 1U);
 
 	/* The entry must be inside the table. */
-	if ((uint32_t)index * 4U + 2U > face->hmtx_size)
+	if ((uint32_t)index * 4U + 2U > drawn->hmtx_size)
 		return EINVAL;
 
-	/* Succeeded: the advance is the entry's first field. */
-	*advance = (int)truetype_u16(face->hmtx + (size_t)index * 4U);
+	/* The advance is the entry's first field, in the units of the face asked (a companion's em may be another). */
+	scaled = (long)truetype_u16(drawn->hmtx + (size_t)index * 4U);
+	if (drawn->units_per_em != face->units_per_em && drawn->units_per_em != 0U)
+		scaled = (scaled * (long)face->units_per_em + (long)drawn->units_per_em / 2L) / (long)drawn->units_per_em;
+
+	/* Succeeded: the advance. */
+	*advance = (int)scaled;
 	return 0;
 }

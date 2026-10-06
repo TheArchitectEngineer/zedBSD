@@ -31,13 +31,15 @@
 
 /*
  * One cached glyph: its key (face, bold, size and code point), what the
- * layout needs, and the bitmap once it is drawn.
+ * layout needs, the bitmap once it is drawn, and whether a bold glyph is
+ * its face's bold companion's (ws090-p020; drawn without the widening).
  */
 struct text_glyph_entry {
 	uint64_t key;
 	struct text_glyph glyph;
 	uint8_t *pixels;
 	int drawn;
+	int bold_face;
 };
 
 static uint64_t font_key(const struct text_font *font, uint32_t code_point);
@@ -68,9 +70,15 @@ text_system_open(
 	if (error != 0)
 		return error;
 
-	/* The others are optional. */
-	if (paths->mono != NULL)
-		font_open_face(&system->faces[TEXT_FACE_MONO], paths->mono);
+	/* Its companions: Mahora Bold for its bold glyphs, the monospaced fallback for the signs it lacks (ws090-p020). */
+	(void)truetype_open_companions(system->faces[TEXT_FACE_SANS].face, KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
+
+	/* The others are optional; the monospace font has the same fallback. */
+	if (paths->mono != NULL) {
+		error = font_open_face(&system->faces[TEXT_FACE_MONO], paths->mono);
+		if (error == 0)
+			(void)truetype_open_companions(system->faces[TEXT_FACE_MONO].face, NULL, KEILAND_FONT_FALLBACK_MONO);
+	}
 	if (paths->fallback != NULL)
 		font_open_face(&system->faces[TEXT_FACE_FALLBACK], paths->fallback);
 
@@ -554,6 +562,7 @@ font_measure(
 	unsigned index;
 	int design_advance;
 	int face_index;
+	int widened;
 	int error;
 
 	/* The font's own face, or the fallback when it lacks the glyph. */
@@ -565,8 +574,19 @@ font_measure(
 			face_index = TEXT_FACE_FALLBACK;
 	}
 
-	/* Measures the glyph at the size (the missing glyph when neither face has it). */
+	/*
+	 * A bold glyph its face's bold companion has (Mahora Bold, ws090-p020)
+	 * is drawn from it as it is; any other is widened by a pixel here.
+	 */
 	face = &system->faces[face_index];
+	entry->bold_face = 0;
+	if (font->bold)
+		entry->bold_face = truetype_glyph_bold_face(face->face, index);
+	error = truetype_set_bold(face->face, entry->bold_face);
+	if (error != 0)
+		return error;
+
+	/* Measures the glyph at the size (the missing glyph when neither face has it). */
 	error = truetype_set_pixel_size(face->face, font->pixels);
 	if (error != 0)
 		return error;
@@ -582,12 +602,15 @@ font_measure(
 	if (error != 0)
 		return error;
 	entry->glyph.advance_units = (int32_t)((float)design_advance * font->size * 64.0f / (float)design.units_per_em + 0.5f);
-	entry->glyph.advance_units += font->bold * 64;
+	widened = 0;
+	if (font->bold && !entry->bold_face)
+		widened = 1;
+	entry->glyph.advance_units += widened * 64;
 
-	/* Records it; a bold glyph is a pixel wider. */
+	/* Records it; a widened bold glyph is a pixel wider. */
 	entry->glyph.face = face_index;
 	entry->glyph.index = index;
-	entry->glyph.advance = measured.advance + font->bold;
+	entry->glyph.advance = measured.advance + widened;
 	entry->glyph.width = (int)measured.width;
 	entry->glyph.height = (int)measured.height;
 	entry->glyph.left = measured.left;
@@ -628,7 +651,9 @@ font_draw(
 	if (pixels == NULL)
 		return ENOMEM;
 	face = &system->faces[entry->glyph.face];
-	error = truetype_set_pixel_size(face->face, font->pixels);
+	error = truetype_set_bold(face->face, entry->bold_face);
+	if (error == 0)
+		error = truetype_set_pixel_size(face->face, font->pixels);
 	if (error == 0)
 		error = truetype_render_glyph(face->face, entry->glyph.index, &measured, pixels, (size_t)(width + 1), size);
 	if (error != 0) {
@@ -636,8 +661,8 @@ font_draw(
 		return error;
 	}
 
-	/* Bold widens every row by a pixel: each pixel is the stronger of itself and its left neighbour. */
-	if (font->bold) {
+	/* Bold widens every row by a pixel (not a glyph of the bold face): each pixel is the stronger of itself and its left neighbour. */
+	if (font->bold && !entry->bold_face) {
 		for (y = 0; y < height; y++) {
 			for (x = width; x > 0; x--) {
 				if (pixels[(size_t)y * (size_t)(width + 1) + (size_t)(x - 1)] > pixels[(size_t)y * (size_t)(width + 1) + (size_t)x])

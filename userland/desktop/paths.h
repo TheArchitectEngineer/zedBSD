@@ -37,6 +37,16 @@
 #define KEILAND_DATADIR "/usr/share"
 #endif
 
+/*
+ * The companions of the desktop's fonts (ws090-p020, libtruetype's
+ * truetype_open_companions): the bold weight of the interface's font
+ * (Mahora Bold), and the monospaced fallback (JetBrains Mono) that draws the
+ * signs and the letters Mahora does not have yet.  A program opens them
+ * beside its font; one that is not installed is left out.
+ */
+#define KEILAND_FONT_BOLD		KEILAND_DATADIR "/fonts/keiland-bold.ttf"
+#define KEILAND_FONT_FALLBACK_MONO	KEILAND_DATADIR "/fonts/keiland-fallback-mono.ttf"
+
 /* The configuration: keiland/ (apps.conf, desktop, open-with). */
 #ifndef KEILAND_SYSCONFDIR
 #define KEILAND_SYSCONFDIR "/etc"

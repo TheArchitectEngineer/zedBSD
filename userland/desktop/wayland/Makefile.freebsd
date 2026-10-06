@@ -74,10 +74,12 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/gpu-host.c
 $(eval $(call KEILAND_FREEBSD_PROGRAM,wayland,bin,$(WAYLAND_FREEBSD_SOURCES),libkeiland.so libkeiland-backend.a libtruetype.so libpng-compat.so libjpeg-compat.so libz-compat.so libvulkan.so.1 libseat.so.1,-lm -pthread))
 
-$(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland.ttf,userland/desktop/fonts/Inter.ttf))
-$(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland-mono.ttf,userland/desktop/fonts/JetBrainsMono-Regular.ttf))
+$(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland.ttf,userland/desktop/fonts/Mahora-Regular.ttf))
+$(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland-bold.ttf,userland/desktop/fonts/Mahora-Bold.ttf))
+$(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland-mono.ttf,userland/desktop/fonts/Mahora-Mono.ttf))
+$(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland-fallback-mono.ttf,userland/desktop/fonts/JetBrainsMono-Regular.ttf))
 $(eval $(call KEILAND_FREEBSD_DATA,share/fonts/keiland-fallback.ttf,userland/desktop/fonts/DroidSansFallbackFull.ttf))
-$(eval $(call KEILAND_FREEBSD_DATA,share/licenses/keiland-fonts/Inter-OFL.txt,userland/desktop/fonts/Inter-OFL.txt))
+$(eval $(call KEILAND_FREEBSD_DATA,share/licenses/keiland-fonts/Mahora-LICENSE.txt,userland/desktop/fonts/Mahora-LICENSE.txt))
 $(eval $(call KEILAND_FREEBSD_DATA,share/licenses/keiland-fonts/JetBrainsMono-OFL.txt,userland/desktop/fonts/JetBrainsMono-OFL.txt))
 $(eval $(call KEILAND_FREEBSD_DATA,share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt,userland/desktop/fonts/DroidSansFallback-LICENSE.txt))
 $(eval $(call KEILAND_FREEBSD_DATA,share/licenses/keiland-fonts/Apache-2.0.txt,userland/desktop/fonts/Apache-2.0.txt))
