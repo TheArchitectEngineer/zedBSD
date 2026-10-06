@@ -6,10 +6,11 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
     helpers_mailer.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
 Mail needs a server: plan/tools/mail/fake-mail-server.py runs on this host for the scenario, with a CA and a
-certificate for the name mail.test made here.  The target reaches this host at the address its SSH connection comes
-from ($SSH_CLIENT: 10.0.2.2 for a QEMU guest, whose user network reaches this host's 127.0.0.1; the LAN address for
-the 5330), so the server listens there; the target gets "ADDRESS mail.test" in /etc/hosts and the CA in
-/tmp/aat-work, which Mail trusts through OpenSSL's SSL_CERT_FILE.  The servers are given with ports that are not the
+certificate made here.  The target reaches this host at the address its SSH connection comes from ($SSH_CLIENT:
+10.0.2.2 for a QEMU guest, whose user network reaches this host's 127.0.0.1; the LAN address for the 5330), so the
+server listens there and the account names its servers by that address (zedBSD's resolver does not read /etc/hosts,
+so a name would need a DNS server); the certificate is for the name mail.test and that address, and the target gets
+the CA in /tmp/aat-work, which Mail trusts through OpenSSL's SSL_CERT_FILE.  The servers are given with ports that are not the
 TLS ones, so Mail uses STARTTLS (the fake server's IMAP and submission ports).  Kei's Mail accounts are removed on the
 target before and after.
 
@@ -58,7 +59,8 @@ class Server:
 		address = client.split()[0] if client.split() else ""
 		item.check(address, "the target does not say where its SSH connection comes from")
 		bind = "127.0.0.1" if address.startswith("10.0.2.") else address
-		# The CA and the certificate for mail.test.
+		self.host = address
+		# The CA and the certificate for mail.test and the address.
 		for words in (
 			["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=aat-mail-ca",
 			 "-keyout", str(folder / "ca.key"), "-out", str(folder / "ca.pem"),
@@ -68,7 +70,7 @@ class Server:
 		):
 			made = subprocess.run(words, capture_output=True, text=True, timeout=60)
 			item.check(made.returncode == 0, f"openssl: {made.stderr.strip()[-200:]}")
-		(folder / "server.ext").write_text(f"subjectAltName=DNS:{NAME}\nbasicConstraints=CA:FALSE\n")
+		(folder / "server.ext").write_text(f"subjectAltName=DNS:{NAME},IP:{address}\nbasicConstraints=CA:FALSE\n")
 		made = subprocess.run(
 			["openssl", "x509", "-req", "-in", str(folder / "server.csr"), "-CA", str(folder / "ca.pem"),
 			 "-CAkey", str(folder / "ca.key"), "-CAcreateserial", "-days", "2", "-extfile", str(folder / "server.ext"),
@@ -84,10 +86,9 @@ class Server:
 		self.imap = int(match.group(2))
 		self.submission = int(match.group(4))
 		item.step(f"fake mail server on {bind}", f"IMAP {self.imap}, submission {self.submission}")
-		# The target: the name, the CA, no account of an earlier run.
+		# The target: the CA, no account of an earlier run.
 		run.aat("put", str(folder / "ca.pem"), CA)
-		run.sh(f"chmod 644 {CA}; grep -v ' {NAME}$' /etc/hosts > /tmp/aat-hosts; echo '{address} {NAME}' >> /tmp/aat-hosts; "
-			"cat /tmp/aat-hosts > /etc/hosts; rm -f /tmp/aat-hosts")
+		run.sh(f"chmod 644 {CA}")
 		forget_accounts()
 
 	def received(self) -> list:
@@ -98,7 +99,6 @@ class Server:
 		if self.process is not None:
 			self.process.terminate()
 			self.process.wait(timeout=10)
-		run.sh(f"grep -v ' {NAME}$' /etc/hosts > /tmp/aat-hosts; cat /tmp/aat-hosts > /etc/hosts; rm -f /tmp/aat-hosts")
 		forget_accounts()
 
 
@@ -132,7 +132,7 @@ def form_place(window, gap):
 def sign_in(item, window, gap, server, codes: bool):
 	"""Fills the form (the name, the address, the password, the two servers), the codes' switch when asked, Sign In."""
 	x, width = form_place(window, gap)
-	values = ["Kei Example", "kei@example.net", PASSWORD, f"{NAME}:{server.imap}", f"{NAME}:{server.submission}"]
+	values = ["Kei Example", "kei@example.net", PASSWORD, f"{server.host}:{server.imap}", f"{server.host}:{server.submission}"]
 	for index, value in enumerate(values):
 		run.click(x + FIELD_LABEL + (width - FIELD_LABEL) // 2, window.y + FIELD_TOP + 16 + index * FIELD_STEP)
 		time.sleep(0.2)

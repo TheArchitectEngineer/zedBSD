@@ -2,7 +2,7 @@
 
 # ws170-p004: compositor のメッセージの API の骨格と偽の backend
 
-Status: in-progress（実装・host の試験・build 済み。QEMU は T1）
+Status: cleared（2026-10-07 Q1 の判定: T1-298 の AAT（needs-person）を Q1 が PNG で目視: Phone の SEND・STATUS・RECEIVED の log と Echo の PNG、backend 0 で拒否）（旧: test-wait（T1-294））
 Disposition: normal
 Parent: [WS170](../ws.md)
 Queue: q831（2026-10-07、P2）

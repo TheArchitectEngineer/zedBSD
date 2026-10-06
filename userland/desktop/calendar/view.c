@@ -115,6 +115,16 @@
 #define CAL_ID_CUSTOM		13U
 #define CAL_ID_MEMO_GRIP	14U
 #define CAL_ID_MEMO_TEXT	15U
+#define CAL_ID_DAY_ITEM		16U
+#define CAL_ID_EDIT_TITLE	17U
+#define CAL_ID_EDIT_START	18U
+#define CAL_ID_EDIT_END		19U
+#define CAL_ID_EDIT_ALL_DAY	20U
+#define CAL_ID_EDIT_LIST	21U
+#define CAL_ID_EDIT_SAVE	22U
+#define CAL_ID_EDIT_DELETE	23U
+#define CAL_ID_EDIT_CANCEL	24U
+#define CAL_ID_LIST_ITEM	25U
 
 /* The colors: the ground, the cards, Sunday's and Saturday's, the text of their numbers. */
 #define CAL_COLOR_GROUND_TOP	kl_theme_choose(KL_RGB(0xeef4fd), KL_RGB(0x1b1f26))
@@ -130,12 +140,18 @@
 #define CAL_COLOR_WHITE		KL_RGB(0xffffff)
 #define CAL_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
 
-/* One item of a day: an event (from the test data or dropped) or a memo kept there (its words). */
+/*
+ * One item of a day: an event or a memo kept there (its words), its time
+ * as words (empty for all day), its calendar, and its index in the store.
+ */
 struct view_entry {
 	const char *title;
-	const char *time;
+	char time[16];
 	enum cal_list list;
 	const char *memo;
+	long index;
+	int start;
+	int all_day;
 };
 
 /* Where the parts of a frame are. */
@@ -157,7 +173,7 @@ static const char *const view_kinds[] = { "Work", "Personal", "Study", "Family" 
 static const char *const view_kind_lines[] = { "Meeting, Task, Deadline", "Health, Hobby, Errand", "Class, Exam, Reading", "Birthday, School, Trip" };
 static const enum cal_list view_kind_lists[] = { CAL_WORK, CAL_PERSONAL, CAL_STUDY, CAL_FAMILY };
 
-/* The titles of an event dropped, by calendar. */
+/* The titles of a new event, by calendar. */
 static const char *const view_new_titles[CAL_LISTS] = { "New Work Event", "New Personal Event", "New Family Event", "New Study Event" };
 
 /* The views of the bar. */
@@ -177,7 +193,15 @@ static void view_keep_under(struct cal_view *view, const struct kl_style *style,
 static void view_let_go(struct cal_view *view, int kind, double x, double y, uint64_t now_us);
 static unsigned view_drag_source(struct cal_view *view, struct kl_ui *ui, uint32_t id, int kind, const struct kl_rect *rect, uint64_t now_us);
 static int view_memo(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, int top, int height, uint64_t now_us);
-static void view_chosen_day(struct cal_view *view, const struct kl_style *style, const struct kl_rect *card, uint64_t now_us);
+static void view_chosen_day(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *card, uint64_t now_us);
+static void view_editor(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
+static void view_edit(struct cal_view *view, long index, uint64_t now_us);
+static void view_edit_save(struct cal_view *view, uint64_t now_us);
+static void view_edit_delete(struct cal_view *view, uint64_t now_us);
+static int view_parse_minute(const char *text, int *minute);
+static void view_copy_title(char *to, size_t size, const char *from);
+static void view_list(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
+static int view_kind_cards(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_memo_drop(struct cal_view *view, const struct cal_date *date, uint64_t now_us);
 static void view_note_icon(struct kl_canvas *canvas, float x, float y, float size);
 static int view_words(const struct kl_style *style, const char *text, int x, int y, int width, unsigned pixels, kl_color color, int draw);
@@ -224,7 +248,8 @@ cal_view_init(
 	view->scroll_glide = 0;
 	view->dragging = -1;
 	view->started_us = now_us;
-	kl_text_area_set(&view->memo, "Ideas for the weekend:\n- walk along the river\n- call Grandma\n- film for the camera");
+	view->edit_index = -1;
+	kl_text_area_set(&view->memo, cal_store_memo());
 
 	/* The months' scroll, down only. */
 	error = kl_scroll_init(&view->scroll, KL_SCROLL_Y);
@@ -478,8 +503,13 @@ cal_view_draw(
 	/* The months' card: its bar, the days of the week, the months. */
 	view_card(view, style, &layout.main, style->theme->glass_content);
 	view_topbar(view, ui, style, &layout.topbar, now_us);
-	view_weekdays(style, &layout.weekdays);
-	view_grid(view, ui, style, &layout.grid, now_us);
+	if (view->mode == CAL_MODE_MONTH) {
+		view_weekdays(style, &layout.weekdays);
+		view_grid(view, ui, style, &layout.grid, now_us);
+	} else {
+		view->cell_count = 0;
+		view_list(view, ui, style, &layout.grid, now_us);
+	}
 
 	/* A kind of event being dragged, over everything. */
 	view_ghost(view, ui, style);
@@ -750,7 +780,7 @@ view_sidebar(
 		else if (i == 2)
 			kl_ui_set_focus(ui, CAL_ID_SEARCH, 0U);
 		else if (i == 3)
-			view_notice(view, "Settings are not in the mock yet.", now_us);
+			view_notice(view, "Calendar's settings are not in this version yet.", now_us);
 	}
 
 	/* The calendars: a box of its color each, filled while shown; a click shows or hides it. */
@@ -806,7 +836,7 @@ view_sidebar(
 	row.height = 32;
 	hit = kl_ui_hit(ui, CAL_ID_ADD_LIST, 0U, &row);
 	if ((hit & KL_HIT_CLICKED) != 0U)
-		view_notice(view, "Adding a calendar is not in the mock yet.", now_us);
+		view_notice(view, "Adding a calendar is not in this version yet.", now_us);
 
 	/* The row: the ground under the pointer, a plus and the words. */
 	if ((hit & KL_HIT_HOT) != 0U)
@@ -848,6 +878,7 @@ view_topbar(
 	struct kl_rect field;
 	enum kl_icon chevron;
 	kl_color ink;
+	unsigned hits[3];
 	unsigned hit;
 	int pressed;
 	int middle;
@@ -886,26 +917,38 @@ view_topbar(
 	if (pressed)
 		cal_view_action(view, CAL_ACTION_TODAY, now_us);
 
-	/* Month / Week / Day in the middle (only Month is in the mock). */
+	/* Month / Week / Day in the middle. */
 	segment.width = 3 * 62 + 6;
 	segment.height = 32;
 	segment.x = area->x + (area->width - segment.width) / 2;
 	segment.y = middle - 16;
 	kl_canvas_round(style->canvas, (float)segment.x, (float)segment.y, (float)segment.width, (float)segment.height, 10.0f, KL_RGBA(0x8a96aa, 30));
 	for (i = 0; i < 3; i++) {
-		/* One segment and its input. */
+		/* One segment's input first, so that a click shows its view in this frame. */
 		button.x = segment.x + 3 + i * 62;
 		button.y = segment.y + 3;
 		button.width = 62;
 		button.height = 26;
-		hit = kl_ui_hit(ui, CAL_ID_SEGMENT, (uint32_t)i, &button);
-		if ((hit & KL_HIT_CLICKED) != 0U && i != 0)
-			view_notice(view, "Week and Day views are not in the mock yet.", now_us);
+		hits[i] = kl_ui_hit(ui, CAL_ID_SEGMENT, (uint32_t)i, &button);
+		if ((hits[i] & KL_HIT_CLICKED) != 0U) {
+			view->mode = i;
+			cal_log("MODE %s", view_segments[i]);
+		}
+	}
+
+	/* Then each drawn. */
+	for (i = 0; i < 3; i++) {
+		/* One segment. */
+		button.x = segment.x + 3 + i * 62;
+		button.y = segment.y + 3;
+		button.width = 62;
+		button.height = 26;
+		hit = hits[i];
 
 		/* The one chosen in the accent and bold, the others plain. */
 		ink = style->theme->text;
 		chosen = 0;
-		if (i == 0) {
+		if (i == view->mode) {
 			kl_canvas_round(style->canvas, (float)button.x, (float)button.y, (float)button.width, (float)button.height, 8.0f, style->theme->accent);
 			ink = CAL_COLOR_WHITE;
 			chosen = 1;
@@ -924,7 +967,7 @@ view_topbar(
 	button.height = 32;
 	hit = kl_ui_hit(ui, CAL_ID_MORE, 0U, &button);
 	if ((hit & KL_HIT_CLICKED) != 0U)
-		view_notice(view, "The menu is not in the mock yet.", now_us);
+		view_notice(view, "The menu is not in this version yet.", now_us);
 
 	/* The menu's three dots, on a soft circle under the pointer. */
 	if ((hit & KL_HIT_HOT) != 0U)
@@ -1150,6 +1193,14 @@ view_cell(
 		view->cell_count++;
 	}
 
+	/* Today's cell, logged when it moves (the tests drop on it). */
+	today = cal_same_day(date, &view->today);
+	if (today && seen.height > 0 && (seen.x != view->today_x || seen.y != view->today_y)) {
+		view->today_x = seen.x;
+		view->today_y = seen.y;
+		cal_log("CELL today x=%d y=%d width=%d height=%d", seen.x, seen.y, seen.width, seen.height);
+	}
+
 	/* Sinking after a drop: pressed in a little, and shaded, for a moment. */
 	sinking = 0;
 	if (view->sinking)
@@ -1257,11 +1308,58 @@ view_panel(
 	const struct kl_rect *area,
 	uint64_t now_us)
 {
-	struct kl_rect card;
 	struct kl_rect day;
+	struct kl_rect editor;
+	int memo_height;
+	int bottom;
+	int top;
+
+	/* An event being edited: the editor in place of the kinds. */
+	if (view->editing) {
+		editor.x = area->x + 14;
+		editor.y = area->y + 14;
+		editor.width = area->width - 28;
+		editor.height = 92 + 2 * (CAL_KIND_HEIGHT + 8) + 52 - 14;
+		view_editor(view, ui, style, &editor, now_us);
+		bottom = editor.y + editor.height;
+	}
+
+	/* Otherwise the kinds of event to drag. */
+	if (!view->editing)
+		bottom = view_kind_cards(view, ui, style, area, now_us);
+
+	/*
+	 * The memo below, as tall as it may be while the day chosen keeps the
+	 * room it needs under it (a short window makes the memo shorter, down
+	 * to a few lines), then the day chosen while there is room.
+	 */
+	top = bottom + 14;
+	memo_height = area->y + area->height - 14 - CAL_DAY_MIN - 12 - (top + CAL_MEMO_HEADER + 4);
+	if (memo_height > CAL_MEMO_HEIGHT)
+		memo_height = CAL_MEMO_HEIGHT;
+	else if (memo_height < CAL_MEMO_LEAST)
+		memo_height = CAL_MEMO_LEAST;
+	top = view_memo(view, ui, style, area, top, memo_height, now_us);
+	day.x = area->x + 14;
+	day.y = top + 12;
+	day.width = area->width - 28;
+	day.height = area->y + area->height - 14 - day.y;
+	if (day.height >= CAL_DAY_DESK_HEIGHT + 8)
+		view_chosen_day(view, ui, style, &day, now_us);
+}
+
+/* Draws the title, the kinds of event to drag onto a date and Custom; returns the bottom of what it drew. */
+static int
+view_kind_cards(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	uint64_t now_us)
+{
+	struct kl_rect card;
 	const char *line;
 	kl_color ground;
-	int memo_height;
 	unsigned hit;
 	size_t length;
 	int card_width;
@@ -1306,7 +1404,7 @@ view_panel(
 	card.height = 52;
 	hit = kl_ui_hit(ui, CAL_ID_CUSTOM, 0U, &card);
 	if ((hit & KL_HIT_CLICKED) != 0U)
-		view_notice(view, "Custom kinds are not in the mock yet.", now_us);
+		view_notice(view, "Custom kinds are not in this version yet.", now_us);
 	ground = CAL_COLOR_SURFACE;
 	if (view->glass)
 		ground = CAL_COLOR_KIND_GLASS;
@@ -1319,24 +1417,8 @@ view_panel(
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 23, "Custom", strlen("Custom"), 13U, 1, style->theme->text);
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 40, "Create your own", strlen("Create your own"), 11U, 0, style->theme->text_secondary);
 
-	/*
-	 * The memo below, as tall as it may be while the day chosen keeps the
-	 * room it needs under it (a short window makes the memo shorter, down
-	 * to a few lines), then the day chosen while there is room.
-	 */
-	top = card.y + card.height + 14;
-	memo_height = area->y + area->height - 14 - CAL_DAY_MIN - 12 - (top + CAL_MEMO_HEADER + 4);
-	if (memo_height > CAL_MEMO_HEIGHT)
-		memo_height = CAL_MEMO_HEIGHT;
-	else if (memo_height < CAL_MEMO_LEAST)
-		memo_height = CAL_MEMO_LEAST;
-	top = view_memo(view, ui, style, area, top, memo_height, now_us);
-	day.x = area->x + 14;
-	day.y = top + 12;
-	day.width = area->width - 28;
-	day.height = area->y + area->height - 14 - day.y;
-	if (day.height >= CAL_DAY_DESK_HEIGHT + 8)
-		view_chosen_day(view, style, &day, now_us);
+	/* Succeeded: the bottom of the Custom card. */
+	return card.y + card.height;
 }
 
 /*
@@ -1657,7 +1739,9 @@ view_memo(
 {
 	struct kl_rect header;
 	struct kl_rect text;
+	unsigned changes;
 	unsigned hit;
+	int error;
 	int i;
 
 	/* The header, which drags the memo: a note, the title, the grip and a word of what to do. */
@@ -1679,7 +1763,14 @@ view_memo(
 	text.y = top + CAL_MEMO_HEADER + 4;
 	text.width = area->width - 28;
 	text.height = height;
-	(void)kl_text_area(ui, style, CAL_ID_MEMO_TEXT, &text, &view->memo, "Write a memo...");
+	changes = kl_text_area(ui, style, CAL_ID_MEMO_TEXT, &text, &view->memo, "Write a memo...");
+
+	/* A change is kept at once (one small file). */
+	if ((changes & KL_FIELD_CHANGED) != 0U) {
+		error = cal_store_set_memo(view->memo.text);
+		if (error != 0)
+			cal_log("MEMO save-failed error=%d", error);
+	}
 
 	/* The edge below it. */
 	return text.y + text.height;
@@ -1693,12 +1784,16 @@ view_memo(
 static void
 view_chosen_day(
 	struct cal_view *view,
+	struct kl_ui *ui,
 	const struct kl_style *style,
 	const struct kl_rect *card,
 	uint64_t now_us)
 {
 	struct view_entry entries[CAL_DAY_EVENTS];
 	struct kl_rect desk;
+	struct kl_rect row;
+	unsigned hit;
+	int top;
 	const char *plural;
 	char line[160];
 	size_t count;
@@ -1733,20 +1828,29 @@ view_chosen_day(
 	y = card->y + CAL_DAY_DESK_HEIGHT + 14;
 	for (i = 0; i < count && y < card->y + card->height; i++) {
 		/* A memo: its note and its words in full. */
+		top = y;
 		if (entries[i].memo != NULL) {
 			view_note_icon(style->canvas, (float)card->x + 12.0f, (float)y - 12.0f, 14.0f);
 			y += view_words(style, entries[i].memo, card->x + 32, y - 15, card->width - 44, 12U, style->theme->text, 1) + 4;
-			continue;
+		} else {
+			/* An event: its calendar's dot, its time and its title. */
+			kl_canvas_circle(style->canvas, (float)card->x + 18.0f, (float)y - 4.0f, 4.0f, cal_list_color(entries[i].list));
+			if (entries[i].time[0] != '\0')
+				(void)snprintf(line, sizeof(line), "%s  %s", entries[i].time, entries[i].title);
+			else
+				(void)snprintf(line, sizeof(line), "All day  %s", entries[i].title);
+			(void)kl_text_draw_fit(style->text, style->canvas, card->x + 32, y, line, 12U, 0, card->width - 44, style->theme->text);
+			y += 20;
 		}
 
-		/* An event: its calendar's dot, its time and its title. */
-		kl_canvas_circle(style->canvas, (float)card->x + 18.0f, (float)y - 4.0f, 4.0f, cal_list_color(entries[i].list));
-		if (entries[i].time != NULL)
-			(void)snprintf(line, sizeof(line), "%s  %s", entries[i].time, entries[i].title);
-		else
-			(void)snprintf(line, sizeof(line), "All day  %s", entries[i].title);
-		(void)kl_text_draw_fit(style->text, style->canvas, card->x + 32, y, line, 12U, 0, card->width - 44, style->theme->text);
-		y += 20;
+		/* The row opens the item in the editor. */
+		row.x = card->x + 6;
+		row.y = top - 16;
+		row.width = card->width - 12;
+		row.height = y - top;
+		hit = kl_ui_hit(ui, CAL_ID_DAY_ITEM, (uint32_t)entries[i].index, &row);
+		if ((hit & KL_HIT_CLICKED) != 0U)
+			view_edit(view, entries[i].index, now_us);
 	}
 
 	/* The clip goes; a day with nothing says so. */
@@ -1765,9 +1869,8 @@ view_memo_drop(
 	const struct cal_date *date,
 	uint64_t now_us)
 {
-	struct cal_memo *memo;
 	char message[128];
-	size_t length;
+	int error;
 
 	/* An empty memo keeps nothing. */
 	if (view->memo.length == 0U) {
@@ -1775,30 +1878,14 @@ view_memo_drop(
 		return;
 	}
 
-	/* No room for another. */
-	if (view->memo_count >= CAL_MEMOS_MAX) {
-		view_notice(view, "No room for more memos in the mock.", now_us);
+	/* A copy of the memo kept on the day (its first line its title). */
+	error = cal_store_add_memo(date, view->memo.text);
+	if (error != 0) {
+		view_notice(view, "The memo could not be kept.", now_us);
 		return;
 	}
 
-	/* A copy of the memo on the day, its first line its title. */
-	memo = &view->memos[view->memo_count];
-	memo->date = *date;
-	length = view->memo.length;
-	if (length >= sizeof(memo->text)) {
-		/* A longer memo is cut at a character's start. */
-		length = sizeof(memo->text) - 1U;
-		while (length > 0U && ((unsigned char)view->memo.text[length] & 0xc0U) == 0x80U)
-			length--;
-	}
-	memcpy(memo->text, view->memo.text, length);
-	memo->text[length] = '\0';
-	length = strcspn(memo->text, "\n");
-	if (length >= sizeof(memo->title))
-		length = sizeof(memo->title) - 1U;
-	memcpy(memo->title, memo->text, length);
-	memo->title[length] = '\0';
-	view->memo_count++;
+	/* The log the tests read. */
 	cal_log("MEMO date=%04d-%02d-%02d length=%zu", date->year, date->month, date->day, view->memo.length);
 
 	/* The cell sinks (not with the motion reduced). */
@@ -1808,9 +1895,9 @@ view_memo_drop(
 		view->sink_date = *date;
 	}
 
-	/* The day chosen, and a word that the mock keeps it only while it runs. */
+	/* The day chosen, and a word of what was kept. */
 	view_select(view, date, now_us);
-	(void)snprintf(message, sizeof(message), "Kept the memo on %s %d (until Calendar quits).", cal_month_name(date->month), date->day);
+	(void)snprintf(message, sizeof(message), "Kept the memo on %s %d.", cal_month_name(date->month), date->day);
 	view_notice(view, message, now_us);
 }
 
@@ -1953,8 +2040,8 @@ view_ghost(
 
 /*
  * Lists the items of a day, the events of hidden calendars left out: the
- * test data's events, those dropped, then the memos kept there.  Returns
- * how many.
+ * events all day first, then by their start, then the memos kept there.
+ * Returns how many.
  */
 static size_t
 view_day(
@@ -1963,52 +2050,69 @@ view_day(
 	struct view_entry *entries,
 	size_t size)
 {
-	const struct cal_event *events;
-	struct cal_date when;
+	const struct cal_item *items;
+	struct view_entry moved;
 	size_t count;
 	size_t found;
+	size_t at;
 	size_t i;
 	int same;
+	int later;
 
-	/* The test data's. */
-	events = cal_events(&count);
+	/* The events of the day, of calendars shown. */
+	items = cal_items(&count);
 	found = 0;
 	for (i = 0; i < count && found < size; i++) {
-		/* One on this day, of a calendar shown. */
-		cal_event_date(&events[i], &view->today, &when);
-		same = cal_same_day(&when, date);
-		if (!same || (view->hidden & (1U << events[i].list)) != 0U)
+		if (items[i].memo)
 			continue;
-		entries[found].title = events[i].title;
-		entries[found].time = events[i].time;
-		entries[found].list = events[i].list;
-		entries[found].memo = NULL;
-		found++;
-	}
+		same = cal_same_day(&items[i].date, date);
+		if (!same || (view->hidden & (1U << items[i].list)) != 0U)
+			continue;
 
-	/* Those dropped. */
-	for (i = 0; i < view->added_count && found < size; i++) {
-		/* One on this day, of a calendar shown. */
-		same = cal_same_day(&view->added[i].date, date);
-		if (!same || (view->hidden & (1U << view->added[i].list)) != 0U)
-			continue;
-		entries[found].title = view_new_titles[view->added[i].list];
-		entries[found].time = NULL;
-		entries[found].list = view->added[i].list;
-		entries[found].memo = NULL;
+		/* The entry, its time as words. */
+		memset(&entries[found], 0, sizeof(entries[found]));
+		entries[found].title = items[i].title;
+		entries[found].list = items[i].list;
+		entries[found].index = (long)i;
+		entries[found].all_day = items[i].all_day;
+		entries[found].start = items[i].start;
+		if (!items[i].all_day)
+			(void)snprintf(entries[found].time, sizeof(entries[found].time), "%02d:%02d", items[i].start / 60, items[i].start % 60);
+
+		/* Its place: after those all day and those that start before it. */
+		moved = entries[found];
+		at = found;
+		while (at > 0U) {
+			later = 0;
+			if (entries[at - 1U].all_day == 0 && moved.all_day)
+				later = 1;
+			else if (entries[at - 1U].all_day == moved.all_day && entries[at - 1U].start > moved.start)
+				later = 1;
+			if (!later)
+				break;
+			entries[at] = entries[at - 1U];
+			at--;
+		}
+
+		/* Its place. */
+		entries[at] = moved;
 		found++;
 	}
 
 	/* The memos kept on it. */
-	for (i = 0; i < view->memo_count && found < size; i++) {
-		/* One on this day. */
-		same = cal_same_day(&view->memos[i].date, date);
+	for (i = 0; i < count && found < size; i++) {
+		if (!items[i].memo)
+			continue;
+		same = cal_same_day(&items[i].date, date);
 		if (!same)
 			continue;
-		entries[found].title = view->memos[i].title;
-		entries[found].time = NULL;
+		memset(&entries[found], 0, sizeof(entries[found]));
+		entries[found].title = items[i].title;
 		entries[found].list = CAL_WORK;
-		entries[found].memo = view->memos[i].text;
+		entries[found].memo = items[i].title;
+		if (items[i].text != NULL)
+			entries[found].memo = items[i].text;
+		entries[found].index = (long)i;
 		found++;
 	}
 
@@ -2133,8 +2237,8 @@ view_show(
 }
 
 /*
- * Adds an event of a calendar on a day (while the program runs): the cell
- * sinks a moment and the day is chosen.
+ * Starts a new event of a calendar on a day: the cell sinks a moment, the
+ * day is chosen, and the editor opens with a title and the hour from 9.
  */
 static void
 view_drop(
@@ -2143,14 +2247,7 @@ view_drop(
 	const struct cal_date *date,
 	uint64_t now_us)
 {
-	char message[128];
-
-	/* The event, when there is room. */
-	if (view->added_count >= CAL_ADDED_MAX)
-		return;
-	view->added[view->added_count].date = *date;
-	view->added[view->added_count].list = list;
-	view->added_count++;
+	/* The log the tests read. */
 	cal_log("DROP list=%s date=%04d-%02d-%02d", cal_list_name(list), date->year, date->month, date->day);
 
 	/* The cell sinks (not with the motion reduced). */
@@ -2160,10 +2257,391 @@ view_drop(
 		view->sink_date = *date;
 	}
 
-	/* The day chosen, and a word that the mock keeps it only while it runs. */
+	/* The day chosen. */
 	view_select(view, date, now_us);
-	(void)snprintf(message, sizeof(message), "Added a %s event on %s %d (kept until Calendar quits).", cal_list_name(list), cal_month_name(date->month), date->day);
-	view_notice(view, message, now_us);
+
+	/* The new event in the editor. */
+	memset(&view->edit, 0, sizeof(view->edit));
+	view->edit.list = list;
+	view->edit.date = *date;
+	view->edit.start = 9 * 60;
+	view->edit.end = 10 * 60;
+	view->edit_index = -1;
+	view->editing = 1;
+	kl_field_set(&view->edit_title, view_new_titles[list]);
+	kl_field_set(&view->edit_start, "09:00");
+	kl_field_set(&view->edit_end, "10:00");
+	cal_log("EDIT new list=%s", cal_list_name(list));
+}
+
+/*
+ * Opens a kept item in the editor: an event's title, times and calendar;
+ * a memo kept on a day can only be deleted.
+ */
+static void
+view_edit(
+	struct cal_view *view,
+	long index,
+	uint64_t now_us)
+{
+	const struct cal_item *items;
+	char text[16];
+	size_t count;
+
+	UNUSED_PARAMETER(now_us);
+
+	/* An item that is there. */
+	items = cal_items(&count);
+	if (index < 0 || (size_t)index >= count)
+		return;
+
+	/* Its fields. */
+	view->edit = items[index];
+	view->edit.text = NULL;
+	view->edit_index = index;
+	view->editing = 1;
+	kl_field_set(&view->edit_title, items[index].title);
+	(void)snprintf(text, sizeof(text), "%02d:%02d", items[index].start / 60, items[index].start % 60);
+	kl_field_set(&view->edit_start, text);
+	(void)snprintf(text, sizeof(text), "%02d:%02d", items[index].end / 60, items[index].end % 60);
+	kl_field_set(&view->edit_end, text);
+	cal_log("EDIT open index=%ld memo=%d", index, items[index].memo);
+}
+
+/*
+ * Draws the editor: its title, the event's title, whether all day, its
+ * start and end, its calendar, and Save, Delete and Cancel (a memo kept
+ * on a day: its words, Delete and Cancel).
+ */
+static void
+view_editor(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	uint64_t now_us)
+{
+	struct kl_rect field;
+	struct kl_rect button;
+	const char *heading;
+	char line[96];
+	unsigned hit;
+	int clicked;
+	int on;
+	int x;
+	int y;
+	int i;
+
+	/* The title of the editor and the day. */
+	x = area->x + 4;
+	y = area->y + 22;
+	heading = "Edit Event";
+	if (view->edit.memo)
+		heading = "Memo";
+	else if (view->edit_index < 0)
+		heading = "New Event";
+	(void)kl_text_draw(style->text, style->canvas, x, y, heading, strlen(heading), 18U, 1, style->theme->text);
+	(void)snprintf(line, sizeof(line), "%s %d %s %d", cal_weekday_name(cal_weekday(&view->edit.date)), view->edit.date.day, cal_month_name(view->edit.date.month), view->edit.date.year);
+	(void)kl_text_draw_fit(style->text, style->canvas, x, y + 20, line, 12U, 0, area->width - 8, style->theme->text_secondary);
+	y += 36;
+
+	/* A memo: its title only. */
+	if (view->edit.memo) {
+		(void)kl_text_draw_fit(style->text, style->canvas, x, y + 20, view->edit.title, 13U, 0, area->width - 8, style->theme->text);
+		y += 40;
+	} else {
+		/* The title. */
+		field.x = x;
+		field.y = y;
+		field.width = area->width - 8;
+		field.height = 32;
+		(void)kl_field(ui, style, CAL_ID_EDIT_TITLE, &field, &view->edit_title, "Title");
+		y += 42;
+
+		/* All day. */
+		(void)kl_text_draw(style->text, style->canvas, x, y + 18, "All day", strlen("All day"), 13U, 0, style->theme->text);
+		on = view->edit.all_day;
+		clicked = kl_switch(ui, style, CAL_ID_EDIT_ALL_DAY, x + area->width - 60, y, &on, 0U);
+		if (clicked)
+			view->edit.all_day = on;
+		y += 36;
+
+		/* The start and the end, while not all day. */
+		if (!view->edit.all_day) {
+			(void)kl_text_draw(style->text, style->canvas, x, y + 21, "From", strlen("From"), 13U, 0, style->theme->text_secondary);
+			field.x = x + 44;
+			field.y = y;
+			field.width = (area->width - 8 - 44 - 36) / 2;
+			field.height = 32;
+			(void)kl_field(ui, style, CAL_ID_EDIT_START, &field, &view->edit_start, "09:00");
+			(void)kl_text_draw(style->text, style->canvas, field.x + field.width + 10, y + 21, "to", strlen("to"), 13U, 0, style->theme->text_secondary);
+			field.x += field.width + 36;
+			(void)kl_field(ui, style, CAL_ID_EDIT_END, &field, &view->edit_end, "10:00");
+		}
+
+		/* The calendars under the times. */
+		y += 42;
+
+		/* The calendar: a dot and name for each, the one chosen ringed. */
+		for (i = 0; i < CAL_LISTS; i++) {
+			button.x = x + (i % 2) * ((area->width - 8) / 2);
+			button.y = y + (i / 2) * 30;
+			button.width = (area->width - 8) / 2 - 4;
+			button.height = 26;
+			hit = kl_ui_hit(ui, CAL_ID_EDIT_LIST, (uint32_t)i, &button);
+			if ((hit & KL_HIT_CLICKED) != 0U)
+				view->edit.list = (enum cal_list)i;
+			if ((enum cal_list)i == view->edit.list)
+				kl_canvas_round(style->canvas, (float)button.x, (float)button.y, (float)button.width, (float)button.height, 8.0f, style->theme->selection);
+			else if ((hit & KL_HIT_HOT) != 0U)
+				kl_canvas_round(style->canvas, (float)button.x, (float)button.y, (float)button.width, (float)button.height, 8.0f, style->theme->hover);
+			kl_canvas_circle(style->canvas, (float)button.x + 14.0f, (float)button.y + 13.0f, 5.0f, cal_list_color((enum cal_list)i));
+			(void)kl_text_draw(style->text, style->canvas, button.x + 26, button.y + 18, cal_list_name((enum cal_list)i), strlen(cal_list_name((enum cal_list)i)), 12U, 0, style->theme->text);
+		}
+
+		/* The buttons under them. */
+		y += 66;
+	}
+
+	/* Save (an event), Delete (one kept), Cancel. */
+	button.width = 72;
+	button.height = 32;
+	button.y = y;
+	button.x = area->x + area->width - 4 - button.width;
+	if (!view->edit.memo) {
+		clicked = kl_button(ui, style, CAL_ID_EDIT_SAVE, &button, "Save", KL_BUTTON_PRIMARY);
+		if (clicked)
+			view_edit_save(view, now_us);
+		button.x -= button.width + 6;
+	}
+
+	/* Cancel closes the editor. */
+	clicked = kl_button(ui, style, CAL_ID_EDIT_CANCEL, &button, "Cancel", 0U);
+	if (clicked) {
+		view->editing = 0;
+		cal_log("EDIT cancel");
+	}
+
+	/* Delete, for one kept. */
+	if (view->edit_index >= 0) {
+		button.x -= button.width + 6;
+		clicked = kl_button(ui, style, CAL_ID_EDIT_DELETE, &button, "Delete", 0U);
+		if (clicked)
+			view_edit_delete(view, now_us);
+	}
+}
+
+/* Keeps the event of the editor (its times read from their fields) and closes the editor. */
+static void
+view_edit_save(
+	struct cal_view *view,
+	uint64_t now_us)
+{
+	struct cal_item item;
+	long kept;
+	int start;
+	int end;
+	int error;
+
+	/* Its title and times. */
+	item = view->edit;
+	view_copy_title(item.title, sizeof(item.title), view->edit_title.text);
+	if (item.title[0] == '\0')
+		(void)snprintf(item.title, sizeof(item.title), "%s", view_new_titles[item.list]);
+	if (!item.all_day) {
+		error = view_parse_minute(view->edit_start.text, &start);
+		if (error == 0)
+			error = view_parse_minute(view->edit_end.text, &end);
+		if (error != 0) {
+			view_notice(view, "Write the times as 09:30.", now_us);
+			return;
+		}
+
+		/* An end before the start is the start. */
+		if (end < start)
+			end = start;
+		item.start = start;
+		item.end = end;
+	}
+
+	/* Kept. */
+	error = cal_store_save_event(view->edit_index, &item, &kept);
+	cal_log("EVENT saved index=%ld list=%s date=%04d-%02d-%02d all_day=%d start=%d end=%d error=%d", kept, cal_list_name(item.list), item.date.year, item.date.month, item.date.day, item.all_day, item.start, item.end, error);
+	if (error != 0) {
+		view_notice(view, "The event could not be kept.", now_us);
+		return;
+	}
+
+	/* The editor closes. */
+	view->editing = 0;
+	view_notice(view, "Event saved.", now_us);
+}
+
+/* Deletes the item of the editor and closes the editor. */
+static void
+view_edit_delete(
+	struct cal_view *view,
+	uint64_t now_us)
+{
+	int error;
+
+	/* Removed. */
+	error = cal_store_delete(view->edit_index);
+	cal_log("EVENT deleted index=%ld error=%d", view->edit_index, error);
+	if (error != 0) {
+		view_notice(view, "It could not be deleted.", now_us);
+		return;
+	}
+
+	/* The editor closes. */
+	view->editing = 0;
+	view->edit_index = -1;
+	view_notice(view, "Deleted.", now_us);
+}
+
+/* Copies a title into a room, cut before a whole UTF-8 character that does not fit. */
+static void
+view_copy_title(
+	char *to,
+	size_t size,
+	const char *from)
+{
+	size_t length;
+
+	/* As much as fits with the NUL, not into the middle of a character. */
+	length = strlen(from);
+	if (length >= size) {
+		length = size - 1U;
+		while (length > 0U && ((unsigned char)from[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+
+	/* The bytes and the NUL. */
+	memcpy(to, from, length);
+	to[length] = '\0';
+}
+
+/* Reads a time "H:MM" or "HH:MM" as minutes of the day; EINVAL for anything else. */
+static int
+view_parse_minute(
+	const char *text,
+	int *minute)
+{
+	int hour;
+	int minutes;
+	int read;
+
+	/* The hour and the minutes. */
+	read = sscanf(text, "%d:%d", &hour, &minutes);
+	if (read != 2)
+		return EINVAL;
+	if (hour < 0 || hour > 23 || minutes < 0 || minutes > 59)
+		return EINVAL;
+
+	/* Succeeded: the minutes of the day. */
+	*minute = hour * 60 + minutes;
+	return 0;
+}
+
+/*
+ * Draws the week of the day chosen (seven columns, the items of each day
+ * under its name) or the day chosen (its items with their times), in the
+ * months' place; an item opens in the editor.
+ */
+static void
+view_list(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	uint64_t now_us)
+{
+	struct view_entry entries[CAL_DAY_EVENTS];
+	struct cal_date day;
+	struct kl_rect column;
+	struct kl_rect row;
+	char line[192];
+	kl_color ink;
+	unsigned hit;
+	size_t count;
+	size_t i;
+	int today;
+	int days;
+	int weekday;
+	int width;
+	int d;
+	int y;
+
+	/* The days shown: the week of the day chosen from its Sunday, or the day. */
+	day = view->selected;
+	days = 1;
+	if (view->mode == CAL_MODE_WEEK) {
+		weekday = cal_weekday(&day);
+		cal_add_days(&day, -weekday);
+		days = 7;
+	}
+
+	/* A column for each. */
+	width = area->width / days;
+
+	/* Each day's column. */
+	for (d = 0; d < days; d++) {
+		column.x = area->x + d * width;
+		column.y = area->y;
+		column.width = width;
+		column.height = area->height;
+
+		/* Its name and date, today in the accent. */
+		(void)snprintf(line, sizeof(line), "%s %d", cal_weekday_name(cal_weekday(&day)), day.day);
+		if (days == 1)
+			(void)snprintf(line, sizeof(line), "%s, %s %d", cal_weekday_name(cal_weekday(&day)), cal_month_name(day.month), day.day);
+		ink = style->theme->text;
+		today = cal_same_day(&day, &view->today);
+		if (today)
+			ink = style->theme->accent;
+		(void)kl_text_draw_fit(style->text, style->canvas, column.x + 10, column.y + 24, line, 13U, 1, column.width - 16, ink);
+		if (d > 0) {
+			row.x = column.x;
+			row.y = column.y + 8;
+			row.width = 1;
+			row.height = column.height - 16;
+			kl_canvas_fill(style->canvas, &row, style->theme->row_separator);
+		}
+
+		/* Its items: the calendar's color, the time, the title (a memo's note). */
+		count = view_day(view, &day, entries, CAL_DAY_EVENTS);
+		y = column.y + 40;
+		for (i = 0; i < count && y + 30 < column.y + column.height; i++) {
+			row.x = column.x + 6;
+			row.y = y;
+			row.width = column.width - 12;
+			row.height = 30;
+			hit = kl_ui_hit(ui, CAL_ID_LIST_ITEM, (uint32_t)entries[i].index, &row);
+			if ((hit & KL_HIT_CLICKED) != 0U)
+				view_edit(view, entries[i].index, now_us);
+			if (entries[i].memo != NULL) {
+				kl_canvas_round(style->canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 8.0f, CAL_COLOR_SURFACE);
+				view_note_icon(style->canvas, (float)row.x + 4.0f, (float)row.y + 7.0f, 16.0f);
+				(void)snprintf(line, sizeof(line), "%s", entries[i].title);
+			} else {
+				kl_canvas_round(style->canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 8.0f, KL_RGBA(cal_list_color(entries[i].list), 48));
+				kl_canvas_circle(style->canvas, (float)row.x + 12.0f, (float)row.y + 15.0f, 4.0f, cal_list_color(entries[i].list));
+				if (entries[i].time[0] != '\0')
+					(void)snprintf(line, sizeof(line), "%s %s", entries[i].time, entries[i].title);
+				else
+					(void)snprintf(line, sizeof(line), "%s", entries[i].title);
+			}
+
+			/* Its line, and the next row under it. */
+			(void)kl_text_draw_fit(style->text, style->canvas, row.x + 24, row.y + 20, line, 12U, 0, row.width - 30, style->theme->text);
+			y += 34;
+		}
+
+		/* A day without items. */
+		if (count == 0U && days == 1)
+			(void)kl_text_draw(style->text, style->canvas, column.x + 10, column.y + 60, "Nothing on this day.", strlen("Nothing on this day."), 12U, 0, style->theme->text_faint);
+		cal_add_days(&day, 1);
+	}
 }
 
 /*

@@ -39,6 +39,10 @@
 #define TEST_COLUMN		99
 #define TEST_ROW		105
 
+/* The editor's Save in the panel (x 980, the editor inset 14; its buttons under the title, all day, the times and the calendars). */
+#define TEST_SAVE_X		1226
+#define TEST_SAVE_Y		274
+
 /* The log the view wrote, for the checks. */
 static char test_log[32768];
 static size_t test_log_length;
@@ -50,6 +54,7 @@ static int test_failures;
 static uint64_t test_now = 1000000000U;
 
 int main(int argc, char **argv);
+int test_calendar_data_load(const char *folder, const struct cal_date *today);
 static void test_frame(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style);
 static void test_click(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int x, int y);
 static void test_check(const char *name, const char *expected);
@@ -82,8 +87,8 @@ main(
 	int i;
 
 	/* The fonts and the prefix of the pictures. */
-	if (argc != 4) {
-		fprintf(stderr, "usage: host-calendar FONT FALLBACK PREFIX\n");
+	if (argc != 5) {
+		fprintf(stderr, "usage: host-calendar FONT FALLBACK PREFIX FOLDER\n");
 		return 2;
 	}
 
@@ -128,6 +133,11 @@ main(
 	today.year = 2026;
 	today.month = 10;
 	today.day = 5;
+	error = test_calendar_data_load(argv[4], &today);
+	if (error != 0) {
+		fprintf(stderr, "host-calendar: store error=%d\n", error);
+		return 2;
+	}
 	error = cal_view_init(&view, &today, test_now);
 	if (error != 0) {
 		fprintf(stderr, "host-calendar: view error=%d\n", error);
@@ -177,13 +187,19 @@ main(
 	(void)kl_ui_pointer_button(ui, 0, test_now + 20000U);
 	test_frame(&view, ui, &style);
 	test_frame(&view, ui, &style);
-	test_check("drop", "DROP list=Work date=2026-10-22");
+	test_check("drop", "FLIP from=2026-10-14 to=2026-10-22 reduced=0\nEDIT new list=Work");
 	for (i = 0; i < 3; i++) {
 		/* One frame of the sink. */
 		(void)test_save(&view, &canvas, argv[3], sinks[i], 0);
 		test_now += 100000U;
 		test_frame(&view, ui, &style);
 	}
+
+	/* The editor: Save keeps the new event at 09:00 on the 22nd. */
+	(void)test_save(&view, &canvas, argv[3], "editor", 0);
+	test_now += 1000000U;
+	test_click(&view, ui, &style, TEST_SAVE_X, TEST_SAVE_Y);
+	test_check("save", "list=Work date=2026-10-22 all_day=0 start=540 end=600 error=0");
 
 	/* The memo: a click after its last line's end gives it the keyboard with the caret there, " ok" is typed, then it is dragged by its header onto the 26th. */
 	test_now += 1000000U;
@@ -242,6 +258,19 @@ main(
 	/* The page turned at once. */
 	test_check("reduced", "reduced=1");
 	(void)test_save(&view, &canvas, argv[3], "reduced", 0);
+
+	/* The week and the day of the day chosen, then the months again. */
+	test_now += 1000000U;
+	test_click(&view, ui, &style, 596, 30);
+	test_check("week", "MODE Week");
+	(void)test_save(&view, &canvas, argv[3], "week", 0);
+	test_now += 1000000U;
+	test_click(&view, ui, &style, 657, 30);
+	test_check("day", "MODE Day");
+	(void)test_save(&view, &canvas, argv[3], "day", 0);
+	test_now += 1000000U;
+	test_click(&view, ui, &style, 533, 30);
+	test_check("month", "MODE Month");
 
 	/* A shorter window (the desktop's 800 less the title bar): the memo shortens so that the day chosen still shows. */
 	kl_ui_begin(ui, test_now);

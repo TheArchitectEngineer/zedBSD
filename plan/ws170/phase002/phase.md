@@ -2,7 +2,7 @@
 
 # ws170-p002: 連絡先と会話の保存（`~/Documents/Phone`）
 
-Status: in-progress（実装・host の試験済み。app の QEMU は p003 と一緒に T1）
+Status: cleared（2026-10-07 Q1 の判定: T1-298 の AAT（needs-person）を Q1 が PNG で目視: Phone の SEND・STATUS・RECEIVED の log と Echo の PNG、backend 0 で拒否）（旧: test-wait（T1-294））
 Disposition: normal
 Parent: [WS170](../ws.md)
 Queue: q831（2026-10-07、P2）

@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p006`
 Parent: [WS130](../ws.md)
-Status: test-wait（2026-10-07 P1: T1-289 FAIL（/var/db が無く秘密を保存できない）の修正、再試験待ち。旧: uncleared（T1-289 FAIL 3 行）、test-wait（正常系を実装、host PASS））
+Status: cleared（2026-10-07 Q1 の判定: T1-296 PASS（QEMU、/var/db の直しの後、新しい起動 1 回））（旧: test-wait（2026-10-07 P1: T1-289 FAIL（/var/db が無く秘密を保存できない）の修正、再試験待ち。旧: uncleared（T1-289 FAIL 3 行）、test-wait（正常系を実装、host PASS）））
 設計: [p001](../phase001/phase.md) §4、H4（RFC 7217）・H5（DNS の順）（2026-10-05 ユーザー決定）
 依存: p002（kernel の RA の事象）、[p005](../phase005/phase.md)（`net.conf` の `ipv6:`、T1-287）
 

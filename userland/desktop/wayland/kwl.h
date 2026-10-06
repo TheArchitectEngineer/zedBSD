@@ -1559,6 +1559,7 @@ void kwl_home_field_input(struct kwl_server *server, const char *preedit, const 
 void kwl_home_tick(struct kwl_server *server);
 int kwl_home_axis(struct kwl_server *server, int32_t vertical, int32_t horizontal);
 int kwl_home_launched(struct kwl_server *server, int32_t *rect);
+int kwl_home_open_app(struct kwl_server *server, const char *name, const char *via);
 void kwl_home_dismiss(struct kwl_server *server, const char *via);
 void kwl_home_toggle(struct kwl_server *server, const char *via);
 pid_t kwl_spawn(struct kwl_server *server, const char *command);

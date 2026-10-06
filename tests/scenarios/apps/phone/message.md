@@ -21,7 +21,7 @@ browse と同じ連絡先。`/bin/keiland-settings set phone.backend 1`（loopba
 2. 操作: header の右の電話の button。
    確認事項: 通話。正解: `PHONE CALL contact=0 error=0`、`PHONE STATUS … state=5`（応答なし）、timeline に「Call not answered」。確認方法: log、撮影。
 3. 操作: `keiland-settings set phone.backend 0`、欄に `Again`、Enter。
-   確認事項: backend 無し。正解: `PHONE RESULT … error=19`（ENODEV）、message は「Not delivered」、下に notice。log の行に番号と本文が無い。確認方法: log、撮影。
+   確認事項: backend 無し。正解: `PHONE RESULT … error=`（ENODEV、番号は OS ごと: zedBSD 13・Linux 19）と `PHONE STATUS … state=0 failed=1`、message は「Not delivered」、下に notice。log の行に番号と本文が無い。確認方法: log、撮影。
 
 ## 合格
 1〜3 の正解。
