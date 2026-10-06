@@ -18,8 +18,8 @@
  * this program unchanged (plan/ws089/design.md section 4).
  */
 
-#ifndef KEILAND_SETTINGS_H
-#define KEILAND_SETTINGS_H
+#ifndef SETTINGS_SETTINGS_H
+#define SETTINGS_SETTINGS_H
 
 #include "../files/canvas.h"
 #include "storage-scan.h"

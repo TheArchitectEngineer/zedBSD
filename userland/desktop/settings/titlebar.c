@@ -9,9 +9,11 @@
  * The window's titlebar in zdesktop (WS070's CONTROLS presentation, the
  * file manager's way, ws071-p014): Back, Forward and Home, the breadcrumb
  * (Settings and the page), the search field (ws089-p008) and the list of
- * pages' switch, drawn by zdesktop
- * in the floating titlebar, or in the system bar while the window is
- * docked.  What the user does with them is queued for the main loop.
+ * pages' switch, drawn by zdesktop in the floating titlebar, or in the
+ * system bar while the window is docked, from the table given to
+ * libkeiland's window (kl_window_set_controls, WS131 p019).  A control
+ * chosen and a field's text come among the window's inputs (window.c) and
+ * are queued here for the main loop.
  */
 
 #include "window.h"
@@ -20,43 +22,23 @@
 #include <stdio.h>
 #include <string.h>
 
-/*
- * One control of the model: its ID, role, priority, segmented group and
- * label.
- */
-struct titlebar_control {
-	uint32_t id;
-	unsigned role;
-	unsigned priority;
-	unsigned group;
-	const char *label;
+/* The controls, in their order: each one's action is SE_TITLEBAR_ACTION plus its ID. */
+static const struct kl_control_entry titlebar_controls[] = {
+	{ SE_CONTROL_BACK, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back", SE_TITLEBAR_ACTION + SE_CONTROL_BACK },
+	{ SE_CONTROL_FORWARD, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward", SE_TITLEBAR_ACTION + SE_CONTROL_FORWARD },
+	{ SE_CONTROL_HOME, KL_CONTROL_HOME, KL_PRIORITY_PRIMARY, 0U, "Home", SE_TITLEBAR_ACTION + SE_CONTROL_HOME },
+	{ SE_CONTROL_PATH, KL_CONTROL_BREADCRUMB, KL_PRIORITY_NORMAL, 0U, "Location", SE_TITLEBAR_ACTION + SE_CONTROL_PATH },
+	{ SE_CONTROL_SEARCH, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Search", SE_TITLEBAR_ACTION + SE_CONTROL_SEARCH },
+	{ SE_CONTROL_SIDEBAR, KL_CONTROL_SIDEBAR, KL_PRIORITY_SECONDARY, 0U, "Sidebar", SE_TITLEBAR_ACTION + SE_CONTROL_SIDEBAR }
 };
 
-/* The controls, in their order. */
-static const struct titlebar_control titlebar_controls[] = {
-	{ SE_CONTROL_BACK, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back" },
-	{ SE_CONTROL_FORWARD, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward" },
-	{ SE_CONTROL_HOME, KEILAND_CONTROL_HOME, KEILAND_PRIORITY_PRIMARY, 0U, "Home" },
-	{ SE_CONTROL_PATH, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location" },
-	{ SE_CONTROL_SEARCH, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search" },
-	{ SE_CONTROL_SIDEBAR, KEILAND_CONTROL_SIDEBAR, KEILAND_PRIORITY_SECONDARY, 0U, "Sidebar" }
-};
-
-static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_changed(void *data, struct keiland_titlebar *object, uint32_t id, const char *text);
-static void titlebar_done(void *data, struct keiland_titlebar *object, uint32_t id, const char *text, unsigned how);
 static void titlebar_queue(struct se_titlebar *titlebar, unsigned kind, uint32_t id, uint32_t detail, const char *text);
-static int titlebar_build(struct se_titlebar *titlebar);
 static int titlebar_state(struct se_titlebar *titlebar, const struct se_titlebar_state *state);
-static int titlebar_state_controls(struct keiland_titlebar *object, const struct se_titlebar_state *state);
-
-/* What the titlebar tells the window: the controls chosen and the text fields' typing. */
-static const struct keiland_titlebar_listener titlebar_listener = {
-	titlebar_activated, titlebar_changed, titlebar_done, NULL, NULL, NULL, NULL, NULL
-};
+static void titlebar_action_state(struct se_titlebar *titlebar, uint32_t control, int enabled, int checked);
 
 /*
- * Gives zdesktop the window's titlebar, showing a state.
+ * Gives zdesktop the window's titlebar, showing a state; the window's
+ * controls' inputs come here from then on.
  *
  * Returns 0, or an errno value (ENOTSUP for a compositor without the
  * titlebar) when the titlebar could not be made.
@@ -73,15 +55,12 @@ se_titlebar_open(
 	memset(titlebar, 0, sizeof(*titlebar));
 	titlebar->window = window;
 
-	/* The window's titlebar object. */
-	titlebar->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
-	if (titlebar->titlebar == NULL)
-		return errno;
-
-	/* The controls in one transaction. */
-	error = titlebar_build(titlebar);
+	/* The controls. */
+	error = kl_window_set_controls(window->kui, titlebar_controls, sizeof(titlebar_controls) / sizeof(titlebar_controls[0]));
 	if (error != 0)
 		return error;
+	titlebar->controls = 1;
+	window->titlebar = titlebar;
 
 	/* The state it shows. */
 	error = titlebar_state(titlebar, state);
@@ -105,19 +84,46 @@ se_titlebar_refresh(
 	int same;
 	int error;
 
-	/* Without a titlebar nothing is sent. */
-	if (titlebar->titlebar == NULL)
+	/* Without a titlebar nothing is sent; nor when the state is the one shown. */
+	if (!titlebar->controls)
 		return;
-
-	/* Nor when the state is the one shown. */
 	same = memcmp(state, &titlebar->shown, sizeof(*state));
 	if (same == 0)
 		return;
 
-	/* The new state in one transaction; a refusal is reported and the titlebar stays as it was. */
+	/* The new state; a refusal is reported and the titlebar stays as it was. */
 	error = titlebar_state(titlebar, state);
 	if (error != 0)
 		se_log("TITLEBAR update-failed errno=%d", error);
+}
+
+/*
+ * Queues what was done with a control (a KL_WINDOW_ACTION input of one,
+ * with the breadcrumb's part in begin) or a field's text
+ * (KL_WINDOW_CONTROL_TEXT, _DONE) for the main loop.
+ */
+void
+se_titlebar_input(
+	struct se_titlebar *titlebar,
+	const struct kl_window_event *event)
+{
+	uint32_t id;
+
+	/* A control chosen: its ID from its action. */
+	if (event->kind == KL_WINDOW_ACTION) {
+		id = event->code - SE_TITLEBAR_ACTION;
+		se_log("TITLEBAR activated id=%u detail=%u", id, (unsigned)event->begin);
+		titlebar_queue(titlebar, SE_TITLEBAR_ACTIVATED, id, (uint32_t)event->begin, "");
+		return;
+	}
+
+	/* A field's text as typed, and when its editing ended (and how). */
+	if (event->kind == KL_WINDOW_CONTROL_TEXT) {
+		titlebar_queue(titlebar, SE_TITLEBAR_CHANGED, (uint32_t)event->id, 0U, event->text);
+		return;
+	}
+	if (event->kind == KL_WINDOW_CONTROL_DONE)
+		titlebar_queue(titlebar, SE_TITLEBAR_DONE, (uint32_t)event->id, event->code, event->text);
 }
 
 /*
@@ -149,57 +155,14 @@ void
 se_titlebar_close(
 	struct se_titlebar *titlebar)
 {
-	/* The titlebar object. */
-	if (titlebar->titlebar != NULL)
-		keiland_titlebar_destroy(titlebar->titlebar);
+	/* The controls, and the window's inputs go nowhere here any more. */
+	if (titlebar->controls && titlebar->window->kui != NULL)
+		(void)kl_window_set_controls(titlebar->window->kui, NULL, 0U);
+	if (titlebar->window != NULL)
+		titlebar->window->titlebar = NULL;
 
 	/* Nothing is left. */
 	memset(titlebar, 0, sizeof(*titlebar));
-}
-
-/* Queues a control chosen. */
-static void
-titlebar_activated(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	uint32_t detail,
-	struct wl_seat *seat,
-	uint32_t serial)
-{
-	/* The event, for the main loop. */
-	(void)object;
-	(void)seat;
-	(void)serial;
-	se_log("TITLEBAR activated id=%u detail=%u", id, detail);
-	titlebar_queue(data, SE_TITLEBAR_ACTIVATED, id, detail, "");
-}
-
-/* Queues a text field's text as typed. */
-static void
-titlebar_changed(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	const char *text)
-{
-	/* The event, for the main loop. */
-	(void)object;
-	titlebar_queue(data, SE_TITLEBAR_CHANGED, id, 0U, text);
-}
-
-/* Queues the end of a text field's editing. */
-static void
-titlebar_done(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	const char *text,
-	unsigned how)
-{
-	/* The event, for the main loop. */
-	(void)object;
-	titlebar_queue(data, SE_TITLEBAR_DONE, id, how, text);
 }
 
 /* Puts an event at the end of the queue; a full queue keeps only the newest text of a field. */
@@ -235,69 +198,33 @@ titlebar_queue(
 	titlebar->event_count++;
 }
 
-/* Gives zdesktop the mode and every control in one transaction; returns 0 or an errno value. */
-static int
-titlebar_build(
-	struct se_titlebar *titlebar)
-{
-	const struct titlebar_control *control;
-	size_t index;
-	int error;
-
-	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* The controls' presentation. */
-	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
-
-	/* Each control in its order. */
-	for (index = 0; error == 0 && index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
-		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
-	}
-
-	/* A refused change still ends the transaction, which is reported. */
-	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The controls are shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the controls are there. */
-	return 0;
-}
-
-/* Shows a state in the titlebar in one transaction, then gives the search field the keyboard when asked; returns 0 or an errno value. */
+/* Shows a state in the titlebar, then gives the search field the keyboard when asked; returns 0 or an errno value. */
 static int
 titlebar_state(
 	struct se_titlebar *titlebar,
 	const struct se_titlebar_state *state)
 {
+	const char *parts[SE_CRUMBS];
+	struct kl_window *window;
+	int index;
 	int asked;
 	int error;
 
-	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
+	/* The history's steps (Home always works), and the list of pages, checked while it is shown. */
+	window = titlebar->window->kui;
+	titlebar_action_state(titlebar, SE_CONTROL_BACK, state->can_back, 0);
+	titlebar_action_state(titlebar, SE_CONTROL_FORWARD, state->can_forward, 0);
+	titlebar_action_state(titlebar, SE_CONTROL_SIDEBAR, 1, state->sidebar);
+
+	/* The breadcrumb's parts. */
+	for (index = 0; index < state->part_count; index++)
+		parts[index] = state->parts[index];
+	error = kl_window_set_control_parts(window, SE_CONTROL_PATH, parts, (size_t)state->part_count);
 	if (error != 0)
 		return error;
 
-	/* The controls' state. */
-	error = titlebar_state_controls(titlebar->titlebar, state);
-
-	/* A refused change still ends the transaction, which is reported. */
-	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The state is shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
+	/* The search's query, and what the field shows when empty. */
+	error = kl_window_set_control_text(window, SE_CONTROL_SEARCH, state->query, kl_tr("Search settings"));
 	if (error != 0)
 		return error;
 
@@ -306,7 +233,7 @@ titlebar_state(
 	if (state->focus_serial != titlebar->shown.focus_serial)
 		asked = 1;
 	if (asked != 0) {
-		error = keiland_titlebar_focus_control(titlebar->titlebar, SE_CONTROL_SEARCH, KEILAND_FOCUS_FIELD);
+		error = kl_window_focus_control(window, SE_CONTROL_SEARCH);
 		if (error != 0)
 			se_log("TITLEBAR focus-failed errno=%d", error);
 	}
@@ -320,39 +247,26 @@ titlebar_state(
 	return 0;
 }
 
-/* Sets the controls' state; returns 0 or the first refusal. */
-static int
-titlebar_state_controls(
-	struct keiland_titlebar *object,
-	const struct se_titlebar_state *state)
+/* Sets a control's action's state (enabled, checked). */
+static void
+titlebar_action_state(
+	struct se_titlebar *titlebar,
+	uint32_t control,
+	int enabled,
+	int checked)
 {
-	const char *parts[SE_CRUMBS];
-	int index;
+	unsigned state;
 	int error;
 
-	/* The history's steps; Home always works. */
-	error = keiland_titlebar_set_control_state(object, SE_CONTROL_BACK, state->can_back, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, SE_CONTROL_FORWARD, state->can_forward, 0);
+	/* The bits. */
+	state = 0U;
+	if (!enabled)
+		state |= KL_ACTION_DISABLED;
+	if (checked)
+		state |= KL_ACTION_CHECKED;
 
-	/* The breadcrumb's parts. */
-	for (index = 0; index < state->part_count; index++)
-		parts[index] = state->parts[index];
-	if (error == 0)
-		error = keiland_titlebar_set_breadcrumb(object, SE_CONTROL_PATH, parts, (size_t)state->part_count);
-
-	/* The search's query, and what the field shows when empty. */
-	if (error == 0)
-		error = keiland_titlebar_set_control_text(object, SE_CONTROL_SEARCH, state->query, kl_tr("Search settings"));
-
-	/* The list of pages, checked while it is shown. */
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, SE_CONTROL_SIDEBAR, 1, state->sidebar);
-
-	/* Reports the first refusal, or none. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the controls show the state. */
-	return 0;
+	/* Kept by the window for its controls. */
+	error = kl_window_set_action_state(titlebar->window->kui, SE_TITLEBAR_ACTION + control, state);
+	if (error != 0 && error != ENOTSUP)
+		se_log("TITLEBAR update-failed errno=%d", error);
 }

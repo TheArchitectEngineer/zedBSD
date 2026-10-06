@@ -524,9 +524,9 @@ se_ui_titlebar(
 
 	/* The search's editing ended: Enter opens the chosen result, Esc ends the search, leaving (Tab) keeps it for the keys. */
 	if (event->kind == SE_TITLEBAR_DONE && event->id == SE_CONTROL_SEARCH) {
-		if (event->detail == KEILAND_TEXT_SUBMITTED) {
+		if (event->detail == KL_TEXT_SUBMITTED) {
 			(void)se_search_open_chosen(app);
-		} else if (event->detail == KEILAND_TEXT_CANCELLED) {
+		} else if (event->detail == KL_TEXT_CANCELLED) {
 			se_search_end(app);
 		}
 
