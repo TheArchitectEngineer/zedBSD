@@ -393,6 +393,8 @@ static void app_select_motion(struct notes_app *app, float x, float y);
 static void app_select_release(struct notes_app *app);
 static void app_select(struct notes_app *app, size_t index, int logged);
 static void app_deselect(struct notes_app *app);
+static void app_edit_object(const struct notes_undo *entry, struct notes_edit *which);
+static void app_reselect(struct notes_app *app, const struct notes_edit *which);
 static int app_selected_state(struct notes_app *app, struct notes_edit *state);
 static void app_drag_preview(struct notes_app *app, struct pdf_page_editor *editor);
 static void app_apply_map(struct notes_app *app, const double map[6]);
@@ -1101,6 +1103,7 @@ app_action(
 	struct notes_app *app,
 	uint32_t action)
 {
+	struct notes_edit which;
 	size_t page;
 	int edit;
 	int error;
@@ -1163,8 +1166,12 @@ app_action(
 	case NOTES_ACTION_UNDO:
 		/* The last change is taken back, and its page shown (the chosen object let go). */
 		edit = 0;
-		if (app->document.undo_done > 0U && app->document.undo[app->document.undo_done - 1U].kind == NOTES_UNDO_EDIT_OBJECT)
+		if (app->document.undo_done > 0U && app->document.undo[app->document.undo_done - 1U].kind == NOTES_UNDO_EDIT_OBJECT) {
 			edit = 1;
+			app_edit_object(&app->document.undo[app->document.undo_done - 1U], &which);
+		}
+
+		/* The chosen object let go (chosen again below). */
 		app_deselect(app);
 		error = notes_document_undo(&app->document, &page);
 		if (error != 0)
@@ -1174,15 +1181,23 @@ app_action(
 		app->page = page;
 		printf("NOTES UNDO page=%lu strokes=%lu pages=%lu\n", (unsigned long)app->page,
 		       (unsigned long)app->document.pages[app->page]->stroke_count, (unsigned long)app->document.page_count);
-		if (edit)
+		if (edit) {
 			printf("NOTES EDIT undo page=%lu edits=%lu\n", (unsigned long)app->page, (unsigned long)app->document.pages[app->page]->edit_count);
+			app_reselect(app, &which);
+		}
+
+		/* The notebook changed. */
 		app_changed(app);
 		break;
 	case NOTES_ACTION_REDO:
 		/* The last change taken back is made again, and its page shown (the chosen object let go). */
 		edit = 0;
-		if (app->document.undo_done < app->document.undo_count && app->document.undo[app->document.undo_done].kind == NOTES_UNDO_EDIT_OBJECT)
+		if (app->document.undo_done < app->document.undo_count && app->document.undo[app->document.undo_done].kind == NOTES_UNDO_EDIT_OBJECT) {
 			edit = 1;
+			app_edit_object(&app->document.undo[app->document.undo_done], &which);
+		}
+
+		/* The chosen object let go (chosen again below). */
 		app_deselect(app);
 		error = notes_document_redo(&app->document, &page);
 		if (error != 0)
@@ -1192,8 +1207,12 @@ app_action(
 		app->page = page;
 		printf("NOTES REDO page=%lu strokes=%lu pages=%lu\n", (unsigned long)app->page,
 		       (unsigned long)app->document.pages[app->page]->stroke_count, (unsigned long)app->document.page_count);
-		if (edit)
+		if (edit) {
 			printf("NOTES EDIT redo page=%lu edits=%lu\n", (unsigned long)app->page, (unsigned long)app->document.pages[app->page]->edit_count);
+			app_reselect(app, &which);
+		}
+
+		/* The notebook changed. */
 		app_changed(app);
 		break;
 	case NOTES_ACTION_PREVIOUS_PAGE:
@@ -3474,4 +3493,50 @@ app_map_point(
 	/* The point times the map. */
 	*mapped_x = x * map[0] + y * map[2] + map[4];
 	*mapped_y = x * map[1] + y * map[3] + map[5];
+}
+
+/* Gives the object an undo entry of an edit names (its state after or before, by value; the image not held). */
+static void
+app_edit_object(
+	const struct notes_undo *entry,
+	struct notes_edit *which)
+{
+	/* The state after, or before when there is none after. */
+	memset(which, 0, sizeof(*which));
+	if (entry->edit_after != NULL)
+		*which = *entry->edit_after;
+	else if (entry->edit_before != NULL)
+		*which = *entry->edit_before;
+}
+
+/*
+ * Chooses again, after an undo or a redo of an edit, the object it changed
+ * when the page shown has it and it is not deleted (ws175-p008: its handles
+ * stay for the next drag).
+ */
+static void
+app_reselect(
+	struct notes_app *app,
+	const struct notes_edit *which)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	size_t index;
+	int error;
+
+	/* With the Select tool, the object on the page shown, not deleted. */
+	if (app->tool != NOTES_ACTION_SELECT)
+		return;
+	error = notes_page_object_index(&app->document, app->page, which, &index);
+	if (error == 0)
+		error = notes_page_editor(&app->document, app->page, &editor);
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, index, &object);
+	if (error != 0 || (object.flags & PDF_EDIT_OBJECT_DELETED) != 0U)
+		return;
+
+	/* Chosen again. */
+	app_select(app, index, 0);
 }

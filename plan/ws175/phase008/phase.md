@@ -40,6 +40,14 @@ menu、log [L9]、AAT の draft の手直し。文字（Text の道具・編集�
   Notes の link の規則にも同じ 3 つ（picture.c が libjpeg と libgif を参照する）。
 - **AAT の draft**: `tests/scenarios/apps/notes/pdf-edit-image.md`・`pdf-insert-image.md` を実装の操作と log に合わせた（status は draft のまま、p010 で active）。
 
+## T1-253 の結果と直し（2026-10-06）
+
+- T1-253（AAT で手の操作、試料は edit-images.pdf）: Select・選択の枠・move・Replace・undo・redo・Delete・保存・Insert・先頭の bytes の一致は期待どおり。
+  **resize は確かめられなかった**（Ctrl+Z の後に handle を drag すると move）。PNG は `/home/awe/zedBSD-worktrees/t1/build/t1-253m/`。
+- 原因: undo・redo は選択を外していたので、Ctrl+Z の後は handle が無く、元の handle の所の press は物の hit（move）になった。
+- 直し: undo・redo が編集の entry の時、その物（entry の後か前の状態の key か id）を `notes_page_object_index`（edit.c、新規）で editor の index に引き、
+  Select の道具なら選び直す（消した物は選ばない）。host 試験に index の 2 項目（notes-edit 35/35 ×3）。画面での resize の確認は p010 か次の T1 で。
+
 ## 設計からの変更（Q1 に報告）
 
 - 操作の帯（物の上に浮く帯）は toolbar の Select の時のボタンにした（文字を描く仕組みが toolbar にしか無いため。機能は同じ）。

@@ -441,6 +441,7 @@ int notes_document_edit_object(struct notes_document *document, size_t page, con
 int notes_document_reset_object(struct notes_document *document, size_t page, const struct notes_edit *which);
 int notes_page_editor(struct notes_document *document, size_t page, struct pdf_page_editor **editor);
 int notes_page_object(struct notes_document *document, size_t page, size_t index, struct notes_edit *state);
+int notes_page_object_index(struct notes_document *document, size_t page, const struct notes_edit *which, size_t *index);
 void notes_page_close_editor(struct notes_page *page);
 int notes_document_edited(const struct notes_document *document);
 int notes_document_check_edits(struct notes_document *document);
