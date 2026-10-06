@@ -64,6 +64,9 @@ main(
 	struct notes_image *png_image;
 	struct notes_edit state;
 	struct notes_edit inserted;
+	struct notes_edit tried;
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
 	struct pdf_document *file;
 	struct notes_edit *bogus;
 	struct stat status;
@@ -78,6 +81,9 @@ main(
 	size_t page;
 	size_t index;
 	size_t bytes;
+	size_t edits;
+	size_t objects;
+	unsigned result;
 	unsigned kind;
 	int journal_there;
 	int kept_there;
@@ -293,6 +299,43 @@ main(
 	check(error == 0 && count_images(&document, 0) == 0, "Japanese the line's own font cannot write: in a replacement font (ws175-p005)");
 	error = notes_document_undo(&document, &page);
 	check(error == 0 && count_images(&document, 0) == 0, "undo: \"Changed!\" again");
+
+	/* ws175-p008: words tried on the page's editor before the change (the text box), the model and the page left as they were. */
+	edits = document.pages[0]->edit_count;
+	tried = state;
+	tried.text = "Tried";
+	error = notes_page_try_edit(&document, 0, &tried, &result);
+	check(error == 0 && (result & PDF_EDIT_TEXT_MISSING) == 0U && document.pages[0]->edit_count == edits, "words tried: taken, the model unchanged");
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = notes_page_editor(&document, 0, &editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, 1, &object);
+	check(error == 0 && object.text != NULL && strcmp(object.text, "Changed!") == 0, "the page's editor made again: the line's words as the model has them");
+	tried.text = "A\xcd\xb8";
+	error = notes_page_try_edit(&document, 0, &tried, &result);
+	check(error == 0 && (result & PDF_EDIT_TEXT_MISSING) != 0U && document.pages[0]->edit_count == edits, "a character no font has (U+0378): MISSING, before the model holds it");
+	tried.text = "\xe6\x97\xa5\xe6\x9c\xac";
+	tried.font = PDF_EDIT_FONT_CJK;
+	error = notes_page_try_edit(&document, 0, &tried, &result);
+	check(error == 0 && (result & (PDF_EDIT_TEXT_MISSING | PDF_EDIT_TEXT_REPLACED)) == PDF_EDIT_TEXT_REPLACED, "Japanese in the CJK font: taken, replaced");
+	memset(&tried, 0, sizeof(tried));
+	tried.flags = NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT;
+	tried.text = "New words";
+	tried.font = PDF_EDIT_FONT_MONO;
+	tried.text_size = 12.0f;
+	tried.transform[0] = 1.0f;
+	tried.transform[3] = 1.0f;
+	objects = 0;
+	error = notes_page_editor(&document, 0, &editor);
+	if (error == 0)
+		objects = pdf_page_editor_count(editor);
+	if (error == 0)
+		error = notes_page_try_edit(&document, 0, &tried, &result);
+	if (error == 0)
+		error = notes_page_editor(&document, 0, &editor);
+	check(error == 0 && (result & PDF_EDIT_TEXT_MISSING) == 0U && objects > 0U && pdf_page_editor_count(editor) == objects,
+	      "new words tried: taken, not left on the page");
 	error = notes_save_pdf(&document, saved_path, &bytes);
 	check(error == 0, "the notebook with the new words saved");
 	error = notes_open_pdf(saved_path, &opened, &kind);

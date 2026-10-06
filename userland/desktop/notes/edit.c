@@ -41,7 +41,7 @@
 /* The largest image side, libpdf's, which keeps width x height x 4 from overflowing. */
 #define EDIT_IMAGE_SIDE_MAX	16384U
 
-static int edit_apply(struct pdf_page_editor *editor, const struct notes_edit *edit);
+static int edit_apply(struct pdf_page_editor *editor, const struct notes_edit *edit, unsigned *result);
 static int edit_grow(struct notes_page *page);
 static float edit_grid(float value, float units);
 
@@ -471,6 +471,7 @@ notes_page_editor(
 	struct notes_page *target;
 	struct pdf_page_editor *made;
 	size_t index;
+	unsigned result;
 	int error;
 
 	/* A page that is there; its editor when it is still good. */
@@ -498,7 +499,7 @@ notes_page_editor(
 
 	/* Each edit, in order. */
 	for (index = 0; index < target->edit_count; index++) {
-		error = edit_apply(made, target->edits[index]);
+		error = edit_apply(made, target->edits[index], &result);
 		if (error != 0) {
 			pdf_page_editor_close(made);
 			return error;
@@ -510,6 +511,38 @@ notes_page_editor(
 	target->editor_stale = 0;
 	*editor = made;
 	return 0;
+}
+
+/*
+ * Tries an object's new state on its page's editor before the change is
+ * made (ws175-p008: the text box asks the editor before the words are the
+ * model's): the state is applied as a change would apply it, and what the
+ * editor did with the words is told (PDF_EDIT_TEXT_*: MISSING when it left
+ * out characters no font has).  The try is not kept: the editor is made
+ * again from the edits when next asked for.  Returns 0, ESTALE when the
+ * page does not have the object, or the editor's failure (ENOTSUP: no
+ * replacement font is installed).
+ */
+int
+notes_page_try_edit(
+	struct notes_document *document,
+	size_t page,
+	const struct notes_edit *state,
+	unsigned *result)
+{
+	struct pdf_page_editor *editor;
+	int error;
+
+	/* The page's editor. */
+	*result = 0U;
+	error = notes_page_editor(document, page, &editor);
+	if (error != 0)
+		return error;
+
+	/* The state applied, then the editor made again when next asked for. */
+	error = edit_apply(editor, state, result);
+	document->pages[page]->editor_stale = 1;
+	return error;
 }
 
 /*
@@ -700,15 +733,17 @@ notes_document_check_edits(
 }
 
 /*
- * Applies an edit to an editor: an inserted image put on the page, or an
- * object of the page (by its key) deleted, given an image, placed.
- * Returns 0, ESTALE when the page does not have the object, or the
- * editor's failure.
+ * Applies an edit to an editor: an inserted image or text put on the
+ * page, or an object of the page (by its key) deleted, given an image or
+ * words, placed.  What the editor did with the words is added to *result
+ * (PDF_EDIT_TEXT_*).  Returns 0, ESTALE when the page does not have the
+ * object, or the editor's failure.
  */
 static int
 edit_apply(
 	struct pdf_page_editor *editor,
-	const struct notes_edit *edit)
+	const struct notes_edit *edit,
+	unsigned *result)
 {
 	struct pdf_image_source source;
 	struct pdf_edit_text words;
@@ -716,7 +751,7 @@ edit_apply(
 	void *owned;
 	size_t index;
 	size_t at;
-	unsigned result;
+	unsigned done;
 	int error;
 
 	/* The transform as libpdf takes it. */
@@ -734,7 +769,10 @@ edit_apply(
 		words.green = (double)((edit->color >> 16) & 0xffU) / 255.0;
 		words.blue = (double)((edit->color >> 8) & 0xffU) / 255.0;
 		words.box_width = (double)edit->box_width;
-		return pdf_page_editor_insert_text(editor, &words, transform, &index, &result);
+		done = 0U;
+		error = pdf_page_editor_insert_text(editor, &words, transform, &index, &done);
+		*result |= done;
+		return error;
 	}
 
 	/* An inserted image. */
@@ -777,7 +815,9 @@ edit_apply(
 		words.size = sizeof(words);
 		words.utf8 = edit->text;
 		words.font = (enum pdf_edit_font)edit->font;
-		error = pdf_page_editor_set_text(editor, index, &words, &result);
+		done = 0U;
+		error = pdf_page_editor_set_text(editor, index, &words, &done);
+		*result |= done;
 		if (error != 0)
 			return error;
 	}

@@ -2,7 +2,7 @@
 # WS175: Notes で PDF の画像と文字を編集する
 
 Master: [master](../master.md)
-Status: incomplete（2026-10-06: p001 設計・p003・p006 cleared、p002（a・b）実装、p007（Notes の model、画像の段）を実装。p008（UI、画像の段）・p004（文字の書き換え）・p005（置き換えの font と文字の挿入）を実装。次は p008 の文字の段（Q1 の指定待ち）
+Status: incomplete（2026-10-06: p001・p003・p004・p005・p006・p007 cleared、p002（a・b）実装。p008 は画像の段 cleared、文字の段（ws079-p017 と一つ）を実装し host PASS、画面は p010。次は p010 の T1）
 Primary Milestone: MG006
 
 ## 由来
@@ -29,9 +29,9 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 | [ws175-p003](phase003/phase.md) | libpdf の画像・図形の editor（削除・移動・大きさ・差し替え・挿入）、content の組み立て、preview、update の PLACE_EDIT、名前の接頭辞 [M4] | cleared（2026-10-06 Q1） | p002a |
 | [ws175-p006](phase006/phase.md) | libz-compat の deflate、圧縮する stream [H6][N11]、画像の取り込み（PNG の素通しと検査・向き・上限）、私的な key と共有・読み戻し [M6] | cleared（2026-10-06 Q1、QEMU は p010） | p003、D4 |
 | [ws175-p007](phase007/phase.md) | Notes の model: 物の編集と画像、undo・Reset、ZNOT 2.0、journal 版 2、保存（PLACE_EDIT・blank）と開く時の照合・rebase・読み戻し | cleared（2026-10-06 Q1、画像の段。QEMU は p010） | p006 |
-| [ws175-p008](phase008/phase.md) | Notes の UI（画像の段）: Select の道具・挿入・差し替え・削除・Reset・drag・描画・log | 実装済み（2026-10-06、build と host PASS、画面は p010）、判定待ち | p007 |
-| [ws175-p004](phase004/phase.md) | libpdf の文字の書き換え（移動・削除・元の font での内容の変更・正規化 [H1]・ActualText [M10]）と Notes の文字の model | 実装済み（2026-10-06、host PASS）、判定待ち | p003・p007 |
-| [ws175-p005](phase005/phase.md) | 置き換えの font（subset・埋め込み・fallback・font の変更）、文字の挿入 | p005a・p005b 実装済み（2026-10-06、host PASS）、判定待ち | p004 |
+| [ws175-p008](phase008/phase.md) | Notes の UI: 画像の段（Select の道具・挿入・差し替え・削除・Reset・drag・描画・log）、文字の段（Text の道具・編集の box・IME・Font/Size、ws079-p017 と一つ） | 画像の段 cleared（2026-10-06 Q1、resize の画面は p010）、文字の段は実装済み（host PASS、画面は p010）、判定待ち | p007・p004・p005 |
+| [ws175-p004](phase004/phase.md) | libpdf の文字の書き換え（移動・削除・元の font での内容の変更・正規化 [H1]・ActualText [M10]）と Notes の文字の model | cleared（2026-10-06 Q1、QEMU は p010） | p003・p007 |
+| [ws175-p005](phase005/phase.md) | 置き換えの font（subset・埋め込み・fallback・font の変更）、文字の挿入 | cleared（2026-10-06 Q1、QEMU は p010） | p004 |
 | p009〜p011 | design.md §10 のとおり（p010 T1 → p011 規約） | 未作成 | — |
 
 見積もり: design.md §10（全体 17.5〜21.5 LW、画像を先にする段は約 10 LW）。Q1 の当初の概算は 6 LW。

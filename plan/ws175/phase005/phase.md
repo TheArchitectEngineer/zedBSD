@@ -2,7 +2,7 @@
 # ws175-p005: 置き換えの font（subset と埋め込み、文字ごとの fallback、既存の行の font の変更、文字の挿入）
 
 Parent: [WS175](../ws.md)
-Status: in-progress（p005a は host の試験 PASS で main に merge（2026-10-06、7345049b5）、p005b 進行中。QEMU は p010）
+Status: cleared（2026-10-06 Q1 判定: p005a・p005b の host の試験 PASS。QEMU は p010。Notes の font・size の UI は p008 の文字の段）
 Disposition: normal
 Queue: Q1 の順（2026-10-06「p004 の後に p005」）
 依存: [p004](../phase004/phase.md)（cleared）
