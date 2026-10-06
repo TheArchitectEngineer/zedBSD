@@ -1486,6 +1486,8 @@ input_button(
 		fm_action_put_back(app);
 	} else if (index == FM_BUTTON_EMPTY_TRASH) {
 		fm_action_empty_trash(app);
+	} else if (index == FM_BUTTON_CLEAR_RECENTS) {
+		fm_action_clear_recents(app);
 	} else if (index == FM_BUTTON_LOOK_CLOSE) {
 		fm_look_close(app);
 	} else if (index == FM_BUTTON_HELP_CLOSE) {

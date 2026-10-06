@@ -250,9 +250,6 @@ enum se_page_id {
 	SE_PAGE_PRINTERS,
 	SE_PAGE_SHARING,
 	SE_PAGE_USERS,
-	SE_PAGE_PRIVACY,
-	SE_PAGE_SECURITY,
-	SE_PAGE_ACCESSIBILITY,
 	SE_PAGE_UPDATES,
 	SE_PAGE_ABOUT,
 	SE_PAGES
@@ -525,7 +522,9 @@ struct se_wired {
  * folder) and its scan with the view last copied, the home; the trash's
  * folder, the scan of its files (its size) and its emptying, whether the
  * Empty button waits for its confirmation, the last message about it, and
- * when the page was last drawn again for a new count.
+ * when the page was last drawn again for a new count; whether the
+ * desktop's recent list is kept (read once, q824) and the last message
+ * about it (red for a failure).
  */
 struct se_storage {
 	char home[SE_SCAN_PATH];
@@ -542,6 +541,10 @@ struct se_storage {
 	int message_bad;
 	uint64_t drawn_generation;
 	uint64_t drawn_at;
+	int recent_known;
+	int recent_keep;
+	char recent_message[SE_MESSAGE];
+	int recent_bad;
 };
 
 /*

@@ -2,7 +2,7 @@
 # ws148-p001: Settings の Privacy の頁の検討と結論の案
 
 Parent: [WS148](../ws.md)
-Status: in-progress（2026-10-06 q821 P2: 検討と結論の案を書いた。ユーザーの判断待ち（頁を消すか、項目を置くか））
+Status: cleared（2026-10-06 ユーザーの決定（Q1 経由のクリック）: (a) 頁を無くす。推奨どおり Files の Recents に「履歴を消す」、Storage に「最近の項目を残す」。実装は [p002](../phase002/phase.md)（q824））
 Disposition: normal
 Queue: q821（P2 の第 1 段の列）
 

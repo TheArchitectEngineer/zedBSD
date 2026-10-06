@@ -277,6 +277,29 @@ fm_action_empty_trash(
 }
 
 /*
+ * Empties the desktop's recent list (q824; the files stay where they are)
+ * and shows Recents again.
+ */
+void
+fm_action_clear_recents(
+	struct fm_app *app)
+{
+	int error;
+
+	/* The list emptied (the log the tests read). */
+	error = kl_recent_clear();
+	printf("ZFILES RECENTS clear error=%d\n", error);
+	if (error != 0) {
+		fm_ui_message(app, "The recent list could not be cleared");
+		return;
+	}
+
+	/* Recents shown again, now empty. */
+	fm_ui_reload(app, fm_ui_tab(app));
+	fm_ui_message(app, "Recents cleared");
+}
+
+/*
  * Answers the question asked: a confirmed delete or empty trash starts its
  * task; otherwise nothing happens.
  */

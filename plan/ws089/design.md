@@ -40,7 +40,7 @@ Display は stub、accent と Touchpad は出さない。Appearance・Wallpaper�
 | | Mouse | 働く: pointer の速さ（相対の mouse だけ）、wheel の向き（natural） | p005 |
 | | Touchpad | **準備中**（D9）。kernel に touchpad の driver が無い（`plan/ws081/design.md`: Touch Pad は未対応）ので、効く先が無い | — |
 | | Printers・Sharing | 準備中 | — |
-| System | Users・Privacy・Security・Accessibility・Updates | 準備中 | — |
+| System | Users・Updates（Privacy・Security・Accessibility は 2026-10-06 ユーザーの判断で頁を無くした、q824） | 準備中 | — |
 | | About | 働く: Kei の印と語、kernel（`uname` の sysname・release）、機械（`x86_64`）、CPU、core 数、memory（§6.1）、Graphics（Vulkan の装置名）、画面の解像度、hostname、uptime | p002 |
 
 「準備中」の頁: 項目の icon・題・一行の説明を card に置き、「This page is coming in a later version of Kei.」と表示する（検索にも出る）。
