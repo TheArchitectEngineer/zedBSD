@@ -81,32 +81,6 @@ zwl_switcher_step(
 }
 
 /*
- * Takes the fingers' travel across the pad (micrometres, positive to the
- * right): a step for each ZWL_SWITCHER_STEP_UM, the rest kept for the
- * next.  Returns the steps taken (negative to the left).
- */
-int
-zwl_switcher_travel(
-	struct zwl_switcher *switcher,
-	int32_t dx_um)
-{
-	int steps;
-
-	/* Only while on. */
-	if (!switcher->on)
-		return 0;
-
-	/* Whole steps; the rest waits. */
-	switcher->travel_um += dx_um;
-	steps = switcher->travel_um / ZWL_SWITCHER_STEP_UM;
-	switcher->travel_um -= steps * ZWL_SWITCHER_STEP_UM;
-	zwl_switcher_step(switcher, steps);
-
-	/* Succeeded: the steps. */
-	return steps;
-}
-
-/*
  * Gives the selected application's key, or NULL while off.
  */
 const char *

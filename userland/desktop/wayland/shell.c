@@ -437,6 +437,12 @@ static void bar_cover_log(struct zwl_server *server, const struct zwl_object *co
 static int home_without_bar(struct zwl_server *server, uint32_t button, uint32_t state);
 static float wiseview_progress(struct zwl_server *server);
 static void wiseview_settle(struct zwl_server *server, float from, float to);
+static void wiseview_choose(struct zwl_server *server, const char *via);
+static void wiseview_move(struct zwl_server *server, int step);
+static int wiseview_pad_swipe(struct zwl_server *server, unsigned direction);
+static int gesture_fullscreen(struct zwl_server *server, uint32_t gesture);
+static int gesture_undock(struct zwl_server *server);
+static unsigned gesture_as_swipe(uint32_t gesture);
 static void gesture_wiseview(struct zwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
 static void gesture_desktop(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
 static int gesture_may_start(struct zwl_server *server);
@@ -5541,8 +5547,9 @@ static void
 wiseview_open_key(
 	struct zwl_server *server)
 {
-	/* The window on top is the one Enter comes back to (a sheet's parent for a sheet). */
+	/* The window on top is the one Enter comes back to (a sheet's parent for a sheet); a swipe in it begins afresh. */
 	server->wiseview_current = sheet_owner(zwl_top_window(server));
+	zwl_swipe_end(&server->pad_swipe);
 
 	/* Wiseview opens as it does at the end of the gesture. */
 	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)zwl_milliseconds());
@@ -5561,11 +5568,6 @@ wiseview_key(
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_object *windows[WISEVIEW_WINDOWS];
-	struct zwl_object *surface;
-	unsigned count;
-	unsigned index;
-	int position;
 	int step;
 
 	/* Only a press acts. */
@@ -5586,18 +5588,7 @@ wiseview_key(
 
 	/* Enter and Space choose the current tile. */
 	if (key == KEY_ENTER || key == KEY_SPACE) {
-		surface = server->wiseview_current;
-
-		/* Without a current window there is nothing to come back to: Wiseview only closes. */
-		if (surface == NULL || surface->dead || !surface->mapped) {
-			wiseview_close_key(server);
-			return;
-		}
-
-		/* A minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
-		zwl_glass_switch_to(server, surface, "wiseview");
-		printf("ZWL WISEVIEW select surface=%u via=key client=%llu\n", surface->id, (unsigned long long)surface->client->number);
-		wiseview_settle(server, wiseview_progress(server), 0.0f);
+		wiseview_choose(server, "key");
 		return;
 	}
 
@@ -5616,6 +5607,48 @@ wiseview_key(
 	/* Any other key does nothing. */
 	if (step == 0)
 		return;
+
+	/* The current tile moves. */
+	wiseview_move(server, step);
+}
+
+/*
+ * Chooses Wiseview's current tile (Enter, Space, a swipe of two fingers
+ * down): its window comes back from minimized, to the top as the layout
+ * mode is, and Wiseview closes; without a current window it only closes.
+ */
+static void
+wiseview_choose(
+	struct zwl_server *server,
+	const char *via)
+{
+	struct zwl_object *surface;
+	float progress;
+
+	/* Without a current window there is nothing to come back to: Wiseview only closes. */
+	surface = server->wiseview_current;
+	if (surface == NULL || surface->dead || !surface->mapped) {
+		wiseview_close_key(server);
+		return;
+	}
+
+	/* A minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
+	zwl_glass_switch_to(server, surface, "wiseview");
+	printf("ZWL WISEVIEW select surface=%u via=%s client=%llu\n", surface->id, via, (unsigned long long)surface->client->number);
+	progress = wiseview_progress(server);
+	wiseview_settle(server, progress, 0.0f);
+}
+
+/* Moves Wiseview's current tile a step on (1) or back (-1), round the ends; without a current tile, to the first. */
+static void
+wiseview_move(
+	struct zwl_server *server,
+	int step)
+{
+	struct zwl_object *windows[WISEVIEW_WINDOWS];
+	unsigned count;
+	unsigned index;
+	int position;
 
 	/* The tiles, in the order Wiseview lays them out; none, nothing to move. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
@@ -5820,8 +5853,6 @@ draw_wiseview(
 	struct shell_rect body;
 	struct shell_rect rect;
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	char header[96];
-	char number[16];
 	const char *footer;
 	float ink[4];
 	float wash[4];
@@ -5884,22 +5915,20 @@ draw_wiseview(
 		draw_tile(server, command, windows[slot], &rect, progress, 0, 1);
 	}
 
-	/* The header: what is shown, and how many. */
+	/*
+	 * No title (BUG-216: Wiseview's name is not drawn); one window alone
+	 * says there are no others.
+	 */
 	memcpy(ink, dark, sizeof(ink));
 	ink[3] = progress;
-	(void)snprintf(number, sizeof(number), "%u", count);
-	(void)kl_tr_format(header, sizeof(header), kl_trn("Wiseview  -  {1} window", "Wiseview  -  {1} windows", count), number, (const char *)NULL);
-	glass_draw_text(server, command, SIZE_TITLE, WISEVIEW_SIDE, ZWL_GLASS_BAR + 34, header, 400, ink);
-
-	/* One window alone: say there are no others. */
 	if (count == 1U)
-		glass_draw_text(server, command, SIZE_BAR, WISEVIEW_SIDE, ZWL_GLASS_BAR + 54, kl_tr("No other windows"), 400, ink);
+		glass_draw_text(server, command, SIZE_BAR, WISEVIEW_SIDE, ZWL_GLASS_BAR + 34, kl_tr("No other windows"), 400, ink);
 
-	/* The footer: a handle and how to go back. */
+	/* The footer: a handle and how to choose (two fingers across, then down, ws142-p009). */
 	ink[3] = progress * 0.35f;
 	glass_draw_solid(server, command, (float)((int32_t)server->width / 2 - 24), (float)((int32_t)server->height - 44), 48.0f, 5.0f, 2.5f, ink);
 	ink[3] = progress * 0.7f;
-	footer = kl_tr("Swipe down to return to your window");
+	footer = kl_tr("Swipe left or right to choose · Swipe down to open");
 	width = glass_text_width(server, SIZE_BAR, footer);
 	glass_draw_text(server, command, SIZE_BAR, ((int32_t)server->width - width) / 2, (int32_t)server->height - 18, footer, 400, ink);
 
@@ -6614,6 +6643,54 @@ zwl_glass_draw_preview(
 }
 
 /*
+ * Takes the touch pad's two-finger scroll while the switcher or Wiseview
+ * shows (ws142-p009): it is no client's, and one swipe (from the fingers
+ * landing until they lift) is one step, or a swipe down that brings or
+ * chooses (swipe.c).  Returns 1 when the scroll was taken.
+ */
+int
+zwl_glass_pad_scroll(
+	struct zwl_server *server,
+	int32_t vertical,
+	int32_t horizontal,
+	int natural)
+{
+	unsigned direction;
+	int32_t across_um;
+	int32_t down_um;
+	int showing;
+	int taken;
+
+	/* Only while the switcher or Wiseview (its opening gesture done) shows. */
+	showing = wiseview_showing(server);
+	if (server->wiseview_gesture)
+		showing = 0;
+	if (!server->switcher.on && !showing)
+		return 0;
+
+	/* The fingers' way (natural scrolling turned back), notches back to travel. */
+	across_um = horizontal * ZWL_TOUCHPAD_NOTCH_UM;
+	down_um = vertical * ZWL_TOUCHPAD_NOTCH_UM;
+	if (natural) {
+		across_um = -across_um;
+		down_um = -down_um;
+	}
+
+	/* What the swipe decided now, if anything. */
+	direction = zwl_swipe_take(&server->pad_swipe, across_um, down_um);
+	if (direction != ZWL_SWIPE_NONE)
+		printf("ZWL SWIPE %s via=pad\n", zwl_swipe_name(direction));
+
+	/* The switcher first, else Wiseview. */
+	taken = zwl_switch_pad_swipe(server, direction);
+	if (!taken)
+		(void)wiseview_pad_swipe(server, direction);
+
+	/* Succeeded: the scroll is taken. */
+	return 1;
+}
+
+/*
  * Carries out a touch pad gesture (touchpad.c, ws142-p003): two fingers up
  * from the pad's bottom edge or three fingers up open Wiseview, two
  * fingers in from the left or the right edge switch to the desktop on that
@@ -6632,7 +6709,9 @@ zwl_glass_gesture(
 {
 	const char *name;
 	const char *phase_name;
+	unsigned direction;
 	int switching;
+	int taken;
 	int may;
 
 	/* Logged, for the tests. */
@@ -6640,11 +6719,25 @@ zwl_glass_gesture(
 	phase_name = gesture_phase_name(phase);
 	printf("ZWL GESTURE kind=%s phase=%s travel_um=%d speed=%d\n", name, phase_name, travel_um, speed);
 
-	/* While the switcher is on, a tap of three fingers moves it on, and nothing else starts (switcher-shell.c). */
+	/* A scrolling touch lifted: the next swipe of Wiseview or the switcher is another (ws142-p009). */
+	if (gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2) {
+		zwl_swipe_end(&server->pad_swipe);
+		return;
+	}
+
+	/*
+	 * While the switcher is on, a tap of three fingers moves it on, an
+	 * edge's swipe of two fingers is a swipe of it (ws142-p009), and
+	 * nothing else starts (switcher-shell.c).
+	 */
 	switching = zwl_switch_on(server);
 	if (switching) {
-		if (gesture == ZWL_TOUCHPAD_GESTURE_TAP3)
+		if (gesture == ZWL_TOUCHPAD_GESTURE_TAP3) {
 			zwl_switch_step(server, 1, "tap3");
+		} else if (phase == ZWL_TOUCHPAD_PHASE_BEGIN) {
+			direction = gesture_as_swipe(gesture);
+			(void)zwl_switch_pad_swipe(server, direction);
+		}
 		return;
 	}
 
@@ -6660,21 +6753,43 @@ zwl_glass_gesture(
 		return;
 	}
 
-	/* Otherwise only a beginning, or a tap, starts anything, and only where a gesture may. */
+	/* Otherwise only a beginning, or a tap, starts anything. */
 	if (phase != ZWL_TOUCHPAD_PHASE_BEGIN && gesture != ZWL_TOUCHPAD_GESTURE_TAP3)
 		return;
+
+	/* While Wiseview shows, an edge's swipe of two fingers is a swipe of its tiles (from the top edge down chooses). */
+	if (phase == ZWL_TOUCHPAD_PHASE_BEGIN) {
+		direction = gesture_as_swipe(gesture);
+		taken = wiseview_pad_swipe(server, direction);
+		if (taken)
+			return;
+	}
+
+	/* A fullscreen window: two fingers from the bottom or the top edge dock it (BUG-228, ws142-p009). */
+	taken = gesture_fullscreen(server, gesture);
+	if (taken)
+		return;
+
+	/* Every other gesture starts only where a gesture may. */
 	may = gesture_may_start(server);
 	if (!may)
 		return;
+
+	/* Two fingers from the top edge down: the docked window floats again (BUG-224), nothing otherwise. */
+	if (gesture == ZWL_TOUCHPAD_GESTURE_TOP2) {
+		(void)gesture_undock(server);
+		return;
+	}
 
 	/* Each gesture. */
 	switch (gesture) {
 	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
 	case ZWL_TOUCHPAD_GESTURE_UP3:
-		/* Wiseview starts opening; the window on top is the current tile. */
+		/* Wiseview starts opening; the window on top is the current tile; a swipe in it begins afresh. */
 		server->wiseview_gesture = 1;
 		server->wiseview_pad = 1;
 		server->wiseview_current = sheet_owner(zwl_top_window(server));
+		zwl_swipe_end(&server->pad_swipe);
 		printf("ZWL WISEVIEW gesture via=pad\n");
 		gesture_wiseview(server, phase, travel_um, speed);
 		break;
@@ -6792,6 +6907,126 @@ gesture_desktop(
 	}
 }
 
+/*
+ * Takes a swipe of two fingers while Wiseview shows (ws142-p009, BUG-216):
+ * to the right the next tile, to the left the one before, down chooses the
+ * current tile.  Returns 1 when Wiseview took it (it shows, its own opening
+ * gesture done).
+ */
+static int
+wiseview_pad_swipe(
+	struct zwl_server *server,
+	unsigned direction)
+{
+	int showing;
+
+	/* Only Wiseview shown, not while its opening gesture holds it. */
+	showing = wiseview_showing(server);
+	if (!showing || server->wiseview_gesture)
+		return 0;
+
+	/* Each swipe's work; up, or no decision yet, does nothing. */
+	if (direction == ZWL_SWIPE_RIGHT) {
+		printf("ZWL WISEVIEW select step=+1 via=swipe\n");
+		wiseview_move(server, 1);
+	} else if (direction == ZWL_SWIPE_LEFT) {
+		printf("ZWL WISEVIEW select step=-1 via=swipe\n");
+		wiseview_move(server, -1);
+	} else if (direction == ZWL_SWIPE_DOWN) {
+		wiseview_choose(server, "swipe");
+	}
+
+	/* Succeeded: the swipe is Wiseview's. */
+	return 1;
+}
+
+/*
+ * Takes two fingers from the bottom or the top edge over a fullscreen
+ * window (BUG-228, the 2026-10-06 user decision, one step at a time): the
+ * window leaves fullscreen docked, and the session's layout mode becomes
+ * docked.  Returns 1 when it took the gesture.
+ */
+static int
+gesture_fullscreen(
+	struct zwl_server *server,
+	uint32_t gesture)
+{
+	struct zwl_object *top;
+	float home;
+	int error;
+
+	/* Only the edges' two fingers up from the bottom and down from the top. */
+	if (gesture != ZWL_TOUCHPAD_GESTURE_BOTTOM2 && gesture != ZWL_TOUCHPAD_GESTURE_TOP2)
+		return 0;
+
+	/* Not over the login and lock screens, nor App Home. */
+	if (server->greeter || server->locked)
+		return 0;
+	home = zwl_home_progress(server);
+	if (home > 0.0f)
+		return 0;
+
+	/* The window on top, fullscreen. */
+	top = zwl_top_window(server);
+	if (top == NULL || !top->fullscreen)
+		return 0;
+
+	/* Docked from now on: the window leaves fullscreen into the docked space (zwl_glass_unfullscreen_docks). */
+	layout_set(server, ZWL_LAYOUT_DOCKED, gesture_name(gesture));
+	error = zwl_window_leave_fullscreen(top);
+	printf("ZWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", top->id, gesture_name(gesture), error, (unsigned long long)top->client->number);
+
+	/* Succeeded: the gesture was the fullscreen window's way out. */
+	return 1;
+}
+
+/*
+ * Takes two fingers from the top edge down over a docked window (BUG-224):
+ * it floats again at its place before, and the session's layout mode
+ * becomes windowed.  Returns 1 when a window floated.
+ */
+static int
+gesture_undock(
+	struct zwl_server *server)
+{
+	struct zwl_object *top;
+
+	/* The window on top (a sheet's parent for a sheet), docked and not fullscreen. */
+	top = sheet_owner(zwl_top_window(server));
+	if (top == NULL || !top->maximized || top->fullscreen)
+		return 0;
+
+	/* Floating where it was before it docked. */
+	window_undock(server, top, top->restore_x, top->restore_y, "top2");
+
+	/* Succeeded: the window floats. */
+	return 1;
+}
+
+/*
+ * Gives what an edge's gesture of two fingers is as a swipe (while Wiseview
+ * or the switcher shows): from the left edge the fingers go right, from the
+ * right edge left, from the top edge down, from the bottom edge up.
+ */
+static unsigned
+gesture_as_swipe(
+	uint32_t gesture)
+{
+	/* Each edge's way. */
+	switch (gesture) {
+	case ZWL_TOUCHPAD_GESTURE_LEFT2:
+		return ZWL_SWIPE_RIGHT;
+	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
+		return ZWL_SWIPE_LEFT;
+	case ZWL_TOUCHPAD_GESTURE_TOP2:
+		return ZWL_SWIPE_DOWN;
+	case ZWL_TOUCHPAD_GESTURE_BOTTOM2:
+		return ZWL_SWIPE_UP;
+	default:
+		return ZWL_SWIPE_NONE;
+	}
+}
+
 /* Tells whether a touch pad gesture may start: not over the login and lock screens, a fullscreen window (D6), App Home, Wiseview or another swipe. */
 static int
 gesture_may_start(
@@ -6845,6 +7080,10 @@ gesture_name(
 		return "right2";
 	case ZWL_TOUCHPAD_GESTURE_TAP3:
 		return "tap3";
+	case ZWL_TOUCHPAD_GESTURE_TOP2:
+		return "top2";
+	case ZWL_TOUCHPAD_GESTURE_SWIPE2:
+		return "swipe2";
 	default:
 		return "none";
 	}
