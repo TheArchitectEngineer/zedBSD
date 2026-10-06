@@ -2,7 +2,7 @@
 
 # ws131-p022: compositor の log の接頭辞を KWL に（試験と同時に）
 
-Status: in-progress（q820、P1。置き換えと build・host の確認まで済み、T1 の結果待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-275 の PNG（Q1 が見た）、後の回帰（T1-281: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress、T1-295 menu-p003、Linux の 8 app の PNG、FreeBSD の backend-test）も PASS）（旧: in-progress（q820、P1。置き換えと build・host の確認まで済み、T1 の結果待ち））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q820（2026-10-06）

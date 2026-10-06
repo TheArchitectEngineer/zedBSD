@@ -4,7 +4,7 @@
 
 Phase ID: `ws161-p004`
 Parent: [WS161](../ws.md)
-Status: in-progress（2026-10-05 P1 q773: 中心の module と host 試験。2026-10-06 P2: os 層・道具 `fidoctl`・build の登録と host 試験。T1 の QEMU 待ち。規約の 38 件は p007）
+Status: cleared（2026-10-07 Q1 の判定: T1-274 PASS（fidoctl-p004: list が hidraw0、info は鍵が無く GetInfo の I/O error で status=1、verify の通過と誤署名の拒否）。p002・p003 の試験は流していない）（旧: in-progress（2026-10-05 P1 q773: 中心の module と host 試験。2026-10-06 P2: os 層・道具 `fidoctl`・build の登録と host 試験。T1 の QEMU 待ち。規約の 38 件は p007））
 Phase disposition: normal
 Queue: q773
 
