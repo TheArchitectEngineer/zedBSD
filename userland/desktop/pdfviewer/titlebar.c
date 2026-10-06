@@ -91,6 +91,8 @@ pv_titlebar_open(
 		pv_log("TITLEBAR none errno=%d", error);
 		return 0;
 	}
+
+	/* Another failure is told; the controls are shown. */
 	if (error != 0)
 		return error;
 	titlebar->shown = 1;
@@ -159,7 +161,9 @@ pv_titlebar_focus_find(
 
 /*
  * Takes the find field's text: as it is typed, Find looks for it from the
- * page in view; Enter in it shows the next place (ws128-p004).
+ * page in view; Enter in it shows the next place and leaves the field with
+ * the keyboard and its text, so that Enter again goes on (ws128-p004,
+ * q826).
  */
 void
 pv_titlebar_input(
@@ -167,8 +171,9 @@ pv_titlebar_input(
 	struct pv_app *app,
 	const struct kl_window_event *input)
 {
+	int error;
+
 	/* Only the find field's. */
-	(void)titlebar;
 	if (input->id != (int32_t)CONTROL_FIND)
 		return;
 
@@ -178,9 +183,20 @@ pv_titlebar_input(
 		return;
 	}
 
-	/* Enter: the next place. */
-	if (input->kind == KL_WINDOW_CONTROL_DONE && input->code == KL_TEXT_SUBMITTED)
-		pv_find_next(app, 1);
+	/* Only Enter ends it otherwise than by leaving it. */
+	if (input->kind != KL_WINDOW_CONTROL_DONE || input->code != KL_TEXT_SUBMITTED)
+		return;
+
+	/* The next place. */
+	pv_find_next(app, 1);
+
+	/* The field keeps the query (the compositor's field starts from the control's text) and takes the keyboard again. */
+	if (!titlebar->shown)
+		return;
+	error = kl_window_set_control_text(titlebar->window->kui, CONTROL_FIND, input->text, "Find");
+	if (error == 0)
+		error = kl_window_focus_control(titlebar->window->kui, CONTROL_FIND);
+	pv_log("FIND keep error=%d", error);
 }
 
 void
