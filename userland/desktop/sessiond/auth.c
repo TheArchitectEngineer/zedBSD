@@ -39,8 +39,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* The most of passkey's answer after its user ID that is passed on (styles=, pin= fido2=, id=). */
-#define AUTH_EXTRA_MAX		256U
+/* The most of passkey's answer after its user ID that is passed on (styles=, pin= fido2= key=..., id=); ENROLLED's line must hold it. */
+#define AUTH_EXTRA_MAX		480U
 
 /* The longest reason word passkey answers. */
 #define AUTH_REASON_MAX		32U

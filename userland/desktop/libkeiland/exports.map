@@ -149,6 +149,10 @@
 		kl_system_account_administer;
 		kl_system_account_set_pin;
 		kl_system_account_enrolled;
+		kl_system_account_keys;
+		kl_system_account_add_key;
+		kl_system_account_remove_key;
+		kl_system_account_touched;
 		kl_system_account_refusal;
 		kl_system_monitor_open;
 		kl_system_monitor_take;

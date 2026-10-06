@@ -93,6 +93,12 @@ struct system_view {
 	unsigned enrolled_known;
 	unsigned enrolled_pin;
 	unsigned enrolled_keys;
+	struct kl_system_key keys[KL_SYSTEM_KEYS_MAX];
+	size_t key_count;
+	struct kl_system_key keys_pending[KL_SYSTEM_KEYS_MAX];
+	size_t keys_pending_count;
+	unsigned touched;
+	uint32_t touched_request;
 	struct kl_sharing_state sharing;
 	struct kl_sharing_state sharing_pending;
 	unsigned sharing_touched;

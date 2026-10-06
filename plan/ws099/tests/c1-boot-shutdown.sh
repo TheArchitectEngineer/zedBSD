@@ -48,9 +48,10 @@ count_seen() {
 
 # 1. Boot, watched from the emulator's start.
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
-rm -f "$out/boot.stop"
+# A new stop file for each run (2026-10-06 user: deleting is Q1's step, so no old one is removed).
+stop="$out/boot.stop.$$"
 env -u VENUS_SIZE timeout 180 sh plan/ws035/tests/zdesktop-guest.sh start "$image" >/dev/null 2>&1
-python3 plan/ws099/tests/c1-watch.py "$out/boot" --runtime "$GUEST_RUNTIME" --seconds 150 --stop "$out/boot.stop" > "$out/boot.txt" 2>&1 &
+python3 plan/ws099/tests/c1-watch.py "$out/boot" --runtime "$GUEST_RUNTIME" --seconds 150 --stop "$stop" > "$out/boot.txt" 2>&1 &
 watcher=$!
 tries=0
 while [ $tries -lt 60 ]; do
@@ -61,7 +62,7 @@ while [ $tries -lt 60 ]; do
 done
 [ "${found:-0}" -ge 1 ] 2>/dev/null || { echo "boot: kei's desktop not reached"; status=1; }
 sleep "$C1_SETTLE_S"
-touch "$out/boot.stop"
+touch "$stop"
 wait $watcher
 set -- $(count_seen "$out/boot.txt")
 boot_black=$1 boot_text=$2

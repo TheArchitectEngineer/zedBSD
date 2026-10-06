@@ -108,6 +108,11 @@ static struct {
 	char pin_value[16];
 	unsigned pin_set;
 	unsigned enrolled_asked;
+	/* The keys (ws172-p003): one added (its label) or removed; the addition is touched first. */
+	unsigned key_asked;
+	unsigned key_add;
+	char key_label[KL_BACKEND_KEY_LABEL];
+	unsigned key_count;
 	char reason[24];
 	char home[64];
 	unsigned stop;
@@ -307,6 +312,67 @@ kl_backend_session_enrolled_get(const struct kl_backend *backend, unsigned *pin,
 	*pin = world.pin_set;
 	*keys = 0U;
 	pthread_mutex_unlock(&world.lock);
+}
+
+size_t
+kl_backend_session_keys_get(const struct kl_backend *backend, struct kl_backend_key *keys, size_t capacity)
+{
+	(void)backend;
+	pthread_mutex_lock(&world.lock);
+	if (world.key_count != 0U && capacity != 0U) {
+		snprintf(keys[0].ref, sizeof(keys[0].ref), "0123456789abcdef");
+		snprintf(keys[0].label, sizeof(keys[0].label), "%s", world.key_label);
+	}
+	pthread_mutex_unlock(&world.lock);
+	return world.key_count;
+}
+
+int
+kl_backend_session_add_key(struct kl_backend *backend, const char *password, const char *label, const char *pin)
+{
+	int error;
+
+	(void)backend;
+	(void)pin;
+	pthread_mutex_lock(&world.lock);
+	error = 0;
+	if (world.pin_asked || world.enrolled_asked || world.key_asked) {
+		error = EBUSY;
+	} else {
+		world.key_asked = 1U;
+		world.key_add = 1U;
+		snprintf(world.pin_password, sizeof(world.pin_password), "%s", password);
+		snprintf(world.key_label, sizeof(world.key_label), "%s", label);
+	}
+	pthread_mutex_unlock(&world.lock);
+	return error;
+}
+
+int
+kl_backend_session_remove_key(struct kl_backend *backend, const char *password, const char *ref)
+{
+	int error;
+
+	(void)backend;
+	(void)ref;
+	pthread_mutex_lock(&world.lock);
+	error = 0;
+	if (world.pin_asked || world.enrolled_asked || world.key_asked) {
+		error = EBUSY;
+	} else {
+		world.key_asked = 1U;
+		world.key_add = 0U;
+		snprintf(world.pin_password, sizeof(world.pin_password), "%s", password);
+	}
+	pthread_mutex_unlock(&world.lock);
+	return error;
+}
+
+int
+kl_backend_session_cancel(struct kl_backend *backend)
+{
+	(void)backend;
+	return 0;
 }
 
 const char *
@@ -766,6 +832,10 @@ serve_pass(void)
 	unsigned unlock;
 	int unlock_error;
 	unsigned enrolled;
+	unsigned key;
+	unsigned key_add;
+	int key_error;
+	int touched;
 	int error;
 	int owned;
 
@@ -833,6 +903,26 @@ serve_pass(void)
 			pthread_mutex_unlock(&world.lock);
 		}
 	}
+
+	/* sessiond's answer to a key's change (ws172-p003): an addition is touched first; the password "kei" alone is good. */
+	pthread_mutex_lock(&world.lock);
+	key = world.key_asked;
+	world.key_asked = 0U;
+	key_add = world.key_add;
+	key_error = 0;
+	world.reason[0] = '\0';
+	if (key && strcmp(world.pin_password, "kei") != 0) {
+		key_error = EACCES;
+		snprintf(world.reason, sizeof(world.reason), "bad-secret");
+	} else if (key) {
+		world.key_count = key_add;
+	}
+	pthread_mutex_unlock(&world.lock);
+	if (key && key_add)
+		touched = kwl_system_key_touch(&server);
+	if (key)
+		(void)kwl_system_pin_answer(&server, key_error);
+	(void)touched;
 
 	/* sessiond's answer to a PIN's change, and to ENROLLED (ws172-p002). */
 	pthread_mutex_lock(&world.lock);
@@ -1219,6 +1309,9 @@ test_both_ends(void)
 	uint32_t request;
 	char pin_path[128];
 	char reason[32];
+	struct kl_system_key listed_keys[5];
+	uint32_t touched_request;
+	size_t listed;
 	unsigned pin;
 	unsigned keys;
 	unsigned seen;
@@ -1248,7 +1341,7 @@ test_both_ends(void)
 		return;
 	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
 	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY | KL_SYSTEM_HAS_KEYS), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
@@ -1523,6 +1616,25 @@ test_both_ends(void)
 	expect_result(display, system, first, 0, "PIN removed");
 	(void)pump(display, system, until_enrolled, 400);
 	CHECK(kl_system_account_enrolled(system, &pin, &keys) == 1 && pin == 0U, "the PIN gone");
+
+	/* The security keys (ws172-p003): offered, added with a touch told, listed with their label, a wrong password refused, removed. */
+	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_KEYS) != 0U, "keys offered");
+	CHECK(kl_system_account_add_key(system, "kei", "YubiKey 5", "1234", &first) == 0, "a key's addition asked");
+	expect_result(display, system, first, 0, "a key added");
+	CHECK(kl_system_account_touched(system, &touched_request) == 1 && touched_request == first, "the touch told for the addition");
+	CHECK(kl_system_account_touched(system, &touched_request) == 0, "the touch told once");
+	(void)pump(display, system, until_enrolled, 400);
+	listed = kl_system_account_keys(system, listed_keys, 5U);
+	CHECK(listed == 1U && strcmp(listed_keys[0].ref, "0123456789abcdef") == 0 && strcmp(listed_keys[0].label, "YubiKey 5") == 0, "the key listed");
+	CHECK(kl_system_account_add_key(system, "kei", "a:b", "1234", &first) == EINVAL, "a label with a colon is refused by the library");
+	CHECK(kl_system_account_remove_key(system, "wrong", "0123456789abcdef", &first) == 0, "a removal with a wrong password asked");
+	expect_result(display, system, first, EPERM, "keys: the password wrong");
+	(void)pump(display, system, until_enrolled, 400);
+	CHECK(kl_system_account_remove_key(system, "kei", "0123456789abcdef", &first) == 0, "a key's removal asked");
+	expect_result(display, system, first, 0, "the key removed");
+	(void)pump(display, system, until_enrolled, 400);
+	listed = kl_system_account_keys(system, listed_keys, 5U);
+	CHECK(listed == 0U, "no key listed");
 
 	/* Close, and no protocol error on the way; the closed system's asking for scans went with it. */
 	kl_system_close(system);

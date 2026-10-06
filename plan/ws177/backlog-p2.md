@@ -52,3 +52,7 @@
 | WS172 ws172-p003 | helper が process を作れないこと | zedBSD に RLIMIT_NPROC か同等の制限を入れて helper に掛ける（今は空の root で exec の program が無いことだけ） | `passkey-fido2/helper.c` の `helper_sandbox`、kernel | 2026-10-06 |
 | WS172 ws172-p003 | label の長さ | 32 文字（UTF-8 の文字）で数える（今は 32 byte） | `passkey-fido2/wire.c` の `fido2_label_valid` | 2026-10-06 |
 | WS172 ws172-p003 | 壊れた鍵の行 | 一度だけ log に出す（今は黙って飛ばす） | `passkey-fido2/main.c` の `main_keys` | 2026-10-06 |
+| WS165 ws165-p002（手書きの照合） | 書いた線が 1 点だけ・極端に少ない | 認識しない・候補を出さないと伝える（今は 1 点の雲で何かを候補にする） | `wayland/hand-cloud.c` の `hand_cloud_make` | 2026-10-06 |
+| WS165 ws165-p002 | templates の file が無い・壊れている | 手書きの面に「認識の data が無い」と出す（今は読みの失敗で template 0 個） | p003 の compositor の読み、`hand_templates_parse` | 2026-10-06 |
+| WS165 ws165-p002 | Hershey の太さの重ね線が濁点の位置に来る字（ほ・ぼ） | 手本から重ね線を除く（変換の時に近い平行の線をまとめる） | `packages/fonts/hand-hershey/convert.py` | 2026-10-06 |
+| WS165 ws165-p002 | 濁点・半濁点の位置が本体の中・左上に書かれた | 位置に依らず小さな印を探す（今は右上の 45% の範囲） | `wayland/hand-cloud.c` の `strokes_mark` | 2026-10-06 |

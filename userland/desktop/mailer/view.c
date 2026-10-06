@@ -100,6 +100,7 @@ static void view_reader(struct ml_view *view, struct kl_ui *ui, const struct kl_
 static void view_compose(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static int view_words(const struct kl_style *style, const char *text, int x, int y, int width, unsigned pixels, kl_color color, int draw);
 static void view_avatar(const struct kl_style *style, const char *name, kl_color color, int cx, int cy, int radius);
+static void view_clip(struct kl_canvas *canvas, float x, float y, float size, kl_color color);
 static void view_edge(const struct ml_view *view, const struct kl_style *style, int x, int y, int width);
 static size_t view_shown(const struct ml_view *view, size_t *indices, size_t size);
 static size_t view_unread(const struct ml_view *view, int account, enum ml_folder folder);
@@ -712,9 +713,9 @@ view_row(
 	/* The subject. */
 	(void)kl_text_draw_fit(style->text, style->canvas, left, row->y + 44, message->subject, ML_VIEW_TEXT_SMALL + 1U, unread, row->width - 56, style->theme->text);
 
-	/* A file's mark at the right of it. */
+	/* A paper clip at the right of it when the message has a file (q826-i02: a file's icon at this size looked like a missing glyph). */
 	if ((message->flags & ML_ATTACHMENT) != 0U)
-		kl_icon_file(style->canvas, style->text, (float)(row->x + row->width - 26), (float)row->y + 32.0f, 16.0f, style->theme->text_faint, NULL);
+		view_clip(style->canvas, (float)(row->x + row->width - 24), (float)row->y + 33.0f, 14.0f, style->theme->text_secondary);
 
 	/* A line of the words, the line breaks as spaces. */
 	(void)snprintf(line, sizeof(line), "%s", message->body);
@@ -1325,4 +1326,25 @@ view_notice(
 	/* The words and until when. */
 	(void)snprintf(view->notice, sizeof(view->notice), "%s", message);
 	view->notice_until = now_us + ML_VIEW_NOTICE_US;
+}
+
+/* Draws a paper clip in a square of size from (x, y): a long loop and the inner wire up its middle. */
+static void
+view_clip(
+	struct kl_canvas *canvas,
+	float x,
+	float y,
+	float size,
+	kl_color color)
+{
+	float width;
+	float left;
+
+	/* The loop, as tall as the square and half as wide, round at both ends. */
+	width = 0.5f * size;
+	left = x + 0.25f * size;
+	kl_canvas_round_border(canvas, left, y, width, size, 0.5f * width, 1.5f, color);
+
+	/* The inner wire, from near the bottom up to two thirds. */
+	kl_canvas_line(canvas, left + 0.5f * width, y + 0.30f * size, left + 0.5f * width, y + 0.78f * size, 1.5f, color);
 }

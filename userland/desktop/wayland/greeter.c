@@ -90,6 +90,9 @@
 /* A PIN's digits. */
 #define GREETER_PIN_DIGITS	6U
 
+/* The fewest characters of a security key's own PIN (CTAP 2.1). */
+#define GREETER_KEY_PIN_MIN	4U
+
 /* The power buttons' size, and their gap to the output's edge. */
 #define GREETER_BUTTON_WIDTH	112
 #define GREETER_BUTTON_HEIGHT	36
@@ -204,6 +207,9 @@ static unsigned greeter_styles_asked;
 /* Enter pressed while the session manager answered something else: the secret goes once it is free. */
 static unsigned greeter_submit_pending;
 
+/* A security key waits to be touched for the attempt under way (sessiond's TOUCH, ws172-p003). */
+static unsigned greeter_touch;
+
 /* The characters each key types, without and with Shift (US layout); 0 for none. */
 static const char greeter_plain[GREETER_KEYS] = {
 	0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0,
@@ -238,6 +244,8 @@ static void greeter_draw_power(struct kwl_server *server, VkCommandBuffer comman
 static void greeter_answered(struct kwl_server *server, int error);
 static void greeter_unlock(struct kwl_server *server);
 static void greeter_refused(struct kwl_server *server);
+static unsigned greeter_next_style(void);
+static void greeter_key_refused(const char *reason);
 static void greeter_styles_reset(void);
 static void greeter_styles_ask(struct kwl_server *server);
 static void greeter_styles_take(struct kwl_server *server);
@@ -383,6 +391,18 @@ kwl_greeter_answer(
 	if (!server->greeter && !server->locked)
 		return;
 
+	/* A security key waits to be touched: said until the answer (ws172-p003). */
+	if (request == KL_BACKEND_SESSION_TOUCH) {
+		if (greeter_waiting) {
+			greeter_touch = 1U;
+			server->dirty = 1;
+			printf("KWL GREETER touch\n");
+		}
+
+		/* Not an answer: the attempt still waits. */
+		return;
+	}
+
 	/* The same answers for both. */
 	greeter_answered(server, error);
 }
@@ -496,6 +516,8 @@ kwl_greeter_key(
 	uint32_t key,
 	uint32_t state)
 {
+	int error;
+
 	/* Releases do nothing, and nothing does once the session is starting or the machine ending. */
 	if (state == 0U || greeter_starting || greeter_powering[0] != '\0')
 		return 1;
@@ -518,7 +540,14 @@ kwl_greeter_key(
 		/* The key was the screen's. */
 		return 1;
 	case GREETER_KEY_ESC:
-		/* Esc clears the password. */
+		/* Esc stops a security key's attempt (ws172-p003), or clears the password. */
+		if (greeter_waiting && greeter_style == KL_BACKEND_STYLE_KEY) {
+			error = kl_backend_session_cancel(server->backend);
+			printf("KWL GREETER cancel error=%d\n", error);
+			return 1;
+		}
+
+		/* Otherwise what was typed goes. */
 		greeter_erase();
 		return 1;
 	case GREETER_KEY_UP:
@@ -763,7 +792,7 @@ greeter_hit(
 	if (inside)
 		return GREETER_HIT_LOGIN;
 	inside = greeter_inside(layout->link, server->pointer_x, server->pointer_y);
-	if (inside && (greeter_styles & KL_BACKEND_STYLE_PIN) != 0U)
+	if (inside && (greeter_styles & (KL_BACKEND_STYLE_PIN | KL_BACKEND_STYLE_KEY)) != 0U)
 		return GREETER_HIT_SWITCH;
 	inside = greeter_inside(layout->restart, server->pointer_x, server->pointer_y);
 	if (inside)
@@ -813,6 +842,7 @@ greeter_draw_card(
 	const struct greeter_user *user;
 	const float *color;
 	const char *link;
+	unsigned next;
 	char letter[2];
 	int32_t middle;
 	int32_t baseline;
@@ -881,18 +911,23 @@ greeter_draw_card(
 	baseline = layout->field[1] + GREETER_FIELD + 28;
 	if (greeter_starting) {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, kl_tr("Starting session..."), GREETER_CARD_WIDTH - 32, faint);
+	} else if (greeter_waiting && greeter_touch) {
+		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, kl_tr("Touch your security key."), GREETER_CARD_WIDTH - 32, ink);
 	} else if (greeter_waiting) {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, kl_tr("Checking..."), GREETER_CARD_WIDTH - 32, faint);
 	} else if (greeter_message[0] != '\0') {
 		greeter_draw_centered(server, command, SIZE_TITLE, middle, baseline, greeter_message, GREETER_CARD_WIDTH - 32, warning);
 	}
 
-	/* The link to the other style, while the PIN is one. */
-	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U || greeter_starting)
+	/* The link to the next style, while there is another than the password. */
+	if ((greeter_styles & (KL_BACKEND_STYLE_PIN | KL_BACKEND_STYLE_KEY)) == 0U || greeter_starting)
 		return;
+	next = greeter_next_style();
 	link = kl_tr("Use your password");
-	if (greeter_style == KL_BACKEND_STYLE_PASSWORD)
+	if (next == KL_BACKEND_STYLE_PIN)
 		link = kl_tr("Use your PIN");
+	if (next == KL_BACKEND_STYLE_KEY)
+		link = kl_tr("Use a security key");
 	inside = greeter_inside(layout->link, server->pointer_x, server->pointer_y);
 	color = faint;
 	if (inside)
@@ -925,6 +960,8 @@ greeter_draw_field(
 	hint_text = kl_tr("Password");
 	if (greeter_style == KL_BACKEND_STYLE_PIN)
 		hint_text = kl_tr("PIN");
+	if (greeter_style == KL_BACKEND_STYLE_KEY)
+		hint_text = kl_tr("Security key PIN");
 	if (greeter_password_length == 0U) {
 		glass_draw_text(server, command, SIZE_TITLE, layout->field[0] + 16, layout->field[1] + 28, hint_text, layout->field[2] - 32, hint);
 	}
@@ -1172,8 +1209,16 @@ greeter_submit(
 		return;
 	}
 
+	/* A security key's PIN has at least four characters (CTAP's least). */
+	if (greeter_style == KL_BACKEND_STYLE_KEY && greeter_password_length < GREETER_KEY_PIN_MIN) {
+		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("A security key's PIN has at least four characters."));
+		server->dirty = 1;
+		return;
+	}
+
 	/* The request (unlock on a session's lock screen), through the backend. */
 	greeter_waiting = 1;
+	greeter_touch = 0U;
 	greeter_message[0] = '\0';
 	if (server->locked) {
 		error = kl_backend_session_unlock(server->backend, greeter_style, greeter_password);
@@ -1321,8 +1366,9 @@ greeter_answered(
 {
 	const char *answer;
 
-	/* The screen is redrawn with the result; the answer as the manager said it. */
+	/* The screen is redrawn with the result (no touch is awaited any more); the answer as the manager said it. */
 	server->dirty = 1;
+	greeter_touch = 0U;
 	answer = "?";
 	if (error == 0) {
 		answer = "OK";
@@ -1407,6 +1453,12 @@ greeter_refused(
 		return;
 	}
 
+	/* A security key's refusals (ws172-p003). */
+	if (greeter_style == KL_BACKEND_STYLE_KEY) {
+		greeter_key_refused(reason);
+		return;
+	}
+
 	/* A wrong PIN: said, and whether the PIN is still offered is asked. */
 	if (greeter_style == KL_BACKEND_STYLE_PIN) {
 		snprintf(greeter_message, sizeof(greeter_message), "%s", kl_tr("Wrong PIN. Try again."));
@@ -1472,6 +1524,7 @@ static void
 greeter_styles_take(
 	struct kwl_server *server)
 {
+	struct greeter_layout layout;
 	unsigned styles;
 
 	/* The styles, the password always among them. */
@@ -1480,34 +1533,36 @@ greeter_styles_take(
 	server->dirty = 1;
 	printf("KWL GREETER styles=%u\n", greeter_styles);
 
-	/* No PIN: the password, and what was typed for a PIN goes. */
-	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U) {
-		if (greeter_style == KL_BACKEND_STYLE_PIN)
-			greeter_erase();
+	/* Where the link to the next style is, for the tests' pointer (ws172-p003). */
+	greeter_layout(server, &layout);
+	printf("KWL GREETER link x=%d y=%d width=%d height=%d\n", layout.link[0], layout.link[1], layout.link[2], layout.link[3]);
+
+	/* A style no longer offered gives way to the password, and what was typed for it goes. */
+	if (greeter_style != KL_BACKEND_STYLE_PASSWORD && (greeter_styles & greeter_style) == 0U) {
+		greeter_erase();
 		greeter_style = KL_BACKEND_STYLE_PASSWORD;
-		return;
 	}
+
+	/* No PIN: the password (or the key the user chose). */
+	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U)
+		return;
 
 	/* The PIN first, while nothing is typed and the user did not choose the password. */
 	if (!greeter_style_chosen && greeter_password_length == 0U)
 		greeter_style = KL_BACKEND_STYLE_PIN;
 }
 
-/* Switches the field between the PIN and the password (the link under it). */
+/* Switches the field to the next style the user has: the password, the PIN, a security key (the link under it). */
 static void
 greeter_style_switch(
 	struct kwl_server *server)
 {
-	/* Only while the PIN is offered and no answer is awaited. */
-	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U || greeter_waiting)
+	/* Only while another style than the password is offered and no answer is awaited. */
+	if ((greeter_styles & (KL_BACKEND_STYLE_PIN | KL_BACKEND_STYLE_KEY)) == 0U || greeter_waiting)
 		return;
 
-	/* The other style, with nothing typed. */
-	if (greeter_style == KL_BACKEND_STYLE_PIN) {
-		greeter_style = KL_BACKEND_STYLE_PASSWORD;
-	} else {
-		greeter_style = KL_BACKEND_STYLE_PIN;
-	}
+	/* The next style, with nothing typed. */
+	greeter_style = greeter_next_style();
 
 	/* The user chose it; nothing typed for the other stays. */
 	greeter_style_chosen = 1U;
@@ -1526,4 +1581,61 @@ greeter_erase(
 	memset(greeter_password, 0, sizeof(greeter_password));
 	greeter_password_length = 0U;
 	greeter_submit_pending = 0U;
+}
+
+/*
+ * Gives the style after the field's in the order password, PIN, security
+ * key, among those offered (the password always is).
+ */
+static unsigned
+greeter_next_style(void)
+{
+	/* After the password: the PIN, else a key. */
+	if (greeter_style == KL_BACKEND_STYLE_PASSWORD) {
+		if ((greeter_styles & KL_BACKEND_STYLE_PIN) != 0U)
+			return KL_BACKEND_STYLE_PIN;
+		if ((greeter_styles & KL_BACKEND_STYLE_KEY) != 0U)
+			return KL_BACKEND_STYLE_KEY;
+		return KL_BACKEND_STYLE_PASSWORD;
+	}
+
+	/* After the PIN: a key, else the password. */
+	if (greeter_style == KL_BACKEND_STYLE_PIN && (greeter_styles & KL_BACKEND_STYLE_KEY) != 0U)
+		return KL_BACKEND_STYLE_KEY;
+
+	/* After a key, back to the password. */
+	return KL_BACKEND_STYLE_PASSWORD;
+}
+
+/* Says why a security key's attempt was refused (ws172-p003). */
+static void
+greeter_key_refused(
+	const char *reason)
+{
+	const char *said;
+	int same;
+
+	/* No registered key plugged in. */
+	said = kl_tr("Wrong security key PIN. Try again.");
+	same = strcmp(reason, "no-key");
+	if (same == 0)
+		said = kl_tr("No registered security key is plugged in.");
+
+	/* The key locked itself (too many wrong PINs). */
+	same = strcmp(reason, "key-locked");
+	if (same == 0)
+		said = kl_tr("The security key is locked.");
+
+	/* The key did not answer as it should. */
+	same = strcmp(reason, "device");
+	if (same == 0)
+		said = kl_tr("The security key did not answer.");
+
+	/* A key that may have been copied. */
+	same = strcmp(reason, "cloned");
+	if (same == 0)
+		said = kl_tr("This security key cannot be used.");
+
+	/* The line under the field. */
+	snprintf(greeter_message, sizeof(greeter_message), "%s", said);
 }

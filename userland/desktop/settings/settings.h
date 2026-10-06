@@ -586,10 +586,14 @@ struct se_languages {
 /* The PIN card's fields (ws163-p003): the current password, the new PIN, the new PIN again. */
 #define SE_PIN_FIELDS		3
 
-/* Whose fields have the Users page's keyboard: the password card's, the administration's, or the PIN card's. */
+/* The security keys card's fields (ws172-p003): the current password, the key's name, the key's own PIN. */
+#define SE_KEY_FIELDS		3
+
+/* Whose fields have the Users page's keyboard: the password card's, the administration's, the PIN card's, or the keys card's. */
 #define SE_USERS_KEYBOARD_PASSWORD	0
 #define SE_USERS_KEYBOARD_ADMIN		1
 #define SE_USERS_KEYBOARD_PIN		2
+#define SE_USERS_KEYBOARD_KEYS		3
 
 /* The most users the Users page lists (ws089-p026). */
 #define SE_USERS_LIST_MAX	32
@@ -650,6 +654,11 @@ enum se_admin_mode {
  * closes) and the one with the keyboard, whether a PIN is set (looked up
  * when the card draws), the change asked (a removal or not) and its
  * request's number, and the last answer (bad when it failed).
+ *
+ * The security keys card (ws172-p003, page-users-keys.c): its three
+ * fields (the secrets wiped as the PIN card's) and the one with the
+ * keyboard, the change asked (a removal or not) and its request's number,
+ * whether the key waits to be touched, and the last answer.
  */
 struct se_users {
 	int read;
@@ -685,6 +694,15 @@ struct se_users {
 	uint32_t pin_request;
 	char pin_message[SE_MESSAGE];
 	int pin_bad;
+
+	struct kl_field key_fields[SE_KEY_FIELDS];
+	int key_focus;
+	int key_asked;
+	int key_removing;
+	int key_touch;
+	uint32_t key_request;
+	char key_message[SE_MESSAGE];
+	int key_bad;
 };
 
 /*
@@ -1343,6 +1361,12 @@ int se_users_pin_press(struct se_app *app, int index);
 int se_users_pin_key(struct se_app *app, const struct se_event *event);
 int se_users_pin_result(struct se_app *app, uint32_t request, int error);
 void se_users_pin_wipe(struct se_users *users);
+int se_users_keys_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+int se_users_keys_press(struct se_app *app, int index);
+int se_users_keys_key(struct se_app *app, const struct se_event *event);
+int se_users_keys_result(struct se_app *app, uint32_t request, int error);
+void se_users_keys_touched(struct se_app *app);
+void se_users_keys_wipe(struct se_users *users);
 void se_users_reload(struct se_users *users);
 
 /* What About shows of the machine (about.c). */

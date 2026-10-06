@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws112 -->
 
-# WS112: Linux 5種類のパッケージ作成とCIリリース配布
+# WS112: Debian の package（Debian 13・Ubuntu 26.04 共通の amd64・arm64 と Raspberry Pi OS の arm64）
 
 Status: incomplete
 Primary Milestone: MG007
@@ -8,6 +8,14 @@ Related Milestones: MG001（追跡可能なbuild/配布記録）、MG006（既�
 Parent: [Master](../master.md)
 Queue: q585 / A2（p001契約調査のみ）
 Resume point: **ベータ1（fg019）で優先度は最下位（2026-10-02 user）**。q585-i01/p001 uncleared（有限契約調査終了、D1 Fedora/Arch boot適用のuser返答待ち）。5OS input/署名/形式契約とRPi採用環境を保存。D1判断元/共有Guardrail反映後p001再評価、q591/p002は候補のみ、実装未承認。
+
+
+## 目標の設定し直し（2026-10-06 夜 ユーザー）
+
+「WS112は、Debianパッケージのみにします。Debian 13, Ubuntu 26.04の両方に互換があるamd64/arm64のdebパッケージと、Raspberry Pi OSのarm64のdebパッケージ、この2つのファイルが生成できるようになることを、ゴールに設定し直します。」と、Q1 のクリックの質問への回答「3 つ（amd64・arm64・RPi）」「第 2 段（ベータ2）」。
+- **新しいゴール**: 次の 3 つの deb の file を生成できる。(1) Debian 13・Ubuntu 26.04 の両方に互換の amd64 の deb、(2) 同じく arm64 の deb、(3) Raspberry Pi OS の arm64 の deb。
+- Fedora・Arch・rpm・pacman の package は取りやめる。段はベータ2（第 2 段）、2026-10-05 の「ベータ4 以降」を置き換える。
+- 以下の Objective / scope は以前の 5 種類の計画の記録（取りやめた部分を含む）。
 
 ## Objective / scope
 

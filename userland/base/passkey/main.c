@@ -64,6 +64,7 @@ static int passkey_auth_pin(const char *name, uid_t uid, char *pin);
 static int passkey_styles(const char *name, uid_t uid, int enrolled);
 static int passkey_change_pin(const char *name, uid_t uid, const char *pin);
 static int passkey_fido2(const char *request, size_t length);
+static void passkey_keys_listed(const char *text, size_t length, const char *name, uid_t uid, char *extra, size_t size);
 
 /* Answers one request. */
 int
@@ -418,9 +419,65 @@ passkey_styles(
 		return passkey_ok(uid, extra);
 	}
 
-	/* enrolled: the counts. */
+	/* enrolled: the counts, then each key's reference and label (ws172-p003). */
 	snprintf(extra, sizeof(extra), "pin=%d fido2=%d", pins > 0, keys);
+	if (error == 0)
+		passkey_keys_listed(text, length, name, uid, extra, sizeof(extra));
 	return passkey_ok(uid, extra);
+}
+
+/*
+ * Adds " key=REF/LABEL" for each of the account's keys to a listing: the
+ * key's reference (passkey_record_ref) and its label in hexadecimal, so
+ * that the line has no space of the label's and stays short.
+ */
+static void
+passkey_keys_listed(
+	const char *text,
+	size_t length,
+	const char *name,
+	uid_t uid,
+	char *extra,
+	size_t size)
+{
+	static const char digits[] = "0123456789abcdef";
+	char line[PASSKEY_REQUEST_MAX];
+	char id[PASSKEY_REQUEST_MAX];
+	char label[PASSKEY_FIELD_MAX];
+	char ref[PASSKEY_REF_SIZE];
+	size_t wanted;
+	size_t used;
+	size_t place;
+	unsigned index;
+	int error;
+
+	/* Each key line that has its ID and label. */
+	for (index = 0U; index < PASSKEY_FIDO2_MAX; index++) {
+		error = passkey_record_find(text, length, name, uid, "fido2", index, line, sizeof(line));
+		if (error != 0)
+			break;
+		error = passkey_record_field(line, 3U, id, sizeof(id));
+		if (error == 0)
+			error = passkey_record_field(line, 7U, label, sizeof(label));
+		if (error != 0)
+			continue;
+
+		/* " key=", the reference, "/", the label's bytes as digits, while there is room. */
+		passkey_record_ref(id, ref, sizeof(ref));
+		used = strlen(extra);
+		wanted = 6U + strlen(ref);
+		wanted += 2U * strlen(label);
+		if (used + wanted + 1U > size)
+			break;
+		used += (size_t)snprintf(extra + used, size - used, " key=%s/", ref);
+		for (place = 0U; label[place] != '\0'; place++) {
+			extra[used++] = digits[(unsigned char)label[place] >> 4];
+			extra[used++] = digits[(unsigned char)label[place] & 0x0fU];
+		}
+
+		/* The listing ends after it. */
+		extra[used] = '\0';
+	}
 }
 
 /* Sets (pin not NULL) or removes the account's PIN, under the account files' lock. */

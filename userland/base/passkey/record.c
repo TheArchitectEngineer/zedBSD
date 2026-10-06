@@ -20,6 +20,7 @@
 #include "passkey.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -282,6 +283,72 @@ record_field_is(
 
 	/* The field is the one. */
 	return 1;
+}
+
+/*
+ * Copies a line's field (from 0: name, uid, kind, then the kind's own)
+ * without its colons.  Returns 0, ENOENT for a line with fewer fields, or
+ * ENAMETOOLONG.
+ */
+int
+passkey_record_field(
+	const char *line,
+	unsigned index,
+	char *field,
+	size_t size)
+{
+	const char *start;
+	const char *end;
+	unsigned colons;
+	size_t length;
+
+	/* After the index-th colon. */
+	start = line;
+	for (colons = 0U; colons < index; colons++) {
+		start = strchr(start, ':');
+		if (start == NULL)
+			return ENOENT;
+		start++;
+	}
+
+	/* Up to the next colon or the end. */
+	end = strchr(start, ':');
+	if (end == NULL)
+		end = start + strlen(start);
+	length = (size_t)(end - start);
+	if (length >= size)
+		return ENAMETOOLONG;
+	memcpy(field, start, length);
+	field[length] = '\0';
+
+	/* Succeeded: the field. */
+	return 0;
+}
+
+/*
+ * Writes a key's reference (ws172-p003): the 64-bit FNV-1a hash of its
+ * credential ID's text, as 16 small hexadecimal digits.  It names one of
+ * an account's few keys in a short line (Settings' list, remove-fido2);
+ * it is not a secret and protects nothing.
+ */
+void
+passkey_record_ref(
+	const char *id,
+	char *ref,
+	size_t size)
+{
+	uint64_t hash;
+	size_t index;
+
+	/* FNV-1a over the bytes. */
+	hash = 0xcbf29ce484222325ULL;
+	for (index = 0U; id[index] != '\0'; index++) {
+		hash ^= (uint64_t)(unsigned char)id[index];
+		hash *= 0x100000001b3ULL;
+	}
+
+	/* Its digits. */
+	(void)snprintf(ref, size, "%016llx", (unsigned long long)hash);
 }
 
 /*

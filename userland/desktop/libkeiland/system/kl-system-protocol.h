@@ -136,6 +136,10 @@
  *   event   1 refused(uint request, string reason)                         since version 8 (ws089-p026)
  *   request 3 set_pin(uint request, string current, string pin)            since version 10 (ws163-p003)
  *   event   2 enrolled(uint pin, uint keys)                                since version 11 (ws172-p002)
+ *   request 4 add_key(uint request, string password, string label, string pin)  since version 14 (ws172-p003)
+ *   request 5 remove_key(uint request, string password, string ref)       since version 14 (ws172-p003)
+ *   event   3 key(string ref, string label)                                since version 14 (ws172-p003)
+ *   event   4 touch(uint request)                                          since version 14 (ws172-p003)
  *   The compositor changes the password of the user it runs as, through
  *   the system (zedBSD: passwd; elsewhere unsupported), on a thread of its
  *   own, and answers ok, denied (the current password is wrong), invalid
@@ -167,6 +171,15 @@
  *   (version 11): sent when the object is made, as soon as the session
  *   manager has answered, and again after each change.  Until it comes
  *   neither is known.
+ *   add_key registers the security key plugged in for the user (version
+ *   14): its label (1 to KL_SYSTEM_KEY_LABEL_MAX bytes, no colon), the
+ *   key's own PIN, checked by the user's password (zedBSD: sessiond's
+ *   ENROLL fido2, /usr/libexec/passkey-fido2).  While the key waits to be
+ *   touched, touch(request) comes; then a refusal's word (bad-secret,
+ *   no-key, many-keys, key-locked, timeout, ...) and the result, as
+ *   set_pin's.  remove_key removes one by the reference key gave.  Before
+ *   each enrolled, an object of version 14 hears key(ref, label) for each
+ *   of the user's keys.  Neither secret is logged or kept.
  *
  * kl_system_monitor_v1 (WS134 p012, plan/ws134/design.md section 1.3)
  *   request 0 destroy
@@ -208,7 +221,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		13U
+#define KL_SYSTEM_MANAGER_VERSION		14U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -247,6 +260,9 @@
 
 /* Since when the manager has get_notify (ws156-p002). */
 #define KL_SYSTEM_SINCE_NOTIFY			13U
+
+/* Since when the account has add_key, remove_key, key and touch (ws172-p003). */
+#define KL_SYSTEM_SINCE_KEYS			14U
 
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
@@ -293,9 +309,15 @@
 #define KL_SYSTEM_ACCOUNT_SET_PASSWORD		1U
 #define KL_SYSTEM_ACCOUNT_ADMINISTER		2U
 #define KL_SYSTEM_ACCOUNT_SET_PIN		3U
+#define KL_SYSTEM_ACCOUNT_ADD_KEY		4U
+#define KL_SYSTEM_ACCOUNT_REMOVE_KEY		5U
 #define KL_SYSTEM_ACCOUNT_EVENT_RESULT		0U
 #define KL_SYSTEM_ACCOUNT_EVENT_REFUSED		1U
 #define KL_SYSTEM_ACCOUNT_EVENT_ENROLLED	2U
+#define KL_SYSTEM_ACCOUNT_EVENT_KEY		3U
+#define KL_SYSTEM_ACCOUNT_EVENT_TOUCH		4U
+#define KL_SYSTEM_KEY_LABEL_MAX			32U
+#define KL_SYSTEM_KEY_REF_MAX			16U
 #define KL_SYSTEM_PASSWORD_MAX			256U
 
 /* The longest operation administer carries, and the longest refusal's word (without their NULs). */

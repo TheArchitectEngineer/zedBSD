@@ -39,9 +39,10 @@
 #define PASSKEY_HEADER		"# zedBSD passkey "
 #define PASSKEY_VERSION		1
 
-/* The digits of a PIN, and the most security keys of an account. */
+/* The digits of a PIN, the most security keys of an account, and a key's reference's size (with its NUL). */
 #define PASSKEY_PIN_DIGITS	6U
 #define PASSKEY_FIDO2_MAX	5U
+#define PASSKEY_REF_SIZE	17U
 
 /*
  * A request taken apart: its operation and its fields (the operation's
@@ -63,6 +64,8 @@ int passkey_record_find(const char *text, size_t length, const char *name, uid_t
 int passkey_record_count(const char *text, size_t length, const char *name, uid_t uid, const char *kind);
 int passkey_record_replace(const char *text, size_t length, const char *name, const char *kind, const char *added,
     char *output, size_t capacity, size_t *written);
+int passkey_record_field(const char *line, unsigned index, char *field, size_t size);
+void passkey_record_ref(const char *id, char *ref, size_t size);
 int passkey_record_edit(const char *text, size_t length, const char *name, const char *kind, const char *field,
     const char *added, char *output, size_t capacity, size_t *written);
 

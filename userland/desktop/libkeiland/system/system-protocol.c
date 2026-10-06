@@ -237,6 +237,8 @@ static const struct wl_message system_account_requests[] = {
 	{ "set_password", "uss", system_plain_types },
 	{ "administer", "8uss", system_plain_types },
 	{ "set_pin", "10uss", system_plain_types },
+	{ "add_key", "14usss", system_plain_types },
+	{ "remove_key", "14uss", system_plain_types },
 };
 
 /* The events of kl_system_account_v1 (refused since version 8, ws089-p026; enrolled since 11, ws172-p002). */
@@ -244,15 +246,17 @@ static const struct wl_message system_account_events[] = {
 	{ "result", "uuu", system_plain_types },
 	{ "refused", "8us", system_plain_types },
 	{ "enrolled", "11uu", system_plain_types },
+	{ "key", "14ss", system_plain_types },
+	{ "touch", "14u", system_plain_types },
 };
 
-/* kl_system_account_v1, made at the manager's version (11): four requests and three events.  It lives for the program. */
+/* kl_system_account_v1, made at the manager's version (14, ws172-p003): six requests and five events.  It lives for the program. */
 const struct wl_interface kl_system_account_v1_interface = {
 	KL_SYSTEM_ACCOUNT_NAME,
-	KL_SYSTEM_SINCE_ENROLLED,
-	4,
+	KL_SYSTEM_SINCE_KEYS,
+	6,
 	system_account_requests,
-	3,
+	5,
 	system_account_events
 };
 

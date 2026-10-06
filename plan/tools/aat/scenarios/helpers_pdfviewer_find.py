@@ -7,8 +7,9 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 The document is WS175's edit-basic.pdf (plan/ws175/tests/make-edit-samples.py, written on the host and put in
 /tmp/aat-work/pdf-find.pdf).  The viewer's lines (PDFVIEWER ...) say what Find and the selection did; the place of
-the first line's words is the viewer's layout of the scroll mode fitting the width (its margin of 16 pixels, the US
-Letter page 612 points wide), from the window's place.
+the first line's words is the viewer's layout of the scroll mode fitting the width (its margin of 16 pixels; the scale
+fits the widest page, the sample's turned third page of 792 points, and a narrower page is centred: the first, US
+Letter, is 612 points wide), from the window's place.
 """
 import subprocess
 import sys
@@ -25,6 +26,7 @@ REMOTE = f"{aatlib.WORK}/pdf-find.pdf"
 # The viewer's layout (pdfviewer/viewer.h PV_MARGIN) and the sample's page and first line (BASIC_* in the sample).
 MARGIN = 16
 PAGE_WIDTH = 612.0
+WIDEST = 792.0
 LINE_X = 72.0
 LINE_Y = 792.0 - 700.0 - 5.0
 K_X = 72.0 + 66.0
@@ -76,8 +78,8 @@ def find_select(item):
 	run.click(*window.middle())
 	run.key("esc", "home")
 	time.sleep(0.8)
-	scale = (window.width - 2 * MARGIN) / PAGE_WIDTH
-	left = window.x + MARGIN
+	scale = (window.width - 2 * MARGIN) / WIDEST
+	left = window.x + (window.width - PAGE_WIDTH * scale) / 2
 	top = window.y + MARGIN
 	mark = run.mark()
 	run.drag(left + (LINE_X + 2.0) * scale, top + LINE_Y * scale, left + K_X * scale, top + LINE_Y * scale, 10)

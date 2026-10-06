@@ -71,7 +71,7 @@ for command in ({"execute": "qmp_capabilities"}, {"execute": "screendump", "argu
 width, height, pixels = read_ppm(sys.argv[2] + ".ppm")
 write_png(sys.argv[2], width, height, pixels)
 EOF
-	rm -f "$out/$1.ppm"
+	# The .ppm is left beside the .png (2026-10-06 user: deleting is Q1's step).
 }
 
 # 1. The greeter at boot.
