@@ -4,7 +4,7 @@
 
 Parent: [WS120](../ws.md)
 Status: planning
-Disposition: normal
+Disposition: canceled（2026-10-07 q831: ユーザーの決定（形式は m4a だけ、AAC は libavcodec の add-in、独自の decoder は後）で取り下げ。置き換えは [p008](../phase008/phase.md)・[p009](../phase009/phase.md)。[p001](../phase001/phase.md) の「2026-10-07 の決定と設計」）
 Queue / attempts: none
 Goal: MPEG-1/2 Audio Layer III の decoder と ID3v2 の metadata を作り、host で参照の decoder との差を規定以内にする。
 Prerequisites: p001 cleared、D1 で MP3 を選んだこと、D2 の決定、p003 の library の枠。planning の理由はこれら。

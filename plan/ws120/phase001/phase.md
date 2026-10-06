@@ -3,7 +3,7 @@
 # ws120-p001: 設計
 
 Parent: [WS120](../ws.md)
-Status: planned
+Status: cleared（2026-10-07 q831 P2、ユーザーの決定で範囲を改めた。下の「2026-10-07 の決定と設計」）
 Disposition: normal
 Queue / attempts: none
 Goal: 音楽アプリの設計（`plan/ws120/design.md`）を作り、D1〜D4 の選択肢をユーザーに提示して決定を記録する。
@@ -34,3 +34,21 @@ Investigation bound: 3 時間。code は書かない。
 ## 依存・未決の判断
 
 依存なし。D1〜D4 はこの Phase で提示し、決定が来るまで p001 は uncleared で待つ（他の作業は止めない）。
+
+## 2026-10-07 の決定と設計（q831、P2）
+
+ユーザーの決定（Q1 経由、クリック、2026-10-07）:
+- (D-AAC)「今は libavcodec、独自は後」: ベータ2 の AAC の decode は videoplayer（WS122 p004）と同じ libavcodec の dlopen の add-in。独自の AAC-LC の decoder は後の Phase（Huffman の表などの出典をユーザーと決めてから）。
+- (D-SVC)「その機能はベータ4へ。今は外部サービスのアイコンは権利の関係でいらないです。」: 既存の音楽 service との連携はベータ4。外部の service の icon・名前を app に出さない。
+- 形式は 2026-10-02 の決定どおり m4a（MP4 の container の AAC）だけ。WAV・FLAC・MP3・Ogg の旧い計画（p002〜p006）は取り下げ（canceled）。
+
+設計（正常系）:
+- app `userland/desktop/music/`（package `music`、窓の題「Music」）: 
+  - `tags.c`: MP4 の moov の mvhd（長さ）と udta/meta/ilst（©nam・©ART・aART・©alb・trkn・covr）を読む（mediafile は metadata を持たないので app の中に小さく）。
+  - `library.c`: `~/Music` を深さ 4 まで見て `.m4a`（と `.mp4` の音だけの物）を集め、album（aART か ©ART と ©alb）ごとにまとめ、track の番号の順。
+  - `play.c`: 再生の thread。mediafile で音の track を開き、videoplayer の `codec.c`（libavcodec の add-in）で decode、`audio.c`（audiod の client）へ 48 kHz・2ch・16 bit で書く。再生・一時停止・seek・次の曲（album の続き）。時刻は audiod の読みの位置。
+  - `view.c`: 左に album の一覧（cover・題・artist）、右に選んだ album の曲（番号・題・長さ）、検索、下に再生の bar（cover・題・artist・前・再生/一時停止・次・位置の slider・時間）。libavcodec が無ければ「Playing needs libavcodec」。
+  - `main.c`: kl_app の loop。引数の file（Files から）を開いて再生（`~/Music` の外の file も一覧に足す）。
+- 音の source（videoplayer/audio.c・codec.c・bitstream.c、mediafile）は music の package でも compile する（共有の library にするのは後）。
+- Files: `audio/mp4` を Music で開く（apps.c の built-in に 1 行）。App Home に「Music」。
+- 試験: host で tags と library（試験の m4a は python で MP4 の箱を組んで作る。音の中身は要らない）、view の PNG。QEMU（T1）: `~/Music` に置いた m4a の再生（libavcodec の package の入った image、audiod の log と再生の位置）。

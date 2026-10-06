@@ -4,7 +4,7 @@
 
 Parent: [WS120](../ws.md)
 Status: planning
-Disposition: normal
+Disposition: canceled（2026-10-07 q831: ユーザーの決定（形式は m4a だけ、AAC は libavcodec の add-in、独自の decoder は後）で取り下げ。置き換えは [p008](../phase008/phase.md)・[p009](../phase009/phase.md)。[p001](../phase001/phase.md) の「2026-10-07 の決定と設計」）
 Queue / attempts: none
 Goal: Keiland の音楽アプリを作り、QEMU で M1〜M6 を確かめる。
 Prerequisites: p002 cleared、p003 cleared（MP3 を含むなら p004 も）、D4 の決定。
