@@ -90,7 +90,7 @@ dump_one(
 	FILE *file;
 
 	/* The icon, drawn by the compositor's rasterizer. */
-	zwl_icon_raster(icon, pixels, coverage, pixels);
+	kwl_icon_raster(icon, pixels, coverage, pixels);
 
 	/* How much it covers, and whether it reaches its square's edge. */
 	covered = 0;

@@ -10,7 +10,7 @@
  */
 
 #include "desktop.h"
-#include "zwl.h"
+#include "kwl.h"
 #include "userland/desktop/keiland/kl-system-protocol.h"
 #include "menu.h"
 #include "titlebar.h"
@@ -38,102 +38,102 @@
 #define WM_ERROR_DEFUNCT_SURFACES	1U
 
 /* The registry advertises only implemented interfaces and their actual versions. */
-struct zwl_global {
+struct kwl_global {
 	uint32_t name;
 	const char *interface;
 	uint32_t version;
-	enum zwl_kind kind;
+	enum kwl_kind kind;
 };
 
 /* Stable global names are scoped to one compositor process generation. */
-static const struct zwl_global globals[] = {
-	{ 1, "wl_compositor", 4, ZWL_COMPOSITOR },
-	{ 2, "xdg_wm_base", 4, ZWL_WM },
-	{ 3, NULL, 0, ZWL_FACTORY },
-	{ 4, "wl_output", 4, ZWL_OUTPUT },
-	{ 5, "wl_seat", 5, ZWL_SEAT },
-	{ 6, "wl_shm", 1, ZWL_SHM },
-	{ 7, "xdg_menu_manager_v1", 2, ZWL_MENU_MANAGER },
-	{ 8, "wl_subcompositor", 1, ZWL_SUBCOMPOSITOR },
-	{ 9, "wl_data_device_manager", 3, ZWL_DATA_MANAGER },
-	{ 10, "zxdg_decoration_manager_v1", 1, ZWL_DECORATION_MANAGER },
-	{ 11, "wp_cursor_shape_manager_v1", 1, ZWL_CURSOR_SHAPE_MANAGER },
-	{ 12, "wp_viewporter", 1, ZWL_VIEWPORTER },
-	{ 13, "zwp_text_input_manager_v3", 1, ZWL_TEXT_INPUT_MANAGER },
-	{ 14, "zwp_input_method_manager_v2", 1, ZWL_INPUT_METHOD_MANAGER },
-	{ 15, "zwp_virtual_keyboard_manager_v1", 1, ZWL_VIRTUAL_KEYBOARD_MANAGER },
-	{ 16, "keiland_titlebar_manager_v1", 4, ZWL_TITLEBAR_MANAGER },
-	{ 17, "keiland_glass_manager_v1", 2, ZWL_GLASS_MANAGER },
-	{ 18, "zwp_primary_selection_device_manager_v1", 1, ZWL_PRIMARY_MANAGER },
-	{ 19, "zwp_tablet_manager_v2", 1, ZWL_TABLET_MANAGER },
-	{ 20, "keiland_ime_status_manager_v1", 2, ZWL_IME_STATUS_MANAGER },
-	{ 21, "keiland_desktop_manager_v1", 1, ZWL_DESKTOP_MANAGER },
-	{ 22, "keiland_keyboard_inset_manager_v1", 1, ZWL_KEYBOARD_INSET_MANAGER },
-	{ 23, "keiland_edit_manager_v1", 1, ZWL_EDIT_MANAGER },
-	{ 24, "org_kde_kwin_server_decoration_manager", 1, ZWL_KDE_DECORATION_MANAGER },
-	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, ZWL_SYSTEM_MANAGER },
-	{ 26, "xdg_activation_v1", 1, ZWL_ACTIVATION_MANAGER },
-	{ 27, "keiland_theme_v1", 1, ZWL_THEME },
-	{ 28, "wp_content_type_manager_v1", 1, ZWL_CONTENT_TYPE_MANAGER },
+static const struct kwl_global globals[] = {
+	{ 1, "wl_compositor", 4, KWL_COMPOSITOR },
+	{ 2, "xdg_wm_base", 4, KWL_WM },
+	{ 3, NULL, 0, KWL_FACTORY },
+	{ 4, "wl_output", 4, KWL_OUTPUT },
+	{ 5, "wl_seat", 5, KWL_SEAT },
+	{ 6, "wl_shm", 1, KWL_SHM },
+	{ 7, "xdg_menu_manager_v1", 2, KWL_MENU_MANAGER },
+	{ 8, "wl_subcompositor", 1, KWL_SUBCOMPOSITOR },
+	{ 9, "wl_data_device_manager", 3, KWL_DATA_MANAGER },
+	{ 10, "zxdg_decoration_manager_v1", 1, KWL_DECORATION_MANAGER },
+	{ 11, "wp_cursor_shape_manager_v1", 1, KWL_CURSOR_SHAPE_MANAGER },
+	{ 12, "wp_viewporter", 1, KWL_VIEWPORTER },
+	{ 13, "zwp_text_input_manager_v3", 1, KWL_TEXT_INPUT_MANAGER },
+	{ 14, "zwp_input_method_manager_v2", 1, KWL_INPUT_METHOD_MANAGER },
+	{ 15, "zwp_virtual_keyboard_manager_v1", 1, KWL_VIRTUAL_KEYBOARD_MANAGER },
+	{ 16, "keiland_titlebar_manager_v1", 4, KWL_TITLEBAR_MANAGER },
+	{ 17, "keiland_glass_manager_v1", 2, KWL_GLASS_MANAGER },
+	{ 18, "zwp_primary_selection_device_manager_v1", 1, KWL_PRIMARY_MANAGER },
+	{ 19, "zwp_tablet_manager_v2", 1, KWL_TABLET_MANAGER },
+	{ 20, "keiland_ime_status_manager_v1", 2, KWL_IME_STATUS_MANAGER },
+	{ 21, "keiland_desktop_manager_v1", 1, KWL_DESKTOP_MANAGER },
+	{ 22, "keiland_keyboard_inset_manager_v1", 1, KWL_KEYBOARD_INSET_MANAGER },
+	{ 23, "keiland_edit_manager_v1", 1, KWL_EDIT_MANAGER },
+	{ 24, "org_kde_kwin_server_decoration_manager", 1, KWL_KDE_DECORATION_MANAGER },
+	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, KWL_SYSTEM_MANAGER },
+	{ 26, "xdg_activation_v1", 1, KWL_ACTIVATION_MANAGER },
+	{ 27, "keiland_theme_v1", 1, KWL_THEME },
+	{ 28, "wp_content_type_manager_v1", 1, KWL_CONTENT_TYPE_MANAGER },
 };
 
-static void global_identity(const struct zwl_global *global, const char **interface, uint32_t *version);
+static void global_identity(const struct kwl_global *global, const char **interface, uint32_t *version);
 static uint32_t word_at(const unsigned char *bytes, size_t offset);
 static int string_at(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
-static int registry_events(struct zwl_object *registry);
-static int output_events(struct zwl_object *output);
-static int output_names(struct zwl_object *output);
-static int bind_global(struct zwl_object *registry, const unsigned char *bytes, size_t size);
-static int surface_request(struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int surface_commit(struct zwl_object *surface);
-static int shell_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static void append_callbacks(struct zwl_object **list, struct zwl_object *callbacks);
-static void add_damage(struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
-static void commit_fence(struct zwl_object *surface, unsigned attached);
-static void commit_damage(struct zwl_object *surface);
-static int send_bounds(struct zwl_object *surface);
-static void window_bounds(struct zwl_server *server, int32_t *width, int32_t *height);
+static int registry_events(struct kwl_object *registry);
+static int output_events(struct kwl_object *output);
+static int output_names(struct kwl_object *output);
+static int bind_global(struct kwl_object *registry, const unsigned char *bytes, size_t size);
+static int surface_request(struct kwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int surface_commit(struct kwl_object *surface);
+static int shell_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static void append_callbacks(struct kwl_object **list, struct kwl_object *callbacks);
+static void add_damage(struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
+static void commit_fence(struct kwl_object *surface, unsigned attached);
+static void commit_damage(struct kwl_object *surface);
+static int send_bounds(struct kwl_object *surface);
+static void window_bounds(struct kwl_server *server, int32_t *width, int32_t *height);
 
 /*
  * Dispatches one validated frame through its client-local interface identity.
  */
 int
-zwl_dispatch(
-	struct zwl_client *client,
+kwl_dispatch(
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *object;
-	struct zwl_object *created;
+	struct kwl_object *object;
+	struct kwl_object *created;
 	uint32_t new_id;
-	enum zwl_kind kind;
+	enum kwl_kind kind;
 	int error;
 
 	/* Unknown IDs cannot select another client's protocol objects or GPU resources. */
-	object = zwl_find(client, id);
+	object = kwl_find(client, id);
 	if (object == NULL) {
-		error = zwl_error(client, id, "unknown object");
+		error = kwl_error(client, id, "unknown object");
 		return error;
 	}
 
 	/* Every method validates its exact payload length and interface opcode. */
 	error = EPROTO;
 	switch (object->kind) {
-	case ZWL_DISPLAY:
+	case KWL_DISPLAY:
 		/* Both supported display constructors contain exactly one new_id. */
 		if (size != 4U || opcode > 1U)
 			break;
 
 		/* A sync callback is completed after preceding requests have been processed. */
 		new_id = word_at(bytes, 0);
-		kind = ZWL_CALLBACK;
+		kind = KWL_CALLBACK;
 		if (opcode == 1U)
-			kind = ZWL_REGISTRY;
+			kind = KWL_REGISTRY;
 
 		/* Duplicate or forbidden IDs are rejected before emitting constructor events. */
-		created = zwl_create(client, new_id, kind, 1);
+		created = kwl_create(client, new_id, kind, 1);
 		if (created == NULL)
 			break;
 
@@ -141,39 +141,39 @@ zwl_dispatch(
 		if (opcode == 1U)
 			error = registry_events(created);
 		else {
-			zwl_callbacks_done(&created);
+			kwl_callbacks_done(&created);
 			error = 0;
 		}
 
 		break;
-	case ZWL_REGISTRY:
+	case KWL_REGISTRY:
 		/* bind is the sole registry request. */
 		if (opcode == 0)
 			error = bind_global(object, bytes, size);
 		break;
-	case ZWL_COMPOSITOR:
+	case KWL_COMPOSITOR:
 		/* The compositor creates independent surfaces or region identities. */
 		if (size != 4U || opcode > 1U)
 			break;
 
 		/* Regions need no retained geometry for this opaque fullscreen policy. */
-		kind = ZWL_SURFACE;
+		kind = KWL_SURFACE;
 		if (opcode == 1U)
-			kind = ZWL_REGION;
+			kind = KWL_REGION;
 
 		/* The child surface inherits the negotiated compositor version. */
 		new_id = word_at(bytes, 0);
-		created = zwl_create(client, new_id, kind, object->version);
+		created = kwl_create(client, new_id, kind, object->version);
 		if (created != NULL)
 			error = 0;
 		break;
-	case ZWL_SURFACE:
+	case KWL_SURFACE:
 		error = surface_request(object, opcode, bytes, size);
 		break;
-	case ZWL_REGION:
+	case KWL_REGION:
 		/* Region destruction retires only its protocol identity. */
 		if (opcode == 0 && size == 0) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		} else if ((opcode == 1U || opcode == 2U) && size == 16U) {
 			/* Damage and input regions do not alter the single opaque scanout plane. */
@@ -181,172 +181,172 @@ zwl_dispatch(
 		}
 
 		break;
-	case ZWL_BUFFER:
+	case KWL_BUFFER:
 		/* Buffer destruction keeps any active GPU use alive independently. */
 		if (opcode == 0 && size == 0) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
 		break;
-	case ZWL_GPU_OBJECT:
-	case ZWL_FACTORY:
-		error = kl_backend_gpu_request(zwl_gpu_host(), zwl_gpu_resource(object), opcode, bytes, size);
+	case KWL_GPU_OBJECT:
+	case KWL_FACTORY:
+		error = kl_backend_gpu_request(kwl_gpu_host(), kwl_gpu_resource(object), opcode, bytes, size);
 		break;
-	case ZWL_SHM:
-	case ZWL_SHM_POOL:
-		error = zwl_shm_request(object, opcode, bytes, size);
+	case KWL_SHM:
+	case KWL_SHM_POOL:
+		error = kwl_shm_request(object, opcode, bytes, size);
 		break;
-	case ZWL_WM:
-	case ZWL_XDG_SURFACE:
-	case ZWL_TOPLEVEL:
+	case KWL_WM:
+	case KWL_XDG_SURFACE:
+	case KWL_TOPLEVEL:
 		error = shell_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SEAT:
-	case ZWL_POINTER:
-	case ZWL_KEYBOARD:
-	case ZWL_TOUCH:
-		error = zwl_seat_request(object, opcode, bytes, size);
+	case KWL_SEAT:
+	case KWL_POINTER:
+	case KWL_KEYBOARD:
+	case KWL_TOUCH:
+		error = kwl_seat_request(object, opcode, bytes, size);
 		break;
-	case ZWL_MENU_MANAGER:
-	case ZWL_MENU:
-	case ZWL_TOPLEVEL_MENU:
-	case ZWL_CONTEXT_MENU:
+	case KWL_MENU_MANAGER:
+	case KWL_MENU:
+	case KWL_TOPLEVEL_MENU:
+	case KWL_CONTEXT_MENU:
 		/* The System Menu and its context menus (menu.c). */
-		error = zwl_menu_request(object, opcode, bytes, size);
+		error = kwl_menu_request(object, opcode, bytes, size);
 		break;
-	case ZWL_TITLEBAR_MANAGER:
-	case ZWL_TITLEBAR:
+	case KWL_TITLEBAR_MANAGER:
+	case KWL_TITLEBAR:
 		/* The Titlebar Presentation (titlebar.c). */
-		error = zwl_titlebar_request(object, opcode, bytes, size);
+		error = kwl_titlebar_request(object, opcode, bytes, size);
 		break;
-	case ZWL_POSITIONER:
-	case ZWL_POPUP:
+	case KWL_POSITIONER:
+	case KWL_POPUP:
 		/* xdg_positioner and xdg_popup (popup.c). */
-		error = zwl_popup_request(object, opcode, bytes, size);
+		error = kwl_popup_request(object, opcode, bytes, size);
 		break;
-	case ZWL_OUTPUT:
+	case KWL_OUTPUT:
 		/* release, from version 3, is the only output request. */
 		if (opcode == 0 && size == 0 && object->version >= 3U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
 		/* Any other output request stays refused. */
 		break;
-	case ZWL_DATA_MANAGER:
-	case ZWL_DATA_SOURCE:
-	case ZWL_DATA_DEVICE:
-	case ZWL_DATA_OFFER:
+	case KWL_DATA_MANAGER:
+	case KWL_DATA_SOURCE:
+	case KWL_DATA_DEVICE:
+	case KWL_DATA_OFFER:
 		/* The clipboard (data.c). */
-		error = zwl_data_request(object, opcode, bytes, size);
+		error = kwl_data_request(object, opcode, bytes, size);
 		break;
-	case ZWL_PRIMARY_MANAGER:
-	case ZWL_PRIMARY_SOURCE:
-	case ZWL_PRIMARY_DEVICE:
-	case ZWL_PRIMARY_OFFER:
+	case KWL_PRIMARY_MANAGER:
+	case KWL_PRIMARY_SOURCE:
+	case KWL_PRIMARY_DEVICE:
+	case KWL_PRIMARY_OFFER:
 		/* The primary selection (primary.c). */
-		error = zwl_primary_request(object, opcode, bytes, size);
+		error = kwl_primary_request(object, opcode, bytes, size);
 		break;
-	case ZWL_DECORATION_MANAGER:
-	case ZWL_DECORATION:
-	case ZWL_KDE_DECORATION_MANAGER:
-	case ZWL_KDE_DECORATION:
+	case KWL_DECORATION_MANAGER:
+	case KWL_DECORATION:
+	case KWL_KDE_DECORATION_MANAGER:
+	case KWL_KDE_DECORATION:
 		/* xdg-decoration and KDE's server decoration (decoration.c). */
-		error = zwl_decoration_request(object, opcode, bytes, size);
+		error = kwl_decoration_request(object, opcode, bytes, size);
 		break;
-	case ZWL_CURSOR_SHAPE_MANAGER:
-	case ZWL_CURSOR_SHAPE_DEVICE:
+	case KWL_CURSOR_SHAPE_MANAGER:
+	case KWL_CURSOR_SHAPE_DEVICE:
 		/* cursor-shape (cursor.c). */
-		error = zwl_cursor_shape_request(object, opcode, bytes, size);
+		error = kwl_cursor_shape_request(object, opcode, bytes, size);
 		break;
-	case ZWL_VIEWPORTER:
-	case ZWL_VIEWPORT:
+	case KWL_VIEWPORTER:
+	case KWL_VIEWPORT:
 		/* viewporter (viewport.c). */
-		error = zwl_viewport_request(object, opcode, bytes, size);
+		error = kwl_viewport_request(object, opcode, bytes, size);
 		break;
-	case ZWL_CONTENT_TYPE_MANAGER:
-	case ZWL_CONTENT_TYPE:
+	case KWL_CONTENT_TYPE_MANAGER:
+	case KWL_CONTENT_TYPE:
 		/* content-type (content-type.c). */
-		error = zwl_content_type_request(object, opcode, bytes, size);
+		error = kwl_content_type_request(object, opcode, bytes, size);
 		break;
-	case ZWL_GLASS_MANAGER:
-	case ZWL_GLASS:
+	case KWL_GLASS_MANAGER:
+	case KWL_GLASS:
 		/* A surface's glass panels (panels.c). */
-		error = zwl_panels_request(object, opcode, bytes, size);
+		error = kwl_panels_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SUBCOMPOSITOR:
+	case KWL_SUBCOMPOSITOR:
 		/* wl_subcompositor (subsurface.c). */
-		error = zwl_subcompositor_request(object, opcode, bytes, size);
+		error = kwl_subcompositor_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SUBSURFACE:
+	case KWL_SUBSURFACE:
 		/* wl_subsurface (subsurface.c). */
-		error = zwl_subsurface_request(object, opcode, bytes, size);
+		error = kwl_subsurface_request(object, opcode, bytes, size);
 		break;
-	case ZWL_TEXT_INPUT_MANAGER:
-	case ZWL_TEXT_INPUT:
+	case KWL_TEXT_INPUT_MANAGER:
+	case KWL_TEXT_INPUT:
 		/* The text input protocol (text-input.c). */
-		error = zwl_text_input_request(object, opcode, bytes, size);
+		error = kwl_text_input_request(object, opcode, bytes, size);
 		break;
-	case ZWL_INPUT_METHOD_MANAGER:
-	case ZWL_INPUT_METHOD:
-	case ZWL_INPUT_POPUP:
-	case ZWL_KEYBOARD_GRAB:
-	case ZWL_VIRTUAL_KEYBOARD_MANAGER:
-	case ZWL_VIRTUAL_KEYBOARD:
-	case ZWL_IME_STATUS_MANAGER:
-	case ZWL_IME_STATUS:
+	case KWL_INPUT_METHOD_MANAGER:
+	case KWL_INPUT_METHOD:
+	case KWL_INPUT_POPUP:
+	case KWL_KEYBOARD_GRAB:
+	case KWL_VIRTUAL_KEYBOARD_MANAGER:
+	case KWL_VIRTUAL_KEYBOARD:
+	case KWL_IME_STATUS_MANAGER:
+	case KWL_IME_STATUS:
 		/* The input method's protocols (input-method.c). */
-		error = zwl_ime_request(object, opcode, bytes, size);
+		error = kwl_ime_request(object, opcode, bytes, size);
 		break;
-	case ZWL_TABLET_MANAGER:
-	case ZWL_TABLET_SEAT:
-	case ZWL_TABLET:
-	case ZWL_TABLET_TOOL:
+	case KWL_TABLET_MANAGER:
+	case KWL_TABLET_SEAT:
+	case KWL_TABLET:
+	case KWL_TABLET_TOOL:
 		/* The pen tablets (tablet.c). */
-		error = zwl_tablet_request(object, opcode, bytes, size);
+		error = kwl_tablet_request(object, opcode, bytes, size);
 		break;
-	case ZWL_DESKTOP_MANAGER:
-	case ZWL_DESKTOP_SURFACE:
+	case KWL_DESKTOP_MANAGER:
+	case KWL_DESKTOP_SURFACE:
 		/* The desktop surface (desktop.c, ws094-p002). */
-		error = zwl_desktop_request(object, opcode, bytes, size);
+		error = kwl_desktop_request(object, opcode, bytes, size);
 		break;
-	case ZWL_KEYBOARD_INSET_MANAGER:
-	case ZWL_KEYBOARD_INSET:
+	case KWL_KEYBOARD_INSET_MANAGER:
+	case KWL_KEYBOARD_INSET:
 		/* The keyboard inset (inset.c, ws102-p015). */
-		error = zwl_inset_request(object, opcode, bytes, size);
+		error = kwl_inset_request(object, opcode, bytes, size);
 		break;
-	case ZWL_EDIT_MANAGER:
-	case ZWL_EDIT:
+	case KWL_EDIT_MANAGER:
+	case KWL_EDIT:
 		/* The editing operations (edit.c, ws102-p017). */
-		error = zwl_edit_request(object, opcode, bytes, size);
+		error = kwl_edit_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_SETTINGS:
+	case KWL_SYSTEM_SETTINGS:
 		/* Keiland's system extension: the settings (settings.c, WS135). */
-		error = zwl_settings_request(object, opcode, bytes, size);
+		error = kwl_settings_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_MANAGER:
-	case ZWL_SYSTEM_NETWORK:
-	case ZWL_SYSTEM_AUDIO:
-	case ZWL_SYSTEM_POWER:
-	case ZWL_SYSTEM_DEVICES:
-	case ZWL_SYSTEM_ACCOUNT:
-	case ZWL_SYSTEM_SHARING:
+	case KWL_SYSTEM_MANAGER:
+	case KWL_SYSTEM_NETWORK:
+	case KWL_SYSTEM_AUDIO:
+	case KWL_SYSTEM_POWER:
+	case KWL_SYSTEM_DEVICES:
+	case KWL_SYSTEM_ACCOUNT:
+	case KWL_SYSTEM_SHARING:
 		/* Keiland's system extension: the manager, the network, the sound, the power, the devices, the account and Remote Login (system.c, WS131 p010, ws160-p002, ws089-p025). */
-		error = zwl_system_request(object, opcode, bytes, size);
+		error = kwl_system_request(object, opcode, bytes, size);
 		break;
-	case ZWL_SYSTEM_MONITOR:
+	case KWL_SYSTEM_MONITOR:
 		/* Keiland's system extension: the monitor (sysmon.c, WS134 p012). */
-		error = zwl_sysmon_request(object, opcode, bytes, size);
+		error = kwl_sysmon_request(object, opcode, bytes, size);
 		break;
-	case ZWL_ACTIVATION_MANAGER:
-	case ZWL_ACTIVATION_TOKEN:
+	case KWL_ACTIVATION_MANAGER:
+	case KWL_ACTIVATION_TOKEN:
 		/* xdg_activation_v1 and its tokens (activation.c, ws089-p016). */
-		error = zwl_activation_request(object, opcode, bytes, size);
+		error = kwl_activation_request(object, opcode, bytes, size);
 		break;
-	case ZWL_THEME:
+	case KWL_THEME:
 		/* keiland_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
-		error = zwl_theme_request(object, opcode, bytes, size);
+		error = kwl_theme_request(object, opcode, bytes, size);
 		break;
 	default:
 		/* Callback objects and version-2 outputs have no client requests. */
@@ -361,7 +361,7 @@ zwl_dispatch(
 	if (error != 0) {
 		/* A delegated terminal error owns the connection's sole final error event. */
 		if (!client->fatal)
-			error = zwl_error(client, id, "invalid or unsupported request");
+			error = kwl_error(client, id, "invalid or unsupported request");
 
 		/* The final error remains queued for bounded flush before disconnect. */
 		return error;
@@ -431,12 +431,12 @@ string_at(
 /* Reports a global's interface name and version: the table's, or the OS module's for its GPU buffer global. */
 static void
 global_identity(
-	const struct zwl_global *global,
+	const struct kwl_global *global,
 	const char **interface,
 	uint32_t *version)
 {
 	/* libkeiland-backend names its GPU buffer global (keiland_gpu_buffer_v1 version 3 on zedBSD, zwp_linux_dmabuf_v1 elsewhere). */
-	if (global->kind == ZWL_FACTORY) {
+	if (global->kind == KWL_FACTORY) {
 		*interface = kl_backend_gpu_global_interface();
 		*version = kl_backend_gpu_global_version();
 		return;
@@ -453,7 +453,7 @@ global_identity(
 /* Announces only the selected protocol globals in stable registry order. */
 static int
 registry_events(
-	struct zwl_object *registry)
+	struct kwl_object *registry)
 {
 	const char *interface;
 	uint32_t version;
@@ -468,12 +468,12 @@ registry_events(
 	/* Each global event carries name, interface string and supported version. */
 	for (index = 0; index < sizeof(globals) / sizeof(globals[0]); index++) {
 		/* The input method's globals are shown to the input method alone (input-method.c). */
-		visible = zwl_ime_global_visible(registry->client, globals[index].kind);
+		visible = kwl_ime_global_visible(registry->client, globals[index].kind);
 		if (!visible)
 			continue;
 
 		/* The system extension is shown to a session's own user alone (settings.c). */
-		visible = zwl_settings_global_visible(registry->client, globals[index].kind);
+		visible = kwl_settings_global_visible(registry->client, globals[index].kind);
 		if (!visible)
 			continue;
 
@@ -493,7 +493,7 @@ registry_events(
 		offset = 8U + ((length + 3U) & ~(size_t)3U);
 		word = version;
 		memcpy(payload + offset, &word, 4);
-		error = zwl_emit(registry->client, registry->id, 0, payload, offset + 4U);
+		error = kwl_emit(registry->client, registry->id, 0, payload, offset + 4U);
 		if (error != 0)
 			return error;
 	}
@@ -505,7 +505,7 @@ registry_events(
 /* Supplies the version-2 output geometry, current mode, scale and completion event. */
 static int
 output_events(
-	struct zwl_object *output)
+	struct kwl_object *output)
 {
 	unsigned char geometry[60];
 	uint32_t words[4];
@@ -524,7 +524,7 @@ output_events(
 	word = 8;
 	memcpy(geometry + 32, &word, 4);
 	memcpy(geometry + 36, "Unknown", 8);
-	error = zwl_emit(output->client, output->id, 0, geometry, 48);
+	error = kwl_emit(output->client, output->id, 0, geometry, 48);
 	if (error != 0)
 		return error;
 
@@ -533,7 +533,7 @@ output_events(
 	words[1] = output->client->server->width;
 	words[2] = output->client->server->height;
 	words[3] = output->client->server->refresh;
-	error = zwl_emit(output->client, output->id, 1, words, sizeof(words));
+	error = kwl_emit(output->client, output->id, 1, words, sizeof(words));
 	if (error != 0)
 		return error;
 
@@ -541,7 +541,7 @@ output_events(
 	if (output->version >= 2U) {
 		/* This output uses one buffer pixel per surface coordinate. */
 		word = 1;
-		error = zwl_emit(output->client, output->id, 3, &word, sizeof(word));
+		error = kwl_emit(output->client, output->id, 3, &word, sizeof(word));
 		if (error != 0)
 			return error;
 
@@ -553,7 +553,7 @@ output_events(
 		}
 
 		/* The done event commits all preceding output properties. */
-		error = zwl_emit(output->client, output->id, 2, NULL, 0);
+		error = kwl_emit(output->client, output->id, 2, NULL, 0);
 		if (error != 0)
 			return error;
 	}
@@ -570,7 +570,7 @@ output_events(
  */
 static int
 output_names(
-	struct zwl_object *output)
+	struct kwl_object *output)
 {
 	char text[64];
 	unsigned char payload[80];
@@ -582,7 +582,7 @@ output_names(
 	length = (uint32_t)sizeof("DISPLAY-1");
 	memcpy(payload, &length, sizeof(length));
 	memcpy(payload + 4, "DISPLAY-1", length);
-	error = zwl_emit(output->client, output->id, OUTPUT_NAME, payload, 4U + ((length + 3U) & ~3U));
+	error = kwl_emit(output->client, output->id, OUTPUT_NAME, payload, 4U + ((length + 3U) & ~3U));
 	if (error != 0)
 		return error;
 
@@ -592,7 +592,7 @@ output_names(
 	length = (uint32_t)strlen(text) + 1U;
 	memcpy(payload, &length, sizeof(length));
 	memcpy(payload + 4, text, length);
-	error = zwl_emit(output->client, output->id, OUTPUT_DESCRIPTION, payload, 4U + ((length + 3U) & ~3U));
+	error = kwl_emit(output->client, output->id, OUTPUT_DESCRIPTION, payload, 4U + ((length + 3U) & ~3U));
 	if (error != 0)
 		return error;
 
@@ -603,14 +603,14 @@ output_names(
 /* Resolves a registry name, exact interface string and supported requested version. */
 static int
 bind_global(
-	struct zwl_object *registry,
+	struct kwl_object *registry,
 	const unsigned char *bytes,
 	size_t size)
 {
 	const char *interface;
 	const char *offered;
 	uint32_t offered_version;
-	struct zwl_object *object;
+	struct kwl_object *object;
 	uint32_t name;
 	uint32_t version;
 	uint32_t id;
@@ -653,22 +653,22 @@ bind_global(
 			return EPROTO;
 
 		/* A global the connection was not shown cannot be bound (the input method's, input-method.c). */
-		visible = zwl_ime_global_visible(registry->client, globals[index].kind);
+		visible = kwl_ime_global_visible(registry->client, globals[index].kind);
 		if (!visible)
 			return EPROTO;
 
 		/* Nor the system extension, for a client that was not shown it (settings.c). */
-		visible = zwl_settings_global_visible(registry->client, globals[index].kind);
+		visible = kwl_settings_global_visible(registry->client, globals[index].kind);
 		if (!visible)
 			return EPROTO;
 
 		/* A successful binding creates exactly one independent client-side object. */
-		object = zwl_create(registry->client, id, globals[index].kind, version);
+		object = kwl_create(registry->client, id, globals[index].kind, version);
 		if (object == NULL)
 			return EPROTO;
 
 		/* Output bindings immediately receive the negotiated property snapshot. */
-		if (object->kind == ZWL_OUTPUT) {
+		if (object->kind == KWL_OUTPUT) {
 			/* Publish the newly bound output's complete initial property snapshot. */
 			error = output_events(object);
 			if (error != 0)
@@ -676,44 +676,44 @@ bind_global(
 		}
 
 		/* A system manager tells what it offers. */
-		if (object->kind == ZWL_SYSTEM_MANAGER) {
-			error = zwl_system_bind(object);
+		if (object->kind == KWL_SYSTEM_MANAGER) {
+			error = kwl_system_bind(object);
 			if (error != 0)
 				return error;
 		}
 
 		/* GPU bindings receive libkeiland-backend's sampled buffer format snapshot. */
-		if (object->kind == ZWL_FACTORY) {
-			error = kl_backend_gpu_bind(zwl_gpu_host(), zwl_gpu_resource(object));
+		if (object->kind == KWL_FACTORY) {
+			error = kl_backend_gpu_bind(kwl_gpu_host(), kwl_gpu_resource(object));
 			if (error != 0)
 				return error;
 		}
 
 		/* wl_shm bindings learn the formats they may use. */
-		if (object->kind == ZWL_SHM) {
-			error = zwl_shm_bind(object);
+		if (object->kind == KWL_SHM) {
+			error = kwl_shm_bind(object);
 			if (error != 0)
 				return error;
 		}
 
 		/* KDE's server decoration manager tells the default mode at once: the compositor's. */
-		if (object->kind == ZWL_KDE_DECORATION_MANAGER) {
-			error = zwl_decoration_kde_bind(object);
+		if (object->kind == KWL_KDE_DECORATION_MANAGER) {
+			error = kwl_decoration_kde_bind(object);
 			if (error != 0)
 				return error;
 		}
 
 		/* The appearance's binding learns the appearance now (theme.c). */
-		if (object->kind == ZWL_THEME) {
-			error = zwl_theme_bind(object);
+		if (object->kind == KWL_THEME) {
+			error = kwl_theme_bind(object);
 			if (error != 0)
 				return error;
 		}
 
 		/* Seat bindings immediately learn the present device classes and the seat name. */
-		if (object->kind == ZWL_SEAT) {
+		if (object->kind == KWL_SEAT) {
 			/* Publish the newly bound seat's capabilities and name. */
-			error = zwl_seat_bind(object);
+			error = kwl_seat_bind(object);
 			if (error != 0)
 				return error;
 		}
@@ -733,13 +733,13 @@ bind_global(
 /* Applies surface requests to pending state without prematurely releasing current scanout. */
 static int
 surface_request(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *object;
-	struct zwl_object *previous;
+	struct kwl_object *object;
+	struct kwl_object *previous;
 	uint32_t id;
 	uint32_t scalar;
 	uint32_t x;
@@ -760,7 +760,7 @@ surface_request(
 			return EPROTO;
 
 		/* Destruction keeps any front allocation alive until unscan succeeds. */
-		zwl_object_destroy(surface);
+		kwl_object_destroy(surface);
 		break;
 	case 1:
 		/* This fullscreen WSI uses zero attach offsets. */
@@ -778,17 +778,17 @@ surface_request(
 		object = NULL;
 		if (id != 0) {
 			/* Pending content cannot borrow another interface or another client's identity. */
-			object = zwl_find(surface->client, id);
-			if (object == NULL || object->kind != ZWL_BUFFER)
+			object = kwl_find(surface->client, id);
+			if (object == NULL || object->kind != KWL_BUFFER)
 				return EPROTO;
 		}
 
 		/* Acquiring the replacement first makes repeated attachment of the same buffer safe. */
-		zwl_buffer_get(object);
+		kwl_buffer_get(object);
 		previous = surface->pending;
 		surface->pending = object;
 		surface->attached = 1;
-		zwl_buffer_put(previous);
+		kwl_buffer_put(previous);
 		break;
 	case 2:
 	case 9:
@@ -806,7 +806,7 @@ surface_request(
 
 		/* A callback ID cannot alias any existing interface. */
 		id = word_at(bytes, 0);
-		object = zwl_create(surface->client, id, ZWL_CALLBACK, 1);
+		object = kwl_create(surface->client, id, KWL_CALLBACK, 1);
 		if (object == NULL)
 			return EPROTO;
 
@@ -823,8 +823,8 @@ surface_request(
 		id = word_at(bytes, 0);
 		if (id != 0) {
 			/* Advisory regions still require a live object of the correct interface. */
-			object = zwl_find(surface->client, id);
-			if (object == NULL || object->kind != ZWL_REGION)
+			object = kwl_find(surface->client, id);
+			if (object == NULL || object->kind != KWL_REGION)
 				return EPROTO;
 		}
 
@@ -867,31 +867,31 @@ surface_request(
 /* Commits pending state after the initial xdg-shell configure/acknowledgment exchange. */
 static int
 surface_commit(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *role;
-	struct zwl_object *previous;
-	struct zwl_server *server;
+	struct kwl_object *role;
+	struct kwl_object *previous;
+	struct kwl_server *server;
 	unsigned attached;
 	uint32_t replaced;
 	int error;
 
 	/* A window waiting for its image of a new size: when its latest commit came (BUG-179). */
 	if (surface->resized_ms != 0U)
-		surface->resized_commit_ms = zwl_milliseconds();
+		surface->resized_commit_ms = kwl_milliseconds();
 
 	/* The viewport's pending source and destination apply with the commit (viewport.c). */
-	zwl_viewport_commit(surface);
+	kwl_viewport_commit(surface);
 
 	/* So does the content type (content-type.c). */
-	zwl_content_type_commit(surface);
+	kwl_content_type_commit(surface);
 
 	/* So do the glass panels (panels.c). */
-	zwl_panels_commit(surface);
+	kwl_panels_commit(surface);
 
 	/* A sub-surface's commit waits for its parent's when it is synchronized (subsurface.c). */
 	if (surface->sub_role != NULL) {
-		error = zwl_subsurface_commit(surface);
+		error = kwl_subsurface_commit(surface);
 		if (error != 0)
 			return error;
 		return 0;
@@ -907,13 +907,13 @@ surface_commit(
 	server = surface->client->server;
 	attached = surface->attached;
 	if (surface->cursor_role || role == NULL) {
-		error = zwl_surface_queue(surface);
+		error = kwl_surface_queue(surface);
 		if (error != 0)
 			return error;
-		zwl_subsurface_applied(surface);
+		kwl_subsurface_applied(surface);
 
 		/* The input method's candidate window is such a surface; its commit redraws the output (input-method.c). */
-		zwl_ime_surface_commit(surface);
+		kwl_ime_surface_commit(surface);
 		return 0;
 	}
 
@@ -935,13 +935,13 @@ surface_commit(
 			return EPROTO;
 
 		/* A popup gets its place and size (popup.c); a window chooses its size, a fullscreen one gets the output's. */
-		if (role->top->kind == ZWL_POPUP) {
-			error = zwl_popup_send_configure(surface);
+		if (role->top->kind == KWL_POPUP) {
+			error = kwl_popup_send_configure(surface);
 		} else {
 			/* Docked from the start when the window in front is docked (shell.c, ws099-p033). */
 			if (server->glass)
-				(void)zwl_glass_open_docked(server, surface);
-			error = zwl_window_send_configure(surface);
+				(void)kwl_glass_open_docked(server, surface);
+			error = kwl_window_send_configure(surface);
 		}
 
 		/* A client that cannot take the configure is failed. */
@@ -959,7 +959,7 @@ surface_commit(
 		return EPROTO;
 
 	/* Decoration ownership and window geometry join the content for this commit. */
-	zwl_decoration_commit(surface);
+	kwl_decoration_commit(surface);
 
 	/* A commit without attach reuses its existing surface content. */
 	if (!surface->attached) {
@@ -969,7 +969,7 @@ surface_commit(
 			surface->pending = surface->queued;
 
 		/* A metadata-only commit preserves the last committed, possibly queued content. */
-		zwl_buffer_get(surface->pending);
+		kwl_buffer_get(surface->pending);
 	}
 
 	/* Explicit unmap returns xdg-shell to its initial configure handshake state. */
@@ -1004,12 +1004,12 @@ surface_commit(
 	commit_fence(surface, attached);
 
 	/* Dropped mailbox images are reusable once no other compositor use remains. */
-	zwl_buffer_put(previous);
+	kwl_buffer_put(previous);
 	append_callbacks(&surface->committed_callbacks, surface->callbacks);
 	surface->callbacks = NULL;
 
 	/* The window's sub-surfaces go with its state (subsurface.c). */
-	zwl_subsurface_applied(surface);
+	kwl_subsurface_applied(surface);
 
 	/* Succeeded: the scheduler owns the latest pending image and all frame callbacks. */
 	return 0;
@@ -1022,10 +1022,10 @@ surface_commit(
  * frame callbacks, for the scheduler.
  */
 int
-zwl_surface_queue(
-	struct zwl_object *surface)
+kwl_surface_queue(
+	struct kwl_object *surface)
 {
-	struct zwl_object *previous;
+	struct kwl_object *previous;
 	unsigned attached;
 
 	/* The attached image, or the current one kept. */
@@ -1036,7 +1036,7 @@ zwl_surface_queue(
 		surface->pending = NULL;
 	} else {
 		surface->queued = surface->current;
-		zwl_buffer_get(surface->queued);
+		kwl_buffer_get(surface->queued);
 	}
 
 	/* The content, its damage and its acquire fence are committed. */
@@ -1046,7 +1046,7 @@ zwl_surface_queue(
 		surface->queued->busy = 1;
 	commit_damage(surface);
 	commit_fence(surface, attached);
-	zwl_buffer_put(previous);
+	kwl_buffer_put(previous);
 	append_callbacks(&surface->committed_callbacks, surface->callbacks);
 	surface->callbacks = NULL;
 
@@ -1057,14 +1057,14 @@ zwl_surface_queue(
 /* Implements the selected fullscreen xdg-shell role and configure lifetime. */
 static int
 shell_request(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
-	struct zwl_object *created;
-	struct zwl_object *other;
+	struct kwl_object *surface;
+	struct kwl_object *created;
+	struct kwl_object *other;
 	const char *text;
 	size_t offset;
 	uint32_t id;
@@ -1076,7 +1076,7 @@ shell_request(
 	int error;
 
 	/* The global shell creates one xdg role for an existing role-free surface. */
-	if (object->kind == ZWL_WM) {
+	if (object->kind == KWL_WM) {
 		/*
 		 * The binding may retire only when no live xdg_surface was made
 		 * from it (xdg-shell's defunct_surfaces, BUG-112): xdg_surfaces of
@@ -1086,30 +1086,30 @@ shell_request(
 		if (opcode == 0 && size == 0) {
 			/* Each live role of this binding still depends on it. */
 			for (other = object->client->objects; other != NULL; other = other->next) {
-				if (other->kind == ZWL_XDG_SURFACE &&
+				if (other->kind == KWL_XDG_SURFACE &&
 				    !other->dead &&
 				    other->wm_base == object) {
-					error = zwl_error_code(object->client, object->id, WM_ERROR_DEFUNCT_SURFACES, "xdg_surfaces of this binding live");
+					error = kwl_error_code(object->client, object->id, WM_ERROR_DEFUNCT_SURFACES, "xdg_surfaces of this binding live");
 					return error;
 				}
 			}
 
 			/* This binding no longer has live shell children. */
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
 		/* The answer to a ping (toplevel.c); one to no ping is ignored. */
 		if (opcode == 3U && size == 4U) {
 			serial = word_at(bytes, 0);
-			zwl_ping_pong(object->client, serial);
+			kwl_ping_pong(object->client, serial);
 			return 0;
 		}
 
 		/* A positioner, for the popups (popup.c). */
 		if (opcode == 1U && size == 4U) {
 			id = word_at(bytes, 0);
-			error = zwl_positioner_create(object, id);
+			error = kwl_positioner_create(object, id);
 			if (error != 0)
 				return error;
 			return 0;
@@ -1121,16 +1121,16 @@ shell_request(
 
 		/* The role cannot be attached to a foreign object or an already assigned surface. */
 		id = word_at(bytes, 4);
-		surface = zwl_find(object->client, id);
+		surface = kwl_find(object->client, id);
 		if (surface == NULL ||
-		    surface->kind != ZWL_SURFACE ||
+		    surface->kind != KWL_SURFACE ||
 		    surface->role != NULL ||
 		    surface->sub_role != NULL)
 			return EPROTO;
 
 		/* Publish both directions only after the role identity is allocated. */
 		id = word_at(bytes, 0);
-		created = zwl_create(object->client, id, ZWL_XDG_SURFACE, object->version);
+		created = kwl_create(object->client, id, KWL_XDG_SURFACE, object->version);
 		if (created == NULL)
 			return EPROTO;
 
@@ -1147,10 +1147,10 @@ shell_request(
 		return EPROTO;
 
 	/* xdg_surface owns the configure serial and the sole toplevel child. */
-	if (object->kind == ZWL_XDG_SURFACE) {
+	if (object->kind == KWL_XDG_SURFACE) {
 		/* Parent retirement cannot invalidate a surviving toplevel child. */
 		if (opcode == 0 && size == 0 && object->top == NULL) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -1158,7 +1158,7 @@ shell_request(
 		if (opcode == 1U && size == 4U && object->top == NULL) {
 			/* Allocate the child before publishing either shell backreference. */
 			id = word_at(bytes, 0);
-			created = zwl_create(object->client, id, ZWL_TOPLEVEL, object->version);
+			created = kwl_create(object->client, id, KWL_TOPLEVEL, object->version);
 			if (created == NULL)
 				return EPROTO;
 
@@ -1174,7 +1174,7 @@ shell_request(
 			id = word_at(bytes, 0);
 			parent = word_at(bytes, 4);
 			positioner = word_at(bytes, 8);
-			error = zwl_popup_create(object, id, parent, positioner);
+			error = kwl_popup_create(object, id, parent, positioner);
 			if (error != 0)
 				return error;
 			return 0;
@@ -1205,7 +1205,7 @@ shell_request(
 				return EPROTO;
 
 			/* Selects the decoration snapshot for this exact outstanding configure. */
-			error = zwl_decoration_ack(surface, serial);
+			error = kwl_decoration_ack(surface, serial);
 			if (error != 0)
 				return error;
 
@@ -1217,7 +1217,7 @@ shell_request(
 			if (surface->resized_ms != 0U &&
 			    surface->resized_acked_ms == 0U &&
 			    serial >= surface->resized_serial)
-				surface->resized_acked_ms = zwl_milliseconds();
+				surface->resized_acked_ms = kwl_milliseconds();
 			return 0;
 		}
 
@@ -1233,7 +1233,7 @@ shell_request(
 			return EPROTO;
 
 		/* Retire the child identity without destroying the underlying core surface. */
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		break;
 	case 2:
 	case 3:
@@ -1263,13 +1263,13 @@ shell_request(
 		id = word_at(bytes, 0);
 		if (id != 0) {
 			/* Explicit targets must refer to this connection's own output binding. */
-			other = zwl_find(object->client, id);
-			if (other == NULL || other->kind != ZWL_OUTPUT)
+			other = kwl_find(object->client, id);
+			if (other == NULL || other->kind != KWL_OUTPUT)
 				return EPROTO;
 		}
 
 		/* The window becomes fullscreen: at the origin, the output's size (design D0, D6). */
-		error = zwl_window_enter_fullscreen(surface);
+		error = kwl_window_enter_fullscreen(surface);
 		if (error != 0)
 			return error;
 
@@ -1280,7 +1280,7 @@ shell_request(
 			return EPROTO;
 
 		/* The window returns to its place and size before fullscreen, or is centred (ws035-p138). */
-		error = zwl_window_leave_fullscreen(surface);
+		error = kwl_window_leave_fullscreen(surface);
 		if (error != 0)
 			return error;
 
@@ -1288,7 +1288,7 @@ shell_request(
 		break;
 	default:
 		/* The requests of the window manager (toplevel.c): parent, window menu, move, resize, limits, maximize, minimize. */
-		error = zwl_toplevel_request(object, surface, opcode, bytes, size);
+		error = kwl_toplevel_request(object, surface, opcode, bytes, size);
 		if (error != 0)
 			return error;
 		break;
@@ -1307,12 +1307,12 @@ shell_request(
  * configure (in which it may choose its size again).
  */
 void
-zwl_window_bounds_refresh(
-	struct zwl_server *server)
+kwl_window_bounds_refresh(
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *top;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
 	int32_t width;
 	int32_t height;
 	int error;
@@ -1334,10 +1334,10 @@ zwl_window_bounds_refresh(
 		/* Each of its windows. */
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only a configured toplevel's surface. */
-			if (surface->kind != ZWL_SURFACE || surface->dead || surface->role == NULL || !surface->configured)
+			if (surface->kind != KWL_SURFACE || surface->dead || surface->role == NULL || !surface->configured)
 				continue;
 			top = surface->role->top;
-			if (top == NULL || top->kind != ZWL_TOPLEVEL || top->version < 4U)
+			if (top == NULL || top->kind != KWL_TOPLEVEL || top->version < 4U)
 				continue;
 
 			/* Not a fullscreen or a docked one (their size is the compositor's). */
@@ -1345,7 +1345,7 @@ zwl_window_bounds_refresh(
 				continue;
 
 			/* The bounds and a configure; a client that cannot take them is failed at its next request. */
-			error = zwl_window_send_configure(surface);
+			error = kwl_window_send_configure(surface);
 			if (error != 0)
 				printf("ZWL BOUNDS configure errno=%d\n", error);
 		}
@@ -1360,10 +1360,10 @@ zwl_window_bounds_refresh(
  * or the error of sending the configure.
  */
 int
-zwl_window_enter_fullscreen(
-	struct zwl_object *surface)
+kwl_window_enter_fullscreen(
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t sent_width;
 	uint32_t sent_height;
 	uint32_t width;
@@ -1384,7 +1384,7 @@ zwl_window_enter_fullscreen(
 	width = 0U;
 	height = 0U;
 	if (surface->current != NULL)
-		zwl_decoration_geometry(surface, &width, &height);
+		kwl_decoration_geometry(surface, &width, &height);
 
 	/*
 	 * An image still of the output's size is the last fullscreen one: the
@@ -1425,7 +1425,7 @@ zwl_window_enter_fullscreen(
 		return 0;
 
 	/* A window already configured is told now. */
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		return error;
 
@@ -1443,10 +1443,10 @@ zwl_window_enter_fullscreen(
  * Returns 0, or the error of sending the configure.
  */
 int
-zwl_window_leave_fullscreen(
-	struct zwl_object *surface)
+kwl_window_leave_fullscreen(
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	int docks;
 	int error;
 
@@ -1462,7 +1462,7 @@ zwl_window_leave_fullscreen(
 	 */
 	server = surface->client->server;
 	surface->fullscreen = 0;
-	docks = zwl_glass_unfullscreen_docks(server, surface);
+	docks = kwl_glass_unfullscreen_docks(server, surface);
 	if (docks) {
 		surface->fullscreen_docked = 0;
 	} else if (surface->fullscreen_docked) {
@@ -1471,14 +1471,14 @@ zwl_window_leave_fullscreen(
 		surface->y = surface->restore_y;
 		surface->window_width = surface->restore_width;
 		surface->window_height = surface->restore_height;
-		zwl_glass_fit(server, (int32_t)surface->window_width, (int32_t)surface->window_height, &surface->x, &surface->y);
+		kwl_glass_fit(server, (int32_t)surface->window_width, (int32_t)surface->window_height, &surface->x, &surface->y);
 	} else if (surface->placed) {
 		surface->x = surface->window_x;
 		surface->y = surface->window_y;
 		if (server->glass && surface->window_width != 0U)
-			zwl_glass_fit(server, (int32_t)surface->window_width, (int32_t)surface->window_height, &surface->x, &surface->y);
+			kwl_glass_fit(server, (int32_t)surface->window_width, (int32_t)surface->window_height, &surface->x, &surface->y);
 	} else {
-		zwl_window_centre(server, surface);
+		kwl_window_centre(server, surface);
 		surface->place_pending = 1;
 	}
 
@@ -1491,7 +1491,7 @@ zwl_window_leave_fullscreen(
 		return 0;
 
 	/* A window already configured is told now. */
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		return error;
 
@@ -1506,11 +1506,11 @@ zwl_window_leave_fullscreen(
  * configure with a new serial follows.
  */
 int
-zwl_window_send_configure(
-	struct zwl_object *surface)
+kwl_window_send_configure(
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
-	struct zwl_object *role;
+	struct kwl_server *server;
+	struct kwl_object *role;
 	uint32_t configure[5];
 	size_t size;
 	unsigned resizing;
@@ -1519,7 +1519,7 @@ zwl_window_send_configure(
 	/* The size and states; a window being resized (toplevel.c) has the resizing state too. */
 	server = surface->client->server;
 	role = surface->role;
-	resizing = zwl_toplevel_resizing(server, surface);
+	resizing = kwl_toplevel_resizing(server, surface);
 	if (surface->fullscreen) {
 		configure[0] = server->width;
 		configure[1] = server->height;
@@ -1557,7 +1557,7 @@ zwl_window_send_configure(
 	}
 
 	/* The toplevel configure. */
-	error = zwl_emit(surface->client, role->top->id, 0, configure, size);
+	error = kwl_emit(surface->client, role->top->id, 0, configure, size);
 	if (error != 0)
 		return error;
 
@@ -1570,12 +1570,12 @@ zwl_window_send_configure(
 	surface->configure_serial = server->serial;
 
 	/* Retains the decoration ownership associated with this configure serial. */
-	error = zwl_decoration_configure(surface, surface->configure_serial);
+	error = kwl_decoration_configure(surface, surface->configure_serial);
 	if (error != 0)
 		return error;
 
 	/* Publishes the serial after its associated state has a durable owner. */
-	error = zwl_emit(surface->client, role->id, 0, &surface->configure_serial, 4);
+	error = kwl_emit(surface->client, role->id, 0, &surface->configure_serial, 4);
 	if (error != 0)
 		return error;
 
@@ -1593,9 +1593,9 @@ zwl_window_send_configure(
  */
 static int
 send_bounds(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	int32_t width;
 	int32_t height;
 	int32_t bounds[2];
@@ -1608,7 +1608,7 @@ send_bounds(
 	/* The width and the height, in that order. */
 	bounds[0] = width;
 	bounds[1] = height;
-	error = zwl_emit(surface->client, surface->role->top->id, 2, bounds, sizeof(bounds));
+	error = kwl_emit(surface->client, surface->role->top->id, 2, bounds, sizeof(bounds));
 	if (error != 0)
 		return error;
 
@@ -1624,7 +1624,7 @@ send_bounds(
 /* Gives the space the look leaves for a window's body: under the system bar and a floating title bar in the glass look, the output otherwise. */
 static void
 window_bounds(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t *width,
 	int32_t *height)
 {
@@ -1634,13 +1634,13 @@ window_bounds(
 
 	/* Less the glass look's bars and margins (shell.c). */
 	if (server->glass)
-		zwl_glass_space(server, width, height);
+		kwl_glass_space(server, width, height);
 }
 
 /* Adds a rectangle to a surface's pending damage (their bounding box). */
 static void
 add_damage(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t x,
 	int32_t y,
 	int32_t width,
@@ -1678,7 +1678,7 @@ add_damage(
  */
 static void
 commit_fence(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned attached)
 {
 	unsigned index;
@@ -1688,7 +1688,7 @@ commit_fence(
 	    surface->queued != NULL &&
 	    surface->queued->import != NULL &&
 	    surface->queued->shm == NULL)
-		kl_backend_gpu_commit(zwl_gpu_host(), zwl_gpu_resource(surface), zwl_gpu_resource(surface->queued));
+		kl_backend_gpu_commit(kwl_gpu_host(), kwl_gpu_resource(surface), kwl_gpu_resource(surface->queued));
 
 	/* The reused image still waits for its own fences. */
 	if (!attached && surface->acquire_count == 0)
@@ -1703,7 +1703,7 @@ commit_fence(
 		surface->fences[index] = surface->acquire[index];
 	surface->fence_count = surface->acquire_count;
 	surface->acquire_count = 0;
-	surface->fence_ms = zwl_milliseconds();
+	surface->fence_ms = kwl_milliseconds();
 	surface->fence_waited = 0;
 }
 
@@ -1713,7 +1713,7 @@ commit_fence(
  */
 static void
 commit_damage(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	/* No damage leaves the committed damage as it is. */
 	if (!surface->damaged)
@@ -1743,8 +1743,8 @@ commit_damage(
 /* Preserves callback request order across pending-state commits and mailbox replacement. */
 static void
 append_callbacks(
-	struct zwl_object **list,
-	struct zwl_object *callbacks)
+	struct kwl_object **list,
+	struct kwl_object *callbacks)
 {
 	/* Each existing callback must complete before later callbacks in the same surface stream. */
 	while (*list != NULL)

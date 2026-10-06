@@ -72,18 +72,18 @@
  */
 #define RESIZE_STALE_MS		3000U
 
-static int toplevel_set_parent(struct zwl_object *toplevel, const unsigned char *bytes, size_t size);
-static int toplevel_size_hint(struct zwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int toplevel_move(struct zwl_object *toplevel, struct zwl_object *surface, const unsigned char *bytes, size_t size);
-static int toplevel_resize(struct zwl_object *toplevel, struct zwl_object *surface, const unsigned char *bytes, size_t size);
-static int toplevel_state(struct zwl_object *surface, uint32_t opcode, size_t size);
-static int press_held(struct zwl_client *client, uint32_t seat_id, uint32_t serial);
-static void window_extent(const struct zwl_object *surface, int32_t *x, int32_t *y, int32_t *width, int32_t *height);
-static void resize_limit(struct zwl_server *server, struct zwl_object *surface, int32_t *width, int32_t *height);
-static void resize_settle(struct zwl_object *surface, int32_t width, int32_t height);
-static void move_anchor(struct zwl_server *server, struct zwl_object *surface);
-static void resize_anchor(struct zwl_server *server);
-static int32_t window_lowest(const struct zwl_server *server);
+static int toplevel_set_parent(struct kwl_object *toplevel, const unsigned char *bytes, size_t size);
+static int toplevel_size_hint(struct kwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int toplevel_move(struct kwl_object *toplevel, struct kwl_object *surface, const unsigned char *bytes, size_t size);
+static int toplevel_resize(struct kwl_object *toplevel, struct kwl_object *surface, const unsigned char *bytes, size_t size);
+static int toplevel_state(struct kwl_object *surface, uint32_t opcode, size_t size);
+static int press_held(struct kwl_client *client, uint32_t seat_id, uint32_t serial);
+static void window_extent(const struct kwl_object *surface, int32_t *x, int32_t *y, int32_t *width, int32_t *height);
+static void resize_limit(struct kwl_server *server, struct kwl_object *surface, int32_t *width, int32_t *height);
+static void resize_settle(struct kwl_object *surface, int32_t width, int32_t height);
+static void move_anchor(struct kwl_server *server, struct kwl_object *surface);
+static void resize_anchor(struct kwl_server *server);
+static int32_t window_lowest(const struct kwl_server *server);
 static uint32_t toplevel_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -92,9 +92,9 @@ static uint32_t toplevel_word(const unsigned char *bytes, size_t offset);
  * minimize.
  */
 int
-zwl_toplevel_request(
-	struct zwl_object *toplevel,
-	struct zwl_object *surface,
+kwl_toplevel_request(
+	struct kwl_object *toplevel,
+	struct kwl_object *surface,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -146,9 +146,9 @@ zwl_toplevel_request(
  * resizing state).
  */
 unsigned
-zwl_toplevel_resizing(
-	const struct zwl_server *server,
-	const struct zwl_object *surface)
+kwl_toplevel_resizing(
+	const struct kwl_server *server,
+	const struct kwl_object *surface)
 {
 	/* Only the window the resize follows. */
 	if (server->resize != surface)
@@ -164,9 +164,9 @@ zwl_toplevel_resizing(
  * has drawn the configure sent when the resize ended.
  */
 void
-zwl_toplevel_committed(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_toplevel_committed(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	uint64_t now;
 	int32_t geometry_x;
@@ -191,9 +191,9 @@ zwl_toplevel_committed(
 	window_extent(surface, &geometry_x, &geometry_y, &width, &height);
 
 	/* Dragged from the left, the right edge stays; dragged from the top, the bottom does. */
-	if ((surface->resize_edges & ZWL_EDGE_LEFT) != 0U)
+	if ((surface->resize_edges & KWL_EDGE_LEFT) != 0U)
 		surface->x = surface->resize_right - geometry_x - width;
-	if ((surface->resize_edges & ZWL_EDGE_TOP) != 0U)
+	if ((surface->resize_edges & KWL_EDGE_TOP) != 0U)
 		surface->y = surface->resize_bottom - geometry_y - height;
 	server->dirty = 1;
 
@@ -221,7 +221,7 @@ zwl_toplevel_committed(
 		return;
 
 	/* An image soon after the end may be one drawn before the last configure was read. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (now - surface->resize_end_ms < RESIZE_STALE_MS)
 		return;
 
@@ -233,13 +233,13 @@ zwl_toplevel_committed(
  * Ends a resize of a surface that is going.
  */
 void
-zwl_toplevel_surface_gone(
-	struct zwl_object *surface)
+kwl_toplevel_surface_gone(
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* Its sheets have no parent any more (sheet.c). */
-	zwl_sheet_surface_gone(surface);
+	kwl_sheet_surface_gone(surface);
 
 	/* Retire borrowed client-operation ownership before this window disappears. */
 	server = surface->client->server;
@@ -267,10 +267,10 @@ zwl_toplevel_surface_gone(
  * when the motion was the resize's.
  */
 int
-zwl_toplevel_motion(
-	struct zwl_server *server)
+kwl_toplevel_motion(
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int32_t width;
 	int32_t height;
 	int error;
@@ -293,13 +293,13 @@ zwl_toplevel_motion(
 	/* The size at the start, grown or shrunk by how far each dragged edge has moved. */
 	width = server->resize_width;
 	height = server->resize_height;
-	if ((surface->resize_edges & ZWL_EDGE_RIGHT) != 0U)
+	if ((surface->resize_edges & KWL_EDGE_RIGHT) != 0U)
 		width += server->pointer_x - server->resize_pointer_x;
-	if ((surface->resize_edges & ZWL_EDGE_LEFT) != 0U)
+	if ((surface->resize_edges & KWL_EDGE_LEFT) != 0U)
 		width -= server->pointer_x - server->resize_pointer_x;
-	if ((surface->resize_edges & ZWL_EDGE_BOTTOM) != 0U)
+	if ((surface->resize_edges & KWL_EDGE_BOTTOM) != 0U)
 		height += server->pointer_y - server->resize_pointer_y;
-	if ((surface->resize_edges & ZWL_EDGE_TOP) != 0U)
+	if ((surface->resize_edges & KWL_EDGE_TOP) != 0U)
 		height -= server->pointer_y - server->resize_pointer_y;
 
 	/* Within the window's limits and the output. */
@@ -312,7 +312,7 @@ zwl_toplevel_motion(
 	/* The client is told the new size, with the resizing state. */
 	surface->window_width = (uint32_t)width;
 	surface->window_height = (uint32_t)height;
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		printf("ZWL RESIZE configure errno=%d\n", error);
 
@@ -326,11 +326,11 @@ zwl_toplevel_motion(
  * resize's (a press while resizing is eaten too).
  */
 int
-zwl_toplevel_button(
-	struct zwl_server *server,
+kwl_toplevel_button(
+	struct kwl_server *server,
 	uint32_t state)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int32_t geometry_x;
 	int32_t geometry_y;
 	int32_t width;
@@ -348,11 +348,11 @@ zwl_toplevel_button(
 
 	/* The release ends it; the client is told the last size again, without the resizing state. */
 	server->resize = NULL;
-	error = zwl_window_send_configure(surface);
+	error = kwl_window_send_configure(surface);
 	if (error != 0)
 		printf("ZWL RESIZE configure errno=%d\n", error);
 	surface->resize_final_serial = surface->configure_serial;
-	surface->resize_end_ms = zwl_milliseconds();
+	surface->resize_end_ms = kwl_milliseconds();
 	printf("ZWL RESIZE end surface=%u width=%u height=%u client=%llu\n", surface->id, surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
 
 	/* A client that has drawn the last size already needs the anchor no more. */
@@ -374,9 +374,9 @@ zwl_toplevel_button(
  * not shown at its own size, or with a move or another resize going on.
  */
 int
-zwl_toplevel_resize_start(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_toplevel_resize_start(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	uint32_t edges)
 {
 	int32_t geometry_x;
@@ -419,10 +419,10 @@ zwl_toplevel_resize_start(
  * its answer or the client has no xdg_wm_base.
  */
 void
-zwl_ping_send(
-	struct zwl_client *client)
+kwl_ping_send(
+	struct kwl_client *client)
 {
-	struct zwl_object *wm;
+	struct kwl_object *wm;
 	uint32_t serial;
 	int error;
 
@@ -433,7 +433,7 @@ zwl_ping_send(
 	/* The client's shell binding, which the ping goes to. */
 	for (wm = client->objects; wm != NULL; wm = wm->next) {
 		/* Only a live xdg_wm_base. */
-		if (wm->kind == ZWL_WM && !wm->dead)
+		if (wm->kind == KWL_WM && !wm->dead)
 			break;
 	}
 
@@ -442,14 +442,14 @@ zwl_ping_send(
 		return;
 
 	/* The ping with a new serial, which the answer must name. */
-	serial = zwl_next_serial(client->server);
-	error = zwl_emit(client, wm->id, WM_BASE_PING, &serial, sizeof(serial));
+	serial = kwl_next_serial(client->server);
+	error = kwl_emit(client, wm->id, WM_BASE_PING, &serial, sizeof(serial));
 	if (error != 0)
 		return;
 
 	/* The ping is out from now. */
 	client->ping_serial = serial;
-	client->ping_ms = zwl_milliseconds();
+	client->ping_ms = kwl_milliseconds();
 }
 
 /*
@@ -457,8 +457,8 @@ zwl_ping_send(
  * was not responding is again.  An answer to no ping is ignored.
  */
 void
-zwl_ping_pong(
-	struct zwl_client *client,
+kwl_ping_pong(
+	struct kwl_client *client,
 	uint32_t serial)
 {
 	/* Only the answer to the ping that is out. */
@@ -482,11 +482,11 @@ zwl_ping_pong(
  * they are not responding until they answer.
  */
 void
-zwl_ping_check(
-	struct zwl_server *server,
+kwl_ping_check(
+	struct kwl_server *server,
 	uint64_t now)
 {
-	struct zwl_client *client;
+	struct kwl_client *client;
 
 	/* Every client with a ping out. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -512,11 +512,11 @@ zwl_ping_check(
  */
 static int
 toplevel_set_parent(
-	struct zwl_object *toplevel,
+	struct kwl_object *toplevel,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *parent;
+	struct kwl_object *parent;
 	uint32_t id;
 
 	/* One nullable toplevel. */
@@ -526,28 +526,28 @@ toplevel_set_parent(
 	/* No parent at all. */
 	id = toplevel_word(bytes, 0U);
 	if (id == 0U) {
-		zwl_sheet_set_parent(toplevel->surface, NULL);
+		kwl_sheet_set_parent(toplevel->surface, NULL);
 		return 0;
 	}
 
 	/* A parent must be another toplevel of the client. */
-	parent = zwl_find(toplevel->client, id);
+	parent = kwl_find(toplevel->client, id);
 	if (parent == NULL ||
-	    parent->kind != ZWL_TOPLEVEL ||
+	    parent->kind != KWL_TOPLEVEL ||
 	    parent == toplevel) {
-		(void)zwl_error_code(toplevel->client, toplevel->id, TOPLEVEL_ERROR_INVALID_PARENT, "the parent is not another toplevel");
+		(void)kwl_error_code(toplevel->client, toplevel->id, TOPLEVEL_ERROR_INVALID_PARENT, "the parent is not another toplevel");
 		return EPROTO;
 	}
 
 	/* Succeeded: kept (a new window is on top of its parent anyway). */
-	zwl_sheet_set_parent(toplevel->surface, parent->surface);
+	kwl_sheet_set_parent(toplevel->surface, parent->surface);
 	return 0;
 }
 
 /* Takes the smallest or the largest size a client can draw its window at (0 for no limit). */
 static int
 toplevel_size_hint(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -579,12 +579,12 @@ toplevel_size_hint(
 /* Starts a move the client asked for from a press on its own title bar. */
 static int
 toplevel_move(
-	struct zwl_object *toplevel,
-	struct zwl_object *surface,
+	struct kwl_object *toplevel,
+	struct kwl_object *surface,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t seat_id;
 	uint32_t serial;
 	int held;
@@ -612,7 +612,7 @@ toplevel_move(
 		return 0;
 
 	/* The shell decides whether this shown window can begin moving. */
-	zwl_glass_toplevel_request(server, surface, ZWL_TOPLEVEL_MOVE);
+	kwl_glass_toplevel_request(server, surface, KWL_TOPLEVEL_MOVE);
 	if (server->drag != surface)
 		return 0;
 
@@ -631,12 +631,12 @@ toplevel_move(
 /* Starts a resize the client asked for from a press on its own window's edge. */
 static int
 toplevel_resize(
-	struct zwl_object *toplevel,
-	struct zwl_object *surface,
+	struct kwl_object *toplevel,
+	struct kwl_object *surface,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t seat_id;
 	uint32_t serial;
 	uint32_t edges;
@@ -650,10 +650,10 @@ toplevel_resize(
 	/* The edges must be one side or one corner. */
 	edges = toplevel_word(bytes, 8U);
 	if (edges == 0U ||
-	    edges > (ZWL_EDGE_BOTTOM | ZWL_EDGE_RIGHT) ||
-	    (edges & (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM)) == (ZWL_EDGE_TOP | ZWL_EDGE_BOTTOM) ||
-	    (edges & (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) == (ZWL_EDGE_LEFT | ZWL_EDGE_RIGHT)) {
-		(void)zwl_error_code(toplevel->client, toplevel->id, TOPLEVEL_ERROR_INVALID_RESIZE_EDGE, "not a resize edge");
+	    edges > (KWL_EDGE_BOTTOM | KWL_EDGE_RIGHT) ||
+	    (edges & (KWL_EDGE_TOP | KWL_EDGE_BOTTOM)) == (KWL_EDGE_TOP | KWL_EDGE_BOTTOM) ||
+	    (edges & (KWL_EDGE_LEFT | KWL_EDGE_RIGHT)) == (KWL_EDGE_LEFT | KWL_EDGE_RIGHT)) {
+		(void)kwl_error_code(toplevel->client, toplevel->id, TOPLEVEL_ERROR_INVALID_RESIZE_EDGE, "not a resize edge");
 		return EPROTO;
 	}
 
@@ -670,7 +670,7 @@ toplevel_resize(
 	}
 
 	/* A window that cannot be resized now leaves the request without effect. */
-	error = zwl_toplevel_resize_start(server, surface, edges);
+	error = kwl_toplevel_resize_start(server, surface, edges);
 	if (error != 0) {
 		printf("ZWL RESIZE refused surface=%u reason=state client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 
@@ -693,11 +693,11 @@ toplevel_resize(
 /* Carries out maximize, unmaximize and minimize, which the glass look has. */
 static int
 toplevel_state(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	uint32_t opcode,
 	size_t size)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	int request;
 
 	/* None has arguments. */
@@ -710,14 +710,14 @@ toplevel_state(
 		return 0;
 
 	/* The shell's request: dock, undock or hide. */
-	request = ZWL_TOPLEVEL_MINIMIZE;
+	request = KWL_TOPLEVEL_MINIMIZE;
 	if (opcode == TOPLEVEL_SET_MAXIMIZED)
-		request = ZWL_TOPLEVEL_MAXIMIZE;
+		request = KWL_TOPLEVEL_MAXIMIZE;
 	if (opcode == TOPLEVEL_UNSET_MAXIMIZED)
-		request = ZWL_TOPLEVEL_UNMAXIMIZE;
+		request = KWL_TOPLEVEL_UNMAXIMIZE;
 
 	/* Succeeded: the shell carried it out. */
-	zwl_glass_toplevel_request(server, surface, request);
+	kwl_glass_toplevel_request(server, surface, request);
 	return 0;
 }
 
@@ -728,17 +728,17 @@ toplevel_state(
  */
 static int
 press_held(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t seat_id,
 	uint32_t serial)
 {
-	struct zwl_server *server;
-	struct zwl_object *seat;
+	struct kwl_server *server;
+	struct kwl_object *seat;
 	uint32_t bit;
 
 	/* The seat must be the client's. */
-	seat = zwl_find(client, seat_id);
-	if (seat == NULL || seat->kind != ZWL_SEAT)
+	seat = kwl_find(client, seat_id);
+	if (seat == NULL || seat->kind != KWL_SEAT)
 		return -1;
 
 	/* Popup, drag-and-drop and lock ownership cannot be overridden by a window request. */
@@ -757,11 +757,11 @@ press_held(
 		return 0;
 
 	/* Only the actual initiating button being held authorizes a move or resize. */
-	if (server->press_button < ZWL_BUTTON_LEFT || server->press_button - ZWL_BUTTON_LEFT >= 32U)
+	if (server->press_button < KWL_BUTTON_LEFT || server->press_button - KWL_BUTTON_LEFT >= 32U)
 		return 0;
 
 	/* Tests the held bit for this physical button rather than any other button. */
-	bit = 1U << (server->press_button - ZWL_BUTTON_LEFT);
+	bit = 1U << (server->press_button - KWL_BUTTON_LEFT);
 	if ((server->buttons_down & bit) == 0U)
 		return 0;
 
@@ -779,7 +779,7 @@ press_held(
  */
 static void
 window_extent(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	int32_t *x,
 	int32_t *y,
 	int32_t *width,
@@ -801,7 +801,7 @@ window_extent(
 	buffer_width = 0;
 	buffer_height = 0;
 	if (surface->current != NULL)
-		zwl_surface_size(surface, &buffer_width, &buffer_height);
+		kwl_surface_size(surface, &buffer_width, &buffer_height);
 	*x = 0;
 	*y = 0;
 	*width = (int32_t)buffer_width;
@@ -815,8 +815,8 @@ window_extent(
  */
 static void
 resize_limit(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t *width,
 	int32_t *height)
 {
@@ -837,7 +837,7 @@ resize_limit(
 		*height = (int32_t)server->height;
 
 	/* Dragged from the top, the window's top may go no higher than the highest a window may be. */
-	if ((surface->resize_edges & ZWL_EDGE_TOP) != 0U) {
+	if ((surface->resize_edges & KWL_EDGE_TOP) != 0U) {
 		window_extent(surface, &geometry_x, &geometry_y, &current_width, &current_height);
 		highest = surface->resize_bottom - geometry_y - window_lowest(server);
 		if (*height > highest)
@@ -858,7 +858,7 @@ resize_limit(
 /* Ends a finished resize's anchor: the window stays where its last image put it. */
 static void
 resize_settle(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	int32_t width,
 	int32_t height)
 {
@@ -872,8 +872,8 @@ resize_settle(
 /* Starts an accepted move from its press: the window takes the place the pointer's motion since then gives it. */
 static void
 move_anchor(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	int32_t lowest;
 
@@ -895,27 +895,27 @@ move_anchor(
 /* Starts an accepted resize from its press: the client is told the size the pointer's motion since then gives. */
 static void
 resize_anchor(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The dragged edges are measured from where the press was, not from where the pointer is now. */
 	server->resize_pointer_x = server->press_x;
 	server->resize_pointer_y = server->press_y;
 
 	/* The motion made while the client was answering resizes the window now (a configure when the size changed). */
-	(void)zwl_toplevel_motion(server);
+	(void)kwl_toplevel_motion(server);
 }
 
 /* Tells the highest a window's image may be: under the glass look's system bar and title bar, or the output's top. */
 static int32_t
 window_lowest(
-	const struct zwl_server *server)
+	const struct kwl_server *server)
 {
 	/* The plain look puts windows anywhere. */
 	if (!server->glass)
 		return 0;
 
 	/* The glass look keeps the title bar below the system bar. */
-	return ZWL_GLASS_BAR + ZWL_GLASS_GAP + ZWL_GLASS_TITLE;
+	return KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
 }
 
 /* Reads one native-endian protocol word. */

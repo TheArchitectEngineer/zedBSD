@@ -42,12 +42,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static void scanout_facts(struct zwl_server *server, struct zwl_object *top, struct zwl_scanout_facts *facts);
-static int scanout_overlay(struct zwl_server *server, struct zwl_object *top);
-static int scanout_enter(struct zwl_server *server, struct zwl_object *top);
-static void scanout_frame(struct zwl_server *server, struct zwl_object *top);
-static void scanout_callbacks(struct zwl_server *server, struct zwl_object *shown);
-static void scanout_note(struct zwl_server *server, struct zwl_object *top, unsigned reason);
+static void scanout_facts(struct kwl_server *server, struct kwl_object *top, struct kwl_scanout_facts *facts);
+static int scanout_overlay(struct kwl_server *server, struct kwl_object *top);
+static int scanout_enter(struct kwl_server *server, struct kwl_object *top);
+static void scanout_frame(struct kwl_server *server, struct kwl_object *top);
+static void scanout_callbacks(struct kwl_server *server, struct kwl_object *shown);
+static void scanout_note(struct kwl_server *server, struct kwl_object *top, unsigned reason);
 
 /*
  * Runs the game mode's part of a pass, after the commits were taken.
@@ -56,32 +56,32 @@ static void scanout_note(struct zwl_server *server, struct zwl_object *top, unsi
  * mode was left, or not entered).
  */
 int
-zwl_scanout_pass(
-	struct zwl_server *server,
-	struct zwl_object *top)
+kwl_scanout_pass(
+	struct kwl_server *server,
+	struct kwl_object *top)
 {
-	struct zwl_scanout_facts facts;
+	struct kwl_scanout_facts facts;
 	unsigned reason;
 	int error;
 
 	/* The pass's facts and the rules' answer. */
 	scanout_facts(server, top, &facts);
-	reason = zwl_scanout_decide(&facts);
+	reason = kwl_scanout_decide(&facts);
 
 	/* In the game mode: the window's new image, or back to window mode. */
 	if (server->scanout != NULL) {
-		if (reason == ZWL_SCANOUT_DIRECT && top == server->scanout_surface) {
+		if (reason == KWL_SCANOUT_DIRECT && top == server->scanout_surface) {
 			scanout_frame(server, top);
 			return 1;
 		}
 
 		/* The facts changed: window mode draws from this pass. */
-		zwl_scanout_leave(server, reason);
+		kwl_scanout_leave(server, reason);
 		return 0;
 	}
 
 	/* Not to be shown straight: window mode (the reason logged for a window that asked). */
-	if (reason != ZWL_SCANOUT_DIRECT) {
+	if (reason != KWL_SCANOUT_DIRECT) {
 		scanout_note(server, top, reason);
 		return 0;
 	}
@@ -101,16 +101,16 @@ zwl_scanout_pass(
 }
 
 /*
- * Leaves the game mode for a reason (ZWL_SCANOUT_*): the backend releases
+ * Leaves the game mode for a reason (KWL_SCANOUT_*): the backend releases
  * the display, the image shown is let go, and window mode opens the
  * swapchain again on the next pass (server->windowed is 0).
  */
 void
-zwl_scanout_leave(
-	struct zwl_server *server,
+kwl_scanout_leave(
+	struct kwl_server *server,
 	unsigned reason)
 {
-	struct zwl_object *front;
+	struct kwl_object *front;
 	uint32_t surface_id;
 
 	/* Not in it. */
@@ -122,13 +122,13 @@ zwl_scanout_leave(
 	server->scanout = NULL;
 	front = server->scanout_front;
 	server->scanout_front = NULL;
-	zwl_buffer_put(front);
+	kwl_buffer_put(front);
 
 	/* The log, and window mode's frame from the next pass. */
 	surface_id = 0U;
 	if (server->scanout_surface != NULL)
 		surface_id = server->scanout_surface->id;
-	printf("ZWL SCANOUT direct=0 reason=%s surface=%u frames=%llu\n", zwl_scanout_reason_name(reason), surface_id, (unsigned long long)server->scanout_frames);
+	printf("ZWL SCANOUT direct=0 reason=%s surface=%u frames=%llu\n", kwl_scanout_reason_name(reason), surface_id, (unsigned long long)server->scanout_frames);
 	server->scanout_surface = NULL;
 	server->scanout_reason = reason;
 	server->dirty = 1;
@@ -139,13 +139,13 @@ zwl_scanout_leave(
  * refusal of it is forgotten.
  */
 void
-zwl_scanout_surface_gone(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_scanout_surface_gone(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	/* The window shown straight. */
 	if (server->scanout != NULL && server->scanout_surface == surface)
-		zwl_scanout_leave(server, ZWL_SCANOUT_NO_WINDOW);
+		kwl_scanout_leave(server, KWL_SCANOUT_NO_WINDOW);
 
 	/* A window the display refused, and the last one logged. */
 	if (server->scanout_refused == surface)
@@ -157,16 +157,16 @@ zwl_scanout_surface_gone(
 /* Gathers the facts of a pass for the rules. */
 static void
 scanout_facts(
-	struct zwl_server *server,
-	struct zwl_object *top,
-	struct zwl_scanout_facts *facts)
+	struct kwl_server *server,
+	struct kwl_object *top,
+	struct kwl_scanout_facts *facts)
 {
 	uint32_t width;
 	uint32_t height;
 	uint64_t now;
 
 	/* The pointer's stillness: a move restarts it. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	if (server->pointer_x != server->scanout_pointer[0] || server->pointer_y != server->scanout_pointer[1]) {
 		server->scanout_pointer[0] = server->pointer_x;
 		server->scanout_pointer[1] = server->pointer_y;
@@ -185,13 +185,13 @@ scanout_facts(
 	/* Its image: a client's GPU buffer (not shared memory) of the output's size, shown whole. */
 	if (top->current != NULL && top->current->shm == NULL)
 		facts->gpu_buffer = 1U;
-	zwl_surface_size(top, &width, &height);
+	kwl_surface_size(top, &width, &height);
 	if (width == server->width && height == server->height && top->source[2] <= 0 && top->destination[0] <= 0)
 		facts->size_matches = 1U;
 
 	/* What may be drawn over it, a screenshot waiting, a refusal of it. */
 	facts->overlay = (unsigned)scanout_overlay(server, top);
-	facts->shot = (unsigned)zwl_shot_waiting();
+	facts->shot = (unsigned)kwl_shot_waiting();
 	if (server->scanout_refused == top)
 		facts->refused = 1U;
 }
@@ -205,29 +205,29 @@ scanout_facts(
  */
 static int
 scanout_overlay(
-	struct zwl_server *server,
-	struct zwl_object *top)
+	struct kwl_server *server,
+	struct kwl_object *top)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 	int showing;
 
 	/* The edges' gestures and what they show (shell.c). */
-	showing = zwl_glass_overlay(server);
+	showing = kwl_glass_overlay(server);
 	if (showing)
 		return 1;
 
 	/* The compositor's own popups and dialogs. */
-	showing = zwl_menu_is_open();
+	showing = kwl_menu_is_open();
 	if (showing)
 		return 1;
-	showing = zwl_network_is_open();
+	showing = kwl_network_is_open();
 	if (showing)
 		return 1;
-	showing = zwl_volume_is_open();
+	showing = kwl_volume_is_open();
 	if (showing)
 		return 1;
-	showing = zwl_power_dialog_showing(server);
+	showing = kwl_power_dialog_showing(server);
 	if (showing)
 		return 1;
 
@@ -243,11 +243,11 @@ scanout_overlay(
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* A shown surface that is not the window itself. */
-			if (surface->kind != ZWL_SURFACE || surface->dead || surface == top || surface->current == NULL)
+			if (surface->kind != KWL_SURFACE || surface->dead || surface == top || surface->current == NULL)
 				continue;
 			if (surface->sub_role != NULL)
 				return 1;
-			if (surface->role != NULL && surface->role->top != NULL && surface->role->top->kind == ZWL_POPUP)
+			if (surface->role != NULL && surface->role->top != NULL && surface->role->top->kind == KWL_POPUP)
 				return 1;
 		}
 	}
@@ -264,15 +264,15 @@ scanout_overlay(
  */
 static int
 scanout_enter(
-	struct zwl_server *server,
-	struct zwl_object *top)
+	struct kwl_server *server,
+	struct kwl_object *top)
 {
 	uint64_t started;
 	int error;
 
 	/* The swapchain goes. */
-	started = zwl_milliseconds();
-	zwl_compose_output_close(server);
+	started = kwl_milliseconds();
+	kwl_compose_output_close(server);
 	server->windowed = 0;
 
 	/* The backend claims the display for the output's size. */
@@ -289,7 +289,7 @@ scanout_enter(
 	server->scanout_surface = top;
 	server->scanout_frames = 0U;
 	server->scanout_noted = NULL;
-	printf("ZWL SCANOUT direct=1 surface=%u client=%llu switch_ms=%llu\n", top->id, (unsigned long long)top->client->number, (unsigned long long)(zwl_milliseconds() - started));
+	printf("ZWL SCANOUT direct=1 surface=%u client=%llu switch_ms=%llu\n", top->id, (unsigned long long)top->client->number, (unsigned long long)(kwl_milliseconds() - started));
 	return 0;
 }
 
@@ -300,16 +300,16 @@ scanout_enter(
  */
 static void
 scanout_frame(
-	struct zwl_server *server,
-	struct zwl_object *top)
+	struct kwl_server *server,
+	struct kwl_object *top)
 {
-	struct zwl_object *buffer;
-	struct zwl_object *previous;
+	struct kwl_object *buffer;
+	struct kwl_object *previous;
 	int error;
 
 	/* Input goes to the window shown. */
-	server->front_surface = zwl_desktop_front(server, top);
-	zwl_seat_focus(server);
+	server->front_surface = kwl_desktop_front(server, top);
+	kwl_seat_focus(server);
 
 	/* Only a new image is presented. */
 	buffer = top->current;
@@ -317,19 +317,19 @@ scanout_frame(
 		return;
 
 	/* The image to the display; a failure is the backend's refusal from now. */
-	error = kl_backend_scanout_present(server->scanout, zwl_gpu_host(), zwl_gpu_resource(buffer));
+	error = kl_backend_scanout_present(server->scanout, kwl_gpu_host(), kwl_gpu_resource(buffer));
 	if (error != 0) {
 		printf("ZWL SCANOUT present errno=%d surface=%u\n", error, top->id);
 		server->scanout_refused = top;
-		zwl_scanout_leave(server, ZWL_SCANOUT_REFUSED);
+		kwl_scanout_leave(server, KWL_SCANOUT_REFUSED);
 		return;
 	}
 
 	/* The display holds the new image; the one it replaces is let go. */
 	previous = server->scanout_front;
-	zwl_buffer_get(buffer);
+	kwl_buffer_get(buffer);
 	server->scanout_front = buffer;
-	zwl_buffer_put(previous);
+	kwl_buffer_put(previous);
 	top->fresh = 0;
 	server->scanout_frames++;
 	server->dirty = 0;
@@ -342,11 +342,11 @@ scanout_frame(
 /* Does the frame callbacks of every surface: the one shown, and the others the game mode hides. */
 static void
 scanout_callbacks(
-	struct zwl_server *server,
-	struct zwl_object *shown)
+	struct kwl_server *server,
+	struct kwl_object *shown)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *surface;
 
 	/* Every surface of every live client. */
 	(void)shown;
@@ -354,8 +354,8 @@ scanout_callbacks(
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			if (surface->kind == ZWL_SURFACE)
-				zwl_callbacks_done(&surface->committed_callbacks);
+			if (surface->kind == KWL_SURFACE)
+				kwl_callbacks_done(&surface->committed_callbacks);
 		}
 	}
 }
@@ -363,14 +363,14 @@ scanout_callbacks(
 /* Logs, once for each new reason, why a fullscreen window that asks for the game mode is composed. */
 static void
 scanout_note(
-	struct zwl_server *server,
-	struct zwl_object *top,
+	struct kwl_server *server,
+	struct kwl_object *top,
 	unsigned reason)
 {
 	/* Only a fullscreen window that asks. */
 	if (top == NULL || !top->fullscreen)
 		return;
-	if (top->content_type != ZWL_SCANOUT_CONTENT_VIDEO && top->content_type != ZWL_SCANOUT_CONTENT_GAME)
+	if (top->content_type != KWL_SCANOUT_CONTENT_VIDEO && top->content_type != KWL_SCANOUT_CONTENT_GAME)
 		return;
 
 	/* The same window and reason as last time. */
@@ -380,5 +380,5 @@ scanout_note(
 	/* Logged. */
 	server->scanout_noted = top;
 	server->scanout_reason = reason;
-	printf("ZWL SCANOUT direct=0 reason=%s surface=%u frames=0\n", zwl_scanout_reason_name(reason), top->id);
+	printf("ZWL SCANOUT direct=0 reason=%s surface=%u frames=0\n", kwl_scanout_reason_name(reason), top->id);
 }

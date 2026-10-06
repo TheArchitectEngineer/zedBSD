@@ -143,8 +143,8 @@
 #define IME_INDICATOR_WIDTH		26
 #define IME_INDICATOR_GAP		12
 #define IME_INDICATOR_HEIGHT		26
-#define IME_INDICATOR_TOP		(ZWL_GLASS_BAR_MIDDLE - IME_INDICATOR_HEIGHT / 2)
-#define IME_INDICATOR_BASELINE		(ZWL_GLASS_BAR_MIDDLE + 5)
+#define IME_INDICATOR_TOP		(KWL_GLASS_BAR_MIDDLE - IME_INDICATOR_HEIGHT / 2)
+#define IME_INDICATOR_BASELINE		(KWL_GLASS_BAR_MIDDLE + 5)
 #define IME_INDICATOR_SLOP		4
 
 /* The keymap formats of wl_keyboard. */
@@ -173,54 +173,54 @@
  * what it makes goes to the field instead of a client.  It lives as long as
  * zdesktop; its zero value is "no field".
  */
-static struct zwl_text_input ime_field;
-static char ime_field_text[ZWL_TITLEBAR_TEXT_MAX + 1U];
+static struct kwl_text_input ime_field;
+static char ime_field_text[KWL_TITLEBAR_TEXT_MAX + 1U];
 
-static void ime_spawn(struct zwl_server *server, uint64_t now);
-static struct zwl_client *ime_connect(struct zwl_server *server, int descriptor);
-static void ime_lost(struct zwl_server *server);
-static int ime_manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int ime_method_request(struct zwl_object *method, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int ime_keyboard_request(struct zwl_object *keyboard, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int ime_status_request(struct zwl_object *status, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int ime_grab_keyboard(struct zwl_object *method, uint32_t id);
-static int ime_popup(struct zwl_object *method, uint32_t id, uint32_t surface_id);
-static int ime_popup_place(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
-static void ime_popup_draw_one(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface);
-static void ime_apply(struct zwl_server *server);
-static void ime_activate(struct zwl_server *server, struct zwl_text_input *input);
-static void ime_state(struct zwl_server *server, struct zwl_text_input *input);
-static void ime_deactivate(struct zwl_server *server);
-static void ime_rectangles(struct zwl_server *server);
-static void ime_keyboard_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
-static void ime_release_keyboard(struct zwl_server *server);
-static void ime_send_key(struct zwl_server *server, uint32_t time, uint32_t key, uint32_t state);
-static void ime_select(struct zwl_server *server, const char *id);
-static int ime_is_direct(const struct zwl_ime *ime);
-static void ime_emit(struct zwl_object *object, uint32_t opcode, const void *payload, size_t size);
+static void ime_spawn(struct kwl_server *server, uint64_t now);
+static struct kwl_client *ime_connect(struct kwl_server *server, int descriptor);
+static void ime_lost(struct kwl_server *server);
+static int ime_manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int ime_method_request(struct kwl_object *method, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int ime_keyboard_request(struct kwl_object *keyboard, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int ime_status_request(struct kwl_object *status, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int ime_grab_keyboard(struct kwl_object *method, uint32_t id);
+static int ime_popup(struct kwl_object *method, uint32_t id, uint32_t surface_id);
+static int ime_popup_place(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
+static void ime_popup_draw_one(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface);
+static void ime_apply(struct kwl_server *server);
+static void ime_activate(struct kwl_server *server, struct kwl_text_input *input);
+static void ime_state(struct kwl_server *server, struct kwl_text_input *input);
+static void ime_deactivate(struct kwl_server *server);
+static void ime_rectangles(struct kwl_server *server);
+static void ime_keyboard_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+static void ime_release_keyboard(struct kwl_server *server);
+static void ime_send_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
+static void ime_select(struct kwl_server *server, const char *id);
+static int ime_is_direct(const struct kwl_ime *ime);
+static void ime_emit(struct kwl_object *object, uint32_t opcode, const void *payload, size_t size);
 static size_t ime_put_string(unsigned char *payload, size_t offset, const char *text);
 static int ime_read_string(const unsigned char *bytes, size_t size, size_t offset, char **text, size_t *next);
 static uint32_t ime_word(const unsigned char *bytes, size_t offset);
 static void ime_set_text(char **field, const char *text);
-static void ime_app_key(struct zwl_server *server, char *key, size_t size);
-static struct zwl_ime_app *ime_app_find(struct zwl_ime *ime, const char *key);
-static struct zwl_ime_app *ime_app_add(struct zwl_ime *ime, const char *key);
-static void ime_app_remember(struct zwl_ime *ime);
-static void ime_app_focus(struct zwl_server *server);
-static int ime_client_has_app(const struct zwl_client *client, const char *app_id);
-static void ime_app_forget(struct zwl_server *server, struct zwl_client *client);
-static struct zwl_text_input *ime_current(struct zwl_server *server);
-static void ime_deliver(struct zwl_server *server, struct zwl_text_input *input, const char *preedit, int32_t begin, int32_t end, const char *commit, uint32_t before, uint32_t after);
+static void ime_app_key(struct kwl_server *server, char *key, size_t size);
+static struct kwl_ime_app *ime_app_find(struct kwl_ime *ime, const char *key);
+static struct kwl_ime_app *ime_app_add(struct kwl_ime *ime, const char *key);
+static void ime_app_remember(struct kwl_ime *ime);
+static void ime_app_focus(struct kwl_server *server);
+static int ime_client_has_app(const struct kwl_client *client, const char *app_id);
+static void ime_app_forget(struct kwl_server *server, struct kwl_client *client);
+static struct kwl_text_input *ime_current(struct kwl_server *server);
+static void ime_deliver(struct kwl_server *server, struct kwl_text_input *input, const char *preedit, int32_t begin, int32_t end, const char *commit, uint32_t before, uint32_t after);
 
 /*
  * Starts the system's input method, when its program is installed (not on
  * the login screen).
  */
 void
-zwl_ime_start(
-	struct zwl_server *server)
+kwl_ime_start(
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	int installed;
 
 	/* The login screen has no applications to type into. */
@@ -245,7 +245,7 @@ zwl_ime_start(
 	server->ime = ime;
 
 	/* Starts the program. */
-	ime_spawn(server, zwl_milliseconds());
+	ime_spawn(server, kwl_milliseconds());
 }
 
 /*
@@ -254,11 +254,11 @@ zwl_ime_start(
  * and follows the lock screen and App Home.
  */
 void
-zwl_ime_tick(
-	struct zwl_server *server,
+kwl_ime_tick(
+	struct kwl_server *server,
 	uint64_t now)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	pid_t reaped;
 	int status;
 	uint64_t oldest;
@@ -295,21 +295,21 @@ zwl_ime_tick(
 	}
 
 	/* The lock screen and App Home take the keys; the input method follows them. */
-	zwl_ime_update(server, NULL);
+	kwl_ime_update(server, NULL);
 }
 
 /*
  * Carries out a request of one of the input method's interfaces.
  */
 int
-zwl_ime_request(
-	struct zwl_object *object,
+kwl_ime_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_ime *ime;
+	struct kwl_server *server;
+	struct kwl_ime *ime;
 	uint64_t waited;
 	int error;
 
@@ -319,7 +319,7 @@ zwl_ime_request(
 	if (ime != NULL && object->client->ime) {
 		/* A slow answer is noted, to tell a busy machine from a hung input method. */
 		if (ime->watching) {
-			waited = zwl_milliseconds() - ime->watch_ms;
+			waited = kwl_milliseconds() - ime->watch_ms;
 			if (waited >= IME_SLOW_MS)
 				printf("ZWL IME slow-answer ms=%llu\n", (unsigned long long)waited);
 		}
@@ -334,34 +334,34 @@ zwl_ime_request(
 	/* Each interface has its own requests. */
 	error = EPROTO;
 	switch (object->kind) {
-	case ZWL_INPUT_METHOD_MANAGER:
-	case ZWL_VIRTUAL_KEYBOARD_MANAGER:
-	case ZWL_IME_STATUS_MANAGER:
+	case KWL_INPUT_METHOD_MANAGER:
+	case KWL_VIRTUAL_KEYBOARD_MANAGER:
+	case KWL_IME_STATUS_MANAGER:
 		error = ime_manager_request(object, opcode, bytes, size);
 		break;
-	case ZWL_INPUT_METHOD:
+	case KWL_INPUT_METHOD:
 		error = ime_method_request(object, opcode, bytes, size);
 		break;
-	case ZWL_INPUT_POPUP:
+	case KWL_INPUT_POPUP:
 		/* A popup's only request is destroy. */
 		if (opcode == POPUP_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
 		break;
-	case ZWL_KEYBOARD_GRAB:
+	case KWL_KEYBOARD_GRAB:
 		/* A grab's only request is release. */
 		if (opcode == GRAB_RELEASE && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			error = 0;
 		}
 
 		break;
-	case ZWL_VIRTUAL_KEYBOARD:
+	case KWL_VIRTUAL_KEYBOARD:
 		error = ime_keyboard_request(object, opcode, bytes, size);
 		break;
-	case ZWL_IME_STATUS:
+	case KWL_IME_STATUS:
 		error = ime_status_request(object, opcode, bytes, size);
 		break;
 	default:
@@ -380,19 +380,19 @@ zwl_ime_request(
  * Forgets one of the input method's objects that goes.
  */
 void
-zwl_ime_object_gone(
-	struct zwl_object *object)
+kwl_ime_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
-	struct zwl_ime *ime;
+	struct kwl_server *server;
+	struct kwl_ime *ime;
 	unsigned i;
 
 	server = object->client->server;
 	ime = server->ime;
 
 	/* A text input's record goes with it (text-input.c). */
-	if (object->kind == ZWL_TEXT_INPUT) {
-		zwl_text_input_object_gone(object);
+	if (object->kind == KWL_TEXT_INPUT) {
+		kwl_text_input_object_gone(object);
 		return;
 	}
 
@@ -402,7 +402,7 @@ zwl_ime_object_gone(
 
 	/* The input method's objects stop being named. */
 	switch (object->kind) {
-	case ZWL_INPUT_METHOD:
+	case KWL_INPUT_METHOD:
 		if (ime->method == object) {
 			ime->method = NULL;
 			ime->activated = 0;
@@ -410,18 +410,18 @@ zwl_ime_object_gone(
 		}
 
 		break;
-	case ZWL_KEYBOARD_GRAB:
+	case KWL_KEYBOARD_GRAB:
 		/* The keys held for the grab are forgotten; their releases go nowhere. */
 		if (ime->grab == object) {
 			ime->grab = NULL;
-			for (i = 0; i < ZWL_IME_KEYS; i++) {
-				if (ime->route[i] == ZWL_IME_ROUTE_GRAB)
-					ime->route[i] = ZWL_IME_ROUTE_NONE;
+			for (i = 0; i < KWL_IME_KEYS; i++) {
+				if (ime->route[i] == KWL_IME_ROUTE_GRAB)
+					ime->route[i] = KWL_IME_ROUTE_NONE;
 			}
 		}
 
 		break;
-	case ZWL_VIRTUAL_KEYBOARD:
+	case KWL_VIRTUAL_KEYBOARD:
 		/* The keys it holds down are let go at the application. */
 		if (ime->keyboard == object) {
 			ime_release_keyboard(server);
@@ -430,11 +430,11 @@ zwl_ime_object_gone(
 		}
 
 		break;
-	case ZWL_IME_STATUS:
+	case KWL_IME_STATUS:
 		if (ime->status == object)
 			ime->status = NULL;
 		break;
-	case ZWL_INPUT_POPUP:
+	case KWL_INPUT_POPUP:
 		for (i = 0; i < sizeof(ime->popups) / sizeof(ime->popups[0]); i++) {
 			if (ime->popups[i] == object)
 				ime->popups[i] = NULL;
@@ -452,10 +452,10 @@ zwl_ime_object_gone(
  * the input method is started again later.
  */
 void
-zwl_ime_client_gone(
-	struct zwl_client *client)
+kwl_ime_client_gone(
+	struct kwl_client *client)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* An application's connection that ends takes its language with it when it was its last (ws095-p016). */
 	server = client->server;
@@ -476,15 +476,15 @@ zwl_ime_client_gone(
  * globals only to the input method zdesktop started.
  */
 int
-zwl_ime_global_visible(
-	struct zwl_client *client,
-	enum zwl_kind kind)
+kwl_ime_global_visible(
+	struct kwl_client *client,
+	enum kwl_kind kind)
 {
 	/* The input method's globals are the input method's alone. */
 	switch (kind) {
-	case ZWL_INPUT_METHOD_MANAGER:
-	case ZWL_VIRTUAL_KEYBOARD_MANAGER:
-	case ZWL_IME_STATUS_MANAGER:
+	case KWL_INPUT_METHOD_MANAGER:
+	case KWL_VIRTUAL_KEYBOARD_MANAGER:
+	case KWL_IME_STATUS_MANAGER:
 		if (client->ime)
 			return 1;
 		return 0;
@@ -502,8 +502,8 @@ zwl_ime_global_visible(
  * itself follow at once.
  */
 void
-zwl_ime_repeat_changed(
-	struct zwl_server *server)
+kwl_ime_repeat_changed(
+	struct kwl_server *server)
 {
 	int32_t repeat[2];
 
@@ -525,10 +525,10 @@ zwl_ime_repeat_changed(
  * death.  An input method that had given up is started again too.
  */
 void
-zwl_ime_method_changed(
-	struct zwl_server *server)
+kwl_ime_method_changed(
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	/* No input method, or it runs the method chosen already. */
 	ime = server->ime;
@@ -547,7 +547,7 @@ zwl_ime_method_changed(
 	}
 
 	/* None runs: started at the next pass. */
-	ime->restart_ms = zwl_milliseconds();
+	ime->restart_ms = kwl_milliseconds();
 }
 
 /*
@@ -558,30 +558,30 @@ zwl_ime_method_changed(
  * Returns nonzero when the key is taken.
  */
 int
-zwl_ime_key_early(
-	struct zwl_server *server,
+kwl_ime_key_early(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	uint32_t modifiers;
 	int direct;
 
 	ime = server->ime;
-	if (ime == NULL || key >= ZWL_IME_KEYS)
+	if (ime == NULL || key >= KWL_IME_KEYS)
 		return 0;
 
 	/* A release goes where its press went. */
 	if (state == 0U) {
-		if (ime->route[key] == ZWL_IME_ROUTE_TAKEN) {
-			ime->route[key] = ZWL_IME_ROUTE_NONE;
+		if (ime->route[key] == KWL_IME_ROUTE_TAKEN) {
+			ime->route[key] = KWL_IME_ROUTE_NONE;
 			return 1;
 		}
 
 		/* A key the input method heard pressed hears its release. */
-		if (ime->route[key] == ZWL_IME_ROUTE_GRAB) {
-			ime->route[key] = ZWL_IME_ROUTE_NONE;
+		if (ime->route[key] == KWL_IME_ROUTE_GRAB) {
+			ime->route[key] = KWL_IME_ROUTE_NONE;
 			if (ime->grab != NULL)
 				ime_send_key(server, time, key, state);
 			return 1;
@@ -600,7 +600,7 @@ zwl_ime_key_early(
 	    (modifiers & IME_MODIFIER_ALT) != 0U &&
 	    (modifiers & (IME_MODIFIER_CONTROL | IME_MODIFIER_META)) == 0U) {
 		ime_emit(ime->status, STATUS_NEXT, NULL, 0);
-		ime->route[key] = ZWL_IME_ROUTE_TAKEN;
+		ime->route[key] = KWL_IME_ROUTE_TAKEN;
 		return 1;
 	}
 
@@ -625,7 +625,7 @@ zwl_ime_key_early(
 	}
 
 	/* Succeeded: the language key is taken, and so is its release. */
-	ime->route[key] = ZWL_IME_ROUTE_TAKEN;
+	ime->route[key] = KWL_IME_ROUTE_TAKEN;
 	return 1;
 }
 
@@ -638,21 +638,21 @@ zwl_ime_key_early(
  * Returns nonzero when the key is taken.
  */
 int
-zwl_ime_key_grab(
-	struct zwl_server *server,
+kwl_ime_key_grab(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state,
 	int composing_only)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	int direct;
 
 	ime = server->ime;
-	if (ime == NULL || key >= ZWL_IME_KEYS)
+	if (ime == NULL || key >= KWL_IME_KEYS)
 		return 0;
 
-	/* Releases were routed by zwl_ime_key_early. */
+	/* Releases were routed by kwl_ime_key_early. */
 	if (state == 0U)
 		return 0;
 
@@ -671,10 +671,10 @@ zwl_ime_key_grab(
 
 	/* The key goes to the grab, and the input method is watched until it answers. */
 	ime_send_key(server, time, key, state);
-	ime->route[key] = ZWL_IME_ROUTE_GRAB;
+	ime->route[key] = KWL_IME_ROUTE_GRAB;
 	if (!ime->watching) {
 		ime->watching = 1;
-		ime->watch_ms = zwl_milliseconds();
+		ime->watch_ms = kwl_milliseconds();
 	}
 
 	/* Succeeded: the input method has the key. */
@@ -685,10 +685,10 @@ zwl_ime_key_grab(
  * Tells the input method's keyboard grab the modifiers held.
  */
 void
-zwl_ime_modifiers(
-	struct zwl_server *server)
+kwl_ime_modifiers(
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	uint32_t words[5];
 
 	ime = server->ime;
@@ -696,7 +696,7 @@ zwl_ime_modifiers(
 		return;
 
 	/* The serial, the held and locked modifiers; nothing latched, group 0. */
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	words[1] = server->modifiers;
 	words[2] = 0;
 	words[3] = server->locked_modifiers;
@@ -710,11 +710,11 @@ zwl_ime_modifiers(
  * hear leave, the new ones enter, and the input method is told.
  */
 void
-zwl_ime_focus(
-	struct zwl_server *server,
-	struct zwl_object *previous)
+kwl_ime_focus(
+	struct kwl_server *server,
+	struct kwl_object *previous)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	/* The preedit shown is committed where it was typed. */
 	ime = server->ime;
@@ -730,10 +730,10 @@ zwl_ime_focus(
 		ime_app_focus(server);
 
 	/* The text inputs hear leave and enter (text-input.c). */
-	zwl_text_input_focus(server, previous);
+	kwl_text_input_focus(server, previous);
 
 	/* The input method follows. */
-	zwl_ime_update(server, NULL);
+	kwl_ime_update(server, NULL);
 }
 
 /*
@@ -742,12 +742,12 @@ zwl_ime_focus(
  * one; a served text input that committed tells it its state again.
  */
 void
-zwl_ime_update(
-	struct zwl_server *server,
-	struct zwl_text_input *committed)
+kwl_ime_update(
+	struct kwl_server *server,
+	struct kwl_text_input *committed)
 {
-	struct zwl_ime *ime;
-	struct zwl_text_input *current;
+	struct kwl_ime *ime;
+	struct kwl_text_input *current;
 
 	ime = server->ime;
 	if (ime == NULL || ime->method == NULL)
@@ -774,11 +774,11 @@ zwl_ime_update(
  * Stops serving a text input that goes.
  */
 void
-zwl_ime_text_input_gone(
-	struct zwl_server *server,
-	struct zwl_text_input *input)
+kwl_ime_text_input_gone(
+	struct kwl_server *server,
+	struct kwl_text_input *input)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	/* Only the text input being served matters. */
 	ime = server->ime;
@@ -795,11 +795,11 @@ zwl_ime_text_input_gone(
  * method is activated for it, told its new state, or deactivated.
  */
 void
-zwl_ime_field_changed(
-	struct zwl_server *server)
+kwl_ime_field_changed(
+	struct kwl_server *server)
 {
 	/* As a commit of the field's text input. */
-	zwl_ime_update(server, &ime_field);
+	kwl_ime_update(server, &ime_field);
 
 	/* The candidate window follows the field (its box is known once the field was drawn). */
 	if (server->ime != NULL && server->ime->active == &ime_field)
@@ -809,11 +809,11 @@ zwl_ime_field_changed(
 /*
  * Gives a key press to the input method before zdesktop's own text field
  * takes it, while the field is the text input served (the place of
- * zwl_ime_key_grab for an application's).  Returns nonzero when taken.
+ * kwl_ime_key_grab for an application's).  Returns nonzero when taken.
  */
 int
-zwl_ime_field_key(
-	struct zwl_server *server,
+kwl_ime_field_key(
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state)
@@ -825,7 +825,7 @@ zwl_ime_field_key(
 		return 0;
 
 	/* The input method's grab, as for an application. */
-	taken = zwl_ime_key_grab(server, time, key, state, 0);
+	taken = kwl_ime_key_grab(server, time, key, state, 0);
 	if (!taken)
 		return 0;
 
@@ -838,10 +838,10 @@ zwl_ime_field_key(
  * redraws the output (the window appears, changes or goes).
  */
 void
-zwl_ime_surface_commit(
-	struct zwl_object *surface)
+kwl_ime_surface_commit(
+	struct kwl_object *surface)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	unsigned i;
 
 	/* Only the input method's surfaces can be its popups. */
@@ -870,11 +870,11 @@ zwl_ime_surface_commit(
  * with the glass look's soft shadow.
  */
 void
-zwl_ime_popup_draw(
-	struct zwl_server *server,
+kwl_ime_popup_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	unsigned i;
 
 	/* Only while a text input is served. */
@@ -900,10 +900,10 @@ zwl_ime_popup_draw(
  * input method that has told its language.
  */
 int32_t
-zwl_ime_indicator_width(
-	struct zwl_server *server)
+kwl_ime_indicator_width(
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	/* No input method, or none that has told its language. */
 	ime = server->ime;
@@ -923,13 +923,13 @@ zwl_ime_indicator_width(
  * x: bright while a text input is served, pale otherwise.
  */
 void
-zwl_ime_indicator_draw(
-	struct zwl_server *server,
+kwl_ime_indicator_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	const float *ink)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	float back[4];
 	float color[4];
 	int32_t width;
@@ -940,7 +940,7 @@ zwl_ime_indicator_draw(
 		return;
 
 	/* Nothing while it has told no language (and a click finds nothing). */
-	width = zwl_ime_indicator_width(server);
+	width = kwl_ime_indicator_width(server);
 	if (width == 0) {
 		ime->indicator_shown = 0;
 		return;
@@ -975,12 +975,12 @@ zwl_ime_indicator_draw(
  * Returns nonzero when the button is taken.
  */
 int
-zwl_ime_indicator_button(
-	struct zwl_server *server,
+kwl_ime_indicator_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	int32_t x;
 	int32_t y;
 
@@ -992,7 +992,7 @@ zwl_ime_indicator_button(
 		return 0;
 	if (ime->status == NULL)
 		return 0;
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return 0;
 
 	/* The pointer must be on the chip (a little larger than the drawing), in the bar. */
@@ -1002,7 +1002,7 @@ zwl_ime_indicator_button(
 		return 0;
 	if (x >= ime->indicator_x + IME_INDICATOR_WIDTH + IME_INDICATOR_SLOP)
 		return 0;
-	if (y < 0 || y >= ZWL_GLASS_BAR)
+	if (y < 0 || y >= KWL_GLASS_BAR)
 		return 0;
 
 	/* A press asks for the next language. */
@@ -1021,11 +1021,11 @@ zwl_ime_indicator_button(
  */
 static void
 ime_spawn(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint64_t now)
 {
-	struct zwl_ime *ime;
-	struct zwl_client *client;
+	struct kwl_ime *ime;
+	struct kwl_client *client;
 	const char *method;
 	char variable[32];
 	int pair[2];
@@ -1106,13 +1106,13 @@ ime_spawn(
  * Makes the input method's end of the pair a connection, as accept_client
  * does for the socket's (main.c).
  */
-static struct zwl_client *
+static struct kwl_client *
 ime_connect(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int descriptor)
 {
-	struct zwl_client *client;
-	struct zwl_object *display;
+	struct kwl_client *client;
+	struct kwl_object *display;
 	int flags;
 
 	/* The connection is read without waiting, like every other. */
@@ -1136,15 +1136,15 @@ ime_connect(
 	client->fd = descriptor;
 	client->server = server;
 	client->number = ++server->client_serial;
-	client->connected_ms = zwl_milliseconds();
+	client->connected_ms = kwl_milliseconds();
 	client->ime = 1;
 	client->next = server->clients;
 	server->clients = client;
 
 	/* The display, the connection's first object. */
-	display = zwl_create(client, 1, ZWL_DISPLAY, 1);
+	display = kwl_create(client, 1, KWL_DISPLAY, 1);
 	if (display == NULL) {
-		zwl_client_destroy(client);
+		kwl_client_destroy(client);
 		return NULL;
 	}
 
@@ -1160,9 +1160,9 @@ ime_connect(
  */
 static void
 ime_lost(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	unsigned i;
 
 	ime = server->ime;
@@ -1176,9 +1176,9 @@ ime_lost(
 		ime_deliver(server, ime->active, NULL, 0, 0, NULL, 0, 0);
 
 	/* The keys it heard pressed: their releases go nowhere. */
-	for (i = 0; i < ZWL_IME_KEYS; i++) {
-		if (ime->route[i] == ZWL_IME_ROUTE_GRAB)
-			ime->route[i] = ZWL_IME_ROUTE_NONE;
+	for (i = 0; i < KWL_IME_KEYS; i++) {
+		if (ime->route[i] == KWL_IME_ROUTE_GRAB)
+			ime->route[i] = KWL_IME_ROUTE_NONE;
 	}
 
 	/* Its objects and state are forgotten. */
@@ -1202,9 +1202,9 @@ ime_lost(
 	/* It is started again after a moment (at once after a change of method); the indicator and the candidate window go meanwhile. */
 	ime->label[0] = '\0';
 	server->dirty = 1;
-	ime->restart_ms = zwl_milliseconds() + IME_RESTART_MS;
+	ime->restart_ms = kwl_milliseconds() + IME_RESTART_MS;
 	if (ime->replacing)
-		ime->restart_ms = zwl_milliseconds();
+		ime->restart_ms = kwl_milliseconds();
 }
 
 /*
@@ -1212,14 +1212,14 @@ ime_lost(
  */
 static int
 ime_manager_request(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_ime *ime;
-	struct zwl_object *object;
+	struct kwl_server *server;
+	struct kwl_ime *ime;
+	struct kwl_object *object;
 	uint32_t id;
 
 	server = manager->client->server;
@@ -1227,10 +1227,10 @@ ime_manager_request(
 
 	/* Each global has its own requests. */
 	switch (manager->kind) {
-	case ZWL_INPUT_METHOD_MANAGER:
+	case KWL_INPUT_METHOD_MANAGER:
 		/* destroy leaves what it made. */
 		if (opcode == MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(manager);
+			kwl_object_destroy(manager);
 			return 0;
 		}
 
@@ -1239,7 +1239,7 @@ ime_manager_request(
 			return EPROTO;
 
 		id = ime_word(bytes, 4);
-		object = zwl_create(manager->client, id, ZWL_INPUT_METHOD, manager->version);
+		object = kwl_create(manager->client, id, KWL_INPUT_METHOD, manager->version);
 		if (object == NULL)
 			return EPROTO;
 
@@ -1251,15 +1251,15 @@ ime_manager_request(
 
 		/* The input method; a text input served now activates it at once. */
 		ime->method = object;
-		zwl_ime_update(server, NULL);
+		kwl_ime_update(server, NULL);
 		return 0;
-	case ZWL_VIRTUAL_KEYBOARD_MANAGER:
+	case KWL_VIRTUAL_KEYBOARD_MANAGER:
 		/* create_virtual_keyboard: the seat and the new ID. */
 		if (opcode != KEYBOARDS_CREATE || size != 8U)
 			return EPROTO;
 
 		id = ime_word(bytes, 4);
-		object = zwl_create(manager->client, id, ZWL_VIRTUAL_KEYBOARD, manager->version);
+		object = kwl_create(manager->client, id, KWL_VIRTUAL_KEYBOARD, manager->version);
 		if (object == NULL)
 			return EPROTO;
 
@@ -1267,10 +1267,10 @@ ime_manager_request(
 		if (ime != NULL)
 			ime->keyboard = object;
 		return 0;
-	case ZWL_IME_STATUS_MANAGER:
+	case KWL_IME_STATUS_MANAGER:
 		/* destroy leaves the status. */
 		if (opcode == STATUSES_DESTROY && size == 0U) {
-			zwl_object_destroy(manager);
+			kwl_object_destroy(manager);
 			return 0;
 		}
 
@@ -1279,7 +1279,7 @@ ime_manager_request(
 			return EPROTO;
 
 		id = ime_word(bytes, 0);
-		object = zwl_create(manager->client, id, ZWL_IME_STATUS, manager->version);
+		object = kwl_create(manager->client, id, KWL_IME_STATUS, manager->version);
 		if (object == NULL)
 			return EPROTO;
 
@@ -1299,13 +1299,13 @@ ime_manager_request(
  */
 static int
 ime_method_request(
-	struct zwl_object *method,
+	struct kwl_object *method,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_ime *ime;
+	struct kwl_server *server;
+	struct kwl_ime *ime;
 	char *text;
 	size_t next;
 	int error;
@@ -1317,7 +1317,7 @@ ime_method_request(
 	if (opcode == METHOD_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(method);
+		kwl_object_destroy(method);
 		return 0;
 	}
 
@@ -1383,13 +1383,13 @@ ime_method_request(
  */
 static int
 ime_keyboard_request(
-	struct zwl_object *keyboard,
+	struct kwl_object *keyboard,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_ime *ime;
+	struct kwl_server *server;
+	struct kwl_ime *ime;
 	int descriptor;
 	int error;
 
@@ -1402,7 +1402,7 @@ ime_keyboard_request(
 		/* The keymap is taken and not used: the applications keep zdesktop's (keymap.c). */
 		if (size != 8U)
 			return EPROTO;
-		descriptor = zwl_take_fd(keyboard->client);
+		descriptor = kwl_take_fd(keyboard->client);
 		if (descriptor < 0)
 			return EPROTO;
 		close(descriptor);
@@ -1416,7 +1416,7 @@ ime_keyboard_request(
 		if (ime == NULL || ime->keyboard != keyboard)
 			return 0;
 		if (!ime->keyboard_keymap) {
-			error = zwl_error_code(keyboard->client, keyboard->id, KEYBOARD_ERROR_NO_KEYMAP, "no keymap was set");
+			error = kwl_error_code(keyboard->client, keyboard->id, KEYBOARD_ERROR_NO_KEYMAP, "no keymap was set");
 			return error;
 		}
 
@@ -1428,7 +1428,7 @@ ime_keyboard_request(
 		if (size != 16U)
 			return EPROTO;
 		if (ime != NULL && ime->keyboard == keyboard && !ime->keyboard_keymap) {
-			error = zwl_error_code(keyboard->client, keyboard->id, KEYBOARD_ERROR_NO_KEYMAP, "no keymap was set");
+			error = kwl_error_code(keyboard->client, keyboard->id, KEYBOARD_ERROR_NO_KEYMAP, "no keymap was set");
 			return error;
 		}
 
@@ -1436,7 +1436,7 @@ ime_keyboard_request(
 	case KEYBOARD_DESTROY:
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(keyboard);
+		kwl_object_destroy(keyboard);
 		return 0;
 	default:
 		break;
@@ -1451,12 +1451,12 @@ ime_keyboard_request(
  */
 static int
 ime_status_request(
-	struct zwl_object *status,
+	struct kwl_object *status,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	char *id;
 	char *label;
 	size_t next;
@@ -1470,7 +1470,7 @@ ime_status_request(
 	case STATUS_DESTROY:
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(status);
+		kwl_object_destroy(status);
 		return 0;
 	case STATUS_LANGUAGE:
 		/* The language chosen now and its label. */
@@ -1514,7 +1514,7 @@ ime_status_request(
 
 		/* The on-screen keyboard shows them when they answer its latest reading. */
 		if (ime != NULL && ime->status == status)
-			zwl_keyboard_predictions(status->client->server, ime_word(bytes, 0), id);
+			kwl_keyboard_predictions(status->client->server, ime_word(bytes, 0), id);
 		free(id);
 		return 0;
 	default:
@@ -1531,11 +1531,11 @@ ime_status_request(
  */
 static int
 ime_grab_keyboard(
-	struct zwl_object *method,
+	struct kwl_object *method,
 	uint32_t id)
 {
-	struct zwl_server *server;
-	struct zwl_object *grab;
+	struct kwl_server *server;
+	struct kwl_object *grab;
 	uint32_t words[2];
 	int32_t repeat[2];
 	uint32_t size;
@@ -1545,7 +1545,7 @@ ime_grab_keyboard(
 	server = method->client->server;
 
 	/* The grab. */
-	grab = zwl_create(method->client, id, ZWL_KEYBOARD_GRAB, method->version);
+	grab = kwl_create(method->client, id, KWL_KEYBOARD_GRAB, method->version);
 	if (grab == NULL)
 		return EPROTO;
 
@@ -1553,7 +1553,7 @@ ime_grab_keyboard(
 
 	/* The keymap the keys are in: zdesktop's (keymap.c), or none. */
 	words[0] = IME_KEYMAP_XKB_V1;
-	descriptor = zwl_keymap_descriptor(&size);
+	descriptor = kwl_keymap_descriptor(&size);
 	words[1] = size;
 	if (descriptor < 0) {
 		descriptor = open("/dev/null", O_RDONLY | O_CLOEXEC);
@@ -1563,7 +1563,7 @@ ime_grab_keyboard(
 		words[1] = 0;
 	}
 
-	error = zwl_emit_fd(grab->client, grab->id, GRAB_KEYMAP, words, sizeof(words), descriptor);
+	error = kwl_emit_fd(grab->client, grab->id, GRAB_KEYMAP, words, sizeof(words), descriptor);
 	if (error != 0)
 		return error;
 
@@ -1571,7 +1571,7 @@ ime_grab_keyboard(
 	repeat[0] = server->repeat_rate;
 	repeat[1] = server->repeat_delay_ms;
 	ime_emit(grab, GRAB_REPEAT_INFO, repeat, sizeof(repeat));
-	zwl_ime_modifiers(server);
+	kwl_ime_modifiers(server);
 
 	/* Succeeded: keys can go to the input method. */
 	return 0;
@@ -1583,33 +1583,33 @@ ime_grab_keyboard(
  */
 static int
 ime_popup(
-	struct zwl_object *method,
+	struct kwl_object *method,
 	uint32_t id,
 	uint32_t surface_id)
 {
-	struct zwl_ime *ime;
-	struct zwl_object *popup;
-	struct zwl_object *surface;
+	struct kwl_ime *ime;
+	struct kwl_object *popup;
+	struct kwl_object *surface;
 	unsigned i;
 	int error;
 
 	/* The surface must be the input method's own, live and a surface. */
-	surface = zwl_find(method->client, surface_id);
+	surface = kwl_find(method->client, surface_id);
 	if (surface == NULL ||
 	    surface->dead ||
-	    surface->kind != ZWL_SURFACE)
+	    surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* It must have no role yet. */
 	if (surface->role != NULL ||
 	    surface->cursor_role ||
 	    surface->sub_role != NULL) {
-		error = zwl_error_code(method->client, method->id, METHOD_ERROR_ROLE, "the surface has another role");
+		error = kwl_error_code(method->client, method->id, METHOD_ERROR_ROLE, "the surface has another role");
 		return error;
 	}
 
 	/* The popup, which names its surface. */
-	popup = zwl_create(method->client, id, ZWL_INPUT_POPUP, method->version);
+	popup = kwl_create(method->client, id, KWL_INPUT_POPUP, method->version);
 	if (popup == NULL)
 		return EPROTO;
 
@@ -1638,9 +1638,9 @@ ime_popup(
  */
 static void
 ime_apply(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	ime = server->ime;
 
@@ -1665,10 +1665,10 @@ ime_apply(
  */
 static void
 ime_activate(
-	struct zwl_server *server,
-	struct zwl_text_input *input)
+	struct kwl_server *server,
+	struct kwl_text_input *input)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	ime = server->ime;
 
@@ -1696,11 +1696,11 @@ ime_activate(
  */
 static void
 ime_state(
-	struct zwl_server *server,
-	struct zwl_text_input *input)
+	struct kwl_server *server,
+	struct kwl_text_input *input)
 {
-	unsigned char payload[ZWL_IME_TEXT_MAX + 16U];
-	struct zwl_ime *ime;
+	unsigned char payload[KWL_IME_TEXT_MAX + 16U];
+	struct kwl_ime *ime;
 	uint32_t words[2];
 	size_t offset;
 
@@ -1732,9 +1732,9 @@ ime_state(
  */
 static void
 ime_deactivate(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 
 	ime = server->ime;
 
@@ -1757,9 +1757,9 @@ ime_deactivate(
  */
 static void
 ime_rectangles(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	unsigned i;
 
 	ime = server->ime;
@@ -1779,12 +1779,12 @@ ime_rectangles(
  */
 static void
 ime_popup_draw_one(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	const struct zwl_import *image;
-	struct zwl_import alpha;
+	const struct kwl_import *image;
+	struct kwl_import alpha;
 	struct glass_shape shape;
 	uint32_t width;
 	uint32_t height;
@@ -1798,7 +1798,7 @@ ime_popup_draw_one(
 	if (surface->dead)
 		return;
 
-	image = zwl_compose_surface_image(surface);
+	image = kwl_compose_surface_image(surface);
 	if (image == NULL)
 		return;
 
@@ -1808,7 +1808,7 @@ ime_popup_draw_one(
 		return;
 
 	/* Its size, the image's when the surface has none of its own. */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 	if (width == 0U || height == 0U) {
 		width = image->width;
 		height = image->height;
@@ -1833,8 +1833,8 @@ ime_popup_draw_one(
 
 	/* The image, blended. */
 	alpha = *image;
-	alpha.draw = ZWL_DRAW_ALPHA;
-	zwl_compose_surface_quad(server, command, surface, &alpha, x, y);
+	alpha.draw = KWL_DRAW_ALPHA;
+	kwl_compose_surface_quad(server, command, surface, &alpha, x, y);
 }
 
 /*
@@ -1846,13 +1846,13 @@ ime_popup_draw_one(
  */
 static int
 ime_popup_place(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t *x,
 	int32_t *y)
 {
-	struct zwl_text_input *input;
-	struct zwl_object *window;
+	struct kwl_text_input *input;
+	struct kwl_object *window;
 	uint32_t width;
 	uint32_t height;
 	int32_t below;
@@ -1865,7 +1865,7 @@ ime_popup_place(
 		return 0;
 
 	/* The popup's size. */
-	zwl_surface_size(surface, &width, &height);
+	kwl_surface_size(surface, &width, &height);
 
 	/* Below the rectangle, at its left. */
 	*x = window->x + input->rectangle[0];
@@ -1891,25 +1891,25 @@ ime_popup_place(
  */
 static void
 ime_keyboard_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	int taken;
 
 	ime = server->ime;
 
 	/* A key past the remembered range goes as it is. */
-	if (key >= ZWL_IME_KEYS) {
-		zwl_seat_key_deliver(server, time, key, state);
+	if (key >= KWL_IME_KEYS) {
+		kwl_seat_key_deliver(server, time, key, state);
 		return;
 	}
 
 	/* zdesktop's own field served: its keys are the field's (titlebar-shell.c), the rest the application's. */
 	if (ime->active == &ime_field) {
-		taken = zwl_titlebar_key(server, key, state);
+		taken = kwl_titlebar_key(server, key, state);
 		if (taken)
 			return;
 	}
@@ -1922,9 +1922,9 @@ ime_keyboard_key(
 
 	/* A press may be the window's menu or tab key, when nothing is being composed. */
 	if (state != 0U && !ime->composing) {
-		taken = zwl_menu_key(server, key, state);
+		taken = kwl_menu_key(server, key, state);
 		if (!taken)
-			taken = zwl_titlebar_tab_key(server, key, state);
+			taken = kwl_titlebar_tab_key(server, key, state);
 		if (taken) {
 			ime->keyboard_taken[key] = 1;
 			return;
@@ -1932,7 +1932,7 @@ ime_keyboard_key(
 	}
 
 	/* The application hears it, and a held key is remembered. */
-	zwl_seat_key_deliver(server, time, key, state);
+	kwl_seat_key_deliver(server, time, key, state);
 	ime->keyboard_down[key] = 0;
 	if (state != 0U)
 		ime->keyboard_down[key] = 1;
@@ -1943,20 +1943,20 @@ ime_keyboard_key(
  */
 static void
 ime_release_keyboard(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
+	struct kwl_ime *ime;
 	uint32_t key;
 
 	ime = server->ime;
 
 	/* Each held key hears its release. */
-	for (key = 0; key < ZWL_IME_KEYS; key++) {
+	for (key = 0; key < KWL_IME_KEYS; key++) {
 		if (!ime->keyboard_down[key])
 			continue;
 
 		ime->keyboard_down[key] = 0;
-		zwl_seat_key_deliver(server, zwl_milliseconds() & 0xffffffffU, key, 0);
+		kwl_seat_key_deliver(server, kwl_milliseconds() & 0xffffffffU, key, 0);
 	}
 
 	memset(ime->keyboard_taken, 0, sizeof(ime->keyboard_taken));
@@ -1967,7 +1967,7 @@ ime_release_keyboard(
  */
 static void
 ime_send_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	uint32_t state)
@@ -1975,7 +1975,7 @@ ime_send_key(
 	uint32_t words[4];
 
 	/* A serial, the time, the evdev code and the state. */
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	words[1] = time;
 	words[2] = key;
 	words[3] = state;
@@ -1987,7 +1987,7 @@ ime_send_key(
  */
 static void
 ime_select(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *id)
 {
 	unsigned char payload[64];
@@ -2005,8 +2005,8 @@ ime_select(
  * when asked, ENOTSUP without an input method that predicts.
  */
 int
-zwl_ime_predict(
-	struct zwl_server *server,
+kwl_ime_predict(
+	struct kwl_server *server,
 	uint32_t serial,
 	const char *reading)
 {
@@ -2038,8 +2038,8 @@ zwl_ime_predict(
  * version 2; ws166-p002).
  */
 void
-zwl_ime_learn(
-	struct zwl_server *server,
+kwl_ime_learn(
+	struct kwl_server *server,
 	const char *reading,
 	const char *word)
 {
@@ -2067,7 +2067,7 @@ zwl_ime_learn(
  */
 static int
 ime_is_direct(
-	const struct zwl_ime *ime)
+	const struct kwl_ime *ime)
 {
 	int order;
 
@@ -2085,7 +2085,7 @@ ime_is_direct(
  */
 static void
 ime_emit(
-	struct zwl_object *object,
+	struct kwl_object *object,
 	uint32_t opcode,
 	const void *payload,
 	size_t size)
@@ -2097,10 +2097,10 @@ ime_emit(
 		return;
 
 	/* A client that stopped reading loses its connection. */
-	error = zwl_emit(object->client, object->id, opcode, payload, size);
+	error = kwl_emit(object->client, object->id, opcode, payload, size);
 	if (error != 0) {
 		object->client->fatal = 1;
-		object->client->fatal_time = zwl_milliseconds();
+		object->client->fatal_time = kwl_milliseconds();
 	}
 }
 
@@ -2118,8 +2118,8 @@ ime_put_string(
 
 	/* The length with the NUL, the bytes, and zeros to a four-byte boundary. */
 	length = (uint32_t)strlen(text) + 1U;
-	if (length > ZWL_IME_TEXT_MAX)
-		length = ZWL_IME_TEXT_MAX;
+	if (length > KWL_IME_TEXT_MAX)
+		length = KWL_IME_TEXT_MAX;
 	padded = ((size_t)length + 3U) & ~(size_t)3U;
 	memcpy(payload + offset, &length, 4);
 	memset(payload + offset + 4U, 0, padded);
@@ -2152,7 +2152,7 @@ ime_read_string(
 
 	length = ime_word(bytes, offset);
 	padded = ((size_t)length + 3U) & ~(size_t)3U;
-	if (length == 0U || length > ZWL_IME_TEXT_MAX || offset + 4U + padded > size)
+	if (length == 0U || length > KWL_IME_TEXT_MAX || offset + 4U + padded > size)
 		return EPROTO;
 
 	/* The text must end with its NUL. */
@@ -2222,11 +2222,11 @@ ime_set_text(
  */
 static void
 ime_app_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	char *key,
 	size_t size)
 {
-	struct zwl_object *focus;
+	struct kwl_object *focus;
 	int desktop;
 
 	/* No window with the keyboard, or the desktop's surface: the desktop. */
@@ -2234,7 +2234,7 @@ ime_app_key(
 	focus = server->focus;
 	if (focus == NULL)
 		return;
-	desktop = zwl_desktop_is(focus);
+	desktop = kwl_desktop_is(focus);
 	if (desktop != 0)
 		return;
 
@@ -2249,16 +2249,16 @@ ime_app_key(
 }
 
 /* Finds an application's entry by its key; NULL when none is kept. */
-static struct zwl_ime_app *
+static struct kwl_ime_app *
 ime_app_find(
-	struct zwl_ime *ime,
+	struct kwl_ime *ime,
 	const char *key)
 {
 	unsigned index;
 	int differs;
 
 	/* Each entry in use. */
-	for (index = 0; index < ZWL_IME_APPS; index++) {
+	for (index = 0; index < KWL_IME_APPS; index++) {
 		if (ime->apps[index].key[0] == '\0')
 			continue;
 		differs = strcmp(ime->apps[index].key, key);
@@ -2275,17 +2275,17 @@ ime_app_find(
  * is taken, in place of the first (the table is small and an application
  * that lost its entry only starts again with the desktop's language).
  */
-static struct zwl_ime_app *
+static struct kwl_ime_app *
 ime_app_add(
-	struct zwl_ime *ime,
+	struct kwl_ime *ime,
 	const char *key)
 {
-	struct zwl_ime_app *app;
+	struct kwl_ime_app *app;
 	unsigned index;
 
 	/* A free place, else the first one. */
 	app = &ime->apps[0];
-	for (index = 0; index < ZWL_IME_APPS; index++) {
+	for (index = 0; index < KWL_IME_APPS; index++) {
 		if (ime->apps[index].key[0] == '\0') {
 			app = &ime->apps[index];
 			break;
@@ -2303,9 +2303,9 @@ ime_app_add(
 /* Keeps the language chosen now as the one of whose it is: the application with the keyboard, or the desktop. */
 static void
 ime_app_remember(
-	struct zwl_ime *ime)
+	struct kwl_ime *ime)
 {
-	struct zwl_ime_app *app;
+	struct kwl_ime_app *app;
 
 	/* The desktop's. */
 	if (ime->focus_key[0] == '\0') {
@@ -2330,11 +2330,11 @@ ime_app_remember(
  */
 static void
 ime_app_focus(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_ime *ime;
-	struct zwl_ime_app *app;
-	char key[ZWL_IME_APP_KEY];
+	struct kwl_ime *ime;
+	struct kwl_ime_app *app;
+	char key[KWL_IME_APP_KEY];
 	const char *wanted;
 	const char *why;
 	int same;
@@ -2384,15 +2384,15 @@ ime_app_focus(
 /* Tells whether a connection has a window of an application ID. */
 static int
 ime_client_has_app(
-	const struct zwl_client *client,
+	const struct kwl_client *client,
 	const char *app_id)
 {
-	const struct zwl_object *object;
+	const struct kwl_object *object;
 	int differs;
 
 	/* Each live window (surface) of the connection. */
 	for (object = client->objects; object != NULL; object = object->next) {
-		if (object->kind != ZWL_SURFACE || object->dead)
+		if (object->kind != KWL_SURFACE || object->dead)
 			continue;
 		differs = strcmp(object->app_id, app_id);
 		if (differs == 0)
@@ -2412,13 +2412,13 @@ ime_client_has_app(
  */
 static void
 ime_app_forget(
-	struct zwl_server *server,
-	struct zwl_client *client)
+	struct kwl_server *server,
+	struct kwl_client *client)
 {
-	struct zwl_ime *ime;
-	struct zwl_ime_app *focused;
-	struct zwl_client *other;
-	char key[ZWL_IME_APP_KEY];
+	struct kwl_ime *ime;
+	struct kwl_ime_app *focused;
+	struct kwl_client *other;
+	char key[KWL_IME_APP_KEY];
 	const char *app_id;
 	const char *wanted;
 	const char *why;
@@ -2432,7 +2432,7 @@ ime_app_forget(
 	(void)snprintf(key, sizeof(key), "client:%llu", (unsigned long long)client->number);
 
 	/* Each entry: the connection's own goes; an application's goes when this was its last connection. */
-	for (index = 0; index < ZWL_IME_APPS; index++) {
+	for (index = 0; index < KWL_IME_APPS; index++) {
 		if (ime->apps[index].key[0] == '\0')
 			continue;
 		differs = strcmp(ime->apps[index].key, key);
@@ -2499,18 +2499,18 @@ ime_app_forget(
  * keyboard (its state read again), else the application's
  * (text-input.c).
  */
-static struct zwl_text_input *
+static struct kwl_text_input *
 ime_current(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_text_input *input;
-	struct zwl_object *surface;
+	struct kwl_text_input *input;
+	struct kwl_object *surface;
 	int known;
 
 	/* zdesktop's own field, when one has the keyboard. */
-	surface = zwl_titlebar_field_surface(server);
+	surface = kwl_titlebar_field_surface(server);
 	if (surface != NULL) {
-		known = zwl_titlebar_field_state(server, ime_field_text, sizeof(ime_field_text), &ime_field.cursor, &ime_field.anchor, ime_field.rectangle);
+		known = kwl_titlebar_field_state(server, ime_field_text, sizeof(ime_field_text), &ime_field.cursor, &ime_field.anchor, ime_field.rectangle);
 		if (known) {
 			ime_field.surface = surface;
 			ime_field.text = ime_field_text;
@@ -2523,7 +2523,7 @@ ime_current(
 	}
 
 	/* Otherwise an application's. */
-	input = zwl_text_input_current(server);
+	input = kwl_text_input_current(server);
 
 	/* Succeeded: the one, or none. */
 	return input;
@@ -2535,8 +2535,8 @@ ime_current(
  */
 static void
 ime_deliver(
-	struct zwl_server *server,
-	struct zwl_text_input *input,
+	struct kwl_server *server,
+	struct kwl_text_input *input,
 	const char *preedit,
 	int32_t begin,
 	int32_t end,
@@ -2546,10 +2546,10 @@ ime_deliver(
 {
 	/* zdesktop's own field. */
 	if (input == &ime_field) {
-		zwl_titlebar_field_input(server, preedit, commit, before, after);
+		kwl_titlebar_field_input(server, preedit, commit, before, after);
 		return;
 	}
 
 	/* An application's text input. */
-	zwl_text_input_deliver(input, preedit, begin, end, commit, before, after);
+	kwl_text_input_deliver(input, preedit, begin, end, commit, before, after);
 }

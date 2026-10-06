@@ -55,22 +55,22 @@
 #define PRIMARY_MIME_MAX	32U
 #define PRIMARY_MIME_LENGTH	256U
 
-static int manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int source_request(struct zwl_object *source, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int device_request(struct zwl_object *device, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int offer_request(struct zwl_object *offer, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int set_selection(struct zwl_object *device, uint32_t source_id);
-static void selection_changed(struct zwl_server *server);
-static void send_selection(struct zwl_server *server, struct zwl_client *client);
-static void send_device_selection(struct zwl_server *server, struct zwl_object *device);
+static int manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int source_request(struct kwl_object *source, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int device_request(struct kwl_object *device, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int offer_request(struct kwl_object *offer, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int set_selection(struct kwl_object *device, uint32_t source_id);
+static void selection_changed(struct kwl_server *server);
+static void send_selection(struct kwl_server *server, struct kwl_client *client);
+static void send_device_selection(struct kwl_server *server, struct kwl_object *device);
 static uint32_t primary_word(const unsigned char *bytes, size_t offset);
 
 /*
  * Carries out a request of one of the primary selection's interfaces.
  */
 int
-zwl_primary_request(
-	struct zwl_object *object,
+kwl_primary_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -79,16 +79,16 @@ zwl_primary_request(
 
 	/* Each interface has its own requests. */
 	switch (object->kind) {
-	case ZWL_PRIMARY_MANAGER:
+	case KWL_PRIMARY_MANAGER:
 		error = manager_request(object, opcode, bytes, size);
 		break;
-	case ZWL_PRIMARY_SOURCE:
+	case KWL_PRIMARY_SOURCE:
 		error = source_request(object, opcode, bytes, size);
 		break;
-	case ZWL_PRIMARY_DEVICE:
+	case KWL_PRIMARY_DEVICE:
 		error = device_request(object, opcode, bytes, size);
 		break;
-	case ZWL_PRIMARY_OFFER:
+	case KWL_PRIMARY_OFFER:
 		error = offer_request(object, opcode, bytes, size);
 		break;
 	default:
@@ -109,9 +109,9 @@ zwl_primary_request(
  * client that was told it last is not told again).
  */
 void
-zwl_primary_focus(
-	struct zwl_server *server,
-	struct zwl_object *focus)
+kwl_primary_focus(
+	struct kwl_server *server,
+	struct kwl_object *focus)
 {
 	/* No new focus, or the client told last. */
 	if (focus == NULL || focus->client->number == server->primary_client)
@@ -127,16 +127,16 @@ zwl_primary_focus(
  * selection is empty (the keyboard's client is told).
  */
 void
-zwl_primary_object_gone(
-	struct zwl_object *object)
+kwl_primary_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
-	struct zwl_client *client;
-	struct zwl_object *other;
+	struct kwl_server *server;
+	struct kwl_client *client;
+	struct kwl_object *other;
 	unsigned index;
 
 	/* Only a source has anything to untie. */
-	if (object->kind != ZWL_PRIMARY_SOURCE)
+	if (object->kind != KWL_PRIMARY_SOURCE)
 		return;
 	server = object->client->server;
 
@@ -150,7 +150,7 @@ zwl_primary_object_gone(
 	/* The offers made from it have no source any more. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (other = client->objects; other != NULL; other = other->next) {
-			if (other->kind == ZWL_PRIMARY_OFFER && other->data_source == object)
+			if (other->kind == KWL_PRIMARY_OFFER && other->data_source == object)
 				other->data_source = NULL;
 		}
 	}
@@ -166,14 +166,14 @@ zwl_primary_object_gone(
 /* Carries out a request of the manager: a new source, a seat's device, or destroy. */
 static int
 manager_request(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *seat;
-	struct zwl_server *server;
+	struct kwl_object *created;
+	struct kwl_object *seat;
+	struct kwl_server *server;
 	uint32_t id;
 	uint32_t seat_id;
 
@@ -181,7 +181,7 @@ manager_request(
 	if (opcode == MANAGER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(manager);
+		kwl_object_destroy(manager);
 		return 0;
 	}
 
@@ -190,7 +190,7 @@ manager_request(
 		if (size != 4U)
 			return EPROTO;
 		id = primary_word(bytes, 0U);
-		created = zwl_create(manager->client, id, ZWL_PRIMARY_SOURCE, manager->version);
+		created = kwl_create(manager->client, id, KWL_PRIMARY_SOURCE, manager->version);
 		if (created == NULL)
 			return EPROTO;
 		return 0;
@@ -201,10 +201,10 @@ manager_request(
 		return EPROTO;
 	id = primary_word(bytes, 0U);
 	seat_id = primary_word(bytes, 4U);
-	seat = zwl_find(manager->client, seat_id);
-	if (seat == NULL || seat->kind != ZWL_SEAT)
+	seat = kwl_find(manager->client, seat_id);
+	if (seat == NULL || seat->kind != KWL_SEAT)
 		return EPROTO;
-	created = zwl_create(manager->client, id, ZWL_PRIMARY_DEVICE, manager->version);
+	created = kwl_create(manager->client, id, KWL_PRIMARY_DEVICE, manager->version);
 	if (created == NULL)
 		return EPROTO;
 
@@ -220,7 +220,7 @@ manager_request(
 /* Carries out a request of a source: a type offered, or destroy. */
 static int
 source_request(
-	struct zwl_object *source,
+	struct kwl_object *source,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -231,18 +231,18 @@ source_request(
 	size_t length;
 	int error;
 
-	/* The source goes (zwl_primary_object_gone empties the selection when it held it). */
+	/* The source goes (kwl_primary_object_gone empties the selection when it held it). */
 	if (opcode == SOURCE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(source);
+		kwl_object_destroy(source);
 		return 0;
 	}
 
 	/* Only offer is left: one MIME type. */
 	if (opcode != SOURCE_OFFER)
 		return EPROTO;
-	error = zwl_data_read_string(bytes, size, 0U, &text, &next);
+	error = kwl_data_read_string(bytes, size, 0U, &text, &next);
 	if (error != 0 || next != size)
 		return EPROTO;
 
@@ -270,7 +270,7 @@ source_request(
 /* Carries out a request of a device: the selection, or destroy. */
 static int
 device_request(
-	struct zwl_object *device,
+	struct kwl_object *device,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -282,7 +282,7 @@ device_request(
 	if (opcode == DEVICE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(device);
+		kwl_object_destroy(device);
 		return 0;
 	}
 
@@ -301,12 +301,12 @@ device_request(
 /* Carries out a request of an offer: receive a type into a descriptor, or destroy. */
 static int
 offer_request(
-	struct zwl_object *offer,
+	struct kwl_object *offer,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *source;
+	struct kwl_object *source;
 	const char *text;
 	size_t next;
 	int descriptor;
@@ -316,17 +316,17 @@ offer_request(
 	if (opcode == OFFER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(offer);
+		kwl_object_destroy(offer);
 		return 0;
 	}
 
 	/* Only receive is left: the type, and the descriptor beside the message. */
 	if (opcode != OFFER_RECEIVE)
 		return EPROTO;
-	error = zwl_data_read_string(bytes, size, 0U, &text, &next);
+	error = kwl_data_read_string(bytes, size, 0U, &text, &next);
 	if (error != 0 || next != size)
 		return EPROTO;
-	descriptor = zwl_take_fd(offer->client);
+	descriptor = kwl_take_fd(offer->client);
 	if (descriptor < 0)
 		return EAGAIN;
 
@@ -340,26 +340,26 @@ offer_request(
 
 	/* Succeeded: the source's client writes the type into the descriptor (the event carries it away). */
 	printf("ZWL PRIMARY receive client=%llu mime=%s source=%llu\n", (unsigned long long)offer->client->number, text, (unsigned long long)source->client->number);
-	(void)zwl_data_emit_string(source->client, source->id, SOURCE_SEND, text, descriptor);
+	(void)kwl_data_emit_string(source->client, source->id, SOURCE_SEND, text, descriptor);
 	return 0;
 }
 
 /* Sets the primary selection from a client's device: a source of the client, or none; the replaced source is cancelled. */
 static int
 set_selection(
-	struct zwl_object *device,
+	struct kwl_object *device,
 	uint32_t source_id)
 {
-	struct zwl_server *server;
-	struct zwl_object *source;
-	struct zwl_object *previous;
+	struct kwl_server *server;
+	struct kwl_object *source;
+	struct kwl_object *previous;
 	unsigned types;
 
 	/* The source must be one of the client's. */
 	source = NULL;
 	if (source_id != 0U) {
-		source = zwl_find(device->client, source_id);
-		if (source == NULL || source->kind != ZWL_PRIMARY_SOURCE)
+		source = kwl_find(device->client, source_id);
+		if (source == NULL || source->kind != KWL_PRIMARY_SOURCE)
 			return EPROTO;
 	}
 
@@ -371,7 +371,7 @@ set_selection(
 
 	/* The source replaced hears that it is not the selection any more. */
 	if (previous != NULL && !previous->dead)
-		(void)zwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
+		(void)kwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
 
 	/* The new selection (with how many types it has), and the client with the keyboard hears it. */
 	server->primary = source;
@@ -388,7 +388,7 @@ set_selection(
 /* Tells the client with the keyboard that the primary selection changed. */
 static void
 selection_changed(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Without a focus nobody is told now (the next focus is). */
 	server->primary_client = 0;
@@ -402,10 +402,10 @@ selection_changed(
 /* Tells every primary selection device of a client the selection. */
 static void
 send_selection(
-	struct zwl_server *server,
-	struct zwl_client *client)
+	struct kwl_server *server,
+	struct kwl_client *client)
 {
-	struct zwl_object *device;
+	struct kwl_object *device;
 
 	/* A failed client hears nothing. */
 	if (client->fatal)
@@ -413,7 +413,7 @@ send_selection(
 
 	/* Each live device. */
 	for (device = client->objects; device != NULL; device = device->next) {
-		if (device->kind == ZWL_PRIMARY_DEVICE && !device->dead)
+		if (device->kind == KWL_PRIMARY_DEVICE && !device->dead)
 			send_device_selection(server, device);
 	}
 
@@ -428,11 +428,11 @@ send_selection(
  */
 static void
 send_device_selection(
-	struct zwl_server *server,
-	struct zwl_object *device)
+	struct kwl_server *server,
+	struct kwl_object *device)
 {
-	struct zwl_object *source;
-	struct zwl_object *offer;
+	struct kwl_object *source;
+	struct kwl_object *offer;
 	uint32_t word;
 	unsigned index;
 
@@ -440,24 +440,24 @@ send_device_selection(
 	source = server->primary;
 	word = 0;
 	if (source == NULL || source->dead) {
-		(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
+		(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
 		return;
 	}
 
 	/* The offer, made by the compositor. */
-	offer = zwl_create_server(device->client, ZWL_PRIMARY_OFFER, device->version);
+	offer = kwl_create_server(device->client, KWL_PRIMARY_OFFER, device->version);
 	if (offer == NULL)
 		return;
 	offer->data_source = source;
 
 	/* It is introduced, with each of the source's types. */
 	word = offer->id;
-	(void)zwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
+	(void)kwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
 	for (index = 0; index < source->mime_count; index++)
-		(void)zwl_data_emit_string(device->client, offer->id, OFFER_OFFER, source->mime_types[index], -1);
+		(void)kwl_data_emit_string(device->client, offer->id, OFFER_OFFER, source->mime_types[index], -1);
 
 	/* Succeeded: the selection names it. */
-	(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
+	(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
 	printf("ZWL PRIMARY offer client=%llu offer=%u types=%u\n", (unsigned long long)device->client->number, offer->id, source->mime_count);
 }
 

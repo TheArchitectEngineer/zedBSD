@@ -54,16 +54,16 @@ static int failures;
 static int checks;
 
 /* The pad, the fake clock and the next tracking identifier. */
-static struct zwl_touchpad pad;
+static struct kwl_touchpad pad;
 static uint64_t now_ms;
 static int32_t next_tracking;
 
 /* The actions of the whole of one case, gathered from every call. */
-static struct zwl_touchpad_action seen[512];
+static struct kwl_touchpad_action seen[512];
 static unsigned seen_count;
 
 static void check(int condition, const char *what);
-static void gather(const struct zwl_touchpad_actions *actions);
+static void gather(const struct kwl_touchpad_actions *actions);
 static void frame(void);
 static void frame_after(uint64_t milliseconds);
 static void finger_down(int32_t slot, int32_t x, int32_t y);
@@ -100,7 +100,7 @@ check(
 /* Keeps the actions one call gave. */
 static void
 gather(
-	const struct zwl_touchpad_actions *actions)
+	const struct kwl_touchpad_actions *actions)
 {
 	unsigned index;
 
@@ -126,11 +126,11 @@ static void
 frame_after(
 	uint64_t milliseconds)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 
 	/* Time passes, then the report ends. */
 	now_ms += milliseconds;
-	zwl_touchpad_frame(&pad, now_ms, &actions);
+	kwl_touchpad_frame(&pad, now_ms, &actions);
 	gather(&actions);
 }
 
@@ -142,11 +142,11 @@ finger_down(
 	int32_t y)
 {
 	/* Its slot, its new identifier and its place. */
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, next_tracking);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, next_tracking);
 	next_tracking++;
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
 }
 
 /* A finger moves to a place. */
@@ -157,9 +157,9 @@ finger_move(
 	int32_t y)
 {
 	/* Its slot and its place. */
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_X, x);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_Y, y);
 }
 
 /* A finger lifts. */
@@ -168,8 +168,8 @@ finger_up(
 	int32_t slot)
 {
 	/* Its slot ends its identifier. */
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
-	zwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, -1);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_SLOT, slot);
+	kwl_touchpad_event(&pad, EV_ABS_TYPE, CODE_TRACKING, -1);
 }
 
 /* The pad pressed or let go. */
@@ -178,7 +178,7 @@ button(
 	int32_t pressed)
 {
 	/* BTN_LEFT. */
-	zwl_touchpad_event(&pad, EV_KEY_TYPE, CODE_BUTTON, pressed);
+	kwl_touchpad_event(&pad, EV_KEY_TYPE, CODE_BUTTON, pressed);
 }
 
 /* Starts a case on a fresh pad (of the 5330's size, or of no known size), long after any earlier one. */
@@ -188,9 +188,9 @@ start_case(
 {
 	/* A pad with nothing on it, and no action seen. */
 	memset(&pad, 0, sizeof(pad));
-	zwl_touchpad_init(&pad, RESOLUTION, RESOLUTION);
+	kwl_touchpad_init(&pad, RESOLUTION, RESOLUTION);
 	if (sized)
-		zwl_touchpad_set_size(&pad, PAD_X_MAX, PAD_Y_MAX);
+		kwl_touchpad_set_size(&pad, PAD_X_MAX, PAD_Y_MAX);
 	now_ms += 10000U;
 	seen_count = 0;
 }
@@ -229,7 +229,7 @@ gesture_count(
 	/* Every gesture action of that kind and phase. */
 	count = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE &&
+		if (seen[index].kind == KWL_TOUCHPAD_GESTURE &&
 		    seen[index].gesture == gesture &&
 		    seen[index].phase == phase)
 			count++;
@@ -247,8 +247,8 @@ gestures(void)
 	unsigned swipes;
 
 	/* Of the gesture kind, less the swipes' ends. */
-	count = kind_count(ZWL_TOUCHPAD_GESTURE);
-	swipes = gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END);
+	count = kind_count(KWL_TOUCHPAD_GESTURE);
+	swipes = gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END);
 
 	/* Succeeded: the count. */
 	return count - swipes;
@@ -271,13 +271,13 @@ swipe_after_scroll(void)
 	found = 0;
 	for (index = 0; index < seen_count; index++) {
 		/* A scroll. */
-		if (seen[index].kind == ZWL_TOUCHPAD_SCROLL) {
+		if (seen[index].kind == KWL_TOUCHPAD_SCROLL) {
 			last_scroll = index;
 			scrolled = 1;
 		}
 
 		/* The swipe's end. */
-		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE && seen[index].gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2) {
+		if (seen[index].kind == KWL_TOUCHPAD_GESTURE && seen[index].gesture == KWL_TOUCHPAD_GESTURE_SWIPE2) {
 			swipe = index;
 			found = 1;
 		}
@@ -323,7 +323,7 @@ last_travel(
 	/* The last one of the phase. */
 	travel = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE && seen[index].phase == phase)
+		if (seen[index].kind == KWL_TOUCHPAD_GESTURE && seen[index].phase == phase)
 			travel = seen[index].travel_um;
 	}
 
@@ -342,7 +342,7 @@ last_speed(
 	/* The last one of the phase. */
 	speed = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE && seen[index].phase == phase)
+		if (seen[index].kind == KWL_TOUCHPAD_GESTURE && seen[index].phase == phase)
 			speed = seen[index].speed;
 	}
 
@@ -360,7 +360,7 @@ travel_rises(void)
 	/* Every gesture action against the one before. */
 	before = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind != ZWL_TOUCHPAD_GESTURE)
+		if (seen[index].kind != KWL_TOUCHPAD_GESTURE)
 			continue;
 		if (seen[index].travel_um < before)
 			return 0;
@@ -383,7 +383,7 @@ button_count(
 	/* Every button action of that button and state. */
 	count = 0;
 	for (index = 0; index < seen_count; index++) {
-		if (seen[index].kind == ZWL_TOUCHPAD_BUTTON &&
+		if (seen[index].kind == KWL_TOUCHPAD_BUTTON &&
 		    seen[index].button == code &&
 		    seen[index].pressed == pressed)
 			count++;
@@ -399,7 +399,7 @@ main(void)
 {
 	int32_t x[3];
 	int32_t y[3];
-	struct zwl_touchpad_actions released;
+	struct kwl_touchpad_actions released;
 	int32_t travel;
 	int burst;
 	int step;
@@ -417,15 +417,15 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "bottom2: begins once");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_UPDATE) >= 5U, "bottom2: follows the fingers");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_END) == 1U, "bottom2: ends at the lift");
-	travel = last_travel(ZWL_TOUCHPAD_PHASE_END);
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "bottom2: begins once");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_UPDATE) >= 5U, "bottom2: follows the fingers");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_END) == 1U, "bottom2: ends at the lift");
+	travel = last_travel(KWL_TOUCHPAD_PHASE_END);
 	check(travel >= 19000 && travel <= 21000, "bottom2: travels 20 mm up");
 	check(travel_rises(), "bottom2: the travel rises");
-	check(last_speed(ZWL_TOUCHPAD_PHASE_END) >= FLICK, "bottom2: 250 mm/s is a flick");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) == 0U, "bottom2: does not scroll");
-	check(kind_count(ZWL_TOUCHPAD_BUTTON) == 0U, "bottom2: clicks nothing");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) >= FLICK, "bottom2: 250 mm/s is a flick");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "bottom2: does not scroll");
+	check(kind_count(KWL_TOUCHPAD_BUTTON) == 0U, "bottom2: clicks nothing");
 
 	/* 2. The same, slowly (2 mm every 80 ms): the end is no flick. */
 	start_case(1);
@@ -436,8 +436,8 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_END) == 1U, "slow bottom2: ends");
-	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "slow bottom2: 25 mm/s is no flick");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_END) == 1U, "slow bottom2: ends");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) < FLICK, "slow bottom2: 25 mm/s is no flick");
 
 	/* 3. The fingers land in different reports: still BOTTOM2. */
 	start_case(1);
@@ -449,8 +449,8 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "staggered bottom2: begins");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) == 0U, "staggered bottom2: does not scroll");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "staggered bottom2: begins");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "staggered bottom2: does not scroll");
 
 	/* 4. Two fingers up in the middle: a scroll, no gesture. */
 	start_case(1);
@@ -466,7 +466,7 @@ main(void)
 	finger_up(1);
 	frame();
 	check(gestures() == 0U, "middle: no gesture");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) > 0U, "middle: scrolls");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "middle: scrolls");
 
 	/* 5. Two fingers at the bottom edge moving across: a scroll, no gesture. */
 	start_case(1);
@@ -482,7 +482,7 @@ main(void)
 	finger_up(1);
 	frame();
 	check(gestures() == 0U, "along the bottom edge: no gesture");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) > 0U, "along the bottom edge: scrolls");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "along the bottom edge: scrolls");
 
 	/* 6. Only one finger in the bottom edge: a scroll. */
 	start_case(1);
@@ -509,10 +509,10 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_LEFT2, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "left2: begins");
-	travel = last_travel(ZWL_TOUCHPAD_PHASE_END);
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_LEFT2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "left2: begins");
+	travel = last_travel(KWL_TOUCHPAD_PHASE_END);
 	check(travel >= 29000 && travel <= 31000, "left2: travels 30 mm inward");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) == 0U, "left2: does not scroll");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "left2: does not scroll");
 
 	/* 8. Two fingers left 30 mm from the right edge: RIGHT2, its travel inward positive. */
 	start_case(1);
@@ -527,8 +527,8 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_RIGHT2, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "right2: begins");
-	travel = last_travel(ZWL_TOUCHPAD_PHASE_END);
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_RIGHT2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "right2: begins");
+	travel = last_travel(KWL_TOUCHPAD_PHASE_END);
 	check(travel >= 29000 && travel <= 31000, "right2: travels 30 mm inward");
 
 	/* 9. From the left edge, but moving left (outward): no gesture. */
@@ -561,11 +561,11 @@ main(void)
 	finger_up(1);
 	finger_up(2);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_UP3, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "up3: begins");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_UP3, ZWL_TOUCHPAD_PHASE_END) == 1U, "up3: ends");
-	travel = last_travel(ZWL_TOUCHPAD_PHASE_END);
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_UP3, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "up3: begins");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_UP3, KWL_TOUCHPAD_PHASE_END) == 1U, "up3: ends");
+	travel = last_travel(KWL_TOUCHPAD_PHASE_END);
 	check(travel >= 14000 && travel <= 16000, "up3: travels 15 mm");
-	check(kind_count(ZWL_TOUCHPAD_MOTION) == 0U, "up3: moves no pointer");
+	check(kind_count(KWL_TOUCHPAD_MOTION) == 0U, "up3: moves no pointer");
 
 	/* 11. Three fingers across: nothing at all. */
 	start_case(1);
@@ -590,8 +590,8 @@ main(void)
 	finger_up(1);
 	finger_up(2);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_TAP3, ZWL_TOUCHPAD_PHASE_END) == 1U, "tap3: the gesture");
-	check(kind_count(ZWL_TOUCHPAD_BUTTON) == 0U, "tap3: no button");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_TAP3, KWL_TOUCHPAD_PHASE_END) == 1U, "tap3: the gesture");
+	check(kind_count(KWL_TOUCHPAD_BUTTON) == 0U, "tap3: no button");
 
 	/* 13. The pad pressed with three fingers: the middle button. */
 	start_case(1);
@@ -607,7 +607,7 @@ main(void)
 	finger_up(1);
 	finger_up(2);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_MIDDLE, 1U) == 1U && button_count(ZWL_TOUCHPAD_BUTTON_MIDDLE, 0U) == 1U, "three-finger press: the middle button");
+	check(button_count(KWL_TOUCHPAD_BUTTON_MIDDLE, 1U) == 1U && button_count(KWL_TOUCHPAD_BUTTON_MIDDLE, 0U) == 1U, "three-finger press: the middle button");
 	check(gestures() == 0U, "three-finger press: no gesture");
 
 	/* 14. A two-finger tap in the bottom edge is still the right button. */
@@ -618,7 +618,7 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(button_count(ZWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 1U, "two-finger tap in the edge: the right button");
+	check(button_count(KWL_TOUCHPAD_BUTTON_RIGHT, 1U) == 1U, "two-finger tap in the edge: the right button");
 	check(gestures() == 0U, "two-finger tap in the edge: no gesture");
 
 	/* 15. A third finger during BOTTOM2: given up, and the rest of the touch does nothing. */
@@ -642,10 +642,10 @@ main(void)
 	finger_up(1);
 	finger_up(2);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_CANCEL) == 1U, "a finger more: bottom2 given up");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_END) == 0U, "a finger more: no end");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_UP3, ZWL_TOUCHPAD_PHASE_BEGIN) == 0U, "a finger more: no up3 after");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) == 0U && kind_count(ZWL_TOUCHPAD_MOTION) == 0U, "a finger more: nothing after");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_CANCEL) == 1U, "a finger more: bottom2 given up");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_END) == 0U, "a finger more: no end");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_UP3, KWL_TOUCHPAD_PHASE_BEGIN) == 0U, "a finger more: no up3 after");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U && kind_count(KWL_TOUCHPAD_MOTION) == 0U, "a finger more: nothing after");
 
 	/* 16. One finger lifted during BOTTOM2: it ends, and the finger left moves no pointer. */
 	start_case(1);
@@ -663,9 +663,9 @@ main(void)
 	move_fingers(1U, x, y, 120, 0, 5, 8U);
 	finger_up(0);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_END) == 1U, "a finger less: bottom2 ends once");
-	check(kind_count(ZWL_TOUCHPAD_MOTION) == 0U, "a finger less: the finger left moves no pointer");
-	check(kind_count(ZWL_TOUCHPAD_BUTTON) == 0U, "a finger less: no tap");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_END) == 1U, "a finger less: bottom2 ends once");
+	check(kind_count(KWL_TOUCHPAD_MOTION) == 0U, "a finger less: the finger left moves no pointer");
+	check(kind_count(KWL_TOUCHPAD_BUTTON) == 0U, "a finger less: no tap");
 
 	/* 17. The pad pressed during BOTTOM2: given up. */
 	start_case(1);
@@ -682,7 +682,7 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_CANCEL) == 1U, "pressed: bottom2 given up");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_CANCEL) == 1U, "pressed: bottom2 given up");
 
 	/* 18. The device going away during BOTTOM2: given up. */
 	start_case(1);
@@ -690,9 +690,9 @@ main(void)
 	finger_down(1, x[1], y[1]);
 	frame();
 	move_fingers(2U, x, y, 0, -120, 5, 8U);
-	zwl_touchpad_release_all(&pad, &released);
+	kwl_touchpad_release_all(&pad, &released);
 	gather(&released);
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_CANCEL) == 1U, "released: bottom2 given up");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_CANCEL) == 1U, "released: bottom2 given up");
 
 	/* 19. Without the pad's size there is no edge: two fingers at the bottom scroll. */
 	start_case(0);
@@ -704,7 +704,7 @@ main(void)
 	finger_up(1);
 	frame();
 	check(gestures() == 0U, "no size: no gesture");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) > 0U, "no size: scrolls");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "no size: scrolls");
 
 	/* 20. Slow fingers (2 mm every 60 ms) whose reports come in bursts of three every 180 ms: no flick (T1-126). */
 	start_case(1);
@@ -729,9 +729,9 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_BOTTOM2, ZWL_TOUCHPAD_PHASE_END) == 1U, "bursts: bottom2 ends");
-	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "bursts: 33 mm/s read in bursts is no flick");
-	check(last_speed(ZWL_TOUCHPAD_PHASE_END) > 20000, "bursts: about 33 mm/s");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_END) == 1U, "bursts: bottom2 ends");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) < FLICK, "bursts: 33 mm/s read in bursts is no flick");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) > 20000, "bursts: about 33 mm/s");
 
 	/* 21. A quick swipe that stops 200 ms before the lift: no flick, with or without reports while still. */
 	start_case(1);
@@ -745,7 +745,7 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, no reports: no flick");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, no reports: no flick");
 	start_case(1);
 	finger_down(0, x[0], y[0]);
 	finger_down(1, x[1], y[1]);
@@ -763,7 +763,7 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, reports while still: no flick");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, reports while still: no flick");
 
 	/* 22. Two fingers down 20 mm from the top edge: TOP2 (ws142-p009, BUG-224), its travel down positive. */
 	start_case(1);
@@ -778,12 +778,12 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_TOP2, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "top2: begins");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_TOP2, ZWL_TOUCHPAD_PHASE_END) == 1U, "top2: ends");
-	travel = last_travel(ZWL_TOUCHPAD_PHASE_END);
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_TOP2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "top2: begins");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_TOP2, KWL_TOUCHPAD_PHASE_END) == 1U, "top2: ends");
+	travel = last_travel(KWL_TOUCHPAD_PHASE_END);
 	check(travel >= 19000 && travel <= 21000, "top2: travels 20 mm down");
-	check(kind_count(ZWL_TOUCHPAD_SCROLL) == 0U, "top2: does not scroll");
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 0U, "top2: no swipe's end");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "top2: does not scroll");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 0U, "top2: no swipe's end");
 
 	/* 23. From the top edge, but moving up (outward), and one finger only in the top edge: no gesture. */
 	start_case(1);
@@ -822,7 +822,7 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 1U, "scroll: one swipe's end");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 1U, "scroll: one swipe's end");
 	check(swipe_after_scroll(), "scroll: the swipe's end after the scrolling");
 
 	/* 25. One finger of a scroll lifting first: the swipe ends then, once. */
@@ -833,12 +833,12 @@ main(void)
 	move_fingers(2U, x, y, 120, 0, 6, 8U);
 	finger_up(1);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 1U, "a finger lifts: the swipe ends");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 1U, "a finger lifts: the swipe ends");
 	finger_move(0, x[0] + 60, y[0]);
 	frame();
 	finger_up(0);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 1U, "the last finger: no second end");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 1U, "the last finger: no second end");
 
 	/* 26. A touch that did not scroll (one finger moving, a gesture, a tap) says no swipe's end. */
 	start_case(1);
@@ -847,7 +847,7 @@ main(void)
 	move_fingers(1U, x, y, 120, 0, 6, 8U);
 	finger_up(0);
 	frame();
-	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 0U, "one finger: no swipe's end");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 0U, "one finger: no swipe's end");
 
 	/* The result. */
 	if (failures != 0) {

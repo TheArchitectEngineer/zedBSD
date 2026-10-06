@@ -28,7 +28,7 @@
  * Reports how many bytes a buffer's description takes on the wire.
  */
 size_t
-zwl_gpu_buffer_wire_bytes(
+kwl_gpu_buffer_wire_bytes(
 	void)
 {
 	/* Succeeded: the kernel's image description. */
@@ -45,11 +45,11 @@ zwl_gpu_buffer_wire_bytes(
  * the device has.  Returns EINVAL for anything else.
  */
 int
-zwl_gpu_buffer_decode(
+kwl_gpu_buffer_decode(
 	const unsigned char *bytes,
 	size_t size,
-	const struct zwl_gpu_limits *limits,
-	struct zwl_buffer_layout *layout)
+	const struct kwl_gpu_limits *limits,
+	struct kwl_buffer_layout *layout)
 {
 	struct gpu_image_descriptor image;
 	VkFormat format;
@@ -133,7 +133,7 @@ zwl_gpu_buffer_decode(
  * Reports the Vulkan handle type a buffer's fd is imported as.
  */
 VkExternalMemoryHandleTypeFlagBits
-zwl_gpu_buffer_handle_type(
+kwl_gpu_buffer_handle_type(
 	void)
 {
 	/* Succeeded: a kernel image capability is libvulkan's OPAQUE_FD. */

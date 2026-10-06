@@ -99,7 +99,7 @@
 #define TAB_TITLE_GAP		18
 
 /* The most tabs one window lays out. */
-#define SHELL_TABS		ZWL_TITLEBAR_TABS_MAX
+#define SHELL_TABS		KWL_TITLEBAR_TABS_MAX
 
 /* The keys a field knows (evdev codes). */
 #define FIELD_KEY_ESC		1U
@@ -139,7 +139,7 @@
 #define SEAT_META		0x40U
 
 /* The most controls one window lays out. */
-#define SHELL_ITEMS		ZWL_TITLEBAR_CONTROLS_MAX
+#define SHELL_ITEMS		KWL_TITLEBAR_CONTROLS_MAX
 
 /*
  * The kinds of region a frame records: a button (or a text control shown
@@ -174,7 +174,7 @@ enum shell_side {
  * starts.
  */
 struct shell_hit {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	unsigned docked;
 	unsigned kind;
 	uint32_t id;
@@ -192,7 +192,7 @@ struct shell_hit {
  * shown, and where it is.
  */
 struct shell_item {
-	const struct zwl_titlebar_control *control;
+	const struct kwl_titlebar_control *control;
 	unsigned side;
 	unsigned unit;
 	unsigned shown;
@@ -205,7 +205,7 @@ struct shell_item {
  * it is shown, and where it is and how wide.
  */
 struct shell_tab {
-	const struct zwl_titlebar_tab *tab;
+	const struct kwl_titlebar_tab *tab;
 	int32_t natural;
 	unsigned shown;
 	int32_t x;
@@ -236,10 +236,10 @@ struct shell_strip {
  * cursor and not part of the text; empty for none.
  */
 struct shell_field {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t id;
 	unsigned edit;
-	char text[ZWL_TITLEBAR_TEXT_MAX + 1U];
+	char text[KWL_TITLEBAR_TEXT_MAX + 1U];
 	size_t length;
 	size_t cursor;
 	size_t anchor;
@@ -248,7 +248,7 @@ struct shell_field {
 	int32_t box_y;
 	int32_t box_width;
 	int32_t box_height;
-	char preedit[ZWL_TITLEBAR_TEXT_MAX + 1U];
+	char preedit[KWL_TITLEBAR_TEXT_MAX + 1U];
 };
 
 /*
@@ -262,8 +262,8 @@ struct shell_field {
 struct shell_suggestions {
 	size_t count;
 	int lit;
-	char labels[ZWL_TITLEBAR_SUGGESTIONS_MAX][SUGGEST_LABEL];
-	char texts[ZWL_TITLEBAR_SUGGESTIONS_MAX][ZWL_TITLEBAR_TEXT_MAX + 1U];
+	char labels[KWL_TITLEBAR_SUGGESTIONS_MAX][SUGGEST_LABEL];
+	char texts[KWL_TITLEBAR_SUGGESTIONS_MAX][KWL_TITLEBAR_TEXT_MAX + 1U];
 	unsigned drawn;
 	unsigned logged;
 	int32_t x;
@@ -273,7 +273,7 @@ struct shell_suggestions {
 
 /* The last layout logged for a window and place (a checksum), so a layout is logged once. */
 struct shell_logged {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	unsigned docked;
 	uint32_t checksum;
 };
@@ -294,7 +294,7 @@ struct shell_titlebar {
 	unsigned pressing;
 	int32_t press_x;
 	int32_t press_y;
-	enum zwl_contact_source press_source;
+	enum kwl_contact_source press_source;
 	unsigned waiting;
 	unsigned selecting;
 	struct shell_field field;
@@ -310,43 +310,43 @@ struct shell_titlebar {
  */
 static struct shell_titlebar shell_titlebar;
 
-static unsigned shell_mode(struct zwl_object *surface, struct zwl_titlebar_model **model, struct zwl_object **titlebar);
-static unsigned shell_layout(struct zwl_server *server, const struct zwl_titlebar_state *state, unsigned docked, const struct zwl_menu_area *area, unsigned has_menu, struct shell_item *items, int32_t *crumb_width, unsigned *overflow, unsigned *compact_search);
-static int32_t shell_item_width(struct zwl_server *server, const struct zwl_titlebar_control *control, int32_t size, unsigned compact_search);
-static unsigned shell_side(const struct zwl_titlebar_control *control);
-static int32_t shell_crumb_full(struct zwl_server *server, const struct zwl_titlebar_control *control);
-static void shell_draw_controls(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, const float *ink, float fade);
-static void shell_draw_button(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, unsigned kind, const float *ink, float fade, unsigned recording);
-static void shell_draw_search(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
-static void shell_draw_crumbs(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
-static void shell_draw_field_text(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t baseline, int32_t width, const float *ink, float fade);
-static void shell_draw_progress(struct zwl_server *server, VkCommandBuffer command, const struct zwl_titlebar_control *control, int32_t x, int32_t y, int32_t size, float fade);
-static int32_t shell_tab_natural(struct zwl_server *server, const struct zwl_titlebar_tab *tab);
-static int32_t shell_tabs_need(struct zwl_server *server, struct zwl_object *surface, const struct zwl_titlebar_model *model);
-static unsigned shell_tabs_layout(struct zwl_server *server, struct zwl_titlebar_model *model, const struct zwl_menu_area *area, int32_t size, unsigned has_menu, struct shell_tab *tabs, struct shell_strip *strip);
-static void shell_draw_tabs(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct zwl_menu_area *area, const float *ink, float fade);
-static void shell_draw_tab(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, unsigned docked, const struct shell_tab *tab, int32_t y, int32_t size, const float *ink, float fade, unsigned recording, int32_t *close_x);
-static void shell_act_tabs(struct zwl_server *server, const struct shell_hit *hit, struct zwl_titlebar_model *model, struct zwl_object *titlebar);
-static void shell_log_strip(struct zwl_object *surface, unsigned docked, const struct shell_tab *tabs, unsigned count, const int32_t *closes, int32_t y, int32_t size, const int32_t *buttons, uint32_t checksum);
+static unsigned shell_mode(struct kwl_object *surface, struct kwl_titlebar_model **model, struct kwl_object **titlebar);
+static unsigned shell_layout(struct kwl_server *server, const struct kwl_titlebar_state *state, unsigned docked, const struct kwl_menu_area *area, unsigned has_menu, struct shell_item *items, int32_t *crumb_width, unsigned *overflow, unsigned *compact_search);
+static int32_t shell_item_width(struct kwl_server *server, const struct kwl_titlebar_control *control, int32_t size, unsigned compact_search);
+static unsigned shell_side(const struct kwl_titlebar_control *control);
+static int32_t shell_crumb_full(struct kwl_server *server, const struct kwl_titlebar_control *control);
+static void shell_draw_controls(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
+static void shell_draw_button(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, unsigned kind, const float *ink, float fade, unsigned recording);
+static void shell_draw_search(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
+static void shell_draw_crumbs(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
+static void shell_draw_field_text(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t baseline, int32_t width, const float *ink, float fade);
+static void shell_draw_progress(struct kwl_server *server, VkCommandBuffer command, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t size, float fade);
+static int32_t shell_tab_natural(struct kwl_server *server, const struct kwl_titlebar_tab *tab);
+static int32_t shell_tabs_need(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_model *model);
+static unsigned shell_tabs_layout(struct kwl_server *server, struct kwl_titlebar_model *model, const struct kwl_menu_area *area, int32_t size, unsigned has_menu, struct shell_tab *tabs, struct shell_strip *strip);
+static void shell_draw_tabs(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
+static void shell_draw_tab(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct shell_tab *tab, int32_t y, int32_t size, const float *ink, float fade, unsigned recording, int32_t *close_x);
+static void shell_act_tabs(struct kwl_server *server, const struct shell_hit *hit, struct kwl_titlebar_model *model, struct kwl_object *titlebar);
+static void shell_log_strip(struct kwl_object *surface, unsigned docked, const struct shell_tab *tabs, unsigned count, const int32_t *closes, int32_t y, int32_t size, const int32_t *buttons, uint32_t checksum);
 static unsigned shell_icon(uint32_t role);
-static int shell_hovered(struct zwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
-static void shell_draw_drop_part(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t size, float fade);
-static void shell_add_hit(struct zwl_object *surface, unsigned docked, unsigned kind, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t height);
-static void shell_add_field(struct zwl_object *surface, unsigned docked, uint32_t id, int32_t x, int32_t y, int32_t width, int32_t height, int32_t text_x);
-static void shell_release(struct zwl_server *server);
-static size_t shell_field_at(struct zwl_server *server, int32_t text_x, int32_t x);
+static int shell_hovered(struct kwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
+static void shell_draw_drop_part(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t size, float fade);
+static void shell_add_hit(struct kwl_object *surface, unsigned docked, unsigned kind, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t height);
+static void shell_add_field(struct kwl_object *surface, unsigned docked, uint32_t id, int32_t x, int32_t y, int32_t width, int32_t height, int32_t text_x);
+static void shell_release(struct kwl_server *server);
+static size_t shell_field_at(struct kwl_server *server, int32_t text_x, int32_t x);
 static const struct shell_hit *shell_hit_at(int32_t x, int32_t y);
-static void shell_act(struct zwl_server *server, const struct shell_hit *hit);
-static void shell_focus(struct zwl_server *server, struct zwl_object *surface, const struct zwl_titlebar_control *control, unsigned edit);
-static void shell_field_done(struct zwl_server *server, uint32_t how);
-static void shell_field_changed(struct zwl_server *server);
+static void shell_act(struct kwl_server *server, const struct shell_hit *hit);
+static void shell_focus(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_control *control, unsigned edit);
+static void shell_field_done(struct kwl_server *server, uint32_t how);
+static void shell_field_changed(struct kwl_server *server);
 static void shell_field_insert(const char *text, size_t length);
 static void shell_field_erase(int forward);
 static size_t shell_field_step(size_t at, int step);
-static void shell_suggest_clear(struct zwl_server *server);
+static void shell_suggest_clear(struct kwl_server *server);
 static int shell_suggest_at(int32_t x, int32_t y);
-static void shell_suggest_apply(struct zwl_server *server, int index);
-static void shell_log_layout(struct zwl_object *surface, unsigned docked, const struct shell_item *items, unsigned count, int32_t y, int32_t size, int32_t overflow_x, uint32_t checksum);
+static void shell_suggest_apply(struct kwl_server *server, int index);
+static void shell_log_layout(struct kwl_object *surface, unsigned docked, const struct shell_item *items, unsigned count, int32_t y, int32_t size, int32_t overflow_x, uint32_t checksum);
 static uint32_t shell_mix(uint32_t checksum, uint32_t value);
 static void shell_colour(float *colour, const float *ink, float alpha);
 
@@ -354,8 +354,8 @@ static void shell_colour(float *colour, const float *ink, float alpha);
  * Starts a frame: the controls are hit-tested where this frame draws them.
  */
 void
-zwl_titlebar_frame(
-	struct zwl_server *server)
+kwl_titlebar_frame(
+	struct kwl_server *server)
 {
 	/* The server is the one this file's state belongs to. */
 	(void)server;
@@ -369,13 +369,13 @@ zwl_titlebar_frame(
  * mode, a fifth of the room with controls.
  */
 int32_t
-zwl_titlebar_title_limit(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_titlebar_title_limit(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t available)
 {
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	int32_t limit;
 	int32_t least;
 	int32_t need;
@@ -383,14 +383,14 @@ zwl_titlebar_title_limit(
 
 	/* In menu mode, the menu decides. */
 	mode = shell_mode(surface, &model, &titlebar);
-	if (mode == ZWL_TITLEBAR_MENU) {
-		limit = zwl_menu_title_limit(server, surface, available);
+	if (mode == KWL_TITLEBAR_MENU) {
+		limit = kwl_menu_title_limit(server, surface, available);
 		return limit;
 	}
 
 	/* Otherwise the controls take most of the room; the title is the window's name. */
 	limit = available / 5;
-	if (mode != ZWL_TITLEBAR_TABS)
+	if (mode != KWL_TITLEBAR_TABS)
 		return limit;
 
 	/* Tabs that fit as they would like leave the title its fifth. */
@@ -415,17 +415,17 @@ zwl_titlebar_title_limit(
  * titlebar, or in the system bar when docked): its menu, or its controls.
  */
 void
-zwl_titlebar_draw(
-	struct zwl_server *server,
+kwl_titlebar_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	const float *ink,
 	float fade)
 {
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	unsigned mode;
 
 	/* The window's mode. */
@@ -433,24 +433,24 @@ zwl_titlebar_draw(
 
 	/* A focus the client asked for is taken now that the controls are drawn. */
 	if (model != NULL && model->focus_id != 0U) {
-		shell_focus(server, surface, zwl_titlebar_control(&model->shown, model->focus_id), model->focus_mode);
+		shell_focus(server, surface, kwl_titlebar_control(&model->shown, model->focus_id), model->focus_mode);
 		model->focus_id = 0;
 	}
 
 	/* A field of a window that shows no controls any more stops being edited. */
-	if (mode != ZWL_TITLEBAR_CONTROLS && shell_titlebar.field.surface == surface)
-		shell_field_done(server, ZWL_TEXT_LEFT);
+	if (mode != KWL_TITLEBAR_CONTROLS && shell_titlebar.field.surface == surface)
+		shell_field_done(server, KWL_TEXT_LEFT);
 
 	/* The menu mode is the menus' to draw. */
-	if (mode == ZWL_TITLEBAR_MENU) {
-		zwl_menu_draw_bar(server, command, surface, docked, area, ink, fade);
+	if (mode == KWL_TITLEBAR_MENU) {
+		kwl_menu_draw_bar(server, command, surface, docked, area, ink, fade);
 		return;
 	}
 
 	/* The controls, or the tabs. */
-	if (mode == ZWL_TITLEBAR_CONTROLS) {
+	if (mode == KWL_TITLEBAR_CONTROLS) {
 		shell_draw_controls(server, command, surface, docked, area, ink, fade);
-	} else if (mode == ZWL_TITLEBAR_TABS) {
+	} else if (mode == KWL_TITLEBAR_TABS) {
 		shell_draw_tabs(server, command, surface, docked, area, ink, fade);
 	}
 }
@@ -458,24 +458,24 @@ zwl_titlebar_draw(
 /*
  * Handles a pointer button for the controls: a left press on one is taken
  * and the control acts on the release over it, or moves the window when it
- * goes far enough first (zwl_titlebar_motion); the search field's release
+ * goes far enough first (kwl_titlebar_motion); the search field's release
  * gives it the keyboard; a press on the field with the
  * keyboard puts its cursor; a press elsewhere ends the editing of a field.
  * Returns 1 when the button was the controls'.
  */
 int
-zwl_titlebar_button(
-	struct zwl_server *server,
+kwl_titlebar_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
 	const struct shell_hit *hit;
 	struct shell_field *field;
-	struct zwl_object *top;
+	struct kwl_object *top;
 	int suggestion;
 
 	/* Only the left button. */
-	if (button != ZWL_BUTTON_LEFT)
+	if (button != KWL_BUTTON_LEFT)
 		return 0;
 
 	/* The release of a press on a suggestion is taken too. */
@@ -510,7 +510,7 @@ zwl_titlebar_button(
 	 * shows the resize arrow, raised the window under it instead).
 	 */
 	if (hit != NULL && hit->docked == 0U) {
-		top = zwl_glass_window_at(server, server->pointer_x, server->pointer_y);
+		top = kwl_glass_window_at(server, server->pointer_x, server->pointer_y);
 		if (top != hit->surface)
 			hit = NULL;
 	}
@@ -519,17 +519,17 @@ zwl_titlebar_button(
 	if (hit == NULL) {
 		/* A press anywhere but on the field ends its editing, and goes on to what it is on. */
 		if (shell_titlebar.field.surface != NULL)
-			shell_field_done(server, ZWL_TEXT_LEFT);
+			shell_field_done(server, KWL_TEXT_LEFT);
 		return 0;
 	}
 
 	/* A press outside the field (on another control) ends its editing too. */
 	if (shell_titlebar.field.surface != NULL && (hit->kind != KIND_FIELD || hit->id != shell_titlebar.field.id))
-		shell_field_done(server, ZWL_TEXT_LEFT);
+		shell_field_done(server, KWL_TEXT_LEFT);
 
 	/* The window of a floating titlebar comes to the top; the press waits for its release. */
 	if (hit->docked == 0U)
-		zwl_glass_raise(server, hit->surface);
+		kwl_glass_raise(server, hit->surface);
 	shell_titlebar.pressed = *hit;
 	shell_titlebar.pressing = 1;
 	shell_titlebar.press_x = server->pointer_x;
@@ -571,8 +571,8 @@ zwl_titlebar_button(
  * 1 when the motion is the control's.
  */
 int
-zwl_titlebar_motion(
-	struct zwl_server *server)
+kwl_titlebar_motion(
+	struct kwl_server *server)
 {
 	struct shell_field *field;
 	struct shell_hit pressed;
@@ -609,7 +609,7 @@ zwl_titlebar_motion(
 		return 0;
 
 	/* Not far enough yet: the press keeps the pointer. */
-	moved = zwl_glass_press_moved(server, shell_titlebar.press_x, shell_titlebar.press_y, shell_titlebar.press_source);
+	moved = kwl_glass_press_moved(server, shell_titlebar.press_x, shell_titlebar.press_y, shell_titlebar.press_source);
 	if (!moved)
 		return 1;
 
@@ -618,7 +618,7 @@ zwl_titlebar_motion(
 	shell_titlebar.waiting = 0;
 	server->dirty = 1;
 	printf("ZWL TITLEBAR press moves client=%llu surface=%u id=%u docked=%u\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, pressed.docked);
-	zwl_glass_press_move(server, pressed.surface, pressed.docked, shell_titlebar.press_x, shell_titlebar.press_y);
+	kwl_glass_press_move(server, pressed.surface, pressed.docked, shell_titlebar.press_x, shell_titlebar.press_y);
 
 	/* Succeeded: the motion goes on to the move (shell.c). */
 	return 0;
@@ -632,8 +632,8 @@ zwl_titlebar_motion(
  * when the key was the field's.
  */
 int
-zwl_titlebar_key(
-	struct zwl_server *server,
+kwl_titlebar_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -656,7 +656,7 @@ zwl_titlebar_key(
 	if (field->surface == NULL)
 		return 0;
 	if (server->focus != field->surface) {
-		shell_field_done(server, ZWL_TEXT_LEFT);
+		shell_field_done(server, KWL_TEXT_LEFT);
 		return 0;
 	}
 
@@ -686,7 +686,7 @@ zwl_titlebar_key(
 	 * results, ws089-p012): the key and its release are the window's.
 	 */
 	if (key == FIELD_KEY_DOWN && shell_titlebar.suggestions.count == 0U) {
-		shell_field_done(server, ZWL_TEXT_LEFT);
+		shell_field_done(server, KWL_TEXT_LEFT);
 		return 0;
 	}
 
@@ -726,14 +726,14 @@ zwl_titlebar_key(
 	/* Each key that edits, moves or ends. */
 	switch (key) {
 	case FIELD_KEY_ESC:
-		shell_field_done(server, ZWL_TEXT_CANCELLED);
+		shell_field_done(server, KWL_TEXT_CANCELLED);
 		return 1;
 	case FIELD_KEY_ENTER:
 	case FIELD_KEY_KPENTER:
-		shell_field_done(server, ZWL_TEXT_SUBMITTED);
+		shell_field_done(server, KWL_TEXT_SUBMITTED);
 		return 1;
 	case FIELD_KEY_TAB:
-		shell_field_done(server, ZWL_TEXT_LEFT);
+		shell_field_done(server, KWL_TEXT_LEFT);
 		return 1;
 	case FIELD_KEY_BACKSPACE:
 		shell_field_erase(0);
@@ -757,7 +757,7 @@ zwl_titlebar_key(
 		break;
 	default:
 		/* A character of the US layout is typed; any other key does nothing. */
-		known = zwl_menu_keysym(key, modifiers, &keysym);
+		known = kwl_menu_keysym(key, modifiers, &keysym);
 		if (known == 0 || keysym < 0x20U || keysym > 0x7eU)
 			return 1;
 		character = (char)keysym;
@@ -771,7 +771,7 @@ zwl_titlebar_key(
 		field->anchor = field->cursor;
 
 	/* The input method hears where the cursor is. */
-	zwl_ime_field_changed(server);
+	kwl_ime_field_changed(server);
 
 	/* Succeeded: the key moved the cursor. */
 	return 1;
@@ -786,14 +786,14 @@ zwl_titlebar_key(
  * Returns 1 when the key was the tabs'.
  */
 int
-zwl_titlebar_tab_key(
-	struct zwl_server *server,
+kwl_titlebar_tab_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
-	const struct zwl_titlebar_state *shown;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	const struct kwl_titlebar_state *shown;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	uint32_t modifiers;
 	unsigned mode;
 	unsigned count;
@@ -813,7 +813,7 @@ zwl_titlebar_tab_key(
 
 	/* Only for a window that shows tabs. */
 	mode = shell_mode(server->focus, &model, &titlebar);
-	if (mode != ZWL_TITLEBAR_TABS || titlebar == NULL)
+	if (mode != KWL_TITLEBAR_TABS || titlebar == NULL)
 		return 0;
 
 	/* The tabs, and the active one (count when none is). */
@@ -821,7 +821,7 @@ zwl_titlebar_tab_key(
 	count = shown->tab_count;
 	active = count;
 	for (index = 0; index < count; index++) {
-		if ((shown->tabs[index].flags & ZWL_TAB_ACTIVE) != 0U && active == count)
+		if ((shown->tabs[index].flags & KWL_TAB_ACTIVE) != 0U && active == count)
 			active = index;
 	}
 
@@ -865,7 +865,7 @@ zwl_titlebar_tab_key(
 
 	/* It is activated as its click would (the client's next commit shows it). */
 	if (index != active)
-		zwl_titlebar_send_tab(titlebar, shown->tabs[index].id, ZWL_TAB_EVENT_ACTIVATED);
+		kwl_titlebar_send_tab(titlebar, shown->tabs[index].id, KWL_TAB_EVENT_ACTIVATED);
 
 	/* Succeeded: the key was the tabs'. */
 	return 1;
@@ -877,14 +877,14 @@ zwl_titlebar_tab_key(
  * would.  Returns 1 when the wheel was over a strip.
  */
 int
-zwl_titlebar_axis(
-	struct zwl_server *server,
+kwl_titlebar_axis(
+	struct kwl_server *server,
 	int32_t vertical,
 	int32_t horizontal)
 {
 	const struct shell_hit *hit;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	unsigned direction;
 	unsigned index;
 	unsigned mode;
@@ -897,7 +897,7 @@ zwl_titlebar_axis(
 	if (hit->kind != KIND_TAB && hit->kind != KIND_TAB_CLOSE && hit->kind != KIND_NEW_TAB && hit->kind != KIND_SCROLL)
 		return 0;
 	mode = shell_mode(hit->surface, &model, &titlebar);
-	if (mode != ZWL_TITLEBAR_TABS)
+	if (mode != KWL_TITLEBAR_TABS)
 		return 0;
 
 	/* The way it goes: the vertical wheel, or else the horizontal one. */
@@ -938,18 +938,18 @@ zwl_titlebar_axis(
  * is the one on top.  Returns 1 when there is one.
  */
 int
-zwl_titlebar_drop_at(
-	struct zwl_server *server,
+kwl_titlebar_drop_at(
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
-	struct zwl_object **surface,
-	struct zwl_object **titlebar,
+	struct kwl_object **surface,
+	struct kwl_object **titlebar,
 	uint32_t *id,
 	uint32_t *detail)
 {
 	const struct shell_hit *hit;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *top;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *top;
 	unsigned mode;
 
 	/* A breadcrumb's part under the point. */
@@ -959,14 +959,14 @@ zwl_titlebar_drop_at(
 
 	/* A floating one covered by another window is not there. */
 	if (hit->docked == 0U) {
-		top = zwl_glass_window_at(server, x, y);
+		top = kwl_glass_window_at(server, x, y);
 		if (top != hit->surface)
 			return 0;
 	}
 
 	/* The window's titlebar, showing its controls. */
 	mode = shell_mode(hit->surface, &model, titlebar);
-	if (mode != ZWL_TITLEBAR_CONTROLS || *titlebar == NULL)
+	if (mode != KWL_TITLEBAR_CONTROLS || *titlebar == NULL)
 		return 0;
 
 	/* Succeeded: the window, the control and the part. */
@@ -980,24 +980,24 @@ zwl_titlebar_drop_at(
  * Carries out a hidden control chosen from the "..." popup (menu-shell.c).
  */
 void
-zwl_titlebar_overflow_chosen(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_titlebar_overflow_chosen(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	uint32_t id)
 {
-	const struct zwl_titlebar_control *control;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	const struct kwl_titlebar_control *control;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	uint32_t detail;
 	unsigned mode;
 	unsigned index;
 
 	/* A tab out of sight of a tab strip is chosen as its click would. */
 	mode = shell_mode(surface, &model, &titlebar);
-	if (mode == ZWL_TITLEBAR_TABS) {
+	if (mode == KWL_TITLEBAR_TABS) {
 		for (index = 0; index < model->shown.tab_count; index++) {
 			if (model->shown.tabs[index].id == id)
-				zwl_titlebar_send_tab(titlebar, id, ZWL_TAB_EVENT_ACTIVATED);
+				kwl_titlebar_send_tab(titlebar, id, KWL_TAB_EVENT_ACTIVATED);
 		}
 
 		/* The tab is shown by the client's next commit. */
@@ -1006,45 +1006,45 @@ zwl_titlebar_overflow_chosen(
 	}
 
 	/* The window's controls, and the control. */
-	if (mode != ZWL_TITLEBAR_CONTROLS)
+	if (mode != KWL_TITLEBAR_CONTROLS)
 		return;
-	control = zwl_titlebar_control(&model->shown, id);
+	control = kwl_titlebar_control(&model->shown, id);
 	if (control == NULL || control->enabled == 0U)
 		return;
 
 	/* A search takes the keyboard; a breadcrumb goes to its last part; any other acts. */
-	if (control->role == ZWL_CONTROL_SEARCH) {
+	if (control->role == KWL_CONTROL_SEARCH) {
 		shell_focus(server, surface, control, 0U);
 		return;
 	}
 
 	/* A breadcrumb goes to its last part; any other control has no detail. */
 	detail = 0;
-	if (control->role == ZWL_CONTROL_BREADCRUMB && control->segment_count > 0U)
+	if (control->role == KWL_CONTROL_BREADCRUMB && control->segment_count > 0U)
 		detail = control->segment_count - 1U;
 
 	/* The event. */
-	zwl_titlebar_send_activated(titlebar, id, detail, "overflow");
+	kwl_titlebar_send_activated(titlebar, id, detail, "overflow");
 }
 
 /*
  * Tells the client of a window with controls that its "..." popup opened.
  */
 void
-zwl_titlebar_overflow_opened(
-	struct zwl_object *surface)
+kwl_titlebar_overflow_opened(
+	struct kwl_object *surface)
 {
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	unsigned mode;
 
 	/* Only a window with a titlebar presentation hears it. */
 	mode = shell_mode(surface, &model, &titlebar);
-	if (titlebar == NULL || mode == ZWL_TITLEBAR_MENU)
+	if (titlebar == NULL || mode == KWL_TITLEBAR_MENU)
 		return;
 
 	/* The event. */
-	zwl_titlebar_send_overflow(titlebar);
+	kwl_titlebar_send_overflow(titlebar);
 }
 
 /*
@@ -1052,9 +1052,9 @@ zwl_titlebar_overflow_opened(
  * window, and its logged layouts.  No event is sent.
  */
 void
-zwl_titlebar_forget(
-	struct zwl_server *server,
-	struct zwl_object *object)
+kwl_titlebar_forget(
+	struct kwl_server *server,
+	struct kwl_object *object)
 {
 	unsigned index;
 	unsigned kept;
@@ -1082,7 +1082,7 @@ zwl_titlebar_forget(
 	if (shell_titlebar.field.surface == object) {
 		shell_titlebar.field.surface = NULL;
 		shell_titlebar.field.preedit[0] = '\0';
-		zwl_ime_field_changed(server);
+		kwl_ime_field_changed(server);
 	}
 
 	/* Its logged layouts. */
@@ -1097,11 +1097,11 @@ zwl_titlebar_forget(
  * input method serves it), or NULL when none has (or the lock screen, the
  * login screen or App Home takes the keys).
  */
-struct zwl_object *
-zwl_titlebar_field_surface(
-	struct zwl_server *server)
+struct kwl_object *
+kwl_titlebar_field_surface(
+	struct kwl_server *server)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* A field, on the window with the keyboard. */
 	surface = shell_titlebar.field.surface;
@@ -1125,8 +1125,8 @@ zwl_titlebar_field_surface(
  * goes under.  Returns 0 when no field has the keyboard.
  */
 int
-zwl_titlebar_field_state(
-	struct zwl_server *server,
+kwl_titlebar_field_state(
+	struct kwl_server *server,
 	char *text,
 	size_t size,
 	int32_t *cursor,
@@ -1134,10 +1134,10 @@ zwl_titlebar_field_state(
 	int32_t *rectangle)
 {
 	struct shell_field *field;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* The field with the keyboard. */
-	surface = zwl_titlebar_field_surface(server);
+	surface = kwl_titlebar_field_surface(server);
 	if (surface == NULL || size == 0U)
 		return 0;
 
@@ -1175,22 +1175,22 @@ zwl_titlebar_field_state(
  * client as typing does.
  */
 void
-zwl_titlebar_field_input(
-	struct zwl_server *server,
+kwl_titlebar_field_input(
+	struct kwl_server *server,
 	const char *preedit,
 	const char *commit,
 	uint32_t before,
 	uint32_t after)
 {
 	struct shell_field *field;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	const char *committed;
 	size_t length;
 	unsigned changed;
 
 	/* Only the field with the keyboard. */
 	field = &shell_titlebar.field;
-	surface = zwl_titlebar_field_surface(server);
+	surface = kwl_titlebar_field_surface(server);
 	if (surface == NULL)
 		return;
 
@@ -1238,16 +1238,16 @@ zwl_titlebar_field_input(
  * field.
  */
 void
-zwl_titlebar_suggestions(
-	struct zwl_server *server,
-	struct zwl_object *titlebar,
+kwl_titlebar_suggestions(
+	struct kwl_server *server,
+	struct kwl_object *titlebar,
 	uint32_t id,
 	const char *const *strings,
 	size_t count)
 {
 	struct shell_suggestions *suggestions;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *owner;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *owner;
 	size_t index;
 
 	/* Only the field with the keyboard, of this titlebar's window. */
@@ -1259,8 +1259,8 @@ zwl_titlebar_suggestions(
 
 	/* The list, none lit. */
 	suggestions = &shell_titlebar.suggestions;
-	if (count > ZWL_TITLEBAR_SUGGESTIONS_MAX)
-		count = ZWL_TITLEBAR_SUGGESTIONS_MAX;
+	if (count > KWL_TITLEBAR_SUGGESTIONS_MAX)
+		count = KWL_TITLEBAR_SUGGESTIONS_MAX;
 	for (index = 0; index < count; index++) {
 		(void)snprintf(suggestions->labels[index], sizeof(suggestions->labels[index]), "%s", strings[2U * index]);
 		(void)snprintf(suggestions->texts[index], sizeof(suggestions->texts[index]), "%s", strings[2U * index + 1U]);
@@ -1281,8 +1281,8 @@ zwl_titlebar_suggestions(
  * the keys, or else the one under the pointer, in the accent.
  */
 void
-zwl_titlebar_draw_suggestions(
-	struct zwl_server *server,
+kwl_titlebar_draw_suggestions(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float lit_ground[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
@@ -1355,14 +1355,14 @@ zwl_titlebar_draw_suggestions(
  */
 static unsigned
 shell_mode(
-	struct zwl_object *surface,
-	struct zwl_titlebar_model **model,
-	struct zwl_object **titlebar)
+	struct kwl_object *surface,
+	struct kwl_titlebar_model **model,
+	struct kwl_object **titlebar)
 {
 	/* The window's model. */
-	*model = zwl_titlebar_of_surface(surface, titlebar);
+	*model = kwl_titlebar_of_surface(surface, titlebar);
 	if (*model == NULL)
-		return ZWL_TITLEBAR_MENU;
+		return KWL_TITLEBAR_MENU;
 
 	/* The mode it shows. */
 	return (*model)->shown.mode;
@@ -1376,17 +1376,17 @@ shell_mode(
  */
 static unsigned
 shell_layout(
-	struct zwl_server *server,
-	const struct zwl_titlebar_state *state,
+	struct kwl_server *server,
+	const struct kwl_titlebar_state *state,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	unsigned has_menu,
 	struct shell_item *items,
 	int32_t *crumb_width,
 	unsigned *overflow,
 	unsigned *compact_search)
 {
-	const struct zwl_titlebar_control *control;
+	const struct kwl_titlebar_control *control;
 	unsigned count;
 	unsigned index;
 	unsigned unit;
@@ -1472,7 +1472,7 @@ shell_layout(
 			control = items[index - 1U].control;
 			if (items[index - 1U].shown == 0U || items[index - 1U].side != SIDE_RIGHT)
 				continue;
-			if (control->priority == ZWL_PRIORITY_SECONDARY) {
+			if (control->priority == KWL_PRIORITY_SECONDARY) {
 				victim = index - 1U;
 				break;
 			}
@@ -1483,7 +1483,7 @@ shell_layout(
 			control = items[index - 1U].control;
 			if (items[index - 1U].shown == 0U || items[index - 1U].side != SIDE_RIGHT)
 				continue;
-			if (control->priority == ZWL_PRIORITY_NORMAL)
+			if (control->priority == KWL_PRIORITY_NORMAL)
 				victim = index - 1U;
 		}
 
@@ -1522,22 +1522,22 @@ shell_layout(
 /* Measures a control that is not a breadcrumb: a button's square, a segment's face, a field, a label. */
 static int32_t
 shell_item_width(
-	struct zwl_server *server,
-	const struct zwl_titlebar_control *control,
+	struct kwl_server *server,
+	const struct kwl_titlebar_control *control,
 	int32_t size,
 	unsigned compact_search)
 {
 	int32_t width;
 
 	/* A search field, or its button. */
-	if (control->role == ZWL_CONTROL_SEARCH) {
+	if (control->role == KWL_CONTROL_SEARCH) {
 		if (compact_search != 0U)
 			return size;
 		return SEARCH_WIDTH;
 	}
 
 	/* A label's pill. */
-	if (control->role == ZWL_CONTROL_GENERIC) {
+	if (control->role == KWL_CONTROL_GENERIC) {
 		width = glass_text_width(server, SIZE_BAR, control->label) + 2 * LABEL_PADDING;
 		return width;
 	}
@@ -1549,16 +1549,16 @@ shell_item_width(
 /* Tells which side a control goes on. */
 static unsigned
 shell_side(
-	const struct zwl_titlebar_control *control)
+	const struct kwl_titlebar_control *control)
 {
 	/* The navigation on the left, the breadcrumb between, the rest on the right. */
 	switch (control->role) {
-	case ZWL_CONTROL_BACK:
-	case ZWL_CONTROL_FORWARD:
-	case ZWL_CONTROL_UP:
-	case ZWL_CONTROL_HOME:
+	case KWL_CONTROL_BACK:
+	case KWL_CONTROL_FORWARD:
+	case KWL_CONTROL_UP:
+	case KWL_CONTROL_HOME:
 		return SIDE_LEFT;
-	case ZWL_CONTROL_BREADCRUMB:
+	case KWL_CONTROL_BREADCRUMB:
 		return SIDE_CRUMB;
 	default:
 		break;
@@ -1571,8 +1571,8 @@ shell_side(
 /* Measures a breadcrumb with all its parts. */
 static int32_t
 shell_crumb_full(
-	struct zwl_server *server,
-	const struct zwl_titlebar_control *control)
+	struct kwl_server *server,
+	const struct kwl_titlebar_control *control)
 {
 	unsigned part;
 	int32_t width;
@@ -1592,22 +1592,22 @@ shell_crumb_full(
 /* Draws a window's controls in an area, and records where they are. */
 static void
 shell_draw_controls(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	const float *ink,
 	float fade)
 {
 	static struct shell_item items[SHELL_ITEMS];
-	const struct zwl_menu_item *tops[1];
-	const struct zwl_titlebar_control *control;
-	const struct zwl_menu_model *menu;
+	const struct kwl_menu_item *tops[1];
+	const struct kwl_titlebar_control *control;
+	const struct kwl_menu_model *menu;
 	const char *labels[SHELL_ITEMS];
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
-	struct zwl_object *place;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
+	struct kwl_object *place;
 	uint32_t ids[SHELL_ITEMS];
 	uint32_t checksum;
 	unsigned has_menu;
@@ -1631,9 +1631,9 @@ shell_draw_controls(
 	/* The model, and whether the window has a menu for "...". */
 	(void)shell_mode(surface, &model, &titlebar);
 	has_menu = 0;
-	menu = zwl_menu_of_surface(surface, &place);
+	menu = kwl_menu_of_surface(surface, &place);
 	if (menu != NULL)
-		has_menu = zwl_menu_children(menu, ZWL_MENU_ROOT, tops, 1U);
+		has_menu = kwl_menu_children(menu, KWL_MENU_ROOT, tops, 1U);
 
 	/*
 	 * Places are recorded only where they are seen as they are: not while
@@ -1705,11 +1705,11 @@ shell_draw_controls(
 		}
 
 		/* Each kind of control. */
-		if (control->role == ZWL_CONTROL_SEARCH && compact == 0U) {
+		if (control->role == KWL_CONTROL_SEARCH && compact == 0U) {
 			shell_draw_search(server, command, surface, docked, control, items[index].x, y, items[index].width, size, ink, fade, recording);
-		} else if (control->role == ZWL_CONTROL_BREADCRUMB) {
+		} else if (control->role == KWL_CONTROL_BREADCRUMB) {
 			shell_draw_crumbs(server, command, surface, docked, control, items[index].x, y, items[index].width, size, ink, fade, recording);
-		} else if (control->role == ZWL_CONTROL_PROGRESS) {
+		} else if (control->role == KWL_CONTROL_PROGRESS) {
 			shell_draw_progress(server, command, control, items[index].x, y, size, fade);
 			if (recording != 0U)
 				shell_add_hit(surface, docked, KIND_BUTTON, control->id, 0U, items[index].x, y, size, size);
@@ -1736,7 +1736,7 @@ shell_draw_controls(
 		overflow_x = area->right - size;
 		shell_draw_button(server, command, surface, docked, NULL, overflow_x, y, size, size, KIND_BUTTON, ink, fade, 0U);
 		if (recording != 0U)
-			zwl_menu_add_overflow(surface, docked, area, area->right - size, size, ids, labels, hidden);
+			kwl_menu_add_overflow(surface, docked, area, area->right - size, size, ids, labels, hidden);
 		checksum = shell_mix(checksum, 0xffffffffU);
 	}
 
@@ -1752,11 +1752,11 @@ shell_draw_controls(
  */
 static void
 shell_draw_button(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_titlebar_control *control,
+	const struct kwl_titlebar_control *control,
 	int32_t x,
 	int32_t y,
 	int32_t width,
@@ -1812,7 +1812,7 @@ shell_draw_button(
 		shell_colour(colour, accent, fade);
 	if (enabled == 0U)
 		colour[3] *= 0.35f;
-	if (control != NULL && (control->role == ZWL_CONTROL_GENERIC || control->role == ZWL_CONTROL_PRIMARY_ACTION) && width > size) {
+	if (control != NULL && (control->role == KWL_CONTROL_GENERIC || control->role == KWL_CONTROL_PRIMARY_ACTION) && width > size) {
 		label_width = glass_text_width(server, SIZE_BAR, control->label);
 		glass_draw_text(server, command, SIZE_BAR, x + (width - label_width) / 2, y + size / 2 + 5, control->label, width, colour);
 	} else {
@@ -1831,11 +1831,11 @@ shell_draw_button(
  */
 static void
 shell_draw_search(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_titlebar_control *control,
+	const struct kwl_titlebar_control *control,
 	int32_t x,
 	int32_t y,
 	int32_t width,
@@ -1914,11 +1914,11 @@ shell_draw_search(
  */
 static void
 shell_draw_crumbs(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_titlebar_control *control,
+	const struct kwl_titlebar_control *control,
 	int32_t x,
 	int32_t y,
 	int32_t width,
@@ -1928,7 +1928,7 @@ shell_draw_crumbs(
 	unsigned recording)
 {
 	static const char ellipsis[] = "\xe2\x80\xa6";
-	int32_t widths[ZWL_TITLEBAR_SEGMENTS_MAX];
+	int32_t widths[KWL_TITLEBAR_SEGMENTS_MAX];
 	float ground[4];
 	float colour[4];
 	unsigned first;
@@ -2022,7 +2022,7 @@ shell_draw_crumbs(
 /* Draws the field's text from x on a baseline within a width: the selection's tint, the text and the cursor. */
 static void
 shell_draw_field_text(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	int32_t x,
 	int32_t baseline,
@@ -2032,8 +2032,8 @@ shell_draw_field_text(
 {
 	static const float selection[4] = { 0.18f, 0.49f, 0.96f, 0.25f };
 	struct shell_field *field;
-	char before[ZWL_TITLEBAR_TEXT_MAX + 1U];
-	char shown[2U * ZWL_TITLEBAR_TEXT_MAX + 1U];
+	char before[KWL_TITLEBAR_TEXT_MAX + 1U];
+	char shown[2U * KWL_TITLEBAR_TEXT_MAX + 1U];
 	size_t preedit_length;
 	int32_t preedit_width;
 	float colour[4];
@@ -2098,9 +2098,9 @@ shell_draw_field_text(
 /* Draws a progress control: a short bar with the share done in the accent (a third of it when the share is not known). */
 static void
 shell_draw_progress(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_titlebar_control *control,
+	const struct kwl_titlebar_control *control,
 	int32_t x,
 	int32_t y,
 	int32_t size,
@@ -2135,16 +2135,16 @@ shell_draw_progress(
  */
 static unsigned
 shell_tabs_layout(
-	struct zwl_server *server,
-	struct zwl_titlebar_model *model,
-	const struct zwl_menu_area *area,
+	struct kwl_server *server,
+	struct kwl_titlebar_model *model,
+	const struct kwl_menu_area *area,
 	int32_t size,
 	unsigned has_menu,
 	struct shell_tab *tabs,
 	struct shell_strip *strip)
 {
-	const struct zwl_titlebar_state *state;
-	const struct zwl_titlebar_tab *tab;
+	const struct kwl_titlebar_state *state;
+	const struct kwl_titlebar_tab *tab;
 	unsigned count;
 	unsigned index;
 	unsigned active;
@@ -2167,7 +2167,7 @@ shell_tabs_layout(
 		tabs[index].width = width;
 		tabs[index].x = 0;
 		total += width + TAB_GAP;
-		if ((tab->flags & ZWL_TAB_ACTIVE) != 0U && active == count)
+		if ((tab->flags & KWL_TAB_ACTIVE) != 0U && active == count)
 			active = index;
 	}
 
@@ -2175,7 +2175,7 @@ shell_tabs_layout(
 	memset(strip, 0, sizeof(*strip));
 	strip->shown = count;
 	room = area->right - area->x;
-	if ((state->options & ZWL_TABS_NEW_BUTTON) != 0U) {
+	if ((state->options & KWL_TABS_NEW_BUTTON) != 0U) {
 		strip->new_button = 1;
 		room -= size + TAB_GAP;
 	}
@@ -2260,8 +2260,8 @@ shell_tabs_layout(
  */
 static int32_t
 shell_tab_natural(
-	struct zwl_server *server,
-	const struct zwl_titlebar_tab *tab)
+	struct kwl_server *server,
+	const struct kwl_titlebar_tab *tab)
 {
 	int32_t width;
 
@@ -2269,9 +2269,9 @@ shell_tab_natural(
 	width = glass_text_width(server, SIZE_BAR, tab->title) + 2 * TAB_PADDING;
 
 	/* The close button's room, and the dot's. */
-	if ((tab->flags & ZWL_TAB_CLOSABLE) != 0U)
+	if ((tab->flags & KWL_TAB_CLOSABLE) != 0U)
 		width += TAB_CLOSE;
-	if ((tab->flags & ZWL_TAB_ATTENTION) != 0U)
+	if ((tab->flags & KWL_TAB_ATTENTION) != 0U)
 		width += TAB_ATTENTION;
 
 	/* Within the widest and the least. */
@@ -2289,13 +2289,13 @@ shell_tab_natural(
  */
 static int32_t
 shell_tabs_need(
-	struct zwl_server *server,
-	struct zwl_object *surface,
-	const struct zwl_titlebar_model *model)
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	const struct kwl_titlebar_model *model)
 {
-	const struct zwl_menu_item *tops[1];
-	const struct zwl_menu_model *menu;
-	struct zwl_object *place;
+	const struct kwl_menu_item *tops[1];
+	const struct kwl_menu_model *menu;
+	struct kwl_object *place;
 	unsigned has_menu;
 	unsigned index;
 	int32_t need;
@@ -2306,14 +2306,14 @@ shell_tabs_need(
 		need += shell_tab_natural(server, &model->shown.tabs[index]) + TAB_GAP;
 
 	/* "+". */
-	if ((model->shown.options & ZWL_TABS_NEW_BUTTON) != 0U)
+	if ((model->shown.options & KWL_TABS_NEW_BUTTON) != 0U)
 		need += CONTROL_SIZE + TAB_GAP;
 
 	/* "..." for the window's menu. */
 	has_menu = 0;
-	menu = zwl_menu_of_surface(surface, &place);
+	menu = kwl_menu_of_surface(surface, &place);
 	if (menu != NULL)
-		has_menu = zwl_menu_children(menu, ZWL_MENU_ROOT, tops, 1U);
+		has_menu = kwl_menu_children(menu, KWL_MENU_ROOT, tops, 1U);
 	if (has_menu != 0U)
 		need += CONTROL_SIZE + SIDE_GAP;
 	return need;
@@ -2322,11 +2322,11 @@ shell_tabs_need(
 /* Draws a window's tabs in an area, with the strip's arrows, "+" and "...", and records where they are. */
 static void
 shell_draw_tabs(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
-	const struct zwl_menu_area *area,
+	const struct kwl_menu_area *area,
 	const float *ink,
 	float fade)
 {
@@ -2334,12 +2334,12 @@ shell_draw_tabs(
 	static int32_t closes[SHELL_TABS];
 	static uint32_t ids[SHELL_TABS];
 	static const char *labels[SHELL_TABS];
-	struct zwl_titlebar_control button;
-	const struct zwl_menu_item *tops[1];
-	const struct zwl_menu_model *menu;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
-	struct zwl_object *place;
+	struct kwl_titlebar_control button;
+	const struct kwl_menu_item *tops[1];
+	const struct kwl_menu_model *menu;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
+	struct kwl_object *place;
 	struct shell_strip strip;
 	uint32_t checksum;
 	unsigned has_menu;
@@ -2356,9 +2356,9 @@ shell_draw_tabs(
 	/* The model, and whether the window has a menu for "...". */
 	(void)shell_mode(surface, &model, &titlebar);
 	has_menu = 0;
-	menu = zwl_menu_of_surface(surface, &place);
+	menu = kwl_menu_of_surface(surface, &place);
 	if (menu != NULL)
-		has_menu = zwl_menu_children(menu, ZWL_MENU_ROOT, tops, 1U);
+		has_menu = kwl_menu_children(menu, KWL_MENU_ROOT, tops, 1U);
 
 	/* Places are recorded only where they are seen as they are (as for the controls). */
 	recording = 0;
@@ -2405,7 +2405,7 @@ shell_draw_tabs(
 
 	/* The arrows of a scrolled strip, pale at its ends. */
 	if (strip.scrolling != 0U) {
-		button.role = ZWL_CONTROL_BACK;
+		button.role = KWL_CONTROL_BACK;
 		button.enabled = 0;
 		if (strip.first > 0U)
 			button.enabled = 1;
@@ -2415,7 +2415,7 @@ shell_draw_tabs(
 			shell_add_hit(surface, docked, KIND_SCROLL, 0U, 0U, buttons[0], y, size, size);
 
 		/* The right arrow after the last tab's room. */
-		button.role = ZWL_CONTROL_FORWARD;
+		button.role = KWL_CONTROL_FORWARD;
 		button.enabled = 0;
 		if (strip.first + strip.shown < count)
 			button.enabled = 1;
@@ -2433,7 +2433,7 @@ shell_draw_tabs(
 
 	/* "+" after the tabs (after the right arrow of a scrolled strip). */
 	if (strip.new_button != 0U) {
-		button.role = ZWL_CONTROL_PRIMARY_ACTION;
+		button.role = KWL_CONTROL_PRIMARY_ACTION;
 		button.enabled = 1;
 		buttons[2] = x;
 		if (strip.scrolling != 0U)
@@ -2459,7 +2459,7 @@ shell_draw_tabs(
 		buttons[3] = area->right - size;
 		shell_draw_button(server, command, surface, docked, NULL, buttons[3], y, size, size, KIND_BUTTON, ink, fade, 0U);
 		if (recording != 0U)
-			zwl_menu_add_overflow(surface, docked, area, buttons[3], size, ids, labels, hidden);
+			kwl_menu_add_overflow(surface, docked, area, buttons[3], size, ids, labels, hidden);
 		checksum = shell_mix(checksum, 0xffffffffU);
 	}
 
@@ -2478,9 +2478,9 @@ shell_draw_tabs(
  */
 static void
 shell_draw_tab(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
 	const struct shell_tab *tab,
 	int32_t y,
@@ -2504,10 +2504,10 @@ shell_draw_tab(
 
 	/* The tab's state, and whether the pointer is on it. */
 	active = 0;
-	if ((tab->tab->flags & ZWL_TAB_ACTIVE) != 0U)
+	if ((tab->tab->flags & KWL_TAB_ACTIVE) != 0U)
 		active = 1;
 	closable = 0;
-	if ((tab->tab->flags & ZWL_TAB_CLOSABLE) != 0U)
+	if ((tab->tab->flags & KWL_TAB_CLOSABLE) != 0U)
 		closable = 1;
 	hovered = shell_hovered(server, tab->x, y, tab->width, size);
 	shows_close = 0;
@@ -2535,7 +2535,7 @@ shell_draw_tab(
 
 	/* A dot before the title of a tab that wants attention. */
 	text_x = tab->x + TAB_PADDING;
-	if ((tab->tab->flags & ZWL_TAB_ATTENTION) != 0U) {
+	if ((tab->tab->flags & KWL_TAB_ATTENTION) != 0U) {
 		memcpy(colour, accent, sizeof(colour));
 		colour[3] *= fade;
 		glass_draw_solid(server, command, (float)text_x, (float)(y + size / 2 - 3), 6.0f, 6.0f, 3.0f, colour);
@@ -2580,21 +2580,21 @@ shell_draw_tab(
 /* Carries out a released region of a tab strip: a tab, its close button, "+", or an arrow. */
 static void
 shell_act_tabs(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct shell_hit *hit,
-	struct zwl_titlebar_model *model,
-	struct zwl_object *titlebar)
+	struct kwl_titlebar_model *model,
+	struct kwl_object *titlebar)
 {
 	/* Each region's event, or the arrows' scroll. */
 	switch (hit->kind) {
 	case KIND_TAB:
-		zwl_titlebar_send_tab(titlebar, hit->id, ZWL_TAB_EVENT_ACTIVATED);
+		kwl_titlebar_send_tab(titlebar, hit->id, KWL_TAB_EVENT_ACTIVATED);
 		break;
 	case KIND_TAB_CLOSE:
-		zwl_titlebar_send_tab(titlebar, hit->id, ZWL_TAB_EVENT_CLOSE);
+		kwl_titlebar_send_tab(titlebar, hit->id, KWL_TAB_EVENT_CLOSE);
 		break;
 	case KIND_NEW_TAB:
-		zwl_titlebar_send_tab(titlebar, 0U, ZWL_TAB_EVENT_NEW);
+		kwl_titlebar_send_tab(titlebar, 0U, KWL_TAB_EVENT_NEW);
 		break;
 	case KIND_SCROLL:
 		/* The strip moves one tab (the layout keeps it within the tabs). */
@@ -2619,31 +2619,31 @@ shell_icon(
 {
 	/* Each role's icon. */
 	switch (role) {
-	case ZWL_CONTROL_BACK:
+	case KWL_CONTROL_BACK:
 		return GLASS_ICON_BACK;
-	case ZWL_CONTROL_FORWARD:
+	case KWL_CONTROL_FORWARD:
 		return GLASS_ICON_FORWARD;
-	case ZWL_CONTROL_UP:
+	case KWL_CONTROL_UP:
 		return GLASS_ICON_UP;
-	case ZWL_CONTROL_HOME:
+	case KWL_CONTROL_HOME:
 		return GLASS_ICON_HOME;
-	case ZWL_CONTROL_SEARCH:
+	case KWL_CONTROL_SEARCH:
 		return GLASS_ICON_SEARCH;
-	case ZWL_CONTROL_VIEW_GRID:
+	case KWL_CONTROL_VIEW_GRID:
 		return GLASS_ICON_GRID;
-	case ZWL_CONTROL_VIEW_LIST:
+	case KWL_CONTROL_VIEW_LIST:
 		return GLASS_ICON_LIST;
-	case ZWL_CONTROL_VIEW_COLUMNS:
+	case KWL_CONTROL_VIEW_COLUMNS:
 		return GLASS_ICON_COLUMNS;
-	case ZWL_CONTROL_SORT:
+	case KWL_CONTROL_SORT:
 		return GLASS_ICON_SORT;
-	case ZWL_CONTROL_FILTER:
+	case KWL_CONTROL_FILTER:
 		return GLASS_ICON_FILTER;
-	case ZWL_CONTROL_SIDEBAR:
+	case KWL_CONTROL_SIDEBAR:
 		return GLASS_ICON_SIDEBAR;
-	case ZWL_CONTROL_PREVIEW:
+	case KWL_CONTROL_PREVIEW:
 		return GLASS_ICON_PREVIEW;
-	case ZWL_CONTROL_PRIMARY_ACTION:
+	case KWL_CONTROL_PRIMARY_ACTION:
 		return GLASS_ICON_PLUS;
 	default:
 		break;
@@ -2656,7 +2656,7 @@ shell_icon(
 /* Tells whether the pointer is over a rectangle (and no menu is open). */
 static int
 shell_hovered(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y,
 	int32_t width,
@@ -2678,9 +2678,9 @@ shell_hovered(
  */
 static void
 shell_draw_drop_part(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	uint32_t id,
 	uint32_t detail,
 	int32_t x,
@@ -2691,8 +2691,8 @@ shell_draw_drop_part(
 {
 	static const float edge[4] = { 0.18f, 0.49f, 0.96f, 0.9f };
 	static const float face[4] = { 0.86f, 0.92f, 1.0f, 0.95f };
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	float colour[4];
 
 	/* Only the part the drag is over, of this window's titlebar. */
@@ -2716,7 +2716,7 @@ shell_draw_drop_part(
 /* Records a region of the frame, when there is room. */
 static void
 shell_add_hit(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
 	unsigned kind,
 	uint32_t id,
@@ -2750,7 +2750,7 @@ shell_add_hit(
 /* Records a text field's region, with where its text starts. */
 static void
 shell_add_field(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
 	uint32_t id,
 	int32_t x,
@@ -2810,7 +2810,7 @@ shell_hit_at(
  */
 static void
 shell_release(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	const struct shell_hit *hit;
 	struct shell_field *field;
@@ -2836,7 +2836,7 @@ shell_release(
 
 	/* A waiting press released far from where it was pressed (a finger's quick stroke) is no click. */
 	if (waiting != 0U) {
-		moved = zwl_glass_press_moved(server, shell_titlebar.press_x, shell_titlebar.press_y, shell_titlebar.press_source);
+		moved = kwl_glass_press_moved(server, shell_titlebar.press_x, shell_titlebar.press_y, shell_titlebar.press_source);
 		if (moved)
 			return;
 	}
@@ -2869,11 +2869,11 @@ shell_release(
  */
 static size_t
 shell_field_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t text_x,
 	int32_t x)
 {
-	char before[ZWL_TITLEBAR_TEXT_MAX + 1U];
+	char before[KWL_TITLEBAR_TEXT_MAX + 1U];
 	struct shell_field *field;
 	int32_t target;
 	int32_t width;
@@ -2916,30 +2916,30 @@ shell_field_at(
 /* Carries out a released control: a field takes the keyboard, any other enabled control sends its event. */
 static void
 shell_act(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct shell_hit *hit)
 {
-	const struct zwl_titlebar_control *control;
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	const struct kwl_titlebar_control *control;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 	unsigned mode;
 
 	/* The tabs have their own regions. */
 	mode = shell_mode(hit->surface, &model, &titlebar);
-	if (mode == ZWL_TITLEBAR_TABS) {
+	if (mode == KWL_TITLEBAR_TABS) {
 		shell_act_tabs(server, hit, model, titlebar);
 		return;
 	}
 
 	/* The control, as the window shows it now. */
-	if (mode != ZWL_TITLEBAR_CONTROLS)
+	if (mode != KWL_TITLEBAR_CONTROLS)
 		return;
-	control = zwl_titlebar_control(&model->shown, hit->id);
+	control = kwl_titlebar_control(&model->shown, hit->id);
 	if (control == NULL || control->enabled == 0U)
 		return;
 
 	/* A field takes the keyboard (a search field shown as a button too). */
-	if (control->role == ZWL_CONTROL_SEARCH) {
+	if (control->role == KWL_CONTROL_SEARCH) {
 		if (shell_titlebar.field.surface != hit->surface || shell_titlebar.field.id != hit->id)
 			shell_focus(server, hit->surface, control, 0U);
 		return;
@@ -2950,7 +2950,7 @@ shell_act(
 		return;
 
 	/* Any other control, or a breadcrumb's part, sends its event. */
-	zwl_titlebar_send_activated(titlebar, hit->id, hit->detail, "pointer");
+	kwl_titlebar_send_activated(titlebar, hit->id, hit->detail, "pointer");
 }
 
 /*
@@ -2959,9 +2959,9 @@ shell_act(
  */
 static void
 shell_focus(
-	struct zwl_server *server,
-	struct zwl_object *surface,
-	const struct zwl_titlebar_control *control,
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	const struct kwl_titlebar_control *control,
 	unsigned edit)
 {
 	struct shell_field *field;
@@ -2971,7 +2971,7 @@ shell_focus(
 	if (control == NULL)
 		return;
 	if (shell_titlebar.field.surface != NULL)
-		shell_field_done(server, ZWL_TEXT_LEFT);
+		shell_field_done(server, KWL_TEXT_LEFT);
 
 	/* The field, with the control's text. */
 	field = &shell_titlebar.field;
@@ -2981,8 +2981,8 @@ shell_focus(
 	length = 0;
 	if (control->text != NULL)
 		length = strlen(control->text);
-	if (length > ZWL_TITLEBAR_TEXT_MAX)
-		length = ZWL_TITLEBAR_TEXT_MAX;
+	if (length > KWL_TITLEBAR_TEXT_MAX)
+		length = KWL_TITLEBAR_TEXT_MAX;
 	if (control->text != NULL)
 		memcpy(field->text, control->text, length);
 	field->text[length] = '\0';
@@ -2994,23 +2994,23 @@ shell_focus(
 	shell_suggest_clear(server);
 
 	/* The window has the keyboard; the log line the tests read. */
-	zwl_glass_raise(server, surface);
+	kwl_glass_raise(server, surface);
 	server->dirty = 1;
 	printf("ZWL TITLEBAR focus client=%llu surface=%u id=%u edit=%u\n", (unsigned long long)surface->client->number, surface->id, control->id, edit);
 
 	/* The input method serves the field (BUG-177). */
-	zwl_ime_field_changed(server);
+	kwl_ime_field_changed(server);
 }
 
 /* Ends the field's editing and tells the client how. */
 static void
 shell_field_done(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t how)
 {
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
-	struct zwl_object *surface;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
+	struct kwl_object *surface;
 
 	/* The field and its suggestions go first (the event may make the client change its controls); the input method stops serving it. */
 	surface = shell_titlebar.field.surface;
@@ -3020,30 +3020,30 @@ shell_field_done(
 	server->dirty = 1;
 	if (surface == NULL)
 		return;
-	zwl_ime_field_changed(server);
+	kwl_ime_field_changed(server);
 
 	/* The client hears how it ended, with the text. */
 	(void)shell_mode(surface, &model, &titlebar);
 	if (titlebar != NULL)
-		zwl_titlebar_send_text(titlebar, shell_titlebar.field.id, shell_titlebar.field.text, 1, how);
+		kwl_titlebar_send_text(titlebar, shell_titlebar.field.id, shell_titlebar.field.text, 1, how);
 }
 
 /* Tells the client the field's text changed. */
 static void
 shell_field_changed(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_titlebar_model *model;
-	struct zwl_object *titlebar;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
 
 	/* The suggestions were for the text before; the window's titlebar hears the new one. */
 	shell_suggest_clear(server);
 	(void)shell_mode(shell_titlebar.field.surface, &model, &titlebar);
 	if (titlebar != NULL)
-		zwl_titlebar_send_text(titlebar, shell_titlebar.field.id, shell_titlebar.field.text, 0, 0U);
+		kwl_titlebar_send_text(titlebar, shell_titlebar.field.id, shell_titlebar.field.text, 0, 0U);
 
 	/* The input method hears the new text (BUG-177). */
-	zwl_ime_field_changed(server);
+	kwl_ime_field_changed(server);
 }
 
 /* Replaces the field's selection with some bytes, when there is room. */
@@ -3070,7 +3070,7 @@ shell_field_insert(
 	field->length -= end - start;
 
 	/* The bytes, when they fit. */
-	if (field->length + length <= ZWL_TITLEBAR_TEXT_MAX) {
+	if (field->length + length <= KWL_TITLEBAR_TEXT_MAX) {
 		memmove(field->text + start + length, field->text + start, field->length - start + 1U);
 		memcpy(field->text + start, text, length);
 		field->length += length;
@@ -3135,7 +3135,7 @@ shell_field_step(
 /* Logs a window's control layout when it changed: each control's place (or that it is hidden). */
 static void
 shell_log_layout(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
 	const struct shell_item *items,
 	unsigned count,
@@ -3194,7 +3194,7 @@ shell_log_layout(
 /* Logs a window's tab strip when it changed: each tab's place (or that it is hidden) and the strip's buttons. */
 static void
 shell_log_strip(
-	struct zwl_object *surface,
+	struct kwl_object *surface,
 	unsigned docked,
 	const struct shell_tab *tabs,
 	unsigned count,
@@ -3293,7 +3293,7 @@ shell_colour(
 /* Takes the field's suggestions away. */
 static void
 shell_suggest_clear(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* A list shown needs a frame without it. */
 	if (shell_titlebar.suggestions.count != 0U)
@@ -3333,7 +3333,7 @@ shell_suggest_at(
 /* Puts a suggestion's text in the field, the cursor at its end; the client hears the text changed. */
 static void
 shell_suggest_apply(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int index)
 {
 	struct shell_field *field;
@@ -3342,8 +3342,8 @@ shell_suggest_apply(
 	/* The text, as much as a field holds. */
 	field = &shell_titlebar.field;
 	length = strlen(shell_titlebar.suggestions.texts[index]);
-	if (length > ZWL_TITLEBAR_TEXT_MAX)
-		length = ZWL_TITLEBAR_TEXT_MAX;
+	if (length > KWL_TITLEBAR_TEXT_MAX)
+		length = KWL_TITLEBAR_TEXT_MAX;
 	memcpy(field->text, shell_titlebar.suggestions.texts[index], length);
 	field->text[length] = '\0';
 	field->length = length;

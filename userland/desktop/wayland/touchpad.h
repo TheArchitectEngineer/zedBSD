@@ -14,32 +14,32 @@
  * So the host tests run it alone.
  */
 
-#ifndef ZWL_TOUCHPAD_H
-#define ZWL_TOUCHPAD_H
+#ifndef KWL_TOUCHPAD_H
+#define KWL_TOUCHPAD_H
 
 #include <stdint.h>
 
 /* The fingers a touch pad's reports address (its slots), and the actions one call may give. */
-#define ZWL_TOUCHPAD_SLOTS	10U
-#define ZWL_TOUCHPAD_ACTIONS	16U
+#define KWL_TOUCHPAD_SLOTS	10U
+#define KWL_TOUCHPAD_ACTIONS	16U
 
 /* The fingers' travel of one wheel notch when two fingers scroll (micrometres; the shell turns notches back into travel). */
-#define ZWL_TOUCHPAD_NOTCH_UM	2500
+#define KWL_TOUCHPAD_NOTCH_UM	2500
 
 /* The wheel's units in one notch (the seat's WHEEL_STEP): a scroll's finer measure divides a notch into these. */
-#define ZWL_TOUCHPAD_NOTCH_UNITS	15
+#define KWL_TOUCHPAD_NOTCH_UNITS	15
 
 /* The evdev codes of the left, right and middle buttons (the same on every OS). */
-#define ZWL_TOUCHPAD_BUTTON_LEFT	0x110U
-#define ZWL_TOUCHPAD_BUTTON_RIGHT	0x111U
-#define ZWL_TOUCHPAD_BUTTON_MIDDLE	0x112U
+#define KWL_TOUCHPAD_BUTTON_LEFT	0x110U
+#define KWL_TOUCHPAD_BUTTON_RIGHT	0x111U
+#define KWL_TOUCHPAD_BUTTON_MIDDLE	0x112U
 
 /* What an action asks of the seat. */
-enum zwl_touchpad_action_kind {
-	ZWL_TOUCHPAD_MOTION,
-	ZWL_TOUCHPAD_BUTTON,
-	ZWL_TOUCHPAD_SCROLL,
-	ZWL_TOUCHPAD_GESTURE
+enum kwl_touchpad_action_kind {
+	KWL_TOUCHPAD_MOTION,
+	KWL_TOUCHPAD_BUTTON,
+	KWL_TOUCHPAD_SCROLL,
+	KWL_TOUCHPAD_GESTURE
 };
 
 /*
@@ -53,23 +53,23 @@ enum zwl_touchpad_action_kind {
  * two fingers that scrolled has lifted, so that one swipe can be one step
  * of Wiseview or the switcher (ws142-p009, BUG-215 and BUG-216).
  */
-enum zwl_touchpad_gesture {
-	ZWL_TOUCHPAD_GESTURE_NONE,
-	ZWL_TOUCHPAD_GESTURE_BOTTOM2,
-	ZWL_TOUCHPAD_GESTURE_UP3,
-	ZWL_TOUCHPAD_GESTURE_LEFT2,
-	ZWL_TOUCHPAD_GESTURE_RIGHT2,
-	ZWL_TOUCHPAD_GESTURE_TAP3,
-	ZWL_TOUCHPAD_GESTURE_TOP2,
-	ZWL_TOUCHPAD_GESTURE_SWIPE2
+enum kwl_touchpad_gesture {
+	KWL_TOUCHPAD_GESTURE_NONE,
+	KWL_TOUCHPAD_GESTURE_BOTTOM2,
+	KWL_TOUCHPAD_GESTURE_UP3,
+	KWL_TOUCHPAD_GESTURE_LEFT2,
+	KWL_TOUCHPAD_GESTURE_RIGHT2,
+	KWL_TOUCHPAD_GESTURE_TAP3,
+	KWL_TOUCHPAD_GESTURE_TOP2,
+	KWL_TOUCHPAD_GESTURE_SWIPE2
 };
 
 /* A gesture's phases: it begins, follows the fingers, ends with them lifted, or is given up (a finger more). */
-enum zwl_touchpad_phase {
-	ZWL_TOUCHPAD_PHASE_BEGIN,
-	ZWL_TOUCHPAD_PHASE_UPDATE,
-	ZWL_TOUCHPAD_PHASE_END,
-	ZWL_TOUCHPAD_PHASE_CANCEL
+enum kwl_touchpad_phase {
+	KWL_TOUCHPAD_PHASE_BEGIN,
+	KWL_TOUCHPAD_PHASE_UPDATE,
+	KWL_TOUCHPAD_PHASE_END,
+	KWL_TOUCHPAD_PHASE_CANCEL
 };
 
 /*
@@ -78,8 +78,8 @@ enum zwl_touchpad_phase {
  * (vertical positive down, horizontal positive right, as the seat takes
  * them).  It lives in the caller's list.
  */
-struct zwl_touchpad_action {
-	enum zwl_touchpad_action_kind kind;
+struct kwl_touchpad_action {
+	enum kwl_touchpad_action_kind kind;
 	int32_t dx;
 	int32_t dy;
 	uint32_t button;
@@ -87,7 +87,7 @@ struct zwl_touchpad_action {
 	int32_t vertical;
 	int32_t horizontal;
 	/*
-	 * A scroll's finer measure (BUG-218): the wheel's units, ZWL_TOUCHPAD_NOTCH_UNITS a notch, so
+	 * A scroll's finer measure (BUG-218): the wheel's units, KWL_TOUCHPAD_NOTCH_UNITS a notch, so
 	 * that a client hears the fingers from their first fraction of a millimetre, smoothly.
 	 */
 	int32_t vertical_units;
@@ -100,9 +100,9 @@ struct zwl_touchpad_action {
 };
 
 /* The actions of one call, in order; the caller owns the storage. */
-struct zwl_touchpad_actions {
+struct kwl_touchpad_actions {
 	unsigned count;
-	struct zwl_touchpad_action actions[ZWL_TOUCHPAD_ACTIONS];
+	struct kwl_touchpad_action actions[KWL_TOUCHPAD_ACTIONS];
 };
 
 /*
@@ -110,7 +110,7 @@ struct zwl_touchpad_actions {
  * finger), its place, its place at the last report's end, and whether it
  * came in this report.
  */
-struct zwl_touchpad_finger {
+struct kwl_touchpad_finger {
 	int32_t tracking;
 	int32_t x;
 	int32_t y;
@@ -125,11 +125,11 @@ struct zwl_touchpad_finger {
  * a second tap); and a tap drag, whose button is held until the finger
  * lifts.
  */
-enum zwl_touchpad_tap {
-	ZWL_TOUCHPAD_TAP_NONE,
-	ZWL_TOUCHPAD_TAP_PENDING,
-	ZWL_TOUCHPAD_TAP_SECOND,
-	ZWL_TOUCHPAD_TAP_DRAG
+enum kwl_touchpad_tap {
+	KWL_TOUCHPAD_TAP_NONE,
+	KWL_TOUCHPAD_TAP_PENDING,
+	KWL_TOUCHPAD_TAP_SECOND,
+	KWL_TOUCHPAD_TAP_DRAG
 };
 
 /*
@@ -139,16 +139,16 @@ enum zwl_touchpad_tap {
  * the pad (when it began, the most fingers, how far it went), and the
  * remainders of the motion and the scrolling that did not make a whole
  * pixel or notch; the user's feel (ws089-p024): the acceleration's level
- * (ZWL_ACCEL_* of pointer-accel.h, which chooses the gain's curve) and
+ * (KWL_ACCEL_* of pointer-accel.h, which chooses the gain's curve) and
  * whether the scrolling follows the fingers.
  *
- * It lives in its input device from attach (zwl_touchpad_init) to detach.
+ * It lives in its input device from attach (kwl_touchpad_init) to detach.
  */
 /* The latest reports of a gesture whose travel and times its speed is measured over. */
-#define ZWL_TOUCHPAD_SAMPLES	16U
+#define KWL_TOUCHPAD_SAMPLES	16U
 
-struct zwl_touchpad {
-	struct zwl_touchpad_finger fingers[ZWL_TOUCHPAD_SLOTS];
+struct kwl_touchpad {
+	struct kwl_touchpad_finger fingers[KWL_TOUCHPAD_SLOTS];
 	int32_t slot;
 	int32_t resolution_x;
 	int32_t resolution_y;
@@ -156,7 +156,7 @@ struct zwl_touchpad {
 	uint32_t button_changed;
 	uint32_t button_sent;
 	uint32_t press_quiet;
-	enum zwl_touchpad_tap tap;
+	enum kwl_touchpad_tap tap;
 	uint64_t tap_deadline_ms;
 	uint64_t touch_start_ms;
 	uint32_t touch_fingers;
@@ -167,7 +167,7 @@ struct zwl_touchpad {
 	int64_t motion_remainder_y;
 	int64_t scroll_travel_x_um;
 	int64_t scroll_travel_y_um;
-	/* The travel not yet told as the wheel's units, in micrometres times ZWL_TOUCHPAD_NOTCH_UNITS (exact). */
+	/* The travel not yet told as the wheel's units, in micrometres times KWL_TOUCHPAD_NOTCH_UNITS (exact). */
 	int64_t scroll_units_x;
 	int64_t scroll_units_y;
 	/* Whether the touch now on the pad scrolled (its end is told as SWIPE2's, ws142-p009). */
@@ -194,18 +194,18 @@ struct zwl_touchpad {
 	int64_t gesture_dy_um;
 	int64_t gesture_travel_um;
 	int64_t gesture_speed;
-	uint64_t gesture_sample_ms[ZWL_TOUCHPAD_SAMPLES];
-	int64_t gesture_sample_um[ZWL_TOUCHPAD_SAMPLES];
+	uint64_t gesture_sample_ms[KWL_TOUCHPAD_SAMPLES];
+	int64_t gesture_sample_um[KWL_TOUCHPAD_SAMPLES];
 	unsigned gesture_sample_next;
 	unsigned gesture_sample_count;
 };
 
-void zwl_touchpad_init(struct zwl_touchpad *pad, int32_t resolution_x, int32_t resolution_y);
-void zwl_touchpad_set_size(struct zwl_touchpad *pad, int32_t x_max, int32_t y_max);
-void zwl_touchpad_set_feel(struct zwl_touchpad *pad, int32_t acceleration, int32_t natural);
-void zwl_touchpad_event(struct zwl_touchpad *pad, uint16_t type, uint16_t code, int32_t value);
-void zwl_touchpad_frame(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touchpad_actions *actions);
-void zwl_touchpad_tick(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touchpad_actions *actions);
-void zwl_touchpad_release_all(struct zwl_touchpad *pad, struct zwl_touchpad_actions *actions);
+void kwl_touchpad_init(struct kwl_touchpad *pad, int32_t resolution_x, int32_t resolution_y);
+void kwl_touchpad_set_size(struct kwl_touchpad *pad, int32_t x_max, int32_t y_max);
+void kwl_touchpad_set_feel(struct kwl_touchpad *pad, int32_t acceleration, int32_t natural);
+void kwl_touchpad_event(struct kwl_touchpad *pad, uint16_t type, uint16_t code, int32_t value);
+void kwl_touchpad_frame(struct kwl_touchpad *pad, uint64_t now_ms, struct kwl_touchpad_actions *actions);
+void kwl_touchpad_tick(struct kwl_touchpad *pad, uint64_t now_ms, struct kwl_touchpad_actions *actions);
+void kwl_touchpad_release_all(struct kwl_touchpad *pad, struct kwl_touchpad_actions *actions);
 
 #endif

@@ -16,7 +16,7 @@
 
 /* Tells whether this compositor was built with the capture (it was not). */
 int
-zwl_shot_enabled(
+kwl_shot_enabled(
 	void)
 {
 	return 0;
@@ -24,7 +24,7 @@ zwl_shot_enabled(
 
 /* Has no capture to wait for. */
 int
-zwl_shot_waiting(
+kwl_shot_waiting(
 	void)
 {
 	return 0;
@@ -32,32 +32,32 @@ zwl_shot_waiting(
 
 /* No socket. */
 void
-zwl_shot_open(
-	struct zwl_server *server)
+kwl_shot_open(
+	struct kwl_server *server)
 {
 	(void)server;
 }
 
 /* Nothing to close. */
 void
-zwl_shot_close(
-	struct zwl_server *server)
+kwl_shot_close(
+	struct kwl_server *server)
 {
 	(void)server;
 }
 
 /* Nothing to serve. */
 void
-zwl_shot_tick(
-	struct zwl_server *server)
+kwl_shot_tick(
+	struct kwl_server *server)
 {
 	(void)server;
 }
 
 /* No copy. */
 void
-zwl_shot_record(
-	struct zwl_server *server,
+kwl_shot_record(
+	struct kwl_server *server,
 	VkCommandBuffer command,
 	VkImage image)
 {
@@ -68,8 +68,8 @@ zwl_shot_record(
 
 /* Nothing to send. */
 void
-zwl_shot_complete(
-	struct zwl_server *server)
+kwl_shot_complete(
+	struct kwl_server *server)
 {
 	(void)server;
 }

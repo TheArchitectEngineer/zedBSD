@@ -11,8 +11,8 @@
  * popup menu takes (popup.c).
  */
 
-#ifndef ZWL_POPUP_H
-#define ZWL_POPUP_H
+#ifndef KWL_POPUP_H
+#define KWL_POPUP_H
 
 #include "compose.h"
 
@@ -22,7 +22,7 @@
  * adjustments allowed when the popup would leave the output, and the offset.
  * A positioner is complete once its size and its anchor rectangle are set.
  */
-struct zwl_positioner {
+struct kwl_positioner {
 	int32_t width;
 	int32_t height;
 	int32_t anchor_x;
@@ -39,24 +39,24 @@ struct zwl_positioner {
 	unsigned anchor_set;
 };
 
-int zwl_positioner_create(struct zwl_object *wm, uint32_t id);
-int zwl_popup_create(struct zwl_object *role, uint32_t id, uint32_t parent_id, uint32_t positioner_id);
-int zwl_popup_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-int zwl_popup_send_configure(struct zwl_object *surface);
-void zwl_popup_mapped(struct zwl_server *server, struct zwl_object *surface);
-void zwl_popup_object_gone(struct zwl_object *object);
-int zwl_popup_origin(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
-unsigned zwl_popup_collect(struct zwl_server *server, struct zwl_object **popups, unsigned capacity);
-void zwl_popup_draw(struct zwl_server *server, VkCommandBuffer command);
-struct zwl_object *zwl_popup_focus(struct zwl_server *server, struct zwl_object *target);
-struct zwl_object *zwl_popup_chain_at(struct zwl_server *server);
-int zwl_popup_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int kwl_positioner_create(struct kwl_object *wm, uint32_t id);
+int kwl_popup_create(struct kwl_object *role, uint32_t id, uint32_t parent_id, uint32_t positioner_id);
+int kwl_popup_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+int kwl_popup_send_configure(struct kwl_object *surface);
+void kwl_popup_mapped(struct kwl_server *server, struct kwl_object *surface);
+void kwl_popup_object_gone(struct kwl_object *object);
+int kwl_popup_origin(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
+unsigned kwl_popup_collect(struct kwl_server *server, struct kwl_object **popups, unsigned capacity);
+void kwl_popup_draw(struct kwl_server *server, VkCommandBuffer command);
+struct kwl_object *kwl_popup_focus(struct kwl_server *server, struct kwl_object *target);
+struct kwl_object *kwl_popup_chain_at(struct kwl_server *server);
+int kwl_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 
 /* What popup.c needs from the compositor and the shell. */
-void zwl_compose_surface_quad(struct zwl_server *server, VkCommandBuffer command, const struct zwl_object *surface, const struct zwl_import *import, int32_t x, int32_t y);
-int zwl_glass_body_origin(struct zwl_server *server, struct zwl_object *surface, int32_t *x, int32_t *y);
-struct zwl_object *zwl_glass_body_at(struct zwl_server *server, int32_t x, int32_t y);
-void zwl_seat_pointer_move(struct zwl_server *server, struct zwl_object *from, struct zwl_object *to);
-void zwl_seat_pointer_update(struct zwl_server *server);
+void kwl_compose_surface_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_object *surface, const struct kwl_import *import, int32_t x, int32_t y);
+int kwl_glass_body_origin(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
+struct kwl_object *kwl_glass_body_at(struct kwl_server *server, int32_t x, int32_t y);
+void kwl_seat_pointer_move(struct kwl_server *server, struct kwl_object *from, struct kwl_object *to);
+void kwl_seat_pointer_update(struct kwl_server *server);
 
 #endif

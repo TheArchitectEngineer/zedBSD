@@ -37,13 +37,13 @@
 #define STORE_FOLDER		".config/keiland"
 #define STORE_NAME		"desktop.conf"
 
-static void store_entry_set(struct zwl_settings_store *store, struct zwl_settings_entry *entry, const char *value, unsigned chosen);
-static void store_parse(struct zwl_settings_store *store, const char *text, size_t length);
-static void store_parse_line(struct zwl_settings_store *store, const char *line, size_t length);
+static void store_entry_set(struct kwl_settings_store *store, struct kwl_settings_entry *entry, const char *value, unsigned chosen);
+static void store_parse(struct kwl_settings_store *store, const char *text, size_t length);
+static void store_parse_line(struct kwl_settings_store *store, const char *line, size_t length);
 static int store_clean_value(const struct kl_settings_key *key, const char *raw, char *value, size_t size);
-static int store_entry_differs(const struct zwl_settings_entry *entry);
-static void store_mark_saved(struct zwl_settings_store *store, const struct zwl_settings_change *changes, unsigned count);
-static int store_merge(const char *folder, const char *path, const struct zwl_settings_change *changes, unsigned count);
+static int store_entry_differs(const struct kwl_settings_entry *entry);
+static void store_mark_saved(struct kwl_settings_store *store, const struct kwl_settings_change *changes, unsigned count);
+static int store_merge(const char *folder, const char *path, const struct kwl_settings_change *changes, unsigned count);
 static int store_load(const char *path, char *text, size_t capacity, size_t *length);
 static int store_compose(const char *old_text, size_t old_length, const char *key, const char *value, char *text, size_t capacity, size_t *length);
 static int store_append(char *text, size_t capacity, size_t *length, const char *part, size_t part_length);
@@ -59,17 +59,17 @@ static void store_copy(char *to, size_t size, const char *from);
  * Makes the store's settings, each at its resolver's default, for the
  * file in a home (NULL or an empty home: nothing is read or written).
  *
- * The defaults the command line gives (zwl_settings_store_default) and the
- * file's values (zwl_settings_store_load) come after.  Returns 0, or
+ * The defaults the command line gives (kwl_settings_store_default) and the
+ * file's values (kwl_settings_store_load) come after.  Returns 0, or
  * ENAMETOOLONG for a home whose file's path does not fit.
  */
 int
-zwl_settings_store_open(
-	struct zwl_settings_store *store,
+kwl_settings_store_open(
+	struct kwl_settings_store *store,
 	const char *home)
 {
 	const struct kl_settings_key *key;
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	size_t count;
 	size_t index;
 	int written;
@@ -82,7 +82,7 @@ zwl_settings_store_open(
 	/* Makes one entry for each compositor setting, at the table's default, while there is room. */
 	count = kl_settings_key_count();
 	for (index = 0;
-	     index < count && store->count < ZWL_SETTINGS_ENTRIES;
+	     index < count && store->count < KWL_SETTINGS_ENTRIES;
 	     index++) {
 		/* Only a setting the compositor resolves is the store's. */
 		key = kl_settings_key_at(index);
@@ -102,7 +102,7 @@ zwl_settings_store_open(
 
 		/*
 		 * known says a value is in effect.  The sound's is audiod's, so it
-		 * is not known until audiod reports (zwl_settings_store_report).
+		 * is not known until audiod reports (kwl_settings_store_report).
 		 */
 		entry->known = 1;
 		sound = strncmp(key->name, "sound.", 6U);
@@ -136,11 +136,11 @@ zwl_settings_store_open(
 
 /*
  * Waits for a write still under way and lets the store go (the session's
- * end is zwl_settings_store_finish, before this).
+ * end is kwl_settings_store_finish, before this).
  */
 void
-zwl_settings_store_close(
-	struct zwl_settings_store *store)
+kwl_settings_store_close(
+	struct kwl_settings_store *store)
 {
 	/* A writer that was started is joined. */
 	if (store->writer.started) {
@@ -156,9 +156,9 @@ zwl_settings_store_close(
  * Finds a compositor setting's entry; NULL for a name the store does not
  * hold (a key of an application, or none at all).
  */
-struct zwl_settings_entry *
-zwl_settings_store_find(
-	struct zwl_settings_store *store,
+struct kwl_settings_entry *
+kwl_settings_store_find(
+	struct kwl_settings_store *store,
 	const char *name)
 {
 	unsigned index;
@@ -181,15 +181,15 @@ zwl_settings_store_find(
  * takes it at once.
  */
 void
-zwl_settings_store_default(
-	struct zwl_settings_store *store,
+kwl_settings_store_default(
+	struct kwl_settings_store *store,
 	const char *name,
 	const char *value)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 
 	/* Only a setting the store holds. */
-	entry = zwl_settings_store_find(store, name);
+	entry = kwl_settings_store_find(store, name);
 	if (entry == NULL)
 		return;
 
@@ -211,8 +211,8 @@ zwl_settings_store_default(
  * reading, which read_error keeps.
  */
 int
-zwl_settings_store_load(
-	struct zwl_settings_store *store)
+kwl_settings_store_load(
+	struct kwl_settings_store *store)
 {
 	char *text;
 	size_t length;
@@ -252,16 +252,16 @@ zwl_settings_store_load(
  * take.
  */
 int
-zwl_settings_store_choose(
-	struct zwl_settings_store *store,
+kwl_settings_store_choose(
+	struct kwl_settings_store *store,
 	const char *name,
 	const char *value)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	int error;
 
 	/* Only a setting the store holds. */
-	entry = zwl_settings_store_find(store, name);
+	entry = kwl_settings_store_find(store, name);
 	if (entry == NULL)
 		return ENOENT;
 
@@ -286,14 +286,14 @@ zwl_settings_store_choose(
  * EPERM.
  */
 int
-zwl_settings_store_reset(
-	struct zwl_settings_store *store,
+kwl_settings_store_reset(
+	struct kwl_settings_store *store,
 	const char *name)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 
 	/* Only a setting the store holds. */
-	entry = zwl_settings_store_find(store, name);
+	entry = kwl_settings_store_find(store, name);
 	if (entry == NULL)
 		return ENOENT;
 
@@ -313,15 +313,15 @@ zwl_settings_store_reset(
  * sound): it is in effect and known from now on.
  */
 void
-zwl_settings_store_report(
-	struct zwl_settings_store *store,
+kwl_settings_store_report(
+	struct kwl_settings_store *store,
 	const char *name,
 	const char *value)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 
 	/* Only a setting the store holds. */
-	entry = zwl_settings_store_find(store, name);
+	entry = kwl_settings_store_find(store, name);
 	if (entry == NULL)
 		return;
 
@@ -332,14 +332,14 @@ zwl_settings_store_report(
 /*
  * Lists the settings the session's end would write: those kept in the
  * file whose value is known and differs from the start.  changes has room
- * for ZWL_SETTINGS_ENTRIES.  Returns how many.
+ * for KWL_SETTINGS_ENTRIES.  Returns how many.
  */
 unsigned
-zwl_settings_store_changes(
-	const struct zwl_settings_store *store,
-	struct zwl_settings_change *changes)
+kwl_settings_store_changes(
+	const struct kwl_settings_store *store,
+	struct kwl_settings_change *changes)
 {
-	const struct zwl_settings_entry *entry;
+	const struct kwl_settings_entry *entry;
 	unsigned count;
 	unsigned index;
 	int differs;
@@ -370,10 +370,10 @@ zwl_settings_store_changes(
  * no home), or the errno value of the merge; the file is then as it was.
  */
 int
-zwl_settings_store_save(
-	struct zwl_settings_store *store)
+kwl_settings_store_save(
+	struct kwl_settings_store *store)
 {
-	struct zwl_settings_change changes[ZWL_SETTINGS_ENTRIES];
+	struct kwl_settings_change changes[KWL_SETTINGS_ENTRIES];
 	unsigned count;
 	int error;
 
@@ -382,7 +382,7 @@ zwl_settings_store_save(
 		return 0;
 
 	/* Nothing differs: the file stays as it is. */
-	count = zwl_settings_store_changes(store, changes);
+	count = kwl_settings_store_changes(store, changes);
 	if (count == 0U)
 		return 0;
 
@@ -407,14 +407,14 @@ zwl_settings_store_save(
  * Merges the session's changes into the file on a thread of its own (the
  * Log Out: the event loop goes on drawing until the session's manager ends
  * it).  The changes are copied now; a change made afterwards is written by
- * zwl_settings_store_finish.  Returns 0 (also with nothing to write), EBUSY
+ * kwl_settings_store_finish.  Returns 0 (also with nothing to write), EBUSY
  * when a writer was started already, or the errno value of the thread.
  */
 int
-zwl_settings_store_save_later(
-	struct zwl_settings_store *store)
+kwl_settings_store_save_later(
+	struct kwl_settings_store *store)
 {
-	struct zwl_settings_writer *writer;
+	struct kwl_settings_writer *writer;
 	int error;
 
 	/* Without a home there is no file. */
@@ -427,7 +427,7 @@ zwl_settings_store_save_later(
 		return EBUSY;
 
 	/* The changes as they are now; none leaves the file as it is. */
-	writer->count = zwl_settings_store_changes(store, writer->changes);
+	writer->count = kwl_settings_store_changes(store, writer->changes);
 	if (writer->count == 0U)
 		return 0;
 
@@ -444,7 +444,7 @@ zwl_settings_store_save_later(
 		return error;
 
 	/*
-	 * started tells zwl_settings_store_finish and close that a thread runs
+	 * started tells kwl_settings_store_finish and close that a thread runs
 	 * or waits to be joined, and refuses a second writer.
 	 */
 	writer->started = 1;
@@ -460,10 +460,10 @@ zwl_settings_store_save_later(
  * or the errno value of the last merge.
  */
 int
-zwl_settings_store_finish(
-	struct zwl_settings_store *store)
+kwl_settings_store_finish(
+	struct kwl_settings_store *store)
 {
-	struct zwl_settings_writer *writer;
+	struct kwl_settings_writer *writer;
 	int error;
 
 	/* Waits for the writer, when one was started. */
@@ -479,7 +479,7 @@ zwl_settings_store_finish(
 	}
 
 	/* Merges now whatever the writer did not write. */
-	error = zwl_settings_store_save(store);
+	error = kwl_settings_store_save(store);
 	if (error != 0)
 		return error;
 
@@ -490,15 +490,15 @@ zwl_settings_store_finish(
 /* Sets an entry's value and whether it was chosen, and counts a change of a kept setting. */
 static void
 store_entry_set(
-	struct zwl_settings_store *store,
-	struct zwl_settings_entry *entry,
+	struct kwl_settings_store *store,
+	struct kwl_settings_entry *entry,
 	const char *value,
 	unsigned chosen)
 {
 	int differs;
 
 	/*
-	 * generation tells zwl_settings_store_finish that something changed
+	 * generation tells kwl_settings_store_finish that something changed
 	 * after the writer took its copy.  Only a change of the value or of
 	 * whether it was chosen counts.
 	 */
@@ -517,7 +517,7 @@ store_entry_set(
 /* Reads each line of the file's text. */
 static void
 store_parse(
-	struct zwl_settings_store *store,
+	struct kwl_settings_store *store,
 	const char *text,
 	size_t length)
 {
@@ -543,11 +543,11 @@ store_parse(
 /* Takes a key=value line's setting; a comment, an empty line or a line not well formed is passed over. */
 static void
 store_parse_line(
-	struct zwl_settings_store *store,
+	struct kwl_settings_store *store,
 	const char *line,
 	size_t length)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	char key[KL_SETTINGS_KEY_MAX];
 	char raw[KL_SETTINGS_VALUE_MAX];
 	char clean[KL_SETTINGS_VALUE_MAX];
@@ -582,7 +582,7 @@ store_parse_line(
 	raw[value_length] = '\0';
 
 	/* Only a setting the store holds. */
-	entry = zwl_settings_store_find(store, key);
+	entry = kwl_settings_store_find(store, key);
 	if (entry == NULL)
 		return;
 
@@ -655,7 +655,7 @@ store_clean_value(
 /* Tells whether an entry is kept in the file, known, and differs from what the file held at the start. */
 static int
 store_entry_differs(
-	const struct zwl_settings_entry *entry)
+	const struct kwl_settings_entry *entry)
 {
 	int differs;
 
@@ -687,17 +687,17 @@ store_entry_differs(
 /* Makes the written changes the start of their settings: the file holds them now. */
 static void
 store_mark_saved(
-	struct zwl_settings_store *store,
-	const struct zwl_settings_change *changes,
+	struct kwl_settings_store *store,
+	const struct kwl_settings_change *changes,
 	unsigned count)
 {
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_entry *entry;
 	unsigned index;
 
 	/* Updates the start of each setting written. */
 	for (index = 0; index < count; index++) {
 		/* A change the store no longer holds has no start to update. */
-		entry = zwl_settings_store_find(store, changes[index].key);
+		entry = kwl_settings_store_find(store, changes[index].key);
 		if (entry == NULL)
 			continue;
 
@@ -712,7 +712,7 @@ static int
 store_merge(
 	const char *folder,
 	const char *path,
-	const struct zwl_settings_change *changes,
+	const struct kwl_settings_change *changes,
 	unsigned count)
 {
 	const char *value;
@@ -1010,7 +1010,7 @@ store_replace(
 	const char *text,
 	size_t length)
 {
-	char temporary[ZWL_SETTINGS_PATH_MAX + 8U];
+	char temporary[KWL_SETTINGS_PATH_MAX + 8U];
 	ssize_t count;
 	size_t done;
 	int descriptor;
@@ -1075,7 +1075,7 @@ static int
 store_lock(
 	const char *path)
 {
-	char lock_path[ZWL_SETTINGS_PATH_MAX + 8U];
+	char lock_path[KWL_SETTINGS_PATH_MAX + 8U];
 	int descriptor;
 	int status;
 	int error;
@@ -1104,7 +1104,7 @@ static void
 store_mkdir(
 	const char *folder)
 {
-	char partial[ZWL_SETTINGS_PATH_MAX];
+	char partial[KWL_SETTINGS_PATH_MAX];
 	size_t index;
 
 	/* Makes each prefix that ends at a slash. */
@@ -1129,7 +1129,7 @@ static void *
 store_writer_run(
 	void *argument)
 {
-	struct zwl_settings_writer *writer;
+	struct kwl_settings_writer *writer;
 	int error;
 
 	/* The writer that started the thread. */
@@ -1138,7 +1138,7 @@ store_writer_run(
 	/* Merges the changes, away from the event loop. */
 	error = store_merge(writer->folder, writer->path, writer->changes, writer->count);
 
-	/* Records how it went, for zwl_settings_store_finish after the join; done says the thread is finished. */
+	/* Records how it went, for kwl_settings_store_finish after the join; done says the thread is finished. */
 	(void)pthread_mutex_lock(&writer->lock);
 
 	writer->error = error;

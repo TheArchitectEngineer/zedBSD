@@ -111,40 +111,40 @@
 #define DATA_MIME_MAX			32U
 #define DATA_MIME_LENGTH		256U
 
-static int manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int source_request(struct zwl_object *source, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int device_request(struct zwl_object *device, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int offer_request(struct zwl_object *offer, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int set_selection(struct zwl_object *device, uint32_t source_id);
-static void selection_changed(struct zwl_server *server);
-static void send_selection(struct zwl_server *server, struct zwl_client *client);
-static void send_device_selection(struct zwl_server *server, struct zwl_object *device);
-static int emit_string(struct zwl_client *client, uint32_t id, uint32_t opcode, const char *text, int descriptor);
+static int manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int source_request(struct kwl_object *source, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int device_request(struct kwl_object *device, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int offer_request(struct kwl_object *offer, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int set_selection(struct kwl_object *device, uint32_t source_id);
+static void selection_changed(struct kwl_server *server);
+static void send_selection(struct kwl_server *server, struct kwl_client *client);
+static void send_device_selection(struct kwl_server *server, struct kwl_object *device);
+static int emit_string(struct kwl_client *client, uint32_t id, uint32_t opcode, const char *text, int descriptor);
 static int read_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
 static uint32_t data_word(const unsigned char *bytes, size_t offset);
-static int start_drag(struct zwl_object *device, const unsigned char *bytes, size_t size);
-static int offer_accept(struct zwl_object *offer, const unsigned char *bytes, size_t size);
-static int offer_set_actions(struct zwl_object *offer, const unsigned char *bytes, size_t size);
-static void offer_finish(struct zwl_object *offer);
-static struct zwl_object *drag_surface_at(struct zwl_server *server, struct zwl_object **titlebar, uint32_t *id, uint32_t *detail);
-static struct zwl_object *drag_plain_window_at(struct zwl_server *server, int32_t x, int32_t y);
-static struct zwl_object *drag_device_of(struct zwl_client *client);
-static void drag_update(struct zwl_server *server, uint32_t time);
-static void drag_enter(struct zwl_server *server, struct zwl_object *surface);
-static void drag_leave(struct zwl_server *server);
-static void drag_tell_part(struct zwl_server *server, struct zwl_object *titlebar, uint32_t id, uint32_t detail);
-static void drag_action(struct zwl_server *server);
+static int start_drag(struct kwl_object *device, const unsigned char *bytes, size_t size);
+static int offer_accept(struct kwl_object *offer, const unsigned char *bytes, size_t size);
+static int offer_set_actions(struct kwl_object *offer, const unsigned char *bytes, size_t size);
+static void offer_finish(struct kwl_object *offer);
+static struct kwl_object *drag_surface_at(struct kwl_server *server, struct kwl_object **titlebar, uint32_t *id, uint32_t *detail);
+static struct kwl_object *drag_plain_window_at(struct kwl_server *server, int32_t x, int32_t y);
+static struct kwl_object *drag_device_of(struct kwl_client *client);
+static void drag_update(struct kwl_server *server, uint32_t time);
+static void drag_enter(struct kwl_server *server, struct kwl_object *surface);
+static void drag_leave(struct kwl_server *server);
+static void drag_tell_part(struct kwl_server *server, struct kwl_object *titlebar, uint32_t id, uint32_t detail);
+static void drag_action(struct kwl_server *server);
 static uint32_t drag_choose(uint32_t source_actions, uint32_t target_actions, uint32_t preferred, uint32_t modifiers);
-static void drag_place(struct zwl_server *server, struct zwl_object *surface, uint32_t *x, uint32_t *y);
-static void drag_end(struct zwl_server *server);
-static int emit_nullable(struct zwl_client *client, uint32_t id, uint32_t opcode, const char *text);
+static void drag_place(struct kwl_server *server, struct kwl_object *surface, uint32_t *x, uint32_t *y);
+static void drag_end(struct kwl_server *server);
+static int emit_nullable(struct kwl_client *client, uint32_t id, uint32_t opcode, const char *text);
 
 /*
  * Carries out a request of one of the data-sharing interfaces.
  */
 int
-zwl_data_request(
-	struct zwl_object *object,
+kwl_data_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -153,16 +153,16 @@ zwl_data_request(
 
 	/* Each interface has its own requests. */
 	switch (object->kind) {
-	case ZWL_DATA_MANAGER:
+	case KWL_DATA_MANAGER:
 		error = manager_request(object, opcode, bytes, size);
 		break;
-	case ZWL_DATA_SOURCE:
+	case KWL_DATA_SOURCE:
 		error = source_request(object, opcode, bytes, size);
 		break;
-	case ZWL_DATA_DEVICE:
+	case KWL_DATA_DEVICE:
 		error = device_request(object, opcode, bytes, size);
 		break;
-	case ZWL_DATA_OFFER:
+	case KWL_DATA_OFFER:
 		error = offer_request(object, opcode, bytes, size);
 		break;
 	default:
@@ -183,9 +183,9 @@ zwl_data_request(
  * keyboard hears enter (a client that was told it last is not told again).
  */
 void
-zwl_data_focus(
-	struct zwl_server *server,
-	struct zwl_object *focus)
+kwl_data_focus(
+	struct kwl_server *server,
+	struct kwl_object *focus)
 {
 	/* No new focus, or the client told last. */
 	if (focus == NULL || focus->client->number == server->selection_client)
@@ -201,12 +201,12 @@ zwl_data_focus(
  * is empty (the keyboard's client is told).
  */
 void
-zwl_data_object_gone(
-	struct zwl_object *object)
+kwl_data_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
-	struct zwl_client *client;
-	struct zwl_object *other;
+	struct kwl_server *server;
+	struct kwl_client *client;
+	struct kwl_object *other;
 	unsigned index;
 
 	/* A drag loses what goes: its source cancels it, its origin ends it, and the others are forgotten. */
@@ -216,7 +216,7 @@ zwl_data_object_gone(
 		if (object == server->dnd_source || object == server->dnd_origin) {
 			printf("ZWL DATA drag end reason=gone client=%llu\n", (unsigned long long)object->client->number);
 			if (object == server->dnd_origin && server->dnd_source != NULL && !server->dnd_source->dead)
-				(void)zwl_emit(server->dnd_source->client, server->dnd_source->id, SOURCE_CANCELLED, NULL, 0U);
+				(void)kwl_emit(server->dnd_source->client, server->dnd_source->id, SOURCE_CANCELLED, NULL, 0U);
 			if (object == server->dnd_source)
 				server->dnd_source = NULL;
 			drag_leave(server);
@@ -240,14 +240,14 @@ zwl_data_object_gone(
 	}
 
 	/* A dropped offer that goes without its finish (the target gave up, the "ask" cancelled): its source is cancelled. */
-	if (object->kind == ZWL_DATA_OFFER && object->dnd_dropped && object->data_source != NULL && !object->data_source->dead) {
+	if (object->kind == KWL_DATA_OFFER && object->dnd_dropped && object->data_source != NULL && !object->data_source->dead) {
 		printf("ZWL DATA drag unfinished client=%llu\n", (unsigned long long)object->client->number);
-		(void)zwl_emit(object->data_source->client, object->data_source->id, SOURCE_CANCELLED, NULL, 0U);
+		(void)kwl_emit(object->data_source->client, object->data_source->id, SOURCE_CANCELLED, NULL, 0U);
 		object->dnd_dropped = 0;
 	}
 
 	/* Only a source has anything more to untie. */
-	if (object->kind != ZWL_DATA_SOURCE)
+	if (object->kind != KWL_DATA_SOURCE)
 		return;
 
 	/* Its types. */
@@ -262,7 +262,7 @@ zwl_data_object_gone(
 		/* Each client's offers. */
 		for (other = client->objects; other != NULL; other = other->next) {
 			/* An offer of this source. */
-			if (other->kind == ZWL_DATA_OFFER && other->data_source == object)
+			if (other->kind == KWL_DATA_OFFER && other->data_source == object)
 				other->data_source = NULL;
 		}
 	}
@@ -280,8 +280,8 @@ zwl_data_object_gone(
  * leave, when it goes), or motion.
  */
 void
-zwl_data_drag_motion(
-	struct zwl_server *server,
+kwl_data_drag_motion(
+	struct kwl_server *server,
 	uint32_t time)
 {
 	/* Only while dragging. */
@@ -299,12 +299,12 @@ zwl_data_drag_motion(
  * source is cancelled.
  */
 void
-zwl_data_drag_release(
-	struct zwl_server *server)
+kwl_data_drag_release(
+	struct kwl_server *server)
 {
-	struct zwl_object *offer;
-	struct zwl_object *source;
-	struct zwl_object *device;
+	struct kwl_object *offer;
+	struct kwl_object *source;
+	struct kwl_object *device;
 	uint32_t action;
 	unsigned drop;
 
@@ -329,13 +329,13 @@ zwl_data_drag_release(
 		printf("ZWL DATA drag cancel client=%llu reason=release\n", (unsigned long long)server->dnd_origin->client->number);
 		drag_leave(server);
 		if (source != NULL && !source->dead)
-			(void)zwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
+			(void)kwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
 		drag_end(server);
 		return;
 	}
 
 	/* The drop: the target's device hears it, and its offer awaits the finish; its enter's serial may open a context menu (ask). */
-	(void)zwl_emit(device->client, device->id, DEVICE_DROP, NULL, 0U);
+	(void)kwl_emit(device->client, device->id, DEVICE_DROP, NULL, 0U);
 	server->dnd_drop_client = device->client->number;
 	server->dnd_drop_serial = server->dnd_enter_serial;
 	action = ACTION_NONE;
@@ -349,9 +349,9 @@ zwl_data_drag_release(
 
 	/* The source hears that the drop was made, and at once that it is finished when the target cannot say so (before version 3). */
 	if (source != NULL && !source->dead && source->version >= DATA_ACTIONS_VERSION) {
-		(void)zwl_emit(source->client, source->id, SOURCE_DND_DROP_PERFORMED, NULL, 0U);
+		(void)kwl_emit(source->client, source->id, SOURCE_DND_DROP_PERFORMED, NULL, 0U);
 		if (offer != NULL && offer->version < DATA_ACTIONS_VERSION)
-			(void)zwl_emit(source->client, source->id, SOURCE_DND_FINISHED, NULL, 0U);
+			(void)kwl_emit(source->client, source->id, SOURCE_DND_FINISHED, NULL, 0U);
 	}
 
 	/* Succeeded: the drag is over (the finish comes from the target). */
@@ -363,10 +363,10 @@ zwl_data_drag_release(
  * cancelled.
  */
 void
-zwl_data_drag_cancel(
-	struct zwl_server *server)
+kwl_data_drag_cancel(
+	struct kwl_server *server)
 {
-	struct zwl_object *source;
+	struct kwl_object *source;
 
 	/* Only while dragging. */
 	if (!server->dnd_active)
@@ -377,7 +377,7 @@ zwl_data_drag_cancel(
 	drag_leave(server);
 	source = server->dnd_source;
 	if (source != NULL && !source->dead)
-		(void)zwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
+		(void)kwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
 	drag_end(server);
 }
 
@@ -386,8 +386,8 @@ zwl_data_drag_cancel(
  * it (-1 for none), for the primary selection too (primary.c).
  */
 int
-zwl_data_emit_string(
-	struct zwl_client *client,
+kwl_data_emit_string(
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const char *text,
@@ -409,7 +409,7 @@ zwl_data_emit_string(
  * (primary.c).
  */
 int
-zwl_data_read_string(
+kwl_data_read_string(
 	const unsigned char *bytes,
 	size_t size,
 	size_t offset,
@@ -430,14 +430,14 @@ zwl_data_read_string(
 /* Carries out a request of wl_data_device_manager: a new source, or a seat's data device. */
 static int
 manager_request(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *seat;
-	struct zwl_server *server;
+	struct kwl_object *created;
+	struct kwl_object *seat;
+	struct kwl_server *server;
 	uint32_t id;
 	uint32_t seat_id;
 
@@ -446,7 +446,7 @@ manager_request(
 		if (size != 4U)
 			return EPROTO;
 		id = data_word(bytes, 0U);
-		created = zwl_create(manager->client, id, ZWL_DATA_SOURCE, manager->version);
+		created = kwl_create(manager->client, id, KWL_DATA_SOURCE, manager->version);
 		if (created == NULL)
 			return EPROTO;
 		return 0;
@@ -457,10 +457,10 @@ manager_request(
 		return EPROTO;
 	id = data_word(bytes, 0U);
 	seat_id = data_word(bytes, 4U);
-	seat = zwl_find(manager->client, seat_id);
-	if (seat == NULL || seat->kind != ZWL_SEAT)
+	seat = kwl_find(manager->client, seat_id);
+	if (seat == NULL || seat->kind != KWL_SEAT)
 		return EPROTO;
-	created = zwl_create(manager->client, id, ZWL_DATA_DEVICE, manager->version);
+	created = kwl_create(manager->client, id, KWL_DATA_DEVICE, manager->version);
 	if (created == NULL)
 		return EPROTO;
 
@@ -476,7 +476,7 @@ manager_request(
 /* Carries out a request of wl_data_source: a type offered, destroy, or the drag actions. */
 static int
 source_request(
-	struct zwl_object *source,
+	struct kwl_object *source,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -487,11 +487,11 @@ source_request(
 	size_t length;
 	int error;
 
-	/* The source goes (zwl_data_object_gone empties the clipboard when it held it). */
+	/* The source goes (kwl_data_object_gone empties the clipboard when it held it). */
 	if (opcode == SOURCE_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(source);
+		kwl_object_destroy(source);
 		return 0;
 	}
 
@@ -501,7 +501,7 @@ source_request(
 			return EPROTO;
 		source->dnd_actions = data_word(bytes, 0U);
 		if ((source->dnd_actions & ~ACTION_ALL) != 0U) {
-			error = zwl_error_code(source->client, source->id, SOURCE_ERROR_INVALID_ACTION_MASK, "unknown drag and drop action");
+			error = kwl_error_code(source->client, source->id, SOURCE_ERROR_INVALID_ACTION_MASK, "unknown drag and drop action");
 			return error;
 		}
 
@@ -540,7 +540,7 @@ source_request(
 /* Carries out a request of wl_data_device: a drag, the selection, or release. */
 static int
 device_request(
-	struct zwl_object *device,
+	struct kwl_object *device,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -569,7 +569,7 @@ device_request(
 		/* The device goes (version 2). */
 		if (size != 0U || device->version < 2U)
 			return EPROTO;
-		zwl_object_destroy(device);
+		kwl_object_destroy(device);
 		return 0;
 	default:
 		break;
@@ -582,12 +582,12 @@ device_request(
 /* Carries out a request of wl_data_offer: receive a type into a descriptor, destroy, or the drag requests. */
 static int
 offer_request(
-	struct zwl_object *offer,
+	struct kwl_object *offer,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *source;
+	struct kwl_object *source;
 	const char *text;
 	size_t next;
 	int descriptor;
@@ -617,7 +617,7 @@ offer_request(
 		/* The offer goes. */
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(offer);
+		kwl_object_destroy(offer);
 		return 0;
 	case OFFER_RECEIVE:
 		break;
@@ -629,14 +629,14 @@ offer_request(
 	error = read_string(bytes, size, 0U, &text, &next);
 	if (error != 0 || next != size)
 		return EPROTO;
-	descriptor = zwl_take_fd(offer->client);
+	descriptor = kwl_take_fd(offer->client);
 	if (descriptor < 0)
 		return EAGAIN;
 
 	/* An offer of zdesktop's own selection: zdesktop writes the text (clipboard.c). */
 	if (offer->data_offered) {
 		printf("ZWL DATA receive client=%llu mime=%s source=history\n", (unsigned long long)offer->client->number, text);
-		zwl_clipboard_offer_write(descriptor);
+		kwl_clipboard_offer_write(descriptor);
 		return 0;
 	}
 
@@ -659,8 +659,8 @@ offer_request(
  * history reads the text so, clipboard.c); the event takes the descriptor.
  */
 int
-zwl_data_send(
-	struct zwl_object *source,
+kwl_data_send(
+	struct kwl_object *source,
 	const char *type,
 	int descriptor)
 {
@@ -681,15 +681,15 @@ zwl_data_send(
  * client with the keyboard hears it.
  */
 void
-zwl_data_select_offered(
-	struct zwl_server *server)
+kwl_data_select_offered(
+	struct kwl_server *server)
 {
-	struct zwl_object *previous;
+	struct kwl_object *previous;
 
 	/* The source replaced hears that it is not the selection any more. */
 	previous = server->selection;
 	if (previous != NULL && !previous->dead)
-		(void)zwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
+		(void)kwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
 
 	/* zdesktop's selection, told to the client with the keyboard. */
 	server->selection = NULL;
@@ -701,19 +701,19 @@ zwl_data_select_offered(
 /* Sets the selection from a client's device: a source of the client, or none; the replaced source is cancelled. */
 static int
 set_selection(
-	struct zwl_object *device,
+	struct kwl_object *device,
 	uint32_t source_id)
 {
-	struct zwl_server *server;
-	struct zwl_object *source;
-	struct zwl_object *previous;
+	struct kwl_server *server;
+	struct kwl_object *source;
+	struct kwl_object *previous;
 	unsigned types;
 
 	/* The source must be one of the client's. */
 	source = NULL;
 	if (source_id != 0U) {
-		source = zwl_find(device->client, source_id);
-		if (source == NULL || source->kind != ZWL_DATA_SOURCE)
+		source = kwl_find(device->client, source_id);
+		if (source == NULL || source->kind != KWL_DATA_SOURCE)
 			return EPROTO;
 	}
 
@@ -725,7 +725,7 @@ set_selection(
 
 	/* The source replaced hears that it is not the selection any more. */
 	if (previous != NULL && !previous->dead)
-		(void)zwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
+		(void)kwl_emit(previous->client, previous->id, SOURCE_CANCELLED, NULL, 0U);
 
 	/* The new selection (with how many types it has), and the client with the keyboard hears it. */
 	server->selection = source;
@@ -737,7 +737,7 @@ set_selection(
 	selection_changed(server);
 
 	/* Its text joins the clipboard's history (clipboard.c). */
-	zwl_clipboard_selected(server, source);
+	kwl_clipboard_selected(server, source);
 
 	/* Succeeded: the clipboard holds the source. */
 	return 0;
@@ -746,7 +746,7 @@ set_selection(
 /* Tells the client with the keyboard that the selection changed. */
 static void
 selection_changed(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Without a focus nobody is told now (the next focus is). */
 	server->selection_client = 0;
@@ -760,10 +760,10 @@ selection_changed(
 /* Tells every data device of a client the selection. */
 static void
 send_selection(
-	struct zwl_server *server,
-	struct zwl_client *client)
+	struct kwl_server *server,
+	struct kwl_client *client)
 {
-	struct zwl_object *device;
+	struct kwl_object *device;
 
 	/* A failed client hears nothing. */
 	if (client->fatal)
@@ -772,7 +772,7 @@ send_selection(
 	/* Each live data device. */
 	for (device = client->objects; device != NULL; device = device->next) {
 		/* Only live devices. */
-		if (device->kind == ZWL_DATA_DEVICE && !device->dead)
+		if (device->kind == KWL_DATA_DEVICE && !device->dead)
 			send_device_selection(server, device);
 	}
 
@@ -786,11 +786,11 @@ send_selection(
  */
 static void
 send_device_selection(
-	struct zwl_server *server,
-	struct zwl_object *device)
+	struct kwl_server *server,
+	struct kwl_object *device)
 {
-	struct zwl_object *source;
-	struct zwl_object *offer;
+	struct kwl_object *source;
+	struct kwl_object *offer;
 	uint32_t word;
 	unsigned index;
 
@@ -798,46 +798,46 @@ send_device_selection(
 	source = server->selection;
 	word = 0;
 	if (source == NULL && server->selection_offered) {
-		offer = zwl_create_server(device->client, ZWL_DATA_OFFER, device->version);
+		offer = kwl_create_server(device->client, KWL_DATA_OFFER, device->version);
 		if (offer == NULL)
 			return;
 		offer->data_offered = 1;
 		word = offer->id;
-		(void)zwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
+		(void)kwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
 		(void)emit_string(device->client, offer->id, OFFER_OFFER, "text/plain;charset=utf-8", -1);
 		(void)emit_string(device->client, offer->id, OFFER_OFFER, "text/plain", -1);
-		(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
+		(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
 		printf("ZWL DATA offer client=%llu offer=%u types=2 history=1\n", (unsigned long long)device->client->number, offer->id);
 		return;
 	}
 
 	/* An empty clipboard: the selection names no offer. */
 	if (source == NULL || source->dead) {
-		(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
+		(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
 		return;
 	}
 
 	/* The offer, made by the compositor. */
-	offer = zwl_create_server(device->client, ZWL_DATA_OFFER, device->version);
+	offer = kwl_create_server(device->client, KWL_DATA_OFFER, device->version);
 	if (offer == NULL)
 		return;
 	offer->data_source = source;
 
 	/* It is introduced, with each of the source's types. */
 	word = offer->id;
-	(void)zwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
+	(void)kwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
 	for (index = 0; index < source->mime_count; index++)
 		(void)emit_string(device->client, offer->id, OFFER_OFFER, source->mime_types[index], -1);
 
 	/* Succeeded: the selection names it. */
-	(void)zwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
+	(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
 	printf("ZWL DATA offer client=%llu offer=%u types=%u\n", (unsigned long long)device->client->number, offer->id, source->mime_count);
 }
 
 /* Sends an event whose only argument is a string, with a descriptor beside it when there is one (-1 for none). */
 static int
 emit_string(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const char *text,
@@ -864,9 +864,9 @@ emit_string(
 
 	/* The event (the descriptor goes with it). */
 	if (descriptor >= 0) {
-		error = zwl_emit_fd(client, id, opcode, payload, padded, descriptor);
+		error = kwl_emit_fd(client, id, opcode, payload, padded, descriptor);
 	} else {
-		error = zwl_emit(client, id, opcode, payload, padded);
+		error = kwl_emit(client, id, opcode, payload, padded);
 	}
 
 	/* Reports an event that could not be queued. */
@@ -933,14 +933,14 @@ data_word(
  */
 static int
 start_drag(
-	struct zwl_object *device,
+	struct kwl_object *device,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_object *source;
-	struct zwl_object *origin;
-	struct zwl_object *icon;
+	struct kwl_server *server;
+	struct kwl_object *source;
+	struct kwl_object *origin;
+	struct kwl_object *icon;
 	uint32_t source_id;
 	uint32_t origin_id;
 	uint32_t icon_id;
@@ -959,21 +959,21 @@ start_drag(
 	/* The source must be one of the client's sources. */
 	source = NULL;
 	if (source_id != 0U) {
-		source = zwl_find(device->client, source_id);
-		if (source == NULL || source->kind != ZWL_DATA_SOURCE)
+		source = kwl_find(device->client, source_id);
+		if (source == NULL || source->kind != KWL_DATA_SOURCE)
 			return EPROTO;
 	}
 
 	/* The origin must be one of its surfaces. */
-	origin = zwl_find(device->client, origin_id);
-	if (origin == NULL || origin->kind != ZWL_SURFACE)
+	origin = kwl_find(device->client, origin_id);
+	if (origin == NULL || origin->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* And so must the icon, when there is one. */
 	icon = NULL;
 	if (icon_id != 0U) {
-		icon = zwl_find(device->client, icon_id);
-		if (icon == NULL || icon->kind != ZWL_SURFACE)
+		icon = kwl_find(device->client, icon_id);
+		if (icon == NULL || icon->kind != KWL_SURFACE)
 			return EPROTO;
 	}
 
@@ -988,10 +988,10 @@ start_drag(
 	if (!server->dnd_active && server->buttons_down != 0U)
 		held = 1;
 	if (!server->dnd_active && !held)
-		held = zwl_touch_drag_start(server, device->client, serial);
+		held = kwl_touch_drag_start(server, device->client, serial);
 	if (!held) {
 		if (source != NULL)
-			(void)zwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
+			(void)kwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
 		printf("ZWL DATA drag refused client=%llu buttons=%u serial=%u\n", (unsigned long long)device->client->number, server->buttons_down, serial);
 		return 0;
 	}
@@ -1021,7 +1021,7 @@ start_drag(
 
 	/* The pointer is the drag's now: the surface it was on hears leave. */
 	if (server->pointer_surface != NULL) {
-		zwl_seat_pointer_move(server, server->pointer_surface, NULL);
+		kwl_seat_pointer_move(server, server->pointer_surface, NULL);
 		server->pointer_surface = NULL;
 	}
 
@@ -1037,12 +1037,12 @@ start_drag(
  */
 static int
 offer_accept(
-	struct zwl_object *offer,
+	struct kwl_object *offer,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_object *source;
+	struct kwl_server *server;
+	struct kwl_object *source;
 	const char *text;
 	uint32_t length;
 	size_t next;
@@ -1088,11 +1088,11 @@ offer_accept(
  */
 static int
 offer_set_actions(
-	struct zwl_object *offer,
+	struct kwl_object *offer,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	uint32_t actions;
 	uint32_t preferred;
 	int error;
@@ -1105,13 +1105,13 @@ offer_set_actions(
 
 	/* Only known actions. */
 	if ((actions & ~ACTION_ALL) != 0U) {
-		error = zwl_error_code(offer->client, offer->id, OFFER_ERROR_INVALID_ACTION_MASK, "unknown drag and drop action");
+		error = kwl_error_code(offer->client, offer->id, OFFER_ERROR_INVALID_ACTION_MASK, "unknown drag and drop action");
 		return error;
 	}
 
 	/* The preferred one is one action (or none). */
 	if (preferred != ACTION_NONE && preferred != ACTION_COPY && preferred != ACTION_MOVE && preferred != ACTION_ASK) {
-		error = zwl_error_code(offer->client, offer->id, OFFER_ERROR_INVALID_ACTION, "invalid preferred drag and drop action");
+		error = kwl_error_code(offer->client, offer->id, OFFER_ERROR_INVALID_ACTION, "invalid preferred drag and drop action");
 		return error;
 	}
 
@@ -1128,9 +1128,9 @@ offer_set_actions(
 		offer->dnd_action = preferred;
 		printf("ZWL DATA drag chosen client=%llu action=%u\n", (unsigned long long)offer->client->number, preferred);
 		if (offer->version >= DATA_ACTIONS_VERSION)
-			(void)zwl_emit(offer->client, offer->id, OFFER_ACTION, &preferred, sizeof(preferred));
+			(void)kwl_emit(offer->client, offer->id, OFFER_ACTION, &preferred, sizeof(preferred));
 		if (offer->data_source != NULL && !offer->data_source->dead && offer->data_source->version >= DATA_ACTIONS_VERSION)
-			(void)zwl_emit(offer->data_source->client, offer->data_source->id, SOURCE_ACTION, &preferred, sizeof(preferred));
+			(void)kwl_emit(offer->data_source->client, offer->data_source->id, SOURCE_ACTION, &preferred, sizeof(preferred));
 		return 0;
 	}
 
@@ -1144,9 +1144,9 @@ offer_set_actions(
 /* Carries out wl_data_offer.finish: the source of a drop hears that the target is done. */
 static void
 offer_finish(
-	struct zwl_object *offer)
+	struct kwl_object *offer)
 {
-	struct zwl_object *source;
+	struct kwl_object *source;
 
 	/* Only an offer that was dropped on. */
 	if (!offer->dnd_dropped)
@@ -1157,7 +1157,7 @@ offer_finish(
 	source = offer->data_source;
 	printf("ZWL DATA drag finish client=%llu action=%u\n", (unsigned long long)offer->client->number, offer->dnd_action);
 	if (source != NULL && !source->dead && source->version >= DATA_ACTIONS_VERSION)
-		(void)zwl_emit(source->client, source->id, SOURCE_DND_FINISHED, NULL, 0U);
+		(void)kwl_emit(source->client, source->id, SOURCE_DND_FINISHED, NULL, 0U);
 }
 
 /*
@@ -1166,14 +1166,14 @@ offer_finish(
  * titlebar and the part), or else a window's body; in the plain look the
  * window under the pointer.  NULL for none.
  */
-static struct zwl_object *
+static struct kwl_object *
 drag_surface_at(
-	struct zwl_server *server,
-	struct zwl_object **titlebar,
+	struct kwl_server *server,
+	struct kwl_object **titlebar,
 	uint32_t *id,
 	uint32_t *detail)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	int found;
 
 	/* No part yet. */
@@ -1188,30 +1188,30 @@ drag_surface_at(
 	}
 
 	/* A part of a breadcrumb in a titlebar (titlebar-shell.c). */
-	found = zwl_titlebar_drop_at(server, server->pointer_x, server->pointer_y, &surface, titlebar, id, detail);
+	found = kwl_titlebar_drop_at(server, server->pointer_x, server->pointer_y, &surface, titlebar, id, detail);
 	if (found)
 		return surface;
 
 	/* A window's body (shell.c). */
-	surface = zwl_glass_body_at(server, server->pointer_x, server->pointer_y);
+	surface = kwl_glass_body_at(server, server->pointer_x, server->pointer_y);
 	if (surface != NULL)
 		return surface;
 
 	/* Succeeded: the desktop's icons where no window is, or none (desktop.c). */
-	surface = zwl_desktop_at(server, server->pointer_x, server->pointer_y);
+	surface = kwl_desktop_at(server, server->pointer_x, server->pointer_y);
 	return surface;
 }
 
 /* Finds the window on top whose image is under a point (the plain look); NULL for none. */
-static struct zwl_object *
+static struct kwl_object *
 drag_plain_window_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_client *client;
-	struct zwl_object *surface;
-	struct zwl_object *found;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *found;
 	uint32_t width;
 	uint32_t height;
 
@@ -1225,13 +1225,13 @@ drag_plain_window_at(
 		/* Each of its windows. */
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
 			/* Only mapped windows of the desktop shown. */
-			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped || surface->role == NULL)
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped || surface->role == NULL)
 				continue;
 			if (surface->desktop != server->desktop || surface->minimized)
 				continue;
 
 			/* The point on its image. */
-			zwl_surface_size(surface, &width, &height);
+			kwl_surface_size(surface, &width, &height);
 			if (x < surface->x || y < surface->y || x >= surface->x + (int32_t)width || y >= surface->y + (int32_t)height)
 				continue;
 
@@ -1246,11 +1246,11 @@ drag_plain_window_at(
 }
 
 /* Finds a client's first live data device; NULL when it has none. */
-static struct zwl_object *
+static struct kwl_object *
 drag_device_of(
-	struct zwl_client *client)
+	struct kwl_client *client)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* A failed client has none. */
 	if (client->fatal)
@@ -1259,7 +1259,7 @@ drag_device_of(
 	/* The first live one. */
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* Only data devices. */
-		if (object->kind == ZWL_DATA_DEVICE && !object->dead)
+		if (object->kind == KWL_DATA_DEVICE && !object->dead)
 			return object;
 	}
 
@@ -1274,12 +1274,12 @@ drag_device_of(
  */
 static void
 drag_update(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time)
 {
-	struct zwl_object *surface;
-	struct zwl_object *titlebar;
-	struct zwl_object *device;
+	struct kwl_object *surface;
+	struct kwl_object *titlebar;
+	struct kwl_object *device;
 	uint32_t words[3];
 	uint32_t id;
 	uint32_t detail;
@@ -1320,7 +1320,7 @@ drag_update(
 	/* The same target hears the motion, and the action may change with Ctrl. */
 	words[0] = time;
 	drag_place(server, surface, &words[1], &words[2]);
-	(void)zwl_emit(server->dnd_target_device->client, server->dnd_target_device->id, DEVICE_MOTION, words, sizeof(words));
+	(void)kwl_emit(server->dnd_target_device->client, server->dnd_target_device->id, DEVICE_MOTION, words, sizeof(words));
 	drag_action(server);
 }
 
@@ -1331,12 +1331,12 @@ drag_update(
  */
 static void
 drag_enter(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_object *device;
-	struct zwl_object *offer;
-	struct zwl_object *source;
+	struct kwl_object *device;
+	struct kwl_object *offer;
+	struct kwl_object *source;
 	uint32_t words[5];
 	uint32_t word;
 	unsigned index;
@@ -1350,7 +1350,7 @@ drag_enter(
 	offer = NULL;
 	source = server->dnd_source;
 	if (source != NULL && !source->dead) {
-		offer = zwl_create_server(device->client, ZWL_DATA_OFFER, device->version);
+		offer = kwl_create_server(device->client, KWL_DATA_OFFER, device->version);
 		if (offer == NULL)
 			return;
 		offer->data_source = source;
@@ -1358,7 +1358,7 @@ drag_enter(
 
 		/* It is introduced with each type. */
 		word = offer->id;
-		(void)zwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
+		(void)kwl_emit(device->client, device->id, DEVICE_DATA_OFFER, &word, sizeof(word));
 		for (index = 0; index < source->mime_count; index++)
 			(void)emit_string(device->client, offer->id, OFFER_OFFER, source->mime_types[index], -1);
 
@@ -1367,18 +1367,18 @@ drag_enter(
 		if (source->version >= DATA_ACTIONS_VERSION)
 			word = source->dnd_actions;
 		if (offer->version >= DATA_ACTIONS_VERSION)
-			(void)zwl_emit(device->client, offer->id, OFFER_SOURCE_ACTIONS, &word, sizeof(word));
+			(void)kwl_emit(device->client, offer->id, OFFER_SOURCE_ACTIONS, &word, sizeof(word));
 	}
 
 	/* Enter: a serial (kept: a context menu may answer it after a drop), the surface, the pointer's place on it and the offer. */
-	words[0] = zwl_next_serial(server);
+	words[0] = kwl_next_serial(server);
 	server->dnd_enter_serial = words[0];
 	words[1] = surface->id;
 	drag_place(server, surface, &words[2], &words[3]);
 	words[4] = 0;
 	if (offer != NULL)
 		words[4] = offer->id;
-	(void)zwl_emit(device->client, device->id, DEVICE_ENTER, words, sizeof(words));
+	(void)kwl_emit(device->client, device->id, DEVICE_ENTER, words, sizeof(words));
 
 	/* Succeeded: the target, its device and its offer. */
 	server->dnd_target = surface;
@@ -1390,9 +1390,9 @@ drag_enter(
 /* Tells the target that the drag left it (its offer is no longer the drag's). */
 static void
 drag_leave(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *device;
+	struct kwl_object *device;
 
 	/* No target. */
 	device = server->dnd_target_device;
@@ -1405,7 +1405,7 @@ drag_leave(
 
 	/* Its device hears leave. */
 	if (!device->dead)
-		(void)zwl_emit(device->client, device->id, DEVICE_LEAVE, NULL, 0U);
+		(void)kwl_emit(device->client, device->id, DEVICE_LEAVE, NULL, 0U);
 	printf("ZWL DATA drag leave client=%llu surface=%u\n", (unsigned long long)device->client->number, server->dnd_target->id);
 
 	/* Succeeded: no target. */
@@ -1421,8 +1421,8 @@ drag_leave(
  */
 static void
 drag_tell_part(
-	struct zwl_server *server,
-	struct zwl_object *titlebar,
+	struct kwl_server *server,
+	struct kwl_object *titlebar,
 	uint32_t id,
 	uint32_t detail)
 {
@@ -1432,7 +1432,7 @@ drag_tell_part(
 
 	/* The titlebar told before, when it is another one, hears none. */
 	if (server->dnd_titlebar != NULL && server->dnd_titlebar != titlebar)
-		zwl_titlebar_send_drop_target(server->dnd_titlebar, 0U, 0U);
+		kwl_titlebar_send_drop_target(server->dnd_titlebar, 0U, 0U);
 
 	/* The new part. */
 	server->dnd_titlebar = titlebar;
@@ -1441,7 +1441,7 @@ drag_tell_part(
 
 	/* Succeeded: its titlebar hears it. */
 	if (titlebar != NULL)
-		zwl_titlebar_send_drop_target(titlebar, id, detail);
+		kwl_titlebar_send_drop_target(titlebar, id, detail);
 }
 
 /*
@@ -1451,10 +1451,10 @@ drag_tell_part(
  */
 static void
 drag_action(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *offer;
-	struct zwl_object *source;
+	struct kwl_object *offer;
+	struct kwl_object *source;
 	uint32_t source_actions;
 	uint32_t target_actions;
 	uint32_t preferred;
@@ -1488,11 +1488,11 @@ drag_action(
 
 	/* The offer hears it (version 3). */
 	if (offer->version >= DATA_ACTIONS_VERSION)
-		(void)zwl_emit(offer->client, offer->id, OFFER_ACTION, &action, sizeof(action));
+		(void)kwl_emit(offer->client, offer->id, OFFER_ACTION, &action, sizeof(action));
 
 	/* And so does the source. */
 	if (source->version >= DATA_ACTIONS_VERSION)
-		(void)zwl_emit(source->client, source->id, SOURCE_ACTION, &action, sizeof(action));
+		(void)kwl_emit(source->client, source->id, SOURCE_ACTION, &action, sizeof(action));
 }
 
 /*
@@ -1544,8 +1544,8 @@ drag_choose(
  */
 static void
 drag_place(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	uint32_t *x,
 	uint32_t *y)
 {
@@ -1556,7 +1556,7 @@ drag_place(
 	left = surface->x;
 	top = surface->y;
 	if (server->glass)
-		(void)zwl_glass_body_origin(server, surface, &left, &top);
+		(void)kwl_glass_body_origin(server, surface, &left, &top);
 
 	/* Succeeded: the pointer from there. */
 	*x = (uint32_t)((server->pointer_x - left) * 256);
@@ -1569,7 +1569,7 @@ drag_place(
  */
 static void
 drag_end(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* The part of a breadcrumb is none now. */
 	drag_tell_part(server, NULL, 0U, 0U);
@@ -1585,13 +1585,13 @@ drag_end(
 	server->dirty = 1;
 
 	/* Succeeded: the pointer's surface hears enter again. */
-	zwl_seat_pointer_update(server);
+	kwl_seat_pointer_update(server);
 }
 
 /* Sends an event whose only argument is a string that may be null (a zero length). */
 static int
 emit_nullable(
-	struct zwl_client *client,
+	struct kwl_client *client,
 	uint32_t id,
 	uint32_t opcode,
 	const char *text)
@@ -1607,7 +1607,7 @@ emit_nullable(
 
 	/* A null string is its zero length alone. */
 	word = 0;
-	error = zwl_emit(client, id, opcode, &word, sizeof(word));
+	error = kwl_emit(client, id, opcode, &word, sizeof(word));
 	if (error != 0)
 		return error;
 

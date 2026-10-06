@@ -18,11 +18,11 @@
  * Names a layout mode for the log (ZWL LAYOUT).
  */
 const char *
-zwl_layout_name(
+kwl_layout_name(
 	unsigned mode)
 {
 	/* The docked mode is the tablet's. */
-	if (mode == ZWL_LAYOUT_DOCKED)
+	if (mode == KWL_LAYOUT_DOCKED)
 		return "docked";
 
 	/* Every other value is the windowed mode, the session's first. */
@@ -38,28 +38,28 @@ zwl_layout_name(
  * which the caller makes follow the mode instead.
  */
 unsigned
-zwl_layout_switch_action(
+kwl_layout_switch_action(
 	unsigned mode,
-	const struct zwl_layout_window *window)
+	const struct kwl_layout_window *window)
 {
 	/* A fullscreen window keeps covering the output. */
 	if (window->fullscreen)
-		return ZWL_LAYOUT_KEEP;
+		return KWL_LAYOUT_KEEP;
 
 	/* A dialog or a sheet is never docked; its parent follows the mode. */
 	if (window->child)
-		return ZWL_LAYOUT_KEEP;
+		return KWL_LAYOUT_KEEP;
 
 	/* The docked mode docks a floating window. */
-	if (mode == ZWL_LAYOUT_DOCKED && !window->docked)
-		return ZWL_LAYOUT_DOCK;
+	if (mode == KWL_LAYOUT_DOCKED && !window->docked)
+		return KWL_LAYOUT_DOCK;
 
 	/* The windowed mode brings a docked window back to floating. */
-	if (mode != ZWL_LAYOUT_DOCKED && window->docked)
-		return ZWL_LAYOUT_FLOAT;
+	if (mode != KWL_LAYOUT_DOCKED && window->docked)
+		return KWL_LAYOUT_FLOAT;
 
 	/* The window already is as the mode wants it. */
-	return ZWL_LAYOUT_KEEP;
+	return KWL_LAYOUT_KEEP;
 }
 
 /*
@@ -70,12 +70,12 @@ zwl_layout_switch_action(
  * Returns 1 when it opens docked.
  */
 int
-zwl_layout_opens_docked(
+kwl_layout_opens_docked(
 	unsigned mode,
-	const struct zwl_layout_window *window)
+	const struct kwl_layout_window *window)
 {
 	/* The windowed mode opens windows floating. */
-	if (mode != ZWL_LAYOUT_DOCKED)
+	if (mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* A dialog or a sheet floats over its parent. */
@@ -99,12 +99,12 @@ zwl_layout_opens_docked(
  * Returns 1 when it is docked.
  */
 int
-zwl_layout_unfullscreen_docked(
+kwl_layout_unfullscreen_docked(
 	unsigned mode,
-	const struct zwl_layout_window *window)
+	const struct kwl_layout_window *window)
 {
 	/* The windowed mode brings it back floating. */
-	if (mode != ZWL_LAYOUT_DOCKED)
+	if (mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* A dialog or a sheet floats over its parent. */
@@ -123,16 +123,16 @@ zwl_layout_unfullscreen_docked(
  * decision).  Returns 1 when it is centred.
  */
 int
-zwl_layout_centred(
+kwl_layout_centred(
 	unsigned mode,
-	const struct zwl_layout_window *window)
+	const struct kwl_layout_window *window)
 {
 	/* A docked window of one size keeps its size in the middle. */
 	if (window->docked && window->fixed)
 		return 1;
 
 	/* In the docked mode, a dialog or a sheet shows in the middle of the screen. */
-	if (mode == ZWL_LAYOUT_DOCKED && window->child)
+	if (mode == KWL_LAYOUT_DOCKED && window->child)
 		return 1;
 
 	/* Any other window is drawn where its place is. */
@@ -147,13 +147,13 @@ zwl_layout_centred(
  * when the window is not drawn and takes no press.
  */
 int
-zwl_layout_hidden(
+kwl_layout_hidden(
 	unsigned mode,
 	int same_application,
 	int overview)
 {
 	/* The windowed mode shows every window. */
-	if (mode != ZWL_LAYOUT_DOCKED)
+	if (mode != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* The current application's windows show. */
@@ -173,7 +173,7 @@ zwl_layout_hidden(
  * space starts at the space's top-left corner.
  */
 void
-zwl_layout_centre(
+kwl_layout_centre(
 	int32_t space_x,
 	int32_t space_y,
 	int32_t space_width,

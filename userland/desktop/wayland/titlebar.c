@@ -38,7 +38,7 @@
 #define TITLEBAR_VALUE_UNKNOWN		1001U
 
 /* The longest event: a control, a text of the longest, and a word after it. */
-#define TITLEBAR_EVENT_MAX		(12U + ZWL_TITLEBAR_TEXT_MAX + 4U)
+#define TITLEBAR_EVENT_MAX		(12U + KWL_TITLEBAR_TEXT_MAX + 4U)
 
 /* keiland_titlebar_manager_v1's requests and error. */
 #define MANAGER_DESTROY			0U
@@ -90,30 +90,30 @@
 
 static uint32_t titlebar_word(const unsigned char *bytes, size_t offset);
 static int titlebar_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
-static int manager_request(struct zwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int titlebar_request(struct zwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int titlebar_begin(struct zwl_object *titlebar, uint32_t serial);
-static int titlebar_commit(struct zwl_object *titlebar, uint32_t serial);
-static int titlebar_edit(struct zwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int titlebar_edit_control(struct zwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int titlebar_edit_tab(struct zwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int titlebar_add_control(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
-static int titlebar_set_text(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
-static int titlebar_set_breadcrumb(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
-static int titlebar_focus(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
-static int titlebar_suggest(struct zwl_object *titlebar, const unsigned char *bytes, size_t size);
-static int titlebar_fail(struct zwl_object *titlebar, uint32_t code, const char *reason);
-static struct zwl_titlebar_control *titlebar_find_control(struct zwl_titlebar_state *state, uint32_t id, unsigned *index);
-static struct zwl_titlebar_tab *titlebar_find_tab(struct zwl_titlebar_state *state, uint32_t id, unsigned *index);
+static int manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int titlebar_request(struct kwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int titlebar_begin(struct kwl_object *titlebar, uint32_t serial);
+static int titlebar_commit(struct kwl_object *titlebar, uint32_t serial);
+static int titlebar_edit(struct kwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int titlebar_edit_control(struct kwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int titlebar_edit_tab(struct kwl_object *titlebar, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int titlebar_add_control(struct kwl_object *titlebar, const unsigned char *bytes, size_t size);
+static int titlebar_set_text(struct kwl_object *titlebar, const unsigned char *bytes, size_t size);
+static int titlebar_set_breadcrumb(struct kwl_object *titlebar, const unsigned char *bytes, size_t size);
+static int titlebar_focus(struct kwl_object *titlebar, const unsigned char *bytes, size_t size);
+static int titlebar_suggest(struct kwl_object *titlebar, const unsigned char *bytes, size_t size);
+static int titlebar_fail(struct kwl_object *titlebar, uint32_t code, const char *reason);
+static struct kwl_titlebar_control *titlebar_find_control(struct kwl_titlebar_state *state, uint32_t id, unsigned *index);
+static struct kwl_titlebar_tab *titlebar_find_tab(struct kwl_titlebar_state *state, uint32_t id, unsigned *index);
 static int titlebar_replace(char **field, const char *text);
-static int titlebar_state_copy(struct zwl_titlebar_state *target, const struct zwl_titlebar_state *source);
-static void titlebar_state_free(struct zwl_titlebar_state *state);
-static void titlebar_control_free(struct zwl_titlebar_control *control);
+static int titlebar_state_copy(struct kwl_titlebar_state *target, const struct kwl_titlebar_state *source);
+static void titlebar_state_free(struct kwl_titlebar_state *state);
+static void titlebar_control_free(struct kwl_titlebar_control *control);
 static char *titlebar_text_copy(const char *text);
 static size_t titlebar_put_string(unsigned char *payload, size_t offset, const char *text);
-static uint32_t titlebar_seat(struct zwl_object *titlebar);
-static int titlebar_live(struct zwl_object *titlebar);
-static void titlebar_emit(struct zwl_object *titlebar, uint32_t opcode, const void *payload, size_t size);
+static uint32_t titlebar_seat(struct kwl_object *titlebar);
+static int titlebar_live(struct kwl_object *titlebar);
+static void titlebar_emit(struct kwl_object *titlebar, uint32_t opcode, const void *payload, size_t size);
 
 /*
  * Carries out a request of a Titlebar Presentation object.
@@ -122,8 +122,8 @@ static void titlebar_emit(struct zwl_object *titlebar, uint32_t opcode, const vo
  * dispatcher then ends the client).
  */
 int
-zwl_titlebar_request(
-	struct zwl_object *object,
+kwl_titlebar_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -132,10 +132,10 @@ zwl_titlebar_request(
 
 	/* Each interface has its own requests. */
 	switch (object->kind) {
-	case ZWL_TITLEBAR_MANAGER:
+	case KWL_TITLEBAR_MANAGER:
 		error = manager_request(object, opcode, bytes, size);
 		break;
-	case ZWL_TITLEBAR:
+	case KWL_TITLEBAR:
 		error = titlebar_request(object, opcode, bytes, size);
 		break;
 	default:
@@ -159,17 +159,17 @@ zwl_titlebar_request(
  * model with it and its window shows its menu again.
  */
 void
-zwl_titlebar_object_gone(
-	struct zwl_object *object)
+kwl_titlebar_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_titlebar_model *model;
+	struct kwl_titlebar_model *model;
 	int error;
 
 	/* The presentation forgets it: a press, a field and its places (titlebar-shell.c). */
-	zwl_titlebar_forget(object->client->server, object);
+	kwl_titlebar_forget(object->client->server, object);
 
 	/* A window's titlebar is left without the window. */
-	if (object->kind == ZWL_TOPLEVEL) {
+	if (object->kind == KWL_TOPLEVEL) {
 		if (object->titlebar != NULL)
 			object->titlebar->top = NULL;
 		object->titlebar = NULL;
@@ -177,7 +177,7 @@ zwl_titlebar_object_gone(
 	}
 
 	/* Nothing else is tied to anything but a titlebar. */
-	if (object->kind != ZWL_TITLEBAR)
+	if (object->kind != KWL_TITLEBAR)
 		return;
 
 	/* The window stops naming it. */
@@ -185,11 +185,11 @@ zwl_titlebar_object_gone(
 		object->top->titlebar = NULL;
 
 		/* Withdraws native decoration ownership with the surviving surface's next commit. */
-		error = zwl_decoration_native_changed(object->top);
+		error = kwl_decoration_native_changed(object->top);
 		if (error != 0) {
 			/* Defers connection teardown until the dispatcher can report failure. */
 			object->client->fatal = 1;
-			object->client->fatal_time = zwl_milliseconds();
+			object->client->fatal_time = kwl_milliseconds();
 		}
 	}
 
@@ -213,12 +213,12 @@ zwl_titlebar_object_gone(
  * Finds the titlebar model a window's surface shows, and the
  * keiland_titlebar_v1 its events go to; NULL when the window has none.
  */
-struct zwl_titlebar_model *
-zwl_titlebar_of_surface(
-	struct zwl_object *surface,
-	struct zwl_object **titlebar)
+struct kwl_titlebar_model *
+kwl_titlebar_of_surface(
+	struct kwl_object *surface,
+	struct kwl_object **titlebar)
 {
-	struct zwl_object *toplevel;
+	struct kwl_object *toplevel;
 
 	/* Nothing is found until the whole chain is. */
 	*titlebar = NULL;
@@ -246,14 +246,14 @@ zwl_titlebar_of_surface(
 /*
  * Finds a control of a state by its ID; NULL when the state has none.
  */
-const struct zwl_titlebar_control *
-zwl_titlebar_control(
-	const struct zwl_titlebar_state *state,
+const struct kwl_titlebar_control *
+kwl_titlebar_control(
+	const struct kwl_titlebar_state *state,
 	uint32_t id)
 {
 	unsigned index;
 
-	/* A state has at most ZWL_TITLEBAR_CONTROLS_MAX controls, so a search is cheap. */
+	/* A state has at most KWL_TITLEBAR_CONTROLS_MAX controls, so a search is cheap. */
 	for (index = 0; index < state->control_count; index++) {
 		if (state->controls[index].id == id)
 			return &state->controls[index];
@@ -268,8 +268,8 @@ zwl_titlebar_control(
  * (a breadcrumb's part, 0 otherwise), the client's seat and a new serial.
  */
 void
-zwl_titlebar_send_activated(
-	struct zwl_object *titlebar,
+kwl_titlebar_send_activated(
+	struct kwl_object *titlebar,
 	uint32_t id,
 	uint32_t detail,
 	const char *via)
@@ -286,7 +286,7 @@ zwl_titlebar_send_activated(
 	words[0] = id;
 	words[1] = detail;
 	words[2] = titlebar_seat(titlebar);
-	words[3] = zwl_next_serial(titlebar->client->server);
+	words[3] = kwl_next_serial(titlebar->client->server);
 	titlebar_emit(titlebar, EVENT_CONTROL_ACTIVATED, words, sizeof(words));
 
 	/* The log line the tests read. */
@@ -299,8 +299,8 @@ zwl_titlebar_send_activated(
  * or that its editing ended and how (done nonzero).
  */
 void
-zwl_titlebar_send_text(
-	struct zwl_object *titlebar,
+kwl_titlebar_send_text(
+	struct kwl_object *titlebar,
 	uint32_t id,
 	const char *text,
 	int done,
@@ -337,12 +337,12 @@ zwl_titlebar_send_text(
 }
 
 /*
- * Tells a window's client what the user did to a tab (ZWL_TAB_EVENT_*):
+ * Tells a window's client what the user did to a tab (KWL_TAB_EVENT_*):
  * chose it, pressed its close button, or pressed the new-tab button.
  */
 void
-zwl_titlebar_send_tab(
-	struct zwl_object *titlebar,
+kwl_titlebar_send_tab(
+	struct kwl_object *titlebar,
 	uint32_t id,
 	unsigned event)
 {
@@ -356,15 +356,15 @@ zwl_titlebar_send_tab(
 		return;
 
 	/* Each event has its own words: a tab and a serial, a tab, or a serial. */
-	if (event == ZWL_TAB_EVENT_ACTIVATED) {
+	if (event == KWL_TAB_EVENT_ACTIVATED) {
 		words[0] = id;
-		words[1] = zwl_next_serial(titlebar->client->server);
+		words[1] = kwl_next_serial(titlebar->client->server);
 		titlebar_emit(titlebar, EVENT_TAB_ACTIVATED, words, sizeof(words));
-	} else if (event == ZWL_TAB_EVENT_CLOSE) {
+	} else if (event == KWL_TAB_EVENT_CLOSE) {
 		words[0] = id;
 		titlebar_emit(titlebar, EVENT_TAB_CLOSE_REQUESTED, words, sizeof(words[0]));
 	} else {
-		words[0] = zwl_next_serial(titlebar->client->server);
+		words[0] = kwl_next_serial(titlebar->client->server);
 		titlebar_emit(titlebar, EVENT_NEW_TAB_REQUESTED, words, sizeof(words[0]));
 	}
 
@@ -377,8 +377,8 @@ zwl_titlebar_send_tab(
  * its menu up to date).
  */
 void
-zwl_titlebar_send_overflow(
-	struct zwl_object *titlebar)
+kwl_titlebar_send_overflow(
+	struct kwl_object *titlebar)
 {
 	int live;
 
@@ -397,8 +397,8 @@ zwl_titlebar_send_overflow(
  * titlebar before version 2 is not told.
  */
 void
-zwl_titlebar_send_drop_target(
-	struct zwl_object *titlebar,
+kwl_titlebar_send_drop_target(
+	struct kwl_object *titlebar,
 	uint32_t id,
 	uint32_t detail)
 {
@@ -479,13 +479,13 @@ titlebar_string(
 /* Carries out a request of keiland_titlebar_manager_v1. */
 static int
 manager_request(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *created;
-	struct zwl_object *toplevel;
+	struct kwl_object *created;
+	struct kwl_object *toplevel;
 	uint32_t id;
 	int error;
 
@@ -493,7 +493,7 @@ manager_request(
 	if (opcode == MANAGER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(manager);
+		kwl_object_destroy(manager);
 		return 0;
 	}
 
@@ -502,26 +502,26 @@ manager_request(
 		return EPROTO;
 
 	/* The window must be one of the client's toplevels. */
-	toplevel = zwl_find(manager->client, titlebar_word(bytes, 4U));
-	if (toplevel == NULL || toplevel->kind != ZWL_TOPLEVEL)
+	toplevel = kwl_find(manager->client, titlebar_word(bytes, 4U));
+	if (toplevel == NULL || toplevel->kind != KWL_TOPLEVEL)
 		return EPROTO;
 
 	/* A window has one titlebar at a time. */
 	if (toplevel->titlebar != NULL) {
-		error = zwl_error_code(manager->client, manager->id, MANAGER_ERROR_ALREADY_EXISTS, "the toplevel already has a keiland_titlebar_v1");
+		error = kwl_error_code(manager->client, manager->id, MANAGER_ERROR_ALREADY_EXISTS, "the toplevel already has a keiland_titlebar_v1");
 		return error;
 	}
 
 	/* The titlebar object. */
 	id = titlebar_word(bytes, 0U);
-	created = zwl_create(manager->client, id, ZWL_TITLEBAR, manager->version);
+	created = kwl_create(manager->client, id, KWL_TITLEBAR, manager->version);
 	if (created == NULL)
 		return EPROTO;
 
 	/* Its model, empty (menu mode, no controls, no tabs). */
 	created->titlebar_model = calloc(1, sizeof(*created->titlebar_model));
 	if (created->titlebar_model == NULL) {
-		zwl_object_destroy(created);
+		kwl_object_destroy(created);
 		return EPROTO;
 	}
 
@@ -531,7 +531,7 @@ manager_request(
 	printf("ZWL TITLEBAR create client=%llu titlebar=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
 
 	/* Native titlebar creation explicitly requests compositor decoration ownership. */
-	error = zwl_decoration_native_changed(toplevel);
+	error = kwl_decoration_native_changed(toplevel);
 	if (error != 0)
 		return error;
 
@@ -542,19 +542,19 @@ manager_request(
 /* Carries out a request of keiland_titlebar_v1. */
 static int
 titlebar_request(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_model *model;
+	struct kwl_titlebar_model *model;
 	int error;
 
-	/* The titlebar goes; its window shows its menu again (zwl_titlebar_object_gone). */
+	/* The titlebar goes; its window shows its menu again (kwl_titlebar_object_gone). */
 	if (opcode == REQUEST_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(titlebar);
+		kwl_object_destroy(titlebar);
 		return 0;
 	}
 
@@ -609,10 +609,10 @@ titlebar_request(
 /* Opens a transaction: the state shown is copied, and the changes go to the copy. */
 static int
 titlebar_begin(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t serial)
 {
-	struct zwl_titlebar_model *model;
+	struct kwl_titlebar_model *model;
 	int error;
 
 	/* One transaction at a time. */
@@ -638,10 +638,10 @@ titlebar_begin(
 /* Shows a transaction: the copy takes the place of the state shown. */
 static int
 titlebar_commit(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t serial)
 {
-	struct zwl_titlebar_model *model;
+	struct kwl_titlebar_model *model;
 	int error;
 
 	/* Only an open transaction, under the serial it was opened with. */
@@ -680,12 +680,12 @@ titlebar_commit(
 /* Decodes one change in a transaction and applies it to the pending state. */
 static int
 titlebar_edit(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_state *state;
+	struct kwl_titlebar_state *state;
 	uint32_t value;
 	int error;
 
@@ -737,13 +737,13 @@ titlebar_edit(
 /* Applies a change of a control to the pending state. */
 static int
 titlebar_edit_control(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_control *control;
-	struct zwl_titlebar_state *state;
+	struct kwl_titlebar_control *control;
+	struct kwl_titlebar_state *state;
 	const char *text;
 	unsigned index;
 	size_t length;
@@ -797,7 +797,7 @@ titlebar_edit_control(
 		if (error != 0 || next != size)
 			return EPROTO;
 		length = strlen(text);
-		if (length > ZWL_TITLEBAR_TEXT_MAX) {
+		if (length > KWL_TITLEBAR_TEXT_MAX) {
 			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "a label longer than 1023 bytes");
 			return error;
 		}
@@ -825,7 +825,7 @@ titlebar_edit_control(
 		if (size != 8U)
 			return EPROTO;
 		value = titlebar_word(bytes, 4U);
-		if (control->role != ZWL_CONTROL_PROGRESS || value > TITLEBAR_VALUE_UNKNOWN) {
+		if (control->role != KWL_CONTROL_PROGRESS || value > TITLEBAR_VALUE_UNKNOWN) {
 			error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "a value for a control that is not progress, or above 1001");
 			return error;
 		}
@@ -844,13 +844,13 @@ titlebar_edit_control(
 /* Applies a change of a tab to the pending state. */
 static int
 titlebar_edit_tab(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_state *state;
-	struct zwl_titlebar_tab *tab;
+	struct kwl_titlebar_state *state;
+	struct kwl_titlebar_tab *tab;
 	const char *title;
 	unsigned index;
 	size_t length;
@@ -878,7 +878,7 @@ titlebar_edit_tab(
 
 		/* Room for it. */
 		length = strlen(title);
-		if (state->tab_count == ZWL_TITLEBAR_TABS_MAX || length > ZWL_TITLEBAR_TEXT_MAX) {
+		if (state->tab_count == KWL_TITLEBAR_TABS_MAX || length > KWL_TITLEBAR_TEXT_MAX) {
 			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "more than 128 tabs, or a title longer than 1023 bytes");
 			return error;
 		}
@@ -887,7 +887,7 @@ titlebar_edit_tab(
 		tab = &state->tabs[state->tab_count];
 		memset(tab, 0, sizeof(*tab));
 		tab->id = id;
-		tab->flags = ZWL_TAB_CLOSABLE;
+		tab->flags = KWL_TAB_CLOSABLE;
 		tab->title = titlebar_text_copy(title);
 		if (tab->title == NULL)
 			return EPROTO;
@@ -923,7 +923,7 @@ titlebar_edit_tab(
 
 	/* A title not longer than a string may be. */
 	length = strlen(title);
-	if (length > ZWL_TITLEBAR_TEXT_MAX) {
+	if (length > KWL_TITLEBAR_TEXT_MAX) {
 		error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "a title longer than 1023 bytes");
 		return error;
 	}
@@ -941,12 +941,12 @@ titlebar_edit_tab(
 /* Adds a control at the end of the pending state (add_control: id, role, priority, group, label). */
 static int
 titlebar_add_control(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_control *control;
-	struct zwl_titlebar_state *state;
+	struct kwl_titlebar_control *control;
+	struct kwl_titlebar_state *state;
 	const char *label;
 	unsigned index;
 	size_t length;
@@ -982,7 +982,7 @@ titlebar_add_control(
 
 	/* Room for it. */
 	length = strlen(label);
-	if (state->control_count == ZWL_TITLEBAR_CONTROLS_MAX || length > ZWL_TITLEBAR_TEXT_MAX) {
+	if (state->control_count == KWL_TITLEBAR_CONTROLS_MAX || length > KWL_TITLEBAR_TEXT_MAX) {
 		error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "more than 64 controls, or a label longer than 1023 bytes");
 		return error;
 	}
@@ -1007,11 +1007,11 @@ titlebar_add_control(
 /* Sets a text control's text and placeholder (set_control_text: id, text, placeholder). */
 static int
 titlebar_set_text(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_control *control;
+	struct kwl_titlebar_control *control;
 	const char *placeholder;
 	const char *text;
 	unsigned index;
@@ -1039,7 +1039,7 @@ titlebar_set_text(
 	}
 
 	/* Only those two roles have text. */
-	if (control->role != ZWL_CONTROL_SEARCH && control->role != ZWL_CONTROL_BREADCRUMB) {
+	if (control->role != KWL_CONTROL_SEARCH && control->role != KWL_CONTROL_BREADCRUMB) {
 		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "text for a control that is not a search or a breadcrumb");
 		return error;
 	}
@@ -1047,7 +1047,7 @@ titlebar_set_text(
 	/* Not longer than a string may be. */
 	text_length = strlen(text);
 	placeholder_length = strlen(placeholder);
-	if (text_length > ZWL_TITLEBAR_TEXT_MAX || placeholder_length > ZWL_TITLEBAR_TEXT_MAX) {
+	if (text_length > KWL_TITLEBAR_TEXT_MAX || placeholder_length > KWL_TITLEBAR_TEXT_MAX) {
 		error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "a text longer than 1023 bytes");
 		return error;
 	}
@@ -1067,11 +1067,11 @@ titlebar_set_text(
 /* Sets a breadcrumb's parts (set_breadcrumb: id, an array of NUL-terminated parts). */
 static int
 titlebar_set_breadcrumb(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_titlebar_control *control;
+	struct kwl_titlebar_control *control;
 	const char *parts;
 	unsigned index;
 	uint32_t length;
@@ -1097,7 +1097,7 @@ titlebar_set_breadcrumb(
 	}
 
 	/* Only a breadcrumb has parts. */
-	if (control->role != ZWL_CONTROL_BREADCRUMB) {
+	if (control->role != KWL_CONTROL_BREADCRUMB) {
 		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "parts for a control that is not a breadcrumb");
 		return error;
 	}
@@ -1120,7 +1120,7 @@ titlebar_set_breadcrumb(
 	/* Each part, as many as a breadcrumb has at most. */
 	at = 0;
 	while (at < length) {
-		if (control->segment_count == ZWL_TITLEBAR_SEGMENTS_MAX) {
+		if (control->segment_count == KWL_TITLEBAR_SEGMENTS_MAX) {
 			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "more than 32 breadcrumb parts");
 			return error;
 		}
@@ -1140,12 +1140,12 @@ titlebar_set_breadcrumb(
 /* Asks for the keyboard for a text control (focus_control: id, mode), outside the transactions. */
 static int
 titlebar_focus(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	const unsigned char *bytes,
 	size_t size)
 {
-	const struct zwl_titlebar_control *control;
-	struct zwl_titlebar_model *model;
+	const struct kwl_titlebar_control *control;
+	struct kwl_titlebar_model *model;
 	uint32_t mode;
 	int error;
 
@@ -1153,7 +1153,7 @@ titlebar_focus(
 	if (size != 8U)
 		return EPROTO;
 	model = titlebar->titlebar_model;
-	control = zwl_titlebar_control(&model->shown, titlebar_word(bytes, 0U));
+	control = kwl_titlebar_control(&model->shown, titlebar_word(bytes, 0U));
 	mode = titlebar_word(bytes, 4U);
 	if (control == NULL) {
 		error = titlebar_fail(titlebar, ERROR_INVALID_ID, "no control shown has the ID");
@@ -1161,7 +1161,7 @@ titlebar_focus(
 	}
 
 	/* A search takes it as a field; a breadcrumb may also be edited as a path. */
-	if (control->role != ZWL_CONTROL_SEARCH && control->role != ZWL_CONTROL_BREADCRUMB) {
+	if (control->role != KWL_CONTROL_SEARCH && control->role != KWL_CONTROL_BREADCRUMB) {
 		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "focus for a control that is not a search or a breadcrumb");
 		return error;
 	}
@@ -1190,12 +1190,12 @@ titlebar_focus(
  */
 static int
 titlebar_suggest(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	const unsigned char *bytes,
 	size_t size)
 {
-	const struct zwl_titlebar_control *control;
-	const char *strings[2U * ZWL_TITLEBAR_SUGGESTIONS_MAX];
+	const struct kwl_titlebar_control *control;
+	const char *strings[2U * KWL_TITLEBAR_SUGGESTIONS_MAX];
 	const char *items;
 	uint32_t length;
 	size_t aligned;
@@ -1214,14 +1214,14 @@ titlebar_suggest(
 	items = (const char *)bytes + 8U;
 
 	/* A search or a breadcrumb that is shown. */
-	control = zwl_titlebar_control(&titlebar->titlebar_model->shown, titlebar_word(bytes, 0U));
+	control = kwl_titlebar_control(&titlebar->titlebar_model->shown, titlebar_word(bytes, 0U));
 	if (control == NULL) {
 		error = titlebar_fail(titlebar, ERROR_INVALID_ID, "no control shown has the ID");
 		return error;
 	}
 
 	/* Only a text field has suggestions. */
-	if (control->role != ZWL_CONTROL_SEARCH && control->role != ZWL_CONTROL_BREADCRUMB) {
+	if (control->role != KWL_CONTROL_SEARCH && control->role != KWL_CONTROL_BREADCRUMB) {
 		error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "suggestions for a control that is not a search or a breadcrumb");
 		return error;
 	}
@@ -1236,14 +1236,14 @@ titlebar_suggest(
 	count = 0;
 	at = 0;
 	while (at < length) {
-		if (count == 2U * ZWL_TITLEBAR_SUGGESTIONS_MAX) {
+		if (count == 2U * KWL_TITLEBAR_SUGGESTIONS_MAX) {
 			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "more than 12 suggestions");
 			return error;
 		}
 
 		/* The string, which must fit a field. */
 		text_length = strlen(items + at);
-		if (text_length > ZWL_TITLEBAR_TEXT_MAX) {
+		if (text_length > KWL_TITLEBAR_TEXT_MAX) {
 			error = titlebar_fail(titlebar, ERROR_TOO_LARGE, "a suggestion longer than 1023 bytes");
 			return error;
 		}
@@ -1259,7 +1259,7 @@ titlebar_suggest(
 	}
 
 	/* The presentation shows them when the field is this one's. */
-	zwl_titlebar_suggestions(titlebar->client->server, titlebar, control->id, strings, count / 2U);
+	kwl_titlebar_suggestions(titlebar->client->server, titlebar, control->id, strings, count / 2U);
 
 	/* Succeeded: the suggestions are taken (or the field had gone). */
 	return 0;
@@ -1268,23 +1268,23 @@ titlebar_suggest(
 /* Sends a keiland_titlebar_v1 protocol error. */
 static int
 titlebar_fail(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t code,
 	const char *reason)
 {
 	int error;
 
 	/* The error names the titlebar and the keiland_titlebar_v1 error code. */
-	error = zwl_error_code(titlebar->client, titlebar->id, code, reason);
+	error = kwl_error_code(titlebar->client, titlebar->id, code, reason);
 
 	/* Reports the refusal. */
 	return error;
 }
 
 /* Finds a control of a state that may change, and its index; NULL when there is none. */
-static struct zwl_titlebar_control *
+static struct kwl_titlebar_control *
 titlebar_find_control(
-	struct zwl_titlebar_state *state,
+	struct kwl_titlebar_state *state,
 	uint32_t id,
 	unsigned *index)
 {
@@ -1303,9 +1303,9 @@ titlebar_find_control(
 }
 
 /* Finds a tab of a state that may change, and its index; NULL when there is none. */
-static struct zwl_titlebar_tab *
+static struct kwl_titlebar_tab *
 titlebar_find_tab(
-	struct zwl_titlebar_state *state,
+	struct kwl_titlebar_state *state,
 	uint32_t id,
 	unsigned *index)
 {
@@ -1347,10 +1347,10 @@ titlebar_replace(
 /* Copies a state deeply (its strings too) into an empty one; ENOMEM leaves the target empty. */
 static int
 titlebar_state_copy(
-	struct zwl_titlebar_state *target,
-	const struct zwl_titlebar_state *source)
+	struct kwl_titlebar_state *target,
+	const struct kwl_titlebar_state *source)
 {
-	struct zwl_titlebar_control *control;
+	struct kwl_titlebar_control *control;
 	unsigned index;
 	unsigned part;
 
@@ -1387,7 +1387,7 @@ titlebar_state_copy(
 /* Frees a state's strings and leaves it empty. */
 static void
 titlebar_state_free(
-	struct zwl_titlebar_state *state)
+	struct kwl_titlebar_state *state)
 {
 	unsigned index;
 
@@ -1406,7 +1406,7 @@ titlebar_state_free(
 /* Frees a control's strings. */
 static void
 titlebar_control_free(
-	struct zwl_titlebar_control *control)
+	struct kwl_titlebar_control *control)
 {
 	unsigned part;
 
@@ -1463,8 +1463,8 @@ titlebar_put_string(
 
 	/* The length, the NUL counted, and the text cut to what a string may hold. */
 	length = (uint32_t)strlen(text);
-	if (length > ZWL_TITLEBAR_TEXT_MAX)
-		length = ZWL_TITLEBAR_TEXT_MAX;
+	if (length > KWL_TITLEBAR_TEXT_MAX)
+		length = KWL_TITLEBAR_TEXT_MAX;
 	length++;
 	memcpy(payload + offset, &length, sizeof(length));
 
@@ -1480,13 +1480,13 @@ titlebar_put_string(
 /* Returns the first live wl_seat of the titlebar's client, or 0 (the null seat). */
 static uint32_t
 titlebar_seat(
-	struct zwl_object *titlebar)
+	struct kwl_object *titlebar)
 {
-	struct zwl_object *object;
+	struct kwl_object *object;
 
 	/* The client's objects, for a seat. */
 	for (object = titlebar->client->objects; object != NULL; object = object->next) {
-		if (object->kind == ZWL_SEAT && object->dead == 0U)
+		if (object->kind == KWL_SEAT && object->dead == 0U)
 			return object->id;
 	}
 
@@ -1497,7 +1497,7 @@ titlebar_seat(
 /* Tells whether a titlebar can still be told anything (it and its client are alive). */
 static int
 titlebar_live(
-	struct zwl_object *titlebar)
+	struct kwl_object *titlebar)
 {
 	/* A dead titlebar, or a failed client. */
 	if (titlebar->dead != 0U)
@@ -1512,7 +1512,7 @@ titlebar_live(
 /* Sends an event of a titlebar; a client that cannot take it is failed. */
 static void
 titlebar_emit(
-	struct zwl_object *titlebar,
+	struct kwl_object *titlebar,
 	uint32_t opcode,
 	const void *payload,
 	size_t size)
@@ -1520,11 +1520,11 @@ titlebar_emit(
 	int error;
 
 	/* The event. */
-	error = zwl_emit(titlebar->client, titlebar->id, opcode, payload, size);
+	error = kwl_emit(titlebar->client, titlebar->id, opcode, payload, size);
 	if (error == 0)
 		return;
 
 	/* The client is failed. */
 	titlebar->client->fatal = 1;
-	titlebar->client->fatal_time = zwl_milliseconds();
+	titlebar->client->fatal_time = kwl_milliseconds();
 }

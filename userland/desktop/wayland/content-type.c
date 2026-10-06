@@ -34,7 +34,7 @@
 /* The types, and the largest. */
 #define CONTENT_TYPE_GAME		3U
 
-static int content_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
+static int content_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 static uint32_t content_word(const unsigned char *bytes, size_t offset);
 static const char *content_name(uint32_t type);
 
@@ -43,20 +43,20 @@ static const char *content_name(uint32_t type);
  * object.  Returns 0, or EPROTO for a malformed request.
  */
 int
-zwl_content_type_request(
-	struct zwl_object *object,
+kwl_content_type_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	uint32_t type;
 	int error;
 
 	/* The manager: it goes, or it makes a surface's object. */
-	if (object->kind == ZWL_CONTENT_TYPE_MANAGER) {
+	if (object->kind == KWL_CONTENT_TYPE_MANAGER) {
 		if (opcode == CONTENT_MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -69,11 +69,11 @@ zwl_content_type_request(
 		return 0;
 	}
 
-	/* The object goes; the surface's next commit shows no type (zwl_content_type_object_gone). */
+	/* The object goes; the surface's next commit shows no type (kwl_content_type_object_gone). */
 	if (opcode == CONTENT_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(object);
+		kwl_object_destroy(object);
 		return 0;
 	}
 
@@ -101,8 +101,8 @@ zwl_content_type_request(
  * Applies a surface's pending content type with its commit.
  */
 void
-zwl_content_type_commit(
-	struct zwl_object *surface)
+kwl_content_type_commit(
+	struct kwl_object *surface)
 {
 	/* Nothing changed since the last commit. */
 	if (!surface->content_type_changed)
@@ -122,13 +122,13 @@ zwl_content_type_commit(
  * back to none with its next commit; a surface's object names nothing.
  */
 void
-zwl_content_type_object_gone(
-	struct zwl_object *object)
+kwl_content_type_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* A content type object: its surface's pending type is none. */
-	if (object->kind == ZWL_CONTENT_TYPE) {
+	if (object->kind == KWL_CONTENT_TYPE) {
 		surface = object->surface;
 		object->surface = NULL;
 		if (surface == NULL)
@@ -140,7 +140,7 @@ zwl_content_type_object_gone(
 	}
 
 	/* A surface: its object names nothing. */
-	if (object->kind == ZWL_SURFACE && object->content_type_object != NULL) {
+	if (object->kind == KWL_SURFACE && object->content_type_object != NULL) {
 		object->content_type_object->surface = NULL;
 		object->content_type_object = NULL;
 	}
@@ -149,12 +149,12 @@ zwl_content_type_object_gone(
 /* Makes a surface's content type object (one per surface). */
 static int
 content_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *surface;
-	struct zwl_object *created;
+	struct kwl_object *surface;
+	struct kwl_object *created;
 	uint32_t id;
 	uint32_t surface_id;
 
@@ -163,18 +163,18 @@ content_create(
 		return EPROTO;
 	id = content_word(bytes, 0U);
 	surface_id = content_word(bytes, 4U);
-	surface = zwl_find(manager->client, surface_id);
-	if (surface == NULL || surface->kind != ZWL_SURFACE)
+	surface = kwl_find(manager->client, surface_id);
+	if (surface == NULL || surface->kind != KWL_SURFACE)
 		return EPROTO;
 
 	/* One object per surface. */
 	if (surface->content_type_object != NULL) {
-		(void)zwl_error_code(manager->client, manager->id, CONTENT_ERROR_ALREADY_CONSTRUCTED, "the surface has a content type object");
+		(void)kwl_error_code(manager->client, manager->id, CONTENT_ERROR_ALREADY_CONSTRUCTED, "the surface has a content type object");
 		return EPROTO;
 	}
 
 	/* Succeeded: the object, tied to its surface both ways. */
-	created = zwl_create(manager->client, id, ZWL_CONTENT_TYPE, manager->version);
+	created = kwl_create(manager->client, id, KWL_CONTENT_TYPE, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->surface = surface;

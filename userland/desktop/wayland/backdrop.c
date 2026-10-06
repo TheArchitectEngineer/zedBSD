@@ -42,26 +42,26 @@
 #define BACKDROP_READY		1U
 #define BACKDROP_FAILED		2U
 
-static VkResult backdrop_create(struct zwl_compose *compose, uint32_t width, uint32_t height);
-static VkResult backdrop_pass(struct zwl_compose *compose);
-static VkResult backdrop_target(struct zwl_compose *compose, struct zwl_backdrop_target *target);
-static void backdrop_begin_small(struct zwl_server *server, VkCommandBuffer command, const struct zwl_backdrop_target *target);
-static void backdrop_blur(struct zwl_server *server, VkCommandBuffer command, const struct zwl_backdrop_target *from, const struct zwl_backdrop_target *to, float step_x, float step_y);
+static VkResult backdrop_create(struct kwl_compose *compose, uint32_t width, uint32_t height);
+static VkResult backdrop_pass(struct kwl_compose *compose);
+static VkResult backdrop_target(struct kwl_compose *compose, struct kwl_backdrop_target *target);
+static void backdrop_begin_small(struct kwl_server *server, VkCommandBuffer command, const struct kwl_backdrop_target *target);
+static void backdrop_blur(struct kwl_server *server, VkCommandBuffer command, const struct kwl_backdrop_target *from, const struct kwl_backdrop_target *to, float step_x, float step_y);
 static void backdrop_viewport(VkCommandBuffer command, uint32_t width, uint32_t height);
 
 /*
  * Starts drawing the scene under a window into the backdrop: the output's
  * pass ends, and the small image's begins.  Returns 1 when the caller
- * draws the scene (and then calls zwl_backdrop_end), 0 when there is no
+ * draws the scene (and then calls kwl_backdrop_end), 0 when there is no
  * backdrop (the glass keeps the blurred wallpaper).
  */
 int
-zwl_backdrop_begin(
-	struct zwl_server *server,
+kwl_backdrop_begin(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	struct zwl_compose *compose;
-	struct zwl_backdrop *backdrop;
+	struct kwl_compose *compose;
+	struct kwl_backdrop *backdrop;
 	VkResult result;
 
 	/* The images, made the first time (a failure is remembered). */
@@ -99,12 +99,12 @@ zwl_backdrop_begin(
  * from now on samples the blurred scene.
  */
 void
-zwl_backdrop_end(
-	struct zwl_server *server,
+kwl_backdrop_end(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	struct zwl_compose *compose;
-	struct zwl_backdrop *backdrop;
+	struct kwl_compose *compose;
+	struct kwl_backdrop *backdrop;
 	VkRenderPassBeginInfo pass;
 	unsigned round;
 
@@ -139,8 +139,8 @@ zwl_backdrop_end(
  * blurred wallpaper again.
  */
 void
-zwl_backdrop_reset(
-	struct zwl_server *server)
+kwl_backdrop_reset(
+	struct kwl_server *server)
 {
 	/* No blurred scene. */
 	server->compose->backdrop_set = VK_NULL_HANDLE;
@@ -150,10 +150,10 @@ zwl_backdrop_reset(
  * Releases the backdrop's images and passes (the device is idle).
  */
 void
-zwl_backdrop_destroy(
-	struct zwl_compose *compose)
+kwl_backdrop_destroy(
+	struct kwl_compose *compose)
 {
-	struct zwl_backdrop *backdrop;
+	struct kwl_backdrop *backdrop;
 	unsigned index;
 
 	/* Each image, its view, its framebuffer, its memory and its descriptor set. */
@@ -168,7 +168,7 @@ zwl_backdrop_destroy(
 		if (backdrop->targets[index].memory != VK_NULL_HANDLE)
 			vkFreeMemory(compose->device, backdrop->targets[index].memory, NULL);
 		if (backdrop->targets[index].set != VK_NULL_HANDLE)
-			zwl_compose_set_put(compose, backdrop->targets[index].set);
+			kwl_compose_set_put(compose, backdrop->targets[index].set);
 	}
 
 	/* The passes (the output's loading one is the damage's too, made again with the next output). */
@@ -186,11 +186,11 @@ zwl_backdrop_destroy(
 /* Makes the passes and the two small images. */
 static VkResult
 backdrop_create(
-	struct zwl_compose *compose,
+	struct kwl_compose *compose,
 	uint32_t width,
 	uint32_t height)
 {
-	struct zwl_backdrop *backdrop;
+	struct kwl_backdrop *backdrop;
 	VkResult result;
 	unsigned index;
 
@@ -207,7 +207,7 @@ backdrop_create(
 	result = backdrop_pass(compose);
 	if (result != VK_SUCCESS)
 		return result;
-	result = zwl_compose_load_pass(compose);
+	result = kwl_compose_load_pass(compose);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -229,7 +229,7 @@ backdrop_create(
  */
 static VkResult
 backdrop_pass(
-	struct zwl_compose *compose)
+	struct kwl_compose *compose)
 {
 	VkAttachmentDescription attachment;
 	VkAttachmentReference reference;
@@ -296,8 +296,8 @@ backdrop_pass(
  * damage (compose.c).  The image is presented as before.
  */
 VkResult
-zwl_compose_load_pass(
-	struct zwl_compose *compose)
+kwl_compose_load_pass(
+	struct kwl_compose *compose)
 {
 	VkAttachmentDescription attachment;
 	VkAttachmentReference reference;
@@ -357,8 +357,8 @@ zwl_compose_load_pass(
 /* Makes one small image: device memory, a view, a framebuffer of the small pass, and a linearly sampled descriptor set. */
 static VkResult
 backdrop_target(
-	struct zwl_compose *compose,
-	struct zwl_backdrop_target *target)
+	struct kwl_compose *compose,
+	struct kwl_backdrop_target *target)
 {
 	VkPhysicalDeviceMemoryProperties memory;
 	VkMemoryRequirements requirements;
@@ -450,7 +450,7 @@ backdrop_target(
 		return result;
 
 	/* The descriptor set, sampled linearly. */
-	result = zwl_compose_set_get(compose, &target->set);
+	result = kwl_compose_set_get(compose, &target->set);
 	if (result != VK_SUCCESS)
 		return result;
 	memset(&image_info, 0, sizeof(image_info));
@@ -473,11 +473,11 @@ backdrop_target(
 /* Begins the small pass on an image, cleared to the background, with a viewport of its size. */
 static void
 backdrop_begin_small(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_backdrop_target *target)
+	const struct kwl_backdrop_target *target)
 {
-	struct zwl_backdrop *backdrop;
+	struct kwl_backdrop *backdrop;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear;
 	VkRect2D scissor;
@@ -485,9 +485,9 @@ backdrop_begin_small(
 	/* The pass, cleared to the output's background. */
 	backdrop = &server->compose->backdrop;
 	memset(&clear, 0, sizeof(clear));
-	clear.color.float32[0] = ZWL_BACKGROUND_RED;
-	clear.color.float32[1] = ZWL_BACKGROUND_GREEN;
-	clear.color.float32[2] = ZWL_BACKGROUND_BLUE;
+	clear.color.float32[0] = KWL_BACKGROUND_RED;
+	clear.color.float32[1] = KWL_BACKGROUND_GREEN;
+	clear.color.float32[2] = KWL_BACKGROUND_BLUE;
 	clear.color.float32[3] = 1.0f;
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -510,10 +510,10 @@ backdrop_begin_small(
 /* Blurs one small image into the other along a direction (a step of one texel across or down). */
 static void
 backdrop_blur(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct zwl_backdrop_target *from,
-	const struct zwl_backdrop_target *to,
+	const struct kwl_backdrop_target *from,
+	const struct kwl_backdrop_target *to,
 	float step_x,
 	float step_y)
 {

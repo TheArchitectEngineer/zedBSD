@@ -24,9 +24,9 @@
  * application (it stays off).
  */
 int
-zwl_switcher_open(
-	struct zwl_switcher *switcher,
-	const struct zwl_apps *apps,
+kwl_switcher_open(
+	struct kwl_switcher *switcher,
+	const struct kwl_apps *apps,
 	int current,
 	unsigned via,
 	unsigned placement)
@@ -59,8 +59,8 @@ zwl_switcher_open(
  * Moves the selection by a number of steps, around at the ends.
  */
 void
-zwl_switcher_step(
-	struct zwl_switcher *switcher,
+kwl_switcher_step(
+	struct kwl_switcher *switcher,
 	int delta)
 {
 	int count;
@@ -84,8 +84,8 @@ zwl_switcher_step(
  * Gives the selected application's key, or NULL while off.
  */
 const char *
-zwl_switcher_selected(
-	const struct zwl_switcher *switcher)
+kwl_switcher_selected(
+	const struct kwl_switcher *switcher)
 {
 	/* Off. */
 	if (!switcher->on || switcher->count == 0U)
@@ -98,14 +98,14 @@ zwl_switcher_selected(
 /*
  * Tells what letting Alt go does to the keyboard's switcher (BUG-209, the
  * 2026-10-06 user instruction): a quick Alt+Tab (let go within
- * ZWL_SWITCHER_QUICK_MS of the opening, before any step) leaves it open
+ * KWL_SWITCHER_QUICK_MS of the opening, before any step) leaves it open
  * and sticky, and a sticky switcher stays open at every later release;
  * otherwise the selection is brought.  Returns 1 when the selection is to
  * be brought, 0 when the switcher stays open.
  */
 int
-zwl_switcher_alt_released(
-	struct zwl_switcher *switcher,
+kwl_switcher_alt_released(
+	struct kwl_switcher *switcher,
 	uint64_t now_ms)
 {
 	uint64_t held_ms;
@@ -122,7 +122,7 @@ zwl_switcher_alt_released(
 	held_ms = 0U;
 	if (now_ms > switcher->opened_ms)
 		held_ms = now_ms - switcher->opened_ms;
-	if (switcher->steps == 0U && held_ms < ZWL_SWITCHER_QUICK_MS) {
+	if (switcher->steps == 0U && held_ms < KWL_SWITCHER_QUICK_MS) {
 		switcher->sticky = 1U;
 		return 0;
 	}
@@ -135,8 +135,8 @@ zwl_switcher_alt_released(
  * Closes the switcher.
  */
 void
-zwl_switcher_close(
-	struct zwl_switcher *switcher)
+kwl_switcher_close(
+	struct kwl_switcher *switcher)
 {
 	/* Off, with nothing kept. */
 	memset(switcher, 0, sizeof(*switcher));

@@ -4,7 +4,7 @@
 #  1. Notes started fullscreen by the top-right swipe (corner.c, /bin/notes --fullscreen), then Esc (Notes' own
 #     xdg_toplevel.unset_fullscreen): it had no place as a window, so zdesktop centres it in the space
 #     (ZWL WINDOW unfullscreen ... placed=0, then ZWL WINDOW centred at its window size), its title bar below the
-#     system bar (y >= ZWL_GLASS_TOP, 98).  unfullscreen.png.
+#     system bar (y >= KWL_GLASS_TOP, 108).  unfullscreen.png.
 #  2. A drag on its title bar moves it (ZWL GLASS moved).  moved.png.
 #  3. The swipe again: the compositor makes the Notes window fullscreen (the compositor's path); Esc brings it back
 #     to where it was moved (placed=1), kept inside the space (moved up if its body would overhang the bottom).  back.png.
@@ -102,7 +102,7 @@ pointer $(stroke 1272 6 1072 206 10 30) up sleep 3000
 expect_log 'ZWL CORNER commit' 2
 keys '<esc>'
 sleep 2
-# Its place, kept inside the space: a body that would overhang the space's bottom is moved up (zwl_glass_fit).
+# Its place, kept inside the space: a body that would overhang the space's bottom is moved up (kwl_glass_fit).
 space_bottom=$((800 - 12))
 want_y=$((ny + 60))
 [ $((want_y + nh)) -gt $space_bottom ] && want_y=$((space_bottom - nh))

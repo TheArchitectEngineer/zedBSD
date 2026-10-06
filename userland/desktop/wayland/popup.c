@@ -89,24 +89,24 @@
 #define POPUP_SHADOW		14.0f
 #define POPUP_RADIUS		8.0f
 
-static int positioner_request(struct zwl_object *positioner, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int popup_object_request(struct zwl_object *popup, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int popup_reposition(struct zwl_object *popup, uint32_t positioner_id, uint32_t token);
-static void popup_place(struct zwl_object *popup, const struct zwl_positioner *rules);
+static int positioner_request(struct kwl_object *positioner, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int popup_object_request(struct kwl_object *popup, uint32_t opcode, const unsigned char *bytes, size_t size);
+static int popup_reposition(struct kwl_object *popup, uint32_t positioner_id, uint32_t token);
+static void popup_place(struct kwl_object *popup, const struct kwl_positioner *rules);
 static void place_axis(int32_t anchor_start, int32_t anchor_length, int side, int direction, int32_t length, int32_t offset, int32_t *start);
 static int anchor_side_x(uint32_t edge);
 static int anchor_side_y(uint32_t edge);
 static uint32_t flip_x(uint32_t edge);
 static uint32_t flip_y(uint32_t edge);
-static void popup_fit_axis(const struct zwl_positioner *rules, unsigned horizontal, int32_t base, int32_t limit, int32_t *start, int32_t *length);
-static struct zwl_object *popup_of(struct zwl_object *surface);
-static int surface_visible(struct zwl_server *server, struct zwl_object *surface);
-static void geometry_offset(const struct zwl_object *surface, int32_t *x, int32_t *y);
-static struct zwl_object *chain_toplevel(struct zwl_object *surface);
-static struct zwl_object *chain_surface_at(struct zwl_server *server, int32_t x, int32_t y);
-static void popup_dismiss(struct zwl_server *server);
-static void popup_grab_end(struct zwl_server *server, struct zwl_object *next);
-static struct zwl_object *grab_shown(struct zwl_server *server);
+static void popup_fit_axis(const struct kwl_positioner *rules, unsigned horizontal, int32_t base, int32_t limit, int32_t *start, int32_t *length);
+static struct kwl_object *popup_of(struct kwl_object *surface);
+static int surface_visible(struct kwl_server *server, struct kwl_object *surface);
+static void geometry_offset(const struct kwl_object *surface, int32_t *x, int32_t *y);
+static struct kwl_object *chain_toplevel(struct kwl_object *surface);
+static struct kwl_object *chain_surface_at(struct kwl_server *server, int32_t x, int32_t y);
+static void popup_dismiss(struct kwl_server *server);
+static void popup_grab_end(struct kwl_server *server, struct kwl_object *next);
+static struct kwl_object *grab_shown(struct kwl_server *server);
 static uint32_t popup_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -114,21 +114,21 @@ static uint32_t popup_word(const unsigned char *bytes, size_t offset);
  * complete once its size and anchor rectangle are set.
  */
 int
-zwl_positioner_create(
-	struct zwl_object *wm,
+kwl_positioner_create(
+	struct kwl_object *wm,
 	uint32_t id)
 {
-	struct zwl_object *created;
+	struct kwl_object *created;
 
 	/* The object, at the shell's version. */
-	created = zwl_create(wm->client, id, ZWL_POSITIONER, wm->version);
+	created = kwl_create(wm->client, id, KWL_POSITIONER, wm->version);
 	if (created == NULL)
 		return EPROTO;
 
 	/* Its rules, empty: no size, no anchor rectangle, the edges none, no adjustment. */
 	created->positioner = calloc(1, sizeof(*created->positioner));
 	if (created->positioner == NULL) {
-		zwl_object_destroy(created);
+		kwl_object_destroy(created);
 		return EPROTO;
 	}
 
@@ -142,22 +142,22 @@ zwl_positioner_create(
  * relative to the output), and configured on the surface's first commit.
  */
 int
-zwl_popup_create(
-	struct zwl_object *role,
+kwl_popup_create(
+	struct kwl_object *role,
 	uint32_t id,
 	uint32_t parent_id,
 	uint32_t positioner_id)
 {
-	struct zwl_server *server;
-	struct zwl_object *parent;
-	struct zwl_object *positioner;
-	struct zwl_object *created;
+	struct kwl_server *server;
+	struct kwl_object *parent;
+	struct kwl_object *positioner;
+	struct kwl_object *created;
 	uint32_t parent_surface;
 
 	/* One role object per xdg_surface. */
 	server = role->client->server;
 	if (role->top != NULL) {
-		(void)zwl_error_code(role->client, role->id, XDG_SURFACE_ERROR_ALREADY_CONSTRUCTED, "the xdg_surface already has a role object");
+		(void)kwl_error_code(role->client, role->id, XDG_SURFACE_ERROR_ALREADY_CONSTRUCTED, "the xdg_surface already has a role object");
 		return EPROTO;
 	}
 
@@ -165,9 +165,9 @@ zwl_popup_create(
 	parent = NULL;
 	parent_surface = 0U;
 	if (parent_id != 0U) {
-		parent = zwl_find(role->client, parent_id);
+		parent = kwl_find(role->client, parent_id);
 		if (parent == NULL ||
-		    parent->kind != ZWL_XDG_SURFACE ||
+		    parent->kind != KWL_XDG_SURFACE ||
 		    parent->surface == NULL)
 			return EPROTO;
 
@@ -176,14 +176,14 @@ zwl_popup_create(
 	}
 
 	/* The positioner must be complete: a size and an anchor rectangle. */
-	positioner = zwl_find(role->client, positioner_id);
-	if (positioner == NULL || positioner->kind != ZWL_POSITIONER)
+	positioner = kwl_find(role->client, positioner_id);
+	if (positioner == NULL || positioner->kind != KWL_POSITIONER)
 		return EPROTO;
 	if (!positioner->positioner->size_set || !positioner->positioner->anchor_set)
 		return EPROTO;
 
 	/* The popup, tied to its xdg_surface and its surface. */
-	created = zwl_create(role->client, id, ZWL_POPUP, role->version);
+	created = kwl_create(role->client, id, KWL_POPUP, role->version);
 	if (created == NULL)
 		return EPROTO;
 
@@ -213,8 +213,8 @@ zwl_popup_create(
  * Carries out a request of xdg_positioner or xdg_popup.
  */
 int
-zwl_popup_request(
-	struct zwl_object *object,
+kwl_popup_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -222,7 +222,7 @@ zwl_popup_request(
 	int error;
 
 	/* Each interface has its own requests. */
-	if (object->kind == ZWL_POSITIONER) {
+	if (object->kind == KWL_POSITIONER) {
 		error = positioner_request(object, opcode, bytes, size);
 	} else {
 		error = popup_object_request(object, opcode, bytes, size);
@@ -241,11 +241,11 @@ zwl_popup_request(
  * to the parent and its size, then xdg_surface.configure with a new serial.
  */
 int
-zwl_popup_send_configure(
-	struct zwl_object *surface)
+kwl_popup_send_configure(
+	struct kwl_object *surface)
 {
-	struct zwl_server *server;
-	struct zwl_object *popup;
+	struct kwl_server *server;
+	struct kwl_object *popup;
 	uint32_t words[4];
 	int error;
 
@@ -258,7 +258,7 @@ zwl_popup_send_configure(
 	words[1] = (uint32_t)popup->popup_y;
 	words[2] = (uint32_t)popup->popup_width;
 	words[3] = (uint32_t)popup->popup_height;
-	error = zwl_emit(surface->client, popup->id, POPUP_CONFIGURE, words, sizeof(words));
+	error = kwl_emit(surface->client, popup->id, POPUP_CONFIGURE, words, sizeof(words));
 	if (error != 0)
 		return error;
 
@@ -269,7 +269,7 @@ zwl_popup_send_configure(
 	surface->configure_serial = server->serial;
 
 	/* The xdg_surface configure makes the state the client acknowledges. */
-	error = zwl_emit(surface->client, surface->role->id, XDG_SURFACE_CONFIGURE, &surface->configure_serial, sizeof(surface->configure_serial));
+	error = kwl_emit(surface->client, surface->role->id, XDG_SURFACE_CONFIGURE, &surface->configure_serial, sizeof(surface->configure_serial));
 	if (error != 0)
 		return error;
 
@@ -283,18 +283,18 @@ zwl_popup_send_configure(
  * popup the keyboard (and the pointer) of its client.
  */
 void
-zwl_popup_mapped(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+kwl_popup_mapped(
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
-	struct zwl_object *popup;
+	struct kwl_object *popup;
 	unsigned grab;
 	int32_t x;
 	int32_t y;
 	int shown;
 
 	/* Its place on the output, for the log and for the pointer. */
-	shown = zwl_popup_origin(server, surface, &x, &y);
+	shown = kwl_popup_origin(server, surface, &x, &y);
 	if (shown == 0) {
 		surface->x = x;
 		surface->y = y;
@@ -316,8 +316,8 @@ zwl_popup_mapped(
 	if (server->focus != NULL && server->focus->client == popup->client)
 		server->pointer_grabbed = 1;
 
-	/* The keyboard goes to the popup (zwl_popup_focus), the pointer to the surface it is over. */
-	zwl_seat_focus(server);
+	/* The keyboard goes to the popup (kwl_popup_focus), the pointer to the surface it is over. */
+	kwl_seat_focus(server);
 }
 
 /*
@@ -326,23 +326,23 @@ zwl_popup_mapped(
  * popups lose their parent and are told popup_done.
  */
 void
-zwl_popup_object_gone(
-	struct zwl_object *object)
+kwl_popup_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_server *server;
-	struct zwl_object *other;
-	struct zwl_object *next;
+	struct kwl_server *server;
+	struct kwl_object *other;
+	struct kwl_object *next;
 
 	/* A positioner only has its rules. */
 	server = object->client->server;
-	if (object->kind == ZWL_POSITIONER) {
+	if (object->kind == KWL_POSITIONER) {
 		free(object->positioner);
 		object->positioner = NULL;
 		return;
 	}
 
 	/* A popup: the grab passes to the popup under it (when that one grabbed), and its xdg_surface is free again. */
-	if (object->kind == ZWL_POPUP) {
+	if (object->kind == KWL_POPUP) {
 		if (server->popup_grab == object) {
 			next = NULL;
 			other = popup_of(object->popup_parent);
@@ -366,13 +366,13 @@ zwl_popup_object_gone(
 	}
 
 	/* Only a surface is left that popups can name. */
-	if (object->kind != ZWL_SURFACE)
+	if (object->kind != KWL_SURFACE)
 		return;
 
 	/* Its popups lose their parent and are closed. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
 		/* Only a live popup of this parent. */
-		if (other->kind != ZWL_POPUP ||
+		if (other->kind != KWL_POPUP ||
 		    other->dead ||
 		    other->popup_parent != object)
 			continue;
@@ -380,7 +380,7 @@ zwl_popup_object_gone(
 		/* It is not drawn any more, and its client is told unless it was told already. */
 		other->popup_parent = NULL;
 		if (!other->popup_closed)
-			(void)zwl_emit(other->client, other->id, POPUP_DONE, NULL, 0U);
+			(void)kwl_emit(other->client, other->id, POPUP_DONE, NULL, 0U);
 		other->popup_closed = 1;
 	}
 }
@@ -392,14 +392,14 @@ zwl_popup_object_gone(
  * gone or is hidden).
  */
 int
-zwl_popup_origin(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+kwl_popup_origin(
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	int32_t *x,
 	int32_t *y)
 {
-	struct zwl_object *popup;
-	struct zwl_object *chain[POPUP_DEPTH];
+	struct kwl_object *popup;
+	struct kwl_object *chain[POPUP_DEPTH];
 	unsigned depth;
 	int32_t parent_x;
 	int32_t parent_y;
@@ -436,7 +436,7 @@ zwl_popup_origin(
 		base_x = chain[depth]->x;
 		base_y = chain[depth]->y;
 		if (server->glass)
-			(void)zwl_glass_body_origin(server, chain[depth], &base_x, &base_y);
+			(void)kwl_glass_body_origin(server, chain[depth], &base_x, &base_y);
 	}
 
 	/* Down the chain: each popup at its parent's window geometry plus its own place, less its own geometry. */
@@ -471,15 +471,15 @@ zwl_popup_origin(
  * were made (a submenu after its menu).  Returns how many were stored.
  */
 unsigned
-zwl_popup_collect(
-	struct zwl_server *server,
-	struct zwl_object **popups,
+kwl_popup_collect(
+	struct kwl_server *server,
+	struct kwl_object **popups,
 	unsigned capacity)
 {
-	const struct zwl_import *image;
-	struct zwl_client *client;
-	struct zwl_object *object;
-	struct zwl_object *surface;
+	const struct kwl_import *image;
+	struct kwl_client *client;
+	struct kwl_object *object;
+	struct kwl_object *surface;
 	unsigned count;
 	unsigned index;
 	unsigned at;
@@ -497,7 +497,7 @@ zwl_popup_collect(
 		/* Its popups. */
 		for (object = client->objects; object != NULL; object = object->next) {
 			/* Only a live popup that was not closed, with a surface. */
-			if (object->kind != ZWL_POPUP ||
+			if (object->kind != KWL_POPUP ||
 			    object->dead ||
 			    object->popup_closed ||
 			    object->surface == NULL)
@@ -509,12 +509,12 @@ zwl_popup_collect(
 				continue;
 
 			/* One window mode can sample. */
-			image = zwl_compose_surface_image(surface);
+			image = kwl_compose_surface_image(surface);
 			if (image == NULL)
 				continue;
 
 			/* And a place on the output. */
-			shown = zwl_popup_origin(server, surface, &x, &y);
+			shown = kwl_popup_origin(server, surface, &x, &y);
 			if (shown != 0)
 				continue;
 
@@ -545,12 +545,12 @@ zwl_popup_collect(
  * the pointer.
  */
 void
-zwl_popup_draw(
-	struct zwl_server *server,
+kwl_popup_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	struct zwl_object *popups[POPUP_MAX];
-	const struct zwl_import *image;
+	struct kwl_object *popups[POPUP_MAX];
+	const struct kwl_import *image;
 	struct glass_shape shape;
 	uint32_t width;
 	uint32_t height;
@@ -561,18 +561,18 @@ zwl_popup_draw(
 	int shown;
 
 	/* The popups in the order they were made. */
-	count = zwl_popup_collect(server, popups, POPUP_MAX);
+	count = kwl_popup_collect(server, popups, POPUP_MAX);
 	for (index = 0; index < count; index++) {
 		/* Its place, kept for the pointer's surface-local position. */
-		shown = zwl_popup_origin(server, popups[index], &x, &y);
+		shown = kwl_popup_origin(server, popups[index], &x, &y);
 		if (shown != 0)
 			continue;
 
 		/* The place, the image the frame samples and the popup's size (a viewport's, viewport.c). */
 		popups[index]->x = x;
 		popups[index]->y = y;
-		image = zwl_compose_surface_image(popups[index]);
-		zwl_surface_size(popups[index], &width, &height);
+		image = kwl_compose_surface_image(popups[index]);
+		kwl_surface_size(popups[index], &width, &height);
 
 		/* The glass look gives it a soft shadow. */
 		if (server->glass) {
@@ -592,9 +592,9 @@ zwl_popup_draw(
 		}
 
 		/* The image itself, between its sub-surfaces below and above it (subsurface.c). */
-		zwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 0U);
-		zwl_compose_surface_quad(server, command, popups[index], image, x, y);
-		zwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 1U);
+		kwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 0U);
+		kwl_compose_surface_quad(server, command, popups[index], image, x, y);
+		kwl_subsurface_draw(server, command, popups[index], (float)x, (float)y, 1.0f, 1.0f, 1U);
 	}
 }
 
@@ -602,12 +602,12 @@ zwl_popup_draw(
  * Chooses the surface that has the keyboard: the grabbing popup when the
  * focus would go to a surface of its client, otherwise the target itself.
  */
-struct zwl_object *
-zwl_popup_focus(
-	struct zwl_server *server,
-	struct zwl_object *target)
+struct kwl_object *
+kwl_popup_focus(
+	struct kwl_server *server,
+	struct kwl_object *target)
 {
-	struct zwl_object *grab;
+	struct kwl_object *grab;
 
 	/* No grab, nothing changes. */
 	if (server->popup_grab == NULL || target == NULL)
@@ -632,12 +632,12 @@ zwl_popup_focus(
  * the button was taken.
  */
 int
-zwl_popup_button(
-	struct zwl_server *server,
+kwl_popup_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	struct zwl_object *over;
+	struct kwl_object *over;
 
 	/* The release of a press that closed the popups is eaten too. */
 	if (state == 0U &&
@@ -671,11 +671,11 @@ zwl_popup_button(
  * shown popups, the latest first, then the toplevel's body); NULL outside
  * them all, or without a grab.
  */
-struct zwl_object *
-zwl_popup_chain_at(
-	struct zwl_server *server)
+struct kwl_object *
+kwl_popup_chain_at(
+	struct kwl_server *server)
 {
-	struct zwl_object *over;
+	struct kwl_object *over;
 
 	/* Without a grab there is no chain. */
 	if (server->popup_grab == NULL)
@@ -691,12 +691,12 @@ zwl_popup_chain_at(
 /* Carries out a request of xdg_positioner. */
 static int
 positioner_request(
-	struct zwl_object *positioner,
+	struct kwl_object *positioner,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_positioner *rules;
+	struct kwl_positioner *rules;
 	int32_t first;
 	int32_t second;
 
@@ -705,7 +705,7 @@ positioner_request(
 	if (opcode == POSITIONER_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(positioner);
+		kwl_object_destroy(positioner);
 		return 0;
 	}
 
@@ -718,7 +718,7 @@ positioner_request(
 		first = (int32_t)popup_word(bytes, 0U);
 		second = (int32_t)popup_word(bytes, 4U);
 		if (first <= 0 || second <= 0) {
-			(void)zwl_error_code(positioner->client, positioner->id, POSITIONER_ERROR_INVALID_INPUT, "a positioner size that is not positive");
+			(void)kwl_error_code(positioner->client, positioner->id, POSITIONER_ERROR_INVALID_INPUT, "a positioner size that is not positive");
 			return EPROTO;
 		}
 
@@ -734,7 +734,7 @@ positioner_request(
 		first = (int32_t)popup_word(bytes, 8U);
 		second = (int32_t)popup_word(bytes, 12U);
 		if (first < 0 || second < 0) {
-			(void)zwl_error_code(positioner->client, positioner->id, POSITIONER_ERROR_INVALID_INPUT, "an anchor rectangle with a negative size");
+			(void)kwl_error_code(positioner->client, positioner->id, POSITIONER_ERROR_INVALID_INPUT, "an anchor rectangle with a negative size");
 			return EPROTO;
 		}
 
@@ -752,7 +752,7 @@ positioner_request(
 			return EPROTO;
 		first = (int32_t)popup_word(bytes, 0U);
 		if (first < 0 || first > (int32_t)EDGE_BOTTOM_RIGHT) {
-			(void)zwl_error_code(positioner->client, positioner->id, POSITIONER_ERROR_INVALID_INPUT, "an unknown anchor or gravity");
+			(void)kwl_error_code(positioner->client, positioner->id, POSITIONER_ERROR_INVALID_INPUT, "an unknown anchor or gravity");
 			return EPROTO;
 		}
 
@@ -805,24 +805,24 @@ positioner_request(
 /* Carries out a request of xdg_popup. */
 static int
 popup_object_request(
-	struct zwl_object *popup,
+	struct kwl_object *popup,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_server *server;
-	struct zwl_object *seat;
+	struct kwl_server *server;
+	struct kwl_object *seat;
 	uint32_t first;
 	uint32_t second;
 	uint32_t surface;
 	int error;
 
-	/* The popup goes (zwl_popup_object_gone ends its grab). */
+	/* The popup goes (kwl_popup_object_gone ends its grab). */
 	server = popup->client->server;
 	if (opcode == POPUP_DESTROY) {
 		if (size != 0U)
 			return EPROTO;
-		zwl_object_destroy(popup);
+		kwl_object_destroy(popup);
 		return 0;
 	}
 
@@ -844,11 +844,11 @@ popup_object_request(
 	if (opcode != POPUP_GRAB || size != 8U)
 		return EPROTO;
 	first = popup_word(bytes, 0U);
-	seat = zwl_find(popup->client, first);
-	if (seat == NULL || seat->kind != ZWL_SEAT)
+	seat = kwl_find(popup->client, first);
+	if (seat == NULL || seat->kind != KWL_SEAT)
 		return EPROTO;
 
-	/* The popup on top holds the grab; its first image gives it the keyboard (zwl_popup_mapped). */
+	/* The popup on top holds the grab; its first image gives it the keyboard (kwl_popup_mapped). */
 	popup->popup_grab = 1;
 	server->popup_grab = popup;
 
@@ -865,16 +865,16 @@ popup_object_request(
 /* Places a popup again from a positioner and tells its client (repositioned, then the configure). */
 static int
 popup_reposition(
-	struct zwl_object *popup,
+	struct kwl_object *popup,
 	uint32_t positioner_id,
 	uint32_t token)
 {
-	struct zwl_object *positioner;
+	struct kwl_object *positioner;
 	int error;
 
 	/* The positioner must be complete. */
-	positioner = zwl_find(popup->client, positioner_id);
-	if (positioner == NULL || positioner->kind != ZWL_POSITIONER)
+	positioner = kwl_find(popup->client, positioner_id);
+	if (positioner == NULL || positioner->kind != KWL_POSITIONER)
 		return EPROTO;
 	if (!positioner->positioner->size_set || !positioner->positioner->anchor_set)
 		return EPROTO;
@@ -888,12 +888,12 @@ popup_reposition(
 		return 0;
 
 	/* The token names the reposition the configure answers. */
-	error = zwl_emit(popup->client, popup->id, POPUP_REPOSITIONED, &token, sizeof(token));
+	error = kwl_emit(popup->client, popup->id, POPUP_REPOSITIONED, &token, sizeof(token));
 	if (error != 0)
 		return error;
 
 	/* The configure with the new place. */
-	error = zwl_popup_send_configure(popup->surface);
+	error = kwl_popup_send_configure(popup->surface);
 	if (error != 0)
 		return error;
 
@@ -909,10 +909,10 @@ popup_reposition(
  */
 static void
 popup_place(
-	struct zwl_object *popup,
-	const struct zwl_positioner *rules)
+	struct kwl_object *popup,
+	const struct kwl_positioner *rules)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	int32_t base_x;
 	int32_t base_y;
 	int32_t own_x;
@@ -944,7 +944,7 @@ popup_place(
 	base_x = 0;
 	base_y = 0;
 	if (popup->popup_parent != NULL) {
-		shown = zwl_popup_origin(server, popup->popup_parent, &base_x, &base_y);
+		shown = kwl_popup_origin(server, popup->popup_parent, &base_x, &base_y);
 		if (shown != 0) {
 			base_x = popup->popup_parent->x;
 			base_y = popup->popup_parent->y;
@@ -1109,7 +1109,7 @@ flip_y(
  */
 static void
 popup_fit_axis(
-	const struct zwl_positioner *rules,
+	const struct kwl_positioner *rules,
 	unsigned horizontal,
 	int32_t base,
 	int32_t limit,
@@ -1195,14 +1195,14 @@ popup_fit_axis(
 }
 
 /* Finds the popup object of a surface; NULL when the surface is not a popup. */
-static struct zwl_object *
+static struct kwl_object *
 popup_of(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
 	/* A surface with an xdg_surface whose role object is a popup. */
 	if (surface == NULL || surface->role == NULL || surface->role->top == NULL)
 		return NULL;
-	if (surface->role->top->kind != ZWL_POPUP)
+	if (surface->role->top->kind != KWL_POPUP)
 		return NULL;
 
 	/* Succeeded: the popup. */
@@ -1212,8 +1212,8 @@ popup_of(
 /* Tells whether a toplevel window is shown now, so that its popups are. */
 static int
 surface_visible(
-	struct zwl_server *server,
-	struct zwl_object *surface)
+	struct kwl_server *server,
+	struct kwl_object *surface)
 {
 	float home;
 
@@ -1226,7 +1226,7 @@ surface_visible(
 	/* Wiseview and App Home show tiles and icons, not windows with their popups. */
 	if (server->wiseview > 0.0f || server->wiseview_moving || server->wiseview_gesture)
 		return 0;
-	home = zwl_home_progress(server);
+	home = kwl_home_progress(server);
 	if (home > 0.0f)
 		return 0;
 
@@ -1237,7 +1237,7 @@ surface_visible(
 /* Finds where a surface's window geometry starts in its image (0, 0 without one). */
 static void
 geometry_offset(
-	const struct zwl_object *surface,
+	const struct kwl_object *surface,
 	int32_t *x,
 	int32_t *y)
 {
@@ -1253,11 +1253,11 @@ geometry_offset(
 }
 
 /* Finds the toplevel at the top of a surface's chain of popups. */
-static struct zwl_object *
+static struct kwl_object *
 chain_toplevel(
-	struct zwl_object *surface)
+	struct kwl_object *surface)
 {
-	struct zwl_object *popup;
+	struct kwl_object *popup;
 	unsigned depth;
 
 	/* Up the parents, within the deepest chain. */
@@ -1281,15 +1281,15 @@ chain_toplevel(
  * popups, the latest first, then the toplevel's body.  NULL when the point
  * is outside them all.
  */
-static struct zwl_object *
+static struct kwl_object *
 chain_surface_at(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int32_t x,
 	int32_t y)
 {
-	struct zwl_object *popups[POPUP_MAX];
-	struct zwl_object *toplevel;
-	const struct zwl_import *image;
+	struct kwl_object *popups[POPUP_MAX];
+	struct kwl_object *toplevel;
+	const struct kwl_import *image;
 	uint32_t width;
 	uint32_t height;
 	unsigned count;
@@ -1299,22 +1299,22 @@ chain_surface_at(
 	int shown;
 
 	/* The shown popups of the grab's client, the latest first. */
-	count = zwl_popup_collect(server, popups, POPUP_MAX);
+	count = kwl_popup_collect(server, popups, POPUP_MAX);
 	for (index = count; index > 0U; index--) {
 		/* Only the grab's client's. */
 		if (popups[index - 1U]->client != server->popup_grab->client)
 			continue;
 
 		/* The popup's rectangle on the output. */
-		shown = zwl_popup_origin(server, popups[index - 1U], &left, &top);
+		shown = kwl_popup_origin(server, popups[index - 1U], &left, &top);
 		if (shown != 0)
 			continue;
-		image = zwl_compose_surface_image(popups[index - 1U]);
+		image = kwl_compose_surface_image(popups[index - 1U]);
 		if (image == NULL)
 			continue;
 
 		/* The point inside it (its size, a viewport's, viewport.c). */
-		zwl_surface_size(popups[index - 1U], &width, &height);
+		kwl_surface_size(popups[index - 1U], &width, &height);
 		if (x >= left &&
 		    x < left + (int32_t)width &&
 		    y >= top &&
@@ -1333,15 +1333,15 @@ chain_surface_at(
 		return NULL;
 
 	/* Its body's rectangle. */
-	shown = zwl_popup_origin(server, toplevel, &left, &top);
+	shown = kwl_popup_origin(server, toplevel, &left, &top);
 	if (shown != 0)
 		return NULL;
-	image = zwl_compose_surface_image(toplevel);
+	image = kwl_compose_surface_image(toplevel);
 	if (image == NULL)
 		return NULL;
 
 	/* The point inside the body at its size (not its title bar, which is zdesktop's). */
-	zwl_surface_size(toplevel, &width, &height);
+	kwl_surface_size(toplevel, &width, &height);
 	if (x >= left &&
 	    x < left + (int32_t)width &&
 	    y >= top &&
@@ -1355,22 +1355,22 @@ chain_surface_at(
 /* Closes every popup of the grab's client (popup_done, the latest first) and ends the grab. */
 static void
 popup_dismiss(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
+	struct kwl_client *client;
+	struct kwl_object *object;
 
 	/* Each live popup of the client is told. */
 	client = server->popup_grab->client;
 	printf("ZWL POPUP dismiss client=%llu\n", (unsigned long long)client->number);
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* Only a live popup. */
-		if (object->kind != ZWL_POPUP || object->dead)
+		if (object->kind != KWL_POPUP || object->dead)
 			continue;
 
 		/* popup_done, once; the popup is not shown any more, and the client destroys it. */
 		if (!object->popup_closed)
-			(void)zwl_emit(client, object->id, POPUP_DONE, NULL, 0U);
+			(void)kwl_emit(client, object->id, POPUP_DONE, NULL, 0U);
 		object->popup_grab = 0;
 		object->popup_closed = 1;
 	}
@@ -1386,8 +1386,8 @@ popup_dismiss(
  */
 static void
 popup_grab_end(
-	struct zwl_server *server,
-	struct zwl_object *next)
+	struct kwl_server *server,
+	struct kwl_object *next)
 {
 	/* The next grab, or none (the pointer is the grab's no more). */
 	server->popup_grab = next;
@@ -1396,7 +1396,7 @@ popup_grab_end(
 	server->dirty = 1;
 
 	/* The keyboard's focus, and the pointer's surface, follow. */
-	zwl_seat_focus(server);
+	kwl_seat_focus(server);
 }
 
 /*
@@ -1404,11 +1404,11 @@ popup_grab_end(
  * while it has no image yet, the grabbing popup under it that has one.
  * NULL when none is shown.
  */
-static struct zwl_object *
+static struct kwl_object *
 grab_shown(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
-	struct zwl_object *popup;
+	struct kwl_object *popup;
 	unsigned depth;
 
 	/* Down the grabbing chain from the top, within the deepest chain. */

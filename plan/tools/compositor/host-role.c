@@ -44,13 +44,13 @@ static unsigned option_given(unsigned options, unsigned option);
 
 /* The cases; a --timeout in them is 900 s. */
 static const struct role_case cases[] = {
-	{ "no options: a desktop without a deadline", 0U, 0, ZWL_ROLE_NORMAL, UINT64_MAX },
-	{ "--session: the same", OPTION_SESSION, 0, ZWL_ROLE_NORMAL, UINT64_MAX },
-	{ "--session --control-fd --lock-idle: sessiond's", OPTION_SESSION | OPTION_CONTROL_FD | OPTION_LOCK_IDLE, 0, ZWL_ROLE_NORMAL, UINT64_MAX },
-	{ "--testing: 150 s", OPTION_TESTING, 0, ZWL_ROLE_TESTING, ZWL_ROLE_TESTING_TIMEOUT_MS },
-	{ "--testing --timeout: its own deadline", OPTION_TESTING | OPTION_TIMEOUT, 0, ZWL_ROLE_TESTING, 900000U },
-	{ "--testing --max-frames: 150 s and frames", OPTION_TESTING | OPTION_MAX_FRAMES, 0, ZWL_ROLE_TESTING, ZWL_ROLE_TESTING_TIMEOUT_MS },
-	{ "--greeter: the login screen", OPTION_GREETER, 0, ZWL_ROLE_GREETER, UINT64_MAX },
+	{ "no options: a desktop without a deadline", 0U, 0, KWL_ROLE_NORMAL, UINT64_MAX },
+	{ "--session: the same", OPTION_SESSION, 0, KWL_ROLE_NORMAL, UINT64_MAX },
+	{ "--session --control-fd --lock-idle: sessiond's", OPTION_SESSION | OPTION_CONTROL_FD | OPTION_LOCK_IDLE, 0, KWL_ROLE_NORMAL, UINT64_MAX },
+	{ "--testing: 150 s", OPTION_TESTING, 0, KWL_ROLE_TESTING, KWL_ROLE_TESTING_TIMEOUT_MS },
+	{ "--testing --timeout: its own deadline", OPTION_TESTING | OPTION_TIMEOUT, 0, KWL_ROLE_TESTING, 900000U },
+	{ "--testing --max-frames: 150 s and frames", OPTION_TESTING | OPTION_MAX_FRAMES, 0, KWL_ROLE_TESTING, KWL_ROLE_TESTING_TIMEOUT_MS },
+	{ "--greeter: the login screen", OPTION_GREETER, 0, KWL_ROLE_GREETER, UINT64_MAX },
 	{ "--timeout alone: refused", OPTION_TIMEOUT, EINVAL, 0U, 0U },
 	{ "--max-frames alone: refused", OPTION_MAX_FRAMES, EINVAL, 0U, 0U },
 	{ "--session --timeout: refused", OPTION_SESSION | OPTION_TIMEOUT, EINVAL, 0U, 0U },
@@ -101,8 +101,8 @@ static int
 run_case(
 	const struct role_case *item)
 {
-	struct zwl_role_request request;
-	struct zwl_role role;
+	struct kwl_role_request request;
+	struct kwl_role role;
 	int error;
 
 	/* The request the options make. */
@@ -117,7 +117,7 @@ run_case(
 	request.timeout_ms = 900000U;
 
 	/* The decision. */
-	error = zwl_role_resolve(&request, &role);
+	error = kwl_role_resolve(&request, &role);
 	if (error != item->error) {
 		printf("%s: FAIL (error %d)\n", item->name, error);
 		return 0;
@@ -133,7 +133,7 @@ run_case(
 	if (error == 0 && (role.role != item->role || role.timeout_ms != item->timeout_ms)) {
 		printf("%s: FAIL (role %s, %llu ms)\n",
 		       item->name,
-		       zwl_role_name(role.role),
+		       kwl_role_name(role.role),
 		       (unsigned long long)role.timeout_ms);
 		return 0;
 	}
@@ -142,7 +142,7 @@ run_case(
 	if (error != 0)
 		printf("%s: ok (%s)\n", item->name, role.refusal);
 	else
-		printf("%s: ok (%s)\n", item->name, zwl_role_name(role.role));
+		printf("%s: ok (%s)\n", item->name, kwl_role_name(role.role));
 
 	/* Succeeded: as expected. */
 	return 1;

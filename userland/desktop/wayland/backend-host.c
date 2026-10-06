@@ -19,13 +19,13 @@
  * path, which stays the same while their descriptors change.
  */
 
-#include "userland/desktop/wayland/zwl.h"
+#include "userland/desktop/wayland/kwl.h"
 
 #include <stdio.h>
 #include <string.h>
 
-static void lid_screen_off(struct zwl_server *server);
-static struct zwl_input_device *backend_input(struct zwl_server *server, const char *path);
+static void lid_screen_off(struct kwl_server *server);
+static struct kwl_input_device *backend_input(struct kwl_server *server, const char *path);
 static const char *power_source_text(unsigned source);
 
 /*
@@ -33,10 +33,10 @@ static const char *power_source_text(unsigned source);
  * duplicate of the primary node goes before the seat returns it).
  */
 void
-zwl_backend_session_paused(
+kwl_backend_session_paused(
 	void *data)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* No frame and no new input device from now on. */
 	server = data;
@@ -44,8 +44,8 @@ zwl_backend_session_paused(
 
 	/* The frame in flight finishes and the output closes. */
 	if (server->compose != NULL) {
-		zwl_compose_quiesce(server);
-		zwl_compose_output_close(server);
+		kwl_compose_quiesce(server);
+		kwl_compose_output_close(server);
 	}
 
 	/* The next activation makes a new output rather than reusing this one. */
@@ -58,10 +58,10 @@ zwl_backend_session_paused(
  * scan finds the input devices.
  */
 void
-zwl_backend_session_resumed(
+kwl_backend_session_resumed(
 	void *data)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* The ordinary scheduler opens the output and scans the inputs. */
 	server = data;
@@ -77,11 +77,11 @@ zwl_backend_session_resumed(
  * stays the seat's).
  */
 void
-zwl_backend_input_paused(
+kwl_backend_input_paused(
 	void *data,
 	const char *path)
 {
-	struct zwl_input_device *input;
+	struct kwl_input_device *input;
 
 	/* A node the compositor did not keep has nothing to stop. */
 	input = backend_input(data, path);
@@ -95,12 +95,12 @@ zwl_backend_input_paused(
  * does not enter it.
  */
 void
-zwl_backend_input_resumed(
+kwl_backend_input_resumed(
 	void *data,
 	const char *path,
 	int descriptor)
 {
-	struct zwl_input_device *input;
+	struct kwl_input_device *input;
 
 	/* A node the compositor did not keep has nothing to resume. */
 	input = backend_input(data, path);
@@ -116,17 +116,17 @@ zwl_backend_input_resumed(
  * closed).
  */
 void
-zwl_backend_input_gone(
+kwl_backend_input_gone(
 	void *data,
 	const char *path)
 {
-	struct zwl_input_device *input;
+	struct kwl_input_device *input;
 
 	/* A node the compositor did not keep has nothing to forget. */
 	input = backend_input(data, path);
 	if (input == NULL)
 		return;
-	zwl_input_forget(data, input);
+	kwl_input_forget(data, input);
 }
 
 /*
@@ -134,11 +134,11 @@ zwl_backend_input_gone(
  * backend's scan leaves it alone).
  */
 int
-zwl_backend_input_known(
+kwl_backend_input_known(
 	void *data,
 	const char *path)
 {
-	struct zwl_input_device *input;
+	struct kwl_input_device *input;
 
 	/* A live input of that path. */
 	input = backend_input(data, path);
@@ -150,7 +150,7 @@ zwl_backend_input_known(
  * (and owns its descriptor), 0 when the backend is to close it.
  */
 int
-zwl_backend_input_found(
+kwl_backend_input_found(
 	void *data,
 	int descriptor,
 	const char *path,
@@ -159,19 +159,19 @@ zwl_backend_input_found(
 	int kept;
 
 	/* The seat's classification (input.c). */
-	kept = zwl_input_probe(data, descriptor, path, caps);
+	kept = kwl_input_probe(data, descriptor, path, caps);
 	return kept;
 }
 
 /*
  * An input device came or went (ws132-p003): the devices are scanned again
- * in the event loop's next pass instead of at the next ZWL_INPUT_SCAN_MS.
+ * in the event loop's next pass instead of at the next KWL_INPUT_SCAN_MS.
  */
 void
-zwl_backend_input_changed(
+kwl_backend_input_changed(
 	void *data)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* The next pass scans (main.c compares the time of the last scan). */
 	server = data;
@@ -185,16 +185,16 @@ zwl_backend_input_changed(
  * clients.
  */
 void
-zwl_backend_power_changed(
+kwl_backend_power_changed(
 	void *data)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 
 	/* The bar's state, then the extension's. */
 	server = data;
-	zwl_power_read(server);
-	zwl_system_power_changed(server);
-	zwl_schedule(server);
+	kwl_power_read(server);
+	kwl_system_power_changed(server);
+	kwl_schedule(server);
 }
 
 /*
@@ -202,7 +202,7 @@ zwl_backend_power_changed(
  * for the decision D1 (ws132-p008); it is only written in the log.
  */
 void
-zwl_backend_power_button(
+kwl_backend_power_button(
 	void *data,
 	unsigned button)
 {
@@ -223,11 +223,11 @@ zwl_backend_power_button(
  * opening it within 15 minutes unlocks the lock the closing made (lid.c).
  */
 void
-zwl_backend_lid_changed(
+kwl_backend_lid_changed(
 	void *data,
 	unsigned open)
 {
-	struct zwl_server *server;
+	struct kwl_server *server;
 	unsigned actions;
 	int session;
 	int locked;
@@ -248,29 +248,29 @@ zwl_backend_lid_changed(
 	if (server->locked)
 		locked = 1;
 	if (open != 0U) {
-		actions = zwl_lid_open(&server->lid, zwl_milliseconds(), locked);
+		actions = kwl_lid_open(&server->lid, kwl_milliseconds(), locked);
 	} else {
-		actions = zwl_lid_close(&server->lid, zwl_milliseconds(), session, locked);
+		actions = kwl_lid_close(&server->lid, kwl_milliseconds(), session, locked);
 	}
 
 	/* The lock first, so that the screen never lights on the desktop. */
-	if ((actions & ZWL_LID_LOCK) != 0U) {
-		locked = zwl_lock(server, "lid");
+	if ((actions & KWL_LID_LOCK) != 0U) {
+		locked = kwl_lock(server, "lid");
 		if (!locked)
-			zwl_lid_lock_failed(&server->lid);
+			kwl_lid_lock_failed(&server->lid);
 	}
 
 	/* The screen out. */
-	if ((actions & ZWL_LID_SCREEN_OFF) != 0U)
+	if ((actions & KWL_LID_SCREEN_OFF) != 0U)
 		lid_screen_off(server);
 
 	/* The lid's own lock goes without the password. */
-	if ((actions & ZWL_LID_UNLOCK) != 0U)
-		zwl_lock_release(server, "lid");
+	if ((actions & KWL_LID_UNLOCK) != 0U)
+		kwl_lock_release(server, "lid");
 
 	/* The screen lit again. */
-	if ((actions & ZWL_LID_SCREEN_ON) != 0U)
-		zwl_lid_screen_restore(server);
+	if ((actions & KWL_LID_SCREEN_ON) != 0U)
+		kwl_lid_screen_restore(server);
 }
 
 /*
@@ -280,8 +280,8 @@ zwl_backend_lid_changed(
  * the next session.
  */
 void
-zwl_lid_screen_restore(
-	struct zwl_server *server)
+kwl_lid_screen_restore(
+	struct kwl_server *server)
 {
 	int error;
 
@@ -305,8 +305,8 @@ zwl_lid_screen_restore(
  * backend did not open or cannot say.
  */
 void
-zwl_power_read(
-	struct zwl_server *server)
+kwl_power_read(
+	struct kwl_server *server)
 {
 	struct kl_backend_power_state state;
 	int error;
@@ -344,16 +344,16 @@ power_source_text(
 }
 
 /* Finds the input the compositor keeps for a device path, or NULL. */
-static struct zwl_input_device *
+static struct kwl_input_device *
 backend_input(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const char *path)
 {
 	unsigned index;
 	int same;
 
 	/* The path stays while the descriptors change. */
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		if (server->inputs[index].live == 0)
 			continue;
 		same = strcmp(server->inputs[index].path, path);
@@ -372,7 +372,7 @@ backend_input(
  */
 static void
 lid_screen_off(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned percent;
 	int error;

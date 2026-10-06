@@ -299,11 +299,11 @@ emoji_missing(
 
 	/* Each emoji of each category. */
 	missing = 0U;
-	for (category = 0U; category < ZWL_EMOJI_CATEGORIES; category++) {
-		count = zwl_emoji_count(category);
+	for (category = 0U; category < KWL_EMOJI_CATEGORIES; category++) {
+		count = kwl_emoji_count(category);
 		for (index = 0U; index < count; index++) {
 			/* Its code point and glyph. */
-			text = zwl_emoji(category, index);
+			text = kwl_emoji(category, index);
 			point = 0U;
 			decoded = 0;
 			if (text != NULL)

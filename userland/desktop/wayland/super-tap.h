@@ -15,30 +15,30 @@
  * (seat.c).  So the host tests run it alone.
  */
 
-#ifndef ZWL_SUPER_TAP_H
-#define ZWL_SUPER_TAP_H
+#ifndef KWL_SUPER_TAP_H
+#define KWL_SUPER_TAP_H
 
 #include <stdint.h>
 
 /* The evdev codes of the left and the right Super (Meta) keys. */
-#define ZWL_SUPER_TAP_LEFT	125U
-#define ZWL_SUPER_TAP_RIGHT	126U
+#define KWL_SUPER_TAP_LEFT	125U
+#define KWL_SUPER_TAP_RIGHT	126U
 
 /* The longest a Super may be held and still be a tap (milliseconds). */
-#define ZWL_SUPER_TAP_MS	1000U
+#define KWL_SUPER_TAP_MS	1000U
 
 /*
  * The state: armed while a Super went down alone and nothing else has
  * happened since, the key that armed it, and when it went down.  All zero
  * when nothing is armed; it lives in the compositor's server.
  */
-struct zwl_super_tap {
+struct kwl_super_tap {
 	uint32_t armed;
 	uint32_t key;
 	uint64_t down_ms;
 };
 
-int zwl_super_tap_key(struct zwl_super_tap *tap, uint32_t key, uint32_t state, uint32_t others_held, uint64_t now_ms);
-void zwl_super_tap_cancel(struct zwl_super_tap *tap);
+int kwl_super_tap_key(struct kwl_super_tap *tap, uint32_t key, uint32_t state, uint32_t others_held, uint64_t now_ms);
+void kwl_super_tap_cancel(struct kwl_super_tap *tap);
 
 #endif

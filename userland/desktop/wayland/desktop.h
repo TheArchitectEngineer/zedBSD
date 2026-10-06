@@ -12,21 +12,21 @@
  * display pass.
  */
 
-#ifndef ZWL_DESKTOP_H
-#define ZWL_DESKTOP_H
+#ifndef KWL_DESKTOP_H
+#define KWL_DESKTOP_H
 
 #include "glass.h"
 
-int zwl_desktop_option(struct zwl_server *server, const char *argument);
-int zwl_desktop_request(struct zwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-void zwl_desktop_object_gone(struct zwl_object *object);
-void zwl_desktop_tick(struct zwl_server *server);
-void zwl_desktop_draw(struct zwl_server *server, VkCommandBuffer command);
-struct zwl_object *zwl_desktop_surface(struct zwl_server *server);
-int zwl_desktop_is(const struct zwl_object *surface);
-struct zwl_object *zwl_desktop_front(struct zwl_server *server, struct zwl_object *top);
-int zwl_desktop_press(struct zwl_server *server);
-void zwl_desktop_unfocus(struct zwl_server *server);
-struct zwl_object *zwl_desktop_at(struct zwl_server *server, int32_t x, int32_t y);
+int kwl_desktop_option(struct kwl_server *server, const char *argument);
+int kwl_desktop_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_desktop_object_gone(struct kwl_object *object);
+void kwl_desktop_tick(struct kwl_server *server);
+void kwl_desktop_draw(struct kwl_server *server, VkCommandBuffer command);
+struct kwl_object *kwl_desktop_surface(struct kwl_server *server);
+int kwl_desktop_is(const struct kwl_object *surface);
+struct kwl_object *kwl_desktop_front(struct kwl_server *server, struct kwl_object *top);
+int kwl_desktop_press(struct kwl_server *server);
+void kwl_desktop_unfocus(struct kwl_server *server);
+struct kwl_object *kwl_desktop_at(struct kwl_server *server, int32_t x, int32_t y);
 
 #endif

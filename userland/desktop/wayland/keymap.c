@@ -29,7 +29,7 @@
 
 /*
  * The keymap's text.  It lives for the whole run and is copied once into
- * the keymap file (zwl_keymap_open).
+ * the keymap file (kwl_keymap_open).
  */
 static const char keymap_text[] =
 	"xkb_keymap {\n"
@@ -225,7 +225,7 @@ static const char keymap_text[] =
 
 /*
  * The read-only descriptor of the keymap file, which each keyboard gets a
- * copy of; -1 until zwl_keymap_open made it (or when it could not).
+ * copy of; -1 until kwl_keymap_open made it (or when it could not).
  */
 static int keymap_fd = -1;
 
@@ -235,7 +235,7 @@ static int keymap_fd = -1;
  * keyboards then say they have no keymap).
  */
 int
-zwl_keymap_open(void)
+kwl_keymap_open(void)
 {
 	char path[64];
 	ssize_t written;
@@ -273,7 +273,7 @@ zwl_keymap_open(void)
  * keyboard; -1 when there is no keymap.
  */
 int
-zwl_keymap_descriptor(
+kwl_keymap_descriptor(
 	uint32_t *size)
 {
 	int copy;
@@ -297,7 +297,7 @@ zwl_keymap_descriptor(
  * Gives the keymap's text (for the host test).
  */
 const char *
-zwl_keymap_text(void)
+kwl_keymap_text(void)
 {
 	/* Succeeded: the text. */
 	return keymap_text;

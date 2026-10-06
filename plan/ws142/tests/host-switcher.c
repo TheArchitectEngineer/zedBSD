@@ -31,7 +31,7 @@ static int failures;
 static int checks;
 
 static void check(int condition, const char *what);
-static int selected_is(const struct zwl_switcher *switcher, const char *key);
+static int selected_is(const struct kwl_switcher *switcher, const char *key);
 
 /* Counts one check, and reports it when it failed. */
 static void
@@ -52,14 +52,14 @@ check(
 /* Tells whether the selection is an application. */
 static int
 selected_is(
-	const struct zwl_switcher *switcher,
+	const struct kwl_switcher *switcher,
 	const char *key)
 {
 	const char *selected;
 	int same;
 
 	/* None selected matches no key. */
-	selected = zwl_switcher_selected(switcher);
+	selected = kwl_switcher_selected(switcher);
 	if (selected == NULL)
 		return 0;
 
@@ -76,30 +76,30 @@ selected_is(
 int
 main(void)
 {
-	static struct zwl_apps_window windows[8];
-	static struct zwl_apps apps;
-	static struct zwl_apps_order order;
-	static struct zwl_switcher switcher;
+	static struct kwl_apps_window windows[8];
+	static struct kwl_apps apps;
+	static struct kwl_apps_order order;
+	static struct kwl_switcher switcher;
 	unsigned counted;
 	int error;
 	int brings;
 
 	/* 1. No application: it does not open. */
-	zwl_apps_build(windows, 0, &order, &apps);
-	error = zwl_switcher_open(&switcher, &apps, -1, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	kwl_apps_build(windows, 0, &order, &apps);
+	error = kwl_switcher_open(&switcher, &apps, -1, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	check(error == -1 && !switcher.on, "no application: off");
-	check(zwl_switcher_selected(&switcher) == NULL, "no application: nothing selected");
+	check(kwl_switcher_selected(&switcher) == NULL, "no application: nothing selected");
 
 	/* 2. One application: it is selected. */
 	windows[0].app_id = "files";
 	windows[0].client = 1;
 	windows[0].open_order = 1;
 	windows[0].map_order = 1;
-	zwl_apps_build(windows, 1, &order, &apps);
-	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_PAD, ZWL_SWITCHER_CENTER);
+	kwl_apps_build(windows, 1, &order, &apps);
+	error = kwl_switcher_open(&switcher, &apps, 0, KWL_SWITCHER_VIA_PAD, KWL_SWITCHER_CENTER);
 	check(error == 0 && switcher.on && switcher.index == 0U, "one application: on, it selected");
-	check(switcher.via == ZWL_SWITCHER_VIA_PAD && switcher.placement == ZWL_SWITCHER_CENTER, "how and where kept");
-	zwl_switcher_step(&switcher, 1);
+	check(switcher.via == KWL_SWITCHER_VIA_PAD && switcher.placement == KWL_SWITCHER_CENTER, "how and where kept");
+	kwl_switcher_step(&switcher, 1);
 	check(switcher.index == 0U, "one application: a step stays");
 
 	/*
@@ -116,8 +116,8 @@ main(void)
 	windows[2].client = 3;
 	windows[2].open_order = 3;
 	windows[2].map_order = 11;
-	zwl_apps_build(windows, 3, &order, &apps);
-	error = zwl_switcher_open(&switcher, &apps, 1, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	kwl_apps_build(windows, 3, &order, &apps);
+	error = kwl_switcher_open(&switcher, &apps, 1, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	check(error == 0 && switcher.count == 3U, "three applications");
 	check(selected_is(&switcher, "terminal"), "the current application is selected");
 	check(strcmp(switcher.keys[0], "files") == 0 &&
@@ -125,46 +125,46 @@ main(void)
 	      strcmp(switcher.keys[2], "notes") == 0, "the bar's order, not the latest use");
 
 	/* 4. Steps one icon to the right, around at both ends. */
-	zwl_switcher_step(&switcher, 1);
+	kwl_switcher_step(&switcher, 1);
 	check(selected_is(&switcher, "notes"), "a step to the right");
-	zwl_switcher_step(&switcher, 1);
+	kwl_switcher_step(&switcher, 1);
 	check(selected_is(&switcher, "files"), "around past the right end to the left end");
-	zwl_switcher_step(&switcher, -1);
+	kwl_switcher_step(&switcher, -1);
 	check(selected_is(&switcher, "notes"), "a step to the left around past the left end");
-	zwl_switcher_step(&switcher, -7);
+	kwl_switcher_step(&switcher, -7);
 	check(selected_is(&switcher, "terminal"), "many steps to the left");
-	zwl_switcher_step(&switcher, 8);
+	kwl_switcher_step(&switcher, 8);
 	check(selected_is(&switcher, "files"), "many steps to the right");
 
 	/* 5. A step on and two back (the pad's swipes are one step each, swipe.c; host-swipe.c checks them). */
 	counted = switcher.steps;
-	zwl_switcher_step(&switcher, 1);
+	kwl_switcher_step(&switcher, 1);
 	check(selected_is(&switcher, "terminal"), "a step on");
-	zwl_switcher_step(&switcher, -2);
+	kwl_switcher_step(&switcher, -2);
 	check(selected_is(&switcher, "notes"), "two steps back");
-	zwl_switcher_step(&switcher, 0);
+	kwl_switcher_step(&switcher, 0);
 	check(selected_is(&switcher, "notes") && switcher.steps == counted + 2U, "no step: stays, not counted");
 
 	/* 6. The order kept while on, whatever the bar does (an icon dragged to the left end). */
-	error = zwl_apps_move(&order, 2, 0);
-	zwl_apps_build(windows, 3, &order, &apps);
+	error = kwl_apps_move(&order, 2, 0);
+	kwl_apps_build(windows, 3, &order, &apps);
 	check(error == 0 && strcmp(apps.apps[0].key, "notes") == 0, "the bar's order changed");
 	check(strcmp(switcher.keys[0], "files") == 0, "the order taken at the opening stays");
 
 	/* 6b. Opened again: the new bar order; no current or one out of range is the leftmost. */
-	error = zwl_switcher_open(&switcher, &apps, -1, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, -1, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	check(error == 0 && selected_is(&switcher, "notes"), "no current application: the leftmost");
-	error = zwl_switcher_open(&switcher, &apps, 3, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 3, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	check(error == 0 && selected_is(&switcher, "notes"), "out of range: the leftmost");
-	error = zwl_switcher_open(&switcher, &apps, 2, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 2, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	check(error == 0 && selected_is(&switcher, "terminal"), "the current one at its new place");
-	zwl_switcher_step(&switcher, 1);
+	kwl_switcher_step(&switcher, 1);
 	check(selected_is(&switcher, "notes"), "right of the right end: the left end");
 
 	/* 7. Closed: nothing selected, no step, no travel. */
-	zwl_switcher_close(&switcher);
-	check(!switcher.on && zwl_switcher_selected(&switcher) == NULL, "closed: off");
-	zwl_switcher_step(&switcher, 1);
+	kwl_switcher_close(&switcher);
+	check(!switcher.on && kwl_switcher_selected(&switcher) == NULL, "closed: off");
+	kwl_switcher_step(&switcher, 1);
 	check(!switcher.on && switcher.steps == 0U, "closed: no step");
 
 	/*
@@ -172,33 +172,33 @@ main(void)
 	 * Alt+Tab without a step leaves the switcher open and sticky, and every
 	 * later release brings nothing; a slow one, or one after a step, brings.
 	 */
-	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 0, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	switcher.opened_ms = 1000U;
-	brings = zwl_switcher_alt_released(&switcher, 1200U);
+	brings = kwl_switcher_alt_released(&switcher, 1200U);
 	check(error == 0 && brings == 0 && switcher.on && switcher.sticky, "a quick Alt+Tab: open, sticky");
-	zwl_switcher_step(&switcher, 1);
-	brings = zwl_switcher_alt_released(&switcher, 9000U);
+	kwl_switcher_step(&switcher, 1);
+	brings = kwl_switcher_alt_released(&switcher, 9000U);
 	check(brings == 0 && switcher.on, "sticky: a later release (after a step) brings nothing");
-	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 0, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	switcher.opened_ms = 1000U;
-	brings = zwl_switcher_alt_released(&switcher, 1000U + ZWL_SWITCHER_QUICK_MS);
+	brings = kwl_switcher_alt_released(&switcher, 1000U + KWL_SWITCHER_QUICK_MS);
 	check(error == 0 && brings == 1 && !switcher.sticky, "Alt held the quick time or longer: brings");
-	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 0, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	switcher.opened_ms = 1000U;
-	zwl_switcher_step(&switcher, 1);
-	brings = zwl_switcher_alt_released(&switcher, 1100U);
+	kwl_switcher_step(&switcher, 1);
+	brings = kwl_switcher_alt_released(&switcher, 1100U);
 	check(error == 0 && brings == 1 && switcher.steps == 1U, "a quick Alt+Tab+Tab: brings");
-	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_PAD, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 0, KWL_SWITCHER_VIA_PAD, KWL_SWITCHER_BAR);
 	switcher.opened_ms = 1000U;
-	zwl_switcher_step(&switcher, -1);
-	brings = zwl_switcher_alt_released(&switcher, 1100U);
+	kwl_switcher_step(&switcher, -1);
+	brings = kwl_switcher_alt_released(&switcher, 1100U);
 	check(error == 0 && brings == 1, "a step back counts as a step");
-	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	error = kwl_switcher_open(&switcher, &apps, 0, KWL_SWITCHER_VIA_KEYS, KWL_SWITCHER_BAR);
 	switcher.opened_ms = 5000U;
-	brings = zwl_switcher_alt_released(&switcher, 4000U);
+	brings = kwl_switcher_alt_released(&switcher, 4000U);
 	check(error == 0 && brings == 0 && switcher.sticky, "a clock before the opening counts as quick");
-	zwl_switcher_close(&switcher);
-	brings = zwl_switcher_alt_released(&switcher, 9000U);
+	kwl_switcher_close(&switcher);
+	brings = kwl_switcher_alt_released(&switcher, 9000U);
 	check(brings == 0 && !switcher.on && !switcher.sticky, "closed: a release brings nothing");
 
 	/* The result. */

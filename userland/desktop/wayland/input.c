@@ -22,7 +22,7 @@
  * the order they arrived, then wheel scrolling, then a pointer frame.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "tablet.h"
 #include "touch.h"
 
@@ -43,7 +43,7 @@
  * and not yet applied, and how many reads it has had this pass.
  */
 struct input_source {
-	struct zwl_input_device *device;
+	struct kwl_input_device *device;
 	struct input_event events[INPUT_READ_EVENTS];
 	size_t count;
 	size_t next;
@@ -90,35 +90,35 @@ struct input_source {
 
 static int read_ranges(int descriptor, struct input_absinfo *x, struct input_absinfo *y);
 static int bit_is_set(const unsigned long *bits, unsigned code);
-static void consume_event(struct zwl_server *server, struct zwl_input_device *device, const struct input_event *event);
-static int source_fill(struct zwl_server *server, struct input_source *source);
+static void consume_event(struct kwl_server *server, struct kwl_input_device *device, const struct input_event *event);
+static int source_fill(struct kwl_server *server, struct input_source *source);
 static int event_earlier(const struct input_event *event, const struct input_event *other);
-static void apply_frame(struct zwl_server *server, struct zwl_input_device *device, uint32_t time);
-static void apply_key(struct zwl_server *server, uint32_t time, uint32_t key, int32_t value);
+static void apply_frame(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
+static void apply_key(struct kwl_server *server, uint32_t time, uint32_t key, int32_t value);
 static int32_t scale_absolute(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
 static int32_t clamp_position(int64_t position, uint32_t size);
 static uint32_t event_time(const struct input_event *event);
-static void update_capabilities(struct zwl_server *server);
-static int attach_tablet(struct zwl_server *server, int descriptor, const char *path);
-static int attach_touch(struct zwl_server *server, int descriptor, const char *path);
+static void update_capabilities(struct kwl_server *server);
+static int attach_tablet(struct kwl_server *server, int descriptor, const char *path);
+static int attach_touch(struct kwl_server *server, int descriptor, const char *path);
 static int multitouch(const struct kl_backend_input_caps *capabilities);
 static int touchpad_node(const struct kl_backend_input_caps *capabilities);
-static int attach_touchpad(struct zwl_server *server, int descriptor, const char *path);
-static void apply_touchpad(struct zwl_server *server, struct zwl_input_device *device, uint32_t time);
-static void apply_touchpad_actions(struct zwl_server *server, const struct zwl_touchpad *pad, const struct zwl_touchpad_actions *actions, uint32_t time);
-static int pointer_move(struct zwl_server *server, int64_t delta_x, int64_t delta_y, uint32_t time);
-static ssize_t input_read(struct zwl_server *server, struct zwl_input_device *device, struct input_event *events, size_t capacity);
+static int attach_touchpad(struct kwl_server *server, int descriptor, const char *path);
+static void apply_touchpad(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
+static void apply_touchpad_actions(struct kwl_server *server, const struct kwl_touchpad *pad, const struct kwl_touchpad_actions *actions, uint32_t time);
+static int pointer_move(struct kwl_server *server, int64_t delta_x, int64_t delta_y, uint32_t time);
+static ssize_t input_read(struct kwl_server *server, struct kwl_input_device *device, struct input_event *events, size_t capacity);
 
 /*
  * Opens the input devices not read yet (libkeiland-backend's scan, which
- * offers each through zwl_input_probe) and sets the time of the next scan.
+ * offers each through kwl_input_probe) and sets the time of the next scan.
  */
 void
-zwl_input_scan(
-	struct zwl_server *server)
+kwl_input_scan(
+	struct kwl_server *server)
 {
 	/* The next rescan is due one period from now. */
-	server->input_scan_time = zwl_milliseconds();
+	server->input_scan_time = kwl_milliseconds();
 
 	/* The backend finds, opens and offers the devices. */
 	kl_backend_input_scan(server->backend);
@@ -131,8 +131,8 @@ zwl_input_scan(
  * the table is full (the backend then closes it).
  */
 int
-zwl_input_probe(
-	struct zwl_server *server,
+kwl_input_probe(
+	struct kwl_server *server,
 	int descriptor,
 	const char *path,
 	const struct kl_backend_input_caps *capabilities)
@@ -218,9 +218,9 @@ zwl_input_probe(
 
 	/* Keep the node; an absolute pointer brings its ranges along. */
 	if (absolute) {
-		error = zwl_input_attach(server, descriptor, path, pointer, keyboard, &x, &y);
+		error = kwl_input_attach(server, descriptor, path, pointer, keyboard, &x, &y);
 	} else {
-		error = zwl_input_attach(server, descriptor, path, pointer, keyboard, NULL, NULL);
+		error = kwl_input_attach(server, descriptor, path, pointer, keyboard, NULL, NULL);
 	}
 
 	/* Succeeded: the node has been classified; 1 when the seat keeps it. */
@@ -235,8 +235,8 @@ zwl_input_probe(
  * NULL for both.
  */
 int
-zwl_input_attach(
-	struct zwl_server *server,
+kwl_input_attach(
+	struct kwl_server *server,
 	int descriptor,
 	const char *path,
 	unsigned pointer,
@@ -244,12 +244,12 @@ zwl_input_attach(
 	const struct input_absinfo *x,
 	const struct input_absinfo *y)
 {
-	struct zwl_input_device *device;
+	struct kwl_input_device *device;
 	unsigned index;
 
 	/* Find a free slot in the fixed device table. */
 	device = NULL;
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A slot not in use can hold the new device. */
 		if (!server->inputs[index].live) {
 			device = &server->inputs[index];
@@ -266,7 +266,7 @@ zwl_input_attach(
 	device->fd = descriptor;
 	device->pointer = pointer;
 	device->keyboard = keyboard;
-	zwl_pointer_accel_init(&device->accel);
+	kwl_pointer_accel_init(&device->accel);
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/* An absolute pointer maps its axis ranges onto the surface. */
@@ -308,12 +308,12 @@ zwl_input_attach(
  * ready" means the device went away, and it is closed.
  */
 void
-zwl_input_read_devices(
-	struct zwl_server *server,
-	struct zwl_input_device **devices,
+kwl_input_read_devices(
+	struct kwl_server *server,
+	struct kwl_input_device **devices,
 	size_t count)
 {
-	static struct input_source sources[ZWL_INPUT_MAX];
+	static struct input_source sources[KWL_INPUT_MAX];
 	struct input_source *earliest;
 	size_t used;
 	size_t index;
@@ -322,8 +322,8 @@ zwl_input_read_devices(
 
 	/* One source for each device given, up to the seat's devices. */
 	used = count;
-	if (used > ZWL_INPUT_MAX)
-		used = ZWL_INPUT_MAX;
+	if (used > KWL_INPUT_MAX)
+		used = KWL_INPUT_MAX;
 	for (index = 0; index < used; index++) {
 		sources[index].device = devices[index];
 		sources[index].count = 0;
@@ -371,7 +371,7 @@ zwl_input_read_devices(
  */
 static int
 source_fill(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct input_source *source)
 {
 	ssize_t count;
@@ -401,7 +401,7 @@ source_fill(
 		/* End of file means the node is gone. */
 		if (count == 0) {
 			printf("ZWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, EIO);
-			zwl_input_close(server, source->device);
+			kwl_input_close(server, source->device);
 			source->done = 1;
 			break;
 		}
@@ -416,7 +416,7 @@ source_fill(
 		/* Any other failure but an interruption means the device is gone. */
 		if (error != EINTR) {
 			printf("ZWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, error);
-			zwl_input_close(server, source->device);
+			kwl_input_close(server, source->device);
 			source->done = 1;
 		}
 	}
@@ -449,11 +449,11 @@ event_earlier(
  * Closes one device and tells bound seats when a device class disappears.
  */
 void
-zwl_input_close(
-	struct zwl_server *server,
-	struct zwl_input_device *device)
+kwl_input_close(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 
 	/* A slot that is not in use has no descriptor. */
 	if (!device->live)
@@ -461,16 +461,16 @@ zwl_input_close(
 
 	/* A pen tablet's clients hear that it and its tools are gone (tablet.c). */
 	if (device->tablet)
-		zwl_tablet_remove(server, device, 1);
+		kwl_tablet_remove(server, device, 1);
 
 	/* A touch screen's fingers end (touch.c). */
 	if (device->touch)
-		zwl_touch_remove(server, device, 1);
+		kwl_touch_remove(server, device, 1);
 
 	/* A touch pad lets go of every button it holds. */
 	if (device->touchpad) {
-		zwl_touchpad_release_all(&device->pad, &actions);
-		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)zwl_milliseconds());
+		kwl_touchpad_release_all(&device->pad, &actions);
+		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)kwl_milliseconds());
 	}
 
 	/* The slot is free once its descriptor is closed. */
@@ -488,14 +488,14 @@ zwl_input_close(
 /*
  * Forgets one device whose descriptor the seat has already closed
  * (libkeiland-backend's input_gone, ws131-p006): the same as
- * zwl_input_close without returning the descriptor.
+ * kwl_input_close without returning the descriptor.
  */
 void
-zwl_input_forget(
-	struct zwl_server *server,
-	struct zwl_input_device *device)
+kwl_input_forget(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 
 	/* A slot that is not in use has nothing to forget. */
 	if (!device->live)
@@ -503,14 +503,14 @@ zwl_input_forget(
 
 	/* A pen tablet's clients and a touch screen's fingers hear that it is gone. */
 	if (device->tablet)
-		zwl_tablet_remove(server, device, 1);
+		kwl_tablet_remove(server, device, 1);
 	if (device->touch)
-		zwl_touch_remove(server, device, 1);
+		kwl_touch_remove(server, device, 1);
 
 	/* A touch pad lets go of every button it holds. */
 	if (device->touchpad) {
-		zwl_touchpad_release_all(&device->pad, &actions);
-		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)zwl_milliseconds());
+		kwl_touchpad_release_all(&device->pad, &actions);
+		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)kwl_milliseconds());
 	}
 
 	/* The slot is free; its descriptor was the seat's. */
@@ -525,24 +525,24 @@ zwl_input_forget(
  * Closes every device during service shutdown without notifying clients.
  */
 void
-zwl_input_cleanup(
-	struct zwl_server *server)
+kwl_input_cleanup(
+	struct kwl_server *server)
 {
 	unsigned index;
 
 	/* Every slot in use owns one descriptor. */
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A free slot owns nothing. */
 		if (!server->inputs[index].live)
 			continue;
 
 		/* A pen tablet's state is forgotten without telling anyone (tablet.c). */
 		if (server->inputs[index].tablet)
-			zwl_tablet_remove(server, &server->inputs[index], 0);
+			kwl_tablet_remove(server, &server->inputs[index], 0);
 
 		/* A touch screen's fingers are forgotten the same way (touch.c). */
 		if (server->inputs[index].touch)
-			zwl_touch_remove(server, &server->inputs[index], 0);
+			kwl_touch_remove(server, &server->inputs[index], 0);
 
 		/* Close the descriptor and free the slot. */
 		kl_backend_input_close(server->backend, server->inputs[index].fd);
@@ -606,8 +606,8 @@ bit_is_set(
 /* Adds one event to the device's pending report, or completes the report. */
 static void
 consume_event(
-	struct zwl_server *server,
-	struct zwl_input_device *device,
+	struct kwl_server *server,
+	struct kwl_input_device *device,
 	const struct input_event *event)
 {
 	uint32_t time;
@@ -632,9 +632,9 @@ consume_event(
 		time = event_time(event);
 		device->frame_time_us = (uint64_t)event->time.tv_sec * 1000000U + (uint64_t)event->time.tv_usec;
 		if (device->tablet) {
-			zwl_tablet_frame(server, device, time);
+			kwl_tablet_frame(server, device, time);
 		} else if (device->touch) {
-			zwl_touch_frame(server, device, time);
+			kwl_touch_frame(server, device, time);
 		} else if (device->touchpad) {
 			apply_touchpad(server, device, time);
 		} else {
@@ -654,7 +654,7 @@ consume_event(
 	server->input_events++;
 
 	/* A report too large to hold is thrown away like a dropped one. */
-	if (device->frame_count == ZWL_INPUT_FRAME_MAX) {
+	if (device->frame_count == KWL_INPUT_FRAME_MAX) {
 		device->frame_count = 0;
 		device->discarding = 1;
 		return;
@@ -671,8 +671,8 @@ consume_event(
 /* Applies one completed report: motion, buttons and keys, scrolling, frame. */
 static void
 apply_frame(
-	struct zwl_server *server,
-	struct zwl_input_device *device,
+	struct kwl_server *server,
+	struct kwl_input_device *device,
 	uint32_t time)
 {
 	const struct input_event *event;
@@ -740,7 +740,7 @@ apply_frame(
 	     delta_x != 0 ||
 	     delta_y != 0)) {
 		server->pointer_unmoved = 0U;
-		zwl_damage_pointer(server, server->pointer_x, server->pointer_y);
+		kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
 	}
 
 	/* An absolute report places the pointer; relative movement is added and clamped. */
@@ -757,7 +757,7 @@ apply_frame(
 	 * that a slow pointer still moves.
 	 */
 	if (delta_x != 0 || delta_y != 0) {
-		zwl_pointer_accel_move(&device->accel, delta_x, delta_y, device->frame_time_us, server->mouse_speed, server->mouse_acceleration, &moved_x, &moved_y);
+		kwl_pointer_accel_move(&device->accel, delta_x, delta_y, device->frame_time_us, server->mouse_speed, server->mouse_acceleration, &moved_x, &moved_y);
 		delta_x = moved_x;
 		delta_y = moved_y;
 	}
@@ -773,10 +773,10 @@ apply_frame(
 		old_y = server->pointer_y;
 		server->pointer_x = x;
 		server->pointer_y = y;
-		zwl_seat_motion(server, time);
+		kwl_seat_motion(server, time);
 
 		/* Window mode draws the cursor at its new place (and where it was, damage.c). */
-		zwl_damage_pointer(server, old_x, old_y);
+		kwl_damage_pointer(server, old_x, old_y);
 		pointer_activity = 1;
 	}
 
@@ -796,7 +796,7 @@ apply_frame(
 		if (device->pointer &&
 		    event->code >= INPUT_BUTTON_FIRST &&
 		    event->code <= INPUT_BUTTON_LAST) {
-			zwl_seat_button(server, time, event->code, (uint32_t)event->value);
+			kwl_seat_button(server, time, event->code, (uint32_t)event->value);
 			pointer_activity = 1;
 			continue;
 		}
@@ -818,13 +818,13 @@ apply_frame(
 
 	/* Wheel notches scroll; evdev counts up as positive, Wayland counts down as positive. */
 	if (wheel != 0 || horizontal_wheel != 0) {
-		zwl_seat_axis(server, time, -wheel, horizontal_wheel);
+		kwl_seat_axis(server, time, -wheel, horizontal_wheel);
 		pointer_activity = 1;
 	}
 
 	/* Version 5 pointers are told where this report's events end. */
 	if (pointer_activity)
-		zwl_seat_frame(server);
+		kwl_seat_frame(server);
 
 	/* Succeeded: the report has been delivered. */
 	return;
@@ -837,22 +837,22 @@ apply_frame(
  */
 static void
 apply_touchpad(
-	struct zwl_server *server,
-	struct zwl_input_device *device,
+	struct kwl_server *server,
+	struct kwl_input_device *device,
 	uint32_t time)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 	const struct input_event *event;
 	unsigned index;
 
 	/* The report's events, in order. */
 	for (index = 0; index < device->frame_count; index++) {
 		event = &device->frame[index];
-		zwl_touchpad_event(&device->pad, event->type, event->code, event->value);
+		kwl_touchpad_event(&device->pad, event->type, event->code, event->value);
 	}
 
 	/* The report's end: what the fingers did. */
-	zwl_touchpad_frame(&device->pad, zwl_milliseconds(), &actions);
+	kwl_touchpad_frame(&device->pad, kwl_milliseconds(), &actions);
 	apply_touchpad_actions(server, &device->pad, &actions, time);
 
 	/* Succeeded: the report has been applied. */
@@ -862,12 +862,12 @@ apply_touchpad(
 /* Carries out the actions of the touch pad layer on the seat, as a mouse's report would. */
 static void
 apply_touchpad_actions(
-	struct zwl_server *server,
-	const struct zwl_touchpad *pad,
-	const struct zwl_touchpad_actions *actions,
+	struct kwl_server *server,
+	const struct kwl_touchpad *pad,
+	const struct kwl_touchpad_actions *actions,
 	uint32_t time)
 {
-	const struct zwl_touchpad_action *action;
+	const struct kwl_touchpad_action *action;
 	unsigned activity;
 	unsigned index;
 	int moved;
@@ -880,32 +880,32 @@ apply_touchpad_actions(
 
 		/* Its kind. */
 		switch (action->kind) {
-		case ZWL_TOUCHPAD_MOTION:
+		case KWL_TOUCHPAD_MOTION:
 			/* The pointer moves, at the user's speed. */
 			moved = pointer_move(server, action->dx, action->dy, time);
 			if (moved)
 				activity = 1;
 			break;
-		case ZWL_TOUCHPAD_BUTTON:
+		case KWL_TOUCHPAD_BUTTON:
 			/* A button's press or release. */
-			zwl_seat_button(server, time, action->button, action->pressed);
+			kwl_seat_button(server, time, action->button, action->pressed);
 			activity = 1;
 			break;
-		case ZWL_TOUCHPAD_SCROLL:
+		case KWL_TOUCHPAD_SCROLL:
 			/* The switcher or Wiseview, while it shows, takes the two fingers' swipe (shell.c, ws142-p009). */
-			taken = zwl_glass_pad_scroll(server, action->vertical, action->horizontal, pad->natural_scroll);
+			taken = kwl_glass_pad_scroll(server, action->vertical, action->horizontal, pad->natural_scroll);
 			if (taken)
 				break;
 
 			/* Otherwise the fingers' scrolling, in the wheel's units (vertical positive down, as the seat takes them). */
-			zwl_seat_axis_finger(server, time, action->vertical, action->horizontal, action->vertical_units, action->horizontal_units);
+			kwl_seat_axis_finger(server, time, action->vertical, action->horizontal, action->vertical_units, action->horizontal_units);
 			activity = 1;
 			break;
-		case ZWL_TOUCHPAD_GESTURE:
+		case KWL_TOUCHPAD_GESTURE:
 			/* A gesture is the shell's (ws142-p003); the end of two fingers' scroll also ends the client's scrolling (BUG-211). */
-			zwl_glass_gesture(server, action->gesture, action->phase, action->travel_um, action->speed);
-			if (action->gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2 && action->phase == ZWL_TOUCHPAD_PHASE_END)
-				zwl_seat_axis_stop(server, time);
+			kwl_glass_gesture(server, action->gesture, action->phase, action->travel_um, action->speed);
+			if (action->gesture == KWL_TOUCHPAD_GESTURE_SWIPE2 && action->phase == KWL_TOUCHPAD_PHASE_END)
+				kwl_seat_axis_stop(server, time);
 			break;
 		default:
 			break;
@@ -914,7 +914,7 @@ apply_touchpad_actions(
 
 	/* Version 5 pointers are told where the actions end. */
 	if (activity)
-		zwl_seat_frame(server);
+		kwl_seat_frame(server);
 
 	/* Succeeded: the actions are carried out. */
 	return;
@@ -925,19 +925,19 @@ apply_touchpad_actions(
  * scrolling direction again, after the settings changed them (ws089-p024).
  */
 void
-zwl_input_touchpads_changed(
-	struct zwl_server *server)
+kwl_input_touchpads_changed(
+	struct kwl_server *server)
 {
 	unsigned index;
 
 	/* Every touch pad in use. */
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A free slot, or a device that is no touch pad. */
 		if (!server->inputs[index].live || !server->inputs[index].touchpad)
 			continue;
 
 		/* The new feel, from the next report on. */
-		zwl_touchpad_set_feel(&server->inputs[index].pad, server->touchpad_acceleration, server->touchpad_natural);
+		kwl_touchpad_set_feel(&server->inputs[index].pad, server->touchpad_acceleration, server->touchpad_natural);
 	}
 }
 
@@ -946,21 +946,21 @@ zwl_input_touchpads_changed(
  * completes its click (touchpad.c).
  */
 void
-zwl_input_tick(
-	struct zwl_server *server,
+kwl_input_tick(
+	struct kwl_server *server,
 	uint64_t now)
 {
-	struct zwl_touchpad_actions actions;
+	struct kwl_touchpad_actions actions;
 	unsigned index;
 
 	/* Every touch pad in use. */
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A free slot, or a device that is no touch pad, has no time to keep. */
 		if (!server->inputs[index].live || !server->inputs[index].touchpad)
 			continue;
 
 		/* Its layer's timers, and what they give. */
-		zwl_touchpad_tick(&server->inputs[index].pad, now, &actions);
+		kwl_touchpad_tick(&server->inputs[index].pad, now, &actions);
 		apply_touchpad_actions(server, &server->inputs[index].pad, &actions, (uint32_t)now);
 	}
 
@@ -974,7 +974,7 @@ zwl_input_tick(
  */
 static int
 pointer_move(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int64_t delta_x,
 	int64_t delta_y,
 	uint32_t time)
@@ -987,7 +987,7 @@ pointer_move(
 	/* The device moved the pointer: its arrow is shown from now on (ws035-p116). */
 	if (server->pointer_unmoved && (delta_x != 0 || delta_y != 0)) {
 		server->pointer_unmoved = 0U;
-		zwl_damage_pointer(server, server->pointer_x, server->pointer_y);
+		kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
 	}
 
 	/* The motion at the touch pads' speed (ws089-p007, p024, a percentage), the hundredths carried. */
@@ -1011,8 +1011,8 @@ pointer_move(
 	old_y = server->pointer_y;
 	server->pointer_x = x;
 	server->pointer_y = y;
-	zwl_seat_motion(server, time);
-	zwl_damage_pointer(server, old_x, old_y);
+	kwl_seat_motion(server, time);
+	kwl_damage_pointer(server, old_x, old_y);
 
 	/* Succeeded: the pointer moved. */
 	return 1;
@@ -1045,11 +1045,11 @@ touchpad_node(
  */
 static int
 attach_touchpad(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int descriptor,
 	const char *path)
 {
-	struct zwl_input_device *device;
+	struct kwl_input_device *device;
 	struct input_absinfo x;
 	struct input_absinfo y;
 	unsigned index;
@@ -1067,7 +1067,7 @@ attach_touchpad(
 
 	/* Find a free slot in the fixed device table. */
 	device = NULL;
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A slot not in use can hold the new device. */
 		if (!server->inputs[index].live) {
 			device = &server->inputs[index];
@@ -1085,9 +1085,9 @@ attach_touchpad(
 	device->pointer = 1;
 	device->touchpad = 1;
 	snprintf(device->path, sizeof(device->path), "%s", path);
-	zwl_touchpad_init(&device->pad, x.resolution, y.resolution);
-	zwl_touchpad_set_size(&device->pad, x.maximum, y.maximum);
-	zwl_touchpad_set_feel(&device->pad, server->touchpad_acceleration, server->touchpad_natural);
+	kwl_touchpad_init(&device->pad, x.resolution, y.resolution);
+	kwl_touchpad_set_size(&device->pad, x.maximum, y.maximum);
+	kwl_touchpad_set_feel(&device->pad, server->touchpad_acceleration, server->touchpad_natural);
 
 	/* The slot is published only when it is completely filled in. */
 	device->live = 1;
@@ -1105,7 +1105,7 @@ attach_touchpad(
 /* Tracks the modifier keys and delivers one key with any modifier change. */
 static void
 apply_key(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	uint32_t time,
 	uint32_t key,
 	int32_t value)
@@ -1174,13 +1174,13 @@ apply_key(
 		locked ^= MODIFIER_NUM_LOCK;
 
 	/* The key itself is reported first. */
-	zwl_seat_key(server, time, key, (uint32_t)value);
+	kwl_seat_key(server, time, key, (uint32_t)value);
 
 	/* A changed mask follows the key that changed it. */
 	if (modifiers != server->modifiers || locked != server->locked_modifiers) {
 		server->modifiers = modifiers;
 		server->locked_modifiers = locked;
-		zwl_seat_modifiers(server);
+		kwl_seat_modifiers(server);
 	}
 
 	/* Succeeded: the key and the modifier state are delivered. */
@@ -1250,14 +1250,14 @@ event_time(
 /* Recomputes the seat's capability bits and tells bound seats when they change. */
 static void
 update_capabilities(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	unsigned capabilities;
 	unsigned index;
 
 	/* The seat offers each class some open device provides. */
 	capabilities = 0;
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A free slot provides nothing. */
 		if (!server->inputs[index].live)
 			continue;
@@ -1283,7 +1283,7 @@ update_capabilities(
 
 	/* Bound seats learn the new set. */
 	server->capabilities = capabilities;
-	zwl_seat_capabilities(server);
+	kwl_seat_capabilities(server);
 
 	/* Succeeded: every seat binding agrees with the open devices. */
 	return;
@@ -1297,17 +1297,17 @@ update_capabilities(
  */
 static int
 attach_tablet(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int descriptor,
 	const char *path)
 {
-	struct zwl_input_device *device;
+	struct kwl_input_device *device;
 	unsigned index;
 	int error;
 
 	/* Find a free slot in the fixed device table. */
 	device = NULL;
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A slot not in use can hold the new device. */
 		if (!server->inputs[index].live) {
 			device = &server->inputs[index];
@@ -1326,7 +1326,7 @@ attach_tablet(
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/* The tablet reads the axes and tells the bound tablet seats (tablet.c). */
-	error = zwl_tablet_add(server, device);
+	error = kwl_tablet_add(server, device);
 	if (error != 0) {
 		device->fd = -1;
 		device->tablet = 0;
@@ -1355,17 +1355,17 @@ attach_tablet(
  */
 static int
 attach_touch(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	int descriptor,
 	const char *path)
 {
-	struct zwl_input_device *device;
+	struct kwl_input_device *device;
 	unsigned index;
 	int error;
 
 	/* Find a free slot in the fixed device table. */
 	device = NULL;
-	for (index = 0; index < ZWL_INPUT_MAX; index++) {
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		/* A slot not in use can hold the new device. */
 		if (!server->inputs[index].live) {
 			device = &server->inputs[index];
@@ -1384,7 +1384,7 @@ attach_touch(
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/* The touch screen reads its range (touch.c). */
-	error = zwl_touch_add(device);
+	error = kwl_touch_add(device);
 	if (error != 0) {
 		device->fd = -1;
 		device->touch = 0;
@@ -1412,8 +1412,8 @@ attach_touch(
  */
 static ssize_t
 input_read(
-	struct zwl_server *server,
-	struct zwl_input_device *device,
+	struct kwl_server *server,
+	struct kwl_input_device *device,
 	struct input_event *events,
 	size_t capacity)
 {
@@ -1476,8 +1476,8 @@ multitouch(
  * details on an Alt+click, network.c, ws099-p032).
  */
 int
-zwl_input_alt_held(
-	const struct zwl_server *server)
+kwl_input_alt_held(
+	const struct kwl_server *server)
 {
 	/* Either Alt. */
 	if ((server->modifier_keys & (HELD_LEFTALT | HELD_RIGHTALT)) != 0U)

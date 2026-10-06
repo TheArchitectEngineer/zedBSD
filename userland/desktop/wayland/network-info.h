@@ -16,8 +16,8 @@
  * the transfer rates), so the host tests run it alone.
  */
 
-#ifndef ZWL_NETWORK_INFO_H
-#define ZWL_NETWORK_INFO_H
+#ifndef KWL_NETWORK_INFO_H
+#define KWL_NETWORK_INFO_H
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
@@ -25,14 +25,14 @@
 #include <stdint.h>
 
 /* The most rows, and a row's label and value with their NULs. */
-#define ZWL_NETWORK_INFO_ROWS		12U
-#define ZWL_NETWORK_INFO_LABEL		24U
-#define ZWL_NETWORK_INFO_VALUE		64U
+#define KWL_NETWORK_INFO_ROWS		12U
+#define KWL_NETWORK_INFO_LABEL		24U
+#define KWL_NETWORK_INFO_VALUE		64U
 
 /* One row: its label, and its value. */
-struct zwl_network_info_row {
-	char label[ZWL_NETWORK_INFO_LABEL];
-	char value[ZWL_NETWORK_INFO_VALUE];
+struct kwl_network_info_row {
+	char label[KWL_NETWORK_INFO_LABEL];
+	char value[KWL_NETWORK_INFO_VALUE];
 };
 
 /*
@@ -40,7 +40,7 @@ struct zwl_network_info_row {
  * readings to show the rates: when (ms), which interface, its counts, and
  * whether it holds a reading (valid).
  */
-struct zwl_network_info_sample {
+struct kwl_network_info_sample {
 	unsigned valid;
 	uint64_t ms;
 	char name[KL_BACKEND_NETWORK_NAME_MAX];
@@ -52,7 +52,7 @@ struct zwl_network_info_sample {
  * What a reading is made of: the watch's state and scan, the interfaces
  * and the DNS servers read, and the time of the reading.
  */
-struct zwl_network_info_input {
+struct kwl_network_info_input {
 	const struct kl_backend_network_state *state;
 	const struct kl_backend_network_ap *scan;
 	size_t scan_count;
@@ -69,9 +69,9 @@ struct zwl_network_info_input {
  * title is the first row's value when the label is empty ("Wi-Fi" or
  * "Ethernet", or "Network" when nothing is connected).
  */
-unsigned zwl_network_info_build(const struct zwl_network_info_input *input, struct zwl_network_info_sample *previous, struct zwl_network_info_row *rows, unsigned capacity);
+unsigned kwl_network_info_build(const struct kwl_network_info_input *input, struct kwl_network_info_sample *previous, struct kwl_network_info_row *rows, unsigned capacity);
 
 /* Writes a count of bytes as B, KB, MB or GB (powers of 1024, one decimal above B). */
-void zwl_network_info_bytes(uint64_t bytes, char *text, size_t size);
+void kwl_network_info_bytes(uint64_t bytes, char *text, size_t size);
 
 #endif

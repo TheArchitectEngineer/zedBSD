@@ -8,7 +8,7 @@
 #  2. In A: select_begin, Right five times, copy (both through the protocol: ZWL EDIT action=... via=protocol); A's
 #     state showed a selection being made (flags with 0x10) and then something to paste (0x2).
 #  3. The previous application again (B), paste; B saved with Ctrl+S holds "HELLO".
-#  The state the buttons would show (Super+Alt+Q, zwl_edit_state; Text Editor's real state since ws102-p023): while
+#  The state the buttons would show (Super+Alt+Q, kwl_edit_state; Text Editor's real state since ws102-p023): while
 #  selecting 0xa3 (copy, cut, select all, select end), after the copy 0x67 (copy, cut, paste, select all, begin); Terminal 0x5 (copy, paste), wlshm 0x3f (the operations with keys).
 #  4. Terminal (no protocol, a terminal): copy is Ctrl+Shift+C (via=keys ... modifiers=0x5 terminal=1), cut has no keys
 #     (via=none); wlshm (no protocol): copy is Ctrl+C (modifiers=0x4 terminal=0); both keep running.

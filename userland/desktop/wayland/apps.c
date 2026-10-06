@@ -8,11 +8,11 @@
 /*
  * The applications of a desktop (ws142-p004; apps.h says what they are).
  *
- * zwl_apps_build gathers the windows into applications, puts them in the
+ * kwl_apps_build gathers the windows into applications, puts them in the
  * desktop's bar order (those the order knows where it has them, new ones
  * after them by their opening) and writes that order back, so that an
  * application that has gone leaves it and one that comes is added on the
- * right.  zwl_apps_move is the drag of an icon.
+ * right.  kwl_apps_move is the drag of an icon.
  */
 
 #include "apps.h"
@@ -20,16 +20,16 @@
 #include <stdio.h>
 #include <string.h>
 
-static int find_key(const struct zwl_apps *apps, unsigned count, const char *key);
-static void add_window(struct zwl_app *app, const struct zwl_apps_window *windows, unsigned index);
-static unsigned order_place(const struct zwl_apps_order *order, const char *key);
-static int comes_before(const struct zwl_app *app, unsigned place, const struct zwl_app *other, unsigned other_place);
+static int find_key(const struct kwl_apps *apps, unsigned count, const char *key);
+static void add_window(struct kwl_app *app, const struct kwl_apps_window *windows, unsigned index);
+static unsigned order_place(const struct kwl_apps_order *order, const char *key);
+static int comes_before(const struct kwl_app *app, unsigned place, const struct kwl_app *other, unsigned other_place);
 
 /*
  * Writes an application's key: its application ID, or its client's for a window without one.
  */
 void
-zwl_apps_key(
+kwl_apps_key(
 	const char *app_id,
 	uint64_t client,
 	char *key,
@@ -48,20 +48,20 @@ zwl_apps_key(
 /*
  * Gathers windows into applications in the bar's order, and the most
  * recently used order; the order is the desktop's bar order, read and
- * written back.  Windows past ZWL_APPS_MAX applications are left out,
- * and of an application's windows past ZWL_APPS_WINDOWS those raised
+ * written back.  Windows past KWL_APPS_MAX applications are left out,
+ * and of an application's windows past KWL_APPS_WINDOWS those raised
  * earliest.
  */
 void
-zwl_apps_build(
-	const struct zwl_apps_window *windows,
+kwl_apps_build(
+	const struct kwl_apps_window *windows,
 	unsigned count,
-	struct zwl_apps_order *order,
-	struct zwl_apps *apps)
+	struct kwl_apps_order *order,
+	struct kwl_apps *apps)
 {
-	struct zwl_app moving;
-	char key[ZWL_APPS_KEY];
-	unsigned places[ZWL_APPS_MAX];
+	struct kwl_app moving;
+	char key[KWL_APPS_KEY];
+	unsigned places[KWL_APPS_MAX];
 	unsigned place;
 	unsigned index;
 	unsigned at;
@@ -71,11 +71,11 @@ zwl_apps_build(
 	/* Each window joins its application, or starts one. */
 	apps->count = 0;
 	for (index = 0; index < count; index++) {
-		zwl_apps_key(windows[index].app_id, windows[index].client, key, sizeof(key));
+		kwl_apps_key(windows[index].app_id, windows[index].client, key, sizeof(key));
 		found = find_key(apps, apps->count, key);
 		if (found < 0) {
 			/* A new application, while there is room. */
-			if (apps->count >= ZWL_APPS_MAX)
+			if (apps->count >= KWL_APPS_MAX)
 				continue;
 			found = (int)apps->count;
 			memset(&apps->apps[found], 0, sizeof(apps->apps[found]));
@@ -132,12 +132,12 @@ zwl_apps_build(
  * others shift over).  Returns 0, or -1 for a place that is not there.
  */
 int
-zwl_apps_move(
-	struct zwl_apps_order *order,
+kwl_apps_move(
+	struct kwl_apps_order *order,
 	unsigned from,
 	unsigned to)
 {
-	char key[ZWL_APPS_KEY];
+	char key[KWL_APPS_KEY];
 	unsigned index;
 
 	/* Both places in the order. */
@@ -165,8 +165,8 @@ zwl_apps_move(
  * Finds an application by its key: its index in the bar's order, or -1.
  */
 int
-zwl_apps_find(
-	const struct zwl_apps *apps,
+kwl_apps_find(
+	const struct kwl_apps *apps,
 	const char *key)
 {
 	int found;
@@ -183,7 +183,7 @@ zwl_apps_find(
 /* Finds a key among the first applications: its index, or -1. */
 static int
 find_key(
-	const struct zwl_apps *apps,
+	const struct kwl_apps *apps,
 	unsigned count,
 	const char *key)
 {
@@ -204,8 +204,8 @@ find_key(
 /* Adds a window to its application, among its windows by the latest raise first. */
 static void
 add_window(
-	struct zwl_app *app,
-	const struct zwl_apps_window *windows,
+	struct kwl_app *app,
+	const struct kwl_apps_window *windows,
 	unsigned index)
 {
 	unsigned at;
@@ -219,7 +219,7 @@ add_window(
 		app->minimized = 0;
 
 	/* A full application keeps its latest raised: the new window only in place of an earlier one. */
-	if (app->window_count >= ZWL_APPS_WINDOWS) {
+	if (app->window_count >= KWL_APPS_WINDOWS) {
 		if (windows[app->windows[app->window_count - 1U]].map_order >= windows[index].map_order)
 			return;
 		app->window_count--;
@@ -240,7 +240,7 @@ add_window(
 /* Gives a key's place in a bar order, or the order's length when it is not there. */
 static unsigned
 order_place(
-	const struct zwl_apps_order *order,
+	const struct kwl_apps_order *order,
 	const char *key)
 {
 	unsigned index;
@@ -260,9 +260,9 @@ order_place(
 /* Tells whether an application comes before another in the bar: by its place, then (both new) by its opening. */
 static int
 comes_before(
-	const struct zwl_app *app,
+	const struct kwl_app *app,
 	unsigned place,
-	const struct zwl_app *other,
+	const struct kwl_app *other,
 	unsigned other_place)
 {
 	/* Different places decide. */

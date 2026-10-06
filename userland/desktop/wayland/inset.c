@@ -30,8 +30,8 @@
 #define INSET_DESTROY			0U
 #define INSET_EVENT_INSET		0U
 
-static int inset_create(struct zwl_object *manager, const unsigned char *bytes, size_t size);
-static void inset_covered(struct zwl_server *server, struct zwl_object *surface, const int32_t *panel, int32_t *right, int32_t *bottom);
+static int inset_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static void inset_covered(struct kwl_server *server, struct kwl_object *surface, const int32_t *panel, int32_t *right, int32_t *bottom);
 static uint32_t inset_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -39,8 +39,8 @@ static uint32_t inset_word(const unsigned char *bytes, size_t offset);
  * window's keiland_keyboard_inset_v1.
  */
 int
-zwl_inset_request(
-	struct zwl_object *object,
+kwl_inset_request(
+	struct kwl_object *object,
 	uint32_t opcode,
 	const unsigned char *bytes,
 	size_t size)
@@ -48,9 +48,9 @@ zwl_inset_request(
 	int error;
 
 	/* The manager: it goes, or it gives a window its inset. */
-	if (object->kind == ZWL_KEYBOARD_INSET_MANAGER) {
+	if (object->kind == KWL_KEYBOARD_INSET_MANAGER) {
 		if (opcode == INSET_MANAGER_DESTROY && size == 0U) {
-			zwl_object_destroy(object);
+			kwl_object_destroy(object);
 			return 0;
 		}
 
@@ -66,7 +66,7 @@ zwl_inset_request(
 	/* The inset's only request is destroy. */
 	if (opcode != INSET_DESTROY || size != 0U)
 		return EPROTO;
-	zwl_object_destroy(object);
+	kwl_object_destroy(object);
 
 	/* Succeeded: the window hears no more. */
 	return 0;
@@ -77,18 +77,18 @@ zwl_inset_request(
  * on (and are told nothing).
  */
 void
-zwl_inset_object_gone(
-	struct zwl_object *object)
+kwl_inset_object_gone(
+	struct kwl_object *object)
 {
-	struct zwl_object *other;
+	struct kwl_object *other;
 
 	/* Only a toplevel is named by an inset. */
-	if (object->kind != ZWL_TOPLEVEL)
+	if (object->kind != KWL_TOPLEVEL)
 		return;
 
 	/* Each inset of the client that names it. */
 	for (other = object->client->objects; other != NULL; other = other->next) {
-		if (other->kind == ZWL_KEYBOARD_INSET && other->top == object)
+		if (other->kind == KWL_KEYBOARD_INSET && other->top == object)
 			other->top = NULL;
 	}
 }
@@ -100,24 +100,24 @@ zwl_inset_object_gone(
  * keyboard opens or closes, and by the work area before its configures.
  */
 void
-zwl_keyboard_inset_notify(
-	struct zwl_server *server,
+kwl_keyboard_inset_notify(
+	struct kwl_server *server,
 	const int32_t *panel)
 {
-	struct zwl_client *client;
-	struct zwl_object *object;
-	struct zwl_object *surface;
+	struct kwl_client *client;
+	struct kwl_object *object;
+	struct kwl_object *surface;
 	int32_t words[3];
 	uint32_t reason;
 	int32_t right;
 	int32_t bottom;
 
 	/* The reason: no keyboard, the right column, or the bottom row (the wider than tall panel). */
-	reason = ZWL_INSET_REASON_NONE;
+	reason = KWL_INSET_REASON_NONE;
 	if (panel != NULL && panel[2] >= panel[3])
-		reason = ZWL_INSET_REASON_BOTTOM;
+		reason = KWL_INSET_REASON_BOTTOM;
 	else if (panel != NULL)
-		reason = ZWL_INSET_REASON_RIGHT;
+		reason = KWL_INSET_REASON_RIGHT;
 
 	/* Each live client's insets. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -125,7 +125,7 @@ zwl_keyboard_inset_notify(
 			continue;
 		for (object = client->objects; object != NULL; object = object->next) {
 			/* An inset whose window is still there. */
-			if (object->kind != ZWL_KEYBOARD_INSET || object->dead || object->top == NULL)
+			if (object->kind != KWL_KEYBOARD_INSET || object->dead || object->top == NULL)
 				continue;
 			surface = object->top->surface;
 			if (surface == NULL || surface->dead)
@@ -141,7 +141,7 @@ zwl_keyboard_inset_notify(
 			words[0] = right;
 			words[1] = bottom;
 			words[2] = (int32_t)reason;
-			(void)zwl_emit(client, object->id, INSET_EVENT_INSET, words, sizeof(words));
+			(void)kwl_emit(client, object->id, INSET_EVENT_INSET, words, sizeof(words));
 			printf("ZWL INSET client=%llu surface=%u right=%d bottom=%d reason=%u\n", (unsigned long long)client->number, surface->id, right, bottom, reason);
 		}
 	}
@@ -150,24 +150,24 @@ zwl_keyboard_inset_notify(
 /* Makes a window's inset (get_inset: the new ID and the window's xdg_toplevel). */
 static int
 inset_create(
-	struct zwl_object *manager,
+	struct kwl_object *manager,
 	const unsigned char *bytes,
 	size_t size)
 {
-	struct zwl_object *toplevel;
-	struct zwl_object *created;
+	struct kwl_object *toplevel;
+	struct kwl_object *created;
 	uint32_t id;
 
 	/* The new ID and one of the client's toplevels. */
 	if (size != 8U)
 		return EPROTO;
 	id = inset_word(bytes, 0U);
-	toplevel = zwl_find(manager->client, inset_word(bytes, 4U));
-	if (toplevel == NULL || toplevel->kind != ZWL_TOPLEVEL)
+	toplevel = kwl_find(manager->client, inset_word(bytes, 4U));
+	if (toplevel == NULL || toplevel->kind != KWL_TOPLEVEL)
 		return EPROTO;
 
 	/* The inset, naming its window. */
-	created = zwl_create(manager->client, id, ZWL_KEYBOARD_INSET, manager->version);
+	created = kwl_create(manager->client, id, KWL_KEYBOARD_INSET, manager->version);
 	if (created == NULL)
 		return EPROTO;
 	created->top = toplevel;
@@ -185,8 +185,8 @@ inset_create(
  */
 static void
 inset_covered(
-	struct zwl_server *server,
-	struct zwl_object *surface,
+	struct kwl_server *server,
+	struct kwl_object *surface,
 	const int32_t *panel,
 	int32_t *right,
 	int32_t *bottom)
@@ -204,8 +204,8 @@ inset_covered(
 	x = surface->x;
 	y = surface->y;
 	if (server->glass)
-		(void)zwl_glass_body_origin(server, surface, &x, &y);
-	zwl_surface_size(surface, &width, &height);
+		(void)kwl_glass_body_origin(server, surface, &x, &y);
+	kwl_surface_size(surface, &width, &height);
 
 	/* A docked window: the size it is being told (the work area's, ws102-p007), not its image's yet. */
 	if (surface->maximized && surface->window_width != 0U) {

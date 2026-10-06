@@ -11,9 +11,9 @@
  *
  * A press of either Super with no Shift, Control or Alt held arms the tap.
  * Any other key pressed meanwhile (the other Super too), a pointer button,
- * a wheel turn or a touch disarms it (zwl_super_tap_cancel), so Super+Tab,
+ * a wheel turn or a touch disarms it (kwl_super_tap_cancel), so Super+Tab,
  * Super+L and the Super+Alt shortcuts stay what they are.  The release of
- * the key that armed it, within ZWL_SUPER_TAP_MS of its press, is the tap.
+ * the key that armed it, within KWL_SUPER_TAP_MS of its press, is the tap.
  * A key's repeat (state 2) changes nothing.  The keys still go to the
  * client as before (plan/ws142/phase001 D9).
  */
@@ -28,8 +28,8 @@
  * completes a tap, 0 otherwise.
  */
 int
-zwl_super_tap_key(
-	struct zwl_super_tap *tap,
+kwl_super_tap_key(
+	struct kwl_super_tap *tap,
 	uint32_t key,
 	uint32_t state,
 	uint32_t others_held,
@@ -45,7 +45,7 @@ zwl_super_tap_key(
 
 	/* Which key it is. */
 	super = 0;
-	if (key == ZWL_SUPER_TAP_LEFT || key == ZWL_SUPER_TAP_RIGHT)
+	if (key == KWL_SUPER_TAP_LEFT || key == KWL_SUPER_TAP_RIGHT)
 		super = 1;
 
 	/* A press: a Super alone arms the tap, anything else disarms it. */
@@ -60,7 +60,7 @@ zwl_super_tap_key(
 		}
 
 		/* Another key, or the other Super, while armed. */
-		zwl_super_tap_cancel(tap);
+		kwl_super_tap_cancel(tap);
 		return 0;
 	}
 
@@ -71,8 +71,8 @@ zwl_super_tap_key(
 	/* The release of the armed Super: a tap when it came soon enough. */
 	armed_key = tap->key;
 	held_ms = now_ms - tap->down_ms;
-	zwl_super_tap_cancel(tap);
-	if (armed_key != key || held_ms > ZWL_SUPER_TAP_MS)
+	kwl_super_tap_cancel(tap);
+	if (armed_key != key || held_ms > KWL_SUPER_TAP_MS)
 		return 0;
 
 	/* Succeeded: a tap. */
@@ -83,8 +83,8 @@ zwl_super_tap_key(
  * Disarms the tap: something else happened while Super was down.
  */
 void
-zwl_super_tap_cancel(
-	struct zwl_super_tap *tap)
+kwl_super_tap_cancel(
+	struct kwl_super_tap *tap)
 {
 	/* Nothing armed. */
 	tap->armed = 0U;

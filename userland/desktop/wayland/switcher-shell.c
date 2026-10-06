@@ -33,7 +33,7 @@
  * keeps its release from the windows.
  */
 
-#include "zwl.h"
+#include "kwl.h"
 #include "apps.h"
 #include "apps-bar.h"
 #include "glass.h"
@@ -57,19 +57,19 @@
 struct switch_center {
 	struct apps_panel panel;
 	struct apps_rect rect;
-	struct apps_rect icons[ZWL_APPS_MAX];
-	int apps[ZWL_APPS_MAX];
+	struct apps_rect icons[KWL_APPS_MAX];
+	int apps[KWL_APPS_MAX];
 	unsigned icon_count;
 	int selected;
 };
 
-static int view_and_selection(struct zwl_server *server, struct apps_view *view, int *found);
-static void present(struct zwl_server *server);
-static int center_build(struct zwl_server *server, const struct apps_view *view, struct switch_center *center);
-static int bar_panel(struct zwl_server *server, const struct apps_view *view, struct apps_panel *panel);
-static void bring_app(struct zwl_server *server, const struct apps_view *view, int found, const char *how);
-static void close_switcher(struct zwl_server *server);
-static void alt_released(struct zwl_server *server);
+static int view_and_selection(struct kwl_server *server, struct apps_view *view, int *found);
+static void present(struct kwl_server *server);
+static int center_build(struct kwl_server *server, const struct apps_view *view, struct switch_center *center);
+static int bar_panel(struct kwl_server *server, const struct apps_view *view, struct apps_panel *panel);
+static void bring_app(struct kwl_server *server, const struct apps_view *view, int found, const char *how);
+static void close_switcher(struct kwl_server *server);
+static void alt_released(struct kwl_server *server);
 static const char *via_name(unsigned via);
 static const char *placement_name(unsigned placement);
 
@@ -77,8 +77,8 @@ static const char *placement_name(unsigned placement);
  * Tells whether the switcher is on.
  */
 int
-zwl_switch_on(
-	struct zwl_server *server)
+kwl_switch_on(
+	struct kwl_server *server)
 {
 	/* Off. */
 	if (server->switcher.on == 0U)
@@ -92,8 +92,8 @@ zwl_switch_on(
  * Opens the switcher (Alt+Tab, a tap of three fingers).  Returns 1 when it opened.
  */
 int
-zwl_switch_open(
-	struct zwl_server *server,
+kwl_switch_open(
+	struct kwl_server *server,
 	unsigned via)
 {
 	struct apps_view view;
@@ -104,26 +104,26 @@ zwl_switch_open(
 	int error;
 
 	/* Only where the switcher may show, with applications to switch between. */
-	allowed = zwl_glass_switch_place(server, &placement);
+	allowed = kwl_glass_switch_place(server, &placement);
 	if (!allowed)
 		return 0;
-	collected = zwl_apps_view_collect(server, &view);
+	collected = kwl_apps_view_collect(server, &view);
 	if (!collected)
 		return 0;
-	error = zwl_switcher_open(&server->switcher, &view.apps, view.current, via, placement);
+	error = kwl_switcher_open(&server->switcher, &view.apps, view.current, via, placement);
 	if (error != 0)
 		return 0;
 
 	/* When it opened: a quick Alt+Tab is told from it; a swipe begins afresh. */
-	server->switcher.opened_ms = zwl_milliseconds();
-	zwl_swipe_end(&server->pad_swipe);
+	server->switcher.opened_ms = kwl_milliseconds();
+	kwl_swipe_end(&server->pad_swipe);
 
 	/* The bar's own previews give way to it. */
-	zwl_apps_bar_hide(server, "switch");
+	kwl_apps_bar_hide(server, "switch");
 
 	/* Logged and shown. */
-	selected = zwl_switcher_selected(&server->switcher);
-	printf("ZWL SWITCH open via=%s index=%u app=%s placement=%s count=%u at_ms=%llu\n", via_name(via), server->switcher.index, selected, placement_name(placement), server->switcher.count, (unsigned long long)zwl_milliseconds());
+	selected = kwl_switcher_selected(&server->switcher);
+	printf("ZWL SWITCH open via=%s index=%u app=%s placement=%s count=%u at_ms=%llu\n", via_name(via), server->switcher.index, selected, placement_name(placement), server->switcher.count, (unsigned long long)kwl_milliseconds());
 	present(server);
 	return 1;
 }
@@ -132,8 +132,8 @@ zwl_switch_open(
  * Moves the selection.
  */
 void
-zwl_switch_step(
-	struct zwl_server *server,
+kwl_switch_step(
+	struct kwl_server *server,
 	int delta,
 	const char *how)
 {
@@ -144,9 +144,9 @@ zwl_switch_step(
 		return;
 
 	/* The next one, logged and shown. */
-	zwl_switcher_step(&server->switcher, delta);
-	selected = zwl_switcher_selected(&server->switcher);
-	printf("ZWL SWITCH step index=%u app=%s via=%s at_ms=%llu\n", server->switcher.index, selected, how, (unsigned long long)zwl_milliseconds());
+	kwl_switcher_step(&server->switcher, delta);
+	selected = kwl_switcher_selected(&server->switcher);
+	printf("ZWL SWITCH step index=%u app=%s via=%s at_ms=%llu\n", server->switcher.index, selected, how, (unsigned long long)kwl_milliseconds());
 	present(server);
 }
 
@@ -154,8 +154,8 @@ zwl_switch_step(
  * Brings the selected application's latest window, and closes the switcher.
  */
 void
-zwl_switch_commit(
-	struct zwl_server *server,
+kwl_switch_commit(
+	struct kwl_server *server,
 	const char *how)
 {
 	struct apps_view view;
@@ -169,7 +169,7 @@ zwl_switch_commit(
 	/* The application, if it is still there. */
 	known = view_and_selection(server, &view, &found);
 	if (!known) {
-		zwl_switch_cancel(server, "gone");
+		kwl_switch_cancel(server, "gone");
 		return;
 	}
 
@@ -181,8 +181,8 @@ zwl_switch_commit(
  * Gives the switcher up, changing nothing.
  */
 void
-zwl_switch_cancel(
-	struct zwl_server *server,
+kwl_switch_cancel(
+	struct kwl_server *server,
 	const char *why)
 {
 	/* Only while on. */
@@ -203,8 +203,8 @@ zwl_switch_cancel(
  * own release goes on to the windows).
  */
 int
-zwl_switch_key(
-	struct zwl_server *server,
+kwl_switch_key(
+	struct kwl_server *server,
 	uint32_t key,
 	uint32_t state)
 {
@@ -219,7 +219,7 @@ zwl_switch_key(
 	    (server->modifiers & (SWITCH_CONTROL | SWITCH_SUPER)) == 0U) {
 		/* Tab's release is the switcher's while it is on. */
 		if (state == 0U) {
-			on = zwl_switch_on(server);
+			on = kwl_switch_on(server);
 			if (!on)
 				return 0;
 			return 1;
@@ -232,14 +232,14 @@ zwl_switch_key(
 
 		/* Off: it opens on the current application, with Shift or without (BUG-209). */
 		if (!server->switcher.on) {
-			opened = zwl_switch_open(server, ZWL_SWITCHER_VIA_KEYS);
+			opened = kwl_switch_open(server, KWL_SWITCHER_VIA_KEYS);
 			if (!opened)
 				return 0;
 			return 1;
 		}
 
 		/* On: one icon to the right (with Shift, to the left). */
-		zwl_switch_step(server, delta, "tab");
+		kwl_switch_step(server, delta, "tab");
 		return 1;
 	}
 
@@ -253,8 +253,8 @@ zwl_switch_key(
 	 */
 	if ((key == KEY_LEFTALT || key == KEY_RIGHTALT) &&
 	    state == 0U) {
-		held = zwl_input_alt_held(server);
-		if (!held && server->switcher.via == ZWL_SWITCHER_VIA_KEYS)
+		held = kwl_input_alt_held(server);
+		if (!held && server->switcher.via == KWL_SWITCHER_VIA_KEYS)
 			alt_released(server);
 
 		/* The release goes on to the windows. */
@@ -279,16 +279,16 @@ zwl_switch_key(
 		switch (key) {
 		case KEY_TAB:
 		case KEY_RIGHT:
-			zwl_switch_step(server, 1, "key");
+			kwl_switch_step(server, 1, "key");
 			break;
 		case KEY_LEFT:
-			zwl_switch_step(server, -1, "key");
+			kwl_switch_step(server, -1, "key");
 			break;
 		case KEY_ENTER:
-			zwl_switch_commit(server, "enter");
+			kwl_switch_commit(server, "enter");
 			break;
 		default:
-			zwl_switch_cancel(server, "escape");
+			kwl_switch_cancel(server, "escape");
 			break;
 		}
 
@@ -308,8 +308,8 @@ zwl_switch_key(
  * the button is the switcher's.
  */
 int
-zwl_switch_button(
-	struct zwl_server *server,
+kwl_switch_button(
+	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
@@ -344,17 +344,17 @@ zwl_switch_button(
 	found = -1;
 	built = view_and_selection(server, &view, &found);
 	tile = -1;
-	if (built && server->switcher.placement == ZWL_SWITCHER_BAR) {
+	if (built && server->switcher.placement == KWL_SWITCHER_BAR) {
 		built = bar_panel(server, &view, &panel);
 		if (built)
-			tile = zwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
+			tile = kwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
 	} else if (built) {
 		built = center_build(server, &view, &center);
 		if (built) {
 			panel = center.panel;
-			tile = zwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
+			tile = kwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
 			for (index = 0; index < center.icon_count; index++) {
-				hit = zwl_apps_inside(&center.icons[index], server->pointer_x, server->pointer_y);
+				hit = kwl_apps_inside(&center.icons[index], server->pointer_x, server->pointer_y);
 				if (hit && center.apps[index] >= 0) {
 					bring_app(server, &view, center.apps[index], "icon");
 					return 1;
@@ -367,18 +367,18 @@ zwl_switch_button(
 	if (built && tile >= 0) {
 		printf("ZWL SWITCH commit app=%s surface=%u via=preview client=%llu\n", view.apps.apps[found].key, panel.surfaces[tile]->id, (unsigned long long)panel.surfaces[tile]->client->number);
 		close_switcher(server);
-		zwl_glass_switch_to(server, panel.surfaces[tile], "switch");
+		kwl_glass_switch_to(server, panel.surfaces[tile], "switch");
 		return 1;
 	}
 
 	/* Elsewhere: the pad's switcher brings its selection, the keyboard's gives up. */
-	if (server->switcher.via == ZWL_SWITCHER_VIA_PAD) {
-		zwl_switch_commit(server, "pad");
+	if (server->switcher.via == KWL_SWITCHER_VIA_PAD) {
+		kwl_switch_commit(server, "pad");
 		return 1;
 	}
 
 	/* The keyboard's gives up. */
-	zwl_switch_cancel(server, "press");
+	kwl_switch_cancel(server, "press");
 	return 1;
 }
 
@@ -389,8 +389,8 @@ zwl_switch_button(
  * Returns 1 when it took the swipe (the switcher is on).
  */
 int
-zwl_switch_pad_swipe(
-	struct zwl_server *server,
+kwl_switch_pad_swipe(
+	struct kwl_server *server,
 	unsigned direction)
 {
 	/* Only while on. */
@@ -398,12 +398,12 @@ zwl_switch_pad_swipe(
 		return 0;
 
 	/* Each swipe's work; up, or no decision yet, does nothing. */
-	if (direction == ZWL_SWIPE_RIGHT) {
-		zwl_switch_step(server, 1, "pad");
-	} else if (direction == ZWL_SWIPE_LEFT) {
-		zwl_switch_step(server, -1, "pad");
-	} else if (direction == ZWL_SWIPE_DOWN) {
-		zwl_switch_commit(server, "pad-swipe");
+	if (direction == KWL_SWIPE_RIGHT) {
+		kwl_switch_step(server, 1, "pad");
+	} else if (direction == KWL_SWIPE_LEFT) {
+		kwl_switch_step(server, -1, "pad");
+	} else if (direction == KWL_SWIPE_DOWN) {
+		kwl_switch_commit(server, "pad-swipe");
 	}
 
 	/* Succeeded: the swipe is the switcher's. */
@@ -414,8 +414,8 @@ zwl_switch_pad_swipe(
  * Gives the switcher up when it may no longer show (App Home, Wiseview, a fullscreen window, the lock).
  */
 void
-zwl_switch_tick(
-	struct zwl_server *server)
+kwl_switch_tick(
+	struct kwl_server *server)
 {
 	unsigned placement;
 	int allowed;
@@ -425,17 +425,17 @@ zwl_switch_tick(
 		return;
 
 	/* Away. */
-	allowed = zwl_glass_switch_place(server, &placement);
+	allowed = kwl_glass_switch_place(server, &placement);
 	if (!allowed)
-		zwl_switch_cancel(server, "away");
+		kwl_switch_cancel(server, "away");
 }
 
 /*
  * Draws the switcher in the middle of the output, when it shows there.
  */
 void
-zwl_switch_draw(
-	struct zwl_server *server,
+kwl_switch_draw(
+	struct kwl_server *server,
 	VkCommandBuffer command)
 {
 	static const float faint[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
@@ -443,7 +443,7 @@ zwl_switch_draw(
 	struct apps_view view;
 	struct switch_center center;
 	struct glass_shape shape;
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 	unsigned index;
 	float alpha;
 	int found;
@@ -451,7 +451,7 @@ zwl_switch_draw(
 	int over;
 
 	/* Only on, in the middle. */
-	if (!server->switcher.on || server->switcher.placement != ZWL_SWITCHER_CENTER)
+	if (!server->switcher.on || server->switcher.placement != KWL_SWITCHER_CENTER)
 		return;
 	built = view_and_selection(server, &view, &found);
 	if (built)
@@ -484,9 +484,9 @@ zwl_switch_draw(
 	glass_shape_draw(server, command, &shape);
 
 	/* The selected application's previews, the one under the pointer lit, a minimized one faint. */
-	over = zwl_apps_tile_at(center.panel.tiles, center.panel.count, server->pointer_x, server->pointer_y);
+	over = kwl_apps_tile_at(center.panel.tiles, center.panel.count, server->pointer_x, server->pointer_y);
 	for (index = 0; index < center.panel.count; index++) {
-		zwl_glass_draw_preview(server, command, center.panel.surfaces[index], center.panel.tiles[index].x, center.panel.tiles[index].y, center.panel.tiles[index].width, center.panel.tiles[index].height, over == (int)index);
+		kwl_glass_draw_preview(server, command, center.panel.surfaces[index], center.panel.tiles[index].x, center.panel.tiles[index].y, center.panel.tiles[index].width, center.panel.tiles[index].height, over == (int)index);
 		if (center.panel.surfaces[index]->minimized)
 			glass_draw_solid(server, command, (float)center.panel.tiles[index].x, (float)center.panel.tiles[index].y, (float)center.panel.tiles[index].width, (float)center.panel.tiles[index].height, 10.0f, faint);
 	}
@@ -501,14 +501,14 @@ zwl_switch_draw(
 		alpha = 1.0f;
 		if (view.apps.apps[center.apps[index]].minimized)
 			alpha = 0.45f;
-		zwl_glass_draw_app_mark(server, command, surface, center.icons[index].x + (CENTER_ICON - CENTER_MARK) / 2, center.icons[index].y + CENTER_ICON / 2, CENTER_MARK, alpha);
+		kwl_glass_draw_app_mark(server, command, surface, center.icons[index].x + (CENTER_ICON - CENTER_MARK) / 2, center.icons[index].y + CENTER_ICON / 2, CENTER_MARK, alpha);
 	}
 }
 
 /* Gathers the desktop's applications and finds the selected one.  Returns 0 when it is gone. */
 static int
 view_and_selection(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	struct apps_view *view,
 	int *found)
 {
@@ -517,13 +517,13 @@ view_and_selection(
 
 	/* The applications now. */
 	*found = -1;
-	collected = zwl_apps_view_collect(server, view);
-	selected = zwl_switcher_selected(&server->switcher);
+	collected = kwl_apps_view_collect(server, view);
+	selected = kwl_switcher_selected(&server->switcher);
 	if (!collected || selected == NULL)
 		return 0;
 
 	/* The selected one among them. */
-	*found = zwl_apps_find(&view->apps, selected);
+	*found = kwl_apps_find(&view->apps, selected);
 	if (*found < 0)
 		return 0;
 
@@ -538,7 +538,7 @@ view_and_selection(
  */
 static void
 present(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	struct apps_view view;
 	const char *selected;
@@ -549,27 +549,27 @@ present(
 
 	/* Where it may show now. */
 	server->dirty = 1;
-	allowed = zwl_glass_switch_place(server, &placement);
-	selected = zwl_switcher_selected(&server->switcher);
+	allowed = kwl_glass_switch_place(server, &placement);
+	selected = kwl_switcher_selected(&server->switcher);
 	if (!allowed || selected == NULL)
 		return;
 
 	/* At the icon, when the application has one. */
-	if (placement == ZWL_SWITCHER_BAR) {
-		built = zwl_apps_view_build(server, &view);
+	if (placement == KWL_SWITCHER_BAR) {
+		built = kwl_apps_view_build(server, &view);
 		found = -1;
 		if (built)
-			found = zwl_apps_find(&view.apps, selected);
+			found = kwl_apps_find(&view.apps, selected);
 		if (found >= 0 && found < (int)view.shown) {
-			server->switcher.placement = ZWL_SWITCHER_BAR;
-			zwl_apps_bar_show(server, &view, selected, ZWL_APPS_VIA_SWITCH);
+			server->switcher.placement = KWL_SWITCHER_BAR;
+			kwl_apps_bar_show(server, &view, selected, KWL_APPS_VIA_SWITCH);
 			return;
 		}
 	}
 
 	/* Otherwise in the middle. */
-	server->switcher.placement = ZWL_SWITCHER_CENTER;
-	zwl_apps_bar_hide(server, "switch");
+	server->switcher.placement = KWL_SWITCHER_CENTER;
+	kwl_apps_bar_hide(server, "switch");
 	printf("ZWL SWITCH center app=%s\n", selected);
 }
 
@@ -580,7 +580,7 @@ present(
  */
 static int
 center_build(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct apps_view *view,
 	struct switch_center *center)
 {
@@ -592,19 +592,19 @@ center_build(
 	int found;
 
 	/* The selected application's previews. */
-	selected = zwl_switcher_selected(&server->switcher);
+	selected = kwl_switcher_selected(&server->switcher);
 	if (selected == NULL)
 		return 0;
-	found = zwl_apps_find(&view->apps, selected);
+	found = kwl_apps_find(&view->apps, selected);
 	if (found < 0)
 		return 0;
-	zwl_apps_tiles_layout(server, view, (unsigned)found, &center->panel);
+	kwl_apps_tiles_layout(server, view, (unsigned)found, &center->panel);
 
 	/* The icons in the switcher's order (an application gone since keeps its place, empty). */
 	center->icon_count = server->switcher.count;
 	center->selected = (int)server->switcher.index;
 	for (index = 0; index < center->icon_count; index++)
-		center->apps[index] = zwl_apps_find(&view->apps, server->switcher.keys[index]);
+		center->apps[index] = kwl_apps_find(&view->apps, server->switcher.keys[index]);
 
 	/* The panel's size and place in the middle. */
 	icons_width = (int32_t)center->icon_count * CENTER_ICON;
@@ -615,8 +615,8 @@ center_build(
 	center->rect.height = PANEL_PAD + center->panel.rect.height + CENTER_GAP + CENTER_ICON + PANEL_PAD;
 	center->rect.x = ((int32_t)server->width - center->rect.width) / 2;
 	center->rect.y = ((int32_t)server->height - center->rect.height) / 2;
-	if (center->rect.y < ZWL_GLASS_BAR + PANEL_DROP)
-		center->rect.y = ZWL_GLASS_BAR + PANEL_DROP;
+	if (center->rect.y < KWL_GLASS_BAR + PANEL_DROP)
+		center->rect.y = KWL_GLASS_BAR + PANEL_DROP;
 
 	/* The previews in its upper part, centred. */
 	for (index = 0; index < center->panel.count; index++) {
@@ -640,7 +640,7 @@ center_build(
 /* Gives the bar's previews of the selection, when it shows there.  Returns 0 otherwise. */
 static int
 bar_panel(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct apps_view *view,
 	struct apps_panel *panel)
 {
@@ -650,13 +650,13 @@ bar_panel(
 
 	/* The bar's own view, with the icons' places. */
 	(void)view;
-	built = zwl_apps_view_build(server, &bar);
+	built = kwl_apps_view_build(server, &bar);
 	if (!built)
 		return 0;
 
 	/* Its panel of the selection. */
-	selected = zwl_switcher_selected(&server->switcher);
-	built = zwl_apps_bar_panel(server, &bar, selected, panel);
+	selected = kwl_switcher_selected(&server->switcher);
+	built = kwl_apps_bar_panel(server, &bar, selected, panel);
 	if (!built)
 		return 0;
 
@@ -667,20 +667,20 @@ bar_panel(
 /* Brings an application's latest window, and closes the switcher. */
 static void
 bring_app(
-	struct zwl_server *server,
+	struct kwl_server *server,
 	const struct apps_view *view,
 	int found,
 	const char *how)
 {
-	struct zwl_object *surface;
+	struct kwl_object *surface;
 
 	/* Its latest raised window. */
 	surface = view->surfaces[view->apps.apps[found].windows[0]];
-	printf("ZWL SWITCH commit app=%s surface=%u via=%s at_ms=%llu client=%llu\n", view->apps.apps[found].key, surface->id, how, (unsigned long long)zwl_milliseconds(), (unsigned long long)surface->client->number);
+	printf("ZWL SWITCH commit app=%s surface=%u via=%s at_ms=%llu client=%llu\n", view->apps.apps[found].key, surface->id, how, (unsigned long long)kwl_milliseconds(), (unsigned long long)surface->client->number);
 
 	/* Closed, then brought. */
 	close_switcher(server);
-	zwl_glass_switch_to(server, surface, "switch");
+	kwl_glass_switch_to(server, surface, "switch");
 }
 
 /*
@@ -689,34 +689,34 @@ bring_app(
  */
 static void
 alt_released(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	uint64_t now;
 	unsigned sticky;
 	int brings;
 
 	/* What letting Alt go does now. */
-	now = zwl_milliseconds();
+	now = kwl_milliseconds();
 	sticky = server->switcher.sticky;
-	brings = zwl_switcher_alt_released(&server->switcher, now);
+	brings = kwl_switcher_alt_released(&server->switcher, now);
 	if (brings) {
-		zwl_switch_commit(server, "alt");
+		kwl_switch_commit(server, "alt");
 		return;
 	}
 
 	/* Left open by this release (the first after a quick Alt+Tab); the log says so once. */
 	if (!sticky && server->switcher.sticky)
-		printf("ZWL SWITCH stay via=quick-alt index=%u app=%s held_ms=%llu\n", server->switcher.index, zwl_switcher_selected(&server->switcher), (unsigned long long)(now - server->switcher.opened_ms));
+		printf("ZWL SWITCH stay via=quick-alt index=%u app=%s held_ms=%llu\n", server->switcher.index, kwl_switcher_selected(&server->switcher), (unsigned long long)(now - server->switcher.opened_ms));
 }
 
 /* Closes the switcher and its previews. */
 static void
 close_switcher(
-	struct zwl_server *server)
+	struct kwl_server *server)
 {
 	/* Off. */
-	zwl_switcher_close(&server->switcher);
-	zwl_apps_bar_hide(server, "switch");
+	kwl_switcher_close(&server->switcher);
+	kwl_apps_bar_hide(server, "switch");
 	server->dirty = 1;
 }
 
@@ -726,7 +726,7 @@ via_name(
 	unsigned via)
 {
 	/* The keys or the pad. */
-	if (via == ZWL_SWITCHER_VIA_PAD)
+	if (via == KWL_SWITCHER_VIA_PAD)
 		return "pad";
 	return "keys";
 }
@@ -737,7 +737,7 @@ placement_name(
 	unsigned placement)
 {
 	/* The bar or the middle. */
-	if (placement == ZWL_SWITCHER_CENTER)
+	if (placement == KWL_SWITCHER_CENTER)
 		return "center";
 	return "bar";
 }

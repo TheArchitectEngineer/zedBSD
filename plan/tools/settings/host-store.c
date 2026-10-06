@@ -176,130 +176,130 @@ test_keys(void)
 static void
 test_read(void)
 {
-	struct zwl_settings_store store;
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_store store;
+	struct kwl_settings_entry *entry;
 	int error;
 
 	put_file("# a comment\nunknown.key=1\npointer.speed=400\nwindow.opacity=x\nbroken line\nkeyboard.repeat.rate=30\nkeyboard.repeat.rate=40\nwallpaper=relative.ppm\nsound.volume=40\n");
-	error = zwl_settings_store_open(&store, test_home);
+	error = kwl_settings_store_open(&store, test_home);
 	check(error == 0, "read: opens");
-	zwl_settings_store_default(&store, "window.opacity", "97");
-	error = zwl_settings_store_load(&store);
+	kwl_settings_store_default(&store, "window.opacity", "97");
+	error = kwl_settings_store_load(&store);
 	check(error == 0, "read: loads");
-	entry = zwl_settings_store_find(&store, "pointer.speed");
+	entry = kwl_settings_store_find(&store, "pointer.speed");
 	check(entry != NULL && strcmp(entry->value, "300") == 0 && entry->chosen, "read: pointer.speed 400 is moved to 300 (%s)", entry != NULL ? entry->value : "-");
-	entry = zwl_settings_store_find(&store, "window.opacity");
+	entry = kwl_settings_store_find(&store, "window.opacity");
 	check(entry != NULL && strcmp(entry->value, "97") == 0 && !entry->chosen, "read: a bad opacity leaves the command line's default 97");
-	entry = zwl_settings_store_find(&store, "keyboard.repeat.rate");
+	entry = kwl_settings_store_find(&store, "keyboard.repeat.rate");
 	check(entry != NULL && strcmp(entry->value, "30") == 0, "read: a key given twice keeps its first value");
-	entry = zwl_settings_store_find(&store, "wallpaper");
+	entry = kwl_settings_store_find(&store, "wallpaper");
 	check(entry != NULL && !entry->chosen, "read: a relative wallpaper is passed over");
-	entry = zwl_settings_store_find(&store, "sound.volume");
+	entry = kwl_settings_store_find(&store, "sound.volume");
 	check(entry != NULL && !entry->known && entry->start_chosen && strcmp(entry->start, "40") == 0, "read: the sound's start is read, not in effect until audiod reports");
-	check(zwl_settings_store_find(&store, "unknown.key") == NULL, "read: an unknown key is not held");
-	zwl_settings_store_close(&store);
+	check(kwl_settings_store_find(&store, "unknown.key") == NULL, "read: an unknown key is not held");
+	kwl_settings_store_close(&store);
 }
 
 static void
 test_set(void)
 {
-	struct zwl_settings_store store;
-	struct zwl_settings_entry *entry;
+	struct kwl_settings_store store;
+	struct kwl_settings_entry *entry;
 	int error;
 
 	put_file("");
-	(void)zwl_settings_store_open(&store, test_home);
-	(void)zwl_settings_store_load(&store);
-	check(zwl_settings_store_choose(&store, "mouse.speed", "26") == 0, "set: mouse.speed 26");
-	check(zwl_settings_store_choose(&store, "mouse.speed", "301") == EINVAL, "set: 301 is refused");
-	check(zwl_settings_store_choose(&store, "no.key", "1") == ENOENT, "set: an unknown key is ENOENT");
-	check(zwl_settings_store_choose(&store, "sound.available", "1") == EPERM, "set: sound.available is read only");
-	check(zwl_settings_store_reset(&store, "sound.available") == EPERM, "set: sound.available cannot be reset");
-	entry = zwl_settings_store_find(&store, "mouse.speed");
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
+	check(kwl_settings_store_choose(&store, "mouse.speed", "26") == 0, "set: mouse.speed 26");
+	check(kwl_settings_store_choose(&store, "mouse.speed", "301") == EINVAL, "set: 301 is refused");
+	check(kwl_settings_store_choose(&store, "no.key", "1") == ENOENT, "set: an unknown key is ENOENT");
+	check(kwl_settings_store_choose(&store, "sound.available", "1") == EPERM, "set: sound.available is read only");
+	check(kwl_settings_store_reset(&store, "sound.available") == EPERM, "set: sound.available cannot be reset");
+	entry = kwl_settings_store_find(&store, "mouse.speed");
 	check(entry != NULL && strcmp(entry->value, "26") == 0 && entry->chosen, "set: 26 is in effect");
-	error = zwl_settings_store_reset(&store, "mouse.speed");
+	error = kwl_settings_store_reset(&store, "mouse.speed");
 	check(error == 0 && entry != NULL && strcmp(entry->value, "150") == 0 && !entry->chosen, "set: reset gives the default 150");
-	zwl_settings_store_close(&store);
+	kwl_settings_store_close(&store);
 }
 
 static void
 test_merge(void)
 {
-	struct zwl_settings_store store;
+	struct kwl_settings_store store;
 	struct stat before;
 	struct stat after;
 	int error;
 
 	put_file("# keep me\nfoo.bar=keep\nmouse.speed=50\nwindow.opacity=90\n");
-	(void)zwl_settings_store_open(&store, test_home);
-	(void)zwl_settings_store_load(&store);
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
 
 	/* Nothing changed: nothing written. */
 	(void)stat(test_conf, &before);
 	sleep(1);
-	error = zwl_settings_store_finish(&store);
+	error = kwl_settings_store_finish(&store);
 	(void)stat(test_conf, &after);
 	check(error == 0 && before.st_mtime == after.st_mtime && before.st_ino == after.st_ino, "merge: nothing changed, the file is not written");
 
 	/* A set, a reset and a set back to the start value. */
-	(void)zwl_settings_store_choose(&store, "mouse.speed", "60");
-	(void)zwl_settings_store_reset(&store, "window.opacity");
-	(void)zwl_settings_store_choose(&store, "keyboard.repeat.rate", "33");
-	(void)zwl_settings_store_choose(&store, "keyboard.repeat.rate", "25");
-	(void)zwl_settings_store_reset(&store, "keyboard.repeat.rate");
-	error = zwl_settings_store_finish(&store);
+	(void)kwl_settings_store_choose(&store, "mouse.speed", "60");
+	(void)kwl_settings_store_reset(&store, "window.opacity");
+	(void)kwl_settings_store_choose(&store, "keyboard.repeat.rate", "33");
+	(void)kwl_settings_store_choose(&store, "keyboard.repeat.rate", "25");
+	(void)kwl_settings_store_reset(&store, "keyboard.repeat.rate");
+	error = kwl_settings_store_finish(&store);
 	check(error == 0, "merge: written");
 	check(file_has("# keep me") && file_has("foo.bar=keep"), "merge: the comment and the unknown key stay");
 	check(file_has("mouse.speed=60"), "merge: mouse.speed=60 is written");
 	check(strstr(get_file(), "window.opacity") == NULL, "merge: the reset opacity leaves the file");
 	check(strstr(get_file(), "keyboard.repeat.rate") == NULL, "merge: a key set and reset to its absent start is not written");
-	zwl_settings_store_close(&store);
+	kwl_settings_store_close(&store);
 }
 
 static void
 test_hand_edit(void)
 {
-	struct zwl_settings_store store;
+	struct kwl_settings_store store;
 	int error;
 
 	put_file("mouse.speed=50\n");
-	(void)zwl_settings_store_open(&store, test_home);
-	(void)zwl_settings_store_load(&store);
-	(void)zwl_settings_store_choose(&store, "mouse.natural", "1");
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
+	(void)kwl_settings_store_choose(&store, "mouse.natural", "1");
 
 	/* A hand edit during the session, of another key and of an unknown one. */
 	put_file("mouse.speed=70\nmy.note=hello\n");
-	error = zwl_settings_store_finish(&store);
+	error = kwl_settings_store_finish(&store);
 	check(error == 0 && file_has("mouse.speed=70") && file_has("my.note=hello") && file_has("mouse.natural=1"),
 	      "hand edit: the edit of a key the session did not change stays, and the session's change is merged");
-	zwl_settings_store_close(&store);
+	kwl_settings_store_close(&store);
 }
 
 static void
 test_two_stores(void)
 {
-	struct zwl_settings_store first;
-	struct zwl_settings_store second;
+	struct kwl_settings_store first;
+	struct kwl_settings_store second;
 	int error;
 
 	put_file("");
-	(void)zwl_settings_store_open(&first, test_home);
-	(void)zwl_settings_store_load(&first);
-	(void)zwl_settings_store_open(&second, test_home);
-	(void)zwl_settings_store_load(&second);
-	(void)zwl_settings_store_choose(&first, "mouse.speed", "111");
-	(void)zwl_settings_store_choose(&second, "keyboard.repeat.delay", "500");
-	error = zwl_settings_store_finish(&first);
-	error |= zwl_settings_store_finish(&second);
+	(void)kwl_settings_store_open(&first, test_home);
+	(void)kwl_settings_store_load(&first);
+	(void)kwl_settings_store_open(&second, test_home);
+	(void)kwl_settings_store_load(&second);
+	(void)kwl_settings_store_choose(&first, "mouse.speed", "111");
+	(void)kwl_settings_store_choose(&second, "keyboard.repeat.delay", "500");
+	error = kwl_settings_store_finish(&first);
+	error |= kwl_settings_store_finish(&second);
 	check(error == 0 && file_has("mouse.speed=111") && file_has("keyboard.repeat.delay=500"), "two stores: both sessions' changes are kept");
-	zwl_settings_store_close(&first);
-	zwl_settings_store_close(&second);
+	kwl_settings_store_close(&first);
+	kwl_settings_store_close(&second);
 }
 
 static void
 test_unread(void)
 {
-	struct zwl_settings_store store;
+	struct kwl_settings_store store;
 	char *big;
 	FILE *file;
 	size_t index;
@@ -315,63 +315,63 @@ test_unread(void)
 	big[69999] = '\0';
 	fputs(big, file);
 	fclose(file);
-	(void)zwl_settings_store_open(&store, test_home);
-	error = zwl_settings_store_load(&store);
+	(void)kwl_settings_store_open(&store, test_home);
+	error = kwl_settings_store_load(&store);
 	check(error == E2BIG && store.read_error == E2BIG, "unread: a file too large is E2BIG");
-	(void)zwl_settings_store_choose(&store, "mouse.speed", "60");
-	error = zwl_settings_store_finish(&store);
+	(void)kwl_settings_store_choose(&store, "mouse.speed", "60");
+	error = kwl_settings_store_finish(&store);
 	check(error == E2BIG && strlen(get_file()) == 69999U, "unread: the merge does not break the file it cannot read");
-	zwl_settings_store_close(&store);
+	kwl_settings_store_close(&store);
 	free(big);
 
 	/* No home: nothing at all. */
-	(void)zwl_settings_store_open(&store, NULL);
-	(void)zwl_settings_store_choose(&store, "mouse.speed", "60");
-	check(zwl_settings_store_load(&store) == 0 && zwl_settings_store_finish(&store) == 0, "unread: without a home nothing is read or written");
-	zwl_settings_store_close(&store);
+	(void)kwl_settings_store_open(&store, NULL);
+	(void)kwl_settings_store_choose(&store, "mouse.speed", "60");
+	check(kwl_settings_store_load(&store) == 0 && kwl_settings_store_finish(&store) == 0, "unread: without a home nothing is read or written");
+	kwl_settings_store_close(&store);
 }
 
 static void
 test_writer(void)
 {
-	struct zwl_settings_store store;
+	struct kwl_settings_store store;
 	int error;
 
 	put_file("");
-	(void)zwl_settings_store_open(&store, test_home);
-	(void)zwl_settings_store_load(&store);
-	(void)zwl_settings_store_choose(&store, "mouse.speed", "80");
-	error = zwl_settings_store_save_later(&store);
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
+	(void)kwl_settings_store_choose(&store, "mouse.speed", "80");
+	error = kwl_settings_store_save_later(&store);
 	check(error == 0, "writer: started");
-	check(zwl_settings_store_save_later(&store) == EBUSY, "writer: one a session");
+	check(kwl_settings_store_save_later(&store) == EBUSY, "writer: one a session");
 
 	/* A change after the writer took its copy is written at the end. */
-	(void)zwl_settings_store_choose(&store, "mouse.natural", "1");
-	error = zwl_settings_store_finish(&store);
+	(void)kwl_settings_store_choose(&store, "mouse.natural", "1");
+	error = kwl_settings_store_finish(&store);
 	check(error == 0 && file_has("mouse.speed=80") && file_has("mouse.natural=1"), "writer: the writer's and the later change are both written");
-	zwl_settings_store_close(&store);
+	kwl_settings_store_close(&store);
 }
 
 static void
 test_sound(void)
 {
-	struct zwl_settings_store store;
-	struct zwl_settings_change changes[ZWL_SETTINGS_ENTRIES];
+	struct kwl_settings_store store;
+	struct kwl_settings_change changes[KWL_SETTINGS_ENTRIES];
 	unsigned count;
 
 	put_file("sound.volume=40\nsound.muted=0\n");
-	(void)zwl_settings_store_open(&store, test_home);
-	(void)zwl_settings_store_load(&store);
-	count = zwl_settings_store_changes(&store, changes);
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
+	count = kwl_settings_store_changes(&store, changes);
 	check(count == 0U, "sound: nothing to write before audiod reports (%u)", count);
-	zwl_settings_store_report(&store, "sound.volume", "40");
-	zwl_settings_store_report(&store, "sound.muted", "0");
-	count = zwl_settings_store_changes(&store, changes);
+	kwl_settings_store_report(&store, "sound.volume", "40");
+	kwl_settings_store_report(&store, "sound.muted", "0");
+	count = kwl_settings_store_changes(&store, changes);
 	check(count == 0U, "sound: audiod at the kept volume: nothing to write");
-	zwl_settings_store_report(&store, "sound.volume", "65");
-	zwl_settings_store_report(&store, "sound.available", "1");
-	(void)zwl_settings_store_finish(&store);
+	kwl_settings_store_report(&store, "sound.volume", "65");
+	kwl_settings_store_report(&store, "sound.available", "1");
+	(void)kwl_settings_store_finish(&store);
 	check(file_has("sound.volume=65") && file_has("sound.muted=0") && strstr(get_file(), "sound.available") == NULL,
 	      "sound: the session's volume is kept, sound.available is never written");
-	zwl_settings_store_close(&store);
+	kwl_settings_store_close(&store);
 }

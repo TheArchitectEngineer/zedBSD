@@ -22,9 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static VkResult import_image(struct zwl_compose *compose, VkFormat format, struct zwl_import *import);
-static VkResult import_layout(struct zwl_compose *compose, struct zwl_import *import);
-static void import_release(struct zwl_compose *compose, struct zwl_import *import);
+static VkResult import_image(struct kwl_compose *compose, VkFormat format, struct kwl_import *import);
+static VkResult import_layout(struct kwl_compose *compose, struct kwl_import *import);
+static void import_release(struct kwl_compose *compose, struct kwl_import *import);
 
 /*
  * Adopts an image and its bound memory for a GPU buffer.
@@ -35,16 +35,16 @@ static void import_release(struct zwl_compose *compose, struct zwl_import *impor
  * whatever else was made.
  */
 VkResult
-zwl_import_adopt(
-	struct zwl_object *buffer,
+kwl_import_adopt(
+	struct kwl_object *buffer,
 	VkImage image,
 	VkDeviceMemory memory,
 	uint32_t width,
 	uint32_t height,
 	VkFormat format)
 {
-	struct zwl_compose *compose;
-	struct zwl_import *import;
+	struct kwl_compose *compose;
+	struct kwl_import *import;
 	VkResult status;
 
 	/* The compositor's Vulkan device the image belongs to. */
@@ -63,7 +63,7 @@ zwl_import_adopt(
 	import->memory = memory;
 	import->width = width;
 	import->height = height;
-	import->draw = ZWL_DRAW_OPAQUE;
+	import->draw = KWL_DRAW_OPAQUE;
 
 	/* The view and descriptor sets that sample it, and its move to the general layout. */
 	status = import_image(compose, format, import);
@@ -84,8 +84,8 @@ zwl_import_adopt(
  * A buffer without an image has nothing to change.
  */
 void
-zwl_import_set_alpha(
-	struct zwl_object *buffer,
+kwl_import_set_alpha(
+	struct kwl_object *buffer,
 	uint32_t alpha)
 {
 	/* No image, nothing to draw differently. */
@@ -93,11 +93,11 @@ zwl_import_set_alpha(
 		return;
 
 	/* The drawing's blending. */
-	buffer->import->draw = ZWL_DRAW_OPAQUE;
+	buffer->import->draw = KWL_DRAW_OPAQUE;
 
 	/* Selects blending only for the premultiplied-alpha protocol value. */
 	if (alpha == 1U)
-		buffer->import->draw = ZWL_DRAW_ALPHA;
+		buffer->import->draw = KWL_DRAW_ALPHA;
 
 	/* Succeeded: the imported image has the requested drawing mode. */
 	return;
@@ -107,10 +107,10 @@ zwl_import_set_alpha(
  * Releases a buffer's Vulkan image; the caller guarantees that no frame in flight still samples it (the frame holds the buffer until it completes).
  */
 void
-zwl_import_destroy(
-	struct zwl_object *buffer)
+kwl_import_destroy(
+	struct kwl_object *buffer)
 {
-	struct zwl_compose *compose;
+	struct kwl_compose *compose;
 
 	/* A buffer without an import has nothing to release. */
 	if (buffer->import == NULL)
@@ -135,11 +135,11 @@ zwl_import_destroy(
  * It is recorded before the frame's pass, which is the first to sample them.
  */
 void
-zwl_import_layouts_record(
-	struct zwl_compose *compose,
+kwl_import_layouts_record(
+	struct kwl_compose *compose,
 	VkCommandBuffer command)
 {
-	VkImageMemoryBarrier barriers[ZWL_LAYOUTS_MAX];
+	VkImageMemoryBarrier barriers[KWL_LAYOUTS_MAX];
 	unsigned index;
 
 	/* No image waits. */
@@ -183,8 +183,8 @@ zwl_import_layouts_record(
  * Forgets the images whose move was recorded, once the frame that records it is submitted (a frame not submitted records them again next time).
  */
 void
-zwl_import_layouts_done(
-	struct zwl_compose *compose)
+kwl_import_layouts_done(
+	struct kwl_compose *compose)
 {
 	unsigned index;
 
@@ -202,9 +202,9 @@ zwl_import_layouts_done(
 /* Makes the view and descriptor sets that sample an imported image. */
 static VkResult
 import_image(
-	struct zwl_compose *compose,
+	struct kwl_compose *compose,
 	VkFormat format,
-	struct zwl_import *import)
+	struct kwl_import *import)
 {
 	VkImageViewCreateInfo view;
 	VkDescriptorImageInfo image_info;
@@ -230,7 +230,7 @@ import_image(
 	 * The image goes to the layout it is sampled in, once: in the next
 	 * frame's commands, or now when too many images wait.
 	 */
-	if (compose->layout_count < ZWL_LAYOUTS_MAX) {
+	if (compose->layout_count < KWL_LAYOUTS_MAX) {
 		compose->layouts[compose->layout_count] = import;
 		compose->layout_count++;
 		import->layout_pending = 1U;
@@ -241,7 +241,7 @@ import_image(
 	}
 
 	/* Its descriptor set (a spare one when there is one). */
-	status = zwl_compose_set_get(compose, &import->set);
+	status = kwl_compose_set_get(compose, &import->set);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -262,7 +262,7 @@ import_image(
 	vkUpdateDescriptorSets(compose->device, 1U, &write, 0U, NULL);
 
 	/* And the same image sampled linearly. */
-	status = zwl_compose_linear_set(compose, import);
+	status = kwl_compose_linear_set(compose, import);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -273,8 +273,8 @@ import_image(
 /* Moves an imported image to the shader-readable general layout. */
 static VkResult
 import_layout(
-	struct zwl_compose *compose,
-	struct zwl_import *import)
+	struct kwl_compose *compose,
+	struct kwl_import *import)
 {
 	VkCommandBufferAllocateInfo allocate;
 	VkCommandBufferBeginInfo begin;
@@ -352,8 +352,8 @@ import_layout(
 /* Destroys what an import made, whatever part of it was made. */
 static void
 import_release(
-	struct zwl_compose *compose,
-	struct zwl_import *import)
+	struct kwl_compose *compose,
+	struct kwl_import *import)
 {
 	unsigned index;
 
@@ -377,11 +377,11 @@ import_release(
 
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
-		zwl_compose_set_put(compose, import->set);
+		kwl_compose_set_put(compose, import->set);
 
 	/* Returns the spare descriptor for linear sampling. */
 	if (import->linear_set != VK_NULL_HANDLE)
-		zwl_compose_set_put(compose, import->linear_set);
+		kwl_compose_set_put(compose, import->linear_set);
 
 	/* Destroys the view before its image. */
 	if (import->view != VK_NULL_HANDLE)
