@@ -30,6 +30,8 @@
 #define NETCONF_MAX_DNS 8
 #define NETCONF_NAME_MAX 15
 #define NETCONF_IPV4_MAX 15
+/* The longest text of an address either family (an IPv6 one, ws130-p005). */
+#define NETCONF_ADDRESS_MAX 45
 
 enum netconf_interface_type {
 	NETCONF_INTERFACE_UNSET,
@@ -47,8 +49,37 @@ enum netconf_dns_mode {
 };
 
 struct netconf_address {
-	char address[NETCONF_IPV4_MAX + 1];
+	char address[NETCONF_ADDRESS_MAX + 1];
 	unsigned prefix_length;
+};
+
+/* How an interface asks DHCPv6 (ws130-p005): by the Router Advertisement's flags, for options only, for addresses, never. */
+enum netconf_ipv6_dhcp {
+	NETCONF_IPV6_DHCP_AUTO,
+	NETCONF_IPV6_DHCP_STATELESS,
+	NETCONF_IPV6_DHCP_STATEFUL,
+	NETCONF_IPV6_DHCP_OFF
+};
+
+/*
+ * An interface's IPv6 (ws130-p005, the "ipv6:" section of net.conf): each
+ * key with whether the file named it (a key it does not name is its
+ * default: IPv6, SLAAC, a stable address and a temporary one on, DHCPv6 by
+ * the Router Advertisement), and its static addresses.
+ */
+struct netconf_ipv6 {
+	int enabled;
+	int enabled_set;
+	int autoconf;
+	int autoconf_set;
+	enum netconf_ipv6_dhcp dhcp;
+	int dhcp_set;
+	int stable_address;
+	int stable_address_set;
+	int temporary;
+	int temporary_set;
+	struct netconf_address addresses[NETCONF_MAX_ADDRESSES];
+	size_t address_count;
 };
 
 struct netconf_interface {
@@ -67,11 +98,14 @@ struct netconf_interface {
 	int vlan_id_set;
 	char members[NETCONF_MAX_MEMBERS][NETCONF_NAME_MAX + 1];
 	size_t member_count;
+	struct netconf_ipv6 ipv6;
 };
 
+/* A route: its destination ("default" or a prefix of either family), its gateway, and the interface of a link-local IPv6 gateway (ws130-p005). */
 struct netconf_route {
-	char destination[NETCONF_IPV4_MAX + 4];
-	char gateway[NETCONF_IPV4_MAX + 1];
+	char destination[NETCONF_ADDRESS_MAX + 5];
+	char gateway[NETCONF_ADDRESS_MAX + 1];
+	char interface[NETCONF_NAME_MAX + 1];
 };
 
 struct netconf {
@@ -81,7 +115,7 @@ struct netconf {
 	struct netconf_route routes[NETCONF_MAX_ROUTES];
 	size_t route_count;
 	enum netconf_dns_mode dns_mode;
-	char dns_servers[NETCONF_MAX_DNS][NETCONF_IPV4_MAX + 1];
+	char dns_servers[NETCONF_MAX_DNS][NETCONF_ADDRESS_MAX + 1];
 	size_t dns_count;
 };
 
@@ -94,5 +128,12 @@ int netconf_writer_unlock(int);
 int netconf_save_atomic(const char *, const struct netconf *, char *, size_t);
 int netconf_save_atomic_locked(const char *, const struct netconf *, char *,
 	size_t);
+
+/* An interface's IPv6 settings with their defaults (ws130-p005). */
+int netconf_ipv6_enabled(const struct netconf_interface *);
+int netconf_ipv6_autoconf(const struct netconf_interface *);
+int netconf_ipv6_stable_address(const struct netconf_interface *);
+int netconf_ipv6_temporary(const struct netconf_interface *);
+enum netconf_ipv6_dhcp netconf_ipv6_dhcp(const struct netconf_interface *);
 
 #endif
