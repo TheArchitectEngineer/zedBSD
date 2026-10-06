@@ -528,6 +528,40 @@ kl_window_set_glass(
 }
 
 /*
+ * Makes the window's glass show what is under the window blurred, or the
+ * blurred wallpaper (KL_VERSION 45; the glass is made when there is none
+ * yet).  Returns 0, EINVAL, or the compositor's refusal (ENOTSUP without
+ * glass or without the choice).
+ */
+int
+kl_window_set_glass_blur(
+	struct kl_window *window,
+	int enabled)
+{
+	int error;
+
+	/* A window. */
+	if (window == NULL)
+		return EINVAL;
+
+	/* The surface's glass, made once; a compositor without it has no blur. */
+	if (window->glass == NULL) {
+		window->glass = kl_glass_create(window->display, window->surface);
+		if (window->glass == NULL)
+			return errno;
+		window->glass_sent = 0;
+	}
+
+	/* The choice. */
+	error = kl_glass_set_blur(window->glass, enabled);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Makes a Vulkan surface over the window, for the application's instance.
  */
 int

@@ -1231,8 +1231,9 @@ int kl_window_accept_tablet(struct kl_window *window);
  * window is maximized, maximizing or bringing it back and minimizing it,
  * the first screen's current mode (its refresh in millihertz; ENOENT while
  * unknown), the Vulkan device that shows the frames and the last frame's
- * times, and a breadcrumb control's parts (one chosen comes as the
- * control's KL_WINDOW_ACTION with the part in begin).
+ * times, a breadcrumb control's parts (one chosen comes as the control's
+ * KL_WINDOW_ACTION with the part in begin), and the glass blurring what is
+ * under the window.
  */
 struct kl_present_times {
 	unsigned copy_ms;
@@ -1248,6 +1249,7 @@ int kl_window_output_mode(const struct kl_window *window, int32_t *width, int32_
 const char *kl_window_device_name(const struct kl_window *window);
 void kl_window_present_times(const struct kl_window *window, struct kl_present_times *times);
 int kl_window_set_control_parts(struct kl_window *window, uint32_t id, const char *const *parts, size_t count);
+int kl_window_set_glass_blur(struct kl_window *window, int enabled);
 int kl_window_set_repeat(struct kl_window *window, int enabled);
 int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
 int kl_window_selection_own(const struct kl_window *window, unsigned which);

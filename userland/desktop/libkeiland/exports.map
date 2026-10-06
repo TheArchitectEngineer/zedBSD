@@ -321,6 +321,7 @@
 		kl_window_device_name;
 		kl_window_present_times;
 		kl_window_set_control_parts;
+		kl_window_set_glass_blur;
 		kl_window_set_repeat;
 		kl_window_set_tabs;
 		kl_window_selection_own;
