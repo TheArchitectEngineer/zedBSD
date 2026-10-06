@@ -33,6 +33,7 @@ static void write16(uint8_t *p, uint16_t v);
 static void write64(uint8_t *p, uint64_t v);
 static uint16_t read16(const uint8_t *p);
 static uint64_t read64(const uint8_t *p);
+static int ping6(int descriptor, const struct sockaddr_in6 *peer, const char *name, uint32_t count, uint32_t interval_ms, uint32_t timeout_ms);
 
 /*
  * Runs the ping command.
@@ -62,6 +63,10 @@ main(
 	unsigned transmitted, received, sequence, arg;
 	char numeric[16];
 	int descriptor, error, socket_error;
+	int descriptor6;
+	int socket6_error;
+	int family;
+	struct sockaddr_in6 peer6;
 	uid_t real_user;
 	struct timespec retry;
 	struct timespec delay;
@@ -83,6 +88,8 @@ main(
 	 */
 	descriptor = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 	socket_error = errno;
+	descriptor6 = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);
+	socket6_error = errno;
 
 	/*
 	 * Gives the lent privilege up for good before any argument is read.
@@ -96,6 +103,18 @@ main(
 
 		/* Refuses to run with privilege it could not give up. */
 		return 1;
+	}
+
+	/* -4 and -6 choose the family (ws130-p005; either by the name's addresses otherwise). */
+	family = AF_UNSPEC;
+	while (arg < (unsigned)argc) {
+		if (strcmp(argv[arg], "-4") == 0)
+			family = AF_INET;
+		else if (strcmp(argv[arg], "-6") == 0)
+			family = AF_INET6;
+		else
+			break;
+		arg++;
 	}
 
 	/* Process each remaining command-line operand. */
@@ -163,9 +182,8 @@ main(
 	}
 
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
+	hints.ai_family = family;
 	hints.ai_socktype = SOCK_RAW;
-	hints.ai_protocol = IPPROTO_ICMP;
 	error = getaddrinfo(argv[arg], NULL, &hints, &addresses);
 
 	/* Handles an operation failure. */
@@ -175,6 +193,24 @@ main(
 		/* Reports operation failure. */
 		return 1;
 	}
+
+	/* An IPv6 address: ICMPv6's echo (ws130-p005). */
+	if (addresses->ai_family == AF_INET6) {
+		peer6 = *(const struct sockaddr_in6 *)addresses->ai_addr;
+		freeaddrinfo(addresses);
+		if (descriptor >= 0)
+			close(descriptor);
+		if (descriptor6 < 0) {
+			printf("ping: socket: %s\n", strerror(socket6_error));
+			return 1;
+		}
+		error = ping6(descriptor6, &peer6, argv[arg], count, interval_ms, timeout_ms);
+		return error;
+	}
+
+	/* An IPv4 one. */
+	if (descriptor6 >= 0)
+		close(descriptor6);
 	peer = *(const struct sockaddr_in *)addresses->ai_addr;
 	freeaddrinfo(addresses);
 	inet_ntop(AF_INET, &peer.sin_addr, numeric, sizeof(numeric));
@@ -320,7 +356,7 @@ static int
 usage(
 	void)
 {
-	puts("usage: ping [-c count] [-i interval] [-W timeout] host");
+	puts("usage: ping [-4|-6] [-c count] [-i interval] [-W timeout] host");
 
 	/* Reports operation failure. */
 	return 2;
@@ -373,4 +409,141 @@ read64(
 
 	/* Returns the computed result. */
 	return v;
+}
+
+/*
+ * Sends ICMPv6 echo requests to an IPv6 peer and reads its replies
+ * (ws130-p005), the same way as the IPv4 echo: a raw ICMPv6 socket gives
+ * the message without its IPv6 header (RFC 3542) and fills the checksum.
+ * Returns 0 when a reply came.
+ */
+static int
+ping6(
+	int descriptor,
+	const struct sockaddr_in6 *peer,
+	const char *name,
+	uint32_t count,
+	uint32_t interval_ms,
+	uint32_t timeout_ms)
+{
+	struct sockaddr_in6 source;
+	struct timeval receive_timeout;
+	struct timespec delay;
+	uint8_t echo[64];
+	uint8_t packet[2048];
+	char numeric[INET6_ADDRSTRLEN + IF_NAMESIZE + 1];
+	char zone[IF_NAMESIZE];
+	const char *written;
+	const char *named;
+	socklen_t source_length;
+	ssize_t length;
+	uint64_t minimum;
+	uint64_t maximum;
+	uint64_t total;
+	uint64_t sent;
+	uint64_t now;
+	uint64_t deadline;
+	uint64_t rtt;
+	uint16_t identifier;
+	unsigned transmitted;
+	unsigned received;
+	unsigned sequence;
+	unsigned loss;
+	unsigned i;
+	int same;
+
+	/* The peer as text, a link-local one with its interface. */
+	written = inet_ntop(AF_INET6, &peer->sin6_addr, numeric, sizeof(numeric));
+	if (written == NULL)
+		strcpy(numeric, "?");
+	named = NULL;
+	if (peer->sin6_scope_id != 0U)
+		named = if_indextoname(peer->sin6_scope_id, zone);
+	if (named != NULL) {
+		i = (unsigned)strlen(numeric);
+		snprintf(numeric + i, sizeof(numeric) - i, "%%%s", zone);
+	}
+	printf("PING6 %s (%s): 56 data bytes\n", name, numeric);
+	receive_timeout.tv_sec = (time_t)(timeout_ms / 1000U);
+	receive_timeout.tv_usec = (long)(timeout_ms % 1000U) * 1000L;
+	(void)setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout));
+
+	/* Each echo. */
+	identifier = (uint16_t)(netutil_monotonic_us() ^ 0x5a43U);
+	minimum = 0;
+	maximum = 0;
+	total = 0;
+	transmitted = 0;
+	received = 0;
+	for (sequence = 1; sequence <= count; sequence++) {
+		/* The request: type 128, the identifier, the sequence and the time sent. */
+		memset(echo, 0, sizeof(echo));
+		echo[0] = 128;
+		write16(echo + 4, identifier);
+		write16(echo + 6, (uint16_t)sequence);
+		sent = netutil_monotonic_us();
+		write64(echo + 8, sent);
+		for (i = 16; i < sizeof(echo); i++)
+			echo[i] = (uint8_t)i;
+		deadline = sent + (uint64_t)timeout_ms * 1000U;
+		length = sendto(descriptor, echo, sizeof(echo), 0, (const struct sockaddr *)peer, sizeof(*peer));
+		transmitted++;
+
+		/* Its reply: type 129 from the peer with the same identifier and sequence. */
+		while (length == (ssize_t)sizeof(echo)) {
+			now = netutil_monotonic_us();
+			if (now >= deadline)
+				break;
+			source_length = sizeof(source);
+			length = recvfrom(descriptor, packet, sizeof(packet), 0, (struct sockaddr *)&source, &source_length);
+			if (length < 16)
+				break;
+			same = memcmp(&source.sin6_addr, &peer->sin6_addr, sizeof(source.sin6_addr));
+			if (same != 0 || packet[0] != 129) {
+				length = (ssize_t)sizeof(echo);
+				continue;
+			}
+			if (read16(packet + 4) != identifier || read16(packet + 6) != sequence) {
+				length = (ssize_t)sizeof(echo);
+				continue;
+			}
+
+			/* Its round trip. */
+			rtt = netutil_monotonic_us() - read64(packet + 8);
+			received++;
+			total += rtt;
+			if (received == 1 || rtt < minimum)
+				minimum = rtt;
+			if (rtt > maximum)
+				maximum = rtt;
+			printf("%ld bytes from %s: icmp_seq=%u time=%llu.%03llu ms\n", (long)length, numeric, sequence,
+			       (unsigned long long)(rtt / 1000U), (unsigned long long)(rtt % 1000U));
+			break;
+		}
+
+		/* The interval before the next. */
+		if (sequence != count) {
+			delay.tv_sec = (time_t)(interval_ms / 1000U);
+			delay.tv_nsec = (long)(interval_ms % 1000U) * 1000000L;
+			nanosleep(&delay, NULL);
+		}
+	}
+	close(descriptor);
+
+	/* The statistics. */
+	loss = 0;
+	if (transmitted != 0)
+		loss = (transmitted - received) * 100U / transmitted;
+	printf("--- %s ping6 statistics ---\n%u packets transmitted, %u packets received, %u%% packet loss\n", name, transmitted, received, loss);
+	if (received != 0) {
+		printf("round-trip min/avg/max = %llu.%03llu/%llu.%03llu/%llu.%03llu ms\n",
+		       (unsigned long long)(minimum / 1000U), (unsigned long long)(minimum % 1000U),
+		       (unsigned long long)(total / received / 1000U), (unsigned long long)(total / received % 1000U),
+		       (unsigned long long)(maximum / 1000U), (unsigned long long)(maximum % 1000U));
+	}
+
+	/* Succeeded when a reply came. */
+	if (received == 0)
+		return 1;
+	return 0;
 }

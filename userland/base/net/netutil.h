@@ -26,6 +26,7 @@ int netutil_parse_ipv4(const char *, struct in_addr *);
 int netutil_parse_cidr(const char *, struct in_addr *, struct in_addr *,
 		       unsigned *);
 int netutil_mask_prefix(struct in_addr, unsigned *);
+int netutil_parse_cidr6(const char *, struct in6_addr *, unsigned *);
 uint64_t netutil_monotonic_us(void);
 int netutil_parse_milliseconds(const char *, uint32_t *);
 

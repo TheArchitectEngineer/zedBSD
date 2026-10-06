@@ -45,7 +45,7 @@ Resume point: p001（2026-10-05 P1 が設計の第 1 版を書いた。UAPI（H1
 | [p002](phase002/phase.md) | kernel の核（UAPI、`ipv6.c`・ICMPv6・NDP・DAD・MLDv2・address と route の表、RS・RA と route socket） | cleared（2026-10-06、T1-206b PASS） | p001（H1〜H4・H6、ユーザー承認 2026-10-05） |
 | p003 | transport（address を 16 byte に、`AF_INET6` の UDP・TCP・ICMPv6、`IPV6_V6ONLY`、PMTU、source の選択） | planning | p002、H2 |
 | [p004](phase004/phase.md) | libc（`inet_pton`・`inet_ntop`・`getaddrinfo`・`getnameinfo`・resolver） | test-wait（2026-10-06 q832 P1: 正常系を実装、host PASS、T1 待ち） | p003 |
-| p005 | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | planning | p003、p004、H3 |
+| [p005](phase005/phase.md) | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | test-wait（2026-10-07 q832 P1: 正常系を実装、host PASS、T1 待ち） | p003、p004、H3 |
 | p006 | networkd の SLAAC（link-local・RFC 7217・RFC 8981・RA・既定の route・RDNSS・DNSSL） | planning | p002、p005、H4・H5 |
 | p007 | `dhcpc -6`（stateless・stateful、DUID、Renew） | planning | p006、H7 |
 | p008 | T1（slirp と tap+netns の dnsmasq を 1 つの QEMU で）と 5330 の UAT | planning | p007 |

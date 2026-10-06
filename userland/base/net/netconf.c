@@ -14,6 +14,7 @@
 #include "userland/base/net/netconf.h"
 #include "userland/base/net/publication-trace.h"
 
+#include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -31,7 +32,9 @@ enum subsection {
 	SUBSECTION_IPV4,
 	SUBSECTION_ADDRESSES,
 	SUBSECTION_MEMBERS,
-	SUBSECTION_DNS_SERVERS
+	SUBSECTION_DNS_SERVERS,
+	SUBSECTION_IPV6,
+	SUBSECTION_ADDRESSES6
 };
 
 struct parser {
@@ -47,6 +50,7 @@ struct parser {
 	unsigned top_seen;
 	unsigned interface_seen;
 	unsigned ipv4_seen;
+	unsigned ipv6_seen;
 	unsigned dns_seen;
 	unsigned route_seen;
 };
@@ -73,6 +77,11 @@ static int ipv4_prefix_valid(const char *text);
 static int copy_value(struct parser *parser, char *output, size_t capacity, const char *value, const char *what);
 static int dns_property(struct parser *parser, char *text);
 static int dns_entry(struct parser *parser, char *text);
+static int ipv6_property(struct parser *parser, char *text);
+static int ipv6_valid(const char *text);
+static int ipv6_prefix_valid(const char *text);
+static int ipv6_link_local(const char *text);
+static int write_ipv6(FILE *stream, const struct netconf_interface *item);
 static const char *type_name(enum netconf_interface_type type);
 static const char *dns_name(enum netconf_dns_mode mode);
 
@@ -86,8 +95,11 @@ netconf_validate(
 	size_t capacity)
 {
 	const struct netconf_interface *item;
+	const struct netconf_route *route;
 	size_t index, address;
 	unsigned visiting, visited;
+	int gateway6;
+	int destination6;
 
 	visiting = 0;
 	visited = 0;
@@ -136,6 +148,12 @@ netconf_validate(
 			}
 		}
 
+		/* Each static IPv6 address has its prefix length (ws130-p005). */
+		for (address = 0; address < item->ipv6.address_count; address++) {
+			if (item->ipv6.addresses[address].prefix_length > 128U)
+				VALIDATE_ERROR("interface %s IPv6 address lacks prefix", item->name);
+		}
+
 		/* Handles the item condition. */
 		if (item->type == NETCONF_INTERFACE_VLAN) {
 			/* Handles the item condition. */
@@ -160,6 +178,19 @@ netconf_validate(
 		if (*configuration->routes[index].destination == '\0' ||
 		    *configuration->routes[index].gateway == '\0')
 			VALIDATE_ERROR("route lacks destination or gateway");
+
+		/* An IPv6 destination goes through an IPv6 gateway, and the other way (ws130-p005). */
+		route = &configuration->routes[index];
+		gateway6 = ipv6_valid(route->gateway);
+		destination6 = strchr(route->destination, ':') != NULL;
+		if (destination6 && !gateway6)
+			VALIDATE_ERROR("IPv6 route %s through an IPv4 gateway", route->destination);
+		if (gateway6 && !destination6 && strcmp(route->destination, "default") != 0)
+			VALIDATE_ERROR("IPv4 route %s through an IPv6 gateway", route->destination);
+
+		/* A link-local gateway is reached through its interface. */
+		if (ipv6_link_local(route->gateway) && route->interface[0] == '\0')
+			VALIDATE_ERROR("route through %s lacks interface", route->gateway);
 	}
 
 	/* Handles the configuration condition. */
@@ -456,6 +487,10 @@ netconf_write(
 			}
 		}
 
+		/* The IPv6 section, its keys that are not the defaults (ws130-p005). */
+		if (write_ipv6(stream, item) != 0)
+			return -1;
+
 		/* Handles the end-of-file condition. */
 		if (fputc('\n', stream) == EOF)
 			return -1;
@@ -476,6 +511,11 @@ netconf_write(
 				    configuration->routes[index].gateway) < 0)
 
 				/* Reports operation failure. */
+				return -1;
+
+			/* The interface of a link-local IPv6 gateway (ws130-p005). */
+			if (configuration->routes[index].interface[0] != '\0' &&
+			    fprintf(stream, "    interface: %s\n", configuration->routes[index].interface) < 0)
 				return -1;
 		}
 
@@ -895,6 +935,13 @@ parse_content(
 			return function_result;
 		}
 
+		/* The IPv6 section's keys (ws130-p005). */
+		if (indent == 6 &&
+		    (parser->subsection == SUBSECTION_IPV6 || parser->subsection == SUBSECTION_ADDRESSES6)) {
+			function_result = ipv6_property(parser, text);
+			return function_result;
+		}
+
 		/* Handles the indent condition. */
 		if (indent == 6 && parser->subsection == SUBSECTION_MEMBERS) {
 			/* Obtains the member entry result. */
@@ -1195,6 +1242,7 @@ new_interface(
 	strcpy(parser->interface->name, key);
 	parser->interface_seen = 0;
 	parser->ipv4_seen = 0;
+	parser->ipv6_seen = 0;
 	parser->subsection = SUBSECTION_NONE;
 
 	/* Reports successful completion. */
@@ -1323,6 +1371,11 @@ interface_property(
 		if (set_once(parser, &parser->interface_seen, 32U, key) != 0)
 			return -1;
 		parser->subsection = SUBSECTION_MEMBERS;
+	} else if (strcmp(key, "ipv6") == 0 && *value == '\0') {
+		/* The IPv6 section (ws130-p005). */
+		if (set_once(parser, &parser->interface_seen, 64U, key) != 0)
+			return -1;
+		parser->subsection = SUBSECTION_IPV6;
 	} else {
 		/* Obtains the fail result. */
 		function_result = fail(parser, "unknown interface key %s", key);
@@ -1468,7 +1521,7 @@ member_entry(
 	return 0;
 }
 
-/* Supports the new address operation. */
+/* Supports the new address operation (an IPv4 one, or an IPv6 one in the IPv6 section, ws130-p005). */
 static int
 new_address(
 	struct parser *parser,
@@ -1476,35 +1529,49 @@ new_address(
 {
 	int function_result;
 	char *key, *value;
+	struct netconf_address *addresses;
+	size_t *count;
+	int six;
+	int valid;
 
-	/* Handles a failed split mapping operation. */
+	/* An entry of either section's addresses. */
+	six = parser->subsection == SUBSECTION_ADDRESSES6;
 	if (parser->interface == NULL ||
-	    parser->subsection != SUBSECTION_ADDRESSES || text[0] != '-' ||
+	    (parser->subsection != SUBSECTION_ADDRESSES && !six) ||
+	    text[0] != '-' ||
 	    text[1] != ' ' ||
 	    split_mapping(parser, text + 2, &key, &value) != 0 ||
-	    strcmp(key, "address") != 0 || !ipv4_valid(value)) {
-		/* Obtains the fail result. */
-		function_result = fail(parser, "expected - address: IPv4");
-
-		/* Returns the computed result. */
+	    strcmp(key, "address") != 0) {
+		function_result = fail(parser, "expected - address: ADDRESS");
 		return function_result;
 	}
 
-	/* Checks the parser state. */
-	if (parser->interface->address_count == NETCONF_MAX_ADDRESSES) {
-		/* Obtains the fail result. */
+	/* An address of the section's family. */
+	if (six)
+		valid = ipv6_valid(value);
+	else
+		valid = ipv4_valid(value);
+	if (!valid) {
+		function_result = fail(parser, six ? "expected - address: IPv6" : "expected - address: IPv4");
+		return function_result;
+	}
+
+	/* Room for it. */
+	addresses = parser->interface->addresses;
+	count = &parser->interface->address_count;
+	if (six) {
+		addresses = parser->interface->ipv6.addresses;
+		count = &parser->interface->ipv6.address_count;
+	}
+	if (*count == NETCONF_MAX_ADDRESSES) {
 		function_result = fail(parser, "too many addresses");
-
-		/* Returns the computed result. */
 		return function_result;
 	}
 
-	parser->address =
-	    &parser->interface->addresses[parser->interface->address_count++];
+	/* Succeeded: its prefix length follows (the mark of none: one past the family's longest). */
+	parser->address = &addresses[(*count)++];
 	strcpy(parser->address->address, value);
-	parser->address->prefix_length = 33;
-
-	/* Reports successful completion. */
+	parser->address->prefix_length = six ? 129U : 33U;
 	return 0;
 }
 
@@ -1550,7 +1617,7 @@ ipv4_valid(
 	return 0;
 }
 
-/* Supports the address property operation. */
+/* Supports the address property operation: an address's prefix length, 0..32 or 0..128 (ws130-p005). */
 static int
 address_property(
 	struct parser *parser,
@@ -1558,17 +1625,20 @@ address_property(
 {
 	int function_result;
 	char *key, *value;
+	unsigned longest;
 
-	/* Handles a failed split mapping operation. */
+	/* The family's longest prefix. */
+	longest = 32U;
+	if (parser->subsection == SUBSECTION_ADDRESSES6)
+		longest = 128U;
+
+	/* One prefix-length of the address just read. */
 	if (parser->address == NULL ||
 	    split_mapping(parser, text, &key, &value) != 0 ||
 	    strcmp(key, "prefix-length") != 0 ||
-	    parser->address->prefix_length != 33 ||
-	    unsigned_value(value, 0, 32, &parser->address->prefix_length) != 0) {
-		/* Obtains the fail result. */
-		function_result = fail(parser, "expected one prefix-length: 0..32");
-
-		/* Returns the computed result. */
+	    parser->address->prefix_length != longest + 1U ||
+	    unsigned_value(value, 0, longest, &parser->address->prefix_length) != 0) {
+		function_result = fail(parser, "expected one prefix-length: 0..%u", longest);
 		return function_result;
 	}
 
@@ -1620,7 +1690,8 @@ route_entry(
 		/* Handles a failed set once operation. */
 		if (set_once(parser, &parser->route_seen, 1U, key) != 0 ||
 		    (strcmp(value, "default") != 0 &&
-		     !ipv4_prefix_valid(value))) {
+		     !ipv4_prefix_valid(value) &&
+		     !ipv6_prefix_valid(value))) {
 			/* Obtains the fail result. */
 			function_result = fail(parser, "invalid route destination");
 
@@ -1641,7 +1712,7 @@ route_entry(
 	if (strcmp(key, "gateway") == 0) {
 		/* Handles a failed set once operation. */
 		if (set_once(parser, &parser->route_seen, 2U, key) != 0 ||
-		    !ipv4_valid(value)) {
+		    (!ipv4_valid(value) && !ipv6_valid(value))) {
 			/* Obtains the fail result. */
 			function_result = fail(parser, "invalid route gateway");
 
@@ -1651,6 +1722,16 @@ route_entry(
 		strcpy(parser->route->gateway, value);
 
 		/* Reports successful completion. */
+		return 0;
+	}
+
+	/* The interface of a link-local IPv6 gateway (ws130-p005). */
+	if (strcmp(key, "interface") == 0) {
+		if (set_once(parser, &parser->route_seen, 4U, key) != 0 || !name_valid(value)) {
+			function_result = fail(parser, "invalid route interface");
+			return function_result;
+		}
+		strcpy(parser->route->interface, value);
 		return 0;
 	}
 
@@ -1789,7 +1870,8 @@ dns_entry(
 	/* Handles a failed ipv4 valid operation. */
 	if (parser->section != SECTION_DNS ||
 	    parser->subsection != SUBSECTION_DNS_SERVERS || text[0] != '-' ||
-	    text[1] != ' ' || !ipv4_valid(address = text + 2)) {
+	    text[1] != ' ' ||
+	    (!ipv4_valid(address = text + 2) && !ipv6_valid(text + 2))) {
 		/* Obtains the fail result. */
 		function_result = fail(parser, "expected - DNS-address");
 
@@ -1848,4 +1930,243 @@ dns_name(
 
 	/* Returns the computed result. */
 	return names[mode];
+}
+
+/*
+ * Reads a key of an interface's IPv6 section (ws130-p005): enabled,
+ * autoconf, dhcp (auto, stateless, stateful or false), stable-address,
+ * temporary, and the addresses.
+ */
+static int
+ipv6_property(
+	struct parser *parser,
+	char *text)
+{
+	struct netconf_ipv6 *ipv6;
+	char *key;
+	char *value;
+	int status;
+
+	/* A key with its value. */
+	if (parser->interface == NULL || split_mapping(parser, text, &key, &value) != 0) {
+		status = fail(parser, "expected an IPv6 property");
+		return status;
+	}
+	ipv6 = &parser->interface->ipv6;
+	parser->subsection = SUBSECTION_IPV6;
+	parser->address = NULL;
+
+	/* The switches. */
+	if (strcmp(key, "enabled") == 0) {
+		if (set_once(parser, &parser->ipv6_seen, 1U, key) != 0 || boolean_value(value, &ipv6->enabled) != 0)
+			return fail(parser, "enabled must be true or false");
+		ipv6->enabled_set = 1;
+		return 0;
+	}
+	if (strcmp(key, "autoconf") == 0) {
+		if (set_once(parser, &parser->ipv6_seen, 2U, key) != 0 || boolean_value(value, &ipv6->autoconf) != 0)
+			return fail(parser, "autoconf must be true or false");
+		ipv6->autoconf_set = 1;
+		return 0;
+	}
+	if (strcmp(key, "stable-address") == 0) {
+		if (set_once(parser, &parser->ipv6_seen, 4U, key) != 0 || boolean_value(value, &ipv6->stable_address) != 0)
+			return fail(parser, "stable-address must be true or false");
+		ipv6->stable_address_set = 1;
+		return 0;
+	}
+	if (strcmp(key, "temporary") == 0) {
+		if (set_once(parser, &parser->ipv6_seen, 8U, key) != 0 || boolean_value(value, &ipv6->temporary) != 0)
+			return fail(parser, "temporary must be true or false");
+		ipv6->temporary_set = 1;
+		return 0;
+	}
+
+	/* DHCPv6's use. */
+	if (strcmp(key, "dhcp") == 0) {
+		if (set_once(parser, &parser->ipv6_seen, 16U, key) != 0)
+			return -1;
+		if (strcmp(value, "auto") == 0)
+			ipv6->dhcp = NETCONF_IPV6_DHCP_AUTO;
+		else if (strcmp(value, "stateless") == 0)
+			ipv6->dhcp = NETCONF_IPV6_DHCP_STATELESS;
+		else if (strcmp(value, "stateful") == 0)
+			ipv6->dhcp = NETCONF_IPV6_DHCP_STATEFUL;
+		else if (strcmp(value, "false") == 0)
+			ipv6->dhcp = NETCONF_IPV6_DHCP_OFF;
+		else
+			return fail(parser, "dhcp must be auto, stateless, stateful or false");
+		ipv6->dhcp_set = 1;
+		return 0;
+	}
+
+	/* The static addresses. */
+	if (strcmp(key, "addresses") == 0 && *value == '\0') {
+		if (set_once(parser, &parser->ipv6_seen, 32U, key) != 0)
+			return -1;
+		parser->subsection = SUBSECTION_ADDRESSES6;
+		return 0;
+	}
+
+	/* Not a key of the section. */
+	status = fail(parser, "unknown IPv6 key %s", key);
+	return status;
+}
+
+/* Tells whether a text is an IPv6 address. */
+static int
+ipv6_valid(
+	const char *text)
+{
+	struct in6_addr address;
+	int ok;
+
+	/* The C library's reading. */
+	ok = inet_pton(AF_INET6, text, &address);
+	return ok == 1;
+}
+
+/* Tells whether a text is an IPv6 prefix, "ADDRESS/LENGTH" (0..128). */
+static int
+ipv6_prefix_valid(
+	const char *text)
+{
+	char address[NETCONF_ADDRESS_MAX + 1];
+	const char *slash;
+	unsigned prefix;
+	size_t length;
+	int valid;
+
+	/* The address before the slash. */
+	slash = strchr(text, '/');
+	if (slash == NULL)
+		return 0;
+	length = (size_t)(slash - text);
+	if (length == 0 || length >= sizeof(address))
+		return 0;
+	memcpy(address, text, length);
+	address[length] = '\0';
+
+	/* An address, and a length. */
+	valid = ipv6_valid(address);
+	if (!valid)
+		return 0;
+	valid = unsigned_value(slash + 1, 0, 128, &prefix) == 0;
+	return valid;
+}
+
+/* Tells whether a text is a link-local IPv6 address (fe80::/10). */
+static int
+ipv6_link_local(
+	const char *text)
+{
+	struct in6_addr address;
+	int ok;
+
+	/* The address, then its prefix. */
+	ok = inet_pton(AF_INET6, text, &address);
+	if (ok != 1)
+		return 0;
+	return address.s6_addr[0] == 0xfe && (address.s6_addr[1] & 0xc0) == 0x80;
+}
+
+/* Writes an interface's IPv6 section: the keys that are not the defaults, and the static addresses (ws130-p005). */
+static int
+write_ipv6(
+	FILE *stream,
+	const struct netconf_interface *item)
+{
+	static const char *const dhcp_names[] = { "auto", "stateless", "stateful", "false" };
+	const struct netconf_ipv6 *ipv6;
+	size_t index;
+	int any;
+
+	/* Nothing that is not the default: no section. */
+	ipv6 = &item->ipv6;
+	any = ipv6->enabled_set || ipv6->autoconf_set || ipv6->dhcp_set;
+	any = any || ipv6->stable_address_set || ipv6->temporary_set || ipv6->address_count != 0;
+	if (!any)
+		return 0;
+	if (fputs("    ipv6:\n", stream) == EOF)
+		return -1;
+
+	/* The switches named. */
+	if (ipv6->enabled_set && fprintf(stream, "      enabled: %s\n", ipv6->enabled ? "true" : "false") < 0)
+		return -1;
+	if (ipv6->autoconf_set && fprintf(stream, "      autoconf: %s\n", ipv6->autoconf ? "true" : "false") < 0)
+		return -1;
+	if (ipv6->dhcp_set && fprintf(stream, "      dhcp: %s\n", dhcp_names[ipv6->dhcp]) < 0)
+		return -1;
+	if (ipv6->stable_address_set && fprintf(stream, "      stable-address: %s\n", ipv6->stable_address ? "true" : "false") < 0)
+		return -1;
+	if (ipv6->temporary_set && fprintf(stream, "      temporary: %s\n", ipv6->temporary ? "true" : "false") < 0)
+		return -1;
+
+	/* The static addresses. */
+	if (ipv6->address_count == 0)
+		return 0;
+	if (fputs("      addresses:\n", stream) == EOF)
+		return -1;
+	for (index = 0; index < ipv6->address_count; index++) {
+		if (fprintf(stream, "        - address: %s\n          prefix-length: %u\n", ipv6->addresses[index].address, ipv6->addresses[index].prefix_length) < 0)
+			return -1;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Whether IPv6 is on at an interface (the default: on, H3). */
+int
+netconf_ipv6_enabled(
+	const struct netconf_interface *item)
+{
+	/* Named, or the default. */
+	if (item->ipv6.enabled_set)
+		return item->ipv6.enabled;
+	return 1;
+}
+
+/* Whether an interface takes addresses from Router Advertisements (the default: yes). */
+int
+netconf_ipv6_autoconf(
+	const struct netconf_interface *item)
+{
+	/* Named, or the default. */
+	if (item->ipv6.autoconf_set)
+		return item->ipv6.autoconf;
+	return 1;
+}
+
+/* Whether an interface's SLAAC address is stable (RFC 7217; the default: yes). */
+int
+netconf_ipv6_stable_address(
+	const struct netconf_interface *item)
+{
+	/* Named, or the default. */
+	if (item->ipv6.stable_address_set)
+		return item->ipv6.stable_address;
+	return 1;
+}
+
+/* Whether an interface makes temporary addresses (RFC 8981; the default: yes). */
+int
+netconf_ipv6_temporary(
+	const struct netconf_interface *item)
+{
+	/* Named, or the default. */
+	if (item->ipv6.temporary_set)
+		return item->ipv6.temporary;
+	return 1;
+}
+
+/* How an interface asks DHCPv6 (the default: by the Router Advertisement's flags). */
+enum netconf_ipv6_dhcp
+netconf_ipv6_dhcp(
+	const struct netconf_interface *item)
+{
+	/* Named, or the default. */
+	if (item->ipv6.dhcp_set)
+		return item->ipv6.dhcp;
+	return NETCONF_IPV6_DHCP_AUTO;
 }

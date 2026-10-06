@@ -99,11 +99,12 @@ struct networkd_request {
 	struct networkd_protocol_header header;
 	unsigned char payload[NETWORKD_REQUEST_MAX];
 	char interface[IFNAMSIZ];
-	char address[INET_ADDRSTRLEN];
+	/* An address either family, with an IPv6 prefix's length (ws130-p005). */
+	char address[INET6_ADDRSTRLEN + 5];
 	char netmask[INET_ADDRSTRLEN];
-	char gateway[INET_ADDRSTRLEN];
+	char gateway[INET6_ADDRSTRLEN];
 	char rollback_path[NETWORKD_ROLLBACK_PATH_MAX + 1U];
-	char dns[8][INET_ADDRSTRLEN];
+	char dns[8][INET6_ADDRSTRLEN];
 	unsigned char ssid[WLAN_SSID_MAX];
 	size_t ssid_length;
 	unsigned dns_count;
@@ -3557,7 +3558,7 @@ dispatch_request(
 
 	/* Serializes every wired mutation with the volatile transaction owner. */
 	if (request->header.opcode >= NETWORKD_OP_UP &&
-	    request->header.opcode <= NETWORKD_OP_DNS_CLEAR &&
+	    request->header.opcode <= NETWORKD_OP_ROUTE6_CLEAR &&
 	    request->header.opcode != NETWORKD_OP_RELOAD &&
 	    networkd_confirmed_check(&confirmed, request->token) != 0) {
 		error = errno != 0 ? errno : EBUSY;
@@ -3745,6 +3746,57 @@ execute_wired_request(
 	} else if (request->header.opcode == NETWORKD_OP_DNS_CLEAR) {
 		result = write_resolver(NULL, 0);
 		*error = errno;
+	} else if (request->header.opcode == NETWORKD_OP_IPV6) {
+		/* IPv6 on or off at an interface (ws130-p005). */
+		arguments[0] = "/sbin/ifconfig";
+		arguments[1] = request->interface;
+		arguments[2] = "ipv6";
+		arguments[3] = request->address;
+		arguments[4] = NULL;
+		if (interface_exists(request->interface) == 0)
+			result = run_command_until(arguments, 10, deadline, diagnostic);
+		*error = errno;
+	} else if (request->header.opcode == NETWORKD_OP_STATIC6) {
+		/* A static IPv6 address, ADDRESS/LENGTH (ws130-p005). */
+		arguments[0] = "/sbin/ifconfig";
+		arguments[1] = request->interface;
+		arguments[2] = "inet6";
+		arguments[3] = request->address;
+		arguments[4] = NULL;
+		if (interface_exists(request->interface) == 0)
+			result = run_command_until(arguments, 10, deadline, diagnostic);
+		*error = errno;
+	} else if (request->header.opcode == NETWORKD_OP_ROUTE6) {
+		/* An IPv6 route, replacing one to the same destination (ws130-p005). */
+		arguments[0] = "/sbin/route";
+		arguments[1] = "-6";
+		arguments[2] = "delete";
+		arguments[3] = request->address;
+		arguments[4] = NULL;
+		(void)run_command_until(arguments, 10, deadline, diagnostic);
+		arguments[2] = "add";
+		arguments[3] = request->address;
+		arguments[4] = request->gateway;
+		arguments[5] = NULL;
+		if (request->interface[0] != '\0') {
+			arguments[5] = "-ifp";
+			arguments[6] = request->interface;
+			arguments[7] = NULL;
+		}
+		diagnostic[0] = '\0';
+		result = run_command_until(arguments, 10, deadline, diagnostic);
+		*error = errno;
+	} else if (request->header.opcode == NETWORKD_OP_ROUTE6_CLEAR) {
+		/* The IPv6 default route removed; none there is the same. */
+		arguments[0] = "/sbin/route";
+		arguments[1] = "-6";
+		arguments[2] = "delete";
+		arguments[3] = "default";
+		arguments[4] = NULL;
+		(void)run_command_until(arguments, 10, deadline, diagnostic);
+		diagnostic[0] = '\0';
+		result = 0;
+		*error = 0;
 	} else if (request->header.opcode == NETWORKD_OP_RELOAD) {
 		result = 0;
 		*error = 0;
@@ -3837,6 +3889,7 @@ rollback_parse(
 	char *token;
 	char *end;
 	struct in_addr parsed;
+	struct in6_addr parsed6;
 	struct in_addr mask;
 	unsigned prefix;
 	unsigned long timeout;
@@ -3904,6 +3957,26 @@ rollback_parse(
 			ROLLBACK_REJECT("invalid rollback default route");
 		request->header.opcode = NETWORKD_OP_DEFAULT_ROUTE;
 		strcpy(request->gateway, word[2]);
+	} else if ((strcmp(word[1], "IPV6") == 0 || strcmp(word[1], "STATIC6") == 0) && count == 4U) {
+		/* IPv6 (ws130-p005): the interface, and "on"/"off" or the address with its length. */
+		if (strlen(word[2]) >= sizeof(request->interface) || strlen(word[3]) >= sizeof(request->address))
+			ROLLBACK_REJECT("invalid rollback IPv6 operation");
+		request->header.opcode = strcmp(word[1], "IPV6") == 0 ? NETWORKD_OP_IPV6 : NETWORKD_OP_STATIC6;
+		strcpy(request->interface, word[2]);
+		strcpy(request->address, word[3]);
+	} else if (strcmp(word[1], "ROUTE6") == 0 && (count == 4U || count == 5U)) {
+		/* An IPv6 route: the destination, the gateway, and the interface of a link-local one. */
+		if (strlen(word[2]) >= sizeof(request->address) || strlen(word[3]) >= sizeof(request->gateway))
+			ROLLBACK_REJECT("invalid rollback IPv6 route");
+		if (count == 5U && strlen(word[4]) >= sizeof(request->interface))
+			ROLLBACK_REJECT("invalid rollback IPv6 route");
+		request->header.opcode = NETWORKD_OP_ROUTE6;
+		strcpy(request->address, word[2]);
+		strcpy(request->gateway, word[3]);
+		if (count == 5U)
+			strcpy(request->interface, word[4]);
+	} else if (strcmp(word[1], "ROUTE6_CLEAR") == 0 && count == 2U) {
+		request->header.opcode = NETWORKD_OP_ROUTE6_CLEAR;
 	} else if (strcmp(word[1], "DEFAULTROUTE_CLEAR") == 0 && count == 2U) {
 		request->header.opcode = NETWORKD_OP_DEFAULT_ROUTE_CLEAR;
 	} else if (strcmp(word[1], "DNS_CLEAR") == 0 && count == 2U) {
@@ -3912,8 +3985,11 @@ rollback_parse(
 		request->header.opcode = NETWORKD_OP_DNS;
 		request->dns_count = count - 2U;
 		for (index = 0U; index < request->dns_count; index++) {
-			if (strlen(word[index + 2U]) >= sizeof(request->dns[index]) ||
-			    netutil_parse_ipv4(word[index + 2U], &parsed) != 0)
+			if (strlen(word[index + 2U]) >= sizeof(request->dns[index]))
+				ROLLBACK_REJECT("invalid rollback DNS");
+			/* An IPv4 or IPv6 server (ws130-p005). */
+			if (netutil_parse_ipv4(word[index + 2U], &parsed) != 0 &&
+			    inet_pton(AF_INET6, word[index + 2U], &parsed6) != 1)
 				ROLLBACK_REJECT("invalid rollback DNS");
 			strcpy(request->dns[index], word[index + 2U]);
 		}
@@ -3923,7 +3999,9 @@ rollback_parse(
 	if ((request->header.opcode == NETWORKD_OP_UP ||
 	    request->header.opcode == NETWORKD_OP_DOWN ||
 	    request->header.opcode == NETWORKD_OP_DHCP ||
-	    request->header.opcode == NETWORKD_OP_STATIC) &&
+	    request->header.opcode == NETWORKD_OP_STATIC ||
+	    request->header.opcode == NETWORKD_OP_IPV6 ||
+	    request->header.opcode == NETWORKD_OP_STATIC6) &&
 	    (request->interface[0] == '\0' ||
 	    strspn(request->interface,
 	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") !=
@@ -5611,8 +5689,15 @@ decode_request(
 	    (request->header.opcode == NETWORKD_OP_RELOAD && seen == 0U &&
 	    request->dns_count == 0U) ||
 	    ((request->header.opcode == NETWORKD_OP_DEFAULT_ROUTE_CLEAR ||
-	    request->header.opcode == NETWORKD_OP_DNS_CLEAR) &&
+	    request->header.opcode == NETWORKD_OP_DNS_CLEAR ||
+	    request->header.opcode == NETWORKD_OP_ROUTE6_CLEAR) &&
 	    (seen == 0U || seen == 128U) && request->dns_count == 0U) ||
+	    ((request->header.opcode == NETWORKD_OP_IPV6 ||
+	    request->header.opcode == NETWORKD_OP_STATIC6) &&
+	    (seen == 5U || seen == (5U | 128U)) && request->dns_count == 0U) ||
+	    (request->header.opcode == NETWORKD_OP_ROUTE6 &&
+	    (seen == 20U || seen == 21U || seen == (20U | 128U) || seen == (21U | 128U)) &&
+	    request->dns_count == 0U) ||
 	    (request->header.opcode == NETWORKD_OP_CONFIRMED_ROLLBACK &&
 	    seen == 0U && request->dns_count == 0U) ||
 	    (request->header.opcode == NETWORKD_OP_CONFIRMED_CHECK &&
@@ -5679,6 +5764,14 @@ operation_name(
 		return "DEFAULTROUTE_CLEAR";
 	if (opcode == NETWORKD_OP_DNS_CLEAR)
 		return "DNS_CLEAR";
+	if (opcode == NETWORKD_OP_IPV6)
+		return "IPV6";
+	if (opcode == NETWORKD_OP_STATIC6)
+		return "STATIC6";
+	if (opcode == NETWORKD_OP_ROUTE6)
+		return "ROUTE6";
+	if (opcode == NETWORKD_OP_ROUTE6_CLEAR)
+		return "ROUTE6_CLEAR";
 	if (opcode == NETWORKD_OP_LAN_ENABLE)
 		return "LAN_ENABLE";
 	if (opcode == NETWORKD_OP_LAN_DISABLE)
