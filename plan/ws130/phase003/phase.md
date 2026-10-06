@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p003`
 Parent: [WS130](../ws.md)
-Status: in-progress（q804-i01、P1、2026-10-06）
+Status: test-wait（q804-i01、P1、2026-10-06: 段 a〜d を実装、T1 の試験待ち）
 設計: [p001](../phase001/phase.md) §3.1（H2: `IPV6_V6ONLY` の既定は 0、ユーザー承認 2026-10-05）
 依存: [p002](../phase002/phase.md)（cleared、2026-10-06 T1-206b）
 
@@ -27,7 +27,7 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
 | a | `inet_socket` の family と IPv6 の欄、`AF_INET6` の family の登録、`sockaddr_in6` の bind・connect・name、`IPV6_V6ONLY`、port の衝突（v4 と v6 の見方）、UDP の IPv6 の送受と dual stack の IPv4 の受信 | 実装済み（build のみ） |
 | b | TCP の IPv6（endpoint の照合、checksum、出力、listener の子、RST、MSS 1440） | 実装済み（build のみ） |
 | c | ICMPv6 の echo の socket（`ping6` は p005）、transport への ICMPv6 の error、PMTU を TCP に | 実装済み（build のみ） |
-| d | 試験: `userland/tests/ipv6-probe` に UDP・TCP の `::1` と slirp の `fec0::2`、`plan/ws130/tests/ipv6-p003.sh`。IPv4 の回帰（既存の network の試験）。T1 | — |
+| d | 試験: `userland/tests/ipv6-probe` に UDP・TCP の `::1` と slirp の `fec0::2`、`plan/ws130/tests/ipv6-p003.sh`。IPv4 の回帰（既存の network の試験）。T1 | 試験を作成、T1 に依頼 |
 
 ## 段 a の結果（2026-10-06、P1）
 
@@ -62,3 +62,13 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
 - PMTU を TCP に: TCP の送る segment は `TCP_MSS` 1024 で、IPv6 の最小 MTU 1280 から header 60 を引いた 1220 より小さいので、Packet Too Big で縮める要が無い（UDP は `ipv6_route_source` の path MTU を使う）。
 - 2026-10-06（q806 の後）: `inet6_create` の `SOCK_RAW` を `icmp6_socket_create` につないだ。amd64・arm64 の kernel、i386 の変えた 6 file の build（warning 0）。残りは段 d（試験）。
 - 確認: amd64 の kernel の build（`-Werror`、warning 0）。
+
+## 段 d（2026-10-06、P1）
+
+- `userland/tests/ipv6-probe/transport.c`（新）と `probe.h`: `ipv6-probe -t`（host の中: UDP の `::1` と connect の source、`[::]` の AF_INET6 socket が
+  `::ffff:127.0.0.1` から IPv4 を受けて返す・AF_INET の 0.0.0.0 の bind を `EADDRINUSE` に、`IPV6_V6ONLY` は IPv4 と port を譲る・bind の後は変えられない、TCP の `::1`
+  （accept の peer、両向きの data）、AF_INET6 の listener への IPv4 の接続（peer は v4-mapped）、拒否の RST、raw の ICMPv6 の echo を `::1` へ）。port は実行ごとに pid から
+  （30000 台、ephemeral の下）。`-T`: p002 の core の手順の途中（address と default route がある間）に router の link-local（scope の interface）と global（prefix の ::2）へ echo。
+- `plan/ws130/tests/ipv6-p003.sh`: `-t`・`-T`、root でない利用者は UDP と TCP は通り raw は `echo-socket` で拒否、IPv4 の `ping 10.0.2.2`。image は p002 の
+  `config-amd64-ipv6.mk`。
+- 確認: ipv6-probe の build（warning 0）、`sh -n`。QEMU は T1。
