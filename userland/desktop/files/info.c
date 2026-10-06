@@ -318,7 +318,7 @@ fm_mode_text(
 	snprintf(text, size, "%s (%o)", letters, (unsigned)(mode & 07777));
 }
 
-/* Reads the names of the file's extended attributes and the sizes of their values. */
+/* Reads the names of the file's extended attributes (the names only, WS131 D14). */
 static void
 info_attributes(
 	struct fm_info *info)
@@ -326,7 +326,6 @@ info_attributes(
 	char *names;
 	char *name;
 	ssize_t length;
-	ssize_t size;
 
 	/* Room for the names. */
 	names = malloc(INFO_NAMES_MAX);
@@ -340,7 +339,7 @@ info_attributes(
 		return;
 	}
 
-	/* Each name and its value's size, as many as the card lists. */
+	/* Each name, as many as the card lists. */
 	name = names;
 	while (name < names + length) {
 		if (info->attribute_count == FM_INFO_ATTRIBUTES) {
@@ -348,10 +347,8 @@ info_attributes(
 			break;
 		}
 
-		/* The value's size, asked without reading it. */
-		size = lgetxattr(info->path, name, NULL, 0);
+		/* The name. */
 		snprintf(info->attributes[info->attribute_count].name, sizeof(info->attributes[0].name), "%s", name);
-		info->attributes[info->attribute_count].size = (long)size;
 		info->attribute_count++;
 
 		/* The next name. */

@@ -32,7 +32,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* The frame's measurements, in pixels. */
+/* The frame's measurements, in pixels: the tasks' place from the corner. */
 #define UI_MARGIN		12
 
 /* The margin round a region drawn again alone (its edge and shadow, BUG-221, BUG-226). */
@@ -40,10 +40,10 @@
 #define UI_GAP			10
 
 /*
- * On glass (ws071-p017) the cards reach the window's edges, so that their
- * outer edges line up with the floating titlebar's, and stand apart by
- * zdesktop's gap between the titlebar and the window; docked, they keep
- * that gap from the screen's edges too.
+ * The panels reach the window's edges, so that their outer edges line up
+ * with the floating titlebar's and the titlebar's gap above them is
+ * zdesktop's alone (ws090-p021); on glass they stand apart by zdesktop's
+ * gap between the titlebar and the window (ws071-p017).
  */
 #define UI_GLASS_GAP		8
 #define UI_SIDEBAR_WIDTH	212
@@ -947,15 +947,11 @@ ui_layout(
 	int right;
 	int row;
 
-	/* The margin around the panels and the gap between them: on glass, the titlebar's (see UI_GLASS_GAP). */
-	margin = UI_MARGIN;
+	/* No margin around the panels (see UI_GLASS_GAP), and the gap between them: on glass, the titlebar's. */
+	margin = 0;
 	gap = UI_GAP;
-	if (app->glass != 0) {
-		margin = 0;
-		if (app->docked != 0)
-			margin = UI_GLASS_GAP;
+	if (app->glass != 0)
 		gap = UI_GLASS_GAP;
-	}
 
 	/* The panels start at the top margin (the titlebar is zdesktop's, above the window). */
 	layout = &app->layout;

@@ -16,6 +16,9 @@ if [ "${1:-}" = --tmp ]; then
 		fi
 		rm -rf -- "$dir"
 	done
+	for dir in /dev/shm/zedbsd-host-model.*; do
+		[ -d "$dir" ] && rm -rf -- "$dir"
+	done
 	exit 0
 fi
 [ $# -eq 1 ] || { echo "usage: q1-clean.sh WORKTREE" >&2; exit 2; }
@@ -34,7 +37,7 @@ done
 for dir in "$build"/*.old.* "$build"/*/*.old.*; do
 	[ -d "$dir" ] && rm -rf -- "$dir"
 done
-for dir in "$build"/ws089-host/wallpaper.*; do
+for dir in "$build"/ws089-host/wallpaper.* "$build"/ws071-host/volume.* "$build"/ws131-p020/model-*; do
 	[ -d "$dir" ] && rm -rf -- "$dir"
 done
 sh "$(dirname -- "$0")/files/host-clean.sh" "$root"

@@ -114,6 +114,9 @@ terminal_window_open(
 	if (window->kui == NULL)
 		return -1;
 
+	/* The keyboard's editing buttons come as zdesktop's keys for a terminal (Ctrl+Shift+C and V), not as Ctrl+C. */
+	kl_window_edit_by_keys(window->kui);
+
 	/* The window's size and full screen as the first configure left them. */
 	kl_window_size(window->kui, &window->width, &window->height);
 	window->fullscreen = kl_window_fullscreen(window->kui);

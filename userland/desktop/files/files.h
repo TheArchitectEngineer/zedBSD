@@ -18,8 +18,8 @@
  * operations.
  */
 
-#ifndef KEILAND_FILES_H
-#define KEILAND_FILES_H
+#ifndef FILES_H
+#define FILES_H
 
 #include "canvas.h"
 #include "ops.h"
@@ -777,12 +777,11 @@ struct fm_opener {
 #define FM_INFO_ATTRIBUTE_NAME	96
 
 /*
- * One extended attribute of a file: its name and the size of its value
- * (-1 when it could not be read).
+ * One extended attribute of a file: its name (the information shows the
+ * names only, WS131 D14).
  */
 struct fm_attribute {
 	char name[FM_INFO_ATTRIBUTE_NAME];
-	long size;
 };
 
 /*
@@ -1076,7 +1075,7 @@ enum fm_titlebar_kind {
 /*
  * One thing done with the titlebar: a control chosen (with the path's part
  * for the path), a text control's text as typed, or its editing ended
- * (how: KEILAND_TEXT_SUBMITTED, _CANCELLED or _LEFT), with its text.
+ * (how: KL_TEXT_SUBMITTED, _CANCELLED or _LEFT), with its text.
  */
 struct fm_titlebar_event {
 	unsigned kind;
@@ -1137,9 +1136,6 @@ struct fm_app {
 	 */
 	int desktop;
 	struct fm_desktop desk;
-
-	/* Whether the window is docked (maximized): its panels keep a gap from the screen's edges on glass. */
-	int docked;
 
 	/* The user's home folder, and the name the Home page greets (the display name, ws035-p120). */
 	char home[FM_PATH_MAX];

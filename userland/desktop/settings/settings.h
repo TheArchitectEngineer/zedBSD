@@ -1021,9 +1021,8 @@ struct se_app {
 	uint64_t now;
 	int dirty;
 
-	/* Whether the window is glass (its ground clear, the panes on zdesktop's glass), docked (maximized), and has the focus. */
+	/* Whether the window is glass (its ground clear, the panes on zdesktop's glass), and has the focus. */
 	int glass;
-	int docked;
 	int focused;
 
 	/* Whether the list of pages is shown. */

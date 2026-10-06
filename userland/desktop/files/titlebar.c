@@ -14,11 +14,14 @@
  * zdesktop draws the controls in the window's floating titlebar (in the
  * system bar while the window is maximized), makes them give way when the
  * room runs short (into its "..." popup, which also holds the menus), and
- * edits the text fields.  This file gives it the model and the window's
- * state (made by fm_ui_titlebar_state) in transactions, sending the state
- * only when it changed, and queues what zdesktop tells the window for the
- * main loop (fm_ui_titlebar).  The file manager needs zdesktop's titlebar:
- * without it the window does not start.
+ * edits the text fields.  This file gives libkeiland's window the table of
+ * the controls (kl_window_set_controls, WS131 p020; the progress in it
+ * while operations run) and the window's state (made by
+ * fm_ui_titlebar_state), sending the state only when it changed, and
+ * queues what zdesktop tells the window (a control chosen and a field's
+ * text, among the window's inputs, window.c) for the main loop
+ * (fm_ui_titlebar).  The file manager needs zdesktop's titlebar: without
+ * it the window does not start.
  */
 
 #include "window.h"
@@ -27,48 +30,36 @@
 #include <stdio.h>
 #include <string.h>
 
-/*
- * One control of the model: its ID, role, priority, segmented group and
- * label.
- */
-struct titlebar_control {
-	uint32_t id;
-	unsigned role;
-	unsigned priority;
-	unsigned group;
-	const char *label;
+/* The controls always there, in their order (the progress is added while operations run): each one's action is FM_TITLEBAR_ACTION plus its ID. */
+static const struct kl_control_entry titlebar_controls[] = {
+	{ FM_CONTROL_BACK, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back", FM_TITLEBAR_ACTION + FM_CONTROL_BACK },
+	{ FM_CONTROL_FORWARD, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward", FM_TITLEBAR_ACTION + FM_CONTROL_FORWARD },
+	{ FM_CONTROL_HOME, KL_CONTROL_HOME, KL_PRIORITY_PRIMARY, 0U, "Home", FM_TITLEBAR_ACTION + FM_CONTROL_HOME },
+	{ FM_CONTROL_PATH, KL_CONTROL_BREADCRUMB, KL_PRIORITY_NORMAL, 0U, "Location", FM_TITLEBAR_ACTION + FM_CONTROL_PATH },
+	{ FM_CONTROL_SEARCH, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Search", FM_TITLEBAR_ACTION + FM_CONTROL_SEARCH },
+	{ FM_CONTROL_ICONS, KL_CONTROL_VIEW_GRID, KL_PRIORITY_SECONDARY, 1U, "Icons", FM_TITLEBAR_ACTION + FM_CONTROL_ICONS },
+	{ FM_CONTROL_LIST, KL_CONTROL_VIEW_LIST, KL_PRIORITY_SECONDARY, 1U, "List", FM_TITLEBAR_ACTION + FM_CONTROL_LIST },
+	{ FM_CONTROL_PREVIEW, KL_CONTROL_PREVIEW, KL_PRIORITY_SECONDARY, 0U, "Preview", FM_TITLEBAR_ACTION + FM_CONTROL_PREVIEW }
 };
 
-/* The controls always there, in their order (the progress is added while operations run). */
-static const struct titlebar_control titlebar_controls[] = {
-	{ FM_CONTROL_BACK, KEILAND_CONTROL_BACK, KEILAND_PRIORITY_PRIMARY, 0U, "Back" },
-	{ FM_CONTROL_FORWARD, KEILAND_CONTROL_FORWARD, KEILAND_PRIORITY_PRIMARY, 0U, "Forward" },
-	{ FM_CONTROL_HOME, KEILAND_CONTROL_HOME, KEILAND_PRIORITY_PRIMARY, 0U, "Home" },
-	{ FM_CONTROL_PATH, KEILAND_CONTROL_BREADCRUMB, KEILAND_PRIORITY_NORMAL, 0U, "Location" },
-	{ FM_CONTROL_SEARCH, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, 0U, "Search" },
-	{ FM_CONTROL_ICONS, KEILAND_CONTROL_VIEW_GRID, KEILAND_PRIORITY_SECONDARY, 1U, "Icons" },
-	{ FM_CONTROL_LIST, KEILAND_CONTROL_VIEW_LIST, KEILAND_PRIORITY_SECONDARY, 1U, "List" },
-	{ FM_CONTROL_PREVIEW, KEILAND_CONTROL_PREVIEW, KEILAND_PRIORITY_SECONDARY, 0U, "Preview" }
+/* The progress, added while operations run. */
+static const struct kl_control_entry titlebar_progress = {
+	FM_CONTROL_PROGRESS, KL_CONTROL_PROGRESS, KL_PRIORITY_NORMAL, 0U, "Operations", FM_TITLEBAR_ACTION + FM_CONTROL_PROGRESS
 };
 
-static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_changed(void *data, struct keiland_titlebar *object, uint32_t id, const char *text);
-static void titlebar_done(void *data, struct keiland_titlebar *object, uint32_t id, const char *text, unsigned how);
-static void titlebar_drop_target(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail);
+/* How many controls there are at most: the ones always there and the progress. */
+#define TITLEBAR_CONTROLS	(sizeof(titlebar_controls) / sizeof(titlebar_controls[0]) + 1U)
+
 static void titlebar_queue(struct fm_titlebar *titlebar, unsigned kind, uint32_t id, uint32_t detail, const char *text);
-static int titlebar_build(struct fm_titlebar *titlebar);
+static int titlebar_controls_send(struct fm_titlebar *titlebar, int progress);
 static int titlebar_state(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
-static int titlebar_state_controls(struct keiland_titlebar *object, const struct fm_titlebar_state *state);
-static int titlebar_state_progress(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
+static void titlebar_action_state(struct fm_titlebar *titlebar, uint32_t control, int enabled, int checked);
 static void titlebar_suggest(struct fm_titlebar *titlebar, const struct fm_titlebar_state *state);
-
-/* What the titlebar tells the window: the controls chosen, the text fields' typing, and the part of the path a drag is over. */
-static const struct keiland_titlebar_listener titlebar_listener = {
-	titlebar_activated, titlebar_changed, titlebar_done, NULL, NULL, NULL, NULL, titlebar_drop_target
-};
+static int titlebar_same(unsigned value, unsigned named);
 
 /*
- * Gives zdesktop the window's titlebar, showing a state.
+ * Gives zdesktop the window's titlebar, showing a state; the window's
+ * controls' inputs come here from then on.
  *
  * Returns 0, or an errno value (ENOTSUP for a compositor without the
  * titlebar) when the titlebar could not be made.
@@ -85,15 +76,12 @@ fm_titlebar_open(
 	memset(titlebar, 0, sizeof(*titlebar));
 	titlebar->window = window;
 
-	/* The window's titlebar object. */
-	titlebar->titlebar = keiland_titlebar_create(window->display, window->toplevel, &titlebar_listener, titlebar);
-	if (titlebar->titlebar == NULL)
-		return errno;
-
-	/* The controls in one transaction. */
-	error = titlebar_build(titlebar);
+	/* The controls always there. */
+	error = titlebar_controls_send(titlebar, 0);
 	if (error != 0)
 		return error;
+	titlebar->controls = 1;
+	window->titlebar = titlebar;
 
 	/* The state it shows. */
 	error = titlebar_state(titlebar, state);
@@ -118,19 +106,42 @@ fm_titlebar_refresh(
 	int same;
 	int error;
 
-	/* Without a titlebar nothing is sent. */
-	if (titlebar->titlebar == NULL)
+	/* Without a titlebar nothing is sent; nor when the state is the one shown. */
+	if (!titlebar->controls)
 		return;
-
-	/* Nor when the state is the one shown. */
 	same = memcmp(state, &titlebar->shown, sizeof(*state));
 	if (same == 0)
 		return;
 
-	/* The new state in one transaction; a refusal is reported and the titlebar stays as it was. */
+	/* The new state; a refusal is reported and the titlebar stays as it was. */
 	error = titlebar_state(titlebar, state);
 	if (error != 0)
 		fm_log("TITLEBAR update-failed errno=%d", error);
+}
+
+/*
+ * Queues what was done with a control (a KL_WINDOW_ACTION input of one,
+ * with the breadcrumb's part in begin) or a field's text
+ * (KL_WINDOW_CONTROL_TEXT, _DONE) for the main loop.
+ */
+void
+fm_titlebar_input(
+	struct fm_titlebar *titlebar,
+	const struct kl_window_event *event)
+{
+	/* A control chosen: its ID from its action. */
+	if (event->kind == KL_WINDOW_ACTION) {
+		titlebar_queue(titlebar, FM_TITLEBAR_ACTIVATED, event->code - FM_TITLEBAR_ACTION, (uint32_t)event->begin, "");
+		return;
+	}
+
+	/* A field's text as typed, and when its editing ended (and how). */
+	if (event->kind == KL_WINDOW_CONTROL_TEXT) {
+		titlebar_queue(titlebar, FM_TITLEBAR_CHANGED, (uint32_t)event->id, 0U, event->text);
+		return;
+	}
+	if (event->kind == KL_WINDOW_CONTROL_DONE)
+		titlebar_queue(titlebar, FM_TITLEBAR_DONE, (uint32_t)event->id, event->code, event->text);
 }
 
 /*
@@ -162,81 +173,16 @@ void
 fm_titlebar_close(
 	struct fm_titlebar *titlebar)
 {
-	/* The titlebar object. */
-	if (titlebar->titlebar != NULL)
-		keiland_titlebar_destroy(titlebar->titlebar);
+	/* The controls, and the window's inputs go nowhere here any more. */
+	if (titlebar->controls &&
+	    titlebar->window != NULL &&
+	    titlebar->window->kui != NULL)
+		(void)kl_window_set_controls(titlebar->window->kui, NULL, 0U);
+	if (titlebar->window != NULL)
+		titlebar->window->titlebar = NULL;
 
 	/* Nothing is left. */
 	memset(titlebar, 0, sizeof(*titlebar));
-}
-
-/* Queues a control chosen. */
-static void
-titlebar_activated(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	uint32_t detail,
-	struct wl_seat *seat,
-	uint32_t serial)
-{
-	/* The event, for the main loop. */
-	(void)object;
-	(void)seat;
-	(void)serial;
-	titlebar_queue(data, FM_TITLEBAR_ACTIVATED, id, detail, "");
-}
-
-/*
- * Queues the part of the path a drag and drop is over (id 0: none) with the
- * window's input, where the drag's own events are (dnd.c), so that the
- * interface knows the part before the drag's next enter or motion.
- */
-static void
-titlebar_drop_target(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	uint32_t detail)
-{
-	struct fm_titlebar *titlebar;
-	struct fm_event *event;
-
-	/* The event, with the window's input. */
-	(void)object;
-	titlebar = data;
-	event = fm_window_push(titlebar->window, FM_EVENT_DROP_PART);
-	if (event == NULL)
-		return;
-	event->action = id;
-	event->button = detail;
-}
-
-/* Queues a text field's text as typed. */
-static void
-titlebar_changed(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	const char *text)
-{
-	/* The event, for the main loop. */
-	(void)object;
-	titlebar_queue(data, FM_TITLEBAR_CHANGED, id, 0U, text);
-}
-
-/* Queues the end of a text field's editing. */
-static void
-titlebar_done(
-	void *data,
-	struct keiland_titlebar *object,
-	uint32_t id,
-	const char *text,
-	unsigned how)
-{
-	/* The event, for the main loop. */
-	(void)object;
-	titlebar_queue(data, FM_TITLEBAR_DONE, id, how, text);
 }
 
 /* Puts an event at the end of the queue; a full queue keeps only the newest text of a field. */
@@ -254,7 +200,7 @@ titlebar_queue(
 	if (kind == FM_TITLEBAR_CHANGED && titlebar->event_count > 0U) {
 		event = &titlebar->events[titlebar->event_count - 1U];
 		if (event->kind == FM_TITLEBAR_CHANGED && event->id == id) {
-			snprintf(event->text, sizeof(event->text), "%s", text);
+			(void)snprintf(event->text, sizeof(event->text), "%s", text);
 			return;
 		}
 	}
@@ -268,90 +214,94 @@ titlebar_queue(
 	event->kind = kind;
 	event->id = id;
 	event->detail = detail;
-	snprintf(event->text, sizeof(event->text), "%s", text);
+	(void)snprintf(event->text, sizeof(event->text), "%s", text);
 	titlebar->event_count++;
 }
 
-/* Gives zdesktop the mode and every control in one transaction; returns 0 or an errno value. */
+/* Gives libkeiland's window the table of the controls, with the progress while operations run; 0 or an errno value. */
 static int
-titlebar_build(
-	struct fm_titlebar *titlebar)
+titlebar_controls_send(
+	struct fm_titlebar *titlebar,
+	int progress)
 {
-	const struct titlebar_control *control;
-	size_t index;
+	struct kl_control_entry controls[TITLEBAR_CONTROLS];
+	size_t count;
 	int error;
 
-	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
+	/* The controls always there, and the progress. */
+	count = sizeof(titlebar_controls) / sizeof(titlebar_controls[0]);
+	memcpy(controls, titlebar_controls, sizeof(titlebar_controls));
+	if (progress)
+		controls[count++] = titlebar_progress;
+
+	/* The table (libkeiland sends only what changed). */
+	error = kl_window_set_controls(titlebar->window->kui, controls, count);
 	if (error != 0)
 		return error;
 
-	/* The controls' presentation. */
-	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
-
-	/* Each control in its order. */
-	for (index = 0; error == 0 && index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
-		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
-	}
-
-	/* A refused change still ends the transaction, which is reported. */
-	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The controls are shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the controls are there. */
+	/* Succeeded. */
 	return 0;
 }
 
-/* Shows a state in the titlebar in one transaction, then gives a text field the keyboard when asked; returns 0 or an errno value. */
+/* Shows a state in the titlebar, then gives a text field the keyboard when asked; returns 0 or an errno value. */
 static int
 titlebar_state(
 	struct fm_titlebar *titlebar,
 	const struct fm_titlebar_state *state)
 {
+	const char *parts[FM_CRUMBS];
+	struct kl_window *window;
 	const char *last;
 	unsigned focused;
 	unsigned mode;
+	int progress;
+	int index;
 	int asked;
 	int error;
 
-	/* The transaction. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
-	if (error != 0)
-		return error;
+	/* The history's steps (Home always works); the view shown and the preview, checked. */
+	window = titlebar->window->kui;
+	titlebar_action_state(titlebar, FM_CONTROL_BACK, state->can_back, 0);
+	titlebar_action_state(titlebar, FM_CONTROL_FORWARD, state->can_forward, 0);
+	titlebar_action_state(titlebar, FM_CONTROL_ICONS, 1, titlebar_same(state->view, FM_VIEW_ICONS));
+	titlebar_action_state(titlebar, FM_CONTROL_LIST, 1, titlebar_same(state->view, FM_VIEW_LIST));
+	titlebar_action_state(titlebar, FM_CONTROL_PREVIEW, 1, state->preview);
 
-	/* The controls' state, then the progress. */
-	error = titlebar_state_controls(titlebar->titlebar, state);
+	/* The path's parts, and the folder its field starts from. */
+	for (index = 0; index < state->part_count; index++)
+		parts[index] = state->parts[index];
+	error = kl_window_set_control_parts(window, FM_CONTROL_PATH, parts, (size_t)state->part_count);
 	if (error == 0)
-		error = titlebar_state_progress(titlebar, state);
+		error = kl_window_set_control_text(window, FM_CONTROL_PATH, state->path, kl_tr("Go to folder"));
 
-	/* A refused change still ends the transaction, which is reported. */
-	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The state is shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
+	/* The search's query. */
+	if (error == 0)
+		error = kl_window_set_control_text(window, FM_CONTROL_SEARCH, state->query, kl_tr("Search"));
 	if (error != 0)
 		return error;
+
+	/* The progress: there while operations run, with their share done. */
+	progress = 0;
+	if (state->progress != FM_TITLEBAR_NO_PROGRESS)
+		progress = 1;
+	error = titlebar_controls_send(titlebar, progress);
+	if (error != 0)
+		return error;
+	if (progress) {
+		error = kl_window_set_control_value(window, FM_CONTROL_PROGRESS, (unsigned)state->progress);
+		if (error != 0)
+			return error;
+	}
 
 	/* A text field the window asked the keyboard for since the last state (the path is edited as text). */
 	asked = 0;
 	if (state->focus != FM_CONTROL_NONE && state->focus_serial != titlebar->shown.focus_serial)
 		asked = 1;
 	if (asked != 0) {
-		mode = KEILAND_FOCUS_FIELD;
+		mode = KL_FOCUS_FIELD;
 		if (state->focus == FM_CONTROL_PATH)
-			mode = KEILAND_FOCUS_EDIT;
-		error = keiland_titlebar_focus_control(titlebar->titlebar, state->focus, mode);
+			mode = KL_FOCUS_EDIT;
+		error = kl_window_focus_control_mode(window, state->focus, mode);
 		if (error != 0)
 			fm_log("TITLEBAR focus-failed id=%u errno=%d", state->focus, error);
 	}
@@ -376,85 +326,28 @@ titlebar_state(
 	return 0;
 }
 
-/* Sets the controls that are always there; returns 0 or the first refusal. */
-static int
-titlebar_state_controls(
-	struct keiland_titlebar *object,
-	const struct fm_titlebar_state *state)
-{
-	const char *parts[FM_CRUMBS];
-	int index;
-	int error;
-
-	/* The history's steps; Home always works. */
-	error = keiland_titlebar_set_control_state(object, FM_CONTROL_BACK, state->can_back, 0);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, FM_CONTROL_FORWARD, state->can_forward, 0);
-
-	/* The path's parts, and the folder its field starts from. */
-	for (index = 0; index < state->part_count; index++)
-		parts[index] = state->parts[index];
-	if (error == 0)
-		error = keiland_titlebar_set_breadcrumb(object, FM_CONTROL_PATH, parts, (size_t)state->part_count);
-	if (error == 0)
-		error = keiland_titlebar_set_control_text(object, FM_CONTROL_PATH, state->path, kl_tr("Go to folder"));
-
-	/* The search's query. */
-	if (error == 0)
-		error = keiland_titlebar_set_control_text(object, FM_CONTROL_SEARCH, state->query, kl_tr("Search"));
-
-	/* The view shown and the preview, checked. */
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, FM_CONTROL_ICONS, 1, state->view == FM_VIEW_ICONS);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, FM_CONTROL_LIST, 1, state->view == FM_VIEW_LIST);
-	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, FM_CONTROL_PREVIEW, 1, state->preview);
-
-	/* Reports the first refusal, or none. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the controls show the state. */
-	return 0;
-}
-
-/* Adds the progress when operations start, sets its share while they run, and removes it when they end. */
-static int
-titlebar_state_progress(
+/* Sets a control's action's state (enabled, checked). */
+static void
+titlebar_action_state(
 	struct fm_titlebar *titlebar,
-	const struct fm_titlebar_state *state)
+	uint32_t control,
+	int enabled,
+	int checked)
 {
-	int shown;
+	unsigned state;
 	int error;
 
-	/* Whether the titlebar has it now. */
-	shown = 0;
-	if (titlebar->sent != 0 && titlebar->shown.progress != FM_TITLEBAR_NO_PROGRESS)
-		shown = 1;
+	/* The bits. */
+	state = 0U;
+	if (!enabled)
+		state |= KL_ACTION_DISABLED;
+	if (checked)
+		state |= KL_ACTION_CHECKED;
 
-	/* Nothing runs: it goes, when it was there. */
-	if (state->progress == FM_TITLEBAR_NO_PROGRESS) {
-		if (shown == 0)
-			return 0;
-		error = keiland_titlebar_remove_control(titlebar->titlebar, FM_CONTROL_PROGRESS);
-		return error;
-	}
-
-	/* Operations run: it comes, when it was not there. */
-	if (shown == 0) {
-		error = keiland_titlebar_add_control(titlebar->titlebar, FM_CONTROL_PROGRESS, KEILAND_CONTROL_PROGRESS, KEILAND_PRIORITY_NORMAL, 0U, "Operations");
-		if (error != 0)
-			return error;
-	}
-
-	/* Their share done. */
-	error = keiland_titlebar_set_control_value(titlebar->titlebar, FM_CONTROL_PROGRESS, (unsigned)state->progress);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the progress shows. */
-	return 0;
+	/* Kept by the window for its controls. */
+	error = kl_window_set_action_state(titlebar->window->kui, FM_TITLEBAR_ACTION + control, state);
+	if (error != 0 && error != ENOTSUP)
+		fm_log("TITLEBAR update-failed errno=%d", error);
 }
 
 /* Gives the path's field the folders it suggests (none takes the list away); a refusal is only logged. */
@@ -475,7 +368,21 @@ titlebar_suggest(
 	}
 
 	/* The request; a compositor without suggestions (ENOTSUP) leaves the field as it is. */
-	error = keiland_titlebar_set_suggestions(titlebar->titlebar, FM_CONTROL_PATH, labels, texts, (size_t)state->suggest_count);
+	error = kl_window_set_control_suggestions(titlebar->window->kui, FM_CONTROL_PATH, labels, texts, (size_t)state->suggest_count);
 	if (error != 0)
 		fm_log("TITLEBAR suggest-failed errno=%d", error);
+}
+
+/* Tells whether a value is the one a control names (1) or not (0). */
+static int
+titlebar_same(
+	unsigned value,
+	unsigned named)
+{
+	/* The control's value. */
+	if (value == named)
+		return 1;
+
+	/* Another value. */
+	return 0;
 }

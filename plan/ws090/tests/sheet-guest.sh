@@ -7,13 +7,14 @@
 #             bar in the middle of the window, with no title bar of its own (open.png)
 #   move      the parent's title bar dragged: the sheet moves with it (moved.png)
 #   hold      a press on the parent's body is held (ZWL GLASS sheet holds) and the chooser stays; Cancel closes it
-#   dock      Open again, the parent's maximize button: the parent docks, the sheet hangs under the system bar
-#             (docked.png); the docked title's restore brings both back
+#   dock      Open again, the parent's maximize button: the parent docks, and in the docked mode the sheet is in the
+#             middle of the docked body (ws142-p008: x=260, y=48+(752-height)/2) (docked.png); Cancel
 #   minimize  Open again, the parent's minimize button: both hide (minimized.png); Wiseview (Super+Tab) shows the
 #             parent alone, Right picks its tile and Enter brings both back (restored.png); Cancel
 #   saveas    Text Editor without a file, "abc" typed and Ctrl+S: Save As is a sheet too (saveas.png); Cancel
 #   open and saveas (ws090-p016): the sheet is glass: its panels are the whole sheet, reaching 14 above its top
-#             (ZWL GLASS ... panels=3 card:0,-14,...), and the two cards; open.png and saveas.png show both panes as light
+#             (ZWL GLASS ... panels=3 card:0,-14,...), and the two cards (Text Editor's card at 0,0 since ws090-p021:
+#             it reaches the window's edges); open.png and saveas.png show both panes as light
 #             veils on the blurred wallpaper, no white card
 #   GUEST_RUNTIME=... BIN=build/amd64 plan/ws090/tests/sheet-guest.sh OUTDIR STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -69,7 +70,7 @@ open_chooser() {
 	pointer move 487 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
 	expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
 	expect_more 'ZWL GLASS sheet at x=260 y=100 ' 0
-	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
+	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:0,0,' "$glass"
 }
 
 # The chooser's Cancel (its place at the bottom right of the sheet, as the chooser lays it out at 760x480); Text Editor
@@ -122,7 +123,16 @@ for step in "$@"; do
 		open_chooser
 		pointer move 1029 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
 		expect_more 'ZWL GLASS dock surface=' 0
-		expect_more 'ZWL GLASS sheet at x=260 y=48 ' 0
+		sleep 1
+		height=$(sheet_place | sed -n 's/.* height=\([0-9]*\).*/\1/p')
+		want=$(( 48 + (752 - ${height:-0}) / 2 ))
+		set -- $(sheet_xy)
+		if [ "${1:-}" = 260 ] && [ "${2:-}" = "$want" ]; then
+			echo "sheet in the docked body's middle at 260,$want ok"
+		else
+			echo "sheet at ${1:-?},${2:-?}, not 260,$want (height ${height:-?}) MISSING"
+			status=1
+		fi
 		shot docked.png
 		cancel
 		;;
@@ -149,7 +159,7 @@ for step in "$@"; do
 		sleep 1.5
 		pointer move 1250 780 sleep 300
 		expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
-		expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
+		expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:0,0,' "$glass"
 		shot saveas.png
 		cancel
 		;;

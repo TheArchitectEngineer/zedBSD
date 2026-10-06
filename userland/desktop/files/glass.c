@@ -9,7 +9,7 @@
  * The window's glass in zdesktop (ws071-p015): the sidebar, the content
  * (with its tabs) and the preview float as cards on zdesktop's frosted glass,
  * and the desktop shows between them.  zdesktop draws the glass, its rim
- * and the cards' shadows (keiland_glass_v1 through libkeiland); the frame
+ * and the cards' shadows (through libkeiland's window, WS131 p020); the frame
  * leaves its ground clear and only tints the cards.
  *
  * The window is glass when its swapchain is see-through and zdesktop has
@@ -36,8 +36,11 @@ fm_glass_open(
 	struct fm_window *window,
 	const struct fm_present *present)
 {
+	int error;
+
 	/* Nothing sent yet. */
 	memset(glass, 0, sizeof(*glass));
+	glass->window = window;
 
 	/* A frame that zdesktop does not blend cannot let the desktop through. */
 	if (present->premultiplied == 0) {
@@ -45,14 +48,15 @@ fm_glass_open(
 		return 0;
 	}
 
-	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(window->display, window->surface);
-	if (glass->glass == NULL) {
-		fm_log("GLASS off reason=compositor errno=%d", errno);
+	/* zdesktop's glass for the window's surface, over the wallpaper. */
+	error = kl_window_set_glass_blur(window->kui, 0);
+	if (error == ENODEV) {
+		fm_log("GLASS off reason=compositor errno=%d", error);
 		return 0;
 	}
 
 	/* Succeeded: the window is glass. */
+	glass->on = 1;
 	fm_log("GLASS on");
 	return 1;
 }
@@ -66,7 +70,7 @@ fm_glass_refresh(
 	struct fm_glass *glass,
 	struct fm_app *app)
 {
-	struct keiland_glass_panel sent[FM_PANELS];
+	struct kl_glass_panel sent[FM_PANELS];
 	struct fm_panel panels[FM_PANELS];
 	size_t count;
 	size_t index;
@@ -74,7 +78,7 @@ fm_glass_refresh(
 	int error;
 
 	/* A window that is not glass has no panels. */
-	if (glass->glass == NULL)
+	if (!glass->on)
 		return;
 
 	/* The frame's panels, unless they are the ones zdesktop has. */
@@ -84,17 +88,18 @@ fm_glass_refresh(
 		return;
 
 	/* Each panel in zdesktop's terms. */
+	memset(sent, 0, sizeof(sent));
 	for (index = 0; index < count; index++) {
 		sent[index].x = panels[index].rect.x;
 		sent[index].y = panels[index].rect.y;
 		sent[index].width = panels[index].rect.width;
 		sent[index].height = panels[index].rect.height;
 		sent[index].radius = panels[index].radius;
-		sent[index].kind = KEILAND_GLASS_CARD;
+		sent[index].kind = KL_GLASS_CARD;
 	}
 
 	/* Sent with the frame; a refused list is logged and the old panels stay. */
-	error = keiland_glass_set_panels(glass->glass, sent, count);
+	error = kl_window_set_glass(glass->window->kui, sent, count);
 	if (error != 0) {
 		fm_log("GLASS refused errno=%d count=%lu", error, (unsigned long)count);
 		return;
@@ -114,9 +119,12 @@ void
 fm_glass_close(
 	struct fm_glass *glass)
 {
-	/* The glass object, when there is one. */
-	keiland_glass_destroy(glass->glass);
-	glass->glass = NULL;
+	/* The panels, when the window is glass (the glass goes with the window). */
+	if (glass->on &&
+	    glass->window != NULL &&
+	    glass->window->kui != NULL)
+		(void)kl_window_set_glass(glass->window->kui, NULL, 0U);
+	glass->on = 0;
 }
 
 /* Tells whether a list of panels is the one sent last. */

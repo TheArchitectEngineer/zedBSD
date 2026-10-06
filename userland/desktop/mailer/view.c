@@ -29,10 +29,13 @@
 /* The width under which the folders are left out and the list or the message is shown alone. */
 #define ML_VIEW_NARROW		900
 
-/* The panes: the folders' and the list's widths, the cards' margin, gap and corner on glass. */
+/*
+ * The panes: the folders' and the list's widths, the cards' gap and corner
+ * on glass.  The cards reach the window's edges, so that they line up with
+ * the floating titlebar (ws090-p021).
+ */
 #define ML_VIEW_SIDEBAR		220
 #define ML_VIEW_LIST		340
-#define ML_VIEW_MARGIN		12
 #define ML_VIEW_GAP		10
 #define ML_VIEW_CARD_RADIUS	16.0f
 
@@ -449,7 +452,7 @@ ml_view_wait(
 /*
  * Lays out the panes in a window of a size: the folders, the list and the
  * message side by side, or in a narrow window the list or the message
- * alone; on glass, as cards with a margin round them and a gap between.
+ * alone; on glass, as cards with a gap between.
  */
 static void
 view_layout(
@@ -462,14 +465,12 @@ view_layout(
 	int gap;
 	int left;
 
-	/* The margin and the gap: only cards on glass have them. */
+	/* No margin (see ML_VIEW_SIDEBAR), and the gap: only cards on glass have one. */
 	memset(layout, 0, sizeof(layout[0]));
 	margin = 0;
 	gap = 0;
-	if (view->glass) {
-		margin = ML_VIEW_MARGIN;
+	if (view->glass)
 		gap = ML_VIEW_GAP;
-	}
 
 	/* A narrow window: the list or the message alone. */
 	if (view->narrow) {

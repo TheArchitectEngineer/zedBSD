@@ -664,8 +664,12 @@ void te_draw(struct te_app *app, struct te_canvas *canvas);
 void te_log(const char *format, ...);
 uint64_t te_clock(void);
 
-/* The layout of the frame, in pixels. */
-#define TE_CARD_INSET		8
+/*
+ * The layout of the frame, in pixels: the card reaches the window's edges
+ * (no inset), so that it lines up with the floating titlebar and the gap
+ * above it is zdesktop's alone (ws090-p021).
+ */
+#define TE_CARD_INSET		0
 #define TE_CARD_RADIUS		18
 #define TE_TEXT_SIDE		16
 #define TE_TEXT_TOP		12
