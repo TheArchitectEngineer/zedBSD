@@ -21,6 +21,7 @@
 #define KL_BACKEND_DISPLAY_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <vulkan/vulkan.h>
 
 struct kl_backend;
@@ -55,6 +56,34 @@ VkResult kl_backend_display_acquire(struct kl_backend *backend, const struct kl_
  * VK_SUCCESS or the failure of the release.
  */
 VkResult kl_backend_display_release(struct kl_backend *backend, const struct kl_backend_vulkan *vulkan, VkPhysicalDevice physical, VkDisplayKHR display);
+
+/*
+ * The direct scanout of a client's buffer (ws122-p005b, the compositor's
+ * game mode, the 2026-10-06 user decision B and the Guardrail's exception
+ * to "the compositor uses only libvulkan"): while a fullscreen video or
+ * game is all that shows, the compositor closes its swapchain, and the
+ * backend shows the client's GPU buffer on the display without composing
+ * it.  Only zedBSD has it (its kernel's display ioctls, which stay in the
+ * backend's zedBSD tree); elsewhere it is ENOTSUP and the compositor keeps
+ * composing.
+ *
+ *   kl_backend_scanout_open     claims the display for an output of the
+ *       given size (after the swapchain has gone); 0, ENOTSUP, or the
+ *       claim's failure
+ *   kl_backend_scanout_present  shows a buffer (one of the GPU buffers'
+ *       protocol, keiland-backend-gpu.h, whose rendering is done) as the
+ *       whole output; the one it replaces is no longer read when it
+ *       returns.  0, EINVAL for a buffer that cannot be scanned out (not a
+ *       GPU buffer, another size), or the present's failure
+ *   kl_backend_scanout_close    releases the display (the swapchain may be
+ *       made again); NULL does nothing
+ */
+struct kl_backend_scanout;
+struct kl_backend_protocol_host;
+struct kl_backend_resource;
+int kl_backend_scanout_open(struct kl_backend *backend, uint32_t width, uint32_t height, struct kl_backend_scanout **scanout);
+int kl_backend_scanout_present(struct kl_backend_scanout *scanout, const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer);
+void kl_backend_scanout_close(struct kl_backend_scanout *scanout);
 
 /*
  * Fills path with the compositor's default socket for this system (the
