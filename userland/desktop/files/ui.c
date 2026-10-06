@@ -91,6 +91,7 @@ fm_app_init(
 	app->sort = FM_SORT_NAME;
 	app->show_sidebar = 1;
 	app->columns = FM_COLUMNS_DEFAULT;
+	app->column_drag = -1;
 	app->wall = time(NULL);
 	app->focused = 1;
 	app->dirty = 1;

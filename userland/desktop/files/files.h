@@ -578,7 +578,8 @@ enum fm_hit_kind {
 	FM_HIT_SCOPE,
 	FM_HIT_OVERLAY,
 	FM_HIT_BUTTON,
-	FM_HIT_SECTION
+	FM_HIT_SECTION,
+	FM_HIT_COLUMN_EDGE
 };
 
 /*
@@ -1145,6 +1146,18 @@ struct fm_app {
 	unsigned columns;
 
 	/*
+	 * The list view's columns' widths the user dragged (BUG-220: 0 for a
+	 * column's own width), kept while Files runs; a drag of the edge before
+	 * a column (its index, -1 for none), where it started, and the widths
+	 * of the columns on either side of the edge then.
+	 */
+	int column_widths[FM_COLUMN_COUNT];
+	int column_drag;
+	int column_drag_x;
+	int column_drag_left;
+	int column_drag_right;
+
+	/*
 	 * The removable device a mount or an eject was asked for
 	 * (FM_REQUEST_DEVICE_*, ws132-p005), and the one to be opened once the
 	 * desktop says it is mounted.
@@ -1519,6 +1532,9 @@ void fm_view_item_rect(struct fm_app *app, int index, struct fm_rect *rect);
 void fm_list_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
 void fm_time_text(time_t when, time_t now, char *text, size_t size);
 int fm_list_sort_at(struct fm_app *app, int index);
+void fm_list_edge_press(struct fm_app *app, int column, int x);
+int fm_list_edge_motion(struct fm_app *app, int x);
+int fm_list_edge_release(struct fm_app *app);
 
 /* The text fields (ui-field.c). */
 char fm_key_character(uint32_t key, uint32_t modifiers);

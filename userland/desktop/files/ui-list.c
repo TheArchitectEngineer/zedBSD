@@ -13,6 +13,8 @@
  * app's choice (View > List Columns); the places whose items come from
  * many folders (search, recent files, the trash) add where each item is.
  * Clicking a column's title sorts by it, clicking again reverses.
+ * Dragging the edge before a column changes the widths of the columns on
+ * either side of it (BUG-220); the widths are kept while Files runs.
  */
 
 #include "files.h"
@@ -31,6 +33,13 @@
 /* The widest a list may show columns: the name, and the six others at most. */
 #define LIST_COLUMNS		8
 
+/* The columns' own widths (the name takes what is left), the least a dragged column keeps, the least the name keeps. */
+#define LIST_LEAST		60
+#define LIST_NAME_LEAST		200
+
+/* How wide the grip on an edge between two columns is. */
+#define LIST_EDGE_GRIP		10
+
 /*
  * One column as it is laid out for a frame: which one, where and how wide.
  */
@@ -46,6 +55,9 @@ static void list_row(struct fm_app *app, struct fm_canvas *canvas, struct fm_ent
 static void list_cell_text(struct fm_app *app, struct fm_entry *entry, unsigned column, char *text, size_t size);
 static const char *list_title(unsigned column);
 static unsigned list_sort_of(unsigned column);
+static int list_width(const struct fm_app *app, unsigned column);
+static int list_left_of(struct fm_app *app, unsigned column);
+static unsigned list_shown(struct fm_app *app);
 
 /*
  * Draws the items as a list in the panel's inner rectangle, and records
@@ -178,6 +190,92 @@ fm_list_sort_at(
 	return (int)list_sort_of((unsigned)index);
 }
 
+/*
+ * Starts a drag of the edge before a column (a press on it, BUG-220): the
+ * widths of the columns on either side of it then.
+ */
+void
+fm_list_edge_press(
+	struct fm_app *app,
+	int column,
+	int x)
+{
+	int left;
+
+	/* The column and the one left of it (none when the name is: the name takes what is left). */
+	if (column <= (int)FM_COLUMN_NAME || column >= (int)FM_COLUMN_COUNT)
+		return;
+	left = list_left_of(app, (unsigned)column);
+	app->column_drag = column;
+	app->column_drag_x = x;
+	app->column_drag_right = list_width(app, (unsigned)column);
+	app->column_drag_left = 0;
+	if (left > (int)FM_COLUMN_NAME)
+		app->column_drag_left = list_width(app, (unsigned)left);
+	app->dirty = 1;
+}
+
+/*
+ * Follows a drag of a column's edge: moved right, the column narrows and
+ * the one left of it widens (the name, when it is that one, takes it);
+ * neither below LIST_LEAST.  Returns 1 while a drag is under way.
+ */
+int
+fm_list_edge_motion(
+	struct fm_app *app,
+	int x)
+{
+	int left;
+	int moved;
+	int right_width;
+	int left_width;
+
+	/* No drag. */
+	if (app->column_drag < 0)
+		return 0;
+
+	/* The edge's move, kept where neither column gets narrower than its least. */
+	moved = x - app->column_drag_x;
+	if (app->column_drag_right - moved < LIST_LEAST)
+		moved = app->column_drag_right - LIST_LEAST;
+	left = list_left_of(app, (unsigned)app->column_drag);
+	if (left > (int)FM_COLUMN_NAME && app->column_drag_left + moved < LIST_LEAST)
+		moved = LIST_LEAST - app->column_drag_left;
+
+	/* The new widths (the name's is what the layout leaves; the layout keeps its least). */
+	right_width = app->column_drag_right - moved;
+	app->column_widths[app->column_drag] = right_width;
+	if (left > (int)FM_COLUMN_NAME) {
+		left_width = app->column_drag_left + moved;
+		app->column_widths[left] = left_width;
+	}
+
+	/* Drawn at the new widths. */
+	app->dirty = 1;
+
+	/* Succeeded: the drag goes on. */
+	return 1;
+}
+
+/* Ends a drag of a column's edge.  Returns 1 when one was under way (the release is its). */
+int
+fm_list_edge_release(
+	struct fm_app *app)
+{
+	/* No drag. */
+	if (app->column_drag < 0)
+		return 0;
+
+	/* The widths stay; the log says them (the tests read it). */
+	printf("ZFILES COLUMN width column=%d width=%d\n", app->column_drag, app->column_widths[app->column_drag]);
+	fflush(stdout);
+	app->column_drag = -1;
+	app->dirty = 1;
+
+	/* Succeeded: the release was the drag's. */
+	return 1;
+}
+
 /* Lays out the columns shown, and returns how many there are. */
 static int
 list_layout(
@@ -185,40 +283,31 @@ list_layout(
 	const struct fm_rect *inner,
 	struct list_column *columns)
 {
-	static const int widths[FM_COLUMN_COUNT] = { 0, 150, 90, 150, 150, 110, 200, 150 };
-	const struct fm_location *location;
-	struct fm_tab *tab;
 	unsigned shown;
 	unsigned column;
 	struct list_column swap;
 	int count;
 	int right;
+	int width;
 	int first;
 	int last;
 
 	/* The columns the app shows, and those the place adds. */
-	tab = fm_ui_tab(app);
-	location = &tab->history[tab->history_index].location;
-	shown = app->columns | (1U << FM_COLUMN_NAME);
-	if (location->kind == FM_LOCATION_SEARCH || location->kind == FM_LOCATION_RECENTS)
-		shown |= 1U << FM_COLUMN_LOCATION;
-	if (location->kind == FM_LOCATION_TRASH) {
-		shown |= 1U << FM_COLUMN_LOCATION;
-		shown |= 1U << FM_COLUMN_DELETED;
-	}
+	shown = list_shown(app);
 
-	/* The other columns from the right, while the name keeps 200 pixels. */
+	/* The other columns from the right (each its dragged width, else its own), while the name keeps its least. */
 	count = 1;
 	right = inner->x + inner->width - 8;
 	for (column = FM_COLUMN_COUNT - 1U; column > FM_COLUMN_NAME; column--) {
 		if ((shown & (1U << column)) == 0U)
 			continue;
-		if (right - widths[column] < inner->x + 200)
+		width = list_width(app, column);
+		if (right - width < inner->x + LIST_NAME_LEAST)
 			continue;
-		right -= widths[column];
+		right -= width;
 		columns[count].column = column;
 		columns[count].x = right;
-		columns[count].width = widths[column];
+		columns[count].width = width;
 		count++;
 	}
 
@@ -252,6 +341,7 @@ list_header(
 	int count)
 {
 	struct fm_rect title;
+	struct fm_rect edge;
 	fm_color ink;
 	unsigned sort;
 	int baseline;
@@ -293,6 +383,20 @@ list_header(
 		/* A sortable title can be clicked. */
 		if (sort != FM_SORT_COUNT)
 			fm_ui_hit(app, &title, FM_HIT_HEADER, (int)columns[index].column);
+	}
+
+	/* The edge before each column but the name's can be dragged (over the titles, which it was recorded after). */
+	for (index = 1; index < count; index++) {
+		title.x = columns[index].x - LIST_EDGE_GRIP / 2;
+		title.y = inner->y;
+		title.width = LIST_EDGE_GRIP;
+		title.height = LIST_HEADER;
+		edge.x = columns[index].x;
+		edge.y = inner->y + 8;
+		edge.width = 1;
+		edge.height = LIST_HEADER - 16;
+		fm_canvas_fill(canvas, &edge, FM_COLOR_SEPARATOR);
+		fm_ui_hit(app, &title, FM_HIT_COLUMN_EDGE, (int)columns[index].column);
 	}
 }
 
@@ -473,4 +577,71 @@ list_sort_of(
 
 	/* The others do not. */
 	return FM_SORT_COUNT;
+}
+
+/* Gives a column's width: the one the user dragged it to, else its own. */
+static int
+list_width(
+	const struct fm_app *app,
+	unsigned column)
+{
+	static const int widths[FM_COLUMN_COUNT] = { 0, 150, 90, 150, 150, 110, 200, 150 };
+
+	/* Dragged. */
+	if (column < FM_COLUMN_COUNT && app->column_widths[column] > 0)
+		return app->column_widths[column];
+
+	/* Its own. */
+	if (column < FM_COLUMN_COUNT)
+		return widths[column];
+	return 0;
+}
+
+/*
+ * Gives the column shown left of another in the list (the name when none
+ * other is): the next lower column the app shows.
+ */
+static int
+list_left_of(
+	struct fm_app *app,
+	unsigned column)
+{
+	unsigned shown;
+	unsigned other;
+
+	/* The columns shown (the place's own too, as list_layout takes them). */
+	shown = list_shown(app);
+	for (other = column - 1U; other > FM_COLUMN_NAME; other--) {
+		if ((shown & (1U << other)) != 0U)
+			return (int)other;
+	}
+
+	/* None: the name. */
+	return (int)FM_COLUMN_NAME;
+}
+
+/* Gives the columns shown (FM_COLUMN_* bits): the name, the app's, and those the place adds. */
+static unsigned
+list_shown(
+	struct fm_app *app)
+{
+	const struct fm_location *location;
+	struct fm_tab *tab;
+	unsigned shown;
+
+	/* The name and the app's choice. */
+	tab = fm_ui_tab(app);
+	location = &tab->history[tab->history_index].location;
+	shown = app->columns | (1U << FM_COLUMN_NAME);
+
+	/* Where each item is, for the places whose items come from many folders; when it was deleted, in the trash. */
+	if (location->kind == FM_LOCATION_SEARCH || location->kind == FM_LOCATION_RECENTS)
+		shown |= 1U << FM_COLUMN_LOCATION;
+	if (location->kind == FM_LOCATION_TRASH) {
+		shown |= 1U << FM_COLUMN_LOCATION;
+		shown |= 1U << FM_COLUMN_DELETED;
+	}
+
+	/* Succeeded: the columns. */
+	return shown;
 }
