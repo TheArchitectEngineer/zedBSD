@@ -78,6 +78,7 @@ struct sandbox_spawn {
 /* The size of the first version. */
 #define SANDBOX_SPAWN_SIZE_V1		64U
 
+/* The layouts every program and kernel agree on. */
 _Static_assert(sizeof(struct sandbox_spawn) == SANDBOX_SPAWN_SIZE_V1, "the first version of the request is 64 bytes");
 _Static_assert(sizeof(struct sandbox_fd) == 8U, "a file mapping is 8 bytes");
 

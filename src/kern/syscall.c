@@ -9004,7 +9004,13 @@ sys_sandbox_spawn_call(
 
 	/* One argument: the request. */
 	process = current_process();
-	if (process == NULL || process->fd == NULL || args[1] != 0 || args[2] != 0 || args[3] != 0 || args[4] != 0 || args[5] != 0)
+	if (process == NULL || process->fd == NULL)
+		return -EINVAL;
+	if (args[1] != 0 ||
+	    args[2] != 0 ||
+	    args[3] != 0 ||
+	    args[4] != 0 ||
+	    args[5] != 0)
 		return -EINVAL;
 	error = sandbox_request_read(args[0], &request);
 	if (error != 0)
