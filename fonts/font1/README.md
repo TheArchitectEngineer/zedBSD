@@ -1,5 +1,7 @@
 # font1 — Bold / Regular
 
+**現行の配布TTFは [Keiland Mono / Keiland Regular / Keiland Bold](../keiland/README.md)。** 2026-10-06 userの命名指示により、承認済み0.202をKeiland Monoとし、可変ピッチのRegular/Boldを追加した。このdirectoryは元の字形と生成履歴を保持する。
+
 2026-10-06 userの指示で、承認された最初の字形を **Bold** として保存し、Monaco Regularと同程度の線幅を目標に **Regular** の画像案を生成した。
 
 - [Bold](bold/README.md): 元の95文字と原画像を変更せず保存。初案のcommitは `aad48d2a`。
