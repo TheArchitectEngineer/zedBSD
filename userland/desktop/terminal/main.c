@@ -238,6 +238,13 @@ static size_t main_paste_length;
 static char main_primary[MAIN_CLIPBOARD_MAX];
 static size_t main_paste_written;
 
+/*
+ * Whether the active shell reads a secret (ws095-p006): its echo off on a
+ * whole line, as a password prompt has it.  The window's text input is off
+ * meanwhile, so the input method composes nothing and the keys go as they are.
+ */
+static int main_secret;
+
 static int main_parse(int argc, char **argv, struct main_options *options);
 static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
@@ -285,6 +292,7 @@ static void main_scroll(void);
 static void main_view_log(const char *how);
 static void main_touch_round(void);
 static void main_text_cursor(void);
+static void main_secret_follow(int master);
 static void main_touch_queue(unsigned kind, const struct terminal_touch_pointer *made);
 
 /*
@@ -701,6 +709,9 @@ main_loop(
 			return 0;
 		}
 
+		/* A password prompt in the active shell turns the input method off until it is answered. */
+		main_secret_follow(run->master);
+
 		/* The deadline, when one was given, ends the terminal. */
 		now = terminal_clock();
 		if (options->timeout != 0U && now - started >= (uint64_t)options->timeout * 1000U) {
@@ -920,6 +931,44 @@ main_read_shell(
 
 	/* Succeeded: more may follow, read on the next round. */
 	return 0;
+}
+
+/*
+ * Turns the window's text input off while the active shell reads a secret
+ * (ws095-p006): sudo, su, ssh and passwd turn the echo off and keep the
+ * whole line, so the keys then reach them as they are, with no text
+ * composed.  A full-screen program that turns the echo off with the line
+ * (an editor, ICANON off) keeps the input method.
+ */
+static void
+main_secret_follow(
+	int master)
+{
+	struct termios modes;
+	int secret;
+	int error;
+
+	/* The active shell's modes; a master that cannot tell them leaves the text input as it is. */
+	if (master < 0)
+		return;
+	error = tcgetattr(master, &modes);
+	if (error != 0)
+		return;
+
+	/* A secret: no echo, on a whole line. */
+	secret = 0;
+	if ((modes.c_lflag & ECHO) == 0 && (modes.c_lflag & ICANON) != 0)
+		secret = 1;
+	if (secret == main_secret)
+		return;
+
+	/* The text input off for the secret, on again after it. */
+	main_secret = secret;
+	if (secret)
+		kui_window_text_input(main_window.kui, 0);
+	else
+		kui_window_text_input(main_window.kui, 1);
+	printf("ZTERM IME secret=%d\n", secret);
 }
 
 /* Writes the keys typed to the shell; returns nonzero once the shell has gone. */
