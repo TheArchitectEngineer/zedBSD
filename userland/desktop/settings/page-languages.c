@@ -110,13 +110,13 @@ se_languages_draw(
 
 	/* The input method's card: one row a choice, a switch at each. */
 	height = se_card_height(0, 1) + 3 * LANGUAGES_ROW + 4;
-	y = se_card_begin(app, canvas, x, top, width, height, "Input method", "What the keyboard types through. The change applies at once.");
+	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Input method"), kl_tr("What the keyboard types through. The change applies at once."));
 	fm_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
 	for (i = 0; i < sizeof(languages_choices) / sizeof(languages_choices[0]); i++) {
 		/* The name, what it does, and its switch (on for the method chosen). */
 		choice = &languages_choices[i];
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, choice->name, LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, choice->line, LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, kl_tr(choice->name), LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, kl_tr(choice->line), LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 16, app->look.ime_method == choice->method, app->look.writable, choice->index);
 		y += LANGUAGES_ROW;
 	}

@@ -1,0 +1,161 @@
+# Settings' texts in Japanese (domain settings, WS158 p004). tools/i18n/tr.py update keeps the translations.
+# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:481
+msg	Settings	設定
+# userland/desktop/locale/settings.keys:4
+msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
+# userland/desktop/locale/settings.keys:5
+msg	Wi-Fi	Wi-Fi
+# userland/desktop/locale/settings.keys:6
+msg	Join wireless networks and turn the radio on or off.	無線のネットワークにつなぎ、電波を入れたり切ったりします。
+# userland/desktop/locale/settings.keys:7
+msg	Ethernet	イーサネット
+# userland/desktop/locale/settings.keys:8
+msg	Wired connections and their addresses.	有線の接続とそのアドレス。
+# userland/desktop/locale/settings.keys:9
+msg	Bluetooth	Bluetooth
+# userland/desktop/locale/settings.keys:10
+msg	Pair and connect wireless devices.	無線の機器をペアリングしてつなぎます。
+# userland/desktop/locale/settings.keys:11
+msg	VPN	VPN
+# userland/desktop/locale/settings.keys:12
+msg	Connect securely to other networks.	ほかのネットワークに安全につなぎます。
+# userland/desktop/locale/settings.keys:13
+msg	Network	ネットワーク
+# userland/desktop/locale/settings.keys:14
+msg	Manage connections and internet settings.	接続とインターネットの設定を管理します。
+# userland/desktop/locale/settings.keys:15
+msg	Appearance	外観
+# userland/desktop/locale/settings.keys:16
+msg	The look of windows and the desktop.	ウインドウとデスクトップの見た目。
+# userland/desktop/locale/settings.keys:17
+msg	Wallpaper	壁紙
+# userland/desktop/locale/settings.keys:18
+msg	The picture behind your windows.	ウインドウの後ろの画像。
+# userland/desktop/locale/settings.keys:19
+msg	Notifications	通知
+# userland/desktop/locale/settings.keys:20
+msg	Choose which applications may notify you.	通知してよいアプリケーションを選びます。
+# userland/desktop/locale/settings.keys:21
+msg	Sound	サウンド
+# userland/desktop/locale/settings.keys:22
+msg	Volume and the sound output.	音量と音の出力。
+# userland/desktop/locale/settings.keys:23
+msg	Display	ディスプレイ
+# userland/desktop/locale/settings.keys:24
+msg	Resolution and the screens.	解像度と画面。
+# userland/desktop/locale/settings.keys:25
+msg	Languages	言語
+# userland/desktop/locale/settings.keys:26
+msg	The input method and the display language.	入力方式と表示の言語。
+# userland/desktop/locale/settings.keys:27
+msg	Storage	ストレージ
+# userland/desktop/locale/settings.keys:28
+msg	How the disks and folders are used, and the Trash.	ディスクとフォルダの使用量、ゴミ箱。
+# userland/desktop/locale/settings.keys:29
+msg	Battery	バッテリー
+# userland/desktop/locale/settings.keys:30
+msg	Charge and power saving.	充電と省電力。
+# userland/desktop/locale/settings.keys:31
+msg	Keyboard	キーボード
+# userland/desktop/locale/settings.keys:32
+msg	Key repeat and the layout.	キーのリピートと配列。
+# userland/desktop/locale/settings.keys:33
+msg	Mouse	マウス
+# userland/desktop/locale/settings.keys:34
+msg	Pointer speed, acceleration and scrolling.	ポインターの速さ、加速、スクロール。
+# userland/desktop/locale/settings.keys:35
+msg	Touchpad	タッチパッド
+# userland/desktop/locale/settings.keys:36
+msg	Printers	プリンター
+# userland/desktop/locale/settings.keys:37
+msg	Add and manage printers.	プリンターを追加して管理します。
+# userland/desktop/locale/settings.keys:38
+msg	Sharing	共有
+# userland/desktop/locale/settings.keys:39
+msg	Remote Login and, later, cloud storage.	リモートログイン（のちにクラウドストレージ）。
+# userland/desktop/locale/settings.keys:40
+msg	Users	ユーザー
+# userland/desktop/locale/settings.keys:41
+msg	Accounts on this computer.	このコンピューターのアカウント。
+# userland/desktop/locale/settings.keys:42
+msg	Privacy	プライバシー
+# userland/desktop/locale/settings.keys:43
+msg	What applications may use.	アプリケーションが使ってよいもの。
+# userland/desktop/locale/settings.keys:44
+msg	Security	セキュリティ
+# userland/desktop/locale/settings.keys:45
+msg	Locking the screen and protecting your data.	画面のロックとデータの保護。
+# userland/desktop/locale/settings.keys:46
+msg	Accessibility	アクセシビリティ
+# userland/desktop/locale/settings.keys:47
+msg	Make Kei easier to see, hear and use.	Kei を見やすく、聞きやすく、使いやすくします。
+# userland/desktop/locale/settings.keys:48
+msg	Updates	アップデート
+# userland/desktop/locale/settings.keys:49
+msg	Keep Kei up to date.	Kei を最新に保ちます。
+# userland/desktop/locale/settings.keys:50
+msg	About	情報
+# userland/desktop/locale/settings.keys:51
+msg	This computer and the version of Kei.	このコンピューターと Kei のバージョン。
+# userland/desktop/locale/settings.keys:53
+msg	Search Results	検索結果
+# userland/desktop/locale/settings.keys:55
+msg	Japanese	日本語
+# userland/desktop/locale/settings.keys:56
+msg	Kei's input method: romaji to kana, converted a phrase at a time.	Kei の入力方式: ローマ字をかなにし、文節ごとに変換します。
+# userland/desktop/locale/settings.keys:57
+msg	SKK	SKK
+# userland/desktop/locale/settings.keys:58
+msg	Emacs's SKK: an upper-case letter starts a word, Space converts it.	Emacs の SKK: 大文字で単語を始め、スペースで変換します。
+# userland/desktop/locale/settings.keys:59
+msg	None (English)	なし（英語）
+# userland/desktop/locale/settings.keys:60
+msg	The keys type as they are; no input method.	キーをそのまま入力します。入力方式は使いません。
+# userland/desktop/settings/page-home.c:60
+msg	Connectivity	接続
+# userland/desktop/settings/page-home.c:61
+msg	Personalization	パーソナライズ
+# userland/desktop/settings/page-home.c:62
+msg	Devices	デバイス
+# userland/desktop/settings/page-home.c:63
+msg	System	システム
+# userland/desktop/settings/page-languages.c:113
+msg	Input method	入力方式
+# userland/desktop/settings/page-languages.c:113
+msg	What the keyboard types through. The change applies at once.	キーボードの入力に使うもの。変更はすぐに反映されます。
+# userland/desktop/settings/page-languages.c:127
+msg	Display language	表示の言語
+# userland/desktop/settings/page-languages.c:127
+msg	The language of the desktop's words. The change applies at once.	デスクトップの文字の言語。変更はすぐに反映されます。
+# userland/desktop/settings/page-languages.c:183
+msg	Login screen	ログイン画面
+# userland/desktop/settings/page-languages.c:183
+msg	The language of the login screen, for everyone on this computer.	このコンピューターの全員のログイン画面の言語。
+# userland/desktop/settings/page-languages.c:184
+msg	Not set (English)	未設定（英語）
+# userland/desktop/settings/page-languages.c:187
+msg	Now	現在
+# userland/desktop/settings/page-languages.c:206, userland/desktop/settings/page-languages.c:209
+msg	Apply	適用
+# userland/desktop/settings/page-languages.c:241
+msg	Your password	あなたのパスワード
+# userland/desktop/settings/page-languages.c:265
+msg	Needed for the change	変更に必要です
+# userland/desktop/settings/page-languages.c:434
+msg	Changed. The login screen uses it from the next time it shows.	変更しました。次にログイン画面が出る時から使われます。
+# userland/desktop/settings/page-languages.c:443, userland/desktop/settings/page-languages.c:583
+msg	The change could not be made.	変更できませんでした。
+# userland/desktop/settings/page-languages.c:550
+msg	The change could not be asked.	変更を依頼できませんでした。
+# userland/desktop/settings/page-languages.c:559
+msg	Changing...	変更しています...
+# userland/desktop/settings/page-languages.c:574
+msg	Only an administrator can change the login screen's language.	ログイン画面の言語は管理者だけが変更できます。
+# userland/desktop/settings/page-languages.c:577
+msg	Your password is wrong.	パスワードが違います。
+# userland/desktop/settings/page-languages.c:580
+msg	Another change is under way. Try again in a moment.	ほかの変更が進行中です。少し待ってからやり直してください。
+# userland/desktop/settings/search.c:527
+msg	Coming in a later version	今後のバージョンで対応予定
+# userland/desktop/settings/ui.c:484
+msg	Search	検索
