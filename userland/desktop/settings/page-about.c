@@ -22,8 +22,9 @@
 #define ABOUT_TEXT_NAME		44U
 #define ABOUT_TEXT_TAGLINE	14U
 
-/* The space between two cards. */
+/* The space between two cards, and a button's height. */
 #define ABOUT_CARD_GAP		18
+#define ABOUT_BUTTON_HEIGHT	32
 
 /*
  * One row of a card of values: its label and its value.  The rows of a
@@ -87,8 +88,26 @@ se_about_draw(
 	count = about_add(rows, count, "Up for", text);
 	y = about_card(app, canvas, x, y + ABOUT_CARD_GAP, width, "Software", rows, count);
 
-	/* The edge below the last card. */
-	return y;
+	/* The Welcome again (ws164-p002). */
+	y += ABOUT_CARD_GAP;
+	(void)se_button_draw(app, canvas, x, y, kl_tr("Show Welcome again"), 0, 1, SE_ABOUT_WELCOME);
+
+	/* The edge below the button. */
+	return y + ABOUT_BUTTON_HEIGHT;
+}
+
+/*
+ * Carries out a press of the About page's control: "Show Welcome again"
+ * starts the Welcome in the window (ws164-p002).
+ */
+void
+se_about_press(
+	struct se_app *app,
+	int index)
+{
+	/* The Welcome. */
+	if (index == SE_ABOUT_WELCOME)
+		se_welcome_start(app);
 }
 
 /* Draws the hero card: the Kei mark, the word Kei and the tagline; returns the edge below it. */

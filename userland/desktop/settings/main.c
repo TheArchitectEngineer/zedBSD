@@ -10,7 +10,7 @@
  * Wayland window drawn on the CPU and shown with Vulkan.
  *
  *   settings [--display=NAME] [--font=PATH] [--fallback-font=PATH]
- *            [--width=N] [--height=N] [--timeout-s=N] [PAGE]
+ *            [--width=N] [--height=N] [--timeout-s=N] [--welcome] [PAGE]
  *
  * It opens on Home, or on the page PAGE names (network, about, ...).  Its
  * outcome is one line on standard error: ZSETTINGS DONE with the reason,
@@ -28,9 +28,17 @@
 #include "userland/desktop/paths.h"
 
 #include <errno.h>
+#include <spawn.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The environment a started program inherits. */
+extern char **environ;
+
+/* Files, which the Welcome opens at its end (ws164-p002). */
+#define MAIN_FILES		KEILAND_BINDIR "/files"
 
 /* The fonts used unless told otherwise (the fallback is optional). */
 #define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
@@ -57,6 +65,7 @@ struct main_options {
 	const char *fallback;
 	unsigned page;
 	unsigned page_given;
+	int welcome;
 	unsigned width;
 	unsigned height;
 	unsigned timeout;
@@ -119,6 +128,7 @@ static void main_text_input(void);
 static int main_canvas_make(void);
 static int main_timeout(uint64_t now);
 static void main_request(void);
+static void main_open_files(void);
 static void main_state_update(void);
 static void main_about_window(void);
 static void main_handed_over(void);
@@ -143,7 +153,7 @@ main(
 	/* The command line. */
 	status = main_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: settings [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--timeout-s=N] [PAGE]\n");
+		fprintf(stderr, "usage: settings [--display=NAME] [--font=PATH] [--fallback-font=PATH] [--width=N] [--height=N] [--timeout-s=N] [--welcome] [PAGE]\n");
 		return 2;
 	}
 
@@ -151,6 +161,8 @@ main(
 	page_word = "";
 	if (options.page_given)
 		page_word = se_pages[options.page].word;
+	if (options.welcome)
+		page_word = "welcome";
 	error = kl_instance_open("settings", page_word, &main_instance);
 	if (error != 0) {
 		se_log("INSTANCE alone errno=%d", error);
@@ -193,6 +205,8 @@ main(
 	se_about_read(&main_app.about);
 	main_about_window();
 	se_ui_init(&main_app, &main_text, options.page);
+	if (options.welcome)
+		se_welcome_start(&main_app);
 
 	/* The desktop's system (the network and the sound follow it), and the desktop's settings. */
 	se_system_open(&main_app, main_window.display);
@@ -329,6 +343,13 @@ main_parse(
 			status = main_number(value, 86400U, &options->timeout);
 			if (status != 0)
 				return status;
+			continue;
+		}
+
+		/* The Welcome (ws164-p002, the compositor's start at a first login). */
+		status = strcmp(argv[index], "--welcome");
+		if (status == 0) {
+			options->welcome = 1;
 			continue;
 		}
 
@@ -667,6 +688,21 @@ main_timeout(
 	return limit;
 }
 
+/* Starts Files, which opens at Today (the Welcome's end, ws164-p002); a failure is logged. */
+static void
+main_open_files(void)
+{
+	char *arguments[2];
+	pid_t child;
+	int error;
+
+	/* Files, on its own (its window is the compositor's to place). */
+	arguments[0] = (char *)(uintptr_t)MAIN_FILES;
+	arguments[1] = NULL;
+	error = posix_spawn(&child, MAIN_FILES, NULL, NULL, arguments, environ);
+	se_log("WELCOME files error=%d", error);
+}
+
 /* Carries out what the window was asked to do by an action, once. */
 static void
 main_request(void)
@@ -686,6 +722,13 @@ main_request(void)
 		se_window_zoom(&main_window);
 		break;
 	case SE_REQUEST_CLOSE:
+		/* The Welcome's last step opens Files (its Today) as the window goes (ws164-p002). */
+		if (main_app.request_files) {
+			main_app.request_files = 0;
+			main_open_files();
+		}
+
+		/* The window goes. */
 		main_window.closed = 1;
 		break;
 	default:
@@ -737,6 +780,7 @@ main_handed_over(void)
 	char token[KL_ACTIVATION_TOKEN_MAX];
 	const struct se_page *page;
 	int activated;
+	int welcome;
 	int known;
 	int taken;
 
@@ -753,6 +797,13 @@ main_handed_over(void)
 			page = se_page_find(request);
 		if (page != NULL) {
 			se_ui_go(&main_app, page->id);
+			known = 1;
+		}
+
+		/* The Welcome asked of the one that runs (ws164-p002). */
+		welcome = strcmp(request, "welcome");
+		if (welcome == 0) {
+			se_welcome_start(&main_app);
 			known = 1;
 		}
 
