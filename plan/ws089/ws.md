@@ -56,13 +56,13 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p009](phase009/phase.md) | 生成の壁紙（5 枚、1920x1080、`userland/desktop/wallpapers/generate.py`）を build の時に作り、デモの image に同梱（2026-09-29 ユーザーの D8 の判断、main の許可） | cleared（2026-09-29、Venus の guest。デモの image は `make -n`。実機は未実施） | p004 |
 | [ws089-p006](phase006/phase.md) | 規約の全文との照合、回帰、デモの通し（App Home の絵は p008、デモの image の壁紙は p009） | cleared（2026-09-29、Venus の guest。実機は未実施） | p003〜p005, p008 |
 | [ws089-p010](phase010/phase.md) | 現在の main（KEILAND_VERSION 20 以後）での回帰の取り直し・S7（QEMU）・頁ごとの通しと不具合の表・ブラッシュアップの候補の一覧（ユーザーが選ぶ） | cleared（2026-10-03、q617-i01、QEMU の Venus。regress 8 本・volume-p005・host・boot test PASS、重い・中の不具合 0、候補は [beta1-candidates.md](beta1-candidates.md)） | — |
-| [ws089-p011](phase011/phase.md) | 5330 の passthrough で S7（壁紙・透明度・検索）、透明度 85% の frame の率 | planned（2h、`/tmp/i915-hw.lock` が空くこと） | p010 |
-| [ws089-p012](phase012/phase.md) | Settings の中だけで済む操作性: 検索の結果の上下の key と Enter、頁の pane の touch の drag の scroll、左の pane の key の移動の見直し（q619 で C1・C4 を追加） | uncleared（2026-10-03 q619-i01。実装と試験 PASS、欄からの Down だけ compositor 待ち。今は Tab → Down） | —（p010 と並列可、source は p012 だけが変える） |
+| [ws089-p011](phase011/phase.md) | 5330 の passthrough で S7（壁紙・透明度・検索）、透明度 85% の frame の率 | planned（2h、`/tmp/i915-hw.lock` が空くこと。2026-10-06 q805 は実機の Phase なので skip） | p010 |
+| [ws089-p012](phase012/phase.md) | Settings の中だけで済む操作性: 検索の結果の上下の key と Enter、頁の pane の touch の drag の scroll、左の pane の key の移動の見直し（q619 で C1・C4 を追加） | test-wait（2026-10-06 q805 P2: 欄の Down を compositor で直した、T1-238。以前: uncleared q619-i01） | —（p010 と並列可、source は p012 だけが変える） |
 | [ws089-p013](phase013/phase.md) | About の memory と Storage の使用量（[proposed/libkeiland-system.md](proposed/libkeiland-system.md)、libkeiland の追加） | planning（libkeiland の API の追加の main の許可、p010 でユーザーの採否） | p010 |
 | [ws089-p014](phase014/phase.md) | Network の頁を実機の Wi-Fi（5330）で: 一覧・接続・鍵・切断 | planning（WiFi の driver の WS（BUG-134 ほか）の成果が要る） | ネットワークの WS、実機 |
 | [ws089-p015](phase015/phase.md) | 日本語の UI（WS127 p005 と共通の仕組み） | canceled（2026-10-05 夜、WS158 に吸収） | p010、WS127 p005 と仕組みを共有 |
-| [ws089-p016](phase016/phase.md) | 単一の instance（二つ目の起動で既存の窓を前に） | planning（compositor の activation の仕組みが要る。今の zdesktop に xdg-activation は無い） | p010、compositor の Phase（WS099 と直列） |
-| [ws089-p017](phase017/phase.md) | accent の色・dark の外観（D2） | planning（ユーザーの判断: ベータ1 に入れるか。zdesktop と全 app の固定の色に及ぶ） | p010 |
+| [ws089-p016](phase016/phase.md) | 単一の instance（二つ目の起動で既存の窓を前に） | cleared（2026-10-05 Q1、T1-185 PASS） | p010、compositor の Phase（WS099 と直列） |
+| [ws089-p017](phase017/phase.md) | accent の色・dark の外観（D2） | cleared（2026-10-05 Q1、p017a T1-195・p017b T1-198b PASS） | p010 |
 | [ws089-p018](phase018/phase.md) | 全文規約と回帰（WS の最後）、完了の処理の準備 | planning（最後） | 選んだ実装の Phase |
 | [ws089-p020](phase020/phase.md) | BUG-152: Wallpaper の頁の縮小表示を別の thread で読み、頁を先に出す | cleared（2026-10-03 Q1、T1-011） | — |
 | [ws089-p021](phase021/phase.md) | Wi-Fi の画面の自動の scan（Scan のボタンを無くす、compositor が要求を数えて libkeiland-backend 経由で networkd に on・off）と Disconnect の icon（2026-10-04 ユーザーの要望）、BUG-184 | cleared（2026-10-05、T1-109・T1-098 PASS） | WS131・WS005、q700 の Wi-Fi の Bug と同じ担当 |
@@ -70,7 +70,7 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p023](phase023/phase.md) | Storage の頁: 解析の button で folder の階層ごとの使用量を multi-thread で解析し逐次に表示、Stop で止める。Trash を空にする（2026-10-04 ユーザーの要望） | cleared（2026-10-05 Q1、T1-159） | WS127（Trash） |
 | [ws089-p024](phase024/phase.md) | Mouse の頁を device ごと（マウス・タッチパッド）の設定に、pointer の加速、既定 base 150%・加速 強め、自然な方向のスクロールはタッチパッド ON・マウス OFF（2026-10-04 ユーザーの要望） | cleared（2026-10-05 Q1） | compositor の入力、WS135 |
 | [ws089-p025](phase025/phase.md) | Sharing の頁に SSHD の ON/OFF（後でクラウドストレージの設定もここに、WS146）（2026-10-04 ユーザーの要望） | cleared（2026-10-05 Q1） | WS002（service） |
-| [ws089-p026](phase026/phase.md) | Users の頁の実装（一覧・自分の password・管理者の利用者の追加・削除・group）（2026-10-04 ユーザー） | planning | WS131、account の userland |
+| [ws089-p026](phase026/phase.md) | Users の頁の実装（一覧・自分の password・管理者の利用者の追加・削除・group）（2026-10-04 ユーザー） | cleared（2026-10-05 Q1、T1-183b PASS。Manage users の UI は UAT） | WS131、account の userland |
 | [ws089-p027](phase027/phase.md) | About に版の名前（`/etc/os-release` の PRETTY_NAME）を出す | cleared（2026-10-05、T1-108 PASS） | ws129-p003 |
 
 
