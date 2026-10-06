@@ -550,11 +550,7 @@ list_row(
 		field.y = row->y + 3;
 		field.width = width + 4;
 		field.height = row->height - 6;
-		kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, FM_COLOR_PANEL);
-		kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 5.0f, 1.5f, FM_COLOR_ACCENT);
-		field.x += 4;
-		field.width -= 8;
-		fm_field_draw(app, canvas, &app->rename, &field, LIST_TEXT, NULL);
+		fm_rename_draw(app, canvas, &field);
 	} else {
 		(void)kl_text_draw_fit(app->text, canvas, columns[0].x + 30, baseline, entry->name, LIST_TEXT, 0, width, ink);
 	}

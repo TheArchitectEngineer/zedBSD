@@ -125,7 +125,7 @@ fm_ui_action(
 		else if (app->focus == FM_FOCUS_SEARCH)
 			fm_field_select(&app->search_field, 0, app->search_field.length);
 		else if (app->focus == FM_FOCUS_RENAME)
-			fm_field_select(&app->rename, 0, app->rename.length);
+			fm_rename_select_all(app);
 		else
 			fm_select_all(tab);
 		break;

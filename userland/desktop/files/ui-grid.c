@@ -367,12 +367,8 @@ grid_cell(
 		field.x = x + 2;
 		field.y = y + GRID_ICON + 16;
 		field.width = GRID_CELL_WIDTH - 4;
-		field.height = 22;
-		kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
-		kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
-		field.x += 5;
-		field.width -= 10;
-		fm_field_draw(app, canvas, &app->rename, &field, GRID_TEXT_NAME, NULL);
+		field.height = 24;
+		fm_rename_draw(app, canvas, &field);
 		baseline = y + GRID_ICON + 32;
 	} else {
 		baseline = grid_name(app, canvas, entry, x, y + GRID_ICON + 30, entry->selected);

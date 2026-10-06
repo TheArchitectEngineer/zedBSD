@@ -57,9 +57,13 @@ fi
 "$cc" $flags -c userland/desktop/libkeiland/ui/scroll-bar.c -o "$out/obj/keiui-scroll-bar.o"
 objects="$objects $out/obj/keiui-scroll-bar.o"
 
-# libkeiland's canvas, text and icons (files draws with them since ws090-p009) and the colour glyphs its text draws emoji with.
+# libkeiland's canvas, text and icons (files draws with them since ws090-p009), the colour glyphs its text draws emoji with,
+# and its widgets' input and text field (the field of the name being changed, ws090-p010).
 for file in userland/desktop/libkeiland/ui/canvas.c userland/desktop/libkeiland/ui/text.c userland/desktop/libkeiland/ui/icons.c \
-    userland/desktop/libkeiland/ui/icons-line.c userland/desktop/picture/color-glyph.c; do
+    userland/desktop/libkeiland/ui/icons-line.c userland/desktop/picture/color-glyph.c \
+    userland/desktop/libkeiland/ui/ui.c userland/desktop/libkeiland/ui/field.c userland/desktop/libkeiland/ui/input.c \
+    userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/text-touch.c \
+    plan/tools/files/host-appearance.c; do
 	object="$out/obj/keiui-$(basename "$file" .c).o"
 	"$cc" $flags -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
 	objects="$objects $object"

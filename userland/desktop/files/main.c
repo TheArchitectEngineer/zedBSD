@@ -713,6 +713,9 @@ main_frame(void)
 			fm_ui_draw(&main_app, &main_canvas);
 		}
 
+		/* Enter or Esc in the field of the name being changed, after its frame (rename.c). */
+		fm_rename_take(&main_app);
+
 		/* The time drawing took, the first frame's kept for the start-up log. */
 		drawn = fm_clock();
 		if (main_startup.draw_ms == 0U)
@@ -1347,25 +1350,21 @@ main_open_context_menus(void)
 }
 
 /*
- * Asks for the window's text input while a name is being changed, with
- * where its cursor was drawn, so that an input method's text reaches it
- * (ws090-p022); off otherwise, and what was being composed goes.
+ * Asks for the window's text input while the field of the name being
+ * changed has the keyboard, with where its caret is, so that an input
+ * method's text reaches it (ws090-p022, p010); off otherwise.
  */
 static void
 main_text_input(void)
 {
 	/* No name being changed: off. */
-	if (main_app.focus != FM_FOCUS_RENAME) {
-		main_app.preedit[0] = '\0';
-		main_app.caret_known = 0;
+	if (main_app.focus != FM_FOCUS_RENAME || main_app.rename_ui == NULL) {
 		kl_window_text_input(main_window.kui, 0);
 		return;
 	}
 
-	/* On, at the name's cursor once it was drawn. */
-	kl_window_text_input(main_window.kui, 1);
-	if (main_app.caret_known)
-		kl_window_text_cursor(main_window.kui, main_app.caret.x, main_app.caret.y, main_app.caret.width, main_app.caret.height);
+	/* On while its field has the keyboard, at its caret (libkeiland's field, rename.c). */
+	kl_ui_window_text(main_app.rename_ui, main_window.kui);
 }
 
 /* Hands an input to the desktop (files --desktop) or to the window's file manager. */

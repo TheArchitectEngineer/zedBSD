@@ -1110,15 +1110,6 @@ enum fm_help {
  * history) and freed with the app.
  */
 struct fm_app {
-	/*
-	 * The text an input method is composing for the name being changed,
-	 * and where the name's caret was last drawn (window pixels; known 0
-	 * until it is), for the window's text input (ws090-p022).
-	 */
-	char preedit[FM_TEXT_INPUT_MAX];
-	struct kl_rect caret;
-	int caret_known;
-
 	/* The fonts, the window's size, the time of the input being handled, and whether a new frame is due. */
 	struct kl_text *text;
 	int width;
@@ -1322,8 +1313,17 @@ struct fm_app {
 	/* The undo and redo histories. */
 	struct fm_undo undo;
 
-	/* The name being changed: the field, the item's path and its index when the edit began. */
-	struct fm_field rename;
+	/*
+	 * The name being changed: libkeiland's field and its own widgets'
+	 * input (rename.c, ws090-p010), what its last frame did
+	 * (KL_FIELD_*), where it was drawn (window pixels; shown 0 until it
+	 * is), and the item's path.
+	 */
+	struct kl_field rename;
+	struct kl_ui *rename_ui;
+	unsigned rename_flags;
+	struct kl_rect rename_rect;
+	int rename_shown;
 	char rename_path[FM_PATH_MAX];
 
 	/* A question being asked (FM_DIALOG_*), and the paths it is about. */
@@ -1567,8 +1567,12 @@ void fm_field_set(struct fm_field *field, const char *text);
 void fm_field_select(struct fm_field *field, size_t start, size_t end);
 unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
-void fm_field_delete_before(struct fm_field *field, size_t bytes);
-void fm_field_text_input(struct fm_app *app, const struct fm_event *event);
+int fm_rename_start(struct fm_app *app, const char *name, size_t stem);
+void fm_rename_select_all(struct fm_app *app);
+int fm_rename_input(struct fm_app *app, const struct fm_event *event);
+void fm_rename_draw(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *rect);
+int fm_rename_hit(const struct fm_app *app, int x, int y);
+void fm_rename_take(struct fm_app *app);
 void fm_field_draw(struct fm_app *app, struct kl_canvas *canvas, const struct fm_field *field, const struct kl_rect *rect, unsigned pixels, const char *placeholder);
 
 /* The search (search.c). */

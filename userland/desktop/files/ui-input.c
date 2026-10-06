@@ -337,7 +337,6 @@ fm_input_key(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
-	unsigned result;
 	char character;
 	int handled;
 
@@ -393,13 +392,9 @@ fm_input_key(
 		return;
 	}
 
-	/* So does the name being changed: Enter renames, Esc gives up. */
+	/* So does the name being changed (its field, rename.c: Enter renames, Esc gives up, after its frame). */
 	if (app->focus == FM_FOCUS_RENAME) {
-		result = fm_field_key(&app->rename, event->key, event->modifiers);
-		if (result == FM_FIELD_ENTER)
-			fm_action_rename_end(app, 1);
-		else if (result == FM_FIELD_CANCEL)
-			fm_action_rename_end(app, 0);
+		(void)fm_rename_input(app, event);
 		return;
 	}
 
@@ -614,6 +609,7 @@ input_press(
 	unsigned kind;
 	int index;
 	int double_click;
+	int on_field;
 
 	/* The region under the pointer, and the press in progress. */
 	(void)fm_input_hit_at(app, event->x, event->y, &kind, &index);
@@ -639,7 +635,10 @@ input_press(
 	if (app->focus == FM_FOCUS_LOCATION || app->focus == FM_FOCUS_SEARCH)
 		app->focus = FM_FOCUS_CONTENT;
 
-	/* A press anywhere but on the name being changed ends the change, keeping what was typed. */
+	/* A press anywhere but on the name being changed ends the change, keeping what was typed; one on its field is the field's. */
+	on_field = fm_rename_hit(app, event->x, event->y);
+	if (on_field)
+		return;
 	if (app->focus == FM_FOCUS_RENAME && kind != FM_HIT_OVERLAY)
 		fm_action_rename_end(app, 1);
 
