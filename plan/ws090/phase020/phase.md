@@ -19,3 +19,12 @@ font の file は main 712a16880 で `userland/desktop/fonts/Mahora-{Regular,Mon
 ## ユーザーへの報告事項
 
 - Mahora は ASCII の 95 字だけなので、Inter・JetBrains Mono・Droid Sans Fallback を消すと、UI の記号と日本語の字が無くなる。消す前に、記号と日本語の fallback をどうするか（Mahora に足すか、別の font を残すか）を決める必要がある。
+
+## 2026-10-06 ユーザーの決定（fallback）
+
+「Fallbackフォントを利用できるようにして、Fallbackで2種類のフォントを残します。可変ピッチで1つ、monospaceで1つです。日本語はMohraに徐々に足していくので、遠い将来にFallbackフォントがなくても動くようにしたいです。」と、Q1 のクリックの質問への回答「Droid Sans Fallback と JetBrains Mono」。
+→ 残す fallback は 2 つ: 可変ピッチ＝Droid Sans Fallback、monospace＝JetBrains Mono。Inter は使わない（ユーザーが外観を見て消す）。
+- P1 の調べ（fontTools）: Droid Sans Fallback は CJK・Hangul・Thai だけで、Latin-1 と記号（· → … × © — 等）を持たない。JetBrains Mono は持つ。
+- よって連鎖は、UI: Mahora → JetBrains Mono（記号・Latin-1）→ Droid Sans Fallback（日本語）。Terminal: Mahora Mono → JetBrains Mono → Droid Sans Fallback（日本語は 2 セル）。可変ピッチの文の中の記号は JetBrains Mono の字形になる（ユーザーに報告済み）。
+- fallback の file が無くても動く（開けなければ飛ばし、無い字は □）。Mahora に日本語が足されれば fallback を引かない。
+- 行の高さ・baseline は font に依らない決まった値か Mahora の値で、fallback の有無で layout が動かない。

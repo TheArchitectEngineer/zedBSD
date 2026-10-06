@@ -507,6 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー: fallback は 2 つ残す（可変ピッチ 1・monospace 1）、遠い将来に fallback 無しでも動くように。クリック「Droid Sans Fallback と JetBrains Mono」→ Inter は使わない。ws090-p020 に記録。
 - 2026-10-06 ユーザー: Mahora の font（ユーザーの著作、tree の Zlib）を追加、UI を Mahora Regular・Terminal を Mahora Mono・太字を Mahora Bold に。外観が良ければ他の font を消す → [ws090-p020](ws090/phase020/phase.md)（q812、P1）。Q1 の確認: Mahora は ASCII の 95 字だけ。
 - 2026-10-06 ユーザー（クリック）: rm の規則の範囲は「make の規則の rm は可」（自分の worktree の build/ の中の make の出力）。AGENTS.md と protocol に記録。P1・P2 が気づかずに走らせた rm を含む host の script 15 本は Q1 が rm 無しに直した（fresh-out.sh・build/tmp・q1-clean.sh）。
 - 2026-10-06 ユーザー（クリック）: WS168 の sandbox の isatty は「(a) TCGETS だけ ENOTTY」（承認済みの許可の set の変更、ws168-p002 に記録）。
