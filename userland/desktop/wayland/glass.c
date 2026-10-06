@@ -92,6 +92,9 @@
  */
 #define GLASS_TILE_SCENE_INSET	0.08f
 
+/* The bands an application tile's reflection on App Home's floor fades out in (ws099-p035b). */
+#define GLASS_REFLECTION_SLICES	8U
+
 /* A cached glyph's cell in the atlas, in pixels a side, and the most cells there are. */
 #define GLASS_CELL		48U
 #define GLASS_CELLS		512U
@@ -1969,12 +1972,82 @@ glass_draw_icon(
 }
 
 /*
+ * Draws an application's tile upside down under a floor at y, as a glossy
+ * floor reflects it (App Home's stage, ws099-p035b): the tile's lower part,
+ * height pixels of it, mirrored, its opacity from opacity at the floor
+ * fading to nothing downwards (in GLASS_REFLECTION_SLICES bands).
+ */
+void
+glass_draw_app_tile_reflection(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	unsigned icon,
+	float x,
+	float y,
+	float pixels,
+	float height,
+	float opacity)
+{
+	struct glass_shape shape;
+	const struct glass_glyph *glyph;
+	struct zwl_glass *glass;
+	unsigned size;
+	unsigned slice;
+	float top;
+	float bottom;
+	float source_top;
+	float source_bottom;
+	float glyph_top;
+	float glyph_height;
+
+	/* Nothing without the tiles, for an icon without one, or for nothing to show. */
+	glass = server->compose->glass;
+	if (!glass->tiles_ready)
+		return;
+	if (icon < GLASS_ICON_FIRST_APP || icon >= GLASS_ICON_COUNT)
+		return;
+	if (height <= 0.0f || opacity <= 0.0f)
+		return;
+
+	/* The smallest size kept that is not smaller than the square, else the largest. */
+	for (size = 0; size + 1U < GLASS_TILE_SIZES; size++) {
+		if ((float)glass_tile_pixels[size] >= pixels)
+			break;
+	}
+
+	/* That size's tile, and its rows in the tiles' image. */
+	glyph = &glass->app_tiles[size][icon - GLASS_ICON_FIRST_APP];
+	glyph_top = (float)glyph->y;
+	glyph_height = (float)glyph->height;
+
+	/* Each band down from the floor: the tile's rows up from its bottom, fainter further down. */
+	for (slice = 0U; slice < GLASS_REFLECTION_SLICES; slice++) {
+		top = y + height * (float)slice / (float)GLASS_REFLECTION_SLICES;
+		bottom = y + height * (float)(slice + 1U) / (float)GLASS_REFLECTION_SLICES;
+		source_top = glyph_top + glyph_height - glyph_height * (top - y) / pixels;
+		source_bottom = glyph_top + glyph_height - glyph_height * (bottom - y) / pixels;
+		glass_shape_init(&shape, x, top, pixels, bottom - top);
+		shape.mode = MODE_IMAGE;
+		shape.uv[0] = (float)glyph->x / (float)GLASS_TILE_WIDTH;
+		shape.uv[1] = source_top / (float)GLASS_TILE_HEIGHT;
+		shape.uv[2] = (float)(glyph->x + glyph->width) / (float)GLASS_TILE_WIDTH;
+		shape.uv[3] = source_bottom / (float)GLASS_TILE_HEIGHT;
+		shape.opacity = opacity * (1.0f - ((float)slice + 0.5f) / (float)GLASS_REFLECTION_SLICES);
+		shape.set = glass->tiles.set;
+		glass_shape_draw(server, command, &shape);
+	}
+}
+
+/*
  * Draws an application's tile (an icon from GLASS_ICON_FIRST_APP) in a
  * square of a size in pixels at (x, y): the tile kept at that size, or the
  * smallest kept larger (the largest when none is) scaled, as opaque as
  * asked (0..1).  Its picture is cut out: with GLASS_HOLE_GROUND what was
  * drawn under the tile shows through it, with GLASS_HOLE_SCENE the blurred
- * scene under the glass the tile is on, unwhitened (BUG-237).  lighten
+ * scene under the glass the tile is on, unwhitened (BUG-237), with
+ * GLASS_HOLE_WALLPAPER the desktop's wallpaper itself, sharp, as if the
+ * picture were a real hole through the bar or App Home (ws099-p034b, the
+ * 2026-10-06 user decision).  lighten
  * (0..1) whitens the tile itself, as a lit button.
  */
 void
@@ -2025,6 +2098,26 @@ glass_draw_app_tile(
 		shape.soft = 1.0f;
 		shape.opacity = opacity;
 		shape.light = 1U;
+		glass_shape_draw(server, command, &shape);
+	}
+
+	/*
+	 * Through to the wallpaper: the part of the wallpaper under the tile
+	 * (the wallpaper is drawn over the whole output), inside the tile,
+	 * where only the cut-out picture leaves it seen.
+	 */
+	if (hole == GLASS_HOLE_WALLPAPER) {
+		inset = pixels * GLASS_TILE_SCENE_INSET;
+		glass_shape_init(&shape, x + inset, y + inset, pixels - 2.0f * inset, pixels - 2.0f * inset);
+		shape.mode = MODE_IMAGE;
+		shape.opaque = 1.0f;
+		shape.radius = pixels * GLASS_ICON_TILE_RADIUS - inset;
+		shape.uv[0] = (x + inset) / (float)server->width;
+		shape.uv[1] = (y + inset) / (float)server->height;
+		shape.uv[2] = (x + pixels - inset) / (float)server->width;
+		shape.uv[3] = (y + pixels - inset) / (float)server->height;
+		shape.opacity = opacity;
+		shape.set = glass_wallpaper_set(server);
 		glass_shape_draw(server, command, &shape);
 	}
 

@@ -182,6 +182,10 @@ static uint32_t fullscreen_leave_eaten;
 #define BAR_PILL_GAP		10
 #define BAR_EDGE		8
 
+/* The bar's change between a floating and a docked window's layout (ws099-p034b, ms), and the docked buttons' smallest scale. */
+#define BAR_DOCK_MS		180U
+#define BAR_DOCK_SCALE		0.9f
+
 /*
  * The dock animation, a launched window's growing, a double click, and how
  * far a docked title is pulled down to come off (ws035-p064: the window
@@ -352,6 +356,8 @@ struct shell_bar {
 	int32_t desktops_width;
 	int32_t desktops_line;
 	int32_t buttons[BUTTON_COUNT];
+	int32_t buttons_x;
+	int32_t buttons_width;
 	int32_t menu_line;
 	int32_t title_x;
 };
@@ -378,9 +384,12 @@ static int glass_placed(struct zwl_server *server, struct zwl_object *surface, s
 static void shown_title(const struct zwl_object *surface, char *title, size_t size);
 static void draw_sign(struct zwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
 static void draw_system_bar(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
-static void draw_bar_strip(struct zwl_server *server, VkCommandBuffer command);
+static void draw_bar_strip(struct zwl_server *server, VkCommandBuffer command, const struct glass_bar_colours *colours);
+static void draw_bar_buttons(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, struct zwl_object *docked, const struct glass_bar_colours *colours);
+static void draw_bar_group_faded(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height, float opacity);
+static void bar_dock_follow(struct zwl_server *server);
 static void draw_bar_group(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
-static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
+static void draw_desktops(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
 static void draw_status(struct zwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
 static void draw_battery(struct zwl_server *server, VkCommandBuffer command, int32_t x, int percent, unsigned charging, const float *ink);
 static void draw_dock_hint(struct zwl_server *server, VkCommandBuffer command);
@@ -570,6 +579,7 @@ zwl_glass_draw(
 		server->layer_on = 0;
 		zwl_backdrop_reset(server);
 		zwl_popup_draw(server, command);
+		zwl_power_dialog_draw(server, command);
 		return;
 	}
 
@@ -669,6 +679,9 @@ zwl_glass_draw(
 	/* An open menu's popups over the system bar (menu-shell.c). */
 	zwl_menu_draw_popups(server, command);
 
+	/* The power dialog over everything (power-dialog.c, ws099-p037). */
+	zwl_power_dialog_draw(server, command);
+
 	/* The suggestions under a titlebar's field with the keyboard (titlebar-shell.c, ws127-p010). */
 	zwl_titlebar_draw_suggestions(server, command);
 
@@ -726,6 +739,11 @@ zwl_glass_button(
 		pressed = zwl_greeter_button(server, button, state);
 		return pressed;
 	}
+
+	/* The power dialog, while it shows, takes every button (power-dialog.c, ws099-p037). */
+	pressed = zwl_power_dialog_button(server, button, state);
+	if (pressed)
+		return 1;
 
 	/* The switcher, while on, takes every button, and the release of a press it took (switcher-shell.c). */
 	pressed = zwl_switch_button(server, button, state);
@@ -2310,6 +2328,11 @@ zwl_glass_key(
 	int step;
 	int taken;
 
+	/* The power dialog, while it shows, takes every key (power-dialog.c, ws099-p037). */
+	taken = zwl_power_dialog_key(server, key, state);
+	if (taken)
+		return 1;
+
 	/* The switcher: Alt+Tab, and its keys while it is on (switcher-shell.c, ws142-p005). */
 	taken = zwl_switch_key(server, key, state);
 	if (taken)
@@ -2409,6 +2432,12 @@ zwl_glass_tick(
 	/* The sheets where their parents are (ws090-p014). */
 	sheet_place(server);
 
+	/* The power dialog's darkening, and its end (power-dialog.c). */
+	zwl_power_dialog_tick(server);
+
+	/* The bar's layout follows a docked window coming or going (ws099-p034b). */
+	bar_dock_follow(server);
+
 	/* In the docked mode the window that came to the front (the one before closed or was minimized) docks. */
 	layout_keep_front(server);
 
@@ -2496,6 +2525,7 @@ bar_layout(
 	int32_t slot;
 	int32_t battery_slot;
 	int32_t slots;
+	int32_t shift;
 	int ime_width;
 	int media_width;
 	int button;
@@ -2509,6 +2539,19 @@ bar_layout(
 	bar->clock_pill_width = glass_text_width(server, SIZE_BAR, bar->clock) + 2 * BAR_CLOCK_PAD;
 	bar->clock_pill_x = (int32_t)server->width - BAR_EDGE - bar->clock_pill_width;
 	bar->clock_x = bar->clock_pill_x + BAR_CLOCK_PAD;
+
+	/*
+	 * A docked window's buttons in a pill at the right end (ws099-p034b, the
+	 * 2026-10-06 user decision); the status and the clock make room left of
+	 * it as the docked layout comes in (bar_dock, animated).
+	 */
+	bar->buttons_width = BUTTON_COUNT * BAR_BUTTON_SPACING + 6;
+	bar->buttons_x = (int32_t)server->width - BAR_EDGE - bar->buttons_width;
+	for (button = 0; button < BUTTON_COUNT; button++)
+		bar->buttons[button] = bar->buttons_x + 3 + BAR_BUTTON_SPACING / 2 + (BUTTON_COUNT - 1 - button) * BAR_BUTTON_SPACING;
+	shift = (int32_t)(server->bar_dock * (float)(bar->buttons_width + BAR_PILL_GAP) + 0.5f);
+	bar->clock_pill_x -= shift;
+	bar->clock_x -= shift;
 
 	/*
 	 * The status pill's slots: the network and the volume always, the input
@@ -2553,10 +2596,6 @@ bar_layout(
 	bar->desktops_width = 2 * DESKTOPS_PAD + DESKTOPS * DESKTOP_WIDTH + (DESKTOPS - 1) * DESKTOP_GAP;
 	bar->desktops_x = ((int32_t)server->width - bar->desktops_width) / 2;
 	bar->desktops_line = bar->desktops_x - 12;
-
-	/* The docked window's buttons, close nearest the desktops. */
-	for (button = 0; button < BUTTON_COUNT; button++)
-		bar->buttons[button] = bar->desktops_line - 30 - button * BAR_BUTTON_SPACING;
 
 	/* On the left, after the launcher, a line and the docked title (ws035-p117: no word after the mark). */
 	bar->menu_line = BAR_LAUNCHER_X + BAR_LAUNCHER_SIZE + 10;
@@ -3104,7 +3143,7 @@ draw_picture_mark(
 	if (picture < 0)
 		return 0;
 
-	/* Its tile, its picture showing through the glass it is on. */
+	/* Its tile, its picture showing through the glass it is on (on the bar, the wallpaper). */
 	hole = mark_hole(server);
 	glass_draw_app_tile(server, command, (unsigned)picture, (float)x, (float)(middle - 10), 20.0f, ink[3], 0.0f, hole);
 
@@ -3116,20 +3155,20 @@ draw_picture_mark(
  * Finds what an application's cut-out picture shows on the glass of the
  * title bars, Wiseview and Alt+Tab (BUG-237): in the light appearance that
  * glass is near white, so the picture shows the blurred scene the glass
- * frosts; the dark appearance's glass and the system bar's dark glass in
- * either appearance (ws099-p034, drawn while keep_colours is set) show
- * through themselves.
+ * frosts; the dark appearance's glass shows through itself; the system
+ * bar's tiles (drawn while keep_colours is set) show the wallpaper, in
+ * either appearance (ws099-p034b).
  */
 static enum glass_hole
 mark_hole(
 	struct zwl_server *server)
 {
+	/* The system bar's tiles are holes through to the wallpaper, in both appearances (ws099-p034b, the 2026-10-06 user decision). */
+	if (server->keep_colours != 0U)
+		return GLASS_HOLE_WALLPAPER;
+
 	/* Dark glass reads as a hole by itself. */
 	if (server->dark != 0)
-		return GLASS_HOLE_GROUND;
-
-	/* So does the system bar's. */
-	if (server->keep_colours != 0U)
 		return GLASS_HOLE_GROUND;
 
 	/* Light glass: a window onto the scene. */
@@ -3382,20 +3421,15 @@ draw_system_bar(
 	VkCommandBuffer command,
 	const struct shell_bar *bar)
 {
-	static const float ink[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
-	static const float line[4] = { 1.0f, 1.0f, 1.0f, 0.18f };
+	struct glass_bar_colours colours;
 	struct zwl_menu_area area;
 	struct glass_shape shape;
 	struct zwl_object *docked;
 	int32_t available;
 	int32_t limit;
 	int32_t end;
-	int32_t left;
-	float label[4];
 	float progress;
 	float home;
-	int button;
-	int over;
 
 	/* The docked window, if one is on top and not moving (not while App Home shows). */
 	docked = docked_window(server);
@@ -3403,11 +3437,16 @@ draw_system_bar(
 	if (home > 0.0f)
 		docked = NULL;
 
-	/* The bar keeps its own colours in the dark appearance (light ink on dark glass in both). */
+	/*
+	 * The bar keeps its own colours (ws099-p034b): light ink on the dark
+	 * glass in the dark appearance, the floating title bar's dark ink on its
+	 * white glass in the light one.
+	 */
+	zwl_glass_bar_colours(server, &colours);
 	server->keep_colours = 1U;
 
 	/* The strip. */
-	draw_bar_strip(server, command);
+	draw_bar_strip(server, command, &colours);
 
 	/* The launcher: the Kei mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
 	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
@@ -3426,21 +3465,20 @@ draw_system_bar(
 	}
 
 	/* The line after the launcher. */
-	glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, line);
+	glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, colours.line);
 
 	/*
 	 * The docked window: its mark and title in a pill, its menu or controls
-	 * after it, and its buttons (restore for maximize) in a pill of their
-	 * own left of the desktops.
+	 * after it, up to the desktops (its buttons are at the right end,
+	 * draw_bar_buttons).
 	 */
 	if (docked != NULL) {
-		/* The title shares the room before the buttons' pill with the window's menu. */
-		left = bar->buttons[BUTTON_MINIMIZE] - BAR_SLOT / 2 - 3;
-		available = left - 12 - bar->title_x - 30;
+		/* The title shares the room before the desktops with the window's menu. */
+		available = bar->desktops_line - 12 - bar->title_x - 30;
 		limit = zwl_titlebar_title_limit(server, docked, available);
 		end = title_end(server, docked, limit);
 		draw_bar_group(server, command, bar->title_x - 7, 30 + end + 7 + 12, BAR_GROUP_HEIGHT);
-		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, ink);
+		draw_title(server, command, docked, bar->title_x, ZWL_GLASS_BAR / 2, limit, colours.ink);
 
 		/* The presentation after the title: its menu or its controls (titlebar-shell.c). */
 		area.x = bar->title_x + 30 + end + 24;
@@ -3448,30 +3486,22 @@ draw_system_bar(
 		area.right = bar->title_x + 30 + available;
 		area.height = ZWL_GLASS_BAR;
 		area.origin = 0;
-		zwl_titlebar_draw(server, command, docked, 1, &area, ink, 1.0f);
-
-		/* The buttons' pill, and the buttons, the one under the pointer lit. */
-		draw_bar_group(server, command, left, bar->buttons[BUTTON_CLOSE] + BAR_SLOT / 2 + 3 - left, BAR_BUTTONS_HEIGHT);
-		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
-		for (button = 0; button < BUTTON_COUNT; button++)
-			draw_sign(server, command, button, bar->buttons[button], ZWL_GLASS_BAR / 2, 1, over == button, 1.0f, ink);
+		zwl_titlebar_draw(server, command, docked, 1, &area, colours.ink, 1.0f);
 	}
 
-	/* Wiseview's name where a docked title would be. */
+	/* The docked window's buttons at the right end, as far as the docked layout has come in (ws099-p034b). */
+	draw_bar_buttons(server, command, bar, docked, &colours);
+
+	/* Wiseview shows no name of its own, in the bar either (BUG-216: the name stays in the code and the documents). */
 	progress = wiseview_progress(server);
-	if (progress > 0.0f) {
-		memcpy(label, ink, sizeof(label));
-		label[3] = progress;
-		glass_draw_text(server, command, SIZE_TITLE, bar->title_x, BAR_BASELINE + 1, kl_tr("Wiseview"), 200, label);
-	}
 
 	/* Without a docked title, the applications' pill in its place (apps-bar.c, ws142-p004). */
 	if (docked == NULL && progress <= 0.0f)
 		(void)zwl_apps_bar_draw(server, command);
 
 	/* The desktops, then the status. */
-	draw_desktops(server, command, bar);
-	draw_status(server, command, bar, ink);
+	draw_desktops(server, command, bar, &colours);
+	draw_status(server, command, bar, colours.ink);
 
 	/* The rest of the frame is drawn in the appearance's colours again. */
 	server->keep_colours = 0U;
@@ -3487,14 +3517,36 @@ draw_system_bar(
 static void
 draw_bar_strip(
 	struct zwl_server *server,
-	VkCommandBuffer command)
+	VkCommandBuffer command,
+	const struct glass_bar_colours *colours)
 {
 	static const float hairline[4] = { 1.0f, 1.0f, 1.0f, 0.09f };
+	static const float light_hairline[4] = { 0.12f, 0.16f, 0.24f, 0.10f };
 	struct glass_shape shape;
 	float width;
 
-	/* The dark glass, a little bluish. */
+	/*
+	 * The light appearance's bar is the floating title bar's white glass
+	 * (ws099-p034b), a dark hairline along its bottom; a dragged window over
+	 * it (it would dock) darkens it a little.
+	 */
 	width = (float)server->width;
+	if (colours->light) {
+		glass_shape_init(&shape, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR);
+		shape.mode = MODE_GLASS;
+		shape.soft = 1.0f;
+		shape.color[0] = 1.0f;
+		shape.color[1] = 1.0f;
+		shape.color[2] = 1.0f;
+		shape.color[3] = 0.64f;
+		glass_shape_draw(server, command, &shape);
+		if (server->drag != NULL && server->pointer_y < ZWL_GLASS_BAR)
+			glass_draw_solid(server, command, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR, 0.0f, colours->lit);
+		glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), width, 1.0f, 0.0f, light_hairline);
+		return;
+	}
+
+	/* The dark glass, a little bluish. */
 	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)ZWL_GLASS_BAR);
 	shape.mode = MODE_GLASS;
 	shape.dark_glass = 1U;
@@ -3528,7 +3580,7 @@ draw_bar_strip(
 	glass_draw_solid(server, command, 0.0f, (float)(ZWL_GLASS_BAR - 1), width, 1.0f, 0.0f, hairline);
 }
 
-/* Draws one of the bar's group pills: darker than the bar, with a faint light edge, centred on the bar's middle. */
+/* Draws one of the bar's group pills: a little darker than the bar, with a faint edge, centred on the bar's middle. */
 static void
 draw_bar_group(
 	struct zwl_server *server,
@@ -3537,11 +3589,29 @@ draw_bar_group(
 	int32_t width,
 	int32_t height)
 {
-	static const float fill[4] = { 0.0f, 0.0f, 0.0f, 0.25f };
+	/* Whole. */
+	draw_bar_group_faded(server, command, x, width, height, 1.0f);
+}
+
+/* Draws one of the bar's group pills at an opacity (the bar's colours in the appearance shown, ws099-p034b). */
+static void
+draw_bar_group_faded(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	int32_t x,
+	int32_t width,
+	int32_t height,
+	float opacity)
+{
+	struct glass_bar_colours colours;
 	struct glass_shape shape;
+	float fill[4];
 	float top;
 
 	/* The pill. */
+	zwl_glass_bar_colours(server, &colours);
+	memcpy(fill, colours.fill, sizeof(fill));
+	fill[3] *= opacity;
 	top = (float)(ZWL_GLASS_BAR_MIDDLE - height / 2);
 	glass_draw_solid(server, command, (float)x, top, (float)width, (float)height, (float)height * 0.5f, fill);
 
@@ -3550,11 +3620,56 @@ draw_bar_group(
 	shape.mode = MODE_RING;
 	shape.radius = (float)height * 0.5f;
 	shape.soft = 1.0f;
-	shape.color[0] = 1.0f;
-	shape.color[1] = 1.0f;
-	shape.color[2] = 1.0f;
-	shape.color[3] = 0.12f;
+	memcpy(shape.color, colours.edge, sizeof(shape.color));
+	shape.color[3] *= opacity;
 	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Draws a docked window's buttons in their pill at the bar's right end
+ * (ws099-p034b): faded in and grown from BAR_DOCK_SCALE as the docked
+ * layout comes in, out as it goes; the one under the pointer lit while a
+ * window is docked.
+ */
+static void
+draw_bar_buttons(
+	struct zwl_server *server,
+	VkCommandBuffer command,
+	const struct shell_bar *bar,
+	struct zwl_object *docked,
+	const struct glass_bar_colours *colours)
+{
+	float ink[4];
+	float scale;
+	float t;
+	int32_t width;
+	int32_t x;
+	int32_t cx;
+	int32_t middle;
+	int button;
+	int over;
+
+	/* Nothing while the floating layout shows. */
+	t = server->bar_dock;
+	if (t <= 0.0f)
+		return;
+
+	/* The pill, as large as the layout has come in, about its middle. */
+	scale = BAR_DOCK_SCALE + (1.0f - BAR_DOCK_SCALE) * t;
+	width = (int32_t)((float)bar->buttons_width * scale + 0.5f);
+	middle = bar->buttons_x + bar->buttons_width / 2;
+	x = middle - width / 2;
+	draw_bar_group_faded(server, command, x, width, (int32_t)((float)BAR_BUTTONS_HEIGHT * scale + 0.5f), t);
+
+	/* The buttons, faded with it, the one under the pointer lit while a window is docked. */
+	memcpy(ink, colours->ink, sizeof(ink));
+	over = -1;
+	if (docked != NULL)
+		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
+	for (button = 0; button < BUTTON_COUNT; button++) {
+		cx = middle + (int32_t)((float)(bar->buttons[button] - middle) * scale);
+		draw_sign(server, command, button, cx, ZWL_GLASS_BAR / 2, 1, over == button, t, ink);
+	}
 }
 
 /*
@@ -3566,9 +3681,9 @@ static void
 draw_desktops(
 	struct zwl_server *server,
 	VkCommandBuffer command,
-	const struct shell_bar *bar)
+	const struct shell_bar *bar,
+	const struct glass_bar_colours *colours)
 {
-	static const float dot[4] = { 1.0f, 1.0f, 1.0f, 0.42f };
 	static const float current[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	struct glass_shape shape;
 	float progress;
@@ -3608,14 +3723,12 @@ draw_desktops(
 			shape.mode = MODE_RING;
 			shape.radius = (float)DESKTOP_SHOWN_HEIGHT * 0.5f;
 			shape.soft = 1.6f;
-			shape.color[0] = 1.0f;
-			shape.color[1] = 1.0f;
-			shape.color[2] = 1.0f;
+			memcpy(shape.color, colours->ink, sizeof(shape.color));
 			shape.color[3] = 0.95f;
 			glass_shape_draw(server, command, &shape);
 		} else {
 			glass_draw_solid(server, command, (float)(x + (DESKTOP_WIDTH - DESKTOP_DOT_WIDTH) / 2), (float)ZWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT_HEIGHT * 0.5f,
-					 (float)DESKTOP_DOT_WIDTH, (float)DESKTOP_DOT_HEIGHT, (float)DESKTOP_DOT_HEIGHT * 0.5f, dot);
+					 (float)DESKTOP_DOT_WIDTH, (float)DESKTOP_DOT_HEIGHT, (float)DESKTOP_DOT_HEIGHT * 0.5f, colours->faint);
 		}
 	}
 }
@@ -5046,6 +5159,54 @@ draw_centred_cover(
 
 	/* Darker, so that the window in the middle stands out. */
 	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, shade);
+}
+
+/*
+ * Follows the bar's layout towards a docked window's (1) while one is on
+ * top, the floating one's (0) otherwise (ws099-p034b): a change starts
+ * from where it is and eases out over BAR_DOCK_MS; drawn every frame
+ * meanwhile.
+ */
+static void
+bar_dock_follow(
+	struct zwl_server *server)
+{
+	struct zwl_object *top;
+	uint64_t now;
+	uint64_t elapsed;
+	float target;
+	float t;
+	float home;
+
+	/* Docked: a docked window on top, not fullscreen, outside App Home and Wiseview. */
+	target = 0.0f;
+	top = sheet_owner(zwl_top_window(server));
+	home = zwl_home_progress(server);
+	if (top != NULL && top->maximized && !top->fullscreen && home <= 0.0f && server->wiseview <= 0.0f && !server->wiseview_gesture)
+		target = 1.0f;
+
+	/* A new target: from where the layout is now. */
+	now = zwl_milliseconds();
+	if (target != server->bar_dock_to) {
+		server->bar_dock_from = server->bar_dock;
+		server->bar_dock_to = target;
+		server->bar_dock_ms = now;
+	}
+
+	/* Settled. */
+	if (server->bar_dock == server->bar_dock_to)
+		return;
+
+	/* On its way, eased out (1 - (1 - t)^3), drawn every frame. */
+	elapsed = now - server->bar_dock_ms;
+	t = (float)elapsed / (float)BAR_DOCK_MS;
+	if (t > 1.0f)
+		t = 1.0f;
+	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+	server->bar_dock = server->bar_dock_from + (server->bar_dock_to - server->bar_dock_from) * t;
+	if (elapsed >= BAR_DOCK_MS)
+		server->bar_dock = server->bar_dock_to;
+	server->dirty = 1;
 }
 
 /*
@@ -6544,6 +6705,51 @@ zwl_glass_unfullscreen_docks(
 }
 
 /*
+ * Gives the system bar's colours in the appearance shown (ws099-p034b, the
+ * 2026-10-06 user decision): the dark appearance keeps p034's light ink on
+ * dark glass, the light one takes the floating title bar's dark ink.
+ */
+void
+zwl_glass_bar_colours(
+	struct zwl_server *server,
+	struct glass_bar_colours *colours)
+{
+	static const float dark_ink[4] = { 1.0f, 1.0f, 1.0f, 0.94f };
+	static const float dark_line[4] = { 1.0f, 1.0f, 1.0f, 0.18f };
+	static const float dark_fill[4] = { 0.0f, 0.0f, 0.0f, 0.25f };
+	static const float dark_edge[4] = { 1.0f, 1.0f, 1.0f, 0.12f };
+	static const float dark_lit[4] = { 1.0f, 1.0f, 1.0f, 0.20f };
+	static const float dark_faint[4] = { 1.0f, 1.0f, 1.0f, 0.42f };
+	static const float light_ink[4] = { 0.12f, 0.16f, 0.24f, 0.94f };
+	static const float light_line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
+	static const float light_fill[4] = { 0.12f, 0.16f, 0.24f, 0.06f };
+	static const float light_edge[4] = { 0.12f, 0.16f, 0.24f, 0.10f };
+	static const float light_lit[4] = { 0.12f, 0.16f, 0.24f, 0.10f };
+	static const float light_faint[4] = { 0.12f, 0.16f, 0.24f, 0.36f };
+
+	/* The dark appearance's. */
+	if (server->dark != 0) {
+		memcpy(colours->ink, dark_ink, sizeof(colours->ink));
+		memcpy(colours->line, dark_line, sizeof(colours->line));
+		memcpy(colours->fill, dark_fill, sizeof(colours->fill));
+		memcpy(colours->edge, dark_edge, sizeof(colours->edge));
+		memcpy(colours->lit, dark_lit, sizeof(colours->lit));
+		memcpy(colours->faint, dark_faint, sizeof(colours->faint));
+		colours->light = 0U;
+		return;
+	}
+
+	/* The light appearance's: the title bar's. */
+	memcpy(colours->ink, light_ink, sizeof(colours->ink));
+	memcpy(colours->line, light_line, sizeof(colours->line));
+	memcpy(colours->fill, light_fill, sizeof(colours->fill));
+	memcpy(colours->edge, light_edge, sizeof(colours->edge));
+	memcpy(colours->lit, light_lit, sizeof(colours->lit));
+	memcpy(colours->faint, light_faint, sizeof(colours->faint));
+	colours->light = 1U;
+}
+
+/*
  * Opens Wiseview for the bar's "+N" place, as Super+Tab does.
  */
 void
@@ -6715,13 +6921,16 @@ zwl_glass_pad_scroll(
 	int32_t across_um;
 	int32_t down_um;
 	int showing;
+	int dialog;
 	int taken;
+	int down;
 
-	/* Only while the switcher or Wiseview (its opening gesture done) shows. */
+	/* Only while the power dialog, the switcher or Wiseview (its opening gesture done) shows. */
+	dialog = zwl_power_dialog_showing(server);
 	showing = wiseview_showing(server);
 	if (server->wiseview_gesture)
 		showing = 0;
-	if (!server->switcher.on && !showing)
+	if (!dialog && !server->switcher.on && !showing)
 		return 0;
 
 	/* The fingers' way (natural scrolling turned back), notches back to travel. */
@@ -6737,7 +6946,16 @@ zwl_glass_pad_scroll(
 	if (direction != ZWL_SWIPE_NONE)
 		printf("ZWL SWIPE %s via=pad\n", zwl_swipe_name(direction));
 
-	/* The switcher first, else Wiseview. */
+	/* The power dialog first: a swipe down cancels it. */
+	if (dialog) {
+		down = 0;
+		if (direction == ZWL_SWIPE_DOWN)
+			down = 1;
+		(void)zwl_power_dialog_swipe(server, down);
+		return 1;
+	}
+
+	/* The switcher, else Wiseview. */
 	taken = zwl_switch_pad_swipe(server, direction);
 	if (!taken)
 		(void)wiseview_pad_swipe(server, direction);
@@ -6767,6 +6985,7 @@ zwl_glass_gesture(
 	const char *phase_name;
 	unsigned direction;
 	int switching;
+	int dialog;
 	int taken;
 	int may;
 
@@ -6778,6 +6997,15 @@ zwl_glass_gesture(
 	/* A scrolling touch lifted: the next swipe of Wiseview or the switcher is another (ws142-p009). */
 	if (gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2) {
 		zwl_swipe_end(&server->pad_swipe);
+		return;
+	}
+
+	/* While the power dialog shows, two fingers down from the top edge cancel it, and nothing else starts. */
+	dialog = zwl_power_dialog_showing(server);
+	if (dialog) {
+		direction = gesture_as_swipe(gesture);
+		if (phase == ZWL_TOUCHPAD_PHASE_BEGIN && direction == ZWL_SWIPE_DOWN)
+			(void)zwl_power_dialog_swipe(server, 1);
 		return;
 	}
 
@@ -7368,6 +7596,11 @@ glass_motion_take(
 		server->dirty = 1;
 		return 1;
 	}
+
+	/* So does the power dialog while it shows (power-dialog.c). */
+	taken = zwl_power_dialog_motion(server);
+	if (taken)
+		return 1;
 
 	/* Wiseview follows the gesture, and hears the pointer while it is open; a pressed tile that moves is dragged. */
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {

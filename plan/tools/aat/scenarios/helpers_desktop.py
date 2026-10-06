@@ -45,6 +45,84 @@ def home_super_key(item):
 	item.passed()
 
 
+def power_dialog(item):
+	"""Opens App Home's Power Off dialog: Home by the Windows key, "power" typed, the Power Off icon clicked."""
+	since = run.home_open(item)
+	run.type("power")
+	item.check(run.wait(r'ZWL HOME search query="power"', since, 10), "Home did not search for power")
+	icons = run.lines(r'ZWL HOME icon name="Power Off" x=-?\d+ y=-?\d+', since)
+	item.step("typed 'power' in App Home", icons[-1] if icons else "no icon")
+	item.check(icons, "Home shows no Power Off icon")
+	x, y = (int(value) for value in re.search(r"x=(-?\d+) y=(-?\d+)", icons[-1]).groups())
+	mark = run.mark()
+	run.click(x, y)
+	opened = run.wait(r"ZWL POWER dialog open source=home ", mark, 10)
+	time.sleep(0.6)
+	item.step(f"clicked the Power Off icon at {x},{y}", opened)
+	item.check(opened, "no ZWL POWER dialog open")
+	item.check(not run.lines(r"ZWL SESSION logout", mark), "the session ended without asking")
+	return opened
+
+
+@run.define("desktop.home.power-off-dialog")
+def home_power_off(item):
+	opened = power_dialog(item)
+	run.shot(item, "dialog")
+	mark = run.mark()
+	run.key("esc")
+	cancelled = run.wait(r"ZWL POWER choice=cancel via=escape", mark, 10)
+	time.sleep(0.5)
+	item.step("Esc", cancelled)
+	run.shot(item, "cancelled")
+	item.check(cancelled, "Esc did not cancel")
+	power_dialog(item)
+	mark = run.mark()
+	run.click(20, 400)
+	outside = run.wait(r"ZWL POWER choice=cancel via=outside", mark, 10)
+	item.step("clicked outside the card", outside)
+	item.check(outside, "a click outside did not cancel")
+	item.person(f"the darkened desktop and the card in the first screenshot ({opened}); Log Out by hand (step 4)")
+
+
+@run.define("desktop.home.switch-running")
+def home_switch_running(item):
+	files = run.launch(item, "Files")
+	run.launch(item, "Terminal")
+	since = run.home_open(item)
+	run.type("files")
+	item.check(run.wait(r'ZWL HOME search query="files"', since, 10), "Home did not search for files")
+	icons = run.lines(r'ZWL HOME icon name="Files" x=-?\d+ y=-?\d+', since)
+	item.check(icons, "Home shows no Files icon")
+	x, y = (int(value) for value in re.search(r"x=(-?\d+) y=(-?\d+)", icons[-1]).groups())
+	mark = run.mark()
+	run.click(x, y)
+	switched = run.wait(rf"ZWL HOME switch name=Files surface={files.surface} client={files.client}\b", mark, 10)
+	time.sleep(1.0)
+	launched = run.lines(r"ZWL HOME launch name=Files ", mark)
+	mapped = run.lines(r"ZWL MAP client=", mark)
+	item.step(f"clicked the Files icon at {x},{y} with Files running", f"{switched}; launches {len(launched)}; maps {len(mapped)}")
+	item.check(switched, "Home did not switch to the running Files")
+	item.check(not launched and not mapped, "a second Files was started")
+	run.home_open(item)
+	run.shot(item, "running-marks")
+	run.key("esc")
+	item.person("the short lines under Files and Terminal in the screenshot")
+
+
+@run.define("desktop.home.open-latency")
+def home_open_latency(item):
+	since = run.mark()
+	run.key("super")
+	cover = run.wait(r"ZWL HOME layer=cover after_ms=\d+", since, 10)
+	content = run.wait(r"ZWL HOME layer=content after_ms=\d+", since, 10)
+	time.sleep(0.4)
+	item.step("Windows key pressed and let go", f"{cover}; {content}")
+	run.shot(item, "open")
+	run.key("super")
+	item.check(cover and content, "no ZWL HOME layer=cover or layer=content")
+	item.person(f"cover after_ms={aatlib.number(cover, 'after_ms')} (16 or less), content after_ms={aatlib.number(content, 'after_ms')} (150 or less); the icons rising in")
+
+
 @run.define("desktop.home.launcher-button")
 def home_launcher(item):
 	since = run.mark()
@@ -270,6 +348,11 @@ def volume_slider(item):
 	popup = run.wait(r"ZWL VOLUME popup open x=", since, 10)
 	item.step("clicked the volume icon", popup)
 	item.check(popup, "the popup did not open")
+	# Without a sound device (QEMU without audio) the popup's controls do nothing by design (volume.c, T1-202c).
+	if aatlib.number(popup, "sound") == 0:
+		run.shot(item, "no-sound")
+		run.key("esc")
+		item.person("no sound device here (sound=0): the slider is shown inert; drag it on a machine with sound")
 	left = aatlib.number(popup, "x") + 14 + 9
 	width = 260 - 28 - 18
 	y = aatlib.number(popup, "slider") + 17
@@ -433,7 +516,9 @@ def japanese_in_editor(item, method: int, name: str, keys: str) -> None:
 	common.set_method(run, item, method)
 	try:
 		editor(item, name)
-		common.to_language(run, item, "ja")
+		# The Japanese engine's language is "ja", SKK's "skk" (userland/desktop/ime, T1-202c).
+		language = "skk" if method == 2 else "ja"
+		common.to_language(run, item, language)
 		run.type(keys)
 		run.key("space")
 		time.sleep(0.8)

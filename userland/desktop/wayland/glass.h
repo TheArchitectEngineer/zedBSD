@@ -55,7 +55,8 @@
  */
 enum glass_hole {
 	GLASS_HOLE_GROUND,
-	GLASS_HOLE_SCENE
+	GLASS_HOLE_SCENE,
+	GLASS_HOLE_WALLPAPER
 };
 
 /* The text sizes: the system bar, the titles, the close sign, App Home's icon letters and its search text. */
@@ -112,14 +113,37 @@ void glass_draw_glyph(struct zwl_server *server, VkCommandBuffer command, enum g
 int32_t glass_glyph_advance(struct zwl_server *server, enum glass_size size, unsigned index);
 void glass_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
 void glass_draw_app_tile(struct zwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float opacity, float lighten, enum glass_hole hole);
+void glass_draw_app_tile_reflection(struct zwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float height, float opacity);
 void glass_draw_mark(struct zwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct zwl_server *server);
+
+/*
+ * The system bar's colours in the appearance shown (ws099-p034b, the
+ * 2026-10-06 user decision): in the dark appearance light ink on the dark
+ * glass of p034, in the light appearance the floating title bar's dark ink
+ * on its white glass.  The ink, a faint line, a group pill's fill and edge,
+ * a lit place, a faint place, and whether the bar is light.
+ */
+struct glass_bar_colours {
+	float ink[4];
+	float line[4];
+	float fill[4];
+	float edge[4];
+	float lit[4];
+	float faint[4];
+	unsigned light;
+};
+
+void zwl_glass_bar_colours(struct zwl_server *server, struct glass_bar_colours *colours);
 
 /* The applications' icons in the system bar and their previews (apps-bar.c), drawn with the shell's marks and Wiseview's tiles (shell.c). */
 int zwl_apps_bar_draw(struct zwl_server *server, VkCommandBuffer command);
 void zwl_apps_bar_draw_popup(struct zwl_server *server, VkCommandBuffer command);
 void zwl_glass_draw_app_mark(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t middle, int32_t size, float alpha);
 void zwl_switch_draw(struct zwl_server *server, VkCommandBuffer command);
+
+/* The power dialog over everything but the cursor (power-dialog.c, ws099-p037). */
+void zwl_power_dialog_draw(struct zwl_server *server, VkCommandBuffer command);
 void zwl_glass_draw_preview(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height, int over);
 
 /* The login screen in place of the desktop (greeter.c). */

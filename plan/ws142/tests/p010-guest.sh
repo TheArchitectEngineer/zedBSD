@@ -50,7 +50,9 @@ pass() { echo "$1: ok"; }
 fail() { echo "$1: FAILED"; status=1; }
 expect_count() { n=$(count "$2"); if [ "${n:-0}" -eq "$3" ] 2>/dev/null; then pass "$1"; else fail "$1 ($2: ${n:-?}, expected $3)"; fi; }
 expect_some() { n=$(count "$2"); if [ "${n:-0}" -ge 1 ] 2>/dev/null; then pass "$1"; else fail "$1 ($2: none)"; fi; }
-open_app() { guest "$env /bin/wltest $4 --size=$3 --color=$2 --app-id=$1 --frames=3600 --delay-ms=250 > /tmp/$1.log 2>&1 </dev/null & sleep 3; echo started" >/dev/null; }
+# The kernel keeps a process's argv[0] only as its command (src/kern/exec.c), so ps cannot tell two wltests apart by
+# their arguments (T1-224, T1-224b: apps.b was never killed): each one's pid is kept in /tmp/NAME.pid when it starts.
+open_app() { guest "$env /bin/wltest --app-id=$1 $4 --size=$3 --color=$2 --frames=3600 --delay-ms=250 > /tmp/$1.log 2>&1 </dev/null & echo \$! > /tmp/$1.pid; sleep 3; echo started" >/dev/null; }
 pad() { name=$1; shift; script="pad 1336 760 5 scan\nwait 2600"; for line in "$@"; do script="$script\n$line"; done
 	guest "printf '$script\nhold 800\n' | /bin/touchinject; echo replay=\$?" > "$out/$name.txt"
 	grep -q '^replay=0$' "$out/$name.txt" || fail "$name replay"; sleep 0.5; }
@@ -107,7 +109,8 @@ expect_some switch-floats "ZWL LAYOUT switch surface=[0-9]* action=float mode=wi
 # 4. apps.b docked again, then it ends by itself: apps.a in front docks.
 title_double_click "${b:-0}"
 n=$(count 'ZWL LAYOUT mode=docked'); [ "${n:-0}" -ge 2 ] 2>/dev/null && pass docked-again || fail "docked-again (${n:-?})"
-guest 'for p in $(ps -A -o pid,args | grep "[w]ltest .*app-id=apps.b" | awk "{print \$1}"); do kill $p; done; sleep 2; echo killed' >/dev/null
+guest 'p=$(cat /tmp/apps.b.pid); ps -A -o pid,args | grep "^ *$p "; kill $p; sleep 2; echo killed pid=$p' > "$out/kill.txt"
+expect_some apps-b-gone "ZWL CLIENT gone client=${b:-0} "
 expect_some front-docks "ZWL LAYOUT front surface=[0-9]* action=dock client=${a:-0}\$"
 
 # 5. A window of one size opens docked, in the middle over the blurred scene.

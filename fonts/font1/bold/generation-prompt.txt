@@ -1,0 +1,19 @@
+Design a NEW coherent monospace ASCII typeface concept called font1, using these three reference typeface specimen images. Image 1 is Monaco and is the dominant structural reference. Image 2 is Droid Sans and is the punctuation and symbol design reference. Image 3 is JetBrains Mono and is a reference for clean, restrained modern terminals and stroke consistency. Blend actual letter design, do not merely paste fonts together and do not overlap translucent characters.
+
+Output a PRECISE GLYPH SPRITE ATLAS, a square 2000 x 2000 or higher resolution image, exactly 10 equal-width columns and 10 equal-height rows, covering the entire canvas with NO outer margin. Transparent background, solid pure black glyphs, clean vector-like anti-aliased edges. There must be NO headings, NO labels, NO codepoint text, NO captions, NO border lines, NO guidelines, NO decorations. Each glyph is isolated in its assigned cell with generous inset for extraction. Each cell uses the exact same advance, size and baseline: baseline at 72% down the cell; uppercase height 48% of cell height; x-height 36%; descenders reach 85%. Stroke thickness 5% of cell height, conventional regular weight. Center the glyph optically inside each cell without changing the width of its glyph skeleton unnecessarily.
+
+Style: keep Monaco's comfortably wide and rounded counters, human warmth, single-storey lowercase a and g, distinctive readable i and l, familiar high x-height and open uppercase shapes. Gently simplify terminals and unify straight strokes with the quiet, unostentatious clarity of JetBrains Mono. Avoid JetBrains' conspicuously narrow stadium-shaped O, pointed coding aesthetic, angular curly braces, and dotted zero. Keep Monaco's slashed zero, soften and shorten slash so counter remains open. Modernize punctuation based on Droid Sans: simple clean parentheses/brackets/braces, balanced ampersand, uncomplicated @ with single-storey internal a, restrained comma and semicolon, round dots, balanced arithmetic signs. All symbols must fit the same monospace advance, with coherent stroke weight, no tapered exclamation stems and no calligraphic or slab decorations.
+
+The following array specifies every cell EXACTLY, top to bottom and left to right. Each row has 10 cells. Render exactly the glyph listed in each cell; "blank" means fully transparent empty cell. Do not reorder, duplicate, omit, add letters or use look-alike letters:
+row 1: blank, !, double quote, #, $, %, &, apostrophe, (, )
+row 2: *, +, comma, hyphen-minus, period, /, 0, 1, 2, 3
+row 3: 4, 5, 6, 7, 8, 9, colon, semicolon, <, =
+row 4: >, ?, @, A, B, C, D, E, F, G
+row 5: H, I, J, K, L, M, N, O, P, Q
+row 6: R, S, T, U, V, W, X, Y, Z, [
+row 7: backslash, ], circumflex ^, underscore _, grave accent backtick, a, b, c, d, e
+row 8: f, g, h, i, j, k, l, m, n, o
+row 9: p, q, r, s, t, u, v, w, x, y
+row 10: z, {, vertical bar |, }, tilde ~, blank, blank, blank, blank, blank
+
+This is a production-oriented alphabet drawing sheet for slicing into individual glyph images, not a text specimen page. Precisely preserve the 10 by 10 cell coordinate layout, all 95 assigned characters, and the six empty cells.

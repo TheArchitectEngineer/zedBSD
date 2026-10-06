@@ -67,7 +67,9 @@ def terminal_f11(item):
 	window = terminal(item)
 	mark = run.mark()
 	run.key("f11")
-	on = run.wait(r"ZTERM FULLSCREEN key on=1", mark, 10)
+	# F11 is the Fullscreen menu item's shortcut: the compositor's menu chooses it (ZTERM MENU state ... fullscreen=1),
+	# or Terminal takes the key itself on a desktop without those menus (BUG-194).
+	on = run.wait(r"ZTERM FULLSCREEN key on=1|ZTERM MENU state .*fullscreen=1", mark, 10)
 	hidden = run.wait(r"ZWL GLASS bar hidden fullscreen=1", mark, 10)
 	time.sleep(1.0)
 	item.step("F11", f"{on}; {hidden}")
@@ -153,7 +155,8 @@ def terminal_history(item):
 @run.define("apps.emacs.edit-save")
 def emacs(item):
 	terminal(item)
-	run.type(f"emacs -nw {aatlib.WORK}/emacs.txt")
+	# REmacs (userland/base/emacs) has no -nw: it is a terminal editor, and would open a buffer named -nw (T1-202c).
+	run.type(f"emacs {aatlib.WORK}/emacs.txt")
 	run.key("enter")
 	time.sleep(4.0)
 	run.shot(item, "emacs")
@@ -262,11 +265,40 @@ def settings_password(item):
 			item.check(now == before, f"{what} changed the password")
 			if name == "wrong":
 				item.check(result and aatlib.number(result[-1], "errno") != 0, "no refused request for the wrong password")
+		# Esc empties the fields, or with nothing typed goes back from the page (T1-202c: the cases after the first
+		# typed into the Settings overview): the Users page is asked for again, its controls read anew.
 		run.key("esc")
+		controls = users_page_again(controls)
 	common.restore_shadow(run)
 	item.check(shadow_line() == before, "/etc/shadow was not put back")
 	item.step("put /etc/shadow back")
 	item.person("the messages under the fields in the screenshots (wrong, not accepted, changed)")
+
+
+def users_page_again(controls: dict) -> dict:
+	"""Shows Settings' Users page again (the page asked for once more re-logs its controls) and gives its controls
+	(those given when no new list comes)."""
+	mark = run.mark()
+	run.as_user("/bin/settings users")
+	layout = run.wait(r"ZSETTINGS LAYOUT page=users controls=", mark, 15)
+	time.sleep(0.5)
+	if layout is None:
+		return controls
+	return run.controls(mark, "users")
+
+
+def reveal_control(window, page: str, index: int) -> dict:
+	"""Scrolls a Settings page down (the wheel over the window) until a control is inside the window (T1-202c: the
+	users' list's last row was 1294 pixels down); gives the page's controls then."""
+	controls = run.controls(None, page)
+	for _ in range(8):
+		place = controls.get(index)
+		if place is not None and 0 <= place[1] and place[1] + place[3] <= window.height:
+			return controls
+		run.aat("wheel", str(window.x + window.width // 2), str(window.y + window.height // 2), "-5")
+		time.sleep(0.6)
+		controls = run.controls(None, page)
+	return controls
 
 
 def remove_aatuser() -> None:
@@ -302,9 +334,10 @@ def settings_manage(item):
 	controls = run.controls(None, "users")
 	rows = sorted(index for index in controls if index >= 100)
 	item.check(rows, "no rows in the users' list")
+	controls = reveal_control(window, "users", rows[-1])
 	run.click_control(item, window, controls, rows[-1], "aatuser's row")
 	time.sleep(0.5)
-	controls = run.controls(None, "users")
+	controls = reveal_control(window, "users", 23)
 	mark = run.mark()
 	run.click_control(item, window, controls, 23, "Remove")
 	started = run.wait(r"ZSETTINGS USERS admin start mode=3", mark, 10)
@@ -449,15 +482,17 @@ def videoplayer(item):
 	run.shot(item, "playing-1")
 	time.sleep(0.6)
 	run.shot(item, "playing-2")
+	# FRAMES is logged at the first picture and every 100th only; how many were shown is Pause's (T1-202c).
 	frames = [aatlib.number(line, "shown") for line in run.lines(r"VIDEOPLAYER FRAMES shown=\d+", mark)]
-	item.step("played for 1.6 s", f"frames {frames[-3:]}")
-	item.check(len(frames) >= 2 and frames[-1] > frames[0], f"the frames did not advance: {frames}")
 	mark = run.mark()
 	run.key("space")
 	paused = run.wait(r"VIDEOPLAYER PAUSE shown=", mark, 5)
+	shown = aatlib.number(paused, "shown")
+	item.step("played for 1.6 s, then Space", f"frames {frames[-3:]}; {paused}")
+	item.check(shown is not None and shown > 1, f"the frames did not advance: {frames}, {paused}")
 	run.key("space")
 	played = run.wait(r"VIDEOPLAYER PLAY shown=", mark, 5)
-	item.step("Space, Space", f"{paused}; {played}")
+	item.step("Space again", f"{paused}; {played}")
 	item.check(paused and played, "Space did not pause and play")
 	mark = run.mark()
 	run.key("right")
@@ -498,9 +533,15 @@ def pdfviewer(item):
 	turned = run.wait(r"PDFVIEWER PAGE shown=\d+", mark, 10)
 	time.sleep(0.8)
 	item.step("Page Down", f"{shown[-1] if shown else '-'} -> {turned}")
-	run.shot(item, "page-2")
-	item.check(turned and (not shown or turned != shown[-1]), "Page Down did not turn the page")
-	item.person("AAT page 1, then AAT page 2 in the screenshots")
+	second = run.shot(item, "page-2")
+	if turned:
+		item.check(not shown or turned != shown[-1], "Page Down did not turn the page")
+		item.person("AAT page 1, then AAT page 2 in the screenshots")
+	# The scroll mode (the viewer's first) scrolls a screen and logs no PAGE (T1-202c): the view must have moved.
+	first = run.outdir / "png" / f"{item.ident}-page-1.png"
+	moved = first.read_bytes() != (run.outdir / second).read_bytes()
+	item.check(moved, "Page Down moved nothing (the two screenshots are the same)")
+	item.person("the scroll mode: the view moved down a screen from AAT page 1 towards AAT page 2 in the screenshots")
 
 
 @run.define("apps.textedit.type-save")

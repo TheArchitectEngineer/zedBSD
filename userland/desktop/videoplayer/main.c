@@ -47,6 +47,13 @@
 /* The bar of controls: its height, how long it stays after the pointer moves (us), and its widgets' ids. */
 #define VP_BAR_HEIGHT		56
 #define VP_BAR_US		3000000U
+
+/* In full screen the bar shows for less after the pointer moved (ws122-p005a, us). */
+#define VP_BAR_FULL_US		2000000U
+
+/* A double click on the picture toggles full screen: the second press this soon (us) and this near (pixels). */
+#define VP_DOUBLE_US		400000U
+#define VP_DOUBLE_NEAR		8
 #define VP_ID_PLAY		1U
 #define VP_ID_POSITION		2U
 
@@ -59,7 +66,9 @@
 #define VP_KEY_Q		16U
 #define VP_KEY_W		17U
 #define VP_KEY_O		24U
+#define VP_KEY_ENTER		28U
 #define VP_KEY_F		33U
+#define VP_KEY_F11		87U
 #define VP_KEY_SPACE		57U
 #define VP_KEY_LEFT		105U
 #define VP_KEY_RIGHT		106U
@@ -110,6 +119,11 @@ struct vp_player {
 	double position;
 	uint64_t seek_at;
 
+	/* The last press on the picture (when and where), which a second one soon after makes a double click. */
+	uint64_t click_us;
+	int32_t click_x;
+	int32_t click_y;
+
 	/* A frame is due, the window changed size, the run ends. */
 	int dirty;
 	int resized;
@@ -153,6 +167,8 @@ static void vp_draw_picture(struct vp_player *player);
 static void vp_notice(struct vp_player *player, int error, int problem);
 static void vp_draw_bar(struct vp_player *player, uint64_t now_us);
 static void vp_time_text(double seconds, char *text, size_t size);
+static uint64_t vp_bar_time(struct vp_player *player);
+static int vp_double_click(struct vp_player *player, const struct kl_window_event *event, uint64_t now);
 static int vp_wait(struct vp_player *player, uint64_t now_us);
 
 /* The chooser tells its answer here. */
@@ -402,29 +418,40 @@ vp_input(
 	const struct kl_window_event *event)
 {
 	uint64_t now;
+	int doubled;
 	int ctrl;
+	int alt;
 	int full;
 
-	/* Any input may change the bar; the pointer brings it back for a while. */
+	/* Any input may change the bar; the pointer brings it back for a while (less in full screen). */
 	now = kl_clock_us();
 	full = kl_window_fullscreen(player->window);
 	player->dirty = 1;
 	switch (event->kind) {
 	case KL_WINDOW_MOTION:
-		player->bar_until = now + VP_BAR_US;
+		player->bar_until = now + vp_bar_time(player);
 		(void)kl_ui_pointer_motion(player->ui, event->x, event->y);
 		break;
 	case KL_WINDOW_LEAVE:
 		(void)kl_ui_pointer_leave(player->ui);
 		break;
 	case KL_WINDOW_BUTTON:
-		player->bar_until = now + VP_BAR_US;
+		player->bar_until = now + vp_bar_time(player);
 		(void)kl_ui_pointer_motion(player->ui, event->x, event->y);
 		if (event->code == KL_BUTTON_LEFT)
 			(void)kl_ui_pointer_button(player->ui, event->pressed, event->arrival_us);
+
+		/* A double click on the picture toggles full screen (ws122-p005a). */
+		doubled = vp_double_click(player, event, now);
+		if (doubled) {
+			vp_log("FULLSCREEN toggle via=double-click");
+			vp_action(player, VP_ACTION_FULLSCREEN);
+		}
+
+		/* The button is done. */
 		break;
 	case KL_WINDOW_TOUCH_DOWN:
-		player->bar_until = now + VP_BAR_US;
+		player->bar_until = now + vp_bar_time(player);
 		(void)kl_ui_touch_down(player->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
 	case KL_WINDOW_TOUCH_MOTION:
@@ -441,7 +468,15 @@ vp_input(
 		if (!event->pressed)
 			break;
 		ctrl = (event->modifiers & KL_MOD_CTRL) != 0U;
-		if (ctrl && event->code == VP_KEY_O)
+		alt = (event->modifiers & KL_MOD_ALT) != 0U;
+		if (event->code == VP_KEY_F11) {
+			/* F11 and Alt+Enter toggle full screen, as F does (ws122-p005a, the 2026-10-06 user request). */
+			vp_log("FULLSCREEN toggle via=f11");
+			vp_action(player, VP_ACTION_FULLSCREEN);
+		} else if (alt && event->code == VP_KEY_ENTER) {
+			vp_log("FULLSCREEN toggle via=alt-enter");
+			vp_action(player, VP_ACTION_FULLSCREEN);
+		} else if (ctrl && event->code == VP_KEY_O)
 			vp_action(player, VP_ACTION_OPEN);
 		else if (ctrl && event->code == VP_KEY_W)
 			vp_action(player, VP_ACTION_CLOSE);
@@ -481,7 +516,7 @@ vp_action(
 	/* The log line the tests read. */
 	vp_log("ACTION action=%u", (unsigned)action);
 	player->dirty = 1;
-	player->bar_until = kl_clock_us() + VP_BAR_US;
+	player->bar_until = kl_clock_us() + vp_bar_time(player);
 	switch (action) {
 	case VP_ACTION_OPEN:
 		vp_choose(player);
@@ -520,6 +555,7 @@ vp_action(
 	case VP_ACTION_FULLSCREEN:
 		full = kl_window_fullscreen(player->window);
 		kl_window_set_fullscreen(player->window, !full);
+		vp_log("FULLSCREEN on=%d", !full);
 		break;
 	default:
 		break;
@@ -951,4 +987,65 @@ vp_wait(
 	if (now_us < player->bar_until + VP_BAR_US && wait > 100)
 		wait = 100;
 	return wait;
+}
+
+/* Gives how long the bar stays after the pointer moved: less in full screen (ws122-p005a). */
+static uint64_t
+vp_bar_time(
+	struct vp_player *player)
+{
+	int full;
+
+	/* Full screen: the picture is uncovered sooner. */
+	full = kl_window_fullscreen(player->window);
+	if (full)
+		return VP_BAR_FULL_US;
+
+	/* A window. */
+	return VP_BAR_US;
+}
+
+/*
+ * Tells whether a button event is the second press of a double click on
+ * the picture (not on the bar while it shows): soon after the first and
+ * near it.  Remembers a first press.  Returns 1 for the second.
+ */
+static int
+vp_double_click(
+	struct vp_player *player,
+	const struct kl_window_event *event,
+	uint64_t now)
+{
+	int32_t dx;
+	int32_t dy;
+	int on_bar;
+
+	/* Only the left button's press. */
+	if (event->code != KL_BUTTON_LEFT || !event->pressed)
+		return 0;
+
+	/* Not on the bar while it shows (its controls take the press). */
+	on_bar = 0;
+	if (event->y >= (int32_t)player->height - VP_BAR_HEIGHT && now <= player->bar_until)
+		on_bar = 1;
+	if (on_bar) {
+		player->click_us = 0U;
+		return 0;
+	}
+
+	/* The second press soon after and near the first: a double click, after which a new one begins. */
+	dx = (int32_t)event->x - player->click_x;
+	dy = (int32_t)event->y - player->click_y;
+	if (player->click_us != 0U &&
+	    now - player->click_us <= VP_DOUBLE_US &&
+	    dx * dx + dy * dy <= VP_DOUBLE_NEAR * VP_DOUBLE_NEAR) {
+		player->click_us = 0U;
+		return 1;
+	}
+
+	/* A first press. */
+	player->click_us = now;
+	player->click_x = (int32_t)event->x;
+	player->click_y = (int32_t)event->y;
+	return 0;
 }

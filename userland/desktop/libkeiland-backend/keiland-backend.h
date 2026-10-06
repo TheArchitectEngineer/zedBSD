@@ -725,9 +725,11 @@ int kl_backend_peer_uid(int descriptor, uid_t *uid);
  *
  * The machine's power source and the actions a user may take on the
  * machine: power it off, restart it, suspend it.  An action is asked of
- * the system's session manager (zedBSD's sessiond from the login screen;
- * logind on Linux) and the machine then ends or sleeps.  On zedBSD
- * sessiond's answer comes as session_answer(KL_BACKEND_SESSION_POWER); on
+ * the system's session manager (zedBSD's sessiond from the login screen or
+ * a session, ws131-p027; logind on Linux) and the machine then ends or
+ * sleeps.  On zedBSD sessiond's answer comes as
+ * session_answer(KL_BACKEND_SESSION_POWER) (EACCES when it refused: the
+ * session's user is neither root nor in wheel); on
  * Linux logind answers the call itself and the action's return value is
  * the answer.  One action is asked at a time.  The power source is read on
  * zedBSD (ws132-p003, the kernel's KERN_SYSTEM_GET_POWER); elsewhere the
@@ -749,8 +751,8 @@ int kl_backend_peer_uid(int descriptor, uid_t *uid);
  * The power as the backend knows it: the source, the battery's charge in
  * percent (-1 when unknown), whether it charges, and the
  * KL_BACKEND_POWER_ACTION_BIT of each action a user may take now (0 when
- * none: a zedBSD session cannot power the machine off, only the login
- * screen can).
+ * none: without a session manager, or a zedBSD session of a user neither
+ * root nor in wheel, ws131-p027).
  */
 struct kl_backend_power_state {
 	unsigned source;

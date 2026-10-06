@@ -280,9 +280,19 @@ se_ui_go(
 	/* The search's results give way to the page chosen. */
 	se_search_end(app);
 
-	/* The page shown stays, without a new step. */
-	if (page == app->page)
+	/*
+	 * The page's controls are listed in the log again at the next frame,
+	 * even when they are the same as the last page's (two pages without a
+	 * control), so a test that asked for the page finds its LAYOUT line.
+	 */
+	app->logged_count = -1;
+	app->dirty = 1;
+
+	/* The page shown stays, without a new step (said again for whoever asked it). */
+	if (page == app->page) {
+		se_log("PAGE %s", se_pages[page].word);
 		return;
+	}
 
 	/* A full history drops its oldest step. */
 	index = app->history_index + 1;

@@ -130,6 +130,7 @@ timeout 300 sh plan/tools/aat/run-aat.sh local "$tmp/runs" os.boot.session-up os
 grep -q '| `os.boot.session-up` | \*\*pass\*\* | 64x48 |' "$tmp/runs/summary.md" && ok "runner: a helper's pass" || bad "runner: a helper's pass"
 grep -q '| `os.power.lid` | \*\*needs-person\*\* |' "$tmp/runs/summary.md" && ok "runner: hands are a person's" || bad "runner: hands"
 grep -q 'seen: `ZWL READY' "$tmp/runs/records/os.boot.session-up.md" && [ -s "$tmp/runs/png/os.boot.session-up-desktop.png" ] && ok "runner: the step's record and screenshot" || bad "runner: record"
+[ -f "$tmp/runs/logs/os.boot.session-up.log" ] && ok "runner: the scenario's log kept" || bad "runner: the scenario's log"
 aat stop >/dev/null 2>&1
 
 # The choice from a change (select-scenarios.py, ws173-p006): its git diff stood in for by a fixed list.

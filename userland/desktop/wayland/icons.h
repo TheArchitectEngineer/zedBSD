@@ -66,7 +66,7 @@ enum glass_icon {
 	GLASS_ICON_APP_GEARS,
 	GLASS_ICON_APP_XTERM,
 	GLASS_ICON_APP_LOCK,
-	GLASS_ICON_APP_LOGOUT,
+	GLASS_ICON_APP_POWER,
 	GLASS_ICON_APP_TEXT,
 	GLASS_ICON_APP_SETTINGS,
 	/* ws128-p012: the standard applications that had only their first letter. */

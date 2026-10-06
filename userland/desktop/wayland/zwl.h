@@ -48,6 +48,7 @@
 #include "apps.h"
 #include "switcher.h"
 #include "swipe.h"
+#include "power-layout.h"
 #include "lid.h"
 #include "super-tap.h"
 #include <stdint.h>
@@ -1064,6 +1065,16 @@ struct zwl_server {
 	float home_from;
 	float home_to;
 	uint64_t home_start_ms;
+	/*
+	 * App Home's two layers (ws099-p035c, BUG-225): when its content (the
+	 * icons, rising one after another) began to come in (0: shown at once,
+	 * after a drag), when it was asked to open, and whether its first frame
+	 * of the stage and of the content have been logged since.
+	 */
+	uint64_t home_content_ms;
+	uint64_t home_asked_ms;
+	unsigned home_cover_logged;
+	unsigned home_content_logged;
 	char home_query[48];
 	unsigned home_query_length;
 	int home_selected;
@@ -1112,6 +1123,18 @@ struct zwl_server {
 	 * landing until their lifting (the gesture SWIPE2's end).
 	 */
 	struct zwl_swipe pad_swipe;
+	/* App Home's Power Off dialog (power-dialog.c, ws099-p037): shown over everything while open. */
+	struct zwl_power_dialog power_dialog;
+	/*
+	 * The system bar's docked layout (ws099-p034b): how far it is (0, a
+	 * floating window's: the status and the clock at the right end; 1, a
+	 * docked window's: the window's buttons there, the status and the clock
+	 * left of them), the animation's ends and when it began (ms).
+	 */
+	float bar_dock;
+	float bar_dock_from;
+	float bar_dock_to;
+	uint64_t bar_dock_ms;
 	/*
 	 * App Home's pages (ws035-p071): the page shown; a press on Home that
 	 * may become a page drag (where it started, the application under it,
@@ -1424,6 +1447,13 @@ int zwl_switch_key(struct zwl_server *server, uint32_t key, uint32_t state);
 int zwl_switch_button(struct zwl_server *server, uint32_t button, uint32_t state);
 int zwl_switch_pad_swipe(struct zwl_server *server, unsigned direction);
 int zwl_glass_pad_scroll(struct zwl_server *server, int32_t vertical, int32_t horizontal, int natural);
+void zwl_power_dialog_open(struct zwl_server *server, const char *source);
+int zwl_power_dialog_showing(struct zwl_server *server);
+int zwl_power_dialog_button(struct zwl_server *server, uint32_t button, uint32_t state);
+int zwl_power_dialog_key(struct zwl_server *server, uint32_t key, uint32_t state);
+int zwl_power_dialog_motion(struct zwl_server *server);
+int zwl_power_dialog_swipe(struct zwl_server *server, int down);
+void zwl_power_dialog_tick(struct zwl_server *server);
 void zwl_switch_tick(struct zwl_server *server);
 void zwl_glass_place(struct zwl_server *server, struct zwl_object *surface, int32_t width, int32_t height, int32_t step);
 void zwl_glass_space(struct zwl_server *server, int32_t *width, int32_t *height);
