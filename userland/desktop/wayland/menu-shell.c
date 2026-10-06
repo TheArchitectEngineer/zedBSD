@@ -60,6 +60,9 @@
 #define ITEM_GAP		2
 #define TITLE_GAP		18
 
+/* How strong the faint line under a top-level menu item's label is, of the label's ink (BUG-219). */
+#define ITEM_UNDERLINE		0.28f
+
 /* A popup's rows, its padding, the gutter for check marks, its least width, corners and margin to the output's edge. */
 #define ROW_HEIGHT		30
 #define SEPARATOR_HEIGHT	11
@@ -343,6 +346,7 @@ zwl_menu_draw_bar(
 	unsigned open;
 	uint32_t checksum;
 	int32_t widths[SHELL_ROWS];
+	float underline[4];
 	int32_t more;
 	int32_t x;
 	int32_t pill_y;
@@ -443,9 +447,16 @@ zwl_menu_draw_bar(
 			colour[3] *= 0.4f;
 		colour[3] *= fade;
 
-		/* The item's label, or "..." for the overflow. */
+		/*
+		 * The item's label with a faint line under it, so that a menu reads as
+		 * something to press, not as more of the title (BUG-219), or "..." for
+		 * the overflow.
+		 */
 		if (index < shown) {
 			glass_draw_text(server, command, SIZE_BAR, x + ITEM_PADDING, baseline, tops[index]->label, widths[index], colour);
+			memcpy(underline, colour, sizeof(underline));
+			underline[3] *= ITEM_UNDERLINE;
+			glass_draw_solid(server, command, (float)(x + ITEM_PADDING), (float)(baseline + 4), (float)(widths[index] - 2 * ITEM_PADDING), 1.0f, 0.5f, underline);
 		} else {
 			glass_draw_text(server, command, SIZE_BAR, x + ITEM_PADDING, baseline, "...", widths[index], colour);
 		}
