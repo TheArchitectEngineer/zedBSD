@@ -10,7 +10,8 @@
  * (ws089-p004):
  *
  *   Appearance  light or dark (ws089-p017), a switch; the windows'
- *               transparency, a slider saved when let go;
+ *               contents' opacity, a slider saved when let go, and
+ *               whether their glass panels are frosted, a switch (BUG-214);
  *   Wallpaper   the pictures, the default first, one click to choose;
  *   Display     the screen's mode, read only (changing it comes later);
  *   Storage     each file system's use.
@@ -27,6 +28,7 @@
 /* The controls of the look's pages (hit indices); a picture is its index past LOOK_PICTURE_FIRST. */
 #define LOOK_OPACITY		1
 #define LOOK_DARK		2
+#define LOOK_FROSTED		3
 #define LOOK_PICTURE_FIRST	100
 
 /* The space between two cards, a card's inner margin, and the text sizes. */
@@ -49,6 +51,9 @@
 
 /* The card of the appearance: its height, and the switch's width and height. */
 #define LOOK_DARK_HEIGHT	76
+
+/* The frosted glass's row in the card of the windows (BUG-214). */
+#define LOOK_FROSTED_HEIGHT	80
 #define LOOK_SWITCH_WIDTH	44
 #define LOOK_SWITCH_HEIGHT	24
 
@@ -93,18 +98,14 @@ se_appearance_draw(
 	se_toggle_draw(app, canvas, x + width - LOOK_PAD - LOOK_SWITCH_WIDTH, card + (LOOK_DARK_HEIGHT - LOOK_SWITCH_HEIGHT) / 2, app->look.dark, enabled, LOOK_DARK);
 	card += LOOK_DARK_HEIGHT + LOOK_GAP;
 
-	/* The card of the windows: a title, a line, and the slider with its value. */
-	height = 150;
+	/* The card of the windows: a title, a line, the slider with its value, and the frosted glass's switch (BUG-214). */
+	height = 150 + LOOK_FROSTED_HEIGHT;
 	y = se_card_begin(app, canvas, x, card, width, height, "Windows", "How much of the desktop shows through the windows.");
 	fm_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
 	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Window opacity", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 
-	/* The value at the right, as the slider shows it. */
-	if (app->look.opacity >= LOOK_OPACITY_MAX) {
-		(void)snprintf(value, sizeof(value), "%s", "Opaque");
-	} else {
-		(void)snprintf(value, sizeof(value), "%d%%", app->look.opacity);
-	}
+	/* The value at the right, as the slider shows it (the contents' opacity; the panels are the switch's). */
+	(void)snprintf(value, sizeof(value), "%d%%", app->look.opacity);
 
 	/* Drawn against the card's right margin. */
 	value_width = fm_text_width(app->text, value, strlen(value), LOOK_TEXT_TITLE, 0);
@@ -119,6 +120,14 @@ se_appearance_draw(
 	(void)fm_text_draw(app->text, canvas, x + LOOK_PAD + 2, y + 66 + line.ascent, "See-through", strlen("See-through"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
 	value_width = fm_text_width(app->text, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0);
 	(void)fm_text_draw(app->text, canvas, x + width - LOOK_PAD - value_width, y + 66 + line.ascent, "Opaque", strlen("Opaque"), LOOK_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+
+	/* The frosted glass: its name, a line, and the switch (on: the panels show the desktop blurred; off: solid). */
+	y += 100;
+	fm_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
+	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, "Frosted glass", LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	fm_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
+	(void)fm_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "The windows' panels show the desktop blurred behind them. Off makes them solid.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
+	se_toggle_draw(app, canvas, x + width - LOOK_PAD - LOOK_SWITCH_WIDTH, y + 8, app->look.frosted, enabled, LOOK_FROSTED);
 
 	/* The edge below the cards. */
 	return card + height;
@@ -259,6 +268,14 @@ se_look_press(
 	if (index == LOOK_DARK) {
 		app->look.dark = !app->look.dark;
 		se_look_set_number(app, "appearance.dark", app->look.dark, 0);
+		app->dirty = 1;
+		return;
+	}
+
+	/* The frosted glass's switch turns, and is saved; zdesktop makes the panels solid or frosted (BUG-214). */
+	if (index == LOOK_FROSTED) {
+		app->look.frosted = !app->look.frosted;
+		se_look_set_number(app, "window.frosted", app->look.frosted, 1);
 		app->dirty = 1;
 		return;
 	}

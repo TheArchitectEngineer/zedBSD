@@ -936,6 +936,7 @@ struct se_look {
 	int ime_method;
 	int ui_language;
 	int dark;
+	int frosted;
 	int dragging;
 	struct fm_rect slider;
 	struct fm_rect sliders[8];
