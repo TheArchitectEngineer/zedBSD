@@ -449,14 +449,15 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_SEGMENT | ICON_CUT, 12.0f, 14.6f, 12.0f, 17.6f, 1.4f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
-	/* Log Out: an arrow leaving an open door. */
+	/*
+	 * Power Off (ws099-p037, BUG-235): the power sign, a ring open at the
+	 * top (two arcs side by side, for a wider line) and a bar down into
+	 * the opening.
+	 */
 	{
-		{ ICON_SEGMENT, 11.0f, 4.0f, 5.0f, 4.0f, 2.2f, 0.0f },
-		{ ICON_SEGMENT, 5.0f, 4.0f, 5.0f, 20.0f, 2.2f, 0.0f },
-		{ ICON_SEGMENT, 5.0f, 20.0f, 11.0f, 20.0f, 2.2f, 0.0f },
-		{ ICON_SEGMENT, 10.0f, 12.0f, 20.0f, 12.0f, 2.2f, 0.0f },
-		{ ICON_SEGMENT, 16.2f, 8.2f, 20.0f, 12.0f, 2.2f, 0.0f },
-		{ ICON_SEGMENT, 20.0f, 12.0f, 16.2f, 15.8f, 2.2f, 0.0f },
+		{ ICON_ARC, 12.0f, 13.0f, 7.2f, 300.0f, 300.0f, 0.0f },
+		{ ICON_ARC, 12.0f, 13.0f, 6.4f, 300.0f, 300.0f, 0.0f },
+		{ ICON_SEGMENT, 12.0f, 3.6f, 12.0f, 11.6f, 2.4f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
 	/* Text Editor (WS092): a capital T and a text cursor beside it. */
@@ -548,7 +549,7 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"gears",
 	"xterm",
 	"lock",
-	"logout",
+	"power",
 	"text",
 	"settings",
 	"video",

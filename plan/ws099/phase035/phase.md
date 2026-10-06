@@ -61,3 +61,5 @@ App Home で app を選んだ時、その app id の窓が既にあれば起動�
 - 出力（P2 の worktree）: `build/ws099-p035a/montage.png`（A・B・C を半分の大きさで横に）、`stage-a.png`・`stage-b.png`・`stage-c.png`（1280x800）。
 - 案: A 弱い（spotlight 0.08、hover 0.16、反射 0.15、床 0.10）、B 中（設計の値: 0.12・0.22・0.25・0.18）、C 強い（0.18・0.30・0.38・0.28 と上からの光の筋 0.07）。Settings を hover の icon として明るく。
 - 未決: ユーザーの選択（A・B・C か調整）と、light の外観でも暗い stage でよいか。選択を待つ間は p037 に進む（Q1 の指示）。
+
+2026-10-06 ユーザー（クリックの回答）: stage は **案 A（弱い: spotlight 0.08・hover 0.16、反射 0.15、床の線 0.10）**。light の外観でも暗い stage のまま。→ p035b 以降は A の値で実装する。

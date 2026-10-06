@@ -100,3 +100,8 @@ P2 の bar の実装（b095413c、旧 agent/p2、ユーザーの指示の履歴�
 - **animation**: dock に入る時、button の pill が右端に fade と scale（0.9 → 1）で現れ、時計と状態の pill が左へ slide（180 ms、ease-out）。dock から出る時は逆。浮いた窓だけの時は今の配置（button の pill は無し）。
 - [ws142-p007](../../ws142/phase007/phase.md) の `layout_mode` の切り替え（app の切り替えで dock・窓が変わる）でも同じ animation。切り替え先も dock なら button の pill は動かさず中身だけ替える。
 - 実装の Phase: p034b（配置と animation、0.5 LW）。ユーザーの順の指示「Cの設計の見直しをまずやりましょう。そのあと、タイトルバーのデザイン変更」で、C の後に行う。
+
+## 2026-10-06 ユーザーの変更（light の外観の bar）
+
+「モンタージュの画面上部のバーですが、ダークモードではこの黒い色でOKです。ライトモードでは、ウィンドウタイトルバーと同じ色味にしてほしいです。」
+→ 同日の前の回答「light の外観でも暗い bar（案 A）」を置き換える。dark の外観は今の黒い glass の bar のまま。light の外観では、bar の地を窓の title bar と同じ色味（light の title bar の glass の色・透明度）にし、icon・文字・pill の色も light の title bar に合わせて読めるようにする。App Home の stage は light でも暗いまま（別の決定、ws099-p035）。p034b で実装する。
