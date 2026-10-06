@@ -6,7 +6,7 @@ msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
 # userland/desktop/locale/settings.keys:5
 msg	Wi-Fi	Wi-Fi
 # userland/desktop/locale/settings.keys:6
-msg	Join wireless networks and turn the radio on or off.	無線のネットワークにつなぎ、電波を入れたり切ったりします。
+msg	Join wireless networks and turn the radio on or off.	無線のネットワークに接続し、電波を入れたり切ったりします。
 # userland/desktop/locale/settings.keys:7
 msg	Ethernet	イーサネット
 # userland/desktop/locale/settings.keys:8
@@ -14,11 +14,11 @@ msg	Wired connections and their addresses.	有線の接続とそのアドレス�
 # userland/desktop/locale/settings.keys:9
 msg	Bluetooth	Bluetooth
 # userland/desktop/locale/settings.keys:10
-msg	Pair and connect wireless devices.	無線の機器をペアリングしてつなぎます。
+msg	Pair and connect wireless devices.	無線の機器をペアリングして接続します。
 # userland/desktop/locale/settings.keys:11
 msg	VPN	VPN
 # userland/desktop/locale/settings.keys:12
-msg	Connect securely to other networks.	ほかのネットワークに安全につなぎます。
+msg	Connect securely to other networks.	ほかのネットワークに安全に接続します。
 # userland/desktop/locale/settings.keys:13
 msg	Network	ネットワーク
 # userland/desktop/locale/settings.keys:14
@@ -112,9 +112,9 @@ msg	None (English)	なし（英語）
 # userland/desktop/locale/settings.keys:60
 msg	The keys type as they are; no input method.	キーをそのまま入力します。入力方式は使いません。
 # userland/desktop/locale/settings.keys:62
-msg	Connect to a network	ネットワークにつなぐ
+msg	Connect to a network	ネットワークに接続
 # userland/desktop/locale/settings.keys:63
-msg	Join Wi-Fi now, or later in Settings.	今 Wi-Fi につなぐか、あとで設定でつなぎます。
+msg	Join Wi-Fi now, or later in Settings.	今 Wi-Fi に接続するか、あとで設定から接続します。
 # userland/desktop/locale/settings.keys:64
 msg	Your network	ネットワーク
 # userland/desktop/locale/settings.keys:65
