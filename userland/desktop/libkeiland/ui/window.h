@@ -26,6 +26,13 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 
+/* The most tabs a window's titlebar shows, and the longest tab title kept (WS131 p018). */
+#define KEIUI_WINDOW_TABS	32U
+#define KEIUI_TAB_TITLE		128U
+
+/* The longest text a drag of the window's own carries (WS131 p018, Terminal's drag of selected text). */
+#define KEIUI_DRAG_TEXT		4096U
+
 /* How many inputs wait at most (the oldest is dropped past it). */
 #define KEIUI_WINDOW_EVENTS	512U
 
@@ -52,6 +59,13 @@ struct kl_window_menu;
 struct kl_context_menu;
 struct kl_titlebar;
 struct kl_glass;
+
+/* One tab as the titlebar shows it (WS131 p018): its ID, title and KL_TAB_* flags. */
+struct keiui_tab {
+	uint32_t id;
+	char title[KEIUI_TAB_TITLE];
+	unsigned flags;
+};
 
 /* One global the compositor announced: its name, version and interface. */
 struct keiui_app_global {
@@ -274,6 +288,29 @@ struct kl_window {
 	char *clipboard;
 	size_t clipboard_length;
 
+	/*
+	 * Drops (clipboard.c, WS131 p018, Terminal's ws035-p088 moved here):
+	 * the types the window takes (KL_DROP_*, 0 refuses every drag),
+	 * whether the offer being described has file names, the drag over the
+	 * window (NULL for none) with its enter's serial and the types it has,
+	 * and whether it was dropped and waits for kl_window_take_drop.
+	 */
+	unsigned drop_types;
+	int pending_uris;
+	struct wl_data_offer *drop_offer;
+	uint32_t drop_serial;
+	unsigned drop_offered;
+	int drop_pending;
+
+	/* Where the drag over the window is (surface pixels, from its enter and motions). */
+	double drop_x;
+	double drop_y;
+
+	/* A drag of the window's text out of it (Terminal's ws035-p093): its source (NULL for none) and its text. */
+	struct wl_data_source *drag_source;
+	char drag_text[KEIUI_DRAG_TEXT];
+	size_t drag_length;
+
 	/* The compositor's content type manager and the surface's content type object (ws122-p005b), NULL until bound and asked. */
 	struct wp_content_type_manager_v1 *content_manager;
 	struct wp_content_type_v1 *content_type;
@@ -372,6 +409,13 @@ struct kl_window {
 	struct kl_menu *popup_menu;
 	struct kl_context_menu *popup;
 	struct kl_titlebar *titlebar;
+
+	/* The tabs in the titlebar (window-declare.c, WS131 p018): the ones shown, how many, the options and whether any were ever sent. */
+	struct keiui_tab tabs[KEIUI_WINDOW_TABS];
+	size_t tab_count;
+	unsigned tab_options;
+	int tabs_sent;
+
 	struct kl_glass *glass;
 	struct kl_glass_panel glass_panels[KL_GLASS_PANELS_MAX];
 	size_t glass_count;

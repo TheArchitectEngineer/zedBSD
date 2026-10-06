@@ -1141,6 +1141,68 @@ int kl_window_set_control_text(struct kl_window *window, uint32_t id, const char
 int kl_window_focus_control(struct kl_window *window, uint32_t id);
 
 /*
+ * KL_VERSION 44 (WS131 p018): the tabs of a window's titlebar, the
+ * selections' changes, drag and drop, as Terminal had them of its own.
+ *
+ * Tabs: the titlebar shows the table given (count 0 takes them away, and
+ * the titlebar shows the controls again, or the menu): each tab's ID (not
+ * 0), title and KL_TAB_* flags of <keiland.h>, with KL_TABS_* options.  A
+ * tab chosen, its close button or the new tab's button comes as a
+ * KL_WINDOW_TAB input: KL_WINDOW_TAB_* in code, the tab's ID in id (0 for
+ * a new one).
+ *
+ * The selections: a KL_WINDOW_SELECTION input says the clipboard or the
+ * primary selection changed (KL_SELECTION_* in code), and whether it has
+ * text (pressed).  kl_window_selection_own tells whether the window's own
+ * text is the selection (a paste then takes it directly).
+ *
+ * Drops: a window takes the drags of the types it accepts
+ * (KL_DROP_TEXT, KL_DROP_URIS: a "text/uri-list", which comes as it is),
+ * as a copy.  A drag over it comes as KL_WINDOW_DROP_ENTER (the types it
+ * has that the window takes in code, where it is in x and y) and
+ * KL_WINDOW_DROP_LEAVE; dropped, as KL_WINDOW_DROP (the type it is read
+ * as in code: the file names when it has them), and the window then takes
+ * it with kl_window_take_drop (which finishes the drop).  A drop of the
+ * window's own drag is taken directly.
+ *
+ * A drag of text out of the window starts with kl_window_drag_text from a
+ * press (its serial); its end comes as KL_WINDOW_DRAG_DONE (code 1 when it
+ * was dropped, 0 when not).
+ */
+#define KL_WINDOW_SELECTION	21U
+#define KL_WINDOW_DROP_ENTER	22U
+#define KL_WINDOW_DROP_LEAVE	23U
+#define KL_WINDOW_DROP		24U
+#define KL_WINDOW_DRAG_DONE	25U
+#define KL_WINDOW_TAB		26U
+
+/* Which selection changed. */
+#define KL_SELECTION_CLIPBOARD	1U
+#define KL_SELECTION_PRIMARY	2U
+
+/* The types a drop is taken as (bits). */
+#define KL_DROP_TEXT		1U
+#define KL_DROP_URIS		2U
+
+/* What a tab's input asks. */
+#define KL_WINDOW_TAB_CHOSEN	1U
+#define KL_WINDOW_TAB_CLOSE	2U
+#define KL_WINDOW_TAB_NEW	3U
+
+/* One tab: its ID (not 0), its title and its KL_TAB_* flags. */
+struct kl_tab_entry {
+	uint32_t id;
+	const char *title;
+	unsigned flags;
+};
+
+int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
+int kl_window_selection_own(const struct kl_window *window, unsigned which);
+int kl_window_accept_drops(struct kl_window *window, unsigned types);
+size_t kl_window_take_drop(struct kl_window *window, char *text, size_t size, unsigned *type);
+int kl_window_drag_text(struct kl_window *window, const char *text, size_t length, uint32_t serial);
+
+/*
  * A Vulkan surface over a window shown with KL_PRESENT_NONE, for an
  * application drawing with its own Vulkan instance (which enabled
  * VK_KHR_wayland_surface).  Declared for a program that included the
