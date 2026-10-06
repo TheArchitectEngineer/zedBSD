@@ -27,7 +27,7 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 | [ws175-p001](phase001/phase.md) | 設計: libpdf の書き出し（増分の更新か作り直しか）、content stream の text・image の object の取り出しと書き換え、font（埋め込みの subset の扱い、置き換えの font）、複数頁、Notes の UI、試験。design-reviewer | cleared（2026-10-06 Q1、D1〜D7 は推奨どおり） | — |
 | [ws175-p002](phase002/phase.md) | libpdf の走査: p002a 画像と図形（先の段）、p002b 文字の行と Unicode の抽出（後の段） | p002a・p002b 実装済み（2026-10-06、host PASS） | p001 |
 | [ws175-p003](phase003/phase.md) | libpdf の画像・図形の editor（削除・移動・大きさ・差し替え・挿入）、content の組み立て、preview、update の PLACE_EDIT、名前の接頭辞 [M4] | cleared（2026-10-06 Q1） | p002a |
-| [ws175-p006](phase006/phase.md) | libz-compat の deflate、圧縮する stream [H6][N11]、画像の取り込み（PNG の素通しと検査・向き・上限）、私的な key と共有・読み戻し [M6] | 実装済み（2026-10-06、host PASS）、判定待ち | p003、D4 |
+| [ws175-p006](phase006/phase.md) | libz-compat の deflate、圧縮する stream [H6][N11]、画像の取り込み（PNG の素通しと検査・向き・上限）、私的な key と共有・読み戻し [M6] | cleared（2026-10-06 Q1、QEMU は p010） | p003、D4 |
 | p004・p005・p007〜p011 | design.md §10 のとおり（p007 Notes の model → p008 Notes の UI → p010 T1 → p011 規約、文字は p004・p005） | 未作成 | — |
 
 見積もり: design.md §10（全体 17.5〜21.5 LW、画像を先にする段は約 10 LW）。Q1 の当初の概算は 6 LW。
