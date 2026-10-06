@@ -27,7 +27,9 @@
  * the selected application's latest window to the top (back from
  * minimized); a click on a preview brings that window, on an icon of the
  * middle's row that application.  Esc, and a click elsewhere on the
- * keyboard's switcher, give it up.  A button that acted on the switcher
+ * keyboard's switcher, give it up.  A quick Alt+Tab (Alt let go soon,
+ * before any step) leaves the switcher open, and letting Alt go brings
+ * nothing from then on (BUG-209, the 2026-10-06 user instruction).  A button that acted on the switcher
  * keeps its release from the windows.
  */
 
@@ -70,6 +72,7 @@ static int center_build(struct zwl_server *server, const struct apps_view *view,
 static int bar_panel(struct zwl_server *server, const struct apps_view *view, struct apps_panel *panel);
 static void bring_app(struct zwl_server *server, const struct apps_view *view, int found, const char *how);
 static void close_switcher(struct zwl_server *server);
+static void alt_released(struct zwl_server *server);
 static const char *via_name(unsigned via);
 static const char *placement_name(unsigned placement);
 
@@ -113,6 +116,9 @@ zwl_switch_open(
 	error = zwl_switcher_open(&server->switcher, &view.apps, view.current, via, placement);
 	if (error != 0)
 		return 0;
+
+	/* When it opened: a quick Alt+Tab is told from it. */
+	server->switcher.opened_ms = zwl_milliseconds();
 
 	/* The bar's own previews give way to it. */
 	zwl_apps_bar_hide(server, "switch");
@@ -192,9 +198,10 @@ zwl_switch_cancel(
 
 /*
  * Takes a key: Alt+Tab opens on the current application, or moves one icon
- * to the right (with Shift, to the left); while on, the arrows
+ * to the right (with Shift, to the left); while on, Tab and the arrows
  * move, Enter brings, Esc gives up, and letting Alt go brings the
- * keyboard's selection.  Returns 1 when the key is the switcher's (Alt's
+ * keyboard's selection (not after a quick Alt+Tab, which leaves the
+ * switcher open, BUG-209).  Returns 1 when the key is the switcher's (Alt's
  * own release goes on to the windows).
  */
 int
@@ -242,12 +249,15 @@ zwl_switch_key(
 	if (!server->switcher.on)
 		return 0;
 
-	/* Alt let go: the keyboard's switcher brings its selection; the release goes on. */
+	/*
+	 * Alt let go: the keyboard's switcher brings its selection, unless a
+	 * quick Alt+Tab leaves it open (BUG-209); the release goes on.
+	 */
 	if ((key == KEY_LEFTALT || key == KEY_RIGHTALT) &&
 	    state == 0U) {
 		held = zwl_input_alt_held(server);
 		if (!held && server->switcher.via == ZWL_SWITCHER_VIA_KEYS)
-			zwl_switch_commit(server, "alt");
+			alt_released(server);
 
 		/* The release goes on to the windows. */
 		return 0;
@@ -677,6 +687,32 @@ bring_app(
 	/* Closed, then brought. */
 	close_switcher(server);
 	zwl_glass_switch_to(server, surface, "switch");
+}
+
+/*
+ * Brings the keyboard's selection as Alt is let go, or leaves the switcher
+ * open after a quick Alt+Tab (switcher.c says when).
+ */
+static void
+alt_released(
+	struct zwl_server *server)
+{
+	uint64_t now;
+	unsigned sticky;
+	int brings;
+
+	/* What letting Alt go does now. */
+	now = zwl_milliseconds();
+	sticky = server->switcher.sticky;
+	brings = zwl_switcher_alt_released(&server->switcher, now);
+	if (brings) {
+		zwl_switch_commit(server, "alt");
+		return;
+	}
+
+	/* Left open by this release (the first after a quick Alt+Tab); the log says so once. */
+	if (!sticky && server->switcher.sticky)
+		printf("ZWL SWITCH stay via=quick-alt index=%u app=%s held_ms=%llu\n", server->switcher.index, zwl_switcher_selected(&server->switcher), (unsigned long long)(now - server->switcher.opened_ms));
 }
 
 /* Closes the switcher and its previews. */

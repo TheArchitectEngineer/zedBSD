@@ -70,6 +70,10 @@ zwl_switcher_step(
 	if (!switcher->on || switcher->count == 0U)
 		return;
 
+	/* A step taken, even one that stays (a single application): Alt let go after it brings the selection. */
+	if (delta != 0)
+		switcher->steps++;
+
 	/* The new place, in the range. */
 	count = (int)switcher->count;
 	index = ((int)switcher->index + delta % count + count) % count;
@@ -115,6 +119,42 @@ zwl_switcher_selected(
 
 	/* Succeeded: the selection. */
 	return switcher->keys[switcher->index];
+}
+
+/*
+ * Tells what letting Alt go does to the keyboard's switcher (BUG-209, the
+ * 2026-10-06 user instruction): a quick Alt+Tab (let go within
+ * ZWL_SWITCHER_QUICK_MS of the opening, before any step) leaves it open
+ * and sticky, and a sticky switcher stays open at every later release;
+ * otherwise the selection is brought.  Returns 1 when the selection is to
+ * be brought, 0 when the switcher stays open.
+ */
+int
+zwl_switcher_alt_released(
+	struct zwl_switcher *switcher,
+	uint64_t now_ms)
+{
+	uint64_t held_ms;
+
+	/* Off: nothing to bring. */
+	if (!switcher->on)
+		return 0;
+
+	/* Left open by a quick Alt+Tab: only Enter, a click or a tap brings now. */
+	if (switcher->sticky)
+		return 0;
+
+	/* A quick Alt+Tab without a step leaves it open from now on. */
+	held_ms = 0U;
+	if (now_ms > switcher->opened_ms)
+		held_ms = now_ms - switcher->opened_ms;
+	if (switcher->steps == 0U && held_ms < ZWL_SWITCHER_QUICK_MS) {
+		switcher->sticky = 1U;
+		return 0;
+	}
+
+	/* Succeeded: the selection is brought. */
+	return 1;
 }
 
 /*
