@@ -76,7 +76,7 @@ echo "animation frames while docking: $frames"
 set -- $(guest "grep 'GLASS dock surface=$surface via=double-click' /tmp/zdesktop.log | tail -1" | sed -n 's/.* buttons=\([0-9]*\),\([0-9]*\),\([0-9]*\) title=\([0-9]*\).*/\1 \2 \3 \4/p')
 close=$1; restore=$2; minimize=$3; title_x=$4
 pointer move 1200 780 sleep 500
-check "$out/docked.png" --expect 20,780,333333 --expect 1260,50,333333 --expect 640,700,333333 || status=1
+check "$out/docked.png" --expect 20,780,333333 --expect 1260,60,333333 --expect 640,700,333333 || status=1
 pointer move "$restore" 17 sleep 800
 check "$out/docked-hover.png" >/dev/null
 

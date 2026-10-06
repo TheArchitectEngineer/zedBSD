@@ -260,6 +260,8 @@ kl_color kl_color_mix(kl_color from, kl_color to, float amount);
 
 /* The text (text.c). */
 int kl_text_open(struct kl_text *text, const char *primary, const char *fallback);
+/* KL_VERSION 48 (ws090-p023): the companions' files for fonts opened from now on (a host test with the tree's fonts); NULL: the installed ones. */
+void kl_text_companions(const char *bold, const char *mono);
 void kl_text_close(struct kl_text *text);
 void kl_text_metrics(struct kl_text *text, unsigned pixels, struct kl_text_line *line);
 int kl_text_center(unsigned pixels, int top, int height);

@@ -59,6 +59,30 @@ static void text_clear(struct kl_text *text);
 static int text_render_color(struct kl_text *text, unsigned glyph_index, unsigned pixels, struct kl_glyph *glyph);
 
 /*
+ * The companions' files when a program names its own (kl_text_companions:
+ * a host test with the tree's fonts); NULL for the installed ones.
+ */
+static const char *text_bold_path;
+static const char *text_mono_path;
+
+/*
+ * Names the companions' files the fonts opened from now on use (KL_VERSION
+ * 48, ws090-p023): Mahora Bold and the monospaced fallback, for a program
+ * that runs without the installed fonts (a host test drawing with the
+ * tree's userland/desktop/fonts).  NULL keeps the installed one.  The
+ * strings must last while fonts are opened.
+ */
+void
+kl_text_companions(
+	const char *bold,
+	const char *mono)
+{
+	/* Kept for the next kl_text_open. */
+	text_bold_path = bold;
+	text_mono_path = mono;
+}
+
+/*
  * Opens the main font and, when a path is given and readable, the fallback.
  *
  * Returns 0, or an errno value when the main font cannot be used.
@@ -69,6 +93,8 @@ kl_text_open(
 	const char *primary,
 	const char *fallback)
 {
+	const char *bold;
+	const char *mono;
 	int error;
 
 	/* Nothing is open yet. */
@@ -87,8 +113,14 @@ kl_text_open(
 		return error;
 	}
 
-	/* Its companions: Mahora Bold for its bold glyphs, the monospaced fallback for the signs it lacks (ws090-p020). */
-	(void)truetype_open_companions(text->faces[0].face, KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
+	/* Its companions: Mahora Bold for its bold glyphs, the monospaced fallback for the signs it lacks (ws090-p020), installed or named. */
+	bold = KEILAND_FONT_BOLD;
+	if (text_bold_path != NULL)
+		bold = text_bold_path;
+	mono = KEILAND_FONT_FALLBACK_MONO;
+	if (text_mono_path != NULL)
+		mono = text_mono_path;
+	(void)truetype_open_companions(text->faces[0].face, bold, mono);
 
 	/* One face so far. */
 	text->face_count = 1;

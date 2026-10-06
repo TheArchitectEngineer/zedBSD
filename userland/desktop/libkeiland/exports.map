@@ -189,6 +189,7 @@
 		kl_image_scale;
 		kl_color_mix;
 		kl_text_open;
+		kl_text_companions;
 		kl_text_close;
 		kl_text_metrics;
 		kl_text_center;
