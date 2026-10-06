@@ -1,11 +1,11 @@
 #!/bin/sh
 # ws071-p018: new windows are seen whole on a 1280x800 output (the Venus guest, the lean image).
 # zdesktop --glass tells windows of xdg-shell version 4 the space for bodies (configure_bounds: the output
-# less the system bar, a floating title bar and the margins, 1256x690) and keeps the cascade inside it:
+# less the system bar, a floating title bar and the margins, 1256x680 under the 44-pixel system bar since 2026-10-05) and keeps the cascade inside it:
 #  1. one.png: files at its own size (1120x720) takes the bounds' height (ZWL BOUNDS ... width=1256
-#     height=690, ZFILES READY width=1120 height=690) and maps under the title bar (y=98).
+#     height=680, ZFILES READY width=1120 height=680) and maps under the title bar (y=108).
 #  2. two.png: a second files of 1000x640 would hide the first one's title at the centre, so it goes a
-#     cascade step (48) down and right of it (x=128 y=146, ws035-p092) and ends inside the space.
+#     cascade step (48) down and right of it (128,156, ws035-p092), raised to end inside the space (x=128 y=148).
 #  3. home.png: files started from App Home fits too (the case of files-p011's files.png).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up)
@@ -54,15 +54,15 @@ guest "$stop_all; rm -f /etc/keiland/apps.conf; sh /usr/share/files-tests/make-h
 guest "$start" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=200 > /tmp/f1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=690"
-expect_log /tmp/f1.log 'ZFILES READY width=1120 height=690'
-expect_log /tmp/zdesktop.log "ZWL MAP client=$zc1 surface=[0-9]+ x=80 y=98"
+expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
+expect_log /tmp/f1.log 'ZFILES READY width=1120 height=680'
+expect_log /tmp/zdesktop.log "ZWL MAP client=$zc1 surface=[0-9]+ x=80 y=108"
 shot one.png
 
 # 2. A second window, cascaded and kept inside.
 guest 'export XDG_RUNTIME_DIR=/tmp; HOME=/tmp/fhome /bin/files --token=f2 --timeout-s=200 --width=1000 --height=640 > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/f2.log 'ZFILES READY width=1000 height=640'
-expect_log /tmp/zdesktop.log "ZWL MAP client=$zc2 surface=[0-9]+ x=128 y=146"
+expect_log /tmp/zdesktop.log "ZWL MAP client=$zc2 surface=[0-9]+ x=128 y=148"
 shot two.png
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
@@ -74,8 +74,8 @@ pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 set -- $(guest "grep 'ZWL HOME icon name=\"Files\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 8000
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=690"
-expect_log /tmp/zdesktop.log "ZWL MAP client=$zc1 surface=[0-9]+ x=80 y=98"
+expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
+expect_log /tmp/zdesktop.log "ZWL MAP client=$zc1 surface=[0-9]+ x=80 y=108"
 shot home.png
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

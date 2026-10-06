@@ -131,8 +131,8 @@ struct fm_touch_area {
  * again.
  */
 struct fm_touch {
-	struct keiland_gesture *gesture;
-	struct keiland_scroller *scroller;
+	struct kl_gesture *gesture;
+	struct kl_scroller *scroller;
 	struct fm_touch_area areas[FM_TOUCH_AREAS];
 	unsigned target;
 	int scroll;
