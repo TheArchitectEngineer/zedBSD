@@ -32,6 +32,9 @@
 /* How many arrivals of mail wait for kl_system_take_mail_event (ws169-p002). */
 #define SYSTEM_VIEW_MAIL_EVENTS	8U
 
+/* How many phone events wait for kl_system_take_phone_event (ws170-p004). */
+#define SYSTEM_VIEW_PHONE_EVENTS	16U
+
 /* One answered request and its error. */
 struct system_view_result {
 	uint32_t request;
@@ -51,7 +54,8 @@ struct system_view_result {
  * changed has the KL_SYSTEM_CHANGED_* bits since the last take; results is
  * a ring of answered requests, result_head the oldest, result_count how
  * many wait (the oldest is dropped when it is full).  The notification
- * events and the arrivals of mail are rings of the same kind.
+ * events, the arrivals of mail and the phone's events are rings of the
+ * same kind.
  */
 struct system_view {
 	unsigned capabilities;
@@ -116,6 +120,9 @@ struct system_view {
 	struct kl_mail_event mail_events[SYSTEM_VIEW_MAIL_EVENTS];
 	unsigned mail_head;
 	unsigned mail_count;
+	struct kl_phone_event phone_events[SYSTEM_VIEW_PHONE_EVENTS];
+	unsigned phone_head;
+	unsigned phone_count;
 };
 
 /*
@@ -220,6 +227,8 @@ void system_view_notify_event(struct system_view *view, const struct kl_notify_e
 int system_view_take_notify_event(struct system_view *view, struct kl_notify_event *event);
 void system_view_mail_event(struct system_view *view, const char *from, const char *subject, const char *code);
 int system_view_take_mail_event(struct system_view *view, struct kl_mail_event *event);
+void system_view_phone_event(struct system_view *view, const struct kl_phone_event *event);
+int system_view_take_phone_event(struct system_view *view, struct kl_phone_event *event);
 unsigned system_view_take_changed(struct system_view *view);
 int system_view_error_of(uint32_t applied);
 void system_view_copy(char *to, size_t size, const char *from);

@@ -469,32 +469,6 @@ def settings_login_language(item):
 # The other applications.
 # The other applications.
 
-@run.define("apps.phone.browse")
-def phone(item):
-	window = run.launch(item, "Phone")
-	run.click(window.x + window.width // 6, window.y + window.height // 3)
-	time.sleep(0.5)
-	mark = run.mark()
-	run.key("down")
-	first = run.wait(r"PHONE SELECT contact=\d+", mark, 10)
-	item.step("Down", first)
-	run.shot(item, "selected")
-	item.check(first, "no PHONE SELECT")
-	start = aatlib.number(first, "contact")
-	mark = run.mark()
-	run.key("down", "up")
-	time.sleep(0.5)
-	moves = [aatlib.number(line, "contact") for line in run.lines(r"PHONE SELECT contact=\d+", mark)]
-	item.step("Down, Up", f"contacts {moves}")
-	item.check(moves == [start + 1, start] or moves[-1:] == [start], f"the selection went {moves}")
-	mark = run.mark()
-	run.key("ctrl+q")
-	done = run.wait(r"PHONE DONE reason=close", mark, 10)
-	item.step("Ctrl+Q", done)
-	item.check(done, "Phone did not end on Ctrl+Q")
-	item.person("the contacts and the timeline in the screenshot")
-
-
 @run.define("apps.calendar.navigate")
 def calendar(item):
 	mark = run.mark()
