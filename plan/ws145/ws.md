@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
 Queue: q831（P2）
-Resume point: p002（printd）を実装・host 済み。p003（backend・compositor・libkeiland・printtest）→ p004（Settings）→ p007（PDF Viewer の Print）。
+Resume point: p002〜p004・p007 を実装（host・build 済み）、T1 待ち。p005（Linux・FreeBSD の guest の確認）と p006（全文規約）は後。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -40,4 +40,4 @@ app が libkeiland に PDF の場所を渡して印刷を依頼すると、netwo
 | ws145-p005 | Linux・FreeBSD の build と install と Debian の QEMU+KVM・FreeBSD 15 の guest の確認 | planning | p003 |
 | ws145-p006 | 全文の規約の確認と回帰、T1 の QEMU の試験（最後） | planning | p002〜p005 |
 | （別の WS の案） | 変換の filter（PDF → PWG raster・PostScript・PCL）。単一目標の外。D4 の機種が PDF を受けなければ受け入れの前に | — | p002 |
-| （p007 案） | PDF Viewer の File > Print（D6 の判断次第） | — | p003 |
+| [ws145-p007](phase007/phase.md) | PDF Viewer の File > Print（D6: 含める） | in-progress（2026-10-07 P2） | p003 |

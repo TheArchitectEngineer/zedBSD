@@ -352,6 +352,10 @@ pv_app_action(
 		if (app->has_document)
 			app->want_annotate = 1;
 		break;
+	case PV_ACTION_PRINT:
+		if (app->has_document)
+			app->want_print = 1;
+		break;
 	case PV_ACTION_MODE_SCROLL:
 		app->mode = PV_MODE_SCROLL;
 		if (app->fit == PV_FIT_PAGE)

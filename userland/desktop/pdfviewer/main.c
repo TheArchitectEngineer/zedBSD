@@ -113,6 +113,10 @@ static struct kl_file_chooser *main_chooser;
  */
 static struct kl_app *main_kl;
 
+/* The print under way (ws145-p007): its request until it is answered, then its job until it ends (0 for none). */
+static uint32_t main_print_request;
+static uint32_t main_print_job;
+
 /* The font the chooser draws with: the viewer's own. */
 static const char *main_font;
 
@@ -150,6 +154,8 @@ static int main_canvas_make(void);
 static void main_state(struct pv_state *state);
 static void main_opened(void);
 static void main_annotate(void);
+static void main_print(void);
+static void main_print_follow(void);
 static void main_appearance_changed(void);
 
 /*
@@ -471,6 +477,8 @@ main_loop(
 			pv_log("DONE reason=disconnected");
 			return 0;
 		}
+
+		/*  pv_clock();=The time of this round. */
 		now = pv_clock();
 		main_app.now = now;
 
@@ -494,6 +502,15 @@ main_loop(
 			main_app.want_annotate = 0;
 			main_annotate();
 		}
+
+		/* A print asked for (ws145-p007), and the one under way followed. */
+		if (main_app.want_print) {
+			main_app.want_print = 0;
+			main_print();
+		}
+
+		/* The print under way followed. */
+		main_print_follow();
 
 		/* The find field asked for (Ctrl+F, ws128-p004). */
 		if (main_app.want_find_focus) {
@@ -965,4 +982,107 @@ main_appearance_changed(void)
 	pv_draw_set_dark(appearance == KL_APPEARANCE_DARK);
 	main_app.dirty = 1;
 	pv_log("APPEARANCE appearance=%u", appearance);
+}
+
+/*
+ * Prints the document on the default printer (ws145-p007): the desktop is
+ * given its file; the answer and the job's end come later as messages.
+ */
+static void
+main_print(void)
+{
+	struct kl_system *system;
+	unsigned capabilities;
+	const char *title;
+	const char *slash;
+	int error;
+
+	/* The desktop's printers. */
+	system = kl_app_system(main_kl);
+	capabilities = 0U;
+	if (system != NULL)
+		capabilities = kl_system_capabilities(system);
+	if ((capabilities & KL_SYSTEM_HAS_PRINTERS) == 0U) {
+		pv_app_message(&main_app, "This desktop cannot print.", 4000U);
+		pv_log("PRINT none");
+		return;
+	}
+
+	/* The document's file, under its name. */
+	title = main_app.document.path;
+	slash = strrchr(title, '/');
+	if (slash != NULL)
+		title = slash + 1;
+	error = kl_system_printers_print(system, 0U, main_app.document.path, title, &main_print_request);
+	pv_log("PRINT asked error=%d", error);
+	main_print_job = 0U;
+	if (error != 0) {
+		main_print_request = 0U;
+		pv_app_message(&main_app, "The document could not be printed.", 4000U);
+		return;
+	}
+
+	/* Answered later. */
+	pv_app_message(&main_app, "Sending to the printer...", 0U);
+}
+
+/* Follows the print under way: its answer, then its job to its end. */
+static void
+main_print_follow(void)
+{
+	struct kl_print_job jobs[KL_PRINT_JOBS_MAX];
+	struct kl_system *system;
+	uint32_t request;
+	unsigned changed;
+	size_t count;
+	size_t index;
+	int taken;
+	int error;
+	int found;
+
+	/* Nothing under way. */
+	if (main_print_request == 0U && main_print_job == 0U)
+		return;
+	system = kl_app_system(main_kl);
+	if (system == NULL)
+		return;
+	changed = 0U;
+	(void)kl_system_dispatch(system, &changed);
+
+	/* The answer: refused (no printer), or the job. */
+	for (;;) {
+		taken = kl_system_take_result(system, &request, &error);
+		if (!taken)
+			break;
+		if (request != main_print_request)
+			continue;
+		main_print_request = 0U;
+		pv_log("PRINT result error=%d", error);
+		if (error != 0) {
+			pv_app_message(&main_app, "No printer took it. Add a printer in Settings.", 5000U);
+			return;
+		}
+
+		/*  kl_system_print_job_of(=Its job, followed from here. */
+		found = kl_system_print_job_of(system, request, &main_print_job);
+		if (!found)
+			main_print_job = 0U;
+	}
+
+	/* The job's end. */
+	if (main_print_job == 0U || (changed & KL_SYSTEM_CHANGED_PRINTERS) == 0U)
+		return;
+	count = kl_system_print_jobs_get(system, jobs, KL_PRINT_JOBS_MAX);
+	for (index = 0; index < count; index++) {
+		if (jobs[index].job != main_print_job || jobs[index].state < KL_PRINT_DONE)
+			continue;
+		pv_log("PRINT job=%u state=%u detail=%s", jobs[index].job, jobs[index].state, jobs[index].detail);
+		main_print_job = 0U;
+		if (jobs[index].state == KL_PRINT_DONE)
+			pv_app_message(&main_app, "Printed.", 4000U);
+		else if (jobs[index].state == KL_PRINT_CANCELLED)
+			pv_app_message(&main_app, "The printing was cancelled.", 4000U);
+		else
+			pv_app_message(&main_app, "The printer could not print the document.", 5000U);
+	}
 }

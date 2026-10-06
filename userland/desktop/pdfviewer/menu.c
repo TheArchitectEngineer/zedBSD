@@ -7,7 +7,7 @@
 
 /*
  * The menus of PDF Viewer in zdesktop's System Menu: File (Open, Annotate
- * in Notes, Close, Quit), Edit (ws128-p004: Copy, Find, Find Next and
+ * in Notes, Print (ws145-p007), Close, Quit), Edit (ws128-p004: Copy, Find, Find Next and
  * Previous), View (the sidebar of page thumbnails, the two
  * modes, the two fits, the zoom) and Go (the pages), given to libkeiland
  * as a table (WS131 p017: kl_window_set_menu).  The viewer's state is the
@@ -33,6 +33,7 @@
 /* The items of File. */
 #define MENU_OPEN		10U
 #define MENU_ANNOTATE		11U
+#define MENU_PRINT		15U
 #define MENU_FILE_LINE		12U
 #define MENU_CLOSE		13U
 #define MENU_QUIT		14U
@@ -75,6 +76,7 @@ static const struct kl_menu_entry menu_items[] = {
 	{ MENU_FILE, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_OPEN, MENU_FILE, KL_MENU_ITEM_NORMAL, "Open...", PV_ACTION_OPEN, KL_MENU_ROLE_OPEN, KL_MENU_CTRL, 'o' },
 	{ MENU_ANNOTATE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Annotate in Notes", PV_ACTION_ANNOTATE, KL_MENU_ROLE_NONE, KL_MENU_CTRL, 'e' },
+	{ MENU_PRINT, MENU_FILE, KL_MENU_ITEM_NORMAL, "Print", PV_ACTION_PRINT, KL_MENU_ROLE_NONE, KL_MENU_CTRL, 'p' },
 	{ MENU_FILE_LINE, MENU_FILE, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_CLOSE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Close", PV_ACTION_CLOSE, KL_MENU_ROLE_CLOSE, KL_MENU_CTRL, 'w' },
 	{ MENU_QUIT, MENU_FILE, KL_MENU_ITEM_NORMAL, "Quit PDF Viewer", PV_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
@@ -190,6 +192,7 @@ pv_menu_refresh(
 
 	/* The actions that need a document or another page. */
 	menu_action_state(menu, PV_ACTION_ANNOTATE, state->has_document, 0);
+	menu_action_state(menu, PV_ACTION_PRINT, state->has_document, 0);
 	menu_action_state(menu, PV_ACTION_COPY, state->has_selection, 0);
 	menu_action_state(menu, PV_ACTION_FIND, state->has_document, 0);
 	menu_action_state(menu, PV_ACTION_FIND_NEXT, state->has_document, 0);

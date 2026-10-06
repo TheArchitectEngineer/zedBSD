@@ -72,11 +72,27 @@ def printers(item):
 			got = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else "none"
 			item.check(got == want, f"{name} is not the sample ({got[:12]})")
 		item.step("the documents the printers got", "both are the sample")
+		# PDF Viewer's File > Print (Ctrl+P) on the default printer.
+		mark = run.mark()
+		viewer = run.open_as_user(item, f"/bin/pdfviewer {SAMPLE}")
+		time.sleep(1.0)
+		run.click(*viewer.middle())
+		run.key("ctrl+p")
+		asked = run.wait(r"PDFVIEWER PRINT asked error=0", mark, 10)
+		printed = run.wait(r"PDFVIEWER PRINT job=3 state=4", mark, 60)
+		item.step("PDF Viewer, Ctrl+P", f"{asked}; {printed}")
+		run.shot(item, "pdfviewer")
+		item.check(asked and printed, "PDF Viewer did not print")
+		path = folder / "ipp-2.pdf"
+		got = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else "none"
+		item.check(got == want, f"PDF Viewer's document is not the sample ({got[:12]})")
+		run.close(item, viewer)
 		# The Settings page.
 		window, _ = run.settings(item, "printers")
 		run.shot(item, "page")
 		run.close(item, window)
-		item.person("the Printers page: Mock Printer (Default) and the LPD printer, the form, and the two jobs Done")
+		item.person("the Printers page: Mock Printer (Default) and the LPD printer, the form, and the three jobs Done; PDF Viewer's "
+			"message Printed")
 	finally:
 		mock.terminate()
 		forget()
