@@ -37,8 +37,8 @@ static unsigned checks;
 static unsigned failures;
 
 /* The library's objects the adapter draws with, and the stroke it has fed them. */
-static struct keiland_motion_device *adapter_device;
-static struct keiland_motion *adapter_motion;
+static struct kl_motion_device *adapter_device;
+static struct kl_motion *adapter_motion;
 static const struct report *adapter_reports;
 static double adapter_first_stamp;
 static int adapter_fed;
@@ -118,8 +118,8 @@ static void
 adapter_start(
 	void)
 {
-	adapter_device = keiland_motion_device_create();
-	adapter_motion = keiland_motion_create(adapter_device);
+	adapter_device = kl_motion_device_create();
+	adapter_motion = kl_motion_create(adapter_device);
 	adapter_reports = NULL;
 	adapter_first_stamp = -1.0;
 	adapter_fed = 0;
@@ -131,9 +131,9 @@ adapter_stop(
 	void)
 {
 	if (adapter_fed > 0)
-		keiland_motion_end(adapter_motion);
-	keiland_motion_destroy(adapter_motion);
-	keiland_motion_device_destroy(adapter_device);
+		kl_motion_end(adapter_motion);
+	kl_motion_destroy(adapter_motion);
+	kl_motion_device_destroy(adapter_device);
 	adapter_motion = NULL;
 	adapter_device = NULL;
 }
@@ -156,8 +156,8 @@ library_point(
 	/* A new stroke. */
 	if (reports != adapter_reports || count < adapter_fed || reports[0].stamp != adapter_first_stamp) {
 		if (adapter_fed > 0)
-			keiland_motion_end(adapter_motion);
-		keiland_motion_begin(adapter_motion);
+			kl_motion_end(adapter_motion);
+		kl_motion_begin(adapter_motion);
 		adapter_reports = reports;
 		adapter_first_stamp = reports[0].stamp;
 		adapter_fed = 0;
@@ -165,7 +165,7 @@ library_point(
 
 	/* The reports it has not seen. */
 	while (adapter_fed < count) {
-		error = keiland_motion_add(adapter_motion, microseconds(reports[adapter_fed].stamp),
+		error = kl_motion_add(adapter_motion, microseconds(reports[adapter_fed].stamp),
 					   microseconds(reports[adapter_fed].arrival), reports[adapter_fed].x,
 					   reports[adapter_fed].y);
 		check(error == 0, "adapter add error %d", error);
@@ -173,7 +173,7 @@ library_point(
 	}
 
 	/* The point at the frame. */
-	error = keiland_motion_point(adapter_motion, microseconds(now), KEILAND_MOTION_EXTRAPOLATION_CONTENT, x, y);
+	error = kl_motion_point(adapter_motion, microseconds(now), KL_MOTION_EXTRAPOLATION_CONTENT, x, y);
 	check(error == 0, "adapter point error %d", error);
 }
 
@@ -216,8 +216,8 @@ static void
 test_exact(
 	void)
 {
-	struct keiland_motion_device *device;
-	struct keiland_motion *motion;
+	struct kl_motion_device *device;
+	struct kl_motion *motion;
 	uint64_t stamp;
 	uint64_t now;
 	double t;
@@ -227,16 +227,16 @@ test_exact(
 	int k;
 	int error;
 
-	device = keiland_motion_device_create();
-	motion = keiland_motion_create(device);
+	device = kl_motion_device_create();
+	motion = kl_motion_create(device);
 	check(device != NULL && motion != NULL, "create");
 
 	/* A steady line: 1500 px/s along x, 700 along y, every 16 ms, read 2 ms later. */
-	keiland_motion_begin(motion);
+	kl_motion_begin(motion);
 	for (k = 0; k < 12; k++) {
 		stamp = TIME_BASE + (uint64_t)k * 16000U;
 		t = (double)(stamp - TIME_BASE) / 1.0e6;
-		error = keiland_motion_add(motion, stamp, stamp + 2000U, 1500.0 * t, 700.0 * t);
+		error = kl_motion_add(motion, stamp, stamp + 2000U, 1500.0 * t, 700.0 * t);
 		check(error == 0, "line add %d", error);
 	}
 
@@ -245,39 +245,39 @@ test_exact(
 	 * point is the line at 4 ms after it.
 	 */
 	now = stamp + 10000U;
-	error = keiland_motion_point(motion, now, KEILAND_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
+	error = kl_motion_point(motion, now, KL_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
 	t = (double)(stamp + 4000U - TIME_BASE) / 1.0e6;
 	check(error == 0 && fabs(x - 1500.0 * t) < 1e-6 && fabs(y - 700.0 * t) < 1e-6,
 	      "line point %.9f,%.9f wanted %.9f,%.9f", x, y, 1500.0 * t, 700.0 * t);
 
 	/* Far past the last report the point stops at the extrapolation limit (12 + 8 ms). */
-	error = keiland_motion_point(motion, stamp + 200000U, KEILAND_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
+	error = kl_motion_point(motion, stamp + 200000U, KL_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
 	t = (double)(stamp + 20000U - TIME_BASE) / 1.0e6;
 	check(error == 0 && fabs(x - 1500.0 * t) < 1e-6, "line limit %.9f wanted %.9f", x, 1500.0 * t);
 
 	/* A finger slowing down: x = 2000 t - 3000 t^2 (it stops at t = 1/3 s). */
-	keiland_motion_begin(motion);
+	kl_motion_begin(motion);
 	for (k = 0; k < 12; k++) {
 		stamp = TIME_BASE + (uint64_t)k * 16000U;
 		t = (double)(stamp - TIME_BASE) / 1.0e6;
-		error = keiland_motion_add(motion, stamp, stamp + 2000U, 2000.0 * t - 3000.0 * t * t, 0.0);
+		error = kl_motion_add(motion, stamp, stamp + 2000U, 2000.0 * t - 3000.0 * t * t, 0.0);
 		check(error == 0, "parabola add %d", error);
 	}
 
 	/* Behind the last report (4 ms after it minus 6: 2 ms before it) the parabola is exact. */
-	error = keiland_motion_point(motion, stamp + 4000U, KEILAND_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
+	error = kl_motion_point(motion, stamp + 4000U, KL_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
 	t = (double)(stamp - 2000U - TIME_BASE) / 1.0e6;
 	expected = 2000.0 * t - 3000.0 * t * t;
 	check(error == 0 && fabs(x - expected) < 1e-6, "parabola behind %.9f wanted %.9f", x, expected);
 
 	/* Past it, the slowing parabola goes less far than the line and is chosen: exact again. */
-	error = keiland_motion_point(motion, stamp + 14000U, KEILAND_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
+	error = kl_motion_point(motion, stamp + 14000U, KL_MOTION_EXTRAPOLATION_CONTENT, &x, &y);
 	t = (double)(stamp + 8000U - TIME_BASE) / 1.0e6;
 	expected = 2000.0 * t - 3000.0 * t * t;
 	check(error == 0 && fabs(x - expected) < 1e-6, "parabola past %.9f wanted %.9f", x, expected);
 
-	keiland_motion_destroy(motion);
-	keiland_motion_device_destroy(device);
+	kl_motion_destroy(motion);
+	kl_motion_device_destroy(device);
 }
 
 /*
@@ -289,8 +289,8 @@ static void
 test_edges(
 	void)
 {
-	struct keiland_motion_device *device;
-	struct keiland_motion *motion;
+	struct kl_motion_device *device;
+	struct kl_motion *motion;
 	uint64_t stamp;
 	double x;
 	double y;
@@ -300,58 +300,58 @@ test_edges(
 	int k;
 	int error;
 
-	device = keiland_motion_device_create();
-	motion = keiland_motion_create(device);
+	device = kl_motion_device_create();
+	motion = kl_motion_create(device);
 
 	/* Nothing to draw before a report; a single report is drawn where it is. */
-	keiland_motion_begin(motion);
-	error = keiland_motion_point(motion, TIME_BASE, 12000U, &x, &y);
+	kl_motion_begin(motion);
+	error = kl_motion_point(motion, TIME_BASE, 12000U, &x, &y);
 	check(error == ENOENT, "no report gives ENOENT, not %d", error);
-	(void)keiland_motion_add(motion, TIME_BASE, TIME_BASE + 1000U, 10.0, 20.0);
-	error = keiland_motion_point(motion, TIME_BASE + 50000U, 12000U, &x, &y);
+	(void)kl_motion_add(motion, TIME_BASE, TIME_BASE + 1000U, 10.0, 20.0);
+	error = kl_motion_point(motion, TIME_BASE + 50000U, 12000U, &x, &y);
 	check(error == 0 && x == 10.0 && y == 20.0, "one report %.3f,%.3f", x, y);
-	error = keiland_motion_velocity(motion, TIME_BASE + 5000U, &vx, &vy);
+	error = kl_motion_velocity(motion, TIME_BASE + 5000U, &vx, &vy);
 	check(error == 0 && vx == 0.0 && vy == 0.0, "one report has no velocity");
 
 	/* A report going back is refused. */
-	error = keiland_motion_add(motion, TIME_BASE - 1U, TIME_BASE, 0.0, 0.0);
+	error = kl_motion_add(motion, TIME_BASE - 1U, TIME_BASE, 0.0, 0.0);
 	check(error == EINVAL, "report going back gives EINVAL, not %d", error);
 
 	/* Reports at one time (a burst) give a finite point. */
 	for (k = 0; k < 4; k++)
-		(void)keiland_motion_add(motion, TIME_BASE + 8000U, TIME_BASE + 9000U, 10.0 + k, 20.0);
-	error = keiland_motion_point(motion, TIME_BASE + 20000U, 12000U, &x, &y);
+		(void)kl_motion_add(motion, TIME_BASE + 8000U, TIME_BASE + 9000U, 10.0 + k, 20.0);
+	error = kl_motion_point(motion, TIME_BASE + 20000U, 12000U, &x, &y);
 	check(error == 0 && isfinite(x) && isfinite(y), "burst point %.3f,%.3f", x, y);
-	error = keiland_motion_velocity(motion, TIME_BASE + 20000U, &vx, &vy);
+	error = kl_motion_velocity(motion, TIME_BASE + 20000U, &vx, &vy);
 	check(error == 0 && isfinite(vx) && isfinite(vy), "burst velocity %.3f,%.3f", vx, vy);
 
 	/* After a second of silence the older reports are forgotten. */
-	(void)keiland_motion_add(motion, TIME_BASE + 1500000U, TIME_BASE + 1501000U, 500.0, 600.0);
-	error = keiland_motion_point(motion, TIME_BASE + 1520000U, 12000U, &x, &y);
+	(void)kl_motion_add(motion, TIME_BASE + 1500000U, TIME_BASE + 1501000U, 500.0, 600.0);
+	error = kl_motion_point(motion, TIME_BASE + 1520000U, 12000U, &x, &y);
 	check(error == 0 && x == 500.0 && y == 600.0, "silence forgets %.3f,%.3f", x, y);
 
 	/* Missing objects are refused. */
-	check(keiland_motion_add(NULL, 0, 0, 0.0, 0.0) == EINVAL, "add without motion");
-	check(keiland_motion_point(NULL, 0, 0, &x, &y) == EINVAL, "point without motion");
-	check(keiland_motion_velocity(motion, 0, NULL, &vy) == EINVAL, "velocity without result");
-	check(keiland_motion_create(NULL) == NULL, "motion without device");
+	check(kl_motion_add(NULL, 0, 0, 0.0, 0.0) == EINVAL, "add without motion");
+	check(kl_motion_point(NULL, 0, 0, &x, &y) == EINVAL, "point without motion");
+	check(kl_motion_velocity(motion, 0, NULL, &vy) == EINVAL, "velocity without result");
+	check(kl_motion_create(NULL) == NULL, "motion without device");
 
 	/*
 	 * Once settled, the time behind the frame moves at most 0.5 ms a call:
 	 * a steady line whose delay jumps from 2 to 12 ms (behind 6 → 16 ms).
 	 */
-	keiland_motion_begin(motion);
+	kl_motion_begin(motion);
 	for (k = 0; k < 10; k++) {
 		stamp = TIME_BASE + (uint64_t)k * 16000U;
-		(void)keiland_motion_add(motion, stamp, stamp + 2000U, 1.5 * (double)(stamp - TIME_BASE) / 1000.0, 0.0);
+		(void)kl_motion_add(motion, stamp, stamp + 2000U, 1.5 * (double)(stamp - TIME_BASE) / 1000.0, 0.0);
 	}
-	(void)keiland_motion_point(motion, stamp + 8000U, 12000U, &first_x, &y);
+	(void)kl_motion_point(motion, stamp + 8000U, 12000U, &first_x, &y);
 	for (k = 10; k < 20; k++) {
 		stamp = TIME_BASE + (uint64_t)k * 16000U;
-		(void)keiland_motion_add(motion, stamp, stamp + 12000U, 1.5 * (double)(stamp - TIME_BASE) / 1000.0, 0.0);
+		(void)kl_motion_add(motion, stamp, stamp + 12000U, 1.5 * (double)(stamp - TIME_BASE) / 1000.0, 0.0);
 	}
-	(void)keiland_motion_point(motion, stamp + 8000U, 12000U, &first_x, &y);
-	(void)keiland_motion_point(motion, stamp + 8000U, 12000U, &x, &y);
+	(void)kl_motion_point(motion, stamp + 8000U, 12000U, &first_x, &y);
+	(void)kl_motion_point(motion, stamp + 8000U, 12000U, &x, &y);
 
 	/*
 	 * The line is 1.5 px a millisecond: drawn 8 ms after the last report,
@@ -363,8 +363,8 @@ test_edges(
 	check(fabs(x - 1.5 * ((double)(stamp - TIME_BASE) / 1000.0 + 1.0)) < 1e-6, "behind second step %.6f px",
 	      x - 1.5 * (double)(stamp - TIME_BASE) / 1000.0);
 
-	keiland_motion_destroy(motion);
-	keiland_motion_device_destroy(device);
+	kl_motion_destroy(motion);
+	kl_motion_device_destroy(device);
 }
 
 /*
@@ -379,8 +379,8 @@ test_rate(
 	static const struct condition alias = {"alias", 0.0, 0.0, 0.0, STAMP_COMPLETION, 0.008, 1, 0};
 	static const struct condition lossy = {"lossy", 0.10, 0.05, 1.0, STAMP_COMPLETION, 0.001, 1, 0};
 	static struct report reports[SAMPLES_MAX];
-	struct keiland_motion_device *device;
-	struct keiland_motion *motion;
+	struct kl_motion_device *device;
+	struct kl_motion *motion;
 	struct rng rng;
 	double interval;
 	int count;
@@ -388,34 +388,34 @@ test_rate(
 	int run;
 
 	/* The slow poll's alias. */
-	device = keiland_motion_device_create();
-	motion = keiland_motion_create(device);
+	device = kl_motion_device_create();
+	motion = kl_motion_create(device);
 	rng.state = 0x1234567ULL;
 	count = generate(&alias, 90.0, PATH_LINE, &rng, reports);
-	keiland_motion_begin(motion);
+	kl_motion_begin(motion);
 	for (k = 0; k < count; k++)
-		(void)keiland_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-	keiland_motion_end(motion);
-	interval = (double)keiland_motion_device_interval(device);
+		(void)kl_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+	kl_motion_end(motion);
+	interval = (double)kl_motion_device_interval(device);
 	check(fabs(interval / 11111.0 - 1.0) < 0.15, "90 Hz read every 8 ms measures %.0f us", interval);
-	keiland_motion_destroy(motion);
-	keiland_motion_device_destroy(device);
+	kl_motion_destroy(motion);
+	kl_motion_device_destroy(device);
 
 	/* Lost reports, over many strokes. */
-	device = keiland_motion_device_create();
-	motion = keiland_motion_create(device);
+	device = kl_motion_device_create();
+	motion = kl_motion_create(device);
 	for (run = 0; run < 16; run++) {
 		rng.state = 0x7654321ULL + (unsigned long long)run;
 		count = generate(&lossy, 60.0, PATH_LINE, &rng, reports);
-		keiland_motion_begin(motion);
+		kl_motion_begin(motion);
 		for (k = 0; k < count; k++)
-			(void)keiland_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-		keiland_motion_end(motion);
+			(void)kl_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+		kl_motion_end(motion);
 	}
-	interval = (double)keiland_motion_device_interval(device);
+	interval = (double)kl_motion_device_interval(device);
 	check(interval / 16667.0 - 1.0 > -0.03 && interval / 16667.0 - 1.0 < 0.10, "60 Hz with 5%% lost measures %.0f us", interval);
-	keiland_motion_destroy(motion);
-	keiland_motion_device_destroy(device);
+	kl_motion_destroy(motion);
+	kl_motion_device_destroy(device);
 }
 
 /*
@@ -427,7 +427,7 @@ static void
 test_clock(
 	void)
 {
-	struct keiland_motion_device *device;
+	struct kl_motion_device *device;
 	struct rng rng;
 	uint64_t host;
 	uint64_t stamp;
@@ -445,7 +445,7 @@ test_clock(
 
 	/* 0: a true clock, 1: 200 ppm fast, 2: 200 ppm slow, 3: a wrap, 4: a restart after a pause. */
 	for (variant = 0; variant < 5; variant++) {
-		device = keiland_motion_device_create();
+		device = kl_motion_device_create();
 		rng.state = 0xabcdef12ULL + (unsigned long long)variant;
 		rate = 1.0;
 		if (variant == 1)
@@ -470,7 +470,7 @@ test_clock(
 				raw = (uint32_t)llround((scan - 5.0) * 1.0e6);
 			scan_host = TIME_BASE + (uint64_t)llround(scan * 1.0e6);
 			host = scan_host + 300U + (uint64_t)llround(1000.0 * rng_uniform(&rng));
-			error = keiland_motion_device_time(device, host, raw, &stamp);
+			error = kl_motion_device_time(device, host, raw, &stamp);
 			check(error == 0, "clock error %d", error);
 
 			/* Never later than the host, never back. */
@@ -488,24 +488,24 @@ test_clock(
 		}
 		check(bad_future == 0 && bad_order == 0, "clock variant %d: %d later than host, %d back", variant, bad_future, bad_order);
 		check(worst < 400.0, "clock variant %d: %.0f us from the scan", variant, worst);
-		keiland_motion_device_destroy(device);
+		kl_motion_device_destroy(device);
 	}
 
 	/* 0: a Scan Time standing still, 1: one ten times too fast: the host time is used. */
 	for (variant = 0; variant < 2; variant++) {
-		device = keiland_motion_device_create();
+		device = kl_motion_device_create();
 		worst = 0.0;
 		for (k = 0; k < 300; k++) {
 			host = TIME_BASE + (uint64_t)k * 16667U + 700U;
 			raw = 12345U;
 			if (variant == 1)
 				raw = (uint32_t)k * 166670U;
-			(void)keiland_motion_device_time(device, host, raw, &stamp);
+			(void)kl_motion_device_time(device, host, raw, &stamp);
 			if (fabs((double)stamp - (double)host) > worst)
 				worst = fabs((double)stamp - (double)host);
 		}
 		check(worst == 0.0, "untrusted Scan Time variant %d strays %.0f us from the host", variant, worst);
-		keiland_motion_device_destroy(device);
+		kl_motion_device_destroy(device);
 	}
 }
 
@@ -521,8 +521,8 @@ test_noise(
 	static struct report reports[SAMPLES_MAX];
 	static const double levels[] = {0.0, 1.0, 2.5};
 	struct condition condition;
-	struct keiland_motion_device *device;
-	struct keiland_motion *motion;
+	struct kl_motion_device *device;
+	struct kl_motion *motion;
 	struct rng rng;
 	double noise;
 	size_t l;
@@ -533,25 +533,25 @@ test_noise(
 	for (l = 0; l < sizeof(levels) / sizeof(levels[0]); l++) {
 		condition = conditions[2];
 		condition.noise = levels[l];
-		device = keiland_motion_device_create();
-		motion = keiland_motion_create(device);
+		device = kl_motion_device_create();
+		motion = kl_motion_create(device);
 		for (run = 0; run < 16; run++) {
 			rng.state = 0x5eed0000ULL + (unsigned long long)(run * 31 + (int)l);
 			count = generate(&condition, 60.0, (enum path)(PATH_LINE + run % 4), &rng, reports);
-			keiland_motion_begin(motion);
+			kl_motion_begin(motion);
 			for (k = 0; k < count; k++)
-				(void)keiland_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-			keiland_motion_end(motion);
+				(void)kl_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+			kl_motion_end(motion);
 		}
-		noise = keiland_motion_device_noise(device);
+		noise = kl_motion_device_noise(device);
 		if (levels[l] == 0.0) {
 			check(noise < 0.5, "clean panel measures noise %.3f px", noise);
 		} else {
 			check(fabs(noise / levels[l] - 1.0) < 0.3, "panel of %.1f px measures %.3f px", levels[l], noise);
 		}
 		printf("noise: panel %.1f px, measured %.3f px\n", levels[l], noise);
-		keiland_motion_destroy(motion);
-		keiland_motion_device_destroy(device);
+		kl_motion_destroy(motion);
+		kl_motion_device_destroy(device);
 	}
 }
 
@@ -599,10 +599,10 @@ test_resampling(
 			for (run = 0; run < 16; run++) {
 				rng.state = 0xfeedULL + (unsigned long long)run;
 				count = generate(&conditions[indexes[c]], rates[r], (enum path)(PATH_LINE + run % 4), &rng, reports);
-				keiland_motion_begin(adapter_motion);
+				kl_motion_begin(adapter_motion);
 				for (k = 0; k < count; k++)
-					(void)keiland_motion_add(adapter_motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-				keiland_motion_end(adapter_motion);
+					(void)kl_motion_add(adapter_motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+				kl_motion_end(adapter_motion);
 			}
 			run_paths(&conditions[indexes[c]], rates[r], &library, &mine);
 			adapter_stop();
@@ -677,10 +677,10 @@ test_gaps(
 			for (run = 0; run < 4; run++) {
 				rng.state = 0x600dULL + (unsigned long long)run;
 				count = generate(&condition, rates[r], PATH_LINE, &rng, reports);
-				keiland_motion_begin(adapter_motion);
+				kl_motion_begin(adapter_motion);
 				for (k = 0; k < count; k++)
-					(void)keiland_motion_add(adapter_motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-				keiland_motion_end(adapter_motion);
+					(void)kl_motion_add(adapter_motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+				kl_motion_end(adapter_motion);
 			}
 
 			/* Then the silent rests. */
@@ -742,8 +742,8 @@ test_velocity(
 	static const size_t indexes[] = {2, 8};
 	static const enum path flicks[] = {PATH_FLING_FAST, PATH_FLING_SLOW, PATH_FLING_EASE};
 	static const double truths[] = {3000.0, 800.0, 2400.0};
-	struct keiland_motion_device *device;
-	struct keiland_motion *motion;
+	struct kl_motion_device *device;
+	struct kl_motion *motion;
 	struct rng rng;
 	double mine[3];
 	double theirs[3];
@@ -762,15 +762,15 @@ test_velocity(
 	for (c = 0; c < sizeof(indexes) / sizeof(indexes[0]); c++) {
 		for (r = 0; r < sizeof(rates) / sizeof(rates[0]); r++) {
 			/* The device learns the panel from sixteen ordinary strokes first. */
-			device = keiland_motion_device_create();
-			motion = keiland_motion_create(device);
+			device = kl_motion_device_create();
+			motion = kl_motion_create(device);
 			for (run = 0; run < 16; run++) {
 				rng.state = 0xfeedULL + (unsigned long long)run;
 				count = generate(&conditions[indexes[c]], rates[r], (enum path)(PATH_LINE + run % 4), &rng, reports);
-				keiland_motion_begin(motion);
+				kl_motion_begin(motion);
 				for (k = 0; k < count; k++)
-					(void)keiland_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-				keiland_motion_end(motion);
+					(void)kl_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+				kl_motion_end(motion);
 			}
 
 			/* The flicks and the pause, the same reports for both. */
@@ -783,20 +783,20 @@ test_velocity(
 				rng.state = 0x243f6a8885a308d3ULL ^ (unsigned long long)(run * 104729 + (int)rates[r]);
 				for (f = 0; f < 3; f++) {
 					count = generate(&conditions[indexes[c]], rates[r], flicks[f], &rng, reports);
-					keiland_motion_begin(motion);
+					kl_motion_begin(motion);
 					for (k = 0; k < count; k++)
-						(void)keiland_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-					(void)keiland_motion_velocity(motion, microseconds(path_duration(flicks[f])), &vx, &vy);
-					keiland_motion_begin(motion);
+						(void)kl_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+					(void)kl_motion_velocity(motion, microseconds(path_duration(flicks[f])), &vx, &vy);
+					kl_motion_begin(motion);
 					mine[f] += vx / truths[f] - 1.0;
 					theirs[f] += estimate_velocity(ESTIMATOR_KALMAN_NOISE_GATED, reports, count) / truths[f] - 1.0;
 				}
 				count = generate(&conditions[indexes[c]], rates[r], PATH_PAUSE, &rng, reports);
-				keiland_motion_begin(motion);
+				kl_motion_begin(motion);
 				for (k = 0; k < count; k++)
-					(void)keiland_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
-				(void)keiland_motion_velocity(motion, microseconds(path_duration(PATH_PAUSE)), &vx, &vy);
-				keiland_motion_begin(motion);
+					(void)kl_motion_add(motion, microseconds(reports[k].stamp), microseconds(reports[k].arrival), reports[k].x, reports[k].y);
+				(void)kl_motion_velocity(motion, microseconds(path_duration(PATH_PAUSE)), &vx, &vy);
+				kl_motion_begin(motion);
 				pause[run] = sqrt(vx * vx + vy * vy);
 			}
 			device_noise = 0.0;
@@ -826,8 +826,8 @@ test_velocity(
 				check(pause[(VELOCITY_RUNS * 99) / 100] < 300.0, "%s %.0f Hz pause p99 %.0f px/s", conditions[indexes[c]].name,
 				      rates[r], pause[(VELOCITY_RUNS * 99) / 100]);
 			}
-			keiland_motion_destroy(motion);
-			keiland_motion_device_destroy(device);
+			kl_motion_destroy(motion);
+			kl_motion_device_destroy(device);
 		}
 	}
 }

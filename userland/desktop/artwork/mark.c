@@ -393,41 +393,41 @@ mark_sample(
 
 	/* Weighs the point by the layer it is sampled for. */
 	switch (layer) {
-	case KEILAND_MARK_BAR:
+	case KL_MARK_BAR:
 		/* The bar is even. */
 		if (bar < 0.0f)
 			return 0.0f;
 		return 1.0f;
-	case KEILAND_MARK_BAR_SHADE:
+	case KL_MARK_BAR_SHADE:
 		/* The bar's shade deepens towards its foot. */
 		if (bar < 0.0f)
 			return 0.0f;
 		return v / MARK_BAR_FOOT;
-	case KEILAND_MARK_LEAF:
+	case KL_MARK_LEAF:
 		/* The leaf is even. */
 		if (leaf_depth < 0.0f)
 			return 0.0f;
 		return 1.0f;
-	case KEILAND_MARK_LEAF_SHADE:
+	case KL_MARK_LEAF_SHADE:
 		/* The leaf's shade gathers towards its lower point. */
 		if (leaf_depth < 0.0f)
 			return 0.0f;
 		along = 1.0f - mark_leaf_along(u, v);
 		return along * along;
-	case KEILAND_MARK_OVERLAP:
+	case KL_MARK_OVERLAP:
 		/* Where both panes lie, deepest towards the leaf's lower point. */
 		if (bar < 0.0f || leaf_depth < 0.0f)
 			return 0.0f;
 		along = mark_leaf_along(u, v);
 		return 0.55f + 0.45f * (1.0f - along);
-	case KEILAND_MARK_RIM:
+	case KL_MARK_RIM:
 		/* The brighter of the two panes' edge lights. */
 		light = mark_rim(bar);
 		other = mark_rim(leaf_depth);
 		if (other > light)
 			light = other;
 		return light;
-	case KEILAND_MARK_SHEEN:
+	case KL_MARK_SHEEN:
 		/* The light over the upper part of the glass. */
 		light = mark_sheen(bar, leaf_depth, u, v);
 		return light;

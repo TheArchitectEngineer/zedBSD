@@ -261,7 +261,7 @@ struct kl_window {
 	uint32_t preferred_width;
 	uint32_t preferred_height;
 
-	/* Whether the first configure arrived, and whether the last one made the window fullscreen (KUI_VERSION 10) or maximized (KL_VERSION 45). */
+	/* Whether the first configure arrived, and whether the last one made the window fullscreen (libkeiui's version 10) or maximized (KL_VERSION 45). */
 	int configured;
 	int fullscreen;
 	int maximized;
@@ -393,7 +393,7 @@ struct kl_window {
 	size_t primary_length;
 
 	/*
-	 * The text input (text-input.c, KUI_VERSION 6): the compositor's
+	 * The text input (text-input.c, libkeiui's version 6): the compositor's
 	 * manager and the seat's text input, whether the application asks for
 	 * it and whether the text input is on the window's surface (enabled
 	 * when both), the commits made (the done's serial), the caret's
@@ -428,7 +428,7 @@ struct kl_window {
 	struct wl_callback *notify_sync;
 
 	/*
-	 * The on-screen keyboard's inset (KUI_VERSION 7, ws102-p015): libkeiland's
+	 * The on-screen keyboard's inset (libkeiui's version 7, ws102-p015): libkeiland's
 	 * object (NULL with a compositor without it), the covered widths from
 	 * the right and bottom edges last heard, and the application's callback.
 	 */
@@ -439,7 +439,7 @@ struct kl_window {
 	void *inset_data;
 
 	/*
-	 * The editing operations (KUI_VERSION 8, ws102-p017, edit.c):
+	 * The editing operations (libkeiui's version 8, ws102-p017, edit.c):
 	 * libkeiland's object (NULL with a compositor without it), whether a
 	 * selection is being made, the state the application told and whether
 	 * it did, and the application's callback.

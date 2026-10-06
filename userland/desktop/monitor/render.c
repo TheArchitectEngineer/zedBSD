@@ -393,15 +393,15 @@ sm_renderer_draw(
 
 	/* The image to draw into, once the compositor has given one back. */
 	memset(times, 0, sizeof(*times));
-	before = kui_clock_us();
+	before = kl_clock_us();
 	renderer->operation = "vkAcquireNextImageKHR";
 	error = vkAcquireNextImageKHR(renderer->device, renderer->swapchain, RENDER_TIMEOUT, renderer->acquired, VK_NULL_HANDLE, &image);
-	times->acquire_us = kui_clock_us() - before;
+	times->acquire_us = kl_clock_us() - before;
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
 	/* The frame's commands. */
-	before = kui_clock_us();
+	before = kl_clock_us();
 	renderer->operation = "vkResetCommandBuffer";
 	error = vkResetCommandBuffer(renderer->command, 0U);
 	if (error != VK_SUCCESS)
@@ -411,7 +411,7 @@ sm_renderer_draw(
 	render_record(renderer, image, scene);
 	renderer->operation = "vkEndCommandBuffer";
 	error = vkEndCommandBuffer(renderer->command);
-	times->record_us = kui_clock_us() - before;
+	times->record_us = kl_clock_us() - before;
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -432,10 +432,10 @@ sm_renderer_draw(
 	submit.pCommandBuffers = &renderer->command;
 	submit.signalSemaphoreCount = 1U;
 	submit.pSignalSemaphores = &renderer->targets[image].rendered;
-	before = kui_clock_us();
+	before = kl_clock_us();
 	renderer->operation = "vkQueueSubmit";
 	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
-	times->submit_us = kui_clock_us() - before;
+	times->submit_us = kl_clock_us() - before;
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -447,18 +447,18 @@ sm_renderer_draw(
 	present.swapchainCount = 1U;
 	present.pSwapchains = &renderer->swapchain;
 	present.pImageIndices = &image;
-	before = kui_clock_us();
+	before = kl_clock_us();
 	renderer->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(renderer->queue, &present);
-	times->present_us = kui_clock_us() - before;
+	times->present_us = kl_clock_us() - before;
 
 	/* The frame is finished before the host touches the vertices again, whatever the present said. */
-	before = kui_clock_us();
+	before = kl_clock_us();
 	renderer->operation = "vkWaitForFences";
 	waited = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
 	if (waited != VK_SUCCESS)
 		return VK_ERROR_DEVICE_LOST;
-	times->wait_us = kui_clock_us() - before;
+	times->wait_us = kl_clock_us() - before;
 
 	/* The present's answer. */
 	renderer->operation = "vkQueuePresentKHR";

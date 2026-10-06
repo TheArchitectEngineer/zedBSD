@@ -338,7 +338,7 @@ kl_window_dispatch(
 /*
  * Waits up to a timeout (milliseconds, -1 for ever) for the compositor's
  * events or for other descriptors of the application (a terminal's
- * shells), and runs the compositor's events (KUI_VERSION 11).
+ * shells), and runs the compositor's events (libkeiui's version 11).
  *
  * ready[i] is set to 1 when fds[i] has bytes to read or its other end has
  * gone, 0 otherwise.  Returns 0, or -1 when the connection is broken.
@@ -702,7 +702,7 @@ kl_window_toplevel(
 
 /*
  * Asks the compositor to make the window fullscreen (on the output it is
- * on), or to take it out of the full screen (KUI_VERSION 10).  The answer
+ * on), or to take it out of the full screen (libkeiui's version 10).  The answer
  * is a configure: kl_window_fullscreen tells once it came.
  */
 void
@@ -890,7 +890,7 @@ kl_window_present_times(
 
 /*
  * Reports whether the compositor's last configure made the window
- * fullscreen (KUI_VERSION 10).
+ * fullscreen (libkeiui's version 10).
  */
 int
 kl_window_fullscreen(
@@ -1169,7 +1169,7 @@ window_setup(
 	if (status != 0)
 		return status;
 
-	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told), and the editing operations of the keyboard's buttons (KUI_VERSION 8): a toplevel's. */
+	/* The on-screen keyboard's inset, where the compositor tells it (libkeiui's version 7; NULL otherwise, and nothing is told), and the editing operations of the keyboard's buttons (libkeiui's version 8): a toplevel's. */
 	if (window->toplevel != NULL) {
 		window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
 		keiui_edit_start(window);
@@ -1442,7 +1442,7 @@ window_surface(
 	if (application != NULL)
 		xdg_toplevel_set_app_id(window->toplevel, application);
 
-	/* The full screen from the first configure, when asked (KUI_VERSION 11). */
+	/* The full screen from the first configure, when asked (libkeiui's version 11). */
 	if (options->fullscreen)
 		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
 
@@ -1935,7 +1935,7 @@ window_pointer_motion(
 	if (!window->pointer_ours)
 		return;
 
-	/* The new place, as a motion at the compositor's time (KUI_VERSION 11: a stroke's samples keep their times). */
+	/* The new place, as a motion at the compositor's time (libkeiui's version 11: a stroke's samples keep their times). */
 	window->pointer_x = wl_fixed_to_double(x);
 	window->pointer_y = wl_fixed_to_double(y);
 	event = window_push(window, KL_WINDOW_MOTION);
@@ -2466,7 +2466,7 @@ window_touch_foreign(
 }
 
 /*
- * Lets the application hear the on-screen keyboard's inset (KUI_VERSION 7):
+ * Lets the application hear the on-screen keyboard's inset (libkeiui's version 7):
  * callback runs during kl_window_dispatch and returns 1 when the
  * application kept its caret in sight itself (the default is skipped).
  */

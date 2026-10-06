@@ -18,7 +18,7 @@
  * a right press asks for the window menu.  The window is drawn at the size
  * each configure gives, within its limits (200x150 to 800x600).
  *
- * The window asks for zdesktop's titlebar (keiland_titlebar, an explicit
+ * The window asks for zdesktop's titlebar (kl_titlebar, an explicit
  * server-side decoration) before its first commit, as the native
  * applications do; without it zdesktop leaves the decoration to the client
  * (ws114-p007) and the tests that use the titlebar's buttons and corners
@@ -170,7 +170,7 @@ struct probe {
 	int wm_probe;
 	unsigned request_delay_ms;
 	int csd;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 };
 
 static int probe_options(int count, char **arguments, struct probe *probe, unsigned *timeout);
@@ -213,7 +213,7 @@ static void keyboard_key(void *data, struct wl_keyboard *keyboard, uint32_t seri
 static void keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group);
 
 /* The titlebar's events: the probe's titlebar has no controls or tabs, so it hears none. */
-static const struct keiland_titlebar_listener titlebar_listener = {
+static const struct kl_titlebar_listener titlebar_listener = {
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
@@ -468,7 +468,7 @@ probe_connect(
 
 	/* zdesktop's titlebar, asked for before the first commit so that the first configure carries it. */
 	if (!probe->csd && !probe->wm_probe) {
-		probe->titlebar = keiland_titlebar_create(probe->display, probe->window.toplevel, &titlebar_listener, probe);
+		probe->titlebar = kl_titlebar_create(probe->display, probe->window.toplevel, &titlebar_listener, probe);
 		if (probe->titlebar == NULL)
 			printf("POPUPPROBE titlebar none errno=%d\n", errno);
 	}

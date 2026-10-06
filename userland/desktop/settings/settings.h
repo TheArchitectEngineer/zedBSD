@@ -25,7 +25,6 @@
 #include "storage-trash.h"
 
 #include <keiland.h>
-#include <keiland-ui.h>
 
 #include <pthread.h>
 #include <stddef.h>

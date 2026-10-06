@@ -14,7 +14,7 @@
  * range, the keys move the keyboard's plate and open and close the card,
  * and a drag on the core turns it and lets it come back.
  *
- * The clock is the test's (kui_clock_us below), and the range is recorded
+ * The clock is the test's (kl_clock_us below), and the range is recorded
  * by the sm_set_range below; the monitor's log goes to standard output and
  * the verdict to standard error.
  *
@@ -36,7 +36,7 @@
 /* The number of failed checks. */
 static int failures;
 
-/* The test's clock in microseconds: what kui_clock_us gives. */
+/* The test's clock in microseconds: what kl_clock_us gives. */
 static uint64_t test_clock_us;
 
 /* How many times the range changed, and the last one. */
@@ -91,7 +91,7 @@ main(void)
  * The test's clock, standing in for libkeiland's.
  */
 uint64_t
-kui_clock_us(void)
+kl_clock_us(void)
 {
 	/* The time the test set. */
 	return test_clock_us;
@@ -189,7 +189,7 @@ finger(
 	double x,
 	double y)
 {
-	struct kui_window_event event;
+	struct kl_window_event event;
 
 	/* The event as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
@@ -208,11 +208,11 @@ key(
 	uint32_t code,
 	unsigned modifiers)
 {
-	struct kui_window_event event;
+	struct kl_window_event event;
 
 	/* The press as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
-	event.kind = KUI_WINDOW_KEY;
+	event.kind = KL_WINDOW_KEY;
 	event.code = code;
 	event.pressed = 1;
 	event.modifiers = modifiers;
@@ -227,11 +227,11 @@ button(
 	double x,
 	double y)
 {
-	struct kui_window_event event;
+	struct kl_window_event event;
 
 	/* The button as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
-	event.kind = KUI_WINDOW_BUTTON;
+	event.kind = KL_WINDOW_BUTTON;
 	event.code = code;
 	event.pressed = pressed;
 	event.x = x;
@@ -245,11 +245,11 @@ pointer(
 	double x,
 	double y)
 {
-	struct kui_window_event event;
+	struct kl_window_event event;
 
 	/* The motion as libkeiland gives it. */
 	memset(&event, 0, sizeof(event));
-	event.kind = KUI_WINDOW_MOTION;
+	event.kind = KL_WINDOW_MOTION;
 	event.x = x;
 	event.y = y;
 	sm_interact_event(&app, &event);
@@ -269,24 +269,24 @@ test_tap(void)
 {
 	/* A tap on the CPU's plate. */
 	setup();
-	finger(KUI_WINDOW_TOUCH_DOWN, 1, 100.0, 100.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 1, 100.0, 100.0);
 	advance(80U);
-	finger(KUI_WINDOW_TOUCH_UP, 1, 100.0, 100.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 100.0, 100.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_CPU, "tap: the CPU's card");
 	check(app.focus.opening && app.focus.progress >= 1.0f, "tap: the card all the way out");
 
 	/* A tap on the card itself keeps it. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 2, 640.0, 400.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 640.0, 400.0);
 	advance(80U);
-	finger(KUI_WINDOW_TOUCH_UP, 2, 640.0, 400.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 640.0, 400.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_CPU && app.focus.opening, "tap on the card: it stays");
 
 	/* A tap outside it sends it back. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 3, 20.0, 790.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 3, 20.0, 790.0);
 	advance(80U);
-	finger(KUI_WINDOW_TOUCH_UP, 3, 20.0, 790.0);
+	finger(KL_WINDOW_TOUCH_UP, 3, 20.0, 790.0);
 	settle();
 	check(app.focus.plate == -1, "tap outside: the card went back");
 	check(range_changes == 0U, "tap: the range is the same");
@@ -298,16 +298,16 @@ test_long_press(void)
 {
 	/* A finger held still on the network's plate. */
 	setup();
-	finger(KUI_WINDOW_TOUCH_DOWN, 1, 200.0, 600.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 1, 200.0, 600.0);
 	advance(700U);
-	finger(KUI_WINDOW_TOUCH_UP, 1, 200.0, 600.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 200.0, 600.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_FLOW && app.focus.pinned, "long press: the network's card, pinned");
 
 	/* A tap outside keeps a pinned card. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 2, 20.0, 790.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 20.0, 790.0);
 	advance(80U);
-	finger(KUI_WINDOW_TOUCH_UP, 2, 20.0, 790.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 20.0, 790.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_FLOW && app.focus.opening, "tap outside a pinned card: it stays");
 
@@ -317,8 +317,8 @@ test_long_press(void)
 	check(app.focus.plate == -1 && !app.focus.pinned, "Esc: the pinned card went back");
 
 	/* The right button pins too. */
-	button(KUI_BUTTON_RIGHT, 1, 100.0, 100.0);
-	button(KUI_BUTTON_RIGHT, 0, 100.0, 100.0);
+	button(KL_BUTTON_RIGHT, 1, 100.0, 100.0);
+	button(KL_BUTTON_RIGHT, 0, 100.0, 100.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_CPU && app.focus.pinned, "right click: the CPU's card, pinned");
 }
@@ -331,40 +331,40 @@ test_swipe(void)
 
 	/* One finger 300 px to the left over 100 ms across the network's plate. */
 	setup();
-	finger(KUI_WINDOW_TOUCH_DOWN, 1, 400.0, 620.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 1, 400.0, 620.0);
 	for (step = 1; step <= 12; step++) {
 		advance(8U);
-		finger(KUI_WINDOW_TOUCH_MOTION, 1, 400.0 - 25.0 * step, 620.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 1, 400.0 - 25.0 * step, 620.0);
 	}
 
 	/* The lift ends the swipe. */
-	finger(KUI_WINDOW_TOUCH_UP, 1, 100.0, 620.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 100.0, 620.0);
 	settle();
 	check(app.range == 2U && range_changes == 1U, "swipe left: the next longer range");
 	check(app.focus.plate == -1, "swipe: no card");
 
 	/* The same to the right. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 2, 100.0, 620.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 100.0, 620.0);
 	for (step = 1; step <= 12; step++) {
 		advance(8U);
-		finger(KUI_WINDOW_TOUCH_MOTION, 2, 100.0 + 25.0 * step, 620.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 2, 100.0 + 25.0 * step, 620.0);
 	}
 
 	/* The lift ends the swipe. */
-	finger(KUI_WINDOW_TOUCH_UP, 2, 400.0, 620.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 400.0, 620.0);
 	settle();
 	check(app.range == 1U && range_changes == 2U, "swipe right: the shorter range again");
 
 	/* Across the core: it turns, the range stays. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 3, 560.0, 330.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 3, 560.0, 330.0);
 	for (step = 1; step <= 12; step++) {
 		advance(8U);
-		finger(KUI_WINDOW_TOUCH_MOTION, 3, 560.0 + 15.0 * step, 330.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 3, 560.0 + 15.0 * step, 330.0);
 	}
 
 	/* Turned while held, back after the lift. */
 	check(app.touch.core_turn > 0.3f, "drag on the core: it turned");
-	finger(KUI_WINDOW_TOUCH_UP, 3, 740.0, 330.0);
+	finger(KL_WINDOW_TOUCH_UP, 3, 740.0, 330.0);
 	settle();
 	advance(1000U);
 	check(range_changes == 2U, "drag on the core: the range is the same");
@@ -379,36 +379,36 @@ test_pinch(void)
 
 	/* Apart from 80 px to 240 px. */
 	setup();
-	finger(KUI_WINDOW_TOUCH_DOWN, 1, 600.0, 350.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 1, 600.0, 350.0);
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_DOWN, 2, 680.0, 350.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 680.0, 350.0);
 	for (step = 1; step <= 10; step++) {
 		advance(16U);
-		finger(KUI_WINDOW_TOUCH_MOTION, 1, 600.0 - 8.0 * step, 350.0);
-		finger(KUI_WINDOW_TOUCH_MOTION, 2, 680.0 + 8.0 * step, 350.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 1, 600.0 - 8.0 * step, 350.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 2, 680.0 + 8.0 * step, 350.0);
 	}
 
 	/* Both lift. */
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_UP, 1, 520.0, 350.0);
-	finger(KUI_WINDOW_TOUCH_UP, 2, 760.0, 350.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 520.0, 350.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 760.0, 350.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_STATE && app.focus.opening, "pinch apart: the state's detail");
 
 	/* Together from 240 px to 80 px. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 3, 520.0, 350.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 3, 520.0, 350.0);
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_DOWN, 4, 760.0, 350.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 4, 760.0, 350.0);
 	for (step = 1; step <= 10; step++) {
 		advance(16U);
-		finger(KUI_WINDOW_TOUCH_MOTION, 3, 520.0 + 8.0 * step, 350.0);
-		finger(KUI_WINDOW_TOUCH_MOTION, 4, 760.0 - 8.0 * step, 350.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 3, 520.0 + 8.0 * step, 350.0);
+		finger(KL_WINDOW_TOUCH_MOTION, 4, 760.0 - 8.0 * step, 350.0);
 	}
 
 	/* Both lift. */
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_UP, 3, 600.0, 350.0);
-	finger(KUI_WINDOW_TOUCH_UP, 4, 680.0, 350.0);
+	finger(KL_WINDOW_TOUCH_UP, 3, 600.0, 350.0);
+	finger(KL_WINDOW_TOUCH_UP, 4, 680.0, 350.0);
 	settle();
 	check(app.focus.plate == -1, "pinch together: the overview");
 	check(range_changes == 0U, "pinch: the range is the same");
@@ -420,32 +420,32 @@ test_two_finger_tap(void)
 {
 	/* Down 20 ms apart over the GPU's card, up 100 ms later. */
 	setup();
-	finger(KUI_WINDOW_TOUCH_DOWN, 1, 1000.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 1, 1000.0, 300.0);
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_DOWN, 2, 1100.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 2, 1100.0, 300.0);
 	advance(96U);
-	finger(KUI_WINDOW_TOUCH_UP, 1, 1000.0, 300.0);
-	finger(KUI_WINDOW_TOUCH_UP, 2, 1100.0, 300.0);
+	finger(KL_WINDOW_TOUCH_UP, 1, 1000.0, 300.0);
+	finger(KL_WINDOW_TOUCH_UP, 2, 1100.0, 300.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_GRAPHICS && app.focus.opening, "two-finger tap: the graphics' detail");
 
 	/* Again: the overview. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 3, 1000.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 3, 1000.0, 300.0);
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_DOWN, 4, 1100.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 4, 1100.0, 300.0);
 	advance(96U);
-	finger(KUI_WINDOW_TOUCH_UP, 3, 1000.0, 300.0);
-	finger(KUI_WINDOW_TOUCH_UP, 4, 1100.0, 300.0);
+	finger(KL_WINDOW_TOUCH_UP, 3, 1000.0, 300.0);
+	finger(KL_WINDOW_TOUCH_UP, 4, 1100.0, 300.0);
 	settle();
 	check(app.focus.plate == -1, "two-finger tap again: the overview");
 
 	/* Held too long: no tap. */
-	finger(KUI_WINDOW_TOUCH_DOWN, 5, 1000.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 5, 1000.0, 300.0);
 	advance(16U);
-	finger(KUI_WINDOW_TOUCH_DOWN, 6, 1100.0, 300.0);
+	finger(KL_WINDOW_TOUCH_DOWN, 6, 1100.0, 300.0);
 	advance(400U);
-	finger(KUI_WINDOW_TOUCH_UP, 5, 1000.0, 300.0);
-	finger(KUI_WINDOW_TOUCH_UP, 6, 1100.0, 300.0);
+	finger(KL_WINDOW_TOUCH_UP, 5, 1000.0, 300.0);
+	finger(KL_WINDOW_TOUCH_UP, 6, 1100.0, 300.0);
 	settle();
 	check(app.focus.plate == -1, "two fingers held 400 ms: nothing");
 	check(range_changes == 0U, "two-finger taps: the range is the same");
@@ -460,9 +460,9 @@ test_keys(void)
 	key(TEST_KEY_TAB, 0U);
 	check(app.focus.keyboard == SM_PLATE_CPU, "Tab: the CPU's plate");
 	app.focus.keyboard = -1;
-	key(TEST_KEY_TAB, KUI_MOD_SHIFT);
+	key(TEST_KEY_TAB, KL_MOD_SHIFT);
 	check(app.focus.keyboard == SM_PLATE_EVENTS, "Shift+Tab from none: the events' plate");
-	key(TEST_KEY_TAB, KUI_MOD_SHIFT);
+	key(TEST_KEY_TAB, KL_MOD_SHIFT);
 	check(app.focus.keyboard == SM_PLATE_LANES, "Shift+Tab: the disks' plate");
 	key(TEST_KEY_TAB, 0U);
 	key(TEST_KEY_TAB, 0U);
@@ -493,26 +493,26 @@ test_core(void)
 {
 	/* A drag on the core with the left button. */
 	setup();
-	button(KUI_BUTTON_LEFT, 1, 600.0, 330.0);
+	button(KL_BUTTON_LEFT, 1, 600.0, 330.0);
 	pointer(700.0, 330.0);
 	advance(16U);
 	check(app.touch.core_turn > 0.39f && app.touch.core_turn < 0.41f, "pointer drag on the core: turned 0.4");
-	button(KUI_BUTTON_LEFT, 0, 700.0, 330.0);
+	button(KL_BUTTON_LEFT, 0, 700.0, 330.0);
 	advance(1000U);
 	check(app.touch.core_turn == 0.0f, "pointer released: the core came back");
 	check(app.focus.plate == -1, "a drag is no click");
 
 	/* A click on the memory's plate. */
-	button(KUI_BUTTON_LEFT, 1, 600.0, 100.0);
+	button(KL_BUTTON_LEFT, 1, 600.0, 100.0);
 	advance(80U);
-	button(KUI_BUTTON_LEFT, 0, 600.0, 100.0);
+	button(KL_BUTTON_LEFT, 0, 600.0, 100.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_MEMORY && !app.focus.pinned, "click: the memory's card");
 
 	/* A long press with the pointer pins it. */
-	button(KUI_BUTTON_LEFT, 1, 640.0, 400.0);
+	button(KL_BUTTON_LEFT, 1, 640.0, 400.0);
 	advance(600U);
-	button(KUI_BUTTON_LEFT, 0, 640.0, 400.0);
+	button(KL_BUTTON_LEFT, 0, 640.0, 400.0);
 	settle();
 	check(app.focus.plate == SM_PLATE_MEMORY && app.focus.pinned, "pointer long press: pinned");
 	sm_interact_close(&app);

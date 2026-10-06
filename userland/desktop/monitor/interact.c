@@ -97,15 +97,15 @@ static int in_box(const struct sm_box *box, float x, float y);
 static int on_core(const struct sm_app *app, float x, float y);
 static float clamp_turn(float dx);
 static int finger_slot(const struct sm_touch *touch, int32_t id);
-static void finger_down(struct sm_app *app, const struct kui_window_event *event);
-static void finger_up(struct sm_app *app, const struct kui_window_event *event, int slot);
-static void touch_event(struct sm_app *app, const struct kui_window_event *event);
-static void pointer_event(struct sm_app *app, const struct kui_window_event *event);
-static void button_event(struct sm_app *app, const struct kui_window_event *event);
-static void key_event(struct sm_app *app, const struct kui_window_event *event);
+static void finger_down(struct sm_app *app, const struct kl_window_event *event);
+static void finger_up(struct sm_app *app, const struct kl_window_event *event, int slot);
+static void touch_event(struct sm_app *app, const struct kl_window_event *event);
+static void pointer_event(struct sm_app *app, const struct kl_window_event *event);
+static void button_event(struct sm_app *app, const struct kl_window_event *event);
+static void key_event(struct sm_app *app, const struct kl_window_event *event);
 static void key_tab(struct sm_app *app, int backwards);
 static void gesture_events(struct sm_app *app, uint64_t now_us);
-static void drag_end(struct sm_app *app, const struct keiland_gesture_event *gesture);
+static void drag_end(struct sm_app *app, const struct kl_gesture_event *gesture);
 static void pinch_tick(struct sm_app *app, uint64_t now_us);
 static int card_tick(struct sm_app *app, uint64_t now_ms);
 
@@ -122,7 +122,7 @@ sm_interact_open(
 	app->focus.keyboard = -1;
 
 	/* The gestures of the window's fingers. */
-	app->touch.gesture = keiland_gesture_create();
+	app->touch.gesture = kl_gesture_create();
 	if (app->touch.gesture == NULL)
 		return -1;
 
@@ -139,7 +139,7 @@ sm_interact_close(
 {
 	/* The gestures, when they were made. */
 	if (app->touch.gesture != NULL)
-		keiland_gesture_destroy(app->touch.gesture);
+		kl_gesture_destroy(app->touch.gesture);
 	app->touch.gesture = NULL;
 }
 
@@ -149,25 +149,25 @@ sm_interact_close(
 void
 sm_interact_event(
 	struct sm_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* Each kind of input to its own reader. */
 	switch (event->kind) {
-	case KUI_WINDOW_TOUCH_DOWN:
-	case KUI_WINDOW_TOUCH_MOTION:
-	case KUI_WINDOW_TOUCH_UP:
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_CANCEL:
 		touch_event(app, event);
 		break;
-	case KUI_WINDOW_MOTION:
-	case KUI_WINDOW_LEAVE:
-	case KUI_WINDOW_AXIS:
+	case KL_WINDOW_MOTION:
+	case KL_WINDOW_LEAVE:
+	case KL_WINDOW_AXIS:
 		pointer_event(app, event);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		button_event(app, event);
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		key_event(app, event);
 		break;
 	default:
@@ -200,14 +200,14 @@ sm_interact_tick(
 
 	/* The gestures due, then a pinch of two fingers. */
 	touch = &app->touch;
-	now_us = kui_clock_us();
+	now_us = kl_clock_us();
 	gesture_events(app, now_us);
 	pinch_tick(app, now_us);
 	active = 0;
 
 	/* A finger dragging the core turns it. */
 	if (touch->dragging && touch->drag_core) {
-		error = keiland_gesture_drag_offset(touch->gesture, now_us, &dx, &dy);
+		error = kl_gesture_drag_offset(touch->gesture, now_us, &dx, &dy);
 		if (error == 0)
 			touch->core_turn = clamp_turn((float)dx);
 		active = 1;
@@ -588,7 +588,7 @@ finger_slot(
 static void
 finger_down(
 	struct sm_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct sm_touch *touch;
 	unsigned slot;
@@ -655,7 +655,7 @@ finger_down(
 static void
 finger_up(
 	struct sm_app *app,
-	const struct kui_window_event *event,
+	const struct kl_window_event *event,
 	int slot)
 {
 	struct sm_touch *touch;
@@ -704,7 +704,7 @@ finger_up(
 static void
 touch_event(
 	struct sm_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct sm_touch *touch;
 	float dx;
@@ -715,15 +715,15 @@ touch_event(
 	touch = &app->touch;
 	slot = finger_slot(touch, event->id);
 	switch (event->kind) {
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		/* A new finger. */
-		(void)keiland_gesture_down(touch->gesture, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		(void)kl_gesture_down(touch->gesture, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		if (slot < 0)
 			finger_down(app, event);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_MOTION:
 		/* A finger moving: past the slop it is no tap. */
-		(void)keiland_gesture_motion(touch->gesture, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		(void)kl_gesture_motion(touch->gesture, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		if (slot < 0)
 			break;
 		touch->last_x[slot] = (float)event->x;
@@ -733,15 +733,15 @@ touch_event(
 		if (dx * dx + dy * dy > PRESS_SLOP * PRESS_SLOP)
 			touch->moved = 1;
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		/* A finger lifting. */
-		(void)keiland_gesture_up(touch->gesture, event->id, event->time_us);
+		(void)kl_gesture_up(touch->gesture, event->id, event->time_us);
 		if (slot >= 0)
 			finger_up(app, event, slot);
 		break;
 	default:
 		/* The compositor took the fingers: nothing they did acts. */
-		keiland_gesture_cancel(touch->gesture);
+		kl_gesture_cancel(touch->gesture);
 		memset(touch->ids, 0, sizeof(touch->ids));
 		touch->fingers = 0;
 		touch->dragging = 0;
@@ -757,7 +757,7 @@ touch_event(
 static void
 pointer_event(
 	struct sm_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct sm_touch *touch;
 	float dx;
@@ -765,15 +765,15 @@ pointer_event(
 
 	/* The pointer leaving: the camera straight again. */
 	touch = &app->touch;
-	if (event->kind == KUI_WINDOW_LEAVE) {
+	if (event->kind == KL_WINDOW_LEAVE) {
 		app->motion.pointer_x = 0.0f;
 		app->motion.pointer_y = 0.0f;
 		return;
 	}
 
 	/* Shift and the wheel: the range (the wheel down is a swipe to the left, a longer range). */
-	if (event->kind == KUI_WINDOW_AXIS) {
-		if ((event->modifiers & KUI_MOD_SHIFT) == 0U)
+	if (event->kind == KL_WINDOW_AXIS) {
+		if ((event->modifiers & KL_MOD_SHIFT) == 0U)
 			return;
 		if (event->dy != 0.0)
 			act_swipe(app, (float)-event->dy);
@@ -804,20 +804,20 @@ pointer_event(
 static void
 button_event(
 	struct sm_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct sm_touch *touch;
 
 	/* The right button pins (design.md section 3.10: the pointer's long press). */
 	touch = &app->touch;
-	if (event->code == KUI_BUTTON_RIGHT) {
+	if (event->code == KL_BUTTON_RIGHT) {
 		if (event->pressed)
 			act_long_press(app, (float)event->x, (float)event->y);
 		return;
 	}
 
 	/* Only the left button otherwise. */
-	if (event->code != KUI_BUTTON_LEFT)
+	if (event->code != KL_BUTTON_LEFT)
 		return;
 
 	/* Pressed: a press begins, timed by the real clock (on the core, a turn). */
@@ -827,7 +827,7 @@ button_event(
 		touch->press_long = 0;
 		touch->press_x = (float)event->x;
 		touch->press_y = (float)event->y;
-		touch->press_ms = kui_clock_us() / 1000U;
+		touch->press_ms = kl_clock_us() / 1000U;
 		touch->press_core = on_core(app, (float)event->x, (float)event->y);
 		app->dirty = 1;
 		return;
@@ -853,7 +853,7 @@ button_event(
 static void
 key_event(
 	struct sm_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	int out;
 	int backwards;
@@ -867,7 +867,7 @@ key_event(
 	case KEY_TAB:
 		/* The next plate, or with Shift the one before. */
 		backwards = 0;
-		if ((event->modifiers & KUI_MOD_SHIFT) != 0U)
+		if ((event->modifiers & KL_MOD_SHIFT) != 0U)
 			backwards = 1;
 		key_tab(app, backwards);
 		break;
@@ -942,7 +942,7 @@ gesture_events(
 	struct sm_app *app,
 	uint64_t now_us)
 {
-	struct keiland_gesture_event gesture;
+	struct kl_gesture_event gesture;
 	struct sm_touch *touch;
 	int found;
 	int plate;
@@ -951,19 +951,19 @@ gesture_events(
 	/* Each gesture due. */
 	touch = &app->touch;
 	for (;;) {
-		found = keiland_gesture_next(touch->gesture, now_us, &gesture);
+		found = kl_gesture_next(touch->gesture, now_us, &gesture);
 		if (!found)
 			break;
 
 		/* Each kind. */
 		switch (gesture.kind) {
-		case KEILAND_GESTURE_TAP:
+		case KL_GESTURE_TAP:
 			act_tap(app, (float)gesture.x, (float)gesture.y, "tap");
 			break;
-		case KEILAND_GESTURE_LONG_PRESS:
+		case KL_GESTURE_LONG_PRESS:
 			act_long_press(app, (float)gesture.x, (float)gesture.y);
 			break;
-		case KEILAND_GESTURE_DRAG_BEGIN:
+		case KL_GESTURE_DRAG_BEGIN:
 			/* One finger on the core turns it; one finger on another plate may be a swipe. */
 			touch->dragging = 1;
 			touch->drag_core = 0;
@@ -977,7 +977,7 @@ gesture_events(
 			else if (plate >= 0)
 				touch->swipe_ok = 1;
 			break;
-		case KEILAND_GESTURE_DRAG_END:
+		case KL_GESTURE_DRAG_END:
 			drag_end(app, &gesture);
 			break;
 		default:
@@ -998,7 +998,7 @@ gesture_events(
 static void
 drag_end(
 	struct sm_app *app,
-	const struct keiland_gesture_event *gesture)
+	const struct kl_gesture_event *gesture)
 {
 	struct sm_touch *touch;
 	float distance;
@@ -1067,7 +1067,7 @@ pinch_tick(
 		return;
 
 	/* Their distance against the start. */
-	error = keiland_gesture_pinch(touch->gesture, now_us, &scale, &x, &y);
+	error = kl_gesture_pinch(touch->gesture, now_us, &scale, &x, &y);
 	if (error != 0)
 		return;
 

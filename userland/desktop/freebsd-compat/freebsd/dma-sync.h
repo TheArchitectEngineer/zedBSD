@@ -14,7 +14,7 @@
 
 /* Recognizes unavailable native ioctl transport while preserving genuine descriptor errors. */
 static __inline int
-keiland_freebsd_dma_error(
+kl_freebsd_dma_error(
 	int descriptor,
 	int native_error)
 {

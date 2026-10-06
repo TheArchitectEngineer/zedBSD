@@ -14,7 +14,7 @@
  *		[--size=WxH] [--cpus=N] [--gpus=N] [--calm] [--clock=fixed:MS]
  *		[--range=0..3] [--timeout-s=N] [--token=T]
  *
- * The window is libkeiland's (KUI_PRESENT_NONE) and the drawing the
+ * The window is libkeiland's (KL_PRESENT_NONE) and the drawing the
  * monitor's own Vulkan (render.c), like Notes.  A frame is drawn only once
  * the compositor has shown the last one: the monitor asks for a frame
  * callback with each frame and waits for it before the next, so a hidden
@@ -77,7 +77,7 @@ static int main_option(struct sm_app *app, const char *argument);
 static int main_open(struct sm_app *app);
 static void main_close(struct sm_app *app);
 static void main_titlebar(struct sm_app *app);
-static void main_control_activated(void *data, struct keiland_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void main_control_activated(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
 static void main_frame_done(void *data, struct wl_callback *callback, uint32_t time);
 static uint64_t main_now(const struct sm_app *app);
 static void main_take_frames(struct sm_app *app, uint64_t now);
@@ -90,7 +90,7 @@ static void main_reports(struct sm_app *app, uint64_t now);
 static void main_log_layout(const struct sm_app *app);
 static int main_open_source(struct sm_app *app);
 
-static const struct keiland_titlebar_listener main_titlebar_listener = {
+static const struct kl_titlebar_listener main_titlebar_listener = {
 	main_control_activated, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
@@ -131,7 +131,7 @@ main(
 		/* Waits for the compositor until the next thing that is due. */
 		now = main_now(&app);
 		timeout = main_timeout(&app, now);
-		status = kui_window_dispatch(app.window, timeout);
+		status = kl_window_dispatch(app.window, timeout);
 		if (status != 0) {
 			printf("ZMON DISCONNECTED\n");
 			break;
@@ -162,7 +162,7 @@ main(
 
 		/* The reports, and the end of the run. */
 		main_reports(&app, now);
-		elapsed = (kui_clock_us() - app.start_us) / 1000U;
+		elapsed = (kl_clock_us() - app.start_us) / 1000U;
 		if (app.timeout_ms != 0U && elapsed >= app.timeout_ms)
 			app.quit = 1;
 		fflush(stdout);
@@ -195,10 +195,10 @@ sm_set_range(
 	/* The titlebar shows it checked. */
 	if (app->titlebar == NULL)
 		return;
-	(void)keiland_titlebar_begin(app->titlebar);
+	(void)kl_titlebar_begin(app->titlebar);
 	for (index = 0; index < SM_RANGES; index++)
-		(void)keiland_titlebar_set_control_state(app->titlebar, MAIN_CONTROL_RANGE + index, 1, index == range);
-	(void)keiland_titlebar_commit(app->titlebar);
+		(void)kl_titlebar_set_control_state(app->titlebar, MAIN_CONTROL_RANGE + index, 1, index == range);
+	(void)kl_titlebar_commit(app->titlebar);
 }
 
 /* Reads the command line; returns 0, or 2 after printing the usage. */
@@ -350,7 +350,7 @@ static int
 main_open(
 	struct sm_app *app)
 {
-	struct kui_window_options options;
+	struct kl_window_options options;
 	const char *source_name;
 	const char *token;
 	uint32_t width;
@@ -360,23 +360,23 @@ main_open(
 	VkResult result;
 
 	/* The window, drawn by the monitor's own Vulkan. */
-	app->start_us = kui_clock_us();
+	app->start_us = kl_clock_us();
 	memset(&options, 0, sizeof(options));
 	options.title = "System Monitor";
 	options.application = "monitor";
 	options.width = app->width;
 	options.height = app->height;
-	options.present = KUI_PRESENT_NONE;
-	app->window = kui_window_open(&options);
+	options.present = KL_PRESENT_NONE;
+	app->window = kl_window_open(&options);
 	if (app->window == NULL) {
 		fprintf(stderr, "monitor: no window (errno %d)\n", errno);
 		return -1;
 	}
 
 	/* Its objects, its size and its titlebar. */
-	app->display = kui_window_display(app->window);
-	app->surface = kui_window_surface(app->window);
-	kui_window_size(app->window, &width, &height);
+	app->display = kl_window_display(app->window);
+	app->surface = kl_window_surface(app->window);
+	kl_window_size(app->window, &width, &height);
 	app->width = width;
 	app->height = height;
 	main_titlebar(app);
@@ -387,16 +387,16 @@ main_open(
 		return -1;
 
 	/* The fonts: the interface's, and the monospaced one (the interface's again when it is missing). */
-	error = kui_text_open(&app->sans, MAIN_FONT, MAIN_FONT_FALLBACK);
+	error = kl_text_open(&app->sans, MAIN_FONT, MAIN_FONT_FALLBACK);
 	if (error != 0) {
 		fprintf(stderr, "monitor: %s: error %d\n", MAIN_FONT, error);
 		return -1;
 	}
 
 	/* The monospaced one, or the interface's again. */
-	error = kui_text_open(&app->mono, MAIN_FONT_MONO, MAIN_FONT_FALLBACK);
+	error = kl_text_open(&app->mono, MAIN_FONT_MONO, MAIN_FONT_FALLBACK);
 	if (error != 0)
-		error = kui_text_open(&app->mono, MAIN_FONT, MAIN_FONT_FALLBACK);
+		error = kl_text_open(&app->mono, MAIN_FONT, MAIN_FONT_FALLBACK);
 	if (error != 0)
 		return -1;
 
@@ -479,11 +479,11 @@ main_close(
 	if (app->frame_callback != NULL)
 		wl_callback_destroy(app->frame_callback);
 	if (app->titlebar != NULL)
-		keiland_titlebar_destroy(app->titlebar);
-	kui_text_close(&app->sans);
-	kui_text_close(&app->mono);
+		kl_titlebar_destroy(app->titlebar);
+	kl_text_close(&app->sans);
+	kl_text_close(&app->mono);
 	if (app->window != NULL)
-		kui_window_close(app->window);
+		kl_window_close(app->window);
 	app->window = NULL;
 }
 
@@ -495,30 +495,30 @@ main_titlebar(
 	unsigned range;
 
 	/* A compositor without the titlebar presentation leaves the plain title. */
-	app->titlebar = keiland_titlebar_create(app->display, kui_window_toplevel(app->window), &main_titlebar_listener, app);
+	app->titlebar = kl_titlebar_create(app->display, kl_window_toplevel(app->window), &main_titlebar_listener, app);
 	if (app->titlebar == NULL) {
 		printf("ZMON TITLEBAR none errno=%d\n", errno);
 		return;
 	}
 
 	/* The four ranges, the current one checked. */
-	(void)keiland_titlebar_begin(app->titlebar);
-	(void)keiland_titlebar_set_mode(app->titlebar, KEILAND_TITLEBAR_CONTROLS);
+	(void)kl_titlebar_begin(app->titlebar);
+	(void)kl_titlebar_set_mode(app->titlebar, KL_TITLEBAR_CONTROLS);
 	for (range = 0; range < SM_RANGES; range++) {
-		(void)keiland_titlebar_add_control(app->titlebar, MAIN_CONTROL_RANGE + range, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_NORMAL,
+		(void)kl_titlebar_add_control(app->titlebar, MAIN_CONTROL_RANGE + range, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL,
 						   0U, main_range_labels[range]);
-		(void)keiland_titlebar_set_control_state(app->titlebar, MAIN_CONTROL_RANGE + range, 1, range == app->range);
+		(void)kl_titlebar_set_control_state(app->titlebar, MAIN_CONTROL_RANGE + range, 1, range == app->range);
 	}
 
 	/* Shown together. */
-	(void)keiland_titlebar_commit(app->titlebar);
+	(void)kl_titlebar_commit(app->titlebar);
 }
 
 /* A titlebar control was chosen: a time range. */
 static void
 main_control_activated(
 	void *data,
-	struct keiland_titlebar *titlebar,
+	struct kl_titlebar *titlebar,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -555,7 +555,7 @@ main_frame_done(
 	app->frame_allowed = 1;
 
 	/* The compositor's answer time for the frame report. */
-	app->callback_us += kui_clock_us() - app->frame_asked_us;
+	app->callback_us += kl_clock_us() - app->frame_asked_us;
 	app->callback_count++;
 
 	/* A hidden window that shows again says so. */
@@ -576,7 +576,7 @@ main_now(
 		return app->fixed_ms;
 
 	/* Succeeded: the time since the start (after the history the simulation filled). */
-	return (kui_clock_us() - app->start_us) / 1000U + app->clock_offset_ms;
+	return (kl_clock_us() - app->start_us) / 1000U + app->clock_offset_ms;
 }
 
 /* Takes every frame the source has due, into the history, the rules and the events. */
@@ -648,31 +648,31 @@ static void
 main_input(
 	struct sm_app *app)
 {
-	struct kui_window_event event;
+	struct kl_window_event event;
 	int status;
 	int took;
 
 	/* Each input queued. */
 	for (;;) {
-		took = kui_window_take(app->window, &event);
+		took = kl_window_take(app->window, &event);
 		if (!took)
 			break;
 
 		/* Each kind. */
 		switch (event.kind) {
-		case KUI_WINDOW_RESIZE:
+		case KL_WINDOW_RESIZE:
 			status = main_resize(app);
 			if (status != 0)
 				app->quit = 1;
 			break;
-		case KUI_WINDOW_CLOSE:
+		case KL_WINDOW_CLOSE:
 			app->quit = 1;
 			break;
-		case KUI_WINDOW_KEY:
+		case KL_WINDOW_KEY:
 			/* Ctrl+Q ends the monitor; every other key is the plates'. */
 			if (event.pressed &&
 			    event.code == MAIN_KEY_Q &&
-			    (event.modifiers & KUI_MOD_CTRL) != 0U) {
+			    (event.modifiers & KL_MOD_CTRL) != 0U) {
 				app->quit = 1;
 				break;
 			}
@@ -699,7 +699,7 @@ main_resize(
 	VkResult result;
 
 	/* The size the compositor gave. */
-	kui_window_size(app->window, &width, &height);
+	kl_window_size(app->window, &width, &height);
 	if (width == 0U || height == 0U)
 		return 0;
 	app->width = width;
@@ -760,17 +760,17 @@ main_draw(
 		/* Nothing moves, or its next frame is not due yet. */
 		if (!moving)
 			return 0;
-		now_us = kui_clock_us();
+		now_us = kl_clock_us();
 		if (now_us < app->next_frame_us)
 			return 0;
 	}
 
 	/* The scene, timed for the frame report. */
-	before_us = kui_clock_us();
+	before_us = kl_clock_us();
 	error = sm_scene_build(app, now);
 	if (error != 0)
 		return -1;
-	app->build_us += kui_clock_us() - before_us;
+	app->build_us += kl_clock_us() - before_us;
 
 	/* The next frame waits for the compositor's callback for this one, asked before the present commits it. */
 	app->frame_callback = wl_surface_frame(app->surface);
@@ -778,7 +778,7 @@ main_draw(
 		(void)wl_callback_add_listener(app->frame_callback, &main_frame_listener, app);
 		app->frame_allowed = 0;
 		app->frame_asked_ms = now;
-		app->frame_asked_us = kui_clock_us();
+		app->frame_asked_us = kl_clock_us();
 	}
 
 	/* The frame; an outdated swapchain or a lost surface is made again and the frame drawn next time. */
@@ -814,7 +814,7 @@ main_draw(
 	app->frame_times.record_us += times.record_us;
 	app->frame_times.submit_us += times.submit_us;
 	app->frame_times.present_us += times.present_us;
-	app->next_frame_us = kui_clock_us() + 1000000U / app->fps;
+	app->next_frame_us = kl_clock_us() + 1000000U / app->fps;
 	app->dirty = 0;
 
 	/* Succeeded: the frame is drawn. */
@@ -859,7 +859,7 @@ main_timeout(
 	if (app->frame_allowed &&
 	    app->have_frame &&
 	    app->visible) {
-		now_us = kui_clock_us();
+		now_us = kl_clock_us();
 		if (app->next_frame_us <= now_us)
 			return 0;
 		if ((app->next_frame_us - now_us) / 1000U < (uint64_t)wait)
@@ -889,7 +889,7 @@ main_reports(
 	UNUSED_PARAMETER(now);
 
 	/* The frame rate and the mean wait for the GPU since the last report. */
-	now_us = kui_clock_us();
+	now_us = kl_clock_us();
 	if (last_us == 0U)
 		last_us = now_us;
 	if (now_us >= last_us + (uint64_t)MAIN_FRAME_REPORT_MS * 1000U) {

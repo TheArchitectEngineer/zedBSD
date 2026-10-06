@@ -10,19 +10,19 @@
  * one library the desktop's applications draw their parts with, so that a
  * button, a list or a scroll looks and feels the same in every one of them.
  *
- * The first layer (KUI_VERSION 1) is the drawing: a CPU canvas of
+ * The first layer (libkeiui's version 1) is the drawing: a CPU canvas of
  * premultiplied BGRA pixels, the text drawn on it from TrueType fonts, the
  * icons made of its shapes, and the theme -- the colours and sizes of the
  * Kei look.  It began as the file manager's drawing surface (Files'
  * canvas.c, text.c and icons.c) and Settings' line pictures, moved here
  * unchanged so that an application moved onto the library draws the same
- * pixels as before.  The second (KUI_VERSION 2) is the scroll, the input
+ * pixels as before.  The second (libkeiui's version 2) is the scroll, the input
  * that finds which part of a frame a pointer, a wheel or a finger meant,
- * and the touch of a view of editable text.  The third (KUI_VERSION 3) is
+ * and the touch of a view of editable text.  The third (libkeiui's version 3) is
  * the window: a Wayland toplevel whose input arrives as a queue of
  * events, whose CPU-drawn frames are shown through Vulkan or shared
  * memory, and which holds the clipboard and the primary selection.  The
- * fourth (KUI_VERSION 4) is the widgets: buttons, switches, sliders, text
+ * fourth (libkeiui's version 4) is the widgets: buttons, switches, sliders, text
  * fields, lists, sidebars, cards and their rows, dialogs, chips and
  * progress bars, drawn in the Kei look of Files and Settings, and the
  * keyboard's focus among them.
@@ -315,7 +315,7 @@ struct kl_theme {
 	unsigned text_title;
 
 	/*
-	 * KUI_VERSION 4 (Settings' values, plan/ws089): a card within a page
+	 * libkeiui's version 4 (Settings' values, plan/ws089): a card within a page
 	 * and its edge, the line between a card's rows, a control's ground and
 	 * edge, a switch's track when off, good and bad news, a control's
 	 * height, and a switch's size.
@@ -350,7 +350,7 @@ void kl_icon_file(struct kl_canvas *canvas, struct kl_text *text, float x, float
 void kl_icon_tag(struct kl_canvas *canvas, float cx, float cy, float radius, kl_color color);
 
 /*
- * The scroll (scroll.c, KUI_VERSION 2): the state of one part of a window
+ * The scroll (scroll.c, libkeiui's version 2): the state of one part of a window
  * whose content is larger than the part, which an application keeps and
  * draws its content at (x, y) of.
  *
@@ -448,7 +448,7 @@ double kl_scroll_limit_y(const struct kl_scroll *scroll);
 int kl_scroll_draw_bars(const struct kl_scroll *scroll, struct kl_canvas *canvas, const struct kl_rect *viewport, const struct kl_theme *theme, uint64_t now_us);
 
 /*
- * The overlay scroll bar (scroll-bar.c, KUI_VERSION 12, ws127-p002): the
+ * The overlay scroll bar (scroll-bar.c, libkeiui's version 12, ws127-p002): the
  * vertical bar of a view, drawn over its content's right edge the way
  * macOS draws one (the user's choice of 2026-10-02).  It comes out thin
  * while the content moves, grows thick (with a faint track) while the
@@ -513,7 +513,7 @@ int kl_scroll_bar_busy(const struct kl_scroll_bar *bar, uint64_t now_us);
 int kl_scroll_bar_draw(const struct kl_scroll_bar *bar, struct kl_canvas *canvas, const struct kl_rect *viewport, double content, double offset, uint64_t now_us);
 
 /*
- * The keys (input.c, KUI_VERSION 2).  zdesktop forwards evdev key codes
+ * The keys (input.c, libkeiui's version 2).  zdesktop forwards evdev key codes
  * with no keymap; the library carries the US layout, as the desktop's
  * programs do, until an input method arrives (WS095).
  */
@@ -542,7 +542,7 @@ int kl_scroll_bar_draw(const struct kl_scroll_bar *bar, struct kl_canvas *canvas
 uint32_t kl_key_character(uint32_t key, unsigned modifiers);
 
 /*
- * The touch of a view of editable text (text-touch.c, KUI_VERSION 2,
+ * The touch of a view of editable text (text-touch.c, libkeiui's version 2,
  * plan/ws090/design.md section 6.1): in a text editor's body and a text
  * field, one finger's drag selects and two fingers scroll.
  *
@@ -622,7 +622,7 @@ unsigned kl_text_touch_take(struct kl_text_touch *touch);
 void kl_text_touch_draw_handles(const struct kl_text_touch *touch, struct kl_canvas *canvas, double origin_x, double origin_y, const struct kl_theme *theme);
 
 /*
- * The input of a window (ui.c, KUI_VERSION 2, design section 4): which
+ * The input of a window (ui.c, libkeiui's version 2, design section 4): which
  * part of a frame a pointer, the wheel or a finger meant.
  *
  * While a frame is drawn, each part that takes input is recorded: a
@@ -653,7 +653,7 @@ struct kl_ui;
 #define KL_HIT_CLICKED	4U	/* pressed and released on it since the last frame */
 #define KL_HIT_DOUBLE		8U	/* the click was the second of a double click or tap */
 #define KL_HIT_FOCUSED	16U	/* it has the keyboard's focus (a widget that takes the keyboard) */
-#define KL_HIT_TOUCHED	32U	/* KUI_VERSION 5: the click was a finger's tap */
+#define KL_HIT_TOUCHED	32U	/* libkeiui's version 5: the click was a finger's tap */
 
 /* The input no part took. */
 #define KL_EVENT_PRESS		1U
@@ -712,7 +712,7 @@ int kl_ui_drag_offset(struct kl_ui *ui, uint64_t now_us, double *dx, double *dy)
 
 /*
  * The window (window.c, present.c, present-shm.c, clipboard.c,
- * primary.c; KUI_VERSION 3, plan/ws090/design.md section 5): an
+ * primary.c; libkeiui's version 3, plan/ws090/design.md section 5): an
  * xdg-shell toplevel of its own connection, its seat's input, the frames
  * the application draws on the CPU, and the clipboard and the primary
  * selection.
@@ -765,7 +765,7 @@ struct xdg_toplevel;
 #define KL_WINDOW_POST		13U
 
 /*
- * KUI_VERSION 6: the text an input method or zdesktop's on-screen keyboard
+ * libkeiui's version 6: the text an input method or zdesktop's on-screen keyboard
  * sends through the text input (text-input-unstable-v3), while the window
  * asks for it (kl_window_text_input): text to insert at the caret in place
  * of the selection (text), the text being composed to show at the caret
@@ -804,7 +804,7 @@ struct xdg_toplevel;
  * What a window is made with.  Any pointer may be NULL: display (the
  * WAYLAND_DISPLAY one), title and application (the app_id).  width and
  * height are the size asked for until the compositor gives one.
- * fullscreen (KUI_VERSION 11) asks for the full screen before the window
+ * fullscreen (libkeiui's version 11) asks for the full screen before the window
  * is first configured, so that its first configure is the full screen's.
  * role and token (KL_VERSION 46) make the desktop's surface instead.
  */
@@ -835,10 +835,10 @@ struct kl_window_options {
  * (surface pixels), a button's or a key's code and whether it is pressed
  * (a focus: 1 when it came), whether a key is a repeat, the modifiers held
  * (KL_MOD_*), the wheel's distance in pixels, a finger's id and the time
- * it happened (a finger's, and since KUI_VERSION 11 the pointer's motions and
+ * it happened (a finger's, and since libkeiui's version 11 the pointer's motions and
  * buttons, from the compositor's time; otherwise when it was read), when it
  * was read, and its serial (a press's, for a popup or
- * a selection); for the text input's (KUI_VERSION 6), its text, the
+ * a selection); for the text input's (libkeiui's version 6), its text, the
  * composed text's cursor, and the bytes to delete around the caret; for a
  * pen tablet's (KL_VERSION 44), its tool (KL_TABLET_*), its barrel buttons
  * held (KL_TABLET_BUTTON_*), its pressure (0 to 1, -1 for a tool without
@@ -898,7 +898,7 @@ void kl_window_text_cursor(struct kl_window *window, int x, int y, int width, in
 void kl_window_select(struct kl_window *window, const char *text, size_t length);
 
 /*
- * KUI_VERSION 7 (ws102-p015, plan/ws102/design.md section 2.8): the
+ * libkeiui's version 7 (ws102-p015, plan/ws102/design.md section 2.8): the
  * on-screen keyboard's inset.  zdesktop tells a window how much of it the
  * keyboard covers, in the window's pixels from its right edge (the flick
  * panel's column) and from its bottom edge (the QWERTY row), when the
@@ -921,7 +921,7 @@ void kl_window_on_keyboard_inset(struct kl_window *window, kl_window_keyboard_in
 void kl_window_keyboard_inset(const struct kl_window *window, int *right, int *bottom);
 
 /*
- * KUI_VERSION 8 (ws102-p017, plan/ws102/design.md section 2.10): the
+ * libkeiui's version 8 (ws102-p017, plan/ws102/design.md section 2.10): the
  * editing operations the on-screen keyboard's buttons ask for.  A window
  * tells zdesktop it carries all of them out and its state, and hears them.
  * By default each becomes the keys it stands for, queued as the window's
@@ -944,7 +944,7 @@ int kl_window_selecting(const struct kl_window *window);
 size_t kl_window_paste_primary(struct kl_window *window, char *text, size_t size);
 
 /*
- * KUI_VERSION 10 (ws090-p008, Image Viewer): the full screen.  An
+ * libkeiui's version 10 (ws090-p008, Image Viewer): the full screen.  An
  * application asks the compositor for it (or out of it), and learns from
  * the configure whether the window is fullscreen.
  */
@@ -965,7 +965,7 @@ int kl_window_fullscreen(const struct kl_window *window);
 int kl_window_set_content_type(struct kl_window *window, unsigned type);
 
 /*
- * KUI_VERSION 11 (ws090-p011, Terminal): an application that waits for
+ * libkeiui's version 11 (ws090-p011, Terminal): an application that waits for
  * other descriptors too (a terminal's shells) waits for them with the
  * compositor, at most KL_WINDOW_FDS_MAX of them; ready[i] says fds[i] has
  * something to read or has hung up.
@@ -1349,7 +1349,7 @@ int kl_window_vulkan_surface(struct kl_window *window, VkInstance instance, VkSu
 #endif
 
 /*
- * The widgets (widgets.c, field.c, list.c, cards.c; KUI_VERSION 4,
+ * The widgets (widgets.c, field.c, list.c, cards.c; libkeiui's version 4,
  * plan/ws090/design.md section 3): each is drawn by one call during a
  * frame, which also records where it is for the input and reports what
  * the input did to it since the last frame (the immediate way of section
@@ -1387,7 +1387,7 @@ struct kl_style {
 /* What a list reports (bits). */
 #define KL_LIST_SELECTED	1U
 #define KL_LIST_ACTIVATED	2U
-#define KL_LIST_TOUCHED	4U	/* KUI_VERSION 5: the row was chosen by a finger's tap */
+#define KL_LIST_TOUCHED	4U	/* libkeiui's version 5: the row was chosen by a finger's tap */
 
 /* The longest text a field holds, with its NUL. */
 #define KL_FIELD_MAX		512U
@@ -1501,7 +1501,7 @@ void kl_chip(const struct kl_style *style, int centre_x, int bottom, const char 
 void kl_progress(const struct kl_style *style, const struct kl_rect *rect, double fraction, uint64_t now_us);
 
 /*
- * The file chooser (KUI_VERSION 5; libkeiland's keiland_file_chooser of
+ * The file chooser (libkeiui's version 5; libkeiland's own file chooser of
  * KL_VERSION 12, moved here by ws090-p006 and made of the widgets):
  * the Open and Save As window every application shares.  It shows the
  * folders and files of a folder, the sidebar's places (Recent, Home and

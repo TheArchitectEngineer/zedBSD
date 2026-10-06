@@ -47,13 +47,13 @@ static const struct atlas_style atlas_styles[SM_STYLES] = {
 int
 sm_atlas_build(
 	struct sm_atlas *atlas,
-	struct kui_text *sans,
-	struct kui_text *mono,
+	struct kl_text *sans,
+	struct kl_text *mono,
 	float scale)
 {
-	struct kui_text_line line;
-	struct kui_canvas canvas;
-	struct kui_text *text;
+	struct kl_text_line line;
+	struct kl_canvas canvas;
+	struct kl_text *text;
 	struct sm_glyph *glyph;
 	unsigned pixels[SM_STYLES];
 	unsigned style;
@@ -86,14 +86,14 @@ sm_atlas_build(
 		pixels[style] = (unsigned)(atlas_styles[style].pixels * scale + 0.5f);
 		if (pixels[style] < 6U)
 			pixels[style] = 6U;
-		kui_text_metrics(text, pixels[style], &line);
+		kl_text_metrics(text, pixels[style], &line);
 		atlas->ascent[style] = line.ascent;
 		atlas->line[style] = line.ascent + line.descent;
 
 		/* Each character's cell. */
 		for (index = 0; index < SM_GLYPH_COUNT; index++) {
 			character = (char)(SM_GLYPH_FIRST + index);
-			width = kui_text_width(text, &character, 1, pixels[style], atlas_styles[style].bold);
+			width = kl_text_width(text, &character, 1, pixels[style], atlas_styles[style].bold);
 			glyph = &atlas->glyphs[style][index];
 			glyph->advance = width;
 			glyph->width = width + 2 * ATLAS_MARGIN;
@@ -122,7 +122,7 @@ sm_atlas_build(
 		return ENOMEM;
 
 	/* The canvas over them. */
-	error = kui_canvas_init(&canvas, atlas->pixels, (size_t)atlas->width, atlas->width, atlas->height);
+	error = kl_canvas_init(&canvas, atlas->pixels, (size_t)atlas->width, atlas->width, atlas->height);
 	if (error != 0) {
 		sm_atlas_release(atlas);
 		return error;
@@ -136,13 +136,13 @@ sm_atlas_build(
 		for (index = 0; index < SM_GLYPH_COUNT; index++) {
 			character = (char)(SM_GLYPH_FIRST + index);
 			glyph = &atlas->glyphs[style][index];
-			(void)kui_text_draw(text, &canvas, glyph->x + ATLAS_MARGIN, glyph->y + ATLAS_MARGIN + atlas->ascent[style],
-					    &character, 1, pixels[style], atlas_styles[style].bold, KUI_RGB(0xffffff));
+			(void)kl_text_draw(text, &canvas, glyph->x + ATLAS_MARGIN, glyph->y + ATLAS_MARGIN + atlas->ascent[style],
+					    &character, 1, pixels[style], atlas_styles[style].bold, KL_RGB(0xffffff));
 		}
 	}
 
 	/* The canvas it was drawn on goes. */
-	kui_canvas_release(&canvas);
+	kl_canvas_release(&canvas);
 
 	/* Succeeded: the atlas is drawn. */
 	return 0;

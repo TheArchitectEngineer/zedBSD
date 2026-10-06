@@ -167,7 +167,7 @@ keiui_theme_of(
 }
 
 /*
- * Chooses a program's colour by the appearance told last (keiland-ui.h).
+ * Chooses a program's colour by the appearance told last (keiland.h).
  */
 kl_color
 kl_theme_choose(

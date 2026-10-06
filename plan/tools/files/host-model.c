@@ -580,16 +580,16 @@ main(
 
 	/* 14. The recent list (libkeiland): newest first, a path once, removal. */
 	{
-		static struct keiland_recent_item items[8];
+		static struct kl_recent_item items[8];
 
 		snprintf(path, sizeof(path), "%s/src/Report.pdf", root);
-		check(keiland_recent_add(path, "test") == 0, "recent: add");
+		check(kl_recent_add(path, "test") == 0, "recent: add");
 		snprintf(other, sizeof(other), "%s/src/Report copy.pdf", root);
-		check(keiland_recent_add(other, "test") == 0, "recent: add another");
-		check(keiland_recent_add(path, "test") == 0, "recent: add the first again");
-		check(keiland_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
-		check(keiland_recent_remove(path) == 0, "recent: remove");
-		check(keiland_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
+		check(kl_recent_add(other, "test") == 0, "recent: add another");
+		check(kl_recent_add(path, "test") == 0, "recent: add the first again");
+		check(kl_recent_list(items, 8, &count) == 0 && count == 2 && strcmp(items[0].path, path) == 0 && strcmp(items[1].path, other) == 0, "recent: newest first, once each");
+		check(kl_recent_remove(path) == 0, "recent: remove");
+		check(kl_recent_list(items, 8, &count) == 0 && count == 1 && strcmp(items[0].path, other) == 0, "recent: the other is left");
 
 		/* 15. (Tags, removed in ws127-p012.) */
 	}

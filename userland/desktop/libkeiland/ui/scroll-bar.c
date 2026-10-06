@@ -6,7 +6,7 @@
  */
 
 /*
- * The overlay scroll bar (KUI_VERSION 12, ws127-p002): the vertical bar a
+ * The overlay scroll bar (libkeiui's version 12, ws127-p002): the vertical bar a
  * view draws over its content's right edge, as macOS draws one (the user's
  * choice of 2026-10-02, "B の MacOS 風です").
  *

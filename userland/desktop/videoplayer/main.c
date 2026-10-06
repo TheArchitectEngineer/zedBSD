@@ -25,7 +25,6 @@
 #include "videoplayer.h"
 
 #include <keiland.h>
-#include <keiui.h>
 
 
 #include "userland/desktop/paths.h"

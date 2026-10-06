@@ -27,7 +27,6 @@
  */
 
 #include <keiland.h>
-#include <keiui.h>
 
 #include "userland/desktop/paths.h"
 
@@ -111,20 +110,20 @@ struct demo {
 	/* The application, its window and its input. */
 	struct kl_app *app;
 	struct kl_window *window;
-	struct kui_ui *ui;
+	struct kl_ui *ui;
 
 	/* The frame: its pixels, its size, the canvas over them, the text and the style. */
 	uint32_t *pixels;
 	uint32_t width;
 	uint32_t height;
-	struct kui_canvas canvas;
+	struct kl_canvas canvas;
 	int canvas_made;
-	struct kui_text text;
-	struct kui_style style;
+	struct kl_text text;
+	struct kl_style style;
 
 	/* The panels of the last frame. */
-	struct kui_rect sidebar;
-	struct kui_rect content;
+	struct kl_rect sidebar;
+	struct kl_rect content;
 
 	/* The page shown and the controls' values. */
 	int page;
@@ -132,11 +131,11 @@ struct demo {
 	int bluetooth;
 	int working;
 	double volume;
-	struct kui_field name;
-	struct kui_field password;
+	struct kl_field name;
+	struct kl_field password;
 
 	/* The list, and the row activated last (-1 for none). */
-	struct kui_list list;
+	struct kl_list list;
 	long activated;
 
 	/* The dialog: shown, and the last answer (-1 for none); the chip until a time. */
@@ -154,7 +153,7 @@ struct demo {
 
 /* The pages' names and icons in the sidebar. */
 static const char *const demo_page_names[DEMO_PAGES] = { "Controls", "List", "Dialogs" };
-static const enum kui_icon demo_page_icons[DEMO_PAGES] = { KUI_ICON_TILES, KUI_ICON_LIST, KUI_ICON_BELL };
+static const enum kl_icon demo_page_icons[DEMO_PAGES] = { KL_ICON_TILES, KL_ICON_LIST, KL_ICON_BELL };
 
 /* The dialog's buttons: the main one first, Cancel last. */
 static const char *const demo_dialog_labels[] = { "Delete", "Cancel" };
@@ -187,7 +186,7 @@ static const char *demo_value(const char *argument, const char *name);
 static int demo_number(const char *text, unsigned maximum, unsigned *value);
 static void demo_log(const char *format, ...);
 static int demo_loop(struct demo *demo, const struct demo_options *options);
-static void demo_event(struct demo *demo, const struct kui_window_event *event);
+static void demo_event(struct demo *demo, const struct kl_window_event *event);
 static void demo_action(struct demo *demo, uint32_t action, int32_t id);
 static void demo_show_page(struct demo *demo, int page);
 static void demo_states(struct demo *demo);
@@ -201,7 +200,7 @@ static void demo_draw_controls(struct demo *demo);
 static void demo_draw_list(struct demo *demo);
 static void demo_draw_dialogs(struct demo *demo, uint64_t now_us);
 static void demo_glass_refresh(struct demo *demo);
-static int demo_value_x(const struct kui_rect *card);
+static int demo_value_x(const struct kl_rect *card);
 
 /*
  * Runs the sampler.
@@ -211,7 +210,7 @@ main(
 	int argc,
 	char **argv)
 {
-	struct kui_window_options window_options;
+	struct kl_window_options window_options;
 	struct kl_app_options app_options;
 	struct demo_options options;
 	static struct demo demo;
@@ -226,7 +225,7 @@ main(
 	}
 
 	/* The font; without it the widgets show no words. */
-	error = kui_text_open(&demo.text, options.font, options.fallback);
+	error = kl_text_open(&demo.text, options.font, options.fallback);
 	if (error != 0)
 		demo_log("FONT missing path=%s error=%d", options.font, error);
 
@@ -237,7 +236,7 @@ main(
 	demo.app = kl_app_open(&app_options);
 	if (demo.app == NULL) {
 		fprintf(stderr, "KUIDEMO FAILED operation=app error=%d\n", errno);
-		kui_text_close(&demo.text);
+		kl_text_close(&demo.text);
 		return 1;
 	}
 
@@ -251,18 +250,18 @@ main(
 	if (demo.window == NULL) {
 		fprintf(stderr, "KUIDEMO FAILED operation=window error=%d\n", errno);
 		kl_app_close(demo.app);
-		kui_text_close(&demo.text);
+		kl_text_close(&demo.text);
 		return 1;
 	}
 
 	/* The input and the list's state. */
-	demo.ui = kui_ui_create();
-	error = kui_list_init(&demo.list);
+	demo.ui = kl_ui_create();
+	error = kl_list_init(&demo.list);
 	if (demo.ui == NULL || error != 0) {
 		fprintf(stderr, "KUIDEMO FAILED operation=memory\n");
-		kui_ui_destroy(demo.ui);
+		kl_ui_destroy(demo.ui);
 		kl_app_close(demo.app);
-		kui_text_close(&demo.text);
+		kl_text_close(&demo.text);
 		return 1;
 	}
 
@@ -274,28 +273,28 @@ main(
 
 	/* The widgets' first values: on glass when the frames are see-through (the first panels say whether zdesktop has it). */
 	demo.style.text = &demo.text;
-	demo.style.theme = kui_theme_default();
-	demo.style.glass = kui_window_see_through(demo.window);
+	demo.style.theme = kl_theme_default();
+	demo.style.glass = kl_window_see_through(demo.window);
 	demo_states(&demo);
 	demo.wifi = 1;
 	demo.volume = 40.0;
 	demo.activated = -1;
 	demo.answer = -1;
 	demo.password.secret = 1;
-	kui_field_set(&demo.name, "Kei");
+	kl_field_set(&demo.name, "Kei");
 	demo_log("GLASS glass=%d", demo.style.glass);
 
 	/* The loop, until the window closes. */
 	status = demo_loop(&demo, &options);
 
 	/* Everything goes (the application closes its window). */
-	kui_list_release(&demo.list);
-	kui_ui_destroy(demo.ui);
+	kl_list_release(&demo.list);
+	kl_ui_destroy(demo.ui);
 	if (demo.canvas_made)
-		kui_canvas_release(&demo.canvas);
+		kl_canvas_release(&demo.canvas);
 	free(demo.pixels);
 	kl_app_close(demo.app);
-	kui_text_close(&demo.text);
+	kl_text_close(&demo.text);
 
 	/* Reports how the run ended. */
 	if (status != 0)
@@ -320,7 +319,7 @@ demo_parse(
 	options->fallback = DEMO_FALLBACK_FONT;
 	options->width = DEMO_WIDTH;
 	options->height = DEMO_HEIGHT;
-	options->present = KUI_PRESENT_VULKAN;
+	options->present = KL_PRESENT_VULKAN;
 
 	/* Each argument. */
 	for (index = 1; index < argc; index++) {
@@ -375,7 +374,7 @@ demo_parse(
 		/* Frames in shared memory instead of Vulkan. */
 		status = strcmp(argv[index], "--shm");
 		if (status == 0) {
-			options->present = KUI_PRESENT_SHM;
+			options->present = KL_PRESENT_SHM;
 			continue;
 		}
 
@@ -473,7 +472,7 @@ demo_loop(
 	demo_log("READY width=%u height=%u", demo->width, demo->height);
 
 	/* Each round: input, and a frame when something changed or moves. */
-	started = kui_clock_us();
+	started = kl_clock_us();
 	for (;;) {
 		/* Waits for the compositor, or a frame's time while something moves (a held key's repeat is the application's). */
 		timeout = DEMO_IDLE_MS;
@@ -488,7 +487,7 @@ demo_loop(
 		}
 
 		/* Every event: the window's inputs go to the widgets, its actions to the pages. */
-		now = kui_clock_us();
+		now = kl_clock_us();
 		for (;;) {
 			taken = kl_app_take(demo->app, &event);
 			if (!taken)
@@ -542,58 +541,58 @@ demo_loop(
 static void
 demo_event(
 	struct demo *demo,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* Any input may change the page. */
 	demo->dirty = 1;
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
-		(void)kui_ui_pointer_motion(demo->ui, event->x, event->y);
+	case KL_WINDOW_MOTION:
+		(void)kl_ui_pointer_motion(demo->ui, event->x, event->y);
 		break;
-	case KUI_WINDOW_LEAVE:
-		(void)kui_ui_pointer_leave(demo->ui);
+	case KL_WINDOW_LEAVE:
+		(void)kl_ui_pointer_leave(demo->ui);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The main button goes to the widgets; a right press opens the context menu of the pages. */
-		(void)kui_ui_pointer_motion(demo->ui, event->x, event->y);
-		if (event->code == KUI_BUTTON_LEFT)
-			(void)kui_ui_pointer_button(demo->ui, event->pressed, event->arrival_us);
-		if (event->code == KUI_BUTTON_RIGHT && event->pressed)
+		(void)kl_ui_pointer_motion(demo->ui, event->x, event->y);
+		if (event->code == KL_BUTTON_LEFT)
+			(void)kl_ui_pointer_button(demo->ui, event->pressed, event->arrival_us);
+		if (event->code == KL_BUTTON_RIGHT && event->pressed)
 			demo_log("CONTEXT error=%d", kl_window_popup_menu(demo->window, demo_context, sizeof(demo_context) / sizeof(demo_context[0]), (int)event->x, (int)event->y));
 		break;
-	case KUI_WINDOW_AXIS:
-		(void)kui_ui_wheel(demo->ui, event->dx, event->dy, event->arrival_us);
+	case KL_WINDOW_AXIS:
+		(void)kl_ui_wheel(demo->ui, event->dx, event->dy, event->arrival_us);
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		/* Ctrl+Q quits; the other keys go to the widgets. */
-		if (event->pressed && event->code == DEMO_KEY_Q && (event->modifiers & KUI_MOD_CTRL) != 0U) {
+		if (event->pressed && event->code == DEMO_KEY_Q && (event->modifiers & KL_MOD_CTRL) != 0U) {
 			demo->quit = 1;
 			break;
 		}
 
 		/* Any other key goes to the widgets. */
-		(void)kui_ui_key(demo->ui, event->code, event->pressed, event->modifiers);
+		(void)kl_ui_key(demo->ui, event->code, event->pressed, event->modifiers);
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		demo_log("TOUCH down id=%d x=%.0f y=%.0f", (int)event->id, event->x, event->y);
-		(void)kui_ui_touch_down(demo->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
+		(void)kl_ui_touch_down(demo->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
-		(void)kui_ui_touch_motion(demo->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
+	case KL_WINDOW_TOUCH_MOTION:
+		(void)kl_ui_touch_motion(demo->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		demo_log("TOUCH up id=%d", (int)event->id);
-		(void)kui_ui_touch_up(demo->ui, event->id, event->time_us, event->arrival_us);
+		(void)kl_ui_touch_up(demo->ui, event->id, event->time_us, event->arrival_us);
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
-		(void)kui_ui_touch_cancel(demo->ui, event->arrival_us);
+	case KL_WINDOW_TOUCH_CANCEL:
+		(void)kl_ui_touch_cancel(demo->ui, event->arrival_us);
 		break;
-	case KUI_WINDOW_RESIZE:
+	case KL_WINDOW_RESIZE:
 		demo->resized = 1;
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		demo->closed = 1;
 		break;
 	default:
@@ -678,9 +677,9 @@ demo_frame(
 	/* Tries until the frame is shown. */
 	for (stale = 0; stale < DEMO_STALE_LIMIT; stale++) {
 		/* The frame, its glass panels, and the frame shown. */
-		demo_draw(demo, kui_clock_us());
+		demo_draw(demo, kl_clock_us());
 		demo_glass_refresh(demo);
-		status = kui_window_present(demo->window, demo->pixels, (size_t)demo->width);
+		status = kl_window_present(demo->window, demo->pixels, (size_t)demo->width);
 		if (status == 0)
 			return 0;
 
@@ -709,7 +708,7 @@ demo_resize(
 	int status;
 
 	/* The presenter at the window's size. */
-	status = kui_window_present_resize(demo->window, &demo->width, &demo->height);
+	status = kl_window_present_resize(demo->window, &demo->width, &demo->height);
 	if (status != 0) {
 		fprintf(stderr, "KUIDEMO FAILED operation=present error=%d\n", status);
 		return -1;
@@ -744,11 +743,11 @@ demo_canvas_make(
 
 	/* The canvas over it, in place of the old one. */
 	if (demo->canvas_made)
-		kui_canvas_release(&demo->canvas);
+		kl_canvas_release(&demo->canvas);
 	demo->canvas_made = 0;
 	free(demo->pixels);
 	demo->pixels = pixels;
-	status = kui_canvas_init(&demo->canvas, demo->pixels, (size_t)demo->width, (int)demo->width, (int)demo->height);
+	status = kl_canvas_init(&demo->canvas, demo->pixels, (size_t)demo->width, (int)demo->width, (int)demo->height);
 	if (status != 0)
 		return -1;
 	demo->canvas_made = 1;
@@ -764,16 +763,16 @@ demo_draw(
 	struct demo *demo,
 	uint64_t now_us)
 {
-	const struct kui_theme *theme;
-	struct kui_event event;
-	struct kui_rect whole;
+	const struct kl_theme *theme;
+	struct kl_event event;
+	struct kl_rect whole;
 	int moving;
 	int taken;
 
 	/* The frame of the input (a widget that changes the page asks for another), and the panels' places. */
 	theme = demo->style.theme;
 	demo->dirty = 0;
-	kui_ui_begin(demo->ui, now_us);
+	kl_ui_begin(demo->ui, now_us);
 	demo_layout(demo);
 
 	/* The ground: clear on glass (the desktop shows between the panels), else a quiet gradient. */
@@ -782,13 +781,13 @@ demo_draw(
 	whole.width = (int)demo->width;
 	whole.height = (int)demo->height;
 	if (demo->style.glass)
-		kui_canvas_clear(&demo->canvas);
+		kl_canvas_clear(&demo->canvas);
 	else
-		kui_canvas_gradient(&demo->canvas, &whole, theme->ground_top, theme->ground_bottom);
+		kl_canvas_gradient(&demo->canvas, &whole, theme->ground_top, theme->ground_bottom);
 
 	/* The sidebar and the page shown. */
 	demo_draw_sidebar(demo);
-	kui_panel(&demo->style, &demo->content, 0);
+	kl_panel(&demo->style, &demo->content, 0);
 	switch (demo->page) {
 	case DEMO_PAGE_LIST:
 		demo_draw_list(demo);
@@ -802,17 +801,17 @@ demo_draw(
 	}
 
 	/* The frame is drawn; frames go on while the input or a widget moves. */
-	moving = kui_ui_end(demo->ui, now_us);
+	moving = kl_ui_end(demo->ui, now_us);
 	demo->moving = moving;
 	if (demo->chip_until > now_us || (demo->page == DEMO_PAGE_DIALOGS && demo->working))
 		demo->moving = 1;
 
 	/* The keys no widget took are the application's. */
 	for (;;) {
-		taken = kui_ui_take(demo->ui, &event);
+		taken = kl_ui_take(demo->ui, &event);
 		if (!taken)
 			break;
-		if (event.kind == KUI_EVENT_KEY)
+		if (event.kind == KL_EVENT_KEY)
 			demo_log("KEY code=%u modifiers=%u", (unsigned)event.code, event.modifiers);
 	}
 }
@@ -849,14 +848,14 @@ static void
 demo_draw_sidebar(
 	struct demo *demo)
 {
-	struct kui_rect item;
+	struct kl_rect item;
 	int pressed;
 	int index;
 	int top;
 
 	/* The panel and its section. */
-	kui_panel(&demo->style, &demo->sidebar, 1);
-	top = kui_sidebar_section(&demo->style, demo->sidebar.x + 8, demo->sidebar.y + 8, demo->sidebar.width - 16, "Widgets");
+	kl_panel(&demo->style, &demo->sidebar, 1);
+	top = kl_sidebar_section(&demo->style, demo->sidebar.x + 8, demo->sidebar.y + 8, demo->sidebar.width - 16, "Widgets");
 
 	/* Each page; a click shows it (the dialog closes). */
 	for (index = 0; index < DEMO_PAGES; index++) {
@@ -864,7 +863,7 @@ demo_draw_sidebar(
 		item.y = top + index * 30;
 		item.width = demo->sidebar.width - 16;
 		item.height = 30;
-		pressed = kui_sidebar_item(demo->ui, &demo->style, DEMO_ID_PAGES, (uint32_t)index, &item, demo_page_icons[index], demo_page_names[index], index == demo->page);
+		pressed = kl_sidebar_item(demo->ui, &demo->style, DEMO_ID_PAGES, (uint32_t)index, &item, demo_page_icons[index], demo_page_names[index], index == demo->page);
 		if (pressed)
 			demo_show_page(demo, index);
 	}
@@ -875,9 +874,9 @@ static void
 demo_draw_controls(
 	struct demo *demo)
 {
-	const struct kui_theme *theme;
-	struct kui_rect card;
-	struct kui_rect control;
+	const struct kl_theme *theme;
+	struct kl_rect card;
+	struct kl_rect control;
 	char value[32];
 	unsigned changes;
 	int pressed;
@@ -888,96 +887,96 @@ demo_draw_controls(
 
 	/* The page's header. */
 	theme = demo->style.theme;
-	top = kui_header(&demo->style, demo->content.x + 24, demo->content.y + 20, demo->content.width - 48, "Controls", "Buttons, switches, a slider, fields and progress");
+	top = kl_header(&demo->style, demo->content.x + 24, demo->content.y + 20, demo->content.width - 48, "Controls", "Buttons, switches, a slider, fields and progress");
 
 	/* The buttons' card: one of each kind. */
 	card.x = demo->content.x + 16;
 	card.y = top + 16;
 	card.width = demo->content.width - 32;
 	card.height = 104;
-	top = kui_card(&demo->style, &card, "Buttons", NULL);
+	top = kl_card(&demo->style, &card, "Buttons", NULL);
 	control.x = card.x + 20;
 	control.y = top + 4;
 	control.height = theme->control_height;
-	control.width = kui_button_width(&demo->style, "Save");
-	pressed = kui_button(demo->ui, &demo->style, DEMO_ID_SAVE, &control, "Save", KUI_BUTTON_PRIMARY);
+	control.width = kl_button_width(&demo->style, "Save");
+	pressed = kl_button(demo->ui, &demo->style, DEMO_ID_SAVE, &control, "Save", KL_BUTTON_PRIMARY);
 	if (pressed)
 		demo_log("BUTTON save");
 	control.x += control.width + 8;
-	control.width = kui_button_width(&demo->style, "Cancel");
-	pressed = kui_button(demo->ui, &demo->style, DEMO_ID_CANCEL, &control, "Cancel", 0U);
+	control.width = kl_button_width(&demo->style, "Cancel");
+	pressed = kl_button(demo->ui, &demo->style, DEMO_ID_CANCEL, &control, "Cancel", 0U);
 	if (pressed)
 		demo_log("BUTTON cancel");
 	control.x += control.width + 8;
-	control.width = kui_button_width(&demo->style, "Delete");
-	pressed = kui_button(demo->ui, &demo->style, DEMO_ID_DELETE, &control, "Delete", KUI_BUTTON_DANGER);
+	control.width = kl_button_width(&demo->style, "Delete");
+	pressed = kl_button(demo->ui, &demo->style, DEMO_ID_DELETE, &control, "Delete", KL_BUTTON_DANGER);
 	if (pressed)
 		demo_log("BUTTON delete");
 	control.x += control.width + 8;
-	control.width = kui_button_width(&demo->style, "Disabled");
-	(void)kui_button(demo->ui, &demo->style, DEMO_ID_DISABLED, &control, "Disabled", KUI_BUTTON_DISABLED);
+	control.width = kl_button_width(&demo->style, "Disabled");
+	(void)kl_button(demo->ui, &demo->style, DEMO_ID_DISABLED, &control, "Disabled", KL_BUTTON_DISABLED);
 
 	/* The settings' card: a row for each control. */
 	card.y += card.height + 12;
 	card.height = 46 + 5 * 40 + 14;
-	top = kui_card(&demo->style, &card, "Settings", NULL);
+	top = kl_card(&demo->style, &card, "Settings", NULL);
 	value_x = demo_value_x(&card);
 
 	/* Wi-Fi and Bluetooth: switches. */
-	(void)kui_row(&demo->style, card.x, top, card.width, "Wi-Fi", "", 0);
-	changed = kui_switch(demo->ui, &demo->style, DEMO_ID_WIFI, value_x, top + (40 - theme->switch_height) / 2, &demo->wifi, 0U);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Wi-Fi", "", 0);
+	changed = kl_switch(demo->ui, &demo->style, DEMO_ID_WIFI, value_x, top + (40 - theme->switch_height) / 2, &demo->wifi, 0U);
 	if (changed)
 		demo_log("SWITCH wifi on=%d", demo->wifi);
 	top += 40;
-	(void)kui_row(&demo->style, card.x, top, card.width, "Bluetooth", "", 0);
-	changed = kui_switch(demo->ui, &demo->style, DEMO_ID_BLUETOOTH, value_x, top + (40 - theme->switch_height) / 2, &demo->bluetooth, 0U);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Bluetooth", "", 0);
+	changed = kl_switch(demo->ui, &demo->style, DEMO_ID_BLUETOOTH, value_x, top + (40 - theme->switch_height) / 2, &demo->bluetooth, 0U);
 	if (changed)
 		demo_log("SWITCH bluetooth on=%d", demo->bluetooth);
 	top += 40;
 
 	/* The volume: a slider and its value. */
 	snprintf(value, sizeof(value), "%d%%", (int)demo->volume);
-	(void)kui_row(&demo->style, card.x, top, card.width, "Volume", "", 0);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Volume", "", 0);
 	control.x = value_x;
 	control.y = top + 8;
 	control.width = card.x + card.width - 20 - 56 - value_x;
 	control.height = 24;
-	changed = kui_slider(demo->ui, &demo->style, DEMO_ID_VOLUME, &control, 0.0, 100.0, 1.0, &demo->volume);
+	changed = kl_slider(demo->ui, &demo->style, DEMO_ID_VOLUME, &control, 0.0, 100.0, 1.0, &demo->volume);
 	if (changed)
 		demo_log("SLIDER volume=%d", (int)demo->volume);
 	x = control.x + control.width + 12;
-	(void)kui_text_draw(&demo->text, &demo->canvas, x, kui_text_center(14U, top, 40), value, strlen(value), 14U, 0, theme->text_secondary);
+	(void)kl_text_draw(&demo->text, &demo->canvas, x, kl_text_center(14U, top, 40), value, strlen(value), 14U, 0, theme->text_secondary);
 	top += 40;
 
 	/* The name and the password: fields. */
-	(void)kui_row(&demo->style, card.x, top, card.width, "Name", "", 0);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Name", "", 0);
 	control.x = value_x;
 	control.y = top + 4;
 	control.width = card.x + card.width - 20 - value_x;
 	control.height = theme->control_height;
-	changes = kui_field(demo->ui, &demo->style, DEMO_ID_NAME, &control, &demo->name, "Your name");
-	if ((changes & KUI_FIELD_CHANGED) != 0U)
+	changes = kl_field(demo->ui, &demo->style, DEMO_ID_NAME, &control, &demo->name, "Your name");
+	if ((changes & KL_FIELD_CHANGED) != 0U)
 		demo_log("FIELD name text=%s", demo->name.text);
-	if ((changes & KUI_FIELD_SUBMITTED) != 0U)
+	if ((changes & KL_FIELD_SUBMITTED) != 0U)
 		demo_log("FIELD name submitted text=%s", demo->name.text);
-	if ((changes & KUI_FIELD_CANCELLED) != 0U)
+	if ((changes & KL_FIELD_CANCELLED) != 0U)
 		demo_log("FIELD name cancelled");
 	top += 40;
-	(void)kui_row(&demo->style, card.x, top, card.width, "Password", "", 1);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Password", "", 1);
 	control.y = top + 4;
-	changes = kui_field(demo->ui, &demo->style, DEMO_ID_PASSWORD, &control, &demo->password, "Password");
-	if ((changes & KUI_FIELD_CHANGED) != 0U)
+	changes = kl_field(demo->ui, &demo->style, DEMO_ID_PASSWORD, &control, &demo->password, "Password");
+	if ((changes & KL_FIELD_CHANGED) != 0U)
 		demo_log("FIELD password length=%lu", (unsigned long)demo->password.length);
 
 	/* The progress card: the volume's share. */
 	card.y += card.height + 12;
 	card.height = 46 + 40;
-	top = kui_card(&demo->style, &card, "Progress", NULL);
+	top = kl_card(&demo->style, &card, "Progress", NULL);
 	control.x = card.x + 20;
 	control.y = top + 10;
 	control.width = card.width - 40;
 	control.height = 6;
-	kui_progress(&demo->style, &control, demo->volume / 100.0, 0U);
+	kl_progress(&demo->style, &control, demo->volume / 100.0, 0U);
 }
 
 /* Draws the list's page: a hundred rows, what is selected and what was activated. */
@@ -985,12 +984,12 @@ static void
 demo_draw_list(
 	struct demo *demo)
 {
-	const struct kui_theme *theme;
-	struct kui_rect card;
-	struct kui_rect area;
-	struct kui_rect row;
-	kui_color ink;
-	kui_color quiet;
+	const struct kl_theme *theme;
+	struct kl_rect card;
+	struct kl_rect area;
+	struct kl_rect row;
+	kl_color ink;
+	kl_color quiet;
 	char label[64];
 	char status[96];
 	unsigned changes;
@@ -1002,44 +1001,44 @@ demo_draw_list(
 
 	/* The page's header, and what the list reports. */
 	theme = demo->style.theme;
-	top = kui_header(&demo->style, demo->content.x + 24, demo->content.y + 20, demo->content.width - 48, "List", "The arrows, Page Up and Down, Home, End and Enter; a double click");
+	top = kl_header(&demo->style, demo->content.x + 24, demo->content.y + 20, demo->content.width - 48, "List", "The arrows, Page Up and Down, Home, End and Enter; a double click");
 	snprintf(status, sizeof(status), "Selected: %ld   Activated: %ld", demo->list.selected, demo->activated);
-	(void)kui_text_draw(&demo->text, &demo->canvas, demo->content.x + 24, top + 24, status, strlen(status), 13U, 0, theme->text_secondary);
+	(void)kl_text_draw(&demo->text, &demo->canvas, demo->content.x + 24, top + 24, status, strlen(status), 13U, 0, theme->text_secondary);
 
 	/* The card the list stands in. */
 	card.x = demo->content.x + 16;
 	card.y = top + 40;
 	card.width = demo->content.width - 32;
 	card.height = demo->content.y + demo->content.height - 16 - card.y;
-	(void)kui_card(&demo->style, &card, NULL, NULL);
+	(void)kl_card(&demo->style, &card, NULL, NULL);
 	area.x = card.x + 8;
 	area.y = card.y + 8;
 	area.width = card.width - 16;
 	area.height = card.height - 16;
 
 	/* The rows that show: a name, and a size at the right. */
-	changes = kui_list_begin(demo->ui, &demo->style, DEMO_ID_LIST, &area, &demo->list, DEMO_ROWS, &first, &last);
+	changes = kl_list_begin(demo->ui, &demo->style, DEMO_ID_LIST, &area, &demo->list, DEMO_ROWS, &first, &last);
 	for (index = first; index < last; index++) {
-		changes |= kui_list_row(demo->ui, &demo->style, DEMO_ID_LIST, &area, &demo->list, index, &row, &ink);
+		changes |= kl_list_row(demo->ui, &demo->style, DEMO_ID_LIST, &area, &demo->list, index, &row, &ink);
 		snprintf(label, sizeof(label), "Item %u", (unsigned)index + 1U);
-		(void)kui_text_draw(&demo->text, &demo->canvas, row.x + 12, kui_text_center(13U, row.y, row.height), label, strlen(label), 13U, 0, ink);
+		(void)kl_text_draw(&demo->text, &demo->canvas, row.x + 12, kl_text_center(13U, row.y, row.height), label, strlen(label), 13U, 0, ink);
 		snprintf(label, sizeof(label), "%u KB", ((unsigned)index * 37U) % 900U + 4U);
-		width = kui_text_width(&demo->text, label, strlen(label), 13U, 0);
+		width = kl_text_width(&demo->text, label, strlen(label), 13U, 0);
 		quiet = theme->text_secondary;
 		if (ink != theme->text)
 			quiet = ink;
-		(void)kui_text_draw(&demo->text, &demo->canvas, row.x + row.width - 12 - width, kui_text_center(13U, row.y, row.height), label, strlen(label), 13U, 0, quiet);
+		(void)kl_text_draw(&demo->text, &demo->canvas, row.x + row.width - 12 - width, kl_text_center(13U, row.y, row.height), label, strlen(label), 13U, 0, quiet);
 	}
 
 	/* The list ends. */
-	kui_list_end(demo->ui, &demo->style, &area, &demo->list);
+	kl_list_end(demo->ui, &demo->style, &area, &demo->list);
 
 	/* What the list did (the status above it shows it in the next frame). */
 	if (changes != 0U)
 		demo->dirty = 1;
-	if ((changes & KUI_LIST_SELECTED) != 0U)
+	if ((changes & KL_LIST_SELECTED) != 0U)
 		demo_log("LIST selected=%ld", demo->list.selected);
-	if ((changes & KUI_LIST_ACTIVATED) != 0U) {
+	if ((changes & KL_LIST_ACTIVATED) != 0U) {
 		demo->activated = demo->list.selected;
 		demo_log("LIST activated=%ld", demo->activated);
 	}
@@ -1051,9 +1050,9 @@ demo_draw_dialogs(
 	struct demo *demo,
 	uint64_t now_us)
 {
-	const struct kui_theme *theme;
-	struct kui_rect card;
-	struct kui_rect control;
+	const struct kl_theme *theme;
+	struct kl_rect card;
+	struct kl_rect control;
 	const char *answer;
 	int pressed;
 	int changed;
@@ -1063,19 +1062,19 @@ demo_draw_dialogs(
 
 	/* The page's header. */
 	theme = demo->style.theme;
-	top = kui_header(&demo->style, demo->content.x + 24, demo->content.y + 20, demo->content.width - 48, "Dialogs", "A question over the page, a message of a moment, and work going on");
+	top = kl_header(&demo->style, demo->content.x + 24, demo->content.y + 20, demo->content.width - 48, "Dialogs", "A question over the page, a message of a moment, and work going on");
 
 	/* The card: the buttons that ask and tell, and the last answer. */
 	card.x = demo->content.x + 16;
 	card.y = top + 16;
 	card.width = demo->content.width - 32;
 	card.height = 46 + 44 + 3 * 40 + 14;
-	top = kui_card(&demo->style, &card, "Try them", NULL);
+	top = kl_card(&demo->style, &card, "Try them", NULL);
 	control.x = card.x + 20;
 	control.y = top + 4;
 	control.height = theme->control_height;
-	control.width = kui_button_width(&demo->style, "Ask a question");
-	pressed = kui_button(demo->ui, &demo->style, DEMO_ID_ASK, &control, "Ask a question", KUI_BUTTON_PRIMARY);
+	control.width = kl_button_width(&demo->style, "Ask a question");
+	pressed = kl_button(demo->ui, &demo->style, DEMO_ID_ASK, &control, "Ask a question", KL_BUTTON_PRIMARY);
 	if (pressed) {
 		demo->dialog = 1;
 		demo_log("DIALOG shown");
@@ -1083,8 +1082,8 @@ demo_draw_dialogs(
 
 	/* The next button, to its right. */
 	control.x += control.width + 8;
-	control.width = kui_button_width(&demo->style, "Show a chip");
-	pressed = kui_button(demo->ui, &demo->style, DEMO_ID_CHIP, &control, "Show a chip", 0U);
+	control.width = kl_button_width(&demo->style, "Show a chip");
+	pressed = kl_button(demo->ui, &demo->style, DEMO_ID_CHIP, &control, "Show a chip", 0U);
 	if (pressed) {
 		demo->chip_until = now_us + DEMO_CHIP_US;
 		demo_log("CHIP shown");
@@ -1097,33 +1096,33 @@ demo_draw_dialogs(
 	answer = "None yet";
 	if (demo->answer >= 0)
 		answer = demo_dialog_labels[demo->answer];
-	top = kui_row(&demo->style, card.x, top, card.width, "Last answer", answer, 0);
+	top = kl_row(&demo->style, card.x, top, card.width, "Last answer", answer, 0);
 
 	/* Work going on: a switch, and a bar that moves while it is on. */
 	value_x = demo_value_x(&card);
-	(void)kui_row(&demo->style, card.x, top, card.width, "Working", "", 0);
-	changed = kui_switch(demo->ui, &demo->style, DEMO_ID_WORKING, value_x, top + (40 - theme->switch_height) / 2, &demo->working, 0U);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Working", "", 0);
+	changed = kl_switch(demo->ui, &demo->style, DEMO_ID_WORKING, value_x, top + (40 - theme->switch_height) / 2, &demo->working, 0U);
 	if (changed)
 		demo_log("SWITCH working on=%d", demo->working);
 	top += 40;
-	(void)kui_row(&demo->style, card.x, top, card.width, "Progress", "", 1);
+	(void)kl_row(&demo->style, card.x, top, card.width, "Progress", "", 1);
 	control.x = value_x;
 	control.y = top + 17;
 	control.width = card.x + card.width - 20 - value_x;
 	control.height = 6;
 	if (demo->working)
-		kui_progress(&demo->style, &control, -1.0, now_us);
+		kl_progress(&demo->style, &control, -1.0, now_us);
 	else
-		kui_progress(&demo->style, &control, 0.0, now_us);
+		kl_progress(&demo->style, &control, 0.0, now_us);
 
 	/* The chip at the bottom of the content, while it shows. */
 	if (demo->chip_until > now_us)
-		kui_chip(&demo->style, demo->content.x + demo->content.width / 2, demo->content.y + demo->content.height - 20, "Saved to Documents");
+		kl_chip(&demo->style, demo->content.x + demo->content.width / 2, demo->content.y + demo->content.height - 20, "Saved to Documents");
 
 	/* The dialog over the content, while it shows. */
 	if (!demo->dialog)
 		return;
-	chosen = kui_dialog(demo->ui, &demo->style, DEMO_ID_DIALOG, &demo->content, "Delete \xe2\x80\x9creport.txt\xe2\x80\x9d?", "The file goes to the Trash; you can put it back from there until the Trash is emptied.", demo_dialog_labels, 2);
+	chosen = kl_dialog(demo->ui, &demo->style, DEMO_ID_DIALOG, &demo->content, "Delete \xe2\x80\x9creport.txt\xe2\x80\x9d?", "The file goes to the Trash; you can put it back from there until the Trash is emptied.", demo_dialog_labels, 2);
 	if (chosen >= 0) {
 		demo->answer = chosen;
 		demo->dialog = 0;
@@ -1132,10 +1131,10 @@ demo_draw_dialogs(
 	}
 }
 
-/* Reports the left of a card's values: its rows' label takes a third of the card, as kui_row draws them. */
+/* Reports the left of a card's values: its rows' label takes a third of the card, as kl_row draws them. */
 static int
 demo_value_x(
-	const struct kui_rect *card)
+	const struct kl_rect *card)
 {
 	int left;
 	int right;

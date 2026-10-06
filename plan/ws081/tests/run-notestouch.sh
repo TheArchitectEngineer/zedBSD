@@ -12,7 +12,6 @@ mkdir -p "$out/include"
 
 # Only <keiland.h> is taken from include/libc: the rest of that directory is zedBSD's C library.
 ln -sf "$root/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
-ln -sf "$root/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
 
 flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion $extra -I$out/include"
 for name in motion scroll gesture; do

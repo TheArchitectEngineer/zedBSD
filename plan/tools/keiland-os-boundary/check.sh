@@ -52,7 +52,7 @@ while IFS= read -r file; do
 done > "$work/C4"
 
 # Desktop headers are owned by desktop rather than libc.
-find include/libc \( -name 'keiland.h' -o -name 'keiui.h' -o -name 'truetype.h' \
+find include/libc \( -name 'keiland.h' -o -name 'keiui.h' -o -name 'keiland-ui.h' -o -name 'truetype.h' \
     -o -name 'browser.h' -o -name 'wayland*' -o -name 'xdg-shell*' \
     -o -name 'primary-selection*' -o -name 'tablet-unstable*' \) -print > "$work/C5"
 
@@ -196,8 +196,24 @@ for line in Path(sys.argv[1]).read_text().splitlines():
                 print(f'target includes Linux rules: {name}')
 PY
 
+# The old names are gone (WS131 B5, ws131-p023): no C source of the tree or of the plan's tests (the history and
+# libbrowser, another component, aside) uses kui_, KUI_, keiland_ or KEILAND_, and nothing includes or copies the
+# old headers keiui.h and keiland-ui.h.  Kept: the install paths' macros (paths.h, KEILAND_PREFIX), the environment's
+# variables (KEILAND_DRM_DEVICE, KEILAND_SEAT, KEILAND_DESKTOP_TOKEN, KEILAND_VULKAN_*), include guards (D16), and the
+# WS035 p075 test's own protocol (keiland_generic_*_v1, ws131-p021).
+git ls-files userland plan | grep -E '\.(c|h|inc)$' | grep -v -e '^plan/history/' -e '^userland/desktop/libbrowser/' |
+while IFS= read -r file; do
+    grep -noE '\b(kui|KUI|keiland|KEILAND)_[A-Za-z0-9_]*|[<"](keiui|keiland-ui)\.h[>"]' "$file" |
+        grep -vE ':(KEILAND_(BINDIR|DATADIR|LIBEXECDIR|SYSCONFDIR|PREFIX|FONT_BOLD|FONT_FALLBACK_MONO|DRM_DEVICE|SEAT|DESKTOP_TOKEN|VULKAN_BACKEND|VULKAN_BACKEND_PATHS|VULKAN_NO_DEEPBIND)|KEILAND_([A-Z0-9_]+_)?H|keiland_generic_[a-z0-9_]+)$' |
+        sed "s|^|$file:|"
+done > "$work/B5"
+git ls-files userland plan | grep -E '(\.sh|\.py|Makefile[a-z.]*|\.mk)$' | grep -v -e '^plan/history/' -e '^plan/ws131/tools/rename-map\.py$' |
+while IFS= read -r file; do
+    grep -nE 'keiland/(keiui|keiland-ui)\.h' "$file" | sed "s|^|$file:|"
+done >> "$work/B5"
+
 # Report every violated condition before returning the aggregate outcome.
-for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 L7 M1 X1 B1 B2 B3 S1; do
+for check in C1 C2 C3 C4 C5 L1 L2 L3 L4 L5 L6 L7 M1 X1 B1 B2 B3 B5 S1; do
     if [ -s "$work/$check" ]; then
         while IFS= read -r detail; do
             printf 'check: %s FAIL %s\n' "$check" "$detail"
