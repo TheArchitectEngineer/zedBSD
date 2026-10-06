@@ -16,6 +16,8 @@
 
 #include "files.h"
 
+#include <keiland.h>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -98,14 +100,14 @@ fm_grid_draw(
 
 	/* A folder that could not be read says so. */
 	if (tab->listing.error != 0) {
-		snprintf(message, sizeof(message), "This folder can't be opened.");
+		snprintf(message, sizeof(message), "%s", kl_tr("This folder can't be opened."));
 		grid_message(app, canvas, &inner, message);
 		return;
 	}
 
 	/* An empty place says so too. */
 	if (tab->listing.count == 0) {
-		grid_message(app, canvas, &inner, "Nothing here");
+		grid_message(app, canvas, &inner, kl_tr("Nothing here"));
 		return;
 	}
 
