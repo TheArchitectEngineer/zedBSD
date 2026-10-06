@@ -892,8 +892,8 @@ apply_touchpad_actions(
 			activity = 1;
 			break;
 		case ZWL_TOUCHPAD_SCROLL:
-			/* The switcher, while on, takes the two fingers across (switcher-shell.c, ws142-p005). */
-			taken = zwl_switch_pad_scroll(server, action->horizontal, pad->natural_scroll);
+			/* The switcher or Wiseview, while it shows, takes the two fingers' swipe (shell.c, ws142-p009). */
+			taken = zwl_glass_pad_scroll(server, action->vertical, action->horizontal, pad->natural_scroll);
 			if (taken)
 				break;
 

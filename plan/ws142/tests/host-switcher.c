@@ -13,7 +13,7 @@
  * in the bar's order and the current one is selected (BUG-209), the
  * leftmost when none is current or the index is out of range; steps one
  * icon to the right (or the left), around at both ends, also by many; the
- * pad's travel a step each ZWL_SWITCHER_STEP_UM, the rest kept, both ways;
+ * steps counted (a no-step is not);
  * the order kept while it is on, also when the bar's order changes; nothing
  * while off; letting Alt go after a quick Alt+Tab leaves it open and sticky
  * (BUG-209, 2026-10-06), after a slow one or a step brings.
@@ -80,8 +80,8 @@ main(void)
 	static struct zwl_apps apps;
 	static struct zwl_apps_order order;
 	static struct zwl_switcher switcher;
+	unsigned counted;
 	int error;
-	int steps;
 	int brings;
 
 	/* 1. No application: it does not open. */
@@ -136,15 +136,14 @@ main(void)
 	zwl_switcher_step(&switcher, 8);
 	check(selected_is(&switcher, "files"), "many steps to the right");
 
-	/* 5. The pad's travel: a step each 12 mm, the rest kept, both ways. */
-	steps = zwl_switcher_travel(&switcher, 6000);
-	check(steps == 0 && selected_is(&switcher, "files"), "6 mm: no step yet");
-	steps = zwl_switcher_travel(&switcher, 6000);
-	check(steps == 1 && selected_is(&switcher, "terminal"), "12 mm in all: a step");
-	steps = zwl_switcher_travel(&switcher, -25000);
-	check(steps == -2 && selected_is(&switcher, "notes"), "25 mm left: two steps back");
-	steps = zwl_switcher_travel(&switcher, 2000);
-	check(steps == 0 && selected_is(&switcher, "notes"), "the rest and a little: no step");
+	/* 5. A step on and two back (the pad's swipes are one step each, swipe.c; host-swipe.c checks them). */
+	counted = switcher.steps;
+	zwl_switcher_step(&switcher, 1);
+	check(selected_is(&switcher, "terminal"), "a step on");
+	zwl_switcher_step(&switcher, -2);
+	check(selected_is(&switcher, "notes"), "two steps back");
+	zwl_switcher_step(&switcher, 0);
+	check(selected_is(&switcher, "notes") && switcher.steps == counted + 2U, "no step: stays, not counted");
 
 	/* 6. The order kept while on, whatever the bar does (an icon dragged to the left end). */
 	error = zwl_apps_move(&order, 2, 0);
@@ -166,8 +165,7 @@ main(void)
 	zwl_switcher_close(&switcher);
 	check(!switcher.on && zwl_switcher_selected(&switcher) == NULL, "closed: off");
 	zwl_switcher_step(&switcher, 1);
-	steps = zwl_switcher_travel(&switcher, 24000);
-	check(steps == 0 && !switcher.on, "closed: no step, no travel");
+	check(!switcher.on && switcher.steps == 0U, "closed: no step");
 
 	/*
 	 * 8. Letting Alt go (BUG-209, the 2026-10-06 user instruction): a quick
@@ -192,9 +190,9 @@ main(void)
 	check(error == 0 && brings == 1 && switcher.steps == 1U, "a quick Alt+Tab+Tab: brings");
 	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_PAD, ZWL_SWITCHER_BAR);
 	switcher.opened_ms = 1000U;
-	steps = zwl_switcher_travel(&switcher, 13000);
+	zwl_switcher_step(&switcher, -1);
 	brings = zwl_switcher_alt_released(&switcher, 1100U);
-	check(error == 0 && steps == 1 && brings == 1, "the pad's travel counts as a step");
+	check(error == 0 && brings == 1, "a step back counts as a step");
 	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
 	switcher.opened_ms = 5000U;
 	brings = zwl_switcher_alt_released(&switcher, 4000U);

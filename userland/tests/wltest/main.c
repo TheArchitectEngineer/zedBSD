@@ -31,6 +31,7 @@ struct wltest_options {
 	uint32_t delay;
 	int verify;
 	int windowed;
+	int fixed;
 	uint32_t width;
 	uint32_t height;
 	int solid;
@@ -77,7 +78,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: wltest [--display=NAME] [--frames=1..3600] [--mode=fifo|mailbox] [--verify-session] [--recreate-at=N] [--delay-ms=0..1000] [--token=NAME] [--windowed] [--size=WxH] [--color=RRGGBB] [--fullscreen-at=N] [--unfullscreen-at=N] [--app-id=NAME]\n");
+		fprintf(stderr, "usage: wltest [--display=NAME] [--frames=1..3600] [--mode=fifo|mailbox] [--verify-session] [--recreate-at=N] [--delay-ms=0..1000] [--token=NAME] [--windowed] [--fixed] [--size=WxH] [--color=RRGGBB] [--fullscreen-at=N] [--unfullscreen-at=N] [--app-id=NAME]\n");
 		return 2;
 	}
 
@@ -89,7 +90,7 @@ main(
 	completed = 0U;
 	result = VK_SUCCESS;
 	operation = "wltest_window_open";
-	status = wltest_window_open(&window, options.display, options.width, options.height, !options.windowed, options.app_id);
+	status = wltest_window_open(&window, options.display, options.width, options.height, !options.windowed, options.fixed, options.app_id);
 	if (status != 0)
 		goto cleanup;
 
@@ -249,6 +250,13 @@ options_parse(
 		match = strcmp(argv[index], "--windowed");
 		if (match == 0) {
 			options->windowed = 1;
+			continue;
+		}
+
+		/* A window of one size: its --size, whatever the compositor configures (ws142-p010). */
+		match = strcmp(argv[index], "--fixed");
+		if (match == 0) {
+			options->fixed = 1;
 			continue;
 		}
 

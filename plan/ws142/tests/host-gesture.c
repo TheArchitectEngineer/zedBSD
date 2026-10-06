@@ -20,6 +20,9 @@
  * with three is the middle button (D1); a finger more gives the gesture
  * up, a finger less or the pad pressed ends or gives it up, and the
  * fingers left do nothing; without the pad's size there are no edges.
+ * Two fingers down from the top edge are TOP2 (ws142-p009); a touch of two
+ * fingers that scrolled ends with one SWIPE2 end, after its scrolling (when
+ * one finger lifts, or both), and no other touch says one.
  *
  *   plan/ws142/tests/run-host-gesture.sh
  */
@@ -75,6 +78,7 @@ static unsigned kind_count(uint32_t kind);
 static int32_t last_travel(uint32_t phase);
 static int32_t last_speed(uint32_t phase);
 static int travel_rises(void);
+static int swipe_after_scroll(void);
 static unsigned button_count(uint32_t code, uint32_t pressed);
 
 /* Counts one check, and reports it when it failed. */
@@ -235,17 +239,58 @@ gesture_count(
 	return count;
 }
 
-/* Counts every gesture action. */
+/* Counts every gesture action but SWIPE2's end, which only says that a scrolling touch lifted. */
 static unsigned
 gestures(void)
 {
 	unsigned count;
+	unsigned swipes;
 
-	/* Of the gesture kind. */
+	/* Of the gesture kind, less the swipes' ends. */
 	count = kind_count(ZWL_TOUCHPAD_GESTURE);
+	swipes = gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END);
 
 	/* Succeeded: the count. */
-	return count;
+	return count - swipes;
+}
+
+/* Tells whether a swipe's end came after every scroll (none: no scroll either). */
+static int
+swipe_after_scroll(void)
+{
+	unsigned index;
+	unsigned last_scroll;
+	unsigned swipe;
+	int scrolled;
+	int found;
+
+	/* The last scroll and the swipe's end. */
+	last_scroll = 0;
+	swipe = 0;
+	scrolled = 0;
+	found = 0;
+	for (index = 0; index < seen_count; index++) {
+		/* A scroll. */
+		if (seen[index].kind == ZWL_TOUCHPAD_SCROLL) {
+			last_scroll = index;
+			scrolled = 1;
+		}
+
+		/* The swipe's end. */
+		if (seen[index].kind == ZWL_TOUCHPAD_GESTURE && seen[index].gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2) {
+			swipe = index;
+			found = 1;
+		}
+	}
+
+	/* Without a scroll there is nothing to be after. */
+	if (!scrolled || !found)
+		return 0;
+
+	/* Succeeded: whether the end came last. */
+	if (swipe > last_scroll)
+		return 1;
+	return 0;
 }
 
 /* Counts the actions of a kind. */
@@ -719,6 +764,90 @@ main(void)
 	finger_up(1);
 	frame();
 	check(last_speed(ZWL_TOUCHPAD_PHASE_END) < FLICK, "stopped, reports while still: no flick");
+
+	/* 22. Two fingers down 20 mm from the top edge: TOP2 (ws142-p009, BUG-224), its travel down positive. */
+	start_case(1);
+	x[0] = 500;
+	y[0] = 10;
+	x[1] = 700;
+	y[1] = 20;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_TOP2, ZWL_TOUCHPAD_PHASE_BEGIN) == 1U, "top2: begins");
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_TOP2, ZWL_TOUCHPAD_PHASE_END) == 1U, "top2: ends");
+	travel = last_travel(ZWL_TOUCHPAD_PHASE_END);
+	check(travel >= 19000 && travel <= 21000, "top2: travels 20 mm down");
+	check(kind_count(ZWL_TOUCHPAD_SCROLL) == 0U, "top2: does not scroll");
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 0U, "top2: no swipe's end");
+
+	/* 23. From the top edge, but moving up (outward), and one finger only in the top edge: no gesture. */
+	start_case(1);
+	y[0] = 60;
+	y[1] = 65;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, -50, 5, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "outward from the top edge: no gesture");
+	start_case(1);
+	y[0] = 10;
+	y[1] = 300;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "one finger in the top edge: no gesture");
+
+	/* 24. A scroll's touch ends with one swipe's end, after its scrolling. */
+	start_case(1);
+	x[0] = 500;
+	y[0] = 400;
+	x[1] = 700;
+	y[1] = 400;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 120, 0, 6, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 1U, "scroll: one swipe's end");
+	check(swipe_after_scroll(), "scroll: the swipe's end after the scrolling");
+
+	/* 25. One finger of a scroll lifting first: the swipe ends then, once. */
+	start_case(1);
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 120, 0, 6, 8U);
+	finger_up(1);
+	frame();
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 1U, "a finger lifts: the swipe ends");
+	finger_move(0, x[0] + 60, y[0]);
+	frame();
+	finger_up(0);
+	frame();
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 1U, "the last finger: no second end");
+
+	/* 26. A touch that did not scroll (one finger moving, a gesture, a tap) says no swipe's end. */
+	start_case(1);
+	finger_down(0, x[0], y[0]);
+	frame();
+	move_fingers(1U, x, y, 120, 0, 6, 8U);
+	finger_up(0);
+	frame();
+	check(gesture_count(ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END) == 0U, "one finger: no swipe's end");
 
 	/* The result. */
 	if (failures != 0) {

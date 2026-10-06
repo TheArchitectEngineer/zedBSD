@@ -37,6 +37,11 @@
  *     scroll: the first DECIDE_UM of their mean travel decides, and is held
  *     back meanwhile (a touch that turns out to be a scroll scrolls by it
  *     then);
+ *   - two fingers that both touch within EDGE_UM of the top edge and move
+ *     down are TOP2 (ws142-p009, BUG-224);
+ *   - the end of a touch of two fingers that scrolled (all of them lifted,
+ *     or one of them) is told as SWIPE2's end, after its scrolling, so
+ *     that the shell can make one swipe one step (ws142-p009);
  *   - three fingers that move up (DECIDE3_UM, mostly up) are UP3; three
  *     fingers moving otherwise do nothing (they move no pointer);
  *   - a tap of three fingers is TAP3 (the switcher), not the middle button,
@@ -80,7 +85,7 @@
 #define PRESS_QUIET_UM			1000
 
 /* The finger travel of one wheel notch when two fingers scroll (micrometres). */
-#define SCROLL_NOTCH_UM			2500
+#define SCROLL_NOTCH_UM			ZWL_TOUCHPAD_NOTCH_UM
 
 /* The edges' band, and the travel that decides a two-finger and a three-finger gesture (micrometres). */
 #define EDGE_UM				6000
@@ -91,6 +96,7 @@
 #define EDGE_BOTTOM			0x1U
 #define EDGE_LEFT			0x2U
 #define EDGE_RIGHT			0x4U
+#define EDGE_TOP			0x8U
 
 /* Whether a touch of two or three fingers is decided: not yet, as no gesture (a scroll, or nothing), or as a gesture. */
 #define DECIDED_NOT			0U
@@ -132,6 +138,7 @@ static void touch_end(struct zwl_touchpad *pad, uint64_t now_ms, struct zwl_touc
 static void pointer_motion(struct zwl_touchpad *pad, uint64_t now_ms, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
 static void scroll(struct zwl_touchpad *pad, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
 static void tap_finish(struct zwl_touchpad *pad, struct zwl_touchpad_actions *actions);
+static void swipe_finish(struct zwl_touchpad *pad, struct zwl_touchpad_actions *actions);
 static void fingers_changed(struct zwl_touchpad *pad, uint64_t now_ms, unsigned fingers, struct zwl_touchpad_actions *actions);
 static uint32_t edges_of_fingers(const struct zwl_touchpad *pad);
 static void gesture_motion(struct zwl_touchpad *pad, uint64_t now_ms, unsigned fingers, int64_t dx_um, int64_t dy_um, struct zwl_touchpad_actions *actions);
@@ -381,6 +388,9 @@ zwl_touchpad_release_all(
 		gesture_end(pad, ZWL_TOUCHPAD_PHASE_CANCEL, pad->last_frame_ms, actions);
 		pad->decided = DECIDED_SPENT;
 	}
+
+	/* A touch that scrolled has gone with the device. */
+	swipe_finish(pad, actions);
 }
 
 /* Counts the fingers on the pad. */
@@ -486,6 +496,7 @@ touch_begin(
 		pad->touch_clicked = 1;
 	pad->scroll_travel_x_um = 0;
 	pad->scroll_travel_y_um = 0;
+	pad->scrolled = 0U;
 
 	/* No gesture yet; two fingers that came at once start deciding, with the edges they touched. */
 	pad->gesture = ZWL_TOUCHPAD_GESTURE_NONE;
@@ -605,9 +616,10 @@ touch_end(
 	if (duration <= TAP_MS && pad->touch_travel_um < TAP_TRAVEL_UM && !pad->touch_clicked)
 		tapped = 1;
 
-	/* The scrolling's remainder goes with the touch. */
+	/* The scrolling's remainder goes with the touch, and a touch that scrolled says it has lifted. */
 	pad->scroll_travel_x_um = 0;
 	pad->scroll_travel_y_um = 0;
+	swipe_finish(pad, actions);
 
 	/* A gesture ends with its fingers. */
 	if (pad->gesture != ZWL_TOUCHPAD_GESTURE_NONE) {
@@ -726,9 +738,10 @@ scroll(
 	int64_t vertical;
 	int64_t horizontal;
 
-	/* The fingers' travel, with what earlier reports left over. */
+	/* The fingers' travel, with what earlier reports left over; the touch has scrolled. */
 	pad->scroll_travel_x_um += dx_um;
 	pad->scroll_travel_y_um += dy_um;
+	pad->scrolled = 1U;
 
 	/* Whole notches; the rest waits. */
 	vertical = pad->scroll_travel_y_um / SCROLL_NOTCH_UM;
@@ -778,6 +791,9 @@ fingers_changed(
 	if (pad->decided == DECIDED_SPENT)
 		return;
 
+	/* A touch that scrolled says it has lifted (a finger of the two went). */
+	swipe_finish(pad, actions);
+
 	/* A new count decides afresh. */
 	pad->decided = DECIDED_NOT;
 	pad->edges = 0;
@@ -805,7 +821,7 @@ edges_of_fingers(
 	/* The band in units, and every edge until a finger is outside it. */
 	band_x = (int32_t)((int64_t)EDGE_UM * pad->resolution_x / 1000);
 	band_y = (int32_t)((int64_t)EDGE_UM * pad->resolution_y / 1000);
-	edges = EDGE_BOTTOM | EDGE_LEFT | EDGE_RIGHT;
+	edges = EDGE_BOTTOM | EDGE_LEFT | EDGE_RIGHT | EDGE_TOP;
 	for (index = 0; index < ZWL_TOUCHPAD_SLOTS; index++) {
 		/* Each finger. */
 		finger = &pad->fingers[index];
@@ -819,6 +835,8 @@ edges_of_fingers(
 			edges &= ~EDGE_LEFT;
 		if (finger->x < pad->x_max - band_x)
 			edges &= ~EDGE_RIGHT;
+		if (finger->y > band_y)
+			edges &= ~EDGE_TOP;
 	}
 
 	/* Succeeded: the edges. */
@@ -897,6 +915,10 @@ gesture_motion(
 		    pad->gesture_dx_um < 0 &&
 		    across >= 2 * down)
 			gesture = ZWL_TOUCHPAD_GESTURE_RIGHT2;
+		if ((pad->edges & EDGE_TOP) != 0U &&
+		    pad->gesture_dy_um > 0 &&
+		    down >= 2 * across)
+			gesture = ZWL_TOUCHPAD_GESTURE_TOP2;
 	}
 
 	/* Three fingers: up, mostly up. */
@@ -1011,7 +1033,7 @@ gesture_speed_at(
 	return (pad->gesture_travel_um - base_um) * 1000 / (int64_t)span;
 }
 
-/* Gives a motion along a gesture's way: up for BOTTOM2 and UP3, right for LEFT2, left for RIGHT2. */
+/* Gives a motion along a gesture's way: up for BOTTOM2 and UP3, right for LEFT2, left for RIGHT2, down for TOP2. */
 static int64_t
 gesture_along(
 	uint32_t gesture,
@@ -1024,6 +1046,8 @@ gesture_along(
 		return dx_um;
 	case ZWL_TOUCHPAD_GESTURE_RIGHT2:
 		return -dx_um;
+	case ZWL_TOUCHPAD_GESTURE_TOP2:
+		return dy_um;
 	default:
 		return -dy_um;
 	}
@@ -1108,6 +1132,21 @@ push_scroll(
 	action->vertical = vertical;
 	action->horizontal = horizontal;
 	actions->count++;
+}
+
+/* Tells, once, that a touch that scrolled has lifted: SWIPE2's end, after its scrolling. */
+static void
+swipe_finish(
+	struct zwl_touchpad *pad,
+	struct zwl_touchpad_actions *actions)
+{
+	/* A touch that never scrolled says nothing. */
+	if (!pad->scrolled)
+		return;
+
+	/* The swipe ends; the next scroll of this touch (fingers landing again) is another. */
+	pad->scrolled = 0U;
+	push_gesture(actions, ZWL_TOUCHPAD_GESTURE_SWIPE2, ZWL_TOUCHPAD_PHASE_END, 0, 0);
 }
 
 /* Adds a gesture's phase to the actions. */

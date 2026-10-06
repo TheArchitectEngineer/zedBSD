@@ -52,14 +52,16 @@ wltest_window_open(
 	uint32_t width,
 	uint32_t height,
 	int fullscreen,
+	int fixed,
 	const char *app_id)
 {
 	int status;
 
-	/* The compositor may choose dimensions, otherwise this application chooses its own. */
+	/* The compositor may choose dimensions, otherwise this application chooses its own (always, for a window of one size). */
 	memset(window, 0, sizeof(*window));
 	window->width = width;
 	window->height = height;
+	window->fixed = fixed;
 
 	/* This window owns the original connection until its renderer and roles have retired. */
 	window->display = wl_display_connect(display);
@@ -112,9 +114,17 @@ wltest_window_open(
 	if (status != 0)
 		return -1;
 
-	/* Publish the application identity and the fullscreen preference, unless a window was asked for. */
+	/* Publish the application identity. */
 	xdg_toplevel_set_title(window->toplevel, "Wayland Vulkan test");
 	xdg_toplevel_set_app_id(window->toplevel, app_id);
+
+	/* A window of one size says so: its smallest and largest sizes are its size. */
+	if (fixed) {
+		xdg_toplevel_set_min_size(window->toplevel, (int32_t)width, (int32_t)height);
+		xdg_toplevel_set_max_size(window->toplevel, (int32_t)width, (int32_t)height);
+	}
+
+	/* The fullscreen preference, unless a window was asked for. */
 	if (fullscreen)
 		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
 	wl_surface_commit(window->surface);
@@ -345,6 +355,10 @@ window_toplevel_configure(
 	(void)toplevel;
 	(void)states;
 	window = data;
+
+	/* A window of one size keeps it, as a third-party one that refuses to be resized does. */
+	if (window->fixed)
+		return;
 
 	/* A zero width leaves the application's existing choice in place. */
 	if (width > 0)

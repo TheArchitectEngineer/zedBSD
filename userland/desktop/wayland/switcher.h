@@ -11,8 +11,9 @@
  * desktop's applications in the order of the bar's icons, from the left,
  * and selects the current application (BUG-209, the 2026-10-05 user
  * decision: the order a person sees, never the compositor's order of use).
- * Tab, the arrows and two fingers across the pad move the selection one
- * icon to the right or the left, around at the ends; the caller then
+ * Tab, the arrows and a swipe of two fingers across the pad (one swipe a
+ * step, swipe.c, ws142-p009) move the selection one icon to the right or
+ * the left, around at the ends; the caller then
  * brings the selected application, or gives the switcher up.  A quick
  * Alt+Tab (Alt let go within ZWL_SWITCHER_QUICK_MS of the opening, before
  * any step) leaves it open (BUG-209, the 2026-10-06 user instruction):
@@ -39,16 +40,12 @@
 #define ZWL_SWITCHER_BAR		0U
 #define ZWL_SWITCHER_CENTER		1U
 
-/* The fingers' travel across the pad of one step (micrometres). */
-#define ZWL_SWITCHER_STEP_UM		12000
-
 /* How soon after the opening Alt let go leaves the switcher open, when no step came (milliseconds). */
 #define ZWL_SWITCHER_QUICK_MS		500U
 
 /*
  * The switcher: whether it is on, how it was opened, where it shows, the
- * applications' keys (the bar's order), the selection, and the pad's
- * travel not yet a step.  When it opened (milliseconds, the caller's
+ * applications' keys (the bar's order), and the selection.  When it opened (milliseconds, the caller's
  * clock), the steps taken since, and whether a quick Alt+Tab left it open
  * (sticky: letting Alt go no longer brings the selection).
  */
@@ -59,7 +56,6 @@ struct zwl_switcher {
 	char keys[ZWL_APPS_MAX][ZWL_APPS_KEY];
 	unsigned count;
 	unsigned index;
-	int32_t travel_um;
 	uint64_t opened_ms;
 	unsigned steps;
 	unsigned sticky;
@@ -67,7 +63,6 @@ struct zwl_switcher {
 
 int zwl_switcher_open(struct zwl_switcher *switcher, const struct zwl_apps *apps, int current, unsigned via, unsigned placement);
 void zwl_switcher_step(struct zwl_switcher *switcher, int delta);
-int zwl_switcher_travel(struct zwl_switcher *switcher, int32_t dx_um);
 const char *zwl_switcher_selected(const struct zwl_switcher *switcher);
 int zwl_switcher_alt_released(struct zwl_switcher *switcher, uint64_t now_ms);
 void zwl_switcher_close(struct zwl_switcher *switcher);

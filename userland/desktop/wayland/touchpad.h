@@ -23,6 +23,9 @@
 #define ZWL_TOUCHPAD_SLOTS	10U
 #define ZWL_TOUCHPAD_ACTIONS	16U
 
+/* The fingers' travel of one wheel notch when two fingers scroll (micrometres; the shell turns notches back into travel). */
+#define ZWL_TOUCHPAD_NOTCH_UM	2500
+
 /* The evdev codes of the left, right and middle buttons (the same on every OS). */
 #define ZWL_TOUCHPAD_BUTTON_LEFT	0x110U
 #define ZWL_TOUCHPAD_BUTTON_RIGHT	0x111U
@@ -41,7 +44,11 @@ enum zwl_touchpad_action_kind {
  * bottom edge up, three fingers up anywhere (both open Wiseview), two
  * fingers from the left edge to the right and from the right edge to the
  * left (the desktop on that side), and a tap of three fingers (the
- * application switcher, D1).
+ * application switcher, D1).  Two fingers from the top edge down (TOP2,
+ * ws142-p009, BUG-224: a docked window floats again, a fullscreen one is
+ * docked).  SWIPE2 is no gesture of its own: its end says that a touch of
+ * two fingers that scrolled has lifted, so that one swipe can be one step
+ * of Wiseview or the switcher (ws142-p009, BUG-215 and BUG-216).
  */
 enum zwl_touchpad_gesture {
 	ZWL_TOUCHPAD_GESTURE_NONE,
@@ -49,7 +56,9 @@ enum zwl_touchpad_gesture {
 	ZWL_TOUCHPAD_GESTURE_UP3,
 	ZWL_TOUCHPAD_GESTURE_LEFT2,
 	ZWL_TOUCHPAD_GESTURE_RIGHT2,
-	ZWL_TOUCHPAD_GESTURE_TAP3
+	ZWL_TOUCHPAD_GESTURE_TAP3,
+	ZWL_TOUCHPAD_GESTURE_TOP2,
+	ZWL_TOUCHPAD_GESTURE_SWIPE2
 };
 
 /* A gesture's phases: it begins, follows the fingers, ends with them lifted, or is given up (a finger more). */
@@ -149,6 +158,8 @@ struct zwl_touchpad {
 	int64_t motion_remainder_y;
 	int64_t scroll_travel_x_um;
 	int64_t scroll_travel_y_um;
+	/* Whether the touch now on the pad scrolled (its end is told as SWIPE2's, ws142-p009). */
+	uint32_t scrolled;
 	uint64_t last_frame_ms;
 	int32_t natural_scroll;
 	int32_t acceleration;
