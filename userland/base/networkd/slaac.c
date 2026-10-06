@@ -33,6 +33,7 @@ static uint32_t slaac_read32(const uint8_t *bytes);
 static void slaac_prefix(const uint8_t *option, struct slaac_ra *ra);
 static void slaac_rdnss(const uint8_t *option, size_t length, struct slaac_ra *ra);
 static void slaac_dnssl(const uint8_t *option, size_t length, struct slaac_ra *ra);
+static int slaac_label_valid(const uint8_t *label, size_t length);
 
 /*
  * Reads a Router Advertisement (the ICMPv6 message from its type byte).
@@ -238,6 +239,8 @@ slaac_dnssl(
 		}
 		if (label > 63U || offset + label > length || used + label + 2U >= SLAAC_SEARCH_MAX)
 			break;
+		if (!slaac_label_valid(option + offset, label))
+			break;
 
 		/* A label, after a dot when the name has one already. */
 		if (used != 0U && ra->search[used - 1U] != ' ')
@@ -251,4 +254,27 @@ slaac_dnssl(
 	while (used != 0U && ra->search[used - 1U] == ' ')
 		used--;
 	ra->search[used] = '\0';
+}
+
+/* Tells whether a label is a host name's: letters, digits, '-' and '_' only (nothing else reaches resolv.conf). */
+static int
+slaac_label_valid(
+	const uint8_t *label,
+	size_t length)
+{
+	size_t index;
+	uint8_t letter;
+
+	/* Each byte. */
+	for (index = 0; index < length; index++) {
+		letter = label[index];
+		if ((letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z') || (letter >= '0' && letter <= '9'))
+			continue;
+		if (letter == '-' || letter == '_')
+			continue;
+		return 0;
+	}
+
+	/* Succeeded. */
+	return 1;
 }
