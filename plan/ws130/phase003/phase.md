@@ -25,7 +25,7 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
 | 段 | 中身 | 状態 |
 | --- | --- | --- |
 | a | `inet_socket` の family と IPv6 の欄、`AF_INET6` の family の登録、`sockaddr_in6` の bind・connect・name、`IPV6_V6ONLY`、port の衝突（v4 と v6 の見方）、UDP の IPv6 の送受と dual stack の IPv4 の受信 | 実装済み（build のみ） |
-| b | TCP の IPv6（endpoint の照合、checksum、出力、listener の子、RST、MSS 1440） | — |
+| b | TCP の IPv6（endpoint の照合、checksum、出力、listener の子、RST、MSS 1440） | 実装済み（build のみ） |
 | c | ICMPv6 の echo の socket（`ping6` は p005）、transport への ICMPv6 の error、PMTU を TCP に | — |
 | d | 試験: `userland/tests/ipv6-probe` に UDP・TCP の `::1` と slirp の `fec0::2`、`plan/ws130/tests/ipv6-p003.sh`。IPv4 の回帰（既存の network の試験）。T1 | — |
 
@@ -41,3 +41,13 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
   （checksum 0 は破棄、bound の interface の照合）、IPv4 の受信は IPv4 を受ける AF_INET6 の socket にも v4-mapped の名前で渡す。IPv6 の connect は
   source を選んで getsockname に出す（再 connect で選び直す）。既存の `udp_input` の pull 失敗時の socket の参照の漏れも直した。
 - 確認: amd64・arm64（rpi4）の kernel、i386（pcat）の変えた 3 file の build（`-Werror`、warning 0）。QEMU の確認は段 d で T1 に依頼する。
+
+## 段 b の結果（2026-10-06、P1）
+
+- `src/kern/net/tcp.c`: 受信は `tcp_input`（IPv4）と `tcp6_input`（IPv6、group 宛ては破棄）が checksum を確かめて `tcp_segment_input` に
+  `struct tcp_segment_addresses` を渡す。照合は `tcp_connection_matches`・`tcp_listener_matches`（segment の family で、その family を受ける socket だけ。
+  IPv4 の segment は `IPV6_V6ONLY` でない `[::]` の listener にも合い、子は v4-mapped）。子は listener の family で作る（`tcp_child_addresses`）。
+  送信は IPv6 の相手なら `tcp6_route`（bound の interface か link-local の相手の scope、source は bound か RFC 6724 の選択を保持）と `ipv6_output`、SYN の MSS は 1440。
+  RST は segment の family で返す（`tcp_send_reset6`）。`IPPROTO_IPV6` の option（`IPV6_V6ONLY`）を inet の層に渡す。
+- `src/kern/net/inet-socket.c`: `AF_INET6` の `SOCK_STREAM` を TCP で作る。
+- 確認: amd64・arm64 の kernel、i386 の変えた 4 file の build（`-Werror`、warning 0）。
