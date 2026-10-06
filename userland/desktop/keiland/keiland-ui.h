@@ -821,7 +821,10 @@ struct kl_window_options {
  * buttons, from the compositor's time; otherwise when it was read), when it
  * was read, and its serial (a press's, for a popup or
  * a selection); for the text input's (KUI_VERSION 6), its text, the
- * composed text's cursor, and the bytes to delete around the caret.
+ * composed text's cursor, and the bytes to delete around the caret; for a
+ * pen tablet's (KL_VERSION 44), its tool (KL_TABLET_*), its barrel buttons
+ * held (KL_TABLET_BUTTON_*), its pressure (0 to 1, -1 for a tool without
+ * it) and its tilt (degrees).
  */
 struct kl_window_event {
 	unsigned kind;
@@ -843,6 +846,11 @@ struct kl_window_event {
 	uint32_t before;
 	uint32_t after;
 	unsigned axis_source;
+	unsigned tool;
+	unsigned buttons;
+	double pressure;
+	double tilt_x;
+	double tilt_y;
 };
 
 struct kl_window *kl_window_open(const struct kl_window_options *options);
@@ -1139,6 +1147,90 @@ int kl_window_set_control_text(struct kl_window *window, uint32_t id, const char
 
 /* Gives a control's field the keyboard (the find field when Find is chosen). */
 int kl_window_focus_control(struct kl_window *window, uint32_t id);
+
+/*
+ * KL_VERSION 44 (WS131 p018): the tabs of a window's titlebar, the
+ * selections' changes, drag and drop, as Terminal had them of its own.
+ *
+ * Tabs: the titlebar shows the table given (count 0 takes them away, and
+ * the titlebar shows the controls again, or the menu): each tab's ID (not
+ * 0), title and KL_TAB_* flags of <keiland.h>, with KL_TABS_* options.  A
+ * tab chosen, its close button or the new tab's button comes as a
+ * KL_WINDOW_TAB input: KL_WINDOW_TAB_* in code, the tab's ID in id (0 for
+ * a new one).
+ *
+ * The selections: a KL_WINDOW_SELECTION input says the clipboard or the
+ * primary selection changed (KL_SELECTION_* in code), and whether it has
+ * text (pressed).  kl_window_selection_own tells whether the window's own
+ * text is the selection (a paste then takes it directly).
+ *
+ * Drops: a window takes the drags of the types it accepts
+ * (KL_DROP_TEXT, KL_DROP_URIS: a "text/uri-list", which comes as it is),
+ * as a copy.  A drag over it comes as KL_WINDOW_DROP_ENTER (the types it
+ * has that the window takes in code, where it is in x and y) and
+ * KL_WINDOW_DROP_LEAVE; dropped, as KL_WINDOW_DROP (the type it is read
+ * as in code: the file names when it has them), and the window then takes
+ * it with kl_window_take_drop (which finishes the drop).  A drop of the
+ * window's own drag is taken directly.
+ *
+ * A drag of text out of the window starts with kl_window_drag_text from a
+ * press (its serial); its end comes as KL_WINDOW_DRAG_DONE (code 1 when it
+ * was dropped, 0 when not).
+ */
+#define KL_WINDOW_SELECTION	21U
+#define KL_WINDOW_DROP_ENTER	22U
+#define KL_WINDOW_DROP_LEAVE	23U
+#define KL_WINDOW_DROP		24U
+#define KL_WINDOW_DRAG_DONE	25U
+#define KL_WINDOW_TAB		26U
+
+/* Which selection changed. */
+#define KL_SELECTION_CLIPBOARD	1U
+#define KL_SELECTION_PRIMARY	2U
+
+/* The types a drop is taken as (bits). */
+#define KL_DROP_TEXT		1U
+#define KL_DROP_URIS		2U
+
+/* What a tab's input asks. */
+#define KL_WINDOW_TAB_CHOSEN	1U
+#define KL_WINDOW_TAB_CLOSE	2U
+#define KL_WINDOW_TAB_NEW	3U
+
+/* One tab: its ID (not 0), its title and its KL_TAB_* flags. */
+struct kl_tab_entry {
+	uint32_t id;
+	const char *title;
+	unsigned flags;
+};
+
+/*
+ * A pen tablet: a window whose application takes it
+ * (kl_window_accept_tablet) hears the pen as KL_WINDOW_TABLET_* inputs
+ * with its pressure and tilt (a contact's start, moves and end, a move
+ * over the window without touching it, and leaving it); any other window
+ * hears the pen as the pointer.  And a held key's repeat may be turned off
+ * for a window (kl_window_set_repeat).
+ */
+#define KL_WINDOW_TABLET_DOWN	27U
+#define KL_WINDOW_TABLET_MOTION	28U
+#define KL_WINDOW_TABLET_UP	29U
+#define KL_WINDOW_TABLET_HOVER	30U
+#define KL_WINDOW_TABLET_LEAVE	31U
+
+/* A tablet's tool, and its barrel buttons (bits). */
+#define KL_TABLET_PEN		0U
+#define KL_TABLET_ERASER	1U
+#define KL_TABLET_BUTTON_STYLUS	1U
+#define KL_TABLET_BUTTON_STYLUS2	2U
+
+int kl_window_accept_tablet(struct kl_window *window);
+int kl_window_set_repeat(struct kl_window *window, int enabled);
+int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
+int kl_window_selection_own(const struct kl_window *window, unsigned which);
+int kl_window_accept_drops(struct kl_window *window, unsigned types);
+size_t kl_window_take_drop(struct kl_window *window, char *text, size_t size, unsigned *type);
+int kl_window_drag_text(struct kl_window *window, const char *text, size_t length, uint32_t serial);
 
 /*
  * A Vulkan surface over a window shown with KL_PRESENT_NONE, for an

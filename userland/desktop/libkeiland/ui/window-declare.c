@@ -28,12 +28,19 @@
 #include <keiland.h>
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 static struct kl_menu_service *declare_service(struct kl_window *window);
 static int declare_menu_sink(void *data, unsigned operation, const struct keiui_declare_item *item);
 static int declare_control_sink(void *data, unsigned operation, const struct keiui_declare_item *item);
-static int declare_titlebar(struct kl_window *window);
+static int declare_titlebar(struct kl_window *window, unsigned mode);
+static int declare_tabs_same(const struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
+static int declare_tabs_send(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
+static void declare_tab(struct kl_window *window, unsigned code, uint32_t id);
+static void declare_tab_activated(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t serial);
+static void declare_tab_close(void *data, struct kl_titlebar *titlebar, uint32_t id);
+static void declare_tab_new(void *data, struct kl_titlebar *titlebar, uint32_t serial);
 static void declare_action(struct kl_window *window, uint32_t action, uint32_t id, uint32_t detail);
 static void declare_menu_activated(void *data, struct kl_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static void declare_popup_activated(void *data, struct kl_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
@@ -56,14 +63,14 @@ static const struct kl_context_menu_listener declare_popup_listener = {
 	declare_popup_done
 };
 
-/* What the titlebar tells the window: the controls chosen, and a field's text (KL_VERSION 43). */
+/* What the titlebar tells the window: the controls chosen, a field's text (KL_VERSION 43), and the tabs' choices (KL_VERSION 44). */
 static const struct kl_titlebar_listener declare_titlebar_listener = {
 	declare_control_activated,
 	declare_text_changed,
 	declare_text_done,
-	NULL,
-	NULL,
-	NULL,
+	declare_tab_activated,
+	declare_tab_close,
+	declare_tab_new,
 	NULL,
 	NULL
 };
@@ -192,16 +199,18 @@ kl_window_set_controls(
 	if (window == NULL || (entries == NULL && count != 0U))
 		return EINVAL;
 
-	/* No controls: the titlebar goes, and nothing is kept. */
+	/* No controls: the titlebar goes (unless it shows tabs), and nothing is kept. */
 	if (count == 0U) {
-		kl_titlebar_destroy(window->titlebar);
-		window->titlebar = NULL;
+		if (window->tab_count == 0U) {
+			kl_titlebar_destroy(window->titlebar);
+			window->titlebar = NULL;
+		}
 		keiui_declare_fini(&window->control_model);
 		return 0;
 	}
 
-	/* The titlebar in the controls mode, made once. */
-	error = declare_titlebar(window);
+	/* The titlebar in the controls mode, made once (one showing tabs keeps them). */
+	error = declare_titlebar(window, KL_TITLEBAR_CONTROLS);
 	if (error != 0)
 		return error;
 
@@ -268,6 +277,68 @@ kl_window_focus_control(
 
 	/* The field takes the keyboard. */
 	error = kl_titlebar_focus_control(window->titlebar, id, KL_FOCUS_FIELD);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Shows a table of tabs in the window's titlebar (KL_VERSION 44; count 0
+ * takes them away: the titlebar shows its controls again, or goes and the
+ * window shows its menu).  Only a change is sent, in one transaction.
+ * Returns 0, EINVAL, ENOTSUP without the titlebar, or its refusal.
+ */
+int
+kl_window_set_tabs(
+	struct kl_window *window,
+	const struct kl_tab_entry *tabs,
+	size_t count,
+	unsigned options)
+{
+	size_t index;
+	int same;
+	int error;
+
+	/* A window and a table of tabs with IDs, as many as are kept. */
+	if (window == NULL ||
+	    (tabs == NULL && count != 0U) ||
+	    count > KEIUI_WINDOW_TABS)
+		return EINVAL;
+	for (index = 0; index < count; index++) {
+		if (tabs[index].id == 0U)
+			return EINVAL;
+	}
+
+	/* The same as shown: nothing to send. */
+	same = declare_tabs_same(window, tabs, count, options);
+	if (same)
+		return 0;
+
+	/* No tabs and no controls: the titlebar goes, and the window shows its menu. */
+	if (count == 0U && window->control_model.count == 0U) {
+		kl_titlebar_destroy(window->titlebar);
+		window->titlebar = NULL;
+		window->tab_count = 0;
+		window->tab_options = options;
+		window->tabs_sent = 1;
+		return 0;
+	}
+
+	/* No tabs beside controls: the controls again. */
+	if (count == 0U) {
+		error = declare_tabs_send(window, tabs, count, options);
+		return error;
+	}
+
+	/* The titlebar, made in the tabs mode when there is none yet. */
+	error = declare_titlebar(window, KL_TITLEBAR_TABS);
+	if (error != 0)
+		return error;
+
+	/* What changed. */
+	error = declare_tabs_send(window, tabs, count, options);
 	if (error != 0)
 		return error;
 
@@ -545,10 +616,11 @@ declare_control_sink(
 	return 0;
 }
 
-/* Gives the window its titlebar in the controls mode, once; 0 or an errno value. */
+/* Gives the window its titlebar in a mode (KL_TITLEBAR_*), once; 0 or an errno value. */
 static int
 declare_titlebar(
-	struct kl_window *window)
+	struct kl_window *window,
+	unsigned mode)
 {
 	int error;
 
@@ -561,10 +633,10 @@ declare_titlebar(
 	if (window->titlebar == NULL)
 		return errno;
 
-	/* The controls mode, in a transaction of its own. */
+	/* The mode, in a transaction of its own. */
 	error = kl_titlebar_begin(window->titlebar);
 	if (error == 0)
-		error = kl_titlebar_set_mode(window->titlebar, KL_TITLEBAR_CONTROLS);
+		error = kl_titlebar_set_mode(window->titlebar, mode);
 	if (error == 0)
 		error = kl_titlebar_commit(window->titlebar);
 
@@ -577,7 +649,185 @@ declare_titlebar(
 
 	/* Succeeded: nothing shown in it yet. */
 	keiui_declare_fini(&window->control_model);
+	window->tab_count = 0;
+	window->tabs_sent = 0;
 	return 0;
+}
+
+/* Tells whether a table of tabs is the one shown (IDs, titles, flags and options). */
+static int
+declare_tabs_same(
+	const struct kl_window *window,
+	const struct kl_tab_entry *tabs,
+	size_t count,
+	unsigned options)
+{
+	const char *title;
+	size_t index;
+	int differs;
+
+	/* Never sent, another count or other options. */
+	if (!window->tabs_sent ||
+	    count != window->tab_count ||
+	    options != window->tab_options)
+		return 0;
+
+	/* Each tab. */
+	for (index = 0; index < count; index++) {
+		if (tabs[index].id != window->tabs[index].id || tabs[index].flags != window->tabs[index].flags)
+			return 0;
+		title = tabs[index].title;
+		if (title == NULL)
+			title = "";
+		differs = strncmp(title, window->tabs[index].title, sizeof(window->tabs[index].title) - 1U);
+		if (differs != 0)
+			return 0;
+	}
+
+	/* The same. */
+	return 1;
+}
+
+/*
+ * Sends a table of tabs to the titlebar in one transaction: the tabs gone
+ * removed, the new ones added, each one's title and flags, the options,
+ * and the mode (tabs, or the controls when there are none).  The table is
+ * kept as the one shown.  Returns 0 or the titlebar's refusal.
+ */
+static int
+declare_tabs_send(
+	struct kl_window *window,
+	const struct kl_tab_entry *tabs,
+	size_t count,
+	unsigned options)
+{
+	const char *title;
+	unsigned mode;
+	size_t shown;
+	size_t index;
+	int found;
+	int error;
+
+	/* One transaction. */
+	error = kl_titlebar_begin(window->titlebar);
+	if (error != 0)
+		return error;
+
+	/* The tabs shown before that are gone. */
+	for (shown = 0; shown < window->tab_count; shown++) {
+		found = 0;
+		for (index = 0; index < count; index++) {
+			if (tabs[index].id == window->tabs[shown].id)
+				found = 1;
+		}
+		if (!found)
+			(void)kl_titlebar_remove_tab(window->titlebar, window->tabs[shown].id);
+	}
+
+	/* Each tab now: added when new, then its title and flags. */
+	for (index = 0; index < count; index++) {
+		title = tabs[index].title;
+		if (title == NULL)
+			title = "";
+		found = 0;
+		for (shown = 0; shown < window->tab_count; shown++) {
+			if (window->tabs[shown].id == tabs[index].id)
+				found = 1;
+		}
+		if (!found)
+			(void)kl_titlebar_add_tab(window->titlebar, tabs[index].id, title);
+		(void)kl_titlebar_set_tab(window->titlebar, tabs[index].id, title, tabs[index].flags);
+	}
+
+	/* The options and the mode: the tabs, or the controls when none are left. */
+	(void)kl_titlebar_set_tabs_options(window->titlebar, options);
+	mode = KL_TITLEBAR_TABS;
+	if (count == 0U)
+		mode = KL_TITLEBAR_CONTROLS;
+	(void)kl_titlebar_set_mode(window->titlebar, mode);
+	error = kl_titlebar_commit(window->titlebar);
+
+	/* The table kept as the one shown (titles cut to what is kept). */
+	for (index = 0; index < count; index++) {
+		window->tabs[index].id = tabs[index].id;
+		window->tabs[index].flags = tabs[index].flags;
+		title = tabs[index].title;
+		if (title == NULL)
+			title = "";
+		(void)snprintf(window->tabs[index].title, sizeof(window->tabs[index].title), "%s", title);
+	}
+	window->tab_count = count;
+	window->tab_options = options;
+	window->tabs_sent = 1;
+
+	/* The commit's answer. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Queues a tab's input among the window's inputs. */
+static void
+declare_tab(
+	struct kl_window *window,
+	unsigned code,
+	uint32_t id)
+{
+	struct kl_window_event *event;
+
+	/* The input; a full queue drops it. */
+	event = keiui_window_push(window, KL_WINDOW_TAB);
+	if (event == NULL)
+		return;
+	event->code = code;
+	event->id = (int32_t)id;
+}
+
+/* A tab was chosen (or zdesktop's tab keys moved to it). */
+static void
+declare_tab_activated(
+	void *data,
+	struct kl_titlebar *titlebar,
+	uint32_t id,
+	uint32_t serial)
+{
+	struct kl_window *window;
+
+	/* The choice is the window's last input, and its tab's input. */
+	(void)titlebar;
+	window = data;
+	window->serial = serial;
+	declare_tab(window, KL_WINDOW_TAB_CHOSEN, id);
+}
+
+/* A tab's close button. */
+static void
+declare_tab_close(
+	void *data,
+	struct kl_titlebar *titlebar,
+	uint32_t id)
+{
+	/* The tab's input. */
+	(void)titlebar;
+	declare_tab(data, KL_WINDOW_TAB_CLOSE, id);
+}
+
+/* The new tab's button. */
+static void
+declare_tab_new(
+	void *data,
+	struct kl_titlebar *titlebar,
+	uint32_t serial)
+{
+	struct kl_window *window;
+
+	/* The choice is the window's last input, and a new tab's input. */
+	(void)titlebar;
+	window = data;
+	window->serial = serial;
+	declare_tab(window, KL_WINDOW_TAB_NEW, 0U);
 }
 
 /* Queues an action chosen among the window's inputs. */

@@ -6,19 +6,23 @@
  */
 
 /*
- * The Wayland window of terminal: libkeiland's window (ws090-p011), whose
- * surface the terminal draws on with its own Vulkan (KUI_PRESENT_NONE).
+ * The Wayland window of terminal: a window of libkeiland's application
+ * (WS131 p018, kl_app; ws090-p011 before), whose surface the terminal
+ * draws on with its own Vulkan (KL_PRESENT_NONE).  The application waits
+ * for the compositor and the shells' pseudo-terminals together
+ * (kl_app_watch_fd).
  *
- * The window queues its input; this file takes it into what the main loop
- * reads.  A key press is turned into bytes at once (keys.c) and kept until
- * the main loop writes them to the shell, and a held key's repeats (which
- * the window makes after the compositor's events are in, BUG-111) are typed
- * the same way.  The pointer's presses, releases and motions are kept for
- * the selection (ws035-p093), the wheel as notches of the view's scroll
- * (ws035-p114), and the fingers for touch.c (ws081-p011).  The clipboard,
- * drops and drags (clipboard.c) and the primary selection (primary.c) bind
- * their managers from a registry of the terminal's own, on the window's
- * seat.
+ * The application queues the window's input; this file takes it into what
+ * the main loop reads.  A key press is turned into bytes at once (keys.c)
+ * and kept until the main loop writes them to the shell, and a held key's
+ * repeats (which the application makes after the compositor's events are
+ * in, BUG-111) are typed the same way.  The pointer's presses, releases
+ * and motions are kept for the selection (ws035-p093), the wheel as
+ * notches of the view's scroll (ws035-p114), and the fingers for touch.c
+ * (ws081-p011).  The menus' choices (menu.c), the tabs' (tabs.c), a drop
+ * waiting, the end of a drag and the selections' changes come as inputs
+ * too (clipboard.c, primary.c: the window's own clipboard and primary
+ * selection).
  *
  * The window asks for the input method's text (BUG-155): what it commits
  * goes to the shell like typed keys, and what it composes is kept for the
@@ -56,26 +60,21 @@
  */
 #define WINDOW_WHEEL_NOTCH	60.0
 
-static void window_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
-static void window_global_remove(void *data, struct wl_registry *registry, uint32_t name);
-static void window_take(struct terminal_window *window);
-static void window_event(struct terminal_window *window, const struct kui_window_event *event);
+static void window_watch(struct terminal_window *window, const int *others, unsigned count);
+static void window_event(struct terminal_window *window, const struct kl_window_event *event);
+static void window_selection(const struct kl_window_event *event);
+static void window_drop_enter(const struct kl_window_event *event);
 static void window_press(struct terminal_window *window, uint32_t key);
 static void window_text_commit(struct terminal_window *window, const char *text);
 static void window_search_key(struct terminal_window *window, uint32_t key);
 static void window_search_append(struct terminal_window *window, const char *text, size_t length);
-static void window_text_preedit(struct terminal_window *window, const struct kui_window_event *event);
+static void window_text_preedit(struct terminal_window *window, const struct kl_window_event *event);
 static void window_text_delete(struct terminal_window *window, uint32_t before);
 static void window_wheel(struct terminal_window *window, double dy);
-static void window_pointer_event(struct terminal_window *window, unsigned kind, const struct kui_window_event *event);
-static void window_pad_push(struct terminal_window *window, unsigned type, const struct kui_window_event *event);
-static void window_touch_push(struct terminal_window *window, unsigned type, const struct kui_window_event *event);
+static void window_pointer_event(struct terminal_window *window, unsigned kind, const struct kl_window_event *event);
+static void window_pad_push(struct terminal_window *window, unsigned type, const struct kl_window_event *event);
+static void window_touch_push(struct terminal_window *window, unsigned type, const struct kl_window_event *event);
 static uint32_t window_modifiers(unsigned modifiers);
-
-/* The terminal's registry: the clipboard's and the primary selection's managers. */
-static const struct wl_registry_listener registry_listener = {
-	window_global, window_global_remove
-};
 
 /*
  * Connects to the compositor and makes a toplevel window of a size.
@@ -89,31 +88,35 @@ terminal_window_open(
 	uint32_t width,
 	uint32_t height)
 {
-	struct kui_window_options options;
-	int status;
+	struct kl_window_options options;
+	struct kl_app_options app_options;
+	struct kl_app_event event;
+	int taken;
 
 	/* Nothing held yet. */
 	memset(window, 0, sizeof(*window));
 
-	/* libkeiland's window, the size asked for until the compositor gives one; the terminal draws on it itself. */
+	/* The application: the connection to zdesktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.display = display;
+	app_options.application = "terminal";
+	window->app = kl_app_open(&app_options);
+	if (window->app == NULL)
+		return -1;
+
+	/* Its window, the size asked for until the compositor gives one; the terminal draws on it itself. */
 	memset(&options, 0, sizeof(options));
-	options.display = display;
 	options.title = "Terminal";
-	options.application = "terminal";
 	options.width = width;
 	options.height = height;
-	options.present = KUI_PRESENT_NONE;
-	window->kui = kui_window_open(&options);
+	options.present = KL_PRESENT_NONE;
+	window->kui = kl_app_window_create(window->app, &options);
 	if (window->kui == NULL)
 		return -1;
 
-	/* The window's objects the terminal's parts use, and the size it was given. */
-	window->display = kui_window_display(window->kui);
-	window->seat = kui_window_seat(window->kui);
-	window->surface = kui_window_surface(window->kui);
-	window->toplevel = kui_window_toplevel(window->kui);
-	kui_window_size(window->kui, &window->width, &window->height);
-	window->fullscreen = kui_window_fullscreen(window->kui);
+	/* The window's size and full screen as the first configure left them. */
+	kl_window_size(window->kui, &window->width, &window->height);
+	window->fullscreen = kl_window_fullscreen(window->kui);
 
 	/*
 	 * The input method's text, asked for for good: the whole window is
@@ -122,39 +125,19 @@ terminal_window_open(
 	window->preedit[0] = '\0';
 	window->preedit_begin = -1;
 	window->preedit_end = -1;
-	kui_window_text_input(window->kui, 1);
+	kl_window_text_input(window->kui, 1);
 
-	/*
-	 * zdesktop's titlebar with the tabs (tabs.c), asked for before anything
-	 * is drawn: the roundtrip below acknowledges the configure it brings, so
-	 * the first image is shown with its titlebar.  Asked for after the
-	 * renderer and the menus, the first image was committed before that
-	 * configure was acknowledged, and the titlebar came only with a later
-	 * image, seconds after the window (ws099-p023, BUG-137).
-	 */
-	terminal_tabs_open(window);
+	/* Text and file names dropped on the window are pasted into the shell (ws035-p088). */
+	(void)kl_window_accept_drops(window->kui, KL_DROP_TEXT | KL_DROP_URIS);
 
-	/* The terminal's registry, for the clipboard's and the primary selection's managers. */
-	window->registry = wl_display_get_registry(window->display);
-	if (window->registry == NULL)
-		return -1;
-
-	/* Listens for the globals the compositor announces. */
-	status = wl_registry_add_listener(window->registry, &registry_listener, window);
-	if (status != 0)
-		return -1;
-
-	/* Waits until every global has been announced. */
-	status = wl_display_roundtrip(window->display);
-	if (status < 0)
-		return -1;
-
-	/* The seat's data device, for the clipboard and drops (clipboard.c), and the primary selection's (primary.c). */
-	terminal_clipboard_start(window);
-	terminal_primary_start(window);
-
-	/* What the first configure left in the window's queue (its size is already known). */
-	window_take(window);
+	/* What the window's making left queued (its size is already known). */
+	for (;;) {
+		taken = kl_app_take(window->app, &event);
+		if (taken == 0)
+			break;
+		if (event.kind == KL_APP_WINDOW)
+			window_event(window, &event.input);
+	}
 	window->resized = 0;
 
 	/* Succeeded: the window can be drawn into. */
@@ -162,12 +145,13 @@ terminal_window_open(
 }
 
 /*
- * Waits for the compositor or another descriptor (the shells') and runs
- * the compositor's events, taking the window's input.
+ * Waits for the compositor or another descriptor (the shells') and takes
+ * what happened: the window's input, and which descriptors are ready.
  *
- * `timeout` is in milliseconds (-1 waits for ever); ready[i] tells whether
- * others[i] has something to read or has hung up.  Returns 0, or -1 when
- * the connection is broken.
+ * `timeout` is in milliseconds (-1 waits for ever; a held key's repeat or
+ * input already queued waits less); ready[i] tells whether others[i] has
+ * something to read or has hung up.  Returns 0, or -1 when the connection
+ * is broken.
  */
 int
 terminal_window_dispatch(
@@ -177,50 +161,47 @@ terminal_window_dispatch(
 	int timeout,
 	int *ready)
 {
+	struct kl_app_event event;
+	unsigned index;
 	int status;
+	int taken;
 
-	/* The compositor and the shells, together. */
-	status = kui_window_dispatch_fds(window->kui, others, count, timeout, ready);
+	/* The descriptors watched are the shells' now; none is ready yet. */
+	window_watch(window, others, count);
+	for (index = 0; index < count; index++)
+		ready[index] = 0;
+
+	/* The compositor and the shells, together (a held key repeats within, after its release if that came). */
+	status = kl_app_dispatch(window->app, timeout);
 	if (status != 0)
 		return -1;
 
-	/* The input the compositor's events queued. */
-	window_take(window);
+	/* What happened, in its order: the window's input, and the shells that wrote or hung up. */
+	for (;;) {
+		taken = kl_app_take(window->app, &event);
+		if (taken == 0)
+			break;
+
+		/* The window's input. */
+		if (event.kind == KL_APP_WINDOW && event.window == window->kui) {
+			window_event(window, &event.input);
+			continue;
+		}
+
+		/* A shell's descriptor. */
+		if (event.kind != KL_APP_FD)
+			continue;
+		for (index = 0; index < count; index++) {
+			if (others[index] == event.fd)
+				ready[index] = 1;
+		}
+	}
+
+	/* Whether the compositor made the window fullscreen (the View menu shows it). */
+	window->fullscreen = kl_window_fullscreen(window->kui);
 
 	/* Succeeded: the events so far have run. */
 	return 0;
-}
-
-/*
- * Presses the held key again when its repeat is due (after the compositor's
- * events, so that a release read with them stops it first, BUG-111).
- */
-void
-terminal_window_repeat(
-	struct terminal_window *window,
-	uint64_t now)
-{
-	/* The window's repeat queues the key; it is typed like any press. */
-	(void)now;
-	(void)kui_window_repeat(window->kui, kui_clock_us());
-	window_take(window);
-}
-
-/*
- * Reports in how many milliseconds the held key's repeat is due (0: now,
- * -1 when no key is held).
- */
-int
-terminal_window_repeat_wait(
-	const struct terminal_window *window)
-{
-	int wait;
-
-	/* The window's answer. */
-	wait = kui_window_repeat_wait(window->kui, kui_clock_us());
-
-	/* Reports it. */
-	return wait;
 }
 
 /*
@@ -230,16 +211,15 @@ void
 terminal_window_close(
 	struct terminal_window *window)
 {
-	/* The menus, before the window they are shown on, and the clipboard before the seat. */
-	terminal_menu_close(window);
-	terminal_primary_close(window);
-	terminal_clipboard_close(window);
-
-	/* The terminal's registry, then the window and its connection. */
-	if (window->registry != NULL)
-		wl_registry_destroy(window->registry);
+	/* The menus, before the window they are shown on. */
 	if (window->kui != NULL)
-		kui_window_close(window->kui);
+		terminal_menu_close(window);
+
+	/* The window, then the application and its connection. */
+	if (window->kui != NULL)
+		kl_window_close(window->kui);
+	if (window->app != NULL)
+		kl_app_close(window->app);
 	memset(window, 0, sizeof(*window));
 }
 
@@ -272,7 +252,7 @@ terminal_window_set_fullscreen(
 	int fullscreen)
 {
 	/* On the default output, or back to a window. */
-	kui_window_set_fullscreen(window->kui, fullscreen);
+	kl_window_set_fullscreen(window->kui, fullscreen);
 }
 
 /*
@@ -293,85 +273,74 @@ terminal_clock(void)
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
 }
 
-/* Binds the clipboard's and the primary selection's managers (the window has the rest). */
+/*
+ * Watches the shells' descriptors for reading, as many as there are now:
+ * one no longer among them stops being watched.
+ */
 static void
-window_global(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name,
-	const char *interface,
-	uint32_t version)
+window_watch(
+	struct terminal_window *window,
+	const int *others,
+	unsigned count)
 {
-	struct terminal_window *window;
-	int match;
+	unsigned kept;
+	unsigned index;
+	unsigned other;
+	int found;
+	int error;
 
-	/* The data device manager shares the clipboard with other clients (clipboard.c). */
-	window = data;
-	match = strcmp(interface, "wl_data_device_manager");
-	if (match == 0 && window->data_manager == NULL) {
-		terminal_clipboard_bind(window, registry, name, version);
-		return;
+	/* The ones watched that are gone stop being watched. */
+	kept = 0;
+	for (index = 0; index < window->watched_count; index++) {
+		found = 0;
+		for (other = 0; other < count; other++) {
+			if (others[other] == window->watched[index])
+				found = 1;
+		}
+		if (!found) {
+			(void)kl_app_watch_fd(window->app, window->watched[index], 0U);
+			continue;
+		}
+		window->watched[kept] = window->watched[index];
+		kept++;
 	}
+	window->watched_count = kept;
 
-	/* The primary selection manager shares the selected text with other clients (primary.c). */
-	match = strcmp(interface, "zwp_primary_selection_device_manager_v1");
-	if (match == 0 && window->primary_manager == NULL)
-		terminal_primary_bind(window, registry, name);
-}
-
-/* A global going away does not matter to a terminal that already bound what it needs. */
-static void
-window_global_remove(
-	void *data,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Nothing to do. */
-	(void)data;
-	(void)registry;
-	(void)name;
-}
-
-/* Takes every input the window queued, and its size and full screen as the compositor left them. */
-static void
-window_take(
-	struct terminal_window *window)
-{
-	struct kui_window_event event;
-	int taken;
-
-	/* Each input, oldest first. */
-	for (;;) {
-		taken = kui_window_take(window->kui, &event);
-		if (taken == 0)
-			break;
-		window_event(window, &event);
+	/* The new ones are watched. */
+	for (other = 0; other < count && window->watched_count < TERMINAL_TABS; other++) {
+		found = 0;
+		for (index = 0; index < window->watched_count; index++) {
+			if (window->watched[index] == others[other])
+				found = 1;
+		}
+		if (found)
+			continue;
+		error = kl_app_watch_fd(window->app, others[other], KL_APP_FD_READ);
+		if (error != 0)
+			continue;
+		window->watched[window->watched_count] = others[other];
+		window->watched_count++;
 	}
-
-	/* Whether the compositor made the window fullscreen (the View menu shows it). */
-	window->fullscreen = kui_window_fullscreen(window->kui);
 }
 
 /* Turns one input of the window into the terminal's. */
 static void
 window_event(
 	struct terminal_window *window,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
-	/* Every input carries the modifiers held; one with a serial names a selection the terminal may set. */
+	/* Every input carries the modifiers held. */
 	window->modifiers = window_modifiers(event->modifiers);
-	if (event->serial != 0U)
-		window->serial = event->serial;
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
+	case KL_WINDOW_MOTION:
 		/* The pointer's place, and a motion for the main loop. */
 		window->pointer_x = (int32_t)event->x;
 		window->pointer_y = (int32_t)event->y;
 		window_pointer_event(window, TERMINAL_POINTER_MOTION, event);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The middle button's press pastes the primary selection (ws035-p100). */
 		if (event->code == WINDOW_BUTTON_MIDDLE) {
 			if (event->pressed)
@@ -389,7 +358,7 @@ window_event(
 		}
 
 		break;
-	case KUI_WINDOW_AXIS:
+	case KL_WINDOW_AXIS:
 		/* A touch pad's fingers scroll as fingers do, with libkeiland's scroller (ws090-p019); a wheel by notches. */
 		if (event->axis_source == KL_AXIS_SOURCE_FINGER) {
 			window_pad_push(window, TERMINAL_TOUCH_PAD, event);
@@ -400,45 +369,106 @@ window_event(
 	case KL_WINDOW_AXIS_STOP:
 		window_pad_push(window, TERMINAL_TOUCH_PAD_STOP, event);
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		/* A press (or a held key's repeat) types; a release does nothing. */
 		if (event->pressed)
 			window_press(window, event->code);
 		break;
-	case KUI_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_COMMIT:
 		window_text_commit(window, event->text);
 		break;
-	case KUI_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_PREEDIT:
 		window_text_preedit(window, event);
 		break;
-	case KUI_WINDOW_TEXT_DELETE:
+	case KL_WINDOW_TEXT_DELETE:
 		/* Only bytes before the cursor can be taken back, as Backspace; the terminal has no text after it. */
 		window_text_delete(window, event->before);
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		window_touch_push(window, TERMINAL_TOUCH_DOWN, event);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_MOTION:
 		window_touch_push(window, TERMINAL_TOUCH_MOTION, event);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		window_touch_push(window, TERMINAL_TOUCH_UP, event);
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_CANCEL:
 		window_touch_push(window, TERMINAL_TOUCH_CANCEL, event);
 		break;
-	case KUI_WINDOW_RESIZE:
+	case KL_WINDOW_RESIZE:
 		/* The size the compositor gave, drawn at from the next frame. */
-		kui_window_size(window->kui, &window->width, &window->height);
+		kl_window_size(window->kui, &window->width, &window->height);
 		window->resized = 1;
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		/* The main loop ends the terminal. */
 		window->closed = 1;
+		break;
+	case KL_WINDOW_ACTION:
+		/* A menu's item, for the main loop (menu.c). */
+		terminal_menu_chosen(window, event);
+		break;
+	case KL_WINDOW_TAB:
+		/* A tab chosen, closed or new, for the main loop (tabs.c). */
+		terminal_tabs_input(window, event);
+		break;
+	case KL_WINDOW_DROP_ENTER:
+		window_drop_enter(event);
+		break;
+	case KL_WINDOW_DROP:
+		/* Dropped: the main loop pastes it (clipboard.c). */
+		window->drop_pending = 1;
+		break;
+	case KL_WINDOW_DRAG_DONE:
+		/* The terminal's drag of text ended. */
+		printf("ZTERM DRAG done dropped=%u\n", event->code);
+		fflush(stdout);
+		break;
+	case KL_WINDOW_SELECTION:
+		window_selection(event);
 		break;
 	default:
 		break;
 	}
+}
+
+/* Tells the tests a drag the window takes came over it, and what it has. */
+static void
+window_drop_enter(
+	const struct kl_window_event *event)
+{
+	int uris;
+	int text;
+
+	/* The file names and the text it has. */
+	uris = 0;
+	if ((event->code & KL_DROP_URIS) != 0U)
+		uris = 1;
+	text = 0;
+	if ((event->code & KL_DROP_TEXT) != 0U)
+		text = 1;
+
+	/* The log line the tests read. */
+	printf("ZTERM DROP enter uris=%d text=%d\n", uris, text);
+	fflush(stdout);
+}
+
+/* Tells the tests a selection's change: the clipboard's, or the primary selection's offer. */
+static void
+window_selection(
+	const struct kl_window_event *event)
+{
+	/* The primary selection. */
+	if (event->code == KL_SELECTION_PRIMARY) {
+		printf("ZTERM PRIMARY offer text=%d\n", event->pressed);
+		fflush(stdout);
+		return;
+	}
+
+	/* The clipboard. */
+	printf("ZTERM CLIPBOARD selection text=%d\n", event->pressed);
+	fflush(stdout);
 }
 
 /* Adds a key's bytes to what the shell reads next. */
@@ -667,7 +697,7 @@ window_text_delete(
 static void
 window_text_preedit(
 	struct terminal_window *window,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* The text and its segment; the main loop draws them. */
 	(void)snprintf(window->preedit, sizeof(window->preedit), "%s", event->text);
@@ -706,7 +736,7 @@ static void
 window_pointer_event(
 	struct terminal_window *window,
 	unsigned kind,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct terminal_pointer_event *kept;
 	uint32_t time;
@@ -746,7 +776,7 @@ static void
 window_touch_push(
 	struct terminal_window *window,
 	unsigned type,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct terminal_touch_event *kept;
 
@@ -777,7 +807,7 @@ static void
 window_pad_push(
 	struct terminal_window *window,
 	unsigned type,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct terminal_touch_event *kept;
 
@@ -805,11 +835,11 @@ window_modifiers(
 
 	/* Shift, Control and Alt. */
 	bits = 0U;
-	if ((modifiers & KUI_MOD_SHIFT) != 0U)
+	if ((modifiers & KL_MOD_SHIFT) != 0U)
 		bits |= TERMINAL_MODIFIER_SHIFT;
-	if ((modifiers & KUI_MOD_CTRL) != 0U)
+	if ((modifiers & KL_MOD_CTRL) != 0U)
 		bits |= TERMINAL_MODIFIER_CONTROL;
-	if ((modifiers & KUI_MOD_ALT) != 0U)
+	if ((modifiers & KL_MOD_ALT) != 0U)
 		bits |= TERMINAL_MODIFIER_ALT;
 
 	/* Reports them. */

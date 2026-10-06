@@ -49,7 +49,7 @@ static void touch_down(struct notes_touch *touch, const struct notes_touch_event
 static void touch_press(struct notes_touch *touch, uint64_t now);
 static void touch_gestures(struct notes_touch *touch, uint64_t now);
 static void touch_cancel(struct notes_touch *touch, uint64_t now);
-static void touch_double_tap(struct notes_touch *touch, const struct keiland_gesture_event *gesture);
+static void touch_double_tap(struct notes_touch *touch, const struct kl_gesture_event *gesture);
 static void touch_pinch(struct notes_touch *touch, uint64_t now);
 static void touch_pinch_end(struct notes_touch *touch, uint64_t now);
 static float touch_zoom_max(const struct notes_touch *touch);
@@ -78,14 +78,14 @@ notes_touch_open(
 	touch->zoom = 1.0f;
 
 	/* The gestures of the window. */
-	touch->gesture = keiland_gesture_create();
+	touch->gesture = kl_gesture_create();
 	if (touch->gesture == NULL)
 		return ENOMEM;
 
 	/* The scroller of the page. */
-	touch->scroller = keiland_scroller_create();
+	touch->scroller = kl_scroller_create();
 	if (touch->scroller == NULL) {
-		keiland_gesture_destroy(touch->gesture);
+		kl_gesture_destroy(touch->gesture);
 		touch->gesture = NULL;
 		return ENOMEM;
 	}
@@ -103,9 +103,9 @@ notes_touch_close(
 {
 	/* Both, when they were made. */
 	if (touch->scroller != NULL)
-		keiland_scroller_destroy(touch->scroller);
+		kl_scroller_destroy(touch->scroller);
 	if (touch->gesture != NULL)
-		keiland_gesture_destroy(touch->gesture);
+		kl_gesture_destroy(touch->gesture);
 	memset(touch, 0, sizeof(*touch));
 }
 
@@ -159,7 +159,7 @@ notes_touch_layout(
 		if (touch->scroll_y < 0.0)
 			touch->scroll_y = 0.0;
 		if (touch->scroller != NULL)
-			keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
+			kl_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
 	}
 
 	/* Where the page is drawn. */
@@ -204,7 +204,7 @@ notes_touch_event(
 		/* Any other finger the gestures follow. */
 		finger = touch_finger(touch, event->id);
 		if (finger != NULL && finger->followed)
-			(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
+			(void)kl_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 		break;
 	case NOTES_TOUCH_UP:
 		/* The writing finger's lift ends its line where it last was. */
@@ -220,7 +220,7 @@ notes_touch_event(
 		if (finger == NULL)
 			break;
 		if (finger->followed) {
-			error = keiland_gesture_up(touch->gesture, event->id, time);
+			error = kl_gesture_up(touch->gesture, event->id, time);
 			if (error == 0 && touch->followed > 0U)
 				touch->followed--;
 		}
@@ -239,7 +239,7 @@ notes_touch_event(
 		}
 
 		/* The gestures forget every finger. */
-		keiland_gesture_cancel(touch->gesture);
+		kl_gesture_cancel(touch->gesture);
 		for (index = 0; index < NOTES_TOUCH_FINGERS; index++) {
 			touch->fingers[index].used = 0;
 			touch->fingers[index].followed = 0;
@@ -271,7 +271,7 @@ notes_touch_pen(
 
 	/* The pen came near: the fingers down are left alone until they lift. */
 	if (near && !touch->pen_near && touch->followed > 0U) {
-		keiland_gesture_cancel(touch->gesture);
+		kl_gesture_cancel(touch->gesture);
 		for (index = 0; index < NOTES_TOUCH_FINGERS; index++)
 			touch->fingers[index].followed = 0;
 		touch->followed = 0;
@@ -344,13 +344,13 @@ notes_touch_tick(
 	/* A drag moves the scroller with the fingers, resampled for the frame. */
 	if (touch->dragging &&
 	    touch->pressed) {
-		error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+		error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 		if (error == 0)
-			keiland_scroller_drag(touch->scroller, dx - touch->base_x, dy - touch->base_y);
+			kl_scroller_drag(touch->scroller, dx - touch->base_x, dy - touch->base_y);
 	}
 
 	/* The page where the scroller is at the frame's time. */
-	animating = keiland_scroller_step(touch->scroller, now, &x, &y);
+	animating = kl_scroller_step(touch->scroller, now, &x, &y);
 	if (touch->moving) {
 		touch->scroll_x = x;
 		touch->scroll_y = y;
@@ -487,7 +487,7 @@ notes_touch_top(
 	touch->scroll_y = 0.0;
 	touch->moving = 0;
 	if (touch->scroller != NULL)
-		keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
+		kl_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
 	touch_place(touch);
 }
 
@@ -640,7 +640,7 @@ touch_down(
 
 	/* The gestures follow it. */
 	time = touch_time(event);
-	error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival, event->x, event->y);
+	error = kl_gesture_down(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 	if (error != 0)
 		return;
 	finger->followed = 1;
@@ -665,10 +665,10 @@ touch_press(
 	/* The page's bounds, and its place unless the scroller already owns it. */
 	touch_bounds(touch);
 	if (!touch->moving)
-		keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
+		kl_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
 
 	/* The press; the first press on a gliding page catches it. */
-	caught = keiland_scroller_press(touch->scroller, now);
+	caught = kl_scroller_press(touch->scroller, now);
 	if (!touch->pressed) {
 		touch->caught = caught;
 		if (caught) {
@@ -684,7 +684,7 @@ touch_press(
 	/* A drag already going on is measured from here. */
 	touch->base_x = 0.0;
 	touch->base_y = 0.0;
-	error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+	error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 	if (error == 0) {
 		touch->base_x = dx;
 		touch->base_y = dy;
@@ -697,18 +697,18 @@ touch_gestures(
 	struct notes_touch *touch,
 	uint64_t now)
 {
-	struct keiland_gesture_event gesture;
+	struct kl_gesture_event gesture;
 	int found;
 
 	/* Each gesture in turn. */
 	for (;;) {
-		found = keiland_gesture_next(touch->gesture, now, &gesture);
+		found = kl_gesture_next(touch->gesture, now, &gesture);
 		if (!found)
 			break;
 
 		/* Does what the gesture means. */
 		switch (gesture.kind) {
-		case KEILAND_GESTURE_TAP:
+		case KL_GESTURE_TAP:
 			/* A tap on the toolbar waits for the main loop to press its button. */
 			if (touch->toolbar &&
 			    gesture.y < (double)touch->top &&
@@ -722,10 +722,10 @@ touch_gestures(
 			printf("NOTES TOUCH tap x=%.0f y=%.0f toolbar=%d\n", gesture.x, gesture.y, touch->toolbar);
 			fflush(stdout);
 			break;
-		case KEILAND_GESTURE_DOUBLE_TAP:
+		case KL_GESTURE_DOUBLE_TAP:
 			touch_double_tap(touch, &gesture);
 			break;
-		case KEILAND_GESTURE_DRAG_BEGIN:
+		case KL_GESTURE_DRAG_BEGIN:
 			/* A drag on the page scrolls it. */
 			if (!touch->toolbar) {
 				touch->dragging = 1;
@@ -735,10 +735,10 @@ touch_gestures(
 
 			/* Nothing else. */
 			break;
-		case KEILAND_GESTURE_DRAG_END:
+		case KL_GESTURE_DRAG_END:
 			/* The page glides on at the finger's velocity. */
 			if (touch->dragging) {
-				keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
+				kl_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
 				printf("NOTES TOUCH release vx=%.0f vy=%.0f x=%.1f y=%.1f\n", gesture.vx, gesture.vy, touch->scroll_x, touch->scroll_y);
 				fflush(stdout);
 				touch->pressed = 0;
@@ -747,7 +747,7 @@ touch_gestures(
 			/* The drag is over. */
 			touch->dragging = 0;
 			break;
-		case KEILAND_GESTURE_CANCEL:
+		case KL_GESTURE_CANCEL:
 			touch_cancel(touch, now);
 			break;
 		default:
@@ -758,7 +758,7 @@ touch_gestures(
 	/* The last finger lifted without a drag: the scroller is let go still (a page past an edge springs back). */
 	if (touch->followed == 0U &&
 	    touch->pressed) {
-		keiland_scroller_release(touch->scroller, now, 0.0, 0.0);
+		kl_scroller_release(touch->scroller, now, 0.0, 0.0);
 		touch->pressed = 0;
 		touch->dragging = 0;
 	}
@@ -776,7 +776,7 @@ touch_cancel(
 
 	/* The scroller lets go (a page past an edge springs back). */
 	if (touch->pressed)
-		keiland_scroller_cancel(touch->scroller, now);
+		kl_scroller_cancel(touch->scroller, now);
 	touch->pressed = 0;
 	touch->dragging = 0;
 	touch->toolbar = 0;
@@ -792,7 +792,7 @@ touch_cancel(
 static void
 touch_double_tap(
 	struct notes_touch *touch,
-	const struct keiland_gesture_event *gesture)
+	const struct kl_gesture_event *gesture)
 {
 	float anchor_x;
 	float anchor_y;
@@ -845,7 +845,7 @@ touch_pinch(
 	error = ENOENT;
 	if (touch->followed >= 2U &&
 	    !touch->toolbar)
-		error = keiland_gesture_pinch(touch->gesture, now, &ratio, &x, &y);
+		error = kl_gesture_pinch(touch->gesture, now, &ratio, &x, &y);
 	if (error != 0) {
 		if (touch->pinching)
 			touch_pinch_end(touch, now);
@@ -972,7 +972,7 @@ touch_bounds(
 		return;
 
 	/* The new bounds. */
-	(void)keiland_scroller_set_bounds(touch->scroller, 0.0, largest_x, 0.0, largest_y, width, height);
+	(void)kl_scroller_set_bounds(touch->scroller, 0.0, largest_x, 0.0, largest_y, width, height);
 	touch->bounds_x = largest_x;
 	touch->bounds_y = largest_y;
 	touch->bounds_width = width;
@@ -1021,7 +1021,7 @@ touch_zoom_about(
 		touch->scroll_y = 0.0;
 
 	/* The scroller takes the page there, and the page is placed. */
-	keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
+	kl_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
 	touch_place(touch);
 }
 
@@ -1071,9 +1071,9 @@ touch_stop(
 		return;
 
 	/* The scroller holds the page where it was last placed. */
-	keiland_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
+	kl_scroller_set_position(touch->scroller, touch->scroll_x, touch->scroll_y);
 	touch->moving = 0;
-	(void)keiland_scroller_step(touch->scroller, now, &touch->scroll_x, &touch->scroll_y);
+	(void)kl_scroller_step(touch->scroller, now, &touch->scroll_x, &touch->scroll_y);
 	touch_place(touch);
 
 	/* The tests' line. */
@@ -1204,7 +1204,7 @@ touch_write_handover(
 
 	/* The gestures follow it from where it is. */
 	finger = touch_finger(touch, touch->writer_id);
-	error = keiland_gesture_down(touch->gesture, touch->writer_id, touch->writer_time_us, now, touch->writer_x, touch->writer_y);
+	error = kl_gesture_down(touch->gesture, touch->writer_id, touch->writer_time_us, now, touch->writer_x, touch->writer_y);
 	if (error != 0)
 		return;
 

@@ -236,13 +236,14 @@ primary_offer(
 	(void)zwp_primary_selection_offer_v1_add_listener(offer, &offer_listener, window);
 }
 
-/* The primary selection changed: its offer (the last one described), or none. */
+/* The primary selection changed: its offer (the last one described), or none; the window hears it changed. */
 static void
 primary_selection(
 	void *data,
 	struct zwp_primary_selection_device_v1 *device,
 	struct zwp_primary_selection_offer_v1 *offer)
 {
+	struct kl_window_event *event;
 	struct kl_window *window;
 
 	/* The offer before goes. */
@@ -256,6 +257,13 @@ primary_selection(
 	window->primary_offer_text = 0;
 	if (offer != NULL)
 		window->primary_offer_text = window->primary_pending_text;
+
+	/* The window's input (WS131 p018). */
+	event = keiui_window_push(window, KL_WINDOW_SELECTION);
+	if (event != NULL) {
+		event->code = KL_SELECTION_PRIMARY;
+		event->pressed = window->primary_offer_text;
+	}
 }
 
 /* Notes an offer's type: text is what the window takes. */

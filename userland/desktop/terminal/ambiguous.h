@@ -15,8 +15,8 @@
  * Mn, Me, Cf and Cc characters are left out.  Do not edit by hand.
  */
 
-#ifndef KEILAND_TERMINAL_AMBIGUOUS_H
-#define KEILAND_TERMINAL_AMBIGUOUS_H
+#ifndef TERMINAL_AMBIGUOUS_H
+#define TERMINAL_AMBIGUOUS_H
 
 /* How many ranges the table has (138370 code points). */
 #define AMBIGUOUS_RANGES	176U

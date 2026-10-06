@@ -63,6 +63,16 @@ find userland/desktop \
     -o -name '*.[ch]' -print |
 while IFS= read -r file; do
     [ "$file" != userland/desktop/libkeiland-backend/keiland-backend-evdev.h ] || continue
+    # D14 (2026-10-03 user): Terminal's pty header, <pty.h> or FreeBSD's <libutil.h>, is chosen by one macro block
+    # (ws131-p018 moved it into terminal/main.c); the block holds only those includes.
+    if [ "$file" = userland/desktop/terminal/main.c ]; then
+        awk '/^[[:space:]]*#[[:space:]]*(if|ifdef|elif).*(__linux__|__FreeBSD__)/ {
+            getline next_line
+            if (next_line ~ /^[[:space:]]*#[[:space:]]*include[[:space:]]*<libutil\.h>/) next
+            print FILENAME ":" FNR - 1 ": " $0
+        }' "$file"
+        continue
+    fi
     awk '/^[[:space:]]*#[[:space:]]*(if|ifdef|elif).*(__linux__|__FreeBSD__)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/L1"
 
