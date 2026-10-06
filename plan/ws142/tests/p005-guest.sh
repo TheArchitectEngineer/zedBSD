@@ -10,8 +10,12 @@
 #     with its two previews (switch-bar.png); Shift+Tab: apps.a again; Alt let go: "ZWL SWITCH commit app=apps.a
 #     ... via=alt" and its window raised ("ZWL APPS raise ... via=switch").
 #  2. Alt+Tab then Esc: "ZWL SWITCH cancel via=escape", nothing brought.
-#  3. A quick Alt+Tab keeps the current application (apps.a); Alt+Tab+Tab brings the one to its right (apps.b);
-#     Shift+Alt+Tab opens on the current one too ("open via=keys index=1 app=apps.b"), Shift+Tab then apps.a, Esc.
+#  3. A quick Alt+Tab (Alt let go at once) leaves the switcher open on the current application (BUG-209, the
+#     2026-10-06 user instruction: "ZWL SWITCH stay via=quick-alt index=0 app=apps.a", no commit); Tab alone then
+#     steps to apps.b, Alt pressed and let go again brings nothing, Enter brings apps.b ("commit ... via=enter").  A
+#     quick Alt+Tab again, then Esc: "cancel via=escape", apps.b stays current.  Alt held, Tab, Tab brings the one to
+#     the right of the current one (apps.c); Shift+Alt+Tab opens on the current one too ("open via=keys index=2
+#     app=apps.c"), Shift+Tab then apps.b, Esc.
 #  4. The pad: a tap of three fingers opens it ("open via=pad"), two fingers 15 mm to the right step on ("step ...
 #     via=pad"), a tap brings the selection ("commit ... via=pad").
 #  5. A docked window (double click on the top window's title): Alt+Tab shows in the middle ("placement=center",
@@ -35,6 +39,13 @@ shot() { timeout 60 python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --r
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$qmp" "$@" >/dev/null; }
 key() { send input-send-event "{\"events\":[{\"type\":\"key\",\"data\":{\"down\":$2,\"key\":{\"type\":\"qcode\",\"data\":\"$1\"}}}]}"; }
 tap() { key "$1" true; sleep 0.12; key "$1" false; sleep 0.6; }
+# Alt+Tab pressed and let go at once (well within ZWL_SWITCHER_QUICK_MS, 500 ms), two events a QMP command.
+quick_alt_tab() {
+	send input-send-event '{"events":[{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"alt"}}},{"type":"key","data":{"down":true,"key":{"type":"qcode","data":"tab"}}}]}'
+	sleep 0.05
+	send input-send-event '{"events":[{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"tab"}}},{"type":"key","data":{"down":false,"key":{"type":"qcode","data":"alt"}}}]}'
+	sleep 0.8
+}
 count() { guest "grep -c -- '$1' /tmp/zdesktop.log" | tail -1; }
 stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]ltest|[t]ouchinject" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 env='export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0;'
@@ -88,29 +99,41 @@ sleep 0.8
 expect_count escape-cancels 'ZWL SWITCH cancel via=escape' 1
 expect_count escape-brings-nothing 'ZWL APPS raise surface=[0-9]* via=switch' 1
 
-# 3. A quick Alt+Tab keeps apps.a; Alt+Tab+Tab brings apps.b; Shift+Alt+Tab opens on apps.b.
+# 3. A quick Alt+Tab stays open on apps.a; Tab, Alt again, Enter brings apps.b; quick again and Esc; Alt+Tab+Tab
+#    brings apps.c; Shift+Alt+Tab opens on apps.c.
+quick_alt_tab
+expect_count quick-stays-open 'ZWL SWITCH stay via=quick-alt index=0 app=apps.a' 1
+expect_count quick-brings-nothing 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt' 1
+tap tab
+expect_count quick-tab-steps 'ZWL SWITCH step index=1 app=apps.b via=key' 1
 key alt true
+sleep 0.2
+key alt false
+sleep 0.8
+expect_count quick-alt-again-nothing 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt' 1
+tap ret
+expect_count quick-enter-brings 'ZWL SWITCH commit app=apps.b surface=[0-9]* via=enter' 1
+quick_alt_tab
+expect_count quick-again-stays 'ZWL SWITCH stay via=quick-alt index=1 app=apps.b' 1
+tap esc
+expect_count quick-escape 'ZWL SWITCH cancel via=escape' 2
+key alt true
+tap tab
 tap tab
 key alt false
 sleep 0.8
-expect_count quick-keeps-current 'ZWL SWITCH commit app=apps.a surface=[0-9]* via=alt' 2
-key alt true
-tap tab
-tap tab
-key alt false
-sleep 0.8
-expect_count tab-tab-right 'ZWL SWITCH commit app=apps.b surface=[0-9]* via=alt' 1
+expect_count tab-tab-right 'ZWL SWITCH commit app=apps.c surface=[0-9]* via=alt' 1
 key shift true
 key alt true
 tap tab
-expect_count shift-opens-current 'ZWL SWITCH open via=keys index=1 app=apps.b placement=bar count=3' 1
+expect_count shift-opens-current 'ZWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3' 2
 tap tab
-expect_count shift-tab-left 'ZWL SWITCH step index=0 app=apps.a via=tab' 3
+expect_count shift-tab-left 'ZWL SWITCH step index=1 app=apps.b via=tab' 2
 key shift false
 tap esc
 key alt false
 sleep 0.8
-expect_count shift-escape 'ZWL SWITCH cancel via=escape' 2
+expect_count shift-escape 'ZWL SWITCH cancel via=escape' 3
 
 # 4. The pad: a tap of three fingers, two fingers 15 mm right, a tap.
 pad switch-pad "down 0 400 500; down 1 550 480; down 2 700 500" "wait 40" "up 0; up 1; up 2" "wait 500" \
@@ -136,7 +159,7 @@ n=$(count 'ZWL SWITCH center app='); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass cen
 shot switch-center
 key alt false
 sleep 0.8
-n=$(count 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt'); [ "${n:-0}" -ge 4 ] 2>/dev/null && pass center-commit || fail "center-commit (${n:-?})"
+n=$(count 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt'); [ "${n:-0}" -ge 3 ] 2>/dev/null && pass center-commit || fail "center-commit (${n:-?})"
 
 # 6. A fullscreen window: no switcher.
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null

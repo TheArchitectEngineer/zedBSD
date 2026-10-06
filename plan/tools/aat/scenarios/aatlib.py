@@ -457,6 +457,21 @@ class Run:
 			item.check(line, f"the press did not reach the close button of {window.client}:{window.surface}")
 		item.check(line, f"the window {window.client}:{window.surface} was asked to close but did not")
 
+	def back_to_windowed(self) -> None:
+		"""Brings the session's layout mode back to windowed when a scenario left it docked (ws142-p008: docking a
+		window docks every window switched to or opened after, until one is brought back), so that the next scenario
+		starts with floating windows: the restore button in the system bar of the docked window in front."""
+		modes = self.lines(r"ZWL LAYOUT mode=\w+", None)
+		if not modes or "mode=docked" not in modes[-1]:
+			return
+		docks = self.lines(r"ZWL GLASS dock surface=\d+ .*buttons=-?\d+,-?\d+,", None)
+		if not docks:
+			return
+		match = re.search(r"buttons=(-?\d+),(-?\d+),", docks[-1])
+		since = self.mark()
+		self.click(int(match.group(2)), TITLE_HEIGHT // 2)
+		self.wait(r"ZWL LAYOUT mode=windowed", since, 5)
+
 	# Settings.
 
 	def settings(self, item: Item, page: str) -> tuple[Window, str]:

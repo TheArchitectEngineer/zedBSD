@@ -1373,8 +1373,10 @@ zwl_window_enter_fullscreen(
 
 	/*
 	 * A docked window is not docked while it is fullscreen: it covers the
-	 * output, not the space under the system bar, and leaving fullscreen
-	 * docks it again (BUG-208).  A dock still being animated ends here.
+	 * output, not the space under the system bar, and keeps its floating
+	 * place to come back to (BUG-208); leaving fullscreen follows the
+	 * session's layout mode (ws142-p008).  A dock still being animated ends
+	 * here.
 	 */
 	if (surface->maximized) {
 		surface->fullscreen_docked = 1;
@@ -1415,8 +1417,7 @@ zwl_window_leave_fullscreen(
 	struct zwl_object *surface)
 {
 	struct zwl_server *server;
-	int32_t right;
-	int32_t bottom;
+	int docks;
 	int error;
 
 	/* Not fullscreen: nothing changes. */
@@ -1424,20 +1425,23 @@ zwl_window_leave_fullscreen(
 		return 0;
 
 	/*
-	 * Docked again when it was docked (BUG-208): the space under the system
-	 * bar, less what the on-screen keyboard's panel takes.  Otherwise back to
-	 * its place, or the space's centre when it never had one.
+	 * Docked when the session's layout mode is docked (shell.c, ws142-p008;
+	 * it replaces BUG-208's memory of the window's own state).  Otherwise a
+	 * window that was docked before comes back to its floating place, and
+	 * any other to its place, or the space's centre when it never had one.
 	 */
 	server = surface->client->server;
 	surface->fullscreen = 0;
-	if (surface->fullscreen_docked) {
-		zwl_keyboard_reserved_now(&right, &bottom);
+	docks = zwl_glass_unfullscreen_docks(server, surface);
+	if (docks) {
 		surface->fullscreen_docked = 0;
-		surface->maximized = 1;
-		surface->x = 0;
-		surface->y = ZWL_GLASS_DOCK_TOP;
-		surface->window_width = server->width - (uint32_t)right;
-		surface->window_height = server->height - ZWL_GLASS_DOCK_TOP - (uint32_t)bottom;
+	} else if (surface->fullscreen_docked) {
+		surface->fullscreen_docked = 0;
+		surface->x = surface->restore_x;
+		surface->y = surface->restore_y;
+		surface->window_width = surface->restore_width;
+		surface->window_height = surface->restore_height;
+		zwl_glass_fit(server, (int32_t)surface->window_width, (int32_t)surface->window_height, &surface->x, &surface->y);
 	} else if (surface->placed) {
 		surface->x = surface->window_x;
 		surface->y = surface->window_y;
