@@ -322,6 +322,10 @@
 		kl_window_present_times;
 		kl_window_set_control_parts;
 		kl_window_set_glass_blur;
+		kl_window_answer_drop;
+		kl_window_receive_drop;
+		kl_window_finish_drop;
+		kl_window_start_drag;
 		kl_window_set_repeat;
 		kl_window_set_tabs;
 		kl_window_selection_own;

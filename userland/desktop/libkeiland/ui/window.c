@@ -73,6 +73,7 @@ static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
 static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
 static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
 static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
+static void window_desktop_configure(void *data, struct kl_desktop *desktop, uint32_t serial, int32_t x, int32_t y, int32_t width, int32_t height);
 static void window_output_geometry(void *data, struct wl_output *output, int32_t x, int32_t y, int32_t physical_width, int32_t physical_height, int32_t subpixel, const char *make, const char *model, int32_t transform);
 static void window_output_mode(void *data, struct wl_output *output, uint32_t flags, int32_t width, int32_t height, int32_t refresh);
 static void window_output_done(void *data, struct wl_output *output);
@@ -156,6 +157,11 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 /* The seat's devices and name. */
 static const struct wl_seat_listener seat_listener = {
 	window_seat_capabilities, window_seat_name
+};
+
+/* The desktop surface's configure (KL_VERSION 46). */
+static const struct kl_desktop_listener desktop_listener = {
+	window_desktop_configure
 };
 
 /* The first screen's description: its current mode is kept (KL_VERSION 45). */
@@ -280,6 +286,8 @@ kl_window_close(
 	/* The roles before the surface, the surface before the globals that made it. */
 	if (window->toplevel != NULL)
 		xdg_toplevel_destroy(window->toplevel);
+	if (window->desktop != NULL)
+		kl_desktop_destroy(window->desktop);
 	if (window->role != NULL)
 		xdg_surface_destroy(window->role);
 	if (window->surface != NULL)
@@ -548,8 +556,9 @@ kl_window_set_title(
 	struct kl_window *window,
 	const char *title)
 {
-	/* The request, sent with the next flush. */
-	xdg_toplevel_set_title(window->toplevel, title);
+	/* The request, sent with the next flush (a desktop surface has no title). */
+	if (window->toplevel != NULL)
+		xdg_toplevel_set_title(window->toplevel, title);
 }
 
 /*
@@ -701,7 +710,9 @@ kl_window_set_fullscreen(
 	struct kl_window *window,
 	int fullscreen)
 {
-	/* The request, sent with the next flush. */
+	/* The request, sent with the next flush (a desktop surface fills its screen already). */
+	if (window->toplevel == NULL)
+		return;
 	if (fullscreen) {
 		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
 	} else {
@@ -785,7 +796,9 @@ kl_window_set_maximized(
 	struct kl_window *window,
 	int maximized)
 {
-	/* Maximized, or back. */
+	/* Maximized, or back (a desktop surface is neither). */
+	if (window->toplevel == NULL)
+		return;
 	if (maximized) {
 		xdg_toplevel_set_maximized(window->toplevel);
 	} else {
@@ -800,8 +813,9 @@ void
 kl_window_minimize(
 	struct kl_window *window)
 {
-	/* The request, sent with the next flush. */
-	xdg_toplevel_set_minimized(window->toplevel);
+	/* The request, sent with the next flush (a desktop surface is never minimized). */
+	if (window->toplevel != NULL)
+		xdg_toplevel_set_minimized(window->toplevel);
 }
 
 /*
@@ -1135,11 +1149,11 @@ window_setup(
 	if (status != 0)
 		return status;
 
-	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told). */
-	window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
-
-	/* The editing operations of the keyboard's buttons, where the compositor has them (KUI_VERSION 8). */
-	keiui_edit_start(window);
+	/* The on-screen keyboard's inset, where the compositor tells it (KUI_VERSION 7; NULL otherwise, and nothing is told), and the editing operations of the keyboard's buttons (KUI_VERSION 8): a toplevel's. */
+	if (window->toplevel != NULL) {
+		window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
+		keiui_edit_start(window);
+	}
 	wl_surface_commit(window->surface);
 
 	/* The first configure (and the seat's devices) before anything is drawn. */
@@ -1335,9 +1349,11 @@ window_setup_app(
 	if (status != 0)
 		return status;
 
-	/* The keyboard's inset and the editing operations, where the compositor has them (bound from the application's registry). */
-	window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
-	keiui_edit_start(window);
+	/* The keyboard's inset and the editing operations, where the compositor has them (bound from the application's registry): a toplevel's. */
+	if (window->toplevel != NULL) {
+		window->inset = kl_keyboard_inset_create(window->display, window->toplevel, window_inset, window);
+		keiui_edit_start(window);
+	}
 	wl_surface_commit(window->surface);
 
 	/* The first configure (and the seat's devices) before anything is drawn; what it queues is not news. */
@@ -1371,10 +1387,20 @@ window_surface(
 {
 	int status;
 
-	/* The surface, as an xdg surface. */
+	/* The surface. */
 	window->surface = wl_compositor_create_surface(window->compositor);
 	if (window->surface == NULL)
 		return ENOMEM;
+
+	/* The desktop's surface instead of a window, with its token (KL_VERSION 46). */
+	if (options->role == KL_WINDOW_ROLE_DESKTOP) {
+		window->desktop = kl_desktop_create(window->display, window->surface, options->token, &desktop_listener, window);
+		if (window->desktop == NULL)
+			return errno;
+		return 0;
+	}
+
+	/* Otherwise an xdg surface. */
 	window->role = xdg_wm_base_get_xdg_surface(window->shell, window->surface);
 	if (window->role == NULL)
 		return ENOMEM;
@@ -2554,4 +2580,42 @@ window_output_scale(
 	(void)data;
 	(void)output;
 	(void)factor;
+}
+
+/* The desktop surface's place and size: acknowledged before any image of it, a new size heard (KL_VERSION 46). */
+static void
+window_desktop_configure(
+	void *data,
+	struct kl_desktop *desktop,
+	uint32_t serial,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height)
+{
+	struct kl_window *window;
+	int resized;
+
+	/* The acknowledgement comes before any image of the new size. */
+	(void)x;
+	(void)y;
+	window = data;
+	kl_desktop_ack(desktop, serial);
+	window->configured = 1;
+
+	/* A new width or height marks the surface resized. */
+	resized = 0;
+	if (width > 0 && (uint32_t)width != window->width) {
+		window->width = (uint32_t)width;
+		resized = 1;
+	}
+	if (height > 0 && (uint32_t)height != window->height) {
+		window->height = (uint32_t)height;
+		resized = 1;
+	}
+
+	/* The application hears of a new size. */
+	if (resized)
+		(void)window_push(window, KL_WINDOW_RESIZE);
+	keiui_window_wake(window);
 }

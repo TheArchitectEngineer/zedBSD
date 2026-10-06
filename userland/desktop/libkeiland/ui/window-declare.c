@@ -41,6 +41,7 @@ static void declare_tab(struct kl_window *window, unsigned code, uint32_t id);
 static void declare_tab_activated(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t serial);
 static void declare_tab_close(void *data, struct kl_titlebar *titlebar, uint32_t id);
 static void declare_tab_new(void *data, struct kl_titlebar *titlebar, uint32_t serial);
+static void declare_drop_target(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t detail);
 static void declare_action(struct kl_window *window, uint32_t action, uint32_t id, uint32_t detail);
 static void declare_menu_activated(void *data, struct kl_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
 static void declare_popup_activated(void *data, struct kl_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
@@ -63,7 +64,7 @@ static const struct kl_context_menu_listener declare_popup_listener = {
 	declare_popup_done
 };
 
-/* What the titlebar tells the window: the controls chosen, a field's text (KL_VERSION 43), and the tabs' choices (KL_VERSION 44). */
+/* What the titlebar tells the window: the controls chosen, a field's text (KL_VERSION 43), the tabs' choices (KL_VERSION 44), and the control a drag is over (KL_VERSION 46). */
 static const struct kl_titlebar_listener declare_titlebar_listener = {
 	declare_control_activated,
 	declare_text_changed,
@@ -72,7 +73,7 @@ static const struct kl_titlebar_listener declare_titlebar_listener = {
 	declare_tab_close,
 	declare_tab_new,
 	NULL,
-	NULL
+	declare_drop_target
 };
 
 /*
@@ -155,7 +156,9 @@ kl_window_set_menu(
 		return 0;
 	}
 
-	/* The menu service; a compositor without the System Menu shows none. */
+	/* The menu service; a compositor without the System Menu shows none, nor has a desktop surface a menu. */
+	if (window->toplevel == NULL)
+		return ENOTSUP;
 	service = declare_service(window);
 	if (service == NULL)
 		return ENOTSUP;
@@ -698,9 +701,11 @@ declare_titlebar(
 {
 	int error;
 
-	/* Made already. */
+	/* Made already; a desktop surface has no titlebar. */
 	if (window->titlebar != NULL)
 		return 0;
+	if (window->toplevel == NULL)
+		return ENOTSUP;
 
 	/* The titlebar; a compositor without it shows no controls. */
 	window->titlebar = kl_titlebar_create(window->display, window->toplevel, &declare_titlebar_listener, window);
@@ -1061,4 +1066,23 @@ declare_text(
 	if (length != 0U)
 		memcpy(event->text, text, length);
 	event->text[length] = '\0';
+}
+
+/* A drag over the window is over a control of the titlebar (a part of it in detail), or over none (id 0): among the inputs (KL_VERSION 46). */
+static void
+declare_drop_target(
+	void *data,
+	struct kl_titlebar *titlebar,
+	uint32_t id,
+	uint32_t detail)
+{
+	struct kl_window_event *event;
+
+	/* The input; a full queue drops it. */
+	(void)titlebar;
+	event = keiui_window_push(data, KL_WINDOW_CONTROL_DROP);
+	if (event == NULL)
+		return;
+	event->id = (int32_t)id;
+	event->begin = (int32_t)detail;
 }
