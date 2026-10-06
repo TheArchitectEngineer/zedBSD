@@ -97,6 +97,7 @@
 #define UI_SEPARATOR_ALPHA	40U
 
 static int32_t ui_layout(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
+static int32_t ui_layout_rest(struct notes_ui *ui, int32_t x, int32_t left, const struct notes_ui_state *state);
 static void ui_clear(struct notes_ui *ui);
 static void ui_over(struct notes_ui *ui, int32_t x, int32_t y, uint32_t rgb, unsigned alpha);
 static float ui_rounded_distance(float px, float py, float x, float y, float width, float height, float radius);
@@ -382,25 +383,22 @@ ui_layout(
 	int32_t left,
 	const struct notes_ui_state *state)
 {
-	char page_text[48];
 	const uint32_t *colors;
 	const float *widths;
 	int32_t x;
-	int32_t text_width;
 	int32_t slack;
 	uint32_t chosen;
 	unsigned index;
 	float radius;
 	float cx;
 	float cy;
-	int earlier;
-	int later;
 
 	/* The tools, the chosen one in Kei's blue. */
 	x = left;
 	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
 	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
 	x = ui_eraser_button(ui, x, state);
+	x = ui_label_button(ui, x, "Select", NOTES_ACTION_SELECT, state->tool, 1);
 
 	/*
 	 * The eraser's place keeps room for its longer label, so the buttons
@@ -419,6 +417,21 @@ ui_layout(
 	x = ui_label_button(ui, x, "Finger", NOTES_ACTION_FINGER, chosen, 1);
 	ui_separator(ui, x + UI_GAP / 2 - 1);
 	x += UI_GAP;
+
+	/*
+	 * With the Select tool (ws175-p008), what it does in place of the
+	 * colours and the widths: an image inserted, and the chosen object's
+	 * image replaced, deleted or put back as the page has it.
+	 */
+	if (state->tool == NOTES_ACTION_SELECT) {
+		x = ui_label_button(ui, x, "Image", NOTES_ACTION_INSERT_IMAGE, NOTES_ACTION_NONE, state->can_insert);
+		x = ui_label_button(ui, x, "Replace", NOTES_ACTION_REPLACE_IMAGE, NOTES_ACTION_NONE, state->can_replace);
+		x = ui_label_button(ui, x, "Delete", NOTES_ACTION_DELETE_OBJECT, NOTES_ACTION_NONE, state->selected);
+		x = ui_label_button(ui, x, "Reset", NOTES_ACTION_RESET_OBJECT, NOTES_ACTION_NONE, state->can_reset);
+		ui_separator(ui, x + UI_GAP / 2 - 1);
+		x += UI_GAP;
+		return ui_layout_rest(ui, x, left, state);
+	}
 
 	/* The colours of the pen, or of the highlighter while it is chosen. */
 	colors = ui_pen_colors;
@@ -468,6 +481,27 @@ ui_layout(
 	/* A separator before the next group. */
 	ui_separator(ui, x + UI_GAP / 2 - 1);
 	x += UI_GAP;
+
+	/* Undo, Redo, the pages and Save. */
+	return ui_layout_rest(ui, x, left, state);
+}
+
+/*
+ * Lays out (and draws) the card's buttons after the tools' own: Undo and
+ * Redo, the pages and Save, from x; returns the width all the buttons take
+ * from left.
+ */
+static int32_t
+ui_layout_rest(
+	struct notes_ui *ui,
+	int32_t x,
+	int32_t left,
+	const struct notes_ui_state *state)
+{
+	char page_text[48];
+	int32_t text_width;
+	int earlier;
+	int later;
 
 	/* Undo and Redo, pale when there is nothing to take back or make again. */
 	x = ui_label_button(ui, x, "Undo", NOTES_ACTION_UNDO, NOTES_ACTION_NONE, state->can_undo);

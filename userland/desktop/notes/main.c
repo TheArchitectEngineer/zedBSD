@@ -43,6 +43,17 @@
  * toolbar's Finger is on, one finger writes as the pointer does and two
  * fingers scroll and zoom.
  *
+ * ws175-p008: the Select tool edits the PDF's images and graphics (plan/
+ * ws175/phase001/design.md section 7): a press chooses the object under it
+ * (framed in blue, a handle on each corner), a drag moves it, a handle's
+ * drag sizes it (its proportions kept; Shift sizes the sides apart), the
+ * arrow keys move it by a point (Shift: ten) and Delete deletes it; the
+ * toolbar's Image inserts an image file, Replace puts one in the chosen
+ * image's place and Reset puts a page's object back as the page has it.
+ * Each is one change to undo.  A page with edits is drawn by its editor
+ * (edit.c), again every MAIN_DRAG_PREVIEW_MS while a drag moves its
+ * object.
+ *
  * --timeout-s ends Notes after that many seconds as if it were closed (the
  * tests use it to bound a run).  The lines starting with "NOTES" on the
  * standard output are what the tests read.
@@ -100,6 +111,12 @@
 #define MAIN_KEY_F11		87U
 #define MAIN_KEY_PAGE_UP	104U
 #define MAIN_KEY_PAGE_DOWN	109U
+#define MAIN_KEY_BACKSPACE	14U
+#define MAIN_KEY_UP		103U
+#define MAIN_KEY_LEFT		105U
+#define MAIN_KEY_RIGHT		106U
+#define MAIN_KEY_DOWN		108U
+#define MAIN_KEY_DELETE		111U
 
 /* The points of a circle the pen's mark is drawn with. */
 #define MAIN_CIRCLE_POINTS	40U
@@ -131,6 +148,34 @@
 #define MAIN_CONTACT_TOOLBAR	1U
 #define MAIN_CONTACT_DRAW	2U
 #define MAIN_CONTACT_ERASE	3U
+#define MAIN_CONTACT_SELECT	4U
+
+/*
+ * The Select tool (ws175-p008): no object chosen; what a drag does (no
+ * drag, the object moved, sized by a corner's handle); the handles' size
+ * and how close a press must be to one, in pixels; the colour of the
+ * chosen object's frame (Kei's blue); how often a drag draws the page
+ * again with the object where the drag has it, in milliseconds; the
+ * smallest side an object is sized to and how many times the page's size
+ * it may reach; how far the arrow keys move it (Shift: ten times), in
+ * points.
+ */
+#define MAIN_NONE		((size_t)-1)
+#define MAIN_DRAG_NONE		0U
+#define MAIN_DRAG_MOVE		1U
+#define MAIN_DRAG_RESIZE	2U
+#define MAIN_HANDLE_SIZE	8.0f
+#define MAIN_HANDLE_REACH	12.0f
+#define MAIN_SELECT_COLOR	0x2f7cf6ffU
+#define MAIN_DRAG_PREVIEW_MS	100U
+#define MAIN_SIDE_MIN		4.0
+#define MAIN_SIDE_TIMES_PAGE	4.0
+#define MAIN_NUDGE		1.0
+
+/* What the file chooser is shown for: a PDF (Open, Save As), an image to insert, an image for the chosen object. */
+#define MAIN_CHOOSE_DOCUMENT	0U
+#define MAIN_CHOOSE_INSERT	1U
+#define MAIN_CHOOSE_REPLACE	2U
 
 /*
  * Everything Notes holds for the one notebook it shows.
@@ -194,6 +239,44 @@ struct notes_app {
 	float background_scale;
 	uint32_t background_width;
 	uint32_t background_height;
+
+	/*
+	 * ws175-p008: the background's drawing is of the page with its edits
+	 * (the page's editor) and of a drag under way: the page and the look
+	 * (app_look) it was made for; and the look the page's picture was drawn
+	 * with (it is drawn again from the start when the look changed).
+	 */
+	const struct notes_page *background_list_page;
+	uint64_t background_look;
+	uint64_t picture_look;
+
+	/*
+	 * The Select tool (ws175-p008): the object chosen on the page shown (its
+	 * index among the page's editor's objects; MAIN_NONE: none), its kind
+	 * and whether it was inserted or has an edit (for the toolbar); the drag
+	 * under way (MAIN_DRAG_*), the corner whose handle it holds, where it
+	 * started (page points), the object's corners then, and the map of the
+	 * page's shown space it makes so far; the drags' previews drawn (they
+	 * count into the look), when the last was, and whether the map changed
+	 * since.
+	 */
+	size_t selected;
+	enum pdf_edit_kind selected_kind;
+	int selected_inserted;
+	int selected_edited;
+	unsigned drag;
+	unsigned drag_corner;
+	float drag_x;
+	float drag_y;
+	double drag_quad[8];
+	double drag_map[6];
+	uint64_t drag_previews;
+	uint64_t drag_previewed_at;
+	int drag_moved;
+
+	/* What the file chooser is shown for (MAIN_CHOOSE_*), and what it was shown for when it answered. */
+	unsigned chooser_purpose;
+	unsigned chosen_purpose;
 
 	/* The pen over the window: whether it is there, its place (surface pixels) and its source (NOTES_SOURCE_*). */
 	int hover;
@@ -295,13 +378,30 @@ static void app_frame_report(struct notes_app *app);
 static int app_timeout(const struct notes_app *app, uint64_t now);
 static uint64_t app_unix_ms(void);
 static uint64_t app_microseconds(void);
-static void app_choose(struct notes_app *app, unsigned mode);
+static void app_choose(struct notes_app *app, unsigned mode, unsigned purpose);
 static void app_chooser_done(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static void app_chosen(struct notes_app *app);
 static void app_open_file(struct notes_app *app, const char *path);
 static void app_save_as(struct notes_app *app, const char *path);
 static void app_place_page(struct notes_app *app);
 static void app_appearance_changed(void *data, unsigned appearance);
+static const char *app_tool_name(unsigned tool);
+static uint64_t app_look(const struct notes_app *app);
+static void app_count_edits(const struct notes_app *app, size_t *edits, size_t *pages);
+static void app_select_press(struct notes_app *app, float x, float y);
+static void app_select_motion(struct notes_app *app, float x, float y);
+static void app_select_release(struct notes_app *app);
+static void app_select(struct notes_app *app, size_t index, int logged);
+static void app_deselect(struct notes_app *app);
+static int app_selected_state(struct notes_app *app, struct notes_edit *state);
+static void app_drag_preview(struct notes_app *app, struct pdf_page_editor *editor);
+static void app_apply_map(struct notes_app *app, const double map[6]);
+static void app_delete_object(struct notes_app *app);
+static void app_reset_object(struct notes_app *app);
+static void app_put_image(struct notes_app *app, const char *path, unsigned purpose);
+static void app_selection_draw(struct notes_app *app, const struct notes_view *view);
+static void app_map_multiply(const double left[6], const double right[6], double product[6]);
+static void app_map_point(const double map[6], double x, double y, double *mapped_x, double *mapped_y);
 
 /*
  * Runs Notes.
@@ -365,6 +465,7 @@ main(
 
 	/* The notebook: recovered from a journal, or new. */
 	app.tool = NOTES_ACTION_PEN;
+	app.selected = MAIN_NONE;
 	app.width = 1U;
 	error = app_start_document(&app, file);
 	if (error != 0) {
@@ -544,7 +645,9 @@ app_start_document(
 	struct stat status;
 	const char *slash;
 	const char *cwd;
+	size_t edited_pages;
 	size_t records;
+	size_t edits;
 	unsigned opened;
 	const char *kind;
 	int written;
@@ -636,6 +739,9 @@ app_start_document(
 			kind = app_opened_name(opened);
 			printf("NOTES OPEN pages=%lu strokes=%lu kind=%s path=%s\n", (unsigned long)app->document.page_count,
 			       (unsigned long)notes_document_stroke_total(&app->document), kind, app->path);
+			app_count_edits(app, &edits, &edited_pages);
+			printf("NOTES EDITS opened edits=%lu edited_pages=%lu rebased=%d\n", (unsigned long)edits, (unsigned long)edited_pages,
+			       opened == NOTES_OPENED_REBASED);
 
 			/* Writing on another program's PDF is said once. */
 			if (opened == NOTES_OPENED_FOREIGN)
@@ -722,6 +828,11 @@ app_opened_name(
  * libpdf interprets the base's page once into a display list, which is kept
  * while the page is shown, and rasterizes it on the CPU over white; the
  * picture is drawn again only for another page, scale or size.
+ *
+ * ws175-p008: a page with edits of its objects (or one whose object a drag
+ * moves) is drawn by its editor (edit.c), a page of Notes' own too (its
+ * inserted images); the drawing is made again when the look (app_look)
+ * changed.
  */
 static int
 app_background(
@@ -730,8 +841,10 @@ app_background(
 	float scale)
 {
 	struct pdf_display_list *list;
+	struct pdf_page_editor *editor;
 	unsigned char *target;
 	uint32_t *pixels;
+	uint64_t look;
 	uint64_t started;
 	uint64_t rendered;
 	uint64_t rasterized;
@@ -741,11 +854,20 @@ app_background(
 	size_t count;
 	size_t index;
 	size_t row;
+	int dragged;
+	int edited;
 	int error;
 
-	/* Nothing to draw without the PDF. */
-	if (app->document.base == NULL)
+	/* Nothing to draw without the PDF, or (a page of Notes' own) without edits or a drag. */
+	dragged = 0;
+	if (app->drag != MAIN_DRAG_NONE && app->drag_previews > 0U)
+		dragged = 1;
+	edited = 0;
+	if (page->edit_count > 0U || dragged)
+		edited = 1;
+	if (!edited && (app->document.base == NULL || page->origin != NOTES_ORIGIN_OVER))
 		return 0;
+	look = app_look(app);
 
 	/* The picture's size, the page picture's. */
 	width = app->renderer.page_width;
@@ -753,8 +875,9 @@ app_background(
 	if (width == 0U || height == 0U)
 		return 0;
 
-	/* A picture drawn for the page at the scale and the size stands. */
+	/* A picture drawn for the page at the scale, the size and the look stands. */
 	if (app->background_page == page &&
+	    app->background_look == look &&
 	    app->background_scale == scale &&
 	    app->background_width == width &&
 	    app->background_height == height &&
@@ -762,14 +885,27 @@ app_background(
 	    app->renderer.background_height == height)
 		return 1;
 
-	/* The base's page as a display list, made once while the page is shown. */
+	/* The page as a display list -- the base's page, or the page's editor's --, made once while the page and its look stay. */
 	started = app_microseconds();
-	if (app->background_list == NULL || app->background_source != page->source) {
+	if (app->background_list == NULL || app->background_list_page != page || app->background_source != page->source ||
+	    app->background_look != look) {
 		pdf_display_list_destroy(app->background_list);
 		app->background_list = NULL;
 		app->background_failed = 0;
 		app->background_source = page->source;
-		error = pdf_page_render(app->document.base, page->source, &list);
+		app->background_list_page = page;
+		app->background_look = look;
+		if (edited) {
+			error = notes_page_editor(&app->document, app->page, &editor);
+			if (error == 0 && dragged)
+				app_drag_preview(app, editor);
+			if (error == 0)
+				error = pdf_page_editor_render(editor, (size_t)-1, &list);
+		} else {
+			error = pdf_page_render(app->document.base, page->source, &list);
+		}
+
+		/* A page that cannot be drawn stays white. */
 		if (error != 0) {
 			printf("NOTES BACKGROUND failed source=%lu error=%d\n", (unsigned long)page->source, error);
 			fflush(stdout);
@@ -923,6 +1059,8 @@ app_state(
 	const struct notes_app *app,
 	struct notes_ui_state *state)
 {
+	const struct notes_page *page;
+
 	/* The tool, colour, width, pages, history, changes and fullscreen. */
 	memset(state, 0, sizeof(*state));
 	state->tool = app->tool;
@@ -943,6 +1081,18 @@ app_state(
 	state->fullscreen = app->window.fullscreen;
 	state->finger_write = app->finger_write;
 	state->status = app->status;
+
+	/* The Select tool's: an image inserted on a page drawn over the PDF, or on one of Notes' own; the chosen object's (ws175-p008). */
+	page = app->document.pages[app->page];
+	if (page->origin != NOTES_ORIGIN_OVER || app->document.base != NULL)
+		state->can_insert = 1;
+	if (app->selected != MAIN_NONE) {
+		state->selected = 1;
+		if (app->selected_kind == PDF_EDIT_IMAGE)
+			state->can_replace = 1;
+		if (app->selected_edited && !app->selected_inserted)
+			state->can_reset = 1;
+	}
 }
 
 /* Carries out an action of the toolbar, a menu or a key. */
@@ -952,6 +1102,7 @@ app_action(
 	uint32_t action)
 {
 	size_t page;
+	int edit;
 	int error;
 
 	/* A colour or a width chooses by its index. */
@@ -976,19 +1127,45 @@ app_action(
 	switch (action) {
 	case NOTES_ACTION_PEN:
 	case NOTES_ACTION_HIGHLIGHTER:
-		/* The tool. */
+	case NOTES_ACTION_SELECT:
+		/* The tool (another than Select lets the chosen object go). */
 		app->tool = action;
-		printf("NOTES TOOL %u\n", action);
+		if (action != NOTES_ACTION_SELECT)
+			app_deselect(app);
+		printf("NOTES TOOL %u name=%s\n", action, app_tool_name(action));
 		break;
 	case NOTES_ACTION_ERASER:
 		/* The eraser; chosen again, it switches between whole strokes and parts (design-input-notes.md section 5.2). */
 		if (app->tool == NOTES_ACTION_ERASER)
 			app->erase_parts = !app->erase_parts;
 		app->tool = action;
-		printf("NOTES TOOL %u parts=%d\n", action, app->erase_parts);
+		app_deselect(app);
+		printf("NOTES TOOL %u parts=%d name=eraser\n", action, app->erase_parts);
+		break;
+	case NOTES_ACTION_INSERT_IMAGE:
+		/* An image file to insert on the page, chosen in the file chooser (ws175-p008). */
+		app_choose(app, KUI_FILE_CHOOSER_OPEN, MAIN_CHOOSE_INSERT);
+		break;
+	case NOTES_ACTION_REPLACE_IMAGE:
+		/* An image file for the chosen object. */
+		if (app->selected == MAIN_NONE)
+			break;
+		app_choose(app, KUI_FILE_CHOOSER_OPEN, MAIN_CHOOSE_REPLACE);
+		break;
+	case NOTES_ACTION_DELETE_OBJECT:
+		/* The chosen object deleted. */
+		app_delete_object(app);
+		break;
+	case NOTES_ACTION_RESET_OBJECT:
+		/* The chosen object as the page has it. */
+		app_reset_object(app);
 		break;
 	case NOTES_ACTION_UNDO:
-		/* The last change is taken back, and its page shown. */
+		/* The last change is taken back, and its page shown (the chosen object let go). */
+		edit = 0;
+		if (app->document.undo_done > 0U && app->document.undo[app->document.undo_done - 1U].kind == NOTES_UNDO_EDIT_OBJECT)
+			edit = 1;
+		app_deselect(app);
 		error = notes_document_undo(&app->document, &page);
 		if (error != 0)
 			break;
@@ -997,10 +1174,16 @@ app_action(
 		app->page = page;
 		printf("NOTES UNDO page=%lu strokes=%lu pages=%lu\n", (unsigned long)app->page,
 		       (unsigned long)app->document.pages[app->page]->stroke_count, (unsigned long)app->document.page_count);
+		if (edit)
+			printf("NOTES EDIT undo page=%lu edits=%lu\n", (unsigned long)app->page, (unsigned long)app->document.pages[app->page]->edit_count);
 		app_changed(app);
 		break;
 	case NOTES_ACTION_REDO:
-		/* The last change taken back is made again, and its page shown. */
+		/* The last change taken back is made again, and its page shown (the chosen object let go). */
+		edit = 0;
+		if (app->document.undo_done < app->document.undo_count && app->document.undo[app->document.undo_done].kind == NOTES_UNDO_EDIT_OBJECT)
+			edit = 1;
+		app_deselect(app);
 		error = notes_document_redo(&app->document, &page);
 		if (error != 0)
 			break;
@@ -1009,22 +1192,27 @@ app_action(
 		app->page = page;
 		printf("NOTES REDO page=%lu strokes=%lu pages=%lu\n", (unsigned long)app->page,
 		       (unsigned long)app->document.pages[app->page]->stroke_count, (unsigned long)app->document.page_count);
+		if (edit)
+			printf("NOTES EDIT redo page=%lu edits=%lu\n", (unsigned long)app->page, (unsigned long)app->document.pages[app->page]->edit_count);
 		app_changed(app);
 		break;
 	case NOTES_ACTION_PREVIOUS_PAGE:
-		/* The page before, when there is one. */
+		/* The page before, when there is one (the chosen object let go). */
+		app_deselect(app);
 		if (app->page > 0U)
 			app->page--;
 		printf("NOTES PAGE current=%lu count=%lu\n", (unsigned long)app->page, (unsigned long)app->document.page_count);
 		break;
 	case NOTES_ACTION_NEXT_PAGE:
-		/* The page after, when there is one. */
+		/* The page after, when there is one (the chosen object let go). */
+		app_deselect(app);
 		if (app->page + 1U < app->document.page_count)
 			app->page++;
 		printf("NOTES PAGE current=%lu count=%lu\n", (unsigned long)app->page, (unsigned long)app->document.page_count);
 		break;
 	case NOTES_ACTION_NEW_PAGE:
 		/* A blank page after the current one, shown. */
+		app_deselect(app);
 		error = notes_document_add_page(&app->document, app->page + 1U);
 		if (error != 0) {
 			app_status(app, "Could not add a page");
@@ -1042,11 +1230,11 @@ app_action(
 		break;
 	case NOTES_ACTION_OPEN:
 		/* Another PDF, chosen in libkeiland's file chooser (ws128-p002). */
-		app_choose(app, KUI_FILE_CHOOSER_OPEN);
+		app_choose(app, KUI_FILE_CHOOSER_OPEN, MAIN_CHOOSE_DOCUMENT);
 		break;
 	case NOTES_ACTION_SAVE_AS:
 		/* The notebook as another file, chosen in the file chooser (ws128-p002). */
-		app_choose(app, KUI_FILE_CHOOSER_SAVE);
+		app_choose(app, KUI_FILE_CHOOSER_SAVE, MAIN_CHOOSE_DOCUMENT);
 		break;
 	case NOTES_ACTION_CLOSE:
 		/* The main loop saves and ends. */
@@ -1091,6 +1279,8 @@ app_key(
 	struct notes_app *app,
 	const struct notes_key *key)
 {
+	double map[6];
+	double step;
 	int control;
 	int shift;
 
@@ -1158,7 +1348,48 @@ app_key(
 		app_action(app, NOTES_ACTION_FULLSCREEN);
 		break;
 	case MAIN_KEY_ESC:
+		/* The chosen object let go, or fullscreen left. */
+		if (app->selected != MAIN_NONE) {
+			app_deselect(app);
+			break;
+		}
+
+		/* Otherwise a window again. */
 		app_action(app, NOTES_ACTION_LEAVE_FULLSCREEN);
+		break;
+	case MAIN_KEY_DELETE:
+	case MAIN_KEY_BACKSPACE:
+		/* The chosen object deleted (ws175-p008). */
+		if (app->selected != MAIN_NONE)
+			app_action(app, NOTES_ACTION_DELETE_OBJECT);
+		break;
+	case MAIN_KEY_LEFT:
+	case MAIN_KEY_RIGHT:
+	case MAIN_KEY_UP:
+	case MAIN_KEY_DOWN:
+		/* The chosen object moved by a point (Shift: ten). */
+		if (app->selected == MAIN_NONE || app->contact != MAIN_CONTACT_NONE)
+			break;
+		step = MAIN_NUDGE;
+		if (shift)
+			step = MAIN_NUDGE * 10.0;
+		map[0] = 1.0;
+		map[1] = 0.0;
+		map[2] = 0.0;
+		map[3] = 1.0;
+		map[4] = 0.0;
+		map[5] = 0.0;
+		if (key->key == MAIN_KEY_LEFT)
+			map[4] = -step;
+		if (key->key == MAIN_KEY_RIGHT)
+			map[4] = step;
+		if (key->key == MAIN_KEY_UP)
+			map[5] = -step;
+		if (key->key == MAIN_KEY_DOWN)
+			map[5] = step;
+		app_apply_map(app, map);
+		printf("NOTES EDIT move page=%lu object=%lu dx=%.1f dy=%.1f\n", (unsigned long)app->page, (unsigned long)app->selected, map[4], map[5]);
+		fflush(stdout);
 		break;
 	default:
 		break;
@@ -1201,6 +1432,8 @@ app_input(
 	if (input->kind == NOTES_INPUT_MOTION) {
 		if (app->contact == MAIN_CONTACT_DRAW || app->contact == MAIN_CONTACT_ERASE)
 			app_sample(app, input);
+		if (app->contact == MAIN_CONTACT_SELECT)
+			app_select_motion(app, input->x, input->y);
 		return;
 	}
 
@@ -1226,6 +1459,13 @@ app_input(
 		action = notes_ui_hit(&app->ui, input->x, input->y);
 		if (action != NOTES_ACTION_NONE)
 			app_action(app, action);
+		return;
+	}
+
+	/* The Select tool chooses, moves and sizes the page's objects (ws175-p008). */
+	if (app->tool == NOTES_ACTION_SELECT && input->source != NOTES_SOURCE_ERASER) {
+		app->contact = MAIN_CONTACT_SELECT;
+		app_select_press(app, input->x, input->y);
 		return;
 	}
 
@@ -1462,6 +1702,13 @@ app_end_contact(
 	if (app->contact == MAIN_CONTACT_ERASE)
 		notes_document_erase_end(&app->document);
 
+	/* A drag of the Select tool is one change. */
+	if (app->contact == MAIN_CONTACT_SELECT) {
+		if (input != NULL)
+			app_select_motion(app, input->x, input->y);
+		app_select_release(app);
+	}
+
 	/* The frames the contact took, for the tests' line. */
 	app_frame_report(app);
 
@@ -1555,6 +1802,13 @@ app_abort_contact(
 	if (app->contact == MAIN_CONTACT_ERASE)
 		notes_document_erase_end(&app->document);
 
+	/* A drag of the Select tool is dropped: the object stays where it was, the page's editor is made again. */
+	if (app->contact == MAIN_CONTACT_SELECT && app->drag != MAIN_DRAG_NONE) {
+		app->drag = MAIN_DRAG_NONE;
+		notes_page_close_editor(app->document.pages[app->page]);
+		app->drag_previews++;
+	}
+
 	/* No contact is under way, and no finger's. */
 	app->contact = MAIN_CONTACT_NONE;
 	app->finger_contact = 0;
@@ -1582,6 +1836,8 @@ app_save(
 	const char *reason)
 {
 	char text[160];
+	size_t edited_pages;
+	size_t edits;
 	size_t bytes;
 	int error;
 
@@ -1608,8 +1864,9 @@ app_save(
 	(void)keiland_recent_add(app->path, "notes");
 
 	/* The tests' line and the status. */
-	printf("NOTES SAVE reason=%s pages=%lu strokes=%lu bytes=%lu path=%s\n", reason, (unsigned long)app->document.page_count,
-	       (unsigned long)notes_document_stroke_total(&app->document), (unsigned long)bytes, app->path);
+	app_count_edits(app, &edits, &edited_pages);
+	printf("NOTES SAVE reason=%s pages=%lu strokes=%lu edits=%lu edited_pages=%lu bytes=%lu path=%s\n", reason, (unsigned long)app->document.page_count,
+	       (unsigned long)notes_document_stroke_total(&app->document), (unsigned long)edits, (unsigned long)edited_pages, (unsigned long)bytes, app->path);
 	fflush(stdout);
 	app_status(app, "Saved");
 
@@ -1632,6 +1889,7 @@ app_draw(
 	struct notes_frame *page_frame;
 	unsigned char *pixels;
 	const char *mode;
+	uint64_t now;
 	uint64_t started;
 	uint64_t built;
 	uint64_t finished;
@@ -1646,6 +1904,14 @@ app_draw(
 
 	/* When the frame starts, for the frame times. */
 	started = app_microseconds();
+
+	/* A drag of the Select tool shows the page with the object where it is now, every MAIN_DRAG_PREVIEW_MS (ws175-p008). */
+	now = notes_clock();
+	if (app->drag != MAIN_DRAG_NONE && app->drag_moved && now - app->drag_previewed_at >= MAIN_DRAG_PREVIEW_MS) {
+		app->drag_previews++;
+		app->drag_previewed_at = now;
+		app->drag_moved = 0;
+	}
 
 	/* The whole page's place, and the place the fingers' zoom and scroll give it (another page starts at its top). */
 	page = app->document.pages[app->page];
@@ -1748,7 +2014,8 @@ app_draw(
 			notes_frame_polygon(&app->frame, app->live->outline, app->live->outline_count, &view, app->live->color);
 	}
 
-	/* The pen's mark on the page. */
+	/* The chosen object's frame and handles (ws175-p008), then the pen's mark on the page. */
+	app_selection_draw(app, &view);
 	app_mark(app, &view, 0);
 
 	/* The toolbar across the top, and the pen's mark over it. */
@@ -1791,6 +2058,7 @@ app_draw(
 		app->picture_reshaped = app->document.reshaped;
 		app->picture_scale = view.scale;
 		app->picture_strokes = page->stroke_count;
+		app->picture_look = app_look(app);
 	}
 
 	/* The frame's times join the ones the next NOTES FRAMES line reports. */
@@ -1828,12 +2096,14 @@ app_page_frame(
 {
 	struct notes_stroke *stroke;
 	struct notes_view origin;
+	uint64_t look;
 	size_t first;
 	size_t index;
 	int drawn;
 	int error;
 
-	/* The picture must be drawn from the start when anything but strokes on top changed. */
+	/* The picture must be drawn from the start when anything but strokes on top changed (ws175-p008: the objects' look too). */
+	look = app_look(app);
 	*clear = 0;
 	if (app->picture_page != page) {
 		*clear = 1;
@@ -1844,6 +2114,8 @@ app_page_frame(
 	} else if (app->picture_scale != scale) {
 		*clear = 1;
 	} else if (page->stroke_count < app->picture_strokes) {
+		*clear = 1;
+	} else if (app->picture_look != look) {
 		*clear = 1;
 	}
 
@@ -1868,7 +2140,7 @@ app_page_frame(
 		app->picture_strokes = 0;
 		notes_frame_rect(&app->page_frame, 0.0f, 0.0f, page->width * scale, page->height * scale, 0xffffffffU);
 		drawn = 0;
-		if (page->origin == NOTES_ORIGIN_OVER)
+		if (page->origin == NOTES_ORIGIN_OVER || page->edit_count > 0U || app->drag != MAIN_DRAG_NONE)
 			drawn = app_background(app, page, scale);
 		if (drawn) {
 			notes_frame_texture(&app->page_frame, NOTES_TEXTURE_BACKGROUND, 0.0f, 0.0f,
@@ -1970,6 +2242,10 @@ app_mark(
 		app_circle(&app->frame, app->hover_x, app->hover_y, 4.0f, MAIN_MARK_RING | 0xffU);
 		return;
 	}
+
+	/* The Select tool has no mark on the page. */
+	if (app->tool == NOTES_ACTION_SELECT && app->hover_source != NOTES_SOURCE_ERASER)
+		return;
 
 	/* The eraser, or a pen's eraser end: its ring, the size it erases. */
 	if (app->tool == NOTES_ACTION_ERASER || app->hover_source == NOTES_SOURCE_ERASER) {
@@ -2181,14 +2457,21 @@ app_microseconds(void)
  * Shows libkeiland's file chooser for File > Open (KUI_FILE_CHOOSER_OPEN) or
  * Save As (KUI_FILE_CHOOSER_SAVE), at the notebook's folder, the PDFs
  * shown first (ws128-p002).  One already shown answers in its time.
+ * ws175-p008: for an image to insert or put in the chosen object's place
+ * (purpose), the images shown first.
  */
 static void
 app_choose(
 	struct notes_app *app,
-	unsigned mode)
+	unsigned mode,
+	unsigned purpose)
 {
 	static const struct kui_file_filter filters[] = {
 		{ "PDF documents", "pdf" },
+		{ "All files", NULL }
+	};
+	static const struct kui_file_filter image_filters[] = {
+		{ "Images", "png jpg jpeg jpe" },
 		{ "All files", NULL }
 	};
 	static const struct kui_file_chooser_listener listener = {
@@ -2199,9 +2482,10 @@ app_choose(
 	const char *word;
 	char *slash;
 
-	/* One chooser at a time. */
+	/* One chooser at a time; this one's purpose (MAIN_CHOOSE_*). */
 	if (app->chooser != NULL)
 		return;
+	app->chooser_purpose = purpose;
 
 	/* The notebook's folder (the home folder when the path has none). */
 	(void)snprintf(folder, sizeof(folder), "%s", app->path);
@@ -2223,6 +2507,15 @@ app_choose(
 		options.name = app->name;
 	}
 
+	/* An image's chooser shows the images (ws175-p008). */
+	if (app->chooser_purpose != MAIN_CHOOSE_DOCUMENT) {
+		options.filters = image_filters;
+		options.filter_count = sizeof(image_filters) / sizeof(image_filters[0]);
+		options.title = "Insert Image";
+		if (app->chooser_purpose == MAIN_CHOOSE_REPLACE)
+			options.title = "Replace Image";
+	}
+
 	/* The chooser's window over Notes'; without it the status says why. */
 	app->chooser = kui_file_chooser_open(app->window.display, app->window.toplevel, &options, &listener, app);
 	if (app->chooser == NULL) {
@@ -2236,6 +2529,10 @@ app_choose(
 	word = "open";
 	if (mode == KUI_FILE_CHOOSER_SAVE)
 		word = "save";
+	if (app->chooser_purpose == MAIN_CHOOSE_INSERT)
+		word = "insert";
+	if (app->chooser_purpose == MAIN_CHOOSE_REPLACE)
+		word = "replace";
 	printf("NOTES CHOOSER open mode=%s folder=%s\n", word, folder);
 }
 
@@ -2257,6 +2554,7 @@ app_chooser_done(
 	if (result == KUI_FILE_CHOOSER_CHOSEN && path != NULL)
 		(void)snprintf(app->chosen, sizeof(app->chosen), "%s", path);
 	app->chosen_mode = app->chooser_mode;
+	app->chosen_purpose = app->chooser_purpose;
 	app->chosen_ready = 1;
 
 	/* The chooser is spent. */
@@ -2280,6 +2578,12 @@ app_chosen(
 	if (path[0] == '\0') {
 		printf("NOTES CHOOSER cancelled\n");
 		fflush(stdout);
+		return;
+	}
+
+	/* An image inserted or put in the chosen object's place (ws175-p008). */
+	if (app->chosen_purpose != MAIN_CHOOSE_DOCUMENT) {
+		app_put_image(app, path, app->chosen_purpose);
 		return;
 	}
 
@@ -2330,8 +2634,11 @@ app_open_file(
 	app->background_list = NULL;
 	app->background_failed = 0;
 	app->background_page = NULL;
+	app->background_list_page = NULL;
 	app->picture_page = NULL;
 	app->touch_page = NULL;
+	app->selected = MAIN_NONE;
+	app->drag = MAIN_DRAG_NONE;
 	app->page = 0;
 	app->status[0] = '\0';
 	app->status_until = 0;
@@ -2431,4 +2738,740 @@ app_appearance_changed(
 	app->toolbar_dirty = 1;
 	printf("NOTES APPEARANCE appearance=%u\n", appearance);
 	fflush(stdout);
+}
+
+/* Names a tool for the tests' line (design.md [L9]). */
+static const char *
+app_tool_name(
+	unsigned tool)
+{
+	/* Each tool by its word. */
+	switch (tool) {
+	case NOTES_ACTION_HIGHLIGHTER:
+		return "highlighter";
+	case NOTES_ACTION_ERASER:
+		return "eraser";
+	case NOTES_ACTION_SELECT:
+		return "select";
+	default:
+		break;
+	}
+
+	/* The pen. */
+	return "pen";
+}
+
+/*
+ * Gives the look of the pages' objects (ws175-p008): it grows when an edit
+ * changes and when a drag's preview is drawn, which is when the page's
+ * background must be drawn again.
+ */
+static uint64_t
+app_look(
+	const struct notes_app *app)
+{
+	/* The edits' changes and the drags' previews. */
+	return app->document.edit_serial + app->drag_previews;
+}
+
+/* Counts the notebook's edits and the pages that have any, for the tests' lines. */
+static void
+app_count_edits(
+	const struct notes_app *app,
+	size_t *edits,
+	size_t *pages)
+{
+	size_t index;
+
+	/* Each page's edits. */
+	*edits = 0;
+	*pages = 0;
+	for (index = 0; index < app->document.page_count; index++) {
+		*edits += app->document.pages[index]->edit_count;
+		if (app->document.pages[index]->edit_count > 0U)
+			(*pages)++;
+	}
+}
+
+/*
+ * Starts a contact of the Select tool at a point of the window
+ * (ws175-p008, design.md section 7.1): on a handle of the chosen object it
+ * sizes it, on an image or a graphic of the page it chooses it and moves
+ * it, elsewhere it lets the chosen one go.
+ */
+static void
+app_select_press(
+	struct notes_app *app,
+	float x,
+	float y)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	float page_x;
+	float page_y;
+	float corner_x;
+	float corner_y;
+	size_t index;
+	unsigned corner;
+	unsigned status;
+	int error;
+
+	/* The point on the page, and the page's editor. */
+	page_x = (x - app->view.x) / app->view.scale;
+	page_y = (y - app->view.y) / app->view.scale;
+	app->drag = MAIN_DRAG_NONE;
+	error = notes_page_editor(&app->document, app->page, &editor);
+	if (error != 0) {
+		printf("NOTES EDIT page failed page=%lu error=%d\n", (unsigned long)app->page, error);
+		fflush(stdout);
+		app_status(app, "The objects of this page cannot be edited");
+		app_deselect(app);
+		return;
+	}
+
+	/* A page with a stream that cannot be read cannot be edited (design.md [M5]). */
+	status = pdf_page_editor_status(editor);
+	if ((status & PDF_EDIT_PAGE_READ_ONLY) != 0U) {
+		app_status(app, "This page cannot be edited: part of it cannot be read");
+		app_deselect(app);
+		return;
+	}
+
+	/* A handle of the chosen object sizes it, from the opposite corner. */
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	if (app->selected != MAIN_NONE) {
+		error = pdf_page_editor_object(editor, app->selected, &object);
+		for (corner = 0; error == 0 && corner < 4U; corner++) {
+			corner_x = app->view.x + (float)object.quad[corner * 2U] * app->view.scale - x;
+			corner_y = app->view.y + (float)object.quad[corner * 2U + 1U] * app->view.scale - y;
+			if (corner_x > MAIN_HANDLE_REACH || corner_x < -MAIN_HANDLE_REACH || corner_y > MAIN_HANDLE_REACH || corner_y < -MAIN_HANDLE_REACH)
+				continue;
+			app->drag = MAIN_DRAG_RESIZE;
+			app->drag_corner = corner;
+			break;
+		}
+	}
+
+	/* Otherwise the object under the point: an image or a graphic (lines of text come with ws175-p004). */
+	if (app->drag == MAIN_DRAG_NONE) {
+		error = pdf_page_editor_hit(editor, (double)page_x, (double)page_y, &index);
+		if (error == 0)
+			error = pdf_page_editor_object(editor, index, &object);
+		if (error != 0 || object.kind == PDF_EDIT_TEXT) {
+			app_deselect(app);
+			return;
+		}
+
+		/* Chosen (logged when it is another), and moved by the drag. */
+		if (index != app->selected)
+			app_select(app, index, 1);
+		app->drag = MAIN_DRAG_MOVE;
+	}
+
+	/* The drag starts here, from the object's corners, moving nothing yet. */
+	app->drag_x = page_x;
+	app->drag_y = page_y;
+	memcpy(app->drag_quad, object.quad, sizeof(app->drag_quad));
+	app->drag_map[0] = 1.0;
+	app->drag_map[1] = 0.0;
+	app->drag_map[2] = 0.0;
+	app->drag_map[3] = 1.0;
+	app->drag_map[4] = 0.0;
+	app->drag_map[5] = 0.0;
+	app->drag_moved = 0;
+	app->drag_previewed_at = 0;
+	app->redraw = 1;
+}
+
+/*
+ * Follows a drag of the Select tool: the object moved by the point's way
+ * from where the drag started, or sized from the corner opposite the
+ * handle (its proportions kept; Shift sizes each side apart), within
+ * MAIN_SIDE_MIN points and MAIN_SIDE_TIMES_PAGE times the page.
+ */
+static void
+app_select_motion(
+	struct notes_app *app,
+	float x,
+	float y)
+{
+	const struct notes_page *page;
+	double anchor_x;
+	double anchor_y;
+	double from_x;
+	double from_y;
+	double to_x;
+	double to_y;
+	double across;
+	double down;
+	double lowest;
+	double highest;
+	double scale_x;
+	double scale_y;
+	double page_x;
+	double page_y;
+	unsigned opposite;
+
+	/* A drag under way, at the point on the page. */
+	if (app->drag == MAIN_DRAG_NONE)
+		return;
+	page_x = (double)((x - app->view.x) / app->view.scale);
+	page_y = (double)((y - app->view.y) / app->view.scale);
+
+	/* Moved: by the point's way. */
+	if (app->drag == MAIN_DRAG_MOVE) {
+		app->drag_map[0] = 1.0;
+		app->drag_map[3] = 1.0;
+		app->drag_map[4] = page_x - (double)app->drag_x;
+		app->drag_map[5] = page_y - (double)app->drag_y;
+		app->drag_moved = 1;
+		app->redraw = 1;
+		return;
+	}
+
+	/* Sized: from the opposite corner, as far as the handle's corner went. */
+	opposite = (app->drag_corner + 2U) % 4U;
+	anchor_x = app->drag_quad[opposite * 2U];
+	anchor_y = app->drag_quad[opposite * 2U + 1U];
+	from_x = app->drag_quad[app->drag_corner * 2U] - anchor_x;
+	from_y = app->drag_quad[app->drag_corner * 2U + 1U] - anchor_y;
+	to_x = page_x - anchor_x;
+	to_y = page_y - anchor_y;
+	scale_x = 1.0;
+	scale_y = 1.0;
+	if ((app->window.modifiers & NOTES_MODIFIER_SHIFT) != 0U) {
+		if (from_x > 1e-6 || from_x < -1e-6)
+			scale_x = to_x / from_x;
+		if (from_y > 1e-6 || from_y < -1e-6)
+			scale_y = to_y / from_y;
+	} else if (from_x * from_x + from_y * from_y > 1e-12) {
+		scale_x = (to_x * from_x + to_y * from_y) / (from_x * from_x + from_y * from_y);
+		scale_y = scale_x;
+	}
+
+	/* Within the smallest and the largest sides: the object's sides now, the page's. */
+	page = app->document.pages[app->page];
+	across = hypot(app->drag_quad[2] - app->drag_quad[0], app->drag_quad[3] - app->drag_quad[1]);
+	down = hypot(app->drag_quad[6] - app->drag_quad[0], app->drag_quad[7] - app->drag_quad[1]);
+	lowest = MAIN_SIDE_MIN / fmin(fmax(across, 1e-6), fmax(down, 1e-6));
+	highest = MAIN_SIDE_TIMES_PAGE * fmax((double)page->width, (double)page->height) / fmax(fmax(across, down), 1e-6);
+	scale_x = fmin(fmax(scale_x, lowest), highest);
+	scale_y = fmin(fmax(scale_y, lowest), highest);
+
+	/* The map: the anchor stays, the rest scales about it. */
+	app->drag_map[0] = scale_x;
+	app->drag_map[1] = 0.0;
+	app->drag_map[2] = 0.0;
+	app->drag_map[3] = scale_y;
+	app->drag_map[4] = anchor_x - scale_x * anchor_x;
+	app->drag_map[5] = anchor_y - scale_y * anchor_y;
+	app->drag_moved = 1;
+	app->redraw = 1;
+}
+
+/* Ends a drag of the Select tool: the map it made becomes one change (logged), or a press without a drag changes nothing. */
+static void
+app_select_release(
+	struct notes_app *app)
+{
+	double map[6];
+	unsigned drag;
+	int moved;
+
+	/* A drag under way. */
+	drag = app->drag;
+	if (drag == MAIN_DRAG_NONE)
+		return;
+	app->drag = MAIN_DRAG_NONE;
+	memcpy(map, app->drag_map, sizeof(map));
+
+	/* Whether it moved the object at all. */
+	moved = fabs(map[0] - 1.0) > 1e-6 || fabs(map[3] - 1.0) > 1e-6 || fabs(map[4]) > 1e-6 || fabs(map[5]) > 1e-6;
+	if (!moved) {
+		/* A preview drawn goes with the page's editor, made again. */
+		if (app->drag_previews > 0U) {
+			notes_page_close_editor(app->document.pages[app->page]);
+			app->drag_previews++;
+		}
+
+		/* Nothing changed. */
+		app->redraw = 1;
+		return;
+	}
+
+	/* The change, and the tests' line. */
+	app_apply_map(app, map);
+	if (drag == MAIN_DRAG_MOVE)
+		printf("NOTES EDIT move page=%lu object=%lu dx=%.1f dy=%.1f\n", (unsigned long)app->page, (unsigned long)app->selected, map[4], map[5]);
+	else
+		printf("NOTES EDIT resize page=%lu object=%lu sx=%.3f sy=%.3f\n", (unsigned long)app->page, (unsigned long)app->selected, map[0], map[3]);
+	fflush(stdout);
+}
+
+/*
+ * Chooses an object of the page shown by its index in the page's editor
+ * (logged for the tests when asked), and notes what the toolbar shows of
+ * it: its kind, whether it was inserted, whether it has an edit.
+ */
+static void
+app_select(
+	struct notes_app *app,
+	size_t index,
+	int logged)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	struct notes_edit state;
+	const char *kind;
+	int error;
+
+	/* The object and its state. */
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = notes_page_editor(&app->document, app->page, &editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, index, &object);
+	if (error == 0)
+		error = notes_page_object(&app->document, app->page, index, &state);
+	if (error != 0) {
+		app_deselect(app);
+		return;
+	}
+
+	/* Chosen. */
+	app->selected = index;
+	app->selected_kind = object.kind;
+	app->selected_inserted = (state.flags & NOTES_EDIT_INSERTED) != 0U;
+	app->selected_edited = state.flags != 0U;
+	app->toolbar_dirty = 1;
+	app->redraw = 1;
+	if (!logged)
+		return;
+
+	/* The tests' line, and the clip that hides what moves out of it. */
+	kind = "graphic";
+	if (object.kind == PDF_EDIT_IMAGE)
+		kind = "image";
+	printf("NOTES EDIT select page=%lu object=%lu kind=%s inserted=%d clipped=%d\n", (unsigned long)app->page, (unsigned long)index, kind,
+	       app->selected_inserted, (object.flags & PDF_EDIT_OBJECT_CLIPPED) != 0U);
+	fflush(stdout);
+	if ((object.flags & PDF_EDIT_OBJECT_CLIPPED) != 0U)
+		app_status(app, "Clipped: what moves out of the clip stays hidden");
+}
+
+/* Lets the chosen object go. */
+static void
+app_deselect(
+	struct notes_app *app)
+{
+	/* None chosen, no drag. */
+	if (app->selected == MAIN_NONE && app->drag == MAIN_DRAG_NONE)
+		return;
+	app->selected = MAIN_NONE;
+	app->drag = MAIN_DRAG_NONE;
+	app->toolbar_dirty = 1;
+	app->redraw = 1;
+}
+
+/* Gives the chosen object's state (its edit, or its key as the page has it).  Returns 0 or an errno value. */
+static int
+app_selected_state(
+	struct notes_app *app,
+	struct notes_edit *state)
+{
+	/* None chosen. */
+	if (app->selected == MAIN_NONE)
+		return ENOENT;
+
+	/* The state by its index. */
+	return notes_page_object(&app->document, app->page, app->selected, state);
+}
+
+/*
+ * Puts the chosen object where the drag has it in the page's editor, for
+ * the preview only (the drag's end makes the change; a drop makes the
+ * editor again): an inserted image's placement is the drag's map, a page's
+ * object's is its placement so far followed by the map.
+ */
+static void
+app_drag_preview(
+	struct notes_app *app,
+	struct pdf_page_editor *editor)
+{
+	struct notes_edit state;
+	double placement[6];
+	size_t item;
+	int error;
+
+	/* The object's state. */
+	error = app_selected_state(app, &state);
+	if (error != 0)
+		return;
+
+	/* Its placement so far (a page's own placed object's), then the drag's map. */
+	placement[0] = 1.0;
+	placement[1] = 0.0;
+	placement[2] = 0.0;
+	placement[3] = 1.0;
+	placement[4] = 0.0;
+	placement[5] = 0.0;
+	if ((state.flags & NOTES_EDIT_INSERTED) == 0U && (state.flags & NOTES_EDIT_PLACED) != 0U) {
+		for (item = 0; item < 6U; item++)
+			placement[item] = (double)state.transform[item];
+	}
+
+	/* The drag's map after it. */
+	app_map_multiply(placement, app->drag_map, placement);
+
+	/* In the editor (a refusal leaves it where it was). */
+	(void)pdf_page_editor_place(editor, app->selected, placement);
+}
+
+/*
+ * Moves or sizes the chosen object by a map of the page's shown space, as
+ * one change: an inserted image's placement followed by the map, a page's
+ * object placed (its placement so far followed by the map).
+ */
+static void
+app_apply_map(
+	struct notes_app *app,
+	const double map[6])
+{
+	struct notes_edit state;
+	double transform[6];
+	size_t item;
+	int error;
+
+	/* The object's state. */
+	error = app_selected_state(app, &state);
+	if (error != 0)
+		return;
+
+	/* Its transform so far (the identity for an object not placed yet), followed by the map. */
+	for (item = 0; item < 6U; item++)
+		transform[item] = (double)state.transform[item];
+	if ((state.flags & (NOTES_EDIT_INSERTED | NOTES_EDIT_PLACED)) == 0U) {
+		transform[0] = 1.0;
+		transform[1] = 0.0;
+		transform[2] = 0.0;
+		transform[3] = 1.0;
+		transform[4] = 0.0;
+		transform[5] = 0.0;
+	}
+
+	/* The map after it, back on the edit's numbers. */
+	app_map_multiply(transform, map, transform);
+	for (item = 0; item < 6U; item++)
+		state.transform[item] = (float)transform[item];
+	if ((state.flags & NOTES_EDIT_INSERTED) == 0U)
+		state.flags |= NOTES_EDIT_PLACED;
+
+	/* The change; the object stays chosen. */
+	error = notes_document_edit_object(&app->document, app->page, &state);
+	if (error != 0) {
+		printf("NOTES EDIT failed page=%lu object=%lu error=%d\n", (unsigned long)app->page, (unsigned long)app->selected, error);
+		app_status(app, "Could not move the object");
+		return;
+	}
+
+	/* Succeeded: the object, still chosen, where the map put it. */
+	app_select(app, app->selected, 0);
+	app_changed(app);
+}
+
+/* Deletes the chosen object, as one change: an inserted image taken off, a page's object deleted. */
+static void
+app_delete_object(
+	struct notes_app *app)
+{
+	struct notes_edit state;
+	size_t object;
+	int error;
+
+	/* The object's state. */
+	error = app_selected_state(app, &state);
+	if (error != 0)
+		return;
+
+	/* Taken off, or deleted. */
+	if ((state.flags & NOTES_EDIT_INSERTED) != 0U) {
+		error = notes_document_reset_object(&app->document, app->page, &state);
+	} else {
+		state.flags = NOTES_EDIT_DELETED;
+		state.image = NULL;
+		error = notes_document_edit_object(&app->document, app->page, &state);
+	}
+
+	/* A failure is shown; otherwise the object is gone and let go. */
+	if (error != 0) {
+		app_status(app, "Could not delete the object");
+		return;
+	}
+
+	/* Gone (the tests' line). */
+	object = app->selected;
+	app_deselect(app);
+	printf("NOTES EDIT delete page=%lu object=%lu\n", (unsigned long)app->page, (unsigned long)object);
+	fflush(stdout);
+	app_changed(app);
+}
+
+/* Puts the chosen object of the page back as the page has it (Reset, design.md [L10]), as one change. */
+static void
+app_reset_object(
+	struct notes_app *app)
+{
+	struct notes_edit state;
+	int error;
+
+	/* A page's own object with an edit. */
+	if (app->selected == MAIN_NONE || app->selected_inserted || !app->selected_edited)
+		return;
+	error = app_selected_state(app, &state);
+	if (error == 0)
+		error = notes_document_reset_object(&app->document, app->page, &state);
+	if (error != 0) {
+		app_status(app, "Could not reset the object");
+		return;
+	}
+
+	/* The tests' line; the object stays chosen. */
+	printf("NOTES EDIT reset page=%lu object=%lu\n", (unsigned long)app->page, (unsigned long)app->selected);
+	fflush(stdout);
+	app_select(app, app->selected, 0);
+	app_changed(app);
+}
+
+/*
+ * Puts an image file on the page shown (ws175-p008): in the chosen object's
+ * place, or inserted at the middle of the page's part in the window, at
+ * most half the page's width and height and its own size at 72 dpi
+ * (design.md section 5.3), then chosen with the Select tool.
+ */
+static void
+app_put_image(
+	struct notes_app *app,
+	const char *path,
+	unsigned purpose)
+{
+	struct pdf_page_editor *editor;
+	struct notes_image *image;
+	struct notes_page *page;
+	struct notes_edit state;
+	double shown_width;
+	double shown_height;
+	double left;
+	double top;
+	double right;
+	double bottom;
+	double scale;
+	double width;
+	double height;
+	unsigned status;
+	int error;
+
+	/* The image. */
+	error = notes_picture_load(&app->document, path, &image);
+	if (error != 0) {
+		printf("NOTES EDIT image failed error=%d path=%s\n", error, path);
+		fflush(stdout);
+		if (error == ENOTSUP)
+			app_status(app, "This image cannot be put in a PDF (JPEG or PNG; not CMYK)");
+		else if (error == E2BIG)
+			app_status(app, "The image is too large");
+		else
+			app_status(app, "Could not read the image");
+		return;
+	}
+
+	/* In the chosen object's place. */
+	if (purpose == MAIN_CHOOSE_REPLACE) {
+		error = app_selected_state(app, &state);
+		state.flags |= NOTES_EDIT_IMAGE;
+		state.image = image;
+		if (error == 0)
+			error = notes_document_edit_object(&app->document, app->page, &state);
+		if (error == 0) {
+			printf("NOTES EDIT replace page=%lu object=%lu image=%lux%lu\n", (unsigned long)app->page, (unsigned long)app->selected,
+			       (unsigned long)image->width, (unsigned long)image->height);
+			app_select(app, app->selected, 0);
+		}
+	} else {
+		/* Inserted: a page that can be edited. */
+		error = notes_page_editor(&app->document, app->page, &editor);
+		status = 0U;
+		if (error == 0)
+			status = pdf_page_editor_status(editor);
+		if ((status & PDF_EDIT_PAGE_READ_ONLY) != 0U)
+			error = EPERM;
+
+		/* The page's part in the window. */
+		page = app->document.pages[app->page];
+		left = fmax(0.0, (double)(-app->view.x / app->view.scale));
+		top = fmax(0.0, (double)(((float)NOTES_TOOLBAR_HEIGHT - app->view.y) / app->view.scale));
+		right = fmin((double)page->width, (double)(((float)app->renderer.extent.width - app->view.x) / app->view.scale));
+		bottom = fmin((double)page->height, (double)(((float)app->renderer.extent.height - app->view.y) / app->view.scale));
+		if (right <= left || bottom <= top) {
+			left = 0.0;
+			top = 0.0;
+			right = (double)page->width;
+			bottom = (double)page->height;
+		}
+
+		/* The image's size as shown (a quarter turn swaps its sides), at most half the page's and its own. */
+		shown_width = (double)image->width;
+		shown_height = (double)image->height;
+		if (image->orientation >= 5) {
+			shown_width = (double)image->height;
+			shown_height = (double)image->width;
+		}
+
+		/* At most half the page's sides and its own size. */
+		scale = fmin(1.0, fmin((double)page->width / 2.0 / shown_width, (double)page->height / 2.0 / shown_height));
+		width = shown_width * scale;
+		height = shown_height * scale;
+
+		/* Its unit square onto the middle (its top left where (0, 1) goes). */
+		memset(&state, 0, sizeof(state));
+		state.flags = NOTES_EDIT_INSERTED | NOTES_EDIT_IMAGE;
+		state.id = app->document.next_id;
+		state.image = image;
+		state.transform[0] = (float)width;
+		state.transform[3] = (float)-height;
+		state.transform[4] = (float)((left + right) / 2.0 - width / 2.0);
+		state.transform[5] = (float)((top + bottom) / 2.0 + height / 2.0);
+		if (error == 0) {
+			app->document.next_id++;
+			error = notes_document_edit_object(&app->document, app->page, &state);
+		}
+
+		/* Chosen with the Select tool, the last of the page's objects. */
+		if (error == 0)
+			error = notes_page_editor(&app->document, app->page, &editor);
+		if (error == 0) {
+			app->tool = NOTES_ACTION_SELECT;
+			app_select(app, pdf_page_editor_count(editor) - 1U, 0);
+			printf("NOTES EDIT insert page=%lu kind=image object=%lu image=%lux%lu\n", (unsigned long)app->page, (unsigned long)app->selected,
+			       (unsigned long)image->width, (unsigned long)image->height);
+		}
+	}
+
+	/* The caller's hold on the image goes (the edit holds its own); a failure is shown. */
+	notes_image_release(image);
+	fflush(stdout);
+	if (error != 0) {
+		printf("NOTES EDIT image failed error=%d path=%s\n", error, path);
+		fflush(stdout);
+		app_status(app, "Could not put the image on this page");
+		return;
+	}
+
+	/* Succeeded: the image is on the page. */
+	app_changed(app);
+}
+
+/*
+ * Draws the chosen object's frame -- its corners where a drag has them --
+ * and a handle on each corner, in Kei's blue.
+ */
+static void
+app_selection_draw(
+	struct notes_app *app,
+	const struct notes_view *view)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	struct pdf_point edge[4];
+	double quad[8];
+	double along_x;
+	double along_y;
+	double length;
+	double thick;
+	float x;
+	float y;
+	unsigned corner;
+	unsigned next;
+	int error;
+
+	/* The Select tool's chosen object. */
+	if (app->tool != NOTES_ACTION_SELECT || app->selected == MAIN_NONE)
+		return;
+
+	/* Its corners: where the drag has them, or the editor's. */
+	if (app->drag != MAIN_DRAG_NONE) {
+		for (corner = 0; corner < 4U; corner++)
+			app_map_point(app->drag_map, app->drag_quad[corner * 2U], app->drag_quad[corner * 2U + 1U], &quad[corner * 2U], &quad[corner * 2U + 1U]);
+	} else {
+		memset(&object, 0, sizeof(object));
+		object.size = sizeof(object);
+		error = notes_page_editor(&app->document, app->page, &editor);
+		if (error == 0)
+			error = pdf_page_editor_object(editor, app->selected, &object);
+		if (error != 0)
+			return;
+		memcpy(quad, object.quad, sizeof(quad));
+	}
+
+	/* Each side, a band two pixels wide. */
+	thick = 1.0 / (double)view->scale;
+	for (corner = 0; corner < 4U; corner++) {
+		next = (corner + 1U) % 4U;
+		along_x = quad[next * 2U] - quad[corner * 2U];
+		along_y = quad[next * 2U + 1U] - quad[corner * 2U + 1U];
+		length = hypot(along_x, along_y);
+		if (length < 1e-9)
+			continue;
+		edge[0].x = quad[corner * 2U] - along_y / length * thick;
+		edge[0].y = quad[corner * 2U + 1U] + along_x / length * thick;
+		edge[1].x = quad[next * 2U] - along_y / length * thick;
+		edge[1].y = quad[next * 2U + 1U] + along_x / length * thick;
+		edge[2].x = quad[next * 2U] + along_y / length * thick;
+		edge[2].y = quad[next * 2U + 1U] - along_x / length * thick;
+		edge[3].x = quad[corner * 2U] + along_y / length * thick;
+		edge[3].y = quad[corner * 2U + 1U] - along_x / length * thick;
+		notes_frame_polygon(&app->frame, edge, 4U, view, MAIN_SELECT_COLOR);
+	}
+
+	/* A handle on each corner: white with a blue square in it. */
+	for (corner = 0; corner < 4U; corner++) {
+		x = view->x + (float)quad[corner * 2U] * view->scale;
+		y = view->y + (float)quad[corner * 2U + 1U] * view->scale;
+		notes_frame_rect(&app->frame, x - MAIN_HANDLE_SIZE / 2.0f - 1.0f, y - MAIN_HANDLE_SIZE / 2.0f - 1.0f, MAIN_HANDLE_SIZE + 2.0f,
+				 MAIN_HANDLE_SIZE + 2.0f, 0xffffffffU);
+		notes_frame_rect(&app->frame, x - MAIN_HANDLE_SIZE / 2.0f, y - MAIN_HANDLE_SIZE / 2.0f, MAIN_HANDLE_SIZE, MAIN_HANDLE_SIZE, MAIN_SELECT_COLOR);
+	}
+}
+
+/* Multiplies two maps of the plane (a point goes through left, then right); product may be either. */
+static void
+app_map_multiply(
+	const double left[6],
+	const double right[6],
+	double product[6])
+{
+	double result[6];
+
+	/* The product of the 3 by 3 matrices whose third column is 0, 0, 1. */
+	result[0] = left[0] * right[0] + left[1] * right[2];
+	result[1] = left[0] * right[1] + left[1] * right[3];
+	result[2] = left[2] * right[0] + left[3] * right[2];
+	result[3] = left[2] * right[1] + left[3] * right[3];
+	result[4] = left[4] * right[0] + left[5] * right[2] + right[4];
+	result[5] = left[4] * right[1] + left[5] * right[3] + right[5];
+	memcpy(product, result, sizeof(result));
+}
+
+/* Maps a point of the plane. */
+static void
+app_map_point(
+	const double map[6],
+	double x,
+	double y,
+	double *mapped_x,
+	double *mapped_y)
+{
+	/* The point times the map. */
+	*mapped_x = x * map[0] + y * map[2] + map[4];
+	*mapped_y = x * map[1] + y * map[3] + map[5];
 }
