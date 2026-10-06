@@ -77,28 +77,28 @@ kwl_compose_open(
 	started = kwl_milliseconds();
 	result = compose_device(compose);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=device result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=device result=%d\n", (int)result);
 		return EIO;
 	}
 
 	/* The display's size (unless --width and --height chose one) and refresh, before anything is drawn at that size. */
 	result = compose_display(server);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		return EIO;
 	}
 
 	/* What the device can take, against which each client buffer's description is checked. */
 	compose_limits(server);
 
-	/* How long the device took (ZWL STARTUP, ws035-p129). */
-	printf("ZWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	/* How long the device took (KWL STARTUP, ws035-p129). */
+	printf("KWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 
 	/* The layouts, sampler, pools and synchronization of a frame. */
 	result = compose_objects(compose);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=objects result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=objects result=%d\n", (int)result);
 		return EIO;
 	}
 
@@ -108,16 +108,16 @@ kwl_compose_open(
 	/* the compositor's arrow cursor. */
 	error = kwl_arrow_create(server);
 	if (error != 0) {
-		printf("ZWL VULKAN_ERROR operation=arrow\n");
+		printf("KWL VULKAN_ERROR operation=arrow\n");
 		return EIO;
 	}
 
 	/* The glass look's wallpaper and glyphs; without them the plain look is drawn. */
-	printf("ZWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	if (server->glass) {
 		error = kwl_glass_open(server);
 		if (error != 0) {
-			printf("ZWL GLASS unavailable errno=%d\n", error);
+			printf("KWL GLASS unavailable errno=%d\n", error);
 			server->glass = 0;
 		}
 	}
@@ -125,7 +125,7 @@ kwl_compose_open(
 	/* The start's images' layout moves, submitted and waited for once. */
 	result = kwl_host_image_batch_end(compose);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=setup-layout result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=setup-layout result=%d\n", (int)result);
 		return EIO;
 	}
 
@@ -159,17 +159,17 @@ kwl_compose_output_prepare(
 	started = kwl_milliseconds();
 	result = vkdemo_display_open(compose->instance, compose->physical, server->width, server->height, &compose->output);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=display result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		return EIO;
 	}
 
 	/* The swapchain's format, which the pass and pipelines follow. */
-	printf("ZWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=output-display ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 	result = vkdemo_display_choose_format(compose->physical, &compose->output);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=format result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=format result=%d\n", (int)result);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		return EIO;
 	}
@@ -179,7 +179,7 @@ kwl_compose_output_prepare(
 		compose->format = compose->output.format;
 		result = compose_pass(compose);
 		if (result != VK_SUCCESS) {
-			printf("ZWL VULKAN_ERROR operation=pipelines result=%d\n", (int)result);
+			printf("KWL VULKAN_ERROR operation=pipelines result=%d\n", (int)result);
 			vkdemo_display_close(compose->instance, compose->device, &compose->output);
 			return EIO;
 		}
@@ -187,7 +187,7 @@ kwl_compose_output_prepare(
 
 	/* Succeeded: only the swapchain is left, which claims the display. */
 	compose->output_prepared = 1;
-	printf("ZWL STARTUP step=output-pipelines ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=output-pipelines ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	return 0;
 }
 
@@ -218,7 +218,7 @@ kwl_compose_output_open(
 	/* Gives Vulkan the display permission before creating its swapchain. */
 	result = kwl_os_display_acquire(server, compose->physical, compose->display);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=display-acquire result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=display-acquire result=%d\n", (int)result);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		compose->output_prepared = 0;
 		return EIO;
@@ -230,7 +230,7 @@ kwl_compose_output_open(
 	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
 	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
 		/* A display whose images cannot be read back still shows the desktop, without the capture (ws173-p002). */
-		printf("ZWL SHOT unsupported: the swapchain images cannot be a copy's source\n");
+		printf("KWL SHOT unsupported: the swapchain images cannot be a copy's source\n");
 		readback = 0;
 		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
 	}
@@ -238,7 +238,7 @@ kwl_compose_output_open(
 	if (result != VK_SUCCESS ||
 	    compose->output.image_count > KWL_SWAPCHAIN_MAX ||
 	    compose->output.format != compose->format) {
-		printf("ZWL VULKAN_ERROR operation=swapchain result=%d images=%u format=%d\n", (int)result, compose->output.image_count, (int)compose->output.format);
+		printf("KWL VULKAN_ERROR operation=swapchain result=%d images=%u format=%d\n", (int)result, compose->output.image_count, (int)compose->output.format);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		kwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
@@ -246,11 +246,11 @@ kwl_compose_output_open(
 	}
 
 	/* A view, framebuffer and semaphore for each swapchain image. */
-	printf("ZWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 	result = compose_targets(compose);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
 		compose_targets_destroy(compose);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		kwl_os_display_release(server, compose->physical, compose->display);
@@ -259,13 +259,13 @@ kwl_compose_output_open(
 	}
 
 	/* No image has been drawn yet: the first frame of each is drawn whole. */
-	printf("ZWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	memset(compose->image_frames, 0, sizeof(compose->image_frames));
 
 	/* Succeeded: window mode owns the display through the swapchain. */
 	compose->output_open = 1;
 	server->dirty = 1;
-	printf("ZWL OUTPUT open width=%u height=%u images=%u format=%d\n", server->width, server->height, compose->output.image_count, (int)compose->format);
+	printf("KWL OUTPUT open width=%u height=%u images=%u format=%d\n", server->width, server->height, compose->output.image_count, (int)compose->format);
 	return 0;
 }
 
@@ -306,7 +306,7 @@ kwl_compose_output_close(
 	/* Marks the output as available for the next handoff. */
 	compose->output_prepared = 0;
 	compose->output_open = 0;
-	printf("ZWL OUTPUT closed\n");
+	printf("KWL OUTPUT closed\n");
 
 	/* Succeeded: the swapchain and OS display ownership are released. */
 	return;
@@ -354,18 +354,18 @@ kwl_compose_draw(
 
 	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
 	if (server->log_frames)
-		printf("ZWL LAT draw frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT draw frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* The next swapchain image (the wait for it is measured apart). */
 	mark = kwl_cycles();
 	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, UINT64_MAX, compose->acquired, VK_NULL_HANDLE, &image);
 	server->perf.compose_acquire_cycles += kwl_cycles() - mark;
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		printf("ZWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
 		return EIO;
 	}
 	if (server->log_frames)
-		printf("ZWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
 	partial = compose_region(server, image, &region);
@@ -376,18 +376,18 @@ kwl_compose_draw(
 		region_drawn = &region;
 	result = compose_record(server, image, windows, count, region_drawn);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=record result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
 		return EIO;
 	}
 	if (server->log_frames)
-		printf("ZWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* Submitted and presented; the fence fd tells the event loop when it is done. */
 	mark = kwl_cycles();
 	result = compose_submit(server, image);
 	server->perf.compose_present_cycles += kwl_cycles() - mark;
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=submit result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=submit result=%d\n", (int)result);
 		return EIO;
 	}
 
@@ -405,13 +405,13 @@ kwl_compose_draw(
 	/* The first frame after App Home or Wiseview was asked to open or close, logged once (C5, also without --log-frames). */
 	if (server->transition != NULL) {
 		now = kwl_milliseconds();
-		printf("ZWL FIRST_FRAME what=%s frame=%llu request_ms=%llu ms=%llu\n", server->transition, (unsigned long long)server->frame,
+		printf("KWL FIRST_FRAME what=%s frame=%llu request_ms=%llu ms=%llu\n", server->transition, (unsigned long long)server->frame,
 		       (unsigned long long)server->transition_ms, (unsigned long long)(now - server->transition_ms));
 		server->transition = NULL;
 	}
 	if (server->log_frames) {
-		printf("ZWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)kwl_milliseconds());
-		printf("ZWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
+		printf("KWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)kwl_milliseconds());
+		printf("KWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
 	}
 
 	/* Succeeded: one frame is in flight. */
@@ -448,7 +448,7 @@ kwl_compose_complete(
 	if (result == VK_SUCCESS)
 		result = vkResetFences(compose->device, 1U, &compose->fence);
 	if (result != VK_SUCCESS) {
-		printf("ZWL VULKAN_ERROR operation=fence result=%d\n", (int)result);
+		printf("KWL VULKAN_ERROR operation=fence result=%d\n", (int)result);
 		return EIO;
 	}
 
@@ -462,9 +462,9 @@ kwl_compose_complete(
 	/* A test image's capture sends the frame it copied (shot.c, ws173-p002). */
 	kwl_shot_complete(server);
 	if (server->log_frames)
-		printf("ZWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
 
-	/* The time from the start of the frame to its completion (reported by ZWL PERF). */
+	/* The time from the start of the frame to its completion (reported by KWL PERF). */
 	elapsed = kwl_cycles() - compose->frame_start_cycles;
 	server->perf.compose_frames++;
 	server->perf.compose_cycles += elapsed;
@@ -535,7 +535,7 @@ kwl_compose_quiesce(
 	/* The frame completes; a failure is the compositor's. */
 	error = kwl_compose_complete(server);
 	if (error != 0) {
-		printf("ZWL FAILED site=compose_poll errno=%d\n", error);
+		printf("KWL FAILED site=compose_poll errno=%d\n", error);
 		server->failed = 1;
 	}
 }
@@ -846,7 +846,7 @@ compose_display(
 
 	/* The machine log names the device and the output the compositor will open. */
 	vkGetPhysicalDeviceProperties(compose->physical, &device);
-	printf("ZWL DISPLAY device=%s width=%u height=%u refresh_mhz=%u\n", device.deviceName, server->width, server->height, server->refresh);
+	printf("KWL DISPLAY device=%s width=%u height=%u refresh_mhz=%u\n", device.deviceName, server->width, server->height, server->refresh);
 
 	/* Succeeded: the output's size and refresh are known. */
 	return VK_SUCCESS;
@@ -1776,7 +1776,7 @@ compose_region(
 	region->extent.width = (uint32_t)(box[2] - box[0]);
 	region->extent.height = (uint32_t)(box[3] - box[1]);
 	if (server->log_frames)
-		printf("ZWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u\n", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height);
+		printf("KWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u\n", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height);
 	return 1;
 }
 

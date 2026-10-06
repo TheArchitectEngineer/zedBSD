@@ -162,7 +162,7 @@ kwl_edit_request(
 	if (actions != object->edit_actions || flags != object->edit_flags) {
 		object->edit_actions = actions;
 		object->edit_flags = flags;
-		printf("ZWL EDIT state client=%llu edit=%u actions=0x%x flags=0x%x\n", (unsigned long long)object->client->number, object->id, actions, flags);
+		printf("KWL EDIT state client=%llu edit=%u actions=0x%x flags=0x%x\n", (unsigned long long)object->client->number, object->id, actions, flags);
 	}
 
 	/* Succeeded: the state is the window's now. */
@@ -218,7 +218,7 @@ kwl_edit_action(
 	/* The focused window, and its edit object if it has one. */
 	edit = edit_focused(server, &window);
 	if (window == NULL) {
-		printf("ZWL EDIT action=%s via=none reason=no-focus\n", edit_names[action]);
+		printf("KWL EDIT action=%s via=none reason=no-focus\n", edit_names[action]);
 		return ENOENT;
 	}
 
@@ -226,7 +226,7 @@ kwl_edit_action(
 	if (edit != NULL && (edit->edit_actions & (1U << action)) != 0U) {
 		word = action;
 		(void)kwl_emit(edit->client, edit->id, EDIT_EVENT_ACTION, &word, sizeof(word));
-		printf("ZWL EDIT action=%s via=protocol surface=%u app=%s\n", edit_names[action], window->id, window->app_id);
+		printf("KWL EDIT action=%s via=protocol surface=%u app=%s\n", edit_names[action], window->id, window->app_id);
 		return 0;
 	}
 
@@ -240,7 +240,7 @@ kwl_edit_action(
 		with = keys->terminal_modifiers;
 	}
 	if (key == 0U) {
-		printf("ZWL EDIT action=%s via=none reason=no-keys surface=%u app=%s\n", edit_names[action], window->id, window->app_id);
+		printf("KWL EDIT action=%s via=none reason=no-keys surface=%u app=%s\n", edit_names[action], window->id, window->app_id);
 		return ENOTSUP;
 	}
 
@@ -255,7 +255,7 @@ kwl_edit_action(
 	kwl_seat_modifiers(server);
 
 	/* Succeeded: the keys were sent. */
-	printf("ZWL EDIT action=%s via=keys key=%u modifiers=0x%x terminal=%d surface=%u app=%s\n", edit_names[action], key, with, terminal, window->id, window->app_id);
+	printf("KWL EDIT action=%s via=keys key=%u modifiers=0x%x terminal=%d surface=%u app=%s\n", edit_names[action], key, with, terminal, window->id, window->app_id);
 	return 0;
 }
 
@@ -341,13 +341,13 @@ kwl_focus_previous(
 
 	/* None to go back to. */
 	if (second == NULL) {
-		printf("ZWL FOCUS previous none\n");
+		printf("KWL FOCUS previous none\n");
 		return ENOENT;
 	}
 
 	/* It comes forward and has the focus (the keyboard, if open, stays). */
 	kwl_glass_raise(server, second);
-	printf("ZWL FOCUS previous surface=%u app=%s from=%u client=%llu\n", second->id, second->app_id, top->id, (unsigned long long)second->client->number);
+	printf("KWL FOCUS previous surface=%u app=%s from=%u client=%llu\n", second->id, second->app_id, top->id, (unsigned long long)second->client->number);
 
 	/* Succeeded. */
 	return 0;
@@ -399,7 +399,7 @@ kwl_edit_key(
 	if (key == EDIT_KEY_Q) {
 		if (state != 0U) {
 			protocol = kwl_edit_state(server, &enabled);
-			printf("ZWL EDIT enabled=0x%x protocol=%d\n", enabled, protocol);
+			printf("KWL EDIT enabled=0x%x protocol=%d\n", enabled, protocol);
 		}
 		return 1;
 	}
@@ -443,7 +443,7 @@ edit_create(
 	created->top = toplevel;
 	created->edit_actions = 0U;
 	created->edit_flags = 0U;
-	printf("ZWL EDIT create client=%llu edit=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
+	printf("KWL EDIT create client=%llu edit=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
 
 	/* Succeeded: the window takes actions once it says which. */
 	return 0;

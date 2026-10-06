@@ -203,7 +203,7 @@ kwl_buffer_put(
 
 	/* An unbalanced owner is an internal defect rather than a client-controlled refcount. */
 	if (buffer->holds == 0) {
-		printf("ZWL FAILED site=buffer_put client=%llu buffer=%u\n", (unsigned long long)buffer->client->number, buffer->id);
+		printf("KWL FAILED site=buffer_put client=%llu buffer=%u\n", (unsigned long long)buffer->client->number, buffer->id);
 		buffer->client->server->failed = 1;
 		return;
 	}
@@ -219,7 +219,7 @@ kwl_buffer_put(
 
 		/* Names the release when the per-frame lines were asked for. */
 		if (buffer->client->server->log_frames)
-			printf("ZWL RELEASE client=%llu buffer=%u dead=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->dead);
+			printf("KWL RELEASE client=%llu buffer=%u dead=%u\n", (unsigned long long)buffer->client->number, buffer->id, buffer->dead);
 
 		/* Only a surviving protocol identity may tell its producer to reuse storage. */
 		if (!buffer->dead && !buffer->client->fatal) {
@@ -488,7 +488,7 @@ kwl_client_destroy(
 
 	/* Fatal status suppresses events while destructors unwind dependent objects. */
 	client->fatal = 1;
-	printf("ZWL CLEANUP client=%llu objects=%u unread_fds=%u\n", (unsigned long long)client->number, client->object_count, client->right_count);
+	printf("KWL CLEANUP client=%llu objects=%u unread_fds=%u\n", (unsigned long long)client->number, client->object_count, client->right_count);
 
 	/* Surfaces own all callback lists and buffer-use holds, so retire them first. */
 	while (1) {

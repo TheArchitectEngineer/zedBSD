@@ -142,7 +142,7 @@ kwl_keyboard_inset_notify(
 			words[1] = bottom;
 			words[2] = (int32_t)reason;
 			(void)kwl_emit(client, object->id, INSET_EVENT_INSET, words, sizeof(words));
-			printf("ZWL INSET client=%llu surface=%u right=%d bottom=%d reason=%u\n", (unsigned long long)client->number, surface->id, right, bottom, reason);
+			printf("KWL INSET client=%llu surface=%u right=%d bottom=%d reason=%u\n", (unsigned long long)client->number, surface->id, right, bottom, reason);
 		}
 	}
 }
@@ -171,7 +171,7 @@ inset_create(
 	if (created == NULL)
 		return EPROTO;
 	created->top = toplevel;
-	printf("ZWL INSET create client=%llu inset=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
+	printf("KWL INSET create client=%llu inset=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
 
 	/* Succeeded: the window hears the keyboard from now on. */
 	return 0;

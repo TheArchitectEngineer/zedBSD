@@ -25,14 +25,14 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/titlebar-probe > /tmp/probe.log 2>&1; echo probe-exit=$?
 /bin/terminal --token=t2 --timeout-s=20 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' | tee "$out/run.txt"
 guest 'cat /tmp/probe.log' | tee "$out/probe.log"
-guest 'grep -E "ZWL (ERROR|TITLEBAR)" /tmp/zdesktop.log' | tee "$out/zdesktop-titlebar.log"
+guest 'grep -E "KWL (ERROR|TITLEBAR)" /tmp/zdesktop.log' | tee "$out/zdesktop-titlebar.log"
 grep -q 'probe-exit=0' "$out/run.txt" || { echo "probe: exit"; status=1; }
 grep -q 'TITLEBARPROBE DONE failures=0' "$out/probe.log" || { echo "probe: failures"; status=1; }
-errors=$(grep -c 'ZWL ERROR client=[0-9]* object=[0-9]* code=' "$out/zdesktop-titlebar.log")
+errors=$(grep -c 'KWL ERROR client=[0-9]* object=[0-9]* code=' "$out/zdesktop-titlebar.log")
 [ "$errors" -eq 12 ] || { echo "zdesktop: $errors protocol errors (want 12)"; status=1; }
-grep -qE 'ZWL TITLEBAR commit client=[0-9]+ titlebar=[0-9]+ serial=1 mode=1 controls=6 tabs=1 ' "$out/zdesktop-titlebar.log" || { echo "commit 1: MISSING"; status=1; }
-grep -qE 'ZWL TITLEBAR commit client=[0-9]+ titlebar=[0-9]+ serial=2 mode=2 controls=6 tabs=1 ' "$out/zdesktop-titlebar.log" || { echo "commit 2: MISSING"; status=1; }
-grep -qE 'ZWL TITLEBAR commit client=[0-9]+ titlebar=[0-9]+ serial=3 mode=1 controls=6 tabs=1 ' "$out/zdesktop-titlebar.log" || { echo "commit 3: MISSING"; status=1; }
+grep -qE 'KWL TITLEBAR commit client=[0-9]+ titlebar=[0-9]+ serial=1 mode=1 controls=6 tabs=1 ' "$out/zdesktop-titlebar.log" || { echo "commit 1: MISSING"; status=1; }
+grep -qE 'KWL TITLEBAR commit client=[0-9]+ titlebar=[0-9]+ serial=2 mode=2 controls=6 tabs=1 ' "$out/zdesktop-titlebar.log" || { echo "commit 2: MISSING"; status=1; }
+grep -qE 'KWL TITLEBAR commit client=[0-9]+ titlebar=[0-9]+ serial=3 mode=1 controls=6 tabs=1 ' "$out/zdesktop-titlebar.log" || { echo "commit 3: MISSING"; status=1; }
 guest 'grep -c "ZTERM MENU ready" /tmp/t2.log' | tail -1 | grep -q '^1$' || { echo "terminal: menus MISSING"; status=1; }
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "titlebar-p008: PASS" || echo "titlebar-p008: FAIL"

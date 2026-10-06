@@ -124,6 +124,6 @@ done
 # Protocol errors in the compositor or the clients.
 guest 'grep -a -E "ERROR|FAILED|protocol error" /tmp/zdesktop.log /tmp/t.log /tmp/p.log 2>/dev/null' | tee "$out/errors.txt"
 [ -s "$out/errors.txt" ] && status=1
-guest 'grep -a -E "ZWL (INPUT|TABLET)" /tmp/zdesktop.log' > "$out/zdesktop-input.txt"
+guest 'grep -a -E "KWL (INPUT|TABLET)" /tmp/zdesktop.log' > "$out/zdesktop-input.txt"
 echo "p003-guest: status=$status"
 exit $status

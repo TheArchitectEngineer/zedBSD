@@ -14,7 +14,7 @@
 #   real           a PDF Notes saved (/tmp/real-notes.pdf, made by hand in the annotate step's Notes) in PDF Viewer,
 #                  then Annotate: Notes opens it with its strokes (real*.png)
 # Every step's pictures go to OUTDIR, and to PREFIX* when a prefix is given.  The steps read the program's
-# own log lines (PDFVIEWER ..., ZFILES ..., ZWL ...) through SSH; nothing reads the console.
+# own log lines (PDFVIEWER ..., ZFILES ..., KWL ...) through SSH; nothing reads the console.
 #   GUEST_RUNTIME=... plan/ws079/tests/pdfviewer-guest.sh OUTDIR PREFIX STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -80,7 +80,7 @@ cp /tmp/notes.pdf /tmp/pvdir/notes.pdf && { [ ! -f /tmp/notes-program ] || { cp 
 		;;
 	home)
 		pointer move 23 17 sleep 300 down sleep 60 up sleep 1500 move 700 780 sleep 300
-		expect_log /tmp/zdesktop.log 'ZWL HOME opened'
+		expect_log /tmp/zdesktop.log 'KWL HOME opened'
 		shot home.png
 		keys '<esc>'
 		sleep 1

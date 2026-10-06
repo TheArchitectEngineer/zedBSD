@@ -378,7 +378,7 @@ kwl_network_tick(
 		network_view.scan_count = kl_backend_network_get_scan(network_view.watch, network_view.scan, KL_BACKEND_NETWORK_SCAN_MAX);
 		if (network_view.scan_count > KL_BACKEND_NETWORK_SCAN_MAX)
 			network_view.scan_count = KL_BACKEND_NETWORK_SCAN_MAX;
-		printf("ZWL NETWORK scan count=%u\n", (unsigned)network_view.scan_count);
+		printf("KWL NETWORK scan count=%u\n", (unsigned)network_view.scan_count);
 		network_view.scan_fresh = 1U;
 	}
 
@@ -392,7 +392,7 @@ kwl_network_tick(
 	 */
 	if ((changed & KL_BACKEND_NETWORK_CHANGED_DONE) != 0) {
 		request = kl_backend_network_get_request(network_view.watch, &error);
-		printf("ZWL NETWORK done request=%s error=%d\n", network_request_name(request), error);
+		printf("KWL NETWORK done request=%s error=%d\n", network_request_name(request), error);
 		owned = kwl_system_network_done(server, request, error);
 		if (owned) {
 			network_send_waiting(server);
@@ -429,7 +429,7 @@ kwl_network_draw_icon(
 	network_view.icon_height = KWL_GLASS_BAR - 6;
 	if (!network_view.icon_logged) {
 		network_view.icon_logged = 1;
-		printf("ZWL NETWORK icon x=%d y=%d width=%d height=%d\n", network_view.icon_x, network_view.icon_y, network_view.icon_width, network_view.icon_height);
+		printf("KWL NETWORK icon x=%d y=%d width=%d height=%d\n", network_view.icon_x, network_view.icon_y, network_view.icon_width, network_view.icon_height);
 	}
 
 	/* While the menu is open its icon has a pale blue back, on the bar's middle. */
@@ -717,7 +717,7 @@ kwl_network_key_failed(
 	(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not join {1} ({2})"), ssid, strerror(error), (const char *)NULL);
 	network_connecting(NULL);
 	server->dirty = 1;
-	printf("ZWL NETWORK key failed ssid=%s error=%d\n", ssid, error);
+	printf("KWL NETWORK key failed ssid=%s error=%d\n", ssid, error);
 }
 
 /*
@@ -736,7 +736,7 @@ kwl_network_saved(
 		count = KL_BACKEND_NETWORK_SCAN_MAX;
 	memcpy(network_view.saved, ssids, count * sizeof(network_view.saved[0]));
 	network_view.saved_count = count;
-	printf("ZWL NETWORK saved count=%u\n", (unsigned)count);
+	printf("KWL NETWORK saved count=%u\n", (unsigned)count);
 }
 
 /*
@@ -764,7 +764,7 @@ kwl_network_scan_hold(
 	/* One more: the first holder starts the asking. */
 	if (on != 0U) {
 		network_view.scan_holders++;
-		printf("ZWL NETWORK scan holders=%u\n", network_view.scan_holders);
+		printf("KWL NETWORK scan holders=%u\n", network_view.scan_holders);
 		if (network_view.scan_holders == 1U && network_view.watch != NULL)
 			(void)kl_backend_network_set_scanning(network_view.watch, 1U);
 		return;
@@ -776,7 +776,7 @@ kwl_network_scan_hold(
 
 	/* One fewer: the last holder ends the asking. */
 	network_view.scan_holders--;
-	printf("ZWL NETWORK scan holders=%u\n", network_view.scan_holders);
+	printf("KWL NETWORK scan holders=%u\n", network_view.scan_holders);
 	if (network_view.scan_holders == 0U && network_view.watch != NULL)
 		(void)kl_backend_network_set_scanning(network_view.watch, 0U);
 }
@@ -822,9 +822,9 @@ kwl_network_details(
 	/* Shown, and logged for the tests. */
 	network_info_place(server);
 	server->dirty = 1;
-	printf("ZWL NETWORK info rows=%u\n", network_view.info_count);
+	printf("KWL NETWORK info rows=%u\n", network_view.info_count);
 	for (index = 0; index < network_view.info_count; index++)
-		printf("ZWL NETWORK info row label=%s value=%s\n", network_view.info_rows[index].label, network_view.info_rows[index].value);
+		printf("KWL NETWORK info row label=%s value=%s\n", network_view.info_rows[index].label, network_view.info_rows[index].value);
 }
 
 /* Opens the menu, which holds the radios scanning while it is open. */
@@ -836,7 +836,7 @@ network_open_menu(
 	network_view.open = 1;
 	network_view.logged_layout = 0;
 	server->dirty = 1;
-	printf("ZWL NETWORK open\n");
+	printf("KWL NETWORK open\n");
 
 	/* The saved networks, read again by the system extension's thread. */
 	kwl_system_bar_saved(server);
@@ -860,7 +860,7 @@ network_close_menu(
 		kwl_network_scan_hold(0U);
 	network_view.open = 0;
 	server->dirty = 1;
-	printf("ZWL NETWORK close via=%s\n", via);
+	printf("KWL NETWORK close via=%s\n", via);
 }
 
 /*
@@ -1219,7 +1219,7 @@ network_request(
 
 	/* The request; the answer comes through the ticks. */
 	error = kl_backend_network_request(network_view.watch, request, ssid);
-	printf("ZWL NETWORK request %s ssid=%s error=%d\n", network_request_name(request), network_view.joining, error);
+	printf("KWL NETWORK request %s ssid=%s error=%d\n", network_request_name(request), network_view.joining, error);
 	server->dirty = 1;
 
 	/* A request behind another one waits for its answer (a scan is not kept). */
@@ -1307,7 +1307,7 @@ network_log_state(
 		kind = "wifi";
 
 	/* One line. */
-	printf("ZWL NETWORK state reachable=%u connected=%u kind=%s interface=%s wifi=%s ssid=%s\n",
+	printf("KWL NETWORK state reachable=%u connected=%u kind=%s interface=%s wifi=%s ssid=%s\n",
 	    state->reachable, state->connected, kind, state->interface, network_wifi_name(state->wifi), state->ssid);
 }
 
@@ -1342,16 +1342,16 @@ network_log_layout(
 	network_view.logged_layout = checksum;
 
 	/* Each row that acts, with its rectangle. */
-	printf("ZWL NETWORK menu x=%d y=%d width=%d height=%d rows=%u\n", network_view.menu_x, network_view.menu_y, NETWORK_MENU_WIDTH, network_view.menu_height, network_view.row_count);
+	printf("KWL NETWORK menu x=%d y=%d width=%d height=%d rows=%u\n", network_view.menu_x, network_view.menu_y, NETWORK_MENU_WIDTH, network_view.menu_height, network_view.row_count);
 	for (index = 0; index < network_view.row_count; index++) {
 		row = &network_view.rows[index];
-		printf("ZWL NETWORK row index=%u kind=%d x=%d y=%d width=%d height=%d text=%s\n", index, (int)row->kind,
+		printf("KWL NETWORK row index=%u kind=%d x=%d y=%d width=%d height=%d text=%s\n", index, (int)row->kind,
 		    network_view.menu_x, network_view.menu_y + row->y, NETWORK_MENU_WIDTH, row->height, row->text);
 
 		/* The Disconnect button of the network it is on, for the tests that click it. */
 		current = network_is_current(row);
 		if (current) {
-			printf("ZWL NETWORK disconnect x=%d y=%d width=%d height=%d ssid=%s\n",
+			printf("KWL NETWORK disconnect x=%d y=%d width=%d height=%d ssid=%s\n",
 			    network_view.menu_x + NETWORK_MENU_WIDTH - 10 - NETWORK_DISCONNECT_WIDTH,
 			    network_view.menu_y + row->y + NETWORK_DISCONNECT_INSET, NETWORK_DISCONNECT_WIDTH,
 			    row->height - 2 * NETWORK_DISCONNECT_INSET, row->text);
@@ -1678,7 +1678,7 @@ network_switch_settle(
 	network_view.switch_wanted = 0U;
 	network_view.switch_until = 0U;
 	server->dirty = 1;
-	printf("ZWL NETWORK switch settled wifi=%u\n", network_view.state.wifi);
+	printf("KWL NETWORK switch settled wifi=%u\n", network_view.state.wifi);
 }
 
 /* Tells whether the switch shows on: what was asked while it waits (BUG-183), else the state. */
@@ -1839,7 +1839,7 @@ network_key_open(
 	network_view.key_open = 1;
 	network_view.failure[0] = '\0';
 	server->dirty = 1;
-	printf("ZWL NETWORK key open ssid=%s\n", network_view.key_ssid);
+	printf("KWL NETWORK key open ssid=%s\n", network_view.key_ssid);
 }
 
 /* Closes the key field, wiping what was typed. */
@@ -1865,7 +1865,7 @@ network_key_type(
 	if (key == NETWORK_KEY_ESC) {
 		network_key_close();
 		server->dirty = 1;
-		printf("ZWL NETWORK key cancel\n");
+		printf("KWL NETWORK key cancel\n");
 		return;
 	}
 
@@ -1935,13 +1935,13 @@ network_key_submit(
 	network_key_wipe();
 	if (error != 0) {
 		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not save the key ({1})"), strerror(error), (const char *)NULL);
-		printf("ZWL NETWORK key save error=%d\n", error);
+		printf("KWL NETWORK key save error=%d\n", error);
 		server->dirty = 1;
 		return;
 	}
 
 	/* The log line the tests read (never the key). */
-	printf("ZWL NETWORK key handed ssid=%s\n", network_view.key_ssid);
+	printf("KWL NETWORK key handed ssid=%s\n", network_view.key_ssid);
 
 	/* The field closes; the menu says it is connecting from now, and the join's answer comes as the bar's. */
 	network_view.key_open = 0;
@@ -2075,7 +2075,7 @@ network_connecting(
 		(void)snprintf(network_view.connecting, sizeof(network_view.connecting), "%s", ssid);
 
 	/* The log line the tests read. */
-	printf("ZWL NETWORK connecting ssid=%s\n", network_view.connecting);
+	printf("KWL NETWORK connecting ssid=%s\n", network_view.connecting);
 }
 
 /* Tells whether a row is the network the Wi-Fi is on (a network row of its SSID, or its own row). */
@@ -2205,7 +2205,7 @@ network_info_open(
 	(void)snprintf(network_view.info_rows[0].value, sizeof(network_view.info_rows[0].value), "%s", "Network");
 	network_info_place(server);
 	server->dirty = 1;
-	printf("ZWL NETWORK info open\n");
+	printf("KWL NETWORK info open\n");
 
 	/* The first reading. */
 	network_view.info_asked_ms = kwl_milliseconds();
@@ -2221,7 +2221,7 @@ network_info_close(
 	/* Gone. */
 	network_view.info_open = 0U;
 	server->dirty = 1;
-	printf("ZWL NETWORK info close via=%s\n", via);
+	printf("KWL NETWORK info close via=%s\n", via);
 }
 
 /* Places the details where the menu goes, as tall as their rows. */

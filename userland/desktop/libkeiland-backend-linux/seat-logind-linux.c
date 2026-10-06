@@ -165,7 +165,7 @@ linux_logind_seat_open(
 		return error;
 	seat_paused = seat_devices[0].paused;
 	(void)backend;
-	printf("ZWL SEAT logind session=%s\n", seat_session);
+	printf("KWL SEAT logind session=%s\n", seat_session);
 
 	/* Succeeded: logind, rather than direct open, owns device authority. */
 	return 0;
@@ -360,7 +360,7 @@ linux_logind_device_revoked(
 		if (device->owned == 0 || device->fd != descriptor)
 			continue;
 		device->paused = 1;
-		printf("ZWL SEAT input_revoked device=%u:%u lease=retained\n", device->major, device->minor);
+		printf("KWL SEAT input_revoked device=%u:%u lease=retained\n", device->major, device->minor);
 		return 1;
 	}
 
@@ -667,7 +667,7 @@ seat_pause(
 	}
 
 	/* The log records actual notification kind rather than assuming VT behavior. */
-	printf("ZWL SEAT pause device=%u:%u type=%s display=%u\n", device->major, device->minor, kind, device->display);
+	printf("KWL SEAT pause device=%u:%u type=%s display=%u\n", device->major, device->minor, kind, device->display);
 	if (cooperative != 0) {
 		error = seat_device_call("PauseDeviceComplete", device);
 		if (error != 0)
@@ -742,6 +742,6 @@ seat_resume(
 	}
 
 	/* Succeeded: input and display use only the newly supplied file. */
-	printf("ZWL SEAT resume device=%u:%u display=%u\n", device->major, device->minor, device->display);
+	printf("KWL SEAT resume device=%u:%u display=%u\n", device->major, device->minor, device->display);
 	return 0;
 }

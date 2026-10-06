@@ -71,7 +71,7 @@ wclick() {
 menu() {
 	item=$1
 	zwl_app_clients
-	set -- $(guest "grep 'ZWL TITLEBAR control client=$zc1 .* where=floating id=0 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- $(guest "grep 'KWL TITLEBAR control client=$zc1 .* where=floating id=0 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 	click $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2)) 900
 	click $(( $(popup_x) + 60 )) "$(row_y "$item")" 900
 }
@@ -87,14 +87,14 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
 
 # 1. The controls and "..." in the floating title bar.
 expect_log /tmp/f.log 'ZFILES MENU ready items='
 expect_log /tmp/f.log 'ZFILES TITLEBAR ready controls='
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 surface=$surface where=floating id=0 "
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc1 surface=$surface where=floating id=0 "
 shot floating.png
 
 # 2. File by the pointer.
@@ -144,7 +144,7 @@ back=$(guest "grep -c 'LOCATION kind=folder path=/tmp/fhome/Documents ' /tmp/f.l
 keys '<ctrl-n>'
 expect_log /tmp/f.log 'ZFILES SPAWN program=/bin/files'
 expect_log /tmp/f.log 'ZFILES READY .* token=f1-new'
-expect_log /tmp/zdesktop.log "ZWL MAP client=$zc2 "
+expect_log /tmp/zdesktop.log "KWL MAP client=$zc2 "
 sleep 2
 shot two-windows.png
 keys '<ctrl-shift-w>'

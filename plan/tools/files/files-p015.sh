@@ -47,14 +47,14 @@ guest 'export XDG_RUNTIME_DIR=/tmp
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
 
 # 1. Glass, and the two cards.
 expect_log /tmp/f.log 'ZFILES GLASS on'
 expect_log /tmp/f.log 'ZFILES GLASS panels count=2'
-expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 card:0,0,212,640,16 card:220,0,780,640,16\$"
+expect_log /tmp/zdesktop.log "KWL GLASS client=[0-9]+ surface=$surface panels=2 card:0,0,212,640,16 card:220,0,780,640,16\$"
 shot one.png
 
 # 2. The desktop between the sidebar and the content, as the wallpaper has it.
@@ -82,7 +82,7 @@ EOF
 # 3. The preview (Ctrl+Alt+P): a third card, and the content narrower.
 keys '<ctrl-alt-p>'
 expect_log /tmp/f.log 'ZFILES GLASS panels count=3'
-expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=3 card:0,0,212,640,16 card:220,0,508,640,16 card:736,0,264,640,16\$"
+expect_log /tmp/zdesktop.log "KWL GLASS client=[0-9]+ surface=$surface panels=3 card:0,0,212,640,16 card:220,0,508,640,16 card:736,0,264,640,16\$"
 shot preview.png
 
 # 4. A second tab: the row of tabs is inside the content's card, which keeps its place (no new panels).
@@ -91,7 +91,7 @@ expect_log /tmp/f.log 'ZFILES TABS new index=1 count=2'
 shot tabs.png
 keys '<ctrl-w>'
 expect_log /tmp/f.log 'ZFILES TABS close index=1 count=1'
-lines=$(guest "grep -c 'ZWL GLASS client=' /tmp/zdesktop.log" | tail -1)
+lines=$(guest "grep -c 'KWL GLASS client=' /tmp/zdesktop.log" | tail -1)
 [ "${lines:-0}" = 2 ] && echo "log: two glass commits (the tabs change no panel) ok" || { echo "log: $lines glass commits, 2 wanted MISSING"; status=1; }
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

@@ -1,9 +1,9 @@
 #!/bin/sh
 # ws079-p005: Notes from App Home on the Venus guest (the lean image with Notes, build-notes-image.sh).
 # zdesktop --glass at 1280x800 with no /etc/keiland/apps.conf (the built-in list):
-#  1. home.png: Home lists Notes (ZWL HOME icon name="Notes").
-#  2. window.png: the Notes icon starts /bin/notes (ZWL HOME launch name=Notes), a window with its System Menu
-#     (ZWL MENU commit ... items=18) and the toolbar; a stroke drawn in the window (NOTES STROKE).
+#  1. home.png: Home lists Notes (KWL HOME icon name="Notes").
+#  2. window.png: the Notes icon starts /bin/notes (KWL HOME launch name=Notes), a window with its System Menu
+#     (KWL MENU commit ... items=18) and the toolbar; a stroke drawn in the window (NOTES STROKE).
 #  3. menu.png: F10 opens the File menu with the shortcuts (Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+W); Esc closes it.
 #  4. Ctrl+W closes Notes, saving the new notebook under ~/Documents/Notes (NOTES SAVE reason=close).
 #
@@ -51,7 +51,7 @@ shot() {
 
 # An icon's centre on Home as zdesktop logged it: "x y".
 icon() {
-	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
 guest "$stop_all; rm -f /etc/keiland/apps.conf; rm -rf /root/Documents/Notes /root/.local/share/keiland/notes" >/dev/null
@@ -63,16 +63,16 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 pointer move 700 500 sleep 400
 shot home.png
-expect_log /tmp/zdesktop.log 'ZWL HOME icon name="Notes"'
+expect_log /tmp/zdesktop.log 'KWL HOME icon name="Notes"'
 
 # 2. Notes from its icon, and a stroke in its window.
 set -- $(icon Notes)
 echo "Notes icon at ${1:-?},${2:-?}"
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 6000
-expect_log /tmp/zdesktop.log 'ZWL HOME launch name=Notes'
+expect_log /tmp/zdesktop.log 'KWL HOME launch name=Notes'
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL MENU commit client=$zc1 .*items=18"
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+expect_log /tmp/zdesktop.log "KWL MENU commit client=$zc1 .*items=18"
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "Notes window at $wx,$wy"
 pointer move $((wx + 350)) $((wy + 200)) sleep 60 down sleep 40 move $((wx + 420)) $((wy + 240)) sleep 30 \
@@ -91,7 +91,7 @@ sleep 2
 guest 'ls -l /root/Documents/Notes/' | tee "$out/documents.txt"
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -E "ZWL HOME|ZWL MENU" /tmp/zdesktop.log' > "$out/zdesktop-home.log"
+guest 'grep -E "KWL HOME|KWL MENU" /tmp/zdesktop.log' > "$out/zdesktop-home.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "notes-home: PASS" || echo "notes-home: FAIL"
 exit $status

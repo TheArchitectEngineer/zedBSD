@@ -41,14 +41,14 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 /bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/titlebar-probe --show="日本語のタイトル — 表示の試験" --seconds=120 > /tmp/probe.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "probe: surface $surface at $wx,$wy"
 
 # 1. The fonts, the cache and the Japanese glyphs.
-expect_log /tmp/zdesktop.log 'ZWL GLASS atlas cache-top=[0-9]+ cells=[0-9]+ faces=1'
-expect_log /tmp/zdesktop.log 'ZWL GLASS fallback font: path=[^ ]+ faces=2'
-expect_log /tmp/zdesktop.log 'ZWL GLASS glyph codepoint=U\+65E5 size=[0-9]+ face=1 '
+expect_log /tmp/zdesktop.log 'KWL GLASS atlas cache-top=[0-9]+ cells=[0-9]+ faces=1'
+expect_log /tmp/zdesktop.log 'KWL GLASS fallback font: path=[^ ]+ faces=2'
+expect_log /tmp/zdesktop.log 'KWL GLASS glyph codepoint=U\+65E5 size=[0-9]+ face=1 '
 expect_log /tmp/probe.log 'TITLEBARPROBE show ready mode=menu'
 
 # 2. The title floating, then docked (a double click on the title bar, above the body).
@@ -61,7 +61,7 @@ expect_log /tmp/zdesktop.log "GLASS dock surface=$surface"
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep "ZWL GLASS" /tmp/zdesktop.log' > "$out/glass.log"
+guest 'grep "KWL GLASS" /tmp/zdesktop.log' > "$out/glass.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "titlebar-p009: PASS" || echo "titlebar-p009: FAIL"
 exit $status

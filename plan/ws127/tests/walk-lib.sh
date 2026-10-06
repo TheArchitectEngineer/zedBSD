@@ -38,7 +38,7 @@ HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=1700 --width=$width --height=$
 	i=0
 	while [ $i -lt 30 ]; do
 		zwl_app_clients
-		set -- $(walk_run "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+		set -- $(walk_run "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 		[ -n "${1:-}" ] && break
 		sleep 1
 		i=$((i+1))

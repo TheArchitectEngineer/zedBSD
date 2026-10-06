@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws103-p005: on the Venus guest of the forgery image (plan/tools/gpu-boundary/build-forge-image.sh), a Vulkan Wayland client
 # (wltest) sends each present's own new fence: every acquire fence zdesktop receives is at its first generation
-# ("ZWL ACQUIRE_FENCE ... generation=1"; before ws103-p005 the reused slot fence advanced 1, 2, 3, ...).  Also times
+# ("KWL ACQUIRE_FENCE ... generation=1"; before ws103-p005 the reused slot fence advanced 1, 2, 3, ...).  Also times
 # FRAMES presents of wltest without delay, to compare with an image before the change.
 # Prints "fence-guest RESULT fences=N first_generation=M max_generation=G frames=F seconds=S" and "fence-guest: PASS",
 # or "fence-guest: FAIL ..." (with EXPECT=advancing the check is the old behaviour's, for the image before the change).
@@ -23,7 +23,7 @@ fail() { echo "fence-guest: FAIL $*"; exit 1; }
 
 # zdesktop alone, with the per-frame lines.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1' >/dev/null
 
 # FRAMES presents without delay, timed.
 guest "export XDG_RUNTIME_DIR=/tmp; start=\$(date +%s); /bin/wltest --windowed --size=400x300 --color=ff0000 --frames=$frames --delay-ms=0 --token=f > /tmp/f.log 2>&1 </dev/null; end=\$(date +%s); echo seconds=\$((end - start))" | tee "$out/timing.txt"
@@ -31,12 +31,12 @@ seconds=$(sed -n 's/.*seconds=\([0-9]*\).*/\1/p' "$out/timing.txt" | tail -1)
 drawn=$(guest 'grep -c "WLTEST FRAME run=f" /tmp/f.log' | tail -1)
 
 # The fences zdesktop received.
-guest "grep -a 'ZWL ACQUIRE_FENCE' /tmp/zdesktop.log" > "$out/fences.txt"
-count=$(grep -c 'ZWL ACQUIRE_FENCE' "$out/fences.txt")
+guest "grep -a 'KWL ACQUIRE_FENCE' /tmp/zdesktop.log" > "$out/fences.txt"
+count=$(grep -c 'KWL ACQUIRE_FENCE' "$out/fences.txt")
 first=$(grep -c 'generation=1$' "$out/fences.txt")
 max=$(sed -n 's/.*generation=\([0-9]*\).*/\1/p' "$out/fences.txt" | sort -n | tail -1)
 echo "fence-guest RESULT fences=$count first_generation=$first max_generation=${max:-0} frames=$drawn seconds=${seconds:-?}" | tee "$out/summary.txt"
-guest 'grep -aE "ZWL (FAILED|GPU_ERROR|VULKAN_ERROR|IMPORT_ERROR)" /tmp/zdesktop.log' | tee "$out/errors.txt"
+guest 'grep -aE "KWL (FAILED|GPU_ERROR|VULKAN_ERROR|IMPORT_ERROR)" /tmp/zdesktop.log' | tee "$out/errors.txt"
 guest "$stop_all" >/dev/null
 
 # The verdict.

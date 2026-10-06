@@ -2,7 +2,7 @@
 # ws070-p010: the CONTROLS presentation on the Venus guest (the lean image).  zdesktop --glass shows
 # /bin/titlebar-probe --show --mode=controls (a file manager's controls: back, forward (disabled), home,
 # a breadcrumb Home > Projects > 日本語, a search field, Icons/List, Preview):
-#  1. floating.png: the controls in the floating titlebar (ZWL TITLEBAR control ... where=floating).
+#  1. floating.png: the controls in the floating titlebar (KWL TITLEBAR control ... where=floating).
 #  2. Back clicked (event activated id=1); the breadcrumb's "..." (the nearest part left out) and its last
 #     part (detail=2); the search field
 #     clicked, "aBc" typed (text events, a capital with Shift), Enter (done how=0 text=aBc): search.png while typing; List
@@ -29,7 +29,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 # "GLASS dock ... buttons=close,restore,minimize" line; a button is 30 wide).  The input method's indicator, when
 # installed, moves the buttons left, so a fixed offset can land on minimize (titlebar-p010 in T1-036).
 docked_free_x() {
-	guest "grep -E 'ZWL TITLEBAR (strip|control) client=$(zwl_app_client $1) .* where=docked .* x=[-0-9]+ y=[-0-9]+ width=[0-9]+|ZWL GLASS dock surface=' /tmp/zdesktop.log" |
+	guest "grep -E 'KWL TITLEBAR (strip|control) client=$(zwl_app_client $1) .* where=docked .* x=[-0-9]+ y=[-0-9]+ width=[0-9]+|KWL GLASS dock surface=' /tmp/zdesktop.log" |
 	    awk 'BEGIN { right = 150; minimize = 0 }
 		/GLASS dock surface=/ { for (i = 1; i <= NF; i++) if ($i ~ /^buttons=/) { split(substr($i, 9), b, ","); minimize = b[3] - 15 } next }
 		{ x = ""; w = ""; for (i = 1; i <= NF; i++) { if ($i ~ /^x=/) x = substr($i, 3); if ($i ~ /^width=/) w = substr($i, 7) }
@@ -62,7 +62,7 @@ expect_log() {
 
 # The centre of a control (client, place, ID) as zdesktop last logged it: "x y".
 control() {
-	guest "grep 'ZWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
+	guest "grep 'KWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
 	    sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p' |
 	    { read x y w h; echo "$(( ${x:-0} + ${w:-0} / 2 )) $(( ${y:-0} + ${h:-0} / 2 ))"; }
 }
@@ -93,25 +93,25 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/titlebar-probe --show=Files --mode=controls --seconds=400 > /tmp/probe.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "probe: surface $surface at $wx,$wy"
 
 # 1. The controls in the floating titlebar.
 expect_log /tmp/probe.log 'TITLEBARPROBE show ready mode=controls'
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 surface=$surface where=floating id=5 .* shown=1"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc1 surface=$surface where=floating id=5 .* shown=1"
 shot floating.png
 
 # 2. Back, the breadcrumb's first part, the search field, List.
 set -- $(control 1 floating 1); click "$1" "$2"
 expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=1 detail=0'
-set -- $(guest "grep 'ZWL TITLEBAR control client=$zc1 .* where=floating id=4 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL TITLEBAR control client=$zc1 .* where=floating id=4 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\).*/\1 \2 \3/p')
 click $(( $1 + 8 )) $(( $2 + 15 ))
 expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=4 detail=[01] '
 click $(( $1 + 60 )) $(( $2 + 15 ))
 expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=4 detail=2 '
 set -- $(control 1 floating 5); click "$1" "$2"
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR focus client=$zc1 surface=[0-9]+ id=5 edit=0"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR focus client=$zc1 surface=[0-9]+ id=5 edit=0"
 keys 'aBc'
 shot search.png
 expect_log /tmp/probe.log 'TITLEBARPROBE event=text id=5 text=aBc'
@@ -128,7 +128,7 @@ expect_log /tmp/probe.log 'TITLEBARPROBE event=activated id=7 detail=0'
 set -- $(control 1 floating 1)
 double $((wx + 60)) "$2"
 expect_log /tmp/zdesktop.log "GLASS dock surface=$surface"
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 surface=$surface where=docked id=7 .* shown=1"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc1 surface=$surface where=docked id=7 .* shown=1"
 shot docked.png
 set -- $(control 1 docked 7); click "$1" "$2"
 activations=$(guest "grep -c 'TITLEBARPROBE event=activated id=7 ' /tmp/probe.log" | tail -1)
@@ -138,19 +138,19 @@ expect_log /tmp/zdesktop.log "GLASS undock surface=$surface"
 
 # 4. A narrow window: the controls give way to "...", which holds them.
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/titlebar-probe --show=Narrow --mode=controls --width=380 --seconds=200 > /tmp/probe2.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc2 .* where=floating id=7 .* shown=0"
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc2 .* where=floating id=0 "
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc2 .* where=floating id=7 .* shown=0"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc2 .* where=floating id=0 "
 shot narrow.png
 set -- $(control 2 floating 0); click "$1" "$2" 1000
-expect_log /tmp/zdesktop.log "ZWL MENU open client=$zc2 "
+expect_log /tmp/zdesktop.log "KWL MENU open client=$zc2 "
 shot overflow.png
 click $(( $(popup_x) + 60 )) "$(row_y 4026531847)" 1000
 expect_log /tmp/probe2.log 'TITLEBARPROBE event=activated id=7 detail=0'
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR activate client=$zc2 id=7 detail=0 serial=[0-9]+ via=overflow"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR activate client=$zc2 id=7 detail=0 serial=[0-9]+ via=overflow"
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -E "ZWL (TITLEBAR|MENU)" /tmp/zdesktop.log' > "$out/zdesktop-titlebar.log"
+guest 'grep -E "KWL (TITLEBAR|MENU)" /tmp/zdesktop.log' > "$out/zdesktop-titlebar.log"
 guest 'cat /tmp/probe.log /tmp/probe2.log' > "$out/probe.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "titlebar-p010: PASS" || echo "titlebar-p010: FAIL"

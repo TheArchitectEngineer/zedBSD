@@ -106,7 +106,7 @@ click() {
 
 # Presses at a point, drags by (dx, dy) in three steps, and lets go.
 drag() {
-	press_request "$1" "$2" '^ZWL RESIZE start surface=' || finish
+	press_request "$1" "$2" '^KWL RESIZE start surface=' || finish
 	pointer move $(($1 + $3 / 3)) $(($2 + $4 / 3)) sleep 200 \
 	    move $(($1 + 2 * $3 / 3)) $(($2 + 2 * $4 / 3)) sleep 200 \
 	    move $(($1 + $3)) $(($2 + $4)) sleep 400 up sleep 1000
@@ -114,19 +114,19 @@ drag() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --log-frames --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --log-frames --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/popup-probe --wide --timeout-s=300 --token=p > /tmp/p.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/p.log 'POPUPPROBE ready run=p'
-set -- $(guest "grep 'ZWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "window at $wx,$wy"
 
 if [ "${P076_GEOMETRY_ONLY:-0}" != 1 ]; then
 # 1. The menu at a press in the window (window-local 60,60); the press pinged the client.
 click $((wx + 60)) $((wy + 60)) 1200
-expect_log /tmp/zdesktop.log 'ZWL POPUP grab popup='
-expect_log /tmp/zdesktop.log 'ZWL POPUP map surface=[0-9]+ x=[0-9]+ y=[0-9]+ grab=1'
-expect_log /tmp/zdesktop.log 'ZWL PING pong client=1 '
+expect_log /tmp/zdesktop.log 'KWL POPUP grab popup='
+expect_log /tmp/zdesktop.log 'KWL POPUP map surface=[0-9]+ x=[0-9]+ y=[0-9]+ grab=1'
+expect_log /tmp/zdesktop.log 'KWL PING pong client=1 '
 expect_log /tmp/p.log 'POPUPPROBE ping serial=[0-9]+ answered'
 expect_log /tmp/p.log 'POPUPPROBE configure menu x=60 y=60 width=360 height=180'
 expect_log /tmp/p.log 'POPUPPROBE focus menu'
@@ -158,7 +158,7 @@ check "$out/flipped.png" --expect $((wx + 360 - 360 + 100)),$((wy + 60 + 120 + 4
 # 5. A press on the desktop closes the popups (popup_done) and reaches nobody.
 before=$(count_log /tmp/p.log 'POPUPPROBE button other state=1')
 click 40 700 1200
-expect_log /tmp/zdesktop.log 'ZWL POPUP dismiss client='
+expect_log /tmp/zdesktop.log 'KWL POPUP dismiss client='
 expect_log /tmp/p.log 'POPUPPROBE done submenu'
 expect_log /tmp/p.log 'POPUPPROBE close menu' 2
 after=$(count_log /tmp/p.log 'POPUPPROBE button other state=1')
@@ -177,30 +177,30 @@ expect_log /tmp/p.log 'POPUPPROBE close menu' 3
 fi
 
 # 7. A move from the window's top strip.
-press_request $((wx + 200)) $((wy + 10)) '^ZWL GLASS request move surface=[0-9]+$' || finish
+press_request $((wx + 200)) $((wy + 10)) '^KWL GLASS request move surface=[0-9]+$' || finish
 pointer move $((wx + 240)) $((wy + 40)) sleep 150 move $((wx + 300)) $((wy + 110)) sleep 300 up sleep 800
 expect_log /tmp/p.log 'POPUPPROBE move'
-expect_log /tmp/zdesktop.log 'ZWL GLASS request move surface='
-expect_log /tmp/zdesktop.log "ZWL GLASS moved surface=[0-9]+ x=$((wx + 100)) y=$((wy + 100))"
+expect_log /tmp/zdesktop.log 'KWL GLASS request move surface='
+expect_log /tmp/zdesktop.log "KWL GLASS moved surface=[0-9]+ x=$((wx + 100)) y=$((wy + 100))"
 check "$out/moved.png" --expect $((wx + 100 + 200)),$((wy + 100 + 155)),2b3444 || status=1
 mx=$((wx + 100)); my=$((wy + 100))
 
 # 8. Resizes: the corner, the left edge (to the minimum width), the corner again (to the maximum).
 drag $((mx + 390)) $((my + 290)) 150 100
 expect_log /tmp/p.log 'POPUPPROBE resize bottom-right'
-expect_log /tmp/zdesktop.log 'ZWL RESIZE start surface=[0-9]+ edges=10 width=400 height=300'
+expect_log /tmp/zdesktop.log 'KWL RESIZE start surface=[0-9]+ edges=10 width=400 height=300'
 expect_log /tmp/p.log 'POPUPPROBE configure window width=[0-9]+ height=[0-9]+ states=2 resizing=1'
-expect_log /tmp/zdesktop.log 'ZWL RESIZE end surface=[0-9]+ width=550 height=400'
+expect_log /tmp/zdesktop.log 'KWL RESIZE end surface=[0-9]+ width=550 height=400'
 expect_log /tmp/p.log 'POPUPPROBE configure window width=550 height=400 states=1 resizing=0'
 check "$out/resized.png" --expect $((mx + 540)),$((my + 385)),2b3444 || status=1
 drag $((mx + 5)) $((my + 200)) 400 0
 expect_log /tmp/p.log 'POPUPPROBE resize left'
-expect_log /tmp/zdesktop.log 'ZWL RESIZE end surface=[0-9]+ width=200 height=400'
-expect_log /tmp/zdesktop.log "ZWL RESIZE settled surface=[0-9]+ x=$((mx + 350)) y=$my width=200 height=400"
+expect_log /tmp/zdesktop.log 'KWL RESIZE end surface=[0-9]+ width=200 height=400'
+expect_log /tmp/zdesktop.log "KWL RESIZE settled surface=[0-9]+ x=$((mx + 350)) y=$my width=200 height=400"
 check "$out/narrowed.png" --expect $((mx + 350 + 100)),$((my + 385)),2b3444 || status=1
 drag $((mx + 355)) $((my + 200)) -800 0
-expect_log /tmp/zdesktop.log 'ZWL RESIZE end surface=[0-9]+ width=800 height=400'
-expect_log /tmp/zdesktop.log "ZWL RESIZE settled surface=[0-9]+ x=$((mx - 250)) y=$my width=800 height=400"
+expect_log /tmp/zdesktop.log 'KWL RESIZE end surface=[0-9]+ width=800 height=400'
+expect_log /tmp/zdesktop.log "KWL RESIZE settled surface=[0-9]+ x=$((mx - 250)) y=$my width=800 height=400"
 check "$out/widened.png" --expect $((mx - 250 + 30)),$((my + 385)),2b3444 || status=1
 
 # 9. Not responding: pongs off, a right press (the window menu) pings, 5 s pass; then pongs on.
@@ -210,20 +210,20 @@ pointer move $((mx - 250 + 400)) $((my + 100)) sleep 300 right-down sleep 60 rig
 expect_log /tmp/p.log 'POPUPPROBE window-menu'
 expect_log /tmp/p.log 'POPUPPROBE ping serial=[0-9]+ ignored'
 sleep 6
-expect_log /tmp/zdesktop.log 'ZWL PING unresponsive client=1'
+expect_log /tmp/zdesktop.log 'KWL PING unresponsive client=1'
 check "$out/unresponsive.png" >/dev/null
 keys 'p'
 expect_log /tmp/p.log 'POPUPPROBE pong on answered=[1-9]'
-expect_log /tmp/zdesktop.log 'ZWL PING responsive client=1'
+expect_log /tmp/zdesktop.log 'KWL PING responsive client=1'
 
 # 10. Maximize, unmaximize and minimize from the keyboard.
 keys 'm'
-expect_log /tmp/zdesktop.log 'ZWL GLASS dock surface=[0-9]+ via=request'
+expect_log /tmp/zdesktop.log 'KWL GLASS dock surface=[0-9]+ via=request'
 keys 'u'
-expect_log /tmp/zdesktop.log 'ZWL GLASS undock surface=[0-9]+ via=request'
+expect_log /tmp/zdesktop.log 'KWL GLASS undock surface=[0-9]+ via=request'
 sleep 1
 keys 'n'
-expect_log /tmp/zdesktop.log 'ZWL GLASS minimize surface='
+expect_log /tmp/zdesktop.log 'KWL GLASS minimize surface='
 
 # Nothing failed.
 finish

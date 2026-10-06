@@ -7,8 +7,8 @@
 #  1. A long press on T1's "dragme" selects the word (ZTERM TOUCH hold on-selection=0, ZTERM SELECT how=word).
 #  2. A long press on the selection holds it (on-selection=1); the finger then moves onto T2's uncovered strip:
 #     T1 starts a drag with the finger's wl_touch.down serial (ZTERM DRAG start), the compositor gives the finger
-#     to the drag (ZWL TOUCH drag start; T1 hears wl_touch.cancel), the drag follows the finger, and the lift
-#     drops on T2 (ZWL DATA drag drop ... target=T2, ZTERM DROP bytes=6 in T2, ZTERM DRAG done dropped=1 in T1).
+#     to the drag (KWL TOUCH drag start; T1 hears wl_touch.cancel), the drag follows the finger, and the lift
+#     drops on T2 (KWL DATA drag drop ... target=T2, ZTERM DROP bytes=6 in T2, ZTERM DRAG done dropped=1 in T1).
 # The logs are read through SSH; nothing reads the console.  Pictures go to OUTDIR (and PREFIX* when given).
 #
 #   GUEST_RUNTIME=... plan/ws081/tests/p014-guest.sh BUILD [OUTDIR [PREFIX]]
@@ -73,9 +73,9 @@ put "$build/dynamic/libkeiland.so" /lib/libkeiland.so
 guest 'chmod 755 /bin/wayland /bin/terminal /bin/touchinject' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 guest 'printf "echo dragme; sleep 600\n" > /tmp/t1.sh; export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/terminal --columns=40 --rows=10 --token=t1 "--command=sh /tmp/t1.sh" > /tmp/t1.log 2>&1 </dev/null & sleep 5; /bin/terminal --columns=40 --rows=10 --token=t2 > /tmp/t2.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
-guest "grep 'ZWL MAP client=' /tmp/zdesktop.log" > "$out/maps.txt"
+guest "grep 'KWL MAP client=' /tmp/zdesktop.log" > "$out/maps.txt"
 set -- $(sed -n 's/.* client=\([0-9]*\) surface=[0-9]* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p' "$out/maps.txt" | tr '\n' ' ')
 c1=${1:-0}; x1=${2:-0}; y1=${3:-0}; c2=${4:-0}; x2=${5:-0}; y2=${6:-0}
 echo "T1 client $c1 at $x1,$y1; T2 client $c2 at $x2,$y2"
@@ -95,15 +95,15 @@ printf 'size 1279 799 2\nwait 2600\ndown 1 %d %d\nwait 700\nswipe %d %d 24 16.66
 inject touchinject drag.script
 expect /tmp/t1.log 'ZTERM TOUCH hold on-selection=1' "a long press on the selection holds it"
 expect /tmp/t1.log 'ZTERM DRAG start bytes=6' "T1 starts dragging the selected text"
-expect /tmp/zdesktop.log "ZWL TOUCH drag start client=$c1" "the compositor gives the finger to the drag"
-expect /tmp/zdesktop.log "ZWL TOUCH cancel client=$c1 reason=drag" "T1 hears wl_touch.cancel"
-expect /tmp/zdesktop.log "ZWL DATA drag drop client=$c1 target=$c2" "the lift drops on T2"
+expect /tmp/zdesktop.log "KWL TOUCH drag start client=$c1" "the compositor gives the finger to the drag"
+expect /tmp/zdesktop.log "KWL TOUCH cancel client=$c1 reason=drag" "T1 hears wl_touch.cancel"
+expect /tmp/zdesktop.log "KWL DATA drag drop client=$c1 target=$c2" "the lift drops on T2"
 expect /tmp/t2.log 'ZTERM DROP bytes=6' "T2 takes the dropped text"
 expect /tmp/t1.log 'ZTERM DRAG done dropped=1' "T1 hears the drop was done"
 shot dropped.png
 
 # The logs, the compositor's errors, and everything stops.
-guest "grep -E 'ZWL (TOUCH|DATA)' /tmp/zdesktop.log" > "$out/zdesktop-log.txt"
+guest "grep -E 'KWL (TOUCH|DATA)' /tmp/zdesktop.log" > "$out/zdesktop-log.txt"
 guest "grep -E 'ZTERM' /tmp/t1.log /tmp/t2.log" > "$out/terminals-log.txt"
 guest "grep -cE 'ERROR|FAILED' /tmp/zdesktop.log" | tail -1 > "$out/errors.txt"
 guest "$stop_all" >/dev/null

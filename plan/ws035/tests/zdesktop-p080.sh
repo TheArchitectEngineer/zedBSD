@@ -44,21 +44,21 @@ expect_log() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/extras-probe --timeout-s=150 --token=x > /tmp/x.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/x.log 'EXTRAS ready run=x'
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "window at $wx,$wy"
 
 # 1. Server-side decorations, whatever the client asks.
-expect_log /tmp/zdesktop.log "ZWL DECORATION asked client=$zc1 mode=1"
-expect_log /tmp/zdesktop.log "ZWL DECORATION configure client=$zc1 mode=2" 2
+expect_log /tmp/zdesktop.log "KWL DECORATION asked client=$zc1 mode=1"
+expect_log /tmp/zdesktop.log "KWL DECORATION configure client=$zc1 mode=2" 2
 expect_log /tmp/x.log 'EXTRAS decoration mode=2' 2
 
 # 2. The viewport: the red quarter at 200x100 (inside it red; right of it the window).
-expect_log /tmp/zdesktop.log 'ZWL VIEWPORT surface=[0-9]+ source=0,0,12800,12800 destination=200,100'
+expect_log /tmp/zdesktop.log 'KWL VIEWPORT surface=[0-9]+ source=0,0,12800,12800 destination=200,100'
 pointer move 40 700 sleep 600
 check "$out/decoration.png" --expect $((wx + 40)),$((wy + 40)),e04040 --expect $((wx + 200)),$((wy + 100)),e04040 \
     --expect $((wx + 120)),$((wy + 70)),e04040 --expect $((wx + 240)),$((wy + 70)),2b3444 --expect $((wx + 120)),$((wy + 140)),2b3444 || status=1
@@ -66,14 +66,14 @@ check "$out/decoration.png" --expect $((wx + 40)),$((wy + 40)),e04040 --expect $
 # 3. The cursor shapes, at a point of the window away from the sub-surface.
 px=$((wx + 300)); py=$((wy + 200))
 pointer move $((px - 3)) "$py" sleep 200 move "$px" "$py" sleep 800
-expect_log /tmp/zdesktop.log "ZWL CURSOR shape client=$zc1 shape=9 image=0"
+expect_log /tmp/zdesktop.log "KWL CURSOR shape client=$zc1 shape=9 image=0"
 check "$out/text.png" --expect "$px","$py",ffffff --expect "$px",$((py + 6)),ffffff || status=1
 keys 'h'
-expect_log /tmp/zdesktop.log "ZWL CURSOR shape client=$zc1 shape=4 image=1"
+expect_log /tmp/zdesktop.log "KWL CURSOR shape client=$zc1 shape=4 image=1"
 pointer move $((px + 1)) "$py" sleep 150 move "$px" "$py" sleep 600
 check "$out/hand.png" --expect "$px","$py",ffffff --expect "$px",$((py + 6)),ffffff || status=1
 keys 'e'
-expect_log /tmp/zdesktop.log "ZWL CURSOR shape client=$zc1 shape=26 image=3"
+expect_log /tmp/zdesktop.log "KWL CURSOR shape client=$zc1 shape=26 image=3"
 pointer move $((px + 1)) "$py" sleep 150 move "$px" "$py" sleep 600
 check "$out/resize.png" --expect "$px","$py",ffffff --expect $((px + 5)),"$py",ffffff || status=1
 

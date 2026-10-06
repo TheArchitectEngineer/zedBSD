@@ -29,7 +29,7 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 # "GLASS dock ... buttons=close,restore,minimize" line; a button is 30 wide).  The input method's indicator, when
 # installed, moves the buttons left, so a fixed offset can land on minimize (titlebar-p010 in T1-036).
 docked_free_x() {
-	guest "grep -E 'ZWL TITLEBAR (strip|control) client=$(zwl_app_client $1) .* where=docked .* x=[-0-9]+ y=[-0-9]+ width=[0-9]+|ZWL GLASS dock surface=' /tmp/zdesktop.log" |
+	guest "grep -E 'KWL TITLEBAR (strip|control) client=$(zwl_app_client $1) .* where=docked .* x=[-0-9]+ y=[-0-9]+ width=[0-9]+|KWL GLASS dock surface=' /tmp/zdesktop.log" |
 	    awk 'BEGIN { right = 150; minimize = 0 }
 		/GLASS dock surface=/ { for (i = 1; i <= NF; i++) if ($i ~ /^buttons=/) { split(substr($i, 9), b, ","); minimize = b[3] - 15 } next }
 		{ x = ""; w = ""; for (i = 1; i <= NF; i++) { if ($i ~ /^x=/) x = substr($i, 3); if ($i ~ /^width=/) w = substr($i, 7) }
@@ -62,7 +62,7 @@ expect_log() {
 
 # The latest logged line of a tab (client, place, ID).
 tab_line() {
-	guest "grep 'ZWL TITLEBAR strip client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1"
+	guest "grep 'KWL TITLEBAR strip client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1"
 }
 
 # The centre of a logged rectangle ("x y" from a line with x=, y=, width=, height=), and its left edge.
@@ -94,7 +94,7 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 probe /tmp/probe.log '--show=Editor --mode=tabs --seconds=500'
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "probe: surface $surface at $wx,$wy"
 expect_log /tmp/probe.log 'TITLEBARPROBE show ready mode=tabs'
@@ -120,28 +120,28 @@ expect_log /tmp/zdesktop.log "GLASS undock surface=$surface"
 
 # 3. A long title gives way to six tabs.
 probe /tmp/probe2.log '--show=A_rather_long_window_title_that_would_crowd_the_tabs --mode=tabs --tabs=5 --width=860 --seconds=300'
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR strip client=$zc2 .* where=floating id=[0-9]+ .* shown=1 "
-set -- $(guest "grep 'ZWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=.*/\1/p')
+expect_log /tmp/zdesktop.log "KWL TITLEBAR strip client=$zc2 .* where=floating id=[0-9]+ .* shown=1 "
+set -- $(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=.*/\1/p')
 w2x=${1:-0}
-first=$(guest "grep 'ZWL TITLEBAR strip client=$zc2 .* where=floating id=' /tmp/zdesktop.log | head -1" | left)
+first=$(guest "grep 'KWL TITLEBAR strip client=$zc2 .* where=floating id=' /tmp/zdesktop.log | head -1" | left)
 [ $(( ${first:-9999} - w2x )) -le 150 ] && echo "title: first tab at +$(( ${first:-0} - w2x )) ok" || { echo "title: first tab at +$(( ${first:-9999} - w2x )) MISSING"; status=1; }
-arrows=$(guest "grep -c 'ZWL TITLEBAR strip client=$zc2 .* button=left ' /tmp/zdesktop.log" | tail -1)
+arrows=$(guest "grep -c 'KWL TITLEBAR strip client=$zc2 .* button=left ' /tmp/zdesktop.log" | tail -1)
 [ "${arrows:-1}" = 0 ] && echo "title: no arrows ok" || { echo "title: arrows=$arrows MISSING"; status=1; }
 shot title.png
 
 # 4. The wheel over a scrolling strip.
 probe /tmp/probe3.log '--show=Many --mode=tabs --tabs=14 --width=640 --seconds=300'
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR strip client=$zc3 .* where=floating button=left "
+expect_log /tmp/zdesktop.log "KWL TITLEBAR strip client=$zc3 .* where=floating button=left "
 set -- $(tab_line 3 floating 2 | centre)
 pointer move "$1" "$2" sleep 400 wheel-down sleep 600
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR strip scroll client=$zc3 surface=[0-9]+ first=1 by=wheel"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR strip scroll client=$zc3 surface=[0-9]+ first=1 by=wheel"
 check "$out/wheel.png" >/dev/null
 pointer wheel-up sleep 600
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR strip scroll client=$zc3 surface=[0-9]+ first=0 by=wheel"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR strip scroll client=$zc3 surface=[0-9]+ first=0 by=wheel"
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -E "ZWL (TITLEBAR|MENU|GLASS)" /tmp/zdesktop.log' > "$out/zdesktop-titlebar.log"
+guest 'grep -E "KWL (TITLEBAR|MENU|GLASS)" /tmp/zdesktop.log' > "$out/zdesktop-titlebar.log"
 guest 'cat /tmp/probe.log /tmp/probe2.log /tmp/probe3.log' > "$out/probe.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "titlebar-p013: PASS" || echo "titlebar-p013: FAIL"

@@ -1,12 +1,12 @@
 #!/bin/sh
 # ws095-p016: the input method's language is kept for each application (the user's request of 2026-10-04), on the Venus
 # guest (the lean image, build-ime-image.sh).  zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime; the test
-# client ime-probe (--app-id) stands for applications.  Judged by zdesktop's log (ZWL IME app ... and ZWL IME language=)
+# client ime-probe (--app-id) stands for applications.  Judged by zdesktop's log (KWL IME app ... and KWL IME language=)
 # and the probes' logs, never the guest's console:
 #  1. Probe A (app probe-a) starts with the desktop's language (direct, from=inherited); Alt+Space: Japanese.
 #  2. Probe B (app probe-b) starts with the desktop's (direct, from=inherited), not A's.
 #  3. B goes: the keyboard is A's again and so is Japanese (from=remembered).
-#  4. Probe C of the same application (app probe-a) keeps Japanese without a new choice (no new ZWL IME app line for
+#  4. Probe C of the same application (app probe-a) keeps Japanese without a new choice (no new KWL IME app line for
 #     probe-a), and "kanji" composes there (a preedit).
 #  5. A and C go: the desktop's language comes back (direct, from=desktop); Alt+Space on the desktop: Japanese.
 #  6. Probe D (app probe-d) starts with the desktop's language now (ja, from=inherited), and "kanji" composes there.
@@ -85,29 +85,29 @@ start_probe() {
 # 1. The desktop, then probe A with the desktop's language, then Japanese.
 guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME started pid='
+expect_log /tmp/zdesktop.log 'KWL IME started pid='
 expect_log /tmp/zdesktop.log 'KEI-IME READY languages=2'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct'
 start_probe /tmp/a.log --app-id=probe-a
-expect_log /tmp/zdesktop.log 'ZWL IME app key=app:probe-a language=direct from=inherited'
+expect_log /tmp/zdesktop.log 'KWL IME app key=app:probe-a language=direct from=inherited'
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 
 # 2. Probe B starts with the desktop's language, not A's.
 start_probe /tmp/b.log --app-id=probe-b
-expect_log /tmp/zdesktop.log 'ZWL IME app key=app:probe-b language=direct from=inherited'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct' 2
+expect_log /tmp/zdesktop.log 'KWL IME app key=app:probe-b language=direct from=inherited'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct' 2
 shot b-direct.png
 
 # 3. B goes: A's Japanese comes back.
 guest 'kill $(cat /tmp/b.log.pid); sleep 2' >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME app key=app:probe-a language=ja from=remembered'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja' 2
+expect_log /tmp/zdesktop.log 'KWL IME app key=app:probe-a language=ja from=remembered'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja' 2
 shot a-ja.png
 
 # 4. A second window of the same application keeps Japanese and composes.
 start_probe /tmp/c.log --app-id=probe-a
-lines=$(count /tmp/zdesktop.log 'ZWL IME app key=app:probe-a ')
+lines=$(count /tmp/zdesktop.log 'KWL IME app key=app:probe-a ')
 [ "$lines" -eq 2 ] && echo "same application: no new choice ok" || { echo "same application: $lines choices for probe-a, not 2 FAIL"; status=1; }
 keys 'kanji'
 expect_log /tmp/c.log 'preedit=かんじ '
@@ -115,21 +115,21 @@ keys '<esc>'
 
 # 5. A and C go: the desktop's language; Alt+Space on the desktop.
 guest 'kill $(cat /tmp/c.log.pid) $(cat /tmp/a.log.pid); sleep 2' >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME app key=desktop language=direct from=desktop'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct' 3
+expect_log /tmp/zdesktop.log 'KWL IME app key=desktop language=direct from=desktop'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct' 3
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja' 3
+expect_log /tmp/zdesktop.log 'KWL IME language=ja' 3
 
 # 6. Probe D starts with the desktop's Japanese.
 start_probe /tmp/d.log --app-id=probe-d
-expect_log /tmp/zdesktop.log 'ZWL IME app key=app:probe-d language=ja from=inherited'
+expect_log /tmp/zdesktop.log 'KWL IME app key=app:probe-d language=ja from=inherited'
 keys 'kanji'
 expect_log /tmp/d.log 'preedit=かんじ '
 shot d-ja.png
 
 # zdesktop saw no protocol error.
-expect_none /tmp/zdesktop.log 'ZWL ERROR'
-guest "grep -E 'ZWL IME|KEI-IME|ZWL ERROR' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
+expect_none /tmp/zdesktop.log 'KWL ERROR'
+guest "grep -E 'KWL IME|KEI-IME|KWL ERROR' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
 guest "$stop_all" >/dev/null
 echo "ime-p016: status=$status"
 exit $status

@@ -9,7 +9,7 @@
 #     (SESSIOND HANDOFF greeter go written=3), then sessiond adopts the greeter.  No picture is the text console.
 #  2. Login: kei's password and Enter at the adopted greeter; the greeter stays ("Starting session...") until the
 #     session's zdesktop says READY, sessiond ends the greeter and answers GO (SESSIOND HANDOFF session ready=1,
-#     ZWL HANDOFF go=1).  No picture is the text console (before p101 the console's text showed for about
+#     KWL HANDOFF go=1).  No picture is the text console (before p101 the console's text showed for about
 #     3 seconds; ws035-p126 also took the black away, which plan/ws035/tests/zdesktop-p126.sh measures).
 # The pictures are kept in OUTDIR/logout and OUTDIR/login, the lists in OUTDIR/logout.txt and OUTDIR/login.txt.
 #
@@ -61,12 +61,12 @@ no_text() {
 
 # 0. kei's session, logged in at boot.
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF go written=3' 1 90
-expect_log /run/user/1000/session.log 'ZWL HANDOFF go=1' 1 10
+expect_log /run/user/1000/session.log 'KWL HANDOFF go=1' 1 10
 sleep 4
 
 # 1. Log Out photographed.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-set -- $(guest "grep 'ZWL HOME icon name=\"Log Out\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 if [ -n "${1:-}" ]; then
 	frames logout 16 &
 	sleep 1
@@ -81,7 +81,7 @@ expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter ready: waits' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF session released=1' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter go written=3' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND GREETER adopt pid=' 1 5
-expect_log /var/log/greeter.log 'ZWL GREETER open' 1 5
+expect_log /var/log/greeter.log 'KWL GREETER open' 1 5
 no_text logout
 
 # 2. The login at the adopted greeter photographed (it answers AUTH).
@@ -95,8 +95,8 @@ expect_log /var/log/sessiond.log 'SESSIOND GREETER stays pid=' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF session ready=1' 2 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter released=1' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF go written=3' 2 5
-expect_log /run/user/1000/session.log 'ZWL HANDOFF go=1' 1 5
-expect_log /var/log/greeter.log 'ZWL GREETER starting' 1 5
+expect_log /run/user/1000/session.log 'KWL HANDOFF go=1' 1 5
+expect_log /var/log/greeter.log 'KWL GREETER starting' 1 5
 no_text login
 
 # The desktop of the new session.

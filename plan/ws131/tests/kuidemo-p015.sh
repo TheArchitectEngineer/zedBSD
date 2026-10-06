@@ -2,8 +2,8 @@
 # ws131-p015: the application API (kl_app, KL_VERSION 26) on the Venus guest of plan/ws131/tests/config-amd64-p015.mk
 # (FILES_CONFIG=... plan/tools/files/build-files-image.sh). zdesktop --glass at 1280x800, kuidemo at 900x640.
 #  1. kuidemo opens with kl_app_open and kl_app_window_create: KUIDEMO READY, its menu and its titlebar's controls
-#     given as tables (KUIDEMO MENU error=0, CONTROLS error=0), its glass panels (ZWL GLASS ... panels=2); zdesktop
-#     shows the two controls in the floating titlebar (ZWL TITLEBAR control ... id=1, id=2 shown=1) (start.png).
+#     given as tables (KUIDEMO MENU error=0, CONTROLS error=0), its glass panels (KWL GLASS ... panels=2); zdesktop
+#     shows the two controls in the floating titlebar (KWL TITLEBAR control ... id=1, id=2 shown=1) (start.png).
 #  2. The control "Page after" (id 2): KUIDEMO ACTION action=21 id=2, PAGE List (the list page, list.png).
 #  3. Ctrl+3, the menu's shortcut of Page > Dialogs (zdesktop chooses the item): ACTION action=12 id=6, PAGE Dialogs.
 #  4. A right press on the window's body: KUIDEMO CONTEXT error=0 and zdesktop's context menu opens (context.png);
@@ -48,7 +48,7 @@ expect_log() {
 
 # A control's place (client, ID) as zdesktop last logged it: "x y width height".
 place() {
-	guest "grep 'ZWL TITLEBAR control client=$(zwl_app_client $1) .* where=floating id=$2 ' /tmp/zdesktop.log | tail -1" |
+	guest "grep 'KWL TITLEBAR control client=$(zwl_app_client $1) .* where=floating id=$2 ' /tmp/zdesktop.log | tail -1" |
 	    sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 
@@ -77,9 +77,9 @@ zwl_app_clients
 expect_log /tmp/k.log 'KUIDEMO READY width='
 expect_log /tmp/k.log 'KUIDEMO MENU error=0'
 expect_log /tmp/k.log 'KUIDEMO CONTROLS error=0'
-expect_log /tmp/zdesktop.log "ZWL GLASS client=$zc1 surface=[0-9]+ panels=2 "
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 .* where=floating id=1 .* shown=1"
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 .* where=floating id=2 .* shown=1"
+expect_log /tmp/zdesktop.log "KWL GLASS client=$zc1 surface=[0-9]+ panels=2 "
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc1 .* where=floating id=1 .* shown=1"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc1 .* where=floating id=2 .* shown=1"
 shot start.png
 
 # 2. The page after.
@@ -110,6 +110,6 @@ errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest "$stop_all" >/dev/null
 guest 'cat /tmp/k.log' > "$out/k.log"
-guest 'grep -E "ZWL (TITLEBAR|GLASS|MENU|CONTEXT)" /tmp/zdesktop.log' > "$out/zdesktop.log"
+guest 'grep -E "KWL (TITLEBAR|GLASS|MENU|CONTEXT)" /tmp/zdesktop.log' > "$out/zdesktop.log"
 [ $status = 0 ] && echo "kuidemo-p015: PASS" || echo "kuidemo-p015: FAIL"
 exit $status

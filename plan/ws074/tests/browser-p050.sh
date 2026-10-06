@@ -87,7 +87,7 @@ while [ $tries -lt 30 ]; do
 	tries=$((tries + 1))
 done
 sleep 3
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "browser: window at $wx,$wy"
 expect_log /tmp/b.log 'ZBROWSER READY width=900 height=640'

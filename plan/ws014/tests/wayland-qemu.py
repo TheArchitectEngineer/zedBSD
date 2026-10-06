@@ -428,7 +428,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
         with (output / 'wayland-observed.log').open('a') as stream:
             stream.write('\n'.join(fresh) + '\n')
         failures = re.findall(r'WLTEST FAILED run=([^ ]+)', value)
-        if (re.search(r'kernel panic|amd64 fault v=|ZWL FAILED|ZWL IMPORT_ERROR|GPU SHARE FAILED|GPUFENCE FAIL|GPUADMISSION FAILED|Segmentation fault', value) or
+        if (re.search(r'kernel panic|amd64 fault v=|KWL FAILED|KWL IMPORT_ERROR|GPU SHARE FAILED|GPUFENCE FAIL|GPUADMISSION FAILED|Segmentation fault', value) or
                 any(token != expected_failure for token in failures)):
             raise RuntimeError('guest Wayland/GPU failure; inspect console and renderer logs')
         fence_exit = re.search(r'/bin/gpu-fence-test[\r\n][\s\S]*root@[^\r\n]*\$ ', value)
@@ -476,10 +476,10 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
         report['allocation_imports'].append({'kind': option, 'marker': marker.group(0)})
 
     def start_compositor():
-        old = {int(value) for value in re.findall(r'ZWL READY[^\r\n]*pid=(\d+)', console())}
+        old = {int(value) for value in re.findall(r'KWL READY[^\r\n]*pid=(\d+)', console())}
         command('/bin/wayland --testing --socket=/tmp/wayland-0 --timeout=150 --log-frames &')
         while time.monotonic() < deadline:
-            for marker in re.finditer(r'ZWL READY[^\r\n]*pid=(\d+)', console()):
+            for marker in re.finditer(r'KWL READY[^\r\n]*pid=(\d+)', console()):
                 pid = int(marker.group(1))
                 if pid > 1 and pid not in old:
                     report.setdefault('compositors', []).append({'pid': pid, 'ready': marker.group(0)})
@@ -489,7 +489,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
 
     def stop_compositor(pid):
         command(f'kill {pid}')
-        wait(r'ZWL EXIT frames=\d+ error=0 cleanup_failed=0 pid=' + str(pid) + r'\b',
+        wait(r'KWL EXIT frames=\d+ error=0 cleanup_failed=0 pid=' + str(pid) + r'\b',
              'compositor lease-safe shutdown')
 
     def ordinary(suffix):
@@ -536,8 +536,8 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
     # Correlate every observed compositor presentation with its imported K resource.
     text = '\n'.join(sorted(seen))
     imports = {(int(client), int(buffer), int(resource)) for client, buffer, resource in
-               re.findall(r'ZWL IMPORT client=(\d+) buffer=(\d+) gpu_fd=\d+ resource=(\d+)', text)}
-    presents = list(re.finditer(r'ZWL PRESENT client=(\d+) surface=\d+ buffer=(\d+) resource=(\d+) '
+               re.findall(r'KWL IMPORT client=(\d+) buffer=(\d+) gpu_fd=\d+ resource=(\d+)', text)}
+    presents = list(re.finditer(r'KWL PRESENT client=(\d+) surface=\d+ buffer=(\d+) resource=(\d+) '
                                r'frame=(\d+) sequence=(\d+) width=(\d+) height=(\d+) flags=(\d+) refresh=(\d+)', text))
     report['shared_resources'] = [dict(zip(('client', 'buffer', 'resource', 'frame', 'sequence',
                                           'width', 'height', 'flags', 'refresh'), map(int, item.groups())))

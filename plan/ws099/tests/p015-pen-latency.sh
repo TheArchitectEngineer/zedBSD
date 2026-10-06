@@ -2,7 +2,7 @@
 # ws099-p015: the pen's line in fullscreen Notes, before and after the fullscreen window is composed (the direct
 # scanout removed), on the Venus guest with the injected pen (plan/ws079/tests/config-amd64-demo.mk's image).
 # zdesktop --glass --log-frames at 1280x800 and /bin/notes --fullscreen; peninject draws STROKES strokes of 60
-# moves 15 ms apart.  The image must have the per-frame time lines (ZWL LAT pen/adopt/submit/shown, ws099-p015);
+# moves 15 ms apart.  The image must have the per-frame time lines (KWL LAT pen/adopt/submit/shown, ws099-p015);
 # p015-lat.py reads them:
 #   latency   from a pen place sent to Notes to the end of the frame that shows Notes' next image (the direct
 #             present's return, or the composed frame's fence)
@@ -60,18 +60,18 @@ done
 put "$out/lat.pen" /tmp/lat.pen
 guest 'service stop greeter >/dev/null 2>&1; rm -rf /tmp/notes-lat /root/.local/share/keiland/notes; mkdir -p /tmp/notes-lat; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
-wait_log /tmp/zdesktop.log 'ZWL READY' 20
+wait_log /tmp/zdesktop.log 'KWL READY' 20
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/notes --fullscreen /tmp/notes-lat/lat.pdf > /tmp/notes-lat.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 wait_log /tmp/notes-lat.log 'NOTES TABLET seat' 20
 sleep 3
 guest 'timeout 120 /bin/peninject /tmp/lat.pen; echo peninject=$?' | tail -1
 sleep 2
 python3 plan/ws035/tests/zdesktop-check.py "$out/strokes.png" --runtime "$GUEST_RUNTIME" >/dev/null 2>&1
-guest 'grep -E "^ZWL (LAT|MODE)" /tmp/zdesktop.log' > "$out/lat.log"
+guest 'grep -E "^KWL (LAT|MODE)" /tmp/zdesktop.log' > "$out/lat.log"
 guest "cat /tmp/zdesktop.log" > "$out/zdesktop-full.log"
 guest 'grep -E "^NOTES (START|STROKE|FRAMES)" /tmp/notes-lat.log' > "$out/notes.log"
-guest 'grep -cE "ZWL ERROR" /tmp/zdesktop.log' | tail -1 > "$out/errors.txt"
+guest 'grep -cE "KWL ERROR" /tmp/zdesktop.log' | tail -1 > "$out/errors.txt"
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 grep -E "NOTES (START|FRAMES)" "$out/notes.log"
-echo "ZWL ERROR lines: $(cat "$out/errors.txt")"
+echo "KWL ERROR lines: $(cat "$out/errors.txt")"
 python3 plan/ws099/tests/p015-lat.py "$out/lat.log"

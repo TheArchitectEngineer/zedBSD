@@ -43,7 +43,7 @@ main(
 	}
 
 	/* A first line, long enough that a hole after a truncation is plain to see. */
-	printf("ZWL first line of the old run, written before the file is truncated by the next run\n");
+	printf("KWL first line of the old run, written before the file is truncated by the next run\n");
 	fflush(stdout);
 
 	/* Waits for the file to be truncated (the next run's ">"). */
@@ -54,7 +54,7 @@ main(
 	}
 
 	/* The old run's last line. */
-	printf("ZWL DONE old run\n");
+	printf("KWL DONE old run\n");
 	fflush(stdout);
 	return 0;
 }

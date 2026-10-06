@@ -185,7 +185,7 @@ main(
 		backend_options.session_descriptor = server.control_fd;
 	error = kl_backend_open(&backend_options, &backend_host, &server.backend);
 	if (error != 0)
-		printf("ZWL BACKEND unavailable errno=%d\n", error);
+		printf("KWL BACKEND unavailable errno=%d\n", error);
 
 	/* The power as the backend knows it now, for the bar's battery (ws132-p003). */
 	kwl_power_read(&server);
@@ -194,14 +194,14 @@ main(
 	if (error == 0) {
 		error = kwl_os_open(&server);
 		if (error != 0)
-			printf("ZWL OS unavailable errno=%d\n", error);
+			printf("KWL OS unavailable errno=%d\n", error);
 	}
 
 	/* Reads the wallpaper while Vulkan starts, only after OS startup succeeded. */
 	if (error == 0)
 		kwl_glass_prefetch(&server);
 
-	/* The start is timed from the Vulkan device on (ZWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
+	/* The start is timed from the Vulkan device on (KWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
 	step_start = kwl_milliseconds();
 
 	/*
@@ -211,9 +211,9 @@ main(
 	if (error == 0) {
 		error = kwl_compose_open(&server);
 		if (error != 0)
-			printf("ZWL COMPOSE unavailable errno=%d\n", error);
+			printf("KWL COMPOSE unavailable errno=%d\n", error);
 
-		/* How long the device, the wallpaper and the glyphs took (ZWL STARTUP). */
+		/* How long the device, the wallpaper and the glyphs took (KWL STARTUP). */
 		step_start = startup_step("compose", step_start);
 	}
 
@@ -232,9 +232,9 @@ main(
 	if (error == 0) {
 		keymap_error = kwl_keymap_open();
 		if (keymap_error == 0) {
-			printf("ZWL KEYMAP format=xkb_v1 errno=0\n");
+			printf("KWL KEYMAP format=xkb_v1 errno=0\n");
 		} else {
-			printf("ZWL KEYMAP format=none errno=%d\n", keymap_error);
+			printf("KWL KEYMAP format=none errno=%d\n", keymap_error);
 		}
 
 		/* How long the keymap took. */
@@ -257,14 +257,14 @@ main(
 
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
-		printf("ZWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), kwl_role_name(server.role));
+		printf("KWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), kwl_role_name(server.role));
 		error = event_loop(&server);
 	}
 
 	/* No exit path leaves a lease, imported image or owned socket generation behind. */
 	service_cleanup(&server);
 	cleanup_failed = server.failed;
-	printf("ZWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)kwl_milliseconds());
+	printf("KWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)kwl_milliseconds());
 	if (error != 0 || cleanup_failed)
 		return 1;
 
@@ -695,7 +695,7 @@ accept_client(
 	}
 
 	/* READY already guarantees that this independent namespace can import images. */
-	printf("ZWL CLIENT client=%llu fd=%d\n", (unsigned long long)client->number, descriptor);
+	printf("KWL CLIENT client=%llu fd=%d\n", (unsigned long long)client->number, descriptor);
 
 	/* Succeeded: the display object owns the connection's first live identity. */
 	return 0;
@@ -993,7 +993,7 @@ event_loop(
 
 			/* Withdrawal releases unread rights and scanout ownership before fd reuse (the log line BUG-121's test reads). */
 			if (remove) {
-				printf("ZWL CLIENT gone client=%llu reason=%s\n", (unsigned long long)client->number, why);
+				printf("KWL CLIENT gone client=%llu reason=%s\n", (unsigned long long)client->number, why);
 				kwl_client_destroy(client);
 			}
 		}
@@ -1133,7 +1133,7 @@ kwl_perf_report(
 	per_ms = (double)cycles / (double)(now - perf->window_start_ms);
 
 	/* The loop's line. */
-	printf("ZWL PERF %llums: passes=%u timeouts=%u | poll %.1f%% work %.1f%%\n",
+	printf("KWL PERF %llums: passes=%u timeouts=%u | poll %.1f%% work %.1f%%\n",
 	    (unsigned long long)(now - perf->window_start_ms),
 	    perf->passes,
 	    perf->timeouts,
@@ -1142,7 +1142,7 @@ kwl_perf_report(
 
 	/* Window mode's frames: how many, the CPU time to record and submit one, and the time until its fence. */
 	if (perf->compose_frames != 0) {
-		printf("ZWL PERF compose frames=%u draw_ms=%.2f (acquire %.2f submit+present %.2f) frame_ms=%.2f\n",
+		printf("KWL PERF compose frames=%u draw_ms=%.2f (acquire %.2f submit+present %.2f) frame_ms=%.2f\n",
 		    perf->compose_frames,
 		    (double)perf->compose_draw_cycles / per_ms / (double)perf->compose_frames,
 		    (double)perf->compose_acquire_cycles / per_ms / (double)perf->compose_frames,
@@ -1152,7 +1152,7 @@ kwl_perf_report(
 
 	/* wl_shm's copies: how many, and the CPU time of one. */
 	if (perf->shm_copies != 0) {
-		printf("ZWL PERF shm copies=%u copy_ms=%.3f\n",
+		printf("KWL PERF shm copies=%u copy_ms=%.3f\n",
 		    perf->shm_copies,
 		    (double)perf->shm_copy_cycles / per_ms / (double)perf->shm_copies);
 	}
@@ -1166,7 +1166,7 @@ kwl_perf_report(
 
 /*
  * Reports how long one step of the start took, and when it ended (the
- * diagnostic line ZWL STARTUP, ws035-p129); returns the time it ended.
+ * diagnostic line KWL STARTUP, ws035-p129); returns the time it ended.
  */
 static uint64_t
 startup_step(
@@ -1177,7 +1177,7 @@ startup_step(
 
 	/* The step's length, and the monotonic time the hand-over's lines use too. */
 	now = kwl_milliseconds();
-	printf("ZWL STARTUP step=%s ms=%llu at_ms=%llu\n", step, (unsigned long long)(now - since), (unsigned long long)now);
+	printf("KWL STARTUP step=%s ms=%llu at_ms=%llu\n", step, (unsigned long long)(now - since), (unsigned long long)now);
 
 	/* Succeeded: the next step starts now. */
 	return now;

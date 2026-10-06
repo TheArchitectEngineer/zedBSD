@@ -62,15 +62,15 @@ fi
 guest 'for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | awk "{print \$1}"); do kill $p; done; sleep 1
 export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=60 --width=1280 --height=800 --glass > /tmp/zdesktop-p012.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop-p012.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop-p012.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done
 printf "size 1000 1000 2\nwait 5000\ndown 1 500 500; down 2 600 500\nswipe 0 -100 4 50\nup 1; up 2\nhold 1500\n" | /bin/touchinject; echo replay=$?; sleep 1
 ps -A -o args | grep -cE "[w]ayland( |$)"
 for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | awk "{print \$1}"); do kill $p; done; sleep 1
-grep -E "ZWL INPUT|ERROR|FAILED" /tmp/zdesktop-p012.log | head -20' > "$out/compositor.txt"
+grep -E "KWL INPUT|ERROR|FAILED" /tmp/zdesktop-p012.log | head -20' > "$out/compositor.txt"
 if grep -q '^replay=0$' "$out/compositor.txt" &&
    grep -q '^1$' "$out/compositor.txt" &&
-   grep -q 'ZWL INPUT device=/dev/input/event[0-9]* kind=touch abs=1' "$out/compositor.txt" &&
-   grep -q 'ZWL INPUT_CLOSED' "$out/compositor.txt" &&
+   grep -q 'KWL INPUT device=/dev/input/event[0-9]* kind=touch abs=1' "$out/compositor.txt" &&
+   grep -q 'KWL INPUT_CLOSED' "$out/compositor.txt" &&
    ! grep -qE 'ERROR|FAILED' "$out/compositor.txt"; then
 	echo "compositor with the touch screen: ok"
 else

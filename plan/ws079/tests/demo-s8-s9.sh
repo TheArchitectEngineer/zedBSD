@@ -92,8 +92,8 @@ timeout 200 python3 plan/tools/guest/guest.py wait --timeout 180 >/dev/null 2>&1
 put "$out/a4.pdf" /root/a4.pdf
 guest 'service stop greeter >/dev/null 2>&1; rm -rf /root/Documents/Notes /root/.local/share/keiland/notes; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=1200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
-expect_more /tmp/zdesktop.log 'ZWL READY' 0 20
-expect_more /tmp/zdesktop.log 'ZWL CORNER zone' 0 20
+expect_more /tmp/zdesktop.log 'KWL READY' 0 20
+expect_more /tmp/zdesktop.log 'KWL CORNER zone' 0 20
 sleep 3
 
 # S8. The corner's swipe, the pen, Esc.
@@ -182,11 +182,11 @@ guest "grep -E 'TOUCH (double-tap|pinch end)' /tmp/pv2.log" > "$out/zoom.txt"
 cat "$out/zoom.txt"
 
 # The logs, and no errors.
-guest 'grep -E "ZWL (CORNER|TOUCH|ERROR)|NOTES (START|STROKE|LAYOUT)" /tmp/zdesktop.log' > "$out/zdesktop.log"
+guest 'grep -E "KWL (CORNER|TOUCH|ERROR)|NOTES (START|STROKE|LAYOUT)" /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest 'cat /tmp/pv.log' > "$out/pv-scroll.log"
 guest 'cat /tmp/pv2.log' > "$out/pv-page.log"
-errors=$(count /tmp/zdesktop.log 'ZWL ERROR')
-[ "${errors:-1}" = 0 ] && verdict ok "no ZWL ERROR" || verdict no "ZWL ERROR ($errors)"
+errors=$(count /tmp/zdesktop.log 'KWL ERROR')
+[ "${errors:-1}" = 0 ] && verdict ok "no KWL ERROR" || verdict no "KWL ERROR ($errors)"
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 echo "RESULT scroll_turn_ms=${scroll_ms:-?} page_frame_ms=${frame_ms:-?} page_turn_ms=${page_ms:-?} limit=$limit"
 [ $status -eq 0 ] && echo "demo-s8-s9: PASS" || echo "demo-s8-s9: FAIL"

@@ -136,7 +136,7 @@ language_open(
 	server->dirty = 1;
 
 	/* The log line the tests read. */
-	printf("ZWL LANGUAGE language=%s from=%s error=%d\n", kl_tr_language(), why, error);
+	printf("KWL LANGUAGE language=%s from=%s error=%d\n", kl_tr_language(), why, error);
 }
 
 /* Names a day of the week (0 Sunday) in the language, short or long. */

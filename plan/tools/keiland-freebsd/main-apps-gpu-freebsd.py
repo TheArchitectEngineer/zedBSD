@@ -39,7 +39,7 @@ try:
    cases=[('terminal',['--timeout-s=12','--command=read answer; printf "%s" "$answer" > '+directory+'/typed.txt; sleep 1'],['ZTERM START','ZTERM DONE']),('files',['--timeout-s=5',directory],['ZFILES READY','ZFILES DONE']),('settings',['--timeout-s=5','sound'],['ZSETTINGS READY','ZSETTINGS DONE']),('notes',['--timeout-s=5',str(pdf)],['NOTES START','NOTES EXIT']),('textedit',['--timeout-s=5',str(text)],['TEXTEDIT READY','TEXTEDIT DONE']),('imageview',['--timeout-s=5',str(image)],['IMAGEVIEW READY','IMAGEVIEW DONE']),('pdfviewer',['--timeout-s=5',str(pdf)],['PDFVIEWER READY','PDFVIEWER DONE']),('files',['--desktop','--timeout-s=5',directory],['ZFILES READY','ZFILES DONE'])]
    if '--only-desktop' in sys.argv:cases=cases[-1:]
    for name,args,positive in cases:
-    before=serverlog.read_text().count('ZWL MAP ')
+    before=serverlog.read_text().count('KWL MAP ')
     clientlog=evidence/(name+('-desktop' if '--desktop' in args else '')+'.txt')
     with clientlog.open('w') as clientout:
      clientenv=dict(env)
@@ -48,15 +48,15 @@ try:
      if name=='terminal':
       deadline=time.monotonic()+8
       while client.poll() is None and time.monotonic()<deadline:
-       if serverlog.read_text().count('ZWL MAP ')>before:break
+       if serverlog.read_text().count('KWL MAP ')>before:break
        time.sleep(.05)
-      assert serverlog.read_text().count('ZWL MAP ')>before
+      assert serverlog.read_text().count('KWL MAP ')>before
       Path('/tmp/ws109-app-terminal-ready').write_text(directory)
      client.wait(timeout=20)
     report=clientlog.read_text();print(name,client.returncode,report,flush=True)
     assert client.returncode==0 and all(marker in report for marker in positive), name
     assert 'FAILED' not in report,name
-    if '--desktop' not in args:assert serverlog.read_text().count('ZWL MAP ')>before,name+' unmapped'
+    if '--desktop' not in args:assert serverlog.read_text().count('KWL MAP ')>before,name+' unmapped'
     if name=='terminal':
      assert (runtime/'typed.txt').read_text()=='freebsd', 'actual kernel/Wayland/PTY input not delivered'
      Path('/tmp/ws109-app-terminal-ready').unlink()
@@ -64,8 +64,8 @@ try:
    server.terminate();server.wait(timeout=10)
   report=serverlog.read_text();print(report,flush=True)
   assert server.returncode==0 and 'error=0 cleanup_failed=0' in report and not socket.exists()
-  assert report.count('ZWL IMPORT ')>=3*len(cases)
-  assert 'ZWL DESKTOP' in report, 'native App Home role not observed'
+  assert report.count('KWL IMPORT ')>=3*len(cases)
+  assert 'KWL DESKTOP' in report, 'native App Home role not observed'
   print(json.dumps(results,indent=2),flush=True)
 finally:
  if client and client.poll() is None:client.terminate();client.wait(timeout=5)

@@ -37,12 +37,12 @@ expect_log() {
 # The surface, x, y and client of the latest window mapped (a surface's number is its client's own: every wltest's is
 # the same, so a window is named by its client and its surface).
 last_map() {
-	guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*ZWL MAP client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4 \1/p'
+	guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*KWL MAP client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4 \1/p'
 }
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 
 # 1. a, floating, then docked by a double click on its title bar.
 guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null

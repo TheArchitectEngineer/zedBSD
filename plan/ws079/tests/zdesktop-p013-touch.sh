@@ -88,7 +88,7 @@ touches() {
 open_at() {
 	token=$1; size=$2; color=$3; x=$4; y=$5
 	guest "$env /bin/wltest --windowed --size=$size --color=$color --frames=3600 --delay-ms=250 --token=$token > /tmp/$token.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
 	s=${1:-0:0}; sx=${2:-0}; sy=${3:-0}
 	pointer move $((sx + 150)) $((sy - 30)) sleep 300 down sleep 80 \
 	    move $(((sx + x) / 2 + 150)) $(((sy + y) / 2 - 30)) sleep 80 \
@@ -109,7 +109,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 # 1. wl_touch: two fingers on the probe's window.
 guest "$env /bin/tablet-probe --touch --color=$PROBE --token=touch --timeout-s=600 > /tmp/touchprobe.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 expect_log 'TABLETPROBE ready run=touch mode=touch' /tmp/touchprobe.log
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
 probe=${1:-0:0}; px=${2:-0}; py=${3:-0}
 echo "probe: $probe at $px,$py"
 pointer move 1200 780 sleep 300 >/dev/null
@@ -131,7 +131,7 @@ shot probe --expect $((px + 20)),$((py + 20)),$PROBE --expect $((px + 100)),$((p
 
 # 1b. A client without wl_touch (tablet-probe --pointer) hears the first finger as the pointer's left button.
 guest "$env /bin/tablet-probe --pointer --color=f0e0d0 --token=pointer --timeout-s=600 > /tmp/pointerprobe.log 2>&1 </dev/null & echo \$! > /tmp/pointerprobe.pid; sleep 4; echo started" >/dev/null
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
 fallback=${1:-0:0}; fx=${2:-0}; fy=${3:-0}
 echo "pointer probe: $fallback at $fx,$fy"
 touches "down 1 $((fx + 100)) $((fy + 100))|swipe 60 20 3 40|up 1"
@@ -187,7 +187,7 @@ sleep 1
 expect_log 'WISEVIEW opening'
 touches "down 1 60 120|hold 60|up 1"
 expect_log 'WISEVIEW closed'
-guest 'grep -E "ZWL (TOUCH|HOME (open|close|bottom)|CORNER|WISEVIEW)" /tmp/zdesktop-edges.log' > "$out/${prefix}edges-log.txt"
+guest 'grep -E "KWL (TOUCH|HOME (open|close|bottom)|CORNER|WISEVIEW)" /tmp/zdesktop-edges.log' > "$out/${prefix}edges-log.txt"
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
@@ -245,7 +245,7 @@ shot tap --expect 700,450,$C --expect 300,500,$B || status=1
 # Nothing failed.
 guest 'grep -E "ERROR|FAILED|protocol error" /tmp/zdesktop.log /tmp/zdesktop-edges.log /tmp/a.log /tmp/b.log /tmp/c.log /tmp/touchprobe.log' | tee "$out/${prefix}errors.txt"
 [ -s "$out/${prefix}errors.txt" ] && status=1
-guest 'grep -E "ZWL (TOUCH|INPUT)|GLASS (dock|undock|moved|lower|double-click)" /tmp/zdesktop.log' > "$out/${prefix}log.txt"
+guest 'grep -E "KWL (TOUCH|INPUT)|GLASS (dock|undock|moved|lower|double-click)" /tmp/zdesktop.log' > "$out/${prefix}log.txt"
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "p013 touch: PASS" || echo "p013 touch: FAIL"
 exit $status

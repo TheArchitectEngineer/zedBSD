@@ -168,7 +168,7 @@ kwl_volume_tick(
 
 		/* audiod reached or lost: the volume is given once per connection. */
 		if ((changed & KL_BACKEND_AUDIO_CHANGED_REACHABLE) != 0U) {
-			printf("ZWL VOLUME reachable=%u device=%u\n", volume_view.state.reachable, volume_view.state.device);
+			printf("KWL VOLUME reachable=%u device=%u\n", volume_view.state.reachable, volume_view.state.device);
 			if (!volume_view.state.reachable)
 				volume_view.applied = 0U;
 		}
@@ -221,7 +221,7 @@ kwl_volume_keep(
 
 	/* What the file holds already is not written again. */
 	if (volume_view.kept && value == volume_view.kept_value && muted == volume_view.kept_muted) {
-		printf("ZWL VOLUME kept value=%u muted=%u why=%s write=0\n", value, muted, why);
+		printf("KWL VOLUME kept value=%u muted=%u why=%s write=0\n", value, muted, why);
 		return;
 	}
 
@@ -242,7 +242,7 @@ kwl_volume_keep(
 	volume_view.kept_muted = muted;
 
 	/* Logs the keep for the tests; handing it to the store cannot fail, so the error is always 0. */
-	printf("ZWL VOLUME kept value=%u muted=%u why=%s write=1 error=%d\n", value, muted, why, 0);
+	printf("KWL VOLUME kept value=%u muted=%u why=%s write=1 error=%d\n", value, muted, why, 0);
 }
 
 /*
@@ -304,7 +304,7 @@ kwl_volume_request(
 	server->dirty = 1;
 
 	/* Logs the set for the tests. */
-	printf("ZWL VOLUME set value=%u muted=%u via=settings final=1 at_ms=%llu\n", value, muted, (unsigned long long)kwl_milliseconds());
+	printf("KWL VOLUME set value=%u muted=%u via=settings final=1 at_ms=%llu\n", value, muted, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: audiod has the volume (its report comes back to the settings). */
 	return 0;
@@ -340,7 +340,7 @@ kwl_volume_request_channels(
 	volume_view.sent_ms = kwl_milliseconds();
 	server->dirty = 1;
 	error = kl_backend_audio_set_volume(volume_view.audio, left, right, muted);
-	printf("ZWL VOLUME set left=%u right=%u muted=%u via=system error=%d\n", left, right, muted, error);
+	printf("KWL VOLUME set left=%u right=%u muted=%u via=system error=%d\n", left, right, muted, error);
 	if (error != 0)
 		return error;
 
@@ -406,7 +406,7 @@ kwl_volume_draw_icon(
 	volume_view.icon_height = KWL_GLASS_BAR - 6;
 	if (!volume_view.icon_logged) {
 		volume_view.icon_logged = 1U;
-		printf("ZWL VOLUME icon x=%d y=%d width=%d height=%d\n", volume_view.icon_x, volume_view.icon_y, volume_view.icon_width, volume_view.icon_height);
+		printf("KWL VOLUME icon x=%d y=%d width=%d height=%d\n", volume_view.icon_x, volume_view.icon_y, volume_view.icon_width, volume_view.icon_height);
 	}
 
 	/* While the popup is open its icon has a pale blue back, on the bar's middle. */
@@ -748,7 +748,7 @@ volume_open_popup(
 	volume_view.open = 1U;
 	volume_view.dragging = 0U;
 	server->dirty = 1;
-	printf("ZWL VOLUME popup open x=%d y=%d width=%d height=%d slider=%d mute=%d sound=%d\n", volume_view.popup_x, volume_view.popup_y, VOLUME_POPUP_WIDTH, volume_view.popup_height, volume_slider_top(), volume_mute_top(), sound);
+	printf("KWL VOLUME popup open x=%d y=%d width=%d height=%d slider=%d mute=%d sound=%d\n", volume_view.popup_x, volume_view.popup_y, VOLUME_POPUP_WIDTH, volume_view.popup_height, volume_slider_top(), volume_mute_top(), sound);
 }
 
 /* Closes the popup. */
@@ -766,7 +766,7 @@ volume_close_popup(
 	/* Closed. */
 	volume_view.open = 0U;
 	server->dirty = 1;
-	printf("ZWL VOLUME popup close via=%s\n", via);
+	printf("KWL VOLUME popup close via=%s\n", via);
 }
 
 /*
@@ -794,7 +794,7 @@ volume_set(
 	volume_view.muted = muted;
 	volume_view.send_waiting = 1U;
 	server->dirty = 1;
-	printf("ZWL VOLUME set value=%u muted=%u via=%s final=%u at_ms=%llu\n", value, muted, via, final, (unsigned long long)kwl_milliseconds());
+	printf("KWL VOLUME set value=%u muted=%u via=%s final=%u at_ms=%llu\n", value, muted, via, final, (unsigned long long)kwl_milliseconds());
 
 	/* Sent now when final, or when a drag's wait is over (audiod holds it; nothing is written). */
 	now = kwl_milliseconds();
@@ -807,7 +807,7 @@ volume_set(
 
 	/* The sound, once for the final volume, at that volume. */
 	(void)kl_backend_audio_feedback(volume_view.audio);
-	printf("ZWL VOLUME feedback at_ms=%llu via=%s\n", (unsigned long long)now, via);
+	printf("KWL VOLUME feedback at_ms=%llu via=%s\n", (unsigned long long)now, via);
 }
 
 /* Sends the volume shown to audiod. */
@@ -824,7 +824,7 @@ volume_send(
 	volume_view.sent_ms = kwl_milliseconds();
 	error = kl_backend_audio_set_volume(volume_view.audio, volume_view.value, volume_view.value, volume_view.muted);
 	if (error != 0)
-		printf("ZWL VOLUME send errno=%d\n", error);
+		printf("KWL VOLUME send errno=%d\n", error);
 }
 
 /*
@@ -844,7 +844,7 @@ volume_restore(
 	if (volume_view.restored) {
 		if (volume_view.value != volume_view.state.left || volume_view.muted != volume_view.state.muted) {
 			volume_send(server);
-			printf("ZWL VOLUME restored value=%u muted=%u from=session\n", volume_view.value, volume_view.muted);
+			printf("KWL VOLUME restored value=%u muted=%u from=session\n", volume_view.value, volume_view.muted);
 		}
 		return;
 	}
@@ -877,7 +877,7 @@ volume_restore(
 	volume_view.muted = (unsigned)muted;
 	volume_send(server);
 	server->dirty = 1;
-	printf("ZWL VOLUME preferences value=%d muted=%d\n", value, muted);
+	printf("KWL VOLUME preferences value=%d muted=%d\n", value, muted);
 }
 
 /* Tells whether there is sound: audiod reached, with a device. */

@@ -37,7 +37,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing
 /bin/egltest --display=/tmp/wayland-0 --size=640x400 --color=3a78c8 --frames=4000 --delay-ms=30 --token=w > /tmp/egl-w.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 guest 'cat /tmp/egl-w.log' | tee "$out/wayland.txt"
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 pointer move 1250 780 sleep 400
 check "$out/wayland.png" --expect $((wx + 320)),$((wy + 200)),3a78c8 || status=1

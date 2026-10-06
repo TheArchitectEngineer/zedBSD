@@ -1,19 +1,19 @@
 #!/bin/sh
 # ws100-p004: the system bar's volume (A1..A6) on the Venus guest of the volume image (build-volume-image.sh), kei's
 # session at boot, QEMU's HD Audio recorded to a WAV (volume-guest.sh).  The guest is started by this script:
-#  1. A1: the icon is drawn (ZWL VOLUME icon, reachable=1 device=1); icon.png.
+#  1. A1: the icon is drawn (KWL VOLUME icon, reachable=1 device=1); icon.png.
 #  2. A2: a click on the icon opens the popup; a press on the slider at a quarter, a drag to three quarters and the
-#     release set the volume (ZWL VOLUME set ... final=1 at the end), and audiod reports it (audiod-feedback get);
+#     release set the volume (KWL VOLUME set ... final=1 at the end), and audiod reports it (audiod-feedback get);
 #     the mute row switches mute on and off; a click outside closes it (via=outside); again, Esc closes it (via=key).
 #  3. A3: the wheel over the icon: three notches down, two up -> five percent a notch, audiod follows.
 #  4. A4: the WAV (the guest stopped) has a feedback sound for the changes, the wheel's in falling then rising loudness,
 #     none while muted, and none louder than one sound.
 #  5. A5 (BUG-161, ws100-p012): while the session changes the volume, kei's desktop.conf does not change (no write
-#     for a change, no ZWL VOLUME kept line); at Log Out the volume is written once (ZWL VOLUME kept ... why=logout
+#     for a change, no KWL VOLUME kept line); at Log Out the volume is written once (KWL VOLUME kept ... why=logout
 #     write=1, sound.volume in desktop.conf); after audiod set to 100 (as a new boot leaves it) and a login, the
-#     session sets audiod back to the kept volume (ZWL VOLUME preferences).
+#     session sets audiod back to the kept volume (KWL VOLUME preferences).
 #  6. A6: a guest without HD Audio: the icon says no sound (device=0), the popup says "No sound output"; with audiod
-#     stopped, reachable=0 and the popup says so; zdesktop keeps running without ZWL ERROR.
+#     stopped, reachable=0 and the popup says so; zdesktop keeps running without KWL ERROR.
 #   plan/ws100/tests/volume-p004.sh IMAGE [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -92,25 +92,25 @@ last() {
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 VOLUME_AUDIO=duplex timeout 180 sh plan/ws100/tests/volume-guest.sh start "$image" >/dev/null 2>&1
 sleep 35
-expect_more $log 'ZWL HANDOFF go=1' 0 60
+expect_more $log 'KWL HANDOFF go=1' 0 60
 
 # What kei's desktop.conf holds of the volume as the session begins (A5 compares it later).
 conf_start=$(guest 'grep -E "^sound\.(volume|muted)=" /home/kei/.config/keiland/desktop.conf' | tr '\n' ' ')
 
 # 1. A1: the icon, and audiod reached with its device.
-expect_more $log 'ZWL VOLUME icon x=' 0 10
-expect_more $log 'ZWL VOLUME reachable=1 device=1' 0 10
-set -- $(last 'ZWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+expect_more $log 'KWL VOLUME icon x=' 0 10
+expect_more $log 'KWL VOLUME reachable=1 device=1' 0 10
+set -- $(last 'KWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 ix=$((${1:-900} + ${3:-30} / 2)); iy=$((${2:-3} + ${4:-28} / 2))
 echo "icon at $ix,$iy"
 pointer move 640 600 sleep 500
 shot icon.png
 
 # 2. A2: the popup, the slider, mute, closing.
-opens=$(count $log 'ZWL VOLUME popup open')
+opens=$(count $log 'KWL VOLUME popup open')
 pointer move $((ix - 2)) $iy sleep 200 move $ix $iy sleep 300 down sleep 60 up sleep 800
-expect_more $log 'ZWL VOLUME popup open' "$opens" 5
-set -- $(last 'ZWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
+expect_more $log 'KWL VOLUME popup open' "$opens" 5
+set -- $(last 'KWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
 px=${1:-900} pw=${3:-260} slider=${5:-100} mute=${6:-134}
 # The knob's centre runs from px + 14 + 9 to px + pw - 14 - 9.
 track_left=$((px + 23)) track_width=$((pw - 46))
@@ -118,7 +118,7 @@ sy=$((slider + 17)) my=$((mute + 17))
 shot popup.png
 q1=$((track_left + track_width / 4)) q3=$((track_left + track_width * 3 / 4))
 pointer move $q1 $sy sleep 300 down sleep 200 move $((q1 + track_width / 6)) $sy sleep 150 move $((q1 + track_width / 3)) $sy sleep 150 move $q3 $sy sleep 300 up sleep 800
-expect_more $log 'ZWL VOLUME set value=7[4-6] muted=0 via=slider final=1' 0 5
+expect_more $log 'KWL VOLUME set value=7[4-6] muted=0 via=slider final=1' 0 5
 shot slider.png
 sleep 1
 set -- $(audiod_volume)
@@ -130,13 +130,13 @@ shot muted.png
 pointer move $((px + pw - 40)) $my sleep 300 down sleep 60 up sleep 800
 muted=$(audiod_muted_wait 0)
 [ "$muted" = 0 ] && verdict ok "mute off: audiod unmuted" || verdict no "mute off: audiod unmuted ($muted)"
-guest "grep -E 'ZWL VOLUME (set .*via=mute|send errno)' $log" > "$out/mute.log"
-closes=$(count $log 'ZWL VOLUME popup close via=outside')
+guest "grep -E 'KWL VOLUME (set .*via=mute|send errno)' $log" > "$out/mute.log"
+closes=$(count $log 'KWL VOLUME popup close via=outside')
 pointer move 400 600 sleep 300 down sleep 60 up sleep 800
-expect_more $log 'ZWL VOLUME popup close via=outside' "$closes" 5
+expect_more $log 'KWL VOLUME popup close via=outside' "$closes" 5
 pointer move $ix $iy sleep 300 down sleep 60 up sleep 800
 keys '<esc>'
-expect_more $log 'ZWL VOLUME popup close via=key' 0 5
+expect_more $log 'KWL VOLUME popup close via=key' 0 5
 
 # 3. A3: the wheel over the icon, three notches down and two up.
 before=$(audiod_volume | cut -d' ' -f1)
@@ -147,8 +147,8 @@ echo "wheel: $before -> $after"
 shot wheel.png
 
 # The first session's volume lines, before Log Out replaces its log.
-guest "grep -E 'ZWL (VOLUME|ERROR)' $log" > "$out/session-first.log"
-grep -q 'ZWL ERROR' "$out/session-first.log" && { echo "ZWL ERROR in the first session"; status=1; }
+guest "grep -E 'KWL (VOLUME|ERROR)' $log" > "$out/session-first.log"
+grep -q 'KWL ERROR' "$out/session-first.log" && { echo "KWL ERROR in the first session"; status=1; }
 n=$(grep -c 'via=wheel final=1' "$out/session-first.log")
 [ "$n" -eq 5 ] && verdict ok "wheel: five changes logged" || verdict no "wheel: five changes logged ($n)"
 
@@ -157,9 +157,9 @@ sleep 2
 during=$(guest 'grep -E "^sound\.(volume|muted)=" /home/kei/.config/keiland/desktop.conf' | tr '\n' ' ')
 echo "during the session: $during (the session began with: $conf_start)"
 [ "$during" = "$conf_start" ] && verdict ok "no write while the volume changes" || verdict no "no write while the volume changes"
-grep -q 'ZWL VOLUME kept' "$out/session-first.log" && verdict no "no kept line during the session" || verdict ok "no kept line during the session"
+grep -q 'KWL VOLUME kept' "$out/session-first.log" && verdict no "no kept line during the session" || verdict ok "no kept line during the session"
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-set -- $(last 'ZWL HOME icon name="Log Out"' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+set -- $(last 'KWL HOME icon name="Log Out"' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 pointer move "${1:-0}" "${2:-0}" sleep 400 down sleep 60 up
 expect_more /var/log/sessiond.log 'SESSIOND GREETER adopt pid=' 0 20
 sleep 2
@@ -176,8 +176,8 @@ echo "a new session: audiod $greeter_volume at the greeter -> $restored"
 [ "${restored:-0}" = "${after:-x}" ] && verdict ok "a new session applies the kept volume" || verdict no "a new session applies the kept volume"
 
 # 4. A4: the WAV, once the guest is stopped.
-guest "grep -E 'ZWL (VOLUME|ERROR)' $log" > "$out/session-volume.log"
-grep -q 'ZWL ERROR' "$out/session-volume.log" && { echo "ZWL ERROR in the session"; status=1; }
+guest "grep -E 'KWL (VOLUME|ERROR)' $log" > "$out/session-volume.log"
+grep -q 'KWL ERROR' "$out/session-volume.log" && { echo "KWL ERROR in the session"; status=1; }
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 sleep 2
 cp "$GUEST_RUNTIME/out.wav" "$out/p004.wav" 2>/dev/null
@@ -208,25 +208,25 @@ most=$(echo "$sounds" | tr ' ' '\n' | cut -d: -f2 | sort -n | tail -1)
 # 6. A6: no HD Audio, then audiod stopped.
 VOLUME_AUDIO=none timeout 180 sh plan/ws100/tests/volume-guest.sh start "$image" >/dev/null 2>&1
 sleep 35
-expect_more $log 'ZWL VOLUME reachable=1 device=0' 0 30
+expect_more $log 'KWL VOLUME reachable=1 device=0' 0 30
 pointer move 640 600 sleep 500
 shot no-device-icon.png
-set -- $(last 'ZWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+set -- $(last 'KWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 ix=$((${1:-900} + ${3:-30} / 2)); iy=$((${2:-3} + ${4:-28} / 2))
 pointer move $ix $iy sleep 300 down sleep 60 up sleep 800
-expect_more $log 'ZWL VOLUME popup open .* sound=0' 0 5
+expect_more $log 'KWL VOLUME popup open .* sound=0' 0 5
 shot no-device-popup.png
 keys '<esc>'
 guest 'service stop audiod >/dev/null 2>&1; echo stopped' >/dev/null
-expect_more $log 'ZWL VOLUME reachable=0' 0 10
+expect_more $log 'KWL VOLUME reachable=0' 0 10
 pointer move $ix $iy sleep 300 down sleep 60 up sleep 800
 shot no-audiod-popup.png
 keys '<esc>'
 alive=$(guest "ps -A -o args | grep -c '[w]ayland'" | tail -1)
 [ "${alive:-0}" -ge 1 ] && verdict ok "zdesktop runs without audiod" || verdict no "zdesktop runs without audiod"
-errors=$(count $log 'ZWL ERROR')
-[ "${errors:-1}" = 0 ] && verdict ok "no ZWL ERROR" || verdict no "ZWL ERROR ($errors)"
-guest "grep -E 'ZWL VOLUME' $log" > "$out/no-device-volume.log"
+errors=$(count $log 'KWL ERROR')
+[ "${errors:-1}" = 0 ] && verdict ok "no KWL ERROR" || verdict no "KWL ERROR ($errors)"
+guest "grep -E 'KWL VOLUME' $log" > "$out/no-device-volume.log"
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 [ $status -eq 0 ] && echo "volume-p004: PASS" || echo "volume-p004: FAIL"
 exit $status

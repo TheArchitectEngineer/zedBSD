@@ -47,13 +47,13 @@ expect_log() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3000 --delay-ms=100 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 2
 /bin/wlshm --size=360x260 --color=ff2b3444 --frames=9000 --token=s > /tmp/s.log 2>&1 </dev/null & sleep 2
 /bin/wltest --windowed --size=380x280 --color=dfe9f7 --frames=3000 --delay-ms=100 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 zwl_app_clients
-s=$(guest "grep 'ZWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
-b=$(guest "grep 'ZWL MAP client=$zc3 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
+s=$(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
+b=$(guest "grep 'KWL MAP client=$zc3 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
 echo "s is surface ${s:-?}, b is surface ${b:-?}"
 pointer move 1250 780 sleep 300
 
@@ -79,7 +79,7 @@ keys '<ret>'
 sleep 1.5
 expect_log "WISEVIEW select surface=$s via=key"
 expect_log 'WISEVIEW closed'
-set -- $(guest "grep 'ZWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 check "$out/selected.png" --expect $(($1 + 180)),$(($2 + 130)),2b3444 || status=1
 
 # 4. Super+Tab, then Esc.

@@ -2,8 +2,8 @@
 # ws132-p005: the removable media on the desktop, on the Venus guest of plan/ws132/tests/config-amd64-p004.mk (started
 # with plan/tools/files/files-guest.sh start IMAGE): volumed, zdesktop --glass at 1280x800 (as root, the seat's user here).
 #  1. A FAT stick (label USBSTICK) plugged in: zdesktop's bar shows the media icon and it blinks
-#     (ZWL MEDIA new ..., volumes=1 icon=1; bar.png); nothing is mounted.
-#  2. A click on the icon starts Files on its devices (ZWL MEDIA files pid=, files --devices): Files lists the stick
+#     (KWL MEDIA new ..., volumes=1 icon=1; bar.png); nothing is mounted.
+#  2. A click on the icon starts Files on its devices (KWL MEDIA files pid=, files --devices): Files lists the stick
 #     not mounted, new and blinking (ZFILES DEVICE ... mounted=0 new=1 ... blink=1), under Devices and on Today
 #     (ZFILES DEVICE row / card; files.png).
 #  3. A double click on Today's card asks whether to mount it (ws132-p009: DEVICE mount confirm ... fs=fat
@@ -13,7 +13,7 @@
 #     (mounted.png).
 #  4. The eject button of its row in the sidebar ejects it (DEVICE result ... mount=0 errno=0, MESSAGE The device can be
 #     taken out safely.), and /media/USBSTICK is gone.
-#  5. Pulled out (not mounted): the list empties (ZWL MEDIA volumes=0, ZFILES DEVICES count=0).
+#  5. Pulled out (not mounted): the list empties (KWL MEDIA volumes=0, ZFILES DEVICES count=0).
 # PASS: every "ok" line and the last line p005: PASS.
 #   plan/ws132/tests/p005-guest.sh [OUTDIR]     (default build/ws132-p005)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -84,22 +84,22 @@ rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height
 # 1.
 send blockdev-add "{\"driver\":\"raw\",\"node-name\":\"stick0\",\"file\":{\"driver\":\"file\",\"filename\":\"$(realpath "$stick")\"}}"
 send device_add '{"driver":"usb-storage","bus":"xhci.0","drive":"stick0","id":"stick"}'
-expect_log 'ZWL MEDIA new id=sd[a-z] label=USBSTICK' 8
-expect_log 'ZWL MEDIA volumes=1 icon=1'
-expect_log 'ZWL MEDIA icon x='
+expect_log 'KWL MEDIA new id=sd[a-z] label=USBSTICK' 8
+expect_log 'KWL MEDIA volumes=1 icon=1'
+expect_log 'KWL MEDIA icon x='
 shot bar.png
 
 # 2.
-set -- $(rect_of 'ZWL MEDIA icon x=')
+set -- $(rect_of 'KWL MEDIA icon x=')
 click $((${1:-0} + ${3:-0} / 2)) $((${2:-0} + ${4:-0} / 2))
-expect_log 'ZWL MEDIA files pid=[1-9]'
+expect_log 'KWL MEDIA files pid=[1-9]'
 expect_log 'ZFILES DEVICE id=sd[a-z] name=USBSTICK mounted=0 new=1 path= blink=1' 8
 expect_log 'ZFILES DEVICE row id=sd[a-z] '
 expect_log 'ZFILES DEVICE card id=sd[a-z] '
 shot files.png
 
 # 3.
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 set -- $(rect_of 'ZFILES DEVICE card id=')
 card_x=$((wx + ${1:-0} + ${3:-0} / 2)); card_y=$((wy + ${2:-0} + ${4:-0} / 2))
@@ -115,7 +115,7 @@ expect_log 'ZFILES DEVICE mount answer id=sd[a-z] confirmed=1'
 expect_log 'ZFILES DEVICE ask id=sd[a-z] mount=1 error=0'
 expect_log 'ZFILES DEVICE result id=sd[a-z] mount=1 errno=0'
 expect_log 'ZFILES DEVICE open id=sd[a-z] path=/media/USBSTICK'
-expect_log 'ZWL MEDIA volumes=1 icon=0'
+expect_log 'KWL MEDIA volumes=1 icon=0'
 guest 'ls /media/USBSTICK' > "$out/media.txt"
 if grep -qi '^hello.txt$' "$out/media.txt"; then echo "ok: /media/USBSTICK holds HELLO.TXT"; else echo "FAIL: /media/USBSTICK: $(cat "$out/media.txt")"; status=1; fi
 shot mounted.png
@@ -133,10 +133,10 @@ shot ejected.png
 send device_del '{"id":"stick"}'
 sleep 4
 send blockdev-del '{"node-name":"stick0"}'
-expect_log 'ZWL MEDIA volumes=0 icon=0'
+expect_log 'KWL MEDIA volumes=0 icon=0'
 expect_log 'ZFILES DEVICES count=0'
 
 guest "$stop_all" >/dev/null
-guest 'grep -E "ZWL MEDIA|ZWL SYSTEM devices|ZFILES DEVICE|ZFILES MESSAGE" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL MEDIA|KWL SYSTEM devices|ZFILES DEVICE|ZFILES MESSAGE" /tmp/zdesktop.log' > "$out/log.txt"
 [ $status = 0 ] && echo "p005: PASS" || echo "p005: FAIL"
 exit $status

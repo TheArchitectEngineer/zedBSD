@@ -3,17 +3,17 @@
 # this worktree's compositor, Text Editor and libraries put in by the install step).  The steps read zdesktop's log through
 # SSH and the pictures (nothing reads the console); the pointer is driven through QMP.
 #   install   the compositor, Text Editor, the libraries and a note (/root/note.txt)
-#   open      Text Editor on the note; its Open: the chooser is a sheet (ZWL GLASS sheet ... parent=), under the title
+#   open      Text Editor on the note; its Open: the chooser is a sheet (KWL GLASS sheet ... parent=), under the title
 #             bar in the middle of the window, with no title bar of its own (open.png)
 #   move      the parent's title bar dragged: the sheet moves with it (moved.png)
-#   hold      a press on the parent's body is held (ZWL GLASS sheet holds) and the chooser stays; Cancel closes it
+#   hold      a press on the parent's body is held (KWL GLASS sheet holds) and the chooser stays; Cancel closes it
 #   dock      Open again, the parent's maximize button: the parent docks, and in the docked mode the sheet is in the
 #             middle of the docked body (ws142-p008: x=260, y=52+(740-height)/2, the docked body 8 pixels in from every side, ws099-p038) (docked.png); Cancel
 #   minimize  Open again, the parent's minimize button: both hide (minimized.png); Wiseview (Super+Tab) shows the
 #             parent alone, Right picks its tile and Enter brings both back (restored.png); Cancel
 #   saveas    Text Editor without a file, "abc" typed and Ctrl+S: Save As is a sheet too (saveas.png); Cancel
 #   open and saveas (ws090-p016): the sheet is glass: its panels are the whole sheet, reaching 14 above its top
-#             (ZWL GLASS ... panels=3 card:0,-14,...), and the chooser's two panes inside it (card:8,8,...); open.png and saveas.png show both panes as light
+#             (KWL GLASS ... panels=3 card:0,-14,...), and the chooser's two panes inside it (card:8,8,...); open.png and saveas.png show both panes as light
 #             veils on the blurred wallpaper, no white card
 #   GUEST_RUNTIME=... BIN=build/amd64 plan/ws090/tests/sheet-guest.sh OUTDIR STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -53,23 +53,23 @@ expect_more() {
 
 # The sheet's place from zdesktop's log line and the parent's, checked against the rule (x centred, y at the title bar).
 sheet_place() {
-	guest "grep -a 'ZWL GLASS sheet surface=' /tmp/zdesktop.log | tail -1"
+	guest "grep -a 'KWL GLASS sheet surface=' /tmp/zdesktop.log | tail -1"
 }
 
 # zdesktop and Text Editor afresh (the file argument, or none).
 start() {
 	guest "$stop_all" >/dev/null
-	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while ! grep -q 'ZWL READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; /bin/textedit --timeout-s=900 $1 > /tmp/te.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
+	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while ! grep -q 'KWL READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; /bin/textedit --timeout-s=900 $1 > /tmp/te.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 }
 
 # Text Editor's Open (its title bar's button at 487,73 while the window is where it opens).
 open_chooser() {
-	before=$(count 'ZWL GLASS sheet surface=')
+	before=$(count 'KWL GLASS sheet surface=')
 	glass=$(count 'panels=3 card:0,-14,')
 	pointer move 487 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
-	expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
-	expect_more 'ZWL GLASS sheet at x=260 y=100 ' 0
-	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
+	expect_more 'KWL GLASS sheet surface=[0-9]+ parent=' "$before"
+	expect_more 'KWL GLASS sheet at x=260 y=100 ' 0
+	expect_more 'KWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 }
 
 # The chooser's Cancel (its place at the bottom right of the sheet, as the chooser lays it out at 760x480); Text Editor
@@ -84,7 +84,7 @@ cancel() {
 
 # The sheet's top-left corner now: the parent's body from the log is not kept, so the sheet's place is asked of the log's last configure.
 sheet_xy() {
-	guest "grep -a 'ZWL GLASS sheet at ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
+	guest "grep -a 'KWL GLASS sheet at ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
 }
 
 for step in "$@"; do
@@ -107,21 +107,21 @@ for step in "$@"; do
 		;;
 	move)
 		pointer move 340 73 sleep 200 down sleep 150 move 300 90 sleep 80 move 250 110 sleep 80 move 200 130 sleep 200 up sleep 800 move 1250 780 sleep 300
-		expect_more 'ZWL GLASS moved surface=' 0
-		expect_more 'ZWL GLASS sheet at x=120 y=157 ' 0
+		expect_more 'KWL GLASS moved surface=' 0
+		expect_more 'KWL GLASS sheet at x=120 y=157 ' 0
 		shot moved.png
 		;;
 	hold)
-		held=$(count 'ZWL GLASS sheet holds')
+		held=$(count 'KWL GLASS sheet holds')
 		pointer move 600 760 sleep 200 down sleep 60 up sleep 600
-		expect_more 'ZWL GLASS sheet holds' "$held"
+		expect_more 'KWL GLASS sheet holds' "$held"
 		cancel
 		;;
 	dock)
 		start /root/note.txt
 		open_chooser
 		pointer move 1029 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
-		expect_more 'ZWL GLASS dock surface=' 0
+		expect_more 'KWL GLASS dock surface=' 0
 		sleep 1
 		height=$(sheet_place | sed -n 's/.* height=\([0-9]*\).*/\1/p')
 		want=$(( 52 + (740 - ${height:-0}) / 2 ))
@@ -152,13 +152,13 @@ for step in "$@"; do
 	saveas)
 		start ''
 		keys 'abc'
-		before=$(count 'ZWL GLASS sheet surface=')
+		before=$(count 'KWL GLASS sheet surface=')
 		glass=$(count 'panels=3 card:0,-14,')
 		keys '<ctrl-s>'
 		sleep 1.5
 		pointer move 1250 780 sleep 300
-		expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
-		expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
+		expect_more 'KWL GLASS sheet surface=[0-9]+ parent=' "$before"
+		expect_more 'KWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 		shot saveas.png
 		cancel
 		;;
@@ -170,7 +170,7 @@ for step in "$@"; do
 done
 
 # zdesktop's errors.
-errors=$(count 'ZWL ERROR')
+errors=$(count 'KWL ERROR')
 [ "${errors:-0}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: $errors ERROR lines"; status=1; }
 [ $status -eq 0 ] && echo "sheet-guest: PASS" || echo "sheet-guest: FAIL"
 exit $status

@@ -158,7 +158,7 @@ kwl_primary_object_gone(
 	/* The selection it was: the primary selection is empty now. */
 	if (server->primary == object) {
 		server->primary = NULL;
-		printf("ZWL PRIMARY selection none (source gone)\n");
+		printf("KWL PRIMARY selection none (source gone)\n");
 		selection_changed(server);
 	}
 }
@@ -334,12 +334,12 @@ offer_request(
 	source = offer->data_source;
 	if (source == NULL || source->dead || source->client->fatal) {
 		close(descriptor);
-		printf("ZWL PRIMARY receive client=%llu mime=%s source=none\n", (unsigned long long)offer->client->number, text);
+		printf("KWL PRIMARY receive client=%llu mime=%s source=none\n", (unsigned long long)offer->client->number, text);
 		return 0;
 	}
 
 	/* Succeeded: the source's client writes the type into the descriptor (the event carries it away). */
-	printf("ZWL PRIMARY receive client=%llu mime=%s source=%llu\n", (unsigned long long)offer->client->number, text, (unsigned long long)source->client->number);
+	printf("KWL PRIMARY receive client=%llu mime=%s source=%llu\n", (unsigned long long)offer->client->number, text, (unsigned long long)source->client->number);
 	(void)kwl_data_emit_string(source->client, source->id, SOURCE_SEND, text, descriptor);
 	return 0;
 }
@@ -378,7 +378,7 @@ set_selection(
 	types = 0;
 	if (source != NULL)
 		types = source->mime_count;
-	printf("ZWL PRIMARY selection client=%llu source=%u types=%u\n", (unsigned long long)device->client->number, source_id, types);
+	printf("KWL PRIMARY selection client=%llu source=%u types=%u\n", (unsigned long long)device->client->number, source_id, types);
 	selection_changed(server);
 
 	/* Succeeded: the primary selection holds the source. */
@@ -458,7 +458,7 @@ send_device_selection(
 
 	/* Succeeded: the selection names it. */
 	(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
-	printf("ZWL PRIMARY offer client=%llu offer=%u types=%u\n", (unsigned long long)device->client->number, offer->id, source->mime_count);
+	printf("KWL PRIMARY offer client=%llu offer=%u types=%u\n", (unsigned long long)device->client->number, offer->id, source->mime_count);
 }
 
 /* Reads one native-endian protocol word. */

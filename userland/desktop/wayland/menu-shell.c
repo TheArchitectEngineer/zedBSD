@@ -1074,7 +1074,7 @@ kwl_menu_open_context(
 	shell_layout(server, model, 0U);
 
 	/* The log gives the place and the rows. */
-	printf("ZWL MENU context client=%llu context=%u surface=%u x=%d y=%d rows=%u\n", (unsigned long long)context->client->number, context->id, surface->id, popup->x, popup->y, count);
+	printf("KWL MENU context client=%llu context=%u surface=%u x=%d y=%d rows=%u\n", (unsigned long long)context->client->number, context->id, surface->id, popup->x, popup->y, count);
 	shell_log_popup(server, model, 0U);
 	server->dirty = 1;
 
@@ -1295,7 +1295,7 @@ shell_close_from(
 			kwl_menu_send_popup(place, parent, 0U);
 
 		/* The log line the tests read. */
-		printf("ZWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
+		printf("KWL MENU close client=%llu surface=%u item=%u depth=%u\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id, parent, shell_menu.depth);
 	}
 
 	/* The whole menu closed: menu mode ends, and a context menu is told it is done. */
@@ -1999,7 +1999,7 @@ shell_wait_motion(
 
 	/* The window moves instead, and its move follows this motion (shell.c). */
 	shell_menu.waiting.surface = NULL;
-	printf("ZWL MENU press moves client=%llu surface=%u item=%u docked=%u\n", (unsigned long long)waiting.surface->client->number, waiting.surface->id, waiting.item, waiting.docked);
+	printf("KWL MENU press moves client=%llu surface=%u item=%u docked=%u\n", (unsigned long long)waiting.surface->client->number, waiting.surface->id, waiting.item, waiting.docked);
 	kwl_glass_press_move(server, waiting.surface, waiting.docked, waiting.x, waiting.y);
 
 	/* Succeeded: the motion goes on to the move. */
@@ -2152,7 +2152,7 @@ shell_log_bar(
 			item = 0U;
 
 		/* The log line the tests read. */
-		printf("ZWL MENU bar client=%llu surface=%u where=%s item=%u offset=%d top=%d width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id,
+		printf("KWL MENU bar client=%llu surface=%u where=%s item=%u offset=%d top=%d width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id,
 		       where, item, hit->x - area->origin, hit->y, hit->width, hit->height);
 	}
 }
@@ -2200,7 +2200,7 @@ shell_log_popup(
 		parent = 0U;
 
 	/* The log line the tests read. */
-	printf("ZWL MENU open client=%llu surface=%u item=%u depth=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id,
+	printf("KWL MENU open client=%llu surface=%u item=%u depth=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)shell_menu.surface->client->number, shell_menu.surface->id,
 	       parent, level + 1U, popup->x, popup->y, popup->width, popup->height);
 
 	/* Each row. */
@@ -2213,7 +2213,7 @@ shell_log_popup(
 			height = SEPARATOR_HEIGHT;
 
 		/* Its line, and the next row under it. */
-		printf("ZWL MENU row item=%u depth=%u y=%d height=%d\n", rows[index]->id, level + 1U, top, height);
+		printf("KWL MENU row item=%u depth=%u y=%d height=%d\n", rows[index]->id, level + 1U, top, height);
 		top += height;
 	}
 }

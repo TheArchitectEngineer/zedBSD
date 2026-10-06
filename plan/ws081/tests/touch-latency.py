@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """ws081-p016 (for p017, L3): the touch's latency and the inertial scroll's frame gaps from zdesktop's log.
 
-zdesktop must run with --log-frames: it logs each finger's report ("ZWL TOUCH report contact=N ... stamp_ms=S
-host_ms=H", H the time the report was stamped, the same clock as at_ms) and each composed frame ("ZWL COMPOSE
+zdesktop must run with --log-frames: it logs each finger's report ("KWL TOUCH report contact=N ... stamp_ms=S
+host_ms=H", H the time the report was stamped, the same clock as at_ms) and each composed frame ("KWL COMPOSE
 frame=F ... at_ms=A").
 
   latency   for each finger put down (a contact's first report, or its first after 300 ms without one), the time
@@ -21,8 +21,8 @@ import argparse
 import re
 import sys
 
-REPORT = re.compile(r"ZWL TOUCH report contact=(\d+) x=(-?\d+) y=(-?\d+) stamp_ms=(\d+) host_ms=(\d+)")
-COMPOSE = re.compile(r"ZWL COMPOSE frame=(\d+) .*at_ms=(\d+)")
+REPORT = re.compile(r"KWL TOUCH report contact=(\d+) x=(-?\d+) y=(-?\d+) stamp_ms=(\d+) host_ms=(\d+)")
+COMPOSE = re.compile(r"KWL COMPOSE frame=(\d+) .*at_ms=(\d+)")
 
 
 def percentile(values, share):

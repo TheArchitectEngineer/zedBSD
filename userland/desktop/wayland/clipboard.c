@@ -119,7 +119,7 @@ kwl_clipboard_selected(
 	for (index = 0; index < source->mime_count; index++) {
 		same = strcmp(source->mime_types[index], CLIPBOARD_SECRET_TYPE);
 		if (same == 0) {
-			printf("ZWL CLIP skip reason=secret client=%llu\n", (unsigned long long)source->client->number);
+			printf("KWL CLIP skip reason=secret client=%llu\n", (unsigned long long)source->client->number);
 			return;
 		}
 	}
@@ -136,7 +136,7 @@ kwl_clipboard_selected(
 		}
 	}
 	if (type == NULL) {
-		printf("ZWL CLIP skip reason=no-text client=%llu\n", (unsigned long long)source->client->number);
+		printf("KWL CLIP skip reason=no-text client=%llu\n", (unsigned long long)source->client->number);
 		return;
 	}
 
@@ -160,7 +160,7 @@ kwl_clipboard_selected(
 	}
 
 	/* Succeeded: the text comes through the pipe. */
-	printf("ZWL CLIP read client=%llu mime=%s\n", (unsigned long long)source->client->number, type);
+	printf("KWL CLIP read client=%llu mime=%s\n", (unsigned long long)source->client->number, type);
 }
 
 /*
@@ -188,7 +188,7 @@ kwl_clipboard_poll(
 		/* Nothing more for now: another pass, unless it has taken too long. */
 		if (got < 0 && (errno == EAGAIN || errno == EINTR)) {
 			if (kwl_milliseconds() - clipboard_read.started > CLIPBOARD_READ_MS) {
-				printf("ZWL CLIP skip reason=timeout\n");
+				printf("KWL CLIP skip reason=timeout\n");
 				clipboard_read_end(0);
 			}
 			return;
@@ -208,7 +208,7 @@ kwl_clipboard_poll(
 
 		/* Too much text is not kept. */
 		if (clipboard_read.length + (size_t)got > KWL_CLIPBOARD_TEXT_MAX) {
-			printf("ZWL CLIP skip reason=size\n");
+			printf("KWL CLIP skip reason=size\n");
 			clipboard_read_end(0);
 			return;
 		}
@@ -297,7 +297,7 @@ kwl_clipboard_history_paste(
 
 	/* It is the selection, and the focused window pastes it. */
 	kwl_data_select_offered(server);
-	printf("ZWL CLIP paste index=%u length=%zu sum=%08x\n", index, item.length, clipboard_sum(item.text, item.length));
+	printf("KWL CLIP paste index=%u length=%zu sum=%08x\n", index, item.length, clipboard_sum(item.text, item.length));
 	error = kwl_edit_action(server, KWL_EDIT_PASTE);
 	if (error != 0)
 		return error;
@@ -339,7 +339,7 @@ kwl_clipboard_offer_write(
 
 	/* Succeeded: the reader sees the end. */
 	close(descriptor);
-	printf("ZWL CLIP offer bytes=%zu\n", written);
+	printf("KWL CLIP offer bytes=%zu\n", written);
 }
 
 /*
@@ -375,7 +375,7 @@ kwl_clipboard_history_clear(
 	}
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL CLIP clear reason=%s count=%u\n", reason, count);
+	printf("KWL CLIP clear reason=%s count=%u\n", reason, count);
 }
 
 /*
@@ -390,7 +390,7 @@ kwl_clipboard_history_log(
 
 	/* The count, then each item. */
 	(void)server;
-	printf("ZWL CLIP history count=%u", clipboard_count);
+	printf("KWL CLIP history count=%u", clipboard_count);
 	for (index = 0; index < clipboard_count; index++)
 		printf(" %u:%zu:%08x", index, clipboard_history[index].length, clipboard_sum(clipboard_history[index].text, clipboard_history[index].length));
 	printf("\n");
@@ -454,7 +454,7 @@ clipboard_add(
 	clipboard_count++;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL CLIP add length=%zu sum=%08x count=%u\n", length, clipboard_sum(text, length), clipboard_count);
+	printf("KWL CLIP add length=%zu sum=%08x count=%u\n", length, clipboard_sum(text, length), clipboard_count);
 }
 
 /* Overwrites a text before it is freed, so that a copied secret does not stay in freed memory. */

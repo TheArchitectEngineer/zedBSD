@@ -2,10 +2,10 @@
 
 # ws131-p022: compositor の log の接頭辞を KWL に（試験と同時に）
 
-Status: planning（p002 第 2 版はユーザーのレビュー済み（2026-10-03、D7 は確認中）。開始はユーザーの承認と P2 の終了の後に Q1 が指示）
+Status: in-progress（q820、P1。置き換えと build・host の確認まで済み、T1 の結果待ち）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
-Queue: none
+Queue: q820（2026-10-06）
 依存: p021 cleared。compositor と試験の他の作業が無い時
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
 所有 path: `userland/desktop/wayland/` の log の文字列（44 file、63 種類の tag）、`plan/ws131/`。（Q1 の委任が要る: Q1 が Phase の前に委任を記録する）: `"ZWL "` を読む試験の script 201 本（sh・py、`plan/history` を除く。他の WS の試験を含む）
@@ -37,3 +37,60 @@ compositor の log の行の接頭辞 `"ZWL "` を `"KWL "` にし、それを�
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+## q820（P1、2026-10-06）
+
+- 置き換え: 正規表現 `\bZWL\b(?!_)`（`ZWL_` の識別子は p021 で既に無い）を `KWL` に。printf の `\nZWL` は別に直した。計 約 2770 か所・329 file（`plan/ws131/tools/rename-map.py` の識別子の正規表現 `(?:zwl|ZWL)_` は巻き込んだので戻した）。
+- userland（60 file）: compositor（`userland/desktop/wayland/`）、libkeiland-backend の zedBSD・Linux の log（`IMPORT`・`SEAT` など）、sessiond の greeter が読む `KWL EXIT`。
+- 試験と道具（270 file: sh・py・c と `plan/tools/aat/aat`）。変えない物: `plan/history`、Markdown の文書（BUG の ticket・phase.md の引用）、`evidence`・`handover`・`import` の下の記録と古い script、log・txt・json の証拠、held の patch。shell の補助関数 `zwl_app_client(s)`・`ZWL_RUN`（`plan/tools/guest/zwl-clients.sh`）は名前のまま（読む文字列は `KWL CLIENT`）。
+
+| 場所 | file の数 |
+| --- | --- |
+| `plan/tools/aat` | 8 |
+| `plan/tools/compositor` | 1 |
+| `plan/tools/files` | 18 |
+| `plan/tools/gpu-boundary` | 2 |
+| `plan/tools/guest` | 1 |
+| `plan/tools/imageview` | 2 |
+| `plan/tools/keiland-freebsd` | 2 |
+| `plan/tools/settings` | 1 |
+| `plan/tools/showcase` | 1 |
+| `plan/tools/titlebar` | 9 |
+| `plan/tools/wallpaper` | 2 |
+| `plan/tools/x11` | 2 |
+| `plan/ws005` | 3 |
+| `plan/ws014` | 1 |
+| `plan/ws031` | 3 |
+| `plan/ws035` | 55 |
+| `plan/ws068` | 17 |
+| `plan/ws073` | 2 |
+| `plan/ws074` | 13 |
+| `plan/ws075` | 2 |
+| `plan/ws079` | 9 |
+| `plan/ws081` | 10 |
+| `plan/ws089` | 16 |
+| `plan/ws090` | 5 |
+| `plan/ws094` | 2 |
+| `plan/ws095` | 7 |
+| `plan/ws099` | 28 |
+| `plan/ws100` | 5 |
+| `plan/ws102` | 7 |
+| `plan/ws114` | 1 |
+| `plan/ws127` | 6 |
+| `plan/ws128` | 3 |
+| `plan/ws129` | 1 |
+| `plan/ws131` | 2 |
+| `plan/ws132` | 2 |
+| `plan/ws134` | 5 |
+| `plan/ws139` | 2 |
+| `plan/ws142` | 5 |
+| `plan/ws154` | 2 |
+| `plan/ws158` | 1 |
+| `plan/ws159` | 2 |
+| `plan/ws160` | 1 |
+| `plan/ws166` | 1 |
+| `plan/ws172` | 1 |
+| `plan/ws173` | 1 |
+
+- 確認: zedBSD amd64 の wayland・sessiond（exit 0、warning 0、binary の `ZWL ` の文字列 0、`KWL ` 597）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）、`keiland-os-boundary/check.sh` PASS、AAT の host（aat-host PASS）、run-host-role・host-layout・host-keyboard・host-network-info。直した sh は `sh -n`、py は `py_compile` で全て通る。
+- 未実施: FreeBSD（環境なし）、QEMU（T1）: C1・C2・C9 と各 WS の代表の試験（`zdesktop-p101.sh`・`settings-regress.sh`・`volume-p005.sh`・`textinput-p013.sh`・`demo-s8-s9.sh`）、AAT。

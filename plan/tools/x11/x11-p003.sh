@@ -35,9 +35,9 @@ expect_log() {
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 DISPLAY=:0 /bin/xserver --size 1000x620 > /tmp/x11server.log 2>&1 </dev/null & sleep 3; DISPLAY=:0 /bin/zterm > /tmp/zterm.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
-guest 'cat /tmp/x11server.log; grep -E "ZWL (MAP|TITLE)" /tmp/zdesktop.log' | tee "$out/start.txt"
+guest 'cat /tmp/x11server.log; grep -E "KWL (MAP|TITLE)" /tmp/zdesktop.log' | tee "$out/start.txt"
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "zterm window: surface $surface at $wx,$wy"
 pointer move 1250 780 sleep 500

@@ -21,7 +21,7 @@
  *
  * Each change, whoever made it, comes to every settings object as its
  * value and a done.  Each key put into effect is logged
- * ("ZWL PREFERENCES key=... applied"), which the tests read.  No other
+ * ("KWL PREFERENCES key=... applied"), which the tests read.  No other
  * process reads or writes desktop.conf, and nothing looks at it during
  * the session.
  */
@@ -130,7 +130,7 @@ kwl_settings_open(
 	/* Allocates the store; without it the session has no settings. */
 	store = calloc(1, sizeof(*store));
 	if (store == NULL) {
-		printf("ZWL SETTINGS none errno=%d\n", ENOMEM);
+		printf("KWL SETTINGS none errno=%d\n", ENOMEM);
 		return;
 	}
 
@@ -142,7 +142,7 @@ kwl_settings_open(
 	/* Opens the store on the home's desktop.conf. */
 	error = kwl_settings_store_open(store, home);
 	if (error != 0)
-		printf("ZWL SETTINGS home errno=%d\n", error);
+		printf("KWL SETTINGS home errno=%d\n", error);
 
 	/* Makes the command line's wallpaper the wallpaper's default. */
 	if (server->wallpaper_path != NULL)
@@ -156,7 +156,7 @@ kwl_settings_open(
 	/* Reads desktop.conf, once for the session. */
 	error = kwl_settings_store_load(store);
 	if (error != 0)
-		printf("ZWL SETTINGS read-failed errno=%d\n", error);
+		printf("KWL SETTINGS read-failed errno=%d\n", error);
 
 	/* The one pointer setting of before becomes the mouse's (ws089-p024). */
 	settings_migrate(store, "pointer.speed", "mouse.speed");
@@ -167,7 +167,7 @@ kwl_settings_open(
 	settings_apply_all(server, 1);
 
 	/* Logs the opening for the tests. */
-	printf("ZWL SETTINGS open present=%d\n", store->present);
+	printf("KWL SETTINGS open present=%d\n", store->present);
 }
 
 /*
@@ -215,7 +215,7 @@ kwl_settings_logout(
 	error = kwl_settings_store_save_later(server->settings);
 
 	/* Logs how the start went, for the tests. */
-	printf("ZWL SETTINGS logout-save error=%d\n", error);
+	printf("KWL SETTINGS logout-save error=%d\n", error);
 }
 
 /*
@@ -236,7 +236,7 @@ kwl_settings_close(
 	error = kwl_settings_store_finish(server->settings);
 
 	/* Logs how the writing went, for the tests. */
-	printf("ZWL SETTINGS saved error=%d\n", error);
+	printf("KWL SETTINGS saved error=%d\n", error);
 
 	/* Lets the store go; the server has no settings from now on. */
 	kwl_settings_store_close(server->settings);
@@ -310,7 +310,7 @@ kwl_settings_global_visible(
 		/* Asks which user runs the peer; a failure leaves it another user. */
 		error = kl_backend_peer_uid(client->fd, &uid);
 		if (error != 0) {
-			printf("ZWL SETTINGS peer client=%llu errno=%d\n", (unsigned long long)client->number, error);
+			printf("KWL SETTINGS peer client=%llu errno=%d\n", (unsigned long long)client->number, error);
 		} else {
 			/* The compositor's own user is the one that sees the extension. */
 			own = getuid();
@@ -457,7 +457,7 @@ settings_migrate(
 
 	/* The old value, chosen under the new name. */
 	error = kwl_settings_store_choose(store, new_name, old_entry->start);
-	printf("ZWL SETTINGS migrated %s=%s to %s error=%d\n", old_name, old_entry->start, new_name, error);
+	printf("KWL SETTINGS migrated %s=%s to %s error=%d\n", old_name, old_entry->start, new_name, error);
 }
 
 /* Puts every setting into effect (starting: before the look is made). */
@@ -679,7 +679,7 @@ settings_apply_wallpaper(
 
 	/* Before the look is made, it draws the picture itself. */
 	if (starting) {
-		printf("ZWL PREFERENCES key=wallpaper applied\n");
+		printf("KWL PREFERENCES key=wallpaper applied\n");
 		return;
 	}
 
@@ -695,12 +695,12 @@ settings_apply_wallpaper(
 
 	/* A refusal leaves the wallpaper shown. */
 	if (error != 0) {
-		printf("ZWL PREFERENCES key=wallpaper failed errno=%d\n", error);
+		printf("KWL PREFERENCES key=wallpaper failed errno=%d\n", error);
 		return;
 	}
 
 	/* Logs that the new picture is shown, for the tests. */
-	printf("ZWL PREFERENCES key=wallpaper applied\n");
+	printf("KWL PREFERENCES key=wallpaper applied\n");
 }
 
 /*
@@ -757,7 +757,7 @@ settings_apply_opacity(
 	panels = "glass";
 	if (panels_opaque != 0U)
 		panels = "opaque";
-	printf("ZWL PREFERENCES key=window.opacity applied value=%d panels=%s\n", percent, panels);
+	printf("KWL PREFERENCES key=window.opacity applied value=%d panels=%s\n", percent, panels);
 }
 
 /* Sets a number the desktop uses to the setting's value when it differs, and logs it. */
@@ -789,7 +789,7 @@ settings_apply_number(
 	*target = (int32_t)number;
 
 	/* Logs the value put into effect, for the tests. */
-	printf("ZWL PREFERENCES key=%s applied value=%d\n", name, number);
+	printf("KWL PREFERENCES key=%s applied value=%d\n", name, number);
 }
 
 /* Marks a setting to be told to every settings object at the next flush. */
@@ -949,7 +949,7 @@ settings_result(
 	(void)kwl_emit(client, id, KL_SYSTEM_SETTINGS_EVENT_RESULT, words, sizeof(words));
 
 	/* Logs the answer, for the tests. */
-	printf("ZWL SETTINGS result client=%llu request=%u applied=%u saved=%u\n", (unsigned long long)client->number, request, words[1], words[2]);
+	printf("KWL SETTINGS result client=%llu request=%u applied=%u saved=%u\n", (unsigned long long)client->number, request, words[1], words[2]);
 }
 
 /* Reads a set (request, key, value) or a reset (request, key) and answers it; returns 0 or EPROTO for a malformed request. */
@@ -1012,7 +1012,7 @@ settings_set(
 		shown = name;
 
 	/* Logs the request, for the tests. */
-	printf("ZWL SETTINGS %s key=%s client=%llu applied=%u\n", reset ? "reset" : "set", shown, (unsigned long long)object->client->number, applied);
+	printf("KWL SETTINGS %s key=%s client=%llu applied=%u\n", reset ? "reset" : "set", shown, (unsigned long long)object->client->number, applied);
 
 	/* Lets the request's copies go. */
 	free(value);
@@ -1266,7 +1266,7 @@ settings_wallpaper_done(
 			server->wallpaper_path = server->wallpaper_chosen;
 
 		/* Logs the wallpaper put into effect, for the tests. */
-		printf("ZWL PREFERENCES key=wallpaper applied\n");
+		printf("KWL PREFERENCES key=wallpaper applied\n");
 
 		/* Tells every settings object. */
 		settings_mark(server, "wallpaper");
@@ -1375,7 +1375,7 @@ settings_snapshot(
 	settings_emit_done(settings->client, settings->id);
 
 	/* Logs the snapshot, for the tests. */
-	printf("ZWL SETTINGS snapshot client=%llu object=%u\n", (unsigned long long)settings->client->number, settings->id);
+	printf("KWL SETTINGS snapshot client=%llu object=%u\n", (unsigned long long)settings->client->number, settings->id);
 
 	/* Succeeded: the object knows every setting. */
 	return 0;

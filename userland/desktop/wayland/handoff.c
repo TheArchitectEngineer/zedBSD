@@ -54,12 +54,12 @@ kwl_handoff_wait(
 	if (error == ENOTSUP || error == EINVAL)
 		return;
 	if (error != 0 && error != ETIMEDOUT) {
-		printf("ZWL HANDOFF send errno=%d\n", error);
+		printf("KWL HANDOFF send errno=%d\n", error);
 		return;
 	}
 
 	/* The display can be taken (with or without the manager's word). */
-	printf("ZWL HANDOFF go=%d waited_ms=%llu at_ms=%llu\n", error == 0, (unsigned long long)(kwl_milliseconds() - started), (unsigned long long)kwl_milliseconds());
+	printf("KWL HANDOFF go=%d waited_ms=%llu at_ms=%llu\n", error == 0, (unsigned long long)(kwl_milliseconds() - started), (unsigned long long)kwl_milliseconds());
 }
 
 /*
@@ -91,7 +91,7 @@ kwl_handoff_logout(
 
 	/* Succeeded: the quit will come. */
 	server->logout_ms = kwl_milliseconds();
-	printf("ZWL HANDOFF logout at_ms=%llu\n", (unsigned long long)server->logout_ms);
+	printf("KWL HANDOFF logout at_ms=%llu\n", (unsigned long long)server->logout_ms);
 	return 1;
 }
 
@@ -122,14 +122,14 @@ kwl_handoff_stop(
 
 	/* The seat's authority failed: the ordinary cleanup ends the compositor. */
 	if (reason == KL_BACKEND_SESSION_LOST) {
-		printf("ZWL SEAT lost\n");
+		printf("KWL SEAT lost\n");
 		server->failed = 1;
 		return;
 	}
 
 	/* A Log Out the manager did not answer in time: the compositor ends anyway. */
 	if (reason == KL_BACKEND_SESSION_UNANSWERED) {
-		printf("ZWL HANDOFF logout unanswered\n");
+		printf("KWL HANDOFF logout unanswered\n");
 		server->logout_ms = 0U;
 		kwl_request_stop();
 		return;
@@ -137,13 +137,13 @@ kwl_handoff_stop(
 
 	/* Which end: the session's quit, or the login screen's manager done with it. */
 	if (reason == KL_BACKEND_SESSION_QUIT)
-		printf("ZWL HANDOFF quit at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+		printf("KWL HANDOFF quit at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	else
-		printf("ZWL GREETER closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+		printf("KWL GREETER closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 
 	/* The swapchain goes, and with it the display's lease, before anything slower. */
 	kwl_compose_output_close(server);
-	printf("ZWL HANDOFF released at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+	printf("KWL HANDOFF released at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	server->logout_ms = 0U;
 	kwl_request_stop();
 }
@@ -191,10 +191,10 @@ kwl_handoff_answer(
 
 	/* A session's Power Off or Restart (the Power Off dialog, ws099-p037): refused (EACCES) or not done is said. */
 	if (request == KL_BACKEND_SESSION_POWER) {
-		printf("ZWL POWER answer error=%d\n", error);
+		printf("KWL POWER answer error=%d\n", error);
 		return;
 	}
 
 	/* Anything else is not for this compositor. */
-	printf("ZWL HANDOFF answer request=%u error=%d\n", request, error);
+	printf("KWL HANDOFF answer request=%u error=%d\n", request, error);
 }

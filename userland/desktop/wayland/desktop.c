@@ -221,7 +221,7 @@ kwl_desktop_request(
 	/* ack_configure: the configure the client drew for. */
 	if (opcode != DESKTOP_SURFACE_ACK || size != 4U)
 		return EPROTO;
-	printf("ZWL DESKTOP ack serial=%u\n", desktop_word(bytes, 0U));
+	printf("KWL DESKTOP ack serial=%u\n", desktop_word(bytes, 0U));
 
 	/* Succeeded: the acknowledgement is taken. */
 	return 0;
@@ -244,7 +244,7 @@ kwl_desktop_object_gone(
 
 	/* The role ends; the windows have the keyboard again. */
 	server = object->client->server;
-	printf("ZWL DESKTOP gone client=%llu\n", (unsigned long long)object->client->number);
+	printf("KWL DESKTOP gone client=%llu\n", (unsigned long long)object->client->number);
 	kwl_desktop_unfocus(server);
 	desk.surface = NULL;
 	desk.object = NULL;
@@ -286,7 +286,7 @@ kwl_desktop_tick(
 	    height != desk.height) {
 		error = desktop_configure(server);
 		if (error != 0)
-			printf("ZWL DESKTOP configure-failed errno=%d\n", error);
+			printf("KWL DESKTOP configure-failed errno=%d\n", error);
 	}
 
 	/* A frame that does not draw the desktop (a fullscreen window, the lock screen) still answers its callbacks. */
@@ -327,7 +327,7 @@ kwl_desktop_draw(
 	/* The first image since the program started, with its time (the tests read it). */
 	if (!desk.drawn) {
 		desk.drawn = 1;
-		printf("ZWL DESKTOP drawn at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+		printf("KWL DESKTOP drawn at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	}
 
 	/* Its size (its viewport's, else its image's). */
@@ -421,7 +421,7 @@ kwl_desktop_front(
 	surface = kwl_desktop_surface(server);
 	if (surface == NULL || top != desk.focus_top) {
 		desk.focused = 0;
-		printf("ZWL DESKTOP unfocus via=window\n");
+		printf("KWL DESKTOP unfocus via=window\n");
 		return top;
 	}
 
@@ -449,7 +449,7 @@ kwl_desktop_press(
 	if (!desk.focused) {
 		desk.focused = 1;
 		desk.focus_top = kwl_top_window(server);
-		printf("ZWL DESKTOP focus client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
+		printf("KWL DESKTOP focus client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}
 
 	/* The focus follows now, so that the press reaches the desktop. */
@@ -477,7 +477,7 @@ kwl_desktop_unfocus(
 	desk.focused = 0;
 	server->front_surface = kwl_top_window(server);
 	kwl_seat_focus(server);
-	printf("ZWL DESKTOP unfocus via=press\n");
+	printf("KWL DESKTOP unfocus via=press\n");
 
 	/* Succeeded: the top window has the keyboard. */
 	return;
@@ -560,7 +560,7 @@ desktop_get(
 	if (desk.token[0] != '\0')
 		differs = strcmp(token, desk.token);
 	if (differs != 0) {
-		printf("ZWL DESKTOP refused client=%llu reason=token\n", (unsigned long long)manager->client->number);
+		printf("KWL DESKTOP refused client=%llu reason=token\n", (unsigned long long)manager->client->number);
 		(void)kwl_error_code(manager->client, manager->id, DESKTOP_ERROR_TOKEN, "not the desktop's token");
 		return EPROTO;
 	}
@@ -570,7 +570,7 @@ desktop_get(
 	    surface->role != NULL ||
 	    surface->sub_role != NULL ||
 	    surface->cursor_role) {
-		printf("ZWL DESKTOP refused client=%llu reason=role\n", (unsigned long long)manager->client->number);
+		printf("KWL DESKTOP refused client=%llu reason=role\n", (unsigned long long)manager->client->number);
 		(void)kwl_error_code(manager->client, manager->id, DESKTOP_ERROR_ROLE, "the desktop has a surface, or the surface has a role");
 		return EPROTO;
 	}
@@ -589,7 +589,7 @@ desktop_get(
 		return error;
 
 	/* The log the tests read. */
-	printf("ZWL DESKTOP role client=%llu surface=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, desk.x, desk.y, desk.width, desk.height);
+	printf("KWL DESKTOP role client=%llu surface=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, desk.x, desk.y, desk.width, desk.height);
 
 	/* Succeeded: the surface is the desktop's. */
 	return 0;
@@ -733,7 +733,7 @@ desktop_start(
 	/* Too many starts in the minute stop the starts for good. */
 	if (desk.starts >= DESKTOP_STARTS) {
 		desk.limited = 1;
-		printf("ZWL DESKTOP start-limit starts=%u\n", desk.starts);
+		printf("KWL DESKTOP start-limit starts=%u\n", desk.starts);
 		return;
 	}
 
@@ -745,7 +745,7 @@ desktop_start(
 	snprintf(line, sizeof(line), "KEILAND_DESKTOP_TOKEN=%s exec %s", desk.token, desk.command);
 	desk.pid = kwl_spawn(server, line);
 	if (desk.pid < 0) {
-		printf("ZWL DESKTOP start-failed errno=%d\n", errno);
+		printf("KWL DESKTOP start-failed errno=%d\n", errno);
 		desk.starts++;
 		desk.pid = 0;
 		desk.gone_ms = now;
@@ -757,7 +757,7 @@ desktop_start(
 
 	/* The log the tests read; its first image is logged when drawn. */
 	desk.drawn = 0;
-	printf("ZWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)kwl_milliseconds());
+	printf("KWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: the program is running. */
 	return;
@@ -787,7 +787,7 @@ desktop_watch(
 		return;
 
 	/* The program is gone; it is started again after a while. */
-	printf("ZWL DESKTOP exited pid=%d\n", (int)desk.pid);
+	printf("KWL DESKTOP exited pid=%d\n", (int)desk.pid);
 	desk.pid = 0;
 	desk.gone_ms = kwl_milliseconds();
 

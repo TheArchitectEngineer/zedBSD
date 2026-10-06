@@ -53,13 +53,13 @@ def monitor_metrics(out, reasons):
     fps = []
     callback_ms = []
     for line in lines:
-        compose = re.search(r'ZWL PERF compose frames=(\d+) draw_ms=([\d.]+) .* frame_ms=([\d.]+)', line)
+        compose = re.search(r'KWL PERF compose frames=(\d+) draw_ms=([\d.]+) .* frame_ms=([\d.]+)', line)
         if compose:
             frames += int(compose.group(1))
             draw_ms.append(float(compose.group(2)))
             frame_ms.append(float(compose.group(3)))
             continue
-        window = re.search(r'ZWL PERF (\d+)ms:', line)
+        window = re.search(r'KWL PERF (\d+)ms:', line)
         if window:
             window_ms += int(window.group(1))
             continue

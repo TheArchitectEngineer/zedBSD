@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws173-p003: the host self-test of plan/tools/aat/aat.  --local runs every command on this host, with
 # fake-aat-input.py for P1's aat-input (the same command line and answers) and fake-shot.py for keiland-shot, so the
-# command line, the commands sent, the logs' marks and waits, the windows from ZWL lines and the transfers are checked
+# command line, the commands sent, the logs' marks and waits, the windows from KWL lines and the transfers are checked
 # without a target.  The SSH transport is the same code with ssh in front (checked against QEMU by T1, README.md).
 # Last line: "aat-host: PASS" or "aat-host: FAIL".
 #   sh plan/tools/aat/tests/run-host.sh
@@ -65,37 +65,37 @@ aat key ctrl+nosuchkey 2>"$tmp/refused" && bad "aat-input refusal" || { grep -q 
 : > "$record"
 
 # The log: a mark, a line written after it is waited for and found; one before it is not.
-printf 'ZWL MAP client=3 surface=9 x=100 y=50\nold line\n' > "$AAT_LOG"
+printf 'KWL MAP client=3 surface=9 x=100 y=50\nold line\n' > "$AAT_LOG"
 aat mark before >/dev/null
-(sleep 1; printf 'ZWL WINDOW centred surface=9 x=120 y=60 width=640 height=480\nNOTES APPEARANCE appearance=1\n' >> "$AAT_LOG") &
+(sleep 1; printf 'KWL WINDOW centred surface=9 x=120 y=60 width=640 height=480\nNOTES APPEARANCE appearance=1\n' >> "$AAT_LOG") &
 aat wait-log 'APPEARANCE appearance=1' --since before --timeout 10 | grep -q 'NOTES APPEARANCE' && ok wait-log || bad wait-log
 aat lines 'old line' --since before >/dev/null && bad "lines before the mark" || ok "lines after the mark only"
 aat lines 'old line' >/dev/null && ok "lines from the start" || bad "lines from the start"
 aat wait-log 'never' --timeout 1 2>/dev/null && bad "wait-log timeout" || ok "wait-log timeout"
 aat where 9 | grep -qx '120 60 640 480' && ok where || bad where
 aat windows | grep -q "^9 3 True 120 60 640 480 0$" && ok windows || bad windows
-printf 'ZWL UNMAP client=3 surface=9\n' >> "$AAT_LOG"
+printf 'KWL UNMAP client=3 surface=9\n' >> "$AAT_LOG"
 aat windows | grep -q '^9 3 False ' && ok unmap || bad unmap
 # A client that left without unmapping (an application ended by its close button): its window is no longer mapped.
-printf 'ZWL MAP client=5 surface=8 x=10 y=20\nZWL CLIENT gone client=5 reason=hangup\n' >> "$AAT_LOG"
+printf 'KWL MAP client=5 surface=8 x=10 y=20\nKWL CLIENT gone client=5 reason=hangup\n' >> "$AAT_LOG"
 aat windows | grep -q '^8 5 False 10 20 ' && ok "client gone" || bad "client gone: $(aat windows | grep '^8 5 ')"
 # Where a window goes: launched, moved, docked, undocked; the press's point is not the window's place.
 cat >> "$AAT_LOG" <<'EOF2'
-ZWL MAP client=4 surface=12 x=0 y=0
-ZWL GLASS launch surface=12 from=10,10 to=300,200 size=800x600
-ZWL GLASS press move surface=12 x=700 y=170
-ZWL GLASS moved surface=12 x=340 y=260
+KWL MAP client=4 surface=12 x=0 y=0
+KWL GLASS launch surface=12 from=10,10 to=300,200 size=800x600
+KWL GLASS press move surface=12 x=700 y=170
+KWL GLASS moved surface=12 x=340 y=260
 EOF2
 aat where 12 | grep -qx '340 260 800 600' && ok "launch and move" || bad "launch and move: $(aat where 12)"
-printf 'ZWL GLASS dock surface=12 via=double-click buttons=1,2,3 title=60 x=0 y=48 w=1280 h=752\n' >> "$AAT_LOG"
+printf 'KWL GLASS dock surface=12 via=double-click buttons=1,2,3 title=60 x=0 y=48 w=1280 h=752\n' >> "$AAT_LOG"
 aat windows | grep -q '^12 4 True 0 48 1280 752 1$' && ok dock || bad dock
-printf 'ZWL GLASS undock surface=12 via=drag x=200 y=150\nZWL GLASS resized surface=12 docked=0 width=800 height=600 after_ms=1 acked_ms=1 committed_ms=1 sent_at_ms=1\n' >> "$AAT_LOG"
+printf 'KWL GLASS undock surface=12 via=drag x=200 y=150\nKWL GLASS resized surface=12 docked=0 width=800 height=600 after_ms=1 acked_ms=1 committed_ms=1 sent_at_ms=1\n' >> "$AAT_LOG"
 aat windows | grep -q '^12 4 True 200 150 800 600 0$' && ok undock || bad undock
 # Two clients with the same surface number: a line naming only the surface is the later window's.
-printf 'ZWL MAP client=7 surface=12 x=50 y=60\nZWL GLASS moved surface=12 x=70 y=80\n' >> "$AAT_LOG"
+printf 'KWL MAP client=7 surface=12 x=50 y=60\nKWL GLASS moved surface=12 x=70 y=80\n' >> "$AAT_LOG"
 aat where 12 --client 7 | grep -qx '70 80 - -' && aat where 12 --client 4 | grep -qx '200 150 800 600' && ok "same surface, two clients" || bad "same surface, two clients"
 # With client= on the lines (the compositor since 2026-10-05), the earlier client's window is followed too.
-printf 'ZWL GLASS moved surface=12 x=90 y=95 client=4\n' >> "$AAT_LOG"
+printf 'KWL GLASS moved surface=12 x=90 y=95 client=4\n' >> "$AAT_LOG"
 aat where 12 --client 4 | grep -qx '90 95 800 600' && aat where 12 --client 7 | grep -qx '70 80 - -' && ok "client= on the lines" || bad "client= on the lines"
 aat windows --json | python3 -c 'import json,sys; w={(x["client"], x["surface"]): x for x in json.load(sys.stdin)}; sys.exit(0 if w[(4, 12)]["x"] == 90 else 1)' && ok "windows --json" || bad "windows --json"
 
@@ -126,11 +126,11 @@ aat click 1 1 2>"$tmp/stopped" && bad "stopped input" || { grep -q 'no-server' "
 # The scenarios: the documents and suites are well formed, and the runner runs a helper, marks a scenario that needs
 # hands, and writes the record (the fake input and capture again; the host's own programs are never stopped).
 python3 plan/tools/aat/check-scenarios.py | tail -1 | grep -q 'check-scenarios: PASS' && ok "scenarios and suites" || bad "scenarios and suites"
-printf 'ZWL READY socket=%s/wayland-0 width=64 height=48 timeout_ms=0 pid=7 role=normal\n' "$tmp" > "$AAT_LOG"
+printf 'KWL READY socket=%s/wayland-0 width=64 height=48 timeout_ms=0 pid=7 role=normal\n' "$tmp" > "$AAT_LOG"
 timeout 300 sh plan/tools/aat/run-aat.sh local "$tmp/runs" os.boot.session-up os.power.lid --no-samples > "$tmp/runner.txt" 2>&1
 grep -q '| `os.boot.session-up` | \*\*pass\*\* | 64x48 |' "$tmp/runs/summary.md" && ok "runner: a helper's pass" || bad "runner: a helper's pass"
 grep -q '| `os.power.lid` | \*\*needs-person\*\* |' "$tmp/runs/summary.md" && ok "runner: hands are a person's" || bad "runner: hands"
-grep -q 'seen: `ZWL READY' "$tmp/runs/records/os.boot.session-up.md" && [ -s "$tmp/runs/png/os.boot.session-up-desktop.png" ] && ok "runner: the step's record and screenshot" || bad "runner: record"
+grep -q 'seen: `KWL READY' "$tmp/runs/records/os.boot.session-up.md" && [ -s "$tmp/runs/png/os.boot.session-up-desktop.png" ] && ok "runner: the step's record and screenshot" || bad "runner: record"
 [ -f "$tmp/runs/logs/os.boot.session-up.log" ] && ok "runner: the scenario's log kept" || bad "runner: the scenario's log"
 aat stop >/dev/null 2>&1
 

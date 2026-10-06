@@ -707,7 +707,7 @@ kwl_glass_draw(
 
 	/* A frame of the animation. */
 	if (server->anim != NULL && server->log_frames)
-		printf("ZWL GLASS anim surface=%u docking=%u t=%.2f client=%llu\n", server->anim->id, server->anim_docking, (double)animation_progress(server), (unsigned long long)server->anim->client->number);
+		printf("KWL GLASS anim surface=%u docking=%u t=%.2f client=%llu\n", server->anim->id, server->anim_docking, (double)animation_progress(server), (unsigned long long)server->anim->client->number);
 }
 
 /*
@@ -925,7 +925,7 @@ kwl_glass_button(
 		sheet = kwl_sheet_of(surface);
 	if (sheet != NULL) {
 		window_raise(server, surface);
-		printf("ZWL GLASS sheet holds surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL GLASS sheet holds surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -960,7 +960,7 @@ kwl_glass_button(
 		edges = frame_edges(server, surface, server->pointer_x, server->pointer_y);
 		error = kwl_toplevel_resize_start(server, surface, edges);
 		if (error != 0)
-			printf("ZWL GLASS frame refused surface=%u edges=%u\n", surface->id, edges);
+			printf("KWL GLASS frame refused surface=%u edges=%u\n", surface->id, edges);
 		return 1;
 	}
 
@@ -968,7 +968,7 @@ kwl_glass_button(
 	pressed = button_at(surface, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
 		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-		printf("ZWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -1287,7 +1287,7 @@ unfullscreen_press(
 		if (!unfullscreen_swipe.pressing)
 			return 0;
 		unfullscreen_swipe.pressing = 0;
-		printf("ZWL GLASS unfullscreen-swipe end done=%d\n", unfullscreen_swipe.done);
+		printf("KWL GLASS unfullscreen-swipe end done=%d\n", unfullscreen_swipe.done);
 		return 1;
 	}
 
@@ -1299,7 +1299,7 @@ unfullscreen_press(
 	unfullscreen_swipe.pressing = 1;
 	unfullscreen_swipe.done = 0;
 	unfullscreen_swipe.start_y = server->pointer_y;
-	printf("ZWL GLASS unfullscreen-swipe start y=%d source=%d\n", server->pointer_y, (int)server->shell_source);
+	printf("KWL GLASS unfullscreen-swipe start y=%d source=%d\n", server->pointer_y, (int)server->shell_source);
 
 	/* Succeeded: the press is the swipe's. */
 	return 1;
@@ -1336,7 +1336,7 @@ unfullscreen_motion(
 
 	/* It becomes a window again. */
 	error = kwl_window_leave_fullscreen(top);
-	printf("ZWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu client=%llu\n", top->id, error, (unsigned long long)kwl_milliseconds(), (unsigned long long)top->client->number);
+	printf("KWL GLASS unfullscreen surface=%u via=swipe errno=%d at_ms=%llu client=%llu\n", top->id, error, (unsigned long long)kwl_milliseconds(), (unsigned long long)top->client->number);
 
 	/* Succeeded: the contact stays the swipe's until its release. */
 	return 1;
@@ -1485,7 +1485,7 @@ kwl_glass_press_move(
 		server->pull = surface;
 		server->pull_start_y = y;
 		server->pull_distance = 0;
-		printf("ZWL GLASS press pull surface=%u\n", surface->id);
+		printf("KWL GLASS press pull surface=%u\n", surface->id);
 		return;
 	}
 
@@ -1500,7 +1500,7 @@ kwl_glass_press_move(
 	server->dirty = 1;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL GLASS press move surface=%u x=%d y=%d\n", surface->id, x, y);
+	printf("KWL GLASS press move surface=%u x=%d y=%d\n", surface->id, x, y);
 }
 
 /*
@@ -1848,7 +1848,7 @@ kwl_glass_toplevel_request(
 		server->drag_dy = server->pointer_y - surface->y;
 		server->drag_start_x = surface->x;
 		server->drag_start_y = surface->y;
-		printf("ZWL GLASS request move surface=%u\n", surface->id);
+		printf("KWL GLASS request move surface=%u\n", surface->id);
 		break;
 	case KWL_TOPLEVEL_MAXIMIZE:
 		/* Docked where it is. */
@@ -1889,7 +1889,7 @@ kwl_glass_toplevel_move_end(
 	}
 
 	/* A move ending elsewhere retains the last position reached by its motion. */
-	printf("ZWL GLASS moved surface=%u x=%d y=%d client=%llu\n", surface->id, surface->x, surface->y, (unsigned long long)surface->client->number);
+	printf("KWL GLASS moved surface=%u x=%d y=%d client=%llu\n", surface->id, surface->x, surface->y, (unsigned long long)surface->client->number);
 
 	/* Succeeded: no button, regardless of its physical code, remains a move owner. */
 	return;
@@ -2225,7 +2225,7 @@ kwl_glass_mapped(
 	/* A window that came late is named as the launch's (the tests find it so) but does not grow. */
 	if (launched == 2) {
 		body_rect(server, surface, &to);
-		printf("ZWL GLASS launch-late surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
+		printf("KWL GLASS launch-late surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
 		return;
 	}
 
@@ -2237,7 +2237,7 @@ kwl_glass_mapped(
 	server->anim_docking = ANIM_LAUNCH;
 	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
+	printf("KWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
 }
 
 /*
@@ -2300,7 +2300,7 @@ kwl_glass_committed(
 	committed = 0U;
 	if (surface->resized_commit_ms >= surface->resized_ms)
 		committed = surface->resized_commit_ms - surface->resized_ms;
-	printf("ZWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu acked_ms=%llu committed_ms=%llu sent_at_ms=%llu client=%llu\n", surface->id, surface->maximized, width, height,
+	printf("KWL GLASS resized surface=%u docked=%u width=%u height=%u after_ms=%llu acked_ms=%llu committed_ms=%llu sent_at_ms=%llu client=%llu\n", surface->id, surface->maximized, width, height,
 	       (unsigned long long)(now - surface->resized_ms), (unsigned long long)acked, (unsigned long long)committed, (unsigned long long)surface->resized_ms, (unsigned long long)surface->client->number);
 
 	/* The wait is over: the image is drawn at its own size. */
@@ -2472,7 +2472,7 @@ kwl_glass_tick(
 		elapsed = kwl_milliseconds() - server->desktop_start_ms;
 		if (elapsed >= DESKTOP_MS) {
 			server->desktop_moving = 0;
-			printf("ZWL GLASS desktop settled desktop=%u windows=%u\n", server->desktop + 1U, desktop_windows(server, server->desktop));
+			printf("KWL GLASS desktop settled desktop=%u windows=%u\n", server->desktop + 1U, desktop_windows(server, server->desktop));
 		}
 	}
 
@@ -2494,7 +2494,7 @@ kwl_glass_tick(
 			if (server->wiseview > 0.0f)
 				wiseview_log(server);
 			else
-				printf("ZWL WISEVIEW closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+				printf("KWL WISEVIEW closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 		}
 	}
 
@@ -3700,7 +3700,7 @@ draw_desktops(
 	/* Where the slots are, once (the tests click a desktop's slot). */
 	if (!shell_desktops_logged) {
 		shell_desktops_logged = 1U;
-		printf("ZWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
+		printf("KWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
 	}
 
 	/* Each desktop's slot: a dot, or for the one shown an outlined pill as wide as the slot. */
@@ -4449,7 +4449,7 @@ sheet_place(
 			if (surface->sheet_ms == 0U) {
 				surface->sheet_ms = now;
 				sheet_narrow(server, surface, parent, width, height);
-				printf("ZWL GLASS sheet surface=%u parent=%u width=%d height=%d client=%llu\n", surface->id, parent->id, width, height, (unsigned long long)surface->client->number);
+				printf("KWL GLASS sheet surface=%u parent=%u width=%d height=%d client=%llu\n", surface->id, parent->id, width, height, (unsigned long long)surface->client->number);
 			}
 
 			/* How far it has slid out, eased out, and frames asked for until it has. */
@@ -4471,7 +4471,7 @@ sheet_place(
 
 			/* Its place once it has slid out, whenever it changes (the tests read it). */
 			if (moved && t >= 1.0f)
-				printf("ZWL GLASS sheet at x=%d y=%d parent=%u\n", x, y, parent->id);
+				printf("KWL GLASS sheet at x=%d y=%d parent=%u\n", x, y, parent->id);
 
 			/* The parent's desktop, shown or hidden with it. */
 			surface->desktop = parent->desktop;
@@ -4520,7 +4520,7 @@ sheet_narrow(
 	surface->window_width = (uint32_t)wanted;
 	surface->window_height = (uint32_t)height;
 	window_configure(surface);
-	printf("ZWL GLASS sheet narrower surface=%u width=%d client=%llu\n", surface->id, wanted, (unsigned long long)surface->client->number);
+	printf("KWL GLASS sheet narrower surface=%u width=%d client=%llu\n", surface->id, wanted, (unsigned long long)surface->client->number);
 }
 
 /*
@@ -4686,7 +4686,7 @@ window_dock(
 
 	/* The client draws the new size; the log gives where the bar's buttons are (close, restore, minimize) and the docked body. */
 	bar_layout(server, &bar);
-	printf("ZWL GLASS dock surface=%u via=%s buttons=%d,%d,%d title=%d x=%d y=%d w=%d h=%d client=%llu\n", surface->id, via,
+	printf("KWL GLASS dock surface=%u via=%s buttons=%d,%d,%d title=%d x=%d y=%d w=%d h=%d client=%llu\n", surface->id, via,
 	       bar.buttons[BUTTON_CLOSE], bar.buttons[BUTTON_MAXIMIZE], bar.buttons[BUTTON_MINIMIZE], bar.title_x,
 	       (int)to.x, (int)to.y, (int)to.width, (int)to.height, (unsigned long long)surface->client->number);
 	window_configure(surface);
@@ -4746,7 +4746,7 @@ window_undock(
 	server->dirty = 1;
 
 	/* The client draws the size it had. */
-	printf("ZWL GLASS undock surface=%u via=%s x=%d y=%d client=%llu\n", surface->id, via, x, y, (unsigned long long)surface->client->number);
+	printf("KWL GLASS undock surface=%u via=%s x=%d y=%d client=%llu\n", surface->id, via, x, y, (unsigned long long)surface->client->number);
 	window_configure(surface);
 
 	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180). */
@@ -4766,7 +4766,7 @@ window_configure(
 	/* A failure is reported; the window keeps drawing its old size. */
 	error = kwl_window_send_configure(surface);
 	if (error != 0)
-		printf("ZWL GLASS configure errno=%d\n", error);
+		printf("KWL GLASS configure errno=%d\n", error);
 }
 
 /*
@@ -4827,7 +4827,7 @@ layout_set(
 	/* The new mode, drawn from the next frame (another application's windows show or go). */
 	server->layout_mode = mode;
 	server->dirty = 1;
-	printf("ZWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
+	printf("KWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
 }
 
 /*
@@ -4865,7 +4865,7 @@ layout_match(
 	}
 
 	/* The log says what the switch did (the tests read it). */
-	printf("ZWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], kwl_layout_name(server->layout_mode), via, (unsigned long long)owner->client->number);
+	printf("KWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], kwl_layout_name(server->layout_mode), via, (unsigned long long)owner->client->number);
 }
 
 /*
@@ -5040,7 +5040,7 @@ layout_keep_front(
 
 	/* Docked where it floats, and the log says why. */
 	window_dock(server, top, top->x, top->y, "front");
-	printf("ZWL LAYOUT front surface=%u action=dock client=%llu\n", top->id, (unsigned long long)top->client->number);
+	printf("KWL LAYOUT front surface=%u action=dock client=%llu\n", top->id, (unsigned long long)top->client->number);
 }
 
 /*
@@ -5400,7 +5400,7 @@ window_lower(
 
 	/* A window alone stays where it is. */
 	if (!found) {
-		printf("ZWL GLASS lower client=%llu surface=%u via=%s next=none\n", (unsigned long long)surface->client->number, surface->id, via);
+		printf("KWL GLASS lower client=%llu surface=%u via=%s next=none\n", (unsigned long long)surface->client->number, surface->id, via);
 		return;
 	}
 
@@ -5455,7 +5455,7 @@ window_lower(
 	}
 
 	/* Written as one line for the tests. */
-	printf("ZWL GLASS lower client=%llu surface=%u via=%s next=%llu:%u focus=%llu:%u\n",
+	printf("KWL GLASS lower client=%llu surface=%u via=%s next=%llu:%u focus=%llu:%u\n",
 	       (unsigned long long)surface->client->number,
 	       surface->id,
 	       via,
@@ -5498,7 +5498,7 @@ bar_press(
 	pressed = bar_button_at(&bar, server->pointer_x, server->pointer_y);
 	if (pressed == BUTTON_CLOSE) {
 		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-		printf("ZWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL GLASS close surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -5605,14 +5605,14 @@ bar_cover_log(
 	/* The bar went away. */
 	if (cover != NULL && !server->bar_hidden) {
 		server->bar_hidden = 1U;
-		printf("ZWL GLASS bar hidden fullscreen=%u\n", cover->id);
+		printf("KWL GLASS bar hidden fullscreen=%u\n", cover->id);
 		return;
 	}
 
 	/* The bar came back. */
 	if (cover == NULL && server->bar_hidden) {
 		server->bar_hidden = 0U;
-		printf("ZWL GLASS bar shown\n");
+		printf("KWL GLASS bar shown\n");
 	}
 }
 
@@ -5757,7 +5757,7 @@ wiseview_open_key(
 	kwl_swipe_end(&server->pad_swipe);
 
 	/* Wiseview opens as it does at the end of the gesture. */
-	printf("ZWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+	printf("KWL WISEVIEW opening key at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "wiseview-open");
 	wiseview_settle(server, 0.0f, 1.0f);
 }
@@ -5839,7 +5839,7 @@ wiseview_choose(
 
 	/* A minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
 	kwl_glass_switch_to(server, surface, "wiseview");
-	printf("ZWL WISEVIEW select surface=%u via=%s client=%llu\n", surface->id, via, (unsigned long long)surface->client->number);
+	printf("KWL WISEVIEW select surface=%u via=%s client=%llu\n", surface->id, via, (unsigned long long)surface->client->number);
 	progress = wiseview_progress(server);
 	wiseview_settle(server, progress, 0.0f);
 }
@@ -5879,7 +5879,7 @@ wiseview_move(
 	/* It becomes the current tile, which Wiseview draws marked. */
 	server->wiseview_current = windows[position];
 	server->dirty = 1;
-	printf("ZWL WISEVIEW current surface=%u\n", windows[position]->id);
+	printf("KWL WISEVIEW current surface=%u\n", windows[position]->id);
 }
 
 /* Closes Wiseview from the keyboard, from wherever it is on its way. */
@@ -5894,7 +5894,7 @@ wiseview_close_key(
 	server->wiseview_gesture = 0;
 
 	/* Wiseview settles closed. */
-	printf("ZWL WISEVIEW close key at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+	printf("KWL WISEVIEW close key at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "wiseview-close");
 	wiseview_settle(server, progress, 0.0f);
 }
@@ -6139,7 +6139,7 @@ draw_wiseview(
 
 	/* A frame of the way. */
 	if (server->log_frames)
-		printf("ZWL WISEVIEW frame progress=%.2f windows=%u\n", (double)progress, count);
+		printf("KWL WISEVIEW frame progress=%.2f windows=%u\n", (double)progress, count);
 }
 
 /*
@@ -6325,10 +6325,10 @@ wiseview_button(
 		progress = wiseview_progress(server);
 		server->wiseview_gesture = 0;
 		if (progress > WISEVIEW_THRESHOLD) {
-			printf("ZWL WISEVIEW opening from=%.2f\n", (double)progress);
+			printf("KWL WISEVIEW opening from=%.2f\n", (double)progress);
 			wiseview_settle(server, progress, 1.0f);
 		} else {
-			printf("ZWL WISEVIEW cancel from=%.2f\n", (double)progress);
+			printf("KWL WISEVIEW cancel from=%.2f\n", (double)progress);
 			wiseview_settle(server, progress, 0.0f);
 		}
 
@@ -6353,7 +6353,7 @@ wiseview_button(
 		if (surface->dead || !surface->mapped)
 			return 1;
 		kwl_glass_switch_to(server, surface, "wiseview");
-		printf("ZWL WISEVIEW select surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL WISEVIEW select surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		wiseview_settle(server, 1.0f, 0.0f);
 		return 1;
 	}
@@ -6383,7 +6383,7 @@ wiseview_button(
 
 	/* Elsewhere, Wiseview closes. */
 	if (surface == NULL) {
-		printf("ZWL WISEVIEW close\n");
+		printf("KWL WISEVIEW close\n");
 		wiseview_settle(server, 1.0f, 0.0f);
 		return 1;
 	}
@@ -6391,7 +6391,7 @@ wiseview_button(
 	/* Its close button closes the window. */
 	if (server->pointer_x >= tiles[index].x + tiles[index].width - 26 && server->pointer_y < tiles[index].y + 26) {
 		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-		printf("ZWL WISEVIEW close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL WISEVIEW close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 1;
 	}
 
@@ -6416,9 +6416,9 @@ wiseview_log(
 	/* The tiles as they are laid out now. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
 	wiseview_layout(server, windows, count, tiles);
-	printf("ZWL WISEVIEW open windows=%u at_ms=%llu\n", count, (unsigned long long)kwl_milliseconds());
+	printf("KWL WISEVIEW open windows=%u at_ms=%llu\n", count, (unsigned long long)kwl_milliseconds());
 	for (index = 0; index < count; index++)
-		printf("ZWL WISEVIEW tile client=%llu surface=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)windows[index]->client->number, windows[index]->id, tiles[index].x, tiles[index].y, tiles[index].width, tiles[index].height);
+		printf("KWL WISEVIEW tile client=%llu surface=%u x=%d y=%d width=%d height=%d\n", (unsigned long long)windows[index]->client->number, windows[index]->id, tiles[index].x, tiles[index].y, tiles[index].width, tiles[index].height);
 }
 
 /* Returns where the desktops are, as a desktop number: the one shown, swiped by the pointer, or sliding. */
@@ -6477,7 +6477,7 @@ desktop_turn(
 	/* The focus goes to the desktop's top window (or nobody). */
 	server->front_surface = kwl_top_window(server);
 	kwl_seat_focus(server);
-	printf("ZWL GLASS desktop=%u via=%s\n", server->desktop + 1U, via);
+	printf("KWL GLASS desktop=%u via=%s\n", server->desktop + 1U, via);
 }
 
 /*
@@ -6548,7 +6548,7 @@ kwl_glass_switch_to(
 	server->front_surface = kwl_top_window(server);
 	kwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu client=%llu\n", surface->id, via, (unsigned long long)kwl_milliseconds(), (unsigned long long)surface->client->number);
+	printf("KWL APPS raise surface=%u via=%s at_ms=%llu client=%llu\n", surface->id, via, (unsigned long long)kwl_milliseconds(), (unsigned long long)surface->client->number);
 
 	/* Docked or floating as the mode is. */
 	layout_match(server, surface, via);
@@ -6632,7 +6632,7 @@ kwl_glass_open_docked(
 	}
 
 	/* The log names where it opens (the tests read it). */
-	printf("ZWL GLASS open-docked client=%llu surface=%u front_client=%llu front=%u x=%d y=%d w=%d h=%d\n",
+	printf("KWL GLASS open-docked client=%llu surface=%u front_client=%llu front=%u x=%d y=%d w=%d h=%d\n",
 	       (unsigned long long)surface->client->number, surface->id, front_client, front_id,
 	       (int)docked.x, (int)docked.y, (int)docked.width, (int)docked.height);
 
@@ -6747,7 +6747,7 @@ kwl_glass_open_wiseview(
 {
 	/* The window on top is the one Enter comes back to. */
 	server->wiseview_current = sheet_owner(kwl_top_window(server));
-	printf("ZWL WISEVIEW opening via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+	printf("KWL WISEVIEW opening via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "wiseview-open");
 	wiseview_settle(server, 0.0f, 1.0f);
 }
@@ -6932,7 +6932,7 @@ kwl_glass_pad_scroll(
 	/* What the swipe decided now, if anything. */
 	direction = kwl_swipe_take(&server->pad_swipe, across_um, down_um);
 	if (direction != KWL_SWIPE_NONE)
-		printf("ZWL SWIPE %s via=pad\n", kwl_swipe_name(direction));
+		printf("KWL SWIPE %s via=pad\n", kwl_swipe_name(direction));
 
 	/* The power dialog first: a swipe down cancels it. */
 	if (dialog) {
@@ -6980,7 +6980,7 @@ kwl_glass_gesture(
 	/* Logged, for the tests. */
 	name = gesture_name(gesture);
 	phase_name = gesture_phase_name(phase);
-	printf("ZWL GESTURE kind=%s phase=%s travel_um=%d speed=%d\n", name, phase_name, travel_um, speed);
+	printf("KWL GESTURE kind=%s phase=%s travel_um=%d speed=%d\n", name, phase_name, travel_um, speed);
 
 	/* A scrolling touch lifted: the next swipe of Wiseview or the switcher is another (ws142-p009). */
 	if (gesture == KWL_TOUCHPAD_GESTURE_SWIPE2) {
@@ -7064,7 +7064,7 @@ kwl_glass_gesture(
 		server->wiseview_pad = 1;
 		server->wiseview_current = sheet_owner(kwl_top_window(server));
 		kwl_swipe_end(&server->pad_swipe);
-		printf("ZWL WISEVIEW gesture via=pad\n");
+		printf("KWL WISEVIEW gesture via=pad\n");
 		gesture_wiseview(server, phase, travel_um, speed);
 		break;
 	case KWL_TOUCHPAD_GESTURE_LEFT2:
@@ -7073,7 +7073,7 @@ kwl_glass_gesture(
 		server->desktop_pad = 1;
 		server->desktop_dragging = 1;
 		server->desktop_moving = 0;
-		printf("ZWL GLASS desktop swipe via=pad\n");
+		printf("KWL GLASS desktop swipe via=pad\n");
 		gesture_desktop(server, gesture, phase, travel_um, speed);
 		break;
 	default:
@@ -7118,10 +7118,10 @@ gesture_wiseview(
 	server->wiseview_pad = 0;
 	if (phase == KWL_TOUCHPAD_PHASE_END &&
 	    (progress > WISEVIEW_THRESHOLD || speed >= GESTURE_FLICK)) {
-		printf("ZWL WISEVIEW opening from=%.2f\n", (double)progress);
+		printf("KWL WISEVIEW opening from=%.2f\n", (double)progress);
 		wiseview_settle(server, progress, 1.0f);
 	} else {
-		printf("ZWL WISEVIEW cancel from=%.2f\n", (double)progress);
+		printf("KWL WISEVIEW cancel from=%.2f\n", (double)progress);
 		wiseview_settle(server, progress, 0.0f);
 	}
 }
@@ -7201,10 +7201,10 @@ wiseview_pad_swipe(
 
 	/* Each swipe's work; up, or no decision yet, does nothing. */
 	if (direction == KWL_SWIPE_RIGHT) {
-		printf("ZWL WISEVIEW select step=+1 via=swipe\n");
+		printf("KWL WISEVIEW select step=+1 via=swipe\n");
 		wiseview_move(server, 1);
 	} else if (direction == KWL_SWIPE_LEFT) {
-		printf("ZWL WISEVIEW select step=-1 via=swipe\n");
+		printf("KWL WISEVIEW select step=-1 via=swipe\n");
 		wiseview_move(server, -1);
 	} else if (direction == KWL_SWIPE_DOWN) {
 		wiseview_choose(server, "swipe");
@@ -7248,7 +7248,7 @@ gesture_fullscreen(
 	/* Docked from now on: the window leaves fullscreen into the docked space (kwl_glass_unfullscreen_docks). */
 	layout_set(server, KWL_LAYOUT_DOCKED, gesture_name(gesture));
 	error = kwl_window_leave_fullscreen(top);
-	printf("ZWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", top->id, gesture_name(gesture), error, (unsigned long long)top->client->number);
+	printf("KWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", top->id, gesture_name(gesture), error, (unsigned long long)top->client->number);
 
 	/* Succeeded: the gesture was the fullscreen window's way out. */
 	return 1;
@@ -7496,7 +7496,7 @@ pull_back(
 	server->anim_docking = 1;
 	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL GLASS pull back surface=%u\n", surface->id);
+	printf("KWL GLASS pull back surface=%u\n", surface->id);
 }
 
 /* Hides a window (it keeps its place, and comes back from Wiseview); the next window takes the focus. */
@@ -7516,7 +7516,7 @@ window_minimize(
 	server->front_surface = kwl_top_window(server);
 	kwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL GLASS minimize surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+	printf("KWL GLASS minimize surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 }
 
 /* Moves a window to another desktop (shown when that desktop is), and gives the focus to the top window of the desktop shown. */
@@ -7536,7 +7536,7 @@ window_to_desktop(
 	server->front_surface = kwl_top_window(server);
 	kwl_seat_focus(server);
 	server->dirty = 1;
-	printf("ZWL GLASS move-desktop surface=%u desktop=%u via=%s client=%llu\n", surface->id, desktop + 1U, via, (unsigned long long)surface->client->number);
+	printf("KWL GLASS move-desktop surface=%u desktop=%u via=%s client=%llu\n", surface->id, desktop + 1U, via, (unsigned long long)surface->client->number);
 }
 
 /* Returns the desktop whose picture in the system bar is under a point, or -1. */
@@ -7597,7 +7597,7 @@ glass_motion_take(
 			y = server->pointer_y - server->wiseview_press_y;
 			if (x * x + y * y >= TILE_DRAG_START * TILE_DRAG_START) {
 				server->wiseview_dragging = 1;
-				printf("ZWL WISEVIEW drag surface=%u client=%llu\n", server->wiseview_press->id, (unsigned long long)server->wiseview_press->client->number);
+				printf("KWL WISEVIEW drag surface=%u client=%llu\n", server->wiseview_press->id, (unsigned long long)server->wiseview_press->client->number);
 			}
 		}
 
@@ -7651,7 +7651,7 @@ glass_motion_take(
 		if (!server->desktop_dragging && (dx >= DESKTOP_START || dx <= -DESKTOP_START)) {
 			server->desktop_dragging = 1;
 			server->desktop_moving = 0;
-			printf("ZWL GLASS desktop swipe\n");
+			printf("KWL GLASS desktop swipe\n");
 		}
 
 		/* The offset follows the pointer. */
@@ -7764,7 +7764,7 @@ fullscreen_leave_key(
 	/* A window again, told so (a refused configure leaves the window as the compositor draws it). */
 	error = kwl_window_leave_fullscreen(surface);
 	fullscreen_leave_eaten = key;
-	printf("ZWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", surface->id, via, error, (unsigned long long)surface->client->number);
+	printf("KWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", surface->id, via, error, (unsigned long long)surface->client->number);
 
 	/* Succeeded: the key was the compositor's. */
 	return 1;

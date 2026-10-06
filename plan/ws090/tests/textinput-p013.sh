@@ -7,7 +7,7 @@
 #     converts it (漢字), Enter commits it: Text Editor inserts it (TEXT commit ... text=漢字).
 #  3. "kana" and Enter without converting commits the kana かな.
 #  4. Alt+Space back to direct input, "c" typed, Ctrl+S saves: the file is "ab漢字かなc" (read over SSH).
-#  5. The input method's activation follows Text Editor (ZWL IME activate client=).
+#  5. The input method's activation follows Text Editor (KWL IME activate client=).
 #   plan/ws090/tests/textinput-p013.sh [IMAGE] [OUTDIR]   (IMAGE default: build it into build/amd64 and copy it)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -69,7 +69,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.confi
 expect_log /tmp/zdesktop.log 'KEI-IME READY'
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; : > /root/ti.txt; /bin/textedit /root/ti.txt > /tmp/te.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 expect_log /tmp/te.log 'TEXTEDIT READY'
-expect_log /tmp/zdesktop.log 'ZWL IME activate client='
+expect_log /tmp/zdesktop.log 'KWL IME activate client='
 
 # 1. Direct input.
 keys 'ab'
@@ -79,7 +79,7 @@ n=$(count /tmp/te.log 'TEXT commit')
 
 # 2. Japanese: a preedit at the caret, a conversion, a commit.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'kanji'
 expect_log /tmp/te.log 'TEXT input preedit=かんじ'
 sleep 1
@@ -98,7 +98,7 @@ shot committed.png
 
 # 4. Direct input again, then save.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct'
 keys 'c' '<ctrl-s>'
 sleep 2
 guest 'cat /root/ti.txt' | tail -1 > "$out/ti.txt"
@@ -106,9 +106,9 @@ text=$(cat "$out/ti.txt")
 echo "file: $text"
 [ "$text" = "ab漢字かなc" ] && echo "file: ab漢字かなc ok" || { echo "file: ab漢字かなc FAIL"; status=1; }
 guest 'grep -E "TEXT" /tmp/te.log' > "$out/te-text.log"
-guest 'grep -E "ZWL (IME|ERROR)|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
-errors=$(count /tmp/zdesktop.log 'ZWL ERROR')
-[ "$errors" = 0 ] && echo "no ZWL ERROR ok" || { echo "ZWL ERROR FAIL"; status=1; }
+guest 'grep -E "KWL (IME|ERROR)|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
+errors=$(count /tmp/zdesktop.log 'KWL ERROR')
+[ "$errors" = 0 ] && echo "no KWL ERROR ok" || { echo "KWL ERROR FAIL"; status=1; }
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 [ $status -eq 0 ] && echo "textinput-p013: PASS" || echo "textinput-p013: FAIL"
 exit $status

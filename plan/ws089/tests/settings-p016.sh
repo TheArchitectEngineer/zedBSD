@@ -7,8 +7,8 @@
 #  1. Settings started (Home); then Files over it (its window on top).
 #  2. "settings sharing": the second start ends with "ZSETTINGS DONE reason=handed-over page=sharing"; the first logs
 #     "ZSETTINGS INSTANCE request page=sharing known=1 activate=0" and "ZSETTINGS PAGE sharing"; zdesktop logs a granted
-#     token ("ZWL ACTIVATION token ... granted=1 reason=new-program"), "ZWL ACTIVATION activate ... result=activated"
-#     and "ZWL APPS raise ... via=activation"; one settings process runs; sharing.png shows Settings in front on Sharing.
+#     token ("KWL ACTIVATION token ... granted=1 reason=new-program"), "KWL ACTIVATION activate ... result=activated"
+#     and "KWL APPS raise ... via=activation"; one settings process runs; sharing.png shows Settings in front on Sharing.
 #  3. A second Files window over Settings, then "settings" without a page: handed over with an empty page
 #     ("INSTANCE request page= known=0"), activated, raised; front.png.
 #  4. "settings about" while Settings is in front: handed over, the page changes (PAGE about); one process; about.png.
@@ -70,9 +70,9 @@ sleep 2
 expect handed-over /tmp/s2.log 'ZSETTINGS DONE reason=handed-over page=sharing'
 expect request /tmp/s.log 'ZSETTINGS INSTANCE request page=sharing known=1 activate=0'
 expect page /tmp/s.log 'ZSETTINGS PAGE sharing'
-expect token /tmp/zdesktop.log 'ZWL ACTIVATION token client=[0-9]+ app=settings granted=1 reason=new-program'
-expect activated /tmp/zdesktop.log 'ZWL ACTIVATION activate client=[0-9]+ surface=[0-9]+ app=settings result=activated'
-expect raised /tmp/zdesktop.log 'ZWL APPS raise surface=[0-9]+ via=activation'
+expect token /tmp/zdesktop.log 'KWL ACTIVATION token client=[0-9]+ app=settings granted=1 reason=new-program'
+expect activated /tmp/zdesktop.log 'KWL ACTIVATION activate client=[0-9]+ surface=[0-9]+ app=settings result=activated'
+expect raised /tmp/zdesktop.log 'KWL APPS raise surface=[0-9]+ via=activation'
 one_process one-settings
 shot sharing.png
 
@@ -99,7 +99,7 @@ shot about.png
 
 # 5. No ERROR.
 if guest 'grep -c ERROR /tmp/zdesktop.log' | tail -1 | grep -qx 0; then echo "no-error: ok"; else echo "no-error: FAILED"; status=1; fi
-guest 'grep "ZWL ACTIVATION\|via=activation" /tmp/zdesktop.log; grep "INSTANCE\|PAGE\|DONE" /tmp/s.log' | tail -20
+guest 'grep "KWL ACTIVATION\|via=activation" /tmp/zdesktop.log; grep "INSTANCE\|PAGE\|DONE" /tmp/s.log' | tail -20
 
 echo "settings-p016: status $status (pictures in $out)"
 exit $status

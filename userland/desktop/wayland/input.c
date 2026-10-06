@@ -285,9 +285,9 @@ kwl_input_attach(
 
 	/* One line per role lets a test see which devices the seat uses. */
 	if (pointer)
-		printf("ZWL INPUT device=%s kind=pointer abs=%u\n", device->path, device->absolute);
+		printf("KWL INPUT device=%s kind=pointer abs=%u\n", device->path, device->absolute);
 	if (keyboard)
-		printf("ZWL INPUT device=%s kind=keyboard abs=0\n", device->path);
+		printf("KWL INPUT device=%s kind=keyboard abs=0\n", device->path);
 
 	/* Bound seats learn about a new class of device. */
 	update_capabilities(server);
@@ -400,7 +400,7 @@ source_fill(
 
 		/* End of file means the node is gone. */
 		if (count == 0) {
-			printf("ZWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, EIO);
+			printf("KWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, EIO);
 			kwl_input_close(server, source->device);
 			source->done = 1;
 			break;
@@ -415,7 +415,7 @@ source_fill(
 
 		/* Any other failure but an interruption means the device is gone. */
 		if (error != EINTR) {
-			printf("ZWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, error);
+			printf("KWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, error);
 			kwl_input_close(server, source->device);
 			source->done = 1;
 		}
@@ -1093,7 +1093,7 @@ attach_touchpad(
 	device->live = 1;
 
 	/* One line lets a test see the touch pad and its resolution. */
-	printf("ZWL INPUT device=%s kind=touchpad abs=0 resolution=%d,%d size=%d,%d\n", device->path, x.resolution, y.resolution, x.maximum, y.maximum);
+	printf("KWL INPUT device=%s kind=touchpad abs=0 resolution=%d,%d size=%d,%d\n", device->path, x.resolution, y.resolution, x.maximum, y.maximum);
 
 	/* Bound seats learn that a pointer is there. */
 	update_capabilities(server);
@@ -1337,7 +1337,7 @@ attach_tablet(
 	device->live = 1;
 
 	/* One line lets a test see which devices the seat uses. */
-	printf("ZWL INPUT device=%s kind=tablet abs=1\n", device->path);
+	printf("KWL INPUT device=%s kind=tablet abs=1\n", device->path);
 
 	/* Bound seats learn that a pointer (the pen's fallback) is there. */
 	update_capabilities(server);
@@ -1395,7 +1395,7 @@ attach_touch(
 	device->live = 1;
 
 	/* One line lets a test see which devices the seat uses. */
-	printf("ZWL INPUT device=%s kind=touch abs=1\n", device->path);
+	printf("KWL INPUT device=%s kind=touch abs=1\n", device->path);
 
 	/* Bound seats learn that a touch screen (and the pointer of its fallback) is there. */
 	update_capabilities(server);
@@ -1433,7 +1433,7 @@ input_read(
 	}
 
 	/* Retained: the descriptor is forgotten until the seat gives the device back. */
-	printf("ZWL SEAT input_revoked path=%s lease=retained\n", device->path);
+	printf("KWL SEAT input_revoked path=%s lease=retained\n", device->path);
 	device->fd = -1;
 	errno = EAGAIN;
 	return -1;

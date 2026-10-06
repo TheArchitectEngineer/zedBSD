@@ -3,7 +3,7 @@
 
     qwerty-plan.py LOG TEXT MILLISECONDS
 
-LOG is zdesktop's log with the panel's key places (ZWL OSK qrect face=letters|symbols ...), the latest of each face
+LOG is zdesktop's log with the panel's key places (KWL OSK qrect face=letters|symbols ...), the latest of each face
 taken; the panel is taken to show the letters face with Shift off.  The output is the arguments of qmp-pointer.py
 (move x y sleep ms down sleep ms up sleep ms ...) for every tap: the other face's key when the character is on the
 other face, Shift before a character that needs it, then the character's key, each at the middle of its key, spread
@@ -13,7 +13,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import re
 import sys
 
-LINE = re.compile(r'ZWL OSK qrect face=(\w+) row=(\d+) index=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+) label=(.*)$')
+LINE = re.compile(r'KWL OSK qrect face=(\w+) row=(\d+) index=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+) label=(.*)$')
 
 # What each key types without and with Shift, by face and label (keyboard-layout.c): the letters' rows.
 DIGITS = dict(zip('1234567890', '!@#$%^&*()'))

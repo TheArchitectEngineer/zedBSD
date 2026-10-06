@@ -203,7 +203,7 @@ kwl_popup_create(
 	popup_place(created, positioner->positioner);
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL POPUP create client=%llu popup=%u surface=%u parent=%u x=%d y=%d width=%d height=%d\n",
+	printf("KWL POPUP create client=%llu popup=%u surface=%u parent=%u x=%d y=%d width=%d height=%d\n",
 	       (unsigned long long)role->client->number, created->id, role->surface->id,
 	       parent_surface, created->popup_x, created->popup_y, created->popup_width, created->popup_height);
 	return 0;
@@ -274,7 +274,7 @@ kwl_popup_send_configure(
 		return error;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL POPUP configure surface=%u serial=%u x=%d y=%d width=%d height=%d client=%llu\n", surface->id, surface->configure_serial, popup->popup_x, popup->popup_y, popup->popup_width, popup->popup_height, (unsigned long long)surface->client->number);
+	printf("KWL POPUP configure surface=%u serial=%u x=%d y=%d width=%d height=%d client=%llu\n", surface->id, surface->configure_serial, popup->popup_x, popup->popup_y, popup->popup_width, popup->popup_height, (unsigned long long)surface->client->number);
 	return 0;
 }
 
@@ -306,7 +306,7 @@ kwl_popup_mapped(
 	grab = 0U;
 	if (popup != NULL)
 		grab = popup->popup_grab;
-	printf("ZWL POPUP map surface=%u x=%d y=%d grab=%u client=%llu\n", surface->id, surface->x, surface->y, grab, (unsigned long long)surface->client->number);
+	printf("KWL POPUP map surface=%u x=%d y=%d grab=%u client=%llu\n", surface->id, surface->x, surface->y, grab, (unsigned long long)surface->client->number);
 
 	/* Only the grabbing popup on top takes the focus. */
 	if (popup == NULL || server->popup_grab != popup)
@@ -856,7 +856,7 @@ popup_object_request(
 	surface = 0U;
 	if (popup->surface != NULL)
 		surface = popup->surface->id;
-	printf("ZWL POPUP grab popup=%u surface=%u\n", popup->id, surface);
+	printf("KWL POPUP grab popup=%u surface=%u\n", popup->id, surface);
 
 	/* Succeeded: the popup holds the grab. */
 	return 0;
@@ -1362,7 +1362,7 @@ popup_dismiss(
 
 	/* Each live popup of the client is told. */
 	client = server->popup_grab->client;
-	printf("ZWL POPUP dismiss client=%llu\n", (unsigned long long)client->number);
+	printf("KWL POPUP dismiss client=%llu\n", (unsigned long long)client->number);
 	for (object = client->objects; object != NULL; object = object->next) {
 		/* Only a live popup. */
 		if (object->kind != KWL_POPUP || object->dead)

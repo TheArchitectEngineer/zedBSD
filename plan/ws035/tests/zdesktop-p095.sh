@@ -9,7 +9,7 @@
 #  2. wrong.png: a wrong password: "Wrong password" (SESSIOND AUTH fail).
 #  3. The right password (typed with Shift for nothing, a space in it): the greeter ends, the session runs as alice
 #     (zdesktop --session, pid owned by alice, its socket in /run/user/1001), session.png.
-#  4. home.png: App Home has Log Out as its last icon; a click on it ends the session (ZWL SESSION logout).
+#  4. home.png: App Home has Log Out as its last icon; a click on it ends the session (KWL SESSION logout).
 #  5. again.png: the login screen again.  sessiond is then stopped (SIGTERM).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up; GUEST_RUNTIME as for the files tests)
@@ -81,21 +81,21 @@ expect_run 'chmod 0666 /dev/gpu0; ls -l /dev/gpu0' '^crw-rw-rw- .* root '
 
 # 1. The login screen.
 guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open users=3 selected=kei' 20
-expect_log /var/log/greeter.log 'ZWL OUTPUT open' 20
-set -- $(guest "grep 'ZWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
+expect_log /var/log/greeter.log 'KWL GREETER open users=3 selected=kei' 20
+expect_log /var/log/greeter.log 'KWL OUTPUT open' 20
+set -- $(guest "grep 'KWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
 width=${1:-1280}; height=${2:-800}
 echo "output ${width}x$height"
 sleep 3
 pointer move $((width - 4)) $((height / 3)) sleep 400
 keys '<down>'
-expect_log /var/log/greeter.log 'ZWL GREETER select user=alice' 10
+expect_log /var/log/greeter.log 'KWL GREETER select user=alice' 10
 check "$out/greeter.png" >/dev/null
 
 # 2. A wrong password.
 keys 'nope' '\n'
 expect_log /var/log/sessiond.log 'AUTH fail user=alice wrong=1' 10
-expect_log /var/log/greeter.log 'ZWL GREETER answer=FAIL' 10
+expect_log /var/log/greeter.log 'KWL GREETER answer=FAIL' 10
 sleep 1
 check "$out/wrong.png" >/dev/null
 keys 'abc'
@@ -107,7 +107,7 @@ keys '<esc>'
 keys 'secret word' '\n'
 expect_log /var/log/sessiond.log 'AUTH ok user=alice uid=1001' 10
 expect_log /var/log/sessiond.log 'SESSION start user=alice' 15
-expect_log /run/user/1001/session.log 'ZWL READY socket=/run/user/1001/wayland-0' 20
+expect_log /run/user/1001/session.log 'KWL READY socket=/run/user/1001/wayland-0' 20
 guest "ps -A -o user,pid,args" | grep -E 'zdesktop|sessiond|greeter'
 owner=$(guest "ps -A -o user,args" | awk '$2 == "/bin/wayland" {print $1}' | tail -1)
 echo "session zdesktop user: $owner"
@@ -118,14 +118,14 @@ check "$out/session.png" >/dev/null
 # 4. App Home's Log Out.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 check "$out/home.png" >/dev/null
-set -- $(guest "grep 'ZWL HOME icon name=\"Log Out\"' /run/user/1001/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/1001/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 echo "Log Out at ${1:-?},${2:-?}"
 if [ -n "${1:-}" ]; then
 	pointer move "$1" "$2" sleep 400 down sleep 60 up sleep 500
 else
 	status=1
 fi
-expect_log /run/user/1001/session.log 'ZWL SESSION logout' 10
+expect_log /run/user/1001/session.log 'KWL SESSION logout' 10
 expect_log /var/log/sessiond.log 'SESSION end user=alice' 20
 
 # 5. The login screen again.

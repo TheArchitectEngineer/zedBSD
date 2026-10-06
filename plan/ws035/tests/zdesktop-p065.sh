@@ -35,9 +35,9 @@ expect_log() {
 
 # zdesktop and the red window on desktop 1.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/wlshm --size=520x340 --color=ffd04040 --frames=20000 --token=r > /tmp/r.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
-set -- $(guest "grep 'ZWL GLASS desktops' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([0-9]*\) step=\([0-9]*\) width=\([0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL GLASS desktops' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([0-9]*\) step=\([0-9]*\) width=\([0-9]*\).*/\1 \2 \3/p')
 dx=${1:-850}; dstep=${2:-46}; dwidth=${3:-40}
 desk() { echo $((dx + ($1 - 1) * dstep + dwidth / 2)); }
 pointer move 1250 780 sleep 400
@@ -48,28 +48,28 @@ pointer move $(desk 2) 17 sleep 300 down sleep 60 up sleep 800
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/wlshm --size=520x340 --color=ff4060d0 --frames=20000 --token=u > /tmp/u.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 pointer move 1250 780 sleep 400
 check "$out/desk2.png" --expect 640,450,4060d0 || status=1
-expect_log 'ZWL GLASS desktop=2 via=bar'
+expect_log 'KWL GLASS desktop=2 via=bar'
 
 # 3. A swipe from the left edge: both windows in view half way, then desktop 1.
 pointer move 4 450 sleep 200 down sleep 100 move 150 450 sleep 80 move 350 450 sleep 80 move 640 450 sleep 400
 check "$out/swipe.png" >/dev/null
 pointer up sleep 800 move 1250 780 sleep 400
 check "$out/back1.png" --expect 640,450,d04040 || status=1
-expect_log 'ZWL GLASS desktop swipe'
-expect_log 'ZWL GLASS desktop=1 via=swipe'
+expect_log 'KWL GLASS desktop swipe'
+expect_log 'KWL GLASS desktop=1 via=swipe'
 
 # 4. The keys, and a short swipe that goes back.
 keys '<ctrl-alt-right>'
 sleep 1
 pointer move 1250 780 sleep 400
 check "$out/key2.png" --expect 640,450,4060d0 || status=1
-expect_log 'ZWL GLASS desktop=2 via=key'
+expect_log 'KWL GLASS desktop=2 via=key'
 pointer move 1275 450 sleep 200 down sleep 100 move 1200 450 sleep 80 move 1100 450 sleep 200 up sleep 800
-expect_log 'ZWL GLASS desktop=2 via=swipe'
+expect_log 'KWL GLASS desktop=2 via=swipe'
 keys '<ctrl-alt-left>'
 sleep 1
-expect_log 'ZWL GLASS desktop=1 via=key'
-expect_log 'ZWL GLASS desktop settled desktop=1 windows=1'
+expect_log 'KWL GLASS desktop=1 via=key'
+expect_log 'KWL GLASS desktop settled desktop=1 windows=1'
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "zdesktop-p065: PASS (and judge the screens)" || echo "zdesktop-p065: FAIL"
 exit $status

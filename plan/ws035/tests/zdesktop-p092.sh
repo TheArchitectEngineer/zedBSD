@@ -2,7 +2,7 @@
 # ws035-p092: where new windows go, and the title bars over dark windows, on the Venus guest (the browser
 # image, plan/ws074/tests/build-browser-image.sh).  It runs the demo sheet (plan/ws035/tests/zdesktop-p090.sh with
 # the demo image's App Home list: Files, Terminal, Browser, Model viewer, Gears, X terminal, one after another)
-# and then checks the places zdesktop logged (ZWL MAP): no window's corner within 32 pixels of an earlier one's,
+# and then checks the places zdesktop logged (KWL MAP): no window's corner within 32 pixels of an earlier one's,
 # and every corner inside the space under the system bar.  The sheet's pictures (99-all.png: the inactive
 # title bars over the dark windows, the letters from the application IDs) are judged by eye.
 #
@@ -16,7 +16,7 @@ status=0
 sh plan/ws035/tests/zdesktop-p090.sh "$out" demo || status=1
 
 # The places, in the order the windows came (the client and the corner).
-grep 'ZWL MAP ' "$out/zdesktop.log" | sed -n 's/.*client=\([0-9]*\) surface=[0-9]* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p' > "$out/places.txt"
+grep 'KWL MAP ' "$out/zdesktop.log" | sed -n 's/.*client=\([0-9]*\) surface=[0-9]* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p' > "$out/places.txt"
 echo "places (client x y):"
 cat "$out/places.txt"
 awk '

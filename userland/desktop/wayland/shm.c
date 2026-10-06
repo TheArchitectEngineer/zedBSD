@@ -548,7 +548,7 @@ surface_upload(
 			return ENOMEM;
 		result = image_create(server->compose, shm->width, shm->height, server->compose->sampler, image);
 		if (result != VK_SUCCESS) {
-			printf("ZWL VULKAN_ERROR operation=shm_image result=%d\n", (int)result);
+			printf("KWL VULKAN_ERROR operation=shm_image result=%d\n", (int)result);
 			image_release(server->compose, image);
 			free(image);
 			return EIO;
@@ -587,7 +587,7 @@ surface_upload(
 		sum = 2166136261U;
 		for (y = first; y < last; y += 16)
 			sum = (sum ^ kwl_row_sum(target + (size_t)y * image->row_pitch, shm->width)) * 16777619U;
-		printf("ZWL SHM_COPY client=%llu surface=%u buffer=%u rows=%d-%d sum=%08x\n", (unsigned long long)surface->client->number, surface->id,
+		printf("KWL SHM_COPY client=%llu surface=%u buffer=%u rows=%d-%d sum=%08x\n", (unsigned long long)surface->client->number, surface->id,
 		       buffer->id, first, last, (unsigned)sum);
 	}
 

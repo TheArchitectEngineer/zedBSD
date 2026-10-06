@@ -46,7 +46,7 @@ expect_log() {
 
 # The place of a client's window (from zdesktop's MAP line).
 window_of() {
-	guest "grep 'ZWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
 }
 
 # Clicks a point (with a small approach, so that the motion is seen before the press).
@@ -56,7 +56,7 @@ click() {
 
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/p079-pasted; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=400 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/data-probe --token=a --color=3060c0 --text="hello from a" --timeout-s=300 > /tmp/a.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 expect_log /tmp/a.log 'DATAPROBE ready run=a'
 expect_log /tmp/a.log 'DATAPROBE focus'
@@ -65,7 +65,7 @@ expect_log /tmp/a.log 'DATAPROBE focus'
 keys 's'
 expect_log /tmp/a.log 'DATAPROBE set selection text=hello from a'
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL DATA selection client=$zc1 source=[0-9]+ types=2"
+expect_log /tmp/zdesktop.log "KWL DATA selection client=$zc1 source=[0-9]+ types=2"
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/data-probe --token=b --color=30a050 --text="b says hi" --timeout-s=300 > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 expect_log /tmp/b.log 'DATAPROBE ready run=b'
 expect_log /tmp/b.log 'DATAPROBE type text/plain;charset=utf-8'
@@ -82,7 +82,7 @@ click $((ax + 20)) $((ay + 20))
 expect_log /tmp/a.log 'DATAPROBE focus' 2
 keys 'q'
 expect_log /tmp/a.log 'DATAPROBE source destroyed'
-expect_log /tmp/zdesktop.log 'ZWL DATA selection none \(source gone\)'
+expect_log /tmp/zdesktop.log 'KWL DATA selection none \(source gone\)'
 click $((bx + 285)) $((by + 190))
 expect_log /tmp/b.log 'DATAPROBE selection none'
 
@@ -100,7 +100,7 @@ sleep 2
 keys 'echo p079-copy-me' '<ret>'
 sleep 1
 keys '<ctrl-shift-a>' '<ctrl-shift-c>'
-expect_log /tmp/zdesktop.log "ZWL DATA selection client=$zc3 "
+expect_log /tmp/zdesktop.log "KWL DATA selection client=$zc3 "
 check "$out/terminal-copy.png" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/data-probe --token=c --color=a05030 --text="touch /tmp/p079-pasted
 " --timeout-s=300 > /tmp/c.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null

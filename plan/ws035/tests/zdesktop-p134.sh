@@ -59,11 +59,11 @@ double_click() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/t.log 'ZTERM START'
 kwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-0}; ty=${2:-0}
 set -- $(guest "grep 'ZTERM START' /tmp/t.log | tail -1" | sed -n 's/.* columns=\([0-9]*\) .* window=\([0-9]*\)x\([0-9]*\).*/\1 \2 \3/p')
 columns=${1:-80}; tw=${2:-0}; th=${3:-0}
@@ -81,7 +81,7 @@ corners "$out/terminal.png" "$tx" "$(title_y "$ty")" "$tw" 44 round terminal-tit
 # 2. The probe over it (its corners are checked alone, in 5).
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/popup-probe --timeout-s=300 --token=p > /tmp/p.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/p.log 'POPUPPROBE ready run=p'
-set -- $(guest "grep 'ZWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 px=${1:-0}; py=${2:-0}
 echo "probe at $px,$py size 400x300"
 pointer move 5 790 sleep 600
@@ -90,7 +90,7 @@ check "$out/both.png" >/dev/null
 # 3. Wiseview.
 keys '<super-tab>'
 sleep 1.5
-expect_log /tmp/zdesktop.log 'ZWL WISEVIEW opening key'
+expect_log /tmp/zdesktop.log 'KWL WISEVIEW opening key'
 check "$out/wiseview.png" >/dev/null
 keys '<esc>'
 sleep 1
@@ -98,17 +98,17 @@ sleep 1
 # 4. Docked (maximized) and back: the probe goes first, then a double click on the terminal's title bar.
 guest 'for p in $(ps -A -o pid,args | grep "[p]opup-probe" | awk "{print \$1}"); do kill $p; done; sleep 1; echo ok' >/dev/null
 double_click $((tx + tw / 2)) $((ty - 8 - 22))
-expect_log /tmp/zdesktop.log 'ZWL GLASS dock surface=[0-9]+ via='
-set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) w=\([0-9]*\) h=\([0-9]*\).*/\1 \2 \3 \4/p')
+expect_log /tmp/zdesktop.log 'KWL GLASS dock surface=[0-9]+ via='
+set -- $(guest "grep 'KWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) w=\([0-9]*\) h=\([0-9]*\).*/\1 \2 \3 \4/p')
 dx=${1:-8}; dy=${2:-52}; dw=${3:-1264}; dh=${4:-740}
 echo "docked at $dx,$dy size ${dw}x$dh"
 sleep 1.5
 pointer move 1200 400 sleep 600
 check "$out/maximized.png" >/dev/null
 corners "$out/maximized.png" "$dx" "$dy" "$dw" "$dh" square docked-body
-set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* title=\([0-9]*\) .*/\1/p')
+set -- $(guest "grep 'KWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* title=\([0-9]*\) .*/\1/p')
 double_click $((${1:-400} + 20)) 17
-expect_log /tmp/zdesktop.log 'ZWL GLASS undock surface=[0-9]+ via='
+expect_log /tmp/zdesktop.log 'KWL GLASS undock surface=[0-9]+ via='
 sleep 1.5
 pointer move 5 790 sleep 600
 check "$out/restored.png" >/dev/null
@@ -119,7 +119,7 @@ corners "$out/restored.png" "$tx" "$(title_y "$ty")" "$tw" 44 round restored-tit
 guest 'for p in $(ps -A -o pid,args | grep "[t]erminal" | awk "{print \$1}"); do kill $p; done; sleep 1
 export XDG_RUNTIME_DIR=/tmp; /bin/popup-probe --timeout-s=300 --token=q > /tmp/q.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 expect_log /tmp/q.log 'POPUPPROBE ready run=q'
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 qx=${1:-0}; qy=${2:-0}
 echo "probe alone at $qx,$qy size 400x300"
 pointer move 5 790 sleep 600

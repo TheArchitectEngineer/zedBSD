@@ -51,27 +51,27 @@ shot() {
 }
 
 # 1. The drawn wallpaper: the picture aside, the greeter again.
-expect_log /var/log/greeter.log 'ZWL GREETER open' 60
+expect_log /var/log/greeter.log 'KWL GREETER open' 60
 guest 'mv /usr/share/keiland/wallpaper.png /tmp/wallpaper.ppm.saved; echo moved' >/dev/null
 sleep 21
 guest 'kill $(sed -n "s/.*SESSIOND GREETER start pid=\([0-9]*\).*/\1/p" /var/log/sessiond.log | tail -1); echo killed' >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open' 30 2
+expect_log /var/log/greeter.log 'KWL GREETER open' 30 2
 sleep 3
 shot greeter.png
 
 # 2. The session.
 keys '\n'
-expect_log $session 'ZWL HANDOFF go=1' 30
+expect_log $session 'KWL HANDOFF go=1' 30
 sleep 3
 shot desktop.png
 
 # 3. The lock screen.
 keys '<super-l>'
-expect_log $session 'ZWL LOCK locked reason=key' 5
+expect_log $session 'KWL LOCK locked reason=key' 5
 sleep 1
 shot locked.png
 keys '\n'
-expect_log $session 'ZWL LOCK unlocked' 8
+expect_log $session 'KWL LOCK unlocked' 8
 
 # 4. files on its Home, then on an empty folder.
 guest 'export XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0; /bin/files --token=h --timeout-s=120 > /tmp/fh.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null

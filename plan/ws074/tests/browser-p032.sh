@@ -56,7 +56,7 @@ start() {
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; /bin/browser --width=$2 --height=$3 $1 > /tmp/b.log 2>&1 </dev/null & sleep $4; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 	wx=${1:-0}
 	wy=${2:-0}
 	echo "browser: window at $wx,$wy"

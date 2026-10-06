@@ -107,20 +107,20 @@ start_settings mouse
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=3 '
 slide 2 right
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.speed value=300 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=300'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=mouse.speed applied value=300'
 slide 6 left
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.acceleration value=0 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.acceleration applied value=0'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=mouse.acceleration applied value=0'
 control 3
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.natural value=1 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.natural applied value=1'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=mouse.natural applied value=1'
 shot mouse.png
 slide 2 middle
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.speed value=150 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.speed applied value=150'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=mouse.speed applied value=150'
 control 3
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=mouse.natural value=0 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=mouse.natural applied value=0'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=mouse.natural applied value=0'
 
 # 1b. Touchpad.
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
@@ -130,10 +130,10 @@ expect_log /tmp/s.log 'ZSETTINGS CONTROL index=9 '
 shot touchpad.png
 slide 7 right
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=touchpad.speed value=300 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=touchpad.speed applied value=300'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=touchpad.speed applied value=300'
 control 9
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=touchpad.natural value=0 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=touchpad.natural applied value=0'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=touchpad.natural applied value=0'
 
 # 2. Keyboard.
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
@@ -142,10 +142,10 @@ start_settings keyboard
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=5 '
 slide 4 right
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=keyboard.repeat.rate value=60 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.rate applied value=60'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=keyboard.repeat.rate applied value=60'
 slide 5 left
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=keyboard.repeat.delay value=150 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.delay applied value=150'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=keyboard.repeat.delay applied value=150'
 shot keyboard.png
 
 # 3. Sound and Home.

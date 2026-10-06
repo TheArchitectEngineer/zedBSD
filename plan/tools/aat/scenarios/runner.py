@@ -11,7 +11,7 @@ order: a helper of the same id (helpers_*.py) runs it and records its
 steps (OUTDIR/records/ID.md); a scenario for the real machine on QEMU is
 not-run; one without a helper is needs-person when it needs hands, and
 by-agent otherwise (an agent carries it out from its document).  Before
-them: aat check, the session's ZWL READY, aat-input started, the samples
+them: aat check, the session's KWL READY, aat-input started, the samples
 put.  After them: OUTDIR/summary.md (the run's record: the target, the
 image, every verdict with its note, screenshots and record) and
 OUTDIR/summary.tsv; --record copies the record to PATH (the plan's
@@ -116,9 +116,9 @@ def preflight(target: list[str], outdir: Path, samples: bool) -> list[str]:
 	if check.returncode != 0:
 		problems.append(f"aat check: {(check.stdout + check.stderr).strip().splitlines()[-1:]}")
 		return problems
-	ready = aat(target, "wait-log", r"ZWL READY socket=\S+ .* role=normal", "--timeout", "180", timeout=400)
+	ready = aat(target, "wait-log", r"KWL READY socket=\S+ .* role=normal", "--timeout", "180", timeout=400)
 	if ready.returncode != 0:
-		problems.append("no session (no ZWL READY ... role=normal)")
+		problems.append("no session (no KWL READY ... role=normal)")
 		return problems
 	size = re.search(r"width=(\d+) height=(\d+)", ready.stdout)
 	start = aat(target, "start", "--size", f"{size.group(1)}x{size.group(2)}", timeout=120)

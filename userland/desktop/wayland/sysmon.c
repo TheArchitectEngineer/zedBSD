@@ -126,7 +126,7 @@ kwl_sysmon_create(
 	created->monitor_period = sysmon_period(period);
 	created->monitor_waiting = 0;
 	created->monitor_info = 0;
-	printf("ZWL SYSTEM monitor client=%llu id=%u period=%u\n", (unsigned long long)manager->client->number, id, created->monitor_period);
+	printf("KWL SYSTEM monitor client=%llu id=%u period=%u\n", (unsigned long long)manager->client->number, id, created->monitor_period);
 
 	/* The info, when the thread has read one. */
 	if (sysmon_state.taken_info != 0U)
@@ -436,7 +436,7 @@ sysmon_scan(
 
 	/* The log says when the count changes. */
 	if (count != sysmon_state.subscribers)
-		printf("ZWL SYSTEM monitor subscribers=%u period=%u\n", count, period);
+		printf("KWL SYSTEM monitor subscribers=%u period=%u\n", count, period);
 	sysmon_state.subscribers = count;
 
 	/* A thread asked to stop is joined once it ended. */
@@ -480,7 +480,7 @@ sysmon_scan(
 	if (!sysmon_state.running) {
 		error = sysmon_start();
 		if (error != 0)
-			printf("ZWL SYSTEM monitor thread error=%d\n", error);
+			printf("KWL SYSTEM monitor thread error=%d\n", error);
 	}
 }
 

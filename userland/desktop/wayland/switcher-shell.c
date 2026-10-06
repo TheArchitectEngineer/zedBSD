@@ -123,7 +123,7 @@ kwl_switch_open(
 
 	/* Logged and shown. */
 	selected = kwl_switcher_selected(&server->switcher);
-	printf("ZWL SWITCH open via=%s index=%u app=%s placement=%s count=%u at_ms=%llu\n", via_name(via), server->switcher.index, selected, placement_name(placement), server->switcher.count, (unsigned long long)kwl_milliseconds());
+	printf("KWL SWITCH open via=%s index=%u app=%s placement=%s count=%u at_ms=%llu\n", via_name(via), server->switcher.index, selected, placement_name(placement), server->switcher.count, (unsigned long long)kwl_milliseconds());
 	present(server);
 	return 1;
 }
@@ -146,7 +146,7 @@ kwl_switch_step(
 	/* The next one, logged and shown. */
 	kwl_switcher_step(&server->switcher, delta);
 	selected = kwl_switcher_selected(&server->switcher);
-	printf("ZWL SWITCH step index=%u app=%s via=%s at_ms=%llu\n", server->switcher.index, selected, how, (unsigned long long)kwl_milliseconds());
+	printf("KWL SWITCH step index=%u app=%s via=%s at_ms=%llu\n", server->switcher.index, selected, how, (unsigned long long)kwl_milliseconds());
 	present(server);
 }
 
@@ -190,7 +190,7 @@ kwl_switch_cancel(
 		return;
 
 	/* Closed. */
-	printf("ZWL SWITCH cancel via=%s\n", why);
+	printf("KWL SWITCH cancel via=%s\n", why);
 	close_switcher(server);
 }
 
@@ -365,7 +365,7 @@ kwl_switch_button(
 
 	/* A preview: its window. */
 	if (built && tile >= 0) {
-		printf("ZWL SWITCH commit app=%s surface=%u via=preview client=%llu\n", view.apps.apps[found].key, panel.surfaces[tile]->id, (unsigned long long)panel.surfaces[tile]->client->number);
+		printf("KWL SWITCH commit app=%s surface=%u via=preview client=%llu\n", view.apps.apps[found].key, panel.surfaces[tile]->id, (unsigned long long)panel.surfaces[tile]->client->number);
 		close_switcher(server);
 		kwl_glass_switch_to(server, panel.surfaces[tile], "switch");
 		return 1;
@@ -570,7 +570,7 @@ present(
 	/* Otherwise in the middle. */
 	server->switcher.placement = KWL_SWITCHER_CENTER;
 	kwl_apps_bar_hide(server, "switch");
-	printf("ZWL SWITCH center app=%s\n", selected);
+	printf("KWL SWITCH center app=%s\n", selected);
 }
 
 /*
@@ -676,7 +676,7 @@ bring_app(
 
 	/* Its latest raised window. */
 	surface = view->surfaces[view->apps.apps[found].windows[0]];
-	printf("ZWL SWITCH commit app=%s surface=%u via=%s at_ms=%llu client=%llu\n", view->apps.apps[found].key, surface->id, how, (unsigned long long)kwl_milliseconds(), (unsigned long long)surface->client->number);
+	printf("KWL SWITCH commit app=%s surface=%u via=%s at_ms=%llu client=%llu\n", view->apps.apps[found].key, surface->id, how, (unsigned long long)kwl_milliseconds(), (unsigned long long)surface->client->number);
 
 	/* Closed, then brought. */
 	close_switcher(server);
@@ -706,7 +706,7 @@ alt_released(
 
 	/* Left open by this release (the first after a quick Alt+Tab); the log says so once. */
 	if (!sticky && server->switcher.sticky)
-		printf("ZWL SWITCH stay via=quick-alt index=%u app=%s held_ms=%llu\n", server->switcher.index, kwl_switcher_selected(&server->switcher), (unsigned long long)(now - server->switcher.opened_ms));
+		printf("KWL SWITCH stay via=quick-alt index=%u app=%s held_ms=%llu\n", server->switcher.index, kwl_switcher_selected(&server->switcher), (unsigned long long)(now - server->switcher.opened_ms));
 }
 
 /* Closes the switcher and its previews. */

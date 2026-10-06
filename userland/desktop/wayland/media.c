@@ -115,7 +115,7 @@ kwl_media_tick(
 		known = media_fresh(list[index].id);
 		if (!known) {
 			media_view.blink_ms = kwl_milliseconds();
-			printf("ZWL MEDIA new id=%s label=%s\n", list[index].id, list[index].label);
+			printf("KWL MEDIA new id=%s label=%s\n", list[index].id, list[index].label);
 		}
 	}
 
@@ -124,7 +124,7 @@ kwl_media_tick(
 	media_view.count = count;
 	media_view.shown = shown;
 	server->dirty = 1;
-	printf("ZWL MEDIA volumes=%zu icon=%u\n", count, shown);
+	printf("KWL MEDIA volumes=%zu icon=%u\n", count, shown);
 
 	/* Succeeded: what changed. */
 	return changed;
@@ -246,7 +246,7 @@ kwl_media_draw_icon(
 	/* Where it is, once each time it shows (the tests click it). */
 	if (!media_view.icon_logged) {
 		media_view.icon_logged = 1U;
-		printf("ZWL MEDIA icon x=%d y=%d width=%d height=%d\n", media_view.icon_x, media_view.icon_y, media_view.icon_width, media_view.icon_height);
+		printf("KWL MEDIA icon x=%d y=%d width=%d height=%d\n", media_view.icon_x, media_view.icon_y, media_view.icon_width, media_view.icon_height);
 	}
 
 	/* The ink, fading in each blink's first half and coming back in its second. */
@@ -288,7 +288,7 @@ kwl_media_button(
 	/* Files on its devices; the blinks end. */
 	media_view.blink_ms = 0U;
 	child = kwl_spawn(server, MEDIA_FILES);
-	printf("ZWL MEDIA files pid=%d\n", (int)child);
+	printf("KWL MEDIA files pid=%d\n", (int)child);
 
 	/* Succeeded: the press was the icon's. */
 	return 1;

@@ -2,7 +2,7 @@
 # ws089-p006: the demonstration's walk through Settings on the Venus guest (the lean image, build-settings-image.sh).
 # zdesktop --glass at 1280x800 with the session's wallpaper; root's home.  The test waits for the guest's SSH and for
 # zdesktop's READY first (settings-wait.sh).
-#  1. App Home: the Settings tile (the cog) is there; a click starts Settings (ZWL HOME launch name=Settings) and its
+#  1. App Home: the Settings tile (the cog) is there; a click starts Settings (KWL HOME launch name=Settings) and its
 #     window maps (apphome.png, launched.png).
 #  2. Every page in the list's order: Settings at Home, then Down key by key through all 24 pages, a picture of each
 #     (NN-WORD.png) and the page's line in the log (ZSETTINGS PAGE WORD).
@@ -102,17 +102,17 @@ guest "rm -f $conf" >/dev/null
 guest "$start_desktop" >/dev/null
 wait_desktop
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-expect_log /tmp/zdesktop.log 'ZWL HOME icon name="Settings"'
+expect_log /tmp/zdesktop.log 'KWL HOME icon name="Settings"'
 shot apphome.png
-set -- $(guest "grep 'ZWL HOME icon name=\"Settings\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL HOME icon name=\"Settings\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 if [ -n "${1:-}" ]; then
 	pointer move "$1" "$2" sleep 400 down sleep 60 up sleep 3000
 else
 	echo "no Settings icon"
 	status=1
 fi
-expect_log /tmp/zdesktop.log 'ZWL HOME launch name=Settings pid=[0-9]+'
-expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
+expect_log /tmp/zdesktop.log 'KWL HOME launch name=Settings pid=[0-9]+'
+expect_log /tmp/zdesktop.log 'KWL MAP client=[0-9]+ '
 shot launched.png
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null
 sleep 1

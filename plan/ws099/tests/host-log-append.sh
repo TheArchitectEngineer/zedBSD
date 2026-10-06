@@ -18,7 +18,7 @@ for mode in plain append; do
 	"$out/writer" "$file" $mode > "$file" &
 	sleep 0.3
 	: > "$file"
-	echo "ZWL READY new run" >> "$file"
+	echo "KWL READY new run" >> "$file"
 	wait
 	count=$(nuls "$file")
 	echo "$mode: NUL bytes=$count"

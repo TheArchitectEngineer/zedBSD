@@ -745,7 +745,7 @@ kwl_keyboard_touch_down(
 	}
 
 	/* Succeeded: said for the tests. */
-	printf("ZWL OSK touch down id=%u x=%d y=%d taken=%d rollover=%d\n", id, x, y, taken, rolled);
+	printf("KWL OSK touch down id=%u x=%d y=%d taken=%d rollover=%d\n", id, x, y, taken, rolled);
 	return taken;
 }
 
@@ -808,7 +808,7 @@ kwl_keyboard_touch_up(
 	/* The press is no finger's now. */
 	if (keyboard.touch_owner == id + 1U)
 		keyboard.touch_owner = 0U;
-	printf("ZWL OSK touch up id=%u x=%d y=%d acted=%d\n", id, x, y, acted);
+	printf("KWL OSK touch up id=%u x=%d y=%d acted=%d\n", id, x, y, acted);
 	return 1;
 }
 
@@ -834,7 +834,7 @@ kwl_keyboard_touch_cancel(
 	keyboard.band_active = 0;
 	keyboard.hand_key_active = 0;
 	server->dirty = 1;
-	printf("ZWL OSK touch cancel id=%u\n", id);
+	printf("KWL OSK touch cancel id=%u\n", id);
 }
 
 /*
@@ -882,15 +882,15 @@ kwl_keyboard_tick(
 	/* The corners' places, once, for the tests. */
 	if (!keyboard.zones_logged && server->width > 0U) {
 		keyboard.zones_logged = 1;
-		printf("ZWL OSK zone kind=flick x=%d y=%d size=%d\n", (int)server->width - KEYBOARD_ZONE, (int)server->height - KEYBOARD_ZONE, KEYBOARD_ZONE);
-		printf("ZWL OSK zone kind=qwerty x=0 y=%d size=%d\n", (int)server->height - KEYBOARD_ZONE, KEYBOARD_ZONE);
+		printf("KWL OSK zone kind=flick x=%d y=%d size=%d\n", (int)server->width - KEYBOARD_ZONE, (int)server->height - KEYBOARD_ZONE, KEYBOARD_ZONE);
+		printf("KWL OSK zone kind=qwerty x=0 y=%d size=%d\n", (int)server->height - KEYBOARD_ZONE, KEYBOARD_ZONE);
 	}
 
 	/* A contact whose release never came (its device went away with the button held) ends. */
 	if (keyboard.contact.active && (server->buttons_down & 1U) == 0U) {
 		keyboard.contact.active = 0;
 		server->dirty = 1;
-		printf("ZWL OSK cancel reason=lost\n");
+		printf("KWL OSK cancel reason=lost\n");
 	}
 
 	/* So does a press on the panel (not a finger's, which touch.c ends, ws102-p009). */
@@ -904,7 +904,7 @@ kwl_keyboard_tick(
 	    !keyboard.contact.expired &&
 	    now - keyboard.contact.start_clock_ms > KEYBOARD_ARM_MS) {
 		keyboard.contact.expired = 1;
-		printf("ZWL OSK cancel reason=timeout\n");
+		printf("KWL OSK cancel reason=timeout\n");
 	}
 
 	/* The windows the work area moves follow the slide, and are left at their ends once it is over. */
@@ -961,7 +961,7 @@ kwl_keyboard_tick(
 	if (same != 0) {
 		memcpy(keyboard.panel, rect, sizeof(rect));
 		server->dirty = 1;
-		printf("ZWL OSK place kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(keyboard.open), rect[0], rect[1], rect[2], rect[3]);
+		printf("KWL OSK place kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(keyboard.open), rect[0], rect[1], rect[2], rect[3]);
 	}
 }
 
@@ -1021,7 +1021,7 @@ kwl_keyboard_close(
 		return;
 
 	/* The panel goes, going back into its edge (drawn until it is in). */
-	printf("ZWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
+	printf("KWL OSK close kind=%s reason=%s\n", keyboard_kind_name(keyboard.open), reason);
 	keyboard.leaving = keyboard.open;
 	keyboard.slide_ms = kwl_milliseconds();
 	keyboard.open = PANEL_NONE;
@@ -1183,7 +1183,7 @@ keyboard_contact_begin(
 	keyboard_sample(x, y, time);
 
 	/* Succeeded: the contact is the keyboard's. */
-	printf("ZWL OSK press corner=%s source=%s x=%d y=%d\n", keyboard_kind_name(corner), keyboard_source_name(server->shell_source), x, y);
+	printf("KWL OSK press corner=%s source=%s x=%d y=%d\n", keyboard_kind_name(corner), keyboard_source_name(server->shell_source), x, y);
 	return 1;
 }
 
@@ -1225,7 +1225,7 @@ keyboard_contact_move(
 	elapsed = time - keyboard.contact.start_time;
 	if (elapsed > KEYBOARD_ARM_MS) {
 		keyboard.contact.expired = 1;
-		printf("ZWL OSK cancel reason=timeout\n");
+		printf("KWL OSK cancel reason=timeout\n");
 		return 1;
 	}
 
@@ -1237,7 +1237,7 @@ keyboard_contact_move(
 	/* Succeeded: the contact is armed, and the hint shows from now on. */
 	keyboard.contact.armed = 1;
 	server->dirty = 1;
-	printf("ZWL OSK armed corner=%s ms=%u\n", keyboard_kind_name(keyboard.contact.corner), elapsed);
+	printf("KWL OSK armed corner=%s ms=%u\n", keyboard_kind_name(keyboard.contact.corner), elapsed);
 	return 1;
 }
 
@@ -1278,7 +1278,7 @@ keyboard_contact_end(
 	/* A contact that never armed ends without effect, like a tap in the corner. */
 	if (!keyboard.contact.armed) {
 		keyboard.contact.active = 0;
-		printf("ZWL OSK cancel reason=unarmed\n");
+		printf("KWL OSK cancel reason=unarmed\n");
 		return 1;
 	}
 
@@ -1287,7 +1287,7 @@ keyboard_contact_end(
 	diagonal = keyboard_on_diagonal(inwards, upwards);
 	if (!diagonal) {
 		keyboard.contact.active = 0;
-		printf("ZWL OSK cancel reason=direction\n");
+		printf("KWL OSK cancel reason=direction\n");
 		return 1;
 	}
 
@@ -1307,7 +1307,7 @@ keyboard_contact_end(
 
 	/* Succeeded: too short and too slow, the contact is let go. */
 	keyboard.contact.active = 0;
-	printf("ZWL OSK cancel reason=short progress=%.0f speed=%.2f\n", (double)progress, (double)speed);
+	printf("KWL OSK cancel reason=short progress=%.0f speed=%.2f\n", (double)progress, (double)speed);
 	return 1;
 }
 
@@ -1451,7 +1451,7 @@ keyboard_commit(
 	/* The contact is over. */
 	corner = keyboard.contact.corner;
 	keyboard.contact.active = 0;
-	printf("ZWL OSK commit corner=%s via=%s progress=%.0f\n", keyboard_kind_name(corner), via, (double)progress);
+	printf("KWL OSK commit corner=%s via=%s progress=%.0f\n", keyboard_kind_name(corner), via, (double)progress);
 
 	/* The same panel again closes it. */
 	if (keyboard.open == corner) {
@@ -1482,7 +1482,7 @@ keyboard_open(
 	server->dirty = 1;
 
 	/* The log line the tests read, and the QWERTY panel's keys' places. */
-	printf("ZWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
+	printf("KWL OSK open kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(kind), keyboard.panel[0], keyboard.panel[1], keyboard.panel[2], keyboard.panel[3]);
 
 	/* The work area less the panel; the windows follow it (their insets told before their configures, inset.c). */
 	keyboard_work_area(server);
@@ -1506,7 +1506,7 @@ keyboard_put_away(
 	kwl_keyboard_close(server, reason);
 	keyboard.restore = kind;
 	keyboard.restore_focus = server->focus;
-	printf("ZWL OSK put-away kind=%s reason=%s\n", keyboard_kind_name(kind), reason);
+	printf("KWL OSK put-away kind=%s reason=%s\n", keyboard_kind_name(kind), reason);
 }
 
 /*
@@ -1524,7 +1524,7 @@ keyboard_restore(
 
 	/* The login and lock screens end the wait. */
 	if (server->greeter || server->locked) {
-		printf("ZWL OSK restore-dropped reason=%s\n", server->greeter ? "greeter" : "lock");
+		printf("KWL OSK restore-dropped reason=%s\n", server->greeter ? "greeter" : "lock");
 		keyboard.restore = PANEL_NONE;
 		keyboard.restore_focus = NULL;
 		return;
@@ -1544,12 +1544,12 @@ keyboard_restore(
 		live = keyboard_window_live(server, server->focus);
 	keyboard.restore_focus = NULL;
 	if (live == 0) {
-		printf("ZWL OSK restore-dropped reason=focus\n");
+		printf("KWL OSK restore-dropped reason=focus\n");
 		return;
 	}
 
 	/* The panel comes back as it was. */
-	printf("ZWL OSK restore kind=%s\n", keyboard_kind_name(kind));
+	printf("KWL OSK restore kind=%s\n", keyboard_kind_name(kind));
 	keyboard_open(server, kind);
 }
 
@@ -1769,7 +1769,7 @@ keyboard_panel_button(
 		inside = keyboard_contains(close, server->pointer_x, server->pointer_y);
 		if (inside) {
 			keyboard_hand_point(server, server->pointer_x, server->pointer_y, 1);
-			printf("ZWL OSK hand stroke-begin x=%d y=%d\n", server->pointer_x, server->pointer_y);
+			printf("KWL OSK hand stroke-begin x=%d y=%d\n", server->pointer_x, server->pointer_y);
 			return 1;
 		}
 
@@ -1799,7 +1799,7 @@ keyboard_panel_button(
 	}
 
 	/* Succeeded: the press is the panel's. */
-	printf("ZWL OSK panel-press x=%d y=%d key=%d\n", server->pointer_x, server->pointer_y, found);
+	printf("KWL OSK panel-press x=%d y=%d key=%d\n", server->pointer_x, server->pointer_y, found);
 	return 1;
 }
 
@@ -2206,14 +2206,14 @@ keyboard_key_release(
 	newline = strcmp(shown, "\n");
 	if (newline == 0)
 		shown = "\\n";
-	printf("ZWL OSK key face=%s row=%u column=%u dir=%s action=%u text=%s\n", kwl_flick_face_name(keyboard.face), keyboard.key_row, keyboard.key_column, kwl_flick_direction_name(direction), key->action, shown);
+	printf("KWL OSK key face=%s row=%u column=%u dir=%s action=%u text=%s\n", kwl_flick_face_name(keyboard.face), keyboard.key_row, keyboard.key_column, kwl_flick_direction_name(direction), key->action, shown);
 
 	/* What the key does. */
 	switch (key->action) {
 	case KWL_FLICK_FACE:
 		/* The next face. */
 		keyboard.face = kwl_flick_face_next(keyboard.face);
-		printf("ZWL OSK face name=%s\n", kwl_flick_face_name(keyboard.face));
+		printf("KWL OSK face name=%s\n", kwl_flick_face_name(keyboard.face));
 		break;
 	case KWL_FLICK_BACKSPACE:
 		/* The delete key; the last character is gone, from the reading too. */
@@ -2445,7 +2445,7 @@ keyboard_send_key(
 
 	/* Without a focused application the key reaches nobody. */
 	if (server->focus == NULL) {
-		printf("ZWL OSK refused reason=no-focus code=%u\n", code);
+		printf("KWL OSK refused reason=no-focus code=%u\n", code);
 		return 0;
 	}
 
@@ -2473,7 +2473,7 @@ keyboard_send_key(
 	}
 
 	/* Succeeded: the key was sent. */
-	printf("ZWL OSK send via=key code=%u shift=%d held=%u\n", code, shift, used);
+	printf("KWL OSK send via=key code=%u shift=%d held=%u\n", code, shift, used);
 	return 1;
 }
 
@@ -2501,7 +2501,7 @@ keyboard_key_event(
 			return;
 		taken = kwl_ime_key_grab(server, time, code, state, 0);
 		if (taken) {
-			printf("ZWL OSK send via=ime code=%u\n", code);
+			printf("KWL OSK send via=ime code=%u\n", code);
 			return;
 		}
 	}
@@ -2527,13 +2527,13 @@ keyboard_send_commit(
 	/* The focused field's text input. */
 	input = kwl_text_input_current(server);
 	if (input == NULL) {
-		printf("ZWL OSK refused reason=no-text-input text=%s\n", text);
+		printf("KWL OSK refused reason=no-text-input text=%s\n", text);
 		return 0;
 	}
 
 	/* A composition of the input method is left alone (its preedit would be lost). */
 	if (server->ime != NULL && server->ime->composing) {
-		printf("ZWL OSK refused reason=composing text=%s\n", text);
+		printf("KWL OSK refused reason=composing text=%s\n", text);
 		return 0;
 	}
 
@@ -2541,7 +2541,7 @@ keyboard_send_commit(
 	kwl_text_input_deliver(input, NULL, 0, 0, text, before, 0U);
 
 	/* Succeeded: the field has the text. */
-	printf("ZWL OSK send via=commit text=%s before=%u\n", text, before);
+	printf("KWL OSK send via=commit text=%s before=%u\n", text, before);
 	return 1;
 }
 
@@ -2556,14 +2556,14 @@ keyboard_voice(
 
 	/* Only a kana that was committed. */
 	if (keyboard.last_sent != KEYBOARD_SENT_COMMIT) {
-		printf("ZWL OSK voice none\n");
+		printf("KWL OSK voice none\n");
 		return;
 	}
 
 	/* Its next form, if it has one. */
 	found = kwl_flick_voice(keyboard.last, next, sizeof(next));
 	if (!found) {
-		printf("ZWL OSK voice none\n");
+		printf("KWL OSK voice none\n");
 		return;
 	}
 
@@ -2588,14 +2588,14 @@ keyboard_case(
 
 	/* Only a letter that was sent as a key. */
 	if (keyboard.last_sent != KEYBOARD_SENT_KEY) {
-		printf("ZWL OSK case none\n");
+		printf("KWL OSK case none\n");
 		return;
 	}
 
 	/* Its other case, if it is a letter. */
 	found = kwl_flick_case(keyboard.last, next, sizeof(next));
 	if (!found) {
-		printf("ZWL OSK case none\n");
+		printf("KWL OSK case none\n");
 		return;
 	}
 
@@ -2774,7 +2774,7 @@ keyboard_qwerty_release(
 		return;
 
 	/* The log line the tests read, with the time (the rate of typing). */
-	printf("ZWL OSK qkey face=%s row=%u index=%u label=%s shift=%u ms=%llu\n", kwl_qwerty_face_name(keyboard.qface), keyboard.key_row, keyboard.key_column, key->label, keyboard.shift, (unsigned long long)kwl_milliseconds());
+	printf("KWL OSK qkey face=%s row=%u index=%u label=%s shift=%u ms=%llu\n", kwl_qwerty_face_name(keyboard.qface), keyboard.key_row, keyboard.key_column, key->label, keyboard.shift, (unsigned long long)kwl_milliseconds());
 
 	/* What the key does. */
 	switch (key->action) {
@@ -2785,7 +2785,7 @@ keyboard_qwerty_release(
 		/* The other face; Shift goes. */
 		keyboard.qface = (keyboard.qface + 1U) % KWL_QWERTY_FACES;
 		keyboard.shift = KEYBOARD_SHIFT_OFF;
-		printf("ZWL OSK qface name=%s\n", kwl_qwerty_face_name(keyboard.qface));
+		printf("KWL OSK qface name=%s\n", kwl_qwerty_face_name(keyboard.qface));
 		keyboard_qwerty_log(server);
 		break;
 	case KWL_FLICK_BACKSPACE:
@@ -2800,12 +2800,12 @@ keyboard_qwerty_release(
 	case KWL_FLICK_CTRL:
 		/* Ctrl for the next key, or no more. */
 		keyboard.held ^= KEYBOARD_CTRL;
-		printf("ZWL OSK held=%u\n", keyboard.held);
+		printf("KWL OSK held=%u\n", keyboard.held);
 		break;
 	case KWL_FLICK_ALT:
 		/* Alt for the next key, or no more. */
 		keyboard.held ^= KEYBOARD_ALT;
-		printf("ZWL OSK held=%u\n", keyboard.held);
+		printf("KWL OSK held=%u\n", keyboard.held);
 		break;
 	default:
 		/* A character: its Shift form while Shift is on (a single Shift is used up). */
@@ -2841,7 +2841,7 @@ keyboard_qwerty_shift(
 
 	/* When it was pressed, and the log line the tests read. */
 	keyboard.shift_ms = now;
-	printf("ZWL OSK shift state=%u\n", keyboard.shift);
+	printf("KWL OSK shift state=%u\n", keyboard.shift);
 }
 
 /* Logs the QWERTY panel's keys' places for its face (the tests find the keys by them). */
@@ -2860,7 +2860,7 @@ keyboard_qwerty_log(
 		keys = kwl_qwerty_row(keyboard.qface, row, &count);
 		for (index = 0; index < count; index++) {
 			keyboard_qwerty_rect(server, row, index, rect);
-			printf("ZWL OSK qrect face=%s row=%u index=%u x=%d y=%d width=%d height=%d label=%s\n", kwl_qwerty_face_name(keyboard.qface), row, index, rect[0], rect[1], rect[2], rect[3], keys[index].label);
+			printf("KWL OSK qrect face=%s row=%u index=%u x=%d y=%d width=%d height=%d label=%s\n", kwl_qwerty_face_name(keyboard.qface), row, index, rect[0], rect[1], rect[2], rect[3], keys[index].label);
 		}
 	}
 }
@@ -3089,12 +3089,12 @@ keyboard_hand_toggle(
 	/* The log line the tests read, with the writing area's place. */
 	if (keyboard.hand) {
 		keyboard_hand_area(area);
-		printf("ZWL OSK hand on area=%d,%d,%d,%d\n", area[0], area[1], area[2], area[3]);
+		printf("KWL OSK hand on area=%d,%d,%d,%d\n", area[0], area[1], area[2], area[3]);
 		return;
 	}
 
 	/* Back to the keys. */
-	printf("ZWL OSK hand off\n");
+	printf("KWL OSK hand off\n");
 }
 
 /*
@@ -3155,7 +3155,7 @@ keyboard_hand_release(
 	keyboard.writing = 0;
 	keyboard.stroke_end_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL OSK hand stroke-end strokes=%u points=%u\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink));
+	printf("KWL OSK hand stroke-end strokes=%u points=%u\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink));
 }
 
 /*
@@ -3174,7 +3174,7 @@ keyboard_hand_key_release(
 	keyboard.hand_key_active = 0;
 	key = keyboard.hand_key;
 	server->dirty = 1;
-	printf("ZWL OSK hand key=%u\n", key);
+	printf("KWL OSK hand key=%u\n", key);
 
 	/* A candidate there is: sent, and the ink and the answer go. */
 	if (key < KEYBOARD_HAND_CLEAR) {
@@ -3194,7 +3194,7 @@ keyboard_hand_key_release(
 		kwl_hand_clear(&keyboard_ink);
 		keyboard.recognized = 0;
 		memset(&keyboard.result, 0, sizeof(keyboard.result));
-		printf("ZWL OSK hand clear\n");
+		printf("KWL OSK hand clear\n");
 		break;
 	case KEYBOARD_HAND_DELETE:
 		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
@@ -3228,7 +3228,7 @@ keyboard_hand_recognize(
 	first = "";
 	if (keyboard.result.count > 0U)
 		first = keyboard.result.candidates[0];
-	printf("ZWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
+	printf("KWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
 }
 
 /*
@@ -3329,7 +3329,7 @@ keyboard_draw_hand(
 	if (!keyboard.lag_pending)
 		return;
 	now = kwl_milliseconds();
-	printf("ZWL OSK hand frame lag_ms=%llu gap_ms=%llu points=%u\n", (unsigned long long)(now - keyboard.lag_input_ms), (unsigned long long)(now - keyboard.lag_frame_ms), kwl_hand_points(&keyboard_ink));
+	printf("KWL OSK hand frame lag_ms=%llu gap_ms=%llu points=%u\n", (unsigned long long)(now - keyboard.lag_input_ms), (unsigned long long)(now - keyboard.lag_frame_ms), kwl_hand_points(&keyboard_ink));
 	keyboard.lag_pending = 0;
 	keyboard.lag_frame_ms = now;
 }
@@ -3381,7 +3381,7 @@ keyboard_work_area(
 	keyboard.reserved_right = right;
 	keyboard.reserved_bottom = bottom;
 	keyboard.moving = 1;
-	printf("ZWL OSK work-area right=%d bottom=%d\n", right, bottom);
+	printf("KWL OSK work-area right=%d bottom=%d\n", right, bottom);
 
 	/* Without a panel, the windows moved before go back. */
 	if (right == 0 && bottom == 0)
@@ -3433,7 +3433,7 @@ keyboard_work_area(
 
 			/* The configure, and the log line the tests read. */
 			(void)kwl_window_send_configure(surface);
-			printf("ZWL OSK work docked surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
+			printf("KWL OSK work docked surface=%u width=%u height=%u\n", surface->id, surface->window_width, surface->window_height);
 		}
 	}
 }
@@ -3598,7 +3598,7 @@ keyboard_fit_floating(
 		move->back = 0;
 		if (x == move->home_x && y == move->home_y)
 			move->back = 1;
-		printf("ZWL OSK work moved surface=%u from=%d,%d to=%d,%d\n", surface->id, surface->x, surface->y, x, y);
+		printf("KWL OSK work moved surface=%u from=%d,%d to=%d,%d\n", surface->id, surface->x, surface->y, x, y);
 		return;
 	}
 
@@ -3621,7 +3621,7 @@ keyboard_fit_floating(
 	move->to_x = x;
 	move->to_y = y;
 	move->back = 0;
-	printf("ZWL OSK work moved surface=%u from=%d,%d to=%d,%d\n", surface->id, surface->x, surface->y, x, y);
+	printf("KWL OSK work moved surface=%u from=%d,%d to=%d,%d\n", surface->id, surface->x, surface->y, x, y);
 }
 
 /*
@@ -3649,7 +3649,7 @@ keyboard_move_back(
 
 		/* A window moved by the user since (not where the move left it) stays where it is. */
 		if (move->surface->x != move->to_x || move->surface->y != move->to_y || move->surface->maximized) {
-			printf("ZWL OSK work kept surface=%u\n", move->surface->id);
+			printf("KWL OSK work kept surface=%u\n", move->surface->id);
 			continue;
 		}
 
@@ -3661,7 +3661,7 @@ keyboard_move_back(
 		move->back = 1;
 		keyboard.moves[kept] = *move;
 		kept++;
-		printf("ZWL OSK work back surface=%u to=%d,%d\n", move->surface->id, move->home_x, move->home_y);
+		printf("KWL OSK work back surface=%u to=%d,%d\n", move->surface->id, move->home_x, move->home_y);
 	}
 
 	/* The moves still to be drawn. */
@@ -3854,7 +3854,7 @@ keyboard_tool_release(
 	keyboard.tool_active = 0;
 	server->dirty = 1;
 	tool = &keyboard_tools[keyboard.tool];
-	printf("ZWL OSK tool label=%s\n", tool->label);
+	printf("KWL OSK tool label=%s\n", tool->label);
 
 	/* A tool that is not a tab or delete ends the reading (the cursor or the text may move). */
 	if (tool->row != 1U && tool->kind != TOOL_DELETE)
@@ -3864,7 +3864,7 @@ keyboard_tool_release(
 	switch (tool->kind) {
 	case TOOL_PREVIOUS:
 		error = kwl_focus_previous(server);
-		printf("ZWL OSK tool previous error=%d\n", error);
+		printf("KWL OSK tool previous error=%d\n", error);
 		break;
 	case TOOL_DELETE:
 		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
@@ -3898,7 +3898,7 @@ keyboard_tool_release(
 	case TOOL_SELECT:
 		/* Selecting on or off: the movements go with Shift while it is on. */
 		keyboard.selecting = !keyboard.selecting;
-		printf("ZWL OSK tool selecting=%u\n", keyboard.selecting);
+		printf("KWL OSK tool selecting=%u\n", keyboard.selecting);
 		break;
 	case TOOL_SELECT_ALL:
 		keyboard_tool_edit(server, KWL_EDIT_SELECT_ALL);
@@ -3922,22 +3922,22 @@ keyboard_tool_release(
 		break;
 	case TOOL_TAB_EDIT:
 		keyboard.tools_face = KEYBOARD_FACE_EDIT;
-		printf("ZWL OSK tool face=edit\n");
+		printf("KWL OSK tool face=edit\n");
 		break;
 	case TOOL_TAB_HISTORY:
 		keyboard.tools_face = KEYBOARD_FACE_HISTORY;
-		printf("ZWL OSK tool face=history items=%u\n", kwl_clipboard_history_count(server));
+		printf("KWL OSK tool face=history items=%u\n", kwl_clipboard_history_count(server));
 		break;
 	case TOOL_TAB_EMOJI:
 		/* The emoji face, at the category shown last; the log gives the tests its places. */
 		keyboard.tools_face = KEYBOARD_FACE_EMOJI;
-		printf("ZWL OSK tool face=emoji category=%u\n", keyboard.emoji_category);
+		printf("KWL OSK tool face=emoji category=%u\n", keyboard.emoji_category);
 		keyboard_emoji_log(server);
 		break;
 	case TOOL_TAB_CANDIDATES:
 		/* The candidates' face (ws166-p003). */
 		keyboard.tools_face = KEYBOARD_FACE_CANDIDATES;
-		printf("ZWL OSK tool face=candidates count=%u\n", keyboard.prediction_count);
+		printf("KWL OSK tool face=candidates count=%u\n", keyboard.prediction_count);
 		break;
 	default:
 		break;
@@ -3971,7 +3971,7 @@ keyboard_tool_edit(
 
 	/* The operation, and the log line the tests read. */
 	error = kwl_edit_action(server, action);
-	printf("ZWL OSK tool edit action=%u error=%d\n", action, error);
+	printf("KWL OSK tool edit action=%u error=%d\n", action, error);
 }
 
 /*
@@ -4111,7 +4111,7 @@ keyboard_history_release(
 	server->dirty = 1;
 	keyboard_reading_end(server, "paste");
 	error = kwl_clipboard_history_paste(server, keyboard.history_row);
-	printf("ZWL OSK history paste index=%u error=%d\n", keyboard.history_row, error);
+	printf("KWL OSK history paste index=%u error=%d\n", keyboard.history_row, error);
 }
 
 /*
@@ -4277,7 +4277,7 @@ keyboard_emoji_release(
 	/* A tab: its category, and its places for the tests. */
 	if (keyboard.emoji_slot < KWL_EMOJI_CATEGORIES) {
 		keyboard.emoji_category = keyboard.emoji_slot;
-		printf("ZWL OSK emoji category=%u\n", keyboard.emoji_category);
+		printf("KWL OSK emoji category=%u\n", keyboard.emoji_category);
 		keyboard_emoji_log(server);
 		return;
 	}
@@ -4289,7 +4289,7 @@ keyboard_emoji_release(
 
 	/* Committed whole (no deletion before it), and the log line the tests read; a reading ends. */
 	sent = keyboard_send_commit(server, text, 0U);
-	printf("ZWL OSK emoji commit sent=%d text=%s\n", sent, text);
+	printf("KWL OSK emoji commit sent=%d text=%s\n", sent, text);
 	keyboard_reading_end(server, "emoji");
 
 	/*
@@ -4312,14 +4312,14 @@ keyboard_emoji_log(
 	/* The tabs. */
 	for (slot = 0; slot < KWL_EMOJI_CATEGORIES; slot++) {
 		keyboard_emoji_rect(server, slot, rect);
-		printf("ZWL OSK etab category=%u x=%d y=%d width=%d height=%d\n", slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+		printf("KWL OSK etab category=%u x=%d y=%d width=%d height=%d\n", slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
 	}
 
 	/* The cells of the category shown. */
 	count = kwl_emoji_count(keyboard.emoji_category);
 	for (slot = 0; slot < count; slot++) {
 		keyboard_emoji_rect(server, KWL_EMOJI_CATEGORIES + slot, rect);
-		printf("ZWL OSK erect category=%u index=%u x=%d y=%d width=%d height=%d\n", keyboard.emoji_category, slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+		printf("KWL OSK erect category=%u index=%u x=%d y=%d width=%d height=%d\n", keyboard.emoji_category, slot, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
 	}
 }
 
@@ -4462,7 +4462,7 @@ kwl_keyboard_predictions(
 
 	/* Only the answer to the latest reading. */
 	if (serial != keyboard.predict_serial || keyboard.reading[0] == '\0') {
-		printf("ZWL OSK predictions stale serial=%u\n", serial);
+		printf("KWL OSK predictions stale serial=%u\n", serial);
 		return;
 	}
 
@@ -4501,12 +4501,12 @@ kwl_keyboard_predictions(
 	first = "-";
 	if (keyboard.prediction_count != 0U)
 		first = keyboard.predictions[0];
-	printf("ZWL OSK predictions serial=%u reading=%s count=%u first=%s\n", serial, keyboard.reading, keyboard.prediction_count, first);
+	printf("KWL OSK predictions serial=%u reading=%s count=%u first=%s\n", serial, keyboard.reading, keyboard.prediction_count, first);
 
 	/* The words' places, for the tests to tap them. */
 	for (index = 0; index < keyboard.prediction_count && index < KEYBOARD_CANDIDATE_COLUMNS * KEYBOARD_CANDIDATE_ROWS; index++) {
 		keyboard_candidate_rect(server, index, rect);
-		printf("ZWL OSK crect slot=%u x=%d y=%d width=%d height=%d\n", index, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+		printf("KWL OSK crect slot=%u x=%d y=%d width=%d height=%d\n", index, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
 	}
 }
 
@@ -4638,7 +4638,7 @@ keyboard_reading_end(
 		return;
 
 	/* The reading and its words go. */
-	printf("ZWL OSK reading end reason=%s reading=%s\n", why, keyboard.reading);
+	printf("KWL OSK reading end reason=%s reading=%s\n", why, keyboard.reading);
 	keyboard.reading[0] = '\0';
 	keyboard.reading_input = NULL;
 	keyboard.prediction_count = 0;
@@ -4663,7 +4663,7 @@ keyboard_reading_predict(
 	/* A new request: an answer to an older one is dropped. */
 	keyboard.predict_serial++;
 	error = kwl_ime_predict(server, keyboard.predict_serial, keyboard.reading);
-	printf("ZWL OSK reading=%s serial=%u error=%d\n", keyboard.reading, keyboard.predict_serial, error);
+	printf("KWL OSK reading=%s serial=%u error=%d\n", keyboard.reading, keyboard.predict_serial, error);
 
 	/* Without an input method that predicts there are no words. */
 	if (error != 0)
@@ -4810,7 +4810,7 @@ keyboard_candidate_release(
 	/* The field the reading was typed into. */
 	input = kwl_text_input_current(server);
 	if (input == NULL || input != keyboard.reading_input) {
-		printf("ZWL OSK candidate refused reason=field\n");
+		printf("KWL OSK candidate refused reason=field\n");
 		keyboard_reading_end(server, "field");
 		return;
 	}
@@ -4823,7 +4823,7 @@ keyboard_candidate_release(
 		if ((size_t)input->cursor >= length && (size_t)input->cursor <= text_length)
 			differs = memcmp(input->text + (size_t)input->cursor - length, keyboard.reading, length);
 		if (differs != 0) {
-			printf("ZWL OSK candidate refused reason=surrounding\n");
+			printf("KWL OSK candidate refused reason=surrounding\n");
 			keyboard_reading_end(server, "surrounding");
 			return;
 		}
@@ -4835,7 +4835,7 @@ keyboard_candidate_release(
 
 	/* The reading's bytes deleted and the word committed together. */
 	sent = keyboard_send_commit(server, word, (uint32_t)length);
-	printf("ZWL OSK candidate commit sent=%d slot=%u word=%s reading=%s\n", sent, keyboard.candidate_slot, word, reading);
+	printf("KWL OSK candidate commit sent=%d slot=%u word=%s reading=%s\n", sent, keyboard.candidate_slot, word, reading);
 	keyboard_reading_end(server, "chosen");
 	if (!sent)
 		return;

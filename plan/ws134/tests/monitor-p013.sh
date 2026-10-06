@@ -9,7 +9,7 @@
 #     has none of 0x3f) and the memory in use above 0; a busy loop lifts the CPU to 20% or more;
 #     a disk read shows 1 MB/s or more read.  system.png.
 #  2. --source=sim still simulates: ZMON READY source=sim.
-#  3. The compositor stops sampling after the monitor ends (ZWL SYSTEM monitor subscribers=0); no ERROR.
+#  3. The compositor stops sampling after the monitor ends (KWL SYSTEM monitor subscribers=0); no ERROR.
 #
 #   plan/ws134/tests/monitor-p013.sh [OUTDIR]
 # Prints "monitor-p013: PASS" or "monitor-p013: FAIL".
@@ -30,7 +30,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 guest "$stop_all" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=400 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
+/bin/wayland --testing --timeout=400 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
 
 # 1. The default source, quiet for 6 s, then a busy loop and a disk read for 8 s.
 guest "export XDG_RUNTIME_DIR=/tmp; /bin/monitor --timeout-s=120 --token=p013 > /tmp/monitor.log 2>&1 </dev/null & echo started" >/dev/null
@@ -46,7 +46,7 @@ guest "export XDG_RUNTIME_DIR=/tmp; /bin/monitor --timeout-s=60 --source=sim --t
 guest "$stop_monitor" >/dev/null
 
 # 3. The compositor's sampling and errors.
-guest 'grep "ZWL SYSTEM monitor" /tmp/zdesktop.log' > "$out/zdesktop-monitor.txt"
+guest 'grep "KWL SYSTEM monitor" /tmp/zdesktop.log' > "$out/zdesktop-monitor.txt"
 guest "grep -c ERROR /tmp/zdesktop.log" | tail -1 > "$out/errors.txt"
 guest "$stop_all" >/dev/null
 

@@ -96,7 +96,7 @@ mute_click() {
 # Opens the system bar's popup (the icon's place from the log), takes a picture, and closes it with Esc.
 bar_shot() {
 	name=$1
-	set -- $(last $log 'ZWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- $(last $log 'KWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 	ix=$((${1:-900} + ${3:-30} / 2)); iy=$((${2:-3} + ${4:-28} / 2))
 	pointer move $((ix - 2)) $iy sleep 200 move $ix $iy sleep 300 down sleep 60 up sleep 900
 	python3 plan/ws035/tests/zdesktop-check.py "$out/$name" --runtime "$GUEST_RUNTIME" >/dev/null 2>&1
@@ -109,17 +109,17 @@ bar_shot() {
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 VOLUME_AUDIO=duplex timeout 180 sh plan/ws100/tests/volume-guest.sh start "$image" >/dev/null 2>&1
 sleep 35
-expect_more $log 'ZWL HANDOFF go=1' 0 60
-expect_more $log 'ZWL VOLUME reachable=1 device=1' 0 20
+expect_more $log 'KWL HANDOFF go=1' 0 60
+expect_more $log 'KWL VOLUME reachable=1 device=1' 0 20
 guest 'audiod-feedback volume 60' >/dev/null
 sleep 2
 conf_start=$(guest "grep -E '^sound\\.(volume|muted)=' $conf" | tr '\n' ' ')
-maps=$(count $log 'ZWL MAP client=')
+maps=$(count $log 'KWL MAP client=')
 # Settings runs as kei (runas): the compositor serves its system extension only to its own user (WS131 p011, D5), so a
 # Settings root started would find no sound (T2-021).
 guest "export XDG_RUNTIME_DIR=/run/user/1000 HOME=/home/kei; /bin/runas kei /bin/settings --timeout-s=600 sound > $slog 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-expect_more $log 'ZWL MAP client=' "$maps" 20
-set -- $(last $log 'ZWL MAP client=' | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+expect_more $log 'KWL MAP client=' "$maps" 20
+set -- $(last $log 'KWL MAP client=' | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "settings: window at $wx,$wy"
 
@@ -159,14 +159,14 @@ after2=$(count $slog 'SOUND feedback error=0')
 [ "${after2:-0}" -gt "${after:-0}" ] && verdict ok "settings mute off: feedback sound" || verdict no "settings mute off: feedback sound"
 
 # 4. The bar -> Settings: two notches down on the bar's icon, then the bar's mute row.
-set -- $(last $log 'ZWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+set -- $(last $log 'KWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 ix=$((${1:-900} + ${3:-30} / 2)); iy=$((${2:-3} + ${4:-28} / 2))
 pointer move $ix $iy sleep 400 wheel-down sleep 700 wheel-down sleep 1000
 target=$((value - 10))
 expect_more $slog "SOUND report reachable=1 device=1 value=$target muted=0" 0 5
 shot page-$target.png
 pointer move $((ix - 2)) $iy sleep 200 move $ix $iy sleep 300 down sleep 60 up sleep 900
-set -- $(last $log 'ZWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
+set -- $(last $log 'KWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
 px=${1:-900} pw=${3:-260} my=$((${6:-134} + 17))
 pointer move $((px + pw - 40)) $my sleep 300 down sleep 60 up sleep 800
 python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<esc>'
@@ -175,8 +175,8 @@ shot page-muted.png
 
 # The logs, and no errors.
 guest "grep -E 'ZSETTINGS (SOUND|LOOK set key=sound)' $slog" > "$out/settings-sound.log"
-guest "grep -E 'ZWL (VOLUME|ERROR)' $log" > "$out/session-volume.log"
-grep -q 'ZWL ERROR' "$out/session-volume.log" && { echo "ZWL ERROR in the session"; status=1; }
+guest "grep -E 'KWL (VOLUME|ERROR)' $log" > "$out/session-volume.log"
+grep -q 'KWL ERROR' "$out/session-volume.log" && { echo "KWL ERROR in the session"; status=1; }
 alive=$(guest "ps -A -o args | grep -c '[s]ettings'" | tail -1)
 [ "${alive:-0}" -ge 1 ] && verdict ok "settings runs" || verdict no "settings runs"
 

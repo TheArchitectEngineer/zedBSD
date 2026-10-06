@@ -71,7 +71,7 @@ compositor() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; mkdir -p /tmp/dhome/Desktop; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture $1 > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q 'ZWL MODE' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
+i=0; while ! grep -q 'KWL MODE' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
 }
 
 for step in "$@"; do
@@ -89,9 +89,9 @@ for step in "$@"; do
 	role)
 		compositor '--desktop-token=T --desktop-client=none'
 		guest "$env /tmp/desktop-probe --token=T > /tmp/probe.log 2>&1 </dev/null & sleep 3; echo started" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
 		expect_log /tmp/probe.log 'DESKPROBE configure serial=[0-9]+ x=0 y=44 width=1280 height=756'
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP ack serial='
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP ack serial='
 		expect_log /tmp/probe.log 'DESKPROBE commit width=1280 height=756'
 		expect_log /tmp/probe.log 'DESKPROBE frame'
 		pointer move 640 500 sleep 300
@@ -99,16 +99,16 @@ for step in "$@"; do
 		;;
 	refuse)
 		guest "$env /tmp/desktop-probe --token=T --timeout-s=5 > /tmp/probe2.log 2>&1 </dev/null; echo done" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP refused client=[0-9]+ reason=role'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP refused client=[0-9]+ reason=role'
 		expect_log /tmp/probe2.log 'DESKPROBE failed'
 		guest "$env /tmp/desktop-probe --token=wrong --timeout-s=5 > /tmp/probe3.log 2>&1 </dev/null; echo done" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP refused client=[0-9]+ reason=token'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP refused client=[0-9]+ reason=token'
 		expect_log /tmp/probe3.log 'DESKPROBE failed'
 		expect_count /tmp/probe.log 'DESKPROBE failed' 0
 		;;
 	input)
 		pointer move 600 400 sleep 300 down sleep 60 up sleep 500
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP focus client='
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP focus client='
 		expect_log /tmp/probe.log 'DESKPROBE focus in'
 		expect_log /tmp/probe.log 'DESKPROBE button x=600 y=356 button=272 state=1'
 		pointer move 700 450 sleep 300 right-down sleep 60 right-up sleep 500
@@ -118,28 +118,28 @@ for step in "$@"; do
 		shot input.png
 		# A Files window over the desktop.
 		guest "$env mkdir -p /tmp/dhome/Docs; echo hello > /tmp/dhome/Docs/note.txt; /bin/files --token=f1 --timeout-s=800 --width=700 --height=500 /tmp/dhome/Docs > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP unfocus via=window'
+		expect_log /tmp/zdesktop.log 'KWL MAP client=[0-9]+ '
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP unfocus via=window'
 		expect_log /tmp/probe.log 'DESKPROBE focus out'
 		shot window.png
-		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		set -- $(guest "grep -a 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 		wx=${1:-0}; wy=${2:-0}
 		echo "files at $wx,$wy"
 		# A press beside the window gives the desktop the keyboard, a press on the window takes it back.
 		pointer move 1200 700 sleep 300 down sleep 60 up sleep 700
-		expect_count /tmp/zdesktop.log 'ZWL DESKTOP focus client=' 2
+		expect_count /tmp/zdesktop.log 'KWL DESKTOP focus client=' 2
 		pointer move $((wx + 300)) $((wy + 200)) sleep 300 down sleep 60 up sleep 700
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP unfocus via=press'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP unfocus via=press'
 		expect_count /tmp/probe.log 'DESKPROBE focus out' 2
 		# The last window closing does not give the desktop the keyboard (only a press does).
 		guest 'for p in $(ps -A -o pid,args | grep -E "[f]iles" | awk "{print \$1}"); do kill $p; done; sleep 2; echo closed' >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL UNMAP client=|ZWL CLEANUP client='
+		expect_log /tmp/zdesktop.log 'KWL UNMAP client=|KWL CLEANUP client='
 		expect_count /tmp/probe.log 'DESKPROBE focus in' 2
-		expect_count /tmp/zdesktop.log 'ZWL DESKTOP focus client=' 2
+		expect_count /tmp/zdesktop.log 'KWL DESKTOP focus client=' 2
 		;;
 	home)
 		pointer move 23 17 sleep 300 down sleep 60 up sleep 1500 move 700 780 sleep 300
-		expect_log /tmp/zdesktop.log 'ZWL HOME opened'
+		expect_log /tmp/zdesktop.log 'KWL HOME opened'
 		shot home.png
 		keys '<esc>'
 		sleep 1.5
@@ -159,7 +159,7 @@ for step in "$@"; do
 		guest "$env mkdir -p /tmp/dhome/Docs; echo hello > /tmp/dhome/Docs/note.txt; /bin/files --token=f2 --timeout-s=800 --width=700 --height=500 /tmp/dhome/Docs > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 		expect_log /tmp/f2.log 'ZFILES READY'
 		keys '<ctrl-2>'
-		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		set -- $(guest "grep -a 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 		wx=${1:-0}; wy=${2:-0}
 		pointer move $((wx + 400)) $((wy + 114)) sleep 300 down sleep 100 move $((wx + 420)) $((wy + 120)) sleep 80 move $((wx + 460)) $((wy + 140)) sleep 80 \
 			move 1100 600 sleep 150 move 1180 650 sleep 150 move 1200 680 sleep 600
@@ -175,7 +175,7 @@ for step in "$@"; do
 		result=$(guest "/bin/touchinject /tmp/tap.script 2>&1; echo replay=\$?")
 		printf '%s\n' "$result" | grep -q '^replay=0$' || { echo "touchinject: FAILED"; status=1; }
 		expect_log /tmp/probe.log 'DESKPROBE touch down id=[0-9]+ x=500 y=456'
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP focus client='
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP focus client='
 		;;
 	restart)
 		compositor '--desktop-client=/tmp/desktop-probe\ --timeout-s=3'
@@ -183,17 +183,17 @@ for step in "$@"; do
 		# replaced a fixed 45 s wait, which some runs did not reach).
 		i=0
 		while [ $i -lt 45 ]; do
-			found=$(guest "grep -ac 'ZWL DESKTOP start-limit' /tmp/zdesktop.log" | tail -1)
+			found=$(guest "grep -ac 'KWL DESKTOP start-limit' /tmp/zdesktop.log" | tail -1)
 			[ "${found:-0}" -gt 0 ] 2>/dev/null && break
 			i=$((i + 1))
 			sleep 2
 		done
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start pid=[0-9]+ command=/tmp/desktop-probe --timeout-s=3'
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client='
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP exited pid='
-		expect_count /tmp/zdesktop.log 'ZWL DESKTOP start pid=' 4
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start-limit starts=4'
-		guest 'grep -a "ZWL DESKTOP" /tmp/zdesktop.log' > "$out/restart-log.txt"
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP start pid=[0-9]+ command=/tmp/desktop-probe --timeout-s=3'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP role client='
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP exited pid='
+		expect_count /tmp/zdesktop.log 'KWL DESKTOP start pid=' 4
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP start-limit starts=4'
+		guest 'grep -a "KWL DESKTOP" /tmp/zdesktop.log' > "$out/restart-log.txt"
 		;;
 	stop)
 		guest "$stop_all" >/dev/null
@@ -207,6 +207,6 @@ done
 errors=$(guest "grep ERROR /tmp/zdesktop.log | grep -cvE \"not the desktop's token|the desktop has a surface\"" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest 'cat /tmp/probe.log' > "$out/probe.log"
-guest 'grep -a "ZWL DESKTOP" /tmp/zdesktop.log' > "$out/zdesktop-desktop.log"
+guest 'grep -a "KWL DESKTOP" /tmp/zdesktop.log' > "$out/zdesktop-desktop.log"
 [ $status = 0 ] && echo "desktop-guest: PASS" || echo "desktop-guest: FAIL"
 exit $status

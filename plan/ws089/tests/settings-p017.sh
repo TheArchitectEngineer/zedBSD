@@ -6,14 +6,14 @@
 #     keep a contrast of C7_MIN_CONTRAST (4.5) or more (plan/ws089/tests/c7-either.py, the regions of
 #     plan/ws099/tests/c7-contrast.sh); the default look is unchanged (the user's eye on the picture against T1's
 #     earlier C7 pictures).
-#  2. "keiland-settings set appearance.dark 1" (as the Appearance page's switch does): zdesktop logs "ZWL PREFERENCES
-#     key=appearance.dark applied value=1" and "ZWL THEME appearance=1"; Settings logs "ZSETTINGS APPEARANCE
+#  2. "keiland-settings set appearance.dark 1" (as the Appearance page's switch does): zdesktop logs "KWL PREFERENCES
+#     key=appearance.dark applied value=1" and "KWL THEME appearance=1"; Settings logs "ZSETTINGS APPEARANCE
 #     appearance=1" and draws again; dark-settings.png: the glass, the cards and the system bar dark, the text light,
 #     every region's contrast 4.5 or more.
 #  3. Files started in the dark: its log says "APPEARANCE appearance=1" at once; dark-files.png; its regions 4.5 or more.
 #  4. zdesktop started again (the setting is kept in desktop.conf): Settings starts dark ("APPEARANCE appearance=1"
 #     before its first frame); restart-settings.png.
-#  5. "keiland-settings reset appearance.dark": "ZWL THEME appearance=0", Settings "APPEARANCE appearance=0";
+#  5. "keiland-settings reset appearance.dark": "KWL THEME appearance=0", Settings "APPEARANCE appearance=0";
 #     light-again.png looks like light-settings.png.
 #  6. No ERROR in zdesktop's log.
 # PASS: the last line "settings-p017: status 0" and the pictures as above (to Q1).
@@ -85,8 +85,8 @@ contrast "$out/light-settings.png" $C7_CLOCK $C7_SETTINGS
 # 2. Dark, set as the Appearance page sets it.
 settings_tool "set appearance.dark 1"
 sleep 2
-expect applied /tmp/zdesktop.log 'ZWL PREFERENCES key=appearance.dark applied value=1'
-expect told /tmp/zdesktop.log 'ZWL THEME appearance=1'
+expect applied /tmp/zdesktop.log 'KWL PREFERENCES key=appearance.dark applied value=1'
+expect told /tmp/zdesktop.log 'KWL THEME appearance=1'
 expect settings-dark /tmp/s.log 'ZSETTINGS APPEARANCE appearance=1'
 shot dark-settings.png
 contrast "$out/dark-settings.png" $C7_CLOCK $C7_SETTINGS
@@ -102,7 +102,7 @@ contrast "$out/dark-files.png" $C7_FILES
 guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
 wait_desktop
-expect kept /tmp/zdesktop.log 'ZWL PREFERENCES key=appearance.dark applied value=1'
+expect kept /tmp/zdesktop.log 'KWL PREFERENCES key=appearance.dark applied value=1'
 guest "$env_line; /bin/settings --timeout-s=600 > /tmp/s.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 expect restart-dark /tmp/s.log 'ZSETTINGS APPEARANCE appearance=1'
 shot restart-settings.png
@@ -111,7 +111,7 @@ contrast "$out/restart-settings.png" $C7_CLOCK $C7_SETTINGS
 # 5. Back to light.
 settings_tool "reset appearance.dark"
 sleep 2
-expect told-light /tmp/zdesktop.log 'ZWL THEME appearance=0'
+expect told-light /tmp/zdesktop.log 'KWL THEME appearance=0'
 expect settings-light-again /tmp/s.log 'ZSETTINGS APPEARANCE appearance=0'
 shot light-again.png
 contrast "$out/light-again.png" $C7_CLOCK $C7_SETTINGS

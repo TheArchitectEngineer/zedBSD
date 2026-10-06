@@ -35,7 +35,7 @@ default "/bin/keiland-shot {path}").
     aat mark NAME [--log PATH]      remember how long a log is now
     aat wait-log REGEX [--log PATH] [--since NAME] [--timeout S]
     aat lines REGEX [--log PATH] [--since NAME]
-    aat windows [--log PATH]        windows from the compositor's ZWL lines
+    aat windows [--log PATH]        windows from the compositor's KWL lines
     aat where SURFACE [--log PATH]  one window's x y width height
 
 Target options (or AAT_TARGET): --target root@10.0.30.3[:22], --target 5330
@@ -269,18 +269,18 @@ def text_pieces(text: str) -> list[list[str]]:
 # not where the window is, so it is not one of them.
 
 WINDOW_LINES = (
-	(re.compile(r"ZWL MAP client=(\d+) surface=(\d+) x=(-?\d+) y=(-?\d+)"), "map"),
-	(re.compile(r"ZWL UNMAP client=(\d+) surface=(\d+)"), "unmap"),
-	(re.compile(r"ZWL WINDOW centred surface=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+)"), "place"),
-	(re.compile(r"ZWL RESIZE settled surface=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+)"), "place"),
-	(re.compile(r"ZWL RESIZE end surface=(\d+) width=(\d+) height=(\d+)"), "size"),
-	(re.compile(r"ZWL GLASS launch(?:-late)? surface=(\d+) from=-?\d+,-?\d+ to=(-?\d+),(-?\d+) size=(\d+)x(\d+)"), "place"),
-	(re.compile(r"ZWL GLASS moved surface=(\d+) x=(-?\d+) y=(-?\d+)"), "at"),
-	(re.compile(r"ZWL GLASS dock surface=(\d+) .* x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)"), "dock"),
-	(re.compile(r"ZWL GLASS open-docked client=\d+ surface=(\d+) .* x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)"), "dock"),
-	(re.compile(r"ZWL GLASS undock surface=(\d+) via=\S+ x=(-?\d+) y=(-?\d+)"), "undock"),
-	(re.compile(r"ZWL GLASS resized surface=(\d+) docked=(\d+) width=(\d+) height=(\d+)"), "resized"),
-	(re.compile(r"ZWL WINDOW unfullscreen surface=(\d+) x=(-?\d+) y=(-?\d+)"), "at"),
+	(re.compile(r"KWL MAP client=(\d+) surface=(\d+) x=(-?\d+) y=(-?\d+)"), "map"),
+	(re.compile(r"KWL UNMAP client=(\d+) surface=(\d+)"), "unmap"),
+	(re.compile(r"KWL WINDOW centred surface=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+)"), "place"),
+	(re.compile(r"KWL RESIZE settled surface=(\d+) x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+)"), "place"),
+	(re.compile(r"KWL RESIZE end surface=(\d+) width=(\d+) height=(\d+)"), "size"),
+	(re.compile(r"KWL GLASS launch(?:-late)? surface=(\d+) from=-?\d+,-?\d+ to=(-?\d+),(-?\d+) size=(\d+)x(\d+)"), "place"),
+	(re.compile(r"KWL GLASS moved surface=(\d+) x=(-?\d+) y=(-?\d+)"), "at"),
+	(re.compile(r"KWL GLASS dock surface=(\d+) .* x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)"), "dock"),
+	(re.compile(r"KWL GLASS open-docked client=\d+ surface=(\d+) .* x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)"), "dock"),
+	(re.compile(r"KWL GLASS undock surface=(\d+) via=\S+ x=(-?\d+) y=(-?\d+)"), "undock"),
+	(re.compile(r"KWL GLASS resized surface=(\d+) docked=(\d+) width=(\d+) height=(\d+)"), "resized"),
+	(re.compile(r"KWL WINDOW unfullscreen surface=(\d+) x=(-?\d+) y=(-?\d+)"), "at"),
 )
 
 
@@ -288,8 +288,8 @@ WINDOW_LINES = (
 CLIENT_FIELD = re.compile(r"(?<![\w])client=(\d+)")
 
 # A client that left: its windows went with it (an application that ends at its close request commits no null image,
-# so no ZWL UNMAP comes for them).
-CLIENT_GONE = re.compile(r"ZWL CLIENT gone client=(\d+)\b")
+# so no KWL UNMAP comes for them).
+CLIENT_GONE = re.compile(r"KWL CLIENT gone client=(\d+)\b")
 
 
 def windows_from(text: str) -> dict[tuple[int, int], dict]:
@@ -695,7 +695,7 @@ def parser() -> argparse.ArgumentParser:
 	log_options(command)
 	command = commands.add_parser("where")
 	command.add_argument("surface", type=int)
-	command.add_argument("--client", type=int, help="the client's number (ZWL MAP client=)")
+	command.add_argument("--client", type=int, help="the client's number (KWL MAP client=)")
 	log_options(command)
 	return top
 

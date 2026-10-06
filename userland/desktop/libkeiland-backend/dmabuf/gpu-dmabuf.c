@@ -290,7 +290,7 @@ kl_backend_gpu_commit(
 			return;
 
 		/* A failed reservation inquiry ends this client before further GPU work. */
-		printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(surface), saved_error);
+		printf("KWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(surface), saved_error);
 		(void)gpu_host->post_error(surface, KL_BACKEND_ERROR_INVALID, "cannot export acquire fence");
 		return;
 	}
@@ -314,7 +314,7 @@ kl_backend_gpu_commit(
 	/* Per-frame diagnostics expose the fence transfer without changing default behavior. */
 	logging = gpu_host->log_frames(surface);
 	if (logging)
-		printf("ZWL ACQUIRE_FENCE client=%" PRIu64 " surface=%u generation=1\n", (uint64_t)gpu_host->client_number(surface), gpu_host->resource_id(surface));
+		printf("KWL ACQUIRE_FENCE client=%" PRIu64 " surface=%u generation=1\n", (uint64_t)gpu_host->client_number(surface), gpu_host->resource_id(surface));
 
 	/* Succeeded: common commit polling now owns the client's acquire fence. */
 	return;
@@ -891,7 +891,7 @@ gpu_protocol_error(
 	int error;
 
 	/* The common diagnostic prefix also counts pre-import validation failures. */
-	printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(params), EINVAL);
+	printf("KWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(params), EINVAL);
 	error = gpu_host->post_error(params, code, reason);
 	if (error != 0)
 		return error;
@@ -951,7 +951,7 @@ gpu_create_buffer(
 	status = gpu_image(buffer, plane, width, height);
 	if (status != VK_SUCCESS) {
 		/* A failed import retires its independently created buffer and all partial resources. */
-		printf("ZWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(params), EIO);
+		printf("KWL IMPORT_ERROR client=%" PRIu64 " errno=%d\n", (uint64_t)gpu_host->client_number(params), EIO);
 		gpu_host->resource_destroy(buffer);
 
 		/* Immediate creation cannot return an invalid wl_buffer to the client. */
@@ -977,7 +977,7 @@ gpu_create_buffer(
 	buffer_id = gpu_host->resource_id(buffer);
 
 	/* The imported resource and actual kernel allocation size share the target's diagnostic shape. */
-	printf("ZWL IMPORT client=%" PRIu64 " buffer=%u width=%u height=%u bytes=%" PRIu64 "\n", (uint64_t)gpu_host->client_number(params), buffer_id, width, height, (uint64_t)allocation_bytes);
+	printf("KWL IMPORT client=%" PRIu64 " buffer=%u width=%u height=%u bytes=%" PRIu64 "\n", (uint64_t)gpu_host->client_number(params), buffer_id, width, height, (uint64_t)allocation_bytes);
 
 	/* Asynchronous construction announces its server-allocated new identity. */
 	if (opcode == 2U) {

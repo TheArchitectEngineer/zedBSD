@@ -145,7 +145,7 @@ kwl_panels_commit(
 
 	/* A change of the blur, logged on its own line. */
 	if (panels->blur != panels->pending_blur)
-		printf("ZWL GLASS client=%llu surface=%u blur=%u\n", (unsigned long long)surface->client->number, surface->id, panels->pending_blur);
+		printf("KWL GLASS client=%llu surface=%u blur=%u\n", (unsigned long long)surface->client->number, surface->id, panels->pending_blur);
 
 	/* The pending panels and blur become the surface's, drawn from the next frame. */
 	memcpy(panels->current, panels->pending, sizeof(panels->current));
@@ -155,7 +155,7 @@ kwl_panels_commit(
 	surface->client->server->dirty = 1;
 
 	/* The log the tests read: the count, then each panel. */
-	printf("ZWL GLASS client=%llu surface=%u panels=%u", (unsigned long long)surface->client->number, surface->id, panels->count);
+	printf("KWL GLASS client=%llu surface=%u panels=%u", (unsigned long long)surface->client->number, surface->id, panels->count);
 	for (index = 0; index < panels->count; index++) {
 		panel = &panels->current[index];
 		printf(" card:%d,%d,%d,%d,%d", panel->x, panel->y, panel->width, panel->height, panel->radius);

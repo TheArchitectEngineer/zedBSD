@@ -3,14 +3,14 @@
 # guest of the Settings image with the input method (plan/ws089/tests/config-amd64-settings-ime.mk, which has the
 # terminal, keiland-ime and its Japanese dictionary).  zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime;
 # the terminal runs the shell.  Checks:
-#  1. The input method follows the terminal (ZWL IME activate client=).  Direct input: "echo a" typed as keys; no
+#  1. The input method follows the terminal (KWL IME activate client=).  Direct input: "echo a" typed as keys; no
 #     ZTERM IME commit.
 #  2. Japanese (Alt+Space): "kanji" is a preedit drawn at the cursor (ZTERM IME preedit=かんじ, preedit.png); Space
 #     converts it (漢字, converted.png), Enter commits it: the terminal sends it to the shell (ZTERM IME commit
 #     bytes=6 text=漢字).
 #  3. "kana" and Enter without converting commits かな (committed.png: the line reads "echo a漢字かな").
 #  4. Alt+Space back to direct input, " > /root/ime.txt" and Enter: the shell wrote "a漢字かな" (read over SSH).
-#  No ZWL ERROR in zdesktop's log.
+#  No KWL ERROR in zdesktop's log.
 #
 #   SETTINGS_CONFIG=plan/ws089/tests/config-amd64-settings-ime.mk plan/ws089/tests/build-settings-image.sh BUILD
 #   plan/ws128/tests/terminal-p011-ime.sh BUILD/hdd-image.img [OUTDIR]
@@ -64,7 +64,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/ime.tx
 expect_log /tmp/zdesktop.log 'KEI-IME READY'
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; cd /root; /bin/terminal --token=ime --timeout-s=600 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 expect_log /tmp/t.log 'ZTERM START run=ime'
-expect_log /tmp/zdesktop.log 'ZWL IME activate client='
+expect_log /tmp/zdesktop.log 'KWL IME activate client='
 
 # 1. Direct input: keys, no commit.
 keys 'echo a'
@@ -74,7 +74,7 @@ n=$(count /tmp/t.log 'ZTERM IME commit')
 
 # 2. Japanese: a preedit at the cursor, a conversion, a commit.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'kanji'
 expect_log /tmp/t.log 'ZTERM IME preedit=かんじ'
 sleep 1
@@ -94,7 +94,7 @@ shot committed.png
 
 # 4. Direct input again; the shell writes the line to a file.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct'
 keys ' > /root/ime.txt' '\n'
 sleep 2
 guest 'cat /root/ime.txt' | tail -1 > "$out/ime.txt"
@@ -103,9 +103,9 @@ echo "file: $text"
 [ "$text" = "a漢字かな" ] && echo "file: a漢字かな ok" || { echo "file: a漢字かな FAIL"; status=1; }
 shot done.png
 guest 'grep -E "ZTERM (IME|START)" /tmp/t.log' > "$out/t-ime.log"
-guest 'grep -E "ZWL (IME|ERROR)|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
-errors=$(count /tmp/zdesktop.log 'ZWL ERROR')
-[ "$errors" = 0 ] && echo "no ZWL ERROR ok" || { echo "ZWL ERROR FAIL"; status=1; }
+guest 'grep -E "KWL (IME|ERROR)|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
+errors=$(count /tmp/zdesktop.log 'KWL ERROR')
+[ "$errors" = 0 ] && echo "no KWL ERROR ok" || { echo "KWL ERROR FAIL"; status=1; }
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 [ $status -eq 0 ] && echo "terminal-p011-ime: PASS" || echo "terminal-p011-ime: FAIL"
 exit $status

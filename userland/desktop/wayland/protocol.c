@@ -984,7 +984,7 @@ surface_commit(
 		replaced = 0U;
 		if (surface->queued != NULL)
 			replaced = surface->queued->id;
-		printf("ZWL COMMIT client=%llu surface=%u buffer=%u queued=%u\n", (unsigned long long)surface->client->number, surface->id,
+		printf("KWL COMMIT client=%llu surface=%u buffer=%u queued=%u\n", (unsigned long long)surface->client->number, surface->id,
 		       surface->pending->id, replaced);
 	}
 
@@ -1321,7 +1321,7 @@ kwl_window_bounds_refresh(
 	window_bounds(server, &width, &height);
 	if (server->bounds_width == 0 || (width == server->bounds_width && height == server->bounds_height))
 		return;
-	printf("ZWL BOUNDS changed width=%d height=%d was=%dx%d\n", width, height, server->bounds_width, server->bounds_height);
+	printf("KWL BOUNDS changed width=%d height=%d was=%dx%d\n", width, height, server->bounds_width, server->bounds_height);
 	server->bounds_width = width;
 	server->bounds_height = height;
 
@@ -1347,7 +1347,7 @@ kwl_window_bounds_refresh(
 			/* The bounds and a configure; a client that cannot take them is failed at its next request. */
 			error = kwl_window_send_configure(surface);
 			if (error != 0)
-				printf("ZWL BOUNDS configure errno=%d\n", error);
+				printf("KWL BOUNDS configure errno=%d\n", error);
 		}
 	}
 }
@@ -1484,7 +1484,7 @@ kwl_window_leave_fullscreen(
 
 	/* The output is drawn again; the log names where the window went. */
 	server->dirty = 1;
-	printf("ZWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u docked=%u client=%llu\n", surface->id, surface->x, surface->y, surface->placed, surface->maximized, (unsigned long long)surface->client->number);
+	printf("KWL WINDOW unfullscreen surface=%u x=%d y=%d placed=%u docked=%u client=%llu\n", surface->id, surface->x, surface->y, surface->placed, surface->maximized, (unsigned long long)surface->client->number);
 
 	/* A window not configured yet learns it from its first configure. */
 	if (!surface->configured)
@@ -1580,7 +1580,7 @@ kwl_window_send_configure(
 		return error;
 
 	/* Succeeded. */
-	printf("ZWL CONFIGURE client=%llu surface=%u serial=%u width=%u height=%u fullscreen=%u\n", (unsigned long long)surface->client->number, surface->id, surface->configure_serial, configure[0], configure[1], surface->fullscreen);
+	printf("KWL CONFIGURE client=%llu surface=%u serial=%u width=%u height=%u fullscreen=%u\n", (unsigned long long)surface->client->number, surface->id, surface->configure_serial, configure[0], configure[1], surface->fullscreen);
 	return 0;
 }
 
@@ -1617,7 +1617,7 @@ send_bounds(
 	server->bounds_height = height;
 
 	/* Succeeded. */
-	printf("ZWL BOUNDS client=%llu surface=%u width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, width, height);
+	printf("KWL BOUNDS client=%llu surface=%u width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, width, height);
 	return 0;
 }
 

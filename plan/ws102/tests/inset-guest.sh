@@ -4,10 +4,10 @@
 #  1. Text Editor on a document of 200 lines ("L001" ...; line 150 is a row of M's), the caret put on line 150 with the
 #     keys (Ctrl+End to the empty line 201, then Up 51 times).  before.png.
 #  2. The bottom-left corner's swipe opens the QWERTY row: zdesktop tells Text Editor how much of it the row covers
-#     (ZWL INSET ... bottom>0 reason=2), and Text Editor, which does nothing of its own, has the caret's line (the M's)
+#     (KWL INSET ... bottom>0 reason=2), and Text Editor, which does nothing of its own, has the caret's line (the M's)
 #     in the middle of the part of its text the row leaves: the M row's centre within one line of the middle between
 #     the first and the last text row seen above the keyboard.  after.png.
-#  3. The row closes (ZWL INSET ... right=0 bottom=0 reason=0).
+#  3. The row closes (KWL INSET ... right=0 bottom=0 reason=0).
 #  4. wlshm (no libkeiland, no inset) under the keyboard: it keeps drawing, gets no inset, and nothing fails.
 # Prints "INSET RESULT ..." and "inset-guest: PASS" or "inset-guest: FAIL".
 #
@@ -55,12 +55,12 @@ PY
 put "$out/inset.txt" /root/inset.txt
 guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL OSK zone" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 1; echo started' >/dev/null
+i=0; while ! grep -q "KWL OSK zone" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 1; echo started' >/dev/null
 
 # 1. Text Editor, the caret on line 150.
 guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=800 /root/inset.txt > /tmp/te.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-expect_more 'ZWL INSET create client=' 0
-expect_more 'ZWL MAP client=' 0
+expect_more 'KWL INSET create client=' 0
+expect_more 'KWL MAP client=' 0
 pointer move 640 400 sleep 200 down sleep 60 up sleep 500 >/dev/null
 keys '<ctrl-end>'
 n=0
@@ -69,13 +69,13 @@ sleep 1.5
 shot before.png
 
 # 2. The QWERTY row.
-insets=$(count 'ZWL INSET client=')
+insets=$(count 'KWL INSET client=')
 pointer move 6 792 sleep 200 down sleep 80 move 78 721 sleep 60 move 150 650 sleep 120 up sleep 1500 >/dev/null
-expect_more 'ZWL OSK open kind=qwerty' 0
-expect_more 'ZWL INSET client=[0-9]+ surface=[0-9]+ right=0 bottom=[1-9][0-9]* reason=2' 0
-panel_y=$(guest "grep 'ZWL OSK open kind=qwerty' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\) .*/\1/p')
-body_y=$(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\).*/\1/p')
-guest "grep 'ZWL INSET' /tmp/zdesktop.log" | tail -3
+expect_more 'KWL OSK open kind=qwerty' 0
+expect_more 'KWL INSET client=[0-9]+ surface=[0-9]+ right=0 bottom=[1-9][0-9]* reason=2' 0
+panel_y=$(guest "grep 'KWL OSK open kind=qwerty' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\) .*/\1/p')
+body_y=$(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* y=\([0-9]*\).*/\1/p')
+guest "grep 'KWL INSET' /tmp/zdesktop.log" | tail -3
 sleep 1
 shot after.png
 
@@ -123,28 +123,28 @@ cat "$out/verdict.txt"
 
 # 3. The row closes.
 pointer move 6 792 sleep 200 down sleep 80 move 78 721 sleep 60 move 150 650 sleep 120 up sleep 1500 >/dev/null
-expect_more 'ZWL OSK close kind=qwerty' 0
-expect_more 'ZWL INSET client=[0-9]+ surface=[0-9]+ right=0 bottom=0 reason=0' 0
+expect_more 'KWL OSK close kind=qwerty' 0
+expect_more 'KWL INSET client=[0-9]+ surface=[0-9]+ right=0 bottom=0 reason=0' 0
 
 # 4. wlshm under the keyboard: no inset, still drawing.
 guest "export XDG_RUNTIME_DIR=/tmp; /bin/wlshm --size=480x320 --frames=100000 > /tmp/wlshm.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-creates=$(count 'ZWL INSET create')
+creates=$(count 'KWL INSET create')
 pointer move 6 792 sleep 200 down sleep 80 move 78 721 sleep 60 move 150 650 sleep 120 up sleep 1500 >/dev/null
-expect_more 'ZWL OSK open kind=qwerty' 1
+expect_more 'KWL OSK open kind=qwerty' 1
 shot wlshm.png
 commits1=$(guest 'grep -c . /tmp/wlshm.log' | tail -1)
 sleep 2
 commits2=$(guest 'grep -c . /tmp/wlshm.log' | tail -1)
 alive=$(guest 'ps -A -o args | grep -c "[w]lshm"' | tail -1)
-[ "$(count 'ZWL INSET create')" = "$creates" ] && echo "wlshm: no inset ok" || { echo "wlshm: an inset was made FAIL"; status=1; }
+[ "$(count 'KWL INSET create')" = "$creates" ] && echo "wlshm: no inset ok" || { echo "wlshm: an inset was made FAIL"; status=1; }
 [ "${alive:-0}" -ge 1 ] && echo "wlshm: running ok" || { echo "wlshm: gone FAIL"; status=1; }
 echo "wlshm: log lines $commits1 -> $commits2"
 pointer move 6 792 sleep 200 down sleep 80 move 78 721 sleep 60 move 150 650 sleep 120 up sleep 1000 >/dev/null
 
 # Nothing failed.
-errors=$(count 'ZWL ERROR|protocol error|FAILED')
+errors=$(count 'KWL ERROR|protocol error|FAILED')
 [ "${errors:-1}" = 0 ] && echo "no errors ok" || { echo "errors: $errors FAIL"; status=1; }
-guest 'grep -E "ZWL (INSET|OSK (open|close)|MAP|ERROR)" /tmp/zdesktop.log' > "$out/zdesktop.log"
+guest 'grep -E "KWL (INSET|OSK (open|close)|MAP|ERROR)" /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest 'cat /tmp/te.log' > "$out/te.log"
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 [ $status -eq 0 ] && echo "inset-guest: PASS" || echo "inset-guest: FAIL"

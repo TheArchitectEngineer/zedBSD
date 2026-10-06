@@ -290,7 +290,7 @@ if [ -n "$SCENARIO" ]; then
 	grep -aE 'i915: (test |ktest|MCR-PROBE summary)|i915: .*(verdict|[A-Z0-9-]+ (PASS|FAIL|HANG|ERROR)[:( ]|[A-Z0-9-]+ cleanup|[A-Z0-9-]+ release:)' /tmp/vkloop-last.log | cut -c1-300 | head -100
 	echo "--- vkdemo"
 fi
-grep -anE 'i915: vk|i915: capture: (base|lease)|gpu: ioctl|VKDEMO|vkdemo:|ZWL|WLTEST|wltest:|zdesktop:|MVIEW (START|DONE|FAILED)|mview:|resident|panic|fault|init: ' /tmp/vkloop-last.log | grep -v 'parity N0\|parity P\|expected_fault' | cut -c1-200 | head -60
+grep -anE 'i915: vk|i915: capture: (base|lease)|gpu: ioctl|VKDEMO|vkdemo:|KWL|WLTEST|wltest:|zdesktop:|MVIEW (START|DONE|FAILED)|mview:|resident|panic|fault|init: ' /tmp/vkloop-last.log | grep -v 'parity N0\|parity P\|expected_fault' | cut -c1-200 | head -60
 if [ "$ORACLE" = 1 ]; then
 	python3 plan/ws031/handover/tools/vkdump_verify.py /tmp/vkloop-last.log plan/ws014/tests /tmp/vkframe1.ppm "${TIME_MS:-0}"
 fi

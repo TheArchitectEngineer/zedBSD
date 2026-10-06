@@ -179,7 +179,7 @@ kwl_decoration_request(
 
 	/* Publishes a new proposal without discarding an already acknowledged mode. */
 	toplevel->decoration_preferred = mode;
-	printf("ZWL DECORATION asked client=%llu mode=%u\n", (unsigned long long)object->client->number, mode);
+	printf("KWL DECORATION asked client=%llu mode=%u\n", (unsigned long long)object->client->number, mode);
 
 	/* Sends decoration configure before the corresponding xdg_surface configure. */
 	error = decoration_answer(object);
@@ -390,7 +390,7 @@ kwl_decoration_commit(
 	if (mode != toplevel->decoration_committed) {
 		toplevel->decoration_committed = mode;
 		surface->client->server->dirty = 1;
-		printf("ZWL DECORATION applied client=%llu surface=%u mode=%u\n", (unsigned long long)surface->client->number, surface->id, mode);
+		printf("KWL DECORATION applied client=%llu surface=%u mode=%u\n", (unsigned long long)surface->client->number, surface->id, mode);
 	}
 
 	/* Succeeded: drawing and hit testing follow the committed content. */
@@ -593,7 +593,7 @@ decoration_answer(
 		return error;
 
 	/* Records the mode actually sent on the decoration wire. */
-	printf("ZWL DECORATION configure client=%llu mode=%u\n", (unsigned long long)decoration->client->number, mode);
+	printf("KWL DECORATION configure client=%llu mode=%u\n", (unsigned long long)decoration->client->number, mode);
 
 	/* The first empty surface commit sends the initial xdg configure. */
 	surface = toplevel->surface;
@@ -663,7 +663,7 @@ kde_request(
 	error = kwl_emit(object->client, object->id, KDE_DECORATION_MODE, &mode, sizeof(mode));
 	if (error != 0)
 		return error;
-	printf("ZWL DECORATION kde client=%llu mode=%u\n", (unsigned long long)object->client->number, mode);
+	printf("KWL DECORATION kde client=%llu mode=%u\n", (unsigned long long)object->client->number, mode);
 
 	/* A window of an orphaned decoration, or one without a toplevel yet, takes the mode at its first configure. */
 	if (object->kde_surface == NULL)

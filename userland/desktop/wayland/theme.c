@@ -88,7 +88,7 @@ kwl_theme_changed(
 	}
 
 	/* Logs the appearance told, for the tests. */
-	printf("ZWL THEME appearance=%d\n", (int)server->dark);
+	printf("KWL THEME appearance=%d\n", (int)server->dark);
 }
 
 /* Sends one object the appearance: 0 light, 1 dark. */

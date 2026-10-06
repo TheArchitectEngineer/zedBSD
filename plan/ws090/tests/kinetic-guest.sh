@@ -5,7 +5,7 @@
 # of pages scrolls.  The pointer (QMP) is put on the list; touchinject's pad (the Latitude 5330's size, 12 units a
 # millimetre) has two fingers move 20 mm up in about 100 ms and lift.  Judged from the logs over SSH and a picture.
 #  1. The compositor sends the fingers' scrolling a unit at a time with the finger as its source, and its end:
-#     zdesktop's log has "ZWL AXIS stop".
+#     zdesktop's log has "KWL AXIS stop".
 #  2. Settings scrolls the list at once and lets it fly on after the lift: its log has
 #     "ZSETTINGS KINETIC start pane=list" and, within 2 s, "ZSETTINGS KINETIC stop pane=list".
 #  3. Both stay up, without ERROR or FAILED lines (kinetic.png: the list scrolled down).
@@ -30,7 +30,7 @@ guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 guest "$env /bin/settings --width=900 --height=420 --timeout-s=120 > /tmp/settings.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4/p')
 wx=${2:-0}; wy=${3:-0}
 echo "settings window at $wx,$wy"
 
@@ -40,9 +40,9 @@ guest 'printf "pad 1336 760 5 scan\nwait 2600\ndown 0 600 500; down 1 760 500\nw
 grep -q '^replay=0$' "$out/pad.txt" && pass replay || fail replay
 
 # 1 and 2. The logs.
-guest 'grep -E "ZWL INPUT|ZWL AXIS|ERROR" /tmp/zdesktop.log' > "$out/zdesktop.txt"
+guest 'grep -E "KWL INPUT|KWL AXIS|ERROR" /tmp/zdesktop.log' > "$out/zdesktop.txt"
 guest 'cat /tmp/settings.log' > "$out/settings.txt"
-grep -q 'ZWL AXIS stop' "$out/zdesktop.txt" && pass axis-stop || fail axis-stop
+grep -q 'KWL AXIS stop' "$out/zdesktop.txt" && pass axis-stop || fail axis-stop
 grep -q 'KINETIC start pane=list' "$out/settings.txt" && pass kinetic-start || fail kinetic-start
 grep -q 'KINETIC stop pane=list' "$out/settings.txt" && pass kinetic-stop || fail kinetic-stop
 

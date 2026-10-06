@@ -269,7 +269,7 @@ kwl_tablet_add(
 	}
 
 	/* One line lets a test see the tablet's axes. */
-	printf("ZWL TABLET added device=%s name=\"%s\" x=%d..%d y=%d..%d pressure=%d..%d tilt=%u\n", input->path, device->name, device->axis_x.minimum, device->axis_x.maximum, device->axis_y.minimum, device->axis_y.maximum, device->axis_pressure.minimum, device->axis_pressure.maximum, device->has_tilt);
+	printf("KWL TABLET added device=%s name=\"%s\" x=%d..%d y=%d..%d pressure=%d..%d tilt=%u\n", input->path, device->name, device->axis_x.minimum, device->axis_x.maximum, device->axis_y.minimum, device->axis_y.maximum, device->axis_pressure.minimum, device->axis_pressure.maximum, device->has_tilt);
 
 	/* Succeeded: the tablet's reports are applied from now on. */
 	return 0;
@@ -337,7 +337,7 @@ kwl_tablet_remove(
 	}
 
 	/* The slot is free. */
-	printf("ZWL TABLET removed device=%s\n", input->path);
+	printf("KWL TABLET removed device=%s\n", input->path);
 	device->input = NULL;
 	device->focus = NULL;
 }
@@ -1148,7 +1148,7 @@ send_axes(
 
 		/* The time the place went out, when the per-frame lines were asked for (ws099-p015's pen latency). */
 		if (device->focus->client->server->log_frames)
-			printf("ZWL LAT pen surface=%u at_us=%llu\n", device->focus->id, (unsigned long long)kwl_microseconds());
+			printf("KWL LAT pen surface=%u at_us=%llu\n", device->focus->id, (unsigned long long)kwl_microseconds());
 	}
 
 	/* The pressure, 0..65535, when it differs from what was sent. */
@@ -1426,7 +1426,7 @@ seat_create(
 	}
 
 	/* One line lets a test see who took the tablets. */
-	printf("ZWL TABLET seat client=%llu\n", (unsigned long long)manager->client->number);
+	printf("KWL TABLET seat client=%llu\n", (unsigned long long)manager->client->number);
 
 	/* Succeeded: the client owns the tablet seat. */
 	return 0;

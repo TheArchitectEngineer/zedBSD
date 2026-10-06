@@ -65,7 +65,7 @@ replay() {
 viewer() {
 	guest "$stop_viewer" >/dev/null
 	guest "$env /bin/imageview --width=1180 --height=700 $1 > /tmp/iv.log 2>&1 </dev/null & i=0; while ! grep -q 'IMAGEVIEW READY' /tmp/iv.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 	wx=${1:-0}; wy=${2:-0}
 	echo "window at $wx,$wy"
 }
@@ -85,7 +85,7 @@ done
 guest 'chmod 755 /bin/wayland /bin/imageview /bin/touchinject' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 
 # 1. Two fingers part over the fitted photo: the zoom.
 viewer /tmp/pics/02-landscape.jpg

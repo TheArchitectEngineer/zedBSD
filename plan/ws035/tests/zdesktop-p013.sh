@@ -31,7 +31,7 @@ pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 1; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[n]etwork-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[n]etwork-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 start_desktop='export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started'
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started'
 status=0
 
 # Fails the run unless a log has a line matching a pattern (within a few seconds).
@@ -60,30 +60,30 @@ shot() {
 }
 # The middle of the icon, from zdesktop's log.
 icon() {
-	guest "grep 'ZWL NETWORK icon' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep 'KWL NETWORK icon' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 # The middle of the last laid-out row whose text is $1.
 row() {
-	guest "grep 'ZWL NETWORK row .*text=$1\$' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep 'KWL NETWORK row .*text=$1\$' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 
 # 1. The real networkd.
 guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state reachable=1 connected=1 kind=wired interface=[a-z]+[0-9]+ wifi=absent'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state reachable=1 connected=1 kind=wired interface=[a-z]+[0-9]+ wifi=absent'
 set -- $(icon)
 ix=$(($1 + $3 / 2)); iy=$(($2 + $4 / 2))
 echo "icon at $ix,$iy"
 pointer move 700 400 sleep 400
 shot wired.png
 click "$ix" "$iy"
-expect_log /tmp/zdesktop.log 'ZWL NETWORK open'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=No Wi-Fi hardware'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=Wired \([a-z]+[0-9]+\): connected'
+expect_log /tmp/zdesktop.log 'KWL NETWORK open'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=No Wi-Fi hardware'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=Wired \([a-z]+[0-9]+\): connected'
 pointer move 1100 300 sleep 400
 shot wired-menu.png
 click 400 400
-expect_log /tmp/zdesktop.log 'ZWL NETWORK close via=outside'
+expect_log /tmp/zdesktop.log 'KWL NETWORK close via=outside'
 
 # 2. The stand-in: networkd's socket aside, the stand-in in its place, zdesktop again.
 guest "$stop_all" >/dev/null
@@ -94,13 +94,13 @@ saved=$(guest 'rm -f /tmp/wifi.conf.p013; [ -f /etc/wifi.conf ] && mv /etc/wifi.
 guest 'mv /run/networkd.sock /run/networkd.sock.real; /bin/network-probe 240 > /tmp/probe.log 2>&1 </dev/null & sleep 1; echo started' >/dev/null
 expect_log /tmp/probe.log 'NETPROBE listening'
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state reachable=1 connected=1 kind=wired interface=em9 wifi=disconnected'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state reachable=1 connected=1 kind=wired interface=em9 wifi=disconnected'
 set -- $(icon)
 ix=$(($1 + $3 / 2)); iy=$(($2 + $4 / 2))
 click "$ix" "$iy" 1500
-expect_log /tmp/zdesktop.log 'ZWL NETWORK request scan'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK scan count=3'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=Kei Lab'
+expect_log /tmp/zdesktop.log 'KWL NETWORK request scan'
+expect_log /tmp/zdesktop.log 'KWL NETWORK scan count=3'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=Kei Lab'
 set -- $(row 'Kei Lab')
 lx=$(($1 + 150)); ly=$(($2 + $4 / 2))
 pointer move "$lx" "$ly" sleep 500
@@ -109,20 +109,20 @@ shot list.png
 # Joining "Kei Lab", with its saved key: no key field.
 click "$lx" "$ly" 1500
 expect_log /tmp/probe.log 'NETPROBE request op=35 ssid=Kei Lab'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state reachable=1 connected=1 kind=wifi interface=wlan0 wifi=connected ssid=Kei Lab'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK disconnect .*ssid=Kei Lab'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state reachable=1 connected=1 kind=wifi interface=wlan0 wifi=connected ssid=Kei Lab'
+expect_log /tmp/zdesktop.log 'KWL NETWORK disconnect .*ssid=Kei Lab'
 pointer move 1100 500 sleep 500
 shot joined.png
 
 # "Kei Lab" took no key field.
-opened=$(guest "grep -c 'ZWL NETWORK key open ssid=Kei Lab' /tmp/zdesktop.log" | tail -1)
+opened=$(guest "grep -c 'KWL NETWORK key open ssid=Kei Lab' /tmp/zdesktop.log" | tail -1)
 [ "${opened:-1}" = 0 ] && echo "Kei Lab: no key field ok" || { echo "Kei Lab: key field opened"; status=1; }
 
 # "Neighbor 5G" asks for a key and has none saved: the key field, and no join yet.
 set -- $(row 'Neighbor 5G')
 click $(($1 + 150)) $(($2 + $4 / 2)) 1500
-expect_log /tmp/zdesktop.log 'ZWL NETWORK key open ssid=Neighbor 5G'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=Key for Neighbor 5G'
+expect_log /tmp/zdesktop.log 'KWL NETWORK key open ssid=Neighbor 5G'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=Key for Neighbor 5G'
 joins=$(guest "grep -c 'NETPROBE request op=35 ssid=Neighbor 5G' /tmp/probe.log" | tail -1)
 [ "${joins:-1}" = 0 ] && echo "Neighbor 5G: no join before the key ok" || { echo "Neighbor 5G: joined before the key"; status=1; }
 pointer move 1100 500 sleep 500
@@ -130,16 +130,16 @@ shot key.png
 
 # A key of 4 characters is refused, and kept to be finished.
 keys 'p013' '\n'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=The key must be 8 to 63 characters'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=The key must be 8 to 63 characters'
 shot failed.png
 
 # The key finished (13 characters) and Enter: saved, the daemon told (37), then the join (35).
 keys '-fake-key' '\n'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK key saved ssid=Neighbor 5G'
+expect_log /tmp/zdesktop.log 'KWL NETWORK key saved ssid=Neighbor 5G'
 expect_log /tmp/probe.log 'NETPROBE request op=37'
 expect_log /tmp/probe.log 'NETPROBE request op=35 ssid=Neighbor 5G'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state reachable=1 connected=1 kind=wifi interface=wlan0 wifi=connected ssid=Neighbor 5G'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK disconnect .*ssid=Neighbor 5G'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state reachable=1 connected=1 kind=wifi interface=wlan0 wifi=connected ssid=Neighbor 5G'
+expect_log /tmp/zdesktop.log 'KWL NETWORK disconnect .*ssid=Neighbor 5G'
 pointer move 1100 500 sleep 500
 shot key-joined.png
 
@@ -149,9 +149,9 @@ shot key-joined.png
 set -- $(row 'Wi-Fi')
 click $(($1 + 150)) $(($2 + $4 / 2)) 1500
 expect_log /tmp/probe.log 'NETPROBE request op=33'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state .*wifi=off'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state .*wifi=off'
 click 400 400
-expect_log /tmp/zdesktop.log 'ZWL NETWORK close via=outside'
+expect_log /tmp/zdesktop.log 'KWL NETWORK close via=outside'
 pointer move 700 400 sleep 500
 shot off.png
 

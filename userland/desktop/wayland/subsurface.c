@@ -447,7 +447,7 @@ subsurface_create(
 	insert_child(parent, surface, NULL, 1U);
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL SUBSURFACE create client=%llu surface=%u parent=%u\n", (unsigned long long)surface->client->number, surface->id, parent->id);
+	printf("KWL SUBSURFACE create client=%llu surface=%u parent=%u\n", (unsigned long long)surface->client->number, surface->id, parent->id);
 	return 0;
 }
 
@@ -624,7 +624,7 @@ flush_cached(
 	/* The cached commit is applied. */
 	error = kwl_surface_queue(surface);
 	if (error != 0)
-		printf("ZWL SUBSURFACE flush surface=%u errno=%d\n", surface->id, error);
+		printf("KWL SUBSURFACE flush surface=%u errno=%d\n", surface->id, error);
 
 	/* The pending state comes back, and the children go with the applied state. */
 	surface->pending = pending;

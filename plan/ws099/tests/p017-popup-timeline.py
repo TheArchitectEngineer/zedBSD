@@ -24,14 +24,14 @@ SOURCE = ROOT / "plan/ws035/tests/zdesktop-p076.sh"
 
 # All three observations must advance beyond the first menu's existing entries.
 HANDSHAKE = r'''
-far_maps=$(count_log /tmp/zdesktop.log '^ZWL POPUP map surface=')
+far_maps=$(count_log /tmp/zdesktop.log '^KWL POPUP map surface=')
 far_configures=$(count_log /tmp/p.log 'POPUPPROBE configure menu x=360 y=60 width=360 height=180')
 far_focuses=$(count_log /tmp/p.log 'POPUPPROBE focus menu')
 case "$far_maps:$far_configures:$far_focuses" in
 *[!0-9:]*|:*|*::|*:) echo 'far-menu: invalid initial count'; status=1; finish ;;
 esac
 click $((wx + 360)) $((wy + 60)) 1200
-far_reply=$(guest "i=0; while [ \$i -lt 6 ]; do m=\$(grep -cE '^ZWL POPUP map surface=' /tmp/zdesktop.log); c=\$(grep -cE 'POPUPPROBE configure menu x=360 y=60 width=360 height=180' /tmp/p.log); f=\$(grep -cE 'POPUPPROBE focus menu' /tmp/p.log); if [ \$m -gt $far_maps ] && [ \$c -gt $far_configures ] && [ \$f -gt $far_focuses ]; then grep '^ZWL POPUP map surface=' /tmp/zdesktop.log | tail -1; echo P017_FAR_READY=1; exit 0; fi; sleep 0.5; i=\$((i + 1)); done; echo P017_FAR_READY=0; exit 1")
+far_reply=$(guest "i=0; while [ \$i -lt 6 ]; do m=\$(grep -cE '^KWL POPUP map surface=' /tmp/zdesktop.log); c=\$(grep -cE 'POPUPPROBE configure menu x=360 y=60 width=360 height=180' /tmp/p.log); f=\$(grep -cE 'POPUPPROBE focus menu' /tmp/p.log); if [ \$m -gt $far_maps ] && [ \$c -gt $far_configures ] && [ \$f -gt $far_focuses ]; then grep '^KWL POPUP map surface=' /tmp/zdesktop.log | tail -1; echo P017_FAR_READY=1; exit 0; fi; sleep 0.5; i=\$((i + 1)); done; echo P017_FAR_READY=0; exit 1")
 far_status=$?
 printf '%s\n' "$far_reply"
 if [ "$far_status" -ne 0 ] || ! printf '%s\n' "$far_reply" | grep -q '^P017_FAR_READY=1$'; then

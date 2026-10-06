@@ -2,8 +2,8 @@
 # ws099-p028: zdesktop's log keeps no NUL bytes when the file is truncated while zdesktop still writes (as a test's
 # next run, "> /tmp/zdesktop.log", does while the old zdesktop ends), on the Venus guest of the Settings image.
 #  1. zdesktop started with "> /tmp/lognul.log"; once READY the file is truncated (": > /tmp/lognul.log"), and zdesktop
-#     is then stopped (it writes its exit lines: ZWL EXIT).
-#  2. The file's size and its size without NUL bytes (tr -d '\000' | wc -c) are equal, and the ZWL EXIT line is in it.
+#     is then stopped (it writes its exit lines: KWL EXIT).
+#  2. The file's size and its size without NUL bytes (tr -d '\000' | wc -c) are equal, and the KWL EXIT line is in it.
 #  3. Each /run/user/*/session.log the guest has (on a session image, after a Log Out and a login: sessiond's log of the
 #     session, now opened with O_APPEND too) has no NUL byte; without a session it is passed over.
 # Before the fix the exit lines landed at zdesktop's old offset after a hole of NUL bytes.
@@ -22,7 +22,7 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 
 # 1. zdesktop, the log truncated under it, then its end.
 guest "$stop_all" >/dev/null
-guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/lognul.log; /bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass > /tmp/lognul.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -aq ZWL.READY /tmp/lognul.log && break; sleep 0.5; done; echo started' >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/lognul.log; /bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass > /tmp/lognul.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -aq KWL.READY /tmp/lognul.log && break; sleep 0.5; done; echo started' >/dev/null
 guest ': > /tmp/lognul.log; echo truncated' >/dev/null
 guest "$stop_all" >/dev/null
 sleep 1
@@ -32,7 +32,7 @@ sizes=$(guest 'a=$(wc -c < /tmp/lognul.log); b=$(tr -d "\000" < /tmp/lognul.log 
 echo "$sizes"
 set -- $sizes x 0 1
 [ "$2" = "$3" ] && echo "no NUL byte: ok" || { echo "NUL bytes: $(( ${2:-0} - ${3:-0} )) FAIL"; status=1; }
-exits=$(guest 'grep -ac "ZWL EXIT" /tmp/lognul.log' | tail -1)
+exits=$(guest 'grep -ac "KWL EXIT" /tmp/lognul.log' | tail -1)
 [ "${exits:-0}" -ge 1 ] 2>/dev/null && echo "the exit line kept: ok" || { echo "the exit line kept: FAIL"; status=1; }
 guest 'tr -d "\000" < /tmp/lognul.log | tail -5' > "$out/tail.txt"
 

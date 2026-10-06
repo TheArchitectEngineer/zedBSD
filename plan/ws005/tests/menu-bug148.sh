@@ -4,7 +4,7 @@
 # of the Settings image (zdesktop and network-probe).  networkd's socket is moved aside and network-probe stands in
 # (Kei Lab with a key saved first, Cafe Guest, Neighbor 5G).
 #  1. 1280x800: the menu, a click on Kei Lab (joined): the first network row after the switch's lines is Kei Lab, the
-#     button is logged (ZWL NETWORK disconnect ... ssid=Kei Lab) and no row reads "Disconnect from" (joined.png).
+#     button is logged (KWL NETWORK disconnect ... ssid=Kei Lab) and no row reads "Disconnect from" (joined.png).
 #  2. zdesktop again at 1280x230 (the stand-in stays connected): the menu lists Kei Lab and a note "2 more in Settings >
 #     Wi-Fi" instead of the two others, and its height is within 230 - 44 - 6 - 8 = 172 (short.png).
 #  3. A click on the button: the stand-in is told to disconnect (op=36) and the state says disconnected (left.png).
@@ -25,7 +25,7 @@ check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNT
 pointer() { python3 plan/ws035/tests/qmp-pointer.py --height "${PH:-800}" "$GUEST_RUNTIME/qmp.sock" "$@"; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[s]ettings|[n]etwork-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[s]ettings|[n]etwork-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 start_desktop='export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started'
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started'
 status=0
 . plan/ws089/tests/settings-wait.sh
 
@@ -57,11 +57,11 @@ shot() {
 }
 # The middle of the network icon, from zdesktop's log.
 icon() {
-	guest "grep -a 'ZWL NETWORK icon' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep -a 'KWL NETWORK icon' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 # The place of the last laid-out menu row whose text is $1.
 row() {
-	guest "grep -a 'ZWL NETWORK row .*text=$1\$' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep -a 'KWL NETWORK row .*text=$1\$' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 # Clicks a control of Settings' page by its index, where Settings last logged it.
 control() {
@@ -76,7 +76,7 @@ control() {
 
 # The rows of the last layout logged.
 last_rows() {
-	guest "grep -aE 'ZWL NETWORK (menu|row|disconnect) ' /tmp/zdesktop.log" | awk '/ZWL NETWORK menu /{block=""} {block=block $0 "\n"} END{printf "%s", block}'
+	guest "grep -aE 'KWL NETWORK (menu|row|disconnect) ' /tmp/zdesktop.log" | awk '/KWL NETWORK menu /{block=""} {block=block $0 "\n"} END{printf "%s", block}'
 }
 
 # 0. A key for Kei Lab (against the real networkd), then the stand-in and zdesktop.
@@ -85,20 +85,20 @@ guest 'rm -f /etc/wifi.conf; net wifi add "Kei Lab" --password keilab-2026 --aut
 guest 'mv /run/networkd.sock /run/networkd.sock.real; /bin/network-probe 600 > /tmp/probe.log 2>&1 </dev/null & sleep 1; echo started' >/dev/null
 expect_log /tmp/probe.log 'NETPROBE listening'
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state reachable=1 '
+expect_log /tmp/zdesktop.log 'KWL NETWORK state reachable=1 '
 
 # 1. Joined to Kei Lab: first, with its button.
 set -- $(icon) 0 0 0 0
 ix=$(($1 + $3 / 2)); iy=$(($2 + $4 / 2))
 click $ix $iy 1500
-expect_log /tmp/zdesktop.log 'ZWL NETWORK scan count=3'
+expect_log /tmp/zdesktop.log 'KWL NETWORK scan count=3'
 set -- $(row 'Kei Lab') 0 0 0 0
 [ "$1" = 0 ] && { echo "Kei Lab's row: MISSING"; status=1; }
 click $(($1 + 150)) $(($2 + $4 / 2)) 1500
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state .*wifi=connected ssid=Kei Lab'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK disconnect .*ssid=Kei Lab'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state .*wifi=connected ssid=Kei Lab'
+expect_log /tmp/zdesktop.log 'KWL NETWORK disconnect .*ssid=Kei Lab'
 last_rows > "$out/rows-joined.txt"
-first=$(grep 'ZWL NETWORK row ' "$out/rows-joined.txt" | grep -E 'kind=(3|5) ' | head -1 | sed -n 's/.*text=//p')
+first=$(grep 'KWL NETWORK row ' "$out/rows-joined.txt" | grep -E 'kind=(3|5) ' | head -1 | sed -n 's/.*text=//p')
 [ "$first" = "Kei Lab" ] && echo "first network: Kei Lab ok" || { echo "first network: '$first' FAIL"; status=1; }
 grep -q 'text=Disconnect from' "$out/rows-joined.txt" && { echo "a Disconnect from row: FAIL"; status=1; } || echo "no Disconnect from row: ok"
 pointer move 1100 500 sleep 500
@@ -110,27 +110,27 @@ guest 'for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | awk "{print \$1
 PH=230
 start_short=$(echo "$start_desktop" | sed 's/--height=800/--height=230/')
 guest "$start_short" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL NETWORK icon x='
+expect_log /tmp/zdesktop.log 'KWL NETWORK icon x='
 set -- $(icon) 0 0 0 0
 click $(($1 + $3 / 2)) $(($2 + $4 / 2)) 1500
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=[0-9]+ more in Settings > Wi-Fi'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=[0-9]+ more in Settings > Wi-Fi'
 last_rows > "$out/rows-short.txt"
-height=$(grep 'ZWL NETWORK menu ' "$out/rows-short.txt" | tail -1 | sed -n 's/.* height=\([0-9]*\).*/\1/p')
+height=$(grep 'KWL NETWORK menu ' "$out/rows-short.txt" | tail -1 | sed -n 's/.* height=\([0-9]*\).*/\1/p')
 [ "${height:-999}" -le 172 ] 2>/dev/null && echo "menu height $height fits: ok" || { echo "menu height ${height:-?}: FAIL"; status=1; }
 shot short.png
 
 # 3. The button disconnects.
-set -- $(guest "grep -a 'ZWL NETWORK disconnect ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') 0 0 0 0
+set -- $(guest "grep -a 'KWL NETWORK disconnect ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') 0 0 0 0
 [ "$1" = 0 ] && { echo "the Disconnect button: MISSING"; status=1; }
 click $(($1 + $3 / 2)) $(($2 + $4 / 2)) 1500
 expect_log /tmp/probe.log 'NETPROBE request op=36'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state .*wifi=disconnected'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state .*wifi=disconnected'
 shot left.png
 
 # zdesktop saw no error; networkd's socket back and the test key gone.
 errors=$(guest "grep -ac ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -a "ZWL NETWORK" /tmp/zdesktop.log' > "$out/zdesktop-network.log"
+guest 'grep -a "KWL NETWORK" /tmp/zdesktop.log' > "$out/zdesktop-network.log"
 guest "$stop_all" >/dev/null
 guest 'rm -f /run/networkd.sock; mv /run/networkd.sock.real /run/networkd.sock; rm -f /etc/wifi.conf; net show' > "$out/net-show.txt"
 grep -q 'online' "$out/net-show.txt" && echo "networkd: back" || { echo "networkd: not back"; status=1; }

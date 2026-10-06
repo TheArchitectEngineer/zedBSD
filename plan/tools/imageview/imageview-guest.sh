@@ -18,7 +18,7 @@
 #   swipe        a drag across a fitted image goes back to the previous one (swipe.png)
 #   fullscreen   F: the full screen, black, the chip dark (fullscreen.png), Esc back
 #   chooser      Ctrl+O (chooser.png), Escape
-# Every step's pictures go to OUTDIR.  The steps read the program's own log lines (IMAGEVIEW ..., ZWL ...) through
+# Every step's pictures go to OUTDIR.  The steps read the program's own log lines (IMAGEVIEW ..., KWL ...) through
 # SSH; nothing reads the console.
 #   GUEST_RUNTIME=... BIN=build/ws091-amd64 plan/tools/imageview/imageview-guest.sh OUTDIR STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -85,7 +85,7 @@ mkdir -p /etc/keiland /tmp/pics && cp /tmp/apps.conf /etc/keiland/apps.conf && m
 		;;
 	home)
 		pointer move 23 17 sleep 300 down sleep 60 up sleep 1500 move 700 780 sleep 300
-		expect_log /tmp/zdesktop.log 'ZWL HOME opened'
+		expect_log /tmp/zdesktop.log 'KWL HOME opened'
 		shot home.png
 		keys '<esc>'
 		sleep 1

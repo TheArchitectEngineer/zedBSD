@@ -84,7 +84,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 /bin/terminal --token=t1 --timeout-s=800 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}; bar=$((wy - 30))
 echo "terminal: surface $surface at $wx,$wy"
 
@@ -200,7 +200,7 @@ expect_log /tmp/t.log 'ZTERM ACTION run=t1 action=18'
 # 13. A new window by Ctrl+Shift+N; its own menu closes it.
 keys '<ctrl-shift-n>'
 sleep 6
-set -- $(guest "grep 'ZWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 nx=${2:-0}; ny=${3:-0}
 expect_log /tmp/t.log 'ZTERM START run=t1-new'
 expect_log /tmp/zdesktop.log "MENU bar client=$zc2 surface=[0-9]+ where=floating item=5 "

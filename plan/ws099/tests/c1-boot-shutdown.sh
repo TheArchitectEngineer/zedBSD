@@ -12,8 +12,8 @@
 #     end's: a machine that goes dark when it is off).
 #     ws099-p009: the last picture is the greeter's "Shutting down..." card: against the greeter photographed before
 #     the press, the card's middle (the name, the password field) and the power buttons' corner have changed
-#     (C1_CHANGED_PERCENT of their pixels), and the greeter's log has ZWL GREETER powering=poweroff before
-#     ZWL GREETER power=poweroff (the request went after the picture).  QEMU ending (ACPI S5, BUG-119) is checked
+#     (C1_CHANGED_PERCENT of their pixels), and the greeter's log has KWL GREETER powering=poweroff before
+#     KWL GREETER power=poweroff (the request went after the picture).  QEMU ending (ACPI S5, BUG-119) is checked
 #     too: a warning while C1_REQUIRE_QEMU_EXIT is 0, a failure when it is 1.
 # Prints "C1 RESULT boot_black=N boot_text=M shutdown_black=N shutdown_text=M" and "C1-boot: PASS|FAIL".
 #
@@ -71,7 +71,7 @@ echo "boot: $(grep -c 'seen=' "$out/boot.txt") moments; after the first picture:
 # 2. Log Out to the greeter (App Home's Log Out, as ws035-p126), then Shut Down at the greeter.
 sleep 3
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-set -- $(guest "grep 'ZWL HOME icon name=\"Log Out\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/1000/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 if [ -z "${1:-}" ]; then
 	echo "shutdown: no Log Out icon"
 	echo "C1 RESULT boot_black=$boot_black boot_text=$boot_text shutdown_black=? shutdown_text=?"
@@ -97,7 +97,7 @@ pointer move 1190 750 sleep 300 move 1200 758 sleep 400 down sleep 100 up
 python3 plan/ws099/tests/c1-watch.py "$out/shutdown" --runtime "$GUEST_RUNTIME" --seconds "$C1_SHUTDOWN_S" > "$out/shutdown.txt" 2>&1 &
 watcher=$!
 sleep 2
-guest "grep -nE 'ZWL GREETER (powering|power)=' /var/log/greeter.log" > "$out/greeter-power.txt" 2>&1
+guest "grep -nE 'KWL GREETER (powering|power)=' /var/log/greeter.log" > "$out/greeter-power.txt" 2>&1
 sleep 18
 down=0
 answer=$(guest 'echo alive' | tail -1)

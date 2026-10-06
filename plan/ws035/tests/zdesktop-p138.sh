@@ -3,9 +3,9 @@
 # zdesktop --glass at 1280x800, the pointer driven through QMP.
 #  1. Notes started fullscreen by the top-right swipe (corner.c, /bin/notes --fullscreen), then Esc (Notes' own
 #     xdg_toplevel.unset_fullscreen): it had no place as a window, so zdesktop centres it in the space
-#     (ZWL WINDOW unfullscreen ... placed=0, then ZWL WINDOW centred at its window size), its title bar below the
+#     (KWL WINDOW unfullscreen ... placed=0, then KWL WINDOW centred at its window size), its title bar below the
 #     system bar (y >= KWL_GLASS_TOP, 108).  unfullscreen.png.
-#  2. A drag on its title bar moves it (ZWL GLASS moved).  moved.png.
+#  2. A drag on its title bar moves it (KWL GLASS moved).  moved.png.
 #  3. The swipe again: the compositor makes the Notes window fullscreen (the compositor's path); Esc brings it back
 #     to where it was moved (placed=1), kept inside the space (moved up if its body would overhang the bottom).  back.png.
 #
@@ -60,18 +60,18 @@ stroke() {
 
 guest "$stop_all" >/dev/null
 guest 'rm -rf /root/Documents/Notes /root/.local/share/keiland/notes; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 
 # 1. The swipe starts Notes fullscreen; Esc leaves it: centred, its title bar under the system bar.
 pointer $(stroke 1272 6 1072 206 10 30) up sleep 5000
-expect_log 'ZWL CORNER commit'
+expect_log 'KWL CORNER commit'
 pointer move 640 400 sleep 300
 check "$out/fullscreen.png" >/dev/null
 keys '<esc>'
 sleep 2
-expect_log 'ZWL WINDOW unfullscreen surface=[0-9]+ x=-?[0-9]+ y=-?[0-9]+ placed=0'
-expect_log 'ZWL WINDOW centred surface=[0-9]+ x=[0-9]+ y=[0-9]+ width=[0-9]+ height=[0-9]+'
-set -- $(guest "grep 'ZWL WINDOW centred' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+expect_log 'KWL WINDOW unfullscreen surface=[0-9]+ x=-?[0-9]+ y=-?[0-9]+ placed=0'
+expect_log 'KWL WINDOW centred surface=[0-9]+ x=[0-9]+ y=[0-9]+ width=[0-9]+ height=[0-9]+'
+set -- $(guest "grep 'KWL WINDOW centred' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 nx=${1:-0}; ny=${2:-0}; nw=${3:-0}; nh=${4:-0}
 echo "notes centred at $nx,$ny size ${nw}x$nh"
 if [ "$ny" -ge "$top" ] 2>/dev/null; then
@@ -93,13 +93,13 @@ check "$out/unfullscreen.png" >/dev/null
 # 2. Its title bar drags it: an empty part of the title bar (left of the buttons, right of Notes' menus), 30 pixels above the body.
 tx=$((nx + nw - 250)); ty=$((ny - 30))
 pointer move $((tx - 2)) $ty sleep 200 move $tx $ty sleep 300 down sleep 200 move $((tx + 40)) $((ty + 20)) sleep 150 move $((tx + 100)) $((ty + 60)) sleep 300 up sleep 800
-expect_log "ZWL GLASS moved surface=[0-9]+ x=$((nx + 100)) y=$((ny + 60))"
+expect_log "KWL GLASS moved surface=[0-9]+ x=$((nx + 100)) y=$((ny + 60))"
 pointer move 1270 790 sleep 600
 check "$out/moved.png" >/dev/null
 
 # 3. The swipe makes the window fullscreen (the compositor's path); Esc brings it back where it was moved.
 pointer $(stroke 1272 6 1072 206 10 30) up sleep 3000
-expect_log 'ZWL CORNER commit' 2
+expect_log 'KWL CORNER commit' 2
 keys '<esc>'
 sleep 2
 # Its place, kept inside the space: a body that would overhang the space's bottom is moved up (kwl_glass_fit).
@@ -107,14 +107,14 @@ space_bottom=$((800 - 12))
 want_y=$((ny + 60))
 [ $((want_y + nh)) -gt $space_bottom ] && want_y=$((space_bottom - nh))
 [ $want_y -lt $top ] && want_y=$top
-expect_log "ZWL WINDOW unfullscreen surface=[0-9]+ x=$((nx + 100)) y=$want_y placed=1"
+expect_log "KWL WINDOW unfullscreen surface=[0-9]+ x=$((nx + 100)) y=$want_y placed=1"
 pointer move 1270 790 sleep 600
 check "$out/back.png" >/dev/null
 
 # Nothing failed.
 guest 'grep -E "ERROR|FAILED|protocol error" /tmp/zdesktop.log' | tee "$out/errors.txt"
 [ -s "$out/errors.txt" ] && status=1
-guest 'grep -E "ZWL (CORNER|WINDOW|MAP|GLASS moved)|NOTES (START|LAYOUT)" /tmp/zdesktop.log' > "$out/zdesktop.log"
+guest 'grep -E "KWL (CORNER|WINDOW|MAP|GLASS moved)|NOTES (START|LAYOUT)" /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "p138: PASS" || echo "p138: FAIL"
 exit $status

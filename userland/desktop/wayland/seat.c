@@ -849,7 +849,7 @@ kwl_seat_axis_stop(
 
 	/* The group of events ends. */
 	kwl_seat_frame(server);
-	printf("ZWL AXIS stop\n");
+	printf("KWL AXIS stop\n");
 }
 
 /*
@@ -1024,7 +1024,7 @@ kwl_seat_key(
 	    server->glass &&
 	    !server->locked &&
 	    !server->greeter) {
-		printf("ZWL SUPER home\n");
+		printf("KWL SUPER home\n");
 		kwl_home_toggle(server, "super");
 	}
 
@@ -1486,7 +1486,7 @@ report_seat(
 	}
 
 	/* One line per constructor keeps the test log short. */
-	printf("ZWL SEAT client=%llu pointer=%u keyboard=%u touch=%u\n", (unsigned long long)client->number, pointer, keyboard, touch);
+	printf("KWL SEAT client=%llu pointer=%u keyboard=%u touch=%u\n", (unsigned long long)client->number, pointer, keyboard, touch);
 
 	/* Succeeded: the line is printed. */
 	return;

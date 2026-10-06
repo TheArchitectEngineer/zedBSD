@@ -77,7 +77,7 @@ expect_log() {
 open_at() {
 	token=$1; size=$2; color=$3; x=$4; y=$5
 	guest "$env /bin/wltest --windowed --size=$size --color=$color --frames=3600 --delay-ms=250 --token=$token > /tmp/$token.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
 	s=${1:-0:0}; sx=${2:-0}; sy=${3:-0}
 	pointer move $((sx + 150)) $((sy - 30)) sleep 300 down sleep 80 \
 	    move $(((sx + x) / 2 + 150)) $(((sy + y) / 2 - 30)) sleep 80 \

@@ -9,7 +9,7 @@
 # first: the compositor looks for new evdev nodes every 2 s.
 #
 #  1. The compositor takes the injector's touch pad as a touch pad (not as
-#     a touch screen): "ZWL INPUT device=... kind=touchpad abs=0
+#     a touch screen): "KWL INPUT device=... kind=touchpad abs=0
 #     resolution=12,12".
 #  2. A tap and then a drag (a touch 100 ms after the tap that moves 30 mm
 #     right) on a wltest window's title bar, where the mouse (QMP) first put
@@ -47,7 +47,7 @@ put "$build/bin/wayland" /bin/wayland
 guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=250 > /tmp/w.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "window: surface=$surface at $wx,$wy"
 
@@ -56,7 +56,7 @@ pointer move $((wx + 150)) $((wy - 30)) sleep 300 >/dev/null
 before=$wx
 guest 'printf "pad 1336 760 5 scan\nwait 2600\ndown 0 400 300\nwait 40\nup 0\nwait 100\ndown 0 400 300\nwait 30\nswipe 360 0 12 16\nup 0\nhold 800\n" | /bin/touchinject; echo replay=$?' > "$out/tapdrag.txt"
 grep -q '^replay=0$' "$out/tapdrag.txt" || { echo "tap-drag replay: FAILED"; status=1; }
-if guest "grep -E 'ZWL INPUT device=/dev/input/event[0-9]+ kind=touchpad abs=0 resolution=12,12' /tmp/zdesktop.log" | grep -q kind=touchpad; then
+if guest "grep -E 'KWL INPUT device=/dev/input/event[0-9]+ kind=touchpad abs=0 resolution=12,12' /tmp/zdesktop.log" | grep -q kind=touchpad; then
 	echo "touch pad taken as a touch pad: ok"
 else
 	echo "touch pad taken as a touch pad: FAILED"
@@ -86,7 +86,7 @@ fi
 
 # 4. The compositor is up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
-guest 'grep -E "ZWL INPUT|GLASS moved|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL INPUT|GLASS moved|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 if [ "$running" = "1" ] && ! grep -q ERROR "$out/log.txt"; then
 	echo "compositor up, no ERROR: ok"
 else

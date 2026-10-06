@@ -78,7 +78,7 @@ EOF
 expect_run 'sysctl kern.boot.login' 'kern.boot.login: graphical'
 expect_run 'service status 2>&1; ps -A -o user,args' 'sessiond'
 expect_log /var/log/sessiond.log 'GREETER start pid=[0-9]+ uid=78' 30
-expect_log /var/log/greeter.log 'ZWL GREETER open users=1 selected=root' 30
+expect_log /var/log/greeter.log 'KWL GREETER open users=1 selected=root' 30
 getty=$(guest 'ps -A -o args' | grep -c '^/sbin/getty')
 if [ "${getty:-0}" -eq 0 ]; then
 	echo "run: no getty (replaced by the greeter) ok"
@@ -86,7 +86,7 @@ else
 	echo "run: getty runs: NOT replaced"
 	status=1
 fi
-set -- $(guest "grep 'ZWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
 width=${1:-1280}; height=${2:-800}
 sleep 4
 pointer move $((width - 4)) $((height / 3)) sleep 400
@@ -97,13 +97,13 @@ console_shot console.png
 keys '\n'
 expect_log /var/log/sessiond.log 'AUTH ok user=root uid=0' 15
 expect_log /var/log/sessiond.log 'SESSION start user=root' 15
-expect_log /run/user/0/session.log 'ZWL READY socket=/run/user/0/wayland-0' 20
+expect_log /run/user/0/session.log 'KWL READY socket=/run/user/0/wayland-0' 20
 sleep 3
 check "$out/session.png" >/dev/null
 
 # 3. Log Out, and the greeter again.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-set -- $(guest "grep 'ZWL HOME icon name=\"Log Out\"' /run/user/0/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/0/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 if [ -n "${1:-}" ]; then
 	pointer move "$1" "$2" sleep 400 down sleep 60 up sleep 500
 else

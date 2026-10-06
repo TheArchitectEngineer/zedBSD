@@ -103,7 +103,7 @@ put "$build/dynamic/libjpeg-compat.so" /lib/libjpeg-compat.so
 guest 'chmod 755 /bin/notes /bin/touchinject; rm -rf /tmp/notes-p015 "${XDG_DATA_HOME:-$HOME/.local/share}/keiland/notes"; mkdir -p /tmp/notes-p015' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; rm -f /tmp/notes.log; /bin/notes --fullscreen /tmp/notes-p015/touch.pdf > /tmp/notes.log 2>&1 </dev/null & i=0; while ! grep -q "NOTES FRAME first" /tmp/notes.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 expect 'NOTES LAYOUT window=1280x800' "Notes is fullscreen"
 shot whole.png

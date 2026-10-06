@@ -239,14 +239,14 @@ kwl_ime_start(
 	/* Without the program there is no input method, and keys go to the applications. */
 	installed = access(IME_PROGRAM, X_OK);
 	if (installed != 0) {
-		printf("ZWL IME none program=%s errno=%d\n", IME_PROGRAM, errno);
+		printf("KWL IME none program=%s errno=%d\n", IME_PROGRAM, errno);
 		return;
 	}
 
 	/* The input method's state, for the compositor's lifetime. */
 	ime = calloc(1, sizeof(*ime));
 	if (ime == NULL) {
-		printf("ZWL IME none errno=%d\n", ENOMEM);
+		printf("KWL IME none errno=%d\n", ENOMEM);
 		return;
 	}
 
@@ -280,7 +280,7 @@ kwl_ime_tick(
 	if (ime->pid > 0) {
 		reaped = waitpid(ime->pid, &status, WNOHANG);
 		if (reaped == ime->pid || (reaped < 0 && errno == ECHILD)) {
-			printf("ZWL IME exited pid=%ld\n", (long)ime->pid);
+			printf("KWL IME exited pid=%ld\n", (long)ime->pid);
 			ime->pid = 0;
 		}
 	}
@@ -290,7 +290,7 @@ kwl_ime_tick(
 		oldest = ime->starts[ime->start_index];
 		if (!ime->replacing && oldest != 0U && now - oldest < IME_START_WINDOW_MS) {
 			ime->given_up = 1;
-			printf("ZWL IME given-up starts=3 window_ms=%u\n", IME_START_WINDOW_MS);
+			printf("KWL IME given-up starts=3 window_ms=%u\n", IME_START_WINDOW_MS);
 		} else {
 			ime_spawn(server, now);
 		}
@@ -300,7 +300,7 @@ kwl_ime_tick(
 	if (ime->watching && now - ime->watch_ms >= IME_ANSWER_MS) {
 		ime->watching = 0;
 		ime->bypass = 1;
-		printf("ZWL IME bypass after_ms=%u\n", IME_ANSWER_MS);
+		printf("KWL IME bypass after_ms=%u\n", IME_ANSWER_MS);
 	}
 
 	/* The lock screen and App Home take the keys; the input method follows them. */
@@ -330,13 +330,13 @@ kwl_ime_request(
 		if (ime->watching) {
 			waited = kwl_milliseconds() - ime->watch_ms;
 			if (waited >= IME_SLOW_MS)
-				printf("ZWL IME slow-answer ms=%llu\n", (unsigned long long)waited);
+				printf("KWL IME slow-answer ms=%llu\n", (unsigned long long)waited);
 		}
 
 		ime->watching = 0;
 		if (ime->bypass) {
 			ime->bypass = 0;
-			printf("ZWL IME answering\n");
+			printf("KWL IME answering\n");
 		}
 	}
 
@@ -545,7 +545,7 @@ kwl_ime_method_changed(
 		return;
 
 	/* The next start is the change's. */
-	printf("ZWL IME method=%d\n", server->ime_method);
+	printf("KWL IME method=%d\n", server->ime_method);
 	ime->replacing = 1;
 	ime->given_up = 0;
 
@@ -980,7 +980,7 @@ kwl_ime_indicator_draw(
 
 	/* Where a click chooses the next language (a test reads where it is when it moves). */
 	if (!ime->indicator_shown || ime->indicator_x != x)
-		printf("ZWL IME indicator x=%d label=%s\n", (int)x, ime->label);
+		printf("KWL IME indicator x=%d label=%s\n", (int)x, ime->label);
 	ime->indicator_x = x;
 	ime->indicator_shown = 1;
 
@@ -1040,7 +1040,7 @@ kwl_ime_indicator_button(
 	/* A press asks for the next language. */
 	if (state != 0U) {
 		ime_emit(ime->status, STATUS_NEXT, NULL, 0);
-		printf("ZWL IME indicator next\n");
+		printf("KWL IME indicator next\n");
 	}
 
 	/* Succeeded: the press (or its release) is the indicator's. */
@@ -1078,7 +1078,7 @@ ime_spawn(
 	/* The pair: zdesktop keeps one end, the input method gets the other. */
 	error = socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair);
 	if (error != 0) {
-		printf("ZWL IME spawn-failed step=socketpair errno=%d\n", errno);
+		printf("KWL IME spawn-failed step=socketpair errno=%d\n", errno);
 		ime->restart_ms = now + IME_RESTART_MS;
 		return;
 	}
@@ -1086,7 +1086,7 @@ ime_spawn(
 	/* The program runs in a process of its own. */
 	child = fork();
 	if (child < 0) {
-		printf("ZWL IME spawn-failed step=fork errno=%d\n", errno);
+		printf("KWL IME spawn-failed step=fork errno=%d\n", errno);
 		close(pair[0]);
 		close(pair[1]);
 		ime->restart_ms = now + IME_RESTART_MS;
@@ -1131,7 +1131,7 @@ ime_spawn(
 	ime->pid = child;
 	ime->client = client;
 	ime->method_started = server->ime_method;
-	printf("ZWL IME started pid=%ld client=%llu %s\n", (long)child, (unsigned long long)client->number, method);
+	printf("KWL IME started pid=%ld client=%llu %s\n", (long)child, (unsigned long long)client->number, method);
 }
 
 /*
@@ -1152,7 +1152,7 @@ ime_connect(
 	if (flags >= 0)
 		flags = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
 	if (flags < 0) {
-		printf("ZWL IME spawn-failed step=nonblock errno=%d\n", errno);
+		printf("KWL IME spawn-failed step=nonblock errno=%d\n", errno);
 		close(descriptor);
 		return NULL;
 	}
@@ -1181,7 +1181,7 @@ ime_connect(
 	}
 
 	/* Succeeded: the connection is served from the next pass. */
-	printf("ZWL CLIENT client=%llu fd=%d ime=1\n", (unsigned long long)client->number, descriptor);
+	printf("KWL CLIENT client=%llu fd=%d ime=1\n", (unsigned long long)client->number, descriptor);
 	return client;
 }
 
@@ -1198,7 +1198,7 @@ ime_lost(
 	unsigned i;
 
 	ime = server->ime;
-	printf("ZWL IME lost pid=%ld\n", (long)ime->pid);
+	printf("KWL IME lost pid=%ld\n", (long)ime->pid);
 
 	/* The keys its virtual keyboard holds are let go at the application. */
 	ime_release_keyboard(server);
@@ -1520,7 +1520,7 @@ ime_status_request(
 			snprintf(ime->language, sizeof(ime->language), "%s", id);
 			snprintf(ime->label, sizeof(ime->label), "%s", label);
 			status->client->server->dirty = 1;
-			printf("ZWL IME language=%s\n", ime->language);
+			printf("KWL IME language=%s\n", ime->language);
 
 			/* It is the language of the application (or the desktop) that has the keyboard (ws095-p016). */
 			ime_app_remember(ime);
@@ -1715,16 +1715,16 @@ ime_activate(
 
 	/* Logged: zdesktop's own field has no object of its own (Home's search no window either). */
 	if (input == &ime_field && ime_field_kind == IME_FIELD_HOME) {
-		printf("ZWL IME activate field home\n");
+		printf("KWL IME activate field home\n");
 		return;
 	}
 	if (input == &ime_field) {
-		printf("ZWL IME activate field client=%llu surface=%u\n", (unsigned long long)input->surface->client->number, input->surface->id);
+		printf("KWL IME activate field client=%llu surface=%u\n", (unsigned long long)input->surface->client->number, input->surface->id);
 		return;
 	}
 
 	/* An application's text input. */
-	printf("ZWL IME activate client=%llu\n", (unsigned long long)input->object->client->number);
+	printf("KWL IME activate client=%llu\n", (unsigned long long)input->object->client->number);
 }
 
 /*
@@ -1785,7 +1785,7 @@ ime_deactivate(
 	ime->activated = 0;
 	ime_set_text(&ime->preedit_shown, NULL);
 	server->dirty = 1;
-	printf("ZWL IME deactivate\n");
+	printf("KWL IME deactivate\n");
 }
 
 /*
@@ -2423,7 +2423,7 @@ ime_app_focus(
 			(void)snprintf(app->language, sizeof(app->language), "%s", wanted);
 		}
 	}
-	printf("ZWL IME app key=%s language=%s from=%s\n", key[0] != '\0' ? key : "desktop", wanted, why);
+	printf("KWL IME app key=%s language=%s from=%s\n", key[0] != '\0' ? key : "desktop", wanted, why);
 
 	/* Chosen only when it differs from the input method's now (the status then tells the new one). */
 	same = strcmp(wanted, ime->language);
@@ -2536,7 +2536,7 @@ ime_app_forget(
 	}
 
 	/* The log line the tests read. */
-	printf("ZWL IME app key=desktop language=%s from=%s\n", wanted, why);
+	printf("KWL IME app key=desktop language=%s from=%s\n", wanted, why);
 
 	/* Chosen only when it differs from the input method's now. */
 	differs = strcmp(wanted, ime->language);

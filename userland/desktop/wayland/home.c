@@ -78,7 +78,7 @@
 /*
  * How long a launch is remembered at all: a window that comes later than
  * HOME_LAUNCH_WAIT_MS does not grow out of the icon, but is still named as
- * the launch's (ZWL GLASS launch-late), so that a slow start can be told
+ * the launch's (KWL GLASS launch-late), so that a slow start can be told
  * from a launch that never came (ws099-p024, BUG-147).
  */
 #define HOME_LAUNCH_FORGET_MS	30000U
@@ -394,7 +394,7 @@ kwl_home_draw(
 	/* The stage's first frame since Home was asked to open (BUG-225's wait, measured). */
 	if (!server->home_cover_logged && server->home_to > 0.0f) {
 		server->home_cover_logged = 1U;
-		printf("ZWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
+		printf("KWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
 	/* The rows' floors, under the icons, coming in with the first of them. */
@@ -415,7 +415,7 @@ kwl_home_draw(
 	content = home_content(server, 0U, progress, &rise);
 	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
 		server->home_content_logged = 1U;
-		printf("ZWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
+		printf("KWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
 	/* The search text, while something has been typed or is being composed; the pages' dots, when there are pages. */
@@ -562,7 +562,7 @@ kwl_home_motion(
 			server->home_bottom_dragging = 1;
 			server->home_dragging = 1;
 			server->home_moving = 0;
-			printf("ZWL HOME bottom swipe\n");
+			printf("KWL HOME bottom swipe\n");
 		}
 
 		/* Home closes as far as the pointer has come up, from where it was at the press. */
@@ -584,7 +584,7 @@ kwl_home_motion(
 		dy = server->pointer_y - server->home_page_start_y;
 		if (!server->home_page_dragging && dx * dx + dy * dy >= HOME_PAGE_START * HOME_PAGE_START) {
 			server->home_page_dragging = 1;
-			printf("ZWL HOME page drag\n");
+			printf("KWL HOME page drag\n");
 		}
 
 		/* The pages follow the pointer, only when there are pages and no search. */
@@ -618,7 +618,7 @@ kwl_home_motion(
 			return 1;
 		server->home_dragging = 1;
 		server->home_moving = 0;
-		printf("ZWL HOME gesture\n");
+		printf("KWL HOME gesture\n");
 	}
 
 	/* How far along the diagonal the pointer is, from the start. */
@@ -909,7 +909,7 @@ kwl_home_tick(
 		child = waitpid(-1, &status, WNOHANG);
 		if (child <= 0)
 			break;
-		printf("ZWL HOME ended pid=%d status=%d\n", (int)child, status);
+		printf("KWL HOME ended pid=%d status=%d\n", (int)child, status);
 	}
 
 	/* A page turn draws every frame until it is done; then where the icons are is logged. */
@@ -919,7 +919,7 @@ kwl_home_tick(
 		if (now - server->home_page_start_ms >= HOME_PAGE_MS) {
 			server->home_page_moving = 0;
 			home_layout(server);
-			printf("ZWL HOME page settled page=%u pages=%u\n", server->home_page + 1U, home_pages);
+			printf("KWL HOME page settled page=%u pages=%u\n", server->home_page + 1U, home_pages);
 			home_log_icons();
 		}
 	}
@@ -946,10 +946,10 @@ kwl_home_tick(
 	server->home = server->home_to;
 	if (server->home > 0.0f) {
 		home_layout(server);
-		printf("ZWL HOME opened apps=%u pages=%u page=%u at_ms=%llu\n", home_shown_count, home_pages, server->home_page + 1U, (unsigned long long)kwl_milliseconds());
+		printf("KWL HOME opened apps=%u pages=%u page=%u at_ms=%llu\n", home_shown_count, home_pages, server->home_page + 1U, (unsigned long long)kwl_milliseconds());
 		home_log_icons();
 	} else {
-		printf("ZWL HOME closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
+		printf("KWL HOME closed at_ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	}
 }
 
@@ -1002,13 +1002,13 @@ kwl_home_launched(
 
 	/* A window that came too late to grow out of the icon is still the launch's. */
 	if (waited > HOME_LAUNCH_WAIT_MS) {
-		printf("ZWL HOME launched-late waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)kwl_milliseconds());
+		printf("KWL HOME launched-late waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)kwl_milliseconds());
 		memcpy(rect, server->home_launch_rect, sizeof(server->home_launch_rect));
 		return 2;
 	}
 
 	/* The time from the icon's click to the window's first image (ws099-p016 measures it). */
-	printf("ZWL HOME launched waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)kwl_milliseconds());
+	printf("KWL HOME launched waited_ms=%llu at_ms=%llu\n", (unsigned long long)waited, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: the icon's place. */
 	memcpy(rect, server->home_launch_rect, sizeof(server->home_launch_rect));
@@ -1267,7 +1267,7 @@ home_present(
 			path[length] = '\0';
 			missing = access(path, F_OK);
 			if (missing != 0) {
-				printf("ZWL HOME skip name=%s missing=%s\n", name, path);
+				printf("KWL HOME skip name=%s missing=%s\n", name, path);
 				return 0;
 			}
 		}
@@ -1661,7 +1661,7 @@ home_prepare(
 	}
 
 	/* The log says it is done. */
-	printf("ZWL HOME prepared names=%u\n", home_app_count);
+	printf("KWL HOME prepared names=%u\n", home_app_count);
 }
 
 /*
@@ -1974,7 +1974,7 @@ home_open(
 		server->home_content_ms = 0U;
 	server->home_cover_logged = 0U;
 	server->home_content_logged = 0U;
-	printf("ZWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+	printf("KWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "home-open");
 	home_settle(server, from, 1.0f);
 }
@@ -1990,7 +1990,7 @@ home_close(
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
 	server->home_preedit[0] = '\0';
-	printf("ZWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+	printf("KWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "home-close");
 	home_settle(server, from, 0.0f);
 }
@@ -2055,7 +2055,7 @@ home_launch(
 	 */
 	running = home_running_window(server, app);
 	if (running != NULL) {
-		printf("ZWL HOME switch name=%s surface=%u client=%llu\n", home_apps[app].name, running->id, (unsigned long long)running->client->number);
+		printf("KWL HOME switch name=%s surface=%u client=%llu\n", home_apps[app].name, running->id, (unsigned long long)running->client->number);
 		kwl_glass_activate(server, running, "home");
 		return 1;
 	}
@@ -2063,7 +2063,7 @@ home_launch(
 	/* The application, in its own session with the compositor's socket. */
 	child = kwl_spawn(server, home_apps[app].command);
 	if (child < 0) {
-		printf("ZWL HOME launch name=%s error=%d\n", home_apps[app].name, errno);
+		printf("KWL HOME launch name=%s error=%d\n", home_apps[app].name, errno);
 		return 0;
 	}
 
@@ -2082,7 +2082,7 @@ home_launch(
 	}
 
 	/* Succeeded: the application is starting. */
-	printf("ZWL HOME launch name=%s pid=%d\n", home_apps[app].name, (int)child);
+	printf("KWL HOME launch name=%s pid=%d\n", home_apps[app].name, (int)child);
 	return 0;
 }
 
@@ -2167,7 +2167,7 @@ home_search_changed(
 	kwl_ime_field_changed(server);
 
 	/* The search and its results, for whoever reads the log. */
-	printf("ZWL HOME search query=\"%s\" results=%u", server->home_query, home_shown_count);
+	printf("KWL HOME search query=\"%s\" results=%u", server->home_query, home_shown_count);
 	for (slot = 0U; slot < home_shown_count; slot++)
 		printf(" [%s]", home_apps[home_shown[slot]].name);
 	printf("\n");
@@ -2182,7 +2182,7 @@ home_log_icons(void)
 
 	/* One line an icon. */
 	for (slot = 0U; slot < home_shown_count; slot++)
-		printf("ZWL HOME icon name=\"%s\" x=%d y=%d\n", home_apps[home_shown[slot]].name, home_icon_x[slot] + HOME_ICON / 2, home_icon_y[slot] + HOME_ICON / 2);
+		printf("KWL HOME icon name=\"%s\" x=%d y=%d\n", home_apps[home_shown[slot]].name, home_icon_x[slot] + HOME_ICON / 2, home_icon_y[slot] + HOME_ICON / 2);
 }
 
 /* Eases an animation: quick at first, settling gently (cubic ease-out). */
@@ -2246,7 +2246,7 @@ home_page_turn(
 	server->home_page_moving = 1;
 	server->home_page_offset = 0;
 	server->dirty = 1;
-	printf("ZWL HOME page page=%u pages=%u via=%s\n", server->home_page + 1U, home_pages, via);
+	printf("KWL HOME page page=%u pages=%u via=%s\n", server->home_page + 1U, home_pages, via);
 }
 
 /*
@@ -2324,7 +2324,7 @@ home_bottom_release(
 	}
 
 	/* Not far enough: Home opens again, keeping its search. */
-	printf("ZWL HOME bottom back\n");
+	printf("KWL HOME bottom back\n");
 	home_settle(server, server->home_drag, 1.0f);
 }
 

@@ -60,7 +60,7 @@ shot before.png
 
 # 2. Japanese, a preedit.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'kanji'
 shot preedit.png
 

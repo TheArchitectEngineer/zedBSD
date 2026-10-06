@@ -3,7 +3,7 @@
 # image of plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800 with the wallpaper;
 # /bin/extras-probe --body-viewport (a 600x300 window of green and white with a red sub-surface) first,
 # then files (1000x640, glass cards) over it.
-#  1. zdesktop makes the backdrop when a window is over another (ZWL BACKDROP ready).
+#  1. zdesktop makes the backdrop when a window is over another (KWL BACKDROP ready).
 #  2. over.png: a point of the file manager's content card that lies over the probe's window; gone.png:
 #     the same point after the probe has closed.  The glass there differs by 12 or more (the blurred
 #     window under it shows through; with only the blurred wallpaper both pictures would agree), and it
@@ -45,19 +45,19 @@ expect_log() {
 
 # The place of a client's window (x y) from zdesktop's log.
 place() {
-	guest "grep 'ZWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
 }
 
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/extras-probe --timeout-s=500 --token=v --body-viewport > /tmp/v.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=500 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(place 1); px=${1:-0}; py=${2:-0}
 set -- $(place 2); fx=${1:-0}; fy=${2:-0}
 echo "probe at $px,$py; files at $fx,$fy"
-expect_log /tmp/zdesktop.log 'ZWL BACKDROP ready width=160 height=100'
+expect_log /tmp/zdesktop.log 'KWL BACKDROP ready width=160 height=100'
 
 # A point of the file manager's content card (x 254..968, y 60..608 of its body) over the probe's red
 # sub-surface (its middle, 120,70 of the probe's body), else over its green (the first of those inside the card).

@@ -3,10 +3,10 @@
 # (plan/ws095/tests/build-ime-image.sh; plan/ws095/tests/ime-guest.sh start).  The compositor under test
 # (BUILD/bin/wayland) is copied in; zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime, and
 # /bin/titlebar-probe --mode=controls shows a file manager's controls with a search field (id 5), as Files does.
-#  1. A click on the search field gives it the keyboard ("ZWL TITLEBAR focus ... id=5 edit=0") and the input method
-#     is activated for it ("ZWL IME activate field").
+#  1. A click on the search field gives it the keyboard ("KWL TITLEBAR focus ... id=5 edit=0") and the input method
+#     is activated for it ("KWL IME activate field").
 #  2. Direct input: "ab" reaches the field (probe: event=text id=5 text=ab).
-#  3. Alt+Space chooses Japanese; "kanji" is a preedit in the field ("ZWL TITLEBAR ime ... preedit=かんじ";
+#  3. Alt+Space chooses Japanese; "kanji" is a preedit in the field ("KWL TITLEBAR ime ... preedit=かんじ";
 #     preedit.png), Space converts it (preedit=漢字), Enter commits it (probe: text=ab漢字); a second Enter ends the
 #     editing with the text (probe: event=done id=5 how=0 text=ab漢字) and the input method is deactivated.
 #  4. Alt+Space back to direct; the compositor stays up, with no ERROR in its log.
@@ -46,7 +46,7 @@ expect_log() {
 
 # The centre of a control (client, place, ID) as zdesktop last logged it: "x y".
 control() {
-	guest "grep 'ZWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
+	guest "grep 'KWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
 	    sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p' |
 	    { read x y w h; echo "$(( ${x:-0} + ${w:-0} / 2 )) $(( ${y:-0} + ${h:-0} / 2 ))"; }
 }
@@ -65,8 +65,8 @@ expect_log /tmp/probe.log 'TITLEBARPROBE show ready mode=controls'
 # 1. The search field takes the keyboard; the input method serves it.
 set -- $(control 1 floating 5)
 pointer move $(($1 - 2)) "$2" sleep 150 move "$1" "$2" sleep 300 down sleep 60 up sleep 700
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR focus client=$zc1 surface=[0-9]+ id=5 edit=0"
-expect_log /tmp/zdesktop.log "ZWL IME activate field client=$zc1 "
+expect_log /tmp/zdesktop.log "KWL TITLEBAR focus client=$zc1 surface=[0-9]+ id=5 edit=0"
+expect_log /tmp/zdesktop.log "KWL IME activate field client=$zc1 "
 
 # 2. Direct input.
 keys 'ab'
@@ -74,24 +74,24 @@ expect_log /tmp/probe.log 'TITLEBARPROBE event=text id=5 text=ab$'
 
 # 3. Japanese: a preedit, a conversion, a commit, the end of the editing.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'kanji'
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR ime commit= preedit=かんじ text=ab$'
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR ime commit= preedit=かんじ text=ab$'
 pointer move 1270 790 sleep 500
 check "$out/preedit.png" >/dev/null
 keys ' '
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR ime commit= preedit=漢字 text=ab$'
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR ime commit= preedit=漢字 text=ab$'
 keys '\n'
 expect_log /tmp/probe.log 'TITLEBARPROBE event=text id=5 text=ab漢字$'
 keys '\n'
 expect_log /tmp/probe.log 'TITLEBARPROBE event=done id=5 how=0 text=ab漢字$'
-expect_log /tmp/zdesktop.log 'ZWL IME deactivate'
+expect_log /tmp/zdesktop.log 'KWL IME deactivate'
 
 # 4. Back to direct input; up, without errors.
 keys '<alt-spc>'
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 if [ "$running" = "1" ]; then echo "alive: ok"; else echo "alive: FAILED"; status=1; fi
-guest 'grep -E "ZWL IME|ZWL TITLEBAR (focus|ime)|KEI-IME|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL IME|KWL TITLEBAR (focus|ime)|KEI-IME|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 if grep -q ERROR "$out/log.txt"; then echo "no-error: FAILED"; status=1; else echo "no-error: ok"; fi
 guest "$stop_all" >/dev/null
 

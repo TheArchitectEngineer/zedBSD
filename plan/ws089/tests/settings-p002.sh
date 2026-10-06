@@ -52,7 +52,7 @@ click() {
 
 # A titlebar control's place as zdesktop logged it: "x y width height".
 place() {
-	guest "grep 'ZWL TITLEBAR control client=$1 .* where=floating id=$2 ' /tmp/zdesktop.log | tail -1" |
+	guest "grep 'KWL TITLEBAR control client=$1 .* where=floating id=$2 ' /tmp/zdesktop.log | tail -1" |
 	    sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 
@@ -131,13 +131,13 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 pointer move 700 500 sleep 400
 check "$out/apphome.png" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL HOME icon name="Settings"'
-set -- $(guest "grep 'ZWL HOME icon name=\"Settings\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+expect_log /tmp/zdesktop.log 'KWL HOME icon name="Settings"'
+set -- $(guest "grep 'KWL HOME icon name=\"Settings\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 echo "Settings icon at ${1:-?},${2:-?}"
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 8000
 shot apphome-settings.png
-expect_log /tmp/zdesktop.log 'ZWL HOME launch name=Settings pid='
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR control client=[0-9]+ .* where=floating id=1 .* shown=1'
+expect_log /tmp/zdesktop.log 'KWL HOME launch name=Settings pid='
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR control client=[0-9]+ .* where=floating id=1 .* shown=1'
 
 # 8. zdesktop saw no error.
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

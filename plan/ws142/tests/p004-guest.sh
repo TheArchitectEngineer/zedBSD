@@ -3,15 +3,15 @@
 # (plan/ws079/tests/config-amd64-pen.mk; plan/ws079/tests/pen-guest.sh start IMAGE).  The compositor under test
 # (BUILD/bin/wayland) is copied in, 1280x800.  Three applications by wltest --app-id: apps.a (one window), apps.b
 # (two windows) and apps.c (one window), opened in that order.  The mouse is QMP's tablet.
-#  1. The bar: "ZWL APPS bar count=3 hidden=0 desktop=1 apps=apps.a,apps.b,apps.c" (the opening order), an icon each.
-#  2. The pointer resting on apps.b's icon: after 400 ms "ZWL APPS preview app=apps.b windows=2 via=hover"
-#     (preview-hover.png); away from it: "ZWL APPS preview close via=leave".
-#  3. A click on apps.a's icon (one window): "ZWL APPS raise surface=<its window> via=bar".
+#  1. The bar: "KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.a,apps.b,apps.c" (the opening order), an icon each.
+#  2. The pointer resting on apps.b's icon: after 400 ms "KWL APPS preview app=apps.b windows=2 via=hover"
+#     (preview-hover.png); away from it: "KWL APPS preview close via=leave".
+#  3. A click on apps.a's icon (one window): "KWL APPS raise surface=<its window> via=bar".
 #  4. A click on apps.b's icon: its previews at once ("via=click"); a click on the first preview brings that window
-#     ("ZWL APPS raise surface=<it> via=preview").
+#     ("KWL APPS raise surface=<it> via=preview").
 #  5. Two clicks on apps.b's icon: shown, then hidden ("preview close via=click"); shown again, Esc hides
 #     ("preview close via=escape").
-#  6. apps.c's icon dragged onto apps.a's place: "ZWL APPS reorder app=apps.c place=0 desktop=1", the bar
+#  6. apps.c's icon dragged onto apps.a's place: "KWL APPS reorder app=apps.c place=0 desktop=1", the bar
 #     "apps=apps.c,apps.a,apps.b".
 #  7. Desktop 2 (Ctrl+Alt+Right) with a window of apps.d: "desktop=2 apps=apps.d"; back on desktop 1 (Ctrl+Alt+Left)
 #     the dragged order is still there ("desktop=1 apps=apps.c,apps.a,apps.b" again).
@@ -44,19 +44,19 @@ pass() { echo "$1: ok"; }
 fail() { echo "$1: FAILED"; status=1; }
 expect_count() { n=$(count "$2"); if [ "${n:-0}" -eq "$3" ] 2>/dev/null; then pass "$1"; else fail "$1 ($2: ${n:-?}, expected $3)"; fi; }
 expect_some() { n=$(count "$2"); if [ "${n:-0}" -ge 1 ] 2>/dev/null; then pass "$1"; else fail "$1 ($2 missing)"; fi; }
-# The middle of an application's icon, from its last "ZWL APPS icon" line.
-icon_x() { guest "grep 'ZWL APPS icon app=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) .*/\1/p' | tail -1; }
+# The middle of an application's icon, from its last "KWL APPS icon" line.
+icon_x() { guest "grep 'KWL APPS icon app=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) .*/\1/p' | tail -1; }
 # A window of an application: wltest with that ID and colour, then its surface from the newest map.
 open_app() { guest "$env /bin/wltest --windowed --size=$3 --color=$2 --app-id=$1 --frames=3600 --delay-ms=250 > /tmp/$1-$$.log 2>&1 </dev/null & sleep 3; echo started" >/dev/null; }
 # The newest window's client (surface numbers are each client's own, so a window is found by its client).
-last_client() { guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*ZWL MAP client=\([0-9]*\) .*/\1/p'; }
+last_client() { guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*KWL MAP client=\([0-9]*\) .*/\1/p'; }
 : > "$out/qmp.txt"
 
 # The compositor under test, and the applications.
 guest "$stop_all" >/dev/null
 put "$build/bin/wayland" /bin/wayland
 guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 open_app apps.a f4d0d0 380x260
 client_a=$(last_client)
 open_app apps.b d0f4d0 400x280
@@ -65,7 +65,7 @@ open_app apps.c d0d0f4 420x300
 pointer move 640 700 sleep 300
 
 # 1. The bar in the opening order.
-expect_some bar-opening-order 'ZWL APPS bar count=3 hidden=0 desktop=1 apps=apps.a,apps.b,apps.c'
+expect_some bar-opening-order 'KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.a,apps.b,apps.c'
 ax=$(icon_x apps.a); bx=$(icon_x apps.b); cx=$(icon_x apps.c)
 echo "icons: apps.a=${ax:-?} apps.b=${bx:-?} apps.c=${cx:-?}"
 [ -n "$ax" ] && [ -n "$bx" ] && [ -n "$cx" ] && [ "$ax" -lt "$bx" ] && [ "$bx" -lt "$cx" ] && pass icons-left-to-right || fail icons-left-to-right
@@ -73,60 +73,60 @@ ax=${ax:-100}; bx=${bx:-136}; cx=${cx:-172}
 
 # 2. Resting on apps.b's icon, then away.
 pointer move $((bx + 18)) 22 sleep 900
-expect_count hover-preview 'ZWL APPS preview app=apps.b windows=2 via=hover' 1
+expect_count hover-preview 'KWL APPS preview app=apps.b windows=2 via=hover' 1
 shot preview-hover
 pointer move 640 700 sleep 800
-expect_count hover-leaves 'ZWL APPS preview close via=leave' 1
+expect_count hover-leaves 'KWL APPS preview close via=leave' 1
 
 # 3. A click on apps.a's icon brings its window.
 pointer move $((ax + 18)) 22 sleep 100 down sleep 60 up sleep 500
-expect_count click-single-raises "ZWL APPS raise surface=[0-9]* via=bar at_ms=[0-9]* client=${client_a:-0}\$" 1
+expect_count click-single-raises "KWL APPS raise surface=[0-9]* via=bar at_ms=[0-9]* client=${client_a:-0}\$" 1
 
 # 4. A click on apps.b's icon: its previews at once; the first preview brings its window.
 pointer move $((bx + 18)) 22 sleep 100 down sleep 60 up sleep 300
-expect_count click-preview 'ZWL APPS preview app=apps.b windows=2 via=click' 1
-set -- $(guest "grep 'ZWL APPS preview window surface=' /tmp/zdesktop.log | tail -2 | head -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\) client=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
+expect_count click-preview 'KWL APPS preview app=apps.b windows=2 via=click' 1
+set -- $(guest "grep 'KWL APPS preview window surface=' /tmp/zdesktop.log | tail -2 | head -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\) client=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
 ps=${1:-0}; px=${2:-0}; py=${3:-0}; pw=${4:-0}; ph=${5:-0}; pc=${6:-0}
 pointer move $((px + pw / 2)) $((py + ph / 2)) sleep 200 down sleep 60 up sleep 500
-expect_count preview-raises "ZWL APPS raise surface=$ps via=preview at_ms=[0-9]* client=$pc\$" 1
+expect_count preview-raises "KWL APPS raise surface=$ps via=preview at_ms=[0-9]* client=$pc\$" 1
 
 # 5. Shown and hidden by clicks; shown, hidden by Esc.
 pointer move $((bx + 18)) 22 sleep 100 down sleep 60 up sleep 400 down sleep 60 up sleep 400
-expect_count second-click-hides 'ZWL APPS preview close via=click' 1
+expect_count second-click-hides 'KWL APPS preview close via=click' 1
 pointer move $((bx + 18)) 22 sleep 100 down sleep 60 up sleep 400
 tap esc
-expect_count escape-hides 'ZWL APPS preview close via=escape' 1
+expect_count escape-hides 'KWL APPS preview close via=escape' 1
 pointer move 640 700 sleep 600
 
 # 6. apps.c's icon dragged onto apps.a's place.
 pointer move $((cx + 18)) 22 sleep 100 down sleep 60 move $((cx + 6)) 22 sleep 60 move $((bx + 10)) 22 sleep 60 move $((ax + 10)) 22 sleep 60 move $((ax + 6)) 22 sleep 100 up sleep 500
-expect_count drag-reorders 'ZWL APPS reorder app=apps.c place=0 desktop=1' 1
-expect_some drag-bar 'ZWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b'
+expect_count drag-reorders 'KWL APPS reorder app=apps.c place=0 desktop=1' 1
+expect_some drag-bar 'KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b'
 pointer move 640 700 sleep 300
 
 # 7. Desktop 2 with apps.d; back on desktop 1, the order kept.
 combo right
 open_app apps.d f4f4c0 380x260
-expect_some desktop2-bar 'ZWL APPS bar count=1 hidden=0 desktop=2 apps=apps.d'
+expect_some desktop2-bar 'KWL APPS bar count=1 hidden=0 desktop=2 apps=apps.d'
 combo left
 sleep 1
-n=$(count 'ZWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b')
+n=$(count 'KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b')
 [ "${n:-0}" -ge 2 ] 2>/dev/null && pass desktop1-order-kept || fail "desktop1-order-kept (${n:-?})"
 
 # 8. A docked window: the window brought by the preview (on top since; found by its client, T1-134) docked by a double click on its title.
-set -- $(guest "grep 'ZWL MAP client=$pc ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$pc ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-300}; ty=${2:-300}
 pointer move $((tx + 150)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500
-expect_some docked "ZWL GLASS dock surface=$ps "
-before=$(count 'ZWL APPS preview app=')
+expect_some docked "KWL GLASS dock surface=$ps "
+before=$(count 'KWL APPS preview app=')
 pointer move $((bx + 18)) 22 sleep 900
 shot docked
-expect_count docked-no-preview 'ZWL APPS preview app=' "${before:-0}"
+expect_count docked-no-preview 'KWL APPS preview app=' "${before:-0}"
 
 # 9. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
-guest 'grep -E "ZWL APPS|ZWL MAP|ZWL GLASS dock|ZWL GLASS desktop|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL APPS|KWL MAP|KWL GLASS dock|KWL GLASS desktop|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 

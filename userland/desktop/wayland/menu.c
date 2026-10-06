@@ -358,7 +358,7 @@ kwl_menu_send_activated(
 	}
 
 	/* The log line the tests read. */
-	printf("ZWL MENU activate client=%llu place=%u item=%u action=%u serial=%u via=%s\n",
+	printf("KWL MENU activate client=%llu place=%u item=%u action=%u serial=%u via=%s\n",
 	       (unsigned long long)place->client->number, place->id, item->id, item->action, words[3], via);
 }
 
@@ -394,7 +394,7 @@ kwl_menu_send_context_activated(
 	}
 
 	/* The log line the tests read. */
-	printf("ZWL MENU context-activate client=%llu context=%u item=%u action=%u serial=%u via=%s\n",
+	printf("KWL MENU context-activate client=%llu context=%u item=%u action=%u serial=%u via=%s\n",
 	       (unsigned long long)context->client->number, context->id, item->id, item->action, words[2], via);
 }
 
@@ -421,7 +421,7 @@ kwl_menu_send_context_done(
 
 	/* It shows nothing more. */
 	context->shown_menu = NULL;
-	printf("ZWL MENU context-done client=%llu context=%u\n", (unsigned long long)context->client->number, context->id);
+	printf("KWL MENU context-done client=%llu context=%u\n", (unsigned long long)context->client->number, context->id);
 }
 
 /*
@@ -784,7 +784,7 @@ place_request(
 	/* The window shows the menu's committed state from the next frame. */
 	place->shown_menu = menu;
 	place->client->server->dirty = 1;
-	printf("ZWL MENU set client=%llu place=%u menu=%u\n", (unsigned long long)place->client->number, place->id, id);
+	printf("KWL MENU set client=%llu place=%u menu=%u\n", (unsigned long long)place->client->number, place->id, id);
 
 	/* Succeeded: the window shows the menu. */
 	return 0;
@@ -844,7 +844,7 @@ context_create(
 	desktop = kwl_desktop_surface(server);
 	if ((surface->role == NULL || surface->role->top == NULL) &&
 	    surface != desktop) {
-		printf("ZWL MENU context-refused client=%llu context=%u surface=%u reason=window\n", (unsigned long long)manager->client->number, created->id, surface->id);
+		printf("KWL MENU context-refused client=%llu context=%u surface=%u reason=window\n", (unsigned long long)manager->client->number, created->id, surface->id);
 		kwl_menu_send_context_done(created);
 		return 0;
 	}
@@ -856,7 +856,7 @@ context_create(
 	if (serial != 0U && serial == server->dnd_drop_serial && manager->client->number == server->dnd_drop_client)
 		answers = 1;
 	if (!answers) {
-		printf("ZWL MENU context-refused client=%llu context=%u serial=%u press=%u\n", (unsigned long long)manager->client->number, created->id, serial, server->press_serial);
+		printf("KWL MENU context-refused client=%llu context=%u serial=%u press=%u\n", (unsigned long long)manager->client->number, created->id, serial, server->press_serial);
 		kwl_menu_send_context_done(created);
 		return 0;
 	}
@@ -956,7 +956,7 @@ model_commit(
 	menu->client->server->dirty = 1;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL MENU commit client=%llu menu=%u serial=%u items=%u generation=%llu\n",
+	printf("KWL MENU commit client=%llu menu=%u serial=%u items=%u generation=%llu\n",
 	       (unsigned long long)menu->client->number, menu->id, serial, model->count, (unsigned long long)model->generation);
 	return 0;
 }

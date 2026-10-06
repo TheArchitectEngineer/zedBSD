@@ -79,7 +79,7 @@ try:
   assert len(clients)==1 and all(c['exit']==0 for c in clients)
   report=Path('/root/ws109-passthrough-evidence/compositor.txt').read_text()
   import re
-  exitline=re.search(r'ZWL EXIT frames=(\d+) error=0 cleanup_failed=0.*input_events=(\d+) seat_events=(\d+)',report)
+  exitline=re.search(r'KWL EXIT frames=(\d+) error=0 cleanup_failed=0.*input_events=(\d+) seat_events=(\d+)',report)
   assert exitline and int(exitline[1])>10 and int(exitline[2])>0 and int(exitline[3])>=2, 'GPU resume/input/seat output missing'
   assert not socket.exists()
 finally:
