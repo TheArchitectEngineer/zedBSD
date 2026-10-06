@@ -1168,11 +1168,17 @@ network_link_card(
 	height = se_card_height(7, 1);
 	y = se_card_begin(app, canvas, x, top, width, height, title, NULL);
 
-	/* The link and the addresses. */
+	/*
+	 * The link: connected with an address, a cable without an address, up
+	 * without a cable (BUG-213: that was "No address", beside an address
+	 * the interface still held), or down.
+	 */
 	if (link->running != 0 && link->address[0] != '\0') {
 		y = se_row_value(app, canvas, x, y, width, "Status", "Connected", 0);
-	} else if (link->up != 0) {
+	} else if (link->running != 0) {
 		y = se_row_value(app, canvas, x, y, width, "Status", "No address", 0);
+	} else if (link->up != 0) {
+		y = se_row_value(app, canvas, x, y, width, "Status", "No cable", 0);
 	} else {
 		y = se_row_value(app, canvas, x, y, width, "Status", "Down", 0);
 	}
