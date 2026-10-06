@@ -424,6 +424,8 @@ static int layout_takes_press(struct zwl_server *server);
 static int layout_press_switches(struct zwl_server *server, struct zwl_object *surface);
 static void docked_body(struct zwl_server *server, const struct zwl_object *surface, struct shell_rect *body);
 static void dock_restore_default(struct zwl_server *server, struct zwl_object *surface);
+static int window_centred_over(struct zwl_server *server, const struct zwl_object *surface);
+static void draw_centred_cover(struct zwl_server *server, VkCommandBuffer command);
 static unsigned double_click(struct zwl_server *server, struct zwl_object *surface);
 static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surface);
 static int click_docked_third(struct zwl_server *server);
@@ -499,6 +501,7 @@ zwl_glass_draw(
 	int whole;
 	float progress;
 	unsigned blur;
+	int centred;
 	int showing;
 	float home;
 	float position;
@@ -608,7 +611,17 @@ zwl_glass_draw(
 		 * which costs nothing more (the default).
 		 */
 		blur = zwl_panels_blur(windows[index]);
-		if (drawn > 0U && home <= 0.0f && blur) {
+		centred = window_centred_over(server, windows[index]);
+		if (centred && home <= 0.0f) {
+			/*
+			 * A window in the middle of the docked space (ws142-p008b, the
+			 * 2026-10-06 user decision) stands on the scene under it blurred
+			 * as one layer: the wallpaper, its application's other windows,
+			 * its docked parent.
+			 */
+			draw_backdrop(server, command, windows, index, position);
+			draw_centred_cover(server, command);
+		} else if (drawn > 0U && home <= 0.0f && blur) {
 			draw_backdrop(server, command, windows, index, position);
 		} else {
 			zwl_backdrop_reset(server);
@@ -2696,7 +2709,6 @@ draw_window(
 	unsigned focused,
 	const struct shell_bar *bar)
 {
-	static const float letterbox[4] = { 0.04f, 0.05f, 0.07f, 1.0f };
 	struct shell_rect body;
 	struct shell_rect from;
 	struct shell_rect to;
@@ -2766,13 +2778,13 @@ draw_window(
 
 	/*
 	 * A docked window has only its body; its title is in the system bar.
-	 * One of one size is in the middle of the docked space, the rest of
-	 * which is dark (ws142-p008).
+	 * One of one size is in the middle of the docked space, a whole body
+	 * over the blurred, darkened scene under it (ws142-p008, p008b:
+	 * draw_centred_cover).
 	 */
 	if (surface->maximized) {
 		docked_rect(server, &slot);
 		if (body.width != slot.width || body.height != slot.height) {
-			glass_draw_solid(server, command, (float)slot.x, (float)slot.y, (float)slot.width, (float)slot.height, 0.0f, letterbox);
 			draw_body(server, command, surface, &body, 0, focused);
 			return;
 		}
@@ -4909,6 +4921,69 @@ docked_body(
 	body->y = y;
 	body->width = width;
 	body->height = height;
+}
+
+/*
+ * Tells whether a window is drawn in the middle of the docked space over
+ * the scene under it blurred (ws142-p008b): a docked window of one size
+ * smaller than the space, and in the docked mode a dialog or a sheet over
+ * its docked parent.  Returns 1 when it is.
+ */
+static int
+window_centred_over(
+	struct zwl_server *server,
+	const struct zwl_object *surface)
+{
+	struct shell_rect body;
+	struct shell_rect space;
+	struct zwl_object *parent;
+
+	/* A docked window: centred when its body is smaller than the docked space. */
+	if (surface->maximized) {
+		docked_body(server, surface, &body);
+		docked_rect(server, &space);
+		if (body.width != space.width || body.height != space.height)
+			return 1;
+		return 0;
+	}
+
+	/* Otherwise only the docked mode centres anything. */
+	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+		return 0;
+
+	/* A dialog or a sheet over a docked parent that is shown. */
+	parent = surface->parent_window;
+	if (parent == NULL || parent->dead || !parent->mapped)
+		return 0;
+	if (!parent->maximized || parent->minimized)
+		return 0;
+
+	/* Succeeded: it is centred over the blurred scene. */
+	return 1;
+}
+
+/*
+ * Covers the output with the scene drawn into the backdrop, blurred, and a
+ * little darker, under a window in the middle of the docked space
+ * (ws142-p008b).  The system bar is drawn over it later, sharp.
+ */
+static void
+draw_centred_cover(
+	struct zwl_server *server,
+	VkCommandBuffer command)
+{
+	static const float shade[4] = { 0.02f, 0.03f, 0.06f, 0.32f };
+	struct glass_shape shape;
+
+	/* The blurred scene over the whole output, where the output is (not with a desktop's layer). */
+	server->layer_on = 0;
+	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	shape.mode = MODE_GLASS;
+	shape.opacity = 1.0f;
+	glass_shape_draw(server, command, &shape);
+
+	/* Darker, so that the window in the middle stands out. */
+	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, shade);
 }
 
 /*

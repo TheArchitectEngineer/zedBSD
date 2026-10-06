@@ -16,7 +16,7 @@ Related: [BUG-217](../../bugs/BUG-217.md)
 - 新しい窓は DOCKED なら dock で開く（大きさの固定の窓も。親を持つ dialog・sheet と全画面は除く）。
 - 全画面から出る時は mode に戻る（BUG-208 の `fullscreen_docked` の役は「前に dock だったので浮いた位置は restore_*」だけに）。
 - DOCKED の間は今の app（前の窓の client）以外の窓を描かず、press も受けない。App Home・WiseView・switcher の間は全てを描く。
-- 大きさの固定の dock した窓は dock の領域の中央に自分の大きさで、周りは暗い地。親を持つ dialog は DOCKED の間は画面の中央に、dock した親の sheet（File Chooser）も中央に。
+- 大きさの固定の dock した窓は dock の領域の中央に自分の大きさで、周りは暗い地（p008b で、下の層をぼかして暗くした地に置き換え）。親を持つ dialog は DOCKED の間は画面の中央に、dock した親の sheet（File Chooser）も中央に。
 - 中央の窓の下の blur は ws142-p008b（Q1 の分け方）。
 
 ## 判断（Q1 経由、2026-10-06）
