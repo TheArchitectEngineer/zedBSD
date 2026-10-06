@@ -116,9 +116,19 @@ def terminal_many(item):
 	run.shot(item, "twenty")
 	item.check(len(started) >= 20 and len(maps) >= 20, f"only {len(started)} Terminals started ({len(maps)} windows)")
 	item.check(not failed, f"{failed[0] if failed else ''}")
+	clients = {aatlib.number(line, "client") for line in maps}
+	ended = time.monotonic()
 	run.stop_programs()
-	item.step("ended them all")
-	item.passed()
+	# The compositor lets them go one by one (T1-232: 23 s for twenty, its keys waiting meanwhile, so that the next
+	# scenario's Windows key came too late): the scenario ends when each window's client is gone.
+	gone = set()
+	while time.monotonic() < ended + 90 and not clients <= gone:
+		gone = {aatlib.number(line, "client") for line in run.lines(r"ZWL CLIENT gone client=\d+", mark)}
+		time.sleep(2)
+	took = time.monotonic() - ended
+	item.step("ended them all", f"{len(clients & gone)} of {len(clients)} clients gone in {took:.0f} s")
+	item.check(clients <= gone, f"{len(clients - gone)} clients were not gone after 90 s")
+	item.passed(f"the compositor let them go in {took:.0f} s")
 
 
 @run.define("apps.terminal.japanese-history")
@@ -251,6 +261,9 @@ def settings_password(item):
 		("the right change", [aatlib.PASSWORD, "aat-pass-1", "aat-pass-1"], "right"),
 	)
 	for what, fields, name in cases:
+		# The field is at the page's foot, half under the window's edge (T1-232: a click there missed it, and the
+		# typing went to the sidebar): the page is scrolled until the field is whole.
+		controls = reveal_control(window, "users", 1)
 		mark = run.mark()
 		run.click_control(item, window, controls, 1, "the current password's field")
 		fill(fields)
@@ -332,7 +345,8 @@ def settings_manage(item):
 	run.as_user("/bin/settings users")
 	time.sleep(1.5)
 	controls = run.controls(None, "users")
-	rows = sorted(index for index in controls if index >= 100)
+	# The rows of the users' list are 100 to 199; 200 and on are the PIN fields (T1-232 clicked one as a row).
+	rows = sorted(index for index in controls if 100 <= index < 200)
 	item.check(rows, "no rows in the users' list")
 	controls = reveal_control(window, "users", rows[-1])
 	run.click_control(item, window, controls, rows[-1], "aatuser's row")
@@ -355,8 +369,11 @@ def settings_manage(item):
 
 @run.define("apps.settings.about")
 def settings_about(item):
+	# Settings reads the system's names once as it starts, before any page (T1-232): the line is looked for from the
+	# launch on.
+	start = run.mark()
 	window, since = run.settings(item, "about")
-	about = run.wait(r"ZSETTINGS ABOUT system=", since, 10)
+	about = run.wait(r"ZSETTINGS ABOUT system=", start, 10)
 	_, release = run.sh(". /etc/os-release; echo \"$PRETTY_NAME\"; uname -a")
 	pretty, uname = (release.splitlines() + ["", ""])[:2]
 	item.step("read the About page", about)
@@ -372,8 +389,11 @@ def settings_about(item):
 
 @run.define("apps.settings.sound-page")
 def settings_sound(item):
+	# Settings opens its sound connection once as it starts, before any page (T1-232): the line is looked for from the
+	# launch on.
+	start = run.mark()
 	window, since = run.settings(item, "sound")
-	line = run.wait(r"ZSETTINGS SOUND open live=", since, 10)
+	line = run.wait(r"ZSETTINGS SOUND open live=", start, 10)
 	item.step("read the Sound page", line)
 	run.shot(item, "sound")
 	item.check(line, "no ZSETTINGS SOUND open line")
@@ -578,9 +598,21 @@ def videoplayer_fullscreen(item):
 		else:
 			run.click(*point, "--count", "2")
 		line = run.wait(rf"VIDEOPLAYER FULLSCREEN on={on}" + (f"|{extra}" if extra else ""), since, 10)
+		# The player's first frame of the new size (a new swapchain first; T1-235's screenshot 0.8 s after the line
+		# still had the window's size), when the size changed; then the compositor's frame.
+		configure = run.wait(rf"ZWL CONFIGURE client={window.client} surface={window.surface} serial=\d+ width=\d+ height=\d+ fullscreen={on}", since, 10)
+		width, height = aatlib.number(configure, "width"), aatlib.number(configure, "height")
+		presented = None
+		if width and height:
+			presented = run.wait(rf"VIDEOPLAYER PRESENTED width={width} height={height}|VIDEOPLAYER FAILED operation=frame", since, 10)
 		time.sleep(0.8)
-		item.step(what, line)
+		item.step(what, f"{line}; {configure}; {presented or 'no new size shown'}")
 		item.check(line, f"{what}: full screen did not turn {'on' if on else 'off'}")
+		# Out of full screen the window comes back to its own size, not the output's (T1-235: Alt+Enter soon after Esc
+		# saved the last fullscreen image's size).
+		output = (int(run.ready().get("width", 0)), int(run.ready().get("height", 0)))
+		if not on:
+			item.check((width, height) != output, f"{what}: the window came back at the output's size {width}x{height}")
 		return line
 
 	toggled("F11", ("f11",), 1)
