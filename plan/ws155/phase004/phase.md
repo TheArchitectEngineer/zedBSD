@@ -2,7 +2,7 @@
 
 # ws155-p004: system bar の時計から Calendar を開く
 
-Status: in-progress（実装・build 済み。QEMU は T1）
+Status: test-wait（T1-297）
 Disposition: normal
 Parent: [WS155](../ws.md)
 Queue: q831（2026-10-07、P2）

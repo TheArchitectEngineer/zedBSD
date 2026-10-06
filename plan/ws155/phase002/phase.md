@@ -2,7 +2,7 @@
 
 # ws155-p002: 予定とメモの保存（iCalendar）
 
-Status: in-progress（実装・host の試験済み。app の QEMU は p003 と一緒に T1）
+Status: test-wait（T1-297）
 Disposition: normal
 Parent: [WS155](../ws.md)
 Queue: q831（2026-10-07、P2）

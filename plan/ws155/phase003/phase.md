@@ -2,7 +2,7 @@
 
 # ws155-p003: Calendar の app（保存・編集・週と日・通知）
 
-Status: in-progress（実装・host の試験・build 済み。QEMU は T1）
+Status: test-wait（T1-297）
 Disposition: normal
 Parent: [WS155](../ws.md)
 Queue: q831（2026-10-07、P2）
