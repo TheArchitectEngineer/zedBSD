@@ -2,7 +2,7 @@
 
 # ws128-p004: PDF Viewer の文字の検索と選択・copy
 
-Status: in-progress（2026-10-06 q821 P2: 正常系を実装、build warning 0 と host 試験 PASS。QEMU は T1 待ち（未依頼））
+Status: in-progress（2026-10-06 q821 P2: 正常系を実装、build warning 0 と host 試験 PASS。T1-268 の AAT find-select が FAIL → q826 で修正、T1 の再試験待ち）
 Disposition: normal
 Parent: [WS128](../ws.md)
 Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
@@ -63,6 +63,14 @@ host と QEMU の Venus。 やっていない確認は「未実施」と書く�
 | WS175 の `run-host-edit-scan.sh`・`run-host-notes-edit.sh`（scan の変更の回帰） | PASS |
 | build: zedBSD の libpdf.so・`bin/pdfviewer`・`bin/notes`（-Werror）、keiland-linux の `bin/pdfviewer` | warning 0 |
 | style-check（find.c・titlebar.c・menu.c・view.c・draw.c・document.c の変えた所、content.c・editor.c） | 新しい違反 0（main.c・menu.c・titlebar.c の既存の 3 件は前から） |
+
+## T1-268 の FAIL と q826 の修正（2026-10-06 P2）
+
+- T1-268（証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-267/`、`records/apps.pdfviewer.find-select.md`、`logs/apps.pdfviewer.find-select.log`）: lazy は ok。「line」を打って Enter を 2 回押すと、1 回目は field の Enter（`FIND found query="line" page=0 from=127`）になった。2 回目は `PDFVIEWER KEY key=28` として window に届き、何も起きなかった。
+- 原因: compositor の titlebar の field は Enter（KL_TEXT_SUBMITTED）で編集を終え、keyboard を window に返す。pdfviewer は次の場所を出すだけで、field に keyboard を戻していなかった。
+- 修正: `pdfviewer/titlebar.c` の `pv_titlebar_input`。Enter の後に field の text を query に置き（compositor の field は control の text から始まるため）、`kl_window_focus_control` で field に keyboard を戻す。log は `PDFVIEWER FIND keep error=`。browser の検索と同じく、Enter を続けて押せば次々に進む。field は query 全体を選んだ状態で戻るので、文字を打つと置き換わる。
+- 合わせて、同じ file の既存の規約の指摘（`titlebar_send` の後の空行）を直した。
+- 確認: build（zedBSD の pdfviewer、Linux の keiland-linux.mk all）は warning 0、style-check は 0。host では titlebar の field を再現できないので、QEMU（T1 の AAT `apps.pdfviewer.find-select` の再試験）が要る。
 
 ## 未実施・残り
 
