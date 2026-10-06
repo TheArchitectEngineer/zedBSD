@@ -2,7 +2,7 @@
 
 # ws169-p003: IMAP4・SMTP の backend
 
-Status: in-progress（実装・host の試験・build 済み。app への結線は p004、QEMU は WS169 の最後に T1）
+Status: test-wait（T1-291）
 Disposition: normal
 Parent: [WS169](../ws.md)
 Queue: q831（2026-10-06、P2）

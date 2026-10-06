@@ -32,6 +32,9 @@
 /* The longest list of receivers kept (To, Cc), with its NUL. */
 #define ML_LIST_MAX		1024U
 
+/* The most accounts. */
+#define ML_ACCOUNTS_MAX		4U
+
 /* The longest IMAP folder name kept, with its NUL. */
 #define ML_MAILBOX_MAX		128U
 

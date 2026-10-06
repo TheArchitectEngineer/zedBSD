@@ -74,3 +74,16 @@
 | WS169 ws169-p003 | 宛先の名前が ASCII でない、To・Cc の長い行 | encoded word と header の折り返し（今は打ったまま 1 行） | `mailer/compose.c` の `compose_field` | 2026-10-07 |
 | WS169 ws169-p003 | SMTP の AUTH LOGIN だけの server、8BITMIME の無い server | AUTH LOGIN、EHLO の答えに従う（今は AUTH PLAIN だけ、本文は QP なので 7bit） | `mailer/smtp.c` | 2026-10-07 |
 | WS169 ws169-p003 | code の語が他の語の一部（shipping の pin など） | 語の境で数える（今は部分一致） | `mailer/code.c` の `code_contains` | 2026-10-07 |
+| WS169 ws169-p004（メーラの app） | password の保存 | desktop の秘密の store に置く（今は 0600 の平文の file、2026-10-06 ユーザーの仮置き。`secret.c` の 2 関数を置き換える） | `mailer/secret.c` | 2026-10-07 |
+| WS169 ws169-p004 | 起動ごとの取り直し、offline | local の cache に message を保ち、起動を速く・offline でも読む（今は memory だけ、起動のたびに各 folder の最新 50 通） | `mailer/store.c`・`sync.c` | 2026-10-07 |
+| WS169 ws169-p004 | 一覧の先（51 通目より古い）、server の側の既読・削除の変化 | scroll で古い物を取る、FLAGS・EXPUNGE の変化を一覧に反映する（今は取った時のまま） | `mailer/sync.c`・`imap.c` | 2026-10-07 |
+| WS169 ws169-p004 | Trash の中の Delete、Sent を自分で保つ server（Gmail）で Sent が 2 通 | 完全な削除、APPEND しない（今は Trash で Delete は何もしない、Gmail では 2 通） | `mailer/main.c` の `ml_request_move`、`sync.c` の ML_JOB_SEND | 2026-10-07 |
+| WS169 ws169-p004 | 送信の失敗の後の書きかけ、下書き、添付の保存・送信 | 書きかけを Drafts に保つ、添付を保存・付ける（今は失敗の通知だけ、書いた物は画面に残る） | `mailer/view.c`・`main.c` | 2026-10-07 |
+| WS169 ws169-p004 | account の削除・編集、5 個目の account | Settings か Mail の中で消す・直す（今は追加だけ、4 個まで） | `mailer/account.c`・`view.c` | 2026-10-07 |
+| WS169 ws169-p004 | 日付の語が古くなる（Yesterday のまま日をまたぐ） | 描く時に今から作る（今は取った時の語） | `mailer/store.c` の `store_dates` | 2026-10-07 |
+| WS169 ws169-p004 | 一覧が 512 通を超える | 全部を出す（今は 512 通まで） | `mailer/view.c` の `ML_MESSAGES_MAX` | 2026-10-07 |
+| WS169 ws169-p005（browser の code の入力） | page に focus の欄が無い、別の tab・別の窓 | code を clipboard に置いて知らせる、どの tab に入れるかを選ぶ（今は focus の要素に打つだけ、無ければ何も起きない） | `browser/shell/mail.c` の `shell_mail_fill` | 2026-10-07 |
+| WS169 ws169-p005 | 英字を含む code、`autocomplete="one-time-code"` の欄 | 英字の DOM の code、one-time-code の欄を探して入れる（今は数字の code だけ、focus の欄へ） | `browser/shell/mail.c`、`mailer/code.c` | 2026-10-07 |
+| WS169 ws169-p005 | 通知の popup（WS156 p003）が無い間 | 通知の click で入る経路の QEMU の確認（今は titlebar の control だけが見える） | `browser/shell/mail.c`、WS156 p003 | 2026-10-07 |
+| WS169 ws169-p005 | offer の 2 分の時間切れ | 時間で起きて取り下げる（今は loop が起きた時に見る） | `browser/shell/shell.c` の待ちの timeout | 2026-10-07 |
+| WS169 ws169-p005 | 窓の中の帯の UI | page の上に code の帯（「Sign-in code … — Fill in / ×」）を出す（今は titlebar の control だけ。shell に描く層が要り、libbrowser の描画に関わる。2026-10-07 Q1 了承で backlog） | `browser/shell/`、libbrowser | 2026-10-07 |

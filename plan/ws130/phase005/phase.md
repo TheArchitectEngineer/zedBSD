@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p005`
 Parent: [WS130](../ws.md)
-Status: uncleared（2026-10-07 T1-287 FAIL ×2: link-local address・ping -6 ::1・ping fec0::2・ping fe80::2%ue0・IPv6 on。追加・削除・route・off・IPv4 は ok。P1 が直す。旧: test-wait）
+Status: test-wait（再試験 T1 待ち。2026-10-07 T1-287 FAIL ×2: link-local address・ping -6 ::1・ping fec0::2・ping fe80::2%ue0・IPv6 on。追加・削除・route・off・IPv4 は ok → 下の「T1-287 の FAIL の原因と修正」）
 設計: [p001](../phase001/phase.md) §6（`net.conf`）・§7（道具）、H3（既定で有効、`ipv6: enabled: false` で止める。2026-10-05 ユーザー決定）
 依存: [p003](../phase003/phase.md)（T1-243 PASS）、[p004](../phase004/phase.md)（libc、T1-286）
 
@@ -32,6 +32,19 @@ Status: uncleared（2026-10-07 T1-287 FAIL ×2: link-local address・ping -6 ::1
 | `plan/ws089/tests/host-lan-configure.c`（netconf の既存の host 試験、script の rm を除いて同じ命令を手で） | PASS |
 
 未実施: QEMU（T1: `ipv6-p005.sh`、`LOOKUP_NAME` があれば DNS も）、`net commit` の guest の確認（console の操作が要る）、規約の見直し（p009）。
+
+## T1-287 の FAIL の原因と修正（2026-10-07、P1）
+
+T1 の出力（`t1/build/t1-286/p005/*.txt`）で確かめた。`ifconfig.txt` には `inet6` の行が 1 つも無い。
+
+| FAIL | 原因 | 修正 |
+| --- | --- | --- |
+| link-local address | link-local は networkd が付ける（p006）。T1-287 の image は p006 の merge の前で、付ける者がいなかった | 試験の image は p006 を含む main から作る。試験の頭に RA を待つ 5 秒 |
+| ping fec0::2・ping fe80::2%ue0 | 上の連鎖。送り元の address（link-local・SLAAC）が無い | 同上 |
+| ping -6 ::1 | ping の不具合: `-4`・`-6` を他の option の前でしか読まず、`ping -c 1 -6 ::1` が usage | `userland/base/ping/main.c`: `-4`・`-6` を option の loop の中で、引数の無い flag として読む |
+| IPv6 on | `ifconfig IF ipv6 on` は kernel の switch だけで、kernel は on の通知を出さず、networkd は link-local を付け直さない（設計どおり、link-local は networkd の責務） | 試験の手順 5 を「on の後に address を足せる（kernel が on）」と「`service restart networkd` で link-local が戻る」に分けた。後の試験（p006）の順の依存も restart で切れる。あわせて net の commit の `IPV6 on`（networkd の op）では networkd が link-local を付け直す（`networkd_ipv6_link_local`） |
+
+確認: `make -j16 disk-image`（`-Werror`）exit 0、自前の warning 0。QEMU は未実施（T1 に依頼）。
 
 ## 積み残し
 

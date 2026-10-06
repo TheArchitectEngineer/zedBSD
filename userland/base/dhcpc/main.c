@@ -11,6 +11,7 @@
  * Implements the zedBSD dhcpc userland command.
  */
 
+#include "userland/base/dhcpc/inet6.h"
 #include "userland/base/net/dhcp.h"
 #include "userland/base/net/netutil.h"
 
@@ -91,6 +92,7 @@ main(
 	size_t packet_length;
 	const char *failure_stage;
 	int control, socket_, verbose, arg, got_offer;
+	int inet6, information, resolver;
 	int got_ack, interface_prepared;
 	int previous_default_present, route_prepared, rollback_error;
 
@@ -98,6 +100,9 @@ main(
 	failure_stage = "interface";
 	socket_ = -1;
 	verbose = 0;
+	inet6 = 0;
+	information = 0;
+	resolver = 1;
 	arg = 1;
 	got_offer = 0;
 	got_ack = 0;
@@ -111,6 +116,16 @@ main(
 		/* Handles the selected command-line operation. */
 		if (strcmp(argv[arg], "-v") == 0) {
 			verbose = 1;
+			arg++;
+		} else if (strcmp(argv[arg], "-6") == 0) {
+			/* DHCPv6 (ws130-p007): -i only the information, -n not the resolver. */
+			inet6 = 1;
+			arg++;
+		} else if (strcmp(argv[arg], "-i") == 0) {
+			information = 1;
+			arg++;
+		} else if (strcmp(argv[arg], "-n") == 0) {
+			resolver = 0;
 			arg++;
 		} else if (strcmp(argv[arg], "-t") == 0 && arg + 1 < argc) {
 			v = strtoul(argv[arg + 1], &end, 10);
@@ -134,8 +149,8 @@ main(
 		}
 	}
 
-	/* Validates the command-line arguments. */
-	if (arg + 1 < argc) {
+	/* Validates the command-line arguments: -i and -n are DHCPv6's. */
+	if (arg + 1 < argc || (!inet6 && (information || !resolver))) {
 		/* Obtains the usage result. */
 		function_result = usage();
 
@@ -172,6 +187,12 @@ main(
 
 		/* Reports operation failure. */
 		return 1;
+	}
+
+	/* DHCPv6 is done apart (ws130-p007). */
+	if (inet6) {
+		close(control);
+		return dhcpc_inet6(interface, information, resolver, timeout_seconds, verbose);
 	}
 	memset(&previous_default, 0, sizeof(previous_default));
 	deadline =
@@ -511,7 +532,7 @@ static int
 usage(
 	void)
 {
-	puts("usage: dhcpc [-v] [-t seconds] [interface]");
+	puts("usage: dhcpc [-v] [-t seconds] [interface]\n       dhcpc -6 [-i] [-n] [-v] [-t seconds] [interface]");
 
 	/* Reports operation failure. */
 	return 2;

@@ -57,6 +57,18 @@
 /* The longest text of a name server with its zone. */
 #define IPV6_SERVER_TEXT	(INET6_ADDRSTRLEN + IF_NAMESIZE + 1)
 
+/*
+ * DHCPv6 (ws130-p007): how many interfaces' runs networkd keeps, dhcpc's
+ * time and the most a run may take, the record dhcpc leaves (when to run
+ * again), and the waits after a run that failed (doubled up to the last).
+ */
+#define IPV6_DHCP_INTERFACES	8U
+#define IPV6_DHCP_TIMEOUT	"10"
+#define IPV6_DHCP_RUN_SECONDS	15U
+#define IPV6_DHCP_RECORD	"/var/db/dhcpc/%s.dhcp6"
+#define IPV6_DHCP_RETRY_FIRST	60U
+#define IPV6_DHCP_RETRY_LAST	3600U
+
 /* A temporary address's identifier, kept so that each advertisement renews it rather than making another. */
 struct ipv6_temporary {
 	int used;
@@ -65,10 +77,32 @@ struct ipv6_temporary {
 	uint8_t iid[8];
 };
 
+/* What DHCPv6 an interface's advertisements ask for. */
+enum ipv6_dhcp_mode {
+	IPV6_DHCP_NONE,
+	IPV6_DHCP_STATELESS,
+	IPV6_DHCP_STATEFUL
+};
+
+/*
+ * An interface's DHCPv6: its mode, whether dhcpc writes the resolver,
+ * when it runs again (monotonic microseconds; 0: not again), and the wait
+ * after the last failure.
+ */
+struct ipv6_dhcp {
+	int used;
+	char name[IF_NAMESIZE];
+	enum ipv6_dhcp_mode mode;
+	int resolver;
+	uint64_t due;
+	unsigned retry;
+};
+
 static uint8_t ipv6_secret[IPV6_SECRET_LENGTH];
 static int ipv6_secret_ready;
 static struct ipv6_temporary ipv6_temporaries[IPV6_TEMPORARIES];
 static struct netconf ipv6_configuration;
+static struct ipv6_dhcp ipv6_dhcps[IPV6_DHCP_INTERFACES];
 
 static int ipv6_secret_load(void);
 static void ipv6_config(const char *name, struct netconf_interface *item, int *dns_dynamic);
@@ -83,6 +117,11 @@ static int ipv6_eui64(const char *name, uint8_t *iid);
 static const uint8_t *ipv6_temporary(unsigned ifindex, const struct in6_addr *prefix);
 static void ipv6_route(unsigned ifindex, const struct in6_addr *router, uint32_t lifetime);
 static void ipv6_resolver(const char *name, const struct slaac_ra *ra);
+static void ipv6_dhcp_advertised(const char *name, const struct netconf_interface *item, const struct slaac_ra *ra,
+    int dns_dynamic);
+static struct ipv6_dhcp *ipv6_dhcp_find(const char *name, int make);
+static void ipv6_dhcp_run(struct ipv6_dhcp *entry);
+static unsigned ipv6_dhcp_renew(const char *name);
 
 /*
  * Opens the route socket of IPv6's events (RTM_ROUTERADV, RTM_ADDRINFO,
@@ -319,6 +358,36 @@ ipv6_add(
 	return status;
 }
 
+/*
+ * Gives an interface whose IPv6 is on its link-local address: fe80::/64
+ * with the stable identifier (RFC 7217).  networkd does it when the
+ * interface comes up, and when a commit turns IPv6 on again (the kernel
+ * says nothing of that).  Returns 0, or -1 without the secret.
+ */
+int
+networkd_ipv6_link_local(
+	const char *name)
+{
+	struct in6_addr link;
+	struct in6_addr address;
+	uint8_t iid[8];
+	int status;
+
+	/* The secret of the stable identifiers. */
+	status = ipv6_secret_load();
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: fe80::/64 and the identifier; an address it has already is renewed. */
+	memset(&link, 0, sizeof(link));
+	link.s6_addr[0] = 0xfe;
+	link.s6_addr[1] = 0x80;
+	slaac_stable_iid(ipv6_secret, sizeof(ipv6_secret), &link, name, "", 0, iid);
+	slaac_address(&link, iid, &address);
+	(void)ipv6_add(name, &address, 64U, 0U, IN6_LIFETIME_INFINITE, IN6_LIFETIME_INFINITE);
+	return 0;
+}
+
 /* Sets an interface's IPv6 up: on or off as net.conf says, and when on its link-local and static addresses. */
 static void
 ipv6_setup(
@@ -326,13 +395,17 @@ ipv6_setup(
 {
 	struct netconf_interface item;
 	struct ifreq request;
-	struct in6_addr link;
 	struct in6_addr address;
-	uint8_t iid[8];
 	size_t index;
 	int dns_dynamic;
 	int on;
+	struct ipv6_dhcp *entry;
 	int status;
+
+	/* DHCPv6 starts again with the next advertisement. */
+	entry = ipv6_dhcp_find(name, 0);
+	if (entry != NULL)
+		entry->used = 0;
 
 	/* On or off. */
 	ipv6_config(name, &item, &dns_dynamic);
@@ -345,16 +418,10 @@ ipv6_setup(
 	if (status != 0 || !on)
 		return;
 
-	/* The link-local address: fe80::/64 with the stable identifier. */
-	status = ipv6_secret_load();
+	/* The link-local address. */
+	status = networkd_ipv6_link_local(name);
 	if (status != 0)
 		return;
-	memset(&link, 0, sizeof(link));
-	link.s6_addr[0] = 0xfe;
-	link.s6_addr[1] = 0x80;
-	slaac_stable_iid(ipv6_secret, sizeof(ipv6_secret), &link, name, "", 0, iid);
-	slaac_address(&link, iid, &address);
-	(void)ipv6_add(name, &address, 64U, 0U, IN6_LIFETIME_INFINITE, IN6_LIFETIME_INFINITE);
 
 	/* The static addresses. */
 	for (index = 0; index < item.ipv6.address_count; index++) {
@@ -404,6 +471,7 @@ ipv6_advertisement(
 		ipv6_route(record->rtm_ifindex, &record->rtm_source, ra.router_lifetime);
 	if (ra.dns_count != 0U && dns_dynamic)
 		ipv6_resolver(name, &ra);
+	ipv6_dhcp_advertised(name, &item, &ra, dns_dynamic);
 	printf("networkd: %s: router advertisement prefixes=%u router=%u dns=%u\n", name, ra.prefix_count,
 	    (unsigned)ra.router_lifetime, ra.dns_count);
 	fflush(stdout);
@@ -649,4 +717,227 @@ ipv6_resolver(
 		status = rename(IPV6_RESOLV_TEMPORARY, IPV6_RESOLV_PATH);
 	if (status != 0)
 		fprintf(stderr, "networkd: %s: %s\n", IPV6_RESOLV_PATH, strerror(errno));
+}
+
+/*
+ * Starts DHCPv6 as an advertisement and net.conf ask (section 4): with
+ * dhcp auto, stateful on the M flag, or only the information on the O flag
+ * when there is no RDNSS; stateless or stateful as net.conf says
+ * otherwise.  An interface already run in the same mode is left to its
+ * schedule.
+ */
+static void
+ipv6_dhcp_advertised(
+	const char *name,
+	const struct netconf_interface *item,
+	const struct slaac_ra *ra,
+	int dns_dynamic)
+{
+	struct ipv6_dhcp *entry;
+	enum ipv6_dhcp_mode mode;
+
+	/* The mode. */
+	mode = IPV6_DHCP_NONE;
+	switch (netconf_ipv6_dhcp(item)) {
+	case NETCONF_IPV6_DHCP_AUTO:
+		if ((ra->flags & SLAAC_RA_MANAGED) != 0U)
+			mode = IPV6_DHCP_STATEFUL;
+		else if ((ra->flags & SLAAC_RA_OTHER) != 0U && ra->dns_count == 0U)
+			mode = IPV6_DHCP_STATELESS;
+		break;
+	case NETCONF_IPV6_DHCP_STATELESS:
+		mode = IPV6_DHCP_STATELESS;
+		break;
+	case NETCONF_IPV6_DHCP_STATEFUL:
+		mode = IPV6_DHCP_STATEFUL;
+		break;
+	case NETCONF_IPV6_DHCP_OFF:
+		break;
+	}
+
+	/* None: what was kept goes. */
+	entry = ipv6_dhcp_find(name, mode != IPV6_DHCP_NONE);
+	if (entry == NULL)
+		return;
+	if (mode == IPV6_DHCP_NONE) {
+		entry->used = 0;
+		return;
+	}
+
+	/* Run in this mode already: its schedule runs it again. */
+	if (entry->mode == mode)
+		return;
+
+	/* Succeeded: run now. */
+	entry->mode = mode;
+	entry->resolver = dns_dynamic;
+	entry->retry = 0;
+	ipv6_dhcp_run(entry);
+}
+
+/* Finds an interface's DHCPv6, taking a free slot with make; NULL when there is none. */
+static struct ipv6_dhcp *
+ipv6_dhcp_find(
+	const char *name,
+	int make)
+{
+	struct ipv6_dhcp *entry;
+	unsigned index;
+	int same;
+
+	/* The interface's. */
+	for (index = 0; index < IPV6_DHCP_INTERFACES; index++) {
+		entry = &ipv6_dhcps[index];
+		if (!entry->used)
+			continue;
+		same = strcmp(entry->name, name);
+		if (same == 0)
+			return entry;
+	}
+	if (!make)
+		return NULL;
+
+	/* A free one. */
+	for (index = 0; index < IPV6_DHCP_INTERFACES; index++) {
+		entry = &ipv6_dhcps[index];
+		if (entry->used)
+			continue;
+		memset(entry, 0, sizeof(*entry));
+		entry->used = 1;
+		(void)snprintf(entry->name, sizeof(entry->name), "%s", name);
+		return entry;
+	}
+
+	/* The table is full. */
+	return NULL;
+}
+
+/*
+ * Runs `dhcpc -6` for an interface and schedules the next run: at T1 (or
+ * the information refresh time) as dhcpc recorded, or after a wait that
+ * doubles while it fails.
+ */
+static void
+ipv6_dhcp_run(
+	struct ipv6_dhcp *entry)
+{
+	char *arguments[9];
+	unsigned count;
+	unsigned renew;
+	int status;
+
+	/* dhcpc -6 [-i] [-n] -t SECONDS IF. */
+	count = 0;
+	arguments[count++] = "/sbin/dhcpc";
+	arguments[count++] = "-6";
+	if (entry->mode == IPV6_DHCP_STATELESS)
+		arguments[count++] = "-i";
+	if (!entry->resolver)
+		arguments[count++] = "-n";
+	arguments[count++] = "-t";
+	arguments[count++] = IPV6_DHCP_TIMEOUT;
+	arguments[count++] = entry->name;
+	arguments[count] = NULL;
+	status = networkd_run_command(arguments, IPV6_DHCP_RUN_SECONDS);
+
+	/* Failed: again after a wait twice the last. */
+	if (status != 0) {
+		entry->retry = entry->retry == 0U ? IPV6_DHCP_RETRY_FIRST : entry->retry * 2U;
+		if (entry->retry > IPV6_DHCP_RETRY_LAST)
+			entry->retry = IPV6_DHCP_RETRY_LAST;
+		entry->due = netutil_monotonic_us() + (uint64_t)entry->retry * 1000000U;
+		printf("networkd: %s: DHCPv6 failed, again in %u seconds\n", entry->name, entry->retry);
+		fflush(stdout);
+		return;
+	}
+
+	/* Succeeded: again when dhcpc said (not again for 0). */
+	entry->retry = 0;
+	renew = ipv6_dhcp_renew(entry->name);
+	entry->due = 0;
+	if (renew != 0U)
+		entry->due = netutil_monotonic_us() + (uint64_t)renew * 1000000U;
+	printf("networkd: %s: DHCPv6 %s, again in %u seconds\n", entry->name,
+	    entry->mode == IPV6_DHCP_STATEFUL ? "stateful" : "stateless", renew);
+	fflush(stdout);
+}
+
+/* Reads when dhcpc said to run again ("renew SECONDS" in its record); 0 when not again or not said. */
+static unsigned
+ipv6_dhcp_renew(
+	const char *name)
+{
+	char path[64];
+	char line[64];
+	unsigned long value;
+	unsigned renew;
+	FILE *input;
+	char *end;
+
+	/* The record. */
+	(void)snprintf(path, sizeof(path), IPV6_DHCP_RECORD, name);
+	input = fopen(path, "r");
+	if (input == NULL)
+		return 0;
+
+	/* Its renew line. */
+	renew = 0;
+	while (fgets(line, sizeof(line), input) != NULL) {
+		if (strncmp(line, "renew ", 6) != 0)
+			continue;
+		value = strtoul(line + 6, &end, 10);
+		if ((*end == '\n' || *end == '\0') && value <= 0xffffffffUL)
+			renew = (unsigned)value;
+	}
+	fclose(input);
+
+	/* Succeeded. */
+	return renew;
+}
+
+/* Gives the milliseconds until the next DHCPv6 run is due, or -1 when none is. */
+int
+networkd_ipv6_poll_timeout(void)
+{
+	uint64_t now;
+	uint64_t soonest;
+	uint64_t wait;
+	unsigned index;
+
+	/* The soonest. */
+	soonest = 0;
+	for (index = 0; index < IPV6_DHCP_INTERFACES; index++) {
+		if (!ipv6_dhcps[index].used || ipv6_dhcps[index].due == 0U)
+			continue;
+		if (soonest == 0U || ipv6_dhcps[index].due < soonest)
+			soonest = ipv6_dhcps[index].due;
+	}
+	if (soonest == 0U)
+		return -1;
+
+	/* Succeeded: from now, rounded up, at most a day at a time. */
+	now = netutil_monotonic_us();
+	if (soonest <= now)
+		return 0;
+	wait = (soonest - now + 999U) / 1000U;
+	if (wait > 86400000U)
+		wait = 86400000U;
+	return (int)wait;
+}
+
+/* Runs each DHCPv6 that is due (a Renew, or the information again). */
+void
+networkd_ipv6_run_due(void)
+{
+	uint64_t now;
+	unsigned index;
+
+	/* Each one due. */
+	now = netutil_monotonic_us();
+	for (index = 0; index < IPV6_DHCP_INTERFACES; index++) {
+		if (!ipv6_dhcps[index].used || ipv6_dhcps[index].due == 0U || ipv6_dhcps[index].due > now)
+			continue;
+		ipv6_dhcps[index].due = 0;
+		ipv6_dhcp_run(&ipv6_dhcps[index]);
+	}
 }

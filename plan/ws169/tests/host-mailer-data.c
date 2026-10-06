@@ -6,25 +6,47 @@
  */
 
 /*
- * Mail's test data (WS169 p000): two accounts and their messages, made up
- * for the mock -- read and unread ones, one with a file, one with a
+ * Mail's test data for the host test of its view (WS169 p000; moved out of
+ * the program by p004): two accounts and their messages, made up -- read and unread ones, one with a file, one with a
  * sign-in code (what the browser is to fill in from a mail later), a sent
  * one and a draft.
  */
 
-#include "mailer.h"
+#include "userland/desktop/mailer/mailer.h"
+
+#include <stdio.h>
+#include <string.h>
+
+void test_mailer_data_load(void);
 
 /* The accounts. */
-static const struct ml_account data_accounts[] = {
-	{ "Personal", "kei@example.net" },
-	{ "Work", "kei@corp.example" }
+static const char *const data_account_names[2] = { "Personal", "Work" };
+static const char *const data_account_addresses[2] = { "kei@example.net", "kei@corp.example" };
+
+/*
+ * One message of the test data, as the mock had it: its account and
+ * folder, flags, sender, color, to whom, subject, dates as words, words,
+ * file and code.
+ */
+struct data_message {
+	int account;
+	enum ml_folder folder;
+	unsigned flags;
+	const char *from_name;
+	const char *from_address;
+	kl_color color;
+	const char *to;
+	const char *subject;
+	const char *date_short;
+	const char *date_long;
+	const char *body;
+	const char *file_name;
+	const char *file_detail;
+	const char *code;
 };
 
-/* The folders' names. */
-static const char *const data_folders[ML_FOLDERS] = { "Inbox", "Sent", "Drafts", "Archive", "Trash" };
-
 /* The messages, the latest first in each folder. */
-static const struct ml_message data_messages[] = {
+static const struct data_message data_messages[] = {
 	{ 0, ML_INBOX, ML_UNREAD, "Example Bank", "no-reply@bank.example", KL_RGB(0x2d9cdb), "kei@example.net",
 	  "Your sign-in code", "09:41", "Monday, 5 October 2026 at 09:41",
 	  "Hello Kei,\n\nUse this code to finish signing in to Example Bank:\n\n482913\n\nThe code expires in 10 minutes. If you did not try to sign in, you can ignore this message; nobody can sign in without the code.\n\nExample Bank",
@@ -76,40 +98,46 @@ static const struct ml_message data_messages[] = {
 };
 
 /*
- * Reports the accounts and how many there are.
+ * Fills Mail's store with the test data: the two accounts and their
+ * messages, the first of the array the newest (a date a minute apart).
  */
-const struct ml_account *
-ml_accounts(
-	size_t *count)
+void
+test_mailer_data_load(void)
 {
-	/* The array of the program. */
-	*count = sizeof(data_accounts) / sizeof(data_accounts[0]);
-	return data_accounts;
-}
+	struct ml_account_config account;
+	struct ml_message message;
+	size_t index;
+	size_t count;
 
-/*
- * Reports the messages and how many there are.
- */
-const struct ml_message *
-ml_messages(
-	size_t *count)
-{
-	/* The array of the program. */
-	*count = sizeof(data_messages) / sizeof(data_messages[0]);
-	return data_messages;
-}
+	/* The accounts. */
+	for (index = 0; index < 2U; index++) {
+		memset(&account, 0, sizeof(account));
+		(void)snprintf(account.name, sizeof(account.name), "%s", data_account_names[index]);
+		(void)snprintf(account.address, sizeof(account.address), "%s", data_account_addresses[index]);
+		(void)ml_store_add_account(&account);
+	}
 
-/*
- * Reports a folder's name.
- */
-const char *
-ml_folder_name(
-	enum ml_folder folder)
-{
-	/* A folder not known. */
-	if ((unsigned)folder >= ML_FOLDERS)
-		return "";
-
-	/* Its name. */
-	return data_folders[folder];
+	/* The messages. */
+	count = sizeof(data_messages) / sizeof(data_messages[0]);
+	for (index = 0; index < count; index++) {
+		memset(&message, 0, sizeof(message));
+		message.account = data_messages[index].account;
+		message.folder = data_messages[index].folder;
+		message.flags = data_messages[index].flags;
+		message.uid = (uint32_t)(index + 1U);
+		message.date = (time_t)(1790000000L - (long)index * 60L);
+		message.from_name = (char *)data_messages[index].from_name;
+		message.from_address = (char *)data_messages[index].from_address;
+		message.color = data_messages[index].color;
+		message.to = (char *)data_messages[index].to;
+		message.subject = (char *)data_messages[index].subject;
+		message.date_short = (char *)data_messages[index].date_short;
+		message.date_long = (char *)data_messages[index].date_long;
+		message.body = (char *)data_messages[index].body;
+		message.file_name = (char *)data_messages[index].file_name;
+		message.file_detail = (char *)data_messages[index].file_detail;
+		message.code = (char *)data_messages[index].code;
+		message.message_id = (char *)"<test@example.net>";
+		(void)ml_store_insert(&message);
+	}
 }

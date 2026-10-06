@@ -57,6 +57,7 @@ static int test_failures;
 static uint64_t test_now = 1000000U;
 
 int main(int argc, char **argv);
+void test_mailer_data_load(void);
 unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void test_frame(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height);
 static void test_click(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, int x, int y);
@@ -128,6 +129,7 @@ main(
 	style.glass = 0;
 
 	/* The view at the start: the Personal inbox, its first message (the sign-in code). */
+	test_mailer_data_load();
 	error = ml_view_init(&view);
 	if (error != 0)
 		return 2;
@@ -146,7 +148,7 @@ main(
 	(void)test_save(&canvas, argv[3], "reply");
 	test_check("reply", "COMPOSE kind=reply");
 
-	/* A new message: To "ben", the words "hello", Send; there is no backend. */
+	/* A new message: To "ben", the words "hello", Send: a request for the window. */
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 110, 71);
 	test_check("new", "COMPOSE kind=new");
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 800, 82);
@@ -155,12 +157,25 @@ main(
 	test_type(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, hello, sizeof(hello) / sizeof(hello[0]));
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 1124, 28);
 	(void)test_save(&canvas, argv[3], "send");
-	test_check("send", "NOBACKEND action=send to=3 subject=0 body=5");
+	test_check("send", "REQUEST action=send to=3 subject=0 body=5");
 
-	/* Get Mail: there is no backend. */
+	/* Get Mail: a request for the window. */
 	test_now += 5000000U;
 	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 110, TEST_HEIGHT - 48);
-	test_check("get", "NOBACKEND action=get");
+	test_check("get", "REQUEST action=get");
+
+	/* Add Account: the form; the browser's switch; Sign In asks the window; Cancel closes the form. */
+	test_now += 5000000U;
+	(void)snprintf(view.status, sizeof(view.status), "Updated 09:41");
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 110, TEST_HEIGHT - 88);
+	test_check("setup", "SETUP open");
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 950, 410);
+	test_check("codes", "CODES allowed=1");
+	(void)test_save(&canvas, argv[3], "setup");
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 925, 347);
+	test_check("sign-in", "REQUEST action=sign-in address=0 imap=0 smtp=0");
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 807, 347);
+	test_check("setup-cancel", "COMPOSE kind=cancel");
 
 	/* The Work account's inbox. */
 	test_now += 5000000U;

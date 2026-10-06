@@ -2648,6 +2648,12 @@ event_poll_timeout(
 		scan = wifi_scan_poll_timeout();
 	if (scan >= 0 && (automatic < 0 || scan < automatic))
 		automatic = scan;
+	/* A DHCPv6 run that is due wakes the loop too (ws130-p007). */
+	scan = -1;
+	if (!networkd_confirmed_active(&confirmed))
+		scan = networkd_ipv6_poll_timeout();
+	if (scan >= 0 && (automatic < 0 || scan < automatic))
+		automatic = scan;
 	rollback = networkd_confirmed_poll_timeout(&confirmed,
 	    netutil_monotonic_us());
 	if (automatic < 0)
@@ -2697,6 +2703,10 @@ run_due_work(
 		recheck_connection_profile();
 	}
 	run_confirmed_due();
+
+	/* DHCPv6's Renew, or the information again (ws130-p007). */
+	if (!networkd_confirmed_active(&confirmed))
+		networkd_ipv6_run_due();
 	if (!networkd_confirmed_active(&confirmed) &&
 	    automatic_poll_timeout() == 0) {
 		if (managed_wlan.state == NETWORKD_WLAN_RETIRING)
@@ -3778,6 +3788,10 @@ execute_wired_request(
 		if (interface_exists(request->interface) == 0)
 			result = run_command_until(arguments, 10, deadline, diagnostic);
 		*error = errno;
+
+		/* On again: its link-local address back (the kernel says nothing of it). */
+		if (result == 0 && strcmp(request->address, "on") == 0)
+			(void)networkd_ipv6_link_local(request->interface);
 	} else if (request->header.opcode == NETWORKD_OP_STATIC6) {
 		/* A static IPv6 address, ADDRESS/LENGTH (ws130-p005). */
 		arguments[0] = "/sbin/ifconfig";
@@ -8392,6 +8406,18 @@ unlink_owned_resolver(
 	networkd_protocol_clear(&current, sizeof(current));
 	errno = saved;
 	return result;
+}
+
+/* Runs a command for networkd's IPv6 (ws130-p007), bounded by its time; 0, or -1. */
+int
+networkd_run_command(
+	char *const arguments[],
+	unsigned timeout_seconds)
+{
+	char diagnostic[CHILD_OUTPUT_MAX];
+
+	/* No transaction's deadline. */
+	return run_command_until(arguments, timeout_seconds, 0U, diagnostic);
 }
 
 /* Runs one child with both an operation bound and an optional transaction deadline. */
