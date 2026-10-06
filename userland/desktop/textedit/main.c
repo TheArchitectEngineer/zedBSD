@@ -16,7 +16,8 @@
  * The file is opened from the command line (a path that does not exist is
  * made by the first save), or with File > Open.  The outcome is one line
  * on standard error: TEXTEDIT DONE with the reason, or TEXTEDIT FAILED
- * naming what failed; TEXTEDIT READY says the first frame is shown, and
+ * naming what failed; TEXTEDIT READY says the first frame is shown and the
+ * window has the keyboard (or MAIN_READY_WAIT_MS passed without it), and
  * TEXTEDIT OPEN and TEXTEDIT SAVE name the files read and written.
  */
 
@@ -70,6 +71,13 @@
 
 /* The longest the loop sleeps when nothing is due, in milliseconds. */
 #define MAIN_IDLE_MS		1000
+
+/*
+ * How long READY waits for the keyboard after the first frame
+ * (q807-i02): a key typed before zdesktop gives the window the keyboard
+ * goes nowhere, so READY says the window takes keys, or that this passed.
+ */
+#define MAIN_READY_WAIT_MS	2000U
 
 /* The application's identity in the compositor and the recent files. */
 #define MAIN_APPLICATION	"textedit"
@@ -126,6 +134,9 @@ static struct kl_field main_with_field;
 /* Whether the compositor asked to close the window or gave it a new size, since the loop last looked. */
 static int main_closed;
 static int main_resized;
+
+/* Whether the window has had the keyboard since it opened (READY waits for it, MAIN_READY_WAIT_MS). */
+static int main_focus_came;
 
 /* The editor: the document and the view, made once the swapchain's size is known. */
 static struct te_app main_app;
@@ -539,8 +550,10 @@ main_loop(
 	struct kl_app_event app_event;
 	struct te_event event;
 	struct te_state state;
+	uint64_t ready_due;
 	uint64_t started;
 	uint64_t now;
+	int ready_told;
 	int taken;
 	int status;
 	int timeout;
@@ -553,14 +566,22 @@ main_loop(
 		return -1;
 	}
 
-	/* The file given on the command line, the title, and the first frame. */
+	/*
+	 * The input method's text, asked for before the window has the
+	 * keyboard, so that the text input is on as soon as it comes (the loop
+	 * asks again each round, under a dialog or the chooser not).
+	 */
+	kl_window_text_input(main_window.kui, 1);
+
+	/* The file given on the command line, the title, and the first frame; READY waits for the keyboard. */
 	main_app.now = te_clock();
 	main_opened();
 	main_title_refresh();
 	status = main_frame();
 	if (status != 0)
 		return -1;
-	te_log("READY width=%u height=%u lines=%lu", main_width, main_height, (unsigned long)main_app.buffer.line_count);
+	ready_told = 0;
+	ready_due = te_clock() + MAIN_READY_WAIT_MS;
 
 	/* Each round: input, time, and a frame when something changed. */
 	started = te_clock();
@@ -575,6 +596,15 @@ main_loop(
 			timeout = MAIN_FRAME_MS;
 		if (main_app.dirty)
 			timeout = 0;
+
+		/* Until READY is told, no later than its time without the keyboard. */
+		if (!ready_told) {
+			due = 0;
+			if (ready_due > now)
+				due = (int)(ready_due - now);
+			if (due < timeout)
+				timeout = due;
+		}
 
 		/* Waits (a key held repeats within, after its release if that came, BUG-111); a lost connection ends the run. */
 		status = kl_app_dispatch(main_kl, timeout);
@@ -594,6 +624,17 @@ main_loop(
 				main_appearance_changed();
 			if (app_event.kind == KL_APP_WINDOW && app_event.window == main_window.kui)
 				main_window_event(&app_event.input);
+		}
+
+		/* READY once the window has the keyboard (keys typed from now reach it), or once its time passed without it. */
+		if (!ready_told) {
+			if (main_focus_came) {
+				ready_told = 1;
+			} else if (now >= ready_due) {
+				ready_told = 1;
+			}
+			if (ready_told)
+				te_log("READY width=%u height=%u lines=%lu focus=%d", main_width, main_height, (unsigned long)main_app.buffer.line_count, main_focus_came);
 		}
 
 		/* Every input queued (the menus' and the titlebar's among them). */
@@ -1382,6 +1423,9 @@ main_window_event(
 		main_app.dirty = 1;
 		break;
 	case KL_WINDOW_FOCUS:
+		/* The keyboard came (READY waits for the first time) or went. */
+		if (event->pressed)
+			main_focus_came = 1;
 		input = te_window_push(&main_window, TE_EVENT_FOCUS);
 		if (input != NULL)
 			input->pressed = event->pressed;
