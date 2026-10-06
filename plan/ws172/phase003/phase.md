@@ -54,3 +54,7 @@ Queue: Q1 の P2 の列（2026-10-06、q824 → q826 → WS161 → **WS172**）
 
 - 段 B・段 C（上の表）。
 - WS161 p005（NFC の transport）が入ったら、helper が `/dev/smartcard*` の鍵も使う。
+
+## 2026-10-06 夜 ユーザーの決定（段 C、P5 の置き換え）
+
+P2 の案 (a) kernel の試験の driver に CTAP2 の応答器、(b) userland の応答器と kernel の中継、(c) 実機の鍵だけ、へのクリックの回答「(c) 実機の鍵だけで確かめる」: QEMU では鍵の流れを試さず、実機の YubiKey（WS161 p006 の UAT）で確かめる。承認済みの P5（kernel の loopback を CTAP2 の応答器に広げる）は行わない。

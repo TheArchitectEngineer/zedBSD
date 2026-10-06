@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー（クリック）: WS172 の QEMU での鍵の試験は「(c) 実機の鍵だけで確かめる」（P5 の kernel の応答器は作らない、実機の YubiKey の UAT で確かめる）。
 - 2026-10-06 夜 ユーザー（クリック）: Guardrail の OpenSSL の例外を「広げる」→ libpasskey を使う base の道具 fidoctl（WS161）も範囲に（期限は同じ、リリースの前に独自実装へ）。
 - 2026-10-06 夜 ユーザー:「WS152はベータ3に先送りします。」→ WS152（system の更新）は第 1 段から外しベータ3 へ。p001 の検討（U1〜U12）は保存。
 - 2026-10-06 夜 ユーザー（クリック）: Settings の Privacy（WS148）・Security（WS149）・Accessibility（WS151）は 3 つとも「頁を無くす」。Privacy は推奨どおり Files の Recents に「履歴を消す」と Storage に「最近の項目を残す」の switch。Security・Accessibility は頁を取り除くだけ（lock の設定・動きを減らす などは作らない）。q824（P2）。WS152 は第 1 段（ユーザーの列）なので段は「ベータ2」に揃える。
