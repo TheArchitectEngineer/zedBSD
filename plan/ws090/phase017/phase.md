@@ -2,7 +2,7 @@
 # ws090-p017: 設計 — libkeiland の慣性 scroll（全ての窓）と開始の遅れ
 
 Parent: [WS090](../ws.md)
-Status: planned（2026-10-06 Q1 の設計の第 1 版。実装に取りかかれる）
+Status: test-wait（T1 依頼中。q790-i01、P1、2026-10-06 実装済み。残りは下の「残り」）
 Disposition: normal
 Related: [BUG-211](../../bugs/BUG-211.md)・[BUG-218](../../bugs/BUG-218.md)
 
@@ -25,3 +25,33 @@ BUG-211「慣性スクロールが実装されていないようです…この�
 - host: 速度の推定・減衰・端の止まり・新しい接触での停止。
 - AAT: `apps.settings.kinetic-scroll`（wifi の一覧）、`apps.phone.scroll-latency`（注入の時刻から再描画の log まで）。実機はユーザー。
 - 実装: p017a（libkeiland の慣性と API、host 試験、0.7 LW）、p017b（各 app への適用と Phone の独自の慣性の置き換え、開始の遅れの測定と短縮、0.7 LW）。
+
+## q790-i01（P1、2026-10-06）: 実装（p017a と p017b の主な部分）
+
+commit 58b9027a（試験は別の commit）。設計からの変更: 2 本指の scroll は compositor が**wheel の notch**（2.5 mm ごとに 15 単位）にしてから client
+に送っていたので、client は指の始まり・終わり・速度を知り得なかった。慣性の前に compositor を直した。
+
+| 層 | 変更 |
+| --- | --- |
+| compositor（`userland/desktop/wayland/touchpad.c`・`touchpad.h`・`seat.c`・`input.c`・`zwl.h`） | touch pad の 2 本指の移動を notch に加えて **wheel の単位**（`ZWL_TOUCHPAD_NOTCH_UNITS` = 15、約 0.17 mm に 1 単位）でも数え、client へは `wl_pointer.axis_source = finger`・単位ごとの `axis`（discrete 無し）で送る（`zwl_seat_axis_finger`）。指が離れる（SWIPE2 の END）と `axis_stop` を両方の軸に（`zwl_seat_axis_stop`、log `ZWL AXIS stop`）。App Home の page・音量・tab は従来どおり notch で（notch 0 の時も、その上なら受ける）。**開始の遅れ（BUG-218）**: 最初の scroll は 2.5 mm の後でなく約 0.17 mm の後に client に届く |
+| libkeiland（`ui/window.c`・`window.h`・`ui/scroll.c`・新 `ui/axis-track.c`・`ui/ui.c`、`keiland-ui.h`・`keiland.h`、`exports.map`、Makefile 3 つ） | `kl_window_event` に `axis_source`、新しい kind `KL_WINDOW_AXIS_STOP`。axis の値の端数を捨てない（`wl_fixed_to_int` → `wl_fixed_to_double`）。`kl_scroll_axis`: 指は content を握り（飛んでいる物は止まる）、glide 無しで即座に動かす。`kl_scroll_axis_stop`: 指の速度（`kl_axis_track`: 直近 100 ms の移動 ÷ 時間、60 ms 以上止まってから離した時は 0）で既存の `kl_scroller` の慣性・端の弾みで飛ぶ。`kl_ui_axis`: 窓の axis event を pointer の下の scroll へ（握った scroll を指が離れるまで保ち、frame にもう無い scroll には触れない）。KL_VERSION 40 |
+| app | Phone・Mailer・Calendar・file chooser: `KL_WINDOW_AXIS` と `KL_WINDOW_AXIS_STOP` を `kl_ui_axis` に。**Settings**（自前の窓と scroll）: axis の source・stop・端数、指が握った pane（page か list）を即座に動かし、離すと速度で飛ぶ（時定数 325 ms の指数の減衰、20 px/s 未満か端で止まる、log `ZSETTINGS KINETIC start pane=… velocity=…` と `KINETIC stop`）。飛ぶ間は 8 ms ごとに frame |
+| Phone の padding（BUG-218） | glass の時の card の周りの margin 12 → 0、間の gap 10 → 8（Settings の glass と同じ） |
+
+確認（host）: `plan/ws090/tests/host-input.sh` 72/72（新: track の速度・休んだ指・`kl_scroll_axis` の即座の移動と離した後の飛行・wheel の glide・`kl_ui_axis` の
+window event からの通し）。`plan/ws159/tests/run-host-touchpad.sh` ok（25）、`plan/ws142/tests/run-host-gesture.sh` ok（62）、
+`plan/ws170/tests/run-host-phone.sh` PASS、`plan/ws090/tests/host-widgets.sh` 94/94、`plan/ws089/tests/host-build.sh` built。build: wayland・settings・phone・
+mailer・calendar・files（zedBSD）warning 0、keiland-linux.mk exit 0、`exports.py --check` ok。`ui/scroll.c` を使う他の host の script（keiui の chooser、
+textedit の core、ws102 の inset、ws155 の calendar、ws170 の phone、ws090 の widgets）に `ui/axis-track.c` を足した。そのうち chooser・textedit・
+inset・calendar・ws089 の dark は **この変更の前から** `kl_appearance_get`・`kl_theme_choose` の未定義で link できない（既存の壊れ、未修正）。
+
+QEMU: `plan/ws090/tests/kinetic-guest.sh`（`config-amd64-kinetic.mk`: pen の guest に Settings。touchinject の pad で 2 本指を 20 mm 上へ約 100 ms で動かして離す）を
+T1 に依頼。実機（5330 の touch pad、開始の遅れの体感、慣性の感じ）は UAT。
+
+## 残り
+
+- 自前の scroll を持つ他の app（Files・Text Editor・Terminal・PDF Viewer・Image Viewer・Browser・Monitor・Notes）の慣性は未対応（compositor の変更で
+  scroll は細かく早く始まるようになるが、離した後は飛ばない）。`kl_axis_track` で同じ形に足せる。
+- 開始の遅れの測定（注入の時刻から再描画の log まで、AAT の `apps.phone.scroll-latency`）は未実施。Phone の 300 ms が touch screen の swipe の話なら、
+  別の経路（kl_ui の touch の drag の判定）を見る必要がある。
+- 端の軽い弾み（overshoot）は kl_scroll の既存の rubber band に任せた（Settings は端で止まるだけ）。

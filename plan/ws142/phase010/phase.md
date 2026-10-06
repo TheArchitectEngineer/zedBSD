@@ -29,3 +29,8 @@ Queue: q781 / q781-i01
 | `sh -n p010-guest.sh` | ok |
 | QEMU（p010-guest.sh） | 未実施。T1 に依頼（Q1 経由） |
 | 実機 5330 | 未実施（touchpad の 2 つのシナリオ、ユーザーの UAT） |
+
+## q795（2026-10-06 P2）: T1-224 の 4. front-docks の FAIL
+
+- 切り分け: 試験の側。zedBSD の kernel は process の command line を 63 byte までしか持たず（`KERN_SYSTEM_PROCESS_COMMAND_MAX` 64）、`ps -o args` もそこまで。`/bin/wltest --windowed --size=400x280 --color=d0f4d0 --app-id=apps.b` は 68 byte で `--app-id=apps.b` が切れ、4. の `grep "[w]ltest .*app-id=apps.b"` が何にも当たらず kill されなかった（log に client=3 の CLIENT gone が無く、後の WiseView に client=3 の tile が残る、のとおり）。compositor の機能の問題ではない。
+- 直し（cbf196c1）: `open_app` の `--app-id` を先頭に（`/bin/wltest --app-id=apps.b …`）、kill の grep を `[w]ltest --app-id=apps.b `、kill の後に `ZWL CLIENT gone client=B` を確かめる項目 `apps-b-gone` を足した。`sh -n` ok。流し直しは T1。

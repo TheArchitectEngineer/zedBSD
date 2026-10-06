@@ -84,6 +84,16 @@ struct se_window {
 	/* The finger taken as the pointer (-1 when none): a touch is a click where it lands and lifts. */
 	int32_t touch_id;
 
+	/*
+	 * The scrolling of the pointer's frame (BUG-211): what it comes from
+	 * (SE_SOURCE_*, a wheel's until told, and again after the frame),
+	 * whether the frame told the fingers' end already, and the fraction of
+	 * a pixel not yet given (a touch pad scrolls a unit at a time).
+	 */
+	unsigned axis_source;
+	int axis_stopped;
+	double axis_remainder;
+
 	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
 	uint32_t repeat_key;
 	uint64_t repeat_at;

@@ -859,6 +859,8 @@ window_pointer_axis(
 {
 	struct se_window *window;
 	struct se_event *event;
+	double distance;
+	int whole;
 
 	/* Only the vertical axis scrolls the window. */
 	(void)pointer;
@@ -867,39 +869,55 @@ window_pointer_axis(
 	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
 		return;
 
-	/* The distance, scaled to the window's pixels. */
+	/* The distance, scaled to the window's pixels, its fraction kept for the next (a touch pad scrolls a unit at a time). */
+	distance = wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE + window->axis_remainder;
+	whole = (int)distance;
+	window->axis_remainder = distance - (double)whole;
+	if (whole == 0)
+		return;
+
+	/* The scroll, with what it came from. */
 	event = se_window_push(window, SE_EVENT_AXIS);
 	if (event == NULL)
 		return;
-	event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+	event->scroll = whole;
+	event->source = window->axis_source;
 	event->time = se_clock();
 }
 
-/* A group of pointer events ends; each was queued as it came. */
+/* A group of pointer events ends (each was queued as it came): the next frame's scrolling is a wheel's until told. */
 static void
 window_pointer_frame(
 	void *data,
 	struct wl_pointer *pointer)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct se_window *window;
+
+	/* The frame's scrolling is over. */
 	(void)pointer;
+	window = data;
+	window->axis_source = SE_SOURCE_WHEEL;
+	window->axis_stopped = 0;
 }
 
-/* The source of scrolling is not used. */
+/* What the frame's scrolling comes from: a touch pad's fingers, or a wheel (BUG-211). */
 static void
 window_pointer_axis_source(
 	void *data,
 	struct wl_pointer *pointer,
 	uint32_t source)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct se_window *window;
+
+	/* The fingers, or else a wheel. */
 	(void)pointer;
-	(void)source;
+	window = data;
+	window->axis_source = SE_SOURCE_WHEEL;
+	if (source == WL_POINTER_AXIS_SOURCE_FINGER)
+		window->axis_source = SE_SOURCE_FINGER;
 }
 
-/* The end of scrolling is not used. */
+/* The fingers' scrolling ends: one SE_EVENT_AXIS_STOP for the frame, however many axes stop (BUG-211). */
 static void
 window_pointer_axis_stop(
 	void *data,
@@ -907,11 +925,25 @@ window_pointer_axis_stop(
 	uint32_t time,
 	uint32_t axis)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct se_window *window;
+	struct se_event *event;
+
+	/* Once a frame; the fraction left goes with the scrolling. */
 	(void)pointer;
 	(void)time;
 	(void)axis;
+	window = data;
+	if (window->axis_stopped != 0)
+		return;
+	window->axis_stopped = 1;
+	window->axis_remainder = 0.0;
+
+	/* The end. */
+	event = se_window_push(window, SE_EVENT_AXIS_STOP);
+	if (event == NULL)
+		return;
+	event->source = window->axis_source;
+	event->time = se_clock();
 }
 
 /* The wheel's notches are not used (the axis value already says how far). */

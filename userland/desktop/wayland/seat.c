@@ -45,6 +45,7 @@
 #define POINTER_AXIS			4U
 #define POINTER_FRAME			5U
 #define POINTER_AXIS_SOURCE		6U
+#define POINTER_AXIS_STOP		7U
 #define POINTER_AXIS_DISCRETE		8U
 
 /* Event opcodes of wl_keyboard, in protocol order. */
@@ -78,6 +79,7 @@
 #define AXIS_VERTICAL			0U
 #define AXIS_HORIZONTAL			1U
 #define AXIS_SOURCE_WHEEL		0U
+#define AXIS_SOURCE_FINGER		1U
 #define KEYMAP_NO_KEYMAP		0U
 #define KEYMAP_XKB_V1			1U
 
@@ -85,6 +87,7 @@
 #define WHEEL_STEP			15
 
 static int create_device(struct zwl_object *seat, enum zwl_kind kind, const unsigned char *bytes, size_t size);
+static void seat_axis(struct zwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units, uint32_t source);
 static void deliver(struct zwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
 static void pointer_enter(struct zwl_object *pointer, struct zwl_object *surface, uint32_t serial);
 static void keyboard_enter(struct zwl_object *keyboard, struct zwl_object *surface, uint32_t serial);
@@ -780,6 +783,90 @@ zwl_seat_axis(
 	int32_t vertical,
 	int32_t horizontal)
 {
+	/* The notches, and their units, from a wheel. */
+	seat_axis(server, time, vertical, horizontal, vertical * WHEEL_STEP, horizontal * WHEEL_STEP, AXIS_SOURCE_WHEEL);
+}
+
+/*
+ * Reports two fingers' scrolling on a touch pad to the focused client, in
+ * the wheel's units (BUG-218): the client hears them as the fingers move,
+ * a unit at a time, with the finger as their source, and the end of the
+ * scrolling as axis_stop (zwl_seat_axis_stop).  The whole notches are the
+ * desktop's own uses' (App Home's pages, the volume, the tabs).
+ */
+void
+zwl_seat_axis_finger(
+	struct zwl_server *server,
+	uint32_t time,
+	int32_t vertical,
+	int32_t horizontal,
+	int32_t vertical_units,
+	int32_t horizontal_units)
+{
+	/* The notches for the desktop, the units for the client. */
+	seat_axis(server, time, vertical, horizontal, vertical_units, horizontal_units, AXIS_SOURCE_FINGER);
+}
+
+/*
+ * Tells the client under the pointer that two fingers' scrolling has ended
+ * (wl_pointer.axis_stop on both axes, version 5 pointers): its content may
+ * fly on from there (BUG-211).
+ */
+void
+zwl_seat_axis_stop(
+	struct zwl_server *server,
+	uint32_t time)
+{
+	struct zwl_object *object;
+	struct zwl_object *target;
+	uint32_t words[2];
+	uint32_t word;
+
+	/* The surface the pointer is on; without one nobody heard the scrolling. */
+	target = server->pointer_surface;
+	if (target == NULL)
+		return;
+
+	/* Each version 5 pointer hears the source and the end of both axes, then the frame's end. */
+	for (object = target->client->objects; object != NULL; object = object->next) {
+		/* Only live pointer objects of version 5 or later. */
+		if (object->kind != ZWL_POINTER || object->dead)
+			continue;
+		if (object->version < POINTER_FRAME_VERSION)
+			continue;
+
+		/* The finger was the source. */
+		word = AXIS_SOURCE_FINGER;
+		deliver(object->client, object->id, POINTER_AXIS_SOURCE, &word, sizeof(word));
+
+		/* The end on each axis. */
+		words[0] = time;
+		words[1] = AXIS_VERTICAL;
+		deliver(object->client, object->id, POINTER_AXIS_STOP, words, sizeof(words));
+		words[1] = AXIS_HORIZONTAL;
+		deliver(object->client, object->id, POINTER_AXIS_STOP, words, sizeof(words));
+	}
+
+	/* The group of events ends. */
+	zwl_seat_frame(server);
+	printf("ZWL AXIS stop\n");
+}
+
+/*
+ * Scrolls: the desktop's own uses of the wheel first (by whole notches),
+ * then the surface under the pointer (by units, with their source; a
+ * wheel's notches as discrete steps too).
+ */
+static void
+seat_axis(
+	struct zwl_server *server,
+	uint32_t time,
+	int32_t vertical,
+	int32_t horizontal,
+	int32_t vertical_units,
+	int32_t horizontal_units,
+	uint32_t source)
+{
 	struct zwl_object *object;
 	struct zwl_object *target;
 	uint32_t words[3];
@@ -816,22 +903,22 @@ zwl_seat_axis(
 	if (target == NULL)
 		return;
 
-	/* Each pointer hears the source first, then per-axis discrete steps and values. */
+	/* Each pointer hears the source first, then per-axis discrete steps (a wheel's) and values. */
 	for (object = target->client->objects; object != NULL; object = object->next) {
 		/* Only live pointer objects receive scrolling. */
 		if (object->kind != ZWL_POINTER || object->dead)
 			continue;
 
-		/* Version 5 pointers learn that a wheel produced this frame's scrolling. */
+		/* Version 5 pointers learn what produced this frame's scrolling. */
 		if (object->version >= POINTER_FRAME_VERSION) {
-			word = AXIS_SOURCE_WHEEL;
+			word = source;
 			deliver(object->client, object->id, POINTER_AXIS_SOURCE, &word, sizeof(word));
 		}
 
-		/* Vertical notches become a discrete count and a value. */
-		if (vertical != 0) {
+		/* Vertical scrolling: a wheel's discrete count first, then the value. */
+		if (vertical_units != 0) {
 			/* The discrete count must precede its axis value in the same frame. */
-			if (object->version >= POINTER_FRAME_VERSION) {
+			if (source == AXIS_SOURCE_WHEEL && vertical != 0 && object->version >= POINTER_FRAME_VERSION) {
 				words[0] = AXIS_VERTICAL;
 				words[1] = (uint32_t)vertical;
 				deliver(object->client, object->id, POINTER_AXIS_DISCRETE, words, 2U * sizeof(uint32_t));
@@ -840,14 +927,14 @@ zwl_seat_axis(
 			/* The value is the scroll distance in surface units as 24.8 fixed point. */
 			words[0] = time;
 			words[1] = AXIS_VERTICAL;
-			words[2] = (uint32_t)(vertical * WHEEL_STEP * 256);
+			words[2] = (uint32_t)(vertical_units * 256);
 			deliver(object->client, object->id, POINTER_AXIS, words, sizeof(words));
 		}
 
-		/* Horizontal notches follow the same pattern on the other axis. */
-		if (horizontal != 0) {
+		/* Horizontal scrolling follows the same pattern on the other axis. */
+		if (horizontal_units != 0) {
 			/* The discrete count must precede its axis value in the same frame. */
-			if (object->version >= POINTER_FRAME_VERSION) {
+			if (source == AXIS_SOURCE_WHEEL && horizontal != 0 && object->version >= POINTER_FRAME_VERSION) {
 				words[0] = AXIS_HORIZONTAL;
 				words[1] = (uint32_t)horizontal;
 				deliver(object->client, object->id, POINTER_AXIS_DISCRETE, words, 2U * sizeof(uint32_t));
@@ -856,7 +943,7 @@ zwl_seat_axis(
 			/* The value is the scroll distance in surface units as 24.8 fixed point. */
 			words[0] = time;
 			words[1] = AXIS_HORIZONTAL;
-			words[2] = (uint32_t)(horizontal * WHEEL_STEP * 256);
+			words[2] = (uint32_t)(horizontal_units * 256);
 			deliver(object->client, object->id, POINTER_AXIS, words, sizeof(words));
 		}
 	}
