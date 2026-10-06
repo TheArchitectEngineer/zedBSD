@@ -37,3 +37,7 @@ Status: in-progress（2026-10-05 夜 P1 generation19。kernel の部分を書い
    親は §6 の 1〜7（要求の確かめ・子の状態・DENY_ERRNO の EPERM・許す call・引数の制限・既定の SIGKILL・動的 link の image の ENOEXEC）を流し、
    `SANDBOX PASS` を出す。静的 libc の起動が集合の外の call を呼ばないかは、子の最初の run の klog（`SANDBOX deny`）で確かめる。
 4. `plan/ws168/tests/config-amd64-sandbox.mk`（Files の image ＋ sandboxtest・sandbox-child・runas）と `plan/ws168/tests/sandbox-p002.sh`、T1 の依頼。
+
+## 2026-10-06 ユーザーの決定（isatty）
+
+static link の子が libc の起動の isatty（ioctl TCGETS）で既定の kill に当たる件。P1 の案 (a)・(b)・(c) へのクリックの回答「(a) TCGETS だけ ENOTTY（推奨）」: sandbox の中では ioctl(fd, TCGETS) だけを sandbox の検査が ENOTTY で答える（file・driver に届かず klog も書かない）。他の ioctl は拒否のまま。p001 §3.3 に 1 文足す。

@@ -507,6 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー（クリック）: WS168 の sandbox の isatty は「(a) TCGETS だけ ENOTTY」（承認済みの許可の set の変更、ws168-p002 に記録）。
 - 2026-10-06 ユーザー（クリック）: WS131 の app の移行 p016〜p020 を「承認、p016 から順に」（kl_app へ、Q1 の最初の質問の書き間違いを訂正した上で）。ws095-p007 の Notes は「Notes に text box を作る（別の Phase）」→ [ws079-p017](ws079/phase017/phase.md)。Q1 の許可: WS175 p006 の `userland/base/libz-compat` への deflate の追加（design の「libz-compat の path は Q1 の許可」）。
 - 2026-10-06 ユーザー:「慣性スクロールはlibkeilandに実装してほしいのですが、Settingsも含め、各appで独自実装してしまっていませんか？」→ Q1 が確認（Settings の減速は自前、Files・Terminal・Browser・PDF Viewer・Image Viewer・Notes・Text Editor は全て自前）。[ws090-p019](ws090/phase019/phase.md) で libkeiland に一本化（q806、P1）。
 - 2026-10-06 ユーザー（クリック）: BUG-223 の game mode は「B backend に direct の口」（Guardrail の例外の表に記録）。ws128-p004（PDF の文字の検索と選択）は「採る（ベータ2）」。WS131 p016〜p025 の質問に「appはlibkeilandしか使わず、これはコンポジタのクライアント側です。libkeiland-backendはコンポジタ実装のファウンデーションのバックエンドです。何か混同してませんか？」→ Q1 の質問の書き方の誤り（p016〜p020 は app を libkeiland の新しい API `kl_app` へ移す Phase で、libkeiland-backend とは無関係）。訂正して聞き直す。
