@@ -522,6 +522,28 @@ class Run:
 			f"if (n ~ /^({pattern})$/) print $1}}'); do kill $p 2>/dev/null; done; sleep 1; true"
 		)
 
+	# The session's log of each scenario.
+
+	def log_start(self) -> str | None:
+		"""Marks the session's log where a scenario starts (None when it cannot be marked)."""
+		try:
+			return self.mark()
+		except RuntimeError:
+			return None
+
+	def save_log(self, ident: str, start: str | None) -> None:
+		"""Keeps the session's log of a scenario (from its start mark) as OUTDIR/logs/ID.log, so that a failure can be
+		understood without running it again (T1-202c had only the verdicts)."""
+		if start is None:
+			return
+		try:
+			lines = self.lines(r".", start)
+		except RuntimeError:
+			return
+		logs = self.outdir / "logs"
+		logs.mkdir(parents=True, exist_ok=True)
+		(logs / f"{ident}.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 	# The items.
 
 	def define(self, ident: str):
@@ -546,6 +568,7 @@ class Run:
 			title = scenario_header(ident).get("title", ident)
 			item = Item(self, ident, title)
 			print(f"AAT {ident} ... {title}", flush=True)
+			start = self.log_start()
 			try:
 				if before:
 					before(item)
@@ -566,6 +589,7 @@ class Run:
 					with open(self.outdir / "errors.txt", "a", encoding="utf-8") as errors:
 						errors.write(f"== {ident} (after)\n{traceback.format_exc()}\n")
 			seconds = time.monotonic() - item.started
+			self.save_log(ident, start)
 			(records / f"{ident}.md").write_text(item.record(), encoding="utf-8")
 			line = "\t".join([ident, item.verdict, title, ",".join(item.pictures), item.note, f"{seconds:.0f}", self.scenario])
 			with open(self.outdir / "verdicts.tsv", "a", encoding="utf-8") as verdicts:

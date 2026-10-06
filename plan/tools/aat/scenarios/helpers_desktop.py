@@ -348,6 +348,11 @@ def volume_slider(item):
 	popup = run.wait(r"ZWL VOLUME popup open x=", since, 10)
 	item.step("clicked the volume icon", popup)
 	item.check(popup, "the popup did not open")
+	# Without a sound device (QEMU without audio) the popup's controls do nothing by design (volume.c, T1-202c).
+	if aatlib.number(popup, "sound") == 0:
+		run.shot(item, "no-sound")
+		run.key("esc")
+		item.person("no sound device here (sound=0): the slider is shown inert; drag it on a machine with sound")
 	left = aatlib.number(popup, "x") + 14 + 9
 	width = 260 - 28 - 18
 	y = aatlib.number(popup, "slider") + 17
@@ -511,7 +516,9 @@ def japanese_in_editor(item, method: int, name: str, keys: str) -> None:
 	common.set_method(run, item, method)
 	try:
 		editor(item, name)
-		common.to_language(run, item, "ja")
+		# The Japanese engine's language is "ja", SKK's "skk" (userland/desktop/ime, T1-202c).
+		language = "skk" if method == 2 else "ja"
+		common.to_language(run, item, language)
 		run.type(keys)
 		run.key("space")
 		time.sleep(0.8)
