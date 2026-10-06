@@ -178,6 +178,8 @@ static int editor_patch_objects(const struct pdf_page_editor *editor, size_t hid
 static int editor_patch_text(const struct pdf_page_editor *editor, size_t hidden, struct editor_patches *patches);
 static int editor_write_show(const struct pdf_page_editor *editor, size_t at, size_t line_index, size_t hidden, struct pdf_buffer *out);
 static int editor_show_string(const struct pdf_page_editor *editor, const struct pdf_scan_show *show, size_t *from, size_t *length);
+static int editor_write_mark(const struct pdf_page_editor *editor, const struct pdf_scan_mark *mark, struct pdf_buffer *out, int *replaced);
+static int editor_has_reference(const struct pdf_object *object, int depth);
 static int editor_patch_add(struct editor_patches *patches, size_t offset, size_t length, size_t from);
 static int editor_patch_order(const void *left, const void *right);
 static void editor_patches_free(struct editor_patches *patches);
@@ -1087,6 +1089,8 @@ editor_patch_text(
 	size_t at;
 	size_t member;
 	size_t index;
+	int replaced;
+	int stale;
 	int error;
 
 	/* No lines, nothing to do. */
@@ -1136,6 +1140,30 @@ editor_patch_text(
 
 		/* In the move's place. */
 		error = editor_patch_add(patches, move->offset, move->length, from);
+	}
+
+	/* The marked content around a line with new words or deleted: its BDC without /ActualText (design.md [M10][N15]). */
+	for (at = 0; at < editor->scan.mark_count && error == 0; at++) {
+		stale = 0;
+		for (index = 0; index < editor->line_count && !stale; index++) {
+			change = &editor->changes[editor->scan.count + index];
+			if (change->text == NULL && change->state != EDITOR_DELETED)
+				continue;
+			show = &editor->scan.shows[editor->lines[index].first];
+			if (show->offset > editor->scan.marks[at].offset && (editor->scan.marks[at].end == 0 || show->offset < editor->scan.marks[at].end))
+				stale = 1;
+		}
+
+		/* A BDC around none is left as it is. */
+		if (!stale)
+			continue;
+		from = text->length;
+		replaced = 0;
+		error = editor_write_mark(editor, &editor->scan.marks[at], text, &replaced);
+		if (error == 0 && replaced)
+			error = editor_patch_add(patches, editor->scan.marks[at].offset, editor->scan.marks[at].length, from);
+		if (error == 0 && !replaced)
+			text->length = from;
 	}
 
 	/* Their shown strings. */
@@ -1247,6 +1275,135 @@ editor_write_show(
 		return error;
 	pdf_buffer_append(out, editor->content + string_from, string_length);
 	pdf_buffer_append(out, " Tj ", 4);
+	return 0;
+}
+
+/*
+ * Writes a BDC whose properties (inline, or named in the page's
+ * /Properties) have /ActualText without it (design.md [M10][N15]): its tag
+ * as it was, its properties inline without the key (a named dictionary
+ * that holds a reference is left as it is), BDC.  *replaced says whether
+ * it wrote one.  Returns 0 or ENOMEM.
+ */
+static int
+editor_write_mark(
+	const struct pdf_page_editor *editor,
+	const struct pdf_scan_mark *mark,
+	struct pdf_buffer *out,
+	int *replaced)
+{
+	struct pdf_lexer lexer;
+	struct pdf_arena arena;
+	struct pdf_object *tag;
+	struct pdf_object *properties;
+	struct pdf_object *page;
+	struct pdf_object *resources;
+	struct pdf_object *named;
+	struct pdf_object *dictionary;
+	struct pdf_object *value;
+	const struct pdf_object *actual;
+	size_t tag_from;
+	size_t tag_to;
+	size_t at;
+	int referenced;
+	int differs;
+	int error;
+
+	/* The tag and the properties. */
+	*replaced = 0;
+	memset(&lexer, 0, sizeof(lexer));
+	memset(&arena, 0, sizeof(arena));
+	lexer.data = editor->content + mark->offset;
+	lexer.size = mark->length;
+	lexer.arena = &arena;
+	tag_from = lexer.position;
+	error = pdf_parse_object(&lexer, 0, &tag);
+	tag_to = lexer.position;
+	if (error == 0)
+		error = pdf_parse_object(&lexer, 0, &properties);
+	if (error != 0 || tag->type != PDF_OBJECT_NAME) {
+		pdf_arena_free(&arena);
+		if (error == ENOMEM)
+			return ENOMEM;
+		return 0;
+	}
+
+	/* Inline properties, or the page's named ones (without references, so that they may stand inline). */
+	dictionary = NULL;
+	if (properties->type == PDF_OBJECT_DICTIONARY) {
+		dictionary = properties;
+	} else if (properties->type == PDF_OBJECT_NAME) {
+		error = pdf_reader_page(editor->document, editor->index, &page, &resources);
+		if (error == 0 && resources != NULL)
+			error = pdf_reader_resolve_key(editor->document, resources, "Properties", &named);
+		else
+			error = ENOENT;
+		value = NULL;
+		for (at = 0; error == 0 && named->type == PDF_OBJECT_DICTIONARY && at < named->count; at++) {
+			if (named->keys[at]->length != properties->length)
+				continue;
+			differs = memcmp(named->keys[at]->bytes, properties->bytes, properties->length);
+			if (differs == 0)
+				value = named->values[at];
+		}
+
+		/* The named dictionary. */
+		if (error == 0 && value != NULL)
+			error = pdf_reader_resolve(editor->document, value, &dictionary);
+		if (error != 0 || dictionary == NULL || dictionary->type != PDF_OBJECT_DICTIONARY)
+			dictionary = NULL;
+		referenced = 0;
+		if (dictionary != NULL)
+			referenced = editor_has_reference(dictionary, 0);
+		if (referenced)
+			dictionary = NULL;
+	}
+
+	/* Only properties with /ActualText change. */
+	actual = NULL;
+	if (dictionary != NULL)
+		actual = pdf_object_get(dictionary, "ActualText");
+	if (actual == NULL) {
+		pdf_arena_free(&arena);
+		return 0;
+	}
+
+	/* The tag as it was, the properties without the key, BDC. */
+	pdf_buffer_append(out, " ", 1);
+	pdf_buffer_append(out, editor->content + mark->offset + tag_from, tag_to - tag_from);
+	pdf_buffer_append(out, " ", 1);
+	pdf_writer_write_dictionary_except(out, dictionary, "ActualText");
+	pdf_buffer_append(out, " BDC ", 5);
+	pdf_arena_free(&arena);
+	*replaced = 1;
+	return 0;
+}
+
+/* Tells whether an object holds a reference (a dictionary or an array, to the reader's depth). */
+static int
+editor_has_reference(
+	const struct pdf_object *object,
+	int depth)
+{
+	size_t at;
+	int found;
+
+	/* Too deep counts as one. */
+	if (depth > PDF_READER_DEPTH_MAX)
+		return 1;
+	if (object->type == PDF_OBJECT_REFERENCE)
+		return 1;
+	if (object->type != PDF_OBJECT_ARRAY && object->type != PDF_OBJECT_DICTIONARY)
+		return 0;
+
+	/* Each value. */
+	for (at = 0; at < object->count; at++) {
+		found = editor_has_reference(object->values[at], depth + 1);
+		if (found)
+			return 1;
+	}
+
+	/* None. */
 	return 0;
 }
 

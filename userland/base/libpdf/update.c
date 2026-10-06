@@ -2108,6 +2108,22 @@ write_entries_except(
 }
 
 /*
+ * Writes a dictionary without one of its keys (ws175-p004: a marked
+ * content's properties without /ActualText, design.md [M10][N15]).
+ */
+void
+pdf_writer_write_dictionary_except(
+	struct pdf_buffer *file,
+	const struct pdf_object *dictionary,
+	const char *key)
+{
+	/* The entries but the key, between the brackets. */
+	pdf_buffer_append(file, "<<", 2);
+	write_entries_except(file, dictionary, key, NULL, 0);
+	pdf_buffer_append(file, " >>", 3);
+}
+
+/*
  * Writes an object as the reader read it: references as references,
  * strings in hexadecimal.  A stream, which is only ever an object of its
  * own, cannot be written in place and fails the buffer.

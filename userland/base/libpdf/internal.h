@@ -447,6 +447,17 @@ struct pdf_scan_move {
 };
 
 /*
+ * One marked content of the page's top level opened by BDC (ws175-p004,
+ * design.md [M10]): the BDC's bytes (its tag, its properties and the
+ * operator) and the end of its EMC (0: not closed).
+ */
+struct pdf_scan_mark {
+	size_t offset;
+	size_t length;
+	size_t end;
+};
+
+/*
  * What the scan of a page's content found: its objects in the order of the
  * content, the q left open at its end, the Q that had no q to restore
  * (their offsets; each is one byte, "Q"), whether the content ended inside
@@ -481,6 +492,12 @@ struct pdf_scan {
 	struct pdf_scan_move *moves;
 	size_t move_count;
 	size_t move_capacity;
+	struct pdf_scan_mark *marks;
+	size_t mark_count;
+	size_t mark_capacity;
+	size_t *mark_stack;
+	size_t mark_depth;
+	size_t mark_stack_capacity;
 };
 
 /* The scan of a page's content (content.c): the objects, and the decoded content they are ranges of. */

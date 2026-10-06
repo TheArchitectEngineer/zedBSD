@@ -487,6 +487,7 @@ static int scan_add_stray(struct pdf_scan *scan, size_t offset);
 static void scan_string(struct content_run *run, const unsigned char *bytes, size_t length);
 static void scan_show(struct content_run *run, enum content_operator code, size_t start, size_t end, const unsigned char *data);
 static void scan_move(struct content_run *run, enum content_operator code, size_t start, size_t end);
+static void scan_mark(struct content_run *run, size_t start, size_t keyword, size_t end, const unsigned char *data);
 static void scan_text_operator(struct content_run *run, enum content_operator code, size_t keyword, const unsigned char *data);
 static int scan_grow(void **items, size_t *capacity, size_t count, size_t size);
 static double clamp_unit(double value);
@@ -616,6 +617,8 @@ pdf_scan_free(
 	free(scan->block_clips);
 	free(scan->blocks);
 	free(scan->moves);
+	free(scan->marks);
+	free(scan->mark_stack);
 	memset(scan, 0, sizeof(*scan));
 }
 
@@ -4581,6 +4584,10 @@ scan_operator(
 		scan->blocks[scan->block_count - 1U].ended = 1;
 	}
 
+	/* The marked content, its BDC and its EMC (design.md [M10]). */
+	if (code == OP_IGNORED)
+		scan_mark(run, start, keyword, end, data);
+
 	/* The moves of the text position. */
 	if (code == OP_TEXT_MOVE || code == OP_TEXT_MOVE_LEADING || code == OP_TEXT_MATRIX || code == OP_TEXT_NEXT_LINE)
 		scan_move(run, code, start, end);
@@ -4976,6 +4983,71 @@ scan_move(
 
 	/* One more. */
 	scan->move_count++;
+}
+
+/*
+ * Notes the marked content of the page's own content (ws175-p004): a BDC's
+ * bytes as it opens (a BMC is counted, to pair the EMC), the end of its
+ * EMC as it closes.  A failure of memory fails the scan.
+ */
+static void
+scan_mark(
+	struct content_run *run,
+	size_t start,
+	size_t keyword,
+	size_t end,
+	const unsigned char *data)
+{
+	struct pdf_scan *scan;
+	size_t record;
+	int is_bdc;
+	int is_bmc;
+	int is_emc;
+	int error;
+
+	/* Which operator. */
+	scan = run->scan;
+	if (end - keyword != 3U)
+		return;
+	is_bdc = memcmp(data + keyword, "BDC", 3) == 0;
+	is_bmc = memcmp(data + keyword, "BMC", 3) == 0;
+	is_emc = memcmp(data + keyword, "EMC", 3) == 0;
+
+	/* An EMC closes the last opened; a BDC's records its end. */
+	if (is_emc) {
+		if (scan->mark_depth == 0)
+			return;
+		scan->mark_depth--;
+		record = scan->mark_stack[scan->mark_depth];
+		if (record != (size_t)-1)
+			scan->marks[record].end = end;
+		return;
+	}
+
+	/* An opening: a BDC's record, a BMC's place in the stack. */
+	if (!is_bdc && !is_bmc)
+		return;
+	error = scan_grow((void **)&scan->mark_stack, &scan->mark_stack_capacity, scan->mark_depth + 1U, sizeof(*scan->mark_stack));
+	if (error == 0 && is_bdc)
+		error = scan_grow((void **)&scan->marks, &scan->mark_capacity, scan->mark_count + 1U, sizeof(*scan->marks));
+	if (error != 0) {
+		scan->error = error;
+		return;
+	}
+
+	/* The record. */
+	record = (size_t)-1;
+	if (is_bdc) {
+		record = scan->mark_count;
+		scan->marks[record].offset = start;
+		scan->marks[record].length = end - start;
+		scan->marks[record].end = 0;
+		scan->mark_count++;
+	}
+
+	/* On the stack. */
+	scan->mark_stack[scan->mark_depth] = record;
+	scan->mark_depth++;
 }
 
 /* Grows an array of items of a size to hold count of them.  Returns 0 or ENOMEM. */
