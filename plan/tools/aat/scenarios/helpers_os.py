@@ -21,9 +21,9 @@ run = aatlib.Run.from_command_line("helpers_os")
 
 @run.define("os.boot.session-up")
 def session_up(item):
-	line = run.wait(r"ZWL READY socket=\S+ width=\d+ height=\d+ .* role=normal", None, 120)
+	line = run.wait(r"KWL READY socket=\S+ width=\d+ height=\d+ .* role=normal", None, 120)
 	item.step("waited for the desktop", line)
-	item.check(line, "no ZWL READY ... role=normal in the session's log")
+	item.check(line, "no KWL READY ... role=normal in the session's log")
 	run.shot(item, "desktop")
 	item.passed(f"{aatlib.field(line, 'width')}x{aatlib.field(line, 'height')}")
 
@@ -69,9 +69,9 @@ def battery_state(item):
 	status, text = run.sh("systemevents -p 2>&1")
 	item.step("systemevents -p", text.strip())
 	item.check(status == 0 and re.search(r"battery=\d+", text) and "ac=" in text, f"no battery or AC: {text.strip()[:120]}")
-	power = run.lines(r"ZWL POWER source=", None)
+	power = run.lines(r"KWL POWER source=", None)
 	percent = aatlib.number(power[-1], "percent") if power else None
-	item.step("read ZWL POWER in the session's log", power[-1] if power else "none")
+	item.step("read KWL POWER in the session's log", power[-1] if power else "none")
 	item.check(percent is not None and percent >= 0, "the compositor knows no battery")
 	run.shot(item, "bar")
 	item.person("the battery's icon left of the clock, with + while charging (the screenshot)")

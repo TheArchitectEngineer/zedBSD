@@ -2,9 +2,9 @@
 # ws035-p100: the primary selection between two terminals on the Venus guest (the lean image, the files
 # image, or the login image), zdesktop --glass at 1280x800:
 #  1. In the first terminal "alpha beta-gamma delta" is printed and "beta-gamma" double-clicked: it is the primary
-#     selection (ZTERM PRIMARY set bytes=10; ZWL PRIMARY selection types=2).
+#     selection (ZTERM PRIMARY set bytes=10; KWL PRIMARY selection types=2).
 #  2. A second terminal is started (it gets the keyboard and is told the primary selection: ZTERM PRIMARY offer
-#     text=1); a middle click in it pastes the first one's text into its shell (ZWL PRIMARY receive, ZTERM PRIMARY
+#     text=1); a middle click in it pastes the first one's text into its shell (KWL PRIMARY receive, ZTERM PRIMARY
 #     paste received bytes=10 in the second): pasted.png.
 #  3. Back in the first terminal, a middle click pastes its own selection (ZTERM PRIMARY paste own bytes=10).
 #
@@ -45,12 +45,12 @@ expect_log() {
 
 # A terminal's window place and cell size, from the logs.
 window_of() {
-	guest "grep 'ZWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
 }
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/terminal --token=t1 --timeout-s=500 > /tmp/t1.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(window_of 1)
 wx=${1:-0}; wy=${2:-0}
@@ -67,7 +67,7 @@ sleep 1
 pointer move "$(cx 12)" "$(cy 0)" sleep 300 down sleep 50 up sleep 120 down sleep 50 up sleep 800
 expect_log /tmp/t1.log 'ZTERM SELECT how=word .* bytes=10'
 expect_log /tmp/t1.log 'ZTERM PRIMARY set bytes=10'
-expect_log /tmp/zdesktop.log 'ZWL PRIMARY selection client=[0-9]+ source=[0-9]+ types=2'
+expect_log /tmp/zdesktop.log 'KWL PRIMARY selection client=[0-9]+ source=[0-9]+ types=2'
 
 # 2. The second terminal, and a middle click in it.
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/terminal --token=t2 --timeout-s=400 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
@@ -79,7 +79,7 @@ pointer move $((x2 + 300)) $((y2 + 200)) sleep 200 down sleep 60 up sleep 300
 keys 'printf "\\033[H\\033[2J"; echo -n "pasted: "' '\n'
 sleep 1
 pointer move $((x2 + 300)) $((y2 + 200)) sleep 200 middle-down sleep 60 middle-up sleep 1500
-expect_log /tmp/zdesktop.log 'ZWL PRIMARY receive client=[0-9]+ mime=text/plain;charset=utf-8 source=[0-9]+'
+expect_log /tmp/zdesktop.log 'KWL PRIMARY receive client=[0-9]+ mime=text/plain;charset=utf-8 source=[0-9]+'
 # The first terminal's send is libkeiland's since WS131 p018 (no line of its own); the second's 10 bytes show it.
 expect_log /tmp/t2.log 'ZTERM PRIMARY paste received bytes=10'
 pointer move 1270 790 sleep 400

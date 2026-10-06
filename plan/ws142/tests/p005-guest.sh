@@ -5,13 +5,13 @@
 # icons are a, b, c from the left and apps.c (on top) is the current one.  BUG-209 (the 2026-10-05 user decision): the
 # switcher opens on the current application and each Tab moves one icon to the right in the bar's order, around at
 # the right end; Shift+Tab one to the left.  Keys through QMP, the touch pad through touchinject's "pad".
-#  1. Alt held, Tab: "ZWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3" and apps.c's preview under
-#     its icon ("ZWL APPS preview app=apps.c windows=1 via=switch"); Tab: around to apps.a (index=0); Tab: apps.b
-#     with its two previews (switch-bar.png); Shift+Tab: apps.a again; Alt let go: "ZWL SWITCH commit app=apps.a
-#     ... via=alt" and its window raised ("ZWL APPS raise ... via=switch").
-#  2. Alt+Tab then Esc: "ZWL SWITCH cancel via=escape", nothing brought.
+#  1. Alt held, Tab: "KWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3" and apps.c's preview under
+#     its icon ("KWL APPS preview app=apps.c windows=1 via=switch"); Tab: around to apps.a (index=0); Tab: apps.b
+#     with its two previews (switch-bar.png); Shift+Tab: apps.a again; Alt let go: "KWL SWITCH commit app=apps.a
+#     ... via=alt" and its window raised ("KWL APPS raise ... via=switch").
+#  2. Alt+Tab then Esc: "KWL SWITCH cancel via=escape", nothing brought.
 #  3. A quick Alt+Tab (Alt let go at once) leaves the switcher open on the current application (BUG-209, the
-#     2026-10-06 user instruction: "ZWL SWITCH stay via=quick-alt index=0 app=apps.a", no commit); Tab alone then
+#     2026-10-06 user instruction: "KWL SWITCH stay via=quick-alt index=0 app=apps.a", no commit); Tab alone then
 #     steps to apps.b, Alt pressed and let go again brings nothing, Enter brings apps.b ("commit ... via=enter").  A
 #     quick Alt+Tab again, then Esc: "cancel via=escape", apps.b stays current.  Alt held, Tab, Tab brings the one to
 #     the right of the current one (apps.c); Shift+Alt+Tab opens on the current one too ("open via=keys index=2
@@ -19,7 +19,7 @@
 #  4. The pad: a tap of three fingers opens it ("open via=pad"), two fingers 15 mm to the right step on ("step ...
 #     via=pad"), a tap brings the selection ("commit ... via=pad").
 #  5. A docked window (double click on the top window's title): Alt+Tab shows in the middle ("placement=center",
-#     "ZWL SWITCH center"; switch-center.png); Alt let go brings it.
+#     "KWL SWITCH center"; switch-center.png); Alt let go brings it.
 #  6. A fullscreen window: Alt+Tab opens nothing (D6).
 #  7. The compositor stays up, with no ERROR in its log.
 #   plan/ws142/tests/p005-guest.sh BUILD [OUTDIR]
@@ -63,7 +63,7 @@ pad() { name=$1; shift; script="pad 1336 760 5 scan\nwait 2600"; for line in "$@
 guest "$stop_all" >/dev/null
 put "$build/bin/wayland" /bin/wayland
 guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 open_app apps.a f4d0d0 380x260
 open_app apps.b d0f4d0 400x280
 open_app apps.b c0e4c0 360x240
@@ -73,22 +73,22 @@ pointer move 640 760 sleep 300
 # 1. Alt+Tab (the current one), Tab (around), Tab, Shift+Tab, Alt let go.
 key alt true
 tap tab
-expect_count keys-open 'ZWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3' 1
-expect_count keys-bar-preview-current 'ZWL APPS preview app=apps.c windows=1 via=switch' 1
+expect_count keys-open 'KWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3' 1
+expect_count keys-bar-preview-current 'KWL APPS preview app=apps.c windows=1 via=switch' 1
 tap tab
-expect_count keys-tab-around 'ZWL SWITCH step index=0 app=apps.a via=tab' 1
+expect_count keys-tab-around 'KWL SWITCH step index=0 app=apps.a via=tab' 1
 tap tab
-expect_count keys-tab-right 'ZWL SWITCH step index=1 app=apps.b via=tab' 1
-expect_count keys-bar-preview 'ZWL APPS preview app=apps.b windows=2 via=switch' 1
+expect_count keys-tab-right 'KWL SWITCH step index=1 app=apps.b via=tab' 1
+expect_count keys-bar-preview 'KWL APPS preview app=apps.b windows=2 via=switch' 1
 shot switch-bar
 key shift true
 tap tab
 key shift false
-expect_count keys-shift-tab 'ZWL SWITCH step index=0 app=apps.a via=tab' 2
+expect_count keys-shift-tab 'KWL SWITCH step index=0 app=apps.a via=tab' 2
 key alt false
 sleep 0.8
-expect_count keys-commit 'ZWL SWITCH commit app=apps.a surface=[0-9]* via=alt' 1
-expect_count keys-raise 'ZWL APPS raise surface=[0-9]* via=switch' 1
+expect_count keys-commit 'KWL SWITCH commit app=apps.a surface=[0-9]* via=alt' 1
+expect_count keys-raise 'KWL APPS raise surface=[0-9]* via=switch' 1
 
 # 2. Alt+Tab, Esc.
 key alt true
@@ -96,84 +96,84 @@ tap tab
 tap esc
 key alt false
 sleep 0.8
-expect_count escape-cancels 'ZWL SWITCH cancel via=escape' 1
-expect_count escape-brings-nothing 'ZWL APPS raise surface=[0-9]* via=switch' 1
+expect_count escape-cancels 'KWL SWITCH cancel via=escape' 1
+expect_count escape-brings-nothing 'KWL APPS raise surface=[0-9]* via=switch' 1
 
 # 3. A quick Alt+Tab stays open on apps.a; Tab, Alt again, Enter brings apps.b; quick again and Esc; Alt+Tab+Tab
 #    brings apps.c; Shift+Alt+Tab opens on apps.c.
 quick_alt_tab
-expect_count quick-stays-open 'ZWL SWITCH stay via=quick-alt index=0 app=apps.a' 1
-expect_count quick-brings-nothing 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt' 1
+expect_count quick-stays-open 'KWL SWITCH stay via=quick-alt index=0 app=apps.a' 1
+expect_count quick-brings-nothing 'KWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt' 1
 tap tab
-expect_count quick-tab-steps 'ZWL SWITCH step index=1 app=apps.b via=key' 1
+expect_count quick-tab-steps 'KWL SWITCH step index=1 app=apps.b via=key' 1
 key alt true
 sleep 0.2
 key alt false
 sleep 0.8
-expect_count quick-alt-again-nothing 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt' 1
+expect_count quick-alt-again-nothing 'KWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt' 1
 tap ret
-expect_count quick-enter-brings 'ZWL SWITCH commit app=apps.b surface=[0-9]* via=enter' 1
+expect_count quick-enter-brings 'KWL SWITCH commit app=apps.b surface=[0-9]* via=enter' 1
 quick_alt_tab
-expect_count quick-again-stays 'ZWL SWITCH stay via=quick-alt index=1 app=apps.b' 1
+expect_count quick-again-stays 'KWL SWITCH stay via=quick-alt index=1 app=apps.b' 1
 tap esc
-expect_count quick-escape 'ZWL SWITCH cancel via=escape' 2
+expect_count quick-escape 'KWL SWITCH cancel via=escape' 2
 key alt true
 tap tab
 tap tab
 key alt false
 sleep 0.8
-expect_count tab-tab-right 'ZWL SWITCH commit app=apps.c surface=[0-9]* via=alt' 1
+expect_count tab-tab-right 'KWL SWITCH commit app=apps.c surface=[0-9]* via=alt' 1
 key shift true
 key alt true
 tap tab
-expect_count shift-opens-current 'ZWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3' 2
+expect_count shift-opens-current 'KWL SWITCH open via=keys index=2 app=apps.c placement=bar count=3' 2
 tap tab
-expect_count shift-tab-left 'ZWL SWITCH step index=1 app=apps.b via=tab' 2
+expect_count shift-tab-left 'KWL SWITCH step index=1 app=apps.b via=tab' 2
 key shift false
 tap esc
 key alt false
 sleep 0.8
-expect_count shift-escape 'ZWL SWITCH cancel via=escape' 3
+expect_count shift-escape 'KWL SWITCH cancel via=escape' 3
 
 # 4. The pad: a tap of three fingers, two fingers 15 mm right, a tap.
 pad switch-pad "down 0 400 500; down 1 550 480; down 2 700 500" "wait 40" "up 0; up 1; up 2" "wait 500" \
 	"down 0 500 400; down 1 700 400" "wait 30" "swipe 180 0 12 16" "up 0; up 1" "wait 500" \
 	"down 0 600 400" "wait 40" "up 0" "wait 600"
-expect_count pad-open 'ZWL SWITCH open via=pad' 1
-n=$(count 'ZWL SWITCH step index=[0-9]* app=[^ ]* via=pad'); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass pad-step || fail "pad-step (${n:-?})"
-expect_count pad-commit 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=pad' 1
+expect_count pad-open 'KWL SWITCH open via=pad' 1
+n=$(count 'KWL SWITCH step index=[0-9]* app=[^ ]* via=pad'); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass pad-step || fail "pad-step (${n:-?})"
+expect_count pad-commit 'KWL SWITCH commit app=[^ ]* surface=[0-9]* via=pad' 1
 
 # 5. A docked window: the switcher in the middle.
 # The window the pad brought is on top; surface numbers are each client's own, so it is found by its client (T1-134).
-top=$(guest "grep 'ZWL SWITCH commit app=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
-topc=$(guest "grep 'ZWL SWITCH commit app=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\).*/\1/p')
-set -- $(guest "grep 'ZWL MAP client=${topc:-0} ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+top=$(guest "grep 'KWL SWITCH commit app=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) .*/\1/p')
+topc=$(guest "grep 'KWL SWITCH commit app=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\).*/\1/p')
+set -- $(guest "grep 'KWL MAP client=${topc:-0} ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-300}; ty=${2:-300}
 pointer move $((tx + 150)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500
-n=$(count "ZWL GLASS dock surface=${top:-0} "); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass docked || fail docked
+n=$(count "KWL GLASS dock surface=${top:-0} "); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass docked || fail docked
 pointer move 640 760 sleep 300
 key alt true
 tap tab
-expect_count center-open 'ZWL SWITCH open via=keys index=[0-9]* app=[^ ]* placement=center' 1
-n=$(count 'ZWL SWITCH center app='); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass center-shown || fail center-shown
+expect_count center-open 'KWL SWITCH open via=keys index=[0-9]* app=[^ ]* placement=center' 1
+n=$(count 'KWL SWITCH center app='); [ "${n:-0}" -ge 1 ] 2>/dev/null && pass center-shown || fail center-shown
 shot switch-center
 key alt false
 sleep 0.8
-n=$(count 'ZWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt'); [ "${n:-0}" -ge 3 ] 2>/dev/null && pass center-commit || fail "center-commit (${n:-?})"
+n=$(count 'KWL SWITCH commit app=[^ ]* surface=[0-9]* via=alt'); [ "${n:-0}" -ge 3 ] 2>/dev/null && pass center-commit || fail "center-commit (${n:-?})"
 
 # 6. A fullscreen window: no switcher.
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-before=$(count 'ZWL SWITCH open')
+before=$(count 'KWL SWITCH open')
 key alt true
 tap tab
 key alt false
 sleep 0.8
-expect_count fullscreen-no-switcher 'ZWL SWITCH open' "${before:-0}"
+expect_count fullscreen-no-switcher 'KWL SWITCH open' "${before:-0}"
 
 # 7. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
-guest 'grep -E "ZWL SWITCH|ZWL APPS|ZWL GESTURE|ZWL MAP|ZWL GLASS dock|ZWL GLASS bar|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL SWITCH|KWL APPS|KWL GESTURE|KWL MAP|KWL GLASS dock|KWL GLASS bar|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 

@@ -156,7 +156,7 @@ run() (
 	started=0
 
 	# Counts application/session faults while refusing missing or stale evidence.
-	errors=$(grep -Ec 'ZWL ERROR|ZWL FAILED' "$out/session.log" || true)
+	errors=$(grep -Ec 'KWL ERROR|KWL FAILED' "$out/session.log" || true)
 	restarts=$(grep -Ec 'SESSIOND GREETER (retry|failed)' "$out/sessiond.log" || true)
 	echo "C10-HW RESULT rounds=$n minutes=$minutes elapsed_seconds=$elapsed errors=$errors restarts=$restarts"
 	if [ "$errors" -ne 0 ] || [ "$restarts" -ne 0 ] || [ ! -s "$out/shots/saved-live.png" ]; then

@@ -4,7 +4,7 @@
 # plan/ws035/tests/zdesktop-p102.sh: the boot's autologin session is stopped, the autologin emptied (restored at the
 # end) and sessiond started, so the greeter comes up with kei (password "kei") selected.
 #  0. /sbin/passkey is root's alone (-r-x------); /etc/passkey is made by the first enrollment, root's, 0600.
-#  1. The greeter offers the password only (ZWL GREETER styles=1); kei logs in with it (SESSIOND AUTH ok ...
+#  1. The greeter offers the password only (KWL GREETER styles=1); kei logs in with it (SESSIOND AUTH ok ...
 #     style=password); the WS163 mock's ~/.config/keiland/pin, put there first, is removed by the session.
 #  2. kei's PIN 246810 is enrolled through passkey (as sessiond's ENROLL pin would; Settings' path is host-tested).
 #  3. Super+L: the lock screen offers the PIN (styles=3): locked.png ("PIN", "Use your password"); the PIN unlocks
@@ -82,9 +82,9 @@ wait_count() {
 	return 1
 }
 
-# The styles a screen last took ("ZWL GREETER styles=N").
+# The styles a screen last took ("KWL GREETER styles=N").
 last_styles() {
-	guest "grep -E 'ZWL GREETER styles=' $1 | tail -1" | tail -1
+	guest "grep -E 'KWL GREETER styles=' $1 | tail -1" | tail -1
 }
 
 # Stops sessiond, its greeter and any session.
@@ -100,13 +100,13 @@ expect passkey-mode '^-r-x------ .* root ' "$(guest 'ls -l /sbin/passkey' | tail
 
 # 1. The greeter: the password only; kei logs in with it; the old PIN file goes.
 guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open .*selected=kei' 60
-expect_log /var/log/greeter.log 'ZWL GREETER styles=1$' 10
+expect_log /var/log/greeter.log 'KWL GREETER open .*selected=kei' 60
+expect_log /var/log/greeter.log 'KWL GREETER styles=1$' 10
 sleep 2
 check "$out/greeter.png" >/dev/null
 keys 'kei' '\n'
 expect_log /var/log/sessiond.log 'SESSIOND AUTH ok user=kei uid=1000 style=password' 10
-expect_log $session 'ZWL HANDOFF go=1' 20
+expect_log $session 'KWL HANDOFF go=1' 20
 expect_log $session 'removed the old PIN file' 10
 expect old-pin-file 'gone' "$(guest "[ -e $home/.config/keiland/pin ] && echo there || echo gone" | tail -1)"
 
@@ -117,21 +117,21 @@ expect passkey-line '^1$' "$(guest "grep -c '^kei:1000:pin:\\\$6\\\$' /etc/passk
 
 # 3. The lock screen offers the PIN, and the PIN unlocks.
 keys '<super-l>'
-expect_log $session 'ZWL LOCK locked reason=key user=kei' 5
-expect_log $session 'ZWL GREETER styles=3' 5
+expect_log $session 'KWL LOCK locked reason=key user=kei' 5
+expect_log $session 'KWL GREETER styles=3' 5
 pointer move 1270 790 sleep 300
 check "$out/locked.png" >/dev/null
 keys '246810' '\n'
 expect_log /var/log/sessiond.log 'SESSIOND UNLOCK ok user=kei style=pin' 8
-expect_log $session 'ZWL LOCK unlocked$' 5
+expect_log $session 'KWL LOCK unlocked$' 5
 
 # 4. Five wrong PINs, each waited for, turn the PIN off; the password unlocks and gives it back.
 keys '<super-l>'
-expect_log $session 'ZWL LOCK locked reason=key user=kei' 5
+expect_log $session 'KWL LOCK locked reason=key user=kei' 5
 for wrong in 1 2 3 4 5; do
 	keys '000000' '\n'
 	expect_log /var/log/sessiond.log "SESSIOND UNLOCK fail user=kei wrong=$wrong .*style=pin" 20
-	wait_count $session 'ZWL GREETER answer=FAIL reason=bad-secret' $wrong 20
+	wait_count $session 'KWL GREETER answer=FAIL reason=bad-secret' $wrong 20
 	sleep 1
 done
 sleep 2
@@ -151,16 +151,16 @@ expect pin-unlocks-again '^2$' "$pins"
 # 5. The session ends: the new greeter offers the PIN, which logs in.
 guest 'for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | grep -v -- --greeter | awk "{print \$1}"); do kill $p; done; echo killed' >/dev/null
 sleep 6
-expect_log /var/log/greeter.log 'ZWL GREETER styles=3$' 20
+expect_log /var/log/greeter.log 'KWL GREETER styles=3$' 20
 check "$out/greeter-pin.png" >/dev/null
 keys '246810' '\n'
 expect_log /var/log/sessiond.log 'SESSIOND AUTH ok user=kei uid=1000 style=pin' 10
 
 # 6. sessiond restarted: the password only, until kei logs in with it.
 guest "$stop_all; rm -f /var/log/greeter.log; /sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
-expect_log /var/log/greeter.log 'ZWL GREETER open .*selected=kei' 60
-expect_log /var/log/greeter.log 'ZWL GREETER styles=1$' 10
-greeter_pin=$(count_log /var/log/greeter.log 'ZWL GREETER styles=3')
+expect_log /var/log/greeter.log 'KWL GREETER open .*selected=kei' 60
+expect_log /var/log/greeter.log 'KWL GREETER styles=1$' 10
+greeter_pin=$(count_log /var/log/greeter.log 'KWL GREETER styles=3')
 expect no-pin-after-restart '^0$' "$greeter_pin"
 keys 'kei' '\n'
 expect_log /var/log/sessiond.log 'SESSIOND AUTH ok user=kei uid=1000 style=password' 10

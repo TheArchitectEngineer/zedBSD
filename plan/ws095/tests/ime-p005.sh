@@ -5,13 +5,13 @@
 # its KEI-IME lines there), the editor's log read on the host, and the screens (never the guest's console):
 #  1. The input method's candidate window is made (KEI-IME POPUP ready=1).  bar-direct.png: the indicator "A" left of
 #     the volume in the system bar.
-#  2. Alt+Space: bar-ja.png, the indicator "あ" (ZWL IME language=ja).
+#  2. Alt+Space: bar-ja.png, the indicator "あ" (KWL IME language=ja).
 #  3. "kanji" and Space three times (the window opens at the third candidate, design §7.2): the candidate window
 #     below the caret (KEI-IME POPUP shown), candidates.png; "3" chooses the third candidate (chosen.png) and Enter
 #     commits it (TEXTEDIT TEXT input commit=…), the window goes (KEI-IME POPUP hidden), committed.png.
 #  4. "a" held 1.6 s: the input method repeats it into the preedit (a preedit of more than five あ), repeat.png;
 #     Escape drops it.
-#  5. A click on the indicator chooses the next language (ZWL IME indicator next, ZWL IME language=direct),
+#  5. A click on the indicator chooses the next language (KWL IME indicator next, KWL IME language=direct),
 #     bar-clicked.png.
 #
 #   plan/ws095/tests/ime-guest.sh start IMAGE     (the guest must be up; GUEST_RUNTIME names its runtime)
@@ -63,7 +63,7 @@ shot bar-direct.png
 
 # 2. Japanese: "あ" in the bar.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 shot bar-ja.png
 
 # 3. The candidate window, a choice by its digit.
@@ -86,10 +86,10 @@ shot repeat.png
 keys '<esc>'
 
 # 5. A click on the indicator: the next language.
-x=$(guest "grep -o 'ZWL IME indicator x=[0-9]*' /tmp/zdesktop.log | tail -1" | sed -n 's/.*x=\([0-9]*\).*/\1/p' | tail -1)
+x=$(guest "grep -o 'KWL IME indicator x=[0-9]*' /tmp/zdesktop.log | tail -1" | sed -n 's/.*x=\([0-9]*\).*/\1/p' | tail -1)
 input move $(( ${x:-700} + 13 )) 17 sleep 300 down sleep 60 up sleep 1200
-expect_log /tmp/zdesktop.log 'ZWL IME indicator next'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct' 2
+expect_log /tmp/zdesktop.log 'KWL IME indicator next'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct' 2
 shot bar-clicked.png
 
 # The editor's log, read on the host: the third candidate committed, and a preedit of more than five あ.
@@ -107,7 +107,7 @@ else
 	status=1
 fi
 
-guest "grep -E 'ZWL IME|KEI-IME|ZWL ERROR' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
+guest "grep -E 'KWL IME|KEI-IME|KWL ERROR' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 [ $status = 0 ] && echo "ime-p005: PASS" || echo "ime-p005: FAIL"

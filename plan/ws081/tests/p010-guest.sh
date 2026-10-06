@@ -3,17 +3,17 @@
 # compositor (with the finger's drag and drop of ws081-p014), Files, libkeiland, libz-compat, libpng-compat and
 # touchinject under test are copied into the running guest (1280x800, the touch screen declared 0..1279 by 0..799,
 # so a finger's numbers are the output's pixels).  Files shows /tmp/ftest (the folders alpha and beta and 150 text
-# files) in a 900x620 window; the places below are measured from the window's body (its ZWL MAP line) in the grid
+# files) in a 900x620 window; the places below are measured from the window's body (its KWL MAP line) in the grid
 # view at that size.  Files' log (/tmp/files.log) and the compositor's are read through SSH; nothing reads the
 # console.
 #
 #  1. A tap on file0 selects it (ZFILES TOUCH tap, ZFILES SELECT count=1).
 #  2. A long press on file1, lifted, opens its context menu with the finger's serial (ZFILES TOUCH context,
-#     ZFILES CONTEXT-MENU open, ZWL MENU context client=); Esc closes it.
+#     ZFILES CONTEXT-MENU open, KWL MENU context client=); Esc closes it.
 #  3. A long press on file2 carried onto the folder beta moves it there (ZFILES TOUCH hold, DRAG target
 #     kind=folder, DRAG drop operation=move; the file is in beta).
 #  4. A long press on another file carried out of the window becomes zdesktop's drag and drop, driven by the
-#     finger (ZFILES DRAG out, DND start serial=, ZWL TOUCH drag start, the lift over the desktop cancels it).
+#     finger (ZFILES DRAG out, DND start serial=, KWL TOUCH drag start, the lift over the desktop cancels it).
 #  5. A double tap on the folder alpha opens it (LOCATION path=/tmp/ftest/alpha); the titlebar's Back returns.
 #  6. A flick up over the items scrolls them and they glide on (ZFILES TOUCH drag, release, rest further down).
 # Each script waits 2.6 s after declaring its screen before it touches.  Pictures go to OUTDIR (and PREFIX*).
@@ -89,10 +89,10 @@ put "$build/dynamic/libpng-compat.so" /lib/libpng-compat.so
 guest 'chmod 755 /bin/wayland /bin/files /bin/touchinject; rm -rf /tmp/ftest; mkdir -p /tmp/ftest/alpha /tmp/ftest/beta; i=0; while [ $i -lt 150 ]; do echo x > /tmp/ftest/file$i.txt; i=$((i+1)); done; echo made' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/files --width=900 --height=620 --token=p010 /tmp/ftest > /tmp/files.log 2>&1 </dev/null & i=0; while ! grep -q "ZFILES READY" /tmp/files.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 3; echo started' >/dev/null
 expect /tmp/files.log 'ZFILES READY' "Files started"
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=[0-9]* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=[0-9]* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 client=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "Files client $client at $wx,$wy"
 shot start.png
@@ -106,7 +106,7 @@ expect /tmp/files.log 'ZFILES SELECT count=1' "it selects file0"
 touches context.script "$(printf 'down 1 %d %d\nwait 800\nup 1' $((wx + 672)) $((wy + 107)))"
 expect /tmp/files.log 'ZFILES TOUCH context' "a long press lifted is the right button's click"
 expect /tmp/files.log 'ZFILES CONTEXT-MENU open' "Files asks for its context menu"
-expect /tmp/zdesktop.log "ZWL MENU context client=$client" "zdesktop shows it (the finger's serial is the press's)"
+expect /tmp/zdesktop.log "KWL MENU context client=$client" "zdesktop shows it (the finger's serial is the press's)"
 shot context.png
 keys '<esc>'
 
@@ -125,8 +125,8 @@ esac
 touches out.script "$(printf 'down 1 %d %d\nwait 700\nswipe %d %d 30 16.667\nhold 400\nup 1' $((wx + 785)) $((wy + 107)) $((100 - wx - 785)) 250)"
 expect /tmp/files.log 'ZFILES DRAG out items=1' "the drag leaves the window"
 expect /tmp/files.log 'ZFILES DND start items=1' "Files starts a drag and drop with the finger's serial"
-expect /tmp/zdesktop.log "ZWL TOUCH drag start client=$client" "zdesktop gives the finger to the drag"
-expect /tmp/zdesktop.log "ZWL DATA drag cancel client=$client reason=release" "the lift over the desktop gives it up"
+expect /tmp/zdesktop.log "KWL TOUCH drag start client=$client" "zdesktop gives the finger to the drag"
+expect /tmp/zdesktop.log "KWL DATA drag cancel client=$client reason=release" "the lift over the desktop gives it up"
 expect /tmp/files.log 'ZFILES (DRAG out done|DND end) dropped=0' "Files hears it was not dropped"
 shot out.png
 
@@ -161,7 +161,7 @@ shot flicked.png
 
 # The logs, the compositor's errors, and everything stops.
 guest "grep -E 'ZFILES (TOUCH|SELECT|CONTEXT|DRAG|DND|LOCATION|FAILED)' /tmp/files.log" > "$out/files-log.txt"
-guest "grep -E 'ZWL (TOUCH|DATA|MENU)' /tmp/zdesktop.log" > "$out/zdesktop-log.txt"
+guest "grep -E 'KWL (TOUCH|DATA|MENU)' /tmp/zdesktop.log" > "$out/zdesktop-log.txt"
 guest "grep -cE 'ERROR|FAILED' /tmp/zdesktop.log" | tail -1 > "$out/errors.txt"
 guest "$stop_all" >/dev/null
 [ "$(cat "$out/errors.txt")" = 0 ] || { echo "compositor errors: $(cat "$out/errors.txt")"; status=1; }

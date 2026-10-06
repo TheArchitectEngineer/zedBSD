@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws035-p086: terminal's tabs in the titlebar's TABS mode, on the Venus guest (the lean image,
 # plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800, terminal with its shell:
-#  1. The terminal binds xdg-shell 4 (ZWL BOUNDS client=1, 1256x680 under the 44-pixel system bar) and shows its menus with one tab (ZTERM TABS count=1
+#  1. The terminal binds xdg-shell 4 (KWL BOUNDS client=1, 1256x680 under the 44-pixel system bar) and shows its menus with one tab (ZTERM TABS count=1
 #     mode=0); "echo one" typed in it.
 #  2. Ctrl+Shift+T (Shell > New Tab): a second shell (TAB new id=2 count=2), the titlebar shows the tabs
 #     (TABS count=2 mode=2, the strip in zdesktop's log); "echo two" typed there; tabs.png.
@@ -49,11 +49,11 @@ expect_log() {
 # The latest logged rectangle of a tab or of a strip button of client 1 (floating), and its centre.
 tab_line() {
 	zwl_app_clients
-	guest "grep 'ZWL TITLEBAR strip client=$zc1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1"
+	guest "grep 'KWL TITLEBAR strip client=$zc1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1"
 }
 button_line() {
 	zwl_app_clients
-	guest "grep 'ZWL TITLEBAR strip client=$zc1 .* where=floating button=$1 ' /tmp/zdesktop.log | tail -1"
+	guest "grep 'KWL TITLEBAR strip client=$zc1 .* where=floating button=$1 ' /tmp/zdesktop.log | tail -1"
 }
 centre() {
 	sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p' |
@@ -73,15 +73,15 @@ shot() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 wx=${2:-0}; wy=${3:-0}
 echo "terminal at $wx,$wy"
 
 # 1. One tab, the menus.
-expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
+expect_log /tmp/zdesktop.log "KWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
 expect_log /tmp/t.log 'ZTERM TABS count=1 active=1 mode=0'
 keys 'echo one' '\n'
 
@@ -89,7 +89,7 @@ keys 'echo one' '\n'
 keys '<ctrl-shift-t>'
 expect_log /tmp/t.log 'ZTERM TAB new run=t1 id=2 count=2'
 expect_log /tmp/t.log 'ZTERM TABS count=2 active=2 mode=2'
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR strip client=$zc1 .* where=floating id=2 .* shown=1 flags=5 "
+expect_log /tmp/zdesktop.log "KWL TITLEBAR strip client=$zc1 .* where=floating id=2 .* shown=1 flags=5 "
 keys 'echo two' '\n'
 shot tabs.png
 
@@ -97,13 +97,13 @@ shot tabs.png
 set -- $(tab_line 1 | centre); click "$1" "$2"
 expect_log /tmp/t.log 'ZTERM TAB active id=1'
 keys '<ctrl-w>'
-closes=$(guest "grep -c 'ZWL TITLEBAR tab client=$zc1 .*event=close' /tmp/zdesktop.log" | tail -1)
+closes=$(guest "grep -c 'KWL TITLEBAR tab client=$zc1 .*event=close' /tmp/zdesktop.log" | tail -1)
 [ "${closes:-1}" = 0 ] && echo "ctrl-w: the shell's ok" || { echo "ctrl-w: $closes tab closes MISSING"; status=1; }
 shot tab1.png
 
 # 4. Ctrl+Tab, "+", and the third tab's close button.
 keys '<ctrl-tab>'
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR tab client=$zc1 id=2 event=activated"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR tab client=$zc1 id=2 event=activated"
 expect_log /tmp/t.log 'ZTERM TABS count=2 active=2 mode=2'
 set -- $(button_line new | centre); click "$1" "$2" 1500
 expect_log /tmp/t.log 'ZTERM TAB new run=t1 id=3 count=3'
@@ -123,7 +123,7 @@ expect_log /tmp/t.log 'ZTERM DONE run=t1 reason=shell-exited'
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest 'cat /tmp/t.log' > "$out/t.log"
-guest 'grep -E "ZWL (TITLEBAR (tab|strip)|BOUNDS)" /tmp/zdesktop.log' > "$out/zdesktop-tabs.log"
+guest 'grep -E "KWL (TITLEBAR (tab|strip)|BOUNDS)" /tmp/zdesktop.log' > "$out/zdesktop-tabs.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "zdesktop-p086: PASS" || echo "zdesktop-p086: FAIL"
 exit $status

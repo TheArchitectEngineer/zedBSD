@@ -264,7 +264,7 @@ kwl_greeter_open(
 	/* sessiond's answers are read without waiting for them. */
 	flags = fcntl(server->auth_fd, F_GETFL);
 	if (flags < 0) {
-		printf("ZWL GREETER auth-fd=%d errno=%d\n", server->auth_fd, errno);
+		printf("KWL GREETER auth-fd=%d errno=%d\n", server->auth_fd, errno);
 		return EBADF;
 	}
 
@@ -275,7 +275,7 @@ kwl_greeter_open(
 	(void)fcntl(server->auth_fd, F_SETFD, FD_CLOEXEC);
 
 	/* Succeeded: the screen can be drawn. */
-	printf("ZWL GREETER open users=%u selected=%s\n", greeter_user_count, greeter_users[0].name);
+	printf("KWL GREETER open users=%u selected=%s\n", greeter_user_count, greeter_users[0].name);
 	return 0;
 }
 
@@ -324,7 +324,7 @@ kwl_lock(
 	/* Succeeded: the lock screen shows. */
 	server->locked = 1U;
 	server->dirty = 1;
-	printf("ZWL LOCK locked reason=%s user=%s\n", reason, greeter_users[0].name);
+	printf("KWL LOCK locked reason=%s user=%s\n", reason, greeter_users[0].name);
 	return 1;
 }
 
@@ -351,7 +351,7 @@ kwl_lock_release(
 	server->locked = 0U;
 	server->lock_input_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL LOCK unlocked reason=%s\n", reason);
+	printf("KWL LOCK unlocked reason=%s\n", reason);
 }
 
 /*
@@ -1102,7 +1102,7 @@ greeter_select(
 	greeter_message[0] = '\0';
 	greeter_styles_reset();
 	server->dirty = 1;
-	printf("ZWL GREETER select user=%s\n", greeter_users[user].name);
+	printf("KWL GREETER select user=%s\n", greeter_users[user].name);
 }
 
 /* Types a key's character into the password. */
@@ -1191,13 +1191,13 @@ greeter_submit(
 	/* Nothing typed is kept once it is asked. */
 	greeter_erase();
 	if (error != 0) {
-		printf("ZWL GREETER send errno=%d\n", error);
+		printf("KWL GREETER send errno=%d\n", error);
 		greeter_waiting = 0;
 	}
 
 	/* The screen shows the wait. */
 	server->dirty = 1;
-	printf("ZWL GREETER auth user=%s style=%u\n", greeter_users[greeter_selected].name, greeter_style);
+	printf("KWL GREETER auth user=%s style=%u\n", greeter_users[greeter_selected].name, greeter_style);
 }
 
 /*
@@ -1216,7 +1216,7 @@ greeter_power(
 	greeter_power_frame = server->frame;
 	greeter_power_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL GREETER powering=%s frame=%llu\n", what, (unsigned long long)server->frame);
+	printf("KWL GREETER powering=%s frame=%llu\n", what, (unsigned long long)server->frame);
 }
 
 /*
@@ -1252,8 +1252,8 @@ greeter_power_send(
 	greeter_power_sent = 1U;
 	error = kl_backend_power_action(server->backend, action);
 	if (error != 0)
-		printf("ZWL GREETER send errno=%d\n", error);
-	printf("ZWL GREETER power=%s frames=%llu ms=%llu\n", greeter_powering, (unsigned long long)(server->frame - greeter_power_frame), (unsigned long long)elapsed);
+		printf("KWL GREETER send errno=%d\n", error);
+	printf("KWL GREETER power=%s frames=%llu ms=%llu\n", greeter_powering, (unsigned long long)(server->frame - greeter_power_frame), (unsigned long long)elapsed);
 }
 
 /* Draws the card of a machine that is ending: "Shutting down..." or "Restarting...", and a turning ring of dots. */
@@ -1335,12 +1335,12 @@ greeter_answered(
 	}
 
 	/* The log names the answer and its word. */
-	printf("ZWL GREETER answer=%s reason=%s\n", answer, kl_backend_session_reason(server->backend));
+	printf("KWL GREETER answer=%s reason=%s\n", answer, kl_backend_session_reason(server->backend));
 
 	/* Unlocked: the desktop shows again. */
 	if (error == 0 && greeter_waiting && server->locked) {
 		greeter_unlock(server);
-		printf("ZWL LOCK unlocked\n");
+		printf("KWL LOCK unlocked\n");
 		return;
 	}
 
@@ -1348,7 +1348,7 @@ greeter_answered(
 	if (error == 0 && greeter_waiting) {
 		greeter_waiting = 0;
 		greeter_starting = 1;
-		printf("ZWL GREETER starting\n");
+		printf("KWL GREETER starting\n");
 		return;
 	}
 
@@ -1478,7 +1478,7 @@ greeter_styles_take(
 	styles = kl_backend_session_styles_get(server->backend);
 	greeter_styles = styles | KL_BACKEND_STYLE_PASSWORD;
 	server->dirty = 1;
-	printf("ZWL GREETER styles=%u\n", greeter_styles);
+	printf("KWL GREETER styles=%u\n", greeter_styles);
 
 	/* No PIN: the password, and what was typed for a PIN goes. */
 	if ((greeter_styles & KL_BACKEND_STYLE_PIN) == 0U) {
@@ -1514,7 +1514,7 @@ greeter_style_switch(
 	greeter_erase();
 	greeter_message[0] = '\0';
 	server->dirty = 1;
-	printf("ZWL GREETER style=%u\n", greeter_style);
+	printf("KWL GREETER style=%u\n", greeter_style);
 }
 
 /* Erases what has been typed. */

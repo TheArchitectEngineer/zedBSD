@@ -2,16 +2,16 @@
 # ws095-p004: the input method's protocols and key path on the Venus guest (the lean image, build-ime-image.sh).
 # zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime; the test client ime-probe logs what its text input
 # hears (/tmp/p.log, read over SSH).  Checks:
-#  1. The input method starts and is ready (ZWL IME started, KEI-IME READY); the probe does not see its globals.
+#  1. The input method starts and is ready (KWL IME started, KEI-IME READY); the probe does not see its globals.
 #  2. Direct input: keys reach the probe as keys (PROBE KEY), the input method is activated for it.
-#  3. Alt+Space chooses Japanese (ZWL IME language=ja); "kanji" is a preedit, Space converts it, Enter commits 漢字;
+#  3. Alt+Space chooses Japanese (KWL IME language=ja); "kanji" is a preedit, Space converts it, Enter commits 漢字;
 #     "watasi" Space Enter commits 私; every done's serial is the number of the probe's commits.
 #  4. Alt+Space goes back to direct input; x reaches the probe as a key.
 #  5. A password field (ime-probe --password): the input method is not activated and a is a key, not a preedit.
 #  6. A new probe (the desktop's language, direct, since ws095-p016) is switched to Japanese with Alt+Space; the input
-#     method stopped (SIGSTOP): a key is passed by after 500 ms (ZWL IME bypass) and the next reaches the
-#     probe; SIGCONT: it answers again (ZWL IME answering).
-#  7. The input method killed: zdesktop lets go (ZWL IME lost) and starts it again (a second KEI-IME READY).
+#     method stopped (SIGSTOP): a key is passed by after 500 ms (KWL IME bypass) and the next reaches the
+#     probe; SIGCONT: it answers again (KWL IME answering).
+#  7. The input method killed: zdesktop lets go (KWL IME lost) and starts it again (a second KEI-IME READY).
 #
 #   plan/ws095/tests/ime-guest.sh start     (the guest must be up)
 #   plan/ws095/tests/ime-p004.sh [OUTDIR]   (default build/ws095-shots/p004)
@@ -86,12 +86,12 @@ start_probe() {
 # 1. The input method starts; the probe does not see its globals.
 guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME started pid='
+expect_log /tmp/zdesktop.log 'KWL IME started pid='
 expect_log /tmp/zdesktop.log 'KEI-IME READY languages=2'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct'
 start_probe /tmp/p.log
 expect_none /tmp/p.log 'PROBE SEES'
-expect_log /tmp/zdesktop.log 'ZWL IME activate client='
+expect_log /tmp/zdesktop.log 'KWL IME activate client='
 
 # 2. Direct input: the keys are the probe's.
 keys 'ab'
@@ -101,7 +101,7 @@ expect_none /tmp/p.log 'preedit=[^ ]'
 
 # 3. Japanese: a preedit, a conversion, a commit.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 expect_log /tmp/zdesktop.log 'KEI-IME LANGUAGE id=ja'
 keys 'kanji'
 expect_log /tmp/p.log 'preedit=かんじ '
@@ -125,13 +125,13 @@ expect_none /tmp/p.log 'PROBE KEY key=37 state=1'
 
 # 4. Back to direct input.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct' 2
+expect_log /tmp/zdesktop.log 'KWL IME language=direct' 2
 keys 'x'
 expect_log /tmp/p.log 'PROBE KEY key=45 state=1'
 
 # 5. A password field is not served: Japanese chosen, a is a key.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja' 2
+expect_log /tmp/zdesktop.log 'KWL IME language=ja' 2
 start_probe /tmp/pw.log --password
 keys 'a'
 expect_log /tmp/pw.log 'PROBE KEY key=30 state=1'
@@ -143,41 +143,41 @@ guest 'kill $(cat /tmp/pw.log.pid); sleep 2' >/dev/null
 
 # A new probe for the rest (zdesktop gives the keyboard to the next window only when one is shown).
 start_probe /tmp/p2.log
-expect_log /tmp/zdesktop.log 'ZWL IME activate client=' 2
+expect_log /tmp/zdesktop.log 'KWL IME activate client=' 2
 
 # The new probe starts with the desktop's language, direct (ws095-p016), whose keys never reach the input method:
 # Japanese first, so that the keys of step 6 go to it.
-before=$(count /tmp/zdesktop.log 'ZWL IME language=ja')
+before=$(count /tmp/zdesktop.log 'KWL IME language=ja')
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja' $((before + 1))
+expect_log /tmp/zdesktop.log 'KWL IME language=ja' $((before + 1))
 
 # 6. A stopped input method is passed by, and heard again when it goes on.
-pid=$(guest "grep 'ZWL IME started pid=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | tail -1)
+pid=$(guest "grep 'KWL IME started pid=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | tail -1)
 echo "input method: pid $pid"
 guest "kill -STOP $pid" >/dev/null
 keys 'k'
 sleep 1.5
 keys 'z'
-expect_log /tmp/zdesktop.log 'ZWL IME bypass after_ms=500'
+expect_log /tmp/zdesktop.log 'KWL IME bypass after_ms=500'
 expect_log /tmp/p2.log 'PROBE KEY key=44 state=1'
 guest "kill -CONT $pid" >/dev/null
 sleep 1
-expect_log /tmp/zdesktop.log 'ZWL IME answering'
+expect_log /tmp/zdesktop.log 'KWL IME answering'
 keys '<esc>'
 
 # 7. A killed input method is let go and started again.
 guest "kill -KILL $pid" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME lost'
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=' 2
+expect_log /tmp/zdesktop.log 'KWL IME lost'
+expect_log /tmp/zdesktop.log 'KWL IME started pid=' 2
 expect_log /tmp/zdesktop.log 'KEI-IME READY languages=2' 2
-expect_log /tmp/zdesktop.log 'ZWL IME activate client=' 3
+expect_log /tmp/zdesktop.log 'KWL IME activate client=' 3
 keys 'a'
 expect_log /tmp/p2.log 'PROBE KEY key=30 state=1'
 shot restarted.png
 
 # zdesktop saw no protocol error.
-expect_none /tmp/zdesktop.log 'ZWL ERROR'
-guest "grep -E 'ZWL IME|KEI-IME|ZWL ERROR' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
+expect_none /tmp/zdesktop.log 'KWL ERROR'
+guest "grep -E 'KWL IME|KEI-IME|KWL ERROR' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
 guest "cat /tmp/p.log" > "$out/probe.txt"
 guest "cat /tmp/p2.log" > "$out/probe2.txt"
 echo "ime-p004: status=$status"

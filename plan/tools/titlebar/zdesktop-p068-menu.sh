@@ -45,7 +45,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 /bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 guest 'cat /tmp/t.log' | tee "$out/start.txt"
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; tx=${2:-0}; ty=${3:-0}
 echo "terminal: surface $surface at $tx,$ty"
 expect_log /tmp/t.log 'ZTERM START run=t1'

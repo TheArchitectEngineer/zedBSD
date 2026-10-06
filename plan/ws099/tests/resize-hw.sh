@@ -123,7 +123,7 @@ while [ $n -lt "$total" ]; do
 	fi
 	n=$((n + 1))
 done
-grep -E 'MVIEW (DONE|FAILED)|ZWL (ERROR|GPU_ERROR)|ZWL CLIENT gone|ZWL GLASS (close|minimize)|ZWL UNMAP' "$out/session.log" | tee "$out/events.txt"
+grep -E 'MVIEW (DONE|FAILED)|KWL (ERROR|GPU_ERROR)|KWL CLIENT gone|KWL GLASS (close|minimize)|KWL UNMAP' "$out/session.log" | tee "$out/events.txt"
 echo "RESIZE-HW RESULT drags=$total vanished=$vanished"
 [ "$vanished" -eq 0 ] && { echo "resize-hw: PASS"; exit 0; }
 echo "resize-hw: FAIL"

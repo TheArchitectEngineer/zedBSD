@@ -4,7 +4,7 @@
 # Settings and network-probe).  networkd's socket is moved aside and network-probe stands in with a radio whose
 # joins take 6 seconds (network-probe 600 6), the state left as it was meanwhile; "Kei Lab" has a key saved first.
 #  1. The system bar's menu: a click on "Kei Lab" says at once "Connecting to Kei Lab..." under the switch and
-#     "Connecting..." on the row (ZWL NETWORK connecting ssid=Kei Lab; bar-connecting.png), then it is joined and
+#     "Connecting..." on the row (KWL NETWORK connecting ssid=Kei Lab; bar-connecting.png), then it is joined and
 #     checked (connecting cleared; bar-joined.png).
 #  2. Switching: a click on "Cafe Guest" while on Kei Lab says "Connecting to Cafe Guest..." and Kei Lab loses its
 #     check meanwhile (bar-switching.png), then Cafe Guest is joined (bar-switched.png).
@@ -27,7 +27,7 @@ check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNT
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[s]ettings|[n]etwork-probe" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[s]ettings|[n]etwork-probe" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 start_desktop='export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started'
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started'
 status=0
 . plan/ws089/tests/settings-wait.sh
 
@@ -59,11 +59,11 @@ shot() {
 }
 # The middle of the network icon, from zdesktop's log.
 icon() {
-	guest "grep -a 'ZWL NETWORK icon' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep -a 'KWL NETWORK icon' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 # The place of the last laid-out menu row whose text is $1.
 row() {
-	guest "grep -a 'ZWL NETWORK row .*text=$1\$' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep -a 'KWL NETWORK row .*text=$1\$' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 # Clicks a control of Settings' page by its index, where Settings last logged it.
 control() {
@@ -82,35 +82,35 @@ guest 'rm -f /etc/wifi.conf; net wifi add "Kei Lab" --password keilab-2026 --aut
 guest 'mv /run/networkd.sock /run/networkd.sock.real; /bin/network-probe 600 6 > /tmp/probe.log 2>&1 </dev/null & sleep 1; echo started' >/dev/null
 expect_log /tmp/probe.log 'NETPROBE listening'
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state reachable=1 .*wifi=disconnected'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state reachable=1 .*wifi=disconnected'
 
 # 1. The menu, the scan, and a click on Kei Lab: "Connecting" at once, joined after the stand-in's 6 seconds.
 set -- $(icon)
 click $(($1 + $3 / 2)) $(($2 + $4 / 2)) 1500
-expect_log /tmp/zdesktop.log 'ZWL NETWORK scan count=3'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=Kei Lab$'
+expect_log /tmp/zdesktop.log 'KWL NETWORK scan count=3'
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=Kei Lab$'
 set -- $(row 'Kei Lab')
 click $(($1 + 150)) $(($2 + $4 / 2))
-expect_log /tmp/zdesktop.log 'ZWL NETWORK connecting ssid=Kei Lab$' 3
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=Connecting to Kei Lab\.\.\.$' 3
+expect_log /tmp/zdesktop.log 'KWL NETWORK connecting ssid=Kei Lab$' 3
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=Connecting to Kei Lab\.\.\.$' 3
 shot bar-connecting.png
 expect_log /tmp/probe.log 'NETPROBE join waits seconds=6 ssid=Kei Lab'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state .*wifi=connected ssid=Kei Lab'
-expect_log /tmp/zdesktop.log 'ZWL NETWORK connecting ssid=$'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state .*wifi=connected ssid=Kei Lab'
+expect_log /tmp/zdesktop.log 'KWL NETWORK connecting ssid=$'
 sleep 1
 shot bar-joined.png
 
 # 2. Switching to Cafe Guest (open): "Connecting" again, then joined.
 set -- $(row 'Cafe Guest')
 click $(($1 + 150)) $(($2 + $4 / 2))
-expect_log /tmp/zdesktop.log 'ZWL NETWORK connecting ssid=Cafe Guest$' 3
-expect_log /tmp/zdesktop.log 'ZWL NETWORK row .*text=Connecting to Cafe Guest\.\.\.$' 3
+expect_log /tmp/zdesktop.log 'KWL NETWORK connecting ssid=Cafe Guest$' 3
+expect_log /tmp/zdesktop.log 'KWL NETWORK row .*text=Connecting to Cafe Guest\.\.\.$' 3
 shot bar-switching.png
-expect_log /tmp/zdesktop.log 'ZWL NETWORK state .*wifi=connected ssid=Cafe Guest'
+expect_log /tmp/zdesktop.log 'KWL NETWORK state .*wifi=connected ssid=Cafe Guest'
 sleep 1
 shot bar-switched.png
 click 400 400 900
-expect_log /tmp/zdesktop.log 'ZWL NETWORK close via=outside'
+expect_log /tmp/zdesktop.log 'KWL NETWORK close via=outside'
 
 # 3. Settings' Wi-Fi page: Kei Lab again.
 guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/settings --timeout-s=600 wifi > /tmp/s.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
@@ -128,7 +128,7 @@ shot settings-joined.png
 # zdesktop saw no error; networkd's socket back and the test key gone.
 errors=$(guest "grep -ac ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -a "ZWL NETWORK" /tmp/zdesktop.log' > "$out/zdesktop-network.log"
+guest 'grep -a "KWL NETWORK" /tmp/zdesktop.log' > "$out/zdesktop-network.log"
 guest 'cat /tmp/s.log' > "$out/settings.log"
 guest 'cat /tmp/probe.log' > "$out/probe.log"
 guest "$stop_all" >/dev/null

@@ -2,7 +2,7 @@
 # ws089-p004: the look's pages of Settings on the Venus guest (the lean image with the generated wallpapers, build-settings-image.sh).  zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share
 # root's home (/root/.config/keiland/desktop.conf, removed before and after).
 #  1. Wallpaper: seven tiles (Kei (default), the five of generate.py and Lakeside, ws099-p019) (wallpaper.png); a click on Aurora writes the key
-#     (LOOK set key=wallpaper value=.../Aurora.png) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
+#     (LOOK set key=wallpaper value=.../Aurora.png) and zdesktop shows it (KWL PREFERENCES key=wallpaper applied)
 #     (wallpaper-aurora.png); a click on the default removes the key and zdesktop goes back (wallpaper-default.png).
 #  2. Appearance: the slider dragged to the left end writes window.opacity=85 and zdesktop applies it
 #     (appearance-85.png); dragged to the right end removes the key (opacity 100 again).
@@ -106,11 +106,11 @@ expect_log /tmp/s.log 'ZSETTINGS CONTROL index=102 '
 shot wallpaper.png
 control 101
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/Aurora.png error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Aurora.png'
+expect_log /tmp/zdesktop.log 'KWL GLASS wallpaper path=/usr/share/keiland/wallpapers/Aurora.png'
 shot wallpaper-aurora.png
 control 100
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value= error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.png'
+expect_log /tmp/zdesktop.log 'KWL GLASS wallpaper path=/usr/share/keiland/wallpaper.png'
 shot wallpaper-default.png
 
 # 2. Appearance.
@@ -120,11 +120,11 @@ start_settings appearance
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=1 '
 slide left
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=window.opacity value=85 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=85'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=window.opacity applied value=85'
 shot appearance-85.png
 slide right
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=window.opacity value=100 error=0'
-expect_log /tmp/zdesktop.log 'ZWL PREFERENCES key=window.opacity applied value=100'
+expect_log /tmp/zdesktop.log 'KWL PREFERENCES key=window.opacity applied value=100'
 
 # 3. Display, Storage and Home.
 guest "pid=\$(ps -A -o pid,args | grep '[s]ettings' | awk '{print \$1}'); kill \$pid" >/dev/null

@@ -62,7 +62,7 @@ expect_title() {
 
 tab_line() {
 	zwl_app_clients
-	guest "grep 'ZWL TITLEBAR strip client=$zc1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1"
+	guest "grep 'KWL TITLEBAR strip client=$zc1 .* where=floating id=$1 ' /tmp/zdesktop.log | tail -1"
 }
 centre() {
 	sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p' |
@@ -79,7 +79,7 @@ shot() {
 guest "$stop_all" >/dev/null
 timeout 60 python3 plan/tools/guest/guest.py put plan/ws035/tests/p091-title.sh /tmp/p091-title.sh >/dev/null 2>&1 </dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/terminal --token=t1 --timeout-s=500 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 
 # 1. OSC 0 in the only tab: the window's title.
@@ -115,7 +115,7 @@ shot long.png
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest 'cat /tmp/t.log' > "$out/t.log"
-guest 'grep -E "ZWL TITLEBAR (tab|strip)" /tmp/zdesktop.log' > "$out/zdesktop-tabs.log"
+guest 'grep -E "KWL TITLEBAR (tab|strip)" /tmp/zdesktop.log' > "$out/zdesktop-tabs.log"
 guest "$stop_all; rm -f /tmp/p091-title.sh" >/dev/null
 [ $status = 0 ] && echo "zdesktop-p091: PASS" || echo "zdesktop-p091: FAIL"
 exit $status

@@ -71,10 +71,10 @@ kwl_backdrop_begin(
 		result = backdrop_create(compose, compose->output.width / BACKDROP_SCALE, compose->output.height / BACKDROP_SCALE);
 		if (result == VK_SUCCESS) {
 			backdrop->state = BACKDROP_READY;
-			printf("ZWL BACKDROP ready width=%u height=%u\n", backdrop->width, backdrop->height);
+			printf("KWL BACKDROP ready width=%u height=%u\n", backdrop->width, backdrop->height);
 		} else {
 			backdrop->state = BACKDROP_FAILED;
-			printf("ZWL BACKDROP failed result=%d\n", (int)result);
+			printf("KWL BACKDROP failed result=%d\n", (int)result);
 		}
 	}
 

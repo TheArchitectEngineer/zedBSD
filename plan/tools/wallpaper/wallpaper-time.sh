@@ -8,12 +8,12 @@
 # and a PPM of the same pixels (python3, ppm-to-png.py's read_png).  All three go to the guest's /tmp, so the disk
 # cache treats them alike.
 #  1. The start: zdesktop --testing --glass at 1280x800 with --wallpaper=, PNG and JPEG in turn, four times each; the first of
-#     each is dropped (the cache warms).  The medians of "ZWL STARTUP step=wallpaper ms=" and
-#     "step=wallpaper-picture ms=" are printed.  A "ZWL GLASS no wallpaper" line fails the run.
-#  2. The PPM is refused: "ZWL GLASS no wallpaper: path=/tmp/w.ppm errno=3" (EINVAL is 3 on zedBSD, include/uapi/errno.h;
+#     each is dropped (the cache warms).  The medians of "KWL STARTUP step=wallpaper ms=" and
+#     "step=wallpaper-picture ms=" are printed.  A "KWL GLASS no wallpaper" line fails the run.
+#  2. The PPM is refused: "KWL GLASS no wallpaper: path=/tmp/w.ppm errno=3" (EINVAL is 3 on zedBSD, include/uapi/errno.h;
 #     T1-169 expected the host's 22), and the landscape is drawn instead.
 #  3. A wallpaper chosen during the session (glass.c's thread, ws138 U7): zdesktop without a picture, keiland-settings
-#     sets /tmp/w.png, then /tmp/w.jpg, then resets: "ZWL GLASS wallpaper path=... ms=" for each (the reset is the
+#     sets /tmp/w.png, then /tmp/w.jpg, then resets: "KWL GLASS wallpaper path=... ms=" for each (the reset is the
 #     landscape, path=-).
 # Only "both read, the PPM refused" is judged; the times are recorded, not judged (the QEMU host has no GPU for the
 # guest and its CPU time varies with other load).  Prints "wallpaper-time: PASS" or FAIL.
@@ -49,7 +49,7 @@ done
 # Starts zdesktop for a few seconds with a wallpaper (or none) and prints its startup lines.
 run_start() {
 	guest "$stop_all" >/dev/null
-	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/keiland/desktop.conf; /bin/wayland --testing --timeout=8 --width=1280 --height=800 --glass $1 > /tmp/wt.log 2>&1 </dev/null; grep -E 'ZWL STARTUP step=wallpaper|ZWL GLASS no wallpaper' /tmp/wt.log"
+	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; rm -f /tmp/wayland-0 /root/.config/keiland/desktop.conf; /bin/wayland --testing --timeout=8 --width=1280 --height=800 --glass $1 > /tmp/wt.log 2>&1 </dev/null; grep -E 'KWL STARTUP step=wallpaper|KWL GLASS no wallpaper' /tmp/wt.log"
 }
 
 # The median of the numbers on standard input.
@@ -61,7 +61,7 @@ for round in 1 2 3 4; do
 	for kind in png jpg; do
 		lines=$(run_start "--wallpaper=/tmp/w.$kind")
 		echo "$lines" | sed "s/^/$kind round=$round /" >> "$out/start.txt"
-		if echo "$lines" | grep -q 'ZWL GLASS no wallpaper'; then
+		if echo "$lines" | grep -q 'KWL GLASS no wallpaper'; then
 			echo "start $kind round $round: no wallpaper"
 			status=1
 		fi
@@ -69,15 +69,15 @@ for round in 1 2 3 4; do
 done
 echo "start (median of rounds 2-4, ms):"
 for kind in png jpg; do
-	whole=$(grep "^$kind round=[234] ZWL STARTUP step=wallpaper ms=" "$out/start.txt" | sed 's/.*ms=//' | median)
-	picture=$(grep "^$kind round=[234] ZWL STARTUP step=wallpaper-picture ms=" "$out/start.txt" | sed 's/.*ms=//' | median)
+	whole=$(grep "^$kind round=[234] KWL STARTUP step=wallpaper ms=" "$out/start.txt" | sed 's/.*ms=//' | median)
+	picture=$(grep "^$kind round=[234] KWL STARTUP step=wallpaper-picture ms=" "$out/start.txt" | sed 's/.*ms=//' | median)
 	echo "  $kind step=wallpaper $whole step=wallpaper-picture $picture"
 done
 
 # 2. The PPM is refused.
 lines=$(run_start "--wallpaper=/tmp/w.ppm")
 echo "$lines" > "$out/ppm.txt"
-if echo "$lines" | grep -qE 'ZWL GLASS no wallpaper: path=/tmp/w.ppm errno=3([^0-9]|$)'; then
+if echo "$lines" | grep -qE 'KWL GLASS no wallpaper: path=/tmp/w.ppm errno=3([^0-9]|$)'; then
 	echo "ppm: refused (EINVAL, errno 3 on zedBSD) ok"
 else
 	echo "ppm: NOT refused"
@@ -91,11 +91,11 @@ for value in "set wallpaper /tmp/w.png" "set wallpaper /tmp/w.jpg" "reset wallpa
 	guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/keiland-settings $value >> /tmp/probe.log 2>&1; echo done" >/dev/null
 	sleep 2
 done
-guest "grep -E 'ZWL GLASS wallpaper path=|ZWL GLASS no wallpaper' /tmp/wt.log" > "$out/session.txt"
+guest "grep -E 'KWL GLASS wallpaper path=|KWL GLASS no wallpaper' /tmp/wt.log" > "$out/session.txt"
 cat "$out/session.txt"
 for expected in 'path=/tmp/w.png ms=' 'path=/tmp/w.jpg ms=' 'path=- ms='; do
-	if ! grep -q "ZWL GLASS wallpaper $expected" "$out/session.txt"; then
-		echo "session: ZWL GLASS wallpaper $expected MISSING"
+	if ! grep -q "KWL GLASS wallpaper $expected" "$out/session.txt"; then
+		echo "session: KWL GLASS wallpaper $expected MISSING"
 		status=1
 	fi
 done

@@ -41,22 +41,22 @@ expect_log() {
 
 # The centre of an icon, from zdesktop's log.
 icon() {
-	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/wlshm --size=520x340 --color=ffe8eef8 --frames=20000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 
 # 1. The launcher opens Home.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1200
 pointer move 700 500 sleep 400
 check "$out/home.png" >/dev/null
-expect_log 'ZWL HOME open via=launcher'
+expect_log 'KWL HOME open via=launcher'
 # The number of tiles depends on the programs the image has (App Home leaves out an entry whose program is not
 # there), so only the opening is checked (2026-10-04: System Monitor joined the default list).
-expect_log 'ZWL HOME opened apps='
+expect_log 'KWL HOME opened apps='
 
 # 2. The Terminal icon starts the terminal and closes Home.
 set -- $(icon Terminal)
@@ -64,10 +64,10 @@ echo "Terminal icon at ${1:-?},${2:-?}"
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 6000
 pointer move 1250 780 sleep 400
 check "$out/terminal.png" >/dev/null
-expect_log 'ZWL HOME launch name=Terminal pid='
-expect_log 'ZWL HOME close via=launch'
+expect_log 'KWL HOME launch name=Terminal pid='
+expect_log 'KWL HOME close via=launch'
 zwl_app_clients
-expect_log "ZWL MAP client=$zc2 "
+expect_log "KWL MAP client=$zc2 "
 
 # 3. The corner drag follows the pointer, and opens Home past the threshold.
 pointer move 6 6 sleep 300 down sleep 100 \
@@ -76,33 +76,33 @@ check "$out/gesture.png" >/dev/null
 pointer move 260 220 sleep 80 move 360 320 sleep 200 up sleep 1200
 pointer move 700 500 sleep 400
 check "$out/home-drag.png" >/dev/null
-expect_log 'ZWL HOME gesture'
-expect_log 'ZWL HOME open via=drag'
+expect_log 'KWL HOME gesture'
+expect_log 'KWL HOME open via=drag'
 
 # 4. Typing searches; Enter starts the one found.
 keys 'mod'
 sleep 1
 check "$out/search.png" >/dev/null
-expect_log 'ZWL HOME search query="mod" results=1 \[Model viewer\]'
+expect_log 'KWL HOME search query="mod" results=1 \[Model viewer\]'
 keys '\n'
 sleep 10
 pointer move 1250 780 sleep 400
 check "$out/mview.png" >/dev/null
-expect_log 'ZWL HOME launch name=Model viewer pid='
+expect_log 'KWL HOME launch name=Model viewer pid='
 
 # 5. Esc closes Home; so does the desktop's corner.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1200
 keys '<esc>'
 sleep 1
-expect_log 'ZWL HOME close via=escape'
+expect_log 'KWL HOME close via=escape'
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1200
 pointer move 1268 788 sleep 500 down sleep 60 up sleep 1200
 check "$out/closed.png" >/dev/null
-expect_log 'ZWL HOME close via=corner'
+expect_log 'KWL HOME close via=corner'
 
 guest 'grep -E "FAILED|ERROR" /tmp/zdesktop.log' | tee "$out/errors.txt"
 [ -s "$out/errors.txt" ] && status=1
-guest 'grep -E "ZWL (HOME|MAP)" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL (HOME|MAP)" /tmp/zdesktop.log' > "$out/log.txt"
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "p069: PASS" || echo "p069: FAIL"
 exit $status

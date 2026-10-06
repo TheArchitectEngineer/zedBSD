@@ -57,7 +57,7 @@ expect_guest() {
 }
 
 window() {
-	guest "grep 'ZWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p'
 }
 
 # Drags between two screen points (optionally with a key held) and releases.
@@ -81,7 +81,7 @@ shot() {
 
 # The middle (y) of the Nth row of the latest popup, and its left edge.
 row_n() {
-	guest "grep 'ZWL MENU row item=' /tmp/zdesktop.log | tail -5 | sed -n $1p" | sed -n 's/.* y=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p' | { read y h; echo $(( ${y:-0} + ${h:-0} / 2 )); }
+	guest "grep 'KWL MENU row item=' /tmp/zdesktop.log | tail -5 | sed -n $1p" | sed -n 's/.* y=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p' | { read y h; echo $(( ${y:-0} + ${h:-0} / 2 )); }
 }
 popup_x() {
 	guest "grep 'MENU open ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=.*/\1/p'
@@ -90,7 +90,7 @@ popup_x() {
 guest "$stop_all" >/dev/null
 guest 'rm -f /tmp/files.clipboard; rm -rf /tmp/fhome; sh /usr/share/files-tests/make-home.sh /tmp/fhome >/dev/null'
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 HOME=/tmp/fhome /bin/files --token=a --timeout-s=800 --width=600 --height=560 /tmp/fhome/Desktop > /tmp/a.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 set -- $(window 1)
 ax=${1:-0}; ay=${2:-0}
@@ -106,14 +106,14 @@ echo "A at $ax,$ay  B at $bx,$by"
 # 1. Alt: the choice, and Copy Here.
 drag_alt $((ax + 330)) $((ay + 110)) $((bx + 420)) $((by + 420))
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL DATA drag action client=$zc2 action=4"
+expect_log /tmp/zdesktop.log "KWL DATA drag action client=$zc2 action=4"
 expect_log /tmp/b.log 'ZFILES DROP drop self=0 destination=/tmp/fhome/Documents action=4'
 expect_log /tmp/b.log 'ZFILES CONTEXT-MENU open rows=5 '
 sleep 1
 shot ask.png
 click $(( $(popup_x) + 60 )) "$(row_n 2)" 2000
 expect_log /tmp/b.log 'ZFILES DROP operation=copy items=1 destination=/tmp/fhome/Documents first=/tmp/fhome/Desktop/Logo.png'
-expect_log /tmp/zdesktop.log "ZWL DATA drag finish client=$zc2 action=1"
+expect_log /tmp/zdesktop.log "KWL DATA drag finish client=$zc2 action=1"
 expect_guest '[ -f /tmp/fhome/Documents/Logo.png ] && [ -f /tmp/fhome/Desktop/Logo.png ]' 'Logo.png copied'
 
 # 2. Alt again, and Cancel.
@@ -123,7 +123,7 @@ expect_log /tmp/b.log 'ZFILES CONTEXT-MENU open rows=5 '
 sleep 1
 click $(( $(popup_x) + 60 )) "$(row_n 5)" 2000
 expect_log /tmp/b.log 'ZFILES DROP ask cancel'
-expect_log /tmp/zdesktop.log "ZWL DATA drag unfinished client=$zc2"
+expect_log /tmp/zdesktop.log "KWL DATA drag unfinished client=$zc2"
 expect_log /tmp/a.log 'ZFILES DRAG out done dropped=0'
 expect_guest '[ -f /tmp/fhome/Desktop/Screenshot.png ] && [ ! -e /tmp/fhome/Documents/Screenshot.png ]' 'Screenshot.png stayed'
 
@@ -135,7 +135,7 @@ drag $((tx + 60)) $((ty - 30)) $((tx + 60 + 300)) $((ty - 30))
 tx=$((tx + 300))
 drag $((ax + 440)) $((ay + 110)) $((tx + 200)) $((ty + 120))
 expect_log /tmp/t.log 'ZTERM DROP enter uris=1 text=1'
-expect_log /tmp/zdesktop.log "ZWL DATA drag accept client=$zc3 mime=text/uri-list"
+expect_log /tmp/zdesktop.log "KWL DATA drag accept client=$zc3 mime=text/uri-list"
 expect_log /tmp/t.log 'ZTERM DROP bytes=[1-9][0-9]* uris=1'
 expect_guest '[ -f /tmp/fhome/Desktop/Screenshot.png ]' 'Screenshot.png stayed (a copy)'
 sleep 1
@@ -143,7 +143,7 @@ shot term-drop.png
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -E "ZWL (DATA|MENU (open|context))" /tmp/zdesktop.log' > "$out/zdesktop-data.log"
+guest 'grep -E "KWL (DATA|MENU (open|context))" /tmp/zdesktop.log' > "$out/zdesktop-data.log"
 guest 'cat /tmp/a.log' > "$out/a.log"
 guest 'cat /tmp/b.log' > "$out/b.log"
 guest 'cat /tmp/t.log' > "$out/t.log"

@@ -25,7 +25,7 @@ status=0
 
 # The centre of an icon, from zdesktop's log.
 icon() {
-	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
 # Opens Home from the launcher and starts an application from its icon.

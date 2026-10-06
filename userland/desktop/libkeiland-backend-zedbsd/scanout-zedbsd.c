@@ -224,7 +224,7 @@ kl_backend_scanout_close(
 	release.lease = scanout->lease;
 	error = ioctl(scanout->gpu, GPU_DISPLAY_RELEASE, &release);
 	if (error != 0)
-		printf("ZWL SCANOUT release errno=%d\n", errno);
+		printf("KWL SCANOUT release errno=%d\n", errno);
 
 	/* The fd (and its handles) and the record. */
 	close(scanout->gpu);

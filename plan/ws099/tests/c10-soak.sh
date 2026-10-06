@@ -1,9 +1,9 @@
 #!/bin/sh
-# ws099-p001, C10: zdesktop runs C10_SECONDS (an hour) of continuous work without dying and without a ZWL ERROR.
+# ws099-p001, C10: zdesktop runs C10_SECONDS (an hour) of continuous work without dying and without a KWL ERROR.
 # zdesktop --glass at 1280x800 with the wallpaper; each round: three popup-probe windows opened, the top one dragged
 # by its title bar, Wiseview opened and closed (Super+Tab, Esc), App Home opened and closed (the launcher, Esc), a
 # window maximized and back (keys m, u to the probe), one probe closed by its close button and the rest ended.
-# After each round zdesktop must be alive; at the end the log's ZWL ERROR and FAILED lines are counted.
+# After each round zdesktop must be alive; at the end the log's KWL ERROR and FAILED lines are counted.
 # Prints "C10 RESULT rounds=N seconds=S alive=0|1 errors=E" and "C10: PASS" or "C10: FAIL".
 #
 #   plan/ws035/tests/zdesktop-guest.sh start build/ws099-criteria.img
@@ -33,7 +33,7 @@ while [ $(($(date +%s) - start)) -lt "$C10_SECONDS" ]; do
 	# Three windows, cascaded from the centre; the pids kept (the guest's ps shows no arguments).
 	guest "export XDG_RUNTIME_DIR=/tmp; for t in a b c; do /bin/popup-probe --timeout-s=600 --token=\$t > /dev/null 2>&1 </dev/null & echo \$! > /tmp/soak-\$t.pid; sleep 1; done; echo ok" >/dev/null
 	sleep 1
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 	wx=${1:-536}; wy=${2:-389}
 	# The top one dragged by its title bar and back.
 	pointer move $((wx + 150)) $((wy - 30)) sleep 200 down sleep 150 move $((wx + 190)) $((wy - 10)) sleep 150 move $((wx + 230)) $((wy + 10)) sleep 200 up sleep 400
@@ -61,8 +61,8 @@ while [ $(($(date +%s) - start)) -lt "$C10_SECONDS" ]; do
 	[ $((rounds % 20)) -eq 1 ] && echo "round $rounds at $(($(date +%s) - start)) s"
 done
 seconds=$(($(date +%s) - start))
-errors=$(guest 'grep -cE "ZWL ERROR|ZWL FAILED" /tmp/zdesktop.log' | tail -1)
-guest 'grep -E "ZWL ERROR|ZWL FAILED" /tmp/zdesktop.log | head -20' > "$out/errors.txt"
+errors=$(guest 'grep -cE "KWL ERROR|KWL FAILED" /tmp/zdesktop.log' | tail -1)
+guest 'grep -E "KWL ERROR|KWL FAILED" /tmp/zdesktop.log | head -20' > "$out/errors.txt"
 guest 'tail -50 /tmp/zdesktop.log' > "$out/zdesktop-tail.log"
 check "$out/end.png" >/dev/null
 guest "$stop_all" >/dev/null

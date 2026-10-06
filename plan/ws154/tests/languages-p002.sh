@@ -1,8 +1,8 @@
 #!/bin/sh
 # ws154-p002: the input method chosen on the Languages page, on the Venus guest (config-amd64-languages.mk).  zdesktop
 # --glass at 1280x800 starts /usr/libexec/keiland-ime with --method=  from the setting ime.method; a change of the
-# setting starts it again with the new method at once.  Judged by zdesktop's log (ZWL IME started ... --method=,
-# ZWL IME method=, KEI-IME METHOD, ZWL IME language=) and the probe's log, never the guest's console:
+# setting starts it again with the new method at once.  Judged by zdesktop's log (KWL IME started ... --method=,
+# KWL IME method=, KEI-IME METHOD, KWL IME language=) and the probe's log, never the guest's console:
 #  1. The default: --method=ja, two languages; Alt+Space in the probe: Japanese, "kanji" composes (preedit かんじ).
 #  2. ime.method 0 (keiland-settings set): zdesktop starts it again with --method=none, one language; Alt+Space does not
 #     leave direct input.
@@ -65,12 +65,12 @@ set_method() {
 # 1. The default: Japanese.
 guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=ja'
+expect_log /tmp/zdesktop.log 'KWL IME started pid=[0-9]+ client=[0-9]+ --method=ja'
 expect_log /tmp/zdesktop.log 'KEI-IME METHOD 1'
 expect_log /tmp/zdesktop.log 'KEI-IME READY languages=2'
 start_probe /tmp/p1.log
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'kanji'
 expect_log /tmp/p1.log 'preedit=かんじ '
 keys '<esc>'
@@ -78,23 +78,23 @@ stop_probe /tmp/p1.log
 
 # 2. None: started again with direct input alone.
 set_method 0
-expect_log /tmp/zdesktop.log 'ZWL IME method=0'
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=none'
+expect_log /tmp/zdesktop.log 'KWL IME method=0'
+expect_log /tmp/zdesktop.log 'KWL IME started pid=[0-9]+ client=[0-9]+ --method=none'
 expect_log /tmp/zdesktop.log 'KEI-IME READY languages=1'
 start_probe /tmp/p2.log
 keys '<alt-spc>'
 sleep 1
-ja=$(count /tmp/zdesktop.log 'ZWL IME language=ja')
+ja=$(count /tmp/zdesktop.log 'KWL IME language=ja')
 [ "$ja" -eq 1 ] && echo "none: Alt+Space stays in direct input ok" || { echo "none: Alt+Space chose Japanese ($ja) FAIL"; status=1; }
 stop_probe /tmp/p2.log
 
 # 3. SKK: started again with it; a word converted with its dictionary.
 set_method 2
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=skk'
+expect_log /tmp/zdesktop.log 'KWL IME started pid=[0-9]+ client=[0-9]+ --method=skk'
 expect_log /tmp/zdesktop.log 'KEI-IME METHOD 2'
 start_probe /tmp/p3.log
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=skk'
+expect_log /tmp/zdesktop.log 'KWL IME language=skk'
 keys 'Kanji'
 expect_log /tmp/p3.log 'preedit=▽かんじ '
 keys ' '
@@ -108,26 +108,26 @@ stop_probe /tmp/p3.log
 
 # 4. Japanese again.
 set_method 1
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=ja' 2
+expect_log /tmp/zdesktop.log 'KWL IME started pid=[0-9]+ client=[0-9]+ --method=ja' 2
 
 # 5. The Languages page: its SKK switch (the second choice) chooses SKK.
 guest "$env; /bin/settings --timeout-s=300 languages > /tmp/s.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=3 '
-line=$(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1")
+line=$(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1")
 set -- $(echo "$line" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p') 0 0 0
 wx=$2; wy=$3
 set -- $(guest "grep -a 'ZSETTINGS CONTROL index=3 ' /tmp/s.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p') 0 0 0 0
 cx=$((wx + $1 + $3 / 2)); cy=$((wy + $2 + $4 / 2))
 pointer move $((cx - 2)) "$cy" sleep 150 move "$cx" "$cy" sleep 300 down sleep 60 up sleep 1500
 expect_log /tmp/s.log 'LANGUAGES ime method=2'
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=skk' 2
+expect_log /tmp/zdesktop.log 'KWL IME started pid=[0-9]+ client=[0-9]+ --method=skk' 2
 pointer move 1270 790 sleep 500
 check "$out/languages.png" >/dev/null
 echo "shot: $out/languages.png"
 
-expect_none=$(count /tmp/zdesktop.log 'ZWL ERROR')
-[ "$expect_none" -eq 0 ] && echo "log: no ZWL ERROR ok" || { echo "log: ZWL ERROR ($expect_none)"; status=1; }
-guest "grep -E 'ZWL IME|KEI-IME' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
+expect_none=$(count /tmp/zdesktop.log 'KWL ERROR')
+[ "$expect_none" -eq 0 ] && echo "log: no KWL ERROR ok" || { echo "log: KWL ERROR ($expect_none)"; status=1; }
+guest "grep -E 'KWL IME|KEI-IME' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
 guest "$env; /bin/keiland-settings reset ime.method >/dev/null 2>&1; $stop_all" >/dev/null
 echo "languages-p002: status=$status"
 exit $status

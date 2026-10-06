@@ -2,11 +2,11 @@
 # ws127-p010: the path's field of files in zdesktop's titlebar, on the Venus guest of the files image
 # (plan/tools/files/build-files-image.sh).  zdesktop --glass at 1280x800; files at 1000x640 on the sample home
 # (/tmp/fhome), opened on the home folder (its breadcrumb is one part, Home, the last part).
-#  1. A click on the last part (Home) makes the path a field (ZFILES TITLEBAR kind=0 id=4 detail=0; ZWL TITLEBAR
+#  1. A click on the last part (Home) makes the path a field (ZFILES TITLEBAR kind=0 id=4 detail=0; KWL TITLEBAR
 #     focus id=4 edit=1).
 #  2. /tmp/fhome/P typed: a second later files suggests Pictures/ and Projects/ (ZFILES LOCATION suggest ... count=2,
-#     ZWL TITLEBAR suggestions id=4 count=2) and the list drops down under the field (suggestions.png).
-#  3. Down and Enter put the first in the field (ZWL TITLEBAR suggestion chosen index=0 text=/tmp/fhome/Pictures/, the
+#     KWL TITLEBAR suggestions id=4 count=2) and the list drops down under the field (suggestions.png).
+#  3. Down and Enter put the first in the field (KWL TITLEBAR suggestion chosen index=0 text=/tmp/fhome/Pictures/, the
 #     field heard changed); Enter goes there (LOCATION kind=folder path=/tmp/fhome/Pictures).
 #  4. Ctrl+L, /tmp/fhome/D typed: Desktop/, Documents/, Downloads/; a click on the second row puts Documents/ in the
 #     field (index=1) and the field keeps the keyboard; Enter goes there.
@@ -62,7 +62,7 @@ expect_none() {
 
 # A control's place (client, where, ID) as zdesktop last logged it: "x y width height".
 place() {
-	guest "grep 'ZWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
+	guest "grep 'KWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
 	    sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 
@@ -85,26 +85,26 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
 expect_log /tmp/f.log 'ZFILES TITLEBAR state back=0 forward=0 parts=1 last=Home '
-expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 .* where=floating id=4 .* shown=1"
+expect_log /tmp/zdesktop.log "KWL TITLEBAR control client=$zc1 .* where=floating id=4 .* shown=1"
 
 # 1. The last part (the only one) makes the path a field.
 set -- $(place 1 floating 4)
 click $((${1:-0} + 12)) $((${2:-0} + ${4:-0} / 2))
 expect_log /tmp/f.log 'ZFILES TITLEBAR kind=0 id=4 detail=0 '
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR focus client=[0-9]+ surface=[0-9]+ id=4 edit=1'
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR focus client=[0-9]+ surface=[0-9]+ id=4 edit=1'
 
 # 2. A path typed, and the suggestions a second later.
 keys '<ctrl-a>' '/tmp/fhome/P'
 sleep 2
 expect_log /tmp/f.log 'ZFILES LOCATION suggest text=/tmp/fhome/P count=2'
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR suggestions id=4 count=2'
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR suggestions shown x=[0-9]+ y=[0-9]+ '
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR suggestions id=4 count=2'
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR suggestions shown x=[0-9]+ y=[0-9]+ '
 pointer move 1270 790 sleep 500
 shot suggestions.png
 
 # 3. Down and Enter take the first; Enter goes there.
 keys '<down>' '<ret>'
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR suggestion chosen index=0 text=/tmp/fhome/Pictures/'
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR suggestion chosen index=0 text=/tmp/fhome/Pictures/'
 expect_log /tmp/f.log 'ZFILES TITLEBAR kind=1 id=4 detail=0 text=/tmp/fhome/Pictures/'
 keys '<ret>'
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Pictures items='
@@ -114,9 +114,9 @@ keys '<ctrl-l>'
 keys '<ctrl-a>' '/tmp/fhome/D'
 sleep 2
 expect_log /tmp/f.log 'ZFILES LOCATION suggest text=/tmp/fhome/D count=3'
-set -- $(guest "grep 'ZWL TITLEBAR suggestions shown ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) row=\([0-9]*\) first=\([0-9]*\) .*/\1 \5 \4/p')
+set -- $(guest "grep 'KWL TITLEBAR suggestions shown ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) row=\([0-9]*\) first=\([0-9]*\) .*/\1 \5 \4/p')
 click $((${1:-0} + 30)) $((${2:-0} + ${3:-28} + ${3:-28} / 2)) 900
-expect_log /tmp/zdesktop.log 'ZWL TITLEBAR suggestion chosen index=1 text=/tmp/fhome/Documents/'
+expect_log /tmp/zdesktop.log 'KWL TITLEBAR suggestion chosen index=1 text=/tmp/fhome/Documents/'
 keys '<ret>'
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items='
 
@@ -126,7 +126,7 @@ keys '<ctrl-a>' '/tmp/fhome/M'
 sleep 2
 expect_log /tmp/f.log 'ZFILES LOCATION suggest text=/tmp/fhome/M count=[1-9]'
 keys '<esc>'
-expect_none /tmp/zdesktop.log 'ZWL TITLEBAR suggestion chosen index=[0-9]+ text=/tmp/fhome/M'
+expect_none /tmp/zdesktop.log 'KWL TITLEBAR suggestion chosen index=[0-9]+ text=/tmp/fhome/M'
 expect_none /tmp/f.log 'ZFILES TITLEBAR kind=2 id=4 detail=1 text=/tmp/fhome/M'
 keys '<esc>'
 expect_log /tmp/f.log 'ZFILES TITLEBAR kind=2 id=4 detail=1 text=/tmp/fhome/M'
@@ -136,6 +136,6 @@ errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
 guest "$stop_all" >/dev/null
 guest 'cat /tmp/f.log' > "$out/f.log"
-guest 'grep -E "ZWL TITLEBAR" /tmp/zdesktop.log' > "$out/zdesktop-titlebar.log"
+guest 'grep -E "KWL TITLEBAR" /tmp/zdesktop.log' > "$out/zdesktop-titlebar.log"
 [ $status = 0 ] && echo "files-p010: PASS" || echo "files-p010: FAIL"
 exit $status

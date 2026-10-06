@@ -314,7 +314,7 @@ kwl_toplevel_motion(
 	surface->window_height = (uint32_t)height;
 	error = kwl_window_send_configure(surface);
 	if (error != 0)
-		printf("ZWL RESIZE configure errno=%d\n", error);
+		printf("KWL RESIZE configure errno=%d\n", error);
 
 	/* Succeeded: the motion was the resize's. */
 	return 1;
@@ -350,10 +350,10 @@ kwl_toplevel_button(
 	server->resize = NULL;
 	error = kwl_window_send_configure(surface);
 	if (error != 0)
-		printf("ZWL RESIZE configure errno=%d\n", error);
+		printf("KWL RESIZE configure errno=%d\n", error);
 	surface->resize_final_serial = surface->configure_serial;
 	surface->resize_end_ms = kwl_milliseconds();
-	printf("ZWL RESIZE end surface=%u width=%u height=%u client=%llu\n", surface->id, surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
+	printf("KWL RESIZE end surface=%u width=%u height=%u client=%llu\n", surface->id, surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
 
 	/* A client that has drawn the last size already needs the anchor no more. */
 	window_extent(surface, &geometry_x, &geometry_y, &width, &height);
@@ -410,7 +410,7 @@ kwl_toplevel_resize_start(
 	surface->window_height = (uint32_t)height;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL RESIZE start surface=%u edges=%u width=%d height=%d client=%llu\n", surface->id, edges, width, height, (unsigned long long)surface->client->number);
+	printf("KWL RESIZE start surface=%u edges=%u width=%d height=%d client=%llu\n", surface->id, edges, width, height, (unsigned long long)surface->client->number);
 	return 0;
 }
 
@@ -467,13 +467,13 @@ kwl_ping_pong(
 
 	/* No ping is out any more. */
 	client->ping_serial = 0;
-	printf("ZWL PING pong client=%llu serial=%u\n", (unsigned long long)client->number, serial);
+	printf("KWL PING pong client=%llu serial=%u\n", (unsigned long long)client->number, serial);
 
 	/* A client that was not responding is again, and its title bars are drawn so. */
 	if (client->unresponsive) {
 		client->unresponsive = 0;
 		client->server->dirty = 1;
-		printf("ZWL PING responsive client=%llu\n", (unsigned long long)client->number);
+		printf("KWL PING responsive client=%llu\n", (unsigned long long)client->number);
 	}
 }
 
@@ -501,7 +501,7 @@ kwl_ping_check(
 		/* It is not responding; its title bars say so. */
 		client->unresponsive = 1;
 		server->dirty = 1;
-		printf("ZWL PING unresponsive client=%llu\n", (unsigned long long)client->number);
+		printf("KWL PING unresponsive client=%llu\n", (unsigned long long)client->number);
 	}
 }
 
@@ -601,7 +601,7 @@ toplevel_move(
 	if (held < 0)
 		return EPROTO;
 	if (held == 0) {
-		printf("ZWL GLASS request move surface=%u refused=no-press\n", surface->id);
+		printf("KWL GLASS request move surface=%u refused=no-press\n", surface->id);
 		return 0;
 	}
 
@@ -665,14 +665,14 @@ toplevel_resize(
 	if (held < 0)
 		return EPROTO;
 	if (held == 0) {
-		printf("ZWL RESIZE refused surface=%u reason=no-press client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL RESIZE refused surface=%u reason=no-press client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return 0;
 	}
 
 	/* A window that cannot be resized now leaves the request without effect. */
 	error = kwl_toplevel_resize_start(server, surface, edges);
 	if (error != 0) {
-		printf("ZWL RESIZE refused surface=%u reason=state client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL RESIZE refused surface=%u reason=state client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 
 		/* An inert request has no client release ownership to retain. */
 		return 0;
@@ -866,7 +866,7 @@ resize_settle(
 	surface->resize_edges = 0;
 
 	/* The log line the tests read. */
-	printf("ZWL RESIZE settled surface=%u x=%d y=%d width=%d height=%d client=%llu\n", surface->id, surface->x, surface->y, width, height, (unsigned long long)surface->client->number);
+	printf("KWL RESIZE settled surface=%u x=%d y=%d width=%d height=%d client=%llu\n", surface->id, surface->x, surface->y, width, height, (unsigned long long)surface->client->number);
 }
 
 /* Starts an accepted move from its press: the window takes the place the pointer's motion since then gives it. */

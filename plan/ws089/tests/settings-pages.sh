@@ -72,7 +72,7 @@ last=$(guest "grep 'ZSETTINGS PAGE ' /tmp/s.log | tail -1" | sed -n 's/.*ZSETTIN
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; guest "grep ERROR /tmp/zdesktop.log | head -5"; status=1; }
 guest 'cat /tmp/s.log' > "$out/settings.log"
-guest "grep -E 'ZWL (MAP|CLIENT)' /tmp/zdesktop.log" > "$out/zdesktop-map.log"
+guest "grep -E 'KWL (MAP|CLIENT)' /tmp/zdesktop.log" > "$out/zdesktop-map.log"
 guest "$stop_all" >/dev/null
 guest "rm -f $conf" >/dev/null
 [ $status = 0 ] && echo "settings-pages: PASS" || echo "settings-pages: FAIL"

@@ -214,7 +214,7 @@ kwl_data_object_gone(
 	if (server->dnd_active) {
 		/* The drag's source, or the surface it started from: the drag is over (the target hears leave). */
 		if (object == server->dnd_source || object == server->dnd_origin) {
-			printf("ZWL DATA drag end reason=gone client=%llu\n", (unsigned long long)object->client->number);
+			printf("KWL DATA drag end reason=gone client=%llu\n", (unsigned long long)object->client->number);
 			if (object == server->dnd_origin && server->dnd_source != NULL && !server->dnd_source->dead)
 				(void)kwl_emit(server->dnd_source->client, server->dnd_source->id, SOURCE_CANCELLED, NULL, 0U);
 			if (object == server->dnd_source)
@@ -241,7 +241,7 @@ kwl_data_object_gone(
 
 	/* A dropped offer that goes without its finish (the target gave up, the "ask" cancelled): its source is cancelled. */
 	if (object->kind == KWL_DATA_OFFER && object->dnd_dropped && object->data_source != NULL && !object->data_source->dead) {
-		printf("ZWL DATA drag unfinished client=%llu\n", (unsigned long long)object->client->number);
+		printf("KWL DATA drag unfinished client=%llu\n", (unsigned long long)object->client->number);
 		(void)kwl_emit(object->data_source->client, object->data_source->id, SOURCE_CANCELLED, NULL, 0U);
 		object->dnd_dropped = 0;
 	}
@@ -270,7 +270,7 @@ kwl_data_object_gone(
 	/* The selection it was: the clipboard is empty now. */
 	if (server->selection == object) {
 		server->selection = NULL;
-		printf("ZWL DATA selection none (source gone)\n");
+		printf("KWL DATA selection none (source gone)\n");
 		selection_changed(server);
 	}
 }
@@ -326,7 +326,7 @@ kwl_data_drag_release(
 
 	/* Nowhere to drop: the target (if any) hears leave, the source is cancelled. */
 	if (!drop) {
-		printf("ZWL DATA drag cancel client=%llu reason=release\n", (unsigned long long)server->dnd_origin->client->number);
+		printf("KWL DATA drag cancel client=%llu reason=release\n", (unsigned long long)server->dnd_origin->client->number);
 		drag_leave(server);
 		if (source != NULL && !source->dead)
 			(void)kwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
@@ -345,7 +345,7 @@ kwl_data_drag_release(
 	}
 
 	/* The log line the tests read. */
-	printf("ZWL DATA drag drop client=%llu target=%llu surface=%u action=%u\n", (unsigned long long)server->dnd_origin->client->number, (unsigned long long)device->client->number, server->dnd_target->id, action);
+	printf("KWL DATA drag drop client=%llu target=%llu surface=%u action=%u\n", (unsigned long long)server->dnd_origin->client->number, (unsigned long long)device->client->number, server->dnd_target->id, action);
 
 	/* The source hears that the drop was made, and at once that it is finished when the target cannot say so (before version 3). */
 	if (source != NULL && !source->dead && source->version >= DATA_ACTIONS_VERSION) {
@@ -373,7 +373,7 @@ kwl_data_drag_cancel(
 		return;
 
 	/* The target leaves, the source is cancelled, the drag is over. */
-	printf("ZWL DATA drag cancel client=%llu reason=key\n", (unsigned long long)server->dnd_origin->client->number);
+	printf("KWL DATA drag cancel client=%llu reason=key\n", (unsigned long long)server->dnd_origin->client->number);
 	drag_leave(server);
 	source = server->dnd_source;
 	if (source != NULL && !source->dead)
@@ -635,7 +635,7 @@ offer_request(
 
 	/* An offer of zdesktop's own selection: zdesktop writes the text (clipboard.c). */
 	if (offer->data_offered) {
-		printf("ZWL DATA receive client=%llu mime=%s source=history\n", (unsigned long long)offer->client->number, text);
+		printf("KWL DATA receive client=%llu mime=%s source=history\n", (unsigned long long)offer->client->number, text);
 		kwl_clipboard_offer_write(descriptor);
 		return 0;
 	}
@@ -644,12 +644,12 @@ offer_request(
 	source = offer->data_source;
 	if (source == NULL || source->dead || source->client->fatal) {
 		close(descriptor);
-		printf("ZWL DATA receive client=%llu mime=%s source=none\n", (unsigned long long)offer->client->number, text);
+		printf("KWL DATA receive client=%llu mime=%s source=none\n", (unsigned long long)offer->client->number, text);
 		return 0;
 	}
 
 	/* Succeeded: the source's client writes the type into the descriptor (the event carries it away). */
-	printf("ZWL DATA receive client=%llu mime=%s source=%llu\n", (unsigned long long)offer->client->number, text, (unsigned long long)source->client->number);
+	printf("KWL DATA receive client=%llu mime=%s source=%llu\n", (unsigned long long)offer->client->number, text, (unsigned long long)source->client->number);
 	(void)emit_string(source->client, source->id, SOURCE_SEND, text, descriptor);
 	return 0;
 }
@@ -694,7 +694,7 @@ kwl_data_select_offered(
 	/* zdesktop's selection, told to the client with the keyboard. */
 	server->selection = NULL;
 	server->selection_offered = 1;
-	printf("ZWL DATA selection history\n");
+	printf("KWL DATA selection history\n");
 	selection_changed(server);
 }
 
@@ -733,7 +733,7 @@ set_selection(
 	types = 0;
 	if (source != NULL)
 		types = source->mime_count;
-	printf("ZWL DATA selection client=%llu source=%u types=%u\n", (unsigned long long)device->client->number, source_id, types);
+	printf("KWL DATA selection client=%llu source=%u types=%u\n", (unsigned long long)device->client->number, source_id, types);
 	selection_changed(server);
 
 	/* Its text joins the clipboard's history (clipboard.c). */
@@ -807,7 +807,7 @@ send_device_selection(
 		(void)emit_string(device->client, offer->id, OFFER_OFFER, "text/plain;charset=utf-8", -1);
 		(void)emit_string(device->client, offer->id, OFFER_OFFER, "text/plain", -1);
 		(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
-		printf("ZWL DATA offer client=%llu offer=%u types=2 history=1\n", (unsigned long long)device->client->number, offer->id);
+		printf("KWL DATA offer client=%llu offer=%u types=2 history=1\n", (unsigned long long)device->client->number, offer->id);
 		return;
 	}
 
@@ -831,7 +831,7 @@ send_device_selection(
 
 	/* Succeeded: the selection names it. */
 	(void)kwl_emit(device->client, device->id, DEVICE_SELECTION, &word, sizeof(word));
-	printf("ZWL DATA offer client=%llu offer=%u types=%u\n", (unsigned long long)device->client->number, offer->id, source->mime_count);
+	printf("KWL DATA offer client=%llu offer=%u types=%u\n", (unsigned long long)device->client->number, offer->id, source->mime_count);
 }
 
 /* Sends an event whose only argument is a string, with a descriptor beside it when there is one (-1 for none). */
@@ -992,7 +992,7 @@ start_drag(
 	if (!held) {
 		if (source != NULL)
 			(void)kwl_emit(source->client, source->id, SOURCE_CANCELLED, NULL, 0U);
-		printf("ZWL DATA drag refused client=%llu buttons=%u serial=%u\n", (unsigned long long)device->client->number, server->buttons_down, serial);
+		printf("KWL DATA drag refused client=%llu buttons=%u serial=%u\n", (unsigned long long)device->client->number, server->buttons_down, serial);
 		return 0;
 	}
 
@@ -1017,7 +1017,7 @@ start_drag(
 	}
 
 	/* The line. */
-	printf("ZWL DATA drag start client=%llu source=%u types=%u actions=%u icon=%u\n", (unsigned long long)device->client->number, source_id, types, actions, icon_id);
+	printf("KWL DATA drag start client=%llu source=%u types=%u actions=%u icon=%u\n", (unsigned long long)device->client->number, source_id, types, actions, icon_id);
 
 	/* The pointer is the drag's now: the surface it was on hears leave. */
 	if (server->pointer_surface != NULL) {
@@ -1069,9 +1069,9 @@ offer_accept(
 	if (text != NULL)
 		offer->dnd_accepted = 1;
 	if (text != NULL) {
-		printf("ZWL DATA drag accept client=%llu mime=%s\n", (unsigned long long)offer->client->number, text);
+		printf("KWL DATA drag accept client=%llu mime=%s\n", (unsigned long long)offer->client->number, text);
 	} else {
-		printf("ZWL DATA drag accept client=%llu mime=(none)\n", (unsigned long long)offer->client->number);
+		printf("KWL DATA drag accept client=%llu mime=(none)\n", (unsigned long long)offer->client->number);
 	}
 
 	/* Succeeded: the source hears it as its target. */
@@ -1126,7 +1126,7 @@ offer_set_actions(
 	 */
 	if (offer->dnd_dropped && offer->dnd_action == ACTION_ASK && preferred != ACTION_NONE && preferred != ACTION_ASK) {
 		offer->dnd_action = preferred;
-		printf("ZWL DATA drag chosen client=%llu action=%u\n", (unsigned long long)offer->client->number, preferred);
+		printf("KWL DATA drag chosen client=%llu action=%u\n", (unsigned long long)offer->client->number, preferred);
 		if (offer->version >= DATA_ACTIONS_VERSION)
 			(void)kwl_emit(offer->client, offer->id, OFFER_ACTION, &preferred, sizeof(preferred));
 		if (offer->data_source != NULL && !offer->data_source->dead && offer->data_source->version >= DATA_ACTIONS_VERSION)
@@ -1155,7 +1155,7 @@ offer_finish(
 
 	/* The source, still there, hears it. */
 	source = offer->data_source;
-	printf("ZWL DATA drag finish client=%llu action=%u\n", (unsigned long long)offer->client->number, offer->dnd_action);
+	printf("KWL DATA drag finish client=%llu action=%u\n", (unsigned long long)offer->client->number, offer->dnd_action);
 	if (source != NULL && !source->dead && source->version >= DATA_ACTIONS_VERSION)
 		(void)kwl_emit(source->client, source->id, SOURCE_DND_FINISHED, NULL, 0U);
 }
@@ -1384,7 +1384,7 @@ drag_enter(
 	server->dnd_target = surface;
 	server->dnd_target_device = device;
 	server->dnd_offer = offer;
-	printf("ZWL DATA drag enter client=%llu surface=%u offer=%u x=%d y=%d\n", (unsigned long long)device->client->number, surface->id, words[4], (int32_t)words[2] / 256, (int32_t)words[3] / 256);
+	printf("KWL DATA drag enter client=%llu surface=%u offer=%u x=%d y=%d\n", (unsigned long long)device->client->number, surface->id, words[4], (int32_t)words[2] / 256, (int32_t)words[3] / 256);
 }
 
 /* Tells the target that the drag left it (its offer is no longer the drag's). */
@@ -1406,7 +1406,7 @@ drag_leave(
 	/* Its device hears leave. */
 	if (!device->dead)
 		(void)kwl_emit(device->client, device->id, DEVICE_LEAVE, NULL, 0U);
-	printf("ZWL DATA drag leave client=%llu surface=%u\n", (unsigned long long)device->client->number, server->dnd_target->id);
+	printf("KWL DATA drag leave client=%llu surface=%u\n", (unsigned long long)device->client->number, server->dnd_target->id);
 
 	/* Succeeded: no target. */
 	server->dnd_target = NULL;
@@ -1484,7 +1484,7 @@ drag_action(
 	if (action == offer->dnd_action)
 		return;
 	offer->dnd_action = action;
-	printf("ZWL DATA drag action client=%llu action=%u\n", (unsigned long long)offer->client->number, action);
+	printf("KWL DATA drag action client=%llu action=%u\n", (unsigned long long)offer->client->number, action);
 
 	/* The offer hears it (version 3). */
 	if (offer->version >= DATA_ACTIONS_VERSION)

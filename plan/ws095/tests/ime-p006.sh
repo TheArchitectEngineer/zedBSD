@@ -2,16 +2,16 @@
 # ws095-p006: Terminal and the input method on the Venus guest of the Settings image with the input method
 # (plan/ws089/tests/config-amd64-settings-ime.mk: the terminal, keiland-ime and its dictionary, the fallback font).
 # zdesktop --glass at 1280x800 starts /usr/libexec/keiland-ime; the terminal runs the shell.  Checks:
-#  1. The input method follows the terminal (ZWL IME activate client=); the CJK fallback font is open (no ZTERM FONT
+#  1. The input method follows the terminal (KWL IME activate client=); the CJK fallback font is open (no ZTERM FONT
 #     fallback error).
 #  2. Japanese (Alt+Space): "nihongo", Space, Enter commits 日本語 after "echo " (ZTERM IME commit text=日本語); Alt+Space
 #     back and Enter: the shell prints 日本語 (shown.png, the line drawn with the fallback font) and, sent to a file,
 #     the file reads 日本語.
 #  3. A password prompt: `stty -echo; read secret` (the echo off on a whole line, as sudo, su, ssh and passwd have it)
-#     turns the text input off (ZTERM IME secret=1, ZWL IME deactivate); Alt+Space to Japanese and "abc" typed reach the
-#     shell as keys (no preedit, the file reads abc); `stty echo` turns it on again (ZTERM IME secret=0, ZWL IME activate
+#     turns the text input off (ZTERM IME secret=1, KWL IME deactivate); Alt+Space to Japanese and "abc" typed reach the
+#     shell as keys (no preedit, the file reads abc); `stty echo` turns it on again (ZTERM IME secret=0, KWL IME activate
 #     a second time), and "kana" is composed again (ZTERM IME preedit=かな).
-#  No ZWL ERROR in zdesktop's log.
+#  No KWL ERROR in zdesktop's log.
 #
 #   SETTINGS_CONFIG=plan/ws089/tests/config-amd64-settings-ime.mk plan/ws089/tests/build-settings-image.sh BUILD
 #   plan/ws095/tests/ime-p006.sh BUILD/hdd-image.img [OUTDIR]
@@ -80,14 +80,14 @@ guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; cd /root; /bin/terminal --token=p
 expect_log /tmp/t.log 'ZTERM START run=p006'
 
 # 1. The input method follows the terminal; the fallback font opened.
-expect_log /tmp/zdesktop.log 'ZWL IME activate client='
+expect_log /tmp/zdesktop.log 'KWL IME activate client='
 n=$(count /tmp/t.log 'ZTERM FONT fallback')
 [ "$n" = 0 ] && echo "font: fallback opened ok" || { echo "font: fallback error FAIL"; status=1; }
 
 # 2. 日本語 composed, committed after "echo ", printed by the shell, and written to a file.
 keys 'echo '
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'nihongo'
 expect_log /tmp/t.log 'ZTERM IME preedit=にほんご'
 keys ' '
@@ -95,7 +95,7 @@ expect_log /tmp/t.log 'ZTERM IME preedit=日本語'
 keys '\n'
 expect_log /tmp/t.log 'ZTERM IME commit bytes=9 text=日本語'
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct'
 keys '\n'
 sleep 1
 shot shown.png
@@ -106,7 +106,7 @@ expect_file /root/ja.txt '日本語'
 # 3. A password prompt: the text input off while the echo is off on a whole line.
 keys 'stty -echo; read secret; stty echo; echo "$secret" > /root/secret.txt' '\n'
 expect_log /tmp/t.log 'ZTERM IME secret=1'
-expect_log /tmp/zdesktop.log 'ZWL IME deactivate'
+expect_log /tmp/zdesktop.log 'KWL IME deactivate'
 keys '<alt-spc>'
 keys 'abc'
 sleep 1
@@ -117,7 +117,7 @@ keys '\n'
 sleep 2
 expect_file /root/secret.txt 'abc'
 expect_log /tmp/t.log 'ZTERM IME secret=0'
-expect_count /tmp/zdesktop.log 'ZWL IME activate client=' 2
+expect_count /tmp/zdesktop.log 'KWL IME activate client=' 2
 keys 'kana'
 expect_log /tmp/t.log 'ZTERM IME preedit=かな'
 sleep 1
@@ -125,9 +125,9 @@ shot after-secret.png
 keys '<esc>'
 
 guest 'grep -E "ZTERM (IME|START|FONT)" /tmp/t.log' > "$out/t-ime.log"
-guest 'grep -E "ZWL (IME|ERROR)|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
-errors=$(count /tmp/zdesktop.log 'ZWL ERROR')
-[ "$errors" = 0 ] && echo "no ZWL ERROR ok" || { echo "ZWL ERROR FAIL"; status=1; }
+guest 'grep -E "KWL (IME|ERROR)|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
+errors=$(count /tmp/zdesktop.log 'KWL ERROR')
+[ "$errors" = 0 ] && echo "no KWL ERROR ok" || { echo "KWL ERROR FAIL"; status=1; }
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 [ $status -eq 0 ] && echo "ime-p006: PASS" || echo "ime-p006: FAIL"
 exit $status

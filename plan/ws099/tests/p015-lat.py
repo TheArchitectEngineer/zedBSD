@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ws099-p015: reads zdesktop's per-frame time lines (ZWL LAT pen/adopt/submit/shown, --log-frames) and prints the
+# ws099-p015: reads zdesktop's per-frame time lines (KWL LAT pen/adopt/submit/shown, --log-frames) and prints the
 # pen's latency (a pen place sent to the surface -> the end of the frame that shows that surface's next image)
 # and the interval between the frames that show a new image of it during a stroke.
 #   plan/ws099/tests/p015-lat.py LAT.LOG
@@ -8,7 +8,7 @@ import bisect, re, statistics, sys
 
 pens, adopts, submits, shown_direct, shown = [], {}, [], [], {}
 for line in open(sys.argv[1], errors="replace"):
-    m = re.match(r"ZWL LAT (\w+) (.*)", line)
+    m = re.match(r"KWL LAT (\w+) (.*)", line)
     if not m:
         continue
     kind, rest = m.groups()

@@ -2,15 +2,15 @@
 # ws158-p003: the compositor's text in Japanese, on the Venus guest of plan/ws158/tests/config-amd64-tr.mk (zdesktop
 # --glass at 1280x800).  Judged by zdesktop's log and the pictures, never the guest's console:
 #  1. The catalog is installed (/usr/share/keiland/locale/ja/wayland.tr); zdesktop starts in English
-#     ("ZWL LANGUAGE language=en from=setting error=0"); en-bar.png.
-#  2. keiland-settings set ui.language 1: "ZWL LANGUAGE language=ja from=setting error=0" without a restart;
+#     ("KWL LANGUAGE language=en from=setting error=0"); en-bar.png.
+#  2. keiland-settings set ui.language 1: "KWL LANGUAGE language=ja from=setting error=0" without a restart;
 #     ja-bar.png (the clock "10月5日(月)  14:05").
-#  3. The volume's popup (its icon from "ZWL VOLUME icon"): ja-volume.png (サウンド, 消音).
+#  3. The volume's popup (its icon from "KWL VOLUME icon"): ja-volume.png (サウンド, 消音).
 #  4. The network's menu, then its details (Alt and a click): ja-network.png, ja-network-details.png (状態, IPv4 アドレス).
 #  5. Wiseview (Super+Tab) with one window: ja-wiseview.png (ほかのウインドウはありません).
 #  6. (The lock screen in Japanese is the AAT's desktop.language.lock-japanese: zdesktop locks only a session sessiond
 #     started, which can unlock it (greeter.c kwl_lock), and this guest's zdesktop runs alone -- T1-207's MISSING line.)
-#  7. ui.language 0: "ZWL LANGUAGE language=en"; no ERROR in zdesktop's log.
+#  7. ui.language 0: "KWL LANGUAGE language=en"; no ERROR in zdesktop's log.
 # PASS: the last line "tr-p003: status=0", and the pictures show the Japanese text (to Q1).
 #   plan/tools/files/files-guest.sh start BUILD/hdd-image.img
 #   plan/ws158/tests/tr-p003-guest.sh [OUTDIR]          (default build/ws158-shots/p003)
@@ -49,9 +49,9 @@ expect_log() {
 	done
 	if [ "$found" -ge 1 ]; then echo "log: $1 ok"; else echo "log: $1 MISSING"; status=1; fi
 }
-# The middle of the last "ZWL NAME icon x= y= width= height=" line.
+# The middle of the last "KWL NAME icon x= y= width= height=" line.
 icon() {
-	guest "grep 'ZWL $1 icon x=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
+	guest "grep 'KWL $1 icon x=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 click_icon() {
 	set -- $(icon "$1")
@@ -64,24 +64,24 @@ guest "$stop_all" >/dev/null
 if guest 'test -s /usr/share/keiland/locale/ja/wayland.tr && echo there' | grep -q there; then echo "catalog: ok"; else echo "catalog: MISSING"; status=1; fi
 guest "$env; rm -f /tmp/wayland-0; c=/root/.config/keiland/desktop.conf; [ -f \$c ] && grep -v '^ui.language=' \$c > \$c.new; [ -f \$c.new ] && mv \$c.new \$c; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
-expect_log 'ZWL LANGUAGE language=en from=setting error=0'
+expect_log 'KWL LANGUAGE language=en from=setting error=0'
 check "$out/en-bar.png" >/dev/null
 
 # 2. Japanese without a restart.
 guest "$env; /bin/keiland-settings set ui.language 1" >/dev/null
-expect_log 'ZWL LANGUAGE language=ja from=setting error=0'
+expect_log 'KWL LANGUAGE language=ja from=setting error=0'
 sleep 1
 check "$out/ja-bar.png" >/dev/null
 
 # 3. The volume's popup.
 click_icon VOLUME
-expect_log 'ZWL VOLUME popup open'
+expect_log 'KWL VOLUME popup open'
 check "$out/ja-volume.png" >/dev/null
 keys "<esc>"
 
 # 4. The network's menu, then its details.
 click_icon NETWORK
-expect_log 'ZWL NETWORK open'
+expect_log 'KWL NETWORK open'
 check "$out/ja-network.png" >/dev/null
 keys "<esc>"
 set -- $(icon NETWORK)
@@ -93,14 +93,14 @@ if [ $# -eq 4 ]; then
 	key alt false
 	sleep 1.5
 fi
-expect_log 'ZWL NETWORK info open'
+expect_log 'KWL NETWORK info open'
 check "$out/ja-network-details.png" >/dev/null
 keys "<esc>"
 
 # 5. Wiseview with one window (Files).
 guest "$env; /bin/files > /tmp/files.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 keys "<super-tab>"
-expect_log 'ZWL WISEVIEW opening'
+expect_log 'KWL WISEVIEW opening'
 sleep 1
 check "$out/ja-wiseview.png" >/dev/null
 keys "<esc>"
@@ -110,10 +110,10 @@ keys "<esc>"
 # 7. Back to English; no error.
 guest "$env; /bin/keiland-settings set ui.language 0" >/dev/null
 guest 'cat /tmp/zdesktop.log' > "$out/.log"
-n=$(grep -c 'ZWL LANGUAGE language=en from=setting error=0' "$out/.log")
+n=$(grep -c 'KWL LANGUAGE language=en from=setting error=0' "$out/.log")
 [ "$n" -ge 2 ] && echo "back to English: ok" || { echo "back to English: MISSING"; status=1; }
 if [ "$(count 'ERROR')" = 0 ]; then echo "no-error: ok"; else echo "no-error: FAILED"; status=1; fi
-LC_ALL=C.UTF-8 grep -E 'ZWL LANGUAGE' "$out/.log"
+LC_ALL=C.UTF-8 grep -E 'KWL LANGUAGE' "$out/.log"
 guest "$stop_all" >/dev/null
 echo "tr-p003: status=$status"
 exit $status

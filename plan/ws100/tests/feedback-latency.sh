@@ -3,7 +3,7 @@
 # feedback sound, on the Venus guest of the volume image (build-volume-image.sh) with QEMU's HD Audio (volume-guest.sh),
 # kei's session at boot.  audiod is started again with AUDIOD_TIMING_LOG (it logs when a feedback sound is asked for,
 # the device byte and time it is mixed at, and the time the device takes that byte); zdesktop logs the change and the
-# request (ZWL VOLUME set/feedback at_ms).  Both clocks are the guest's CLOCK_MONOTONIC.  For each change: zdesktop's
+# request (KWL VOLUME set/feedback at_ms).  Both clocks are the guest's CLOCK_MONOTONIC.  For each change: zdesktop's
 # request after the change, audiod's receipt, the mix, and the device reaching the sound; the medians against the
 # target (FEEDBACK_TARGET_MS, 50 ms).  Then the host's measure (wav-latency.py): from the QMP input to the sound's start
 # in QEMU's WAV, which also counts the input's way into the guest and QEMU's codec buffer (up to 8 KiB, which the
@@ -44,17 +44,17 @@ expect_more() {
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 VOLUME_AUDIO=duplex timeout 180 sh plan/ws100/tests/volume-guest.sh start "$image" >/dev/null 2>&1
 sleep 35
-expect_more $log 'ZWL HANDOFF go=1' 0 60
-expect_more $log 'ZWL VOLUME reachable=1 device=1' 0 20
+expect_more $log 'KWL HANDOFF go=1' 0 60
+expect_more $log 'KWL VOLUME reachable=1 device=1' 0 20
 
 # audiod again, timing its feedback sounds; zdesktop reaches it again by itself.
-reached=$(count $log 'ZWL VOLUME reachable=1 device=1')
+reached=$(count $log 'KWL VOLUME reachable=1 device=1')
 guest 'service stop audiod >/dev/null 2>&1; sleep 1; rm -f /tmp/audiod-timing.log; AUDIOD_TIMING_LOG=/tmp/audiod-timing.log /sbin/audiod > /tmp/audiod.out 2>&1 </dev/null & sleep 1; echo started' >/dev/null
-expect_more $log 'ZWL VOLUME reachable=1 device=1' "$reached" 20
+expect_more $log 'KWL VOLUME reachable=1 device=1' "$reached" 20
 sleep 2
 
 # The icon.
-set -- $(last 'ZWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+set -- $(last 'KWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 ix=$((${1:-900} + ${3:-30} / 2)); iy=$((${2:-3} + ${4:-28} / 2))
 
 # Wheel notches over the icon, down and up in turn, well apart; the host's times of the notches and the WAV's size
@@ -69,7 +69,7 @@ python3 plan/ws100/tests/wav-latency.py record "$GUEST_RUNTIME/qmp.sock" "$GUEST
 
 # Releases on the slider: the popup, a press and a release at a place, a moment apart.
 pointer move $((ix - 2)) $iy sleep 200 move $ix $iy sleep 300 down sleep 60 up sleep 800
-set -- $(last 'ZWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
+set -- $(last 'KWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
 px=${1:-900} pw=${3:-260} slider=${5:-100}
 track_left=$((px + 23)) track_width=$((pw - 46)) sy=$((slider + 17))
 steps=""
@@ -83,7 +83,7 @@ python3 plan/ws100/tests/wav-latency.py record "$GUEST_RUNTIME/qmp.sock" "$GUEST
 
 # The lines, and the guest stopped (the WAV complete).
 sleep 1
-guest "grep -E 'ZWL VOLUME (set|feedback)' $log" > "$out/zdesktop.log"
+guest "grep -E 'KWL VOLUME (set|feedback)' $log" > "$out/zdesktop.log"
 guest 'cat /tmp/audiod-timing.log' > "$out/audiod.log"
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 cp "$GUEST_RUNTIME/out.wav" "$out/out.wav" 2>/dev/null
@@ -91,8 +91,8 @@ cp "$GUEST_RUNTIME/out.wav" "$out/out.wav" 2>/dev/null
 # Each change's way, and the medians.
 python3 - "$out/zdesktop.log" "$out/audiod.log" "${FEEDBACK_TARGET_MS:-50}" <<'PY' | tee "$out/latency.txt"
 import re, statistics, sys
-sets = [(int(m.group(2)), m.group(1)) for m in (re.search(r'ZWL VOLUME set .*via=(\S+) final=1 at_ms=(\d+)', l) for l in open(sys.argv[1])) if m]
-requests = [int(m.group(1)) for m in (re.search(r'ZWL VOLUME feedback at_ms=(\d+)', l) for l in open(sys.argv[1])) if m]
+sets = [(int(m.group(2)), m.group(1)) for m in (re.search(r'KWL VOLUME set .*via=(\S+) final=1 at_ms=(\d+)', l) for l in open(sys.argv[1])) if m]
+requests = [int(m.group(1)) for m in (re.search(r'KWL VOLUME feedback at_ms=(\d+)', l) for l in open(sys.argv[1])) if m]
 asked, mixed, played = [], [], []
 for line in open(sys.argv[2]):
 	m = re.search(r'feedback asked at_ms=(\d+)', line)

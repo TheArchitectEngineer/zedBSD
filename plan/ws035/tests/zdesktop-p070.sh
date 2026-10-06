@@ -38,13 +38,13 @@ processes() {
 
 # The centre of an icon, from zdesktop's log.
 icon() {
-	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
 # zdesktop alone (no X server yet).
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/x11server.pid; rmdir /tmp/x11server.lock 2>/dev/null; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass $picture --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 echo "xserver before: $(processes xserver)"
 
 # 1. Home, then the X terminal's icon.
@@ -54,9 +54,9 @@ echo "X terminal icon at ${1:-?},${2:-?}"
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 9000
 pointer move 1250 780 sleep 400
 check "$out/xterm.png" >/dev/null
-expect_log 'ZWL HOME launch name=X terminal pid='
+expect_log 'KWL HOME launch name=X terminal pid='
 zwl_app_clients
-expect_log "ZWL MAP client=$zc1 "
+expect_log "KWL MAP client=$zc1 "
 servers=$(processes xserver); zterm=$(processes zterm)
 echo "after X terminal: x11server=$servers zterm=$zterm"
 [ "$servers" = 1 ] && [ "$zterm" = 1 ] || status=1
@@ -68,8 +68,8 @@ echo "Gears icon at ${1:-?},${2:-?}"
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 12000
 pointer move 1250 780 sleep 400
 check "$out/gears.png" >/dev/null
-expect_log 'ZWL HOME launch name=Gears pid='
-maps=$(guest "grep -c 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log" | tail -1)
+expect_log 'KWL HOME launch name=Gears pid='
+maps=$(guest "grep -c 'KWL MAP client=$zc1 ' /tmp/zdesktop.log" | tail -1)
 echo "the server's windows mapped: $maps"
 [ "${maps:-0}" -ge 2 ] 2>/dev/null || status=1
 servers=$(processes xserver); gears=$(processes zgears)

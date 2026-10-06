@@ -17,8 +17,8 @@
  * press outside the card and a swipe of two fingers down on the touch pad
  * cancel; Tab and the arrows move the keys' choice, Enter and Space take
  * it.  While it shows it takes every key, button and motion.
- * Log: "ZWL POWER dialog open source=S poweroff=0|1 restart=0|1" and
- * "ZWL POWER choice=poweroff|restart|logout|cancel via=V error=E".
+ * Log: "KWL POWER dialog open source=S poweroff=0|1 restart=0|1" and
+ * "KWL POWER choice=poweroff|restart|logout|cancel via=V error=E".
  */
 
 #include "kwl.h"
@@ -98,7 +98,7 @@ kwl_power_dialog_open(
 	dialog->pressed = -1;
 	(void)snprintf(dialog->source, sizeof(dialog->source), "%s", source);
 	server->dirty = 1;
-	printf("ZWL POWER dialog open source=%s poweroff=%u restart=%u\n", dialog->source, poweroff, restart);
+	printf("KWL POWER dialog open source=%s poweroff=%u restart=%u\n", dialog->source, poweroff, restart);
 }
 
 /*
@@ -442,7 +442,7 @@ power_choose(
 	}
 
 	/* The log says what was chosen and how it went. */
-	printf("ZWL POWER choice=%s via=%s error=%d\n", kwl_power_choice_name(choice), via, error);
+	printf("KWL POWER choice=%s via=%s error=%d\n", kwl_power_choice_name(choice), via, error);
 }
 
 /*
@@ -457,7 +457,7 @@ power_logout(
 	int handed;
 
 	/* Through sessiond, or the compositor stops. */
-	printf("ZWL SESSION logout\n");
+	printf("KWL SESSION logout\n");
 	handed = kwl_handoff_logout(server);
 	if (!handed)
 		kwl_request_stop();

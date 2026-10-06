@@ -10,7 +10,7 @@
 # ws035-p120: the demonstration logs in as the person kei ("Kei", no password; the base accounts, userland/base/etc):
 # the session's log is /run/user/1000/session.log, the PDF goes to /home/kei/Documents, and the walk checks that
 # Notes saved its notebook in /home/kei/Documents/Notes as kei, that the session has the group network, and that
-# PDF Viewer opened over the fullscreen Notes leaves the system bar away (ZWL GLASS bar hidden).
+# PDF Viewer opened over the fullscreen Notes leaves the system bar away (KWL GLASS bar hidden).
 #
 #   plan/ws035/tests/build-demo-venus-image.sh build/amd64
 #   VENUS_SIZE=1920x1280 plan/tools/files/files-guest.sh start build/amd64/hdd-image.img
@@ -110,14 +110,14 @@ print("shot 00-splash")
 EOF
 
 # 01. The greeter.
-wait_log /var/log/greeter.log 'ZWL GREETER open' 90
+wait_log /var/log/greeter.log 'KWL GREETER open' 90
 sleep 3
 shot 01-greeter
 
 # 02. The login (kei, no password: Enter): the desktop.
-wait_log /var/log/greeter.log "ZWL GREETER open users=1 selected=$user" 5
+wait_log /var/log/greeter.log "KWL GREETER open users=1 selected=$user" 5
 keys '\n'
-wait_log $session 'ZWL HANDOFF go=1' 30
+wait_log $session 'KWL HANDOFF go=1' 30
 wait_log /var/log/sessiond.log "SESSIOND SESSION start user=$user uid=$uid" 5
 sleep 4
 shot 02-desktop
@@ -132,7 +132,7 @@ fi
 
 # 03. App Home: the swipe from the top-left corner.
 stroke 4 4 240 240 10 30 1500
-wait_log $session 'ZWL HOME opened' 10
+wait_log $session 'KWL HOME opened' 10
 shot 03-apphome
 
 # 04. Files from App Home.
@@ -158,7 +158,7 @@ shot 05b-xterminal
 
 # 06. Notes: the swipe from the top-right corner (fullscreen), and a stroke on the page.
 stroke $((width - 6)) 6 $((width - 166)) 166 8 40 8000
-wait_log $session 'ZWL CORNER notes (launch|surface)' 10
+wait_log $session 'KWL CORNER notes (launch|surface)' 10
 pointer move 700 300 sleep 200 down sleep 30 move 740 380 sleep 20 move 760 420 sleep 20 move 800 340 sleep 20 \
     move 820 300 sleep 20 move 860 380 sleep 20 move 880 420 sleep 20 move 920 340 sleep 20 move 940 300 sleep 30 up sleep 800
 park
@@ -181,7 +181,7 @@ sleep 1.5
 keys '<down>' '\n'
 sleep 5
 park
-wait_log $session 'ZWL GLASS bar hidden fullscreen=' 5
+wait_log $session 'KWL GLASS bar hidden fullscreen=' 5
 shot 07-pdfviewer
 
 # 08. Wiseview: the swipe up from the bottom edge.
@@ -194,13 +194,13 @@ sleep 1.5
 # 09. The lock screen from App Home's Lock Screen.
 stroke 4 4 240 240 10 30 1500
 tap "$(icon_x 1)" 618 2500
-wait_log $session 'ZWL LOCK locked reason=home' 10
+wait_log $session 'KWL LOCK locked reason=home' 10
 park
 shot 09-lock
 
 # 10. Unlocked (Enter: kei has no password).
 keys '\n'
-wait_log $session 'ZWL LOCK unlocked' 10
+wait_log $session 'KWL LOCK unlocked' 10
 sleep 2
 shot 10-unlocked
 

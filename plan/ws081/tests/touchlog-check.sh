@@ -99,8 +99,8 @@ downs=$(value "$out/latency.txt" downs)
 [ "${downs:-0}" -ge 12 ] && verdict ok "latency: every finger put down measured ($downs)" || verdict no "latency: every finger put down measured (${downs:-0}, at least 12)"
 inertia=$(value "$out/latency.txt" inertia_max_gap_ms)
 [ "${inertia:-0}" -gt 0 ] && verdict ok "inertia: the glide's frames measured (longest interval $inertia ms)" || verdict no "inertia: the glide's frames measured"
-errors=$(grep -c 'ZWL ERROR' "$out/zdesktop.log")
-[ "$errors" = 0 ] && verdict ok "no ZWL ERROR" || verdict no "ZWL ERROR ($errors)"
+errors=$(grep -c 'KWL ERROR' "$out/zdesktop.log")
+[ "$errors" = 0 ] && verdict ok "no KWL ERROR" || verdict no "KWL ERROR ($errors)"
 
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1
 [ $status -eq 0 ] && echo "touchlog-check: PASS" || echo "touchlog-check: FAIL"

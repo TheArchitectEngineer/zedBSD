@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ws099-p001, C5: reads zdesktop's log (--log-frames, with the at_ms of ZWL COMPOSE and of App Home's and Wiseview's
+# ws099-p001, C5: reads zdesktop's log (--log-frames, with the at_ms of KWL COMPOSE and of App Home's and Wiseview's
 # open and close lines) and prints, for each open and close, the milliseconds from the request to the first frame
 # composed after it, to the settled line, and the longest gap between frames while it moves.
 #
@@ -10,18 +10,18 @@ import re
 import sys
 
 STARTS = {
-    'wiseview-open': re.compile(r'ZWL WISEVIEW opening key at_ms=(\d+)'),
-    'wiseview-close': re.compile(r'ZWL WISEVIEW close key at_ms=(\d+)'),
-    'home-open': re.compile(r'ZWL HOME open via=\S+ at_ms=(\d+)'),
-    'home-close': re.compile(r'ZWL HOME close via=\S+ at_ms=(\d+)'),
+    'wiseview-open': re.compile(r'KWL WISEVIEW opening key at_ms=(\d+)'),
+    'wiseview-close': re.compile(r'KWL WISEVIEW close key at_ms=(\d+)'),
+    'home-open': re.compile(r'KWL HOME open via=\S+ at_ms=(\d+)'),
+    'home-close': re.compile(r'KWL HOME close via=\S+ at_ms=(\d+)'),
 }
 ENDS = {
-    'wiseview-open': re.compile(r'ZWL WISEVIEW open windows=(\d+) at_ms=(\d+)'),
-    'wiseview-close': re.compile(r'ZWL WISEVIEW closed at_ms=(\d+)'),
-    'home-open': re.compile(r'ZWL HOME opened .* at_ms=(\d+)'),
-    'home-close': re.compile(r'ZWL HOME closed at_ms=(\d+)'),
+    'wiseview-open': re.compile(r'KWL WISEVIEW open windows=(\d+) at_ms=(\d+)'),
+    'wiseview-close': re.compile(r'KWL WISEVIEW closed at_ms=(\d+)'),
+    'home-open': re.compile(r'KWL HOME opened .* at_ms=(\d+)'),
+    'home-close': re.compile(r'KWL HOME closed at_ms=(\d+)'),
 }
-FRAME = re.compile(r'ZWL COMPOSE frame=\d+ image=\d+ windows=(\d+) at_ms=(\d+)')
+FRAME = re.compile(r'KWL COMPOSE frame=\d+ image=\d+ windows=(\d+) at_ms=(\d+)')
 
 
 def main():

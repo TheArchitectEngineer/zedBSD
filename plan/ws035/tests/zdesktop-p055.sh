@@ -3,8 +3,8 @@
 # plan/tools/files/build-files-image.sh).  zdesktop --log-frames at 1280x800 with /bin/wlshm --band (a
 # 400x300 blue window with a yellow band moving down it, a new image every frame).
 # In the glass look and then the plain look:
-#  1. The window's new images are drawn in its body alone (ZWL DAMAGE lines of the body's size).
-#  2. The pointer moved over the body is drawn in the cursor's places too (ZWL DAMAGE lines other than
+#  1. The window's new images are drawn in its body alone (KWL DAMAGE lines of the body's size).
+#  2. The pointer moved over the body is drawn in the cursor's places too (KWL DAMAGE lines other than
 #     the body's alone: the body and the cursor's places together).
 #  3. band-<look>.png, taken while the band moves and the pointer rests on the body: down a column of the
 #     body there is one band 20 rows high and the window's blue elsewhere -- no band left behind by an
@@ -42,21 +42,21 @@ run_look() {
 	look=$1
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=300 --width=1280 --height=800 --log-frames $2 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 --log-frames $2 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/wlshm --size=400x300 --color=ff3060c0 --band=ffe0e040 --frames=100000 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 	zwl_app_clients
-	set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+	set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 	wx=${1:-0}; wy=${2:-0}
 	echo "$look: window at $wx,$wy"
 
 	# 1. The images, in the body.
-	expect_count "$look: body damage" "grep -cE 'ZWL DAMAGE .* width=400 height=300' /tmp/zdesktop.log" 10
+	expect_count "$look: body damage" "grep -cE 'KWL DAMAGE .* width=400 height=300' /tmp/zdesktop.log" 10
 
 	# 2. The pointer across the body (a zigzag), then resting at its middle.
-	before=$(guest "grep -c 'ZWL DAMAGE' /tmp/zdesktop.log" | tail -1)
+	before=$(guest "grep -c 'KWL DAMAGE' /tmp/zdesktop.log" | tail -1)
 	pointer move $((wx + 40)) $((wy + 40)) sleep 200 move $((wx + 120)) $((wy + 60)) sleep 100 move $((wx + 200)) $((wy + 40)) sleep 100 \
 	    move $((wx + 280)) $((wy + 80)) sleep 100 move $((wx + 360)) $((wy + 40)) sleep 100 move $((wx + 200)) $((wy + 150)) sleep 800
-	expect_count "$look: cursor damage" "grep -E 'ZWL DAMAGE' /tmp/zdesktop.log | grep -vc 'width=400 height=300'" 1
+	expect_count "$look: cursor damage" "grep -E 'KWL DAMAGE' /tmp/zdesktop.log | grep -vc 'width=400 height=300'" 1
 
 	# 3. The picture: one band down a column clear of the cursor, and no cursor where it passed.
 	check "$out/band-$look.png" >/dev/null
@@ -99,7 +99,7 @@ else:
 EOF
 	errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 	[ "${errors:-1}" = 0 ] && echo "$look: zdesktop: no ERROR" || { echo "$look: zdesktop: ERROR lines"; status=1; }
-	guest 'grep -c "ZWL DAMAGE" /tmp/zdesktop.log; grep -c "ZWL COMPOSE" /tmp/zdesktop.log' > "$out/frames-$look.txt"
+	guest 'grep -c "KWL DAMAGE" /tmp/zdesktop.log; grep -c "KWL COMPOSE" /tmp/zdesktop.log' > "$out/frames-$look.txt"
 }
 
 run_look glass --glass

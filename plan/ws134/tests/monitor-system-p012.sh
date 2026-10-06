@@ -27,14 +27,14 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 # zdesktop alone (the probe runs as root, as zdesktop does: the same user).
 guest "$stop_all" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=300 --width=1280 --height=800 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; echo started" >/dev/null
 
 # 1. Quiet.
 guest "export XDG_RUNTIME_DIR=/tmp; hostname; /bin/keiland-system --timeout-ms=4000 monitor; sleep 1" > "$out/quiet.txt"
 
 # 2. A busy loop and a disk read.
 guest "export XDG_RUNTIME_DIR=/tmp; awk 'BEGIN { for (;;) ; }' & p=\$!; (sleep 1; dd if=/dev/nvme0n1 of=/dev/null bs=65536 skip=15000 count=512 >/dev/null 2>&1) & /bin/keiland-system --timeout-ms=4000 monitor; kill \$p; sleep 1" > "$out/busy.txt"
-guest 'grep "ZWL SYSTEM monitor" /tmp/zdesktop.log' > "$out/zdesktop-monitor.txt"
+guest 'grep "KWL SYSTEM monitor" /tmp/zdesktop.log' > "$out/zdesktop-monitor.txt"
 guest "grep -c ERROR /tmp/zdesktop.log" | tail -1 > "$out/errors.txt"
 guest "$stop_all" >/dev/null
 

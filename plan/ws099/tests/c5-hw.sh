@@ -3,7 +3,7 @@
 # plan/ws075/tests/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), with the ten applications
 # of App Home open (hdmi/apps8.sh's tiles, as resize-hw.sh).  ROUNDS times: Wiseview opened with Super+Tab and closed
 # with Esc, App Home opened with the launcher and closed with Esc.  The compositor logs each request's first frame
-# (ZWL FIRST_FRAME what=... ms=..., the request to the frame's submission, ws099-p002) in the session's log, which
+# (KWL FIRST_FRAME what=... ms=..., the request to the frame's submission, ws099-p002) in the session's log, which
 # Terminal copies to /home/kei/c5-hw.log (/run is not on the disk) and is read from the image afterwards.
 # Prints the FIRST_FRAME lines, "C5-HW RESULT count=N max_ms=M over=K" and "c5-hw: PASS" (every one within LIMIT_MS,
 # default 100) or "c5-hw: FAIL".
@@ -57,7 +57,7 @@ ssh "$host" "python3 bigbang/ufs-cat.py bigbang/h4/guest.img /home/kei/c5-hw.log
 "$h4" stop "$out" > /dev/null
 
 # The verdict from the log (the Terminal's own Home opening at the end counts too).
-grep 'ZWL FIRST_FRAME' "$out/session.log" | tee "$out/first-frames.txt"
+grep 'KWL FIRST_FRAME' "$out/session.log" | tee "$out/first-frames.txt"
 python3 - "$out/first-frames.txt" "$limit" <<'PY'
 import re, sys
 values = [int(m.group(1)) for m in (re.search(r' ms=(\d+)', l) for l in open(sys.argv[1])) if m]

@@ -91,7 +91,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
         if fresh:
             with (output / 'mview-observed.log').open('a') as stream:
                 stream.write('\n'.join(fresh) + '\n')
-        if re.search(r'kernel panic|amd64 fault v=|ZWL FAILED|MVIEW FAILED|Segmentation fault', value):
+        if re.search(r'kernel panic|amd64 fault v=|KWL FAILED|MVIEW FAILED|Segmentation fault', value):
             raise RuntimeError('guest compositor/viewer failure; inspect console and renderer logs')
         return value
 
@@ -157,12 +157,12 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
             time.sleep(0.05)
 
     command(f'/bin/wayland --testing --socket=/tmp/wayland-0 --width={WIDTH} --height={HEIGHT} --timeout={args.timeout} &')
-    ready = wait(r'ZWL READY[^\r\n]*', 'compositor startup')
+    ready = wait(r'KWL READY[^\r\n]*', 'compositor startup')
     report['compositor_ready'] = ready.group(0)
-    report['compositor_inputs'] = re.findall(r'ZWL INPUT [^\r\n]*', console())
+    report['compositor_inputs'] = re.findall(r'KWL INPUT [^\r\n]*', console())
     command(f'/bin/mview --display=/tmp/wayland-0 --token={args.token} --timeout-s={args.timeout}')
     report['viewer_start'] = wait(r'MVIEW START run=' + re.escape(args.token) + r'[^\r\n]*', 'viewer startup').group(0)
-    wait(r'ZWL SEAT[^\r\n]*', 'viewer seat binding')
+    wait(r'KWL SEAT[^\r\n]*', 'viewer seat binding')
 
     initial = view('initial')
     report['checks']['model_visible'] = coloured(initial) > 0.02
@@ -205,7 +205,7 @@ def exercise(args, qmp, output, debug, vnc_path, process, report):
     # The viewer's keys also reached the shell's line; an empty command clears it first.
     command('')
     command('kill ' + re.search(r'pid=(\d+)', report['compositor_ready']).group(1))
-    report['compositor_exit'] = wait(r'ZWL EXIT[^\r\n]*', 'compositor exit').group(0)
+    report['compositor_exit'] = wait(r'KWL EXIT[^\r\n]*', 'compositor exit').group(0)
     report['status'] = 'pass' if all(report['checks'].values()) else 'fail'
     if report['status'] != 'pass':
         report['error'] = 'viewer checks failed: ' + json.dumps(report['checks'])

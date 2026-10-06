@@ -131,8 +131,8 @@ for step in "$@"; do
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP start pid=[0-9]+ command=/bin/files --desktop'
-		expect_log /tmp/zdesktop.log 'ZWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP start pid=[0-9]+ command=/bin/files --desktop'
+		expect_log /tmp/zdesktop.log 'KWL DESKTOP role client=[0-9]+ surface=[0-9]+ x=0 y=44 width=1280 height=756'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP configure x=0 y=44 width=1280 height=756'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=5 cells=5 width=1280 height=756'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP place name=[^ ]+ column=0 row=0 x=1168 y=16'
@@ -172,7 +172,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		pointer move 1216 90 sleep 300 down sleep 50 up sleep 80 down sleep 50 up sleep 3000
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open name=Projects via=double-click'
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP open-folder path=/tmp/dhome/Desktop/Projects error=0'
-		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
+		expect_log /tmp/zdesktop.log 'KWL MAP client=[0-9]+ '
 		shot folder.png
 		# The folder's window (on top, with the keyboard) closes by Ctrl+W.
 		keys '<ctrl-w>'
@@ -189,7 +189,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		;;
 	window)
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; /bin/files --token=w --timeout-s=800 --width=800 --height=560 /tmp/dhome/Desktop > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-		expect_log /tmp/zdesktop.log 'ZWL MAP client=[0-9]+ '
+		expect_log /tmp/zdesktop.log 'KWL MAP client=[0-9]+ '
 		pointer move 640 760 sleep 300
 		shot window.png
 		;;
@@ -259,8 +259,8 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		guest 'rm -rf /tmp/dhome/.local/share/Trash; rm -f /tmp/files.clipboard' >/dev/null
 		rclick 700 400
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=700 y=356'
-		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1056 depth=1 '
-		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1055 depth=1 '
+		expect_log /tmp/zdesktop.log 'KWL MENU row item=1056 depth=1 '
+		expect_log /tmp/zdesktop.log 'KWL MENU row item=1055 depth=1 '
 		shot menu-empty.png
 		choose 1002
 		expect_log /tmp/zdesktop.log 'ZFILES NEWFOLDER path=/tmp/dhome/Desktop/untitled folder'
@@ -274,7 +274,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		# notes.txt's menu: Rename; the stem is selected, so "todo" makes todo.txt, which keeps the cell.
 		rclick 1216 194
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=notes.txt'
-		expect_log /tmp/zdesktop.log 'ZWL MENU row item=1014 depth=1 '
+		expect_log /tmp/zdesktop.log 'KWL MENU row item=1014 depth=1 '
 		shot menu-item.png
 		choose 1014
 		keys 'todo' '<ret>'
@@ -313,32 +313,32 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		sleep 1
 		shot trash.png
 		# Show in Files from report.pdf's menu: a Files window on ~/Desktop, closed by Ctrl+W.
-		maps=$(guest "grep -ac 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+		maps=$(guest "grep -ac 'KWL MAP client=' /tmp/zdesktop.log" | tail -1)
 		rclick 1216 402
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context name=report.pdf'
 		choose 1055
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP show-in-files path=/tmp/dhome/Desktop error=0'
 		sleep 4
-		now=$(guest "grep -ac 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+		now=$(guest "grep -ac 'KWL MAP client=' /tmp/zdesktop.log" | tail -1)
 		[ "${now:-0}" -gt "${maps:-0}" ] 2>/dev/null && echo "show-in-files: a window ok" || { echo "show-in-files: no window MISSING"; status=1; }
 		pointer move 640 780 sleep 300
 		shot show-in-files.png
 		# With that window on top, the desktop's menu (at 40,500, left of the window) stays open, and closes without a
 		# choice at a press on the window, and when another window maps.
-		done=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		done=$(guest "grep -ac 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		rclick 40 500
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP context empty x=40 y=456'
 		sleep 1
-		open=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		open=$(guest "grep -ac 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		[ "${open:-0}" = "${done:-0}" ] && echo "desktop menu over a window: stays open ok" || { echo "desktop menu over a window: closed MISSING"; status=1; }
 		shot menu-over-window.png
 		click 700 500
-		now=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		now=$(guest "grep -ac 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		[ "${now:-0}" -gt "${open:-0}" ] 2>/dev/null && echo "desktop menu: a press on the window closes it ok" || { echo "desktop menu: press on the window MISSING"; status=1; }
 		rclick 40 500
-		open=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		open=$(guest "grep -ac 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; /bin/files --token=m --timeout-s=300 --width=600 --height=400 /tmp/dhome > /tmp/f3.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-		now=$(guest "grep -ac 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+		now=$(guest "grep -ac 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 		[ "${now:-0}" -gt "${open:-0}" ] 2>/dev/null && echo "desktop menu: a new window closes it ok" || { echo "desktop menu: new window MISSING"; status=1; }
 		keys '<ctrl-w>'
 		sleep 1
@@ -404,7 +404,7 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome; mkdir -p /tmp/dhome/Docs; echo hello > /tmp/dhome/Docs/note.txt; /bin/files --token=f2 --timeout-s=800 --width=700 --height=500 /tmp/dhome/Docs > /tmp/f2.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 		expect_log /tmp/f2.log 'ZFILES READY'
 		keys '<ctrl-2>'
-		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+		set -- $(guest "grep -a 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 		wx=${1:-0}; wy=${2:-0}
 		echo "files window at $wx,$wy"
 		pointer move $((wx + 400)) $((wy + 114)) sleep 300 down sleep 100 move $((wx + 380)) $((wy + 120)) sleep 80 move $((wx + 300)) $((wy + 200)) sleep 80 \
@@ -480,12 +480,12 @@ hold 2000'
 		;;
 	perf100)
 		# ws094-p008 (L3): the desktop with 100 items (20 pictures, 10 folders, 70 texts in /tmp/dhome100/Desktop), three
-		# rounds, each on a compositor started afresh: (a) zdesktop's start of files --desktop (ZWL DESKTOP start at_ms)
+		# rounds, each on a compositor started afresh: (a) zdesktop's start of files --desktop (KWL DESKTOP start at_ms)
 		# to ZFILES DESKTOP ready items=100 (at_ms); (b) a file added to the ready desktop: the age of the newest item when
 		# it is shown (ready items=101 newest_age_ms); (c) three clicks on items: the press to the selection's frame
 		# (DESKTOP select-frame ms).  The medians against L3's targets (PERF_START_MS, PERF_ADDED_MS, PERF_SELECT_MS),
 		# and the SLOW-FRAME lines counted (perf100.txt, perf100.png).  ws094-p009: (a') zdesktop's first drawing of the
-		# desktop's image (ZWL DESKTOP drawn at_ms), and the steps of Files' start (perf100-steps.txt).
+		# desktop's image (KWL DESKTOP drawn at_ms), and the steps of Files' start (perf100-steps.txt).
 		start_limit=${PERF_START_MS:-1500}; added_limit=${PERF_ADDED_MS:-2500}; select_limit=${PERF_SELECT_MS:-50}
 		python3 plan/tools/imageview/make-images.py build/ws094-images >/dev/null
 		guest 'rm -rf /tmp/dhome100; mkdir -p /tmp/dhome100/Desktop /tmp/p100' >/dev/null
@@ -502,12 +502,12 @@ ls /tmp/dhome100/Desktop | wc -l' | tail -1 | sed 's/^/items made: /'
 			guest "export XDG_RUNTIME_DIR=/tmp HOME=/tmp/dhome100; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass \$picture --desktop-client='/bin/files --desktop' > /tmp/zdesktop.log 2>&1 </dev/null &
 i=0; while ! grep -aq 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log && [ \$i -lt 120 ]; do sleep 0.25; i=\$((i+1)); done; sleep 3; echo started" >/dev/null
-			began=$(guest "grep -a 'ZWL DESKTOP start ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
+			began=$(guest "grep -a 'KWL DESKTOP start ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
 			ready=$(guest "grep -a 'ZFILES DESKTOP ready items=100 ' /tmp/zdesktop.log | head -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
 			start_ms=$(( ${ready:-0} - ${began:-0} ))
 			[ -n "$began" ] && [ -n "$ready" ] || start_ms=-1
 			# (a') zdesktop's first drawing of the desktop's image (ws094-p009): what the screen shows, not only Files' frame.
-			drawn=$(guest "grep -a 'ZWL DESKTOP drawn ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
+			drawn=$(guest "grep -a 'KWL DESKTOP drawn ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
 			drawn_ms=$(( ${drawn:-0} - ${began:-0} ))
 			[ -n "$began" ] && [ -n "$drawn" ] || drawn_ms=-1
 			guest "printf 'new\n' > /tmp/dhome100/Desktop/added-$round.txt" >/dev/null

@@ -93,7 +93,7 @@ kwl_fence_ready(
 
 	/* Succeeded: all done. */
 	if (server->log_frames && surface->fence_waited)
-		printf("ZWL ACQUIRED surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(kwl_milliseconds() - surface->fence_ms));
+		printf("KWL ACQUIRED surface=%u waited_ms=%llu\n", surface->id, (unsigned long long)(kwl_milliseconds() - surface->fence_ms));
 	return 1;
 }
 
@@ -155,7 +155,7 @@ kwl_schedule(
 			/* A switch waiting for the frame in flight is tried again on a later pass. */
 			if (error == EAGAIN)
 				return;
-			printf("ZWL MODE_ERROR errno=%d\n", error);
+			printf("KWL MODE_ERROR errno=%d\n", error);
 			server->failed = 1;
 			return;
 		}
@@ -184,7 +184,7 @@ kwl_schedule(
 	if (server->dirty || server->damaged) {
 		error = kwl_compose_draw(server);
 		if (error != 0) {
-			printf("ZWL FAILED site=compose_draw errno=%d\n", error);
+			printf("KWL FAILED site=compose_draw errno=%d\n", error);
 			server->failed = 1;
 		}
 	}
@@ -218,7 +218,7 @@ kwl_frame_done(
 	/* The frame's held buffers and callbacks are released. */
 	error = kwl_compose_complete(server);
 	if (error != 0) {
-		printf("ZWL FAILED site=frame_done errno=%d\n", error);
+		printf("KWL FAILED site=frame_done errno=%d\n", error);
 		server->failed = 1;
 	}
 }
@@ -324,7 +324,7 @@ adopt_commit(
 
 	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
 	if (server->log_frames)
-		printf("ZWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)kwl_microseconds());
 
 	/* An awaited window has committed. */
 	if (surface->awaited) {
@@ -356,12 +356,12 @@ adopt_commit(
 		surface->open_order = server->map_order;
 		surface->desktop = server->desktop;
 		place_window(server, surface);
-		printf("ZWL MAP client=%llu surface=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, surface->x, surface->y);
+		printf("KWL MAP client=%llu surface=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, surface->x, surface->y);
 		kwl_glass_mapped(server, surface);
 	} else if (surface->current == NULL && surface->mapped) {
 		surface->mapped = 0;
 		kwl_callbacks_done(&surface->committed_callbacks);
-		printf("ZWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
+		printf("KWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}
 
 	/*
@@ -375,7 +375,7 @@ adopt_commit(
 			surface->place_pending = 0;
 			kwl_window_centre(server, surface);
 			surface->placed = 1;
-			printf("ZWL WINDOW centred surface=%u x=%d y=%d width=%u height=%u client=%llu\n", surface->id, surface->x, surface->y, new_width, new_height, (unsigned long long)surface->client->number);
+			printf("KWL WINDOW centred surface=%u x=%d y=%d width=%u height=%u client=%llu\n", surface->id, surface->x, surface->y, new_width, new_height, (unsigned long long)surface->client->number);
 		}
 	}
 
@@ -458,7 +458,7 @@ enter_window_mode(
 	uint64_t start;
 	int error;
 
-	/* The switch is timed from here (ZWL MODE). */
+	/* The switch is timed from here (KWL MODE). */
 	start = kwl_milliseconds();
 
 	/*
@@ -480,6 +480,6 @@ enter_window_mode(
 	server->windowed = 1;
 	server->dirty = 1;
 	server->mode_switch_ms = kwl_milliseconds() - start;
-	printf("ZWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)kwl_milliseconds());
+	printf("KWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)kwl_milliseconds());
 	return 0;
 }

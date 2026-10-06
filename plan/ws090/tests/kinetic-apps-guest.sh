@@ -11,7 +11,7 @@
 #  4. Phone, Mail and Calendar (libkeiland's kl_ui_axis; at 900x400 so that their lists scroll): "PHONE KINETIC fling
 #     source=finger", "MAIL KINETIC fling source=finger", "CALENDAR KINETIC fling source=finger" (phone.png, mailer.png,
 #     calendar.png).  Before KL_VERSION 43 the fingers' lift came to them as an action (KL_WINDOW_AXIS_STOP was 17).
-#  5. zdesktop has "ZWL AXIS stop" for each and no ERROR line.
+#  5. zdesktop has "KWL AXIS stop" for each and no ERROR line.
 #   plan/ws090/tests/kinetic-apps-guest.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -35,7 +35,7 @@ start() {
 	guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 	guest "$env $1 > /tmp/app.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\2 \3 \4/p')
 	wx=${2:-0}; wy=${3:-0}
 	pointer move $((wx + 450)) $((wy + 300)) sleep 300 >/dev/null
 }
@@ -48,11 +48,11 @@ judge() {
 	grep -q '^replay=0$' "$out/$name-pad.txt" && pass "$name replay" || fail "$name replay"
 	sleep 2
 	guest 'cat /tmp/app.log' > "$out/$name.log"
-	guest 'grep -E "ZWL AXIS|ERROR" /tmp/zdesktop.log' > "$out/$name-zdesktop.txt"
+	guest 'grep -E "KWL AXIS|ERROR" /tmp/zdesktop.log' > "$out/$name-zdesktop.txt"
 	for line in "$@"; do
 		grep -q "$line" "$out/$name.log" && pass "$name $line" || fail "$name $line"
 	done
-	grep -q 'ZWL AXIS stop' "$out/$name-zdesktop.txt" && pass "$name axis-stop" || fail "$name axis-stop"
+	grep -q 'KWL AXIS stop' "$out/$name-zdesktop.txt" && pass "$name axis-stop" || fail "$name axis-stop"
 	grep -q ERROR "$out/$name-zdesktop.txt" && fail "$name zdesktop-errors" || pass "$name zdesktop-errors"
 	check "$out/$name.png" >/dev/null
 }

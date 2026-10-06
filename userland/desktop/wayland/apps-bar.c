@@ -296,7 +296,7 @@ kwl_apps_bar_motion(
 		    (dx >= DRAG_START || dx <= -DRAG_START)) {
 			state->dragging = 1;
 			kwl_apps_bar_hide(server, "drag");
-			printf("ZWL APPS drag app=%s\n", state->press_key);
+			printf("KWL APPS drag app=%s\n", state->press_key);
 		}
 
 		/* Its place follows the pointer. */
@@ -426,7 +426,7 @@ kwl_apps_bar_button(
 			found = -1;
 			if (built)
 				found = kwl_apps_find(&view.apps, state->press_key);
-			printf("ZWL APPS reorder app=%s place=%d desktop=%u\n", state->press_key, found, server->desktop + 1U);
+			printf("KWL APPS reorder app=%s place=%d desktop=%u\n", state->press_key, found, server->desktop + 1U);
 			server->dirty = 1;
 			return 1;
 		}
@@ -491,7 +491,7 @@ kwl_apps_bar_button(
 			/* The close button at the preview's top right. */
 			if (server->pointer_x >= panel.tiles[tile].x + panel.tiles[tile].width - 26 && server->pointer_y < panel.tiles[tile].y + 26) {
 				(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
-				printf("ZWL APPS close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+				printf("KWL APPS close-window surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 				return 1;
 			}
 
@@ -994,9 +994,9 @@ kwl_apps_bar_show(
 		how = "click";
 	if (via == KWL_APPS_VIA_SWITCH)
 		how = "switch";
-	printf("ZWL APPS preview app=%s windows=%u via=%s at_ms=%llu\n", key, panel.count, how, (unsigned long long)kwl_milliseconds());
+	printf("KWL APPS preview app=%s windows=%u via=%s at_ms=%llu\n", key, panel.count, how, (unsigned long long)kwl_milliseconds());
 	for (index = 0; index < panel.count; index++)
-		printf("ZWL APPS preview window surface=%u x=%d y=%d width=%d height=%d client=%llu\n", panel.surfaces[index]->id, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height, (unsigned long long)panel.surfaces[index]->client->number);
+		printf("KWL APPS preview window surface=%u x=%d y=%d width=%d height=%d client=%llu\n", panel.surfaces[index]->id, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height, (unsigned long long)panel.surfaces[index]->client->number);
 }
 
 /*
@@ -1012,7 +1012,7 @@ kwl_apps_bar_hide(
 	/* Logged only when they showed. */
 	state = &server->apps_bar;
 	if (state->state == KWL_APPS_SHOWN)
-		printf("ZWL APPS preview close via=%s\n", why);
+		printf("KWL APPS preview close via=%s\n", why);
 
 	/* Idle. */
 	state->state = KWL_APPS_IDLE;
@@ -1058,10 +1058,10 @@ log_bar(
 	(void)snprintf(state->logged, sizeof(state->logged), "%s", line);
 
 	/* The bar, then each icon. */
-	printf("ZWL APPS bar %s\n", line);
+	printf("KWL APPS bar %s\n", line);
 	for (index = 0; index < view->shown; index++) {
 		slot_rect(view, index, &rect);
-		printf("ZWL APPS icon app=%s x=%d y=%d width=%d height=%d windows=%u\n", view->apps.apps[index].key, rect.x, rect.y, rect.width, rect.height, view->apps.apps[index].window_count);
+		printf("KWL APPS icon app=%s x=%d y=%d width=%d height=%d windows=%u\n", view->apps.apps[index].key, rect.x, rect.y, rect.width, rect.height, view->apps.apps[index].window_count);
 	}
 }
 

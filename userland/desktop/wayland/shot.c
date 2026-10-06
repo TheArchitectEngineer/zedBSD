@@ -137,7 +137,7 @@ kwl_shot_open(
 
 	/* The user's alone (root may connect too). */
 	(void)chmod(shot.path, 0600);
-	printf("ZWL SHOT listening path=%s\n", shot.path);
+	printf("KWL SHOT listening path=%s\n", shot.path);
 }
 
 /* Closes the capture's socket and gives back its buffer. */
@@ -249,7 +249,7 @@ kwl_shot_tick(
 	shot.stage = SHOT_REQUESTED;
 	shot.asked_ms = kwl_milliseconds();
 	server->dirty = 1;
-	printf("ZWL SHOT requested width=%u height=%u\n", shot.width, shot.height);
+	printf("KWL SHOT requested width=%u height=%u\n", shot.width, shot.height);
 }
 
 /*
@@ -358,7 +358,7 @@ kwl_shot_complete(
 
 	/* The memory is given back to the device. */
 	vkUnmapMemory(server->compose->device, shot.memory);
-	printf("ZWL SHOT sent width=%u height=%u bytes=%llu\n", shot.width, shot.height, (unsigned long long)sent);
+	printf("KWL SHOT sent width=%u height=%u bytes=%llu\n", shot.width, shot.height, (unsigned long long)sent);
 
 	/* The request is done. */
 	shot_finish(server, NULL);
@@ -385,7 +385,7 @@ shot_finish(
 	if (error != NULL && shot.client >= 0) {
 		snprintf(line, sizeof(line), "ERROR %s\n", error);
 		shot_answer(shot.client, line);
-		printf("ZWL SHOT error=%s\n", error);
+		printf("KWL SHOT error=%s\n", error);
 	}
 
 	/* The connection and the buffer. */

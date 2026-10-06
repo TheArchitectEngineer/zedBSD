@@ -64,7 +64,7 @@ click() {
 # Starts a terminal with a token and finds its window (client number $2).
 start_terminal() {
 	guest "export XDG_RUNTIME_DIR=/tmp; /bin/terminal --token=$1 --timeout-s=600 >> /tmp/t.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=$(zwl_app_client $2) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+	set -- $(guest "grep 'KWL MAP client=$(zwl_app_client $2) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 	wx=${2:-0}; wy=${3:-0}; bar=$((wy - 30))
 	echo "terminal: surface ${1:-0} at $wx,$wy"
 }

@@ -28,7 +28,7 @@ fail() { echo "$1: FAILED"; status=1; }
 start() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland $2 --width=1280 --height=800 > /tmp/roles.log 2>&1 </dev/null &
-for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/roles.log && break; sleep 0.5; done; grep 'ZWL READY' /tmp/roles.log" > "$out/$1.txt"
+for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/roles.log && break; sleep 0.5; done; grep 'KWL READY' /tmp/roles.log" > "$out/$1.txt"
 }
 
 # 1. No role.

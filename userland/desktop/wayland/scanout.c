@@ -25,8 +25,8 @@
  * (display.c), so the gesture's feedback and the pointer are drawn.  The
  * input goes to the compositor all along.
  *
- * Log: "ZWL SCANOUT direct=1 surface=N client=C switch_ms=M" and
- * "ZWL SCANOUT direct=0 reason=R surface=N frames=F" (also once for a
+ * Log: "KWL SCANOUT direct=1 surface=N client=C switch_ms=M" and
+ * "KWL SCANOUT direct=0 reason=R surface=N frames=F" (also once for a
  * window that asks but is not shown straight, for each new reason).
  */
 
@@ -128,7 +128,7 @@ kwl_scanout_leave(
 	surface_id = 0U;
 	if (server->scanout_surface != NULL)
 		surface_id = server->scanout_surface->id;
-	printf("ZWL SCANOUT direct=0 reason=%s surface=%u frames=%llu\n", kwl_scanout_reason_name(reason), surface_id, (unsigned long long)server->scanout_frames);
+	printf("KWL SCANOUT direct=0 reason=%s surface=%u frames=%llu\n", kwl_scanout_reason_name(reason), surface_id, (unsigned long long)server->scanout_frames);
 	server->scanout_surface = NULL;
 	server->scanout_reason = reason;
 	server->dirty = 1;
@@ -281,7 +281,7 @@ scanout_enter(
 		server->scanout = NULL;
 		server->scanout_refused = top;
 		server->dirty = 1;
-		printf("ZWL SCANOUT direct=0 reason=backend errno=%d surface=%u client=%llu\n", error, top->id, (unsigned long long)top->client->number);
+		printf("KWL SCANOUT direct=0 reason=backend errno=%d surface=%u client=%llu\n", error, top->id, (unsigned long long)top->client->number);
 		return error;
 	}
 
@@ -289,7 +289,7 @@ scanout_enter(
 	server->scanout_surface = top;
 	server->scanout_frames = 0U;
 	server->scanout_noted = NULL;
-	printf("ZWL SCANOUT direct=1 surface=%u client=%llu switch_ms=%llu\n", top->id, (unsigned long long)top->client->number, (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL SCANOUT direct=1 surface=%u client=%llu switch_ms=%llu\n", top->id, (unsigned long long)top->client->number, (unsigned long long)(kwl_milliseconds() - started));
 	return 0;
 }
 
@@ -319,7 +319,7 @@ scanout_frame(
 	/* The image to the display; a failure is the backend's refusal from now. */
 	error = kl_backend_scanout_present(server->scanout, kwl_gpu_host(), kwl_gpu_resource(buffer));
 	if (error != 0) {
-		printf("ZWL SCANOUT present errno=%d surface=%u\n", error, top->id);
+		printf("KWL SCANOUT present errno=%d surface=%u\n", error, top->id);
 		server->scanout_refused = top;
 		kwl_scanout_leave(server, KWL_SCANOUT_REFUSED);
 		return;
@@ -380,5 +380,5 @@ scanout_note(
 	/* Logged. */
 	server->scanout_noted = top;
 	server->scanout_reason = reason;
-	printf("ZWL SCANOUT direct=0 reason=%s surface=%u frames=0\n", kwl_scanout_reason_name(reason), top->id);
+	printf("KWL SCANOUT direct=0 reason=%s surface=%u frames=0\n", kwl_scanout_reason_name(reason), top->id);
 }

@@ -737,7 +737,7 @@ struct kwl_client {
 	uint64_t connected_ms;
 };
 
-/* Cycle counts of the event loop, reported every few seconds (ZWL PERF). */
+/* Cycle counts of the event loop, reported every few seconds (KWL PERF). */
 struct kwl_perf {
 	uint64_t window_start_ms;
 	uint64_t window_start_cycles;
@@ -911,7 +911,7 @@ struct kwl_server {
 	 * An opening or closing of App Home or Wiseview waiting for its first
 	 * frame (ws099-p002, C5): what it is (NULL for none) and when it was
 	 * asked for.  The next frame is drawn without the frame pacing's wait,
-	 * and its submission is logged once (ZWL FIRST_FRAME).
+	 * and its submission is logged once (KWL FIRST_FRAME).
 	 */
 	const char *transition;
 	uint64_t transition_ms;

@@ -15,7 +15,7 @@
 #include "layout.h"
 
 /*
- * Names a layout mode for the log (ZWL LAYOUT).
+ * Names a layout mode for the log (KWL LAYOUT).
  */
 const char *
 kwl_layout_name(

@@ -49,11 +49,11 @@ put "$build/dynamic/libkeiland.so" /lib/libkeiland.so
 guest 'chmod 755 /bin/wayland' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 
 # 1. The window, where the compositor places it.
 guest "$env /bin/tablet-probe --pointer --color=c8d8ec --token=b --timeout-s=120 > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* client=\([0-9]*\) surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1:\2 \3 \4/p')
 b=${1:-0:0}; sx=${2:-0}; sy=${3:-0}
 tx=$((sx + 150)); ty=$((sy - 30))
 pointer move 1200 780 sleep 300 >/dev/null
@@ -65,7 +65,7 @@ printf 'size 1279 799 2 scan\nwait 2600\ndown 2 1000 760\nswipe 0 0 20 33.333\nu
 put "$out/drag.script" /tmp/drag.script
 guest '/bin/touchinject /tmp/drag.script; echo replay=$?' | grep -q '^replay=0$' || { echo "touchinject: FAILED"; status=1; }
 sleep 1
-guest "grep -E 'ZWL TOUCH (title|report|follow)|GLASS moved' /tmp/zdesktop.log" > "$out/drag-log.txt"
+guest "grep -E 'KWL TOUCH (title|report|follow)|GLASS moved' /tmp/zdesktop.log" > "$out/drag-log.txt"
 guest "grep -cE 'ERROR|FAILED' /tmp/zdesktop.log" | tail -1 > "$out/errors.txt"
 guest "$stop_all" >/dev/null
 

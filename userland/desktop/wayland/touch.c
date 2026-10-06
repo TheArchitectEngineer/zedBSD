@@ -320,7 +320,7 @@ kwl_touch_add(
 	}
 
 	/* One line lets a test see the touch screen's range. */
-	printf("ZWL TOUCH added device=%s x=%d..%d y=%d..%d\n", input->path, screen->axis_x.minimum, screen->axis_x.maximum, screen->axis_y.minimum, screen->axis_y.maximum);
+	printf("KWL TOUCH added device=%s x=%d..%d y=%d..%d\n", input->path, screen->axis_x.minimum, screen->axis_x.maximum, screen->axis_y.minimum, screen->axis_y.maximum);
 
 	/* Succeeded: the touch screen's reports are applied from now on. */
 	return 0;
@@ -386,7 +386,7 @@ kwl_touch_remove(
 	screen_forget_motions(screen);
 
 	/* The slot is free. */
-	printf("ZWL TOUCH removed device=%s\n", input->path);
+	printf("KWL TOUCH removed device=%s\n", input->path);
 	screen->input = NULL;
 }
 
@@ -444,7 +444,7 @@ kwl_touch_frame(
 
 		/* A test sees each finger's report, its time and the time it arrived, with --log-frames. */
 		if (server->log_frames) {
-			printf("ZWL TOUCH report contact=%u x=%d y=%d stamp_ms=%llu host_ms=%llu scan=%u\n", contact_id(screen, slot),
+			printf("KWL TOUCH report contact=%u x=%d y=%d stamp_ms=%llu host_ms=%llu scan=%u\n", contact_id(screen, slot),
 			       contact->place_x / 256, contact->place_y / 256, (unsigned long long)(stamp / 1000U),
 			       (unsigned long long)(input->frame_time_us / 1000U), screen->msc_present);
 		}
@@ -628,7 +628,7 @@ kwl_touch_drag_start(
 	found->surface = NULL;
 	cancel_client(client, "drag");
 	place_pointer(server, found->place_x / 256, found->place_y / 256);
-	printf("ZWL TOUCH drag start client=%llu contact=%u x=%d y=%d\n", (unsigned long long)client->number, number, found->place_x / 256,
+	printf("KWL TOUCH drag start client=%llu contact=%u x=%d y=%d\n", (unsigned long long)client->number, number, found->place_x / 256,
 	       found->place_y / 256);
 
 	/* Succeeded: the finger drives the drag. */
@@ -831,7 +831,7 @@ contact_begin(
 		taken = kwl_keyboard_touch_down(server, contact_id(screen, slot), x, y, report->time);
 		if (taken) {
 			contact->route = ROUTE_OSK;
-			printf("ZWL TOUCH osk contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
+			printf("KWL TOUCH osk contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
 			return;
 		}
 	}
@@ -848,7 +848,7 @@ contact_begin(
 			title.pair_time = report->time;
 			title.pair_clock = kwl_milliseconds();
 			contact->route = ROUTE_TITLE;
-			printf("ZWL TOUCH title pair window=%llu:%u contact=%u x=%d y=%d after_ms=%u\n", (unsigned long long)window->client->number, window->id, contact_id(screen, slot), x, y, elapsed);
+			printf("KWL TOUCH title pair window=%llu:%u contact=%u x=%d y=%d after_ms=%u\n", (unsigned long long)window->client->number, window->id, contact_id(screen, slot), x, y, elapsed);
 			return;
 		}
 
@@ -870,7 +870,7 @@ contact_begin(
 		/* Otherwise the finger goes nowhere until it lifts. */
 		if (!bound) {
 			contact->route = ROUTE_IGNORED;
-			printf("ZWL TOUCH ignored contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
+			printf("KWL TOUCH ignored contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
 			return;
 		}
 
@@ -889,7 +889,7 @@ contact_begin(
 		title.first_time = report->time;
 		title.first_clock = kwl_milliseconds();
 		contact->route = ROUTE_TITLE;
-		printf("ZWL TOUCH title held window=%llu:%u contact=%u x=%d y=%d\n", (unsigned long long)window->client->number, window->id, contact_id(screen, slot), x, y);
+		printf("KWL TOUCH title held window=%llu:%u contact=%u x=%d y=%d\n", (unsigned long long)window->client->number, window->id, contact_id(screen, slot), x, y);
 		return;
 	}
 
@@ -898,7 +898,7 @@ contact_begin(
 	if (taken) {
 		contact->route = ROUTE_SHELL;
 		follow_start(contact);
-		printf("ZWL TOUCH shell contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
+		printf("KWL TOUCH shell contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
 		cancel_clients("shell");
 		return;
 	}
@@ -946,7 +946,7 @@ deliver_first(
 	if (target == NULL) {
 		server->buttons_down &= ~1U;
 		contact->route = ROUTE_IGNORED;
-		printf("ZWL TOUCH ignored contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
+		printf("KWL TOUCH ignored contact=%u x=%d y=%d\n", contact_id(screen, slot), x, y);
 		return;
 	}
 
@@ -966,7 +966,7 @@ deliver_first(
 	kwl_seat_button_deliver(server, report->time, KWL_BUTTON_LEFT, 1U);
 	contact->route = ROUTE_POINTER;
 	report->pointer_activity = 1;
-	printf("ZWL TOUCH pointer client=%llu surface=%u contact=%u x=%d y=%d\n", (unsigned long long)target->client->number, target->id, contact_id(screen, slot), x, y);
+	printf("KWL TOUCH pointer client=%llu surface=%u contact=%u x=%d y=%d\n", (unsigned long long)target->client->number, target->id, contact_id(screen, slot), x, y);
 }
 
 /* Moves a finger the way it is delivered. */
@@ -1073,7 +1073,7 @@ contact_end(
 		place_pointer(server, contact->place_x / 256, contact->place_y / 256);
 		kwl_data_drag_motion(server, report->time);
 		kwl_data_drag_release(server);
-		printf("ZWL TOUCH drag lift contact=%u x=%d y=%d\n", contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256);
+		printf("KWL TOUCH drag lift contact=%u x=%d y=%d\n", contact_id(screen, slot), contact->place_x / 256, contact->place_y / 256);
 		break;
 	case ROUTE_OSK:
 		/* The keyboard's press ends where the finger was last reported (ws102-p009). */
@@ -1241,7 +1241,7 @@ title_flick(
 
 	/* Each finger must have gone up by the flick's distance. */
 	if (-first_dy < TITLE_FLICK_DISTANCE || -second_dy < TITLE_FLICK_DISTANCE) {
-		printf("ZWL TOUCH flick dy=%d,%d\n", first_dy, second_dy);
+		printf("KWL TOUCH flick dy=%d,%d\n", first_dy, second_dy);
 		title_refuse("short", elapsed);
 		return;
 	}
@@ -1260,12 +1260,12 @@ title_flick(
 	if (window == NULL ||
 	    window->dead ||
 	    !window->mapped) {
-		printf("ZWL TOUCH flick gone ms=%u\n", elapsed);
+		printf("KWL TOUCH flick gone ms=%u\n", elapsed);
 		return;
 	}
 
 	/* The log line comes before the shell's own line of the lowering. */
-	printf("ZWL TOUCH flick window=%llu:%u dx=%d,%d dy=%d,%d ms=%u\n", (unsigned long long)window->client->number, window->id, first_dx, second_dx, first_dy, second_dy, elapsed);
+	printf("KWL TOUCH flick window=%llu:%u dx=%d,%d dy=%d,%d ms=%u\n", (unsigned long long)window->client->number, window->id, first_dx, second_dx, first_dy, second_dy, elapsed);
 	cancel_clients("flick");
 
 	/* Succeeded: the same as a triple click on its title bar. */
@@ -1279,7 +1279,7 @@ title_refuse(
 	uint32_t elapsed)
 {
 	/* The log line says why. */
-	printf("ZWL TOUCH flick refused reason=%s ms=%u\n", reason, elapsed);
+	printf("KWL TOUCH flick refused reason=%s ms=%u\n", reason, elapsed);
 
 	/* Succeeded: the fingers are the title bar's until they lift. */
 	title.state = TITLE_DONE;
@@ -1311,14 +1311,14 @@ title_promote(
 	if (!taken) {
 		server->buttons_down &= ~1U;
 		contact->route = ROUTE_IGNORED;
-		printf("ZWL TOUCH title drag refused contact=%u\n", contact_id(screen, title.first));
+		printf("KWL TOUCH title drag refused contact=%u\n", contact_id(screen, title.first));
 		return;
 	}
 
 	/* The shell has the finger now, and the clients' fingers are cancelled. */
 	contact->route = ROUTE_SHELL;
 	follow_start(contact);
-	printf("ZWL TOUCH title drag contact=%u x=%d y=%d\n", contact_id(screen, title.first), contact->start_x, contact->start_y);
+	printf("KWL TOUCH title drag contact=%u x=%d y=%d\n", contact_id(screen, title.first), contact->start_x, contact->start_y);
 	cancel_clients("shell");
 
 	/* Succeeded: the way it moved since it touched follows at once. */
@@ -1344,7 +1344,7 @@ title_tap(
 	title.state = TITLE_NONE;
 	title.screen = NULL;
 	title.window = NULL;
-	printf("ZWL TOUCH title tap contact=%u x=%d y=%d\n", contact_id(screen, title.first), contact->start_x, contact->start_y);
+	printf("KWL TOUCH title tap contact=%u x=%d y=%d\n", contact_id(screen, title.first), contact->start_x, contact->start_y);
 
 	/* The press where it touched. */
 	taken = shell_press(server, contact->start_x, contact->start_y, time, 1U);
@@ -1532,7 +1532,7 @@ follow_step(
 	/* The pointer and the shell go there; a test sees each step with --log-frames. */
 	shell_motion_at(server, point_x, point_y, time);
 	if (server->log_frames) {
-		printf("ZWL TOUCH follow contact=%u x=%d y=%d report_x=%d report_y=%d now_ms=%llu\n", contact_id(screen, slot), point_x,
+		printf("KWL TOUCH follow contact=%u x=%d y=%d report_x=%d report_y=%d now_ms=%llu\n", contact_id(screen, slot), point_x,
 		       point_y, contact->place_x / 256, contact->place_y / 256, (unsigned long long)(now / 1000U));
 	}
 }
@@ -1736,7 +1736,7 @@ touch_down(
 	server->press_serial = words[0];
 
 	/* Succeeded: one line lets a test see where the finger went. */
-	printf("ZWL TOUCH down client=%llu surface=%u contact=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, words[3], contact->place_x / 256, contact->place_y / 256);
+	printf("KWL TOUCH down client=%llu surface=%u contact=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, words[3], contact->place_x / 256, contact->place_y / 256);
 }
 
 /*
@@ -1797,7 +1797,7 @@ cancel_clients(
 	/* Each client hears cancel. */
 	for (index = 0; index < count; index++) {
 		send_touch(clients[index], TOUCH_CANCEL, NULL, 0U);
-		printf("ZWL TOUCH cancel client=%llu reason=%s\n", (unsigned long long)clients[index]->number, reason);
+		printf("KWL TOUCH cancel client=%llu reason=%s\n", (unsigned long long)clients[index]->number, reason);
 	}
 }
 
@@ -1832,7 +1832,7 @@ cancel_client(
 
 	/* The client hears cancel, for the finger that went to the drag too. */
 	send_touch(client, TOUCH_CANCEL, NULL, 0U);
-	printf("ZWL TOUCH cancel client=%llu reason=%s others=%u\n", (unsigned long long)client->number, reason, count);
+	printf("KWL TOUCH cancel client=%llu reason=%s others=%u\n", (unsigned long long)client->number, reason, count);
 }
 
 /* Moves the pointer to a point, redrawing the cursor where it was and is. */

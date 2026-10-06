@@ -91,7 +91,7 @@ menu_click() {
 # Opens a top-level menu (its item) from the titlebar's "...", as plan/tools/files/files-p008.sh does.
 menu_top() {
 	zwl_app_clients
-	set -- "$1" $(guest "grep 'ZWL TITLEBAR control client=$zc1 .* where=floating id=0 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	set -- "$1" $(guest "grep 'KWL TITLEBAR control client=$zc1 .* where=floating id=0 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 	x=$((${2:-0} + ${4:-0} / 2)); y=$((${3:-0} + ${5:-0} / 2))
 	pointer move $((x - 2)) "$y" sleep 150 move "$x" "$y" sleep 300 down sleep 60 up sleep 900
 	menu_click "$1"
@@ -103,7 +103,7 @@ opened() {
 	sleep "${5:-5}"
 	expect_log /tmp/f.log "ZFILES LAUNCH name=$2 command=/bin/$3 ./tmp/demo/$1.$"
 	expect_running "[${3%"${3#?}"}]${3#?}"
-	maps=$(guest "grep -c 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+	maps=$(guest "grep -c 'KWL MAP client=' /tmp/zdesktop.log" | tail -1)
 	[ "${maps:-0}" -gt "$maps_before" ] 2>/dev/null && echo "window: $2 mapped" || { echo "window: $2 MISSING"; status=1; }
 	maps_before=${maps:-0}
 	shot "$4"
@@ -136,13 +136,13 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=1200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=1100 --width=1000 --height=640 /tmp/demo > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 wx=${2:-0}; wy=${3:-0}
 echo "files at $wx,$wy"
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/demo items=6 error=0'
 keys '<ctrl-2>'
 shot "files-$mode.png"
-maps_before=$(guest "grep -c 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+maps_before=$(guest "grep -c 'KWL MAP client=' /tmp/zdesktop.log" | tail -1)
 
 case "$mode" in
 mouse)

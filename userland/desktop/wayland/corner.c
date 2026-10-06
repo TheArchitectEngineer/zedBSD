@@ -216,7 +216,7 @@ kwl_corner_contact_begin(
 	corner_sample(x, y, time);
 
 	/* Succeeded: the contact is the gesture's. */
-	printf("ZWL CORNER press source=%s x=%d y=%d\n", corner_source_name(source), x, y);
+	printf("KWL CORNER press source=%s x=%d y=%d\n", corner_source_name(source), x, y);
 	return 1;
 }
 
@@ -258,7 +258,7 @@ kwl_corner_contact_move(
 	elapsed = time - corner.contact.start_time;
 	if (elapsed > CORNER_ARM_MS) {
 		corner.contact.expired = 1;
-		printf("ZWL CORNER cancel reason=timeout\n");
+		printf("KWL CORNER cancel reason=timeout\n");
 		return 1;
 	}
 
@@ -272,7 +272,7 @@ kwl_corner_contact_move(
 	corner.contact.armed = 1;
 	corner.settling = 0;
 	server->dirty = 1;
-	printf("ZWL CORNER armed ms=%u\n", elapsed);
+	printf("KWL CORNER armed ms=%u\n", elapsed);
 	return 1;
 }
 
@@ -312,7 +312,7 @@ kwl_corner_contact_end(
 	/* A contact that never armed ends without effect, like a click on the clock. */
 	if (!corner.contact.armed) {
 		corner.contact.active = 0;
-		printf("ZWL CORNER cancel reason=unarmed\n");
+		printf("KWL CORNER cancel reason=unarmed\n");
 		return 1;
 	}
 
@@ -328,7 +328,7 @@ kwl_corner_contact_end(
 	/* Far enough along the diagonal commits. */
 	progress = ((float)dx + (float)dy) * 0.5f;
 	if (progress >= CORNER_COMMIT) {
-		printf("ZWL CORNER commit via=distance progress=%.0f\n", (double)progress);
+		printf("KWL CORNER commit via=distance progress=%.0f\n", (double)progress);
 		corner_finish(server, 1, NULL);
 		corner_act(server);
 		return 1;
@@ -337,14 +337,14 @@ kwl_corner_contact_end(
 	/* A quick flick commits after a shorter way. */
 	speed = corner_speed();
 	if (progress >= CORNER_FLICK && speed >= CORNER_FLICK_SPEED) {
-		printf("ZWL CORNER commit via=flick progress=%.0f speed=%.2f\n", (double)progress, (double)speed);
+		printf("KWL CORNER commit via=flick progress=%.0f speed=%.2f\n", (double)progress, (double)speed);
 		corner_finish(server, 1, NULL);
 		corner_act(server);
 		return 1;
 	}
 
 	/* Succeeded: too short and too slow, the contact is let go. */
-	printf("ZWL CORNER speed=%.2f progress=%.0f\n", (double)speed, (double)progress);
+	printf("KWL CORNER speed=%.2f progress=%.0f\n", (double)speed, (double)progress);
 	corner_finish(server, 0, "short");
 	return 1;
 }
@@ -409,7 +409,7 @@ kwl_corner_tick(
 	/* The corner's place, once, beside the network icon's (network.c) in the log. */
 	if (!corner.zone_logged && server->width > 0U) {
 		corner.zone_logged = 1;
-		printf("ZWL CORNER zone x=%d y=0 width=%d height=%d\n", (int)server->width - CORNER_ZONE, CORNER_ZONE, CORNER_ZONE);
+		printf("KWL CORNER zone x=%d y=0 width=%d height=%d\n", (int)server->width - CORNER_ZONE, CORNER_ZONE, CORNER_ZONE);
 	}
 
 	/*
@@ -423,7 +423,7 @@ kwl_corner_tick(
 		corner.contact.active = 0;
 		corner.settling = 0;
 		server->dirty = 1;
-		printf("ZWL CORNER cancel reason=lost\n");
+		printf("KWL CORNER cancel reason=lost\n");
 	}
 
 	/* A contact that is still waiting to arm times out. */
@@ -433,7 +433,7 @@ kwl_corner_tick(
 	    !corner.contact.expired &&
 	    now - corner.contact.start_clock_ms > CORNER_ARM_MS) {
 		corner.contact.expired = 1;
-		printf("ZWL CORNER cancel reason=timeout\n");
+		printf("KWL CORNER cancel reason=timeout\n");
 	}
 
 	/* The settling hint draws every frame until its time is over. */
@@ -446,7 +446,7 @@ kwl_corner_tick(
 	/* A start of Notes whose window did not come in time may be tried again. */
 	if (corner.launching && now - corner.launch_ms > CORNER_LAUNCH_WAIT_MS) {
 		corner.launching = 0;
-		printf("ZWL CORNER launch expired\n");
+		printf("KWL CORNER launch expired\n");
 	}
 }
 
@@ -734,7 +734,7 @@ corner_finish(
 	/* The contact is over. */
 	corner.contact.active = 0;
 	if (!committed)
-		printf("ZWL CORNER cancel reason=%s\n", reason);
+		printf("KWL CORNER cancel reason=%s\n", reason);
 }
 
 /*
@@ -762,7 +762,7 @@ corner_act(
 		/* Already on top and fullscreen here: nothing to do. */
 		top = kwl_top_window(server);
 		if (surface == top && surface->fullscreen) {
-			printf("ZWL CORNER notes surface=%u already client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+			printf("KWL CORNER notes surface=%u already client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 			return;
 		}
 
@@ -776,40 +776,40 @@ corner_act(
 		/* The compositor makes it fullscreen, and tells it (a fullscreen window is only raised). */
 		error = kwl_window_enter_fullscreen(surface);
 		if (error != 0) {
-			printf("ZWL CORNER notes surface=%u fullscreen error=%d client=%llu\n", surface->id, error, (unsigned long long)surface->client->number);
+			printf("KWL CORNER notes surface=%u fullscreen error=%d client=%llu\n", surface->id, error, (unsigned long long)surface->client->number);
 			return;
 		}
 
 		/* Succeeded: Notes is on top, fullscreen. */
 		server->dirty = 1;
-		printf("ZWL CORNER notes surface=%u raise fullscreen client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+		printf("KWL CORNER notes surface=%u raise fullscreen client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		return;
 	}
 
 	/* Notes already starting: a second one is not started. */
 	if (corner.launching) {
-		printf("ZWL CORNER notes waiting\n");
+		printf("KWL CORNER notes waiting\n");
 		return;
 	}
 
 	/* Without the program there is nothing to start. */
 	missing = access(CORNER_PROGRAM, X_OK);
 	if (missing != 0) {
-		printf("ZWL CORNER notes missing errno=%d\n", errno);
+		printf("KWL CORNER notes missing errno=%d\n", errno);
 		return;
 	}
 
 	/* Notes is started, and asks for fullscreen itself before its window first shows. */
 	child = kwl_spawn(server, CORNER_COMMAND);
 	if (child < 0) {
-		printf("ZWL CORNER notes launch error=%d\n", errno);
+		printf("KWL CORNER notes launch error=%d\n", errno);
 		return;
 	}
 
 	/* Succeeded: its window is waited for. */
 	corner.launching = 1;
 	corner.launch_ms = kwl_milliseconds();
-	printf("ZWL CORNER notes launch pid=%d\n", (int)child);
+	printf("KWL CORNER notes launch pid=%d\n", (int)child);
 }
 
 /* Finds Notes' window: the most recently raised mapped toplevel whose app_id is "notes"; NULL for none. */

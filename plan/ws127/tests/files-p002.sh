@@ -5,7 +5,7 @@
 #  1. Move To: a right click on Budget.csv in Documents has the Move To submenu; its Downloads row moves it there
 #     (CONTEXT move-to, TASK move done, the file in Downloads): moveto.png.
 #  2. Open in New Window: a right click on the folder zedBSD in Projects; the row starts a second window on it
-#     (CONTEXT new-window, ZWL MAP client=2, two files processes): newwindow.png.
+#     (CONTEXT new-window, KWL MAP client=2, two files processes): newwindow.png.
 #  3. The overlay scroll bar on a folder of 300 files: after wheel notches it shows thin (scroll-thin.png); the
 #     pointer at the right edge makes it thick (scroll-thick.png); a press on the thumb and a drag down scroll the
 #     content (SCROLLBAR press dragging=1, SCROLLBAR release with a larger scroll); it fades (scroll-faded.png).
@@ -75,7 +75,7 @@ start() {
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --wallpaper=/usr/share/keiland/wallpaper.png > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 $1 > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started" >/dev/null
 	zwl_app_clients
-	set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+	set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 	surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 	echo "files: surface $surface at $wx,$wy"
 }
@@ -92,10 +92,10 @@ timeout 60 python3 plan/ws005/phase024/guest-ports.py put "$out/Red.pdf" /tmp/fh
 start /tmp/fhome/Documents
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=7 error=0'
 rclick 446 140
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=105 depth=1 '
+expect_log /tmp/zdesktop.log 'KWL MENU row item=105 depth=1 '
 click $(( $(popup_x 1) + 60 )) "$(row_y 105)" 900
 # Downloads is place 4 (Today, Home, Desktop, Documents before it since ws127-p011 put Today first; T1-166).
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=1504 depth=2 '
+expect_log /tmp/zdesktop.log 'KWL MENU row item=1504 depth=2 '
 shot moveto.png $(( $(popup_x 2) + 60 )) "$(row_y 1504)"
 click $(( $(popup_x 2) + 60 )) "$(row_y 1504)" 1500
 expect_log /tmp/f.log 'ZFILES CONTEXT move-to place=4 path=/tmp/fhome/Downloads count=1'
@@ -118,11 +118,11 @@ shot hover.png
 start /tmp/fhome/Projects
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Projects items=2 error=0'
 rclick 335 130
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=1058 depth=1 '
+expect_log /tmp/zdesktop.log 'KWL MENU row item=1058 depth=1 '
 click $(( $(popup_x 1) + 60 )) "$(row_y 1058)" 6000
 expect_log /tmp/f.log 'ZFILES CONTEXT new-window path=/tmp/fhome/Projects/[a-zA-Z]+$'
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL MAP client=$zc2 "
+expect_log /tmp/zdesktop.log "KWL MAP client=$zc2 "
 running=$(guest "ps -A -o args | grep -c '[/]bin/files'" | tail -1)
 [ "${running:-0}" -ge 2 ] && echo "new window: two files ok" || { echo "new window: two files MISSING"; status=1; }
 shot newwindow.png

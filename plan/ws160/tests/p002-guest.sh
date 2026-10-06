@@ -8,7 +8,7 @@
 # copied in; /etc/shadow is saved first and put back at the end.
 #  1. Settings on Users: "ZSETTINGS USERS account name=root" (users.png).
 #  2. Typed (the current, then Tab, the new one twice: "newroot123"), Enter: "ZSETTINGS USERS change request=N", the
-#     compositor's "ZWL SYSTEM account set-password" and "ZWL SYSTEM account result ... error=0", Settings'
+#     compositor's "KWL SYSTEM account set-password" and "KWL SYSTEM account result ... error=0", Settings'
 #     "ZSETTINGS USERS result request=N errno=0" (users-changed.png); root's shadow line has a new
 #     $6$rounds=65536$ hash; no log has the password.
 #  3. /etc/shadow back as it was; no ERROR in zdesktop's log.
@@ -70,8 +70,8 @@ shot users.png
 # 2. The change: the current, Tab, the new one, Tab, the new one again, Enter.
 keys 'x' '<tab>' 'newroot123' '<tab>' 'newroot123' '<ret>'
 expect_log change-asked /tmp/s.log 'ZSETTINGS USERS change request=[0-9]+'
-expect_log compositor-asked /tmp/zdesktop.log 'ZWL SYSTEM account set-password client=[0-9]+ number=[0-9]+'
-expect_log compositor-result /tmp/zdesktop.log 'ZWL SYSTEM account result client=[0-9]+ number=[0-9]+ error=0'
+expect_log compositor-asked /tmp/zdesktop.log 'KWL SYSTEM account set-password client=[0-9]+ number=[0-9]+'
+expect_log compositor-result /tmp/zdesktop.log 'KWL SYSTEM account result client=[0-9]+ number=[0-9]+ error=0'
 expect_log settings-result /tmp/s.log 'ZSETTINGS USERS result request=[0-9]+ errno=0'
 shot users-changed.png
 guest 'grep "^root:" /etc/shadow | cut -c1-21; grep "^root:" /tmp/shadow.p002 | cut -c1-21' > "$out/shadow.txt"

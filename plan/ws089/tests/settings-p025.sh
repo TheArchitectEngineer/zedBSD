@@ -51,7 +51,7 @@ shot() {
 
 # kei's session, and Remote Login on to begin with (the harness needs it).
 wait_guest
-expect_log "$session" 'ZWL HANDOFF go=1' 60
+expect_log "$session" 'KWL HANDOFF go=1' 60
 guest 'service enable sshd >/dev/null 2>&1; service start sshd >/dev/null 2>&1; echo on' >/dev/null
 
 # 1. Settings as kei on the Sharing page; its window from the session's log.  Without su it cannot start.
@@ -62,7 +62,7 @@ if [ "$has_su" != yes ]; then
 	exit 1
 fi
 guest "su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 HOME=/home/kei /bin/settings --timeout-s=600 sharing > /tmp/s.log 2>&1 </dev/null &'; sleep 6; echo started" >/dev/null
-line=$(guest "grep 'ZWL MAP client=' $session | tail -1")
+line=$(guest "grep 'KWL MAP client=' $session | tail -1")
 set -- $(echo "$line" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p') 0 0 0
 wx=$2; wy=$3
 echo "settings: window at $wx,$wy"
@@ -89,8 +89,8 @@ expect_log /var/log/messages 'service sshd off by kei: errno=0' 5
 expect_log /var/log/messages 'service sshd on by kei: errno=0' 5
 guest "awk '/^  sshd:/{s=1} s && /enabled:/{print; exit}' /etc/rc.conf" > "$out/rcconf.txt"
 grep -q 'true' "$out/rcconf.txt" && pass "rc.conf enables sshd" || fail "rc.conf enables sshd"
-expect_log "$session" 'ZWL SYSTEM sharing client=[0-9]+ action=2 error=0' 3
-expect_log "$session" 'ZWL SYSTEM sharing client=[0-9]+ action=1 error=0' 3
+expect_log "$session" 'KWL SYSTEM sharing client=[0-9]+ action=2 error=0' 3
+expect_log "$session" 'KWL SYSTEM sharing client=[0-9]+ action=1 error=0' 3
 
 guest 'grep -a "ZSETTINGS SHARING" /tmp/s.log' > "$out/settings.log"
 guest 'grep -a "service sshd" /var/log/messages | tail -5' > "$out/messages.txt"

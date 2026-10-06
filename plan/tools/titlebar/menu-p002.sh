@@ -23,10 +23,10 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/menu-probe > /tmp/probe.log 2>&1; echo probe-exit=$?
 /bin/terminal --token=t2 --timeout-s=20 > /tmp/t2.log 2>&1 </dev/null & sleep 6; echo started' | tee "$out/run.txt"
 guest 'cat /tmp/probe.log' | tee "$out/probe.log"
-guest 'grep -E "ZWL (ERROR|MENU commit)" /tmp/zdesktop.log' | tee "$out/zdesktop-errors.log"
+guest 'grep -E "KWL (ERROR|MENU commit)" /tmp/zdesktop.log' | tee "$out/zdesktop-errors.log"
 grep -q 'probe-exit=0' "$out/run.txt" || status=1
 grep -q 'MENUPROBE DONE failures=0' "$out/probe.log" || status=1
-[ "$(grep -c 'ZWL ERROR client=[0-9]* object=[0-9]* code=' "$out/zdesktop-errors.log")" -eq 10 ] || status=1
+[ "$(grep -c 'KWL ERROR client=[0-9]* object=[0-9]* code=' "$out/zdesktop-errors.log")" -eq 10 ] || status=1
 guest 'grep -c "ZTERM MENU ready" /tmp/t2.log' | tail -1 | grep -q '^1$' || status=1
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "menu-p002: PASS" || echo "menu-p002: FAIL"

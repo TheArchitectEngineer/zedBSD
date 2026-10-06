@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws154-p004: SKK's modes as languages of their own (kana skk, katakana skk-katakana, Latin skk-latin, wide skk-wide),
 # remembered for each application by zdesktop (ws095-p016), on the Venus guest (config-amd64-languages.mk).  Judged by
-# zdesktop's log (ZWL IME language=, ZWL IME app ...) and the probes' logs:
+# zdesktop's log (KWL IME language=, KWL IME app ...) and the probes' logs:
 #  1. ime.method 2: SKK.  Probe A (app probe-a): Alt+Space chooses skk; q goes to katakana (language=skk-katakana);
 #     "ai" puts ア and イ in (one commit each); the system bar shows ア (skk-katakana.png).
 #  2. Probe B (app probe-b) starts with the desktop's language (direct), not A's.
@@ -55,12 +55,12 @@ guest "$stop_all" >/dev/null
 guest "$start_desktop" >/dev/null
 # keiland-settings is a Wayland client of zdesktop: the method is set once the desktop runs, and it starts SKK at once.
 guest "$env; /bin/keiland-settings set ime.method 2 > /tmp/set.log 2>&1; echo set" >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME started pid=[0-9]+ client=[0-9]+ --method=skk'
+expect_log /tmp/zdesktop.log 'KWL IME started pid=[0-9]+ client=[0-9]+ --method=skk'
 start_probe /tmp/a.log probe-a
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=skk$'
+expect_log /tmp/zdesktop.log 'KWL IME language=skk$'
 keys 'q'
-expect_log /tmp/zdesktop.log 'ZWL IME language=skk-katakana'
+expect_log /tmp/zdesktop.log 'KWL IME language=skk-katakana'
 keys 'ai'
 # In SKK's katakana (as in its kana) a letter's kana goes in at once: ア and イ are two commits.
 expect_log /tmp/a.log 'commit=ア$'
@@ -70,29 +70,29 @@ echo "shot: $out/skk-katakana.png"
 
 # 2. Probe B with the desktop's language.
 start_probe /tmp/b.log probe-b
-expect_log /tmp/zdesktop.log 'ZWL IME app key=app:probe-b language=direct from=inherited'
+expect_log /tmp/zdesktop.log 'KWL IME app key=app:probe-b language=direct from=inherited'
 
 # 3. B goes: A's katakana comes back.
 guest 'kill $(cat /tmp/b.log.pid); sleep 2' >/dev/null
-expect_log /tmp/zdesktop.log 'ZWL IME app key=app:probe-a language=skk-katakana from=remembered'
+expect_log /tmp/zdesktop.log 'KWL IME app key=app:probe-a language=skk-katakana from=remembered'
 keys 'ka'
 expect_log /tmp/a.log 'commit=カ'
 
 # 4. Latin and back.
 keys 'q'
-expect_log /tmp/zdesktop.log 'ZWL IME language=skk$' 2
+expect_log /tmp/zdesktop.log 'KWL IME language=skk$' 2
 keys 'l'
-expect_log /tmp/zdesktop.log 'ZWL IME language=skk-latin'
+expect_log /tmp/zdesktop.log 'KWL IME language=skk-latin'
 keys 'x'
 expect_log /tmp/a.log 'PROBE KEY key=45 state=1'
 keys '<ctrl-j>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=skk$' 3
+expect_log /tmp/zdesktop.log 'KWL IME language=skk$' 3
 keys 'a'
 expect_log /tmp/a.log 'commit=あ'
 
-errors=$(count /tmp/zdesktop.log 'ZWL ERROR')
-[ "$errors" -eq 0 ] && echo "log: no ZWL ERROR ok" || { echo "log: ZWL ERROR ($errors)"; status=1; }
-guest "grep -E 'ZWL IME|KEI-IME' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
+errors=$(count /tmp/zdesktop.log 'KWL ERROR')
+[ "$errors" -eq 0 ] && echo "log: no KWL ERROR ok" || { echo "log: KWL ERROR ($errors)"; status=1; }
+guest "grep -E 'KWL IME|KEI-IME' /tmp/zdesktop.log" > "$out/zdesktop-ime.txt"
 guest "$env; /bin/keiland-settings reset ime.method >/dev/null 2>&1; $stop_all" >/dev/null
 echo "languages-p004: status=$status"
 exit $status

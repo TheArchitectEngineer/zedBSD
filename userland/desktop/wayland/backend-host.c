@@ -50,7 +50,7 @@ kwl_backend_session_paused(
 
 	/* The next activation makes a new output rather than reusing this one. */
 	server->windowed = 0;
-	printf("ZWL SEAT paused\n");
+	printf("KWL SEAT paused\n");
 }
 
 /*
@@ -69,7 +69,7 @@ kwl_backend_session_resumed(
 	server->input_scan_time = 0;
 	server->windowed = 0;
 	server->dirty = 1;
-	printf("ZWL SEAT resumed\n");
+	printf("KWL SEAT resumed\n");
 }
 
 /*
@@ -176,7 +176,7 @@ kwl_backend_input_changed(
 	/* The next pass scans (main.c compares the time of the last scan). */
 	server = data;
 	server->input_scan_time = 0;
-	printf("ZWL EVENT input changed\n");
+	printf("KWL EVENT input changed\n");
 }
 
 /*
@@ -209,12 +209,12 @@ kwl_backend_power_button(
 	/* Only the log, until p008. */
 	(void)data;
 	if (button == KL_BACKEND_BUTTON_SLEEP) {
-		printf("ZWL EVENT sleep button\n");
+		printf("KWL EVENT sleep button\n");
 		return;
 	}
 
 	/* The power button. */
-	printf("ZWL EVENT power button\n");
+	printf("KWL EVENT power button\n");
 }
 
 /*
@@ -235,9 +235,9 @@ kwl_backend_lid_changed(
 	/* The change, logged. */
 	server = data;
 	if (open != 0U) {
-		printf("ZWL EVENT lid open\n");
+		printf("KWL EVENT lid open\n");
 	} else {
-		printf("ZWL EVENT lid closed\n");
+		printf("KWL EVENT lid closed\n");
 	}
 
 	/* What it asks for: a session is any but the login screen's. */
@@ -288,7 +288,7 @@ kwl_lid_screen_restore(
 	/* The backlight back, when the lid put it out. */
 	if (server->backlight_out) {
 		error = kl_backend_backlight_set(server->backlight, server->backlight_saved);
-		printf("ZWL LID backlight on percent=%u error=%d\n", server->backlight_saved, error);
+		printf("KWL LID backlight on percent=%u error=%d\n", server->backlight_saved, error);
 		server->backlight_out = 0;
 	}
 
@@ -296,7 +296,7 @@ kwl_lid_screen_restore(
 	if (server->screen_off) {
 		server->screen_off = 0;
 		server->dirty = 1;
-		printf("ZWL LID screen on\n");
+		printf("KWL LID screen on\n");
 	}
 }
 
@@ -324,7 +324,7 @@ kwl_power_read(
 
 	/* Kept for the bar, and written in the log. */
 	server->power = state;
-	printf("ZWL POWER source=%s percent=%d charging=%u\n", power_source_text(state.source), state.percent,
+	printf("KWL POWER source=%s percent=%d charging=%u\n", power_source_text(state.source), state.percent,
 	       state.charging);
 }
 
@@ -381,7 +381,7 @@ lid_screen_off(
 	if (!server->screen_off) {
 		server->screen_off = 1;
 		server->dirty = 1;
-		printf("ZWL LID screen off\n");
+		printf("KWL LID screen off\n");
 	}
 
 	/* The backlight, opened the first time it is needed. */
@@ -389,7 +389,7 @@ lid_screen_off(
 		error = kl_backend_backlight_open(&server->backlight);
 		if (error != 0) {
 			server->backlight = NULL;
-			printf("ZWL LID backlight none error=%d\n", error);
+			printf("KWL LID backlight none error=%d\n", error);
 			return;
 		}
 	}
@@ -405,12 +405,12 @@ lid_screen_off(
 		percent = 100U;
 	error = kl_backend_backlight_set(server->backlight, 0U);
 	if (error != 0) {
-		printf("ZWL LID backlight off error=%d\n", error);
+		printf("KWL LID backlight off error=%d\n", error);
 		return;
 	}
 
 	/* Succeeded: out, to come back at the opening. */
 	server->backlight_saved = percent;
 	server->backlight_out = 1;
-	printf("ZWL LID backlight off saved=%u\n", percent);
+	printf("KWL LID backlight off saved=%u\n", percent);
 }

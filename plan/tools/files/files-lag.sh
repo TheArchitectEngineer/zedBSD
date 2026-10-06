@@ -22,7 +22,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; rm -rf /tmp/fhome; sh 
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Projects > /tmp/f.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 wx=${2:-0}; wy=${3:-0}
 input "move $((wx + 900)) $((wy + 600)) sleep 300 down sleep 100 move $((wx + 800)) $((wy + 500)) sleep 1000"
 check "$out/lag1.png" >/dev/null

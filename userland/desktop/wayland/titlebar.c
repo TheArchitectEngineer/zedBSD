@@ -290,7 +290,7 @@ kwl_titlebar_send_activated(
 	titlebar_emit(titlebar, EVENT_CONTROL_ACTIVATED, words, sizeof(words));
 
 	/* The log line the tests read. */
-	printf("ZWL TITLEBAR activate client=%llu id=%u detail=%u serial=%u via=%s\n",
+	printf("KWL TITLEBAR activate client=%llu id=%u detail=%u serial=%u via=%s\n",
 	       (unsigned long long)titlebar->client->number, id, detail, words[3], via);
 }
 
@@ -332,7 +332,7 @@ kwl_titlebar_send_text(
 	titlebar_emit(titlebar, opcode, payload, offset);
 
 	/* The log line the tests read (only the length: the text may be anything the user typed). */
-	printf("ZWL TITLEBAR text client=%llu id=%u done=%d how=%u length=%lu\n",
+	printf("KWL TITLEBAR text client=%llu id=%u done=%d how=%u length=%lu\n",
 	       (unsigned long long)titlebar->client->number, id, done, how, (unsigned long)strlen(text));
 }
 
@@ -369,7 +369,7 @@ kwl_titlebar_send_tab(
 	}
 
 	/* The log line the tests read. */
-	printf("ZWL TITLEBAR tab client=%llu id=%u event=%s\n", (unsigned long long)titlebar->client->number, id, names[event]);
+	printf("KWL TITLEBAR tab client=%llu id=%u event=%s\n", (unsigned long long)titlebar->client->number, id, names[event]);
 }
 
 /*
@@ -416,7 +416,7 @@ kwl_titlebar_send_drop_target(
 	titlebar_emit(titlebar, EVENT_DROP_TARGET, words, sizeof(words));
 
 	/* The log line the tests read. */
-	printf("ZWL TITLEBAR drop_target client=%llu id=%u detail=%u\n", (unsigned long long)titlebar->client->number, id, detail);
+	printf("KWL TITLEBAR drop_target client=%llu id=%u detail=%u\n", (unsigned long long)titlebar->client->number, id, detail);
 }
 
 /* Reads one native-endian protocol word the caller has checked is there. */
@@ -528,7 +528,7 @@ manager_request(
 	/* Tied to the window from both ends. */
 	created->top = toplevel;
 	toplevel->titlebar = created;
-	printf("ZWL TITLEBAR create client=%llu titlebar=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
+	printf("KWL TITLEBAR create client=%llu titlebar=%u toplevel=%u\n", (unsigned long long)manager->client->number, id, toplevel->id);
 
 	/* Native titlebar creation explicitly requests compositor decoration ownership. */
 	error = kwl_decoration_native_changed(toplevel);
@@ -671,7 +671,7 @@ titlebar_commit(
 	titlebar->client->server->dirty = 1;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL TITLEBAR commit client=%llu titlebar=%u serial=%u mode=%u controls=%u tabs=%u generation=%llu\n",
+	printf("KWL TITLEBAR commit client=%llu titlebar=%u serial=%u mode=%u controls=%u tabs=%u generation=%llu\n",
 	       (unsigned long long)titlebar->client->number, titlebar->id, serial, model->shown.mode,
 	       model->shown.control_count, model->shown.tab_count, (unsigned long long)model->generation);
 	return 0;

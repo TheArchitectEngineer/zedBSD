@@ -5,7 +5,7 @@
 ws114-p008 (2026-10-03 user): a toplevel without a declaration is decorated by the compositor (SSD); xdg-decoration's
 client_side, KDE's request_mode CLIENT/NONE, or a destroyed xdg-decoration object leave the client's decoration (CSD).
 With WS114_COMPOSITOR_LOG naming the compositor's log, each checkpoint also checks the mode the compositor applied
-(its last "ZWL DECORATION applied" line since the connection was made); without it the checkpoints are only printed.
+(its last "KWL DECORATION applied" line since the connection was made); without it the checkpoints are only printed.
 """
 import json
 import os
@@ -14,7 +14,7 @@ import socket
 import struct
 
 LOG = os.environ.get('WS114_COMPOSITOR_LOG')
-APPLIED = re.compile(r'^ZWL DECORATION applied client=\d+ surface=\d+ mode=(\d+)$', re.M)
+APPLIED = re.compile(r'^KWL DECORATION applied client=\d+ surface=\d+ mode=(\d+)$', re.M)
 
 
 def word(*values):

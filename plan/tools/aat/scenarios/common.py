@@ -58,7 +58,7 @@ def current_method(run) -> int:
 	"""The input method the desktop has now (0 none, 1 Japanese, 2 SKK): the last change the log says, or the
 	desktop's default, Japanese (the compositor's main.c; T1-232 took no line for none, and the switch of the
 	method chosen already did nothing)."""
-	lines = run.lines(r"ZWL IME method=\d+", None)
+	lines = run.lines(r"KWL IME method=\d+", None)
 	return aatlib.number(lines[-1], "method") if lines else 1
 
 
@@ -72,7 +72,7 @@ def set_method(run, item, method: int) -> None:
 	mark = run.mark()
 	run.click_control(item, window, controls, METHOD_SWITCHES[method], f"the switch of method {method}")
 	chosen = run.wait(rf"ZSETTINGS LANGUAGES ime method={method}", mark, 10)
-	desktop = run.wait(rf"ZWL IME method={method}", mark, 10)
+	desktop = run.wait(rf"KWL IME method={method}", mark, 10)
 	item.step(f"chose input method {method}", f"{chosen}; {desktop}")
 	item.check(chosen and desktop, f"input method {method} was not taken")
 	run.stop_programs()
@@ -83,7 +83,7 @@ def to_language(run, item, language: str) -> None:
 	for _ in range(3):
 		mark = run.mark()
 		run.key("alt+space")
-		line = run.wait(r"ZWL IME language=\S+", mark, 5)
+		line = run.wait(r"KWL IME language=\S+", mark, 5)
 		if line and aatlib.field(line, "language") == language:
 			item.step(f"Alt+Space to {language}", line)
 			return

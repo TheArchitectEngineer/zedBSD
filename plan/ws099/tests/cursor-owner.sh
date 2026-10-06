@@ -2,7 +2,7 @@
 # ws099-p007 (BUG-118): a client's cursor (here hidden) is shown only over that client's window; elsewhere zdesktop's
 # arrow, without the keyboard's focus changing.  zdesktop --glass at 1280x800 with the wallpaper, and
 # /bin/wlshm --hide-cursor (400x300, it hides the cursor when the pointer enters it).  The pointer is put:
-#  1. on the window's body: hidden (ZWL CURSOR client=N shown=1; the picture around the pointer is the same as with
+#  1. on the window's body: hidden (KWL CURSOR client=N shown=1; the picture around the pointer is the same as with
 #     the pointer elsewhere, so no arrow is drawn there);
 #  2. on the desktop: the arrow (shown=0; the picture around the pointer differs from one with the pointer elsewhere);
 #  3. on the window's title bar: the arrow (the title bar is zdesktop's);
@@ -72,10 +72,10 @@ put() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=300 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/wlshm --size=400x300 --color=ff3060a0 --frames=6000 --hide-cursor --token=h > /tmp/h.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-440}; wy=${2:-250}
 echo "window at $wx,$wy"
 body_x=$((wx + 200)); body_y=$((wy + 150))
@@ -85,17 +85,17 @@ far_x=1100; far_y=650
 
 # 1. The body: the client hid the cursor; nothing is drawn at the pointer.
 put "$body_x" "$body_y" body
-expect_log 'ZWL CURSOR client=[0-9]+ shown=1' 1
+expect_log 'KWL CURSOR client=[0-9]+ shown=1' 1
 # 2. The desktop: the arrow.
 put "$desk_x" "$desk_y" desktop
-expect_log 'ZWL CURSOR client=[0-9]+ shown=0' 1
+expect_log 'KWL CURSOR client=[0-9]+ shown=0' 1
 # 3. The title bar: the arrow.
 put "$title_x" "$title_y" title
 # The pictures to compare with: the pointer far away on the desktop.
 put "$far_x" "$far_y" far
 # 4. The body again: hidden.
 put "$body_x" "$body_y" body-again
-expect_log 'ZWL CURSOR client=[0-9]+ shown=1' 2
+expect_log 'KWL CURSOR client=[0-9]+ shown=1' 2
 
 # The arrow is drawn where it should be, and not on the body.
 n=$(differs "$out/desktop.png" "$out/far.png" "$desk_x" "$desk_y")
@@ -112,7 +112,7 @@ leaves=$(guest "grep -c 'WLSHM LEAVE' /tmp/h.log" | tail -1)
 echo "wlshm pointer leaves: ${leaves:-?}"
 guest 'grep -E "ERROR|FAILED" /tmp/zdesktop.log' | tee "$out/errors.txt"
 [ -s "$out/errors.txt" ] && status=1
-guest 'grep -E "ZWL CURSOR" /tmp/zdesktop.log' > "$out/zdesktop-cursor.log"
+guest 'grep -E "KWL CURSOR" /tmp/zdesktop.log' > "$out/zdesktop-cursor.log"
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "cursor-owner: PASS" || echo "cursor-owner: FAIL"
 exit $status

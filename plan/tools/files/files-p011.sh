@@ -4,7 +4,7 @@
 #  1. home.png: the launcher opens Home with the built-in list, Files among them (at least 7 tiles; the list has
 #     grown since ws071, e.g. 11 on 2026-10-03 with Lock Screen and Log Out, so ws127-p002 checks no exact count).
 #  2. files.png: the Files icon starts files (HOME LAUNCH name=Files), which maps its window and gives
-#     its titlebar the controls (ZWL TITLEBAR control ... where=floating id=1 ... shown=1).
+#     its titlebar the controls (KWL TITLEBAR control ... where=floating id=1 ... shown=1).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up)
 #   plan/tools/files/files-p011.sh [OUTDIR]
@@ -42,7 +42,7 @@ expect_log() {
 
 # An icon's centre on Home as zdesktop logged it: "x y".
 icon() {
-	guest "grep 'ZWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
+	guest "grep 'KWL HOME icon name=\"$1\"' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p'
 }
 
 guest "$stop_all; rm -f /etc/keiland/apps.conf" >/dev/null
@@ -54,8 +54,8 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 pointer move 700 500 sleep 400
 check "$out/home.png" >/dev/null
-expect_log 'ZWL HOME opened apps=([7-9]|[1-9][0-9]) '
-expect_log 'ZWL HOME icon name="Files"'
+expect_log 'KWL HOME opened apps=([7-9]|[1-9][0-9]) '
+expect_log 'KWL HOME icon name="Files"'
 
 # 2. Files.
 set -- $(icon Files)
@@ -63,10 +63,10 @@ echo "Files icon at ${1:-?},${2:-?}"
 pointer move ${1:-0} ${2:-0} sleep 400 down sleep 60 up sleep 8000
 pointer move 1250 780 sleep 400
 check "$out/files.png" >/dev/null
-expect_log 'ZWL HOME launch name=Files pid='
+expect_log 'KWL HOME launch name=Files pid='
 zwl_app_clients
-expect_log "ZWL MAP client=$zc1 "
-expect_log "ZWL TITLEBAR control client=$zc1 .* where=floating id=1 .* shown=1"
+expect_log "KWL MAP client=$zc1 "
+expect_log "KWL TITLEBAR control client=$zc1 .* where=floating id=1 .* shown=1"
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }

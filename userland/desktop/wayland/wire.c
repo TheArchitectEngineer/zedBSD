@@ -319,7 +319,7 @@ kwl_error(
 	error = kwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
 	client->fatal = 1;
 	client->fatal_time = kwl_milliseconds();
-	printf("ZWL ERROR client=%llu object=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, reason, error);
+	printf("KWL ERROR client=%llu object=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, reason, error);
 
 	/* Succeeded: EPROTO directs the loop to flush this terminal error before disconnect. */
 	return EPROTO;
@@ -366,7 +366,7 @@ kwl_error_code(
 	error = kwl_emit(client, 1, 0, payload, 12U + ((bytes + 4U) & ~(size_t)3U));
 	client->fatal = 1;
 	client->fatal_time = kwl_milliseconds();
-	printf("ZWL ERROR client=%llu object=%u code=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, code, reason, error);
+	printf("KWL ERROR client=%llu object=%u code=%u reason=%s emit=%d\n", (unsigned long long)client->number, object, code, reason, error);
 
 	/* Succeeded: EPROTO makes the loop flush the error before it disconnects. */
 	return EPROTO;

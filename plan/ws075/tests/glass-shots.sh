@@ -51,5 +51,5 @@ pointer move 22 16 sleep 150 down sleep 60 up sleep 1200
 # Wiseview (a swipe up from the middle of the bottom edge).
 pointer move 640 798 sleep 200 down sleep 80 move 640 700 sleep 60 move 640 520 sleep 120 up sleep 1500
 shot wiseview.png
-guest 'grep -a "ZWL GLASS\|ZWL OSK open\|ZWL WISEVIEW\|ZWL HOME" /tmp/zdesktop.log | tail -20' > "$out/$variant-log.txt"
+guest 'grep -a "KWL GLASS\|KWL OSK open\|KWL WISEVIEW\|KWL HOME" /tmp/zdesktop.log | tail -20' > "$out/$variant-log.txt"
 guest "$stop_all" >/dev/null

@@ -70,26 +70,26 @@ def terminal_f11(item):
 	# F11 is the Fullscreen menu item's shortcut: the compositor's menu chooses it (ZTERM MENU state ... fullscreen=1),
 	# or Terminal takes the key itself on a desktop without those menus (BUG-194).
 	on = run.wait(r"ZTERM FULLSCREEN key on=1|ZTERM MENU state .*fullscreen=1", mark, 10)
-	hidden = run.wait(r"ZWL GLASS bar hidden fullscreen=1", mark, 10)
+	hidden = run.wait(r"KWL GLASS bar hidden fullscreen=1", mark, 10)
 	time.sleep(1.0)
 	item.step("F11", f"{on}; {hidden}")
 	run.shot(item, "fullscreen")
 	item.check(on and hidden, "Terminal did not go full screen")
 	mark = run.mark()
 	run.key("f11")
-	left = run.wait(rf"ZWL GLASS fullscreen-leave surface={window.surface} via=f11 error=0|ZTERM FULLSCREEN key on=0", mark, 10)
-	shown = run.wait(r"ZWL GLASS bar shown", mark, 10)
+	left = run.wait(rf"KWL GLASS fullscreen-leave surface={window.surface} via=f11 error=0|ZTERM FULLSCREEN key on=0", mark, 10)
+	shown = run.wait(r"KWL GLASS bar shown", mark, 10)
 	time.sleep(1.0)
 	item.step("F11 again", f"{left}; {shown}")
 	run.shot(item, "window")
 	item.check(left and shown, "Terminal did not leave full screen (BUG-194)")
 	mark = run.mark()
 	run.key("f11")
-	again = run.wait(r"ZWL GLASS bar hidden fullscreen=1", mark, 10)
+	again = run.wait(r"KWL GLASS bar hidden fullscreen=1", mark, 10)
 	time.sleep(0.8)
 	run.key("super+down")
-	down = run.wait(rf"ZWL GLASS fullscreen-leave surface={window.surface} via=super-down error=0", mark, 10)
-	shown = run.wait(r"ZWL GLASS bar shown", mark, 10)
+	down = run.wait(rf"KWL GLASS fullscreen-leave surface={window.surface} via=super-down error=0", mark, 10)
+	shown = run.wait(r"KWL GLASS bar shown", mark, 10)
 	time.sleep(1.0)
 	item.step("F11, then Super+Down", f"{again}; {down}; {shown}")
 	run.shot(item, "super-down")
@@ -110,7 +110,7 @@ def terminal_many(item):
 		if len(started) >= 20:
 			break
 		time.sleep(2)
-	maps = run.lines(r"ZWL MAP client=", mark)
+	maps = run.lines(r"KWL MAP client=", mark)
 	failed = run.lines(r"ZTERM FAILED|errno=[1-9]", mark)
 	item.step(f"started Terminal 20 times as {aatlib.USER}", f"{len(maps)} maps, {len(started)} starts, {len(failed)} failures")
 	run.shot(item, "twenty")
@@ -123,7 +123,7 @@ def terminal_many(item):
 	# scenario's Windows key came too late): the scenario ends when each window's client is gone.
 	gone = set()
 	while time.monotonic() < ended + 90 and not clients <= gone:
-		gone = {aatlib.number(line, "client") for line in run.lines(r"ZWL CLIENT gone client=\d+", mark)}
+		gone = {aatlib.number(line, "client") for line in run.lines(r"KWL CLIENT gone client=\d+", mark)}
 		time.sleep(2)
 	took = time.monotonic() - ended
 	item.step("ended them all", f"{len(clients & gone)} of {len(clients)} clients gone in {took:.0f} s")
@@ -214,7 +214,7 @@ def settings_single(item):
 	handed = run.wait(r"ZSETTINGS DONE reason=handed-over page=about", mark, 15)
 	page = run.wait(r"ZSETTINGS PAGE about", mark, 10)
 	time.sleep(1.0)
-	maps = run.lines(r"ZWL MAP client=", mark)
+	maps = run.lines(r"KWL MAP client=", mark)
 	item.step("started settings about as kei", f"{handed}; {page}; {len(maps)} new windows")
 	run.shot(item, "about")
 	item.check(handed and page, "the second start did not hand its page over")
@@ -399,7 +399,7 @@ def settings_sound(item):
 	item.check(line, "no ZSETTINGS SOUND open line")
 	if aatlib.number(line, "reachable") != 1:
 		item.person(f"audiod is not reachable here: {line}")
-	volume = run.lines(r"ZWL VOLUME (restored|set) value=", None)
+	volume = run.lines(r"KWL VOLUME (restored|set) value=", None)
 	value = aatlib.number(line, "value")
 	bar = aatlib.number(volume[-1], "value") if volume else None
 	item.check(bar is None or bar == value, f"Settings says {value}, the bar {bar}")
@@ -661,7 +661,7 @@ def videoplayer_fullscreen(item):
 		line = run.wait(rf"VIDEOPLAYER FULLSCREEN on={on}" + (f"|{extra}" if extra else ""), since, 10)
 		# The player's first frame of the new size (a new swapchain first; T1-235's screenshot 0.8 s after the line
 		# still had the window's size), when the size changed; then the compositor's frame.
-		configure = run.wait(rf"ZWL CONFIGURE client={window.client} surface={window.surface} serial=\d+ width=\d+ height=\d+ fullscreen={on}", since, 10)
+		configure = run.wait(rf"KWL CONFIGURE client={window.client} surface={window.surface} serial=\d+ width=\d+ height=\d+ fullscreen={on}", since, 10)
 		width, height = aatlib.number(configure, "width"), aatlib.number(configure, "height")
 		presented = None
 		if width and height:
@@ -680,15 +680,15 @@ def videoplayer_fullscreen(item):
 	toggled("F11", ("f11",), 1)
 	# The game mode (ws122-p005b): the video shown straight once the pointer has been still 2 s (direct=1), or the
 	# reason the display would not (backend: the QEMU display shows no shared images; the UAT's i915 should).
-	scanout = run.wait(r"ZWL SCANOUT direct=1 |ZWL SCANOUT direct=0 reason=(backend|refused)", mark, 8)
-	item.step("the game mode after 2 s of a still pointer", scanout or "no ZWL SCANOUT line")
+	scanout = run.wait(r"KWL SCANOUT direct=1 |KWL SCANOUT direct=0 reason=(backend|refused)", mark, 8)
+	item.step("the game mode after 2 s of a still pointer", scanout or "no KWL SCANOUT line")
 	item.check(scanout, "the fullscreen video neither went straight to the display nor was refused by it")
 	run.shot(item, "f11")
-	left = run.lines(r"ZWL SCANOUT direct=0 reason=shot", mark)
+	left = run.lines(r"KWL SCANOUT direct=0 reason=shot", mark)
 	item.step("the screenshot is composed (the game mode leaves for it)", left[-1] if left else "no shot reason")
 	toggled("Esc", ("esc",), 0)
 	toggled("Alt+Enter", ("alt+enter",), 1)
-	toggled("F11 again", ("f11",), 0, r"ZWL GLASS fullscreen-leave surface=\d+ via=f11")
+	toggled("F11 again", ("f11",), 0, r"KWL GLASS fullscreen-leave surface=\d+ via=f11")
 	time.sleep(0.5)
 	toggled("a double click", (), 1)
 	run.shot(item, "double-click")
@@ -758,14 +758,14 @@ def browser(item):
 	mark = run.mark()
 	window = run.launch(item, "Browser")
 	time.sleep(1.5)
-	controls = [line for line in run.lines(rf"ZWL TITLEBAR control client={window.client} surface={window.surface} where=floating id=\d+ ", mark)
+	controls = [line for line in run.lines(rf"KWL TITLEBAR control client={window.client} surface={window.surface} where=floating id=\d+ ", mark)
 		if aatlib.number(line, "width") and aatlib.number(line, "width") >= 200]
 	item.check(controls, "no wide control (the URL field) in the title bar's log")
 	field = controls[-1]
 	x, y, width, height = (aatlib.number(field, name) for name in ("x", "y", "width", "height"))
 	focus_mark = run.mark()
 	run.click(x + width // 2, y + height // 2)
-	focus = run.wait(rf"ZWL TITLEBAR focus client={window.client} surface=\d+ id=\d+ edit=1", focus_mark, 10)
+	focus = run.wait(rf"KWL TITLEBAR focus client={window.client} surface=\d+ id=\d+ edit=1", focus_mark, 10)
 	item.step("clicked the URL field", focus)
 	item.check(focus, "the URL field did not take the keyboard")
 	run.key("ctrl+a")

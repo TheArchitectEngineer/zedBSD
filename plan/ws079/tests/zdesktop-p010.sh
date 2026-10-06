@@ -102,9 +102,9 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 pointer move 640 500 sleep 800
 
 # 0. The corner against the network icon.
-set -- $(guest "grep 'ZWL CORNER zone' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([0-9]*\) .*/\1/p')
+set -- $(guest "grep 'KWL CORNER zone' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([0-9]*\) .*/\1/p')
 zone_x=${1:-0}
-set -- $(guest "grep 'ZWL NETWORK icon' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([-0-9]*\) y=[0-9]* width=\([0-9]*\) .*/\1 \2/p')
+set -- $(guest "grep 'KWL NETWORK icon' /tmp/zdesktop.log | head -1" | sed -n 's/.* x=\([-0-9]*\) y=[0-9]* width=\([0-9]*\) .*/\1 \2/p')
 icon_x=${1:-0}; icon_width=${2:-0}
 echo "corner from x=$zone_x; network icon x=$icon_x..$((icon_x + icon_width - 1))"
 if [ "$zone_x" -ge 1200 ] && [ $((icon_x + icon_width)) -le "$zone_x" ]; then
@@ -149,7 +149,7 @@ shot notes-after-flick --expect 640,400,fdf6e3 || status=1
 # 4. A windowed stand-in under another window: raised and made fullscreen.
 guest "$stop_notes" >/dev/null
 guest "$env /bin/notes --windowed & sleep 4; /bin/wltest --windowed --size=500x360 --color=c8d8ec --frames=3600 --delay-ms=250 --token=b > /tmp/b.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 b_surface=${1:-0}; bx=${2:-0}; by=${3:-0}
 echo "b: surface $b_surface at $bx,$by"
 pointer move 640 500 sleep 800

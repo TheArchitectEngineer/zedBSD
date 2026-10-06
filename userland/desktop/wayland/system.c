@@ -698,7 +698,7 @@ system_manager_request(
 	created = kwl_create(manager->client, id, kind, manager->version);
 	if (created == NULL)
 		return EPROTO;
-	printf("ZWL SYSTEM object client=%llu get=%u id=%u\n", (unsigned long long)manager->client->number, (unsigned)opcode, id);
+	printf("KWL SYSTEM object client=%llu get=%u id=%u\n", (unsigned long long)manager->client->number, (unsigned)opcode, id);
 
 	/* Its first state and a done. */
 	switch (kind) {
@@ -756,7 +756,7 @@ kwl_system_sharing_answer(
 	struct system_devices_wait *wait;
 
 	/* Every sharing object, the state and a done. */
-	printf("ZWL SYSTEM sharing answer error=%d\n", error);
+	printf("KWL SYSTEM sharing answer error=%d\n", error);
 	system_tell(server, KWL_SYSTEM_SHARING, system_sharing_state, KL_SYSTEM_SHARING_EVENT_DONE);
 
 	/* The result of the request that waited. */
@@ -798,7 +798,7 @@ kwl_system_pin_answer(
 	wait = &system_state.pin;
 	system_state.pin_waiting = 0U;
 	reason = kl_backend_session_reason(server->backend);
-	printf("ZWL SYSTEM account pin answer=%d reason=%s\n", error, reason);
+	printf("KWL SYSTEM account pin answer=%d reason=%s\n", error, reason);
 
 	/* What is enrolled may have changed. */
 	system_state.enrolled_wanted = 1U;
@@ -844,7 +844,7 @@ kwl_system_enrolled_answer(
 	/* The answer came; a failed one is asked again later. */
 	system_state.enrolled_asked = 0U;
 	if (error != 0) {
-		printf("ZWL SYSTEM enrolled error=%d\n", error);
+		printf("KWL SYSTEM enrolled error=%d\n", error);
 		return;
 	}
 
@@ -853,7 +853,7 @@ kwl_system_enrolled_answer(
 	system_state.enrolled_known = 1U;
 	system_state.enrolled_pin = pin;
 	system_state.enrolled_keys = keys;
-	printf("ZWL SYSTEM enrolled pin=%u keys=%u\n", pin, keys);
+	printf("KWL SYSTEM enrolled pin=%u keys=%u\n", pin, keys);
 
 	/* Each account object of every client that is not ending. */
 	for (client = server->clients;
@@ -915,7 +915,7 @@ system_sharing_request(
 
 	/* Asked of sessiond; the answer comes through kwl_system_sharing_answer. */
 	error = kl_backend_sharing_request(object->client->server->backend, action);
-	printf("ZWL SYSTEM sharing client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
+	printf("KWL SYSTEM sharing client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
 	if (error != 0) {
 		system_result(object, KL_SYSTEM_SHARING_EVENT_RESULT, number, system_result_of(error));
 		return 0;
@@ -1092,7 +1092,7 @@ system_network_scanning(
 	 */
 	object->network_scanning = asked;
 	kwl_network_scan_hold(asked);
-	printf("ZWL SYSTEM scanning client=%llu id=%u on=%u\n", (unsigned long long)object->client->number, object->id, asked);
+	printf("KWL SYSTEM scanning client=%llu id=%u on=%u\n", (unsigned long long)object->client->number, object->id, asked);
 }
 
 /* Lets go of each network object's asking for scans that was not asked again within its minute. */
@@ -1116,7 +1116,7 @@ system_scanning_expire(
 				continue;
 
 			/* Its minute ran out without its asking again. */
-			printf("ZWL SYSTEM scanning expired client=%llu id=%u\n", (unsigned long long)client->number, object->id);
+			printf("KWL SYSTEM scanning expired client=%llu id=%u\n", (unsigned long long)client->number, object->id);
 			system_network_scanning(object, 0U);
 		}
 	}
@@ -1210,7 +1210,7 @@ system_power_request(
 	 * unsupported at once; logind answers its one call).
 	 */
 	error = kl_backend_power_action(object->client->server->backend, action);
-	printf("ZWL SYSTEM power client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
+	printf("KWL SYSTEM power client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
 	system_result(object, KL_SYSTEM_POWER_EVENT_RESULT, number, system_result_of(error));
 
 	/* Succeeded: the request is answered. */
@@ -1266,7 +1266,7 @@ system_devices_request(
 	/* Sent to volumed; the answer comes later, or the failure to send now. */
 	request = 0U;
 	error = kwl_media_ask(mount, id, &request);
-	printf("ZWL SYSTEM devices client=%llu mount=%d id=%s error=%d\n", (unsigned long long)object->client->number, mount, id, error);
+	printf("KWL SYSTEM devices client=%llu mount=%d id=%s error=%d\n", (unsigned long long)object->client->number, mount, id, error);
 	free(id);
 	if (error != 0) {
 		system_result(object, KL_SYSTEM_DEVICES_EVENT_RESULT, number, system_result_of(error));
@@ -1415,7 +1415,7 @@ system_account_request(
 		kind = "set-password";
 		if (job->administer)
 			kind = "administer";
-		printf("ZWL SYSTEM account %s client=%llu number=%u\n", kind, (unsigned long long)job->client, number);
+		printf("KWL SYSTEM account %s client=%llu number=%u\n", kind, (unsigned long long)job->client, number);
 		return 0;
 	}
 
@@ -1495,7 +1495,7 @@ system_account_take(
 	system_wipe(job->current, sizeof(job->current));
 	system_wipe(job->fresh, sizeof(job->fresh));
 	system_wipe(job->operation, sizeof(job->operation));
-	printf("ZWL SYSTEM account result client=%llu number=%u error=%d reason=%s\n", (unsigned long long)job->client, job->number, job->error, job->reason);
+	printf("KWL SYSTEM account result client=%llu number=%u error=%d reason=%s\n", (unsigned long long)job->client, job->number, job->error, job->reason);
 
 	/* The asking object, when its client and it are still there. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -1620,7 +1620,7 @@ system_pin_begin(
 
 	/* The change; the answer comes through kwl_system_pin_answer. */
 	error = kl_backend_session_set_pin(backend, current, pin);
-	printf("ZWL SYSTEM account pin client=%llu number=%u remove=%d error=%d\n", (unsigned long long)object->client->number, number, pin[0] == '\0', error);
+	printf("KWL SYSTEM account pin client=%llu number=%u remove=%d error=%d\n", (unsigned long long)object->client->number, number, pin[0] == '\0', error);
 	if (error != 0)
 		return error;
 
@@ -1702,7 +1702,7 @@ system_enrolled_tick(
 			snprintf(path, sizeof(path), "%s/.config/keiland/pin", home);
 			error = unlink(path);
 			if (error == 0)
-				printf("ZWL SYSTEM removed the old PIN file\n");
+				printf("KWL SYSTEM removed the old PIN file\n");
 		}
 	}
 
@@ -1759,7 +1759,7 @@ system_network_send(
 	if (request == KL_BACKEND_NETWORK_REQUEST_JOIN)
 		named = ssid;
 	error = kl_backend_network_request(watch, request, named);
-	printf("ZWL SYSTEM network client=%llu request=%u error=%d\n", (unsigned long long)object->client->number, request, error);
+	printf("KWL SYSTEM network client=%llu request=%u error=%d\n", (unsigned long long)object->client->number, request, error);
 	if (error != 0)
 		return system_network_result_of(error);
 
@@ -1888,7 +1888,7 @@ system_network_wired_send(
 
 	/* The request (the system bar's may be outstanding: busy). */
 	error = kl_backend_network_configure_wired(watch, config);
-	printf("ZWL SYSTEM network client=%llu wired interface=%s mode=%u error=%d\n", (unsigned long long)object->client->number, config->interface, config->mode, error);
+	printf("KWL SYSTEM network client=%llu wired interface=%s mode=%u error=%d\n", (unsigned long long)object->client->number, config->interface, config->mode, error);
 	if (error != 0)
 		return system_result_of(error);
 
@@ -1951,7 +1951,7 @@ system_network_save_key(
 	wait->number = number;
 	(void)snprintf(wait->ssid, sizeof(wait->ssid), "%s", ssid);
 	(void)snprintf(wait->key, sizeof(wait->key), "%s", key);
-	printf("ZWL SYSTEM network client=%llu bar=%u save-key ssid=%s\n", (unsigned long long)client, bar, ssid);
+	printf("KWL SYSTEM network client=%llu bar=%u save-key ssid=%s\n", (unsigned long long)client, bar, ssid);
 	system_network_job_next(server);
 
 	/* Succeeded: the result comes once the network is joined. */
@@ -2018,7 +2018,7 @@ system_network_step(
 	}
 
 	/* A step that could not be sent ends the work. */
-	printf("ZWL SYSTEM network step request=%u ssid=%s error=%d\n", request, wait->ssid, error);
+	printf("KWL SYSTEM network step request=%u ssid=%s error=%d\n", request, wait->ssid, error);
 	if (error != 0) {
 		system_network_finish(server, error);
 		return;
@@ -2231,14 +2231,14 @@ system_network_job_take(
 	}
 
 	/* A key that could not be saved ends the work. */
-	printf("ZWL SYSTEM network key saved ssid=%s error=%d\n", system_state.wait.ssid, job->error);
+	printf("KWL SYSTEM network key saved ssid=%s error=%d\n", system_state.wait.ssid, job->error);
 	if (job->error != 0) {
 		system_network_finish(server, job->error);
 		return;
 	}
 
 	/* The line the system bar's tests read since before the key moved to this thread (network.c, WS131 p011). */
-	printf("ZWL NETWORK key saved ssid=%s\n", system_state.wait.ssid);
+	printf("KWL NETWORK key saved ssid=%s\n", system_state.wait.ssid);
 
 	/* The daemon is told the saved networks changed; its answer sends the join. */
 	system_network_step(server, KL_BACKEND_NETWORK_REQUEST_PROFILES);
@@ -2396,7 +2396,7 @@ system_power_read(
 	job->backend = server->backend;
 	error = system_job_start(job, SYSTEM_JOB_POWER, "", "");
 	if (error != 0)
-		printf("ZWL SYSTEM power read error=%d\n", error);
+		printf("KWL SYSTEM power read error=%d\n", error);
 }
 
 /* Tells whether a thread's job is finished, and joins the thread then (its outputs are the event loop's from here). */
@@ -2638,7 +2638,7 @@ system_devices_answers(
 
 		/* The object, if it is still there: the program of a busy eject (version 5), then the result. */
 		object = system_devices_object(server, wait.client, wait.object);
-		printf("ZWL SYSTEM devices answer request=%u error=%d user=%s\n", wait.number, error, user);
+		printf("KWL SYSTEM devices answer request=%u error=%d user=%s\n", wait.number, error, user);
 		if (object == NULL)
 			continue;
 		if (error == EBUSY && user[0] != '\0' && object->version >= KL_SYSTEM_DEVICES_SINCE_MOUNT) {
@@ -2770,7 +2770,7 @@ system_result(
 	words[1] = applied;
 	words[2] = applied;
 	(void)kwl_emit(object->client, object->id, opcode, words, sizeof(words));
-	printf("ZWL SYSTEM result client=%llu object=%u request=%u applied=%u\n", (unsigned long long)object->client->number, object->id, number, applied);
+	printf("KWL SYSTEM result client=%llu object=%u request=%u applied=%u\n", (unsigned long long)object->client->number, object->id, number, applied);
 }
 
 /* Sends a done with the serial of the state it closes. */

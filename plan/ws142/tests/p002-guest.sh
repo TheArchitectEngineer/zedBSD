@@ -2,10 +2,10 @@
 # ws142-p002: the Windows key pressed alone opens and closes App Home.  On the desktop test guest
 # (plan/ws079/tests/config-amd64-pen.mk, started with plan/ws079/tests/pen-guest.sh start IMAGE); the compositor under
 # test (BUILD/bin/wayland) is copied in, 1280x800, with one wltest window.  The keys come through QMP.
-#  1. Super (meta_l) pressed and released: "ZWL SUPER home" and "ZWL HOME open via=super" (home-open.png).
-#  2. Again: "ZWL HOME close via=super".
-#  3. The right Super (meta_r): opens; Esc closes it ("ZWL HOME close via=escape").
-#  4. Super+Tab: Wiseview opens from the keyboard ("ZWL WISEVIEW opening key"), Home does not; Esc closes Wiseview.
+#  1. Super (meta_l) pressed and released: "KWL SUPER home" and "KWL HOME open via=super" (home-open.png).
+#  2. Again: "KWL HOME close via=super".
+#  3. The right Super (meta_r): opens; Esc closes it ("KWL HOME close via=escape").
+#  4. Super+Tab: Wiseview opens from the keyboard ("KWL WISEVIEW opening key"), Home does not; Esc closes Wiseview.
 #  5. Super held while the mouse clicks the window: Home does not open.
 #  6. Super held 1.5 s: Home does not open.
 #  7. Shift+Super: Home does not open.
@@ -43,43 +43,43 @@ expect_count() { n=$(count "$2"); if [ "${n:-0}" -eq "$3" ] 2>/dev/null; then pa
 guest "$stop_all" >/dev/null
 put "$build/bin/wayland" /bin/wayland
 guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/wltest --windowed --size=420x300 --frames=3600 --delay-ms=250 > /tmp/w.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null
 
 # 1 and 2. The left Super opens Home, then closes it.
 tap meta_l
-expect_count super-opens 'ZWL HOME open via=super' 1
-expect_count super-logged 'ZWL SUPER home' 1
+expect_count super-opens 'KWL HOME open via=super' 1
+expect_count super-logged 'KWL SUPER home' 1
 pointer move 700 500 sleep 300 >/dev/null
 shot home-open
 tap meta_l
-expect_count super-closes 'ZWL HOME close via=super' 1
+expect_count super-closes 'KWL HOME close via=super' 1
 
 # 3. The right Super opens it; Esc closes it.
 tap meta_r
-expect_count right-super-opens 'ZWL HOME open via=super' 2
+expect_count right-super-opens 'KWL HOME open via=super' 2
 tap esc
-expect_count esc-closes 'ZWL HOME close via=escape' 1
+expect_count esc-closes 'KWL HOME close via=escape' 1
 
 # 4. Super+Tab: Wiseview, not Home.
 key meta_l true; sleep 0.1; key tab true; sleep 0.05; key tab false; sleep 0.1; key meta_l false; sleep 1
-expect_count super-tab-wiseview 'ZWL WISEVIEW opening key' 1
-expect_count super-tab-no-home 'ZWL HOME open via=super' 2
+expect_count super-tab-wiseview 'KWL WISEVIEW opening key' 1
+expect_count super-tab-no-home 'KWL HOME open via=super' 2
 tap esc
 
 # 5. Super held while the mouse clicks.
 key meta_l true; sleep 0.1
 pointer move 640 400 sleep 100 down sleep 60 up sleep 200 >/dev/null
 key meta_l false; sleep 1
-expect_count click-no-home 'ZWL HOME open via=super' 2
+expect_count click-no-home 'KWL HOME open via=super' 2
 
 # 6. Super held 1.5 s.
 key meta_l true; sleep 1.5; key meta_l false; sleep 1
-expect_count long-hold-no-home 'ZWL HOME open via=super' 2
+expect_count long-hold-no-home 'KWL HOME open via=super' 2
 
 # 7. Shift+Super.
 key shift true; sleep 0.1; key meta_l true; sleep 0.1; key meta_l false; sleep 0.1; key shift false; sleep 1
-expect_count shift-no-home 'ZWL HOME open via=super' 2
+expect_count shift-no-home 'KWL HOME open via=super' 2
 
 # 8. Super reaches no client: seat-probe has the focus.
 guest 'export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0; /bin/seat-probe --timeout-s=40 --token=k > /tmp/k.log 2>&1 </dev/null & sleep 4; echo started' >/dev/null

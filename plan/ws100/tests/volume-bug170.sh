@@ -4,12 +4,12 @@
 # On the Venus guest of the volume image (build-volume-image.sh) with QEMU's HD Audio (volume-guest.sh), kei's session
 # at boot.
 #  1. The system bar: the popup's slider pressed at a quarter, dragged in 160 steps of 10 ms to the right end and back
-#     to the middle, and let go.  Exactly one new "ZWL VOLUME feedback ... via=slider" (the release's); the release's
+#     to the middle, and let go.  Exactly one new "KWL VOLUME feedback ... via=slider" (the release's); the release's
 #     "set ... final=1" comes within the drag's time and 2 s of its first step (zdesktop kept up); audiod has the final
 #     volume; a click on the icon right after closes the popup within 3 s (the desktop answers).
 #  2. Settings' Sound page: its slider dragged the same way (120 steps of 10 ms) and let go.  Exactly one new
 #     "SOUND feedback error=0" (the release's); "SOUND set ... final=1"; audiod has the final volume.
-#  3. No ZWL ERROR; Settings still runs.
+#  3. No KWL ERROR; Settings still runs.
 #   plan/ws100/tests/volume-bug170.sh IMAGE [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -89,29 +89,29 @@ EOF
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1
 VOLUME_AUDIO=duplex timeout 180 sh plan/ws100/tests/volume-guest.sh start "$image" >/dev/null 2>&1
 sleep 35
-expect_more $log 'ZWL HANDOFF go=1' 0 60
-expect_more $log 'ZWL VOLUME reachable=1 device=1' 0 20
-expect_more $log 'ZWL VOLUME icon x=' 0 10
+expect_more $log 'KWL HANDOFF go=1' 0 60
+expect_more $log 'KWL VOLUME reachable=1 device=1' 0 20
+expect_more $log 'KWL VOLUME icon x=' 0 10
 guest 'audiod-feedback volume 60' >/dev/null
 sleep 2
 
 # 1. The system bar's slider: the popup, then the quick drag.
-set -- $(last $log 'ZWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+set -- $(last $log 'KWL VOLUME icon x=' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 ix=$((${1:-900} + ${3:-30} / 2)); iy=$((${2:-3} + ${4:-28} / 2))
-opens=$(count $log 'ZWL VOLUME popup open')
+opens=$(count $log 'KWL VOLUME popup open')
 pointer move $((ix - 2)) $iy sleep 200 move $ix $iy sleep 300 down sleep 60 up sleep 800
-expect_more $log 'ZWL VOLUME popup open' "$opens" 5
-set -- $(last $log 'ZWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
+expect_more $log 'KWL VOLUME popup open' "$opens" 5
+set -- $(last $log 'KWL VOLUME popup open' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\) slider=\([0-9]*\) mute=\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p')
 px=${1:-900} pw=${3:-260} slider=${5:-100}
 track_left=$((px + 23)) track_width=$((pw - 46))
 sy=$((slider + 17))
 q1=$((track_left + track_width / 4)) right=$((track_left + track_width)) middle=$((track_left + track_width / 2))
 lines=$(guest "wc -l < $log" | tail -1)
-feedbacks=$(count $log 'ZWL VOLUME feedback at_ms=[0-9]+ via=slider')
+feedbacks=$(count $log 'KWL VOLUME feedback at_ms=[0-9]+ via=slider')
 pointer $(drag_steps $q1 $right $middle $sy 80)
-expect_more $log 'ZWL VOLUME set value=(49|50|51) muted=0 via=slider final=1' 0 10
-guest "tail -n +$((${lines:-0} + 1)) $log | grep -E 'ZWL VOLUME (set|feedback)'" > "$out/bar-drag.log"
-after=$(count $log 'ZWL VOLUME feedback at_ms=[0-9]+ via=slider')
+expect_more $log 'KWL VOLUME set value=(49|50|51) muted=0 via=slider final=1' 0 10
+guest "tail -n +$((${lines:-0} + 1)) $log | grep -E 'KWL VOLUME (set|feedback)'" > "$out/bar-drag.log"
+after=$(count $log 'KWL VOLUME feedback at_ms=[0-9]+ via=slider')
 echo "bar: feedback via=slider $feedbacks -> $after"
 [ "${after:-0}" -eq $((${feedbacks:-0} + 1)) ] 2>/dev/null && verdict ok "bar drag: one feedback sound, at the release" || verdict no "bar drag: one feedback sound, at the release ($feedbacks -> $after)"
 first=$(grep -m1 'via=slider final=0' "$out/bar-drag.log" | sed -n 's/.* at_ms=\([0-9]*\).*/\1/p')
@@ -125,15 +125,15 @@ sleep 1
 set -- $(audiod_volume)
 [ "${1:-0}" -ge 49 ] && [ "${1:-0}" -le 51 ] && verdict ok "bar drag: audiod at ${1:-?}" || verdict no "bar drag: audiod at ${1:-?}"
 shot bar-after.png
-closes=$(count $log 'ZWL VOLUME popup close via=icon')
+closes=$(count $log 'KWL VOLUME popup close via=icon')
 pointer move $ix $iy sleep 100 down sleep 60 up
-expect_more $log 'ZWL VOLUME popup close via=icon' "$closes" 3
+expect_more $log 'KWL VOLUME popup close via=icon' "$closes" 3
 
 # 2. Settings' Sound page, run as kei (the compositor serves its system extension only to its own user).
-maps=$(count $log 'ZWL MAP client=')
+maps=$(count $log 'KWL MAP client=')
 guest "export XDG_RUNTIME_DIR=/run/user/1000 HOME=/home/kei; /bin/runas kei /bin/settings --timeout-s=600 sound > $slog 2>&1 </dev/null & sleep 6; echo started" >/dev/null
-expect_more $log 'ZWL MAP client=' "$maps" 20
-set -- $(last $log 'ZWL MAP client=' | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+expect_more $log 'KWL MAP client=' "$maps" 20
+set -- $(last $log 'KWL MAP client=' | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 expect_more $slog 'SOUND report reachable=1 device=1' 0 10
 expect_more $slog 'ZSETTINGS CONTROL index=6 ' 0 10
@@ -154,8 +154,8 @@ shot settings-after.png
 
 # 3. The logs, and no errors.
 guest "grep -E 'ZSETTINGS SOUND' $slog" > "$out/settings-sound.log"
-guest "grep -E 'ZWL (VOLUME|ERROR|PERF)' $log" > "$out/session-volume.log"
-grep -q 'ZWL ERROR' "$out/session-volume.log" && { echo "ZWL ERROR in the session"; status=1; }
+guest "grep -E 'KWL (VOLUME|ERROR|PERF)' $log" > "$out/session-volume.log"
+grep -q 'KWL ERROR' "$out/session-volume.log" && { echo "KWL ERROR in the session"; status=1; }
 alive=$(guest "ps -A -o args | grep -c '[s]ettings'" | tail -1)
 [ "${alive:-0}" -ge 1 ] && verdict ok "settings runs" || verdict no "settings runs"
 sh plan/ws100/tests/volume-guest.sh stop >/dev/null 2>&1

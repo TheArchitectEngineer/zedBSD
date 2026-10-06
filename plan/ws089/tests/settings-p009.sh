@@ -4,7 +4,7 @@
 # zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share root's home.
 #  1. The Wallpaper page lists seven pictures: Kei (default), Aurora, Dawn, Lagoon, Lakeside (the tree's, ws099-p019),
 #     Meadow, Twilight (page.png).
-#  2. Each of the six is chosen in turn: Settings writes the key, zdesktop draws it (ZWL GLASS wallpaper path=...),
+#  2. Each of the six is chosen in turn: Settings writes the key, zdesktop draws it (KWL GLASS wallpaper path=...),
 #     and the screen is taken (NAME.png).
 #  3. The default chosen again: the key removed, the session's wallpaper back.  No ERROR line in zdesktop's log.
 #
@@ -110,16 +110,16 @@ index=101
 for name in Aurora Dawn Lagoon Lakeside Meadow Twilight; do
 	control $index
 	expect_log /tmp/s.log "ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/$name.png error=0"
-	expect_log /tmp/zdesktop.log "ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/$name.png"
+	expect_log /tmp/zdesktop.log "KWL GLASS wallpaper path=/usr/share/keiland/wallpapers/$name.png"
 	shot "$name.png"
 	index=$((index + 1))
 done
-guest "grep 'ZWL GLASS wallpaper' /tmp/zdesktop.log"
+guest "grep 'KWL GLASS wallpaper' /tmp/zdesktop.log"
 
 # 3. The default again.
 control 100
 expect_log /tmp/s.log 'ZSETTINGS LOOK set key=wallpaper value= error=0'
-expect_log /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpaper.png'
+expect_log /tmp/zdesktop.log 'KWL GLASS wallpaper path=/usr/share/keiland/wallpaper.png'
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; guest "grep ERROR /tmp/zdesktop.log | head -5"; status=1; }
 guest 'cat /tmp/s.log' > "$out/settings.log"

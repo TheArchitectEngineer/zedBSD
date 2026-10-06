@@ -3,7 +3,7 @@
 # SESSIOND_WALLPAPER).  The criteria image logs kei in at boot (/etc/keiland/autologin), so the greeter is never on
 # the screen there; this run empties the autologin file (restored at the end), starts sessiond --graphical as
 # plan/ws035/tests/zdesktop-p095.sh does, and checks:
-#  1. /var/log/greeter.log has "ZWL STARTUP step=wallpaper" and no "ZWL GLASS no wallpaper";
+#  1. /var/log/greeter.log has "KWL STARTUP step=wallpaper" and no "KWL GLASS no wallpaper";
 #  2. greeter.png: the login screen over the birch-and-lake picture (looked at by eye).
 # sessiond and the greeter are stopped afterwards and the autologin file put back.
 #
@@ -30,17 +30,17 @@ rm -f /var/log/greeter.log
 guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
 tries=0
 while [ $tries -lt 30 ]; do
-	opened=$(guest "grep -c 'ZWL GREETER open' /var/log/greeter.log" | tail -1)
+	opened=$(guest "grep -c 'KWL GREETER open' /var/log/greeter.log" | tail -1)
 	[ "${opened:-0}" -gt 0 ] 2>/dev/null && break
 	tries=$((tries + 1))
 	sleep 1
 done
 sleep 3
-guest "grep -E 'ZWL STARTUP step=wallpaper|ZWL GLASS no wallpaper|ZWL GREETER open' /var/log/greeter.log" > "$out/greeter-log.txt"
+guest "grep -E 'KWL STARTUP step=wallpaper|KWL GLASS no wallpaper|KWL GREETER open' /var/log/greeter.log" > "$out/greeter-log.txt"
 cat "$out/greeter-log.txt"
-grep -q 'ZWL GREETER open' "$out/greeter-log.txt" || { echo "greeter: did not open"; status=1; }
-grep -q 'ZWL STARTUP step=wallpaper ' "$out/greeter-log.txt" || { echo "greeter: no wallpaper step"; status=1; }
-if grep -q 'ZWL GLASS no wallpaper' "$out/greeter-log.txt"; then
+grep -q 'KWL GREETER open' "$out/greeter-log.txt" || { echo "greeter: did not open"; status=1; }
+grep -q 'KWL STARTUP step=wallpaper ' "$out/greeter-log.txt" || { echo "greeter: no wallpaper step"; status=1; }
+if grep -q 'KWL GLASS no wallpaper' "$out/greeter-log.txt"; then
 	echo "greeter: the wallpaper was not read"
 	status=1
 fi

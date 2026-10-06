@@ -52,7 +52,7 @@
 /* The greeter's output. */
 #define GREETER_LOG_PATH	"/var/log/greeter.log"
 
-/* How much of the end of the greeter's log is searched for its last word (ZWL EXIT) after a failure. */
+/* How much of the end of the greeter's log is searched for its last word (KWL EXIT) after a failure. */
 #define GREETER_REASON_BYTES	8192
 
 /* A greeter that ends with an error within this many seconds of its start has failed. */
@@ -682,7 +682,7 @@ greeter_kill(
 
 /*
  * Puts the reason a greeter failed into sessiond's log (BUG-122): the last
- * line of its own log that says how it exited (ZWL EXIT … error=), or its
+ * line of its own log that says how it exited (KWL EXIT … error=), or its
  * last line when it wrote none.
  */
 static void
@@ -711,12 +711,12 @@ greeter_reason(void)
 		return;
 	tail[count] = '\0';
 
-	/* The last ZWL EXIT line, else the last line. */
+	/* The last KWL EXIT line, else the last line. */
 	found = NULL;
-	line = strstr(tail, "ZWL EXIT");
+	line = strstr(tail, "KWL EXIT");
 	while (line != NULL) {
 		found = line;
-		line = strstr(line + 1, "ZWL EXIT");
+		line = strstr(line + 1, "KWL EXIT");
 	}
 
 	/* No such line: the last line, without the line ends after it. */

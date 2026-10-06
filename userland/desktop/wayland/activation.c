@@ -172,7 +172,7 @@ kwl_activation_issue(
 	slot->live = 1;
 	slot->granted = 1;
 	snprintf(token, size, "%s", slot->text);
-	printf("ZWL ACTIVATION token client=0 app=%s granted=1 reason=%s at_ms=%llu\n", slot->app_id, via, (unsigned long long)now);
+	printf("KWL ACTIVATION token client=0 app=%s granted=1 reason=%s at_ms=%llu\n", slot->app_id, via, (unsigned long long)now);
 
 	/* Succeeded: the caller holds the token's text. */
 	return 0;
@@ -271,12 +271,12 @@ activation_activate(
 
 	/* Refused: the windows stay as they are. */
 	if (reason != NULL) {
-		printf("ZWL ACTIVATION activate client=%llu surface=%u result=refused reason=%s at_ms=%llu\n", (unsigned long long)manager->client->number, surface->id, reason, (unsigned long long)now);
+		printf("KWL ACTIVATION activate client=%llu surface=%u result=refused reason=%s at_ms=%llu\n", (unsigned long long)manager->client->number, surface->id, reason, (unsigned long long)now);
 		return 0;
 	}
 
 	/* The window, on its desktop, in front with the keyboard's focus. */
-	printf("ZWL ACTIVATION activate client=%llu surface=%u app=%s result=activated token_app=%s at_ms=%llu\n", (unsigned long long)manager->client->number, surface->id, surface->app_id, found->app_id, (unsigned long long)now);
+	printf("KWL ACTIVATION activate client=%llu surface=%u app=%s result=activated token_app=%s at_ms=%llu\n", (unsigned long long)manager->client->number, surface->id, surface->app_id, found->app_id, (unsigned long long)now);
 	kwl_glass_activate(server, surface, "activation");
 
 	/* Succeeded: the window is in front. */
@@ -377,7 +377,7 @@ activation_commit(
 	slot->issued_ms = now;
 	slot->live = 1;
 	slot->granted = (unsigned)granted;
-	printf("ZWL ACTIVATION token client=%llu app=%s granted=%d reason=%s at_ms=%llu\n", (unsigned long long)token->client->number, slot->app_id, granted, reason, (unsigned long long)now);
+	printf("KWL ACTIVATION token client=%llu app=%s granted=%d reason=%s at_ms=%llu\n", (unsigned long long)token->client->number, slot->app_id, granted, reason, (unsigned long long)now);
 
 	/* The done event: the text as a string argument (its length with the NUL, the bytes, the padding). */
 	length = (uint32_t)strlen(slot->text) + 1U;

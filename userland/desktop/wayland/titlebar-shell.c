@@ -617,7 +617,7 @@ kwl_titlebar_motion(
 	shell_titlebar.pressing = 0;
 	shell_titlebar.waiting = 0;
 	server->dirty = 1;
-	printf("ZWL TITLEBAR press moves client=%llu surface=%u id=%u docked=%u\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, pressed.docked);
+	printf("KWL TITLEBAR press moves client=%llu surface=%u id=%u docked=%u\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, pressed.docked);
 	kwl_glass_press_move(server, pressed.surface, pressed.docked, shell_titlebar.press_x, shell_titlebar.press_y);
 
 	/* Succeeded: the motion goes on to the move (shell.c). */
@@ -922,7 +922,7 @@ kwl_titlebar_axis(
 			model->tab_first--;
 		if (direction != 0U)
 			model->tab_first++;
-		printf("ZWL TITLEBAR strip scroll client=%llu surface=%u first=%u by=wheel\n", (unsigned long long)hit->surface->client->number, hit->surface->id, model->tab_first);
+		printf("KWL TITLEBAR strip scroll client=%llu surface=%u first=%u by=wheel\n", (unsigned long long)hit->surface->client->number, hit->surface->id, model->tab_first);
 		server->dirty = 1;
 		break;
 	}
@@ -1224,7 +1224,7 @@ kwl_titlebar_field_input(
 	committed = "";
 	if (commit != NULL)
 		committed = commit;
-	printf("ZWL TITLEBAR ime commit=%s preedit=%s text=%s\n", committed, field->preedit, field->text);
+	printf("KWL TITLEBAR ime commit=%s preedit=%s text=%s\n", committed, field->preedit, field->text);
 
 	/* The client and the input method hear a changed text. */
 	if (changed)
@@ -1272,7 +1272,7 @@ kwl_titlebar_suggestions(
 	suggestions->drawn = 0;
 	suggestions->logged = 0;
 	server->dirty = 1;
-	printf("ZWL TITLEBAR suggestions id=%u count=%u\n", id, (unsigned)count);
+	printf("KWL TITLEBAR suggestions id=%u count=%u\n", id, (unsigned)count);
 }
 
 /*
@@ -1330,7 +1330,7 @@ kwl_titlebar_draw_suggestions(
 	/* The list's place, once, for the tests that click its rows. */
 	if (suggestions->logged == 0U) {
 		suggestions->logged = 1;
-		printf("ZWL TITLEBAR suggestions shown x=%d y=%d width=%d row=%d first=%d count=%u\n", suggestions->x, suggestions->y, suggestions->width, SUGGEST_ROW, suggestions->y + SUGGEST_PADDING, (unsigned)suggestions->count);
+		printf("KWL TITLEBAR suggestions shown x=%d y=%d width=%d row=%d first=%d count=%u\n", suggestions->x, suggestions->y, suggestions->width, SUGGEST_ROW, suggestions->y + SUGGEST_PADDING, (unsigned)suggestions->count);
 	}
 
 	/* Each row: lit by the keys, or under the pointer when none is. */
@@ -2602,7 +2602,7 @@ shell_act_tabs(
 			model->tab_first--;
 		if (hit->detail != 0U)
 			model->tab_first++;
-		printf("ZWL TITLEBAR strip scroll client=%llu surface=%u first=%u\n", (unsigned long long)hit->surface->client->number, hit->surface->id, model->tab_first);
+		printf("KWL TITLEBAR strip scroll client=%llu surface=%u first=%u\n", (unsigned long long)hit->surface->client->number, hit->surface->id, model->tab_first);
 		break;
 	default:
 		break;
@@ -2830,7 +2830,7 @@ shell_release(
 	if (shell_titlebar.selecting != 0U) {
 		shell_titlebar.selecting = 0;
 		if (field->surface == pressed.surface && field->id == pressed.id)
-			printf("ZWL TITLEBAR select client=%llu surface=%u id=%u anchor=%zu cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->anchor, field->cursor);
+			printf("KWL TITLEBAR select client=%llu surface=%u id=%u anchor=%zu cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->anchor, field->cursor);
 		return;
 	}
 
@@ -2858,7 +2858,7 @@ shell_release(
 	    field->id == pressed.id) {
 		field->cursor = shell_field_at(server, pressed.text_x, shell_titlebar.press_x);
 		field->anchor = field->cursor;
-		printf("ZWL TITLEBAR caret client=%llu surface=%u id=%u cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->cursor);
+		printf("KWL TITLEBAR caret client=%llu surface=%u id=%u cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->cursor);
 	}
 }
 
@@ -2996,7 +2996,7 @@ shell_focus(
 	/* The window has the keyboard; the log line the tests read. */
 	kwl_glass_raise(server, surface);
 	server->dirty = 1;
-	printf("ZWL TITLEBAR focus client=%llu surface=%u id=%u edit=%u\n", (unsigned long long)surface->client->number, surface->id, control->id, edit);
+	printf("KWL TITLEBAR focus client=%llu surface=%u id=%u edit=%u\n", (unsigned long long)surface->client->number, surface->id, control->id, edit);
 
 	/* The input method serves the field (BUG-177). */
 	kwl_ime_field_changed(server);
@@ -3179,14 +3179,14 @@ shell_log_layout(
 
 	/* Each control. */
 	for (index = 0; index < count; index++) {
-		printf("ZWL TITLEBAR control client=%llu surface=%u where=%s id=%u x=%d y=%d width=%d height=%d shown=%u\n",
+		printf("KWL TITLEBAR control client=%llu surface=%u where=%s id=%u x=%d y=%d width=%d height=%d shown=%u\n",
 		       (unsigned long long)surface->client->number, surface->id, where[docked], items[index].control->id,
 		       items[index].x, y, items[index].width, size, items[index].shown);
 	}
 
 	/* "..." as the control 0, when there is one. */
 	if (overflow_x >= 0) {
-		printf("ZWL TITLEBAR control client=%llu surface=%u where=%s id=0 x=%d y=%d width=%d height=%d shown=1\n",
+		printf("KWL TITLEBAR control client=%llu surface=%u where=%s id=0 x=%d y=%d width=%d height=%d shown=1\n",
 		       (unsigned long long)surface->client->number, surface->id, where[docked], overflow_x, y, size, size);
 	}
 }
@@ -3240,7 +3240,7 @@ shell_log_strip(
 
 	/* Each tab. */
 	for (index = 0; index < count; index++) {
-		printf("ZWL TITLEBAR strip client=%llu surface=%u where=%s id=%u x=%d y=%d width=%d height=%d shown=%u flags=%u close=%d\n",
+		printf("KWL TITLEBAR strip client=%llu surface=%u where=%s id=%u x=%d y=%d width=%d height=%d shown=%u flags=%u close=%d\n",
 		       (unsigned long long)surface->client->number, surface->id, where[docked], tabs[index].tab->id,
 		       tabs[index].x, y, tabs[index].width, size, tabs[index].shown, tabs[index].tab->flags, closes[index]);
 	}
@@ -3249,7 +3249,7 @@ shell_log_strip(
 	for (index = 0; index < 4U; index++) {
 		if (buttons[index] < 0)
 			continue;
-		printf("ZWL TITLEBAR strip client=%llu surface=%u where=%s button=%s x=%d y=%d width=%d height=%d\n",
+		printf("KWL TITLEBAR strip client=%llu surface=%u where=%s button=%s x=%d y=%d width=%d height=%d\n",
 		       (unsigned long long)surface->client->number, surface->id, where[docked], names[index], buttons[index], y, size, size);
 	}
 }
@@ -3349,7 +3349,7 @@ shell_suggest_apply(
 	field->length = length;
 	field->cursor = length;
 	field->anchor = length;
-	printf("ZWL TITLEBAR suggestion chosen index=%d text=%s\n", index, field->text);
+	printf("KWL TITLEBAR suggestion chosen index=%d text=%s\n", index, field->text);
 
 	/* The client hears it as typing (and the list goes with the old text). */
 	shell_field_changed(server);

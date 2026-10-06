@@ -38,11 +38,11 @@ expect_log() {
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 export WAYLAND_DISPLAY=wayland-0; /bin/titlebar-probe --show=Probe --mode=controls --width=1100 --seconds=300 > /tmp/probe.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 
 # The search field's place (the latest layout of control 5, floating and shown).
-set -- $(guest "grep -E 'ZWL TITLEBAR control client=[0-9]+ surface=[0-9]+ where=floating id=5 .* shown=1' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+set -- $(guest "grep -E 'KWL TITLEBAR control client=[0-9]+ surface=[0-9]+ where=floating id=5 .* shown=1' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 fx=${1:-0}; fy=${2:-0}; fw=${3:-0}; fh=${4:-0}
 echo "search field: x=$fx y=$fy width=$fw height=$fh"
 [ "$fw" -gt 0 ] || { echo "field: MISSING"; status=1; }

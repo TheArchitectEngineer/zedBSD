@@ -53,13 +53,13 @@ put "$out/touch.pdf" /tmp/touch.pdf
 guest 'chmod 755 /bin/wayland /bin/pdfviewer /bin/touchinject' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+i=0; while ! grep -q "KWL MODE" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 
 # Starts PDF Viewer on the document with extra arguments, and finds where its window is.
 viewer() {
 	guest "$stop_viewer" >/dev/null
 	guest "$env /bin/pdfviewer --width=1000 --height=700 $1 /tmp/touch.pdf > /tmp/pv.log 2>&1 </dev/null & i=0; while ! grep -q 'PDFVIEWER READY' /tmp/pv.log && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i+1)); done; sleep 2; echo started" >/dev/null
-	set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+	set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 	wx=${1:-0}; wy=${2:-0}
 	echo "window at $wx,$wy"
 }

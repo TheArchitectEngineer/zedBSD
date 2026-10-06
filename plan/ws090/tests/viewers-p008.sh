@@ -71,8 +71,8 @@ done
 guest 'chmod 755 /bin/imageview' >/dev/null
 guest 'service stop greeter >/dev/null 2>&1; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=1200 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null &
-i=0; while ! grep -q "ZWL READY" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
-expect_more /tmp/zdesktop.log 'ZWL READY' 0
+i=0; while ! grep -q "KWL READY" /tmp/zdesktop.log && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 2; echo started' >/dev/null
+expect_more /tmp/zdesktop.log 'KWL READY' 0
 
 # 1. The password card.
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/pdfviewer --timeout-s=900 /root/password.pdf > /tmp/pv.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
@@ -83,7 +83,7 @@ shot pdf-card.png
 
 # 2. The QWERTY row and the inset.
 pointer move 6 792 sleep 200 down sleep 80 move 78 721 sleep 60 move 150 650 sleep 120 up sleep 1500
-expect_more /tmp/zdesktop.log 'ZWL OSK open kind=qwerty' 0
+expect_more /tmp/zdesktop.log 'KWL OSK open kind=qwerty' 0
 expect_more /tmp/pv.log 'KEYBOARD inset right=0 bottom=[1-9][0-9]*' 0
 sleep 1
 shot pdf-card-keyboard.png
@@ -154,9 +154,9 @@ sleep 1
 # The logs, and no errors.
 guest 'cat /tmp/pv.log' > "$out/pv.log"
 guest 'cat /tmp/iv.log' > "$out/iv.log"
-guest 'grep -E "ZWL (OSK|INSET|ERROR)" /tmp/zdesktop.log' > "$out/zdesktop.log"
-errors=$(count /tmp/zdesktop.log 'ZWL ERROR')
-if [ "${errors:-1}" = 0 ]; then echo "no ZWL ERROR ok"; else echo "ZWL ERROR ($errors) FAIL"; status=1; fi
+guest 'grep -E "KWL (OSK|INSET|ERROR)" /tmp/zdesktop.log' > "$out/zdesktop.log"
+errors=$(count /tmp/zdesktop.log 'KWL ERROR')
+if [ "${errors:-1}" = 0 ]; then echo "no KWL ERROR ok"; else echo "KWL ERROR ($errors) FAIL"; status=1; fi
 failed=$(guest "grep -cE 'FAILED' /tmp/pv.log /tmp/iv.log" | awk -F: '{s += $NF} END {print s + 0}')
 if [ "${failed:-1}" = 0 ]; then echo "no FAILED ok"; else echo "FAILED lines ($failed) FAIL"; status=1; fi
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1

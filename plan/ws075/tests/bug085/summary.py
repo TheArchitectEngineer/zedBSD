@@ -7,7 +7,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 For each run: the timer calibration (the chosen period, and the windows when the kernel logs them), the capture
 harness's verdict, the last captured frame, the watcher's marks (stall, fault, poweroff), whether the compositor
-ended normally (ZWL EXIT error=0), whether egltest finished its scenes, the EGLTEST failures, and how many different
+ended normally (KWL EXIT error=0), whether egltest finished its scenes, the EGLTEST failures, and how many different
 pictures the harness took (the scenes change the picture; a frozen screen repeats one).
 """
 import json
@@ -46,7 +46,7 @@ def main():
             value = text(run / mark).strip()
             if value:
                 marks.append(f'{mark}: {value[:90]}')
-        exit_line = re.search(r'ZWL EXIT frames=(\d+) error=(\d+)', guest)
+        exit_line = re.search(r'KWL EXIT frames=(\d+) error=(\d+)', guest)
         failures = re.findall(r'EGLTEST CHECK run=\S+ failures=(\d+)', guest)
         print(f'{run.name}: cal={ticks.group(1) if ticks else "-"} windows={",".join(windows) or "-"} '
               f'timecounter={timecounter} {started} harness={verdict} {checks} '

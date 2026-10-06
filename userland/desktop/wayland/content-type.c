@@ -114,7 +114,7 @@ kwl_content_type_commit(
 		return;
 	surface->content_type = surface->pending_content_type;
 	surface->client->server->dirty = 1;
-	printf("ZWL CONTENT surface=%u type=%s client=%llu\n", surface->id, content_name(surface->content_type), (unsigned long long)surface->client->number);
+	printf("KWL CONTENT surface=%u type=%s client=%llu\n", surface->id, content_name(surface->content_type), (unsigned long long)surface->client->number);
 }
 
 /*

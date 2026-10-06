@@ -63,11 +63,11 @@ shot 01-desktop.png 3
 # 1. App Home: a click on the launcher at the top left, then (if Home did not open) a drag from the corner.
 home_open() {
 	pointer move 23 17 sleep 800 down sleep 150 up sleep 2500
-	guest 'grep -c "ZWL HOME open" /tmp/zdesktop.log' | tail -1 > "$out/.home"
+	guest 'grep -c "KWL HOME open" /tmp/zdesktop.log' | tail -1 > "$out/.home"
 	if [ "$(cat "$out/.home")" = "${home_seen:-0}" ]; then
 		pointer move 4 4 sleep 500 down sleep 100 move 120 90 sleep 80 move 360 260 sleep 80 move 700 520 sleep 80 up sleep 2500
 	fi
-	home_seen=$(guest 'grep -c "ZWL HOME open" /tmp/zdesktop.log' | tail -1)
+	home_seen=$(guest 'grep -c "KWL HOME open" /tmp/zdesktop.log' | tail -1)
 }
 home_close() { keys '<esc>'; sleep 2; }
 home_open

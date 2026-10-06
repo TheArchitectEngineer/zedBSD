@@ -2,7 +2,7 @@
 # ws079-p005: the real Notes behind ws079-p010's top-right swipe, on the Venus guest (the lean image with Notes).
 # zdesktop --glass at 1280x800, the pointer driven through QMP:
 #  1. swipe.png: a swipe from the top-right corner down to the left starts /bin/notes --fullscreen
-#     (ZWL CORNER commit, NOTES START ... fullscreen=1); a stroke in it (NOTES STROKE); Ctrl+W closes it.
+#     (KWL CORNER commit, NOTES START ... fullscreen=1); a stroke in it (NOTES STROKE); Ctrl+W closes it.
 #  2. raised.png: Notes started as a window (NOTES START ... fullscreen=0) is made fullscreen by the swipe
 #     (NOTES LAYOUT window=1280x800 after the compositor's configure), and no second Notes starts.
 #
@@ -68,7 +68,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 
 # 1. The swipe starts Notes fullscreen.
 pointer $(stroke 1272 6 1072 206 10 30) up sleep 5000
-expect_log /tmp/zdesktop.log 'ZWL CORNER commit'
+expect_log /tmp/zdesktop.log 'KWL CORNER commit'
 guest 'ps -A -o pid,args | grep "[n]otes"' | tee "$out/ps-swipe.txt"
 running=$(grep -c "/bin/notes" "$out/ps-swipe.txt")
 expect_log /tmp/zdesktop.log 'NOTES START width=1280 height=800 fullscreen=1'
@@ -95,7 +95,7 @@ sleep 1
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
 [ "${errors:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }
-guest 'grep -E "ZWL CORNER" /tmp/zdesktop.log' > "$out/zdesktop-corner.log"
+guest 'grep -E "KWL CORNER" /tmp/zdesktop.log' > "$out/zdesktop-corner.log"
 guest "$stop_all" >/dev/null
 [ $status = 0 ] && echo "notes-gesture: PASS" || echo "notes-gesture: FAIL"
 exit $status

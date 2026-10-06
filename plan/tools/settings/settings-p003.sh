@@ -7,14 +7,14 @@
 #  2. A watching probe (all keys) runs while a second probe sets pointer.speed 120 (result error=0), 500 (EINVAL, the
 #     range), sound.available 1 (EPERM, read only), no.key (ENOENT), keyboard.repeat.rate 40 (error=0), a FIFO as
 #     the wallpaper (result EINVAL) and a generated wallpaper (result error=0).  The watcher hears pointer.speed 120,
-#     keyboard.repeat.rate 40 and the wallpaper; zdesktop applies them (ZWL PREFERENCES key=... applied).
+#     keyboard.repeat.rate 40 and the wallpaper; zdesktop applies them (KWL PREFERENCES key=... applied).
 #  3. desktop.conf is not written during the session (its checksum unchanged).
 #  4. zdesktop stopped by SIGTERM: desktop.conf has pointer.speed=120, keyboard.repeat.rate=40, the wallpaper, and
 #     my.note=hello still.
 #  5. zdesktop started again: the probe reads pointer.speed=120.
 #  6. --app=terminal: terminal.ambiguous-wide set 1 (result error=0) and read back; /root/.config/keiland/terminal.conf
 #     has ambiguous-wide=1.
-#  7. No ZWL ERROR in zdesktop's logs.
+#  7. No KWL ERROR in zdesktop's logs.
 #
 #   plan/ws089/tests/settings-guest.sh start IMAGE    (the guest must be up)
 #   plan/tools/settings/settings-p003.sh [OUTDIR]        (default build/ws135-shots/p003)
@@ -46,7 +46,7 @@ expect() {
 # 0. A fresh desktop with a seeded file.
 guest "$stop_all; mkdir -p /root/.config/keiland; rm -f /root/.config/keiland/terminal.conf; printf 'pointer.speed=50\nmy.note=hello\n' > $conf; mkfifo /tmp/settings-fifo 2>/dev/null; echo ready" >/dev/null
 guest "$start_desktop" >/dev/null
-expect /tmp/zdesktop.log 'ZWL SETTINGS open present=1' 'zdesktop opened the settings'
+expect /tmp/zdesktop.log 'KWL SETTINGS open present=1' 'zdesktop opened the settings'
 
 # 1. The first state.
 guest "$env; /bin/keiland-settings dump > /tmp/p1.log 2>&1; echo dumped" >/dev/null
@@ -74,9 +74,9 @@ expect /tmp/p2.log 'result request=4 error=0' 'set: a wallpaper applied'
 expect /tmp/watch.log 'change key=pointer.speed value=120 flags=0' 'watch: another process hears pointer.speed'
 expect /tmp/watch.log 'change key=keyboard.repeat.rate value=40 flags=0' 'watch: keyboard.repeat.rate'
 expect /tmp/watch.log 'change key=wallpaper value=/usr/share/keiland/wallpapers/' 'watch: the wallpaper'
-expect /tmp/zdesktop.log 'ZWL PREFERENCES key=pointer.speed applied value=120' 'zdesktop applied pointer.speed'
-expect /tmp/zdesktop.log 'ZWL PREFERENCES key=keyboard.repeat.rate applied value=40' 'zdesktop applied the repeat'
-expect /tmp/zdesktop.log 'ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/' 'zdesktop showed the wallpaper'
+expect /tmp/zdesktop.log 'KWL PREFERENCES key=pointer.speed applied value=120' 'zdesktop applied pointer.speed'
+expect /tmp/zdesktop.log 'KWL PREFERENCES key=keyboard.repeat.rate applied value=40' 'zdesktop applied the repeat'
+expect /tmp/zdesktop.log 'KWL GLASS wallpaper path=/usr/share/keiland/wallpapers/' 'zdesktop showed the wallpaper'
 
 # 3. Not written during the session.
 sum_during=$(guest "cksum $conf" | tail -1)
@@ -89,7 +89,7 @@ expect $conf '^pointer.speed=120$' 'end: pointer.speed=120 written'
 expect $conf '^keyboard.repeat.rate=40$' 'end: keyboard.repeat.rate=40 written'
 expect $conf '^wallpaper=/usr/share/keiland/wallpapers/' 'end: the wallpaper written'
 expect $conf '^my.note=hello$' 'end: the unknown key kept'
-expect /tmp/zdesktop.log 'ZWL SETTINGS saved error=0' 'end: zdesktop saved'
+expect /tmp/zdesktop.log 'KWL SETTINGS saved error=0' 'end: zdesktop saved'
 guest 'cp /tmp/zdesktop.log /tmp/zdesktop-1.log' >/dev/null
 
 # 5. The next session reads it.
@@ -105,9 +105,9 @@ expect /tmp/p6.log 'value key=terminal.ambiguous-wide value=1 flags=0' 'app: rea
 expect /root/.config/keiland/terminal.conf '^ambiguous-wide=1$' 'app: terminal.conf written'
 
 # 7. No error.
-errors=$(guest "cat /tmp/zdesktop-1.log /tmp/zdesktop.log | grep -c 'ZWL ERROR'" | tail -1)
-[ "${errors:-1}" = 0 ] && echo "ok: no ZWL ERROR" || { echo "FAIL: ZWL ERROR lines ($errors)"; status=1; }
-guest 'grep -E "ZWL (SETTINGS|PREFERENCES|GLASS wallpaper)" /tmp/zdesktop-1.log' > "$out/zdesktop-settings.log"
+errors=$(guest "cat /tmp/zdesktop-1.log /tmp/zdesktop.log | grep -c 'KWL ERROR'" | tail -1)
+[ "${errors:-1}" = 0 ] && echo "ok: no KWL ERROR" || { echo "FAIL: KWL ERROR lines ($errors)"; status=1; }
+guest 'grep -E "KWL (SETTINGS|PREFERENCES|GLASS wallpaper)" /tmp/zdesktop-1.log' > "$out/zdesktop-settings.log"
 guest "$stop_all; rm -f $conf /root/.config/keiland/terminal.conf /tmp/settings-fifo; echo clean" >/dev/null
 
 [ $status = 0 ] && echo "settings-p003: PASS" || echo "settings-p003: FAIL"

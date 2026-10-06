@@ -267,7 +267,7 @@ kwl_cursor_frame(
 		    server->compose != NULL) {
 			error = image_make(server, index);
 			if (error != 0)
-				printf("ZWL CURSOR image=%u errno=%d\n", index, error);
+				printf("KWL CURSOR image=%u errno=%d\n", index, error);
 		}
 	}
 
@@ -276,7 +276,7 @@ kwl_cursor_frame(
 	server->dirty = 1;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL CURSOR frame edges=%u\n", edges);
+	printf("KWL CURSOR frame edges=%u\n", edges);
 }
 
 /*
@@ -310,7 +310,7 @@ kwl_cursor_client_shown(
 	/* The log says when it changes (for the tests). */
 	if (server->cursor_client_logged != shown + 1U) {
 		server->cursor_client_logged = shown + 1U;
-		printf("ZWL CURSOR client=%llu shown=%u\n", (unsigned long long)server->cursor_client->number, shown);
+		printf("KWL CURSOR client=%llu shown=%u\n", (unsigned long long)server->cursor_client->number, shown);
 	}
 
 	/* Succeeded: whether the client's cursor is shown. */
@@ -387,7 +387,7 @@ device_set_shape(
 	    server->compose != NULL) {
 		error = image_make(server, index);
 		if (error != 0)
-			printf("ZWL CURSOR image=%u errno=%d\n", index, error);
+			printf("KWL CURSOR image=%u errno=%d\n", index, error);
 	}
 
 	/* The shape replaces a cursor surface, and is drawn from the next frame. */
@@ -400,7 +400,7 @@ device_set_shape(
 	server->dirty = 1;
 
 	/* Succeeded: the log line the tests read. */
-	printf("ZWL CURSOR shape client=%llu shape=%u image=%u\n", (unsigned long long)device->client->number, shape, shape_image(shape));
+	printf("KWL CURSOR shape client=%llu shape=%u image=%u\n", (unsigned long long)device->client->number, shape, shape_image(shape));
 	return 0;
 }
 

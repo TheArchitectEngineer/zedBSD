@@ -29,7 +29,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/sh
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --log-frames $picture > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; sleep 1; echo started' >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; i=0; while [ \$i -lt $C5_WINDOWS ]; do /bin/popup-probe --timeout-s=800 --token=w\$i > /tmp/w\$i.log 2>&1 </dev/null & sleep 1.5; i=\$((i+1)); done; echo started" >/dev/null
 sleep 3
-mapped=$(guest "grep -c 'ZWL MAP client=' /tmp/zdesktop.log" | tail -1)
+mapped=$(guest "grep -c 'KWL MAP client=' /tmp/zdesktop.log" | tail -1)
 echo "windows mapped: $mapped"
 pointer move 640 790 sleep 300
 check "$out/windows.png" >/dev/null
@@ -46,7 +46,7 @@ while [ $round -le "$C5_ROUNDS" ]; do
 done
 
 guest 'cat /tmp/zdesktop.log' > "$out/zdesktop.log"
-guest 'grep -cE "ZWL ERROR|FAILED" /tmp/zdesktop.log' | tail -1 | sed 's/^/errors: /'
+guest 'grep -cE "KWL ERROR|FAILED" /tmp/zdesktop.log' | tail -1 | sed 's/^/errors: /'
 guest "$stop_all" >/dev/null
 python3 plan/ws099/tests/c5-parse.py "$out/zdesktop.log" "$C5_FIRST_FRAME_MS" "$C5_GAP_MS"
 status=$?

@@ -8,7 +8,7 @@
 #            E1 by default), the date, the host's CPUs, load, IO pressure and memory, KVM (query-kvm: TCG stops the run,
 #            "perf-run: FAIL no KVM"), the guest's wallpaper files, the host's Mesa shader cache
 #  3. monitor (P-03) zdesktop --glass --log-frames and /bin/monitor --source=sim --seed=9 --cpus=16 --gpus=2, 20 s; the
-#            ZWL PERF and ZMON FRAME lines to OUT/monitor.out, the device lines to OUT/device.txt
+#            KWL PERF and ZMON FRAME lines to OUT/monitor.out, the device lines to OUT/device.txt
 #  4. c5     (P-01) C5_ROUNDS=5 plan/ws099/tests/c5-transitions.sh OUT/c5 > OUT/c5.out
 #  5. latency (P-02) plan/ws139/tests/type-only.sh OUT/latency > OUT/latency.out
 #  6. the compositor and the applications stopped
@@ -88,15 +88,15 @@ monitor_step() {
 	guest "$stop_all" >/dev/null
 	guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/monitor --timeout-s=300 --source=sim --seed=9 --cpus=16 --gpus=2 --token=c > /tmp/monitor.log 2>&1 </dev/null & echo started" >/dev/null
 	sleep 20
-	guest "grep -E 'ZWL PERF' /tmp/zdesktop.log; grep 'ZMON FRAME' /tmp/monitor.log" > "$out/monitor.out"
-	guest "grep -E 'ZWL DISPLAY device=' /tmp/zdesktop.log; grep 'ZMON READY' /tmp/monitor.log" > "$out/device.txt"
+	guest "grep -E 'KWL PERF' /tmp/zdesktop.log; grep 'ZMON FRAME' /tmp/monitor.log" > "$out/monitor.out"
+	guest "grep -E 'KWL DISPLAY device=' /tmp/zdesktop.log; grep 'ZMON READY' /tmp/monitor.log" > "$out/device.txt"
 }
 # Each guest call has its own 90 s limit (a shell function cannot run under timeout), so the step is bounded.
 monitor_step
-lines=$(grep -c 'ZWL PERF compose' "$out/monitor.out" 2>/dev/null)
+lines=$(grep -c 'KWL PERF compose' "$out/monitor.out" 2>/dev/null)
 echo "monitor compose_lines=${lines:-0}" >> "$steps"
 
 # 4. The first frames of App Home and Wiseview, five rounds (P-01).

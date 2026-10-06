@@ -98,12 +98,12 @@ shot() {
 start_zdesktop() {
 	guest "$stop_all" >/dev/null
 	guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
+/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1; echo started' >/dev/null
 }
 
 # The latest map of an application client: "surface x y".
 mapped() {
-	guest "grep 'ZWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p'
+	guest "grep 'KWL MAP client=$(zwl_app_client $1) ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p'
 }
 
 # The centre (x) of a menu item as last logged in a place, from the window's x (0 for the system bar).
@@ -114,7 +114,7 @@ item_x() {
 
 # A titlebar control's rectangle as last logged: "x y width height".
 control() {
-	guest "grep 'ZWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
+	guest "grep 'KWL TITLEBAR control client=$(zwl_app_client $1) .* where=$2 id=$3 ' /tmp/zdesktop.log | tail -1" |
 	    sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p'
 }
 
@@ -147,7 +147,7 @@ keys '<esc>'
 # 3. Edit dragged by the mouse moves the window.
 opens=$(count 'MENU open ')
 drag "$ex" "$bar" 60 80
-expect_log "ZWL MENU press moves client=$zc1 surface=$surface item=2 docked=0"
+expect_log "KWL MENU press moves client=$zc1 surface=$surface item=2 docked=0"
 expect_log "GLASS press move surface=$surface "
 expect_log "GLASS moved surface=$surface x=$((wx + 60)) y=$((wy + 80))"
 expect_count "menus open after the drag" "$(count 'MENU open ')" "$opens"
@@ -180,11 +180,11 @@ expect_log "GLASS dock surface=$surface "
 expect_log "MENU bar client=$zc1 surface=$surface where=docked item=2 "
 dx=$(item_x 1 docked 2 0)
 pointer move "$dx" 17 sleep 300 down sleep 120 move "$dx" 60 sleep 100 move "$dx" 120 sleep 100 move "$dx" 200 sleep 100 move "$dx" 260 sleep 300 up sleep 1000
-expect_log "ZWL MENU press moves client=$zc1 surface=$surface item=2 docked=1"
+expect_log "KWL MENU press moves client=$zc1 surface=$surface item=2 docked=1"
 expect_log "GLASS press pull surface=$surface"
 expect_log "GLASS undock surface=$surface via=pull "
 shot menu-pull.png
-guest 'grep -E "ZWL (MENU|GLASS|TOUCH)" /tmp/zdesktop.log' > "$out/menu-log.txt"
+guest 'grep -E "KWL (MENU|GLASS|TOUCH)" /tmp/zdesktop.log' > "$out/menu-log.txt"
 errors_a=$(count 'ERROR')
 
 # B. The search field of titlebar-probe's controls.
@@ -195,7 +195,7 @@ set -- $(mapped 1)
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "probe: client $zc1 surface $surface at $wx,$wy"
 expect_log 'TITLEBARPROBE show ready mode=controls' /tmp/probe.log
-expect_log "ZWL TITLEBAR control client=$zc1 surface=$surface where=floating id=5 .* shown=1"
+expect_log "KWL TITLEBAR control client=$zc1 surface=$surface where=floating id=5 .* shown=1"
 set -- $(control 1 floating 5)
 fx=${1:-0}; fy=${2:-0}; fw=${3:-0}; fh=${4:-0}
 cy=$((fy + fh / 2)); tx=$((fx + 30))
@@ -203,21 +203,21 @@ echo "search field: $fx,$fy ${fw}x$fh"
 
 # 1. A click gives it the keyboard with the caret.
 click $((fx + fw / 2)) "$cy"
-expect_log "ZWL TITLEBAR focus client=$zc1 surface=$surface id=5 edit=0"
-expect_log "ZWL TITLEBAR caret client=$zc1 surface=$surface id=5 cursor=0"
+expect_log "KWL TITLEBAR focus client=$zc1 surface=$surface id=5 edit=0"
+expect_log "KWL TITLEBAR caret client=$zc1 surface=$surface id=5 cursor=0"
 keys 'abcdef'
 expect_log 'TITLEBARPROBE event=text id=5 text=abcdef' /tmp/probe.log
 
 # 2. On the field with the keyboard a drag selects and the window stays.
 moves=$(count 'GLASS moved ')
 drag $((tx + 1)) "$cy" $((fw - 44)) 0
-expect_log "ZWL TITLEBAR select client=$zc1 surface=$surface id=5 anchor=0 cursor=6"
+expect_log "KWL TITLEBAR select client=$zc1 surface=$surface id=5 anchor=0 cursor=6"
 expect_count "windows moved by the selecting drag" "$(count 'GLASS moved ')" "$moves"
 expect_count "presses that moved" "$(count 'TITLEBAR press moves ')" 0
 keys 'Z'
 expect_log 'TITLEBARPROBE event=text id=5 text=Z$' /tmp/probe.log
 click $((fx + fw - 14)) "$cy"
-expect_log "ZWL TITLEBAR select client=$zc1 surface=$surface id=5 anchor=1 cursor=1"
+expect_log "KWL TITLEBAR select client=$zc1 surface=$surface id=5 anchor=1 cursor=1"
 shot search-select.png
 keys '<esc>'
 expect_log 'TITLEBARPROBE event=done id=5 how=1 ' /tmp/probe.log
@@ -225,7 +225,7 @@ expect_log 'TITLEBARPROBE event=done id=5 how=1 ' /tmp/probe.log
 # 3. The field without the keyboard dragged by the mouse moves the window.
 focuses=$(count 'TITLEBAR focus ')
 drag $((fx + fw / 2)) "$cy" 50 40
-expect_log "ZWL TITLEBAR press moves client=$zc1 surface=$surface id=5 docked=0"
+expect_log "KWL TITLEBAR press moves client=$zc1 surface=$surface id=5 docked=0"
 expect_log "GLASS moved surface=$surface x=$((wx + 50)) y=$((wy + 40))"
 expect_count "focuses after the drag" "$(count 'TITLEBAR focus ')" "$focuses"
 wx=$((wx + 50)); wy=$((wy + 40)); fx=$((fx + 50)); fy=$((fy + 40)); cy=$((cy + 40)); tx=$((tx + 50))
@@ -253,7 +253,7 @@ pointer move $((wx + 800 - 26)) $((wy - 30)) sleep 300 down sleep 600
 expect_count "closes while the close button is held" "$(count "GLASS close surface=$surface")" 1
 pointer up sleep 800
 
-guest 'grep -E "ZWL (MENU|GLASS|TOUCH|TITLEBAR)" /tmp/zdesktop.log' > "$out/search-log.txt"
+guest 'grep -E "KWL (MENU|GLASS|TOUCH|TITLEBAR)" /tmp/zdesktop.log' > "$out/search-log.txt"
 guest 'cat /tmp/probe.log' > "$out/probe.log"
 errors_b=$(count 'ERROR')
 [ "${errors_a:-1}" = 0 ] && [ "${errors_b:-1}" = 0 ] && echo "zdesktop: no ERROR" || { echo "zdesktop: ERROR lines"; status=1; }

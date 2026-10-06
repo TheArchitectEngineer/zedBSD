@@ -32,9 +32,9 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/terminal --token=t3 --timeout-s=250 > /tmp/t3.log 2>&1 </dev/null & sleep 6
 /bin/wlshm --size=520x340 --color=ffd04040 --frames=20000 --token=a > /tmp/a.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 tx=${1:-0}; ty=${2:-0}
-set -- $(guest "grep 'ZWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 ax=${1:-0}; ay=${2:-0}
 shell=$(guest "grep 'MENU bar client=$zc1 .* where=floating item=1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* offset=\([0-9]*\) top=[0-9]* width=\([0-9]*\).*/\1 \2/p')
 set -- $shell

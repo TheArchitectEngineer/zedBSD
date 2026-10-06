@@ -44,9 +44,9 @@ pad() { name=$1; shift; script="pad 1336 760 5 scan\nwait 2600"; for line in "$@
 guest "$stop_all" >/dev/null
 put "$build/bin/wayland" /bin/wayland
 guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=16 > /tmp/w.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "window: surface=$surface at $wx,$wy"
 
@@ -92,7 +92,7 @@ shot docked
 # 4. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
-guest 'grep -E "ZWL INPUT|GLASS (moved|dock|undock|resized)|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL INPUT|GLASS (moved|dock|undock|resized)|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 

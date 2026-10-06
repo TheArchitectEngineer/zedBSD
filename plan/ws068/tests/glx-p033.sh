@@ -52,7 +52,7 @@ guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/.X11-unix/X0; /bin
 DISPLAY=:0 /bin/xserver > /tmp/x11server.log 2>&1 </dev/null & sleep 6
 DISPLAY=:0 /bin/glxtest --gl32 --frames=600 --delay-ms=30 --token=g32 > /tmp/glx3.log 2>&1 </dev/null & i=0; while ! grep -q "EGLTEST CHECK" /tmp/glx3.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; sleep 2; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 echo "glxtest window at $wx,$wy"
 pointer move 1250 780 sleep 400

@@ -299,7 +299,7 @@ kwl_glass_prefetch(
 	glass_prefetch.path = server->wallpaper_path;
 	error = pthread_create(&glass_prefetch.thread, NULL, prefetch_run, NULL);
 	if (error != 0) {
-		printf("ZWL GLASS prefetch unavailable errno=%d\n", error);
+		printf("KWL GLASS prefetch unavailable errno=%d\n", error);
 		return;
 	}
 
@@ -329,24 +329,24 @@ kwl_glass_open(
 	error = wallpaper_create(server, glass);
 	if (error != 0)
 		return error;
-	printf("ZWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The glyphs; the look is drawn without text when the font cannot be read. */
 	started = kwl_milliseconds();
 	error = atlas_create(server, glass);
 	if (error != 0)
-		printf("ZWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
-	printf("ZWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+		printf("KWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
+	printf("KWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The applications' tiles; without them the marks are drawn without pictures. */
 	started = kwl_milliseconds();
 	error = tiles_create(server, glass);
 	if (error != 0)
-		printf("ZWL GLASS no tiles: errno=%d\n", error);
-	printf("ZWL STARTUP step=tiles ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+		printf("KWL GLASS no tiles: errno=%d\n", error);
+	printf("KWL STARTUP step=tiles ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded. */
-	printf("ZWL GLASS ready text=%u\n", glass->text);
+	printf("KWL GLASS ready text=%u\n", glass->text);
 	return 0;
 }
 
@@ -426,7 +426,7 @@ kwl_glass_landscape(
 	server->dirty = 1;
 
 	/* The log names the landscape ("-") and how long it took. */
-	printf("ZWL GLASS wallpaper path=- ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL GLASS wallpaper path=- ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded: the landscape is shown from the next frame. */
 	return 0;
@@ -553,7 +553,7 @@ kwl_glass_wallpaper_poll(
 	/* A picture that could not be read is not shown. */
 	*error = glass_loader.error;
 	if (*error != 0) {
-		printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, *error);
+		printf("KWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, *error);
 		return 1;
 	}
 
@@ -575,7 +575,7 @@ kwl_glass_wallpaper_poll(
 	server->dirty = 1;
 
 	/* Logs how long the drawing took, for the tests. */
-	printf("ZWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded: the new wallpaper is shown from the next frame. */
 	return 1;
@@ -635,7 +635,7 @@ wallpaper_fill(
 	if (path != NULL) {
 		error = wallpaper_load(path, &picture);
 		if (error != 0)
-			printf("ZWL GLASS no wallpaper: path=%s errno=%d\n", path, error);
+			printf("KWL GLASS no wallpaper: path=%s errno=%d\n", path, error);
 	}
 
 	/* The picture into both images. */
@@ -743,7 +743,7 @@ wallpaper_draw(
 	free(columns);
 	free(sums);
 	free(picture.data);
-	printf("ZWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The frosted glass. */
 	error = blur_fill(server, glass, small);
@@ -1256,27 +1256,27 @@ atlas_fill(
 	}
 
 	/* The icons in the rows after the glyphs. */
-	printf("ZWL STARTUP step=glyphs-text ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=glyphs-text ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 	pen_y += line + 1U;
 	error = atlas_icons(glass, &pen_y);
 	if (error != 0)
 		return error;
-	printf("ZWL STARTUP step=glyphs-icons ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=glyphs-icons ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 
 	/* The Kei mark's layers in the row after them. */
 	error = atlas_mark(glass, &pen_y);
 	if (error != 0)
 		return error;
-	printf("ZWL STARTUP step=glyphs-mark ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL STARTUP step=glyphs-mark ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The cache's cells in the rest of the atlas. */
 	glass->cache_top = pen_y;
 	glass->cache_count = (GLASS_ATLAS_WIDTH / GLASS_CELL) * ((GLASS_ATLAS_HEIGHT - pen_y) / GLASS_CELL);
 	if (glass->cache_count > GLASS_CELLS)
 		glass->cache_count = GLASS_CELLS;
-	printf("ZWL GLASS atlas cache-top=%u cells=%u faces=%u\n", glass->cache_top, glass->cache_count, glass->face_count);
+	printf("KWL GLASS atlas cache-top=%u cells=%u faces=%u\n", glass->cache_top, glass->cache_count, glass->face_count);
 
 	/* Succeeded. */
 	return 0;
@@ -2589,9 +2589,9 @@ glass_cache_glyph(
 		glass->fallback_tried = 1;
 		error = glass_open_face(glass, glass->fallback_path);
 		if (error != 0) {
-			printf("ZWL GLASS no fallback font: path=%s errno=%d\n", glass->fallback_path, error);
+			printf("KWL GLASS no fallback font: path=%s errno=%d\n", glass->fallback_path, error);
 		} else {
-			printf("ZWL GLASS fallback font: path=%s faces=%u\n", glass->fallback_path, glass->face_count);
+			printf("KWL GLASS fallback font: path=%s faces=%u\n", glass->fallback_path, glass->face_count);
 			which = glass->face_count - 1U;
 			id = truetype_glyph_index(glass->faces[which], codepoint);
 			if (id != 0U)
@@ -2606,7 +2606,7 @@ glass_cache_glyph(
 		error = glass_open_face(glass, GLASS_EMOJI_FONT);
 		if (error == 0)
 			glass->emoji_face = (int)glass->face_count - 1;
-		printf("ZWL GLASS emoji font: path=%s errno=%d\n", GLASS_EMOJI_FONT, error);
+		printf("KWL GLASS emoji font: path=%s errno=%d\n", GLASS_EMOJI_FONT, error);
 	}
 
 	/* The emoji font's colour glyph, when it has the character. */
@@ -2660,7 +2660,7 @@ glass_cache_glyph(
 	cell->glyph.advance = metrics.advance;
 	glass->clock++;
 	cell->used = glass->clock;
-	printf("ZWL GLASS glyph codepoint=U+%04X size=%u face=%u cell=%u\n", codepoint, (unsigned)size, which, oldest);
+	printf("KWL GLASS glyph codepoint=U+%04X size=%u face=%u cell=%u\n", codepoint, (unsigned)size, which, oldest);
 
 	/* Succeeded: the glyph. */
 	return &cell->glyph;
@@ -2720,7 +2720,7 @@ glass_cache_color(
 	cell->glyph.color = 1;
 	glass->clock++;
 	cell->used = glass->clock;
-	printf("ZWL GLASS glyph codepoint=U+%04X size=%u face=emoji cell=%u color=1\n", codepoint, (unsigned)size, slot);
+	printf("KWL GLASS glyph codepoint=U+%04X size=%u face=emoji cell=%u color=1\n", codepoint, (unsigned)size, slot);
 	return &cell->glyph;
 }
 

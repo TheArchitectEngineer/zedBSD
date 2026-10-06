@@ -112,15 +112,15 @@ close_page
 
 # 4. zdesktop's titlebar: a drag moves the window by (100, 60), and its close button ends the browser.
 open_page first.html
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
 # (The drag starts on the title: since ws074-p045 the middle of the titlebar holds the location's control.)
 pointer move $((wx + 150)) $((wy - 30)) sleep 300 down sleep 200 move $((wx + 200)) $((wy)) sleep 200 move $((wx + 250)) $((wy + 30)) sleep 300 up sleep 800
-expect_log /tmp/zdesktop.log "ZWL GLASS moved surface=[0-9]* x=$((wx + 100)) y=$((wy + 60))"
+expect_log /tmp/zdesktop.log "KWL GLASS moved surface=[0-9]* x=$((wx + 100)) y=$((wy + 60))"
 pointer move 1270 790 sleep 400
 check "$out/moved.png" >/dev/null
 pointer move $((wx + 100 + 871)) $((wy + 60 - 30)) sleep 300 move $((wx + 100 + 873)) $((wy + 60 - 30)) sleep 300 down sleep 80 up sleep 1500
-expect_log /tmp/zdesktop.log 'ZWL GLASS close surface='
+expect_log /tmp/zdesktop.log 'KWL GLASS close surface='
 wait_gone "titlebar close"
 
 # 5. No error in zdesktop's log.

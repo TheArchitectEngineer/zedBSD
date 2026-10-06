@@ -2,7 +2,7 @@
 # ws035-p064: the pull that follows the pointer, on the Venus guest (the zdesktop image).  A wl_shm window is
 # docked (a double click on its title bar); then its title in the system bar is pulled down:
 #  1. pulling.png: 70 px down, the window has shrunk part of the way, rounded, with its floating title bar.
-#  2. back.png: let go there, it springs back to the docked space (ZWL GLASS pull back).
+#  2. back.png: let go there, it springs back to the docked space (KWL GLASS pull back).
 #  3. Pulled past 140 px it comes off at its own size under the pointer and keeps moving (undock via=pull).
 #
 #   plan/ws035/tests/zdesktop-p064.sh [OUTDIR]
@@ -35,7 +35,7 @@ guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while [ ! -S /tmp/wayland-0 ] && [ $i -lt 80 ]; do sleep 0.25; i=$((i+1)); done; sleep 2
 /bin/wlshm --size=520x340 --color=ffd04040 --frames=20000 --token=r > /tmp/r.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 pointer move $((wx + 150)) $((wy - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 2000
 expect_log "GLASS dock surface=$surface via=double-click"

@@ -18,9 +18,9 @@ run-aat.sh sums up.
 
     @run.define("os.boot.session-up")
     def session_up(item):
-        line = run.wait(r"ZWL READY .* role=normal", None, 120)
+        line = run.wait(r"KWL READY .* role=normal", None, 120)
         item.step("wait for the desktop", line)
-        item.check(line, "no ZWL READY")
+        item.check(line, "no KWL READY")
         run.shot(item, "desktop")
         item.passed(line)
 
@@ -60,7 +60,7 @@ TITLE_GAP = 8
 BUTTON_FROM_RIGHT = 26
 BUTTON_SPACING = 34
 
-# A window started outside App Home (a program run with a file) has only its place in the compositor's lines (ZWL
+# A window started outside App Home (a program run with a file) has only its place in the compositor's lines (KWL
 # MAP x= y=), not its size: a point this far inside its body's top-left corner is still in the body of any window an
 # application opens (none is smaller than 320x200).
 UNSIZED_INSET_X = 120
@@ -296,16 +296,16 @@ class Run:
 		return result.stdout.splitlines() if result.returncode == 0 else []
 
 	def ready(self) -> dict:
-		"""The compositor's ZWL READY line of the session (socket, width, height), read once."""
+		"""The compositor's KWL READY line of the session (socket, width, height), read once."""
 		if self._ready is None:
-			found = self.lines(r"ZWL READY socket=", None)
+			found = self.lines(r"KWL READY socket=", None)
 			self._ready = {}
 			if found:
 				self._ready = dict(re.findall(r"(\w+)=(\S+)", found[-1]))
 		return self._ready
 
 	def screen(self) -> tuple[int, int]:
-		"""The screen's size (from ZWL READY; the 5330's panel without one)."""
+		"""The screen's size (from KWL READY; the 5330's panel without one)."""
 		ready = self.ready()
 		return int(ready.get("width", 1920)), int(ready.get("height", 1200))
 
@@ -375,8 +375,8 @@ class Run:
 
 	def mapped_after(self, since: str, timeout: float = 15.0, size_wait: float = 10.0) -> Window | None:
 		"""The first window mapped after a mark, once its place and size are logged.  A window whose size no line
-		gives within size_wait (one started outside App Home has only ZWL MAP) comes back with its place only."""
-		line = self.wait(r"ZWL MAP client=\d+ surface=\d+", since, timeout)
+		gives within size_wait (one started outside App Home has only KWL MAP) comes back with its place only."""
+		line = self.wait(r"KWL MAP client=\d+ surface=\d+", since, timeout)
 		if line is None:
 			return None
 		match = re.search(r"client=(\d+) surface=(\d+)", line)
@@ -393,9 +393,9 @@ class Run:
 		"""Opens App Home with the Windows key (Super pressed alone); returns the mark before it."""
 		since = self.mark()
 		self.key("super")
-		line = self.wait(r"ZWL HOME open via=", since, 10)
+		line = self.wait(r"KWL HOME open via=", since, 10)
 		item.step("Windows key pressed and let go", line)
-		item.check(line, "App Home did not open (no ZWL HOME open)")
+		item.check(line, "App Home did not open (no KWL HOME open)")
 		time.sleep(0.4)
 		return since
 
@@ -404,14 +404,14 @@ class Run:
 		query, _, ready = APPS[name]
 		since = self.home_open(item)
 		self.type(query)
-		item.check(self.wait(rf'ZWL HOME search query="{re.escape(query)}"', since, 10), f"Home did not search for {query}")
-		icons = self.lines(rf'ZWL HOME icon name="{re.escape(name)}" x=-?\d+ y=-?\d+', since)
+		item.check(self.wait(rf'KWL HOME search query="{re.escape(query)}"', since, 10), f"Home did not search for {query}")
+		icons = self.lines(rf'KWL HOME icon name="{re.escape(name)}" x=-?\d+ y=-?\d+', since)
 		item.step(f"typed {query!r} in App Home", icons[-1] if icons else "no icon")
 		item.check(icons, f"Home shows no icon for {name}")
 		x, y = (int(value) for value in re.search(r"x=(-?\d+) y=(-?\d+)", icons[-1]).groups())
 		started = self.mark()
 		self.click(x, y)
-		launched = self.wait(rf"ZWL HOME launch name={re.escape(name)} pid=\d+", started, 10)
+		launched = self.wait(rf"KWL HOME launch name={re.escape(name)} pid=\d+", started, 10)
 		window = self.mapped_after(started, timeout) if launched else None
 		item.step(f"clicked the {name} icon at {x},{y}", f"{launched or 'no launch'}; window {window}")
 		item.check(launched, f"Home did not start {name}")
@@ -438,21 +438,21 @@ class Run:
 	def close(self, item: Item, window: Window) -> None:
 		"""Closes a window with its title bar's close button (floating), and waits for it to go: its unmap, or its
 		client gone (an application that ends at its close request leaves without a null image, so the compositor
-		says only ZWL CLIENT gone)."""
+		says only KWL CLIENT gone)."""
 		since = self.mark()
 		current = self.window(window.client, window.surface) or window
 		if current.docked:
-			buttons = self.lines(rf"ZWL GLASS dock surface={current.surface} ", None)
+			buttons = self.lines(rf"KWL GLASS dock surface={current.surface} ", None)
 			match = re.search(r"buttons=(-?\d+),", buttons[-1]) if buttons else None
 			item.check(match, "a docked window without its buttons' line")
 			self.click(int(match.group(1)), TITLE_HEIGHT // 2)
 		else:
 			item.check(current.sized(), f"the window {window.client}:{window.surface} has no known size for its buttons")
 			self.click(*current.button_point(0))
-		gone = rf"ZWL UNMAP client={window.client} surface={window.surface}\b|ZWL CLIENT gone client={window.client}\b"
+		gone = rf"KWL UNMAP client={window.client} surface={window.surface}\b|KWL CLIENT gone client={window.client}\b"
 		line = self.wait(gone, since, 10)
-		asked = self.lines(rf"ZWL GLASS close surface={window.surface} client={window.client}\b", since)
-		item.step("clicked the close button", "; ".join(filter(None, [asked[-1] if asked else "no ZWL GLASS close", line])))
+		asked = self.lines(rf"KWL GLASS close surface={window.surface} client={window.client}\b", since)
+		item.step("clicked the close button", "; ".join(filter(None, [asked[-1] if asked else "no KWL GLASS close", line])))
 		if not asked:
 			item.check(line, f"the press did not reach the close button of {window.client}:{window.surface}")
 		item.check(line, f"the window {window.client}:{window.surface} was asked to close but did not")
@@ -461,16 +461,16 @@ class Run:
 		"""Brings the session's layout mode back to windowed when a scenario left it docked (ws142-p008: docking a
 		window docks every window switched to or opened after, until one is brought back), so that the next scenario
 		starts with floating windows: the restore button in the system bar of the docked window in front."""
-		modes = self.lines(r"ZWL LAYOUT mode=\w+", None)
+		modes = self.lines(r"KWL LAYOUT mode=\w+", None)
 		if not modes or "mode=docked" not in modes[-1]:
 			return
-		docks = self.lines(r"ZWL GLASS dock surface=\d+ .*buttons=-?\d+,-?\d+,", None)
+		docks = self.lines(r"KWL GLASS dock surface=\d+ .*buttons=-?\d+,-?\d+,", None)
 		if not docks:
 			return
 		match = re.search(r"buttons=(-?\d+),(-?\d+),", docks[-1])
 		since = self.mark()
 		self.click(int(match.group(2)), TITLE_HEIGHT // 2)
-		self.wait(r"ZWL LAYOUT mode=windowed", since, 5)
+		self.wait(r"KWL LAYOUT mode=windowed", since, 5)
 
 	# Settings.
 

@@ -121,7 +121,7 @@ kwl_viewport_commit(
 	memcpy(surface->destination, surface->pending_destination, sizeof(surface->destination));
 	surface->viewport_changed = 0;
 	surface->client->server->dirty = 1;
-	printf("ZWL VIEWPORT surface=%u source=%d,%d,%d,%d destination=%d,%d\n", surface->id,
+	printf("KWL VIEWPORT surface=%u source=%d,%d,%d,%d destination=%d,%d\n", surface->id,
 	       surface->source[0], surface->source[1], surface->source[2], surface->source[3],
 	       surface->destination[0], surface->destination[1]);
 }

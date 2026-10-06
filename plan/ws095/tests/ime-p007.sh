@@ -75,7 +75,7 @@ expect_log /tmp/te.log 'TEXTEDIT READY'
 # 1. 漢字 on the second line.
 keys '<ctrl-end>'
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 keys 'kanji'
 keys ' '
 keys '\n'
@@ -98,7 +98,7 @@ shot two-lines.png
 
 # 4. Saved by direct input's Ctrl+S.
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=direct'
+expect_log /tmp/zdesktop.log 'KWL IME language=direct'
 keys '<ctrl-s>'
 expect_log /tmp/te.log 'SAVE path=/tmp/p007.txt'
 expect_file saved

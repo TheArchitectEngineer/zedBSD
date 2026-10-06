@@ -6,14 +6,14 @@
 #     the whole line, so the region of the line changes by far more than the cursor's blink (threshold 300 pixels).
 #  2. terminal-direct: the same in Terminal (the line of the shell; threshold 20) as the baseline.
 #  3. textedit-japanese: Alt+Space (Japanese), then for each trial "kanji", Space and Enter (a conversion learned and
-#     saved to the user dictionary), then "a" measured (its preedit あ); and the session's ZWL IME bypass lines are counted (before
-#     the fix the save on Enter held the input method past 500 ms: "ZWL IME bypass after_ms=500").
+#     saved to the user dictionary), then "a" measured (its preedit あ); and the session's KWL IME bypass lines are counted (before
+#     the fix the save on Enter held the input method past 500 ms: "KWL IME bypass after_ms=500").
 #  4. ws095-p015 (2026-10-04 user: save the dictionary when there has been no input for three minutes): right after
 #     step 3 the user dictionary is not written yet; 190 s without a key and it is (one reading at least); then one more
 #     conversion learned ("watasi") and keiland-ime stopped by SIGTERM: zdesktop logs it exited, and the file has a second
 #     reading (saved at the end).
 # Reported, not judged against a number for 1 and 2 (the guest's own figures are the evidence; 5330 is measured by the
-# user).  PASS needs every trial shown (missed=0), no "ZWL IME bypass" in step 3, and step 4's four checks.
+# user).  PASS needs every trial shown (missed=0), no "KWL IME bypass" in step 3, and step 4's four checks.
 #
 #   plan/ws089/tests/settings-guest.sh start IMAGE      (or zdesktop-guest.sh start IMAGE)
 #   plan/ws095/tests/latency-bug143.sh [OUTDIR]          (default build/ws095-shots/bug143)
@@ -75,19 +75,19 @@ guest "pid=\$(ps -A -o pid,args | grep '[t]erminal' | awk '{print \$1}'); kill \
 sleep 1
 
 # 3. Text Editor in Japanese: a conversion learned (and saved) before each measured key.
-bypass_before=$(guest "grep -c 'ZWL IME bypass' /tmp/zdesktop.log" | tail -1)
+bypass_before=$(guest "grep -c 'KWL IME bypass' /tmp/zdesktop.log" | tail -1)
 guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit /root/lat.txt > /tmp/te2.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
 expect_log /tmp/te2.log 'TEXTEDIT READY'
 find_window
 keys '<alt-spc>'
-expect_log /tmp/zdesktop.log 'ZWL IME language=ja'
+expect_log /tmp/zdesktop.log 'KWL IME language=ja'
 for round in 1 2 3 4 5; do
 	keys 'kanji' ' ' ' ' '\n'
 	latency --name textedit-japanese-$round --key a --region "$((wx + 20)),$((wy + 10)),700,60" --threshold 300 --trials 1 --pause 200
 	keys '\n'
 done
-bypass_after=$(guest "grep -c 'ZWL IME bypass' /tmp/zdesktop.log" | tail -1)
-echo "ZWL IME bypass lines: ${bypass_before:-?} -> ${bypass_after:-?}"
+bypass_after=$(guest "grep -c 'KWL IME bypass' /tmp/zdesktop.log" | tail -1)
+echo "KWL IME bypass lines: ${bypass_before:-?} -> ${bypass_after:-?}"
 [ "${bypass_after:-1}" = "${bypass_before:-0}" ] && echo "no IME bypass: ok" || { echo "no IME bypass: FAIL"; status=1; }
 
 # 4. The user dictionary: not written at each commit, written after three minutes without a key and at the end.
@@ -102,21 +102,21 @@ echo "dictionary after 190 s without a key: $now"
 [ "$now" != none ] && [ "$now" -ge 1 ] 2>/dev/null && echo "written after the idle time: ok" || { echo "written after the idle time: FAIL"; status=1; }
 keys 'watasi' ' ' ' ' '\n'
 sleep 1
-exited_before=$(guest "grep -c 'ZWL IME exited' /tmp/zdesktop.log" | tail -1)
+exited_before=$(guest "grep -c 'KWL IME exited' /tmp/zdesktop.log" | tail -1)
 guest "pid=\$(ps -A -o pid,args | grep '[k]eiland-ime' | awk '{print \$1}'); echo pids \$pid; kill -TERM \$pid" | tail -1
 tries=0
 while [ $tries -lt 10 ]; do
-	exited_after=$(guest "grep -c 'ZWL IME exited' /tmp/zdesktop.log" | tail -1)
+	exited_after=$(guest "grep -c 'KWL IME exited' /tmp/zdesktop.log" | tail -1)
 	[ "${exited_after:-0}" -gt "${exited_before:-0}" ] 2>/dev/null && break
 	tries=$((tries + 1))
 	sleep 1
 done
-echo "ZWL IME exited lines: ${exited_before:-?} -> ${exited_after:-?}"
+echo "KWL IME exited lines: ${exited_before:-?} -> ${exited_after:-?}"
 [ "${exited_after:-0}" -gt "${exited_before:-0}" ] 2>/dev/null && echo "keiland-ime ends on SIGTERM: ok" || { echo "keiland-ime ends on SIGTERM: FAIL"; status=1; }
 last=$(entries)
 echo "dictionary after SIGTERM: $last"
 [ "$last" != none ] && [ "$last" -gt "${now:-0}" ] 2>/dev/null && echo "written at the end: ok" || { echo "written at the end: FAIL"; status=1; }
-guest 'grep -E "ZWL IME|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
+guest 'grep -E "KWL IME|KEI-IME" /tmp/zdesktop.log' > "$out/zdesktop-ime.log"
 grep -q 'missed=[1-9]' "$out/latency.txt" && { echo "a trial was never shown: FAIL"; status=1; }
 grep '^LATENCY' "$out/latency.txt"
 [ $status = 0 ] && echo "latency-bug143: PASS" || echo "latency-bug143: FAIL"

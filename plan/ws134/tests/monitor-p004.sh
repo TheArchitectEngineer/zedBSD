@@ -4,7 +4,7 @@
 # with plan/tools/files/files-guest.sh start IMAGE).  zdesktop --glass at 1280x800, the monitor on the critical recording
 # with the clock stopped at 130 s (a card comes out at once).  The touch screen is declared 0..1279 by 0..799, so a
 # finger's numbers are the output's pixels; the plates' places are the monitor's own ZMON PLATE lines plus the window's
-# place (ZWL MAP).  Each touch script waits 2.6 s after declaring its screen (the compositor looks for a new evdev node
+# place (KWL MAP).  Each touch script waits 2.6 s after declaring its screen (the compositor looks for a new evdev node
 # now and then).
 #  1. A tap on the CPU plate: ZMON CARD open plate=cpu via=tap and the card drawn all the way out.  card.png.
 #  2. A tap outside the card: ZMON CARD close plate=cpu.
@@ -95,11 +95,11 @@ tap() {
 guest "$stop_all" >/dev/null
 guest "export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
-/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q ZWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
+/bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass \$picture > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 1
 /bin/monitor --timeout-s=400 --source=replay:/usr/share/monitor-tests/critical.txt --clock=fixed:130000 --token=p004 > /tmp/monitor.log 2>&1 </dev/null & echo started" >/dev/null
 expect_log 'ZMON READY .* source=replay'
 sleep 3
-set -- $(guest "grep 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+set -- $(guest "grep 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}
 wy=${2:-0}
 echo "window at $wx,$wy"

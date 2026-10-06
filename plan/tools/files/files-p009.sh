@@ -3,7 +3,7 @@
 # WS070's System Menu protocol version 2 (xdg_menu_manager_v1.get_context_menu, xdg_context_menu_v1) and
 # libkeiland's keiland_menu_popup.  zdesktop --glass at 1280x800; files at 1000x640 on the
 # sample home (/tmp/fhome), opened on Documents.
-#  1. A right click on Budget.csv: zdesktop opens the context menu at the click (ZWL MENU context), items.png;
+#  1. A right click on Budget.csv: zdesktop opens the context menu at the click (KWL MENU context), items.png;
 #     Get Info chosen: the action comes back (CONTEXT-MENU item=1004 action=4), the information opens,
 #     and the context menu is done.
 #  2. A right click on the empty part: the empty menu; View > as List chosen through the submenu
@@ -73,7 +73,7 @@ picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/sh
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 4
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=800 --width=1000 --height=640 /tmp/fhome/Documents > /tmp/f.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
 zwl_app_clients
-set -- $(guest "grep 'ZWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 surface=${1:-0}; wx=${2:-0}; wy=${3:-0}
 echo "files: surface $surface at $wx,$wy"
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents items=6 error=0'
@@ -81,12 +81,12 @@ expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Documents ite
 # 1. Budget.csv: the items' menu, and Get Info.
 rclick 446 140
 expect_log /tmp/f.log 'ZFILES CONTEXT-MENU open rows=[0-9]+ x=446 y=140 '
-expect_log /tmp/zdesktop.log "ZWL MENU context client=$zc1 context=[0-9]+ surface=$surface x=$((wx + 446)) y=$((wy + 140)) rows="
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=1004 depth=1 '
+expect_log /tmp/zdesktop.log "KWL MENU context client=$zc1 context=[0-9]+ surface=$surface x=$((wx + 446)) y=$((wy + 140)) rows="
+expect_log /tmp/zdesktop.log 'KWL MENU row item=1004 depth=1 '
 shot items.png $((wx + 446)) $((wy + 140))
 click $(( $(popup_x 1) + 60 )) "$(row_y 1004)" 1200
 # zdesktop hears the row's action as libkeiland's declarative menu gives it: FM_CONTEXT_ACTION (0x20000) + 4 (WS131 p020).
-expect_log /tmp/zdesktop.log "ZWL MENU context-activate client=$zc1 context=[0-9]+ item=1004 action=131076 "
+expect_log /tmp/zdesktop.log "KWL MENU context-activate client=$zc1 context=[0-9]+ item=1004 action=131076 "
 expect_log /tmp/f.log 'ZFILES CONTEXT-MENU item=1004 action=4 '
 expect_log /tmp/f.log 'ZFILES INFO path=/tmp/fhome/Documents/Budget.csv '
 expect_log /tmp/f.log 'ZFILES CONTEXT-MENU done'
@@ -94,9 +94,9 @@ keys '<esc>'
 
 # 2. The empty part: View > as List.
 rclick 700 520
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=102 depth=1 '
+expect_log /tmp/zdesktop.log 'KWL MENU row item=102 depth=1 '
 click $(( $(popup_x 1) + 60 )) "$(row_y 102)" 900
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=1016 depth=2 '
+expect_log /tmp/zdesktop.log 'KWL MENU row item=1016 depth=2 '
 shot empty.png $(( $(popup_x 2) + 60 )) "$(row_y 1016)"
 click $(( $(popup_x 2) + 60 )) "$(row_y 1016)" 1200
 expect_log /tmp/f.log 'ZFILES CONTEXT-MENU item=1016 action=16 '
@@ -104,16 +104,16 @@ expect_log /tmp/f.log 'ZFILES ACTION action=16'
 
 # 3. Downloads in the sidebar: Open in New Tab.
 rclick 100 185
-expect_log /tmp/zdesktop.log 'ZWL MENU row item=1049 depth=1 '
+expect_log /tmp/zdesktop.log 'KWL MENU row item=1049 depth=1 '
 click $(( $(popup_x 1) + 60 )) "$(row_y 1049)" 1200
 expect_log /tmp/f.log 'ZFILES TABS new index=1 count=2'
 expect_log /tmp/f.log 'ZFILES LOCATION kind=folder path=/tmp/fhome/Downloads '
 
 # 4. A right click, then Esc: done without a choice.
-before=$(guest "grep -c 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+before=$(guest "grep -c 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 rclick 700 520
 keys '<esc>'
-after=$(guest "grep -c 'ZWL MENU context-done' /tmp/zdesktop.log" | tail -1)
+after=$(guest "grep -c 'KWL MENU context-done' /tmp/zdesktop.log" | tail -1)
 [ "${after:-0}" -gt "${before:-0}" ] 2>/dev/null && echo "esc: done ok" || { echo "esc: done MISSING ($before -> $after)"; status=1; }
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)

@@ -155,13 +155,13 @@ kl_backend_gpu_request(
 	/* Closes the request-owned descriptor before reporting an import failure. */
 	close(descriptor);
 	if (error != 0) {
-		printf("ZWL IMPORT_ERROR client=%llu buffer=%u errno=%d\n", (unsigned long long)host->client_number(factory), host->resource_id(buffer), error);
+		printf("KWL IMPORT_ERROR client=%llu buffer=%u errno=%d\n", (unsigned long long)host->client_number(factory), host->resource_id(buffer), error);
 		host->resource_destroy(buffer);
 		return EPROTO;
 	}
 
 	/* The machine log counts the imports (plan/ws099/tests/import-launch.sh reads the prefix). */
-	printf("ZWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\n", (unsigned long long)host->client_number(factory), host->resource_id(buffer), layout.width, layout.height, (unsigned long long)layout.allocation_bytes);
+	printf("KWL IMPORT client=%llu buffer=%u width=%u height=%u bytes=%llu\n", (unsigned long long)host->client_number(factory), host->resource_id(buffer), layout.width, layout.height, (unsigned long long)layout.allocation_bytes);
 
 	/* Succeeded: the wl_buffer owns its independently imported resource. */
 	return 0;
@@ -333,7 +333,7 @@ factory_fence(
 	/* Names the fence when the per-frame lines were asked for (a present's own fence is at its first generation, ws103-p005). */
 	logging = host->log_frames(factory);
 	if (logging)
-		printf("ZWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\n", (unsigned long long)host->client_number(factory), host->resource_id(surface), (unsigned long long)generation);
+		printf("KWL ACQUIRE_FENCE client=%llu surface=%u generation=%llu\n", (unsigned long long)host->client_number(factory), host->resource_id(surface), (unsigned long long)generation);
 
 	/* Succeeded: the next commit waits for this fence too. */
 	return 0;
@@ -401,21 +401,21 @@ buffer_import(
 	/* The image bound to the imported memory (the copy is consumed or closed). */
 	status = buffer_image(device, layout, copy, &image, &memory);
 	if (status != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), (int)status);
+		printf("KWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), (int)status);
 		return EINVAL;
 	}
 
 	/* Its view and descriptor sets and the buffer's import record (the compositor's); the image and memory go on failure. */
 	status = host->buffer_adopt(buffer, image, memory, layout->width, layout->height, layout->format);
 	if (status != VK_SUCCESS) {
-		printf("ZWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), (int)status);
+		printf("KWL VULKAN_IMPORT_ERROR client=%llu buffer=%u result=%d\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), (int)status);
 		return EINVAL;
 	}
 
 	/* The per-frame log names the import. */
 	logging = host->log_frames(buffer);
 	if (logging)
-		printf("ZWL VULKAN_IMPORT client=%llu buffer=%u width=%u height=%u\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), layout->width, layout->height);
+		printf("KWL VULKAN_IMPORT client=%llu buffer=%u width=%u height=%u\n", (unsigned long long)host->client_number(buffer), host->resource_id(buffer), layout->width, layout->height);
 
 	/* Succeeded: the buffer can be drawn in window mode. */
 	return 0;
@@ -531,7 +531,7 @@ buffer_image(
 	    requirements.size > image->allocation_bytes ||
 	    layout.offset != image->offset ||
 	    layout.rowPitch != image->stride) {
-		printf("ZWL VULKAN_IMPORT_LAYOUT types=0x%x type=%u size=%llu bytes=%llu offset=%llu/%llu pitch=%llu/%u\n",
+		printf("KWL VULKAN_IMPORT_LAYOUT types=0x%x type=%u size=%llu bytes=%llu offset=%llu/%llu pitch=%llu/%u\n",
 		       requirements.memoryTypeBits,
 		       image->memory_type,
 		       (unsigned long long)requirements.size,
