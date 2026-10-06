@@ -663,12 +663,22 @@ main_window_event(
 		pv_app_event(&main_app, &input);
 		break;
 	case KUI_WINDOW_AXIS:
+		/* A touch pad's fingers scroll the view as fingers do, with libkeiland's scroller (ws090-p019). */
+		if (event->axis_source == KL_AXIS_SOURCE_FINGER) {
+			pv_touch_pad(&main_touch, &main_app, event);
+			break;
+		}
+
 		/* Only the vertical wheel scrolls the view. */
 		if (event->dy == 0.0)
 			break;
 		main_event(PV_EVENT_AXIS, event, &input);
 		input.scroll = (int)event->dy;
 		pv_app_event(&main_app, &input);
+		break;
+	case KL_WINDOW_AXIS_STOP:
+		/* The touch pad's fingers lift: the view flies on. */
+		pv_touch_pad_stop(&main_touch, event);
 		break;
 	case KUI_WINDOW_KEY:
 		/* The key, whether it went down, and whether it is a held key's repeat. */

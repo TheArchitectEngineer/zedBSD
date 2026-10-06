@@ -378,7 +378,8 @@ struct kl_scroller;
  * when the fingers lift, so that the content flies on.  The samples older
  * than KL_AXIS_TRACK_WINDOW_US at the lift do not count, and fingers that
  * rested longer than KL_AXIS_TRACK_REST_US before lifting throw nothing.
- * It is plain data a caller keeps (a kl_scroll keeps one).
+ * It is plain data a caller keeps; kl_scroller keeps one for a touch pad's
+ * fingers (KL_VERSION 41), so a program needs none of its own.
  */
 #define KL_AXIS_TRACK_SAMPLES	16U
 #define KL_AXIS_TRACK_WINDOW_US	100000U
@@ -421,16 +422,6 @@ struct kl_scroll {
 
 	/* When the content last moved (for the bars), 0 before it ever moved. */
 	uint64_t moved_us;
-
-	/*
-	 * A touch pad's two fingers holding the content (KL_VERSION 40,
-	 * BUG-211): whether they hold it, how far they have scrolled it since
-	 * they began (as a wheel scrolls: down positive), and their track.
-	 */
-	int axis_holding;
-	double axis_total_x;
-	double axis_total_y;
-	struct kl_axis_track axis_track;
 };
 
 int kl_scroll_init(struct kl_scroll *scroll, unsigned axes);
@@ -445,7 +436,7 @@ void kl_scroll_drag(struct kl_scroll *scroll, double dx, double dy);
 void kl_scroll_fling(struct kl_scroll *scroll, double vx, double vy, uint64_t now_us);
 void kl_scroll_cancel(struct kl_scroll *scroll, uint64_t now_us);
 void kl_scroll_axis(struct kl_scroll *scroll, double dx, double dy, unsigned source, uint64_t now_us);
-void kl_scroll_axis_stop(struct kl_scroll *scroll, uint64_t now_us);
+int kl_scroll_axis_stop(struct kl_scroll *scroll, uint64_t now_us);
 int kl_scroll_step(struct kl_scroll *scroll, uint64_t now_us);
 double kl_scroll_limit_x(const struct kl_scroll *scroll);
 double kl_scroll_limit_y(const struct kl_scroll *scroll);
@@ -926,7 +917,7 @@ void kl_window_set_fullscreen(struct kl_window *window, int fullscreen);
 int kl_window_fullscreen(const struct kl_window *window);
 
 /*
- * KL_VERSION 41 (ws122-p005b): what the window shows, told to the
+ * KL_VERSION 42 (ws122-p005b): what the window shows, told to the
  * compositor (wp_content_type_v1) from the window's next frame: nothing in
  * particular, a photo, a video or a game.  A fullscreen video or game may
  * then be shown without composing (the compositor's game mode).  Without

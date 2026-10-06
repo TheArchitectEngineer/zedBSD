@@ -37,3 +37,5 @@ Text Editor（部品・IME・chooser・inset・編集の操作を全て使う）
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+2026-10-06 ユーザー（クリック）「承認、p016 から順に」: p016〜p020（app を kl_app へ）を番号の順に進めてよい。

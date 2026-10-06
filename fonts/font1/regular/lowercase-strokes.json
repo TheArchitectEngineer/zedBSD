@@ -1,10 +1,10 @@
 {
-  "revision": "lowercase-02",
+  "revision": "lowercase-04",
   "canvas_pixels": 1024,
   "stroke_width_pixels": 62,
   "line_cap": "butt",
   "line_join": "round",
-  "description": "Monoline centerlines for 24 lowercase letters; preserve the restored original g/s outlines. Single-storey a retained, i/l bars shortened.",
+  "description": "Approved lowercase shapes; g/p/q vertical positions aligned to the lowercase baseline. Original g/s forms preserved.",
   "glyphs": {
     "a": {
       "paths": [
@@ -43,7 +43,11 @@
     "g": {
       "preserve_outline": true,
       "restored_from_commit": "ef9c3295",
-      "reason": "User requested the original g/s shapes after reviewing lowercase-01"
+      "reason": "User requested the original g/s shapes after reviewing lowercase-01",
+      "position_adjustment_pixels": {
+        "dy": 60,
+        "relative_to_font_version": "0.201"
+      }
     },
     "h": {
       "paths": [
@@ -109,12 +113,20 @@
       "paths": [
         "M385 350 V860",
         "M385 481 C431 419 477 381 530 381 C617 381 659 441 659 533 C659 626 609 683 524 683 C453 683 411 658 385 628"
+      ],
+      "translation_pixels": [
+        0,
+        27
       ]
     },
     "q": {
       "paths": [
         "M638 342 C599 332 573 336 544 342 C441 363 369 441 369 543 C369 610 402 645 460 645 C533 645 596 584 638 488",
         "M638 305 V818"
+      ],
+      "translation_pixels": [
+        0,
+        66
       ]
     },
     "r": {

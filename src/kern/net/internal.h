@@ -127,6 +127,11 @@ icmp_socket_create(
 	struct socket **result);
 
 int
+icmp6_socket_create(
+	int protocol,
+	struct socket **result);
+
+int
 udp_init(void);
 
 int

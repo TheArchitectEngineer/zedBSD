@@ -40,6 +40,8 @@ static void touch_down(struct fm_touch *touch, const struct fm_touch_event *even
 static void touch_up(struct fm_touch *touch, const struct fm_touch_event *event);
 static void touch_gestures(struct fm_touch *touch, uint64_t now);
 static void touch_pointer(struct fm_touch *touch, unsigned kind, unsigned button, double x, double y, uint64_t now);
+static void touch_pad(struct fm_touch *touch, const struct fm_touch_event *event, uint64_t time);
+static void touch_pad_stop(struct fm_touch *touch, const struct fm_touch_event *event, uint64_t time);
 
 /*
  * Makes the gestures and the scroller.
@@ -173,6 +175,14 @@ fm_touch_event(
 	case FM_TOUCH_UP:
 		touch_up(touch, event);
 		break;
+	case FM_TOUCH_PAD:
+		/* A touch pad's fingers scroll the area under the pointer (ws090-p019). */
+		touch_pad(touch, event, time);
+		break;
+	case FM_TOUCH_PAD_STOP:
+		/* They lift: the area flies on. */
+		touch_pad_stop(touch, event, time);
+		break;
 	case FM_TOUCH_CANCEL:
 		/* The compositor took the fingers (a drag and drop among them): a held button is let go (the main loop drops it during a drag and drop). */
 		if (touch->mode == TOUCH_MODE_POINTER || touch->holding)
@@ -212,6 +222,7 @@ fm_touch_tick(
 	double dy;
 	int scroll;
 	int animating;
+	int holding;
 	int error;
 
 	/* Nothing without the gestures. */
@@ -252,17 +263,20 @@ fm_touch_tick(
 		}
 	}
 
-	/* The scroll rests once it stops with no finger on it. */
+	/* The scroll rests once it stops with no finger on it, on the screen or on a touch pad. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
 	if (!animating &&
 	    !touch->pressed &&
 	    touch->mode == TOUCH_MODE_NONE &&
+	    !holding &&
 	    touch->moving) {
 		touch->moving = 0;
 		fprintf(stderr, "ZFILES TOUCH rest area=%u scroll=%d\n", touch->target, touch->scroll);
 	}
 
-	/* Fingers down or a glide want the next tick soon. */
+	/* Fingers down (on the screen or a touch pad) or a glide want the next tick soon. */
 	if (animating ||
+	    holding ||
 	    touch->mode != TOUCH_MODE_NONE)
 		return TOUCH_TICK_MS;
 
@@ -559,6 +573,7 @@ touch_gestures(
 {
 	struct keiland_gesture_event gesture;
 	int found;
+	int flung;
 
 	/* Each gesture in turn. */
 	for (;;) {
@@ -609,8 +624,10 @@ touch_gestures(
 		case KEILAND_GESTURE_DRAG_END:
 			/* The area glides on at the finger's velocity. */
 			if (touch->dragging) {
-				keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
+				flung = keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
 				fprintf(stderr, "ZFILES TOUCH release vy=%.0f scroll=%d\n", gesture.vy, touch->scroll);
+				if (flung)
+					fprintf(stderr, "ZFILES KINETIC fling source=touch vy=%.0f\n", gesture.vy);
 				touch->pressed = 0;
 			}
 
@@ -663,4 +680,58 @@ touch_pointer(
 	pointer->y = (int32_t)floor(y);
 	pointer->time = (uint32_t)(now / 1000U);
 	pointer->serial = touch->serial;
+}
+
+/*
+ * A touch pad's two fingers move the area under the pointer by the
+ * event's y (pixels, as a wheel scrolls) at the compositor's time
+ * (ws090-p019): libkeiland's scroller takes the area at their first move
+ * (from where it is, unless it already owns it; a glide is caught) and
+ * follows them.  Fingers on the screen keep it from them.
+ */
+static void
+touch_pad(
+	struct fm_touch *touch,
+	const struct fm_touch_event *event,
+	uint64_t time)
+{
+	int holding;
+	int caught;
+
+	/* Fingers on the screen hold the scroll. */
+	if (touch->mode != TOUCH_MODE_NONE || touch->scroller == NULL)
+		return;
+
+	/* The first move: the area under the pointer, from its scroll unless the scroller owns it already. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
+	if (!holding) {
+		if (event->area != FM_TOUCH_CONTENT && event->area != FM_TOUCH_SIDEBAR)
+			return;
+		touch_target(touch, event->area);
+		if (!touch->moving)
+			keiland_scroller_set_position(touch->scroller, 0.0, (double)touch->scroll);
+	}
+
+	/* The scroller follows the fingers and owns the scroll until it rests. */
+	caught = keiland_scroller_axis(touch->scroller, 0.0, (double)event->y, time, event->arrival);
+	touch->moving = 1;
+	if (caught)
+		fprintf(stderr, "ZFILES TOUCH caught source=finger area=%u scroll=%d\n", touch->target, touch->scroll);
+}
+
+/* The touch pad's fingers lift: the area flies on at their velocity, as libkeiland's scroller throws it (ws090-p019). */
+static void
+touch_pad_stop(
+	struct fm_touch *touch,
+	const struct fm_touch_event *event,
+	uint64_t time)
+{
+	double vx;
+	double vy;
+	int flung;
+
+	/* The scroller throws the area the fingers held. */
+	flung = keiland_scroller_axis_stop(touch->scroller, time, event->arrival, &vx, &vy);
+	if (flung)
+		fprintf(stderr, "ZFILES KINETIC fling source=finger area=%u vy=%.0f\n", touch->target, vy);
 }

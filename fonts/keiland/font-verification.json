@@ -1,0 +1,86 @@
+{
+  "fonts": {
+    "Keiland-Mono.ttf": {
+      "full_name": "Keiland Mono",
+      "sha256": "2e3af57e9fed08b2107e8a19b1d8dde6bf6819145969e18ab0826aafa8ca917d",
+      "unicode_mappings": 95,
+      "glyphs": 96,
+      "advance_count": 1,
+      "fontconfig": "Keiland Mono|Regular|TrueType|100|20-7e",
+      "H_measurement_768px": {
+        "height_pixels": 503,
+        "stem_widths_pixels": [
+          64,
+          64
+        ],
+        "mean_stem_height_ratio": 0.1272365805168986
+      }
+    },
+    "Keiland-Regular.ttf": {
+      "full_name": "Keiland Regular",
+      "sha256": "5c9e84554f8329c7fe221dff439505e85894a9a039d7f46076876870063dc866",
+      "unicode_mappings": 95,
+      "glyphs": 96,
+      "advance_count": 80,
+      "fontconfig": "Keiland|Regular|TrueType||20-7e",
+      "H_measurement_768px": {
+        "height_pixels": 503,
+        "stem_widths_pixels": [
+          64,
+          64
+        ],
+        "mean_stem_height_ratio": 0.1272365805168986
+      }
+    },
+    "Keiland-Bold.ttf": {
+      "full_name": "Keiland Bold",
+      "sha256": "afa8157d872aafb2470fb3c8a3be98302ad641c5ee770b2b092d28e3ad4a12a9",
+      "unicode_mappings": 95,
+      "glyphs": 96,
+      "advance_count": 80,
+      "fontconfig": "Keiland|Bold|TrueType||20-7e",
+      "H_measurement_768px": {
+        "height_pixels": 502,
+        "stem_widths_pixels": [
+          80,
+          80
+        ],
+        "mean_stem_height_ratio": 0.1593625498007968
+      }
+    }
+  },
+  "mono_outlines_and_metrics_match_approved_source": true,
+  "proportional_regular_shapes_preserved_by_x_translation": true,
+  "regular_bold_advances_match": true,
+  "bold_components_and_counters_preserved": true,
+  "bold_H_target_ratio": 0.159,
+  "raqm_layout_checks_performed": true,
+  "q_height_revision": {
+    "reference_version": "0.300",
+    "version": "0.301",
+    "reference_commit": "2730f3b59",
+    "fonts": {
+      "Keiland-Mono.ttf": {
+        "q_vertical_shift_font_units": -176,
+        "q_shape_and_metrics_preserved": true,
+        "other_95_glyphs_and_metrics_unchanged": true,
+        "kerning_unchanged": true
+      },
+      "Keiland-Regular.ttf": {
+        "q_vertical_shift_font_units": -176,
+        "q_shape_and_metrics_preserved": true,
+        "other_95_glyphs_and_metrics_unchanged": true,
+        "kerning_unchanged": true
+      },
+      "Keiland-Bold.ttf": {
+        "q_vertical_shift_font_units": -170,
+        "q_shape_and_metrics_preserved": true,
+        "other_95_glyphs_and_metrics_unchanged": true,
+        "kerning_unchanged": true
+      }
+    },
+    "preserved_source_asset_count": 385,
+    "rebuild_sha256_matches": true,
+    "review": "q-height-review.png"
+  }
+}

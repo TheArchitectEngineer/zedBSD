@@ -108,6 +108,7 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 	window_toplevel_configure, window_toplevel_close, window_toplevel_bounds
 };
 
+static void window_pad_push(struct fm_window *window, unsigned type, uint32_t time, double distance);
 static void window_touch_push(struct fm_window *window, unsigned type, uint32_t time, uint32_t serial, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
@@ -962,10 +963,15 @@ window_pointer_axis(
 
 	/* Only the vertical axis scrolls the window. */
 	(void)pointer;
-	(void)time;
 	window = data;
 	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
 		return;
+
+	/* A touch pad's fingers scroll as fingers do, with libkeiland's scroller (ws090-p019), unrounded. */
+	if (window->axis_source == WL_POINTER_AXIS_SOURCE_FINGER) {
+		window_pad_push(window, FM_TOUCH_PAD, time, wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE);
+		return;
+	}
 
 	/* The distance, scaled to the window's pixels. */
 	event = fm_window_push(window, FM_EVENT_AXIS);
@@ -975,31 +981,36 @@ window_pointer_axis(
 	event->time = fm_clock();
 }
 
-/* A group of pointer events ends; each was queued as it came. */
+/* A group of pointer events ends; each was queued as it came, and the next group says its own source. */
 static void
 window_pointer_frame(
 	void *data,
 	struct wl_pointer *pointer)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct fm_window *window;
+
+	/* A wheel until the next group says otherwise. */
 	(void)pointer;
+	window = data;
+	window->axis_source = WL_POINTER_AXIS_SOURCE_WHEEL;
 }
 
-/* The source of scrolling is not used. */
+/* What the scrolling of this group comes from: a touch pad's fingers scroll as fingers do (ws090-p019). */
 static void
 window_pointer_axis_source(
 	void *data,
 	struct wl_pointer *pointer,
 	uint32_t source)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct fm_window *window;
+
+	/* Kept for the group's axis. */
 	(void)pointer;
-	(void)source;
+	window = data;
+	window->axis_source = source;
 }
 
-/* The end of scrolling is not used. */
+/* The touch pad's fingers lift (the vertical axis): the scroll flies on (ws090-p019). */
 static void
 window_pointer_axis_stop(
 	void *data,
@@ -1007,11 +1018,16 @@ window_pointer_axis_stop(
 	uint32_t time,
 	uint32_t axis)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct fm_window *window;
+
+	/* Only the vertical axis scrolls the window. */
 	(void)pointer;
-	(void)time;
-	(void)axis;
+	window = data;
+	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
+		return;
+
+	/* Queued among the touch inputs, in their order. */
+	window_pad_push(window, FM_TOUCH_PAD_STOP, time, 0.0);
 }
 
 /* The wheel's notches are not used (the axis value already says how far). */
@@ -1242,6 +1258,35 @@ window_has_state(
 
 	/* Not among them. */
 	return 0;
+}
+
+/*
+ * Queues a touch pad's scrolling among the touch inputs (ws090-p019): a
+ * move (as a wheel scrolls) or the fingers' lift, at the compositor's
+ * time; a full queue drops it.
+ */
+static void
+window_pad_push(
+	struct fm_window *window,
+	unsigned type,
+	uint32_t time,
+	double distance)
+{
+	struct fm_touch_event *event;
+
+	/* A full queue drops the input. */
+	if (window->touch_count >= FM_WINDOW_TOUCHES)
+		return;
+
+	/* The input, after the ones before it; the main loop finds the area under the pointer. */
+	event = &window->touches[window->touch_count];
+	window->touch_count++;
+	memset(event, 0, sizeof(*event));
+	event->type = type;
+	event->y = (float)distance;
+	event->time = time;
+	event->area = FM_TOUCH_OTHER;
+	event->arrival = fm_touch_clock();
 }
 
 /* Queues a touch input with the time the window read it; a full queue drops it. */

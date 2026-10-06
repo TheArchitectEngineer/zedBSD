@@ -80,6 +80,7 @@ static void window_keyboard_repeat(void *data, struct wl_keyboard *keyboard, int
 static struct shell_event *window_push(struct shell_window *window, int type);
 static void window_push_motion(struct shell_window *window);
 static int window_modifier_key(uint32_t key);
+static void window_pad_push(struct shell_window *window, unsigned type, uint32_t time, double distance);
 static void window_touch_push(struct shell_window *window, unsigned type, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_down(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, struct wl_surface *surface, int32_t id, wl_fixed_t x, wl_fixed_t y);
 static void window_touch_up(void *data, struct wl_touch *touch, uint32_t serial, uint32_t time, int32_t id);
@@ -764,10 +765,15 @@ window_pointer_axis(
 	struct shell_event *event;
 
 	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(time);
+
+	/* A touch pad's fingers scroll the page as fingers do, with libkeiland's scroller (ws090-p019), unrounded. */
+	window = data;
+	if (window->axis_source == WL_POINTER_AXIS_SOURCE_FINGER && axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
+		window_pad_push(window, SHELL_TOUCH_PAD, time, wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE);
+		return;
+	}
 
 	/* The input; a full queue drops it. */
-	window = data;
 	event = window_push(window, SHELL_EVENT_SCROLL);
 	if (event == NULL)
 		return;
@@ -779,31 +785,38 @@ window_pointer_axis(
 		event->scroll = wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
 }
 
-/* A group of pointer events ends; each was queued as it came. */
+/* A group of pointer events ends; each was queued as it came, and the next group says its own source. */
 static void
 window_pointer_frame(
 	void *data,
 	struct wl_pointer *pointer)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+
 	UNUSED_PARAMETER(pointer);
+
+	/* A wheel until the next group says otherwise. */
+	window = data;
+	window->axis_source = WL_POINTER_AXIS_SOURCE_WHEEL;
 }
 
-/* The source of scrolling is not used. */
+/* What the scrolling of this group comes from: a touch pad's fingers scroll as fingers do (ws090-p019). */
 static void
 window_pointer_axis_source(
 	void *data,
 	struct wl_pointer *pointer,
 	uint32_t source)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+
 	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(source);
+
+	/* Kept for the group's axis. */
+	window = data;
+	window->axis_source = source;
 }
 
-/* The end of scrolling is not used. */
+/* The touch pad's fingers lift (the vertical axis): the page flies on (ws090-p019). */
 static void
 window_pointer_axis_stop(
 	void *data,
@@ -811,11 +824,17 @@ window_pointer_axis_stop(
 	uint32_t time,
 	uint32_t axis)
 {
-	/* Nothing to do. */
-	UNUSED_PARAMETER(data);
+	struct shell_window *window;
+
 	UNUSED_PARAMETER(pointer);
-	UNUSED_PARAMETER(time);
-	UNUSED_PARAMETER(axis);
+
+	/* Only the vertical axis scrolls with the fingers. */
+	window = data;
+	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
+		return;
+
+	/* Queued among the touch inputs, in their order. */
+	window_pad_push(window, SHELL_TOUCH_PAD_STOP, time, 0.0);
 }
 
 /* The wheel's notches are not used (the axis value already says how far). */
@@ -1077,6 +1096,34 @@ window_modifier_key(
 
 	/* Every other key repeats. */
 	return 0;
+}
+
+/*
+ * Queues a touch pad's scrolling among the touch inputs (ws090-p019): a
+ * move (as a wheel scrolls) or the fingers' lift, at the compositor's
+ * time; a full queue drops it.
+ */
+static void
+window_pad_push(
+	struct shell_window *window,
+	unsigned type,
+	uint32_t time,
+	double distance)
+{
+	struct shell_touch_event *event;
+
+	/* A full queue drops the input. */
+	if (window->touch_count >= SHELL_WINDOW_TOUCHES)
+		return;
+
+	/* The input, after the ones before it. */
+	event = &window->touches[window->touch_count];
+	window->touch_count++;
+	memset(event, 0, sizeof(*event));
+	event->type = type;
+	event->y = (float)distance;
+	event->time = time;
+	event->arrival = shell_touch_clock();
 }
 
 /* Queues a touch input with the time the window read it; a full queue drops it. */

@@ -132,6 +132,9 @@ struct shell_window {
 	int pointer_x;
 	int pointer_y;
 
+	/* What the scrolling of the pointer's frame comes from (wl_pointer's axis source; a wheel until one is said, ws090-p019). */
+	uint32_t axis_source;
+
 	/* The key held for repeating (0 when none), when it repeats next, and the repeat's delay and interval. */
 	uint32_t repeat_key;
 	uint64_t repeat_at;

@@ -96,6 +96,9 @@ struct fm_window {
 	int activated;
 	int maximized;
 
+	/* What the scrolling of the pointer's frame comes from (wl_pointer's axis source; a wheel until one is said, ws090-p019). */
+	uint32_t axis_source;
+
 	/* The pointer's place, the serial of its last press, and the modifiers held (FM_MOD_*). */
 	int pointer_x;
 	int pointer_y;

@@ -11,6 +11,8 @@
  * user network answers router solicitations with fec0::/64).
  *
  *   ipv6-probe [-i INTERFACE]
+ *   ipv6-probe -t      (the transports on the host itself, ws130-p003: transport.c)
+ *   ipv6-probe -T      (the core's steps, and the transports through the router before the removals)
  *
  * Without -i it takes the first interface that is up and not the
  * loopback.  On a routing socket made for IPv6 it: lists the loopback's
@@ -41,6 +43,8 @@
 #include <uapi/netinet.h>
 #include <uapi/route.h>
 
+#include "probe.h"
+
 /* The longest a record is, and how long the probe waits for each event (milliseconds). */
 #define PROBE_RECORD_MAX	2048U
 #define PROBE_DAD_MS		5000
@@ -49,7 +53,6 @@
 /* The link-local address the probe adds: fe80::1234:5678:9abc:def0. */
 static const uint8_t probe_link_local[16] = { 0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 };
 
-static int probe_fail(const char *step, int error);
 static int probe_interface(int inet, char *name, size_t size, unsigned *ifindex);
 static int probe_wait(int events, unsigned type, unsigned ifindex, const struct in6_addr *address, uint8_t *record, int timeout_ms);
 static int probe_add(int inet, const char *name, const struct in6_addr *address, unsigned prefixlen, unsigned flags, uint32_t valid, uint32_t preferred);
@@ -81,7 +84,27 @@ main(
 	int events_error;
 	int found;
 	int same;
+	int through_router;
+	int status;
 	int error;
+
+	/* -t: the transports on the host itself (ws130-p003). */
+	through_router = 0;
+	if (argc == 2) {
+		same = strcmp(argv[1], "-t");
+		if (same == 0) {
+			status = probe_transport_local();
+			if (status != 0)
+				return status;
+			printf("IPV6 PASS\n");
+			return 0;
+		}
+
+		/* -T: the core's steps, and the transports through the router. */
+		same = strcmp(argv[1], "-T");
+		if (same == 0)
+			through_router = 1;
+	}
 
 	/*
 	 * The sockets.  A raw socket (the route socket too) is the
@@ -208,6 +231,13 @@ main(
 	if (routes < 3U)
 		return probe_fail("routes", ENOENT);
 
+	/* With -T, the transports through the router while the address and the route are there (ws130-p003). */
+	if (through_router) {
+		status = probe_transport_router(&router, ifindex, &prefix);
+		if (status != 0)
+			return status;
+	}
+
 	/* The route and the address removed. */
 	memset(&route, 0, sizeof(route));
 	route.rt6_ifindex = ifindex;
@@ -251,8 +281,10 @@ main(
 	return 0;
 }
 
-/* Says a failed step and gives the status. */
-static int
+/*
+ * Says a failed step and gives the status.
+ */
+int
 probe_fail(
 	const char *step,
 	int error)

@@ -172,6 +172,66 @@ pv_touch_event(
 }
 
 /*
+ * A touch pad's two fingers move the view by the event's dx, dy (pixels,
+ * as a wheel scrolls) at the compositor's time (ws090-p019): libkeiland's
+ * scroller takes the view at their first move (from where it is, unless it
+ * already owns it; a glide is caught) and follows them, as a finger on the
+ * screen does.  Fingers on the screen keep it from them.
+ */
+void
+pv_touch_pad(
+	struct pv_touch *touch,
+	struct pv_app *app,
+	const struct kui_window_event *event)
+{
+	int holding;
+	int caught;
+
+	/* Fingers on the screen, the pointer's finger, or no document. */
+	if (touch->gesture == NULL ||
+	    touch->fingers > 0U ||
+	    touch->pointer ||
+	    !app->has_document)
+		return;
+
+	/* The first move: the view's bounds, and its place unless the scroller owns it already. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
+	if (!holding) {
+		touch_bounds(touch, app);
+		if (!touch->moving)
+			keiland_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
+		touch->written_x = app->scroll_x;
+		touch->written_y = app->scroll_y;
+	}
+
+	/* The scroller follows the fingers and owns the view until it rests. */
+	caught = keiland_scroller_axis(touch->scroller, event->dx, event->dy, event->time_us, event->arrival_us);
+	touch->moving = 1;
+	app->touching = 1;
+	if (caught)
+		pv_log("TOUCH caught source=finger x=%.1f y=%.1f", app->scroll_x, app->scroll_y);
+}
+
+/*
+ * The touch pad's fingers lift: the view flies on at their velocity, as
+ * libkeiland's scroller throws it (ws090-p019).
+ */
+void
+pv_touch_pad_stop(
+	struct pv_touch *touch,
+	const struct kui_window_event *event)
+{
+	double vx;
+	double vy;
+	int flung;
+
+	/* The scroller throws the view the fingers held. */
+	flung = keiland_scroller_axis_stop(touch->scroller, event->time_us, event->arrival_us, &vx, &vy);
+	if (flung)
+		pv_log("KINETIC fling source=finger vx=%.0f vy=%.0f", vx, vy);
+}
+
+/*
  * Moves time on for the fingers: finds a long press, places the view at
  * the frame's time from the fingers (a drag, two fingers' zoom, a swipe) or
  * from the gliding content, and notices a move of the view made elsewhere.
@@ -190,6 +250,7 @@ pv_touch_tick(
 	double dx;
 	double dy;
 	int animating;
+	int holding;
 	int error;
 
 	/* Nothing without the gestures. */
@@ -279,10 +340,12 @@ pv_touch_tick(
 	touch->written_x = app->scroll_x;
 	touch->written_y = app->scroll_y;
 
-	/* The content rests once it stops with no finger on it. */
+	/* The content rests once it stops with no finger on it, on the screen or on a touch pad. */
+	holding = keiland_scroller_axis_holding(touch->scroller);
 	if (!animating &&
 	    !touch->pressed &&
 	    touch->fingers == 0U &&
+	    !holding &&
 	    touch->moving) {
 		touch->moving = 0;
 		pv_log("TOUCH rest x=%.1f y=%.1f", app->scroll_x, app->scroll_y);
@@ -295,8 +358,9 @@ pv_touch_tick(
 	    touch->fingers > 0U)
 		app->touching = 1;
 
-	/* Fingers down or gliding content want the next tick soon. */
+	/* Fingers down (on the screen or a touch pad) or gliding content want the next tick soon. */
 	if (animating ||
+	    holding ||
 	    touch->fingers > 0U)
 		return TOUCH_TICK_MS;
 
@@ -547,6 +611,8 @@ touch_drag_end(
 	uint64_t now,
 	const struct keiland_gesture_event *gesture)
 {
+	int flung;
+
 	/* A swipe turns by how far and how fast the page went (pixels a millisecond). */
 	if (touch->drag == TOUCH_DRAG_SWIPE) {
 		touch_swipe(touch, app, now);
@@ -556,8 +622,10 @@ touch_drag_end(
 
 	/* A scroll glides on at the finger's velocity. */
 	if (touch->drag == TOUCH_DRAG_SCROLL) {
-		keiland_scroller_release(touch->scroller, now, gesture->vx, gesture->vy);
+		flung = keiland_scroller_release(touch->scroller, now, gesture->vx, gesture->vy);
 		pv_log("TOUCH release vx=%.0f vy=%.0f x=%.1f y=%.1f", gesture->vx, gesture->vy, app->scroll_x, app->scroll_y);
+		if (flung)
+			pv_log("KINETIC fling source=touch vx=%.0f vy=%.0f", gesture->vx, gesture->vy);
 	}
 
 	/* The drag is over. */

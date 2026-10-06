@@ -68,6 +68,7 @@ static void window_text_preedit(struct terminal_window *window, const struct kui
 static void window_text_delete(struct terminal_window *window, uint32_t before);
 static void window_wheel(struct terminal_window *window, double dy);
 static void window_pointer_event(struct terminal_window *window, unsigned kind, const struct kui_window_event *event);
+static void window_pad_push(struct terminal_window *window, unsigned type, const struct kui_window_event *event);
 static void window_touch_push(struct terminal_window *window, unsigned type, const struct kui_window_event *event);
 static uint32_t window_modifiers(unsigned modifiers);
 
@@ -389,7 +390,15 @@ window_event(
 
 		break;
 	case KUI_WINDOW_AXIS:
-		window_wheel(window, event->dy);
+		/* A touch pad's fingers scroll as fingers do, with libkeiland's scroller (ws090-p019); a wheel by notches. */
+		if (event->axis_source == KL_AXIS_SOURCE_FINGER) {
+			window_pad_push(window, TERMINAL_TOUCH_PAD, event);
+		} else {
+			window_wheel(window, event->dy);
+		}
+		break;
+	case KL_WINDOW_AXIS_STOP:
+		window_pad_push(window, TERMINAL_TOUCH_PAD_STOP, event);
 		break;
 	case KUI_WINDOW_KEY:
 		/* A press (or a held key's repeat) types; a release does nothing. */
@@ -757,6 +766,34 @@ window_touch_push(
 	kept->arrival = event->arrival_us;
 	if (type == TERMINAL_TOUCH_DOWN)
 		kept->serial = event->serial;
+}
+
+/*
+ * Queues a touch pad's scrolling among the touch inputs (ws090-p019), in
+ * their order: the move (as a wheel scrolls) at the compositor's time, or
+ * the fingers' lift.
+ */
+static void
+window_pad_push(
+	struct terminal_window *window,
+	unsigned type,
+	const struct kui_window_event *event)
+{
+	struct terminal_touch_event *kept;
+
+	/* A full queue drops the input. */
+	if (window->touch_count >= TERMINAL_TOUCH_EVENTS)
+		return;
+
+	/* The input, after the ones before it. */
+	kept = &window->touches[window->touch_count];
+	window->touch_count++;
+	memset(kept, 0, sizeof(*kept));
+	kept->type = type;
+	kept->x = (float)event->dx;
+	kept->y = (float)event->dy;
+	kept->time = (uint32_t)(event->time_us / 1000U);
+	kept->arrival = event->arrival_us;
 }
 
 /* Turns libkeiland's modifier bits into wl_keyboard's, which keys.c and the selection read. */

@@ -341,6 +341,7 @@ test_scroll_axis(void)
 {
 	struct kl_axis_track track;
 	struct kl_window_event event;
+	struct kl_scroller *scroller;
 	struct kui_scroll scroll;
 	struct kui_rect widget;
 	struct kui_rect region;
@@ -349,6 +350,10 @@ test_scroll_axis(void)
 	int taken;
 	double vx;
 	double vy;
+	double x;
+	double y;
+	int caught;
+	int flung;
 	int moving;
 	int step;
 	int index;
@@ -372,14 +377,14 @@ test_scroll_axis(void)
 	for (index = 0; index < 10; index++)
 		kl_scroll_axis(&scroll, 0.0, 30.0, KL_AXIS_SOURCE_FINGER, test_now + (uint64_t)index * 10000U);
 	(void)kui_scroll_step(&scroll, test_now + 90000U);
-	check(scroll.y == 1300.0 && scroll.axis_holding, "axis: the fingers move the content at once");
+	check(scroll.y == 1300.0 && kl_scroller_axis_holding(scroll.scroller), "axis: the fingers move the content at once");
 
 	/* They lift moving: the content flies on further down, and rests. */
 	kl_scroll_axis_stop(&scroll, test_now + 95000U);
 	moving = 1;
 	for (step = 1; step < 400 && moving; step++)
 		moving = kui_scroll_step(&scroll, test_now + 95000U + (uint64_t)step * 16667U);
-	check(scroll.y > 1600.0 && !moving && !scroll.touched && !scroll.axis_holding, "axis: the content flies on when the fingers lift");
+	check(scroll.y > 1600.0 && !moving && !scroll.touched && !kl_scroller_axis_holding(scroll.scroller), "axis: the content flies on when the fingers lift");
 	test_now += 10U * SECOND;
 
 	/* Fingers that rest before lifting leave the content where it is. */
@@ -394,8 +399,33 @@ test_scroll_axis(void)
 
 	/* A wheel's axis glides as kl_scroll_wheel does. */
 	kl_scroll_axis(&scroll, 0.0, 100.0, KL_AXIS_SOURCE_WHEEL, test_now);
-	check(scroll.gliding && !scroll.axis_holding && scroll.to_y == 1400.0, "axis: a wheel glides");
+	check(scroll.gliding && !kl_scroller_axis_holding(scroll.scroller) && scroll.to_y == 1400.0, "axis: a wheel glides");
 	kui_scroll_release(&scroll);
+	test_now += 10U * SECOND;
+
+	/*
+	 * The bare scroller (ws090-p019, what the touch screens' programs keep):
+	 * the fingers' moves at the compositor's times, 5 s behind the steps'
+	 * clock, fling it from the steps' time; another move catches the flight.
+	 */
+	scroller = kl_scroller_create();
+	check(scroller != NULL, "scroller: made");
+	(void)kl_scroller_set_bounds(scroller, 0.0, 0.0, 0.0, 4000.0, 400.0, 300.0);
+	kl_scroller_set_position(scroller, 0.0, 1000.0);
+	caught = 0;
+	for (index = 0; index < 10; index++)
+		caught |= kl_scroller_axis(scroller, 0.0, 30.0, test_now + (uint64_t)index * 10000U, test_now + 5U * SECOND + (uint64_t)index * 10000U);
+	(void)kl_scroller_step(scroller, test_now + 5U * SECOND + 90000U, &x, &y);
+	check(!caught && y == 1300.0 && kl_scroller_axis_holding(scroller), "scroller: the fingers drag it");
+	flung = kl_scroller_axis_stop(scroller, test_now + 95000U, test_now + 5U * SECOND + 95000U, &vx, &vy);
+	check(flung && near(vy, 3000.0, 1.0) && !kl_scroller_axis_holding(scroller), "scroller: the fingers' lift flings it at their velocity");
+	moving = kl_scroller_step(scroller, test_now + 5U * SECOND + 300000U, &x, &y);
+	check(moving && y > 1500.0, "scroller: it flies on the steps' clock");
+	caught = kl_scroller_axis(scroller, 0.0, 1.0, test_now + 400000U, test_now + 5U * SECOND + 400000U);
+	check(caught, "scroller: another move catches the flight");
+	flung = kl_scroller_axis_stop(scroller, test_now + 400000U + KL_AXIS_TRACK_REST_US, test_now + 5U * SECOND + 500000U, NULL, NULL);
+	check(!flung, "scroller: rested fingers throw nothing");
+	kl_scroller_destroy(scroller);
 	test_now += 10U * SECOND;
 
 	/* Through the window's events: the fingers' moves reach the scroll under the pointer, their end lets it fly. */

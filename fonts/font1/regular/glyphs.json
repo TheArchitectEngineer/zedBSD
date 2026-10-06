@@ -1,8 +1,8 @@
 {
   "name": "font1",
-  "version": "design-04",
+  "version": "design-06",
   "weight": "Regular",
-  "status": "Refined Regular lowercase with original g/s restored; Unicode TrueType 0.201 available",
+  "status": "Regular with corrected g/p/q vertical positions; Unicode TrueType 0.203 available",
   "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
   "generation": {
     "tool": "built-in image_gen",
@@ -1531,10 +1531,10 @@
       "category": "letters",
       "image": "glyphs/U0067.png",
       "ink_bbox_pixels": [
-        321,
-        282,
-        696,
-        852
+        342,
+        364,
+        675,
+        891
       ],
       "atlas_crop_pixels": [
         170,
@@ -1543,10 +1543,11 @@
         1007
       ],
       "atlas_row_baseline_pixels": 992.0,
-      "status": "Original Regular PNG and SVG restored by user decision",
-      "image_sha256": "8a87563be9075533138741cc7e635b8cbe1764751643d65aa3cb1f5e6cc679f4",
+      "status": "Existing shape translated down; PNG rendered from final SVG",
+      "image_sha256": "09dd727f94bce4ac98b3d780677cc2b8a95fd29ceba5bc59588339219838907c",
       "source": "svg/U0067.svg",
-      "restored_from_commit": "ef9c3295"
+      "restored_from_commit": "ef9c3295",
+      "vertical_shift_pixels": 60
     },
     {
       "codepoint": "U+0068",
@@ -1731,12 +1732,12 @@
       "image": "glyphs/U0070.png",
       "ink_bbox_pixels": [
         351,
-        347,
+        374,
         693,
-        863
+        890
       ],
-      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
-      "image_sha256": "3cafba6d42d438f0ef13493bcd6c094d740130fa54e464b717d105caaa3bd078",
+      "status": "Existing shape translated down; PNG rendered from final SVG",
+      "image_sha256": "8d51049b73c2b5114a8b9f21cf6dc62ac63dd0f2fb008d766a86dcba3c3ce857",
       "previous_atlas_crop_pixels": [
         46,
         1059,
@@ -1744,7 +1745,8 @@
         1131
       ],
       "source": "svg/U0070.svg",
-      "construction_source": "lowercase-strokes.json"
+      "construction_source": "lowercase-strokes.json",
+      "vertical_shift_pixels": 27
     },
     {
       "codepoint": "U+0071",
@@ -1753,12 +1755,12 @@
       "image": "glyphs/U0071.png",
       "ink_bbox_pixels": [
         335,
-        302,
+        368,
         672,
-        821
+        887
       ],
-      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
-      "image_sha256": "bbbd63d3fdaf34d6aadcabf5b5a7435b1c5b40a10031955c6dcbcdf460bce85b",
+      "status": "Existing shape translated down; PNG rendered from final SVG",
+      "image_sha256": "a936aae9972cac7dc2036e340ed9a494f5773210b1d20ba6c7d75891ebabe9c6",
       "previous_atlas_crop_pixels": [
         169,
         1053,
@@ -1766,7 +1768,8 @@
         1126
       ],
       "source": "svg/U0071.svg",
-      "construction_source": "lowercase-strokes.json"
+      "construction_source": "lowercase-strokes.json",
+      "vertical_shift_pixels": 66
     },
     {
       "codepoint": "U+0072",
@@ -2056,20 +2059,23 @@
   "svg_directory": "svg",
   "revision": {
     "date": "2026-10-06",
-    "source": "User requested original g/s; accepted all other lowercase changes",
+    "source": "User requested q height alignment only in all three Keiland faces",
     "changed_codepoints": [
-      "U+0067",
-      "U+0073"
+      "U+0071"
     ],
     "construction_source": "lowercase-strokes.json",
     "stroke_width_pixels": 62,
-    "font_version": "0.201",
+    "font_version": "0.203",
     "review": "lowercase-review.png",
-    "previous_revision_commit": "a42730b5d",
+    "previous_revision_commit": "2730f3b59",
     "restored_from_commit": "ef9c3295",
     "monoline_exceptions": [
       "g",
       "s"
-    ]
+    ],
+    "vertical_shift_pixels": {
+      "q": 66
+    },
+    "position_review": "../../keiland/q-height-review.png"
   }
 }

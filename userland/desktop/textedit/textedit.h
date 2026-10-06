@@ -104,12 +104,15 @@ enum te_event_type {
 	TE_EVENT_FIND_DONE,
 	TE_EVENT_CHOSEN,
 	TE_EVENT_TEXT,
-	TE_EVENT_TEXT_DELETE
+	TE_EVENT_TEXT_DELETE,
+	TE_EVENT_AXIS_STOP
 };
 
 /*
  * One input: its kind, the pointer's place, the button and whether it was
- * pressed, the wheel's distance in pixels (down and right are positive),
+ * pressed, the wheel's distance in pixels (down and right are positive;
+ * for a touch pad's fingers also unrounded, with the source and the
+ * compositor's time on the monotonic clock, ws090-p019),
  * the key, the modifiers, the time in milliseconds, the action, whether
  * the focus came (pressed), how the find field's editing ended, and the
  * find field's text or the path the file chooser chose (empty when it was
@@ -123,6 +126,10 @@ struct te_event {
 	int pressed;
 	int scroll;
 	int scroll_x;
+	double axis_dx;
+	double axis_dy;
+	unsigned axis_source;
+	uint64_t axis_us;
 	uint32_t key;
 	uint32_t modifiers;
 	uint64_t time;

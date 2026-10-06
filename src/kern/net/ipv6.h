@@ -104,6 +104,7 @@ int ipv6_init(void);
 int ipv6_protocol_register(uint8_t next_header, ipv6_input_fn input);
 int ipv6_output(struct net_device *device, const struct in6_addr *source, const struct in6_addr *destination, uint8_t next_header, unsigned hop_limit, struct packet_buf *packet);
 int ipv6_source_select(struct net_device *device, const struct in6_addr *destination, struct in6_addr *source);
+int ipv6_route_source(struct net_device *device, const struct in6_addr *destination, struct in6_addr *source, unsigned *mtu);
 int ipv6_address_state(struct net_device *device, const struct in6_addr *address, unsigned *flags);
 int ipv6_address_is_local(const struct in6_addr *address);
 int ipv6_link_get(struct net_device *device, struct ipv6_link *link);
@@ -134,6 +135,13 @@ int icmp6_send(struct net_device *device, const struct in6_addr *source, const s
 void icmp6_error(struct packet_buf *packet, uint8_t type, uint8_t code, uint32_t data);
 unsigned icmp6_path_mtu(const struct in6_addr *destination, unsigned link_mtu);
 void icmp6_path_mtu_purge(void);
+
+/* icmp.c: the raw ICMPv6 sockets (ws130-p003), given a copy of every message (packet->data its first byte) */
+void icmp6_raw_deliver(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
+
+/* udp.c, tcp.c: an ICMPv6 error about a datagram or segment this host sent (its addresses and ports as sent) */
+void udp6_error(const struct in6_addr *source, const struct in6_addr *destination, uint16_t source_port, uint16_t destination_port, int error);
+void tcp6_error(const struct in6_addr *source, const struct in6_addr *destination, uint16_t source_port, uint16_t destination_port, int error);
 
 /* nd6.c */
 int nd6_init(void);
