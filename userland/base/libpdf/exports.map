@@ -68,6 +68,7 @@
 		pdf_page_editor_read_image;
 		pdf_page_editor_blank;
 		pdf_writer_draw_page_editor;
+		pdf_page_editor_set_text;
 	local:
 		*;
 };

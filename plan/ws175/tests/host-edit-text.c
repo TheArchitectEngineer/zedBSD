@@ -15,8 +15,9 @@
  * text" (a TJ and a Tj), "Before" and "After" (a colour set between them),
  * "Hidden" (invisible, an OCR layer); the clipping text object is no line.
  * Their text, font, size and flags, their keys again, the hit (the visible
- * line over the invisible one), and the changes p004 will make refused
- * (ENOTSUP).
+ * line over the invisible one); ws175-p004: a line deleted, the invisible
+ * one not moved (ENOTSUP) nor given words (EPERM), Helvetica (not
+ * embedded) needs a replacement font.
  */
 
 #include <errno.h>
@@ -37,6 +38,8 @@ main(
 	char **argv)
 {
 	static const char *const expected[] = { "Hello World", "Kerned text", "Before", "After", "Hidden" };
+	static const double across[6] = { 1.0, 0.0, 0.0, 1.0, 10.0, 0.0 };
+	struct pdf_edit_text words;
 	struct pdf_document *document;
 	struct pdf_page_editor *editor;
 	struct pdf_edit_object object;
@@ -46,6 +49,7 @@ main(
 	size_t count;
 	size_t index;
 	size_t at;
+	unsigned result;
 	int same;
 	int error;
 
@@ -99,8 +103,14 @@ main(
 	error = pdf_page_editor_hit(editor, 20.0, 98.0, &index);
 	check(error == 0 && index == 4, "20,98 is the invisible line (nothing visible there)");
 
-	/* The changes of words are p004's. */
-	check(pdf_page_editor_delete(editor, 0) == ENOTSUP, "deleting a line: ENOTSUP (p004)");
+	/* ws175-p004: a line deleted; the invisible one only deleted; Helvetica cannot write new words. */
+	check(pdf_page_editor_delete(editor, 0) == 0, "line 0 deleted");
+	check(pdf_page_editor_place(editor, 4, across) == ENOTSUP, "the invisible line moved: ENOTSUP");
+	memset(&words, 0, sizeof(words));
+	words.size = sizeof(words);
+	words.utf8 = "Hi";
+	check(pdf_page_editor_set_text(editor, 4, &words, &result) == EPERM, "the invisible line given words: EPERM");
+	check(pdf_page_editor_set_text(editor, 1, &words, &result) == ENOTSUP && result == PDF_EDIT_TEXT_NEEDS_FONT, "Helvetica (not embedded) given words: it needs a replacement font");
 
 	/* The summary. */
 	pdf_page_editor_close(editor);
