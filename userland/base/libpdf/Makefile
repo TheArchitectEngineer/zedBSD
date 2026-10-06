@@ -11,12 +11,14 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # axial and radial shadings, cross-reference streams, object streams and the repair of broken
 # cross-references.  ws079-p008: embedded Type 1 and CFF fonts (charstrings.c, type1.c, cff.c,
 # cffdata.c) and the standard security handler's decryption (crypt.c).  ws079-p015: the CCITT fax
-# decoder (ccitt.c) and the user and owner passwords.
+# decoder (ccitt.c) and the user and owner passwords.  ws175: the editor of a page's objects (editor.c),
+# the ToUnicode CMap (tounicode.c), the PNG rows taken as they are (intake.c), and the images and edited
+# content compressed through libz-compat's deflate.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 LIBPDF_SOURCES := userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c \
 	userland/base/libpdf/object.c userland/base/libpdf/reader.c \
 	userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/image.c userland/base/libpdf/display.c \
-	userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \
+	userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \
 	userland/base/libpdf/font.c userland/base/libpdf/encoding.c \
 	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c \
 	userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c userland/base/libpdf/crypt.c
