@@ -71,4 +71,13 @@ int resolver_query(const char *, uint16_t, struct resolver_result *);
 int resolver_inet6_ptr_name(const uint8_t *address, char *output, size_t capacity);
 int resolver_inet6_preferred(const uint8_t *destination, const uint8_t *source);
 
+/* A line of /etc/hosts that names a host: its address (IPv4 or IPv6) and its canonical (first) name. */
+struct resolver_hosts_entry {
+	int family;
+	uint8_t address[16];
+	char canonical[254];
+};
+
+int resolver_hosts_line(char *line, const char *name, struct resolver_hosts_entry *entry);
+
 #endif
