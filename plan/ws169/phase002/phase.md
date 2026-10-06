@@ -2,7 +2,7 @@
 
 # ws169-p002: compositor のメールの口と許可
 
-Status: test-wait（T1-291）
+Status: cleared（2026-10-07 Q1 の判定: T1-298 の AAT（needs-person）を Q1 が PNG で目視: Mail の read-compose の log（SIGNED-IN・REFRESHED・OPEN・SENT）と受信箱 3 通の PNG）（旧: test-wait（T1-291））
 Disposition: normal
 Parent: [WS169](../ws.md)
 Queue: q831（2026-10-06、P2）
