@@ -2,7 +2,7 @@
 
 # ws166-p004: T1（QEMU）と全文の規約
 
-Status: planned
+Status: planned（2026-10-06 P2: T1 の部分は T1-196c で PASS 済み（p002・p003 の記録）。全文規約の見直しは、第 1 段の実装の 1 パスの後に WS177 とまとめて行う（2026-10-06 Q1）。実装の残りは無い）
 Disposition: normal
 Parent: [WS166](../ws.md)
 依存: [p002](../phase002/phase.md)、[p003](../phase003/phase.md)
