@@ -441,7 +441,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS139](ws139/ws.md) | MG006 | desktop の性能の台帳と改善（F-072。開発の host の Venus は lavapipe の CPU、E2 の 5330 の測定は未実施） | planned（p001 から。判断 U2・U3・U5 待ち） | — |
 | [WS140](ws140/ws.md) | MG002 | ld.so の依存・object・handle の上限を動的に（F-070。main は 32・16 のまま） | completed | 2026-10-05 完了（ld.so の上限を動的に、amd64、試験は plan/tools/rtld） |
 | [WS141](ws141/ws.md) | MG006 | Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI と V3D 4.2）。Linux の vc4・v3d の初期化の順と command の順を先に文書にし、i915 の書き換えを手本に我々の interface へ。framebuffer に段の印。Linux の vc4・v3d は GPL なので code は写さない（2026-10-04 ユーザー） | planned（p001 から、q691） | 独立（他の WS と並走） |
-| [WS142](ws142/ws.md) | MG006 | デスクトップのアプリの切り替え: Windows キーでアプリの一覧、タッチパッドの端からの 2 本指（Wiseview・仮想デスクトップ）、上部のバーのアプリの一覧とプレビュー、3 本指のタップ・Alt+Tab の切り替え（2026-10-04 ユーザーの要望） | planning（p001 の設計から、q701） | — |
+| [WS142](ws142/ws.md) | MG006 | デスクトップのアプリの切り替え: Windows キーでアプリの一覧、タッチパッドの端からの 2 本指（Wiseview・仮想デスクトップ）、上部のバーのアプリの一覧とプレビュー、3 本指のタップ・Alt+Tab の切り替え（2026-10-04 ユーザーの要望） | incomplete | p001〜p006 cleared（QEMU）。5330 の UAT 待ち（実機は第 1 段の外） |
 | [WS143](ws143/ws.md) | MG006 | Bluetooth（Settings の stub の頁の実体、HCI・daemon・desktop の経路）。ベータ2 の実装の項目、時期は未定（2026-10-04 ユーザー） | planning（Queue なし） | — |
 | [WS144](ws144/ws.md) | MG005 | VPN（bridge・tunnel などの汎用の network の基盤と、選んだ VPN の protocol、Settings の stub の VPN の頁の実体）。ベータ2 の実装の項目、時期は未定（2026-10-04 ユーザー） | planning（Queue なし） | — |
 | [WS145](ws145/ws.md) | MG006 | 印刷: printer の daemon（IPP・LPD で PDF）、libkeiland の印刷の口と printer の一覧（compositor 経由、backend が daemon を起動）、Settings の Printers の頁（IP・port・protocol）、後に PostScript・vendor の filter（2026-10-04 ユーザー） | planning（p001 から、Queue なし） | — |
