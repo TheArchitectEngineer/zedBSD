@@ -57,6 +57,7 @@ static int test_failures;
 static uint64_t test_now = 1000000U;
 
 int main(int argc, char **argv);
+unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void test_frame(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height);
 static void test_click(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, int x, int y);
 static void test_type(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, const uint32_t *keys, size_t count);
@@ -242,6 +243,21 @@ ml_log(
 	test_log[test_log_length] = '\n';
 	test_log_length++;
 	test_log[test_log_length] = '\0';
+}
+
+/*
+ * Reports the light appearance: the host has no desktop to ask (the
+ * library's own, appearance.c, needs Wayland), and the pictures are the
+ * light theme's.
+ */
+unsigned
+kl_appearance_get(
+	const struct kl_appearance *appearance)
+{
+	(void)appearance;
+
+	/* The light appearance. */
+	return KL_APPEARANCE_LIGHT;
 }
 
 /*

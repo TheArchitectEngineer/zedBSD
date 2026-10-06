@@ -686,6 +686,12 @@ int kl_ui_pointer_motion(struct kl_ui *ui, double x, double y);
 int kl_ui_pointer_leave(struct kl_ui *ui);
 int kl_ui_pointer_button(struct kl_ui *ui, int pressed, uint64_t now_us);
 int kl_ui_wheel(struct kl_ui *ui, double dx, double dy, uint64_t now_us);
+/*
+ * Takes a window's scrolling (KL_WINDOW_AXIS, KL_WINDOW_AXIS_STOP): 0 when
+ * nothing took it, 1 when a scroll did, KL_UI_AXIS_FLUNG (KL_VERSION 43)
+ * when the fingers' lift threw the content (it flies on).
+ */
+#define KL_UI_AXIS_FLUNG	2
 int kl_ui_axis(struct kl_ui *ui, const struct kl_window_event *event);
 int kl_ui_touch_down(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
 int kl_ui_touch_motion(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
@@ -771,9 +777,12 @@ struct xdg_toplevel;
  * KL_VERSION 40 (BUG-211): what a KL_WINDOW_AXIS came from (axis_source:
  * a wheel, a touch pad's fingers, or something continuous), and the end of
  * the fingers' scrolling, KL_WINDOW_AXIS_STOP, after which the content may
- * fly on (kl_ui_axis, kl_scroll_axis_stop).
+ * fly on (kl_ui_axis, kl_scroll_axis_stop).  It is 18 (KL_VERSION 43):
+ * KL_VERSION 40 gave it 17, the number KL_WINDOW_ACTION has had since
+ * KL_VERSION 26, so that a lift of the fingers came to an application of
+ * kl_app as an action.
  */
-#define KL_WINDOW_AXIS_STOP	17U
+#define KL_WINDOW_AXIS_STOP	18U
 #define KL_AXIS_SOURCE_WHEEL		0U
 #define KL_AXIS_SOURCE_FINGER		1U
 #define KL_AXIS_SOURCE_CONTINUOUS	2U
@@ -1112,6 +1121,24 @@ int kl_window_popup_menu(struct kl_window *window, const struct kl_menu_entry *e
 
 /* The window's glass panels, from its next frame (count 0 takes them away). */
 int kl_window_set_glass(struct kl_window *window, const struct kl_glass_panel *panels, size_t count);
+
+/*
+ * KL_VERSION 43 (WS131 p016): the text of a control that takes text (a
+ * KL_CONTROL_SEARCH field).  As it is typed, a KL_WINDOW_CONTROL_TEXT
+ * input brings it (the control's ID in id, the text in text); when its
+ * editing ends, a KL_WINDOW_CONTROL_DONE input brings the text and how it
+ * ended in code (KL_TEXT_SUBMITTED and the others).  A choice of a menu's
+ * item or a control also stands as the window's last input for the
+ * clipboard (its serial).
+ */
+#define KL_WINDOW_CONTROL_TEXT	19U
+#define KL_WINDOW_CONTROL_DONE	20U
+
+/* Sets a control's text and its placeholder (either may be NULL to leave it), after kl_window_set_controls. */
+int kl_window_set_control_text(struct kl_window *window, uint32_t id, const char *text, const char *placeholder);
+
+/* Gives a control's field the keyboard (the find field when Find is chosen). */
+int kl_window_focus_control(struct kl_window *window, uint32_t id);
 
 /*
  * A Vulkan surface over a window shown with KL_PRESENT_NONE, for an

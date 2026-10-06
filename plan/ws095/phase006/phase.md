@@ -51,3 +51,10 @@ D14 の font を WS095 で足すか Terminal の WS に任せるか（design §1
 試験: 新しい `plan/ws095/tests/ime-p006.sh`（IME の Settings の image、`config-amd64-settings-ime.mk`）: 日本語の「日本語」の変換・確定・`echo` の表示（shown.png）と file、
 `stty -echo; read secret` の間は `secret=1`・`ZWL IME deactivate`・Alt+Space の後の abc が preedit にならず file は abc、`stty echo` で `secret=0`・再 activate・かな の preedit。
 確認: zedBSD amd64 の `bin/terminal` の build、keiland-linux の host build（どちらも `-Werror`、warning 0）、`sh -n`。QEMU は T1 に依頼する。実機は未実施。
+
+## q808（P1、2026-10-06）: T1-240 の FAIL の切り分け
+
+T1-240 は `ZTERM IME secret=1`・`secret=0` がその段の時点で found 0 の FAIL ×2、他は全部 ok（`ZWL IME deactivate`、secret の間の abc は preedit にならず file は abc、
+再 activate、かな の preedit）。試験の後の `t1-240/run2/t-ime.log` には 12・13 行目に 2 行が続けて在る。原因は **log の書き出しの遅れ**: `main_secret_follow` の
+`printf` の後に `fflush(stdout)` が無く、stdout が file（`/tmp/t.log`）なので全 buffer され、次に flush される時（次の IME の行）まで file に出なかった。
+他の `ZTERM IME` の行は flush している。直し: `fflush(stdout)` を足した（機能は T1-240 で正しく動いている）。確認: zedBSD の terminal の build（warning 0）。T1 の再実行を依頼する。

@@ -13,7 +13,8 @@
  *
  * The window is glass when its swapchain is see-through and zdesktop has
  * glass; otherwise it keeps its own opaque ground.  The card is sent
- * before the frame is shown, only when it changed.
+ * before the frame is shown; libkeiland sends it only when it changed (WS131
+ * p016: kl_window_set_glass).
  */
 
 #include "window.h"
@@ -21,19 +22,25 @@
 #include <errno.h>
 #include <string.h>
 
+static int glass_send(struct te_glass *glass, const struct te_app *app);
+
 /*
- * Makes the window glass when it can be: returns 1 when it is, 0 when it
- * keeps its opaque ground (a swapchain that is not see-through, or a
- * compositor without glass).
+ * Makes the window glass when it can be, with the editor's first card:
+ * returns 1 when it is, 0 when it keeps its opaque ground (a swapchain
+ * that is not see-through, or a compositor without glass).
  */
 int
 te_glass_open(
 	struct te_glass *glass,
 	struct te_window *window,
+	const struct te_app *app,
 	int see_through)
 {
+	int error;
+
 	/* Nothing sent yet. */
 	memset(glass, 0, sizeof(*glass));
+	glass->window = window;
 
 	/* A frame that zdesktop does not blend cannot let the desktop through. */
 	if (!see_through) {
@@ -41,20 +48,21 @@ te_glass_open(
 		return 0;
 	}
 
-	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(kui_window_display(window->kui), kui_window_surface(window->kui));
-	if (glass->glass == NULL) {
-		te_log("GLASS off reason=compositor errno=%d", errno);
+	/* zdesktop's glass for the window, with the first card; a compositor without glass refuses it. */
+	error = glass_send(glass, app);
+	if (error != 0) {
+		te_log("GLASS off reason=compositor errno=%d", error);
 		return 0;
 	}
 
 	/* Succeeded: the window is glass. */
+	glass->on = 1;
 	te_log("GLASS on");
 	return 1;
 }
 
 /*
- * Sends the card of the frame just drawn, when it differs from the one
+ * Sends the card of the frame just drawn when it differs from the one
  * sent last; it takes effect with the frame's present.
  */
 void
@@ -62,41 +70,16 @@ te_glass_refresh(
 	struct te_glass *glass,
 	const struct te_app *app)
 {
-	struct keiland_glass_panel panel;
-	struct te_rect card;
-	int same;
 	int error;
 
 	/* A window that is not glass has no card. */
-	if (glass->glass == NULL)
+	if (!glass->on)
 		return;
 
-	/* The frame's card, unless it is the one zdesktop has. */
-	te_app_card(app, &card);
-	same = memcmp(&card, &glass->shown, sizeof(card));
-	if (glass->sent && same == 0)
-		return;
-
-	/* The card in zdesktop's terms. */
-	memset(&panel, 0, sizeof(panel));
-	panel.x = card.x;
-	panel.y = card.y;
-	panel.width = card.width;
-	panel.height = card.height;
-	panel.radius = TE_CARD_RADIUS;
-	panel.kind = KEILAND_GLASS_CARD;
-
-	/* Sent with the frame; a refused card is logged and the old one stays. */
-	error = keiland_glass_set_panels(glass->glass, &panel, 1U);
-	if (error != 0) {
+	/* The card; a refused one is logged and the old one stays. */
+	error = glass_send(glass, app);
+	if (error != 0)
 		te_log("GLASS refused errno=%d", error);
-		return;
-	}
-
-	/* Remembered, to send again only what changes. */
-	glass->shown = card;
-	glass->sent = 1;
-	te_log("GLASS card width=%d height=%d", card.width, card.height);
 }
 
 /*
@@ -106,7 +89,44 @@ void
 te_glass_close(
 	struct te_glass *glass)
 {
-	/* The glass object, when there is one. */
-	keiland_glass_destroy(glass->glass);
-	glass->glass = NULL;
+	/* No panel on the window. */
+	if (glass->on)
+		(void)kl_window_set_glass(glass->window->kui, NULL, 0U);
+	memset(glass, 0, sizeof(*glass));
+}
+
+/* Gives libkeiland the frame's card as the window's one panel (it sends only a change); 0 or an errno value. */
+static int
+glass_send(
+	struct te_glass *glass,
+	const struct te_app *app)
+{
+	struct kl_glass_panel panel;
+	struct te_rect card;
+	int same;
+	int error;
+
+	/* The frame's card in zdesktop's terms. */
+	te_app_card(app, &card);
+	memset(&panel, 0, sizeof(panel));
+	panel.x = card.x;
+	panel.y = card.y;
+	panel.width = card.width;
+	panel.height = card.height;
+	panel.radius = TE_CARD_RADIUS;
+	panel.kind = KL_GLASS_CARD;
+
+	/* Sent with the frame. */
+	error = kl_window_set_glass(glass->window->kui, &panel, 1U);
+	if (error != 0)
+		return error;
+
+	/* The log names a new card once. */
+	same = memcmp(&card, &glass->shown, sizeof(card));
+	if (same != 0)
+		te_log("GLASS card width=%d height=%d", card.width, card.height);
+	glass->shown = card;
+
+	/* Succeeded. */
+	return 0;
 }

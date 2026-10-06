@@ -9004,7 +9004,13 @@ sys_sandbox_spawn_call(
 
 	/* One argument: the request. */
 	process = current_process();
-	if (process == NULL || process->fd == NULL || args[1] != 0 || args[2] != 0 || args[3] != 0 || args[4] != 0 || args[5] != 0)
+	if (process == NULL || process->fd == NULL)
+		return -EINVAL;
+	if (args[1] != 0 ||
+	    args[2] != 0 ||
+	    args[3] != 0 ||
+	    args[4] != 0 ||
+	    args[5] != 0)
 		return -EINVAL;
 	error = sandbox_request_read(args[0], &request);
 	if (error != 0)
@@ -9568,13 +9574,17 @@ syscall_dispatch_body(
 	struct process *process;
 	intptr_t result;
 	int permitted;
+	int answered;
 	int error;
 
-	/* A sandboxed process makes only the calls of its set (ws168-p002), redispatched ones too. */
+	/* A sandboxed process makes only the calls of its set (ws168-p002), redispatched ones too; the terminal query is answered. */
 	process = NULL;
 	if (curthread != NULL)
 		process = curthread->proc;
 	if (process != NULL && process->sandbox != NULL) {
+		answered = sandbox_answers(number, args, &result);
+		if (answered)
+			return result;
 		permitted = sandbox_permits(process->sandbox, number, args);
 		if (!permitted) {
 			result = sandbox_deny(process, number);

@@ -79,3 +79,4 @@ user「テストはメインエージェントが集約してサブエージェ�
 ユーザー:「rmはQ1で実行するパイプラインにしてください。セキュリティ回避はアカウントbanにつながるので自動では行わないで、私に対処を聞いてください。」（P1 が `plan/tools/files/host-run.sh` の中の `rm -rf` で Claude Code の安全の判定に 2 回止められた件への回答）
 - 担当（P・T）は rm を走らせない。担当が使う script にも rm を入れない（例: host-run.sh の `--fresh` は新しい `run.*` の directory を作る形に変え、古い物は Q1 が `plan/tools/files/host-clean.sh WORKTREE` で消す）。消す物がある時は path と理由を Q1 に送る。guest の中（QEMU の中の `/tmp` など）の rm は host の削除ではないので対象外。
 - security・権限の判定で止められたら、担当も Q1 も別の経路で回避しない。Q1 がユーザーに内容と対処の案を示して指示を待つ（2026-10-02 の「権限で止まったとき」の再起動の手順は、ユーザーがそれを選んだ時だけ）。
+- 範囲（2026-10-06 ユーザー、クリック「make の規則の rm は可」）: make の規則が自分の worktree の build/ の中の自分の出力を消すのは対象外。担当が直に打つ rm と試験の script の中の host の rm は禁止のまま。script は `plan/tools/fresh-out.sh`（`fresh_out NAME`）か `build/tmp/` の mktemp を使い、Q1 が `plan/tools/q1-clean.sh WORKTREE` で古い物を消す。

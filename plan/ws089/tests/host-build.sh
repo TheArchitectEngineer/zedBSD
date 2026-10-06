@@ -14,8 +14,9 @@ cd "$(dirname -- "$0")/../../.."
 out=build/ws089-host
 src=userland/desktop/settings
 mkdir -p "$out/include" "$out/obj"
-# Objects of an earlier layout (as shared-audio.o before ws131-p004) would be linked again by host-wallpaper.sh.
-rm -f "$out"/obj/*.o
+# host-wallpaper.sh links the objects named in objects.list, not every obj/*.o, so objects of an earlier layout (as
+# shared-audio.o before ws131-p004) left in obj/ are not linked again (2026-10-06 user: deleting is Q1's step, so
+# this script removes nothing).
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
 ln -sf "$(pwd)/userland/desktop/keiland/keiland-ui.h" "$out/include/keiland-ui.h"
@@ -68,4 +69,5 @@ done
 "$cc" $flags -c plan/ws089/tests/host-render.c -o "$out/obj/host-render.o"
 "$cc" $flags -c plan/ws089/tests/host-network.c -o "$out/obj/host-network.o"
 "$cc" -o "$out/settings-render" "$out/obj/host-render.o" "$out/obj/host-network.o" $objects -lm -pthread
+printf '%s\n' $objects > "$out/objects.list"
 echo "built $out/settings-render"

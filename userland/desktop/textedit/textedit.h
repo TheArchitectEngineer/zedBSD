@@ -16,7 +16,7 @@
 #ifndef TEXTEDIT_TEXTEDIT_H
 #define TEXTEDIT_TEXTEDIT_H
 
-#include <keiui.h>
+#include <keiland.h>
 
 #include "userland/desktop/paths.h"
 
@@ -445,12 +445,12 @@ struct te_app {
 	 * moves it (the wheel's glide, the fingers' drag and flight), and the
 	 * place drawn, copied from the scroll by te_app_sync_scroll.
 	 */
-	struct kui_scroll scroll;
+	struct kl_scroll scroll;
 	double scroll_x;
 	double scroll_y;
 
 	/* The fingers' selection in the text (libkeiland's text view touch: one finger selects, two scroll), and whether its handles are drawn. */
-	struct kui_text_touch touch;
+	struct kl_text_touch touch;
 	int handles_shown;
 
 	/* The keyboard's focus and the cursor's blinking. */
@@ -496,7 +496,7 @@ struct te_app {
 	char message[160];
 	uint64_t message_until;
 
-	/* The dialog shown (drawn and answered by libkeiland's kui_dialog in main.c), and what waits for it. */
+	/* The dialog shown (drawn and answered by libkeiland's kl_dialog in main.c), and what waits for it. */
 	enum te_dialog dialog;
 	enum te_after after;
 
@@ -529,7 +529,7 @@ struct te_app {
 	 * end are the preedit's cursor in bytes: the segment being converted
 	 * when they differ, the caret when they are equal, none when negative.
 	 */
-	char preedit[KUI_WINDOW_TEXT_MAX];
+	char preedit[KL_WINDOW_TEXT_MAX];
 	int32_t preedit_begin;
 	int32_t preedit_end;
 };

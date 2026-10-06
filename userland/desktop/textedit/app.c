@@ -61,7 +61,7 @@ static void app_drag(struct te_app *app);
 static void app_wheel(struct te_app *app, const struct te_event *event);
 static void app_axis_stop(struct te_app *app, const struct te_event *event);
 static size_t app_view_position(void *data, double x, double y);
-static void app_view_caret(void *data, size_t position, struct kui_rect *rect);
+static void app_view_caret(void *data, size_t position, struct kl_rect *rect);
 static void app_text(struct te_app *app, const struct te_event *event);
 static void app_view_word(void *data, size_t position, size_t *start, size_t *end);
 static void app_key(struct te_app *app, const struct te_event *event);
@@ -85,7 +85,7 @@ static void app_error_message(struct te_app *app, const char *what, const char *
  * cursor's rectangle at a position, and the word around a position.  The
  * table is constant for the program's life.
  */
-static const struct kui_text_view app_text_view = {
+static const struct kl_text_view app_text_view = {
 	app_view_position,
 	app_view_caret,
 	app_view_word
@@ -117,10 +117,10 @@ te_app_init(
 	app->focused = 1;
 
 	/* The view's scroll (both ways; across only while lines are not wrapped) and the fingers' selection. */
-	error = kui_scroll_init(&app->scroll, KUI_SCROLL_X | KUI_SCROLL_Y);
+	error = kl_scroll_init(&app->scroll, KL_SCROLL_X | KL_SCROLL_Y);
 	if (error != 0)
 		te_log("FAILED operation=scroll error=%d", error);
-	kui_text_touch_init(&app->touch, &app_text_view, app);
+	kl_text_touch_init(&app->touch, &app_text_view, app);
 
 	/* The empty document, its history and its rows. */
 	error = te_buffer_init(&app->buffer, "", 0U);
@@ -144,7 +144,7 @@ te_app_release(
 	struct te_app *app)
 {
 	/* The view's scroll, the rows, the history and the document. */
-	kui_scroll_release(&app->scroll);
+	kl_scroll_release(&app->scroll);
 	te_layout_free(&app->layout);
 	te_undo_free(&app->undo);
 	te_buffer_free(&app->buffer);
@@ -324,7 +324,7 @@ te_app_event(
 	/* A selection the keys or the pointer changed is no longer the fingers' (their handles go). */
 	if (app->touch.handles) {
 		if (app->touch.anchor != app->anchor || app->touch.caret != app->cursor)
-			kui_text_touch_set_selection(&app->touch, app->anchor, app->cursor);
+			kl_text_touch_set_selection(&app->touch, app->anchor, app->cursor);
 	}
 }
 
@@ -554,11 +554,11 @@ te_app_clamp(
 
 	/* The scroll's sizes: the text's viewport and as much more as it scrolls. */
 	te_app_text_rect(app, &text);
-	kui_scroll_set_size(&app->scroll, (double)text.width + largest_x, (double)text.height + largest_y, (double)text.width, (double)text.height);
+	kl_scroll_set_size(&app->scroll, (double)text.width + largest_x, (double)text.height + largest_y, (double)text.width, (double)text.height);
 
 	/* A place the editor chose (a reveal, a drag past the edge, a new file) moves the scroll there at once. */
 	if (app->scroll_x != app->scroll.x || app->scroll_y != app->scroll.y)
-		kui_scroll_move_to(&app->scroll, app->scroll_x, app->scroll_y, 0, app->now * 1000U);
+		kl_scroll_move_to(&app->scroll, app->scroll_x, app->scroll_y, 0, app->now * 1000U);
 }
 
 /*
@@ -574,7 +574,7 @@ te_app_sync_scroll(
 	int moving;
 
 	/* The scroll at the time. */
-	moving = kui_scroll_step(&app->scroll, now_us);
+	moving = kl_scroll_step(&app->scroll, now_us);
 
 	/* A new place is drawn. */
 	if (app->scroll.x != app->scroll_x || app->scroll.y != app->scroll_y) {
@@ -598,18 +598,18 @@ te_app_touch(
 	unsigned changes;
 
 	/* What changed. */
-	changes = kui_text_touch_take(&app->touch);
+	changes = kl_text_touch_take(&app->touch);
 
 	/* The fingers' selection becomes the editor's. */
 	if (changes != 0U)
 		te_log("TOUCH changes=%u anchor=%lu caret=%lu handles=%d", changes, (unsigned long)app->touch.anchor, (unsigned long)app->touch.caret, app->touch.handles);
-	if ((changes & KUI_TEXT_TOUCH_SELECTION) != 0U) {
+	if ((changes & KL_TEXT_TOUCH_SELECTION) != 0U) {
 		te_edit_select(app, app->touch.anchor, app->touch.caret);
 		app->dirty = 1;
 	}
 
 	/* The context menu at the finger. */
-	if ((changes & KUI_TEXT_TOUCH_MENU) != 0U && app->host.context_menu != NULL)
+	if ((changes & KL_TEXT_TOUCH_MENU) != 0U && app->host.context_menu != NULL)
 		app->host.context_menu(app->host.data, (int)app->touch.menu_x, (int)app->touch.menu_y);
 
 	/* The handles came or went (a drag's end, a key's selection): the frame shows it. */
@@ -1142,7 +1142,7 @@ app_wheel(
 	}
 
 	/* Otherwise the view glides to the new place, within the text (libkeiland's scroll). */
-	kui_scroll_wheel(&app->scroll, (double)event->scroll_x, (double)event->scroll, app->now * 1000U);
+	kl_scroll_wheel(&app->scroll, (double)event->scroll_x, (double)event->scroll, app->now * 1000U);
 	app->dirty = 1;
 }
 
@@ -1744,7 +1744,7 @@ static void
 app_view_caret(
 	void *data,
 	size_t position,
-	struct kui_rect *rect)
+	struct kl_rect *rect)
 {
 	struct te_app *app;
 	size_t row;
@@ -1782,7 +1782,7 @@ te_app_caret_rect(
 	const struct te_app *app,
 	struct te_rect *rect)
 {
-	struct kui_rect caret;
+	struct kl_rect caret;
 	struct te_rect text;
 	size_t row;
 	size_t column;

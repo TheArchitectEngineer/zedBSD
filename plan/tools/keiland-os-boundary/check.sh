@@ -4,8 +4,9 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT HUP INT TERM
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+work=$(mktemp -d "$(pwd)/build/tmp/os-boundary.XXXXXX")
 status=0
 
 # Collect the compositor's and the system library's sources: all of them, since their OS code is libkeiland-backend's
