@@ -40,7 +40,7 @@ compositor の log の行の接頭辞 `"ZWL "` を `"KWL "` にし、それを�
 
 ## q820（P1、2026-10-06）
 
-- 置き換え: 正規表現 `\bZWL\b(?!_)`（`ZWL_` の識別子は p021 で既に無い）を `KWL` に。printf の `\nZWL` は別に直した。計 2770 か所・330 file。
+- 置き換え: 正規表現 `\bZWL\b(?!_)`（`ZWL_` の識別子は p021 で既に無い）を `KWL` に。printf の `\nZWL` は別に直した。計 約 2770 か所・329 file（`plan/ws131/tools/rename-map.py` の識別子の正規表現 `(?:zwl|ZWL)_` は巻き込んだので戻した）。
 - userland（60 file）: compositor（`userland/desktop/wayland/`）、libkeiland-backend の zedBSD・Linux の log（`IMPORT`・`SEAT` など）、sessiond の greeter が読む `KWL EXIT`。
 - 試験と道具（270 file: sh・py・c と `plan/tools/aat/aat`）。変えない物: `plan/history`、Markdown の文書（BUG の ticket・phase.md の引用）、`evidence`・`handover`・`import` の下の記録と古い script、log・txt・json の証拠、held の patch。shell の補助関数 `zwl_app_client(s)`・`ZWL_RUN`（`plan/tools/guest/zwl-clients.sh`）は名前のまま（読む文字列は `KWL CLIENT`）。
 
