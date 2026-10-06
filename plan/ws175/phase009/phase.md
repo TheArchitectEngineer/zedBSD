@@ -74,7 +74,7 @@ image: p010 と同じ config で、この commit の libpdf.so と bin/notes を
 
 ## 再開の情報（2026-10-06 ラップアップ）
 
-- commit: 返却の報告の SHA（agent/p2、`git commit -m WIP`）。merge は Q1。
+- commit: 967795671（agent/p2、実装・試験・記録の全部）とこの記録の commit。merge は Q1 に依頼。
 - 残り:
   1. T1 の結果。
   2. FAIL なら直す。
