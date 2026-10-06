@@ -309,6 +309,19 @@
    "note": ""
   },
   {
+   "id": "hand-hershey",
+   "name": "Hershey fonts (handwriting templates)",
+   "when": "program:hand-hershey",
+   "license": "LicenseRef-Hershey-fonts (use for any purpose with the acknowledgements)",
+   "upstream": "comp.sources.unix volume 4, hershey",
+   "version": "ext:hand-hershey-part2",
+   "notices": [
+    "/usr/share/licenses/hand-hershey/NOTICE"
+   ],
+   "paths": [],
+   "note": "The Unicode mapping of the glyphs taken is from Kaloffl's Hershey-Unicode-Mapping (Unlicense)."
+  },
+  {
    "id": "i915-firmware",
    "name": "Intel i915 display firmware (DMC)",
    "when": "program:i915-firmware",
