@@ -5,7 +5,7 @@
 #     selection (ZTERM PRIMARY set bytes=10; ZWL PRIMARY selection types=2).
 #  2. A second terminal is started (it gets the keyboard and is told the primary selection: ZTERM PRIMARY offer
 #     text=1); a middle click in it pastes the first one's text into its shell (ZWL PRIMARY receive, ZTERM PRIMARY
-#     send bytes=10 in the first, ZTERM PRIMARY paste received bytes=10 in the second): pasted.png.
+#     paste received bytes=10 in the second): pasted.png.
 #  3. Back in the first terminal, a middle click pastes its own selection (ZTERM PRIMARY paste own bytes=10).
 #
 #   plan/tools/files/files-guest.sh start     (the guest must be up)
@@ -80,7 +80,7 @@ keys 'printf "\\033[H\\033[2J"; echo -n "pasted: "' '\n'
 sleep 1
 pointer move $((x2 + 300)) $((y2 + 200)) sleep 200 middle-down sleep 60 middle-up sleep 1500
 expect_log /tmp/zdesktop.log 'ZWL PRIMARY receive client=[0-9]+ mime=text/plain;charset=utf-8 source=[0-9]+'
-expect_log /tmp/t1.log 'ZTERM PRIMARY send bytes=10'
+# The first terminal's send is libkeiland's since WS131 p018 (no line of its own); the second's 10 bytes show it.
 expect_log /tmp/t2.log 'ZTERM PRIMARY paste received bytes=10'
 pointer move 1270 790 sleep 400
 check "$out/pasted.png" >/dev/null

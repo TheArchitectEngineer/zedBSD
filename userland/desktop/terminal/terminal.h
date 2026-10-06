@@ -15,33 +15,26 @@
  * keys.c turns the compositor's key codes into the bytes a shell reads;
  * font.c draws the glyphs of a monospaced TrueType font into an atlas;
  * render.c draws the grid from that atlas; window.c holds the Wayland
- * window (libkeiland's) and turns its input into the terminal's; menu.c gives zdesktop the window's menus
+ * window (libkeiland's application and window, WS131 p018) and turns its
+ * input into the terminal's; menu.c gives zdesktop the window's menus
  * (Shell, Edit, View, Session, Help) through libkeiland; tabs.c gives it
- * the window's tabs (the titlebar's TABS mode, ws035-p086); main.c runs a
- * shell on a pseudo-terminal for each tab and ties them together.
+ * the window's tabs (the titlebar's TABS mode, ws035-p086); clipboard.c
+ * and primary.c paste, drop and drag through libkeiland's window; main.c
+ * runs a shell on a pseudo-terminal for each tab and ties them together.
  */
 
-#ifndef KEILAND_TERMINAL_H
-#define KEILAND_TERMINAL_H
+#ifndef TERMINAL_H
+#define TERMINAL_H
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
-#include <wayland-client.h>
-#include <xdg-shell-client-protocol.h>
 #include <keiland.h>
-#include <keiui.h>
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "touch.h"
 #include "width.h"
-
-/* The primary selection's objects (primary.c includes their protocol's header). */
-struct zwp_primary_selection_device_manager_v1;
-struct zwp_primary_selection_device_v1;
-struct zwp_primary_selection_source_v1;
-struct zwp_primary_selection_offer_v1;
 
 /* The largest grid the terminal keeps, whatever the window's size. */
 #define TERMINAL_MAX_COLUMNS	240U
@@ -474,23 +467,18 @@ struct terminal_renderer {
 };
 
 /*
- * The Wayland window: libkeiland's window (ws090-p011: the toplevel, the
- * seat's input and the key repeat; the terminal draws on its surface with
- * its own Vulkan), and what its input has left for the main loop.
+ * The Wayland window: libkeiland's application and its window (WS131
+ * p018: the connection, the toplevel, the seat's input, the key repeat,
+ * the menus, the tabs, the selections and drag and drop; the terminal draws
+ * on its surface with its own Vulkan), and what its input has left for the
+ * main loop.
  */
 struct terminal_window {
-	/*
-	 * libkeiland's window, and the objects it owns that the terminal's parts
-	 * use (borrowed, never destroyed here): the connection, the seat, the
-	 * surface and its toplevel.  The registry is the terminal's own, for
-	 * the clipboard's and the primary selection's managers.
-	 */
-	struct kui_window *kui;
-	struct wl_display *display;
-	struct wl_registry *registry;
-	struct wl_seat *seat;
-	struct wl_surface *surface;
-	struct xdg_toplevel *toplevel;
+	/* libkeiland's application and window, and the shells' descriptors the application watches. */
+	struct kl_app *app;
+	struct kl_window *kui;
+	int watched[TERMINAL_TABS];
+	unsigned watched_count;
 
 	/* The touch inputs not yet taken by the main loop, oldest first (ws081-p011; a full queue drops the newest). */
 	struct terminal_touch_event touches[TERMINAL_TOUCH_EVENTS];
@@ -526,7 +514,7 @@ struct terminal_window {
 	 * when there is none); preedit_changed says the main loop has to draw
 	 * it again.
 	 */
-	char preedit[KUI_WINDOW_TEXT_MAX];
+	char preedit[KL_WINDOW_TEXT_MAX];
 	int32_t preedit_begin;
 	int32_t preedit_end;
 	int preedit_changed;
@@ -536,7 +524,7 @@ struct terminal_window {
 	 * before the cursor (the on-screen keyboard's voice key replaces the
 	 * kana it sent last) can be typed as that many characters' Backspace.
 	 */
-	char last_commit[KUI_WINDOW_TEXT_MAX];
+	char last_commit[KL_WINDOW_TEXT_MAX];
 
 	/*
 	 * The view's scrolling the main loop has not yet carried out
@@ -574,12 +562,10 @@ struct terminal_window {
 	unsigned search_cells;
 
 	/*
-	 * The tabs in the titlebar (tabs.c): zdesktop's titlebar (NULL without
-	 * the Titlebar Presentation), the tabs and the active one as last shown
-	 * (and whether ever shown), and what the titlebar asked and the main
-	 * loop has not yet carried out, oldest first.
+	 * The tabs in the titlebar (tabs.c): the tabs and the active one as
+	 * last shown (and whether ever shown), and what the titlebar asked and
+	 * the main loop has not yet carried out, oldest first.
 	 */
-	struct keiland_titlebar *titlebar;
 	struct terminal_tab_view tabs_shown[TERMINAL_TABS];
 	unsigned tabs_shown_count;
 	uint32_t tabs_shown_active;
@@ -588,88 +574,30 @@ struct terminal_window {
 	unsigned tab_request_count;
 
 	/*
-	 * The menus (menu.c): the connection's menu service (NULL when the
-	 * compositor has none), the menu and the window's place for it, the
-	 * state the menu last showed, and the actions chosen but not yet
-	 * carried out, oldest first.
+	 * The menus (menu.c): whether the window shows them (not without the
+	 * compositor's System Menu), the state they last showed, and the
+	 * actions chosen but not yet carried out, oldest first.
 	 */
-	struct keiland_menu_service *menu_service;
-	struct keiland_menu *menu;
-	struct keiland_window_menu *window_menu;
+	int menu_shown;
 	struct terminal_menu_state menu_state;
 	uint32_t actions[TERMINAL_ACTIONS];
 	unsigned action_count;
 
-	/*
-	 * The clipboard (clipboard.c, WS035 p079): the data device manager and
-	 * the seat's data device (NULL without them), the terminal's source
-	 * while its text is the selection, the selection's offer and whether it
-	 * has text, whether the offer being described has text, the serial of
-	 * the last key (a selection is set with it), and the text the source
-	 * sends (the terminal's copy, owned by main.c).
-	 */
-	struct wl_data_device_manager *data_manager;
-	struct wl_data_device *data_device;
-	struct wl_data_source *data_source;
-	struct wl_data_offer *data_offer;
-	int offer_text;
-	int pending_text;
-	uint32_t serial;
-	const char *clipboard;
-	size_t clipboard_length;
-
-	/*
-	 * Drops (clipboard.c, ws035-p088): whether the offer being described
-	 * has file names, the drag over the window (NULL for none), the serial
-	 * of its enter, whether it has text and file names, and whether it was
-	 * dropped and waits for the main loop to paste it.
-	 */
-	int pending_uris;
-	struct wl_data_offer *drop_offer;
-	uint32_t drop_serial;
-	int drop_text;
-	int drop_uris;
+	/* A drop on the window waiting for the main loop to paste it (clipboard.c, ws035-p088). */
 	int drop_pending;
-
-	/* A drag of selected text out of the window (clipboard.c, ws035-p093): its source (NULL for none) and its text. */
-	struct wl_data_source *drag_source;
-	char drag_text[4096];
-	size_t drag_length;
-
-	/*
-	 * The primary selection (primary.c, ws035-p100): the manager and the
-	 * seat's device (NULL without them), the terminal's source while its
-	 * selected text is the primary selection, the selection's offer and
-	 * whether it has text, whether the offer being described has text, and
-	 * the text the source sends (owned by main.c).
-	 */
-	struct zwp_primary_selection_device_manager_v1 *primary_manager;
-	struct zwp_primary_selection_device_v1 *primary_device;
-	struct zwp_primary_selection_source_v1 *primary_source;
-	struct zwp_primary_selection_offer_v1 *primary_offer;
-	int primary_offer_text;
-	int primary_pending_text;
-	const char *primary_text;
-	size_t primary_length;
 };
 
-/* The clipboard through zdesktop's (clipboard.c). */
-void terminal_clipboard_bind(struct terminal_window *window, struct wl_registry *registry, uint32_t name, uint32_t version);
-void terminal_clipboard_start(struct terminal_window *window);
+/* The clipboard, drops and drags (clipboard.c). */
 void terminal_clipboard_set(struct terminal_window *window, const char *text, size_t length);
 int terminal_clipboard_own(const struct terminal_window *window);
 int terminal_clipboard_has_text(const struct terminal_window *window);
 size_t terminal_clipboard_receive(struct terminal_window *window, char *text, size_t size);
-void terminal_clipboard_close(struct terminal_window *window);
 size_t terminal_clipboard_drop(struct terminal_window *window, char *text, size_t size);
 void terminal_clipboard_drag(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
 
-/* The primary selection through zdesktop's (primary.c). */
-void terminal_primary_bind(struct terminal_window *window, struct wl_registry *registry, uint32_t name);
-void terminal_primary_start(struct terminal_window *window);
-void terminal_primary_set(struct terminal_window *window, const char *text, size_t length, uint32_t serial);
+/* The primary selection (primary.c). */
+void terminal_primary_set(struct terminal_window *window, const char *text, size_t length);
 size_t terminal_primary_receive(struct terminal_window *window, char *text, size_t size);
-void terminal_primary_close(struct terminal_window *window);
 
 /* The character grid (screen.c). */
 void terminal_screen_init(struct terminal_screen *screen, unsigned columns, unsigned rows);
@@ -714,23 +642,21 @@ void terminal_renderer_close(struct terminal_renderer *renderer);
 /* The window (window.c). */
 int terminal_window_open(struct terminal_window *window, const char *display, uint32_t width, uint32_t height);
 int terminal_window_dispatch(struct terminal_window *window, const int *others, unsigned count, int timeout, int *ready);
-void terminal_window_repeat(struct terminal_window *window, uint64_t now);
-int terminal_window_repeat_wait(const struct terminal_window *window);
 void terminal_window_close(struct terminal_window *window);
 void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
 void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);
 uint64_t terminal_clock(void);
 
 /* The tabs in the titlebar (tabs.c). */
-void terminal_tabs_open(struct terminal_window *window);
 void terminal_tabs_show(struct terminal_window *window, const struct terminal_tab_view *tabs, unsigned count, uint32_t active);
+void terminal_tabs_input(struct terminal_window *window, const struct kl_window_event *event);
 int terminal_tabs_take(struct terminal_window *window, struct terminal_tab_request *request);
-void terminal_tabs_close(struct terminal_window *window);
 
 /* The menus (menu.c). */
 int terminal_menu_open(struct terminal_window *window, const struct terminal_menu_state *state);
 void terminal_menu_refresh(struct terminal_window *window, const struct terminal_menu_state *state);
 uint32_t terminal_menu_take(struct terminal_window *window);
+void terminal_menu_chosen(struct terminal_window *window, const struct kl_window_event *event);
 void terminal_menu_close(struct terminal_window *window);
 
 #endif

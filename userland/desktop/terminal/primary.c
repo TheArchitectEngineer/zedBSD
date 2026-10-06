@@ -6,125 +6,37 @@
  */
 
 /*
- * The terminal's primary selection through zdesktop's (ws035-p100): the
- * text selected with the pointer becomes the primary selection (a source
- * offering UTF-8 and plain text), and a middle click pastes the primary
+ * The terminal's primary selection through libkeiland's window (WS131
+ * p018; zdesktop's since ws035-p100): the text selected with the pointer
+ * becomes the primary selection, and a middle click pastes the primary
  * selection into the shell.  While the terminal's own text is it, a paste
- * takes it directly (asking itself to write into a pipe it reads would wait
- * on itself).
- *
- * Without the compositor's primary selection manager the primary selection
- * is the terminal's own.
+ * takes it directly (the window does).  Without the compositor's primary
+ * selection the primary selection is the terminal's own.
  */
 
 #include "terminal.h"
 
-#include <primary-selection-unstable-v1-client-protocol.h>
-
-#include <errno.h>
-#include <poll.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-
-/* The text types the terminal offers and takes. */
-#define PRIMARY_TYPE_UTF8	"text/plain;charset=utf-8"
-#define PRIMARY_TYPE_PLAIN	"text/plain"
-
-/* How long a paste waits for the text. */
-#define PRIMARY_RECEIVE_MS	2000U
-
-static void primary_offer(void *data, struct zwp_primary_selection_device_v1 *device, struct zwp_primary_selection_offer_v1 *offer);
-static void primary_selection(void *data, struct zwp_primary_selection_device_v1 *device, struct zwp_primary_selection_offer_v1 *offer);
-static void primary_type(void *data, struct zwp_primary_selection_offer_v1 *offer, const char *mime_type);
-static void primary_send(void *data, struct zwp_primary_selection_source_v1 *source, const char *mime_type, int32_t fd);
-static void primary_cancelled(void *data, struct zwp_primary_selection_source_v1 *source);
-
-/* The device's events. */
-static const struct zwp_primary_selection_device_v1_listener device_listener = {
-	primary_offer,
-	primary_selection
-};
-
-/* Every offer's events. */
-static const struct zwp_primary_selection_offer_v1_listener offer_listener = {
-	primary_type
-};
-
-/* The terminal's source's events. */
-static const struct zwp_primary_selection_source_v1_listener source_listener = {
-	primary_send,
-	primary_cancelled
-};
 
 /*
- * Binds the compositor's primary selection manager (from the registry).
- */
-void
-terminal_primary_bind(
-	struct terminal_window *window,
-	struct wl_registry *registry,
-	uint32_t name)
-{
-	/* Version 1 is the only one. */
-	window->primary_manager = wl_registry_bind(registry, name, &zwp_primary_selection_device_manager_v1_interface, 1U);
-}
-
-/*
- * Gets the seat's primary selection device, once the globals are bound.
- */
-void
-terminal_primary_start(
-	struct terminal_window *window)
-{
-	/* Nothing to share through. */
-	if (window->primary_manager == NULL || window->seat == NULL)
-		return;
-
-	/* The device, and its events. */
-	window->primary_device = zwp_primary_selection_device_manager_v1_get_device(window->primary_manager, window->seat);
-	if (window->primary_device != NULL)
-		(void)zwp_primary_selection_device_v1_add_listener(window->primary_device, &device_listener, window);
-}
-
-/*
- * Makes the selected text the primary selection.  The text stays the
- * caller's and must live until the next selection; it is sent from there.
+ * Makes the selected text the primary selection (the window keeps its own
+ * copy).
  */
 void
 terminal_primary_set(
 	struct terminal_window *window,
 	const char *text,
-	size_t length,
-	uint32_t serial)
+	size_t length)
 {
-	/* The text the source sends. */
-	window->primary_text = text;
-	window->primary_length = length;
-	if (window->primary_device == NULL)
-		return;
-
-	/* The last source goes. */
-	if (window->primary_source != NULL)
-		zwp_primary_selection_source_v1_destroy(window->primary_source);
-
-	/* A source with the two text types, as the primary selection. */
-	window->primary_source = zwp_primary_selection_device_manager_v1_create_source(window->primary_manager);
-	if (window->primary_source == NULL)
-		return;
-	(void)zwp_primary_selection_source_v1_add_listener(window->primary_source, &source_listener, window);
-	zwp_primary_selection_source_v1_offer(window->primary_source, PRIMARY_TYPE_UTF8);
-	zwp_primary_selection_source_v1_offer(window->primary_source, PRIMARY_TYPE_PLAIN);
-	zwp_primary_selection_device_v1_set_selection(window->primary_device, window->primary_source, serial);
-	(void)wl_display_flush(window->display);
+	/* The primary selection, from the window's last input. */
+	kl_window_select(window->kui, text, length);
 	printf("ZTERM PRIMARY set bytes=%lu\n", (unsigned long)length);
 	fflush(stdout);
 }
 
 /*
  * Receives the primary selection's text into a buffer (a middle click):
- * the terminal's own directly, another client's through a pipe (read until
- * its end or PRIMARY_RECEIVE_MS).  Returns the bytes (0 for none).
+ * the terminal's own, or another client's.  Returns the bytes (0 for none).
  */
 size_t
 terminal_primary_receive(
@@ -132,199 +44,19 @@ terminal_primary_receive(
 	char *text,
 	size_t size)
 {
-	struct pollfd descriptor;
-	uint64_t deadline;
-	uint64_t now;
 	size_t length;
-	ssize_t got;
-	int pipes[2];
-	int error;
-	int ready;
+	int own;
 
-	/* The terminal's own text (or the only one, without the compositor's). */
-	if (window->primary_device == NULL || window->primary_source != NULL) {
-		length = window->primary_length;
-		if (length > size)
-			length = size;
-		if (length != 0U)
-			memcpy(text, window->primary_text, length);
+	/* Whose it is, and its text. */
+	own = kl_window_selection_own(window->kui, KL_SELECTION_PRIMARY);
+	length = kl_window_paste_primary(window->kui, text, size);
+
+	/* Succeeded: the log line the tests read says whose. */
+	if (own) {
 		printf("ZTERM PRIMARY paste own bytes=%lu\n", (unsigned long)length);
-		fflush(stdout);
-		return length;
+	} else {
+		printf("ZTERM PRIMARY paste received bytes=%lu\n", (unsigned long)length);
 	}
-
-	/* No text to receive. */
-	if (window->primary_offer == NULL || !window->primary_offer_text)
-		return 0;
-
-	/* The pipe; its writing end goes to the offer's client. */
-	error = pipe(pipes);
-	if (error != 0)
-		return 0;
-	zwp_primary_selection_offer_v1_receive(window->primary_offer, PRIMARY_TYPE_UTF8, pipes[1]);
-	close(pipes[1]);
-	(void)wl_display_flush(window->display);
-
-	/* The data, until the writer closes (or the time is up). */
-	length = 0;
-	deadline = terminal_clock() + PRIMARY_RECEIVE_MS;
-	while (length < size) {
-		/* The time is up. */
-		now = terminal_clock();
-		if (now >= deadline)
-			break;
-
-		/* The pipe becomes readable. */
-		descriptor.fd = pipes[0];
-		descriptor.events = POLLIN;
-		descriptor.revents = 0;
-		ready = poll(&descriptor, 1, 100);
-		if (ready <= 0)
-			continue;
-
-		/* What came; nothing more is the end. */
-		got = read(pipes[0], text + length, size - length);
-		if (got <= 0)
-			break;
-		length += (size_t)got;
-	}
-
-	/* The reading end goes. */
-	close(pipes[0]);
-
-	/* Succeeded: the bytes received. */
-	printf("ZTERM PRIMARY paste received bytes=%lu\n", (unsigned long)length);
 	fflush(stdout);
 	return length;
-}
-
-/*
- * Destroys the primary selection's objects (before the seat they belong to).
- */
-void
-terminal_primary_close(
-	struct terminal_window *window)
-{
-	/* The offer, the source, the device and the manager. */
-	if (window->primary_offer != NULL)
-		zwp_primary_selection_offer_v1_destroy(window->primary_offer);
-	if (window->primary_source != NULL)
-		zwp_primary_selection_source_v1_destroy(window->primary_source);
-	if (window->primary_device != NULL)
-		zwp_primary_selection_device_v1_destroy(window->primary_device);
-	if (window->primary_manager != NULL)
-		zwp_primary_selection_device_manager_v1_destroy(window->primary_manager);
-	window->primary_offer = NULL;
-	window->primary_source = NULL;
-	window->primary_device = NULL;
-	window->primary_manager = NULL;
-}
-
-/* Takes a new offer: its types are heard next. */
-static void
-primary_offer(
-	void *data,
-	struct zwp_primary_selection_device_v1 *device,
-	struct zwp_primary_selection_offer_v1 *offer)
-{
-	struct terminal_window *window;
-
-	/* The offer being described, with no text type yet. */
-	(void)device;
-	window = data;
-	window->primary_pending_text = 0;
-	(void)zwp_primary_selection_offer_v1_add_listener(offer, &offer_listener, window);
-}
-
-/* The primary selection changed: its offer (the last one described), or none. */
-static void
-primary_selection(
-	void *data,
-	struct zwp_primary_selection_device_v1 *device,
-	struct zwp_primary_selection_offer_v1 *offer)
-{
-	struct terminal_window *window;
-
-	/* The offer before goes. */
-	(void)device;
-	window = data;
-	if (window->primary_offer != NULL && window->primary_offer != offer)
-		zwp_primary_selection_offer_v1_destroy(window->primary_offer);
-
-	/* The new one, and whether it has text. */
-	window->primary_offer = offer;
-	window->primary_offer_text = 0;
-	if (offer != NULL)
-		window->primary_offer_text = window->primary_pending_text;
-	printf("ZTERM PRIMARY offer text=%d\n", window->primary_offer_text);
-	fflush(stdout);
-}
-
-/* Notes an offer's type: text is what the terminal takes. */
-static void
-primary_type(
-	void *data,
-	struct zwp_primary_selection_offer_v1 *offer,
-	const char *mime_type)
-{
-	struct terminal_window *window;
-	int utf8;
-	int plain;
-
-	/* Either text type. */
-	(void)offer;
-	window = data;
-	utf8 = strcmp(mime_type, PRIMARY_TYPE_UTF8);
-	plain = strcmp(mime_type, PRIMARY_TYPE_PLAIN);
-	if (utf8 == 0 || plain == 0)
-		window->primary_pending_text = 1;
-}
-
-/* Writes the terminal's selected text into another client's descriptor. */
-static void
-primary_send(
-	void *data,
-	struct zwp_primary_selection_source_v1 *source,
-	const char *mime_type,
-	int32_t fd)
-{
-	struct terminal_window *window;
-	size_t written;
-	ssize_t count;
-
-	/* The whole text, whatever the text type. */
-	(void)source;
-	(void)mime_type;
-	window = data;
-	written = 0;
-	while (written < window->primary_length) {
-		count = write(fd, window->primary_text + written, window->primary_length - written);
-		if (count < 0 && errno == EINTR)
-			continue;
-		if (count <= 0)
-			break;
-		written += (size_t)count;
-	}
-
-	/* The reader sees the end. */
-	close(fd);
-	printf("ZTERM PRIMARY send bytes=%lu\n", (unsigned long)written);
-	fflush(stdout);
-}
-
-/* Another client's text is the primary selection now: the source goes. */
-static void
-primary_cancelled(
-	void *data,
-	struct zwp_primary_selection_source_v1 *source)
-{
-	struct terminal_window *window;
-
-	/* The source. */
-	window = data;
-	zwp_primary_selection_source_v1_destroy(source);
-	if (window->primary_source == source)
-		window->primary_source = NULL;
-	printf("ZTERM PRIMARY cancelled\n");
-	fflush(stdout);
 }
