@@ -45,6 +45,7 @@ struct pv_state {
 	int mode;
 	int fit;
 	int thumbnails;
+	int has_selection;
 };
 
 /* The action of the titlebar's page control ("Page 3 of 10"), which does nothing but show its state. */
@@ -71,6 +72,10 @@ struct pv_titlebar {
 	struct pv_window *window;
 	int shown;
 };
+
+/* ws128-p004: the titlebar's find field gets the keyboard; its text's inputs go to the viewer. */
+void pv_titlebar_focus_find(struct pv_titlebar *titlebar);
+void pv_titlebar_input(struct pv_titlebar *titlebar, struct pv_app *app, const struct kl_window_event *input);
 
 /* The menus (menu.c). */
 int pv_menu_open(struct pv_menu *menu, struct pv_window *window, const struct pv_state *state);

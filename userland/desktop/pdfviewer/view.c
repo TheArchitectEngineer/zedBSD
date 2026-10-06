@@ -24,6 +24,11 @@
  * card, which takes every key and click until the document opens or the
  * card is cancelled.
  *
+ * ws128-p004: Find and the selection (find.c): Ctrl+F gives the titlebar's
+ * find field the keyboard, F3 and Shift+F3 show the next and the previous
+ * place found, a press on a page's words selects instead of dragging the
+ * view, Ctrl+C copies the selection, Esc lets both go.
+ *
  * ws081-p012: the touch screen's gestures (touch.c) use the places below
  * (pv_app_place_at, pv_app_show_place) to keep the point under two fingers
  * while they zoom, and end a swipe as the pointer's release does.
@@ -141,6 +146,7 @@ pv_app_init(
 	app->width = width;
 	app->height = height;
 	app->now = pv_clock();
+	app->find_page = (size_t)-1;
 	app->dirty = 1;
 }
 
@@ -151,9 +157,11 @@ void
 pv_app_release(
 	struct pv_app *app)
 {
-	/* Closes what is open, and forgets a password being typed. */
+	/* Closes what is open, forgets a password being typed, and words copied that were not taken. */
 	pv_app_close_document(app);
 	forget_password(app);
+	free(app->copy_text);
+	app->copy_text = NULL;
 }
 
 /*
@@ -204,6 +212,9 @@ pv_app_close_document(
 	app->thumbnail_dragging = 0;
 	app->thumbnail_scroll = 0.0;
 	app->dirty = 1;
+
+	/* Nothing selected or found (the pages' words went with them). */
+	pv_find_clear(app);
 
 	/* The pages take the whole window again: the sidebar needs a document. */
 	app->width = app->window_width;
@@ -281,17 +292,21 @@ pv_app_event(
 	local = *event;
 	local.x -= sidebar;
 
-	/* Handles it by its kind. */
+	/* Handles it by its kind (the selection takes the button and the motion first, ws128-p004). */
 	switch (local.type) {
 	case PV_EVENT_KEY:
 		if (local.pressed)
 			handle_key(app, &local);
 		break;
 	case PV_EVENT_BUTTON:
-		handle_button(app, &local);
+		taken = pv_select_button(app, &local);
+		if (!taken)
+			handle_button(app, &local);
 		break;
 	case PV_EVENT_MOTION:
-		handle_motion(app, &local);
+		taken = pv_select_motion(app, &local);
+		if (!taken)
+			handle_motion(app, &local);
 		break;
 	case PV_EVENT_AXIS:
 		handle_axis(app, &local);
@@ -399,6 +414,19 @@ pv_app_action(
 		app->thumbnail_followed = (size_t)-1;
 		relayout(app);
 		pv_log("THUMBNAILS shown=%d sidebar=%d", app->thumbnails, pv_app_sidebar_width(app));
+		break;
+	case PV_ACTION_FIND:
+		/* The titlebar's find field takes the keyboard (main.c, ws128-p004). */
+		app->want_find_focus = 1;
+		break;
+	case PV_ACTION_FIND_NEXT:
+		pv_find_next(app, 1);
+		break;
+	case PV_ACTION_FIND_PREVIOUS:
+		pv_find_next(app, -1);
+		break;
+	case PV_ACTION_COPY:
+		pv_select_copy(app);
 		break;
 	case PV_ACTION_NONE:
 		break;
@@ -1077,6 +1105,19 @@ pv_app_show_place(
 }
 
 /*
+ * Shows a page (ws128-p004: the page of a place found): its top in the
+ * scroll mode, the page itself in the page mode.
+ */
+void
+pv_app_go_to(
+	struct pv_app *app,
+	size_t index)
+{
+	/* The view's own way of showing a page. */
+	show_page(app, index);
+}
+
+/*
  * Ends a sideways drag of the page mode's page: let go far enough (a share
  * of the width) or fast enough (velocity, pixels a millisecond, as the
  * page moved), it turns to the neighbour it moved toward; otherwise, or
@@ -1336,6 +1377,8 @@ toggle_key(
 		case PV_KEY_Q:
 		case PV_KEY_E:
 		case PV_KEY_0:
+		case PV_KEY_F:
+		case PV_KEY_C:
 			return 1;
 		default:
 			return 0;
@@ -1420,6 +1463,12 @@ handle_key(
 		case PV_KEY_0:
 			pv_app_action(app, PV_ACTION_ZOOM_RESET);
 			break;
+		case PV_KEY_F:
+			pv_app_action(app, PV_ACTION_FIND);
+			break;
+		case PV_KEY_C:
+			pv_app_action(app, PV_ACTION_COPY);
+			break;
 		default:
 			break;
 		}
@@ -1497,6 +1546,17 @@ handle_key(
 		break;
 	case PV_KEY_F9:
 		pv_app_action(app, PV_ACTION_THUMBNAILS);
+		break;
+	case PV_KEY_F3:
+		/* The next place found, the one before with Shift (ws128-p004). */
+		if ((event->modifiers & PV_MOD_SHIFT) != 0)
+			pv_app_action(app, PV_ACTION_FIND_PREVIOUS);
+		else
+			pv_app_action(app, PV_ACTION_FIND_NEXT);
+		break;
+	case PV_KEY_ESCAPE:
+		/* The selection and the places found let go. */
+		pv_find_clear(app);
 		break;
 	default:
 		return;

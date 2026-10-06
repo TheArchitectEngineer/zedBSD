@@ -495,6 +495,19 @@ main_loop(
 			main_annotate();
 		}
 
+		/* The find field asked for (Ctrl+F, ws128-p004). */
+		if (main_app.want_find_focus) {
+			main_app.want_find_focus = 0;
+			pv_titlebar_focus_find(&main_titlebar);
+		}
+
+		/* The words copied, on the clipboard. */
+		if (main_app.copy_text != NULL) {
+			kl_window_copy(main_window.kui, main_app.copy_text, main_app.copy_length);
+			free(main_app.copy_text);
+			main_app.copy_text = NULL;
+		}
+
 		/* Time passes for the viewer and the fingers; the menus and the titlebar show its state. */
 		(void)pv_app_tick(&main_app, now);
 		(void)pv_touch_tick(&main_touch, &main_app, kl_clock_us());
@@ -699,6 +712,11 @@ main_window_event(
 	case KL_WINDOW_TOUCH_CANCEL:
 		pv_touch_event(&main_touch, &main_app, event);
 		break;
+	case KL_WINDOW_CONTROL_TEXT:
+	case KL_WINDOW_CONTROL_DONE:
+		/* The titlebar's find field's text (ws128-p004). */
+		pv_titlebar_input(&main_titlebar, &main_app, event);
+		break;
 	case KL_WINDOW_RESIZE:
 		main_resized = 1;
 		break;
@@ -858,6 +876,7 @@ main_state(
 	state->mode = (int)main_app.mode;
 	state->fit = (int)main_app.fit;
 	state->thumbnails = main_app.thumbnails;
+	state->has_selection = main_app.has_selection;
 }
 
 /* After a document opened: the window's title names it, and it joins the recent files. */

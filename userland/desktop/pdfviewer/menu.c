@@ -7,7 +7,8 @@
 
 /*
  * The menus of PDF Viewer in zdesktop's System Menu: File (Open, Annotate
- * in Notes, Close, Quit), View (the sidebar of page thumbnails, the two
+ * in Notes, Close, Quit), Edit (ws128-p004: Copy, Find, Find Next and
+ * Previous), View (the sidebar of page thumbnails, the two
  * modes, the two fits, the zoom) and Go (the pages), given to libkeiland
  * as a table (WS131 p017: kl_window_set_menu).  The viewer's state is the
  * actions' state (kl_window_set_action_state), which every item and
@@ -27,6 +28,7 @@
 #define MENU_FILE		1U
 #define MENU_VIEW		2U
 #define MENU_GO			3U
+#define MENU_EDIT		4U
 
 /* The items of File. */
 #define MENU_OPEN		10U
@@ -34,6 +36,13 @@
 #define MENU_FILE_LINE		12U
 #define MENU_CLOSE		13U
 #define MENU_QUIT		14U
+
+/* The items of Edit (ws128-p004). */
+#define MENU_COPY		40U
+#define MENU_EDIT_LINE		41U
+#define MENU_FIND		42U
+#define MENU_FIND_NEXT		43U
+#define MENU_FIND_PREVIOUS	44U
 
 /* The items of View. */
 #define MENU_THUMBNAILS		19U
@@ -59,6 +68,7 @@
 #define MENU_KEY_PLUS		0x2bU
 #define MENU_KEY_MINUS		0x2dU
 #define MENU_KEY_ZERO		0x30U
+#define MENU_KEY_F3		0xffc0U
 
 /* The menus, in the order they are shown. */
 static const struct kl_menu_entry menu_items[] = {
@@ -68,6 +78,12 @@ static const struct kl_menu_entry menu_items[] = {
 	{ MENU_FILE_LINE, MENU_FILE, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_CLOSE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Close", PV_ACTION_CLOSE, KL_MENU_ROLE_CLOSE, KL_MENU_CTRL, 'w' },
 	{ MENU_QUIT, MENU_FILE, KL_MENU_ITEM_NORMAL, "Quit PDF Viewer", PV_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+	{ MENU_EDIT, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Edit", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_COPY, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Copy", PV_ACTION_COPY, KL_MENU_ROLE_COPY, KL_MENU_CTRL, 'c' },
+	{ MENU_EDIT_LINE, MENU_EDIT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FIND, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Find...", PV_ACTION_FIND, KL_MENU_ROLE_FIND, KL_MENU_CTRL, 'f' },
+	{ MENU_FIND_NEXT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Find Next", PV_ACTION_FIND_NEXT, KL_MENU_ROLE_NONE, 0U, MENU_KEY_F3 },
+	{ MENU_FIND_PREVIOUS, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Find Previous", PV_ACTION_FIND_PREVIOUS, KL_MENU_ROLE_NONE, KL_MENU_SHIFT, MENU_KEY_F3 },
 	{ MENU_VIEW, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "View", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_THUMBNAILS, MENU_VIEW, KL_MENU_ITEM_CHECKBOX, "Page Thumbnails", PV_ACTION_THUMBNAILS, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_THUMBNAILS_LINE, MENU_VIEW, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
@@ -174,6 +190,10 @@ pv_menu_refresh(
 
 	/* The actions that need a document or another page. */
 	menu_action_state(menu, PV_ACTION_ANNOTATE, state->has_document, 0);
+	menu_action_state(menu, PV_ACTION_COPY, state->has_selection, 0);
+	menu_action_state(menu, PV_ACTION_FIND, state->has_document, 0);
+	menu_action_state(menu, PV_ACTION_FIND_NEXT, state->has_document, 0);
+	menu_action_state(menu, PV_ACTION_FIND_PREVIOUS, state->has_document, 0);
 	menu_action_state(menu, PV_ACTION_PREVIOUS, can_previous, 0);
 	menu_action_state(menu, PV_ACTION_NEXT, can_next, 0);
 	menu_action_state(menu, PV_ACTION_FIRST, state->has_document, 0);

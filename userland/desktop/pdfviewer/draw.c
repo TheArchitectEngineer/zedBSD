@@ -180,8 +180,9 @@ draw_page(
 		return;
 	}
 
-	/* The page's raster. */
+	/* The page's raster, and the places found and the selection over it (ws128-p004). */
 	pv_canvas_copy(canvas, x, y, page->raster, page->raster_width, page->raster_height);
+	pv_find_draw(app, canvas, index, x, y, page->raster_scale);
 }
 
 /* Draws the scroll mode's column: every page that meets the frame. */
