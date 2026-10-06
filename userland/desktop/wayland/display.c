@@ -109,6 +109,7 @@ zwl_schedule(
 	struct zwl_object *surface;
 	struct zwl_object *top;
 	uint64_t now;
+	int direct;
 	int ready;
 	int error;
 
@@ -141,8 +142,13 @@ zwl_schedule(
 		}
 	}
 
-	/* The first pass enters window mode, which the compositor stays in (a fullscreen window is composed too). */
+	/* A fullscreen video or game alone on the output is shown straight (the game mode, scanout.c); then nothing is composed. */
 	top = zwl_top_window(server);
+	direct = zwl_scanout_pass(server, top);
+	if (direct)
+		return;
+
+	/* The first pass enters window mode, which the compositor stays in (and comes back to from the game mode). */
 	if (!server->windowed) {
 		error = enter_window_mode(server);
 		if (error != 0) {

@@ -674,8 +674,16 @@ def videoplayer_fullscreen(item):
 			item.check((width, height) != output, f"{what}: the window came back at the output's size {width}x{height}")
 		return line
 
+	mark = run.mark()
 	toggled("F11", ("f11",), 1)
+	# The game mode (ws122-p005b): the video shown straight once the pointer has been still 2 s (direct=1), or the
+	# reason the display would not (backend: the QEMU display shows no shared images; the UAT's i915 should).
+	scanout = run.wait(r"ZWL SCANOUT direct=1 |ZWL SCANOUT direct=0 reason=(backend|refused)", mark, 8)
+	item.step("the game mode after 2 s of a still pointer", scanout or "no ZWL SCANOUT line")
+	item.check(scanout, "the fullscreen video neither went straight to the display nor was refused by it")
 	run.shot(item, "f11")
+	left = run.lines(r"ZWL SCANOUT direct=0 reason=shot", mark)
+	item.step("the screenshot is composed (the game mode leaves for it)", left[-1] if left else "no shot reason")
 	toggled("Esc", ("esc",), 0)
 	toggled("Alt+Enter", ("alt+enter",), 1)
 	toggled("F11 again", ("f11",), 0, r"ZWL GLASS fullscreen-leave surface=\d+ via=f11")
@@ -685,7 +693,7 @@ def videoplayer_fullscreen(item):
 	time.sleep(2.5)
 	run.shot(item, "bar-hidden")
 	toggled("a double click again", (), 0)
-	item.person("the picture over the whole screen in f11.png and double-click.png, the bar gone in bar-hidden.png")
+	item.person("the picture over the whole screen in f11.png and double-click.png, the bar gone in bar-hidden.png; the game mode's line (direct=1 on the UAT's i915)")
 
 
 @run.define("apps.files.devices")

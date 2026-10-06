@@ -319,9 +319,11 @@ zwl_object_destroy(
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_VIEWPORT)
 		zwl_viewport_object_gone(object);
 
-	/* A surface and its content type (content-type.c). */
+	/* A surface and its content type (content-type.c), and the game mode that shows it (scanout.c). */
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_CONTENT_TYPE)
 		zwl_content_type_object_gone(object);
+	if (object->kind == ZWL_SURFACE)
+		zwl_scanout_surface_gone(object->client->server, object);
 
 	/* A surface and its glass panels (panels.c). */
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_GLASS)

@@ -22,6 +22,14 @@ zwl_shot_enabled(
 	return 0;
 }
 
+/* Has no capture to wait for. */
+int
+zwl_shot_waiting(
+	void)
+{
+	return 0;
+}
+
 /* No socket. */
 void
 zwl_shot_open(
