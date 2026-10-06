@@ -523,6 +523,132 @@ pdf_font_unicode(
 }
 
 /*
+ * Finds a code of a font that stands for one character (ws175-p004,
+ * design.md section 3.4): pdf_font_unicode's sources read backward -- the
+ * /ToUnicode CMap, a simple font's 256 codes, a composite font's TrueType
+ * program's character map (its glyph's CID) -- the code checked forward.
+ * *length is its bytes (1, or 2 for a composite font).  Returns 0, EINVAL,
+ * ENOENT when the font has none, or ENOMEM.
+ */
+int
+pdf_font_code(
+	struct pdf_document *document,
+	struct pdf_font *font,
+	uint32_t character,
+	unsigned *code,
+	unsigned *length)
+{
+	uint32_t characters[8];
+	unsigned candidate;
+	unsigned bytes;
+	unsigned glyph;
+	unsigned drawn;
+	unsigned cid;
+	size_t count;
+	size_t cids;
+	int single_byte;
+	int error;
+
+	/* Refuses missing results; a Type 3 font's codes draw procedures. */
+	if (font == NULL || code == NULL || length == NULL)
+		return EINVAL;
+	if (font->kind == FONT_KIND_TYPE3)
+		return ENOENT;
+
+	/* The /ToUnicode CMap, read the first time, backward. */
+	if (!font->tounicode_read) {
+		font->tounicode_read = 1;
+		error = font_read_tounicode(document, font);
+		if (error == ENOMEM)
+			return ENOMEM;
+	}
+
+	/* The CMap backward (a composite font's codes are two bytes). */
+	if (font->tounicode != NULL) {
+		error = pdf_tounicode_reverse(font->tounicode, character, &candidate, &bytes);
+		if (error == 0 && (bytes == 2U || font->kind != FONT_KIND_COMPOSITE)) {
+			*code = candidate;
+			*length = bytes;
+			return 0;
+		}
+	}
+
+	/* A simple font: the code of its 256 whose character it is. */
+	single_byte = font->kind != FONT_KIND_COMPOSITE;
+	if (single_byte) {
+		for (candidate = 0; candidate < 256U; candidate++) {
+			error = pdf_font_unicode(document, font, candidate, 1, characters, sizeof(characters) / sizeof(characters[0]), &count);
+			if (error == ENOMEM)
+				return ENOMEM;
+			if (error == 0 && count == 1 && characters[0] == character) {
+				*code = candidate;
+				*length = 1U;
+				return 0;
+			}
+		}
+
+		/* None of the 256. */
+		return ENOENT;
+	}
+
+	/* A composite font with a TrueType program: the character's glyph, then the CID that draws it. */
+	if (font->face == NULL)
+		return ENOENT;
+	if (!font->glyph_unicode_built) {
+		font->glyph_unicode_built = 1;
+		error = font_build_glyph_unicode(font);
+		if (error == ENOMEM)
+			return ENOMEM;
+	}
+
+	/* Each glyph of the character. */
+	for (glyph = 1; glyph < font->glyph_unicode_count; glyph++) {
+		if (font->glyph_unicode[glyph] != character)
+			continue;
+
+		/* The identity map's CID is the glyph; a map's is the first CID that draws it. */
+		cids = font->cid_map_size / 2U;
+		if (font->cid_map == NULL)
+			cids = 0x10000U;
+		for (cid = 0; cid < cids; cid++) {
+			drawn = composite_glyph(font, cid);
+			if (drawn != glyph)
+				continue;
+			error = pdf_font_unicode(document, font, cid, 0, characters, sizeof(characters) / sizeof(characters[0]), &count);
+			if (error == ENOMEM)
+				return ENOMEM;
+			if (error == 0 && count == 1 && characters[0] == character) {
+				*code = cid;
+				*length = 2U;
+				return 0;
+			}
+
+			/* The identity has one CID a glyph. */
+			if (font->cid_map == NULL)
+				break;
+		}
+	}
+
+	/* No code. */
+	return ENOENT;
+}
+
+/*
+ * Tells whether a font draws with its own embedded program (not a
+ * substitute, design.md section 3.4: a line of a font that is not
+ * embedded is written with a replacement font).
+ */
+int
+pdf_font_embedded(
+	const struct pdf_font *font)
+{
+	/* A program of its own, not a stand-in. */
+	if (font == NULL || font->substituted)
+		return 0;
+	return font->face != NULL || font->charstrings != NULL;
+}
+
+/*
  * Finds what one character code draws: its displacement in text space
  * (ems of the font size), and its outline in ems with y upward when the
  * font draws it.

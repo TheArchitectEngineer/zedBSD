@@ -301,6 +301,8 @@ const struct pdf_object *pdf_font_dictionary(const struct pdf_font *font);
 size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *bytes, size_t length, unsigned *code, int *single_byte);
 int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
 int pdf_font_unicode(struct pdf_document *document, struct pdf_font *font, unsigned code, int single_byte, uint32_t *characters, size_t capacity, size_t *count);
+int pdf_font_code(struct pdf_document *document, struct pdf_font *font, uint32_t character, unsigned *code, unsigned *length);
+int pdf_font_embedded(const struct pdf_font *font);
 int pdf_font_type3_glyph(struct pdf_document *document, struct pdf_font *font, unsigned code, struct pdf_object **procedure, double matrix[6], struct pdf_object **resources);
 unsigned pdf_glyph_name_unicode(const unsigned char *name, size_t length);
 struct pdf_font_cache *pdf_reader_font_cache(struct pdf_document *document);
@@ -388,9 +390,16 @@ struct pdf_scan_object {
 #define PDF_SCAN_SHOW_UNKNOWN	0x1U
 #define PDF_SCAN_SHOW_TYPE3	0x2U
 #define PDF_SCAN_SHOW_VERTICAL	0x4U
+
+/* The operator of a shown string (ws175-p004): Tj, TJ, ' or ". */
+#define PDF_SCAN_SHOW_TJ	0U
+#define PDF_SCAN_SHOW_ARRAY	1U
+#define PDF_SCAN_SHOW_NEXT	2U
+#define PDF_SCAN_SHOW_SPACED	3U
 struct pdf_scan_show {
 	size_t offset;
 	size_t length;
+	unsigned op;
 	size_t block;
 	double start[6];
 	double end[6];
@@ -412,6 +421,29 @@ struct pdf_scan_show {
 	size_t marked_depth;
 	unsigned flags;
 	unsigned char fingerprint[8];
+};
+
+/*
+ * One text object of a page's top level (ws175-p004): the offset of its BT
+ * and the end of its ET (ended: there is one) in the decoded content.
+ */
+struct pdf_scan_block {
+	size_t begin;
+	size_t end;
+	int ended;
+};
+
+/*
+ * One operator that moves the text position inside a text object of the
+ * page's top level (Td, TD, T* or Tm; ws175-p004, design.md section 3.4):
+ * its bytes, its text object, and for TD the leading it sets (sets_leading).
+ */
+struct pdf_scan_move {
+	size_t offset;
+	size_t length;
+	size_t block;
+	int sets_leading;
+	double leading;
 };
 
 /*
@@ -444,6 +476,11 @@ struct pdf_scan {
 	size_t block_count;
 	unsigned char *block_clips;
 	size_t block_clip_capacity;
+	struct pdf_scan_block *blocks;
+	size_t block_capacity;
+	struct pdf_scan_move *moves;
+	size_t move_count;
+	size_t move_capacity;
 };
 
 /* The scan of a page's content (content.c): the objects, and the decoded content they are ranges of. */
@@ -455,6 +492,7 @@ int pdf_content_render(struct pdf_document *document, size_t index, const unsign
 struct pdf_tounicode;
 int pdf_tounicode_parse(const unsigned char *data, size_t size, struct pdf_tounicode **map);
 int pdf_tounicode_lookup(const struct pdf_tounicode *map, unsigned code, unsigned length, uint32_t *characters, size_t capacity, size_t *count);
+int pdf_tounicode_reverse(const struct pdf_tounicode *map, uint32_t character, unsigned *code, unsigned *length);
 void pdf_tounicode_free(struct pdf_tounicode *map);
 
 /* A PNG whose compressed rows a PDF image takes as they are, and the check of such rows (intake.c, ws175-p006). */
