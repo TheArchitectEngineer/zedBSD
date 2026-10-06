@@ -730,6 +730,8 @@ vp_draw(
 	uint64_t now_us)
 {
 	struct vp_frame *picture;
+	uint64_t shown_us;
+	uint64_t after_ms;
 	double clock;
 	double time;
 	double next;
@@ -782,11 +784,15 @@ vp_draw(
 	if (status != EAGAIN)
 		player->present_error = status;
 
-	/* The first frame shown at a new size, and how long after the size came (ws122-p005a, T1-235). */
+	/* The first frame shown at a new size, and how long after the size came (ws122-p005a, T1-235; the loop's time is from before the resize, T1-237). */
 	if (status == 0 && (player->width != player->presented_width || player->height != player->presented_height)) {
 		player->presented_width = player->width;
 		player->presented_height = player->height;
-		vp_log("PRESENTED width=%u height=%u after_ms=%llu", player->width, player->height, (unsigned long long)((now_us - player->resized_us) / 1000U));
+		shown_us = kl_clock_us();
+		after_ms = 0U;
+		if (shown_us > player->resized_us)
+			after_ms = (shown_us - player->resized_us) / 1000U;
+		vp_log("PRESENTED width=%u height=%u after_ms=%llu", player->width, player->height, (unsigned long long)after_ms);
 	}
 }
 
