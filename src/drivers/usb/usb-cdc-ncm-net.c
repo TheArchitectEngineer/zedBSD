@@ -46,7 +46,21 @@
 #define NCM_NOTIFICATION_SPEED_CHANGE	0x2aU
 #define NCM_NOTIFICATION_SIZE		16U
 #define NCM_NTB_BUFFER_SIZE		8192U
+
+/*
+ * The largest receive block asked of the device, and how many frames of
+ * one block are held for the stack.  A 64-bit machine's larger packet pool
+ * (packet-buf.h) takes a 16 KB block, ten full frames, and up to the 32 a
+ * block of small frames may carry, which would otherwise be refused whole
+ * (BUG-222); the small pool of the 32-bit boards keeps 8 KB and 8 frames.
+ */
+#if PACKET_BUF_POOL_COUNT >= 256U
+#define NCM_NTB_IN_SIZE			16384U
+#define NCM_RX_QUEUE_MAX		DRV_USB_CDC_NCM_MAX_RX_DATAGRAMS
+#else
+#define NCM_NTB_IN_SIZE			NCM_NTB_BUFFER_SIZE
 #define NCM_RX_QUEUE_MAX		8U
+#endif
 
 /*
  * Frames held while the one transmit transfer is busy.  The packet pool is
@@ -2120,7 +2134,7 @@ ncm_attach(
 	if (error != 0)
 		return error;
 	kern_memset(&limits, 0, sizeof(limits));
-	limits.ntb_in_max_size = NCM_NTB_BUFFER_SIZE;
+	limits.ntb_in_max_size = NCM_NTB_IN_SIZE;
 	limits.ntb_out_max_size = NCM_NTB_BUFFER_SIZE;
 	limits.rx_max_datagrams = NCM_RX_QUEUE_MAX;
 	limits.tx_max_datagrams = 1U;
