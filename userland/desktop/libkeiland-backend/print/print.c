@@ -209,6 +209,8 @@ kl_backend_print_close(
 		if (print->jobs[index].fd >= 0)
 			(void)close(print->jobs[index].fd);
 	}
+
+	/*  0; index < print->printer_count=The default's line. */
 	for (index = 0; index < print->queue_count; index++) {
 		if (print->queue[index].fd >= 0)
 			(void)close(print->queue[index].fd);
@@ -307,6 +309,8 @@ kl_backend_print_jobs(
 		list[count] = print->jobs[index].job;
 		count++;
 	}
+
+	/* The count copied. */
 	return count;
 }
 
@@ -324,8 +328,11 @@ kl_backend_print_add(
 	uint32_t *request)
 {
 	struct kl_backend_printer *printer;
+	const char *space;
+	size_t path_length;
 	size_t index;
 	int same_host;
+	int host_ok;
 	int lock;
 	int error;
 	int saved;
@@ -333,10 +340,15 @@ kl_backend_print_add(
 	/* A protocol, a host, a port. */
 	if (protocol != KL_BACKEND_PRINTER_IPP && protocol != KL_BACKEND_PRINTER_LPD)
 		return EINVAL;
-	if (!print_host_ok(host) || port == 0U || port > 65535U)
+	host_ok = print_host_ok(host);
+	if (!host_ok || port == 0U || port > 65535U)
 		return EINVAL;
-	if (path != NULL && (strlen(path) >= KL_BACKEND_PRINTER_PATH_MAX || strchr(path, ' ') != NULL))
-		return EINVAL;
+	if (path != NULL) {
+		path_length = strlen(path);
+		space = strchr(path, ' ');
+		if (path_length >= KL_BACKEND_PRINTER_PATH_MAX || space != NULL)
+			return EINVAL;
+	}
 
 	/* The file read again under its lock. */
 	*request = print->next_request;
@@ -353,6 +365,8 @@ kl_backend_print_add(
 		if (same_host == 0 && print->printers[index].port == port && print->printers[index].protocol == protocol)
 			error = EINVAL;
 	}
+
+	/*  0) {=Refused: answered at once. */
 	if (error != 0) {
 		print_unlock(lock);
 		print_result(print, *request, error, 0);
@@ -397,6 +411,8 @@ kl_backend_print_add(
 			print->next_seq++;
 		}
 	}
+
+	/* Asked: the answer comes as a result. */
 	return 0;
 }
 
@@ -439,6 +455,8 @@ kl_backend_print_remove(
 			if (print->printers[index].id < found->id)
 				found = &print->printers[index];
 		}
+
+		/*  1;=It is the default. */
 		found->is_default = 1;
 	}
 
@@ -453,6 +471,8 @@ kl_backend_print_remove(
 		if (print->jobs[index].job.printer == printer && print->jobs[index].job.state < KL_BACKEND_PRINT_DONE)
 			(void)kl_backend_print_cancel(print, print->jobs[index].job.job, &ignored);
 	}
+
+	/* Asked: the answer comes as a result. */
 	return 0;
 }
 
@@ -511,6 +531,7 @@ kl_backend_print_submit(
 {
 	struct kl_backend_printer *found;
 	struct print_job *made;
+	const char *protocol;
 	size_t active;
 	size_t index;
 	int error;
@@ -524,6 +545,8 @@ kl_backend_print_submit(
 		if ((printer == 0U && print->printers[index].is_default) || print->printers[index].id == printer)
 			found = &print->printers[index];
 	}
+
+	/* = NULL) {=No such printer: refused. */
 	if (found == NULL) {
 		(void)close(fd);
 		print_result(print, *request, EINVAL, 1);
@@ -536,6 +559,8 @@ kl_backend_print_submit(
 		if (print->jobs[index].job.state < KL_BACKEND_PRINT_DONE)
 			active++;
 	}
+
+	/*  PRINT_ACTIVE_MAX) {=Too many jobs held: busy. */
 	if (active >= PRINT_ACTIVE_MAX) {
 		(void)close(fd);
 		print_result(print, *request, EBUSY, 1);
@@ -558,8 +583,13 @@ kl_backend_print_submit(
 		print_end_job(print, made, KL_BACKEND_PRINT_FAILED, "daemon");
 		return 0;
 	}
-	print_send(print, fd, made->job.job, "JOB %lu %s %s %u %s %s", (unsigned long)made->job.job,
-	    found->protocol == KL_BACKEND_PRINTER_IPP ? "ipp" : "lpd", found->host, found->port, found->path, title);
+
+	/*  "lpd";=The JOB line, with the document beside it. */
+	protocol = "lpd";
+	if (found->protocol == KL_BACKEND_PRINTER_IPP)
+		protocol = "ipp";
+	print_send(print, fd, made->job.job, "JOB %lu %s %s %u %s %s", (unsigned long)made->job.job, protocol, found->host, found->port,
+	    found->path, title);
 	return 0;
 }
 
@@ -642,8 +672,11 @@ print_load(
 	char host[KL_BACKEND_PRINTER_HOST_MAX];
 	char path[KL_BACKEND_PRINTER_PATH_MAX];
 	FILE *file;
+	char *read;
 	int consumed;
 	int fields;
+	int error;
+	int lpd;
 	size_t index;
 
 	/* The file, and its time. */
@@ -651,22 +684,34 @@ print_load(
 	file = fopen(print->config, "r");
 	if (file == NULL)
 		return errno;
-	if (fstat(fileno(file), &status) == 0)
+	error = fstat(fileno(file), &status);
+	if (error == 0)
 		print->config_time = status.st_mtim;
 
 	/* Each line; one that is not understood is passed over. */
-	while (fgets(line, sizeof(line), file) != NULL) {
+	for (;;) {
+		read = fgets(line, sizeof(line), file);
+		if (read == NULL)
+			break;
 		line[strcspn(line, "\r\n")] = '\0';
-		if (sscanf(line, "next-id %lu", &id) == 1) {
+
+		/* The next number. */
+		fields = sscanf(line, "next-id %lu", &id);
+		if (fields == 1) {
 			if (id > print->next_id)
 				print->next_id = (uint32_t)id;
 			continue;
 		}
-		if (sscanf(line, "default %lu", &id) == 1) {
+
+		/* The default. */
+		fields = sscanf(line, "default %lu", &id);
+		if (fields == 1) {
 			for (index = 0; index < print->printer_count; index++)
 				print->printers[index].is_default = print->printers[index].id == (uint32_t)id;
 			continue;
 		}
+
+		/* A printer's line. */
 		consumed = 0;
 		fields = sscanf(line, "printer %lu %7s %63s %lu %63s %n", &id, protocol, host, &port, path, &consumed);
 		if (fields != 5 || consumed == 0 || print->printer_count == KL_BACKEND_PRINTERS_MAX || id == 0UL)
@@ -676,7 +721,10 @@ print_load(
 		printer = &print->printers[print->printer_count];
 		memset(printer, 0, sizeof(*printer));
 		printer->id = (uint32_t)id;
-		printer->protocol = strcmp(protocol, "lpd") == 0 ? KL_BACKEND_PRINTER_LPD : KL_BACKEND_PRINTER_IPP;
+		lpd = strcmp(protocol, "lpd");
+		printer->protocol = KL_BACKEND_PRINTER_IPP;
+		if (lpd == 0)
+			printer->protocol = KL_BACKEND_PRINTER_LPD;
 		print_copy(printer->host, sizeof(printer->host), host);
 		printer->port = (unsigned)port;
 		print_copy(printer->path, sizeof(printer->path), path);
@@ -699,9 +747,13 @@ print_save(
 	struct stat status;
 	char temporary[600];
 	char directory[512];
+	const char *protocol;
 	char *slash;
 	FILE *file;
 	size_t index;
+	int flushed;
+	int failed;
+	int closed;
 	int error;
 
 	/* The folder, made when it is not there. */
@@ -719,27 +771,38 @@ print_save(
 		return errno;
 	fprintf(file, "# Keiland printers\nnext-id %lu\n", (unsigned long)print->next_id);
 	for (index = 0; index < print->printer_count; index++) {
-		fprintf(file, "printer %lu %s %s %u %s %s\n", (unsigned long)print->printers[index].id,
-		    print->printers[index].protocol == KL_BACKEND_PRINTER_LPD ? "lpd" : "ipp", print->printers[index].host,
+		protocol = "ipp";
+		if (print->printers[index].protocol == KL_BACKEND_PRINTER_LPD)
+			protocol = "lpd";
+		fprintf(file, "printer %lu %s %s %u %s %s\n", (unsigned long)print->printers[index].id, protocol, print->printers[index].host,
 		    print->printers[index].port, print->printers[index].path, print->printers[index].name);
 	}
+
+	/*  0; index < print->printer_count=The default's line. */
 	for (index = 0; index < print->printer_count; index++) {
 		if (print->printers[index].is_default)
 			fprintf(file, "default %lu\n", (unsigned long)print->printers[index].id);
 	}
-	error = fflush(file) != 0 || ferror(file);
-	error |= fclose(file) != 0;
-	if (error) {
+
+	/*  fflush(file);=Written out and closed. */
+	flushed = fflush(file);
+	failed = ferror(file);
+	closed = fclose(file);
+	if (flushed != 0 || failed || closed != 0) {
 		(void)unlink(temporary);
 		return EIO;
 	}
 
-	/* In place, and its time kept (no reading again for this session's own change). */
-	if (rename(temporary, print->config) != 0) {
+	/* In place. */
+	error = rename(temporary, print->config);
+	if (error != 0) {
 		(void)unlink(temporary);
 		return errno;
 	}
-	if (stat(print->config, &status) == 0)
+
+	/* Its time kept (no reading again for this session's own change). */
+	error = stat(print->config, &status);
+	if (error == 0)
 		print->config_time = status.st_mtim;
 	return 0;
 }
@@ -784,6 +847,8 @@ print_printer(
 		if (print->printers[index].id == id)
 			return &print->printers[index];
 	}
+
+	/* Not found. */
 	return NULL;
 }
 
@@ -800,6 +865,8 @@ print_find_job(
 		if (print->jobs[index].job.job == job)
 			return &print->jobs[index];
 	}
+
+	/* Not found. */
 	return NULL;
 }
 
@@ -825,6 +892,8 @@ print_new_job(
 				break;
 			}
 		}
+
+		/* = KL_BACKEND_PRINT_JOBS_MAX)=None ended: the oldest of all. */
 		if (oldest == KL_BACKEND_PRINT_JOBS_MAX)
 			oldest = 0;
 		memmove(&print->jobs[oldest], &print->jobs[oldest + 1U], (print->job_count - oldest - 1U) * sizeof(print->jobs[0]));
@@ -904,6 +973,7 @@ print_start(
 	int pair[2];
 	int child;
 	int status;
+	int same;
 
 	/* Running already. */
 	if (print->socket >= 0)
@@ -932,11 +1002,14 @@ print_start(
 	environment[count] = runtime;
 	count++;
 	for (index = 0; environ != NULL && environ[index] != NULL && count + 1U < PRINT_ENVIRONMENT_MAX; index++) {
-		if (strncmp(environ[index], "XDG_RUNTIME_DIR=", 16U) == 0)
+		same = strncmp(environ[index], "XDG_RUNTIME_DIR=", 16U);
+		if (same == 0)
 			continue;
 		environment[count] = environ[index];
 		count++;
 	}
+
+	/*  NULL;=The list's end. */
 	environment[count] = NULL;
 
 	/* The daemon: its descriptor 3, its signals as they start, no mask. */
@@ -993,6 +1066,8 @@ print_stopped(
 		if (print->queue[index].fd >= 0)
 			(void)close(print->queue[index].fd);
 	}
+
+	/*  0;=None waits, and no name is asked. */
 	print->queue_count = 0;
 	print->name_count = 0;
 
@@ -1089,6 +1164,8 @@ print_flush(
 			rights->cmsg_len = CMSG_LEN(sizeof(int));
 			memcpy(CMSG_DATA(rights), &line->fd, sizeof(int));
 		}
+
+		/*  sendmsg(=Sent as far as the socket takes it. */
 		sent = sendmsg(print->socket, &message, MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (sent < 0)
 			return;
@@ -1099,6 +1176,8 @@ print_flush(
 			if (job != NULL)
 				job->sent = 1;
 		}
+
+		/*  -1;=Its descriptor is not sent again. */
 		line->fd = -1;
 
 		/* Part of it: the rest waits. */
@@ -1144,6 +1223,8 @@ print_read(
 				print->input_length++;
 				continue;
 			}
+
+			/*  '\0';=A whole line. */
 			print->input[print->input_length] = '\0';
 			print->input_length = 0;
 			print_line(print, print->input);
@@ -1167,25 +1248,34 @@ print_line(
 	char detail[32];
 	char path[KL_BACKEND_PRINTER_PATH_MAX];
 	int consumed;
+	int fields;
+	int same;
 	int lock;
 
 	/* Where its spool is. */
-	if (strncmp(line, "SPOOL ", 6U) == 0) {
+	same = strncmp(line, "SPOOL ", 6U);
+	if (same == 0) {
 		print_copy(print->spool, sizeof(print->spool), line + 6);
 		return;
 	}
 
 	/* A job taken into the spool, or refused. */
-	if (sscanf(line, "ACCEPTED %lu", &number) == 1) {
+	fields = sscanf(line, "ACCEPTED %lu", &number);
+	if (fields == 1) {
 		job = print_find_job(print, (uint32_t)number);
 		if (job != NULL && job->fd >= 0) {
 			(void)close(job->fd);
 			job->fd = -1;
 		}
+
+		/* Done with this line. */
 		return;
 	}
+
+	/*  '\0';=Its word, when it has one. */
 	detail[0] = '\0';
-	if (sscanf(line, "REJECTED %lu %31s", &number, detail) >= 1) {
+	fields = sscanf(line, "REJECTED %lu %31s", &number, detail);
+	if (fields >= 1) {
 		job = print_find_job(print, (uint32_t)number);
 		if (job != NULL && job->job.state < KL_BACKEND_PRINT_DONE)
 			print_end_job(print, job, KL_BACKEND_PRINT_FAILED, detail);
@@ -1194,13 +1284,15 @@ print_line(
 
 	/* A job's state. */
 	detail[0] = '\0';
-	if (sscanf(line, "STATE %lu %31s %31s", &number, word, detail) >= 2) {
+	fields = sscanf(line, "STATE %lu %31s %31s", &number, word, detail);
+	if (fields >= 2) {
 		print_job_state(print, (uint32_t)number, word, detail);
 		return;
 	}
 
 	/* The path an IPP printer answered at, kept. */
-	if (sscanf(line, "PATH %lu %63s", &number, path) == 2) {
+	fields = sscanf(line, "PATH %lu %63s", &number, path);
+	if (fields == 2) {
 		job = print_find_job(print, (uint32_t)number);
 		if (job == NULL)
 			return;
@@ -1212,23 +1304,29 @@ print_line(
 			(void)print_save(print);
 			print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
 		}
+
+		/* The lock let go. */
 		print_unlock(lock);
 		return;
 	}
 
 	/* A printer's name. */
 	consumed = 0;
-	if (sscanf(line, "NAMED %lu%n", &number, &consumed) == 1) {
+	fields = sscanf(line, "NAMED %lu%n", &number, &consumed);
+	if (fields == 1) {
 		print_named(print, (uint32_t)number, line + consumed);
 		return;
 	}
 
 	/* Nothing to do: ended when the daemon read every command and nothing waits. */
-	if (sscanf(line, "IDLE %lu", &count) == 1) {
+	fields = sscanf(line, "IDLE %lu", &count);
+	if (fields == 1) {
 		if (count == print->commands && print->queue_count == 0U) {
 			print_send(print, -1, 0, "BYE %lu", count);
 			print->commands--;
 		}
+
+		/* Done with this line. */
 		return;
 	}
 }
@@ -1257,22 +1355,30 @@ print_job_state(
 		print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
 		return;
 	}
+
+	/*  strcmp(state, "cancelled");=Cancelled. */
 	same = strcmp(state, "waiting");
 	if (same == 0) {
 		job->job.state = KL_BACKEND_PRINT_WAITING;
 		print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
 		return;
 	}
+
+	/*  strcmp(state, "cancelled");=Cancelled. */
 	same = strcmp(state, "done");
 	if (same == 0) {
 		print_end_job(print, job, KL_BACKEND_PRINT_DONE, detail);
 		return;
 	}
+
+	/*  strcmp(state, "cancelled");=Cancelled. */
 	same = strcmp(state, "cancelled");
 	if (same == 0) {
 		print_end_job(print, job, KL_BACKEND_PRINT_CANCELLED, detail);
 		return;
 	}
+
+	/* Any other word: failed. */
 	print_end_job(print, job, KL_BACKEND_PRINT_FAILED, detail);
 }
 
@@ -1299,6 +1405,8 @@ print_named(
 		print->name_count--;
 		break;
 	}
+
+	/* = 0U || rest[0] != ' ')=None asked, or no name found. */
 	if (id == 0U || rest[0] != ' ')
 		return;
 
@@ -1320,6 +1428,8 @@ print_named(
 		(void)print_save(print);
 		print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
 	}
+
+	/* The lock let go. */
 	print_unlock(lock);
 }
 
@@ -1344,6 +1454,8 @@ print_remove_spool(
 			(void)snprintf(path, sizeof(path), "%s/%s", dir, entry->d_name);
 			(void)unlink(path);
 		}
+
+		/* Read through. */
 		(void)closedir(opened);
 	}
 
@@ -1375,6 +1487,8 @@ print_host_ok(
 		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-'))
 			return 0;
 	}
+
+	/* Every character is one of them. */
 	return 1;
 }
 
@@ -1385,6 +1499,8 @@ print_copy(
 	size_t size,
 	const char *from)
 {
-	/* As much as fits. */
-	(void)snprintf(to, size, "%s", from != NULL ? from : "");
+	/* As much as fits (nothing for none). */
+	if (from == NULL)
+		from = "";
+	(void)snprintf(to, size, "%s", from);
 }
