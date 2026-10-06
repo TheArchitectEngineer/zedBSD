@@ -136,6 +136,13 @@ void icmp6_error(struct packet_buf *packet, uint8_t type, uint8_t code, uint32_t
 unsigned icmp6_path_mtu(const struct in6_addr *destination, unsigned link_mtu);
 void icmp6_path_mtu_purge(void);
 
+/* icmp.c: the raw ICMPv6 sockets (ws130-p003), given a copy of every message (packet->data its first byte) */
+void icmp6_raw_deliver(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
+
+/* udp.c, tcp.c: an ICMPv6 error about a datagram or segment this host sent (its addresses and ports as sent) */
+void udp6_error(const struct in6_addr *source, const struct in6_addr *destination, uint16_t source_port, uint16_t destination_port, int error);
+void tcp6_error(const struct in6_addr *source, const struct in6_addr *destination, uint16_t source_port, uint16_t destination_port, int error);
+
 /* nd6.c */
 int nd6_init(void);
 int nd6_output(struct net_device *device, const struct in6_addr *next_hop, struct packet_buf *packet);

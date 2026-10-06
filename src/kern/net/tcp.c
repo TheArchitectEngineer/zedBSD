@@ -328,6 +328,64 @@ tcp_keepalive_expire_locked(
 }
 
 /*
+ * Takes an ICMPv6 error about a segment this host sent (ws130-p003): a
+ * refusal (port unreachable) ends a connect still sending its SYN, as a
+ * reset would; the other errors are soft (RFC 1122 section 4.2.3.9) and
+ * leave the connection to its timers.
+ */
+void
+tcp6_error(
+	const struct in6_addr *source,
+	const struct in6_addr *destination,
+	uint16_t source_port,
+	uint16_t destination_port,
+	int error)
+{
+	struct tcp_segment_addresses addresses;
+	struct tcp_endpoint *endpoint;
+	struct tcp_discard retransmit;
+	unsigned long socket_irq;
+	int refused;
+
+	/* Only a refusal is a hard error. */
+	if (error != ECONNREFUSED)
+		return;
+
+	/* The connection the segment went from, found as its answer would be. */
+	kern_memset(&addresses, 0, sizeof(addresses));
+	addresses.family = AF_INET6;
+	addresses.source6 = *destination;
+	addresses.destination6 = *source;
+	endpoint = tcp_lookup(&addresses, destination_port, source_port);
+	if (endpoint == NULL)
+		return;
+
+	/* A connect still sending its SYN is refused. */
+	retransmit.count = 0;
+	socket_irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	refused = 0;
+	if (endpoint->tcp.state == TCP_SYN_SENT) {
+		tcp_retransmit_reset(endpoint, &retransmit);
+		endpoint->tcp.state = TCP_CLOSED;
+		endpoint->tcp.active_connect_generation = 0;
+		endpoint->tcp.connect_wait_deadline = 0;
+		tcp_forget_peer(endpoint);
+		refused = 1;
+	}
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+
+	/* The connect hears of it. */
+	tcp_discard_free(&retransmit);
+	if (refused) {
+		socket_set_error(&endpoint->tcp.inet.socket, ECONNREFUSED);
+		socket_wake_connect(&endpoint->tcp.inet.socket);
+	}
+	socket_release(&endpoint->tcp.inet.socket);
+}
+
+/*
  * Retransmits expired segments, abandoning attempts that failed too often.
  */
 void

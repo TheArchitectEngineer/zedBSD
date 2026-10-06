@@ -148,6 +148,60 @@ udp_init(
 	return 0;
 }
 
+/*
+ * Takes an ICMPv6 error about a datagram this host sent (ws130-p003): the
+ * socket connected from its source port to its destination has it as its
+ * error, which the next receive or send reports.  An unconnected socket
+ * is not told, as on the other systems.
+ */
+void
+udp6_error(
+	const struct in6_addr *source,
+	const struct in6_addr *destination,
+	uint16_t source_port,
+	uint16_t destination_port,
+	int error)
+{
+	struct udp_endpoint *endpoint;
+	struct udp_endpoint *found;
+	unsigned long irq;
+	int speaks;
+	int same;
+	int referenced;
+
+	/* The connected IPv6 socket the datagram went from. */
+	found = NULL;
+	irq = spin_lock_irqsave(&udp_registry_lock);
+
+	for (endpoint = udp_sockets; endpoint != NULL; endpoint = endpoint->next) {
+		speaks = inet_socket_speaks_ipv6(&endpoint->inet);
+		if (!speaks ||
+		    endpoint->inet.local_port != source_port ||
+		    endpoint->inet.remote_port != destination_port)
+			continue;
+		same = in6_equal(&endpoint->inet.remote6, destination);
+		if (!same)
+			continue;
+		same = in6_equal(&endpoint->inet.local6, source);
+		if (!same)
+			continue;
+		referenced = socket_tryref(&endpoint->inet.socket);
+		if (referenced)
+			found = endpoint;
+		break;
+	}
+
+	spin_unlock_irqrestore(&udp_registry_lock, irq);
+
+	/* None: nobody is told. */
+	if (found == NULL)
+		return;
+
+	/* The socket's error. */
+	socket_set_error(&found->inet.socket, error);
+	socket_release(&found->inet.socket);
+}
+
 /* Converts a socket to its UDP endpoint. */
 static struct udp_endpoint *
 udp_endpoint(

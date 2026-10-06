@@ -10,8 +10,9 @@
  * error messages the layer sends (rate-limited, never about an error or a
  * group but where the RFC allows it), the path MTU a Packet Too Big
  * teaches, and the hand-off of neighbor discovery and multicast listener
- * messages.  The echo socket and the errors' delivery to the transports
- * come with ws130-p003.
+ * messages.  Every message is also copied to the raw ICMPv6 sockets, and
+ * an error about a UDP datagram or a TCP segment this host sent is told to
+ * the transport (ws130-p003).
  */
 
 #include "ipv6.h"
@@ -24,6 +25,7 @@
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
+#include <uapi/netinet.h>
 
 /* The most of an invoking packet an error carries: the minimum MTU less the two headers. */
 #define ICMP6_ERROR_PAYLOAD_MAX	(IPV6_MINIMUM_MTU - IPV6_HEADER_LENGTH - sizeof(struct icmp6_wire))
@@ -54,6 +56,8 @@ static uint64_t icmp6_errors_second;
 static void icmp6_echo(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
 static void icmp6_too_big(struct packet_buf *packet);
 static int icmp6_error_allowed(void);
+static void icmp6_transport_error(struct packet_buf *packet);
+static int icmp6_error_number(uint8_t type, uint8_t code);
 
 /* Makes the lock and empties the path MTUs and the error budget (ipv6_init). */
 void
@@ -94,6 +98,9 @@ icmp6_input(
 		return EINVAL;
 	}
 
+	/* A copy for the raw ICMPv6 sockets (ws130-p003). */
+	icmp6_raw_deliver(packet, source, destination);
+
 	/* The hop limit it came with (neighbor discovery's messages need 255). */
 	header = (const struct ipv6_wire *)(packet->storage + packet->l3_offset);
 	hop_limit = header->hop_limit;
@@ -106,6 +113,11 @@ icmp6_input(
 		return 0;
 	case ICMP6_PACKET_TOO_BIG:
 		icmp6_too_big(packet);
+		return 0;
+	case ICMP6_DESTINATION_UNREACHABLE:
+	case ICMP6_TIME_EXCEEDED:
+	case ICMP6_PARAMETER_PROBLEM:
+		icmp6_transport_error(packet);
 		return 0;
 	case ICMP6_MLD_QUERY:
 	case ICMP6_MLD1_REPORT:
@@ -124,7 +136,7 @@ icmp6_input(
 		break;
 	}
 
-	/* Anything else (the echo's answers and the other errors: ws130-p003). */
+	/* Anything else (the echo's answers): for the raw sockets only. */
 	packet_buf_free(packet);
 	return 0;
 }
@@ -447,4 +459,77 @@ icmp6_error_allowed(
 
 	/* Succeeded: allowed or not. */
 	return allowed;
+}
+
+/*
+ * Tells the transport of an error about a datagram or segment this host
+ * sent: the invoking packet's IPv6 header (with no extension header) and
+ * its first ports, after the message's header.  The packet is consumed.
+ */
+static void
+icmp6_transport_error(
+	struct packet_buf *packet)
+{
+	const struct icmp6_wire *message;
+	const struct ipv6_wire *inner;
+	const uint8_t *ports;
+	struct in6_addr source;
+	struct in6_addr destination;
+	uint16_t source_port;
+	uint16_t destination_port;
+	uint8_t next_header;
+	int error;
+
+	/* The message, the invoking packet's header and its ports. */
+	if (packet->length < sizeof(*message) + sizeof(*inner) + 4U) {
+		packet_buf_free(packet);
+		return;
+	}
+
+	message = (const struct icmp6_wire *)packet->data;
+	inner = (const struct ipv6_wire *)(packet->data + sizeof(*message));
+	ports = packet->data + sizeof(*message) + sizeof(*inner);
+	kern_memcpy(source.s6_addr, inner->source, 16U);
+	kern_memcpy(destination.s6_addr, inner->destination, 16U);
+	next_header = inner->next_header;
+	source_port = wire_get16(ports);
+	destination_port = wire_get16(ports + 2);
+	error = icmp6_error_number(message->type, message->code);
+	packet_buf_free(packet);
+
+	/* The transport it was sent by. */
+	if (next_header == IPPROTO_UDP)
+		udp6_error(&source, &destination, source_port, destination_port, error);
+	else if (next_header == IPPROTO_TCP)
+		tcp6_error(&source, &destination, source_port, destination_port, error);
+}
+
+/* Gives the errno value an ICMPv6 error stands for (as the other systems give it). */
+static int
+icmp6_error_number(
+	uint8_t type,
+	uint8_t code)
+{
+	/* Time Exceeded: the hops ran out, or the reassembly did. */
+	if (type == ICMP6_TIME_EXCEEDED)
+		return EHOSTUNREACH;
+
+	/* Parameter Problem: the packet was malformed for the receiver. */
+	if (type == ICMP6_PARAMETER_PROBLEM)
+		return EPROTO;
+
+	/* Destination Unreachable, by its code (RFC 4443 section 3.1). */
+	switch (code) {
+	case 0U:
+		return ENETUNREACH;
+	case 1U:
+		return EACCES;
+	case 4U:
+		return ECONNREFUSED;
+	default:
+		break;
+	}
+
+	/* Succeeded: another code is the host's being unreachable. */
+	return EHOSTUNREACH;
 }

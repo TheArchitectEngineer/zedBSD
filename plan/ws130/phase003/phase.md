@@ -26,7 +26,7 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
 | --- | --- | --- |
 | a | `inet_socket` の family と IPv6 の欄、`AF_INET6` の family の登録、`sockaddr_in6` の bind・connect・name、`IPV6_V6ONLY`、port の衝突（v4 と v6 の見方）、UDP の IPv6 の送受と dual stack の IPv4 の受信 | 実装済み（build のみ） |
 | b | TCP の IPv6（endpoint の照合、checksum、出力、listener の子、RST、MSS 1440） | 実装済み（build のみ） |
-| c | ICMPv6 の echo の socket（`ping6` は p005）、transport への ICMPv6 の error、PMTU を TCP に | — |
+| c | ICMPv6 の echo の socket（`ping6` は p005）、transport への ICMPv6 の error、PMTU を TCP に | 実装中（raw socket と error の配達は build 済み、2026-10-06 q806 の割り込みで中断） |
 | d | 試験: `userland/tests/ipv6-probe` に UDP・TCP の `::1` と slirp の `fec0::2`、`plan/ws130/tests/ipv6-p003.sh`。IPv4 の回帰（既存の network の試験）。T1 | — |
 
 ## 段 a の結果（2026-10-06、P1）
@@ -51,3 +51,14 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
   RST は segment の family で返す（`tcp_send_reset6`）。`IPPROTO_IPV6` の option（`IPV6_V6ONLY`）を inet の層に渡す。
 - `src/kern/net/inet-socket.c`: `AF_INET6` の `SOCK_STREAM` を TCP で作る。
 - 確認: amd64・arm64 の kernel、i386 の変えた 4 file の build（`-Werror`、warning 0）。
+
+## 段 c の途中（2026-10-06、P1、q806 の割り込みで中断）
+
+- `src/kern/net/icmp.c`: raw の ICMPv6 の socket（`AF_INET6`・`SOCK_RAW`・`IPPROTO_ICMPV6`、`icmp6_socket_create`）。受信は全ての ICMPv6 の message を IPv6 の header 無しで
+  （RFC 3542）bound・connected の address が合う socket へ（`icmp6_raw_deliver`）、送信は `icmp6_send` が checksum を埋める。IPv4 の raw socket は AF_INET の物だけに配る。
+- `src/kern/net/icmp6.c`: 入力で raw socket に写しを渡し、Destination Unreachable・Time Exceeded・Parameter Problem を transport に（`icmp6_transport_error`、
+  errno は code 0 ENETUNREACH・1 EACCES・4 ECONNREFUSED・他 EHOSTUNREACH、Time Exceeded EHOSTUNREACH、Parameter Problem EPROTO）。
+- `udp6_error`（connected の socket の error に）、`tcp6_error`（port unreachable は SYN_SENT の connect を ECONNREFUSED で終える、他は soft）。
+- PMTU を TCP に: TCP の送る segment は `TCP_MSS` 1024 で、IPv6 の最小 MTU 1280 から header 60 を引いた 1220 より小さいので、Packet Too Big で縮める要が無い（UDP は `ipv6_route_source` の path MTU を使う）。
+- 残り: `inet6_create` の `SOCK_RAW` を `icmp6_socket_create` につなぐ、i386・arm64 の build、段 d（試験）。
+- 確認: amd64 の kernel の build（`-Werror`、warning 0）。
