@@ -7,7 +7,7 @@
 
 /*
  * The parts of Image Viewer that speak Wayland, Vulkan and zdesktop's
- * extensions: the window (libkeiland's kui_window since ws090-p008: the
+ * extensions: the window (libkeiland's kl_window since ws090-p008: the
  * toplevel and the seat's input; its surface is left to the presenter),
  * the presenter of the image and the drawn canvas (present.c), the menus
  * (menu.c), the titlebar's controls (titlebar.c) and the window's glass
@@ -17,27 +17,28 @@
 #ifndef IMAGEVIEW_WINDOW_H
 #define IMAGEVIEW_WINDOW_H
 
+/* The Vulkan header first, so that <keiland-ui.h> declares kl_window_vulkan_surface. */
+#define VK_USE_PLATFORM_WAYLAND_KHR 1
+#include <vulkan/vulkan.h>
+
 #include "imageview.h"
 #include "touch.h"
 
-#define VK_USE_PLATFORM_WAYLAND_KHR 1
-#include <vulkan/vulkan.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 #include <keiland.h>
-#include <keiui.h>
 
 /*
  * The window: libkeiland's window, which queues the input (the menus' and
  * the titlebar's actions among it, posted in the order they came).  The
- * viewer's own presenter draws on its surface (KUI_PRESENT_NONE): the
+ * viewer's own presenter draws on its surface (KL_PRESENT_NONE): the
  * image is a texture under the canvas, which libkeiland's presenter does not
  * have.
  *
  * One lives for the whole run.
  */
 struct iv_window {
-	struct kui_window *kui;
+	struct kl_window *kui;
 };
 
 /*
@@ -158,49 +159,47 @@ struct iv_state {
 };
 
 /*
- * The window's glass in zdesktop (glass.c): the object (NULL without
- * glass), and the panels last sent.
+ * The window's glass in zdesktop (glass.c, WS131 p017): the window, and
+ * whether it is glass (libkeiland sends the panels only when they change).
  */
 struct iv_glass {
-	struct keiland_glass *glass;
-	struct keiland_glass_panel panels[2];
+	struct iv_window *window;
+	int on;
 	size_t count;
 	int sent;
 };
 
+/* The action of File > Open With's submenu itself (greyed without an image; nothing is done when it is chosen). */
+#define IV_ACTION_OPEN_WITH_MENU	97U
+
+/* The action of the titlebar's place control ("3 / 12"), which does nothing but show its state. */
+#define IV_ACTION_PLACE_INFO	98U
+
 /*
- * The window's menus as given to zdesktop (menu.c): the connection's menu
- * service (NULL when the compositor has none, and the window then has no
- * menus), the menu and the window's place for it, and the state the menus
- * last showed; the names of Open With's applications shown, for the image
- * shown (ws128-p005).
+ * The window's menus as given to libkeiland (menu.c, WS131 p017): the
+ * window, whether the menu was given (not without the compositor's System
+ * Menu), the state the actions last showed and whether it was sent, and
+ * the names of Open With's applications for the image shown (ws128-p005;
+ * opener_count -1 before the first).
  */
 struct iv_menu {
-	struct keiland_menu_service *service;
-	struct keiland_menu *menu;
-	struct keiland_window_menu *window_menu;
-	struct iv_state shown;
 	struct iv_window *window;
-	struct keiland_menu *context;
-	struct keiland_context_menu *popup;
+	int shown_once;
+	struct iv_state shown;
+	int sent;
 	char openers[IV_OPENERS][IV_OPENER_NAME];
 	int opener_count;
 };
 
 /*
- * The window's titlebar in zdesktop (titlebar.c): zdesktop's titlebar
- * object (NULL without one), the state it last showed, and whether it was
- * ever sent.
+ * The window's titlebar in zdesktop (titlebar.c, WS131 p017): the window,
+ * and whether its controls are shown (not without the compositor's
+ * titlebar).  The controls' state is their actions' (menu.c).
  */
 struct iv_titlebar {
 	struct iv_window *window;
-	struct keiland_titlebar *titlebar;
-	struct iv_state shown;
-	int sent;
+	int shown;
 };
-
-/* The window's actions: the menus' and the titlebar's choices, queued among the input. */
-void iv_window_action(struct iv_window *window, uint32_t action);
 
 /* The menus (menu.c). */
 int iv_menu_open(struct iv_menu *menu, struct iv_window *window, const struct iv_state *state);
@@ -223,7 +222,7 @@ void iv_present_set_frame(struct iv_present *present, const uint32_t *pixels);
 void iv_present_close(struct iv_present *present);
 
 /* The glass (glass.c). */
-int iv_glass_open(struct iv_glass *glass, struct iv_window *window, const struct iv_present *present);
+int iv_glass_open(struct iv_glass *glass, struct iv_window *window, const struct iv_present *present, const struct iv_app *app);
 void iv_glass_update(struct iv_glass *glass, const struct iv_app *app);
 void iv_glass_close(struct iv_glass *glass);
 

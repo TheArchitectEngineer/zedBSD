@@ -41,15 +41,15 @@
 /* The share a swipe keeps of the finger's movement past the first and the last image (as the pointer's). */
 #define TOUCH_SWIPE_RESIST	3.0
 
-static int touch_for_pointer(const struct iv_app *app, const struct kui_window_event *event);
-static void touch_pointer(struct iv_touch *touch, struct iv_app *app, const struct kui_window_event *event);
+static int touch_for_pointer(const struct iv_app *app, const struct kl_window_event *event);
+static void touch_pointer(struct iv_touch *touch, struct iv_app *app, const struct kl_window_event *event);
 static void touch_press(struct iv_touch *touch, struct iv_app *app, uint64_t now);
 static void touch_gestures(struct iv_touch *touch, struct iv_app *app, uint64_t now);
 static void touch_drag_begin(struct iv_touch *touch, struct iv_app *app, uint64_t now);
-static void touch_drag_end(struct iv_touch *touch, struct iv_app *app, uint64_t now, const struct keiland_gesture_event *gesture);
+static void touch_drag_end(struct iv_touch *touch, struct iv_app *app, uint64_t now, const struct kl_gesture_event *gesture);
 static void touch_cancel(struct iv_touch *touch, struct iv_app *app, uint64_t now);
-static void touch_double_tap(struct iv_touch *touch, struct iv_app *app, const struct keiland_gesture_event *gesture);
-static void touch_long_press(struct iv_touch *touch, struct iv_app *app, const struct keiland_gesture_event *gesture);
+static void touch_double_tap(struct iv_touch *touch, struct iv_app *app, const struct kl_gesture_event *gesture);
+static void touch_long_press(struct iv_touch *touch, struct iv_app *app, const struct kl_gesture_event *gesture);
 static void touch_bounds(struct iv_touch *touch, struct iv_app *app);
 static void touch_pinch(struct iv_touch *touch, struct iv_app *app, uint64_t now);
 static void touch_pinch_end(struct iv_touch *touch, struct iv_app *app, uint64_t now);
@@ -68,14 +68,14 @@ iv_touch_open(
 	memset(touch, 0, sizeof(*touch));
 
 	/* The gestures of the window. */
-	touch->gesture = keiland_gesture_create();
+	touch->gesture = kl_gesture_create();
 	if (touch->gesture == NULL)
 		return ENOMEM;
 
 	/* The scroller of the view. */
-	touch->scroller = keiland_scroller_create();
+	touch->scroller = kl_scroller_create();
 	if (touch->scroller == NULL) {
-		keiland_gesture_destroy(touch->gesture);
+		kl_gesture_destroy(touch->gesture);
 		touch->gesture = NULL;
 		return ENOMEM;
 	}
@@ -93,9 +93,9 @@ iv_touch_close(
 {
 	/* Both, when they were made. */
 	if (touch->scroller != NULL)
-		keiland_scroller_destroy(touch->scroller);
+		kl_scroller_destroy(touch->scroller);
 	if (touch->gesture != NULL)
-		keiland_gesture_destroy(touch->gesture);
+		kl_gesture_destroy(touch->gesture);
 	memset(touch, 0, sizeof(*touch));
 }
 
@@ -108,7 +108,7 @@ void
 iv_touch_event(
 	struct iv_touch *touch,
 	struct iv_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	uint64_t time;
 	int error;
@@ -126,7 +126,7 @@ iv_touch_event(
 
 	/* A first finger over the empty window starts playing the pointer. */
 	for_pointer = touch_for_pointer(app, event);
-	if (event->kind == KUI_WINDOW_TOUCH_DOWN &&
+	if (event->kind == KL_WINDOW_TOUCH_DOWN &&
 	    touch->fingers == 0U &&
 	    for_pointer) {
 		touch_pointer(touch, app, event);
@@ -138,30 +138,30 @@ iv_touch_event(
 
 	/* Hands the finger to the gestures. */
 	switch (event->kind) {
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		/* The first finger presses the scroller. */
 		if (touch->fingers == 0U)
 			touch_press(touch, app, event->arrival_us);
 
 		/* The finger joins the gestures, and counts once they took it. */
-		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival_us, event->x, event->y);
+		error = kl_gesture_down(touch->gesture, event->id, time, event->arrival_us, event->x, event->y);
 		if (error == 0)
 			touch->fingers++;
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_MOTION:
 		/* The finger's new place; the tick places the view from it. */
-		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival_us, event->x, event->y);
+		(void)kl_gesture_motion(touch->gesture, event->id, time, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		/* The finger leaves the gestures, and the count once they let it go. */
-		error = keiland_gesture_up(touch->gesture, event->id, time);
+		error = kl_gesture_up(touch->gesture, event->id, time);
 		if (error == 0 &&
 		    touch->fingers > 0U)
 			touch->fingers--;
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_CANCEL:
 		/* Every finger is gone at once. */
-		keiland_gesture_cancel(touch->gesture);
+		kl_gesture_cancel(touch->gesture);
 		touch->fingers = 0;
 		break;
 	}
@@ -231,7 +231,7 @@ iv_touch_tick(
 	if (touch->moving &&
 	    (app->scroll_x != touch->written_x ||
 	     app->scroll_y != touch->written_y)) {
-		keiland_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
+		kl_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
 		touch->written_x = app->scroll_x;
 		touch->written_y = app->scroll_y;
 		if (touch->pressed)
@@ -258,13 +258,13 @@ iv_touch_tick(
 	/* A drag moves the scroller with the fingers, resampled for the frame. */
 	if (touch->drag == TOUCH_DRAG_SCROLL &&
 	    touch->pressed) {
-		error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+		error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 		if (error == 0)
-			keiland_scroller_drag(touch->scroller, dx - touch->base_x, dy - touch->base_y);
+			kl_scroller_drag(touch->scroller, dx - touch->base_x, dy - touch->base_y);
 	}
 
 	/* The view where the scroller is at the frame's time. */
-	animating = keiland_scroller_step(touch->scroller, now, &x, &y);
+	animating = kl_scroller_step(touch->scroller, now, &x, &y);
 	if (touch->moving &&
 	    (x != app->scroll_x ||
 	     y != app->scroll_y)) {
@@ -306,7 +306,7 @@ iv_touch_tick(
 static int
 touch_for_pointer(
 	const struct iv_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	UNUSED_PARAMETER(event);
 
@@ -327,13 +327,13 @@ static void
 touch_pointer(
 	struct iv_touch *touch,
 	struct iv_app *app,
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct iv_event pointer;
 
 	/* Only the finger that plays it, once it plays it. */
 	if (touch->pointer &&
-	    event->kind != KUI_WINDOW_TOUCH_CANCEL &&
+	    event->kind != KL_WINDOW_TOUCH_CANCEL &&
 	    event->id != touch->pointer_id)
 		return;
 
@@ -341,8 +341,8 @@ touch_pointer(
 	memset(&pointer, 0, sizeof(pointer));
 	pointer.x = touch->pointer_x;
 	pointer.y = touch->pointer_y;
-	if (event->kind == KUI_WINDOW_TOUCH_DOWN ||
-	    event->kind == KUI_WINDOW_TOUCH_MOTION) {
+	if (event->kind == KL_WINDOW_TOUCH_DOWN ||
+	    event->kind == KL_WINDOW_TOUCH_MOTION) {
 		pointer.x = (int)floor(event->x);
 		pointer.y = (int)floor(event->y);
 		touch->pointer_x = pointer.x;
@@ -355,7 +355,7 @@ touch_pointer(
 
 	/* Plays the pointer by the kind of touch. */
 	switch (event->kind) {
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		/* The pointer comes, and presses. */
 		touch->pointer = 1;
 		touch->pointer_id = event->id;
@@ -367,18 +367,18 @@ touch_pointer(
 		pointer.pressed = 1;
 		iv_app_event(app, &pointer);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_MOTION:
 		/* The pointer follows the finger. */
 		pointer.type = IV_EVENT_MOTION;
 		iv_app_event(app, &pointer);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		/* Released where the finger last was. */
 		touch->pointer = 0;
 		pointer.type = IV_EVENT_BUTTON;
 		iv_app_event(app, &pointer);
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_CANCEL:
 		/* Let go without a release, so that nothing is clicked. */
 		touch->pointer = 0;
 		app->pressed = 0;
@@ -406,10 +406,10 @@ touch_press(
 	/* The view's bounds, and its place unless the scroller already owns it. */
 	touch_bounds(touch, app);
 	if (!touch->moving)
-		keiland_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
+		kl_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
 
 	/* The press; a first press on gliding content catches it. */
-	caught = keiland_scroller_press(touch->scroller, now);
+	caught = kl_scroller_press(touch->scroller, now);
 	if (!touch->pressed) {
 		touch->caught = caught;
 		if (caught)
@@ -425,7 +425,7 @@ touch_press(
 	/* A drag already going on is measured from here. */
 	touch->base_x = 0.0;
 	touch->base_y = 0.0;
-	error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+	error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 	if (error == 0) {
 		touch->base_x = dx;
 		touch->base_y = dy;
@@ -439,33 +439,33 @@ touch_gestures(
 	struct iv_app *app,
 	uint64_t now)
 {
-	struct keiland_gesture_event gesture;
+	struct kl_gesture_event gesture;
 	int found;
 
 	/* Each gesture in turn. */
 	for (;;) {
-		found = keiland_gesture_next(touch->gesture, now, &gesture);
+		found = kl_gesture_next(touch->gesture, now, &gesture);
 		if (!found)
 			break;
 
 		/* Does what the gesture means. */
 		switch (gesture.kind) {
-		case KEILAND_GESTURE_TAP:
+		case KL_GESTURE_TAP:
 			iv_log("TOUCH tap x=%.0f y=%.0f caught=%d", gesture.x, gesture.y, touch->caught);
 			break;
-		case KEILAND_GESTURE_DOUBLE_TAP:
+		case KL_GESTURE_DOUBLE_TAP:
 			touch_double_tap(touch, app, &gesture);
 			break;
-		case KEILAND_GESTURE_LONG_PRESS:
+		case KL_GESTURE_LONG_PRESS:
 			touch_long_press(touch, app, &gesture);
 			break;
-		case KEILAND_GESTURE_DRAG_BEGIN:
+		case KL_GESTURE_DRAG_BEGIN:
 			touch_drag_begin(touch, app, now);
 			break;
-		case KEILAND_GESTURE_DRAG_END:
+		case KL_GESTURE_DRAG_END:
 			touch_drag_end(touch, app, now, &gesture);
 			break;
-		case KEILAND_GESTURE_CANCEL:
+		case KL_GESTURE_CANCEL:
 			touch_cancel(touch, app, now);
 			break;
 		default:
@@ -476,7 +476,7 @@ touch_gestures(
 	/* The last finger lifted without a drag: the scroller is let go still (content past an end springs back). */
 	if (touch->fingers == 0U &&
 	    touch->pressed) {
-		keiland_scroller_release(touch->scroller, now, 0.0, 0.0);
+		kl_scroller_release(touch->scroller, now, 0.0, 0.0);
 		touch->pressed = 0;
 		touch->drag = TOUCH_DRAG_NONE;
 	}
@@ -508,7 +508,7 @@ touch_drag_begin(
 	/* Where the fingers went. */
 	dx = 0.0;
 	dy = 0.0;
-	error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+	error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 	if (error != 0)
 		return;
 
@@ -540,18 +540,18 @@ touch_drag_end(
 	struct iv_touch *touch,
 	struct iv_app *app,
 	uint64_t now,
-	const struct keiland_gesture_event *gesture)
+	const struct kl_gesture_event *gesture)
 {
 	/* A swipe changes the image by how far and how fast it went (pixels a millisecond). */
 	if (touch->drag == TOUCH_DRAG_SWIPE) {
 		touch_swipe(touch, app, now);
 		iv_app_swipe_end(app, gesture->vx / 1000.0, 1);
-		keiland_scroller_release(touch->scroller, now, 0.0, 0.0);
+		kl_scroller_release(touch->scroller, now, 0.0, 0.0);
 	}
 
 	/* A scroll glides on at the finger's velocity. */
 	if (touch->drag == TOUCH_DRAG_SCROLL) {
-		keiland_scroller_release(touch->scroller, now, gesture->vx, gesture->vy);
+		kl_scroller_release(touch->scroller, now, gesture->vx, gesture->vy);
 		iv_log("TOUCH release vx=%.0f vy=%.0f x=%.1f y=%.1f", gesture->vx, gesture->vy, app->scroll_x, app->scroll_y);
 	}
 
@@ -577,7 +577,7 @@ touch_cancel(
 
 	/* The scroller lets go (content past an end springs back). */
 	if (touch->pressed)
-		keiland_scroller_cancel(touch->scroller, now);
+		kl_scroller_cancel(touch->scroller, now);
 
 	/* No finger drags any more. */
 	touch->pressed = 0;
@@ -593,7 +593,7 @@ static void
 touch_double_tap(
 	struct iv_touch *touch,
 	struct iv_app *app,
-	const struct keiland_gesture_event *gesture)
+	const struct kl_gesture_event *gesture)
 {
 	/* Nothing to zoom without an image, or after a catch. */
 	if (!app->has_image ||
@@ -610,7 +610,7 @@ static void
 touch_long_press(
 	struct iv_touch *touch,
 	struct iv_app *app,
-	const struct keiland_gesture_event *gesture)
+	const struct kl_gesture_event *gesture)
 {
 	/* Logs every long press for the tests. */
 	iv_log("TOUCH long-press x=%.0f y=%.0f", gesture->x, gesture->y);
@@ -665,7 +665,7 @@ touch_bounds(
 		return;
 
 	/* The new bounds. */
-	(void)keiland_scroller_set_bounds(touch->scroller, 0.0, largest_x, 0.0, largest_y, width, height);
+	(void)kl_scroller_set_bounds(touch->scroller, 0.0, largest_x, 0.0, largest_y, width, height);
 	touch->bounds_x = largest_x;
 	touch->bounds_y = largest_y;
 	touch->bounds_width = width;
@@ -695,7 +695,7 @@ touch_pinch(
 	error = ENOENT;
 	if (touch->fingers >= 2U &&
 	    touch->drag != TOUCH_DRAG_SWIPE)
-		error = keiland_gesture_pinch(touch->gesture, now, &ratio, &x, &y);
+		error = kl_gesture_pinch(touch->gesture, now, &ratio, &x, &y);
 	if (error != 0) {
 		/* A zoom going on ends with the second finger. */
 		if (touch->pinching)
@@ -745,7 +745,7 @@ touch_pinch_end(
 
 	/* The scroller takes the view where the zoom left it. */
 	touch_bounds(touch, app);
-	keiland_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
+	kl_scroller_set_position(touch->scroller, app->scroll_x, app->scroll_y);
 	touch->written_x = app->scroll_x;
 	touch->written_y = app->scroll_y;
 
@@ -767,7 +767,7 @@ touch_swipe(
 	int error;
 
 	/* Where the fingers are. */
-	error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+	error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 	if (error != 0)
 		return;
 

@@ -68,13 +68,15 @@ struct pdf_buffer {
  * source, and prefixed says that its content follows a stream of its own
  * that saves the graphics state before the page's own content (OVERLAY on
  * a page that has content).  An EDIT page keeps the editor's new content of
- * the page in edited, written before the page's drawing.
+ * the page in edited, written before the page's drawing, compressed when
+ * edited_flate is set (ws175-p006, design.md [H6]).
  */
 struct pdf_writer_page {
 	double width;
 	double height;
 	struct pdf_buffer content;
 	struct pdf_buffer edited;
+	int edited_flate;
 	int placement;
 	size_t source;
 	int prefixed;
@@ -99,6 +101,13 @@ struct pdf_writer_attachment {
  * RGB samples with an 8-bit alpha mask when some pixel is not opaque.
  * object is the image's object number, assigned when the document is laid
  * out; the mask, if any, is the next object.
+ *
+ * The editor's images (ws175-p006) may also be compressed: flate says the
+ * data is a zlib stream (FlateDecode), png_rows that it holds a PNG's rows
+ * (the PNG predictor), alpha_size is the mask's length (0: width times
+ * height) and alpha_flate that it is compressed.  An image of Notes has
+ * its id, written as the private key /KeiNotesImage, and the digest of
+ * what the editor was given, by which one update shares it among pages.
  */
 struct pdf_writer_image {
 	unsigned char *data;
@@ -109,6 +118,12 @@ struct pdf_writer_image {
 	int is_jpeg;
 	int components;
 	size_t object;
+	int flate;
+	int png_rows;
+	size_t alpha_size;
+	int alpha_flate;
+	unsigned long id;
+	unsigned char digest[32];
 };
 
 struct pdf_writer;
@@ -158,6 +173,9 @@ struct pdf_writer {
 	size_t first_alpha_object;
 	size_t last_source;
 };
+
+/* Bytes compressed into a zlib stream, when that is shorter (update.c, ws175-p006). */
+int pdf_writer_pack(const unsigned char *data, size_t size, unsigned char **packed, size_t *packed_size);
 
 /* An update's page with its content changed (update.c; the editor's, ws175-p003). */
 int pdf_update_begin_edited(struct pdf_writer *writer, size_t index, struct pdf_buffer *edited);

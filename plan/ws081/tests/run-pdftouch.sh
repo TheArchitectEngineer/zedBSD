@@ -15,7 +15,7 @@ ln -sfn "$root/include/libc/compat" "$out/include/compat"
 for header in pdf.h sha2.h md5.h sha1.h; do
 	ln -sf "$root/include/libc/$header" "$out/include/$header"
 done
-for header in truetype.h keiland.h; do
+for header in truetype.h keiland.h keiland-ui.h; do
 	ln -sf "$root/userland/desktop/keiland/$header" "$out/include/$header"
 done
 
@@ -24,7 +24,7 @@ python3 "$root/plan/ws081/tests/make-touch-pdf.py" "$out/touch.pdf"
 
 libpdf="writer.c outline.c object.c reader.c filter.c ccitt.c crypt.c image.c display.c content.c stroke.c raster.c
 	font.c encoding.c shading.c charstrings.c type1.c cff.c cffdata.c"
-viewer="view.c draw.c document.c chooser.c canvas.c text.c"
+viewer="view.c draw.c document.c canvas.c text.c"
 status=0
 for variant in plain asan; do
 	strict="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
