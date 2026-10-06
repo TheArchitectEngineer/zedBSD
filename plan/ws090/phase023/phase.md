@@ -31,11 +31,9 @@ Files と Settings は自前の hit の model（`fm_ui_hit`・`se_ui_hit`）で�
 - Settings: slider（track が細く、knob に影）、switch（libkeiland の knob）。card・行・見出し・button は byte で同じ。
 - Files: sidebar の節の見出しの色（faint → secondary）、message の chip（暗い pill → 白い chip）、問いの「Cancel」button（灰の pill → libkeiland の白い button）。
 
-### 範囲の外・積み残し
+### 範囲の外
 
-- Files の list（列・複数選択・並べ替えの見出し）と grid（icon の格子）: libkeiland に該当の部品が無い（`kl_list` は 1 つ選択の行の list）。部品を足す設計が要る → WS177 へ（条件: Files の list・grid を libkeiland の部品にする。期待: 複数選択・列・並べ替えを持つ list と icon の格子の部品。source: `files/ui-list.c`・`ui-grid.c`）。
-- Files の sidebar の削除・取り出しの小さなボタン、Settings の icon だけの button（`se_icon_button_draw`）、Files の tabs・Quick Look・Help・情報の閉じるボタンは自前のまま（libkeiland に icon の button が無い）→ WS177。
-- 準正常系・異常系: `kl_ui` が作れない（memory 不足）時、Files は部品を光らせずに描く（`app->ui` が NULL の時の kl_sidebar_place は呼ばれる前提の所がある: `ui.c` の sidebar）。→ WS177（条件: `fm_widgets_begin` が ENOMEM。期待: 部品を kl_ui 無しで描く。source: `files/ui.c` の `ui_draw_sidebar`）。
+- Files の list・grid、icon だけの小さなボタン（sidebar の削除・取り出し、Settings の icon の button、Files の tabs・Quick Look・Help・情報の閉じる）は自前のまま。libkeiland に該当の部品が無い。積み残しは [WS177 の P1 の一覧](../../ws177/backlog-p1.md)。
 
 ### 確認
 
