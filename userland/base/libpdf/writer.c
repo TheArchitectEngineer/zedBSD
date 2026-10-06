@@ -110,6 +110,13 @@ pdf_writer_destroy(
 		free(writer->images[index].alpha);
 	}
 
+	/* Frees each embedded font's file and glyphs (ws175-p005). */
+	for (index = 0; index < PDF_WRITER_FONT_FILES; index++) {
+		free(writer->fonts[index].data);
+		free(writer->fonts[index].used);
+		free(writer->fonts[index].unicode);
+	}
+
 	/* Frees the page and image arrays, the attachment and the document. */
 	free(writer->images);
 	free(writer->pages);
@@ -1134,6 +1141,8 @@ pdf_writer_write_resources(
 	struct pdf_writer *writer,
 	struct pdf_buffer *file)
 {
+	size_t fonts;
+
 	/* Opens the dictionary; a document without translucent fills or images leaves it empty. */
 	pdf_buffer_printf(file, "<<");
 
@@ -1148,6 +1157,14 @@ pdf_writer_write_resources(
 	if (writer->images_count != 0) {
 		pdf_buffer_printf(file, " /XObject <<");
 		pdf_writer_write_image_entries(writer, file);
+		pdf_buffer_printf(file, " >>");
+	}
+
+	/* Lists each embedded font (ws175-p005). */
+	fonts = pdf_writer_font_count(writer);
+	if (fonts != 0) {
+		pdf_buffer_printf(file, " /Font <<");
+		pdf_writer_write_font_entries(writer, file);
 		pdf_buffer_printf(file, " >>");
 	}
 
@@ -1194,6 +1211,70 @@ pdf_writer_write_image_entries(
 				  writer->name_prefix,
 				  (unsigned long)index,
 				  (unsigned long)writer->images[index].object);
+	}
+}
+
+/*
+ * Counts the replacement fonts a document embeds (ws175-p005).
+ */
+size_t
+pdf_writer_font_count(
+	const struct pdf_writer *writer)
+{
+	size_t count;
+	unsigned file;
+
+	/* Each font used. */
+	count = 0;
+	for (file = 0; file < PDF_WRITER_FONT_FILES; file++) {
+		if (writer->fonts[file].any)
+			count++;
+	}
+
+	/* The count. */
+	return count;
+}
+
+/*
+ * Numbers the embedded fonts' objects from next (five a font).  Returns
+ * the number after them.
+ */
+size_t
+pdf_writer_number_fonts(
+	struct pdf_writer *writer,
+	size_t next)
+{
+	unsigned file;
+
+	/* Each font used. */
+	for (file = 0; file < PDF_WRITER_FONT_FILES; file++) {
+		if (!writer->fonts[file].any)
+			continue;
+		writer->fonts[file].object = next;
+		next += PDF_WRITER_FONT_OBJECTS;
+	}
+
+	/* The number after them. */
+	return next;
+}
+
+/*
+ * Writes the entries of a Font dictionary that name the embedded fonts by
+ * the names the content streams select them with: the name prefix, F and
+ * the font's file.
+ */
+void
+pdf_writer_write_font_entries(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file)
+{
+	unsigned font;
+
+	/* Each font used, by its Type0 font object. */
+	for (font = 0; font < PDF_WRITER_FONT_FILES; font++) {
+		if (!writer->fonts[font].any)
+			continue;
+		pdf_buffer_printf(file, " /%sF%u %lu 0 R", writer->name_prefix, font, (unsigned long)writer->fonts[font].object);
 	}
 }
 
@@ -1662,8 +1743,9 @@ write_document(
 	size_t next_object;
 	size_t file_object;
 	size_t index;
+	int error;
 
-	/* Numbers the objects after the pages: the opacities, then each image and its mask, then the attachment. */
+	/* Numbers the objects after the pages: the opacities, then each image and its mask, the fonts, then the attachment. */
 	first_alpha_object = PDF_WRITER_OBJECT_FIRST_PAGE + writer->pages_count * 2;
 	writer->first_alpha_object = first_alpha_object;
 	next_object = first_alpha_object + writer->alphas_count;
@@ -1673,6 +1755,9 @@ write_document(
 		if (writer->images[index].alpha != NULL)
 			next_object++;
 	}
+
+	/* The embedded fonts' objects (ws175-p005). */
+	next_object = pdf_writer_number_fonts(writer, next_object);
 
 	/* The attached file and its specification come last. */
 	file_object = next_object;
@@ -1703,9 +1788,14 @@ write_document(
 	/* Writes each opacity's ExtGState. */
 	pdf_writer_write_opacities(writer, file, offsets);
 
-	/* Writes each image and its mask. */
+	/* Writes each image and its mask, and the embedded fonts (ws175-p005). */
 	for (index = 0; index < writer->images_count; index++)
 		pdf_writer_write_image_objects(&writer->images[index], file, offsets);
+	if (writer->font_layout != NULL) {
+		error = writer->font_layout(writer, file, offsets);
+		if (error != 0)
+			pdf_buffer_fail(file, error);
+	}
 
 	/* Writes the attachment. */
 	if (writer->has_attachment)

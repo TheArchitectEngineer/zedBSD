@@ -126,7 +126,30 @@ struct pdf_writer_image {
 	unsigned char digest[32];
 };
 
+/*
+ * One replacement font the document embeds (ws175-p005, embed.c): its
+ * file (the writer's copy), the glyphs its shown strings use (one byte a
+ * glyph, by its number, and the first character each stands for, for the
+ * ToUnicode CMap), whether any is used, and its first object number (five
+ * objects: the Type0 font, its CIDFont, the descriptor, the program and
+ * the ToUnicode stream), assigned when the document is laid out.
+ */
+#define PDF_WRITER_FONT_FILES	4U
+#define PDF_WRITER_FONT_GLYPHS	65536U
+#define PDF_WRITER_FONT_OBJECTS	5U
+struct pdf_writer_font {
+	unsigned char *data;
+	size_t size;
+	unsigned char *used;
+	uint32_t *unicode;
+	int any;
+	size_t object;
+};
+
 struct pdf_writer;
+
+/* Writes the embedded fonts' objects (embed.c, set when a font is first used). */
+typedef int (*pdf_writer_font_layout)(struct pdf_writer *writer, struct pdf_buffer *file, size_t *offsets);
 
 /*
  * Lays out an update of a document being read (update.c): the document's
@@ -172,6 +195,8 @@ struct pdf_writer {
 	char prefix_buffer[16];
 	size_t first_alpha_object;
 	size_t last_source;
+	struct pdf_writer_font fonts[PDF_WRITER_FONT_FILES];
+	pdf_writer_font_layout font_layout;
 };
 
 /* A dictionary written without one of its keys (update.c, ws175-p004). */
@@ -198,6 +223,12 @@ void pdf_buffer_append_number(struct pdf_buffer *buffer, double number);
 void pdf_buffer_append_literal_string(struct pdf_buffer *buffer, const char *text);
 void pdf_buffer_append_hex_string(struct pdf_buffer *buffer, const unsigned char *bytes, size_t length);
 void pdf_buffer_append_date(struct pdf_buffer *buffer, time_t when);
+
+/* The embedded replacement fonts (embed.c, ws175-p005): a glyph used, and the fonts' resource entries (writer.c). */
+int pdf_writer_use_glyph(struct pdf_writer *writer, unsigned file, unsigned glyph, uint32_t character);
+size_t pdf_writer_number_fonts(struct pdf_writer *writer, size_t next);
+void pdf_writer_write_font_entries(struct pdf_writer *writer, struct pdf_buffer *file);
+size_t pdf_writer_font_count(const struct pdf_writer *writer);
 
 /* The objects every layout writes (writer.c). */
 void pdf_writer_write_resources(struct pdf_writer *writer, struct pdf_buffer *file);

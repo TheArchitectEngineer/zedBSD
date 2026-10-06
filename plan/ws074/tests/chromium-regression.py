@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parents[3]
 AGENT = CHROME_USER_AGENT
 THRESHOLD = 16
 FONT_NAMES = (
-    "Inter.ttf",
+    "Mahora-Regular.ttf",
     "JetBrainsMono-Regular.ttf",
     "DroidSansFallbackFull.ttf",
 )

@@ -193,6 +193,8 @@ struct pdf_document {
 	time_t modification_time;
 	struct pdf_font_cache *fonts;
 	void (*release_fonts)(struct pdf_font_cache *cache);
+	struct pdf_edit_fonts *edit_fonts;
+	void (*release_edit_fonts)(struct pdf_edit_fonts *fonts);
 	struct pdf_object_stream *object_streams;
 	size_t object_streams_size;
 	struct pdf_crypt *crypt;
@@ -391,6 +393,8 @@ pdf_document_close(
 	/* Frees the fonts, the object streams, the objects, the tables, the bytes and the document. */
 	if (document->release_fonts != NULL)
 		document->release_fonts(document->fonts);
+	if (document->release_edit_fonts != NULL)
+		document->release_edit_fonts(document->edit_fonts);
 	free_object_streams(document);
 	pdf_crypt_close(document->crypt);
 	pdf_arena_free(&document->arena);
@@ -942,6 +946,34 @@ pdf_reader_set_font_cache(
 	/* The document owns the fonts from here on. */
 	document->fonts = cache;
 	document->release_fonts = release;
+}
+
+/*
+ * Reports the replacement fonts the editors of a document draw with
+ * (replace.c, ws175-p005; NULL until made).
+ */
+struct pdf_edit_fonts *
+pdf_reader_edit_fonts(
+	struct pdf_document *document)
+{
+	/* The document's. */
+	return document->edit_fonts;
+}
+
+/*
+ * Gives a document its replacement fonts, which release frees when the
+ * document closes (after the font cache, whose faces may read their
+ * bytes).
+ */
+void
+pdf_reader_set_edit_fonts(
+	struct pdf_document *document,
+	struct pdf_edit_fonts *fonts,
+	void (*release)(struct pdf_edit_fonts *fonts))
+{
+	/* The document owns them from here on. */
+	document->edit_fonts = fonts;
+	document->release_edit_fonts = release;
 }
 
 /*

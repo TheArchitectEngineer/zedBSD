@@ -61,10 +61,10 @@ def chrome_boxes(root, page, width, height):
 
 def our_boxes(root, program, page, width, height):
     fonts = os.path.join(root, "userland/desktop/fonts")
-    if not os.path.isfile(os.path.join(fonts, "Inter.ttf")):
+    if not os.path.isfile(os.path.join(fonts, "Mahora-Regular.ttf")):
         fonts = os.path.join(root, "userland/desktop/fonts")
     result = subprocess.run([program, "--dump=layout", "--width=%d" % width, "--height=%d" % height,
-                             "--font=" + os.path.join(fonts, "Inter.ttf"),
+                             "--font=" + os.path.join(fonts, "Mahora-Regular.ttf"),
                              "--mono-font=" + os.path.join(fonts, "JetBrainsMono-Regular.ttf"),
                              "--fallback-font=" + os.path.join(fonts, "DroidSansFallbackFull.ttf"), page],
                             capture_output=True, text=True, check=True)

@@ -19,7 +19,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 WALLPAPERS = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers')
 WIDTH = 1280
 HEIGHT = 800

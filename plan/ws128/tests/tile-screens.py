@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 WALLPAPER = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers/Birch-Lake.png')
 APPS_CONF = os.path.join(ROOT, 'userland/desktop/wayland/apps.conf')
 

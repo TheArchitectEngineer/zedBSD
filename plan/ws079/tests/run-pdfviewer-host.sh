@@ -5,13 +5,13 @@
 # written to build/ws079-p006-host/viewer-*/ as PPM and converted to PNG.  ws079-p015: the sidebar of thumbnails and the
 # password card (notes.pdf encrypted by qpdf with the user password "secret" and the owner password "owner").
 #   sh plan/ws079/tests/run-pdfviewer-host.sh
-# Needs: userland/desktop/fonts/Inter.ttf, and build/ws079-p006-host/notes.pdf (run-pdf-render.sh makes it).
+# Needs: userland/desktop/fonts/Mahora-Regular.ttf, and build/ws079-p006-host/notes.pdf (run-pdf-render.sh makes it).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws079-p006-host
 cc=${CC:-cc}
-font=userland/desktop/fonts/Inter.ttf
+font=userland/desktop/fonts/Mahora-Regular.ttf
 [ -f "$out/notes.pdf" ] || { echo "run-pdfviewer-host: run run-pdf-render.sh first"; exit 1; }
 mkdir -p "$out/include"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"

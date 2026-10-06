@@ -7,7 +7,7 @@ rtl8822b-tables	-	BSD-3-Clause	/usr/share/licenses/rtl8822b-tables/LICENSE
 khronos-headers	-	Apache-2.0 OR MIT (per header)	-
 libvulkan-registry	-	MIT	/usr/share/licenses/libvulkan/LICENSE-PROTOCOL
 browser-data	-	Unicode-3.0 AND BSD-3-Clause	/usr/share/licenses/browser/Unicode-License-V3 /usr/share/licenses/browser/WHATWG-entities
-keiland-fonts	-	OFL-1.1 AND Apache-2.0	/usr/share/licenses/keiland-fonts/Inter-OFL.txt /usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt /usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt /usr/share/licenses/keiland-fonts/Apache-2.0.txt
+keiland-fonts	-	Zlib AND OFL-1.1 AND Apache-2.0	/usr/share/licenses/keiland-fonts/Mahora-LICENSE.txt /usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt /usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt /usr/share/licenses/keiland-fonts/Apache-2.0.txt
 noct	-	Zlib	-
 emacs	-	Zlib	-
 ime-dict-ja	-	Zlib	-

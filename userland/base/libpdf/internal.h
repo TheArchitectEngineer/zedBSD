@@ -391,6 +391,9 @@ struct pdf_scan_object {
 #define PDF_SCAN_SHOW_TYPE3	0x2U
 #define PDF_SCAN_SHOW_VERTICAL	0x4U
 
+/* The longest font name of the resources a shown string keeps (ws175-p005). */
+#define PDF_SCAN_FONT_NAME_MAX	64
+
 /* The operator of a shown string (ws175-p004): Tj, TJ, ' or ". */
 #define PDF_SCAN_SHOW_TJ	0U
 #define PDF_SCAN_SHOW_ARRAY	1U
@@ -405,6 +408,8 @@ struct pdf_scan_show {
 	double end[6];
 	double ctm[6];
 	struct pdf_font *font;
+	char font_resource[PDF_SCAN_FONT_NAME_MAX];
+	size_t font_resource_length;
 	double font_size;
 	double character_spacing;
 	double word_spacing;
@@ -512,12 +517,52 @@ int pdf_tounicode_lookup(const struct pdf_tounicode *map, unsigned code, unsigne
 int pdf_tounicode_reverse(const struct pdf_tounicode *map, uint32_t character, unsigned *code, unsigned *length);
 void pdf_tounicode_free(struct pdf_tounicode *map);
 
+/*
+ * The replacement fonts the editor writes new words in (replace.c,
+ * ws175-p005, design.md section 4.1 as updated 2026-10-06): the desktop's
+ * Mahora Regular (Sans) and Mahora Mono (Mono), and for the characters a
+ * font lacks its fallbacks JetBrains Mono, then Droid Sans Fallback (CJK).
+ * A document keeps them (their faces and the preview's font objects) until
+ * it closes, design.md [H5].
+ */
+#define PDF_EDIT_FILE_SANS		0U
+#define PDF_EDIT_FILE_MONO		1U
+#define PDF_EDIT_FILE_FALLBACK_MONO	2U
+#define PDF_EDIT_FILE_FALLBACK		3U
+#define PDF_EDIT_FILES			4U
+struct pdf_edit_fonts;
+struct pdf_edit_fonts *pdf_reader_edit_fonts(struct pdf_document *document);
+void pdf_reader_set_edit_fonts(struct pdf_document *document, struct pdf_edit_fonts *fonts, void (*release)(struct pdf_edit_fonts *fonts));
+int pdf_edit_fonts_of(struct pdf_document *document, struct pdf_edit_fonts **fonts);
+int pdf_edit_font_glyph(struct pdf_edit_fonts *fonts, unsigned file, uint32_t character, unsigned *glyph);
+int pdf_edit_font_present(struct pdf_edit_fonts *fonts, unsigned file);
+int pdf_edit_font_advance(struct pdf_edit_fonts *fonts, unsigned file, unsigned glyph, double *ems);
+int pdf_edit_font_object(struct pdf_edit_fonts *fonts, unsigned file, struct pdf_object **font);
+int pdf_edit_font_read(unsigned file, unsigned char **data, size_t *size);
+const char *pdf_edit_font_name(unsigned file);
+
+/* The subset of a TrueType font a document embeds, and the font's embedding permission (subset.c, ws175-p005). */
+int pdf_truetype_subset(const unsigned char *data, size_t size, const unsigned char *used, size_t glyph_count, unsigned char **out, size_t *out_size);
+int pdf_truetype_permission(const unsigned char *data, size_t size, int *allowed, int *whole);
+struct pdf_truetype_metrics {
+	unsigned units_per_em;
+	int box[4];
+	int ascent;
+	int descent;
+	int cap_height;
+	int fixed;
+	unsigned metrics_count;
+	unsigned glyphs;
+};
+int pdf_truetype_metrics(const unsigned char *data, size_t size, struct pdf_truetype_metrics *metrics);
+int pdf_truetype_advance(const unsigned char *data, size_t size, unsigned glyph, unsigned *advance);
+
 /* A PNG whose compressed rows a PDF image takes as they are, and the check of such rows (intake.c, ws175-p006). */
 int pdf_png_rows(const unsigned char *png, size_t size, size_t *width, size_t *height, int *components, unsigned char **rows, size_t *length);
 int pdf_png_check_rows(const unsigned char *rows, size_t length, size_t width, size_t height, int components);
 
 /* The editor's new content (editor.c). */
 struct pdf_buffer;
-int pdf_editor_content(const struct pdf_page_editor *editor, size_t hidden, const char *prefix, const size_t *names, struct pdf_buffer *out);
+int pdf_editor_content(const struct pdf_page_editor *editor, size_t hidden, const char *prefix, const size_t *names, const char *font_prefix, struct pdf_buffer *out);
 
 #endif /* LIBPDF_INTERNAL_H */

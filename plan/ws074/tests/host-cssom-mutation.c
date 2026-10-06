@@ -47,7 +47,7 @@ main(
 	int printed;
 
 	/* Ordinary checked-in fonts supply real layout without a fixture implementation. */
-	paths.sans = "userland/desktop/fonts/Inter.ttf";
+	paths.sans = "userland/desktop/fonts/Mahora-Regular.ttf";
 	paths.mono = "userland/desktop/fonts/JetBrainsMono-Regular.ttf";
 	paths.fallback = "userland/desktop/fonts/DroidSansFallbackFull.ttf";
 	status = page_create(&page, __builtin_frame_address(0));

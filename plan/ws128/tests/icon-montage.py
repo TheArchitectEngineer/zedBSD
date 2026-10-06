@@ -12,7 +12,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-FONT = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+FONT = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 
 # The standard applications of App Home (userland/desktop/wayland/apps.conf): name, picture (icons.h's order from
 # GLASS_ICON_FIRST_APP, the names of icon_app_names), colour.

@@ -83,7 +83,7 @@ def run_case(program, base, path, expect, guest, ca=None, dump="dom"):
     options = ["--async"] if ASYNC else []
     if dump != "dom" and not guest:
         fonts = os.path.join(ROOT, "userland/desktop/fonts")
-        options += ["--font=" + os.path.join(fonts, "Inter.ttf"), "--mono-font=" + os.path.join(fonts, "JetBrainsMono-Regular.ttf"),
+        options += ["--font=" + os.path.join(fonts, "Mahora-Regular.ttf"), "--mono-font=" + os.path.join(fonts, "JetBrainsMono-Regular.ttf"),
                     "--fallback-font=" + os.path.join(fonts, "DroidSansFallbackFull.ttf")]
     if ca is not None:
         options.append("--ca-file=" + ca)

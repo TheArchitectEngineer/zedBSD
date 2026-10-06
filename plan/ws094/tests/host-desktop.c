@@ -605,7 +605,7 @@ check_partial(
 	}
 
 	/* The fonts, a 1280x766 canvas and the model in the desktop mode. */
-	error = fm_text_open(&text, "build/ws035-fonts/Inter.ttf", NULL);
+	error = fm_text_open(&text, "build/ws035-fonts/Mahora-Regular.ttf", NULL);
 	check(error == 0, "partial: the font");
 	if (error != 0)
 		return;
@@ -754,7 +754,7 @@ check_label(void)
 	int error;
 
 	/* The desktop's font (the fallback for the Japanese name). */
-	error = fm_text_open(&text, "build/ws035-fonts/Inter.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
+	error = fm_text_open(&text, "build/ws035-fonts/Mahora-Regular.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
 	check(error == 0, "label: the fonts");
 	if (error != 0)
 		return;

@@ -39,4 +39,4 @@ python3 tools/build/check-dynamic-elf.py --machine "$machine" --role application
 # The text fonts the desktop installs (userland/desktop/wayland), as for the
 # text probe; the colour emoji font comes with the noto-color-emoji package.
 fonts=userland/desktop/fonts
-echo "ZEDBSD_TEST_EXTRA_FILES=--file /usr/bin/pango-probe=$work/pango-probe --mode /usr/bin/pango-probe=0755 --file /usr/share/fonts/keiland.ttf=$PWD/$fonts/Inter.ttf --file /usr/share/fonts/keiland-mono.ttf=$PWD/$fonts/JetBrainsMono-Regular.ttf --file /usr/share/fonts/keiland-fallback.ttf=$PWD/$fonts/DroidSansFallbackFull.ttf"
+echo "ZEDBSD_TEST_EXTRA_FILES=--file /usr/bin/pango-probe=$work/pango-probe --mode /usr/bin/pango-probe=0755 --file /usr/share/fonts/keiland.ttf=$PWD/$fonts/Mahora-Regular.ttf --file /usr/share/fonts/keiland-mono.ttf=$PWD/$fonts/JetBrainsMono-Regular.ttf --file /usr/share/fonts/keiland-fallback.ttf=$PWD/$fonts/DroidSansFallbackFull.ttf"

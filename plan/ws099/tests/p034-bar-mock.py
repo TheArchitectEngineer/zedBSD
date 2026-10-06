@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-INTER = os.path.join(ROOT, 'userland/desktop/fonts/Inter.ttf')
+INTER = os.path.join(ROOT, 'userland/desktop/fonts/Mahora-Regular.ttf')
 JAPANESE = os.path.join(ROOT, 'userland/desktop/fonts/DroidSansFallbackFull.ttf')
 WALLPAPERS = os.path.join(ROOT, 'userland/desktop/keiland/wallpapers')
 

@@ -44,7 +44,7 @@ def render_ours(program, url, width, height, out):
     fonts = os.path.join(ROOT, "userland/desktop/fonts")
     ppm = out + ".ppm"
     command = [program, "--render", "--output=" + ppm, "--width=%d" % width, "--height=%d" % height,
-               "--font=" + os.path.join(fonts, "Inter.ttf"),
+               "--font=" + os.path.join(fonts, "Mahora-Regular.ttf"),
                "--mono-font=" + os.path.join(fonts, "JetBrainsMono-Regular.ttf"),
                "--fallback-font=" + os.path.join(fonts, "DroidSansFallbackFull.ttf"), url]
     result = subprocess.run(command, capture_output=True, text=True, timeout=120)

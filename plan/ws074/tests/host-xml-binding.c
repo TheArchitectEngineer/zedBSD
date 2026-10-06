@@ -78,7 +78,7 @@ main(
 	int printed;
 
 	/* Real layout metrics and Page initialization use the production embedding. */
-	paths.sans = "userland/desktop/fonts/Inter.ttf";
+	paths.sans = "userland/desktop/fonts/Mahora-Regular.ttf";
 	paths.mono = "userland/desktop/fonts/JetBrainsMono-Regular.ttf";
 	paths.fallback = "userland/desktop/fonts/DroidSansFallbackFull.ttf";
 	status = page_create(&page, __builtin_frame_address(0));

@@ -509,6 +509,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー:「Interの削除はお願いします」→ Q1 が Inter.ttf と Inter-OFL.txt を git rm、試験・道具の 61 file の Inter.ttf の参照を Mahora-Regular.ttf に、licenses-index を更新（main f657b82f3）。履歴の証拠の json・md は元のまま。WS074 の Chrome との画素の比較の試験は font が変わったので基準が変わる（WS074 の描画の改善は止めたまま）。
 - 2026-10-06 ユーザー: 最大化の時に compositor が中身の rect を四方に 4 px（[ws099-p038](ws099/phase038/phase.md)、スクショを見せる）。**px は既定の DPI での論理 px**（後で DPI scaling を入れる）。テキスト入力のある全ての app の IME の受け付けの確認と、libkeiland の UI 部品でない自前の text box の洗い出し（理由が無ければ libkeiland の部品へ）。Mahora の採用は「うまくいったと思います。見た目がとてもいいです。」
 - 2026-10-06 ユーザー（クリック）: WS131 の p021〜p026 を「全部進める」（p021 kwl_ の改名、p022 log の接頭辞 KWL と試験 201 本、p025 browser の shell の窓（WS074 の描画は止めたまま）、p023 互換の除去、p026 公開の header の移動（sysroot の変更は Q1 が toolchain の lock を外して一人で流す）、p024 全文規約と 3 OS の回帰）。q811 で keiland-os-boundary の B2 を D4 の許可の表の拡張（compositor が libkeiland の kl_tr* を使う）で解決 → ユーザーに報告。
 - 2026-10-06 ユーザー: 全ての app の窓の中身の padding を 0 に（title bar と同じ幅）、title bar と中身の間の高さは compositor の定数で全 app 同一 → [ws090-p021](ws090/phase021/phase.md)（q813、P1）。画像は build/review/ に複写し project の top からの相対 path で見せる（remote control のため）。

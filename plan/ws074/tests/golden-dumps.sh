@@ -26,10 +26,10 @@ while [ $# -gt 0 ]; do
 done
 mkdir -p plan/ws074/tests/golden build/ws074-dumps
 fonts=userland/desktop/fonts
-if [ ! -f $fonts/Inter.ttf ]; then
+if [ ! -f $fonts/Mahora-Regular.ttf ]; then
 	fonts=userland/desktop/fonts
 fi
-[ -f $fonts/Inter.ttf ] || { echo "golden-dumps: comparison fonts were not found"; exit 1; }
+[ -f $fonts/Mahora-Regular.ttf ] || { echo "golden-dumps: comparison fonts were not found"; exit 1; }
 failed=0
 checked=0
 for kind in "$@"; do
@@ -37,7 +37,7 @@ for kind in "$@"; do
 		name=$(basename "$page" .html)
 		golden=plan/ws074/tests/golden/$name.$kind
 		out=build/ws074-dumps/$name.$kind
-		"$program" --dump="$kind" --font=$fonts/Inter.ttf --mono-font=$fonts/JetBrainsMono-Regular.ttf \
+		"$program" --dump="$kind" --font=$fonts/Mahora-Regular.ttf --mono-font=$fonts/JetBrainsMono-Regular.ttf \
 		    --fallback-font=$fonts/DroidSansFallbackFull.ttf "$page" > "$out"
 		if [ $update = 1 ]; then
 			cp "$out" "$golden"
