@@ -1,0 +1,618 @@
+{
+  "family": "Font1",
+  "style": "Regular",
+  "version": "0.100",
+  "font": "Font1-Regular.ttf",
+  "font_sha256": "9d63a1036754ba0dbc307673186b478b3c09c6eb3ba432d380c2087a0fd4fac3",
+  "units_per_em": 2048,
+  "advance_units": 1229,
+  "ascent_units": 1638,
+  "descent_units": -410,
+  "encoding": "Unicode / ISO 10646 semantics",
+  "coverage": "U+0020-U+007E (95 printable ASCII characters)",
+  "glyph_count": 96,
+  "missing_glyph": ".notdef",
+  "cmap_subtables": [
+    {
+      "platform": 0,
+      "encoding": 3,
+      "format": 4
+    },
+    {
+      "platform": 0,
+      "encoding": 4,
+      "format": 12
+    },
+    {
+      "platform": 3,
+      "encoding": 1,
+      "format": 4
+    },
+    {
+      "platform": 3,
+      "encoding": 10,
+      "format": 12
+    }
+  ],
+  "trace": {
+    "alpha_threshold": 128,
+    "turdsize": 2,
+    "alphamax": 1.0,
+    "opttolerance_pixels": 0.5
+  },
+  "cubic_to_quadratic_error_units": 1.0,
+  "hinting": "No manually authored TrueType hint instructions",
+  "fonttools_version": "4.57.0",
+  "svg_sources": [
+    {
+      "codepoint": "U+0020",
+      "glyph": "space",
+      "file": "svg/U0020.svg",
+      "sha256": "17ea7d45458c537283936957b3a00f9be18bfbdd2f1a7cf96497365c6e5d4dfe"
+    },
+    {
+      "codepoint": "U+0021",
+      "glyph": "exclam",
+      "file": "svg/U0021.svg",
+      "sha256": "5672c179e4413090dd7d6c6b148288c8873edf91322f90dba516c29845fa0a85"
+    },
+    {
+      "codepoint": "U+0022",
+      "glyph": "quotedbl",
+      "file": "svg/U0022.svg",
+      "sha256": "ed34d27541d6d88a826fca99b7141f377e662a969ae4eaa71bfb17185fd5189b"
+    },
+    {
+      "codepoint": "U+0023",
+      "glyph": "numbersign",
+      "file": "svg/U0023.svg",
+      "sha256": "a8a248ea8dc35a57aa3b9d504567dd626fda5027fc760aed176a0154d970a2a7"
+    },
+    {
+      "codepoint": "U+0024",
+      "glyph": "dollar",
+      "file": "svg/U0024.svg",
+      "sha256": "a5f67f7e92d884dad6f16e2b47113740dd326e58be3a370960380146ec803160"
+    },
+    {
+      "codepoint": "U+0025",
+      "glyph": "percent",
+      "file": "svg/U0025.svg",
+      "sha256": "074c7b10815f56b0bb1f32c4994721cad762e3556f60fb14d2e2a4668c6f7243"
+    },
+    {
+      "codepoint": "U+0026",
+      "glyph": "ampersand",
+      "file": "svg/U0026.svg",
+      "sha256": "b2122c9a1197700b6bb48cc3ba4a3c07a14b61163dcdf6e86b74fbdddb7a988e"
+    },
+    {
+      "codepoint": "U+0027",
+      "glyph": "quotesingle",
+      "file": "svg/U0027.svg",
+      "sha256": "2d43942c13ed29bb136b0a9844b445bbca6a2e744208fac26743e6577d45380c"
+    },
+    {
+      "codepoint": "U+0028",
+      "glyph": "parenleft",
+      "file": "svg/U0028.svg",
+      "sha256": "a73b5f94599547e08b89e62c9be5c5ec80e5d55eccaa9fd6f082a53b562a1003"
+    },
+    {
+      "codepoint": "U+0029",
+      "glyph": "parenright",
+      "file": "svg/U0029.svg",
+      "sha256": "cdf1f71fcaaa74a53013014ee10b231fdc5cdce4f10f090c62317ab537607550"
+    },
+    {
+      "codepoint": "U+002A",
+      "glyph": "asterisk",
+      "file": "svg/U002A.svg",
+      "sha256": "cb7c585bf9c76813d227dc51928206cd658a103c71caafdb5a86e8fa10e2fdd9"
+    },
+    {
+      "codepoint": "U+002B",
+      "glyph": "plus",
+      "file": "svg/U002B.svg",
+      "sha256": "0599f3dc5b25bcd43bf2639b290a0746bfcb2cf3a1338eaac8a8f352be15c292"
+    },
+    {
+      "codepoint": "U+002C",
+      "glyph": "comma",
+      "file": "svg/U002C.svg",
+      "sha256": "c9a54096bad255197f8b3bd1456ef654b62464617a15968c81470fdd14d9c401"
+    },
+    {
+      "codepoint": "U+002D",
+      "glyph": "hyphen",
+      "file": "svg/U002D.svg",
+      "sha256": "28a7452a48960ff7b6deaa5080d39bbcfa9de1f2f959e72e8f6eed753a1c4bc2"
+    },
+    {
+      "codepoint": "U+002E",
+      "glyph": "period",
+      "file": "svg/U002E.svg",
+      "sha256": "b8e3247f9b72e98222ddcf1cc58621f51f1095c4e256a9f364c5b40bd27d07dc"
+    },
+    {
+      "codepoint": "U+002F",
+      "glyph": "slash",
+      "file": "svg/U002F.svg",
+      "sha256": "c7c84f216d2a4b8248640f8fb2c062626ea7b1de9f7fa388ffccdd0be45e1e4c"
+    },
+    {
+      "codepoint": "U+0030",
+      "glyph": "zero",
+      "file": "svg/U0030.svg",
+      "sha256": "8bd53a1e2a9891575bba06f219f330cef5760f5bd7d154537f64e7fc49fda202"
+    },
+    {
+      "codepoint": "U+0031",
+      "glyph": "one",
+      "file": "svg/U0031.svg",
+      "sha256": "7285c836c55408ea0c1fb3045fc152fb86ba004adcc9425cbf7a350ce67586e5"
+    },
+    {
+      "codepoint": "U+0032",
+      "glyph": "two",
+      "file": "svg/U0032.svg",
+      "sha256": "4375e7bacb056acc0071863fc200a2ddbe9d9c9b0b728f950a1a387d2cc64d0c"
+    },
+    {
+      "codepoint": "U+0033",
+      "glyph": "three",
+      "file": "svg/U0033.svg",
+      "sha256": "6e38e45ea20b42a018d420e1b126f7c2c4bf9cd4416260dd993290fc6f4f3e8b"
+    },
+    {
+      "codepoint": "U+0034",
+      "glyph": "four",
+      "file": "svg/U0034.svg",
+      "sha256": "5ff405913bfd2ebd628483c99e697930e89abe1c5b6685b5527a235e70eff30b"
+    },
+    {
+      "codepoint": "U+0035",
+      "glyph": "five",
+      "file": "svg/U0035.svg",
+      "sha256": "91484a43c6c42baf5946bad4d3785514b84752234c08c8a053164eea3ea03ddd"
+    },
+    {
+      "codepoint": "U+0036",
+      "glyph": "six",
+      "file": "svg/U0036.svg",
+      "sha256": "7a9531a4f9a620b44fb75a8f9d7b431b2d51b8245b2d4d49296209cfe19120a7"
+    },
+    {
+      "codepoint": "U+0037",
+      "glyph": "seven",
+      "file": "svg/U0037.svg",
+      "sha256": "51f1f1f6f9d4bb9a0481dc3908f2899c2f37d5fd73427b092aa1292eba447a41"
+    },
+    {
+      "codepoint": "U+0038",
+      "glyph": "eight",
+      "file": "svg/U0038.svg",
+      "sha256": "22ac8426210b727e328f03c1c93bd1c048d8511384d356ab182e6ca9b2c78393"
+    },
+    {
+      "codepoint": "U+0039",
+      "glyph": "nine",
+      "file": "svg/U0039.svg",
+      "sha256": "3ab8ced4c8bbded9c823169750f6e7f39812d6780eb3aab8e4f9a6277e7d206e"
+    },
+    {
+      "codepoint": "U+003A",
+      "glyph": "colon",
+      "file": "svg/U003A.svg",
+      "sha256": "5b404e300fa371fbc903e8fa75d694ef1fe2c6870727e12f4afff36d558a27b6"
+    },
+    {
+      "codepoint": "U+003B",
+      "glyph": "semicolon",
+      "file": "svg/U003B.svg",
+      "sha256": "cdb40b93fd450ccf8e64c38c8588f4fd339d519c8c996c9138ae4bf05ad27e80"
+    },
+    {
+      "codepoint": "U+003C",
+      "glyph": "less",
+      "file": "svg/U003C.svg",
+      "sha256": "6cfbb02aa8d52ae4805b3095d5605ef38bdfa0868f5004c508ddf1d7a8dc7cab"
+    },
+    {
+      "codepoint": "U+003D",
+      "glyph": "equal",
+      "file": "svg/U003D.svg",
+      "sha256": "d3159b74dabc5edba455c9ac1b4bb8d29401d2a269d6192d34b272d4f3934583"
+    },
+    {
+      "codepoint": "U+003E",
+      "glyph": "greater",
+      "file": "svg/U003E.svg",
+      "sha256": "2d07e5311fa111e5b1578f9f1bb0fec58ab4c09bc967517de3fce17bff10aca1"
+    },
+    {
+      "codepoint": "U+003F",
+      "glyph": "question",
+      "file": "svg/U003F.svg",
+      "sha256": "6255965f4d3b1665592ab0b84b6dc5cceca762f2ecc1c57f88307c9ecd725a9b"
+    },
+    {
+      "codepoint": "U+0040",
+      "glyph": "at",
+      "file": "svg/U0040.svg",
+      "sha256": "87478562f99affa3a0fce99d7edfe890c68da67f28956b75ebcfcf9e944bb151"
+    },
+    {
+      "codepoint": "U+0041",
+      "glyph": "A",
+      "file": "svg/U0041.svg",
+      "sha256": "b6477e7d1c8d5dec0cf6bdd415f0d34e0b8425cc2ae75141f035a86bdcca9d80"
+    },
+    {
+      "codepoint": "U+0042",
+      "glyph": "B",
+      "file": "svg/U0042.svg",
+      "sha256": "94a8551897015f25c80f76c741a4408d5e87bff0801c6a7a70021f4da80c3d32"
+    },
+    {
+      "codepoint": "U+0043",
+      "glyph": "C",
+      "file": "svg/U0043.svg",
+      "sha256": "28aba9ff99c0412f90f27ee78dd7b5caec63868f645fe047f304728c1e57af32"
+    },
+    {
+      "codepoint": "U+0044",
+      "glyph": "D",
+      "file": "svg/U0044.svg",
+      "sha256": "48db253cd6f59ff0ca67c792c1701836dfe01acef4f66760f6496d9a398291ef"
+    },
+    {
+      "codepoint": "U+0045",
+      "glyph": "E",
+      "file": "svg/U0045.svg",
+      "sha256": "ae4c3286da548df1b9853d8994841e61ff954b182dd5ab274f0ceaa5fc2676e7"
+    },
+    {
+      "codepoint": "U+0046",
+      "glyph": "F",
+      "file": "svg/U0046.svg",
+      "sha256": "f9bd1cfe52b9ae13e5d2e571c855d00d042722a24887191de1091d5a5d93cd9e"
+    },
+    {
+      "codepoint": "U+0047",
+      "glyph": "G",
+      "file": "svg/U0047.svg",
+      "sha256": "679ff9e3dcc91bd07553a205c9b180bd7621ab4b2ca36541924c56539f68e0c7"
+    },
+    {
+      "codepoint": "U+0048",
+      "glyph": "H",
+      "file": "svg/U0048.svg",
+      "sha256": "7b94083c5d671dd6491045caf7284f8835d9fe687b4f97e634f1afb1cbcadf5d"
+    },
+    {
+      "codepoint": "U+0049",
+      "glyph": "I",
+      "file": "svg/U0049.svg",
+      "sha256": "9773846bf6b7d8d991474be183c7fc7b1b1e6493c096c4a35b215052c463d78f"
+    },
+    {
+      "codepoint": "U+004A",
+      "glyph": "J",
+      "file": "svg/U004A.svg",
+      "sha256": "a2b166dce6874a00cbaf28b6f134a6e8adb6c384d09358b686f2d6dbe4ff7d03"
+    },
+    {
+      "codepoint": "U+004B",
+      "glyph": "K",
+      "file": "svg/U004B.svg",
+      "sha256": "ec9b35d6a4056fc10b0cdbf695a387957d227a8bf07aa2d95f8f06d221ccbdee"
+    },
+    {
+      "codepoint": "U+004C",
+      "glyph": "L",
+      "file": "svg/U004C.svg",
+      "sha256": "76d658bd71c38b43b636e1773206b5bba2155854106db7da47fea3455ba0afbc"
+    },
+    {
+      "codepoint": "U+004D",
+      "glyph": "M",
+      "file": "svg/U004D.svg",
+      "sha256": "e260a925da8bcf4efb501f217036fda6e6ca72881375f4c5912efe03316ef587"
+    },
+    {
+      "codepoint": "U+004E",
+      "glyph": "N",
+      "file": "svg/U004E.svg",
+      "sha256": "393c7f7488acd3c50a2b22f2afa5f86799d376ef00690cbd37275be509bfe846"
+    },
+    {
+      "codepoint": "U+004F",
+      "glyph": "O",
+      "file": "svg/U004F.svg",
+      "sha256": "8a5695453a5860185d0a0bb485ccb496c3a8a4828f6a7cecb3b39bf30456f2c3"
+    },
+    {
+      "codepoint": "U+0050",
+      "glyph": "P",
+      "file": "svg/U0050.svg",
+      "sha256": "538d54404c194d39ad67b37b5327dd78b752010f796a2c1c459c40a2afbd6bee"
+    },
+    {
+      "codepoint": "U+0051",
+      "glyph": "Q",
+      "file": "svg/U0051.svg",
+      "sha256": "7984d34570dd97e3d345647c9a5098544781a1ceff12fe14d6da6a704f33fc8d"
+    },
+    {
+      "codepoint": "U+0052",
+      "glyph": "R",
+      "file": "svg/U0052.svg",
+      "sha256": "39b971d19c280d1326643ab11d9c35ce0659a641792235fbded281d00b88293e"
+    },
+    {
+      "codepoint": "U+0053",
+      "glyph": "S",
+      "file": "svg/U0053.svg",
+      "sha256": "94d94e6873bdda938bea4a46f905fc729943f8ffc7fab395e1e11379bd608758"
+    },
+    {
+      "codepoint": "U+0054",
+      "glyph": "T",
+      "file": "svg/U0054.svg",
+      "sha256": "a6556fdc75abea51d3b69e20cfaf63f79c6254a2bd9be20fcf7d6a1dfa758352"
+    },
+    {
+      "codepoint": "U+0055",
+      "glyph": "U",
+      "file": "svg/U0055.svg",
+      "sha256": "99e0616b79159c08cbe60361111c4103e3e3a6d24c6748f31a8342befab7ebd9"
+    },
+    {
+      "codepoint": "U+0056",
+      "glyph": "V",
+      "file": "svg/U0056.svg",
+      "sha256": "87ae916ce9ef7955af1f8900cae7e26261d728386375e217eea519f552fdbb9d"
+    },
+    {
+      "codepoint": "U+0057",
+      "glyph": "W",
+      "file": "svg/U0057.svg",
+      "sha256": "70546b38a875da272a85bec7e6e119cc92d5ce23118511807dacf41a6043fd60"
+    },
+    {
+      "codepoint": "U+0058",
+      "glyph": "X",
+      "file": "svg/U0058.svg",
+      "sha256": "7a5c9d30a5e106823d816b62a2fce2cfd7aa6764bcb8c66a5e4bbb27a563048b"
+    },
+    {
+      "codepoint": "U+0059",
+      "glyph": "Y",
+      "file": "svg/U0059.svg",
+      "sha256": "ee5f6d900912d3f1076e0025db658ec4a2f4c2b8aa0832264ec0c9602ed1f881"
+    },
+    {
+      "codepoint": "U+005A",
+      "glyph": "Z",
+      "file": "svg/U005A.svg",
+      "sha256": "71900efc0fa80ac8afb2389425f27ee22113ad13f65f06074e384741d98e875c"
+    },
+    {
+      "codepoint": "U+005B",
+      "glyph": "bracketleft",
+      "file": "svg/U005B.svg",
+      "sha256": "10c1610527551aed74b9c7b07261a58779c758db99526b433314861546cc8186"
+    },
+    {
+      "codepoint": "U+005C",
+      "glyph": "backslash",
+      "file": "svg/U005C.svg",
+      "sha256": "e0a0272cbd5c9abe5ec7a87f8b826f4384cec342d09ceb3ce976240acd0f265d"
+    },
+    {
+      "codepoint": "U+005D",
+      "glyph": "bracketright",
+      "file": "svg/U005D.svg",
+      "sha256": "99af45fa2f38e93d7e591a2f037b52a234a272af49b7ce2ab0db5841bb6ac122"
+    },
+    {
+      "codepoint": "U+005E",
+      "glyph": "asciicircum",
+      "file": "svg/U005E.svg",
+      "sha256": "b132401f202ed721363aac64dd4f8fd31b22a08160eae53f2e5658e9512c59db"
+    },
+    {
+      "codepoint": "U+005F",
+      "glyph": "underscore",
+      "file": "svg/U005F.svg",
+      "sha256": "6aecf1981241bba1c31e2d8f85cd70d208ec54e8c9b6ebd8fb8312ae267e6209"
+    },
+    {
+      "codepoint": "U+0060",
+      "glyph": "grave",
+      "file": "svg/U0060.svg",
+      "sha256": "c576d491b34170e01ca3ed6bef6e4d696fc8072dbe74f2cf9ad9b4d5f6776395"
+    },
+    {
+      "codepoint": "U+0061",
+      "glyph": "a",
+      "file": "svg/U0061.svg",
+      "sha256": "1b1f14a36100f0595f5bf3b4b9818824c9c8855d10634a404b5b0da210ecdf8e"
+    },
+    {
+      "codepoint": "U+0062",
+      "glyph": "b",
+      "file": "svg/U0062.svg",
+      "sha256": "97111892700417a91559245dea31d45b781d7933d9dc90f4e292359d6117d855"
+    },
+    {
+      "codepoint": "U+0063",
+      "glyph": "c",
+      "file": "svg/U0063.svg",
+      "sha256": "760868de9be06e119583caf4bcecc71cde7a296d6b20b7c2c3065b3c4a0a6ff9"
+    },
+    {
+      "codepoint": "U+0064",
+      "glyph": "d",
+      "file": "svg/U0064.svg",
+      "sha256": "04cec494962917298142aba06835656669b514ee857e6d245a85d3ababe690fb"
+    },
+    {
+      "codepoint": "U+0065",
+      "glyph": "e",
+      "file": "svg/U0065.svg",
+      "sha256": "6febb11235b6da6f6a1e6114e02f9bbff05f1f580684debbdec55f464b27c586"
+    },
+    {
+      "codepoint": "U+0066",
+      "glyph": "f",
+      "file": "svg/U0066.svg",
+      "sha256": "10eeb8fc3c5a6927bbce52e17b3d78d4ca858294b08a73ef7982c20232f07074"
+    },
+    {
+      "codepoint": "U+0067",
+      "glyph": "g",
+      "file": "svg/U0067.svg",
+      "sha256": "a0a5d285650ae27951b83c4226ae8f15e83e88f07d27e96fbd3f8c42b636e954"
+    },
+    {
+      "codepoint": "U+0068",
+      "glyph": "h",
+      "file": "svg/U0068.svg",
+      "sha256": "7a541a4fbd85ba7be7fd1fe624214713702e6183bf8e74a0f5639103151e991d"
+    },
+    {
+      "codepoint": "U+0069",
+      "glyph": "i",
+      "file": "svg/U0069.svg",
+      "sha256": "9f3a4cf37b1e958eb4c2726da898b0837724960e997451723739571881ccdaa6"
+    },
+    {
+      "codepoint": "U+006A",
+      "glyph": "j",
+      "file": "svg/U006A.svg",
+      "sha256": "ac544b6e1f134e9945134e43086bd0cdc893cebb04ae56e344e0740b625e6ae5"
+    },
+    {
+      "codepoint": "U+006B",
+      "glyph": "k",
+      "file": "svg/U006B.svg",
+      "sha256": "35d8786241b96888b5f62a7e4625c2b252607d2e6edde87e0fb69db62b50f828"
+    },
+    {
+      "codepoint": "U+006C",
+      "glyph": "l",
+      "file": "svg/U006C.svg",
+      "sha256": "34479db7735ba6e33f45099f1897de4dc61885cc0e06a61bc0ff577f097eb57c"
+    },
+    {
+      "codepoint": "U+006D",
+      "glyph": "m",
+      "file": "svg/U006D.svg",
+      "sha256": "7b1d9a881ddcef93e810ea7b8c97e47201ee423f8dedf3a4cebc749a3c5ba031"
+    },
+    {
+      "codepoint": "U+006E",
+      "glyph": "n",
+      "file": "svg/U006E.svg",
+      "sha256": "27030865b1b2c14186990b98e43cfcf95b03dc9586448dc0620bc9bf8589f023"
+    },
+    {
+      "codepoint": "U+006F",
+      "glyph": "o",
+      "file": "svg/U006F.svg",
+      "sha256": "0ccd525283a6e7543a3fb2222c2042f708a0142ec0aaba6aa6856ccdc02e3c98"
+    },
+    {
+      "codepoint": "U+0070",
+      "glyph": "p",
+      "file": "svg/U0070.svg",
+      "sha256": "3821982b9ef060d044455010f9bc1dbc1233972de12b2b58e2acbcdbf9e5a83f"
+    },
+    {
+      "codepoint": "U+0071",
+      "glyph": "q",
+      "file": "svg/U0071.svg",
+      "sha256": "35d975d1dd98c5011affcb2e90b34003c4ff2e4e7041687549dc9f67bc162cba"
+    },
+    {
+      "codepoint": "U+0072",
+      "glyph": "r",
+      "file": "svg/U0072.svg",
+      "sha256": "78e4060d362045a06157f3b0c0a942b85a065cee58e1d0c2106642221bfbfdd3"
+    },
+    {
+      "codepoint": "U+0073",
+      "glyph": "s",
+      "file": "svg/U0073.svg",
+      "sha256": "5da989999710f42908bf1b50a00f94a33ae53109c901d74d3f61e4fbc2061ec4"
+    },
+    {
+      "codepoint": "U+0074",
+      "glyph": "t",
+      "file": "svg/U0074.svg",
+      "sha256": "9f92257d6f209e91c5e47417b482af8a7489b82d2a22e39fcfc7a76418d6fdbf"
+    },
+    {
+      "codepoint": "U+0075",
+      "glyph": "u",
+      "file": "svg/U0075.svg",
+      "sha256": "7554736dff0f991d50158e13e5f5a334669287b975eebe5dfe8e0b1a6afc213a"
+    },
+    {
+      "codepoint": "U+0076",
+      "glyph": "v",
+      "file": "svg/U0076.svg",
+      "sha256": "21215d806eea66207dce4114d5bdfd126c93ab06ce09ce9c4e6ca9dbe0e3ebd7"
+    },
+    {
+      "codepoint": "U+0077",
+      "glyph": "w",
+      "file": "svg/U0077.svg",
+      "sha256": "4a09daf3870e6b46d27c53d036c939c29177b2ffef399bf858a3cf14ad946c81"
+    },
+    {
+      "codepoint": "U+0078",
+      "glyph": "x",
+      "file": "svg/U0078.svg",
+      "sha256": "78c1b9bffab73c4478ea9ab37ef475ff98f4e3b5a2b60498c03254f2e6b8a818"
+    },
+    {
+      "codepoint": "U+0079",
+      "glyph": "y",
+      "file": "svg/U0079.svg",
+      "sha256": "e7ce7e09539b5f419c7ee37669b546531eddaf12c5443b3f3d83285e9e8bb472"
+    },
+    {
+      "codepoint": "U+007A",
+      "glyph": "z",
+      "file": "svg/U007A.svg",
+      "sha256": "2edc6af9dbeb9aab7217e6e603bb4ba177184dfa97ae6d18d8cb5795af12e2b5"
+    },
+    {
+      "codepoint": "U+007B",
+      "glyph": "braceleft",
+      "file": "svg/U007B.svg",
+      "sha256": "99eaab9a2f391e98d472ace2da9106559e8319c8bf31ad904331600fef010a91"
+    },
+    {
+      "codepoint": "U+007C",
+      "glyph": "bar",
+      "file": "svg/U007C.svg",
+      "sha256": "4e073fdc7163cc5282c706bc91b389825afc87b57ab7ea27c0df143a183b205a"
+    },
+    {
+      "codepoint": "U+007D",
+      "glyph": "braceright",
+      "file": "svg/U007D.svg",
+      "sha256": "a26a59fbf57c1ca01feeb2d913bd133d43915a12e70d959681c793ce3d0f7a71"
+    },
+    {
+      "codepoint": "U+007E",
+      "glyph": "asciitilde",
+      "file": "svg/U007E.svg",
+      "sha256": "c5cb5a65ceefd614bf5db5579ea6c9f795ed81f1722cc4402c261ebe43858877"
+    }
+  ]
+}
