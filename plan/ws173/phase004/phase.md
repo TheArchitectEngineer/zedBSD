@@ -2,7 +2,7 @@
 
 # ws173-p004: AAT のシナリオ（今日の機能）、suite、runner と実行の記録の形
 
-Status: in-progress・test-wait（T1-202c、2026-10-06 q784: smoke の fail 3 件は helper の不具合、P2 7a442548 → main f4b86474 で直した。T1-202c の流し直し待ち）
+Status: cleared（2026-10-06 Q1 判定: T1-202c の smoke 8 本 pass、full 79 本の判定の一覧（pass 36・fail 13・needs-person 18・not-run 8・未判定 4）。full の fail は q788 で切り分け）
 Disposition: normal
 Parent: [WS173](../ws.md)
 Queue: Q1 の指示（2026-10-05 夜、P2 g17 の Task 1、最優先）

@@ -46,6 +46,28 @@
 #define TCP_PSH 0x08U
 #define TCP_ACK 0x10U
 #define TCP_MSS 1024U
+
+/*
+ * The largest segment this end takes, which the SYN offers (BUG-222): an
+ * Ethernet frame's 1500 bytes less the IP and TCP headers.  It fits one
+ * packet's storage with its headers.  The segments this end sends stay
+ * TCP_MSS, which every interface it is used on carries.
+ */
+#define TCP_RECEIVE_MSS 1460U
+
+/*
+ * How many packets a socket's receive queue may hold.  The window is a
+ * full segment for each one still free, so this is what bounds a transfer
+ * over a link with any delay (BUG-222: the common limit of 8 was an 8 KB
+ * window, about 1 MB/s on a LAN).  44 segments are the 64 KB the queue's
+ * bytes allow, and the larger pool of the 64-bit machines has room for
+ * them; the small pool of the 32-bit boards keeps the common limit.
+ */
+#if PACKET_BUF_POOL_COUNT >= 256U
+#define TCP_RECEIVE_PACKETS 44U
+#else
+#define TCP_RECEIVE_PACKETS SOCKET_RECEIVE_MESSAGES_MAX
+#endif
 #define TCP_EPHEMERAL_FIRST 49152U
 /* The initial retransmission timeout of RFC 6298, one second. */
 #define TCP_INITIAL_RTO KERN_MS_TO_TICKS(1000U)
@@ -192,6 +214,9 @@ tcp_socket_create(
 	inet_socket_object_init(&endpoint->tcp.inet, SOCK_STREAM, IPPROTO_TCP,
 	    &tcp_ops);
 	endpoint->tcp.state = TCP_CLOSED;
+
+	/* Its receive queue takes the packets the window it offers counts (BUG-222). */
+	endpoint->tcp.inet.socket.receive_packet_limit = TCP_RECEIVE_PACKETS;
 	irq = spin_lock_irqsave(&tcp_registry_lock);
 
 	endpoint->next = tcp_sockets;
@@ -887,9 +912,10 @@ tcp_send_segment_at(
 
 	/*
 	 * A SYN carries the maximum segment size this end takes: one receive
-	 * slot, TCP_MSS bytes.  The receive window counts a full segment per
-	 * free slot, so a peer that sent larger segments would find it closing
-	 * faster than it opens; without the option a peer assumes its own size.
+	 * slot, TCP_RECEIVE_MSS bytes.  The receive window counts a full segment
+	 * per free slot, so a peer that sent larger segments would find it
+	 * closing faster than it opens; without the option a peer assumes its
+	 * own size.
 	 */
 	options = 0;
 	if ((flags & TCP_SYN) != 0)
@@ -929,8 +955,8 @@ tcp_send_segment_at(
 		option = (uint8_t *)(tcp + 1);
 		option[0] = 2U;
 		option[1] = 4U;
-		option[2] = (uint8_t)(TCP_MSS >> 8);
-		option[3] = (uint8_t)(TCP_MSS & 0xffU);
+		option[2] = (uint8_t)(TCP_RECEIVE_MSS >> 8);
+		option[3] = (uint8_t)(TCP_RECEIVE_MSS & 0xffU);
 	}
 
 	window = tcp_receive_window(endpoint);
@@ -1909,10 +1935,10 @@ tcp_recvfrom(
 	 */
 	window = tcp_receive_window(endpoint);
 	update = 0;
-	if (endpoint->tcp.advertised_window < TCP_MSS && window >= TCP_MSS)
+	if (endpoint->tcp.advertised_window < TCP_RECEIVE_MSS && window >= TCP_RECEIVE_MSS)
 		update = 1;
-	else if (endpoint->tcp.advertised_window < 2U * TCP_MSS &&
-	    window >= (uint32_t)endpoint->tcp.advertised_window + 2U * TCP_MSS)
+	else if (endpoint->tcp.advertised_window < 2U * TCP_RECEIVE_MSS &&
+	    window >= (uint32_t)endpoint->tcp.advertised_window + 2U * TCP_RECEIVE_MSS)
 		update = 1;
 
 	if (update != 0 &&
@@ -1954,8 +1980,8 @@ tcp_receive_window(
 	if (socket->receive_packet_limit != 0) {
 		packets = socket->receive_packets < socket->receive_packet_limit ?
 		    socket->receive_packet_limit - socket->receive_packets : 0;
-		if (room > packets * TCP_MSS)
-			room = packets * TCP_MSS;
+		if (room > packets * TCP_RECEIVE_MSS)
+			room = packets * TCP_RECEIVE_MSS;
 	}
 
 	/* Clamps to what the header can carry. */

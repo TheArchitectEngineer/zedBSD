@@ -63,3 +63,5 @@ T1 への依頼（未実行）:
 - image: agent/p1 の commit（merge 後の main）で `plan/tools/guest/test-image.sh plan/ws170/tests/config-amd64-phone.mk BUILD`（CI の config 系、extra files 無しでも入ること）。
 - 試験と合否: (1) guest の `ls -l /usr/share/keiland/wallpaper.png /usr/share/keiland/wallpapers/` に wallpaper.png と Aurora・Dawn・Lagoon・Lakeside・Meadow・Twilight の 6 枚（0644）。(2) desktop の起動で Birch-Lake が既定の壁紙（PNG）。(3) Settings > Wallpaper に 7 枚の tile（PNG）、Lakeside と Aurora を選ぶとそれぞれ壁紙が変わる（PNG）、Kei の tile で既定に戻る。
 - 結果の返し先: Q1。
+
+2026-10-06 ユーザー:「その表現の認識が違うだけで、緑色の抽象的な背景はすでに入っていましたよ。」→ 「直線的に抽象化した版」は既に収録済みの緑の抽象の壁紙のこと。抽象版の探索は終了、新しく作らない。

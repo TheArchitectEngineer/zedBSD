@@ -38,7 +38,7 @@ for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userla
 done
 # The desktop's settings (WS135): libkeiland's cache and the settings' table, under a stand-in for kl_settings_*
 # without Wayland (plan/tools/settings/host-kl-settings.c: the compositor's keys in memory, a set in effect at once).
-for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c userland/desktop/settings-keys/settings-keys.c plan/tools/settings/host-kl-settings.c; do
+for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c userland/desktop/libkeiland/translate-follow.c userland/desktop/libkeiland/translate.c userland/desktop/settings-keys/settings-keys.c plan/tools/settings/host-kl-settings.c; do
 	object="$out/obj/shared-$(basename "$file" .c).o"
 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland -c "$file" -o "$object"
 	objects="$objects $object"

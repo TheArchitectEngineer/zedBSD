@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted). */
-#define KL_VERSION	38U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps). */
+#define KL_VERSION	39U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1238,7 +1238,9 @@ struct kl_network_ap {
  * loopback, its IPv4 address and netmask (empty when none), its hardware
  * address as text, its MTU, and the bytes it has received and sent; for a
  * wired one (KL_VERSION 29) how it is configured (KL_WIRED_*, unknown for
- * any other or an older compositor) and the router it was given.
+ * any other or an older compositor) and the router it was given; and
+ * (KL_VERSION 39) its link's speed in Mb/s, 0 while it is not known (or
+ * from an older compositor).
  */
 struct kl_network_link {
 	char name[KL_NETWORK_NAME_MAX];
@@ -1253,6 +1255,7 @@ struct kl_network_link {
 	uint64_t sent_bytes;
 	unsigned wired_mode;
 	char router[KL_NETWORK_ADDRESS_MAX];
+	unsigned link_mbps;
 };
 
 /* How a wired interface is configured (KL_VERSION 29). */

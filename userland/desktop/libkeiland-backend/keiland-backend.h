@@ -312,7 +312,8 @@ int kl_backend_network_set_scanning(struct kl_backend_network *network, unsigned
 /*
  * One interface: its name, whether it is up and has its link, whether it
  * is the loopback, its IPv4 address and netmask (empty when it has none),
- * its hardware address and MTU, and the bytes it has received and sent.
+ * its hardware address and MTU, the bytes it has received and sent, and
+ * its link's speed in Mb/s (0 while not known, BUG-222).
  */
 struct kl_backend_network_link {
 	char name[KL_BACKEND_NETWORK_NAME_MAX];
@@ -327,6 +328,7 @@ struct kl_backend_network_link {
 	uint64_t sent_bytes;
 	unsigned wired_mode;
 	char router[KL_BACKEND_NETWORK_ADDRESS_MAX];
+	unsigned link_mbps;
 };
 
 /*

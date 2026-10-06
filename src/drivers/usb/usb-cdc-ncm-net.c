@@ -46,7 +46,21 @@
 #define NCM_NOTIFICATION_SPEED_CHANGE	0x2aU
 #define NCM_NOTIFICATION_SIZE		16U
 #define NCM_NTB_BUFFER_SIZE		8192U
+
+/*
+ * The largest receive block asked of the device, and how many frames of
+ * one block are held for the stack.  A 64-bit machine's larger packet pool
+ * (packet-buf.h) takes a 16 KB block, ten full frames, and up to the 32 a
+ * block of small frames may carry, which would otherwise be refused whole
+ * (BUG-222); the small pool of the 32-bit boards keeps 8 KB and 8 frames.
+ */
+#if PACKET_BUF_POOL_COUNT >= 256U
+#define NCM_NTB_IN_SIZE			16384U
+#define NCM_RX_QUEUE_MAX		DRV_USB_CDC_NCM_MAX_RX_DATAGRAMS
+#else
+#define NCM_NTB_IN_SIZE			NCM_NTB_BUFFER_SIZE
 #define NCM_RX_QUEUE_MAX		8U
+#endif
 
 /*
  * Frames held while the one transmit transfer is busy.  The packet pool is
@@ -1379,6 +1393,9 @@ ncm_notification_process(
 	const uint8_t *notification = adapter->notification_buffer;
 	size_t length = drv_usb_urb_actual_length(adapter->notification_urb);
 	uint16_t interface_number;
+	uint32_t downstream;
+	uint32_t upstream;
+	int connected;
 
 	/* Checks the drv usb urb status result. */
 	if (drv_usb_urb_status(adapter->notification_urb) !=
@@ -1407,16 +1424,32 @@ ncm_notification_process(
 	/* Checks the ncm le16 result. */
 	if (notification[1] == NCM_NOTIFICATION_NETWORK_CONNECTION &&
 	    ncm_le16(notification + 6U) == 0U && length == 8U) {
-		(void)net_device_set_carrier(adapter->net_device,
-					     ncm_le16(notification + 2U) != 0U);
+		connected = ncm_le16(notification + 2U);
+		(void)net_device_set_carrier(adapter->net_device, connected);
+
+		/* A link that went has no speed until the device tells the next one (BUG-222). */
+		if (!connected && adapter->net_device != NULL)
+			adapter->net_device->link_mbps = 0U;
 	} else if (notification[1] == NCM_NOTIFICATION_SPEED_CHANGE &&
 		   ncm_le16(notification + 2U) == 0U &&
 		   ncm_le16(notification + 6U) == 8U && length == 16U) {
+		downstream = ncm_le32(notification + 8U);
+		upstream = ncm_le32(notification + 12U);
 		irq = spin_lock_irqsave(&adapter->lock);
 
-		adapter->downstream_bps = ncm_le32(notification + 8U);
-		adapter->upstream_bps = ncm_le32(notification + 12U);
+		adapter->downstream_bps = downstream;
+		adapter->upstream_bps = upstream;
+
 		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/*
+		 * The interface reports the faster direction as its link's
+		 * speed, in Mb/s, which is what Settings shows (BUG-222).
+		 */
+		if (upstream > downstream)
+			downstream = upstream;
+		if (adapter->net_device != NULL)
+			adapter->net_device->link_mbps = downstream / 1000000U;
 	}
 }
 
@@ -2101,7 +2134,7 @@ ncm_attach(
 	if (error != 0)
 		return error;
 	kern_memset(&limits, 0, sizeof(limits));
-	limits.ntb_in_max_size = NCM_NTB_BUFFER_SIZE;
+	limits.ntb_in_max_size = NCM_NTB_IN_SIZE;
 	limits.ntb_out_max_size = NCM_NTB_BUFFER_SIZE;
 	limits.rx_max_datagrams = NCM_RX_QUEUE_MAX;
 	limits.tx_max_datagrams = 1U;

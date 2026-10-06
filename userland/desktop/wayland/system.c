@@ -2153,6 +2153,13 @@ system_network_details_send(
 			offset = system_put_string(payload, offset, link->router);
 			(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_WIRED, payload, offset);
 		}
+
+		/* Its link's speed, when known, to a client that knows it (since version 12, BUG-222). */
+		if (object->version >= KL_SYSTEM_NETWORK_SINCE_LINK_SPEED && link->link_mbps != 0U) {
+			offset = system_put_string(payload, 0U, link->name);
+			offset = system_put_word(payload, offset, link->link_mbps);
+			(void)zwl_emit(object->client, object->id, KL_SYSTEM_NETWORK_EVENT_LINK_SPEED, payload, offset);
+		}
 	}
 
 	/* Each DNS server. */
