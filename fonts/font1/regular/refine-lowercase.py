@@ -61,6 +61,13 @@ def main():
         bitmap_path = Path(directory) / "glyph.pbm"
         trace_path = Path(directory) / "glyph.svg"
         for character, definition in design["glyphs"].items():
+            if definition.get("preserve_outline"):
+                codepoint = ord(character)
+                if not BUILDER.svg_filename(codepoint).is_file():
+                    raise ValueError(f"Missing preserved SVG for {character}")
+                if not (ROOT / "glyphs" / f"U{codepoint:04X}.png").is_file():
+                    raise ValueError(f"Missing preserved PNG for {character}")
+                continue
             image = render(definition, width, size)
             alpha = np.asarray(image.getchannel("A"))
             bitmap = Image.fromarray(np.where(alpha >= 128, 0, 255).astype("uint8"))
@@ -83,7 +90,9 @@ def main():
             render(definition, width, size, outline=svg_path).save(
                 ROOT / "glyphs" / f"U{codepoint:04X}.png",
             )
-    print(f"Updated a-z: {width}px monoline construction; shortened i/l bars.")
+    preserved = "".join(character for character, definition in design["glyphs"].items()
+                        if definition.get("preserve_outline"))
+    print(f"Updated lowercase: {width}px construction; preserved outlines: {preserved}.")
 
 
 if __name__ == "__main__":

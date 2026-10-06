@@ -1,10 +1,10 @@
 {
-  "revision": "lowercase-01",
+  "revision": "lowercase-02",
   "canvas_pixels": 1024,
   "stroke_width_pixels": 62,
   "line_cap": "butt",
   "line_join": "round",
-  "description": "Monoline centerlines for a-z; single-storey a/g and existing proportions retained. i/l bars shortened. Coordinates share the exported glyph SVG canvas.",
+  "description": "Monoline centerlines for 24 lowercase letters; preserve the restored original g/s outlines. Single-storey a retained, i/l bars shortened.",
   "glyphs": {
     "a": {
       "paths": [
@@ -41,10 +41,9 @@
       ]
     },
     "g": {
-      "paths": [
-        "M641 344 C602 335 575 338 546 344 C444 365 376 441 376 546 C376 611 409 650 467 650 C539 650 600 590 641 500",
-        "M641 307 V709 C641 772 606 798 541 798 C493 798 450 790 408 772"
-      ]
+      "preserve_outline": true,
+      "restored_from_commit": "ef9c3295",
+      "reason": "User requested the original g/s shapes after reviewing lowercase-01"
     },
     "h": {
       "paths": [
@@ -53,14 +52,28 @@
       ]
     },
     "i": {
-      "paths": ["M441 405 H514 V711 H609"],
-      "dots": [{"cx": 514, "cy": 258, "radius": 39}]
+      "paths": [
+        "M441 405 H514 V711 H609"
+      ],
+      "dots": [
+        {
+          "cx": 514,
+          "cy": 258,
+          "radius": 39
+        }
+      ]
     },
     "j": {
       "paths": [
         "M389 374 H568 V708 C568 771 545 792 500 792 C460 792 423 785 387 771"
       ],
-      "dots": [{"cx": 568, "cy": 218, "radius": 39}]
+      "dots": [
+        {
+          "cx": 568,
+          "cy": 218,
+          "radius": 39
+        }
+      ]
     },
     "k": {
       "paths": [
@@ -69,7 +82,11 @@
         "M482 504 L656 718"
       ]
     },
-    "l": {"paths": ["M418 252 H500 V714 H604"]},
+    "l": {
+      "paths": [
+        "M418 252 H500 V714 H604"
+      ]
+    },
     "m": {
       "paths": [
         "M349 364 V747",
@@ -107,9 +124,9 @@
       ]
     },
     "s": {
-      "paths": [
-        "M648 411 C610 393 574 383 525 383 C444 383 403 415 403 464 C403 512 447 532 516 550 C598 571 636 590 636 634 C636 682 590 704 521 704 C472 704 425 692 383 671"
-      ]
+      "preserve_outline": true,
+      "restored_from_commit": "ef9c3295",
+      "reason": "User requested the original g/s shapes after reviewing lowercase-01"
     },
     "t": {
       "paths": [
@@ -123,15 +140,32 @@
         "M626 365 V743"
       ]
     },
-    "v": {"paths": ["M331 383 L494 710 L659 383"]},
-    "w": {"paths": ["M338 378 L400 706 L505 401 L606 706 L670 378"]},
-    "x": {"paths": ["M353 383 L658 724", "M657 383 L354 724"]},
+    "v": {
+      "paths": [
+        "M331 383 L494 710 L659 383"
+      ]
+    },
+    "w": {
+      "paths": [
+        "M338 378 L400 706 L505 401 L606 706 L670 378"
+      ]
+    },
+    "x": {
+      "paths": [
+        "M353 383 L658 724",
+        "M657 383 L354 724"
+      ]
+    },
     "y": {
       "paths": [
         "M357 357 L535 670",
         "M680 357 L501 744 C476 796 453 815 411 815 C385 815 364 811 339 803"
       ]
     },
-    "z": {"paths": ["M355 417 H644 L386 712 H673"]}
+    "z": {
+      "paths": [
+        "M355 417 H644 L386 712 H673"
+      ]
+    }
   }
 }

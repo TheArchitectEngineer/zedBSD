@@ -1,6 +1,14 @@
-# Font1 Regular — ASCII デザイン案 03 / TrueType 0.200
+# Font1 Regular — ASCII デザイン案 04 / TrueType 0.201
 
-## 小文字の調整（2026-10-06、0.200）
+## g・sを元の字形へ戻す（2026-10-06、0.201）
+
+user「g, s は元に戻しましょう、それ以外はいい」により、g（U+0067）・s（U+0073）のPNG・SVGを小文字調整前のcommit `ef9c3295`（0.100）からそのまま復元した。他の24字の小文字、大文字・数字・記号、Boldは保持。g・sを一定線幅にする変更は撤回し、TTFを0.201へ更新した。
+
+`lowercase-strokes.json`のg・sは輪郭保持の指定へ置き換え、`refine-lowercase.py`で再生成しても復元したPNG・SVGを上書きしない。編集の正本は`svg/`。各PNG、TTF、一覧・文章・ウェイトの比較見本、`glyphs.json`と確認記録を更新した。`lowercase-review.png`は0.100と現行0.201の比較。
+
+TTF内のg・sの輪郭・送り幅が0.100と一致し、他の94グリフ（.notdefを含む）は0.200と一致することを照合した。UnicodeのASCII 95文字・96グリフ・等幅1229 units・Regularの設定、復元PNGとの描画比較、再ビルド一致を確認。実際のアプリでの使用感はユーザーが確認する。
+
+## 小文字の調整の履歴（2026-10-06、0.200）
 
 user「大文字はOK」「i,lは水平方向のバーを短く」「小文字はすべて、ストロークを一定にする」により、Regularの小文字a〜zの画像・SVG・TTFを更新した。a・gの一階建ての形と字形の概略の比率を保ち、曲線・縦線・横線・斜線を共通の**62px**のストロークで組み直した（1024×1024のグリフ画像座標）。接合部分ではストロークが合流する。i・jの独立した丸い点は直径78px。
 
@@ -47,7 +55,7 @@ user「細い方をグリフごとにSVG化してください。そのあとTrue
 
 - `svg/U0020.svg`〜`svg/U007E.svg`: ASCII 95文字のSVG。1024×1024の元画像と同じ座標系。実際の輪郭pathだけで構成し、画像の埋め込みはない。SPACEにはpathがない。
 - `svg/.notdef.svg`: 未収録文字用の四角いグリフ。Unicodeの文字には割り当てず、TTFのglyph index 0に格納。
-- `Font1-Regular.ttf`: family **Font1**、style **Regular**、2048 units/em、全グリフの送り幅1229 unitsの等幅フォント。初回0.100、現行0.200。
+- `Font1-Regular.ttf`: family **Font1**、style **Regular**、2048 units/em、全グリフの送り幅1229 unitsの等幅フォント。初回0.100、現行0.201。
 - `ttf-ascii-overview.png` / `ttf-specimen.png`: 個別PNGではなく、TTF自体をFreeTypeで描画した一覧と見本。
 - `font-build.json`: 生成設定・SVGとTTFのSHA256・Unicode cmap・ツール版。
 - `font-verification.json`: 文字対応・等幅・元PNGとの描画比較・再ビルド一致の確認結果。
@@ -79,6 +87,6 @@ SVGはflatなpathを同じ1024×1024座標で編集する。別のSVG編集ツ�
 
 fontToolsでTTFを再読込してchecksum・95個のUnicode対応・96グリフ・等幅・Regularの名前とweight 400・空のSPACEを確認。Fontconfigはfamily Font1 / style Regular / format TrueType / spacing 100（monospace）/ charset `20-7e` と認識した。SVGがベクターpathであり、PNGを埋め込んでいないことも確認。
 
-0.100の確認では94個の非空文字をTTFから768pxで描画し、元PNGのalpha≥128と比較した。黒い領域のIoUは平均98.69%、最小97.09%、連結した部分の数はすべて一致。現行0.200も同じ方法で再確認し、結果を`font-verification.json`へ更新した。SVGからの再ビルドでTTFのSHA256が一致し、TTFの全95文字の一覧と12〜24pxの文章見本も目視確認した。
+0.100の確認では94個の非空文字をTTFから768pxで描画し、元PNGのalpha≥128と比較した。黒い領域のIoUは平均98.69%、最小97.09%、連結した部分の数はすべて一致。0.200も同じ方法で再確認した。0.201では変更したg・sの描画比較を更新し、他の字形はPNGとTTF輪郭が0.200と一致することを照合して既存の比較値を保持した。結果は`font-verification.json`。SVGからの再ビルドでTTFのSHA256が一致し、TTFの全95文字の一覧と12〜24pxの文章見本も目視確認した。
 
 この版は試作フォントで、小文字以外は生成画像のトレースを保持している。小文字のカーブと線幅は今回調整したが、全体のbaseline・overshootの細部調整やTrueType hintingは未実施。検証済みのSVGとTTFは使用・編集できる状態で保存した。

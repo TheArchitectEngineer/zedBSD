@@ -1,8 +1,8 @@
 {
   "name": "font1",
-  "version": "design-03",
+  "version": "design-04",
   "weight": "Regular",
-  "status": "Regular SVG design with monoline lowercase; Unicode TrueType 0.200 available",
+  "status": "Refined Regular lowercase with original g/s restored; Unicode TrueType 0.201 available",
   "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
   "generation": {
     "tool": "built-in image_gen",
@@ -1531,21 +1531,22 @@
       "category": "letters",
       "image": "glyphs/U0067.png",
       "ink_bbox_pixels": [
-        342,
-        304,
-        675,
-        831
+        321,
+        282,
+        696,
+        852
       ],
-      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
-      "image_sha256": "65ee68aa6fe2b3af72e41ab2239ea690823b758830129c8135573751ad85de7b",
-      "previous_atlas_crop_pixels": [
+      "atlas_crop_pixels": [
         170,
         933,
         218,
         1007
       ],
+      "atlas_row_baseline_pixels": 992.0,
+      "status": "Original Regular PNG and SVG restored by user decision",
+      "image_sha256": "8a87563be9075533138741cc7e635b8cbe1764751643d65aa3cb1f5e6cc679f4",
       "source": "svg/U0067.svg",
-      "construction_source": "lowercase-strokes.json"
+      "restored_from_commit": "ef9c3295"
     },
     {
       "codepoint": "U+0068",
@@ -1795,21 +1796,22 @@
       "category": "letters",
       "image": "glyphs/U0073.png",
       "ink_bbox_pixels": [
-        367,
-        349,
-        670,
-        738
+        339,
+        328,
+        693,
+        761
       ],
-      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
-      "image_sha256": "adab82fcecc12dc2e7fc9cbf3765f9015b0bd651b00660258f947f1b0c2a4502",
-      "previous_atlas_crop_pixels": [
+      "atlas_crop_pixels": [
         413,
         1059,
         459,
         1115
       ],
+      "atlas_row_baseline_pixels": 1111.0,
+      "status": "Original Regular PNG and SVG restored by user decision",
+      "image_sha256": "173e6d0b58769d86d2e88cda0b4bd276e5b838a899718ab82941cf994d6f271c",
       "source": "svg/U0073.svg",
-      "construction_source": "lowercase-strokes.json"
+      "restored_from_commit": "ef9c3295"
     },
     {
       "codepoint": "U+0074",
@@ -2054,12 +2056,20 @@
   "svg_directory": "svg",
   "revision": {
     "date": "2026-10-06",
-    "source": "User approved uppercase; requested shorter i/l horizontal bars and constant lowercase strokes",
-    "changed_codepoints": "U+0061-U+007A",
+    "source": "User requested original g/s; accepted all other lowercase changes",
+    "changed_codepoints": [
+      "U+0067",
+      "U+0073"
+    ],
     "construction_source": "lowercase-strokes.json",
     "stroke_width_pixels": 62,
-    "font_version": "0.200",
+    "font_version": "0.201",
     "review": "lowercase-review.png",
-    "previous_revision_commit": "ef9c3295"
+    "previous_revision_commit": "a42730b5d",
+    "restored_from_commit": "ef9c3295",
+    "monoline_exceptions": [
+      "g",
+      "s"
+    ]
   }
 }

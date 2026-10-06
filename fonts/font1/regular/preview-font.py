@@ -58,8 +58,8 @@ def specimen(from_font):
     canvas = Image.new("RGB", (1600, 1320), "#fafbfc")
     draw = ImageDraw.Draw(canvas)
     kind = "TrueType rendering" if from_font else "glyph PNG rendering"
-    draw.text((64, 32), f"Font1 Regular 0.200 / {kind}", font=label(24), fill="#1a2735")
-    draw.text((64, 74), "Monoline lowercase / shorter i and l bars", font=label(18), fill="#586878")
+    draw.text((64, 32), f"Font1 Regular 0.201 / {kind}", font=label(24), fill="#1a2735")
+    draw.text((64, 74), "Refined lowercase / original g and s / shorter i and l bars", font=label(18), fill="#586878")
 
     def line(text, y, size, x=64):
         if from_font:
@@ -98,7 +98,7 @@ def comparison():
     draw = ImageDraw.Draw(canvas)
     for row, (title, directory) in enumerate([
         ("Monaco", ROOT.parent.parent / "monaco-ascii"),
-        ("font1 Regular 0.200", ROOT),
+        ("font1 Regular 0.201", ROOT),
         ("Droid Sans", ROOT.parent.parent / "droid"),
         ("JetBrains Mono", ROOT.parent.parent / "jetbrains"),
     ]):
@@ -114,7 +114,7 @@ def lowercase_review(before_font):
     canvas = Image.new("RGB", (1600, 1220), "white")
     draw = ImageDraw.Draw(canvas)
     draw.text((64, 30), "Font1 Regular / lowercase refinement", font=label(28), fill="#1a2735")
-    draw.text((64, 79), "Same size and advance. Before 0.100 / After 0.200", font=label(18), fill="#586878")
+    draw.text((64, 79), "Same size and advance. Before 0.100 / After 0.201", font=label(18), fill="#586878")
     for group, characters in enumerate(["abcdefghijklm", "nopqrstuvwxyz"]):
         for revision, (title, font) in enumerate([
             ("Before", before_font), ("After", ROOT / "Font1-Regular.ttf"),
@@ -136,11 +136,11 @@ def lowercase_review(before_font):
 def weight_comparison():
     canvas = Image.new("RGB", (1600, 990), "#fafbfc")
     draw = ImageDraw.Draw(canvas)
-    draw.text((52, 30), "Font1 / Regular 0.200 and Bold", font=label(26), fill="#1a2735")
+    draw.text((52, 30), "Font1 / Regular 0.201 and Bold", font=label(26), fill="#1a2735")
     draw.text((52, 74), "Cap height matched across all three samples", font=label(18), fill="#586878")
     for index, (title, directory) in enumerate([
         ("Monaco Regular", ROOT.parent.parent / "monaco-ascii"),
-        ("font1 Regular 0.200", ROOT),
+        ("font1 Regular 0.201", ROOT),
         ("font1 Bold", ROOT.parent / "bold"),
     ]):
         alpha = np.asarray(Image.open(directory / "glyphs/U0048.png").getchannel("A"))
