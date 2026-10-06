@@ -509,6 +509,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー（クリック）: WS131 の p021〜p026 を「全部進める」（p021 kwl_ の改名、p022 log の接頭辞 KWL と試験 201 本、p025 browser の shell の窓（WS074 の描画は止めたまま）、p023 互換の除去、p026 公開の header の移動（sysroot の変更は Q1 が toolchain の lock を外して一人で流す）、p024 全文規約と 3 OS の回帰）。q811 で keiland-os-boundary の B2 を D4 の許可の表の拡張（compositor が libkeiland の kl_tr* を使う）で解決 → ユーザーに報告。
 - 2026-10-06 ユーザー: 全ての app の窓の中身の padding を 0 に（title bar と同じ幅）、title bar と中身の間の高さは compositor の定数で全 app 同一 → [ws090-p021](ws090/phase021/phase.md)（q813、P1）。画像は build/review/ に複写し project の top からの相対 path で見せる（remote control のため）。
 - 2026-10-06 ユーザー: fallback は 2 つ残す（可変ピッチ 1・monospace 1）、遠い将来に fallback 無しでも動くように。クリック「Droid Sans Fallback と JetBrains Mono」→ Inter は使わない。ws090-p020 に記録。
 - 2026-10-06 ユーザー: Mahora の font（ユーザーの著作、tree の Zlib）を追加、UI を Mahora Regular・Terminal を Mahora Mono・太字を Mahora Bold に。外観が良ければ他の font を消す → [ws090-p020](ws090/phase020/phase.md)（q812、P1）。Q1 の確認: Mahora は ASCII の 95 字だけ。
