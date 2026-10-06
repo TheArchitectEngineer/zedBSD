@@ -208,6 +208,8 @@ git grep -l 'desktop/include/\(keiland\|keiland-ui\|truetype\|browser\)\.h' -- .
 | FreeBSD: `keiland-freebsd.mk` の `-n install-headers`・`print-sources` | 通る。公開の表と RETIRED は上のとおり |
 | `keiland-os-boundary/check.sh` | PASS（B5 を含む） |
 | grep: `userland/desktop/keiland` の参照（履歴・証拠を除く）、旧い綴りの `#include` | 0、0 |
+| host の試験（p026 で直した script のうち host だけの物 57 本と、main の merge 後の WS131 の 4 本） | 52 PASS。直した: `ws131/tests/host-system.sh`・`.c`（header の複写の形と `kl-system-protocol.h` の path）、`ws134/tests/host/run.sh`（rate-test に `-I.`）。前からの FAIL（変更前の tree でも同じ）: `browser-component/run.sh`（Vulkan と CPU の参照の差、前は 216・後は 40 の画素、GPU の非決定）、`ws090/host-input.sh` 77/78（q827）、`ws127/host-column-widths.sh` 9 失敗、`ws079/truetype-render-compare.sh`（引数の git revision が要る）、`ws079/run-pdf-text.sh`（900 秒の timeout、fuzz の asan が長い）。main の merge 後: host-system PASS、host-session 63/63、host-declare 22/22、host-tabs PASS |
+| main（P2 の WS172 段 B、KL_VERSION 52）の merge の後 | disk-image・image 外の 9 本・keiland-linux（gcc）が exit 0・warning 0、keiland-os-boundary PASS（merge で入った `settings/page-users-keys.c` の `<keiland.h>` と `ws172/tests/build-fido2-image.sh` の壁紙の path を直した） |
 
 ## 受け入れ
 
