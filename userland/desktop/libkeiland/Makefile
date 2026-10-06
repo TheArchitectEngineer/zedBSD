@@ -32,7 +32,6 @@ LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/theme.c \
 	userland/desktop/libkeiland/ui/input.c \
 	userland/desktop/libkeiland/ui/scroll.c \
-	userland/desktop/libkeiland/ui/axis-track.c \
 	userland/desktop/libkeiland/ui/scroll-bar.c \
 	userland/desktop/libkeiland/ui/text-touch.c \
 	userland/desktop/libkeiland/ui/ui.c \

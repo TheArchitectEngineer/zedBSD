@@ -20,11 +20,10 @@
  * A touch pad's two fingers (KL_VERSION 40, BUG-211) hold the content as a
  * finger on the screen does: each of their moves moves it at once (no
  * glide, BUG-218), and when they lift (axis_stop) it flies on at their
- * velocity, which their track (kl_axis_track) works out from their last
- * moves; the scroller's inertia and rubber band are the same.
+ * velocity.  The scroller does both (kl_scroller_axis, KL_VERSION 41), with
+ * the same inertia and rubber band as a finger's.
  */
 
-#include <keiland.h>
 #include <keiland.h>
 
 #include <errno.h>
@@ -398,19 +397,24 @@ kl_scroll_axis(
 	unsigned source,
 	uint64_t now_us)
 {
+	int holding;
+
 	/* A wheel, or anything that is not fingers, glides. */
 	if (source != KL_AXIS_SOURCE_FINGER) {
 		kl_scroll_wheel(scroll, dx, dy, now_us);
 		return;
 	}
 
-	/* The fingers' first move takes the content (stopping a flight or a glide) and starts their track. */
-	if (!scroll->axis_holding) {
-		(void)kl_scroll_press(scroll, now_us);
-		scroll->axis_holding = 1;
-		scroll->axis_total_x = 0.0;
-		scroll->axis_total_y = 0.0;
-		kl_axis_track_reset(&scroll->axis_track);
+	/* The fingers' first move takes the content: the scroller from where it is (a glide stops there). */
+	holding = kl_scroller_axis_holding(scroll->scroller);
+	if (!holding) {
+		if (!scroll->touched) {
+			scroll_bounds(scroll);
+			kl_scroller_set_position(scroll->scroller, scroll->x, scroll->y);
+		}
+		scroll->gliding = 0;
+		scroll->touched = 1;
+		scroll->released = 0;
 	}
 
 	/* Only the axes the scroll moves along. */
@@ -419,11 +423,8 @@ kl_scroll_axis(
 	if ((scroll->axes & KL_SCROLL_Y) == 0U)
 		dy = 0.0;
 
-	/* The move, kept for the velocity, and the content dragged the wheel's way (a finger's drag goes the other way). */
-	scroll->axis_total_x += dx;
-	scroll->axis_total_y += dy;
-	kl_axis_track_add(&scroll->axis_track, dx, dy, now_us);
-	kl_scroll_drag(scroll, -scroll->axis_total_x, -scroll->axis_total_y);
+	/* The scroller holds the content and moves it with the fingers (catching a flight at the first move). */
+	(void)kl_scroller_axis(scroll->scroller, dx, dy, now_us, now_us);
 	scroll->moved_us = now_us;
 }
 
@@ -437,17 +438,16 @@ kl_scroll_axis_stop(
 	struct kl_scroll *scroll,
 	uint64_t now_us)
 {
-	double vx;
-	double vy;
+	int holding;
 
 	/* Only content the fingers hold. */
-	if (!scroll->axis_holding)
+	holding = kl_scroller_axis_holding(scroll->scroller);
+	if (!holding)
 		return;
-	scroll->axis_holding = 0;
 
-	/* Their velocity the wheel's way, thrown the finger's way. */
-	kl_axis_track_velocity(&scroll->axis_track, now_us, &vx, &vy);
-	kl_scroll_fling(scroll, -vx, -vy, now_us);
+	/* The scroller throws it; the content is the scroller's until it rests. */
+	(void)kl_scroller_axis_stop(scroll->scroller, now_us, now_us, NULL, NULL);
+	scroll->released = 1;
 }
 
 /*

@@ -378,7 +378,8 @@ struct kl_scroller;
  * when the fingers lift, so that the content flies on.  The samples older
  * than KL_AXIS_TRACK_WINDOW_US at the lift do not count, and fingers that
  * rested longer than KL_AXIS_TRACK_REST_US before lifting throw nothing.
- * It is plain data a caller keeps (a kl_scroll keeps one).
+ * It is plain data a caller keeps; kl_scroller keeps one for a touch pad's
+ * fingers (KL_VERSION 41), so a program needs none of its own.
  */
 #define KL_AXIS_TRACK_SAMPLES	16U
 #define KL_AXIS_TRACK_WINDOW_US	100000U
@@ -421,16 +422,6 @@ struct kl_scroll {
 
 	/* When the content last moved (for the bars), 0 before it ever moved. */
 	uint64_t moved_us;
-
-	/*
-	 * A touch pad's two fingers holding the content (KL_VERSION 40,
-	 * BUG-211): whether they hold it, how far they have scrolled it since
-	 * they began (as a wheel scrolls: down positive), and their track.
-	 */
-	int axis_holding;
-	double axis_total_x;
-	double axis_total_y;
-	struct kl_axis_track axis_track;
 };
 
 int kl_scroll_init(struct kl_scroll *scroll, unsigned axes);

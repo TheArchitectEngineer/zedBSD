@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track). */
-#define KL_VERSION	40U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer). */
+#define KL_VERSION	41U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -769,9 +769,32 @@ void kl_scroller_drag(struct kl_scroller *scroller, double dx, double dy);
 /*
  * The finger lifts with a velocity (px/s, as the finger moved;
  * kl_motion_velocity or the gesture's DRAG_END gives it): a fling
- * when it is fast enough, otherwise the content settles.
+ * when it is fast enough, otherwise the content settles.  Returns 1 for a
+ * fling (KL_VERSION 41), 0 when it settles.
  */
-void kl_scroller_release(struct kl_scroller *scroller, uint64_t now_us, double vx, double vy);
+int kl_scroller_release(struct kl_scroller *scroller, uint64_t now_us, double vx, double vy);
+
+/*
+ * A touch pad's two fingers (KL_AXIS_SOURCE_FINGER, KL_VERSION 41,
+ * ws090-p019) move the content by dx, dy: pixels as a wheel scrolls (down
+ * and right positive), at the compositor's time event_us; now_us is the
+ * time the steps use.  The first move since the fingers last lifted
+ * presses the scroller (returns 1 when it caught moving content); each
+ * drags it on and is kept for their velocity.
+ */
+int kl_scroller_axis(struct kl_scroller *scroller, double dx, double dy, uint64_t event_us, uint64_t now_us);
+
+/*
+ * The touch pad's fingers lift (the axis stop at event_us): the content
+ * flies on from now_us at their velocity (none when they rested before
+ * lifting) with the same deceleration as a finger's fling, or settles.
+ * Gives the velocity (px/s, a wheel's way; either may be NULL) and returns
+ * 1 for a fling.
+ */
+int kl_scroller_axis_stop(struct kl_scroller *scroller, uint64_t event_us, uint64_t now_us, double *vx, double *vy);
+
+/* Tells whether a touch pad's fingers hold the content (since kl_scroller_axis, until they lift). */
+int kl_scroller_axis_holding(const struct kl_scroller *scroller);
 
 /* The touch was taken away (wl_touch.cancel): no fling; content past a bound springs back. */
 void kl_scroller_cancel(struct kl_scroller *scroller, uint64_t now_us);
@@ -2046,6 +2069,9 @@ int kl_tr_follow(struct kl_settings *settings, const char *domain, kl_tr_changed
 #define keiland_recent_list kl_recent_list
 #define keiland_recent_remove kl_recent_remove
 #define keiland_scroller kl_scroller
+#define keiland_scroller_axis kl_scroller_axis
+#define keiland_scroller_axis_holding kl_scroller_axis_holding
+#define keiland_scroller_axis_stop kl_scroller_axis_stop
 #define keiland_scroller_cancel kl_scroller_cancel
 #define keiland_scroller_create kl_scroller_create
 #define keiland_scroller_destroy kl_scroller_destroy
