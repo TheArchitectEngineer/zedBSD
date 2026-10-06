@@ -13,7 +13,7 @@
  * message, Ctrl+Q quits.
  *
  * The accounts are read at the start; the thread of sync.c gets their mail
- * and waits for new mail, and the window carries out what the view asks
+ * (a new account's right after its sign-in) and waits for new mail, and the window carries out what the view asks
  * (send, get mail, archive, delete, read, a new account).  A new message
  * is told as a notification, and its sign-in code to the compositor
  * (kl_system_mail_arrived, ws169-p002), which tells the readers the user
@@ -696,8 +696,9 @@ ml_servers_start(
 	if (error != 0)
 		ml_log("SYNC watch error=%d", error);
 
-	/* Every account's mail. */
-	ml_refresh_all(mailer);
+	/* The thread gets every account's mail first by itself. */
+	if (count != 0U)
+		(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Getting mail...");
 }
 
 /* Takes the thread's results into the store and the view. */
@@ -707,7 +708,6 @@ ml_results(
 {
 	struct ml_account_config config;
 	struct ml_result result;
-	struct ml_job job;
 	size_t count;
 	int taken;
 	int index;
@@ -748,10 +748,6 @@ ml_results(
 				mailer->view.folder = ML_INBOX;
 				mailer->view.selected = -1;
 				mailer->view.adding = 0;
-				memset(&job, 0, sizeof(job));
-				job.kind = ML_JOB_REFRESH;
-				job.account = index;
-				(void)ml_sync_queue(mailer->sync, &job);
 				(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Getting mail...");
 			}
 

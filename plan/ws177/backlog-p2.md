@@ -82,3 +82,7 @@
 | WS169 ws169-p004 | account の削除・編集、5 個目の account | Settings か Mail の中で消す・直す（今は追加だけ、4 個まで） | `mailer/account.c`・`view.c` | 2026-10-07 |
 | WS169 ws169-p004 | 日付の語が古くなる（Yesterday のまま日をまたぐ） | 描く時に今から作る（今は取った時の語） | `mailer/store.c` の `store_dates` | 2026-10-07 |
 | WS169 ws169-p004 | 一覧が 512 通を超える | 全部を出す（今は 512 通まで） | `mailer/view.c` の `ML_MESSAGES_MAX` | 2026-10-07 |
+| WS169 ws169-p005（browser の code の入力） | page に focus の欄が無い、別の tab・別の窓 | code を clipboard に置いて知らせる、どの tab に入れるかを選ぶ（今は focus の要素に打つだけ、無ければ何も起きない） | `browser/shell/mail.c` の `shell_mail_fill` | 2026-10-07 |
+| WS169 ws169-p005 | 英字を含む code、`autocomplete="one-time-code"` の欄 | 英字の DOM の code、one-time-code の欄を探して入れる（今は数字の code だけ、focus の欄へ） | `browser/shell/mail.c`、`mailer/code.c` | 2026-10-07 |
+| WS169 ws169-p005 | 通知の popup（WS156 p003）が無い間 | 通知の click で入る経路の QEMU の確認（今は titlebar の control だけが見える） | `browser/shell/mail.c`、WS156 p003 | 2026-10-07 |
+| WS169 ws169-p005 | offer の 2 分の時間切れ | 時間で起きて取り下げる（今は loop が起きた時に見る） | `browser/shell/shell.c` の待ちの timeout | 2026-10-07 |

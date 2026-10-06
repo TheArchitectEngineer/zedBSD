@@ -19,6 +19,8 @@
  * ws081-p006: the touch screen's fingers (touch.c) scroll the page with
  * inertia and stretch it past its ends (the view's placed scroll and
  * overscroll), and click with taps and long presses.
+ * WS169 p005: a sign-in code that comes by mail is offered as a
+ * notification, whose click types it into the page (mail.c).
  * The shell keeps its own shortcuts, which the page never sees: Ctrl+Q and
  * Ctrl+W close the window, and Ctrl+L edits the location; the titlebar's
  * controls step through the history and reload.
@@ -49,6 +51,8 @@
  * them fingers do nothing), in how many milliseconds they want the next
  * round (-1: none), and the number of the page shown, which each page
  * committed moves on (a new page's scroll is taken over by the fingers).
+ *
+ * The sign-in codes of mail (mail.c, WS169 p005).
  */
 struct shell_state {
 	struct browser_view *view;
@@ -60,6 +64,7 @@ struct shell_state {
 	struct shell_touch touch;
 	int touch_due;
 	unsigned long page_number;
+	struct shell_mail mail;
 };
 
 static void shell_show_state(struct shell_state *state);
@@ -99,6 +104,7 @@ shell_run(
 	struct shell_event event;
 	struct shell_titlebar_event titlebar_event;
 	size_t net_count;
+	int changed;
 	int timeout;
 	int network;
 	int status;
@@ -166,6 +172,9 @@ shell_run(
 		printf("ZBROWSER ERROR titlebar error=%d\n", error);
 		shell_titlebar_close(&state.titlebar);
 	}
+
+	/* The arrivals of mail with their sign-in codes (a compositor without them leaves the browser without codes). */
+	shell_mail_open(&state.mail, state.window.app);
 
 	/* The Vulkan presenter in the window. */
 	result = shell_present_open(&state.present, &state.window, state.view);
@@ -248,6 +257,11 @@ shell_run(
 
 		/* The fingers: the scroll they move and the clicks they make. */
 		shell_touch_round(&state);
+
+		/* A sign-in code that came by mail, offered or typed (the titlebar declared again shows the state again). */
+		changed = shell_mail_round(&state.mail, state.view, &state.titlebar, shell_clock());
+		if (changed)
+			shell_show_state(&state);
 
 		/* The view's work: the network, the page's timers, and the layout they changed. */
 		browser_view_process(state.view, net_fds, net_count);
@@ -476,6 +490,11 @@ shell_titlebar_input(
 	case SHELL_CONTROL_RELOAD:
 		shell_go(state, 0);
 		break;
+	case SHELL_CONTROL_CODE:
+		/* The sign-in code offered, typed into the page (WS169 p005); the titlebar shows the state again. */
+		shell_mail_fill(&state->mail, state->view, &state->titlebar);
+		shell_show_state(state);
+		break;
 	case SHELL_CONTROL_LOCATION:
 		/* A part of the location turns it into the URL's field. */
 		error = shell_titlebar_edit_location(&state->titlebar);
@@ -564,6 +583,10 @@ shell_release(
 
 	/* The titlebar before the window it belongs to. */
 	shell_titlebar_close(&state->titlebar);
+
+	/* The offer of a sign-in code, before the application's system goes with the window. */
+	if (state->window.app != NULL)
+		shell_mail_close(&state->mail, &state->titlebar);
 
 	/* The window. */
 	if (state->window.app != NULL)

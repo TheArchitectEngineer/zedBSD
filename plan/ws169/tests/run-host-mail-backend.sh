@@ -30,7 +30,7 @@ openssl x509 -req -in "$out/server.csr" -CA "$out/ca.pem" -CAkey "$out/ca.key" -
 # Starts a fresh server writing into a folder; its ports are in that folder's "ports".
 start_server() {
 	mkdir -p "$1"
-	python3 plan/ws169/tests/fake-mail-server.py "$out/server.pem" "$out/server.key" "$1" > "$1/ports" &
+	python3 plan/tools/mail/fake-mail-server.py "$out/server.pem" "$out/server.key" "$1" > "$1/ports" &
 	server=$!
 	tries=0
 	while ! grep -q PORTS "$1/ports" 2>/dev/null; do
