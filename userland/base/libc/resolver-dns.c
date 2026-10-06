@@ -160,6 +160,16 @@ resolver_dns_parse(
 			if (result->ttl == 0 || ttl < result->ttl)
 				result->ttl = ttl;
 		} else if (class_ == 1U &&
+			   type == DNS_TYPE_AAAA &&
+			   rdlength == 16U &&
+			   result->address6_count < DNS_MAX_ADDRESSES) {
+			/* An IPv6 address (ws130-p004). */
+			memcpy(result->addresses6[result->address6_count++].s6_addr, message + offset, 16U);
+
+			/* Checks the operation result. */
+			if (result->ttl == 0 || ttl < result->ttl)
+				result->ttl = ttl;
+		} else if (class_ == 1U &&
 			   (type == DNS_TYPE_CNAME || type == DNS_TYPE_PTR)) {
 			error = decode_name(message, length, &rdata, decoded,
 					    sizeof(decoded));
@@ -193,6 +203,10 @@ resolver_dns_parse(
 
 	/* Handles the qtype condition. */
 	if (qtype == DNS_TYPE_A && result->address_count == 0U)
+		return EAI_NONAME;
+
+	/* An IPv6 question without an IPv6 address (ws130-p004). */
+	if (qtype == DNS_TYPE_AAAA && result->address6_count == 0U)
 		return EAI_NONAME;
 
 	/* Handles the qtype condition. */
@@ -388,3 +402,90 @@ read32(
 	return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 |
 	       (uint32_t)p[2] << 8 | p[3];
 }
+
+/* ------------------------------------------------------------------ *
+ * IPv6 for the resolver (ws130-p004): an address's PTR name and the order
+ * of IPv6 and IPv4 destinations.  Pure: the host tests build this file
+ * alone.  The text of an address is inet_pton's and inet_ntop's (socket.c).
+ * ------------------------------------------------------------------ */
+
+/* How long an IPv6 address's PTR name is, with its NUL. */
+#define INET6_PTR_LENGTH	73U
+
+/*
+ * Writes the reverse lookup's name of an IPv6 address
+ * ("b.a.9.8. ... .ip6.arpa"): 0, or EAI_OVERFLOW.
+ */
+int
+resolver_inet6_ptr_name(
+	const uint8_t *address,
+	char *output,
+	size_t capacity)
+{
+	static const char digits[] = "0123456789abcdef";
+	unsigned index;
+	size_t at;
+
+	/* Room for 32 nibbles with their dots and the zone. */
+	if (capacity < INET6_PTR_LENGTH)
+		return EAI_OVERFLOW;
+
+	/* The nibbles, the last byte's low one first. */
+	at = 0;
+	for (index = 16U; index > 0; index--) {
+		output[at++] = digits[address[index - 1U] & 0x0fU];
+		output[at++] = '.';
+		output[at++] = digits[address[index - 1U] >> 4];
+		output[at++] = '.';
+	}
+
+	/* Succeeded: the zone. */
+	memcpy(output + at, "ip6.arpa", sizeof("ip6.arpa"));
+	return 0;
+}
+
+/*
+ * Tells whether an IPv6 destination comes before the IPv4 ones, by the
+ * source the host would send to it from (RFC 6724, as far as one source
+ * tells): one that reaches it -- the loopback for the loopback, not the
+ * loopback otherwise, and not a link-local one for a destination beyond
+ * the link.  0 puts IPv6 after IPv4 (a network with IPv6 on the link but
+ * no way out does not stall the application).
+ */
+int
+resolver_inet6_preferred(
+	const uint8_t *destination,
+	const uint8_t *source)
+{
+	uint8_t loopback[16];
+	uint8_t none[16];
+	int destination_loopback;
+	int source_loopback;
+	int destination_link;
+	int source_link;
+
+	/* The two addresses compared with. */
+	memset(none, 0, sizeof(none));
+	memset(loopback, 0, sizeof(loopback));
+	loopback[15] = 1;
+
+	/* No source: no way there. */
+	if (memcmp(source, none, sizeof(none)) == 0)
+		return 0;
+
+	/* The loopback goes with the loopback only. */
+	destination_loopback = memcmp(destination, loopback, sizeof(loopback)) == 0;
+	source_loopback = memcmp(source, loopback, sizeof(loopback)) == 0;
+	if (destination_loopback != source_loopback)
+		return 0;
+
+	/* A link-local source reaches only the link. */
+	destination_link = destination[0] == 0xfe && (destination[1] & 0xc0) == 0x80;
+	source_link = source[0] == 0xfe && (source[1] & 0xc0) == 0x80;
+	if (source_link && !destination_link)
+		return 0;
+
+	/* Succeeded: the source reaches it. */
+	return 1;
+}
+

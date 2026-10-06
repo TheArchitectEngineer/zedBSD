@@ -20,12 +20,23 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 extern intptr_t syscall_result(intptr_t);
 
 static intptr_t socket_call(uint32_t number, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
 static char *append_decimal(char *output, unsigned value);
+static int inet6_pton_text(const char *text, uint8_t *address);
+static int inet6_ntop_text(const uint8_t *address, char *text, size_t size);
+static int inet6_hex(char c);
+static int inet6_dotted(const char *text, uint8_t *bytes);
+static int inet6_group(const char **cursor, uint16_t *group);
+static int inet6_zero_run(const uint16_t *groups, unsigned *start);
+static char *inet6_put_group(char *output, uint16_t group);
 
 /*
  * Implements the socket operation.
@@ -742,6 +753,12 @@ inet_pton(
 {
 	int function_result;
 
+	/* An IPv6 address (ws130-p004). */
+	if (family == AF_INET6) {
+		function_result = inet6_pton_text(text, address);
+		return function_result;
+	}
+
 	/* Handles the family condition. */
 	if (family != AF_INET) {
 		errno = EAFNOSUPPORT;
@@ -770,8 +787,23 @@ inet_ntop(
 	uint32_t value;
 	char buffer[16], *output;
 	unsigned index;
+	int error;
 
 	output = buffer;
+
+	/* An IPv6 address in RFC 5952's form (ws130-p004). */
+	if (family == AF_INET6) {
+		if (address == NULL || text == NULL) {
+			errno = EFAULT;
+			return NULL;
+		}
+		error = inet6_ntop_text(address, text, (size_t)length);
+		if (error != 0) {
+			errno = ENOSPC;
+			return NULL;
+		}
+		return text;
+	}
 
 	/* Handles the family condition. */
 	if (family != AF_INET) {
@@ -870,5 +902,396 @@ append_decimal(
 		*output++ = (char)('0' + value / 10U % 10U);
 	*output++ = (char)('0' + value % 10U);
 	/* Returns the computed result. */
+	return output;
+}
+
+/*
+ * Reports the index of the interface of a name (POSIX), 0 when there is
+ * none (ws130-p004).
+ */
+unsigned
+if_nametoindex(
+	const char *name)
+{
+	struct ifreq request;
+	size_t length;
+	int descriptor;
+	int status;
+
+	/* A name that fits. */
+	if (name == NULL)
+		return 0;
+	length = strlen(name);
+	if (length >= sizeof(request.ifr_name))
+		return 0;
+	memset(&request, 0, sizeof(request));
+	memcpy(request.ifr_name, name, length);
+
+	/* The network's ioctl answers it. */
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+	if (descriptor < 0)
+		return 0;
+	status = ioctl(descriptor, SIOCGIFINDEX, &request);
+	close(descriptor);
+	if (status != 0)
+		return 0;
+
+	/* Succeeded: its index. */
+	return (unsigned)request.ifr_ifindex;
+}
+
+/*
+ * Writes the name of the interface of an index into name (IF_NAMESIZE
+ * bytes) (POSIX), NULL with errno ENXIO when there is none (ws130-p004).
+ */
+char *
+if_indextoname(
+	unsigned index,
+	char *name)
+{
+	struct ifreq request;
+	int descriptor;
+	int status;
+
+	/* The network's ioctl answers it. */
+	memset(&request, 0, sizeof(request));
+	request.ifr_ifindex = (int)index;
+	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+	if (descriptor < 0)
+		return NULL;
+	status = ioctl(descriptor, SIOCGIFNAME, &request);
+	close(descriptor);
+	if (status != 0) {
+		errno = ENXIO;
+		return NULL;
+	}
+
+	/* Succeeded: its name. */
+	request.ifr_name[IF_NAMESIZE - 1] = '\0';
+	memcpy(name, request.ifr_name, IF_NAMESIZE);
+	return name;
+}
+
+/* ------------------------------------------------------------------ *
+ * IPv6 addresses as text (ws130-p004)
+ *
+ * inet_pton reads the written forms of RFC 4291 section 2.2; inet_ntop
+ * writes the one form of RFC 5952 (lowercase, no leading zeros, the
+ * longest run of two or more zero groups as "::", the first of equal
+ * runs, and a v4-mapped address with its IPv4 part dotted).
+ * ------------------------------------------------------------------ */
+
+/* How many 16-bit groups an address has. */
+#define INET6_GROUPS		8U
+
+/*
+ * Reads an IPv6 address in one of RFC 4291's written forms into its 16
+ * bytes: 1 when it is one, 0 when it is not.
+ */
+static int
+inet6_pton_text(
+	const char *text,
+	uint8_t *address)
+{
+	uint16_t groups[INET6_GROUPS];
+	uint8_t dotted[4];
+	const char *cursor;
+	unsigned count;
+	unsigned index;
+	unsigned moved;
+	int gap;
+	int ok;
+
+	/* A leading "::" opens the gap at once. */
+	cursor = text;
+	count = 0;
+	gap = -1;
+	if (cursor[0] == ':') {
+		if (cursor[1] != ':')
+			return 0;
+		gap = 0;
+		cursor += 2;
+	}
+
+	/* The groups, each after its colon, an embedded IPv4 address last. */
+	while (*cursor != '\0') {
+		/* No room for another group. */
+		if (count == INET6_GROUPS)
+			return 0;
+
+		/* The dotted IPv4 address takes the last two groups. */
+		ok = inet6_dotted(cursor, dotted);
+		if (ok) {
+			if (count > INET6_GROUPS - 2U)
+				return 0;
+			groups[count++] = (uint16_t)(dotted[0] << 8 | dotted[1]);
+			groups[count++] = (uint16_t)(dotted[2] << 8 | dotted[3]);
+			break;
+		}
+
+		/* A group of one to four hex digits. */
+		ok = inet6_group(&cursor, &groups[count]);
+		if (!ok)
+			return 0;
+		count++;
+
+		/* The text may end after a group. */
+		if (*cursor == '\0')
+			break;
+		if (*cursor != ':')
+			return 0;
+		cursor++;
+
+		/* A second colon is the gap, once. */
+		if (*cursor == ':') {
+			if (gap >= 0)
+				return 0;
+			gap = (int)count;
+			cursor++;
+			continue;
+		}
+
+		/* A colon ends no address. */
+		if (*cursor == '\0')
+			return 0;
+	}
+
+	/* Without a gap the groups are all there; with one, it stands for one group at least. */
+	if (gap < 0 && count != INET6_GROUPS)
+		return 0;
+	if (gap >= 0 && count == INET6_GROUPS)
+		return 0;
+
+	/* The groups after the gap move to the end, and the gap is zeros. */
+	if (gap >= 0) {
+		moved = count - (unsigned)gap;
+		for (index = 0; index < moved; index++)
+			groups[INET6_GROUPS - 1U - index] = groups[count - 1U - index];
+		for (index = (unsigned)gap; index < INET6_GROUPS - moved; index++)
+			groups[index] = 0;
+	}
+
+	/* Succeeded: the bytes in network order. */
+	for (index = 0; index < INET6_GROUPS; index++) {
+		address[2U * index] = (uint8_t)(groups[index] >> 8);
+		address[2U * index + 1U] = (uint8_t)groups[index];
+	}
+	return 1;
+}
+
+/*
+ * Writes an IPv6 address in RFC 5952's form: 0, or ENOSPC when the text
+ * does not fit its size.
+ */
+static int
+inet6_ntop_text(
+	const uint8_t *address,
+	char *text,
+	size_t size)
+{
+	uint16_t groups[INET6_GROUPS];
+	char buffer[48];
+	char *output;
+	unsigned index;
+	unsigned start;
+	int run;
+	int mapped;
+	int written;
+
+	/* The groups. */
+	for (index = 0; index < INET6_GROUPS; index++)
+		groups[index] = (uint16_t)(address[2U * index] << 8 | address[2U * index + 1U]);
+
+	/* A v4-mapped address keeps its IPv4 part dotted (RFC 5952 section 5). */
+	mapped = 1;
+	for (index = 0; index < 5U; index++) {
+		if (groups[index] != 0)
+			mapped = 0;
+	}
+	if (mapped && groups[5] == 0xffffU) {
+		written = snprintf(buffer, sizeof(buffer), "::ffff:%u.%u.%u.%u", address[12], address[13], address[14], address[15]);
+		if (written < 0 || (size_t)written + 1U > size)
+			return ENOSPC;
+		memcpy(text, buffer, (size_t)written + 1U);
+		return 0;
+	}
+
+	/* The groups, the longest run of zeros as "::". */
+	run = inet6_zero_run(groups, &start);
+	output = buffer;
+	for (index = 0; index < INET6_GROUPS; index++) {
+		/* The run: "::" once, in place of its groups. */
+		if (run > 0 && index == start) {
+			*output++ = ':';
+			*output++ = ':';
+			index += (unsigned)run - 1U;
+			continue;
+		}
+
+		/* A colon between groups that are not after the run. */
+		if (index != 0 && !(run > 0 && index == start + (unsigned)run))
+			*output++ = ':';
+		output = inet6_put_group(output, groups[index]);
+	}
+	*output = '\0';
+
+	/* Succeeded when it fits. */
+	if ((size_t)(output - buffer) + 1U > size)
+		return ENOSPC;
+	memcpy(text, buffer, (size_t)(output - buffer) + 1U);
+	return 0;
+}
+
+/* Reports a hex digit's value, or -1 for another character. */
+static int
+inet6_hex(
+	char c)
+{
+	/* The decimal digits. */
+	if (c >= '0' && c <= '9')
+		return c - '0';
+
+	/* The letters, either case. */
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+
+	/* Not a hex digit. */
+	return -1;
+}
+
+/* Reads a dotted IPv4 address that ends the text; 1 with its 4 bytes, 0 when the text is not one. */
+static int
+inet6_dotted(
+	const char *text,
+	uint8_t *bytes)
+{
+	unsigned part;
+	unsigned value;
+	unsigned digits;
+
+	/* Four decimal parts, dots between. */
+	for (part = 0; part < 4U; part++) {
+		value = 0;
+		digits = 0;
+		while (*text >= '0' && *text <= '9') {
+			value = value * 10U + (unsigned)(*text - '0');
+			digits++;
+			text++;
+			if (digits > 3U || value > 255U)
+				return 0;
+		}
+
+		/* Each part has digits. */
+		if (digits == 0)
+			return 0;
+		bytes[part] = (uint8_t)value;
+
+		/* A dot after the first three, the end after the last. */
+		if (part < 3U && *text != '.')
+			return 0;
+		if (part < 3U)
+			text++;
+	}
+
+	/* Succeeded only at the end of the text. */
+	if (*text != '\0')
+		return 0;
+	return 1;
+}
+
+/* Reads a group of one to four hex digits, moving the cursor past it; 1, or 0 when there is none. */
+static int
+inet6_group(
+	const char **cursor,
+	uint16_t *group)
+{
+	const char *text;
+	unsigned value;
+	unsigned digits;
+	int digit;
+
+	/* The digits. */
+	text = *cursor;
+	value = 0;
+	digits = 0;
+	for (;;) {
+		digit = inet6_hex(*text);
+		if (digit < 0)
+			break;
+		value = value << 4 | (unsigned)digit;
+		digits++;
+		text++;
+		if (digits > 4U)
+			return 0;
+	}
+
+	/* A group has a digit at least. */
+	if (digits == 0)
+		return 0;
+
+	/* Succeeded. */
+	*group = (uint16_t)value;
+	*cursor = text;
+	return 1;
+}
+
+/* Finds the longest run of two or more zero groups (the first of equal ones); its length, 0 for none, and its start. */
+static int
+inet6_zero_run(
+	const uint16_t *groups,
+	unsigned *start)
+{
+	unsigned index;
+	unsigned length;
+	unsigned best;
+	unsigned best_start;
+
+	/* Each run of zeros. */
+	best = 0;
+	best_start = 0;
+	length = 0;
+	for (index = 0; index < INET6_GROUPS; index++) {
+		if (groups[index] != 0) {
+			length = 0;
+			continue;
+		}
+		length++;
+		if (length > best) {
+			best = length;
+			best_start = index + 1U - length;
+		}
+	}
+
+	/* One zero group stays written. */
+	if (best < 2U)
+		return 0;
+
+	/* Succeeded: the run. */
+	*start = best_start;
+	return (int)best;
+}
+
+/* Writes a group in lowercase hex without leading zeros, and returns the end. */
+static char *
+inet6_put_group(
+	char *output,
+	uint16_t group)
+{
+	static const char digits[] = "0123456789abcdef";
+	int shift;
+	int started;
+
+	/* The nibbles from the highest, the leading zeros left out. */
+	started = 0;
+	for (shift = 12; shift >= 0; shift -= 4) {
+		if (!started && shift > 0 && ((group >> shift) & 0x0fU) == 0)
+			continue;
+		started = 1;
+		*output++ = digits[(group >> shift) & 0x0fU];
+	}
+
+	/* Returns the end. */
 	return output;
 }

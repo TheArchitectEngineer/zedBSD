@@ -10,4 +10,10 @@
 
 #include <uapi/netif.h>
 
+/* An interface's name and index (POSIX; ws130-p004). */
+#define IF_NAMESIZE	IFNAMSIZ
+
+unsigned if_nametoindex(const char *name);
+char *if_indextoname(unsigned index, char *name);
+
 #endif

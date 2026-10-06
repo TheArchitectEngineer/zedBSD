@@ -16,6 +16,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -29,13 +30,49 @@
 static uint32_t resolver_counter;
 static pthread_mutex_t resolver_counter_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static int resolver_query_server_depth(const char *name, uint16_t type, const struct in_addr *server_address, uint16_t port, struct resolver_result *result, unsigned depth);
+static int resolver_query_server_depth(const char *name, uint16_t type, const struct sockaddr *server, socklen_t server_length, struct resolver_result *result, unsigned depth);
+static int resolver_query_server6(const char *name, uint16_t type, const struct in6_addr *address, uint32_t scope, uint16_t port, struct resolver_result *result);
+static int resolver_same_peer(const struct sockaddr *server, const struct sockaddr_storage *source);
+static int resolver_parse_server6(char *text, struct resolver_server *server);
 static uint16_t query_id(const char *name);
-static int tcp_query(const struct sockaddr_in *server, const uint8_t *query, size_t query_length, uint16_t id, const char *name, uint16_t type, struct resolver_result *result);
+static int tcp_query(const struct sockaddr *server, socklen_t server_length, const uint8_t *query, size_t query_length, uint16_t id, const char *name, uint16_t type, struct resolver_result *result);
 static int write_all_socket(int descriptor, const uint8_t *buffer, size_t length);
 static int read_exact_socket(int descriptor, uint8_t *buffer, size_t length);
 static int parse_service(const char *service, const char *protocol, uint16_t *port);
 static int make_ptr_name(struct in_addr address, char *output, size_t capacity);
+
+/* The flags getaddrinfo and getnameinfo take (ws130-p004). */
+#define GAI_FLAGS	(AI_PASSIVE | AI_CANONNAME | AI_NUMERICHOST | AI_NUMERICSERV | AI_ALL | AI_ADDRCONFIG | AI_V4MAPPED)
+#define GNI_FLAGS	(NI_NUMERICHOST | NI_NUMERICSERV | NI_NAMEREQD | NI_NOFQDN | NI_DGRAM | NI_NUMERICSCOPE)
+
+/* How many addresses getaddrinfo gives at most: the A and the AAAA records. */
+#define GAI_ADDRESSES	(2U * DNS_MAX_ADDRESSES)
+
+/* One address getaddrinfo found: IPv4, or IPv6 with its scope. */
+struct gai_address {
+	int family;
+	struct in_addr address;
+	struct in6_addr address6;
+	uint32_t scope;
+};
+
+/* The addresses getaddrinfo found, in their order, and the canonical name. */
+struct gai_list {
+	struct gai_address items[GAI_ADDRESSES];
+	unsigned count;
+	char canonical[254];
+};
+
+static void gai_add4(struct gai_list *list, struct in_addr address, int mapped);
+static void gai_add6(struct gai_list *list, const struct in6_addr *address, uint32_t scope);
+static void gai_unnamed(struct gai_list *list, int family, int flags);
+static int gai_numeric(const char *node, int family, int flags, struct gai_list *list);
+static int gai_lookup(const char *node, int family, int flags, struct gai_list *list);
+static int gai_source(const struct gai_address *item, struct sockaddr_storage *source);
+static void gai_reachable_only(struct gai_list *list);
+static void gai_order(struct gai_list *list);
+static int gai_build(const struct gai_list *list, uint16_t port, int socktype, int protocol, int flags, struct addrinfo **output);
+static int gni_numeric6(const struct sockaddr_in6 *inet6, int flags, char *host, socklen_t host_length);
 
 /*
  * Implements the resolver load config operation.
@@ -59,7 +96,7 @@ resolver_load_config(
 		return EAI_AGAIN;
 
 	/* Process input until it is exhausted. */
-	while (config->count < DNS_MAX_NAMESERVERS &&
+	while (config->list_count < DNS_MAX_NAMESERVERS &&
 	       fgets(line, sizeof(line), file) != NULL) {
 		/* Continue while the operation condition remains true. */
 		text = line;
@@ -86,14 +123,24 @@ resolver_load_config(
 		       *end != ' ' && *end != '\t' && *end != '#')
 			end++;
 		*end = '\0';
-		/* Handles a failed inet aton operation. */
-		if (inet_aton(text, &config->servers[config->count]))
+
+		/* An IPv4 server, kept in both lists. */
+		if (inet_aton(text, &config->servers[config->count])) {
+			config->list[config->list_count].family = AF_INET;
+			config->list[config->list_count].address = config->servers[config->count];
+			config->list_count++;
 			config->count++;
+			continue;
+		}
+
+		/* An IPv6 one, with the interface of a link-local address (ws130-p004). */
+		if (resolver_parse_server6(text, &config->list[config->list_count]))
+			config->list_count++;
 	}
 	fclose(file);
 
 	/* Returns the computed result. */
-	return config->count != 0U ? 0 : EAI_AGAIN;
+	return config->list_count != 0U ? 0 : EAI_AGAIN;
 }
 
 /*
@@ -107,13 +154,25 @@ resolver_query_server(
 	uint16_t port,
 	struct resolver_result *result)
 {
+	struct sockaddr_in server;
 	int function_result;
 
-	/* Obtains the resolver query server depth result. */
-	function_result = resolver_query_server_depth(name, type, server_address, port,
-					   result, 0);
+	/* The server's address. */
+	if (server_address == NULL)
+		return EAI_FAIL;
+	memset(&server, 0, sizeof(server));
+	server.sin_family = AF_INET;
+	server.sin_port = htons(port);
+	server.sin_addr = *server_address;
 
-	/* Returns the computed result. */
+	/* Obtains the resolver query server depth result. */
+	function_result = resolver_query_server_depth(name, type, (const struct sockaddr *)&server, sizeof(server), result, 0);
+
+	/* Succeeded or not, the server that answered. */
+	if (function_result == 0) {
+		result->server = *server_address;
+		result->port = port;
+	}
 	return function_result;
 }
 
@@ -136,12 +195,15 @@ resolver_query(
 	if (error != 0)
 		return error;
 
-	/* Process each remaining element. */
-	for (index = 0; index < config.count; index++) {
-		error = resolver_query_server(
-		    name, type, &config.servers[index], 53U, result);
+	/* Each server in resolv.conf's order, IPv4 or IPv6 (ws130-p004). */
+	for (index = 0; index < config.list_count; index++) {
+		if (config.list[index].family == AF_INET6) {
+			error = resolver_query_server6(name, type, &config.list[index].address6, config.list[index].scope, 53U, result);
+		} else {
+			error = resolver_query_server(name, type, &config.list[index].address, 53U, result);
+		}
 
-		/* Handles an operation failure. */
+		/* An answer, or the name known not to be there, ends the search. */
 		if (error == 0 || error == EAI_NONAME)
 			return error;
 	}
@@ -151,7 +213,12 @@ resolver_query(
 }
 
 /*
- * Implements the getaddrinfo operation.
+ * Finds the addresses of a node and the port of a service (POSIX): IPv4
+ * (A) and IPv6 (AAAA) ones (ws130-p004), a numeric address of either
+ * family (an IPv6 one with "%zone"), IPv4 ones as v4-mapped IPv6 ones for
+ * AF_INET6 with AI_V4MAPPED, only the families the host can reach with
+ * AI_ADDRCONFIG, and IPv6 before IPv4 only when the host has a source that
+ * reaches the IPv6 destination (RFC 6724, resolver_inet6_preferred).
  */
 int
 getaddrinfo(
@@ -160,120 +227,68 @@ getaddrinfo(
 	const struct addrinfo *hints,
 	struct addrinfo **output)
 {
-	struct addrinfo *item;
-	struct sockaddr_in *address;
-	struct resolver_result result;
-	struct addrinfo *head, **tail;
-	struct in_addr numeric;
+	struct gai_list list;
 	uint16_t port;
-	unsigned count, index;
-	int family, socktype, protocol, flags, error;
+	int family;
+	int socktype;
+	int protocol;
+	int flags;
+	int error;
 
-	head = NULL;
-	tail = &head;
+	/* The hints. */
+	if (output == NULL)
+		return EAI_FAIL;
+	*output = NULL;
 	family = AF_UNSPEC;
 	socktype = 0;
 	protocol = 0;
 	flags = 0;
-
-	/* Handles the output availability. */
-	if (output == NULL)
-		return EAI_FAIL;
-	*output = NULL;
-	/* Handles the hints availability. */
 	if (hints != NULL) {
 		family = hints->ai_family;
 		socktype = hints->ai_socktype;
 		protocol = hints->ai_protocol;
 		flags = hints->ai_flags;
-
-		/* Checks the active flags. */
-		if ((flags & ~(AI_PASSIVE | AI_CANONNAME | AI_NUMERICHOST |
-			       AI_NUMERICSERV)) != 0)
-
-			/* Returns the computed result. */
-			return EAI_BADFLAGS;
 	}
 
-	/* Handles the family condition. */
-	if (family != AF_UNSPEC && family != AF_INET)
+	/* The flags, the family and the socket type known. */
+	if ((flags & ~GAI_FLAGS) != 0)
+		return EAI_BADFLAGS;
+	if (family != AF_UNSPEC && family != AF_INET && family != AF_INET6)
 		return EAI_FAMILY;
-
-	/* Handles the socktype condition. */
-	if (socktype != 0 && socktype != SOCK_DGRAM &&
-	    socktype != SOCK_STREAM && socktype != SOCK_RAW)
-
-		/* Returns the computed result. */
+	if (socktype != 0 &&
+	    socktype != SOCK_DGRAM &&
+	    socktype != SOCK_STREAM &&
+	    socktype != SOCK_RAW)
 		return EAI_SOCKTYPE;
-	error = parse_service(service, hints != NULL &&
-	    hints->ai_socktype == SOCK_DGRAM ? "udp" : "tcp", &port);
 
-	/* Handles an operation failure. */
+	/* The service's port. */
+	error = parse_service(service, socktype == SOCK_DGRAM ? "udp" : "tcp", &port);
 	if (error != 0)
 		return error;
-	memset(&result, 0, sizeof(result));
 
-	/* Handles the node availability. */
+	/* The addresses: none named, a numeric one, or the names' in the DNS. */
+	memset(&list, 0, sizeof(list));
 	if (node == NULL) {
-		numeric.s_addr =
-		    htonl((flags & AI_PASSIVE) ? INADDR_ANY : 0x7f000001U);
-		result.addresses[0] = numeric;
-		result.address_count = 1;
-	} else if (inet_aton(node, &numeric)) {
-		result.addresses[0] = numeric;
-		result.address_count = 1;
-		strncpy(result.canonical, node, sizeof(result.canonical) - 1U);
+		gai_unnamed(&list, family, flags);
 	} else {
-		/* Checks the active flags. */
-		if ((flags & AI_NUMERICHOST) != 0)
-			return EAI_NONAME;
-		error = resolver_query(node, DNS_TYPE_A, &result);
-
-		/* Handles an operation failure. */
+		error = gai_numeric(node, family, flags, &list);
+		if (error == EAI_NONAME && (flags & AI_NUMERICHOST) == 0)
+			error = gai_lookup(node, family, flags, &list);
 		if (error != 0)
 			return error;
-
-		/* Checks the operation result. */
-		if (result.canonical[0] == '\0') {
-			strncpy(result.canonical, node,
-				sizeof(result.canonical) - 1U);
-		}
 	}
 
-	/* Process each remaining element. */
-	count = result.address_count;
-	for (index = 0; index < count; index++) {
-		item = calloc(1, sizeof(*item));
-		address = calloc(1, sizeof(*address));
+	/* The families the host reaches, and IPv6 before IPv4 when the host reaches it. */
+	if ((flags & AI_ADDRCONFIG) != 0 && node != NULL)
+		gai_reachable_only(&list);
+	if (list.count == 0U)
+		return EAI_NONAME;
+	if (node != NULL)
+		gai_order(&list);
 
-		/* Handles the item availability. */
-		if (item == NULL || address == NULL) {
-			free(item);
-			free(address);
-			freeaddrinfo(head);
-
-			/* Returns the computed result. */
-			return EAI_MEMORY;
-		}
-		address->sin_family = AF_INET;
-		address->sin_port = htons(port);
-		address->sin_addr = result.addresses[index];
-		item->ai_flags = flags;
-		item->ai_family = AF_INET;
-		item->ai_socktype = socktype;
-		item->ai_protocol = protocol;
-		item->ai_addrlen = sizeof(*address);
-		item->ai_addr = (struct sockaddr *)address;
-
-		/* Checks the active flags. */
-		if ((flags & AI_CANONNAME) != 0 && index == 0)
-			item->ai_canonname = strdup(result.canonical);
-		*tail = item;
-		tail = &item->ai_next;
-	}
-	*output = head;
-	/* Reports successful completion. */
-	return 0;
+	/* Succeeded: the list. */
+	error = gai_build(&list, port, socktype, protocol, flags, output);
+	return error;
 }
 
 /*
@@ -344,7 +359,9 @@ gai_strerror(
 }
 
 /*
- * Implements the getnameinfo operation.
+ * Names an address and its port (POSIX): an IPv4 or an IPv6 address
+ * (ws130-p004; a link-local one with "%interface", or "%index" with
+ * NI_NUMERICSCOPE), by its PTR record unless NI_NUMERICHOST.
  */
 int
 getnameinfo(
@@ -356,206 +373,741 @@ getnameinfo(
 	socklen_t service_length,
 	int flags)
 {
-	int needed;
 	const struct sockaddr_in *inet;
-	char buffer[254];
+	const struct sockaddr_in6 *inet6;
 	struct resolver_result result;
+	const char *written;
+	char buffer[254];
+	uint16_t port;
+	int needed;
 	int error;
 
-	inet = (const struct sockaddr_in *)address;
-
-	/* Checks the active flags. */
-	if ((flags & ~(NI_NUMERICHOST | NI_NUMERICSERV | NI_NAMEREQD)) != 0)
+	/* The flags known, and an address of a family known. */
+	if ((flags & ~GNI_FLAGS) != 0)
 		return EAI_BADFLAGS;
-
-	/* Handles the address availability. */
-	if (address == NULL || length < sizeof(*inet) ||
-	    inet->sin_family != AF_INET)
-
-		/* Returns the computed result. */
+	if (address == NULL)
 		return EAI_FAMILY;
+	inet = (const struct sockaddr_in *)address;
+	inet6 = (const struct sockaddr_in6 *)address;
+	if (address->sa_family == AF_INET && length >= sizeof(*inet)) {
+		port = inet->sin_port;
+	} else if (address->sa_family == AF_INET6 && length >= sizeof(*inet6)) {
+		port = inet6->sin6_port;
+	} else {
+		return EAI_FAMILY;
+	}
 
-	/* Handles the service availability. */
+	/* The service: the port's number. */
 	if (service != NULL && service_length != 0U) {
-		needed = snprintf(service, service_length, "%u",
-		      ntohs(inet->sin_port));
-
-		/* Handles the needed condition. */
+		needed = snprintf(service, service_length, "%u", ntohs(port));
 		if (needed < 0 || (socklen_t)needed >= service_length)
 			return EAI_OVERFLOW;
 	}
 
-	/* Handles the host availability. */
+	/* No host asked for. */
 	if (host == NULL || host_length == 0U)
 		return 0;
 
-	/* Checks the active flags. */
+	/* The name of its PTR record. */
 	if ((flags & NI_NUMERICHOST) == 0) {
-		error = make_ptr_name(inet->sin_addr, buffer, sizeof(buffer));
-
-		/* Handles an operation failure. */
+		if (address->sa_family == AF_INET6)
+			error = resolver_inet6_ptr_name(inet6->sin6_addr.s6_addr, buffer, sizeof(buffer));
+		else
+			error = make_ptr_name(inet->sin_addr, buffer, sizeof(buffer));
 		if (error == 0)
 			error = resolver_query(buffer, DNS_TYPE_PTR, &result);
-
-		/* Handles an operation failure. */
 		if (error == 0) {
-			/* Handles a failed strlen operation. */
-			if (strlen(result.ptr_name) + 1U > host_length)
+			needed = (int)strlen(result.ptr_name);
+			if ((socklen_t)needed + 1U > host_length)
 				return EAI_OVERFLOW;
 			strcpy(host, result.ptr_name);
-
-			/* Reports successful completion. */
 			return 0;
 		}
 
-		/* Checks the active flags. */
+		/* Without a name, the number unless a name was required. */
 		if ((flags & NI_NAMEREQD) != 0)
 			return error;
 	}
 
-	/* Handles a failed inet ntop operation. */
-	if (inet_ntop(AF_INET, &inet->sin_addr, buffer, sizeof(buffer)) == NULL)
+	/* Succeeded: the number. */
+	if (address->sa_family == AF_INET6) {
+		error = gni_numeric6(inet6, flags, host, host_length);
+		return error;
+	}
+	written = inet_ntop(AF_INET, &inet->sin_addr, buffer, sizeof(buffer));
+	if (written == NULL)
 		return EAI_SYSTEM;
-
-	/* Handles a failed strlen operation. */
-	if (strlen(buffer) + 1U > host_length)
+	needed = (int)strlen(buffer);
+	if ((socklen_t)needed + 1U > host_length)
 		return EAI_OVERFLOW;
 	strcpy(host, buffer);
-
-	/* Reports successful completion. */
 	return 0;
 }
 
-/* Supports the resolver query server depth operation. */
+/*
+ * Asks one server (an IPv4 or an IPv6 address, ws130-p004) over UDP, then
+ * TCP when the answer was cut, and follows a CNAME for an address question
+ * (A or AAAA) up to eight deep.
+ */
 static int
 resolver_query_server_depth(
 	const char *name,
 	uint16_t type,
-	const struct in_addr *server_address,
-	uint16_t port,
+	const struct sockaddr *server,
+	socklen_t server_length,
 	struct resolver_result *result,
 	unsigned depth)
 {
 	struct resolver_result target;
-	char alias[254];
-	uint32_t cname_ttl;
-	uint8_t query[512], response[512];
-	struct sockaddr_in server, source;
+	struct sockaddr_storage source;
 	struct timeval timeout;
+	char alias[254];
+	uint8_t query[512];
+	uint8_t response[512];
+	uint32_t cname_ttl;
 	socklen_t source_length;
 	size_t query_length;
-	uint16_t id;
-	int attempt, descriptor, error, truncated;
 	ssize_t count;
+	uint16_t id;
+	int attempt;
+	int descriptor;
+	int error;
+	int truncated;
+	int same;
+	int address_question;
 
-	/* Handles the name availability. */
-	if (name == NULL || server_address == NULL || result == NULL)
+	/* The question. */
+	if (name == NULL || server == NULL || result == NULL)
 		return EAI_FAIL;
 	memset(result, 0, sizeof(*result));
 	id = query_id(name);
-	error = resolver_dns_build_query(query, sizeof(query), id, name, type,
-					 &query_length);
-
-	/* Handles an operation failure. */
+	error = resolver_dns_build_query(query, sizeof(query), id, name, type, &query_length);
 	if (error != 0)
 		return error;
-	memset(&server, 0, sizeof(server));
 
-	/* Process each element required by the operation. */
-	server.sin_family = AF_INET;
-	server.sin_port = htons(port);
-	server.sin_addr = *server_address;
+	/* Two tries over UDP. */
 	for (attempt = 0; attempt < 2; attempt++) {
-		descriptor = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-		/* Checks the file descriptor. */
+		descriptor = socket(server->sa_family, SOCK_DGRAM, IPPROTO_UDP);
 		if (descriptor < 0)
 			return EAI_SYSTEM;
 		timeout.tv_sec = 2;
 		timeout.tv_usec = 0;
-		(void)setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-				 sizeof(timeout));
+		(void)setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-		/* Handles a failed sendto operation. */
-		if (sendto(descriptor, query, query_length, 0,
-			   (const struct sockaddr *)&server,
-			   sizeof(server)) >= 0) {
-			source_length = sizeof(source);
-			count = recvfrom(
-			    descriptor, response, sizeof(response), 0,
-			    (struct sockaddr *)&source, &source_length);
-
-			/* Checks the remaining item count. */
-			if (count >= 0 && source.sin_family == AF_INET &&
-			    source.sin_addr.s_addr == server.sin_addr.s_addr &&
-			    source.sin_port == server.sin_port) {
-				error = resolver_dns_parse(
-				    response, (size_t)count, id, name, type,
-				    result, &truncated);
-				close(descriptor);
-
-				/* Handles the truncated condition. */
-				if (truncated) {
-					error = tcp_query(&server, query,
-							  query_length, id,
-							  name, type, result);
-				}
-
-				/* Handles an operation failure. */
-				if (error == EAI_NONAME && type == DNS_TYPE_A &&
-				    result->canonical[0] != '\0' &&
-				    depth < 8U) {
-					cname_ttl = result->ttl;
-					strncpy(alias, result->canonical,
-						sizeof(alias) - 1U);
-					alias[sizeof(alias) - 1U] = '\0';
-					error = resolver_query_server_depth(
-					    alias, type, server_address, port,
-					    &target, depth + 1U);
-
-					/* Handles an operation failure. */
-					if (error == 0) {
-						*result = target;
-						/* Checks the operation result. */
-						if (result->cname_count < 8U) {
-							memmove(
-							    result->cname_chain +
-								1,
-							    result->cname_chain,
-							    result->cname_count *
-								sizeof(
-								    result->cname_chain
-									[0]));
-							strncpy(
-							    result->cname_chain
-								[0],
-							    alias, 253U);
-							result->cname_count++;
-						}
-
-						/* Handles the cname ttl condition. */
-						if (cname_ttl != 0 &&
-						    (result->ttl == 0 ||
-						     cname_ttl < result->ttl))
-							result->ttl = cname_ttl;
-					}
-				}
-
-				/* Handles an operation failure. */
-				if (error == 0) {
-					result->server = *server_address;
-					result->port = port;
-				}
-
-				/* Returns the computed result. */
-				return error;
-			}
+		/* The question out, an answer from the server back. */
+		count = sendto(descriptor, query, query_length, 0, server, server_length);
+		if (count < 0) {
+			close(descriptor);
+			continue;
 		}
+		source_length = sizeof(source);
+		memset(&source, 0, sizeof(source));
+		count = recvfrom(descriptor, response, sizeof(response), 0, (struct sockaddr *)&source, &source_length);
+		same = 0;
+		if (count >= 0)
+			same = resolver_same_peer(server, &source);
+		if (!same) {
+			close(descriptor);
+			continue;
+		}
+
+		/* The answer, over TCP again when it was cut. */
+		error = resolver_dns_parse(response, (size_t)count, id, name, type, result, &truncated);
 		close(descriptor);
+		if (truncated)
+			error = tcp_query(server, server_length, query, query_length, id, name, type, result);
+
+		/* An address question answered with a CNAME only: the alias asked in turn. */
+		address_question = type == DNS_TYPE_A || type == DNS_TYPE_AAAA;
+		if (error != EAI_NONAME || !address_question)
+			return error;
+		if (result->canonical[0] == '\0' || depth >= 8U)
+			return error;
+		cname_ttl = result->ttl;
+		strncpy(alias, result->canonical, sizeof(alias) - 1U);
+		alias[sizeof(alias) - 1U] = '\0';
+		error = resolver_query_server_depth(alias, type, server, server_length, &target, depth + 1U);
+		if (error != 0)
+			return error;
+
+		/* The alias's answer, the alias first in its chain, the shorter time to live. */
+		*result = target;
+		if (result->cname_count < 8U) {
+			memmove(result->cname_chain + 1, result->cname_chain, result->cname_count * sizeof(result->cname_chain[0]));
+			strncpy(result->cname_chain[0], alias, 253U);
+			result->cname_count++;
+		}
+		if (cname_ttl != 0 && (result->ttl == 0 || cname_ttl < result->ttl))
+			result->ttl = cname_ttl;
+
+		/* Succeeded: answered through the alias. */
+		return 0;
 	}
 
-	/* Returns the computed result. */
+	/* No answer. */
 	return EAI_AGAIN;
+}
+
+/* Asks an IPv6 server (the interface of a link-local one in scope) (ws130-p004). */
+static int
+resolver_query_server6(
+	const char *name,
+	uint16_t type,
+	const struct in6_addr *address,
+	uint32_t scope,
+	uint16_t port,
+	struct resolver_result *result)
+{
+	struct sockaddr_in6 server;
+	int error;
+
+	/* The server's address. */
+	memset(&server, 0, sizeof(server));
+	server.sin6_family = AF_INET6;
+	server.sin6_port = htons(port);
+	server.sin6_addr = *address;
+	server.sin6_scope_id = scope;
+
+	/* The question. */
+	error = resolver_query_server_depth(name, type, (const struct sockaddr *)&server, sizeof(server), result, 0);
+	return error;
+}
+
+/* Tells whether an answer came from the server asked: its family, address and port (ws130-p004). */
+static int
+resolver_same_peer(
+	const struct sockaddr *server,
+	const struct sockaddr_storage *source)
+{
+	const struct sockaddr_in *server4;
+	const struct sockaddr_in *source4;
+	const struct sockaddr_in6 *server6;
+	const struct sockaddr_in6 *source6;
+	int match;
+
+	/* The same family. */
+	if (source->ss_family != server->sa_family)
+		return 0;
+
+	/* IPv4: the address and the port. */
+	if (server->sa_family == AF_INET) {
+		server4 = (const struct sockaddr_in *)server;
+		source4 = (const struct sockaddr_in *)source;
+		if (source4->sin_addr.s_addr != server4->sin_addr.s_addr)
+			return 0;
+		return source4->sin_port == server4->sin_port;
+	}
+
+	/* IPv6: the address and the port. */
+	server6 = (const struct sockaddr_in6 *)server;
+	source6 = (const struct sockaddr_in6 *)source;
+	match = memcmp(&source6->sin6_addr, &server6->sin6_addr, sizeof(server6->sin6_addr));
+	if (match != 0)
+		return 0;
+	return source6->sin6_port == server6->sin6_port;
+}
+
+/*
+ * Reads an IPv6 name server of resolv.conf, "fe80::1%ue0" (an interface's
+ * name or number after the address of a link-local one) (ws130-p004).
+ * Returns 1 when it is one.
+ */
+static int
+resolver_parse_server6(
+	char *text,
+	struct resolver_server *server)
+{
+	char *zone;
+	char *end;
+	unsigned long number;
+	int ok;
+
+	/* The zone after the address. */
+	zone = strchr(text, '%');
+	if (zone != NULL)
+		*zone++ = '\0';
+
+	/* The address. */
+	memset(server, 0, sizeof(*server));
+	ok = inet_pton(AF_INET6, text, &server->address6);
+	if (!ok)
+		return 0;
+	server->family = AF_INET6;
+
+	/* The zone: a number, or an interface's name. */
+	if (zone == NULL)
+		return 1;
+	number = strtoul(zone, &end, 10);
+	if (*zone != '\0' && *end == '\0') {
+		server->scope = (uint32_t)number;
+		return 1;
+	}
+	server->scope = if_nametoindex(zone);
+
+	/* Succeeded when the interface is there. */
+	return server->scope != 0U;
+}
+
+/* Adds an IPv4 address to the list, as a v4-mapped IPv6 one when mapped; a full list drops it. */
+static void
+gai_add4(
+	struct gai_list *list,
+	struct in_addr address,
+	int mapped)
+{
+	struct gai_address *item;
+
+	/* A full list. */
+	if (list->count == GAI_ADDRESSES)
+		return;
+
+	/* As it is. */
+	item = &list->items[list->count++];
+	memset(item, 0, sizeof(*item));
+	if (!mapped) {
+		item->family = AF_INET;
+		item->address = address;
+		return;
+	}
+
+	/* Succeeded: as ::ffff:a.b.c.d. */
+	item->family = AF_INET6;
+	item->address6.s6_addr[10] = 0xff;
+	item->address6.s6_addr[11] = 0xff;
+	memcpy(&item->address6.s6_addr[12], &address.s_addr, 4U);
+}
+
+/* Adds an IPv6 address with its scope to the list; a full list drops it. */
+static void
+gai_add6(
+	struct gai_list *list,
+	const struct in6_addr *address,
+	uint32_t scope)
+{
+	struct gai_address *item;
+
+	/* A full list. */
+	if (list->count == GAI_ADDRESSES)
+		return;
+
+	/* Succeeded: added. */
+	item = &list->items[list->count++];
+	memset(item, 0, sizeof(*item));
+	item->family = AF_INET6;
+	item->address6 = *address;
+	item->scope = scope;
+}
+
+/* The addresses of no node: any (AI_PASSIVE) or the loopback, IPv4 first for AF_UNSPEC. */
+static void
+gai_unnamed(
+	struct gai_list *list,
+	int family,
+	int flags)
+{
+	struct in_addr address;
+	struct in6_addr address6;
+
+	/* IPv4's. */
+	address.s_addr = htonl(0x7f000001U);
+	if ((flags & AI_PASSIVE) != 0)
+		address.s_addr = htonl(INADDR_ANY);
+	if (family != AF_INET6)
+		gai_add4(list, address, 0);
+
+	/* And IPv6's. */
+	address6 = in6addr_loopback;
+	if ((flags & AI_PASSIVE) != 0)
+		address6 = in6addr_any;
+	if (family != AF_INET)
+		gai_add6(list, &address6, 0);
+}
+
+/*
+ * A numeric node: an IPv4 address (a v4-mapped IPv6 one for AF_INET6 with
+ * AI_V4MAPPED), or an IPv6 one with "%zone" (an interface's name or
+ * number).  Returns 0, EAI_NONAME when the node is not numeric, or
+ * EAI_ADDRFAMILY when its family is not the one asked for.
+ */
+static int
+gai_numeric(
+	const char *node,
+	int family,
+	int flags,
+	struct gai_list *list)
+{
+	struct in_addr address;
+	struct in6_addr address6;
+	char text[INET6_ADDRSTRLEN + IF_NAMESIZE + 2];
+	char *zone;
+	char *end;
+	unsigned long number;
+	uint32_t scope;
+	size_t length;
+	int ok;
+
+	/* An IPv4 address. */
+	ok = inet_aton(node, &address);
+	if (ok) {
+		if (family == AF_INET6 && (flags & AI_V4MAPPED) == 0)
+			return EAI_ADDRFAMILY;
+		gai_add4(list, address, family == AF_INET6);
+		strncpy(list->canonical, node, sizeof(list->canonical) - 1U);
+		return 0;
+	}
+
+	/* An IPv6 address, its zone apart. */
+	length = strlen(node);
+	if (length >= sizeof(text))
+		return EAI_NONAME;
+	memcpy(text, node, length + 1U);
+	zone = strchr(text, '%');
+	if (zone != NULL)
+		*zone++ = '\0';
+	ok = inet_pton(AF_INET6, text, &address6);
+	if (ok != 1)
+		return EAI_NONAME;
+	if (family == AF_INET)
+		return EAI_ADDRFAMILY;
+
+	/* The zone: a number, or an interface's name. */
+	scope = 0;
+	if (zone != NULL) {
+		number = strtoul(zone, &end, 10);
+		scope = (uint32_t)number;
+		if (*zone == '\0' || *end != '\0')
+			scope = if_nametoindex(zone);
+		if (scope == 0U)
+			return EAI_NONAME;
+	}
+
+	/* Succeeded: the address. */
+	gai_add6(list, &address6, scope);
+	strncpy(list->canonical, node, sizeof(list->canonical) - 1U);
+	return 0;
+}
+
+/*
+ * Asks the DNS for a name's addresses: A unless AF_INET6, AAAA unless
+ * AF_INET, and for AF_INET6 with AI_V4MAPPED the A records as v4-mapped
+ * ones when there is no AAAA (or with AI_ALL too).  Returns 0 when one was
+ * found, or the error of the last question.
+ */
+static int
+gai_lookup(
+	const char *node,
+	int family,
+	int flags,
+	struct gai_list *list)
+{
+	struct resolver_result result;
+	unsigned index;
+	int mapped;
+	int want4;
+	int error4;
+	int error6;
+
+	/* The IPv6 addresses. */
+	error6 = EAI_NONAME;
+	if (family != AF_INET) {
+		error6 = resolver_query(node, DNS_TYPE_AAAA, &result);
+		if (error6 == 0) {
+			for (index = 0; index < result.address6_count; index++)
+				gai_add6(list, &result.addresses6[index], 0);
+			strncpy(list->canonical, result.canonical, sizeof(list->canonical) - 1U);
+		}
+	}
+
+	/* The IPv4 ones, as v4-mapped ones for AF_INET6 (AI_V4MAPPED: when there were no IPv6 ones, or AI_ALL). */
+	error4 = EAI_NONAME;
+	mapped = family == AF_INET6;
+	want4 = !mapped;
+	if (mapped && (flags & AI_V4MAPPED) != 0)
+		want4 = error6 != 0 || (flags & AI_ALL) != 0;
+	if (want4) {
+		error4 = resolver_query(node, DNS_TYPE_A, &result);
+		if (error4 == 0) {
+			for (index = 0; index < result.address_count; index++)
+				gai_add4(list, result.addresses[index], mapped);
+			if (list->canonical[0] == '\0')
+				strncpy(list->canonical, result.canonical, sizeof(list->canonical) - 1U);
+		}
+	}
+
+	/* No address of either. */
+	if (list->count == 0U) {
+		if (error4 != EAI_NONAME)
+			return error4;
+		return error6;
+	}
+
+	/* Succeeded: the canonical name, the node's own without a CNAME. */
+	if (list->canonical[0] == '\0')
+		strncpy(list->canonical, node, sizeof(list->canonical) - 1U);
+	return 0;
+}
+
+/*
+ * Finds the source the host would send from to an address (a UDP socket
+ * connected to it, no packet sent): 1 with it, 0 when the host has no way
+ * there.
+ */
+static int
+gai_source(
+	const struct gai_address *item,
+	struct sockaddr_storage *source)
+{
+	struct sockaddr_in destination;
+	struct sockaddr_in6 destination6;
+	socklen_t length;
+	int descriptor;
+	int status;
+
+	/* A socket of the address's family. */
+	descriptor = socket(item->family, SOCK_DGRAM, IPPROTO_UDP);
+	if (descriptor < 0)
+		return 0;
+
+	/* Connected to the address (any port: nothing is sent). */
+	memset(&destination, 0, sizeof(destination));
+	memset(&destination6, 0, sizeof(destination6));
+	if (item->family == AF_INET6) {
+		destination6.sin6_family = AF_INET6;
+		destination6.sin6_port = htons(53U);
+		destination6.sin6_addr = item->address6;
+		destination6.sin6_scope_id = item->scope;
+		status = connect(descriptor, (const struct sockaddr *)&destination6, sizeof(destination6));
+	} else {
+		destination.sin_family = AF_INET;
+		destination.sin_port = htons(53U);
+		destination.sin_addr = item->address;
+		status = connect(descriptor, (const struct sockaddr *)&destination, sizeof(destination));
+	}
+
+	/* The source it chose. */
+	length = sizeof(*source);
+	memset(source, 0, sizeof(*source));
+	if (status == 0)
+		status = getsockname(descriptor, (struct sockaddr *)source, &length);
+	close(descriptor);
+
+	/* Succeeded when it was connected. */
+	return status == 0;
+}
+
+/* Keeps only the addresses of the families the host can send to (AI_ADDRCONFIG). */
+static void
+gai_reachable_only(
+	struct gai_list *list)
+{
+	struct sockaddr_storage source;
+	unsigned index;
+	unsigned kept;
+	int reach4;
+	int reach6;
+	int tried4;
+	int tried6;
+	int reach;
+
+	/* Each family judged by its first address. */
+	reach4 = 0;
+	reach6 = 0;
+	tried4 = 0;
+	tried6 = 0;
+	kept = 0;
+	for (index = 0; index < list->count; index++) {
+		if (list->items[index].family == AF_INET6 && !tried6) {
+			reach6 = gai_source(&list->items[index], &source);
+			tried6 = 1;
+		}
+		if (list->items[index].family == AF_INET && !tried4) {
+			reach4 = gai_source(&list->items[index], &source);
+			tried4 = 1;
+		}
+
+		/* Kept when its family is reached. */
+		reach = reach4;
+		if (list->items[index].family == AF_INET6)
+			reach = reach6;
+		if (!reach)
+			continue;
+		list->items[kept++] = list->items[index];
+	}
+
+	/* The list without the others. */
+	list->count = kept;
+}
+
+/*
+ * Puts the IPv6 addresses before the IPv4 ones when the host has a source
+ * that reaches the first IPv6 one (RFC 6724, resolver_inet6_preferred),
+ * after them otherwise; each family keeps its order.
+ */
+static void
+gai_order(
+	struct gai_list *list)
+{
+	struct gai_address sorted[GAI_ADDRESSES];
+	struct sockaddr_storage source;
+	const struct sockaddr_in6 *source6;
+	unsigned index;
+	unsigned count;
+	int first6;
+	int have4;
+	int have6;
+	int pass;
+	int found;
+	int preferred;
+	int family;
+
+	/* Both families there, the first IPv6 one. */
+	have4 = 0;
+	have6 = 0;
+	first6 = -1;
+	for (index = 0; index < list->count; index++) {
+		if (list->items[index].family == AF_INET)
+			have4 = 1;
+		if (list->items[index].family == AF_INET6 && first6 < 0)
+			first6 = (int)index;
+	}
+	have6 = first6 >= 0;
+	if (!have4 || !have6)
+		return;
+
+	/* Whether its source reaches it. */
+	found = gai_source(&list->items[first6], &source);
+	preferred = 0;
+	if (found && source.ss_family == AF_INET6) {
+		source6 = (const struct sockaddr_in6 *)&source;
+		preferred = resolver_inet6_preferred(list->items[first6].address6.s6_addr, source6->sin6_addr.s6_addr);
+	}
+
+	/* The preferred family first, each in its order. */
+	count = 0;
+	for (pass = 0; pass < 2; pass++) {
+		family = AF_INET;
+		if ((pass == 0) == (preferred != 0))
+			family = AF_INET6;
+		for (index = 0; index < list->count; index++) {
+			if (list->items[index].family == family)
+				sorted[count++] = list->items[index];
+		}
+	}
+
+	/* Succeeded: the new order. */
+	memcpy(list->items, sorted, count * sizeof(sorted[0]));
+}
+
+/* Makes the addrinfo records of the list; 0, or EAI_MEMORY. */
+static int
+gai_build(
+	const struct gai_list *list,
+	uint16_t port,
+	int socktype,
+	int protocol,
+	int flags,
+	struct addrinfo **output)
+{
+	const struct gai_address *source;
+	struct sockaddr_in *address;
+	struct sockaddr_in6 *address6;
+	struct addrinfo *head;
+	struct addrinfo **tail;
+	struct addrinfo *item;
+	unsigned index;
+
+	/* Each address. */
+	head = NULL;
+	tail = &head;
+	for (index = 0; index < list->count; index++) {
+		source = &list->items[index];
+		item = calloc(1, sizeof(*item));
+		if (item == NULL) {
+			freeaddrinfo(head);
+			return EAI_MEMORY;
+		}
+		*tail = item;
+		tail = &item->ai_next;
+
+		/* Its socket's address, IPv6 or IPv4. */
+		if (source->family == AF_INET6) {
+			address6 = calloc(1, sizeof(*address6));
+			if (address6 == NULL) {
+				freeaddrinfo(head);
+				return EAI_MEMORY;
+			}
+			address6->sin6_family = AF_INET6;
+			address6->sin6_port = htons(port);
+			address6->sin6_addr = source->address6;
+			address6->sin6_scope_id = source->scope;
+			item->ai_addrlen = sizeof(*address6);
+			item->ai_addr = (struct sockaddr *)address6;
+		} else {
+			address = calloc(1, sizeof(*address));
+			if (address == NULL) {
+				freeaddrinfo(head);
+				return EAI_MEMORY;
+			}
+			address->sin_family = AF_INET;
+			address->sin_port = htons(port);
+			address->sin_addr = source->address;
+			item->ai_addrlen = sizeof(*address);
+			item->ai_addr = (struct sockaddr *)address;
+		}
+
+		/* What every record carries; the canonical name on the first. */
+		item->ai_flags = flags;
+		item->ai_family = source->family;
+		item->ai_socktype = socktype;
+		item->ai_protocol = protocol;
+		if ((flags & AI_CANONNAME) != 0 && index == 0)
+			item->ai_canonname = strdup(list->canonical);
+	}
+
+	/* Succeeded: the records. */
+	*output = head;
+	return 0;
+}
+
+/* Writes an IPv6 address as a number, a link-local one's zone after "%" (its interface's name, or its number with NI_NUMERICSCOPE). */
+static int
+gni_numeric6(
+	const struct sockaddr_in6 *inet6,
+	int flags,
+	char *host,
+	socklen_t host_length)
+{
+	char text[INET6_ADDRSTRLEN + IF_NAMESIZE + 2];
+	char zone[IF_NAMESIZE];
+	const char *written;
+	char *named;
+	size_t length;
+	int link;
+
+	/* The address. */
+	written = inet_ntop(AF_INET6, &inet6->sin6_addr, text, sizeof(text));
+	if (written == NULL)
+		return EAI_SYSTEM;
+
+	/* A link-local one's zone. */
+	link = IN6_IS_ADDR_LINKLOCAL(&inet6->sin6_addr);
+	if (link && inet6->sin6_scope_id != 0U) {
+		named = NULL;
+		if ((flags & NI_NUMERICSCOPE) == 0)
+			named = if_indextoname(inet6->sin6_scope_id, zone);
+		length = strlen(text);
+		if (named != NULL)
+			(void)snprintf(text + length, sizeof(text) - length, "%%%s", zone);
+		else
+			(void)snprintf(text + length, sizeof(text) - length, "%%%u", (unsigned)inet6->sin6_scope_id);
+	}
+
+	/* Succeeded when it fits. */
+	length = strlen(text);
+	if (length + 1U > host_length)
+		return EAI_OVERFLOW;
+	memcpy(host, text, length + 1U);
+	return 0;
 }
 
 /* Supports the query id operation. */
@@ -585,7 +1137,8 @@ query_id(
 /* Supports the tcp query operation. */
 static int
 tcp_query(
-	const struct sockaddr_in *server,
+	const struct sockaddr *server,
+	socklen_t server_length,
 	const uint8_t *query,
 	size_t query_length,
 	uint16_t id,
@@ -600,15 +1153,14 @@ tcp_query(
 	request[0] = (uint8_t)(query_length >> 8);
 	request[1] = (uint8_t)query_length;
 	memcpy(request + 2, query, query_length);
-	descriptor = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	descriptor = socket(server->sa_family, SOCK_STREAM, IPPROTO_TCP);
 
 	/* Checks the file descriptor. */
 	if (descriptor < 0)
 		return EAI_AGAIN;
 
 	/* Handles a failed connect operation. */
-	if (connect(descriptor, (const struct sockaddr *)server,
-		    sizeof(*server)) != 0 ||
+	if (connect(descriptor, server, server_length) != 0 ||
 	    write_all_socket(descriptor, request, query_length + 2U) != 0 ||
 	    read_exact_socket(descriptor, prefix, 2U) != 0) {
 		close(descriptor);
