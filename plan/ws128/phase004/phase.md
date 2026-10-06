@@ -2,7 +2,7 @@
 
 # ws128-p004: PDF Viewer の文字の検索と選択・copy
 
-Status: in-progress（2026-10-06 q821 P2: 正常系を実装、build warning 0 と host 試験 PASS。T1-268・273・279 の AAT find-select が FAIL → q826・q826-i02・i03 で helper と titlebar を修正、T1 の再試験待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-288 で AAT find-select の log（SELECT page=0 from=0 to=8、COPY text="The quick"）と selected の PNG で「The quick」が青く選ばれているのを Q1 が目視。q826-i03 の helper の直しの後）（旧: in-progress（2026-10-06 q821 P2: 正常系を実装、build warning 0 と host 試験 PASS。T1-268・273・279 の AAT find-select が FAIL → q826・q826-i02・i03 で helper と titlebar を修正、T1 の再試験待ち））
 Disposition: normal
 Parent: [WS128](../ws.md)
 Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）

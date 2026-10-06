@@ -1,6 +1,6 @@
 # ws090-p024: libkeiland に複数選択の list と icon の grid の部品を足し、Files の list・grid の view を置き換える
 
-Status: in-progress（2026-10-06 q820、P1。実装・host の確認まで済み、T1 待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-282 PASS（files-regress、p015 は削除済みで外した）。pixel の一致は host の比較だけ）（旧: in-progress（2026-10-06 q820、P1。実装・host の確認まで済み、T1 待ち））
 WS: [WS090](../ws.md)
 
 ws090-p023 で Files の list・grid の view が libkeiland の部品に移せなかった（libkeiland に複数選択の list・icon の grid が無い、P1 の報告）。ユーザーの「置き換える」（2026-10-06）の残り。部品を libkeiland に足し、Files の list・grid（desktop の icon を含むか設計で決める）を置き換える。前後の撮影をユーザーへ。
