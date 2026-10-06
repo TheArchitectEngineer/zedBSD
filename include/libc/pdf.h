@@ -435,6 +435,28 @@ int pdf_writer_begin_page_edited(struct pdf_writer *writer, const struct pdf_pag
 int pdf_page_editor_read_image(const struct pdf_page_editor *editor, unsigned long id, struct pdf_image_source *image, void **owned);
 
 /*
+ * New words for a line of text (ws175-p004, design.md section 3.3): size
+ * is the caller's sizeof; utf8 the words (one line); font the line's own
+ * (ORIGINAL) or a replacement (ws175-p005).  set_text's result says
+ * whether the line's own font writes them (ORIGINAL) or a replacement
+ * font is needed (NEEDS_FONT, with ENOTSUP).
+ */
+enum pdf_edit_font {
+	PDF_EDIT_FONT_ORIGINAL = 0,
+	PDF_EDIT_FONT_SANS = 1,
+	PDF_EDIT_FONT_MONO = 2,
+	PDF_EDIT_FONT_CJK = 3
+};
+struct pdf_edit_text {
+	size_t size;
+	const char *utf8;
+	enum pdf_edit_font font;
+};
+#define PDF_EDIT_TEXT_ORIGINAL		0U
+#define PDF_EDIT_TEXT_NEEDS_FONT	1U
+int pdf_page_editor_set_text(struct pdf_page_editor *editor, size_t index, const struct pdf_edit_text *text, unsigned *result);
+
+/*
  * A blank editor (ws175-p007): an empty page of a size (points), for the
  * images inserted on a page of Notes' own; the writer draws them on its
  * open page (a new page, or one it replaces), in the page's shown space.

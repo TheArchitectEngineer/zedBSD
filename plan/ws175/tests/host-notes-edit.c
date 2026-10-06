@@ -72,6 +72,7 @@ main(
 	size_t png_size;
 	size_t records;
 	size_t page;
+	size_t index;
 	size_t bytes;
 	unsigned kind;
 	int journal_there;
@@ -171,6 +172,12 @@ main(
 	check(notes_document_reset_object(&document, 0, &state) == ENOENT, "Reset of an object without an edit: ENOENT");
 	error = notes_document_undo(&document, &page);
 	check(error == 0 && document.pages[0]->edit_count == 4 && (document.pages[0]->edits[0]->flags & NOTES_EDIT_PLACED) != 0U, "undo of Reset: moved again, in its place");
+
+	/* The editor's index of an edit's object (ws175-p008: chosen again after an undo): the page's image 0, the PNG inserted 3. */
+	error = notes_page_object_index(&document, 0, document.pages[0]->edits[0], &index);
+	check(error == 0 && index == 0, "the moved image's index: 0");
+	error = notes_page_object_index(&document, 0, document.pages[0]->edits[3], &index);
+	check(error == 0 && index == 3, "the inserted PNG's index: 3");
 
 	/* The images are held by the edits and the history, not by the test any more. */
 	notes_image_release(jpeg_image);

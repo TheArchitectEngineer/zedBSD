@@ -181,6 +181,75 @@ pdf_tounicode_lookup(
 }
 
 /*
+ * Finds a code that stands for one character, the CMap read backward
+ * (ws175-p004): a code of an entry whose destination is that one
+ * character (a range of one string counts up its last character, a range
+ * of an array has each code's own), checked forward so that a later entry
+ * that overrides it is not taken.  Returns 0 with the code and its byte
+ * length, EINVAL, or ENOENT when the map has none.
+ */
+int
+pdf_tounicode_reverse(
+	const struct pdf_tounicode *map,
+	uint32_t character,
+	unsigned *code,
+	unsigned *length)
+{
+	const struct tounicode_entry *entry;
+	const struct pdf_object *string;
+	uint32_t found[TOUNICODE_CHARACTERS_MAX];
+	uint32_t decoded[TOUNICODE_CHARACTERS_MAX];
+	unsigned candidate;
+	size_t count;
+	size_t at;
+	size_t item;
+	int error;
+
+	/* Refuses a missing map or result. */
+	if (map == NULL || code == NULL || length == NULL)
+		return EINVAL;
+
+	/* The entries, the last first. */
+	for (at = map->count; at > 0; at--) {
+		entry = &map->entries[at - 1];
+		candidate = 0U;
+		count = 0;
+
+		/* A range of an array: the code whose string is the character. */
+		if (entry->array != NULL) {
+			for (item = 0; item < entry->array->count && count == 0; item++) {
+				string = entry->array->values[item];
+				count = tounicode_utf16(string->bytes, string->length, decoded, TOUNICODE_CHARACTERS_MAX);
+				if (count != 1 || decoded[0] != character)
+					count = 0;
+				candidate = entry->low + (unsigned)item;
+			}
+		} else if (entry->count == 1 && character >= entry->characters[0] && character - entry->characters[0] <= entry->high - entry->low) {
+			/* One character counting up: the code as far from the low one. */
+			candidate = entry->low + (unsigned)(character - entry->characters[0]);
+			count = 1;
+		}
+
+		/* Not here. */
+		if (count == 0)
+			continue;
+
+		/* The code must still stand for the character (no later entry overrides it). */
+		error = pdf_tounicode_lookup(map, candidate, entry->length, found, TOUNICODE_CHARACTERS_MAX, &count);
+		if (error != 0 || count != 1 || found[0] != character)
+			continue;
+
+		/* Succeeded: the code and its length. */
+		*code = candidate;
+		*length = entry->length;
+		return 0;
+	}
+
+	/* No code. */
+	return ENOENT;
+}
+
+/*
  * Frees a map.
  */
 void
