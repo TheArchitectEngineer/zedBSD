@@ -526,6 +526,8 @@ main(
 	uint64_t now;
 	uint32_t width;
 	uint32_t height;
+	unsigned box_keys;
+	unsigned box_texts;
 	unsigned index;
 	int fullscreen;
 	int is_fullscreen;
@@ -663,11 +665,26 @@ main(
 				app_box_frame(&app);
 		}
 
-		/* The text box's inputs, then its frame, which takes them (ws175-p008). */
+		/* The text box's inputs (the keys and an input method's text counted for the tests' line), then its frame, which takes them (ws175-p008). */
 		if (app.window.box_count != 0U) {
-			for (index = 0; index < app.window.box_count; index++)
+			box_keys = 0;
+			box_texts = 0;
+			for (index = 0; index < app.window.box_count; index++) {
 				notes_box_input(&app.box, &app.window.box_events[index]);
+				if (app.window.box_events[index].kind == KL_WINDOW_KEY && app.window.box_events[index].pressed)
+					box_keys++;
+				if (app.window.box_events[index].kind == KL_WINDOW_TEXT_COMMIT || app.window.box_events[index].kind == KL_WINDOW_TEXT_PREEDIT)
+					box_texts++;
+			}
+
+			/* Taken; logged when the keys or the text came. */
 			app.window.box_count = 0;
+			if (box_keys != 0U || box_texts != 0U) {
+				printf("NOTES TEXT box input keys=%u texts=%u open=%d\n", box_keys, box_texts, app.box.open);
+				fflush(stdout);
+			}
+
+			/* The frame. */
 			if (app.box.open)
 				app_box_frame(&app);
 		}
@@ -4173,9 +4190,13 @@ app_box_frame(
 		return;
 	}
 
-	/* Shown with the next frame. */
+	/* Shown with the next frame; what the widget reported is logged for the tests (the words' bytes). */
 	app->redraw = 1;
 	reported = notes_box_take(&app->box);
+	if (reported != 0U) {
+		printf("NOTES TEXT box reported=%u bytes=%lu\n", reported, (unsigned long)strlen(notes_box_text(&app->box)));
+		fflush(stdout);
+	}
 
 	/* Changed words: a line's shown on the page soon. */
 	if ((reported & KL_FIELD_CHANGED) != 0U && app->box_kind == MAIN_BOX_LINE)
