@@ -1517,12 +1517,14 @@ $(BUILD)/bin/monitor: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 
 # Notes (ws079-p005) imports standard Wayland, Vulkan, TrueType and C library entry points,
 # zdesktop's System Menu and the recent files through libkeiland, and libpdf for its PDF; ws175-p007: libz-compat
-# for the images it keeps compressed.
+# for the images it keeps compressed; ws175-p008: libpng-compat, libjpeg-compat and libgif-compat for the image files
+# it puts on a page (picture.c).
 DYNAMIC_ZDESKTOP_NOTES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,notes)
 
 $(BUILD)/bin/notes: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(DYNAMIC_ZDESKTOP_NOTES_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
-	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libpdf.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so $(DYNAMIC_DIR)/libpng-compat.so $(DYNAMIC_DIR)/libjpeg-compat.so \
+	$(DYNAMIC_DIR)/libgif-compat.so $(DYNAMIC_DIR)/libz-compat.so $(DYNAMIC_DIR)/libpdf.so \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
@@ -1531,10 +1533,12 @@ $(BUILD)/bin/notes: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZDESKTOP_NOTES_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libz-compat.so -l:libpdf.so -l:libc.so -o $@
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libpng-compat.so -l:libjpeg-compat.so \
+ -l:libgif-compat.so -l:libz-compat.so -l:libpdf.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
- --needed libz-compat.so --needed libpdf.so --needed libc.so $@
+ --needed libpng-compat.so --needed libjpeg-compat.so --needed libgif-compat.so --needed libz-compat.so --needed libpdf.so \
+ --needed libc.so $@
 
 # PDF Viewer (ws079-p006) imports standard Wayland, Vulkan, TrueType and C library entry points,
 # zdesktop's menus and titlebar through libkeiland, and libpdf (which brings libz-compat and

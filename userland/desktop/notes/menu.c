@@ -6,7 +6,8 @@
  */
 
 /*
- * The menus of Notes: File, Edit, Page, Tool and View.
+ * The menus of Notes: File, Edit, Page, Tool and View (ws175-p008: Edit's
+ * images of the PDF and Tool's Select).
  *
  * The compositor draws them from the model given through libkeiland (the
  * System Menu, WS070) and runs their shortcuts: a shortcut's key is the
@@ -42,9 +43,14 @@
 #define MENU_CLOSE		14U
 #define MENU_SAVE_AS		15U
 
-/* Edit. */
+/* Edit (ws175-p008: the images of the PDF). */
 #define MENU_UNDO		20U
 #define MENU_REDO		21U
+#define MENU_EDIT_LINE		22U
+#define MENU_INSERT_IMAGE	23U
+#define MENU_REPLACE_IMAGE	24U
+#define MENU_DELETE_OBJECT	25U
+#define MENU_RESET_OBJECT	26U
 
 /* Page. */
 #define MENU_PREVIOUS_PAGE	30U
@@ -54,6 +60,7 @@
 #define MENU_PEN		40U
 #define MENU_HIGHLIGHTER	41U
 #define MENU_ERASER		42U
+#define MENU_SELECT		43U
 
 /* View. */
 #define MENU_FULLSCREEN		50U
@@ -90,6 +97,11 @@ static const struct menu_item menu_items[] = {
 	{ MENU_EDIT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Edit", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_UNDO, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Undo", NOTES_ACTION_UNDO, KEILAND_MENU_ROLE_UNDO, KEILAND_MENU_CTRL, 'z' },
 	{ MENU_REDO, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Redo", NOTES_ACTION_REDO, KEILAND_MENU_ROLE_REDO, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'z' },
+	{ MENU_EDIT_LINE, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_INSERT_IMAGE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Insert Image...", NOTES_ACTION_INSERT_IMAGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_REPLACE_IMAGE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Replace Image...", NOTES_ACTION_REPLACE_IMAGE, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_DELETE_OBJECT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Delete", NOTES_ACTION_DELETE_OBJECT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_RESET_OBJECT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Reset", NOTES_ACTION_RESET_OBJECT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_PAGE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Page", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_PREVIOUS_PAGE, MENU_PAGE, KEILAND_MENU_ITEM_NORMAL, "Previous Page", NOTES_ACTION_PREVIOUS_PAGE, KEILAND_MENU_ROLE_NONE, 0U, MENU_KEY_PAGE_UP },
 	{ MENU_NEXT_PAGE, MENU_PAGE, KEILAND_MENU_ITEM_NORMAL, "Next Page", NOTES_ACTION_NEXT_PAGE, KEILAND_MENU_ROLE_NONE, 0U, MENU_KEY_PAGE_DOWN },
@@ -97,6 +109,7 @@ static const struct menu_item menu_items[] = {
 	{ MENU_PEN, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Pen", NOTES_ACTION_PEN, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_HIGHLIGHTER, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Marker", NOTES_ACTION_HIGHLIGHTER, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ERASER, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Eraser", NOTES_ACTION_ERASER, KEILAND_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SELECT, MENU_TOOL, KEILAND_MENU_ITEM_RADIO, "Select", NOTES_ACTION_SELECT, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_FULLSCREEN, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Fullscreen", NOTES_ACTION_FULLSCREEN, KEILAND_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 }
 };
@@ -189,6 +202,12 @@ notes_menu_refresh(
 	(void)keiland_menu_set_enabled(menu, MENU_UNDO, state->can_undo);
 	(void)keiland_menu_set_enabled(menu, MENU_REDO, state->can_redo);
 
+	/* The images' items while they can do something. */
+	(void)keiland_menu_set_enabled(menu, MENU_INSERT_IMAGE, state->can_insert);
+	(void)keiland_menu_set_enabled(menu, MENU_REPLACE_IMAGE, state->can_replace);
+	(void)keiland_menu_set_enabled(menu, MENU_DELETE_OBJECT, state->selected);
+	(void)keiland_menu_set_enabled(menu, MENU_RESET_OBJECT, state->can_reset);
+
 	/* The page before and the page after, when there are such pages. */
 	earlier = 0;
 	if (state->page > 0U)
@@ -203,6 +222,7 @@ notes_menu_refresh(
 	(void)keiland_menu_set_checked(menu, MENU_PEN, menu_is(state->tool, NOTES_ACTION_PEN));
 	(void)keiland_menu_set_checked(menu, MENU_HIGHLIGHTER, menu_is(state->tool, NOTES_ACTION_HIGHLIGHTER));
 	(void)keiland_menu_set_checked(menu, MENU_ERASER, menu_is(state->tool, NOTES_ACTION_ERASER));
+	(void)keiland_menu_set_checked(menu, MENU_SELECT, menu_is(state->tool, NOTES_ACTION_SELECT));
 	(void)keiland_menu_set_checked(menu, MENU_FULLSCREEN, state->fullscreen);
 
 	/* The state is shown together. */
