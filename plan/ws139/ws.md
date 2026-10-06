@@ -52,6 +52,23 @@ E1 の数字は、同じ E1 の前後を比べることにだけ使う。目標�
 | P-11 | 起動の時の壁紙（2026-10-04 UAT で追加） | E4: `ZWL STARTUP step=wallpaper ms=7172`（素の 5330、PPM の Birch-Lake）。他の step は 9〜75 ms（`plan/uat/2026-10-04/zmon-and-session.txt`）。WS138 の PNG 化と prefetch の thread で変わる | E4 |
 | P-12 | System Monitor の描画（2026-10-04 UAT で追加） | E4: `ZMON FRAME fps=21`、submit_ms 約 11、callback_ms 約 31（AC）。i915 の perf: 1 submit 約 6.5 ms | E4 | 未定 | [BUG-159](../bugs/BUG-159.md)、`plan/ws133/s1-results.md` | ユーザーの観察（電源の管理の WS と関係） |
 
+### 基準値（p001 の image、T1-176、2026-10-05）
+
+同じ image（`plan/ws139/tests/config-amd64-perf.mk`、commit 259c4e678）・同じ guest で 2 回（e1・e1b）。`perf-summary.py` の表。
+
+| ID | metric | E1（e1 / e1b） | E2（p002） |
+| --- | --- | --- | --- |
+| P-03 | compose_frame_ms（合成 1 回の frame の間隔の中央値） | 100.1 / 100.6 ms | 未測 |
+| P-03 | compose_draw_ms（合成 1 回の draw） | 89.9 / 90.6 ms | 未測 |
+| P-03 | compose_per_s | 4.13 / 4.13 回/秒 | 未測 |
+| P-03 | monitor_fps・monitor_callback_ms（System Monitor の sim） | 4.5 / 4.6 fps、220 / 219 ms | 未測 |
+| P-01 | c5_first_frame_ms（1 回目 / 2 回目から） | 204 / 203 ms、95 / 95 ms | 未測 |
+| P-01 | c5_gap_ms_max | 204 / 203 ms | 未測 |
+| P-02 | textedit_direct_ms（中央値 / 最大） | 339 / 307 ms、448 / 430 ms | 未測 |
+| P-02 | terminal_direct_ms（中央値 / 最大） | 306 / 302 ms、321 / 324 ms | 未測 |
+
+証拠: `/home/awe/zedBSD-worktrees/t1/build/t1-176-out/`（e1・e1b の `summary.tsv`）。E1 の数字は E1 の前後の比べにだけ使う（上の環境の表）。
+
 - 台帳は、この WS の Phase が測り直したら更新する。古い数字は消さずに、日付と環境を付けて残す。
 - BUG-143 は 2026-10-04 に resolved（IME の確定の遅れは直った）。P-02（直接の入力の遅れ）はその残りで、ticket の reopen か新しい ticket かは Q1 が決める。
   BUG-159（P-10）は tracking。どちらも、直した Phase の結果を ticket に書き、disposition は Q1 が決める。
