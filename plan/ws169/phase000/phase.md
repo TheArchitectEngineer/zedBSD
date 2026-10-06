@@ -27,3 +27,10 @@ Queue: q744（2026-10-05、P2）
 - host: `sh plan/ws169/tests/run-host-mailer.sh` → PASS 10（start・open・reply・new・send（`NOBACKEND action=send to=3 subject=0 body=5`）・get・folder（Work の Inbox）・work・search（"code" で銀行の 1 通）・narrow-open）。PNG は `build/ws169/host-mailer-{start,attachment,reply,send,work,search,narrow-list,narrow-message,glass}.png`（目で見た。glass は壁紙をぼかした近似の地）。
 - build: `make ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk BUILD=build/ws169-zed build/ws169-zed/bin/mailer` が warning 0。host の gcc `-Werror` も 0。style-check 0。
 - 未実施: QEMU、実機、本文の日本語の入力（ASCII の key だけ）、添付・下書きの保存。
+
+## q826-i02（2026-10-06 P2）: 一覧の添付の印
+
+- T1-275 の `mailer.png` で、「Photos from the river walk」の行の右の小さな印が豆腐の四角に見えた。字ではなく、`kl_icon_file`（頁の絵の icon）を 16 px に縮めた物だった。
+- 修正: `mailer/view.c` で、線で描く紙の clip（`view_clip`: 縦長の輪と内側の線、14 px）に替えた。
+- 確認: `plan/ws169/tests/run-host-mailer.sh` は PASS（絵 `build/p2-mailer/host-mailer-start.png`）。Mail の zedBSD の build は warning 0。
+
