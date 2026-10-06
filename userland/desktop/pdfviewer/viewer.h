@@ -57,8 +57,11 @@ struct truetype_face;
 #define PV_KEY_W		17U
 #define PV_KEY_E		18U
 #define PV_KEY_O		24U
+#define PV_KEY_F		33U
+#define PV_KEY_C		46U
 #define PV_KEY_ENTER		28U
 #define PV_KEY_SPACE		57U
+#define PV_KEY_F3		61U
 #define PV_KEY_F9		67U
 #define PV_KEY_KP_MINUS		74U
 #define PV_KEY_KP_PLUS		78U
@@ -128,7 +131,11 @@ enum pv_action {
 	PV_ACTION_NEXT,
 	PV_ACTION_FIRST,
 	PV_ACTION_LAST,
-	PV_ACTION_THUMBNAILS
+	PV_ACTION_THUMBNAILS,
+	PV_ACTION_FIND,
+	PV_ACTION_FIND_NEXT,
+	PV_ACTION_FIND_PREVIOUS,
+	PV_ACTION_COPY
 };
 
 /*
@@ -177,7 +184,8 @@ struct pv_text {
  * One page of the open document: its shown size in points, its display
  * list once interpreted (NULL before), its raster at one scale once
  * drawn, and its thumbnail once drawn for the sidebar (NULL before).  used
- * orders the rasters for the cache's eviction.
+ * orders the rasters for the cache's eviction.  ws128-p004: its words as
+ * libpdf reads them (NULL: none), once read (text_read).
  */
 struct pv_page {
 	double width;
@@ -192,6 +200,8 @@ struct pv_page {
 	uint32_t *thumbnail;
 	int thumbnail_width;
 	int thumbnail_height;
+	struct pdf_page_text *text;
+	int text_read;
 };
 
 /*
@@ -249,6 +259,14 @@ struct pv_document {
  * (pv_app_chosen takes the answer).  keyboard_right and keyboard_bottom are how much of the
  * window the on-screen keyboard covers from its right and its bottom edge
  * (0 without it); the password card stays in the part it leaves.
+ *
+ * ws128-p004 (find.c): the words Find looks for, the place found (its
+ * page, first character and length; find_found: one is shown), and whether
+ * the titlebar's find field is asked to take the keyboard (main.c); the
+ * selection (a drag under way, whether it moved, whether there is one, its
+ * page and its two ends, characters of the page's text); and the words
+ * copied that main.c puts on the clipboard (copy_text, malloc'd, NULL when
+ * none waits).
  */
 struct pv_app {
 	struct pv_document document;
@@ -309,6 +327,20 @@ struct pv_app {
 	int zooming;
 	int keyboard_right;
 	int keyboard_bottom;
+	char find_query[256];
+	int find_found;
+	size_t find_page;
+	size_t find_from;
+	size_t find_length;
+	int want_find_focus;
+	int selecting;
+	int select_moved;
+	int has_selection;
+	size_t select_page;
+	size_t select_anchor;
+	size_t select_caret;
+	char *copy_text;
+	size_t copy_length;
 };
 
 /*
@@ -354,6 +386,16 @@ double pv_app_page_left(const struct pv_app *app, size_t index);
 void pv_app_place_at(const struct pv_app *app, double x, double y, struct pv_place *place);
 void pv_app_show_place(struct pv_app *app, const struct pv_place *place, double x, double y);
 void pv_app_swipe_end(struct pv_app *app, double velocity, int may_turn);
+void pv_app_go_to(struct pv_app *app, size_t index);
+
+/* Find and the selection (find.c, ws128-p004). */
+void pv_find_text(struct pv_app *app, const char *query);
+void pv_find_next(struct pv_app *app, int direction);
+int pv_select_button(struct pv_app *app, const struct pv_event *event);
+int pv_select_motion(struct pv_app *app, const struct pv_event *event);
+void pv_select_copy(struct pv_app *app);
+void pv_find_clear(struct pv_app *app);
+void pv_find_draw(struct pv_app *app, struct pv_canvas *canvas, size_t index, int x, int y, double scale);
 void pv_thumbnail_range(const struct pv_app *app, size_t *first, size_t *last);
 void pv_thumbnail_place(const struct pv_app *app, size_t index, int *x, int *y, int *width, int *height);
 void pv_password_layout(const struct pv_app *app, int *x, int *y, int *width, int *height);

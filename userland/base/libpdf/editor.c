@@ -4084,3 +4084,123 @@ editor_inside(
 	/* Inside (or on an edge). */
 	return 1;
 }
+
+/*
+ * Reads a page's text (ws128-p004): the characters of the editor's lines
+ * in their order, each with its glyph's corners, a space between two
+ * strings of a line apart by more than a fifth of the size (its corners
+ * the gap), and LINE_END on each line's last character.  Returns 0,
+ * EINVAL, ENOMEM, or the failure of reading the page.
+ */
+int
+pdf_page_text_open(
+	struct pdf_document *document,
+	size_t index,
+	struct pdf_page_text **text)
+{
+	struct pdf_page_editor *editor;
+	const struct editor_line *line;
+	const struct pdf_scan_show *show;
+	const struct pdf_scan_show *previous;
+	struct pdf_text_character *character;
+	struct pdf_page_text *made;
+	const double *quad;
+	double end[2];
+	double start[2];
+	double gap;
+	size_t total;
+	size_t at;
+	size_t in;
+	size_t from;
+	int error;
+
+	/* A place for the answer. */
+	if (document == NULL || text == NULL)
+		return EINVAL;
+	*text = NULL;
+
+	/* The page's lines. */
+	error = pdf_page_editor_open(document, index, &editor);
+	if (error != 0)
+		return error;
+
+	/* Room for every character and a space between each two strings. */
+	total = 0;
+	for (at = 0; at < editor->line_count; at++) {
+		line = &editor->lines[at];
+		for (in = 0; in < line->count; in++)
+			total += editor->scan.shows[line->first + in].characters_count + 1U;
+	}
+
+	/* The text and its characters. */
+	made = calloc(1, sizeof(*made));
+	if (made != NULL && total > 0U)
+		made->characters = calloc(total, sizeof(*made->characters));
+	if (made == NULL || (total > 0U && made->characters == NULL)) {
+		pdf_page_text_close(made);
+		pdf_page_editor_close(editor);
+		return ENOMEM;
+	}
+
+	/* Each line's strings. */
+	for (at = 0; at < editor->line_count; at++) {
+		line = &editor->lines[at];
+		for (in = 0; in < line->count; in++) {
+			/* A space where the string starts apart from the one before, over the gap. */
+			show = &editor->scan.shows[line->first + in];
+			if (in > 0 && made->count > 0U && show->characters_count > 0U) {
+				previous = &editor->scan.shows[line->first + in - 1U];
+				editor_point(previous->end, show->ctm, 0.0, 0.0, end);
+				editor_point(show->start, show->ctm, 0.0, 0.0, start);
+				gap = sqrt((start[0] - end[0]) * (start[0] - end[0]) + (start[1] - end[1]) * (start[1] - end[1]));
+				if (gap > line->size / 5.0) {
+					character = &made->characters[made->count];
+					quad = editor->scan.character_quads + show->characters_from * 8U;
+					character->character = ' ';
+					character->quad[0] = made->characters[made->count - 1U].quad[2];
+					character->quad[1] = made->characters[made->count - 1U].quad[3];
+					character->quad[2] = quad[0];
+					character->quad[3] = quad[1];
+					character->quad[4] = quad[6];
+					character->quad[5] = quad[7];
+					character->quad[6] = made->characters[made->count - 1U].quad[4];
+					character->quad[7] = made->characters[made->count - 1U].quad[5];
+					made->count++;
+				}
+			}
+
+			/* Each character with its glyph's corners. */
+			for (from = 0; from < show->characters_count; from++) {
+				character = &made->characters[made->count];
+				character->character = editor->scan.characters[show->characters_from + from];
+				memcpy(character->quad, editor->scan.character_quads + (show->characters_from + from) * 8U, sizeof(character->quad));
+				made->count++;
+			}
+		}
+
+		/* The line ends at its last character. */
+		if (made->count > 0U)
+			made->characters[made->count - 1U].flags |= PDF_TEXT_LINE_END;
+	}
+
+	/* Succeeded: the text, without the editor. */
+	pdf_page_editor_close(editor);
+	*text = made;
+	return 0;
+}
+
+/*
+ * Frees a page's text.
+ */
+void
+pdf_page_text_close(
+	struct pdf_page_text *text)
+{
+	/* Nothing to free. */
+	if (text == NULL)
+		return;
+
+	/* The characters, then the text. */
+	free(text->characters);
+	free(text);
+}

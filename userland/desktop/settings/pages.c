@@ -46,7 +46,7 @@ const struct se_page se_pages[SE_PAGES] = {
 	{ SE_PAGE_SECURITY, SE_GROUP_SYSTEM, SE_GLYPH_LOCK, "Security", "Locking the screen and protecting your data.", "security", "security lock screen encryption firewall", 0, se_soon_draw, NULL, NULL, NULL },
 	{ SE_PAGE_ACCESSIBILITY, SE_GROUP_SYSTEM, SE_GLYPH_PERSON, "Accessibility", "Make Kei easier to see, hear and use.", "accessibility", "accessibility zoom contrast text size", 0, se_soon_draw, NULL, NULL, NULL },
 	{ SE_PAGE_UPDATES, SE_GROUP_SYSTEM, SE_GLYPH_REFRESH, "Updates", "Keep Kei up to date.", "updates", "updates upgrade version software", 0, se_soon_draw, NULL, NULL, NULL },
-	{ SE_PAGE_ABOUT, SE_GROUP_SYSTEM, SE_GLYPH_INFO, "About", "This computer and the version of Kei.", "about", "about version system computer kei hardware", 1, se_about_draw, NULL, NULL, NULL }
+	{ SE_PAGE_ABOUT, SE_GROUP_SYSTEM, SE_GLYPH_INFO, "About", "This computer and the version of Kei.", "about", "about version system computer kei hardware welcome", 1, se_about_draw, se_about_press, NULL, NULL }
 };
 
 /*

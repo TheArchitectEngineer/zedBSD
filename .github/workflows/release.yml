@@ -1,6 +1,6 @@
 # The versioned release (ws129-p004; plan/ws129/release.md section 5).  The nightly build stays in ci.yml.
 #
-# An rc tag, zedbsd-<VERSION>-rc<N>, builds the release image from config/release/config-amd64-beta1.mk and
+# An rc tag, zedbsd-<VERSION>-rc<N>, builds the release image from config/release/config-amd64-beta2.mk and
 # publishes it as the Prerelease "Kei/zedBSD <name> RC <N>".  The final tag, zedbsd-<VERSION>, builds nothing:
 # it takes the assets of the rc it promotes (the highest rc in its history, or the one named), checks them
 # against their SHA256SUMS and publishes the same bytes as the Prerelease "Kei/zedBSD <name>", with the notes
@@ -32,7 +32,7 @@ concurrency:
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
-  RELEASE_CONFIG: config/release/config-amd64-beta1.mk
+  RELEASE_CONFIG: config/release/config-amd64-beta2.mk
 
 jobs:
   classify:

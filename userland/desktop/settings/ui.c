@@ -303,8 +303,13 @@ se_ui_go(
 	if (page >= SE_PAGES)
 		return;
 
-	/* The search's results give way to the page chosen. */
+	/* The search's results give way to the page chosen, and so does the Welcome (left, not done: ws164-p002). */
 	se_search_end(app);
+	if (app->welcome != 0) {
+		app->welcome = 0;
+		app->show_sidebar = 1;
+		se_log("WELCOME left page=%s", se_pages[page].word);
+	}
 
 	/*
 	 * The page's controls are listed in the log again at the next frame,
@@ -802,6 +807,7 @@ ui_draw_page(
 {
 	const struct kl_rect *panel;
 	const struct se_page *page;
+	struct kl_rect content;
 	int bottom;
 	int limit;
 	int x;
@@ -825,8 +831,20 @@ ui_draw_page(
 	width = panel->width - 2 * UI_PAGE_SIDE;
 	page = &se_pages[app->page];
 
-	/* The search's results in place of the page while a query is typed; else the header, then the page's own cards. */
-	if (app->search.active != 0) {
+	/*
+	 * The Welcome's step above its bar (ws164-p002); else the search's
+	 * results in place of the page while a query is typed; else the header,
+	 * then the page's own cards.
+	 */
+	if (app->welcome != 0) {
+		content = *panel;
+		content.height -= se_welcome_bar_height();
+		kl_canvas_clip_push(canvas, &content);
+		bottom = se_welcome_draw(app, canvas, x, panel->y + UI_PAGE_TOP - app->page_scroll, width);
+		bottom += se_welcome_bar_height();
+		kl_canvas_clip_pop(canvas);
+		se_welcome_bar(app, canvas, panel);
+	} else if (app->search.active != 0) {
 		bottom = se_search_draw(app, canvas, x, panel->y + UI_PAGE_TOP - app->page_scroll, width);
 	} else {
 		bottom = se_page_header(app, canvas, page, x, panel->y + UI_PAGE_TOP - app->page_scroll, width);
@@ -1036,6 +1054,7 @@ ui_click(
 	int index)
 {
 	const struct se_page *page;
+	int taken;
 
 	/* A row of the list and a tile of Home both open their page. */
 	if (kind == SE_HIT_PAGE_ROW || kind == SE_HIT_TILE) {
@@ -1047,6 +1066,13 @@ ui_click(
 	if (kind == SE_HIT_RESULT) {
 		se_search_press(app, index);
 		return;
+	}
+
+	/* The Welcome's own controls (ws164-p002). */
+	if (kind == SE_HIT_CONTROL && app->welcome != 0) {
+		taken = se_welcome_press(app, index);
+		if (taken)
+			return;
 	}
 
 	/* A page's own control is the page's to carry out. */

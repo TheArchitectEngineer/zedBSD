@@ -21,14 +21,10 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
-libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
-	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
-	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/tounicode.c userland/base/libpdf/encoding.c
-	userland/base/libpdf/shading.c
-	userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c"
+# The whole of libpdf (ws128-p004: Find reads the pages' text through the editor).
+libpdf=$(ls userland/base/libpdf/*.c)
 viewer="userland/desktop/pdfviewer/view.c userland/desktop/pdfviewer/draw.c userland/desktop/pdfviewer/document.c
-	userland/desktop/pdfviewer/canvas.c userland/desktop/pdfviewer/text.c"
+	userland/desktop/pdfviewer/canvas.c userland/desktop/pdfviewer/text.c userland/desktop/pdfviewer/find.c"
 # ws079-p007: a page with a JBIG2 image (libpdf leaves it out) for the notice.
 python3 -c "
 import sys
@@ -51,7 +47,7 @@ open(sys.argv[1], 'wb').write(out)
 qpdf --encrypt --user-password=secret --owner-password=owner --bits=256 -- "$out/notes.pdf" "$out/password.pdf"
 status=0
 for variant in plain asan; do
-	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
+	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -Wno-long-long -Wno-overlength-strings -D_DEFAULT_SOURCE -I. -I$out/include"
 	if [ "$variant" = asan ]; then
 		flags="$flags -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
 	fi

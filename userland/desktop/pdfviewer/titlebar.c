@@ -9,7 +9,8 @@
  * The titlebar of PDF Viewer in zdesktop (WS070's CONTROLS presentation):
  * the sidebar of page thumbnails (ws079-p015), the previous and the next
  * page, where the view is ("Page 3 of 10"), the two modes, the zoom, the
- * two fits, and "Annotate in Notes".
+ * two fits, "Annotate in Notes", and (ws128-p004) the find field, whose
+ * text comes as KL_WINDOW_CONTROL_TEXT and KL_WINDOW_CONTROL_DONE inputs.
  *
  * The controls are a table given to libkeiland (WS131 p017:
  * kl_window_set_controls), the page's text its label; their state is their
@@ -38,6 +39,7 @@
 #define CONTROL_FIT_PAGE	9U
 #define CONTROL_ANNOTATE	10U
 #define CONTROL_THUMBNAILS	11U
+#define CONTROL_FIND		12U
 
 /*
  * The controls, in their order.  zdesktop draws a generic control outside a
@@ -56,7 +58,8 @@ static const struct kl_control_entry titlebar_controls[] = {
 	{ CONTROL_ZOOM_IN, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "+", PV_ACTION_ZOOM_IN },
 	{ CONTROL_FIT_WIDTH, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "Fit Width", PV_ACTION_FIT_WIDTH },
 	{ CONTROL_FIT_PAGE, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "Fit Page", PV_ACTION_FIT_PAGE },
-	{ CONTROL_ANNOTATE, KL_CONTROL_GENERIC, KL_PRIORITY_PRIMARY, 0U, "Annotate in Notes", PV_ACTION_ANNOTATE }
+	{ CONTROL_ANNOTATE, KL_CONTROL_GENERIC, KL_PRIORITY_PRIMARY, 0U, "Annotate in Notes", PV_ACTION_ANNOTATE },
+	{ CONTROL_FIND, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Find", PV_ACTION_NONE }
 };
 
 /* The place of the page's control in the table. */
@@ -91,6 +94,11 @@ pv_titlebar_open(
 	if (error != 0)
 		return error;
 	titlebar->shown = 1;
+
+	/* The find field's placeholder (ws128-p004). */
+	error = kl_window_set_control_text(window->kui, CONTROL_FIND, "", "Find");
+	if (error != 0)
+		return error;
 
 	/* The page's text for the state. */
 	pv_titlebar_refresh(titlebar, state);
@@ -130,6 +138,51 @@ pv_titlebar_refresh(
 /*
  * Takes the titlebar away from zdesktop (before the window goes).
  */
+/*
+ * Gives the find field the keyboard (Ctrl+F, Edit > Find, ws128-p004).
+ */
+void
+pv_titlebar_focus_find(
+	struct pv_titlebar *titlebar)
+{
+	int error;
+
+	/* Only with the titlebar. */
+	if (!titlebar->shown)
+		return;
+
+	/* The field takes the keyboard. */
+	error = kl_window_focus_control(titlebar->window->kui, CONTROL_FIND);
+	if (error != 0)
+		pv_log("TITLEBAR focus-failed errno=%d", error);
+}
+
+/*
+ * Takes the find field's text: as it is typed, Find looks for it from the
+ * page in view; Enter in it shows the next place (ws128-p004).
+ */
+void
+pv_titlebar_input(
+	struct pv_titlebar *titlebar,
+	struct pv_app *app,
+	const struct kl_window_event *input)
+{
+	/* Only the find field's. */
+	(void)titlebar;
+	if (input->id != (int32_t)CONTROL_FIND)
+		return;
+
+	/* As it is typed. */
+	if (input->kind == KL_WINDOW_CONTROL_TEXT) {
+		pv_find_text(app, input->text);
+		return;
+	}
+
+	/* Enter: the next place. */
+	if (input->kind == KL_WINDOW_CONTROL_DONE && input->code == KL_TEXT_SUBMITTED)
+		pv_find_next(app, 1);
+}
+
 void
 pv_titlebar_close(
 	struct pv_titlebar *titlebar)

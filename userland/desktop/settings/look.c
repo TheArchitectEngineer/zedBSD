@@ -581,6 +581,21 @@ look_language(
 	se_log("LOOK language=%s", language);
 }
 
+/*
+ * Sets a key of the desktop's settings (ws164-p002: the Welcome's
+ * welcome.done); a failure is shown on the page.  Returns 0 or an errno
+ * value.
+ */
+int
+se_look_set(
+	struct se_app *app,
+	const char *key,
+	const char *value)
+{
+	/* As the look's own keys are set. */
+	return look_write(app, key, value);
+}
+
 /* Sets a key (or puts it back at its default when value is NULL); a failure is shown on the page. Returns 0 or an errno value. */
 static int
 look_write(

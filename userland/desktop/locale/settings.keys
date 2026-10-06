@@ -58,3 +58,20 @@ msg	SKK
 msg	Emacs's SKK: an upper-case letter starts a word, Space converts it.
 msg	None (English)
 msg	The keys type as they are; no input method.
+# The Welcome's steps' headers and the keys it lists (welcome.c, ws164-p002), drawn with kl_tr through se_page_header and se_row_value.
+msg	Connect to a network
+msg	Join Wi-Fi now, or later in Settings.
+msg	Your network
+msg	The wired connection and its address.
+msg	Choose your look
+msg	A picture for the desktop, and how clear the windows are.
+msg	Keys to know
+msg	Kei is quick to use from the keyboard.
+msg	You are all set
+msg	Start using Kei opens Files at Today. The Welcome is in Settings > About whenever you want it again.
+msg	Open App Home (tap the key)
+msg	Wiseview: every window at a glance
+msg	Switch between windows
+msg	Lock the screen
+msg	Move between desktops
+msg	Switch the input language

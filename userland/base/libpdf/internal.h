@@ -471,7 +471,10 @@ struct pdf_scan_mark {
  * a text object (BT without its ET), whether objects were left out (past
  * the limit of q's nesting, or after the content stopped), and the
  * page's matrix from its user space to the shown space (B, the matrix in
- * force where the content starts).
+ * force where the content starts).  ws128-p004: each character's corners
+ * in the shown space (character_quads, eight numbers a character: its
+ * code's glyph from the descent to the ascent, the characters of one code
+ * sharing them), for the page's text.
  */
 struct pdf_scan {
 	struct pdf_scan_object *objects;
@@ -491,6 +494,8 @@ struct pdf_scan {
 	uint32_t *characters;
 	size_t character_count;
 	size_t character_capacity;
+	double *character_quads;
+	size_t character_quad_capacity;
 	size_t block_count;
 	unsigned char *block_clips;
 	size_t block_clip_capacity;

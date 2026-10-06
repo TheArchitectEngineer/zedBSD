@@ -816,17 +816,17 @@ ZEDBSD_PACKAGE_INPUTS += $(ZEDBSD_XZED_SESSION_INPUTS)
 ZEDBSD_PACKAGE_FILES += $(ZEDBSD_XZED_SESSION_FILES)
 
 # The version (ws129-p003): VERSION, at the top of the tree, is its one
-# source (1.0.0-beta1).  The kernel's banner shows it (ZEDBSD_VERSION
+# source (1.0.0-beta2).  The kernel's banner shows it (ZEDBSD_VERSION
 # defined on cmain's command line, so that the kernel reads no header from
 # outside its tree; the stamp $(BUILD)/gen/version, rewritten only when
 # VERSION changes, compiles it again, and a commit does not relink it).  Every root carries /etc/os-release with the name, the version
 # and, for uname (libc reads the file), the release: the version itself in a
 # release build (ZEDBSD_RELEASE_BUILD=y, the release job's), the version and
-# the source's revision otherwise (1.0.0-beta1+g1a2b3c4; +unknown without
+# the source's revision otherwise (1.0.0-beta2+g1a2b3c4; +unknown without
 # git).  Both files are rewritten only when their text changes.
 ZEDBSD_VERSION := $(strip $(shell cat VERSION 2>/dev/null))
 ifeq ($(shell printf '%s\n' '$(ZEDBSD_VERSION)' | grep -Ex '[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+(\.[a-z0-9]+)*)?'),)
-$(error VERSION must hold one version such as 1.0.0-beta1, not '$(ZEDBSD_VERSION)')
+$(error VERSION must hold one version such as 1.0.0-beta2, not '$(ZEDBSD_VERSION)')
 endif
 ZEDBSD_RELEASE_BUILD ?= n
 ZEDBSD_SOURCE_REVISION := $(or $(shell git rev-parse --short=7 HEAD 2>/dev/null),unknown)

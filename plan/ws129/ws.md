@@ -15,6 +15,7 @@ Resume point: [p001](phase001/phase.md)（release の定義: 版の付け方、�
 2026-10-02 user（リリースの流れ）:「CIはPrereleaseを生成、それをダウンロードして動作確認した私が、PrereleaseからLatest Releaseに手動昇格します。」→ CI の release の job はベータ1 の版の Prerelease を作る（nightly とは別の tag）。ユーザーが download して動作確認し、手で Latest Release に昇格する。エージェントは昇格・公開をしない。版の名前・tag の形・配布物（Windows の zip を載せるか）は未決。
 2026-10-02 user:「zedbsd-0.1.0-beta1 にしましょう。」→ 版と tag は `zedbsd-0.1.0-beta1`（ws129-p003 で版の一つの源を作り、uname・About などに出す）。配布物に Windows の zip を載せるかは未決。
 2026-10-02 user:「両方載せる、でお願いします。」→ Prerelease の配布物は USB の image（`zedbsd-0.1.0-beta1-amd64.img.gz` の形）と Windows の QEMU/Venus の zip（`zedbsd-0.1.0-beta1-windows.zip` の形）の 2 つ。名前の細部は ws129-p004 で決める。
+**2026-10-06 夜 ユーザー（Q1 経由）「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」** → 2026-10-06 P2（q821）: 版を `1.0.0-beta2`（`VERSION`。About・uname の名前は「Kei/zedBSD 1.0.0 Beta 2」）、release の config を `config/release/config-amd64-beta2.mk`（git mv、`release.yml`・`config/current-uat.mk`・ws129 の試験の参照も）、利用の手引きと既知の問題を `docs/release/zedbsd-1.0.0-beta2-*.md`（git mv、本文の Beta 1 → Beta 2）、About の AAT（`apps.settings.about`）の期待の名前を直した。上の 2026-10-02 の記録（beta1 の名前）は当時の決定として残す。tag は `zedbsd-1.0.0-beta2-rc<N>`・`zedbsd-1.0.0-beta2`（VERSION から決まる）。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-02 ユーザー「次のFeature Goalはベータ1のリリースにします」「リリース目標は10/17です」）

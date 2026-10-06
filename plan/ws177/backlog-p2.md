@@ -14,3 +14,18 @@
 | WS175 ws175-p008（Notes の文字の UI） | 置き換えの font の無い system で既存の行を元の font に無い字で編集 | 理由を出して box を残す（今は ENOTSUP で status を出す。画面の確認は未実施） | `main.c` の `app_box_try` | 2026-10-06 |
 | WS175 ws175-p008（Notes の文字の UI） | [M8] 指の long-press の drag | 選んだ物の移動・大きさ（画像の段からの残り、今は未実装） | `touch.c`・`main.c` | 2026-10-06 |
 | WS175 ws175-p008（Notes の文字の UI） | [N13] 表示中の頁の前後の外の editor を捨てる、[M13] autosave の cache と時間 | 大きな文書で memory と時間を抑える（今は各頁の editor を残す） | `edit.c` の `notes_page_editor`・`main.c` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | 文書の form XObject の中の文字、注釈（/Annots）の文字 | 検索・選択の対象にする（今は頁の top level の content だけ） | libpdf `editor.c` の `pdf_page_text_open`（editor の scan の範囲） | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | 行をまたぐ語・ハイフンで切れた語、空白の数の違い | 行の終わりを空白として一致させる、連続の空白を 1 つとして一致させる（今は文字の並びがそのまま一致する所だけ） | `pdfviewer/find.c` の `find_match` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | ASCII 以外の大文字・小文字、全角・半角、濁点の合成など | Unicode の case folding と正規化で一致させる（今は ASCII の A〜Z だけ） | `find.c` の `find_fold` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | 頁をまたぐ選択、ダブルクリックで語・トリプルで行の選択、Ctrl+A | 複数頁と語・行の単位の選択（今は 1 頁の中の drag だけ） | `find.c` の `pv_select_button`・`pv_select_motion` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | 指（touch）での選択と handle | 長押しで選択、handle で範囲の変更（今は pointer だけ。指は scroll のまま） | `pdfviewer/touch.c`、`find.c` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | 文字の多い頁・大きな文書の検索の速さ | 頁の文字の読みを背景で・一致の数の表示（今は表示の頁から順に同期で読み、一致の数は出さない） | `find.c` の `pv_find_next`・`find_page_text` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | titlebar の無い compositor（System Menu・titlebar の無い環境） | window の中の検索の欄で探せる（今は titlebar の field だけ。Ctrl+F は何もしない） | `pdfviewer/titlebar.c` の `pv_titlebar_focus_find` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | 縦書き・回転した文字の選択の塗り | 文字の四隅の向きのまま塗る（今は四隅を囲む軸に沿った箱） | `find.c` の `find_mark` | 2026-10-06 |
+| WS128 ws128-p004（PDF Viewer の検索と選択） | ToUnicode の無い・壊れた font の文字（U+FFFD） | 読めない字を検索・copy で知らせる（今は U+FFFD がそのまま copy される） | libpdf `pdf_font_unicode`、`find.c` の `pv_select_copy` | 2026-10-06 |
+| WS164 ws164-p002（Welcome） | 設定の store が書けない（Keiland の拡張の無い desktop、書き込みの失敗） | Welcome の終わりで印を付けられないことを画面に出し、次の login でまた出ることを知らせる（今は log だけで窓を閉じる） | `settings/welcome.c` の `welcome_finish` | 2026-10-06 |
+| WS164 ws164-p002（Welcome） | Files の起動の失敗 | Today を開けなかったことを知らせる（今は log だけ） | `settings/main.c` の `main_open_files` | 2026-10-06 |
+| WS164 ws164-p002（Welcome） | Welcome の途中で Wi-Fi の鍵の入力・接続の失敗、radio の無い machine で Ethernet も無い | 段の中で失敗と次の手を出す（今は Wi-Fi・Ethernet の頁の表示のまま） | `settings/welcome.c` の Network の段 | 2026-10-06 |
+| WS164 ws164-p002（Welcome） | 言語と入力の段（WS154 の Languages） | p001 の H3 のとおり Look と Keys の間に足す（今は 5 段のまま） | `settings/welcome.c` | 2026-10-06 |
+| WS164 ws164-p002（Welcome） | Welcome の窓の大きさが小さい・日本語の UI の長い文 | 帯と Skip が重ならないよう詰める・文を折り返す（今は固定の配置） | `settings/welcome.c` の `se_welcome_bar`・`se_welcome_draw` | 2026-10-06 |
+| WS164 ws164-p002（Welcome） | Welcome の key の操作（Enter で Next、Esc で閉じる） | keyboard だけで段を進める（今は pointer と指の click だけ） | `settings/ui.c` の `ui_key`、`welcome.c` | 2026-10-06 |

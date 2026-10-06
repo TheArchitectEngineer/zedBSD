@@ -124,11 +124,12 @@ pv_document_close(
 {
 	size_t index;
 
-	/* Frees each page's list, raster and thumbnail. */
+	/* Frees each page's list, raster, thumbnail and words (ws128-p004). */
 	for (index = 0; document->pages != NULL && index < document->count; index++) {
 		pdf_display_list_destroy(document->pages[index].list);
 		free(document->pages[index].raster);
 		free(document->pages[index].thumbnail);
+		pdf_page_text_close(document->pages[index].text);
 	}
 
 	/* The pages themselves. */

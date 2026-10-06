@@ -184,7 +184,7 @@ msg	Connected to {1}	{1} に接続済み
 # userland/desktop/wayland/network.c:1234, userland/desktop/wayland/network.c:2023
 msg	Could not {1} ({2})	{1}できませんでした（{2}）
 # userland/desktop/wayland/network.c:1544
-msg	Connecting...	接続中...
+msg	Connecting...	接続しています...
 # userland/desktop/wayland/network.c:1738
 ctx	network request	scan	ネットワークを探すことが
 # userland/desktop/wayland/network.c:1740

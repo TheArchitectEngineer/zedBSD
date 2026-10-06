@@ -1,12 +1,12 @@
 # Settings' texts in Japanese (domain settings, WS158 p004). tools/i18n/tr.py update keeps the translations.
-# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:493
+# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:514
 msg	Settings	設定
 # userland/desktop/locale/settings.keys:4
 msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
 # userland/desktop/locale/settings.keys:5
 msg	Wi-Fi	Wi-Fi
 # userland/desktop/locale/settings.keys:6
-msg	Join wireless networks and turn the radio on or off.	無線のネットワークにつなぎ、電波を入れたり切ったりします。
+msg	Join wireless networks and turn the radio on or off.	無線のネットワークに接続し、電波を入れたり切ったりします。
 # userland/desktop/locale/settings.keys:7
 msg	Ethernet	イーサネット
 # userland/desktop/locale/settings.keys:8
@@ -14,11 +14,11 @@ msg	Wired connections and their addresses.	有線の接続とそのアドレス�
 # userland/desktop/locale/settings.keys:9
 msg	Bluetooth	Bluetooth
 # userland/desktop/locale/settings.keys:10
-msg	Pair and connect wireless devices.	無線の機器をペアリングしてつなぎます。
+msg	Pair and connect wireless devices.	無線の機器をペアリングして接続します。
 # userland/desktop/locale/settings.keys:11
 msg	VPN	VPN
 # userland/desktop/locale/settings.keys:12
-msg	Connect securely to other networks.	ほかのネットワークに安全につなぎます。
+msg	Connect securely to other networks.	ほかのネットワークに安全に接続します。
 # userland/desktop/locale/settings.keys:13
 msg	Network	ネットワーク
 # userland/desktop/locale/settings.keys:14
@@ -111,6 +111,40 @@ msg	Emacs's SKK: an upper-case letter starts a word, Space converts it.	Emacs �
 msg	None (English)	なし（英語）
 # userland/desktop/locale/settings.keys:60
 msg	The keys type as they are; no input method.	キーをそのまま入力します。入力方式は使いません。
+# userland/desktop/locale/settings.keys:62
+msg	Connect to a network	ネットワークに接続
+# userland/desktop/locale/settings.keys:63
+msg	Join Wi-Fi now, or later in Settings.	今 Wi-Fi に接続するか、あとで設定から接続します。
+# userland/desktop/locale/settings.keys:64
+msg	Your network	ネットワーク
+# userland/desktop/locale/settings.keys:65
+msg	The wired connection and its address.	有線の接続とそのアドレス。
+# userland/desktop/locale/settings.keys:66
+msg	Choose your look	見た目を選ぶ
+# userland/desktop/locale/settings.keys:67
+msg	A picture for the desktop, and how clear the windows are.	デスクトップの画像と、ウインドウの透け具合。
+# userland/desktop/locale/settings.keys:68
+msg	Keys to know	覚えておきたいキー
+# userland/desktop/locale/settings.keys:69
+msg	Kei is quick to use from the keyboard.	Kei はキーボードからすばやく使えます。
+# userland/desktop/locale/settings.keys:70
+msg	You are all set	準備ができました
+# userland/desktop/locale/settings.keys:71
+msg	Start using Kei opens Files at Today. The Welcome is in Settings > About whenever you want it again.	「Kei を使い始める」でファイルの「今日」を開きます。ようこそは、設定 > 情報 からいつでももう一度見られます。
+# userland/desktop/locale/settings.keys:72
+msg	Open App Home (tap the key)	App Home を開く（キーを軽く押す）
+# userland/desktop/locale/settings.keys:73
+msg	Wiseview: every window at a glance	Wiseview: すべてのウインドウを一覧
+# userland/desktop/locale/settings.keys:74
+msg	Switch between windows	ウインドウを切り替える
+# userland/desktop/locale/settings.keys:75
+msg	Lock the screen	画面をロック
+# userland/desktop/locale/settings.keys:76
+msg	Move between desktops	デスクトップを移る
+# userland/desktop/locale/settings.keys:77
+msg	Switch the input language	入力の言語を切り替える
+# userland/desktop/settings/page-about.c:93
+msg	Show Welcome again	ようこそをもう一度見る
 # userland/desktop/settings/page-home.c:60
 msg	Connectivity	接続
 # userland/desktop/settings/page-home.c:61
@@ -137,27 +171,42 @@ msg	Not set (English)	未設定（英語）
 msg	Now	現在
 # userland/desktop/settings/page-languages.c:206, userland/desktop/settings/page-languages.c:209
 msg	Apply	適用
-# userland/desktop/settings/page-languages.c:241
+# userland/desktop/settings/page-languages.c:236
 msg	Your password	あなたのパスワード
-# userland/desktop/settings/page-languages.c:265
+# userland/desktop/settings/page-languages.c:246
 msg	Needed for the change	変更に必要です
-# userland/desktop/settings/page-languages.c:434
+# userland/desktop/settings/page-languages.c:403
 msg	Changed. The login screen uses it from the next time it shows.	変更しました。次にログイン画面が出る時から使われます。
-# userland/desktop/settings/page-languages.c:443, userland/desktop/settings/page-languages.c:583
+# userland/desktop/settings/page-languages.c:412, userland/desktop/settings/page-languages.c:552
 msg	The change could not be made.	変更できませんでした。
-# userland/desktop/settings/page-languages.c:550
+# userland/desktop/settings/page-languages.c:519
 msg	The change could not be asked.	変更を依頼できませんでした。
-# userland/desktop/settings/page-languages.c:559
+# userland/desktop/settings/page-languages.c:528
 msg	Changing...	変更しています...
-# userland/desktop/settings/page-languages.c:574
+# userland/desktop/settings/page-languages.c:543
 msg	Only an administrator can change the login screen's language.	ログイン画面の言語は管理者だけが変更できます。
-# userland/desktop/settings/page-languages.c:577
+# userland/desktop/settings/page-languages.c:546
 msg	Your password is wrong.	パスワードが違います。
-# userland/desktop/settings/page-languages.c:580
+# userland/desktop/settings/page-languages.c:549
 msg	Another change is under way. Try again in a moment.	ほかの変更が進行中です。少し待ってからやり直してください。
 # userland/desktop/settings/search.c:527
 msg	Coming in a later version	今後のバージョンで対応予定
-# userland/desktop/settings/titlebar.c:346
+# userland/desktop/settings/titlebar.c:227
 msg	Search settings	設定を検索
-# userland/desktop/settings/ui.c:496
+# userland/desktop/settings/ui.c:517
 msg	Search	検索
+# userland/desktop/settings/welcome.c:114, userland/desktop/settings/welcome.c:115
+msg	Skip	スキップ
+# userland/desktop/settings/welcome.c:191
+msg	Back	戻る
+# userland/desktop/settings/welcome.c:194
+msg	Next	次へ
+# userland/desktop/settings/welcome.c:196
+msg	Start using Kei	Kei を使い始める
+# userland/desktop/settings/welcome.c:292
+msg	Welcome to Kei, {1}	Kei へようこそ、{1} さん
+# userland/desktop/settings/welcome.c:300
+msg	Let's set up a few things. You can change each of them later in Settings.	いくつか設定しましょう。どれもあとで設定から変えられます。
+
+# Not asked for by the source any more (kept for a text that comes back):
+# msg	Welcome to Kei	Kei へようこそ

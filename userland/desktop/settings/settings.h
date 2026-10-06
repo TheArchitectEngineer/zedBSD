@@ -1120,7 +1120,26 @@ struct se_app {
 
 	/* The Languages page's system language (ws158-p004). */
 	struct se_languages languages;
+
+	/*
+	 * The Welcome (welcome.c, ws164-p002): whether the window shows it, the
+	 * step shown, and whether Files is to be opened as the window closes
+	 * (its last step), which the main loop carries out.
+	 */
+	int welcome;
+	int welcome_step;
+	int request_files;
 };
+
+/*
+ * The Welcome's controls (ws164-p002), numbered apart from the pages' own
+ * so that a step showing a page's controls keeps them: Back, Next, Skip,
+ * and About's "Show Welcome again".
+ */
+#define SE_WELCOME_BACK		9000
+#define SE_WELCOME_NEXT		9001
+#define SE_WELCOME_SKIP		9002
+#define SE_ABOUT_WELCOME	9003
 
 /* The table of pages (pages.c). */
 extern const struct se_page se_pages[SE_PAGES];
@@ -1238,6 +1257,7 @@ void se_look_close(struct se_app *app);
 void se_look_set_opacity(struct se_app *app, int percent);
 void se_look_set_number(struct se_app *app, const char *key, int value, int fallback);
 void se_look_set_wallpaper(struct se_app *app, int index);
+int se_look_set(struct se_app *app, const char *key, const char *value);
 void se_look_scan(struct se_app *app);
 void se_look_volumes(struct se_app *app);
 const char *se_look_wallpaper_name(const struct se_app *app);
@@ -1286,6 +1306,14 @@ void se_search_press(struct se_app *app, int index);
 /* The pages' drawing (page-home.c, page-about.c, page-soon.c). */
 int se_home_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_about_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+void se_about_press(struct se_app *app, int index);
+
+/* The Welcome (welcome.c, ws164-p002). */
+void se_welcome_start(struct se_app *app);
+int se_welcome_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+void se_welcome_bar(struct se_app *app, struct kl_canvas *canvas, const struct kl_rect *panel);
+int se_welcome_bar_height(void);
+int se_welcome_press(struct se_app *app, int index);
 int se_soon_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 
 /* The Users page (page-users.c, ws160-p002). */

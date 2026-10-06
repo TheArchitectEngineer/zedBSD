@@ -17,7 +17,7 @@ Settings の About の頁。
 
 ## 操作と確認
 1. 操作: 頁を撮る。
-   確認事項: 版と kernel。正解: `ZSETTINGS ABOUT system=… kernel=…` の system が PRETTY_NAME（`Kei/zedBSD 1.0.0 Beta 1 …`）、kernel が `uname` の出力と同じ。確認方法: log と root の `cat /etc/os-release`・`uname -a`、撮影。
+   確認事項: 版と kernel。正解: `ZSETTINGS ABOUT system=… kernel=…` の system が PRETTY_NAME（`Kei/zedBSD 1.0.0 Beta 2 …`）、kernel が `uname` の出力と同じ。確認方法: log と root の `cat /etc/os-release`・`uname -a`、撮影。
 
 ## 合格
 値が合う。
