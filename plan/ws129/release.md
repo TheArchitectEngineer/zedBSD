@@ -1,6 +1,8 @@
 <!-- awesome-plan project=zedbsd record=ws129-release -->
 # ベータ1 の release の定義（案）
 
+> **2026-10-06 夜 ユーザー: 最初の公開ベータはベータ2（10/17 に公開するのはベータ2）。** 版は `1.0.0-beta2`、release の config は `config/release/config-amd64-beta2.mk`、手引き・既知の問題は `docs/release/zedbsd-1.0.0-beta2-*.md`、tag は `zedbsd-1.0.0-beta2(-rcN)`（ws129 の ws.md、P2 q821）。下の表の beta1・0.1.0 の名前は当時の決定の記録として残す。
+
 Parent: [WS129](ws.md) / Phase: [ws129-p001](phase001/phase.md)（q672、P2、2026-10-04）
 Status: **案**（design-reviewer の review を反映した第 2 版、§11）。ユーザーの決めていない点は §9 に並べた。決まるまで、§1〜§8 の「案」を既定にしない。code は変えていない（読みだけ）。
 

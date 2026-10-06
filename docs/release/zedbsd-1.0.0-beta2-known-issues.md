@@ -1,17 +1,17 @@
-# Kei/zedBSD 1.0.0 Beta 1: known issues
+# Kei/zedBSD 1.0.0 Beta 2: known issues
 
-Status: reference; the problems known in the 1.0.0 Beta 1 release.
+Status: reference; the problems known in the 1.0.0 Beta 2 release.
 
-These are the problems known when Beta 1 was released, with what you can do
+These are the problems known when Beta 2 was released, with what you can do
 about them. The numbers are the project's bug numbers. Read also the
-[security notes](zedbsd-1.0.0-beta1-guide.md#security-notes) in the user
+[security notes](zedbsd-1.0.0-beta2-guide.md#security-notes) in the user
 guide.
 
 ## Computers
 
 | Problem | What to do | Bug |
 | --- | --- | --- |
-| Beta 1 is tested on the Dell Latitude 5330 only. On the Latitude 5320 the built-in display is not controlled correctly. | Use a Latitude 5330, or try the Windows virtual machine. | — |
+| Beta 2 is tested on the Dell Latitude 5330 only. On the Latitude 5320 the built-in display is not controlled correctly. | Use a Latitude 5330, or try the Windows virtual machine. | — |
 | The firmware's ACPI table (DSDT) of the Latitude 5330 is not read completely. Battery, lid and power button events can be missing or wrong. | Keep the computer on AC power. | BUG-165 |
 | On battery, drawing slows down to a few frames a second, and the computer stops without a warning when the battery runs out. | Keep the computer on AC power. | BUG-159 |
 | **Shut Down** may leave the computer powered on. | When the screen stays on after Shut Down, hold the power button until the computer turns off. | BUG-119, BUG-095 |

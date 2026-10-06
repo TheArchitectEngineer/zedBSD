@@ -46,7 +46,7 @@ run --components "$work/gpl.json"
 expect "GPL-family component without a decision: openssl" "a GPL component needs the decision mark"
 
 # 3b.
-config=config/release/config-amd64-beta1.mk
+config=config/release/config-amd64-beta2.mk
 python3 -c "
 import json
 d=json.load(open('tools/release/license-components.json'))
