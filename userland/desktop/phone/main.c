@@ -359,7 +359,9 @@ ph_input(
 			(void)kl_ui_pointer_button(phone->ui, event->pressed, event->arrival_us);
 		break;
 	case KL_WINDOW_AXIS:
-		(void)kl_ui_wheel(phone->ui, event->dx, event->dy, event->arrival_us);
+	case KL_WINDOW_AXIS_STOP:
+		/* The wheel glides; a touch pad's fingers hold the content, and it flies on when they lift (BUG-211). */
+		(void)kl_ui_axis(phone->ui, event);
 		break;
 	case KL_WINDOW_TOUCH_DOWN:
 		(void)kl_ui_touch_down(phone->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);

@@ -16,6 +16,12 @@
  * inertia and rubber band; and a move to a place at once.  The latest one
  * takes over: a wheel turned while the content flies stops the flight, a
  * finger that touches stops a glide.
+ *
+ * A touch pad's two fingers (KL_VERSION 40, BUG-211) hold the content as a
+ * finger on the screen does: each of their moves moves it at once (no
+ * glide, BUG-218), and when they lift (axis_stop) it flies on at their
+ * velocity, which their track (kl_axis_track) works out from their last
+ * moves; the scroller's inertia and rubber band are the same.
  */
 
 #include <keiland.h>
@@ -376,6 +382,72 @@ kl_scroll_cancel(
 	/* The scroller springs back. */
 	kl_scroller_cancel(scroll->scroller, now_us);
 	scroll->released = 1;
+}
+
+/*
+ * Scrolls by an axis event of a window: a wheel's glides as kl_scroll_wheel
+ * does; a touch pad's fingers (KL_AXIS_SOURCE_FINGER) hold the content and
+ * move it at once by dx, dy (as a wheel scrolls: down and right positive),
+ * the first move catching content that flies.
+ */
+void
+kl_scroll_axis(
+	struct kl_scroll *scroll,
+	double dx,
+	double dy,
+	unsigned source,
+	uint64_t now_us)
+{
+	/* A wheel, or anything that is not fingers, glides. */
+	if (source != KL_AXIS_SOURCE_FINGER) {
+		kl_scroll_wheel(scroll, dx, dy, now_us);
+		return;
+	}
+
+	/* The fingers' first move takes the content (stopping a flight or a glide) and starts their track. */
+	if (!scroll->axis_holding) {
+		(void)kl_scroll_press(scroll, now_us);
+		scroll->axis_holding = 1;
+		scroll->axis_total_x = 0.0;
+		scroll->axis_total_y = 0.0;
+		kl_axis_track_reset(&scroll->axis_track);
+	}
+
+	/* Only the axes the scroll moves along. */
+	if ((scroll->axes & KL_SCROLL_X) == 0U)
+		dx = 0.0;
+	if ((scroll->axes & KL_SCROLL_Y) == 0U)
+		dy = 0.0;
+
+	/* The move, kept for the velocity, and the content dragged the wheel's way (a finger's drag goes the other way). */
+	scroll->axis_total_x += dx;
+	scroll->axis_total_y += dy;
+	kl_axis_track_add(&scroll->axis_track, dx, dy, now_us);
+	kl_scroll_drag(scroll, -scroll->axis_total_x, -scroll->axis_total_y);
+	scroll->moved_us = now_us;
+}
+
+/*
+ * The touch pad's fingers have lifted: the content flies on at their
+ * velocity (none when they rested before lifting), or settles within its
+ * ends.
+ */
+void
+kl_scroll_axis_stop(
+	struct kl_scroll *scroll,
+	uint64_t now_us)
+{
+	double vx;
+	double vy;
+
+	/* Only content the fingers hold. */
+	if (!scroll->axis_holding)
+		return;
+	scroll->axis_holding = 0;
+
+	/* Their velocity the wheel's way, thrown the finger's way. */
+	kl_axis_track_velocity(&scroll->axis_track, now_us, &vx, &vy);
+	kl_scroll_fling(scroll, -vx, -vy, now_us);
 }
 
 /*

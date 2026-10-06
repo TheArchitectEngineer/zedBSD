@@ -43,6 +43,8 @@ static void view_caret_rect(void *data, size_t position, struct kui_rect *rect);
 static void view_word_at(void *data, size_t position, size_t *start, size_t *end);
 static void test_scroll(void);
 static void test_scroll_touch(void);
+static void test_scroll_axis(void);
+unsigned kl_appearance_get(const struct kl_appearance *appearance);
 static void test_pointer(void);
 static void test_touch(void);
 static void test_text(void);
@@ -67,6 +69,7 @@ main(void)
 	test_now = 10U * SECOND;
 	test_scroll();
 	test_scroll_touch();
+	test_scroll_axis();
 	test_pointer();
 	test_touch();
 	test_text();
@@ -326,6 +329,119 @@ test_scroll_touch(void)
 	keiland_scroller_destroy(reference);
 	kui_scroll_release(&scroll);
 	test_now += 10U * SECOND;
+}
+
+/*
+ * A touch pad's two fingers (BUG-211, BUG-218): their moves move the
+ * content at once, their velocity is the track's, it flies on when they
+ * lift, fingers that rested throw nothing, and a wheel still glides.
+ */
+static void
+test_scroll_axis(void)
+{
+	struct kl_axis_track track;
+	struct kl_window_event event;
+	struct kui_scroll scroll;
+	struct kui_rect widget;
+	struct kui_rect region;
+	struct kui_ui *ui;
+	unsigned state[2];
+	int taken;
+	double vx;
+	double vy;
+	int moving;
+	int step;
+	int index;
+
+	/* The track: ten moves of 30 px every 10 ms are 3000 px/s; a single move, or a rest, none. */
+	kl_axis_track_reset(&track);
+	kl_axis_track_add(&track, 0.0, 30.0, test_now);
+	kl_axis_track_velocity(&track, test_now + 5000U, &vx, &vy);
+	check(vx == 0.0 && vy == 0.0, "track: one move has no velocity");
+	for (index = 1; index < 10; index++)
+		kl_axis_track_add(&track, 0.0, 30.0, test_now + (uint64_t)index * 10000U);
+	kl_axis_track_velocity(&track, test_now + 95000U, &vx, &vy);
+	check(near(vy, 3000.0, 1.0) && vx == 0.0, "track: the velocity of the last moves");
+	kl_axis_track_velocity(&track, test_now + 90000U + KL_AXIS_TRACK_REST_US, &vx, &vy);
+	check(vy == 0.0, "track: fingers that rested throw nothing");
+
+	/* The fingers scroll the content at once, as far as they moved. */
+	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
+	kui_scroll_set_size(&scroll, 400.0, 5000.0, 400.0, 300.0);
+	kui_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
+	for (index = 0; index < 10; index++)
+		kl_scroll_axis(&scroll, 0.0, 30.0, KL_AXIS_SOURCE_FINGER, test_now + (uint64_t)index * 10000U);
+	(void)kui_scroll_step(&scroll, test_now + 90000U);
+	check(scroll.y == 1300.0 && scroll.axis_holding, "axis: the fingers move the content at once");
+
+	/* They lift moving: the content flies on further down, and rests. */
+	kl_scroll_axis_stop(&scroll, test_now + 95000U);
+	moving = 1;
+	for (step = 1; step < 400 && moving; step++)
+		moving = kui_scroll_step(&scroll, test_now + 95000U + (uint64_t)step * 16667U);
+	check(scroll.y > 1600.0 && !moving && !scroll.touched && !scroll.axis_holding, "axis: the content flies on when the fingers lift");
+	test_now += 10U * SECOND;
+
+	/* Fingers that rest before lifting leave the content where it is. */
+	kui_scroll_move_to(&scroll, 0.0, 1000.0, 0, test_now);
+	for (index = 0; index < 10; index++)
+		kl_scroll_axis(&scroll, 0.0, 30.0, KL_AXIS_SOURCE_FINGER, test_now + (uint64_t)index * 10000U);
+	kl_scroll_axis_stop(&scroll, test_now + 200000U);
+	for (step = 1; step < 400; step++)
+		(void)kui_scroll_step(&scroll, test_now + 200000U + (uint64_t)step * 16667U);
+	check(scroll.y == 1300.0 && !scroll.touched, "axis: rested fingers throw nothing");
+	test_now += 10U * SECOND;
+
+	/* A wheel's axis glides as kl_scroll_wheel does. */
+	kl_scroll_axis(&scroll, 0.0, 100.0, KL_AXIS_SOURCE_WHEEL, test_now);
+	check(scroll.gliding && !scroll.axis_holding && scroll.to_y == 1400.0, "axis: a wheel glides");
+	kui_scroll_release(&scroll);
+	test_now += 10U * SECOND;
+
+	/* Through the window's events: the fingers' moves reach the scroll under the pointer, their end lets it fly. */
+	ui = kui_ui_create();
+	(void)kui_scroll_init(&scroll, KUI_SCROLL_Y);
+	kui_scroll_set_size(&scroll, 300.0, 3000.0, 300.0, 300.0);
+	widget.x = 10;
+	widget.y = 10;
+	widget.width = 100;
+	widget.height = 30;
+	region.x = 200;
+	region.y = 0;
+	region.width = 300;
+	region.height = 300;
+	frame(ui, &widget, &scroll, &region, NULL, state);
+	(void)kui_ui_pointer_motion(ui, 300.0, 100.0);
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_WINDOW_AXIS;
+	event.axis_source = KL_AXIS_SOURCE_FINGER;
+	event.dy = 40.0;
+	for (index = 0; index < 5; index++) {
+		event.time_us = test_now + (uint64_t)index * 10000U;
+		event.arrival_us = event.time_us;
+		taken = kl_ui_axis(ui, &event);
+	}
+	(void)kui_scroll_step(&scroll, test_now + 40000U);
+	check(taken == 1 && scroll.y == 200.0, "ui axis: the fingers scroll the region under the pointer");
+	event.kind = KL_WINDOW_AXIS_STOP;
+	event.time_us = test_now + 45000U;
+	taken = kl_ui_axis(ui, &event);
+	moving = kui_scroll_step(&scroll, test_now + 60000U);
+	check(taken == 1 && moving && scroll.y > 200.0, "ui axis: the end lets the content fly");
+	kui_scroll_release(&scroll);
+	kui_ui_destroy(ui);
+	test_now += 10U * SECOND;
+}
+
+/* The appearance the theme asks for: the light one (the tests draw nothing that depends on it). */
+unsigned
+kl_appearance_get(
+	const struct kl_appearance *appearance)
+{
+	(void)appearance;
+
+	/* The light appearance. */
+	return KL_APPEARANCE_LIGHT;
 }
 
 /* Draws one frame of the pointer and touch tests: a widget, a scroll's region (or a text view's), and a widget over the region. */

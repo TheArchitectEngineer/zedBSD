@@ -17,7 +17,7 @@ L=$U/libkeiland
 C=$U/calendar
 cc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$U/libtruetype \
 	plan/ws155/tests/host-calendar.c $C/view.c $C/data.c $C/date.c $C/scene.c $C/render3d.c \
-	$K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/scroll-bar.c \
+	$K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/axis-track.c $K/scroll-bar.c \
 	$K/text-touch.c $K/ui.c $K/widgets.c $K/field.c $K/list.c $K/cards.c \
 	$L/gesture.c $L/motion.c $L/scroll.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
