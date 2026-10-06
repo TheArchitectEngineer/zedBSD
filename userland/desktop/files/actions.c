@@ -289,6 +289,7 @@ fm_action_clear_recents(
 	/* The list emptied (the log the tests read). */
 	error = kl_recent_clear();
 	printf("ZFILES RECENTS clear error=%d\n", error);
+	fflush(stdout);
 	if (error != 0) {
 		fm_ui_message(app, "The recent list could not be cleared");
 		return;

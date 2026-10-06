@@ -36,3 +36,10 @@ host の絵: `build/ws148-recent/off.png`（Storage の card と、System が Us
 ## 残り
 
 - 準正常・異常は [backlog-p2](../../ws177/backlog-p2.md) の q824 の行。
+
+## T1-271 と q826-i02（2026-10-06 P2）
+
+- T1-271（証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-275/`）は目視の範囲で PASS だった。Settings の sidebar に 3 頁が無く、Storage の switch の log が出た。Files の Clear Recents で Recents は 0 件になった。
+- ただし `ZFILES RECENTS clear error=0` の行が無かった。Files の標準出力は file への出力で block 単位に溜まり、`fflush` しない行は終わるまで出ない（他の `ZFILES` の行は `fflush` している）。
+- 修正: `files/actions.c` の `fm_action_clear_recents` で、log の後に `fflush(stdout)` を足した。Files の build は warning 0。
+
