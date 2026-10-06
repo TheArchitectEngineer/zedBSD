@@ -34,3 +34,13 @@ Related: [ws090-p021](../../ws090/phase021/phase.md)（app の padding を 0）
 
 - build: zedBSD amd64 の wayland（exit 0、warning 0）、`make keiland-linux` gcc（0、warning 0）。host: ws142 host-layout ok (57)、run-host-role PASS。
 - 未実施: 撮影（T1）: 最大化した Files・Settings・Text Editor・Terminal（1280x800、glass）をユーザーに（`build/review/`）。上の guest の試験。
+
+## 2026-10-06 ユーザーの変更
+
+撮影（4 px）を見て:「4pxだったところを8pxのパディングに変更して、スクショを1枚でいいのでください。Filesのスクショがいいです。」→ `KWL_GLASS_DOCK_PAD` を 8（論理 px）に。1280x800 で最大化の領域は x=8・y=52・1264x740 の見込み。Files の最大化の撮影 1 枚をユーザーへ。
+## q819（P1、2026-10-06）: 4 px → 8 px
+
+ユーザー（原文）:「4pxだったところを8pxのパディングに変更して、スクショを1枚でいいのでください。Filesのスクショがいいです。」
+- `KWL_GLASS_DOCK_PAD` を 8 に。1280x800 で docked の body は 8,52 1264x740（画面の keyboard の QWERTY の時 1264x404、flick の時 946x740）。
+- 試験の期待を新しい値に: zdesktop-p059・p062・p134、sheet-guest（y = 52+(740−高さ)/2、x は 260 のまま）、bug194-guest、ws142 p010-guest、osk-guest。
+- 確認: zedBSD の wayland の build（warning 0）、keiland-linux の gcc、ws142 host-layout。T1 に Files の最大化の撮影 1 枚。

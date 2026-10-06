@@ -856,17 +856,14 @@ network_key_draw(
 	int y,
 	int width)
 {
-	const struct se_network *network;
+	struct se_network *network;
 	struct kl_rect field;
-	char dots[SE_KEY_TEXT];
 	const char *reveal;
-	const char *text;
-	kl_color ink;
+	unsigned kind;
 	int join;
 	int cancel;
 	int show;
 	int right;
-	size_t index;
 
 	/* The buttons at the right, from the right: Cancel, Join, Show. */
 	network = &app->network;
@@ -881,38 +878,18 @@ network_key_draw(
 	(void)se_button_draw(app, canvas, right - cancel - 8 - join, y + 10, "Join", 1, network->key.length >= KL_NETWORK_KEY_MIN, NETWORK_KEY_JOIN);
 	(void)se_button_draw(app, canvas, right - cancel - 8 - join - 8 - show, y + 10, reveal, 0, 1, NETWORK_KEY_SHOW);
 
-	/* The field, which has the keyboard while the line is open: white with the accent's edge. */
+	/* The field, which has the keyboard while the line is open. */
 	field.x = x + 50;
 	field.y = y + 8;
 	field.width = right - cancel - 8 - join - 8 - show - 12 - field.x;
 	field.height = 36;
-	kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, SE_COLOR_FIELD);
-	kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	se_ui_hit(app, &field, SE_HIT_CONTROL, NETWORK_KEY_FIELD);
 
-	/* The key as dots (or as typed when shown), or the placeholder; a cursor after it. */
-	text = network->key.text;
-	if (network->key_shown == 0) {
-		for (index = 0; index < network->key.length && index + 1U < sizeof(dots); index++)
-			dots[index] = '*';
-		dots[index] = '\0';
-		text = dots;
-	}
-
-	/* An empty field shows what it is for. */
-	ink = SE_COLOR_TEXT;
-	if (network->key.length == 0) {
-		text = "Key (8 to 63 characters)";
-		ink = SE_COLOR_TEXT_FAINT;
-	}
-
-	/* The text inside the field, and the cursor after it. */
-	kl_canvas_clip_push(canvas, &field);
-	right = field.x + 12 + kl_text_draw(app->text, canvas, field.x + 12, kl_text_center(NETWORK_TEXT_ROW, field.y, field.height), text, strlen(text), NETWORK_TEXT_ROW, 0, ink);
-	if (network->key.length == 0)
-		right = field.x + 12;
-	kl_canvas_line(canvas, (float)right + 1.5f, (float)field.y + 9.0f, (float)right + 1.5f, (float)(field.y + field.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	kl_canvas_clip_pop(canvas);
+	/* libkeiland's field: the key as dots, or plain when shown; never an input method (ws090-p007). */
+	kind = SE_FIELD_SECRET;
+	if (network->key_shown != 0)
+		kind = SE_FIELD_PLAIN;
+	(void)se_field_draw(app, canvas, &network->key, &field, "Key (8 to 63 characters)", kind, 1);
 }
 
 /* Draws the card of the wired interfaces: each one's link, name and address, and Details. Returns the edge below it. */

@@ -298,14 +298,12 @@ wired_field_draw(
 	int y,
 	int width)
 {
-	const struct se_wired *wired;
-	const struct se_field *field;
+	struct se_wired *wired;
+	struct kl_field *field;
 	struct kl_rect box;
-	const char *text;
-	kl_color ink;
 	kl_color label;
 	int counts;
-	int right;
+	int focused;
 
 	/* The label, faint for a field that does not count. */
 	wired = &app->wired;
@@ -316,46 +314,26 @@ wired_field_draw(
 		label = SE_COLOR_TEXT_FAINT;
 	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), wired_labels[index], WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, label);
 
-	/* The box: white, the accent's edge with the keyboard. */
+	/* The box's place; a click on it gives it the keyboard. */
 	box.x = x + WIRED_FIELD_X;
 	box.y = y + 8;
 	box.width = width - WIRED_FIELD_X - WIRED_PAD;
 	box.height = 36;
-	if (counts) {
-		kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	} else {
-		kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_SEPARATOR);
-	}
-
-	/* Its edge. */
-	if (counts && wired->focus == index) {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
-	} else {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
-	}
-
-	/* A click on it gives it the keyboard. */
 	se_ui_hit(app, &box, SE_HIT_CONTROL, WIRED_FIELD_FIRST + index);
 
-	/* The text, or what an empty field is for ("From DHCP" for a field that does not count). */
-	text = field->text;
-	ink = SE_COLOR_TEXT;
+	/* A field that does not count: grey, "From DHCP", nothing to type. */
 	if (!counts) {
-		text = "From DHCP";
-		ink = SE_COLOR_TEXT_FAINT;
-	} else if (field->length == 0) {
-		text = wired_placeholders[index];
-		ink = SE_COLOR_TEXT_FAINT;
+		kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_SEPARATOR);
+		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
+		(void)kl_text_draw(app->text, canvas, box.x + 12, kl_text_center(WIRED_TEXT_ROW, box.y, box.height), "From DHCP", strlen("From DHCP"), WIRED_TEXT_ROW, 0, SE_COLOR_TEXT_FAINT);
+		return;
 	}
 
-	/* The text inside the box, and the cursor after it in the field with the keyboard. */
-	kl_canvas_clip_push(canvas, &box);
-	right = box.x + 12 + kl_text_draw(app->text, canvas, box.x + 12, kl_text_center(WIRED_TEXT_ROW, box.y, box.height), text, strlen(text), WIRED_TEXT_ROW, 0, ink);
-	if (field->length == 0 || !counts)
-		right = box.x + 12;
-	if (counts && wired->focus == index)
-		kl_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	kl_canvas_clip_pop(canvas);
+	/* libkeiland's field, plain: an address takes no input method (ws090-p007). */
+	focused = 0;
+	if (wired->focus == index)
+		focused = 1;
+	(void)se_field_draw(app, canvas, field, &box, wired_placeholders[index], SE_FIELD_PLAIN, focused);
 }
 
 /* Says how a wired interface is configured, in words. */

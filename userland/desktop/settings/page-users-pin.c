@@ -207,7 +207,7 @@ se_users_pin_key(
 	const struct se_event *event)
 {
 	struct se_users *users;
-	struct se_field *field;
+	struct kl_field *field;
 	char typed;
 	int ready;
 	int used;
@@ -492,22 +492,15 @@ pin_field_draw(
 	int y,
 	int width)
 {
-	const struct se_users *users;
-	const struct se_field *field;
+	struct se_users *users;
 	struct kl_rect box;
-	char dots[SE_KEY_TEXT];
-	const char *text;
-	kl_color ink;
-	size_t count;
 	int focused;
-	int right;
 
 	/* The label. */
 	users = &app->users;
-	field = &users->pin_fields[index];
 	(void)kl_text_draw_fit(app->text, canvas, x + 20, kl_text_center(PIN_TEXT_ROW, y + 8, 36), pin_labels[index], PIN_TEXT_ROW, 0, PIN_FIELD_X - 30, SE_COLOR_TEXT);
 
-	/* The field: white, the accent's edge when it has the keyboard. */
+	/* The field's place, and whether it has the keyboard. */
 	box.x = x + PIN_FIELD_X;
 	box.y = y + 8;
 	box.width = width - PIN_FIELD_X - 20;
@@ -515,36 +508,10 @@ pin_field_draw(
 	focused = 0;
 	if (users->keyboard == SE_USERS_KEYBOARD_PIN && users->pin_focus == index)
 		focused = 1;
-	kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	if (focused) {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
-	} else {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
-	}
 
 	/* A click on it gives it the keyboard. */
 	se_ui_hit(app, &box, SE_HIT_CONTROL, PIN_FIELD_FIRST + index);
 
-	/* Dots, one a character: all three fields are secrets. */
-	for (count = 0; count < field->length && count + 1U < sizeof(dots); count++)
-		dots[count] = '*';
-	dots[count] = '\0';
-	text = dots;
-
-	/* An empty field shows what it is for. */
-	ink = SE_COLOR_TEXT;
-	if (field->length == 0) {
-		text = pin_placeholders[index];
-		ink = SE_COLOR_TEXT_FAINT;
-	}
-
-	/* The text inside the field, and the cursor after it in the field with the keyboard. */
-	kl_canvas_clip_push(canvas, &box);
-	right = box.x + 12 + kl_text_draw(app->text, canvas, box.x + 12, kl_text_center(PIN_TEXT_ROW, box.y, box.height), text, strlen(text), PIN_TEXT_ROW, 0, ink);
-	if (field->length == 0)
-		right = box.x + 12;
-	if (focused)
-		kl_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	kl_canvas_clip_pop(canvas);
-	memset(dots, 0, sizeof(dots));
+	/* libkeiland's field: all three are secrets, as dots and without an input method (ws090-p007). */
+	(void)se_field_draw(app, canvas, &users->pin_fields[index], &box, pin_placeholders[index], SE_FIELD_SECRET, focused);
 }

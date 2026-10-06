@@ -110,3 +110,22 @@ Settings の guest の回帰は同 §8。WS089 の試験が `plan/tools/settings
 - Settings の key の repeat と search の欄（titlebar の search の field の text は zdesktop の titlebar の物）が `kui_window` の queue の順で変わらないか（BUG-111 の型）。
   見る所: `settings/window.c` の repeat の扱いと `kui_window_repeat`（`userland/desktop/libkeiui/window.c`）。試験は `settings-p008.sh`（検索）。
 - Settings の glass の 2 枚の card の panel の座標（`glass.c:79-107`）が `kui_window` の surface でも同じ原点か。試験は `settings-p004.sh` の画面。
+
+## q817（P1、2026-10-06）
+
+Status: 実装と host の確認まで済み、T1 の結果待ち。
+
+- Settings の全ての欄（Wi-Fi の鍵、有線の 5 つ、言語の頁の password、利用者の password 3 つ、管理の 4 つ、PIN 3 つ）を libkeiland の `kl_field` に。`struct se_field` を除き、`struct kl_field` を直に持つ。
+  - `widgets.c`: 全ての欄が 1 つの `kl_ui` の下（`se_fields_open`・`_close`・`_begin`・`_end`・`_input`・`se_fields_ui`）。`se_field_draw(app, canvas, field, rect, placeholder, kind, focused)` は頁の keyboard の持ち主（`focused`）を `kl_ui` の focus に写して `kl_field` を描く。`se_field_key` は欄の key（文字・Left・Right・Home・End・Backspace・Delete・Ctrl+A）を `kl_ui_key` に積み、1 画素の canvas の上で欄だけの frame を回してすぐに反映する（Enter が打鍵の直後に来ても新しい文字を読む）。Enter・Esc・Tab は今までどおり頁の物。`se_field_clear` は volatile で消して caret も 0 に。
+  - 欄の種類（`SE_FIELD_TEXT`・`_SECRET`・`_PLAIN`）: 秘密（password・鍵・PIN）は点で IME 無し、plain（login 名・有線の address・Show で見せた password と鍵）は文字を見せて IME 無し、TEXT（管理の氏名）は IME あり。libkeiland の `kl_field` に `plain`（KL_VERSION 47、文字を見せるが IME を取らない）を足した。
+  - 有線の欄: 数字と点以外と 16 文字目以降は key の時に落とす（`se_wired_type`、plain なので IME は来ない）。DHCP の時の欄は灰色の「From DHCP」のまま（欄ではない）。
+  - 管理の操作の行が長すぎる時（libkeiland の欄は 511 byte まで持つ）は送らず「The names or the password are too long.」。
+  - q816 の暫定の IME（`se_users_admin_text`・`_text_wanted`・`se_field_insert`・`se_field_delete_before`・preedit と caret の描画・`app->preedit`）を除いた。window の text input は frame の後に `kl_ui_window_text(se_fields_ui(), kui)`（main.c）。
+- 見た目: 欄は libkeiland の物（白、角の丸み、縁の色、文字 14 px、caret・選択・preedit の下線、秘密の点は `•`。Mahora に `•` が無く、image では monospace の companion（JetBrains Mono）で描く。host の絵は companion が無く豆腐になる）。
+- 試験: `plan/ws089/tests/host-build.sh` に libkeiland の `ui.c`・`field.c`・`input.c`・`theme.c`・`scroll.c`・`text-touch.c`・`scroll-bar.c`・`gesture.c`・`motion.c` と appearance の stand-in（files の `host-appearance.c`）。`plan/ws089/tests/host-wired.c` に `kl_key_character` の stand-in。
+
+### 確認
+
+- build: zedBSD amd64 の libkeiland・settings・files・textedit・mailer（exit 0、warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）、`exports.py --check` OK、`keiland-os-boundary/check.sh` PASS。
+- host: host-account-admin 34/34、host-settings 38/38、host-wired PASS、host-dark PASS、ws160 の利用者の頁の確かめ（変更の依頼・長さだけ・errno 1/22・不一致で依頼なし、host の rm を避けて直に）、settings-render の 15 頁（p009 の後と storage の空きの差だけ）、host-widgets 94/94、host-chooser 85/85。
+- 未実施（T1）: 各欄の入力（Wi-Fi の鍵と Show、有線の手動、言語の password、利用者の password と Show、管理の追加で日本語の氏名（IME）と login 名、PIN）、settings-regress、volume。

@@ -542,7 +542,7 @@ kl_system_network_get_saved(
  */
 void
 se_field_clear(
-	struct se_field *field)
+	struct kl_field *field)
 {
 	/* The field's bytes. */
 	memset(field, 0, sizeof(*field));

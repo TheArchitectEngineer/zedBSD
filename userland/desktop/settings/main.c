@@ -577,28 +577,23 @@ main_frame(void)
 }
 
 /*
- * Asks for the window's text input while the field with the keyboard takes
- * an input method's text, with where its caret was drawn (ws090-p022); off
- * otherwise, and what was being composed goes.
+ * Asks for the window's text input while a text field that takes an input
+ * method has the keyboard, at its caret (widgets.c, ws090-p007).
  */
 static void
 main_text_input(void)
 {
-	int wanted;
+	struct kl_ui *fields;
 
-	/* No such field: off. */
-	wanted = se_users_admin_text_wanted(&main_app);
-	if (!wanted) {
-		main_app.preedit[0] = '\0';
-		main_app.caret_known = 0;
+	/* No fields' input: off. */
+	fields = se_fields_ui();
+	if (fields == NULL) {
 		kl_window_text_input(main_window.kui, 0);
 		return;
 	}
 
-	/* On, at its caret once it was drawn. */
-	kl_window_text_input(main_window.kui, 1);
-	if (main_app.caret_known)
-		kl_window_text_cursor(main_window.kui, main_app.caret.x, main_app.caret.y, main_app.caret.width, main_app.caret.height);
+	/* libkeiland's answer: on while a field that takes an input method has the keyboard, at its caret. */
+	kl_ui_window_text(fields, main_window.kui);
 }
 
 /* Makes the frame's memory and canvas at the swapchain's size; nonzero when memory runs out. */
