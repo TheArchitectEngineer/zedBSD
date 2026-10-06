@@ -28,6 +28,8 @@ static int request(int descriptor, const char *name, unsigned long command, stru
 static const char *address_text(const struct sockaddr *address, char output[16]);
 static int usage(void);
 static int set_sockaddr(int descriptor, const char *name, unsigned long command, struct in_addr value);
+static void show_inet6(int descriptor, const char *name);
+static int change_inet6(int descriptor, const char *name, const char *text, int add);
 
 /*
  * Runs the ifconfig command.
@@ -144,6 +146,12 @@ main(
 		    set_sockaddr(descriptor, argv[1], SIOCSIFADDR, address_local) !=
 			0)
 			status = 1;
+	} else if (argc == 4 && strcmp(argv[2], "inet6") == 0) {
+		/* An IPv6 address added (ws130-p005). */
+		status = change_inet6(descriptor, argv[1], argv[3], 1) != 0;
+	} else if (argc == 4 && strcmp(argv[2], "-inet6") == 0) {
+		/* An IPv6 address removed (ws130-p005). */
+		status = change_inet6(descriptor, argv[1], argv[3], 0) != 0;
 	} else if (argc == 4 && strcmp(argv[2], "broadcast") == 0) {
 		/* Validates the command-line arguments. */
 		if (netutil_parse_ipv4(argv[3], &broadcast_local1) != 0) {
@@ -222,6 +230,7 @@ show(
 		       address_text(&mask.ifr_addr, m),
 		       address_text(&broadcast.ifr_addr, b));
 	}
+	show_inet6(descriptor, name);
 	printf("        ether %02x:%02x:%02x:%02x:%02x:%02x\n",
 	       hardware.ifr_hwaddr[0], hardware.ifr_hwaddr[1],
 	       hardware.ifr_hwaddr[2], hardware.ifr_hwaddr[3],
@@ -287,7 +296,7 @@ usage(
 	void)
 {
 	puts("usage: ifconfig [-a] [interface [up|down|inet address[/prefix] "
-	     "[netmask mask]|broadcast address]]]");
+	     "[netmask mask]|inet6 address[/prefix]|-inet6 address[/prefix]|broadcast address]]]");
 
 	/* Reports operation failure. */
 	return 2;
@@ -317,4 +326,98 @@ set_sockaddr(
 
 	/* Returns the computed result. */
 	return function_result;
+}
+
+/*
+ * Shows an interface's IPv6 addresses (ws130-p005): each with its prefix
+ * length, a link-local one's scope (the interface's index), and its state.
+ */
+static void
+show_inet6(
+	int descriptor,
+	const char *name)
+{
+	struct in6_ifaddrs list;
+	const struct in6_ifaddr_entry *entry;
+	const char *written;
+	char text[INET6_ADDRSTRLEN];
+	unsigned index;
+	unsigned ifindex;
+	int status;
+
+	/* The interface's addresses; one without IPv6 shows none. */
+	memset(&list, 0, sizeof(list));
+	(void)snprintf(list.ifa_name, sizeof(list.ifa_name), "%s", name);
+	status = ioctl(descriptor, SIOCGIFADDRS_IN6, &list);
+	if (status != 0)
+		return;
+	ifindex = if_nametoindex(name);
+
+	/* Each address. */
+	for (index = 0; index < list.ifa_count && index < IN6_IFADDRS_MAX; index++) {
+		entry = &list.ifa_list[index];
+		written = inet_ntop(AF_INET6, &entry->ife_addr, text, sizeof(text));
+		if (written == NULL)
+			continue;
+		printf("        inet6 %s prefixlen %u", text, (unsigned)entry->ife_prefixlen);
+		if (IN6_IS_ADDR_LINKLOCAL(&entry->ife_addr))
+			printf(" scopeid 0x%x", ifindex);
+
+		/* Its state. */
+		if ((entry->ife_flags & IN6_IFF_TENTATIVE) != 0U)
+			printf(" tentative");
+		if ((entry->ife_flags & IN6_IFF_DUPLICATED) != 0U)
+			printf(" duplicated");
+		if ((entry->ife_flags & IN6_IFF_DEPRECATED) != 0U)
+			printf(" deprecated");
+		if ((entry->ife_flags & IN6_IFF_TEMPORARY) != 0U)
+			printf(" temporary");
+		if ((entry->ife_flags & IN6_IFF_AUTOCONF) != 0U)
+			printf(" autoconf");
+		if ((entry->ife_flags & IN6_IFF_DHCP) != 0U)
+			printf(" dhcp");
+		printf("\n");
+	}
+}
+
+/*
+ * Adds or removes an IPv6 address of an interface, "ADDRESS[/LENGTH]"
+ * (ws130-p005): an added one has no end to its lifetimes.  Returns 0, or
+ * -1 with errno set.
+ */
+static int
+change_inet6(
+	int descriptor,
+	const char *name,
+	const char *text,
+	int add)
+{
+	struct in6_aliasreq request_;
+	struct in6_addr address;
+	unsigned prefix;
+	unsigned long command;
+	int status;
+
+	/* The address and its length. */
+	status = netutil_parse_cidr6(text, &address, &prefix);
+	if (status != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* The request. */
+	memset(&request_, 0, sizeof(request_));
+	(void)snprintf(request_.ifra_name, sizeof(request_.ifra_name), "%s", name);
+	request_.ifra_addr.sin6_family = AF_INET6;
+	request_.ifra_addr.sin6_addr = address;
+	request_.ifra_prefixlen = prefix;
+	request_.ifra_valid = IN6_LIFETIME_INFINITE;
+	request_.ifra_preferred = IN6_LIFETIME_INFINITE;
+	command = SIOCDIFADDR_IN6;
+	if (add)
+		command = SIOCAIFADDR_IN6;
+
+	/* Succeeded or not, the kernel's answer. */
+	status = ioctl(descriptor, command, &request_);
+	return status;
 }

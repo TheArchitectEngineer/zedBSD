@@ -326,3 +326,47 @@ netutil_parse_milliseconds(
 	/* Reports successful completion. */
 	return 0;
 }
+
+/*
+ * Reads an IPv6 address with its prefix length, "2001:db8::10/64"
+ * (ws130-p005); without "/LENGTH" the length is 128.  Returns 0, or -1
+ * when the text is not one.
+ */
+int
+netutil_parse_cidr6(
+	const char *text,
+	struct in6_addr *address,
+	unsigned *prefix)
+{
+	char copy[INET6_ADDRSTRLEN + 5];
+	char *slash;
+	char *end;
+	unsigned long length;
+	size_t size;
+	int ok;
+
+	/* A copy, its length apart. */
+	size = strlen(text);
+	if (size >= sizeof(copy))
+		return -1;
+	memcpy(copy, text, size + 1U);
+	slash = strchr(copy, '/');
+	*prefix = 128U;
+	if (slash != NULL) {
+		*slash++ = '\0';
+		length = strtoul(slash, &end, 10);
+		if (*slash == '\0' ||
+		    *end != '\0' ||
+		    length > 128UL)
+			return -1;
+		*prefix = (unsigned)length;
+	}
+
+	/* The address. */
+	ok = inet_pton(AF_INET6, copy, address);
+	if (ok != 1)
+		return -1;
+
+	/* Succeeded. */
+	return 0;
+}

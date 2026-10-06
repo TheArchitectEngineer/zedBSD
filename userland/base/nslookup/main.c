@@ -22,6 +22,7 @@
 static int usage(void);
 static int ptr_name(struct in_addr address, char output[64]);
 static void print_result(const char *query, const struct resolver_result *result);
+static int nslookup_ask(const char *query, uint16_t type, const struct in_addr *server, unsigned long port, struct resolver_result *result);
 
 /*
  * Runs the nslookup command.
@@ -33,13 +34,16 @@ main(
 {
 	int function_result;
 	struct resolver_result result;
-	struct resolver_config config;
+	struct resolver_result result6;
 	struct in_addr server, numeric;
+	struct in6_addr numeric6;
+	const struct in_addr *given;
 	char query[254], *end;
 	unsigned long port;
-	unsigned arg, index;
+	unsigned arg;
 	uint16_t type;
 	int error;
+	int error6;
 
 	port = 53;
 	arg = 1;
@@ -69,9 +73,13 @@ main(
 		return function_result;
 	}
 
-	/* Validates the command-line arguments. */
+	/* An IPv4 or IPv6 address asks for its name (PTR); a name asks for its IPv4 and IPv6 addresses (ws130-p005). */
+	type = DNS_TYPE_A;
 	if (inet_aton(argv[arg], &numeric)) {
 		ptr_name(numeric, query);
+		type = DNS_TYPE_PTR;
+	} else if (inet_pton(AF_INET6, argv[arg], &numeric6) == 1) {
+		(void)resolver_inet6_ptr_name(numeric6.s6_addr, query, sizeof(query));
 		type = DNS_TYPE_PTR;
 	} else {
 		/* Validates the command-line arguments. */
@@ -83,10 +91,10 @@ main(
 			return function_result;
 		}
 		strcpy(query, argv[arg]);
-		type = DNS_TYPE_A;
 	}
 
-	/* Validates the command-line arguments. */
+	/* The server named after the query, or resolv.conf's. */
+	given = NULL;
 	if (arg + 1U < (unsigned)argc) {
 		/* Validates the command-line arguments. */
 		if (!inet_aton(argv[arg + 1], &server)) {
@@ -96,20 +104,20 @@ main(
 			/* Returns the computed result. */
 			return function_result;
 		}
-		error = resolver_query_server(query, type, &server,
-					      (uint16_t)port, &result);
-	} else if (port == 53U)
-		error = resolver_query(query, type, &result);
-	else if ((error = resolver_load_config(&config)) == 0) {
-		/* Process each remaining element. */
-		for (index = 0; index < config.count; index++) {
-			error = resolver_query_server(query, type,
-						      &config.servers[index],
-						      (uint16_t)port, &result);
+		given = &server;
+	}
 
-			/* Handles an operation failure. */
-			if (error == 0 || error == EAI_NONAME)
-				break;
+	/* The question; for a name its AAAA records too, kept with the A ones. */
+	error = nslookup_ask(query, type, given, port, &result);
+	if (type == DNS_TYPE_A) {
+		error6 = nslookup_ask(query, DNS_TYPE_AAAA, given, port, &result6);
+		if (error6 == 0 && error != 0) {
+			result = result6;
+			result.address_count = 0;
+			error = 0;
+		} else if (error6 == 0) {
+			memcpy(result.addresses6, result6.addresses6, sizeof(result.addresses6));
+			result.address6_count = result6.address6_count;
 		}
 	}
 
@@ -163,7 +171,7 @@ print_result(
 	const char *query,
 	const struct resolver_result *result)
 {
-	char server[16], address[16];
+	char server[16], address[INET6_ADDRSTRLEN];
 	unsigned i;
 
 	inet_ntop(AF_INET, &result->server, server, sizeof(server));
@@ -180,8 +188,56 @@ print_result(
 		printf("Address: %s\n", address);
 	}
 
+	/* The IPv6 ones (ws130-p005). */
+	for (i = 0; i < result->address6_count; i++) {
+		inet_ntop(AF_INET6, &result->addresses6[i], address, sizeof(address));
+		printf("Address: %s\n", address);
+	}
+
 	/* Checks the operation result. */
 	if (result->ptr_name[0] != '\0')
 		printf("Name: %s\n", result->ptr_name);
 	printf("TTL: %u\n", result->ttl);
+}
+
+/*
+ * Asks one question: of the server given, of resolv.conf's servers in
+ * their order (port 53), or of resolv.conf's IPv4 servers on another port.
+ */
+static int
+nslookup_ask(
+	const char *query,
+	uint16_t type,
+	const struct in_addr *server,
+	unsigned long port,
+	struct resolver_result *result)
+{
+	struct resolver_config config;
+	unsigned index;
+	int error;
+
+	/* The server given. */
+	if (server != NULL) {
+		error = resolver_query_server(query, type, server, (uint16_t)port, result);
+		return error;
+	}
+
+	/* resolv.conf's servers. */
+	if (port == 53U) {
+		error = resolver_query(query, type, result);
+		return error;
+	}
+
+	/* Its IPv4 servers on another port. */
+	error = resolver_load_config(&config);
+	if (error != 0)
+		return error;
+	for (index = 0; index < config.count; index++) {
+		error = resolver_query_server(query, type, &config.servers[index], (uint16_t)port, result);
+		if (error == 0 || error == EAI_NONAME)
+			break;
+	}
+
+	/* The last answer. */
+	return error;
 }
