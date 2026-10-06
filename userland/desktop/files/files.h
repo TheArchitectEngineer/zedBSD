@@ -1546,6 +1546,7 @@ int fm_list_sort_at(struct fm_app *app, int index);
 void fm_list_edge_press(struct fm_app *app, int column, int x);
 int fm_list_edge_motion(struct fm_app *app, int x);
 int fm_list_edge_release(struct fm_app *app);
+void fm_list_widths_load(struct fm_app *app);
 
 /* The text fields (ui-field.c). */
 char fm_key_character(uint32_t key, uint32_t modifiers);

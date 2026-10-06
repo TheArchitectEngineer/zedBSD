@@ -625,8 +625,9 @@ zwl_titlebar_motion(
 }
 
 /*
- * Handles a key for a field with the keyboard: the keys edit it, Enter and
- * Esc end it.  Keys with Alt or Super, and Ctrl keys other than the
+ * Handles a key for a field with the keyboard: the keys edit it, Enter,
+ * Esc and Tab end it, and Down without suggestions ends it and goes on to
+ * the window.  Keys with Alt or Super, and Ctrl keys other than the
  * editing ones, go on (to zdesktop's shortcuts and the menus).  Returns 1
  * when the key was the field's.
  */
@@ -679,26 +680,43 @@ zwl_titlebar_key(
 		return 1;
 	}
 
+	/*
+	 * Without suggestions, Down ends the field as Tab does and goes on to
+	 * the window, which moves into what the field found (Settings' search
+	 * results, ws089-p012): the key and its release are the window's.
+	 */
+	if (key == FIELD_KEY_DOWN && shell_titlebar.suggestions.count == 0U) {
+		shell_field_done(server, ZWL_TEXT_LEFT);
+		return 0;
+	}
+
 	/* The press and its release are the field's from here on. */
 	shell_titlebar.eaten_key = key;
 	server->dirty = 1;
 
 	/* With suggestions shown: Up and Down light one, Enter takes the lit one, Esc takes the list away. */
 	if (shell_titlebar.suggestions.count != 0U) {
+		/* Down lights the next one. */
 		if (key == FIELD_KEY_DOWN) {
 			if (shell_titlebar.suggestions.lit + 1 < (int)shell_titlebar.suggestions.count)
 				shell_titlebar.suggestions.lit++;
 			return 1;
 		}
+
+		/* Up the one before (none above the first). */
 		if (key == FIELD_KEY_UP) {
 			if (shell_titlebar.suggestions.lit >= 0)
 				shell_titlebar.suggestions.lit--;
 			return 1;
 		}
+
+		/* Enter takes the lit one. */
 		if ((key == FIELD_KEY_ENTER || key == FIELD_KEY_KPENTER) && shell_titlebar.suggestions.lit >= 0) {
 			shell_suggest_apply(server, shell_titlebar.suggestions.lit);
 			return 1;
 		}
+
+		/* Esc takes the list away. */
 		if (key == FIELD_KEY_ESC) {
 			shell_suggest_clear(server);
 			return 1;
@@ -1247,6 +1265,8 @@ zwl_titlebar_suggestions(
 		(void)snprintf(suggestions->labels[index], sizeof(suggestions->labels[index]), "%s", strings[2U * index]);
 		(void)snprintf(suggestions->texts[index], sizeof(suggestions->texts[index]), "%s", strings[2U * index + 1U]);
 	}
+
+	/* How many, none lit, to be drawn and logged. */
 	suggestions->count = count;
 	suggestions->lit = -1;
 	suggestions->drawn = 0;

@@ -31,3 +31,7 @@ Queue: なし
 ## Event
 
 2026-10-02 / ws089-beta1-plan: fg019 の計画で新設。
+
+## 2026-10-06 q805 P2
+
+実機（5330 の passthrough、`/tmp/i915-hw.lock`）だけの Phase のため、q805 では skip した。実機の手番で行う。

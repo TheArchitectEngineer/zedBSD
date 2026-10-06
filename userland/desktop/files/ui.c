@@ -107,6 +107,9 @@ fm_app_init(
 	snprintf(app->wallpaper, sizeof(app->wallpaper), "%s", FM_WALLPAPER);
 	app->click_index = -1;
 
+	/* The list's column widths an earlier run kept (BUG-220). */
+	fm_list_widths_load(app);
+
 	/* The user's account, for the name and the home folder. */
 	account = getpwuid(getuid());
 	if (account != NULL && account->pw_name != NULL)

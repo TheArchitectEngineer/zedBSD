@@ -27,7 +27,8 @@
  * language of the interface (WS158) is 0 English or 1 Japanese
  * (kl_tr_language_code).  The one
  * pointer setting of before (pointer.*) is only read, to be moved to the
- * mouse's (settings.c).
+ * mouse's (settings.c).  Files keeps the width of each list column the
+ * user dragged (BUG-220), in pixels, 0 for the column's own width.
  */
 static const struct kl_settings_key settings_keys[] = {
 	{ "wallpaper", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_PATH, 0, 0, 0, KL_SETTINGS_KEY_KEPT },
@@ -52,6 +53,13 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U },
 	{ "terminal.font-size", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 8, 32, 16, 0U },
 	{ "terminal.theme", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2, 0, 0U },
+	{ "files.column-width.kind", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
+	{ "files.column-width.size", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
+	{ "files.column-width.modified", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
+	{ "files.column-width.changed", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
+	{ "files.column-width.owner", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
+	{ "files.column-width.location", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
+	{ "files.column-width.deleted", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2000, 0, 0U },
 	{ "files.open-with.", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_OPENER, 0, 0, 0, KL_SETTINGS_KEY_PREFIX }
 };
 
