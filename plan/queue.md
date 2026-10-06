@@ -19,7 +19,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q782 / q782-i01 | P1 | [BUG-233](bugs/BUG-233.md)・[BUG-234](bugs/BUG-234.md) → [BUG-227](bugs/BUG-227.md) | Files の動画・/bin の file の開き方、amazon の白い画面の切り分け（libbrowser か shell か） | q780 の後 | pending |
 | q783 / q783-i01 | P2 | [ws099-p035](ws099/phase035/phase.md) の p035a → [ws099-p037](ws099/phase037/phase.md) | App Home の stage の montage（2〜3 案、ユーザーが選ぶ）、Power Off と暗くする確認の dialog（BUG-235） | q781 の後 | pending |
 | q784 / q784-i01 | T1（helper の直しは P2） | AAT の runner と未実行の試験 | (a) P2: T1-202b の smoke の fail 3 件（apps.files.open-from-home・apps.settings.open-from-home の「window did not close」、apps.textedit.type-save の「no window mapped within 20 s」、`/home/awe/zedBSD-worktrees/t1/build/t1-202b-smoke/`）が helper・シナリオ・機能のどれかを調べ、helper・シナリオなら直す。機能なら Bug。(b) T1: 台帳の未実行（T1-205・206b・207・215〜220）をまとめて流し、(a) の後に T1-202b を流し直す | なし | in-progress |
-| q785 / q785-i01 | P2（q781 の p008 の安全な地点の後） | [BUG-208](bugs/BUG-208.md)（T1-215 FAIL）| `plan/ws099/tests/bug194-guest.sh` の 5.: title bar の double-click が「Shell」の menu の文字（約 333,110）に落ち `GLASS dock … via=double-click` が出ない。試験の点を menu の無い title bar の所に直す（機能の不具合と分かれば直す）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-205/run{1,2}/`。T1-205・215 を流し直す | T1-215 | pending |
+| q785 / q785-i01 | P2（q781 の p008 の安全な地点の後） | [BUG-208](bugs/BUG-208.md)（T1-215 FAIL）| `plan/ws099/tests/bug194-guest.sh` の 5.: title bar の double-click が「Shell」の menu の文字（約 333,110）に落ち `GLASS dock … via=double-click` が出ない。試験の点を menu の無い title bar の所に直す（機能の不具合と分かれば直す）。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-205/run{1,2}/`。T1-205・215 を流し直す | T1-215 | 試験を直した（P2 b9e1b10f → main）、test-wait（T1-205b） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）
