@@ -99,8 +99,14 @@
  */
 #define KWL_GLASS_BAR_MIDDLE	(KWL_GLASS_BAR / 2)
 
-/* Where a docked (maximized) window's body starts: just under the system bar (shell.c, keyboard.c). */
-#define KWL_GLASS_DOCK_TOP	(KWL_GLASS_BAR + 4)
+/*
+ * How far a docked (maximized) window's body keeps from the screen's edges
+ * and the system bar on every side (ws099-p038, the 2026-10-06 user
+ * decision), and where its body starts: just under the system bar.  In
+ * logical pixels at the default DPI; DPI scaling multiplies it here.
+ */
+#define KWL_GLASS_DOCK_PAD	4
+#define KWL_GLASS_DOCK_TOP	(KWL_GLASS_BAR + KWL_GLASS_DOCK_PAD)
 #define KWL_BUTTON_LEFT		0x110U
 #define KWL_TITLE_MAX		64U
 
