@@ -18,8 +18,9 @@
 #     under the bar; Esc closes it.
 # 11. F11 makes the window fullscreen and back (Fullscreen checked, then not).
 # 12. about.png: Help > About Terminal writes its line.
-# 13. two.png: Ctrl+Shift+N starts a second terminal (t1-new) on top: its own menus, and the system bar
-#     without the docked window's; its Shell > Close Window ends it (reason=menu-close).
+# 13. two.png: Ctrl+Shift+N starts a second terminal (t1-new).  Docking in step 10 put the session in the docked
+#     layout mode (ws142-p008), so it opens docked on top and the system bar has its menus, not t1's; its
+#     Shell > Close Window there ends it (reason=menu-close).
 # 14. Ctrl+Shift+Q ends t1 (reason=menu-close); no ERROR line in zdesktop's log.
 #
 #   plan/tools/titlebar/menu-guest.sh start     (the guest must be up)
@@ -197,16 +198,14 @@ pointer move 1250 780 sleep 400
 check "$out/about.png" >/dev/null
 expect_log /tmp/t.log 'ZTERM ACTION run=t1 action=18'
 
-# 13. A new window by Ctrl+Shift+N; its own menu closes it.
+# 13. A new window by Ctrl+Shift+N, docked in the docked mode; its menus in the system bar close it.
 keys '<ctrl-shift-n>'
 sleep 6
-set -- $(guest "grep 'KWL MAP client=$zc2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
-nx=${2:-0}; ny=${3:-0}
 expect_log /tmp/t.log 'ZTERM START run=t1-new'
-expect_log /tmp/zdesktop.log "MENU bar client=$zc2 surface=[0-9]+ where=floating item=5 "
+expect_log /tmp/zdesktop.log "MENU bar client=$zc2 surface=[0-9]+ where=docked item=5 "
 pointer move 1250 780 sleep 400
 check "$out/two.png" >/dev/null
-click "$(item_x 2 floating 1 $nx)" $((ny - 30))
+click "$(item_x 2 docked 1 0)" 17
 click $(( $(popup_x) + 60 )) "$(row_y 12)" 2000
 expect_log /tmp/t.log 'ZTERM DONE run=t1-new reason=menu-close'
 
