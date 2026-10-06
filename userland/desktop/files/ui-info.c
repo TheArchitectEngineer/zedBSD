@@ -412,11 +412,11 @@ info_rows(
 	if (is_link != 0)
 		info_add(rows, &count, "Link to", info->target);
 
-	/* Its extended attributes, one a row. */
+	/* Its extended attributes' names, one a row. */
 	if (info->attribute_count == 0)
 		info_add(rows, &count, "Attributes", "None");
 	for (index = 0; index < info->attribute_count; index++) {
-		snprintf(value, sizeof(value), "%s \xe2\x80\x94 %ld bytes", info->attributes[index].name, info->attributes[index].size);
+		snprintf(value, sizeof(value), "%s", info->attributes[index].name);
 		info_add(rows, &count, "", value);
 		if (index == 0)
 			rows[count - 1].label = "Attributes";

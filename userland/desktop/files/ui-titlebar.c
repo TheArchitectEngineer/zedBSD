@@ -80,7 +80,7 @@ fm_ui_titlebar_state(
 		task = app->tasks[0];
 		total = task->bytes_total + task->files_total * 4096U;
 		done = task->bytes_done + task->files_done * 4096U;
-		state->progress = (int)KEILAND_PROGRESS_UNKNOWN;
+		state->progress = (int)KL_PROGRESS_UNKNOWN;
 		if (total != 0U && done >= total)
 			state->progress = 1000;
 		else if (total != 0U)
@@ -250,7 +250,7 @@ titlebar_done(
 {
 	/* The search: Enter gives the keyboard to the results, Esc ends the search, leaving keeps it. */
 	if (event->id == FM_CONTROL_SEARCH) {
-		if (event->detail == KEILAND_TEXT_CANCELLED) {
+		if (event->detail == KL_TEXT_CANCELLED) {
 			fm_search_cancel(app);
 			return;
 		}
@@ -264,7 +264,7 @@ titlebar_done(
 	if (event->id == FM_CONTROL_PATH) {
 		app->focus = FM_FOCUS_CONTENT;
 		app->location_typed_at = 0;
-		if (event->detail != KEILAND_TEXT_SUBMITTED)
+		if (event->detail != KL_TEXT_SUBMITTED)
 			return;
 		fm_field_set(&app->location, event->text);
 		fm_input_location_go(app);

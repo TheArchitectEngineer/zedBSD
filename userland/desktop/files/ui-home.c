@@ -84,7 +84,7 @@ static const struct home_folder home_folders[] = {
  * so it lives here rather than on the stack; it is filled when the
  * dashboard is gathered and read only then.
  */
-static struct keiland_recent_item home_recent_items[FM_HOME_RECENTS * 4];
+static struct kl_recent_item home_recent_items[FM_HOME_RECENTS * 4];
 
 static void home_hero(struct fm_app *app, struct fm_canvas *canvas, int x, int y, int width);
 static void home_hero_art(struct fm_image *image);
@@ -159,7 +159,7 @@ fm_home_gather(
 		today = *converted;
 	opened_today = 0;
 	count = 0;
-	error = keiland_recent_list(home_recent_items, sizeof(home_recent_items) / sizeof(home_recent_items[0]), &count);
+	error = kl_recent_list(home_recent_items, sizeof(home_recent_items) / sizeof(home_recent_items[0]), &count);
 	for (index = 0; error == 0 && index < count && board->recent_count < FM_HOME_RECENTS; index++) {
 		folder = 1;
 		error = stat(home_recent_items[index].path, &status);

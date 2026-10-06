@@ -8,7 +8,7 @@
 /*
  * The content's overlay scroll bar (ws127-p002): the macOS-style bar the
  * user chose on 2026-10-02 for the icons and the list, the shared part of
- * libkeiland (kui_scroll_bar, scroll-bar.c) drawn with files' own canvas.
+ * libkeiland (kl_scroll_bar, scroll-bar.c) drawn with files' own canvas.
  *
  * It comes out thin when the content scrolls, thick near the window's
  * right edge, can be dragged and paged, and fades after a while; a frame
@@ -27,9 +27,9 @@
  * as long as the program; a new tab or folder only moves it (its scroll
  * is that tab's), and a zero state is a bar that has not shown.
  */
-static struct kui_scroll_bar scrollbar_content;
+static struct kl_scroll_bar scrollbar_content;
 
-static void scrollbar_viewport(const struct fm_app *app, struct kui_rect *viewport);
+static void scrollbar_viewport(const struct fm_app *app, struct kl_rect *viewport);
 static uint64_t scrollbar_now(void);
 static void scrollbar_set(struct fm_app *app, double offset);
 
@@ -42,7 +42,7 @@ fm_scrollbar_moved(
 	struct fm_app *app)
 {
 	/* The bar shows from now on, and a frame shows it. */
-	kui_scroll_bar_moved(&scrollbar_content, scrollbar_now());
+	kl_scroll_bar_moved(&scrollbar_content, scrollbar_now());
 	app->dirty = 1;
 }
 
@@ -57,7 +57,7 @@ fm_scrollbar_motion(
 	int x,
 	int y)
 {
-	struct kui_rect viewport;
+	struct kl_rect viewport;
 	double offset;
 	int dragged;
 	int changed;
@@ -66,14 +66,14 @@ fm_scrollbar_motion(
 	scrollbar_viewport(app, &viewport);
 
 	/* A drag of the thumb: the content follows it. */
-	dragged = kui_scroll_bar_drag(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)y, scrollbar_now(), &offset);
+	dragged = kl_scroll_bar_drag(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)y, scrollbar_now(), &offset);
 	if (dragged != 0) {
 		scrollbar_set(app, offset);
 		return 1;
 	}
 
 	/* Near the edge or away from it: a frame when the bar grows or shrinks. */
-	changed = kui_scroll_bar_hover(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)x, (double)y, scrollbar_now());
+	changed = kl_scroll_bar_hover(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)x, (double)y, scrollbar_now());
 	if (changed != 0)
 		app->dirty = 1;
 
@@ -92,7 +92,7 @@ fm_scrollbar_press(
 	int x,
 	int y)
 {
-	struct kui_rect viewport;
+	struct kl_rect viewport;
 	struct fm_tab *tab;
 	double offset;
 	int taken;
@@ -102,7 +102,7 @@ fm_scrollbar_press(
 	tab = fm_ui_tab(app);
 
 	/* The bar's press, which may page the content. */
-	taken = kui_scroll_bar_press(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)tab->scroll, (double)x, (double)y, scrollbar_now(), &offset);
+	taken = kl_scroll_bar_press(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)tab->scroll, (double)x, (double)y, scrollbar_now(), &offset);
 	if (taken == 0)
 		return 0;
 
@@ -125,7 +125,7 @@ fm_scrollbar_release(
 	int ended;
 
 	/* A drag of the thumb ends. */
-	ended = kui_scroll_bar_release(&scrollbar_content, scrollbar_now());
+	ended = kl_scroll_bar_release(&scrollbar_content, scrollbar_now());
 	if (ended == 0)
 		return 0;
 
@@ -147,7 +147,7 @@ fm_scrollbar_leave(
 	int changed;
 
 	/* A frame when it shrank. */
-	changed = kui_scroll_bar_leave(&scrollbar_content, scrollbar_now());
+	changed = kl_scroll_bar_leave(&scrollbar_content, scrollbar_now());
 	if (changed != 0)
 		app->dirty = 1;
 }
@@ -160,8 +160,8 @@ fm_scrollbar_draw(
 	struct fm_app *app,
 	struct fm_canvas *canvas)
 {
-	struct kui_scroll_bar_shape shape;
-	struct kui_rect viewport;
+	struct kl_scroll_bar_shape shape;
+	struct kl_rect viewport;
 	struct fm_tab *tab;
 	fm_color track;
 	fm_color thumb;
@@ -170,7 +170,7 @@ fm_scrollbar_draw(
 	/* What shows of the bar now. */
 	scrollbar_viewport(app, &viewport);
 	tab = fm_ui_tab(app);
-	shown = kui_scroll_bar_shape(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)tab->scroll, scrollbar_now(), &shape);
+	shown = kl_scroll_bar_shape(&scrollbar_content, &viewport, (double)app->layout.content_height, (double)tab->scroll, scrollbar_now(), &shape);
 	if (shown == 0)
 		return;
 
@@ -197,7 +197,7 @@ fm_scrollbar_busy(
 
 	/* The bar's own clock decides. */
 	(void)app;
-	busy = kui_scroll_bar_busy(&scrollbar_content, scrollbar_now());
+	busy = kl_scroll_bar_busy(&scrollbar_content, scrollbar_now());
 
 	/* Reports whether it changes on. */
 	return busy;
@@ -207,7 +207,7 @@ fm_scrollbar_busy(
 static void
 scrollbar_viewport(
 	const struct fm_app *app,
-	struct kui_rect *viewport)
+	struct kl_rect *viewport)
 {
 	/* The card the items are drawn in. */
 	viewport->x = app->layout.content.x;
