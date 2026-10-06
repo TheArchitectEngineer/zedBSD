@@ -124,6 +124,25 @@ main(void)
 	error = passkey_record_replace(file, sizeof(file) - 1, "kei", "pin", NULL, output, 40, &written);
 	expect(error == ENOSPC, "no room");
 
+	/* One key's line (ws172-p003): added, its count changed, removed; the other key and the other kinds stay. */
+	error = passkey_record_edit(file, sizeof(file) - 1, "kei", "fido2", NULL, "kei:1000:fido2:EEEE:FFFF:0:zedbsd.login:New:2026-10-06",
+	    output, sizeof(output), &written);
+	output[written] = '\0';
+	expect(error == 0 && strstr(output, ":AAAA:") != NULL && strstr(output, ":CCCC:") != NULL && strstr(output, ":EEEE:") != NULL,
+	    "a key added, the others kept");
+	error = passkey_record_edit(file, sizeof(file) - 1, "kei", "fido2", "AAAA", "kei:1000:fido2:AAAA:BBBB:9:zedbsd.login:YubiKey:2026-10-05",
+	    output, sizeof(output), &written);
+	output[written] = '\0';
+	expect(error == 0 && strstr(output, ":AAAA:BBBB:9:") != NULL && strstr(output, ":AAAA:BBBB:3:") == NULL && strstr(output, ":CCCC:") != NULL,
+	    "a key's count changed");
+	error = passkey_record_edit(file, sizeof(file) - 1, "kei", "fido2", "CCCC", NULL, output, sizeof(output), &written);
+	output[written] = '\0';
+	expect(error == 0 && strstr(output, ":CCCC:") == NULL && strstr(output, ":AAAA:") != NULL && strstr(output, "kei:1000:pin:") != NULL &&
+	    strstr(output, "kei:1000:chip:") != NULL, "a key removed, the PIN and the chip kept");
+	error = passkey_record_edit(file, sizeof(file) - 1, "old", "fido2", "AAAA", NULL, output, sizeof(output), &written);
+	output[written] = '\0';
+	expect(error == 0 && strstr(output, ":AAAA:") != NULL, "another name's ID is not kei's key");
+
 	if (failures != 0) {
 		printf("passkey-host-test: FAIL (%u)\n", failures);
 		return 1;

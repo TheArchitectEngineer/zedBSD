@@ -44,3 +44,11 @@
 | WS161 ws161-p004 | 使っている途中で鍵が抜かれた | 抜かれたことを言って終わる（今は read の ENODEV・EIO をそのまま出す） | `libpasskey/os-posix.c` の `os_read` | 2026-10-06 |
 | WS161 ws161-p004 | PIN の入力 | 端末では echo を切って読む・PIN の長さの規則（4〜63 byte）を先に確かめる（今は標準入力の 1 行をそのまま） | `fidoctl/main.c` の `fidoctl_read_pin` | 2026-10-06 |
 | WS161 ws161-p004 | 鍵の reset、resident の credential の一覧と削除 | `fidoctl reset`・`credentials`（今は無い） | `fidoctl/main.c`、`ctap2.c` | 2026-10-06 |
+| WS172 ws172-p003（passkey-fido2） | 複数の鍵が同じ account の credential を持つ | 触れた鍵を選ぶ（selection 0x0B、2.0 では UP だけの GetAssertion）（今は最初に見つかった鍵） | `passkey-fido2/helper.c` の `helper_assert` | 2026-10-06 |
+| WS172 ws172-p003 | 試行の途中に挿した・かざした鍵 | 途中で現れた鍵にも問う（今は開始の時の鍵だけ） | `passkey-fido2/device.c` の `fido2_devices_open`、`helper.c` | 2026-10-06 |
+| WS172 ws172-p003 | CANCEL・親の終わり | helper が親の pipe の EOF で鍵に CANCEL を送って終わる（今は sessiond の TERM・KILL と helper の alarm だけ） | `passkey-fido2/helper.c` | 2026-10-06 |
+| WS172 ws172-p003 | 内蔵の UV（指紋）だけの鍵、PIN の protocol の細部（maxCredentialCountInList、PIN の長さの最小） | UV の鍵を PIN 無しで使う・allowList を鍵の上限で分ける（今は PIN が設定された鍵だけ、allowList は 5 本まで一度に） | `helper.c` の `helper_token`・`helper_assert` | 2026-10-06 |
+| WS172 ws172-p003 | release の image の loopback の鍵 | release の passkey-fido2 は `HIDRAW_BUS_VIRTUAL` の鍵を拒む（設計 P5、今は区別しない） | `passkey-fido2/device.c` | 2026-10-06 |
+| WS172 ws172-p003 | helper が process を作れないこと | zedBSD に RLIMIT_NPROC か同等の制限を入れて helper に掛ける（今は空の root で exec の program が無いことだけ） | `passkey-fido2/helper.c` の `helper_sandbox`、kernel | 2026-10-06 |
+| WS172 ws172-p003 | label の長さ | 32 文字（UTF-8 の文字）で数える（今は 32 byte） | `passkey-fido2/wire.c` の `fido2_label_valid` | 2026-10-06 |
+| WS172 ws172-p003 | 壊れた鍵の行 | 一度だけ log に出す（今は黙って飛ばす） | `passkey-fido2/main.c` の `main_keys` | 2026-10-06 |

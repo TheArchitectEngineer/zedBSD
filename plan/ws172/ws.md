@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172 -->
 # WS172: passkey の認証の枠組み（/sbin/passkey と /etc/passkey、sessiond は外部の program で認証）
 
-Status: incomplete（2026-10-05 追加、ベータ2。p001 設計 cleared、p002 PIN の login は実装・merge 済みで T1-203 FAIL（uncleared）、p003 FIDO2 は未着手。WS162・WS163 を吸収）
+Status: incomplete（2026-10-05 追加、ベータ2。p001 設計 cleared、p002 PIN の login は実装・merge 済みで T1-203 FAIL（uncleared）、p003 FIDO2 は段 A（passkey-fido2）を実装、2026-10-06。WS162・WS163 を吸収）
 Master: [master](../master.md)
 Primary Milestone: MG006
 Related: [WS161](../ws161/ws.md)（hidraw・smartcard・libpasskey）、[WS162](../ws162/ws.md)（FIDO2 の login）、[WS163](../ws163/ws.md)（PIN の login）
@@ -36,7 +36,7 @@ Related: [WS161](../ws161/ws.md)（hidraw・smartcard・libpasskey）、[WS162](
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（上の項目）と docs、design-reviewer | planning（第 2 版、判断 P1〜P10 待ち、2026-10-05 P1） | — |
 | [p002](phase002/phase.md) | `/sbin/passkey` の password・PIN と `/etc/passkey`、sessiond の外部の認証と memory の失敗の回数、lock・greeter の PIN | in-progress（実装・host 試験済み 16b4fd99・9668d420・dd30409a・b92dc626、T1 待ち） | p001 |
-| p003 | FIDO2（hidraw・smartcard、子の sandbox と root の検証） | planning | p002、WS161 の p002〜 |
+| [p003](phase003/phase.md) | FIDO2（hidraw・smartcard、子の sandbox と root の検証） | in-progress（2026-10-06 P2: 段 A の passkey-fido2・helper・`_passkey` を実装、host 試験 PASS。段 B の UI、段 C の QEMU の鍵は残り） | p002、WS161 の p002〜 |
 | p004 | **セキュリティチップの調べ（survey）**: 世の中のセキュリティチップの入手できる大まかな仕様を調べ、OS がどんな interface を持てばよいかを比べる。対象の例: TPM 2.0（TCG の仕様、firmware の TPM: Intel PTT・AMD fTPM、TIS・CRB の interface）、Microsoft Pluton、Apple の Secure Enclave（公開の資料の範囲）、Google Titan（Titan M・OpenTitan、公開の資料）、Arm の TrustZone の TEE（GlobalPlatform の TEE Client API、OP-TEE）、Android の Keystore・KeyMint の考え方、スマートカード・secure element（PIV・OpenPGP、ISO 7816）、Linux の /dev/tpmrm0 と FreeBSD の tpm の作りの良し悪し。出力: 共通の操作（鍵の生成・封印・署名・乱数・総当たりの防御・attestation など）の表と、zedBSD の汎用の口 **`/dev/security0` のような** UAPI の案（ad hoc な /dev/tpm0 にしない、TPM 以外の chip も同じ口で）。ユーザーの review | planning | — |
 | p004b | `/dev/securityN` の UAPI の設計（p004 の結論から）と、TPM 2.0（5330 の PTT、QEMU の swtpm）の driver の設計、passkey の chip の方式 | planning | p004、ユーザーの review |
 | p005 | OpenSSL を独自の暗号に置き換える（リリースの前） | planning | p003 |
