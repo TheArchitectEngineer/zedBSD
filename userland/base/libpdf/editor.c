@@ -23,15 +23,23 @@
  * the document's objects; the reader keeps no image by its object, so the
  * preview's objects may go with the editor, [H5] concerns the fonts of
  * p005).
+ *
+ * ws175-p006: the images may also be PNG rows taken as they are
+ * (intake.c), turned by their EXIF orientation, and named by Notes' id,
+ * which an update writes as their private key, shares among its pages,
+ * and by which pdf_page_editor_read_image reads them back; the samples
+ * and masks the update writes are compressed.
  */
 
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <pdf.h>
+#include <sha2.h>
 
 #include "internal.h"
 #include "writer.h"
@@ -44,17 +52,23 @@
 /* No object (hidden from the preview), no image. */
 #define EDITOR_NONE		((size_t)-1)
 
-/* The largest side of an image given, the writer's. */
-#define EDITOR_IMAGE_SIDE_MAX	16384
+/* The largest side of an image given, the writer's, and the most pixels (design.md section 5.1). */
+#define EDITOR_IMAGE_SIDE_MAX	16384U
+#define EDITOR_IMAGE_PIXELS_MAX	((size_t)64 * 1024 * 1024)
+
+/* The size of a source as ws175-p003 gave it, before its orientation and id. */
+#define EDITOR_SOURCE_SIZE_P003	offsetof(struct pdf_image_source, orientation)
 
 /* The prefix of the preview's names of the images (its own resources, never written). */
 #define EDITOR_PREVIEW_PREFIX	"ZedPreviewIm"
 
 /*
- * One image the editor was given: its bytes (a JPEG's as they are, or RGB
- * samples with an alpha mask when some pixel is not opaque), its size and
- * components, and the stream object the preview draws it through (made
- * the first time, in the editor's arena).
+ * One image the editor was given: its bytes (a JPEG's as they are, a PNG's
+ * compressed rows (rows), or RGB samples with an alpha mask when some
+ * pixel is not opaque), its size and components, its EXIF orientation,
+ * Notes' id and the digest of its bytes (ws175-p006), and the stream
+ * object the preview draws it through (made the first time, in the
+ * editor's arena; its bytes stay the editor's, design.md [N4]).
  */
 struct editor_image {
 	unsigned char *data;
@@ -64,6 +78,10 @@ struct editor_image {
 	size_t height;
 	int components;
 	int is_jpeg;
+	int rows;
+	int orientation;
+	unsigned long id;
+	unsigned char digest[SHA256_DIGEST_LENGTH];
 	struct pdf_object *preview;
 };
 
@@ -125,9 +143,12 @@ struct pdf_page_editor {
 static int editor_writable(const struct pdf_page_editor *editor, size_t index);
 static int editor_grow(struct pdf_page_editor *editor);
 static int editor_take_image(struct pdf_page_editor *editor, const struct pdf_image_source *source, size_t *taken);
+static int editor_write_image(struct pdf_writer *writer, const struct editor_image *image, size_t *index);
+static int editor_read_back(const struct pdf_page_editor *editor, struct pdf_object *stream, unsigned long id, struct pdf_image_source *image, void **owned);
+static int editor_read_samples(const struct pdf_page_editor *editor, struct pdf_object *stream, size_t width, size_t height, int components, unsigned char **pixels);
 static void editor_quad(const struct pdf_page_editor *editor, size_t index, double quad[8]);
 static int editor_fit(const struct editor_image *image, const double quad[8], double square[6]);
-static int editor_draw_image(struct pdf_buffer *out, const double square[6], const double ctm[6], const char *prefix, size_t name);
+static int editor_draw_image(struct pdf_buffer *out, const struct editor_image *image, const double square[6], const double ctm[6], const char *prefix, size_t name);
 static int editor_preview_resources(struct pdf_page_editor *editor, struct pdf_object **resources);
 static struct pdf_object *editor_preview_image(struct pdf_page_editor *editor, struct editor_image *image);
 static struct pdf_object *editor_object(struct pdf_arena *arena, int type, const char *text, long integer);
@@ -820,7 +841,7 @@ pdf_editor_content(
 			editor_quad(editor, object_at, quad);
 			error = editor_fit(&editor->images[change->image], quad, square);
 			if (error == 0)
-				error = editor_draw_image(out, square, object->ctm, prefix, names[change->image]);
+				error = editor_draw_image(out, &editor->images[change->image], square, object->ctm, prefix, names[change->image]);
 			if (error != 0)
 				return error;
 			object_at++;
@@ -864,7 +885,7 @@ pdf_editor_content(
 		memcpy(square, change->square, sizeof(square));
 		if (change->state == EDITOR_PLACED)
 			editor_multiply(change->square, change->placement, square);
-		error = editor_draw_image(out, square, editor->scan.base, prefix, names[change->image]);
+		error = editor_draw_image(out, &editor->images[change->image], square, editor->scan.base, prefix, names[change->image]);
 		if (error != 0)
 			return error;
 		pdf_buffer_append(out, "\n", 1);
@@ -883,15 +904,17 @@ pdf_editor_content(
  * content, its images the document's from now), and opens it for drawing
  * over it, as pdf_writer_begin_page_over draws (the page as shown).  The
  * editor must be of the update's document, its page the next to list and
- * editable.  Returns 0, EINVAL, EPERM, ENOMEM, ENOSPC, or the failure of
- * the page.
+ * editable.  An image of Notes (its id) the update has already written
+ * for another page is that page's (the same bytes; another image of the
+ * same id is EINVAL); the others are compressed when that is shorter
+ * (ws175-p006, design.md [H6] and [M6]).  Returns 0, EINVAL, EPERM,
+ * ENOMEM, ENOSPC, or the failure of the page.
  */
 int
 pdf_writer_begin_page_edited(
 	struct pdf_writer *writer,
 	const struct pdf_page_editor *editor)
 {
-	struct pdf_writer_image image;
 	struct pdf_buffer edited;
 	char prefix[32];
 	size_t *names;
@@ -906,7 +929,7 @@ pdf_writer_begin_page_edited(
 	if ((editor->status & PDF_EDIT_PAGE_READ_ONLY) != 0U)
 		return EPERM;
 
-	/* Each image the editor was given becomes the document's (a copy of its bytes), named by its index there. */
+	/* Each image the editor was given becomes the document's, named by its index there. */
 	names = NULL;
 	if (editor->image_count > 0) {
 		names = calloc(editor->image_count, sizeof(*names));
@@ -914,7 +937,7 @@ pdf_writer_begin_page_edited(
 			return ENOMEM;
 	}
 
-	/* Each image an object still shows, copied (one replaced again or deleted is not written). */
+	/* Each image an object still shows (one replaced again or deleted is not written). */
 	for (at = 0; at < editor->image_count; at++) {
 		/* Only an image in use. */
 		used = 0;
@@ -927,38 +950,9 @@ pdf_writer_begin_page_edited(
 		if (!used)
 			continue;
 
-		/* The copy. */
-		memset(&image, 0, sizeof(image));
-		image.data = malloc(editor->images[at].length);
-		if (image.data == NULL) {
-			free(names);
-			return ENOMEM;
-		}
-
-		/* Its colour samples, then its mask. */
-		memcpy(image.data, editor->images[at].data, editor->images[at].length);
-		if (editor->images[at].alpha != NULL) {
-			image.alpha = malloc(editor->images[at].width * editor->images[at].height);
-			if (image.alpha == NULL) {
-				free(image.data);
-				free(names);
-				return ENOMEM;
-			}
-
-			/* Its mask, as the editor holds it. */
-			memcpy(image.alpha, editor->images[at].alpha, editor->images[at].width * editor->images[at].height);
-		}
-
-		/* Its description, then the document's. */
-		image.size = editor->images[at].length;
-		image.width = editor->images[at].width;
-		image.height = editor->images[at].height;
-		image.is_jpeg = editor->images[at].is_jpeg;
-		image.components = editor->images[at].components;
-		error = pdf_writer_add_image_object(writer, &image, &names[at]);
+		/* The document's image. */
+		error = editor_write_image(writer, &editor->images[at], &names[at]);
 		if (error != 0) {
-			free(image.data);
-			free(image.alpha);
 			free(names);
 			return error;
 		}
@@ -981,6 +975,63 @@ pdf_writer_begin_page_edited(
 
 	/* Succeeded: drawing goes over the changed page. */
 	return 0;
+}
+
+/*
+ * Reads an image of Notes back from the editor's page: the image of the
+ * page's XObjects whose private key /KeiNotesImage is id (ws175-p006,
+ * design.md [M6]), as a source the editor takes again -- a JPEG's bytes
+ * (DCTDecode), a PNG's rows (FlateDecode with the PNG predictor, kept
+ * compressed), or RGBA (the samples and the soft mask decoded) --, its
+ * data in *owned, which the caller frees.  Returns 0, EINVAL, ENOENT for
+ * an id the page does not have, ENOTSUP for an image of another form or
+ * of an encrypted document, ENOMEM, or the failure of its streams.
+ */
+int
+pdf_page_editor_read_image(
+	const struct pdf_page_editor *editor,
+	unsigned long id,
+	struct pdf_image_source *image,
+	void **owned)
+{
+	struct pdf_object *page;
+	struct pdf_object *resources;
+	struct pdf_object *xobjects;
+	struct pdf_object *stream;
+	struct pdf_object *key;
+	size_t at;
+	int error;
+
+	/* An editor, an id and room for the image. */
+	if (editor == NULL || id == 0UL || image == NULL || owned == NULL || image->size < EDITOR_SOURCE_SIZE_P003)
+		return EINVAL;
+	*owned = NULL;
+
+	/* The page's XObjects. */
+	error = pdf_reader_page(editor->document, editor->index, &page, &resources);
+	if (error != 0)
+		return error;
+	if (resources == NULL || resources->type != PDF_OBJECT_DICTIONARY)
+		return ENOENT;
+	error = pdf_reader_resolve_key(editor->document, resources, "XObject", &xobjects);
+	if (error != 0 || xobjects->type != PDF_OBJECT_DICTIONARY)
+		return ENOENT;
+
+	/* The image whose private key is the id. */
+	for (at = 0; at < xobjects->count; at++) {
+		error = pdf_reader_resolve(editor->document, xobjects->values[at], &stream);
+		if (error != 0 || stream->type != PDF_OBJECT_STREAM)
+			continue;
+		key = pdf_object_get(stream, "KeiNotesImage");
+		if (key == NULL || key->type != PDF_OBJECT_INTEGER || key->integer <= 0 || (unsigned long)key->integer != id)
+			continue;
+
+		/* Found: read back. */
+		return editor_read_back(editor, stream, id, image, owned);
+	}
+
+	/* Not on the page. */
+	return ENOENT;
 }
 
 /*
@@ -1312,8 +1363,12 @@ editor_grow(
 
 /*
  * Takes an image given: a JPEG of one or three components (its bytes as
- * they are), or 8-bit RGBA (split into RGB samples and, when some pixel is
- * not opaque, an alpha mask).  Returns 0, EINVAL, or ENOMEM.
+ * they are), 8-bit RGBA (split into RGB samples and, when some pixel is
+ * not opaque, an alpha mask), a PNG whose rows are taken as they are, or
+ * such rows read back (ws175-p006), with its orientation and id, and the
+ * digest by which an update shares it.  Returns 0, EINVAL, E2BIG past the
+ * largest side or the most pixels, ENOTSUP for a PNG of another kind, or
+ * ENOMEM.
  */
 static int
 editor_take_image(
@@ -1321,38 +1376,80 @@ editor_take_image(
 	const struct pdf_image_source *source,
 	size_t *taken)
 {
+	struct pdf_image_source given;
 	struct editor_image image;
 	struct editor_image *grown;
+	SHA2_CTX context;
 	const unsigned char *pixels;
+	unsigned char kind;
 	size_t capacity;
+	size_t copied;
 	size_t count;
 	size_t at;
 	int translucent;
+	int error;
 
-	/* An image of a known kind, size and side. */
-	if (source == NULL || source->size < sizeof(*source) || source->data == NULL)
+	/* An image (an older caller's without the orientation and id, which are then none). */
+	if (source == NULL || source->size < EDITOR_SOURCE_SIZE_P003 || source->data == NULL || source->bytes == 0)
 		return EINVAL;
-	if (source->width == 0 || source->height == 0 || source->width > EDITOR_IMAGE_SIDE_MAX || source->height > EDITOR_IMAGE_SIDE_MAX)
+	memset(&given, 0, sizeof(given));
+	copied = source->size;
+	if (copied > sizeof(given))
+		copied = sizeof(given);
+	memcpy(&given, source, copied);
+	if (given.orientation < 0 || given.orientation > 8)
 		return EINVAL;
 	memset(&image, 0, sizeof(image));
-	image.width = source->width;
-	image.height = source->height;
+	image.orientation = given.orientation;
+	image.id = given.id;
+
+	/* A PNG: its rows as they are, its size and components the file's. */
+	if (given.kind == PDF_IMAGE_SOURCE_PNG) {
+		error = pdf_png_rows(given.data, given.bytes, &image.width, &image.height, &image.components, &image.data, &image.length);
+		if (error != 0)
+			return error;
+		image.rows = 1;
+	} else {
+		/* Any other: its size as given, within the reader's. */
+		if (given.width == 0 || given.height == 0)
+			return EINVAL;
+		image.width = given.width;
+		image.height = given.height;
+	}
+
+	/* Within the largest side and the most pixels. */
+	if (image.width > EDITOR_IMAGE_SIDE_MAX || image.height > EDITOR_IMAGE_SIDE_MAX || image.width * image.height > EDITOR_IMAGE_PIXELS_MAX) {
+		free(image.data);
+		return E2BIG;
+	}
 
 	/* A JPEG: Gray or RGB, its bytes as they are (CMYK is refused, design.md [M15]). */
-	if (source->kind == PDF_IMAGE_SOURCE_JPEG) {
-		if ((source->components != 1 && source->components != 3) || source->bytes == 0)
+	if (given.kind == PDF_IMAGE_SOURCE_JPEG) {
+		if (given.components != 1 && given.components != 3)
 			return EINVAL;
-		image.data = malloc(source->bytes);
+		image.data = malloc(given.bytes);
 		if (image.data == NULL)
 			return ENOMEM;
-		memcpy(image.data, source->data, source->bytes);
-		image.length = source->bytes;
-		image.components = source->components;
+		memcpy(image.data, given.data, given.bytes);
+		image.length = given.bytes;
+		image.components = given.components;
 		image.is_jpeg = 1;
-	} else if (source->kind == PDF_IMAGE_SOURCE_RGBA) {
+	} else if (given.kind == PDF_IMAGE_SOURCE_IDAT) {
+		/* A PNG's rows read back: checked as a PNG's are, kept as they are. */
+		error = pdf_png_check_rows(given.data, given.bytes, given.width, given.height, given.components);
+		if (error != 0)
+			return error;
+		image.data = malloc(given.bytes);
+		if (image.data == NULL)
+			return ENOMEM;
+		memcpy(image.data, given.data, given.bytes);
+		image.length = given.bytes;
+		image.components = given.components;
+		image.rows = 1;
+	} else if (given.kind == PDF_IMAGE_SOURCE_RGBA) {
 		/* RGBA: the bytes are the rows of pixels. */
-		count = source->width * source->height;
-		if (source->bytes != count * 4U)
+		count = given.width * given.height;
+		if (given.bytes != count * 4U)
 			return EINVAL;
 		image.data = malloc(count * 3U);
 		image.alpha = malloc(count);
@@ -1363,7 +1460,7 @@ editor_take_image(
 		}
 
 		/* Each pixel's colour and alpha, noting whether any is not opaque. */
-		pixels = source->data;
+		pixels = given.data;
 		translucent = 0;
 		for (at = 0; at < count; at++) {
 			image.data[at * 3U] = pixels[at * 4U];
@@ -1383,9 +1480,22 @@ editor_take_image(
 		/* Its length and components. */
 		image.length = count * 3U;
 		image.components = 3;
-	} else {
+	} else if (given.kind != PDF_IMAGE_SOURCE_PNG) {
 		return EINVAL;
 	}
+
+	/* The digest of what it is: its form, its bytes and its mask. */
+	kind = 0;
+	if (image.is_jpeg)
+		kind = 1;
+	if (image.rows)
+		kind = 2;
+	SHA256Init(&context);
+	SHA256Update(&context, &kind, 1);
+	SHA256Update(&context, image.data, image.length);
+	if (image.alpha != NULL)
+		SHA256Update(&context, image.alpha, image.width * image.height);
+	SHA256Final(image.digest, &context);
 
 	/* Room for it. */
 	if (editor->image_count == editor->image_capacity) {
@@ -1487,6 +1597,8 @@ editor_fit(
 	corner[0] = quad[0];
 	corner[1] = quad[1];
 	aspect = (double)image->width / (double)image->height;
+	if (image->orientation >= 5)
+		aspect = (double)image->height / (double)image->width;
 	if (width / height > aspect) {
 		kept = height * aspect / width;
 		corner[0] += across[0] * (1.0 - kept) / 2.0;
@@ -1513,28 +1625,52 @@ editor_fit(
 
 /*
  * Appends the drawing of an image named prefix and name, its unit square
- * mapped by square onto the shown space, where the matrix in force is ctm:
- * q M cm /Name Do Q with M = square times ctm's inverse.  Returns 0 or
- * EINVAL.
+ * as shown mapped by square onto the shown space, where the matrix in
+ * force is ctm: q M cm /Name Do Q with M = O times square times ctm's
+ * inverse, O the map of the image's samples onto it as shown (its EXIF
+ * orientation, ws175-p006).  Returns 0 or EINVAL.
  */
 static int
 editor_draw_image(
 	struct pdf_buffer *out,
+	const struct editor_image *image,
 	const double square[6],
 	const double ctm[6],
 	const char *prefix,
 	size_t name)
 {
+	/*
+	 * The samples' unit square (y up, the first row at the top) as each
+	 * orientation shows it: 1 as stored, 2 mirrored across, 3 turned
+	 * half, 4 mirrored down, 5 transposed, 6 turned a quarter clockwise,
+	 * 7 transversed, 8 turned a quarter anticlockwise.
+	 */
+	static const double orientations[8][6] = {
+		{ 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 },
+		{ -1.0, 0.0, 0.0, 1.0, 1.0, 0.0 },
+		{ -1.0, 0.0, 0.0, -1.0, 1.0, 1.0 },
+		{ 1.0, 0.0, 0.0, -1.0, 0.0, 1.0 },
+		{ 0.0, -1.0, -1.0, 0.0, 1.0, 1.0 },
+		{ 0.0, -1.0, 1.0, 0.0, 0.0, 1.0 },
+		{ 0.0, 1.0, 1.0, 0.0, 0.0, 0.0 },
+		{ 0.0, 1.0, -1.0, 0.0, 1.0, 0.0 }
+	};
 	double inverse[6];
+	double shown[6];
 	double matrix[6];
 	size_t item;
+	int orientation;
 	int error;
 
-	/* The matrix in the space in force. */
+	/* The samples as shown, then the matrix in the space in force. */
+	orientation = image->orientation;
+	if (orientation == 0)
+		orientation = 1;
+	editor_multiply(orientations[orientation - 1], square, shown);
 	error = editor_invert(ctm, inverse);
 	if (error != 0)
 		return EINVAL;
-	editor_multiply(square, inverse, matrix);
+	editor_multiply(shown, inverse, matrix);
 
 	/* The image within a level of its own. */
 	pdf_buffer_append(out, " q ", 3);
@@ -1643,8 +1779,8 @@ editor_preview_resources(
 /*
  * Gives the stream object the preview draws an image through (made the
  * first time): an image XObject of the image's bytes (DCTDecode for a
- * JPEG; 8-bit RGB with a soft mask of the alpha otherwise).  NULL when
- * memory runs out.
+ * JPEG, FlateDecode with the PNG predictor for a PNG's rows; 8-bit RGB
+ * with a soft mask of the alpha otherwise).  NULL when memory runs out.
  */
 static struct pdf_object *
 editor_preview_image(
@@ -1653,6 +1789,7 @@ editor_preview_image(
 {
 	struct pdf_object *stream;
 	struct pdf_object *mask;
+	struct pdf_object *parameters;
 	struct pdf_arena *arena;
 	int error;
 
@@ -1684,6 +1821,26 @@ editor_preview_image(
 	if (error != 0)
 		return NULL;
 
+	/* A PNG's rows: Flate with the PNG predictor (ws175-p006). */
+	if (image->rows) {
+		parameters = editor_dictionary(arena, 4);
+		if (parameters == NULL)
+			return NULL;
+		error = editor_put(parameters, 4, editor_object(arena, PDF_OBJECT_NAME, "Predictor", 0), editor_object(arena, PDF_OBJECT_INTEGER, NULL, 15L));
+		if (error == 0)
+			error = editor_put(parameters, 4, editor_object(arena, PDF_OBJECT_NAME, "Colors", 0), editor_object(arena, PDF_OBJECT_INTEGER, NULL, (long)image->components));
+		if (error == 0)
+			error = editor_put(parameters, 4, editor_object(arena, PDF_OBJECT_NAME, "BitsPerComponent", 0), editor_object(arena, PDF_OBJECT_INTEGER, NULL, 8L));
+		if (error == 0)
+			error = editor_put(parameters, 4, editor_object(arena, PDF_OBJECT_NAME, "Columns", 0), editor_object(arena, PDF_OBJECT_INTEGER, NULL, (long)image->width));
+		if (error == 0)
+			error = editor_put(stream, 8, editor_object(arena, PDF_OBJECT_NAME, "Filter", 0), editor_object(arena, PDF_OBJECT_NAME, "FlateDecode", 0));
+		if (error == 0)
+			error = editor_put(stream, 8, editor_object(arena, PDF_OBJECT_NAME, "DecodeParms", 0), parameters);
+		if (error != 0)
+			return NULL;
+	}
+
 	/* The alpha's soft mask, a gray image of the same size. */
 	if (image->alpha != NULL) {
 		mask = editor_dictionary(arena, 6);
@@ -1710,6 +1867,330 @@ editor_preview_image(
 	/* Succeeded: made once. */
 	image->preview = stream;
 	return stream;
+}
+
+/*
+ * Makes an image of the editor the update's document's (its index there):
+ * an image of Notes already written for another page is that one (the same
+ * digest; another is EINVAL); the others are copied, their samples and
+ * mask compressed when that is shorter (a JPEG and a PNG's rows are
+ * already).  Returns 0, EINVAL, ENOSPC, or ENOMEM.
+ */
+static int
+editor_write_image(
+	struct pdf_writer *writer,
+	const struct editor_image *image,
+	size_t *index)
+{
+	struct pdf_writer_image written;
+	unsigned char *packed;
+	size_t packed_size;
+	size_t count;
+	size_t at;
+	int same;
+	int error;
+
+	/* An image of Notes the update has: the same bytes are that image, others are refused. */
+	for (at = 0; image->id != 0UL && at < writer->images_count; at++) {
+		if (writer->images[at].id != image->id)
+			continue;
+		same = memcmp(writer->images[at].digest, image->digest, sizeof(image->digest)) == 0;
+		if (!same)
+			return EINVAL;
+		*index = at;
+		return 0;
+	}
+
+	/* Its description. */
+	memset(&written, 0, sizeof(written));
+	written.width = image->width;
+	written.height = image->height;
+	written.components = image->components;
+	written.is_jpeg = image->is_jpeg;
+	written.png_rows = image->rows;
+	written.flate = image->rows;
+	written.id = image->id;
+	memcpy(written.digest, image->digest, sizeof(written.digest));
+
+	/* The samples compressed when that is shorter. */
+	packed = NULL;
+	packed_size = 0;
+	if (!image->is_jpeg && !image->rows) {
+		error = pdf_writer_pack(image->data, image->length, &packed, &packed_size);
+		if (error != 0)
+			return error;
+	}
+
+	/* The compressed samples, or a copy of the bytes. */
+	if (packed != NULL) {
+		written.data = packed;
+		written.size = packed_size;
+		written.flate = 1;
+	} else {
+		written.data = malloc(image->length);
+		if (written.data == NULL)
+			return ENOMEM;
+		memcpy(written.data, image->data, image->length);
+		written.size = image->length;
+	}
+
+	/* The mask likewise. */
+	if (image->alpha != NULL) {
+		count = image->width * image->height;
+		error = pdf_writer_pack(image->alpha, count, &packed, &packed_size);
+		if (error != 0) {
+			free(written.data);
+			return error;
+		}
+
+		/* The compressed mask, or a copy. */
+		if (packed != NULL) {
+			written.alpha = packed;
+			written.alpha_size = packed_size;
+			written.alpha_flate = 1;
+		} else {
+			written.alpha = malloc(count);
+			if (written.alpha == NULL) {
+				free(written.data);
+				return ENOMEM;
+			}
+
+			/* The mask's bytes. */
+			memcpy(written.alpha, image->alpha, count);
+			written.alpha_size = count;
+		}
+	}
+
+	/* The document's, which owns the bytes from now. */
+	error = pdf_writer_add_image_object(writer, &written, index);
+	if (error != 0) {
+		free(written.data);
+		free(written.alpha);
+		return error;
+	}
+
+	/* Succeeded: the image by its index. */
+	return 0;
+}
+
+/*
+ * Reads an image stream of Notes back as a source: a JPEG's bytes, a PNG's
+ * compressed rows, or the samples and the mask as RGBA.  Returns 0,
+ * ENOTSUP for another form, PDF_EFORMAT for a malformed one, ENOMEM, or
+ * the failure of its streams.
+ */
+static int
+editor_read_back(
+	const struct pdf_page_editor *editor,
+	struct pdf_object *stream,
+	unsigned long id,
+	struct pdf_image_source *image,
+	void **owned)
+{
+	const unsigned char *data;
+	struct pdf_crypt *crypt;
+	struct pdf_object *filter;
+	struct pdf_object *parameters;
+	struct pdf_object *predictor;
+	struct pdf_object *space;
+	unsigned char *decoded;
+	unsigned char *buffer;
+	double width_number;
+	double height_number;
+	double bits;
+	size_t width;
+	size_t height;
+	size_t length;
+	int components;
+	int is_dct;
+	int is_flate;
+	int is_gray;
+	int is_rgb;
+	int dct;
+	int kind;
+	int error;
+
+	/* Its size, of 8-bit samples. */
+	error = pdf_object_number(pdf_object_get(stream, "Width"), &width_number);
+	if (error == 0)
+		error = pdf_object_number(pdf_object_get(stream, "Height"), &height_number);
+	if (error == 0)
+		error = pdf_object_number(pdf_object_get(stream, "BitsPerComponent"), &bits);
+	if (error != 0 || bits != 8.0)
+		return ENOTSUP;
+	if (!(width_number >= 1.0 && width_number <= (double)EDITOR_IMAGE_SIDE_MAX) || !(height_number >= 1.0 && height_number <= (double)EDITOR_IMAGE_SIDE_MAX))
+		return PDF_EFORMAT;
+	width = (size_t)width_number;
+	height = (size_t)height_number;
+
+	/* Gray or RGB. */
+	space = pdf_object_get(stream, "ColorSpace");
+	is_gray = pdf_object_is_name(space, "DeviceGray");
+	is_rgb = pdf_object_is_name(space, "DeviceRGB");
+	if (!is_gray && !is_rgb)
+		return ENOTSUP;
+	components = 3;
+	if (is_gray)
+		components = 1;
+
+	/* Its filter: a JPEG's, Flate (a PNG's rows when it has the PNG predictor), or none. */
+	filter = pdf_object_get(stream, "Filter");
+	is_dct = pdf_object_is_name(filter, "DCTDecode");
+	is_flate = pdf_object_is_name(filter, "FlateDecode");
+	if (filter != NULL && !is_dct && !is_flate)
+		return ENOTSUP;
+	parameters = pdf_object_get(stream, "DecodeParms");
+	predictor = NULL;
+	if (parameters != NULL && parameters->type == PDF_OBJECT_DICTIONARY)
+		predictor = pdf_object_get(parameters, "Predictor");
+	if (parameters != NULL && (!is_flate || predictor == NULL || predictor->type != PDF_OBJECT_INTEGER || predictor->integer != 15))
+		return ENOTSUP;
+
+	/* A JPEG: its bytes, the filter left undone. */
+	if (is_dct) {
+		error = pdf_filter_decode(editor->document, stream, 1, &data, &length, &decoded, &dct);
+		if (error != 0)
+			return error;
+
+		/* Its own buffer. */
+		buffer = decoded;
+		if (buffer == NULL) {
+			buffer = malloc(length);
+			if (buffer == NULL)
+				return ENOMEM;
+			memcpy(buffer, data, length);
+		}
+
+		/* The JPEG. */
+		kind = PDF_IMAGE_SOURCE_JPEG;
+	} else if (predictor != NULL) {
+		/* A PNG's rows: the stream's bytes as they are in the file (not of an encrypted document). */
+		crypt = pdf_reader_crypt(editor->document);
+		if (crypt != NULL)
+			return ENOTSUP;
+		data = pdf_reader_bytes(editor->document) + stream->data_offset;
+		if (stream->bytes != NULL)
+			data = stream->bytes + stream->data_offset;
+		length = stream->data_length;
+		buffer = malloc(length + 1U);
+		if (buffer == NULL)
+			return ENOMEM;
+		memcpy(buffer, data, length);
+		kind = PDF_IMAGE_SOURCE_IDAT;
+	} else {
+		/* Samples and a mask: RGBA. */
+		error = editor_read_samples(editor, stream, width, height, components, &buffer);
+		if (error != 0)
+			return error;
+		length = width * height * 4U;
+		components = 4;
+		kind = PDF_IMAGE_SOURCE_RGBA;
+	}
+
+	/* Succeeded: the source, its orientation none, its id this one. */
+	image->kind = kind;
+	image->data = buffer;
+	image->bytes = length;
+	image->width = width;
+	image->height = height;
+	image->components = components;
+	if (image->size >= sizeof(*image)) {
+		image->orientation = 0;
+		image->id = id;
+	}
+
+	/* The buffer the caller frees. */
+	*owned = buffer;
+	return 0;
+}
+
+/*
+ * Decodes an image's samples (Gray or RGB, 8 bits) and its soft mask, if
+ * any, into a new buffer of RGBA.  Returns 0, PDF_EFORMAT when a stream's
+ * length is not the image's, ENOMEM, or the failure of its streams.
+ */
+static int
+editor_read_samples(
+	const struct pdf_page_editor *editor,
+	struct pdf_object *stream,
+	size_t width,
+	size_t height,
+	int components,
+	unsigned char **pixels)
+{
+	const unsigned char *samples;
+	const unsigned char *alpha;
+	struct pdf_object *mask;
+	unsigned char *samples_owned;
+	unsigned char *alpha_owned;
+	unsigned char *rgba;
+	size_t samples_size;
+	size_t alpha_size;
+	size_t count;
+	size_t at;
+	int dct;
+	int error;
+
+	/* The samples, of the image's length. */
+	count = width * height;
+	error = pdf_filter_decode(editor->document, stream, 0, &samples, &samples_size, &samples_owned, &dct);
+	if (error != 0)
+		return error;
+	if (samples_size != count * (size_t)components) {
+		free(samples_owned);
+		return PDF_EFORMAT;
+	}
+
+	/* The mask, if any, of as many. */
+	alpha = NULL;
+	alpha_owned = NULL;
+	mask = pdf_object_get(stream, "SMask");
+	if (mask != NULL) {
+		error = pdf_reader_resolve_key(editor->document, stream, "SMask", &mask);
+		if (error == 0 && mask->type != PDF_OBJECT_STREAM)
+			error = PDF_EFORMAT;
+		if (error == 0)
+			error = pdf_filter_decode(editor->document, mask, 0, &alpha, &alpha_size, &alpha_owned, &dct);
+		if (error == 0 && alpha_size != count)
+			error = PDF_EFORMAT;
+		if (error != 0) {
+			free(alpha_owned);
+			free(samples_owned);
+			return error;
+		}
+	}
+
+	/* RGBA: the colour (a gray sample three times) and the alpha (opaque without a mask). */
+	rgba = malloc(count * 4U);
+	if (rgba == NULL) {
+		free(alpha_owned);
+		free(samples_owned);
+		return ENOMEM;
+	}
+
+	/* Each pixel. */
+	for (at = 0; at < count; at++) {
+		if (components == 1) {
+			rgba[at * 4U] = samples[at];
+			rgba[at * 4U + 1U] = samples[at];
+			rgba[at * 4U + 2U] = samples[at];
+		} else {
+			rgba[at * 4U] = samples[at * 3U];
+			rgba[at * 4U + 1U] = samples[at * 3U + 1U];
+			rgba[at * 4U + 2U] = samples[at * 3U + 2U];
+		}
+
+		/* The alpha. */
+		rgba[at * 4U + 3U] = 255U;
+		if (alpha != NULL)
+			rgba[at * 4U + 3U] = alpha[at];
+	}
+
+	/* Succeeded: the decoded buffers go, the pixels stay. */
+	free(alpha_owned);
+	free(samples_owned);
+	*pixels = rgba;
+	return 0;
 }
 
 /* Makes a name (text) or an integer object in an arena; NULL when memory runs out. */

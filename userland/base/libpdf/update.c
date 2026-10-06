@@ -37,6 +37,7 @@
 #include <string.h>
 #include <time.h>
 
+#include <compat/zlib/zlib.h>
 #include <pdf.h>
 
 #include "internal.h"
@@ -377,6 +378,8 @@ pdf_update_begin_edited(
 	struct pdf_writer_page *page;
 	struct pdf_page_box box;
 	struct pdf_buffer prologue;
+	unsigned char *packed;
+	size_t packed_size;
 	double matrix[6];
 	size_t item;
 	int error;
@@ -386,6 +389,21 @@ pdf_update_begin_edited(
 	if (error != 0) {
 		free(edited->data);
 		return error;
+	}
+
+	/* The new content compressed when that is shorter (ws175-p006, design.md [H6]). */
+	error = pdf_writer_pack(edited->data, edited->length, &packed, &packed_size);
+	if (error != 0) {
+		free(edited->data);
+		return error;
+	}
+
+	/* The compressed bytes take the place of the plain ones. */
+	if (packed != NULL) {
+		free(edited->data);
+		edited->data = packed;
+		edited->length = packed_size;
+		edited->capacity = packed_size;
 	}
 
 	/* The page's boxes, which place the drawing on it. */
@@ -423,6 +441,8 @@ pdf_update_begin_edited(
 	page->placement = PDF_WRITER_PLACE_EDIT;
 	page->source = index;
 	page->edited = *edited;
+	if (packed != NULL)
+		page->edited_flate = 1;
 	writer->last_source = index + 1;
 
 	/* Succeeded: drawing now goes over the changed page. */
@@ -1539,7 +1559,10 @@ write_content_streams(
 	if (writer_page->placement == PDF_WRITER_PLACE_EDIT) {
 		object = layout->prefix_objects[index];
 		layout->offsets[object] = file->length;
-		pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)object, (unsigned long)writer_page->edited.length);
+		pdf_buffer_printf(file, "%lu 0 obj\n<<", (unsigned long)object);
+		if (writer_page->edited_flate)
+			pdf_buffer_printf(file, " /Filter /FlateDecode");
+		pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)writer_page->edited.length);
 		pdf_buffer_append(file, writer_page->edited.data, writer_page->edited.length);
 		pdf_buffer_printf(file, "\nendstream\nendobj\n");
 	}
@@ -2351,5 +2374,51 @@ prefix_used(
 	}
 
 	/* No page uses it. */
+	return 0;
+}
+
+/*
+ * Compresses bytes into a zlib stream (libz-compat's deflate, ws175-p006):
+ * *packed is a new buffer the caller frees, or NULL when the stream would
+ * not be shorter (the bytes are written as they are).  Returns 0 or
+ * ENOMEM.
+ */
+int
+pdf_writer_pack(
+	const unsigned char *data,
+	size_t size,
+	unsigned char **packed,
+	size_t *packed_size)
+{
+	unsigned char *buffer;
+	uLongf length;
+	int status;
+
+	/* Nothing to compress. */
+	*packed = NULL;
+	*packed_size = 0;
+	if (data == NULL || size == 0)
+		return 0;
+
+	/* Room for the most the stream can take, and the stream. */
+	length = compressBound((uLong)size);
+	buffer = malloc(length);
+	if (buffer == NULL)
+		return ENOMEM;
+	status = compress2(buffer, &length, data, (uLong)size, Z_DEFAULT_COMPRESSION);
+	if (status == Z_MEM_ERROR) {
+		free(buffer);
+		return ENOMEM;
+	}
+
+	/* A stream no shorter, or one that failed otherwise, is not used. */
+	if (status != Z_OK || length >= size) {
+		free(buffer);
+		return 0;
+	}
+
+	/* Succeeded: the shorter stream. */
+	*packed = buffer;
+	*packed_size = length;
 	return 0;
 }

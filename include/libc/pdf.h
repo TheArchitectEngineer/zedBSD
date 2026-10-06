@@ -312,9 +312,23 @@ enum pdf_edit_kind {
  * components, its bytes as they are (a four-component JPEG is refused), or
  * 8-bit RGBA, rows of width pixels, straight alpha.  size is the caller's
  * sizeof; data and bytes the image's bytes; width and height its pixels.
+ *
+ * ws175-p006: a PNG file whose rows a PDF takes as they are (8-bit Gray
+ * or RGB, no alpha, palette, tRNS or interlace; any other PNG is refused
+ * with ENOTSUP, for the caller to give as RGBA; its size and components
+ * are the file's), or such rows as they were read back (IDAT: the zlib
+ * stream of a PNG's filtered rows, width, height and components 1 or 3).
+ * orientation is the EXIF orientation (1 to 8, 0 as 1) the image is drawn
+ * in -- its samples stay as they are, the placement turns them --, id
+ * Notes' number of the image (0 none), written as the image's private key
+ * so that it can be read back, one image of an update for every page that
+ * uses the same id.  A side past 16384 or more than 64 M pixels is
+ * refused with E2BIG.
  */
 #define PDF_IMAGE_SOURCE_JPEG	1
 #define PDF_IMAGE_SOURCE_RGBA	2
+#define PDF_IMAGE_SOURCE_PNG	3
+#define PDF_IMAGE_SOURCE_IDAT	4
 struct pdf_image_source {
 	size_t size;
 	int kind;
@@ -323,6 +337,8 @@ struct pdf_image_source {
 	size_t width;
 	size_t height;
 	int components;
+	int orientation;
+	unsigned long id;
 };
 
 /*
@@ -409,6 +425,14 @@ int pdf_page_editor_render(struct pdf_page_editor *editor, size_t hidden, struct
 int pdf_page_editor_set_image(struct pdf_page_editor *editor, size_t index, const struct pdf_image_source *image);
 int pdf_page_editor_insert_image(struct pdf_page_editor *editor, const struct pdf_image_source *image, const double placement[6], size_t *index);
 int pdf_writer_begin_page_edited(struct pdf_writer *writer, const struct pdf_page_editor *editor);
+
+/*
+ * An image of Notes read back from the editor's page by its id
+ * (ws175-p006): a JPEG's bytes, a PNG's rows (IDAT) or RGBA, as a source
+ * the editor takes again; *owned is the buffer its data is in, which the
+ * caller frees with free().
+ */
+int pdf_page_editor_read_image(const struct pdf_page_editor *editor, unsigned long id, struct pdf_image_source *image, void **owned);
 
 #ifdef __cplusplus
 }

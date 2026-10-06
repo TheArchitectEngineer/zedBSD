@@ -1230,6 +1230,7 @@ pdf_writer_write_image_objects(
 	size_t *offsets)
 {
 	const char *color_space;
+	size_t mask_size;
 
 	/* Names the color space of the samples. */
 	color_space = "/DeviceRGB";
@@ -1245,11 +1246,23 @@ pdf_writer_write_image_objects(
 		      (unsigned long)image->height,
 		      color_space);
 
-	/* Names the JPEG filter, or the mask that follows the image. */
+	/* Names the JPEG filter, or the Flate filter and a PNG's predictor (ws175-p006). */
 	if (image->is_jpeg)
 		pdf_buffer_printf(file, " /Filter /DCTDecode");
+	if (image->flate)
+		pdf_buffer_printf(file, " /Filter /FlateDecode");
+	if (image->png_rows) {
+		pdf_buffer_printf(file,
+			      " /DecodeParms << /Predictor 15 /Colors %d /BitsPerComponent 8 /Columns %lu >>",
+			      image->components,
+			      (unsigned long)image->width);
+	}
+
+	/* The mask that follows the image, and Notes' id of the image. */
 	if (image->alpha != NULL)
 		pdf_buffer_printf(file, " /SMask %lu 0 R", (unsigned long)(image->object + 1));
+	if (image->id != 0UL)
+		pdf_buffer_printf(file, " /KeiNotesImage %lu", image->id);
 
 	/* Writes the samples. */
 	pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)image->size);
@@ -1260,15 +1273,22 @@ pdf_writer_write_image_objects(
 	if (image->alpha == NULL)
 		return;
 
+	/* The mask's length: its bytes, or (compressed) the length given. */
+	mask_size = image->width * image->height;
+	if (image->alpha_size != 0)
+		mask_size = image->alpha_size;
+
 	/* Writes the mask as an 8-bit gray image of the alpha values. */
 	offsets[image->object + 1] = file->length;
 	pdf_buffer_printf(file,
-		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceGray /BitsPerComponent 8 /Length %lu >>\nstream\n",
+		      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceGray /BitsPerComponent 8",
 		      (unsigned long)(image->object + 1),
 		      (unsigned long)image->width,
-		      (unsigned long)image->height,
-		      (unsigned long)(image->width * image->height));
-	pdf_buffer_append(file, image->alpha, image->width * image->height);
+		      (unsigned long)image->height);
+	if (image->alpha_flate)
+		pdf_buffer_printf(file, " /Filter /FlateDecode");
+	pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)mask_size);
+	pdf_buffer_append(file, image->alpha, mask_size);
 	pdf_buffer_printf(file, "\nendstream\nendobj\n");
 }
 
