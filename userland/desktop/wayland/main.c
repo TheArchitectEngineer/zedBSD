@@ -1091,11 +1091,24 @@ service_cleanup(
 	return;
 }
 
-/* Reads the processor's cycle counter (the millisecond clock has only tick resolution). */
+/*
+ * Reads the processor's cycle counter (the millisecond clock has only tick
+ * resolution).  On arm64 (the Linux arm64 package, WS112) the virtual
+ * counter of the generic timer.
+ */
 uint64_t
 kwl_cycles(
 	void)
 {
+#if defined(__aarch64__)
+	uint64_t value;
+
+	/* The generic timer's virtual count. */
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(value));
+
+	/* Succeeded: the counter. */
+	return value;
+#else
 	uint32_t low;
 	uint32_t high;
 
@@ -1104,6 +1117,7 @@ kwl_cycles(
 
 	/* Succeeded: the counter as one value. */
 	return ((uint64_t)high << 32) | low;
+#endif
 }
 
 /* Prints the loop's timing every five seconds and starts a new window. */
