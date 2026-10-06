@@ -230,7 +230,10 @@ def pdf_edit_image(item):
 	run.shot(item, "undo")
 	notes.act(lambda: run.key("ctrl+shift+z"), r"NOTES EDIT redo page=0", "Ctrl+Shift+Z")
 	middle = notes.at(left + (width * sx) / 2 + dx, PAGE_HEIGHT - bottom - height + (height * sy) / 2 + dy)
-	notes.act(lambda: run.click(*middle), r"NOTES EDIT select page=0 object=\d+ kind=image", "clicked the image again")
+	# The redo chose the image again (app_reselect), so a click on it logs no new select; the click only makes sure.
+	run.click(*middle)
+	time.sleep(0.4)
+	item.step("clicked the image (chosen again by the redo)")
 	notes.act(lambda: run.key("delete"), r"NOTES EDIT delete page=0 object=\d+", "Delete")
 	run.shot(item, "deleted")
 
@@ -333,8 +336,22 @@ def pdf_edit_text(item):
 	item.step("double-clicked the second line", opened or "")
 	item.check(opened, "the second line's box did not open")
 	run.key("end")
+	mark = run.mark()
 	run.type(" ZEBRA")
-	replaced = notes.act(lambda: run.key("esc"), r"NOTES EDIT text page=0 object=\d+ kind=line .*font=original fallback=1", "Esc")
+	typed = run.wait(r"NOTES TEXT box (input|reported)", mark, 5)
+	time.sleep(0.4)
+	item.step("typed ZEBRA", typed or "no NOTES TEXT box line (the keys did not reach the box)")
+	run.shot(item, "zebra-typed")
+	mark = run.mark()
+	run.key("esc")
+	pattern = r"NOTES EDIT text page=0 object=\d+ kind=line .*font=original fallback=1"
+	replaced = run.wait(pattern, mark, 5)
+	if not replaced:
+		# An input method's composition takes the first Esc; the second closes the box.
+		run.key("esc")
+		replaced = run.wait(pattern, mark, 5)
+	item.step("Esc", replaced or "")
+	item.check(replaced, f"Esc: no line {pattern!r}")
 	run.shot(item, "zebra")
 
 	# The third line deleted.

@@ -2,7 +2,7 @@
 # ws175-p010: T1 の QEMU で Notes の PDF の編集の AAT 5 本
 
 Parent: [WS175](../ws.md)
-Status: planned（2026-10-06 P2: 依頼の準備（補助・試料・シナリオの active 化）を済ませ、T1 の依頼を Q1 に送った。結果待ち）
+Status: in-progress（2026-10-06 T1-265: 3 本 needs-person・2 本 FAIL → q823 で P2 が helper を直し Notes に診断の log を足した。T1 の再実行待ち）
 Disposition: normal
 Queue: Q1 の順（2026-10-06「その後 p010 の T1」）
 依存: [p008](../phase008/phase.md)（画像の段 cleared、文字の段は host PASS で判定待ち）・p004・p005（cleared）
@@ -56,3 +56,17 @@ needs-person は撮影を Q1 が見る。FAIL は直さずに log と撮影を�
 
 - QEMU の結果（T1）。補助は host の自己試験と `--list` までで、実の target では走らせていない（座標の計算・chooser の頭の字・IME の手順は T1 の
   run で初めて確かめる）。
+
+## T1-265 の結果と q823 の直し（2026-10-06 P2）
+
+T1-265（証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-265b/`）: pdf-edit-multipage・pdf-insert-image・pdf-insert-text-font は needs-person（機械の確認は通った）、
+pdf-edit-image と pdf-edit-text が FAIL。pdf-edit-image の **resize は通った**（`NOTES EDIT resize page=0 object=0 sx=1.480 sy=1.480`、T1-253 の残り）。
+
+- **pdf-edit-image**「clicked the image again の後に select が無い」: helper の誤り。redo は `app_reselect` で画像を選び直すので、同じ画像の click は
+  新しい `NOTES EDIT select` を出さない（選んだ物と同じ物の press は記録しない）。→ helper は click の後に select を待たず Delete に進む。
+- **pdf-edit-text**「2 行目の box で ZEBRA と打って Esc の後に `NOTES EDIT text … fallback=1` が無い」: log では box は開き（`NOTES TEXT box open … object=2`）、
+  IME も activate したが、その後に box の確定も close も無い。key が box に届いたかを log から言えない。原因は未確定（1 行目の box は同じ手順で通っている）。
+  → Notes に診断の log を足した: box の入力の束ごとに `NOTES TEXT box input keys=N texts=N open=0|1`、widget の報告ごとに `NOTES TEXT box reported=BITS bytes=N`。
+  helper は打った後に撮影（`zebra-typed`）し、Esc で確定しなければ IME の変換を消す分としてもう一度 Esc を押す。再実行の log で、key が届かないのか
+  （input の行が無い）、届いて確定が無いのか（reported の行が無い）を分ける。
+- 確認: zedBSD の `bin/notes` の build warning 0、style-check 0、helper の `--list`。QEMU は T1 の再実行（未実施）。
