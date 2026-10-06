@@ -26,6 +26,9 @@
 /* The fingers' travel of one wheel notch when two fingers scroll (micrometres; the shell turns notches back into travel). */
 #define ZWL_TOUCHPAD_NOTCH_UM	2500
 
+/* The wheel's units in one notch (the seat's WHEEL_STEP): a scroll's finer measure divides a notch into these. */
+#define ZWL_TOUCHPAD_NOTCH_UNITS	15
+
 /* The evdev codes of the left, right and middle buttons (the same on every OS). */
 #define ZWL_TOUCHPAD_BUTTON_LEFT	0x110U
 #define ZWL_TOUCHPAD_BUTTON_RIGHT	0x111U
@@ -83,6 +86,12 @@ struct zwl_touchpad_action {
 	uint32_t pressed;
 	int32_t vertical;
 	int32_t horizontal;
+	/*
+	 * A scroll's finer measure (BUG-218): the wheel's units, ZWL_TOUCHPAD_NOTCH_UNITS a notch, so
+	 * that a client hears the fingers from their first fraction of a millimetre, smoothly.
+	 */
+	int32_t vertical_units;
+	int32_t horizontal_units;
 	/* A gesture: which, its phase, the fingers' travel along its way (micrometres, inward from the edge or up) and their speed (micrometres a second). */
 	uint32_t gesture;
 	uint32_t phase;
@@ -158,6 +167,9 @@ struct zwl_touchpad {
 	int64_t motion_remainder_y;
 	int64_t scroll_travel_x_um;
 	int64_t scroll_travel_y_um;
+	/* The travel not yet told as the wheel's units, in micrometres times ZWL_TOUCHPAD_NOTCH_UNITS (exact). */
+	int64_t scroll_units_x;
+	int64_t scroll_units_y;
 	/* Whether the touch now on the pad scrolled (its end is told as SWIPE2's, ws142-p009). */
 	uint32_t scrolled;
 	uint64_t last_frame_ms;

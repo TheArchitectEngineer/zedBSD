@@ -1750,46 +1750,61 @@ window_pointer_axis(
 
 	/* Only over the window's own surface. */
 	(void)pointer;
-	(void)time;
 	window = data;
 	if (!window->pointer_ours)
 		return;
 
-	/* The distance, scaled to the window's pixels, on its axis. */
+	/*
+	 * The distance, scaled to the window's pixels, on its axis, with its
+	 * fraction (a touch pad's fingers move a unit at a time, BUG-218), its
+	 * source and the compositor's time.
+	 */
 	event = window_push(window, KL_WINDOW_AXIS);
 	if (event == NULL)
 		return;
+	window_stamp(event, time);
+	event->axis_source = window->axis_source;
 	if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-		event->dy = (double)wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+		event->dy = wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE;
 	else
-		event->dx = (double)wl_fixed_to_int(value) * WINDOW_SCROLL_SCALE;
+		event->dx = wl_fixed_to_double(value) * WINDOW_SCROLL_SCALE;
 }
 
-/* A group of pointer events ends; each was queued as it came. */
+/* A group of pointer events ends (each was queued as it came): the next frame's scrolling is a wheel's until told. */
 static void
 window_pointer_frame(
 	void *data,
 	struct wl_pointer *pointer)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct kl_window *window;
+
+	/* The frame's scrolling is over. */
 	(void)pointer;
+	window = data;
+	window->axis_source = KL_AXIS_SOURCE_WHEEL;
+	window->axis_stopped = 0;
 }
 
-/* The source of scrolling is not used. */
+/* What the frame's scrolling comes from: a wheel, a touch pad's fingers, or something continuous (BUG-211). */
 static void
 window_pointer_axis_source(
 	void *data,
 	struct wl_pointer *pointer,
 	uint32_t source)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct kl_window *window;
+
+	/* The source the frame's axis events carry. */
 	(void)pointer;
-	(void)source;
+	window = data;
+	window->axis_source = KL_AXIS_SOURCE_WHEEL;
+	if (source == WL_POINTER_AXIS_SOURCE_FINGER)
+		window->axis_source = KL_AXIS_SOURCE_FINGER;
+	else if (source == WL_POINTER_AXIS_SOURCE_CONTINUOUS)
+		window->axis_source = KL_AXIS_SOURCE_CONTINUOUS;
 }
 
-/* The end of scrolling is not used. */
+/* The fingers' scrolling ends: one KL_WINDOW_AXIS_STOP for the frame, however many axes stop in it (BUG-211). */
 static void
 window_pointer_axis_stop(
 	void *data,
@@ -1797,11 +1812,23 @@ window_pointer_axis_stop(
 	uint32_t time,
 	uint32_t axis)
 {
-	/* Nothing to do. */
-	(void)data;
+	struct kl_window *window;
+	struct kl_window_event *event;
+
+	/* Only over the window's own surface, and once a frame. */
 	(void)pointer;
-	(void)time;
 	(void)axis;
+	window = data;
+	if (!window->pointer_ours || window->axis_stopped)
+		return;
+	window->axis_stopped = 1;
+
+	/* The end, at the compositor's time. */
+	event = window_push(window, KL_WINDOW_AXIS_STOP);
+	if (event == NULL)
+		return;
+	window_stamp(event, time);
+	event->axis_source = window->axis_source;
 }
 
 /* The wheel's notches are not used (the axis value already says how far). */

@@ -45,6 +45,9 @@
 /* The longest the loop sleeps when nothing is due, in milliseconds (the minute About shows moves on). */
 #define MAIN_IDLE_MS		1000
 
+/* How often a flight of the touch pad's scrolling moves, at the least (milliseconds, BUG-211). */
+#define MAIN_KINETIC_MS	8
+
 /*
  * What the command line asked for.
  */
@@ -612,6 +615,10 @@ main_timeout(
 	/* A frame the last one asked for (a scroll it corrected) is drawn at once. */
 	if (main_app.dirty != 0)
 		return 0;
+
+	/* A touch pad's scrolling that flies on moves every frame (BUG-211). */
+	if (main_app.kinetic.flying != 0)
+		return MAIN_KINETIC_MS;
 
 	/* The idle limit, shortened while the network wants polls. */
 	limit = MAIN_IDLE_MS;

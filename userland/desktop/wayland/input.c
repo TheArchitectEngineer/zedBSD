@@ -897,13 +897,15 @@ apply_touchpad_actions(
 			if (taken)
 				break;
 
-			/* Otherwise wheel notches (vertical positive down, as the seat takes them). */
-			zwl_seat_axis(server, time, action->vertical, action->horizontal);
+			/* Otherwise the fingers' scrolling, in the wheel's units (vertical positive down, as the seat takes them). */
+			zwl_seat_axis_finger(server, time, action->vertical, action->horizontal, action->vertical_units, action->horizontal_units);
 			activity = 1;
 			break;
 		case ZWL_TOUCHPAD_GESTURE:
-			/* A gesture is the shell's (ws142-p003); no client hears it. */
+			/* A gesture is the shell's (ws142-p003); the end of two fingers' scroll also ends the client's scrolling (BUG-211). */
 			zwl_glass_gesture(server, action->gesture, action->phase, action->travel_um, action->speed);
+			if (action->gesture == ZWL_TOUCHPAD_GESTURE_SWIPE2 && action->phase == ZWL_TOUCHPAD_PHASE_END)
+				zwl_seat_axis_stop(server, time);
 			break;
 		default:
 			break;

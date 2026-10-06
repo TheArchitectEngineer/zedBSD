@@ -372,6 +372,30 @@ struct kl_scroller;
 #define KL_SCROLL_GLIDE_US	70000U
 #define KL_SCROLL_FADE_US	1000000U
 
+/*
+ * The track of a touch pad's two-finger scrolling (KL_VERSION 40, BUG-211):
+ * its last moves and their times, from which the velocity is worked out
+ * when the fingers lift, so that the content flies on.  The samples older
+ * than KL_AXIS_TRACK_WINDOW_US at the lift do not count, and fingers that
+ * rested longer than KL_AXIS_TRACK_REST_US before lifting throw nothing.
+ * It is plain data a caller keeps (a kl_scroll keeps one).
+ */
+#define KL_AXIS_TRACK_SAMPLES	16U
+#define KL_AXIS_TRACK_WINDOW_US	100000U
+#define KL_AXIS_TRACK_REST_US	60000U
+
+struct kl_axis_track {
+	unsigned count;
+	unsigned next;
+	double dx[KL_AXIS_TRACK_SAMPLES];
+	double dy[KL_AXIS_TRACK_SAMPLES];
+	uint64_t us[KL_AXIS_TRACK_SAMPLES];
+};
+
+void kl_axis_track_reset(struct kl_axis_track *track);
+void kl_axis_track_add(struct kl_axis_track *track, double dx, double dy, uint64_t now_us);
+void kl_axis_track_velocity(const struct kl_axis_track *track, uint64_t now_us, double *vx, double *vy);
+
 struct kl_scroll {
 	/* The axes it moves along, the position drawn, and the sizes of the content and of the part that shows it. */
 	unsigned axes;
@@ -397,6 +421,16 @@ struct kl_scroll {
 
 	/* When the content last moved (for the bars), 0 before it ever moved. */
 	uint64_t moved_us;
+
+	/*
+	 * A touch pad's two fingers holding the content (KL_VERSION 40,
+	 * BUG-211): whether they hold it, how far they have scrolled it since
+	 * they began (as a wheel scrolls: down positive), and their track.
+	 */
+	int axis_holding;
+	double axis_total_x;
+	double axis_total_y;
+	struct kl_axis_track axis_track;
 };
 
 int kl_scroll_init(struct kl_scroll *scroll, unsigned axes);
@@ -410,6 +444,8 @@ int kl_scroll_press(struct kl_scroll *scroll, uint64_t now_us);
 void kl_scroll_drag(struct kl_scroll *scroll, double dx, double dy);
 void kl_scroll_fling(struct kl_scroll *scroll, double vx, double vy, uint64_t now_us);
 void kl_scroll_cancel(struct kl_scroll *scroll, uint64_t now_us);
+void kl_scroll_axis(struct kl_scroll *scroll, double dx, double dy, unsigned source, uint64_t now_us);
+void kl_scroll_axis_stop(struct kl_scroll *scroll, uint64_t now_us);
 int kl_scroll_step(struct kl_scroll *scroll, uint64_t now_us);
 double kl_scroll_limit_x(const struct kl_scroll *scroll);
 double kl_scroll_limit_y(const struct kl_scroll *scroll);
@@ -651,12 +687,15 @@ struct kl_event {
 	unsigned modifiers;
 };
 
+struct kl_window_event;
+
 struct kl_ui *kl_ui_create(void);
 void kl_ui_destroy(struct kl_ui *ui);
 int kl_ui_pointer_motion(struct kl_ui *ui, double x, double y);
 int kl_ui_pointer_leave(struct kl_ui *ui);
 int kl_ui_pointer_button(struct kl_ui *ui, int pressed, uint64_t now_us);
 int kl_ui_wheel(struct kl_ui *ui, double dx, double dy, uint64_t now_us);
+int kl_ui_axis(struct kl_ui *ui, const struct kl_window_event *event);
 int kl_ui_touch_down(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
 int kl_ui_touch_motion(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us, double x, double y);
 int kl_ui_touch_up(struct kl_ui *ui, int32_t id, uint64_t time_us, uint64_t now_us);
@@ -737,6 +776,17 @@ struct xdg_toplevel;
 #define KL_WINDOW_TEXT_PREEDIT	15U
 #define KL_WINDOW_TEXT_DELETE	16U
 
+/*
+ * KL_VERSION 40 (BUG-211): what a KL_WINDOW_AXIS came from (axis_source:
+ * a wheel, a touch pad's fingers, or something continuous), and the end of
+ * the fingers' scrolling, KL_WINDOW_AXIS_STOP, after which the content may
+ * fly on (kl_ui_axis, kl_scroll_axis_stop).
+ */
+#define KL_WINDOW_AXIS_STOP	17U
+#define KL_AXIS_SOURCE_WHEEL		0U
+#define KL_AXIS_SOURCE_FINGER		1U
+#define KL_AXIS_SOURCE_CONTINUOUS	2U
+
 /* The longest text one input carries, with its NUL (a longer one is cut at a character's start). */
 #define KL_WINDOW_TEXT_MAX	256U
 
@@ -792,6 +842,7 @@ struct kl_window_event {
 	int32_t end;
 	uint32_t before;
 	uint32_t after;
+	unsigned axis_source;
 };
 
 struct kl_window *kl_window_open(const struct kl_window_options *options);

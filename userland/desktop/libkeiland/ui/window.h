@@ -222,6 +222,15 @@ struct kl_window {
 	uint32_t press_serial;
 
 	/*
+	 * The scrolling of the pointer's frame being received (KL_VERSION 40,
+	 * BUG-211): what the axis events come from (axis_source comes first in
+	 * a frame; a wheel's until told otherwise, and again after the frame),
+	 * and whether the frame already told the end of the fingers' scrolling.
+	 */
+	unsigned axis_source;
+	int axis_stopped;
+
+	/*
 	 * Whether the pointer and the keyboard are on the window's own surface,
 	 * and the fingers down on other surfaces of the program (a file
 	 * chooser's window): their input is not the window's.

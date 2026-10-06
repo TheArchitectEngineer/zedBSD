@@ -291,7 +291,9 @@ chooser_event(
 			(void)kl_ui_pointer_button(chooser->ui, event->pressed, event->arrival_us);
 		break;
 	case KL_WINDOW_AXIS:
-		(void)kl_ui_wheel(chooser->ui, event->dx, event->dy, event->arrival_us);
+	case KL_WINDOW_AXIS_STOP:
+		/* The wheel glides; a touch pad's fingers hold the content, and it flies on when they lift (BUG-211). */
+		(void)kl_ui_axis(chooser->ui, event);
 		break;
 	case KL_WINDOW_KEY:
 		(void)kl_ui_key(chooser->ui, event->code, event->pressed, event->modifiers);

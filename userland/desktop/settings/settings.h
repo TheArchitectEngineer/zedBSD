@@ -26,6 +26,7 @@
 #include "storage-trash.h"
 
 #include <keiland.h>
+#include <keiland-ui.h>
 
 #include <pthread.h>
 #include <stddef.h>
@@ -183,8 +184,13 @@ enum se_event_type {
 	SE_EVENT_LEAVE,
 	SE_EVENT_KEY,
 	SE_EVENT_FOCUS,
-	SE_EVENT_ACTION
+	SE_EVENT_ACTION,
+	SE_EVENT_AXIS_STOP
 };
+
+/* What a scroll came from (se_event's source, BUG-211): a wheel, or a touch pad's fingers. */
+#define SE_SOURCE_WHEEL		0U
+#define SE_SOURCE_FINGER	1U
 
 /*
  * One input: where the pointer is, which button or key, the modifiers
@@ -206,6 +212,7 @@ struct se_event {
 	int focused;
 	uint32_t action;
 	int touch;
+	unsigned source;
 };
 
 /*
@@ -962,6 +969,27 @@ struct se_sound {
 };
 
 /*
+ * A touch pad's two fingers scrolling a pane, and its flight after they
+ * lift (BUG-211): whether they hold a pane and which (SE_KINETIC_*), their
+ * track (libkeiland's kl_axis_track, for their velocity), and while it
+ * flies its velocity (pixels a second, as a wheel scrolls), the fraction
+ * of a pixel not yet moved and the time of its last step (milliseconds).
+ */
+#define SE_KINETIC_NONE		0
+#define SE_KINETIC_PAGE		1
+#define SE_KINETIC_SIDEBAR	2
+
+struct se_kinetic {
+	int holding;
+	int pane;
+	struct kl_axis_track track;
+	int flying;
+	double velocity;
+	double remainder;
+	uint64_t last_ms;
+};
+
+/*
  * A finger on the touch screen held on a pane, which a drag of it scrolls
  * (ws089-p012): where it touched, the pane and its scroll then, and whether
  * it has moved far enough to be a scroll rather than a tap.  held is 0 when
@@ -1016,6 +1044,9 @@ struct se_app {
 
 	/* A finger held on a pane, which a drag of it scrolls (ws089-p012). */
 	struct se_touch_scroll touch;
+
+	/* A touch pad's scrolling, which flies on after the fingers lift (BUG-211). */
+	struct se_kinetic kinetic;
 
 	/* The panes of the last frame and its clickable regions. */
 	struct se_layout layout;
