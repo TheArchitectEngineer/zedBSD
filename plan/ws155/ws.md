@@ -56,9 +56,9 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 | --- | --- | --- | --- |
 | ws155-p000 | **UI の mock**（デザイン案の要素と上の方針で。月の表示を中心に、sidebar・Add Event の panel・3D の日めくりの animation。data は固定の試験 data、保存は作らない）。ユーザーが見て再指示する | in-progress（q745、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase000/phase.md)） | — |
 | ws155-p001 | 外観の画像に基づく設計（画面・操作・保存・通知・試験） | cleared（q831、P2、[phase](phase001/phase.md)） | p000 の mock へのユーザーの再指示 |
-| ws155-p002 | 予定とメモの保存（`~/Documents/Calendar`、iCalendar） | in-progress（q831、P2、実装・host 試験済み。[phase](phase002/phase.md)） | p001 |
-| ws155-p003 | app: 保存・編集・Week と Day・開始の通知 | in-progress（q831、P2、実装・host 試験済み、QEMU は T1。[phase](phase003/phase.md)） | p002 |
-| ws155-p004 | system bar の時計から Calendar を開く | in-progress（q831、P2、実装・build 済み、QEMU は T1。[phase](phase004/phase.md)） | p001 |
+| ws155-p002 | 予定とメモの保存（`~/Documents/Calendar`、iCalendar） | test-wait（T1-297、q831、P2、[phase](phase002/phase.md)） | p001 |
+| ws155-p003 | app: 保存・編集・Week と Day・開始の通知 | test-wait（T1-297、q831、P2、[phase](phase003/phase.md)） | p002 |
+| ws155-p004 | system bar の時計から Calendar を開く | test-wait（T1-297、q831、P2、[phase](phase004/phase.md)） | p001 |
 | ws155-p005 | 全文規約の見直し | planning（後回し、WS177 の後） | p002〜p004 |
 
 ## mock への再指示（2026-10-05 ユーザー、T1-179 の画面を見て）
