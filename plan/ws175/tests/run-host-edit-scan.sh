@@ -48,7 +48,7 @@ for variant in plain asan ubsan; do
 		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
-	for test in host-edit-scan host-edit-change host-edit-image host-tounicode; do
+	for test in host-edit-scan host-edit-change host-edit-image host-tounicode host-font-unicode; do
 		# shellcheck disable=SC2086
 		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
 			-o "$out/$test-$variant"
@@ -69,6 +69,12 @@ for variant in plain asan ubsan; do
 		echo "host-tounicode $variant: $(tail -1 "$out/tounicode-$variant.txt")"
 	else
 		grep -v '^ok' "$out/tounicode-$variant.txt"
+		status=1
+	fi
+	if "$out/host-font-unicode-$variant" "$out/edit-images.pdf" /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf > "$out/font-unicode-$variant.txt" 2>&1; then
+		echo "host-font-unicode $variant: $(tail -1 "$out/font-unicode-$variant.txt")"
+	else
+		grep -v '^ok' "$out/font-unicode-$variant.txt"
 		status=1
 	fi
 	if "$out/host-edit-image-$variant" "$out/edit-images.pdf" "$out/insert.jpg" "$out/imaged-$variant.pdf" > "$out/image-$variant.txt" 2>&1; then

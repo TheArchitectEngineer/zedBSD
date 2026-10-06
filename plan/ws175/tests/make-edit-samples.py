@@ -13,11 +13,16 @@ writes FOLDER/edit-images.pdf, four pages of 200 x 100 points:
   3. two content streams, the second with a filter the reader does not read (/JBIG2Decode): the page is not editable
   4. an image, then q nested 70 deep (past the interpreter's 63) and an image inside: the second is left out
   5. an image named /KeiIm0, as a revision Notes saved before would name it: an update's names take another prefix
+  6. text in three fonts for the characters of the codes (p002b): Helvetica in WinAnsiEncoding (F1), Helvetica with a
+     /ToUnicode CMap that makes <41> a Z (F2), and the host's DejaVu Sans whole as a CIDFontType2 in Identity-H without
+     /ToUnicode (F3, its codes the glyphs)
 
 The bytes are written by hand (the cross-reference table computed here), so that the content is exactly the test's.
 """
 import sys
 from pathlib import Path
+
+DEJAVU = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 
 IMAGE = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255])
 
@@ -55,7 +60,7 @@ def main() -> int:
 	resources = b"<< /XObject << /Im1 5 0 R /Fm1 6 0 R >> >>"
 	objects = [
 		b"<< /Type /Catalog /Pages 2 0 R >>",
-		b"<< /Type /Pages /Kids [3 0 R 8 0 R 10 0 R 13 0 R 15 0 R] /Count 5 >>",
+		b"<< /Type /Pages /Kids [3 0 R 8 0 R 10 0 R 13 0 R 15 0 R 17 0 R] /Count 6 >>",
 		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources " + resources + b" /Contents 4 0 R >>",
 		stream(b"<< >>", page1),
 		stream(b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 >>", IMAGE),
@@ -71,6 +76,15 @@ def main() -> int:
 		stream(b"<< >>", page4),
 		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /XObject << /KeiIm0 5 0 R >> >> /Contents 16 0 R >>",
 		stream(b"<< >>", b"q 20 0 0 20 30 30 cm /KeiIm0 Do Q\n"),
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /Font << /F1 19 0 R /F2 20 0 R /F3 22 0 R >> >> /Contents 18 0 R >>",
+		stream(b"<< >>", b"BT /F1 12 Tf 10 80 Td (AB) Tj ET BT /F2 12 Tf 10 60 Td (AB) Tj ET BT /F3 12 Tf 10 40 Td <0024> Tj ET\n"),
+		b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+		b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 21 0 R >>",
+		stream(b"<< >>", b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap 1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfchar <41> <005A> endbfchar endcmap end end\n"),
+		b"<< /Type /Font /Subtype /Type0 /BaseFont /DejaVuSans /Encoding /Identity-H /DescendantFonts [23 0 R] >>",
+		b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /DejaVuSans /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 24 0 R /CIDToGIDMap /Identity /DW 600 >>",
+		b"<< /Type /FontDescriptor /FontName /DejaVuSans /Flags 32 /FontBBox [0 -200 1000 900] /ItalicAngle 0 /Ascent 900 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 25 0 R >>",
+		stream(b"<< >>", DEJAVU.read_bytes()),
 	]
 	write(folder / "edit-images.pdf", objects)
 	print(f"wrote {folder / 'edit-images.pdf'}")

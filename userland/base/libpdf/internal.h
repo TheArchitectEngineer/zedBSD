@@ -298,6 +298,7 @@ unsigned pdf_font_status(const struct pdf_font *font);
 int pdf_font_vertical(const struct pdf_font *font);
 size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *bytes, size_t length, unsigned *code, int *single_byte);
 int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
+int pdf_font_unicode(struct pdf_document *document, struct pdf_font *font, unsigned code, int single_byte, uint32_t *characters, size_t capacity, size_t *count);
 int pdf_font_type3_glyph(struct pdf_document *document, struct pdf_font *font, unsigned code, struct pdf_object **procedure, double matrix[6], struct pdf_object **resources);
 unsigned pdf_glyph_name_unicode(const unsigned char *name, size_t length);
 struct pdf_font_cache *pdf_reader_font_cache(struct pdf_document *document);

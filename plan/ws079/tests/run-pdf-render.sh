@@ -23,7 +23,7 @@ convert -size 64x48 gradient:red-yellow -quality 90 "$out/test.jpg"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c userland/base/libpdf/image.c
 	userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
-	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
+	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/tounicode.c userland/base/libpdf/encoding.c
 	userland/base/libpdf/shading.c
 	userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c"
 status=0

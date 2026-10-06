@@ -37,4 +37,6 @@ design.md §10 の p002 の「先の段」の部分を p002a、残りを p002b �
 
 - `tounicode.c`（新規、internal）: font の /ToUnicode CMap を読む。`beginbfchar`・`beginbfrange`（1 つの文字列で最後の単位を数え上げる形と、文字列の配列の形）、UTF-16BE の宛先（surrogate の対は 1 文字、対の無い surrogate は U+FFFD、合字は複数の文字）、元の code の byte 長を区別、後の entry が前に勝つ。`usecmap` は読まない。entry は 65536 まで、1 code の文字は 8 まで、壊れた section はそこで終わり、それまでの分は残す。Makefile 3 つに足した。
 - 試験: `plan/ws175/tests/host-tounicode.c`（13 項目）を `run-host-edit-scan.sh` に足した → plain・ASan・UBSan とも PASS。
-- 残り（p002b）: font.c の `pdf_font_unicode()`（ToUnicode → 単純な font の encoding と Differences → Identity-H の埋め込みの TrueType の cmap の逆引き → U+FFFD）、文字の行の走査（行のまとめ [M9][N16]、Tr 4〜7 の block [H2]、印付きの内容 [M10]、Tr 3）。
+- `font.c` の `pdf_font_unicode()`（internal、§3.2 の順）: /ToUnicode（初回に読む）→ 単純な font の encoding と Differences（`load_simple` の表を font に残す）→ composite の埋め込みの TrueType の cmap の逆引き（BMP を 1 回だけ引いて glyph → 文字の表、CIDToGIDMap を通す）→ U+FFFD。`free_font` で解放。font.c が tounicode.c を使うので、ws079 の host の 5 つの script（render・text・ccitt・update・pdfviewer-host）の source の並びに tounicode.c を足した。
+- 試験: `host-font-unicode.c`（10 項目: WinAnsi の A と €、ToUnicode の Z と下の encoding の B、DejaVu Sans の Identity-H で A の glyph → A、glyph 0 → U+FFFD）。`make-edit-samples.py` に page 6（3 つの font、F3 は host の DejaVu Sans を丸ごと FontFile2 に）。run-host-edit-scan の 5 つの試験が plain・ASan・UBSan とも PASS。
+- 残り（p002b）: 文字の行の走査（行のまとめ [M9][N16]、Tr 4〜7 の block [H2]、印付きの内容 [M10]、Tr 3）と editor の TEXT の物。
