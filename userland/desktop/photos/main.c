@@ -1,0 +1,708 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Photos' window (ws157-p003; photos.h, app.h): a libkeiland application
+ * with one window that shows the view (view.c), its menu (File: Refresh,
+ * Quit; Photo: Favorite, Rotate Left, Rotate Right, Slideshow, Back to
+ * Photos), and the view's input.  The photos are ~/Pictures' (library.c)
+ * with the marks kept (store.c), and the file named on the command line,
+ * which shows whole at once.  The pictures the view wants are queued to
+ * the thread (thumbs.c) and given to the view when made.  Ctrl+Q quits.
+ * What happens is logged on standard error as "PHOTOS" lines for the
+ * tests.
+ *
+ *   photos [--width=N] [--height=N] [--timeout-s=N] [FILE]
+ */
+
+#include "app.h"
+
+#include "userland/desktop/paths.h"
+
+#include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* The fonts, the window's first size, and the longest wait for input. */
+#define PH_FONT			KEILAND_DATADIR "/fonts/keiland.ttf"
+#define PH_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+#define PH_WIDTH		1040U
+#define PH_HEIGHT		700U
+#define PH_IDLE_MS		1000
+#define PH_MOVING_MS		10
+#define PH_WORKING_MS		15
+
+/* The most glass panels of a frame. */
+#define PH_PANELS_MAX		4U
+
+/* The key Q, which quits with Ctrl. */
+#define PH_KEY_Q		16U
+
+/* The folder of the photos under the home. */
+#define PH_FOLDER		"Pictures"
+
+/*
+ * The window's state: the application, the window and its input, the
+ * frame (its pixels, size and canvas), the text and the style, the view,
+ * the file of the marks, whether a frame is due, the window changed size,
+ * a widget moves, and the glass was decided.
+ */
+struct ph_window {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	struct kl_canvas canvas;
+	int canvas_made;
+	struct kl_text text;
+	struct kl_style style;
+	struct ph_view view;
+	char store[PH_PATH_MAX];
+	int store_known;
+	int dirty;
+	int resized;
+	int moving;
+	int glass_decided;
+};
+
+/* The window's menu. */
+static const struct kl_menu_entry ph_menu[] = {
+	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Refresh", PH_ACTION_REFRESH, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 3U, 1U, KL_MENU_ITEM_NORMAL, "Quit Photos", PH_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+	{ 4U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Photo", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 5U, 4U, KL_MENU_ITEM_NORMAL, "Favorite", PH_ACTION_FAVORITE, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 6U, 4U, KL_MENU_ITEM_NORMAL, "Rotate Left", PH_ACTION_TURN_LEFT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 7U, 4U, KL_MENU_ITEM_NORMAL, "Rotate Right", PH_ACTION_TURN_RIGHT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 8U, 4U, KL_MENU_ITEM_NORMAL, "Slideshow", PH_ACTION_SLIDESHOW, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 9U, 4U, KL_MENU_ITEM_NORMAL, "Back to Photos", PH_ACTION_BACK, KL_MENU_ROLE_NONE, 0U, 0U }
+};
+
+int main(int argc, char **argv);
+static int ph_parse(int argc, char **argv, unsigned *width, unsigned *height, unsigned *timeout, const char **file);
+static void ph_library_start(struct ph_window *photos, const char *file, long *photo);
+static void ph_refresh(struct ph_window *photos);
+static int ph_loop(struct ph_window *photos, unsigned timeout);
+static void ph_input(struct ph_window *photos, const struct kl_window_event *event);
+static void ph_results(struct ph_window *photos);
+static void ph_jobs(struct ph_window *photos);
+static void ph_marks(struct ph_window *photos);
+static int ph_resize(struct ph_window *photos);
+static void ph_draw(struct ph_window *photos, uint64_t now_us);
+static int ph_wait(const struct ph_window *photos, uint64_t now_us);
+
+/*
+ * Runs Photos.
+ */
+int
+main(
+	int argc,
+	char **argv)
+{
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	static struct ph_window photos;
+	const char *file;
+	unsigned timeout;
+	unsigned width;
+	unsigned height;
+	long photo;
+	int status;
+	int error;
+
+	/* The command line. */
+	status = ph_parse(argc, argv, &width, &height, &timeout, &file);
+	if (status != 0) {
+		fprintf(stderr, "usage: photos [--width=N] [--height=N] [--timeout-s=N] [FILE]\n");
+		return 2;
+	}
+
+	/* The fonts; without them the view shows no words. */
+	error = kl_text_open(&photos.text, PH_FONT, PH_FALLBACK_FONT);
+	if (error != 0)
+		ph_log("FONT missing error=%d", error);
+
+	/* The photos with their marks, and the file named. */
+	ph_library_start(&photos, file, &photo);
+
+	/* The view's state. */
+	error = ph_view_init(&photos.view);
+	if (error != 0) {
+		ph_log("FAILED operation=view error=%d", error);
+		return 1;
+	}
+
+	/* The thread that makes the pictures. */
+	error = ph_worker_start();
+	if (error != 0) {
+		ph_log("FAILED operation=thread error=%d", error);
+		ph_view_release(&photos.view);
+		return 1;
+	}
+
+	/* The application. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "photos";
+	photos.app = kl_app_open(&app_options);
+	if (photos.app == NULL) {
+		ph_log("FAILED operation=app error=%d", errno);
+		ph_worker_stop();
+		ph_view_release(&photos.view);
+		return 1;
+	}
+
+	/* Its window. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = "Photos";
+	window_options.width = width;
+	window_options.height = height;
+	window_options.present = KL_PRESENT_VULKAN;
+	photos.window = kl_app_window_create(photos.app, &window_options);
+	if (photos.window == NULL) {
+		ph_log("FAILED operation=window error=%d", errno);
+		kl_app_close(photos.app);
+		ph_worker_stop();
+		ph_view_release(&photos.view);
+		return 1;
+	}
+
+	/* The input of its frames. */
+	photos.ui = kl_ui_create();
+	if (photos.ui == NULL) {
+		ph_log("FAILED operation=ui error=%d", errno);
+		kl_app_close(photos.app);
+		ph_worker_stop();
+		ph_view_release(&photos.view);
+		return 1;
+	}
+
+	/* The menu and the style (opaque until the first frame finds whether the window can stand on glass). */
+	(void)kl_window_set_menu(photos.window, ph_menu, sizeof(ph_menu) / sizeof(ph_menu[0]));
+	photos.style.text = &photos.text;
+	photos.style.theme = kl_theme_default();
+	photos.style.glass = 0;
+	photos.view.glass = 0;
+
+	/* The file named shows whole at once. */
+	if (photo >= 0)
+		ph_view_open(&photos.view, photo, kl_clock_us());
+
+	/* The loop until the window closes. */
+	status = ph_loop(&photos, timeout);
+
+	/* Everything goes. */
+	ph_worker_stop();
+	kl_ui_destroy(photos.ui);
+	if (photos.canvas_made)
+		kl_canvas_release(&photos.canvas);
+	free(photos.pixels);
+	kl_app_close(photos.app);
+	ph_view_release(&photos.view);
+	ph_library_release();
+	ph_store_release();
+	kl_text_close(&photos.text);
+
+	/* Reports how the loop ended. */
+	if (status != 0)
+		return 1;
+
+	/* Succeeded: the window closed. */
+	return 0;
+}
+
+/*
+ * Writes a log line for the tests on standard error.
+ */
+void
+ph_log(
+	const char *format,
+	...)
+{
+	va_list arguments;
+
+	/* The line. */
+	va_start(arguments, format);
+	fputs("PHOTOS ", stderr);
+	vfprintf(stderr, format, arguments);
+	fputc('\n', stderr);
+	va_end(arguments);
+}
+
+/*
+ * Reads the command line; nonzero when it cannot be read.
+ */
+static int
+ph_parse(
+	int argc,
+	char **argv,
+	unsigned *width,
+	unsigned *height,
+	unsigned *timeout,
+	const char **file)
+{
+	int index;
+	int same;
+
+	/* The defaults. */
+	*width = PH_WIDTH;
+	*height = PH_HEIGHT;
+	*timeout = 0U;
+	*file = NULL;
+
+	/* Each argument. */
+	for (index = 1; index < argc; index++) {
+		/* The width. */
+		same = strncmp(argv[index], "--width=", 8U);
+		if (same == 0) {
+			*width = (unsigned)strtoul(argv[index] + 8, NULL, 10);
+			continue;
+		}
+
+		/* The height. */
+		same = strncmp(argv[index], "--height=", 9U);
+		if (same == 0) {
+			*height = (unsigned)strtoul(argv[index] + 9, NULL, 10);
+			continue;
+		}
+
+		/* The timeout. */
+		same = strncmp(argv[index], "--timeout-s=", 12U);
+		if (same == 0) {
+			*timeout = (unsigned)strtoul(argv[index] + 12, NULL, 10);
+			continue;
+		}
+
+		/* An option not known, or a second file. */
+		if (argv[index][0] == '-' || *file != NULL)
+			return -1;
+
+		/* The file. */
+		*file = argv[index];
+	}
+
+	/* A window needs a size. */
+	if (*width == 0U || *height == 0U)
+		return -1;
+
+	/* Succeeded: the command line is read. */
+	return 0;
+}
+
+/*
+ * Reads the photos of the home's Pictures folder and their marks, and adds
+ * the file named (-1 for none, or one that is not a picture).
+ */
+static void
+ph_library_start(
+	struct ph_window *photos,
+	const char *file,
+	long *photo)
+{
+	char folder[PH_PATH_MAX];
+	const char *home;
+	size_t count;
+	size_t albums;
+	int error;
+
+	/* The home's Pictures folder. */
+	*photo = -1;
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		home = "/tmp";
+	(void)snprintf(folder, sizeof(folder), "%s/%s", home, PH_FOLDER);
+	error = ph_library_scan(folder);
+	(void)ph_photos(&count);
+	(void)ph_albums(&albums);
+	ph_log("LIBRARY photos=%lu albums=%lu error=%d", (unsigned long)count, (unsigned long)albums, error);
+
+	/* The file named. */
+	if (file != NULL) {
+		error = ph_library_add_file(file, photo);
+		ph_log("FILE photo=%ld error=%d", *photo, error);
+		if (error != 0)
+			*photo = -1;
+	}
+
+	/* The marks. */
+	error = ph_store_path(photos->store, sizeof(photos->store));
+	photos->store_known = error == 0;
+	if (photos->store_known) {
+		error = ph_store_load(photos->store);
+		ph_log("MARKS error=%d", error);
+	}
+}
+
+/* Reads the library again (the marks kept), and starts the view on it. */
+static void
+ph_refresh(
+	struct ph_window *photos)
+{
+	long photo;
+	int error;
+
+	/* The library and the marks again. */
+	ph_worker_drop_thumbs();
+	ph_library_release();
+	ph_store_release();
+	ph_library_start(photos, NULL, &photo);
+
+	/* The view from the timeline's top. */
+	error = ph_view_reset(&photos->view);
+	ph_log("REFRESH error=%d", error);
+	ph_view_notice(&photos->view, "Pictures read again", kl_clock_us());
+	photos->dirty = 1;
+}
+
+/*
+ * Runs the window until it closes, Quit or the timeout; nonzero when
+ * something failed.
+ */
+static int
+ph_loop(
+	struct ph_window *photos,
+	unsigned timeout)
+{
+	struct kl_app_event event;
+	uint64_t started;
+	uint64_t now;
+	int status;
+	int taken;
+	int moved;
+	int wait;
+
+	/* The first frame. */
+	status = ph_resize(photos);
+	if (status != 0)
+		return -1;
+	ph_log("READY width=%u height=%u", photos->width, photos->height);
+
+	/* Each round: the input, the pictures made, then a frame when something changed. */
+	started = kl_clock_us();
+	for (;;) {
+		/* Waits for the compositor, or for the time something moves. */
+		now = kl_clock_us();
+		wait = ph_wait(photos, now);
+		status = kl_app_dispatch(photos->app, wait);
+		if (status != 0) {
+			ph_log("DONE reason=disconnected");
+			return 0;
+		}
+
+		/* The window's input and the actions of its menu. */
+		for (;;) {
+			taken = kl_app_take(photos->app, &event);
+			if (!taken)
+				break;
+
+			/* The desktop's appearance changed: the theme's colours are new. */
+			if (event.kind == KL_APP_THEME) {
+				photos->dirty = 1;
+				continue;
+			}
+
+			/* Another window's event is not this one's. */
+			if (event.kind != KL_APP_WINDOW || event.window != photos->window)
+				continue;
+
+			/* An action of the menu, or input. */
+			if (event.input.kind == KL_WINDOW_ACTION) {
+				ph_view_action(&photos->view, event.input.code, kl_clock_us());
+				photos->dirty = 1;
+			} else {
+				ph_input(photos, &event.input);
+			}
+		}
+
+		/* The pictures made, the slideshow, the marks to keep, the library to read again. */
+		now = kl_clock_us();
+		ph_results(photos);
+		moved = ph_view_tick(&photos->view, now);
+		if (moved)
+			photos->dirty = 1;
+		ph_marks(photos);
+		if (photos->view.refresh) {
+			photos->view.refresh = 0;
+			ph_refresh(photos);
+		}
+
+		/* The end: the window closed or Quit. */
+		if (photos->view.quit) {
+			ph_log("DONE reason=close");
+			return 0;
+		}
+
+		/* The timeout, when one was given. */
+		if (timeout != 0U && now - started >= (uint64_t)timeout * 1000000U) {
+			ph_log("DONE reason=timeout");
+			return 0;
+		}
+
+		/* A new size. */
+		if (photos->resized) {
+			photos->resized = 0;
+			status = ph_resize(photos);
+			if (status != 0)
+				return -1;
+		}
+
+		/* The view's notice gone: drawn without it. */
+		if (photos->view.notice[0] != '\0' && now >= photos->view.notice_until) {
+			photos->view.notice[0] = '\0';
+			photos->dirty = 1;
+		}
+
+		/* A frame, and the pictures it wants. */
+		ph_draw(photos, now);
+	}
+}
+
+/*
+ * Gives one input of the window to the view's widgets, or takes it as the
+ * window's: Ctrl+Q, a new size, the close.
+ */
+static void
+ph_input(
+	struct ph_window *photos,
+	const struct kl_window_event *event)
+{
+	int taken;
+
+	/* Ctrl+Q quits. */
+	if (event->kind == KL_WINDOW_KEY && event->pressed && (event->modifiers & KL_MOD_CTRL) != 0U && event->code == PH_KEY_Q) {
+		photos->view.quit = 1;
+		return;
+	}
+
+	/* The widgets' input draws again. */
+	taken = kl_ui_window_input(photos->ui, event);
+	if (taken) {
+		photos->dirty = 1;
+		return;
+	}
+
+	/* The window's own. */
+	if (event->kind == KL_WINDOW_RESIZE)
+		photos->resized = 1;
+	else if (event->kind == KL_WINDOW_CLOSE)
+		photos->view.quit = 1;
+}
+
+/* Gives the view the pictures the thread made. */
+static void
+ph_results(
+	struct ph_window *photos)
+{
+	struct ph_result result;
+	int taken;
+
+	/* Each one; a frame shows them. */
+	for (;;) {
+		taken = ph_worker_take(&result);
+		if (!taken)
+			break;
+		ph_view_result(&photos->view, &result);
+		photos->dirty = 1;
+	}
+}
+
+/*
+ * Queues the pictures the view wanted in the frame drawn: the photo shown
+ * whole, or the thumbnails in sight (those queued before and no longer in
+ * sight are dropped).
+ */
+static void
+ph_jobs(
+	struct ph_window *photos)
+{
+	struct ph_photo *list;
+	struct ph_view *view;
+	size_t count;
+	size_t index;
+	size_t photo;
+	int whole;
+
+	/* The thumbnails wanted before go; the frame's wants come in their place. */
+	view = &photos->view;
+	list = ph_photos(&count);
+	ph_worker_drop_thumbs();
+	for (index = 0; index < view->want_count; index++) {
+		photo = view->wants[index];
+		if (photo >= count)
+			continue;
+		whole = (long)photo == view->open;
+		(void)ph_worker_queue(photo, whole, list[photo].turns, list[photo].path, view->generation);
+	}
+}
+
+/* Keeps the marks when the view changed them. */
+static void
+ph_marks(
+	struct ph_window *photos)
+{
+	int error;
+
+	/* Nothing changed, or nowhere to keep them. */
+	if (!photos->view.save)
+		return;
+	photos->view.save = 0;
+	if (!photos->store_known)
+		return;
+
+	/* Written. */
+	error = ph_store_save(photos->store);
+	ph_log("SAVE error=%d", error);
+	if (error != 0)
+		ph_view_notice(&photos->view, "The favorites and turns could not be saved.", kl_clock_us());
+}
+
+/*
+ * Remakes the presenter and the canvas at the window's size; nonzero when
+ * it cannot.
+ */
+static int
+ph_resize(
+	struct ph_window *photos)
+{
+	uint32_t *pixels;
+	int see_through;
+	int status;
+
+	/* The presenter at the window's size. */
+	status = kl_window_present_resize(photos->window, &photos->width, &photos->height);
+	if (status != 0) {
+		ph_log("FAILED operation=present error=%d", status);
+		return -1;
+	}
+
+	/* zdesktop's glass, when the frames are blended by their alpha (decided at the first size). */
+	if (!photos->glass_decided) {
+		photos->glass_decided = 1;
+		see_through = kl_window_see_through(photos->window);
+		if (see_through) {
+			photos->style.glass = 1;
+			photos->view.glass = 1;
+		}
+
+		/* The log line the tests read. */
+		ph_log("GLASS see_through=%d", see_through);
+	}
+
+	/* A frame's pixels of its size. */
+	pixels = malloc((size_t)photos->width * (size_t)photos->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* The canvas on them, in place of the old one. */
+	if (photos->canvas_made)
+		kl_canvas_release(&photos->canvas);
+	photos->canvas_made = 0;
+	free(photos->pixels);
+	photos->pixels = pixels;
+	status = kl_canvas_init(&photos->canvas, photos->pixels, (size_t)photos->width, (int)photos->width, (int)photos->height);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: drawn again at the new size. */
+	photos->canvas_made = 1;
+	photos->style.canvas = &photos->canvas;
+	photos->dirty = 1;
+	return 0;
+}
+
+/*
+ * Draws and shows a frame when something changed or moves, queues the
+ * pictures it wants, then gives the view the keys no widget took.
+ */
+static void
+ph_draw(
+	struct ph_window *photos,
+	uint64_t now_us)
+{
+	struct kl_glass_panel panels[PH_PANELS_MAX];
+	struct kl_event event;
+	size_t count;
+	int status;
+	int error;
+	int taken;
+
+	/* Nothing changed and nothing moves: no frame. */
+	if (!photos->dirty && !photos->moving)
+		return;
+
+	/* The view, and the pictures it wants. */
+	photos->dirty = 0;
+	kl_ui_begin(photos->ui, now_us);
+	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
+	photos->moving = kl_ui_end(photos->ui, now_us);
+	kl_ui_window_text(photos->ui, photos->window);
+	ph_jobs(photos);
+
+	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
+	if (photos->view.glass) {
+		count = ph_view_panels(&photos->view, (int)photos->width, (int)photos->height, panels, PH_PANELS_MAX);
+		error = kl_window_set_glass(photos->window, panels, count);
+		if (error != 0) {
+			ph_log("GLASS failed error=%d", error);
+			photos->view.glass = 0;
+			photos->style.glass = 0;
+			photos->dirty = 1;
+		}
+	}
+
+	/* The frame shown. */
+	status = kl_window_present(photos->window, photos->pixels, (size_t)photos->width);
+	if (status == EAGAIN)
+		photos->resized = 1;
+
+	/* The keys no widget took are the view's; it draws again. */
+	for (;;) {
+		taken = kl_ui_take(photos->ui, &event);
+		if (!taken)
+			break;
+		if (event.kind == KL_EVENT_KEY) {
+			ph_view_key(&photos->view, event.code, event.modifiers, now_us);
+			photos->dirty = 1;
+		}
+	}
+}
+
+/*
+ * Reports how long the loop may wait for input (ms): no time while a frame
+ * is due, a frame's time while a widget moves, a little while the thread
+ * makes pictures, the view's own time, or a second.
+ */
+static int
+ph_wait(
+	const struct ph_window *photos,
+	uint64_t now_us)
+{
+	int wait;
+	int busy;
+
+	/* A frame due now. */
+	if (photos->dirty)
+		return 0;
+
+	/* A widget moving. */
+	if (photos->moving)
+		return PH_MOVING_MS;
+
+	/* The thread at work: its results are looked for soon. */
+	busy = ph_worker_busy();
+	if (busy)
+		return PH_WORKING_MS;
+
+	/* The view's time, or a second. */
+	wait = ph_view_wait(&photos->view, now_us);
+	if (wait < 0 || wait > PH_IDLE_MS)
+		wait = PH_IDLE_MS;
+	return wait;
+}

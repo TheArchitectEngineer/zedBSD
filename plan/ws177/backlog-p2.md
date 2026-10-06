@@ -126,3 +126,9 @@
 | WS145 ws145-p003（backend・protocol） | 設定の file の writer の thread（今は compositor の thread で flock と rename）、compositor と libkeiland を通した host の protocol の試験（設計 §7 の host-system-printers.c）、job の title の UTF-8 の厳密な検め（compositor 側） | 作る | `libkeiland-backend/print/print.c`、`wayland/printers-shell.c`、`plan/ws145/tests/` | 2026-10-07 |
 | WS145 ws145-p004（Settings） | 頁の host の描画の試験、printer の名前の変更、IPP の path・LPD の queue の変更（今は足す時だけ） | 作る | `settings/page-printers.c` | 2026-10-07 |
 | WS145 ws145-p005・p007 | Linux・FreeBSD の guest での printd と printtest の確認、ipps（TLS）、PDF を受けない printer の filter（PWG raster）、mDNS の発見、PDF Viewer の printer の選択・部数・範囲 | p005 と別 WS（今は zedBSD だけ確認予定、既定の printer に全頁） | `printd/`、`pdfviewer/main.c` | 2026-10-07 |
+| WS157 ws157-p002（写真の library） | `~/Pictures` の 20000 枚超、album の folder 1024 超、深さ 4 より下、symlink の輪 | 上限を超えたことを知らせる、輪を辿らない（今は黙って打ち切る。symlink は stat で辿るので輪は深さ 4 で止まるだけ） | `library.c` の `library_walk`・`library_add` | 2026-10-07 |
+| WS157 ws157-p002 | `photos.conf` を複数の Photos が同時に書く、改行を含む path、書き込みの失敗の後 | 後から書いた方が前の印を消さない（flock か合わせ込み）。改行の path の印も残す | `store.c` の `ph_store_save`・`store_write` | 2026-10-07 |
+| WS157 ws157-p003（Photos の app） | 縮小画像の disk の cache、大きな library を開いた時の時間 | Files の `thumb-cache.c` の様に disk に持ち、起動を速くする（今は memory の 400 枚だけ、開くたびに decode） | `thumbs.c`・`view.c` の `view_keep` | 2026-10-07 |
+| WS157 ws157-p003 | 窓の幅が狭い（列 1）、HiDPI の縮小画像の粗さ、全面の表示の拡大・pan、指の swipe・pinch | 狭い窓で左の列を畳む、scale に合わせた縮小画像の大きさ、拡大・pan と指の操作（今は fit だけ） | `view.c` の `view_layout`・`view_whole` | 2026-10-07 |
+| WS157 ws157-p003 | 月の見出しを跨ぐ ↑↓、slideshow の写真の decode が 3 秒を超える | ↑↓ は grid の見た目の列で動く、slideshow は写真が出てから時間を数える（今は一覧の index で ±列数、時間は開いた時から） | `view.c` の `view_step`・`ph_view_tick` | 2026-10-07 |
+| WS157 ws157-p003 | 開いている間に `~/Pictures` が変わる（file の削除・追加） | 見張って一覧を直す（今は F5・File > Refresh で読み直すだけ。消えた file は「This photo cannot be shown.」） | `main.c` の `ph_refresh` | 2026-10-07 |
