@@ -6794,6 +6794,8 @@ zwl_glass_gesture(
 			direction = gesture_as_swipe(gesture);
 			(void)zwl_switch_pad_swipe(server, direction);
 		}
+
+		/* Nothing else while the switcher is on. */
 		return;
 	}
 
