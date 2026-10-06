@@ -140,11 +140,11 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 - **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
 1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS139 速さ、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
-2. **第 2 段**: app（WS175 PDF の編集、WS083 Vulkan Video、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、Linux・package・配布（WS116 Qt6、WS115 GTK4、WS009 文書 ほか）。
-3. **第 3 段**: kernel・driver・電源（WS031、WS143、WS052、WS130 の残り、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
+2. **第 2 段**: app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、Linux・package（WS085・088・114・117 はユーザーが検討中）。
+3. **第 3 段**（不確実性のある hardware 関連、2026-10-06 夜 ユーザー）: WS083 Vulkan Video（第 2 段から移す）、kernel・driver・電源（WS031、WS052、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
 4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
 5. **デバッグに専念**して全ての Bug を消化する。
-- ベータ3 へ: WS068・WS101・WS171・WS176・WS152（2026-10-06 夜）。止める: WS074 の描画（B1）・WS153（U2〜U15）。
+- ベータ3 へ: WS068・WS101・WS171・WS176・WS152・WS115 GTK4・WS116 Qt6・WS126 Python（2026-10-06 夜 ユーザー「私たちのOSの価値は先進的なタブレットとデスクトップの融合したUI/UXであって、既存のデスクトップUIのツールキットはコアコンピタンスではない」「私たちには、私たちがよいと考えるスクリプト言語であるNoctがすでにある」）。ベータ4 以降（2026-10-05 ユーザー、Q1 の表の誤りを訂正）: WS112・WS124・WS125・WS143・WS118・WS119 ほか。止める: WS074 の描画（B1）・WS153（U2〜U15）。
 <!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー: 不確実性のある hardware 関連は第 3 段へ（WS083 を第 3 段に）、WS130 IPv6 の残りは第 2 段へ。WS115 GTK4・WS116 Qt6・WS126 Python はベータ3 へ（理由: OS の価値は tablet と desktop の融合した UI/UX、既存の toolkit は core competence でない、script 言語は Noct がある）。
 - 2026-10-06 夜 ユーザー（クリック）: WS172 の QEMU での鍵の試験は「(c) 実機の鍵だけで確かめる」（P5 の kernel の応答器は作らない、実機の YubiKey の UAT で確かめる）。
 - 2026-10-06 夜 ユーザー（クリック）: Guardrail の OpenSSL の例外を「広げる」→ libpasskey を使う base の道具 fidoctl（WS161）も範囲に（期限は同じ、リリースの前に独自実装へ）。
 - 2026-10-06 夜 ユーザー:「WS152はベータ3に先送りします。」→ WS152（system の更新）は第 1 段から外しベータ3 へ。p001 の検討（U1〜U12）は保存。
