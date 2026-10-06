@@ -1,8 +1,8 @@
 {
   "name": "font1",
-  "version": "design-02",
+  "version": "design-04",
   "weight": "Regular",
-  "status": "Regular raster sources; derived SVG and Unicode TrueType 0.100 available",
+  "status": "Refined Regular lowercase with original g/s restored; Unicode TrueType 0.201 available",
   "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
   "generation": {
     "tool": "built-in image_gen",
@@ -20,7 +20,8 @@
     },
     "edit_target": "../bold/generated-atlas.png",
     "edit_target_sha256": "30e31eaf901b1072f162e40c267366a37568724fe4bc808a891449a0994a164c",
-    "weight_reference": "../../monaco-ascii/ascii-overview.png"
+    "weight_reference": "../../monaco-ascii/ascii-overview.png",
+    "atlas_role": "Historical design-02 source; current lowercase differs"
   },
   "export": {
     "canvas_pixels": [
@@ -34,7 +35,7 @@
     "background": "transparent",
     "component_extraction": "whole connected components grouped per row by horizontal proximity; descenders are retained",
     "alignment": "glyph ink centers aligned to approved Bold; single global export scale matches capital H height",
-    "baseline_normalization": "inherited from Bold, approximate"
+    "baseline_normalization": "Approximate original placement; lowercase centers/proportions revised locally"
   },
   "glyphs": [
     {
@@ -45,7 +46,8 @@
       "ink_bbox_pixels": null,
       "atlas_crop_pixels": null,
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "59141e9a74fea7b8e5ccee9078846a0efaaab2e3628f0fd0f6c472b4c1ca8322"
     },
     {
       "codepoint": "U+0021",
@@ -65,7 +67,8 @@
         107
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "e0bfe1bdeebbdbf86f0edad2ac678abcdff7fa90564843eb185ad7df670d0dfa"
     },
     {
       "codepoint": "U+0022",
@@ -85,7 +88,8 @@
         63
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "07310bf3462bb91adf4db51bab80f05a19aa9bafb4df877d3ad750ed2f04a23c"
     },
     {
       "codepoint": "U+0023",
@@ -105,7 +109,8 @@
         108
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "6aa918a532eade232b5902ad17997beb70e12c592583fb8f8729ea3aed717924"
     },
     {
       "codepoint": "U+0024",
@@ -125,7 +130,8 @@
         115
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "a9e95eb94bed1e64646cd6da15117d59df6f295681eede8e77a1e3dbfb872053"
     },
     {
       "codepoint": "U+0025",
@@ -145,7 +151,8 @@
         109
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "684fc2300dd0c825384954d98cbaed0cf4abf97ebb589cdb81a08fe32eb108a5"
     },
     {
       "codepoint": "U+0026",
@@ -165,7 +172,8 @@
         109
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "9903f9e65921f1b0c92bb24d81dbb44400581a795da41d41a8b69e29794e7021"
     },
     {
       "codepoint": "U+0027",
@@ -185,7 +193,8 @@
         67
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "7b9d32d0dec221d97c3c2098ffd93edc1218c17a4ee8040bffe0061312214116"
     },
     {
       "codepoint": "U+0028",
@@ -205,7 +214,8 @@
         116
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "1e285b1d796542ff004cec8da21609831893525fc0b33d46491fe1c6d217eb62"
     },
     {
       "codepoint": "U+0029",
@@ -225,7 +235,8 @@
         116
       ],
       "atlas_row_baseline_pixels": 104.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "83f87ee1a917c087099629a19d1e7c340874b73c6badb90ec0078e202a999fb2"
     },
     {
       "codepoint": "U+002A",
@@ -245,7 +256,8 @@
         207
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "f61348f200b39ca8c6e7e308102a38e5fed8e586f2d48478e068bc4c78b252a2"
     },
     {
       "codepoint": "U+002B",
@@ -265,7 +277,8 @@
         232
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "b6763b846911188dee7f57f9bfe06fc349f808be92ac48562cb0536fad8be47a"
     },
     {
       "codepoint": "U+002C",
@@ -285,7 +298,8 @@
         247
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "da6872b679ed3709d1a491856e084e965f53c747e74909d00a18603d0c9aaf99"
     },
     {
       "codepoint": "U+002D",
@@ -305,7 +319,8 @@
         209
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "fa1e9367bea5168a2103986e115a87fcdcb18c87ad79eb78794cf7cfa761d02f"
     },
     {
       "codepoint": "U+002E",
@@ -325,7 +340,8 @@
         233
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "d2d5dbe9fd783b61f37aab7d677043978610207fe428afcae773a5835bcfc1fd"
     },
     {
       "codepoint": "U+002F",
@@ -345,7 +361,8 @@
         233
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "98f43c3a23f89f29d6cea65bc049afaa9abf933bfa16533a30519c77ffa51a5c"
     },
     {
       "codepoint": "U+0030",
@@ -365,7 +382,8 @@
         233
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "b3935f879fc48e2b52be2a208ac53c069a0aa58af81bee6b89085dbf030465b2"
     },
     {
       "codepoint": "U+0031",
@@ -385,7 +403,8 @@
         233
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "c8a4bdf9cddd9c4d2dc1b5a5f1142395b6410fde7d5d78f56c0385ca20ce6592"
     },
     {
       "codepoint": "U+0032",
@@ -405,7 +424,8 @@
         234
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "2b7c11cefc37d81e8ffbecaf6a79497b7b782fb3eab4a66da49bd86610fcef99"
     },
     {
       "codepoint": "U+0033",
@@ -425,7 +445,8 @@
         235
       ],
       "atlas_row_baseline_pixels": 230.5,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "31c7fc3978c02d39c7a49723047b04b07f009e54b194e3427d22fb233a0874f4"
     },
     {
       "codepoint": "U+0034",
@@ -445,7 +466,8 @@
         361
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "9d77dfdd99ccfdaf89b0647f44a6eecadd8f590855fbffc7332f83c3f001d339"
     },
     {
       "codepoint": "U+0035",
@@ -465,7 +487,8 @@
         363
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5f4bedea7033a3098e753fbe8e91fd716a104c972b6c6a46477373cbe0739ac5"
     },
     {
       "codepoint": "U+0036",
@@ -485,7 +508,8 @@
         363
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "b592a165a4c23daaa4da2e2c038e1a843b491ca8ced1bf4df213dadcb8ee4737"
     },
     {
       "codepoint": "U+0037",
@@ -505,7 +529,8 @@
         361
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "ac83d306c88f722fe39e53101fbc5e0ff35303dcdf9b4fdb1ad1f22ccfacd061"
     },
     {
       "codepoint": "U+0038",
@@ -525,7 +550,8 @@
         363
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "28c7a344b6919ff1d791f985a68eabb45072da04ab2b1ed0e57cbec0adcfaef7"
     },
     {
       "codepoint": "U+0039",
@@ -545,7 +571,8 @@
         363
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "92f2e20dbb22a1ad80af9b73ae77fc7bf74a8f98269e67e049b577690db1e5d4"
     },
     {
       "codepoint": "U+003A",
@@ -565,7 +592,8 @@
         360
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "6fab26571d5c7758ec5f68b651ee10f833974d30fc2a2496fce58e04286c93b9"
     },
     {
       "codepoint": "U+003B",
@@ -585,7 +613,8 @@
         376
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "2a8cd5888c8f2ba56651bf0ac3cef94cd2bd4c3650df7d4de63e720816d86940"
     },
     {
       "codepoint": "U+003C",
@@ -605,7 +634,8 @@
         360
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5b10f16959e146c3e54c824239dbf486772090ff293962630903c1055eb4583e"
     },
     {
       "codepoint": "U+003D",
@@ -625,7 +655,8 @@
         348
       ],
       "atlas_row_baseline_pixels": 360.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "15f5b59c7026e06cab44a9efb4f24266e2d6c964bb55e2b97e84d4df38cb89fd"
     },
     {
       "codepoint": "U+003E",
@@ -645,7 +676,8 @@
         489
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "4d190e617395013cd42d91099614a97a7d056ef5d7b75ab2c30a49a92e2282b7"
     },
     {
       "codepoint": "U+003F",
@@ -665,7 +697,8 @@
         490
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "a2750e95de931d8360db086e91c350806670e49a2554566b5fde7779e3e1ce42"
     },
     {
       "codepoint": "U+0040",
@@ -685,7 +718,8 @@
         491
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "6e2f0d2cdc8a0afddb28d3e5eb1ef72ad625391f5059ec942d466eb947d821d0"
     },
     {
       "codepoint": "U+0041",
@@ -705,7 +739,8 @@
         490
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "752e9c5e008e9ba2441d2eba27924a6bc363604cfd1742ee0bf7a784a079dec6"
     },
     {
       "codepoint": "U+0042",
@@ -725,7 +760,8 @@
         490
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "7d0bd85b1b2eef717d7ed86873786794b7437b4665eef9d08b56cb1e309b68fb"
     },
     {
       "codepoint": "U+0043",
@@ -745,7 +781,8 @@
         491
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "3f3e18ef0e241c709c4142cd19a0603d79c8022ec8a1a4f00422009ce85d3e2f"
     },
     {
       "codepoint": "U+0044",
@@ -765,7 +802,8 @@
         490
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5dbf3bb3ca77b97e71a3e65535c2588293a40f677b8eba3b64a3f49921500435"
     },
     {
       "codepoint": "U+0045",
@@ -785,7 +823,8 @@
         490
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "4819d46fb2b00e19b7e717abcc6482f55d789d48debc2eefbf08c7270fe3886f"
     },
     {
       "codepoint": "U+0046",
@@ -805,7 +844,8 @@
         490
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "38fdca0d8f87c754560f8fb0dd2f280dc10815fc9d3fdcbd0d38d8c7426300cc"
     },
     {
       "codepoint": "U+0047",
@@ -825,7 +865,8 @@
         492
       ],
       "atlas_row_baseline_pixels": 487.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "c520ffaab6e66fb61015325497c73ebf8a9010003878999c0685a4b25fa553da"
     },
     {
       "codepoint": "U+0048",
@@ -845,7 +886,8 @@
         616
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "ce94e4a4f694304c2473c3d8e11b754222467aecc200fa60d7fcfd1be0e78bc7"
     },
     {
       "codepoint": "U+0049",
@@ -865,7 +907,8 @@
         616
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "c882405c2cdfffad1fedf208c45f69b86dd4f766d887a729f2b3294ee61a9350"
     },
     {
       "codepoint": "U+004A",
@@ -885,7 +928,8 @@
         617
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "ea2752348377bf33ecbb03b812cb43d48b8b1d6166d6c093eff4108e8f9a75b5"
     },
     {
       "codepoint": "U+004B",
@@ -905,7 +949,8 @@
         616
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "fb6c35606b6997f4feea6eccbc1eb8c63c6a0ca3c9f6994a88f47f1488ddc692"
     },
     {
       "codepoint": "U+004C",
@@ -925,7 +970,8 @@
         616
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "b8bd77bf06140de8c2bbd1993e1257437c41740e2e68d0c736ce711e441fed99"
     },
     {
       "codepoint": "U+004D",
@@ -945,7 +991,8 @@
         616
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "03d6be58a894256833af7a0461856159037b954ccf3582bd77dcd2f02fc53e86"
     },
     {
       "codepoint": "U+004E",
@@ -965,7 +1012,8 @@
         616
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "843c6a14fd35807b734c02e60bec736991ffda2f117d6f6f585680369d3dfe4e"
     },
     {
       "codepoint": "U+004F",
@@ -985,7 +1033,8 @@
         617
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5210dd863d6c18bb2717aaaa2368ceeba0c8a7a9014c98a447c507a9a6c5cdf1"
     },
     {
       "codepoint": "U+0050",
@@ -1005,7 +1054,8 @@
         614
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "d4a9da1e799a49c2b9673e68e2e7f1cc4eded1ba089458c61f35330554ee8743"
     },
     {
       "codepoint": "U+0051",
@@ -1025,7 +1075,8 @@
         632
       ],
       "atlas_row_baseline_pixels": 613.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "f252027d126e4d735d7b70afc4ff6b0c3fdd6b0eedd47cedb52f5020bb3b4db8"
     },
     {
       "codepoint": "U+0052",
@@ -1045,7 +1096,8 @@
         742
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5200bf12129d717b3e3ba6713c32545d59b5deeb6de75a8b69c71c5f8f280881"
     },
     {
       "codepoint": "U+0053",
@@ -1065,7 +1117,8 @@
         744
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "97ed8ac7a52d32fcd5f330e87ed310812bfed487e31bfa931ecde4a74d444262"
     },
     {
       "codepoint": "U+0054",
@@ -1085,7 +1138,8 @@
         742
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "e3f0df63fe567279406477eee0d517d496941e6479a7e39651d6a713e9e20b93"
     },
     {
       "codepoint": "U+0055",
@@ -1105,7 +1159,8 @@
         743
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "0ee1e492ce747d3cdaf4d0b80677910c14d96f09cb2b51ecf98e255c56d07c45"
     },
     {
       "codepoint": "U+0056",
@@ -1125,7 +1180,8 @@
         741
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "1a234c3949f0b1db663fede5893e56096607348d72c45affe701953f56ed5202"
     },
     {
       "codepoint": "U+0057",
@@ -1145,7 +1201,8 @@
         741
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "8f6c172f8264d755f1ebc9d9e22242d128e4603f3a49e9d94952dd6459401145"
     },
     {
       "codepoint": "U+0058",
@@ -1165,7 +1222,8 @@
         741
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5ac9e55aa5a8729624393584ca13bb06d2b4eb18e09cd0a58b84941d335b2b21"
     },
     {
       "codepoint": "U+0059",
@@ -1185,7 +1243,8 @@
         741
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "b315a134bdd0e8fd1b48b75ce0753fa72ba81ae37818a6f1586caab524b799a3"
     },
     {
       "codepoint": "U+005A",
@@ -1205,7 +1264,8 @@
         741
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "451017507ed92827b2fcf39322f2f043850ea22ce1df31a1c2edcdbec1f9a114"
     },
     {
       "codepoint": "U+005B",
@@ -1225,7 +1285,8 @@
         756
       ],
       "atlas_row_baseline_pixels": 738.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "8a7435427c663182046b3319264ea6c7afb0137490ed1d22a46df94b10f755c5"
     },
     {
       "codepoint": "U+005C",
@@ -1245,7 +1306,8 @@
         869
       ],
       "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "85753a990cbfa3c4d91b161b9006275fbb7d7d6b767290da05f90110dc90d103"
     },
     {
       "codepoint": "U+005D",
@@ -1265,7 +1327,8 @@
         882
       ],
       "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "831272ce6351f3072ba8db2680542c99880cfd7be9d3de965b37d8a9994ef544"
     },
     {
       "codepoint": "U+005E",
@@ -1285,7 +1348,8 @@
         844
       ],
       "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "46f8bd43c93bda472314bf79e6f79694172d921b83b488ece2f614f8e7fe1db5"
     },
     {
       "codepoint": "U+005F",
@@ -1305,7 +1369,8 @@
         869
       ],
       "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "55647a0b8bd5f8528c715e03ee0493fde1f79c1e9b7242a0f7ce986da7cc1972"
     },
     {
       "codepoint": "U+0060",
@@ -1325,7 +1390,8 @@
         818
       ],
       "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "9693bec4cef23ec4baa826608b397b675d58decac24ffda82e81db2c2ad7b404"
     },
     {
       "codepoint": "U+0061",
@@ -1333,19 +1399,21 @@
       "category": "letters",
       "image": "glyphs/U0061.png",
       "ink_bbox_pixels": [
-        302,
-        339,
-        693,
-        764
+        323,
+        361,
+        666,
+        744
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "40dc7655dd384362bc7a5f839b1aca27bb1c8fbbbe2d1c65d325c61261a273aa",
+      "previous_atlas_crop_pixels": [
         660,
         814,
         710,
         869
       ],
-      "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0061.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0062",
@@ -1353,19 +1421,21 @@
       "category": "letters",
       "image": "glyphs/U0062.png",
       "ink_bbox_pixels": [
-        312,
-        182,
-        690,
-        768
+        337,
+        208,
+        672,
+        747
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "ef2da3345808ba29fd9d573273505f246acf05b084a20b49f78ccebbbb32c943",
+      "previous_atlas_crop_pixels": [
         784,
         794,
         833,
         869
       ],
-      "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0062.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0063",
@@ -1373,19 +1443,21 @@
       "category": "letters",
       "image": "glyphs/U0063.png",
       "ink_bbox_pixels": [
-        310,
-        331,
-        680,
-        764
+        333,
+        352,
+        660,
+        741
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "5d043dd3564192398d5a93d48d46c70c627edfd2571b67fcc41685b95a7b07e7",
+      "previous_atlas_crop_pixels": [
         908,
         814,
         956,
         870
       ],
-      "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0063.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0064",
@@ -1393,19 +1465,21 @@
       "category": "letters",
       "image": "glyphs/U0064.png",
       "ink_bbox_pixels": [
-        301,
-        179,
-        676,
-        765
+        321,
+        199,
+        656,
+        743
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "6d3b455f17e9e66e34e91e1d67f9afefca210ced1103fbc2145a758cc517148b",
+      "previous_atlas_crop_pixels": [
         1030,
         794,
         1078,
         869
       ],
-      "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0064.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0065",
@@ -1413,19 +1487,21 @@
       "category": "letters",
       "image": "glyphs/U0065.png",
       "ink_bbox_pixels": [
-        310,
-        331,
-        705,
-        764
+        337,
+        350,
+        684,
+        743
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "5f6047187f67d991546ece873a68fa384eed27e12000226f7ec4275ccb96e06b",
+      "previous_atlas_crop_pixels": [
         1155,
         815,
         1206,
         871
       ],
-      "atlas_row_baseline_pixels": 866.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0065.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0066",
@@ -1433,19 +1509,21 @@
       "category": "letters",
       "image": "glyphs/U0066.png",
       "ink_bbox_pixels": [
-        339,
-        191,
-        717,
-        766
+        361,
+        213,
+        687,
+        745
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "5d4a136b18ae315b3ec1b4c6ab4ef13be14b248a9b5149ca4b5cae3c367e9255",
+      "previous_atlas_crop_pixels": [
         47,
         921,
         96,
         995
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0066.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0067",
@@ -1465,7 +1543,10 @@
         1007
       ],
       "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "Original Regular PNG and SVG restored by user decision",
+      "image_sha256": "8a87563be9075533138741cc7e635b8cbe1764751643d65aa3cb1f5e6cc679f4",
+      "source": "svg/U0067.svg",
+      "restored_from_commit": "ef9c3295"
     },
     {
       "codepoint": "U+0068",
@@ -1473,19 +1554,21 @@
       "category": "letters",
       "image": "glyphs/U0068.png",
       "ink_bbox_pixels": [
-        336,
-        192,
-        692,
-        762
+        359,
+        215,
+        670,
+        740
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "a22700e64a9ea190b16d75027132180ac98fd66620925df47fa2f8184ab7d57b",
+      "previous_atlas_crop_pixels": [
         292,
         921,
         338,
         995
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0068.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0069",
@@ -1493,19 +1576,21 @@
       "category": "letters",
       "image": "glyphs/U0069.png",
       "ink_bbox_pixels": [
-        353,
-        193,
-        672,
-        766
+        438,
+        217,
+        612,
+        745
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "eaba7554b20f77cfe229873a6b806e65df0082836f12b51608a728e2cea128d6",
+      "previous_atlas_crop_pixels": [
         414,
         921,
         455,
         995
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0069.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+006A",
@@ -1513,19 +1598,21 @@
       "category": "letters",
       "image": "glyphs/U006A.png",
       "ink_bbox_pixels": [
-        351,
-        154,
-        645,
-        845
+        374,
+        177,
+        609,
+        826
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "65213df800090e5141300383e8ec3ebd52d5839ddc3f25f972d6f3785dcefff6",
+      "previous_atlas_crop_pixels": [
         537,
         922,
         575,
         1011
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U006A.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+006B",
@@ -1533,19 +1620,21 @@
       "category": "letters",
       "image": "glyphs/U006B.png",
       "ink_bbox_pixels": [
-        331,
-        192,
-        706,
-        762
+        351,
+        213,
+        682,
+        742
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "507fb2ebd3e73226361adb08be5ca3afc3f69c865187170396724b56779dd36f",
+      "previous_atlas_crop_pixels": [
         662,
         921,
         710,
         994
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U006B.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+006C",
@@ -1553,19 +1642,21 @@
       "category": "letters",
       "image": "glyphs/U006C.png",
       "ink_bbox_pixels": [
-        322,
-        198,
-        674,
-        768
+        415,
+        218,
+        607,
+        748
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "62d43a5819e3bb7fd8e78c884f3b4378f8711a582b7ce9a03079b6f7744208eb",
+      "previous_atlas_crop_pixels": [
         783,
         922,
         828,
         995
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U006C.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+006D",
@@ -1573,19 +1664,21 @@
       "category": "letters",
       "image": "glyphs/U006D.png",
       "ink_bbox_pixels": [
-        294,
-        337,
-        713,
-        770
+        315,
+        359,
+        691,
+        750
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "fac60a4c44aad68cc379e0631b9116ebaffadd865ecde302fa2c4d10b89e56a7",
+      "previous_atlas_crop_pixels": [
         904,
         938,
         958,
         994
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U006D.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+006E",
@@ -1593,19 +1686,21 @@
       "category": "letters",
       "image": "glyphs/U006E.png",
       "ink_bbox_pixels": [
-        330,
-        340,
-        684,
-        765
+        351,
+        361,
+        662,
+        742
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "eb8d448f9b2403e7b1528e4f670522750e53f9e06b3edf92e5ce6aa91ee48159",
+      "previous_atlas_crop_pixels": [
         1032,
         940,
         1078,
         995
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U006E.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+006F",
@@ -1613,19 +1708,21 @@
       "category": "letters",
       "image": "glyphs/U006F.png",
       "ink_bbox_pixels": [
-        312,
-        343,
-        705,
-        762
+        336,
+        367,
+        683,
+        743
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "1bac5a0ae691f8ab49d5300fc72683cec255db911e07233ffb2d45815882274a",
+      "previous_atlas_crop_pixels": [
         1156,
         942,
         1207,
         996
       ],
-      "atlas_row_baseline_pixels": 992.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U006F.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0070",
@@ -1633,19 +1730,21 @@
       "category": "letters",
       "image": "glyphs/U0070.png",
       "ink_bbox_pixels": [
-        329,
-        326,
-        717,
-        888
+        351,
+        347,
+        693,
+        863
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "3cafba6d42d438f0ef13493bcd6c094d740130fa54e464b717d105caaa3bd078",
+      "previous_atlas_crop_pixels": [
         46,
         1059,
         96,
         1131
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0070.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0071",
@@ -1653,19 +1752,21 @@
       "category": "letters",
       "image": "glyphs/U0071.png",
       "ink_bbox_pixels": [
-        310,
-        278,
-        693,
-        846
+        335,
+        302,
+        672,
+        821
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "bbbd63d3fdaf34d6aadcabf5b5a7435b1c5b40a10031955c6dcbcdf460bce85b",
+      "previous_atlas_crop_pixels": [
         169,
         1053,
         218,
         1126
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0071.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0072",
@@ -1673,19 +1774,21 @@
       "category": "letters",
       "image": "glyphs/U0072.png",
       "ink_bbox_pixels": [
-        356,
-        346,
-        692,
-        771
+        378,
+        366,
+        672,
+        748
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "b45da284cc24b4296ac4c81c52f78360fc74b7beadaf295f8d93274e30147fae",
+      "previous_atlas_crop_pixels": [
         293,
         1059,
         336,
         1114
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0072.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0073",
@@ -1705,7 +1808,10 @@
         1115
       ],
       "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "Original Regular PNG and SVG restored by user decision",
+      "image_sha256": "173e6d0b58769d86d2e88cda0b4bd276e5b838a899718ab82941cf994d6f271c",
+      "source": "svg/U0073.svg",
+      "restored_from_commit": "ef9c3295"
     },
     {
       "codepoint": "U+0074",
@@ -1713,19 +1819,21 @@
       "category": "letters",
       "image": "glyphs/U0074.png",
       "ink_bbox_pixels": [
-        312,
-        250,
-        690,
-        776
+        336,
+        266,
+        662,
+        754
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "cb0400f8b1eabca26d8e469eae5d8e23aca7a31b1cd095095cba3643dc2e333c",
+      "previous_atlas_crop_pixels": [
         535,
         1047,
         584,
         1115
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0074.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0075",
@@ -1733,19 +1841,21 @@
       "category": "letters",
       "image": "glyphs/U0075.png",
       "ink_bbox_pixels": [
-        315,
-        345,
-        684,
-        770
+        336,
+        362,
+        660,
+        746
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "abaf935ff00080e10488c8b247f35cc406f08e8453b9ec2e3557d3859b83b10c",
+      "previous_atlas_crop_pixels": [
         660,
         1060,
         708,
         1115
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0075.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0076",
@@ -1753,19 +1863,21 @@
       "category": "letters",
       "image": "glyphs/U0076.png",
       "ink_bbox_pixels": [
-        279,
-        350,
-        711,
-        767
+        302,
+        367,
+        689,
+        744
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "4b69a9ac2fc7e6dc11646fde6e8d796d4c6b88583fca9f0f464487ad79e7fc94",
+      "previous_atlas_crop_pixels": [
         780,
         1060,
         836,
         1114
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0076.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0077",
@@ -1773,19 +1885,21 @@
       "category": "letters",
       "image": "glyphs/U0077.png",
       "ink_bbox_pixels": [
-        283,
-        348,
-        723,
-        762
+        306,
+        367,
+        702,
+        740
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "862435b4ba04edec42282f2f0b9d3491ef537fec6de77f0d9069872e27e1af01",
+      "previous_atlas_crop_pixels": [
         901,
         1061,
         958,
         1114
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0077.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0078",
@@ -1793,19 +1907,21 @@
       "category": "letters",
       "image": "glyphs/U0078.png",
       "ink_bbox_pixels": [
-        304,
-        348,
-        712,
-        762
+        328,
+        361,
+        682,
+        746
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "a53a51474cc7572b994ecade98ad56a3b3c131b56a9d9dbd053e2600c63a1813",
+      "previous_atlas_crop_pixels": [
         1029,
         1061,
         1082,
         1114
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0078.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+0079",
@@ -1813,19 +1929,21 @@
       "category": "letters",
       "image": "glyphs/U0079.png",
       "ink_bbox_pixels": [
-        302,
-        322,
-        732,
-        872
+        327,
+        340,
+        710,
+        849
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "6a42d92657c77c8b5166d8fce6228f74bdc0ba3a34e85f6f5a37d75c03180150",
+      "previous_atlas_crop_pixels": [
         1152,
         1060,
         1207,
         1131
       ],
-      "atlas_row_baseline_pixels": 1111.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U0079.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+007A",
@@ -1833,19 +1951,21 @@
       "category": "letters",
       "image": "glyphs/U007A.png",
       "ink_bbox_pixels": [
-        332,
-        360,
-        699,
-        766
+        352,
+        383,
+        678,
+        746
       ],
-      "atlas_crop_pixels": [
+      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
+      "image_sha256": "b626bec69896f4e77a63599a33a8bb8287ff87504ed9c15b6789e9e697fe6e93",
+      "previous_atlas_crop_pixels": [
         48,
         1174,
         95,
         1226
       ],
-      "atlas_row_baseline_pixels": 1223.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "source": "svg/U007A.svg",
+      "construction_source": "lowercase-strokes.json"
     },
     {
       "codepoint": "U+007B",
@@ -1865,7 +1985,8 @@
         1240
       ],
       "atlas_row_baseline_pixels": 1223.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "97b723afeffafdb806b7a2565d91e57e765dc800df9c1770199231531ccb0148"
     },
     {
       "codepoint": "U+007C",
@@ -1885,7 +2006,8 @@
         1229
       ],
       "atlas_row_baseline_pixels": 1223.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "5b552c688749c8ea5418e4a63bddeed1a42652588d3a558d32dcc4d8d8577faf"
     },
     {
       "codepoint": "U+007D",
@@ -1905,7 +2027,8 @@
         1240
       ],
       "atlas_row_baseline_pixels": 1223.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "6a1eeba5cf10b19a1752373f8df7e5d3c5ff0740af20e460b34380b336df417c"
     },
     {
       "codepoint": "U+007E",
@@ -1925,9 +2048,28 @@
         1212
       ],
       "atlas_row_baseline_pixels": 1223.0,
-      "status": "generated design draft; outline and font metrics not finalized"
+      "status": "generated design draft; outline and font metrics not finalized",
+      "image_sha256": "c0346dcbf85dda9cadc804709e6225f2656ac555f7237ea4cb28287ed40ebbff"
     }
   ],
   "derived_font": "Font1-Regular.ttf",
-  "svg_directory": "svg"
+  "svg_directory": "svg",
+  "revision": {
+    "date": "2026-10-06",
+    "source": "User requested original g/s; accepted all other lowercase changes",
+    "changed_codepoints": [
+      "U+0067",
+      "U+0073"
+    ],
+    "construction_source": "lowercase-strokes.json",
+    "stroke_width_pixels": 62,
+    "font_version": "0.201",
+    "review": "lowercase-review.png",
+    "previous_revision_commit": "a42730b5d",
+    "restored_from_commit": "ef9c3295",
+    "monoline_exceptions": [
+      "g",
+      "s"
+    ]
+  }
 }

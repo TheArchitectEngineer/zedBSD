@@ -1,5 +1,6 @@
 {
-  "font_sha256": "9d63a1036754ba0dbc307673186b478b3c09c6eb3ba432d380c2087a0fd4fac3",
+  "font_sha256": "96530e4c20f9ded66cdf8be286e3bfb787804373d9262de76e46e386ff773380",
+  "font_version": "0.201",
   "unicode_mappings": 95,
   "glyphs_including_notdef": 96,
   "svg_files_including_notdef": 96,
@@ -9,326 +10,375 @@
   ],
   "fixed_advance": 1229,
   "fontconfig_spacing": 100,
-  "pixel_overlap_mean": 0.9869322338299121,
-  "pixel_overlap_min": 0.9709280251667842,
+  "pixel_overlap_mean": 0.9876796685124739,
+  "pixel_overlap_min": 0.9751897875227957,
   "connected_component_counts_match": true,
   "rebuild_sha256_matches": true,
-  "comparison_method": "Pillow/FreeType at 768px, same raster origin and baseline; ink threshold 128; IoU source PNG vs TTF",
+  "comparison_method": "Pillow/FreeType at 768px, same raster origin and baseline; ink threshold 128; IoU current PNG vs TTF",
+  "preserved_asset_sha256_count": 289,
+  "preserved_non_lowercase_ttf_outlines_and_metrics": 70,
+  "lowercase_design_revision": "lowercase-02",
+  "lowercase_stroke_width_pixels": 62,
+  "straight_stem_samples_pixels": {
+    "i": 62,
+    "l": 62,
+    "h": 62,
+    "n": 62,
+    "m": 62
+  },
+  "i_l_bar_measurements": {
+    "i": {
+      "before_ink_bounds": [
+        381,
+        218,
+        649,
+        742
+      ],
+      "after_ink_bounds": [
+        441,
+        219,
+        609,
+        742
+      ],
+      "top_bar_width_before_pixels": 164,
+      "top_bar_width_after_pixels": 104,
+      "bottom_bar_width_before_pixels": 165,
+      "bottom_bar_width_after_pixels": 126
+    },
+    "l": {
+      "before_ink_bounds": [
+        352,
+        221,
+        652,
+        745
+      ],
+      "after_ink_bounds": [
+        418,
+        221,
+        604,
+        745
+      ],
+      "top_bar_width_before_pixels": 180,
+      "top_bar_width_after_pixels": 113,
+      "bottom_bar_width_before_pixels": 183,
+      "bottom_bar_width_after_pixels": 135
+    }
+  },
   "glyph_overlap": [
     {
       "codepoint": "U+0021",
       "character": "!",
-      "iou": 0.9849595724270248
+      "iou": 0.9832254972441888
     },
     {
       "codepoint": "U+0022",
       "character": "\"",
-      "iou": 0.9897341888175986
+      "iou": 0.9894587286310097
     },
     {
       "codepoint": "U+0023",
       "character": "#",
-      "iou": 0.9888252678241596
+      "iou": 0.9907335192798319
     },
     {
       "codepoint": "U+0024",
       "character": "$",
-      "iou": 0.9870726657577135
+      "iou": 0.9876295173110943
     },
     {
       "codepoint": "U+0025",
       "character": "%",
-      "iou": 0.9881286845983788
+      "iou": 0.9861512427043642
     },
     {
       "codepoint": "U+0026",
       "character": "&",
-      "iou": 0.9902339633246681
+      "iou": 0.9898896412755688
     },
     {
       "codepoint": "U+0027",
       "character": "'",
-      "iou": 0.9944974807743304
+      "iou": 0.9887975606522603
     },
     {
       "codepoint": "U+0028",
       "character": "(",
-      "iou": 0.9859665104980045
+      "iou": 0.9890859184384803
     },
     {
       "codepoint": "U+0029",
       "character": ")",
-      "iou": 0.9868291639940132
+      "iou": 0.983960188804169
     },
     {
       "codepoint": "U+002A",
       "character": "*",
-      "iou": 0.9784045234689012
+      "iou": 0.9785561764572259
     },
     {
       "codepoint": "U+002B",
       "character": "+",
-      "iou": 0.9943720902822795
+      "iou": 0.992721808056104
     },
     {
       "codepoint": "U+002C",
       "character": ",",
-      "iou": 0.9906231454005935
+      "iou": 0.9903252611585945
     },
     {
       "codepoint": "U+002D",
       "character": "-",
-      "iou": 0.9750231927495897
+      "iou": 0.9795363480251861
     },
     {
       "codepoint": "U+002E",
       "character": ".",
-      "iou": 0.9873301985370951
+      "iou": 0.9866771159874608
     },
     {
       "codepoint": "U+002F",
       "character": "/",
-      "iou": 0.9921407067025828
+      "iou": 0.9912258473234083
     },
     {
       "codepoint": "U+0030",
       "character": "0",
-      "iou": 0.9897741109813375
+      "iou": 0.9890745022000149
     },
     {
       "codepoint": "U+0031",
       "character": "1",
-      "iou": 0.9731996928105863
+      "iou": 0.9752731001301416
     },
     {
       "codepoint": "U+0032",
       "character": "2",
-      "iou": 0.9896297832624702
+      "iou": 0.9810950413223141
     },
     {
       "codepoint": "U+0033",
       "character": "3",
-      "iou": 0.9859756196536108
+      "iou": 0.9846972721224219
     },
     {
       "codepoint": "U+0034",
       "character": "4",
-      "iou": 0.9893767595228097
+      "iou": 0.9895896550114374
     },
     {
       "codepoint": "U+0035",
       "character": "5",
-      "iou": 0.9899105962349682
+      "iou": 0.989674169683614
     },
     {
       "codepoint": "U+0036",
       "character": "6",
-      "iou": 0.988578358855437
+      "iou": 0.9884607184735102
     },
     {
       "codepoint": "U+0037",
       "character": "7",
-      "iou": 0.9849204489787226
+      "iou": 0.9751897875227957
     },
     {
       "codepoint": "U+0038",
       "character": "8",
-      "iou": 0.9879771968718786
+      "iou": 0.9878935509408684
     },
     {
       "codepoint": "U+0039",
       "character": "9",
-      "iou": 0.9758356186161122
+      "iou": 0.9813523528708611
     },
     {
       "codepoint": "U+003A",
       "character": ":",
-      "iou": 0.9873704052780395
+      "iou": 0.9869942196531792
     },
     {
       "codepoint": "U+003B",
       "character": ";",
-      "iou": 0.9893004451341528
+      "iou": 0.9894199346405229
     },
     {
       "codepoint": "U+003C",
       "character": "<",
-      "iou": 0.9863029367189957
+      "iou": 0.9877486761127808
     },
     {
       "codepoint": "U+003D",
       "character": "=",
-      "iou": 0.9709280251667842
+      "iou": 0.9759108537717813
     },
     {
       "codepoint": "U+003E",
       "character": ">",
-      "iou": 0.992271420998298
+      "iou": 0.9914360633787102
     },
     {
       "codepoint": "U+003F",
       "character": "?",
-      "iou": 0.9828210849588522
+      "iou": 0.9830781047477317
     },
     {
       "codepoint": "U+0040",
       "character": "@",
-      "iou": 0.9789555040300321
+      "iou": 0.9774178957935729
     },
     {
       "codepoint": "U+0041",
       "character": "A",
-      "iou": 0.9927774221381057
+      "iou": 0.9911685349503491
     },
     {
       "codepoint": "U+0042",
       "character": "B",
-      "iou": 0.9875490961775725
+      "iou": 0.9901170763773192
     },
     {
       "codepoint": "U+0043",
       "character": "C",
-      "iou": 0.9870465385171268
+      "iou": 0.9864268931863365
     },
     {
       "codepoint": "U+0044",
       "character": "D",
-      "iou": 0.9849543390388742
+      "iou": 0.9801824708345798
     },
     {
       "codepoint": "U+0045",
       "character": "E",
-      "iou": 0.9936299158028223
+      "iou": 0.9835971771886325
     },
     {
       "codepoint": "U+0046",
       "character": "F",
-      "iou": 0.9930213610117256
+      "iou": 0.9929682241666371
     },
     {
       "codepoint": "U+0047",
       "character": "G",
-      "iou": 0.9873893588071091
+      "iou": 0.9861808692724263
     },
     {
       "codepoint": "U+0048",
       "character": "H",
-      "iou": 0.987262747172806
+      "iou": 0.9888393152661751
     },
     {
       "codepoint": "U+0049",
       "character": "I",
-      "iou": 0.9875082640314555
+      "iou": 0.9883524557341087
     },
     {
       "codepoint": "U+004A",
       "character": "J",
-      "iou": 0.9860042971024678
+      "iou": 0.9842730029927491
     },
     {
       "codepoint": "U+004B",
       "character": "K",
-      "iou": 0.9862589887953621
+      "iou": 0.9875019179534391
     },
     {
       "codepoint": "U+004C",
       "character": "L",
-      "iou": 0.992772127245185
+      "iou": 0.9928993570454397
     },
     {
       "codepoint": "U+004D",
       "character": "M",
-      "iou": 0.9843603838432675
+      "iou": 0.9862670609405748
     },
     {
       "codepoint": "U+004E",
       "character": "N",
-      "iou": 0.9850522656053432
+      "iou": 0.9837053469331748
     },
     {
       "codepoint": "U+004F",
       "character": "O",
-      "iou": 0.9891679668516766
+      "iou": 0.9848457767337351
     },
     {
       "codepoint": "U+0050",
       "character": "P",
-      "iou": 0.9819877307731353
+      "iou": 0.9890283046396265
     },
     {
       "codepoint": "U+0051",
       "character": "Q",
-      "iou": 0.9927784285405602
+      "iou": 0.9914406529201809
     },
     {
       "codepoint": "U+0052",
       "character": "R",
-      "iou": 0.990303105744694
+      "iou": 0.9898440514269357
     },
     {
       "codepoint": "U+0053",
       "character": "S",
-      "iou": 0.988814175085248
+      "iou": 0.988189164634438
     },
     {
       "codepoint": "U+0054",
       "character": "T",
-      "iou": 0.9915971528216843
+      "iou": 0.9916777154513003
     },
     {
       "codepoint": "U+0055",
       "character": "U",
-      "iou": 0.9870681692222427
+      "iou": 0.9860704437558632
     },
     {
       "codepoint": "U+0056",
       "character": "V",
-      "iou": 0.9931208000254785
+      "iou": 0.9924480203935314
     },
     {
       "codepoint": "U+0057",
       "character": "W",
-      "iou": 0.9898433532559866
+      "iou": 0.9894048142180557
     },
     {
       "codepoint": "U+0058",
       "character": "X",
-      "iou": 0.9904784022294473
+      "iou": 0.988470072950356
     },
     {
       "codepoint": "U+0059",
       "character": "Y",
-      "iou": 0.9932991188147574
+      "iou": 0.9937220252281579
     },
     {
       "codepoint": "U+005A",
       "character": "Z",
-      "iou": 0.9777122659710753
+      "iou": 0.9777441892746426
     },
     {
       "codepoint": "U+005B",
       "character": "[",
-      "iou": 0.9857329202674059
+      "iou": 0.9852461688946854
     },
     {
       "codepoint": "U+005C",
       "character": "\\",
-      "iou": 0.9895992928697702
+      "iou": 0.9896281454416878
     },
     {
       "codepoint": "U+005D",
       "character": "]",
-      "iou": 0.9830059920106524
+      "iou": 0.9794263303087712
     },
     {
       "codepoint": "U+005E",
       "character": "^",
-      "iou": 0.9901260382180403
+      "iou": 0.9900438303677687
     },
     {
       "codepoint": "U+005F",
       "character": "_",
-      "iou": 0.9775355644253403
+      "iou": 0.9774809355647679
     },
     {
       "codepoint": "U+0060",
@@ -338,152 +388,160 @@
     {
       "codepoint": "U+0061",
       "character": "a",
-      "iou": 0.9853553260366887
+      "iou": 0.9901396147639282
     },
     {
       "codepoint": "U+0062",
       "character": "b",
-      "iou": 0.983567477802033
+      "iou": 0.9872501588866263
     },
     {
       "codepoint": "U+0063",
       "character": "c",
-      "iou": 0.9852157318651429
+      "iou": 0.9849186708124458
     },
     {
       "codepoint": "U+0064",
       "character": "d",
-      "iou": 0.9832724298510613
+      "iou": 0.9918540116115502
     },
     {
       "codepoint": "U+0065",
       "character": "e",
-      "iou": 0.9854297079774276
+      "iou": 0.985634477254589
     },
     {
       "codepoint": "U+0066",
       "character": "f",
-      "iou": 0.9772692307692308
+      "iou": 0.9977296511112294
     },
     {
       "codepoint": "U+0067",
       "character": "g",
-      "iou": 0.9854095583498366
+      "iou": 0.9835619706548968
     },
     {
       "codepoint": "U+0068",
       "character": "h",
-      "iou": 0.9864209955872106
+      "iou": 0.9983424905614046
     },
     {
       "codepoint": "U+0069",
       "character": "i",
-      "iou": 0.9841228796028134
+      "iou": 0.9850401398228515
     },
     {
       "codepoint": "U+006A",
       "character": "j",
-      "iou": 0.9876076926217794
+      "iou": 0.9818872164429205
     },
     {
       "codepoint": "U+006B",
       "character": "k",
-      "iou": 0.9889951176627576
+      "iou": 0.996657415783744
     },
     {
       "codepoint": "U+006C",
       "character": "l",
-      "iou": 0.9913215423486763
+      "iou": 0.9883791125867794
     },
     {
       "codepoint": "U+006D",
       "character": "m",
-      "iou": 0.9911325326871355
+      "iou": 0.9913041354209922
     },
     {
       "codepoint": "U+006E",
       "character": "n",
-      "iou": 0.9839363946130132
+      "iou": 0.9928904885784541
     },
     {
       "codepoint": "U+006F",
       "character": "o",
-      "iou": 0.988343253968254
+      "iou": 0.9922168408530886
     },
     {
       "codepoint": "U+0070",
       "character": "p",
-      "iou": 0.9906992997594183
+      "iou": 0.9908627284317892
     },
     {
       "codepoint": "U+0071",
       "character": "q",
-      "iou": 0.9903263007937047
+      "iou": 0.991222687618387
     },
     {
       "codepoint": "U+0072",
       "character": "r",
-      "iou": 0.9859046333999952
+      "iou": 0.9886593363246389
     },
     {
       "codepoint": "U+0073",
       "character": "s",
-      "iou": 0.9808312809057411
+      "iou": 0.9829306521905344
     },
     {
       "codepoint": "U+0074",
       "character": "t",
-      "iou": 0.9890419854298992
+      "iou": 0.9894836587948942
     },
     {
       "codepoint": "U+0075",
       "character": "u",
-      "iou": 0.9866224204085865
+      "iou": 0.9904218533886584
     },
     {
       "codepoint": "U+0076",
       "character": "v",
-      "iou": 0.9874411302982732
+      "iou": 0.9945627752314191
     },
     {
       "codepoint": "U+0077",
       "character": "w",
-      "iou": 0.991303001730956
+      "iou": 0.9979404054993848
     },
     {
       "codepoint": "U+0078",
       "character": "x",
-      "iou": 0.9905052759343004
+      "iou": 0.9978021978021978
     },
     {
       "codepoint": "U+0079",
       "character": "y",
-      "iou": 0.9817284035579719
+      "iou": 0.9878177246160119
     },
     {
       "codepoint": "U+007A",
       "character": "z",
-      "iou": 0.984729404297422
+      "iou": 0.9980185395775182
     },
     {
       "codepoint": "U+007B",
       "character": "{",
-      "iou": 0.9870210836545001
+      "iou": 0.9817520312175995
     },
     {
       "codepoint": "U+007C",
       "character": "|",
-      "iou": 0.9956
+      "iou": 0.9955076923076923
     },
     {
       "codepoint": "U+007D",
       "character": "}",
-      "iou": 0.9833601617190132
+      "iou": 0.983414141035961
     },
     {
       "codepoint": "U+007E",
       "character": "~",
-      "iou": 0.9842246684580047
+      "iou": 0.9843512939442542
     }
-  ]
+  ],
+  "monoline_lowercase_count": 24,
+  "original_shape_exceptions": [
+    "g",
+    "s"
+  ],
+  "restored_glyphs_match_original_ttf": true,
+  "other_94_ttf_outlines_and_metrics_match_0_200": true,
+  "validation_scope": "g/s rendered again; other PNGs and TTF outlines unchanged from 0.200, so their earlier pixel comparisons remain applicable"
 }
