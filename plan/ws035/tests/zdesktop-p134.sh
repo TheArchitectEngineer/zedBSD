@@ -100,12 +100,12 @@ guest 'for p in $(ps -A -o pid,args | grep "[p]opup-probe" | awk "{print \$1}");
 double_click $((tx + tw / 2)) $((ty - 8 - 22))
 expect_log /tmp/zdesktop.log 'ZWL GLASS dock surface=[0-9]+ via='
 set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\) w=\([0-9]*\) h=\([0-9]*\).*/\1 \2 \3 \4/p')
-dx=${1:-0}; dy=${2:-48}; dw=${3:-1280}; dh=${4:-752}
+dx=${1:-4}; dy=${2:-48}; dw=${3:-1272}; dh=${4:-748}
 echo "docked at $dx,$dy size ${dw}x$dh"
 sleep 1.5
 pointer move 1200 400 sleep 600
 check "$out/maximized.png" >/dev/null
-corners "$out/maximized.png" "$dx" "$dy" "$dw" $((800 - dy)) square docked-body
+corners "$out/maximized.png" "$dx" "$dy" "$dw" "$dh" square docked-body
 set -- $(guest "grep 'ZWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* title=\([0-9]*\) .*/\1/p')
 double_click $((${1:-400} + 20)) 17
 expect_log /tmp/zdesktop.log 'ZWL GLASS undock surface=[0-9]+ via='

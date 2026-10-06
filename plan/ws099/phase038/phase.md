@@ -1,6 +1,6 @@
 # ws099-p038: 最大化（dock）の時に compositor が中身の rect を四方に 4 px ずつ空ける
 
-Status: planned（2026-10-06 Q1 が作成）
+Status: in-progress（q815、P1。実装と host の確認まで済み、T1 の撮影待ち）
 WS: [WS099](../ws.md)
 Related: [ws090-p021](../../ws090/phase021/phase.md)（app の padding を 0）
 
@@ -15,3 +15,22 @@ Related: [ws090-p021](../../ws090/phase021/phase.md)（app の padding を 0）
 - 全画面（fullscreen・game mode）は対象外（端まで）。
 - 試験: host か QEMU で最大化した窓（Files・Settings・Text Editor・Terminal）の撮影をユーザーに見せる（`build/review/` に複写して相対 path で）。AAT・guest の試験の窓の大きさの期待（1256x680 など）が変わる物を直す。
 - WS131 p021（compositor の一括の改名）の merge の後に着手（衝突を避ける）。
+
+## q815（P1、2026-10-06）
+
+### 変えた所
+
+- `kwl.h`: `KWL_GLASS_DOCK_PAD 4`（論理 px、既定の DPI。DPI の倍率を掛ける所はここ 1 か所）、`KWL_GLASS_DOCK_TOP` = bar + `KWL_GLASS_DOCK_PAD`（上の 4 px は前から bar の下にあった値を定数にした）。
+- `shell.c` の `docked_rect`: x = 4、y = 48、幅 = 画面 − 右の keyboard − 8、高さ = 画面 − 48 − 下の keyboard − 4。docked の大きさ（configure で app に渡す大きさ、`kwl_glass_unfullscreen_docks`・`open-docked`・dock の animation・pull・press の判定・大きさが固定の窓の中央）は全てここから。1280x800 では 4,48 1272x748（前は 0,48 1280x752）。
+- `keyboard.c`: 画面の keyboard が開いた時の docked の大きさも同じ余白（定数で）。
+- `draw_body` の `docked`（下の角を画面の外に出して四角に見せる）を除いた。四方に余白があるので、docked の窓も角が丸い（Terminal のように角を四角に保つ窓は `window_square` のまま四角）。
+- fullscreen（game mode を含む）は変えない（`docked_rect` を使わない）。
+
+### 試験の期待の直し
+
+`ws035/tests/zdesktop-p059.sh`・`p062.sh`（1272x748）、`p134.sh`（docked の body 4,48 1272x748、Terminal の角は四角のまま）、`ws090/tests/sheet-guest.sh`（中央の y = 48+(748−高さ)/2、x は 260 のまま）、`ws099/tests/bug194-guest.sh`（1272x748、x=4）、`ws142/tests/p010-guest.sh`（x=4）、`ws102/tests/osk-guest.sh`（1272x412・1272x748・954x748）。
+
+### 確認
+
+- build: zedBSD amd64 の wayland（exit 0、warning 0）、`make keiland-linux` gcc（0、warning 0）。host: ws142 host-layout ok (57)、run-host-role PASS。
+- 未実施: 撮影（T1）: 最大化した Files・Settings・Text Editor・Terminal（1280x800、glass）をユーザーに（`build/review/`）。上の guest の試験。

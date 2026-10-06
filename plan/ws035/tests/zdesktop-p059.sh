@@ -89,7 +89,7 @@ check "$out/moved.png" --expect $((nx + 180)),$((ny + 120)),e8eef8 \
 
 # 4. a maximized (its button, two from the right): since p062 that docks it
 #    to the system bar (the body fills the output under the bar, told
-#    1280x752); a double click on its title in the bar brings it back.
+#    1272x748, 4 pixels in from every side, ws099-p038); a double click on its title in the bar brings it back.
 click $((ax + 420 - 26 - 34)) $((ay - 8 - 22))
 sleep 3
 move 1200 700
@@ -102,7 +102,7 @@ move 1200 700
 check "$out/restored.png" --expect $((ax + 20)),$((ay + 150)),f4f7fc || status=1
 zwl_app_clients
 guest 'grep -E "CONFIGURE client='"$zc1"'" /tmp/zdesktop.log; grep RESIZE /tmp/a.log' | tee "$out/maximize.txt"
-grep -q "width=1280 height=752" "$out/maximize.txt" || status=1
+grep -q "width=1272 height=748" "$out/maximize.txt" || status=1
 grep -q "RESIZE run=a width=420 height=300" "$out/maximize.txt" || status=1
 
 # 5. b closed from its close button.

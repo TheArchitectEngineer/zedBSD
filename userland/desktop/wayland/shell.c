@@ -368,7 +368,7 @@ static int window_shown(struct kwl_server *server, struct kwl_object *surface, f
 static void window_layer(struct kwl_server *server, struct kwl_object *surface, float home, float position);
 static void draw_backdrop(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned below, float position);
 static void draw_window_blurred(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface);
-static void draw_body(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned docked, unsigned focused);
+static void draw_body(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
 static void draw_title_bar(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int draw_picture_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
@@ -2722,9 +2722,9 @@ draw_window_blurred(
 	struct glass_shape shape;
 	int decorated;
 
-	/* The body where it is now (docked, its lower corners below the output). */
+	/* The body where it is now. */
 	body_rect(server, surface, &body);
-	draw_body(server, command, surface, &body, surface->maximized, 0U);
+	draw_body(server, command, surface, &body, 0U);
 	if (surface->maximized)
 		return;
 
@@ -2780,7 +2780,7 @@ draw_window(
 	/* Client-decorated windows supply their own frame, controls and animation content. */
 	decorated = kwl_decoration_server(surface);
 	if (!decorated) {
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 
 		/* The client image is the entire decorated window. */
 		return;
@@ -2789,7 +2789,7 @@ draw_window(
 	/* A window a launch from Home started grows out of the icon; its title bar fades in on it. */
 	if (server->anim == surface && server->anim_docking == ANIM_LAUNCH) {
 		t = animation_progress(server);
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		floating_title(&body, &panel);
 		draw_title_bar(server, command, surface, &panel, t, t, focused);
 		return;
@@ -2798,7 +2798,7 @@ draw_window(
 	/* While docking or coming back, the title bar slides between its two places and its glass fades. */
 	if (server->anim == surface) {
 		t = animation_progress(server);
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		bar_title_slot(server, bar, &slot);
 		memcpy(&from, server->anim_from, sizeof(from));
 		memcpy(&to, server->anim_to, sizeof(to));
@@ -2819,7 +2819,7 @@ draw_window(
 	/* A docked window being pulled has round corners and its floating title bar, fading in with the pull. */
 	if (surface->maximized && surface == server->pull && server->pull_distance > 0) {
 		t = (float)server->pull_distance / (float)PULL_DISTANCE;
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		floating_title(&body, &panel);
 		draw_title_bar(server, command, surface, &panel, t, t, focused);
 		return;
@@ -2832,25 +2832,18 @@ draw_window(
 	 * draw_centred_cover).
 	 */
 	if (surface->maximized) {
-		docked_rect(server, &slot);
-		if (body.width != slot.width || body.height != slot.height) {
-			draw_body(server, command, surface, &body, 0, focused);
-			return;
-		}
-
-		/* One that fills the space has its lower corners below the output. */
-		draw_body(server, command, surface, &body, 1, focused);
+		draw_body(server, command, surface, &body, focused);
 		return;
 	}
 
 	/* A fullscreen window has only its body, whole (draw_body). */
 	if (surface->fullscreen) {
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		return;
 	}
 
 	/* A floating window. */
-	draw_body(server, command, surface, &body, 0, focused);
+	draw_body(server, command, surface, &body, focused);
 	floating_title(&body, &panel);
 	draw_title_bar(server, command, surface, &panel, 1.0f, 1.0f, focused);
 }
@@ -2858,7 +2851,7 @@ draw_window(
 /*
  * Draws a window's body in a rectangle: its shadow, the frosted glass under
  * a see-through body, and its image with rounded corners (a docked body's
- * lower corners are below the output).  A window with glass panels
+ * too: it keeps KWL_GLASS_DOCK_PAD from the output's edges, ws099-p038).  A window with glass panels
  * (panels.c) is not one slab: its panels cast the shadows and stand on the
  * glass, and its image is blended over them by its alpha.  A sheet's upper
  * corners are square, flush with its parent's title bar (ws090-p014).
@@ -2869,7 +2862,6 @@ draw_body(
 	VkCommandBuffer command,
 	struct kwl_object *surface,
 	const struct shell_rect *body,
-	unsigned docked,
 	unsigned focused)
 {
 	const struct kwl_import *image;
@@ -2962,8 +2954,6 @@ draw_body(
 	/* A see-through body lies on frosted glass (a window with panels has its own). */
 	if (server->window_opacity < 1.0f && panels == 0U && !whole) {
 		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
-		if (docked)
-			shape.box[3] += 2.0f * radius;
 		shape.box[1] -= raise;
 		shape.box[3] += raise;
 		shape.mode = MODE_GLASS;
@@ -2981,8 +2971,6 @@ draw_body(
 
 	/* The image (its viewport's source), stretched to the rectangle while it changes, as opaque as asked. */
 	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
-	if (docked)
-		shape.box[3] += 2.0f * radius;
 	shape.box[1] -= raise;
 	shape.box[3] += raise;
 	kwl_viewport_source(surface, shape.uv);
@@ -3987,11 +3975,11 @@ docked_rect(
 	/* What the on-screen keyboard's panel takes now, as it slides (keyboard.c, ws102-p007). */
 	kwl_keyboard_reserved_now(&right, &bottom);
 
-	/* Edge to edge, from just under the bar to the bottom, less the keyboard's column or row. */
-	body->x = 0;
+	/* Under the bar to the bottom, less the keyboard's column or row, KWL_GLASS_DOCK_PAD in from every side (ws099-p038). */
+	body->x = KWL_GLASS_DOCK_PAD;
 	body->y = DOCK_TOP;
-	body->width = (int32_t)server->width - right;
-	body->height = (int32_t)server->height - DOCK_TOP - bottom;
+	body->width = (int32_t)server->width - right - 2 * KWL_GLASS_DOCK_PAD;
+	body->height = (int32_t)server->height - DOCK_TOP - bottom - KWL_GLASS_DOCK_PAD;
 }
 
 /* The floating title bar of a body: as wide as it, a gap above it. */
@@ -4616,7 +4604,7 @@ draw_sheet(
 	body_rect(server, surface, &body);
 	centred = sheet_centred(server, parent);
 	if (centred) {
-		draw_body(server, command, surface, &body, 0, focused);
+		draw_body(server, command, surface, &body, focused);
 		return;
 	}
 
@@ -4636,7 +4624,7 @@ draw_sheet(
 	vkCmdSetScissor(command, 0U, 1U, &cut);
 
 	/* The body, and a hairline along the seam with the title bar. */
-	draw_body(server, command, surface, &body, 0, focused);
+	draw_body(server, command, surface, &body, focused);
 	glass_draw_solid(server, command, (float)body.x, (float)top, (float)body.width, 1.0f, 0.0f, seam);
 
 	/* The frame's scissor back. */

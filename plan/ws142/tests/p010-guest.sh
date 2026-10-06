@@ -145,7 +145,7 @@ sleep 1
 opened=$(count 'ZWL WISEVIEW opening from=')
 pad fullscreen-bottom2 "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -240 10 8" "up 0; up 1" "wait 1200"
 expect_some fullscreen-leaves "ZWL GLASS fullscreen-leave surface=[0-9]* via=bottom2 error=0 client=${s:-0}\$"
-expect_some fullscreen-docked "ZWL WINDOW unfullscreen surface=[0-9]* x=0 y=48 placed=[01] docked=1 client=${s:-0}\$"
+expect_some fullscreen-docked "ZWL WINDOW unfullscreen surface=[0-9]* x=4 y=48 placed=[01] docked=1 client=${s:-0}\$"
 expect_count fullscreen-no-wiseview 'ZWL WISEVIEW opening from=' "${opened:-0}"
 
 # 9. Up, without errors.

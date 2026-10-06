@@ -3395,10 +3395,10 @@ keyboard_work_area(
 			if (!window || surface->fullscreen)
 				continue;
 
-			/* A docked window: the docked size less the panel (or whole again). */
+			/* A docked window: the docked size (KWL_GLASS_DOCK_PAD in from every side) less the panel (or whole again). */
 			if (surface->maximized) {
-				surface->window_width = server->width - (uint32_t)right;
-				surface->window_height = server->height - KWL_GLASS_DOCK_TOP - (uint32_t)bottom;
+				surface->window_width = server->width - (uint32_t)right - 2U * KWL_GLASS_DOCK_PAD;
+				surface->window_height = server->height - KWL_GLASS_DOCK_TOP - (uint32_t)bottom - KWL_GLASS_DOCK_PAD;
 				continue;
 			}
 
