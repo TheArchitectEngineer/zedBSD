@@ -43,6 +43,8 @@ static int piece_add(struct notes_document *document, const struct notes_stroke 
 static int piece_close(struct notes_stroke **piece, struct notes_stroke ***pieces, size_t *piece_count, size_t *piece_capacity);
 static void pieces_free(struct notes_stroke **pieces, size_t first, size_t count);
 static float segment_distance(float px, float py, float ax, float ay, float bx, float by);
+static int edit_change(struct notes_document *document, size_t page, const struct notes_edit *which, const struct notes_edit *state);
+static int edit_swap(struct notes_document *document, const struct notes_undo *entry, const struct notes_edit *from, const struct notes_edit *to);
 
 /*
  * Makes an empty document with one blank page.
@@ -318,10 +320,14 @@ notes_page_free(
 	if (page == NULL)
 		return;
 
-	/* The strokes, then the page. */
+	/* The strokes, the edits and the editor, then the page. */
 	for (index = 0; index < page->stroke_count; index++)
 		notes_stroke_free(page->strokes[index]);
 	free(page->strokes);
+	for (index = 0; index < page->edit_count; index++)
+		notes_edit_free(page->edits[index]);
+	free(page->edits);
+	notes_page_close_editor(page);
 	free(page);
 }
 
@@ -867,6 +873,63 @@ notes_document_redo(
 }
 
 /*
+ * Edits an object of a page, as a change the user can undo (ws175-p007):
+ * state is the object's new state (copied, its image held once more) --
+ * one of the page's own objects by its key, on a page drawn over the base
+ * PDF, or an inserted image by its number, which a new one puts over the
+ * page's other inserted objects.  Returns 0, EINVAL, or ENOMEM.
+ */
+int
+notes_document_edit_object(
+	struct notes_document *document,
+	size_t page,
+	const struct notes_edit *state)
+{
+	unsigned known;
+
+	/* A page that is there, a state of known flags. */
+	if (page >= document->page_count || state == NULL)
+		return EINVAL;
+	known = NOTES_EDIT_DELETED | NOTES_EDIT_PLACED | NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED;
+	if ((state->flags & ~known) != 0U)
+		return EINVAL;
+
+	/* An inserted object is an image that is there; a page's own is of a page of the base. */
+	if ((state->flags & NOTES_EDIT_INSERTED) != 0U) {
+		if (state->image == NULL || (state->flags & NOTES_EDIT_DELETED) != 0U)
+			return EINVAL;
+	} else if (document->pages[page]->origin != NOTES_ORIGIN_OVER) {
+		return EINVAL;
+	}
+
+	/* An image's edit has its image. */
+	if ((state->flags & NOTES_EDIT_IMAGE) != 0U && state->image == NULL)
+		return EINVAL;
+
+	/* The change. */
+	return edit_change(document, page, state, state);
+}
+
+/*
+ * Puts an object of a page back as the page has it (Reset), or takes an
+ * inserted object off the page, as a change the user can undo (ws175-p007).
+ * Returns 0, EINVAL, ENOENT when the object has no edit, or ENOMEM.
+ */
+int
+notes_document_reset_object(
+	struct notes_document *document,
+	size_t page,
+	const struct notes_edit *which)
+{
+	/* A page that is there and an object. */
+	if (page >= document->page_count || which == NULL)
+		return EINVAL;
+
+	/* The change: no state after it. */
+	return edit_change(document, page, which, NULL);
+}
+
+/*
  * Counts the strokes on every page.
  */
 size_t
@@ -947,7 +1010,9 @@ undo_release(
 		notes_page_free(entry->page_held);
 	}
 
-	/* The arrays. */
+	/* The states of an edited object, then the arrays. */
+	notes_edit_free(entry->edit_before);
+	notes_edit_free(entry->edit_after);
 	free(entry->strokes);
 	free(entry->places);
 	free(entry->inserted);
@@ -1204,6 +1269,12 @@ undo_revert(
 		/* The entry holds the pieces until it is redone. */
 		entry->owned = 0;
 		break;
+	case NOTES_UNDO_EDIT_OBJECT:
+		/* The object's state goes back to the one before. */
+		error = edit_swap(document, entry, entry->edit_after, entry->edit_before);
+		if (error != 0)
+			return error;
+		break;
 	default:
 		return EINVAL;
 	}
@@ -1269,6 +1340,12 @@ undo_apply(
 
 		/* The entry holds the cut strokes again. */
 		entry->owned = 1;
+		break;
+	case NOTES_UNDO_EDIT_OBJECT:
+		/* The object's state is the one after again. */
+		error = edit_swap(document, entry, entry->edit_before, entry->edit_after);
+		if (error != 0)
+			return error;
 		break;
 	default:
 		return EINVAL;
@@ -1664,4 +1741,129 @@ pieces_free(
 	for (index = first; index < count; index++)
 		notes_stroke_free(pieces[index]);
 	free(pieces);
+}
+
+/*
+ * Changes the state of an object of a page (which names it) to a state
+ * (NULL: none), entered in the history: the old state taken off and the
+ * new one put at its place (a new inserted object on top of the page's
+ * edits).
+ */
+static int
+edit_change(
+	struct notes_document *document,
+	size_t page,
+	const struct notes_edit *which,
+	const struct notes_edit *state)
+{
+	struct notes_undo *entry;
+	struct notes_edit *before;
+	struct notes_edit *after;
+	struct notes_edit *kept;
+	size_t place;
+	int error;
+
+	/* The new state, on its grids, and a copy for the history. */
+	after = NULL;
+	kept = NULL;
+	if (state != NULL) {
+		after = notes_edit_copy(state);
+		if (after == NULL)
+			return ENOMEM;
+		notes_edit_quantize(after);
+		kept = notes_edit_copy(after);
+		if (kept == NULL) {
+			notes_edit_free(after);
+			return ENOMEM;
+		}
+	}
+
+	/* The history's entry. */
+	error = undo_push(document, NOTES_UNDO_EDIT_OBJECT, page);
+	if (error != 0) {
+		notes_edit_free(after);
+		notes_edit_free(kept);
+		return error;
+	}
+
+	/* The old state off the page; a reset of an object without one changes nothing. */
+	place = document->pages[page]->edit_count;
+	before = notes_document_take_edit(document, page, which, &place);
+	if (before == NULL && after == NULL) {
+		document->undo_done--;
+		document->undo_count--;
+		return ENOENT;
+	}
+
+	/* The new state in its place. */
+	if (after != NULL) {
+		error = notes_document_put_edit(document, page, place, after);
+		if (error != 0) {
+			if (before != NULL)
+				(void)notes_document_put_edit(document, page, place, before);
+			notes_edit_free(after);
+			notes_edit_free(kept);
+			document->undo_done--;
+			document->undo_count--;
+			return error;
+		}
+	}
+
+	/* Succeeded: the entry holds the states before and after, and the place. */
+	entry = &document->undo[document->undo_done - 1U];
+	entry->edit_before = before;
+	entry->edit_after = kept;
+	entry->place = place;
+	return 0;
+}
+
+/*
+ * Changes an object's state from one an entry holds to the other (either
+ * NULL: none) at the entry's place: the page's state off, a copy of the
+ * other on.
+ */
+static int
+edit_swap(
+	struct notes_document *document,
+	const struct notes_undo *entry,
+	const struct notes_edit *from,
+	const struct notes_edit *to)
+{
+	struct notes_edit *taken;
+	struct notes_edit *copy;
+	size_t place;
+	int error;
+
+	/* The copy that goes on the page. */
+	copy = NULL;
+	if (to != NULL) {
+		copy = notes_edit_copy(to);
+		if (copy == NULL)
+			return ENOMEM;
+	}
+
+	/* The state the page has off it. */
+	taken = NULL;
+	if (from != NULL) {
+		taken = notes_document_take_edit(document, entry->page, from, &place);
+		if (taken == NULL) {
+			notes_edit_free(copy);
+			return EINVAL;
+		}
+	}
+
+	/* The other on, at the entry's place (the one taken off goes back when it cannot be). */
+	if (copy != NULL) {
+		error = notes_document_put_edit(document, entry->page, entry->place, copy);
+		if (error != 0) {
+			if (taken != NULL)
+				(void)notes_document_put_edit(document, entry->page, place, taken);
+			notes_edit_free(copy);
+			return error;
+		}
+	}
+
+	/* Succeeded: the object's state is the other. */
+	notes_edit_free(taken);
+	return 0;
 }

@@ -20,10 +20,17 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
+ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
 # ws079-p007: the reader decodes cross-reference and object streams through filter.c and libz-compat.
-sources="userland/desktop/notes/document.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c
+# ws175-p007: the edits of the PDF's objects (edit.c) use libpdf's editor, so the whole of libpdf (with libjpeg-compat
+# and libtruetype) is built.
+sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c
 	userland/desktop/notes/save.c userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c plan/ws079/tests/host-notes.c"
+	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
+	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c
+	userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c
+	userland/base/libpdf/font.c userland/base/libpdf/encoding.c userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c
+	userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c plan/ws079/tests/host-notes.c"
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes"
 	if [ "$variant" = asan ]; then
@@ -36,11 +43,12 @@ for variant in plain asan ubsan; do
 	"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/') -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/; s/-Werror//') -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	zlib=
-	for file in userland/base/libz-compat/*.c; do
-		"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/; s/-Werror//') -w -I"$(dirname "$file")" -c "$file" -o "$out/z-$(basename "$file" .c)-$variant.o"
-		zlib="$zlib $out/z-$(basename "$file" .c)-$variant.o"
+	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
+		"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu11/; s/-Werror//') -w -I"$(dirname "$file")" -c "$file" -o "$object"
+		zlib="$zlib $object"
 	done
-	"$cc" $flags $sources "$out/sha2-$variant.o" "$out/digest-$variant.o" $zlib -lm -o "$out/host-notes-$variant"
+	"$cc" $flags -Wno-overlength-strings $sources "$out/sha2-$variant.o" "$out/digest-$variant.o" $zlib -lm -o "$out/host-notes-$variant"
 	timeout 60 "$out/host-notes-$variant" "$out/notes-$variant.pdf" "$out/scratch-$variant.pdf"
 done
 # ws079-p008: a PDF encrypted with an empty user password opens in the reader, and Notes still refuses it.

@@ -25,6 +25,16 @@
  *
  * The journal stores one stroke at a time in the same way, with its tool
  * written out instead of an index into TOOL.
+ *
+ * Version 2.0 (ws175-p007, plan/ws175/phase001/design.md section 6.3) is
+ * written when a page has edits of the PDF's objects: IMAG after TOOL, one
+ * an image (its number, form, size, components and orientation; its bytes
+ * are the PDF's image of that number), and EDIT after a page's PAGE and
+ * SRC (each edit's flags, its object -- an inserted object's number, or
+ * the key of one of the page's own --, its transform, its image's number).
+ * A reader of version 1 refuses it, and opens the file as another
+ * program's PDF, the edits drawn in it.  A notebook without edits is
+ * written as version 1.1, as before.
  */
 
 #include "notes.h"
@@ -34,9 +44,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The version of the edit data this file writes and reads. */
+/* The version of the edit data this file writes and reads, and the one with edits of the PDF's objects. */
 #define ENCODE_MAJOR		1U
 #define ENCODE_MINOR		1U
+#define ENCODE_MAJOR_EDITS	2U
+#define ENCODE_MINOR_EDITS	0U
+
+/* The grid of an edit's transform's first four numbers, and the largest of them. */
+#define ENCODE_SCALE_UNITS	65536.0
+#define ENCODE_SCALE_MAX	100000.0
+
+/* The most images and edits of a page an edit data may declare. */
+#define ENCODE_IMAGES_MAX	100000U
+#define ENCODE_EDITS_MAX	100000U
 
 /* The stroke flags: the samples carry the tilt, and their times. */
 #define ENCODE_STROKE_TILT	0x01U
@@ -72,6 +92,16 @@ struct encode_tools {
 };
 
 /*
+ * The images of an edit data: gathered while it is encoded (each once), and
+ * read from IMAG while it is decoded (each held once by the list).
+ */
+struct encode_images {
+	struct notes_image **images;
+	size_t count;
+	size_t capacity;
+};
+
+/*
  * A cursor over bytes being read.
  *
  * error stays nonzero once a read runs past the end or finds a malformed
@@ -94,6 +124,12 @@ static int decode_tools(struct encode_reader *reader, struct encode_tools *tools
 static int decode_page(struct encode_reader *reader, struct notes_document *document, const struct encode_tools *tools, size_t index);
 static int decode_base(struct encode_reader *reader, struct notes_document *document);
 static int decode_source(struct encode_reader *reader, struct notes_document *document);
+static int images_add(struct encode_images *images, struct notes_image *image);
+static struct notes_image *images_find(const struct encode_images *images, uint32_t id);
+static void images_free(struct encode_images *images, int held);
+static void encode_edits(struct notes_buffer *chunk, const struct notes_page *page, size_t index);
+static int decode_image(struct encode_reader *reader, struct encode_images *images);
+static int decode_edits(struct encode_reader *reader, struct notes_document *document, const struct encode_images *images);
 static unsigned read_u8(struct encode_reader *reader);
 static unsigned read_u16(struct encode_reader *reader);
 static uint32_t read_u32(struct encode_reader *reader);
@@ -266,21 +302,33 @@ notes_encode_document(
 	struct notes_buffer *buffer)
 {
 	struct encode_tools tools;
+	struct encode_images images;
 	struct notes_buffer chunk;
 	const struct notes_page *page;
 	const struct notes_stroke *stroke;
 	uint64_t first_time;
 	size_t page_index;
 	size_t stroke_index;
+	size_t edit_index;
 	size_t tool;
+	int edited;
 	int error;
 
-	/* The header: magic, version and no flags. */
+	/* The header: magic, version (2.0 with edits of the PDF's objects) and no flags. */
 	memset(&tools, 0, sizeof(tools));
+	memset(&images, 0, sizeof(images));
 	notes_buffer_init(&chunk);
 	notes_buffer_bytes(buffer, "ZNOT", 4U);
-	notes_buffer_u16(buffer, ENCODE_MAJOR);
-	notes_buffer_u16(buffer, ENCODE_MINOR);
+	edited = notes_document_edited(document);
+	if (edited) {
+		notes_buffer_u16(buffer, ENCODE_MAJOR_EDITS);
+		notes_buffer_u16(buffer, ENCODE_MINOR_EDITS);
+	} else {
+		notes_buffer_u16(buffer, ENCODE_MAJOR);
+		notes_buffer_u16(buffer, ENCODE_MINOR);
+	}
+
+	/* No flags. */
 	notes_buffer_u32(buffer, 0U);
 
 	/* DOC: the pages, the pressure's range, the time base and the next stroke number. */
@@ -335,6 +383,34 @@ notes_encode_document(
 	notes_buffer_bytes(buffer, chunk.data, chunk.length);
 	chunk.length = 0;
 
+	/* IMAG (version 2.0): each image an edit holds, once. */
+	for (page_index = 0; page_index < document->page_count; page_index++) {
+		page = document->pages[page_index];
+		for (edit_index = 0; edit_index < page->edit_count; edit_index++) {
+			if (page->edits[edit_index]->image == NULL)
+				continue;
+			error = images_add(&images, page->edits[edit_index]->image);
+			if (error != 0) {
+				images_free(&images, 0);
+				free(tools.tools);
+				notes_buffer_free(&chunk);
+				return error;
+			}
+		}
+	}
+
+	/* One chunk an image. */
+	for (edit_index = 0; edit_index < images.count; edit_index++) {
+		notes_encode_image(&chunk, images.images[edit_index]);
+		notes_buffer_bytes(buffer, "IMAG", 4U);
+		notes_buffer_u32(buffer, (uint32_t)chunk.length);
+		notes_buffer_bytes(buffer, chunk.data, chunk.length);
+		chunk.length = 0;
+	}
+
+	/* The list goes (the pages hold the images). */
+	images_free(&images, 0);
+
 	/* PAGE, one a page, with the digest of its content stream as last saved (zero when not known). */
 	for (page_index = 0; page_index < document->page_count; page_index++) {
 		/* The page's number, size, background, digest and stroke count. */
@@ -381,6 +457,15 @@ notes_encode_document(
 			notes_buffer_bytes(buffer, chunk.data, chunk.length);
 			chunk.length = 0;
 		}
+
+		/* EDIT (version 2.0), after a page with edits. */
+		if (page->edit_count > 0U) {
+			encode_edits(&chunk, page, page_index);
+			notes_buffer_bytes(buffer, "EDIT", 4U);
+			notes_buffer_u32(buffer, (uint32_t)chunk.length);
+			notes_buffer_bytes(buffer, chunk.data, chunk.length);
+			chunk.length = 0;
+		}
 	}
 
 	/* The scratch buffers go; a failure of either is the encoding's. */
@@ -411,6 +496,7 @@ notes_decode_document(
 {
 	struct encode_reader reader;
 	struct encode_tools tools;
+	struct encode_images images;
 	unsigned char tag[4];
 	size_t declared;
 	size_t pages;
@@ -424,6 +510,8 @@ notes_decode_document(
 	int is_page;
 	int is_base;
 	int is_source;
+	int is_image;
+	int is_edit;
 	int error;
 
 	/* An empty document to fill, and a reader at the start. */
@@ -441,12 +529,13 @@ notes_decode_document(
 		return EINVAL;
 	reader.offset = 4U;
 
-	/* A major version this file does not know is not read (design-pdf.md section 2.1). */
+	/* A major version this file does not know is not read (design-pdf.md section 2.1; 2 has edits, ws175-p007). */
 	major = read_u16(&reader);
 	(void)read_u16(&reader);
 	(void)read_u32(&reader);
-	if (major != ENCODE_MAJOR)
+	if (major != ENCODE_MAJOR && major != ENCODE_MAJOR_EDITS)
 		return EINVAL;
+	memset(&images, 0, sizeof(images));
 
 	/* Each chunk, until the data ends. */
 	declared = 0;
@@ -481,6 +570,8 @@ notes_decode_document(
 		is_page = memcmp(tag, "PAGE", 4U);
 		is_base = memcmp(tag, "BASE", 4U);
 		is_source = memcmp(tag, "SRC ", 4U);
+		is_image = memcmp(tag, "IMAG", 4U);
+		is_edit = memcmp(tag, "EDIT", 4U);
 		if (is_doc == 0 && !seen_doc) {
 			error = decode_doc(&reader, document, &declared);
 			seen_doc = 1;
@@ -493,6 +584,10 @@ notes_decode_document(
 			error = decode_base(&reader, document);
 		} else if (is_source == 0 && seen_doc) {
 			error = decode_source(&reader, document);
+		} else if (is_image == 0 && seen_doc && major == ENCODE_MAJOR_EDITS) {
+			error = decode_image(&reader, &images);
+		} else if (is_edit == 0 && seen_doc && major == ENCODE_MAJOR_EDITS) {
+			error = decode_edits(&reader, document, &images);
 		}
 
 		/* A body read past its end is damaged; the next chunk starts after it. */
@@ -501,8 +596,9 @@ notes_decode_document(
 		reader.offset = end;
 	}
 
-	/* The tools are not needed any more. */
+	/* The tools are not needed any more, nor the list's hold on the images (the edits hold theirs). */
 	free(tools.tools);
+	images_free(&images, 1);
 
 	/* A document needs its DOC chunk and the pages it declared, at least one. */
 	if (error == 0 &&
@@ -1098,6 +1194,388 @@ decode_source(
 	page = document->pages[number];
 	page->origin = origin;
 	page->source = (size_t)source;
+	return 0;
+}
+
+/* Adds an image to a list once (by its number).  Returns 0 or ENOMEM. */
+static int
+images_add(
+	struct encode_images *images,
+	struct notes_image *image)
+{
+	struct notes_image **grown;
+	size_t capacity;
+	struct notes_image *found;
+
+	/* An image already there. */
+	found = images_find(images, image->id);
+	if (found != NULL)
+		return 0;
+
+	/* Room for one more. */
+	if (images->count == images->capacity) {
+		capacity = images->capacity * 2U + 8U;
+		grown = realloc(images->images, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		images->images = grown;
+		images->capacity = capacity;
+	}
+
+	/* Succeeded: the image in the list. */
+	images->images[images->count] = image;
+	images->count++;
+	return 0;
+}
+
+/* Finds an image of a list by its number; NULL when it has none. */
+static struct notes_image *
+images_find(
+	const struct encode_images *images,
+	uint32_t id)
+{
+	size_t at;
+
+	/* Each image. */
+	for (at = 0; at < images->count; at++) {
+		if (images->images[at]->id == id)
+			return images->images[at];
+	}
+
+	/* None. */
+	return NULL;
+}
+
+/* Frees a list, letting go of each image when the list holds them. */
+static void
+images_free(
+	struct encode_images *images,
+	int held)
+{
+	size_t at;
+
+	/* The list's references. */
+	for (at = 0; held && at < images->count; at++)
+		notes_image_release(images->images[at]);
+
+	/* The list. */
+	free(images->images);
+	memset(images, 0, sizeof(*images));
+}
+
+/* Encodes an image's description (the IMAG chunk's body and the journal's): its number, form, size, components and orientation. */
+void
+notes_encode_image(
+	struct notes_buffer *chunk,
+	const struct notes_image *image)
+{
+	/* Its fields, in order. */
+	notes_buffer_varint(chunk, image->id);
+	notes_buffer_u8(chunk, image->kind);
+	notes_buffer_varint(chunk, image->width);
+	notes_buffer_varint(chunk, image->height);
+	notes_buffer_u8(chunk, (unsigned)image->components);
+	notes_buffer_u8(chunk, (unsigned)image->orientation);
+}
+
+/*
+ * Encodes one EDIT chunk's body: the page's number, its edits' count, and
+ * each edit (notes_encode_edit).
+ */
+static void
+encode_edits(
+	struct notes_buffer *chunk,
+	const struct notes_page *page,
+	size_t index)
+{
+	size_t at;
+
+	/* The page and the count, then each edit. */
+	notes_buffer_varint(chunk, index);
+	notes_buffer_varint(chunk, page->edit_count);
+	for (at = 0; at < page->edit_count; at++)
+		notes_encode_edit(chunk, page->edits[at]);
+}
+
+/*
+ * Encodes one edit (the EDIT chunk's and the journal's): its flags, its
+ * object (an inserted one's number, or a page's own key: its kind, offset,
+ * length and fingerprint), its transform (a placed or inserted one's: four
+ * numbers in 1/65536, two in 1/64 point) and its image's number (an edit
+ * with an image).
+ */
+void
+notes_encode_edit(
+	struct notes_buffer *buffer,
+	const struct notes_edit *edit)
+{
+	size_t item;
+
+	/* Its flags and its object. */
+	notes_buffer_u8(buffer, edit->flags);
+	if ((edit->flags & NOTES_EDIT_INSERTED) != 0U) {
+		notes_buffer_varint(buffer, edit->id);
+	} else {
+		notes_buffer_u8(buffer, (unsigned)edit->key.kind);
+		notes_buffer_varint(buffer, edit->key.offset);
+		notes_buffer_varint(buffer, edit->key.length);
+		notes_buffer_bytes(buffer, edit->key.fingerprint, sizeof(edit->key.fingerprint));
+	}
+
+	/* Its transform, when it has one. */
+	if ((edit->flags & (NOTES_EDIT_PLACED | NOTES_EDIT_INSERTED)) != 0U) {
+		for (item = 0; item < 4U; item++)
+			notes_buffer_zigzag(buffer, (int64_t)floor((double)edit->transform[item] * ENCODE_SCALE_UNITS + 0.5));
+		notes_buffer_zigzag(buffer, units(edit->transform[4]));
+		notes_buffer_zigzag(buffer, units(edit->transform[5]));
+	}
+
+	/* Its image's number (0: none, as the journal names an object it takes off). */
+	if ((edit->flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
+		if (edit->image != NULL)
+			notes_buffer_varint(buffer, edit->image->id);
+		else
+			notes_buffer_varint(buffer, 0U);
+	}
+}
+
+/*
+ * Decodes one edit (notes_encode_edit): the edit without its image, whose
+ * number (0: none; the caller refuses an edit that needs one) is given
+ * apart, and how many bytes it took.  Returns 0 or EINVAL.
+ */
+int
+notes_decode_edit(
+	const unsigned char *data,
+	size_t size,
+	size_t *used,
+	struct notes_edit *edit,
+	uint32_t *image)
+{
+	struct encode_reader reader;
+	uint64_t value;
+	unsigned known;
+	size_t item;
+	double scale;
+
+	/* A reader over the bytes, an empty edit. */
+	memset(&reader, 0, sizeof(reader));
+	reader.data = data;
+	reader.length = size;
+	memset(edit, 0, sizeof(*edit));
+	*image = 0U;
+
+	/* Its flags (known ones), and its object. */
+	known = NOTES_EDIT_DELETED | NOTES_EDIT_PLACED | NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED;
+	edit->flags = read_u8(&reader);
+	if (reader.error != 0 || (edit->flags & ~known) != 0U)
+		return EINVAL;
+	if ((edit->flags & NOTES_EDIT_INSERTED) != 0U) {
+		value = read_varint(&reader);
+		if (value == 0U || value > 0xffffffffU)
+			return EINVAL;
+		edit->id = (uint32_t)value;
+	} else {
+		/* A page's own object by its key. */
+		edit->key.kind = (enum pdf_edit_kind)read_u8(&reader);
+		edit->key.offset = read_varint(&reader);
+		value = read_varint(&reader);
+		if (reader.error != 0 || value > 0xffffffffU || reader.length - reader.offset < sizeof(edit->key.fingerprint))
+			return EINVAL;
+		edit->key.length = (uint32_t)value;
+		memcpy(edit->key.fingerprint, reader.data + reader.offset, sizeof(edit->key.fingerprint));
+		reader.offset += sizeof(edit->key.fingerprint);
+	}
+
+	/* Its transform (the identity when it has none). */
+	edit->transform[0] = 1.0f;
+	edit->transform[3] = 1.0f;
+	if ((edit->flags & (NOTES_EDIT_PLACED | NOTES_EDIT_INSERTED)) != 0U) {
+		for (item = 0; item < 4U; item++) {
+			scale = (double)read_zigzag(&reader) / ENCODE_SCALE_UNITS;
+			if (scale > ENCODE_SCALE_MAX || scale < -ENCODE_SCALE_MAX)
+				return EINVAL;
+			edit->transform[item] = (float)scale;
+		}
+
+		/* The offset, in 1/64 point. */
+		for (item = 4U; item < 6U; item++) {
+			scale = (double)read_zigzag(&reader) / (double)NOTES_UNITS_PER_POINT;
+			if (scale > (double)ENCODE_LENGTH_MAX || scale < -(double)ENCODE_LENGTH_MAX)
+				return EINVAL;
+			edit->transform[item] = (float)scale;
+		}
+	}
+
+	/* Its image's number (0: none). */
+	if ((edit->flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
+		value = read_varint(&reader);
+		if (value > 0xffffffffU)
+			return EINVAL;
+		*image = (uint32_t)value;
+	}
+
+	/* All of it read. */
+	if (reader.error != 0)
+		return EINVAL;
+	*used = reader.offset;
+	return 0;
+}
+
+/*
+ * Reads one IMAG chunk: an image without its bytes (they are the PDF's),
+ * held by the list.  Returns 0, EINVAL, or ENOMEM.
+ */
+static int
+decode_image(
+	struct encode_reader *reader,
+	struct encode_images *images)
+{
+	struct notes_image *image;
+	struct notes_image *found;
+	size_t used;
+	int error;
+
+	/* The image, a number not seen yet. */
+	if (images->count >= ENCODE_IMAGES_MAX)
+		return EINVAL;
+	error = notes_decode_image(reader->data + reader->offset, reader->length - reader->offset, &used, &image);
+	if (error != 0)
+		return error;
+	reader->offset += used;
+	found = images_find(images, image->id);
+	if (found != NULL) {
+		notes_image_release(image);
+		return EINVAL;
+	}
+
+	/* The list holds it. */
+	error = images_add(images, image);
+	if (error != 0) {
+		notes_image_release(image);
+		return error;
+	}
+
+	/* Succeeded: one more image. */
+	return 0;
+}
+
+/*
+ * Decodes an image's description (notes_encode_image) into a new image
+ * without its bytes, held once by the caller, and how many bytes it took.
+ * Returns 0, EINVAL, or ENOMEM.
+ */
+int
+notes_decode_image(
+	const unsigned char *data,
+	size_t size,
+	size_t *used,
+	struct notes_image **image)
+{
+	struct encode_reader reader;
+	struct notes_image *made;
+	uint64_t id;
+	uint64_t width;
+	uint64_t height;
+	unsigned kind;
+	unsigned components;
+	unsigned orientation;
+
+	/* Its fields. */
+	memset(&reader, 0, sizeof(reader));
+	reader.data = data;
+	reader.length = size;
+	id = read_varint(&reader);
+	kind = read_u8(&reader);
+	width = read_varint(&reader);
+	height = read_varint(&reader);
+	components = read_u8(&reader);
+	orientation = read_u8(&reader);
+	if (reader.error != 0)
+		return EINVAL;
+
+	/* A number, a known form, a size libpdf takes, an orientation. */
+	if (id == 0U || id > 0xffffffffU || kind < NOTES_IMAGE_JPEG || kind > NOTES_IMAGE_RGBA || orientation > 8U)
+		return EINVAL;
+	if (width == 0U || height == 0U || width > 16384U || height > 16384U || components > 4U)
+		return EINVAL;
+
+	/* The image, its bytes to come. */
+	made = calloc(1, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	made->id = (uint32_t)id;
+	made->refs = 1U;
+	made->kind = kind;
+	made->width = (size_t)width;
+	made->height = (size_t)height;
+	made->components = (int)components;
+	made->orientation = (int)orientation;
+
+	/* Succeeded: the image and the bytes it took. */
+	*image = made;
+	*used = reader.offset;
+	return 0;
+}
+
+/*
+ * Reads one EDIT chunk: a page's edits, each put on the page.  Returns 0,
+ * EINVAL, or ENOMEM.
+ */
+static int
+decode_edits(
+	struct encode_reader *reader,
+	struct notes_document *document,
+	const struct encode_images *images)
+{
+	struct notes_edit read;
+	struct notes_edit *edit;
+	struct notes_page *page;
+	uint64_t number;
+	uint64_t count;
+	uint32_t image;
+	size_t used;
+	size_t at;
+	int error;
+
+	/* The page, which must have been read and have no edits yet, and the count. */
+	number = read_varint(reader);
+	count = read_varint(reader);
+	if (reader->error != 0 || number >= document->page_count || count == 0U || count > ENCODE_EDITS_MAX)
+		return EINVAL;
+	page = document->pages[number];
+	if (page->edit_count != 0U)
+		return EINVAL;
+
+	/* Each edit. */
+	for (at = 0; at < (size_t)count; at++) {
+		/* The edit; a page's own object only on a page drawn over the base. */
+		error = notes_decode_edit(reader->data + reader->offset, reader->length - reader->offset, &used, &read, &image);
+		if (error != 0)
+			return error;
+		reader->offset += used;
+		if ((read.flags & NOTES_EDIT_INSERTED) == 0U && page->origin != NOTES_ORIGIN_OVER)
+			return EINVAL;
+
+		/* Its image, one of IMAG's, when it needs one. */
+		if ((read.flags & (NOTES_EDIT_IMAGE | NOTES_EDIT_INSERTED)) != 0U) {
+			read.image = images_find(images, image);
+			if (read.image == NULL)
+				return EINVAL;
+		}
+
+		/* The edit, its image held once more, on the page. */
+		edit = notes_edit_copy(&read);
+		if (edit == NULL)
+			return ENOMEM;
+		error = notes_document_put_edit(document, (size_t)number, page->edit_count, edit);
+		if (error != 0) {
+			notes_edit_free(edit);
+			return error;
+		}
+	}
+
+	/* Succeeded: the page's edits. */
 	return 0;
 }
 

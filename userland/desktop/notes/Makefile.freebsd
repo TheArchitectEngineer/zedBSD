@@ -2,6 +2,7 @@
 # The independent FreeBSD build of notes; source membership mirrors the target package.
 KEILAND_FREEBSD_NOTES_SOURCES := userland/desktop/notes/main.c \
 	userland/desktop/notes/document.c \
+	userland/desktop/notes/edit.c \
 	userland/desktop/notes/encode.c \
 	userland/desktop/notes/journal.c \
 	userland/desktop/notes/save.c \
@@ -12,4 +13,4 @@ KEILAND_FREEBSD_NOTES_SOURCES := userland/desktop/notes/main.c \
 	userland/desktop/notes/tablet.c \
 	userland/desktop/notes/ui.c \
 	userland/desktop/notes/touch.c
-$(eval $(call KEILAND_FREEBSD_PROGRAM,notes,bin,$(KEILAND_FREEBSD_NOTES_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libpdf.so libvulkan.so.1 libkeiland-compat.a,-lm))
+$(eval $(call KEILAND_FREEBSD_PROGRAM,notes,bin,$(KEILAND_FREEBSD_NOTES_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libz-compat.so libpdf.so libvulkan.so.1 libkeiland-compat.a,-lm))
