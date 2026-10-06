@@ -87,6 +87,8 @@ se_system_poll(
 		if (!consumed)
 			consumed = se_sharing_result(app, request, error);
 		if (!consumed)
+			consumed = se_languages_result(app, request, error);
+		if (!consumed)
 			se_log("SYSTEM result request=%u errno=%d", request, error);
 	}
 }
