@@ -2,7 +2,7 @@
 
 # ws089-p012: Settings の中だけで済む操作性（検索の key・touch の scroll）
 
-Status: uncleared（q619-i01、P1 generation4、2026-10-03。実装と試験は PASS。範囲 1 の「titlebar の欄から Down で結果へ」だけが compositor の変更待ち（欄が Down を食う）。今は Tab で欄を出てから Down。結果は末尾）
+Status: test-wait（T1 依頼中。2026-10-06 q805 P2: 残りの「titlebar の欄から Down で結果へ」を compositor で直した（末尾）。以前: uncleared（q619-i01、P1 generation4、2026-10-03。実装と試験は PASS。範囲 1 の欄の Down だけが compositor の変更待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: q619 / q619-i01（Q1 の dispatch、2026-10-03。承認: user「Settingsも重点的にしましょう」と自走の指示。時限 4 時間）
@@ -84,3 +84,10 @@ QEMU の Venus（touch は pen の image の注入）。console・serial の log
   project の build の不具合ではない（複写の仕方の問題）。
 - Linux・FreeBSD の Keiland の build（settings の `Makefile.linux`・`Makefile.freebsd`、新しい file は無い）は未実施。
 - 実機（5330 の touch screen・Wi-Fi の実 radio）での確認は未実施（C1 の効果は実 radio の scan で効く。p014）。
+
+## 2026-10-06 q805 P2: 欄の Down（範囲 1 の残り）
+
+- `userland/desktop/wayland/titlebar-shell.c`（`zwl_titlebar_key`）: suggestion が出ていない時の Down は、Tab と同じく field を `ZWL_TEXT_LEFT` で終え、key（press と release）を window に渡す（0 を返す）。Settings は先頭の結果が選ばれた状態で Down を受け、2 番目へ（`SEARCH chosen index=1`）。suggestion が出ている時の Up・Down（候補を光らせる）は今までどおり。同じ関数の既存の style の指摘 4 件（段落の空行）も直した。
+- 他の app への影響: titlebar の欄を持つ app（Files の検索、Browser の address など）で、suggestion の無い時の Down は欄を出て window へ行く（今までは何もしなかった）。
+- `plan/ws089/tests/settings-p012.sh`: Tab を除き、欄で Down → `SEARCH chosen index=1 page=ethernet`。
+- 確認: wayland の build warning 0、keiland-linux の build warning 0、style-check 0（直す前は 4）、`sh -n`。QEMU（`settings-p012.sh`、touch の image）は T1（未実施）。
