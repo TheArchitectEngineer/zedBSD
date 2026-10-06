@@ -52,6 +52,7 @@ struct kl_system {
 	struct wl_proxy *sharing;
 	struct wl_proxy *notify;
 	struct wl_proxy *mail;
+	struct wl_proxy *phone;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -127,6 +128,13 @@ struct system_mail_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
+/* The listener of kl_system_phone_v1's events (ws170-p004), in their order. */
+struct system_phone_listener {
+	void (*received)(void *data, struct wl_proxy *proxy, uint32_t channel, const char *from, const char *text, uint32_t time_high, uint32_t time_low);
+	void (*status)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t state);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
 /* The listener of kl_system_devices_v1's events, in their order. */
 struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
@@ -142,6 +150,8 @@ static void system_notify_activated(void *data, struct wl_proxy *proxy, uint32_t
 static void system_notify_closed(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t reason);
 static void system_mail(void *data, struct wl_proxy *proxy, const char *from, const char *subject, const char *code);
 static void system_mail_cut(char *to, size_t size, const char *from);
+static void system_phone_received(void *data, struct wl_proxy *proxy, uint32_t channel, const char *from, const char *text, uint32_t time_high, uint32_t time_low);
+static void system_phone_status(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t state);
 static void system_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void system_capabilities(void *data, struct wl_proxy *proxy, uint32_t bits);
 static void system_network_state(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t connected, uint32_t kind, const char *interface, const char *wired, uint32_t wifi, const char *wifi_interface, const char *ssid);
@@ -245,6 +255,13 @@ static const struct system_mail_listener system_mail_listener = {
 	system_result
 };
 
+/* The phone object's callbacks (ws170-p004). */
+static const struct system_phone_listener system_phone_listener = {
+	system_phone_received,
+	system_phone_status,
+	system_result
+};
+
 /* The devices object's callbacks. */
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
@@ -317,6 +334,7 @@ kl_system_close(
 	system_destroy(system->sharing, KL_SYSTEM_SHARING_DESTROY);
 	system_destroy(system->notify, KL_SYSTEM_NOTIFY_DESTROY);
 	system_destroy(system->mail, KL_SYSTEM_MAIL_DESTROY);
+	system_destroy(system->phone, KL_SYSTEM_PHONE_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -389,6 +407,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_NOTIFY;
 	if (system->mail != NULL)
 		bits |= KL_SYSTEM_HAS_MAIL;
+	if (system->phone != NULL)
+		bits |= KL_SYSTEM_HAS_PHONE;
 
 	/* The administration of the accounts, offered with the account to a manager bound at version 8 (ws089-p026). */
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
@@ -800,6 +820,96 @@ kl_system_take_mail_event(
 		return 0;
 
 	/* Succeeded: one arrival taken. */
+	return 1;
+}
+
+/*
+ * Sends a message on a channel to a number (ws170-p004): the request's
+ * result says whether the backend took it; its state follows as phone
+ * events.
+ */
+int
+kl_system_phone_send(
+	struct kl_system *system,
+	unsigned channel,
+	const char *to,
+	const char *text,
+	uint32_t *request)
+{
+	char number[KL_PHONE_NUMBER_MAX];
+	char words[KL_PHONE_TEXT_MAX];
+	uint32_t asked;
+
+	/* A number, words, and a channel of messages. */
+	if (system == NULL || to == NULL || text == NULL)
+		return EINVAL;
+	if (to[0] == '\0' || channel > KL_PHONE_RCS)
+		return EINVAL;
+
+	/* The compositor's phone. */
+	if (system->phone == NULL || system->lost)
+		return ENOTSUP;
+
+	/* The number and the words, cut to what the compositor takes. */
+	system_mail_cut(number, sizeof(number), to);
+	system_mail_cut(words, sizeof(words), text);
+
+	/* Sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_SEND, asked, (uint32_t)channel, number, words);
+
+	/* Succeeded: the answer comes as the request's result. */
+	return 0;
+}
+
+/*
+ * Calls a number on a channel (ws170-p004).
+ */
+int
+kl_system_phone_call(
+	struct kl_system *system,
+	unsigned channel,
+	const char *to,
+	uint32_t *request)
+{
+	char number[KL_PHONE_NUMBER_MAX];
+	uint32_t asked;
+
+	/* A number and a channel of calls. */
+	if (system == NULL || to == NULL)
+		return EINVAL;
+	if (to[0] == '\0' || (channel != KL_PHONE_LINE && channel != KL_PHONE_VOIP))
+		return EINVAL;
+
+	/* The compositor's phone. */
+	if (system->phone == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	system_mail_cut(number, sizeof(number), to);
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_CALL, asked, (uint32_t)channel, number);
+
+	/* Succeeded: the answer comes as the request's result. */
+	return 0;
+}
+
+/*
+ * Takes the oldest phone event: 1 with it, 0 when none waits.
+ */
+int
+kl_system_take_phone_event(
+	struct kl_system *system,
+	struct kl_phone_event *event)
+{
+	int taken;
+
+	/* The view's ring. */
+	taken = system_view_take_phone_event(&system->view, event);
+	if (!taken)
+		return 0;
+
+	/* Succeeded: one event taken. */
 	return 1;
 }
 
@@ -2152,6 +2262,55 @@ system_notify_closed(
 	system_view_notify_event(&system->view, &event);
 }
 
+/* A message came to the phone (ws170-p004). */
+static void
+system_phone_received(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t channel,
+	const char *from,
+	const char *text,
+	uint32_t time_high,
+	uint32_t time_low)
+{
+	struct kl_system *system;
+	struct kl_phone_event event;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_take_phone_event. */
+	system = data;
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_PHONE_RECEIVED;
+	event.channel = channel;
+	system_mail_cut(event.from, sizeof(event.from), from);
+	system_mail_cut(event.text, sizeof(event.text), text);
+	event.time = ((uint64_t)time_high << 32) | (uint64_t)time_low;
+	system_view_phone_event(&system->view, &event);
+}
+
+/* A sent message's or a call's state (ws170-p004). */
+static void
+system_phone_status(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request,
+	uint32_t state)
+{
+	struct kl_system *system;
+	struct kl_phone_event event;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_take_phone_event. */
+	system = data;
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_PHONE_STATUS;
+	event.request = request;
+	event.state = state;
+	system_view_phone_event(&system->view, &event);
+}
+
 /* A message arrived, for this reader (ws169-p002). */
 static void
 system_mail(
@@ -2298,6 +2457,10 @@ system_bind(
 	/* The arrivals of mail, offered to a manager bound at version 15 (ws169-p002). */
 	if (system->manager_version >= KL_SYSTEM_SINCE_MAIL)
 		system->mail = system_make(system, KL_SYSTEM_CAPABILITY_MAIL, KL_SYSTEM_MANAGER_GET_MAIL, &kl_system_mail_v1_interface, &system_mail_listener);
+
+	/* The phone, offered to a manager bound at version 16 (ws170-p004). */
+	if (system->manager_version >= KL_SYSTEM_SINCE_PHONE)
+		system->phone = system_make(system, KL_SYSTEM_CAPABILITY_PHONE, KL_SYSTEM_MANAGER_GET_PHONE, &kl_system_phone_v1_interface, &system_phone_listener);
 
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);

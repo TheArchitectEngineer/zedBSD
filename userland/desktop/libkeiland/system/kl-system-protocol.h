@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 15; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 16; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -24,6 +24,7 @@
  *   request 8 get_sharing(new_id kl_system_sharing_v1)    since version 7 (ws089-p025)
  *   request 9 get_notify(new_id kl_system_notify_v1)      since version 13 (ws156-p002)
  *   request 10 get_mail(new_id kl_system_mail_v1)         since version 15 (ws169-p002)
+ *   request 11 get_phone(new_id kl_system_phone_v1)       since version 16 (ws170-p004)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -223,7 +224,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		15U
+#define KL_SYSTEM_MANAGER_VERSION		16U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -238,6 +239,7 @@
 #define KL_SYSTEM_MANAGER_GET_SHARING		8U
 #define KL_SYSTEM_MANAGER_GET_NOTIFY		9U
 #define KL_SYSTEM_MANAGER_GET_MAIL		10U
+#define KL_SYSTEM_MANAGER_GET_PHONE		11U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -253,6 +255,7 @@
 #define KL_SYSTEM_CAPABILITY_PIN		0x200U
 #define KL_SYSTEM_CAPABILITY_NOTIFY		0x400U
 #define KL_SYSTEM_CAPABILITY_MAIL		0x800U
+#define KL_SYSTEM_CAPABILITY_PHONE		0x1000U
 
 /* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
@@ -271,6 +274,9 @@
 /* Since when the manager has get_mail (ws169-p002). */
 #define KL_SYSTEM_SINCE_MAIL			15U
 
+/* Since when the manager has get_phone (ws170-p004). */
+#define KL_SYSTEM_SINCE_PHONE			16U
+
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
@@ -281,6 +287,7 @@
 #define KL_SYSTEM_SHARING_NAME			"kl_system_sharing_v1"
 #define KL_SYSTEM_NOTIFY_NAME			"kl_system_notify_v1"
 #define KL_SYSTEM_MAIL_NAME			"kl_system_mail_v1"
+#define KL_SYSTEM_PHONE_NAME			"kl_system_phone_v1"
 
 /*
  * kl_system_notify_v1's requests and events (ws156-p002,
@@ -327,6 +334,40 @@
 
 /* The setting that lets a reader hear the arrivals, before the reader's name (mail.codes.browser). */
 #define KL_SYSTEM_MAIL_SETTING_PREFIX		"mail.codes."
+
+/*
+ * kl_system_phone_v1's requests and events (ws170-p004,
+ * plan/ws170/phase001/phase.md section 3):
+ *   request 0 destroy
+ *   request 1 send(uint request, uint channel, string to, string text)
+ *   request 2 call(uint request, uint channel, string to)
+ *   event   0 received(uint channel, string from, string text, uint time_high, uint time_low)
+ *       a message came (to every phone object of the user)
+ *   event   1 status(uint request, uint state)
+ *       a sent message's or a call's state (KL_SYSTEM_PHONE_*)
+ *   event   2 result(uint request, uint applied, uint saved)
+ *       the request taken (OK), or not: UNAVAILABLE without a backend
+ * The backend is the desktop's setting phone.backend (0 none, 1 loopback).
+ */
+#define KL_SYSTEM_PHONE_DESTROY			0U
+#define KL_SYSTEM_PHONE_SEND			1U
+#define KL_SYSTEM_PHONE_CALL			2U
+#define KL_SYSTEM_PHONE_EVENT_RECEIVED		0U
+#define KL_SYSTEM_PHONE_EVENT_STATUS		1U
+#define KL_SYSTEM_PHONE_EVENT_RESULT		2U
+
+/* A message's or call's state (status), and the channels (keiland.h's KL_PHONE_*). */
+#define KL_SYSTEM_PHONE_SENT			1U
+#define KL_SYSTEM_PHONE_DELIVERED		2U
+#define KL_SYSTEM_PHONE_FAILED			3U
+#define KL_SYSTEM_PHONE_ANSWERED		4U
+#define KL_SYSTEM_PHONE_NO_ANSWER		5U
+#define KL_SYSTEM_PHONE_CHANNELS		5U
+
+/* The desktop's setting that chooses the backend. */
+#define KL_SYSTEM_PHONE_SETTING			"phone.backend"
+#define KL_SYSTEM_PHONE_BACKEND_NONE		0
+#define KL_SYSTEM_PHONE_BACKEND_LOOPBACK	1
 
 /* kl_system_sharing_v1's requests and events (ws089-p025), and the longest fingerprint it carries. */
 #define KL_SYSTEM_SHARING_DESTROY		0U

@@ -83,6 +83,11 @@
 #define PH_ID_MESSAGE		7U
 #define PH_ID_ATTACH		8U
 #define PH_ID_BACK		9U
+#define PH_ID_ADD		10U
+#define PH_ID_NEW_NAME		11U
+#define PH_ID_NEW_NUMBER	12U
+#define PH_ID_SAVE		13U
+#define PH_ID_CANCEL		14U
 
 /*
  * The colors: the person's bubbles and cards (on glass, see-through
@@ -117,7 +122,8 @@ static void view_layout(const struct ph_view *view, int width, int height, struc
 static size_t view_filtered(const struct ph_view *view, size_t *indices, size_t size);
 static int view_contains(const char *text, const char *part);
 static int view_lower(int c);
-static void view_notice(struct ph_view *view, const char *message, uint64_t now_us);
+static void view_request(struct ph_view *view, unsigned action, long contact);
+static void view_new_contact(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_sidebar(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_row(const struct kl_style *style, const struct ph_contact *contact, const struct kl_rect *row, int selected, int unread);
 static void view_avatar(const struct kl_style *style, const struct ph_contact *contact, int cx, int cy, int radius);
@@ -189,22 +195,24 @@ ph_view_select(
 	struct ph_view *view,
 	long index)
 {
+	const struct ph_contact *contacts;
 	size_t count;
 
 	/* A contact that is not there. */
-	(void)ph_contacts(&count);
+	contacts = ph_contacts(&count);
 	if (index < 0 || (size_t)index >= count)
 		return;
 
 	/* Shown from its end, with the field emptied. */
 	view->selected = index;
 	view->to_end = 1;
+	view->adding = 0;
 	kl_field_set(&view->message, "");
 	ph_log("SELECT contact=%ld", index);
 
-	/* Its messages read (the mock keeps nothing, so only until the program ends; the first 32 contacts). */
-	if (index < 32L)
-		view->seen |= 1UL << index;
+	/* Its messages read: the window marks them so. */
+	if (contacts[index].unread != 0U)
+		view_request(view, PH_ACTION_READ, index);
 }
 
 /*
@@ -220,19 +228,45 @@ ph_view_action(
 	/* Each action. */
 	switch (action) {
 	case PH_ACTION_SEND:
-		/* Nothing written: nothing to send. */
-		if (view->message.length == 0U)
+		/* Nothing written, or nobody to send to: nothing to send. */
+		if (view->message.length == 0U || view->selected < 0)
 			break;
-		view_notice(view, "No phone backend: messages cannot be sent yet.", now_us);
-		ph_log("NOBACKEND action=send contact=%ld length=%zu", view->selected, view->message.length);
+		view_request(view, PH_ACTION_SEND, view->selected);
+		ph_log("REQUEST action=send contact=%ld length=%zu", view->selected, view->message.length);
 		break;
 	case PH_ACTION_CALL:
-		view_notice(view, "No phone backend: calls cannot be made yet.", now_us);
-		ph_log("NOBACKEND action=call contact=%ld", view->selected);
+		/* The contact shown, called by the window. */
+		if (view->selected < 0)
+			break;
+		view_request(view, PH_ACTION_CALL, view->selected);
+		ph_log("REQUEST action=call contact=%ld", view->selected);
 		break;
 	case PH_ACTION_ATTACH:
-		view_notice(view, "No phone backend: attachments cannot be sent yet.", now_us);
+		ph_view_notice(view, "Attachments cannot be sent yet.", now_us);
 		ph_log("NOBACKEND action=attach contact=%ld", view->selected);
+		break;
+	case PH_ACTION_ADD:
+		/* The form of a new contact, in place of the timeline. */
+		view->adding = 1;
+		view->opened = 1;
+		kl_field_set(&view->new_name, "");
+		kl_field_set(&view->new_number, "");
+		ph_log("ADD open");
+		break;
+	case PH_ACTION_SAVE:
+		/* The new contact, for the window to keep (a number is needed). */
+		if (view->new_number.length == 0U) {
+			ph_view_notice(view, "Write the contact's number.", now_us);
+			break;
+		}
+
+		/* Asked of the window. */
+		view_request(view, PH_ACTION_SAVE, -1);
+		ph_log("REQUEST action=save name=%zu number=%zu", view->new_name.length, view->new_number.length);
+		break;
+	case PH_ACTION_CANCEL:
+		view->adding = 0;
+		ph_log("ADD cancel");
 		break;
 	case PH_ACTION_QUIT:
 		view->quit = 1;
@@ -552,17 +586,111 @@ view_lower(
 }
 
 /*
- * Shows a notice for a while.
+ * Shows a notice for a while (its words copied).
  */
-static void
-view_notice(
+void
+ph_view_notice(
 	struct ph_view *view,
 	const char *message,
 	uint64_t now_us)
 {
 	/* The words and until when. */
-	view->notice = message;
+	(void)snprintf(view->notice_text, sizeof(view->notice_text), "%s", message);
+	view->notice = view->notice_text;
 	view->notice_until = now_us + PH_VIEW_NOTICE_US;
+}
+
+/*
+ * Takes the oldest request the view queued: 1 with it, 0 when none waits.
+ */
+int
+ph_view_take_request(
+	struct ph_view *view,
+	struct ph_request *request)
+{
+	size_t index;
+
+	/* None. */
+	if (view->request_count == 0U)
+		return 0;
+
+	/* The first, the rest moved up. */
+	*request = view->requests[0];
+	for (index = 1; index < view->request_count; index++)
+		view->requests[index - 1U] = view->requests[index];
+	view->request_count--;
+	return 1;
+}
+
+/* Queues a request for the window (a full queue drops it: the user asks again). */
+static void
+view_request(
+	struct ph_view *view,
+	unsigned action,
+	long contact)
+{
+	/* No room. */
+	if (view->request_count == PH_REQUESTS_MAX)
+		return;
+
+	/* At the end. */
+	view->requests[view->request_count].action = action;
+	view->requests[view->request_count].contact = contact;
+	view->request_count++;
+}
+
+/* Draws the form of a new contact: its name and number, Save and Cancel. */
+static void
+view_new_contact(
+	struct ph_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	uint64_t now_us)
+{
+	struct kl_rect field;
+	struct kl_rect button;
+	int clicked;
+	int width;
+	int x;
+	int y;
+
+	/* The title. */
+	width = area->width - 64;
+	if (width > 420)
+		width = 420;
+	x = area->x + (area->width - width) / 2;
+	y = area->y + 70;
+	(void)kl_text_draw(style->text, style->canvas, x, y, "New Contact", strlen("New Contact"), PH_VIEW_TEXT_TITLE, 1, style->theme->text);
+
+	/* The name. */
+	y += 24;
+	(void)kl_text_draw(style->text, style->canvas, x, y + 21, "Name", strlen("Name"), PH_VIEW_TEXT_BODY, 0, style->theme->text_secondary);
+	field.x = x + 90;
+	field.y = y;
+	field.width = width - 90;
+	field.height = 32;
+	(void)kl_field(ui, style, PH_ID_NEW_NAME, &field, &view->new_name, "Their name");
+
+	/* The number. */
+	y += 42;
+	(void)kl_text_draw(style->text, style->canvas, x, y + 21, "Number", strlen("Number"), PH_VIEW_TEXT_BODY, 0, style->theme->text_secondary);
+	field.y = y;
+	(void)kl_field(ui, style, PH_ID_NEW_NUMBER, &field, &view->new_number, "+81 90 1234 5678");
+
+	/* Save, and Cancel before it. */
+	y += 52;
+	button.width = 90;
+	button.height = 34;
+	button.x = x + width - button.width;
+	button.y = y;
+	clicked = kl_button(ui, style, PH_ID_SAVE, &button, "Save", KL_BUTTON_PRIMARY);
+	if (clicked)
+		ph_view_action(view, PH_ACTION_SAVE, now_us);
+	button.x -= button.width + 8;
+	clicked = kl_button(ui, style, PH_ID_CANCEL, &button, "Cancel", 0U);
+	if (clicked)
+		ph_view_action(view, PH_ACTION_CANCEL, now_us);
 }
 
 /*
@@ -582,6 +710,7 @@ view_sidebar(
 	struct kl_rect list;
 	struct kl_rect edge;
 	struct kl_rect row;
+	struct kl_rect button;
 	unsigned hit;
 	unsigned changes;
 	size_t shown;
@@ -589,6 +718,7 @@ view_sidebar(
 	size_t i;
 	int selected;
 	int unread;
+	int clicked;
 
 	/* The column's ground and its edge against the timeline (on glass, its card is drawn already). */
 	if (!view->glass) {
@@ -601,6 +731,15 @@ view_sidebar(
 
 	/* The title. */
 	(void)kl_text_draw(style->text, style->canvas, area->x + 20, area->y + 38, "Phone", strlen("Phone"), PH_VIEW_TEXT_TITLE, 1, style->theme->text);
+
+	/* A new contact: "+" at the right of the title. */
+	button.width = 32;
+	button.height = 32;
+	button.x = area->x + area->width - 16 - button.width;
+	button.y = area->y + 14;
+	clicked = kl_button(ui, style, PH_ID_ADD, &button, "+", 0U);
+	if (clicked)
+		ph_view_action(view, PH_ACTION_ADD, now_us);
 
 	/* The search field; what it holds filters the list. */
 	field.x = area->x + 16;
@@ -650,13 +789,10 @@ view_sidebar(
 		if ((long)indices[i] == view->selected && !view->narrow)
 			selected = 1;
 
-		/* Messages not read, until the timeline was shown. */
+		/* Messages not read (the window marks them read when the timeline is shown). */
 		unread = 0;
-		if (contacts[indices[i]].unread != 0U) {
+		if (contacts[indices[i]].unread != 0U)
 			unread = 1;
-			if (indices[i] < 32U && (view->seen & (1UL << indices[i])) != 0U)
-				unread = 0;
-		}
 
 		/* The row's content. */
 		view_row(style, &contacts[indices[i]], &row, selected, unread);
@@ -776,8 +912,20 @@ view_conversation(
 	struct kl_rect composer;
 	size_t count;
 
+	/* A new contact being added. */
+	if (view->adding) {
+		view_new_contact(view, ui, style, area, now_us);
+		return;
+	}
+
 	/* No contact shown. */
 	contacts = ph_contacts(&count);
+	if (count == 0U) {
+		view_empty(style, area, "No contacts yet", "Add one with + at the top of the list.");
+		return;
+	}
+
+	/* None chosen. */
 	if (view->selected < 0 || (size_t)view->selected >= count) {
 		view_empty(style, area, "No conversation", "Choose a contact at the left.");
 		return;

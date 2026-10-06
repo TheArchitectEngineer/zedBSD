@@ -87,3 +87,12 @@
 | WS169 ws169-p005 | 通知の popup（WS156 p003）が無い間 | 通知の click で入る経路の QEMU の確認（今は titlebar の control だけが見える） | `browser/shell/mail.c`、WS156 p003 | 2026-10-07 |
 | WS169 ws169-p005 | offer の 2 分の時間切れ | 時間で起きて取り下げる（今は loop が起きた時に見る） | `browser/shell/shell.c` の待ちの timeout | 2026-10-07 |
 | WS169 ws169-p005 | 窓の中の帯の UI | page の上に code の帯（「Sign-in code … — Fill in / ×」）を出す（今は titlebar の control だけ。shell に描く層が要り、libbrowser の描画に関わる。2026-10-07 Q1 了承で backlog） | `browser/shell/`、libbrowser | 2026-10-07 |
+| WS170 ws170-p002（Phone の保存） | 2 台が同じ連絡先を同時に作る・同じ item の state を書く、壊れた file | 同じ番号の連絡先をまとめる、state の衝突の file（cloud の conflicted copy）を読む、壊れた file を飛ばして知らせる（今は file ごとに別の連絡先、壊れた header は既定の値） | `phone/store.c` | 2026-10-07 |
+| WS170 ws170-p002 | 大きな store（数千の item）、64 KB を超える本文、添付の `.files/` | 遅延して読む、大きな本文、添付の file の保存と表示（今は全部を起動で読む、64 KB で切れる、添付は名前だけ） | `phone/store.c` | 2026-10-07 |
+| WS170 ws170-p002 | vCard の他の欄（複数の TEL・EMAIL・PHOTO・N）、QUOTED-PRINTABLE・折り返しの行 | 読む・保つ（今は FN と最初の TEL だけ、折り返しは読まない） | `phone/store.c` の `store_load_contact` | 2026-10-07 |
+| WS170 ws170-p003（Phone の app） | 連絡先の編集・削除、会話の削除、添付の送信 | 編集・削除の UI（今は追加だけ、添付は notice） | `phone/view.c`・`main.c` | 2026-10-07 |
+| WS170 ws170-p003 | 送信の失敗の再送、送信中のまま app を閉じた item | 再送の button、起動で sending の item を failed にする（今は state のまま） | `phone/main.c` | 2026-10-07 |
+| WS170 ws170-p003 | 64 人を超える連絡先、32 を超える送信待ち | 全部を出す・待つ（今は一覧 64 人まで、待ちは 32 で古い物を上書き） | `phone/view.c` の `PH_VIEW_CONTACTS_MAX`、`main.c` の `PH_PENDING_MAX` | 2026-10-07 |
+| WS170 ws170-p003 | 日の語が古くなる（Today のまま日をまたぐ） | 描く時に今から作る（今は読んだ・足した時の語） | `phone/store.c` の `store_words` | 2026-10-07 |
+| WS170 ws170-p004（phone の API） | 本物の backend（モデム、スマホの bridge、VoIP、RCS）と、その状態・着信・通話の UI | backend の口を libkeiland-backend に置き、着信・通話中の画面（今は loopback だけ、着信の事象は無い） | `wayland/phone-shell.c`、libkeiland-backend | 2026-10-07 |
+| WS170 ws170-p004 | 受信の時刻の時計の違い、長い本文の UTF-8 の途中の切れ | 送り手の時刻と受けた時刻、文字の境で切る（今は compositor の時刻、Echo は 1024 byte で切る） | `wayland/phone-shell.c` の `phone_loopback_send` | 2026-10-07 |
