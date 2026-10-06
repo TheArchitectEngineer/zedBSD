@@ -507,6 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー: Mahora の font（ユーザーの著作、tree の Zlib）を追加、UI を Mahora Regular・Terminal を Mahora Mono・太字を Mahora Bold に。外観が良ければ他の font を消す → [ws090-p020](ws090/phase020/phase.md)（q812、P1）。Q1 の確認: Mahora は ASCII の 95 字だけ。
 - 2026-10-06 ユーザー（クリック）: rm の規則の範囲は「make の規則の rm は可」（自分の worktree の build/ の中の make の出力）。AGENTS.md と protocol に記録。P1・P2 が気づかずに走らせた rm を含む host の script 15 本は Q1 が rm 無しに直した（fresh-out.sh・build/tmp・q1-clean.sh）。
 - 2026-10-06 ユーザー（クリック）: WS168 の sandbox の isatty は「(a) TCGETS だけ ENOTTY」（承認済みの許可の set の変更、ws168-p002 に記録）。
 - 2026-10-06 ユーザー（クリック）: WS131 の app の移行 p016〜p020 を「承認、p016 から順に」（kl_app へ、Q1 の最初の質問の書き間違いを訂正した上で）。ws095-p007 の Notes は「Notes に text box を作る（別の Phase）」→ [ws079-p017](ws079/phase017/phase.md)。Q1 の許可: WS175 p006 の `userland/base/libz-compat` への deflate の追加（design の「libz-compat の path は Q1 の許可」）。
