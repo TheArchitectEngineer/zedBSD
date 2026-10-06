@@ -1,0 +1,38 @@
+{
+  "method": "H stems sampled at 22% of cap height, alpha threshold >128; a representative check, not every glyph",
+  "measurements": {
+    "Monaco Regular": {
+      "capital_H_height_pixels": 583,
+      "capital_H_stem_pixels": [
+        76,
+        76
+      ],
+      "stem_height_ratio": [
+        0.13036020583190394,
+        0.13036020583190394
+      ]
+    },
+    "font1 Regular": {
+      "capital_H_height_pixels": 504,
+      "capital_H_stem_pixels": [
+        63,
+        65
+      ],
+      "stem_height_ratio": [
+        0.125,
+        0.12896825396825398
+      ]
+    },
+    "font1 Bold": {
+      "capital_H_height_pixels": 500,
+      "capital_H_stem_pixels": [
+        81,
+        78
+      ],
+      "stem_height_ratio": [
+        0.162,
+        0.156
+      ]
+    }
+  }
+}

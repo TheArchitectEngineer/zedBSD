@@ -1,0 +1,23 @@
+Edit image 1, the APPROVED font1 Bold transparent ASCII glyph atlas, into its Regular weight companion. Image 2 (Monaco Regular specimen) is ONLY a reference for the desired stroke thinness.
+
+This is a precise weight edit of an already approved typeface design. Preserve the EXACT glyph identities, outlines' centerline structure, layout, letter proportions, character widths, positions, side bearings, baseline positions, row/column assignment, cap height, x-height, ascenders, descenders, curves, terminal styles, slash direction in zero, and punctuation shapes. Do not redesign or substitute characters from Monaco. Do not scale glyphs smaller or change their horizontal or vertical proportions. The original must remain recognizably the same typeface in every character.
+
+Reduce stroke thickness to approximately 82-85 percent of the original Bold strokes, matching Monaco Regular's moderate, readable regular weight at equal cap height. Narrow stems symmetrically around their current centerlines; increase counter space accordingly. Curves and diagonal strokes get the same optical weight treatment; dots and quote marks become proportionately lighter. Preserve enclosed counters and the entire descenders. Use solid pure black ink with clean anti-aliasing, not gray ink, not lowered opacity, not faded or blurred text. Keep the alpha background truly transparent.
+
+Output ONLY the edited glyph atlas, same square aspect ratio, same exact 10 by 10 layout covering full canvas and generous empty space around each glyph. No headings, labels, captions, borders, guides or extra pixels. Prefer matching the original image pixel size 1254 x 1254. Each slot must contain only its original assigned character, including the completely blank space slot and last five empty cells.
+
+Exact layout, 10 cells in each row:
+row 1: blank, !, double quote, #, $, %, &, apostrophe, (, )
+row 2: *, +, comma, hyphen-minus, period, /, 0, 1, 2, 3
+row 3: 4, 5, 6, 7, 8, 9, colon, semicolon, <, =
+row 4: >, ?, @, A, B, C, D, E, F, G
+row 5: H, I, J, K, L, M, N, O, P, Q
+row 6: R, S, T, U, V, W, X, Y, Z, [
+row 7: backslash, ], circumflex ^, underscore _, grave accent backtick, a, b, c, d, e
+row 8: f, g, h, i, j, k, l, m, n, o
+row 9: p, q, r, s, t, u, v, w, x, y
+row 10: z, {, vertical bar |, }, tilde ~, blank, blank, blank, blank, blank
+
+The accepted single-storey lowercase a and g, readable i/l/I/1, slashed zero, rounded braces, and quiet humanist Monaco-derived design MUST be preserved exactly. Change weight only.
+
+WEIGHT CALIBRATION: The approved Bold capital H has straight stems about 15.5% of its cap height. Monaco Regular straight H stems are about 13.0% of its cap height. Target the latter: ~13.0%, a modest reduction in weight of about 16-18%, not a drastic thin or light font. Keep the original capital height, x-height and horizontal proportions. In a capital H 72 pixels high, the regular stems should be roughly 9 to 9.5 pixels wide, not 7 pixels. Preserve original letter placement and size. This needs to look like a normal Regular companion, not Light.
