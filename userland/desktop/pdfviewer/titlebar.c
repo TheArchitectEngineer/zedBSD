@@ -11,11 +11,13 @@
  * page, where the view is ("Page 3 of 10"), the two modes, the zoom, the
  * two fits, and "Annotate in Notes".
  *
- * zdesktop draws the controls and makes them give way when the room runs
- * short (into its "..." popup, which also holds the menus); a control
- * chosen comes back as an action queued among the window's inputs.  A
- * compositor without the titlebar leaves the viewer with its menus and
- * its keys.
+ * The controls are a table given to libkeiland (WS131 p017:
+ * kl_window_set_controls), the page's text its label; their state is their
+ * actions' (menu.c).  zdesktop draws the controls and makes them give way
+ * when the room runs short (into its "..." popup, which also holds the
+ * menus); a control chosen comes back as a KL_WINDOW_ACTION input among
+ * the window's.  A compositor without the titlebar leaves the viewer with
+ * its menus and its keys.
  */
 
 #include "window.h"
@@ -38,28 +40,16 @@
 #define CONTROL_THUMBNAILS	11U
 
 /*
- * One control of the model: its ID, role, priority, segmented group,
- * label, and the action it asks for.
- */
-struct titlebar_control {
-	uint32_t id;
-	unsigned role;
-	unsigned priority;
-	unsigned group;
-	const char *label;
-	uint32_t action;
-};
-
-/*
  * The controls, in their order.  zdesktop draws a generic control outside a
  * segmented group as a pill with its label, so the zoom, the fits and
  * Annotate are ungrouped generic controls; the modes are the view pair.
+ * The page's control is the one whose label changes (titlebar_send).
  */
-static const struct titlebar_control titlebar_controls[] = {
+static const struct kl_control_entry titlebar_controls[] = {
 	{ CONTROL_THUMBNAILS, KL_CONTROL_SIDEBAR, KL_PRIORITY_PRIMARY, 0U, "Page Thumbnails", PV_ACTION_THUMBNAILS },
 	{ CONTROL_PREVIOUS, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Previous Page", PV_ACTION_PREVIOUS },
 	{ CONTROL_NEXT, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Next Page", PV_ACTION_NEXT },
-	{ CONTROL_PAGE, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, 0U, "No document", PV_ACTION_NONE },
+	{ CONTROL_PAGE, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, 0U, "No document", PV_ACTION_PAGE_INFO },
 	{ CONTROL_SCROLL, KL_CONTROL_VIEW_LIST, KL_PRIORITY_NORMAL, 1U, "Continuous Scroll", PV_ACTION_MODE_SCROLL },
 	{ CONTROL_PAGES, KL_CONTROL_VIEW_COLUMNS, KL_PRIORITY_NORMAL, 1U, "Single Page", PV_ACTION_MODE_PAGE },
 	{ CONTROL_ZOOM_OUT, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, 0U, "\xe2\x88\x92", PV_ACTION_ZOOM_OUT },
@@ -69,14 +59,10 @@ static const struct titlebar_control titlebar_controls[] = {
 	{ CONTROL_ANNOTATE, KL_CONTROL_GENERIC, KL_PRIORITY_PRIMARY, 0U, "Annotate in Notes", PV_ACTION_ANNOTATE }
 };
 
-static void titlebar_activated(void *data, struct kl_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static int titlebar_build(struct pv_titlebar *titlebar);
-static int titlebar_state(struct pv_titlebar *titlebar, const struct pv_state *state);
+/* The place of the page's control in the table. */
+#define TITLEBAR_PAGE_INDEX	3U
 
-/* What the titlebar tells the viewer: the controls chosen. */
-static const struct kl_titlebar_listener titlebar_listener = {
-	titlebar_activated, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-};
+static int titlebar_send(struct pv_titlebar *titlebar, const char *page);
 
 /*
  * Gives zdesktop the window's titlebar controls, showing a state.
@@ -96,22 +82,18 @@ pv_titlebar_open(
 	memset(titlebar, 0, sizeof(*titlebar));
 	titlebar->window = window;
 
-	/* The window's titlebar object; a compositor without one leaves the menus and the keys. */
-	titlebar->titlebar = kl_titlebar_create(kl_window_display(window->kui), kl_window_toplevel(window->kui), &titlebar_listener, titlebar);
-	if (titlebar->titlebar == NULL) {
-		pv_log("TITLEBAR none errno=%d", errno);
+	/* The controls; a compositor without the titlebar leaves the menus and the keys. */
+	error = titlebar_send(titlebar, "No document");
+	if (error == ENOTSUP) {
+		pv_log("TITLEBAR none errno=%d", error);
 		return 0;
 	}
-
-	/* The controls in one transaction. */
-	error = titlebar_build(titlebar);
 	if (error != 0)
 		return error;
+	titlebar->shown = 1;
 
-	/* The state they show. */
-	error = titlebar_state(titlebar, state);
-	if (error != 0)
-		return error;
+	/* The page's text for the state. */
+	pv_titlebar_refresh(titlebar, state);
 
 	/* Succeeded: the titlebar is zdesktop's to show. */
 	pv_log("TITLEBAR ready controls=%u", (unsigned)(sizeof(titlebar_controls) / sizeof(titlebar_controls[0])));
@@ -119,27 +101,28 @@ pv_titlebar_open(
 }
 
 /*
- * Tells the titlebar the viewer's state when it differs from what it shows.
+ * Shows where the view is ("Page 3 of 10") in the page's control; the
+ * controls' states are their actions' (pv_menu_refresh).
  */
 void
 pv_titlebar_refresh(
 	struct pv_titlebar *titlebar,
 	const struct pv_state *state)
 {
-	int same;
+	char label[64];
 	int error;
 
 	/* Without a titlebar nothing is sent. */
-	if (titlebar->titlebar == NULL)
+	if (!titlebar->shown)
 		return;
 
-	/* Nor when the state is the one shown. */
-	same = memcmp(state, &titlebar->shown, sizeof(*state));
-	if (same == 0 && titlebar->sent)
-		return;
+	/* Where the view is. */
+	snprintf(label, sizeof(label), "No document");
+	if (state->has_document)
+		snprintf(label, sizeof(label), "Page %lu of %lu", (unsigned long)(state->page + 1), (unsigned long)state->count);
 
-	/* The new state; a refusal is logged. */
-	error = titlebar_state(titlebar, state);
+	/* Sent when it changed (libkeiland compares the table). */
+	error = titlebar_send(titlebar, label);
 	if (error != 0)
 		pv_log("TITLEBAR update-failed errno=%d", error);
 }
@@ -151,171 +134,30 @@ void
 pv_titlebar_close(
 	struct pv_titlebar *titlebar)
 {
-	/* The titlebar object, when there is one. */
-	if (titlebar->titlebar != NULL)
-		kl_titlebar_destroy(titlebar->titlebar);
+	/* No controls on the window, and nothing kept. */
+	if (titlebar->window != NULL && titlebar->shown)
+		(void)kl_window_set_controls(titlebar->window->kui, NULL, 0U);
 	memset(titlebar, 0, sizeof(*titlebar));
 }
 
-/* Queues the action of a chosen control. */
-static void
-titlebar_activated(
-	void *data,
-	struct kl_titlebar *object,
-	uint32_t id,
-	uint32_t detail,
-	struct wl_seat *seat,
-	uint32_t serial)
-{
-	struct pv_titlebar *titlebar;
-	size_t index;
-
-	/* The titlebar whose control was chosen. */
-	(void)object;
-	(void)detail;
-	(void)seat;
-	(void)serial;
-	titlebar = data;
-	pv_log("TITLEBAR control=%u", id);
-
-	/* The control's action, when it has one. */
-	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
-		if (titlebar_controls[index].id != id)
-			continue;
-		if (titlebar_controls[index].action != PV_ACTION_NONE)
-			pv_window_action(titlebar->window, titlebar_controls[index].action);
-		return;
-	}
-}
-
-/* Gives zdesktop the controls, in the controls presentation, in one transaction. */
+/* Gives libkeiland the controls with the page's text as its control's label; 0 or an errno value. */
 static int
-titlebar_build(
-	struct pv_titlebar *titlebar)
-{
-	const struct titlebar_control *control;
-	size_t index;
-	int error;
-
-	/* The transaction and the presentation. */
-	error = kl_titlebar_begin(titlebar->titlebar);
-	if (error != 0)
-		return error;
-	error = kl_titlebar_set_mode(titlebar->titlebar, KL_TITLEBAR_CONTROLS);
-
-	/* Each control. */
-	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
-		if (error != 0)
-			break;
-		control = &titlebar_controls[index];
-		error = kl_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, control->group, control->label);
-	}
-
-	/* A refused control still ends the transaction. */
-	if (error != 0) {
-		(void)kl_titlebar_commit(titlebar->titlebar);
-		return error;
-	}
-
-	/* The controls are shown together. */
-	error = kl_titlebar_commit(titlebar->titlebar);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the controls are built. */
-	return 0;
-}
-
-/*
- * Shows a state in one transaction: the page's text, the controls that
- * need a document or another page enabled, the mode's and the fit's
- * controls checked.
- */
-static int
-titlebar_state(
+titlebar_send(
 	struct pv_titlebar *titlebar,
-	const struct pv_state *state)
+	const char *page)
 {
-	struct kl_titlebar *object;
-	char label[64];
-	int can_previous;
-	int can_next;
-	int scrolling;
-	int paging;
-	int fitting_width;
-	int fitting_page;
+	struct kl_control_entry controls[sizeof(titlebar_controls) / sizeof(titlebar_controls[0])];
 	int error;
 
-	/* What the state allows and what it has chosen, as the controls show them. */
-	can_previous = 0;
-	if (state->has_document && state->page > 0)
-		can_previous = 1;
-	can_next = 0;
-	if (state->has_document && state->page + 1 < state->count)
-		can_next = 1;
-	scrolling = 0;
-	if (state->mode == PV_MODE_SCROLL)
-		scrolling = 1;
-	paging = 0;
-	if (state->mode == PV_MODE_PAGE)
-		paging = 1;
-	fitting_width = 0;
-	if (state->fit == PV_FIT_WIDTH)
-		fitting_width = 1;
-	fitting_page = 0;
-	if (state->fit == PV_FIT_PAGE)
-		fitting_page = 1;
+	/* The table, with the page's text. */
+	memcpy(controls, titlebar_controls, sizeof(controls));
+	controls[TITLEBAR_PAGE_INDEX].label = page;
 
-
-	/* Where the view is. */
-	snprintf(label, sizeof(label), "No document");
-	if (state->has_document)
-		snprintf(label, sizeof(label), "Page %lu of %lu", (unsigned long)(state->page + 1), (unsigned long)state->count);
-
-	/* The transaction. */
-	object = titlebar->titlebar;
-	error = kl_titlebar_begin(object);
+	/* libkeiland sends what changed. */
+	error = kl_window_set_controls(titlebar->window->kui, controls, sizeof(controls) / sizeof(controls[0]));
 	if (error != 0)
 		return error;
 
-	/* The page's text and the controls' states. */
-	error = kl_titlebar_set_control_label(object, CONTROL_PAGE, label);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_PREVIOUS, can_previous, 0);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_NEXT, can_next, 0);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_PAGE, state->has_document, 0);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_SCROLL, 1, scrolling);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_PAGES, 1, paging);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_ZOOM_OUT, state->has_document, 0);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_ZOOM_IN, state->has_document, 0);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_FIT_WIDTH, state->has_document, fitting_width);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_FIT_PAGE, state->has_document, fitting_page);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_ANNOTATE, state->has_document, 0);
-	if (error == 0)
-		error = kl_titlebar_set_control_state(object, CONTROL_THUMBNAILS, state->has_document, state->thumbnails);
-
-	/* A refused change still ends the transaction. */
-	if (error != 0) {
-		(void)kl_titlebar_commit(object);
-		return error;
-	}
-
-	/* The state is shown together. */
-	error = kl_titlebar_commit(object);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the titlebar shows the state. */
-	titlebar->shown = *state;
-	titlebar->sent = 1;
+	/* Succeeded. */
 	return 0;
 }

@@ -47,34 +47,30 @@ struct pv_state {
 	int thumbnails;
 };
 
-/*
- * The window's menus as given to zdesktop (menu.c): the connection's menu
- * service (NULL when the compositor has none, and the window then has no
- * menus), the menu and the window's place for it, and the state the menus
- * last showed.
- */
-struct pv_menu {
-	struct kl_menu_service *service;
-	struct kl_menu *menu;
-	struct kl_window_menu *window_menu;
-	struct pv_state shown;
-	struct pv_window *window;
-};
+/* The action of the titlebar's page control ("Page 3 of 10"), which does nothing but show its state. */
+#define PV_ACTION_PAGE_INFO	98U
 
 /*
- * The window's titlebar in zdesktop (titlebar.c): zdesktop's titlebar
- * object (NULL without one), the state it last showed, and whether it was
- * ever sent.
+ * The window's menus as given to libkeiland (menu.c, WS131 p017): the
+ * window, whether the menu was given (not without the compositor's System
+ * Menu), and the state the actions last showed and whether it was sent.
  */
-struct pv_titlebar {
+struct pv_menu {
 	struct pv_window *window;
-	struct kl_titlebar *titlebar;
+	int shown_once;
 	struct pv_state shown;
 	int sent;
 };
 
-/* The window's actions: the menus' and the titlebar's choices, queued among the input. */
-void pv_window_action(struct pv_window *window, uint32_t action);
+/*
+ * The window's titlebar in zdesktop (titlebar.c, WS131 p017): the window,
+ * and whether its controls are shown (not without the compositor's
+ * titlebar).  The controls' state is their actions' (menu.c).
+ */
+struct pv_titlebar {
+	struct pv_window *window;
+	int shown;
+};
 
 /* The menus (menu.c). */
 int pv_menu_open(struct pv_menu *menu, struct pv_window *window, const struct pv_state *state);
