@@ -76,7 +76,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q829 / q829-i01 | P1 | zdesktop-p134 の残り（T1-270） | `POPUPPROBE ready run=p` と `run=q` の 2 行が出ない（角の行は解決） | q822 | pending |
 | q830 / q830-i01 | P2 | ws089-p013 の About の Memory の行が出ない（T1-269） | log は `ZSETTINGS ABOUT memory total=8583294976 free=8421027840` なのに PNG の This computer に Memory の行が無い。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-269/` | なし | pending |
 | q831 / q831-i01 | P2 | 第 2 段（P2 の列、app） | WS175 p009（Save Clean Copy）→ WS169 メール → WS170 Phone → WS155 カレンダー → WS120 音楽 → WS122 動画の残り → WS121 browser の動画 → WS145 印刷 → WS157 写真 → WS079 の残り → WS165 p005（認識率）。規則は第 1 段と同じ（正常系だけ、積み残しは WS177 の backlog-p2.md、規約の見直しは後、各 Phase の着手の前に Q1 へ） | 各 Phase の依存 | pending |
-| q832 / q832-i01 | P1（第 1 段の列の後） | 第 2 段（P1 の列） | WS139 desktop の速さ → WS130 IPv6 の残り → WS112 Debian の 3 つの deb → WS009 文書。WS117（Qt6 の Linux の互換）はユーザーの検討の後 | q820 | pending |
+| q832 / q832-i01 | P1（第 1 段の列の後） | 第 2 段（P1 の列） | WS139 desktop の速さ → WS130 IPv6 の残り → WS112 Debian の 3 つの deb → WS009 文書。WS117（Qt6 の Linux の互換）はユーザーの検討の後 | q820 | in-progress（2026-10-06 23:35 開始） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）
