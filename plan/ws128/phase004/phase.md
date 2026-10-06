@@ -2,7 +2,7 @@
 
 # ws128-p004: PDF Viewer の文字の検索と選択・copy
 
-Status: in-progress（2026-10-06 q821 P2: 正常系を実装、build warning 0 と host 試験 PASS。T1-268 の AAT find-select が FAIL → q826 で修正、T1 の再試験待ち）
+Status: in-progress（2026-10-06 q821 P2: 正常系を実装、build warning 0 と host 試験 PASS。T1-268・273・279 の AAT find-select が FAIL → q826・q826-i02・i03 で helper と titlebar を修正、T1 の再試験待ち）
 Disposition: normal
 Parent: [WS128](../ws.md)
 Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
@@ -77,6 +77,14 @@ host と QEMU の Venus。 やっていない確認は「未実施」と書く�
 - T1-273: Enter の 2 回は通った（`FIND keep error=0`、`found query="line" page=2`）。次の段で `the first line's words were not selected and copied` になった。drag の後に `PDFVIEWER SELECT` が無い。
 - 原因は試験の helper の座標。viewer の scroll mode は一番広い頁（sample の 3 頁目が横向きで 792 pt）に幅を合わせ、狭い頁は中央に置く。helper は 1 頁目（612 pt）が幅いっぱいだと見て、行の左の外を drag していた（T1 の絵: 頁は x 266〜1013）。
 - 修正: `plan/tools/aat/scenarios/helpers_pdfviewer_find.py` の倍率を一番広い頁で取り、左端を中央寄せの位置にした（`WIDEST = 792`）。viewer の code は変えていない。
+- T1 の再試験（AAT `apps.pdfviewer.find-select`）が要る。
+
+## T1-279 と q826-i03（2026-10-07 P2）
+
+- T1-279（証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-279m/`・`t1-279/`）: lazy・line・3 頁は ok。drag の後にまた `PDFVIEWER SELECT` が無い。record の 1 段目が `window Window(... x=140, y=108, width=0, height=0)`、選択の絵の pointer は (146, 128)。
+- 原因は helper: App Home の外から開いた窓は compositor の log に大きさが無い（KWL MAP だけ）ので、窓の幅 0 で倍率を計算し（負の倍率）、窓の左上の角を drag していた。q826-i02 の倍率の直しは幅が分かる前提だった。
+- 修正: `helpers_pdfviewer_find.py` で、窓の大きさが無い時は viewer の `PDFVIEWER READY width=1000 height=680 pages=3` の大きさを使う（READY を待つ）。T1 の絵と合わせた計算: drag は (356, 230) → (435, 230)、頁は x 266〜1013・上端 124、「The quick」の行は y 222〜238。
+- 切り分け: viewer 側は host の `run-host-pdfviewer-find.sh` が PASS（14/14 ×2、同じ頁の drag の選択と Ctrl+C の「The quick」）。
 - T1 の再試験（AAT `apps.pdfviewer.find-select`）が要る。
 
 ## 未実施・残り
