@@ -2,8 +2,9 @@
 # ws089-p009: the generated wallpapers (userland/desktop/wallpapers/generate.py) on the Venus guest, as the lean image
 # has them in /usr/share/keiland/wallpapers (build-settings-image.sh, the same as the demonstration image).
 # zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share root's home.
-#  1. The Wallpaper page lists six pictures: Kei (default), Aurora, Dawn, Lagoon, Meadow, Twilight (page.png).
-#  2. Each of the five is chosen in turn: Settings writes the key, zdesktop draws it (ZWL GLASS wallpaper path=...),
+#  1. The Wallpaper page lists seven pictures: Kei (default), Aurora, Dawn, Lagoon, Lakeside (the tree's, ws099-p019),
+#     Meadow, Twilight (page.png).
+#  2. Each of the six is chosen in turn: Settings writes the key, zdesktop draws it (ZWL GLASS wallpaper path=...),
 #     and the screen is taken (NAME.png).
 #  3. The default chosen again: the key removed, the session's wallpaper back.  No ERROR line in zdesktop's log.
 #
@@ -98,15 +99,15 @@ guest "$start_desktop" >/dev/null
 wait_desktop
 guest 'ls -l /usr/share/keiland/wallpapers/'
 start_settings wallpaper
-expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=6'
+expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=7'
 # BUG-152: the small copies are read by a thread after the page is shown; the shot waits for every tile.
-expect_log /tmp/s.log 'ZSETTINGS LOOK pictures ready count=6'
-expect_log /tmp/s.log 'ZSETTINGS CONTROL index=105 '
+expect_log /tmp/s.log 'ZSETTINGS LOOK pictures ready count=7'
+expect_log /tmp/s.log 'ZSETTINGS CONTROL index=106 '
 shot page.png
 
 # 2. Each picture in turn.
 index=101
-for name in Aurora Dawn Lagoon Meadow Twilight; do
+for name in Aurora Dawn Lagoon Lakeside Meadow Twilight; do
 	control $index
 	expect_log /tmp/s.log "ZSETTINGS LOOK set key=wallpaper value=/usr/share/keiland/wallpapers/$name.png error=0"
 	expect_log /tmp/zdesktop.log "ZWL GLASS wallpaper path=/usr/share/keiland/wallpapers/$name.png"

@@ -4,7 +4,7 @@
 # zdesktop's READY first (settings-wait.sh).
 #  1. App Home: the Settings tile (the cog) is there; a click starts Settings (ZWL HOME launch name=Settings) and its
 #     window maps (apphome.png, launched.png).
-#  2. Every page in the list's order: Settings at Home, then Down key by key through all 23 pages, a picture of each
+#  2. Every page in the list's order: Settings at Home, then Down key by key through all 24 pages, a picture of each
 #     (NN-WORD.png) and the page's line in the log (ZSETTINGS PAGE WORD).
 #  3. The search: Ctrl+F, "wall", Enter opens Wallpaper.  Back (Alt+Left) twice goes back through the history.
 #  4. No ERROR line in zdesktop's log.
@@ -123,7 +123,7 @@ expect_log /tmp/s.log 'ZSETTINGS PAGE home'
 pointer move $((wx + 700)) $((wy + 60)) sleep 200
 shot 00-home.png
 number=1
-while [ $number -le 23 ]; do
+while [ $number -le 24 ]; do
 	keys '<down>'
 	word=$(guest "grep 'ZSETTINGS PAGE ' /tmp/s.log | tail -1" | sed -n 's/.*ZSETTINGS PAGE \([a-z]*\).*/\1/p' | tail -1)
 	name=$(printf '%02d-%s.png' "$number" "${word:-unknown}")
@@ -133,7 +133,7 @@ done
 expect_log /tmp/s.log 'ZSETTINGS PAGE about'
 pages=$(guest "grep -c 'ZSETTINGS PAGE ' /tmp/s.log" | tail -1)
 echo "pages shown: $pages"
-[ "${pages:-0}" -ge 24 ] 2>/dev/null || { echo "pages: fewer than 24"; status=1; }
+[ "${pages:-0}" -ge 25 ] 2>/dev/null || { echo "pages: fewer than 25"; status=1; }
 
 # 3. The search, and Back.
 keys '<ctrl-f>'

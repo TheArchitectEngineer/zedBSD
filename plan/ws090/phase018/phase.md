@@ -48,9 +48,23 @@ Files の renderer は damage の frame も描く。
 確認: build（files・settings・phone・mailer・calendar、zedBSD）warning 0、keiland-linux.mk exit 0、`plan/ws170/tests/run-host-phone.sh` PASS。
 QEMU は T1 に依頼。
 
+## q791-i02（P1、2026-10-06）: T1-233 (a) の settings-regress の FAIL
+
+T1-233 (a)（証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-233a/`）の 5 件の FAIL は、どれも試験が今の Settings の中身より古いことによる。
+再描画の変更（82bb75de）でも ebb2780d でもない: 失敗はどれも「数」の食い違いで、画面と log の動き自体は正しい。
+
+| 試験 | 失敗の行 | 原因 |
+| --- | --- | --- |
+| p002 | `PAGE about$` | 一覧は Home の次に 24 頁（Ethernet が 2 番目）。Network（5 番目）から About までは 19 回の Down だが、試験は 18 回で Updates で止まっていた |
+| p006 | `PAGE about`・`PAGE about back` | 同じ理由で、23 回の Down は Updates まで。About が 24 回目 |
+| p008 | `SEARCH query=dns results=2` | "dns" は Ethernet の頁の keyword（`pages.c`）にもあり、結果は 3（Ethernet・Network・"DNS servers"）。2 番目の結果をクリックすると Network を開くのは同じ（`RESULT index=1`・`open page=network` は ok） |
+| p004・p009 | `LOOK pictures count=6`・`ready count=6`、p009 の Meadow・Twilight | ws099-p019（2026-10-06）で `Lakeside.png` が `wallpapers/` に入り、壁紙は 7 枚（Kei・Aurora・Dawn・Lagoon・Lakeside・Meadow・Twilight）。p009 は 4 番目を Meadow と思ってクリックし Lakeside を選んでいた（zdesktop の log に Lakeside） |
+
+直した試験（`plan/ws089/tests/`）: p002 は Down を 19 回、p006 は 24 回で 25 頁以上、p008 は `results=3`、p004・p009 は `count=7`、p009 は
+Lakeside を含めた 6 枚を順に選び、最後の tile を `index=106` で待つ。source の変更は無い。確認: `sh -n`（5 本）。QEMU での再実行は T1 に依頼する。
+
 ## 残り
 
-- **Files の部分の再描画の画素の一致は未確認**: `plan/tools/files/host-run.sh` が中に `rm -rf "$home"` を持つため、Claude Code の安全の判定で実行を止められた
-  （2026-10-06、Q1 に報告済み）。承認の後に `host-run.sh --start=HOME 動作 peek=A` と `… draw=B` の一致を確かめる。
+- Files の host での画素の一致の確かめ（q801）はユーザーの判断で取りやめ（2026-10-06、canceled）。T1-233 (b) の Files の試験は PASS。
 - Mail・Calendar・Phone の hover も部分の再描画にする（kl_ui に hot の矩形を出す口が要る）。desktop（compositor）の範囲選択の frame の丸めは未着手。
 - frame の callback での集約（設計の 2）は、描画が軽くなったので未実施。測った遅れ（注入から再描画の log まで）は未測定。

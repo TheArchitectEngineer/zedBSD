@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws089-p004: the look's pages of Settings on the Venus guest (the lean image with the generated wallpapers, build-settings-image.sh).  zdesktop --glass at 1280x800 with the session's wallpaper; Settings and zdesktop share
 # root's home (/root/.config/keiland/desktop.conf, removed before and after).
-#  1. Wallpaper: six tiles (Kei (default) and the five of generate.py) (wallpaper.png); a click on Aurora writes the key
+#  1. Wallpaper: seven tiles (Kei (default), the five of generate.py and Lakeside, ws099-p019) (wallpaper.png); a click on Aurora writes the key
 #     (LOOK set key=wallpaper value=.../Aurora.png) and zdesktop shows it (ZWL PREFERENCES key=wallpaper applied)
 #     (wallpaper-aurora.png); a click on the default removes the key and zdesktop goes back (wallpaper-default.png).
 #  2. Appearance: the slider dragged to the left end writes window.opacity=85 and zdesktop applies it
@@ -99,9 +99,9 @@ guest "rm -f $conf" >/dev/null
 guest "$start_desktop" >/dev/null
 wait_desktop
 start_settings wallpaper
-expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=6'
+expect_log /tmp/s.log 'ZSETTINGS LOOK pictures count=7'
 # BUG-152: the small copies are read by a thread after the page is shown; the shot waits for every tile.
-expect_log /tmp/s.log 'ZSETTINGS LOOK pictures ready count=6'
+expect_log /tmp/s.log 'ZSETTINGS LOOK pictures ready count=7'
 expect_log /tmp/s.log 'ZSETTINGS CONTROL index=102 '
 shot wallpaper.png
 control 101
