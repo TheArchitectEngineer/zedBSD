@@ -2,7 +2,7 @@
 
 # ws120-p008: m4a の metadata と `~/Music` の collection
 
-Status: in-progress
+Status: test-wait（T1-301）
 Disposition: normal
 Parent: [WS120](../ws.md)
 Queue: q831（2026-10-07、P2）
