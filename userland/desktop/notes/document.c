@@ -894,13 +894,17 @@ notes_document_edit_object(
 	if ((state->flags & ~known) != 0U)
 		return EINVAL;
 
-	/* New words are a line's of the page, UTF-8 there (ws175-p004). */
-	if ((state->flags & NOTES_EDIT_TEXT) != 0U && (state->text == NULL || (state->flags & NOTES_EDIT_INSERTED) != 0U))
+	/* New words are UTF-8 there (a line's of the page, ws175-p004, or an inserted text's of a size, ws175-p005). */
+	if ((state->flags & NOTES_EDIT_TEXT) != 0U && state->text == NULL)
 		return EINVAL;
 
-	/* An inserted object is an image that is there; a page's own is of a page of the base. */
+	/* An inserted object is an image that is there, or a text of a size; a page's own is of a page of the base. */
 	if ((state->flags & NOTES_EDIT_INSERTED) != 0U) {
-		if (state->image == NULL || (state->flags & NOTES_EDIT_DELETED) != 0U)
+		if ((state->flags & NOTES_EDIT_DELETED) != 0U)
+			return EINVAL;
+		if ((state->flags & NOTES_EDIT_TEXT) == 0U && state->image == NULL)
+			return EINVAL;
+		if ((state->flags & NOTES_EDIT_TEXT) != 0U && !(state->text_size > 0.0f && state->box_width >= 0.0f))
 			return EINVAL;
 	} else if (document->pages[page]->origin != NOTES_ORIGIN_OVER) {
 		return EINVAL;

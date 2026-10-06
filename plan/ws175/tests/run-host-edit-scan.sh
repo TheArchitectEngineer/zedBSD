@@ -54,7 +54,7 @@ for variant in plain asan ubsan; do
 		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
-	for test in host-edit-scan host-edit-change host-edit-image host-edit-intake host-edit-blank host-edit-text-change host-tounicode host-font-unicode host-edit-text; do
+	for test in host-edit-scan host-edit-change host-edit-image host-edit-intake host-edit-blank host-edit-text-change host-edit-insert-text host-tounicode host-font-unicode host-edit-text; do
 		# shellcheck disable=SC2086
 		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
 			-o "$out/$test-$variant"
@@ -113,6 +113,17 @@ for variant in plain asan ubsan; do
 		grep -v '^ok' "$out/text-change-$variant.txt"
 		status=1
 	fi
+	if "$out/host-edit-insert-text-$variant" "$out/edit-text.pdf" "$out/inserted-$variant.pdf" "$out/blank-text-$variant.pdf" > "$out/insert-text-$variant.txt" 2>&1; then
+		echo "host-edit-insert-text $variant: $(tail -1 "$out/insert-text-$variant.txt")"
+	else
+		grep -v '^ok' "$out/insert-text-$variant.txt"
+		status=1
+	fi
+	words=$(pdftotext "$out/inserted-$variant.pdf" - 2>/dev/null | tr '\n' ' ')
+	case "$words" in
+	*Hello*"日本語"*second*) echo "pdftotext inserted-$variant.pdf: the inserted words are there" ;;
+	*) echo "FAIL pdftotext inserted-$variant.pdf: $words"; status=1 ;;
+	esac
 	# The rewritten lines as another reader reads them.
 	words=$(pdftotext "$out/texted-$variant.pdf" - 2>/dev/null | tr '\n' ' ')
 	case "$words" in
@@ -125,7 +136,7 @@ for variant in plain asan ubsan; do
 	*) echo "pdftotext texted-$variant.pdf: no stale /ActualText" ;;
 	esac
 	# The only error qpdf may find is the sample's own: page 3's stream of a filter no reader decodes here.
-	for saved in edited imaged intake blank texted; do
+	for saved in edited imaged intake blank texted inserted blank-text; do
 		errors=$(qpdf --check "$out/$saved-$variant.pdf" 2>&1 | grep 'ERROR' | grep -v 'page 3: content stream' || true)
 		if [ -z "$errors" ]; then
 			echo "qpdf --check $saved-$variant.pdf: ok (page 3's own stream only)"

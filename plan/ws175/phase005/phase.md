@@ -50,8 +50,28 @@ D2（Inter・JetBrains Mono・Droid Sans Fallback）の後に、ユーザーが 
 | build: zedBSD の `libpdf.so`・`bin/notes`、keiland-linux の両方 | warning 0 |
 | style-check（libpdf 全 .c、ws175 の試験） | 0 |
 
-## 残り（p005b）
+## p005b の実装（2026-10-06 P2）
 
-- 文字の挿入 `pdf_page_editor_insert_text`（box の幅で折り返し、改行、色、大きさ、置き換えの font）と blank の editor での描画、Notes の挿入の文字の model
-  （`NOTES_EDIT_INSERTED|TEXT`、大きさ・色・幅）。font の変更（既存の行に Sans・Mono・CJK を求める）は p005a の set_text で済み。
-- QEMU は p010。UI（Text の道具・編集の box・IME・font の picker）は p008 の文字の段。
+- `pdf_page_editor_insert_text(editor, text, placement, &index, &result)`（新しい公開 API、exports）: 求めた置き換えの font（ORIGINAL は Sans）で、
+  font_size の大きさ、red・green・blue の色、box_width で折り返し（0 は折り返さない）、改行（`\n`）で次の行。placement は box の空間（pt、左上が原点、
+  y が下）→ shown space。折り返しは行の最後の空白の後（その空白は描かない）、空白の無い行は収まらない glyph の前。行の高さは大きさの 1.2 倍、
+  baseline は行の上から大きさの 0.8。box の高さは行の数。物の kind は TEXT（INSERTED）、四辺形は box、移動・大きさは画像と同じく place で。
+- content: 挿入した物の後（元の content の Q の後）に `q r g b rg BT <各 run の Tm> /<接頭辞>F<file> size Tf <CID の列> Tj … ET Q`。blank の editor の
+  `pdf_writer_draw_page_editor` も同じ（shown space で）、glyph を writer に登録する。挿入した文字に `set_image` は ENOTSUP。
+- **Notes の model**: `notes_edit` に `text_size`・`color`（0xRRGGBBAA）・`box_width`。`NOTES_EDIT_INSERTED|TEXT` は画像なしで受ける（大きさが要る）。
+  EDIT と journal の符号化に大きさ（1/64 pt）・色・幅。画像の id は IMAGE の edit と文字でない挿入の物だけが要る。editor に `insert_text` で適用。
+
+## 試験と結果（p005b、host、2026-10-06）
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws175/tests/run-host-edit-scan.sh <scratch>`（新規 `host-edit-insert-text.c` 14 項目: Sans 10pt 赤 50pt で折り返す文字、CJK の日本語と改行、大きさ 0 は EINVAL、preview、update の保存と開き直しで "Hello"・日本語・"second" が行として読める、blank の page に Mono の文字を挿入して新しい文書に保存し読める） | 10 本 ×3 PASS、pdftotext で挿入した語が読める、qpdf --check は試料の page 3 だけ。pdftoppm で描画を目で確かめた |
+| `sh plan/ws175/tests/run-host-notes-edit.sh <scratch>`（置き換えの font の folder を使う。文字の挿入の model の 3 項目、日本語は置き換えの font で書けるに変更） | notes-edit 44/44・picture 12/12 ×3 |
+| ws079 `run-notes-host.sh` | ok |
+| build: zedBSD・keiland-linux の libpdf.so と bin/notes | warning 0 |
+| style-check（libpdf・notes の全 .c、ws175 の試験） | 0 |
+
+## 残り
+
+- QEMU は p010。UI（Text の道具・編集の box・IME・font の picker・Font と Size のボタン）は p008 の文字の段。
+- 太字（`keiland-bold.ttf`）は D3 のとおり出さない（Q1 の list に在るが、選ぶ UI が無い）。kerning・合字・shaping は範囲外（§9）。
