@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー（クリック、WS169）: メーラの password は「0600 の file に平文で仮置き」（~/.config/keiland/mailer-accounts、秘密の store ができたら替える）。Gmail・Outlook の OAuth2（p006）は「今は IMAP/SMTP だけ」でベータ2 から外す。
 - 2026-10-06 夜 Q1: 第 1 段の 1 パスの間は、各 WS の全文規約の見直しの Phase（conformance）を後に回す（全ての実装の 1 パスの後、WS177 と一緒にまとめて）。正常系の実装を先に。
 - 2026-10-06 夜 ユーザー（記録だけ）: desktop の mode はスマホモード（単一の app を最大化だけ、複数の窓は出さない、約 6 inch まで、Dock Bar は狭く menu を出さない）とタブレットモード（今作っている物、最大化と窓の mode を切り替え、最大化で title bar が Dock Bar に dock、約 7 inch 以上の tablet・laptop・desktop、touch 指向で trackpad・mouse・keyboard も可）。通知 compositor → app: background（process を止める）・foreground（再開）・terminate（oom kill・手動の kill）・画面の大きさの変更。app → compositor: 実行できる mode（スマホ・タブレット）、background でも実行の要求（タブレットだけ）。→ 目標の設計として docs/architecture/keiland.md の「Desktop modes」に記録。実装の Queue は作らない。
 - 2026-10-06 夜 ユーザー（WS165 の H5）:「いったんacceptして、追加のフェーズを第2段でやりましょう。」→ p002 の認識率でいったん受け入れ、組を分ける改善は新しい Phase（第 2 段）。
