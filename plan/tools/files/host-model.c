@@ -37,6 +37,7 @@ static void make_file(const char *path, const char *text);
 static int file_is(const char *path, const char *text);
 static int exists(const char *path);
 static int run(struct fm_task *task);
+static void make_elf(const char *path, const char *library);
 
 int
 main(
@@ -706,6 +707,17 @@ main(
 		check(count >= 2 && strcmp(openers[0].name, "Record") == 0 && strcmp(openers[1].name, "Terminal (less)") == 0, "open: the user's list first, then the built-in viewer");
 		count = fm_apps_for("/x/run", fm_mime_guess("run", 0100755), 0100755, openers, FM_OPENERS);
 		check(count >= 2 && strcmp(openers[0].name, "Run in Terminal") == 0, "open: a program runs in a terminal first");
+		check(strstr(openers[0].command, "Press Return") != NULL, "open: the terminal stays when the program ends (BUG-234)");
+		count = fm_apps_for("/x/clip.mp4", fm_mime_guess("clip.mp4", 0100755), 0100755, openers, FM_OPENERS);
+		check(count >= 1 && strcmp(openers[0].name, "Run in Terminal") != 0 && strcmp(openers[count - 1].name, "Run in Terminal") != 0, "open: a video with x bits does not run (BUG-233)");
+		snprintf(path, sizeof(path), "%s/gui", root);
+		make_elf(path, "libwayland-client.so");
+		count = fm_apps_for(path, fm_mime_guess("gui", 0100755), 0100755, openers, FM_OPENERS);
+		check(count >= 2 && strcmp(openers[0].name, "Open") == 0 && strcmp(openers[1].name, "Run in Terminal") == 0, "open: a Wayland program opens by itself, then in a terminal (BUG-234)");
+		snprintf(path, sizeof(path), "%s/cli", root);
+		make_elf(path, "libc.so");
+		count = fm_apps_for(path, fm_mime_guess("cli", 0100755), 0100755, openers, FM_OPENERS);
+		check(count >= 1 && strcmp(openers[0].name, "Run in Terminal") == 0, "open: a command-line program runs in a terminal (BUG-234)");
 		count = fm_apps_for("/x/a.ppm", fm_mime_guess("a.ppm", 0100644), 0100644, openers, FM_OPENERS);
 		check(count >= 1 && fm_apps_is_quicklook(&openers[0]) == 1, "open: a picture opens in Quick Look");
 		count = fm_apps_for("/x/a.png", fm_mime_guess("a.png", 0100644), 0100644, openers, FM_OPENERS);
@@ -756,6 +768,67 @@ check(
 	printf("%s: %s\n", condition ? "ok" : "FAIL", what);
 	if (!condition)
 		failures++;
+}
+
+/* Writes a small 64-bit little-endian ELF program that links one library, enough for Files to read its DT_NEEDED (BUG-234). */
+static void
+make_elf(
+	const char *path,
+	const char *library)
+{
+	unsigned char image[512];
+	unsigned char *entry;
+	size_t length;
+	unsigned index;
+	FILE *file;
+
+	/* The ELF header: 64 bits, little-endian, two program headers at 64. */
+	memset(image, 0, sizeof(image));
+	memcpy(image, "\177ELF", 4);
+	image[4] = 2U;
+	image[5] = 1U;
+	image[6] = 1U;
+	image[0x20] = 64U;
+	image[0x36] = 56U;
+	image[0x38] = 2U;
+
+	/* A loaded segment of the whole file at address 0x400000, and the dynamic segment at 256. */
+	entry = image + 64;
+	entry[0] = 1U;
+	entry[18] = 0x40U;
+	entry[32] = 0x00U;
+	entry[33] = 0x02U;
+	entry = image + 64 + 56;
+	entry[0] = 2U;
+	entry[8] = 0x00U;
+	entry[9] = 0x01U;
+	entry[32] = 64U;
+
+	/* The dynamic entries: DT_NEEDED at string 1, DT_STRTAB at 0x400180 (file 384), DT_STRSZ, DT_NULL. */
+	length = strlen(library) + 2U;
+	entry = image + 256;
+	entry[0] = 1U;
+	entry[8] = 1U;
+	entry = image + 256 + 16;
+	entry[0] = 5U;
+	entry[8] = 0x80U;
+	entry[9] = 0x01U;
+	entry[10] = 0x40U;
+	entry = image + 256 + 32;
+	entry[0] = 10U;
+	entry[8] = (unsigned char)length;
+
+	/* The string table: an empty name, then the library's. */
+	for (index = 0; library[index] != '\0'; index++)
+		image[384 + 1 + index] = (unsigned char)library[index];
+
+	/* The file, which may run. */
+	file = fopen(path, "wb");
+	if (file == NULL)
+		return;
+	(void)fwrite(image, 1, sizeof(image), file);
+	fclose(file);
+	(void)chmod(path, 0755);
 }
 
 static void
