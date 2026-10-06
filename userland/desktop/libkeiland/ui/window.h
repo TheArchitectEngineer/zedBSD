@@ -203,6 +203,9 @@ struct keiui_present {
 	VkFence fence;
 	VkSemaphore acquired;
 
+	/* The device's name (kl_window_device_name, WS131 p019). */
+	char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+
 	/* The Vulkan call that failed last, and the last frame's copy, acquire, present and wait times (milliseconds). */
 	const char *operation;
 	unsigned copy_ms;
@@ -253,9 +256,16 @@ struct kl_window {
 	uint32_t preferred_width;
 	uint32_t preferred_height;
 
-	/* Whether the first configure arrived, and whether the last one made the window fullscreen (KUI_VERSION 10). */
+	/* Whether the first configure arrived, and whether the last one made the window fullscreen (KUI_VERSION 10) or maximized (KL_VERSION 45). */
 	int configured;
 	int fullscreen;
+	int maximized;
+
+	/* The first screen and its current mode (KL_VERSION 45; 0 while unknown; the refresh in millihertz). */
+	struct wl_output *output;
+	int32_t output_width;
+	int32_t output_height;
+	int32_t output_refresh;
 
 	/*
 	 * The pointer's place, the modifiers held (KL_MOD_*), the serial of

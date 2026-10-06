@@ -485,7 +485,9 @@ static void scan_operator(struct content_run *run, enum content_operator code, s
 static void scan_corners(const double matrix[6], const double corners[8], double quad[8]);
 static int scan_add_stray(struct pdf_scan *scan, size_t offset);
 static void scan_string(struct content_run *run, const unsigned char *bytes, size_t length);
-static void scan_show(struct content_run *run, size_t start, size_t end, const unsigned char *data);
+static void scan_show(struct content_run *run, enum content_operator code, size_t start, size_t end, const unsigned char *data);
+static void scan_move(struct content_run *run, enum content_operator code, size_t start, size_t end);
+static void scan_mark(struct content_run *run, size_t start, size_t keyword, size_t end, const unsigned char *data);
 static void scan_text_operator(struct content_run *run, enum content_operator code, size_t keyword, const unsigned char *data);
 static int scan_grow(void **items, size_t *capacity, size_t count, size_t size);
 static double clamp_unit(double value);
@@ -613,6 +615,10 @@ pdf_scan_free(
 	free(scan->shows);
 	free(scan->characters);
 	free(scan->block_clips);
+	free(scan->blocks);
+	free(scan->moves);
+	free(scan->marks);
+	free(scan->mark_stack);
 	memset(scan, 0, sizeof(*scan));
 }
 
@@ -4568,7 +4574,23 @@ scan_operator(
 	/* The text: the shown strings, the text objects, the marked content and what is drawn between (p002b). */
 	scan_text_operator(run, code, keyword, data);
 	if (code == OP_TEXT_SHOW || code == OP_TEXT_SHOW_ARRAY || code == OP_TEXT_NEXT_SHOW || code == OP_TEXT_SPACED_SHOW)
-		scan_show(run, start, end, data);
+		scan_show(run, code, start, end, data);
+
+	/* The text objects' BT and ET, and the operators that move the text position in them (ws175-p004). */
+	if (code == OP_TEXT_BEGIN && scan->block_count > 0)
+		scan->blocks[scan->block_count - 1U].begin = start;
+	if (code == OP_TEXT_END && scan->block_count > 0) {
+		scan->blocks[scan->block_count - 1U].end = end;
+		scan->blocks[scan->block_count - 1U].ended = 1;
+	}
+
+	/* The marked content, its BDC and its EMC (design.md [M10]). */
+	if (code == OP_IGNORED)
+		scan_mark(run, start, keyword, end, data);
+
+	/* The moves of the text position. */
+	if (code == OP_TEXT_MOVE || code == OP_TEXT_MOVE_LEADING || code == OP_TEXT_MATRIX || code == OP_TEXT_NEXT_LINE)
+		scan_move(run, code, start, end);
 
 	/* Only an operator that drew an object of the page goes on. */
 	if (!run->scan_pending)
@@ -4727,6 +4749,7 @@ scan_string(
 static void
 scan_show(
 	struct content_run *run,
+	enum content_operator code,
 	size_t start,
 	size_t end,
 	const unsigned char *data)
@@ -4757,6 +4780,13 @@ scan_show(
 	memset(show, 0, sizeof(*show));
 	show->offset = start;
 	show->length = end - start;
+	show->op = PDF_SCAN_SHOW_TJ;
+	if (code == OP_TEXT_SHOW_ARRAY)
+		show->op = PDF_SCAN_SHOW_ARRAY;
+	if (code == OP_TEXT_NEXT_SHOW)
+		show->op = PDF_SCAN_SHOW_NEXT;
+	if (code == OP_TEXT_SPACED_SHOW)
+		show->op = PDF_SCAN_SHOW_SPACED;
 	SHA256Init(&context);
 	SHA256Update(&context, data + start, end - start);
 	SHA256Final(digest, &context);
@@ -4849,6 +4879,16 @@ scan_text_operator(
 			return;
 		}
 
+		/* Its record, its BT and ET to come (scan_operator). */
+		error = scan_grow((void **)&scan->blocks, &scan->block_capacity, scan->block_count + 1U, sizeof(*scan->blocks));
+		if (error != 0) {
+			scan->error = error;
+			return;
+		}
+
+		/* Not known yet. */
+		memset(&scan->blocks[scan->block_count], 0, sizeof(*scan->blocks));
+
 		/* The new text object. */
 		scan->block_clips[scan->block_count] = 0U;
 		scan->block_count++;
@@ -4900,6 +4940,114 @@ scan_text_operator(
 	default:
 		break;
 	}
+}
+
+/*
+ * Notes an operator that moves the text position in a text object of the
+ * page's own content (ws175-p004): its bytes, its text object, and the
+ * leading a TD sets.  A failure of memory fails the scan.
+ */
+static void
+scan_move(
+	struct content_run *run,
+	enum content_operator code,
+	size_t start,
+	size_t end)
+{
+	struct pdf_scan_move *move;
+	struct pdf_scan *scan;
+	int error;
+
+	/* Only in a text object. */
+	scan = run->scan;
+	if (!scan->in_text || scan->block_count == 0)
+		return;
+
+	/* Room for it. */
+	error = scan_grow((void **)&scan->moves, &scan->move_capacity, scan->move_count + 1U, sizeof(*scan->moves));
+	if (error != 0) {
+		scan->error = error;
+		return;
+	}
+
+	/* Its bytes, its text object, and the leading after a TD (the state's now). */
+	move = &scan->moves[scan->move_count];
+	memset(move, 0, sizeof(*move));
+	move->offset = start;
+	move->length = end - start;
+	move->block = scan->block_count - 1U;
+	if (code == OP_TEXT_MOVE_LEADING) {
+		move->sets_leading = 1;
+		move->leading = run->stack[run->depth].leading;
+	}
+
+	/* One more. */
+	scan->move_count++;
+}
+
+/*
+ * Notes the marked content of the page's own content (ws175-p004): a BDC's
+ * bytes as it opens (a BMC is counted, to pair the EMC), the end of its
+ * EMC as it closes.  A failure of memory fails the scan.
+ */
+static void
+scan_mark(
+	struct content_run *run,
+	size_t start,
+	size_t keyword,
+	size_t end,
+	const unsigned char *data)
+{
+	struct pdf_scan *scan;
+	size_t record;
+	int is_bdc;
+	int is_bmc;
+	int is_emc;
+	int error;
+
+	/* Which operator. */
+	scan = run->scan;
+	if (end - keyword != 3U)
+		return;
+	is_bdc = memcmp(data + keyword, "BDC", 3) == 0;
+	is_bmc = memcmp(data + keyword, "BMC", 3) == 0;
+	is_emc = memcmp(data + keyword, "EMC", 3) == 0;
+
+	/* An EMC closes the last opened; a BDC's records its end. */
+	if (is_emc) {
+		if (scan->mark_depth == 0)
+			return;
+		scan->mark_depth--;
+		record = scan->mark_stack[scan->mark_depth];
+		if (record != (size_t)-1)
+			scan->marks[record].end = end;
+		return;
+	}
+
+	/* An opening: a BDC's record, a BMC's place in the stack. */
+	if (!is_bdc && !is_bmc)
+		return;
+	error = scan_grow((void **)&scan->mark_stack, &scan->mark_stack_capacity, scan->mark_depth + 1U, sizeof(*scan->mark_stack));
+	if (error == 0 && is_bdc)
+		error = scan_grow((void **)&scan->marks, &scan->mark_capacity, scan->mark_count + 1U, sizeof(*scan->marks));
+	if (error != 0) {
+		scan->error = error;
+		return;
+	}
+
+	/* The record. */
+	record = (size_t)-1;
+	if (is_bdc) {
+		record = scan->mark_count;
+		scan->marks[record].offset = start;
+		scan->marks[record].length = end - start;
+		scan->marks[record].end = 0;
+		scan->mark_count++;
+	}
+
+	/* On the stack. */
+	scan->mark_stack[scan->mark_depth] = record;
+	scan->mark_depth++;
 }
 
 /* Grows an array of items of a size to hold count of them.  Returns 0 or ENOMEM. */

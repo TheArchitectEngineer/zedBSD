@@ -5,8 +5,9 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname -- "$0")/../../.."
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# The work directory stays in build/tmp (2026-10-06 user: deleting is Q1's step; plan/tools/q1-clean.sh removes it).
+mkdir -p build/tmp
+work=$(mktemp -d "$(pwd)/build/tmp/run-host-wired.XXXXXX")
 mkdir -p "$work/include"
 for header in truetype.h keiland.h keiland-ui.h; do
 	ln -sf "$(pwd)/userland/desktop/keiland/$header" "$work/include/$header"

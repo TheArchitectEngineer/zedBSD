@@ -257,12 +257,26 @@ notes_edit_copy(
 	const struct notes_edit *edit)
 {
 	struct notes_edit *copy;
+	size_t length;
 
 	/* The copy. */
 	copy = malloc(sizeof(*copy));
 	if (copy == NULL)
 		return NULL;
 	*copy = *edit;
+
+	/* Its words, its own copy (ws175-p004). */
+	if (edit->text != NULL) {
+		length = strlen(edit->text);
+		copy->text = malloc(length + 1U);
+		if (copy->text == NULL) {
+			free(copy);
+			return NULL;
+		}
+
+		/* The words' bytes. */
+		memcpy(copy->text, edit->text, length + 1U);
+	}
 
 	/* Its image is held once more. */
 	if (copy->image != NULL)
@@ -281,8 +295,9 @@ notes_edit_free(
 	if (edit == NULL)
 		return;
 
-	/* The image's reference, then the edit. */
+	/* The image's reference, the words, then the edit. */
 	notes_image_release(edit->image);
+	free(edit->text);
 	free(edit);
 }
 
@@ -500,7 +515,7 @@ notes_page_editor(
 /*
  * Gives the state of an object of a page's editor by its index there: its
  * edit, or (an object without one) its key as the page has it.  The
- * state's image is the edit's, not held again.  Returns 0, ENOENT for an
+ * state's image and words are the edit's, not held or copied again.  Returns 0, ENOENT for an
  * index the editor does not have, or the failure of making the editor.
  */
 int
@@ -569,6 +584,56 @@ notes_page_object(
 
 	/* An object as the page has it. */
 	*state = named;
+	return 0;
+}
+
+/*
+ * Finds the index in a page's editor of the object an edit names
+ * (ws175-p008): an inserted one by its rank among the page's inserted
+ * edits, one of the page's own by its key.  Returns 0, ENOENT when the
+ * page does not have it, or the failure of making the editor.
+ */
+int
+notes_page_object_index(
+	struct notes_document *document,
+	size_t page,
+	const struct notes_edit *which,
+	size_t *index)
+{
+	struct pdf_page_editor *editor;
+	struct notes_page *target;
+	size_t inserted;
+	size_t rank;
+	size_t at;
+	int error;
+
+	/* The page's editor. */
+	error = notes_page_editor(document, page, &editor);
+	if (error != 0)
+		return error;
+	target = document->pages[page];
+
+	/* One of the page's own, by its key. */
+	if ((which->flags & NOTES_EDIT_INSERTED) == 0U)
+		return pdf_page_editor_find(editor, &which->key, index);
+
+	/* An inserted one: its rank among the inserted, after the page's own objects. */
+	inserted = 0;
+	rank = (size_t)-1;
+	for (at = 0; at < target->edit_count; at++) {
+		if ((target->edits[at]->flags & NOTES_EDIT_INSERTED) == 0U)
+			continue;
+		if (target->edits[at]->id == which->id)
+			rank = inserted;
+		inserted++;
+	}
+
+	/* Not on the page. */
+	if (rank == (size_t)-1)
+		return ENOENT;
+
+	/* Succeeded: its index. */
+	*index = pdf_page_editor_count(editor) - inserted + rank;
 	return 0;
 }
 
@@ -646,10 +711,12 @@ edit_apply(
 	const struct notes_edit *edit)
 {
 	struct pdf_image_source source;
+	struct pdf_edit_text words;
 	double transform[6];
 	void *owned;
 	size_t index;
 	size_t at;
+	unsigned result;
 	int error;
 
 	/* The transform as libpdf takes it. */
@@ -686,6 +753,17 @@ edit_apply(
 			return error;
 		error = pdf_page_editor_set_image(editor, index, &source);
 		free(owned);
+		if (error != 0)
+			return error;
+	}
+
+	/* New words, in the font asked for (ws175-p004). */
+	if ((edit->flags & NOTES_EDIT_TEXT) != 0U && edit->text != NULL) {
+		memset(&words, 0, sizeof(words));
+		words.size = sizeof(words);
+		words.utf8 = edit->text;
+		words.font = (enum pdf_edit_font)edit->font;
+		error = pdf_page_editor_set_text(editor, index, &words, &result);
 		if (error != 0)
 			return error;
 	}

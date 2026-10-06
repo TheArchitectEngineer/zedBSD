@@ -73,6 +73,10 @@ static void window_toplevel_close(void *data, struct xdg_toplevel *toplevel);
 static void window_toplevel_bounds(void *data, struct xdg_toplevel *toplevel, int32_t width, int32_t height);
 static void window_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities);
 static void window_seat_name(void *data, struct wl_seat *seat, const char *name);
+static void window_output_geometry(void *data, struct wl_output *output, int32_t x, int32_t y, int32_t physical_width, int32_t physical_height, int32_t subpixel, const char *make, const char *model, int32_t transform);
+static void window_output_mode(void *data, struct wl_output *output, uint32_t flags, int32_t width, int32_t height, int32_t refresh);
+static void window_output_done(void *data, struct wl_output *output);
+static void window_output_scale(void *data, struct wl_output *output, int32_t factor);
 static void window_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y);
 static void window_pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface);
 static void window_pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
@@ -152,6 +156,11 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 /* The seat's devices and name. */
 static const struct wl_seat_listener seat_listener = {
 	window_seat_capabilities, window_seat_name
+};
+
+/* The first screen's description: its current mode is kept (KL_VERSION 45). */
+static const struct wl_output_listener output_listener = {
+	window_output_geometry, window_output_mode, window_output_done, window_output_scale, NULL, NULL
 };
 
 /* The touch screen's events of versions 1 to 5 (shape and orientation, of version 6, are never called). */
@@ -259,6 +268,8 @@ kl_window_close(
 		wl_keyboard_destroy(window->keyboard);
 	if (window->seat != NULL)
 		wl_seat_destroy(window->seat);
+	if (window->output != NULL)
+		wl_output_destroy(window->output);
 
 	/* The surface's content type before the surface, the manager with it. */
 	if (window->content_type != NULL)
@@ -751,6 +762,96 @@ kl_window_set_repeat(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Reports whether the compositor's last configure maximized the window
+ * (KL_VERSION 45).
+ */
+int
+kl_window_maximized(
+	const struct kl_window *window)
+{
+	/* The state as last configured. */
+	return window->maximized;
+}
+
+/*
+ * Asks the compositor to maximize the window, or to bring it back to its
+ * size (KL_VERSION 45); the configure that follows says what it did.
+ */
+void
+kl_window_set_maximized(
+	struct kl_window *window,
+	int maximized)
+{
+	/* Maximized, or back. */
+	if (maximized) {
+		xdg_toplevel_set_maximized(window->toplevel);
+	} else {
+		xdg_toplevel_unset_maximized(window->toplevel);
+	}
+}
+
+/*
+ * Asks the compositor to minimize the window (KL_VERSION 45).
+ */
+void
+kl_window_minimize(
+	struct kl_window *window)
+{
+	/* The request, sent with the next flush. */
+	xdg_toplevel_set_minimized(window->toplevel);
+}
+
+/*
+ * Reports the first screen's current mode: its size and its refresh in
+ * millihertz (KL_VERSION 45).  Returns 0, or ENOENT while it is not known.
+ */
+int
+kl_window_output_mode(
+	const struct kl_window *window,
+	int32_t *width,
+	int32_t *height,
+	int32_t *refresh)
+{
+	/* Not told yet. */
+	if (window->output_width <= 0 || window->output_height <= 0)
+		return ENOENT;
+
+	/* Succeeded: the mode. */
+	*width = window->output_width;
+	*height = window->output_height;
+	*refresh = window->output_refresh;
+	return 0;
+}
+
+/*
+ * Reports the name of the Vulkan device that shows a KL_PRESENT_VULKAN
+ * window's frames (KL_VERSION 45; empty for another presenter).
+ */
+const char *
+kl_window_device_name(
+	const struct kl_window *window)
+{
+	/* The presenter's device. */
+	return window->vulkan.device_name;
+}
+
+/*
+ * Reports how long the last frame's copy, acquire, queueing and wait took,
+ * in milliseconds (KL_VERSION 45, a KL_PRESENT_VULKAN window's).
+ */
+void
+kl_window_present_times(
+	const struct kl_window *window,
+	struct kl_present_times *times)
+{
+	/* The presenter's times. */
+	times->copy_ms = window->vulkan.copy_ms;
+	times->acquire_ms = window->vulkan.acquire_ms;
+	times->present_ms = window->vulkan.present_ms;
+	times->wait_ms = window->vulkan.wait_ms;
 }
 
 /*
@@ -1512,6 +1613,15 @@ window_global(
 		return;
 	}
 
+	/* The first screen, whose mode an application may show (KL_VERSION 45). */
+	match = strcmp(interface, "wl_output");
+	if (match == 0 && window->output == NULL) {
+		window->output = wl_registry_bind(registry, name, &wl_output_interface, 2U);
+		if (window->output != NULL)
+			(void)wl_output_add_listener(window->output, &output_listener, window);
+		return;
+	}
+
 	/* The seat gives the pointer and the keyboard. */
 	match = strcmp(interface, "wl_seat");
 	if (match == 0 && window->seat == NULL) {
@@ -1577,18 +1687,23 @@ window_toplevel_configure(
 	const uint32_t *state;
 	size_t count;
 	size_t index;
+	int was_maximized;
 	int resized;
 
-	/* Whether the compositor made the window fullscreen (the other states change nothing here). */
+	/* Whether the compositor made the window fullscreen or maximized (the other states change nothing here). */
 	(void)toplevel;
 	window = data;
+	was_maximized = window->maximized;
 	window->fullscreen = 0;
+	window->maximized = 0;
 	state = states->data;
 	count = states->size / sizeof(uint32_t);
 	for (index = 0; index < count; index++) {
-		/* The fullscreen state among the window's states. */
+		/* The fullscreen and maximized states among the window's states. */
 		if (state[index] == XDG_TOPLEVEL_STATE_FULLSCREEN)
 			window->fullscreen = 1;
+		if (state[index] == XDG_TOPLEVEL_STATE_MAXIMIZED)
+			window->maximized = 1;
 	}
 
 	/* A width left to the window is the one it would like, within the compositor's bounds. */
@@ -1618,7 +1733,9 @@ window_toplevel_configure(
 		resized = 1;
 	}
 
-	/* The application hears of a new size. */
+	/* The application hears of a new size, and of a window maximized or no longer (it may lay out otherwise). */
+	if (was_maximized != window->maximized)
+		resized = 1;
 	if (resized)
 		(void)window_push(window, KL_WINDOW_RESIZE);
 }
@@ -2362,4 +2479,79 @@ window_inset(
 
 	/* The default: the next frame keeps the caret in sight. */
 	keiui_ui_inset_note(window->width, window->height, right, bottom, reason, window->text_cursor);
+}
+
+/* The screen's geometry: only the mode matters here. */
+static void
+window_output_geometry(
+	void *data,
+	struct wl_output *output,
+	int32_t x,
+	int32_t y,
+	int32_t physical_width,
+	int32_t physical_height,
+	int32_t subpixel,
+	const char *make,
+	const char *model,
+	int32_t transform)
+{
+	/* Nothing to keep. */
+	(void)data;
+	(void)output;
+	(void)x;
+	(void)y;
+	(void)physical_width;
+	(void)physical_height;
+	(void)subpixel;
+	(void)make;
+	(void)model;
+	(void)transform;
+}
+
+/* Keeps the screen's current mode: its size and refresh (millihertz). */
+static void
+window_output_mode(
+	void *data,
+	struct wl_output *output,
+	uint32_t flags,
+	int32_t width,
+	int32_t height,
+	int32_t refresh)
+{
+	struct kl_window *window;
+
+	/* Only the current mode is the screen's. */
+	(void)output;
+	window = data;
+	if ((flags & WL_OUTPUT_MODE_CURRENT) == 0U)
+		return;
+
+	/* The mode. */
+	window->output_width = width;
+	window->output_height = height;
+	window->output_refresh = refresh;
+}
+
+/* The end of the screen's description: the mode is already kept. */
+static void
+window_output_done(
+	void *data,
+	struct wl_output *output)
+{
+	/* Nothing to do. */
+	(void)data;
+	(void)output;
+}
+
+/* The screen's scale is not used. */
+static void
+window_output_scale(
+	void *data,
+	struct wl_output *output,
+	int32_t factor)
+{
+	/* Nothing to keep. */
+	(void)data;
+	(void)output;
+	(void)factor;
 }

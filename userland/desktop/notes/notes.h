@@ -194,13 +194,15 @@ struct notes_image {
 /*
  * What an edit does: the page's object deleted, placed by a map of the
  * page's shown space, given an image in its place; or an image inserted
- * over the page's objects.  0x10 and up are kept for text (ws175-p004,
- * p005).
+ * over the page's objects.  ws175-p004: a line of text given new words
+ * (TEXT); 0x20 and up are kept for p005.
  */
 #define NOTES_EDIT_DELETED	0x01U
 #define NOTES_EDIT_PLACED	0x02U
 #define NOTES_EDIT_IMAGE	0x04U
 #define NOTES_EDIT_INSERTED	0x08U
+#define NOTES_EDIT_TEXT		0x10U
+#define NOTES_EDIT_KNOWN	0x1fU
 
 /*
  * One edit of a page (ws175-p007, design.md section 6.1): the state of one
@@ -213,7 +215,8 @@ struct notes_image {
  * onto the shown space (its top left where (0, 1) goes).  Its first four
  * numbers are kept on a 1/65536 grid and its last two on the edit data's
  * 1/64 point, so that saving and reading back gives the same edit.  image
- * holds a reference.
+ * holds a reference.  A line's new words (TEXT, ws175-p004) are text, UTF-8
+ * the edit owns, written in font (enum pdf_edit_font; 0 the line's own).
  */
 struct notes_edit {
 	struct pdf_edit_key key;
@@ -221,6 +224,8 @@ struct notes_edit {
 	unsigned flags;
 	float transform[6];
 	struct notes_image *image;
+	char *text;
+	unsigned font;
 };
 
 /*
@@ -441,6 +446,7 @@ int notes_document_edit_object(struct notes_document *document, size_t page, con
 int notes_document_reset_object(struct notes_document *document, size_t page, const struct notes_edit *which);
 int notes_page_editor(struct notes_document *document, size_t page, struct pdf_page_editor **editor);
 int notes_page_object(struct notes_document *document, size_t page, size_t index, struct notes_edit *state);
+int notes_page_object_index(struct notes_document *document, size_t page, const struct notes_edit *which, size_t *index);
 void notes_page_close_editor(struct notes_page *page);
 int notes_document_edited(const struct notes_document *document);
 int notes_document_check_edits(struct notes_document *document);

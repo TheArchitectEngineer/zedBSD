@@ -92,7 +92,9 @@ struct editor_image {
  * One object's change: its state, its placement (the shown space's map
  * from where it was to where it goes), the image put in its place (or
  * inserted), and for an inserted object the map of an image's unit square
- * onto the shown space.
+ * onto the shown space.  A line of text given new words (ws175-p004) has
+ * them (text, UTF-8) and their codes in its font (codes, code_length
+ * bytes), the editor's copies.
  */
 struct editor_change {
 	unsigned state;
@@ -100,6 +102,28 @@ struct editor_change {
 	size_t image;
 	int inserted;
 	double square[6];
+	char *text;
+	unsigned char *codes;
+	size_t code_length;
+};
+
+/*
+ * One replacement of the page's content (ws175-p004): length bytes from
+ * offset replaced by count bytes of the replacements' text from from.
+ */
+struct editor_patch {
+	size_t offset;
+	size_t length;
+	size_t from;
+	size_t count;
+};
+
+/* The replacements of a new content, and the text they write. */
+struct editor_patches {
+	struct editor_patch *items;
+	size_t count;
+	size_t capacity;
+	struct pdf_buffer text;
 };
 
 /*
@@ -146,6 +170,19 @@ struct pdf_page_editor {
 };
 
 static int editor_writable(const struct pdf_page_editor *editor, size_t index);
+static const struct editor_line *editor_line_of(const struct pdf_page_editor *editor, size_t index);
+static void editor_forget_text(struct editor_change *change);
+static int editor_encode(struct pdf_page_editor *editor, const struct editor_line *line, const char *utf8, unsigned char **codes, size_t *length);
+static size_t editor_utf8(const unsigned char *bytes, size_t length, uint32_t *character);
+static int editor_patch_objects(const struct pdf_page_editor *editor, size_t hidden, const char *prefix, const size_t *names, struct editor_patches *patches);
+static int editor_patch_text(const struct pdf_page_editor *editor, size_t hidden, struct editor_patches *patches);
+static int editor_write_show(const struct pdf_page_editor *editor, size_t at, size_t line_index, size_t hidden, struct pdf_buffer *out);
+static int editor_show_string(const struct pdf_page_editor *editor, const struct pdf_scan_show *show, size_t *from, size_t *length);
+static int editor_write_mark(const struct pdf_page_editor *editor, const struct pdf_scan_mark *mark, struct pdf_buffer *out, int *replaced);
+static int editor_has_reference(const struct pdf_object *object, int depth);
+static int editor_patch_add(struct editor_patches *patches, size_t offset, size_t length, size_t from);
+static int editor_patch_order(const void *left, const void *right);
+static void editor_patches_free(struct editor_patches *patches);
 static int editor_grow(struct pdf_page_editor *editor);
 static int editor_take_image(struct pdf_page_editor *editor, const struct pdf_image_source *source, size_t *taken);
 static int editor_write_image(struct pdf_writer *writer, const struct editor_image *image, size_t *index);
@@ -261,8 +298,10 @@ pdf_page_editor_close(
 		free(editor->images[at].alpha);
 	}
 
-	/* The images' list. */
+	/* The images' list, and the lines' new words. */
 	free(editor->images);
+	for (at = 0; at < editor->count; at++)
+		editor_forget_text(&editor->changes[at]);
 
 	/* The scan, the content, the changes, the preview's objects, a blank editor's document, the record. */
 	pdf_scan_free(&editor->scan);
@@ -416,6 +455,8 @@ pdf_page_editor_object(
 		object->kind = PDF_EDIT_TEXT;
 		object->flags |= line->flags;
 		object->text = line->text;
+		if (change->text != NULL)
+			object->text = change->text;
 		memcpy(object->font_name, line->font_name, sizeof(object->font_name));
 		object->font_size = line->size;
 	} else {
@@ -622,10 +663,11 @@ pdf_page_editor_reset(
 	if (error != 0)
 		return error;
 
-	/* As it was (an inserted object keeps its image). */
+	/* As it was (an inserted object keeps its image; a line its words). */
 	editor->changes[index].state = EDITOR_KEPT;
 	if (!editor->changes[index].inserted)
 		editor->changes[index].image = EDITOR_NONE;
+	editor_forget_text(&editor->changes[index]);
 	return 0;
 }
 
@@ -640,12 +682,10 @@ pdf_page_editor_delete(
 {
 	int error;
 
-	/* An object of a page that can be edited (a line of text is p004's). */
+	/* An object of a page that can be edited (a line of text too, ws175-p004). */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
-	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count)
-		return ENOTSUP;
 
 	/* Gone from the new content. */
 	editor->changes[index].state = EDITOR_DELETED;
@@ -665,16 +705,18 @@ pdf_page_editor_place(
 	size_t index,
 	const double transform[6])
 {
+	const struct editor_line *line;
 	double inverse[6];
 	double size;
 	size_t item;
 	int error;
 
-	/* An object of a page that can be edited (a line of text is p004's), and a placement. */
+	/* An object of a page that can be edited (a line of text but an invisible one, ws175-p004, design.md [M9]), and a placement. */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
-	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count)
+	line = editor_line_of(editor, index);
+	if (line != NULL && (line->flags & PDF_EDIT_OBJECT_INVISIBLE) != 0U)
 		return ENOTSUP;
 	if (transform == NULL)
 		return EINVAL;
@@ -690,7 +732,11 @@ pdf_page_editor_place(
 	error = editor_invert(transform, inverse);
 	if (error != 0)
 		return EINVAL;
-	if (!editor->changes[index].inserted) {
+	if (line != NULL) {
+		error = editor_invert(editor->scan.shows[line->first].ctm, inverse);
+		if (error != 0)
+			return EINVAL;
+	} else if (!editor->changes[index].inserted) {
 		error = editor_invert(editor->scan.objects[index].ctm, inverse);
 		if (error != 0)
 			return EINVAL;
@@ -840,14 +886,20 @@ pdf_page_editor_render(
 }
 
 /*
- * Builds a page's new content (design.md section 3.4): the page's own
- * within q and Q, each changed object's bytes replaced (a deleted one, or
- * the one hidden, left out; a placed one inside q M cm ... Q, M the
- * placement in the object's own space; one given an image drawn as that
- * image fitted into its corners), the Q without a q left out, the text
- * object and the q the content left open closed; then the inserted images.
- * An image is named prefix and names[its index].  Returns 0, EINVAL, or
- * ENOMEM.
+ * Builds the page's new content (design.md section 3.4): the page's own
+ * within a level of its own, each changed object's bytes replaced (a
+ * deleted or hidden one by nothing, a placed one wrapped in its own level
+ * with its placement in the space in force, M = C_rec times S times
+ * C_rec's inverse; one given an image drawn as that image fitted into its
+ * corners), the Q without a q left out, the text object and the q the
+ * content left open closed; then the inserted images.  ws175-p004: a text
+ * object with a changed line is normalized (its moves of the text
+ * position left out, a TD's leading kept as TL, each shown string after
+ * its own Tm, ' and " as Tj) and the line's strings moved (Tm' = Tm times
+ * C_rec times S times C_rec's inverse), left out, or the first showing
+ * its new words.  The replacements are gathered first and written in the
+ * content's order.  An image is named prefix and names[its index].
+ * Returns 0, EINVAL, or ENOMEM.
  */
 int
 pdf_editor_content(
@@ -857,90 +909,44 @@ pdf_editor_content(
 	const size_t *names,
 	struct pdf_buffer *out)
 {
-	const struct pdf_scan_object *object;
+	struct editor_patches patches;
 	const struct editor_change *change;
-	double inverse[6];
-	double through[6];
-	double matrix[6];
 	double square[6];
-	double quad[8];
 	size_t position;
 	size_t object_at;
-	size_t stray_at;
-	size_t offset;
+	size_t at;
 	size_t item;
 	int error;
 
-	/* The page's content, from its start, within a level of its own. */
+	/* The replacements: the objects, the stray Q, the text objects. */
+	memset(&patches, 0, sizeof(patches));
+	error = editor_patch_objects(editor, hidden, prefix, names, &patches);
+	if (error == 0)
+		error = editor_patch_text(editor, hidden, &patches);
+	if (error == 0 && patches.text.error != 0)
+		error = patches.text.error;
+	if (error != 0) {
+		editor_patches_free(&patches);
+		return error;
+	}
+
+	/* In the content's order. */
+	if (patches.count > 1)
+		qsort(patches.items, patches.count, sizeof(*patches.items), editor_patch_order);
+
+	/* The page's content, from its start, within a level of its own, each replacement in its place. */
 	pdf_buffer_append(out, "q\n", 2);
 	position = 0;
-	object_at = 0;
-	stray_at = 0;
-
-	/* The changed objects and the stray Q, in the order of the content. */
-	for (;;) {
-		/* The next object of the page that changed, and the next stray Q. */
-		while (object_at < editor->scan.count &&
-		       editor->changes[object_at].state == EDITOR_KEPT &&
-		       editor->changes[object_at].image == EDITOR_NONE &&
-		       object_at != hidden)
-			object_at++;
-		if (object_at >= editor->scan.count && stray_at >= editor->scan.stray_count)
-			break;
-
-		/* A stray Q before the next changed object is left out. */
-		if (stray_at < editor->scan.stray_count && (object_at >= editor->scan.count || editor->scan.stray_restores[stray_at] < editor->scan.objects[object_at].offset)) {
-			offset = editor->scan.stray_restores[stray_at];
-			pdf_buffer_append(out, editor->content + position, offset - position);
-			pdf_buffer_append(out, " ", 1);
-			position = offset + 1U;
-			stray_at++;
+	for (at = 0; at < patches.count; at++) {
+		if (patches.items[at].offset < position)
 			continue;
-		}
-
-		/* The bytes before the object as they are. */
-		object = &editor->scan.objects[object_at];
-		change = &editor->changes[object_at];
-		pdf_buffer_append(out, editor->content + position, object->offset - position);
-		position = object->offset + object->length;
-
-		/* A deleted (or hidden) object leaves only a space. */
-		if (change->state == EDITOR_DELETED || object_at == hidden) {
-			pdf_buffer_append(out, " ", 1);
-			object_at++;
-			continue;
-		}
-
-		/* An image in its place: fitted into its corners where they are now. */
-		if (change->image != EDITOR_NONE) {
-			editor_quad(editor, object_at, quad);
-			error = editor_fit(&editor->images[change->image], quad, square);
-			if (error == 0)
-				error = editor_draw_image(out, &editor->images[change->image], square, object->ctm, prefix, names[change->image]);
-			if (error != 0)
-				return error;
-			object_at++;
-			continue;
-		}
-
-		/* A placed one: M = C_rec times S times C_rec's inverse, so that M times C_rec is C_rec times S. */
-		error = editor_invert(object->ctm, inverse);
-		if (error != 0)
-			return EINVAL;
-		editor_multiply(object->ctm, change->placement, through);
-		editor_multiply(through, inverse, matrix);
-		pdf_buffer_append(out, " q ", 3);
-		for (item = 0; item < 6; item++) {
-			editor_number(out, matrix[item]);
-			pdf_buffer_append(out, " ", 1);
-		}
-
-		/* The object's own bytes inside its level. */
-		pdf_buffer_append(out, "cm ", 3);
-		pdf_buffer_append(out, editor->content + object->offset, object->length);
-		pdf_buffer_append(out, " Q ", 3);
-		object_at++;
+		pdf_buffer_append(out, editor->content + position, patches.items[at].offset - position);
+		pdf_buffer_append(out, patches.text.data + patches.items[at].from, patches.items[at].count);
+		position = patches.items[at].offset + patches.items[at].length;
 	}
+
+	/* The replacements are written. */
+	editor_patches_free(&patches);
 
 	/* The rest of the content, a text object left open closed, and every level it left open. */
 	pdf_buffer_append(out, editor->content + position, editor->size - position);
@@ -972,6 +978,546 @@ pdf_editor_content(
 
 	/* Succeeded: the content is built. */
 	return 0;
+}
+
+/*
+ * Gathers the replacements of the page's images and graphics that changed
+ * (or the one hidden) and of the Q without a q.
+ */
+static int
+editor_patch_objects(
+	const struct pdf_page_editor *editor,
+	size_t hidden,
+	const char *prefix,
+	const size_t *names,
+	struct editor_patches *patches)
+{
+	const struct pdf_scan_object *object;
+	const struct editor_change *change;
+	struct pdf_buffer *text;
+	double inverse[6];
+	double through[6];
+	double matrix[6];
+	double square[6];
+	double quad[8];
+	size_t from;
+	size_t object_at;
+	size_t at;
+	size_t item;
+	int error;
+
+	/* Each Q without its q: a space. */
+	text = &patches->text;
+	for (at = 0; at < editor->scan.stray_count; at++) {
+		from = text->length;
+		pdf_buffer_append(text, " ", 1);
+		error = editor_patch_add(patches, editor->scan.stray_restores[at], 1U, from);
+		if (error != 0)
+			return error;
+	}
+
+	/* Each image or graphic that changed, or is hidden. */
+	for (object_at = 0; object_at < editor->scan.count; object_at++) {
+		change = &editor->changes[object_at];
+		if (change->state == EDITOR_KEPT && change->image == EDITOR_NONE && object_at != hidden)
+			continue;
+		object = &editor->scan.objects[object_at];
+		from = text->length;
+
+		/* A deleted (or hidden) object leaves only a space. */
+		if (change->state == EDITOR_DELETED || object_at == hidden) {
+			pdf_buffer_append(text, " ", 1);
+		} else if (change->image != EDITOR_NONE) {
+			/* An image in its place: fitted into its corners where they are now. */
+			editor_quad(editor, object_at, quad);
+			error = editor_fit(&editor->images[change->image], quad, square);
+			if (error == 0)
+				error = editor_draw_image(text, &editor->images[change->image], square, object->ctm, prefix, names[change->image]);
+			if (error != 0)
+				return error;
+		} else {
+			/* A placed one: M = C_rec times S times C_rec's inverse, so that M times C_rec is C_rec times S. */
+			error = editor_invert(object->ctm, inverse);
+			if (error != 0)
+				return EINVAL;
+			editor_multiply(object->ctm, change->placement, through);
+			editor_multiply(through, inverse, matrix);
+			pdf_buffer_append(text, " q ", 3);
+			for (item = 0; item < 6; item++) {
+				editor_number(text, matrix[item]);
+				pdf_buffer_append(text, " ", 1);
+			}
+
+			/* The object's own bytes inside its level. */
+			pdf_buffer_append(text, "cm ", 3);
+			pdf_buffer_append(text, editor->content + object->offset, object->length);
+			pdf_buffer_append(text, " Q ", 3);
+		}
+
+		/* The replacement of its bytes. */
+		error = editor_patch_add(patches, object->offset, object->length, from);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the objects' replacements. */
+	return 0;
+}
+
+/*
+ * Gathers the replacements of the text objects that hold a changed (or
+ * hidden) line (ws175-p004): each move of the text position left out (a
+ * TD's leading kept as TL, design.md [H1]), each shown string written
+ * after its own Tm and as Tj (' and "; a " keeps its spacing as Tw and Tc),
+ * a changed line's strings moved, left out, or its first showing its new
+ * words.
+ */
+static int
+editor_patch_text(
+	const struct pdf_page_editor *editor,
+	size_t hidden,
+	struct editor_patches *patches)
+{
+	const struct editor_line *line;
+	const struct editor_change *change;
+	const struct pdf_scan_show *show;
+	const struct pdf_scan_move *move;
+	struct pdf_buffer *text;
+	unsigned char *touched;
+	size_t *owner;
+	size_t from;
+	size_t at;
+	size_t member;
+	size_t index;
+	int replaced;
+	int stale;
+	int error;
+
+	/* No lines, nothing to do. */
+	if (editor->line_count == 0 || editor->scan.block_count == 0)
+		return 0;
+
+	/* Each string's line, and the text objects a changed line is in. */
+	touched = calloc(editor->scan.block_count, 1U);
+	owner = malloc(editor->scan.show_count * sizeof(*owner) + 1U);
+	if (touched == NULL || owner == NULL) {
+		free(touched);
+		free(owner);
+		return ENOMEM;
+	}
+
+	/* No line's yet. */
+	for (at = 0; at < editor->scan.show_count; at++)
+		owner[at] = EDITOR_NONE;
+	for (at = 0; at < editor->line_count; at++) {
+		line = &editor->lines[at];
+		index = editor->scan.count + at;
+		change = &editor->changes[index];
+		for (member = 0; member < line->count; member++)
+			owner[line->first + member] = index;
+		if (change->state == EDITOR_KEPT && change->text == NULL && index != hidden)
+			continue;
+		for (member = 0; member < line->count; member++) {
+			show = &editor->scan.shows[line->first + member];
+			if (show->block < editor->scan.block_count)
+				touched[show->block] = 1U;
+		}
+	}
+
+	/* The moves of the text position of those text objects: left out, a TD's leading kept. */
+	text = &patches->text;
+	error = 0;
+	for (at = 0; at < editor->scan.move_count && error == 0; at++) {
+		move = &editor->scan.moves[at];
+		if (move->block >= editor->scan.block_count || touched[move->block] == 0U)
+			continue;
+		from = text->length;
+		pdf_buffer_append(text, " ", 1);
+		if (move->sets_leading) {
+			editor_number(text, move->leading);
+			pdf_buffer_append(text, " TL ", 4);
+		}
+
+		/* In the move's place. */
+		error = editor_patch_add(patches, move->offset, move->length, from);
+	}
+
+	/* The marked content around a line with new words or deleted: its BDC without /ActualText (design.md [M10][N15]). */
+	for (at = 0; at < editor->scan.mark_count && error == 0; at++) {
+		stale = 0;
+		for (index = 0; index < editor->line_count && !stale; index++) {
+			change = &editor->changes[editor->scan.count + index];
+			if (change->text == NULL && change->state != EDITOR_DELETED)
+				continue;
+			show = &editor->scan.shows[editor->lines[index].first];
+			if (show->offset > editor->scan.marks[at].offset && (editor->scan.marks[at].end == 0 || show->offset < editor->scan.marks[at].end))
+				stale = 1;
+		}
+
+		/* A BDC around none is left as it is. */
+		if (!stale)
+			continue;
+		from = text->length;
+		replaced = 0;
+		error = editor_write_mark(editor, &editor->scan.marks[at], text, &replaced);
+		if (error == 0 && replaced)
+			error = editor_patch_add(patches, editor->scan.marks[at].offset, editor->scan.marks[at].length, from);
+		if (error == 0 && !replaced)
+			text->length = from;
+	}
+
+	/* Their shown strings. */
+	for (at = 0; at < editor->scan.show_count && error == 0; at++) {
+		show = &editor->scan.shows[at];
+		if (show->block >= editor->scan.block_count || touched[show->block] == 0U)
+			continue;
+		from = text->length;
+		error = editor_write_show(editor, at, owner[at], hidden, text);
+		if (error == 0)
+			error = editor_patch_add(patches, show->offset, show->length, from);
+	}
+
+	/* The scratch goes. */
+	free(touched);
+	free(owner);
+	return error;
+}
+
+/*
+ * Writes one shown string of a normalized text object: after its own Tm
+ * (moved with its line), as Tj (a TJ as it is); a string of a deleted or
+ * hidden line, or one of a line with new words but the first, as nothing
+ * (a " keeps its spacing); the first of a line with new words as them.
+ */
+static int
+editor_write_show(
+	const struct pdf_page_editor *editor,
+	size_t at,
+	size_t line_index,
+	size_t hidden,
+	struct pdf_buffer *out)
+{
+	const struct pdf_scan_show *show;
+	const struct editor_change *change;
+	const struct editor_line *line;
+	double inverse[6];
+	double through[6];
+	double matrix[6];
+	size_t string_from;
+	size_t string_length;
+	size_t item;
+	int first;
+	int error;
+
+	/* The string, its line's change (none for a string of no line). */
+	show = &editor->scan.shows[at];
+	change = NULL;
+	line = NULL;
+	first = 0;
+	if (line_index != EDITOR_NONE) {
+		change = &editor->changes[line_index];
+		line = &editor->lines[line_index - editor->scan.count];
+		first = line->first == at;
+	}
+
+	/* A " keeps its word and character spacing, whatever becomes of the string. */
+	pdf_buffer_append(out, " ", 1);
+	if (show->op == PDF_SCAN_SHOW_SPACED) {
+		editor_number(out, show->word_spacing);
+		pdf_buffer_append(out, " Tw ", 4);
+		editor_number(out, show->character_spacing);
+		pdf_buffer_append(out, " Tc ", 4);
+	}
+
+	/* A string of a deleted or hidden line, or a later string of a line with new words: nothing more. */
+	if (change != NULL && (change->state == EDITOR_DELETED || line_index == hidden))
+		return 0;
+	if (change != NULL && change->text != NULL && !first)
+		return 0;
+
+	/* Its own Tm: as it was, or Tm times C_rec times S times C_rec's inverse for a moved line. */
+	memcpy(matrix, show->start, sizeof(matrix));
+	if (change != NULL && change->state == EDITOR_PLACED) {
+		error = editor_invert(show->ctm, inverse);
+		if (error != 0)
+			return EINVAL;
+		editor_multiply(show->start, show->ctm, through);
+		editor_multiply(through, change->placement, matrix);
+		editor_multiply(matrix, inverse, matrix);
+	}
+
+	/* The matrix's six numbers. */
+	for (item = 0; item < 6; item++) {
+		editor_number(out, matrix[item]);
+		pdf_buffer_append(out, " ", 1);
+	}
+
+	/* Its operator. */
+	pdf_buffer_append(out, "Tm ", 3);
+
+	/* The line's new words, in hexadecimal. */
+	if (change != NULL && change->text != NULL) {
+		pdf_buffer_append_hex_string(out, change->codes, change->code_length);
+		pdf_buffer_append(out, " Tj ", 4);
+		return 0;
+	}
+
+	/* A TJ or a Tj as it is. */
+	if (show->op == PDF_SCAN_SHOW_ARRAY || show->op == PDF_SCAN_SHOW_TJ) {
+		pdf_buffer_append(out, editor->content + show->offset, show->length);
+		pdf_buffer_append(out, " ", 1);
+		return 0;
+	}
+
+	/* A ' or a ": its string, as Tj. */
+	error = editor_show_string(editor, show, &string_from, &string_length);
+	if (error != 0)
+		return error;
+	pdf_buffer_append(out, editor->content + string_from, string_length);
+	pdf_buffer_append(out, " Tj ", 4);
+	return 0;
+}
+
+/*
+ * Writes a BDC whose properties (inline, or named in the page's
+ * /Properties) have /ActualText without it (design.md [M10][N15]): its tag
+ * as it was, its properties inline without the key (a named dictionary
+ * that holds a reference is left as it is), BDC.  *replaced says whether
+ * it wrote one.  Returns 0 or ENOMEM.
+ */
+static int
+editor_write_mark(
+	const struct pdf_page_editor *editor,
+	const struct pdf_scan_mark *mark,
+	struct pdf_buffer *out,
+	int *replaced)
+{
+	struct pdf_lexer lexer;
+	struct pdf_arena arena;
+	struct pdf_object *tag;
+	struct pdf_object *properties;
+	struct pdf_object *page;
+	struct pdf_object *resources;
+	struct pdf_object *named;
+	struct pdf_object *dictionary;
+	struct pdf_object *value;
+	const struct pdf_object *actual;
+	size_t tag_from;
+	size_t tag_to;
+	size_t at;
+	int referenced;
+	int differs;
+	int error;
+
+	/* The tag and the properties. */
+	*replaced = 0;
+	memset(&lexer, 0, sizeof(lexer));
+	memset(&arena, 0, sizeof(arena));
+	lexer.data = editor->content + mark->offset;
+	lexer.size = mark->length;
+	lexer.arena = &arena;
+	tag_from = lexer.position;
+	error = pdf_parse_object(&lexer, 0, &tag);
+	tag_to = lexer.position;
+	if (error == 0)
+		error = pdf_parse_object(&lexer, 0, &properties);
+	if (error != 0 || tag->type != PDF_OBJECT_NAME) {
+		pdf_arena_free(&arena);
+		if (error == ENOMEM)
+			return ENOMEM;
+		return 0;
+	}
+
+	/* Inline properties, or the page's named ones (without references, so that they may stand inline). */
+	dictionary = NULL;
+	if (properties->type == PDF_OBJECT_DICTIONARY) {
+		dictionary = properties;
+	} else if (properties->type == PDF_OBJECT_NAME) {
+		error = pdf_reader_page(editor->document, editor->index, &page, &resources);
+		if (error == 0 && resources != NULL)
+			error = pdf_reader_resolve_key(editor->document, resources, "Properties", &named);
+		else
+			error = ENOENT;
+		value = NULL;
+		for (at = 0; error == 0 && named->type == PDF_OBJECT_DICTIONARY && at < named->count; at++) {
+			if (named->keys[at]->length != properties->length)
+				continue;
+			differs = memcmp(named->keys[at]->bytes, properties->bytes, properties->length);
+			if (differs == 0)
+				value = named->values[at];
+		}
+
+		/* The named dictionary. */
+		if (error == 0 && value != NULL)
+			error = pdf_reader_resolve(editor->document, value, &dictionary);
+		if (error != 0 || dictionary == NULL || dictionary->type != PDF_OBJECT_DICTIONARY)
+			dictionary = NULL;
+		referenced = 0;
+		if (dictionary != NULL)
+			referenced = editor_has_reference(dictionary, 0);
+		if (referenced)
+			dictionary = NULL;
+	}
+
+	/* Only properties with /ActualText change. */
+	actual = NULL;
+	if (dictionary != NULL)
+		actual = pdf_object_get(dictionary, "ActualText");
+	if (actual == NULL) {
+		pdf_arena_free(&arena);
+		return 0;
+	}
+
+	/* The tag as it was, the properties without the key, BDC. */
+	pdf_buffer_append(out, " ", 1);
+	pdf_buffer_append(out, editor->content + mark->offset + tag_from, tag_to - tag_from);
+	pdf_buffer_append(out, " ", 1);
+	pdf_writer_write_dictionary_except(out, dictionary, "ActualText");
+	pdf_buffer_append(out, " BDC ", 5);
+	pdf_arena_free(&arena);
+	*replaced = 1;
+	return 0;
+}
+
+/* Tells whether an object holds a reference (a dictionary or an array, to the reader's depth). */
+static int
+editor_has_reference(
+	const struct pdf_object *object,
+	int depth)
+{
+	size_t at;
+	int found;
+
+	/* Too deep counts as one. */
+	if (depth > PDF_READER_DEPTH_MAX)
+		return 1;
+	if (object->type == PDF_OBJECT_REFERENCE)
+		return 1;
+	if (object->type != PDF_OBJECT_ARRAY && object->type != PDF_OBJECT_DICTIONARY)
+		return 0;
+
+	/* Each value. */
+	for (at = 0; at < object->count; at++) {
+		found = editor_has_reference(object->values[at], depth + 1);
+		if (found)
+			return 1;
+	}
+
+	/* None. */
+	return 0;
+}
+
+/*
+ * Finds the string operand of a ' or a " (after a "'s two numbers) in the
+ * content.  Returns 0 or EINVAL.
+ */
+static int
+editor_show_string(
+	const struct pdf_page_editor *editor,
+	const struct pdf_scan_show *show,
+	size_t *from,
+	size_t *length)
+{
+	struct pdf_lexer lexer;
+	struct pdf_token token;
+	struct pdf_arena arena;
+	size_t skip;
+	size_t before;
+	int error;
+
+	/* A lexer over the operator's bytes. */
+	memset(&lexer, 0, sizeof(lexer));
+	memset(&arena, 0, sizeof(arena));
+	lexer.data = editor->content + show->offset;
+	lexer.size = show->length;
+	lexer.arena = &arena;
+
+	/* A "'s two numbers first. */
+	skip = 0;
+	if (show->op == PDF_SCAN_SHOW_SPACED)
+		skip = 2;
+	error = 0;
+	while (skip > 0 && error == 0) {
+		error = pdf_lexer_next(&lexer, &token);
+		if (error == 0 && token.type != PDF_TOKEN_INTEGER && token.type != PDF_TOKEN_REAL)
+			error = EINVAL;
+		skip--;
+	}
+
+	/* The string. */
+	before = lexer.position;
+	if (error == 0)
+		error = pdf_lexer_next(&lexer, &token);
+	if (error == 0 && token.type != PDF_TOKEN_STRING)
+		error = EINVAL;
+	pdf_arena_free(&arena);
+	if (error != 0)
+		return EINVAL;
+
+	/* Succeeded: its bytes as written. */
+	*from = show->offset + before;
+	*length = lexer.position - before;
+	return 0;
+}
+
+/* Adds a replacement: bytes of the content from offset, replaced by the patches' text from from to its end now. */
+static int
+editor_patch_add(
+	struct editor_patches *patches,
+	size_t offset,
+	size_t length,
+	size_t from)
+{
+	struct editor_patch *grown;
+	size_t capacity;
+
+	/* Room for one more. */
+	if (patches->count == patches->capacity) {
+		capacity = patches->capacity + patches->capacity / 2U + 16U;
+		grown = realloc(patches->items, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		patches->items = grown;
+		patches->capacity = capacity;
+	}
+
+	/* Succeeded: the replacement. */
+	patches->items[patches->count].offset = offset;
+	patches->items[patches->count].length = length;
+	patches->items[patches->count].from = from;
+	patches->items[patches->count].count = patches->text.length - from;
+	patches->count++;
+	return 0;
+}
+
+/* Orders two replacements by their offsets in the content. */
+static int
+editor_patch_order(
+	const void *left,
+	const void *right)
+{
+	const struct editor_patch *one;
+	const struct editor_patch *other;
+
+	/* The earlier first. */
+	one = left;
+	other = right;
+	if (one->offset < other->offset)
+		return -1;
+	if (one->offset > other->offset)
+		return 1;
+	return 0;
+}
+
+/* Frees the replacements. */
+static void
+editor_patches_free(
+	struct editor_patches *patches)
+{
+	/* The list and the text. */
+	free(patches->items);
+	free(patches->text.data);
+	memset(patches, 0, sizeof(*patches));
 }
 
 /*
@@ -1165,6 +1711,251 @@ pdf_writer_draw_page_editor(
 }
 
 /*
+ * Gives a line of text new words in its own font (ws175-p004, design.md
+ * section 3.4): each character of text->utf8 must have a code in the
+ * line's font (the font's characters read backward) whose glyph the
+ * font's embedded program draws (design.md [L5]: one with an outline, but
+ * for white space); the line's other strings go, its first shows the
+ * words where it starts, in its state (colour and spacing, design.md
+ * [M3]).  *result tells whether the font could (PDF_EDIT_TEXT_ORIGINAL) or
+ * a replacement font is needed (PDF_EDIT_TEXT_NEEDS_FONT, ENOTSUP: a font
+ * not embedded, a character it lacks, words that are not known, a font
+ * other than the line's asked for; ws175-p005 writes those).  Returns 0,
+ * EINVAL (not a line, words that are not UTF-8 or that break the line),
+ * ENOTSUP, EPERM (an invisible line, a page that cannot be edited), or
+ * ENOMEM.
+ */
+int
+pdf_page_editor_set_text(
+	struct pdf_page_editor *editor,
+	size_t index,
+	const struct pdf_edit_text *text,
+	unsigned *result)
+{
+	const struct editor_line *line;
+	struct editor_change *change;
+	unsigned char *codes;
+	size_t length;
+	size_t bytes;
+	char *copy;
+	int error;
+
+	/* A line of a page that can be edited, new words, a result. */
+	if (text == NULL || result == NULL || text->size < sizeof(*text) || text->utf8 == NULL)
+		return EINVAL;
+	*result = PDF_EDIT_TEXT_ORIGINAL;
+	error = editor_writable(editor, index);
+	if (error != 0)
+		return error;
+	line = editor_line_of(editor, index);
+	if (line == NULL)
+		return EINVAL;
+	if ((line->flags & PDF_EDIT_OBJECT_INVISIBLE) != 0U)
+		return EPERM;
+
+	/* The line's own font, for words it knows (another font is ws175-p005's). */
+	if (text->font != PDF_EDIT_FONT_ORIGINAL || (line->flags & PDF_EDIT_OBJECT_TEXT_FIXED) != 0U) {
+		*result = PDF_EDIT_TEXT_NEEDS_FONT;
+		return ENOTSUP;
+	}
+
+	/* The words' codes in it. */
+	error = editor_encode(editor, line, text->utf8, &codes, &length);
+	if (error == ENOTSUP)
+		*result = PDF_EDIT_TEXT_NEEDS_FONT;
+	if (error != 0)
+		return error;
+
+	/* The words, the editor's copy. */
+	bytes = strlen(text->utf8);
+	copy = malloc(bytes + 1U);
+	if (copy == NULL) {
+		free(codes);
+		return ENOMEM;
+	}
+
+	/* The words' bytes. */
+	memcpy(copy, text->utf8, bytes + 1U);
+
+	/* Succeeded: the line's new words (a deleted line comes back with them). */
+	change = &editor->changes[index];
+	editor_forget_text(change);
+	change->text = copy;
+	change->codes = codes;
+	change->code_length = length;
+	if (change->state == EDITOR_DELETED)
+		change->state = EDITOR_KEPT;
+	return 0;
+}
+
+/* Gives the line of text an index of an editor names; NULL for another object. */
+static const struct editor_line *
+editor_line_of(
+	const struct pdf_page_editor *editor,
+	size_t index)
+{
+	/* The lines follow the page's images and graphics. */
+	if (index < editor->scan.count || index >= editor->scan.count + editor->line_count)
+		return NULL;
+	return &editor->lines[index - editor->scan.count];
+}
+
+/* Forgets a line's new words. */
+static void
+editor_forget_text(
+	struct editor_change *change)
+{
+	/* The words and their codes. */
+	free(change->text);
+	free(change->codes);
+	change->text = NULL;
+	change->codes = NULL;
+	change->code_length = 0;
+}
+
+/*
+ * Turns words (UTF-8) into the codes of a line's font (its first string's):
+ * a code a character, each drawn by the font's own program.  Returns 0
+ * with the codes (a new buffer), EINVAL for words that are not UTF-8 or
+ * hold a line break, ENOTSUP when the font is not embedded or lacks a
+ * character's code or glyph, or ENOMEM.
+ */
+static int
+editor_encode(
+	struct pdf_page_editor *editor,
+	const struct editor_line *line,
+	const char *utf8,
+	unsigned char **codes,
+	size_t *length)
+{
+	const struct pdf_scan_show *show;
+	const unsigned char *bytes;
+	struct pdf_glyph glyph;
+	unsigned char *out;
+	uint32_t character;
+	unsigned code;
+	unsigned width;
+	size_t position;
+	size_t used;
+	size_t count;
+	size_t total;
+	int space;
+	int embedded;
+	int error;
+
+	/* The font, which must draw with its own program. */
+	show = &editor->scan.shows[line->first];
+	embedded = pdf_font_embedded(show->font);
+	if (!embedded)
+		return ENOTSUP;
+
+	/* Room for two bytes a character at most. */
+	total = strlen(utf8);
+	out = malloc(total * 2U + 1U);
+	if (out == NULL)
+		return ENOMEM;
+
+	/* Each character. */
+	bytes = (const unsigned char *)utf8;
+	position = 0;
+	count = 0;
+	while (position < total) {
+		/* The character (a line has no break). */
+		used = editor_utf8(bytes + position, total - position, &character);
+		if (used == 0 || character == '\n' || character == '\r') {
+			free(out);
+			return EINVAL;
+		}
+
+		/* Past it. */
+		position += used;
+
+		/* Its code, and the glyph the code draws (white space may be empty). */
+		error = pdf_font_code(editor->document, show->font, character, &code, &width);
+		if (error == 0)
+			error = pdf_font_glyph(show->font, code, &glyph);
+		if (error == ENOMEM) {
+			free(out);
+			return ENOMEM;
+		}
+
+		/* A code drawn by the font (white space may draw nothing). */
+		space = character == ' ' || character == 0xa0U || character == 0x3000U || character == '\t';
+		if (error != 0 || (!space && (!glyph.drawable || glyph.verb_count == 0))) {
+			free(out);
+			return ENOTSUP;
+		}
+
+		/* The code's bytes, the high one first. */
+		if (width == 2U) {
+			out[count] = (unsigned char)(code >> 8);
+			count++;
+		}
+
+		/* The low byte. */
+		out[count] = (unsigned char)code;
+		count++;
+	}
+
+	/* Succeeded: the codes. */
+	*codes = out;
+	*length = count;
+	return 0;
+}
+
+/*
+ * Reads one character of UTF-8.  Returns the bytes it takes, or 0 for
+ * bytes that are not UTF-8 (overlong forms and surrogates too).
+ */
+static size_t
+editor_utf8(
+	const unsigned char *bytes,
+	size_t length,
+	uint32_t *character)
+{
+	uint32_t value;
+	size_t need;
+	size_t at;
+
+	/* The first byte: one byte, or the start of two to four. */
+	if (length == 0)
+		return 0;
+	if (bytes[0] < 0x80U) {
+		*character = bytes[0];
+		return 1;
+	}
+
+	/* The lead byte's length and bits. */
+	if (bytes[0] >= 0xc2U && bytes[0] <= 0xdfU) {
+		need = 2;
+		value = bytes[0] & 0x1fU;
+	} else if (bytes[0] >= 0xe0U && bytes[0] <= 0xefU) {
+		need = 3;
+		value = bytes[0] & 0x0fU;
+	} else if (bytes[0] >= 0xf0U && bytes[0] <= 0xf4U) {
+		need = 4;
+		value = bytes[0] & 0x07U;
+	} else {
+		return 0;
+	}
+
+	/* The continuation bytes. */
+	if (length < need)
+		return 0;
+	for (at = 1; at < need; at++) {
+		if ((bytes[at] & 0xc0U) != 0x80U)
+			return 0;
+		value = (value << 6) | (bytes[at] & 0x3fU);
+	}
+
+	/* Not an overlong form, a surrogate, or past U+10FFFF. */
+	if ((need == 3 && value < 0x800U) || (need == 4 && value < 0x10000U) || (value >= 0xd800U && value <= 0xdfffU) || value > 0x10ffffU)
+		return 0;
+	*character = value;
+	return need;
+}
+
+/*
  * Tells whether an object of an editor may be changed.  Returns 0,
  * EINVAL, ENOENT, or EPERM for a page that cannot be edited.
  */
@@ -1226,9 +2017,9 @@ editor_lines(
 			joins = editor_joins(&editor->scan.shows[line->first + line->count - 1U], show);
 		}
 
-		/* The line grows by it. */
+		/* The line grows by it (and by an empty string between, ws175-p004: its strings are a range). */
 		if (joins) {
-			line->count++;
+			line->count = at - line->first + 1U;
 			continue;
 		}
 
@@ -1672,9 +2463,15 @@ editor_quad(
 		return;
 	}
 
-	/* A line of text: its corners (it is not moved yet, p004). */
+	/* A line of text: its corners, where its placement takes them (ws175-p004). */
 	if (index >= editor->scan.count) {
 		memcpy(quad, editor->lines[index - editor->scan.count].quad, 8U * sizeof(double));
+		if (change->state == EDITOR_PLACED) {
+			editor_corners(change->placement, quad, placed);
+			memcpy(quad, placed, sizeof(placed));
+		}
+
+		/* The line's. */
 		return;
 	}
 

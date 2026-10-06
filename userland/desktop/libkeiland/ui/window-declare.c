@@ -259,6 +259,46 @@ kl_window_set_control_text(
 }
 
 /*
+ * Sets a breadcrumb control's parts in one transaction of the titlebar
+ * (KL_VERSION 45); a part chosen comes as the control's KL_WINDOW_ACTION
+ * input with the part in begin.  Returns 0, EINVAL, ENOTSUP without the
+ * titlebar, or the titlebar's refusal.
+ */
+int
+kl_window_set_control_parts(
+	struct kl_window *window,
+	uint32_t id,
+	const char *const *parts,
+	size_t count)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL || (parts == NULL && count != 0U))
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The parts. */
+	error = kl_titlebar_begin(window->titlebar);
+	if (error != 0)
+		return error;
+	error = kl_titlebar_set_breadcrumb(window->titlebar, id, parts, count);
+	if (error != 0) {
+		(void)kl_titlebar_commit(window->titlebar);
+		return error;
+	}
+
+	/* Shown. */
+	error = kl_titlebar_commit(window->titlebar);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Gives a control's field the keyboard (KL_VERSION 43).  Returns 0,
  * EINVAL, ENOTSUP without the titlebar, or the titlebar's refusal.
  */
@@ -484,6 +524,40 @@ kl_window_set_glass(
 	window->glass_sent = 1;
 
 	/* Succeeded: they go with the next frame. */
+	return 0;
+}
+
+/*
+ * Makes the window's glass show what is under the window blurred, or the
+ * blurred wallpaper (KL_VERSION 45; the glass is made when there is none
+ * yet).  Returns 0, EINVAL, ENODEV for a compositor without glass, or the
+ * glass's refusal of the choice (the glass is there all the same).
+ */
+int
+kl_window_set_glass_blur(
+	struct kl_window *window,
+	int enabled)
+{
+	int error;
+
+	/* A window. */
+	if (window == NULL)
+		return EINVAL;
+
+	/* The surface's glass, made once; a compositor without it has none. */
+	if (window->glass == NULL) {
+		window->glass = kl_glass_create(window->display, window->surface);
+		if (window->glass == NULL)
+			return ENODEV;
+		window->glass_sent = 0;
+	}
+
+	/* The choice. */
+	error = kl_glass_set_blur(window->glass, enabled);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
 	return 0;
 }
 

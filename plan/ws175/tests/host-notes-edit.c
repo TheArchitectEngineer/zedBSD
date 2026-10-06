@@ -20,7 +20,10 @@
  * again as Notes' (annotated) with the same edits and the images read back
  * from it; the journal recovers the same document; a notebook whose edit
  * names an object the page does not have opens as it is shown (rebased),
- * and its journal does not recover (set aside).  Prints each check and
+ * and its journal does not recover (set aside).  ws175-p004: a line of
+ * edit-text.pdf given new words in its own font (and words it cannot
+ * write refused by the page's editor), saved and opened again with them.
+ * Prints each check and
  * exits 0 when all passed.
  */
 
@@ -72,6 +75,7 @@ main(
 	size_t png_size;
 	size_t records;
 	size_t page;
+	size_t index;
 	size_t bytes;
 	unsigned kind;
 	int journal_there;
@@ -172,6 +176,12 @@ main(
 	error = notes_document_undo(&document, &page);
 	check(error == 0 && document.pages[0]->edit_count == 4 && (document.pages[0]->edits[0]->flags & NOTES_EDIT_PLACED) != 0U, "undo of Reset: moved again, in its place");
 
+	/* The editor's index of an edit's object (ws175-p008: chosen again after an undo): the page's image 0, the PNG inserted 3. */
+	error = notes_page_object_index(&document, 0, document.pages[0]->edits[0], &index);
+	check(error == 0 && index == 0, "the moved image's index: 0");
+	error = notes_page_object_index(&document, 0, document.pages[0]->edits[3], &index);
+	check(error == 0 && index == 3, "the inserted PNG's index: 3");
+
 	/* The images are held by the edits and the history, not by the test any more. */
 	notes_image_release(jpeg_image);
 	notes_image_release(png_image);
@@ -258,6 +268,35 @@ main(
 	check(error == 0, "a notebook with an edit of an object the page does not have");
 	error = notes_open_pdf(recovered_path, &opened, &kind);
 	check(error == 0 && kind == NOTES_OPENED_REBASED && opened.pages[0]->edit_count == 0 && opened.pages[0]->origin == NOTES_ORIGIN_OVER, "it opens rebased: every page background, no edits");
+	if (error == 0)
+		notes_document_free(&opened);
+
+	/* ws175-p004: a line of edit-text.pdf given new words, saved, opened again with them. */
+	notes_document_free(&document);
+	(void)snprintf(path, sizeof(path), "%s/edit-text.pdf", argv[1]);
+	(void)snprintf(saved_path, sizeof(saved_path), "%s/notes-text.pdf", argv[1]);
+	error = copy_file(path, saved_path);
+	if (error == 0)
+		error = notes_open_pdf(saved_path, &document, &kind);
+	check(error == 0 && kind == NOTES_OPENED_FOREIGN, "edit-text.pdf opened as another program's PDF");
+	if (error != 0)
+		return 1;
+	error = notes_page_object(&document, 0, 1, &state);
+	state.flags = NOTES_EDIT_TEXT;
+	state.text = "Changed!";
+	if (error == 0)
+		error = notes_document_edit_object(&document, 0, &state);
+	check(error == 0 && count_images(&document, 0) == 0, "Line two given \"Changed!\" (the page's editor takes it)");
+	state.text = "\xe6\x97\xa5";
+	error = notes_document_edit_object(&document, 0, &state);
+	check(error == 0 && count_images(&document, 0) == (size_t)-1, "Japanese the line's own font cannot write: the page's editor refuses it");
+	error = notes_document_undo(&document, &page);
+	check(error == 0 && count_images(&document, 0) == 0, "undo: \"Changed!\" again");
+	error = notes_save_pdf(&document, saved_path, &bytes);
+	check(error == 0, "the notebook with the new words saved");
+	error = notes_open_pdf(saved_path, &opened, &kind);
+	check(error == 0 && kind == NOTES_OPENED_ANNOTATED && opened.pages[0]->edit_count == 1 && (opened.pages[0]->edits[0]->flags & NOTES_EDIT_TEXT) != 0U &&
+	      strcmp(opened.pages[0]->edits[0]->text, "Changed!") == 0, "opened again: the line's new words");
 	if (error == 0)
 		notes_document_free(&opened);
 
