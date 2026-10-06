@@ -8,7 +8,10 @@
 #     (terminal.png).
 #  2. Text Editor (a file of 2000 lines): "TEXTEDIT KINETIC fling source=finger" (textedit.png).
 #  3. Files (a folder of 400 files): "ZFILES KINETIC fling source=finger" and then "ZFILES TOUCH rest" (files.png).
-#  4. zdesktop has "ZWL AXIS stop" for each and no ERROR line.
+#  4. Phone, Mail and Calendar (libkeiland's kl_ui_axis; at 900x400 so that their lists scroll): "PHONE KINETIC fling
+#     source=finger", "MAIL KINETIC fling source=finger", "CALENDAR KINETIC fling source=finger" (phone.png, mailer.png,
+#     calendar.png).  Before KL_VERSION 43 the fingers' lift came to them as an action (KL_WINDOW_AXIS_STOP was 17).
+#  5. zdesktop has "ZWL AXIS stop" for each and no ERROR line.
 #   plan/ws090/tests/kinetic-apps-guest.sh [OUTDIR]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -19,7 +22,7 @@ mkdir -p "$out"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[t]erminal|[t]extedit|[f]iles|[t]ouchinject" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[t]erminal|[t]extedit|[f]iles" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[t]erminal|[t]extedit|[f]iles|[p]hone|[m]ailer|[c]alendar|[t]ouchinject" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[t]erminal|[t]extedit|[f]iles|[p]hone|[m]ailer|[c]alendar" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 env='export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0 HOME=/root;'
 swipe='printf "pad 1336 760 5 scan\nwait 2600\ndown 0 600 500; down 1 760 500\nwait 20\nswipe 0 -240 8 12\nup 0; up 1\nhold 2000\n" | /bin/touchinject; echo replay=$?'
 status=0
@@ -67,6 +70,14 @@ judge textedit 'TEXTEDIT KINETIC fling source=finger'
 guest 'mkdir -p /tmp/many; i=0; while [ $i -lt 400 ]; do : > /tmp/many/file$i.txt; i=$((i+1)); done; echo made' >/dev/null
 start "/bin/files --timeout-s=120 /tmp/many"
 judge files 'ZFILES KINETIC fling source=finger' 'ZFILES TOUCH rest'
+
+# 4. Phone, Mail and Calendar.
+start "/bin/phone --width=900 --height=400 --timeout-s=120"
+judge phone 'PHONE KINETIC fling source=finger'
+start "/bin/mailer --width=900 --height=400 --timeout-s=120"
+judge mailer 'MAIL KINETIC fling source=finger'
+start "/bin/calendar --width=900 --height=400 --timeout-s=120"
+judge calendar 'CALENDAR KINETIC fling source=finger'
 
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "kinetic-apps-guest: PASS" || echo "kinetic-apps-guest: FAIL"

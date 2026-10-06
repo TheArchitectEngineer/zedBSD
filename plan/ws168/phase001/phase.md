@@ -159,6 +159,8 @@ switch を通るので、全部がこの確かめを通る。集合は spawn の
 `fexecve`・`sandbox_spawn`、`dup` の系統・`fcntl`・`pipe` の系統、`ioctl`・`sysctl`、`kill`・`sigqueue`・`ptrace`、`set*id`・`setrlimit`・`setpgid`・`setsid`、
 `ftruncate`・`fsync`・`fchmod`・`fchown`・`futimens`・`flock`、timer の系統。集合は「許す物を書く」形なので、後で足した call は自動的に断られる。
 
+例外（2026-10-06 ユーザーの決定、案 (a)）: `ioctl(fd, TCGETS)`（端末かを問う。静的 link の libc の起動が fd 1 に問う）だけは、集合の外でも sandbox の確かめが `ENOTTY`（端末でない）と答え、file・driver に届かず klog も書かない。他の ioctl は断る。
+
 断った時: 既定は子を SIGKILL で終わらせる（信号の処理を経ない、親の `waitpid` には SIGKILL で終わったと見える）。`SANDBOX_SPAWN_DENY_ERRNO` の時は
 -EPERM を返す（試験用）。どちらも klog に 1 行（`SANDBOX deny pid=… call=…`、1 process に 8 行まで）。
 
