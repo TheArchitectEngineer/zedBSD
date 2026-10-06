@@ -2,7 +2,7 @@
 # ws175-p008: Notes の UI（画像の段: Select の道具・画像の挿入と差し替え・削除・Reset）
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2: 画像の段を実装、build と host 試験 PASS。画面の確認は p010 の T1。Q1 の判定待ち）
+Status: in-progress（2026-10-06 P2: 画像の段を実装、build と host 試験 PASS。main に merge 3d42efb00。画面は T1-253（AAT の pdf-edit-image・pdf-insert-image、draft）の結果で Q1 が判定）
 Disposition: normal
 Queue: Q1 の順（2026-10-06「画像の段の UI の p008 を先に、その後 p004・p005」、D6 (b)）
 依存: [p007](../phase007/phase.md)（cleared）
