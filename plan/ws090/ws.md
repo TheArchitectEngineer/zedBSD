@@ -33,10 +33,10 @@ Resume point: p011（Terminal・Notes の窓、KUI_VERSION 11）uncleared（2026
 | [ws090-p004](phase004/phase.md) | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch（`kui_text_touch`・`kui_scroll`）・clipboard、image への登録 | cleared（2026-09-30。KUI_VERSION 3、QEMU で開く・編集・保存・1 本指の選択・つまみ・2 本指の scroll・double tap・long press・wheel・clipboard・PRIMARY、host 34/63/13/75、boot PASS） | p003 |
 | [ws090-p005](phase005/phase.md) | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | cleared（2026-09-30。KUI_VERSION 4、host 94/94、QEMU で pointer・key・touch・dialog と Text Editor の回帰、boot PASS） | p003 |
 | [ws090-p006](phase006/phase.md) | file chooser を libkeiui へ、libkeiland から取り除く（KEILAND_VERSION）、Text Editor の chooser・dialog・chip | cleared（2026-09-30。KUI_VERSION 5・KEILAND_VERSION 16、host-chooser 85/85、QEMU で Open・Save As・上書き・取り消し・BUG-112 の回避なしの開閉 13 回・dialog、boot PASS） | p004・p005 |
-| ws090-p007 | Settings を libkeiui へ（描画の層の共有の置き換えを含む） | planning | p005、WS089 の完了 |
+| [ws090-p007](phase007/phase.md) | Settings の欄を libkeiland の `kl_field` へ（2026-10-06 に範囲を更新、描画の層は p009） | planned（q817） | p009 |
 | [ws090-p008](phase008/phase.md) | PDF Viewer・Image Viewer を移す | cleared（2026-09-30。`kui_window`（Image Viewer は自前の画像の present を残し `KUI_PRESENT_NONE`）、`kui_file_chooser`、KUI_VERSION 10（全画面）、PDF の password の card は keyboard の inset で上へ。demo-s8-s9 前後 PASS、Image Viewer の guest 試験と touch-guest PASS、C9 10/10（2 件は再実行）、boot PASS） | p006 |
-| ws090-p009 | Files（その 1）: 描画の層と scroll | planning | p003、**WS094 の完了**（Files に `--desktop` を足している、2026-09-29 main） |
-| ws090-p010 | Files（その 2）: 部品と窓 | planning | p009・p005・p004 |
+| [ws090-p009](phase009/phase.md) | Files と Settings の描画の層（canvas・text・icons）を libkeiland へ（2026-10-06 に範囲を更新、scroll は範囲の外） | planned（q817） | WS131 p019・p020 |
+| [ws090-p010](phase010/phase.md) | Files の名前の変更の欄を `kl_field` へ（2026-10-06 に範囲を更新、窓は WS131 p020 で済み） | planned（q817） | p009 |
 | [ws090-p011](phase011/phase.md) | Terminal・Notes: 窓（見せ方は無し）。scroll の model は p015（案）へ（2026-09-30 Q1） | cleared（2026-09-30: 統合の試験 demo-s8-s9.sh で合格（ユーザーの指示）、Terminal と p088 は未切り分け、実機は未実施） | p004 |
 | ws090-p015（案） | Terminal・Notes の scroll を `kui_scroll` へ。`kui_scroll` に rubber band の境界と位置の引き継ぎ（`keiland_scroller_set_position` の相当）を足すことを含む。WS081 の host 試験 2 本（`run-termtouch.sh`・`run-notestouch.sh`）の変更が要る（2026-09-30 Q1） | planning | p011 |
 | [ws090-p013](phase013/phase.md) | `kui_window` の text-input-v3 の受け口と Text Editor（WS102 の D1、2026-09-30 ユーザー） | cleared（2026-09-30。KUI_VERSION 6、QEMU の IME で `漢字`・`かな` が Text Editor に入り保存、host の回帰、boot PASS。WS102 の keyboard は未 merge で未実施） | p004 |
