@@ -55,3 +55,17 @@ T1 に依頼。実機（5330 の touch pad、開始の遅れの体感、慣性�
 - 開始の遅れの測定（注入の時刻から再描画の log まで、AAT の `apps.phone.scroll-latency`）は未実施。Phone の 300 ms が touch screen の swipe の話なら、
   別の経路（kl_ui の touch の drag の判定）を見る必要がある。
 - 端の軽い弾み（overshoot）は kl_scroll の既存の rubber band に任せた（Settings は端で止まるだけ）。
+
+## q790-i02（P1、2026-10-06）: T1-230 の FAIL の直し
+
+T1-230: `ZWL AXIS stop` は出て list は下へ scroll したが、Settings の log に `ZSETTINGS KINETIC` が無かった（kinetic-start・kinetic-stop FAIL、回帰の
+ws159-p004 は PASS。証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-230/kinetic-run{1,2}/`）。
+
+原因（読み）: Settings は指の移動の時刻を **event を読んだ時の自分の時計**（`se_clock`）で track に入れていた。Settings が 1 frame を描く間（QEMU の CPU の
+描画で数十 ms）に移動が溜まり、まとめて同じ時刻で読まれ、離した（axis_stop）時刻も描画の後になる。速度の窓の時間が 0 になるか、最後の移動から
+60 ms（`KL_AXIS_TRACK_REST_US`）以上たって「休んだ指」と判定され、速度 0 で飛ばない（その場合は何も log しなかった）。libkeiland の窓は compositor の
+時刻（`window_stamp`）を使うので影響しない。
+
+直し（32137e34）: Settings の axis と axis_stop の event に compositor の時刻（`se_event.axis_ms`、wl_pointer の time）を持たせ、track と
+離した時の速度はその時刻で測る。診断の log を追加: 指が握った時 `ZSETTINGS KINETIC hold pane=…`、速度が足りない時 `KINETIC none pane=… velocity=… moves=…`。
+build（settings）warning 0。再試験は T1 に依頼（同じ `kinetic-guest.sh`）。

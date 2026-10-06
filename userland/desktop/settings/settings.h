@@ -194,7 +194,9 @@ enum se_event_type {
 
 /*
  * One input: where the pointer is, which button or key, the modifiers
- * held, and a menu's action.  serial is the compositor's serial of a
+ * held, and a menu's action; a scroll's source and the compositor's time
+ * of it (axis_ms, milliseconds: the touch pad's moves keep their own
+ * spacing however late they are read, BUG-211).  serial is the compositor's serial of a
  * button press.  touch is 1 for the pointer's moves and presses a finger
  * on the touch screen made (a drag of the finger scrolls a pane, ws089-p012).
  */
@@ -213,6 +215,7 @@ struct se_event {
 	uint32_t action;
 	int touch;
 	unsigned source;
+	uint32_t axis_ms;
 };
 
 /*
