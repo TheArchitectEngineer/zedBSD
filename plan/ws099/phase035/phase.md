@@ -63,3 +63,18 @@ App Home で app を選んだ時、その app id の窓が既にあれば起動�
 - 未決: ユーザーの選択（A・B・C か調整）と、light の外観でも暗い stage でよいか。選択を待つ間は p037 に進む（Q1 の指示）。
 
 2026-10-06 ユーザー（クリックの回答）: stage は **案 A（弱い: spotlight 0.08・hover 0.16、反射 0.15、床の線 0.10）**。light の外観でも暗い stage のまま。→ p035b 以降は A の値で実装する。
+
+## p035b の実装（2026-10-06 P2、案 A の値）
+
+Status（p035b）: test-wait（T1 依頼中。実装・build まで）
+
+| 所 | 内容 |
+| --- | --- |
+| `home.c` の `zwl_home_draw` | 前の白い glass 0.48 と青み 0.22 を、暗い stage に: 黒い glass 0.82（`light` の印で dark の外観でも写さない）＋上の中央から青白い柔らかい光 0.10（MODE_SHADOW）。Home を描く間は `keep_colours`（stage は両方の外観で暗い） |
+| 床 | `home_draw_floors`・`home_draw_floor`: 行ごとに画面の上の icon の左右より 36 広い線を tile の下 6 px に、中央 0.10 から両端へ 0 に（24 の piece）、上下の 1・2 px にも弱い線（0.55・0.35・0.2 の重み） |
+| spotlight | `home_draw_spotlight`: tile ごとに床の後ろに幅 1.6 tile・高さ 36・柔らかさ 8 の白い楕円、0.08（pointer の下は 0.16） |
+| 反射 | `glass_draw_app_tile_reflection`（glass.c）: tile の下の 35 % を上下に反転して床の下に、0.15 から下へ 0 に（8 帯）。中抜きの記号は反射では床の色 |
+| 名前・点 | 名前は白 0.9 で反射の下（`HOME_LABEL` 26 → 49、click の範囲も）、page の点は白 0.32 |
+| 中抜き | tile の中抜きから壁紙（`GLASS_HOLE_WALLPAPER`、p034b と同じ） |
+
+確認: zedBSD・Linux の build warning 0、style-check（home.c・glass.c・glass.h）指摘 0。QEMU は T1 に依頼。p035c（2 層の animation・準備の先回り・遅れの測定・BUG-232）は次。
