@@ -24,7 +24,7 @@ Queue: q831（2026-10-07、P2）
 - host: `sh plan/ws169/tests/run-host-mailer.sh` → PASS 14（p000 の 10 の send・get を request の log に、Add Account の form・code の switch・Sign In の request・Cancel を足した）。絵 `build/ws169/host-mailer-setup.png` を目で見た。
 - host: `sh plan/ws169/tests/run-host-mail-backend.sh` に thread の試験 `host-mail-sync.c` を足した（別の偽の server）→ host-mail-backend PASS・host-mail-sync PASS 10（誤った password の sign-in の失敗、sign-in、refresh、IDLE の新着と code 7351、送信と Sent の写し、Archive への移動、IDLE の途中の stop）。ASan・UBSan。
 - build: `make -j16 ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk BUILD=build/ws169-zed build/ws169-zed/bin/mailer` が warning 0。`style-check.py` が mailer の全 file で 0。
-- 未実施: QEMU（WS169 の最後に T1。guest から host の偽の server へ、`/etc/hosts` の名前と `SSL_CERT_FILE` の試験の CA で）、実の server。
+- 未実施: QEMU（WS169 の最後に T1。guest から host の偽の server へ、address（zedBSD の resolver は `/etc/hosts` を読まない）と `SSL_CERT_FILE` の試験の CA で）、実の server。
 
 ## 積み残し
 
