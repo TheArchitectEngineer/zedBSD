@@ -56,7 +56,3 @@ needs-person は撮影を Q1 が見る。FAIL は直さずに log と撮影を�
 
 - QEMU の結果（T1）。補助は host の自己試験と `--list` までで、実の target では走らせていない（座標の計算・chooser の頭の字・IME の手順は T1 の
   run で初めて確かめる）。
-
-## 積み残し（準正常系・異常系、WS177 へ）
-
-- 無し（この Phase は試験の準備。Notes の文字の UI の積み残しは [p008](../phase008/phase.md) の節）。
