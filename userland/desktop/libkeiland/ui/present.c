@@ -346,6 +346,7 @@ present_device(
 {
 	VkPhysicalDevice devices[8];
 	VkQueueFamilyProperties families[16];
+	VkPhysicalDeviceProperties properties;
 	VkDeviceQueueCreateInfo queue;
 	VkDeviceCreateInfo create;
 	const char *extension;
@@ -389,6 +390,10 @@ present_device(
 	/* No device can draw this window. */
 	if (present->physical == VK_NULL_HANDLE)
 		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The device's name (kl_window_device_name, WS131 p019: Settings' About shows it). */
+	vkGetPhysicalDeviceProperties(present->physical, &properties);
+	(void)snprintf(present->device_name, sizeof(present->device_name), "%s", properties.deviceName);
 
 	/* One queue of that family and the swapchain extension. */
 	priority = 1.0f;

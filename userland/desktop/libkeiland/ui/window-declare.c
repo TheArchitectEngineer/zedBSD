@@ -259,6 +259,46 @@ kl_window_set_control_text(
 }
 
 /*
+ * Sets a breadcrumb control's parts in one transaction of the titlebar
+ * (KL_VERSION 45); a part chosen comes as the control's KL_WINDOW_ACTION
+ * input with the part in begin.  Returns 0, EINVAL, ENOTSUP without the
+ * titlebar, or the titlebar's refusal.
+ */
+int
+kl_window_set_control_parts(
+	struct kl_window *window,
+	uint32_t id,
+	const char *const *parts,
+	size_t count)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL || (parts == NULL && count != 0U))
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The parts. */
+	error = kl_titlebar_begin(window->titlebar);
+	if (error != 0)
+		return error;
+	error = kl_titlebar_set_breadcrumb(window->titlebar, id, parts, count);
+	if (error != 0) {
+		(void)kl_titlebar_commit(window->titlebar);
+		return error;
+	}
+
+	/* Shown. */
+	error = kl_titlebar_commit(window->titlebar);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Gives a control's field the keyboard (KL_VERSION 43).  Returns 0,
  * EINVAL, ENOTSUP without the titlebar, or the titlebar's refusal.
  */

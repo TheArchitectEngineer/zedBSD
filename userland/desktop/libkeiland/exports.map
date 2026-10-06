@@ -314,6 +314,13 @@
 		kl_window_set_control_text;
 		kl_window_focus_control;
 		kl_window_accept_tablet;
+		kl_window_maximized;
+		kl_window_set_maximized;
+		kl_window_minimize;
+		kl_window_output_mode;
+		kl_window_device_name;
+		kl_window_present_times;
+		kl_window_set_control_parts;
 		kl_window_set_repeat;
 		kl_window_set_tabs;
 		kl_window_selection_own;
