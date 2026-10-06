@@ -65,5 +65,7 @@ Keiland の compositor（`userland/desktop/wayland/`）で、ユーザーの要�
 ## Phase（2026-10-06 追加: 再設計）
 
 - [ws142-p007](phase007/phase.md) 設計: 最大化の session の状態と gesture の体系（planned、実装は p008〜p010）
-- [ws142-p008](phase008/phase.md) layout_mode と切り替えの入口の集約（in-progress、2026-10-06 P2 実装済み、QEMU は p010 で）
-- [ws142-p008b](phase008b/phase.md) 中央の窓の下の blur（in-progress、2026-10-06 P2 実装済み、QEMU は p010 で）
+- [ws142-p008](phase008/phase.md) layout_mode と切り替えの入口の集約（test-wait、2026-10-06 P2 実装済み）
+- [ws142-p008b](phase008b/phase.md) 中央の窓の下の blur（test-wait、2026-10-06 P2 実装済み）
+- [ws142-p009](phase009/phase.md) touchpad の gesture の体系（test-wait、2026-10-06 P2 実装済み）
+- [ws142-p010](phase010/phase.md) AAT のシナリオ・T1・規約（test-wait、p010-guest.sh を T1 に依頼）
