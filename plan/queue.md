@@ -29,7 +29,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q792 / q792-i01 | P1 | [BUG-214](bugs/BUG-214.md) | 2026-10-06 ユーザーの決定: slider の初期の位置を磨りガラスの実際の値に（既定の見た目は変えない） | なし | pending |
 | q793 / q793-i01 | P2（p037 の後） | [ws131-p027](ws131/phase027/phase.md) | sessiond が session の socket で Power Off・Restart を受ける、backend の power_actions、D12 の改訂（2026-10-06 ユーザー「sessiond に口を足す（別の Phase）」） | ws099-p037 | uncleared（ユーザーが規則を「wheel だけ」に変更、q793-i02 へ） |
 | q793 / q793-i02 | P2（q794 の montage の後すぐ） | [ws131-p027](ws131/phase027/phase.md) | 2026-10-06 ユーザー「wheel だけに限る」: power-rules を root・wheel だけに、wheel でない利用者の dialog は Power Off・Restart を押せない形に、host の試験、T1-227 の期待を直す（試験の image の kei が wheel か確かめる） | q793-i01 | 実装済み（P2 fb8f620d → main）、test-wait（T1-227b） |
-| q794 / q794-i01 | P2（q793 の後、p035b の前） | ws099-p034b（[phase034](ws099/phase034/phase.md) の第 2 版） | 上部の bar: light の外観で窓の title bar と同じ色味（dark は黒のまま、2026-10-06 ユーザー）、dock の時の窓の button を右上へ、時計を左へ、animation。まず light の bar の montage をユーザーに見せる | ws099-p034（main） | pending |
+| q794 / q794-i01 | P2（q793 の後、p035b の前） | ws099-p034b（[phase034](ws099/phase034/phase.md) の第 2 版） | 上部の bar: light の外観で窓の title bar と同じ色味（dark は黒のまま、2026-10-06 ユーザー）、dock の時の窓の button を右上へ、時計を左へ、animation。まず light の bar の montage をユーザーに見せる | ws099-p034（main） | 実装済み（P2 c668e131 → main）、test-wait（T1-228） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）
