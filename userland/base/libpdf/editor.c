@@ -56,6 +56,9 @@
 #define EDITOR_IMAGE_SIDE_MAX	16384U
 #define EDITOR_IMAGE_PIXELS_MAX	((size_t)64 * 1024 * 1024)
 
+/* The largest side of a blank editor's page, in points (Notes' own largest). */
+#define EDITOR_BLANK_SIDE_MAX	100000.0
+
 /* The size of a source as ws175-p003 gave it, before its orientation and id. */
 #define EDITOR_SOURCE_SIZE_P003	offsetof(struct pdf_image_source, orientation)
 
@@ -120,7 +123,8 @@ struct editor_line {
  * scan of it, the page's PDF_EDIT_PAGE_* state, the changes of the
  * objects -- the page's images and graphics, then its lines of text, then
  * the inserted ones --, the lines, the images given, and the arena of the
- * preview's objects and the lines' text.
+ * preview's objects and the lines' text.  A blank editor (ws175-p007) owns
+ * its document, one empty page made for it.
  */
 struct pdf_page_editor {
 	struct pdf_document *document;
@@ -138,6 +142,7 @@ struct pdf_page_editor {
 	struct editor_line *lines;
 	size_t line_count;
 	struct pdf_arena arena;
+	struct pdf_document *blank;
 };
 
 static int editor_writable(const struct pdf_page_editor *editor, size_t index);
@@ -259,13 +264,83 @@ pdf_page_editor_close(
 	/* The images' list. */
 	free(editor->images);
 
-	/* The scan, the content, the changes, the preview's objects, the record. */
+	/* The scan, the content, the changes, the preview's objects, a blank editor's document, the record. */
 	pdf_scan_free(&editor->scan);
 	free(editor->content);
 	free(editor->changes);
 	free(editor->lines);
 	pdf_arena_free(&editor->arena);
+	pdf_document_close(editor->blank);
 	free(editor);
+}
+
+/*
+ * Opens a blank editor (ws175-p007, design.md [N2]): the editor of an
+ * empty page of a size (points), without objects of its own, for the
+ * images inserted on a page of Notes' own (a new page, or one whose
+ * content is Notes' strokes), which pdf_writer_draw_page_editor draws.
+ * Returns 0, EINVAL for a size that is not a page's, or ENOMEM.
+ */
+int
+pdf_page_editor_blank(
+	double width,
+	double height,
+	struct pdf_page_editor **editor)
+{
+	struct pdf_document *document;
+	struct pdf_buffer file;
+	size_t offsets[5];
+	size_t table;
+	size_t at;
+	int error;
+
+	/* A size a page has. */
+	if (editor == NULL || !(width > 0.0 && width <= EDITOR_BLANK_SIDE_MAX) || !(height > 0.0 && height <= EDITOR_BLANK_SIDE_MAX))
+		return EINVAL;
+
+	/* The document: a catalog, the page tree, the page of that size, its empty content. */
+	memset(&file, 0, sizeof(file));
+	pdf_buffer_printf(&file, "%%PDF-1.7\n");
+	offsets[1] = file.length;
+	pdf_buffer_printf(&file, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+	offsets[2] = file.length;
+	pdf_buffer_printf(&file, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+	offsets[3] = file.length;
+	pdf_buffer_printf(&file, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ");
+	pdf_buffer_append_number(&file, width);
+	pdf_buffer_append(&file, " ", 1);
+	pdf_buffer_append_number(&file, height);
+	pdf_buffer_printf(&file, "] /Resources << >> /Contents 4 0 R >>\nendobj\n");
+	offsets[4] = file.length;
+	pdf_buffer_printf(&file, "4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n");
+
+	/* Its cross-reference table and trailer. */
+	table = file.length;
+	pdf_buffer_printf(&file, "xref\n0 5\n0000000000 65535 f \n");
+	for (at = 1; at < 5; at++)
+		pdf_buffer_printf(&file, "%010lu 00000 n \n", (unsigned long)offsets[at]);
+	pdf_buffer_printf(&file, "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%lu\n%%%%EOF\n", (unsigned long)table);
+	if (file.error != 0) {
+		free(file.data);
+		return ENOMEM;
+	}
+
+	/* Read as any document (the reader keeps its own copy of the bytes). */
+	error = pdf_document_open_memory(file.data, file.length, &document);
+	free(file.data);
+	if (error != 0)
+		return error;
+
+	/* Its page's editor, which owns it. */
+	error = pdf_page_editor_open(document, 0, editor);
+	if (error != 0) {
+		pdf_document_close(document);
+		return error;
+	}
+
+	/* Succeeded: a blank editor. */
+	(*editor)->blank = document;
+	return 0;
 }
 
 /*
@@ -1032,6 +1107,61 @@ pdf_page_editor_read_image(
 
 	/* Not on the page. */
 	return ENOENT;
+}
+
+/*
+ * Draws a blank editor's inserted images on the writer's open page, under
+ * what is drawn on it next (ws175-p007, design.md [N2]): a page Notes made
+ * or replaces, whose drawing is in the page's shown space.  The images
+ * become the document's as pdf_writer_begin_page_edited makes them (an
+ * image of Notes shared by its id).  Returns 0, EINVAL (not a blank
+ * editor, no open page), ENOMEM, or ENOSPC.
+ */
+int
+pdf_writer_draw_page_editor(
+	struct pdf_writer *writer,
+	const struct pdf_page_editor *editor)
+{
+	static const double identity[6] = { 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
+	const struct editor_change *change;
+	struct pdf_buffer *content;
+	double square[6];
+	char prefix[32];
+	size_t object;
+	size_t name;
+	int error;
+
+	/* A blank editor, and a page open for drawing. */
+	if (writer == NULL || editor == NULL || editor->blank == NULL || !writer->page_is_open || writer->pages_count == 0)
+		return EINVAL;
+	content = &writer->pages[writer->pages_count - 1U]->content;
+	(void)snprintf(prefix, sizeof(prefix), "%sIm", writer->name_prefix);
+
+	/* Each inserted image still there, where it is now. */
+	for (object = editor->scan.count + editor->line_count; object < editor->count; object++) {
+		change = &editor->changes[object];
+		if (change->state == EDITOR_DELETED || change->image == EDITOR_NONE)
+			continue;
+		memcpy(square, change->square, sizeof(square));
+		if (change->state == EDITOR_PLACED)
+			editor_multiply(change->square, change->placement, square);
+
+		/* The document's image, drawn in the shown space. */
+		error = editor_write_image(writer, &editor->images[change->image], &name);
+		if (error != 0)
+			return error;
+		error = editor_draw_image(content, &editor->images[change->image], square, identity, prefix, name);
+		if (error != 0)
+			return error;
+		pdf_buffer_append(content, "\n", 1);
+	}
+
+	/* Reports a content that could not grow. */
+	if (content->error != 0)
+		return content->error;
+
+	/* Succeeded: the images are drawn. */
+	return 0;
 }
 
 /*

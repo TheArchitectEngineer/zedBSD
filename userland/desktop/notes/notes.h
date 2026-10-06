@@ -10,6 +10,7 @@
  * section 5, plan/ws079/design-pdf.md).
  *
  * document.c keeps the pages and their strokes, and the undo history;
+ * edit.c the edits of the PDF's objects and the images (ws175);
  * encode.c turns a document into the edit data (ZNOT) the saved PDF carries
  * and back; journal.c keeps an append-only log of every change since the
  * last save, so that a crash loses nothing; save.c writes the PDF with
@@ -67,6 +68,13 @@
 #define NOTES_OPENED_ANNOTATED	1U
 #define NOTES_OPENED_FOREIGN	2U
 #define NOTES_OPENED_CHANGED	3U
+
+/*
+ * ws175-p007: a notebook whose edits of the PDF's objects no longer match
+ * the file (design.md [H3]): the file is opened as it is shown, all its
+ * pages the background (the edits and strokes kept in it as drawn).
+ */
+#define NOTES_OPENED_REBASED	4U
 
 /* The pressure of one sample runs from 0 to this value. */
 #define NOTES_PRESSURE_MAX	65535U
@@ -151,6 +159,71 @@ struct notes_stroke {
 };
 
 /*
+ * The forms of an image Notes keeps (ws175-p007, plan/ws175/phase001/
+ * design.md section 6.1 and [N3]), each as compressed as it came: a
+ * JPEG's bytes; a PNG file whose rows a PDF takes as they are; such rows
+ * as they were read back from a PDF (a zlib stream of the filtered rows);
+ * RGBA pixels compressed into a zlib stream.
+ */
+#define NOTES_IMAGE_JPEG	1U
+#define NOTES_IMAGE_PNG		2U
+#define NOTES_IMAGE_ROWS	3U
+#define NOTES_IMAGE_RGBA	4U
+
+/*
+ * One image put in a page's object's place or inserted on a page.
+ *
+ * Its number is unique in its document (from the strokes' numbers) and is
+ * the image's private key in the PDF, by which it is read back.  Several
+ * edits (of pages and of the undo history) share it by counting their
+ * references; the last to let it go frees it.  data is NULL while the
+ * bytes are not known yet (an edit data read before the PDF's images).
+ */
+struct notes_image {
+	uint32_t id;
+	unsigned refs;
+	unsigned kind;
+	unsigned char *data;
+	size_t size;
+	size_t width;
+	size_t height;
+	int components;
+	int orientation;
+};
+
+/*
+ * What an edit does: the page's object deleted, placed by a map of the
+ * page's shown space, given an image in its place; or an image inserted
+ * over the page's objects.  0x10 and up are kept for text (ws175-p004,
+ * p005).
+ */
+#define NOTES_EDIT_DELETED	0x01U
+#define NOTES_EDIT_PLACED	0x02U
+#define NOTES_EDIT_IMAGE	0x04U
+#define NOTES_EDIT_INSERTED	0x08U
+
+/*
+ * One edit of a page (ws175-p007, design.md section 6.1): the state of one
+ * of the page's own objects, named by its key, or of an object inserted on
+ * the page, named by its number.
+ *
+ * transform is, for a placed object, the map of the page's shown space
+ * (points, the top left the origin, y downward) from where the object was
+ * to where it is; for an inserted one, the map of the image's unit square
+ * onto the shown space (its top left where (0, 1) goes).  Its first four
+ * numbers are kept on a 1/65536 grid and its last two on the edit data's
+ * 1/64 point, so that saving and reading back gives the same edit.  image
+ * holds a reference.
+ */
+struct notes_edit {
+	struct pdf_edit_key key;
+	uint32_t id;
+	unsigned flags;
+	float transform[6];
+	struct notes_image *image;
+};
+
+/*
  * One page: its size, its background and its strokes, bottom first.
  *
  * content_hash is the SHA-256 of the page's content stream as the PDF
@@ -161,6 +234,12 @@ struct notes_stroke {
  * origin (NOTES_ORIGIN_*) says whether the page is one of the PDF Notes
  * writes on, and source which page of that PDF (the document's base) it
  * is.  A page Notes made has origin NOTES_ORIGIN_NEW and no source.
+ *
+ * edits (ws175-p007) are the states of the page's own objects and the
+ * objects inserted on it, the inserted ones in the order they are drawn.
+ * editor is the libpdf editor of the page with the edits applied, made
+ * when it is asked for and made again after a change (editor_stale): a
+ * cache, which the edits can always rebuild.
  */
 struct notes_page {
 	float width;
@@ -172,6 +251,11 @@ struct notes_page {
 	struct notes_stroke **strokes;
 	size_t stroke_count;
 	size_t stroke_capacity;
+	struct notes_edit **edits;
+	size_t edit_count;
+	size_t edit_capacity;
+	struct pdf_page_editor *editor;
+	int editor_stale;
 };
 
 /* The kinds of undo entry. */
@@ -179,6 +263,7 @@ struct notes_page {
 #define NOTES_UNDO_REMOVE_STROKES	2U
 #define NOTES_UNDO_ADD_PAGE		3U
 #define NOTES_UNDO_ERASE_PARTS		4U
+#define NOTES_UNDO_EDIT_OBJECT		5U
 
 /*
  * One change the undo history can take back.
@@ -195,6 +280,12 @@ struct notes_page {
  * the two it was.  Taking it back undoes them in the opposite order.  While
  * it stands (owned) the entry holds the strokes it took off; while it is
  * taken back it holds the pieces it had put in.
+ *
+ * An edit of an object (NOTES_UNDO_EDIT_OBJECT, ws175-p007) keeps the
+ * object's state before and after it (NULL: none, an object as the page
+ * has it, or an inserted object not there) and, in place, where the
+ * state stands among the page's edits (the drawing order of the inserted
+ * ones).  The entry always holds both, copies of the page's.
  */
 struct notes_undo {
 	unsigned kind;
@@ -207,6 +298,8 @@ struct notes_undo {
 	size_t capacity;
 	struct notes_page *page_held;
 	int owned;
+	struct notes_edit *edit_before;
+	struct notes_edit *edit_after;
 };
 
 struct notes_journal;
@@ -327,6 +420,25 @@ int notes_document_undo(struct notes_document *document, size_t *page);
 int notes_document_redo(struct notes_document *document, size_t *page);
 size_t notes_document_stroke_total(const struct notes_document *document);
 
+/* The images and the edits of the PDF's objects (edit.c, ws175-p007). */
+struct notes_image *notes_image_create(struct notes_document *document, unsigned kind, const void *data, size_t size, size_t width, size_t height, int components, int orientation);
+void notes_image_release(struct notes_image *image);
+int notes_image_source(const struct notes_image *image, struct pdf_image_source *source, void **owned);
+int notes_image_set_bytes(struct notes_image *image, const struct pdf_image_source *source);
+struct notes_edit *notes_edit_copy(const struct notes_edit *edit);
+void notes_edit_free(struct notes_edit *edit);
+void notes_edit_quantize(struct notes_edit *edit);
+int notes_edit_same_object(const struct notes_edit *edit, const struct notes_edit *other);
+int notes_document_put_edit(struct notes_document *document, size_t page, size_t place, struct notes_edit *edit);
+struct notes_edit *notes_document_take_edit(struct notes_document *document, size_t page, const struct notes_edit *which, size_t *place);
+int notes_document_edit_object(struct notes_document *document, size_t page, const struct notes_edit *state);
+int notes_document_reset_object(struct notes_document *document, size_t page, const struct notes_edit *which);
+int notes_page_editor(struct notes_document *document, size_t page, struct pdf_page_editor **editor);
+int notes_page_object(struct notes_document *document, size_t page, size_t index, struct notes_edit *state);
+void notes_page_close_editor(struct notes_page *page);
+int notes_document_edited(const struct notes_document *document);
+int notes_document_check_edits(struct notes_document *document);
+
 /* The byte buffer (encode.c). */
 void notes_buffer_init(struct notes_buffer *buffer);
 void notes_buffer_free(struct notes_buffer *buffer);
@@ -343,6 +455,10 @@ int notes_encode_document(const struct notes_document *document, struct notes_bu
 int notes_decode_document(const void *data, size_t size, struct notes_document *document);
 int notes_encode_stroke(const struct notes_stroke *stroke, struct notes_buffer *buffer);
 int notes_decode_stroke(const unsigned char *data, size_t size, size_t *used, struct notes_stroke **stroke);
+void notes_encode_edit(struct notes_buffer *buffer, const struct notes_edit *edit);
+int notes_decode_edit(const unsigned char *data, size_t size, size_t *used, struct notes_edit *edit, uint32_t *image);
+void notes_encode_image(struct notes_buffer *buffer, const struct notes_image *image);
+int notes_decode_image(const unsigned char *data, size_t size, size_t *used, struct notes_image **image);
 
 /* The journal (journal.c). */
 int notes_journal_path(const char *document_path, char *path, size_t size);
@@ -355,6 +471,9 @@ int notes_journal_remove_stroke(struct notes_journal *journal, const struct note
 int notes_journal_add_page(struct notes_journal *journal, const struct notes_document *document, size_t index);
 int notes_journal_remove_page(struct notes_journal *journal, const struct notes_document *document, size_t index);
 int notes_journal_discard(struct notes_journal *journal);
+int notes_journal_put_edit(struct notes_journal *journal, const struct notes_document *document, size_t page, size_t place, const struct notes_edit *edit);
+int notes_journal_take_edit(struct notes_journal *journal, const struct notes_document *document, size_t page, const struct notes_edit *which);
+int notes_journal_set_aside(const char *journal_path);
 int notes_journal_recover(const char *journal_path, struct notes_document *document, char *document_path, size_t size, size_t *records);
 int notes_journal_newest(char *path, size_t size);
 
