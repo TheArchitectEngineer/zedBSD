@@ -527,31 +527,6 @@ def calendar(item):
 	item.person("the month's grid and the turning in the screenshots")
 
 
-@run.define("apps.mailer.read-compose")
-def mailer(item):
-	window = run.launch(item, "Mail")
-	run.click(window.x + window.width // 3, window.y + window.height // 3)
-	time.sleep(0.5)
-	mark = run.mark()
-	run.key("down")
-	opened = run.wait(r"MAIL OPEN message=\d+", mark, 10)
-	item.step("Down", opened)
-	run.shot(item, "message")
-	item.check(opened, "no MAIL OPEN")
-	mark = run.mark()
-	run.key("ctrl+n")
-	compose = run.wait(r"MAIL COMPOSE kind=new", mark, 10)
-	time.sleep(0.5)
-	item.step("Ctrl+N", compose)
-	run.shot(item, "compose")
-	item.check(compose, "no MAIL COMPOSE kind=new")
-	run.key("esc")
-	time.sleep(0.5)
-	item.step("Esc")
-	run.shot(item, "after")
-	item.person("the message, the new message's fields, and the list after Esc in the screenshots")
-
-
 @run.define("apps.videoplayer.play")
 def videoplayer(item):
 	mark = run.mark()

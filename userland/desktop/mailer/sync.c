@@ -12,6 +12,10 @@
  * and queues the results, and between jobs it waits in IDLE on every
  * account's inbox for new mail.
  *
+ * Every account's folders are got first (the accounts the thread starts
+ * with, and a new one right after its sign-in), so that what IDLE tells
+ * after is new mail.
+ *
  * The window wakes the thread through a pipe (a byte for each job) and is
  * woken by another (a byte for each batch of results), whose reading end
  * it watches with kl_app_watch_fd.  The queues are lists under one lock;
@@ -92,6 +96,7 @@ static int sync_open(struct ml_sync *sync, int account);
 static void sync_close(struct ml_sync *sync, int account);
 static int sync_select(struct ml_sync *sync, int account, enum ml_folder folder);
 static void sync_refresh(struct ml_sync *sync, int account, enum ml_folder folder, int arrived);
+static void sync_refresh_account(struct ml_sync *sync, int account);
 static void sync_fetched(void *data, uint32_t uid, unsigned flags, size_t size, const char *raw, size_t length);
 static void sync_idle_all(struct ml_sync *sync);
 static void sync_idle_stop_all(struct ml_sync *sync);
@@ -327,10 +332,15 @@ sync_run(
 {
 	struct ml_sync *sync;
 	struct ml_job *job;
+	size_t index;
 	int stopping;
 
-	/* Each round. */
+	/* The accounts' folders first. */
 	sync = argument;
+	for (index = 0; index < sync->account_count; index++)
+		sync_refresh_account(sync, (int)index);
+
+	/* Each round. */
 	for (;;) {
 		/* The next job, or the stop. */
 		pthread_mutex_lock(&sync->lock);
@@ -475,7 +485,6 @@ sync_do(
 	struct sync_account *account;
 	size_t count;
 	size_t index;
-	int folder;
 	int error;
 
 	/* A new account: its login and folders tried; taken when they work. */
@@ -503,6 +512,9 @@ sync_do(
 		result = sync_result(ML_RESULT_SIGNED_IN, (int)sync->account_count - 1);
 		if (result != NULL)
 			sync_post(sync, result);
+
+		/* Its folders, before it idles. */
+		sync_refresh_account(sync, (int)sync->account_count - 1);
 		return;
 	}
 
@@ -513,11 +525,7 @@ sync_do(
 
 	/* Get mail: each folder's new messages. */
 	if (job->kind == ML_JOB_REFRESH) {
-		for (folder = 0; folder < ML_FOLDERS; folder++)
-			sync_refresh(sync, job->account, (enum ml_folder)folder, 0);
-		result = sync_result(ML_RESULT_REFRESHED, job->account);
-		if (result != NULL)
-			sync_post(sync, result);
+		sync_refresh_account(sync, job->account);
 		return;
 	}
 
@@ -695,11 +703,13 @@ sync_refresh(
 		return;
 	}
 
-	/* The messages to the window. */
+	/* The messages to the window (new arrivals only in a folder got before). */
 	fetch.sync = sync;
 	fetch.account = account;
 	fetch.folder = folder;
-	fetch.arrived = arrived;
+	fetch.arrived = 0;
+	if (arrived && kept->last_uid[folder] != 0U)
+		fetch.arrived = 1;
 	fetch.count = 0;
 	first = 0;
 	if (kept->last_uid[folder] != 0U)
@@ -709,6 +719,25 @@ sync_refresh(
 		sync_failed(sync, account, "fetch", error, kept->imap.error);
 		sync_close(sync, account);
 	}
+}
+
+/* Gets every folder of an account, then tells the window it is done. */
+static void
+sync_refresh_account(
+	struct ml_sync *sync,
+	int account)
+{
+	struct ml_result *result;
+	int folder;
+
+	/* Each folder. */
+	for (folder = 0; folder < ML_FOLDERS; folder++)
+		sync_refresh(sync, account, (enum ml_folder)folder, 0);
+
+	/* Done. */
+	result = sync_result(ML_RESULT_REFRESHED, account);
+	if (result != NULL)
+		sync_post(sync, result);
 }
 
 /* Hands a fetched message, read, to the window; notes its UID. */

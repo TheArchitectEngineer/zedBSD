@@ -188,6 +188,7 @@ struct shell_present {
 #define SHELL_CONTROL_FORWARD	2U
 #define SHELL_CONTROL_RELOAD	3U
 #define SHELL_CONTROL_LOCATION	4U
+#define SHELL_CONTROL_CODE	5U	/* a sign-in code offered (WS169 p005), only while there is one */
 
 /* How many things done with the titlebar wait for the main loop at most, and the longest text kept. */
 #define SHELL_TITLEBAR_EVENTS	16U
@@ -223,6 +224,21 @@ struct shell_titlebar {
 	unsigned event_count;
 };
 
+/*
+ * The sign-in codes of mail (mail.c, WS169 p005): the application's system
+ * (NULL when the compositor tells no arrivals), the code offered (empty
+ * for none) and the label of its titlebar control, until when, the request that posted its notification and the
+ * notification's number (0 before it comes or after it closed).
+ */
+struct shell_mail {
+	struct kl_system *system;
+	char code[KL_MAIL_CODE_MAX];
+	char label[KL_MAIL_CODE_MAX + 8U];
+	uint64_t until_ms;
+	uint32_t request;
+	uint32_t notification;
+};
+
 /* The window (window.c). */
 int shell_window_open(struct shell_window *window, const char *display, uint32_t width, uint32_t height, const char *title);
 int shell_window_dispatch(struct shell_window *window, int timeout, struct pollfd *extra, size_t extra_count);
@@ -240,9 +256,16 @@ int shell_key_button(uint32_t button);
 int shell_titlebar_open(struct shell_titlebar *titlebar, struct shell_window *window);
 int shell_titlebar_show(struct shell_titlebar *titlebar, int can_back, int can_forward, const char *path);
 int shell_titlebar_edit_location(struct shell_titlebar *titlebar);
+int shell_titlebar_offer_code(struct shell_titlebar *titlebar, const char *label);
 int shell_titlebar_take(struct shell_titlebar *titlebar, struct shell_titlebar_event *event);
 void shell_titlebar_post(struct shell_titlebar *titlebar, const struct kl_window_event *event);
 void shell_titlebar_close(struct shell_titlebar *titlebar);
+
+/* The sign-in codes of mail (mail.c). */
+void shell_mail_open(struct shell_mail *mail, struct kl_app *app);
+int shell_mail_round(struct shell_mail *mail, struct browser_view *view, struct shell_titlebar *titlebar, uint64_t now_ms);
+void shell_mail_fill(struct shell_mail *mail, struct browser_view *view, struct shell_titlebar *titlebar);
+void shell_mail_close(struct shell_mail *mail, struct shell_titlebar *titlebar);
 
 /* The presenter (present.c). */
 VkResult shell_present_open(struct shell_present *present, struct shell_window *window, struct browser_view *view);
