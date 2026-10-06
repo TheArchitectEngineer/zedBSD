@@ -88,6 +88,7 @@
 #include "edit.h"
 #include "ime.h"
 #include "media.h"
+#include "layout.h"
 
 #include <keiland.h>
 
@@ -409,11 +410,20 @@ static void window_raise(struct zwl_server *server, struct zwl_object *surface);
 static void sheet_place(struct zwl_server *server);
 static struct zwl_object *sheet_owner(struct zwl_object *surface);
 static void sheet_narrow(struct zwl_server *server, struct zwl_object *surface, struct zwl_object *parent, int32_t width, int32_t height);
-static void sheet_anchor(struct zwl_server *server, struct zwl_object *parent, int32_t width, int32_t *x, int32_t *top);
+static void sheet_anchor(struct zwl_server *server, struct zwl_object *parent, int32_t width, int32_t height, int32_t *x, int32_t *top);
+static int sheet_centred(struct zwl_server *server, const struct zwl_object *parent);
 static void draw_sheet(struct zwl_server *server, VkCommandBuffer command, struct zwl_object *surface, struct zwl_object *parent, unsigned focused);
 static void window_dock(struct zwl_server *server, struct zwl_object *surface, int32_t restore_x, int32_t restore_y, const char *via);
 static void window_undock(struct zwl_server *server, struct zwl_object *surface, int32_t x, int32_t y, const char *via);
 static void window_configure(struct zwl_object *surface);
+static void layout_window(const struct zwl_object *surface, struct zwl_layout_window *window);
+static void layout_set(struct zwl_server *server, unsigned mode, const char *via);
+static void layout_match(struct zwl_server *server, struct zwl_object *surface, const char *via);
+static int layout_hides(struct zwl_server *server, const struct zwl_object *surface);
+static int layout_takes_press(struct zwl_server *server);
+static int layout_press_switches(struct zwl_server *server, struct zwl_object *surface);
+static void docked_body(struct zwl_server *server, const struct zwl_object *surface, struct shell_rect *body);
+static void dock_restore_default(struct zwl_server *server, struct zwl_object *surface);
 static unsigned double_click(struct zwl_server *server, struct zwl_object *surface);
 static unsigned title_clicks(struct zwl_server *server, struct zwl_object *surface);
 static int click_docked_third(struct zwl_server *server);
@@ -851,6 +861,17 @@ zwl_glass_button(
 	/* Only the left button acts on windows. */
 	surface = window_at(server, server->pointer_x, server->pointer_y, &hit);
 
+	/*
+	 * In the docked mode a press beside a docked window of one size (on the
+	 * dark rest of the docked space, where another application's windows
+	 * are not shown) reaches nothing under it (ws142-p008).
+	 */
+	if (surface == NULL) {
+		open = layout_takes_press(server);
+		if (open)
+			return 1;
+	}
+
 	/* A press where no window is goes to the desktop's icons when there are any (desktop.c); a window's press takes the keyboard back from them. */
 	if (surface == NULL) {
 		open = zwl_desktop_press(server);
@@ -877,6 +898,17 @@ zwl_glass_button(
 	/* A press on the desktop is zdesktop's. */
 	if (surface == NULL)
 		return 1;
+
+	/*
+	 * In the windowed mode a press on another application's window left
+	 * docked behind is a switch to it, which brings it back to floating
+	 * (ws142-p008); the press is not the client's, whose window moves.
+	 */
+	open = layout_press_switches(server, surface);
+	if (open) {
+		zwl_glass_switch_to(server, surface, "press");
+		return 1;
+	}
 
 	/* The window comes to the top and takes the focus. */
 	window_raise(server, surface);
@@ -1843,6 +1875,8 @@ zwl_glass_place(
 	int32_t step)
 {
 	int32_t places[1 + 2 * GLASS_CASCADE_ROUNDS][2];
+	struct zwl_layout_window window;
+	int centred;
 	int32_t space_width;
 	int32_t space_height;
 	int32_t top_x;
@@ -1861,6 +1895,16 @@ zwl_glass_place(
 	places[0][0] = ((int32_t)server->width - width) / 2;
 	places[0][1] = ZWL_GLASS_TOP + (space_height - height) / 2;
 	count = 1U;
+
+	/* In the docked mode a dialog shows in the middle of the screen, over its docked parent (ws142-p008). */
+	layout_window(surface, &window);
+	centred = zwl_layout_centred(server->layout_mode, &window);
+	if (centred) {
+		zwl_glass_fit(server, width, height, &places[0][0], &places[0][1]);
+		surface->x = places[0][0];
+		surface->y = places[0][1];
+		return;
+	}
 
 	/* Down and right of the top window. */
 	found = glass_top(server, surface, &top_x, &top_y);
@@ -2509,6 +2553,7 @@ window_shown(
 	float position)
 {
 	float shift;
+	int hidden;
 
 	/* A minimized window, or one a screen or more to the side. */
 	shift = ((float)surface->desktop - position) * (float)server->width;
@@ -2517,6 +2562,11 @@ window_shown(
 
 	/* With Home open, only the desktop shown. */
 	if (home > 0.0f && surface->desktop != server->desktop)
+		return 0;
+
+	/* In the docked mode another application's window is not drawn (ws142-p008). */
+	hidden = layout_hides(server, surface);
+	if (hidden)
 		return 0;
 
 	/* The window is drawn. */
@@ -2646,6 +2696,7 @@ draw_window(
 	unsigned focused,
 	const struct shell_bar *bar)
 {
+	static const float letterbox[4] = { 0.04f, 0.05f, 0.07f, 1.0f };
 	struct shell_rect body;
 	struct shell_rect from;
 	struct shell_rect to;
@@ -2713,8 +2764,20 @@ draw_window(
 		return;
 	}
 
-	/* A docked window has only its body; its title is in the system bar. */
+	/*
+	 * A docked window has only its body; its title is in the system bar.
+	 * One of one size is in the middle of the docked space, the rest of
+	 * which is dark (ws142-p008).
+	 */
 	if (surface->maximized) {
+		docked_rect(server, &slot);
+		if (body.width != slot.width || body.height != slot.height) {
+			glass_draw_solid(server, command, (float)slot.x, (float)slot.y, (float)slot.width, (float)slot.height, 0.0f, letterbox);
+			draw_body(server, command, surface, &body, 0, focused);
+			return;
+		}
+
+		/* One that fills the space has its lower corners below the output. */
 		draw_body(server, command, surface, &body, 1, focused);
 		return;
 	}
@@ -3749,9 +3812,9 @@ body_rect(
 		return;
 	}
 
-	/* Docked. */
+	/* Docked: the docked space, or the middle of it for a window of one size (ws142-p008). */
 	if (surface->maximized) {
-		docked_rect(server, body);
+		docked_body(server, surface, body);
 		return;
 	}
 
@@ -4114,6 +4177,7 @@ window_at(
 	struct zwl_object *surface;
 	struct zwl_object *found;
 	enum shell_hit place;
+	int hidden;
 
 	/* The hit with the highest map order. */
 	found = NULL;
@@ -4130,6 +4194,11 @@ window_at(
 			    surface->cursor_role ||
 			    surface->desktop != server->desktop ||
 			    surface->minimized)
+				continue;
+
+			/* Not a window the docked mode leaves out of the scene (ws142-p008). */
+			hidden = layout_hides(server, surface);
+			if (hidden)
 				continue;
 
 			/* Above what was found so far. */
@@ -4269,7 +4338,7 @@ sheet_place(
 			t = 1.0f - (1.0f - t) * (1.0f - t);
 
 			/* Its place: under the parent's title bar, risen by what has not slid out yet. */
-			sheet_anchor(server, parent, width, &x, &top);
+			sheet_anchor(server, parent, width, height, &x, &top);
 			y = top - (int32_t)((1.0f - t) * (float)height);
 			moved = surface->x != x || surface->y != y;
 			if (moved)
@@ -4332,28 +4401,58 @@ sheet_narrow(
 }
 
 /*
- * The place of a sheet of a width under its parent: the left of its middle
+ * The place of a sheet of a size under its parent: the left of its middle
  * over the parent's body, and its top at the bottom of the parent's title
- * bar (the top of the body of a docked or fullscreen parent).
+ * bar (the top of the body of a docked or fullscreen parent).  In the
+ * docked mode a docked parent's sheet (the File Chooser among them) is in
+ * the middle of the screen instead (ws142-p008, the 2026-10-06 user
+ * decision).
  */
 static void
 sheet_anchor(
 	struct zwl_server *server,
 	struct zwl_object *parent,
 	int32_t width,
+	int32_t height,
 	int32_t *x,
 	int32_t *top)
 {
 	struct shell_rect body;
+	int centred;
 
 	/* The parent's body where it is now. */
 	body_rect(server, parent, &body);
 	*x = body.x + (body.width - width) / 2;
 
+	/* The middle of the docked parent's body, in the docked mode. */
+	centred = sheet_centred(server, parent);
+	if (centred) {
+		zwl_layout_centre(body.x, body.y, body.width, body.height, width, height, x, top);
+		return;
+	}
+
 	/* A floating parent's title bar ends a gap above its body; a docked or fullscreen one has none there. */
 	*top = body.y - ZWL_GLASS_GAP;
 	if (parent->maximized || parent->fullscreen)
 		*top = body.y;
+}
+
+/* Tells whether a parent's sheet is in the middle of the screen: the parent docked, in the docked mode. */
+static int
+sheet_centred(
+	struct zwl_server *server,
+	const struct zwl_object *parent)
+{
+	/* A floating or fullscreen parent hangs its sheet under its title bar. */
+	if (!parent->maximized)
+		return 0;
+
+	/* So does a docked parent left behind in the windowed mode. */
+	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+		return 0;
+
+	/* Succeeded: the sheet is in the middle. */
+	return 1;
 }
 
 /*
@@ -4376,10 +4475,18 @@ draw_sheet(
 	int32_t x;
 	int32_t top;
 	int32_t bottom;
+	int centred;
 
-	/* The body where it is, and where the parent's title bar ends. */
+	/* A sheet in the middle of the screen (the docked mode, ws142-p008) is a whole body with its shadow, cut nowhere. */
 	body_rect(server, surface, &body);
-	sheet_anchor(server, parent, body.width, &x, &top);
+	centred = sheet_centred(server, parent);
+	if (centred) {
+		draw_body(server, command, surface, &body, 0, focused);
+		return;
+	}
+
+	/* Where the parent's title bar ends. */
+	sheet_anchor(server, parent, body.width, body.height, &x, &top);
 
 	/* Only below the title bar (its shadow and, while it slides, itself): the frame's scissor cut there. */
 	saved = server->compose->scissor_now;
@@ -4437,13 +4544,14 @@ window_dock(
 	surface->restore_height = geometry_height;
 	body_rect(server, surface, &from);
 
-	/* Docked. */
+	/* Docked: told the docked space, drawn there (a window of one size in its middle). */
 	surface->maximized = 1;
 	docked_rect(server, &to);
 	surface->x = to.x;
 	surface->y = to.y;
 	surface->window_width = (uint32_t)to.width;
 	surface->window_height = (uint32_t)to.height;
+	docked_body(server, surface, &to);
 
 	/* The animation from the floating body to the docked space. */
 	memcpy(server->anim_from, &from, sizeof(server->anim_from));
@@ -4462,6 +4570,9 @@ window_dock(
 
 	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
 	window_resized(surface);
+
+	/* A window docked makes the session's mode docked (ws142-p008, BUG-217). */
+	layout_set(server, ZWL_LAYOUT_DOCKED, via);
 }
 
 /*
@@ -4517,6 +4628,9 @@ window_undock(
 
 	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180). */
 	window_resized(surface);
+
+	/* A window brought back makes the session's mode windowed (ws142-p008, BUG-217). */
+	layout_set(server, ZWL_LAYOUT_WINDOWED, via);
 }
 
 /* Tells a window its new size. */
@@ -4548,6 +4662,279 @@ window_resized(
 
 	/* Succeeded: the window waits for its image of the new size. */
 	return;
+}
+
+/* Describes a window to the layout's rules (layout.c): docked, fullscreen, with a parent, of one size. */
+static void
+layout_window(
+	const struct zwl_object *surface,
+	struct zwl_layout_window *window)
+{
+	/* Docked and fullscreen as the shell keeps them. */
+	window->docked = surface->maximized;
+	window->fullscreen = surface->fullscreen;
+
+	/* A dialog or a sheet has a parent. */
+	window->child = 0U;
+	if (surface->parent_window != NULL)
+		window->child = 1U;
+
+	/* A window of one size has the same smallest and largest sizes. */
+	window->fixed = 0U;
+	if (surface->min_width > 0 &&
+	    surface->min_width == surface->max_width &&
+	    surface->min_height == surface->max_height)
+		window->fixed = 1U;
+}
+
+/*
+ * Sets the session's layout mode (ws142-p008): every window is drawn again,
+ * the other applications' shown or hidden, and the log says why it changed.
+ */
+static void
+layout_set(
+	struct zwl_server *server,
+	unsigned mode,
+	const char *via)
+{
+	/* The same mode: nothing changes. */
+	if (server->layout_mode == mode)
+		return;
+
+	/* The new mode, drawn from the next frame (another application's windows show or go). */
+	server->layout_mode = mode;
+	server->dirty = 1;
+	printf("ZWL LAYOUT mode=%s reason=%s at_ms=%llu\n", zwl_layout_name(mode), via, (unsigned long long)zwl_milliseconds());
+}
+
+/*
+ * Makes a window switched to follow the session's layout mode: docked in
+ * the docked mode, floating again at its place before in the windowed
+ * mode.  A dialog or a sheet does it through its parent.
+ */
+static void
+layout_match(
+	struct zwl_server *server,
+	struct zwl_object *surface,
+	const char *via)
+{
+	static const char *const actions[] = { "keep", "dock", "float" };
+	struct zwl_layout_window window;
+	struct zwl_object *owner;
+	unsigned action;
+
+	/* A dialog or a sheet follows the mode through its parent, while the parent is shown. */
+	owner = surface;
+	if (surface->parent_window != NULL &&
+	    !surface->parent_window->dead &&
+	    surface->parent_window->mapped)
+		owner = surface->parent_window;
+
+	/* What the mode makes of it. */
+	layout_window(owner, &window);
+	action = zwl_layout_switch_action(server->layout_mode, &window);
+
+	/* Docked where it floats, or floating again where it was before it docked. */
+	if (action == ZWL_LAYOUT_DOCK) {
+		window_dock(server, owner, owner->x, owner->y, via);
+	} else if (action == ZWL_LAYOUT_FLOAT) {
+		window_undock(server, owner, owner->restore_x, owner->restore_y, via);
+	}
+
+	/* The log says what the switch did (the tests read it). */
+	printf("ZWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], zwl_layout_name(server->layout_mode), via, (unsigned long long)owner->client->number);
+}
+
+/*
+ * Tells whether a window is left out of the scene (not drawn, no press): in
+ * the docked mode a window of another application than the top window's on
+ * the desktop shown, while no overview (App Home, Wiseview, the switcher)
+ * shows them all.  Returns 1 when it is hidden.
+ */
+static int
+layout_hides(
+	struct zwl_server *server,
+	const struct zwl_object *surface)
+{
+	struct zwl_object *top;
+	float home;
+	int desktop_surface;
+	int same_application;
+	int overview;
+	int hidden;
+
+	/* The windowed mode hides nothing (and needs no search for the top window). */
+	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+		return 0;
+
+	/* Only the desktop shown has a current application; a neighbour sliding in shows whole. */
+	if (surface->desktop != server->desktop)
+		return 0;
+
+	/* The desktop's icons are no application's window. */
+	desktop_surface = zwl_desktop_is(surface);
+	if (desktop_surface)
+		return 0;
+
+	/* The current application is the top window's client (none: every window is its). */
+	top = zwl_top_window(server);
+	same_application = 0;
+	if (top == NULL || top->client == surface->client)
+		same_application = 1;
+
+	/* App Home, Wiseview and the switcher show every application. */
+	overview = 0;
+	home = zwl_home_progress(server);
+	if (home > 0.0f) {
+		overview = 1;
+	} else if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+		overview = 1;
+	} else if (server->switcher.on) {
+		overview = 1;
+	}
+
+	/* The rule (layout.c). */
+	hidden = zwl_layout_hidden(server->layout_mode, same_application, overview);
+
+	/* Succeeded: whether the window is hidden. */
+	return hidden;
+}
+
+/*
+ * Tells whether a press where no window is shown is taken without effect:
+ * in the docked mode, on the docked space of a docked window in front (the
+ * dark rest of the space beside a window of one size, where the other
+ * applications' windows are hidden).  Returns 1 when it is taken.
+ */
+static int
+layout_takes_press(
+	struct zwl_server *server)
+{
+	struct zwl_object *top;
+	struct shell_rect space;
+
+	/* Only the docked mode hides windows under the docked one. */
+	if (server->layout_mode != ZWL_LAYOUT_DOCKED)
+		return 0;
+
+	/* The window in front (a sheet's parent for a sheet), docked. */
+	top = sheet_owner(zwl_top_window(server));
+	if (top == NULL || !top->maximized)
+		return 0;
+
+	/* A press outside the docked space is the desktop's. */
+	docked_rect(server, &space);
+	if (server->pointer_x < space.x ||
+	    server->pointer_x >= space.x + space.width ||
+	    server->pointer_y < space.y ||
+	    server->pointer_y >= space.y + space.height)
+		return 0;
+
+	/* Succeeded: the press is taken. */
+	return 1;
+}
+
+/*
+ * Tells whether a press on a window is a switch to it (ws142-p008, the
+ * user's rule that a switch from a windowed application to a maximized
+ * one brings it back to a window): in the windowed mode, a docked window
+ * of another application than the one in front.  Returns 1 when it is.
+ */
+static int
+layout_press_switches(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	struct zwl_object *owner;
+	struct zwl_object *top;
+
+	/* Only the windowed mode brings a docked window back by a press. */
+	if (server->layout_mode != ZWL_LAYOUT_WINDOWED)
+		return 0;
+
+	/* A docked window (a sheet's parent for a sheet), not a fullscreen one. */
+	owner = sheet_owner(surface);
+	if (!owner->maximized || owner->fullscreen)
+		return 0;
+
+	/* Of another application than the window in front. */
+	top = sheet_owner(zwl_top_window(server));
+	if (top == NULL || top == owner)
+		return 0;
+	if (top->client == owner->client)
+		return 0;
+
+	/* Succeeded: the press switches to it. */
+	return 1;
+}
+
+/*
+ * The body of a docked window: the docked space, or its middle at the
+ * window's size for a window of one size whose image is smaller than the
+ * space (ws142-p008: its client does not draw the docked size).
+ */
+static void
+docked_body(
+	struct zwl_server *server,
+	const struct zwl_object *surface,
+	struct shell_rect *body)
+{
+	struct zwl_layout_window window;
+	int32_t width;
+	int32_t height;
+	int32_t x;
+	int32_t y;
+	int centred;
+
+	/* The docked space. */
+	docked_rect(server, body);
+
+	/* Only a docked window of one size is centred. */
+	layout_window(surface, &window);
+	window.docked = 1U;
+	centred = zwl_layout_centred(server->layout_mode, &window);
+	if (!centred)
+		return;
+
+	/* Its image's size; without an image, or one not smaller than the space, the space. */
+	window_size(surface, &width, &height);
+	if (width <= 0 || height <= 0)
+		return;
+	if (width > body->width || height > body->height)
+		return;
+
+	/* The middle of the space at that size. */
+	zwl_layout_centre(body->x, body->y, body->width, body->height, width, height, &x, &y);
+	body->x = x;
+	body->y = y;
+	body->width = width;
+	body->height = height;
+}
+
+/*
+ * Gives a window that is docked without a floating place of its own a
+ * place to come back to: seven tenths of the docked space, in its middle.
+ */
+static void
+dock_restore_default(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	struct shell_rect docked;
+	int32_t restore_x;
+	int32_t restore_y;
+
+	/* Seven tenths of the docked space. */
+	docked_rect(server, &docked);
+	surface->restore_width = (uint32_t)(docked.width * 7 / 10);
+	surface->restore_height = (uint32_t)(docked.height * 7 / 10);
+
+	/* In its middle, inside the space for floating windows. */
+	restore_x = docked.x + (docked.width - (int32_t)surface->restore_width) / 2;
+	restore_y = docked.y + (docked.height - (int32_t)surface->restore_height) / 2;
+	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
+	surface->restore_x = restore_x;
+	surface->restore_y = restore_y;
 }
 
 /*
@@ -5132,9 +5519,8 @@ wiseview_key(
 			return;
 		}
 
-		/* A minimized window comes back; it comes to the top and Wiseview closes. */
-		surface->minimized = 0;
-		window_raise(server, surface);
+		/* A minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
+		zwl_glass_switch_to(server, surface, "wiseview");
 		printf("ZWL WISEVIEW select surface=%u via=key client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		wiseview_settle(server, wiseview_progress(server), 0.0f);
 		return;
@@ -5654,11 +6040,10 @@ wiseview_button(
 			return 1;
 		}
 
-		/* A click: a minimized window comes back; it comes to the top and Wiseview closes. */
+		/* A click: a minimized window comes back; it comes to the top as the layout mode is, and Wiseview closes. */
 		if (surface->dead || !surface->mapped)
 			return 1;
-		surface->minimized = 0;
-		window_raise(server, surface);
+		zwl_glass_switch_to(server, surface, "wiseview");
 		printf("ZWL WISEVIEW select surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
 		wiseview_settle(server, 1.0f, 0.0f);
 		return 1;
@@ -5836,10 +6221,14 @@ zwl_glass_apps_room(
 }
 
 /*
- * Brings a window to the top for the bar's applications (back from minimized), with the focus.
+ * Switches to a window (an application switch: the bar's icon or preview,
+ * the switcher, Wiseview, an activation, a press on a docked window of
+ * another application): back from minimized, on top with the focus, and
+ * made to follow the session's layout mode (ws142-p008, BUG-217): docked
+ * in the docked mode, floating again in the windowed mode.
  */
 void
-zwl_glass_bring(
+zwl_glass_switch_to(
 	struct zwl_server *server,
 	struct zwl_object *surface,
 	const char *via)
@@ -5851,6 +6240,9 @@ zwl_glass_bring(
 	zwl_seat_focus(server);
 	server->dirty = 1;
 	printf("ZWL APPS raise surface=%u via=%s at_ms=%llu client=%llu\n", surface->id, via, (unsigned long long)zwl_milliseconds(), (unsigned long long)surface->client->number);
+
+	/* Docked or floating as the mode is. */
+	layout_match(server, surface, via);
 }
 
 /*
@@ -5872,18 +6264,17 @@ zwl_glass_activate(
 	if (surface->desktop != server->desktop)
 		desktop_turn(server, (int)surface->desktop, via);
 
-	/* Back, on top, with the focus. */
-	zwl_glass_bring(server, surface, via);
+	/* Back, on top, with the focus, as the session's layout mode is. */
+	zwl_glass_switch_to(server, surface, via);
 }
 
 /*
  * Opens a new window docked (ws099-p033, the 2026-10-05 UAT: a tablet used
- * over the whole screen) when the window in front of the desktop shown is
- * docked: its first configure is the docked space.  A window with a parent
- * (a dialog or a sheet), one of a fixed size (its smallest and largest
- * sizes the same), and a fullscreen one open as they would; so does every
- * window once the window in front is brought back to floating.  The place
- * to come back to is the middle of the space at seven tenths of it.
+ * over the whole screen) in the session's docked mode (ws142-p008): its
+ * first configure is the docked space.  A window with a parent (a dialog
+ * or a sheet) and a fullscreen one open as they would; one of a fixed size
+ * is docked too, drawn at its size in the middle of the docked space.  The
+ * place to come back to is the middle of the space at seven tenths of it.
  * Returns 1 when the window opens docked.
  */
 int
@@ -5891,11 +6282,12 @@ zwl_glass_open_docked(
 	struct zwl_server *server,
 	struct zwl_object *surface)
 {
+	struct zwl_layout_window window;
 	struct zwl_object *front;
-	struct zwl_object *parent;
 	struct shell_rect docked;
-	int32_t restore_x;
-	int32_t restore_y;
+	unsigned long long front_client;
+	unsigned front_id;
+	int opens;
 
 	/* Only the glass look's windows, not over the login or lock screen. */
 	if (!server->glass ||
@@ -5904,46 +6296,90 @@ zwl_glass_open_docked(
 	    server->locked)
 		return 0;
 
-	/* Not a dialog, a sheet, a window of one size, a fullscreen one, or one docked already. */
-	if (surface->parent_window != NULL ||
-	    surface->fullscreen ||
-	    surface->maximized)
-		return 0;
-	if (surface->min_width > 0 &&
-	    surface->min_width == surface->max_width &&
-	    surface->min_height == surface->max_height)
-		return 0;
-
-	/* The window in front of the desktop shown (a sheet's parent for a sheet), docked and not fullscreen. */
-	front = zwl_top_window(server);
-	parent = zwl_sheet_parent(front);
-	if (parent != NULL)
-		front = parent;
-	if (front == NULL || !front->maximized || front->fullscreen)
+	/* Docked when the session's mode is and the window is one that docks. */
+	layout_window(surface, &window);
+	opens = zwl_layout_opens_docked(server->layout_mode, &window);
+	if (!opens)
 		return 0;
 
 	/* The place to come back to: seven tenths of the docked space, in its middle. */
-	docked_rect(server, &docked);
-	surface->restore_width = (uint32_t)(docked.width * 7 / 10);
-	surface->restore_height = (uint32_t)(docked.height * 7 / 10);
-	restore_x = docked.x + (docked.width - (int32_t)surface->restore_width) / 2;
-	restore_y = docked.y + (docked.height - (int32_t)surface->restore_height) / 2;
-	zwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
-	surface->restore_x = restore_x;
-	surface->restore_y = restore_y;
+	dock_restore_default(server, surface);
 
 	/* Docked: the first configure gives the docked space and the maximized state. */
+	docked_rect(server, &docked);
 	surface->maximized = 1;
 	surface->x = docked.x;
 	surface->y = docked.y;
 	surface->window_width = (uint32_t)docked.width;
 	surface->window_height = (uint32_t)docked.height;
+
+	/* The window in front it opens over (none: 0). */
+	front = sheet_owner(zwl_top_window(server));
+	front_client = 0ULL;
+	front_id = 0U;
+	if (front != NULL) {
+		front_client = (unsigned long long)front->client->number;
+		front_id = front->id;
+	}
+
+	/* The log names where it opens (the tests read it). */
 	printf("ZWL GLASS open-docked client=%llu surface=%u front_client=%llu front=%u x=%d y=%d w=%d h=%d\n",
-	       (unsigned long long)surface->client->number, surface->id,
-	       (unsigned long long)front->client->number, front->id,
+	       (unsigned long long)surface->client->number, surface->id, front_client, front_id,
 	       (int)docked.x, (int)docked.y, (int)docked.width, (int)docked.height);
 
 	/* Succeeded: the window opens docked. */
+	return 1;
+}
+
+/*
+ * Docks a window leaving fullscreen when the session's layout mode is
+ * docked (ws142-p008: the mode decides, not what the window was before,
+ * BUG-208), with the docked space, and keeps its floating place to come
+ * back to: its place before fullscreen when it floated then, its restore
+ * place when it was docked then, the middle of the space when it never had
+ * a place.  Returns 1 when it is docked (the caller tells it), 0 when it
+ * floats (the caller places it).
+ */
+int
+zwl_glass_unfullscreen_docks(
+	struct zwl_server *server,
+	struct zwl_object *surface)
+{
+	struct zwl_layout_window window;
+	struct shell_rect docked;
+	int docks;
+
+	/* Only the glass look docks. */
+	if (!server->glass)
+		return 0;
+
+	/* Docked when the mode is and the window is one that docks. */
+	layout_window(surface, &window);
+	docks = zwl_layout_unfullscreen_docked(server->layout_mode, &window);
+	if (!docks)
+		return 0;
+
+	/* A window that floated before fullscreen comes back to that place; one never placed, to the middle. */
+	if (!surface->fullscreen_docked) {
+		if (surface->placed && surface->window_width != 0U) {
+			surface->restore_x = surface->window_x;
+			surface->restore_y = surface->window_y;
+			surface->restore_width = surface->window_width;
+			surface->restore_height = surface->window_height;
+		} else {
+			dock_restore_default(server, surface);
+		}
+	}
+
+	/* Docked: the space under the system bar, less what the on-screen keyboard's panel takes. */
+	docked_rect(server, &docked);
+	surface->maximized = 1;
+	surface->x = docked.x;
+	surface->y = docked.y;
+	surface->window_width = (uint32_t)docked.width;
+	surface->window_height = (uint32_t)docked.height;
+
+	/* Succeeded: the window is docked. */
 	return 1;
 }
 

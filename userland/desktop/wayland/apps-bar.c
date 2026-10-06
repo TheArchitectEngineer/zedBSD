@@ -451,7 +451,7 @@ zwl_apps_bar_button(
 		app = &view.apps.apps[found];
 		if (app->window_count == 1U) {
 			zwl_apps_bar_hide(server, "raise");
-			zwl_glass_bring(server, view.surfaces[app->windows[0]], "bar");
+			zwl_glass_switch_to(server, view.surfaces[app->windows[0]], "bar");
 			return 1;
 		}
 
@@ -498,7 +498,7 @@ zwl_apps_bar_button(
 
 			/* The preview: its window comes to the top. */
 			zwl_apps_bar_hide(server, "preview");
-			zwl_glass_bring(server, surface, "preview");
+			zwl_glass_switch_to(server, surface, "preview");
 			return 1;
 		}
 	}

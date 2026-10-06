@@ -359,7 +359,7 @@ zwl_switch_button(
 	if (built && tile >= 0) {
 		printf("ZWL SWITCH commit app=%s surface=%u via=preview client=%llu\n", view.apps.apps[found].key, panel.surfaces[tile]->id, (unsigned long long)panel.surfaces[tile]->client->number);
 		close_switcher(server);
-		zwl_glass_bring(server, panel.surfaces[tile], "switch");
+		zwl_glass_switch_to(server, panel.surfaces[tile], "switch");
 		return 1;
 	}
 
@@ -676,7 +676,7 @@ bring_app(
 
 	/* Closed, then brought. */
 	close_switcher(server);
-	zwl_glass_bring(server, surface, "switch");
+	zwl_glass_switch_to(server, surface, "switch");
 }
 
 /* Closes the switcher and its previews. */

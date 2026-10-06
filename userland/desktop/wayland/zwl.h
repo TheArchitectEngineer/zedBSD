@@ -375,7 +375,9 @@ struct zwl_object {
 	/*
 	 * A window that was docked when it went fullscreen (BUG-208): while it
 	 * is fullscreen it is not docked (maximized is 0, so it is placed and
-	 * drawn as any fullscreen window), and leaving fullscreen docks it again.
+	 * drawn as any fullscreen window), and its restore place is its place
+	 * as a floating window.  Leaving fullscreen follows the session's layout
+	 * mode (ws142-p008), which docks it again or brings it back there.
 	 */
 	unsigned fullscreen_docked;
 	uint32_t window_width;
@@ -1097,6 +1099,13 @@ struct zwl_server {
 	struct zwl_switcher switcher;
 	uint32_t switch_swallow;
 	/*
+	 * The session's layout mode (ZWL_LAYOUT_WINDOWED or ZWL_LAYOUT_DOCKED of
+	 * layout.h, ws142-p008, BUG-217): set by the person docking a window or
+	 * bringing one back, followed by every window switched to, opened or
+	 * leaving fullscreen.  Windowed from the session's start.
+	 */
+	unsigned layout_mode;
+	/*
 	 * App Home's pages (ws035-p071): the page shown; a press on Home that
 	 * may become a page drag (where it started, the application under it,
 	 * whether it has moved enough) and the drag's offset in pixels; the
@@ -1380,7 +1389,8 @@ int zwl_glass_button(struct zwl_server *server, uint32_t button, uint32_t state)
 int zwl_glass_motion(struct zwl_server *server);
 void zwl_glass_gesture(struct zwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
 int zwl_glass_apps_room(struct zwl_server *server, int32_t *left, int32_t *right);
-void zwl_glass_bring(struct zwl_server *server, struct zwl_object *surface, const char *via);
+void zwl_glass_switch_to(struct zwl_server *server, struct zwl_object *surface, const char *via);
+int zwl_glass_unfullscreen_docks(struct zwl_server *server, struct zwl_object *surface);
 void zwl_glass_activate(struct zwl_server *server, struct zwl_object *surface, const char *via);
 
 /* The desktop's appearance (theme.c, ws089-p017). */
