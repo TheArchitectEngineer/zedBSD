@@ -505,6 +505,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 Q1: 第 1 段の 1 パスの間は、各 WS の全文規約の見直しの Phase（conformance）を後に回す（全ての実装の 1 パスの後、WS177 と一緒にまとめて）。正常系の実装を先に。
+- 2026-10-06 夜 ユーザー（記録だけ）: desktop の mode はスマホモード（単一の app を最大化だけ、複数の窓は出さない、約 6 inch まで、Dock Bar は狭く menu を出さない）とタブレットモード（今作っている物、最大化と窓の mode を切り替え、最大化で title bar が Dock Bar に dock、約 7 inch 以上の tablet・laptop・desktop、touch 指向で trackpad・mouse・keyboard も可）。通知 compositor → app: background（process を止める）・foreground（再開）・terminate（oom kill・手動の kill）・画面の大きさの変更。app → compositor: 実行できる mode（スマホ・タブレット）、background でも実行の要求（タブレットだけ）。→ 目標の設計として docs/architecture/keiland.md の「Desktop modes」に記録。実装の Queue は作らない。
+- 2026-10-06 夜 ユーザー（WS165 の H5）:「いったんacceptして、追加のフェーズを第2段でやりましょう。」→ p002 の認識率でいったん受け入れ、組を分ける改善は新しい Phase（第 2 段）。
 - 2026-10-06 夜 ユーザー: 試験の整理の基準（AGENTS.md の検証の節）。一斉の棚卸しはせず、変更に追従する時にだけ適用:「本当に再利用するテストか」を判断し、master の Tools・試験の一覧・未完了の WS・tests/ のシナリオ・T1 の未実行の依頼から参照されない試験は直さず削除（文書の参照も外す、削除は Q1）、回帰に使う物は master に登録、回帰に使いそうな物は tests/ のシナリオへ。
 - 2026-10-06 夜 ユーザー（クリック）: WS112 の新しいゴールは「3 つ（amd64・arm64・RPi）」の deb（Debian 13・Ubuntu 26.04 共通の amd64・arm64、Raspberry Pi OS の arm64）、段は「第 2 段（ベータ2）」。Fedora・Arch は取りやめ。
 - 2026-10-06 夜 ユーザー: WS139（速さ）は最適化なので第 2 段へ。WS085・WS088・WS114 は「すでにできており、Completeにしてください」→ completed（Q1 が ws.md を完了の形にし、Phase の directory を削除、WS114 の試験は plan/tools/gtk4-linux/ へ）。WS112 は Debian の package だけに目標を設定し直す（下の質問の後に記録）。

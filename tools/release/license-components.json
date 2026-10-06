@@ -192,6 +192,19 @@
    "note": "Under the project's license file (ws095 D1)."
   },
   {
+   "id": "ime-dict-skk",
+   "name": "SKK input dictionaries (from the Remacs dictionaries)",
+   "when": "program:ime-dict-skk",
+   "license": "Zlib",
+   "upstream": "the Remacs SKK dictionaries SKK-JISYO.X and SKK-JISYO.remacs, copied into userland/desktop/ime/skk-dict from userland/base/emacs/dict on 2026-10-05 (zlib)",
+   "version": "",
+   "notices": [],
+   "paths": [
+    "userland/desktop/ime/skk-dict/"
+   ],
+   "note": "Under the project's license file (ws095 D1); no entry is copied from SKK-JISYO.L."
+  },
+  {
    "id": "clang",
    "name": "Clang, LLD, LLDB and LLVM tools",
    "when": "program:clang",
@@ -307,6 +320,19 @@
    ],
    "paths": [],
    "note": ""
+  },
+  {
+   "id": "hand-hershey",
+   "name": "Hershey fonts (handwriting templates)",
+   "when": "program:hand-hershey",
+   "license": "LicenseRef-Hershey-fonts (use for any purpose with the acknowledgements)",
+   "upstream": "comp.sources.unix volume 4, hershey",
+   "version": "ext:hand-hershey-part2",
+   "notices": [
+    "/usr/share/licenses/hand-hershey/NOTICE"
+   ],
+   "paths": [],
+   "note": "The Unicode mapping of the glyphs taken is from Kaloffl's Hershey-Unicode-Mapping (Unlicense)."
   },
   {
    "id": "i915-firmware",

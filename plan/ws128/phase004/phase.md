@@ -72,6 +72,13 @@ host と QEMU の Venus。 やっていない確認は「未実施」と書く�
 - 合わせて、同じ file の既存の規約の指摘（`titlebar_send` の後の空行）を直した。
 - 確認: build（zedBSD の pdfviewer、Linux の keiland-linux.mk all）は warning 0、style-check は 0。host では titlebar の field を再現できないので、QEMU（T1 の AAT `apps.pdfviewer.find-select` の再試験）が要る。
 
+## T1-273 と q826-i02（2026-10-06 P2）
+
+- T1-273: Enter の 2 回は通った（`FIND keep error=0`、`found query="line" page=2`）。次の段で `the first line's words were not selected and copied` になった。drag の後に `PDFVIEWER SELECT` が無い。
+- 原因は試験の helper の座標。viewer の scroll mode は一番広い頁（sample の 3 頁目が横向きで 792 pt）に幅を合わせ、狭い頁は中央に置く。helper は 1 頁目（612 pt）が幅いっぱいだと見て、行の左の外を drag していた（T1 の絵: 頁は x 266〜1013）。
+- 修正: `plan/tools/aat/scenarios/helpers_pdfviewer_find.py` の倍率を一番広い頁で取り、左端を中央寄せの位置にした（`WIDEST = 792`）。viewer の code は変えていない。
+- T1 の再試験（AAT `apps.pdfviewer.find-select`）が要る。
+
 ## 未実施・残り
 
 - QEMU（titlebar の find field・IME での検索・clipboard への copy・選択の見た目）は未実施。T1 の依頼は Q1 に送る。
