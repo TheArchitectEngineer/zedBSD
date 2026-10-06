@@ -1,0 +1,812 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Music's window (ws120-p009; music.h, play.h): a libkeiland application
+ * with one window that shows the view (view.c), its menu (File: Quit;
+ * Playback: Play or Pause, Next, Previous), and the view's input.  The
+ * songs are ~/Music's (library.c) and the file named on the command line
+ * (from Files), which plays at once.  The view's requests are carried out
+ * here with the player (play.c); a song played to its end goes on to the
+ * next.  Ctrl+Q quits.  What happens is logged on standard error as
+ * "MUSIC" lines for the tests.
+ *
+ *   music [--width=N] [--height=N] [--timeout-s=N] [FILE]
+ */
+
+#include "play.h"
+
+#include "userland/desktop/paths.h"
+
+#include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* The fonts, the window's first size, and the longest wait for input. */
+#define MU_FONT			KEILAND_DATADIR "/fonts/keiland.ttf"
+#define MU_FALLBACK_FONT	KEILAND_DATADIR "/fonts/keiland-fallback.ttf"
+#define MU_WIDTH		1040U
+#define MU_HEIGHT		680U
+#define MU_IDLE_MS		1000
+#define MU_MOVING_MS		10
+
+/* The most glass panels of a frame. */
+#define MU_PANELS_MAX		4U
+
+/* The key Q, which quits with Ctrl. */
+#define MU_KEY_Q		16U
+
+/* Previous goes to the start of the song instead after this far into it (s). */
+#define MU_RESTART		3.0
+
+/* The folder of the songs under the home. */
+#define MU_FOLDER		"Music"
+
+/*
+ * The window's state: the application, the window and its input, the
+ * frame (its pixels, size and canvas), the text and the style, the view,
+ * the player, whether a frame is due, the window changed size, a widget
+ * moves, the glass was decided, and the last quarter of a second and the
+ * last two seconds of the position told (for the frames and the log).
+ */
+struct mu_window {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	struct kl_canvas canvas;
+	int canvas_made;
+	struct kl_text text;
+	struct kl_style style;
+	struct mu_view view;
+	struct mu_player player;
+	int dirty;
+	int resized;
+	int moving;
+	int glass_decided;
+	long quarter;
+	long logged;
+};
+
+/* The window's menu. */
+static const struct kl_menu_entry mu_menu[] = {
+	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Quit Music", MU_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+	{ 3U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Playback", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 4U, 3U, KL_MENU_ITEM_NORMAL, "Play or Pause", MU_ACTION_PLAY, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 5U, 3U, KL_MENU_ITEM_NORMAL, "Next", MU_ACTION_NEXT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 6U, 3U, KL_MENU_ITEM_NORMAL, "Previous", MU_ACTION_PREVIOUS, KL_MENU_ROLE_NONE, 0U, 0U }
+};
+
+int main(int argc, char **argv);
+static int mu_parse(int argc, char **argv, unsigned *width, unsigned *height, unsigned *timeout, const char **file);
+static void mu_library_start(const char *file, long *song);
+static int mu_loop(struct mu_window *music, unsigned timeout);
+static void mu_input(struct mu_window *music, const struct kl_window_event *event);
+static void mu_requests(struct mu_window *music, uint64_t now_us);
+static void mu_play_song(struct mu_window *music, long song, uint64_t now_us);
+static void mu_toggle(struct mu_window *music, uint64_t now_us);
+static void mu_step(struct mu_window *music, int step, uint64_t now_us);
+static void mu_follow(struct mu_window *music, uint64_t now_us);
+static int mu_resize(struct mu_window *music);
+static void mu_draw(struct mu_window *music, uint64_t now_us);
+static int mu_wait(const struct mu_window *music, uint64_t now_us);
+
+/*
+ * Runs Music.
+ */
+int
+main(
+	int argc,
+	char **argv)
+{
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	static struct mu_window music;
+	const char *file;
+	unsigned timeout;
+	unsigned width;
+	unsigned height;
+	long song;
+	int status;
+	int error;
+
+	/* The command line. */
+	status = mu_parse(argc, argv, &width, &height, &timeout, &file);
+	if (status != 0) {
+		fprintf(stderr, "usage: music [--width=N] [--height=N] [--timeout-s=N] [FILE]\n");
+		return 2;
+	}
+
+	/* The fonts; without them the view shows no words. */
+	error = kl_text_open(&music.text, MU_FONT, MU_FALLBACK_FONT);
+	if (error != 0)
+		mu_log("FONT missing error=%d", error);
+
+	/* The songs, and the file named. */
+	mu_library_start(file, &song);
+
+	/* The view's state. */
+	error = mu_view_init(&music.view);
+	if (error != 0) {
+		mu_log("FAILED operation=view error=%d", error);
+		return 1;
+	}
+
+	/* The sound (none is no failure: the view says why nothing plays), and the decoding add-in. */
+	error = mu_player_init(&music.player);
+	mu_log("AUDIO error=%d", error);
+	if (error != 0)
+		(void)snprintf(music.view.problem, sizeof(music.view.problem), "No sound: audiod is not running.");
+	error = vp_codec_load();
+	if (error != 0)
+		(void)snprintf(music.view.problem, sizeof(music.view.problem), "Playing needs libavcodec (the libavcodec package).");
+
+	/* The application. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "music";
+	music.app = kl_app_open(&app_options);
+	if (music.app == NULL) {
+		mu_log("FAILED operation=app error=%d", errno);
+		mu_player_release(&music.player);
+		mu_view_release(&music.view);
+		return 1;
+	}
+
+	/* Its window. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = "Music";
+	window_options.width = width;
+	window_options.height = height;
+	window_options.present = KL_PRESENT_VULKAN;
+	music.window = kl_app_window_create(music.app, &window_options);
+	if (music.window == NULL) {
+		mu_log("FAILED operation=window error=%d", errno);
+		kl_app_close(music.app);
+		mu_player_release(&music.player);
+		mu_view_release(&music.view);
+		return 1;
+	}
+
+	/* The input of its frames. */
+	music.ui = kl_ui_create();
+	if (music.ui == NULL) {
+		mu_log("FAILED operation=ui error=%d", errno);
+		kl_app_close(music.app);
+		mu_player_release(&music.player);
+		mu_view_release(&music.view);
+		return 1;
+	}
+
+	/* The menu and the style (opaque until the first frame finds whether the window can stand on glass). */
+	(void)kl_window_set_menu(music.window, mu_menu, sizeof(mu_menu) / sizeof(mu_menu[0]));
+	music.style.text = &music.text;
+	music.style.theme = kl_theme_default();
+	music.style.glass = 0;
+	music.view.glass = 0;
+	music.quarter = -1;
+	music.logged = -1;
+
+	/* The file named plays at once. */
+	if (song >= 0)
+		mu_play_song(&music, song, kl_clock_us());
+
+	/* The loop until the window closes. */
+	status = mu_loop(&music, timeout);
+
+	/* Everything goes. */
+	mu_player_release(&music.player);
+	kl_ui_destroy(music.ui);
+	if (music.canvas_made)
+		kl_canvas_release(&music.canvas);
+	free(music.pixels);
+	kl_app_close(music.app);
+	mu_view_release(&music.view);
+	mu_library_release();
+	kl_text_close(&music.text);
+
+	/* Reports how the loop ended. */
+	if (status != 0)
+		return 1;
+
+	/* Succeeded: the window closed. */
+	return 0;
+}
+
+/*
+ * Writes a log line for the tests on standard error.
+ */
+void
+mu_log(
+	const char *format,
+	...)
+{
+	va_list arguments;
+
+	/* The line. */
+	va_start(arguments, format);
+	fputs("MUSIC ", stderr);
+	vfprintf(stderr, format, arguments);
+	fputc('\n', stderr);
+	va_end(arguments);
+}
+
+/*
+ * Writes a log line of Video Player's sound and decoding, which Music
+ * shares, as a Music line.
+ */
+void
+vp_log(
+	const char *format,
+	...)
+{
+	va_list arguments;
+
+	/* The line. */
+	va_start(arguments, format);
+	fputs("MUSIC ", stderr);
+	vfprintf(stderr, format, arguments);
+	fputc('\n', stderr);
+	va_end(arguments);
+}
+
+/*
+ * Reads the command line; nonzero when it cannot be read.
+ */
+static int
+mu_parse(
+	int argc,
+	char **argv,
+	unsigned *width,
+	unsigned *height,
+	unsigned *timeout,
+	const char **file)
+{
+	int index;
+	int same;
+
+	/* The defaults. */
+	*width = MU_WIDTH;
+	*height = MU_HEIGHT;
+	*timeout = 0U;
+	*file = NULL;
+
+	/* Each argument. */
+	for (index = 1; index < argc; index++) {
+		/* The width. */
+		same = strncmp(argv[index], "--width=", 8U);
+		if (same == 0) {
+			*width = (unsigned)strtoul(argv[index] + 8, NULL, 10);
+			continue;
+		}
+
+		/* The height. */
+		same = strncmp(argv[index], "--height=", 9U);
+		if (same == 0) {
+			*height = (unsigned)strtoul(argv[index] + 9, NULL, 10);
+			continue;
+		}
+
+		/* The timeout. */
+		same = strncmp(argv[index], "--timeout-s=", 12U);
+		if (same == 0) {
+			*timeout = (unsigned)strtoul(argv[index] + 12, NULL, 10);
+			continue;
+		}
+
+		/* An option not known, or a second file. */
+		if (argv[index][0] == '-' || *file != NULL)
+			return -1;
+
+		/* The file. */
+		*file = argv[index];
+	}
+
+	/* A window needs a size. */
+	if (*width == 0U || *height == 0U)
+		return -1;
+
+	/* Succeeded: the command line is read. */
+	return 0;
+}
+
+/* Reads the songs of the home's Music folder, and adds the file named (-1 for none, or one that is not a song). */
+static void
+mu_library_start(
+	const char *file,
+	long *song)
+{
+	char folder[1024];
+	const char *home;
+	size_t count;
+	int error;
+
+	/* The home's Music folder. */
+	*song = -1;
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		home = "/tmp";
+	(void)snprintf(folder, sizeof(folder), "%s/%s", home, MU_FOLDER);
+	error = mu_library_scan(folder);
+	(void)mu_songs(&count);
+	mu_log("LIBRARY songs=%lu error=%d", (unsigned long)count, error);
+
+	/* The file named. */
+	if (file == NULL)
+		return;
+	error = mu_library_add_file(file, song);
+	mu_log("FILE song=%ld error=%d", *song, error);
+	if (error != 0)
+		*song = -1;
+}
+
+/*
+ * Runs the window until it closes, Quit or the timeout; nonzero when
+ * something failed.
+ */
+static int
+mu_loop(
+	struct mu_window *music,
+	unsigned timeout)
+{
+	struct kl_app_event event;
+	uint64_t started;
+	uint64_t now;
+	int status;
+	int taken;
+	int wait;
+
+	/* The first frame. */
+	status = mu_resize(music);
+	if (status != 0)
+		return -1;
+	mu_log("READY width=%u height=%u", music->width, music->height);
+
+	/* Each round: the input, the view's requests, the player, then a frame when something changed. */
+	started = kl_clock_us();
+	for (;;) {
+		/* Waits for the compositor, or for the time something moves. */
+		now = kl_clock_us();
+		wait = mu_wait(music, now);
+		status = kl_app_dispatch(music->app, wait);
+		if (status != 0) {
+			mu_log("DONE reason=disconnected");
+			return 0;
+		}
+
+		/* The window's input and the actions of its menu. */
+		for (;;) {
+			taken = kl_app_take(music->app, &event);
+			if (!taken)
+				break;
+
+			/* The desktop's appearance changed: the theme's colours are new. */
+			if (event.kind == KL_APP_THEME) {
+				music->dirty = 1;
+				continue;
+			}
+
+			/* Another window's event is not this one's. */
+			if (event.kind != KL_APP_WINDOW || event.window != music->window)
+				continue;
+
+			/* An action of the menu, or input. */
+			if (event.input.kind == KL_WINDOW_ACTION) {
+				mu_view_action(&music->view, event.input.code, kl_clock_us());
+				music->dirty = 1;
+			} else {
+				mu_input(music, &event.input);
+			}
+		}
+
+		/* What the view asked, and what the player did. */
+		now = kl_clock_us();
+		mu_requests(music, now);
+		mu_follow(music, now);
+
+		/* The end: the window closed or Quit. */
+		if (music->view.quit) {
+			mu_log("DONE reason=close");
+			return 0;
+		}
+
+		/* The timeout, when one was given. */
+		if (timeout != 0U && now - started >= (uint64_t)timeout * 1000000U) {
+			mu_log("DONE reason=timeout");
+			return 0;
+		}
+
+		/* A new size. */
+		if (music->resized) {
+			music->resized = 0;
+			status = mu_resize(music);
+			if (status != 0)
+				return -1;
+		}
+
+		/* The view's notice gone: drawn without it. */
+		if (music->view.notice[0] != '\0' && now >= music->view.notice_until) {
+			music->view.notice[0] = '\0';
+			music->dirty = 1;
+		}
+
+		/* A frame. */
+		mu_draw(music, now);
+	}
+}
+
+/*
+ * Gives one input of the window to the view's widgets, or takes it as the
+ * window's: Ctrl+Q, a new size, the close.
+ */
+static void
+mu_input(
+	struct mu_window *music,
+	const struct kl_window_event *event)
+{
+	int taken;
+
+	/* Ctrl+Q quits. */
+	if (event->kind == KL_WINDOW_KEY && event->pressed && (event->modifiers & KL_MOD_CTRL) != 0U && event->code == MU_KEY_Q) {
+		music->view.quit = 1;
+		return;
+	}
+
+	/* The widgets' input draws again. */
+	taken = kl_ui_window_input(music->ui, event);
+	if (taken) {
+		music->dirty = 1;
+		return;
+	}
+
+	/* The window's own. */
+	if (event->kind == KL_WINDOW_RESIZE)
+		music->resized = 1;
+	else if (event->kind == KL_WINDOW_CLOSE)
+		music->view.quit = 1;
+}
+
+/* Carries out the view's requests with the player. */
+static void
+mu_requests(
+	struct mu_window *music,
+	uint64_t now_us)
+{
+	struct mu_request request;
+	int taken;
+
+	/* Each one, in order. */
+	for (;;) {
+		taken = mu_view_take_request(&music->view, &request);
+		if (!taken)
+			break;
+		music->dirty = 1;
+		switch (request.action) {
+		case MU_ACTION_SONG:
+			mu_play_song(music, request.song, now_us);
+			break;
+		case MU_ACTION_PLAY:
+			mu_toggle(music, now_us);
+			break;
+		case MU_ACTION_NEXT:
+			mu_step(music, 1, now_us);
+			break;
+		case MU_ACTION_PREVIOUS:
+			mu_step(music, -1, now_us);
+			break;
+		case MU_ACTION_SEEK:
+			mu_player_seek(&music->player, request.seconds);
+			mu_log("SEEK song=%ld to_ms=%lld", request.song, (long long)(request.seconds * 1000.0));
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* Plays a song from its start; a song that cannot be played says why. */
+static void
+mu_play_song(
+	struct mu_window *music,
+	long song,
+	uint64_t now_us)
+{
+	const struct mu_song *songs;
+	size_t count;
+	int error;
+
+	/* A song of the collection. */
+	songs = mu_songs(&count);
+	if (song < 0 || (size_t)song >= count)
+		return;
+
+	/* Opened and playing. */
+	error = mu_player_open(&music->player, songs[song].path);
+	mu_log("PLAY song=%ld error=%d problem=%d", song, error, music->player.problem);
+	music->view.playing = song;
+	music->view.chosen = song;
+	music->view.position = 0.0;
+	music->view.length = (double)songs[song].duration_ms / 1000.0;
+	music->logged = -1;
+	if (error == 0) {
+		music->view.length = music->player.duration;
+		music->view.state = MU_PLAYING;
+		return;
+	}
+
+	/* Not playing: why. */
+	music->view.state = MU_STOPPED;
+	if (music->player.problem == VP_CODEC_MISSING || music->player.problem == VP_CODEC_VERSION)
+		mu_view_notice(&music->view, "Playing needs libavcodec (the libavcodec package).", now_us);
+	else if (error == ENODEV)
+		mu_view_notice(&music->view, "There is no sound: audiod is not running.", now_us);
+	else
+		mu_view_notice(&music->view, "This song cannot be played.", now_us);
+}
+
+/* Plays or pauses the song; a song that ended plays again from its start. */
+static void
+mu_toggle(
+	struct mu_window *music,
+	uint64_t now_us)
+{
+	unsigned state;
+	int ended;
+
+	/* The player's state. */
+	state = mu_player_state(&music->player, &ended);
+	if (state == MU_PLAYING) {
+		mu_player_pause(&music->player);
+		mu_log("PAUSE song=%ld", music->view.playing);
+		return;
+	}
+
+	/* Paused: on from there. */
+	if (state == MU_PAUSED) {
+		mu_player_play(&music->player);
+		mu_log("RESUME song=%ld", music->view.playing);
+		return;
+	}
+
+	/* Stopped: the song shown again from its start. */
+	mu_play_song(music, music->view.playing, now_us);
+}
+
+/*
+ * Goes to the next song or the one before; Previous goes to the start of
+ * the song instead when it has played a while.  Past the last, the player
+ * stops.
+ */
+static void
+mu_step(
+	struct mu_window *music,
+	int step,
+	uint64_t now_us)
+{
+	double position;
+	long song;
+
+	/* Nothing playing. */
+	if (music->view.playing < 0)
+		return;
+
+	/* Previous after a while: the start again. */
+	position = mu_player_position(&music->player);
+	if (step < 0 && position > MU_RESTART) {
+		mu_player_seek(&music->player, 0.0);
+		mu_log("SEEK song=%ld to_ms=0", music->view.playing);
+		return;
+	}
+
+	/* The neighbour in the collection's order. */
+	song = mu_library_next(music->view.playing, step);
+	if (song >= 0) {
+		mu_play_song(music, song, now_us);
+		return;
+	}
+
+	/* Past the end (or before the start): the song ends where it is. */
+	if (step > 0) {
+		mu_player_close(&music->player);
+		music->view.state = MU_STOPPED;
+		music->view.position = 0.0;
+		mu_log("STOP song=%ld", music->view.playing);
+	} else {
+		mu_player_seek(&music->player, 0.0);
+	}
+}
+
+/*
+ * Tells the view what the player does: its state and position (a frame
+ * each quarter of a second while it plays), and goes on to the next song
+ * when one ended.
+ */
+static void
+mu_follow(
+	struct mu_window *music,
+	uint64_t now_us)
+{
+	unsigned state;
+	double position;
+	long quarter;
+	long two;
+	int ended;
+
+	/* The state, and the end of a song: the next one, or the end of the list. */
+	state = mu_player_state(&music->player, &ended);
+	if (ended) {
+		mu_log("ENDED song=%ld", music->view.playing);
+		mu_step(music, 1, now_us);
+		state = mu_player_state(&music->player, &ended);
+	}
+
+	/* A new state, drawn and told. */
+	if (state != music->view.state && music->view.playing >= 0) {
+		music->view.state = state;
+		music->dirty = 1;
+		mu_log("STATE song=%ld state=%u", music->view.playing, state);
+	}
+
+	/* The position: a frame each quarter of a second. */
+	if (state == MU_STOPPED)
+		return;
+	position = mu_player_position(&music->player);
+	music->view.position = position;
+	quarter = (long)(position * 4.0);
+	if (quarter != music->quarter) {
+		music->quarter = quarter;
+		music->dirty = 1;
+	}
+
+	/* The log line each two seconds. */
+	two = (long)(position / 2.0);
+	if (two != music->logged) {
+		music->logged = two;
+		mu_log("POSITION song=%ld ms=%lld", music->view.playing, (long long)(position * 1000.0));
+	}
+}
+
+/*
+ * Remakes the presenter and the canvas at the window's size; nonzero when
+ * it cannot.
+ */
+static int
+mu_resize(
+	struct mu_window *music)
+{
+	uint32_t *pixels;
+	int see_through;
+	int status;
+
+	/* The presenter at the window's size. */
+	status = kl_window_present_resize(music->window, &music->width, &music->height);
+	if (status != 0) {
+		mu_log("FAILED operation=present error=%d", status);
+		return -1;
+	}
+
+	/* zdesktop's glass, when the frames are blended by their alpha (decided at the first size). */
+	if (!music->glass_decided) {
+		music->glass_decided = 1;
+		see_through = kl_window_see_through(music->window);
+		if (see_through) {
+			music->style.glass = 1;
+			music->view.glass = 1;
+		}
+
+		/* The log line the tests read. */
+		mu_log("GLASS see_through=%d", see_through);
+	}
+
+	/* A frame's pixels of its size. */
+	pixels = malloc((size_t)music->width * (size_t)music->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* The canvas on them, in place of the old one. */
+	if (music->canvas_made)
+		kl_canvas_release(&music->canvas);
+	music->canvas_made = 0;
+	free(music->pixels);
+	music->pixels = pixels;
+	status = kl_canvas_init(&music->canvas, music->pixels, (size_t)music->width, (int)music->width, (int)music->height);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: drawn again at the new size. */
+	music->canvas_made = 1;
+	music->style.canvas = &music->canvas;
+	music->dirty = 1;
+	return 0;
+}
+
+/*
+ * Draws and shows a frame when something changed or moves, then gives the
+ * view the keys no widget took.
+ */
+static void
+mu_draw(
+	struct mu_window *music,
+	uint64_t now_us)
+{
+	struct kl_glass_panel panels[MU_PANELS_MAX];
+	struct kl_event event;
+	size_t count;
+	int status;
+	int error;
+	int taken;
+
+	/* Nothing changed and nothing moves: no frame. */
+	if (!music->dirty && !music->moving && !music->view.seek_pending)
+		return;
+
+	/* The view. */
+	music->dirty = 0;
+	kl_ui_begin(music->ui, now_us);
+	mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
+	music->moving = kl_ui_end(music->ui, now_us);
+	kl_ui_window_text(music->ui, music->window);
+
+	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
+	if (music->view.glass) {
+		count = mu_view_panels(&music->view, (int)music->width, (int)music->height, panels, MU_PANELS_MAX);
+		error = kl_window_set_glass(music->window, panels, count);
+		if (error != 0) {
+			mu_log("GLASS failed error=%d", error);
+			music->view.glass = 0;
+			music->style.glass = 0;
+			music->dirty = 1;
+		}
+	}
+
+	/* The frame shown. */
+	status = kl_window_present(music->window, music->pixels, (size_t)music->width);
+	if (status == EAGAIN)
+		music->resized = 1;
+
+	/* The keys no widget took are the view's; it draws again. */
+	for (;;) {
+		taken = kl_ui_take(music->ui, &event);
+		if (!taken)
+			break;
+		if (event.kind == KL_EVENT_KEY) {
+			mu_view_key(&music->view, event.code, event.modifiers, now_us);
+			music->dirty = 1;
+		}
+	}
+}
+
+/*
+ * Reports how long the loop may wait for input (ms): no time while a frame
+ * is due, a frame's time while a widget moves, the view's own time, or a
+ * second.
+ */
+static int
+mu_wait(
+	const struct mu_window *music,
+	uint64_t now_us)
+{
+	int wait;
+
+	/* A frame due now, or a request waiting. */
+	if (music->dirty || music->view.request_count != 0U)
+		return 0;
+
+	/* A widget moving. */
+	if (music->moving)
+		return MU_MOVING_MS;
+
+	/* The view's time, or a second. */
+	wait = mu_view_wait(&music->view, now_us);
+	if (wait < 0 || wait > MU_IDLE_MS)
+		wait = MU_IDLE_MS;
+	return wait;
+}

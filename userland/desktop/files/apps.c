@@ -123,7 +123,8 @@ struct apps_builtin {
  * system's defaults.  Each application opens the kinds it reads when it is
  * installed (ws093-p002): a PDF in PDF Viewer (ws079-p006), a PNG, JPEG or
  * GIF picture in Image Viewer (which reads no other kind; the others stay
- * with Quick Look), a video in Video Player (ws122-p002), an HTML page in
+ * with Quick Look), a video in Video Player (ws122-p002), an m4a song in
+ * Music (ws120-p009), an HTML page in
  * the Browser, and text in Text Editor.
  * Anything the others do not fit is shown by less in a terminal.
  */
@@ -132,6 +133,7 @@ static const struct apps_builtin apps_builtins[] = {
 	{ APPS_IMAGE_TYPES, "Image Viewer", KEILAND_BINDIR "/imageview %f", "imageview" },
 	{ "image/" "*", "Quick Look", "@quicklook", NULL },
 	{ "video/" "*", "Video Player", KEILAND_BINDIR "/videoplayer %f", "videoplayer" },
+	{ "audio/mp4", "Music", KEILAND_BINDIR "/music %f", "music" },
 	{ "text/html", "Browser", KEILAND_BINDIR "/browser %f", "browser" },
 	{ APPS_TEXT_TYPES, "Text Editor", KEILAND_BINDIR "/textedit %f", "textedit" },
 	{ APPS_TEXT_TYPES, "Terminal (less)", "@terminal less %f", NULL },

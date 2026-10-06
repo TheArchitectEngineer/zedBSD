@@ -3,13 +3,13 @@
 # WS120: 音楽アプリ
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（2026-10-07 q831 P2: p001 の決定で m4a＋libavcodec の add-in の local の player に。p008・p009 を実装）
 Primary Milestone: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Focused goal: fg019（ベータ1）
-Queue: none
-Resume point: p001（設計）が planned。p001 は下の D1〜D4 を選択肢として提示し、ユーザーの決定を design.md に記録する。実装 Phase（p002〜p006）は D1〜D4 の決定と p001 の成果を待つ planning。
+Queue: q831（2026-10-07、P2）
+Resume point: p008（tags.c・library.c と host の試験）→ p009（app）。p001 の「2026-10-07 の決定と設計」に従う。以下の 2026-10-02・10-05 の行は経緯（形式と decoder は 2026-10-07 の決定で置き換え）。
 2026-10-02 user:「対応する形式はベータ1ではm4aのみで開始します。decoder を独自に実装します。」→ ベータ1 の形式は m4a（MP4/ISO BMFF の container ＋ AAC）だけ。WAV・FLAC・MP3・Ogg の計画（p003・p004・p006）は置き換え、MP4 の demux と AAC-LC の decoder を独自（Zlib）に書く。p001 の設計で Phase を切り直す（AAC の profile の範囲、参照の decoder との一致の測り方、特許・license の確認）。
 2026-10-05 user（方針の改訂、原文）:「音楽プレイヤーは、既存音楽サービスとの連携を重視します。ただし、YouTube Musicみたいなサービスもあるので、写真管理ソフトと動画プレイヤーよりも優先度を下げます。ローカルのファイルをコレクションにするプレイヤー機能も必要と思います。」→ (1) 既存の音楽の service との連携を重視する（どの service と、どう連携するか（公式の API・web の player・browser の中で再生）は p001 で調べてユーザーと決める）、(2) local の file を collection にする player の機能も要る（今の p001〜p006 の m4a の計画はこの部分）、(3) **優先度は写真の管理（WS157）と動画の player（WS122）より下**。
 <!-- awesome-plan-current:end -->
@@ -63,15 +63,17 @@ Resume point: p001（設計）が planned。p001 は下の D1〜D4 を選択肢�
 
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
-| [ws120-p001](phase001/phase.md) | 設計（design.md）: D1〜D4 の選択肢の提示と決定の記録、app の構成と UI、再生の API、decoder の library の構成、試験の素材と数値 | planned | — | 2〜3h |
-| [ws120-p002](phase002/phase.md) | libkeiland の PCM 再生の API（zedBSD は audiod、他 OS は D3）、host 試験と QEMU の WAV | planning（p001・D3 待ち） | p001 | 3h |
-| [ws120-p003](phase003/phase.md) | decoder: WAV・FLAC（D2 の方針）と host の bit 一致の試験 | planning（p001・D1・D2 待ち） | p001 | 3〜4h |
-| [ws120-p004](phase004/phase.md) | decoder: MP3（Layer III、ID3v2）と host の試験 | planning（p001・D1・D2 待ち） | p001（p003 の library の枠） | 3〜4h |
-| [ws120-p005](phase005/phase.md) | Music の app の MVP: window・一覧・metadata・再生操作・seek・音量・Files からの起動、QEMU の受け入れ M1〜M6 | planning | p002、p003（p004） | 3〜4h |
-| [ws120-p006](phase006/phase.md) | 努力目標: Ogg Vorbis（D1 で選んだ場合） | planning（D1 待ち、drop 可） | p003、p005 | 3〜4h |
-| [ws120-p007](phase007/phase.md) | 全文規約と回帰、3 OS の build、制限の整理（必須の最終確認） | planning | p005（p006） | 2h |
+| [ws120-p001](phase001/phase.md) | 設計: 2026-10-07 のユーザーの決定（m4a、libavcodec の add-in、service の連携はベータ4）と app の構成 | cleared（q831、P2） | — | — |
+| [ws120-p002](phase002/phase.md) | libkeiland の PCM 再生の API | planning、**canceled**（2026-10-07: videoplayer の audiod の client を使う、共有の library は後） | — | — |
+| [ws120-p003](phase003/phase.md) | decoder: WAV・FLAC | planning、**canceled**（2026-10-07: 形式は m4a だけ） | — | — |
+| [ws120-p004](phase004/phase.md) | decoder: MP3 | planning、**canceled**（2026-10-07: 形式は m4a だけ） | — | — |
+| [ws120-p005](phase005/phase.md) | Music の app の MVP（WAV・FLAC・MP3） | planning、**canceled**（2026-10-07: p008・p009 に置き換え） | — | — |
+| [ws120-p006](phase006/phase.md) | Ogg Vorbis | planning、**canceled**（2026-10-07: 形式は m4a だけ） | — | — |
+| [ws120-p008](phase008/phase.md) | m4a の metadata と `~/Music` の collection（tags.c・library.c）、host の試験 | in-progress（q831、P2） | p001 | — |
+| [ws120-p009](phase009/phase.md) | Music の app（一覧・再生・seek・次・Files・App Home）、libavcodec の add-in と audiod | in-progress（q831、P2） | p008 | — |
+| [ws120-p007](phase007/phase.md) | 全文規約と回帰、制限の整理（必須の最終確認、後回し） | planning | p009 | 2h |
 
-Graph: p001 → {p002, p003} 、p003 → p004、{p002, p003, p004} → p005 → (p006) → p007。p002 と p003 は並行できる（所有 path が別）。
+Graph（2026-10-07）: p001 → p008 → p009 → p007。p002〜p006 は canceled。
 
 ## Event history
 
