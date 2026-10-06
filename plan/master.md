@@ -139,12 +139,12 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 2026-10-06 夜 ユーザーの作業の順（原文の要旨）:「ベータ1のWS＋ベータ2の一部実装をまずすべて実装してください。P1,P2でフルに実装してしまってください。デバッグ項目としてカウントされているものを除きます。正常系が通ればいいです。準正常系と異常系で未実装な部分は、そういった積み残しを管理するWSを作って、そこにPhaseとして積みましょう。それはすべての実装が1パス通って疎通確認できてからでいいです。」「そのあとで、デバッグに専念して、すべてのバグを消化します。」
 
 - **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
-1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS139 速さ、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS152 更新、WS161 YubiKey、WS172 passkey、WS148・WS149・WS151）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
+1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS139 速さ、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
 2. **第 2 段**: app（WS175 PDF の編集、WS083 Vulkan Video、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、Linux・package・配布（WS116 Qt6、WS115 GTK4、WS009 文書 ほか）。
 3. **第 3 段**: kernel・driver・電源（WS031、WS143、WS052、WS130 の残り、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
 4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
 5. **デバッグに専念**して全ての Bug を消化する。
-- ベータ3 へ: WS068・WS101・WS171・WS176。止める: WS074 の描画（B1）・WS153（U2〜U15）。
+- ベータ3 へ: WS068・WS101・WS171・WS176・WS152（2026-10-06 夜）。止める: WS074 の描画（B1）・WS153（U2〜U15）。
 <!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー:「WS152はベータ3に先送りします。」→ WS152（system の更新）は第 1 段から外しベータ3 へ。p001 の検討（U1〜U12）は保存。
 - 2026-10-06 夜 ユーザー（クリック）: Settings の Privacy（WS148）・Security（WS149）・Accessibility（WS151）は 3 つとも「頁を無くす」。Privacy は推奨どおり Files の Recents に「履歴を消す」と Storage に「最近の項目を残す」の switch。Security・Accessibility は頁を取り除くだけ（lock の設定・動きを減らす などは作らない）。q824（P2）。WS152 は第 1 段（ユーザーの列）なので段は「ベータ2」に揃える。
 - 2026-10-06 夜 ユーザー（クリック）: ws089-p013（About の memory と Storage の使用量）を「採る（第 1 段で）」。Q1 が libkeiland の system の照会の API の追加（plan/ws089/proposed/libkeiland-system.md）を許可。Q1 の割り当て: WS152 は第 1 段に含む（ユーザーの列に在る）、WS161・WS172 は P2、WS164 の compositor の起動と WS156 p002 は p022 の merge の後に P2。
 - 2026-10-06 夜 ユーザー: 積み残しは「専用の1つのベータ2積み残しというWSに入れてください」（元の WS に置かず WS177 の backlog-p1.md・backlog-p2.md へ）。「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」→ fg019 を 10/17 のベータ2 の公開に。版の名前と tag（zedbsd-0.1.0-beta1 → beta2、About の 1.0.0 Beta 1 など）は WS129 で P2 が確かめて直す。
