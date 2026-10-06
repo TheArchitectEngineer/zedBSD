@@ -2,7 +2,7 @@
 # ws175-p007: Notes の model（物の編集・画像・undo・ZNOT 2.0・journal・保存と開く時の照合）
 
 Parent: [WS175](../ws.md)
-Status: cleared（2026-10-06 Q1 判定: host の範囲、画像の段。QEMU は p010。main に merge 98edb3808 まで）
+Status: cleared（2026-10-06 Q1 判定: host の試験 PASS（notes-edit 33/33 ×3、edit-scan・blank、ws079 の回帰）、build warning 0。QEMU は p010、未了の項目は本文）
 Disposition: normal
 Queue: Q1 の順（2026-10-06「p007（Notes の model）を先に」、D6 (b) 画像を先に）
 依存: [p006](../phase006/phase.md)（cleared）、[p003](../phase003/phase.md)（cleared）。文字の部分は p004・p005 の後

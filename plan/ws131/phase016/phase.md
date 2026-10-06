@@ -68,3 +68,10 @@ zedBSD amd64 の libkeiland.so・textedit の build（warning 0）、`plan/tools
 MENU recent・RECENT・CHOSEN・TEXT）は変えていない（`MENU item=`・`TITLEBAR control=` を読む試験は無い）。
 未実施: `make keiland-linux`（make の規則の中の rm の扱いを Q1 に確認中）、FreeBSD の build（この環境に無い）、`plan/tools/keiland-os-boundary/check.sh`（中に `rm -rf`、Q1 に依頼）。
 QEMU の試験は T1 に依頼する。
+
+## q807-i02（P1、2026-10-06）: 起動の直後の最初の key の欠け
+
+T1-248 で ime-p007 が FAIL ×2（保存が `漢字\n日本語Hello`）。T1-250（`plan/ws131/tests/textedit-first-key.sh`）で、READY の直後に送った最初の Ctrl+End だけが効かず（Ln 1, Col 1）、2 秒後・3 秒待った後の Ctrl+End は効く（Ln 2, Col 1）ことを確かめた。
+zdesktop の log では MAP と IME の activate が READY の後に来ていて、key が届いた時に窓がまだ keyboard を持っていない（または text input が後から有効になる）と見られる（Venus の compositor の frame は 100 ms 以上）。
+直し（ca572c7d8、`textedit/main.c`）: READY を「最初の frame を出し、窓が keyboard を得た（KL_WINDOW_FOCUS）時」、得られなければ 2 秒後に出す（log に `focus=1|0`）。text input は最初の frame の前に求める。
+確認: zedBSD amd64 の textedit の build（warning 0）。QEMU は T1 に ime-p007 の流し直しを依頼。

@@ -17,7 +17,7 @@
  * one line on standard error: IMAGEVIEW DONE with the reason, or
  * IMAGEVIEW FAILED naming what failed; IMAGEVIEW READY says the first
  * frame is shown, and IMAGEVIEW SHOW each image shown.  ws090-p008: the
- * window and its input are libkeiland's (kui_window); the viewer's own
+ * window and its input are libkeiland's (kl_window); the viewer's own
  * presenter draws the image and the canvas on its surface.
  */
 
@@ -102,13 +102,13 @@ static struct iv_touch main_touch;
  * libkeiland's file chooser while the viewer waits for it (File > Open), a
  * window of its own over the viewer's; NULL otherwise.
  */
-static struct kui_file_chooser *main_chooser;
+static struct kl_file_chooser *main_chooser;
 
 /* The font the chooser draws with: the viewer's own. */
 static const char *main_font;
 
 /* The files the chooser offers: the images the viewer reads first, or every file. */
-static const struct kui_file_filter main_filters[] = {
+static const struct kl_file_filter main_filters[] = {
 	{ "Images", "png jpg jpeg jpe gif" },
 	{ "All Files", NULL }
 };
@@ -122,8 +122,12 @@ static uint32_t *main_pixels;
 /* The canvas over main_pixels, which the viewer draws its words and cards into. */
 static struct iv_canvas main_canvas;
 
-/* The desktop's appearance watched (ws089-p017): the viewer draws in its colours (draw.c); NULL without it. */
-static struct kl_appearance *main_appearance;
+/*
+ * The application (WS131 p017, libkeiland's kl_app): the connection, its
+ * one queue of inputs (the window's, the actions of its menus and
+ * controls), and the desktop's appearance, which the viewer draws in.
+ */
+static struct kl_app *main_kl;
 
 /* The frame of an animated image last written to the presenter (it writes a new one when the viewer's serial moves on). */
 static unsigned main_frame_serial;
@@ -134,17 +138,17 @@ static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
 static int main_resize(void);
-static void main_window_event(const struct kui_window_event *event);
-static void main_event(enum iv_event_type type, const struct kui_window_event *event, struct iv_event *input);
+static void main_window_event(const struct kl_window_event *event);
+static void main_event(enum iv_event_type type, const struct kl_window_event *event, struct iv_event *input);
 static void main_choose(void);
-static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void main_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static int main_canvas_make(void);
 static void main_state(struct iv_state *state);
 static void main_opened(void);
 static void main_share(void);
 static void main_openers(void);
 static void main_fullscreen(void);
-static void main_appearance_changed(void *data, unsigned appearance);
+static void main_appearance_changed(void);
 static int main_image(void);
 
 /*
@@ -156,7 +160,8 @@ main(
 	char **argv)
 {
 	struct main_options options;
-	struct kui_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_window_options window_options;
 	struct iv_state state;
 	VkResult result;
 	int status;
@@ -176,17 +181,27 @@ main(
 		iv_log("FONT missing path=%s error=%d", options.font, error);
 	main_font = options.font;
 
+	/* The application: the connection to zdesktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.display = options.display;
+	app_options.application = MAIN_APPLICATION;
+	main_kl = kl_app_open(&app_options);
+	if (main_kl == NULL) {
+		fprintf(stderr, "IMAGEVIEW FAILED operation=app error=%d\n", errno);
+		iv_text_close(&main_text);
+		return 1;
+	}
+
 	/* The window, whose surface the viewer's own presenter draws on. */
 	memset(&window_options, 0, sizeof(window_options));
-	window_options.display = options.display;
 	window_options.title = "Image Viewer";
-	window_options.application = MAIN_APPLICATION;
 	window_options.width = options.width;
 	window_options.height = options.height;
-	window_options.present = KUI_PRESENT_NONE;
-	main_window.kui = kui_window_open(&window_options);
+	window_options.present = KL_PRESENT_NONE;
+	main_window.kui = kl_app_window_create(main_kl, &window_options);
 	if (main_window.kui == NULL) {
 		fprintf(stderr, "IMAGEVIEW FAILED operation=window error=%d\n", errno);
+		kl_app_close(main_kl);
 		iv_text_close(&main_text);
 		return 1;
 	}
@@ -196,7 +211,8 @@ main(
 	if (result != VK_SUCCESS) {
 		fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, (int)result);
 		iv_present_close(&main_present);
-		kui_window_close(main_window.kui);
+		kl_window_close(main_window.kui);
+		kl_app_close(main_kl);
 		iv_text_close(&main_text);
 		return 1;
 	}
@@ -204,17 +220,12 @@ main(
 	/* The viewer at the swapchain's size, knowing how large a texture may be and whether the window is glass. */
 	iv_app_init(&main_app, &main_text, (int)main_present.extent.width, (int)main_present.extent.height);
 	main_app.max_dimension = main_present.max_dimension;
-	glass = iv_glass_open(&main_glass, &main_window, &main_present);
+	glass = iv_glass_open(&main_glass, &main_window, &main_present, &main_app);
 	main_app.glass = glass;
 
 	/* The file given on the command line. */
 	if (options.file != NULL)
 		(void)iv_app_open(&main_app, options.file);
-
-	/* The desktop's appearance: the viewer's colours follow it, the picture stays as it is (light under a compositor without it). */
-	error = kl_appearance_open(kui_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
-	if (error != 0)
-		iv_log("APPEARANCE none errno=%d", error);
 
 	/* The touch screen; without memory for it the fingers do nothing. */
 	error = iv_touch_open(&main_touch);
@@ -238,23 +249,23 @@ main(
 
 	/* Fullscreen from the start, when asked. */
 	if (options.fullscreen)
-		kui_window_set_fullscreen(main_window.kui, 1);
+		kl_window_set_fullscreen(main_window.kui, 1);
 
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
 	/* Everything goes, the chooser, the titlebar, the menus, the glass and the viewer before the window they belong to. */
-	kui_file_chooser_destroy(main_chooser);
+	kl_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
 	iv_titlebar_close(&main_titlebar);
 	iv_menu_close(&main_menu);
 	iv_glass_close(&main_glass);
 	iv_touch_close(&main_touch);
-	kl_appearance_close(main_appearance);
 	iv_app_release(&main_app);
 	free(main_pixels);
 	iv_present_close(&main_present);
-	kui_window_close(main_window.kui);
+	kl_window_close(main_window.kui);
+	kl_app_close(main_kl);
 	iv_text_close(&main_text);
 
 	/* Reports how the run ended. */
@@ -263,19 +274,6 @@ main(
 
 	/* Succeeded: the window was closed. */
 	return 0;
-}
-
-/*
- * Queues an action of the menus or the titlebar among the window's inputs,
- * so that it is carried out in the order it came.
- */
-void
-iv_window_action(
-	struct iv_window *window,
-	uint32_t action)
-{
-	/* Posted into the window's queue. */
-	kui_window_post(window->kui, action);
 }
 
 /* Reads the command line into the options; returns nonzero for a malformed one. */
@@ -414,7 +412,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
-	struct kui_window_event event;
+	struct kl_app_event app_event;
 	struct iv_state state;
 	uint64_t started;
 	uint64_t now;
@@ -455,13 +453,8 @@ main_loop(
 		if (due >= 0 && due < timeout)
 			timeout = due;
 
-		/* Nor than the next repeat of a key held. */
-		due = kui_window_repeat_wait(main_window.kui, kui_clock_us());
-		if (due >= 0 && due < timeout)
-			timeout = due;
-
 		/* Nor than the fingers' next step (a fling, a long press). */
-		due = iv_touch_tick(&main_touch, &main_app, kui_clock_us());
+		due = iv_touch_tick(&main_touch, &main_app, kl_clock_us());
 		if (due >= 0 && due < timeout)
 			timeout = due;
 
@@ -476,24 +469,24 @@ main_loop(
 				timeout = 0;
 		}
 
-		/* Waits; a lost connection ends the run. */
-		status = kui_window_dispatch(main_window.kui, timeout);
+		/* Waits (a key held repeats within, after its release if that came); a lost connection ends the run. */
+		status = kl_app_dispatch(main_kl, timeout);
 		if (status != 0) {
 			iv_log("DONE reason=disconnected");
 			return 0;
 		}
-
-		/* A key held repeats once the compositor's input is in, so that its release is seen first. */
 		now = iv_clock();
 		main_app.now = now;
-		(void)kui_window_repeat(main_window.kui, kui_clock_us());
 
-		/* Every input queued, in the order it came (the menus' and the titlebar's choices and the fingers among them). */
+		/* Every input queued, in the order it came (the menus' and the titlebar's choices and the fingers among them), and the desktop's appearance. */
 		for (;;) {
-			taken = kui_window_take(main_window.kui, &event);
+			taken = kl_app_take(main_kl, &app_event);
 			if (taken == 0)
 				break;
-			main_window_event(&event);
+			if (app_event.kind == KL_APP_THEME)
+				main_appearance_changed();
+			if (app_event.kind == KL_APP_WINDOW && app_event.window == main_window.kui)
+				main_window_event(&app_event.input);
 		}
 
 		/* The chooser the viewer asked for (File > Open), or one it no longer waits for closed. */
@@ -508,7 +501,7 @@ main_loop(
 
 		/* Time passes for the viewer and the fingers; the menus and the titlebar show its state. */
 		(void)iv_app_tick(&main_app, now);
-		(void)iv_touch_tick(&main_touch, &main_app, kui_clock_us());
+		(void)iv_touch_tick(&main_touch, &main_app, kl_clock_us());
 		main_state(&state);
 		iv_menu_refresh(&main_menu, &state);
 		iv_titlebar_refresh(&main_titlebar, &state);
@@ -618,7 +611,7 @@ main_resize(void)
 	int status;
 
 	/* The swapchain at the size the compositor gave. */
-	kui_window_size(main_window.kui, &width, &height);
+	kl_window_size(main_window.kui, &width, &height);
 	result = iv_present_resize(&main_present, width, height);
 	if (result != VK_SUCCESS) {
 		fprintf(stderr, "IMAGEVIEW FAILED operation=%s result=%d\n", main_present.operation, (int)result);
@@ -645,28 +638,28 @@ main_resize(void)
  */
 static void
 main_window_event(
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct iv_event input;
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
+	case KL_WINDOW_MOTION:
 		main_event(IV_EVENT_MOTION, event, &input);
 		iv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_LEAVE:
+	case KL_WINDOW_LEAVE:
 		main_event(IV_EVENT_LEAVE, event, &input);
 		iv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The button and whether it went down. */
 		main_event(IV_EVENT_BUTTON, event, &input);
 		input.button = event->code;
 		input.pressed = event->pressed;
 		iv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_AXIS:
+	case KL_WINDOW_AXIS:
 		/* Only the vertical wheel zooms or moves the image. */
 		if (event->dy == 0.0)
 			break;
@@ -674,7 +667,7 @@ main_window_event(
 		input.scroll = (int)event->dy;
 		iv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		/* The key, whether it went down, and whether it is a held key's repeat. */
 		main_event(IV_EVENT_KEY, event, &input);
 		input.key = event->code;
@@ -682,22 +675,23 @@ main_window_event(
 		input.repeat = event->repeated;
 		iv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_POST:
-		/* An action of the menus or the titlebar, in its place among the keys. */
+	case KL_WINDOW_ACTION:
+		/* An item of the menus or a control of the titlebar, in its place among the keys. */
+		iv_log("ACTION id=%d action=%u", (int)event->id, (unsigned)event->code);
 		main_event(IV_EVENT_ACTION, event, &input);
 		input.action = event->code;
 		iv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
-	case KUI_WINDOW_TOUCH_MOTION:
-	case KUI_WINDOW_TOUCH_UP:
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_CANCEL:
 		iv_touch_event(&main_touch, &main_app, event);
 		break;
-	case KUI_WINDOW_RESIZE:
+	case KL_WINDOW_RESIZE:
 		main_resized = 1;
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		main_closed = 1;
 		break;
 	default:
@@ -709,7 +703,7 @@ main_window_event(
 static void
 main_event(
 	enum iv_event_type type,
-	const struct kui_window_event *event,
+	const struct kl_window_event *event,
 	struct iv_event *input)
 {
 	/* The modifiers are the same bits as the viewer's; the time is in milliseconds of the same clock. */
@@ -792,15 +786,15 @@ main_canvas_make(void)
 static void
 main_choose(void)
 {
-	struct kui_file_chooser_options options;
-	static const struct kui_file_chooser_listener listener = {
+	struct kl_file_chooser_options options;
+	static const struct kl_file_chooser_listener listener = {
 		main_chosen
 	};
 
 	/* A chooser the viewer no longer waits for goes. */
 	if (!main_app.chooser_open) {
 		if (main_chooser != NULL) {
-			kui_file_chooser_destroy(main_chooser);
+			kl_file_chooser_destroy(main_chooser);
 			main_chooser = NULL;
 		}
 
@@ -814,7 +808,7 @@ main_choose(void)
 
 	/* Open, at the viewer's folder, with the images shown first, in the viewer's font. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.mode = KL_FILE_CHOOSER_OPEN;
 	options.application = MAIN_APPLICATION;
 	options.folder = main_app.chooser_folder;
 	options.filters = main_filters;
@@ -823,7 +817,7 @@ main_choose(void)
 	options.font = main_font;
 
 	/* The chooser's window over the viewer's; without it the viewer stops waiting. */
-	main_chooser = kui_file_chooser_open(kui_window_display(main_window.kui), kui_window_toplevel(main_window.kui), &options, &listener, &main_app);
+	main_chooser = kl_file_chooser_open(kl_app_display(main_kl), kl_window_toplevel(main_window.kui), &options, &listener, &main_app);
 	if (main_chooser == NULL) {
 		iv_log("CHOOSER failed errno=%d", errno);
 		iv_app_message(&main_app, "The file chooser could not be shown.", 4000U);
@@ -835,19 +829,19 @@ main_choose(void)
 static void
 main_chosen(
 	void *data,
-	struct kui_file_chooser *chooser,
+	struct kl_file_chooser *chooser,
 	unsigned result,
 	const char *path,
 	size_t filter)
 {
 	/* The answer, cancelled unless a file was chosen. */
 	(void)filter;
-	if (result != KUI_FILE_CHOOSER_CHOSEN)
+	if (result != KL_FILE_CHOOSER_CHOSEN)
 		path = NULL;
 	iv_app_chosen(data, path);
 
 	/* The chooser is spent. */
-	kui_file_chooser_destroy(chooser);
+	kl_file_chooser_destroy(chooser);
 	if (chooser == main_chooser)
 		main_chooser = NULL;
 }
@@ -902,7 +896,7 @@ main_opened(void)
 
 	/* Without an image, the application's name. */
 	if (!main_app.has_image || main_app.current == NULL) {
-		kui_window_set_title(main_window.kui, "Image Viewer");
+		kl_window_set_title(main_window.kui, "Image Viewer");
 		return;
 	}
 
@@ -915,7 +909,7 @@ main_opened(void)
 
 	/* The title: the file's name and the application's. */
 	snprintf(title, sizeof(title), "%s \xe2\x80\x94 Image Viewer", name);
-	kui_window_set_title(main_window.kui, title);
+	kl_window_set_title(main_window.kui, title);
 
 	/* The recent files, by the absolute path. */
 	absolute = realpath(main_app.current->path, resolved);
@@ -923,7 +917,7 @@ main_opened(void)
 		return;
 
 	/* The image joins the recent files; a failure only goes to the log. */
-	error = keiland_recent_add(resolved, MAIN_APPLICATION);
+	error = kl_recent_add(resolved, MAIN_APPLICATION);
 	if (error != 0)
 		iv_log("RECENT failed errno=%d", error);
 }
@@ -1005,18 +999,18 @@ main_fullscreen(void)
 	if (main_app.want_fullscreen) {
 		/* The full screen for a window that is not in it, and out of it for one that is. */
 		wanted = 1;
-		fullscreen = kui_window_fullscreen(main_window.kui);
+		fullscreen = kl_window_fullscreen(main_window.kui);
 		if (fullscreen)
 			wanted = 0;
 
 		/* The request goes to the compositor, which answers with a configure. */
 		main_app.want_fullscreen = 0;
-		kui_window_set_fullscreen(main_window.kui, wanted);
+		kl_window_set_fullscreen(main_window.kui, wanted);
 		iv_log("FULLSCREEN request=%d", wanted);
 	}
 
 	/* The compositor's answer: the layout (and the glass) follow it. */
-	fullscreen = kui_window_fullscreen(main_window.kui);
+	fullscreen = kl_window_fullscreen(main_window.kui);
 	if (main_app.fullscreen != fullscreen) {
 		main_app.fullscreen = fullscreen;
 		iv_app_layout(&main_app);
@@ -1026,12 +1020,12 @@ main_fullscreen(void)
 
 /* Takes the desktop's new appearance: the viewer is drawn again in its colours. */
 static void
-main_appearance_changed(
-	void *data,
-	unsigned appearance)
+main_appearance_changed(void)
 {
+	unsigned appearance;
+
 	/* A new frame, with the canvas's cards and words drawn again in the new colours. */
-	(void)data;
+	appearance = kl_appearance_get(NULL);
 	main_app.dirty = 1;
 	main_app.ui_dirty = 1;
 	iv_log("APPEARANCE appearance=%u", appearance);

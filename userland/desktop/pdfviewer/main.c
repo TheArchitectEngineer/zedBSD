@@ -19,7 +19,7 @@
  * naming what failed; PDFVIEWER READY says the first frame is shown.
  * ws081-p012: the touch screen scrolls with inertia, zooms with two
  * fingers and swipes pages (touch.c).  ws090-p008: the window, its input
- * and the frames shown with Vulkan are libkeiland's (kui_window).
+ * and the frames shown with Vulkan are libkeiland's (kl_window).
  */
 
 #include "window.h"
@@ -103,16 +103,21 @@ static struct pv_touch main_touch;
  * libkeiland's file chooser while the viewer waits for it (File > Open), a
  * window of its own over the viewer's; NULL otherwise.
  */
-static struct kui_file_chooser *main_chooser;
+static struct kl_file_chooser *main_chooser;
 
-/* The desktop's appearance watched (ws089-p017): the viewer draws in its colours (draw.c); NULL without it. */
-static struct kl_appearance *main_appearance;
+/*
+ * The application (WS131 p017, libkeiland's kl_app): the connection, its
+ * one queue of inputs (the window's, the actions of its menus and
+ * controls), and the desktop's appearance, which the viewer draws in
+ * (draw.c, ws089-p017).
+ */
+static struct kl_app *main_kl;
 
 /* The font the chooser draws with: the viewer's own. */
 static const char *main_font;
 
 /* The files the chooser offers: PDF documents first, or every file. */
-static const struct kui_file_filter main_filters[] = {
+static const struct kl_file_filter main_filters[] = {
 	{ "PDF Documents", "pdf" },
 	{ "All Files", NULL }
 };
@@ -135,17 +140,17 @@ static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
 static int main_resize(void);
-static void main_window_event(const struct kui_window_event *event);
-static void main_event(enum pv_event_type type, const struct kui_window_event *event, struct pv_event *input);
+static void main_window_event(const struct kl_window_event *event);
+static void main_event(enum pv_event_type type, const struct kl_window_event *event, struct pv_event *input);
 static int main_keyboard_inset(void *data, int right, int bottom, unsigned reason);
 static void main_choose(void);
-static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void main_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static void main_turn_frame(uint64_t started, uint64_t shown);
 static int main_canvas_make(void);
 static void main_state(struct pv_state *state);
 static void main_opened(void);
 static void main_annotate(void);
-static void main_appearance_changed(void *data, unsigned appearance);
+static void main_appearance_changed(void);
 
 /*
  * Runs PDF Viewer.
@@ -156,7 +161,8 @@ main(
 	char **argv)
 {
 	struct main_options options;
-	struct kui_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_window_options window_options;
 	struct pv_state state;
 	int status;
 	int error;
@@ -174,26 +180,37 @@ main(
 		pv_log("FONT missing path=%s error=%d", options.font, error);
 	main_font = options.font;
 
+	/* The application: the connection to zdesktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.display = options.display;
+	app_options.application = MAIN_APPLICATION;
+	main_kl = kl_app_open(&app_options);
+	if (main_kl == NULL) {
+		fprintf(stderr, "PDFVIEWER FAILED operation=app error=%d\n", errno);
+		pv_text_close(&main_text);
+		return 1;
+	}
+
 	/* The window, its frames shown with Vulkan. */
 	memset(&window_options, 0, sizeof(window_options));
-	window_options.display = options.display;
 	window_options.title = "PDF Viewer";
-	window_options.application = MAIN_APPLICATION;
 	window_options.width = options.width;
 	window_options.height = options.height;
-	window_options.present = KUI_PRESENT_VULKAN;
-	main_window.kui = kui_window_open(&window_options);
+	window_options.present = KL_PRESENT_VULKAN;
+	main_window.kui = kl_app_window_create(main_kl, &window_options);
 	if (main_window.kui == NULL) {
 		fprintf(stderr, "PDFVIEWER FAILED operation=window error=%d\n", errno);
+		kl_app_close(main_kl);
 		pv_text_close(&main_text);
 		return 1;
 	}
 
 	/* The presenter's size, which the frames are drawn at. */
-	error = kui_window_present_resize(main_window.kui, &main_width, &main_height);
+	error = kl_window_present_resize(main_window.kui, &main_width, &main_height);
 	if (error != 0) {
 		fprintf(stderr, "PDFVIEWER FAILED operation=present error=%d\n", error);
-		kui_window_close(main_window.kui);
+		kl_window_close(main_window.kui);
+		kl_app_close(main_kl);
 		pv_text_close(&main_text);
 		return 1;
 	}
@@ -205,14 +222,11 @@ main(
 	if (options.file != NULL)
 		(void)pv_app_open(&main_app, options.file);
 
-	/* The desktop's appearance: the viewer's colours follow it, the pages stay white (light under a compositor without it). */
-	error = kl_appearance_open(kui_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
-	if (error != 0)
-		pv_log("APPEARANCE none errno=%d", error);
-	pv_draw_set_dark(kl_appearance_get(main_appearance) == KL_APPEARANCE_DARK);
+	/* The desktop's appearance (the application's): the viewer's colours follow it, the pages stay white. */
+	pv_draw_set_dark(kl_appearance_get(NULL) == KL_APPEARANCE_DARK);
 
 	/* The on-screen keyboard's inset keeps the password card in the part it leaves. */
-	kui_window_on_keyboard_inset(main_window.kui, main_keyboard_inset, &main_app);
+	kl_window_on_keyboard_inset(main_window.kui, main_keyboard_inset, &main_app);
 
 	/* The touch screen; without memory for it the fingers do nothing. */
 	error = pv_touch_open(&main_touch);
@@ -238,15 +252,15 @@ main(
 	status = main_loop(&options);
 
 	/* Everything goes, the chooser, the titlebar, the menus and the viewer before the window they belong to. */
-	kui_file_chooser_destroy(main_chooser);
+	kl_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
 	pv_titlebar_close(&main_titlebar);
 	pv_menu_close(&main_menu);
 	pv_touch_close(&main_touch);
-	kl_appearance_close(main_appearance);
 	pv_app_release(&main_app);
 	free(main_pixels);
-	kui_window_close(main_window.kui);
+	kl_window_close(main_window.kui);
+	kl_app_close(main_kl);
 	pv_text_close(&main_text);
 
 	/* Reports how the run ended. */
@@ -255,19 +269,6 @@ main(
 
 	/* Succeeded: the window was closed. */
 	return 0;
-}
-
-/*
- * Queues an action of the menus or the titlebar among the window's inputs,
- * so that it is carried out in the order it came.
- */
-void
-pv_window_action(
-	struct pv_window *window,
-	uint32_t action)
-{
-	/* Posted into the window's queue. */
-	kui_window_post(window->kui, action);
 }
 
 /* Reads the command line into the options; returns nonzero for a malformed one. */
@@ -413,7 +414,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
-	struct kui_window_event event;
+	struct kl_app_event app_event;
 	struct pv_state state;
 	uint64_t started;
 	uint64_t now;
@@ -447,10 +448,7 @@ main_loop(
 		due = pv_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = kui_window_repeat_wait(main_window.kui, kui_clock_us());
-		if (due >= 0 && due < timeout)
-			timeout = due;
-		due = pv_touch_tick(&main_touch, &main_app, kui_clock_us());
+		due = pv_touch_tick(&main_touch, &main_app, kl_clock_us());
 		if (due >= 0 && due < timeout)
 			timeout = due;
 		if (main_app.dirty)
@@ -463,28 +461,28 @@ main_loop(
 				timeout = 0;
 		}
 
-		/* Waits; a lost connection ends the run. */
-		status = kui_window_dispatch(main_window.kui, timeout);
+		/*
+		 * Waits; a lost connection ends the run.  A key held repeats within,
+		 * after the compositor's input, so that its release is seen first
+		 * (BUG-111).
+		 */
+		status = kl_app_dispatch(main_kl, timeout);
 		if (status != 0) {
 			pv_log("DONE reason=disconnected");
 			return 0;
 		}
-
-		/*
-		 * A key held repeats once the compositor's input is in, so that its
-		 * release is seen first (BUG-111: a repeat pressed before the wait
-		 * made a key act twice when the loop had been busy).
-		 */
 		now = pv_clock();
 		main_app.now = now;
-		(void)kui_window_repeat(main_window.kui, kui_clock_us());
 
-		/* Every input queued, in the order it came (the menus' and the titlebar's choices and the fingers among them). */
+		/* Every input queued, in the order it came (the menus' and the titlebar's choices and the fingers among them), and the desktop's appearance. */
 		for (;;) {
-			taken = kui_window_take(main_window.kui, &event);
+			taken = kl_app_take(main_kl, &app_event);
 			if (taken == 0)
 				break;
-			main_window_event(&event);
+			if (app_event.kind == KL_APP_THEME)
+				main_appearance_changed();
+			if (app_event.kind == KL_APP_WINDOW && app_event.window == main_window.kui)
+				main_window_event(&app_event.input);
 		}
 
 		/* The chooser the viewer asked for (File > Open), or one it no longer waits for closed. */
@@ -499,7 +497,7 @@ main_loop(
 
 		/* Time passes for the viewer and the fingers; the menus and the titlebar show its state. */
 		(void)pv_app_tick(&main_app, now);
-		(void)pv_touch_tick(&main_touch, &main_app, kui_clock_us());
+		(void)pv_touch_tick(&main_touch, &main_app, kl_clock_us());
 		main_state(&state);
 		pv_menu_refresh(&main_menu, &state);
 		pv_titlebar_refresh(&main_titlebar, &state);
@@ -554,7 +552,7 @@ main_frame(void)
 		/* The frame on the CPU, shown in the window. */
 		started = pv_clock();
 		pv_draw(&main_app, &main_canvas);
-		status = kui_window_present(main_window.kui, main_pixels, (size_t)main_width);
+		status = kl_window_present(main_window.kui, main_pixels, (size_t)main_width);
 		if (status == 0) {
 			shown = pv_clock();
 			main_turn_frame(started, shown);
@@ -617,7 +615,7 @@ main_resize(void)
 	int status;
 
 	/* The presenter at the window's size. */
-	status = kui_window_present_resize(main_window.kui, &main_width, &main_height);
+	status = kl_window_present_resize(main_window.kui, &main_width, &main_height);
 	if (status != 0) {
 		fprintf(stderr, "PDFVIEWER FAILED operation=present error=%d\n", status);
 		return -1;
@@ -641,28 +639,28 @@ main_resize(void)
  */
 static void
 main_window_event(
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct pv_event input;
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
+	case KL_WINDOW_MOTION:
 		main_event(PV_EVENT_MOTION, event, &input);
 		pv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_LEAVE:
+	case KL_WINDOW_LEAVE:
 		main_event(PV_EVENT_LEAVE, event, &input);
 		pv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The button and whether it went down. */
 		main_event(PV_EVENT_BUTTON, event, &input);
 		input.button = event->code;
 		input.pressed = event->pressed;
 		pv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_AXIS:
+	case KL_WINDOW_AXIS:
 		/* A touch pad's fingers scroll the view as fingers do, with libkeiland's scroller (ws090-p019). */
 		if (event->axis_source == KL_AXIS_SOURCE_FINGER) {
 			pv_touch_pad(&main_touch, &main_app, event);
@@ -680,7 +678,7 @@ main_window_event(
 		/* The touch pad's fingers lift: the view flies on. */
 		pv_touch_pad_stop(&main_touch, event);
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		/* The key, whether it went down, and whether it is a held key's repeat. */
 		main_event(PV_EVENT_KEY, event, &input);
 		input.key = event->code;
@@ -688,22 +686,23 @@ main_window_event(
 		input.repeat = event->repeated;
 		pv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_POST:
-		/* An action of the menus or the titlebar, in its place among the keys. */
+	case KL_WINDOW_ACTION:
+		/* An item of the menus or a control of the titlebar, in its place among the keys. */
+		pv_log("ACTION id=%d action=%u", (int)event->id, (unsigned)event->code);
 		main_event(PV_EVENT_ACTION, event, &input);
 		input.action = event->code;
 		pv_app_event(&main_app, &input);
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
-	case KUI_WINDOW_TOUCH_MOTION:
-	case KUI_WINDOW_TOUCH_UP:
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_CANCEL:
 		pv_touch_event(&main_touch, &main_app, event);
 		break;
-	case KUI_WINDOW_RESIZE:
+	case KL_WINDOW_RESIZE:
 		main_resized = 1;
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		main_closed = 1;
 		break;
 	default:
@@ -715,7 +714,7 @@ main_window_event(
 static void
 main_event(
 	enum pv_event_type type,
-	const struct kui_window_event *event,
+	const struct kl_window_event *event,
 	struct pv_event *input)
 {
 	/* The modifiers are the same bits as the viewer's; the time is in milliseconds of the same clock. */
@@ -728,7 +727,7 @@ main_event(
 }
 
 /*
- * Hears the on-screen keyboard's inset (libkeiland's KUI_VERSION 7): the
+ * Hears the on-screen keyboard's inset (libkeiland's KL_VERSION 18): the
  * password card stays in the middle of the part of the window the keyboard
  * leaves.  The viewer has no text view whose caret the library would keep
  * in sight, so the default has nothing to do.
@@ -786,15 +785,15 @@ main_canvas_make(void)
 static void
 main_choose(void)
 {
-	struct kui_file_chooser_options options;
-	static const struct kui_file_chooser_listener listener = {
+	struct kl_file_chooser_options options;
+	static const struct kl_file_chooser_listener listener = {
 		main_chosen
 	};
 
 	/* A chooser the viewer no longer waits for goes. */
 	if (!main_app.choosing) {
 		if (main_chooser != NULL) {
-			kui_file_chooser_destroy(main_chooser);
+			kl_file_chooser_destroy(main_chooser);
 			main_chooser = NULL;
 		}
 
@@ -808,7 +807,7 @@ main_choose(void)
 
 	/* Open, at the viewer's folder, with the PDF documents shown first, in the viewer's font. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.mode = KL_FILE_CHOOSER_OPEN;
 	options.application = MAIN_APPLICATION;
 	options.folder = main_app.chooser_folder;
 	options.filters = main_filters;
@@ -817,7 +816,7 @@ main_choose(void)
 	options.font = main_font;
 
 	/* The chooser's window over the viewer's; without it the viewer stops waiting. */
-	main_chooser = kui_file_chooser_open(kui_window_display(main_window.kui), kui_window_toplevel(main_window.kui), &options, &listener, &main_app);
+	main_chooser = kl_file_chooser_open(kl_app_display(main_kl), kl_window_toplevel(main_window.kui), &options, &listener, &main_app);
 	if (main_chooser == NULL) {
 		pv_log("CHOOSER failed errno=%d", errno);
 		pv_app_message(&main_app, "The file chooser could not be shown.", 4000U);
@@ -829,19 +828,19 @@ main_choose(void)
 static void
 main_chosen(
 	void *data,
-	struct kui_file_chooser *chooser,
+	struct kl_file_chooser *chooser,
 	unsigned result,
 	const char *path,
 	size_t filter)
 {
 	/* The answer, cancelled unless a file was chosen. */
 	(void)filter;
-	if (result != KUI_FILE_CHOOSER_CHOSEN)
+	if (result != KL_FILE_CHOOSER_CHOSEN)
 		path = NULL;
 	pv_app_chosen(data, path);
 
 	/* The chooser is spent. */
-	kui_file_chooser_destroy(chooser);
+	kl_file_chooser_destroy(chooser);
 	if (chooser == main_chooser)
 		main_chooser = NULL;
 }
@@ -886,13 +885,13 @@ main_opened(void)
 
 	/* The window's title. */
 	snprintf(title, sizeof(title), "%s \xe2\x80\x94 PDF Viewer", name);
-	kui_window_set_title(main_window.kui, title);
+	kl_window_set_title(main_window.kui, title);
 
 	/* The recent files, by the absolute path. */
 	absolute = realpath(main_app.document.path, resolved);
 	if (absolute == NULL)
 		return;
-	error = keiland_recent_add(resolved, MAIN_APPLICATION);
+	error = kl_recent_add(resolved, MAIN_APPLICATION);
 	if (error != 0)
 		pv_log("RECENT failed errno=%d", error);
 }
@@ -938,12 +937,12 @@ main_annotate(void)
 
 /* Takes the desktop's new appearance: the viewer is drawn again in its colours. */
 static void
-main_appearance_changed(
-	void *data,
-	unsigned appearance)
+main_appearance_changed(void)
 {
+	unsigned appearance;
+
 	/* The colours, and a new frame. */
-	(void)data;
+	appearance = kl_appearance_get(NULL);
 	pv_draw_set_dark(appearance == KL_APPEARANCE_DARK);
 	main_app.dirty = 1;
 	pv_log("APPEARANCE appearance=%u", appearance);

@@ -3,7 +3,7 @@
 
 Phase ID: `ws168-p002`
 Parent: [WS168](../ws.md)
-Status: in-progress（2026-10-06 P1、q804 で再開。libc・試験まで書いた。libc の起動の isatty（ioctl TCGETS）の扱いが判断待ち、下の「2026-10-06」）
+Status: cleared（2026-10-06 Q1 判定: QEMU の T1 PASS（T1-245・T1-240b・T1-242/246）。実機は UAT）
 設計: [p001](../phase001/phase.md) §3（H1〜H7 はユーザーが案のとおり承認、2026-10-05 夜。`sandbox_spawn` の system call 170 と `include/uapi/sandbox.h` の追加を含む）
 
 ## 済んだこと（commit は下の SHA）

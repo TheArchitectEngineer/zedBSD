@@ -153,6 +153,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 ## 工数の見積もり（残り、LW）
 
+
+**2026-10-06 夜の見直し（ベータ2 まで、ユーザーの依頼）**: 設計・実装 186.6 LW、デバッグ 20.8 LW、合計 207.4 LW（1 LW＝実時間 20 分で 69.1 時間、N=2 で 34.6 時間）。止まっている WS074・WS153 の 18 LW を足すと 225.4 LW（75.1 時間、N=2 で 37.6 時間）。2026-10-06 に進んだ分（ws142 p007〜p010、ws099 p034b〜p037、ws090 p017〜p019、ws095 p005〜p007、ws130 p001〜p003、ws168 p001〜p002、ws131 p015〜p017、ws175 p001〜p006 など）を引いた値。内訳は session の回答（下の表は 2026-10-05 の値のまま）。
 2026-10-05 Q1（ユーザー「各WSの工数見積もりをしてほしいです。あなたの1週間かかるという見積もりは、1LW (logical weeks)と表現してほしいです。master.mdに見積もりを書き込んでおいてほしいです。」）。
 
 - **LW（logical week）**: Q1（Claude）が「1 週間かかる」と見積もる作業の量を 1 LW とする。人の暦の週とは違う。実際には **1 LW ≈ 実時間 1〜2 時間**（2026-10-05 ユーザーの観察、担当 1 人あたり）。各 WS の**残り**の量（完了した Phase を除く）。completed の WS は 0 で表に載せない。
@@ -507,6 +509,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー: fallback は 2 つ残す（可変ピッチ 1・monospace 1）、遠い将来に fallback 無しでも動くように。クリック「Droid Sans Fallback と JetBrains Mono」→ Inter は使わない。ws090-p020 に記録。
+- 2026-10-06 ユーザー: Mahora の font（ユーザーの著作、tree の Zlib）を追加、UI を Mahora Regular・Terminal を Mahora Mono・太字を Mahora Bold に。外観が良ければ他の font を消す → [ws090-p020](ws090/phase020/phase.md)（q812、P1）。Q1 の確認: Mahora は ASCII の 95 字だけ。
 - 2026-10-06 ユーザー（クリック）: rm の規則の範囲は「make の規則の rm は可」（自分の worktree の build/ の中の make の出力）。AGENTS.md と protocol に記録。P1・P2 が気づかずに走らせた rm を含む host の script 15 本は Q1 が rm 無しに直した（fresh-out.sh・build/tmp・q1-clean.sh）。
 - 2026-10-06 ユーザー（クリック）: WS168 の sandbox の isatty は「(a) TCGETS だけ ENOTTY」（承認済みの許可の set の変更、ws168-p002 に記録）。
 - 2026-10-06 ユーザー（クリック）: WS131 の app の移行 p016〜p020 を「承認、p016 から順に」（kl_app へ、Q1 の最初の質問の書き間違いを訂正した上で）。ws095-p007 の Notes は「Notes に text box を作る（別の Phase）」→ [ws079-p017](ws079/phase017/phase.md)。Q1 の許可: WS175 p006 の `userland/base/libz-compat` への deflate の追加（design の「libz-compat の path は Q1 の許可」）。
