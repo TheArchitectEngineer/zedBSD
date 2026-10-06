@@ -104,8 +104,8 @@ struct shell_touch_pointer {
  * presses the scroller again.
  */
 struct shell_touch {
-	struct keiland_gesture *gesture;
-	struct keiland_scroller *scroller;
+	struct kl_gesture *gesture;
+	struct kl_scroller *scroller;
 
 	/* The page as the main loop last gave it. */
 	unsigned long token;

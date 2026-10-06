@@ -57,14 +57,14 @@ shell_touch_open(
 	touch->bounds_largest = -1.0;
 
 	/* The gestures of the window. */
-	touch->gesture = keiland_gesture_create();
+	touch->gesture = kl_gesture_create();
 	if (touch->gesture == NULL)
 		return ENOMEM;
 
 	/* The scroller of the page. */
-	touch->scroller = keiland_scroller_create();
+	touch->scroller = kl_scroller_create();
 	if (touch->scroller == NULL) {
-		keiland_gesture_destroy(touch->gesture);
+		kl_gesture_destroy(touch->gesture);
 		touch->gesture = NULL;
 		return ENOMEM;
 	}
@@ -82,9 +82,9 @@ shell_touch_close(
 {
 	/* Both, when they were made. */
 	if (touch->scroller != NULL)
-		keiland_scroller_destroy(touch->scroller);
+		kl_scroller_destroy(touch->scroller);
 	if (touch->gesture != NULL)
-		keiland_gesture_destroy(touch->gesture);
+		kl_gesture_destroy(touch->gesture);
 	memset(touch, 0, sizeof(*touch));
 }
 
@@ -138,7 +138,7 @@ shell_touch_layout(
 	}
 
 	/* The scroller is there from now on. */
-	keiland_scroller_set_position(touch->scroller, 0.0, scroll);
+	kl_scroller_set_position(touch->scroller, 0.0, scroll);
 
 	/* A glide stops. */
 	if (touch->moving && !touch->pressed) {
@@ -183,16 +183,16 @@ shell_touch_event(
 		}
 
 		/* The gestures follow it. */
-		error = keiland_gesture_down(touch->gesture, event->id, time, event->arrival, event->x, event->y);
+		error = kl_gesture_down(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 		if (error == 0)
 			touch->followed++;
 		break;
 	case SHELL_TOUCH_MOTION:
-		(void)keiland_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
+		(void)kl_gesture_motion(touch->gesture, event->id, time, event->arrival, event->x, event->y);
 		break;
 	case SHELL_TOUCH_UP:
 		/* The gestures hear the lift. */
-		error = keiland_gesture_up(touch->gesture, event->id, time);
+		error = kl_gesture_up(touch->gesture, event->id, time);
 		if (error == 0 && touch->followed > 0U)
 			touch->followed--;
 
@@ -216,7 +216,7 @@ shell_touch_event(
 		break;
 	case SHELL_TOUCH_CANCEL:
 		/* The compositor took the fingers: whatever they did ends without its lift. */
-		keiland_gesture_cancel(touch->gesture);
+		kl_gesture_cancel(touch->gesture);
 		touch->followed = 0;
 		touch->held = 0;
 		printf("ZBROWSER TOUCH cancel\n");
@@ -274,18 +274,18 @@ shell_touch_tick(
 	/* A drag moves the scroller with the fingers, resampled for the frame. */
 	if (touch->dragging &&
 	    touch->pressed) {
-		error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+		error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 		if (error == 0)
-			keiland_scroller_drag(touch->scroller, dx - touch->base_x, dy - touch->base_y);
+			kl_scroller_drag(touch->scroller, dx - touch->base_x, dy - touch->base_y);
 	}
 
 	/* The page where the scroller is at the frame's time. */
-	animating = keiland_scroller_step(touch->scroller, now, &x, &y);
+	animating = kl_scroller_step(touch->scroller, now, &x, &y);
 	if (touch->moving)
 		touch_place(touch, y);
 
 	/* The scroll rests once it stops with no finger on it, on the screen or on a touch pad. */
-	holding = keiland_scroller_axis_holding(touch->scroller);
+	holding = kl_scroller_axis_holding(touch->scroller);
 	if (!animating &&
 	    !touch->pressed &&
 	    touch->followed == 0U &&
@@ -414,7 +414,7 @@ touch_bounds(
 		return;
 
 	/* The new bounds; only down scrolls. */
-	(void)keiland_scroller_set_bounds(touch->scroller, 0.0, 0.0, 0.0, touch->largest, 1.0, height);
+	(void)kl_scroller_set_bounds(touch->scroller, 0.0, 0.0, 0.0, touch->largest, 1.0, height);
 	touch->bounds_largest = touch->largest;
 	touch->bounds_height = height;
 }
@@ -436,10 +436,10 @@ touch_press(
 
 	/* The page's scroll, unless the scroller already owns it. */
 	if (!touch->moving)
-		keiland_scroller_set_position(touch->scroller, 0.0, touch->scroll);
+		kl_scroller_set_position(touch->scroller, 0.0, touch->scroll);
 
 	/* The press; the first press on a glide catches it. */
-	caught = keiland_scroller_press(touch->scroller, now);
+	caught = kl_scroller_press(touch->scroller, now);
 	if (!touch->pressed) {
 		touch->caught = caught;
 		if (caught) {
@@ -455,7 +455,7 @@ touch_press(
 	/* A drag already going on is measured from here. */
 	touch->base_x = 0.0;
 	touch->base_y = 0.0;
-	error = keiland_gesture_drag_offset(touch->gesture, now, &dx, &dy);
+	error = kl_gesture_drag_offset(touch->gesture, now, &dx, &dy);
 	if (error == 0) {
 		touch->base_x = dx;
 		touch->base_y = dy;
@@ -504,19 +504,19 @@ touch_gestures(
 	struct shell_touch *touch,
 	uint64_t now)
 {
-	struct keiland_gesture_event gesture;
+	struct kl_gesture_event gesture;
 	int found;
 	int flung;
 
 	/* Each gesture in turn. */
 	for (;;) {
-		found = keiland_gesture_next(touch->gesture, now, &gesture);
+		found = kl_gesture_next(touch->gesture, now, &gesture);
 		if (!found)
 			break;
 
 		/* Does what the gesture means. */
 		switch (gesture.kind) {
-		case KEILAND_GESTURE_TAP:
+		case KL_GESTURE_TAP:
 			/* A click of the primary button there, unless the touch caught a glide. */
 			if (!touch->caught)
 				touch_click(touch, SHELL_TOUCH_PRIMARY, gesture.x, gesture.y);
@@ -525,7 +525,7 @@ touch_gestures(
 			printf("ZBROWSER TOUCH tap x=%.0f y=%.0f caught=%d\n", gesture.x, gesture.y, touch->caught);
 			fflush(stdout);
 			break;
-		case KEILAND_GESTURE_LONG_PRESS:
+		case KL_GESTURE_LONG_PRESS:
 			/* One finger's long press waits for its lift (the secondary button's click). */
 			if (!touch->caught && touch->followed == 1U) {
 				touch->held = 1;
@@ -537,17 +537,17 @@ touch_gestures(
 
 			/* Nothing else. */
 			break;
-		case KEILAND_GESTURE_DRAG_BEGIN:
+		case KL_GESTURE_DRAG_BEGIN:
 			/* The drag scrolls (a long press before it clicks nothing). */
 			touch->held = 0;
 			touch->dragging = 1;
 			printf("ZBROWSER TOUCH drag fingers=%u scroll=%.0f largest=%.0f\n", touch->followed, touch->scroll, touch->largest);
 			fflush(stdout);
 			break;
-		case KEILAND_GESTURE_DRAG_END:
+		case KL_GESTURE_DRAG_END:
 			/* The page glides on at the fingers' velocity. */
 			if (touch->dragging) {
-				flung = keiland_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
+				flung = kl_scroller_release(touch->scroller, now, gesture.vx, gesture.vy);
 				printf("ZBROWSER TOUCH release vy=%.0f scroll=%.0f\n", gesture.vy, touch->scroll);
 				if (flung)
 					printf("ZBROWSER KINETIC fling source=touch vy=%.0f\n", gesture.vy);
@@ -558,10 +558,10 @@ touch_gestures(
 			/* The drag is over. */
 			touch->dragging = 0;
 			break;
-		case KEILAND_GESTURE_CANCEL:
+		case KL_GESTURE_CANCEL:
 			/* No glide (a stretch springs back). */
 			if (touch->pressed)
-				keiland_scroller_cancel(touch->scroller, now);
+				kl_scroller_cancel(touch->scroller, now);
 			touch->pressed = 0;
 			touch->dragging = 0;
 			break;
@@ -573,7 +573,7 @@ touch_gestures(
 	/* The last finger lifted without a drag: the scroller is let go still (a stretch springs back). */
 	if (touch->followed == 0U &&
 	    touch->pressed) {
-		keiland_scroller_release(touch->scroller, now, 0.0, 0.0);
+		kl_scroller_release(touch->scroller, now, 0.0, 0.0);
 		touch->pressed = 0;
 		touch->dragging = 0;
 	}
@@ -638,12 +638,12 @@ touch_pad(
 		return;
 
 	/* The first move: the scroller from the page's scroll, unless it owns it already. */
-	holding = keiland_scroller_axis_holding(touch->scroller);
+	holding = kl_scroller_axis_holding(touch->scroller);
 	if (!holding && !touch->moving)
-		keiland_scroller_set_position(touch->scroller, 0.0, touch->scroll);
+		kl_scroller_set_position(touch->scroller, 0.0, touch->scroll);
 
 	/* The scroller follows the fingers and owns the scroll until it rests. */
-	caught = keiland_scroller_axis(touch->scroller, 0.0, (double)event->y, time, event->arrival);
+	caught = kl_scroller_axis(touch->scroller, 0.0, (double)event->y, time, event->arrival);
 	touch->moving = 1;
 	if (caught) {
 		printf("ZBROWSER TOUCH caught source=finger scroll=%.0f\n", touch->scroll);
@@ -663,7 +663,7 @@ touch_pad_stop(
 	int flung;
 
 	/* The scroller throws the page the fingers held. */
-	flung = keiland_scroller_axis_stop(touch->scroller, time, event->arrival, &vx, &vy);
+	flung = kl_scroller_axis_stop(touch->scroller, time, event->arrival, &vx, &vy);
 	if (flung) {
 		printf("ZBROWSER KINETIC fling source=finger vy=%.0f\n", vy);
 		fflush(stdout);

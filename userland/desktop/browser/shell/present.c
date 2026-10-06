@@ -7,9 +7,10 @@
 
 /*
  * The presenter: the window's swapchain and the synchronization of its
- * frames, with standard Vulkan and Wayland WSI.  The view draws the page:
- * the presenter lends it the device, and each frame it acquires an image,
- * has the view record the drawing into the frame's command buffer
+ * frames, with standard Vulkan WSI on the window's surface (libkeiland's,
+ * WS131 p025).  The view draws the page: the presenter lends it the
+ * device, and each frame it acquires an image, has the view record the
+ * drawing into the frame's command buffer
  * (browser_view_record), submits it and presents the image
  * (ws074-p055, the render target of plan/ws074/design.md §19).
  *
@@ -50,11 +51,11 @@ shell_present_open(
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
-	VkWaylandSurfaceCreateInfoKHR surface;
 	VkSemaphoreCreateInfo semaphore;
 	struct browser_gpu gpu;
 	const char *extensions[2];
 	VkResult error;
+	int failed;
 
 	/* Nothing is owned yet. */
 	memset(present, 0, sizeof(*present));
@@ -76,15 +77,11 @@ shell_present_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The window's surface. */
-	memset(&surface, 0, sizeof(surface));
-	surface.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-	surface.display = window->display;
-	surface.surface = window->surface;
-	present->operation = "vkCreateWaylandSurfaceKHR";
-	error = vkCreateWaylandSurfaceKHR(present->instance, &surface, NULL, &present->surface);
-	if (error != VK_SUCCESS)
-		return error;
+	/* The window's surface (libkeiland's, WS131 p025). */
+	present->operation = "kl_window_vulkan_surface";
+	failed = kl_window_vulkan_surface(window->kui, present->instance, &present->surface);
+	if (failed != 0)
+		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* A device with a queue that draws and presents to the surface. */
 	error = present_device(present);
