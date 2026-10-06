@@ -1524,6 +1524,7 @@ static void
 greeter_styles_take(
 	struct kwl_server *server)
 {
+	struct greeter_layout layout;
 	unsigned styles;
 
 	/* The styles, the password always among them. */
@@ -1531,6 +1532,10 @@ greeter_styles_take(
 	greeter_styles = styles | KL_BACKEND_STYLE_PASSWORD;
 	server->dirty = 1;
 	printf("KWL GREETER styles=%u\n", greeter_styles);
+
+	/* Where the link to the next style is, for the tests' pointer (ws172-p003). */
+	greeter_layout(server, &layout);
+	printf("KWL GREETER link x=%d y=%d width=%d height=%d\n", layout.link[0], layout.link[1], layout.link[2], layout.link[3]);
 
 	/* A style no longer offered gives way to the password, and what was typed for it goes. */
 	if (greeter_style != KL_BACKEND_STYLE_PASSWORD && (greeter_styles & greeter_style) == 0U) {

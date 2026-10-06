@@ -107,3 +107,9 @@ P2 の案 (a) kernel の試験の driver に CTAP2 の応答器、(b) userland �
 - greeter の「Use a security key」の link と hint の見た目（鍵を登録した account が要るので、test の image の `/etc/passkey` に鍵の行を置く必要がある）。
 - 鍵が無い時の振る舞い（`no-key` の文）。
 - Settings の Users の「Security keys」の card の見た目。
+
+T1 への依頼の手順（2026-10-06 P2）: `plan/ws172/tests/build-fido2-image.sh BUILD` で image を作り、`plan/ws172/tests/fido2-p003-guest.sh` を流す。
+- 中身: passkey-fido2 の mode と `_passkey`、作り物の鍵の行、greeter の styles=5 と link（`KWL GREETER link` の log の位置をクリック）、3 文字の PIN は送らない、4 文字で no-key、password で login、Settings の Users の card。
+- 撮る絵: greeter.png・key.png・no-key.png・settings.png。
+- greeter の link の位置を試験が知るため、styles を受けた時に `KWL GREETER link x= y= width= height=` を出すようにした。
+
