@@ -274,6 +274,10 @@ struct kl_window {
 	char *clipboard;
 	size_t clipboard_length;
 
+	/* The compositor's content type manager and the surface's content type object (ws122-p005b), NULL until bound and asked. */
+	struct wp_content_type_manager_v1 *content_manager;
+	struct wp_content_type_v1 *content_type;
+
 	/* The primary selection (primary.c), the same parts as the clipboard's. */
 	struct zwp_primary_selection_device_manager_v1 *primary_manager;
 	struct zwp_primary_selection_device_v1 *primary_device;

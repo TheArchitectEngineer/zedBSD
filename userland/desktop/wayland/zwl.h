@@ -156,6 +156,8 @@ enum zwl_kind {
 	ZWL_CURSOR_SHAPE_DEVICE,
 	ZWL_VIEWPORTER,
 	ZWL_VIEWPORT,
+	ZWL_CONTENT_TYPE_MANAGER,
+	ZWL_CONTENT_TYPE,
 	ZWL_GLASS_MANAGER,
 	ZWL_GLASS,
 	ZWL_CONTEXT_MENU,
@@ -606,6 +608,15 @@ struct zwl_object {
 	int32_t pending_destination[2];
 	int32_t destination[2];
 	unsigned viewport_changed;
+	/*
+	 * ws122-p005b (content-type.c): a surface's wp_content_type_v1 (whose
+	 * own surface field names it back), and its type (0 none, 1 photo, 2
+	 * video, 3 game), pending and applied by the commit.
+	 */
+	struct zwl_object *content_type_object;
+	uint32_t pending_content_type;
+	uint32_t content_type;
+	unsigned content_type_changed;
 	/*
 	 * ws035-p083 (panels.c): a surface's keiland_glass_v1 (whose own surface
 	 * field names it back; each cleared from both ends when either goes),

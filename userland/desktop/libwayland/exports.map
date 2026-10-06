@@ -20,6 +20,7 @@
 		keiland_edit_manager_v1_*;
 		keiland_edit_v1_*;
 		keiland_theme_v1_*;
+		wp_content_type_*;
 	local:
 		*;
 };

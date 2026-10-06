@@ -926,6 +926,19 @@ void kl_window_set_fullscreen(struct kl_window *window, int fullscreen);
 int kl_window_fullscreen(const struct kl_window *window);
 
 /*
+ * KL_VERSION 41 (ws122-p005b): what the window shows, told to the
+ * compositor (wp_content_type_v1) from the window's next frame: nothing in
+ * particular, a photo, a video or a game.  A fullscreen video or game may
+ * then be shown without composing (the compositor's game mode).  Without
+ * the compositor's protocol nothing is told (ENOTSUP).
+ */
+#define KL_CONTENT_NONE		0U
+#define KL_CONTENT_PHOTO	1U
+#define KL_CONTENT_VIDEO	2U
+#define KL_CONTENT_GAME		3U
+int kl_window_set_content_type(struct kl_window *window, unsigned type);
+
+/*
  * KUI_VERSION 11 (ws090-p011, Terminal): an application that waits for
  * other descriptors too (a terminal's shells) waits for them with the
  * compositor, at most KL_WINDOW_FDS_MAX of them; ready[i] says fds[i] has

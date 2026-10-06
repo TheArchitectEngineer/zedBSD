@@ -319,6 +319,10 @@ zwl_object_destroy(
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_VIEWPORT)
 		zwl_viewport_object_gone(object);
 
+	/* A surface and its content type (content-type.c). */
+	if (object->kind == ZWL_SURFACE || object->kind == ZWL_CONTENT_TYPE)
+		zwl_content_type_object_gone(object);
+
 	/* A surface and its glass panels (panels.c). */
 	if (object->kind == ZWL_SURFACE || object->kind == ZWL_GLASS)
 		zwl_panels_object_gone(object);

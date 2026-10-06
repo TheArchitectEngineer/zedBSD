@@ -38,6 +38,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/decoration.c \
 	userland/desktop/wayland/cursor.c \
 	userland/desktop/wayland/viewport.c \
+	userland/desktop/wayland/content-type.c \
 	userland/desktop/wayland/activation.c \
 	userland/desktop/wayland/theme.c \
 	userland/desktop/wayland/panels.c \

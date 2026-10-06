@@ -233,6 +233,9 @@ main(
 		return 1;
 	}
 
+	/* The window shows a video: in full screen the compositor may show it without composing (game mode, ws122-p005b). */
+	(void)kl_window_set_content_type(player.window, KL_CONTENT_VIDEO);
+
 	/* The menu, the style, the sound (none is no failure) and the media. */
 	(void)kl_window_set_menu(player.window, vp_menu, sizeof(vp_menu) / sizeof(vp_menu[0]));
 	player.style.text = &player.text;

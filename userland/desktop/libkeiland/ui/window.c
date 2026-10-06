@@ -23,6 +23,8 @@
 #include "window.h"
 #include "internal.h"
 
+#include "userland/desktop/libwayland/content-type-v1-client-protocol.h"
+
 #include <keiland.h>
 
 #include <errno.h>
@@ -257,6 +259,12 @@ kl_window_close(
 		wl_keyboard_destroy(window->keyboard);
 	if (window->seat != NULL)
 		wl_seat_destroy(window->seat);
+
+	/* The surface's content type before the surface, the manager with it. */
+	if (window->content_type != NULL)
+		wp_content_type_v1_destroy(window->content_type);
+	if (window->content_manager != NULL)
+		wp_content_type_manager_v1_destroy(window->content_manager);
 
 	/* The roles before the surface, the surface before the globals that made it. */
 	if (window->toplevel != NULL)
@@ -688,6 +696,37 @@ kl_window_set_fullscreen(
 	} else {
 		xdg_toplevel_unset_fullscreen(window->toplevel);
 	}
+}
+
+/*
+ * Tells the compositor what the window shows (KL_CONTENT_*, KL_VERSION
+ * 41), from its next frame.  Returns 0, EINVAL for another type, or
+ * ENOTSUP when the compositor does not take content types.
+ */
+int
+kl_window_set_content_type(
+	struct kl_window *window,
+	unsigned type)
+{
+	/* Refuses a type the protocol does not have. */
+	if (window == NULL || type > KL_CONTENT_GAME)
+		return EINVAL;
+
+	/* Without the compositor's manager nothing is told. */
+	if (window->content_manager == NULL)
+		return ENOTSUP;
+
+	/* The surface's object, made the first time. */
+	if (window->content_type == NULL)
+		window->content_type = wp_content_type_manager_v1_get_surface_content_type(window->content_manager, window->surface);
+	if (window->content_type == NULL)
+		return ENOMEM;
+
+	/* The type, applied with the surface's next commit. */
+	wp_content_type_v1_set_content_type(window->content_type, (uint32_t)type);
+
+	/* Succeeded: told. */
+	return 0;
 }
 
 /*
@@ -1393,6 +1432,13 @@ window_global(
 		if (version > 4U)
 			version = 4U;
 		window->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, version);
+		return;
+	}
+
+	/* The content type manager (ws122-p005b), bound for a window that tells what it shows. */
+	match = strcmp(interface, "wp_content_type_manager_v1");
+	if (match == 0 && window->content_manager == NULL) {
+		window->content_manager = wl_registry_bind(registry, name, &wp_content_type_manager_v1_interface, 1U);
 		return;
 	}
 

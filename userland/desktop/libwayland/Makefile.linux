@@ -21,5 +21,6 @@ KEILAND_LINUX_WAYLAND_SOURCES := userland/desktop/libwayland/client.c \
 	userland/desktop/libwayland/keyboard-inset-protocol.c \
 	userland/desktop/libwayland/edit-protocol.c \
 	userland/desktop/libwayland/activation-protocol.c \
+	userland/desktop/libwayland/content-type-protocol.c \
 	userland/desktop/libwayland/theme-protocol.c
 $(eval $(call KEILAND_LINUX_LIBRARY,wayland,libwayland-client.so,$(KEILAND_LINUX_WAYLAND_SOURCES),,,userland/desktop/libwayland/exports.map))
