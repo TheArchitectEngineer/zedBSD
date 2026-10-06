@@ -150,6 +150,15 @@
 #define HOME_REFLECTION_HEIGHT	0.35f
 #define HOME_NAME_ALPHA		0.90f
 
+/*
+ * The content's own animation (ws099-p035c, BUG-225: the stage at once, the
+ * icons after it): each icon rises HOME_CONTENT_RISE pixels and fades in
+ * over HOME_CONTENT_MS, HOME_CONTENT_STEP_MS after the one before it.
+ */
+#define HOME_CONTENT_MS		180U
+#define HOME_CONTENT_STEP_MS	30U
+#define HOME_CONTENT_RISE	12.0f
+
 /* How much a tile is whitened under the pointer. */
 #define HOME_LIT		0.15f
 
@@ -200,6 +209,13 @@ static unsigned home_app_count;
 static unsigned home_apps_read;
 
 /*
+ * Whether Home's opening was prepared ahead (home_prepare, ws099-p035c):
+ * set once, after the list was read and the first frame drawn, for the
+ * compositor's life.
+ */
+static unsigned home_prepared;
+
+/*
  * The applications shown now (all, or those the search finds), as indexes
  * into home_apps, and where each one's icon is.  Laid out again on every
  * frame and every change of the search.
@@ -233,7 +249,9 @@ static void home_layout(struct zwl_server *server);
 static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct zwl_server *server, int32_t x, int32_t y);
-static void home_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned slot, float opacity);
+static void home_draw_icon(struct zwl_server *server, VkCommandBuffer command, unsigned slot, float opacity, float rise);
+static float home_content(struct zwl_server *server, unsigned order, float progress, float *rise);
+static void home_prepare(struct zwl_server *server);
 static void home_draw_floors(struct zwl_server *server, VkCommandBuffer command, float opacity);
 static void home_draw_floor(struct zwl_server *server, VkCommandBuffer command, float left, float right, float y, float opacity);
 static void home_draw_spotlight(struct zwl_server *server, VkCommandBuffer command, float middle, float floor, float strength);
@@ -241,7 +259,8 @@ static void home_draw_search(struct zwl_server *server, VkCommandBuffer command,
 static void home_open(struct zwl_server *server, float from, const char *via);
 static void home_close(struct zwl_server *server, float from, const char *via);
 static void home_settle(struct zwl_server *server, float from, float to);
-static void home_launch(struct zwl_server *server, unsigned app);
+static int home_launch(struct zwl_server *server, unsigned app);
+static struct zwl_object *home_running_window(struct zwl_server *server, unsigned app);
 static void home_search_changed(struct zwl_server *server);
 static void home_log_icons(void);
 static float home_ease(float t);
@@ -326,7 +345,10 @@ zwl_home_draw(
 	float progress)
 {
 	struct glass_shape shape;
+	float content;
 	float width;
+	float rise;
+	unsigned order;
 	unsigned slot;
 
 	/* The applications and where they go. */
@@ -362,14 +384,31 @@ zwl_home_draw(
 	shape.color[3] = HOME_STAGE_LIGHT;
 	glass_shape_draw(server, command, &shape);
 
-	/* The rows' floors, under the icons. */
-	home_draw_floors(server, command, progress);
+	/* The stage's first frame since Home was asked to open (BUG-225's wait, measured). */
+	if (!server->home_cover_logged && server->home_to > 0.0f) {
+		server->home_cover_logged = 1U;
+		printf("ZWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(zwl_milliseconds() - server->home_asked_ms));
+	}
 
-	/* Each icon shown on the output, fading in with Home. */
+	/* The rows' floors, under the icons, coming in with the first of them. */
+	content = home_content(server, 0U, progress, &rise);
+	home_draw_floors(server, command, content);
+
+	/* Each icon shown on the output, coming in after the one before it (fading out with Home as it closes). */
+	order = 0U;
 	for (slot = 0U; slot < home_shown_count; slot++) {
 		if (home_icon_x[slot] + HOME_CELL_WIDTH < 0 || home_icon_x[slot] - HOME_CELL_WIDTH > (int32_t)server->width)
 			continue;
-		home_draw_icon(server, command, slot, progress);
+		content = home_content(server, order, progress, &rise);
+		home_draw_icon(server, command, slot, content, rise);
+		order++;
+	}
+
+	/* The content's first frame (its first icon begun). */
+	content = home_content(server, 0U, progress, &rise);
+	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
+		server->home_content_logged = 1U;
+		printf("ZWL HOME layer=content after_ms=%llu\n", (unsigned long long)(zwl_milliseconds() - server->home_asked_ms));
 	}
 
 	/* The search text, while something has been typed; the pages' dots, when there are pages. */
@@ -602,6 +641,7 @@ zwl_home_key(
 {
 	float progress;
 	char character;
+	int closed;
 
 	/* Home takes the keys only while it shows or is opening. */
 	progress = zwl_home_progress(server);
@@ -641,8 +681,9 @@ zwl_home_key(
 		/* Enter starts the selected application and closes Home. */
 		home_layout(server);
 		if (server->home_selected >= 0 && (unsigned)server->home_selected < home_shown_count) {
-			home_launch(server, home_shown[server->home_selected]);
-			home_close(server, progress, "launch");
+			closed = home_launch(server, home_shown[server->home_selected]);
+			if (!closed)
+				home_close(server, progress, "launch");
 		}
 
 		/* The key was Home's. */
@@ -718,8 +759,10 @@ zwl_home_tick(
 	 * (ws099-p002, C5): Home's first opening does not wait for the file
 	 * and for each program to be looked up.
 	 */
-	if (server->windowed)
+	if (server->windowed) {
 		home_read_apps(server);
+		home_prepare(server);
+	}
 
 	/* Every ended child is collected, so none is left a zombie. */
 	for (;;) {
@@ -1318,9 +1361,11 @@ home_draw_icon(
 	struct zwl_server *server,
 	VkCommandBuffer command,
 	unsigned slot,
-	float opacity)
+	float opacity,
+	float rise)
 {
 	const struct home_app *app;
+	struct zwl_object *running;
 	const char *label;
 	struct glass_shape shape;
 	float color[4];
@@ -1335,13 +1380,14 @@ home_draw_icon(
 	int32_t width;
 	int over;
 
-	/* Where the icon is, and whether the pointer is on it. */
+	/* Where the icon is (lower while it rises in), and whether the pointer is on it. */
 	app = &home_apps[home_shown[slot]];
 	x = home_icon_x[slot];
 	y = home_icon_y[slot];
 	over = 0;
 	if (server->pointer_x >= x && server->pointer_x < x + HOME_ICON && server->pointer_y >= y && server->pointer_y < y + HOME_ICON)
 		over = 1;
+	y += (int32_t)(rise + 0.5f);
 
 	/* The started application's icon grows as Home closes (about its centre). */
 	size = (float)HOME_ICON;
@@ -1358,7 +1404,7 @@ home_draw_icon(
 	 * decision; BUG-237 showed the blurred one).  Any other is its letter's
 	 * tile.
 	 */
-	floor = (float)(y + HOME_ICON + HOME_FLOOR_GAP);
+	floor = (float)(home_icon_y[slot] + HOME_ICON + HOME_FLOOR_GAP);
 	if (app->picture >= 0) {
 		/* Brighter under the pointer: the tile whitened, its spotlight stronger. */
 		lighten = 0.0f;
@@ -1399,6 +1445,83 @@ home_draw_icon(
 	if (width > HOME_CELL_WIDTH - 8)
 		width = HOME_CELL_WIDTH - 8;
 	glass_draw_text(server, command, SIZE_TITLE, x + (HOME_ICON - width) / 2, y + HOME_ICON + HOME_LABEL, label, HOME_CELL_WIDTH - 8, color);
+
+	/* An application that runs already has a short line under its name, as the bar's current application (BUG-232). */
+	running = home_running_window(server, home_shown[slot]);
+	if (running != NULL)
+		glass_draw_solid(server, command, (float)(x + HOME_ICON / 2 - 4), (float)(y + HOME_ICON + HOME_LABEL + 7), 8.0f, 2.5f, 1.25f, color);
+}
+
+/*
+ * Gives how far an icon (the order-th drawn) has come in (0 to 1), and how
+ * far under its place it still is (rise, pixels): while Home opens or is
+ * open, from its own start (HOME_CONTENT_STEP_MS after the one before it,
+ * eased out over HOME_CONTENT_MS, BUG-225); while Home closes, or follows
+ * a drag, as far as Home is open.
+ */
+static float
+home_content(
+	struct zwl_server *server,
+	unsigned order,
+	float progress,
+	float *rise)
+{
+	uint64_t now;
+	uint64_t start;
+	float t;
+
+	/* Closing, following a drag, or shown at once: with Home itself. */
+	*rise = 0.0f;
+	if (server->home_to <= 0.0f || server->home_dragging || server->home_content_ms == 0U)
+		return progress;
+
+	/* Not begun yet. */
+	now = zwl_milliseconds();
+	start = server->home_content_ms + (uint64_t)order * HOME_CONTENT_STEP_MS;
+	if (now <= start) {
+		*rise = HOME_CONTENT_RISE;
+		server->dirty = 1;
+		return 0.0f;
+	}
+
+	/* On its way (1 - (1 - t)^3), drawn every frame until it has come. */
+	t = (float)(now - start) / (float)HOME_CONTENT_MS;
+	if (t >= 1.0f)
+		return 1.0f;
+	server->dirty = 1;
+	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+	*rise = HOME_CONTENT_RISE * (1.0f - t);
+
+	/* Succeeded: partly in. */
+	return t;
+}
+
+/*
+ * Prepares Home's opening ahead, once the output shows (BUG-225): the
+ * glyphs of the names in the desktop's language (any not in the printable
+ * ASCII the atlas keeps are rendered on their first use, glass.c), so that
+ * the first frame of the content waits for nothing.
+ */
+static void
+home_prepare(
+	struct zwl_server *server)
+{
+	const char *label;
+	unsigned app;
+
+	/* Once, after the list is read and the first frame (the glyphs' atlas is made by then). */
+	if (home_prepared || home_app_count == 0U || server->frame == 0U)
+		return;
+	home_prepared = 1U;
+
+	/* Each name's glyphs, by measuring it. */
+	for (app = 0U; app < home_app_count; app++) {
+		label = kl_tr(home_apps[app].name);
+		(void)glass_text_width(server, SIZE_TITLE, label);
+	}
+
+	/* The log says it is done. */
+	printf("ZWL HOME prepared names=%u\n", home_app_count);
 }
 
 /*
@@ -1690,6 +1813,18 @@ home_open(
 	server->home_launch_app = -1;
 	server->home_page_press = 0;
 	server->drag = NULL;
+
+	/*
+	 * The content comes in after the stage (BUG-225), from now; Home already
+	 * partly open (a drag let go) shows it whole at once.  The first frames
+	 * of both are logged (the time from the request).
+	 */
+	server->home_asked_ms = zwl_milliseconds();
+	server->home_content_ms = server->home_asked_ms;
+	if (from > 0.0f)
+		server->home_content_ms = 0U;
+	server->home_cover_logged = 0U;
+	server->home_content_logged = 0U;
 	printf("ZWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)zwl_milliseconds());
 	zwl_transition_request(server, "home-open");
 	home_settle(server, from, 1.0f);
@@ -1725,12 +1860,18 @@ home_settle(
 	server->dirty = 1;
 }
 
-/* Starts an application with /bin/sh -c, with the compositor's socket in its environment. */
-static void
+/*
+ * Starts an application with /bin/sh -c, with the compositor's socket in
+ * its environment, or switches to it when it runs already (BUG-232).
+ * Returns 1 when Home was closed by it (the switch), 0 when the caller
+ * closes Home.
+ */
+static int
 home_launch(
 	struct zwl_server *server,
 	unsigned app)
 {
+	struct zwl_object *running;
 	pid_t child;
 	unsigned slot;
 	int differs;
@@ -1739,7 +1880,7 @@ home_launch(
 	differs = strcmp(home_apps[app].command, HOME_LOCK);
 	if (differs == 0) {
 		(void)zwl_lock(server, "home");
-		return;
+		return 0;
 	}
 
 	/*
@@ -1750,14 +1891,27 @@ home_launch(
 	differs = strcmp(home_apps[app].command, HOME_POWER);
 	if (differs == 0) {
 		zwl_power_dialog_open(server, "home");
-		return;
+		return 0;
+	}
+
+	/*
+	 * An application that runs already is not started again (BUG-232, the
+	 * 2026-10-06 user request): its latest window comes to the front (its
+	 * desktop shown, back from minimized, as the layout mode is) and Home
+	 * closes.
+	 */
+	running = home_running_window(server, app);
+	if (running != NULL) {
+		printf("ZWL HOME switch name=%s surface=%u client=%llu\n", home_apps[app].name, running->id, (unsigned long long)running->client->number);
+		zwl_glass_activate(server, running, "home");
+		return 1;
 	}
 
 	/* The application, in its own session with the compositor's socket. */
 	child = zwl_spawn(server, home_apps[app].command);
 	if (child < 0) {
 		printf("ZWL HOME launch name=%s error=%d\n", home_apps[app].name, errno);
-		return;
+		return 0;
 	}
 
 	/* Its icon grows as Home closes, and its first window will grow out of the icon's place. */
@@ -1776,6 +1930,74 @@ home_launch(
 
 	/* Succeeded: the application is starting. */
 	printf("ZWL HOME launch name=%s pid=%d\n", home_apps[app].name, (int)child);
+	return 0;
+}
+
+/*
+ * Finds the latest window (the highest map order, on any desktop) of an
+ * application of the list that runs already: a window whose application ID
+ * has the application's picture (icons.c), or for an application without
+ * a picture the name of its program (the command's first word's last part,
+ * not a shell).  Returns NULL when it does not run.
+ */
+static struct zwl_object *
+home_running_window(
+	struct zwl_server *server,
+	unsigned app)
+{
+	struct zwl_client *client;
+	struct zwl_object *surface;
+	struct zwl_object *found;
+	char program[64];
+	const char *start;
+	size_t length;
+	int picture;
+	int same;
+
+	/* The program's name: the command's first word, after its last slash. */
+	length = strcspn(home_apps[app].command, " ");
+	start = home_apps[app].command;
+	(void)snprintf(program, sizeof(program), "%.*s", (int)length, start);
+	start = strrchr(program, '/');
+	if (start != NULL)
+		memmove(program, start + 1, strlen(start + 1) + 1U);
+
+	/* Every shown toplevel window of every client: the latest one of the application. */
+	found = NULL;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* A mapped window with an application ID, not a dialog or a sheet. */
+			if (surface->kind != ZWL_SURFACE || surface->dead || !surface->mapped)
+				continue;
+			if (surface->role == NULL || surface->cursor_role || surface->parent_window != NULL)
+				continue;
+			if (surface->app_id[0] == '\0')
+				continue;
+
+			/* The application's: by its picture, or by its program's name (a shell starts many). */
+			if (home_apps[app].picture >= 0) {
+				picture = zwl_icon_for_app_id(surface->app_id);
+				if (picture != home_apps[app].picture)
+					continue;
+			} else {
+				same = strcmp(surface->app_id, program);
+				if (same != 0)
+					continue;
+				same = strcmp(program, "sh");
+				if (same == 0)
+					continue;
+			}
+
+			/* The latest. */
+			if (found == NULL || surface->map_order > found->map_order)
+				found = surface;
+		}
+	}
+
+	/* Succeeded: the window, or NULL. */
+	return found;
 }
 
 /* Lays the icons out again for a changed search, selects the first result and says what was found. */
@@ -1886,6 +2108,7 @@ home_page_release(
 {
 	int32_t dx;
 	int32_t dy;
+	int closed;
 	int app;
 
 	/* The press is over. */
@@ -1919,8 +2142,9 @@ home_page_release(
 	/* A click on an icon starts its application; Home closes. */
 	app = home_icon_at(server, server->pointer_x, server->pointer_y);
 	if (app >= 0 && app == server->home_page_app) {
-		home_launch(server, (unsigned)app);
-		home_close(server, progress, "launch");
+		closed = home_launch(server, (unsigned)app);
+		if (!closed)
+			home_close(server, progress, "launch");
 	}
 }
 
