@@ -37,6 +37,7 @@
 #define OVERLAY_TASK_ROW	58
 
 static void overlay_button(struct fm_app *app, struct kl_canvas *canvas, int x, int y, const char *label, int index, int primary);
+static void overlay_card(struct fm_app *app, struct kl_canvas *canvas, int x, int y, int width, int height);
 static void overlay_collision(struct fm_app *app, struct kl_canvas *canvas);
 static void overlay_mount(struct fm_app *app, struct kl_canvas *canvas);
 static void overlay_check(struct fm_app *app, struct kl_canvas *canvas, int x, int y, const char *label, int checked);
@@ -101,11 +102,10 @@ fm_overlay_draw(
 		snprintf(detail, sizeof(detail), "They will not go to the Trash and can't be brought back.");
 	}
 
-	/* The card in the middle of the window. */
+	/* The card in the middle of the window: libkeiland's white panel (ws090-p023). */
 	x = (app->width - OVERLAY_DIALOG_WIDTH) / 2;
 	y = (app->height - OVERLAY_DIALOG_HEIGHT) / 2;
-	kl_canvas_shadow(canvas, (float)x, (float)y + 8.0f, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT, 18.0f, 24.0f, KL_RGBA(0x1f3a66, 70));
-	kl_canvas_round(canvas, (float)x, (float)y, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT, 18.0f, FM_COLOR_PANEL);
+	overlay_card(app, canvas, x, y, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT);
 
 	/* The title and the detail. */
 	(void)kl_text_draw_fit(app->text, canvas, x + 24, y + 40, title, 16U, 1, OVERLAY_DIALOG_WIDTH - 48, FM_COLOR_TEXT);
@@ -143,8 +143,7 @@ fm_tasks_draw(
 	/* The card, as tall as the tasks. */
 	height = 16 + app->task_count * OVERLAY_TASK_ROW;
 	left = x - OVERLAY_TASKS_WIDTH;
-	kl_canvas_shadow(canvas, (float)left, (float)y + 6.0f, OVERLAY_TASKS_WIDTH, (float)height, 16.0f, 18.0f, KL_RGBA(0x1f3a66, 60));
-	kl_canvas_round(canvas, (float)left, (float)y, OVERLAY_TASKS_WIDTH, (float)height, 16.0f, FM_COLOR_PANEL);
+	overlay_card(app, canvas, left, y, OVERLAY_TASKS_WIDTH, height);
 
 	/* Each task: its words, its bar and its cancel button. */
 	for (index = 0; index < app->task_count; index++) {
@@ -199,36 +198,19 @@ overlay_button(
 	int primary)
 {
 	struct kl_rect rect;
-	kl_color ground;
-	kl_color ink;
-	int width;
+	unsigned flags;
 
-	/* The button's colors (1: red, the action that loses something; 2: blue, the default), lit under the pointer. */
-	ground = FM_COLOR_BUTTON;
-	ink = FM_COLOR_TEXT;
-	if (primary == 1) {
-		ground = KL_RGB(0xe5484d);
-		ink = KL_RGB(0xffffff);
-	} else if (primary == 2) {
-		ground = FM_COLOR_ACCENT;
-		ink = KL_RGB(0xffffff);
-	}
-
-	/* Darker under the pointer. */
-	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
-		ground = kl_color_mix(ground, KL_RGB(0x000000), 0.08f);
-
-	/* The pill and its label, centred. */
+	/* libkeiland's button (1: danger, the action that loses something; 2: primary, the default), ws090-p023. */
 	rect.x = x;
 	rect.y = y;
 	rect.width = OVERLAY_BUTTON_WIDTH;
 	rect.height = OVERLAY_BUTTON_HEIGHT;
-	kl_canvas_round(canvas, (float)x, (float)y, OVERLAY_BUTTON_WIDTH, OVERLAY_BUTTON_HEIGHT, OVERLAY_BUTTON_HEIGHT * 0.5f, ground);
-	width = kl_text_width(app->text, label, strlen(label), 13U, 1);
-	(void)kl_text_draw(app->text, canvas, x + (OVERLAY_BUTTON_WIDTH - width) / 2, kl_text_center(13U, y, OVERLAY_BUTTON_HEIGHT), label, strlen(label), 13U, 1, ink);
-
-	/* It can be clicked. */
-	fm_ui_hit(app, &rect, FM_HIT_BUTTON, index);
+	flags = 0U;
+	if (primary == 1)
+		flags = KL_BUTTON_DANGER;
+	else if (primary == 2)
+		flags = KL_BUTTON_PRIMARY;
+	fm_button(app, canvas, &rect, label, index, flags);
 }
 
 /*
@@ -297,8 +279,7 @@ overlay_collision(
 		width = OVERLAY_MERGE_WIDTH;
 	x = (app->width - width) / 2;
 	y = (app->height - OVERLAY_COLLISION_HEIGHT) / 2;
-	kl_canvas_shadow(canvas, (float)x, (float)y + 8.0f, (float)width, OVERLAY_COLLISION_HEIGHT, 18.0f, 24.0f, KL_RGBA(0x1f3a66, 70));
-	kl_canvas_round(canvas, (float)x, (float)y, (float)width, OVERLAY_COLLISION_HEIGHT, 18.0f, FM_COLOR_PANEL);
+	overlay_card(app, canvas, x, y, width, OVERLAY_COLLISION_HEIGHT);
 
 	/* The title and the two lines under it. */
 	(void)kl_text_draw_fit(app->text, canvas, x + 24, y + 40, title, 16U, 1, width - 48, FM_COLOR_TEXT);
@@ -480,8 +461,7 @@ overlay_mount(
 	/* The card in the middle of the window. */
 	x = (app->width - OVERLAY_DIALOG_WIDTH) / 2;
 	y = (app->height - OVERLAY_DIALOG_HEIGHT) / 2;
-	kl_canvas_shadow(canvas, (float)x, (float)y + 8.0f, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT, 18.0f, 24.0f, KL_RGBA(0x1f3a66, 70));
-	kl_canvas_round(canvas, (float)x, (float)y, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT, 18.0f, FM_COLOR_PANEL);
+	overlay_card(app, canvas, x, y, OVERLAY_DIALOG_WIDTH, OVERLAY_DIALOG_HEIGHT);
 
 	/* The title and the detail. */
 	(void)kl_text_draw_fit(app->text, canvas, x + 24, y + 40, title, 16U, 1, OVERLAY_DIALOG_WIDTH - 48, FM_COLOR_TEXT);
@@ -490,4 +470,27 @@ overlay_mount(
 	/* Cancel, and Mount in blue, the default (not red: mounting loses nothing). */
 	overlay_button(app, canvas, x + OVERLAY_DIALOG_WIDTH - 24 - 2 * OVERLAY_BUTTON_WIDTH - 10, y + OVERLAY_DIALOG_HEIGHT - 24 - OVERLAY_BUTTON_HEIGHT, "Cancel", FM_BUTTON_CANCEL, 0);
 	overlay_button(app, canvas, x + OVERLAY_DIALOG_WIDTH - 24 - OVERLAY_BUTTON_WIDTH, y + OVERLAY_DIALOG_HEIGHT - 24 - OVERLAY_BUTTON_HEIGHT, "Mount", FM_BUTTON_CONFIRM, 2);
+}
+
+/* Draws a question's or the operations' card: libkeiland's white panel with its shadow and edge (ws090-p023). */
+static void
+overlay_card(
+	struct fm_app *app,
+	struct kl_canvas *canvas,
+	int x,
+	int y,
+	int width,
+	int height)
+{
+	struct kl_style style;
+	struct kl_rect rect;
+
+	/* Opaque over the dimmed window (never the glass's veil). */
+	fm_style(app, canvas, &style);
+	style.glass = 0;
+	rect.x = x;
+	rect.y = y;
+	rect.width = width;
+	rect.height = height;
+	kl_panel(&style, &rect, 0);
 }

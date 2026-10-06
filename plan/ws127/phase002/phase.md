@@ -2,7 +2,7 @@
 
 # ws127-p002: p001 で見つけた不具合の直し
 
-Status: uncleared（q616-i01、P1、2026-10-03。実装した項目は QEMU と host の試験で PASS。eject は依存が無く未着手、BUG-141/142 は再現せず。結果は末尾）
+Status: cleared（2026-10-06 Q1 の照合: 実装した項目は q616-i01 で PASS、残っていた eject は ws132-p005 で Files に実装され T1-150 で cleared（fm_devices_eject）。BUG-141/142 は再現せず Bug Board のまま）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: q616 / q616-i01（Q1 の dispatch、2026-10-03。時限 4 時間）
