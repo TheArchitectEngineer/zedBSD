@@ -2,7 +2,7 @@
 # ws175-p004: libpdf の文字の書き換え（移動・削除・元の font での内容の変更）と Notes の文字の model
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2: 実装、host 試験 PASS。Q1 の判定待ち）
+Status: cleared（2026-10-06 Q1 判定: host の試験 PASS（edit-scan 9×3、text-change 35/35、notes-edit 41/41・12/12 ×3、ws079 の回帰）。QEMU は p010。Notes の text の UI は p008 の文字の段）
 Disposition: normal
 Queue: Q1 の順（2026-10-06「p008 の後に p004・p005（文字）」）
 依存: [p003](../phase003/phase.md)（cleared）、[p007](../phase007/phase.md)（cleared、Notes の model）
