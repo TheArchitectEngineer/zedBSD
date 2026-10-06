@@ -57,7 +57,6 @@ static int ctap2_map(struct pk_cbor_reader *reader, uint64_t *count);
 static int ctap2_key(struct pk_cbor_reader *reader, uint64_t *key);
 static int ctap2_text_is(const struct pk_cbor_item *item, const char *text);
 static int ctap2_read_info_options(struct pk_cbor_reader *reader, struct pk_info *info);
-static int ctap2_read_made(const char *rp_id, const uint8_t *data, size_t size, struct pk_made_credential *credential);
 static void ctap2_put_descriptor(struct pk_cbor_writer *writer, const uint8_t *id, size_t size);
 static size_t ctap2_hmac_key_size(const struct pk_pin_shared *shared);
 
@@ -617,7 +616,7 @@ pk_ctap2_make_credential(
 		error = pk_cbor_read(&answer, &item);
 		if (error != 0 || item.kind != PK_CBOR_BYTES)
 			return EBADMSG;
-		error = ctap2_read_made(request->rp_id, item.bytes, (size_t)item.value, credential);
+		error = pk_ctap2_read_made(request->rp_id, item.bytes, (size_t)item.value, credential);
 		if (error != 0)
 			return error;
 		found = 1;
@@ -1113,10 +1112,11 @@ ctap2_read_info_options(
  * Reads a new credential's authenticator data: the relying party's hash,
  * the flags (present, attested data), the count, the AAGUID, the
  * credential ID and its COSE key (ES256, on the curve), and nothing after
- * but an extensions map when its flag says so.  Returns 0 or EBADMSG.
+ * but an extensions map when its flag says so; the data itself is kept
+ * with them.  Returns 0 or EBADMSG.
  */
-static int
-ctap2_read_made(
+int
+pk_ctap2_read_made(
 	const char *rp_id,
 	const uint8_t *data,
 	size_t size,
@@ -1134,10 +1134,12 @@ ctap2_read_made(
 	int same;
 	int error;
 
-	/* The fixed part, the AAGUID and the ID's length. */
+	/* The fixed part, the AAGUID and the ID's length; the data kept. */
 	memset(credential, 0, sizeof(*credential));
-	if (size < PK_AUTH_DATA_MIN + 18U)
+	if (size < PK_AUTH_DATA_MIN + 18U || size > sizeof(credential->auth_data))
 		return EBADMSG;
+	memcpy(credential->auth_data, data, size);
+	credential->auth_data_size = size;
 
 	/* The relying party's hash is ours. */
 	party.data = (const uint8_t *)rp_id;

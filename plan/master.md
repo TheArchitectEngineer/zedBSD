@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー（クリック）: Guardrail の OpenSSL の例外を「広げる」→ libpasskey を使う base の道具 fidoctl（WS161）も範囲に（期限は同じ、リリースの前に独自実装へ）。
 - 2026-10-06 夜 ユーザー:「WS152はベータ3に先送りします。」→ WS152（system の更新）は第 1 段から外しベータ3 へ。p001 の検討（U1〜U12）は保存。
 - 2026-10-06 夜 ユーザー（クリック）: Settings の Privacy（WS148）・Security（WS149）・Accessibility（WS151）は 3 つとも「頁を無くす」。Privacy は推奨どおり Files の Recents に「履歴を消す」と Storage に「最近の項目を残す」の switch。Security・Accessibility は頁を取り除くだけ（lock の設定・動きを減らす などは作らない）。q824（P2）。WS152 は第 1 段（ユーザーの列）なので段は「ベータ2」に揃える。
 - 2026-10-06 夜 ユーザー（クリック）: ws089-p013（About の memory と Storage の使用量）を「採る（第 1 段で）」。Q1 が libkeiland の system の照会の API の追加（plan/ws089/proposed/libkeiland-system.md）を許可。Q1 の割り当て: WS152 は第 1 段に含む（ユーザーの列に在る）、WS161・WS172 は P2、WS164 の compositor の起動と WS156 p002 は p022 の merge の後に P2。
