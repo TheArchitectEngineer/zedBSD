@@ -370,8 +370,10 @@ struct pdf_scan_object {
  * What the scan of a page's content found: its objects in the order of the
  * content, the q left open at its end, the Q that had no q to restore
  * (their offsets; each is one byte, "Q"), whether the content ended inside
- * a text object (BT without its ET), and whether objects were left out
- * (past the limit of q's nesting, or after the content stopped).
+ * a text object (BT without its ET), whether objects were left out (past
+ * the limit of q's nesting, or after the content stopped), and the
+ * page's matrix from its user space to the shown space (B, the matrix in
+ * force where the content starts).
  */
 struct pdf_scan {
 	struct pdf_scan_object *objects;
@@ -384,15 +386,16 @@ struct pdf_scan {
 	int in_text;
 	int partial;
 	int error;
+	double base[6];
 };
 
 /* The scan of a page's content (content.c): the objects, and the decoded content they are ranges of. */
 int pdf_content_scan(struct pdf_document *document, size_t index, struct pdf_scan *scan, unsigned char **content, size_t *size, unsigned *read_flags);
 void pdf_scan_free(struct pdf_scan *scan);
-int pdf_content_render(struct pdf_document *document, size_t index, const unsigned char *content, size_t size, struct pdf_display_list **list);
+int pdf_content_render(struct pdf_document *document, size_t index, const unsigned char *content, size_t size, struct pdf_object *resources, struct pdf_display_list **list);
 
 /* The editor's new content (editor.c). */
 struct pdf_buffer;
-int pdf_editor_content(const struct pdf_page_editor *editor, size_t hidden, struct pdf_buffer *out);
+int pdf_editor_content(const struct pdf_page_editor *editor, size_t hidden, const char *prefix, const size_t *names, struct pdf_buffer *out);
 
 #endif /* LIBPDF_INTERNAL_H */

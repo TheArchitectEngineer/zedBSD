@@ -416,6 +416,44 @@ pdf_writer_fill_outline(
 }
 
 /*
+ * Adds an image the document carries without drawing it (ws175-p003: the
+ * editor names it in its own content as name_prefix, "Im" and the index).
+ * The writer takes the image's bytes.  Returns 0, ENOSPC past the
+ * document's limit, or ENOMEM.
+ */
+int
+pdf_writer_add_image_object(
+	struct pdf_writer *writer,
+	const struct pdf_writer_image *image,
+	size_t *index)
+{
+	struct pdf_writer_image *grown;
+	size_t capacity;
+
+	/* Refuses an image past the document's limit. */
+	if (writer->images_count == PDF_WRITER_IMAGE_MAX)
+		return ENOSPC;
+
+	/* Grows the image array when it is full. */
+	if (writer->images_count == writer->images_capacity) {
+		capacity = writer->images_capacity * 2;
+		if (capacity == 0)
+			capacity = 8;
+		grown = realloc(writer->images, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		writer->images = grown;
+		writer->images_capacity = capacity;
+	}
+
+	/* Succeeded: the image is the document's, by its index. */
+	writer->images[writer->images_count] = *image;
+	*index = writer->images_count;
+	writer->images_count++;
+	return 0;
+}
+
+/*
  * Draws an RGBA image into a rectangle of the open page.
  *
  * The pixels are 8-bit red, green, blue and alpha, row by row from the top.

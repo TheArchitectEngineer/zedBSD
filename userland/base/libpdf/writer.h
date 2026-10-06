@@ -162,6 +162,9 @@ struct pdf_writer {
 /* An update's page with its content changed (update.c; the editor's, ws175-p003). */
 int pdf_update_begin_edited(struct pdf_writer *writer, size_t index, struct pdf_buffer *edited);
 
+/* An image the document carries without drawing it (the editor's, ws175-p003): its index names it. */
+int pdf_writer_add_image_object(struct pdf_writer *writer, const struct pdf_writer_image *image, size_t *index);
+
 /* The pages (writer.c). */
 int pdf_writer_add_page(struct pdf_writer *writer, double width, double height, const struct pdf_buffer *prologue, struct pdf_writer_page **page);
 

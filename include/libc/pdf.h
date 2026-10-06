@@ -296,6 +296,25 @@ enum pdf_edit_kind {
 /* An object's flags: a clip is in force where it is drawn; the editor deleted it (ws175-p003). */
 #define PDF_EDIT_OBJECT_CLIPPED	0x1U
 #define PDF_EDIT_OBJECT_DELETED	0x2U
+#define PDF_EDIT_OBJECT_INSERTED	0x4U
+
+/*
+ * An image given to the editor (ws175-p003): a JPEG of one or three
+ * components, its bytes as they are (a four-component JPEG is refused), or
+ * 8-bit RGBA, rows of width pixels, straight alpha.  size is the caller's
+ * sizeof; data and bytes the image's bytes; width and height its pixels.
+ */
+#define PDF_IMAGE_SOURCE_JPEG	1
+#define PDF_IMAGE_SOURCE_RGBA	2
+struct pdf_image_source {
+	size_t size;
+	int kind;
+	const void *data;
+	size_t bytes;
+	size_t width;
+	size_t height;
+	int components;
+};
 
 /*
  * The page's state (pdf_page_editor_status): a content stream could not
@@ -371,6 +390,15 @@ int pdf_page_editor_reset(struct pdf_page_editor *editor, size_t index);
 int pdf_page_editor_delete(struct pdf_page_editor *editor, size_t index);
 int pdf_page_editor_place(struct pdf_page_editor *editor, size_t index, const double transform[6]);
 int pdf_page_editor_render(struct pdf_page_editor *editor, size_t hidden, struct pdf_display_list **list);
+
+/*
+ * An image put in an object's place (fitted into its corners, its own
+ * proportions kept, centred), and an image inserted over the page's objects
+ * (placement maps its unit square onto the shown space, its top left where
+ * (0, 1) goes); the inserted object's index is the last.
+ */
+int pdf_page_editor_set_image(struct pdf_page_editor *editor, size_t index, const struct pdf_image_source *image);
+int pdf_page_editor_insert_image(struct pdf_page_editor *editor, const struct pdf_image_source *image, const double placement[6], size_t *index);
 int pdf_writer_begin_page_edited(struct pdf_writer *writer, const struct pdf_page_editor *editor);
 
 #ifdef __cplusplus
