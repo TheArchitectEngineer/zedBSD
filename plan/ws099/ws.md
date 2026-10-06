@@ -71,7 +71,7 @@ WS035 を閉じた後継。ユーザー:「WS099のゴールも、明確な達�
 | [ws099-p017](phase017/phase.md) | BUG-125のmove/resize再現と試験同期の切り分け。実compositor defectは別Phaseへ | cleared（2026-10-03 Q1、p020・p024 の証拠） | p003/p007のC9実出力 |
 | [ws099-p019](phase019/phase.md) | ユーザー追加: 白樺・湖と発見された抽象版を共通source/3 OS release dataへ。ぼやけた湖を起動default、既存背景の選択を維持 | planned（2026-10-02 ベータ1の計画で再開可に。user の決定は済み、exact scope は [再開資料](../ws094/phase007/q593-resume.md)。3h。q593 の予約 ID の扱いは Q1） | 旧p061資産・q588安全な終端 |
 | [ws099-p020](phase020/phase.md) | **BUG-125（blocking）**: p076 の popup の 2 症状と left resize の settle の原因を guest で弁別し、compositor（と必要なら試験の同期）を直す。B1 | cleared（2026-10-03 Q1、BUG-125 resolved） | p017 の資産（q589 の helper）、Venus の renderer |
-| [ws099-p021](phase021/phase.md) | C2 の geometry（q538: top-right の増分 20、bottom-left/left の settle）と BUG-127（最小化の直後に窓が残る）。B2 | planned（3h） | p020 cleared（同じ shell.c の周り） |
+| [ws099-p021](phase021/phase.md) | C2 の geometry（q538: top-right の増分 20、bottom-left/left の settle）と BUG-127（最小化の直後に窓が残る）。B2 | cleared（2026-10-06 ユーザー: 再現せず非阻害で clear） | p020 cleared（同じ shell.c の周り） |
 | [ws099-p022](phase022/phase.md) | WS099 の全文規約と回帰（WS の最後）。B5 | planning（最後。p019〜p021 の後） | p019・p020・p021、p012 |
 | [ws099-p025](phase025/phase.md) | BUG-146: Venus の guest 試験が app の client の番号を IME の有無に関わらず求める（共有の helper `plan/tools/guest/zwl-clients.sh`、81 本の試験の `client=N` を置き換え） | cleared（q645、T1-039 PASS、97c019b5b の image） | — |
 | [ws099-p026](phase026/phase.md) | BUG-147 の残り: cursor-owner の guest の消失は、criteria.sh の start_guest が guest の起動の失敗を確かめずに次の試験を流したもの（記録の読み）。start の出力を残し、SSH を確かめ、1 回起こし直す、失敗は INFRA と記録 | cleared（q645、T2-002 PASS） | p024 |

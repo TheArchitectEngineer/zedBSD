@@ -87,7 +87,7 @@ swapchainのlease解放はframe/buffer protocol ownerを退役させる。古い
 
 | command | 確認した結果 |
 | --- | --- |
-| `plan/ws014/phase006/tests/run-wayland-client.sh` | 通常とASan/UBSan PASS。private/default queue、wrapper継承、破棄callback抑止、delete_id世代、断片wire、4096 proxy、60016byte partial sendとrights一回、元fd close、CLOEXEC、遅延rights、callback fd所有権と二重close、未送信fd回収、2reader cancel barrier、protocol error、切断 |
+| `plan/ws014/phase006/tests/run-wayland-client.sh`（2026-10-06 削除: 試験の整理の基準、移設前の path で build できず参照が無い） | 通常とASan/UBSan PASS。private/default queue、wrapper継承、破棄callback抑止、delete_id世代、断片wire、4096 proxy、60016byte partial sendとrights一回、元fd close、CLOEXEC、遅延rights、callback fd所有権と二重close、未送信fd回収、2reader cancel barrier、protocol error、切断 |
 | `plan/ws014/tests/run-wayland-wsi-test.sh` | 通常とASan/UBSan PASS。実clientと実WSI、factory有無、extent交差、private queue、fd import、frameとreleaseの分離、FIFO/MAILBOX、replacement、暗黙unmapなし、OOM、terminal loss、allocator回収とcallbackによるerrno変更後のsocket error保持 |
 | `plan/ws014/tests/run-wayland-swapchain-test.sh` | 通常とASan/UBSan PASS。実shared-image creator/swapchain、GPU image copy・CPU readbackなし、external ownership、enqueue失敗rollback、release前acquire不可、timeoutでsignalなし、submit後OOMのdevice/context/per-chain errorと全回収 |
 | `plan/ws030/tests/run-wsi-discovery-test.sh`、同`asan`、同`ubsan` | 旧direct-display discovery/swapchain/native adapterが各PASS。新shared-image hookへ入った場合はdirect専用fixtureがassertする |
