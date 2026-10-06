@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（make menuconfig）: emacs は base（packages/editors の分類をやめた）。desktop の下の試験の program は tree ごと tests へ（userland/desktop/ime-probe → userland/tests/ime-probe、Desktop の menu にあった venus-frame も userland/gpu/venus → userland/tests/venus-frame）。zedinst は削除（userland/retro/zedinst、config の一覧からも）。X11（Xzed・zterm・zshell・zwm・zgears・glxtest・libGL・libX11・session）は userland/retro → userland/x11、menuconfig の Desktop と同じ階層の X11 の submenu へ。Packages に Multimedia の分類を足した（libavcodec が menu から漏れていた）。
 - 2026-10-06 夜 ユーザー: 「トップレベルのmake downloadは、ソースツリーにすべての依存ファイルをフェッチして、完全なソースツリーを作成し、フリーズして安全なメディアに保存する目的のコマンドです。CIで実行するようなものではありません。そして、CIも含めて、ビルドは、トップレベルのmake downloadは絶対に使わず、コンフィグで指定されたパッケージだけを、個別にmakeするときに、対象のMakefileがダウンロードを行います。」→ ci.yml・release.yml から `make download` の step を外した。docs/howto/build-from-source.md も直した。
 - 2026-10-06 夜 ユーザー（クリック、WS169）: メーラの password は「0600 の file に平文で仮置き」（~/.config/keiland/mailer-accounts、秘密の store ができたら替える）。Gmail・Outlook の OAuth2（p006）は「今は IMAP/SMTP だけ」でベータ2 から外す。
 - 2026-10-06 夜 Q1: 第 1 段の 1 パスの間は、各 WS の全文規約の見直しの Phase（conformance）を後に回す（全ての実装の 1 パスの後、WS177 と一緒にまとめて）。正常系の実装を先に。

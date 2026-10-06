@@ -24,7 +24,7 @@ Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS11
 
 ## 既知の事実（2026-10-02、plan と source を読んで）
 
-- 旧インストーラ `/bin/zedinst` は Noct（`userland/retro/zedinst/`、約 3600 行、text と BeUI の画面）。共存・専用（whole disk）・PC-98 の FAT を WS019 で受け入れた。現在の image の config（`config.mk`・`config/ci/config-amd64.mk`）には入っていない。
+- 旧インストーラ `/bin/zedinst` は Noct（`userland/retro/zedinst/`、2026-10-07 に削除、git の履歴にある、約 3600 行、text と BeUI の画面）。共存・専用（whole disk）・PC-98 の FAT を WS019 で受け入れた。現在の image の config（`config.mk`・`config/ci/config-amd64.mk`）には入っていない。
 - 再利用できる base の道具: `diskpart`（GPT の init・編集）、`mkfs`（FAT32・UFS）、`mkswap`、`blkid`、`mount`、`cp`/`pax`、`df`。amd64 の既定の image は native（UEFI、ESP に kernel、UFS の root、swap の partition、`Makefile` の 144 行）。
 - desktop の app は C と libkeiland/libkeiui（Settings・Files・Terminal）。Wayland の client の作りはこれに倣える。
 

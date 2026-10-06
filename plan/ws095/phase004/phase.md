@@ -43,7 +43,7 @@ main の指示（2026-09-29）: zdesktop の変更は新しい file にまとめ
   - 公開の header: `include/libc/wayland/{text-input-unstable-v3,input-method-unstable-v2,virtual-keyboard-unstable-v1}-client-protocol.h`
   - 私的な header: `userland/desktop/libwayland/zed-ime-status-v1-client-protocol.h`
 - **新規（IME の program）**: `userland/desktop/ime/{main.c,method.c,keys.c,program.h,Makefile}`（package `keiland-ime`、`/usr/libexec`、既定では選ばない）
-- **新規（試験の client）**: `userland/desktop/ime-probe/{main.c,Makefile}`（package `ime-probe`）
+- **新規（試験の client）**: `userland/tests/ime-probe/{main.c,Makefile}`（package `ime-probe`）
 - **新規（試験）**: `plan/ws095/tests/{config-amd64-ime.mk,build-ime-image.sh,ime-guest.sh,ime-p004.sh}`
 - **既存の file への差し込み（最小）**
   - `wayland/zwl.h`: 種類 10、`client->ime`、`server->ime`、`zwl_seat_key_deliver` の宣言

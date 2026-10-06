@@ -21,7 +21,7 @@ Decision source: current user, this task (planning only).
 
 ## 現行コードと調査手順
 
-`Makefile` の `ZEDBSD_ROOTFS_TAR_RULE` は `/sbin` を作成する。`userland/base/init/Makefile` はinitの配置先をsbinとし、`userland/retro/zedinst/Makefile` は `/sbin/zedinst` と `/sbin/zedinst-graphic` を宣言する。これは現行ソースの静的確認であり、ユーザーのイメージの内容を確認したものではない。
+`Makefile` の `ZEDBSD_ROOTFS_TAR_RULE` は `/sbin` を作成する。`userland/base/init/Makefile` はinitの配置先をsbinとし、`userland/retro/zedinst/Makefile`（2026-10-07 に削除） は `/sbin/zedinst` と `/sbin/zedinst-graphic` を宣言する。これは現行ソースの静的確認であり、ユーザーのイメージの内容を確認したものではない。
 `platform/pc98/vmunix.mk` のI386_ARCH_FILES、`platform/pc98/rootfs.mk`、プログラム選択とdestination関数、staging→rootfs.img/tar→実際のroot/overlayを追跡する。設定、成果物hash、起動時root/overlayを記録し、別イメージ・古い成果物・配置漏れ・上書きマウントを区別する。原因に対応する最小修正を設計する。
 
 ## 受け入れ・依存

@@ -33,7 +33,7 @@ out-kept
 link-changed
 
 #### cksum -a sha256 prints the digest, two spaces and the name
-# A zedBSD extension the installer reads (userland/retro/zedinst/files.noct).
+# A zedBSD extension the installer reads (userland/retro/zedinst/files.noct、2026-10-07 に削除).
 printf abc > f; cksum -a sha256 -- f; printf 'x' > 'a\b'; cksum -a sha256 'a\b' | cut -c1-2
 ## expect
 ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  f
