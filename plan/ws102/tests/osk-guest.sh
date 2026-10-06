@@ -635,7 +635,7 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		;;
 	workarea)
 		# (p007) The work area: Text Editor docked, a floating wltest 500x400 over it; the QWERTY panel shortens the
-		# docked window (told 1272x412 once: 1280 - 2 x 4 wide, 800 - the 44-pixel bar - the 336-pixel panel - 4 - 4 high, ws099-p031, p038) and moves the floating one up to the area's top (its bottom overhangs);
+		# docked window (told 1264x404 once: 1280 - 2 x 8 wide, 800 - the 44-pixel bar - the 336-pixel panel - 8 - 8 high, ws099-p031, p038) and moves the floating one up to the area's top (its bottom overhangs);
 		# the flick panel narrows the docked window (962x752); closing gives the docked window its size back and moves
 		# the floating one back; one moved by the user while the panel is out stays where it was put.
 		compositor
@@ -650,10 +650,10 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		set -- $(guest "grep -a 'ZWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* surface=\([0-9]*\) x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2 \3/p')
 		wl=${1:-0}; lx=${2:-0}; ly=${3:-0}
 		echo "docked surface $te, floating surface $wl at $lx,$ly"
-		# The QWERTY panel: the docked window 1272x412, the floating one up to y=108 (the area's top under the 44-pixel bar).
+		# The QWERTY panel: the docked window 1264x404, the floating one up to y=108 (the area's top under the 44-pixel bar).
 		swipe 6 792 150 650
 		expect_log 'ZWL OSK work-area right=0 bottom=336'
-		expect_log "ZWL OSK work docked surface=$te width=1272 height=412"
+		expect_log "ZWL OSK work docked surface=$te width=1264 height=404"
 		expect_log "ZWL OSK work moved surface=$wl from=$lx,$ly to=$lx,108"
 		sleep 1
 		pointer move 640 200 sleep 300
@@ -661,12 +661,12 @@ Symbols: (a+b)*2 = c; x/y - 1 >= 0 ~ ok' 30000) || { echo "qwerty-plan: FAILED";
 		# Closed: the docked window whole again, the floating one back.
 		pointer move 1254 488 sleep 200 down sleep 60 up sleep 900
 		expect_log 'ZWL OSK work-area right=0 bottom=0'
-		expect_log "ZWL OSK work docked surface=$te width=1272 height=748"
+		expect_log "ZWL OSK work docked surface=$te width=1264 height=740"
 		expect_log "ZWL OSK work back surface=$wl to=$lx,$ly"
-		# The flick panel: the docked window 954x748 (the floating one fits already, or moves left).
+		# The flick panel: the docked window 946x740 (the floating one fits already, or moves left).
 		swipe 1272 792 1130 650
 		expect_log 'ZWL OSK work-area right=318 bottom=0'
-		expect_log "ZWL OSK work docked surface=$te width=954 height=748"
+		expect_log "ZWL OSK work docked surface=$te width=946 height=740"
 		sleep 1
 		pointer move 400 200 sleep 300
 		shot workarea-flick.png
