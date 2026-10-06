@@ -33,11 +33,9 @@ asan) flags="$flags -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sa
 esac
 mkdir -p "$out/obj"
 # A changed compiler or flags invalidate cached objects without deleting shared output.
-printf '%s\n' "$cc $flags" > "$out/flags.new"
-if ! cmp -s "$out/flags.new" "$out/flags"; then
-	mv "$out/flags.new" "$out/flags"
-else
-	rm "$out/flags.new"
+# (Compared in the shell, not through a scratch file, so that nothing is removed: 2026-10-06 user, deleting is Q1's.)
+if [ ! -f "$out/flags" ] || [ "$(cat "$out/flags")" != "$cc $flags" ]; then
+	printf '%s\n' "$cc $flags" > "$out/flags"
 fi
 
 # The engine's sources, from the package's list (the window's directory stays out).
