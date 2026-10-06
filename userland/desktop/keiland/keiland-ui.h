@@ -771,9 +771,12 @@ struct xdg_toplevel;
  * KL_VERSION 40 (BUG-211): what a KL_WINDOW_AXIS came from (axis_source:
  * a wheel, a touch pad's fingers, or something continuous), and the end of
  * the fingers' scrolling, KL_WINDOW_AXIS_STOP, after which the content may
- * fly on (kl_ui_axis, kl_scroll_axis_stop).
+ * fly on (kl_ui_axis, kl_scroll_axis_stop).  It is 18 (KL_VERSION 43):
+ * KL_VERSION 40 gave it 17, the number KL_WINDOW_ACTION has had since
+ * KL_VERSION 26, so that a lift of the fingers came to an application of
+ * kl_app as an action.
  */
-#define KL_WINDOW_AXIS_STOP	17U
+#define KL_WINDOW_AXIS_STOP	18U
 #define KL_AXIS_SOURCE_WHEEL		0U
 #define KL_AXIS_SOURCE_FINGER		1U
 #define KL_AXIS_SOURCE_CONTINUOUS	2U
