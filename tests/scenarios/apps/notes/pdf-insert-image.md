@@ -1,7 +1,7 @@
 ---
 id: apps.notes.pdf-insert-image
 title: Notes で PDF に PNG と JPEG の画像を挿入する
-status: draft
+status: active
 areas: [notes, libpdf]
 paths: [userland/desktop/notes/, userland/base/libpdf/, userland/base/libz-compat/]
 machine: either
@@ -13,15 +13,15 @@ since: ws175-p001
 Image の道具で PNG（alpha つき）と JPEG を PDF の頁に挿入でき、保存・開き直しの後も編集できることを確かめる（WS175、ws175-p006・p007・p008）。
 
 ## 準備
-- `/tmp/aat-samples/notes-edit.pdf`（`edit-basic.pdf`）、`sample.jpg`（`samples.py`）、`alpha.png`（`make-edit-samples.py` が作る半透明の PNG）。
-- Notes で `notes-edit.pdf` を開き、2 頁を表示（`>` を 1 回）。
+- 補助（`helpers_notes_edit.py`）が `edit-basic.pdf` を `notes-edit.pdf` として、`picture.png`（alpha つき）・`landscape.jpg` と一緒に scenario の folder（`/tmp/aat-work/notes-<id>-<時刻>/`）に置き、Notes で開く。
+- 2 頁を表示（Page Down を 1 回）。
 
 ## 操作と確認
-1. 操作: toolbar の Select の道具を押し、出てきた Image を押して、file chooser（題「Insert Image」）で `alpha.png` を選ぶ。
-   確認事項: 挿入。正解: 見えている頁の中央に画像が選ばれた状態で現れ（頁の幅・高さの半分以内、72 dpi の大きさ以内）、透けた部分から下の頁が見える。確認方法: log `NOTES EDIT insert page=1 kind=image object=I image=WxH`、撮影。
+1. 操作: toolbar の Select の道具を押し、出てきた Image を押して、file chooser（題「Insert Image」）で `picture.png`（160x100、右半分が半透明）を選ぶ（名前の頭の p を打って Enter）。
+   確認事項: 挿入。正解: 見えている頁の中央に画像が選ばれた状態で現れ（頁の幅・高さの半分以内、72 dpi の大きさ以内）、透けた部分から下の頁が見える。確認方法: log `NOTES EDIT insert page=1 kind=image object=I image=160x100`、撮影。
 2. 操作: 挿入した画像を左上へ drag。
    確認事項: 移動。正解: 画像が動く。確認方法: log `NOTES EDIT move page=1 object=I dx= dy=`。
-3. 操作: もう一度 toolbar の Image で `sample.jpg` を選ぶ。
+3. 操作: もう一度 toolbar の Image で `landscape.jpg`（200x120）を選ぶ（l と Enter）。
    確認事項: 2 つ目の挿入。正解: 中央に JPEG。確認方法: log `NOTES EDIT insert page=1 kind=image object=J`（J ≠ I）。
 4. 操作: Ctrl+S、Notes を閉じ、同じ file を Notes で開き直して 2 頁へ。
    確認事項: 開き直し。正解: 2 つの画像が同じ場所に見え、Select の道具の click で選べる。確認方法: log `NOTES OPEN … kind=annotated path=…` の次の `NOTES EDITS opened edits=N edited_pages=1 rebased=0`、`NOTES EDIT select page=1 … kind=image inserted=1`、撮影。
@@ -32,4 +32,4 @@ Image の道具で PNG（alpha つき）と JPEG を PDF の頁に挿入でき�
 1〜5 の正解。
 
 ## 注記
-draft（ws175-p008 で操作と log を実装に合わせた。p010 で T1 が流して active にする）。file の大きさ（deflate の有無、D4）は記録するが合否に使わない。
+ws175-p010 で active（補助 `helpers_notes_edit.py`）。file の大きさ（deflate の有無、D4）は記録するが合否に使わない。

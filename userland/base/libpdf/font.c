@@ -695,10 +695,11 @@ pdf_font_glyph(
 		width = font->code_widths[code & 0xFF];
 	}
 
-	/* A font that gave no width uses the face's advance. */
+	/* A font that gave no width uses the face's advance; glyph 0 is the missing glyph (ws175-p010: not the character's). */
 	if (width < 0.0)
 		width = face_advance(font, glyph_index);
 	glyph->width = width;
+	glyph->missing = glyph_index == 0;
 
 	/* A font without a face or a program draws nothing. */
 	if (font->face == NULL && font->charstrings == NULL)

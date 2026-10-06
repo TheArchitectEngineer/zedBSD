@@ -130,3 +130,7 @@ pdf-edit-text・pdf-insert-text-font）。FreeBSD の Makefile は box.c を足�
 - [M8] 指の long-press、[N13] 表示中の page の前後の外の editor を捨てること（今は各 page の editor を残す）、[M13] の autosave の cache と時間。
 - 文字の段の画面の確認（上）、box の中の clipboard・語の移動・undo、回転した文字の caret [L8]、指で box の caret を動かすこと（指の tap は box に渡していない）、
   box の表示中の zoom・scroll に box が付いて動くこと（今は開いた時の窓の位置に留まる）。
+
+## 積み残し
+
+準正常系・異常系の未実装は [WS177 の P2 の一覧](../../ws177/backlog-p2.md)（2026-10-06 ユーザー「専用の1つのベータ2積み残しというWSに入れてください」）。

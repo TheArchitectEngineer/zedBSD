@@ -32,7 +32,8 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 | [ws175-p008](phase008/phase.md) | Notes の UI: 画像の段（Select の道具・挿入・差し替え・削除・Reset・drag・描画・log）、文字の段（Text の道具・編集の box・IME・Font/Size、ws079-p017 と一つ） | 画像の段 cleared（2026-10-06 Q1、resize の画面は p010）、文字の段は実装済み（host PASS、画面は p010）、判定待ち | p007・p004・p005 |
 | [ws175-p004](phase004/phase.md) | libpdf の文字の書き換え（移動・削除・元の font での内容の変更・正規化 [H1]・ActualText [M10]）と Notes の文字の model | cleared（2026-10-06 Q1、QEMU は p010） | p003・p007 |
 | [ws175-p005](phase005/phase.md) | 置き換えの font（subset・埋め込み・fallback・font の変更）、文字の挿入 | cleared（2026-10-06 Q1、QEMU は p010） | p004 |
-| p009〜p011 | design.md §10 のとおり（p010 T1 → p011 規約） | 未作成 | — |
+| [ws175-p010](phase010/phase.md) | T1 の QEMU で AAT 5 本（補助 `helpers_notes_edit.py`、試料 edit-basic.pdf、シナリオ active）、FAIL の直し 1 回分 | planned（準備済み、T1 の結果待ち） | p008 |
+| p009・p011 | p009 Save Clean Copy は第 2 段（2026-10-06 Q1）、p011 規約は p010 の後 | 未作成 | — |
 
 見積もり: design.md §10（全体 17.5〜21.5 LW、画像を先にする段は約 10 LW）。Q1 の当初の概算は 6 LW。
 

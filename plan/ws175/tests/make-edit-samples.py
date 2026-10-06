@@ -5,7 +5,8 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     make-edit-samples.py FOLDER
 
-writes FOLDER/edit-images.pdf, pages of 200 x 100 points (and edit-text.pdf, text_objects below):
+writes FOLDER/edit-images.pdf, pages of 200 x 100 points (and edit-text.pdf, text_objects below; and edit-basic.pdf,
+the AAT's document, basic_objects below):
 
   1. an image XObject drawn through cm; a form XObject (whose own image is not the page's); an inline image; a Q
      without its q at the top level; a q left open at the end
@@ -100,6 +101,8 @@ def main() -> int:
 	print(f"wrote {folder / 'edit-images.pdf'}")
 	write(folder / "edit-text.pdf", text_objects())
 	print(f"wrote {folder / 'edit-text.pdf'}")
+	write(folder / "edit-basic.pdf", basic_objects())
+	print(f"wrote {folder / 'edit-basic.pdf'}")
 	return 0
 
 
@@ -139,6 +142,99 @@ def text_objects() -> list[bytes]:
 		b"<< /Type /Font /Subtype /Type0 /BaseFont /DejaVuSans /Encoding /Identity-H /DescendantFonts [11 0 R] >>",
 		b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /DejaVuSans /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity)"
 			b" /Supplement 0 >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity /DW 600 >>",
+	]
+
+
+# edit-basic.pdf's lines (ws175-p010): page 1's paragraph and page 3's, in the subset font; page 2's in Helvetica.
+BASIC_PARAGRAPH = [
+	"The quick brown fox jumps over the lazy dog",
+	"pack my box with five dozen liquor jugs",
+	"a third line that the test deletes",
+	"the fourth line keeps its place",
+]
+BASIC_ROTATED = ["rotated page first line", "rotated page second line"]
+BASIC_SIZE = 14
+BASIC_LEFT = 72
+BASIC_TOP = 700
+BASIC_STEP = 20
+BASIC_IMAGE = (72, 420, 240, 150)
+
+
+def basic_objects() -> list[bytes]:
+	"""edit-basic.pdf (ws175-p010, the AAT's apps.notes.pdf-* scenarios): three US Letter pages.
+
+	1. a paragraph of BASIC_PARAGRAPH, 14 points, its baselines from (72, 700) down by 20, in DejaVu Sans subset to the
+	   paragraphs' characters (a simple TrueType font in WinAnsiEncoding, ABCDEF+DejaVuSans: no capital Z, E, B, R or A,
+	   so that words with them need a replacement font), and a JPEG of 320 x 200 drawn at (72, 420), 240 x 150 points
+	2. "Page two stays as it was" in Helvetica (left as it is)
+	3. /Rotate 90: BASIC_ROTATED in the subset font, from (72, 700) down by 20
+	"""
+	import io
+	import logging
+
+	from fontTools import subset
+	from fontTools.ttLib import TTFont
+	from PIL import Image, ImageDraw
+
+	# The font: DejaVu Sans with only the characters the lines use (and the space).
+	characters = "".join(sorted(set(" ".join(BASIC_PARAGRAPH + BASIC_ROTATED))))
+	font = TTFont(str(DEJAVU))
+	logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
+	options = subset.Options()
+	options.notdef_outline = True
+	options.layout_features = []
+	subsetter = subset.Subsetter(options)
+	subsetter.populate(text=characters)
+	subsetter.subset(font)
+	data = io.BytesIO()
+	font.save(data)
+	scale = 1000.0 / font["head"].unitsPerEm
+	cmap = font.getBestCmap()
+	widths = []
+	for code in range(32, 127):
+		name = cmap.get(code)
+		widths.append(b" %d" % round(font["hmtx"][name][0] * scale) if name else b" 0")
+
+	# The JPEG: a gradient with a white square.
+	picture = Image.new("RGB", (320, 200))
+	draw = ImageDraw.Draw(picture)
+	for x in range(320):
+		draw.line([(x, 0), (x, 199)], fill=(255 - x * 255 // 319, 160, x * 255 // 319))
+	draw.rectangle([130, 70, 190, 130], fill=(255, 255, 255))
+	jpeg = io.BytesIO()
+	picture.save(jpeg, "JPEG", quality=90)
+
+	# The pages' content.
+	def lines(texts: list[str]) -> bytes:
+		out = b"BT /F1 %d Tf %d TL %d %d Td" % (BASIC_SIZE, BASIC_STEP, BASIC_LEFT, BASIC_TOP)
+		for number, text in enumerate(texts):
+			if number > 0:
+				out += b" T*"
+			out += b" (" + text.encode("ascii") + b") Tj"
+		return out + b" ET\n"
+	left, bottom, width, height = BASIC_IMAGE
+	page1 = lines(BASIC_PARAGRAPH) + b"q %d 0 0 %d %d %d cm /Im1 Do Q\n" % (width, height, left, bottom)
+	page2 = b"BT /F2 24 Tf 72 700 Td (Page two stays as it was) Tj ET\n"
+	page3 = lines(BASIC_ROTATED)
+	fonts = b"<< /Font << /F1 9 0 R /F2 12 0 R >> /XObject << /Im1 8 0 R >> >>"
+	return [
+		b"<< /Type /Catalog /Pages 2 0 R >>",
+		b"<< /Type /Pages /Kids [3 0 R 5 0 R 13 0 R] /Count 3 >>",
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources " + fonts + b" /Contents 4 0 R >>",
+		stream(b"<< >>", page1),
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources " + fonts + b" /Contents 6 0 R >>",
+		stream(b"<< >>", page2),
+		b"<< >>",
+		stream(b"<< /Type /XObject /Subtype /Image /Width 320 /Height 200 /ColorSpace /DeviceRGB /BitsPerComponent 8"
+			b" /Filter /DCTDecode >>", jpeg.getvalue()),
+		b"<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+DejaVuSans /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126"
+			b" /Widths [" + b"".join(widths) + b"] /FontDescriptor 10 0 R >>",
+		b"<< /Type /FontDescriptor /FontName /ABCDEF+DejaVuSans /Flags 32 /FontBBox [-1021 -463 1793 1232] /ItalicAngle 0"
+			b" /Ascent 928 /Descent -236 /CapHeight 729 /StemV 80 /FontFile2 11 0 R >>",
+		stream(b"<< /Length1 %d >>" % len(data.getvalue()), data.getvalue()),
+		b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Rotate 90 /Resources " + fonts + b" /Contents 14 0 R >>",
+		stream(b"<< >>", page3),
 	]
 
 
