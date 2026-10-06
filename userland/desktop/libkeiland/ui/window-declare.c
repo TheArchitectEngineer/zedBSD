@@ -39,6 +39,9 @@ static void declare_menu_activated(void *data, struct kl_window_menu *window_men
 static void declare_popup_activated(void *data, struct kl_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
 static void declare_popup_done(void *data, struct kl_context_menu *context_menu);
 static void declare_control_activated(void *data, struct kl_titlebar *titlebar, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void declare_text_changed(void *data, struct kl_titlebar *titlebar, uint32_t id, const char *text);
+static void declare_text_done(void *data, struct kl_titlebar *titlebar, uint32_t id, const char *text, unsigned how);
+static void declare_text(struct kl_window *window, unsigned kind, uint32_t id, const char *text, unsigned how);
 
 /* What the window menu tells the window: only the choices. */
 static const struct kl_window_menu_listener declare_menu_listener = {
@@ -53,11 +56,11 @@ static const struct kl_context_menu_listener declare_popup_listener = {
 	declare_popup_done
 };
 
-/* What the titlebar tells the window: only the controls chosen. */
+/* What the titlebar tells the window: the controls chosen, and a field's text (KL_VERSION 43). */
 static const struct kl_titlebar_listener declare_titlebar_listener = {
 	declare_control_activated,
-	NULL,
-	NULL,
+	declare_text_changed,
+	declare_text_done,
 	NULL,
 	NULL,
 	NULL,
@@ -205,6 +208,71 @@ kl_window_set_controls(
 	/* What changed from the table shown. */
 	error = keiui_declare_controls(&window->control_model, entries, count, &window->action_states, declare_control_sink, window->titlebar);
 	return error;
+}
+
+/*
+ * Sets a control's text and placeholder in one transaction of the
+ * titlebar (KL_VERSION 43).  Returns 0, EINVAL, ENOTSUP without the
+ * titlebar, or the titlebar's refusal.
+ */
+int
+kl_window_set_control_text(
+	struct kl_window *window,
+	uint32_t id,
+	const char *text,
+	const char *placeholder)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL)
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The text and the placeholder, together. */
+	error = kl_titlebar_begin(window->titlebar);
+	if (error != 0)
+		return error;
+	error = kl_titlebar_set_control_text(window->titlebar, id, text, placeholder);
+	if (error != 0) {
+		(void)kl_titlebar_commit(window->titlebar);
+		return error;
+	}
+
+	/* Shown. */
+	error = kl_titlebar_commit(window->titlebar);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Gives a control's field the keyboard (KL_VERSION 43).  Returns 0,
+ * EINVAL, ENOTSUP without the titlebar, or the titlebar's refusal.
+ */
+int
+kl_window_focus_control(
+	struct kl_window *window,
+	uint32_t id)
+{
+	int error;
+
+	/* A window whose controls are shown. */
+	if (window == NULL)
+		return EINVAL;
+	if (window->titlebar == NULL)
+		return ENOTSUP;
+
+	/* The field takes the keyboard. */
+	error = kl_titlebar_focus_control(window->titlebar, id, KL_FOCUS_FIELD);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /*
@@ -541,11 +609,14 @@ declare_menu_activated(
 	struct wl_seat *seat,
 	uint32_t serial)
 {
-	/* The action, among the inputs. */
+	struct kl_window *window;
+
+	/* The choice is the window's last input (for the clipboard), and its action goes among the inputs. */
 	(void)window_menu;
 	(void)seat;
-	(void)serial;
-	declare_action(data, action, item, 0U);
+	window = data;
+	window->serial = serial;
+	declare_action(window, action, item, 0U);
 }
 
 /* An item of the context menu was chosen. */
@@ -557,10 +628,13 @@ declare_popup_activated(
 	uint32_t action,
 	uint32_t serial)
 {
-	/* The action, among the inputs. */
+	struct kl_window *window;
+
+	/* The choice is the window's last input (for the clipboard), and its action goes among the inputs. */
 	(void)context_menu;
-	(void)serial;
-	declare_action(data, action, item, 0U);
+	window = data;
+	window->serial = serial;
+	declare_action(window, action, item, 0U);
 }
 
 /* The context menu closed (told last, once): it is destroyed. */
@@ -592,15 +666,75 @@ declare_control_activated(
 	const struct keiui_declare_item *control;
 	struct kl_window *window;
 
-	/* The control of the ID, when the window shows it. */
+	/* The control of the ID, when the window shows it; the choice is the window's last input. */
 	(void)titlebar;
 	(void)seat;
-	(void)serial;
 	window = data;
+	window->serial = serial;
 	control = keiui_declare_find(&window->control_model, id);
 	if (control == NULL)
 		return;
 
 	/* Its action. */
 	declare_action(window, control->action, id, detail);
+}
+
+/* A field's text as it is typed: among the inputs (KL_VERSION 43). */
+static void
+declare_text_changed(
+	void *data,
+	struct kl_titlebar *titlebar,
+	uint32_t id,
+	const char *text)
+{
+	/* The input. */
+	(void)titlebar;
+	declare_text(data, KL_WINDOW_CONTROL_TEXT, id, text, 0U);
+}
+
+/* A field's editing ended: its text and how, among the inputs (KL_VERSION 43). */
+static void
+declare_text_done(
+	void *data,
+	struct kl_titlebar *titlebar,
+	uint32_t id,
+	const char *text,
+	unsigned how)
+{
+	/* The input. */
+	(void)titlebar;
+	declare_text(data, KL_WINDOW_CONTROL_DONE, id, text, how);
+}
+
+/* Queues a field's text among the window's inputs (a full queue drops it; a long text is cut). */
+static void
+declare_text(
+	struct kl_window *window,
+	unsigned kind,
+	uint32_t id,
+	const char *text,
+	unsigned how)
+{
+	struct kl_window_event *event;
+	size_t length;
+
+	/* The input. */
+	event = keiui_window_push(window, kind);
+	if (event == NULL)
+		return;
+	event->id = (int32_t)id;
+	event->code = how;
+
+	/* Its text, cut at a character's start when it is too long. */
+	length = 0U;
+	if (text != NULL)
+		length = strlen(text);
+	if (length >= sizeof(event->text)) {
+		length = sizeof(event->text) - 1U;
+		while (length > 0U && ((unsigned char)text[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+	if (length != 0U)
+		memcpy(event->text, text, length);
+	event->text[length] = '\0';
 }

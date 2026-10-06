@@ -41,7 +41,7 @@
 /* How often frames are drawn while the fingers or the view's scroll move, in milliseconds. */
 #define MAIN_FRAME_MS		16
 
-/* The text view's id among the parts the fingers' input records, and the dialog's (libkeiland's kui_dialog). */
+/* The text view's id among the parts the fingers' input records, and the dialog's (libkeiland's kl_dialog). */
 #define MAIN_TEXT_REGION	1U
 #define MAIN_DIALOG		2U
 
@@ -110,7 +110,7 @@ static uint32_t main_height;
  * the text view's touch (one finger selects, two scroll) and the scroll.
  * Made with the window, destroyed before it.
  */
-static struct kui_ui *main_input;
+static struct kl_ui *main_input;
 
 /* Whether the fingers or the view's scroll still move (the loop draws the next frame soon). */
 static int main_moving;
@@ -120,8 +120,8 @@ static int main_moving;
  * replacement, filled from the editor each time the panel opens (the
  * editor's replace_fresh) and kept while it is open.
  */
-static struct kui_field main_find_field;
-static struct kui_field main_with_field;
+static struct kl_field main_find_field;
+static struct kl_field main_with_field;
 
 /* Whether the compositor asked to close the window or gave it a new size, since the loop last looked. */
 static int main_closed;
@@ -158,11 +158,11 @@ static uint32_t *main_pixels;
 static struct te_canvas main_canvas;
 
 /* libkeiland's canvas over the same pixels, which the text view's handles, a message's chip and a dialog are drawn with (made with main_canvas). */
-static struct kui_canvas main_handles;
+static struct kl_canvas main_handles;
 static int main_handles_made;
 
 /* The interface's font as libkeiland's text, for the chip and the dialog (open when main_widgets_text is 1). */
-static struct kui_text main_widgets;
+static struct kl_text main_widgets;
 static int main_widgets_text;
 
 /* The title the window shows now, to set it again only when it changes. */
@@ -173,7 +173,7 @@ static char main_title[MAIN_TITLE_MAX];
  * is destroyed when it answers, and by the main loop when the editor stops
  * waiting for it (Quit while it is open).
  */
-static struct kui_file_chooser *main_chooser;
+static struct kl_file_chooser *main_chooser;
 
 /* The desktop's appearance watched (ws089-p017): the editor draws in its colours (draw.c); NULL without it. */
 static struct kl_appearance *main_appearance;
@@ -185,7 +185,7 @@ static const char *main_ui_font;
  * The filters the chooser offers: the kinds of files that are plain text,
  * and every file.
  */
-static const struct kui_file_filter main_filters[] = {
+static const struct kl_file_filter main_filters[] = {
 	{ "Text Files", "txt text md markdown rst c h cc cpp hpp py sh mk conf cfg ini json xml html css js log csv tsv yaml yml toml" },
 	{ "All Files", NULL }
 };
@@ -202,7 +202,7 @@ static void main_title_refresh(void);
 static void main_edit_state(const struct te_state *state);
 static void main_opened(void);
 static void main_recent_refresh(void);
-static void main_replace_panel(uint64_t now_us, const struct kui_style *style, const struct kui_rect *area);
+static void main_replace_panel(uint64_t now_us, const struct kl_style *style, const struct kl_rect *area);
 static void main_host(struct te_app *app);
 static void main_copy(void *data, const char *text, size_t length);
 static size_t main_paste(void *data, char *text, size_t size);
@@ -211,11 +211,11 @@ static size_t main_paste_primary(void *data, char *text, size_t size);
 static void main_context_menu(void *data, int x, int y);
 static void main_find_focus(void *data);
 static int main_choose(void *data, int saving, const char *folder, const char *name);
-static void main_window_event(const struct kui_window_event *event);
+static void main_window_event(const struct kl_window_event *event);
 static void main_fingers(uint64_t now_us);
-static int main_dialog_event(const struct kui_window_event *event);
+static int main_dialog_event(const struct kl_window_event *event);
 static int main_resize(void);
-static void main_chosen(void *data, struct kui_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void main_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static void main_appearance_changed(void *data, unsigned appearance);
 
 /*
@@ -227,7 +227,7 @@ main(
 	char **argv)
 {
 	struct main_options options;
-	struct kui_window_options window_options;
+	struct kl_window_options window_options;
 	struct te_state state;
 	int status;
 	int error;
@@ -248,7 +248,7 @@ main(
 		te_log("FONT missing path=%s error=%d", options.ui_font, error);
 
 	/* The chip and the dialog draw with it too, as libkeiland's text. */
-	error = kui_text_open(&main_widgets, options.ui_font, options.fallback);
+	error = kl_text_open(&main_widgets, options.ui_font, options.fallback);
 	if (error == 0)
 		main_widgets_text = 1;
 
@@ -262,8 +262,8 @@ main(
 	window_options.application = MAIN_APPLICATION;
 	window_options.width = options.width;
 	window_options.height = options.height;
-	window_options.present = KUI_PRESENT_VULKAN;
-	main_window.kui = kui_window_open(&window_options);
+	window_options.present = KL_PRESENT_VULKAN;
+	main_window.kui = kl_window_open(&window_options);
 	if (main_window.kui == NULL) {
 		fprintf(stderr, "TEXTEDIT FAILED operation=window error=%d\n", errno);
 		te_text_close(&main_ui);
@@ -272,10 +272,10 @@ main(
 	}
 
 	/* The presenter's size, which the frames are drawn at. */
-	error = kui_window_present_resize(main_window.kui, &main_width, &main_height);
+	error = kl_window_present_resize(main_window.kui, &main_width, &main_height);
 	if (error != 0) {
 		fprintf(stderr, "TEXTEDIT FAILED operation=present error=%d\n", error);
-		kui_window_close(main_window.kui);
+		kl_window_close(main_window.kui);
 		te_text_close(&main_ui);
 		te_text_close(&main_body);
 		return 1;
@@ -284,17 +284,17 @@ main(
 	/* The editor at that size, with the file when one was given, and the window's services. */
 	te_app_init(&main_app, &main_body, &main_ui, (int)main_width, (int)main_height);
 	main_host(&main_app);
-	main_app.glass = te_glass_open(&main_glass, &main_window, kui_window_see_through(main_window.kui));
+	main_app.glass = te_glass_open(&main_glass, &main_window, kl_window_see_through(main_window.kui));
 
 	/* The desktop's appearance: the editor's colours follow it (light under a compositor without it). */
-	error = kl_appearance_open(kui_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
+	error = kl_appearance_open(kl_window_display(main_window.kui), main_appearance_changed, NULL, &main_appearance);
 	if (error != 0)
 		te_log("APPEARANCE none errno=%d", error);
 	if (options.file != NULL)
 		(void)te_app_open(&main_app, options.file);
 
 	/* The fingers' input; without memory for it the fingers do nothing. */
-	main_input = kui_ui_create();
+	main_input = kl_ui_create();
 	if (main_input == NULL)
 		te_log("TOUCH failed errno=%d", ENOMEM);
 
@@ -320,22 +320,22 @@ main(
 	status = main_loop(&options);
 
 	/* Everything goes, the chooser, the titlebar, the menus and the editor before the window they belong to. */
-	kui_file_chooser_destroy(main_chooser);
+	kl_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
 	te_titlebar_close(&main_titlebar);
 	te_menu_close(&main_menu);
-	kui_ui_destroy(main_input);
+	kl_ui_destroy(main_input);
 	te_glass_close(&main_glass);
 	kl_appearance_close(main_appearance);
 	te_app_release(&main_app);
 	if (main_handles_made)
-		kui_canvas_release(&main_handles);
+		kl_canvas_release(&main_handles);
 	free(main_pixels);
-	kui_window_close(main_window.kui);
+	kl_window_close(main_window.kui);
 	te_text_close(&main_ui);
 	te_text_close(&main_body);
 	if (main_widgets_text)
-		kui_text_close(&main_widgets);
+		kl_text_close(&main_widgets);
 
 	/* Reports how the run ended. */
 	if (status != 0)
@@ -520,7 +520,7 @@ static int
 main_loop(
 	const struct main_options *options)
 {
-	struct kui_window_event window_event;
+	struct kl_window_event window_event;
 	struct te_event event;
 	struct te_state state;
 	uint64_t started;
@@ -555,7 +555,7 @@ main_loop(
 		due = te_app_tick(&main_app, now);
 		if (due >= 0 && due < timeout)
 			timeout = due;
-		due = kui_window_repeat_wait(main_window.kui, kui_clock_us());
+		due = kl_window_repeat_wait(main_window.kui, kl_clock_us());
 		if (due >= 0 && due < timeout)
 			timeout = due;
 		if (main_moving && timeout > MAIN_FRAME_MS)
@@ -564,7 +564,7 @@ main_loop(
 			timeout = 0;
 
 		/* Waits; a lost connection ends the run. */
-		status = kui_window_dispatch(main_window.kui, timeout);
+		status = kl_window_dispatch(main_window.kui, timeout);
 		if (status != 0) {
 			te_log("DONE reason=disconnected");
 			return 0;
@@ -573,11 +573,11 @@ main_loop(
 		/* A key held repeats once the compositor's input is in, so that its release is seen first (BUG-111). */
 		now = te_clock();
 		main_app.now = now;
-		(void)kui_window_repeat(main_window.kui, kui_clock_us());
+		(void)kl_window_repeat(main_window.kui, kl_clock_us());
 
 		/* The window's input: the pointer, the keys and the focus become the editor's, the fingers go to libkeiland. */
 		for (;;) {
-			taken = kui_window_take(main_window.kui, &window_event);
+			taken = kl_window_take(main_window.kui, &window_event);
 			if (taken == 0)
 				break;
 			main_window_event(&window_event);
@@ -592,14 +592,14 @@ main_loop(
 		}
 
 		/* The text input is asked for where the text is edited: not under a dialog or the chooser. */
-		kui_window_text_input(main_window.kui, main_app.dialog == TE_DIALOG_NONE && !main_app.choosing);
+		kl_window_text_input(main_window.kui, main_app.dialog == TE_DIALOG_NONE && !main_app.choosing);
 
 		/* The fingers at this time: their selection, taps and menus, and the view's scroll. */
-		main_fingers(kui_clock_us());
+		main_fingers(kl_clock_us());
 
 		/* A chooser the editor no longer waits for (Quit came meanwhile) closes. */
 		if (main_chooser != NULL && !main_app.choosing) {
-			kui_file_chooser_destroy(main_chooser);
+			kl_file_chooser_destroy(main_chooser);
 			main_chooser = NULL;
 		}
 
@@ -654,7 +654,7 @@ main_loop(
 static int
 main_frame(void)
 {
-	struct kui_rect clip;
+	struct kl_rect clip;
 	struct te_rect caret;
 	struct te_rect text;
 	unsigned stale;
@@ -665,23 +665,23 @@ main_frame(void)
 		/* The frame on the CPU, and the fingers' handles over the text (within it, and a knob's size around it). */
 		te_draw(&main_app, &main_canvas);
 		te_app_text_rect(&main_app, &text);
-		clip.x = text.x - KUI_TEXT_HANDLE;
+		clip.x = text.x - KL_TEXT_HANDLE;
 		clip.y = text.y;
-		clip.width = text.width + 2 * KUI_TEXT_HANDLE;
-		clip.height = text.height + KUI_TEXT_HANDLE;
-		kui_canvas_clip_push(&main_handles, &clip);
-		kui_text_touch_draw_handles(&main_app.touch, &main_handles, (double)text.x - main_app.scroll_x, (double)text.y - main_app.scroll_y, kui_theme_default());
-		kui_canvas_clip_pop(&main_handles);
+		clip.width = text.width + 2 * KL_TEXT_HANDLE;
+		clip.height = text.height + KL_TEXT_HANDLE;
+		kl_canvas_clip_push(&main_handles, &clip);
+		kl_text_touch_draw_handles(&main_app.touch, &main_handles, (double)text.x - main_app.scroll_x, (double)text.y - main_app.scroll_y, kl_theme_default());
+		kl_canvas_clip_pop(&main_handles);
 
 		/* A message's chip and a dialog over it all. */
-		main_overlay(kui_clock_us());
+		main_overlay(kl_clock_us());
 
 		/* Its glass card, and the frame shown in the window. */
 		te_glass_refresh(&main_glass, &main_app);
-		status = kui_window_present(main_window.kui, main_pixels, (size_t)main_width);
+		status = kl_window_present(main_window.kui, main_pixels, (size_t)main_width);
 		if (status == 0) {
 			te_app_caret_rect(&main_app, &caret);
-			kui_window_text_cursor(main_window.kui, caret.x, caret.y, caret.width, caret.height);
+			kl_window_text_cursor(main_window.kui, caret.x, caret.y, caret.width, caret.height);
 			return 0;
 		}
 
@@ -707,9 +707,9 @@ static void
 main_overlay(
 	uint64_t now_us)
 {
-	struct kui_style style;
-	struct kui_event event;
-	struct kui_rect area;
+	struct kl_style style;
+	struct kl_event event;
+	struct kl_rect area;
 	struct te_rect card;
 	const char *const *labels;
 	const char *words;
@@ -725,7 +725,7 @@ main_overlay(
 	/* The widgets draw over the frame, on the window's card. */
 	style.canvas = &main_handles;
 	style.text = &main_widgets;
-	style.theme = kui_theme_default();
+	style.theme = kl_theme_default();
 	style.glass = main_app.glass;
 	te_app_card(&main_app, &card);
 	area.x = card.x;
@@ -735,7 +735,7 @@ main_overlay(
 
 	/* A message, at the bottom middle of the card. */
 	if (main_app.message[0] != '\0')
-		kui_chip(&style, card.x + card.width / 2, card.y + card.height - MAIN_CHIP_BOTTOM, main_app.message);
+		kl_chip(&style, card.x + card.width / 2, card.y + card.height - MAIN_CHIP_BOTTOM, main_app.message);
 
 	/* The dialog, a frame of the fingers' and the pointer's input of its own. */
 	if (main_app.dialog == TE_DIALOG_NONE || main_input == NULL)
@@ -749,13 +749,13 @@ main_overlay(
 
 	/* Any other dialog: its words and buttons (libkeiland's dialog). */
 	te_app_dialog_words(&main_app, title, sizeof(title), &words, &labels, &count);
-	kui_ui_begin(main_input, now_us);
-	answer = kui_dialog(main_input, &style, MAIN_DIALOG, &area, title, words, labels, count);
-	main_moving = kui_ui_end(main_input, now_us);
+	kl_ui_begin(main_input, now_us);
+	answer = kl_dialog(main_input, &style, MAIN_DIALOG, &area, title, words, labels, count);
+	main_moving = kl_ui_end(main_input, now_us);
 
 	/* What no part took under a dialog is nothing. */
 	for (;;) {
-		taken = kui_ui_take(main_input, &event);
+		taken = kl_ui_take(main_input, &event);
 		if (taken == 0)
 			break;
 	}
@@ -772,7 +772,7 @@ main_resize(void)
 	int status;
 
 	/* The presenter at the window's size. */
-	status = kui_window_present_resize(main_window.kui, &main_width, &main_height);
+	status = kl_window_present_resize(main_window.kui, &main_width, &main_height);
 	if (status != 0) {
 		fprintf(stderr, "TEXTEDIT FAILED operation=present error=%d\n", status);
 		return -1;
@@ -814,9 +814,9 @@ main_canvas_make(void)
 
 	/* libkeiland's canvas over the same pixels, for the handles. */
 	if (main_handles_made)
-		kui_canvas_release(&main_handles);
+		kl_canvas_release(&main_handles);
 	main_handles_made = 0;
-	status = kui_canvas_init(&main_handles, main_pixels, (size_t)main_width, (int)main_width, (int)main_height);
+	status = kl_canvas_init(&main_handles, main_pixels, (size_t)main_width, (int)main_width, (int)main_height);
 	if (status != 0)
 		return -1;
 	main_handles_made = 1;
@@ -849,7 +849,7 @@ main_state(
 /*
  * Tells the window's editing state -- a selection, something to paste,
  * something to undo or redo -- which the on-screen keyboard's editing
- * buttons follow (KUI_VERSION 8, ws102-p023); the library sends it only
+ * buttons follow (KL_VERSION 18, ws102-p023); the library sends it only
  * when it changed.
  */
 static void
@@ -862,17 +862,17 @@ main_edit_state(
 	/* The state's bits. */
 	flags = 0U;
 	if (state->selected)
-		flags |= KUI_EDIT_HAS_SELECTION;
+		flags |= KL_EDIT_HAS_SELECTION;
 	if (state->can_undo)
-		flags |= KUI_EDIT_CAN_UNDO;
+		flags |= KL_EDIT_CAN_UNDO;
 	if (state->can_redo)
-		flags |= KUI_EDIT_CAN_REDO;
-	paste = kui_window_can_paste(main_window.kui);
+		flags |= KL_EDIT_CAN_REDO;
+	paste = kl_window_can_paste(main_window.kui);
 	if (paste)
-		flags |= KUI_EDIT_CAN_PASTE;
+		flags |= KL_EDIT_CAN_PASTE;
 
 	/* Succeeded: the window tells it before its next wait. */
-	kui_window_edit_state(main_window.kui, flags);
+	kl_window_edit_state(main_window.kui, flags);
 }
 
 /* Sets the window's title when it changed: "• " for unsaved changes, the document's name and the application's. */
@@ -896,7 +896,7 @@ main_title_refresh(void)
 	if (same == 0)
 		return;
 	snprintf(main_title, sizeof(main_title), "%s", title);
-	kui_window_set_title(main_window.kui, main_title);
+	kl_window_set_title(main_window.kui, main_title);
 	te_log("TITLE %s", main_title);
 }
 
@@ -917,7 +917,7 @@ main_opened(void)
 	absolute = realpath(main_app.path, resolved);
 	if (absolute == NULL)
 		return;
-	error = keiland_recent_add(resolved, MAIN_APPLICATION);
+	error = kl_recent_add(resolved, MAIN_APPLICATION);
 	if (error != 0)
 		te_log("RECENT failed errno=%d", error);
 
@@ -933,7 +933,7 @@ main_opened(void)
 static void
 main_recent_refresh(void)
 {
-	static struct keiland_recent_item items[64];
+	static struct kl_recent_item items[64];
 	size_t count;
 	size_t index;
 	size_t kept;
@@ -943,7 +943,7 @@ main_recent_refresh(void)
 
 	/* The list (an unreadable one shows no file). */
 	count = 0;
-	error = keiland_recent_list(items, sizeof(items) / sizeof(items[0]), &count);
+	error = kl_recent_list(items, sizeof(items) / sizeof(items[0]), &count);
 	if (error != 0) {
 		te_log("RECENT list failed errno=%d", error);
 		count = 0;
@@ -980,12 +980,12 @@ main_recent_refresh(void)
 static void
 main_replace_panel(
 	uint64_t now_us,
-	const struct kui_style *style,
-	const struct kui_rect *area)
+	const struct kl_style *style,
+	const struct kl_rect *area)
 {
-	struct kui_event event;
-	struct kui_rect panel;
-	struct kui_rect rect;
+	struct kl_event event;
+	struct kl_rect panel;
+	struct kl_rect rect;
 	char selected[TE_FIND_MAX];
 	const char *newline;
 	size_t start;
@@ -1013,12 +1013,12 @@ main_replace_panel(
 		}
 
 		/* The fields, and the keyboard for the replacement (for the text to find when there is none yet). */
-		kui_field_set(&main_find_field, selected);
-		kui_field_set(&main_with_field, main_app.replace_with);
+		kl_field_set(&main_find_field, selected);
+		kl_field_set(&main_with_field, main_app.replace_with);
 		if (main_find_field.length == 0U) {
-			kui_ui_set_focus(main_input, MAIN_REPLACE_FIND, 0);
+			kl_ui_set_focus(main_input, MAIN_REPLACE_FIND, 0);
 		} else {
-			kui_ui_set_focus(main_input, MAIN_REPLACE_WITH, 0);
+			kl_ui_set_focus(main_input, MAIN_REPLACE_WITH, 0);
 		}
 
 		/* The log line the tests read. */
@@ -1035,54 +1035,54 @@ main_replace_panel(
 	panel.height = MAIN_REPLACE_HEIGHT;
 
 	/* The frame of input of its own: the panel, the two fields and the buttons. */
-	kui_ui_begin(main_input, now_us);
-	kui_panel(style, &panel, 0);
-	top = kui_card(style, &panel, "Replace", "The next place found is selected; Replace All can be undone at once.");
+	kl_ui_begin(main_input, now_us);
+	kl_panel(style, &panel, 0);
+	top = kl_card(style, &panel, "Replace", "The next place found is selected; Replace All can be undone at once.");
 	rect.x = panel.x + 20;
 	rect.width = panel.width - 40;
 	rect.height = MAIN_REPLACE_ROW;
 	rect.y = top;
-	find_flags = kui_field(main_input, style, MAIN_REPLACE_FIND, &rect, &main_find_field, "Find");
+	find_flags = kl_field(main_input, style, MAIN_REPLACE_FIND, &rect, &main_find_field, "Find");
 	rect.y = top + MAIN_REPLACE_ROW + MAIN_REPLACE_GAP;
-	with_flags = kui_field(main_input, style, MAIN_REPLACE_WITH, &rect, &main_with_field, "Replace with");
+	with_flags = kl_field(main_input, style, MAIN_REPLACE_WITH, &rect, &main_with_field, "Replace with");
 
 	/* The buttons at the bottom right: Replace (the default), Replace All, Done. */
 	rect.y = top + 2 * (MAIN_REPLACE_ROW + MAIN_REPLACE_GAP) + 4;
-	rect.width = kui_button_width(style, "Replace");
+	rect.width = kl_button_width(style, "Replace");
 	rect.x = panel.x + panel.width - 20 - rect.width;
-	replace_one = kui_button(main_input, style, MAIN_REPLACE_ONE, &rect, "Replace", KUI_BUTTON_PRIMARY);
-	rect.width = kui_button_width(style, "Replace All");
+	replace_one = kl_button(main_input, style, MAIN_REPLACE_ONE, &rect, "Replace", KL_BUTTON_PRIMARY);
+	rect.width = kl_button_width(style, "Replace All");
 	rect.x -= rect.width + 10;
-	replace_all = kui_button(main_input, style, MAIN_REPLACE_ALL, &rect, "Replace All", 0U);
-	rect.width = kui_button_width(style, "Done");
+	replace_all = kl_button(main_input, style, MAIN_REPLACE_ALL, &rect, "Replace All", 0U);
+	rect.width = kl_button_width(style, "Done");
 	rect.x -= rect.width + 10;
-	done = kui_button(main_input, style, MAIN_REPLACE_DONE, &rect, "Done", 0U);
-	main_moving = kui_ui_end(main_input, now_us);
+	done = kl_button(main_input, style, MAIN_REPLACE_DONE, &rect, "Done", 0U);
+	main_moving = kl_ui_end(main_input, now_us);
 
 	/* A key no widget took: Esc closes the panel, anything else is nothing. */
 	for (;;) {
-		taken = kui_ui_take(main_input, &event);
+		taken = kl_ui_take(main_input, &event);
 		if (taken == 0)
 			break;
 
 		/* Esc. */
-		if (event.kind == KUI_EVENT_KEY && event.code == KUI_KEY_ESC)
+		if (event.kind == KL_EVENT_KEY && event.code == KL_KEY_ESC)
 			done = 1;
 	}
 
 	/* Esc in either field closes the panel too. */
-	if ((find_flags & KUI_FIELD_CANCELLED) != 0U || (with_flags & KUI_FIELD_CANCELLED) != 0U)
+	if ((find_flags & KL_FIELD_CANCELLED) != 0U || (with_flags & KL_FIELD_CANCELLED) != 0U)
 		done = 1;
 
 	/* Enter in the text to find finds the next place, without replacing. */
-	if ((find_flags & KUI_FIELD_SUBMITTED) != 0U) {
+	if ((find_flags & KL_FIELD_SUBMITTED) != 0U) {
 		snprintf(main_app.find, sizeof(main_app.find), "%s", main_find_field.text);
 		main_app.find_length = strlen(main_app.find);
 		te_edit_find(&main_app, 1, 0);
 	}
 
 	/* Enter in the replacement is Replace. */
-	if ((with_flags & KUI_FIELD_SUBMITTED) != 0U)
+	if ((with_flags & KL_FIELD_SUBMITTED) != 0U)
 		replace_one = 1;
 
 	/* What the buttons and Enter asked for, then the frame shows it. */
@@ -1123,7 +1123,7 @@ main_copy(
 
 	/* The window's clipboard. */
 	window = data;
-	kui_window_copy(window->kui, text, length);
+	kl_window_copy(window->kui, text, length);
 	te_log("CLIPBOARD set bytes=%lu", (unsigned long)length);
 }
 
@@ -1139,7 +1139,7 @@ main_paste(
 
 	/* The window's clipboard. */
 	window = data;
-	length = kui_window_paste(window->kui, text, size);
+	length = kl_window_paste(window->kui, text, size);
 	te_log("CLIPBOARD paste received bytes=%lu", (unsigned long)length);
 
 	/* Succeeded: the length received. */
@@ -1157,7 +1157,7 @@ main_select(
 
 	/* The window's primary selection. */
 	window = data;
-	kui_window_select(window->kui, text, length);
+	kl_window_select(window->kui, text, length);
 	te_log("PRIMARY set bytes=%lu", (unsigned long)length);
 }
 
@@ -1173,7 +1173,7 @@ main_paste_primary(
 
 	/* The window's primary selection. */
 	window = data;
-	length = kui_window_paste_primary(window->kui, text, size);
+	length = kl_window_paste_primary(window->kui, text, size);
 	te_log("PRIMARY paste bytes=%lu", (unsigned long)length);
 
 	/* Succeeded: the length received. */
@@ -1213,22 +1213,22 @@ main_choose(
 	const char *folder,
 	const char *name)
 {
-	struct kui_file_chooser_options options;
-	static const struct kui_file_chooser_listener listener = {
+	struct kl_file_chooser_options options;
+	static const struct kl_file_chooser_listener listener = {
 		main_chosen
 	};
 	struct te_window *window;
 
 	/* A chooser left open goes first (one at a time). */
 	window = data;
-	kui_file_chooser_destroy(main_chooser);
+	kl_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
 
 	/* Open or Save As, at the document's folder, with the text files shown first. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KUI_FILE_CHOOSER_OPEN;
+	options.mode = KL_FILE_CHOOSER_OPEN;
 	if (saving) {
-		options.mode = KUI_FILE_CHOOSER_SAVE;
+		options.mode = KL_FILE_CHOOSER_SAVE;
 		options.name = name;
 	}
 
@@ -1241,7 +1241,7 @@ main_choose(
 	options.font = main_ui_font;
 
 	/* The chooser's window over the editor's. */
-	main_chooser = kui_file_chooser_open(kui_window_display(window->kui), kui_window_toplevel(window->kui), &options, &listener, window);
+	main_chooser = kl_file_chooser_open(kl_window_display(window->kui), kl_window_toplevel(window->kui), &options, &listener, window);
 	if (main_chooser == NULL)
 		return errno;
 
@@ -1253,7 +1253,7 @@ main_choose(
 static void
 main_chosen(
 	void *data,
-	struct kui_file_chooser *chooser,
+	struct kl_file_chooser *chooser,
 	unsigned result,
 	const char *path,
 	size_t filter)
@@ -1265,7 +1265,7 @@ main_chosen(
 	event = te_window_push(data, TE_EVENT_CHOSEN);
 	if (event != NULL) {
 		event->text[0] = '\0';
-		if (result == KUI_FILE_CHOOSER_CHOSEN)
+		if (result == KL_FILE_CHOOSER_CHOSEN)
 			snprintf(event->text, sizeof(event->text), "%s", path);
 	}
 
@@ -1273,7 +1273,7 @@ main_chosen(
 	te_log("CHOSEN result=%u path=%s", result, path);
 
 	/* The chooser is spent. */
-	kui_file_chooser_destroy(chooser);
+	kl_file_chooser_destroy(chooser);
 	if (chooser == main_chooser)
 		main_chooser = NULL;
 }
@@ -1285,7 +1285,7 @@ main_chosen(
  */
 static void
 main_window_event(
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	struct te_event *input;
 	int main_dialog_input;
@@ -1304,13 +1304,13 @@ main_window_event(
 
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
+	case KL_WINDOW_MOTION:
 		(void)te_window_push(&main_window, TE_EVENT_MOTION);
 		break;
-	case KUI_WINDOW_LEAVE:
+	case KL_WINDOW_LEAVE:
 		(void)te_window_push(&main_window, TE_EVENT_LEAVE);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The button and whether it went down. */
 		input = te_window_push(&main_window, TE_EVENT_BUTTON);
 		if (input == NULL)
@@ -1318,7 +1318,7 @@ main_window_event(
 		input->button = event->code;
 		input->pressed = event->pressed;
 		break;
-	case KUI_WINDOW_AXIS:
+	case KL_WINDOW_AXIS:
 		/* The wheel's distance down and across. */
 		input = te_window_push(&main_window, TE_EVENT_AXIS);
 		if (input == NULL)
@@ -1337,7 +1337,7 @@ main_window_event(
 			break;
 		input->axis_us = event->time_us;
 		break;
-	case KUI_WINDOW_KEY:
+	case KL_WINDOW_KEY:
 		/* The key and whether it went down. */
 		input = te_window_push(&main_window, TE_EVENT_KEY);
 		if (input == NULL)
@@ -1345,14 +1345,14 @@ main_window_event(
 		input->key = event->code;
 		input->pressed = event->pressed;
 		break;
-	case KUI_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_COMMIT:
 		/* Text from an input method or the on-screen keyboard. */
 		te_log("TEXT input commit=%s", event->text);
 		input = te_window_push(&main_window, TE_EVENT_TEXT);
 		if (input != NULL)
 			snprintf(input->text, sizeof(input->text), "%s", event->text);
 		break;
-	case KUI_WINDOW_TEXT_DELETE:
+	case KL_WINDOW_TEXT_DELETE:
 		/* Bytes around the caret it replaces. */
 		input = te_window_push(&main_window, TE_EVENT_TEXT_DELETE);
 		if (input == NULL)
@@ -1360,7 +1360,7 @@ main_window_event(
 		input->key = event->before;
 		input->button = event->after;
 		break;
-	case KUI_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_PREEDIT:
 		/* The text being composed, drawn in the body at the cursor (draw.c), and its segment or caret. */
 		te_log("TEXT input preedit=%s begin=%d end=%d", event->text, (int)event->begin, (int)event->end);
 		snprintf(main_app.preedit, sizeof(main_app.preedit), "%s", event->text);
@@ -1368,41 +1368,41 @@ main_window_event(
 		main_app.preedit_end = event->end;
 		main_app.dirty = 1;
 		break;
-	case KUI_WINDOW_FOCUS:
+	case KL_WINDOW_FOCUS:
 		input = te_window_push(&main_window, TE_EVENT_FOCUS);
 		if (input != NULL)
 			input->pressed = event->pressed;
 		break;
-	case KUI_WINDOW_TOUCH_DOWN:
+	case KL_WINDOW_TOUCH_DOWN:
 		te_log("TOUCH down id=%d x=%.0f y=%.0f", (int)event->id, event->x, event->y);
 		if (main_input != NULL)
-			(void)kui_ui_touch_down(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
+			(void)kl_ui_touch_down(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_TOUCH_MOTION:
 		if (main_input != NULL)
-			(void)kui_ui_touch_motion(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
+			(void)kl_ui_touch_motion(main_input, event->id, event->time_us, event->arrival_us, event->x, event->y);
 		break;
-	case KUI_WINDOW_TOUCH_UP:
+	case KL_WINDOW_TOUCH_UP:
 		te_log("TOUCH up id=%d", (int)event->id);
 		if (main_input != NULL)
-			(void)kui_ui_touch_up(main_input, event->id, event->time_us, event->arrival_us);
+			(void)kl_ui_touch_up(main_input, event->id, event->time_us, event->arrival_us);
 		break;
-	case KUI_WINDOW_TOUCH_CANCEL:
+	case KL_WINDOW_TOUCH_CANCEL:
 		if (main_input != NULL)
-			(void)kui_ui_touch_cancel(main_input, event->arrival_us);
+			(void)kl_ui_touch_cancel(main_input, event->arrival_us);
 		break;
-	case KUI_WINDOW_RESIZE:
+	case KL_WINDOW_RESIZE:
 		main_resized = 1;
 		break;
-	case KUI_WINDOW_CLOSE:
+	case KL_WINDOW_CLOSE:
 		main_closed = 1;
 		break;
-	case KUI_WINDOW_POST:
+	case KL_WINDOW_POST:
 		/* Select All (zdesktop takes Ctrl+A for the menu) selects the focused field of the Replace panel. */
 		if (event->code == TE_ACTION_SELECT_ALL &&
 		    main_app.dialog == TE_DIALOG_REPLACE &&
 		    main_input != NULL) {
-			(void)kui_ui_key(main_input, MAIN_KEY_A, 1, KUI_MOD_CTRL);
+			(void)kl_ui_key(main_input, MAIN_KEY_A, 1, KL_MOD_CTRL);
 			main_app.dirty = 1;
 			break;
 		}
@@ -1418,26 +1418,26 @@ main_window_event(
 /* Gives the pointer's and the keys' input to a dialog shown; 1 when it took it. */
 static int
 main_dialog_event(
-	const struct kui_window_event *event)
+	const struct kl_window_event *event)
 {
 	/* What it is. */
 	switch (event->kind) {
-	case KUI_WINDOW_MOTION:
-		(void)kui_ui_pointer_motion(main_input, event->x, event->y);
+	case KL_WINDOW_MOTION:
+		(void)kl_ui_pointer_motion(main_input, event->x, event->y);
 		break;
-	case KUI_WINDOW_LEAVE:
-		(void)kui_ui_pointer_leave(main_input);
+	case KL_WINDOW_LEAVE:
+		(void)kl_ui_pointer_leave(main_input);
 		break;
-	case KUI_WINDOW_BUTTON:
+	case KL_WINDOW_BUTTON:
 		/* The main button only. */
-		(void)kui_ui_pointer_motion(main_input, event->x, event->y);
-		if (event->code == KUI_BUTTON_LEFT)
-			(void)kui_ui_pointer_button(main_input, event->pressed, event->arrival_us);
+		(void)kl_ui_pointer_motion(main_input, event->x, event->y);
+		if (event->code == KL_BUTTON_LEFT)
+			(void)kl_ui_pointer_button(main_input, event->pressed, event->arrival_us);
 		break;
-	case KUI_WINDOW_KEY:
-		(void)kui_ui_key(main_input, event->code, event->pressed, event->modifiers);
+	case KL_WINDOW_KEY:
+		(void)kl_ui_key(main_input, event->code, event->pressed, event->modifiers);
 		break;
-	case KUI_WINDOW_AXIS:
+	case KL_WINDOW_AXIS:
 		break;
 	default:
 		return 0;
@@ -1458,8 +1458,8 @@ static void
 main_fingers(
 	uint64_t now_us)
 {
-	struct kui_event event;
-	struct kui_rect region;
+	struct kl_event event;
+	struct kl_rect region;
 	struct te_rect text;
 	int taken;
 
@@ -1475,31 +1475,31 @@ main_fingers(
 		return;
 
 	/* The frame of the fingers' input: the text view, when nothing covers it. */
-	kui_ui_begin(main_input, now_us);
+	kl_ui_begin(main_input, now_us);
 	if (main_app.dialog == TE_DIALOG_NONE && !main_app.choosing) {
 		te_app_text_rect(&main_app, &text);
 		region.x = text.x;
 		region.y = text.y;
 		region.width = text.width;
 		region.height = text.height;
-		kui_ui_text_region(main_input, MAIN_TEXT_REGION, &region, &main_app.scroll, &main_app.touch);
+		kl_ui_text_region(main_input, MAIN_TEXT_REGION, &region, &main_app.scroll, &main_app.touch);
 	}
 
 	/* The frame is recorded; whether something still moves. */
-	main_moving = kui_ui_end(main_input, now_us);
+	main_moving = kl_ui_end(main_input, now_us);
 
 	/* The fingers' selection and context menu. */
 	te_app_touch(&main_app);
 
 	/* What no part took: a tap is a click (a dialog's button), a long press elsewhere asks for the menu. */
 	for (;;) {
-		taken = kui_ui_take(main_input, &event);
+		taken = kl_ui_take(main_input, &event);
 		if (taken == 0)
 			break;
-		if (event.kind == KUI_EVENT_TAP) {
+		if (event.kind == KL_EVENT_TAP) {
 			te_log("TOUCH tap x=%.0f y=%.0f", event.x, event.y);
 			te_app_tap(&main_app, (int)event.x, (int)event.y, 1);
-		} else if (event.kind == KUI_EVENT_DOUBLE_TAP) {
+		} else if (event.kind == KL_EVENT_DOUBLE_TAP) {
 			te_app_tap(&main_app, (int)event.x, (int)event.y, 2);
 		}
 	}

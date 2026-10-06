@@ -82,7 +82,7 @@ te_window_action(
 	uint32_t action)
 {
 	/* After the window's inputs so far. */
-	kui_window_post(window->kui, action);
+	kl_window_post(window->kui, action);
 }
 
 /*

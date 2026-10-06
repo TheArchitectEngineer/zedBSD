@@ -20,7 +20,6 @@
 #include "textedit.h"
 
 #include <keiland.h>
-#include <keiui.h>
 
 /* How many inputs wait for the editor at most. */
 #define TE_WINDOW_EVENTS	256U
@@ -32,7 +31,7 @@
  * the file chooser -- in the order they came.  It lives for the whole run.
  */
 struct te_window {
-	struct kui_window *kui;
+	struct kl_window *kui;
 
 	/* The pointer's place and the modifiers held (TE_MOD_*), which every queued input carries. */
 	int pointer_x;
@@ -67,11 +66,11 @@ struct te_state {
  * showed, and how many files File > Open Recent shows (ws128-p003).
  */
 struct te_menu {
-	struct keiland_menu_service *service;
-	struct keiland_menu *menu;
-	struct keiland_window_menu *window_menu;
-	struct keiland_menu *context;
-	struct keiland_context_menu *popup;
+	struct kl_menu_service *service;
+	struct kl_menu *menu;
+	struct kl_window_menu *window_menu;
+	struct kl_menu *context;
+	struct kl_context_menu *popup;
 	struct te_state shown;
 	struct te_window *window;
 	size_t recent_shown;
@@ -84,7 +83,7 @@ struct te_menu {
  */
 struct te_titlebar {
 	struct te_window *window;
-	struct keiland_titlebar *titlebar;
+	struct kl_titlebar *titlebar;
 	struct te_state shown;
 	int sent;
 	int want_focus;
@@ -95,7 +94,7 @@ struct te_titlebar {
  * window keeps its own ground), and the card it was last told of.
  */
 struct te_glass {
-	struct keiland_glass *glass;
+	struct kl_glass *glass;
 	struct te_rect shown;
 	int sent;
 };

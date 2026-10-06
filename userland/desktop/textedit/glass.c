@@ -42,7 +42,7 @@ te_glass_open(
 	}
 
 	/* zdesktop's glass for the window's surface. */
-	glass->glass = keiland_glass_create(kui_window_display(window->kui), kui_window_surface(window->kui));
+	glass->glass = kl_glass_create(kl_window_display(window->kui), kl_window_surface(window->kui));
 	if (glass->glass == NULL) {
 		te_log("GLASS off reason=compositor errno=%d", errno);
 		return 0;
@@ -62,7 +62,7 @@ te_glass_refresh(
 	struct te_glass *glass,
 	const struct te_app *app)
 {
-	struct keiland_glass_panel panel;
+	struct kl_glass_panel panel;
 	struct te_rect card;
 	int same;
 	int error;
@@ -84,10 +84,10 @@ te_glass_refresh(
 	panel.width = card.width;
 	panel.height = card.height;
 	panel.radius = TE_CARD_RADIUS;
-	panel.kind = KEILAND_GLASS_CARD;
+	panel.kind = KL_GLASS_CARD;
 
 	/* Sent with the frame; a refused card is logged and the old one stays. */
-	error = keiland_glass_set_panels(glass->glass, &panel, 1U);
+	error = kl_glass_set_panels(glass->glass, &panel, 1U);
 	if (error != 0) {
 		te_log("GLASS refused errno=%d", error);
 		return;
@@ -107,6 +107,6 @@ te_glass_close(
 	struct te_glass *glass)
 {
 	/* The glass object, when there is one. */
-	keiland_glass_destroy(glass->glass);
+	kl_glass_destroy(glass->glass);
 	glass->glass = NULL;
 }

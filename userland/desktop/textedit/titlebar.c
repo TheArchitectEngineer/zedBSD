@@ -44,21 +44,21 @@ struct titlebar_control {
 
 /* The controls, in their order. */
 static const struct titlebar_control titlebar_controls[] = {
-	{ CONTROL_OPEN, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_NORMAL, "Open", TE_ACTION_OPEN },
-	{ CONTROL_SAVE, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_PRIMARY, "Save", TE_ACTION_SAVE },
-	{ CONTROL_UNDO, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, "Undo", TE_ACTION_UNDO },
-	{ CONTROL_REDO, KEILAND_CONTROL_GENERIC, KEILAND_PRIORITY_SECONDARY, "Redo", TE_ACTION_REDO },
-	{ CONTROL_FIND, KEILAND_CONTROL_SEARCH, KEILAND_PRIORITY_NORMAL, "Find", TE_ACTION_NONE }
+	{ CONTROL_OPEN, KL_CONTROL_GENERIC, KL_PRIORITY_NORMAL, "Open", TE_ACTION_OPEN },
+	{ CONTROL_SAVE, KL_CONTROL_GENERIC, KL_PRIORITY_PRIMARY, "Save", TE_ACTION_SAVE },
+	{ CONTROL_UNDO, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, "Undo", TE_ACTION_UNDO },
+	{ CONTROL_REDO, KL_CONTROL_GENERIC, KL_PRIORITY_SECONDARY, "Redo", TE_ACTION_REDO },
+	{ CONTROL_FIND, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, "Find", TE_ACTION_NONE }
 };
 
-static void titlebar_activated(void *data, struct keiland_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
-static void titlebar_text_changed(void *data, struct keiland_titlebar *object, uint32_t id, const char *text);
-static void titlebar_text_done(void *data, struct keiland_titlebar *object, uint32_t id, const char *text, unsigned how);
+static void titlebar_activated(void *data, struct kl_titlebar *object, uint32_t id, uint32_t detail, struct wl_seat *seat, uint32_t serial);
+static void titlebar_text_changed(void *data, struct kl_titlebar *object, uint32_t id, const char *text);
+static void titlebar_text_done(void *data, struct kl_titlebar *object, uint32_t id, const char *text, unsigned how);
 static int titlebar_build(struct te_titlebar *titlebar);
 static int titlebar_state(struct te_titlebar *titlebar, const struct te_state *state);
 
 /* What the titlebar tells the editor: the controls chosen, and the find field's text. */
-static const struct keiland_titlebar_listener titlebar_listener = {
+static const struct kl_titlebar_listener titlebar_listener = {
 	titlebar_activated, titlebar_text_changed, titlebar_text_done, NULL, NULL, NULL, NULL, NULL
 };
 
@@ -81,7 +81,7 @@ te_titlebar_open(
 	titlebar->window = window;
 
 	/* The window's titlebar object; a compositor without one leaves the menus and the keys. */
-	titlebar->titlebar = keiland_titlebar_create(kui_window_display(window->kui), kui_window_toplevel(window->kui), &titlebar_listener, titlebar);
+	titlebar->titlebar = kl_titlebar_create(kl_window_display(window->kui), kl_window_toplevel(window->kui), &titlebar_listener, titlebar);
 	if (titlebar->titlebar == NULL) {
 		te_log("TITLEBAR none errno=%d", errno);
 		return 0;
@@ -121,7 +121,7 @@ te_titlebar_refresh(
 	/* The find field takes the keyboard when asked. */
 	if (titlebar->want_focus) {
 		titlebar->want_focus = 0;
-		error = keiland_titlebar_focus_control(titlebar->titlebar, CONTROL_FIND, KEILAND_FOCUS_FIELD);
+		error = kl_titlebar_focus_control(titlebar->titlebar, CONTROL_FIND, KL_FOCUS_FIELD);
 		if (error != 0)
 			te_log("TITLEBAR focus-failed errno=%d", error);
 	}
@@ -146,7 +146,7 @@ te_titlebar_close(
 {
 	/* The titlebar object, when there is one. */
 	if (titlebar->titlebar != NULL)
-		keiland_titlebar_destroy(titlebar->titlebar);
+		kl_titlebar_destroy(titlebar->titlebar);
 	memset(titlebar, 0, sizeof(*titlebar));
 }
 
@@ -154,7 +154,7 @@ te_titlebar_close(
 static void
 titlebar_activated(
 	void *data,
-	struct keiland_titlebar *object,
+	struct kl_titlebar *object,
 	uint32_t id,
 	uint32_t detail,
 	struct wl_seat *seat,
@@ -168,7 +168,7 @@ titlebar_activated(
 	(void)detail;
 	(void)seat;
 	titlebar = data;
-	kui_window_set_serial(titlebar->window->kui, serial);
+	kl_window_set_serial(titlebar->window->kui, serial);
 	te_log("TITLEBAR control=%u", id);
 
 	/* The control's action, when it has one. */
@@ -185,7 +185,7 @@ titlebar_activated(
 static void
 titlebar_text_changed(
 	void *data,
-	struct keiland_titlebar *object,
+	struct kl_titlebar *object,
 	uint32_t id,
 	const char *text)
 {
@@ -209,7 +209,7 @@ titlebar_text_changed(
 static void
 titlebar_text_done(
 	void *data,
-	struct keiland_titlebar *object,
+	struct kl_titlebar *object,
 	uint32_t id,
 	const char *text,
 	unsigned how)
@@ -241,31 +241,31 @@ titlebar_build(
 	int error;
 
 	/* The transaction and the presentation. */
-	error = keiland_titlebar_begin(titlebar->titlebar);
+	error = kl_titlebar_begin(titlebar->titlebar);
 	if (error != 0)
 		return error;
-	error = keiland_titlebar_set_mode(titlebar->titlebar, KEILAND_TITLEBAR_CONTROLS);
+	error = kl_titlebar_set_mode(titlebar->titlebar, KL_TITLEBAR_CONTROLS);
 
 	/* Each control. */
 	for (index = 0; index < sizeof(titlebar_controls) / sizeof(titlebar_controls[0]); index++) {
 		if (error != 0)
 			break;
 		control = &titlebar_controls[index];
-		error = keiland_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, 0U, control->label);
+		error = kl_titlebar_add_control(titlebar->titlebar, control->id, control->role, control->priority, 0U, control->label);
 	}
 
 	/* The find field's placeholder. */
 	if (error == 0)
-		error = keiland_titlebar_set_control_text(titlebar->titlebar, CONTROL_FIND, "", "Find");
+		error = kl_titlebar_set_control_text(titlebar->titlebar, CONTROL_FIND, "", "Find");
 
 	/* A refused control still ends the transaction. */
 	if (error != 0) {
-		(void)keiland_titlebar_commit(titlebar->titlebar);
+		(void)kl_titlebar_commit(titlebar->titlebar);
 		return error;
 	}
 
 	/* The controls are shown together. */
-	error = keiland_titlebar_commit(titlebar->titlebar);
+	error = kl_titlebar_commit(titlebar->titlebar);
 	if (error != 0)
 		return error;
 
@@ -279,30 +279,30 @@ titlebar_state(
 	struct te_titlebar *titlebar,
 	const struct te_state *state)
 {
-	struct keiland_titlebar *object;
+	struct kl_titlebar *object;
 	int error;
 
 	/* The transaction. */
 	object = titlebar->titlebar;
-	error = keiland_titlebar_begin(object);
+	error = kl_titlebar_begin(object);
 	if (error != 0)
 		return error;
 
 	/* The controls' states. */
-	error = keiland_titlebar_set_control_state(object, CONTROL_SAVE, state->modified, 0);
+	error = kl_titlebar_set_control_state(object, CONTROL_SAVE, state->modified, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_UNDO, state->can_undo, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_UNDO, state->can_undo, 0);
 	if (error == 0)
-		error = keiland_titlebar_set_control_state(object, CONTROL_REDO, state->can_redo, 0);
+		error = kl_titlebar_set_control_state(object, CONTROL_REDO, state->can_redo, 0);
 
 	/* A refused change still ends the transaction. */
 	if (error != 0) {
-		(void)keiland_titlebar_commit(object);
+		(void)kl_titlebar_commit(object);
 		return error;
 	}
 
 	/* The state is shown together. */
-	error = keiland_titlebar_commit(object);
+	error = kl_titlebar_commit(object);
 	if (error != 0)
 		return error;
 

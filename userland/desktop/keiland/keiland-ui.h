@@ -1117,6 +1117,24 @@ int kl_window_popup_menu(struct kl_window *window, const struct kl_menu_entry *e
 int kl_window_set_glass(struct kl_window *window, const struct kl_glass_panel *panels, size_t count);
 
 /*
+ * KL_VERSION 43 (WS131 p016): the text of a control that takes text (a
+ * KL_CONTROL_SEARCH field).  As it is typed, a KL_WINDOW_CONTROL_TEXT
+ * input brings it (the control's ID in id, the text in text); when its
+ * editing ends, a KL_WINDOW_CONTROL_DONE input brings the text and how it
+ * ended in code (KL_TEXT_SUBMITTED and the others).  A choice of a menu's
+ * item or a control also stands as the window's last input for the
+ * clipboard (its serial).
+ */
+#define KL_WINDOW_CONTROL_TEXT	19U
+#define KL_WINDOW_CONTROL_DONE	20U
+
+/* Sets a control's text and its placeholder (either may be NULL to leave it), after kl_window_set_controls. */
+int kl_window_set_control_text(struct kl_window *window, uint32_t id, const char *text, const char *placeholder);
+
+/* Gives a control's field the keyboard (the find field when Find is chosen). */
+int kl_window_focus_control(struct kl_window *window, uint32_t id);
+
+/*
  * A Vulkan surface over a window shown with KL_PRESENT_NONE, for an
  * application drawing with its own Vulkan instance (which enabled
  * VK_KHR_wayland_surface).  Declared for a program that included the
