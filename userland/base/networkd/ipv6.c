@@ -319,6 +319,36 @@ ipv6_add(
 	return status;
 }
 
+/*
+ * Gives an interface whose IPv6 is on its link-local address: fe80::/64
+ * with the stable identifier (RFC 7217).  networkd does it when the
+ * interface comes up, and when a commit turns IPv6 on again (the kernel
+ * says nothing of that).  Returns 0, or -1 without the secret.
+ */
+int
+networkd_ipv6_link_local(
+	const char *name)
+{
+	struct in6_addr link;
+	struct in6_addr address;
+	uint8_t iid[8];
+	int status;
+
+	/* The secret of the stable identifiers. */
+	status = ipv6_secret_load();
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: fe80::/64 and the identifier; an address it has already is renewed. */
+	memset(&link, 0, sizeof(link));
+	link.s6_addr[0] = 0xfe;
+	link.s6_addr[1] = 0x80;
+	slaac_stable_iid(ipv6_secret, sizeof(ipv6_secret), &link, name, "", 0, iid);
+	slaac_address(&link, iid, &address);
+	(void)ipv6_add(name, &address, 64U, 0U, IN6_LIFETIME_INFINITE, IN6_LIFETIME_INFINITE);
+	return 0;
+}
+
 /* Sets an interface's IPv6 up: on or off as net.conf says, and when on its link-local and static addresses. */
 static void
 ipv6_setup(
@@ -326,9 +356,7 @@ ipv6_setup(
 {
 	struct netconf_interface item;
 	struct ifreq request;
-	struct in6_addr link;
 	struct in6_addr address;
-	uint8_t iid[8];
 	size_t index;
 	int dns_dynamic;
 	int on;
@@ -345,16 +373,10 @@ ipv6_setup(
 	if (status != 0 || !on)
 		return;
 
-	/* The link-local address: fe80::/64 with the stable identifier. */
-	status = ipv6_secret_load();
+	/* The link-local address. */
+	status = networkd_ipv6_link_local(name);
 	if (status != 0)
 		return;
-	memset(&link, 0, sizeof(link));
-	link.s6_addr[0] = 0xfe;
-	link.s6_addr[1] = 0x80;
-	slaac_stable_iid(ipv6_secret, sizeof(ipv6_secret), &link, name, "", 0, iid);
-	slaac_address(&link, iid, &address);
-	(void)ipv6_add(name, &address, 64U, 0U, IN6_LIFETIME_INFINITE, IN6_LIFETIME_INFINITE);
 
 	/* The static addresses. */
 	for (index = 0; index < item.ipv6.address_count; index++) {

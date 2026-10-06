@@ -20,5 +20,6 @@
 int networkd_ipv6_open(void);
 int networkd_ipv6_events(int descriptor);
 void networkd_ipv6_start(void);
+int networkd_ipv6_link_local(const char *name);
 
 #endif
