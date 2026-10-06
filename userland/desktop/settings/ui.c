@@ -124,8 +124,9 @@ se_ui_init(
 	app->history_count = 1;
 	app->history_index = 0;
 
-	/* The scroller a touch pad's fingers scroll the panes with (none: they scroll without flying). */
+	/* The scroller a touch pad's fingers scroll the panes with (none: they scroll without flying), and the text fields' input (none: no field draws). */
 	app->kinetic.scroller = kl_scroller_create();
+	(void)se_fields_open(text);
 
 	/* The first frame is due. */
 	app->dirty = 1;
@@ -133,7 +134,8 @@ se_ui_init(
 }
 
 /*
- * Lets go of what the interface holds: the touch pad's scroller.
+ * Lets go of what the interface holds: the touch pad's scroller and the
+ * text fields' input.
  */
 void
 se_ui_close(
@@ -145,6 +147,9 @@ se_ui_close(
 	app->kinetic.scroller = NULL;
 	app->kinetic.flying = 0;
 	app->kinetic.holding = 0;
+
+	/* The text fields' input. */
+	se_fields_close();
 }
 
 /*
@@ -155,17 +160,18 @@ se_ui_event(
 	struct se_app *app,
 	const struct se_event *event)
 {
-	int taken;
-
 	/* The time of the input, for whatever measures time. */
 	app->now = event->time;
 
 	/* Each kind of input. */
 	switch (event->type) {
 	case SE_EVENT_MOTION:
+		se_fields_input(event);
 		ui_motion(app, event);
 		break;
 	case SE_EVENT_BUTTON:
+		/* The text fields see the press too (a click puts a field's caret). */
+		se_fields_input(event);
 		ui_button(app, event);
 		break;
 	case SE_EVENT_AXIS:
@@ -186,10 +192,9 @@ se_ui_event(
 	case SE_EVENT_TEXT:
 	case SE_EVENT_TEXT_DELETE:
 	case SE_EVENT_PREEDIT:
-		/* An input method's text, for the field that takes it (ws090-p022). */
-		taken = se_users_admin_text(app, event);
-		if (taken)
-			app->dirty = 1;
+		/* An input method's text, for the field with the keyboard (widgets.c). */
+		se_fields_input(event);
+		app->dirty = 1;
 		break;
 	case SE_EVENT_FOCUS:
 		/* The chosen page's row is drawn in the accent only while the window has the focus. */
@@ -384,10 +389,12 @@ se_ui_draw(
 		kl_canvas_gradient(canvas, &whole, SE_COLOR_BACKGROUND_TOP, SE_COLOR_BACKGROUND_BOTTOM);
 	}
 
-	/* The list of pages, when shown, then the page. */
+	/* The list of pages, when shown, then the page; the text fields in their own frame of input (widgets.c, ws090-p007). */
+	se_fields_begin(app->now * 1000U);
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 	ui_draw_page(app, canvas);
+	(void)se_fields_end(app->now * 1000U);
 	if (partial != 0)
 		kl_canvas_clip_pop(canvas);
 

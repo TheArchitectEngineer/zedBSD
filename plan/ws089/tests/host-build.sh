@@ -40,6 +40,16 @@ for file in userland/desktop/libkeiland/ui/canvas.c userland/desktop/libkeiland/
 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
 	objects="$objects $object"
 done
+# libkeiland's widgets' input and text field (Settings' fields are kl_field since ws090-p007), and the light appearance
+# its theme asks for (no compositor on the host).
+for file in userland/desktop/libkeiland/ui/ui.c userland/desktop/libkeiland/ui/field.c userland/desktop/libkeiland/ui/input.c \
+    userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/text-touch.c \
+    userland/desktop/libkeiland/ui/scroll-bar.c userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/motion.c \
+    plan/tools/files/host-appearance.c; do
+	object="$out/obj/shared-ui-$(basename "$file" .c).o"
+	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
+	objects="$objects $object"
+done
 # The desktop's settings (WS135): libkeiland's cache and the settings' table, under a stand-in for kl_settings_*
 # without Wayland (plan/tools/settings/host-kl-settings.c: the compositor's keys in memory, a set in effect at once).
 for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c userland/desktop/libkeiland/translate-follow.c userland/desktop/libkeiland/translate.c userland/desktop/libkeiland/scroll.c userland/desktop/settings-keys/settings-keys.c plan/tools/settings/host-kl-settings.c; do

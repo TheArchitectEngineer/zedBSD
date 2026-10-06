@@ -331,71 +331,6 @@ se_users_admin_key(
 }
 
 /*
- * Tells whether the field with the keyboard takes an input method's text
- * (ws090-p022): the full name of an account being added (a login name, a
- * password and the administrator's password are typed as keys, and a
- * secret takes no input method).
- */
-int
-se_users_admin_text_wanted(
-	const struct se_app *app)
-{
-	const struct se_users *users;
-
-	/* The administration's keyboard, on the full name. */
-	users = &app->users;
-	if (users->keyboard != SE_USERS_KEYBOARD_ADMIN || users->admin_mode == SE_ADMIN_NONE)
-		return 0;
-	if (users->admin_focus != SE_ADMIN_FULL_NAME)
-		return 0;
-
-	/* Succeeded: it takes the text. */
-	return 1;
-}
-
-/*
- * Takes an input method's text for the field that takes it
- * (se_users_admin_text_wanted): a commit at its end, bytes deleted before
- * its end, or the text being composed, drawn after it.  Returns 1 when the
- * field took it.
- */
-int
-se_users_admin_text(
-	struct se_app *app,
-	const struct se_event *event)
-{
-	struct se_users *users;
-	int wanted;
-
-	/* Only for that field; a composed text goes with it. */
-	wanted = se_users_admin_text_wanted(app);
-	if (!wanted) {
-		app->preedit[0] = '\0';
-		return 0;
-	}
-	users = &app->users;
-
-	/* The text being composed replaces the one before. */
-	if (event->type == SE_EVENT_PREEDIT) {
-		(void)snprintf(app->preedit, sizeof(app->preedit), "%s", event->text);
-		return 1;
-	}
-
-	/* Bytes before the end, or the text committed at it. */
-	if (event->type == SE_EVENT_TEXT_DELETE)
-		se_field_delete_before(&users->admin_fields[users->admin_focus], (size_t)event->before);
-	else
-		se_field_insert(&users->admin_fields[users->admin_focus], event->text);
-
-	/* A change takes the last answer away. */
-	if (!users->admin_asked)
-		users->admin_message[0] = '\0';
-
-	/* Succeeded: the field took it. */
-	return 1;
-}
-
-/*
  * Takes the answer of the administration's change when it is the page's.
  * Returns 1 when the request was the page's.
  */
@@ -608,30 +543,32 @@ admin_apply(
 	const char *kind;
 	const char *verb;
 	uint32_t request;
+	int written;
 	int error;
 
 	/* The operation's lines (kl_system_account_administer). */
 	users = &app->users;
 	row = admin_chosen(app);
 	operation[0] = '\0';
+	written = 0;
 	switch (users->admin_mode) {
 	case SE_ADMIN_ADD:
 		/* The name, the full name, the password, and whether an administrator. */
 		kind = "user";
 		if (users->admin_flag)
 			kind = "admin";
-		(void)snprintf(operation, sizeof(operation), "add\n%s\n%s\n%s\n%s\n", users->admin_fields[SE_ADMIN_NAME].text,
-			       users->admin_fields[SE_ADMIN_FULL_NAME].text, users->admin_fields[SE_ADMIN_PASSWORD].text, kind);
+		written = snprintf(operation, sizeof(operation), "add\n%s\n%s\n%s\n%s\n", users->admin_fields[SE_ADMIN_NAME].text,
+				   users->admin_fields[SE_ADMIN_FULL_NAME].text, users->admin_fields[SE_ADMIN_PASSWORD].text, kind);
 		break;
 	case SE_ADMIN_RESET:
-		(void)snprintf(operation, sizeof(operation), "reset-password\n%s\n%s\n", row->name, users->admin_fields[SE_ADMIN_PASSWORD].text);
+		written = snprintf(operation, sizeof(operation), "reset-password\n%s\n%s\n", row->name, users->admin_fields[SE_ADMIN_PASSWORD].text);
 		break;
 	case SE_ADMIN_REMOVE:
 		/* The home kept unless the switch is on. */
 		kind = "keep-home";
 		if (users->admin_flag)
 			kind = "remove-home";
-		(void)snprintf(operation, sizeof(operation), "remove\n%s\n%s\n", row->name, kind);
+		written = snprintf(operation, sizeof(operation), "remove\n%s\n%s\n", row->name, kind);
 		break;
 	case SE_ADMIN_WHEEL:
 	case SE_ADMIN_NETWORK:
@@ -647,9 +584,17 @@ admin_apply(
 		}
 
 		/* The lines. */
-		(void)snprintf(operation, sizeof(operation), "%s\n%s\n%s\n", verb, row->name, kind);
+		written = snprintf(operation, sizeof(operation), "%s\n%s\n%s\n", verb, row->name, kind);
 		break;
 	default:
+		return;
+	}
+
+	/* Fields too long for one operation (libkeiland's fields hold more than account-admin takes) are said so. */
+	if (written < 0 || (size_t)written >= sizeof(operation)) {
+		memset(operation, 0, sizeof(operation));
+		(void)snprintf(users->admin_message, sizeof(users->admin_message), "The names or the password are too long.");
+		users->admin_bad = 1;
 		return;
 	}
 
@@ -793,24 +738,16 @@ admin_field_draw(
 	int y,
 	int width)
 {
-	const struct se_users *users;
-	const struct se_field *field;
+	struct se_users *users;
 	struct kl_rect box;
-	char dots[SE_KEY_TEXT];
-	const char *text;
-	kl_color ink;
-	size_t count;
+	unsigned kind;
 	int focused;
-	int right;
-	int baseline;
-	int composed;
 
 	/* The label. */
 	users = &app->users;
-	field = &users->admin_fields[index];
 	(void)kl_text_draw_fit(app->text, canvas, x + 20, kl_text_center(ADMIN_TEXT_ROW, y + 8, 36), admin_labels[index], ADMIN_TEXT_ROW, 0, ADMIN_FIELD_X - 30, SE_COLOR_TEXT);
 
-	/* The field: white, the accent's edge when it has the keyboard. */
+	/* The field's place, and whether it has the keyboard. */
 	box.x = x + ADMIN_FIELD_X;
 	box.y = y + 8;
 	box.width = width - ADMIN_FIELD_X - 20;
@@ -818,59 +755,17 @@ admin_field_draw(
 	focused = 0;
 	if (users->keyboard == SE_USERS_KEYBOARD_ADMIN && users->admin_focus == index)
 		focused = 1;
-	kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	if (focused) {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
-	} else {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
-	}
 
 	/* A click on it gives it the keyboard. */
 	se_ui_hit(app, &box, SE_HIT_CONTROL, ADMIN_FIELD_FIRST + index);
 
-	/* Dots for a password, or the text. */
-	text = field->text;
-	if (admin_secret[index]) {
-		for (count = 0; count < field->length && count + 1U < sizeof(dots); count++)
-			dots[count] = '*';
-		dots[count] = '\0';
-		text = dots;
-	}
-
-	/* An empty field shows what it is for. */
-	ink = SE_COLOR_TEXT;
-	if (field->length == 0) {
-		text = admin_placeholders[index];
-		ink = SE_COLOR_TEXT_FAINT;
-	}
-
-	/* The text inside the field. */
-	kl_canvas_clip_push(canvas, &box);
-	baseline = kl_text_center(ADMIN_TEXT_ROW, box.y, box.height);
-	right = box.x + 12 + kl_text_draw(app->text, canvas, box.x + 12, baseline, text, strlen(text), ADMIN_TEXT_ROW, 0, ink);
-	if (field->length == 0)
-		right = box.x + 12;
-
-	/* An input method's composed text after it, underlined (ws090-p022). */
-	if (focused &&
-	    app->preedit[0] != '\0' &&
-	    index == SE_ADMIN_FULL_NAME) {
-		composed = kl_text_draw(app->text, canvas, right, baseline, app->preedit, strlen(app->preedit), ADMIN_TEXT_ROW, 0, SE_COLOR_TEXT);
-		kl_canvas_line(canvas, (float)right, (float)baseline + 3.5f, (float)(right + composed), (float)baseline + 3.5f, 1.0f, SE_COLOR_TEXT);
-		right += composed;
-	}
-
-	/* The cursor after them in the field with the keyboard, where the input method's candidates open. */
-	if (focused) {
-		kl_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-		app->caret.x = right;
-		app->caret.y = box.y + 9;
-		app->caret.width = 2;
-		app->caret.height = box.height - 18;
-		app->caret_known = 1;
-	}
-	kl_canvas_clip_pop(canvas);
-	memset(dots, 0, sizeof(dots));
+	/* libkeiland's field: a password as dots, the login name plain, the full name with an input method (ws090-p007). */
+	kind = SE_FIELD_TEXT;
+	if (index == SE_ADMIN_NAME)
+		kind = SE_FIELD_PLAIN;
+	if (admin_secret[index])
+		kind = SE_FIELD_SECRET;
+	(void)se_field_draw(app, canvas, &users->admin_fields[index], &box, admin_placeholders[index], kind, focused);
 }
 
 /*

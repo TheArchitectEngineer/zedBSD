@@ -419,14 +419,6 @@ enum se_join_step {
 	SE_JOIN_CONNECT
 };
 
-/*
- * A line of text being typed: its characters (ASCII) and how many there
- * are.  A key's text is wiped when the field is closed.
- */
-struct se_field {
-	char text[SE_KEY_TEXT];
-	size_t length;
-};
 
 /*
  * The network as the network pages show it (network.c keeps it up to date
@@ -483,8 +475,8 @@ struct se_network {
 	char pending_ssid[KL_NETWORK_SSID_MAX];
 	uint64_t retry_at;
 	char key_ssid[KL_NETWORK_SSID_MAX];
-	struct se_field key;
-	struct se_field join_key;
+	struct kl_field key;
+	struct kl_field join_key;
 	int wifi_wanted;
 	uint64_t wifi_until;
 	char wifi_words[96];
@@ -519,7 +511,7 @@ struct se_network {
 struct se_wired {
 	char interface[KL_NETWORK_NAME_MAX];
 	unsigned mode;
-	struct se_field fields[SE_WIRED_FIELDS];
+	struct kl_field fields[SE_WIRED_FIELDS];
 	int focus;
 	int asked;
 	uint32_t request;
@@ -578,7 +570,7 @@ struct se_languages {
 	int system_read;
 	int system;
 	int chosen;
-	struct se_field password;
+	struct kl_field password;
 	int focused;
 	int asked;
 	uint32_t request;
@@ -664,7 +656,7 @@ struct se_users {
 	char home[160];
 	struct se_user_row rows[SE_USERS_LIST_MAX];
 	int row_count;
-	struct se_field fields[SE_USERS_FIELDS];
+	struct kl_field fields[SE_USERS_FIELDS];
 	int focus;
 	int shown;
 	int asked;
@@ -675,7 +667,7 @@ struct se_users {
 	int selected;
 	int keyboard;
 	enum se_admin_mode admin_mode;
-	struct se_field admin_fields[SE_ADMIN_FIELDS];
+	struct kl_field admin_fields[SE_ADMIN_FIELDS];
 	int admin_focus;
 	int admin_flag;
 	int admin_asked;
@@ -683,7 +675,7 @@ struct se_users {
 	char admin_message[SE_MESSAGE];
 	int admin_bad;
 
-	struct se_field pin_fields[SE_PIN_FIELDS];
+	struct kl_field pin_fields[SE_PIN_FIELDS];
 	int pin_focus;
 	int pin_set;
 	int pin_asked;
@@ -1021,16 +1013,6 @@ struct se_touch_scroll {
  * One lives for the whole run.
  */
 struct se_app {
-	/*
-	 * The text an input method is composing for the field that takes it
-	 * (the full name of an account being added), and where that field's
-	 * caret was last drawn (window pixels; known 0 until it is), for the
-	 * window's text input (ws090-p022).
-	 */
-	char preedit[SE_TEXT_INPUT_MAX];
-	struct kl_rect caret;
-	int caret_known;
-
 	/* The fonts, the window's size, the time of the input being handled, and whether a new frame is due. */
 	struct kl_text *text;
 	int width;
@@ -1228,10 +1210,25 @@ int se_wired_key(struct se_app *app, const struct se_event *event);
 int se_wired_card(struct se_app *app, struct kl_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
 
 /* The text fields (widgets.c). */
-int se_field_key(struct se_field *field, const struct se_event *event);
-void se_field_clear(struct se_field *field);
-void se_field_insert(struct se_field *field, const char *text);
-void se_field_delete_before(struct se_field *field, size_t bytes);
+/*
+ * The text fields (widgets.c, ws090-p007): libkeiland's kl_field under one
+ * kl_ui for every page.  A field's text is wiped when it is closed
+ * (se_field_clear).
+ */
+int se_fields_open(struct kl_text *text);
+void se_fields_close(void);
+void se_fields_begin(uint64_t now_us);
+int se_fields_end(uint64_t now_us);
+void se_fields_input(const struct se_event *event);
+struct kl_ui *se_fields_ui(void);
+int se_field_key(struct kl_field *field, const struct se_event *event);
+unsigned se_field_draw(struct se_app *app, struct kl_canvas *canvas, struct kl_field *field, const struct kl_rect *rect, const char *placeholder, unsigned kind, int focused);
+
+/* What a field holds (se_field_draw): text an input method may write, a secret (dots, no input method), or plain characters (shown, no input method). */
+#define SE_FIELD_TEXT		0U
+#define SE_FIELD_SECRET		1U
+#define SE_FIELD_PLAIN		2U
+void se_field_clear(struct kl_field *field);
 
 /* The look and the settings (look.c). */
 void se_look_open(struct se_app *app, struct wl_display *display);
@@ -1302,8 +1299,6 @@ int se_users_admin_available(const struct se_app *app);
 int se_users_admin_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_users_admin_press(struct se_app *app, int index);
 int se_users_admin_key(struct se_app *app, const struct se_event *event);
-int se_users_admin_text(struct se_app *app, const struct se_event *event);
-int se_users_admin_text_wanted(const struct se_app *app);
 int se_users_admin_result(struct se_app *app, uint32_t request, int error);
 void se_users_admin_wipe(struct se_users *users);
 int se_users_pin_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
