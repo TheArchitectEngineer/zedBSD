@@ -431,23 +431,29 @@ kl_scroll_axis(
 /*
  * The touch pad's fingers have lifted: the content flies on at their
  * velocity (none when they rested before lifting), or settles within its
- * ends.
+ * ends.  Returns 1 when it flies (KL_VERSION 41), 0 otherwise.
  */
-void
+int
 kl_scroll_axis_stop(
 	struct kl_scroll *scroll,
 	uint64_t now_us)
 {
 	int holding;
+	int flung;
 
 	/* Only content the fingers hold. */
 	holding = kl_scroller_axis_holding(scroll->scroller);
 	if (!holding)
-		return;
+		return 0;
 
 	/* The scroller throws it; the content is the scroller's until it rests. */
-	(void)kl_scroller_axis_stop(scroll->scroller, now_us, now_us, NULL, NULL);
+	flung = kl_scroller_axis_stop(scroll->scroller, now_us, now_us, NULL, NULL);
 	scroll->released = 1;
+	if (flung == 0)
+		return 0;
+
+	/* Succeeded: the content flies. */
+	return 1;
 }
 
 /*

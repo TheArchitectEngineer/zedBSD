@@ -36,6 +36,14 @@
 #define TERMINAL_TOUCH_CANCEL	3U
 
 /*
+ * A touch pad's two fingers (ws090-p019): a move of the scroll (x, y as a
+ * wheel scrolls, surface pixels) and their lift, which libkeiland's
+ * scroller turns into the same flight as a finger's on the screen.
+ */
+#define TERMINAL_TOUCH_PAD	4U
+#define TERMINAL_TOUCH_PAD_STOP	5U
+
+/*
  * The kinds of pointer event the fingers make: the values of
  * TERMINAL_POINTER_*, and a long press's hold, which the main loop turns
  * into presses.

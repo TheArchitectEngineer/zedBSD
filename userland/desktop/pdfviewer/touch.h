@@ -75,5 +75,7 @@ int pv_touch_open(struct pv_touch *touch);
 void pv_touch_close(struct pv_touch *touch);
 void pv_touch_event(struct pv_touch *touch, struct pv_app *app, const struct kui_window_event *event);
 int pv_touch_tick(struct pv_touch *touch, struct pv_app *app, uint64_t now);
+void pv_touch_pad(struct pv_touch *touch, struct pv_app *app, const struct kui_window_event *event);
+void pv_touch_pad_stop(struct pv_touch *touch, const struct kui_window_event *event);
 
 #endif

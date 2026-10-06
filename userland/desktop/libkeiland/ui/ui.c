@@ -456,7 +456,7 @@ kl_ui_axis(
 			return 0;
 		shown = ui_scroll_shown(ui, scroll);
 		if (shown)
-			kl_scroll_axis_stop(scroll, event->time_us);
+			(void)kl_scroll_axis_stop(scroll, event->time_us);
 		return 1;
 	}
 

@@ -436,7 +436,7 @@ void kl_scroll_drag(struct kl_scroll *scroll, double dx, double dy);
 void kl_scroll_fling(struct kl_scroll *scroll, double vx, double vy, uint64_t now_us);
 void kl_scroll_cancel(struct kl_scroll *scroll, uint64_t now_us);
 void kl_scroll_axis(struct kl_scroll *scroll, double dx, double dy, unsigned source, uint64_t now_us);
-void kl_scroll_axis_stop(struct kl_scroll *scroll, uint64_t now_us);
+int kl_scroll_axis_stop(struct kl_scroll *scroll, uint64_t now_us);
 int kl_scroll_step(struct kl_scroll *scroll, uint64_t now_us);
 double kl_scroll_limit_x(const struct kl_scroll *scroll);
 double kl_scroll_limit_y(const struct kl_scroll *scroll);

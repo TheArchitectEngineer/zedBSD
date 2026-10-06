@@ -37,6 +37,14 @@
 #define SHELL_TOUCH_UP		2U
 #define SHELL_TOUCH_CANCEL	3U
 
+/*
+ * A touch pad's two fingers (ws090-p019): a move of the scroll (y as a
+ * wheel scrolls, surface pixels) and their lift, which libkeiland's
+ * scroller turns into the same flight as a finger's on the screen.
+ */
+#define SHELL_TOUCH_PAD		4U
+#define SHELL_TOUCH_PAD_STOP	5U
+
 /* The kinds of pointer event the fingers make: a motion, a button pressed or released. */
 #define SHELL_TOUCH_POINTER_MOTION	0U
 #define SHELL_TOUCH_POINTER_PRESS	1U

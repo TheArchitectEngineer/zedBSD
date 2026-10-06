@@ -1325,6 +1325,17 @@ main_window_event(
 			break;
 		input->scroll = (int)event->dy;
 		input->scroll_x = (int)event->dx;
+		input->axis_dx = event->dx;
+		input->axis_dy = event->dy;
+		input->axis_source = event->axis_source;
+		input->axis_us = event->time_us;
+		break;
+	case KL_WINDOW_AXIS_STOP:
+		/* A touch pad's fingers lifted (ws090-p019), at the compositor's time. */
+		input = te_window_push(&main_window, TE_EVENT_AXIS_STOP);
+		if (input == NULL)
+			break;
+		input->axis_us = event->time_us;
 		break;
 	case KUI_WINDOW_KEY:
 		/* The key and whether it went down. */

@@ -41,3 +41,17 @@ Q1 の確認（main 065e75461）: libkeiland の慣性（`kl_scroll_axis`・`kl_
 - 試験: `plan/ws090/tests/host-input.c` に scroller の素の touch pad の試験（compositor の時刻が 5 s ずれても step の時計で飛ぶ、速度 3000 px/s、飛行を捕まえる、休んだ指は投げない）。
   host-input 78/78、ws081 の host-scroll 88、host-widgets 94/94、host-core 53/53、host-inset・phone・calendar PASS、host-chooser 85/85、ws089 host-build、
   zedBSD の libkeiland.so・settings、keiland-linux（warning 0）。FreeBSD の build は未実施。
+
+### 段 2: app の touch pad（実装済み）
+
+- Text Editor: `KL_WINDOW_AXIS` の指の source は `kl_scroll_axis`、`KL_WINDOW_AXIS_STOP` は `kl_scroll_axis_stop`（KL 41 で fling の時 1 を返す）。log `TEXTEDIT KINETIC fling source=finger`。
+- Terminal・Files・Browser の shell・PDF Viewer: touch pad の指の動き（unrounded、compositor の時刻）と離しを touch の入力の列に入れ（`*_TOUCH_PAD`・`_PAD_STOP`、
+  PDF は `pv_touch_pad`・`_pad_stop`）、touch.c の同じ `kl_scroller` に `kl_scroller_axis`・`_axis_stop` で渡す。指が離れるまで tick を続け、休む判定に指の保持を入れた。
+  画面の指がある間は pad は動かさない。Files と Browser は自前の `wl_pointer` の `axis_source`・`axis_stop` を使うようにした（今までは捨てていた。frame ごとに wheel に戻す）。
+  log: `Z… KINETIC fling source=finger|touch vy=…`（touch の release が fling の時にも）、捕まえた時 `TOUCH caught source=finger`。
+- Image Viewer: 2 本指の wheel は zoom（`view_axis`）で scroll ではないので変えない。Notes: pointer の scroll を扱わない（`notes/window.c` に axis が無い）ので変えない。
+  Settings の touch screen の drag（ws089-p012）には fling が無い（自前の慣性も無い）。どれも記録だけ。
+- 試験: 新しい `plan/ws090/tests/host-pad.sh`（`host-pad-terminal.c`: 指の drag がそのまま view に、離しで飛ぶ・休む、休んだ指は投げない、飛行を捕まえる、画面の指が優先、7/7）。
+  ws081 の host-termtouch 20・host-filestouch 20・host-notestouch 52、host-core 53/53。zedBSD の terminal・files・browser・pdfviewer・textedit、keiland-linux の build（warning 0）。
+  既存の壊れ（この Phase の前から）: `plan/ws081/tests/run-pdftouch.sh` は消えた `pdfviewer/chooser.c` を参照、`run-browser-scroll.sh` は古い `build/ws074-host` の object で `main` が重複。
+- 受け入れの `grep`: app の source に慣性の式・定数は無い（`grep -rn "exp(\|TAU\|FRICTION\|KINETIC_" userland/desktop/{settings,files,terminal,browser/shell,pdfviewer,imageview,notes,textedit}` で慣性の物は 0）。
