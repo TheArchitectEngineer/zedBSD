@@ -6,7 +6,8 @@
 #     from y 0 to 640; 8 pixels apart, the gap between the titlebar and the window); the titlebar is as
 #     wide as the window (zdesktop's floating_title; its controls, back to "...", inside x .. x+1000).
 #  2. Docked by a double click on the title (GLASS dock): the controls in the system bar (where=docked),
-#     the cards 8 pixels in from the screen's edges; docked.png.  There: Go > Downloads, then the
+#     the cards at the docked body's edges (no margin since ws090-p021; zdesktop keeps the body 4 pixels from the
+#     screen's edges since ws099-p038); docked.png.  There: Go > Downloads, then the
 #     docked Back returns to Documents; the docked search field clicked, "report" typed, found
 #     (SEARCH done), Esc; the docked "..." opened with the menus (docked-overflow.png), View > List chosen
 #     (action 16).
@@ -107,7 +108,7 @@ set -- $(place 1 floating 1)
 double $((wx + 60)) $((${2:-0} + ${4:-0} / 2))
 expect_log /tmp/zdesktop.log "GLASS dock surface=$surface"
 expect_log /tmp/zdesktop.log "ZWL TITLEBAR control client=$zc1 surface=$surface where=docked id=1 .* shown=1"
-expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 card:8,8,212,[0-9]+,16 card:228,8,[0-9]+,[0-9]+,16\$"
+expect_log /tmp/zdesktop.log "ZWL GLASS client=[0-9]+ surface=$surface panels=2 card:0,0,212,[0-9]+,16 card:220,0,[0-9]+,[0-9]+,16\$"
 shot docked.png
 
 # Downloads (Go > Downloads, Ctrl+Shift+L), then the docked Back.

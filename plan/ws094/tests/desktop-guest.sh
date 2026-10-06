@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws094-p002: zdesktop's desktop surface (kl_desktop_v1) on the Venus guest, with the probe client
-# (desktop-probe.c, built by build-probe.sh).  The running guest gets this worktree's compositor and the probe;
+# (desktop-probe.c, built by build-probe.sh in the install step).  The running guest gets this worktree's compositor and the probe;
 # zdesktop --glass at 1280x800 with --desktop-token=T and no program of its own.
 #   role      the probe with the token takes the role: configured under the system bar (0,44 1280x756), its image
 #             committed and its frame done; a picture of its squares over the wallpaper (role.png)
@@ -81,6 +81,8 @@ for step in "$@"; do
 		for library in libkeiland libvulkan libtruetype libwayland-client; do
 			put "$bin/dynamic/$library.so" "/lib/$library.so"
 		done
+		# The probe, built afresh against this build's libwayland-client (T1-257: none had been built for the build given).
+		sh plan/ws094/tests/build-probe.sh "$bin" >/dev/null || { echo "build-probe: FAILED"; status=1; }
 		put "$bin/ws094/desktop-probe" /tmp/desktop-probe
 		guest 'chmod 755 /bin/wayland /tmp/desktop-probe' >/dev/null
 		;;
