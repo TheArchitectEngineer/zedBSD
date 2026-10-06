@@ -34,3 +34,5 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 | p005・p009〜p011 | design.md §10 のとおり（p005 置き換えの font、p010 T1 → p011 規約） | 未作成 | — |
 
 見積もり: design.md §10（全体 17.5〜21.5 LW、画像を先にする段は約 10 LW）。Q1 の当初の概算は 6 LW。
+
+2026-10-06 / Q1: D2 の font の更新（p005 の前）: D2（Inter・JetBrains Mono・Droid Sans Fallback）の後に、ユーザーが UI の font を Mahora に替え、fallback は JetBrains Mono と Droid Sans Fallback の 2 つだけ残し Inter は使わないと決めた（ws090-p020）。p005 の置き換えの font は install される `keiland.ttf`（Mahora Regular）・`keiland-bold.ttf`（Mahora Bold）・`keiland-mono.ttf`（Mahora Mono）、無い字は `keiland-fallback-mono.ttf`（JetBrains Mono）→ `keiland-fallback.ttf`（Droid）。Mahora は Zlib（ユーザーの著作）で subset の埋め込みは問題ない。
