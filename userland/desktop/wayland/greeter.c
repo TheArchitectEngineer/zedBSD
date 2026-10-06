@@ -398,6 +398,8 @@ kwl_greeter_answer(
 			server->dirty = 1;
 			printf("KWL GREETER touch\n");
 		}
+
+		/* Not an answer: the attempt still waits. */
 		return;
 	}
 
@@ -544,6 +546,8 @@ kwl_greeter_key(
 			printf("KWL GREETER cancel error=%d\n", error);
 			return 1;
 		}
+
+		/* Otherwise what was typed goes. */
 		greeter_erase();
 		return 1;
 	case GREETER_KEY_UP:

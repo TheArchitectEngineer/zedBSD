@@ -1,240 +1,255 @@
 # The compositor's texts in Japanese (domain wayland, WS158). tools/i18n/tr.py update keeps the translations.
-# userland/desktop/locale/wayland.keys:3
+# wayland.keys:3
 msg	Lock Screen	画面をロック
-# userland/desktop/locale/wayland.keys:4, userland/desktop/wayland/power-dialog.c:544
+# wayland.keys:4, ../wayland/power-dialog.c:544
 msg	Log Out	ログアウト
-# userland/desktop/locale/wayland.keys:7
+# wayland.keys:7
 msg	Network	ネットワーク
-# userland/desktop/locale/wayland.keys:8, userland/desktop/wayland/network.c:941
+# wayland.keys:8, ../wayland/network.c:941
 msg	Wi-Fi	Wi-Fi
-# userland/desktop/locale/wayland.keys:9
+# wayland.keys:9
 msg	Ethernet	イーサネット
-# userland/desktop/locale/wayland.keys:10
+# wayland.keys:10
 msg	Interface	インターフェイス
-# userland/desktop/locale/wayland.keys:11
+# wayland.keys:11
 msg	Status	状態
-# userland/desktop/locale/wayland.keys:12
+# wayland.keys:12
 msg	Connected	接続済み
-# userland/desktop/locale/wayland.keys:13, userland/desktop/wayland/network.c:1133
+# wayland.keys:13, ../wayland/network.c:1133
 msg	Not connected	未接続
-# userland/desktop/locale/wayland.keys:14
+# wayland.keys:14
 msg	Network service not running	ネットワークサービスが動いていません
-# userland/desktop/locale/wayland.keys:15
+# wayland.keys:15
 msg	IPv4 address	IPv4 アドレス
-# userland/desktop/locale/wayland.keys:16
+# wayland.keys:16
 msg	Subnet mask	サブネットマスク
-# userland/desktop/locale/wayland.keys:17
+# wayland.keys:17
 msg	DNS	DNS
-# userland/desktop/locale/wayland.keys:18
+# wayland.keys:18
 msg	MAC address	MAC アドレス
-# userland/desktop/locale/wayland.keys:19
+# wayland.keys:19
 msg	MTU	MTU
-# userland/desktop/locale/wayland.keys:20
+# wayland.keys:20
 msg	Signal	信号の強さ
-# userland/desktop/locale/wayland.keys:21
+# wayland.keys:21
 msg	Received	受信
-# userland/desktop/locale/wayland.keys:22
+# wayland.keys:22
 msg	Sent	送信
-# userland/desktop/wayland/greeter.c:435, userland/desktop/wayland/power-dialog.c:542
+# ../wayland/greeter.c:453, ../wayland/power-dialog.c:542
 msg	Restart	再起動
-# userland/desktop/wayland/greeter.c:436
+# ../wayland/greeter.c:454
 msg	Shut Down	シャットダウン
-# userland/desktop/wayland/greeter.c:883
+# ../wayland/greeter.c:909
 msg	Starting session...	セッションを開始しています...
-# userland/desktop/wayland/greeter.c:885
+# ../wayland/greeter.c:911
+msg	Touch your security key.	セキュリティキーに触れてください。
+# ../wayland/greeter.c:913
 msg	Checking...	確認しています...
-# userland/desktop/wayland/greeter.c:893
+# ../wayland/greeter.c:922
 msg	Use your password	パスワードを使う
-# userland/desktop/wayland/greeter.c:895
+# ../wayland/greeter.c:924
 msg	Use your PIN	PIN を使う
-# userland/desktop/wayland/greeter.c:925
+# ../wayland/greeter.c:926
+msg	Use a security key	セキュリティキーを使う
+# ../wayland/greeter.c:956
 msg	Password	パスワード
-# userland/desktop/wayland/greeter.c:927
+# ../wayland/greeter.c:958
 msg	PIN	PIN
-# userland/desktop/wayland/greeter.c:1170
+# ../wayland/greeter.c:960
+msg	Security key PIN	セキュリティキーの PIN
+# ../wayland/greeter.c:1203
 msg	A PIN has six digits.	PIN は 6 桁です。
-# userland/desktop/wayland/greeter.c:1291
+# ../wayland/greeter.c:1210
+msg	A security key's PIN has at least four characters.	セキュリティキーの PIN は 4 文字以上です。
+# ../wayland/greeter.c:1332
 msg	Shutting down...	シャットダウンしています...
-# userland/desktop/wayland/greeter.c:1294
+# ../wayland/greeter.c:1335
 msg	Restarting...	再起動しています...
-# userland/desktop/wayland/greeter.c:1359
+# ../wayland/greeter.c:1401
 msg	Busy. Try again.	処理中です。もう一度お試しください。
-# userland/desktop/wayland/greeter.c:1361, userland/desktop/wayland/greeter.c:1399
+# ../wayland/greeter.c:1403, ../wayland/greeter.c:1441
 msg	The login failed.	ログインできませんでした。
-# userland/desktop/wayland/greeter.c:1383
+# ../wayland/greeter.c:1425
 msg	Use your password.	パスワードを使ってください。
-# userland/desktop/wayland/greeter.c:1392
+# ../wayland/greeter.c:1434
 msg	This account is locked.	このアカウントはロックされています。
-# userland/desktop/wayland/greeter.c:1406
+# ../wayland/greeter.c:1448
 msg	That took too long. Try again.	時間がかかりすぎました。もう一度お試しください。
-# userland/desktop/wayland/greeter.c:1412
+# ../wayland/greeter.c:1460
 msg	Wrong PIN. Try again.	PIN が違います。もう一度お試しください。
-# userland/desktop/wayland/greeter.c:1418
+# ../wayland/greeter.c:1466
 msg	Wrong password. Try again.	パスワードが違います。もう一度お試しください。
-# userland/desktop/wayland/keyboard.c:2038
+# ../wayland/greeter.c:1610
+msg	Wrong security key PIN. Try again.	セキュリティキーの PIN が違います。もう一度お試しください。
+# ../wayland/greeter.c:1613
+msg	No registered security key is plugged in.	登録したセキュリティキーが挿さっていません。
+# ../wayland/greeter.c:1618
+msg	The security key is locked.	セキュリティキーがロックされています。
+# ../wayland/greeter.c:1623
+msg	The security key did not answer.	セキュリティキーが応答しませんでした。
+# ../wayland/greeter.c:1628
+msg	This security key cannot be used.	このセキュリティキーは使えません。
+# ../wayland/keyboard.c:2038
 msg	Keyboard	キーボード
-# userland/desktop/wayland/language.c:115
+# ../wayland/language.c:115
 ctx	long date	{1}, {2} {3}	{2}{3}日 {1}
-# userland/desktop/wayland/language.c:117
+# ../wayland/language.c:117
 ctx	short date	{1} {2} {3}  {4}	{2}{3}日({1})  {4}
-# userland/desktop/wayland/language.c:152
+# ../wayland/language.c:152
 ctx	weekday	Sunday	日曜日
-# userland/desktop/wayland/language.c:153
+# ../wayland/language.c:153
 ctx	weekday	Sun	日
-# userland/desktop/wayland/language.c:156
+# ../wayland/language.c:156
 ctx	weekday	Monday	月曜日
-# userland/desktop/wayland/language.c:157
+# ../wayland/language.c:157
 ctx	weekday	Mon	月
-# userland/desktop/wayland/language.c:160
+# ../wayland/language.c:160
 ctx	weekday	Tuesday	火曜日
-# userland/desktop/wayland/language.c:161
+# ../wayland/language.c:161
 ctx	weekday	Tue	火
-# userland/desktop/wayland/language.c:164
+# ../wayland/language.c:164
 ctx	weekday	Wednesday	水曜日
-# userland/desktop/wayland/language.c:165
+# ../wayland/language.c:165
 ctx	weekday	Wed	水
-# userland/desktop/wayland/language.c:168
+# ../wayland/language.c:168
 ctx	weekday	Thursday	木曜日
-# userland/desktop/wayland/language.c:169
+# ../wayland/language.c:169
 ctx	weekday	Thu	木
-# userland/desktop/wayland/language.c:172
+# ../wayland/language.c:172
 ctx	weekday	Friday	金曜日
-# userland/desktop/wayland/language.c:173
+# ../wayland/language.c:173
 ctx	weekday	Fri	金
-# userland/desktop/wayland/language.c:176
+# ../wayland/language.c:176
 ctx	weekday	Saturday	土曜日
-# userland/desktop/wayland/language.c:177
+# ../wayland/language.c:177
 ctx	weekday	Sat	土
-# userland/desktop/wayland/language.c:196
+# ../wayland/language.c:196
 ctx	month	January	1月
-# userland/desktop/wayland/language.c:197
+# ../wayland/language.c:197
 ctx	month	Jan	1月
-# userland/desktop/wayland/language.c:200
+# ../wayland/language.c:200
 ctx	month	February	2月
-# userland/desktop/wayland/language.c:201
+# ../wayland/language.c:201
 ctx	month	Feb	2月
-# userland/desktop/wayland/language.c:204
+# ../wayland/language.c:204
 ctx	month	March	3月
-# userland/desktop/wayland/language.c:205
+# ../wayland/language.c:205
 ctx	month	Mar	3月
-# userland/desktop/wayland/language.c:208
+# ../wayland/language.c:208
 ctx	month	April	4月
-# userland/desktop/wayland/language.c:209
+# ../wayland/language.c:209
 ctx	month	Apr	4月
-# userland/desktop/wayland/language.c:212
+# ../wayland/language.c:212
 ctx	month	May	5月
-# userland/desktop/wayland/language.c:215
+# ../wayland/language.c:215
 ctx	month	June	6月
-# userland/desktop/wayland/language.c:216
+# ../wayland/language.c:216
 ctx	month	Jun	6月
-# userland/desktop/wayland/language.c:219
+# ../wayland/language.c:219
 ctx	month	July	7月
-# userland/desktop/wayland/language.c:220
+# ../wayland/language.c:220
 ctx	month	Jul	7月
-# userland/desktop/wayland/language.c:223
+# ../wayland/language.c:223
 ctx	month	August	8月
-# userland/desktop/wayland/language.c:224
+# ../wayland/language.c:224
 ctx	month	Aug	8月
-# userland/desktop/wayland/language.c:227
+# ../wayland/language.c:227
 ctx	month	September	9月
-# userland/desktop/wayland/language.c:228
+# ../wayland/language.c:228
 ctx	month	Sep	9月
-# userland/desktop/wayland/language.c:231
+# ../wayland/language.c:231
 ctx	month	October	10月
-# userland/desktop/wayland/language.c:232
+# ../wayland/language.c:232
 ctx	month	Oct	10月
-# userland/desktop/wayland/language.c:235
+# ../wayland/language.c:235
 ctx	month	November	11月
-# userland/desktop/wayland/language.c:236
+# ../wayland/language.c:236
 ctx	month	Nov	11月
-# userland/desktop/wayland/language.c:239
+# ../wayland/language.c:239
 ctx	month	December	12月
-# userland/desktop/wayland/language.c:240
+# ../wayland/language.c:240
 ctx	month	Dec	12月
-# userland/desktop/wayland/network.c:717
+# ../wayland/network.c:717
 msg	Could not join {1} ({2})	{1} に接続できませんでした（{2}）
-# userland/desktop/wayland/network.c:944, userland/desktop/wayland/network.c:1127
+# ../wayland/network.c:944, ../wayland/network.c:1127
 msg	Connecting to {1}...	{1} に接続しています...
-# userland/desktop/wayland/network.c:957
+# ../wayland/network.c:957
 msg	Looking for networks...	ネットワークを探しています...
-# userland/desktop/wayland/network.c:959
+# ../wayland/network.c:959
 msg	No networks found	ネットワークが見つかりません
-# userland/desktop/wayland/network.c:1012
+# ../wayland/network.c:1012
 msg	{1} more in Settings > Wi-Fi	ほかに {1} 件（設定 > Wi-Fi）
-# userland/desktop/wayland/network.c:1026
+# ../wayland/network.c:1026
 msg	Wired ({1}): connected	有線（{1}）: 接続済み
-# userland/desktop/wayland/network.c:1028
+# ../wayland/network.c:1028
 msg	Wired: not connected	有線: 未接続
-# userland/desktop/wayland/network.c:1084
+# ../wayland/network.c:1084
 msg	Key for {1}	{1} のパスワード
-# userland/desktop/wayland/network.c:1089
+# ../wayland/network.c:1089
 msg	Enter: join   Esc: cancel	Enter: 接続   Esc: キャンセル
-# userland/desktop/wayland/network.c:1105
+# ../wayland/network.c:1105
 msg	Starting the network service...	ネットワークサービスを開始しています...
-# userland/desktop/wayland/network.c:1111
+# ../wayland/network.c:1111
 msg	Network service not available	ネットワークサービスを使えません
-# userland/desktop/wayland/network.c:1118
+# ../wayland/network.c:1118
 msg	No Wi-Fi hardware	Wi-Fi のハードウェアがありません
-# userland/desktop/wayland/network.c:1121
+# ../wayland/network.c:1121
 msg	Wi-Fi is off	Wi-Fi はオフです
-# userland/desktop/wayland/network.c:1124
+# ../wayland/network.c:1124
 msg	Searching for a known network	接続したことのあるネットワークを探しています
-# userland/desktop/wayland/network.c:1130
+# ../wayland/network.c:1130
 msg	Connected to {1}	{1} に接続済み
-# userland/desktop/wayland/network.c:1234, userland/desktop/wayland/network.c:2023
+# ../wayland/network.c:1234, ../wayland/network.c:2023
 msg	Could not {1} ({2})	{1}できませんでした（{2}）
-# userland/desktop/wayland/network.c:1544
+# ../wayland/network.c:1544
 msg	Connecting...	接続しています...
-# userland/desktop/wayland/network.c:1738
+# ../wayland/network.c:1738
 ctx	network request	scan	ネットワークを探すことが
-# userland/desktop/wayland/network.c:1740
+# ../wayland/network.c:1740
 ctx	network request	join	接続
-# userland/desktop/wayland/network.c:1742
+# ../wayland/network.c:1742
 ctx	network request	disconnect	切断
-# userland/desktop/wayland/network.c:1744
+# ../wayland/network.c:1744
 ctx	network request	turn Wi-Fi on	Wi-Fi をオンに
-# userland/desktop/wayland/network.c:1746
+# ../wayland/network.c:1746
 ctx	network request	turn Wi-Fi off	Wi-Fi をオフに
-# userland/desktop/wayland/network.c:1748
+# ../wayland/network.c:1748
 ctx	network request	save the key	パスワードを保存
-# userland/desktop/wayland/network.c:1750
+# ../wayland/network.c:1750
 ctx	network request	configure wired	有線の設定が
-# userland/desktop/wayland/network.c:1756
+# ../wayland/network.c:1756
 ctx	network request	do that	操作
-# userland/desktop/wayland/network.c:1928
+# ../wayland/network.c:1928
 msg	The key must be 8 to 63 characters	パスワードは 8〜63 文字です
-# userland/desktop/wayland/network.c:1937
+# ../wayland/network.c:1937
 msg	Could not save the key ({1})	パスワードを保存できませんでした（{1}）
-# userland/desktop/wayland/network.c:2009
+# ../wayland/network.c:2009
 msg	Could not join {1}: no saved key	{1} に接続できませんでした: 保存したパスワードがありません
-# userland/desktop/wayland/network.c:2014
+# ../wayland/network.c:2014
 msg	Wi-Fi is off; turn it on to join	Wi-Fi がオフです。接続するにはオンにしてください
-# userland/desktop/wayland/network.c:2017
+# ../wayland/network.c:2017
 msg	This account may not control Wi-Fi	このアカウントは Wi-Fi を操作できません
-# userland/desktop/wayland/network.c:2020
+# ../wayland/network.c:2020
 msg	{1} did not accept the key	{1} がパスワードを受け付けませんでした
-# userland/desktop/wayland/power-dialog.c:540
+# ../wayland/power-dialog.c:540
 msg	Power Off	電源を切る
-# userland/desktop/wayland/power-dialog.c:546
+# ../wayland/power-dialog.c:546
 msg	Cancel	キャンセル
-# userland/desktop/wayland/shell.c:3291
+# ../wayland/shell.c:3301
 msg	Window	ウインドウ
-# userland/desktop/wayland/shell.c:3295
+# ../wayland/shell.c:3305
 msg	{1} (not responding)	{1}（応答なし）
-# userland/desktop/wayland/shell.c:5992
+# ../wayland/shell.c:6130
 msg	No other windows	ほかのウインドウはありません
-# userland/desktop/wayland/shell.c:5998
+# ../wayland/shell.c:6136
 msg	Swipe left or right to choose · Swipe down to open	左右にスワイプして選ぶ · 下にスワイプして開く
-# userland/desktop/wayland/volume.c:502
+# ../wayland/volume.c:502
 msg	Sound	サウンド
-# userland/desktop/wayland/volume.c:507
+# ../wayland/volume.c:507
 msg	Muted	消音
-# userland/desktop/wayland/volume.c:528
+# ../wayland/volume.c:528
 msg	Mute	消音
-# userland/desktop/wayland/volume.c:535
+# ../wayland/volume.c:535
 msg	Sound service is not running	サウンドサービスが動いていません
-# userland/desktop/wayland/volume.c:537
+# ../wayland/volume.c:537
 msg	No sound output	音声の出力がありません
-
-# Not asked for by the source any more (kept for a text that comes back):
-# msg	Wiseview	Wiseview

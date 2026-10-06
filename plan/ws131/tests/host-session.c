@@ -230,9 +230,17 @@ test_login_screen(
 	error = kl_backend_session_set_pin(backend, "x", "123456");
 	check(error == ENOTSUP, "the login screen sets no PIN");
 
-	/* TOUCH answers nothing; FAIL with its word answers AUTH with EACCES. */
-	(void)write(ends[0], "TOUCH\nFAIL bad-secret\n", 22U);
+	/* TOUCH is told but answers nothing (ws172-p003): the request still waits. */
+	(void)write(ends[0], "TOUCH\n", 6U);
 	kl_backend_tick(backend, 1000U);
+	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_TOUCH && answer_error == 0, "TOUCH is told");
+	error = kl_backend_session_authenticate(backend, "kei", KL_BACKEND_STYLE_PASSWORD, "x");
+	check(error == EBUSY, "after TOUCH the request still waits");
+
+	/* FAIL with its word answers AUTH with EACCES. */
+	(void)write(ends[0], "FAIL bad-secret\n", 16U);
+	kl_backend_tick(backend, 1000U);
+	answer_count--;
 	check(answer_count == 1U && answer_request == KL_BACKEND_SESSION_AUTH && answer_error == EACCES, "FAIL answers AUTH with EACCES");
 	check(strcmp(kl_backend_session_reason(backend), "bad-secret") == 0, "the refusal's word is kept");
 
@@ -289,6 +297,8 @@ test_session(
 	void)
 {
 	struct kl_backend *backend;
+	struct kl_backend_key keys_listed[5];
+	size_t listed;
 	unsigned pin;
 	unsigned keys;
 	int ends[2];
@@ -365,6 +375,31 @@ test_session(
 	(void)write(ends[0], "FAIL locked\n", 12U);
 	kl_backend_tick(backend, 2000U);
 	check(answer_count == 5U && answer_error == EACCES && strcmp(kl_backend_session_reason(backend), "locked") == 0, "FAIL locked answers REMOVE");
+
+	/* The keys (ws172-p003): listed by ENROLLED, added with a label, the password and the key's PIN, removed by reference. */
+	error = kl_backend_session_enrolled(backend);
+	check(error == 0 && read_line(ends[0], "ENROLLED\n"), "ENROLLED written again");
+	(void)write(ends[0], "ENROLLED pin=0 fido2=2 key=0123456789abcdef/59756269 key=fedcba9876543210/4b657920320a\n", 87U);
+	kl_backend_tick(backend, 2000U);
+	listed = kl_backend_session_keys_get(backend, keys_listed, 5U);
+	check(listed == 1U && strcmp(keys_listed[0].ref, "0123456789abcdef") == 0 && strcmp(keys_listed[0].label, "Yubi") == 0,
+	    "ENROLLED's keys (one with a line end in its label is left out)");
+	error = kl_backend_session_add_key(backend, "secret", "Yubi Key", "1234");
+	check(error == 0 && read_line(ends[0], "ENROLL fido2 Yubi Key\nsecret\n1234\n"), "ENROLL fido2 with its label and lines written");
+	(void)write(ends[0], "TOUCH\nOK id=AQID\n", 17U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 8U && answer_request == KL_BACKEND_SESSION_ENROLL && answer_error == 0, "TOUCH, then OK answers the addition");
+	error = kl_backend_session_add_key(backend, "secret", "a:b", "1234");
+	check(error == EINVAL, "a label with a colon is EINVAL");
+	error = kl_backend_session_remove_key(backend, "secret", "0123456789abcdef");
+	check(error == 0 && read_line(ends[0], "REMOVE fido2 0123456789abcdef\nsecret\n"), "REMOVE fido2 with its reference written");
+	(void)write(ends[0], "OK\n", 3U);
+	kl_backend_tick(backend, 2000U);
+	check(answer_count == 9U && answer_request == KL_BACKEND_SESSION_ENROLL && answer_error == 0, "OK answers the removal");
+	error = kl_backend_session_remove_key(backend, "secret", "xyz");
+	check(error == EINVAL, "a reference that is not one is EINVAL");
+	error = kl_backend_session_cancel(backend);
+	check(error == 0 && read_line(ends[0], "CANCEL\n"), "CANCEL written");
 	answer_count = 1U;
 
 	/* LOGOUT once, QUIT, then RELEASED after the stop. */

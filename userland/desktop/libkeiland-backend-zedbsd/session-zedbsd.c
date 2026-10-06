@@ -500,6 +500,7 @@ kl_backend_session_add_key(
 	const char *pin)
 {
 	char line[SESSION_REQUEST_MAX];
+	const char *colon;
 	size_t length;
 	int valid;
 	int written;
@@ -520,7 +521,8 @@ kl_backend_session_add_key(
 		return EINVAL;
 	valid = session_secret_valid(label);
 	length = strlen(label);
-	if (!valid || length == 0U || length >= KL_BACKEND_KEY_LABEL || strchr(label, ':') != NULL)
+	colon = strchr(label, ':');
+	if (!valid || length == 0U || length >= KL_BACKEND_KEY_LABEL || colon != NULL)
 		return EINVAL;
 
 	/* The request; nothing of the secrets is kept once it is sent. */
@@ -585,12 +587,14 @@ int
 kl_backend_session_cancel(
 	struct kl_backend *backend)
 {
+	int descriptor;
 	int error;
 
 	/* The login screen's or a session's descriptor, while sessiond listens. */
 	if (backend == NULL)
 		return EINVAL;
-	if (session_descriptor(backend) < 0)
+	descriptor = session_descriptor(backend);
+	if (descriptor < 0)
 		return ENOTSUP;
 
 	/* The line, awaiting nothing of its own. */
@@ -937,7 +941,7 @@ session_take_enrolled(
 	}
 }
 
-/* Takes one "REF/LABEL" word (up to a space or the end), the label's bytes in hexadecimal.  Returns 0 or EINVAL. */
+/* Takes one "REF/LABEL" word (up to a space or the end), the label's bytes in hexadecimal (no control character).  Returns 0 or EINVAL. */
 static int
 session_take_key(
 	const char *word,
@@ -948,6 +952,7 @@ session_take_key(
 	size_t index;
 	int high;
 	int low;
+	int character;
 
 	/* The reference: 16 digits before the slash. */
 	memset(key, 0, sizeof(*key));
@@ -965,7 +970,10 @@ session_take_key(
 		low = session_hex_value(slash[2U + 2U * index]);
 		if (high < 0 || low < 0)
 			return EINVAL;
-		key->label[index] = (char)(high << 4 | low);
+		character = high << 4 | low;
+		if (character < 0x20 || character == 0x7f)
+			return EINVAL;
+		key->label[index] = (char)character;
 	}
 
 	/* Succeeded: the key. */

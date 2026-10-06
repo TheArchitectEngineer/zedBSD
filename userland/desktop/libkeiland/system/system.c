@@ -1221,14 +1221,17 @@ kl_system_account_add_key(
 	const char *pin,
 	uint32_t *request)
 {
+	const char *colon;
 	uint32_t number;
+	unsigned offered;
 	size_t length;
 	int valid;
 
 	/* The keys offered. */
 	if (system == NULL || system->account == NULL || system->lost)
 		return ENOTSUP;
-	if ((kl_system_capabilities(system) & KL_SYSTEM_HAS_KEYS) == 0U)
+	offered = kl_system_capabilities(system);
+	if ((offered & KL_SYSTEM_HAS_KEYS) == 0U)
 		return ENOTSUP;
 
 	/* One line each; a label of 1 to 32 bytes without a colon. */
@@ -1236,7 +1239,8 @@ kl_system_account_add_key(
 		return EINVAL;
 	valid = system_key_secret_valid(password) && system_key_secret_valid(pin) && system_key_secret_valid(label);
 	length = strlen(label);
-	if (!valid || length > KL_SYSTEM_KEY_LABEL_MAX || strchr(label, ':') != NULL)
+	colon = strchr(label, ':');
+	if (!valid || length > KL_SYSTEM_KEY_LABEL_MAX || colon != NULL)
 		return EINVAL;
 
 	/* A refusal or a touch of an earlier request is not this one's. */
@@ -1263,13 +1267,15 @@ kl_system_account_remove_key(
 	uint32_t *request)
 {
 	uint32_t number;
+	unsigned offered;
 	size_t length;
 	int valid;
 
 	/* The keys offered. */
 	if (system == NULL || system->account == NULL || system->lost)
 		return ENOTSUP;
-	if ((kl_system_capabilities(system) & KL_SYSTEM_HAS_KEYS) == 0U)
+	offered = kl_system_capabilities(system);
+	if ((offered & KL_SYSTEM_HAS_KEYS) == 0U)
 		return ENOTSUP;
 
 	/* The password, and a reference that fits. */

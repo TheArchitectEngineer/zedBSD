@@ -76,6 +76,10 @@ se_system_poll(
 		se_log("USERS enrolled changed");
 	}
 
+	/* A security key waits to be touched for the keys card's addition (ws172-p003). */
+	if ((app->system_changed & KL_SYSTEM_CHANGED_TOUCH) != 0U)
+		se_users_keys_touched(app);
+
 	/* The machine's memory for About (ws089-p013): the newest frame of the monitor, when one came. */
 	se_about_follow(app);
 

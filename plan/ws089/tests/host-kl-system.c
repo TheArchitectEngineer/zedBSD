@@ -56,6 +56,8 @@ unsigned
 kl_system_capabilities(const struct kl_system *system)
 {
 	(void)system;
+	if (getenv("HOST_KEYS") != NULL)
+		return KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_KEYS;
 	if (getenv("HOST_ACCOUNT_RESULT") != NULL)
 		return KL_SYSTEM_HAS_ACCOUNT;
 	return 0U;
@@ -146,6 +148,50 @@ kl_system_account_enrolled(const struct kl_system *system, unsigned *pin, unsign
 	(void)system;
 	*pin = 0U;
 	*keys = 0U;
+	return 0;
+}
+
+/*
+ * The security keys (ws172-p003): with HOST_KEYS in the environment two
+ * keys are listed and an addition or a removal is asked (its answer never
+ * comes); without it there are none.
+ */
+size_t
+kl_system_account_keys(const struct kl_system *system, struct kl_system_key *keys, size_t capacity)
+{
+	(void)system;
+	if (getenv("HOST_KEYS") == NULL || capacity < 2U)
+		return 0U;
+	snprintf(keys[0].ref, sizeof(keys[0].ref), "0123456789abcdef");
+	snprintf(keys[0].label, sizeof(keys[0].label), "YubiKey 5 NFC");
+	snprintf(keys[1].ref, sizeof(keys[1].ref), "fedcba9876543210");
+	snprintf(keys[1].label, sizeof(keys[1].label), "Spare key");
+	return 2U;
+}
+
+int
+kl_system_account_add_key(struct kl_system *system, const char *password, const char *label, const char *pin, uint32_t *request)
+{
+	(void)system;
+	printf("HOST key add label=%s password=%zu pin=%zu\n", label, strlen(password), strlen(pin));
+	*request = 77U;
+	return 0;
+}
+
+int
+kl_system_account_remove_key(struct kl_system *system, const char *password, const char *ref, uint32_t *request)
+{
+	(void)system;
+	printf("HOST key remove ref=%s password=%zu\n", ref, strlen(password));
+	*request = 78U;
+	return 0;
+}
+
+int
+kl_system_account_touched(struct kl_system *system, uint32_t *request)
+{
+	(void)system;
+	(void)request;
 	return 0;
 }
 

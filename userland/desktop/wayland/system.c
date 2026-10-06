@@ -271,8 +271,7 @@ static int system_devices_request(struct kwl_object *object, uint32_t opcode, co
 static int system_account_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int system_account_pin(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int system_account_key(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
-static int system_key_begin(struct kwl_object *object, uint32_t number, uint32_t opcode, const char *password, const char *argument,
-    const char *pin);
+static int system_key_begin(struct kwl_object *object, uint32_t number, uint32_t opcode, const char *password, const char *argument, const char *pin);
 static int system_pin_begin(struct kwl_object *object, uint32_t number, const char *current, const char *pin);
 static int system_pin_valid(const char *pin);
 static void system_account_enrolled(struct kwl_object *object);
@@ -1756,6 +1755,8 @@ system_account_key(
 		system_wipe(password, strlen(password));
 		free(password);
 	}
+
+	/* The label or the reference, then the key's PIN. */
 	free(argument);
 	if (pin != NULL) {
 		system_wipe(pin, strlen(pin));

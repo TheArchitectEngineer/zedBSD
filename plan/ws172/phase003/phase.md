@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172-p003 -->
 # ws172-p003: 鍵（FIDO2）の login と登録: passkey-fido2 と機器の helper、UI
 
-Status: in-progress（2026-10-06 P2: 段 A（passkey-fido2・helper・`_passkey`）を実装し、host 試験 PASS。段 B（UI）と段 C（QEMU の鍵）は残り）
+Status: in-progress（2026-10-06 P2: 段 A（passkey-fido2・helper・`_passkey`）と段 B（鍵の一覧・登録・削除の口と UI）を実装し、host 試験 PASS。段 C はユーザーの決定で実機の UAT（WS161 p006）。QEMU の鍵の無い所の確認は T1 待ち）
 WS: [ws172](../ws.md)
 設計: [phase001](../phase001/phase.md) の §7・§12（B1・B2・M3・M6・M7）と判断 P3・P4・P5・P8・P9、`docs/architecture/security.md` の「The parts」「The request」「The security key」
 Queue: Q1 の P2 の列（2026-10-06、q824 → q826 → WS161 → **WS172**）
@@ -15,8 +15,8 @@ Queue: Q1 の P2 の列（2026-10-06、q824 → q826 → WS161 → **WS172**）
 | 段 | 内容 | 状態 |
 | --- | --- | --- |
 | A | `passkey-fido2`（auth・enroll-fido2・remove-fido2）、機器の helper、`_passkey` の account、`/etc/passkey` の鍵の行の追加・数の更新・削除、build の登録、host 試験 | 実装済み（2026-10-06） |
-| B | sessiond の `ENROLLED` に鍵の一覧（id・label）、libkeiland-backend と compositor の口、greeter・lock の「Use security key」と TOUCH の表示と CANCEL、Settings の Users の鍵の card（登録・削除） | 未着手 |
-| C | QEMU で鍵の流れを確かめる手段（判断 P5: 試験の kernel の loopback を、試験の秘密鍵で署名する CTAP2 の応答器に広げる）と T1 の試験 | 未着手（Q1 に相談: kernel の中の P-256 の署名が要る） |
+| B | sessiond の `ENROLLED` に鍵の一覧（id・label）、libkeiland-backend と compositor の口、greeter・lock の「Use security key」と TOUCH の表示と CANCEL、Settings の Users の鍵の card（登録・削除） | 実装済み（2026-10-06） |
+| C | QEMU で鍵の流れを確かめる手段 | ユーザーの決定（下）で作らない。鍵の流れは実機の UAT |
 
 ## 段 A の実装（2026-10-06 P2）
 
@@ -58,3 +58,52 @@ Queue: Q1 の P2 の列（2026-10-06、q824 → q826 → WS161 → **WS172**）
 ## 2026-10-06 夜 ユーザーの決定（段 C、P5 の置き換え）
 
 P2 の案 (a) kernel の試験の driver に CTAP2 の応答器、(b) userland の応答器と kernel の中継、(c) 実機の鍵だけ、へのクリックの回答「(c) 実機の鍵だけで確かめる」: QEMU では鍵の流れを試さず、実機の YubiKey（WS161 p006 の UAT）で確かめる。承認済みの P5（kernel の loopback を CTAP2 の応答器に広げる）は行わない。
+
+## 段 B の実装（2026-10-06 P2）
+
+- **鍵の一覧**: `/sbin/passkey` の `enrolled` の答えに、鍵ごとに ` key=REF/LABEL` を足した。
+  - REF は鍵の参照で、credential ID の base64url の text の 64 bit FNV-1a を 16 桁の 16 進で表したもの（`passkey_record_ref`）。
+  - LABEL は label の bytes を 16 進で書いたもの。空白を含まず、5 本でも sessiond の 1 行（512 byte）に入る。
+  - `remove-fido2` は ID の代わりに参照も受ける（`passkey-fido2` の `main_remove`）。
+  - sessiond の `AUTH_EXTRA_MAX` を 480 にした。
+  - `docs/architecture/security.md` の要求の表を直した。
+- **libkeiland-backend**:
+  - `kl_backend_session_keys_get`、`kl_backend_session_add_key`（`ENROLL fido2 LABEL` ＋ password ＋ 鍵の PIN）、`kl_backend_session_remove_key`（`REMOVE fido2 REF`）、`kl_backend_session_cancel`（`CANCEL`）。
+  - `TOUCH` は `session_answer(KL_BACKEND_SESSION_TOUCH, 0)` として host に伝える。待っている要求は終わらない。
+  - Linux・FreeBSD の `session-none.c` は ENOTSUP。
+- **compositor**:
+  - `kl_system_account_v1` の版 14（`KL_SYSTEM_MANAGER_VERSION` 14、`KL_SYSTEM_SINCE_KEYS`）に、request `add_key`・`remove_key`、event `key(ref, label)`（enrolled の前に鍵ごと）・`touch(request)` を足した。
+  - 鍵の変更の答えは PIN の変更と同じ待ちで返す（`pin_key`）。`TOUCH` は鍵の追加の待ちがあれば `kwl_system_key_touch` が、無ければ greeter・lock が受ける（`handoff.c`）。
+- **greeter・lock**:
+  - 下の link は、password → PIN → 鍵 → password の順に、提供されている方式を巡る（「Use a security key」）。
+  - 鍵の方式では field の hint が「Security key PIN」になり、4 文字以上で送る。
+  - `TOUCH` で「Touch your security key.」と出す。待つ間に Esc を押すと `CANCEL` を送る。
+  - 鍵の失敗の語（no-key・key-locked・device・cloned・bad-secret）を言葉にした。
+  - 日本語の訳 9 行を `locale/ja/wayland.tr` に足した（`tr.py update`、check は 127 件で 0 problems）。
+- **libkeiland**（KL_VERSION 52）:
+  - 関数 `kl_system_account_keys`・`kl_system_account_add_key`・`kl_system_account_remove_key`・`kl_system_account_touched`、型 `struct kl_system_key`、bit `KL_SYSTEM_HAS_KEYS`・`KL_SYSTEM_CHANGED_TOUCH` を足した。`exports.map` を作り直した。
+- **Settings**: Users の頁の PIN の card の下に「Security keys」の card（`page-users-keys.c`）を置いた。
+  - 鍵の一覧と、鍵ごとの Remove（password を打つと押せる）。
+  - field は現在の password、鍵の名前、鍵の PIN。「Add Security Key」と、touch の表示、答えの文。
+- **試験の更新**:
+  - `plan/ws131/tests/host-session.c`: TOUCH が伝わり要求は待ち続けること、鍵の一覧・追加・削除・CANCEL。
+  - `plan/ws131/tests/host-system.c`: capabilities に HAS_KEYS、鍵の追加と touch、一覧、誤った password、削除。
+  - `plan/ws089/tests/host-kl-system.c`: `HOST_KEYS` の stand-in。
+  - `plan/ws172/tests/passkey-host-test.c`: field と参照。
+  - 新しく `plan/ws172/tests/run-host-settings-keys.sh` を足した。
+
+## 確認（段 B、2026-10-06 P2、host）
+
+| 確認 | 結果 |
+| --- | --- |
+| `plan/ws131/tests/host-session.sh` | 63/63 |
+| `plan/ws131/tests/host-system.sh` | PASS |
+| `plan/ws172/tests/run-host-settings-keys.sh`（2 本の一覧の絵、password を打つと Remove が参照で頼む。host の renderer は field に 1 文字しか打てないので、追加（PIN 4 文字以上）は QEMU で確かめる） | PASS |
+| `plan/ws172/tests/passkey-host-test.sh`・`fido2-host-test.sh`・`sessiond-auth-host-test.sh` | PASS・PASS・ok |
+| build（zedBSD: libkeiland.so・wayland・settings・sessiond・passkey・passkey-fido2。Linux: `keiland-linux.mk all`） | 自分の code の warning 0（OpenSSL の package の build の警告は外部） |
+| style-check（変えた C） | 新しい違反 0（passkey の main.c の既存の 27 は変わらない） |
+
+未実施（T1 に頼む、鍵の無い所。2026-10-06 夜 Q1）:
+- greeter の「Use a security key」の link と hint の見た目（鍵を登録した account が要るので、test の image の `/etc/passkey` に鍵の行を置く必要がある）。
+- 鍵が無い時の振る舞い（`no-key` の文）。
+- Settings の Users の「Security keys」の card の見た目。

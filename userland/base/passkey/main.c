@@ -445,6 +445,7 @@ passkey_keys_listed(
 	char id[PASSKEY_REQUEST_MAX];
 	char label[PASSKEY_FIELD_MAX];
 	char ref[PASSKEY_REF_SIZE];
+	size_t wanted;
 	size_t used;
 	size_t place;
 	unsigned index;
@@ -464,13 +465,17 @@ passkey_keys_listed(
 		/* " key=", the reference, "/", the label's bytes as digits, while there is room. */
 		passkey_record_ref(id, ref, sizeof(ref));
 		used = strlen(extra);
-		if (used + 6U + strlen(ref) + 2U * strlen(label) + 1U > size)
+		wanted = 6U + strlen(ref);
+		wanted += 2U * strlen(label);
+		if (used + wanted + 1U > size)
 			break;
 		used += (size_t)snprintf(extra + used, size - used, " key=%s/", ref);
 		for (place = 0U; label[place] != '\0'; place++) {
 			extra[used++] = digits[(unsigned char)label[place] >> 4];
 			extra[used++] = digits[(unsigned char)label[place] & 0x0fU];
 		}
+
+		/* The listing ends after it. */
 		extra[used] = '\0';
 	}
 }
