@@ -61,13 +61,13 @@ struct thumb_gif_source {
 };
 
 static int thumb_read_file(const char *path, unsigned char **data, size_t *size);
-static int thumb_ppm(const unsigned char *data, size_t size, struct fm_image *image);
-static int thumb_png(const unsigned char *data, size_t size, struct fm_image *image);
+static int thumb_ppm(const unsigned char *data, size_t size, struct kl_image *image);
+static int thumb_png(const unsigned char *data, size_t size, struct kl_image *image);
 static int thumb_signed(const unsigned char *data, size_t size, const char *signature, size_t length);
-static int thumb_jpeg(const unsigned char *data, size_t size, struct fm_image *image);
-static int thumb_gif(const unsigned char *data, size_t size, struct fm_image *image);
+static int thumb_jpeg(const unsigned char *data, size_t size, struct kl_image *image);
+static int thumb_gif(const unsigned char *data, size_t size, struct kl_image *image);
 static int thumb_gif_read(GifFileType *gif, GifByteType *bytes, int count);
-static void thumb_adopt(struct kl_picture *picture, struct fm_image *image);
+static void thumb_adopt(struct kl_picture *picture, struct kl_image *image);
 static int thumb_number(const unsigned char *data, size_t size, size_t *at);
 static int thumb_space(unsigned char byte);
 static struct fm_thumb *thumb_find(struct fm_app *app, const char *path, time_t modified);
@@ -83,7 +83,7 @@ static struct fm_thumb *thumb_slot(struct fm_app *app);
 int
 fm_image_load(
 	const char *path,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	unsigned char *data;
 	size_t size;
@@ -145,9 +145,9 @@ int
 fm_image_thumbnail(
 	const char *path,
 	int side,
-	struct fm_image *thumbnail)
+	struct kl_image *thumbnail)
 {
-	struct fm_image full;
+	struct kl_image full;
 	int width;
 	int height;
 	int error;
@@ -166,15 +166,15 @@ fm_image_thumbnail(
 
 	/* Its size in the square. */
 	fm_image_fit(full.width, full.height, side, side, &width, &height);
-	error = fm_image_create(thumbnail, width, height);
+	error = kl_image_create(thumbnail, width, height);
 	if (error != 0) {
-		fm_image_release(&full);
+		kl_image_release(&full);
 		return error;
 	}
 
 	/* The picture averaged down into it. */
-	fm_image_scale(&full, thumbnail);
-	fm_image_release(&full);
+	kl_image_scale(&full, thumbnail);
+	kl_image_release(&full);
 
 	/* Succeeded: the thumbnail. */
 	return 0;
@@ -187,7 +187,7 @@ fm_image_thumbnail(
  * in a later round of the main loop (fm_thumb_tick); only one file is
  * asked for at a time, so the drawing asks again for the others.
  */
-const struct fm_image *
+const struct kl_image *
 fm_thumb_get(
 	struct fm_app *app,
 	const char *path,
@@ -238,7 +238,7 @@ fm_thumb_tick(
 
 	/* The slot, emptied of the thumbnail it held. */
 	thumb = thumb_slot(app);
-	fm_image_release(&thumb->image);
+	kl_image_release(&thumb->image);
 
 	/*
 	 * The slot now stands for the file asked for.  A file that cannot be
@@ -285,7 +285,7 @@ fm_thumb_release(
 
 	/* Each slot's picture, and the slot emptied. */
 	for (index = 0; index < FM_THUMBS; index++) {
-		fm_image_release(&app->thumbs[index].image);
+		kl_image_release(&app->thumbs[index].image);
 		memset(&app->thumbs[index], 0, sizeof(app->thumbs[index]));
 	}
 
@@ -403,7 +403,7 @@ static int
 thumb_ppm(
 	const unsigned char *data,
 	size_t size,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	uint32_t *row;
 	size_t needed;
@@ -449,7 +449,7 @@ thumb_ppm(
 		return EINVAL;
 
 	/* The picture. */
-	error = fm_image_create(image, width, height);
+	error = kl_image_create(image, width, height);
 	if (error != 0)
 		return error;
 
@@ -483,7 +483,7 @@ static int
 thumb_png(
 	const unsigned char *data,
 	size_t size,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	png_image png;
 	unsigned char *pixels;
@@ -523,7 +523,7 @@ thumb_png(
 	}
 
 	/* The picture. */
-	error = fm_image_create(image, (int)png.width, (int)png.height);
+	error = kl_image_create(image, (int)png.width, (int)png.height);
 	if (error != 0) {
 		free(pixels);
 		return error;
@@ -683,7 +683,7 @@ static int
 thumb_jpeg(
 	const unsigned char *data,
 	size_t size,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	struct kl_picture picture;
 	int orientation;
@@ -713,7 +713,7 @@ static int
 thumb_gif(
 	const unsigned char *data,
 	size_t size,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	struct thumb_gif_source source;
 	struct kl_picture picture;
@@ -778,11 +778,11 @@ thumb_gif_read(
 	return (int)left;
 }
 
-/* Makes a decoded picture the image (the same pixels, freed by fm_image_release). */
+/* Makes a decoded picture the image (the same pixels, freed by kl_image_release). */
 static void
 thumb_adopt(
 	struct kl_picture *picture,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	/* The image takes the pixels; the picture no longer owns them. */
 	image->pixels = picture->pixels;

@@ -263,40 +263,40 @@ fm_mime_sniff(
 /*
  * Reports the color of a category's band on its file icon.
  */
-fm_color
+kl_color
 fm_mime_color(
 	unsigned category)
 {
 	/* Each category's color; a plain document is grey. */
 	switch (category) {
 	case FM_CATEGORY_TEXT:
-		return FM_RGB(0x8a94a6);
+		return KL_RGB(0x8a94a6);
 	case FM_CATEGORY_CODE:
-		return FM_RGB(0x14a3a0);
+		return KL_RGB(0x14a3a0);
 	case FM_CATEGORY_IMAGE:
-		return FM_RGB(0x3fb27f);
+		return KL_RGB(0x3fb27f);
 	case FM_CATEGORY_AUDIO:
-		return FM_RGB(0xe85d9a);
+		return KL_RGB(0xe85d9a);
 	case FM_CATEGORY_VIDEO:
-		return FM_RGB(0x8b5cf6);
+		return KL_RGB(0x8b5cf6);
 	case FM_CATEGORY_ARCHIVE:
-		return FM_RGB(0xa97142);
+		return KL_RGB(0xa97142);
 	case FM_CATEGORY_PDF:
-		return FM_RGB(0xe0574f);
+		return KL_RGB(0xe0574f);
 	case FM_CATEGORY_EXECUTABLE:
-		return FM_RGB(0x3d4556);
+		return KL_RGB(0x3d4556);
 	case FM_CATEGORY_DOCUMENT:
-		return FM_RGB(0x3b82f6);
+		return KL_RGB(0x3b82f6);
 	case FM_CATEGORY_FONT:
-		return FM_RGB(0xd08a1e);
+		return KL_RGB(0xd08a1e);
 	case FM_CATEGORY_MODEL:
-		return FM_RGB(0xe07a5a);
+		return KL_RGB(0xe07a5a);
 	default:
 		break;
 	}
 
 	/* A document of no known kind. */
-	return FM_RGB(0x9aa3b2);
+	return KL_RGB(0x9aa3b2);
 }
 
 /*
@@ -407,7 +407,7 @@ mime_text_like(
 
 		/* A malformed character is not text, unless it is the last one, cut by the read. */
 		before = index;
-		codepoint = fm_utf8_next((const char *)bytes, length, &index);
+		codepoint = kl_utf8_next((const char *)bytes, length, &index);
 		if (codepoint == 0xfffdU && length - before > 4U)
 			return 0;
 	}

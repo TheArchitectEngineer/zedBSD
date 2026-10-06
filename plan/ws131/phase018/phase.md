@@ -93,3 +93,14 @@ q812（ws090-p020）の後に再開。Notes は P2 の WS175 p007・p008 の統�
 
 - build: libkeiland・terminal・textedit（exit 0、warning 0）、`make keiland-linux` gcc（0、warning 0）、`exports.py --check` OK、host-tabs PASS。
 - 未実施: QEMU（T1）。同じ system bar の変更で古い `zdesktop-p105.sh`（`height=690`、X11 の `720`）も合わない見込み（WS035 の試験、未確認・未変更）。
+
+## q807-i04（P1、2026-10-06）: T1-256・T1-257 の FAIL の切り分け（全て試験の側）
+
+| 試験 | 原因 | 直し |
+| --- | --- | --- |
+| sheet-guest（`panels=3 card:0,-14,… card:0,0,`） | P1 の誤り: q807-i03 で Text Editor の card と思って `card:8,8,` を `card:0,0,` にしたが、それは sheet の中の chooser の 2 枚の pane（libkeiland の chooser、変えていない） | `card:8,8,` に戻した |
+| files-p009（`context-activate … action=4`） | WS131 p020 で Files の context menu が宣言的になり、row の action は `FM_CONTEXT_ACTION`（0x20000）+ 4 で zdesktop に渡る。Files 側は `item=1004 action=4` を受け取り Get Info も開いた | 期待を `action=131076` に |
+| files-p017（docked の `card:8,8,…`） | q813（ws090-p021）で dock した時の外側の余白も 0 | `card:0,0,212,…,16 card:220,0,…` |
+| files-p018（2 つ目の窓の `x=128 y=148`） | P1 が shell.c から計算した値が外れた（撮影では 176,132 付近、空間の中・1 つ目の右下） | 位置の値ではなく「1 つ目の右下で空間の中」（x>80、y>108、x+1000≤1268、y+640≤788）を確かめる |
+| ws094 files-desktop-guest（menu 以後の 21 行） | 試験の順: overflow の段が 95 個の file を残し、menu の段の空き（700,400）が icon になった（menu-empty.png） | overflow の段の最後に guest の中で overflow の file を消し、`ready items=5` を待つ |
+| ws094 desktop-guest | probe が build されていなかった | install の段で `build-probe.sh "$bin"` で作ってから入れる |

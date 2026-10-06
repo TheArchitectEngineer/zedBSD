@@ -36,12 +36,12 @@ struct places_folder {
 
 /* The usual folders, in the sidebar's order. */
 static const struct places_folder places_folders[] = {
-    {"Desktop", "Desktop", FM_ICON_DESKTOP},
-    {"Documents", "Documents", FM_ICON_DOCUMENTS},
-    {"Downloads", "Downloads", FM_ICON_DOWNLOADS},
-    {"Pictures", "Pictures", FM_ICON_PICTURES},
-    {"Music", "Music", FM_ICON_MUSIC},
-    {"Movies", "Movies", FM_ICON_MOVIES}};
+    {"Desktop", "Desktop", KL_ICON_DESKTOP},
+    {"Documents", "Documents", KL_ICON_DOCUMENTS},
+    {"Downloads", "Downloads", KL_ICON_DOWNLOADS},
+    {"Pictures", "Pictures", KL_ICON_PICTURES},
+    {"Music", "Music", KL_ICON_MUSIC},
+    {"Movies", "Movies", KL_ICON_MOVIES}};
 
 /* The file systems whose mounts are not shown as places (virtual ones). */
 static const char *const places_hidden_types[] = {
@@ -90,10 +90,10 @@ fm_places_init(
 	 * it (ws127-p011, the user's decision of 2026-10-05), fixed, then the
 	 * user's folders.
 	 */
-	place = places_add(places, FM_SECTION_FAVORITES, FM_ICON_TODAY, "Today", FM_LOCATION_TODAY, home);
+	place = places_add(places, FM_SECTION_FAVORITES, KL_ICON_TODAY, "Today", FM_LOCATION_TODAY, home);
 	if (place != NULL)
 		place->fixed = 1;
-	place = places_add(places, FM_SECTION_FAVORITES, FM_ICON_HOME, "Home", FM_LOCATION_FOLDER, home);
+	place = places_add(places, FM_SECTION_FAVORITES, KL_ICON_HOME, "Home", FM_LOCATION_FOLDER, home);
 	if (place != NULL)
 		place->fixed = 1;
 	places_favorites(places, home);
@@ -102,9 +102,9 @@ fm_places_init(
 	places_devices(places);
 
 	/* Locations: the recent files, the trash, the computer's root and the volumes. */
-	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_RECENTS, "Recents", FM_LOCATION_RECENTS, "");
-	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_TRASH, "Trash", FM_LOCATION_TRASH, "");
-	(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_COMPUTER, "Computer", FM_LOCATION_FOLDER, "/");
+	(void)places_add(places, FM_SECTION_LOCATIONS, KL_ICON_RECENTS, "Recents", FM_LOCATION_RECENTS, "");
+	(void)places_add(places, FM_SECTION_LOCATIONS, KL_ICON_TRASH, "Trash", FM_LOCATION_TRASH, "");
+	(void)places_add(places, FM_SECTION_LOCATIONS, KL_ICON_COMPUTER, "Computer", FM_LOCATION_FOLDER, "/");
 	places_mounts(places);
 }
 
@@ -393,7 +393,7 @@ places_add_folder(
 	int match;
 
 	/* The icon of a usual folder, else a folder's. */
-	icon = FM_ICON_FOLDER_LINE;
+	icon = KL_ICON_FOLDER_LINE;
 	for (index = 0; index < sizeof(places_folders) / sizeof(places_folders[0]); index++) {
 		/* Default-folder identity uses the existing bounded home-relative path spelling. */
 		(void)snprintf(usual, sizeof(usual), "%s/%s", home, places_folders[index].name);
@@ -429,7 +429,7 @@ places_devices(
 
 	/* Each device, as the desktop told it. */
 	for (index = 0; index < places->device_count; index++) {
-		place = places_add(places, FM_SECTION_DEVICES, FM_ICON_VOLUME, places->devices[index].name, FM_LOCATION_FOLDER, places->devices[index].path);
+		place = places_add(places, FM_SECTION_DEVICES, KL_ICON_VOLUME, places->devices[index].name, FM_LOCATION_FOLDER, places->devices[index].path);
 		if (place != NULL)
 			place->device = index + 1;
 	}
@@ -519,7 +519,7 @@ places_mounts(
 		location.kind = FM_LOCATION_FOLDER;
 		snprintf(location.path, sizeof(location.path), "%s", mount.path);
 		label = fm_location_name(&location, "");
-		(void)places_add(places, FM_SECTION_LOCATIONS, FM_ICON_VOLUME, label, FM_LOCATION_FOLDER, mount.path);
+		(void)places_add(places, FM_SECTION_LOCATIONS, KL_ICON_VOLUME, label, FM_LOCATION_FOLDER, mount.path);
 	}
 
 	/* Releases only this enumeration's stream or native snapshot. */

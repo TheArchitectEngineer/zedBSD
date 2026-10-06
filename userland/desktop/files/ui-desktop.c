@@ -49,15 +49,15 @@
 #define DESKTOP_TEXT_LINE		15
 
 /* The name's colours: dark text, a white halo; a selected name's pill and text. */
-#define DESKTOP_TEXT_COLOR	FM_RGB(0x1e293b)
-#define DESKTOP_HALO_COLOR	FM_RGBA(0xffffff, 150)
-#define DESKTOP_PILL_COLOR	FM_RGB(0x2f7cf6)
-#define DESKTOP_PILL_TEXT	FM_RGB(0xffffff)
+#define DESKTOP_TEXT_COLOR	KL_RGB(0x1e293b)
+#define DESKTOP_HALO_COLOR	KL_RGBA(0xffffff, 150)
+#define DESKTOP_PILL_COLOR	KL_RGB(0x2f7cf6)
+#define DESKTOP_PILL_TEXT	KL_RGB(0xffffff)
 
 /* A selected icon's ground, and the rubber band's fill and edge. */
-#define DESKTOP_GROUND_COLOR	FM_RGBA(0xffffff, 110)
-#define DESKTOP_BAND_FILL	FM_RGBA(0x2f7cf6, 40)
-#define DESKTOP_BAND_EDGE	FM_RGBA(0x2f7cf6, 160)
+#define DESKTOP_GROUND_COLOR	KL_RGBA(0xffffff, 110)
+#define DESKTOP_BAND_FILL	KL_RGBA(0x2f7cf6, 40)
+#define DESKTOP_BAND_EDGE	KL_RGBA(0x2f7cf6, 160)
 
 /* The field of a name being changed: its height and how far it is under the icon. */
 #define DESKTOP_FIELD_HEIGHT	22
@@ -89,20 +89,20 @@
 
 static void desktop_layout(struct fm_app *app, int width, int height);
 static int desktop_over(const struct fm_app *app);
-static int desktop_partial(struct fm_app *app, struct fm_canvas *canvas);
+static int desktop_partial(struct fm_app *app, struct kl_canvas *canvas);
 static void desktop_painted_record(struct fm_app *app, const struct fm_entry *entry, size_t index, struct fm_desktop_painted *painted);
-static void desktop_painted_keep(struct fm_app *app, struct fm_canvas *canvas);
-static void desktop_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
-static void desktop_item(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, const struct fm_rect *cell);
+static void desktop_painted_keep(struct fm_app *app, struct kl_canvas *canvas);
+static void desktop_clear_rect(struct kl_canvas *canvas, const struct kl_rect *rect);
+static void desktop_item(struct fm_app *app, struct kl_canvas *canvas, const struct fm_entry *entry, const struct kl_rect *cell);
 static void desktop_log_moved(const struct fm_desktop *desk, const char *const *names, size_t count, const struct fm_desktop_saved *known, size_t known_count);
-static void desktop_name(struct fm_app *app, struct fm_canvas *canvas, const char *name, const struct fm_rect *cell, int selected);
-static void desktop_name_line(struct fm_app *app, struct fm_canvas *canvas, const char *line, const struct fm_rect *cell, int baseline, int available, int selected);
-static void desktop_field(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *cell);
-static void desktop_message(struct fm_app *app, struct fm_canvas *canvas);
+static void desktop_name(struct fm_app *app, struct kl_canvas *canvas, const char *name, const struct kl_rect *cell, int selected);
+static void desktop_name_line(struct fm_app *app, struct kl_canvas *canvas, const char *line, const struct kl_rect *cell, int baseline, int available, int selected);
+static void desktop_field(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *cell);
+static void desktop_message(struct fm_app *app, struct kl_canvas *canvas);
 static int desktop_renaming(const struct fm_app *app, const struct fm_entry *entry);
 static uint32_t desktop_names_hash(const struct fm_tab *tab);
 static void desktop_context(struct fm_app *app, const struct fm_event *event);
-static void desktop_band_rect(const struct fm_desktop *desk, struct fm_rect *rect);
+static void desktop_band_rect(const struct fm_desktop *desk, struct kl_rect *rect);
 static void desktop_band_select(struct fm_app *app);
 static long long desktop_newest_age(const struct fm_tab *tab);
 static uint64_t desktop_clock(void);
@@ -110,7 +110,7 @@ static void desktop_press(struct fm_app *app, const struct fm_event *event);
 static void desktop_key(struct fm_app *app, const struct fm_event *event);
 static void desktop_arrow(struct fm_app *app, int dx, int dy);
 static void desktop_open(struct fm_app *app, int index);
-static int desktop_rects_meet(const struct fm_rect *a, const struct fm_rect *b);
+static int desktop_rects_meet(const struct kl_rect *a, const struct kl_rect *b);
 
 /*
  * Draws the desktop: clear, with each item of the tab's folder in its cell
@@ -122,11 +122,11 @@ static int desktop_rects_meet(const struct fm_rect *a, const struct fm_rect *b);
 void
 fm_desktop_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct fm_desktop *desk;
-	struct fm_rect cell;
-	struct fm_rect band;
+	struct kl_rect cell;
+	struct kl_rect band;
 	struct fm_tab *tab;
 	size_t index;
 	size_t hidden;
@@ -162,7 +162,7 @@ fm_desktop_draw(
 	}
 
 	/* Clear, so that the wallpaper shows. */
-	fm_canvas_clear(canvas);
+	kl_canvas_clear(canvas);
 
 	/* Each item in its cell; an item without a cell is not shown. */
 	cells = 0;
@@ -184,8 +184,8 @@ fm_desktop_draw(
 	/* The rubber band over the items. */
 	if (desk->band) {
 		desktop_band_rect(desk, &band);
-		fm_canvas_fill(canvas, &band, DESKTOP_BAND_FILL);
-		fm_canvas_round_border(canvas, (float)band.x, (float)band.y, (float)band.width, (float)band.height, 0.0f, 1.0f, DESKTOP_BAND_EDGE);
+		kl_canvas_fill(canvas, &band, DESKTOP_BAND_FILL);
+		kl_canvas_round_border(canvas, (float)band.x, (float)band.y, (float)band.width, (float)band.height, 0.0f, 1.0f, DESKTOP_BAND_EDGE);
 	}
 
 	/* The target of a drop over the desktop. */
@@ -385,7 +385,7 @@ fm_desktop_item_at(
     int y)
 {
 	struct fm_desktop *desk;
-	struct fm_rect cell;
+	struct kl_rect cell;
 	size_t index;
 	int placed;
 
@@ -447,12 +447,12 @@ desktop_over(
 static int
 desktop_partial(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct fm_desktop_painted now;
 	struct fm_desktop_painted *before;
 	struct fm_desktop *desk;
-	struct fm_rect cell;
+	struct kl_rect cell;
 	struct fm_tab *tab;
 	size_t index;
 	int placed;
@@ -495,9 +495,9 @@ desktop_partial(
 
 		/* The cell again. */
 		desktop_clear_rect(canvas, &cell);
-		fm_canvas_clip_push(canvas, &cell);
+		kl_canvas_clip_push(canvas, &cell);
 		desktop_item(app, canvas, &tab->listing.entries[index], &cell);
-		fm_canvas_clip_pop(canvas);
+		kl_canvas_clip_pop(canvas);
 	}
 
 	/* Succeeded: the frame is the kept one with its changed cells. */
@@ -538,7 +538,7 @@ desktop_painted_record(
 static void
 desktop_painted_keep(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct fm_desktop_painted *cells;
 	struct fm_desktop *desk;
@@ -581,8 +581,8 @@ desktop_painted_keep(
 /* Makes a rectangle of the canvas clear (transparent), within the canvas. */
 static void
 desktop_clear_rect(
-	struct fm_canvas *canvas,
-	const struct fm_rect *rect)
+	struct kl_canvas *canvas,
+	const struct kl_rect *rect)
 {
 	uint32_t *row;
 	int left;
@@ -780,9 +780,9 @@ desktop_log_moved(
 static void
 desktop_item(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct fm_entry *entry,
-	const struct fm_rect *cell)
+	const struct kl_rect *cell)
 {
 	float left;
 	float top;
@@ -794,14 +794,14 @@ desktop_item(
 
 	/* A selected item's light ground behind its icon. */
 	if (entry->selected)
-		fm_canvas_round(canvas, left - 6.0f, top - 4.0f, (float)DESKTOP_ICON + 12.0f, (float)DESKTOP_ICON + 8.0f, 10.0f, DESKTOP_GROUND_COLOR);
+		kl_canvas_round(canvas, left - 6.0f, top - 4.0f, (float)DESKTOP_ICON + 12.0f, (float)DESKTOP_ICON + 8.0f, 10.0f, DESKTOP_GROUND_COLOR);
 
 	/* The icon, faded when the item is cut or dragged. */
 	fm_grid_entry_icon(app, canvas, entry, left, top, (float)DESKTOP_ICON);
 	if (entry->cut != 0 ||
 	    (app->desk.dragging &&
 	     entry->selected != 0))
-		fm_canvas_round(canvas, left, top, (float)DESKTOP_ICON, (float)DESKTOP_ICON, 8.0f, FM_RGBA(0xffffff, 150));
+		kl_canvas_round(canvas, left, top, (float)DESKTOP_ICON, (float)DESKTOP_ICON, 8.0f, KL_RGBA(0xffffff, 150));
 
 	/* The name under it, or the field of the name being changed. */
 	renaming = desktop_renaming(app, entry);
@@ -826,9 +826,9 @@ desktop_item(
 static void
 desktop_name(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const char *name,
-	const struct fm_rect *cell,
+	const struct kl_rect *cell,
 	int selected)
 {
 	char first[FM_DESKTOP_LABEL_MAX];
@@ -856,8 +856,8 @@ desktop_name(
 
 	/* A selected name: its pill behind both lines, kept in the cell. */
 	if (selected) {
-		widest = fm_text_width(app->text, first, strlen(first), DESKTOP_TEXT, 0);
-		width = fm_text_width(app->text, second, strlen(second), DESKTOP_TEXT, 0);
+		widest = kl_text_width(app->text, first, strlen(first), DESKTOP_TEXT, 0);
+		width = kl_text_width(app->text, second, strlen(second), DESKTOP_TEXT, 0);
 		if (width > widest)
 			widest = width;
 		if (widest > available)
@@ -869,7 +869,7 @@ desktop_name(
 		if (pill_right > cell->x + cell->width)
 			pill_right = cell->x + cell->width;
 		pill_top = baseline - 13;
-		fm_canvas_round(canvas, (float)pill_left, (float)pill_top, (float)(pill_right - pill_left), (float)(18 + (lines - 1) * DESKTOP_TEXT_LINE), 9.0f, DESKTOP_PILL_COLOR);
+		kl_canvas_round(canvas, (float)pill_left, (float)pill_top, (float)(pill_right - pill_left), (float)(18 + (lines - 1) * DESKTOP_TEXT_LINE), 9.0f, DESKTOP_PILL_COLOR);
 	}
 
 	/* Each line, centred. */
@@ -885,9 +885,9 @@ desktop_name(
 static void
 desktop_name_line(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const char *line,
-	const struct fm_rect *cell,
+	const struct kl_rect *cell,
 	int baseline,
 	int available,
 	int selected)
@@ -898,14 +898,14 @@ desktop_name_line(
 	int dy;
 
 	/* Centred across the cell. */
-	width = fm_text_width(app->text, line, strlen(line), DESKTOP_TEXT, 0);
+	width = kl_text_width(app->text, line, strlen(line), DESKTOP_TEXT, 0);
 	if (width > available)
 		width = available;
 	left = cell->x + (cell->width - width) / 2;
 
 	/* On the pill. */
 	if (selected) {
-		(void)fm_text_draw_fit(app->text, canvas, left, baseline, line, DESKTOP_TEXT, 0, available, DESKTOP_PILL_TEXT);
+		(void)kl_text_draw_fit(app->text, canvas, left, baseline, line, DESKTOP_TEXT, 0, available, DESKTOP_PILL_TEXT);
 		return;
 	}
 
@@ -916,12 +916,12 @@ desktop_name_line(
 			/* The centre is the text itself, drawn last. */
 			if (dx == 0 && dy == 0)
 				continue;
-			(void)fm_text_draw_fit(app->text, canvas, left + dx, baseline + dy, line, DESKTOP_TEXT, 0, available, DESKTOP_HALO_COLOR);
+			(void)kl_text_draw_fit(app->text, canvas, left + dx, baseline + dy, line, DESKTOP_TEXT, 0, available, DESKTOP_HALO_COLOR);
 		}
 	}
 
 	/* The text over it. */
-	(void)fm_text_draw_fit(app->text, canvas, left, baseline, line, DESKTOP_TEXT, 0, available, DESKTOP_TEXT_COLOR);
+	(void)kl_text_draw_fit(app->text, canvas, left, baseline, line, DESKTOP_TEXT, 0, available, DESKTOP_TEXT_COLOR);
 
 	/* Succeeded: the name is drawn over its halo. */
 	return;
@@ -931,14 +931,14 @@ desktop_name_line(
 static void
 desktop_field(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *cell)
+	struct kl_canvas *canvas,
+	const struct kl_rect *cell)
 {
-	struct fm_rect field;
+	struct kl_rect field;
 	int width;
 
 	/* As wide as the name and a little room, at least the cell and at most two cells. */
-	width = fm_text_width(app->text, app->rename.text, app->rename.length, DESKTOP_TEXT, 0) + 24;
+	width = kl_text_width(app->text, app->rename.text, app->rename.length, DESKTOP_TEXT, 0) + 24;
 	if (width < cell->width - 4)
 		width = cell->width - 4;
 	if (width > 2 * cell->width)
@@ -951,8 +951,8 @@ desktop_field(
 	field.y = cell->y + DESKTOP_FIELD_TOP;
 	field.width = width;
 	field.height = DESKTOP_FIELD_HEIGHT;
-	fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
-	fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
+	kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
+	kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
 
 	/* The text in it, a little in from its edges. */
 	field.x += 5;
@@ -967,7 +967,7 @@ desktop_field(
 static void
 desktop_message(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	char text[256];
 	int width;
@@ -986,12 +986,12 @@ desktop_message(
 		return;
 
 	/* The pill, centred at the bottom, and the text on it. */
-	width = fm_text_width(app->text, text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0) + 32;
+	width = kl_text_width(app->text, text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0) + 32;
 	x = (canvas->width - width) / 2;
 	y = canvas->height - DESKTOP_PILL_BOTTOM;
-	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, 8.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)x, (float)y, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, FM_RGBA(0x2a3345, 225));
-	(void)fm_text_draw(app->text, canvas, x + 16, fm_text_center(DESKTOP_PILL_TEXT_SIZE, y, DESKTOP_PILL_HEIGHT), text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0, FM_RGB(0xffffff));
+	kl_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, 8.0f, FM_COLOR_SHADOW);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)width, (float)DESKTOP_PILL_HEIGHT, 14.0f, KL_RGBA(0x2a3345, 225));
+	(void)kl_text_draw(app->text, canvas, x + 16, kl_text_center(DESKTOP_PILL_TEXT_SIZE, y, DESKTOP_PILL_HEIGHT), text, strlen(text), DESKTOP_PILL_TEXT_SIZE, 0, KL_RGB(0xffffff));
 
 	/* Succeeded: the desktop message is visible. */
 	return;
@@ -1098,7 +1098,7 @@ desktop_context(
 static void
 desktop_band_rect(
 	const struct fm_desktop *desk,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
 	/* The left edge and the width, whichever way the pointer went. */
 	rect->x = desk->band_x;
@@ -1126,8 +1126,8 @@ desktop_band_select(
 	struct fm_app *app)
 {
 	struct fm_desktop *desk;
-	struct fm_rect band;
-	struct fm_rect cell;
+	struct kl_rect band;
+	struct kl_rect cell;
 	struct fm_tab *tab;
 	size_t index;
 	int placed;
@@ -1316,8 +1316,8 @@ desktop_arrow(
 	int dy)
 {
 	struct fm_desktop *desk;
-	struct fm_rect from;
-	struct fm_rect cell;
+	struct kl_rect from;
+	struct kl_rect cell;
 	struct fm_tab *tab;
 	size_t index;
 	long distance;
@@ -1408,8 +1408,8 @@ desktop_open(
 /* Tells whether two rectangles overlap. */
 static int
 desktop_rects_meet(
-	const struct fm_rect *a,
-	const struct fm_rect *b)
+	const struct kl_rect *a,
+	const struct kl_rect *b)
 {
 	/* Apart across. */
 	if (a->x + a->width <= b->x || b->x + b->width <= a->x)

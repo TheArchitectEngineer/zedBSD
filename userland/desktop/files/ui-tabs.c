@@ -49,16 +49,16 @@
  * panel (white on glass, a faint blue-grey on the opaque white panel), and
  * the thin line under the row.
  */
-#define TABS_COLOR_SHOWN_GLASS	FM_RGBA(0xffffff, 120)
-#define TABS_COLOR_HOVER_GLASS	FM_RGBA(0xffffff, 60)
-#define TABS_COLOR_SHOWN	FM_RGBA(0x2f7cf6, 18)
-#define TABS_COLOR_HOVER	FM_RGBA(0x5a6b85, 14)
-#define TABS_COLOR_RULE		FM_RGBA(0x5a6b85, 40)
+#define TABS_COLOR_SHOWN_GLASS	KL_RGBA(0xffffff, 120)
+#define TABS_COLOR_HOVER_GLASS	KL_RGBA(0xffffff, 60)
+#define TABS_COLOR_SHOWN	KL_RGBA(0x2f7cf6, 18)
+#define TABS_COLOR_HOVER	KL_RGBA(0x5a6b85, 14)
+#define TABS_COLOR_RULE		KL_RGBA(0x5a6b85, 40)
 
 static void tabs_leave(struct fm_app *app);
 static void tabs_shown(struct fm_app *app);
-static void tabs_place(struct fm_app *app, const struct fm_rect *bar, int index, struct fm_rect *tab);
-static void tabs_draw_one(struct fm_app *app, struct fm_canvas *canvas, int index, const struct fm_rect *tab);
+static void tabs_place(struct fm_app *app, const struct kl_rect *bar, int index, struct kl_rect *tab);
+static void tabs_draw_one(struct fm_app *app, struct kl_canvas *canvas, int index, const struct kl_rect *tab);
 
 /*
  * Opens a new tab beside the one shown, at a place, and shows it.  A
@@ -214,7 +214,7 @@ fm_tabs_layout(
 	int left,
 	int right)
 {
-	struct fm_rect *bar;
+	struct kl_rect *bar;
 
 	/* No row for one tab. */
 	bar = &app->layout.tabbar;
@@ -237,11 +237,11 @@ fm_tabs_layout(
 void
 fm_tabs_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
-	const struct fm_rect *bar;
-	struct fm_rect rule;
-	struct fm_rect tab;
+	const struct kl_rect *bar;
+	struct kl_rect rule;
+	struct kl_rect tab;
 	int index;
 
 	/* No row for one tab. */
@@ -254,7 +254,7 @@ fm_tabs_draw(
 	rule.y = bar->y + bar->height - 1;
 	rule.width = bar->width - 2 * TABS_INSET;
 	rule.height = 1;
-	fm_canvas_fill(canvas, &rule, TABS_COLOR_RULE);
+	kl_canvas_fill(canvas, &rule, TABS_COLOR_RULE);
 
 	/* Each tab, left to right. */
 	for (index = 0; index < app->tab_count; index++) {
@@ -303,9 +303,9 @@ tabs_leave(
 static void
 tabs_place(
 	struct fm_app *app,
-	const struct fm_rect *bar,
+	const struct kl_rect *bar,
 	int index,
-	struct fm_rect *tab)
+	struct kl_rect *tab)
 {
 	int room;
 	int left;
@@ -331,17 +331,17 @@ tabs_place(
 static void
 tabs_draw_one(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int index,
-	const struct fm_rect *tab)
+	const struct kl_rect *tab)
 {
 	const struct fm_location *location;
 	const struct fm_tab *shown;
-	struct fm_rect close;
-	struct fm_rect line;
+	struct kl_rect close;
+	struct kl_rect line;
 	char name[FM_NAME_MAX];
-	fm_color ground;
-	fm_color ink;
+	kl_color ground;
+	kl_color ink;
 	int text_width;
 	int baseline;
 	int hovered;
@@ -375,7 +375,7 @@ tabs_draw_one(
 
 	/* The ground, when the tab has one. */
 	if (ground != 0)
-		fm_canvas_round(canvas, (float)tab->x + 2.0f, (float)tab->y, (float)tab->width - 4.0f, (float)tab->height, TABS_RADIUS, ground);
+		kl_canvas_round(canvas, (float)tab->x + 2.0f, (float)tab->y, (float)tab->width - 4.0f, (float)tab->height, TABS_RADIUS, ground);
 
 	/* The whole tab is clickable as the tab. */
 	fm_ui_hit(app, tab, FM_HIT_TAB, index);
@@ -383,11 +383,11 @@ tabs_draw_one(
 	/* The name of the tab's place, cut to fit between the ends' room, centred. */
 	shown = app->tabs[index];
 	location = &shown->history[shown->history_index].location;
-	(void)fm_text_fit(app->text, kl_tr(fm_location_name(location, app->home)), TABS_TEXT, current, tab->width - 2 * TABS_PADDING, name, sizeof(name));
-	text_width = fm_text_width(app->text, name, strlen(name), TABS_TEXT, current);
+	(void)kl_text_fit(app->text, kl_tr(fm_location_name(location, app->home)), TABS_TEXT, current, tab->width - 2 * TABS_PADDING, name, sizeof(name));
+	text_width = kl_text_width(app->text, name, strlen(name), TABS_TEXT, current);
 	left = tab->x + (tab->width - text_width) / 2;
-	baseline = fm_text_center(TABS_TEXT, tab->y, tab->height);
-	(void)fm_text_draw(app->text, canvas, left, baseline, name, strlen(name), TABS_TEXT, current, ink);
+	baseline = kl_text_center(TABS_TEXT, tab->y, tab->height);
+	(void)kl_text_draw(app->text, canvas, left, baseline, name, strlen(name), TABS_TEXT, current, ink);
 
 	/* The shown tab's short blue underline, a little wider than its name, at the row's foot. */
 	if (current != 0) {
@@ -395,7 +395,7 @@ tabs_draw_one(
 		line.y = tab->y + tab->height + TABS_LINE_ABOVE - TABS_LINE;
 		line.width = text_width + 2 * TABS_LINE_OVER;
 		line.height = TABS_LINE;
-		fm_canvas_round(canvas, (float)line.x, (float)line.y, (float)line.width, (float)line.height, 1.0f, FM_COLOR_ACCENT);
+		kl_canvas_round(canvas, (float)line.x, (float)line.y, (float)line.width, (float)line.height, 1.0f, FM_COLOR_ACCENT);
 	}
 
 	/* The close button at the right end, clickable always, shown on the shown tab and under the pointer. */
@@ -409,6 +409,6 @@ tabs_draw_one(
 
 	/* Lit under the pointer. */
 	if (app->hover_kind == FM_HIT_TAB_CLOSE && app->hover_index == index)
-		fm_canvas_circle(canvas, (float)close.x + TABS_CLOSE / 2.0f, (float)close.y + TABS_CLOSE / 2.0f, TABS_CLOSE / 2.0f, FM_COLOR_HOVER);
-	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 4.0f, (float)close.y + 4.0f, (float)(TABS_CLOSE - 8), FM_COLOR_TEXT_SECONDARY);
+		kl_canvas_circle(canvas, (float)close.x + TABS_CLOSE / 2.0f, (float)close.y + TABS_CLOSE / 2.0f, TABS_CLOSE / 2.0f, FM_COLOR_HOVER);
+	kl_icon_draw(canvas, KL_ICON_CLOSE, (float)close.x + 4.0f, (float)close.y + 4.0f, (float)(TABS_CLOSE - 8), FM_COLOR_TEXT_SECONDARY);
 }

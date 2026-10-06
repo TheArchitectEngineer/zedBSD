@@ -63,8 +63,8 @@
 #define NETWORK_GRAPH_POINTS	60
 
 /* The colours of what was received and sent. */
-#define NETWORK_COLOR_DOWN	FM_RGB(0x2f7cf6)
-#define NETWORK_COLOR_UP	FM_RGB(0x9b6cf0)
+#define NETWORK_COLOR_DOWN	KL_RGB(0x2f7cf6)
+#define NETWORK_COLOR_UP	KL_RGB(0x9b6cf0)
 
 /* The text sizes. */
 #define NETWORK_TEXT_TITLE	16U
@@ -84,20 +84,20 @@ struct network_row {
 	unsigned secured;
 };
 
-static int network_status_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static void network_tile(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, unsigned glyph, const char *label, const char *value, const char *detail, int dot);
-static int network_wifi_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, int compact);
+static int network_status_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static void network_tile(struct se_app *app, struct kl_canvas *canvas, int x, int y, int width, unsigned glyph, const char *label, const char *value, const char *detail, int dot);
+static int network_wifi_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, int compact);
 static int network_rows(const struct se_app *app, struct network_row *rows, int capacity);
-static void network_row_draw(struct se_app *app, struct fm_canvas *canvas, const struct network_row *row, int x, int y, int width);
-static void network_key_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width);
+static void network_row_draw(struct se_app *app, struct kl_canvas *canvas, const struct network_row *row, int x, int y, int width);
+static void network_key_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int width);
 static void network_key_reveal(struct se_app *app, int top, int bottom);
-static int network_ethernet_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static int network_dns_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static int network_usage_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static void network_graph(struct fm_canvas *canvas, const struct se_network *network, int x, int y, int width, int height);
-static int network_link_card(struct se_app *app, struct fm_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
-static int network_header(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, int height, const char *title, const char *subtitle);
-static int network_message_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width);
+static int network_ethernet_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static int network_dns_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static int network_usage_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static void network_graph(struct kl_canvas *canvas, const struct se_network *network, int x, int y, int width, int height);
+static int network_link_card(struct se_app *app, struct kl_canvas *canvas, const struct kl_network_link *link, int x, int top, int width);
+static int network_header(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, int height, const char *title, const char *subtitle);
+static int network_message_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int width);
 static const struct kl_network_link *network_link(const struct se_network *network, const char *name);
 static int network_wired(const struct se_network *network, size_t index);
 static int network_saved(const struct se_network *network, const char *ssid);
@@ -112,7 +112,7 @@ static const char *network_wifi_words(struct se_network *network);
 int
 se_network_page_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -157,13 +157,13 @@ se_network_page_draw(
 int
 se_wifi_page_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
 	const struct se_network *network;
-	struct fm_text_line line;
+	struct kl_text_line line;
 	char words[96];
 	int on;
 	int y;
@@ -178,9 +178,9 @@ se_wifi_page_draw(
 	y = network_wifi_card(app, canvas, x, top + NETWORK_HEADER + 8 + NETWORK_GAP, width, 0);
 
 	/* A note on where the keys are kept. */
-	fm_text_metrics(app->text, NETWORK_TEXT_SMALL, &line);
+	kl_text_metrics(app->text, NETWORK_TEXT_SMALL, &line);
 	(void)snprintf(words, sizeof(words), "%s", "Keys are kept in your account and used again when a network is in reach.");
-	(void)fm_text_draw_fit(app->text, canvas, x + 4, y + 14 + line.ascent, words, NETWORK_TEXT_SMALL, 0, width - 8, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x + 4, y + 14 + line.ascent, words, NETWORK_TEXT_SMALL, 0, width - 8, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the note. */
 	return y + 14 + line.height;
@@ -193,7 +193,7 @@ se_wifi_page_draw(
 int
 se_ethernet_page_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -219,7 +219,7 @@ se_ethernet_page_draw(
 
 	/* The last Apply's answer once the editor closed (ws089-p022). */
 	if (app->wired.interface[0] == '\0' && app->wired.message[0] != '\0') {
-		(void)fm_text_draw_fit(app->text, canvas, x + 2, y + NETWORK_GAP + 16, app->wired.message, NETWORK_TEXT_SUB, 0, width, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + 2, y + NETWORK_GAP + 16, app->wired.message, NETWORK_TEXT_SUB, 0, width, SE_COLOR_TEXT_SECONDARY);
 		y += NETWORK_GAP + 24;
 	}
 
@@ -365,7 +365,7 @@ se_network_key(
 static int
 network_status_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -456,7 +456,7 @@ network_status_card(
 static void
 network_tile(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width,
@@ -466,19 +466,19 @@ network_tile(
 	const char *detail,
 	int dot)
 {
-	fm_color dot_color;
+	kl_color dot_color;
 	int text_x;
 	int text_width;
 
 	/* The tile's ground, and the picture in a pale circle. */
-	fm_canvas_round(canvas, (float)x, (float)y, (float)width, (float)NETWORK_TILE_HEIGHT, 12.0f, SE_COLOR_TILE);
-	fm_canvas_circle(canvas, (float)x + 32.0f, (float)y + NETWORK_TILE_HEIGHT * 0.5f, 20.0f, FM_RGBA(0x2f7cf6, 30));
+	kl_canvas_round(canvas, (float)x, (float)y, (float)width, (float)NETWORK_TILE_HEIGHT, 12.0f, SE_COLOR_TILE);
+	kl_canvas_circle(canvas, (float)x + 32.0f, (float)y + NETWORK_TILE_HEIGHT * 0.5f, 20.0f, KL_RGBA(0x2f7cf6, 30));
 	se_glyph_draw(canvas, glyph, (float)x + 20.0f, (float)y + NETWORK_TILE_HEIGHT * 0.5f - 12.0f, 24.0f, SE_COLOR_ACCENT);
 
 	/* The label. */
 	text_x = x + 62;
 	text_width = width - 70;
-	(void)fm_text_draw_fit(app->text, canvas, text_x, y + 24, label, NETWORK_TEXT_SMALL, 0, text_width, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, text_x, y + 24, label, NETWORK_TEXT_SMALL, 0, text_width, SE_COLOR_TEXT_SECONDARY);
 
 	/* The value, after its dot when it has one (green for good, grey for not). */
 	dot_color = SE_COLOR_TEXT_FAINT;
@@ -491,10 +491,10 @@ network_tile(
 	}
 
 	/* The value itself. */
-	(void)fm_text_draw_fit(app->text, canvas, text_x, y + 46, value, NETWORK_TEXT_ROW, 1, text_width, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, text_x, y + 46, value, NETWORK_TEXT_ROW, 1, text_width, SE_COLOR_TEXT);
 
 	/* The detail under it. */
-	(void)fm_text_draw_fit(app->text, canvas, x + 62, y + 64, detail, NETWORK_TEXT_SMALL, 0, width - 70, SE_COLOR_TEXT_FAINT);
+	(void)kl_text_draw_fit(app->text, canvas, x + 62, y + 64, detail, NETWORK_TEXT_SMALL, 0, width - 70, SE_COLOR_TEXT_FAINT);
 }
 
 /*
@@ -506,7 +506,7 @@ network_tile(
 static int
 network_wifi_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -514,7 +514,7 @@ network_wifi_card(
 {
 	struct network_row rows[SE_NETWORK_SCAN + 1];
 	const struct se_network *network;
-	struct fm_rect all;
+	struct kl_rect all;
 	const char *title;
 	const char *subtitle;
 	int lit;
@@ -583,17 +583,17 @@ network_wifi_card(
 
 	/* Without the radio, while it is off, or with nothing listed, a line of words. */
 	if (network->state.wifi == KL_WIFI_ABSENT) {
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "This computer has no Wi-Fi radio.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "This computer has no Wi-Fi radio.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
 	} else if (on == 0) {
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "Wi-Fi is off.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "Wi-Fi is off.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
 	} else if (shown == 0 && network->scan_received != 0) {
 		/* A scan came back empty: nothing is in reach. */
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "No networks in reach.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "No networks in reach.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
 	} else if (shown == 0) {
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "No networks found yet.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 22, "No networks found yet.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		y += 36;
 	}
 
@@ -622,8 +622,8 @@ network_wifi_card(
 		all.height = 36;
 		lit = se_ui_lit(app, SE_HIT_CONTROL, NETWORK_WIFI_ALL);
 		if (lit != 0)
-			fm_canvas_round(canvas, (float)all.x, (float)all.y, (float)all.width, (float)all.height, 10.0f, SE_COLOR_HOVER);
-		(void)fm_text_draw(app->text, canvas, all.x + 12, fm_text_center(14U, all.y, all.height), "All Wi-Fi networks", strlen("All Wi-Fi networks"), 14U, 0, SE_COLOR_TEXT);
+			kl_canvas_round(canvas, (float)all.x, (float)all.y, (float)all.width, (float)all.height, 10.0f, SE_COLOR_HOVER);
+		(void)kl_text_draw(app->text, canvas, all.x + 12, kl_text_center(14U, all.y, all.height), "All Wi-Fi networks", strlen("All Wi-Fi networks"), 14U, 0, SE_COLOR_TEXT);
 		se_glyph_draw(canvas, SE_GLYPH_CHEVRON, (float)(all.x + all.width) - 26.0f, (float)all.y + 10.0f, 16.0f, SE_COLOR_TEXT_SECONDARY);
 		se_ui_hit(app, &all, SE_HIT_CONTROL, NETWORK_WIFI_ALL);
 		y += 40;
@@ -706,17 +706,17 @@ network_rows(
 static void
 network_row_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct network_row *row,
 	int x,
 	int y,
 	int width)
 {
 	const struct se_network *network;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	const char *state;
-	fm_color ink;
-	fm_color glyph;
+	kl_color ink;
+	kl_color glyph;
 	int current;
 	int joining;
 	int differs;
@@ -760,9 +760,9 @@ network_row_draw(
 	rect.height = NETWORK_ROW - 4;
 	lit = se_ui_lit(app, SE_HIT_CONTROL, control);
 	if (current != 0) {
-		fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 10.0f, SE_COLOR_SELECTION);
+		kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 10.0f, SE_COLOR_SELECTION);
 	} else if (row->index >= 0 && lit != 0) {
-		fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 10.0f, SE_COLOR_HOVER);
+		kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 10.0f, SE_COLOR_HOVER);
 	}
 
 	/* The state in words. */
@@ -792,8 +792,8 @@ network_row_draw(
 
 	/* The picture, the SSID and the state. */
 	se_glyph_draw(canvas, SE_GLYPH_WIFI, (float)x + 12.0f, (float)y + 13.0f, 24.0f, glyph);
-	(void)fm_text_draw_fit(app->text, canvas, x + 50, y + 22, row->ssid, NETWORK_TEXT_ROW, current, words, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + 50, y + 40, state, NETWORK_TEXT_SMALL, 0, words, ink);
+	(void)kl_text_draw_fit(app->text, canvas, x + 50, y + 22, row->ssid, NETWORK_TEXT_ROW, current, words, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + 50, y + 40, state, NETWORK_TEXT_SMALL, 0, words, ink);
 
 	/* The lock of a secured network, and the signal. */
 	if (row->secured != 0)
@@ -821,7 +821,7 @@ network_key_reveal(
 	int top,
 	int bottom)
 {
-	const struct fm_rect *pane;
+	const struct kl_rect *pane;
 	int scroll;
 
 	/* Only once for a line that opened. */
@@ -851,17 +851,17 @@ network_key_reveal(
 static void
 network_key_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
 	const struct se_network *network;
-	struct fm_rect field;
+	struct kl_rect field;
 	char dots[SE_KEY_TEXT];
 	const char *reveal;
 	const char *text;
-	fm_color ink;
+	kl_color ink;
 	int join;
 	int cancel;
 	int show;
@@ -886,8 +886,8 @@ network_key_draw(
 	field.y = y + 8;
 	field.width = right - cancel - 8 - join - 8 - show - 12 - field.x;
 	field.height = 36;
-	fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, SE_COLOR_FIELD);
-	fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
+	kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, SE_COLOR_FIELD);
+	kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	se_ui_hit(app, &field, SE_HIT_CONTROL, NETWORK_KEY_FIELD);
 
 	/* The key as dots (or as typed when shown), or the placeholder; a cursor after it. */
@@ -907,19 +907,19 @@ network_key_draw(
 	}
 
 	/* The text inside the field, and the cursor after it. */
-	fm_canvas_clip_push(canvas, &field);
-	right = field.x + 12 + fm_text_draw(app->text, canvas, field.x + 12, fm_text_center(NETWORK_TEXT_ROW, field.y, field.height), text, strlen(text), NETWORK_TEXT_ROW, 0, ink);
+	kl_canvas_clip_push(canvas, &field);
+	right = field.x + 12 + kl_text_draw(app->text, canvas, field.x + 12, kl_text_center(NETWORK_TEXT_ROW, field.y, field.height), text, strlen(text), NETWORK_TEXT_ROW, 0, ink);
 	if (network->key.length == 0)
 		right = field.x + 12;
-	fm_canvas_line(canvas, (float)right + 1.5f, (float)field.y + 9.0f, (float)right + 1.5f, (float)(field.y + field.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_line(canvas, (float)right + 1.5f, (float)field.y + 9.0f, (float)right + 1.5f, (float)(field.y + field.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
+	kl_canvas_clip_pop(canvas);
 }
 
 /* Draws the card of the wired interfaces: each one's link, name and address, and Details. Returns the edge below it. */
 static int
 network_ethernet_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -929,8 +929,8 @@ network_ethernet_card(
 	char name[48];
 	const char *status;
 	const char *address;
-	fm_color status_color;
-	fm_color status_ink;
+	kl_color status_color;
+	kl_color status_ink;
 	int rows;
 	int height;
 	int y;
@@ -955,7 +955,7 @@ network_ethernet_card(
 
 	/* A machine without one says so. */
 	if (rows == 0) {
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 24, "No wired interface.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 2, y + 24, "No wired interface.", NETWORK_TEXT_ROW, 0, width - 2 * NETWORK_PAD, SE_COLOR_TEXT_SECONDARY);
 		return top + height;
 	}
 
@@ -986,10 +986,10 @@ network_ethernet_card(
 		se_glyph_draw(canvas, SE_GLYPH_MONITOR, (float)x + NETWORK_PAD + 2.0f, (float)y + 14.0f, 28.0f, SE_COLOR_ICON);
 		(void)snprintf(name, sizeof(name), "Ethernet (%s)", link->name);
 		button = se_button_width(app, "Details");
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 44, y + 18, name, NETWORK_TEXT_ROW, 1, width - 2 * NETWORK_PAD - 56 - button, SE_COLOR_TEXT);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 44, y + 18, name, NETWORK_TEXT_ROW, 1, width - 2 * NETWORK_PAD - 56 - button, SE_COLOR_TEXT);
 		se_dot_draw(canvas, (float)x + NETWORK_PAD + 48.5f, (float)y + 32.0f, status_color);
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 58, y + 37, status, NETWORK_TEXT_SUB, 0, width - 2 * NETWORK_PAD - 70 - button, status_ink);
-		(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 44, y + 54, address, NETWORK_TEXT_SMALL, 0, width - 2 * NETWORK_PAD - 56 - button, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 58, y + 37, status, NETWORK_TEXT_SUB, 0, width - 2 * NETWORK_PAD - 70 - button, status_ink);
+		(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD + 44, y + 54, address, NETWORK_TEXT_SMALL, 0, width - 2 * NETWORK_PAD - 56 - button, SE_COLOR_TEXT_SECONDARY);
 		(void)se_button_draw(app, canvas, x + width - NETWORK_PAD - button, y + 12, "Details", 0, 1, NETWORK_ETHERNET);
 		y += 58;
 		rows++;
@@ -1003,7 +1003,7 @@ network_ethernet_card(
 static int
 network_dns_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -1043,7 +1043,7 @@ network_dns_card(
 static int
 network_usage_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -1062,14 +1062,14 @@ network_usage_card(
 	/* The legend at the left: received and sent since the computer started. */
 	legend = 190;
 	se_dot_draw(canvas, (float)x + NETWORK_PAD + 6.0f, (float)y + 22.0f, NETWORK_COLOR_DOWN);
-	(void)fm_text_draw(app->text, canvas, x + NETWORK_PAD + 18, y + 27, "Download", 8U, 14U, 0, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw(app->text, canvas, x + NETWORK_PAD + 18, y + 27, "Download", 8U, 14U, 0, SE_COLOR_TEXT_SECONDARY);
 	se_bytes_text(network->received_total, total, sizeof(total));
-	(void)fm_text_draw(app->text, canvas, x + NETWORK_PAD + 104, y + 27, total, strlen(total), 14U, 1, SE_COLOR_TEXT);
+	(void)kl_text_draw(app->text, canvas, x + NETWORK_PAD + 104, y + 27, total, strlen(total), 14U, 1, SE_COLOR_TEXT);
 	se_dot_draw(canvas, (float)x + NETWORK_PAD + 6.0f, (float)y + 52.0f, NETWORK_COLOR_UP);
-	(void)fm_text_draw(app->text, canvas, x + NETWORK_PAD + 18, y + 57, "Upload", 6U, 14U, 0, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw(app->text, canvas, x + NETWORK_PAD + 18, y + 57, "Upload", 6U, 14U, 0, SE_COLOR_TEXT_SECONDARY);
 	se_bytes_text(network->sent_total, total, sizeof(total));
-	(void)fm_text_draw(app->text, canvas, x + NETWORK_PAD + 104, y + 57, total, strlen(total), 14U, 1, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + NETWORK_PAD, y + 84, "Since the computer started", NETWORK_TEXT_SMALL, 0, legend - 8, SE_COLOR_TEXT_FAINT);
+	(void)kl_text_draw(app->text, canvas, x + NETWORK_PAD + 104, y + 57, total, strlen(total), 14U, 1, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + NETWORK_PAD, y + 84, "Since the computer started", NETWORK_TEXT_SMALL, 0, legend - 8, SE_COLOR_TEXT_FAINT);
 
 	/* The graph to its right. */
 	network_graph(canvas, network, x + NETWORK_PAD + legend, y + 4, width - 2 * NETWORK_PAD - legend, NETWORK_GRAPH_HEIGHT);
@@ -1081,7 +1081,7 @@ network_usage_card(
 /* Draws the rates of the last samples: received as a filled area, sent as a line, over a faint grid, scaled to the largest. */
 static void
 network_graph(
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct se_network *network,
 	int x,
 	int y,
@@ -1101,7 +1101,7 @@ network_graph(
 
 	/* The grid: three faint lines. */
 	for (index = 0; index < 3U; index++)
-		fm_canvas_line(canvas, (float)x, (float)y + (float)height * (float)index / 2.0f, (float)(x + width), (float)y + (float)height * (float)index / 2.0f, 1.0f, FM_RGBA(0x8a96aa, 40));
+		kl_canvas_line(canvas, (float)x, (float)y + (float)height * (float)index / 2.0f, (float)(x + width), (float)y + (float)height * (float)index / 2.0f, 1.0f, KL_RGBA(0x8a96aa, 40));
 
 	/* Too few samples draw nothing yet. */
 	if (network->usage_count < 2U)
@@ -1138,20 +1138,20 @@ network_graph(
 	area[2U * points + 1U] = (float)(y + height);
 	area[2U * points + 2U] = area[0];
 	area[2U * points + 3U] = (float)(y + height);
-	fm_canvas_polygon(canvas, area, (int)points + 2, FM_RGBA(0x2f7cf6, 60));
+	kl_canvas_polygon(canvas, area, (int)points + 2, KL_RGBA(0x2f7cf6, 60));
 	for (index = 0; index + 1U < points; index++)
-		fm_canvas_line(canvas, area[2U * index], area[2U * index + 1U], area[2U * index + 2U], area[2U * index + 3U], 2.0f, NETWORK_COLOR_DOWN);
+		kl_canvas_line(canvas, area[2U * index], area[2U * index + 1U], area[2U * index + 2U], area[2U * index + 3U], 2.0f, NETWORK_COLOR_DOWN);
 
 	/* The sent line. */
 	for (index = 0; index + 1U < points; index++)
-		fm_canvas_line(canvas, line[2U * index], line[2U * index + 1U], line[2U * index + 2U], line[2U * index + 3U], 2.0f, NETWORK_COLOR_UP);
+		kl_canvas_line(canvas, line[2U * index], line[2U * index + 1U], line[2U * index + 2U], line[2U * index + 3U], 2.0f, NETWORK_COLOR_UP);
 }
 
 /* Draws the card of one wired interface on the Ethernet page: its link, addresses, MTU and counters. Returns the edge below it. */
 static int
 network_link_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct kl_network_link *link,
 	int x,
 	int top,
@@ -1215,7 +1215,7 @@ network_link_card(
 static int
 network_header(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -1234,13 +1234,13 @@ network_header(
 static int
 network_message_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
 	const struct se_network *network;
-	fm_color ink;
+	kl_color ink;
 
 	/* No message, no line. */
 	network = &app->network;
@@ -1251,7 +1251,7 @@ network_message_draw(
 	ink = SE_COLOR_TEXT_SECONDARY;
 	if (network->message_bad != 0)
 		ink = SE_COLOR_BAD;
-	(void)fm_text_draw_fit(app->text, canvas, x, y + 20, network->message, NETWORK_TEXT_SUB, 0, width, ink);
+	(void)kl_text_draw_fit(app->text, canvas, x, y + 20, network->message, NETWORK_TEXT_SUB, 0, width, ink);
 
 	/* The edge below the line. */
 	return y + NETWORK_MESSAGE_LINE;

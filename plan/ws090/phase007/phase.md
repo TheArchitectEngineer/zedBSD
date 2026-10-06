@@ -2,14 +2,29 @@
 
 # ws090-p007: Settings を libkeiui へ
 
-Status: planning（ws.md の表。依存の WS089 の完了がまだ）
+Status: planned（2026-10-06 q817 で範囲を今の形に合わせた。下の「2026-10-06 の範囲」が正）
 Disposition: normal
 Parent: [WS090](../ws.md)
-Queue: なし
+Queue: q817（2026-10-06 ユーザーの決定「今 libkeiland の canvas へ移す」）
 依存: p005（cleared）、**WS089 の完了**（ws.md・design.md §9 の 3 番、2026-09-29 main）
 
 この file は 2026-10-01 に手引き（[../guide.md](../guide.md)）と一緒に作った。範囲は [design.md](../design.md) §9・§10 の p007 の行で、下の手順と
 完了の条件はそこから起こした案である。実行の前に main が範囲と、WS104 との順（下の「始める前」）を確かめる。
+
+## 2026-10-06 の範囲（q817、これが正）
+
+窓は WS131 p019 で `kl_app` に移り済み（下の古い手順の「窓の土台を替える」は済み）。描画の層は p009 で Files と一緒に libkeiland へ移す。この Phase は欄:
+
+- Settings の自前の欄（`se_field`: Wi-Fi の鍵・接続の鍵・有線の設定・言語の頁の password・利用者の頁・管理の頁・PIN）を libkeiland の `kl_field` に。
+  秘密の欄（password・鍵・PIN）は `kl_field` の secret（点で見せ、IME 無し）。Settings は自前の hit と入力の model を持つので、`kl_ui` を 1 つ持ち、
+  欄の hit と key と text input の `KL_WINDOW_TEXT_*` を渡し、frame の後に `kl_ui_window_text`。q816 の暫定の IME（`se_users_admin_text`・
+  `main_text_input`・preedit の描画）を除く。秘密の文字の消去（`se_field_clear` の volatile）は `kl_field` でも保つ。
+- button・switch・slider・card・row の部品への置き換えは範囲の外（見た目が変わる物は別の Phase）。
+
+受け入れ: Settings に `se_field` が無い、各欄が `kl_field`（秘密は IME 無し、管理の氏名で日本語）、host（host-settings・host-account-admin・settings-render）、
+build、QEMU（T1）で各欄の入力と日本語の氏名。
+
+## 以下は 2026-10-01 の古い計画（参考）
 
 ## 範囲（design.md §10）
 

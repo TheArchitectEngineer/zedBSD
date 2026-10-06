@@ -84,8 +84,8 @@ static int admin_ready(const struct se_app *app);
 static void admin_start(struct se_app *app, enum se_admin_mode mode);
 static void admin_apply(struct se_app *app);
 static int admin_next_field(enum se_admin_mode mode, int from, int step);
-static int admin_buttons_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width, int draw);
-static void admin_field_draw(struct se_app *app, struct fm_canvas *canvas, int index, int x, int y, int width);
+static int admin_buttons_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int width, int draw);
+static void admin_field_draw(struct se_app *app, struct kl_canvas *canvas, int index, int x, int y, int width);
 static const char *admin_title(const struct se_app *app);
 static const char *admin_apply_label(const struct se_app *app);
 
@@ -128,14 +128,14 @@ se_users_admin_available(
 int
 se_users_admin_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
 	struct se_users *users;
 	const char *switch_label;
-	fm_color ink;
+	kl_color ink;
 	int apply;
 	int cancel;
 	int enabled;
@@ -160,7 +160,7 @@ se_users_admin_draw(
 	/* The form of the change being made: its title, its fields, its switch, Cancel and its button. */
 	if (users->admin_mode != SE_ADMIN_NONE) {
 		/* Its title. */
-		(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 22, admin_title(app), ADMIN_TEXT_ROW, 1, width - 40, SE_COLOR_TEXT);
+		(void)kl_text_draw_fit(app->text, canvas, x + 20, y + 22, admin_title(app), ADMIN_TEXT_ROW, 1, width - 40, SE_COLOR_TEXT);
 		y += 34;
 
 		/* Its fields. */
@@ -182,7 +182,7 @@ se_users_admin_draw(
 		else if (users->admin_mode == SE_ADMIN_REMOVE)
 			switch_label = "Also delete the home folder and its files";
 		if (switch_label != NULL) {
-			(void)fm_text_draw_fit(app->text, canvas, x + 20, fm_text_center(ADMIN_TEXT_ROW, y + 8, 36), switch_label, ADMIN_TEXT_ROW, 0, width - 120, SE_COLOR_TEXT);
+			(void)kl_text_draw_fit(app->text, canvas, x + 20, kl_text_center(ADMIN_TEXT_ROW, y + 8, 36), switch_label, ADMIN_TEXT_ROW, 0, width - 120, SE_COLOR_TEXT);
 			se_toggle_draw(app, canvas, x + width - 20 - 44, y + 14, users->admin_flag, 1, ADMIN_SWITCH);
 			y += ADMIN_ROW;
 		}
@@ -202,7 +202,7 @@ se_users_admin_draw(
 	if (users->admin_bad)
 		ink = SE_COLOR_BAD;
 	if (users->admin_message[0] != '\0')
-		(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 18, users->admin_message, ADMIN_TEXT_SUB, 0, width - 40, ink);
+		(void)kl_text_draw_fit(app->text, canvas, x + 20, y + 18, users->admin_message, ADMIN_TEXT_SUB, 0, width - 40, ink);
 
 	/* The edge below the card. */
 	return top + height;
@@ -711,7 +711,7 @@ admin_next_field(
 static int
 admin_buttons_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width,
@@ -787,7 +787,7 @@ admin_buttons_draw(
 static void
 admin_field_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int index,
 	int x,
 	int y,
@@ -795,10 +795,10 @@ admin_field_draw(
 {
 	const struct se_users *users;
 	const struct se_field *field;
-	struct fm_rect box;
+	struct kl_rect box;
 	char dots[SE_KEY_TEXT];
 	const char *text;
-	fm_color ink;
+	kl_color ink;
 	size_t count;
 	int focused;
 	int right;
@@ -808,7 +808,7 @@ admin_field_draw(
 	/* The label. */
 	users = &app->users;
 	field = &users->admin_fields[index];
-	(void)fm_text_draw_fit(app->text, canvas, x + 20, fm_text_center(ADMIN_TEXT_ROW, y + 8, 36), admin_labels[index], ADMIN_TEXT_ROW, 0, ADMIN_FIELD_X - 30, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + 20, kl_text_center(ADMIN_TEXT_ROW, y + 8, 36), admin_labels[index], ADMIN_TEXT_ROW, 0, ADMIN_FIELD_X - 30, SE_COLOR_TEXT);
 
 	/* The field: white, the accent's edge when it has the keyboard. */
 	box.x = x + ADMIN_FIELD_X;
@@ -818,11 +818,11 @@ admin_field_draw(
 	focused = 0;
 	if (users->keyboard == SE_USERS_KEYBOARD_ADMIN && users->admin_focus == index)
 		focused = 1;
-	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
+	kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
 	if (focused) {
-		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
+		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
 	} else {
-		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
+		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
 	}
 
 	/* A click on it gives it the keyboard. */
@@ -845,9 +845,9 @@ admin_field_draw(
 	}
 
 	/* The text inside the field. */
-	fm_canvas_clip_push(canvas, &box);
-	baseline = fm_text_center(ADMIN_TEXT_ROW, box.y, box.height);
-	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, baseline, text, strlen(text), ADMIN_TEXT_ROW, 0, ink);
+	kl_canvas_clip_push(canvas, &box);
+	baseline = kl_text_center(ADMIN_TEXT_ROW, box.y, box.height);
+	right = box.x + 12 + kl_text_draw(app->text, canvas, box.x + 12, baseline, text, strlen(text), ADMIN_TEXT_ROW, 0, ink);
 	if (field->length == 0)
 		right = box.x + 12;
 
@@ -855,21 +855,21 @@ admin_field_draw(
 	if (focused &&
 	    app->preedit[0] != '\0' &&
 	    index == SE_ADMIN_FULL_NAME) {
-		composed = fm_text_draw(app->text, canvas, right, baseline, app->preedit, strlen(app->preedit), ADMIN_TEXT_ROW, 0, SE_COLOR_TEXT);
-		fm_canvas_line(canvas, (float)right, (float)baseline + 3.5f, (float)(right + composed), (float)baseline + 3.5f, 1.0f, SE_COLOR_TEXT);
+		composed = kl_text_draw(app->text, canvas, right, baseline, app->preedit, strlen(app->preedit), ADMIN_TEXT_ROW, 0, SE_COLOR_TEXT);
+		kl_canvas_line(canvas, (float)right, (float)baseline + 3.5f, (float)(right + composed), (float)baseline + 3.5f, 1.0f, SE_COLOR_TEXT);
 		right += composed;
 	}
 
 	/* The cursor after them in the field with the keyboard, where the input method's candidates open. */
 	if (focused) {
-		fm_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
+		kl_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
 		app->caret.x = right;
 		app->caret.y = box.y + 9;
 		app->caret.width = 2;
 		app->caret.height = box.height - 18;
 		app->caret_known = 1;
 	}
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 	memset(dots, 0, sizeof(dots));
 }
 

@@ -37,8 +37,8 @@
 #define STORAGE_TEXT_ROW	14U
 #define STORAGE_TEXT_SUB	13U
 
-static int storage_use_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static int storage_trash_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+static int storage_use_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static int storage_trash_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 static void storage_parent(const char *path, char *parent, size_t size);
 
 /*
@@ -48,7 +48,7 @@ static void storage_parent(const char *path, char *parent, size_t size);
 int
 se_storage_cards(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -130,7 +130,7 @@ se_storage_press(
 static int
 storage_use_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -138,13 +138,13 @@ storage_use_card(
 	const struct se_storage *storage;
 	const struct se_scan_view *view;
 	const struct se_scan_group *group;
-	struct fm_rect hit;
+	struct kl_rect hit;
 	char line[SE_MESSAGE];
 	char size[32];
 	const char *label;
 	const char *shown;
 	const char *noun;
-	fm_color ink;
+	kl_color ink;
 	unsigned rows;
 	unsigned index;
 	float share;
@@ -208,13 +208,13 @@ storage_use_card(
 	}
 
 	/* The line, left of the buttons. */
-	(void)fm_text_draw_fit(app->text, canvas, x + STORAGE_PAD, fm_text_center(STORAGE_TEXT_SUB, y + 6, 36), line, STORAGE_TEXT_SUB, 0, width - 3 * STORAGE_PAD - 2 * button, ink);
+	(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, kl_text_center(STORAGE_TEXT_SUB, y + 6, 36), line, STORAGE_TEXT_SUB, 0, width - 3 * STORAGE_PAD - 2 * button, ink);
 	y += 50;
 
 	/* The folders that could not be read. */
 	if (view->unreadable != 0U) {
 		(void)snprintf(line, sizeof(line), "%llu folders could not be read and are not counted.", (unsigned long long)view->unreadable);
-		(void)fm_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 14, line, STORAGE_TEXT_SUB, 0, width - 2 * STORAGE_PAD, SE_COLOR_TEXT_FAINT);
+		(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 14, line, STORAGE_TEXT_SUB, 0, width - 2 * STORAGE_PAD, SE_COLOR_TEXT_FAINT);
 	}
 
 	/* The rows start under that line. */
@@ -231,10 +231,10 @@ storage_use_card(
 		ink = SE_COLOR_TEXT;
 		if (!group->folder)
 			ink = SE_COLOR_TEXT_SECONDARY;
-		(void)fm_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 16, group->name, STORAGE_TEXT_ROW, 0, bar - 120, ink);
-		(void)fm_text_draw_fit(app->text, canvas, right - 110, y + 16, size, STORAGE_TEXT_ROW, 0, 110, SE_COLOR_TEXT_SECONDARY);
-		fm_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar, (float)STORAGE_BAR, 3.0f, SE_COLOR_RAIL);
-		fm_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar * share, (float)STORAGE_BAR, 3.0f, SE_COLOR_ACCENT);
+		(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 16, group->name, STORAGE_TEXT_ROW, 0, bar - 120, ink);
+		(void)kl_text_draw_fit(app->text, canvas, right - 110, y + 16, size, STORAGE_TEXT_ROW, 0, 110, SE_COLOR_TEXT_SECONDARY);
+		kl_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar, (float)STORAGE_BAR, 3.0f, SE_COLOR_RAIL);
+		kl_canvas_round(canvas, (float)(x + STORAGE_PAD), (float)(y + 24), (float)bar * share, (float)STORAGE_BAR, 3.0f, SE_COLOR_ACCENT);
 		if (group->folder) {
 			hit.x = x + STORAGE_PAD;
 			hit.y = y;
@@ -255,7 +255,7 @@ storage_use_card(
 static int
 storage_trash_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -265,7 +265,7 @@ storage_trash_card(
 	char line[SE_MESSAGE];
 	char size[32];
 	const char *noun;
-	fm_color ink;
+	kl_color ink;
 	int empty;
 	int height;
 	int right;
@@ -291,7 +291,7 @@ storage_trash_card(
 		(void)snprintf(line, sizeof(line), "%s", "The Trash is empty.");
 	if (storage->trash.started)
 		(void)snprintf(line, sizeof(line), "%s", "Emptying the Trash...");
-	(void)fm_text_draw_fit(app->text, canvas, x + STORAGE_PAD, fm_text_center(STORAGE_TEXT_ROW, y + 6, 36), line, STORAGE_TEXT_ROW, 0, width / 2, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, kl_text_center(STORAGE_TEXT_ROW, y + 6, 36), line, STORAGE_TEXT_ROW, 0, width / 2, SE_COLOR_TEXT);
 
 	/* Empty Trash, or its confirmation. */
 	right = x + width - STORAGE_PAD;
@@ -321,7 +321,7 @@ storage_trash_card(
 
 	/* Drawn when there is one. */
 	if (line[0] != '\0')
-		(void)fm_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 12, line, STORAGE_TEXT_SUB, 0, width - 2 * STORAGE_PAD, ink);
+		(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 12, line, STORAGE_TEXT_SUB, 0, width - 2 * STORAGE_PAD, ink);
 
 	/* The edge below the card. */
 	return top + height;

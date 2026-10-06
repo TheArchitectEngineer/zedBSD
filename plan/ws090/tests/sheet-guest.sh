@@ -13,8 +13,7 @@
 #             parent alone, Right picks its tile and Enter brings both back (restored.png); Cancel
 #   saveas    Text Editor without a file, "abc" typed and Ctrl+S: Save As is a sheet too (saveas.png); Cancel
 #   open and saveas (ws090-p016): the sheet is glass: its panels are the whole sheet, reaching 14 above its top
-#             (ZWL GLASS ... panels=3 card:0,-14,...), and the two cards (Text Editor's card at 0,0 since ws090-p021:
-#             it reaches the window's edges); open.png and saveas.png show both panes as light
+#             (ZWL GLASS ... panels=3 card:0,-14,...), and the chooser's two panes inside it (card:8,8,...); open.png and saveas.png show both panes as light
 #             veils on the blurred wallpaper, no white card
 #   GUEST_RUNTIME=... BIN=build/amd64 plan/ws090/tests/sheet-guest.sh OUTDIR STEP...
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -70,7 +69,7 @@ open_chooser() {
 	pointer move 487 73 sleep 200 down sleep 60 up sleep 1500 move 1250 780 sleep 300
 	expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
 	expect_more 'ZWL GLASS sheet at x=260 y=100 ' 0
-	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:0,0,' "$glass"
+	expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 }
 
 # The chooser's Cancel (its place at the bottom right of the sheet, as the chooser lays it out at 760x480); Text Editor
@@ -159,7 +158,7 @@ for step in "$@"; do
 		sleep 1.5
 		pointer move 1250 780 sleep 300
 		expect_more 'ZWL GLASS sheet surface=[0-9]+ parent=' "$before"
-		expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:0,0,' "$glass"
+		expect_more 'ZWL GLASS client=[0-9]+ surface=[0-9]+ panels=3 card:0,-14,[0-9]+,[0-9]+,14 card:8,8,' "$glass"
 		shot saveas.png
 		cancel
 		;;

@@ -128,13 +128,13 @@ fm_help_close(
 void
 fm_help_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	const struct help_line *lines;
 	const char *title;
-	struct fm_rect whole;
-	struct fm_rect card;
-	struct fm_rect close;
+	struct kl_rect whole;
+	struct kl_rect card;
+	struct kl_rect close;
 	int count;
 	int index;
 	int baseline;
@@ -149,7 +149,7 @@ fm_help_draw(
 	whole.y = 0;
 	whole.width = app->width;
 	whole.height = app->height;
-	fm_canvas_fill(canvas, &whole, FM_RGBA(0x1b2233, 90));
+	kl_canvas_fill(canvas, &whole, KL_RGBA(0x1b2233, 90));
 	fm_ui_hit(app, &whole, FM_HIT_OVERLAY, FM_OVERLAY_HELP_GROUND);
 
 	/* The card's lines, and its size. */
@@ -164,20 +164,20 @@ fm_help_draw(
 		card.y = 10;
 
 	/* The card; a click on it stays there. */
-	fm_canvas_shadow(canvas, (float)card.x, (float)card.y + 10.0f, (float)card.width, (float)card.height, 18.0f, 30.0f, FM_RGBA(0x0f1a33, 90));
-	fm_canvas_round(canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 18.0f, FM_COLOR_PANEL);
+	kl_canvas_shadow(canvas, (float)card.x, (float)card.y + 10.0f, (float)card.width, (float)card.height, 18.0f, 30.0f, KL_RGBA(0x0f1a33, 90));
+	kl_canvas_round(canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 18.0f, FM_COLOR_PANEL);
 	fm_ui_hit(app, &card, FM_HIT_OVERLAY, FM_OVERLAY_CARD);
 
 	/* The title, and the close button at the right. */
-	(void)fm_text_draw_fit(app->text, canvas, card.x + HELP_PADDING, card.y + 44, title, HELP_TEXT_TITLE, 1, card.width - 2 * HELP_PADDING - 40, FM_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, card.x + HELP_PADDING, card.y + 44, title, HELP_TEXT_TITLE, 1, card.width - 2 * HELP_PADDING - 40, FM_COLOR_TEXT);
 	close.x = card.x + card.width - 48;
 	close.y = card.y + 20;
 	close.width = 28;
 	close.height = 28;
-	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
+	kl_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
 	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_HELP_CLOSE)
-		fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
-	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
+		kl_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
+	kl_icon_draw(canvas, KL_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
 	fm_ui_hit(app, &close, FM_HIT_BUTTON, FM_BUTTON_HELP_CLOSE);
 
 	/* Each line: a key in its column when it has one, then its text. */
@@ -185,12 +185,12 @@ fm_help_draw(
 		baseline = card.y + HELP_HEADER + index * HELP_LINE + 14;
 		text_x = card.x + HELP_PADDING;
 		if (lines[index].key != NULL) {
-			(void)fm_text_draw(app->text, canvas, text_x, baseline, lines[index].key, strlen(lines[index].key), HELP_TEXT_BODY, 1, FM_COLOR_TEXT);
+			(void)kl_text_draw(app->text, canvas, text_x, baseline, lines[index].key, strlen(lines[index].key), HELP_TEXT_BODY, 1, FM_COLOR_TEXT);
 			text_x += HELP_KEY_WIDTH;
 		}
 
 		/* The text, cut at the card's edge. */
-		(void)fm_text_draw_fit(app->text, canvas, text_x, baseline, lines[index].text, HELP_TEXT_BODY, 0, card.x + card.width - HELP_PADDING - text_x, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, text_x, baseline, lines[index].text, HELP_TEXT_BODY, 0, card.x + card.width - HELP_PADDING - text_x, FM_COLOR_TEXT_SECONDARY);
 	}
 }
 

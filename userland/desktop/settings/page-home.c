@@ -33,8 +33,8 @@
 /* The bytes of a tile's state line with its NUL. */
 #define HOME_STATE		96
 
-static int home_group(struct se_app *app, struct fm_canvas *canvas, unsigned group, const char *title, int x, int top, int width);
-static void home_tile(struct se_app *app, struct fm_canvas *canvas, const struct se_page *page, int x, int y, int width);
+static int home_group(struct se_app *app, struct kl_canvas *canvas, unsigned group, const char *title, int x, int top, int width);
+static void home_tile(struct se_app *app, struct kl_canvas *canvas, const struct se_page *page, int x, int y, int width);
 static int home_state(const struct se_app *app, unsigned page, char *text, size_t size, int *dot);
 static int home_wifi_state(const struct kl_network_state *state, char *text, size_t size, int *dot);
 static const char *home_address(const struct se_network *network, const char *name);
@@ -46,7 +46,7 @@ static const char *home_address(const struct se_network *network, const char *na
 int
 se_home_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -70,14 +70,14 @@ se_home_draw(
 static int
 home_group(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	unsigned group,
 	const char *title,
 	int x,
 	int top,
 	int width)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	unsigned id;
 	int columns;
 	int column;
@@ -85,8 +85,8 @@ home_group(
 	int y;
 
 	/* The title, quiet and bold. */
-	fm_text_metrics(app->text, HOME_TEXT_GROUP, &line);
-	(void)fm_text_draw(app->text, canvas, x + 2, top + line.ascent, title, strlen(title), HOME_TEXT_GROUP, 1, SE_COLOR_TEXT_SECONDARY);
+	kl_text_metrics(app->text, HOME_TEXT_GROUP, &line);
+	(void)kl_text_draw(app->text, canvas, x + 2, top + line.ascent, title, strlen(title), HOME_TEXT_GROUP, 1, SE_COLOR_TEXT_SECONDARY);
 
 	/* How many tiles a row holds (at least one), and their width to fill the row. */
 	columns = (width + HOME_TILE_GAP) / (HOME_TILE_WIDTH + HOME_TILE_GAP);
@@ -120,18 +120,18 @@ home_group(
 static void
 home_tile(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct se_page *page,
 	int x,
 	int y,
 	int width)
 {
-	struct fm_rect tile;
+	struct kl_rect tile;
 	char state[HOME_STATE];
 	const char *line;
-	fm_color ground;
-	fm_color glyph;
-	fm_color summary;
+	kl_color ground;
+	kl_color glyph;
+	kl_color summary;
 	int live;
 	int dot;
 	int left;
@@ -145,9 +145,9 @@ home_tile(
 	lit = se_ui_lit(app, SE_HIT_TILE, (int)page->id);
 	ground = SE_COLOR_TILE;
 	if (lit != 0)
-		ground = fm_color_mix(SE_COLOR_TILE, SE_COLOR_TILE_HOVER, 0.8f);
-	fm_canvas_round(canvas, (float)x, (float)y, (float)tile.width, (float)tile.height, 14.0f, ground);
-	fm_canvas_round_border(canvas, (float)x, (float)y, (float)tile.width, (float)tile.height, 14.0f, 1.0f, SE_COLOR_CARD_EDGE);
+		ground = kl_color_mix(SE_COLOR_TILE, SE_COLOR_TILE_HOVER, 0.8f);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)tile.width, (float)tile.height, 14.0f, ground);
+	kl_canvas_round_border(canvas, (float)x, (float)y, (float)tile.width, (float)tile.height, 14.0f, 1.0f, SE_COLOR_CARD_EDGE);
 
 	/* The picture in the accent for a page that works, faint for one that is coming. */
 	glyph = SE_COLOR_ACCENT;
@@ -161,7 +161,7 @@ home_tile(
 	se_glyph_draw(canvas, page->glyph, (float)x + 16.0f, (float)y + 14.0f, 26.0f, glyph);
 
 	/* The name. */
-	(void)fm_text_draw_fit(app->text, canvas, x + 16, y + 62, kl_tr(page->name), HOME_TEXT_NAME, 1, tile.width - 28, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + 16, y + 62, kl_tr(page->name), HOME_TEXT_NAME, 1, tile.width - 28, SE_COLOR_TEXT);
 
 	/* Under it the page's state now, when it has one, else its summary. */
 	line = kl_tr(page->summary);
@@ -181,7 +181,7 @@ home_tile(
 	}
 
 	/* The line itself, after the dot. */
-	(void)fm_text_draw_fit(app->text, canvas, left, y + 80, line, HOME_TEXT_SUMMARY, 0, tile.width - 12 - (left - x), summary);
+	(void)kl_text_draw_fit(app->text, canvas, left, y + 80, line, HOME_TEXT_SUMMARY, 0, tile.width - 12 - (left - x), summary);
 
 	/* A click opens the page. */
 	se_ui_hit(app, &tile, SE_HIT_TILE, (int)page->id);

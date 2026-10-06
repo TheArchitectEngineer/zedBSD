@@ -85,7 +85,8 @@ expect_log /tmp/zdesktop.log "ZWL MENU context client=$zc1 context=[0-9]+ surfac
 expect_log /tmp/zdesktop.log 'ZWL MENU row item=1004 depth=1 '
 shot items.png $((wx + 446)) $((wy + 140))
 click $(( $(popup_x 1) + 60 )) "$(row_y 1004)" 1200
-expect_log /tmp/zdesktop.log "ZWL MENU context-activate client=$zc1 context=[0-9]+ item=1004 action=4 "
+# zdesktop hears the row's action as libkeiland's declarative menu gives it: FM_CONTEXT_ACTION (0x20000) + 4 (WS131 p020).
+expect_log /tmp/zdesktop.log "ZWL MENU context-activate client=$zc1 context=[0-9]+ item=1004 action=131076 "
 expect_log /tmp/f.log 'ZFILES CONTEXT-MENU item=1004 action=4 '
 expect_log /tmp/f.log 'ZFILES INFO path=/tmp/fhome/Documents/Budget.csv '
 expect_log /tmp/f.log 'ZFILES CONTEXT-MENU done'

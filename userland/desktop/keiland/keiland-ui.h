@@ -229,7 +229,10 @@ enum kl_icon {
 	KL_ICON_PERSON,
 	KL_ICON_REFRESH,
 	KL_ICON_INFO,
-	KL_ICON_DISCLOSURE
+	KL_ICON_DISCLOSURE,
+
+	/* Files' sidebar's Today, a calendar's page (KL_VERSION 47, ws090-p009). */
+	KL_ICON_TODAY
 };
 
 /* The canvas (canvas.c). */

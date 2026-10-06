@@ -597,9 +597,9 @@ main(
 	/* 16. Pictures (p007): PPM and PGM read, damaged headers refused, thumbnails fitted; the peek of text. */
 	{
 		static struct fm_app pictures;
-		struct fm_image image;
+		struct kl_image image;
 		struct fm_entry entry;
-		const struct fm_image *thumb;
+		const struct kl_image *thumb;
 		unsigned char big[54 + 300 * 200 * 3];
 		int width;
 		int height;
@@ -614,11 +614,11 @@ main(
 			fclose(file);
 		}
 		check(fm_image_load(path, &image) == 0 && image.width == 2 && image.height == 1 && image.pixels[0] == 0xffff0000U && image.pixels[1] == 0xff0000ffU, "picture: a PPM with a comment read, red then blue");
-		fm_image_release(&image);
+		kl_image_release(&image);
 		snprintf(path, sizeof(path), "%s/grey.pgm", root);
 		make_file(path, "P5 1 1 255\n\x80");
 		check(fm_image_load(path, &image) == 0 && image.pixels[0] == 0xff808080U, "picture: a PGM read as grey");
-		fm_image_release(&image);
+		kl_image_release(&image);
 		snprintf(path, sizeof(path), "%s/short.ppm", root);
 		make_file(path, "P6\n4 4\n255\n\x01\x02");
 		check(fm_image_load(path, &image) == EINVAL, "picture: missing pixels refused");
@@ -641,7 +641,7 @@ main(
 			fclose(file);
 		}
 		check(fm_image_thumbnail(path, 256, &image) == 0 && image.width == 256 && image.height == 170, "thumbnail: 300x200 shrunk to 256x170");
-		fm_image_release(&image);
+		kl_image_release(&image);
 		fm_image_fit(10, 40, 100, 100, &width, &height);
 		check(width == 25 && height == 100, "fit: a tall picture fills the box's height");
 		fm_image_fit(400, 100, 200, 200, &width, &height);
@@ -659,7 +659,7 @@ main(
 		/* The thumbnail kept on disk (ws127-p002, F-035): written by the round above, read back alike; stale once the file changes. */
 		memset(&image, 0, sizeof(image));
 		check(fm_thumb_cache_read(path, &image) == 0 && image.width == 256 && image.height == 170 && (image.pixels[0] & 0x00ffffffU) == 0x404040U, "thumb cache: the made thumbnail is kept and read back");
-		fm_image_release(&image);
+		kl_image_release(&image);
 		{
 			FILE *file = fopen(path, "ab");
 			fputc(0, file);

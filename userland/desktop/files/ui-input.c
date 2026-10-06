@@ -115,7 +115,7 @@ static const struct input_shortcut input_shortcuts[] = {
 static size_t input_reported_count;
 static int input_reported_cursor = -1;
 
-static int input_contains(const struct fm_rect *rect, int x, int y);
+static int input_contains(const struct kl_rect *rect, int x, int y);
 static void input_suggest(struct fm_app *app);
 static int input_suggest_folder(const char *folder, const struct dirent *item);
 static void input_suggest_add(struct fm_app *app, const char *typed_folder, const char *name);
@@ -128,7 +128,7 @@ static void input_select_item(struct fm_tab *tab, int index, uint32_t modifiers)
 static void input_release(struct fm_app *app);
 static void input_band_start(struct fm_app *app, int x, int y, uint32_t modifiers);
 static void input_band_update(struct fm_app *app, int x, int y);
-static void input_band_rect(const struct fm_app *app, const struct fm_tab *tab, struct fm_rect *band);
+static void input_band_rect(const struct fm_app *app, const struct fm_tab *tab, struct kl_rect *band);
 static void input_sort(struct fm_app *app, int column);
 static void input_location_key(struct fm_app *app, const struct fm_event *event);
 static int input_command_key(struct fm_app *app, const struct fm_event *event);
@@ -152,8 +152,8 @@ fm_input_motion(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
-	struct fm_rect before;
-	struct fm_rect now;
+	struct kl_rect before;
+	struct kl_rect now;
 	unsigned kind;
 	int index;
 	int dragging;
@@ -589,7 +589,7 @@ fm_input_location(
 /* Tells whether a rectangle holds a point. */
 static int
 input_contains(
-	const struct fm_rect *rect,
+	const struct kl_rect *rect,
 	int x,
 	int y)
 {
@@ -699,7 +699,7 @@ input_context(
 	unsigned kind,
 	int index)
 {
-	const struct fm_rect *content;
+	const struct kl_rect *content;
 	int inside;
 
 	/* The press's place, which the menu opens at. */
@@ -953,8 +953,8 @@ input_band_update(
 	int y)
 {
 	struct fm_tab *tab;
-	struct fm_rect band;
-	struct fm_rect item;
+	struct kl_rect band;
+	struct kl_rect item;
 	size_t index;
 	int touches;
 	int selected;
@@ -995,7 +995,7 @@ static void
 input_band_rect(
 	const struct fm_app *app,
 	const struct fm_tab *tab,
-	struct fm_rect *band)
+	struct kl_rect *band)
 {
 	/* Its left and width. */
 	band->x = app->band_x0;
@@ -1349,7 +1349,7 @@ input_show(
 	int index)
 {
 	struct fm_tab *tab;
-	struct fm_rect item;
+	struct kl_rect item;
 	int top;
 	int bottom;
 
