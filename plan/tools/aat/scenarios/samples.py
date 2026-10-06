@@ -11,7 +11,7 @@ by everyone, before the scenarios run.
     sample.png    320x200, a colour gradient with a white square
     sample.jpg    the same, JPEG
     sample.pdf    two pages, "AAT page 1" and "AAT page 2"
-    sample.mp4    4 s, 640x360, MPEG-4 Part 2 video and AAC sound (host ffmpeg)
+    sample.mp4    12 s, 640x360, MPEG-4 Part 2 video and AAC sound (host ffmpeg)
 
     samples.py OUTDIR -- TARGET-OPTIONS
 """
@@ -67,11 +67,12 @@ def pdf(directory: Path) -> None:
 
 
 def video(directory: Path) -> None:
-	"""Four seconds of a test pattern with a tone (the host's ffmpeg, its own encoders)."""
+	"""Twelve seconds of a test pattern with a tone (the host's ffmpeg, its own encoders): four ended before the
+	player's pause was asked (T1-232, the window, its size and two screenshots take that long)."""
 	subprocess.run([
 		"ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=4",
-		"-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+		"-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=12",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=12",
 		"-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", "-b:a", "96k", "-shortest",
 		str(directory / "sample.mp4"),
 	], check=True, timeout=120)
