@@ -26,6 +26,9 @@
 /* The most answered requests kept until they are taken. */
 #define SYSTEM_VIEW_RESULTS	32U
 
+/* How many notification events wait for kl_system_take_notify_event (ws156-p002). */
+#define SYSTEM_VIEW_NOTIFY_EVENTS	32U
+
 /* One answered request and its error. */
 struct system_view_result {
 	uint32_t request;
@@ -97,6 +100,9 @@ struct system_view {
 	struct system_view_result results[SYSTEM_VIEW_RESULTS];
 	unsigned result_head;
 	unsigned result_count;
+	struct kl_notify_event notify_events[SYSTEM_VIEW_NOTIFY_EVENTS];
+	unsigned notify_head;
+	unsigned notify_count;
 };
 
 /*
@@ -197,6 +203,8 @@ void system_view_devices_done(struct system_view *view);
 void system_view_device_info(struct system_view *view, const char *id, const char *fs, uint64_t bytes);
 void system_view_result(struct system_view *view, uint32_t request, uint32_t applied);
 int system_view_take_result(struct system_view *view, uint32_t *request, int *error);
+void system_view_notify_event(struct system_view *view, const struct kl_notify_event *event);
+int system_view_take_notify_event(struct system_view *view, struct kl_notify_event *event);
 unsigned system_view_take_changed(struct system_view *view);
 int system_view_error_of(uint32_t applied);
 void system_view_copy(char *to, size_t size, const char *from);

@@ -1071,6 +1071,13 @@ int kl_app_take(struct kl_app *app, struct kl_app_event *event);
  */
 struct kl_system *kl_app_system(struct kl_app *app);
 
+/*
+ * KL_VERSION 49 (ws156-p002): posts a notification of the application (its
+ * application ID as the name shown), without waiting for its number.
+ * Returns 0 when asked, ENOTSUP when the compositor takes none, or EINVAL.
+ */
+int kl_app_notify(struct kl_app *app, const char *title, const char *body);
+
 /* The application's connection, for libkeiland's other objects. */
 struct wl_display *kl_app_display(const struct kl_app *app);
 

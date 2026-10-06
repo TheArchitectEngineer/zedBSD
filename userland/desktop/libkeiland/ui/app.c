@@ -350,6 +350,41 @@ kl_app_system(
 }
 
 /*
+ * Posts a notification of the application (ws156-p002): its application
+ * ID is the name shown; the answer is not waited for.
+ */
+int
+kl_app_notify(
+	struct kl_app *app,
+	const char *title,
+	const char *body)
+{
+	struct kl_notification notification;
+	struct kl_system *system;
+	int error;
+
+	/* The application's system. */
+	if (app == NULL || title == NULL)
+		return EINVAL;
+	system = kl_app_system(app);
+	if (system == NULL)
+		return ENOTSUP;
+
+	/* The words, under the application's ID. */
+	memset(&notification, 0, sizeof(notification));
+	notification.app = app->application;
+	notification.title = title;
+	notification.body = body;
+	error = kl_system_notify(system, &notification, NULL);
+	if (error != 0)
+		return error;
+
+	/* Sent at once. */
+	(void)wl_display_flush(app->display);
+	return 0;
+}
+
+/*
  * Reports the application's connection.
  */
 struct wl_display *
