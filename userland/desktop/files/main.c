@@ -123,6 +123,9 @@ static struct kl_system *main_system;
 
 /* The desktop's appearance watched for the window (ws089-p017): Files draws in its colours (palette.c); NULL without it. */
 static struct kl_appearance *main_appearance;
+
+/* The desktop's settings the window's words follow the display language through (kl_tr_follow, ws158-p004). */
+static struct kl_settings *main_language;
 static uint32_t main_device_request;
 static unsigned main_device_kind;
 static char main_device_id[64];
@@ -184,6 +187,8 @@ static void main_open_context_menus(void);
 static void main_dispatch(const struct fm_event *event);
 static void main_devices_open(const struct main_options *options);
 static void main_appearance_changed(void *data, unsigned appearance);
+static void main_language_changed(void *data, const char *language);
+static void main_language_open(void);
 static void main_devices_poll(void);
 static void main_devices_take(int blink_all);
 static void main_devices_ask(unsigned request);
@@ -328,6 +333,10 @@ main(
 		fm_log("APPEARANCE appearance=%u", kl_appearance_get(main_appearance));
 	}
 
+	/* The window's words in the display language, and again when it changes (ws158-p004). */
+	if (!options.desktop)
+		main_language_open();
+
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
@@ -337,6 +346,8 @@ main(
 	main_system = NULL;
 	kl_appearance_close(main_appearance);
 	main_appearance = NULL;
+	kl_settings_close(main_language);
+	main_language = NULL;
 
 	/* Everything goes, the titlebar, the menus, the glass and the app before the window they belong to. */
 	fm_titlebar_close(&main_titlebar);
@@ -586,6 +597,10 @@ main_loop(
 
 		/* The desktop's news of the removable devices, and the answers to their mounts and ejects (ws132-p005). */
 		main_devices_poll();
+
+		/* A change of the display language (the watch draws the window again). */
+		if (main_language != NULL)
+			(void)kl_settings_dispatch(main_language);
 
 		/* The held key's repeat, and every input queued (the menus' choices among them); the desktop has its own (ui-desktop.c). */
 		now = fm_clock();
@@ -1568,4 +1583,40 @@ main_appearance_changed(
 	fm_palette_set(appearance);
 	main_app.dirty = 1;
 	fm_log("APPEARANCE appearance=%u", appearance);
+}
+
+/*
+ * Opens the desktop's settings for the display language and follows it:
+ * Files' catalogs (domain files) are read in it now and again when it
+ * changes.  Without the settings the words stay English.
+ */
+static void
+main_language_open(
+	void)
+{
+	int error;
+
+	/* The compositor's keys, on the window's display. */
+	main_language = kl_settings_open(main_window.display, NULL);
+	if (main_language == NULL) {
+		fm_log("LANGUAGE none errno=%d", errno);
+		return;
+	}
+
+	/* The catalogs in the language now, and the watch of its changes. */
+	error = kl_tr_follow(main_language, "files", main_language_changed, NULL);
+	if (error != 0)
+		fm_log("LANGUAGE follow errno=%d", error);
+}
+
+/* Draws the window again in the display language its catalogs were read in (kl_tr_follow). */
+static void
+main_language_changed(
+	void *data,
+	const char *language)
+{
+	/* Every word of the window is drawn again (the menus keep theirs for now); the log line the tests read. */
+	(void)data;
+	main_app.dirty = 1;
+	fm_log("LANGUAGE language=%s", language);
 }

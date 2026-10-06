@@ -39,6 +39,8 @@ for catalog in userland/desktop/locale/*/*.tr; do
 	domain=$(basename "$catalog" .tr)
 	case $domain in
 	wayland) sources="userland/desktop/wayland userland/desktop/locale/wayland.keys" ;;
+	settings) sources="userland/desktop/settings userland/desktop/locale/settings.keys" ;;
+	files) sources="userland/desktop/files userland/desktop/locale/files.keys" ;;
 	*) sources="" ;;
 	esac
 	# shellcheck disable=SC2086

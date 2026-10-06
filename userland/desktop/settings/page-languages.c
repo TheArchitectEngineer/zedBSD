@@ -6,31 +6,61 @@
  */
 
 /*
- * The Languages page (WS154 p002):
+ * The Languages page (WS154 p002, ws158-p004):
  *
  *   Input method      which input method the keyboard types through:
  *                     Japanese (Kei's), SKK, or none (English); one is
  *                     chosen at a time, and the desktop starts the input
  *                     method again with it at once (ime.method).
- *   Display language  the language of the desktop's words (WS158); English
- *                     alone until the translations come.
+ *   Display language  the language of the desktop's words (ui.language,
+ *                     WS158): English or Japanese, each named in its own
+ *                     language; the desktop and its programs follow at once.
+ *   Login screen      for an administrator only: the language of the login
+ *                     screen (the system's, KEILAND_SYSCONFDIR
+ *                     /keiland/language), changed through the desktop's
+ *                     account administration (account-admin's
+ *                     system-language) with the administrator's password.
  */
 
 #include "settings.h"
 
+#include "userland/desktop/paths.h"
+
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 /* The three choices' switches (hit indices), in ime.method's order plus one. */
 #define LANGUAGES_NONE		1
 #define LANGUAGES_JAPANESE	2
 #define LANGUAGES_SKK		3
 
+/* The display language's switches, the login screen's, its password's field and its Apply button. */
+#define LANGUAGES_SHOW_EN	4
+#define LANGUAGES_SHOW_JA	5
+#define LANGUAGES_SYSTEM_EN	6
+#define LANGUAGES_SYSTEM_JA	7
+#define LANGUAGES_FIELD		8
+#define LANGUAGES_APPLY		9
+
 /* The card's margin, the space between cards, a choice's height and the text sizes. */
 #define LANGUAGES_PAD		18
 #define LANGUAGES_GAP		16
 #define LANGUAGES_ROW		60
+#define LANGUAGES_SHORT_ROW	48
 #define LANGUAGES_TEXT_TITLE	15U
 #define LANGUAGES_TEXT_SMALL	13U
+
+/* Where the password's field starts in the card, and its height. */
+#define LANGUAGES_FIELD_X	200
+#define LANGUAGES_FIELD_HEIGHT	36
+
+/* The file of the system's language, and the most of it read. */
+#define LANGUAGES_SYSTEM_PATH	KEILAND_SYSCONFDIR "/keiland/language"
+#define LANGUAGES_LINE_MAX	16
+
+/* The languages, by ui.language's number: their codes, and their names in their own language (never translated). */
+#define LANGUAGES_COUNT		2
 
 /* One choice: its switch, the method it chooses, its name and what it does. */
 struct languages_choice {
@@ -46,6 +76,19 @@ static const struct languages_choice languages_choices[] = {
 	{ LANGUAGES_SKK, 2, "SKK", "Emacs's SKK: an upper-case letter starts a word, Space converts it." },
 	{ LANGUAGES_NONE, 0, "None (English)", "The keys type as they are; no input method." },
 };
+
+static const char *const languages_codes[LANGUAGES_COUNT] = { "en", "ja" };
+static const char *const languages_names[LANGUAGES_COUNT] = { "English", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e" };
+
+/* The words of account-admin's refusals, and what the page says for each. */
+static const char *const languages_words[] = { "not-administrator", "bad-password", "busy" };
+
+static int languages_draw_system(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+static void languages_field_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width);
+static void languages_read_system(struct se_languages *languages);
+static int languages_ready(const struct se_app *app);
+static void languages_apply(struct se_app *app);
+static const char *languages_saying(const char *word);
 
 /*
  * Draws the Languages page's cards from a top edge; returns the edge below
@@ -67,31 +110,177 @@ se_languages_draw(
 
 	/* The input method's card: one row a choice, a switch at each. */
 	height = se_card_height(0, 1) + 3 * LANGUAGES_ROW + 4;
-	y = se_card_begin(app, canvas, x, top, width, height, "Input method", "What the keyboard types through. The change applies at once.");
+	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Input method"), kl_tr("What the keyboard types through. The change applies at once."));
 	fm_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
 	for (i = 0; i < sizeof(languages_choices) / sizeof(languages_choices[0]); i++) {
 		/* The name, what it does, and its switch (on for the method chosen). */
 		choice = &languages_choices[i];
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, choice->name, LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, choice->line, LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, kl_tr(choice->name), LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, kl_tr(choice->line), LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 16, app->look.ime_method == choice->method, app->look.writable, choice->index);
 		y += LANGUAGES_ROW;
 	}
 
-	/* The display language's card, English alone for now. */
+	/* The display language's card: one row a language, named in its own language, a switch at each. */
 	top += height + LANGUAGES_GAP;
-	height = se_card_height(1, 1) + 24;
-	y = se_card_begin(app, canvas, x, top, width, height, "Display language", NULL);
-	y = se_row_value(app, canvas, x, y, width, "Language", "English", 1);
-	(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 14, "Other languages come with the translations.", LANGUAGES_TEXT_SMALL, 0, width - 2 * LANGUAGES_PAD, SE_COLOR_TEXT_SECONDARY);
+	height = se_card_height(0, 1) + LANGUAGES_COUNT * LANGUAGES_SHORT_ROW + 4;
+	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Display language"), kl_tr("The language of the desktop's words. The change applies at once."));
+	for (i = 0; i < LANGUAGES_COUNT; i++) {
+		/* The name, and its switch (on for the language shown). */
+		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, languages_names[i], LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 10, app->look.ui_language == (int)i, app->look.writable, LANGUAGES_SHOW_EN + (int)i);
+		y += LANGUAGES_SHORT_ROW;
+	}
+
+	/* The login screen's card, for an administrator. */
+	top += height;
+	top = languages_draw_system(app, canvas, x, top, width);
 
 	/* The edge below the cards. */
-	return top + height;
+	return top;
 }
 
 /*
- * Carries out a click on a choice's switch: that method is chosen (a
- * click on the one chosen changes nothing).
+ * Draws the login screen's card from the edge below the cards above, when
+ * the user is an administrator of a desktop that administers the accounts;
+ * returns the edge below it (the same edge without it).
+ */
+static int
+languages_draw_system(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int top,
+	int width)
+{
+	struct se_languages *languages;
+	struct fm_text_line line;
+	const char *now;
+	fm_color ink;
+	int administer;
+	int enabled;
+	int height;
+	int ready;
+	int right;
+	int apply;
+	int y;
+	int i;
+
+	/* Whether the user is an administrator (the users read once, as the Users page reads them). */
+	se_users_load(&app->users);
+	administer = se_users_admin_available(app);
+	if (!administer)
+		return top;
+
+	/* The system's language, read once (and again after a change). */
+	languages = &app->languages;
+	if (!languages->system_read)
+		languages_read_system(languages);
+
+	/* The card: the language now, one row a language, the password, Apply and the answer. */
+	top += LANGUAGES_GAP;
+	height = se_card_height(0, 1) + 30 + LANGUAGES_COUNT * LANGUAGES_SHORT_ROW + 56 + 60;
+	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Login screen"), kl_tr("The language of the login screen, for everyone on this computer."));
+	now = kl_tr("Not set (English)");
+	if (languages->system >= 0 && languages->system < LANGUAGES_COUNT)
+		now = languages_names[languages->system];
+	(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 18, kl_tr("Now"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT_SECONDARY);
+	(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_FIELD_X, y + 18, now, LANGUAGES_TEXT_SMALL, 0, width - LANGUAGES_FIELD_X - 20, SE_COLOR_TEXT);
+	y += 30;
+
+	/* The languages to choose, each named in its own language. */
+	fm_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
+	for (i = 0; i < LANGUAGES_COUNT; i++) {
+		/* The name, and its switch (on for the one chosen). */
+		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, languages_names[i], LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 10, languages->chosen == i, 1, LANGUAGES_SYSTEM_EN + i);
+		y += LANGUAGES_SHORT_ROW;
+	}
+
+	/* The administrator's password. */
+	languages_field_draw(app, canvas, x, y, width);
+	y += 56;
+
+	/* Apply at the right, when a change and the password are there. */
+	right = x + width - 20;
+	apply = se_button_width(app, kl_tr("Apply"));
+	ready = languages_ready(app);
+	enabled = ready;
+	(void)se_button_draw(app, canvas, right - apply, y + 4, kl_tr("Apply"), 1, enabled, LANGUAGES_APPLY);
+
+	/* The last answer: green when it was made, red when it was not. */
+	ink = SE_COLOR_GOOD;
+	if (languages->message_bad)
+		ink = SE_COLOR_BAD;
+	if (languages->message[0] != '\0')
+		(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 22, languages->message, LANGUAGES_TEXT_SMALL, 0, right - apply - x - 40, ink);
+
+	/* The edge below the card. */
+	return top + height;
+}
+
+/* Draws the password's row: its label at the left, the field at the right with dots, and the cursor when it has the keyboard. */
+static void
+languages_field_draw(
+	struct se_app *app,
+	struct fm_canvas *canvas,
+	int x,
+	int y,
+	int width)
+{
+	const struct se_languages *languages;
+	struct fm_rect box;
+	char dots[SE_KEY_TEXT];
+	const char *text;
+	fm_color ink;
+	size_t count;
+	int right;
+
+	/* The label. */
+	languages = &app->languages;
+	(void)fm_text_draw_fit(app->text, canvas, x + 20, fm_text_center(LANGUAGES_TEXT_SMALL, y + 8, LANGUAGES_FIELD_HEIGHT), kl_tr("Your password"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT);
+
+	/* The field: white, the accent's edge when it has the keyboard. */
+	box.x = x + LANGUAGES_FIELD_X;
+	box.y = y + 8;
+	box.width = width - LANGUAGES_FIELD_X - 20;
+	box.height = LANGUAGES_FIELD_HEIGHT;
+	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
+	if (languages->focused) {
+		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
+	} else {
+		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
+	}
+
+	/* A click on it gives it the keyboard. */
+	se_ui_hit(app, &box, SE_HIT_CONTROL, LANGUAGES_FIELD);
+
+	/* Dots for the password, or what the field is for while it is empty. */
+	for (count = 0; count < languages->password.length && count + 1U < sizeof(dots); count++)
+		dots[count] = '*';
+	dots[count] = '\0';
+	text = dots;
+	ink = SE_COLOR_TEXT;
+	if (languages->password.length == 0) {
+		text = kl_tr("Needed for the change");
+		ink = SE_COLOR_TEXT_FAINT;
+	}
+
+	/* The text inside the field, and the cursor after it when the field has the keyboard. */
+	fm_canvas_clip_push(canvas, &box);
+	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, fm_text_center(LANGUAGES_TEXT_SMALL, box.y, box.height), text, strlen(text), LANGUAGES_TEXT_SMALL, 0, ink);
+	if (languages->password.length == 0)
+		right = box.x + 12;
+	if (languages->focused)
+		fm_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
+	fm_canvas_clip_pop(canvas);
+	memset(dots, 0, sizeof(dots));
+}
+
+/*
+ * Carries out a click on the page: an input method's switch (that method
+ * is chosen; a click on the one chosen changes nothing), a display
+ * language's, or the login screen's switches, field and Apply.
  */
 void
 se_languages_press(
@@ -99,7 +288,47 @@ se_languages_press(
 	int index)
 {
 	const struct languages_choice *choice;
+	struct se_languages *languages;
+	int language;
+	int ready;
 	size_t i;
+
+	/* The display language's switches: that language at once (a click on the one shown changes nothing). */
+	languages = &app->languages;
+	if (index == LANGUAGES_SHOW_EN || index == LANGUAGES_SHOW_JA) {
+		language = index - LANGUAGES_SHOW_EN;
+		if (!app->look.writable || app->look.ui_language == language)
+			return;
+		app->look.ui_language = language;
+		se_look_set_number(app, "ui.language", language, 0);
+		se_log("LANGUAGES ui language=%s", languages_codes[language]);
+		app->dirty = 1;
+		return;
+	}
+
+	/* The login screen's switches choose the language to set. */
+	if (index == LANGUAGES_SYSTEM_EN || index == LANGUAGES_SYSTEM_JA) {
+		languages->chosen = index - LANGUAGES_SYSTEM_EN;
+		languages->message[0] = '\0';
+		app->dirty = 1;
+		return;
+	}
+
+	/* The field takes the keyboard. */
+	if (index == LANGUAGES_FIELD) {
+		languages->focused = 1;
+		app->dirty = 1;
+		return;
+	}
+
+	/* Apply, when a change and the password are there. */
+	if (index == LANGUAGES_APPLY) {
+		ready = languages_ready(app);
+		if (ready)
+			languages_apply(app);
+		app->dirty = 1;
+		return;
+	}
 
 	/* The choice of the switch. */
 	choice = NULL;
@@ -120,4 +349,236 @@ se_languages_press(
 
 	/* The page shows it. */
 	app->dirty = 1;
+}
+
+/*
+ * Takes a key while the login screen's password field has the keyboard:
+ * Enter applies the change when it is ready, Esc empties the field (or,
+ * when it is empty, gives the keyboard back and is the window's), the
+ * others type.  Returns 1 when the key was the page's.
+ */
+int
+se_languages_key(
+	struct se_app *app,
+	const struct se_event *event)
+{
+	struct se_languages *languages;
+	int ready;
+	int used;
+
+	/* Only while the field has the keyboard. */
+	languages = &app->languages;
+	if (!languages->focused)
+		return 0;
+
+	/* Enter: the change, when it is ready. */
+	app->dirty = 1;
+	if (event->key == SE_KEY_ENTER) {
+		ready = languages_ready(app);
+		if (ready)
+			languages_apply(app);
+		return 1;
+	}
+
+	/* Esc empties the field; an empty one gives the keyboard back. */
+	if (event->key == SE_KEY_ESC) {
+		if (languages->password.length == 0) {
+			languages->focused = 0;
+			return 0;
+		}
+
+		/* Emptied. */
+		se_field_clear(&languages->password);
+		return 1;
+	}
+
+	/* Anything else types into the field (or is not the page's). */
+	used = se_field_key(&languages->password, event);
+	if (used == 0)
+		return 0;
+
+	/* A new character takes the last answer away. */
+	if (!languages->asked)
+		languages->message[0] = '\0';
+
+	/* Succeeded: the field took the key. */
+	return 1;
+}
+
+/*
+ * Takes the answer of the login screen's change when it is the page's: the
+ * system's language read again, or the refusal in words.  Returns 1 when
+ * the request was the page's.
+ */
+int
+se_languages_result(
+	struct se_app *app,
+	uint32_t request,
+	int error)
+{
+	struct se_languages *languages;
+	char word[KL_ACCOUNT_REASON_SIZE];
+	const char *saying;
+	int refused;
+
+	/* Only the change the page asked. */
+	languages = &app->languages;
+	if (!languages->asked || request != languages->request)
+		return 0;
+	languages->asked = 0;
+	app->dirty = 1;
+
+	/* Made: the language read again from the system's file. */
+	if (error == 0) {
+		languages_read_system(languages);
+		(void)snprintf(languages->message, sizeof(languages->message), "%s", kl_tr("Changed. The login screen uses it from the next time it shows."));
+		languages->message_bad = 0;
+		se_log("LANGUAGES system result request=%u errno=0 system=%d", request, languages->system);
+		return 1;
+	}
+
+	/* A refusal in words, or a failure (without any password in the log). */
+	word[0] = '\0';
+	refused = kl_system_account_refusal(app->system, request, word, sizeof(word));
+	saying = kl_tr("The change could not be made.");
+	if (refused)
+		saying = languages_saying(word);
+	(void)snprintf(languages->message, sizeof(languages->message), "%s", saying);
+	languages->message_bad = 1;
+	se_log("LANGUAGES system result request=%u errno=%d reason=%s", request, error, word);
+
+	/* Succeeded: the answer was the page's. */
+	return 1;
+}
+
+/*
+ * Reads the system's language from its file ("en" or "ja" on one line);
+ * without the file, or with another word, it is not set.  The language to
+ * set starts as the system's (English when it is not set).
+ */
+static void
+languages_read_system(
+	struct se_languages *languages)
+{
+	char text[LANGUAGES_LINE_MAX];
+	const char *code;
+	FILE *file;
+	size_t length;
+	int same;
+	int i;
+
+	/* Not set until the file says otherwise. */
+	languages->system_read = 1;
+	languages->system = -1;
+	text[0] = '\0';
+	file = fopen(LANGUAGES_SYSTEM_PATH, "r");
+	if (file != NULL) {
+		length = fread(text, 1, sizeof(text) - 1U, file);
+		text[length] = '\0';
+		fclose(file);
+	}
+
+	/* The first line's word. */
+	length = strcspn(text, "\r\n \t");
+	text[length] = '\0';
+	for (i = 0; i < LANGUAGES_COUNT; i++) {
+		/* A language this page knows. */
+		same = strcmp(text, languages_codes[i]);
+		if (same == 0)
+			languages->system = i;
+	}
+
+	/* The one to set starts as the system's. */
+	languages->chosen = 0;
+	code = "none";
+	if (languages->system >= 0) {
+		languages->chosen = languages->system;
+		code = languages_codes[languages->system];
+	}
+
+	/* The log line the tests read. */
+	se_log("LANGUAGES system language=%s", code);
+}
+
+/* Tells whether the login screen's change can be asked: another language chosen, the password typed, no change under way. */
+static int
+languages_ready(
+	const struct se_app *app)
+{
+	const struct se_languages *languages;
+	int system;
+
+	/* A language other than the system's (not set is English). */
+	languages = &app->languages;
+	system = languages->system;
+	if (system < 0)
+		system = 0;
+	if (languages->chosen == system && languages->system >= 0)
+		return 0;
+
+	/* The password, and no answer awaited. */
+	if (languages->password.length == 0 || languages->asked)
+		return 0;
+
+	/* Ready. */
+	return 1;
+}
+
+/*
+ * Asks the desktop to set the system's language (account-admin's
+ * system-language, with the administrator's password), and wipes the field.
+ */
+static void
+languages_apply(
+	struct se_app *app)
+{
+	struct se_languages *languages;
+	char operation[64];
+	uint32_t request;
+	int error;
+
+	/* The operation's lines: its name and the language's code. */
+	languages = &app->languages;
+	(void)snprintf(operation, sizeof(operation), "system-language\n%s\n", languages_codes[languages->chosen]);
+
+	/* Asked; the password leaves with the next flush, and no copy stays. */
+	error = kl_system_account_administer(app->system, languages->password.text, operation, &request);
+	se_field_clear(&languages->password);
+
+	/* Not asked: said at once. */
+	if (error != 0) {
+		(void)snprintf(languages->message, sizeof(languages->message), "%s", kl_tr("The change could not be asked."));
+		languages->message_bad = 1;
+		se_log("LANGUAGES system errno=%d", error);
+		return;
+	}
+
+	/* Succeeded: the answer comes as a result. */
+	languages->asked = 1;
+	languages->request = request;
+	(void)snprintf(languages->message, sizeof(languages->message), "%s", kl_tr("Changing..."));
+	languages->message_bad = 0;
+	se_log("LANGUAGES system request=%u language=%s", request, languages_codes[languages->chosen]);
+}
+
+/* Gives what the page says for one of account-admin's refusal words. */
+static const char *
+languages_saying(
+	const char *word)
+{
+	int same;
+
+	/* Each word the page knows. */
+	same = strcmp(word, languages_words[0]);
+	if (same == 0)
+		return kl_tr("Only an administrator can change the login screen's language.");
+	same = strcmp(word, languages_words[1]);
+	if (same == 0)
+		return kl_tr("Your password is wrong.");
+	same = strcmp(word, languages_words[2]);
+	if (same == 0)
+		return kl_tr("Another change is under way. Try again in a moment.");
+
+	/* Any other. */
+	return kl_tr("The change could not be made.");
 }

@@ -507,6 +507,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー:「慣性スクロールはlibkeilandに実装してほしいのですが、Settingsも含め、各appで独自実装してしまっていませんか？」→ Q1 が確認（Settings の減速は自前、Files・Terminal・Browser・PDF Viewer・Image Viewer・Notes・Text Editor は全て自前）。[ws090-p019](ws090/phase019/phase.md) で libkeiland に一本化（q806、P1）。
+- 2026-10-06 ユーザー（クリック）: BUG-223 の game mode は「B backend に direct の口」（Guardrail の例外の表に記録）。ws128-p004（PDF の文字の検索と選択）は「採る（ベータ2）」。WS131 p016〜p025 の質問に「appはlibkeilandしか使わず、これはコンポジタのクライアント側です。libkeiland-backendはコンポジタ実装のファウンデーションのバックエンドです。何か混同してませんか？」→ Q1 の質問の書き方の誤り（p016〜p020 は app を libkeiland の新しい API `kl_app` へ移す Phase で、libkeiland-backend とは無関係）。訂正して聞き直す。
 - 2026-10-06 ユーザー（クリック）: P1 の Files の host の画素の一致の確かめ（安全の判定に止められた）は「この確かめはやめる」。q801 は canceled。
 - 2026-10-06 ユーザー（クリック）: BUG-214 は「slider と switch に分ける」（slider は窓の中身の不透明度 85〜100・既定 100、「Frosted glass」の switch は既定 on・off で不透明の地）。BUG-220 の列の幅は「保存する」（Files の設定に）。BUG-223:「フルスクリーンモードではappのbufferをscanoutしているはずです。確認して教えてください。」→ Q1 が確認（ws099-p015 が 2026-09-30 のユーザーの指示で fullscreen mode の直の scanout を削除、display.c の注記、code は GitHub の old）→ ユーザーの選択「動画・game mode だけ戻す」: app が明示に頼む全画面（game mode）の時だけ直の scanout を戻す、普通の全画面は合成のまま・端の swipe を保つ。
 - 2026-10-06 ユーザー: light の bar は montage-5 の「このまま実装」。app の icon の中抜きは「デスクトップ背景が透けて見えるとうれしいです。ライトもダークも、Apps一覧も。」（bar の light・dark と App Home の Apps の一覧で、記号の部分から壁紙が透ける）。
