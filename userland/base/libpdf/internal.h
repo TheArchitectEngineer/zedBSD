@@ -276,7 +276,8 @@ struct pdf_font_cache;
  * ems with y upward, and transform (a b c d) maps it into text space before
  * the font size: it narrows or leans a substitute.  bold is the width, in
  * ems, of the stroke that thickens a substitute standing in for a bold
- * face.
+ * face.  missing says the code draws the font's missing glyph (glyph 0,
+ * ws175-p010).
  */
 struct pdf_glyph {
 	double width;
@@ -286,6 +287,7 @@ struct pdf_glyph {
 	double transform[4];
 	double bold;
 	int drawable;
+	int missing;
 	const unsigned char *verbs;
 	size_t verb_count;
 	const struct pdf_point *points;

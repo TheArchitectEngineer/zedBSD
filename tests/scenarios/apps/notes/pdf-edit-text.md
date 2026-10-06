@@ -1,7 +1,7 @@
 ---
 id: apps.notes.pdf-edit-text
 title: Notes で PDF の中の文字を書き換え、消す
-status: draft
+status: active
 areas: [notes, libpdf]
 paths: [userland/desktop/notes/, userland/base/libpdf/]
 machine: either
@@ -13,8 +13,8 @@ since: ws175-p001
 既存の文字の行を、元の埋め込みの font のまま書き換えられること、元の font に無い文字では置き換えの font になり利用者に知らされること、行を消せることを確かめる（WS175、ws175-p002・p004・p005・p008）。
 
 ## 準備
-- `/tmp/aat-samples/notes-edit.pdf`（`edit-basic.pdf`。1 頁の段落の 1 行目は「The quick brown fox jumps over the lazy dog」、subset の TrueType）。
-- Notes で開き、1 頁を表示、toolbar の Select の道具（`NOTES TOOL 16 name=select`）。
+- 補助（`helpers_notes_edit.py`）が `edit-basic.pdf`（1 頁の段落の 1 行目は「The quick brown fox jumps over the lazy dog」。DejaVu Sans を段落の字だけに subset した TrueType（`ABCDEF+DejaVuSans`、大文字は T だけ））を scenario の folder に `notes-edit.pdf` として置き、Notes で開く。
+- toolbar の Select の道具（`NOTES TOOL 16 name=select`）。
 
 ## 操作と確認
 1. 操作: 段落の 1 行目を click し、続けて double-click。
@@ -34,5 +34,5 @@ since: ws175-p001
 1〜6 の正解。
 
 ## 注記
-draft（ws175-p008 の文字の段で操作と log を実装に合わせた。p010 で T1 が流して active にする）。pdftotext は最新の revision の page を読む（消した行の bytes は base の revision に残る。D1）。
+ws175-p010 で active（補助 `helpers_notes_edit.py`）。pdftotext は最新の revision の page を読む（消した行の bytes は base の revision に残る。D1）。
 編集の box は libkeiland の field（`kl_field`、US 配列の文字と IME の文字）で、行の下に出る。どの font にも無い文字は editor が受けないので box が開いたまま status に理由が出る（host 試験 `host-notes-edit` の `notes_page_try_edit` の項目で確かめている）。
