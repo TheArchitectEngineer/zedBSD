@@ -2,7 +2,7 @@
 
 # ws131-p018: Terminal・Notes を新しい API へ（DnD・primary・tablet・fd の監視）
 
-Status: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。下の「q807（P1）: 実装」）
+Status: cleared（2026-10-07 Q1 の判定: T1-254 の zdesktop-p086 の FAIL は T1-256 で PASS、後の回帰（T1-281: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress、T1-295 menu-p003、Linux の 8 app の PNG、FreeBSD の backend-test）も PASS）（旧: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。下の「q807（P1）: 実装」））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q807（P1）

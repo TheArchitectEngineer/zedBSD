@@ -2,7 +2,7 @@
 
 # ws131-p017: PDF Viewer・Image Viewer を新しい API へ
 
-Status: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。p016 の上で開始（Q1 の (1)）。下の「q807（P1）」）
+Status: cleared（2026-10-07 Q1 の判定: T1-249 PASS、後の回帰（T1-281: boot-test・textinput-p013・viewers-p008・demo-s8-s9・titlebar-p010・files-regress、T1-295 menu-p003、Linux の 8 app の PNG、FreeBSD の backend-test）も PASS）（旧: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。p016 の上で開始（Q1 の (1)）。下の「q807（P1）」））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q807（P1）

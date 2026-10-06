@@ -2,7 +2,7 @@
 # ws122-p005: 設計 — 動画の全画面と合成を通さない直接の scanout（game mode）
 
 Parent: [WS122](../ws.md)
-Status: test-wait（2026-10-07 q831 P2: p005a・p005b は実装と T1（T1-237・T1-244）済み、p005c の AAT も済み。i915 の実機の direct=1 は UAT。判定は Q1）
+Status: cleared（2026-10-07 Q1 の判定: T1-237（全画面）・T1-244（game mode の direct scanout、QEMU）・AAT の fullscreen。i915 の実機の direct=1 は UAT（第 3 段の外の実機の確認））（旧: test-wait（2026-10-07 q831 P2: p005a・p005b は実装と T1（T1-237・T1-244）済み、p005c の AAT も済み。i915 の実機の direct=1 は UAT。判定は Q1））
 Disposition: normal
 Related: [BUG-223](../../bugs/BUG-223.md)・[BUG-208](../../bugs/BUG-208.md)・[ws142-p007](../../ws142/phase007/phase.md)
 

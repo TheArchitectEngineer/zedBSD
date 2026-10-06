@@ -2,7 +2,7 @@
 
 # ws122-p003: 独自の container の読み込み（MP4・Matroska/WebM の demux）
 
-Status: test-wait（2026-10-07 q831 P2: 実装と host の試験は済み、p004 が player に接続し T1-191 PASS（mp4 の container で再生・seek）。cleared の判定は Q1）
+Status: cleared（2026-10-07 Q1 の判定: T1-191 PASS（p004 の player で mp4 の再生・seek））（旧: test-wait（2026-10-07 q831 P2: 実装と host の試験は済み、p004 が player に接続し T1-191 PASS（mp4 の container で再生・seek）。cleared の判定は Q1））
 Disposition: normal
 Parent: [WS122](../ws.md)
 Queue: Q1（ベータ2 の割り当て、P2 の 2 番目）
