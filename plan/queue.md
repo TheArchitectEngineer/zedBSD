@@ -57,7 +57,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q812 / q812-i01 | P1（今の p018 の Terminal の安全な地点で、優先） | [ws090-p020](ws090/phase020/phase.md) | 2026-10-06 ユーザー「UIをMahora Regularに移行し、ターミナルはMahora Mono、太字フォントはMahora Boldを利用するように修正してください。」: install の対応を Mahora に、太字を Mahora Bold の face で、崩れの直し、PNG を T1 で撮りユーザーが見る | なし | 実装済み（P1 → main f19289851）、test-wait（T1-252 の PNG をユーザーが見る）。Inter は install しない（file は残す） |
 | q813 / q813-i01 | P1（p020 の安全な地点の後、WS131 の残りより先） | [ws090-p021](ws090/phase021/phase.md) | 2026-10-06 ユーザー: 全ての app の窓の中身の padding を 0（title bar と同じ幅）、title bar との間の高さは compositor の定数で全 app 同一。全 app を確かめる | なし | 実装済み（P1 1b0e70d49 → main 6da33362b）、test-wait（T1-256）。compositor は既に title bar を中身の x・幅に、間は定数 8 px（変更なし）。dock の時も余白 0 |
 | q814 / q814-i01 | P1 | [WS131](ws131/ws.md) p021 → p022 → p025 → p023 → p026 → p024 | 2026-10-06 ユーザー「全部進める」。p025 は shell の窓だけ（WS074 の描画の改善は止めたまま）。p026 の sysroot の変更は Q1 が toolchain の lock を外して一人で流す（担当は変更の差分を用意して Q1 へ）。各 Phase の着手の前に Q1 へ | p020 | p021 実装済み（P1 → main）、test-wait（T1-258）。次は q815（最大化の 4 px）、その後 p022 |
-| q815 / q815-i01 | P1（WS131 p021 の merge の直後、p022 の前） | [ws099-p038](ws099/phase038/phase.md) | 最大化の時に compositor が中身を四方 4 論理 px 内側に、スクショをユーザーへ | ws131-p021 | pending |
+| q815 / q815-i01 | P1（WS131 p021 の merge の直後、p022 の前） | [ws099-p038](ws099/phase038/phase.md) | 最大化の時に compositor が中身を四方 4 論理 px 内側に、スクショをユーザーへ | ws131-p021 | 実装済み（P1 3f7718d06 → main）、test-wait（T1-259、撮影をユーザーへ） |
 | q816 / q816-i01 | P1（q815 の後、WS131 p022 より先） | [ws090-p022](ws090/phase022/phase.md) | 2026-10-06 ユーザー: 全ての文字の入力で IME、自前の text box は理由が無ければ libkeiland の部品へ。Q1 の調べの 7 項目（kl_app の自動の結線・複数行の部品・Files の改名・Settings の欄・Terminal の検索の欄・browser の form・App Home の検索） | なし | pending |
 
 
