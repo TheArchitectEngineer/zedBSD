@@ -6,11 +6,20 @@
  */
 
 /*
- * Mail's window (WS169 p000; mailer.h): a libkeiland application with one
- * window that shows the view (view.c), its menu (File: New Message, Get
- * Mail, Quit; Message: Send, Reply, Reply All, Forward, Archive, Delete),
- * and the view's input.  Ctrl+N writes a new message, Ctrl+Q quits.  What
- * happens is logged on standard error as "MAIL" lines for the tests.
+ * Mail's window (WS169 p000, p004; mailer.h): a libkeiland application
+ * with one window that shows the view (view.c), its menu (File: New
+ * Message, Get Mail, Add Account, Quit; Message: Send, Reply, Reply All,
+ * Forward, Archive, Delete), and the view's input.  Ctrl+N writes a new
+ * message, Ctrl+Q quits.
+ *
+ * The accounts are read at the start; the thread of sync.c gets their mail
+ * and waits for new mail, and the window carries out what the view asks
+ * (send, get mail, archive, delete, read, a new account).  A new message
+ * is told as a notification, and its sign-in code to the compositor
+ * (kl_system_mail_arrived, ws169-p002), which tells the readers the user
+ * allows (the browser, with the desktop's mail.codes.browser).  What
+ * happens is logged on standard error as "MAIL" lines for the tests, the
+ * words of a message never.
  *
  *   mailer [--width=N] [--height=N] [--timeout-s=N]
  */
@@ -24,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* The fonts, the window's first size, and the longest wait for input. */
 #define ML_FONT			KEILAND_DATADIR "/fonts/keiland.ttf"
@@ -38,6 +48,9 @@
 
 /* The key Q, which quits with Ctrl. */
 #define ML_KEY_Q		16U
+
+/* The desktop's setting that lets the browser hear the sign-in codes (ws169-p002). */
+#define ML_CODES_SETTING	"mail.codes.browser"
 
 /*
  * The window's state: the application, the window and its input, the
@@ -64,6 +77,16 @@ struct ml_window {
 	int resized;
 	int moving;
 	int glass_decided;
+
+	/*
+	 * The servers: the thread (NULL when it could not start), the folder
+	 * the accounts are kept in, the account a Sign In tried (taken when it
+	 * works), and the desktop's settings (NULL without them).
+	 */
+	struct ml_sync *sync;
+	char folder[ML_PATH_MAX];
+	struct ml_account_config pending;
+	struct kl_settings *settings;
 };
 
 /* The window's menu. */
@@ -71,6 +94,7 @@ static const struct kl_menu_entry ml_menu[] = {
 	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "New Message", ML_ACTION_NEW, KL_MENU_ROLE_NONE, KL_MENU_CTRL, 'n' },
 	{ 3U, 1U, KL_MENU_ITEM_NORMAL, "Get Mail", ML_ACTION_GET, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 14U, 1U, KL_MENU_ITEM_NORMAL, "Add Account", ML_ACTION_ADD_ACCOUNT, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ 4U, 1U, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ 5U, 1U, KL_MENU_ITEM_NORMAL, "Quit Mail", ML_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
 	{ 6U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Message", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
@@ -90,6 +114,16 @@ static void ml_input(struct ml_window *mailer, const struct kl_window_event *eve
 static int ml_resize(struct ml_window *mailer);
 static void ml_draw(struct ml_window *mailer, uint64_t now_us);
 static int ml_wait(const struct ml_window *mailer, uint64_t now_us);
+static void ml_servers_start(struct ml_window *mailer);
+static void ml_results(struct ml_window *mailer);
+static void ml_result_message(struct ml_window *mailer, const struct ml_result *result);
+static void ml_requests(struct ml_window *mailer);
+static void ml_request_send(struct ml_window *mailer);
+static void ml_request_move(struct ml_window *mailer, long index, enum ml_folder to_folder);
+static void ml_request_sign_in(struct ml_window *mailer);
+static void ml_refresh_all(struct ml_window *mailer);
+static void ml_status_time(struct ml_window *mailer, const char *what);
+static void ml_codes_changed(void *data, const char *key, const char *value, unsigned flags);
 
 /*
  * Runs Mail.
@@ -167,10 +201,16 @@ main(
 	mailer.style.glass = 0;
 	mailer.view.glass = 0;
 
+	/* The accounts, the desktop's settings and the thread that gets the mail. */
+	ml_servers_start(&mailer);
+
 	/* The loop until the window closes. */
 	status = ml_loop(&mailer, timeout);
 
-	/* Everything goes. */
+	/* Everything goes: the thread first (it ends its sessions), then the window. */
+	ml_sync_stop(mailer.sync);
+	if (mailer.settings != NULL)
+		kl_settings_close(mailer.settings);
 	kl_ui_destroy(mailer.ui);
 	if (mailer.canvas_made)
 		kl_canvas_release(&mailer.canvas);
@@ -178,6 +218,7 @@ main(
 	kl_app_close(mailer.app);
 	ml_view_release(&mailer.view);
 	kl_text_close(&mailer.text);
+	ml_store_release();
 
 	/* Reports how the loop ended. */
 	if (status != 0)
@@ -305,6 +346,12 @@ ml_loop(
 				continue;
 			}
 
+			/* The thread's results. */
+			if (event.kind == KL_APP_FD) {
+				ml_results(mailer);
+				continue;
+			}
+
 			/* Another window's event is not this one's. */
 			if (event.kind != KL_APP_WINDOW || event.window != mailer->window)
 				continue;
@@ -317,6 +364,13 @@ ml_loop(
 				ml_input(mailer, &event.input);
 			}
 		}
+
+		/* The desktop's settings: a change of the sign-in codes' setting comes to ml_codes_changed. */
+		if (mailer->settings != NULL)
+			(void)kl_settings_dispatch(mailer->settings);
+
+		/* What the view asked of the servers. */
+		ml_requests(mailer);
 
 		/* The end: the window closed or Quit. */
 		now = kl_clock_us();
@@ -347,6 +401,9 @@ ml_loop(
 
 		/* A frame. */
 		ml_draw(mailer, now);
+
+		/* What the frame's buttons asked. */
+		ml_requests(mailer);
 	}
 }
 
@@ -572,8 +629,10 @@ ml_wait(
 {
 	int wait;
 
-	/* A frame due now. */
+	/* A frame due now, or requests to carry out. */
 	if (mailer->dirty)
+		return 0;
+	if (mailer->view.request_count != 0U)
 		return 0;
 
 	/* Something moving. */
@@ -587,4 +646,452 @@ ml_wait(
 
 	/* The time to wait. */
 	return wait;
+}
+
+/*
+ * Reads the accounts, opens the desktop's settings and starts the thread
+ * that gets the mail, then asks it for every account's mail.  Without an
+ * account the view shows the form of a new one.
+ */
+static void
+ml_servers_start(
+	struct ml_window *mailer)
+{
+	struct ml_account_config accounts[ML_ACCOUNTS_MAX];
+	size_t count;
+	size_t index;
+	int error;
+
+	/* The accounts on the disk. */
+	count = 0;
+	error = ml_config_folder(mailer->folder, sizeof(mailer->folder));
+	if (error == 0)
+		error = ml_accounts_load(mailer->folder, accounts, ML_ACCOUNTS_MAX, &count);
+	if (error != 0)
+		ml_log("ACCOUNTS failed error=%d", error);
+	for (index = 0; index < count; index++)
+		(void)ml_store_add_account(&accounts[index]);
+	ml_log("ACCOUNTS count=%zu", count);
+	if (count == 0U)
+		mailer->view.adding = 1;
+
+	/* The desktop's settings: whether the browser may fill in sign-in codes, and its changes. */
+	mailer->settings = kl_settings_open(kl_app_display(mailer->app), NULL);
+	if (mailer->settings != NULL) {
+		mailer->view.codes_allowed = kl_settings_get_int(mailer->settings, ML_CODES_SETTING, 0);
+		(void)kl_settings_watch(mailer->settings, ML_CODES_SETTING, ml_codes_changed, mailer, NULL);
+	}
+
+	/* The thread, its results watched. */
+	error = ml_sync_start(accounts, count, &mailer->sync);
+	if (error != 0) {
+		ml_log("SYNC failed error=%d", error);
+		(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Mail cannot reach the servers (%d).", error);
+		mailer->sync = NULL;
+		return;
+	}
+
+	/* Its results' descriptor watched by the application's loop. */
+	error = kl_app_watch_fd(mailer->app, ml_sync_fd(mailer->sync), KL_APP_FD_READ);
+	if (error != 0)
+		ml_log("SYNC watch error=%d", error);
+
+	/* Every account's mail. */
+	ml_refresh_all(mailer);
+}
+
+/* Takes the thread's results into the store and the view. */
+static void
+ml_results(
+	struct ml_window *mailer)
+{
+	struct ml_account_config config;
+	struct ml_result result;
+	struct ml_job job;
+	size_t count;
+	int taken;
+	int index;
+	int error;
+
+	/* Each result. */
+	for (;;) {
+		taken = ml_sync_take(mailer->sync, &result);
+		if (!taken)
+			break;
+		mailer->dirty = 1;
+
+		/* Each kind. */
+		switch (result.kind) {
+		case ML_RESULT_MESSAGE:
+			ml_result_message(mailer, &result);
+			break;
+		case ML_RESULT_REFRESHED:
+			ml_log("REFRESHED account=%d", result.account);
+			ml_status_time(mailer, "Updated");
+			break;
+		case ML_RESULT_SENT:
+			ml_log("SENT account=%d", result.account);
+			mailer->view.composing = 0;
+			ml_view_notice(&mailer->view, "Message sent.", kl_clock_us());
+			break;
+		case ML_RESULT_SIGNED_IN:
+			/* The account that worked: kept, shown, and its mail got. */
+			config = mailer->pending;
+			index = ml_store_add_account(&config);
+			ml_log("SIGNED-IN account=%d", index);
+			(void)ml_accounts(&count);
+			if (index >= 0) {
+				error = ml_accounts_save(mailer->folder, ml_accounts(&count), count);
+				if (error != 0)
+					ml_log("ACCOUNTS save-failed error=%d", error);
+				mailer->view.account = index;
+				mailer->view.folder = ML_INBOX;
+				mailer->view.selected = -1;
+				mailer->view.adding = 0;
+				memset(&job, 0, sizeof(job));
+				job.kind = ML_JOB_REFRESH;
+				job.account = index;
+				(void)ml_sync_queue(mailer->sync, &job);
+				(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Getting mail...");
+			}
+
+			/* The tried account is not needed after (its password goes). */
+			memset(&mailer->pending, 0, sizeof(mailer->pending));
+			break;
+		case ML_RESULT_FAILED:
+			/* What failed, in the status and as a notice. */
+			ml_log("FAILED account=%d error=%d", result.account, result.error);
+			(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "%s", result.text);
+			ml_view_notice(&mailer->view, result.text, kl_clock_us());
+			break;
+		default:
+			break;
+		}
+
+		/* What the result held. */
+		ml_sync_release(&result);
+	}
+}
+
+/*
+ * Keeps a message the thread got; a new arrival is told as a
+ * notification, and its sign-in code to the compositor.
+ */
+static void
+ml_result_message(
+	struct ml_window *mailer,
+	const struct ml_result *result)
+{
+	struct kl_mail_arrival arrival;
+	struct kl_system *system;
+	const struct ml_account_config *accounts;
+	char title[ML_TEXT_MAX + 16U];
+	size_t count;
+	long found;
+	int error;
+
+	/* One kept already (a fetch after a move gives its folder again). */
+	found = ml_store_find(result->account, result->folder, result->uid);
+	if (found >= 0)
+		return;
+
+	/* Kept. */
+	error = ml_store_add_parsed(result->account, result->folder, result->uid, result->flags, &result->parsed, time(NULL));
+	if (error != 0) {
+		ml_log("STORE failed error=%d", error);
+		return;
+	}
+
+	/* The log the tests read (no words of the message). */
+	ml_log("MESSAGE account=%d folder=%s uid=%lu arrived=%d code=%d", result->account, ml_folder_name(result->folder), (unsigned long)result->uid, result->arrived, result->parsed.code[0] != '\0');
+
+	/* Only a new unread arrival is told. */
+	if (!result->arrived || (result->flags & ML_UNREAD) == 0U)
+		return;
+
+	/* A notification. */
+	(void)snprintf(title, sizeof(title), "New mail from %s", result->parsed.from_name);
+	(void)kl_app_notify(mailer->app, title, result->parsed.subject);
+
+	/* Its sign-in code to the compositor, for the readers the user allows. */
+	if (result->parsed.code[0] == '\0')
+		return;
+	system = kl_app_system(mailer->app);
+	if (system == NULL)
+		return;
+	accounts = ml_accounts(&count);
+	memset(&arrival, 0, sizeof(arrival));
+	arrival.account = "";
+	if ((size_t)result->account < count)
+		arrival.account = accounts[result->account].name;
+	arrival.from = result->parsed.from_name;
+	arrival.subject = result->parsed.subject;
+	arrival.code = result->parsed.code;
+	error = kl_system_mail_arrived(system, &arrival, NULL);
+	ml_log("ARRIVED told error=%d", error);
+	(void)kl_system_dispatch(system, NULL);
+}
+
+/* Carries out what the view asked. */
+static void
+ml_requests(
+	struct ml_window *mailer)
+{
+	struct ml_request request;
+	struct ml_message *message;
+	struct ml_job job;
+	int taken;
+
+	/* Each request. */
+	for (;;) {
+		taken = ml_view_take_request(&mailer->view, &request);
+		if (!taken)
+			break;
+		mailer->dirty = 1;
+
+		/* The sign-in codes' switch needs no server. */
+		if (request.action == ML_ACTION_CODES) {
+			if (mailer->settings != NULL)
+				(void)kl_settings_set_int(mailer->settings, ML_CODES_SETTING, mailer->view.codes_allowed, NULL);
+			continue;
+		}
+
+		/* Without the thread nothing reaches a server. */
+		if (mailer->sync == NULL) {
+			ml_view_notice(&mailer->view, "Mail cannot reach the servers.", kl_clock_us());
+			continue;
+		}
+
+		/* Each kind. */
+		switch (request.action) {
+		case ML_ACTION_SEND:
+			ml_request_send(mailer);
+			break;
+		case ML_ACTION_GET:
+			ml_refresh_all(mailer);
+			break;
+		case ML_ACTION_ARCHIVE:
+			ml_request_move(mailer, request.message, ML_ARCHIVE);
+			break;
+		case ML_ACTION_DELETE:
+			ml_request_move(mailer, request.message, ML_TRASH);
+			break;
+		case ML_ACTION_SEEN:
+			/* Marked read on the server. */
+			message = ml_store_at(request.message);
+			if (message == NULL || message->uid == 0U)
+				break;
+			memset(&job, 0, sizeof(job));
+			job.kind = ML_JOB_SEEN;
+			job.account = message->account;
+			job.folder = message->folder;
+			job.uid = message->uid;
+			(void)ml_sync_queue(mailer->sync, &job);
+			break;
+		case ML_ACTION_SIGN_IN:
+			ml_request_sign_in(mailer);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* Writes the message of the view and asks the thread to send it from the account shown. */
+static void
+ml_request_send(
+	struct ml_window *mailer)
+{
+	const struct ml_account_config *accounts;
+	struct ml_job job;
+	size_t count;
+	int error;
+
+	/* An account to send from, and someone to send to. */
+	accounts = ml_accounts(&count);
+	if ((size_t)mailer->view.account >= count) {
+		ml_view_notice(&mailer->view, "Add an account to send mail.", kl_clock_us());
+		return;
+	}
+
+	/* Someone to send to. */
+	if (mailer->view.to.length == 0U) {
+		ml_view_notice(&mailer->view, "Write whom the message is to.", kl_clock_us());
+		return;
+	}
+
+	/* The message and its receivers. */
+	memset(&job, 0, sizeof(job));
+	job.kind = ML_JOB_SEND;
+	job.account = mailer->view.account;
+	error = ml_compose(&accounts[mailer->view.account], mailer->view.to.text, mailer->view.cc.text, mailer->view.subject.text,
+	    mailer->view.body.text, mailer->view.reply_id, time(NULL), &job.raw, &job.length);
+	if (error != 0) {
+		ml_view_notice(&mailer->view, "The message could not be written.", kl_clock_us());
+		return;
+	}
+
+	/* The receivers: To and Cc. */
+	(void)snprintf(job.receivers, sizeof(job.receivers), "%s,%s", mailer->view.to.text, mailer->view.cc.text);
+
+	/* To the thread (it frees the bytes). */
+	error = ml_sync_queue(mailer->sync, &job);
+	if (error != 0) {
+		free(job.raw);
+		return;
+	}
+
+	/* The status while it is sent. */
+	(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Sending...");
+	ml_log("SEND queued bytes=%zu", job.length);
+}
+
+/* Moves a message to the archive or the trash: hidden at once, moved on the server. */
+static void
+ml_request_move(
+	struct ml_window *mailer,
+	long index,
+	enum ml_folder to_folder)
+{
+	struct ml_message *message;
+	struct ml_job job;
+
+	/* The message, not already in that folder. */
+	message = ml_store_at(index);
+	if (message == NULL || message->folder == to_folder)
+		return;
+
+	/* On the server (the copy comes back as the folder's new message). */
+	if (message->uid != 0U) {
+		memset(&job, 0, sizeof(job));
+		job.kind = ML_JOB_MOVE;
+		job.account = message->account;
+		job.folder = message->folder;
+		job.uid = message->uid;
+		job.to_folder = to_folder;
+		(void)ml_sync_queue(mailer->sync, &job);
+	}
+
+	/* Hidden here. */
+	message->folder = ML_FOLDERS;
+	ml_log("MOVE message=%ld to=%s", index, ml_folder_name(to_folder));
+}
+
+/* Asks the thread to try the form's account: the servers by the address's domain when they are not written. */
+static void
+ml_request_sign_in(
+	struct ml_window *mailer)
+{
+	struct ml_account_config config;
+	const char *domain;
+	char server[ML_TEXT_MAX + 8U];
+	struct ml_job job;
+	int error;
+
+	/* An address with a domain, and a password. */
+	domain = strchr(mailer->view.setup_address.text, '@');
+	if (domain == NULL || domain[1] == '\0' || mailer->view.setup_password.length == 0U) {
+		(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Write the email address and its password.");
+		return;
+	}
+
+	/* The domain after the at sign. */
+	domain++;
+
+	/* The account. */
+	memset(&config, 0, sizeof(config));
+	(void)snprintf(config.name, sizeof(config.name), "%s", mailer->view.setup_name.text);
+	if (config.name[0] == '\0')
+		(void)snprintf(config.name, sizeof(config.name), "%s", mailer->view.setup_address.text);
+	(void)snprintf(config.address, sizeof(config.address), "%s", mailer->view.setup_address.text);
+	(void)snprintf(config.user, sizeof(config.user), "%s", mailer->view.setup_address.text);
+	(void)snprintf(config.password, sizeof(config.password), "%s", mailer->view.setup_password.text);
+
+	/* The IMAP server, imap.<domain> when it is not written. */
+	(void)snprintf(server, sizeof(server), "%s", mailer->view.setup_imap.text);
+	if (server[0] == '\0')
+		(void)snprintf(server, sizeof(server), "imap.%s", domain);
+	error = ml_server_parse(server, 993U, &config.imap);
+
+	/* The SMTP server, smtp.<domain> when it is not written. */
+	(void)snprintf(server, sizeof(server), "%s", mailer->view.setup_smtp.text);
+	if (server[0] == '\0')
+		(void)snprintf(server, sizeof(server), "smtp.%s", domain);
+	if (error == 0)
+		error = ml_server_parse(server, 465U, &config.smtp);
+	if (error != 0) {
+		(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "A server is not written right.");
+		return;
+	}
+
+	/* Tried by the thread; kept when it works. */
+	memset(&job, 0, sizeof(job));
+	job.kind = ML_JOB_SIGN_IN;
+	job.account = -1;
+	job.config = config;
+	mailer->pending = config;
+	error = ml_sync_queue(mailer->sync, &job);
+	memset(&config, 0, sizeof(config));
+	memset(&job, 0, sizeof(job));
+	if (error != 0)
+		return;
+	(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Signing in...");
+	ml_log("SIGN-IN queued");
+}
+
+/* Asks the thread for every account's mail. */
+static void
+ml_refresh_all(
+	struct ml_window *mailer)
+{
+	struct ml_job job;
+	size_t count;
+	size_t index;
+
+	/* Each account. */
+	(void)ml_accounts(&count);
+	for (index = 0; index < count; index++) {
+		memset(&job, 0, sizeof(job));
+		job.kind = ML_JOB_REFRESH;
+		job.account = (int)index;
+		(void)ml_sync_queue(mailer->sync, &job);
+	}
+
+	/* The status while it works. */
+	if (count != 0U)
+		(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Getting mail...");
+}
+
+/* Sets the status to a word and the time now ("Updated 09:41"). */
+static void
+ml_status_time(
+	struct ml_window *mailer,
+	const char *what)
+{
+	struct tm parts;
+	time_t now;
+
+	/* The local time. */
+	now = time(NULL);
+	(void)localtime_r(&now, &parts);
+	(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "%s %02d:%02d", what, parts.tm_hour, parts.tm_min);
+}
+
+/* Follows a change of the sign-in codes' setting (made here or in another program). */
+static void
+ml_codes_changed(
+	void *data,
+	const char *key,
+	const char *value,
+	unsigned flags)
+{
+	struct ml_window *mailer;
+
+	UNUSED_PARAMETER(key);
+	UNUSED_PARAMETER(flags);
+
+	/* The switch shows the value. */
+	mailer = data;
+	mailer->view.codes_allowed = atoi(value);
+	mailer->dirty = 1;
 }

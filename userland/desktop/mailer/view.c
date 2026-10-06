@@ -6,7 +6,7 @@
  */
 
 /*
- * Mail's view (WS169 p000; mailer.h): three panes side by side -- the
+ * Mail's view (WS169 p000, p004; mailer.h): three panes side by side -- the
  * accounts and their folders with New Message and Get Mail, the folder's
  * messages under a search field (the sender, the subject, a line of the
  * words, unread ones marked), and the message chosen with Reply, Reply
@@ -17,8 +17,12 @@
  * folders and shows the list or the message, with a back button.  On
  * zdesktop's glass the panes are cards with the desktop between.
  *
- * Sending, getting mail, archiving and deleting show for a while that
- * there is no backend, and log a "MAIL NOBACKEND" line for the tests.
+ * Sending, getting mail, archiving, deleting and opening an unread
+ * message are queued as requests for the window (ml_view_take_request),
+ * which carries them out with the servers.  Without an account, or after
+ * Add Account, the list and the message give way to the form of a new
+ * account: the user's name, the address, the password and the two
+ * servers, Sign In, and whether the browser may fill in sign-in codes.
  */
 
 #include "mailer.h"
@@ -71,6 +75,11 @@
 #define ML_ID_BODY		13U
 #define ML_ID_SEND		14U
 #define ML_ID_CANCEL		15U
+#define ML_ID_ADD		16U
+#define ML_ID_SETUP		17U
+#define ML_ID_SIGN_IN		22U
+#define ML_ID_CODES		23U
+#define ML_ID_SETUP_CANCEL	24U
 
 /* The colors: the folders' ground on an opaque window, white, and a code's tint. */
 #define ML_COLOR_SIDEBAR	kl_theme_choose(KL_RGB(0xf4f6f9), KL_RGB(0x1f232a))
@@ -109,7 +118,10 @@ static int view_contains(const char *text, const char *part);
 static int view_lower(int c);
 static void view_open(struct ml_view *view, long index);
 static void view_reply(struct ml_view *view, unsigned action);
-static void view_notice(struct ml_view *view, const char *message, uint64_t now_us);
+static void view_setup(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
+static void view_request(struct ml_view *view, unsigned action, long message);
+static const char *view_action_name(unsigned action);
+static int view_newer(const struct ml_message *messages, size_t a, size_t b);
 
 /*
  * Makes the view's state: the first account's inbox, its first message
@@ -121,9 +133,13 @@ ml_view_init(
 {
 	int error;
 
-	/* Nothing yet. */
+	/* Nothing yet; the password's characters show as dots. */
 	memset(view, 0, sizeof(view[0]));
 	view->selected = -1;
+	view->setup_password.secret = 1;
+	view->setup_address.plain = 1;
+	view->setup_imap.plain = 1;
+	view->setup_smtp.plain = 1;
 
 	/* The list's scroll, down only. */
 	error = kl_scroll_init(&view->list_scroll, KL_SCROLL_Y);
@@ -163,12 +179,16 @@ ml_view_action(
 	unsigned action,
 	uint64_t now_us)
 {
+	UNUSED_PARAMETER(now_us);
+
 	/* Each action. */
 	switch (action) {
 	case ML_ACTION_NEW:
 		/* An empty message to write. */
 		view->composing = 1;
 		view->opened = 1;
+		view->adding = 0;
+		view->reply_id[0] = '\0';
 		kl_field_set(&view->to, "");
 		kl_field_set(&view->cc, "");
 		kl_field_set(&view->subject, "");
@@ -181,25 +201,42 @@ ml_view_action(
 		view_reply(view, action);
 		break;
 	case ML_ACTION_SEND:
-		/* No backend to send it with. */
-		view_notice(view, "No mail backend: messages cannot be sent yet.", now_us);
-		ml_log("NOBACKEND action=send to=%zu subject=%zu body=%zu", view->to.length, view->subject.length, view->body.length);
+		/* The message written, for the window to send (it closes the writing when it is sent). */
+		if (!view->composing)
+			break;
+		view_request(view, ML_ACTION_SEND, -1);
+		ml_log("REQUEST action=send to=%zu subject=%zu body=%zu", view->to.length, view->subject.length, view->body.length);
 		break;
 	case ML_ACTION_GET:
-		view_notice(view, "No mail backend: there is no account to get mail from yet.", now_us);
-		ml_log("NOBACKEND action=get");
+		view_request(view, ML_ACTION_GET, -1);
+		ml_log("REQUEST action=get");
 		break;
 	case ML_ACTION_ARCHIVE:
-		view_notice(view, "No mail backend: messages cannot be archived yet.", now_us);
-		ml_log("NOBACKEND action=archive message=%ld", view->selected);
-		break;
 	case ML_ACTION_DELETE:
-		view_notice(view, "No mail backend: messages cannot be deleted yet.", now_us);
-		ml_log("NOBACKEND action=delete message=%ld", view->selected);
+		/* The message shown, for the window to move; nothing is shown after it. */
+		if (view->selected < 0 || view->composing)
+			break;
+		view_request(view, action, view->selected);
+		ml_log("REQUEST action=%s message=%ld", view_action_name(action), view->selected);
+		view->selected = -1;
+		view->opened = 0;
+		break;
+	case ML_ACTION_ADD_ACCOUNT:
+		/* The form of a new account. */
+		view->adding = 1;
+		view->composing = 0;
+		view->opened = 1;
+		ml_log("SETUP open");
+		break;
+	case ML_ACTION_SIGN_IN:
+		/* The form's account, for the window to try. */
+		view_request(view, ML_ACTION_SIGN_IN, -1);
+		ml_log("REQUEST action=sign-in address=%zu imap=%zu smtp=%zu", view->setup_address.length, view->setup_imap.length, view->setup_smtp.length);
 		break;
 	case ML_ACTION_CANCEL:
-		/* The message written goes (the mock keeps no drafts). */
+		/* The message written goes (no drafts are kept), or the form of a new account closes. */
 		view->composing = 0;
+		view->adding = 0;
 		ml_log("COMPOSE kind=cancel");
 		break;
 	case ML_ACTION_QUIT:
@@ -281,6 +318,8 @@ ml_view_draw(
 	struct view_layout layout;
 	struct kl_rect whole;
 	struct kl_rect bottom;
+	struct kl_rect form;
+	size_t account_count;
 
 	/* The ground: clear on glass (the desktop shows between the cards), else white. */
 	whole.x = 0;
@@ -309,6 +348,28 @@ ml_view_draw(
 
 		/* What is on it. */
 		view_sidebar(view, ui, style, &layout.sidebar, now_us);
+	}
+
+	/* Without an account, or after Add Account: the form of a new account where the list and the message go. */
+	(void)ml_accounts(&account_count);
+	if (view->adding || account_count == 0U) {
+		form = layout.reader;
+		if (layout.list.width > 0) {
+			form.x = layout.list.x;
+			form.width = layout.reader.x + layout.reader.width - layout.list.x;
+		}
+
+		/* A narrow window gives the form the whole window. */
+		if (view->narrow) {
+			form = whole;
+		}
+
+		/* The form's card on glass. */
+		if (view->glass)
+			kl_canvas_round(style->canvas, (float)form.x, (float)form.y, (float)form.width, (float)form.height, ML_VIEW_CARD_RADIUS, style->theme->glass_content);
+		view_setup(view, ui, style, &form, now_us);
+		layout.list.width = 0;
+		layout.reader.width = 0;
 	}
 
 	/* The list, on its card on glass. */
@@ -484,7 +545,7 @@ view_sidebar(
 	const struct kl_rect *area,
 	uint64_t now_us)
 {
-	const struct ml_account *accounts;
+	const struct ml_account_config *accounts;
 	struct kl_rect button;
 	struct kl_rect row;
 	char count_text[24];
@@ -550,15 +611,21 @@ view_sidebar(
 		y += 10;
 	}
 
-	/* Get Mail at the bottom, and when it last did. */
+	/* Add Account above Get Mail. */
 	button.x = area->x + 14;
-	button.y = area->y + area->height - 64;
+	button.y = area->y + area->height - 104;
 	button.width = area->width - 28;
 	button.height = 32;
+	clicked = kl_button(ui, style, ML_ID_ADD, &button, "Add Account", 0U);
+	if (clicked)
+		ml_view_action(view, ML_ACTION_ADD_ACCOUNT, now_us);
+
+	/* Get Mail at the bottom, and when it last did (or what failed). */
+	button.y = area->y + area->height - 64;
 	clicked = kl_button(ui, style, ML_ID_GET, &button, "Get Mail", 0U);
 	if (clicked)
 		ml_view_action(view, ML_ACTION_GET, now_us);
-	(void)kl_text_draw_fit(style->text, style->canvas, area->x + 16, area->y + area->height - 16, "Not connected (no backend yet)", 11U, 0, area->width - 32, style->theme->text_faint);
+	(void)kl_text_draw_fit(style->text, style->canvas, area->x + 16, area->y + area->height - 16, view->status, 11U, 0, area->width - 32, style->theme->text_faint);
 }
 
 /*
@@ -573,14 +640,14 @@ view_list(
 	const struct kl_rect *area,
 	uint64_t now_us)
 {
-	const struct ml_account *accounts;
+	const struct ml_account_config *accounts;
 	size_t indices[ML_MESSAGES_MAX];
 	struct kl_rect field;
 	struct kl_rect list;
 	struct kl_rect row;
 	struct kl_rect button;
 	char title[96];
-	char counts[64];
+	char counts[160];
 	unsigned changes;
 	unsigned hit;
 	size_t account_count;
@@ -599,7 +666,9 @@ view_list(
 	/* The counts beside the account. */
 	shown = view_shown(view, indices, ML_MESSAGES_MAX);
 	unread = view_unread(view, view->account, view->folder);
-	(void)snprintf(counts, sizeof(counts), "%s \xc2\xb7 %zu messages, %zu unread", accounts[view->account].name, shown, unread);
+	counts[0] = '\0';
+	if ((size_t)view->account < account_count)
+		(void)snprintf(counts, sizeof(counts), "%s \xc2\xb7 %zu messages, %zu unread", accounts[view->account].name, shown, unread);
 	(void)kl_text_draw_fit(style->text, style->canvas, left, area->y + 56, counts, ML_VIEW_TEXT_SMALL, 0, area->width - 36, style->theme->text_secondary);
 
 	/* In a narrow window, New Message at the right of the title. */
@@ -748,6 +817,7 @@ view_reader(
 	struct kl_rect body;
 	char line[160];
 	enum kl_icon icon;
+	const char *hint;
 	unsigned action;
 	unsigned hit;
 	size_t count;
@@ -854,7 +924,10 @@ view_reader(
 		kl_canvas_round(style->canvas, (float)x, (float)y - 22.0f, (float)(area->width - 2 * ML_VIEW_PAD), 60.0f, 12.0f, ML_COLOR_CODE);
 		(void)kl_text_draw(style->text, style->canvas, x + 16, y + 17, message->code, strlen(message->code), 24U, 1, style->theme->accent);
 		(void)kl_text_draw_fit(style->text, style->canvas, x + 140, y + 4, "Sign-in code found in this message", ML_VIEW_TEXT_SMALL, 1, area->width - 2 * ML_VIEW_PAD - 156, style->theme->text);
-		(void)kl_text_draw_fit(style->text, style->canvas, x + 140, y + 22, "Apps you allow will be able to fill it in (later).", 11U, 0, area->width - 2 * ML_VIEW_PAD - 156, style->theme->text_secondary);
+		hint = "Allow Browser to fill it in under Add Account.";
+		if (view->codes_allowed)
+			hint = "Browser can fill it in for you.";
+		(void)kl_text_draw_fit(style->text, style->canvas, x + 140, y + 22, hint, 11U, 0, area->width - 2 * ML_VIEW_PAD - 156, style->theme->text_secondary);
 		y += 76;
 	}
 
@@ -942,7 +1015,7 @@ view_compose(
 	(void)kl_text_area(ui, style, ML_ID_BODY, &body, &view->body, "Write your message here.");
 
 	/* What the mock leaves out. */
-	(void)kl_text_draw_fit(style->text, style->canvas, x, area->y + area->height - 14, "Attachments and drafts are not in the mock yet.", 11U, 0, area->width - 2 * ML_VIEW_PAD, style->theme->text_faint);
+	(void)kl_text_draw_fit(style->text, style->canvas, x, area->y + area->height - 14, "Attachments and drafts are not kept yet.", 11U, 0, area->width - 2 * ML_VIEW_PAD, style->theme->text_faint);
 }
 
 /*
@@ -1090,8 +1163,11 @@ view_shown(
 	const struct ml_message *messages;
 	size_t count;
 	size_t found;
+	size_t moved;
+	size_t at;
 	size_t i;
 	int held;
+	int newer;
 
 	/* Each message of the folder. */
 	messages = ml_messages(&count);
@@ -1117,6 +1193,22 @@ view_shown(
 			indices[found] = i;
 			found++;
 		}
+	}
+
+	/* The newest first: each one moved up past the older ones before it. */
+	for (i = 1; i < found; i++) {
+		moved = indices[i];
+		at = i;
+		while (at > 0U) {
+			newer = view_newer(messages, moved, indices[at - 1U]);
+			if (!newer)
+				break;
+			indices[at] = indices[at - 1U];
+			at--;
+		}
+
+		/* Its place. */
+		indices[at] = moved;
 	}
 
 	/* The number found. */
@@ -1167,13 +1259,15 @@ view_is_unread(
 	const struct ml_message *messages;
 	size_t count;
 
-	/* Marked unread in the test data. */
+	UNUSED_PARAMETER(view);
+
+	/* A message not there. */
 	messages = ml_messages(&count);
-	if (index >= count || (messages[index].flags & ML_UNREAD) == 0U)
+	if (index >= count)
 		return 0;
 
-	/* Opened since. */
-	if (index < ML_MESSAGES_MAX && view->read[index])
+	/* Not marked unread (opening one takes the mark off). */
+	if ((messages[index].flags & ML_UNREAD) == 0U)
 		return 0;
 
 	/* Unread. */
@@ -1240,22 +1334,25 @@ view_open(
 	struct ml_view *view,
 	long index)
 {
-	size_t count;
+	struct ml_message *message;
 
 	/* A message that is not there. */
-	(void)ml_messages(&count);
-	if (index < 0 || (size_t)index >= count)
+	message = ml_store_at(index);
+	if (message == NULL)
 		return;
 
 	/* Shown from its top. */
 	view->selected = index;
 	view->composing = 0;
+	view->adding = 0;
 	kl_scroll_move_to(&view->reader_scroll, 0.0, 0.0, 0, 0U);
 	ml_log("OPEN message=%ld", index);
 
-	/* Read (the mock keeps nothing, so only until the program ends). */
-	if (index < (long)ML_MESSAGES_MAX)
-		view->read[index] = 1;
+	/* Read: the mark taken off, and the server told. */
+	if ((message->flags & ML_UNREAD) != 0U) {
+		message->flags &= ~ML_UNREAD;
+		view_request(view, ML_ACTION_SEEN, index);
+	}
 }
 
 /*
@@ -1280,6 +1377,11 @@ view_reply(
 		return;
 	message = &messages[view->selected];
 
+	/* The ID it answers (a forward answers none). */
+	view->reply_id[0] = '\0';
+	if (action != ML_ACTION_FORWARD && message->message_id != NULL)
+		(void)snprintf(view->reply_id, sizeof(view->reply_id), "%s", message->message_id);
+
 	/* A reply: to the sender, nobody in copy. */
 	kind = "reply";
 	prefix = "Re: ";
@@ -1289,7 +1391,11 @@ view_reply(
 	/* To all: the other receivers in copy; a forward: to nobody yet. */
 	if (action == ML_ACTION_REPLY_ALL) {
 		kind = "reply-all";
-		kl_field_set(&view->cc, message->to);
+		if (message->cc != NULL && message->cc[0] != '\0')
+			(void)snprintf(text, sizeof(text), "%s, %s", message->to, message->cc);
+		else
+			(void)snprintf(text, sizeof(text), "%s", message->to);
+		kl_field_set(&view->cc, text);
 	} else if (action == ML_ACTION_FORWARD) {
 		kind = "forward";
 		prefix = "Fwd: ";
@@ -1314,11 +1420,146 @@ view_reply(
 	ml_log("COMPOSE kind=%s", kind);
 }
 
+/* Queues a request for the window (a full queue drops it: the user asks again). */
+static void
+view_request(
+	struct ml_view *view,
+	unsigned action,
+	long message)
+{
+	/* No room. */
+	if (view->request_count == ML_REQUESTS_MAX)
+		return;
+
+	/* At the end. */
+	view->requests[view->request_count].action = action;
+	view->requests[view->request_count].message = message;
+	view->request_count++;
+}
+
+/* Names a move's action for the log. */
+static const char *
+view_action_name(
+	unsigned action)
+{
+	/* The archive. */
+	if (action == ML_ACTION_ARCHIVE)
+		return "archive";
+
+	/* The trash. */
+	return "delete";
+}
+
+/* Tells whether message a is newer than b (by date, then by the order they came). */
+static int
+view_newer(
+	const struct ml_message *messages,
+	size_t a,
+	size_t b)
+{
+	/* A later date. */
+	if (messages[a].date != messages[b].date) {
+		if (messages[a].date > messages[b].date)
+			return 1;
+		return 0;
+	}
+
+	/* The same date: the later one kept. */
+	if (a > b)
+		return 1;
+	return 0;
+}
+
+/*
+ * Draws the form of a new account: its fields, Sign In (and Cancel when
+ * an account is there already), the status, and whether the browser may
+ * fill in sign-in codes from Mail.
+ */
+static void
+view_setup(
+	struct ml_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	uint64_t now_us)
+{
+	static const char *const labels[] = { "Your name", "Email", "Password", "IMAP server", "SMTP server" };
+	static const char *const hints[] = { "Kei Example", "kei@example.net", "", "imap.example.net (993)", "smtp.example.net (465 or :587)" };
+	struct kl_field *fields[5];
+	struct kl_rect field;
+	struct kl_rect button;
+	size_t account_count;
+	int clicked;
+	int width;
+	int on;
+	int x;
+	int y;
+	int i;
+
+	/* The title and what the form is for. */
+	width = area->width - 2 * ML_VIEW_PAD;
+	if (width > 560)
+		width = 560;
+	x = area->x + (area->width - width) / 2;
+	y = area->y + 60;
+	(void)kl_text_draw(style->text, style->canvas, x, y, "Add an Account", strlen("Add an Account"), 22U, 1, style->theme->text);
+	(void)kl_text_draw_fit(style->text, style->canvas, x, y + 26, "Mail reads with IMAP and sends with SMTP. With Gmail, use an app password.", ML_VIEW_TEXT_SMALL, 0, width, style->theme->text_secondary);
+	y += 52;
+
+	/* The fields, a label each. */
+	fields[0] = &view->setup_name;
+	fields[1] = &view->setup_address;
+	fields[2] = &view->setup_password;
+	fields[3] = &view->setup_imap;
+	fields[4] = &view->setup_smtp;
+	for (i = 0; i < 5; i++) {
+		(void)kl_text_draw(style->text, style->canvas, x, y + 21, labels[i], strlen(labels[i]), ML_VIEW_TEXT_BODY - 1U, 0, style->theme->text_secondary);
+		field.x = x + 120;
+		field.y = y;
+		field.width = width - 120;
+		field.height = 32;
+		(void)kl_field(ui, style, ML_ID_SETUP + (uint32_t)i, &field, fields[i], hints[i]);
+		y += 42;
+	}
+
+	/* Sign In, and Cancel when an account is there to go back to. */
+	y += 8;
+	button.width = 110;
+	button.height = 34;
+	button.x = x + width - button.width;
+	button.y = y;
+	clicked = kl_button(ui, style, ML_ID_SIGN_IN, &button, "Sign In", KL_BUTTON_PRIMARY);
+	if (clicked)
+		ml_view_action(view, ML_ACTION_SIGN_IN, now_us);
+	(void)ml_accounts(&account_count);
+	if (account_count != 0U) {
+		button.x -= button.width + 8;
+		clicked = kl_button(ui, style, ML_ID_SETUP_CANCEL, &button, "Cancel", 0U);
+		if (clicked)
+			ml_view_action(view, ML_ACTION_CANCEL, now_us);
+	}
+
+	/* What the last try said. */
+	(void)kl_text_draw_fit(style->text, style->canvas, x, y + 22, view->status, ML_VIEW_TEXT_SMALL, 0, width - 240, style->theme->text_secondary);
+	y += 70;
+
+	/* The browser and the sign-in codes (the desktop's setting). */
+	(void)kl_text_draw(style->text, style->canvas, x, y + 4, "Sign-in codes", strlen("Sign-in codes"), ML_VIEW_TEXT_NAME, 1, style->theme->text);
+	(void)kl_text_draw_fit(style->text, style->canvas, x, y + 24, "Let Browser fill in sign-in codes from the mail that comes in.", ML_VIEW_TEXT_SMALL, 0, width - 70, style->theme->text_secondary);
+	on = view->codes_allowed;
+	clicked = kl_switch(ui, style, ML_ID_CODES, x + width - 52, y - 4, &on, 0U);
+	if (clicked) {
+		view->codes_allowed = on;
+		view_request(view, ML_ACTION_CODES, -1);
+		ml_log("CODES allowed=%d", on);
+	}
+}
+
 /*
  * Shows a notice for a while.
  */
-static void
-view_notice(
+void
+ml_view_notice(
 	struct ml_view *view,
 	const char *message,
 	uint64_t now_us)
@@ -1326,6 +1567,28 @@ view_notice(
 	/* The words and until when. */
 	(void)snprintf(view->notice, sizeof(view->notice), "%s", message);
 	view->notice_until = now_us + ML_VIEW_NOTICE_US;
+}
+
+/*
+ * Takes the oldest request the view queued: 1 with it, 0 when none waits.
+ */
+int
+ml_view_take_request(
+	struct ml_view *view,
+	struct ml_request *request)
+{
+	size_t index;
+
+	/* None. */
+	if (view->request_count == 0U)
+		return 0;
+
+	/* The first, the rest moved up. */
+	*request = view->requests[0];
+	for (index = 1; index < view->request_count; index++)
+		view->requests[index - 1U] = view->requests[index];
+	view->request_count--;
+	return 1;
 }
 
 /* Draws a paper clip in a square of size from (x, y): a long loop and the inner wire up its middle. */

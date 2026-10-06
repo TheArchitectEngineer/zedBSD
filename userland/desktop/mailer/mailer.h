@@ -6,54 +6,65 @@
  */
 
 /*
- * Mail (WS169 p000): the mock of Keiland's mail application.  Only its
- * face exists: two accounts and their folders and messages are test data
- * in the program (data.c), nothing is stored, and there is no backend --
- * sending, getting mail and the like show that there is none.
+ * Mail (WS169): Keiland's mail application.
+ *
+ * The accounts are kept on the disk (account.c, the passwords in
+ * secret.c), their messages in memory while the program runs (store.c),
+ * and a thread of their own talks to the servers (sync.c, with the
+ * backend of mail.h): it gets the folders' latest messages, waits for new
+ * ones with IDLE, sends, marks read and moves.
  *
  * The view (view.c) draws a frame with libkeiland's canvas and widgets and
- * knows nothing of the window, so that the host tests draw it into
- * pictures; the window (main.c) feeds it the input.
+ * knows nothing of the window or the servers -- what the user asks of the
+ * servers it queues as requests the window takes (ml_view_take_request),
+ * so that the host tests draw it into pictures; the window (main.c) feeds
+ * it the input and the thread's results.
  */
 
 #ifndef MAILER_MAILER_H
 #define MAILER_MAILER_H
 
 #include "mail.h"
+#include "sync.h"
 
 #include <keiland/keiland.h>
 
 #include <stddef.h>
 #include <stdint.h>
 
-/* An account: its name and address. */
-struct ml_account {
-	const char *name;
-	const char *address;
-};
+/* The longest path of a file, with its NUL. */
+#define ML_PATH_MAX		1024U
 
 /*
- * One message: its account and folder, what it is (ML_*), the sender's
- * name, address and color, to whom, its subject, its date (short for the
- * list, long for the reader), its words (paragraphs split by an empty
- * line), the file it carries ("name" and "type, size", NULL for none), and
- * a code it holds (a sign-in code, NULL for none).
+ * One message as the view shows it: its account and folder (ML_FOLDERS
+ * for one moved away and no longer shown), what it is (ML_*), its UID in
+ * the folder (0 for one not on a server), its date, the sender's name,
+ * address and color, to whom and in copy, its subject, its date as words
+ * (short for the list, long for the reader), its words, the file it
+ * carries ("name" and "type, size"; NULL for none), a sign-in code (NULL
+ * for none), and its Message-ID (for a reply).
+ *
+ * The strings are the store's (store.c), allocated for each message.
  */
 struct ml_message {
 	int account;
 	enum ml_folder folder;
 	unsigned flags;
-	const char *from_name;
-	const char *from_address;
+	uint32_t uid;
+	time_t date;
+	char *from_name;
+	char *from_address;
 	kl_color color;
-	const char *to;
-	const char *subject;
-	const char *date_short;
-	const char *date_long;
-	const char *body;
-	const char *file_name;
-	const char *file_detail;
-	const char *code;
+	char *to;
+	char *cc;
+	char *subject;
+	char *date_short;
+	char *date_long;
+	char *body;
+	char *file_name;
+	char *file_detail;
+	char *code;
+	char *message_id;
 };
 
 /* The actions of the menu, the keys and the buttons. */
@@ -67,24 +78,48 @@ struct ml_message {
 #define ML_ACTION_DELETE	8U
 #define ML_ACTION_CANCEL	9U
 #define ML_ACTION_QUIT		10U
+#define ML_ACTION_ADD_ACCOUNT	11U
+#define ML_ACTION_SIGN_IN	12U
+#define ML_ACTION_SEEN		13U
+#define ML_ACTION_CODES		14U
 
-/* The longest message body written, with its NUL, and the most messages remembered as read. */
-#define ML_BODY_MAX		4096U
-#define ML_MESSAGES_MAX		64U
+/* The longest message body quoted in a reply, with its NUL, and the most messages a list shows. */
+#define ML_BODY_MAX		8192U
+#define ML_MESSAGES_MAX		512U
+
+/* The most requests the view queues for the window between two frames. */
+#define ML_REQUESTS_MAX		8U
+
+/*
+ * Something the view asks of the servers (ML_ACTION_SEND, _GET, _ARCHIVE,
+ * _DELETE, _SIGN_IN, _SEEN, _CODES), for the window to carry out: the
+ * action and the message it is about (-1 for none).
+ */
+struct ml_request {
+	unsigned action;
+	long message;
+};
 
 /*
  * The view's state.
  *
  * What is shown: the account and folder, the message (-1 for none),
  * whether a narrow window shows the message instead of the list, whether
- * the last frame was narrow, the messages read (a flag each), and the
- * scrolls of the list and of the message.
+ * the last frame was narrow, and the scrolls of the list and of the
+ * message.
  *
  * The search, and the message being written: whether it is open, its
- * fields and its body (libkeiland's text area, ws090-p022).
+ * fields and its body (libkeiland's text area, ws090-p022), and the ID of
+ * the message it answers (empty for a new one).
  *
- * The notice shown at the bottom until a time (empty for none), whether
- * the window stands on glass, and whether the program is to end.
+ * An account being added: whether its form shows, its fields, and whether
+ * the browser may fill in sign-in codes from Mail (the desktop's setting,
+ * as the window last read it).
+ *
+ * The requests queued for the window, the status under Get Mail (when
+ * mail was last got, or what failed), the notice shown at the bottom until
+ * a time (empty for none), whether the window stands on glass, and
+ * whether the program is to end.
  */
 struct ml_view {
 	int account;
@@ -92,7 +127,6 @@ struct ml_view {
 	long selected;
 	int opened;
 	int narrow;
-	unsigned char read[ML_MESSAGES_MAX];
 	struct kl_scroll list_scroll;
 	struct kl_scroll reader_scroll;
 
@@ -102,17 +136,43 @@ struct ml_view {
 	struct kl_field cc;
 	struct kl_field subject;
 	struct kl_text_area body;
+	char reply_id[ML_TEXT_MAX];
 
-	char notice[128];
+	int adding;
+	struct kl_field setup_name;
+	struct kl_field setup_address;
+	struct kl_field setup_password;
+	struct kl_field setup_imap;
+	struct kl_field setup_smtp;
+	int codes_allowed;
+
+	struct ml_request requests[ML_REQUESTS_MAX];
+	size_t request_count;
+	char status[ML_TEXT_MAX];
+	char notice[160];
 	uint64_t notice_until;
 	int glass;
 	int quit;
 };
 
-/* The test data (data.c). */
-const struct ml_account *ml_accounts(size_t *count);
+/* The messages and accounts of the run (store.c). */
+const struct ml_account_config *ml_accounts(size_t *count);
 const struct ml_message *ml_messages(size_t *count);
 const char *ml_folder_name(enum ml_folder folder);
+int ml_store_add_account(const struct ml_account_config *config);
+int ml_store_insert(const struct ml_message *message);
+int ml_store_add_parsed(int account, enum ml_folder folder, uint32_t uid, unsigned flags, const struct ml_parsed *parsed, time_t now);
+long ml_store_find(int account, enum ml_folder folder, uint32_t uid);
+uint32_t ml_store_last_uid(int account, enum ml_folder folder);
+struct ml_message *ml_store_at(long index);
+void ml_store_release(void);
+
+/* The accounts on the disk (account.c, secret.c). */
+int ml_config_folder(char *folder, size_t size);
+int ml_accounts_load(const char *folder, struct ml_account_config *accounts, size_t capacity, size_t *count);
+int ml_accounts_save(const char *folder, const struct ml_account_config *accounts, size_t count);
+int ml_secret_load(const char *folder, const char *address, char *password, size_t size);
+int ml_secret_save(const char *folder, const char *address, const char *password);
 
 /* The view (view.c). */
 int ml_view_init(struct ml_view *view);
@@ -122,6 +182,8 @@ void ml_view_key(struct ml_view *view, uint32_t key, unsigned modifiers, uint64_
 void ml_view_draw(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 size_t ml_view_panels(struct ml_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int ml_view_wait(const struct ml_view *view, uint64_t now_us);
+int ml_view_take_request(struct ml_view *view, struct ml_request *request);
+void ml_view_notice(struct ml_view *view, const char *message, uint64_t now_us);
 
 /* The log for the tests (main.c, and the host tests' own). */
 void ml_log(const char *format, ...);
