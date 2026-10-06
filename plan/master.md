@@ -20,7 +20,7 @@
 <!-- master:merge:start -->
 - main の履歴は 2026-10-06 に `e42ef860` の後を 1 つに squash した（ユーザーの指示: 著作権の参考の画像の削除）。**残り**: `codex/fix-bug202-boot-worker`・`codex/merge-bug202` の branch（別の session の物）が古い履歴を参照しているので、その session の終わりの後に新しい履歴へ移すか消し、`git reflog expire --expire=now --all && git gc --prune=now` で画像の object を消す。
 - 上部の bar（ws099-p034）は当て直して main に merge 済み（e7a56460、montage-4 の icon・暗い bar の穴、build の warning 0、QEMU・実機は未）。montage は `plan/ws099/phase034/images/bar-montage-4.png`（P2 の worktree）。BUG-236 の App Home の stage の montage は未着手。
-- **main に入ったが QEMU・実機で未確認**: BUG-203〜209（Phone の IME・太字・browser の 2 件・dock の F11・Alt+Tab）、ws099-p019 の壁紙、BUG-237 の icon の穴、WS130 IPv6（T1-206b）、WS174 p003 の key（間欠の不検出 1/12）、WS158 p002〜p004、AAT の runner（T1-202b は smoke 5 pass・3 fail で full は中断）。
+- **main に入ったが QEMU・実機で未確認**: BUG-203〜209（Phone の IME・太字・browser の 2 件・dock の F11・Alt+Tab）、ws099-p019 の壁紙、BUG-237 の icon の穴、WS174 p003 の key（間欠の不検出 1/12）、WS158 p002〜p004、AAT の runner（T1-202b は smoke 5 pass・3 fail で full は中断）。
 - 実機で確認済み（2026-10-06 UAT、`config/current-uat.mk` の image）: BUG-202（起動の fatal）・197（電源オフ）・210（I2C の touchpad）・I2C-HID の 2 本指の scroll・mp4 の再生・OSK の変換・app の icon の形。
 <!-- master:merge:end -->
 
@@ -39,7 +39,6 @@
 - **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
 - **WS175 D1〜D7**（Notes の PDF の編集、推奨は phase001/phase.md の表）: 未回答。
 - ws142-p007 の dock の規則は決定済み（dock できない窓は無い、固定の大きさ・File Chooser・親を持つ dialog は中央に、下をぼかす、他の app は見せない）。
-- **BUG-209 Alt+Tab の 4 つの仮定**（端で回る、Shift で左、3 本指の tap も今の app から、短い Alt+Tab は今の app のまま）: 未回答。
 - **BUG-214** 透明度の slider の初期値（frosted に表示を合わせる案か、既定を不透明にするか）: 未回答。
 - **BUG-222** ue0 の chip（RTL8822BU は WiFi、有線は別の chip の見込み）: ユーザーに確かめる。
 - **ws099-p019** 「前に生成した抽象の壁紙」が生成の 5 枚で良いか（古い linear の抽象版は見つからない）: 未回答。
@@ -514,6 +513,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー（クリックの回答）: BUG-209 の Alt+Tab の 4 つの仮定を全て推奨どおりに決定（端で反対の端に回る、Shift+Alt+Tab は 1 つ左で最初は今の app、3 本指の tap の切り替えも今の app から、短い Alt+Tab は今の app のまま）。今の実装と同じ。BUG-212 の構成: 有線は 10.0.0.1 の router に直結、WiFi は 10.0.30.1 の WiFi router（NAT）経由、WiFi は AX211。
 - 2026-10-06 ユーザー: q780〜q784 を承認、N=2（P1・P2・T1）。T1 の model を Sonnet 5.5 medium に。ゴールはベータ2 までの範囲の全消化。順は UAT の指摘 → ベータ2 の未実装 → UAT 以外の Bug。T1 の結果は待たず、試験中の Phase に試験待ちの印（[protocol](agents/protocol.md) の 2026-10-06）。
 - **2026-10-05 夜 ラップアップ（ユーザーの指示で P1・P2・T1 を終了）**: 全部の担当が終了。main 0041dbfd 以降。T1-203（WS172 p002 の PIN の login）が **FAIL**: greeter の password の login が起きない。WS172 p002 は main に merge 済みなので、**次の作業の最初に graphical login の image が壊れていないかを確かめる**（P1 の解析）。未 merge: agent/p1 の WS130 p002（67801dab、T1-206 待ち）と WS168 p002 の kernel（730e8f55、arm64・sparcv9・x68k の build の確認も）。未実施の T1: T1-206・T1-202・T1-205・T1-207。5330 の AAT の image は T1-202 と直しの後に作り直す。WS168 の libc の `<sandbox.h>` の sysroot への追加は Q1 が許可する（toolchain の lock）。
 

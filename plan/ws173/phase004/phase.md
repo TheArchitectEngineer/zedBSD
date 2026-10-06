@@ -2,7 +2,7 @@
 
 # ws173-p004: AAT のシナリオ（今日の機能）、suite、runner と実行の記録の形
 
-Status: in-progress（2026-10-05 夜、P2 g17。シナリオ・suite・自動の補助・runner と host の確かめまで。QEMU の自己試験は T1、5330 は p005）
+Status: in-progress・test-wait（T1-202c、2026-10-06 q784: smoke の fail 3 件は helper の不具合、P2 7a442548 → main f4b86474 で直した。T1-202c の流し直し待ち）
 Disposition: normal
 Parent: [WS173](../ws.md)
 Queue: Q1 の指示（2026-10-05 夜、P2 g17 の Task 1、最優先）
