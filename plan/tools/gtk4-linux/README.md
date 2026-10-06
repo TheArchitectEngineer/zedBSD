@@ -27,8 +27,8 @@ export GUEST_DIR="$q580_assets" GUEST_RUN="$q580_run" SSH_PORT=2249
 # Poll SSH with a bounded deadline; then inspect boot PNG. Do not read serial/console logs.
 timeout 15 sh plan/tools/keiland-linux/guest.sh ssh 'cat /etc/os-release; dpkg --audit'
 timeout 15 sh plan/tools/keiland-linux/guest.sh screenshot "$q580_run/boot.png"
-timeout 15 sh plan/tools/keiland-linux/guest.sh put plan/ws114/tests/start-session.sh /tmp/q580-start-session.sh
-timeout 15 sh plan/tools/keiland-linux/guest.sh put plan/ws114/tests/gtk4-baseline.py /tmp/gtk4-baseline.py
+timeout 15 sh plan/tools/keiland-linux/guest.sh put plan/tools/gtk4-linux/start-session.sh /tmp/q580-start-session.sh
+timeout 15 sh plan/tools/keiland-linux/guest.sh put plan/tools/gtk4-linux/gtk4-baseline.py /tmp/gtk4-baseline.py
 timeout 30 sh plan/tools/keiland-linux/guest.sh ssh 'sh /tmp/q580-start-session.sh'
 ```
 

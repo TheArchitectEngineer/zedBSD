@@ -3,7 +3,19 @@
 # WS088: Windows で動く Kei-nightly.zip を CI で配布する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-06 夜 ユーザー「WS085、WS088、WS114はComplete、はすでにできており、Completeにしてください。」）
+
+## 完了（2026-10-06）
+
+- 結果: GitHub Actions の CI で Windows 用の Kei-nightly.zip（data/hdd-image.img 入り）を nightly の Release に載せる仕組み（make kei-nightly-zip、CI の差分 ci-kei-nightly.diff）。
+- 制限・移管: p002（rev-0 の Release への upload）・p004（CI への組み込み）・p005（Windows での確認）は、ユーザーが既にできていると判断（2026-10-06）。記録の上の未了はこの判断で閉じる。
+- Phase:
+  - ws088-p001 元の zip の整理: completed
+  - ws088-p002 rev-0 への upload: completed（ユーザーの判断）
+  - ws088-p003 make kei-nightly-zip: completed
+  - ws088-p004 CI への組み込み: completed（ユーザーの判断）
+  - ws088-p005 確認: completed（ユーザーの判断）
+- Phase の directory は完了の規則で削除した（git の履歴にある）。以下は以前の記録。
 Primary Milestone: MG006
 Related Milestones: MG001
 Objectives: O2

@@ -3,7 +3,18 @@
 # WS114: Linux Keiland 上の標準 GTK4 互換性を調査・改善する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-06 夜 ユーザー「WS085、WS088、WS114はComplete、はすでにできており、Completeにしてください。」）
+
+## 完了（2026-10-06）
+
+- 結果: Linux の Keiland の上で標準の GTK4 の CSD と明示の SSD の装飾（org_kde_kwin_server_decoration）を完成（B1・B2、QEMU と Linux の guest）。機能表 gtk4-compat-matrix.md。
+- 制限・移管: p002〜p006（行ごとの採否・XDG-shell の修正・portal（取り消し済み）・再検証・全文規約）は完了の判断で閉じる。GTK4・Qt6 の移植（WS115・WS116）はベータ3。WS117（Qt6 の Linux の互換）の開始条件だった p007 は cleared。試験は plan/tools/gtk4-linux/ へ移した。
+- Phase:
+  - ws114-p001 標準 GTK4 の baseline と機能表: cleared
+  - ws114-p002〜p006: completed（2026-10-06 ユーザーの判断で閉じる、portal は取り消し済み）
+  - ws114-p007 CSD・明示の SSD: cleared（q592）
+  - ws114-p008 org_kde_kwin_server_decoration: cleared
+- Phase の directory は完了の規則で削除した（git の履歴にある）。以下は以前の記録。
 Primary Milestone: MG006
 Related Milestones: MG002（後続の移植知見）
 Parent: [Master](../master.md)

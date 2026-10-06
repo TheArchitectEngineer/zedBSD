@@ -2,7 +2,15 @@
 
 # WS085: Windows版QEMUのVenusでデスクトップを表示する
 
-Status: incomplete
+Status: completed（2026-10-06 夜 ユーザー「WS085、WS088、WS114はComplete、はすでにできており、Completeにしてください。」）
+
+## 完了（2026-10-06）
+
+- 結果: Windows 版 QEMU（WINQ-EMU、Venus 1.4）と Linux の試験環境（Venus 1.3）の両方で同じ image の desktop を表示（mapped blob scanout・copy fallback・SDL の multi touch）。
+- 制限・移管: ws085-p001 は完了扱い。Files の起動の停止など残っていた件は WS177（ベータ2 積み残し）か Bug Board へ。
+- Phase:
+  - ws085-p001 paired Windows renderer の同期契約・copy fallback・mapped blob scanout・SDL の multi touch: completed（2026-10-06 ユーザーの判断）
+- Phase の directory は完了の規則で削除した（git の履歴にある）。以下は以前の記録。
 Primary Milestone: MG006
 Related Milestones: MG001
 Parent: [Master](../master.md)
