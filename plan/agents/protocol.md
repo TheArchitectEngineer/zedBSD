@@ -73,3 +73,9 @@ user「テストはメインエージェントが集約してサブエージェ�
 - ゴール: ベータ2 までの範囲を全て消化する。順: (1) UAT の指摘（BUG-211〜237 とその設計の Phase）(2) ベータ1・ベータ2 の未実装 (3) UAT 以外の Bug。
 - **試験待ちの印**: 担当が T1 に依頼した Phase は、phase.md の Status と queue.md の State に `test-wait（T1-NNN）` と書く。担当は結果を待たず次の Queue へ移る。T1 の結果は Q1 が判定し、印を外す: PASS → cleared、FAIL → 直しを同じ Phase の新しい attempt として次のスケジュールで（なるべく元の担当に）投入する。印のある Phase に依存する Queue は印が外れるまで始めない。
 - 試験の依頼は担当から Q1 へ送り、Q1 が `plan/agents/T1/requests.md` に積んで T1 に渡す（2026-10-04 の集約の規則のまま）。T1 は source を直さないので、AAT の runner・試験の helper の直しは P1・P2 が行う。
+
+## 削除は Q1 の pipeline、security の判定は回避しない（2026-10-06 ユーザー）
+
+ユーザー:「rmはQ1で実行するパイプラインにしてください。セキュリティ回避はアカウントbanにつながるので自動では行わないで、私に対処を聞いてください。」（P1 が `plan/tools/files/host-run.sh` の中の `rm -rf` で Claude Code の安全の判定に 2 回止められた件への回答）
+- 担当（P・T）は rm を走らせない。担当が使う script にも rm を入れない（例: host-run.sh の `--fresh` は新しい `run.*` の directory を作る形に変え、古い物は Q1 が `plan/tools/files/host-clean.sh WORKTREE` で消す）。消す物がある時は path と理由を Q1 に送る。guest の中（QEMU の中の `/tmp` など）の rm は host の削除ではないので対象外。
+- security・権限の判定で止められたら、担当も Q1 も別の経路で回避しない。Q1 がユーザーに内容と対処の案を示して指示を待つ（2026-10-02 の「権限で止まったとき」の再起動の手順は、ユーザーがそれを選んだ時だけ）。
