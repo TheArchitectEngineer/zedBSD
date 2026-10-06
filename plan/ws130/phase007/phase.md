@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p007`
 Parent: [WS130](../ws.md)
-Status: uncleared（2026-10-07 T1-292 FAIL 9 行: dhcpc -6 -i の exit・DNS server・renew・DUID の size と type・record・resolv.conf・DUID changed ほか、p007 だけでも同じ。P1 が直す）（旧: test-wait（q832、P1、2026-10-07: 正常系を実装、host の試験 PASS、T1 の試験待ち））
+Status: test-wait（2026-10-07 P1: T1-292 FAIL 9 行の修正と証拠取り、再試験待ち。旧: uncleared（T1-292 FAIL）、test-wait（正常系を実装、host PASS））
 設計: [p001](../phase001/phase.md) §5、H7（DUID-UUID）・H5（DNS の順）（2026-10-05 ユーザー決定）
 依存: [p006](../phase006/phase.md)（networkd の RA の処理、T1-289/290）
 
@@ -30,6 +30,16 @@ stateful（M=1）の確かめは p008 の tap と network namespace の dnsmasq 
 | `sh plan/ws130/tests/host-slaac.sh` | PASS |
 
 未実施: QEMU（T1: `ipv6-p007.sh`）、stateful と networkd の M・O（p008 の dnsmasq）、5330 の実機（p008）、規約の見直し（p009）。
+
+## T1-292 の FAIL（2026-10-07）
+
+`ipv6-p007.sh` の 9 行が FAIL（新しい guest で単独でも同じ）。T1 の出力（`t1/build/t1-290/p007/`）:
+
+| 症状 | 原因 | 修正 |
+| --- | --- | --- |
+| `/var/db/dhcpc/duid: No such file or directory`、記録・DUID の 4 行 | image に `/var/db` が無い（`make-arch-overlay-*` が作るのは `var`・`var/run` だけ）。`mkdir("/var/db/dhcpc")` が親の無さで失敗 | `/var/db` を先に作る（`inet6.c`）。p006 の `/var/db/networkd` も同じ（`ipv6.c`、p006 の `the secret`・`stable after a restart` の原因） |
+| `information-request: Connection timed out`（exit・DNS・renew・resolv.conf） | 未確定。libslirp の `dhcpv6.c` は Information-Request に CLIENTID を返して答える（SERVERID 無し、送り元は `fec0::2`）。static には送り・受けの道に誤りを見つけられなかった | 証拠を取る: `-v` で送った・受けた datagram を 1 行ずつ、試験は手順 1 の間 QMP の `filter-dump` で net0 の pcap（`OUTDIR/dhcp6.pcap`） |
+| （見つけた別の不具合） | kernel: IPv6 の socket を `[::]` に bind すると `SO_BINDTODEVICE` の interface が消える（IPv4 の wildcard は保つ） | `src/kern/net/inet-socket.c`: wildcard・IPv4-mapped の wildcard の bind は interface を保つ |
 
 ## T1 への依頼（文面）
 

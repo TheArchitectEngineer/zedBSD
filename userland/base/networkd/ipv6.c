@@ -40,7 +40,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* The secret of the stable identifiers, and where it is kept (made the first time, 0600). */
+/* The secret of the stable identifiers, and where it is kept (made the first time, 0600; /var/db too, which images lack). */
+#define IPV6_STATE_PARENT	"/var/db"
 #define IPV6_SECRET_DIRECTORY	"/var/db/networkd"
 #define IPV6_SECRET_PATH	"/var/db/networkd/ipv6-secret"
 #define IPV6_SECRET_LENGTH	32U
@@ -253,6 +254,7 @@ ipv6_secret_load(void)
 	status = getentropy(ipv6_secret, sizeof(ipv6_secret));
 	if (status != 0)
 		return -1;
+	(void)mkdir(IPV6_STATE_PARENT, 0755);
 	(void)mkdir(IPV6_SECRET_DIRECTORY, 0700);
 	descriptor = open(IPV6_SECRET_PATH, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 	if (descriptor >= 0) {
