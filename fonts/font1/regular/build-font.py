@@ -151,10 +151,10 @@ def build_font():
     builder.setupNameTable({
         "familyName": "Font1",
         "styleName": "Regular",
-        "uniqueFontIdentifier": "Font1-Regular-0.100",
+        "uniqueFontIdentifier": "Font1-Regular-0.200",
         "fullName": "Font1 Regular",
         "psName": "Font1-Regular",
-        "version": "Version 0.100",
+        "version": "Version 0.200",
         "typographicFamily": "Font1",
         "typographicSubfamily": "Regular",
         "description": "Font1 Regular. Unicode-encoded ASCII design prototype.",
@@ -180,7 +180,7 @@ def build_font():
         isFixedPitch=1, underlinePosition=-180, underlineThickness=70,
     )
     builder.setupMaxp()
-    builder.setupHead(unitsPerEm=UNITS_PER_EM, fontRevision=0.1, macStyle=0)
+    builder.setupHead(unitsPerEm=UNITS_PER_EM, fontRevision=0.2, macStyle=0)
     builder.font["gasp"] = newTable("gasp")
     builder.font["gasp"].version = 1
     builder.font["gasp"].gaspRange = {65535: 10}
@@ -192,7 +192,7 @@ def build_font():
     builder.save(FONT_PATH)
 
     report = {
-        "family": "Font1", "style": "Regular", "version": "0.100",
+        "family": "Font1", "style": "Regular", "version": "0.200",
         "font": FONT_PATH.name,
         "font_sha256": hashlib.sha256(FONT_PATH.read_bytes()).hexdigest(),
         "units_per_em": UNITS_PER_EM, "advance_units": ADVANCE,
@@ -218,6 +218,14 @@ def build_font():
             for codepoint, name in mapping.items()
         ],
     }
+    lowercase_path = ROOT / "lowercase-strokes.json"
+    if lowercase_path.exists():
+        report["lowercase_construction_reference"] = {
+            "file": lowercase_path.name,
+            "sha256": hashlib.sha256(lowercase_path.read_bytes()).hexdigest(),
+            "note": "Centerline source; editable filled SVGs remain the direct TTF inputs",
+            "outline_trace_tolerance_pixels": 0.2,
+        }
     (ROOT / "font-build.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"Built {FONT_PATH}: 95 Unicode mappings, 96 glyphs, fixed advance {ADVANCE}.")
 
