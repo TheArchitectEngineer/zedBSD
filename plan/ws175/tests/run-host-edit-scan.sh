@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws175-p002a, p003a, p003b: builds libpdf (with libz-compat, libjpeg-compat and libtruetype), host-edit-scan,
-# host-edit-change and host-edit-image with the host's C compiler (plain, ASan and UBSan), writes edit-images.pdf (make-edit-samples.py) and
-# runs the tests with each build; the updates host-edit-change and host-edit-image save are checked with qpdf --check.
+# ws175-p002a, p003a, p003b, p006: builds libpdf (with libz-compat, libjpeg-compat and libtruetype), host-edit-scan,
+# host-edit-change, host-edit-image and host-edit-intake with the host's C compiler (plain, ASan and UBSan), writes edit-images.pdf (make-edit-samples.py) and
+# runs the tests with each build; the updates host-edit-change, host-edit-image and host-edit-intake save are checked with qpdf --check.
 #   sh plan/ws175/tests/run-host-edit-scan.sh [OUTPUT]   (default build/ws175-host)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -19,7 +19,7 @@ python3 plan/ws175/tests/make-edit-samples.py "$out" >/dev/null
 convert -size 8x4 gradient:blue-green -quality 90 "$out/insert.jpg"
 libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c
+	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c
 	userland/base/libpdf/stroke.c userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
 	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c
 	userland/base/libpdf/cffdata.c"
@@ -48,7 +48,7 @@ for variant in plain asan ubsan; do
 		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
-	for test in host-edit-scan host-edit-change host-edit-image host-tounicode host-font-unicode host-edit-text; do
+	for test in host-edit-scan host-edit-change host-edit-image host-edit-intake host-tounicode host-font-unicode host-edit-text; do
 		# shellcheck disable=SC2086
 		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
 			-o "$out/$test-$variant"
@@ -89,8 +89,14 @@ for variant in plain asan ubsan; do
 		grep -v '^ok' "$out/image-$variant.txt"
 		status=1
 	fi
+	if "$out/host-edit-intake-$variant" "$out/edit-images.pdf" "$out/insert.jpg" "$out/intake-$variant.pdf" > "$out/intake-$variant.txt" 2>&1; then
+		echo "host-edit-intake $variant: $(tail -1 "$out/intake-$variant.txt")"
+	else
+		grep -v '^ok' "$out/intake-$variant.txt"
+		status=1
+	fi
 	# The only error qpdf may find is the sample's own: page 3's stream of a filter no reader decodes here.
-	for saved in edited imaged; do
+	for saved in edited imaged intake; do
 		errors=$(qpdf --check "$out/$saved-$variant.pdf" 2>&1 | grep 'ERROR' | grep -v 'page 3: content stream' || true)
 		if [ -z "$errors" ]; then
 			echo "qpdf --check $saved-$variant.pdf: ok (page 3's own stream only)"

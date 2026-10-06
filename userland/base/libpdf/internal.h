@@ -457,6 +457,10 @@ int pdf_tounicode_parse(const unsigned char *data, size_t size, struct pdf_touni
 int pdf_tounicode_lookup(const struct pdf_tounicode *map, unsigned code, unsigned length, uint32_t *characters, size_t capacity, size_t *count);
 void pdf_tounicode_free(struct pdf_tounicode *map);
 
+/* A PNG whose compressed rows a PDF image takes as they are, and the check of such rows (intake.c, ws175-p006). */
+int pdf_png_rows(const unsigned char *png, size_t size, size_t *width, size_t *height, int *components, unsigned char **rows, size_t *length);
+int pdf_png_check_rows(const unsigned char *rows, size_t length, size_t width, size_t height, int components);
+
 /* The editor's new content (editor.c). */
 struct pdf_buffer;
 int pdf_editor_content(const struct pdf_page_editor *editor, size_t hidden, const char *prefix, const size_t *names, struct pdf_buffer *out);
