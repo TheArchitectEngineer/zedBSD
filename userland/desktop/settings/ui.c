@@ -43,6 +43,9 @@
 #define UI_KINETIC_TAU_MS	325.0
 #define UI_KINETIC_SLOWEST	20.0
 
+/* The margin round a lit region drawn again alone (its edge and shadow, BUG-226). */
+#define UI_DAMAGE_MARGIN	6
+
 /* The list of pages' width, narrower in a narrow window, and the width that counts as narrow. */
 #define UI_SIDEBAR_WIDTH	248
 #define UI_SIDEBAR_NARROW	208
@@ -89,6 +92,9 @@ static void ui_scroll(struct se_app *app, const struct se_event *event);
 static void ui_scroll_stop(struct se_app *app, const struct se_event *event);
 static int ui_scroll_by(struct se_app *app, int pane, int amount);
 static void ui_kinetic_step(struct se_app *app, uint64_t now);
+static int ui_hit_rect(const struct se_app *app, unsigned kind, int index, struct fm_rect *rect);
+static void ui_damage_add(struct se_app *app, const struct fm_rect *rect);
+static void ui_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
 static void ui_key(struct se_app *app, const struct se_event *event);
 static void ui_step_page(struct se_app *app, int direction);
 static void ui_scroll_page(struct se_app *app, int amount);
@@ -308,6 +314,17 @@ se_ui_draw(
 	struct fm_canvas *canvas)
 {
 	struct fm_rect whole;
+	int partial;
+
+	/*
+	 * Only the lit regions are drawn again when nothing else changed
+	 * (BUG-226): every call draws, clipped to them, and the rest of the
+	 * frame keeps the pixels of the last one.
+	 */
+	partial = 0;
+	if (app->dirty == 0 && app->hover_pending != 0)
+		partial = 1;
+	app->hover_pending = 0;
 
 	/*
 	 * The frame is being brought up to date; drawing may ask for another
@@ -326,7 +343,11 @@ se_ui_draw(
 	whole.y = 0;
 	whole.width = canvas->width;
 	whole.height = canvas->height;
-	if (app->glass != 0) {
+	if (partial != 0)
+		fm_canvas_clip_push(canvas, &app->hover_damage);
+	if (app->glass != 0 && partial != 0) {
+		ui_clear_rect(canvas, &app->hover_damage);
+	} else if (app->glass != 0) {
 		fm_canvas_clear(canvas);
 	} else {
 		fm_canvas_gradient(canvas, &whole, SE_COLOR_BACKGROUND_TOP, SE_COLOR_BACKGROUND_BOTTOM);
@@ -336,6 +357,8 @@ se_ui_draw(
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 	ui_draw_page(app, canvas);
+	if (partial != 0)
+		fm_canvas_clip_pop(canvas);
 
 	/* The page's controls, in the log when they changed. */
 	ui_log_controls(app);
@@ -855,8 +878,12 @@ ui_motion(
 	const struct se_event *event)
 {
 	const struct se_page *page;
+	struct fm_rect before;
+	struct fm_rect now;
 	unsigned kind;
 	int index;
+	int found_before;
+	int found_now;
 
 	/* A finger held on a pane scrolls it once it has moved far enough. */
 	if (app->touch.held != 0 && event->touch != 0) {
@@ -880,12 +907,35 @@ ui_motion(
 		index = -1;
 	}
 
-	/* A change of the lit region needs a frame. */
-	if (kind != app->hover_kind || index != app->hover_index) {
-		app->hover_kind = kind;
-		app->hover_index = index;
-		app->dirty = 1;
+	/* An unchanged lit region needs nothing. */
+	if (kind == app->hover_kind && index == app->hover_index)
+		return;
+
+	/*
+	 * A change of the lit region needs only the regions lit before and
+	 * now drawn again (BUG-226), unless the whole frame is to be drawn
+	 * anyway or one of them is not known.
+	 */
+	if (app->dirty == 0) {
+		memset(&before, 0, sizeof(before));
+		memset(&now, 0, sizeof(now));
+		found_before = 1;
+		if (app->hover_kind != SE_HIT_NONE)
+			found_before = ui_hit_rect(app, app->hover_kind, app->hover_index, &before);
+		found_now = 1;
+		if (kind != SE_HIT_NONE)
+			found_now = ui_hit_rect(app, kind, index, &now);
+		if (found_before == 0 || found_now == 0) {
+			app->dirty = 1;
+		} else {
+			if (app->hover_kind != SE_HIT_NONE)
+				ui_damage_add(app, &before);
+			if (kind != SE_HIT_NONE)
+				ui_damage_add(app, &now);
+		}
 	}
+	app->hover_kind = kind;
+	app->hover_index = index;
 }
 
 /* Takes a press and a release of the left button: a click is a release over the region the press was on. */
@@ -1527,5 +1577,105 @@ ui_log_controls(
 		} else {
 			se_log("CONTROL index=%d x=%d y=%d width=%d height=%d", hit->index, hit->rect.x, hit->rect.y, hit->rect.width, hit->rect.height);
 		}
+	}
+}
+
+/* Finds the rectangle of a region of the last frame by its kind and index; returns 1 when it is there. */
+static int
+ui_hit_rect(
+	const struct se_app *app,
+	unsigned kind,
+	int index,
+	struct fm_rect *rect)
+{
+	int found;
+
+	/* From the latest region back, as the pointer finds them. */
+	for (found = app->hit_count - 1; found >= 0; found--) {
+		if (app->hits[found].kind != kind || app->hits[found].index != index)
+			continue;
+		*rect = app->hits[found].rect;
+		return 1;
+	}
+
+	/* Not in the last frame. */
+	return 0;
+}
+
+/*
+ * Adds a region, with UI_DAMAGE_MARGIN round it (a lit row's edge and
+ * shadow), to the part of the window the next frame draws, and asks for
+ * that frame (BUG-226).
+ */
+static void
+ui_damage_add(
+	struct se_app *app,
+	const struct fm_rect *rect)
+{
+	struct fm_rect grown;
+	int right;
+	int bottom;
+
+	/* The region and its margin. */
+	grown.x = rect->x - UI_DAMAGE_MARGIN;
+	grown.y = rect->y - UI_DAMAGE_MARGIN;
+	grown.width = rect->width + 2 * UI_DAMAGE_MARGIN;
+	grown.height = rect->height + 2 * UI_DAMAGE_MARGIN;
+
+	/* The first region is the part. */
+	if (app->hover_pending == 0) {
+		app->hover_damage = grown;
+		app->hover_pending = 1;
+		return;
+	}
+
+	/* Another widens it to hold both. */
+	right = app->hover_damage.x + app->hover_damage.width;
+	if (grown.x + grown.width > right)
+		right = grown.x + grown.width;
+	bottom = app->hover_damage.y + app->hover_damage.height;
+	if (grown.y + grown.height > bottom)
+		bottom = grown.y + grown.height;
+	if (grown.x < app->hover_damage.x)
+		app->hover_damage.x = grown.x;
+	if (grown.y < app->hover_damage.y)
+		app->hover_damage.y = grown.y;
+	app->hover_damage.width = right - app->hover_damage.x;
+	app->hover_damage.height = bottom - app->hover_damage.y;
+}
+
+/* Makes a rectangle of the canvas transparent (the glass shows through), within the canvas. */
+static void
+ui_clear_rect(
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect)
+{
+	uint32_t *row;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int y;
+
+	/* The rectangle within the canvas. */
+	left = rect->x;
+	top = rect->y;
+	right = rect->x + rect->width;
+	bottom = rect->y + rect->height;
+	if (left < 0)
+		left = 0;
+	if (top < 0)
+		top = 0;
+	if (right > canvas->width)
+		right = canvas->width;
+	if (bottom > canvas->height)
+		bottom = canvas->height;
+	if (left >= right || top >= bottom)
+		return;
+
+	/* Each of its rows, transparent black (premultiplied). */
+	for (y = top; y < bottom; y++) {
+		row = canvas->pixels + (size_t)y * canvas->stride;
+		memset(row + left, 0, sizeof(row[0]) * (size_t)(right - left));
 	}
 }

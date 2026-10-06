@@ -1048,6 +1048,15 @@ struct se_app {
 	/* A touch pad's scrolling, which flies on after the fingers lift (BUG-211). */
 	struct se_kinetic kinetic;
 
+	/*
+	 * A change of the lit region alone (BUG-226): the frame needs drawing
+	 * only within hover_damage (the region lit before and the one lit now),
+	 * which se_ui_draw draws clipped to it rather than the whole window.
+	 * Any other change (dirty) draws everything.
+	 */
+	int hover_pending;
+	struct fm_rect hover_damage;
+
 	/* The panes of the last frame and its clickable regions. */
 	struct se_layout layout;
 	struct se_hit hits[SE_HITS];

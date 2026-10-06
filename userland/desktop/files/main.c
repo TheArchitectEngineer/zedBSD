@@ -668,8 +668,8 @@ main_loop(
 			main_app.dirty = 1;
 		}
 
-		/* A frame when something changed. */
-		if (main_app.dirty != 0) {
+		/* A frame when something changed, or a part of the window alone (BUG-221, BUG-226). */
+		if (main_app.dirty != 0 || main_app.damage_pending != 0) {
 			status = main_frame();
 			if (status != 0)
 				return -1;
@@ -793,6 +793,10 @@ main_timeout(
 	uint64_t wait;
 	int limit;
 	int busy;
+
+	/* A part of the window to draw again is drawn at once (BUG-221, BUG-226). */
+	if (main_app.damage_pending != 0)
+		return 0;
 
 	/* The idle limit, shortened while the file manager has work waiting, or the fingers want their next round. */
 	limit = MAIN_IDLE_MS;

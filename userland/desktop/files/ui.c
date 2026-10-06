@@ -32,6 +32,9 @@
 
 /* The frame's measurements, in pixels. */
 #define UI_MARGIN		12
+
+/* The margin round a region drawn again alone (its edge and shadow, BUG-221, BUG-226). */
+#define UI_DAMAGE_MARGIN	6
 #define UI_GAP			10
 
 /*
@@ -57,6 +60,7 @@
 
 
 static void ui_layout(struct fm_app *app);
+static void ui_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
 static void ui_draw_sidebar(struct fm_app *app, struct fm_canvas *canvas);
 static int ui_place_current(struct fm_app *app, const struct fm_place *place);
 static const char *ui_location_kind_name(unsigned kind);
@@ -317,6 +321,17 @@ fm_ui_draw(
 	struct fm_canvas *canvas)
 {
 	struct fm_rect whole;
+	int partial;
+
+	/*
+	 * Only the damage is drawn when nothing else changed (BUG-221,
+	 * BUG-226): every call draws, clipped to it, and the rest of the frame
+	 * keeps the pixels of the last one.
+	 */
+	partial = 0;
+	if (app->dirty == 0 && app->damage_pending != 0)
+		partial = 1;
+	app->damage_pending = 0;
 
 	/* The panels' places at this size, and no clickable region yet. */
 	app->width = canvas->width;
@@ -329,7 +344,11 @@ fm_ui_draw(
 	whole.y = 0;
 	whole.width = canvas->width;
 	whole.height = canvas->height;
-	if (app->glass != 0) {
+	if (partial != 0)
+		fm_canvas_clip_push(canvas, &app->damage);
+	if (app->glass != 0 && partial != 0) {
+		ui_clear_rect(canvas, &app->damage);
+	} else if (app->glass != 0) {
 		fm_canvas_clear(canvas);
 	} else {
 		fm_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
@@ -358,9 +377,78 @@ fm_ui_draw(
 
 	/* Items being dragged, over everything. */
 	fm_drag_draw(app, canvas);
+	if (partial != 0)
+		fm_canvas_clip_pop(canvas);
 
 	/* The frame is up to date. */
 	app->dirty = 0;
+}
+
+/*
+ * Adds a region of the window, with UI_DAMAGE_MARGIN round it (an edge or
+ * a shadow), to the part the next frame draws alone, and asks for that
+ * frame (BUG-221, BUG-226).
+ */
+void
+fm_ui_damage(
+	struct fm_app *app,
+	const struct fm_rect *rect)
+{
+	struct fm_rect grown;
+	int right;
+	int bottom;
+
+	/* The region and its margin. */
+	grown.x = rect->x - UI_DAMAGE_MARGIN;
+	grown.y = rect->y - UI_DAMAGE_MARGIN;
+	grown.width = rect->width + 2 * UI_DAMAGE_MARGIN;
+	grown.height = rect->height + 2 * UI_DAMAGE_MARGIN;
+
+	/* The first region is the part. */
+	if (app->damage_pending == 0) {
+		app->damage = grown;
+		app->damage_pending = 1;
+		return;
+	}
+
+	/* Another widens it to hold both. */
+	right = app->damage.x + app->damage.width;
+	if (grown.x + grown.width > right)
+		right = grown.x + grown.width;
+	bottom = app->damage.y + app->damage.height;
+	if (grown.y + grown.height > bottom)
+		bottom = grown.y + grown.height;
+	if (grown.x < app->damage.x)
+		app->damage.x = grown.x;
+	if (grown.y < app->damage.y)
+		app->damage.y = grown.y;
+	app->damage.width = right - app->damage.x;
+	app->damage.height = bottom - app->damage.y;
+}
+
+/*
+ * Finds the rectangle of a region of the last frame by its kind and
+ * index; returns 1 when it is there.
+ */
+int
+fm_ui_hit_rect(
+	const struct fm_app *app,
+	unsigned kind,
+	int index,
+	struct fm_rect *rect)
+{
+	int found;
+
+	/* From the latest region back, as the pointer finds them. */
+	for (found = app->hit_count - 1; found >= 0; found--) {
+		if (app->hits[found].kind != kind || app->hits[found].index != index)
+			continue;
+		*rect = app->hits[found].rect;
+		return 1;
+	}
+
+	/* Not in the last frame. */
+	return 0;
 }
 
 /*
@@ -1191,4 +1279,40 @@ ui_select_paths(
 	fm_paths_free(app->select_paths, app->select_count);
 	app->select_paths = NULL;
 	app->select_count = 0;
+}
+
+/* Makes a rectangle of the canvas transparent (the glass shows through), within the canvas. */
+static void
+ui_clear_rect(
+	struct fm_canvas *canvas,
+	const struct fm_rect *rect)
+{
+	uint32_t *row;
+	int left;
+	int top;
+	int right;
+	int bottom;
+	int y;
+
+	/* The rectangle within the canvas. */
+	left = rect->x;
+	top = rect->y;
+	right = rect->x + rect->width;
+	bottom = rect->y + rect->height;
+	if (left < 0)
+		left = 0;
+	if (top < 0)
+		top = 0;
+	if (right > canvas->width)
+		right = canvas->width;
+	if (bottom > canvas->height)
+		bottom = canvas->height;
+	if (left >= right || top >= bottom)
+		return;
+
+	/* Each of its rows, transparent black (premultiplied). */
+	for (y = top; y < bottom; y++) {
+		row = canvas->pixels + (size_t)y * canvas->stride;
+		memset(row + left, 0, sizeof(row[0]) * (size_t)(right - left));
+	}
 }
