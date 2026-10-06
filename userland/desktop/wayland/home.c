@@ -2087,6 +2087,43 @@ home_launch(
 }
 
 /*
+ * Opens an application of the list by its name from elsewhere than Home
+ * (ws155-p004: the system bar's clock opens Calendar): started, or its
+ * window brought to the front when it runs already.  Its first window
+ * does not grow out of an icon.  Returns 0, or ENOENT for a name the list
+ * does not have.
+ */
+int
+kwl_home_open_app(
+	struct kwl_server *server,
+	const char *name,
+	const char *via)
+{
+	unsigned index;
+	int same;
+
+	/* The list (read once). */
+	home_read_apps(server);
+
+	/* The application of the name. */
+	for (index = 0U; index < home_app_count; index++) {
+		same = strcmp(home_apps[index].name, name);
+		if (same != 0)
+			continue;
+
+		/* Started or brought to the front, not growing from an icon of Home. */
+		printf("KWL HOME open name=%s via=%s\n", name, via);
+		(void)home_launch(server, index);
+		server->home_launching = 0;
+		return 0;
+	}
+
+	/* Not in the list (an image without it). */
+	printf("KWL HOME open name=%s via=%s error=%d\n", name, via, ENOENT);
+	return ENOENT;
+}
+
+/*
  * Finds the latest window (the highest map order, on any desktop) of an
  * application of the list that runs already: a window whose application ID
  * has the application's picture (icons.c), or for an application without

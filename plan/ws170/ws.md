@@ -61,9 +61,9 @@ Primary Milestone: MG006
 | --- | --- | --- | --- |
 | p000 | **UI の mock（優先、夕方の UAT が目安・必須でない）**: Phone の app の外側だけ。連絡先の一覧 → 連絡先ごとの iOS のメッセージ風のタイムライン（吹き出し・通話の記録・添付の表示）、送信の欄と電話の button（押すと「backend が無い」）。data は app の中の固定の試験 data。保存・API・backend は作らない | in-progress（q743、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase000/phase.md)） | — |
 | p001 | 要件と設計（保存の形・API・backend の口・UI。世界観の全体と最初の範囲を分ける） | cleared（q831、P2、[phase](phase001/phase.md)） | — |
-| p002 | 連絡先と会話の保存（`~/Documents/`）、host の試験 | in-progress（q831、P2、実装・host 試験済み。[phase](phase002/phase.md)） | p001 |
-| p003 | Phone の app: 連絡先の一覧とタイムラインの表示（保存から、送受信と通話は p004 の口で） | in-progress（q831、P2、実装・host 試験済み、QEMU は T1。[phase](phase003/phase.md)） | p002・p004 |
-| p004 | compositor のメッセージの API の骨格と偽の backend | in-progress（q831、P2、実装・host 試験済み、QEMU は T1。[phase](phase004/phase.md)） | p001 |
+| p002 | 連絡先と会話の保存（`~/Documents/`）、host の試験 | test-wait（T1-294、q831、P2、[phase](phase002/phase.md)） | p001 |
+| p003 | Phone の app: 連絡先の一覧とタイムラインの表示（保存から、送受信と通話は p004 の口で） | test-wait（T1-294、q831、P2、[phase](phase003/phase.md)） | p002・p004 |
+| p004 | compositor のメッセージの API の骨格と偽の backend | test-wait（T1-294、q831、P2、[phase](phase004/phase.md)） | p001 |
 | 後（別の Phase、範囲の外） | 本物の SMS・MMS・RCS の送受信、モデム、スマホの bridge、VoIP、chat の API の統合 | — | — |
 | p005 | 全文規約の見直し（最初の範囲） | planning | p002〜p004 |
 

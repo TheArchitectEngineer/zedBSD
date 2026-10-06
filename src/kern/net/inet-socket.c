@@ -1775,8 +1775,9 @@ inet6_socket_bind(
 				return error;
 		}
 
-		/* The socket speaks IPv4 from now on. */
-		inet->ifindex = ifindex;
+		/* The socket speaks IPv4 from now on (the wildcard keeps a SO_BINDTODEVICE interface, as IPv4's does). */
+		if (ifindex != 0)
+			inet->ifindex = ifindex;
 		inet->local_address = local;
 		inet->local6 = input.sin6_addr;
 		inet->mapped = 1;
@@ -1812,8 +1813,9 @@ inet6_socket_bind(
 			return EADDRNOTAVAIL;
 	}
 
-	/* Records the local endpoint. */
-	inet->ifindex = ifindex;
+	/* Records the local endpoint; [::] keeps a SO_BINDTODEVICE interface, as IPv4's wildcard does. */
+	if (ifindex != 0)
+		inet->ifindex = ifindex;
 	inet->local6 = input.sin6_addr;
 	inet->local_address = 0;
 	inet->local_port = net_ntohs(input.sin6_port);
