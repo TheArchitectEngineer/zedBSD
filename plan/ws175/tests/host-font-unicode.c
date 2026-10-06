@@ -174,6 +174,8 @@ dejavu_glyph(
 		glyph = truetype_glyph_index(face, character);
 		truetype_close(face);
 	}
+
+	/* The bytes go. */
 	free(data);
 	return glyph;
 }
