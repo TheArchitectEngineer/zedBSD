@@ -2,7 +2,7 @@
   "name": "font1",
   "version": "design-02",
   "weight": "Regular",
-  "status": "ASCII raster design concept, not a TrueType font",
+  "status": "Regular raster sources; derived SVG and Unicode TrueType 0.100 available",
   "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
   "generation": {
     "tool": "built-in image_gen",
@@ -1927,5 +1927,7 @@
       "atlas_row_baseline_pixels": 1223.0,
       "status": "generated design draft; outline and font metrics not finalized"
     }
-  ]
+  ],
+  "derived_font": "Font1-Regular.ttf",
+  "svg_directory": "svg"
 }

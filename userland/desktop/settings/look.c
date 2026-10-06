@@ -125,6 +125,7 @@ se_look_open(
 	/* Nothing read yet. */
 	look = &app->look;
 	look->opacity = LOOK_OPACITY_MAX;
+	look->frosted = 1;
 	look->mouse_speed = LOOK_MOUSE_SPEED;
 	look->mouse_acceleration = LOOK_MOUSE_ACCEL;
 	look->mouse_natural = 0;
@@ -524,6 +525,9 @@ look_read(
 
 	/* The appearance, light unless dark is chosen (ws089-p017). */
 	look->dark = kl_settings_get_int(look->settings, "appearance.dark", 0);
+
+	/* The windows' glass panels, frosted unless chosen solid (BUG-214). */
+	look->frosted = kl_settings_get_int(look->settings, "window.frosted", 1);
 
 	/*
 	 * The picture: the chosen one, or none (empty) for the default.  flags

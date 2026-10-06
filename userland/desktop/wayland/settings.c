@@ -497,6 +497,13 @@ settings_apply(
 		return;
 	}
 
+	/* Makes the windows' glass panels frosted or solid (BUG-214). */
+	differs = strcmp(name, "window.frosted");
+	if (differs == 0) {
+		settings_apply_opacity(server);
+		return;
+	}
+
 	/* Sets a mouse's speed, acceleration and wheel's direction (ws089-p024). */
 	differs = strcmp(name, "mouse.speed");
 	if (differs == 0) {
@@ -698,9 +705,12 @@ settings_apply_wallpaper(
 
 /*
  * Sets the windows' opacity the settings hold, or the command line's
- * exactly while at the default.  An opacity of 100 chosen in the settings
- * makes the windows' glass panels solid too (BUG-171, decision B); the
- * default keeps them frosted, and the title bars stay glass either way.
+ * exactly while at the default, and whether the windows' glass panels are
+ * frosted (window.frosted, the default) or solid (BUG-214, the user's
+ * decision of 2026-10-06: the slider is the windows' contents' opacity
+ * alone and a switch makes the panels solid; it replaced BUG-171's
+ * decision B, where 100 chosen made them solid).  The title bars stay
+ * glass either way.
  */
 static void
 settings_apply_opacity(
@@ -711,21 +721,27 @@ settings_apply_opacity(
 	const char *panels;
 	float opacity;
 	int percent;
+	int frosted;
 	int error;
 
 	/* The command line's opacity while the setting is at its default. */
 	entry = zwl_settings_store_find(server->settings, "window.opacity");
 	opacity = server->window_opacity_started;
 	percent = (int)(opacity * 100.0f + 0.5f);
-	panels_opaque = 0U;
 	if (entry != NULL && entry->chosen) {
-		/* The chosen percentage, when it reads as a number; 100 chosen makes the panels solid. */
+		/* The chosen percentage, when it reads as a number. */
 		error = kl_settings_key_number(entry->key, entry->value, &percent);
-		if (error == 0) {
+		if (error == 0)
 			opacity = (float)percent / 100.0f;
-			if (percent >= 100)
-				panels_opaque = 1U;
-		}
+	}
+
+	/* The panels frosted unless window.frosted is chosen off. */
+	panels_opaque = 0U;
+	entry = zwl_settings_store_find(server->settings, "window.frosted");
+	if (entry != NULL && entry->chosen) {
+		error = kl_settings_key_number(entry->key, entry->value, &frosted);
+		if (error == 0 && frosted == 0)
+			panels_opaque = 1U;
 	}
 
 	/* The same opacity and panels change nothing. */
