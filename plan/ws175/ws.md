@@ -2,7 +2,7 @@
 # WS175: Notes で PDF の画像と文字を編集する
 
 Master: [master](../master.md)
-Status: planning（2026-10-06 追加、ベータ2（Q1 の案、ユーザーの確認待ち））
+Status: planned（2026-10-06: p001 設計 cleared（D1〜D7 はユーザーが推奨どおりに決定）、ベータ2。実装は p002 以降）
 Primary Milestone: MG006
 
 ## 由来
