@@ -21,7 +21,11 @@
  * From the left the card holds the tools (Pen, Marker, Eraser), the
  * switch that lets one finger write (Finger, in blue while it is on), five
  * colours, three widths, Undo and Redo, the page's number between the
- * previous and next page buttons, a new page, and Save.  The card is laid
+ * previous and next page buttons, a new page, and Save.  ws175-p008: the
+ * tools go on with Select and Text; Select shows what it does to the PDF's
+ * objects in place of the colours and the widths (and to a line of text:
+ * Edit, its font, its size), and Text the font and the size of the words
+ * it puts on the page before the colours.  The card is laid
  * out once to measure it and drawn centred; its width does not depend on
  * the status, so the buttons stay in place.  A status shows in a small
  * pill of its own beside the card when there is room, or else as a notice
@@ -112,6 +116,7 @@ static int32_t ui_text_width(struct notes_ui *ui, const char *text);
 static void ui_text(struct notes_ui *ui, int32_t x, int32_t y, const char *text, uint32_t rgb);
 static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, uint32_t chosen, int enabled);
 static int32_t ui_eraser_button(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
+static int32_t ui_text_controls(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
 static int32_t ui_eraser_slack(struct notes_ui *ui, const struct notes_ui_state *state);
 static void ui_add_button(struct notes_ui *ui, int32_t x, int32_t y, int32_t width, int32_t height, uint32_t action);
 static uint32_t ui_codepoint(char byte);
@@ -399,6 +404,7 @@ ui_layout(
 	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
 	x = ui_eraser_button(ui, x, state);
 	x = ui_label_button(ui, x, "Select", NOTES_ACTION_SELECT, state->tool, 1);
+	x = ui_label_button(ui, x, "Text", NOTES_ACTION_TEXT, state->tool, 1);
 
 	/*
 	 * The eraser's place keeps room for its longer label, so the buttons
@@ -419,6 +425,20 @@ ui_layout(
 	x += UI_GAP;
 
 	/*
+	 * With the Select tool and a line of text chosen (ws175-p008): its
+	 * words edited in the box, its font and size, deleted or put back.
+	 */
+	if (state->tool == NOTES_ACTION_SELECT && state->text_selected) {
+		x = ui_label_button(ui, x, "Edit", NOTES_ACTION_EDIT_TEXT, NOTES_ACTION_NONE, state->can_edit_text);
+		x = ui_text_controls(ui, x, state);
+		x = ui_label_button(ui, x, "Delete", NOTES_ACTION_DELETE_OBJECT, NOTES_ACTION_NONE, state->selected);
+		x = ui_label_button(ui, x, "Reset", NOTES_ACTION_RESET_OBJECT, NOTES_ACTION_NONE, state->can_reset);
+		ui_separator(ui, x + UI_GAP / 2 - 1);
+		x += UI_GAP;
+		return ui_layout_rest(ui, x, left, state);
+	}
+
+	/*
 	 * With the Select tool (ws175-p008), what it does in place of the
 	 * colours and the widths: an image inserted, and the chosen object's
 	 * image replaced, deleted or put back as the page has it.
@@ -433,7 +453,14 @@ ui_layout(
 		return ui_layout_rest(ui, x, left, state);
 	}
 
-	/* The colours of the pen, or of the highlighter while it is chosen. */
+	/* With the Text tool (ws175-p008): the font and the size of the words put on the page, then the pen's colours. */
+	if (state->tool == NOTES_ACTION_TEXT) {
+		x = ui_text_controls(ui, x, state);
+		ui_separator(ui, x + UI_GAP / 2 - 1);
+		x += UI_GAP;
+	}
+
+	/* The colours of the pen (the Text tool's too), or of the highlighter while it is chosen. */
 	colors = ui_pen_colors;
 	widths = ui_pen_widths;
 	if (state->tool == NOTES_ACTION_HIGHLIGHTER) {
@@ -455,6 +482,10 @@ ui_layout(
 	/* A separator before the next group. */
 	ui_separator(ui, x + UI_GAP / 2 - 1);
 	x += UI_GAP;
+
+	/* The Text tool has no widths. */
+	if (state->tool == NOTES_ACTION_TEXT)
+		return ui_layout_rest(ui, x, left, state);
 
 	/* The widths, each a dot of its size; the chosen one on a pale blue pill, in blue. */
 	for (index = 0; index < NOTES_WIDTHS; index++) {
@@ -959,6 +990,42 @@ ui_label_button(
 
 	/* Reports where the next button goes. */
 	return x + width + 2;
+}
+
+/*
+ * Lays out (and draws) the text's controls (ws175-p008): the font's name,
+ * which chooses the next font, and the size between its smaller and
+ * larger buttons ("12 pt"; without a size, the buttons alone).
+ */
+static int32_t
+ui_text_controls(
+	struct notes_ui *ui,
+	int32_t x,
+	const struct notes_ui_state *state)
+{
+	char size_text[24];
+	const char *label;
+	int32_t text_width;
+	int sized;
+
+	/* The font's name. */
+	label = state->font_label;
+	if (label == NULL)
+		label = "Font";
+	x = ui_label_button(ui, x, label, NOTES_ACTION_FONT, NOTES_ACTION_NONE, 1);
+
+	/* Smaller, the size, larger. */
+	sized = state->text_size > 0.0f;
+	x = ui_label_button(ui, x, "A-", NOTES_ACTION_SIZE_DOWN, NOTES_ACTION_NONE, 1);
+	if (sized) {
+		(void)snprintf(size_text, sizeof(size_text), "%g pt", (double)state->text_size);
+		text_width = ui_text_width(ui, size_text);
+		ui_text(ui, x + 4, UI_BUTTON_TOP, size_text, UI_TEXT_SECONDARY);
+		x += text_width + 8;
+	}
+
+	/* Larger. */
+	return ui_label_button(ui, x, "A+", NOTES_ACTION_SIZE_UP, NOTES_ACTION_NONE, 1);
 }
 
 /*

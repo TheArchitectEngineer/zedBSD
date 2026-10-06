@@ -31,7 +31,7 @@ Queue: Q1 の順（2026-10-06「p008 の後に p004・p005（文字）」）
   - 行の範囲（first, count）は、行の間の空の show も含む連続の範囲にした（p002b の数え方の修正）。
 - **Notes の model**（`notes.h`・`edit.c`・`encode.c`・`journal.c`・`document.c`）: `NOTES_EDIT_TEXT`（0x10）と `notes_edit.text`（UTF-8、edit が持つ）・`font`
   （enum pdf_edit_font、0 は行の元の font）。複製・解放・EDIT と journal の符号化（長さ・bytes・font）。editor に `set_text` で適用。
-  元の font で書けない語の edit は editor の作り直しで失敗するので、UI（p008 の文字の段）は edit の前に editor で確かめる（未実装、下）。
+  元の font で書けない語の edit は editor の作り直しで失敗するので、UI（p008 の文字の段）は edit の前に editor で確かめる（2026-10-06 p008 の文字の段で `notes_page_try_edit` として実装）。
 
 ## p005 の計画の変更（2026-10-06 Q1 了解）
 
