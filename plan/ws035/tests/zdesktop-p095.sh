@@ -118,10 +118,12 @@ check "$out/session.png" >/dev/null
 # 4. App Home's Log Out.
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
 check "$out/home.png" >/dev/null
-set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' /run/user/1001/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
-echo "Log Out at ${1:-?},${2:-?}"
+# App Home's Power Off opens the power dialog (ws099-p037); its keys start on Cancel, Up takes Log Out and Enter chooses it.
+set -- $(guest "grep 'KWL HOME icon name=\"Power Off\"' /run/user/1001/session.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+echo "Power Off at ${1:-?},${2:-?}"
 if [ -n "${1:-}" ]; then
 	pointer move "$1" "$2" sleep 400 down sleep 60 up sleep 500
+	sleep 1; python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<up>' '\n' >/dev/null
 else
 	status=1
 fi
