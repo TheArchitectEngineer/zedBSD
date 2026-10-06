@@ -2,7 +2,7 @@
 # ws175-p006: deflate、圧縮する stream、画像の取り込み、画像の私的な key と共有
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2: 実装、host 試験 PASS。Q1 の判定待ち）
+Status: cleared（2026-10-06 Q1 判定: host の試験 PASS（deflate 31/31、edit-scan の 7 本 plain・ASan・UBSan、intake 42/42、ws079 の回帰 ok、build warning 0）。QEMU は p010。N4 の設計からの外れは本文に記録）
 Disposition: normal
 Queue: q809 の後に Q1 が順を指定（2026-10-06「q809 → WS175 p006 → 続き → q810」）
 依存: [p003](../phase003/phase.md)（cleared）、D4（design.md §5.2。`userland/base/libz-compat` の path は Q1 が許可、2026-10-06）
