@@ -21,6 +21,11 @@
  * the list and written to a new file renamed over the old one, so readers
  * never see half a list and two applications do not lose each other's
  * entries.
+ *
+ * The user may stop the list (q824, plan/ws148/phase001: Settings'
+ * Storage, "Keep recent items"): a file recent.off beside the list says
+ * so, the list is emptied, and kl_recent_add adds nothing until the file
+ * is gone.  Files' Recents empties the list with kl_recent_clear.
  */
 
 #include <keiland.h>
@@ -49,6 +54,7 @@ struct recent_entry {
 };
 
 static int recent_file(char *path, size_t size);
+static int recent_off_file(char *path, size_t size);
 static int recent_lock(const char *list);
 static int recent_read(const char *list, struct recent_entry **entries, size_t *count);
 static int recent_write(const char *list, const struct recent_entry *entries, size_t count);
@@ -76,6 +82,7 @@ kl_recent_add(
 	int lock;
 	int error;
 	int match;
+	int keep;
 
 	/* Only an absolute path of a sane length. */
 	if (path == NULL || path[0] != '/')
@@ -85,6 +92,13 @@ kl_recent_add(
 		return EINVAL;
 	if (application == NULL)
 		application = "";
+
+	/* Nothing is added while the user keeps no list. */
+	error = kl_recent_keep(&keep);
+	if (error != 0)
+		return error;
+	if (!keep)
+		return 0;
 
 	/* The list's file and its lock. */
 	error = recent_file(list, sizeof(list));
@@ -255,6 +269,133 @@ kl_recent_remove(
 		return error;
 
 	/* Succeeded: the path is not listed. */
+	return 0;
+}
+
+/*
+ * Empties the recent list.
+ *
+ * Returns 0, or an errno value.
+ */
+int
+kl_recent_clear(void)
+{
+	char list[KL_RECENT_PATH_MAX];
+	int lock;
+	int error;
+
+	/* The list's file and its lock. */
+	error = recent_file(list, sizeof(list));
+	if (error != 0)
+		return error;
+	lock = recent_lock(list);
+	if (lock < 0)
+		return errno;
+
+	/* No entry written back. */
+	error = recent_write(list, NULL, 0U);
+	close(lock);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the list is empty. */
+	return 0;
+}
+
+/*
+ * Chooses whether the recent list is kept: 0 empties it and stops it, 1
+ * starts it again.
+ *
+ * Returns 0, or an errno value.
+ */
+int
+kl_recent_set_keep(
+	int keep)
+{
+	char off[KL_RECENT_PATH_MAX];
+	int descriptor;
+	int status;
+	int error;
+
+	/* The file that says the list is stopped. */
+	error = recent_off_file(off, sizeof(off));
+	if (error != 0)
+		return error;
+
+	/* Kept again: the file goes (none is the same). */
+	if (keep) {
+		status = unlink(off);
+		if (status != 0 && errno != ENOENT)
+			return errno;
+		return 0;
+	}
+
+	/* Stopped: the file first, so that no add comes between, then the list emptied. */
+	descriptor = open(off, O_WRONLY | O_CREAT, 0600);
+	if (descriptor < 0)
+		return errno;
+	close(descriptor);
+	error = kl_recent_clear();
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the list is stopped and empty. */
+	return 0;
+}
+
+/*
+ * Tells whether the recent list is kept: *keep is 1, or 0 while the user
+ * stopped it.
+ *
+ * Returns 0, or an errno value.
+ */
+int
+kl_recent_keep(
+	int *keep)
+{
+	struct stat status;
+	char off[KL_RECENT_PATH_MAX];
+	int result;
+	int error;
+
+	/* Kept unless the stopping file is there. */
+	*keep = 1;
+	error = recent_off_file(off, sizeof(off));
+	if (error != 0)
+		return error;
+	result = stat(off, &status);
+	if (result == 0) {
+		*keep = 0;
+		return 0;
+	}
+
+	/* No file says kept; another failure is told. */
+	if (errno != ENOENT)
+		return errno;
+
+	/* Succeeded: the list is kept. */
+	return 0;
+}
+
+/* Writes the path of the file that stops the list (beside it); returns 0 or an errno value. */
+static int
+recent_off_file(
+	char *path,
+	size_t size)
+{
+	char list[KL_RECENT_PATH_MAX];
+	int written;
+	int error;
+
+	/* The list's path, and .off after its name. */
+	error = recent_file(list, sizeof(list));
+	if (error != 0)
+		return error;
+	written = snprintf(path, size, "%s.off", list);
+	if (written < 0 || (size_t)written >= size)
+		return ENAMETOOLONG;
+
+	/* Succeeded: the file's path. */
 	return 0;
 }
 

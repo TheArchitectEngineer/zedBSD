@@ -3,12 +3,12 @@
 # WS151: Settings の Accessibility の頁の検討（要らなければ削除、要るなら設計と実装）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: なし（担当と時期は未定）
-Resume point: p001（検討）から。
+Resume point: 2026-10-06 ユーザーの決定で Accessibility の頁を無くした（q824、[ws148-p002](../ws148/phase002/phase.md) で 3 つの頁をまとめて実装、host 試験 PASS）。T1 の QEMU の目視の後に p002 を cleared、WS を完了にする。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -33,6 +33,6 @@ Settings の Accessibility の頁（今は stub）で何を設定すべきかを
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws151-p001](phase001/phase.md) | 検討（上の観点、他の頁との分担）と結論の案、ユーザーの判断 | in-progress（2026-10-06 q821 P2: 検討と結論の案、ユーザーの判断待ち） | — |
-| ws151-p002 | (a) 頁の削除、または (b) 設計 | planning | p001 の判断 |
-| ws151-p003 | (b) の時の実装と回帰 | planning | p002 |
+| [ws151-p001](phase001/phase.md) | 検討（上の観点、他の頁との分担）と結論の案、ユーザーの判断 | cleared（2026-10-06 ユーザー: (a) 頁を無くす） | — |
+| ws151-p002 | (a) 頁の削除（[ws148-p002](../ws148/phase002/phase.md) でまとめて実装） | in-progress（q824 P2、T1 待ち） | p001 |
+| ws151-p003 | (b) の時の実装と回帰 | canceled（(a) に決まったので不要、2026-10-06） | p002 |

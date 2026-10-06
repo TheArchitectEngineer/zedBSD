@@ -55,6 +55,9 @@
 		kl_recent_add;
 		kl_recent_list;
 		kl_recent_remove;
+		kl_recent_clear;
+		kl_recent_set_keep;
+		kl_recent_keep;
 		kl_glass_create;
 		kl_glass_set_panels;
 		kl_glass_set_blur;

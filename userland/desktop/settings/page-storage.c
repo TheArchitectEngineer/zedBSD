@@ -13,6 +13,9 @@
  *               what is counted so far, and the folders in it the largest
  *               first, each with a bar; a click on a folder analyses it.
  *   Trash       its size, and Empty Trash, which asks to be confirmed.
+ *   Recent items  Keep recent items (q824, plan/ws148/phase001): the
+ *               desktop's list of the files applications opened, which
+ *               Files shows as Recents; off empties the list and stops it.
  */
 
 #include "settings.h"
@@ -26,6 +29,7 @@
 #define STORAGE_EMPTY		402
 #define STORAGE_CONFIRM		403
 #define STORAGE_CANCEL		404
+#define STORAGE_RECENT		405
 #define STORAGE_ROW_FIRST	410
 
 /* The rows shown, a row's height, the card's margin, the space between cards, and the text sizes. */
@@ -39,6 +43,8 @@
 
 static int storage_use_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 static int storage_trash_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static int storage_recent_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static void storage_recent_toggle(struct se_app *app);
 static void storage_parent(const char *path, char *parent, size_t size);
 
 /*
@@ -55,9 +61,10 @@ se_storage_cards(
 {
 	int y;
 
-	/* The analysis, then the Trash. */
+	/* The analysis, the Trash, then the recent items. */
 	y = storage_use_card(app, canvas, x, top, width);
 	y = storage_trash_card(app, canvas, x, y + STORAGE_GAP, width);
+	y = storage_recent_card(app, canvas, x, y + STORAGE_GAP, width);
 
 	/* The edge below them. */
 	return y;
@@ -120,6 +127,9 @@ se_storage_press(
 	case STORAGE_CANCEL:
 		storage->confirming = 0;
 		app->dirty = 1;
+		return;
+	case STORAGE_RECENT:
+		storage_recent_toggle(app);
 		return;
 	default:
 		break;
@@ -325,6 +335,86 @@ storage_trash_card(
 
 	/* The edge below the card. */
 	return top + height;
+}
+
+/* Draws the Recent items card; returns the edge below it. */
+static int
+storage_recent_card(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	int x,
+	int top,
+	int width)
+{
+	struct se_storage *storage;
+	const char *line;
+	kl_color ink;
+	int height;
+	int error;
+	int keep;
+	int y;
+
+	/* Whether the list is kept, read the first time the card is drawn. */
+	storage = &app->storage;
+	if (!storage->recent_known) {
+		error = kl_recent_keep(&keep);
+		storage->recent_keep = keep;
+		storage->recent_known = 1;
+		se_log("STORAGE recent keep=%d error=%d", keep, error);
+	}
+
+	/* The card, its switch and its label. */
+	height = 64 + 50 + 30;
+	y = se_card_begin(app, canvas, x, top, width, height, "Recent items", "The files applications opened lately, shown in Files' Recents.");
+	(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, kl_text_center(STORAGE_TEXT_ROW, y + 6, 36), "Keep recent items", STORAGE_TEXT_ROW, 0, width / 2, SE_COLOR_TEXT);
+	se_toggle_draw(app, canvas, x + width - STORAGE_PAD - 44, y + 16, storage->recent_keep, 1, STORAGE_RECENT);
+	y += 50;
+
+	/* What the switch does, or why it did not. */
+	line = "Turning this off clears the list.";
+	ink = SE_COLOR_TEXT_SECONDARY;
+	if (storage->recent_message[0] != '\0') {
+		line = storage->recent_message;
+		if (storage->recent_bad)
+			ink = SE_COLOR_BAD;
+	}
+
+	/* The line under the switch. */
+	(void)kl_text_draw_fit(app->text, canvas, x + STORAGE_PAD, y + 12, line, STORAGE_TEXT_SUB, 0, width - 2 * STORAGE_PAD, ink);
+
+	/* The edge below the card. */
+	return top + height;
+}
+
+/* Turns Keep recent items over: off empties the desktop's recent list and stops it, on starts it again. */
+static void
+storage_recent_toggle(
+	struct se_app *app)
+{
+	struct se_storage *storage;
+	int keep;
+	int error;
+
+	/* The other choice, made (the log the tests read). */
+	storage = &app->storage;
+	keep = !storage->recent_keep;
+	error = kl_recent_set_keep(keep);
+	se_log("STORAGE recent set keep=%d error=%d", keep, error);
+	app->dirty = 1;
+
+	/* A failure is said and the switch stays. */
+	if (error != 0) {
+		(void)snprintf(storage->recent_message, sizeof(storage->recent_message), "The recent list could not be changed (%s).", strerror(error));
+		storage->recent_bad = 1;
+		return;
+	}
+
+	/* Succeeded: the switch as it now is. */
+	storage->recent_keep = keep;
+	storage->recent_bad = 0;
+	storage->recent_message[0] = '\0';
+	if (!keep)
+		(void)snprintf(storage->recent_message, sizeof(storage->recent_message), "%s", "The recent list was cleared and is not kept.");
 }
 
 /* Gives the folder above a path ("/" for the top). */
