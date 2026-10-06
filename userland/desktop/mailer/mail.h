@@ -1,0 +1,185 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Mail's backend (WS169 p003, plan/ws169/phase001/phase.md section 2): a
+ * connection to a mail server, plain or TLS (the OpenSSL package loaded
+ * when first needed), IMAP4rev1 to read the folders, SMTP to send, the
+ * reading and the writing of a message (RFC 5322 and MIME), and the
+ * search for a sign-in code.  Nothing here knows the window or libkeiland,
+ * so that the host tests build it alone against their own servers.
+ */
+
+#ifndef MAILER_MAIL_H
+#define MAILER_MAIL_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <time.h>
+
+/* Marks a parameter a function does not use (a callback's that its kind of reader needs no part of). */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(name) ((void)(name))
+#endif
+
+/* The longest name, address, host or line of words kept, with its NUL. */
+#define ML_TEXT_MAX		256U
+
+/* The longest list of receivers kept (To, Cc), with its NUL. */
+#define ML_LIST_MAX		1024U
+
+/* The longest IMAP folder name kept, with its NUL. */
+#define ML_MAILBOX_MAX		128U
+
+/* The most bytes a connection buffers from the server. */
+#define ML_CONN_BUFFER		16384U
+
+/* The longest line read from a server, with its NUL. */
+#define ML_LINE_MAX		8192U
+
+/* The longest sign-in code, with its NUL (keiland.h's KL_MAIL_CODE_MAX). */
+#define ML_CODE_MAX		16U
+
+/* How much of a message is fetched (a larger one is read up to here; its files are only named). */
+#define ML_FETCH_BYTES		1048576U
+
+/* The folders of an account, in the sidebar's order. */
+enum ml_folder {
+	ML_INBOX,
+	ML_SENT,
+	ML_DRAFTS,
+	ML_ARCHIVE,
+	ML_TRASH,
+	ML_FOLDERS
+};
+
+/* What a message is (bits). */
+#define ML_UNREAD		1U	/* not read yet (no \Seen) */
+#define ML_ATTACHMENT		2U	/* it carries a file */
+
+/*
+ * A mail server: its host, its port, and whether the connection is TLS
+ * from its start (993, 465) or is upgraded with STARTTLS (143, 587).
+ */
+struct ml_server {
+	char host[ML_TEXT_MAX];
+	unsigned port;
+	int secure;
+};
+
+/*
+ * An account as the user set it: the name shown, the address mail comes
+ * to and is sent from, the user name and password the servers take, and
+ * the two servers.
+ */
+struct ml_account_config {
+	char name[64];
+	char address[ML_TEXT_MAX];
+	char user[ML_TEXT_MAX];
+	char password[ML_TEXT_MAX];
+	struct ml_server imap;
+	struct ml_server smtp;
+};
+
+/*
+ * One connection to a server: its socket, its TLS state (NULL while
+ * plain), the bytes read and not yet taken (from start to end of the
+ * buffer), and how long a read waits for the server.
+ */
+struct ml_conn {
+	int fd;
+	void *tls;
+	unsigned char buffer[ML_CONN_BUFFER];
+	size_t start;
+	size_t end;
+	int timeout_ms;
+};
+
+/*
+ * A message as read (mime.c): its sender's name and address, to whom and
+ * in copy, its subject and ID, its date, its words as UTF-8 text with
+ * line feeds (allocated), the name and size of the first file it carries
+ * (empty for none), and a sign-in code found in it (empty for none).
+ */
+struct ml_parsed {
+	char from_name[ML_TEXT_MAX];
+	char from_address[ML_TEXT_MAX];
+	char to[ML_LIST_MAX];
+	char cc[ML_LIST_MAX];
+	char subject[ML_TEXT_MAX];
+	char message_id[ML_TEXT_MAX];
+	time_t date;
+	char *body;
+	char file_name[ML_TEXT_MAX];
+	size_t file_size;
+	char code[ML_CODE_MAX];
+};
+
+/*
+ * An IMAP session: the connection, the number of the next command's tag,
+ * the tag of an IDLE going on (0 for none), how many messages the folder
+ * selected has, and the server's words of the last failure.
+ */
+struct ml_imap {
+	struct ml_conn conn;
+	unsigned tag;
+	unsigned idle_tag;
+	uint32_t exists;
+	char error[ML_TEXT_MAX];
+};
+
+/* What a FETCH gives for each message: its UID, its ML_* flags, its size, and its bytes (up to ML_FETCH_BYTES). */
+typedef void (*ml_imap_fetched_fn)(void *data, uint32_t uid, unsigned flags, size_t size, const char *raw, size_t length);
+
+/* The TLS of the OpenSSL package (tls.c). */
+int ml_tls_add_ca_file(const char *path);
+int ml_tls_open(int fd, const char *host, void **tls);
+int ml_tls_read(void *tls, unsigned char *bytes, size_t length, size_t *received);
+int ml_tls_write(void *tls, const unsigned char *bytes, size_t length);
+int ml_tls_pending(void *tls);
+void ml_tls_close(void *tls);
+const char *ml_tls_error(void);
+
+/* A connection (conn.c). */
+int ml_server_parse(const char *text, unsigned fallback_port, struct ml_server *server);
+int ml_conn_open(struct ml_conn *conn, const struct ml_server *server);
+int ml_conn_start_tls(struct ml_conn *conn, const char *host);
+int ml_conn_write(struct ml_conn *conn, const char *bytes, size_t length);
+int ml_conn_line(struct ml_conn *conn, char *line, size_t size);
+int ml_conn_bytes(struct ml_conn *conn, char *bytes, size_t count);
+int ml_conn_ready(const struct ml_conn *conn);
+void ml_conn_close(struct ml_conn *conn);
+
+/* IMAP (imap.c). */
+int ml_imap_open(struct ml_imap *imap, const struct ml_account_config *account);
+int ml_imap_folders(struct ml_imap *imap, char names[ML_FOLDERS][ML_MAILBOX_MAX]);
+int ml_imap_select(struct ml_imap *imap, const char *mailbox, uint32_t *exists);
+int ml_imap_fetch(struct ml_imap *imap, uint32_t first_uid, unsigned most, ml_imap_fetched_fn fetched, void *data);
+int ml_imap_flag(struct ml_imap *imap, uint32_t uid, const char *flag, int add);
+int ml_imap_move(struct ml_imap *imap, uint32_t uid, const char *mailbox);
+int ml_imap_append(struct ml_imap *imap, const char *mailbox, const char *raw, size_t length);
+int ml_imap_idle_start(struct ml_imap *imap);
+int ml_imap_idle_take(struct ml_imap *imap, int *arrived);
+int ml_imap_idle_stop(struct ml_imap *imap);
+void ml_imap_close(struct ml_imap *imap);
+
+/* SMTP (smtp.c). */
+int ml_smtp_send(const struct ml_account_config *account, const char *const *receivers, size_t count, const char *raw, size_t length, char *error, size_t size);
+
+/* Reading and writing a message (mime.c, compose.c). */
+int ml_mime_parse(const char *raw, size_t length, struct ml_parsed *parsed);
+void ml_mime_release(struct ml_parsed *parsed);
+int ml_mime_address_list(const char *list, char (*addresses)[ML_TEXT_MAX], size_t capacity, size_t *count);
+int ml_compose(const struct ml_account_config *account, const char *to, const char *cc, const char *subject, const char *body, const char *reply_to_id, time_t now, char **raw, size_t *length);
+
+/* The sign-in code (code.c). */
+int ml_code_find(const char *subject, const char *body, char *code, size_t size);
+
+/* Base64 (mime.c), for SMTP's AUTH PLAIN too. */
+size_t ml_base64_encode(const unsigned char *bytes, size_t length, char *text, size_t size);
+
+#endif

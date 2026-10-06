@@ -66,3 +66,11 @@
 | WS169 ws169-p002 | 読み手の許可の変化 | 許可が on・off に変わったことを読み手に知らせる（今は何も送らず、arrived の時に設定を読むだけ） | `wayland/mail-shell.c`、`kl-system-protocol.h` | 2026-10-06 |
 | WS169 ws169-p002 | 許可の UI の置き場 | Settings の Notifications の頁（今は「later」）ができたら mail.codes.* の switch をそちらにも出す（今は Mail の app の中だけ） | `settings/pages.c`、`mailer/` | 2026-10-06 |
 | WS169 ws169-p002 | mail を出せるのは同じ uid の誰でも | arrived を送れる client を Mail に限る（今は system manager の見える client なら誰でも arrived を送れる） | `wayland/mail-shell.c` の `mail_arrived` | 2026-10-06 |
+| WS169 ws169-p003（IMAP・SMTP の backend） | ISO-2022-JP・Shift_JIS・EUC-JP の本文と件名 | UTF-8 に変換して出す（今は bytes のまま、文字化けする） | `mailer/mime.c` の `mime_to_utf8` | 2026-10-07 |
+| WS169 ws169-p003 | 1 MiB を超えるメール | 本文の部分だけを取る（BODYSTRUCTURE と BODY.PEEK[1]）、添付の大きさを正しく（今は先頭 1 MiB を取り、添付の大きさは encode の大きさからの見積もり） | `mailer/imap.c` の `ml_imap_fetch`、`mime.c` | 2026-10-07 |
+| WS169 ws169-p003 | 証明書の検証の失敗・TLS の無い server・接続の timeout・server の BYE | 理由を画面に出し、自己署名を許すかを聞く（今は error の文だけ） | `mailer/tls.c`・`conn.c` | 2026-10-07 |
+| WS169 ws169-p003 | modified UTF-7 の folder 名、`\Noselect` の親、literal の folder 名 | 正しく読み、表示する（今は quoted・atom だけ、名前は bytes のまま） | `mailer/imap.c` の `imap_list_name` | 2026-10-07 |
+| WS169 ws169-p003 | MOVE・UIDPLUS の server | `UID MOVE`・`UID EXPUNGE` を使う（今は COPY＋\Deleted＋EXPUNGE で、他の \Deleted の message も消える） | `mailer/imap.c` の `ml_imap_move` | 2026-10-07 |
+| WS169 ws169-p003 | 宛先の名前が ASCII でない、To・Cc の長い行 | encoded word と header の折り返し（今は打ったまま 1 行） | `mailer/compose.c` の `compose_field` | 2026-10-07 |
+| WS169 ws169-p003 | SMTP の AUTH LOGIN だけの server、8BITMIME の無い server | AUTH LOGIN、EHLO の答えに従う（今は AUTH PLAIN だけ、本文は QP なので 7bit） | `mailer/smtp.c` | 2026-10-07 |
+| WS169 ws169-p003 | code の語が他の語の一部（shipping の pin など） | 語の境で数える（今は部分一致） | `mailer/code.c` の `code_contains` | 2026-10-07 |

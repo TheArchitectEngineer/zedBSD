@@ -19,24 +19,12 @@
 #ifndef MAILER_MAILER_H
 #define MAILER_MAILER_H
 
+#include "mail.h"
+
 #include <keiland/keiland.h>
 
 #include <stddef.h>
 #include <stdint.h>
-
-/* The folders of an account, in the sidebar's order. */
-enum ml_folder {
-	ML_INBOX,
-	ML_SENT,
-	ML_DRAFTS,
-	ML_ARCHIVE,
-	ML_TRASH,
-	ML_FOLDERS
-};
-
-/* What a message is (bits). */
-#define ML_UNREAD		1U	/* not read yet */
-#define ML_ATTACHMENT		2U	/* it carries a file */
 
 /* An account: its name and address. */
 struct ml_account {
