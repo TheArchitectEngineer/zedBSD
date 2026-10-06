@@ -1589,8 +1589,8 @@ inet_create(
 
 
 /*
- * Creates an AF_INET6 socket (ws130-p003): a UDP or TCP one, made IPv6.
- * ICMPv6 comes in a later stage of the Phase.
+ * Creates an AF_INET6 socket (ws130-p003): a raw ICMPv6, a UDP or a TCP
+ * one, made IPv6.
  */
 static int
 inet6_create(
@@ -1601,8 +1601,10 @@ inet6_create(
 	struct inet_socket *inet;
 	int error;
 
-	/* Datagram is UDP, stream is TCP; raw is not there yet. */
-	if (type == SOCK_DGRAM)
+	/* Raw is ICMPv6, datagram is UDP, stream is TCP. */
+	if (type == SOCK_RAW)
+		error = icmp6_socket_create(protocol, result);
+	else if (type == SOCK_DGRAM)
 		error = udp_socket_create(protocol, result);
 	else if (type == SOCK_STREAM)
 		error = tcp_socket_create(protocol, result);

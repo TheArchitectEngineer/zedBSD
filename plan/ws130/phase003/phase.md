@@ -26,7 +26,7 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
 | --- | --- | --- |
 | a | `inet_socket` の family と IPv6 の欄、`AF_INET6` の family の登録、`sockaddr_in6` の bind・connect・name、`IPV6_V6ONLY`、port の衝突（v4 と v6 の見方）、UDP の IPv6 の送受と dual stack の IPv4 の受信 | 実装済み（build のみ） |
 | b | TCP の IPv6（endpoint の照合、checksum、出力、listener の子、RST、MSS 1440） | 実装済み（build のみ） |
-| c | ICMPv6 の echo の socket（`ping6` は p005）、transport への ICMPv6 の error、PMTU を TCP に | 実装中（raw socket と error の配達は build 済み、2026-10-06 q806 の割り込みで中断） |
+| c | ICMPv6 の echo の socket（`ping6` は p005）、transport への ICMPv6 の error、PMTU を TCP に | 実装済み（build のみ） |
 | d | 試験: `userland/tests/ipv6-probe` に UDP・TCP の `::1` と slirp の `fec0::2`、`plan/ws130/tests/ipv6-p003.sh`。IPv4 の回帰（既存の network の試験）。T1 | — |
 
 ## 段 a の結果（2026-10-06、P1）
@@ -60,5 +60,5 @@ dual stack（`IPV6_V6ONLY` = 0）も書ける。差は「IPv4 の socket と IPv
   errno は code 0 ENETUNREACH・1 EACCES・4 ECONNREFUSED・他 EHOSTUNREACH、Time Exceeded EHOSTUNREACH、Parameter Problem EPROTO）。
 - `udp6_error`（connected の socket の error に）、`tcp6_error`（port unreachable は SYN_SENT の connect を ECONNREFUSED で終える、他は soft）。
 - PMTU を TCP に: TCP の送る segment は `TCP_MSS` 1024 で、IPv6 の最小 MTU 1280 から header 60 を引いた 1220 より小さいので、Packet Too Big で縮める要が無い（UDP は `ipv6_route_source` の path MTU を使う）。
-- 残り: `inet6_create` の `SOCK_RAW` を `icmp6_socket_create` につなぐ、i386・arm64 の build、段 d（試験）。
+- 2026-10-06（q806 の後）: `inet6_create` の `SOCK_RAW` を `icmp6_socket_create` につないだ。amd64・arm64 の kernel、i386 の変えた 6 file の build（warning 0）。残りは段 d（試験）。
 - 確認: amd64 の kernel の build（`-Werror`、warning 0）。
