@@ -2,7 +2,7 @@
 # ws175-p002: libpdf の走査（画像と図形の物の表）と、後の段の文字の走査・抽出
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 q805 P2、p002a から）
+Status: in-progress（2026-10-06 q805 P2: p002a と p002b の走査・抽出を実装、host PASS。[M10] の書き換え側は p004）
 Disposition: normal
 Queue: q805（Q1、2026-10-06「ベータ1・2 の未実装を WS の順に」）
 依存: [p001](../phase001/phase.md)（cleared、design.md が正本）
@@ -39,4 +39,7 @@ design.md §10 の p002 の「先の段」の部分を p002a、残りを p002b �
 - 試験: `plan/ws175/tests/host-tounicode.c`（13 項目）を `run-host-edit-scan.sh` に足した → plain・ASan・UBSan とも PASS。
 - `font.c` の `pdf_font_unicode()`（internal、§3.2 の順）: /ToUnicode（初回に読む）→ 単純な font の encoding と Differences（`load_simple` の表を font に残す）→ composite の埋め込みの TrueType の cmap の逆引き（BMP を 1 回だけ引いて glyph → 文字の表、CIDToGIDMap を通す）→ U+FFFD。`free_font` で解放。font.c が tounicode.c を使うので、ws079 の host の 5 つの script（render・text・ccitt・update・pdfviewer-host）の source の並びに tounicode.c を足した。
 - 試験: `host-font-unicode.c`（10 項目: WinAnsi の A と €、ToUnicode の Z と下の encoding の B、DejaVu Sans の Identity-H で A の glyph → A、glyph 0 → U+FFFD）。`make-edit-samples.py` に page 6（3 つの font、F3 は host の DejaVu Sans を丸ごと FontFile2 に）。run-host-edit-scan の 5 つの試験が plain・ASan・UBSan とも PASS。
-- 残り（p002b）: 文字の行の走査（行のまとめ [M9][N16]、Tr 4〜7 の block [H2]、印付きの内容 [M10]、Tr 3）と editor の TEXT の物。
+- 文字の行の走査（2026-10-06 P2）: `content.c` が page の top level の show（Tj・TJ・'・"）ごとに、bytes の範囲と指紋、BT の番号、最初の glyph の前と最後の後の文字の行列、C_rec、font と文字の状態、塗りの色（RGB・gray・CMYK のとき）、文字（`pdf_font_unicode`）、行の四隅（size の 0.2 下から 0.8 上）、前の show からの描画・状態の演算子の数、BT の中で開いた印付きの内容の深さ、flag（不明な文字・Type 3・縦書き）を記録する（`struct pdf_scan_show`）。Tr 4〜7 の show を含む BT は印を付ける（[H2]）。`editor.c` が行にまとめる: 同じ BT か、間に描画・色・gs・q・Q・cm の無い次の BT で同じ CTM、同じ font・size・見える／見えない、同じ向きと baseline（size の 1/4 以内）、size の 1 つ手前から 3 つ先までに始まる show（[M9][N16]）。clip の BT と空の show は行にしない。物の並びは page の画像・図形、行、挿入した物の順で、hit は描く順（後が上）、見えない行（Tr 3）は他に何も無い所だけ（[M9]）。`pdf_edit_object` に text（UTF-8、離れた show の間に空白）、font の名前（subset の接頭辞を除く）、見かけの size、flag `PDF_EDIT_OBJECT_TEXT_FIXED`・`INVISIBLE`。行の key は最初の show の bytes（[H3]）。行の削除・移動・差し替えは p004 まで ENOTSUP。
+- `display.c` の直し: 空の path（glyph の無い clip の文字）で `memcpy(NULL, NULL, 0)` をしていた（UBSan が検出、既存の不具合）→ 長さが 0 なら写さない。
+- 試験: `host-edit-text.c`（19 項目: page 7 の 5 行「Hello World」「Kerned text」「Before」「After」「Hidden」、clip の BT は無し、key、Helvetica 10 pt、四隅、flag、hit、ENOTSUP）。`make-edit-samples.py` に page 7。run-host-edit-scan の 6 つの試験が plain・ASan・UBSan とも PASS。
+- p002b の残り: 印付きの内容の `/ActualText` の扱いと block を割らない判断（[M10]）は p004（文字の書き換え）で使う時に。

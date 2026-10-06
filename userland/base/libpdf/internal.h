@@ -296,6 +296,8 @@ int pdf_font_get(struct pdf_document *document, struct pdf_object *dictionary, s
 void pdf_font_cache_free(struct pdf_font_cache *cache);
 unsigned pdf_font_status(const struct pdf_font *font);
 int pdf_font_vertical(const struct pdf_font *font);
+int pdf_font_type3(const struct pdf_font *font);
+const struct pdf_object *pdf_font_dictionary(const struct pdf_font *font);
 size_t pdf_font_next_code(const struct pdf_font *font, const unsigned char *bytes, size_t length, unsigned *code, int *single_byte);
 int pdf_font_glyph(struct pdf_font *font, unsigned code, struct pdf_glyph *glyph);
 int pdf_font_unicode(struct pdf_document *document, struct pdf_font *font, unsigned code, int single_byte, uint32_t *characters, size_t capacity, size_t *count);
@@ -369,6 +371,50 @@ struct pdf_scan_object {
 };
 
 /*
+ * One shown string of a page's top level (ws175-p002b, design.md section
+ * 3.1): the operator's bytes (first operand to the operator: Tj, TJ, ' or
+ * "), the text object it is in (its BT's number on the page), the text
+ * matrix before its first glyph (after the line move of ' and ") and after
+ * its last, the matrix in force, the font and the text state, the fill
+ * colour when it is RGB, gray or CMYK (fill_known), the characters it
+ * stands for (characters_from and characters_count in the scan's
+ * characters), the corners of its glyphs' line (from a descent of 0.2 to an
+ * ascent of 0.8 of the size), how many operators that draw or change the
+ * graphics state came since the shown string before it (the lines of
+ * adjacent text objects join only without any, [M9][N16]), the marked
+ * content opened since its text object began (marked_depth, design.md
+ * [M10]), and its flags (SCAN_SHOW_*).
+ */
+#define PDF_SCAN_SHOW_UNKNOWN	0x1U
+#define PDF_SCAN_SHOW_TYPE3	0x2U
+#define PDF_SCAN_SHOW_VERTICAL	0x4U
+struct pdf_scan_show {
+	size_t offset;
+	size_t length;
+	size_t block;
+	double start[6];
+	double end[6];
+	double ctm[6];
+	struct pdf_font *font;
+	double font_size;
+	double character_spacing;
+	double word_spacing;
+	double horizontal_scale;
+	double leading;
+	double rise;
+	int render_mode;
+	double fill[3];
+	int fill_known;
+	size_t characters_from;
+	size_t characters_count;
+	double quad[8];
+	size_t drawn_before;
+	size_t marked_depth;
+	unsigned flags;
+	unsigned char fingerprint[8];
+};
+
+/*
  * What the scan of a page's content found: its objects in the order of the
  * content, the q left open at its end, the Q that had no q to restore
  * (their offsets; each is one byte, "Q"), whether the content ended inside
@@ -389,6 +435,15 @@ struct pdf_scan {
 	int partial;
 	int error;
 	double base[6];
+	struct pdf_scan_show *shows;
+	size_t show_count;
+	size_t show_capacity;
+	uint32_t *characters;
+	size_t character_count;
+	size_t character_capacity;
+	size_t block_count;
+	unsigned char *block_clips;
+	size_t block_clip_capacity;
 };
 
 /* The scan of a page's content (content.c): the objects, and the decoded content they are ranges of. */

@@ -374,6 +374,33 @@ pdf_font_status(
 }
 
 /*
+ * Tells whether a font is a Type 3 font, whose glyphs are procedures
+ * (ws175-p002b: its text is not changed).
+ */
+int
+pdf_font_type3(
+	const struct pdf_font *font)
+{
+	/* The kind read. */
+	if (font != NULL && font->kind == FONT_KIND_TYPE3)
+		return 1;
+	return 0;
+}
+
+/*
+ * Gives a font's dictionary (its /BaseFont names it to the editor).
+ */
+const struct pdf_object *
+pdf_font_dictionary(
+	const struct pdf_font *font)
+{
+	/* The dictionary it was read from. */
+	if (font == NULL)
+		return NULL;
+	return font->dictionary;
+}
+
+/*
  * Reports whether a font writes vertically (Identity-V).
  */
 int
