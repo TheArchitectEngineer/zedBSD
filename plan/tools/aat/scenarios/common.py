@@ -55,9 +55,11 @@ METHOD_SWITCHES = {0: 1, 1: 2, 2: 3}
 
 
 def current_method(run) -> int:
-	"""The input method the desktop has now (0 none, 1 Japanese, 2 SKK; 0 when the log says none)."""
+	"""The input method the desktop has now (0 none, 1 Japanese, 2 SKK): the last change the log says, or the
+	desktop's default, Japanese (the compositor's main.c; T1-232 took no line for none, and the switch of the
+	method chosen already did nothing)."""
 	lines = run.lines(r"ZWL IME method=\d+", None)
-	return aatlib.number(lines[-1], "method") if lines else 0
+	return aatlib.number(lines[-1], "method") if lines else 1
 
 
 def set_method(run, item, method: int) -> None:

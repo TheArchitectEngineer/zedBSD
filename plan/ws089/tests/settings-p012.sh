@@ -1,9 +1,10 @@
 #!/bin/sh
 # ws089-p012: Settings with the keys and a finger, on the Venus guest of the touch image (config-amd64-settings-touch.mk:
 # the Settings image with the test touch screen of /dev/input-inject and touchinject).  zdesktop --glass at 1280x800.
-#  1. The search's results by the keys: Ctrl+F, "wi", Tab (the titlebar's field is left; zdesktop's field takes Up and
-#     Down itself), Down chooses the second result (SEARCH chosen index=1 page=ethernet, search-chosen.png), Enter opens
-#     it (SEARCH open page=ethernet).  Then Ctrl+F, "wall", Enter in the field opens the first (page=wallpaper).
+#  1. The search's results by the keys: Ctrl+F, "wi", Down in the field (zdesktop's field, without suggestions, ends as
+#     Tab does and hands Down to Settings, 2026-10-06 q805) chooses the second result (SEARCH chosen index=1
+#     page=ethernet, search-chosen.png), Enter opens it (SEARCH open page=ethernet).  Then Ctrl+F, "wall", Enter in the
+#     field opens the first (page=wallpaper).
 #  2. The list's keys and the history: from Home, Down three times (wifi, ethernet, bluetooth), Up (ethernet); Alt+Left
 #     goes back to bluetooth, Alt+Right forward to ethernet.
 #  3. A finger: on Home, a finger dragged up 300 pixels over the page scrolls it (TOUCH scroll start pane=page, then
@@ -86,8 +87,6 @@ expect_log /tmp/s.log 'ZSETTINGS SEARCH focus'
 sleep 2
 keys 'wi'
 expect_log /tmp/s.log 'ZSETTINGS SEARCH query=wi results=[1-9]'
-keys '<tab>'
-sleep 1
 keys '<down>'
 expect_log /tmp/s.log 'ZSETTINGS SEARCH chosen index=1 page=ethernet'
 shot search-chosen.png

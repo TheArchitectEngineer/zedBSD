@@ -14,11 +14,17 @@
  * many folders (search, recent files, the trash) add where each item is.
  * Clicking a column's title sorts by it, clicking again reverses.
  * Dragging the edge before a column changes the widths of the columns on
- * either side of it (BUG-220); the widths are kept while Files runs.
+ * either side of it (BUG-220); the widths are kept for the next run in
+ * Files' own settings (files.column-width.<column>, libkeiland's
+ * kl_settings_* in ~/.config/keiland/files.conf; 0 is the column's own
+ * width).
  */
 
 #include "files.h"
 
+#include <keiland.h>
+
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -40,6 +46,9 @@
 /* How wide the grip on an edge between two columns is. */
 #define LIST_EDGE_GRIP		10
 
+/* The application's name, which names its settings. */
+#define LIST_SETTINGS_APP	"files"
+
 /*
  * One column as it is laid out for a frame: which one, where and how wide.
  */
@@ -58,6 +67,19 @@ static unsigned list_sort_of(unsigned column);
 static int list_width(const struct fm_app *app, unsigned column);
 static int list_left_of(struct fm_app *app, unsigned column);
 static unsigned list_shown(struct fm_app *app);
+static void list_widths_save(struct fm_app *app, int column, int left);
+
+/* The settings' key of each column's width (the name has none: it takes what is left). */
+static const char *const list_width_keys[FM_COLUMN_COUNT] = {
+	NULL,
+	"files.column-width.kind",
+	"files.column-width.size",
+	"files.column-width.modified",
+	"files.column-width.changed",
+	"files.column-width.owner",
+	"files.column-width.location",
+	"files.column-width.deleted"
+};
 
 /*
  * Draws the items as a list in the panel's inner rectangle, and records
@@ -257,11 +279,16 @@ fm_list_edge_motion(
 	return 1;
 }
 
-/* Ends a drag of a column's edge.  Returns 1 when one was under way (the release is its). */
+/*
+ * Ends a drag of a column's edge: the widths stay, and are kept for the
+ * next run.  Returns 1 when one was under way (the release is its).
+ */
 int
 fm_list_edge_release(
 	struct fm_app *app)
 {
+	int left;
+
 	/* No drag. */
 	if (app->column_drag < 0)
 		return 0;
@@ -269,11 +296,79 @@ fm_list_edge_release(
 	/* The widths stay; the log says them (the tests read it). */
 	printf("ZFILES COLUMN width column=%d width=%d\n", app->column_drag, app->column_widths[app->column_drag]);
 	fflush(stdout);
+
+	/* Kept for the next run: the column, and the one left of it when the drag changed it. */
+	left = list_left_of(app, (unsigned)app->column_drag);
+	list_widths_save(app, app->column_drag, left);
 	app->column_drag = -1;
 	app->dirty = 1;
 
 	/* Succeeded: the release was the drag's. */
 	return 1;
+}
+
+/*
+ * Reads the widths kept by an earlier run (BUG-220); a width under the
+ * least a dragged column keeps, or none, leaves the column at its own.
+ */
+void
+fm_list_widths_load(
+	struct fm_app *app)
+{
+	struct kl_settings *settings;
+	unsigned column;
+	int width;
+
+	/* Files' own settings; its own keys need no display.  Without them the columns keep their own widths. */
+	settings = kl_settings_open(NULL, LIST_SETTINGS_APP);
+	if (settings == NULL)
+		return;
+
+	/* Each column's kept width. */
+	for (column = FM_COLUMN_NAME + 1U; column < FM_COLUMN_COUNT; column++) {
+		width = kl_settings_get_int(settings, list_width_keys[column], 0);
+		if (width >= LIST_LEAST) {
+			app->column_widths[column] = width;
+			printf("ZFILES COLUMN kept column=%u width=%d\n", column, width);
+		}
+	}
+
+	/* Closes the settings, which are not needed any more. */
+	kl_settings_close(settings);
+}
+
+/*
+ * Keeps the widths of a dragged column and of the one left of it (when it
+ * is not the name) in Files' settings.  A failure leaves the old widths for
+ * the next run; this run keeps the new ones.
+ */
+static void
+list_widths_save(
+	struct fm_app *app,
+	int column,
+	int left)
+{
+	struct kl_settings *settings;
+	int error;
+
+	/* Opens Files' own settings. */
+	settings = kl_settings_open(NULL, LIST_SETTINGS_APP);
+	if (settings == NULL) {
+		printf("ZFILES COLUMN saved column=%d error=%d\n", column, ENOMEM);
+		return;
+	}
+
+	/* The dragged column's width. */
+	error = kl_settings_set_int(settings, list_width_keys[column], app->column_widths[column], NULL);
+
+	/* The one left of it, when the drag changed it too. */
+	if (error == 0 && left > (int)FM_COLUMN_NAME && app->column_widths[left] > 0)
+		error = kl_settings_set_int(settings, list_width_keys[left], app->column_widths[left], NULL);
+
+	/* The log says how it went (the tests read it). */
+	printf("ZFILES COLUMN saved column=%d left=%d error=%d\n", column, left, error);
+	fflush(stdout);
+	kl_settings_close(settings);
 }
 
 /* Lays out the columns shown, and returns how many there are. */

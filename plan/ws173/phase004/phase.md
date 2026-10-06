@@ -78,3 +78,19 @@ Queue: Q1 の指示（2026-10-05 夜、P2 g17 の Task 1、最優先）
 
 - runner の改善: 各シナリオの間の session の log を `OUTDIR/logs/ID.log` に残す（`Run.log_start`・`save_log`、aatlib.py）。次の run から fail の原因を log で追える。host の試験に 1 項目（run-host.sh）。
 - 確認: Settings の build warning 0、style-check 0、aat run-host PASS、check-scenarios PASS。QEMU は T1 の full の流し直しで。
+
+## q788-i02（2026-10-06 P2）: T1-232 の full の残りの fail 8 件
+
+証拠は `/home/awe/zedBSD-worktrees/t1/build/t1-232/`（今回から `logs/ID.log` がある）。
+
+| scenario | 判定 | 原因と直し |
+| --- | --- | --- |
+| `apps.settings.about`・`apps.settings.sound-page` | helper | `ZSETTINGS ABOUT` と `ZSETTINGS SOUND open` は Settings の起動の時に 1 回だけ出る（page を開く時ではない）。helper は page を頼んだ後の mark から探した。→ launch の前の mark から探す |
+| `apps.settings.change-password` | helper | 現在の password の欄（window の y 662〜698）が窓の下端（680）に半分隠れ、3 回目の click が外れて `aat-pass-1` が欄に入り、確認の欄が空で request が出なかった（right.png の 10 文字）。→ 各回の前に `reveal_control` で欄が全部見えるまで頁を送る |
+| `apps.settings.manage-users` | helper | 一覧の行を `index >= 100` で探し、PIN の欄（200〜202、`PIN_FIELD_FIRST`）を最後の行として click した。行が選ばれず Remove（23）が出なかった。→ 行は 100〜199 |
+| `apps.videoplayer.play` | helper（sample） | 4 秒の sample は window・2 回の撮影の間に終わり（`END reached`、`ENDED shown=19`）、Space は再生し直した（PAUSE が無い）。→ sample を 12 秒に（samples.py、シナリオの文書も） |
+| `apps.terminal.japanese-history` | helper | desktop の入力方式の既定は 1（Japanese、compositor の main.c `server.ime_method = 1`、Settings の look.c も 1）。起動の時は `ZWL IME method=` を出さないので helper は 0 と読み、1 を選ぼうとした。Settings は選ばれ済みの switch の click を何もしない（page-languages.c）。→ `current_method` の既定を 1 に。choose-method の「最後に元へ戻す」も 0 ではなく 1 へ戻るようになる |
+| `apps.terminal.type-command` | helper（compositor の遅さを記録） | 直前の many-windows の 20 個の Terminal を kill した後、compositor は 20 個の client を手放すのに 23 秒かかり（`ZWL PERF 22690ms: passes=154 … work 94.1%`、その間の compose は 9 frame・2.3 秒だけ）、その間の Windows キーが 10 秒の待ちに間に合わなかった（次の scenario の頭で `HOME open via=super` と `close via=escape` が同じ ms に出た）。→ many-windows は全部の client の `ZWL CLIENT gone` を待って（90 秒まで）かかった秒数を記録する。client 1 個に約 1 秒の後始末は compositor の性能の問題として Q1 に報告（原因は未調査） |
+| `desktop.session.logout-login` | シナリオ | App Home の Log Out の項目は p037 で Power Off の dialog の中に移った。→ dialog を開き（`power_dialog`）、Up（Cancel → Log Out）と Enter。`ZWL POWER choice=logout via=key error=0` を記録 |
+
+- 確認: aat run-host PASS、check-scenarios PASS（88）、py_compile。QEMU は T1 の流し直しで（未実施）。

@@ -95,6 +95,10 @@ struct vp_player {
 	uint32_t *pixels;
 	uint32_t width;
 	uint32_t height;
+	uint64_t resized_us;
+	uint32_t presented_width;
+	uint32_t presented_height;
+	int present_error;
 	struct kl_canvas canvas;
 	int canvas_made;
 	struct kl_text text;
@@ -711,7 +715,8 @@ vp_resize(
 	if (status != 0)
 		return -1;
 
-	/* Succeeded: drawn again at the new size. */
+	/* Succeeded: drawn again at the new size, from now. */
+	player->resized_us = kl_clock_us();
 	player->canvas_made = 1;
 	player->style.canvas = &player->canvas;
 	player->dirty = 1;
@@ -770,6 +775,19 @@ vp_draw(
 	status = kl_window_present(player->window, player->pixels, (size_t)player->width);
 	if (status == EAGAIN)
 		player->resized = 1;
+
+	/* A frame that could not be shown is logged once for each new error (it is drawn again when something changes). */
+	if (status != 0 && status != EAGAIN && status != player->present_error)
+		vp_log("FAILED operation=frame error=%d", status);
+	if (status != EAGAIN)
+		player->present_error = status;
+
+	/* The first frame shown at a new size, and how long after the size came (ws122-p005a, T1-235). */
+	if (status == 0 && (player->width != player->presented_width || player->height != player->presented_height)) {
+		player->presented_width = player->width;
+		player->presented_height = player->height;
+		vp_log("PRESENTED width=%u height=%u after_ms=%llu", player->width, player->height, (unsigned long long)((now_us - player->resized_us) / 1000U));
+	}
 }
 
 /* Draws the picture fitted to the window, black around it (or black alone). */

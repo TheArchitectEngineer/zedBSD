@@ -726,15 +726,16 @@ def lock_unlock(item):
 def logout_login(item):
 	before = run.lines(r"ZWL READY socket=\S+ .* role=normal", None)
 	old_pid = aatlib.field(before[-1], "pid") if before else None
-	since = run.home_open(item)
-	run.type("logout")
-	icons = run.lines(r'ZWL HOME icon name="Log Out" x=', since)
-	item.check(icons, "no Log Out icon in App Home")
+	# Log Out is in App Home's Power Off dialog (ws099-p037, BUG-235): the keys start on Cancel, Up is Log Out.
+	power_dialog(item)
 	greeter_mark = run.mark("/var/log/greeter.log")
-	run.click(*icon_middle_xy(icons[-1]))
+	mark = run.mark()
+	run.key("up")
+	run.key("enter")
 	opened = run.wait(r"ZWL GREETER open users=", greeter_mark, 30, log="/var/log/greeter.log")
 	time.sleep(1.5)
-	item.step("clicked Log Out in App Home", opened)
+	chosen = run.lines(r"ZWL POWER choice=logout via=key error=0", mark)
+	item.step("Up and Enter in the dialog (Log Out)", f"{chosen[-1] if chosen else 'no choice line'}; {opened}")
 	run.shot(item, "greeter")
 	item.check(opened, "the login screen did not come (greeter.log)")
 	run.type(aatlib.PASSWORD)
@@ -752,11 +753,6 @@ def logout_login(item):
 	run.shot(item, "desktop")
 	item.check(auth and ready, "no new session after the login")
 	item.passed()
-
-
-def icon_middle_xy(line: str) -> tuple[int, int]:
-	"""App Home's icon line gives its middle already."""
-	return aatlib.number(line, "x"), aatlib.number(line, "y")
 
 
 sys.exit(run.go(before=common.before(run), after=common.after(run)))
