@@ -196,7 +196,7 @@ struct kl_system_monitor *
 kl_system_monitor_open(struct kl_system *system, unsigned period_ms)
 {
 	(void)system;
-	(void)period_ms;
+	printf("HOST monitor open period=%u\n", period_ms);
 	if (getenv("HOST_MEMORY") == NULL) {
 		errno = ENOTSUP;
 		return NULL;
