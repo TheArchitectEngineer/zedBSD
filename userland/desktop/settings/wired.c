@@ -28,7 +28,7 @@ static const char *const wired_names[SE_WIRED_FIELDS] = { "address", "subnet mas
 static int wired_parse(const char *text, uint32_t *address);
 static int wired_prefix(uint32_t mask);
 static int wired_unicast(uint32_t address);
-static void wired_set(struct se_field *field, const char *text);
+static void wired_set(struct kl_field *field, const char *text);
 static void wired_copy(char *destination, size_t size, const char *source);
 
 /*
@@ -275,7 +275,7 @@ se_wired_outcome(
 
 /*
  * Types a key into the field with the keyboard: digits and dots only, up
- * to an address's 15 characters, and Backspace.  Returns 1 when it was
+ * to an address's 15 characters, the editing keys.  Returns 1 when it was
  * the field's.
  */
 int
@@ -283,33 +283,27 @@ se_wired_type(
 	struct se_wired *wired,
 	const struct se_event *event)
 {
-	struct se_field *field;
-	struct se_field before;
-	char typed;
+	struct kl_field *field;
+	uint32_t character;
 	int used;
 
-	/* The field with the keyboard takes the key as any field does. */
+	/* A character other than a digit or a dot is taken and dropped. */
 	field = &wired->fields[wired->focus];
-	before = *field;
-	used = se_field_key(field, event);
-	if (used == 0)
-		return 0;
-
-	/* Only a digit or a dot stays, and no more than an address's characters. */
-	if (field->length > before.length) {
-		typed = field->text[field->length - 1U];
-		if ((typed < '0' || typed > '9') && typed != '.') {
-			*field = before;
-			return 1;
+	character = kl_key_character(event->key, event->modifiers);
+	if (character != 0U) {
+		if (character < '0' || character > '9') {
+			if (character != '.')
+				return 1;
 		}
-
-		/* An address has at most fifteen characters. */
-		if (field->length > KL_NETWORK_ADDRESS_MAX - 1U)
-			*field = before;
 	}
 
-	/* Succeeded: the field took the key. */
-	return 1;
+	/* An address has at most fifteen characters. */
+	if (character != 0U && field->length >= KL_NETWORK_ADDRESS_MAX - 1U)
+		return 1;
+
+	/* The field with the keyboard takes the key as any field does (in its next frame). */
+	used = se_field_key(field, event);
+	return used;
 }
 
 /* Reads a dotted IPv4 address (four numbers 0 to 255, no leading zero but a lone 0); returns 0 or EINVAL. */
@@ -402,7 +396,7 @@ wired_unicast(
 /* Puts a text into a field (empty for none). */
 static void
 wired_set(
-	struct se_field *field,
+	struct kl_field *field,
 	const char *text)
 {
 	/* The text, as far as it fits. */

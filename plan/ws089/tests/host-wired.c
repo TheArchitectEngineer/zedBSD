@@ -59,7 +59,7 @@ se_log(
 /* A field's key: the evdev codes of 1 to 0, the dot, Backspace and A, as the widgets type them. */
 int
 se_field_key(
-	struct se_field *field,
+	struct kl_field *field,
 	const struct se_event *event)
 {
 	char typed;
@@ -88,10 +88,28 @@ se_field_key(
 	return 1;
 }
 
+/* The character a key types (libkeiland's kl_key_character for the keys the test presses; wired.c drops what is no digit or dot, ws090-p007). */
+uint32_t
+kl_key_character(
+	uint32_t code,
+	unsigned modifiers)
+{
+	(void)modifiers;
+	if (code >= 2U && code <= 10U)
+		return (uint32_t)('1' + (code - 2U));
+	if (code == 11U)
+		return '0';
+	if (code == 52U)
+		return '.';
+	if (code == 30U)
+		return 'a';
+	return 0U;
+}
+
 /* Empties a field. */
 void
 se_field_clear(
-	struct se_field *field)
+	struct kl_field *field)
 {
 	memset(field, 0, sizeof(*field));
 }

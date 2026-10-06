@@ -1386,7 +1386,10 @@ struct kl_style {
 /*
  * A one-line text field's state: its UTF-8 text, the caret and the other
  * end of the selection (byte offsets on character boundaries), how far the
- * text is scrolled across, and whether its characters are shown as dots.
+ * text is scrolled across, whether its characters are shown as dots, and
+ * (KL_VERSION 47) whether it takes no input method though its characters
+ * show (an address, a key shown as typed; a secret field takes none
+ * either).
  */
 struct kl_field {
 	char text[KL_FIELD_MAX];
@@ -1395,6 +1398,7 @@ struct kl_field {
 	size_t anchor;
 	int scroll;
 	int secret;
+	int plain;
 };
 
 /*

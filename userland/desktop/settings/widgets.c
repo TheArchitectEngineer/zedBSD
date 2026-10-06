@@ -17,6 +17,8 @@
 
 #include "../artwork/mark.h"
 
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -51,12 +53,20 @@
 #define WIDGETS_BUTTON_SIDE	16
 #define WIDGETS_TEXT_BUTTON	14U
 
-/* The keys of a US keyboard by their evdev codes (from code 2), without and with Shift; 0 is a key that types nothing. */
-static const char widgets_keys[] = "1234567890-=\0\0qwertyuiop[]\0\0asdfghjkl;'`\0\\zxcvbnm,./";
-static const char widgets_shifted[] = "!@#$%^&*()_+\0\0QWERTYUIOP{}\0\0ASDFGHJKL:\"~\0|ZXCVBNM<>?";
+/* The A key (Ctrl+A selects a field's whole text). */
+#define WIDGETS_KEY_A		30U
 
-/* The first evdev code the tables above start from. */
-#define WIDGETS_KEY_FIRST	2U
+/*
+ * The widgets' input every text field lives in (se_fields_open,
+ * ws090-p007), the text the fields are drawn with, and a canvas of one
+ * pixel a field's keys are carried out on at once (se_field_key).
+ */
+static struct kl_ui *widgets_fields;
+static struct kl_text *widgets_text;
+static uint32_t widgets_pixel;
+static struct kl_canvas widgets_tiny;
+
+static uint32_t widgets_field_id(const struct kl_field *field);
 
 /*
  * Draws a page's header: its name large and its summary under it.
@@ -597,112 +607,275 @@ se_bytes_text(
 }
 
 /*
- * Types a key press into a text field: a character of a US keyboard
- * (Shift held for the other of the key), or Backspace.  Returns 1 when the
- * field used the key.
+ * Opens the widgets' input the text fields live in (ws090-p007): every
+ * field of every page is libkeiland's kl_field under this one kl_ui.
+ * Returns 0, or ENOMEM.
+ */
+int
+se_fields_open(
+	struct kl_text *text)
+{
+	int error;
+
+	/* Made once. */
+	if (widgets_fields != NULL)
+		return 0;
+	widgets_fields = kl_ui_create();
+	if (widgets_fields == NULL)
+		return ENOMEM;
+
+	/* The text, and the one pixel the keys are carried out on. */
+	widgets_text = text;
+	error = kl_canvas_init(&widgets_tiny, &widgets_pixel, 1U, 1, 1);
+	if (error != 0) {
+		se_fields_close();
+		return error;
+	}
+
+	/* Succeeded: the fields can be drawn. */
+	return 0;
+}
+
+/*
+ * Closes the fields' input.
+ */
+void
+se_fields_close(void)
+{
+	/* The input and the pixel's canvas, and they are forgotten. */
+	kl_ui_destroy(widgets_fields);
+	widgets_fields = NULL;
+	kl_canvas_release(&widgets_tiny);
+}
+
+/*
+ * Begins a frame of the fields' input (before the pages are drawn).
+ */
+void
+se_fields_begin(
+	uint64_t now_us)
+{
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return;
+	kl_ui_begin(widgets_fields, now_us);
+}
+
+/*
+ * Ends a frame of the fields' input (after the pages are drawn); the keys
+ * no field took go.  Returns 1 while a field wants another frame.
+ */
+int
+se_fields_end(
+	uint64_t now_us)
+{
+	struct kl_event event;
+	int moving;
+	int taken;
+
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return 0;
+
+	/* The frame, and what no field took (the pages took their own keys before). */
+	moving = kl_ui_end(widgets_fields, now_us);
+	for (;;) {
+		taken = kl_ui_take(widgets_fields, &event);
+		if (!taken)
+			break;
+	}
+
+	/* Reports whether a field moves. */
+	return moving;
+}
+
+/*
+ * Gives the fields the pointer and an input method's text: the pointer's
+ * moves and the main button (a click puts a field's caret), and the
+ * text an input method sends for the field with the keyboard.
+ */
+void
+se_fields_input(
+	const struct se_event *event)
+{
+	struct kl_window_event text;
+
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return;
+
+	/* Each kind of input the fields take. */
+	switch (event->type) {
+	case SE_EVENT_MOTION:
+		(void)kl_ui_pointer_motion(widgets_fields, (double)event->x, (double)event->y);
+		return;
+	case SE_EVENT_BUTTON:
+		(void)kl_ui_pointer_motion(widgets_fields, (double)event->x, (double)event->y);
+		if (event->button == SE_BUTTON_LEFT)
+			(void)kl_ui_pointer_button(widgets_fields, event->pressed, event->time * 1000U);
+		return;
+	case SE_EVENT_TEXT:
+	case SE_EVENT_TEXT_DELETE:
+	case SE_EVENT_PREEDIT:
+		break;
+	default:
+		return;
+	}
+
+	/* An input method's text, as the window gave it. */
+	memset(&text, 0, sizeof(text));
+	text.kind = KL_WINDOW_TEXT_COMMIT;
+	if (event->type == SE_EVENT_TEXT_DELETE)
+		text.kind = KL_WINDOW_TEXT_DELETE;
+	else if (event->type == SE_EVENT_PREEDIT)
+		text.kind = KL_WINDOW_TEXT_PREEDIT;
+	memcpy(text.text, event->text, sizeof(text.text));
+	text.text[sizeof(text.text) - 1U] = '\0';
+	text.before = event->before;
+	text.begin = -1;
+	text.end = -1;
+	(void)kl_ui_text(widgets_fields, &text);
+}
+
+/*
+ * Reports the fields' input, for the window's text input (main.c,
+ * kl_ui_window_text); NULL before se_fields_open.
+ */
+struct kl_ui *
+se_fields_ui(void)
+{
+	/* Succeeded: the input, or none. */
+	return widgets_fields;
+}
+
+/*
+ * Types a key press into a text field (it gets the keyboard): a character,
+ * Left, Right, Home, End, Backspace, Delete, Ctrl+A.  Enter, Esc and Tab
+ * are the pages' own.  The field takes it in the next frame.  Returns 1
+ * when the key is the field's.
  */
 int
 se_field_key(
-	struct se_field *field,
+	struct kl_field *field,
 	const struct se_event *event)
 {
-	unsigned offset;
-	char typed;
+	struct kl_style style;
+	struct kl_rect rect;
+	uint32_t character;
+	uint32_t id;
+	int editing;
 
-	/* A key with Ctrl, Alt or Super held is a shortcut, not a character. */
-	if ((event->modifiers & (SE_MOD_CTRL | SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
+	/* Nothing without the input; Alt and Super are commands, Control's only key is A. */
+	if (widgets_fields == NULL)
+		return 0;
+	if ((event->modifiers & (SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
+		return 0;
+	if ((event->modifiers & SE_MOD_CTRL) != 0U && event->key != WIDGETS_KEY_A)
 		return 0;
 
-	/* Backspace takes the last character away, all its bytes. */
-	if (event->key == SE_KEY_BACKSPACE) {
-		if (field->length > 0)
-			se_field_delete_before(field, 1U);
-
-		/* The field used the key, also when it was empty. */
-		return 1;
+	/* The editing keys, or a key that types a character. */
+	editing = 0;
+	switch (event->key) {
+	case KL_KEY_LEFT:
+	case KL_KEY_RIGHT:
+	case KL_KEY_HOME:
+	case KL_KEY_END:
+	case KL_KEY_BACKSPACE:
+	case KL_KEY_DELETE:
+	case WIDGETS_KEY_A:
+		editing = 1;
+		break;
+	default:
+		break;
 	}
-
-	/* The space. */
-	typed = '\0';
-	if (event->key == SE_KEY_SPACE)
-		typed = ' ';
-
-	/* The key's character, shifted when Shift is held. */
-	if (event->key >= WIDGETS_KEY_FIRST && event->key < WIDGETS_KEY_FIRST + sizeof(widgets_keys) - 1U) {
-		offset = event->key - WIDGETS_KEY_FIRST;
-		typed = widgets_keys[offset];
-		if ((event->modifiers & SE_MOD_SHIFT) != 0U)
-			typed = widgets_shifted[offset];
-	}
-
-	/* A key that types nothing is not the field's. */
-	if (typed == '\0')
+	character = kl_key_character(event->key, event->modifiers);
+	if (!editing && character == 0U)
 		return 0;
 
-	/* A full field keeps what it has. */
-	if (field->length + 1U >= sizeof(field->text))
-		return 1;
+	/*
+	 * The field has the keyboard, and the key is carried out at once in a
+	 * frame of the field alone on one pixel, so that the page reads the
+	 * new text before its next key (Enter right after the typing).
+	 */
+	id = widgets_field_id(field);
+	kl_ui_set_focus(widgets_fields, id, 0U);
+	(void)kl_ui_key(widgets_fields, event->key, 1, event->modifiers);
+	memset(&style, 0, sizeof(style));
+	style.canvas = &widgets_tiny;
+	style.text = widgets_text;
+	style.theme = kl_theme_default();
+	rect.x = 0;
+	rect.y = 0;
+	rect.width = 1;
+	rect.height = 1;
+	kl_ui_begin(widgets_fields, event->time * 1000U);
+	(void)kl_field(widgets_fields, &style, id, &rect, field, NULL);
+	(void)kl_ui_end(widgets_fields, event->time * 1000U);
 
-	/* The character at the end. */
-	field->text[field->length] = typed;
-	field->length++;
-	field->text[field->length] = '\0';
-
-	/* The field used the key. */
+	/* Succeeded: the field's key. */
 	return 1;
 }
 
 /*
- * Puts an input method's committed text at the end of a field (ws090-p022):
- * without control characters, as much as fits, cut at a character's start.
+ * Draws a text field in a rectangle (libkeiland's: white, the accent's
+ * edge with the keyboard, the caret, the selection, an input method's
+ * composed text) with the keyboard when focused says the page gave it, of
+ * a kind (SE_FIELD_*: a secret one as dots and, like a plain one, without
+ * an input method), a placeholder while it is empty.  Returns what happened
+ * (KL_FIELD_*).
  */
-void
-se_field_insert(
-	struct se_field *field,
-	const char *text)
+unsigned
+se_field_draw(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	struct kl_field *field,
+	const struct kl_rect *rect,
+	const char *placeholder,
+	unsigned kind,
+	int focused)
 {
-	size_t at;
-	size_t length;
-	unsigned char byte;
+	struct kl_style style;
+	uint32_t id;
+	int has;
+	unsigned changes;
 
-	/* Each byte that is no control character, while there is room. */
-	length = field->length;
-	for (at = 0; text[at] != '\0' && length + 1U < sizeof(field->text); at++) {
-		byte = (unsigned char)text[at];
-		if (byte < 0x20U || byte == 0x7fU)
-			continue;
-		field->text[length] = (char)byte;
-		length++;
-	}
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return 0U;
 
-	/* A character the room cut goes whole. */
-	while (((unsigned char)text[at] & 0xc0U) == 0x80U && length > field->length) {
-		at--;
-		length--;
-	}
-	field->text[length] = '\0';
-	field->length = length;
+	/* Its kind, and the page's keyboard decides the field's. */
+	field->secret = 0;
+	if (kind == SE_FIELD_SECRET)
+		field->secret = 1;
+	field->plain = 0;
+	if (kind == SE_FIELD_PLAIN)
+		field->plain = 1;
+	id = widgets_field_id(field);
+	has = kl_ui_has_focus(widgets_fields, id, 0U);
+	if (focused && !has)
+		kl_ui_set_focus(widgets_fields, id, 0U);
+	if (!focused && has)
+		kl_ui_clear_focus(widgets_fields);
+
+	/* libkeiland's field in Settings' canvas and text. */
+	memset(&style, 0, sizeof(style));
+	style.canvas = canvas;
+	style.text = app->text;
+	style.theme = kl_theme_default();
+	changes = kl_field(widgets_fields, &style, id, rect, field, placeholder);
+	return changes;
 }
 
-/*
- * Deletes at least a number of bytes from a field's end, back to a
- * character's start (Backspace, or an input method's deletion).
- */
-void
-se_field_delete_before(
-	struct se_field *field,
-	size_t bytes)
+/* Reports a field's widget ID: where it lives in the program (each field is a part of the application's state, kept for its life). */
+static uint32_t
+widgets_field_id(
+	const struct kl_field *field)
 {
-	/* The bytes, or all of them. */
-	if (bytes >= field->length)
-		field->length = 0;
-	else
-		field->length -= bytes;
+	uintptr_t place;
 
-	/* Back to a character's start. */
-	while (field->length > 0 && ((unsigned char)field->text[field->length] & 0xc0U) == 0x80U)
-		field->length--;
-	field->text[field->length] = '\0';
+	/* Its address's low bits, never 0. */
+	place = (uintptr_t)field;
+	return (uint32_t)(place & 0xffffffffU) | 1U;
 }
 
 /*
@@ -710,7 +883,7 @@ se_field_delete_before(
  */
 void
 se_field_clear(
-	struct se_field *field)
+	struct kl_field *field)
 {
 	volatile char *byte;
 	size_t index;
@@ -720,6 +893,9 @@ se_field_clear(
 	for (index = 0; index < sizeof(field->text); index++)
 		byte[index] = '\0';
 
-	/* Nothing typed. */
+	/* Nothing typed, the caret at the start. */
 	field->length = 0;
+	field->caret = 0;
+	field->anchor = 0;
+	field->scroll = 0;
 }

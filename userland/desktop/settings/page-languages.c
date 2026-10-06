@@ -228,53 +228,22 @@ languages_field_draw(
 	int y,
 	int width)
 {
-	const struct se_languages *languages;
+	struct se_languages *languages;
 	struct kl_rect box;
-	char dots[SE_KEY_TEXT];
-	const char *text;
-	kl_color ink;
-	size_t count;
-	int right;
 
 	/* The label. */
 	languages = &app->languages;
 	(void)kl_text_draw_fit(app->text, canvas, x + 20, kl_text_center(LANGUAGES_TEXT_SMALL, y + 8, LANGUAGES_FIELD_HEIGHT), kl_tr("Your password"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT);
 
-	/* The field: white, the accent's edge when it has the keyboard. */
+	/* The field's place; a click on it gives it the keyboard. */
 	box.x = x + LANGUAGES_FIELD_X;
 	box.y = y + 8;
 	box.width = width - LANGUAGES_FIELD_X - 20;
 	box.height = LANGUAGES_FIELD_HEIGHT;
-	kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	if (languages->focused) {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
-	} else {
-		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
-	}
-
-	/* A click on it gives it the keyboard. */
 	se_ui_hit(app, &box, SE_HIT_CONTROL, LANGUAGES_FIELD);
 
-	/* Dots for the password, or what the field is for while it is empty. */
-	for (count = 0; count < languages->password.length && count + 1U < sizeof(dots); count++)
-		dots[count] = '*';
-	dots[count] = '\0';
-	text = dots;
-	ink = SE_COLOR_TEXT;
-	if (languages->password.length == 0) {
-		text = kl_tr("Needed for the change");
-		ink = SE_COLOR_TEXT_FAINT;
-	}
-
-	/* The text inside the field, and the cursor after it when the field has the keyboard. */
-	kl_canvas_clip_push(canvas, &box);
-	right = box.x + 12 + kl_text_draw(app->text, canvas, box.x + 12, kl_text_center(LANGUAGES_TEXT_SMALL, box.y, box.height), text, strlen(text), LANGUAGES_TEXT_SMALL, 0, ink);
-	if (languages->password.length == 0)
-		right = box.x + 12;
-	if (languages->focused)
-		kl_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	kl_canvas_clip_pop(canvas);
-	memset(dots, 0, sizeof(dots));
+	/* libkeiland's field: the password as dots, without an input method (ws090-p007). */
+	(void)se_field_draw(app, canvas, &languages->password, &box, kl_tr("Needed for the change"), SE_FIELD_SECRET, languages->focused);
 }
 
 /*
