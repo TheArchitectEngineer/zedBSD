@@ -242,7 +242,7 @@ main(
 	if (options.desktop) {
 		result = fm_present_instance(&main_present);
 		if (result != VK_SUCCESS)
-			main_present.instance = VK_NULL_HANDLE;
+			fm_log("DESKTOP instance result=%d", (int)result);
 	}
 
 	/* The instance's time. */
@@ -602,9 +602,8 @@ main_loop(
 		if (main_language != NULL)
 			(void)kl_settings_dispatch(main_language);
 
-		/* The held key's repeat, and every input queued (the menus' choices among them); the desktop has its own (ui-desktop.c). */
+		/* Every input queued (the menus' choices and a held key's repeats among them); the desktop has its own (ui-desktop.c). */
 		now = fm_clock();
-		(void)fm_window_repeat(&main_window, now);
 		inputs = 0;
 		for (;;) {
 			taken = fm_window_take(&main_window, &event);
@@ -805,7 +804,6 @@ static int
 main_timeout(
 	uint64_t now)
 {
-	uint64_t wait;
 	int limit;
 	int busy;
 
@@ -821,20 +819,8 @@ main_timeout(
 	if (main_touch_due >= 0 && main_touch_due < limit)
 		limit = main_touch_due;
 
-	/* No key is held: the limit. */
-	if (main_window.repeat_key == 0U)
-		return limit;
-
-	/* A repeat already due is due now. */
-	if (main_window.repeat_at <= now)
-		return 0;
-
-	/* A held key repeats soon. */
-	wait = main_window.repeat_at - now;
-	if (wait < (uint64_t)limit)
-		return (int)wait;
-
-	/* Otherwise the limit. */
+	/* The limit (a held key's repeat shortens the wait within the application's). */
+	(void)now;
 	return limit;
 }
 
@@ -1223,7 +1209,7 @@ main_touch_pointer(
 	struct fm_event event;
 
 	/* A release after the finger went to zdesktop's drag is dropped (the drag's end comes as FM_EVENT_DRAG_DONE). */
-	if (made->kind == FM_TOUCH_POINTER_RELEASE && main_window.drag_source != NULL)
+	if (made->kind == FM_TOUCH_POINTER_RELEASE && main_window.dragging)
 		return;
 
 	/* The event at the finger's place and time. */
@@ -1509,11 +1495,10 @@ main_devices_ask(
 		return;
 	}
 
-	/* Waited for, and sent now. */
+	/* Waited for (sent with the next dispatch's flush). */
 	main_device_request = number;
 	main_device_kind = request;
 	(void)snprintf(main_device_id, sizeof(main_device_id), "%s", main_app.device_asked);
-	(void)wl_display_flush(main_window.display);
 }
 
 /* Tells what became of a mount or an eject. */

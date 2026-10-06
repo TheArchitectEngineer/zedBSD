@@ -819,6 +819,26 @@ kl_window_minimize(
 }
 
 /*
+ * Reports where the desktop's surface is on the screen, as the compositor
+ * last configured it (KL_VERSION 46).  Returns 0, or EINVAL for a window.
+ */
+int
+kl_window_desktop_place(
+	const struct kl_window *window,
+	int32_t *x,
+	int32_t *y)
+{
+	/* Only a desktop surface has a place. */
+	if (window->desktop == NULL)
+		return EINVAL;
+
+	/* Succeeded: the place. */
+	*x = window->desktop_x;
+	*y = window->desktop_y;
+	return 0;
+}
+
+/*
  * Reports the first screen's current mode: its size and its refresh in
  * millihertz (KL_VERSION 45).  Returns 0, or ENOENT while it is not known.
  */
@@ -2596,12 +2616,12 @@ window_desktop_configure(
 	struct kl_window *window;
 	int resized;
 
-	/* The acknowledgement comes before any image of the new size. */
-	(void)x;
-	(void)y;
+	/* The acknowledgement comes before any image of the new size; the place is kept. */
 	window = data;
 	kl_desktop_ack(desktop, serial);
 	window->configured = 1;
+	window->desktop_x = x;
+	window->desktop_y = y;
 
 	/* A new width or height marks the surface resized. */
 	resized = 0;

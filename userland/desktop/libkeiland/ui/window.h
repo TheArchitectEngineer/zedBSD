@@ -248,8 +248,10 @@ struct kl_window {
 	struct xdg_surface *role;
 	struct xdg_toplevel *toplevel;
 
-	/* The desktop's surface role instead of a toplevel (KL_VERSION 46, Files' desktop); NULL for a window. */
+	/* The desktop's surface role instead of a toplevel (KL_VERSION 46, Files' desktop; NULL for a window), and its place on the screen. */
 	struct kl_desktop *desktop;
+	int32_t desktop_x;
+	int32_t desktop_y;
 
 	/* The size the compositor asked for, the largest the window may choose (0 when not known), and the size it would like. */
 	uint32_t width;

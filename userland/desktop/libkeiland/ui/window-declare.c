@@ -1071,11 +1071,12 @@ declare_popup_done(
 {
 	struct kl_window *window;
 
-	/* The one open is the one that closed. */
+	/* The one open is the one that closed; the window hears it (KL_VERSION 46). */
 	window = data;
 	if (window->popup == context_menu) {
 		kl_context_menu_destroy(window->popup);
 		window->popup = NULL;
+		(void)keiui_window_push(window, KL_WINDOW_POPUP_DONE);
 	}
 }
 

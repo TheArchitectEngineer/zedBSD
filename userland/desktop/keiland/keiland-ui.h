@@ -1284,6 +1284,9 @@ int kl_window_set_glass_blur(struct kl_window *window, int enabled);
 #define KL_WINDOW_DROP_ACTION	33U
 #define KL_WINDOW_CONTROL_DROP	34U
 
+/* The context menu (kl_window_popup_menu) closed, chosen from or not (KL_VERSION 46). */
+#define KL_WINDOW_POPUP_DONE	35U
+
 /* The actions of drag and drop (bits, as wl_data_device_manager's). */
 #define KL_DND_COPY		1U
 #define KL_DND_MOVE		2U
@@ -1305,6 +1308,9 @@ int kl_window_start_drag(struct kl_window *window, const struct kl_drag_data *da
 int kl_window_set_control_value(struct kl_window *window, uint32_t id, unsigned value);
 int kl_window_set_control_suggestions(struct kl_window *window, uint32_t id, const char *const *labels, const char *const *texts, size_t count);
 int kl_window_focus_control_mode(struct kl_window *window, uint32_t id, unsigned mode);
+
+/* Where the desktop's surface is on the screen (KL_VERSION 46). */
+int kl_window_desktop_place(const struct kl_window *window, int32_t *x, int32_t *y);
 int kl_window_set_repeat(struct kl_window *window, int enabled);
 int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
 int kl_window_selection_own(const struct kl_window *window, unsigned which);
