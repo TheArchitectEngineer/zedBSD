@@ -109,6 +109,15 @@ int inflateEnd(z_streamp strm);
 int inflateReset(z_streamp strm);
 int uncompress(Bytef *dest, uLongf *destLen, const Bytef *source, uLong sourceLen);
 
+/* The compression (ws175-p006): a zlib wrapper or raw deflate; the input is taken whole and compressed at Z_FINISH. */
+int deflateInit_(z_streamp strm, int level, const char *version, int stream_size);
+int deflateInit2_(z_streamp strm, int level, int method, int windowBits, int memLevel, int strategy, const char *version, int stream_size);
+int deflate(z_streamp strm, int flush);
+int deflateEnd(z_streamp strm);
+uLong compressBound(uLong sourceLen);
+int compress(Bytef *dest, uLongf *destLen, const Bytef *source, uLong sourceLen);
+int compress2(Bytef *dest, uLongf *destLen, const Bytef *source, uLong sourceLen, int level);
+
 /* The checksums; a null buffer gives the starting value. */
 uLong adler32(uLong adler, const Bytef *buf, uInt len);
 uLong crc32(uLong crc, const Bytef *buf, uInt len);
@@ -116,6 +125,9 @@ uLong crc32(uLong crc, const Bytef *buf, uInt len);
 /* The initializers as zlib's header spells them. */
 #define inflateInit(strm)		inflateInit_((strm), ZLIB_VERSION, (int)sizeof(z_stream))
 #define inflateInit2(strm, windowBits)	inflateInit2_((strm), (windowBits), ZLIB_VERSION, (int)sizeof(z_stream))
+#define deflateInit(strm, level)	deflateInit_((strm), (level), ZLIB_VERSION, (int)sizeof(z_stream))
+#define deflateInit2(strm, level, method, windowBits, memLevel, strategy) \
+	deflateInit2_((strm), (level), (method), (windowBits), (memLevel), (strategy), ZLIB_VERSION, (int)sizeof(z_stream))
 
 #ifdef __cplusplus
 }

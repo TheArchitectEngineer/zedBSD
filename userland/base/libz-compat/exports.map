@@ -15,6 +15,13 @@
 		inflateEnd;
 		inflateReset;
 		uncompress;
+		deflateInit_;
+		deflateInit2_;
+		deflate;
+		deflateEnd;
+		compressBound;
+		compress;
+		compress2;
 		adler32;
 		crc32;
 	local:
