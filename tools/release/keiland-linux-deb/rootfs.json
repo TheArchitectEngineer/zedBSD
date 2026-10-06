@@ -34,7 +34,7 @@
     "mirrors": ["deb http://deb.debian.org/debian trixie main",
                 "deb http://deb.debian.org/debian trixie-updates main",
                 "deb http://security.debian.org/debian-security trixie-security main",
-                "deb http://archive.raspberrypi.com/debian trixie main"],
+                "deb [signed-by={raspberrypi_keyring}] http://archive.raspberrypi.com/debian trixie main"],
     "checks": ["rpios13"]
   },
   "environments": {
@@ -58,7 +58,7 @@
       "raspberrypi": true,
       "mirrors": {"arm64": ["deb http://deb.debian.org/debian trixie main",
                             "deb http://security.debian.org/debian-security trixie-security main",
-                            "deb http://archive.raspberrypi.com/debian trixie main"]}
+                            "deb [signed-by={raspberrypi_keyring}] http://archive.raspberrypi.com/debian trixie main"]}
     }
   },
   "raspberrypi_key": {

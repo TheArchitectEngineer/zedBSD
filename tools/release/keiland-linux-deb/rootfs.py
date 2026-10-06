@@ -50,7 +50,11 @@ def snapshot_function():
 
 
 def raspberrypi_keyring(directory):
-    """The Raspberry Pi archive's key, its fingerprint checked against rootfs.json, dearmored."""
+    """
+    The Raspberry Pi archive's key, its fingerprint checked against rootfs.json, dearmored.  apt
+    reads it as the namespace's root, which cannot enter a private home, so the keyring is kept
+    in KEILAND_DEB_TMPDIR (default /var/tmp) under its fingerprint, made once and reused.
+    """
     config = CONFIG['raspberrypi_key']
     armored = directory / 'raspberrypi.gpg.key'
     run(['curl', '-fsSL', '--retry', '2', '--max-time', '120', config['url'], '-o', str(armored)], timeout=140)
@@ -59,9 +63,19 @@ def raspberrypi_keyring(directory):
     fingerprints = [line.split(':')[9] for line in listing.splitlines() if line.startswith('fpr:')]
     if not fingerprints or fingerprints[0] != config['fingerprint']:
         raise RuntimeError('Raspberry Pi archive key fingerprint mismatch: ' + ' '.join(fingerprints))
-    keyring = directory / 'raspberrypi.gpg'
-    run(['gpg', '--batch', '--yes', '--dearmor', '-o', str(keyring), str(armored)])
+    keys = Path(os.environ.get('KEILAND_DEB_TMPDIR', '/var/tmp')) / 'keiland-deb-keys'
+    keys.mkdir(mode=0o755, exist_ok=True)
+    keyring = keys / ('raspberrypi-' + config['fingerprint'] + '.gpg')
+    if not keyring.exists():
+        run(['gpg', '--batch', '--yes', '--dearmor', '-o', str(keyring), str(armored)])
+        keyring.chmod(0o644)
     return keyring
+
+
+def mirrors(lines, keyrings):
+    """The mirror lines with the Raspberry Pi keyring's path put in."""
+    path = str(keyrings[0]) if keyrings else ''
+    return [line.replace('{raspberrypi_keyring}', path) for line in lines]
 
 
 def mmdebstrap(architecture, suite, mirrors, include, keyrings, hooks, log, timeout):
@@ -114,14 +128,14 @@ def inspect(package, architecture):
 def resolve(package, architecture, name, directory, keyrings):
     """apt's --simulate of the deb in a fresh rootfs of one distribution; the transcript and its status."""
     environment = CONFIG['environments'][name]
-    keys = [environment['keyring']] if 'keyring' in environment else [DEBIAN_KEYRING, *keyrings]
+    keys = [environment['keyring']] if 'keyring' in environment else [DEBIAN_KEYRING]
     out = directory / ('check-' + name)
     out.mkdir()
     script = 'apt-get install --simulate /tmp/' + package.name + ' > /tmp/simulate.txt 2>&1; echo exit=$? >> /tmp/simulate.txt'
     hooks = ['copy-in ' + shlex.quote(str(package)) + ' /tmp',
              'chroot "$1" sh -c ' + shlex.quote(script),
              'copy-out /tmp/simulate.txt ' + shlex.quote(str(out))]
-    mmdebstrap(architecture, environment['suite'], environment['mirrors'][architecture], [], keys, hooks,
+    mmdebstrap(architecture, environment['suite'], mirrors(environment['mirrors'][architecture], keyrings), [], keys, hooks,
                directory / ('check-' + name + '.log'), 3600)
     transcript = (out / 'simulate.txt').read_text()
     return {'environment': name, 'resolved': transcript.rstrip().endswith('exit=0'),
@@ -164,7 +178,7 @@ def main():
              'chroot "$1" env SOURCE_DATE_EPOCH=%d LC_ALL=C.UTF-8 sh -c %s' % (epoch, shlex.quote(script)),
              'sync-out /tmp/keiland-output ' + shlex.quote(str(output))]
     started = time.monotonic()
-    mmdebstrap(architecture, target['suite'], target['mirrors'], include, [DEBIAN_KEYRING, *keyrings], hooks,
+    mmdebstrap(architecture, target['suite'], mirrors(target['mirrors'], keyrings), include, [DEBIAN_KEYRING], hooks,
                directory / 'build.log', 14400)
     elapsed = int(time.monotonic() - started)
     packages = sorted(output.glob('*.deb'))
