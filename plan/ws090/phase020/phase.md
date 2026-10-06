@@ -1,6 +1,6 @@
 # ws090-p020: UI の font を Mahora へ（Regular・Mono・Bold）
 
-Status: planned（2026-10-06 Q1 が作成）
+Status: test-wait（q812、P1、2026-10-06 実装済み・T1 の PNG とユーザーの外観の判断待ち。下の「q812（P1）」）
 WS: [WS090](../ws.md)
 Related: [BUG-205](../../bugs/BUG-205.md)（太字を輪郭の太らせで作っていた）
 
@@ -28,3 +28,31 @@ font の file は main 712a16880 で `userland/desktop/fonts/Mahora-{Regular,Mon
 - よって連鎖は、UI: Mahora → JetBrains Mono（記号・Latin-1）→ Droid Sans Fallback（日本語）。Terminal: Mahora Mono → JetBrains Mono → Droid Sans Fallback（日本語は 2 セル）。可変ピッチの文の中の記号は JetBrains Mono の字形になる（ユーザーに報告済み）。
 - fallback の file が無くても動く（開けなければ飛ばし、無い字は □）。Mahora に日本語が足されれば fallback を引かない。
 - 行の高さ・baseline は font に依らない決まった値か Mahora の値で、fallback の有無で layout が動かない。
+
+## q812（P1、2026-10-06）
+
+### 仕組み
+
+- **libtruetype の companion**（`companion.c`、`truetype_open_companions(face, bold_path, next_path)`・`truetype_glyph_bold_face`）: face の横に入れた file を一つの font のように使う。
+  - next（monospace の fallback、JetBrains Mono）: face に無い字は next で探し、glyph の番号を face の後に続けて返す。その番号を渡した全ての call（metrics・描画・design の advance・outline・colour）は next の face で、face の大きさと太さ（太らせ）で描く。design 単位の call は next の em を face の em に換算（JetBrains Mono の 1000 → Mahora Mono の 2048）。
+  - bold（Mahora Bold）: face が bold の間、face 自身の glyph は bold の face の同じ番号の glyph をそのまま描く（太らせない）。glyph の数・em・全 glyph の幅が face と同じ時だけ受ける（Mahora Mono の横では断る）。
+  - 行（`truetype_metrics`・`truetype_design_metrics`）は face 自身の値のまま。companion の file が有っても無くても行・baseline は動かない。読めない file は飛ばす（無い字は face の □）。
+  - Mahora に字が足されれば、face の glyph が先に引かれるので自然に Mahora を使う。
+- **path**: `userland/desktop/paths.h` に `KEILAND_FONT_BOLD`（keiland-bold.ttf）と `KEILAND_FONT_FALLBACK_MONO`（keiland-fallback-mono.ttf）。
+- **install**（zedBSD `wayland/Makefile`、`Makefile.linux`・`.freebsd`）: keiland.ttf=Mahora-Regular、keiland-bold.ttf=Mahora-Bold、keiland-mono.ttf=Mahora-Mono、keiland-fallback-mono.ttf=JetBrains Mono、keiland-fallback.ttf=Droid Sans Fallback（そのまま）。licenses に `Mahora-LICENSE.txt`（新規、tree の Zlib、ユーザーの著作）、Inter-OFL は入れない（Inter は使わない、tree の file は残す）。`tools/release/license-components.json` の keiland-fonts を Mahora に。
+- **各描画**（主 font を開いた直後に 1 行）: libkeiland `ui/text.c`（設定・Phone・Mailer・Calendar・Monitor・Video Player・IME の popup・chooser）、Files の `text.c`（Settings も）、Text Editor、PDF Viewer・Image Viewer の UI、Notes の `ui.c`、compositor の `glass.c`、X server の core font（next だけ）、libbrowser の sans（bold と next）と mono（next）、libpdf の代わりの font（next、bold は既存の keiland-bold.ttf の名前の探しで Mahora Bold が当たる）。
+- **libbrowser の太字**: Mahora Bold にある glyph は bold の face でそのまま、無い glyph（記号・日本語）は今の 1 pixel の太らせ（`truetype_glyph_bold_face` で分ける）。web font は変えない。
+- **Terminal**: cell の行は font に依らない決まった値（ascent 1.02・descent 0.30 em、JetBrains Mono の時の値）。grid の間隔と罫線の繋がりを今のまま保つ。太字は描かない（bold は渡さない）。
+- **他の UI の行**: Mahora 自身の値（ascent 0.8・descent 0.2 em、Inter の 0.97・0.24 より詰まる）。Q1 の了解（2026-10-06）。
+
+### 確認
+
+- host: `sh plan/ws090/tests/host-mahora.sh`（rm 無し）→ `host-mahora: PASS`（companion の 23 項目: 字の番号、bold の face と Mono での拒否、bold の A の advance が regular と同じ、行が Mahora のまま、em の換算 1229、file が無い時）。libkeiland の text で描いた見本 `build/ws090-p020/host/mahora.png`（ASCII・記号・Latin-1・日本語、両方の太さ、Mono と罫線）。
+- build: zedBSD amd64 の libtruetype・libkeiland・libpdf・libbrowser・textedit・terminal・files・settings・pdfviewer・imageview・notes・wayland・xserver・browser（exit 0、warning 0）。`make keiland-linux` の gcc と clang（exit 0、warning・error 0、share/fonts に新しい名前）。
+- 未実施: FreeBSD の build（環境が無い）、`license-inventory.py`（image が要る）、QEMU（T1 に依頼: desktop・各 app・Terminal の PNG をユーザーが見る）。
+
+### ユーザーへの報告
+
+- 可変ピッチの文の中の記号・Latin-1（· → … × © é ü ß €）は JetBrains Mono の字形（幅 0.6 em）で描かれる。
+- UI の行が Inter の時より詰まる（16 px で行 16 px）。Mahora の hhea（lineGap など）で調整できる。
+- Mahora は Inter より cap height が低く（0.65 対 0.73 em）、同じ px で小さく見える。

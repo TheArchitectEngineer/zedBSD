@@ -30,6 +30,14 @@
  * other PDF becomes the base as it stands: its pages are drawn under the
  * strokes, except the pages of a notebook Notes saved that no other program
  * changed, whose strokes stay editable and are written anew in place.
+ *
+ * ws175-p007: a page of the base with edits of its objects is written with
+ * libpdf's editor (its content changed, the strokes over it), and the
+ * images inserted on a page of Notes' own are drawn under its strokes
+ * (plan/ws175/phase001/design.md section 6.4 and [N2]).  Opening checks
+ * that every edit's object is on the base's page and reads every image
+ * back from the file; when one is not, the file is opened as it is shown
+ * (NOTES_OPENED_REBASED, design.md [H3], [N1]).
  */
 
 #include "notes.h"
@@ -55,14 +63,17 @@
 
 static int save_whole(struct notes_document *document, const char *temporary);
 static int save_update(struct notes_document *document, const char *temporary);
-static int save_page(struct pdf_writer *writer, struct notes_page *page);
+static int save_page(struct pdf_writer *writer, struct notes_document *document, size_t index);
 static int save_strokes(struct pdf_writer *writer, struct notes_page *page);
 static int save_edit_data(struct pdf_writer *writer, struct notes_document *document);
 static int save_sync(const char *path);
 static int save_sync_folder(const char *path);
 static int open_own(struct notes_document *saved, struct pdf_document *file);
 static int open_base(struct notes_document *saved, const unsigned char *data, size_t size, struct pdf_document *file);
-static int open_as_base(struct notes_document *document, struct notes_document *saved, int decoded, const unsigned char *data, size_t size, struct pdf_document *file, size_t *changed);
+static int open_as_base(struct notes_document *document, struct notes_document *saved, int decoded, int rebase, const unsigned char *data, size_t size, struct pdf_document *file, size_t *changed);
+static int open_edits(struct notes_document *saved, struct pdf_document *file);
+static int open_keys(struct notes_document *saved, size_t index);
+static int open_images(struct notes_page *page, struct pdf_document *file, size_t index);
 static int page_unchanged(const struct notes_page *page, struct pdf_document *file, size_t index);
 static int read_file(const char *path, size_t limit, unsigned char **data, size_t *size);
 static void hash_bytes(const unsigned char *data, size_t size, unsigned char digest[32]);
@@ -161,6 +172,7 @@ notes_open_pdf(
 	int is_signed;
 	int encrypted;
 	int decoded;
+	int rebase;
 	int error;
 
 	/* The file's bytes. */
@@ -216,9 +228,12 @@ notes_open_pdf(
 			decoded = 1;
 	}
 
-	/* A notebook written on another program's PDF, whose newest revision is Notes' own: its base again. */
+	/* A notebook written on another program's PDF, whose newest revision is Notes' own: its base again, its edits checked. */
+	rebase = 0;
 	if (decoded && saved.base_size != 0U) {
 		error = open_base(&saved, data, size, file);
+		if (error == 0)
+			error = open_edits(&saved, file);
 		if (error == 0) {
 			pdf_document_close(file);
 			free(data);
@@ -226,11 +241,22 @@ notes_open_pdf(
 			*opened = NOTES_OPENED_ANNOTATED;
 			return 0;
 		}
+
+		/* Edits that do not match the file: it is opened as it is shown. */
+		if (error == ESTALE && saved.base != NULL)
+			rebase = 1;
 	}
 
-	/* A notebook Notes saved, unchanged since. */
+	/* A notebook Notes saved, unchanged since, its edits checked. */
 	if (decoded && saved.base_size == 0U) {
 		error = open_own(&saved, file);
+		if (error == 0) {
+			error = open_edits(&saved, file);
+			if (error == ESTALE)
+				rebase = 1;
+		}
+
+		/* Its edits match: the notebook as it was saved. */
 		if (error == 0) {
 			pdf_document_close(file);
 			free(data);
@@ -240,9 +266,17 @@ notes_open_pdf(
 		}
 	}
 
+	/* Memory gone is a failure, not another program's change. */
+	if (decoded && error == ENOMEM) {
+		notes_document_free(&saved);
+		pdf_document_close(file);
+		free(data);
+		return ENOMEM;
+	}
+
 	/* Any other PDF is the base as it stands. */
 	changed = 0;
-	error = open_as_base(document, &saved, decoded, data, size, file, &changed);
+	error = open_as_base(document, &saved, decoded, rebase, data, size, file, &changed);
 	if (decoded)
 		notes_document_free(&saved);
 	free(data);
@@ -251,10 +285,12 @@ notes_open_pdf(
 		return error;
 	}
 
-	/* Succeeded: another program's PDF, or a notebook another program changed. */
+	/* Succeeded: another program's PDF, a notebook another program changed, or one whose edits did not match. */
 	*opened = NOTES_OPENED_FOREIGN;
 	if (decoded)
 		*opened = NOTES_OPENED_CHANGED;
+	if (rebase)
+		*opened = NOTES_OPENED_REBASED;
 	return 0;
 }
 
@@ -344,7 +380,7 @@ save_whole(
 
 	/* Each page with its strokes. */
 	for (index = 0; index < document->page_count; index++) {
-		error = save_page(writer, document->pages[index]);
+		error = save_page(writer, document, index);
 		if (error != 0) {
 			pdf_writer_destroy(writer);
 			return error;
@@ -390,6 +426,7 @@ save_update(
 	const char *temporary)
 {
 	struct pdf_writer *writer;
+	struct pdf_page_editor *editor;
 	struct notes_page *page;
 	size_t index;
 	int error;
@@ -403,8 +440,8 @@ save_update(
 	for (index = 0; index < document->page_count; index++) {
 		page = document->pages[index];
 
-		/* A page of the base without strokes stays as the base has it. */
-		if (page->origin == NOTES_ORIGIN_OVER && page->stroke_count == 0U) {
+		/* A page of the base without strokes or edits stays as the base has it. */
+		if (page->origin == NOTES_ORIGIN_OVER && page->stroke_count == 0U && page->edit_count == 0U) {
 			error = pdf_writer_keep_page(writer, page->source);
 			if (error != 0) {
 				pdf_writer_destroy(writer);
@@ -415,13 +452,27 @@ save_update(
 			continue;
 		}
 
-		/* A page of the base with strokes: drawn over, or replaced when its content was Notes' own. */
-		if (page->origin == NOTES_ORIGIN_OVER) {
+		/*
+		 * A page of the base: edited (its content changed, ws175-p007), or
+		 * drawn over; replaced when its content was Notes' own.
+		 */
+		if (page->origin == NOTES_ORIGIN_OVER && page->edit_count > 0U) {
+			error = notes_page_editor(document, index, &editor);
+			if (error == 0)
+				error = pdf_writer_begin_page_edited(writer, editor);
+		} else if (page->origin == NOTES_ORIGIN_OVER) {
 			error = pdf_writer_begin_page_over(writer, page->source, PDF_PAGE_OVERLAY);
 		} else if (page->origin == NOTES_ORIGIN_REPLACE) {
 			error = pdf_writer_begin_page_over(writer, page->source, PDF_PAGE_REPLACE);
 		} else {
 			error = pdf_writer_begin_page(writer, page->width, page->height);
+		}
+
+		/* The images inserted on a page of Notes' own, under its strokes (design.md [N2]). */
+		if (error == 0 && page->origin != NOTES_ORIGIN_OVER && page->edit_count > 0U) {
+			error = notes_page_editor(document, index, &editor);
+			if (error == 0)
+				error = pdf_writer_draw_page_editor(writer, editor);
 		}
 
 		/* A page that could not be begun ends the save. */
@@ -462,18 +513,34 @@ save_update(
 	return 0;
 }
 
-/* Writes one page of a notebook written whole: each stroke's outline filled in its colour. */
+/*
+ * Writes one page of a notebook written whole: the images inserted on it
+ * (ws175-p007), then each stroke's outline filled in its colour.
+ */
 static int
 save_page(
 	struct pdf_writer *writer,
-	struct notes_page *page)
+	struct notes_document *document,
+	size_t index)
 {
+	struct pdf_page_editor *editor;
+	struct notes_page *page;
 	int error;
 
 	/* The page. */
+	page = document->pages[index];
 	error = pdf_writer_begin_page(writer, page->width, page->height);
 	if (error != 0)
 		return error;
+
+	/* Its inserted images. */
+	if (page->edit_count > 0U) {
+		error = notes_page_editor(document, index, &editor);
+		if (error == 0)
+			error = pdf_writer_draw_page_editor(writer, editor);
+		if (error != 0)
+			return error;
+	}
 
 	/* Its strokes. */
 	error = save_strokes(writer, page);
@@ -742,15 +809,18 @@ open_base(
  * Makes a document whose base is a PDF as it stands: each page of the file
  * a page of the base, drawn under the strokes -- except that a page of a
  * notebook Notes saved (the decoded edit data) that no other program
- * changed keeps its strokes, editable, to be written anew in place.  The
- * pages of saved that stay are taken from it.  changed counts the
- * notebook's pages that became background.
+ * changed keeps its strokes, editable, to be written anew in place, when
+ * every image inserted on it reads back from the file (design.md [N1]).
+ * The pages of saved that stay are taken from it.  With rebase, every page
+ * is background (a notebook whose edits did not match).  changed counts
+ * the notebook's pages that became background.
  */
 static int
 open_as_base(
 	struct notes_document *document,
 	struct notes_document *saved,
 	int decoded,
+	int rebase,
 	const unsigned char *data,
 	size_t size,
 	struct pdf_document *file,
@@ -772,11 +842,13 @@ open_as_base(
 
 	/* Each page of the file, in order. */
 	for (index = 0; index < count; index++) {
-		/* A page of the notebook no other program changed keeps its strokes. */
+		/* A page of the notebook no other program changed keeps its strokes, and its images when they read back. */
 		unchanged = 0;
-		if (decoded && index < saved->page_count) {
+		if (decoded && !rebase && index < saved->page_count) {
 			if (saved->pages[index]->origin != NOTES_ORIGIN_OVER)
 				unchanged = page_unchanged(saved->pages[index], file, index);
+			if (unchanged && saved->pages[index]->edit_count > 0U)
+				unchanged = open_images(saved->pages[index], file, index) == 0;
 		}
 
 		/* Such a page is taken from the notebook, to be written anew in place. */
@@ -845,6 +917,136 @@ open_as_base(
 
 	/* Succeeded: the notebook writes on the file as it stands. */
 	return 0;
+}
+
+/*
+ * Checks a notebook's edits against its file (design.md [H3]): every
+ * object an edit names is on its page of the base, and every image reads
+ * back from the file's page that uses it.  Returns 0, ESTALE when one does
+ * not, or ENOMEM.
+ */
+static int
+open_edits(
+	struct notes_document *saved,
+	struct pdf_document *file)
+{
+	size_t index;
+	int error;
+
+	/* Each page with edits. */
+	for (index = 0; index < saved->page_count; index++) {
+		if (saved->pages[index]->edit_count == 0U)
+			continue;
+
+		/* Its objects, then its images. */
+		error = open_keys(saved, index);
+		if (error == 0)
+			error = open_images(saved->pages[index], file, index);
+		if (error == ENOMEM)
+			return ENOMEM;
+		if (error != 0)
+			return ESTALE;
+	}
+
+	/* Succeeded: the edits are the file's. */
+	return 0;
+}
+
+/*
+ * Checks that every object of the page's own an edit names is on the
+ * base's page (by its kind, place, length and fingerprint).  Returns 0,
+ * ESTALE, or the failure of opening the page's editor.
+ */
+static int
+open_keys(
+	struct notes_document *saved,
+	size_t index)
+{
+	struct pdf_page_editor *editor;
+	struct notes_page *page;
+	size_t found;
+	size_t at;
+	int error;
+
+	/* A page with edits of its own objects only on a base. */
+	page = saved->pages[index];
+	error = 0;
+	editor = NULL;
+	for (at = 0; at < page->edit_count && error == 0; at++) {
+		if ((page->edits[at]->flags & NOTES_EDIT_INSERTED) != 0U)
+			continue;
+		if (page->origin != NOTES_ORIGIN_OVER || saved->base == NULL) {
+			error = ESTALE;
+			break;
+		}
+
+		/* The base's page, scanned once. */
+		if (editor == NULL)
+			error = pdf_page_editor_open(saved->base, page->source, &editor);
+		if (error != 0)
+			break;
+
+		/* The object by its key. */
+		error = pdf_page_editor_find(editor, &page->edits[at]->key, &found);
+		if (error == ENOENT)
+			error = ESTALE;
+	}
+
+	/* The editor goes. */
+	pdf_page_editor_close(editor);
+	return error;
+}
+
+/*
+ * Reads back the images a page's edits hold from the file's page (their
+ * private keys, libpdf's pdf_page_editor_read_image): each image without
+ * its bytes gets them.  Returns 0, ESTALE when one is not there, ENOMEM,
+ * or the failure of opening the page's editor.
+ */
+static int
+open_images(
+	struct notes_page *page,
+	struct pdf_document *file,
+	size_t index)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_image_source source;
+	struct notes_image *image;
+	void *owned;
+	size_t at;
+	int error;
+
+	/* Each image without its bytes. */
+	error = 0;
+	editor = NULL;
+	for (at = 0; at < page->edit_count && error == 0; at++) {
+		image = page->edits[at]->image;
+		if (image == NULL || image->data != NULL)
+			continue;
+
+		/* The file's page, scanned once. */
+		if (editor == NULL)
+			error = pdf_page_editor_open(file, index, &editor);
+		if (error != 0)
+			break;
+
+		/* The image by its number, as the PDF has it, the same size. */
+		memset(&source, 0, sizeof(source));
+		source.size = sizeof(source);
+		owned = NULL;
+		error = pdf_page_editor_read_image(editor, image->id, &source, &owned);
+		if (error == 0 && (source.width != image->width || source.height != image->height))
+			error = ESTALE;
+		if (error == 0)
+			error = notes_image_set_bytes(image, &source);
+		free(owned);
+		if (error != 0 && error != ENOMEM)
+			error = ESTALE;
+	}
+
+	/* The editor goes. */
+	pdf_page_editor_close(editor);
+	return error;
 }
 
 /*

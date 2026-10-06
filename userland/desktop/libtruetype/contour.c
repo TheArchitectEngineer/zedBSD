@@ -23,6 +23,7 @@
 #include "internal.h"
 
 #include <errno.h>
+#include <math.h>
 
 /* The flags each point of a simple glyph carries. */
 #define CONTOUR_ON_CURVE	0x01U
@@ -85,6 +86,8 @@ struct contour_transform {
 	float dy;
 };
 
+static int contour_outline(const struct truetype_face *face, unsigned glyph, struct truetype_glyph_outline *outline);
+static void contour_scale(struct truetype_glyph_outline *outline, unsigned from, unsigned to);
 static int contour_load_glyph(struct contour_walk *walk, unsigned glyph, unsigned depth);
 static int contour_load_simple(struct contour_walk *walk, const uint8_t *entry, uint32_t length);
 static int contour_load_composite(struct contour_walk *walk, const uint8_t *entry, uint32_t length, unsigned depth);
@@ -97,10 +100,41 @@ static float contour_f2dot14(const uint8_t *bytes);
  * Reads one glyph's contours out of glyf, in design units.
  *
  * The arrays and their capacities come from the caller.  When they are too
- * small, ENOSPC is reported and the counts say how many are needed.
+ * small, ENOSPC is reported and the counts say how many are needed.  A
+ * glyph of a companion (companion.c) is read from it and scaled to the
+ * face's em.
  */
 int
 truetype_glyph_outline(
+	const struct truetype_face *face,
+	unsigned glyph,
+	struct truetype_glyph_outline *outline)
+{
+	const struct truetype_face *drawn;
+	int error;
+
+	/* Refuses a call without a face. */
+	if (face == NULL)
+		return EINVAL;
+
+	/* The face among its companions that draws the glyph, and the outline in its units. */
+	drawn = truetype_resolve_const(face, &glyph);
+	error = contour_outline(drawn, glyph, outline);
+	if (error != 0 && error != ENOSPC)
+		return error;
+
+	/* In the units of the face asked (also what arrays too small were given, with the counts). */
+	contour_scale(outline, drawn->units_per_em, face->units_per_em);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the outline holds every contour of the glyph. */
+	return 0;
+}
+
+/* Reads one glyph's contours out of one face's glyf, in its design units (truetype_glyph_outline). */
+static int
+contour_outline(
 	const struct truetype_face *face,
 	unsigned glyph,
 	struct truetype_glyph_outline *outline)
@@ -179,6 +213,36 @@ truetype_glyph_outline(
 
 	/* Succeeded: the outline holds every contour of the glyph. */
 	return 0;
+}
+
+/* Scales an outline read in one em's units (from) to another's (to); the same em leaves it. */
+static void
+contour_scale(
+	struct truetype_glyph_outline *outline,
+	unsigned from,
+	unsigned to)
+{
+	float ratio;
+	unsigned index;
+
+	/* The same units, or none to scale from. */
+	if (from == to || from == 0U)
+		return;
+	ratio = (float)to / (float)from;
+
+	/* Each point the caller's array holds. */
+	for (index = 0; index < outline->point_count && index < outline->point_capacity; index++) {
+		outline->points[index].x *= ratio;
+		outline->points[index].y *= ratio;
+	}
+
+	/* The advance, the bearing and the box, to the nearest unit. */
+	outline->advance = (int)((float)outline->advance * ratio + 0.5f);
+	outline->left_side_bearing = (int)lroundf((float)outline->left_side_bearing * ratio);
+	outline->x_min = (int)lroundf((float)outline->x_min * ratio);
+	outline->y_min = (int)lroundf((float)outline->y_min * ratio);
+	outline->x_max = (int)lroundf((float)outline->x_max * ratio);
+	outline->y_max = (int)lroundf((float)outline->y_max * ratio);
 }
 
 /* Appends one glyph's contours, simple or composite. */

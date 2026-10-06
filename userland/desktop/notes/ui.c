@@ -34,6 +34,8 @@
 
 #include "app.h"
 
+#include "userland/desktop/paths.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -188,6 +190,9 @@ notes_ui_open(
 		notes_ui_close(ui);
 		return error;
 	}
+
+	/* Its companions: Mahora Bold, and the monospaced fallback for the signs it lacks (ws090-p020). */
+	(void)truetype_open_companions(ui->face, KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
 
 	/* The labels' size. */
 	error = truetype_set_pixel_size(ui->face, UI_FONT_PIXELS);

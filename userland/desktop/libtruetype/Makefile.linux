@@ -7,5 +7,6 @@ KEILAND_LINUX_TRUETYPE_SOURCES := userland/desktop/libtruetype/face.c \
 	userland/desktop/libtruetype/glyph.c \
 	userland/desktop/libtruetype/design.c \
 	userland/desktop/libtruetype/contour.c \
-	userland/desktop/libtruetype/color.c
+	userland/desktop/libtruetype/color.c \
+	userland/desktop/libtruetype/companion.c
 $(eval $(call KEILAND_LINUX_LIBRARY,truetype,libtruetype.so,$(KEILAND_LINUX_TRUETYPE_SOURCES),,-lm,userland/desktop/libtruetype/exports.map))

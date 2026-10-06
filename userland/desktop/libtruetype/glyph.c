@@ -129,6 +129,9 @@ truetype_glyph_metrics(
 	if (face == NULL || metrics == NULL)
 		return EINVAL;
 
+	/* The face among its companions that draws the glyph (companion.c). */
+	face = truetype_resolve(face, &glyph);
+
 	/* The outline is large; it belongs on the heap, not on the stack. */
 	outline = malloc(sizeof(*outline));
 
@@ -160,6 +163,9 @@ truetype_render_glyph(
 	/* Validates the arguments. */
 	if (face == NULL || metrics == NULL || bitmap == NULL)
 		return EINVAL;
+
+	/* The face among its companions that draws the glyph (companion.c). */
+	face = truetype_resolve(face, &glyph);
 	outline = malloc(sizeof(*outline));
 
 	/* Handles the allocation failure. */

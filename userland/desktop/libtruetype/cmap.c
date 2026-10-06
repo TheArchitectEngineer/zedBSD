@@ -324,13 +324,26 @@ truetype_glyph_index(
 	const struct truetype_face *face,
 	uint32_t codepoint)
 {
+	unsigned glyph;
+	unsigned other;
+
 	/* Validates the arguments. */
 	if (face == NULL || face->cmap_subtable == NULL)
 		return 0;
 
-	/* Returns the computed result. */
-	return lookup(face, face->cmap_subtable, face->cmap_subtable_size,
-		      face->cmap_format, codepoint);
+	/* The face's own glyph. */
+	glyph = lookup(face, face->cmap_subtable, face->cmap_subtable_size,
+		       face->cmap_format, codepoint);
+	if (glyph != 0U || face->next == NULL)
+		return glyph;
+
+	/* The next companion's, numbered after the face's own (companion.c). */
+	other = truetype_glyph_index(face->next, codepoint);
+	if (other == 0U)
+		return 0;
+
+	/* Succeeded: the companion's glyph. */
+	return (unsigned)face->glyph_count + other;
 }
 
 /*

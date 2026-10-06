@@ -101,6 +101,27 @@ int truetype_set_pixel_size(struct truetype_face *face, unsigned pixels);
  * Returns zero, or an errno value.
  */
 int truetype_set_bold(struct truetype_face *face, int bold);
+/*
+ * Opens a face's companions (ws090-p020), the files a desktop installs
+ * beside its font: bold_path holds the face's own glyphs, in the same
+ * order, in a bold weight, and draws them while the face is bold (instead
+ * of widening them); next_path is a face that draws the characters this
+ * one lacks.  truetype_glyph_index numbers the next face's glyphs after
+ * the face's own, and every call given such a number draws from it at the
+ * face's size and weight (the calls in design units scale its units to the
+ * face's em).  The face's vertical measures stay its own.  Either path may
+ * be NULL, and a file that cannot be read, or a bold face of other glyphs,
+ * is left out.  The companions close with the face.  Returns zero, or
+ * EINVAL for no face or one that has companions already.
+ */
+int truetype_open_companions(struct truetype_face *face,
+			     const char *bold_path, const char *next_path);
+/*
+ * Tells whether a glyph is drawn from the face's bold companion while the
+ * face is bold (1), so that a caller widening bold glyphs itself leaves it
+ * as it is, or not (0).
+ */
+int truetype_glyph_bold_face(const struct truetype_face *face, unsigned glyph);
 
 int truetype_metrics(const struct truetype_face *face,
 		     struct truetype_metrics *metrics);

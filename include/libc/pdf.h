@@ -434,6 +434,14 @@ int pdf_writer_begin_page_edited(struct pdf_writer *writer, const struct pdf_pag
  */
 int pdf_page_editor_read_image(const struct pdf_page_editor *editor, unsigned long id, struct pdf_image_source *image, void **owned);
 
+/*
+ * A blank editor (ws175-p007): an empty page of a size (points), for the
+ * images inserted on a page of Notes' own; the writer draws them on its
+ * open page (a new page, or one it replaces), in the page's shown space.
+ */
+int pdf_page_editor_blank(double width, double height, struct pdf_page_editor **editor);
+int pdf_writer_draw_page_editor(struct pdf_writer *writer, const struct pdf_page_editor *editor);
+
 #ifdef __cplusplus
 }
 #endif
