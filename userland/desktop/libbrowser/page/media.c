@@ -64,6 +64,7 @@ struct page_media {
 	int muted;
 	int play_wanted;
 	int sized;
+	double told_time;
 	struct page *page;
 };
 
@@ -76,6 +77,8 @@ static void media_arrived(void *context, struct net_request *request);
 static int media_read_at(void *context, uint64_t offset, void *data, size_t size);
 static struct page_media *media_find(const struct page *page, const struct dom_element *element);
 static int media_follow(struct page_media *media);
+static void media_events(struct page_media *media, unsigned before);
+static void media_fire(struct page_media *media, const char *type);
 
 /*
  * Starts a page's table of media empty.
@@ -190,12 +193,16 @@ page_media_timeout(
 	size_t index;
 	int timeout;
 
-	/* A playing video's next picture: a frame's time (the engine's wake tells of pictures as they are decoded). */
+	/* A playing video's next picture: a frame's time; other playing media, their time's updates. */
 	timeout = -1;
 	for (index = 0; index < page->media.count; index++) {
 		media = *(struct page_media **)wb_vector_at(&page->media, index);
-		if (media->engine != NULL && media->status.state == MEDIA_PLAYING && media->status.has_video)
+		if (media->engine == NULL || media->status.state != MEDIA_PLAYING)
+			continue;
+		if (media->status.has_video)
 			timeout = 10;
+		else if (timeout < 0)
+			timeout = 250;
 	}
 
 	/* The wait. */
@@ -244,7 +251,7 @@ page_media_play(
 	if (media == NULL)
 		return ENOENT;
 
-	/* Remembered until the engine is open, or asked of it now. */
+	/* Remembered until the engine is open, or asked of it now (the engine plays an ended file from its start). */
 	media->play_wanted = play;
 	if (media->engine == NULL || media->status.state == MEDIA_OPENING)
 		return 0;
@@ -295,6 +302,59 @@ page_media_seek(
 	if (media == NULL || media->engine == NULL)
 		return;
 	media_engine_seek(media->engine, seconds);
+}
+
+/*
+ * The scripts' questions about a media element (bind_host.media,
+ * ws121-p005): its state, and a play, a pause or a seek.  An element a
+ * script asks to play before the page found it is started then.
+ */
+int
+page_media_host(
+	void *context,
+	struct dom_element *element,
+	int request,
+	double value,
+	struct bind_media *state)
+{
+	struct page_media *media;
+	struct page *page;
+	int error;
+
+	/* The element's media; a play starts one not found yet. */
+	page = context;
+	media = media_find(page, element);
+	if (media == NULL && request == BIND_MEDIA_PLAY) {
+		error = media_add(page, element);
+		if (error != 0)
+			return error;
+		media = media_find(page, element);
+	}
+
+	/* What is asked. */
+	if (media != NULL && request == BIND_MEDIA_PLAY)
+		(void)page_media_play(page, element, 1);
+	else if (media != NULL && request == BIND_MEDIA_PAUSE)
+		(void)page_media_play(page, element, 0);
+	else if (media != NULL && request == BIND_MEDIA_SEEK)
+		page_media_seek(page, element, value);
+
+	/* The state as the engine last told: nothing without media. */
+	memset(state, 0, sizeof(*state));
+	state->paused = 1;
+	if (media == NULL)
+		return 0;
+	state->has = 1;
+	state->paused = !media->play_wanted;
+	state->ended = media->status.state == MEDIA_ENDED;
+	state->current_time = media->status.position;
+	state->duration = media->status.duration;
+	state->width = media->status.width;
+	state->height = media->status.height;
+	state->error = media->failed;
+	if (media->status.state != MEDIA_OPENING && !media->failed)
+		state->ready_state = 4;
+	return 0;
 }
 
 /* Starts the media of a node's <video> and <audio> descendants (and its own). */
@@ -654,6 +714,9 @@ media_follow(
 	if (media->status.state == MEDIA_FAILED)
 		media->failed = 1;
 
+	/* The events of what changed (the scripts they run may play or pause it). */
+	media_events(media, before);
+
 	/* The picture whose time has come, into the bitmap (a new serial: the GPU takes it anew). */
 	if (media->bitmap.pixels == NULL)
 		return 0;
@@ -671,4 +734,67 @@ media_follow(
 
 	/* Drawn. */
 	return 1;
+}
+
+/*
+ * Fires the events of an engine's change of state, and timeupdate four
+ * times a second while it plays.
+ */
+static void
+media_events(
+	struct page_media *media,
+	unsigned before)
+{
+	unsigned now;
+
+	/* Opened: what is known of it. */
+	now = media->status.state;
+	if (before == MEDIA_OPENING && now != MEDIA_OPENING && now != MEDIA_FAILED) {
+		media_fire(media, "durationchange");
+		media_fire(media, "loadedmetadata");
+		media_fire(media, "loadeddata");
+		media_fire(media, "canplay");
+	}
+
+	/* A failure. */
+	if (now == MEDIA_FAILED && before != MEDIA_FAILED)
+		media_fire(media, "error");
+	if (now == MEDIA_PLAYING && before != MEDIA_PLAYING) {
+		media_fire(media, "play");
+		media_fire(media, "playing");
+	}
+
+	/* A pause. */
+	if (now == MEDIA_PAUSED && before == MEDIA_PLAYING)
+		media_fire(media, "pause");
+
+	/* The end: paused there. */
+	if (now == MEDIA_ENDED && before != MEDIA_ENDED) {
+		media->play_wanted = 0;
+		media->told_time = media->status.position;
+		media_fire(media, "timeupdate");
+		media_fire(media, "pause");
+		media_fire(media, "ended");
+		return;
+	}
+
+	/* The time moving on. */
+	if (now == MEDIA_PLAYING && (media->status.position - media->told_time >= 0.25 || media->status.position < media->told_time)) {
+		media->told_time = media->status.position;
+		media_fire(media, "timeupdate");
+	}
+}
+
+/* Fires a media event at the element (it does not bubble). */
+static void
+media_fire(
+	struct page_media *media,
+	const char *type)
+{
+	int canceled;
+
+	/* The window's, when the page runs scripts. */
+	if (media->page->window == NULL)
+		return;
+	(void)bind_fire_event(media->page->window, &media->element->node, type, 0U, &canceled);
 }

@@ -13,8 +13,11 @@
  * second and at two seconds.  The video's place must show a picture, the
  * picture must change, and the layout must take the video's size.
  *
- *     host-video PAGE PREFIX
+ *     host-video PAGE SCRIPT-PAGE PREFIX
  *
+ * SCRIPT-PAGE's script (ws121-p005) asks canPlayType, waits for the
+ * metadata, seeks to 16 s and plays, and logs the events up to the end;
+ * its console lines are checked.
  * Writes PREFIX-NAME.ppm for each drawing and prints "PASS name" or "FAIL
  * name ..." for each check; exits with 1 when one failed.
  */
@@ -38,8 +41,14 @@
 /* The checks that failed. */
 static int failures;
 
+/* The page's console lines, one after another. */
+static char console_log[4096];
+static size_t console_length;
+
 int main(int argc, char **argv);
 static void run_for(struct browser_view *view, int milliseconds);
+static void console_line(void *context, struct browser_view *view, int level, const char *text, size_t length);
+static int logged(const char *text);
 static void check(const char *name, int passed, const char *detail);
 static int save(const char *prefix, const char *name, const uint32_t *pixels);
 static unsigned long region_sum(const uint32_t *pixels);
@@ -55,15 +64,16 @@ main(
 	static uint32_t second[TEST_WIDTH * TEST_HEIGHT];
 	static uint32_t third[TEST_WIDTH * TEST_HEIGHT];
 	struct browser_view_options options;
+	struct browser_callbacks callbacks;
 	struct browser_fonts fonts;
 	struct browser_view *view;
 	char detail[128];
 	double height;
 	int error;
 
-	/* The page and the prefix. */
-	if (argc != 3) {
-		fprintf(stderr, "usage: host-video PAGE PREFIX\n");
+	/* The pages and the prefix. */
+	if (argc != 4) {
+		fprintf(stderr, "usage: host-video PAGE SCRIPT-PAGE PREFIX\n");
 		return 2;
 	}
 
@@ -78,6 +88,9 @@ main(
 	options.stack_base = __builtin_frame_address(0);
 	options.width = TEST_WIDTH;
 	options.height = TEST_HEIGHT;
+	memset(&callbacks, 0, sizeof(callbacks));
+	callbacks.console = console_line;
+	options.callbacks = &callbacks;
 	error = browser_view_create(&options, &view);
 	if (error != 0)
 		return 2;
@@ -87,12 +100,12 @@ main(
 	/* Before the video opened: its default box. */
 	error = browser_view_draw_pixels(view, first, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
 	check("draw-before", error == 0, "browser_view_draw_pixels");
-	(void)save(argv[2], "before", first);
+	(void)save(argv[3], "before", first);
 
 	/* A second of the loop: the video opened, its size laid out, pictures came. */
 	run_for(view, 1000);
 	error = browser_view_draw_pixels(view, second, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
-	(void)save(argv[2], "playing-1", second);
+	(void)save(argv[3], "playing-1", second);
 	height = browser_view_document_height(view);
 	(void)snprintf(detail, sizeof(detail), "document height %.0f, region sum %lu", height, region_sum(second));
 	check("picture", error == 0 && region_sum(second) > 0UL && height >= 248.0, detail);
@@ -100,9 +113,26 @@ main(
 	/* Another second: the picture moved on. */
 	run_for(view, 1000);
 	error = browser_view_draw_pixels(view, third, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
-	(void)save(argv[2], "playing-2", third);
+	(void)save(argv[3], "playing-2", third);
 	(void)snprintf(detail, sizeof(detail), "%lu pixels changed", region_changes(second, third));
 	check("advances", error == 0 && region_changes(second, third) > 100UL, detail);
+
+	/* The video's engine goes with its page. */
+	browser_view_destroy(view);
+
+	/* The scripted page: its events up to the end (16 s of 20 s, then 4 s of playing). */
+	error = browser_view_create(&options, &view);
+	if (error != 0)
+		return 2;
+	error = browser_view_load(view, argv[2]);
+	check("script-load", error == 0, "browser_view_load");
+	error = browser_view_draw_pixels(view, first, TEST_WIDTH, TEST_HEIGHT, TEST_WIDTH * sizeof(uint32_t));
+	run_for(view, 6500);
+	printf("%s", console_log);
+	check("script-before", logged("canplaytype maybe| paused true ready 0"), "canPlayType, paused, readyState");
+	check("script-metadata", logged("meta 320x240 duration 20"), "loadedmetadata with the size and the length");
+	check("script-play", logged("play resolved") && logged("playing paused false"), "play() resolved, playing");
+	check("script-ended", logged("ended true paused true time 20"), "ended at the end, paused");
 
 	/* The end. */
 	browser_view_destroy(view);
@@ -237,4 +267,35 @@ region_changes(
 
 	/* The count. */
 	return changed;
+}
+
+/* Keeps a console line of the page. */
+static void
+console_line(
+	void *context,
+	struct browser_view *view,
+	int level,
+	const char *text,
+	size_t length)
+{
+	/* After the others, while there is room. */
+	(void)context;
+	(void)view;
+	(void)level;
+	if (console_length + length + 2U > sizeof(console_log))
+		return;
+	memcpy(console_log + console_length, text, length);
+	console_length += length;
+	console_log[console_length] = '\n';
+	console_length++;
+	console_log[console_length] = '\0';
+}
+
+/* Tells whether the page logged a line holding a text. */
+static int
+logged(
+	const char *text)
+{
+	/* Anywhere in the lines. */
+	return strstr(console_log, text) != NULL;
 }

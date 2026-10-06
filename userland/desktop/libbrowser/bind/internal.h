@@ -114,6 +114,9 @@ enum bind_interface_index {
 	BIND_SVG_RECT_ELEMENT,
 	BIND_SVG_ANIMATED_LENGTH,
 	BIND_SVG_LENGTH,
+	BIND_HTML_MEDIA_ELEMENT,
+	BIND_HTML_VIDEO_ELEMENT,
+	BIND_HTML_AUDIO_ELEMENT,
 	BIND_INTERFACES
 };
 
@@ -409,6 +412,9 @@ extern const struct bind_interface bind_screen_interface;
 extern const struct bind_interface bind_performance_interface;
 extern const struct bind_interface bind_location_interface;
 extern const struct bind_interface bind_html_image_element_interface;
+extern const struct bind_interface bind_html_media_element_interface;
+extern const struct bind_interface bind_html_video_element_interface;
+extern const struct bind_interface bind_html_audio_element_interface;
 extern const struct bind_interface bind_html_script_element_interface;
 extern const struct bind_interface bind_dom_token_list_interface;
 extern const struct bind_interface bind_dom_string_map_interface;

@@ -35,6 +35,8 @@ static const char *const handler_types[] = {
 	"keypress", "keyup", "load", "mousedown", "mouseenter", "mouseleave", "mousemove", "mouseout",
 	"mouseover", "mouseup", "reset", "resize", "scroll", "select", "submit", "wheel",
 	"beforeunload", "hashchange", "message", "pagehide", "pageshow", "popstate", "storage", "unload",
+	"canplay", "durationchange", "ended", "loadeddata", "loadedmetadata", "pause", "play", "playing", "seeked",
+	"seeking", "timeupdate",
 	NULL
 };
 

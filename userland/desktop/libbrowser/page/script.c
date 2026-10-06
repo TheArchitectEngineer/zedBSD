@@ -408,6 +408,7 @@ page_start_scripts(
 	host.fetch_sync = script_fetch_sync;
 	host.element_at = page_element_at;
 	host.document_write = script_document_write;
+	host.media = page_media_host;
 	error = bind_window_create(page->realm, page->document, &host, &page->window);
 	if (error != 0)
 		return error;

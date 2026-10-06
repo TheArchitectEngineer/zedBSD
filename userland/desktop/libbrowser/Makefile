@@ -108,6 +108,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/bind/encoding.c \
 	$(LIBBROWSER_DIR)/bind/storage.c \
 	$(LIBBROWSER_DIR)/bind/markup.c \
+	$(LIBBROWSER_DIR)/bind/media.c \
 	$(LIBBROWSER_DIR)/bind/computed.c \
 	$(LIBBROWSER_DIR)/bind/exception.c \
 	$(LIBBROWSER_DIR)/bind/node.c \
