@@ -140,7 +140,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 - **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
 1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
-2. **第 2 段**: WS139 desktop の速さ（最適化、2026-10-06 夜 ユーザー: 第 1 段から移す）、app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、Linux・package（WS085・088・114・117 はユーザーが検討中）。
+2. **第 2 段**: WS139 desktop の速さ（最適化、2026-10-06 夜 ユーザー: 第 1 段から移す）、app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、WS112 Debian の package（3 つの deb、2026-10-06 夜 ユーザー）、WS117（Qt6 の Linux の互換、ユーザーが検討中）。
 3. **第 3 段**（不確実性のある hardware 関連、2026-10-06 夜 ユーザー）: WS083 Vulkan Video（第 2 段から移す）、kernel・driver・電源（WS031、WS052、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。
 4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
 5. **デバッグに専念**して全ての Bug を消化する。
@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー（クリック）: WS112 の新しいゴールは「3 つ（amd64・arm64・RPi）」の deb（Debian 13・Ubuntu 26.04 共通の amd64・arm64、Raspberry Pi OS の arm64）、段は「第 2 段（ベータ2）」。Fedora・Arch は取りやめ。
 - 2026-10-06 夜 ユーザー: WS139（速さ）は最適化なので第 2 段へ。WS085・WS088・WS114 は「すでにできており、Completeにしてください」→ completed（Q1 が ws.md を完了の形にし、Phase の directory を削除、WS114 の試験は plan/tools/gtk4-linux/ へ）。WS112 は Debian の package だけに目標を設定し直す（下の質問の後に記録）。
 - 2026-10-06 夜 ユーザー: 不確実性のある hardware 関連は第 3 段へ（WS083 を第 3 段に）、WS130 IPv6 の残りは第 2 段へ。WS115 GTK4・WS116 Qt6・WS126 Python はベータ3 へ（理由: OS の価値は tablet と desktop の融合した UI/UX、既存の toolkit は core competence でない、script 言語は Noct がある）。
 - 2026-10-06 夜 ユーザー（クリック）: WS172 の QEMU での鍵の試験は「(c) 実機の鍵だけで確かめる」（P5 の kernel の応答器は作らない、実機の YubiKey の UAT で確かめる）。
