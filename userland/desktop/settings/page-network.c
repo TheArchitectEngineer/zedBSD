@@ -102,6 +102,7 @@ static const struct kl_network_link *network_link(const struct se_network *netwo
 static int network_wired(const struct se_network *network, size_t index);
 static int network_saved(const struct se_network *network, const char *ssid);
 static unsigned network_prefix(const char *netmask);
+static void network_speed_text(unsigned mbps, char *text, size_t size);
 static const char *network_wifi_words(struct se_network *network);
 
 /*
@@ -1165,7 +1166,7 @@ network_link_card(
 
 	/* The card, titled with the interface's name. */
 	(void)snprintf(title, sizeof(title), "Ethernet (%s)", link->name);
-	height = se_card_height(7, 1);
+	height = se_card_height(8, 1);
 	y = se_card_begin(app, canvas, x, top, width, height, title, NULL);
 
 	/*
@@ -1182,6 +1183,10 @@ network_link_card(
 	} else {
 		y = se_row_value(app, canvas, x, y, width, "Status", "Down", 0);
 	}
+
+	/* The speed the link was brought up at, as its driver last heard it (BUG-222). */
+	network_speed_text(link->link_mbps, number, sizeof(number));
+	y = se_row_value(app, canvas, x, y, width, "Link speed", number, 0);
 
 	/* The addresses ("-" for none). */
 	address = "-";
@@ -1315,6 +1320,42 @@ network_saved(
 
 	/* Not saved. */
 	return 0;
+}
+
+/*
+ * Writes a link's speed in words: "Unknown" while the driver has not
+ * heard it, whole megabits below a gigabit, and gigabits from there
+ * ("2.5 Gb/s" for the speed between one and the next).
+ */
+static void
+network_speed_text(
+	unsigned mbps,
+	char *text,
+	size_t size)
+{
+	unsigned whole;
+	unsigned tenths;
+
+	/* A speed the driver has not heard. */
+	if (mbps == 0U) {
+		(void)snprintf(text, size, "%s", "Unknown");
+		return;
+	}
+
+	/* Below a gigabit: the megabits. */
+	if (mbps < 1000U) {
+		(void)snprintf(text, size, "%u Mb/s", mbps);
+		return;
+	}
+
+	/* A gigabit and above: the gigabits, with their tenth when there is one. */
+	whole = mbps / 1000U;
+	tenths = (mbps % 1000U) / 100U;
+	if (tenths == 0U) {
+		(void)snprintf(text, size, "%u Gb/s", whole);
+	} else {
+		(void)snprintf(text, size, "%u.%u Gb/s", whole, tenths);
+	}
 }
 
 /* Counts the bits of a dotted netmask (the prefix length). */

@@ -619,6 +619,7 @@ inet_socket_ioctl(
 	case SIOCGIFSTATS:
 		kern_memset(&request.ifr_data, 0, sizeof(request.ifr_data));
 		request.ifr_data.ifi_mtu = device->mtu;
+		request.ifr_data.ifi_link_mbps = device->link_mbps;
 		request.ifr_data.ifi_ipackets = device->rx_packets;
 		request.ifr_data.ifi_ibytes = device->rx_bytes;
 		request.ifr_data.ifi_ierrors = device->rx_errors;

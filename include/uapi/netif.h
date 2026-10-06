@@ -26,7 +26,7 @@
 
 struct if_data {
 	uint32_t ifi_mtu;
-	uint32_t ifi_reserved;
+	uint32_t ifi_link_mbps;	/* the link's speed in Mb/s, 0 while not known */
 	uint64_t ifi_ipackets;
 	uint64_t ifi_ibytes;
 	uint64_t ifi_ierrors;

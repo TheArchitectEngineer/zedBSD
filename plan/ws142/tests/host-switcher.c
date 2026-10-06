@@ -15,7 +15,8 @@
  * icon to the right (or the left), around at both ends, also by many; the
  * pad's travel a step each ZWL_SWITCHER_STEP_UM, the rest kept, both ways;
  * the order kept while it is on, also when the bar's order changes; nothing
- * while off.
+ * while off; letting Alt go after a quick Alt+Tab leaves it open and sticky
+ * (BUG-209, 2026-10-06), after a slow one or a step brings.
  *
  *   plan/ws142/tests/run-host-switcher.sh
  */
@@ -81,6 +82,7 @@ main(void)
 	static struct zwl_switcher switcher;
 	int error;
 	int steps;
+	int brings;
 
 	/* 1. No application: it does not open. */
 	zwl_apps_build(windows, 0, &order, &apps);
@@ -166,6 +168,40 @@ main(void)
 	zwl_switcher_step(&switcher, 1);
 	steps = zwl_switcher_travel(&switcher, 24000);
 	check(steps == 0 && !switcher.on, "closed: no step, no travel");
+
+	/*
+	 * 8. Letting Alt go (BUG-209, the 2026-10-06 user instruction): a quick
+	 * Alt+Tab without a step leaves the switcher open and sticky, and every
+	 * later release brings nothing; a slow one, or one after a step, brings.
+	 */
+	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	switcher.opened_ms = 1000U;
+	brings = zwl_switcher_alt_released(&switcher, 1200U);
+	check(error == 0 && brings == 0 && switcher.on && switcher.sticky, "a quick Alt+Tab: open, sticky");
+	zwl_switcher_step(&switcher, 1);
+	brings = zwl_switcher_alt_released(&switcher, 9000U);
+	check(brings == 0 && switcher.on, "sticky: a later release (after a step) brings nothing");
+	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	switcher.opened_ms = 1000U;
+	brings = zwl_switcher_alt_released(&switcher, 1000U + ZWL_SWITCHER_QUICK_MS);
+	check(error == 0 && brings == 1 && !switcher.sticky, "Alt held the quick time or longer: brings");
+	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	switcher.opened_ms = 1000U;
+	zwl_switcher_step(&switcher, 1);
+	brings = zwl_switcher_alt_released(&switcher, 1100U);
+	check(error == 0 && brings == 1 && switcher.steps == 1U, "a quick Alt+Tab+Tab: brings");
+	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_PAD, ZWL_SWITCHER_BAR);
+	switcher.opened_ms = 1000U;
+	steps = zwl_switcher_travel(&switcher, 13000);
+	brings = zwl_switcher_alt_released(&switcher, 1100U);
+	check(error == 0 && steps == 1 && brings == 1, "the pad's travel counts as a step");
+	error = zwl_switcher_open(&switcher, &apps, 0, ZWL_SWITCHER_VIA_KEYS, ZWL_SWITCHER_BAR);
+	switcher.opened_ms = 5000U;
+	brings = zwl_switcher_alt_released(&switcher, 4000U);
+	check(error == 0 && brings == 0 && switcher.sticky, "a clock before the opening counts as quick");
+	zwl_switcher_close(&switcher);
+	brings = zwl_switcher_alt_released(&switcher, 9000U);
+	check(brings == 0 && !switcher.on && !switcher.sticky, "closed: a release brings nothing");
 
 	/* The result. */
 	if (failures != 0) {

@@ -141,15 +141,16 @@ static const struct wl_message system_network_events[] = {
 	{ "done", "u", system_plain_types },
 	{ "result", "uuu", system_plain_types },
 	{ "wired", "6sus", system_plain_types },
+	{ "link_speed", "12su", system_plain_types },
 };
 
-/* kl_system_network_v1, version 6: six requests (set_scanning since 3, configure_wired since 6) and ten events (wired since 6).  It lives for the program. */
+/* kl_system_network_v1, version 12: six requests (set_scanning since 3, configure_wired since 6) and eleven events (wired since 6, link_speed since 12).  It lives for the program. */
 const struct wl_interface kl_system_network_v1_interface = {
 	KL_SYSTEM_NETWORK_NAME,
-	KL_SYSTEM_NETWORK_SINCE_WIRED,
+	KL_SYSTEM_NETWORK_SINCE_LINK_SPEED,
 	6,
 	system_network_requests,
-	10,
+	11,
 	system_network_events
 };
 

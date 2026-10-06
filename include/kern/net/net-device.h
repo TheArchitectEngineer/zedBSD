@@ -56,6 +56,12 @@ struct net_device {
 	uint64_t generation;
 	unsigned flags;
 	unsigned mtu;
+	/*
+	 * The link's speed in megabits a second, as the driver last heard it
+	 * from the hardware (a CDC NCM or ECM speed notification); 0 while it
+	 * is not known.  The driver writes it, SIOCGIFSTATS reads it.
+	 */
+	uint32_t link_mbps;
 	uint8_t hwaddr[NET_DEVICE_HWADDR_MAX];
 	uint8_t hwaddr_len;
 	unsigned capabilities;

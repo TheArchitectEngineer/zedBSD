@@ -4,8 +4,10 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 Before: the applications a scenario may have left are ended, App Home is
 closed, /tmp/aat-work (where the steps write) is there for everyone.
-After: the applications are ended again, and /etc/shadow is put back when
-a scenario kept a copy (a password changed).
+After: a docked session's layout mode is brought back to windowed (the
+restore button of the docked window in front, ws142-p008), the
+applications are ended again, and /etc/shadow is put back when a scenario
+kept a copy (a password changed).
 """
 import time
 
@@ -27,6 +29,7 @@ def before(run):
 def after(run):
 	"""The function run.go calls after each scenario."""
 	def tidy(item):
+		run.back_to_windowed()
 		run.stop_programs()
 		restore_shadow(run)
 	return tidy

@@ -79,8 +79,9 @@ host_link(
 
 /*
  * Fills the network with a made-up state: "wifi" (on a Wi-Fi network, a
- * wired interface up too), "wired" (wired only, the radio off), "absent"
- * (no radio), "down" (the daemon not running).
+ * wired interface up too), "wired" (wired only, the radio off, a gigabit
+ * link), "nocable" (the wired interface up without its cable, BUG-213),
+ * "absent" (no radio), "down" (the daemon not running).
  */
 void
 host_network_fake(
@@ -103,6 +104,7 @@ host_network_fake(
 	host_link(network, "lo0", "127.0.0.1", 1, 0, 0);
 	network->links[0].loopback = 1;
 	host_link(network, "em0", "10.0.2.15", 1, 1200000000ULL, 320000000ULL);
+	network->links[1].link_mbps = 1000U;
 	(void)snprintf(network->dns[0], sizeof(network->dns[0]), "%s", "10.0.2.3");
 	(void)snprintf(network->dns[1], sizeof(network->dns[1]), "%s", "1.1.1.1");
 	network->dns_count = 2;
@@ -127,6 +129,21 @@ host_network_fake(
 		return;
 	}
 	if (strcmp(scenario, "wired") == 0) {
+		network->state.wifi = KL_WIFI_OFF;
+		return;
+	}
+
+	/* The cable out of the wired interface, which stays up (BUG-213): no link, no address, no speed. */
+	if (strcmp(scenario, "nocable") == 0) {
+		network->links[1].running = 0;
+		network->links[1].address[0] = '\0';
+		network->links[1].netmask[0] = '\0';
+		network->links[1].router[0] = '\0';
+		network->links[1].link_mbps = 0U;
+		network->state.connected = 0;
+		network->state.kind = KL_NETWORK_NONE;
+		network->state.interface[0] = '\0';
+		network->state.wired[0] = '\0';
 		network->state.wifi = KL_WIFI_OFF;
 		return;
 	}
