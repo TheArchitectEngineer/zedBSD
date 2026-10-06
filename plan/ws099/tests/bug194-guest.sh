@@ -13,8 +13,8 @@
 #     via=super-down"); terminal-super-down.png.
 #  5. BUG-208: Terminal docked (a double click on its title bar, "GLASS dock surface=T via=double-click"), then F11:
 #     a full-screen configure ("width=1280 height=800 fullscreen=1", one more than before); docked-full.png shows no
-#     desktop where the bar was.  F11 again: docked again ("WINDOW unfullscreen surface=T x=4 y=48 placed=N docked=1",
-#     a configure "width=1272 height=748 fullscreen=0", 4 pixels in from every side, ws099-p038); docked-back.png.
+#     desktop where the bar was.  F11 again: docked again ("WINDOW unfullscreen surface=T x=8 y=52 placed=N docked=1",
+#     a configure "width=1264 height=740 fullscreen=0", 8 pixels in from every side, ws099-p038); docked-back.png.
 #  6. No ERROR in zdesktop's log.
 # PASS: the last line "bug194: status 0".
 #   plan/ws099/tests/bug194-guest.sh [OUTDIR]          (default build/ws099-bug194)
@@ -104,7 +104,7 @@ check "$out/terminal-super-down.png" >/dev/null
 
 # 5. BUG-208: Terminal docked by a double click on its title bar, then F11 into fullscreen and out of it again.
 full="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1280 height=800 fullscreen=1"
-docked="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1272 height=748 fullscreen=0"
+docked="CONFIGURE client=[0-9]+ surface=$t serial=[0-9]+ width=1264 height=740 fullscreen=0"
 # The point is in the title bar right of Terminal's menus (Shell .. Help end about 410 to the right of its left edge,
 # T1-205: tx + 150 was on "Shell", whose press opens the menu) and left of its buttons (the last 120 of its 916).
 pointer move $((tx + 500)) $((ty - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500 >/dev/null
@@ -115,7 +115,7 @@ expect_more "$full" "${fulls:-0}"
 check "$out/docked-full.png" >/dev/null
 dockeds=$(count "$docked")
 keys "<f11>"
-expect_log "WINDOW unfullscreen surface=$t x=4 y=48 placed=[01] docked=1"
+expect_log "WINDOW unfullscreen surface=$t x=8 y=52 placed=[01] docked=1"
 expect_more "$docked" "${dockeds:-0}"
 check "$out/docked-back.png" >/dev/null
 

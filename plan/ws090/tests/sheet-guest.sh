@@ -8,7 +8,7 @@
 #   move      the parent's title bar dragged: the sheet moves with it (moved.png)
 #   hold      a press on the parent's body is held (ZWL GLASS sheet holds) and the chooser stays; Cancel closes it
 #   dock      Open again, the parent's maximize button: the parent docks, and in the docked mode the sheet is in the
-#             middle of the docked body (ws142-p008: x=260, y=48+(748-height)/2, the docked body 4 pixels in from every side, ws099-p038) (docked.png); Cancel
+#             middle of the docked body (ws142-p008: x=260, y=52+(740-height)/2, the docked body 8 pixels in from every side, ws099-p038) (docked.png); Cancel
 #   minimize  Open again, the parent's minimize button: both hide (minimized.png); Wiseview (Super+Tab) shows the
 #             parent alone, Right picks its tile and Enter brings both back (restored.png); Cancel
 #   saveas    Text Editor without a file, "abc" typed and Ctrl+S: Save As is a sheet too (saveas.png); Cancel
@@ -124,7 +124,7 @@ for step in "$@"; do
 		expect_more 'ZWL GLASS dock surface=' 0
 		sleep 1
 		height=$(sheet_place | sed -n 's/.* height=\([0-9]*\).*/\1/p')
-		want=$(( 48 + (748 - ${height:-0}) / 2 ))
+		want=$(( 52 + (740 - ${height:-0}) / 2 ))
 		set -- $(sheet_xy)
 		if [ "${1:-}" = 260 ] && [ "${2:-}" = "$want" ]; then
 			echo "sheet in the docked body's middle at 260,$want ok"

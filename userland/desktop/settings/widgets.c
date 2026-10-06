@@ -53,6 +53,9 @@
 #define WIDGETS_BUTTON_SIDE	16
 #define WIDGETS_TEXT_BUTTON	14U
 
+/* The room at each end of libkeiland's slider's track (its knob's radius, widgets.c of libkeiland). */
+#define WIDGETS_SLIDER_KNOB	9
+
 /* The A key (Ctrl+A selects a field's whole text). */
 #define WIDGETS_KEY_A		30U
 
@@ -61,16 +64,18 @@
  * ws090-p007), the text the fields are drawn with, and a canvas of one
  * pixel a field's keys are carried out on at once (se_field_key).
  */
-static struct kl_ui *widgets_fields;
+static struct kl_ui *widgets_ui;
 static struct kl_text *widgets_text;
 static uint32_t widgets_pixel;
 static struct kl_canvas widgets_tiny;
 
 static uint32_t widgets_field_id(const struct kl_field *field);
+static uint32_t widgets_control_id(int index);
+static void widgets_style(struct se_app *app, struct kl_canvas *canvas, struct kl_style *style);
 
 /*
- * Draws a page's header: its name large and its summary under it.
- * Returns the edge below the header.
+ * Draws a page's header: its name large and its summary under it
+ * (libkeiland's kl_header, ws090-p023).  Returns the edge below the header.
  */
 int
 se_page_header(
@@ -81,29 +86,19 @@ se_page_header(
 	int top,
 	int width)
 {
-	struct kl_text_line title;
-	struct kl_text_line summary;
-	int baseline;
+	struct kl_style style;
+	int bottom;
 
-	/* The two lines' measurements. */
-	kl_text_metrics(app->text, WIDGETS_TEXT_TITLE, &title);
-	kl_text_metrics(app->text, WIDGETS_TEXT_SUMMARY, &summary);
-
-	/* The name, bold. */
-	baseline = top + title.ascent;
-	(void)kl_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->name), WIDGETS_TEXT_TITLE, 1, width, SE_COLOR_TEXT);
-
-	/* The summary under it. */
-	baseline = top + title.height + 2 + summary.ascent;
-	(void)kl_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->summary), WIDGETS_TEXT_SUMMARY, 0, width, SE_COLOR_TEXT_SECONDARY);
-
-	/* The edge below the summary. */
-	return top + title.height + 2 + summary.height;
+	/* libkeiland's header in the page's words. */
+	widgets_style(app, canvas, &style);
+	bottom = kl_header(&style, x, top, width, kl_tr(page->name), kl_tr(page->summary));
+	return bottom;
 }
 
 /*
  * Draws a card's ground and its title (and subtitle, when one is given)
- * in a rectangle.  Returns the edge where the card's content starts.
+ * in a rectangle (libkeiland's kl_card, ws090-p023).  Returns the edge
+ * where the card's content starts.
  */
 int
 se_card_begin(
@@ -116,33 +111,18 @@ se_card_begin(
 	const char *title,
 	const char *subtitle)
 {
-	struct kl_text_line line;
-	int baseline;
+	struct kl_style style;
+	struct kl_rect rect;
+	int content;
 
-	/* The card: a whiter veil with a bright edge. */
-	kl_canvas_round(canvas, (float)x, (float)top, (float)width, (float)height, WIDGETS_CARD_RADIUS, SE_COLOR_CARD);
-	kl_canvas_round_border(canvas, (float)x, (float)top, (float)width, (float)height, WIDGETS_CARD_RADIUS, 1.0f, SE_COLOR_CARD_EDGE);
-
-	/* A card without a title starts at its margin. */
-	if (title == NULL)
-		return top + WIDGETS_CARD_PAD;
-
-	/* The title, bold. */
-	kl_text_metrics(app->text, WIDGETS_TEXT_CARD, &line);
-	baseline = top + WIDGETS_CARD_PAD + line.ascent;
-	(void)kl_text_draw_fit(app->text, canvas, x + WIDGETS_CARD_PAD + 2, baseline, title, WIDGETS_TEXT_CARD, 1, width - 2 * WIDGETS_CARD_PAD, SE_COLOR_TEXT);
-
-	/* The subtitle under it, when there is one. */
-	if (subtitle != NULL) {
-		baseline += line.descent + 4;
-		kl_text_metrics(app->text, WIDGETS_TEXT_CARD_SUB, &line);
-		baseline += line.ascent;
-		(void)kl_text_draw_fit(app->text, canvas, x + WIDGETS_CARD_PAD + 2, baseline, subtitle, WIDGETS_TEXT_CARD_SUB, 0, width - 2 * WIDGETS_CARD_PAD, SE_COLOR_TEXT_SECONDARY);
-		return baseline + line.descent + 10;
-	}
-
-	/* The content starts under the title. */
-	return top + WIDGETS_CARD_TITLE;
+	/* libkeiland's card. */
+	widgets_style(app, canvas, &style);
+	rect.x = x;
+	rect.y = top;
+	rect.width = width;
+	rect.height = height;
+	content = kl_card(&style, &rect, title, subtitle);
+	return content;
 }
 
 /*
@@ -169,8 +149,9 @@ se_card_height(
 
 /*
  * Draws one row of a card: a label and its value beside it, with a thin
- * line under the row unless it is the card's last.  x and width are the
- * card's.  Returns the edge below the row.
+ * line under the row unless it is the card's last (libkeiland's kl_row,
+ * ws090-p023).  x and width are the card's.  Returns the edge below the
+ * row.
  */
 int
 se_row_value(
@@ -183,27 +164,13 @@ se_row_value(
 	const char *value,
 	int last)
 {
-	int baseline;
-	int label_width;
-	int left;
-	int right;
+	struct kl_style style;
+	int bottom;
 
-	/* The row's text line, and the columns of the label and the value. */
-	baseline = kl_text_center(WIDGETS_TEXT_ROW, top, WIDGETS_ROW_HEIGHT);
-	left = x + WIDGETS_CARD_PAD + 2;
-	right = x + width - WIDGETS_CARD_PAD;
-	label_width = (int)((float)(right - left) * WIDGETS_LABEL_SHARE);
-
-	/* The label, quiet, and the value, plain. */
-	(void)kl_text_draw_fit(app->text, canvas, left, baseline, label, WIDGETS_TEXT_ROW, 0, label_width - 12, SE_COLOR_TEXT_SECONDARY);
-	(void)kl_text_draw_fit(app->text, canvas, left + label_width, baseline, value, WIDGETS_TEXT_ROW, 0, right - left - label_width, SE_COLOR_TEXT);
-
-	/* The line under the row, unless it is the last. */
-	if (last == 0)
-		kl_canvas_line(canvas, (float)left, (float)(top + WIDGETS_ROW_HEIGHT) - 0.5f, (float)right, (float)(top + WIDGETS_ROW_HEIGHT) - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
-
-	/* The edge below the row. */
-	return top + WIDGETS_ROW_HEIGHT;
+	/* libkeiland's row. */
+	widgets_style(app, canvas, &style);
+	bottom = kl_row(&style, x, top, width, label, value, last);
+	return bottom;
 }
 
 /*
@@ -265,9 +232,10 @@ se_mark_draw(
 }
 
 /*
- * Draws a switch with its top left at (x, y): the accent with the knob on
- * the right when on, grey with the knob on the left when off, faded when
- * it does nothing.  An enabled switch is a page's control (index).
+ * Draws a switch with its top left at (x, y) (libkeiland's kl_switch,
+ * ws090-p023): the accent with the knob on the right when on, faded when
+ * it does nothing.  An enabled switch is a page's control (index), which
+ * the page flips when it is clicked.
  */
 void
 se_toggle_draw(
@@ -279,31 +247,18 @@ se_toggle_draw(
 	int enabled,
 	int index)
 {
+	struct kl_style style;
 	struct kl_rect rect;
-	kl_color track;
-	kl_color knob;
-	float knob_x;
+	unsigned flags;
+	int shown;
 
-	/* The track's colour and the knob's place. */
-	track = SE_COLOR_TRACK;
-	knob_x = (float)x + 12.0f;
-	if (on != 0) {
-		track = SE_COLOR_ACCENT;
-		knob_x = (float)(x + WIDGETS_TOGGLE_WIDTH) - 12.0f;
-	}
-
-	/* The knob is white. */
-	knob = KL_RGB(0xffffff);
-
-	/* A switch that does nothing is faded. */
-	if (enabled == 0) {
-		track = kl_color_mix(track, SE_COLOR_FADED, 0.6f);
-		knob = KL_RGB(0xf6f7f9);
-	}
-
-	/* The track and the knob. */
-	kl_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_TOGGLE_WIDTH, (float)WIDGETS_TOGGLE_HEIGHT, (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, track);
-	kl_canvas_circle(canvas, knob_x, (float)y + (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, 9.5f, knob);
+	/* libkeiland's switch, as the page has it (the page flips it, not the switch). */
+	widgets_style(app, canvas, &style);
+	flags = 0U;
+	if (enabled == 0)
+		flags = KL_BUTTON_DISABLED;
+	shown = on;
+	(void)kl_switch(widgets_ui, &style, widgets_control_id(index), x, y, &shown, flags);
 
 	/* An enabled switch is clickable. */
 	if (enabled != 0) {
@@ -316,10 +271,11 @@ se_toggle_draw(
 }
 
 /*
- * Draws a slider from (x, y), width long: a track filled in the accent up
- * to a fraction (0..1) and a white knob there, faded when it does nothing.
- * An enabled slider is a page's control (index) whose rectangle is given
- * back for a drag (se_slider_fraction).
+ * Draws a slider from (x, y), width long (libkeiland's kl_slider_flags,
+ * ws090-p023): a track filled in the accent up to a fraction (0..1) and a
+ * knob there, faded when it does nothing.  An enabled slider is a page's
+ * control (index) whose rectangle is given back for a drag
+ * (se_slider_fraction); the page moves it.
  */
 void
 se_slider_draw(
@@ -333,11 +289,10 @@ se_slider_draw(
 	int index,
 	struct kl_rect *rect)
 {
-	kl_color fill;
-	kl_color knob;
-	kl_color ring;
-	float knob_x;
-	float middle;
+	struct kl_style style;
+	struct kl_rect track;
+	unsigned flags;
+	double shown;
 
 	/* Within the track. */
 	if (fraction < 0.0f)
@@ -345,26 +300,17 @@ se_slider_draw(
 	if (fraction > 1.0f)
 		fraction = 1.0f;
 
-	/* The track, then the part up to the knob in the accent (faded when it does nothing). */
-	middle = (float)y + (float)WIDGETS_SLIDER_HEIGHT * 0.5f;
-	knob_x = (float)x + fraction * (float)width;
-	fill = SE_COLOR_ACCENT;
+	/* libkeiland's slider, its track from x to x + width, at the page's value (the page moves it). */
+	widgets_style(app, canvas, &style);
+	track.x = x - WIDGETS_SLIDER_KNOB;
+	track.y = y;
+	track.width = width + 2 * WIDGETS_SLIDER_KNOB;
+	track.height = WIDGETS_SLIDER_HEIGHT;
+	flags = 0U;
 	if (enabled == 0)
-		fill = kl_color_mix(SE_COLOR_ACCENT, SE_COLOR_FADED, 0.6f);
-	kl_canvas_round(canvas, (float)x, middle - 3.0f, (float)width, 6.0f, 3.0f, SE_COLOR_RAIL);
-	kl_canvas_round(canvas, (float)x, middle - 3.0f, knob_x - (float)x, 6.0f, 3.0f, fill);
-
-	/* The knob, with a quiet ring round it; greyed when the slider does nothing (ws089-p012 C4), so it does not look as if it could be dragged. */
-	knob = KL_RGB(0xffffff);
-	ring = KL_RGBA(0x5a6b85, 50);
-	if (enabled == 0) {
-		knob = KL_RGB(0xeef1f5);
-		ring = KL_RGBA(0x5a6b85, 24);
-	}
-
-	/* The ring, then the knob in it. */
-	kl_canvas_circle(canvas, knob_x, middle, 11.0f, ring);
-	kl_canvas_circle(canvas, knob_x, middle, 10.0f, knob);
+		flags = KL_BUTTON_DISABLED;
+	shown = (double)fraction;
+	(void)kl_slider_flags(widgets_ui, &style, widgets_control_id(index), &track, 0.0, 1.0, 0.0, &shown, flags);
 
 	/* The whole track takes presses and drags (a little taller than it looks). */
 	rect->x = x - 12;
@@ -402,27 +348,27 @@ se_slider_fraction(
 }
 
 /*
- * Reports how wide a button with a label is.
+ * Reports how wide a button with a label is (libkeiland's).
  */
 int
 se_button_width(
 	struct se_app *app,
 	const char *label)
 {
-	int text;
+	struct kl_style style;
+	int width;
 
-	/* The label and the margins. */
-	text = kl_text_width(app->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
-
-	/* The button's width. */
-	return text + 2 * WIDGETS_BUTTON_SIDE;
+	/* libkeiland's measure. */
+	widgets_style(app, NULL, &style);
+	width = kl_button_width(&style, label);
+	return width;
 }
 
 /*
- * Draws a button with its top left at (x, y): the accent with white text
- * when primary, else a white one with an edge; darker under the pointer,
- * faded when it does nothing.  An enabled button is a page's control
- * (index).  Returns its width.
+ * Draws a button with its top left at (x, y) (libkeiland's kl_button,
+ * ws090-p023): the accent when primary, darker under the pointer, faded
+ * when it does nothing.  An enabled button is a page's control (index),
+ * which the page carries out when it is clicked.  Returns its width.
  */
 int
 se_button_draw(
@@ -435,43 +381,26 @@ se_button_draw(
 	int enabled,
 	int index)
 {
+	struct kl_style style;
 	struct kl_rect rect;
-	kl_color ground;
-	kl_color edge;
-	kl_color ink;
+	unsigned flags;
 	int width;
-	int lit;
 
 	/* The button's size. */
-	width = se_button_width(app, label);
+	widgets_style(app, canvas, &style);
+	width = kl_button_width(&style, label);
 	rect.x = x;
 	rect.y = y;
 	rect.width = width;
 	rect.height = WIDGETS_BUTTON_HEIGHT;
 
-	/* Its colours: the accent for the primary one, the control's ground for the others. */
-	ground = SE_COLOR_CONTROL;
-	edge = SE_COLOR_CONTROL_EDGE;
-	ink = SE_COLOR_TEXT;
-	if (primary != 0) {
-		ground = SE_COLOR_ACCENT;
-		edge = SE_COLOR_ACCENT;
-		ink = KL_RGB(0xffffff);
-	}
-
-	/* Darker under the pointer, faded when it does nothing. */
-	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
-	if (enabled != 0 && lit != 0)
-		ground = kl_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
-	if (enabled == 0) {
-		ground = kl_color_mix(ground, SE_COLOR_FADED, 0.6f);
-		ink = SE_COLOR_TEXT_FAINT;
-	}
-
-	/* The button and its label, centred. */
-	kl_canvas_round(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
-	kl_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, edge);
-	(void)kl_text_draw(app->text, canvas, x + WIDGETS_BUTTON_SIDE, kl_text_center(WIDGETS_TEXT_BUTTON, y, WIDGETS_BUTTON_HEIGHT), label, strlen(label), WIDGETS_TEXT_BUTTON, 1, ink);
+	/* libkeiland's button (its click is the page's, through the control's hit). */
+	flags = 0U;
+	if (primary != 0)
+		flags |= KL_BUTTON_PRIMARY;
+	if (enabled == 0)
+		flags |= KL_BUTTON_DISABLED;
+	(void)kl_button(widgets_ui, &style, widgets_control_id(index), &rect, label, flags);
 
 	/* An enabled button is clickable. */
 	if (enabled != 0)
@@ -618,10 +547,10 @@ se_fields_open(
 	int error;
 
 	/* Made once. */
-	if (widgets_fields != NULL)
+	if (widgets_ui != NULL)
 		return 0;
-	widgets_fields = kl_ui_create();
-	if (widgets_fields == NULL)
+	widgets_ui = kl_ui_create();
+	if (widgets_ui == NULL)
 		return ENOMEM;
 
 	/* The text, and the one pixel the keys are carried out on. */
@@ -643,8 +572,8 @@ void
 se_fields_close(void)
 {
 	/* The input and the pixel's canvas, and they are forgotten. */
-	kl_ui_destroy(widgets_fields);
-	widgets_fields = NULL;
+	kl_ui_destroy(widgets_ui);
+	widgets_ui = NULL;
 	kl_canvas_release(&widgets_tiny);
 }
 
@@ -656,9 +585,9 @@ se_fields_begin(
 	uint64_t now_us)
 {
 	/* Nothing without the input. */
-	if (widgets_fields == NULL)
+	if (widgets_ui == NULL)
 		return;
-	kl_ui_begin(widgets_fields, now_us);
+	kl_ui_begin(widgets_ui, now_us);
 }
 
 /*
@@ -674,13 +603,13 @@ se_fields_end(
 	int taken;
 
 	/* Nothing without the input. */
-	if (widgets_fields == NULL)
+	if (widgets_ui == NULL)
 		return 0;
 
 	/* The frame, and what no field took (the pages took their own keys before). */
-	moving = kl_ui_end(widgets_fields, now_us);
+	moving = kl_ui_end(widgets_ui, now_us);
 	for (;;) {
-		taken = kl_ui_take(widgets_fields, &event);
+		taken = kl_ui_take(widgets_ui, &event);
 		if (!taken)
 			break;
 	}
@@ -701,18 +630,18 @@ se_fields_input(
 	struct kl_window_event text;
 
 	/* Nothing without the input. */
-	if (widgets_fields == NULL)
+	if (widgets_ui == NULL)
 		return;
 
 	/* Each kind of input the fields take. */
 	switch (event->type) {
 	case SE_EVENT_MOTION:
-		(void)kl_ui_pointer_motion(widgets_fields, (double)event->x, (double)event->y);
+		(void)kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);
 		return;
 	case SE_EVENT_BUTTON:
-		(void)kl_ui_pointer_motion(widgets_fields, (double)event->x, (double)event->y);
+		(void)kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);
 		if (event->button == SE_BUTTON_LEFT)
-			(void)kl_ui_pointer_button(widgets_fields, event->pressed, event->time * 1000U);
+			(void)kl_ui_pointer_button(widgets_ui, event->pressed, event->time * 1000U);
 		return;
 	case SE_EVENT_TEXT:
 	case SE_EVENT_TEXT_DELETE:
@@ -734,7 +663,7 @@ se_fields_input(
 	text.before = event->before;
 	text.begin = -1;
 	text.end = -1;
-	(void)kl_ui_text(widgets_fields, &text);
+	(void)kl_ui_text(widgets_ui, &text);
 }
 
 /*
@@ -745,7 +674,7 @@ struct kl_ui *
 se_fields_ui(void)
 {
 	/* Succeeded: the input, or none. */
-	return widgets_fields;
+	return widgets_ui;
 }
 
 /*
@@ -766,7 +695,7 @@ se_field_key(
 	int editing;
 
 	/* Nothing without the input; Alt and Super are commands, Control's only key is A. */
-	if (widgets_fields == NULL)
+	if (widgets_ui == NULL)
 		return 0;
 	if ((event->modifiers & (SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
 		return 0;
@@ -798,8 +727,8 @@ se_field_key(
 	 * new text before its next key (Enter right after the typing).
 	 */
 	id = widgets_field_id(field);
-	kl_ui_set_focus(widgets_fields, id, 0U);
-	(void)kl_ui_key(widgets_fields, event->key, 1, event->modifiers);
+	kl_ui_set_focus(widgets_ui, id, 0U);
+	(void)kl_ui_key(widgets_ui, event->key, 1, event->modifiers);
 	memset(&style, 0, sizeof(style));
 	style.canvas = &widgets_tiny;
 	style.text = widgets_text;
@@ -808,9 +737,9 @@ se_field_key(
 	rect.y = 0;
 	rect.width = 1;
 	rect.height = 1;
-	kl_ui_begin(widgets_fields, event->time * 1000U);
-	(void)kl_field(widgets_fields, &style, id, &rect, field, NULL);
-	(void)kl_ui_end(widgets_fields, event->time * 1000U);
+	kl_ui_begin(widgets_ui, event->time * 1000U);
+	(void)kl_field(widgets_ui, &style, id, &rect, field, NULL);
+	(void)kl_ui_end(widgets_ui, event->time * 1000U);
 
 	/* Succeeded: the field's key. */
 	return 1;
@@ -840,7 +769,7 @@ se_field_draw(
 	unsigned changes;
 
 	/* Nothing without the input. */
-	if (widgets_fields == NULL)
+	if (widgets_ui == NULL)
 		return 0U;
 
 	/* Its kind, and the page's keyboard decides the field's. */
@@ -851,18 +780,18 @@ se_field_draw(
 	if (kind == SE_FIELD_PLAIN)
 		field->plain = 1;
 	id = widgets_field_id(field);
-	has = kl_ui_has_focus(widgets_fields, id, 0U);
+	has = kl_ui_has_focus(widgets_ui, id, 0U);
 	if (focused && !has)
-		kl_ui_set_focus(widgets_fields, id, 0U);
+		kl_ui_set_focus(widgets_ui, id, 0U);
 	if (!focused && has)
-		kl_ui_clear_focus(widgets_fields);
+		kl_ui_clear_focus(widgets_ui);
 
 	/* libkeiland's field in Settings' canvas and text. */
 	memset(&style, 0, sizeof(style));
 	style.canvas = canvas;
 	style.text = app->text;
 	style.theme = kl_theme_default();
-	changes = kl_field(widgets_fields, &style, id, rect, field, placeholder);
+	changes = kl_field(widgets_ui, &style, id, rect, field, placeholder);
 	return changes;
 }
 
@@ -898,4 +827,33 @@ se_field_clear(
 	field->caret = 0;
 	field->anchor = 0;
 	field->scroll = 0;
+}
+
+/* Reports a page's control's widget ID in the widgets' input (even, apart from the fields' odd ones). */
+static uint32_t
+widgets_control_id(
+	int index)
+{
+	/* The index, doubled, past the low numbers. */
+	return 0x40000000U + 2U * (uint32_t)index;
+}
+
+/*
+ * Fills the style libkeiland's widgets draw Settings' with: its canvas,
+ * text and the desktop's colours.  Settings' cards stand on its own ground
+ * (the glass's veil, or its light gradient without glass), never on a
+ * white panel, so libkeiland draws them as on glass either way.
+ */
+static void
+widgets_style(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	struct kl_style *style)
+{
+	/* The canvas (none to measure), the text, the theme, and the glass's look of the cards. */
+	memset(style, 0, sizeof(*style));
+	style->canvas = canvas;
+	style->text = app->text;
+	style->theme = kl_theme_default();
+	style->glass = 1;
 }

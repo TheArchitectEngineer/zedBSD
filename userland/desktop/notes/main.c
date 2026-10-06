@@ -398,10 +398,11 @@ struct notes_app {
 	char status[160];
 	uint64_t status_until;
 
-	/* Whether the frame and the toolbar need drawing again, and the width whose buttons were logged. */
+	/* Whether the frame and the toolbar need drawing again, and the width and the signature of the buttons logged last. */
 	int redraw;
 	int toolbar_dirty;
 	uint32_t buttons_logged;
+	uint64_t buttons_signature;
 	int drawn;
 
 	/* The desktop's appearance watched (ws089-p017): the desk and the toolbar follow it; NULL without it. */
@@ -509,6 +510,7 @@ static const char *app_font_name(unsigned font);
 static const char *app_font_label(unsigned font);
 static unsigned app_color_index(uint32_t color);
 static size_t app_characters(const char *text);
+static uint64_t app_buttons_signature(const struct notes_ui *ui);
 
 /*
  * Runs Notes.
@@ -2156,6 +2158,7 @@ app_draw(
 	unsigned char *pixels;
 	const char *mode;
 	uint64_t now;
+	uint64_t signature;
 	uint64_t started;
 	uint64_t built;
 	uint64_t finished;
@@ -2227,9 +2230,11 @@ app_draw(
 		notes_menu_refresh(&app->window, &state);
 		app->toolbar_dirty = 0;
 
-		/* The buttons' places, logged for the tests once per width. */
-		if (app->buttons_logged != app->renderer.extent.width) {
+		/* The buttons' places, logged for the tests once per width and again when they change (another tool's, ws175-p010). */
+		signature = app_buttons_signature(&app->ui);
+		if (app->buttons_logged != app->renderer.extent.width || app->buttons_signature != signature) {
 			app->buttons_logged = app->renderer.extent.width;
+			app->buttons_signature = signature;
 			printf("NOTES BUTTONS");
 			for (index = 0; index < app->ui.button_count; index++) {
 				printf(" %u:%d,%d,%d,%d", app->ui.buttons[index].action, app->ui.buttons[index].x, app->ui.buttons[index].y,
@@ -4306,10 +4311,12 @@ app_box_commit(
 	/* The box closed. */
 	app_box_close(app);
 
-	/* The tests' line. */
-	printf("NOTES EDIT text page=%lu object=%lu kind=%s chars=%lu font=%s fallback=%d", (unsigned long)app->page, (unsigned long)object,
-	       kinds[app->box_kind], (unsigned long)app_characters(text), app_font_name(state.font), (result & PDF_EDIT_TEXT_REPLACED) != 0U);
-	if (app->box_kind != MAIN_BOX_LINE)
+	/* The tests' line: a line's whether a replacement font writes it, an inserted text's size and colour (always the font asked for). */
+	printf("NOTES EDIT text page=%lu object=%lu kind=%s chars=%lu font=%s", (unsigned long)app->page, (unsigned long)object,
+	       kinds[app->box_kind], (unsigned long)app_characters(text), app_font_name(state.font));
+	if (app->box_kind == MAIN_BOX_LINE)
+		printf(" fallback=%d", (result & PDF_EDIT_TEXT_REPLACED) != 0U);
+	else
 		printf(" size=%g color=%08x", (double)state.text_size, (unsigned)state.color);
 	printf("\n");
 	fflush(stdout);
@@ -4512,8 +4519,10 @@ app_text_font(
 		return;
 
 	/* The tests' line; the text stays chosen. */
-	printf("NOTES EDIT font page=%lu object=%lu font=%s fallback=%d\n", (unsigned long)app->page, (unsigned long)app->selected,
-	       app_font_name(state.font), (result & PDF_EDIT_TEXT_REPLACED) != 0U);
+	printf("NOTES EDIT font page=%lu object=%lu font=%s", (unsigned long)app->page, (unsigned long)app->selected, app_font_name(state.font));
+	if ((state.flags & NOTES_EDIT_INSERTED) == 0U)
+		printf(" fallback=%d", (result & PDF_EDIT_TEXT_REPLACED) != 0U);
+	printf("\n");
 	fflush(stdout);
 	app_select(app, app->selected, 0);
 	app_changed(app);
@@ -4702,4 +4711,34 @@ app_characters(
 
 	/* Reports them. */
 	return count;
+}
+
+/* Gives a signature of the toolbar's buttons as laid out (their actions and places; FNV-1a), which tells when they changed. */
+static uint64_t
+app_buttons_signature(
+	const struct notes_ui *ui)
+{
+	const struct notes_button *button;
+	uint64_t hash;
+	uint32_t values[5];
+	unsigned index;
+	unsigned value;
+
+	/* Each button's action and rectangle, in order. */
+	hash = 14695981039346656037ULL;
+	for (index = 0; index < ui->button_count; index++) {
+		button = &ui->buttons[index];
+		values[0] = button->action;
+		values[1] = (uint32_t)button->x;
+		values[2] = (uint32_t)button->y;
+		values[3] = (uint32_t)button->width;
+		values[4] = (uint32_t)button->height;
+		for (value = 0; value < 5U; value++) {
+			hash ^= values[value];
+			hash *= 1099511628211ULL;
+		}
+	}
+
+	/* Reports it. */
+	return hash;
 }

@@ -45,6 +45,7 @@ done
 for file in userland/desktop/libkeiland/ui/ui.c userland/desktop/libkeiland/ui/field.c userland/desktop/libkeiland/ui/input.c \
     userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/text-touch.c \
     userland/desktop/libkeiland/ui/scroll-bar.c userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/motion.c \
+    userland/desktop/libkeiland/ui/widgets.c userland/desktop/libkeiland/ui/cards.c \
     plan/tools/files/host-appearance.c; do
 	object="$out/obj/shared-ui-$(basename "$file" .c).o"
 	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"

@@ -2547,9 +2547,9 @@ editor_encode(
 			return ENOMEM;
 		}
 
-		/* A code drawn by the font (white space may draw nothing). */
+		/* A code drawn by the font, not its missing glyph (white space may draw nothing). */
 		space = character == ' ' || character == 0xa0U || character == 0x3000U || character == '\t';
-		if (error != 0 || (!space && (!glyph.drawable || glyph.verb_count == 0))) {
+		if (error != 0 || glyph.missing || (!space && (!glyph.drawable || glyph.verb_count == 0))) {
 			free(out);
 			return ENOTSUP;
 		}

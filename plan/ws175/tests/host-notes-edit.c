@@ -372,6 +372,46 @@ main(
 	if (error == 0)
 		notes_document_free(&opened);
 
+	/*
+	 * ws175-p010: the AAT's document (edit-basic.pdf): page 1's image and four lines in the subset font, which writes the
+	 * first line's new words itself and needs a replacement for capitals it lacks; page 3's lines (/Rotate 90) editable.
+	 */
+	notes_document_free(&document);
+	(void)snprintf(path, sizeof(path), "%s/edit-basic.pdf", argv[1]);
+	(void)snprintf(saved_path, sizeof(saved_path), "%s/notes-basic.pdf", argv[1]);
+	error = copy_file(path, saved_path);
+	if (error == 0)
+		error = notes_open_pdf(saved_path, &document, &kind);
+	check(error == 0 && kind == NOTES_OPENED_FOREIGN && document.page_count == 3, "edit-basic.pdf opened, 3 pages");
+	if (error != 0)
+		return 1;
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = notes_page_editor(&document, 0, &editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, 0, &object);
+	check(error == 0 && object.kind == PDF_EDIT_IMAGE && pdf_page_editor_count(editor) == 5U, "page 1: the image, then four lines");
+	if (error == 0)
+		error = pdf_page_editor_object(editor, 1, &object);
+	check(error == 0 && object.kind == PDF_EDIT_TEXT && object.flags == 0U && strcmp(object.text, "The quick brown fox jumps over the lazy dog") == 0,
+	      "line 1: its words, editable");
+	error = notes_page_object(&document, 0, 1, &tried);
+	tried.flags |= NOTES_EDIT_TEXT;
+	tried.text = "The quick brown fox jumps over the lazy fox";
+	if (error == 0)
+		error = notes_page_try_edit(&document, 0, &tried, &result);
+	check(error == 0 && result == PDF_EDIT_TEXT_ORIGINAL, "\"... the lazy fox\" in the line's own subset font");
+	tried.text = "pack my box ZEBRA";
+	error = notes_page_try_edit(&document, 0, &tried, &result);
+	check(error == 0 && result == PDF_EDIT_TEXT_REPLACED, "capitals the subset lacks: a replacement font");
+	error = notes_page_editor(&document, 2, &editor);
+	objects = 0;
+	if (error == 0)
+		objects = pdf_page_editor_count(editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, 0, &object);
+	check(error == 0 && objects == 2U && object.kind == PDF_EDIT_TEXT && object.flags == 0U, "page 3 (/Rotate 90): two lines, editable");
+
 	/* What was made goes. */
 	notes_document_free(&document);
 	free(jpeg);
