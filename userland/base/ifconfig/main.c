@@ -29,6 +29,7 @@ static const char *address_text(const struct sockaddr *address, char output[16])
 static int usage(void);
 static int set_sockaddr(int descriptor, const char *name, unsigned long command, struct in_addr value);
 static void show_inet6(int descriptor, const char *name);
+static int switch_ipv6(int descriptor, const char *name, const char *state);
 static int change_inet6(int descriptor, const char *name, const char *text, int add);
 
 /*
@@ -146,6 +147,9 @@ main(
 		    set_sockaddr(descriptor, argv[1], SIOCSIFADDR, address_local) !=
 			0)
 			status = 1;
+	} else if (argc == 4 && strcmp(argv[2], "ipv6") == 0) {
+		/* IPv6 on or off at the interface (ws130-p005). */
+		status = switch_ipv6(descriptor, argv[1], argv[3]) != 0;
 	} else if (argc == 4 && strcmp(argv[2], "inet6") == 0) {
 		/* An IPv6 address added (ws130-p005). */
 		status = change_inet6(descriptor, argv[1], argv[3], 1) != 0;
@@ -296,7 +300,7 @@ usage(
 	void)
 {
 	puts("usage: ifconfig [-a] [interface [up|down|inet address[/prefix] "
-	     "[netmask mask]|inet6 address[/prefix]|-inet6 address[/prefix]|broadcast address]]]");
+	     "[netmask mask]|inet6 address[/prefix]|-inet6 address[/prefix]|ipv6 on|off|broadcast address]]]");
 
 	/* Reports operation failure. */
 	return 2;
@@ -419,5 +423,34 @@ change_inet6(
 
 	/* Succeeded or not, the kernel's answer. */
 	status = ioctl(descriptor, command, &request_);
+	return status;
+}
+
+/* Turns IPv6 on or off at an interface ("on" or "off"; off removes its IPv6 addresses) (ws130-p005). */
+static int
+switch_ipv6(
+	int descriptor,
+	const char *name,
+	const char *state)
+{
+	struct ifreq request_;
+	int on;
+	int status;
+
+	/* The state asked for. */
+	on = strcmp(state, "on") == 0;
+	if (!on && strcmp(state, "off") != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* The request. */
+	status = netutil_ifreq(&request_, name);
+	if (status != 0)
+		return -1;
+	request_.ifr_flags = on;
+
+	/* Succeeded or not, the kernel's answer. */
+	status = ioctl(descriptor, SIOCSIFINET6, &request_);
 	return status;
 }

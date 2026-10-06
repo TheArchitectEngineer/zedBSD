@@ -20,6 +20,11 @@ static const struct netconf_interface *find_interface(const struct netconf *,
 static int emit_interface(const struct netconf_interface *,
 	netconf_reconcile_emit, void *);
 static int prefix_mask(unsigned, char *, size_t);
+static int route_ipv6(const struct netconf_route *);
+static const struct netconf_route *route_ipv4(const struct netconf *);
+static int routes_ipv6(const struct netconf *);
+static int emit_ipv6(const struct netconf_interface *, netconf_reconcile_emit, void *);
+static int emit_routes6(const struct netconf *, netconf_reconcile_emit, void *);
 
 int
 netconf_reconcile_supported(
@@ -51,7 +56,8 @@ netconf_reconcile_supported(
 			return -1;
 		}
 	}
-	if (configuration->route_count > 1U) {
+	/* One IPv4 route at most, the default; IPv6 routes of any destination (ws130-p005). */
+	if (configuration->route_count - (size_t)routes_ipv6(configuration) > 1U) {
 		if (error != NULL && capacity != 0U)
 			(void)snprintf(error, capacity,
 			    "only one default route is currently applicable");
@@ -59,6 +65,8 @@ netconf_reconcile_supported(
 		return -1;
 	}
 	for (index = 0U; index < configuration->route_count; index++) {
+		if (route_ipv6(&configuration->routes[index]))
+			continue;
 		if (strcmp(configuration->routes[index].destination,
 		    "default") != 0) {
 			if (error != NULL && capacity != 0U)
@@ -99,6 +107,11 @@ netconf_reconcile(
 	if (emit("DEFAULTROUTE_CLEAR", NULL, context) != 0 ||
 	    emit("DNS_CLEAR", NULL, context) != 0)
 		return -1;
+
+	/* The IPv6 default route too, when either side has IPv6 routes (ws130-p005). */
+	if ((routes_ipv6(previous) != 0 || routes_ipv6(target) != 0) &&
+	    emit("ROUTE6_CLEAR", NULL, context) != 0)
+		return -1;
 	/* Interfaces absent from the target become administratively down. */
 	for (index = 0U; index < previous->interface_count; index++) {
 		item = &previous->interfaces[index];
@@ -111,9 +124,13 @@ netconf_reconcile(
 			return -1;
 	}
 	/* An explicit route wins over any route acquired by DHCP. */
-	if (target->route_count != 0U &&
+	if (route_ipv4(target) != NULL &&
 	    (emit("DEFAULTROUTE_CLEAR", NULL, context) != 0 ||
-	    emit("DEFAULTROUTE", target->routes[0].gateway, context) != 0))
+	    emit("DEFAULTROUTE", route_ipv4(target)->gateway, context) != 0))
+		return -1;
+
+	/* The IPv6 routes (ws130-p005). */
+	if (emit_routes6(target, emit, context) != 0)
 		return -1;
 	/* Explicit servers replace any DHCP resolver output. */
 	if (target->dns_count != 0U) {
@@ -164,6 +181,10 @@ emit_interface(
 		return emit("DOWN", item->name, context);
 	if (emit("UP", item->name, context) != 0)
 		return -1;
+
+	/* IPv6 named on or off, and the static IPv6 addresses (ws130-p005). */
+	if (emit_ipv6(item, emit, context) != 0)
+		return -1;
 	if (item->dhcp) {
 		count = snprintf(operands, sizeof(operands), "%s %u", item->name,
 		    item->dhcp_timeout_set ? item->dhcp_timeout : 10U);
@@ -213,5 +234,123 @@ prefix_mask(
 		errno = EOVERFLOW;
 		return -1;
 	}
+	return 0;
+}
+
+/* Tells whether a route is IPv6's: its gateway is an IPv6 address (ws130-p005). */
+static int
+route_ipv6(
+	const struct netconf_route *route)
+{
+	/* An IPv6 gateway has a colon. */
+	return strchr(route->gateway, ':') != NULL;
+}
+
+/* Finds the IPv4 route (the default), NULL when there is none. */
+static const struct netconf_route *
+route_ipv4(
+	const struct netconf *configuration)
+{
+	size_t index;
+
+	/* The first route that is not IPv6's. */
+	for (index = 0U; index < configuration->route_count; index++) {
+		if (!route_ipv6(&configuration->routes[index]))
+			return &configuration->routes[index];
+	}
+
+	/* None. */
+	return NULL;
+}
+
+/* Counts the IPv6 routes. */
+static int
+routes_ipv6(
+	const struct netconf *configuration)
+{
+	size_t index;
+	int count;
+
+	/* Each route of IPv6. */
+	count = 0;
+	for (index = 0U; index < configuration->route_count; index++) {
+		if (route_ipv6(&configuration->routes[index]))
+			count++;
+	}
+
+	/* The count. */
+	return count;
+}
+
+/* Emits an interface's IPv6 named on or off, and its static IPv6 addresses while IPv6 is on. */
+static int
+emit_ipv6(
+	const struct netconf_interface *item,
+	netconf_reconcile_emit emit,
+	void *context)
+{
+	char operands[256];
+	size_t index;
+	int count;
+	int on;
+
+	/* On or off, when the file names it. */
+	on = netconf_ipv6_enabled(item);
+	if (item->ipv6.enabled_set) {
+		count = snprintf(operands, sizeof(operands), "%s %s", item->name, on ? "on" : "off");
+		if (count < 0 || (size_t)count >= sizeof(operands)) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		if (emit("IPV6", operands, context) != 0)
+			return -1;
+	}
+	if (!on)
+		return 0;
+
+	/* Each static address with its length. */
+	for (index = 0U; index < item->ipv6.address_count; index++) {
+		count = snprintf(operands, sizeof(operands), "%s %s/%u", item->name, item->ipv6.addresses[index].address,
+		    item->ipv6.addresses[index].prefix_length);
+		if (count < 0 || (size_t)count >= sizeof(operands)) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		if (emit("STATIC6", operands, context) != 0)
+			return -1;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Emits each IPv6 route: its destination, gateway, and the interface of a link-local gateway. */
+static int
+emit_routes6(
+	const struct netconf *configuration,
+	netconf_reconcile_emit emit,
+	void *context)
+{
+	const struct netconf_route *route;
+	char operands[256];
+	size_t index;
+	int count;
+
+	/* Each IPv6 route. */
+	for (index = 0U; index < configuration->route_count; index++) {
+		route = &configuration->routes[index];
+		if (!route_ipv6(route))
+			continue;
+		count = snprintf(operands, sizeof(operands), "%s %s%s%s", route->destination, route->gateway,
+		    route->interface[0] != '\0' ? " " : "", route->interface);
+		if (count < 0 || (size_t)count >= sizeof(operands)) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		if (emit("ROUTE6", operands, context) != 0)
+			return -1;
+	}
+
+	/* Succeeded. */
 	return 0;
 }

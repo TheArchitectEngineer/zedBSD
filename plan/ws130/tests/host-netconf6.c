@@ -14,6 +14,7 @@
  */
 
 #include "userland/base/net/netconf.h"
+#include "userland/base/net/reconcile.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +23,10 @@ static int test_failures;
 
 static void check(int condition, const char *what);
 static int parse_text(const char *text, struct netconf *configuration, char *error, size_t size);
+static int record(const char *operation, const char *operands, void *context);
+
+/* The operations the reconcile emitted, one a line. */
+static char test_program[2048];
 
 /* The file with every IPv6 key. */
 static const char test_full[] =
@@ -104,6 +109,16 @@ main(void)
 	check(strstr(written, "  lo0:\n    type: loopback\n    enabled: true\n\n") != NULL, "lo0 written without an IPv6 section");
 	check(strcmp(again.routes[0].interface, "ue0") == 0, "the route's interface kept");
 
+	/* The reconcile's program: IPv6 on, the static address, the IPv6 route after the IPv4 one, both DNS servers. */
+	test_program[0] = '\0';
+	status = netconf_reconcile(&configuration, &configuration, record, NULL, error, sizeof(error));
+	check(status == 0, "reconciled");
+	if (status != 0)
+		printf("  error: %s\n", error);
+	check(strstr(test_program, "DEFAULTROUTE_CLEAR\nDNS_CLEAR\nROUTE6_CLEAR\n") == test_program, "the old routes and DNS cleared first, IPv6's too");
+	check(strstr(test_program, "UP ue0\nIPV6 ue0 on\nSTATIC6 ue0 2001:db8::10/64\nDHCP ue0 10\n") != NULL, "ue0: up, IPv6 on, its address, DHCP");
+	check(strstr(test_program, "DEFAULTROUTE 10.0.2.2\nROUTE6 ::/0 fe80::1 ue0\nDNS 2001:db8::53 10.0.2.3\n") != NULL, "the routes, then the DNS");
+
 	/* Refused: an IPv6 route through an IPv4 gateway. */
 	status = parse_text("version: 1\ninterfaces:\n  ue0:\n    type: ethernet\n    enabled: true\nroutes:\n  - destination: 2001:db8::/32\n    gateway: 10.0.2.2\ndns:\n  mode: dhcp\n", &again, error, sizeof(error));
 	check(status != 0, "refused: an IPv6 route through an IPv4 gateway");
@@ -169,4 +184,21 @@ parse_text(
 	/* Succeeded when it is valid. */
 	status = netconf_validate(configuration, error, size);
 	return status;
+}
+
+/* Records one operation of the reconcile's program. */
+static int
+record(
+	const char *operation,
+	const char *operands,
+	void *context)
+{
+	size_t used;
+
+	/* After the ones before it. */
+	(void)context;
+	used = strlen(test_program);
+	(void)snprintf(test_program + used, sizeof(test_program) - used, "%s%s%s\n", operation, operands != NULL ? " " : "",
+	    operands != NULL ? operands : "");
+	return 0;
 }
