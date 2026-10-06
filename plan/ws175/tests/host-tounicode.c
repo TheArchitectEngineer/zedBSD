@@ -78,6 +78,8 @@ main(
 		check(error == ENOENT, "the empty map has nothing");
 		pdf_tounicode_free(map);
 	}
+
+	/* A section broken after its first entry. */
 	error = pdf_tounicode_parse((const unsigned char *)"2 beginbfchar <41> <0061> <42> 7 endbfchar", 43U, &map);
 	check(error == 0, "a broken section: read");
 	if (error == 0) {
