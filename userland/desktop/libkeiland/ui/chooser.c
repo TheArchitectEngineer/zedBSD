@@ -273,49 +273,19 @@ chooser_event(
 	struct kl_file_chooser *chooser,
 	const struct kl_window_event *event)
 {
+	int taken;
+
 	/* Any input may change the window. */
 	chooser->dirty = 1;
 
-	/* What it is. */
-	switch (event->kind) {
-	case KL_WINDOW_MOTION:
-		(void)kl_ui_pointer_motion(chooser->ui, event->x, event->y);
-		break;
-	case KL_WINDOW_LEAVE:
-		(void)kl_ui_pointer_leave(chooser->ui);
-		break;
-	case KL_WINDOW_BUTTON:
-		/* The main button only. */
-		(void)kl_ui_pointer_motion(chooser->ui, event->x, event->y);
-		if (event->code == KL_BUTTON_LEFT)
-			(void)kl_ui_pointer_button(chooser->ui, event->pressed, event->arrival_us);
-		break;
-	case KL_WINDOW_AXIS:
-	case KL_WINDOW_AXIS_STOP:
-		/* The wheel glides; a touch pad's fingers hold the content, and it flies on when they lift (BUG-211). */
-		(void)kl_ui_axis(chooser->ui, event);
-		break;
-	case KL_WINDOW_KEY:
-		(void)kl_ui_key(chooser->ui, event->code, event->pressed, event->modifiers);
-		break;
-	case KL_WINDOW_TOUCH_DOWN:
-		(void)kl_ui_touch_down(chooser->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
-		break;
-	case KL_WINDOW_TOUCH_MOTION:
-		(void)kl_ui_touch_motion(chooser->ui, event->id, event->time_us, event->arrival_us, event->x, event->y);
-		break;
-	case KL_WINDOW_TOUCH_UP:
-		(void)kl_ui_touch_up(chooser->ui, event->id, event->time_us, event->arrival_us);
-		break;
-	case KL_WINDOW_TOUCH_CANCEL:
-		(void)kl_ui_touch_cancel(chooser->ui, event->arrival_us);
-		break;
-	case KL_WINDOW_CLOSE:
+	/* The widgets' input, the text an input method sends among it (ws090-p022). */
+	taken = kl_ui_window_input(chooser->ui, event);
+	if (taken)
+		return;
+
+	/* The close button ends it without a path. */
+	if (event->kind == KL_WINDOW_CLOSE)
 		keiui_chooser_cancel(&chooser->model);
-		break;
-	default:
-		break;
-	}
 }
 
 /* Draws a frame when one is due and shows it, asking for the next while something moves. */
@@ -345,6 +315,9 @@ chooser_draw(
 	/* The frame and its input. */
 	again = keiui_chooser_frame(&chooser->model, chooser->ui, &chooser->style, (int)chooser->width, (int)chooser->height, kl_clock_us());
 	chooser->dirty = again;
+
+	/* The text input while a field (the place, Save As's name) has the keyboard. */
+	kl_ui_window_text(chooser->ui, chooser->window);
 
 	/* An answer closes the window. */
 	if (chooser->model.answered) {

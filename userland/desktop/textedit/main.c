@@ -230,6 +230,7 @@ static int main_choose(void *data, int saving, const char *folder, const char *n
 static void main_window_event(const struct kl_window_event *event);
 static void main_fingers(uint64_t now_us);
 static int main_dialog_event(const struct kl_window_event *event);
+static void main_text_caret(void);
 static int main_resize(void);
 static void main_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static void main_appearance_changed(void);
@@ -645,8 +646,9 @@ main_loop(
 			te_app_event(&main_app, &event);
 		}
 
-		/* The text input is asked for where the text is edited: not under a dialog or the chooser. */
-		kl_window_text_input(main_window.kui, main_app.dialog == TE_DIALOG_NONE && !main_app.choosing);
+		/* The text input is asked for where the body's text is edited: not while the chooser is open (a dialog's fields ask after its frame). */
+		if (main_app.dialog == TE_DIALOG_NONE)
+			kl_window_text_input(main_window.kui, !main_app.choosing);
 
 		/* The fingers at this time: their selection, taps and menus, and the view's scroll. */
 		main_fingers(kl_clock_us());
@@ -709,7 +711,6 @@ static int
 main_frame(void)
 {
 	struct kl_rect clip;
-	struct te_rect caret;
 	struct te_rect text;
 	unsigned stale;
 	int status;
@@ -734,8 +735,7 @@ main_frame(void)
 		te_glass_refresh(&main_glass, &main_app);
 		status = kl_window_present(main_window.kui, main_pixels, (size_t)main_width);
 		if (status == 0) {
-			te_app_caret_rect(&main_app, &caret);
-			kl_window_text_cursor(main_window.kui, caret.x, caret.y, caret.width, caret.height);
+			main_text_caret();
 			return 0;
 		}
 
@@ -1468,7 +1468,29 @@ main_window_event(
 	}
 }
 
-/* Gives the pointer's and the keys' input to a dialog shown; 1 when it took it. */
+/*
+ * Tells the text input where the caret is after a frame: a dialog's field
+ * with the keyboard asks for it there (or a dialog without one turns it
+ * off), otherwise the body's caret (ws090-p022).
+ */
+static void
+main_text_caret(
+	void)
+{
+	struct te_rect caret;
+
+	/* A dialog's fields. */
+	if (main_app.dialog != TE_DIALOG_NONE && main_input != NULL) {
+		kl_ui_window_text(main_input, main_window.kui);
+		return;
+	}
+
+	/* The body's caret. */
+	te_app_caret_rect(&main_app, &caret);
+	kl_window_text_cursor(main_window.kui, caret.x, caret.y, caret.width, caret.height);
+}
+
+/* Gives the pointer's, the keys' and an input method's input to a dialog shown; 1 when it took it. */
 static int
 main_dialog_event(
 	const struct kl_window_event *event)
@@ -1489,6 +1511,12 @@ main_dialog_event(
 		break;
 	case KL_WINDOW_KEY:
 		(void)kl_ui_key(main_input, event->code, event->pressed, event->modifiers);
+		break;
+	case KL_WINDOW_TEXT_COMMIT:
+	case KL_WINDOW_TEXT_PREEDIT:
+	case KL_WINDOW_TEXT_DELETE:
+		/* An input method's text, for the dialog's field with the keyboard (ws090-p022). */
+		(void)kl_ui_text(main_input, event);
 		break;
 	case KL_WINDOW_AXIS:
 		break;

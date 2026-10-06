@@ -109,7 +109,6 @@ static int view_lower(int c);
 static void view_open(struct ml_view *view, long index);
 static void view_reply(struct ml_view *view, unsigned action);
 static void view_notice(struct ml_view *view, const char *message, uint64_t now_us);
-static void view_body_add(struct ml_view *view, const char *text, size_t length);
 
 /*
  * Makes the view's state: the first account's inbox, its first message
@@ -172,8 +171,7 @@ ml_view_action(
 		kl_field_set(&view->to, "");
 		kl_field_set(&view->cc, "");
 		kl_field_set(&view->subject, "");
-		view->body[0] = '\0';
-		view->body_length = 0;
+		kl_text_area_set(&view->body, "");
 		ml_log("COMPOSE kind=new");
 		break;
 	case ML_ACTION_REPLY:
@@ -184,7 +182,7 @@ ml_view_action(
 	case ML_ACTION_SEND:
 		/* No backend to send it with. */
 		view_notice(view, "No mail backend: messages cannot be sent yet.", now_us);
-		ml_log("NOBACKEND action=send to=%zu subject=%zu body=%zu", view->to.length, view->subject.length, view->body_length);
+		ml_log("NOBACKEND action=send to=%zu subject=%zu body=%zu", view->to.length, view->subject.length, view->body.length);
 		break;
 	case ML_ACTION_GET:
 		view_notice(view, "No mail backend: there is no account to get mail from yet.", now_us);
@@ -201,7 +199,6 @@ ml_view_action(
 	case ML_ACTION_CANCEL:
 		/* The message written goes (the mock keeps no drafts). */
 		view->composing = 0;
-		view->body_focus = 0;
 		ml_log("COMPOSE kind=cancel");
 		break;
 	case ML_ACTION_QUIT:
@@ -225,8 +222,6 @@ ml_view_key(
 	uint64_t now_us)
 {
 	size_t indices[ML_MESSAGES_MAX];
-	uint32_t character;
-	char bytes[4];
 	size_t count;
 	size_t at;
 	size_t i;
@@ -235,37 +230,6 @@ ml_view_key(
 	(void)now_us;
 	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return;
-
-	/* The words of a new message: Enter breaks the line, Backspace takes a character back, the rest type. */
-	if (view->composing && view->body_focus) {
-		/* A line's end. */
-		if (key == KL_KEY_ENTER || key == KL_KEY_KPENTER) {
-			view_body_add(view, "\n", 1U);
-			return;
-		}
-
-		/* The character before the end, all its bytes. */
-		if (key == KL_KEY_BACKSPACE) {
-			while (view->body_length > 0U) {
-				/* One byte back; a byte that does not continue a character starts it. */
-				view->body_length--;
-				if (((unsigned char)view->body[view->body_length] & 0xc0U) != 0x80U)
-					break;
-			}
-
-			/* The new end. */
-			view->body[view->body_length] = '\0';
-			return;
-		}
-
-		/* A character the key types (ASCII). */
-		character = kl_key_character(key, modifiers);
-		if (character == 0U || character >= 0x80U)
-			return;
-		bytes[0] = (char)character;
-		view_body_add(view, bytes, 1U);
-		return;
-	}
 
 	/* Esc goes back to the list of a narrow window. */
 	if (key == KL_KEY_ESC) {
@@ -928,10 +892,7 @@ view_compose(
 	struct kl_rect button;
 	struct kl_rect field;
 	struct kl_rect body;
-	unsigned hit;
 	int clicked;
-	int focused;
-	int height;
 	int x;
 	int y;
 	int i;
@@ -956,56 +917,28 @@ view_compose(
 	/* The bar's edge. */
 	view_edge(view, style, area->x, area->y + ML_VIEW_BAR, area->width);
 
-	/* The fields, a label each; one with the keyboard takes it from the words. */
+	/* The fields, a label each. */
 	fields[0] = &view->to;
 	fields[1] = &view->cc;
 	fields[2] = &view->subject;
 	y = area->y + ML_VIEW_BAR + 10;
 	for (i = 0; i < 3; i++) {
-		/* The label and the field. */
 		(void)kl_text_draw(style->text, style->canvas, x, y + 21, labels[i], strlen(labels[i]), ML_VIEW_TEXT_BODY - 1U, 0, style->theme->text_secondary);
 		field.x = x + 70;
 		field.y = y;
 		field.width = area->width - 2 * ML_VIEW_PAD - 70;
 		field.height = 32;
 		(void)kl_field(ui, style, ML_ID_TO + (uint32_t)i, &field, fields[i], NULL);
-		focused = kl_ui_has_focus(ui, ML_ID_TO + (uint32_t)i, 0U);
-		if (focused)
-			view->body_focus = 0;
 		y += 40;
 	}
 
-	/* The words: a click gives them the keyboard (the fields lose it). */
+	/* The words, in libkeiland's text area (an input method's text too, ws090-p022). */
 	view_edge(view, style, area->x, y + 4, area->width);
 	body.x = area->x + 8;
 	body.y = y + 12;
 	body.width = area->width - 16;
 	body.height = area->y + area->height - body.y - 36;
-	hit = kl_ui_hit(ui, ML_ID_BODY, 0U, &body);
-	if ((hit & KL_HIT_CLICKED) != 0U) {
-		kl_ui_clear_focus(ui);
-		view->body_focus = 1;
-	}
-
-	/* The words written, or what goes there; the caret at their end while they have the keyboard. */
-	if (view->body_length == 0U && !view->body_focus) {
-		(void)kl_text_draw(style->text, style->canvas, x, body.y + 24, "Write your message here.", strlen("Write your message here."), ML_VIEW_TEXT_BODY, 0, style->theme->text_faint);
-	} else {
-		kl_canvas_clip_push(style->canvas, &body);
-		height = view_words(style, view->body, x, body.y + 8, area->width - 2 * ML_VIEW_PAD, ML_VIEW_TEXT_BODY, style->theme->text, 1);
-		kl_canvas_clip_pop(style->canvas);
-
-		/* The caret after the last character while the words have the keyboard (on the first line when there are none). */
-		if (view->body_focus) {
-			field.x = x + view_words(style, view->body, x, body.y + 8, area->width - 2 * ML_VIEW_PAD, ML_VIEW_TEXT_BODY, 0, -1);
-			field.y = body.y + 8 + height - 22;
-			field.width = 2;
-			field.height = 18;
-			if (view->body_length == 0U)
-				field.y = body.y + 10;
-			kl_canvas_fill(style->canvas, &field, style->theme->accent);
-		}
-	}
+	(void)kl_text_area(ui, style, ML_ID_BODY, &body, &view->body, "Write your message here.");
 
 	/* What the mock leaves out. */
 	(void)kl_text_draw_fit(style->text, style->canvas, x, area->y + area->height - 14, "Attachments and drafts are not in the mock yet.", 11U, 0, area->width - 2 * ML_VIEW_PAD, style->theme->text_faint);
@@ -1316,7 +1249,6 @@ view_open(
 	/* Shown from its top. */
 	view->selected = index;
 	view->composing = 0;
-	view->body_focus = 0;
 	kl_scroll_move_to(&view->reader_scroll, 0.0, 0.0, 0, 0U);
 	ml_log("OPEN message=%ld", index);
 
@@ -1369,14 +1301,15 @@ view_reply(
 
 	/* The words: an empty line, then the message quoted under who wrote it when. */
 	(void)snprintf(text, sizeof(text), "\n\nOn %s, %s wrote:\n\n%s", message->date_long, message->from_name, message->body);
-	view->body_length = 0;
-	view->body[0] = '\0';
-	view_body_add(view, text, strlen(text));
+	kl_text_area_set(&view->body, text);
+
+	/* The caret on the empty line at the top, where the reply is written. */
+	view->body.caret = 0;
+	view->body.anchor = 0;
 
 	/* Written in the third pane. */
 	view->composing = 1;
 	view->opened = 1;
-	view->body_focus = 0;
 	ml_log("COMPOSE kind=%s", kind);
 }
 
@@ -1392,24 +1325,4 @@ view_notice(
 	/* The words and until when. */
 	(void)snprintf(view->notice, sizeof(view->notice), "%s", message);
 	view->notice_until = now_us + ML_VIEW_NOTICE_US;
-}
-
-/*
- * Adds bytes to the end of the words of the message being written, as far
- * as there is room.
- */
-static void
-view_body_add(
-	struct ml_view *view,
-	const char *text,
-	size_t length)
-{
-	/* No more than fits with the NUL. */
-	if (length > ML_BODY_MAX - 1U - view->body_length)
-		length = ML_BODY_MAX - 1U - view->body_length;
-
-	/* The bytes, and the end. */
-	memcpy(view->body + view->body_length, text, length);
-	view->body_length += length;
-	view->body[view->body_length] = '\0';
 }
