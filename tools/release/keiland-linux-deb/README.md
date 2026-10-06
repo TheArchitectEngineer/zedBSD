@@ -24,7 +24,7 @@ root; a subordinate uid range in /etc/subuid) from the archives in [rootfs.json]
 arm64 runs through the host's qemu-aarch64 binfmt (user-mode emulation, not a VM). One deb serves
 Debian 13 and Ubuntu 26.04: it is built against Debian 13's C library, the older of the two. The
 Raspberry Pi OS rootfs adds archive.raspberrypi.com, whose key is checked against the fingerprint
-in rootfs.json (the dearmored keyring is kept in `KEILAND_DEB_TMPDIR/keiland-deb-keys/`, where the namespace can read it).
+in rootfs.json; that key verifies the archive's InRelease, which leads by SHA256 to raspberrypi-archive-keyring, whose keyring apt (sqv) takes (kept in `KEILAND_DEB_TMPDIR/keiland-deb-keys/`, where the namespace can read it).
 
 Each deb is then checked, not run: its fields, the machine of every ELF in it, no test program, and
 `apt-get install --simulate` of it in a fresh rootfs of each distribution it is for (Debian 13 and

@@ -63,6 +63,7 @@
   },
   "raspberrypi_key": {
     "url": "https://archive.raspberrypi.com/debian/raspberrypi.gpg.key",
+    "archive": "http://archive.raspberrypi.com/debian",
     "fingerprint": "CF8A1AF502A2AA2D763BAE7E82B129927FA3303E"
   },
   "build_packages": ["build-essential", "pkg-config", "python3", "binutils", "dpkg-dev", "libvulkan-dev", "libdrm-dev",
