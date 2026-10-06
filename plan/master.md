@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 夜 ユーザー（クリック）: Settings の Privacy（WS148）・Security（WS149）・Accessibility（WS151）は 3 つとも「頁を無くす」。Privacy は推奨どおり Files の Recents に「履歴を消す」と Storage に「最近の項目を残す」の switch。Security・Accessibility は頁を取り除くだけ（lock の設定・動きを減らす などは作らない）。q824（P2）。WS152 は第 1 段（ユーザーの列）なので段は「ベータ2」に揃える。
 - 2026-10-06 夜 ユーザー（クリック）: ws089-p013（About の memory と Storage の使用量）を「採る（第 1 段で）」。Q1 が libkeiland の system の照会の API の追加（plan/ws089/proposed/libkeiland-system.md）を許可。Q1 の割り当て: WS152 は第 1 段に含む（ユーザーの列に在る）、WS161・WS172 は P2、WS164 の compositor の起動と WS156 p002 は p022 の merge の後に P2。
 - 2026-10-06 夜 ユーザー: 積み残しは「専用の1つのベータ2積み残しというWSに入れてください」（元の WS に置かず WS177 の backlog-p1.md・backlog-p2.md へ）。「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」→ fg019 を 10/17 のベータ2 の公開に。版の名前と tag（zedbsd-0.1.0-beta1 → beta2、About の 1.0.0 Beta 1 など）は WS129 で P2 が確かめて直す。
 - 2026-10-06 夜 ユーザー:「積み残しWSはベータ2積み残しという形でWSを作りましょう。」→ [WS177 ベータ2 積み残し](ws177/ws.md) を作成。各担当は phase.md の「積み残し」の節に書き、第 1〜3 段の後に Q1 が WS177 の Phase に集める。
