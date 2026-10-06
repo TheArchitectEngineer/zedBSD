@@ -1790,6 +1790,19 @@ $(BUILD)/bin/kuidemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
  --needed libc.so $@
 
+# libmedia (ws121-p002): the playing of media files (the container reader, the decoding add-in that opens libavcodec
+# with dlopen, the audiod client and the engine); it needs nothing but the C library.
+DYNAMIC_MEDIA_LIBRARY_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libmedia)
+
+$(DYNAMIC_DIR)/libmedia.so: $(DYNAMIC_MEDIA_LIBRARY_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libmedia/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libmedia.so --hash-style=both -Bsymbolic-functions \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/libmedia/exports.map \
+ $(DYNAMIC_MEDIA_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libc.so --soname libmedia.so $@
+
 # The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of
 # userland/desktop/libbrowser and includes their private headers from that root; it imports standard Vulkan for its
 # GPU renderer (ws074-p014), libtruetype for its text, and libjpeg-compat, libpng-compat (with
