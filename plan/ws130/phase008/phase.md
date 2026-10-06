@@ -26,6 +26,11 @@ lease 2 分（T1 60 秒）、DNS `fd00:6::53`・search `zb6.test`、DNS の口�
 
 判定は script の頭の 8 項目。QEMU の起動・host の sudo は T1 が行う。
 
+## T1-293 の結果と修正（2026-10-07）
+
+1 回目（/var/db の修正の前の image）と 2 回目（後）。2 回目は FAIL 2 行（`networkd on the M flag`・`T1`）だけ。dnsmasq の log では、networkd の Solicit・Request（03:02:31）、試験の手での Renew（03:02:52）、networkd の T1 の Renew（03:03:32、最初から 60 秒）が揃っていて、動きは正しい。
+原因は試験: networkd の行は console に出て `/var/log/networkd.log`・`messages` に無い（console の log は判定に使わない）。修正: 手順 3・7 を host 側の dnsmasq の log（DHCPSOLICIT・DHCPREPLY、DHCPRENEW が 2 つ）で判定する。
+
 ## 5330 の UAT（保留中の手順）
 
 5330 に届いたら: 家の router の RA（SLAAC・RDNSS）で、有線と Wi-Fi のそれぞれで `ifconfig`（link-local・安定・一時的）、`route -6 show`（既定の route）、
