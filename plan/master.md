@@ -8,24 +8,10 @@
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
-  追記（log）: sed -i '/master:decisions-log:start/r entry.md' plan/master.md（start の直後 = 新しい順の先頭に入る）。
-  決まった判断は open-decisions から消し、decisions-log に日付つきで移す。古くなった体制・予定は history-log へ。
--->
-<!-- awesome-plan-current:start -->
-## 現在の状況（Q1）
-
-<!-- master:updated:start -->
-更新: 2026-10-06 Q1 ハンドオーバー（C の再設計と UAT の設計の 7 Phase を planned に、計画の順を priority に、dock の規則をユーザーが決定。次の session は実装から）
-<!-- master:updated:end -->
-
-### 担当
-
-<!-- master:agents:start -->
-- **動いている担当は無い**（P2 は ws099-p034 の当て直しの途中でラップアップ中。届いた SHA を merge する）。新しい session では同じ名前で新しい世代を起動する（前の世代は TaskStop）。
-- 再開の候補（優先の順は下の next）:
-  - **P1**: UAT の不具合（network・kernel・Phone）: BUG-212・213・222（network）、BUG-218（Phone の padding と慣性の遅れ）、BUG-227（amazon の白い画面の切り分け）、BUG-211（libkeiland の慣性 scroll）。WS168 p002 の残り（libc の `sandbox_spawn()`、`<sandbox.h>` の sysroot は Q1 が許可）、WS172 p003、WS161 p005〜。
-  - **P2**: ws099-p034 の bar の当て直しと montage、BUG-236・225（App Home の stage の montage と 2 層の animation）、BUG-217・BUG-215/216/224/228（最大化の session の状態と gesture の体系）、BUG-229〜231（OSK）、BUG-219・221・226・232・235。WS158 p004 の残り。
-  - **T1**: 台帳の未実行（T1-205・206b・207・215〜220・202b の full）。**AAT の full は 1 日 1 回、毎回は直した機能のシナリオだけを束ねて流す**（[tests.md](tests.md) §5）。
+- **2026-10-06 の session（ユーザー承認の q780〜q784）**: P1（phase-runner high）・P2（同）・T1（test-runner、Sonnet 5.5 medium）、N=2。ゴールはベータ2 までの範囲の全消化（UAT の指摘 → ベータ1・2 の未実装 → UAT 以外の Bug）。試験待ちの Phase は `test-wait（T1-NNN）`（[protocol](agents/protocol.md) の 2026-10-06）。
+  - **P1**: q780（BUG-212 → 222 → 213）→ q782（BUG-233・234 → 227）。
+  - **P2**: q784 の AAT の smoke の 3 fail の helper の直し（小）→ q781（ws142-p008〜p010）→ q783（ws099-p035a → p037）。
+  - **T1**: q784 の台帳の未実行（T1-205・206b・207・215〜220・202b）を束ねて流す。
   - **B1**（WS074 p178）: ユーザーの指示まで起動しない。
 <!-- master:agents:end -->
 
@@ -41,11 +27,10 @@
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 新しい session の最初: `git log --oneline -3`、この block、priority の block、[Bug Board](known-bugs.md) の BUG-211〜237、[uat.md](uat.md) の 2026-10-06 を読む。
-2. 2026-10-06 ユーザー「メインエージェントを使って、サブエージェントを使わず、再設計部分のPhaseを1つずつ進めていき、ベータ1と2の範囲は実装に取りかかれるようにします。その段階で次のセッションにハンドオーバーします。」→ C の再設計の Phase は設計を書いた（priority の 1）。次の session は**実装**から: P1・P2・T1 を起こし、priority の順に Queue に入れる。
-3. T1 は直しの確かめを**シナリオの集合で束ねて**流す。AAT の runner の smoke の 3 fail を先に直す。
-4. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で作る。safe boot は起動時に Ctrl・Shift を押したまま Space を叩く。
-5. image の履歴の片付けの残り（merge の block）。
+1. 担当の区切りの報告を受けて merge（`git merge --no-ff --no-commit <SHA>` → 確かめ → `git commit -m WIP`）、試験の依頼を T1 の台帳に積む、T1 の結果で `test-wait` の印を外す（PASS → cleared、FAIL → 直しの attempt を次に投入）。
+2. 空いた担当には priority の順で次を投入: UAT の指摘（BUG-211〜237 と設計の Phase: ws090-p017・p018、ws102-p025、ws122-p005、残りの UAT の Bug）→ ベータ1・2 の未実装 → UAT 以外の Bug。
+3. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で作る。safe boot は起動時に Ctrl・Shift を押したまま Space。
+4. image の履歴の片付けの残り（merge の block）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
@@ -529,6 +514,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー: q780〜q784 を承認、N=2（P1・P2・T1）。T1 の model を Sonnet 5.5 medium に。ゴールはベータ2 までの範囲の全消化。順は UAT の指摘 → ベータ2 の未実装 → UAT 以外の Bug。T1 の結果は待たず、試験中の Phase に試験待ちの印（[protocol](agents/protocol.md) の 2026-10-06）。
 - **2026-10-05 夜 ラップアップ（ユーザーの指示で P1・P2・T1 を終了）**: 全部の担当が終了。main 0041dbfd 以降。T1-203（WS172 p002 の PIN の login）が **FAIL**: greeter の password の login が起きない。WS172 p002 は main に merge 済みなので、**次の作業の最初に graphical login の image が壊れていないかを確かめる**（P1 の解析）。未 merge: agent/p1 の WS130 p002（67801dab、T1-206 待ち）と WS168 p002 の kernel（730e8f55、arm64・sparcv9・x68k の build の確認も）。未実施の T1: T1-206・T1-202・T1-205・T1-207。5330 の AAT の image は T1-202 と直しの後に作り直す。WS168 の libc の `<sandbox.h>` の sysroot への追加は Q1 が許可する（toolchain の lock）。
 
 - **2026-10-05 夜 ユーザーの決定（まとめての質問への回答）**: 次を**担当の推奨どおり**に決定。

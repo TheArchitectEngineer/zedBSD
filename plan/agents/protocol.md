@@ -64,3 +64,12 @@ user「テストはメインエージェントが集約してサブエージェ�
 [Registry](registry.md)は担当名/世代、WS、worktree/branch、current Queue、ordered next Queues、状態、最終checkpoint、wrap-up指示、最終merge ACKを持つ。Queue laneは承認元/範囲/Phase/attempt/依存と結果を持つ。成果のGit commit、統合、Queue/Phase clearance、WS completionは別イベント。shared cache/outboxはmainだけが書き、GitHub publicationの保留とローカル実行成果を混同しない。
 
 2026-10-03 / toolchain の規則と試験の image: T1 の T1-027（CI の image、config/ci/config-amd64.mk）が T1 の worktree の build/ の中で target の clang の package（userland/packages/lang/clang）を build・stage した。共有の toolchain（build/llvm・llvm-source・llvm-build・NoctLang）は toolchain-lock.sh status で全て書き込み不可のまま、変更なしを Q1 が確認。AGENTS.md の「subagent は toolchain を変更・build・install しない（main の許可が要る）」に対し、Q1（main）の許可: 試験の担当（T1・T2）が自分の worktree の build/ の中で、image に入れる target の clang・libcxx の package を build するのは可（共有の toolchain の tree は lock のまま、source と規則は変えない）。I/O が重いので、同じ BUILD の directory を使い回して作り直しを避ける。
+
+## 2026-10-06 の体制と試験待ちの印
+
+ユーザー（原文）:「このqueueで実行してください。N=2でOKです。P1,P2,T1の構成です。変更点として、テストのサブエージェントのモデルを Sonnet 5.5 Midにしたいので、記録してください。進め方は、ベータ2までの範囲をすべて消化することをゴールにします。UATの指摘事項を優先しながら、ベータ2の未実装部分を次に優先します。UAT指摘事項以外のバグ修正は、ベータ2の実装より優先度を下げます。P1,P2は設計と実装を行い、テストをT1に回します。T1にテストを依頼したら、P1,P2は次の作業に移り、テスト結果を待ちません。テスト中のPhaseにはテスト結果待ちをマークしておきます。T1のテストが終わったら、Phaseのテスト待ちマークがクリアされ、P1,P2の次のスケジューリングで実行可能になります。Q1のメインエージェントが計画の管理、スケジューリング、結果のマージを行います。」
+
+- 体制: P1・P2（phase-runner、high、設計と実装）、T1（test-runner、**Sonnet 5.5 の medium**、`.claude/agents/test-runner.md` の `model: claude-sonnet-5-5`・`effort: medium`）。N=2。Q1 は計画・スケジュール・merge。
+- ゴール: ベータ2 までの範囲を全て消化する。順: (1) UAT の指摘（BUG-211〜237 とその設計の Phase）(2) ベータ1・ベータ2 の未実装 (3) UAT 以外の Bug。
+- **試験待ちの印**: 担当が T1 に依頼した Phase は、phase.md の Status と queue.md の State に `test-wait（T1-NNN）` と書く。担当は結果を待たず次の Queue へ移る。T1 の結果は Q1 が判定し、印を外す: PASS → cleared、FAIL → 直しを同じ Phase の新しい attempt として次のスケジュールで（なるべく元の担当に）投入する。印のある Phase に依存する Queue は印が外れるまで始めない。
+- 試験の依頼は担当から Q1 へ送り、Q1 が `plan/agents/T1/requests.md` に積んで T1 に渡す（2026-10-04 の集約の規則のまま）。T1 は source を直さないので、AAT の runner・試験の helper の直しは P1・P2 が行う。

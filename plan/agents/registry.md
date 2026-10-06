@@ -110,3 +110,5 @@
 2026-10-04 Q1: P2 generation8 は終了（ws134-p004〜p013、WS136 p003、BUG-135・163・164 の直し、全て統合済み）。P2 generation9（phase-runner-mid）を q666（ws127-p003・p006、ws128-p005・p006）で起動。
 
 2026-10-04 Q1: P2 generation9 は終了（q666〜q669: Files・Image Viewer・Terminal のベータ1、ws129-p002 の license の一覧と G1〜G4、i915-old の削除、remacs を userland/base/emacs に zlib で取り込み）。P2 generation10（phase-runner）を q670（ws099-p030、タイトルバーのドラッグ）で起動。
+
+2026-10-06 / 新しい session（q780〜q784、ユーザー承認、N=2）: P1 の新しい generation（phase-runner high、`agent/p1` を main 6ac5db98 に揃えた）は q780 → q782、P2 の新しい generation（phase-runner high、worktree p2 を `agent/p2` に戻し main 6ac5db98 に揃えた。`agent/p2-icons` は統合済み）は q784(a) → q781 → q783、T1 の新しい generation（test-runner、Sonnet 5.5 medium、`agent/t1` を main に揃えた）は q784(b)。前の generation は全て終了済み。

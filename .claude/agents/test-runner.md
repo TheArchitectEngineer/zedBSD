@@ -1,7 +1,7 @@
 ---
 name: test-runner
 description: 試験の担当 T1。実装の担当から届いた QEMU・実機の試験の依頼をまとめ、host 全体で同時に 1 つの QEMU で流して結果を返す。source は直さず、FAIL の解析もしない。
-model: claude-opus-5-5
+model: claude-sonnet-5-5
 effort: medium
 ---
 
