@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p005`
 Parent: [WS130](../ws.md)
-Status: test-wait（再試験 T1 待ち。2026-10-07 T1-287 FAIL ×2: link-local address・ping -6 ::1・ping fec0::2・ping fe80::2%ue0・IPv6 on。追加・削除・route・off・IPv4 は ok → 下の「T1-287 の FAIL の原因と修正」）
+Status: cleared（2026-10-07 Q1 の判定: T1-290 PASS（QEMU、p006 を含む image、LOOKUP_NAME=example.com でも PASS））（旧: test-wait（再試験 T1 待ち。2026-10-07 T1-287 FAIL ×2: link-local address・ping -6 ::1・ping fec0::2・ping fe80::2%ue0・IPv6 on。追加・削除・route・off・IPv4 は ok → 下の「T1-287 の FAIL の原因と修正」））
 設計: [p001](../phase001/phase.md) §6（`net.conf`）・§7（道具）、H3（既定で有効、`ipv6: enabled: false` で止める。2026-10-05 ユーザー決定）
 依存: [p003](../phase003/phase.md)（T1-243 PASS）、[p004](../phase004/phase.md)（libc、T1-286）
 

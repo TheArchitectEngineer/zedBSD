@@ -37,7 +37,7 @@ Resume point（2026-10-02 計画）: **p001（棚卸し・回帰の取り直し�
 | [ws128-p001](phase001/phase.md) | 棚卸し: アプリごとの回帰の取り直し、menu の全項目の通しと不具合の表、未完成の UI の一覧、改善の候補（価値・規模・危険・依存）。既存 WS の残りとの照合の確認。最後にユーザーが選ぶ | cleared（2026-10-03 q623-i01、[requirements.md](requirements.md)） | — | 3h |
 | [ws128-p002](phase002/phase.md) | Notes の Open（file chooser で Notes の PDF・他の PDF を開く）と Save As | cleared（2026-10-03 q621-i01、QEMU の Venus） | —（p001 と並列可） | 2h |
 | [ws128-p003](phase003/phase.md) | Text Editor の Find & Replace（Replace・Replace All、undo で戻せる）と Open Recent | cleared（2026-10-03 q621-i01、QEMU の Venus と host） | —（p001 と並列可） | 2h |
-| [ws128-p004](phase004/phase.md) | PDF Viewer の文字の検索と選択・copy（libpdf に文字の抽出（ToUnicode）が無いので規模が大きい） | planning（p001 で規模の見積もりとユーザーの採否） | p001、libpdf（`userland/base/libpdf`） | 4h 以上 |
+| [ws128-p004](phase004/phase.md) | PDF Viewer の文字の検索と選択・copy（libpdf に文字の抽出（ToUnicode）が無いので規模が大きい） | cleared（2026-10-07、T1-288） | p001、libpdf（`userland/base/libpdf`） | 4h 以上 |
 | [ws128-p005](phase005/phase.md) | Image Viewer: Move to Trash・Open With・slideshow（画像の copy は F-074 へ移管、2026-10-04 Q1） | cleared（q666、T1-078） | p001 | 2h |
 | [ws128-p006](phase006/phase.md) | Terminal: scrollback の検索・色の theme と font の大きさの保存 | cleared（q666、T2-025） | p001 | 2h |
 | [ws128-p007](phase007/phase.md) | 5330 の実機で標準アプリの通し（ユーザーの目視、WS079 S8/S9・WS100 A7 と同じ回） | planning（p002〜p006 の選んだ物の後、実機とユーザーの時間） | 実装の Phase | agent 1h + ユーザー 30 分 |

@@ -595,6 +595,51 @@ system_view_take_mail_event(
 }
 
 /*
+ * Keeps a phone event (ws170-p004) for kl_system_take_phone_event; a full
+ * ring drops its oldest.
+ */
+void
+system_view_phone_event(
+	struct system_view *view,
+	const struct kl_phone_event *event)
+{
+	unsigned slot;
+
+	/* A full ring drops its oldest. */
+	if (view->phone_count == SYSTEM_VIEW_PHONE_EVENTS) {
+		view->phone_head = (view->phone_head + 1U) % SYSTEM_VIEW_PHONE_EVENTS;
+		view->phone_count--;
+	}
+
+	/* The event after the newest, counted and told as a change. */
+	slot = (view->phone_head + view->phone_count) % SYSTEM_VIEW_PHONE_EVENTS;
+	view->phone_events[slot] = *event;
+	view->phone_count++;
+	view->changed |= KL_SYSTEM_CHANGED_PHONE;
+}
+
+/*
+ * Takes the oldest phone event: 1 with it, 0 when none waits.
+ */
+int
+system_view_take_phone_event(
+	struct system_view *view,
+	struct kl_phone_event *event)
+{
+	/* None waits. */
+	if (view->phone_count == 0U)
+		return 0;
+
+	/* The oldest, out of the ring. */
+	*event = view->phone_events[view->phone_head];
+	view->phone_head = (view->phone_head + 1U) % SYSTEM_VIEW_PHONE_EVENTS;
+	view->phone_count--;
+
+	/* Succeeded: one event taken. */
+	return 1;
+}
+
+/*
  * Gives what changed since the last take, and starts again from nothing.
  */
 unsigned

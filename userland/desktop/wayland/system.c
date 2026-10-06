@@ -355,6 +355,10 @@ kwl_system_bind(
 	if (manager->version >= KL_SYSTEM_SINCE_MAIL)
 		bits |= KL_SYSTEM_CAPABILITY_MAIL;
 
+	/* The phone, at version 16 (ws170-p004). */
+	if (manager->version >= KL_SYSTEM_SINCE_PHONE)
+		bits |= KL_SYSTEM_CAPABILITY_PHONE;
+
 	/* The administration of the accounts, at version 8 where the system has its tool (ws089-p026). */
 	administer = kl_backend_account_can_administer();
 	if (manager->version >= KL_SYSTEM_SINCE_ADMINISTER && administer)
@@ -413,6 +417,9 @@ kwl_system_request(
 		break;
 	case KWL_SYSTEM_MAIL:
 		error = kwl_mail_request(object, opcode, bytes, size);
+		break;
+	case KWL_SYSTEM_PHONE:
+		error = kwl_phone_request(object, opcode, bytes, size);
 		break;
 	default:
 		error = EPROTO;
@@ -688,6 +695,16 @@ system_manager_request(
 		if (manager->version < KL_SYSTEM_SINCE_MAIL)
 			return EPROTO;
 		error = kwl_mail_create(manager, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The phone is phone-shell.c's, since version 16 (ws170-p004). */
+	if (opcode == KL_SYSTEM_MANAGER_GET_PHONE) {
+		if (manager->version < KL_SYSTEM_SINCE_PHONE)
+			return EPROTO;
+		error = kwl_phone_create(manager, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;

@@ -135,6 +135,9 @@
 		kl_system_mail_arrived;
 		kl_system_mail_listen;
 		kl_system_take_mail_event;
+		kl_system_phone_send;
+		kl_system_phone_call;
+		kl_system_take_phone_event;
 		kl_system_network_get_links;
 		kl_system_network_get_dns;
 		kl_system_network_get_saved;

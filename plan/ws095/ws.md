@@ -51,7 +51,7 @@ Resume point（2026-10-06 Q1 の更新: p005 は q604-i01 で cleared 済み、p
 | [ws095-p005](phase005/phase.md) | 候補の窓の合成と IME の描画、indicator、IME の中の key の repeat、guest の画面の確認 | cleared（q604-i01、2026-10-02、P4。QEMU で候補の窓・system bar の A／あ と click・repeat を確認、実機の目視はユーザー） | p003・p004 | 4h |
 | [ws095-p006](phase006/phase.md) | Terminal の text-input（libkeiui の `kui_window_text_input` を使う、password の検出）と Terminal の CJK の fallback の font（D14） | planned（p005 の後） | p005 | 3〜4h |
 | [ws095-p007](phase007/phase.md) | Text Editor と Notes の確認と不足の修正（preedit の表示・cursor の矩形） | planned（p005 の後） | p005 | 2〜3h |
-| [ws095-p008](phase008/phase.md) | zdesktop の自前の field（titlebar の検索）と Files の field | planning（Files の担当 WS127 と file の調整） | p005・p006、WS127 との調整 | 3〜4h |
+| [ws095-p008](phase008/phase.md) | zdesktop の自前の field（titlebar の検索）と Files の field | cleared（2026-10-07、T1-283） | p005・p006、WS127 との調整 | 3〜4h |
 | ws095-p009 | Browser の text field | planning（WS074 はこの session の対象外。引継ぎか保留をユーザーが決める） | p006、WS074 の担当 | — |
 | ws095-p010 | PS/2 の日本語の key の写し（条件付き: JIS の PS/2 keyboard の利用者が出た時、F-058 と一緒に。5330 は PS/2 だが US 配列で日本語の key が無い。main 2026-09-29） | planning | JIS の PS/2 の利用者（F-058） | — |
 | [ws095-p011](phase011/phase.md) | 全体の規約の適合、guest の回帰（実機の確認は別に記録） | planning | p005〜p008・p012（p009/p010 は行った時だけ） | 2〜3h |

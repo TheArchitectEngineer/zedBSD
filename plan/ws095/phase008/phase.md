@@ -2,7 +2,7 @@
 
 # ws095-p008: zdesktop の自前の field と Files の field
 
-Status: in-progress（2026-10-06 q820、P1。source の変更は無し（下の確認のとおり前の Phase で済んでいた）、guest の試験 `ime-p008.sh` を足して T1 待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-283 PASS（ime-p008: query=日本語、RENAME a.txt → 漢字.txt））（旧: in-progress（2026-10-06 q820、P1。source の変更は無し（下の確認のとおり前の Phase で済んでいた）、guest の試験 `ime-p008.sh` を足して T1 待ち））
 Disposition: normal
 Parent: [WS095](../ws.md)
 Queue: q820（P1）

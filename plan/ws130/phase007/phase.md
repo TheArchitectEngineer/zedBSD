@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p007`
 Parent: [WS130](../ws.md)
-Status: test-wait（q832、P1、2026-10-07: T1-292 FAIL の修正、再試験待ち）
+Status: test-wait（2026-10-07 P1: T1-292 FAIL 9 行の修正と証拠取り、再試験待ち。旧: uncleared（T1-292 FAIL）、test-wait（正常系を実装、host PASS））
 設計: [p001](../phase001/phase.md) §5、H7（DUID-UUID）・H5（DNS の順）（2026-10-05 ユーザー決定）
 依存: [p006](../phase006/phase.md)（networkd の RA の処理、T1-289/290）
 
