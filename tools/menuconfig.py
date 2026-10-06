@@ -75,7 +75,6 @@ PROGRAM_CATEGORIES = [
 
 PACKAGE_CATEGORIES = [
     ("Languages", "packages/lang"),
-    ("Editors", "packages/editors"),
     ("Development", "packages/devel"),
     ("Libraries", "packages/libs"),
     ("Desktop", "packages/desktop"),
