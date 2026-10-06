@@ -456,7 +456,7 @@ test_scroll_axis(void)
 	event.time_us = test_now + 45000U;
 	taken = kl_ui_axis(ui, &event);
 	moving = kl_scroll_step(&scroll, test_now + 60000U);
-	check(taken == 1 && moving && scroll.y > 200.0, "ui axis: the end lets the content fly");
+	check(taken == KL_UI_AXIS_FLUNG && moving && scroll.y > 200.0, "ui axis: the end lets the content fly");
 	kl_scroll_release(&scroll);
 	kl_ui_destroy(ui);
 	test_now += 10U * SECOND;
