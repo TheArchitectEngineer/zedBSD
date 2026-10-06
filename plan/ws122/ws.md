@@ -34,7 +34,7 @@ Resume point: p003・p005 の判定（Q1）、その後は全文規約の Phase�
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 要件・設計（2026-10-05 の計画の段 1〜4、libavcodec の package の license の構成と dlopen の add-in の扱いを含む） | cleared（2026-10-05 Q1） | — |
 | [p002](phase002/phase.md) | 簡単な player（開く・再生・一時停止・停止・シーク、audiod の音）、ベータ1 | cleared（2026-10-05 Q1） | p001 |
-| [p003](phase003/phase.md) | 独自の container の読み込み（MP4・Matroska/WebM の demux）、ベータ2 の段 2 の前半 | test-wait（2026-10-07 P2: p004 の T1-191 で使用、判定は Q1） | p002 |
+| [p003](phase003/phase.md) | 独自の container の読み込み（MP4・Matroska/WebM の demux）、ベータ2 の段 2 の前半 | cleared（2026-10-07） | p002 |
 | [p004](phase004/phase.md) | player を mediafile と libavcodec の dlopen の add-in（software decode、header 無し）で完成（2026-10-05 夕のユーザーの決定。GPU の decode は別の WS） | cleared（2026-10-05 Q1、T1-191） | p003 |
 | 最後 | 全文規約と回帰 | planning | 実装 Phase |
 
