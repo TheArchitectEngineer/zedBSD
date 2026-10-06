@@ -14,6 +14,7 @@
 #include "userland/base/libc/syscall.h"
 #include "src/libc/heap.h"
 #include "src/libc/stdio-internal.h"
+#include "include/libc/sandbox.h"
 
 #include <uapi/auxv.h>
 #include <uapi/dirent.h>
@@ -3090,6 +3091,25 @@ nanosleep(
 
 	/* Returns the computed result. */
 	return result;
+}
+
+/*
+ * Starts a child in a sandbox from its first instruction (ws168-p002;
+ * <sandbox.h>).
+ */
+pid_t
+sandbox_spawn(
+	const struct sandbox_spawn *request)
+{
+	pid_t child;
+
+	/* The kernel reads the request (its size first) and starts the child. */
+	child = (pid_t)call(KERN_SYS_sandbox_spawn, (uintptr_t)request, 0, 0, 0, 0, 0);
+	if (child < 0)
+		return -1;
+
+	/* Succeeded: the child's process ID. */
+	return child;
 }
 
 /*
