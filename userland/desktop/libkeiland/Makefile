@@ -51,6 +51,7 @@ LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/widgets.c \
 	userland/desktop/libkeiland/ui/field.c \
 	userland/desktop/libkeiland/ui/list.c \
+	userland/desktop/libkeiland/ui/views.c \
 	userland/desktop/libkeiland/ui/cards.c \
 	userland/desktop/libkeiland/ui/chooser.c \
 	userland/desktop/libkeiland/ui/chooser-model.c \

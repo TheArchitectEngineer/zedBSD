@@ -45,8 +45,7 @@
 static void grid_panel(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
 static void grid_title(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
 static void grid_items(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner);
-static void grid_cell(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry, int index, int x, int y);
-static int grid_name(struct fm_app *app, struct kl_canvas *canvas, const struct fm_entry *entry, int x, int y, int selected);
+static void grid_cell(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry, int index, const struct kl_rect *slot);
 static void grid_message(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner, const char *message);
 static void grid_band(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner);
 static void grid_status(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
@@ -274,91 +273,66 @@ grid_title(
 	(void)kl_text_draw(app->text, canvas, area->x + 24 + width + 12, baseline, count, strlen(count), GRID_TEXT_COUNT, 0, FM_COLOR_TEXT_SECONDARY);
 }
 
-/* Draws the rows of cells that are in sight, and records each cell. */
+/* Draws the rows of cells that are in sight with libkeiland's grid (ws090-p024), and records each cell. */
 static void
 grid_items(
 	struct fm_app *app,
 	struct kl_canvas *canvas,
 	const struct kl_rect *inner)
 {
+	struct kl_grid grid;
+	struct kl_rect cell;
 	struct fm_tab *tab;
 	size_t index;
-	int columns;
-	int rows;
-	int left;
-	int row;
-	int column;
-	int x;
-	int y;
 
 	/* As many columns as fit, the grid centred. */
 	tab = fm_ui_tab(app);
-	columns = inner->width / GRID_CELL_WIDTH;
-	if (columns < 1)
-		columns = 1;
-	left = inner->x + (inner->width - columns * GRID_CELL_WIDTH) / 2;
-	rows = (int)((tab->listing.count + (size_t)columns - 1U) / (size_t)columns);
+	kl_grid_layout(inner, GRID_CELL_WIDTH, GRID_CELL_HEIGHT, tab->listing.count, &grid);
 
 	/* The grid's measure, which scrolling and the keyboard use. */
-	app->layout.columns = columns;
-	app->layout.grid_left = left;
+	app->layout.columns = grid.columns;
+	app->layout.grid_left = grid.left;
 	app->layout.cell_width = GRID_CELL_WIDTH;
 	app->layout.cell_height = GRID_CELL_HEIGHT;
-	app->layout.content_height = rows * GRID_CELL_HEIGHT + GRID_TITLE_HEIGHT + 8;
+	app->layout.content_height = grid.content_height + GRID_TITLE_HEIGHT + 8;
 
 	/* Each cell whose row is in sight. */
 	for (index = 0; index < tab->listing.count; index++) {
-		row = (int)(index / (size_t)columns);
-		column = (int)(index % (size_t)columns);
-		y = inner->y + row * GRID_CELL_HEIGHT - tab->scroll;
-		if (y + GRID_CELL_HEIGHT < inner->y || y > inner->y + inner->height)
+		kl_grid_cell(&grid, index, tab->scroll, &cell);
+		if (cell.y + GRID_CELL_HEIGHT < inner->y || cell.y > inner->y + inner->height)
 			continue;
-		x = left + column * GRID_CELL_WIDTH;
-		grid_cell(app, canvas, &tab->listing.entries[index], (int)index, x, y);
+		grid_cell(app, canvas, &tab->listing.entries[index], (int)index, &cell);
 	}
 }
 
-/* Draws one cell: the lit ground, the icon, the name and the detail line. */
+/* Draws one cell: libkeiland's ground and name (ws090-p024), the icon and the detail line. */
 static void
 grid_cell(
 	struct fm_app *app,
 	struct kl_canvas *canvas,
 	struct fm_entry *entry,
 	int index,
-	int x,
-	int y)
+	const struct kl_rect *slot)
 {
+	struct kl_style style;
 	struct kl_rect cell;
 	struct kl_rect field;
-	kl_color selection;
+	struct kl_rect icon;
+	const char *name;
 	char detail[64];
+	unsigned state;
 	int renaming;
 	int match;
 	int baseline;
 	int width;
 
 	/* The cell's rectangle, recorded as the item. */
-	cell.x = x + 4;
-	cell.y = y + 2;
+	cell.x = slot->x + 4;
+	cell.y = slot->y + 2;
 	cell.width = GRID_CELL_WIDTH - 8;
 	cell.height = GRID_CELL_HEIGHT - 4;
 
-	/* The ground: the selection's color, or a faint one under the pointer. */
-	selection = FM_COLOR_SELECTION;
-	if (app->focused == 0)
-		selection = FM_COLOR_SELECTION_INACTIVE;
-	if (entry->selected != 0) {
-		kl_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f - 6.0f, (float)y + 4.0f, GRID_ICON + 12.0f, GRID_ICON + 12.0f, 12.0f, selection);
-	} else if (app->hover_kind == FM_HIT_ITEM && app->hover_index == index) {
-		kl_canvas_round(canvas, (float)cell.x, (float)cell.y, (float)cell.width, (float)cell.height, 12.0f, FM_COLOR_HOVER);
-	}
-
-	/* The icon, faded when the item is cut. */
-	fm_grid_entry_icon(app, canvas, entry, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON);
-	if (entry->cut != 0)
-		kl_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_COLOR_TILE);
-
-	/* The name being changed is a field; otherwise the name, on the accent when selected. */
+	/* The name being changed is a field, drawn after the ground. */
 	renaming = 0;
 	if (app->focus == FM_FOCUS_RENAME) {
 		match = strcmp(entry->path, app->rename_path);
@@ -366,16 +340,34 @@ grid_cell(
 			renaming = 1;
 	}
 
+	/* The ground for the item's state and its name (none while it is being changed). */
+	state = 0U;
+	if (entry->selected != 0)
+		state |= KL_ITEM_SELECTED;
+	if (app->focused != 0)
+		state |= KL_ITEM_FOCUSED;
+	if (app->hover_kind == FM_HIT_ITEM && app->hover_index == index)
+		state |= KL_ITEM_HOVER;
+	name = entry->name;
+	if (renaming != 0)
+		name = NULL;
+	fm_style(app, canvas, &style);
+	baseline = kl_grid_item(&style, slot, GRID_ICON, name, GRID_TEXT_NAME, state);
+
+	/* The icon, faded when the item is cut. */
+	kl_grid_icon(slot, GRID_ICON, &icon);
+	fm_grid_entry_icon(app, canvas, entry, (float)icon.x, (float)icon.y, (float)GRID_ICON);
+	if (entry->cut != 0)
+		kl_canvas_round(canvas, (float)icon.x, (float)icon.y, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_COLOR_TILE);
+
 	/* The field, white with the accent edge, where the name was. */
 	if (renaming != 0) {
-		field.x = x + 2;
-		field.y = y + GRID_ICON + 16;
+		field.x = slot->x + 2;
+		field.y = slot->y + GRID_ICON + 16;
 		field.width = GRID_CELL_WIDTH - 4;
 		field.height = 24;
 		fm_rename_draw(app, canvas, &field);
-		baseline = y + GRID_ICON + 32;
-	} else {
-		baseline = grid_name(app, canvas, entry, x, y + GRID_ICON + 30, entry->selected);
+		baseline = slot->y + GRID_ICON + 32;
 	}
 
 	/* The detail: a folder's item count, a file's size. */
@@ -389,70 +381,10 @@ grid_cell(
 
 	/* The detail, centred under the name. */
 	width = kl_text_width(app->text, detail, strlen(detail), GRID_TEXT_DETAIL, 0);
-	(void)kl_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - width) / 2, baseline + 16, detail, strlen(detail), GRID_TEXT_DETAIL, 0, FM_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw(app->text, canvas, slot->x + (GRID_CELL_WIDTH - width) / 2, baseline + 16, detail, strlen(detail), GRID_TEXT_DETAIL, 0, FM_COLOR_TEXT_SECONDARY);
 
 	/* The cell can be clicked. */
 	fm_ui_hit(app, &cell, FM_HIT_ITEM, index);
-}
-
-/* Draws an item's name in up to two centred lines, on an accent pill when selected, and returns the last line's baseline. */
-static int
-grid_name(
-	struct fm_app *app,
-	struct kl_canvas *canvas,
-	const struct fm_entry *entry,
-	int x,
-	int baseline,
-	int selected)
-{
-	struct kl_text_line line;
-	char second[FM_NAME_MAX];
-	kl_color ink;
-	size_t first_length;
-	int limit;
-	int first_width;
-	int second_width;
-	int widest;
-	int lines;
-
-	/* The first line: what fits the cell. */
-	limit = GRID_CELL_WIDTH - 12;
-	first_length = kl_text_break(app->text, entry->name, GRID_TEXT_NAME, 0, limit);
-	first_width = kl_text_width(app->text, entry->name, first_length, GRID_TEXT_NAME, 0);
-
-	/* The second line: the rest, cut with an ellipsis. */
-	lines = 1;
-	second[0] = '\0';
-	second_width = 0;
-	if (entry->name[first_length] != '\0') {
-		(void)kl_text_fit(app->text, entry->name + first_length, GRID_TEXT_NAME, 0, limit, second, sizeof(second));
-		second_width = kl_text_width(app->text, second, strlen(second), GRID_TEXT_NAME, 0);
-		lines = 2;
-	}
-
-	/* A selected name sits on an accent pill as wide as its widest line. */
-	kl_text_metrics(app->text, GRID_TEXT_NAME, &line);
-	ink = FM_COLOR_TEXT;
-	if (selected != 0) {
-		widest = first_width;
-		if (second_width > widest)
-			widest = second_width;
-		kl_canvas_round(canvas, (float)(x + (GRID_CELL_WIDTH - widest) / 2 - 6), (float)(baseline - line.ascent - 3), (float)(widest + 12), (float)(lines * line.height + 5), 7.0f, FM_COLOR_ACCENT);
-		ink = KL_RGB(0xffffff);
-	}
-
-	/* The first line, centred. */
-	(void)kl_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - first_width) / 2, baseline, entry->name, first_length, GRID_TEXT_NAME, 0, ink);
-
-	/* A name of one line ends there. */
-	if (lines == 1)
-		return baseline;
-
-	/* The second line under it. */
-	(void)kl_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - second_width) / 2, baseline + line.height, second, strlen(second), GRID_TEXT_NAME, 0, ink);
-
-	/* Reports the second line's baseline. */
-	return baseline + line.height;
 }
 
 /* Draws a quiet message in the middle of the panel. */
@@ -473,13 +405,15 @@ grid_message(
 	(void)kl_text_draw(app->text, canvas, inner->x + (inner->width - width) / 2, inner->y + inner->height / 2 - 20, message, strlen(message), 15U, 0, FM_COLOR_TEXT_FAINT);
 }
 
-/* Draws the rubber band being dragged: a faint accent box with an edge. */
+/* Draws the rubber band being dragged with libkeiland's (ws090-p024). */
 static void
 grid_band(
 	struct fm_app *app,
 	struct kl_canvas *canvas,
 	const struct kl_rect *inner)
 {
+	struct kl_style style;
+	struct kl_rect band;
 	struct fm_tab *tab;
 	int left;
 	int top;
@@ -508,13 +442,15 @@ grid_band(
 	}
 
 	/* On the screen, the scroll taken off. */
-	top -= tab->scroll;
-	bottom -= tab->scroll;
+	(void)inner;
+	band.x = left;
+	band.y = top - tab->scroll;
+	band.width = right - left;
+	band.height = bottom - top;
 
 	/* The box and its edge. */
-	(void)inner;
-	kl_canvas_round(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, KL_RGBA(0x2f7cf6, 30));
-	kl_canvas_round_border(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, 1.0f, KL_RGBA(0x2f7cf6, 150));
+	fm_style(app, canvas, &style);
+	kl_band(&style, &band);
 }
 
 /* Draws the status pill at the bottom of the panel: a message, or the selection's count and size. */

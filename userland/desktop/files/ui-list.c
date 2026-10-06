@@ -34,7 +34,6 @@
 
 /* The text sizes of the view. */
 #define LIST_TEXT		13U
-#define LIST_TEXT_HEADER	12U
 
 /* The widest a list may show columns: the name, and the six others at most. */
 #define LIST_COLUMNS		8
@@ -426,7 +425,7 @@ list_layout(
 	return count;
 }
 
-/* Draws the header: each column's title, the sorted one with its direction. */
+/* Draws the header with libkeiland's (ws090-p024): each column's title, the sorted one with its direction; records the titles and the edges. */
 static void
 list_header(
 	struct fm_app *app,
@@ -435,49 +434,46 @@ list_header(
 	const struct list_column *columns,
 	int count)
 {
+	struct kl_column titles[LIST_COLUMNS];
+	struct kl_style style;
+	struct kl_rect header;
 	struct kl_rect title;
-	struct kl_rect edge;
-	kl_color ink;
 	unsigned sort;
-	int baseline;
-	int width;
 	int index;
 
-	/* A thin line under the header. */
-	title.x = inner->x;
-	title.y = inner->y + LIST_HEADER - 1;
-	title.width = inner->width;
-	title.height = 1;
-	kl_canvas_fill(canvas, &title, FM_COLOR_SEPARATOR);
-
-	/* Each column's title. */
-	baseline = kl_text_center(LIST_TEXT_HEADER, inner->y, LIST_HEADER);
+	/* Each column's title, the sorted one and the one under the pointer. */
 	for (index = 0; index < count; index++) {
+		titles[index].title = list_title(columns[index].column);
+		titles[index].x = columns[index].x;
+		titles[index].width = columns[index].width;
+		titles[index].flags = 0U;
+		sort = list_sort_of(columns[index].column);
+		if (sort == app->sort)
+			titles[index].flags |= KL_COLUMN_SORTED;
+		if (sort == app->sort && app->sort_reverse != 0)
+			titles[index].flags |= KL_COLUMN_REVERSED;
+		if (app->hover_kind == FM_HIT_HEADER && app->hover_index == (int)columns[index].column)
+			titles[index].flags |= KL_COLUMN_HOVER;
+	}
+
+	/* The header. */
+	header.x = inner->x;
+	header.y = inner->y;
+	header.width = inner->width;
+	header.height = LIST_HEADER;
+	fm_style(app, canvas, &style);
+	kl_list_header(&style, &header, titles, (size_t)count);
+
+	/* A sortable title can be clicked. */
+	for (index = 0; index < count; index++) {
+		sort = list_sort_of(columns[index].column);
+		if (sort == FM_SORT_COUNT)
+			continue;
 		title.x = columns[index].x;
 		title.y = inner->y;
 		title.width = columns[index].width;
 		title.height = LIST_HEADER;
-
-		/* The title lit under the pointer, darker when it is the sort. */
-		sort = list_sort_of(columns[index].column);
-		ink = FM_COLOR_TEXT_SECONDARY;
-		if (sort == app->sort)
-			ink = FM_COLOR_TEXT;
-		if (app->hover_kind == FM_HIT_HEADER && app->hover_index == (int)columns[index].column)
-			kl_canvas_round(canvas, (float)title.x - 4.0f, (float)title.y + 3.0f, (float)title.width, (float)title.height - 6.0f, 6.0f, FM_COLOR_HOVER);
-		width = kl_text_draw_fit(app->text, canvas, title.x + 4, baseline, list_title(columns[index].column), LIST_TEXT_HEADER, 1, title.width - 24, ink);
-
-		/* The sort's direction after its title. */
-		if (sort == app->sort) {
-			if (app->sort_reverse != 0)
-				kl_icon_draw(canvas, KL_ICON_UP, (float)(title.x + width + 8), (float)(baseline - 11), 12.0f, ink);
-			else
-				kl_icon_draw(canvas, KL_ICON_DOWN, (float)(title.x + width + 8), (float)(baseline - 11), 12.0f, ink);
-		}
-
-		/* A sortable title can be clicked. */
-		if (sort != FM_SORT_COUNT)
-			fm_ui_hit(app, &title, FM_HIT_HEADER, (int)columns[index].column);
+		fm_ui_hit(app, &title, FM_HIT_HEADER, (int)columns[index].column);
 	}
 
 	/* The edge before each column but the name's can be dragged (over the titles, which it was recorded after). */
@@ -486,11 +482,6 @@ list_header(
 		title.y = inner->y;
 		title.width = LIST_EDGE_GRIP;
 		title.height = LIST_HEADER;
-		edge.x = columns[index].x;
-		edge.y = inner->y + 8;
-		edge.width = 1;
-		edge.height = LIST_HEADER - 16;
-		kl_canvas_fill(canvas, &edge, FM_COLOR_SEPARATOR);
 		fm_ui_hit(app, &title, FM_HIT_COLUMN_EDGE, (int)columns[index].column);
 	}
 }
@@ -506,30 +497,29 @@ list_row(
 	const struct list_column *columns,
 	int count)
 {
+	struct kl_style style;
 	struct kl_rect field;
 	char text[FM_PATH_MAX];
 	kl_color ink;
 	kl_color faint;
+	unsigned state;
+	unsigned flags;
 	int renaming;
 	int match;
 	int baseline;
 	int column;
 	int width;
 
-	/* The ground: the accent when selected, faint under the pointer. */
-	ink = FM_COLOR_TEXT;
-	faint = FM_COLOR_TEXT_SECONDARY;
-	if (entry->selected != 0) {
-		if (app->focused != 0) {
-			kl_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_ACCENT);
-			ink = KL_RGB(0xffffff);
-			faint = KL_RGBA(0xffffff, 210);
-		} else {
-			kl_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_SELECTION_INACTIVE);
-		}
-	} else if (app->hover_kind == FM_HIT_ITEM && app->hover_index == index) {
-		kl_canvas_round(canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, 7.0f, FM_COLOR_HOVER);
-	}
+	/* The ground for the row's state (libkeiland's, ws090-p024), with the inks of its text. */
+	state = 0U;
+	if (entry->selected != 0)
+		state |= KL_ITEM_SELECTED;
+	if (app->focused != 0)
+		state |= KL_ITEM_FOCUSED;
+	if (app->hover_kind == FM_HIT_ITEM && app->hover_index == index)
+		state |= KL_ITEM_HOVER;
+	fm_style(app, canvas, &style);
+	kl_list_item(&style, row, state, &ink, &faint);
 
 	/* The small icon (faded when cut) and the name, or the field while it is being changed. */
 	baseline = kl_text_center(LIST_TEXT, row->y, row->height);
@@ -559,15 +549,11 @@ list_row(
 	for (column = 1; column < count; column++) {
 		list_cell_text(app, entry, columns[column].column, text, sizeof(text));
 
-		/* Sizes are aligned to the right of their column. */
-		if (columns[column].column == FM_COLUMN_SIZE) {
-			width = kl_text_width(app->text, text, strlen(text), LIST_TEXT, 0);
-			(void)kl_text_draw(app->text, canvas, columns[column].x + columns[column].width - 16 - width, baseline, text, strlen(text), LIST_TEXT, 0, faint);
-			continue;
-		}
-
-		/* The others to the left. */
-		(void)kl_text_draw_fit(app->text, canvas, columns[column].x + 4, baseline, text, LIST_TEXT, 0, columns[column].width - 12, faint);
+		/* Sizes are aligned to the right of their column, the others to the left. */
+		flags = 0U;
+		if (columns[column].column == FM_COLUMN_SIZE)
+			flags = KL_CELL_RIGHT;
+		kl_list_cell(&style, columns[column].x, columns[column].width, baseline, text, LIST_TEXT, flags, faint);
 	}
 
 	/* The row can be clicked. */
