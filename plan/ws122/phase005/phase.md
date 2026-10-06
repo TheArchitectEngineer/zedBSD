@@ -95,3 +95,5 @@ Status（p005b）: 判断待ち（Guardrail「compositor は libvulkan だけ」
 - game mode の頼み方: app の明示の要求。標準の `wp_content_type_v1`（content type `video` / `game`）と xdg の set_fullscreen の両方がある時だけ。player は F11・Alt+Enter・double click の全画面でこれを付ける。普通の全画面（Terminal の F11 など）は合成のまま。
 - 端の操作: input は direct の間も compositor が受けるので、端の swipe（解除・WiseView）は今のまま拾える。gesture が始まった frame で合成に戻り、gesture の絵を描く。Esc は app に届く（player は Esc で全画面を出る）。
 - 合成に戻る条件: popup・OSK・通知・App Home・WiseView・電源の dialog・pointer の cursor 以外の overlay が出た時、buffer が出力の大きさでない、形式・modifier が出せない、alpha がある時。log `ZWL SCANOUT direct=1 surface=N` / `direct=0 reason=…`。
+
+2026-10-06 ユーザー（クリック）: p005b は **B**（libkeiland-backend-zedbsd に direct の口、old の ioctl をそこへ移す）。Guardrail の例外の表に記録（game mode の時だけ、ioctl は backend の zedBSD の tree の中だけ）。

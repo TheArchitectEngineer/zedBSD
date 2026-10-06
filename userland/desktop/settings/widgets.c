@@ -81,11 +81,11 @@ se_page_header(
 
 	/* The name, bold. */
 	baseline = top + title.ascent;
-	(void)fm_text_draw_fit(app->text, canvas, x, baseline, page->name, WIDGETS_TEXT_TITLE, 1, width, SE_COLOR_TEXT);
+	(void)fm_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->name), WIDGETS_TEXT_TITLE, 1, width, SE_COLOR_TEXT);
 
 	/* The summary under it. */
 	baseline = top + title.height + 2 + summary.ascent;
-	(void)fm_text_draw_fit(app->text, canvas, x, baseline, page->summary, WIDGETS_TEXT_SUMMARY, 0, width, SE_COLOR_TEXT_SECONDARY);
+	(void)fm_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->summary), WIDGETS_TEXT_SUMMARY, 0, width, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the summary. */
 	return top + title.height + 2 + summary.height;

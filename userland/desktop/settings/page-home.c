@@ -57,10 +57,10 @@ se_home_draw(
 	se_look_volumes(app);
 
 	/* Each group in the list's order. */
-	y = home_group(app, canvas, SE_GROUP_CONNECTIVITY, "Connectivity", x, top, width);
-	y = home_group(app, canvas, SE_GROUP_PERSONALIZATION, "Personalization", x, y + HOME_GROUP_GAP, width);
-	y = home_group(app, canvas, SE_GROUP_DEVICES, "Devices", x, y + HOME_GROUP_GAP, width);
-	y = home_group(app, canvas, SE_GROUP_SYSTEM, "System", x, y + HOME_GROUP_GAP, width);
+	y = home_group(app, canvas, SE_GROUP_CONNECTIVITY, kl_tr("Connectivity"), x, top, width);
+	y = home_group(app, canvas, SE_GROUP_PERSONALIZATION, kl_tr("Personalization"), x, y + HOME_GROUP_GAP, width);
+	y = home_group(app, canvas, SE_GROUP_DEVICES, kl_tr("Devices"), x, y + HOME_GROUP_GAP, width);
+	y = home_group(app, canvas, SE_GROUP_SYSTEM, kl_tr("System"), x, y + HOME_GROUP_GAP, width);
 
 	/* The edge below the last group. */
 	return y;
@@ -161,10 +161,10 @@ home_tile(
 	se_glyph_draw(canvas, page->glyph, (float)x + 16.0f, (float)y + 14.0f, 26.0f, glyph);
 
 	/* The name. */
-	(void)fm_text_draw_fit(app->text, canvas, x + 16, y + 62, page->name, HOME_TEXT_NAME, 1, tile.width - 28, SE_COLOR_TEXT);
+	(void)fm_text_draw_fit(app->text, canvas, x + 16, y + 62, kl_tr(page->name), HOME_TEXT_NAME, 1, tile.width - 28, SE_COLOR_TEXT);
 
 	/* Under it the page's state now, when it has one, else its summary. */
-	line = page->summary;
+	line = kl_tr(page->summary);
 	dot = 0;
 	live = home_state(app, page->id, state, sizeof(state), &dot);
 	if (live != 0)

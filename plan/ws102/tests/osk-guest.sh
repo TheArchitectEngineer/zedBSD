@@ -21,7 +21,13 @@
 #             as commits: its text is "あいうえおかが" with a deletion of 3 bytes before が; in wltest (no text input)
 #             a kana is refused; in Text Editor a kana (WS090's text input) is also tried, and noted
 #   close     (p005) the title band dragged 100 px right closes the flick panel, 100 px down the QWERTY panel; App
-#             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here)
+#             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here);
+#             (BUG-229) they put it away (put-away), and without a focused window it is not brought back
+#             (restore-dropped reason=focus); with Text Editor focused, App Home's Esc brings it back (restore,
+#             restored.png)
+#   hint      (BUG-230) the bottom-right corner's hint held without letting go: the quarter disc of glass from the corner
+#             to the contact, 40 px along the diagonal the disc only (hint-short.png), 80 px with "Keyboard" fading in
+#             (hint-label.png), 130 px with the label and the blue rim (hint-ready.png); letting go opens the flick panel
 #   large     (p005; the guest started with VENUS_SIZE=1920x1080, OSK_WIDTH=1920 OSK_HEIGHT=1080) the flick panel is
 #             414x1036 at 1506,44 (keys 96 px), the QWERTY panel 1920x453 at 0,627 (large-flick.png, large-qwerty.png)
 #   qwerty    (p006) the QWERTY panel: the 30 characters "Hello, World! Kei 2026 (a+b)=c" (capitals by Shift, symbols
@@ -371,7 +377,35 @@ hold 800'
 		swipe 640 796 640 480
 		expect_log 'ZWL OSK close kind=flick reason=wiseview'
 		pointer move 640 400 sleep 200 down sleep 60 up sleep 1200
+		# (BUG-229) both put the panel away; with no focused window it does not come back.
+		expect_log 'ZWL OSK put-away kind=flick reason=home'
+		expect_log 'ZWL OSK put-away kind=flick reason=wiseview'
+		expect_count 'ZWL OSK restore-dropped reason=focus' 2
+		# (BUG-229) with Text Editor focused, the panel App Home put away comes back when App Home is left by Esc.
+		guest ': > /root/osk3.txt' >/dev/null
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=600 /root/osk3.txt > /tmp/te3.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
+		swipe 1272 792 1130 650
+		pointer move 20 17 sleep 200 down sleep 60 up sleep 1200
+		expect_count 'ZWL OSK put-away kind=flick reason=home' 2
+		python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<esc>' >/dev/null
+		sleep 1.5
+		expect_log 'ZWL OSK restore kind=flick'
+		shot restored.png
+		guest 'for p in $(ps -A -o pid,args | grep "[t]extedit" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		# (The lock screen, Super+L, locks only a session's compositor (--session, sessiond); this one is not.)
+		;;
+	hint)
+		# (BUG-230) the corner's hint, held: the disc only, the label fading in, then the label and the blue rim.
+		compositor
+		pointer move 1272 792 sleep 200 down sleep 80 move 1252 772 sleep 60 move 1232 752 sleep 500
+		expect_log 'ZWL OSK armed corner=flick'
+		shot hint-short.png
+		pointer move 1192 712 sleep 500
+		shot hint-label.png
+		pointer move 1142 662 sleep 500
+		shot hint-ready.png
+		pointer up sleep 700
+		expect_log 'ZWL OSK open kind=flick'
 		;;
 	large)
 		compositor

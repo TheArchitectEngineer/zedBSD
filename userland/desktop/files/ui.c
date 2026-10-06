@@ -21,6 +21,8 @@
 
 #include "files.h"
 
+#include <keiland.h>
+
 #include <errno.h>
 #include <pwd.h>
 #include <stdarg.h>
@@ -705,11 +707,11 @@ fm_ui_crumbs(
 	count = 1;
 	crumbs[0].location.kind = FM_LOCATION_FOLDER;
 	if (inside != 0) {
-		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "Home");
+		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "%s", kl_tr("Home"));
 		snprintf(crumbs[0].location.path, sizeof(crumbs[0].location.path), "%s", app->home);
 		done = home_length;
 	} else {
-		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "Computer");
+		snprintf(crumbs[0].label, sizeof(crumbs[0].label), "%s", kl_tr("Computer"));
 		snprintf(crumbs[0].location.path, sizeof(crumbs[0].location.path), "/");
 		done = 0;
 	}
@@ -1002,6 +1004,7 @@ ui_draw_sidebar(
 {
 	static const char *const titles[] = { "Favorites", "Locations", "Devices" };
 	const struct fm_device *device;
+	const char *title;
 	struct fm_rect eject;
 	float bright;
 	const struct fm_rect *panel;
@@ -1045,7 +1048,8 @@ ui_draw_sidebar(
 			section = place->section;
 			if (index > 0)
 				y += 8;
-			(void)fm_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, titles[section], strlen(titles[section]), UI_TEXT_HEADER, 1, header);
+			title = kl_tr(titles[section]);
+			(void)fm_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, title, strlen(title), UI_TEXT_HEADER, 1, header);
 			row.x = panel->x + 8;
 			row.y = y;
 			row.width = panel->width - 16;
@@ -1088,7 +1092,7 @@ ui_draw_sidebar(
 		fm_icon_draw(canvas, (enum fm_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
 
 		/* The label. */
-		(void)fm_text_draw_fit(app->text, canvas, row.x + 36, fm_text_center(UI_TEXT_SIDEBAR, row.y, row.height), place->label, UI_TEXT_SIDEBAR, current, row.width - 44, ink);
+		(void)fm_text_draw_fit(app->text, canvas, row.x + 36, fm_text_center(UI_TEXT_SIDEBAR, row.y, row.height), kl_tr(place->label), UI_TEXT_SIDEBAR, current, row.width - 44, ink);
 		fm_ui_hit(app, &row, FM_HIT_PLACE, index);
 
 		/* A favorite folder under the pointer offers a small button that takes it off the sidebar. */

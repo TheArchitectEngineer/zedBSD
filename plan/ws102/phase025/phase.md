@@ -2,7 +2,7 @@
 # ws102-p025: 設計 — 画面 keyboard の残り（App Home で消える・引き出しの形・full keyboard の IME）
 
 Parent: [WS102](../ws.md)
-Status: test-wait（T1 依頼中。q789-i01、P1、2026-10-06 実装済み）
+Status: test-wait（T1 依頼中。q789-i02、P1、2026-10-06: 試験を足した。下の「q789-i02」）
 Disposition: normal
 Related: [BUG-229](../../bugs/BUG-229.md)・[BUG-230](../../bugs/BUG-230.md)・[BUG-231](../../bugs/BUG-231.md)
 
@@ -36,3 +36,23 @@ BUG-229「この表示状態で、アプリ一覧を出して戻ると、オン�
 `tools/i18n/tr.py check` で ja の wayland.tr 117 件 0 problems。QEMU は T1 に依頼（下）。実機は UAT。
 
 残り: BUG-231 の候補を OSK の候補の列に出す（今は IME の popup）。AAT の `desktop.osk.restore-after-home`・`desktop.osk.full-ime` の追加は未実施。
+
+## q789-i02（P1、2026-10-06）: T1-226 の所見の調べ
+
+T1-226（証拠 `/home/awe/zedBSD-worktrees/t1/build/t1-226/`）で osk-guest は PASS、ただし BUG-229 の `put-away`・`restore-dropped` の行が
+`osk-log.txt` に無く、BUG-230 の引き出しが右下の小さな白い四分円で「Keyboard」が出なかった。調べた結果、どちらも試験の取り方によるもので、source は直していない:
+
+- **BUG-229**: `osk-log.txt` は osk-guest の**最後の step の compositor の log だけ**を grep したもの（最後の step `qwerty` が compositor を起こし直すので、
+  App Home・Wiseview を扱う `close` の step の行は入らない。570 行に `close`・`home` の行が 1 つも無い）。`close` の step の
+  `close kind=flick reason=home`・`reason=wiseview` は ok で、この 2 つの理由で閉じるのは `keyboard_put_away` だけ（閉じた直後に `put-away` を出す）。
+  ただ、その行と restore を確かめる手順が試験に無かったので足した（下）。
+- **BUG-230**: `partial-swipe2.png` の円の半径は約 65 px で、対角線に沿って約 31 px（半径 = 24 + 1.3 × 進み）。文字は半径 96（進み 55）から
+  fade in し、離せば開く所（進み 108、半径 164）で濃さが満ちて縁が青になる。Notes の角（`corner.c`）とまったく同じ大きさ・色・文字の出方で、
+  ユーザーの「Notesの引き出しと同じ」の通り。短い引きで文字が無いのは Notes でも同じ。
+
+試験に足した物（`plan/ws102/tests/osk-guest.sh`）:
+- `close` の step: `put-away kind=flick reason=home`・`reason=wiseview`、focus の窓が無い時の `restore-dropped reason=focus` 2 回、そして Text Editor を開いて
+  focus を持たせ、flick の panel を開き、App Home を開いて Esc で閉じると `restore kind=flick`（`restored.png`）。
+- 新しい step `hint`: 右下の角から押したまま、40 px（円だけ、`hint-short.png`）、80 px（文字が fade in、`hint-label.png`）、
+  130 px（文字と青い縁、`hint-ready.png`）、離すと `open kind=flick`。
+確認: `sh -n`。QEMU は T1 に依頼する。

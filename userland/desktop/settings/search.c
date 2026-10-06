@@ -517,14 +517,14 @@ search_row(
 	se_glyph_draw(canvas, page->glyph, (float)left, (float)y + 15.0f, 22.0f, glyph);
 
 	/* The name found: the setting's, or the page's own; under it, where it is. */
-	name = page->name;
+	name = kl_tr(page->name);
 	if (result->setting != NULL) {
 		name = result->setting;
-		(void)snprintf(where, sizeof(where), "%s", page->name);
+		(void)snprintf(where, sizeof(where), "%s", kl_tr(page->name));
 	} else if (page->ready != 0) {
-		(void)snprintf(where, sizeof(where), "%s", page->summary);
+		(void)snprintf(where, sizeof(where), "%s", kl_tr(page->summary));
 	} else {
-		(void)snprintf(where, sizeof(where), "%s", "Coming in a later version");
+		(void)snprintf(where, sizeof(where), "%s", kl_tr("Coming in a later version"));
 	}
 
 	/* The two lines, beside the picture and short of the chevron. */
