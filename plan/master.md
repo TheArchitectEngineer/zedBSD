@@ -39,7 +39,6 @@
 - **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
 - **WS175 D1〜D7**（Notes の PDF の編集、推奨は phase001/phase.md の表）: 未回答。
 - ws142-p007 の dock の規則は決定済み（dock できない窓は無い、固定の大きさ・File Chooser・親を持つ dialog は中央に、下をぼかす、他の app は見せない）。
-- **BUG-209 Alt+Tab の 4 つの仮定**（端で回る、Shift で左、3 本指の tap も今の app から、短い Alt+Tab は今の app のまま）: 未回答。
 - **BUG-214** 透明度の slider の初期値（frosted に表示を合わせる案か、既定を不透明にするか）: 未回答。
 - **BUG-222** ue0 の chip（RTL8822BU は WiFi、有線は別の chip の見込み）: ユーザーに確かめる。
 - **ws099-p019** 「前に生成した抽象の壁紙」が生成の 5 枚で良いか（古い linear の抽象版は見つからない）: 未回答。
@@ -514,6 +513,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー（クリックの回答）: BUG-209 の Alt+Tab の 4 つの仮定を全て推奨どおりに決定（端で反対の端に回る、Shift+Alt+Tab は 1 つ左で最初は今の app、3 本指の tap の切り替えも今の app から、短い Alt+Tab は今の app のまま）。今の実装と同じ。BUG-212 の構成: 有線は 10.0.0.1 の router に直結、WiFi は 10.0.30.1 の WiFi router（NAT）経由、WiFi は AX211。
 - 2026-10-06 ユーザー: q780〜q784 を承認、N=2（P1・P2・T1）。T1 の model を Sonnet 5.5 medium に。ゴールはベータ2 までの範囲の全消化。順は UAT の指摘 → ベータ2 の未実装 → UAT 以外の Bug。T1 の結果は待たず、試験中の Phase に試験待ちの印（[protocol](agents/protocol.md) の 2026-10-06）。
 - **2026-10-05 夜 ラップアップ（ユーザーの指示で P1・P2・T1 を終了）**: 全部の担当が終了。main 0041dbfd 以降。T1-203（WS172 p002 の PIN の login）が **FAIL**: greeter の password の login が起きない。WS172 p002 は main に merge 済みなので、**次の作業の最初に graphical login の image が壊れていないかを確かめる**（P1 の解析）。未 merge: agent/p1 の WS130 p002（67801dab、T1-206 待ち）と WS168 p002 の kernel（730e8f55、arm64・sparcv9・x68k の build の確認も）。未実施の T1: T1-206・T1-202・T1-205・T1-207。5330 の AAT の image は T1-202 と直しの後に作り直す。WS168 の libc の `<sandbox.h>` の sysroot への追加は Q1 が許可する（toolchain の lock）。
 
