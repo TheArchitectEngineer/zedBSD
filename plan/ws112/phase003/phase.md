@@ -3,7 +3,7 @@
 # ws112-p003: Raspberry Pi OS arm64 deb
 
 Parent: [WS112](../ws.md)
-Status: planned
+Status: cleared 候補（2026-10-07 P1: RPi OS の rootfs で arm64 の deb を生成し、形式・依存の解決を確認。Q1 の判定待ち）
 Disposition: normal
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認
@@ -16,6 +16,21 @@ Investigation bound: 90分の有限1Phase Queue案。具体的なscope/timebox/c
 対象RPi OS rootfs/native arm64 toolchain/build環境を実装し、make入口とdeb metadata/依存/入力・CPU記録を追加。汎用Debian packageの名称差替えをしない。
 
 [共通設計](../design.md)の対応節を使用する。自分のPhase以外の受け入れを変更する必要が出たら、依存/foreign Phase/WSを同時に計画修正し、material scopeの同意を確認する。
+
+## 実装と確認（2026-10-07、P1、D-a・D-b の後）
+
+道具は p002 と同じ `rootfs.py`（target `rpios13-arm64`、`make keiland-deb-rpi`）。rootfs は Debian trixie ＋ `archive.raspberrypi.com/debian trixie main`、`raspberrypi-archive-keyring` を入れ、build.py はその導入を確かめる（RPi の印）。
+鍵: 公開の `raspberrypi.gpg.key`（CF8A1AF502A2AA2D763BAE7E82B129927FA3303E、2012 年、binding の署名が SHA-1）は apt の sqv の policy に拒まれる。そこで、その鍵（fingerprint を rootfs.json で固定）で InRelease を gpgv で検べ、InRelease の SHA256 で `main/binary-arm64/Packages.gz`、その SHA256 で `raspberrypi-archive-keyring_2025.1+rpt1_all.deb` を確かめ、中の keyring（同じ鍵、sqv の受ける binding）を apt に渡す。keyring は namespace が読める `/var/tmp/keiland-deb-keys/` に置く（一度作って使い回す）。
+
+| 確認 | 結果 |
+| --- | --- |
+| 生成 | `keiland_0~git20261006.e80a76d960d0-1+rpios13_arm64.deb`、build 654 秒（qemu-user） |
+| RPi の rootfs | build の rootfs に RPi の package 19 個（`libc6 2.41-12+rpt1+deb13u4`、`libdrm` の `+rpt1` ほか）: RPi OS の compiler・headers・C library で build した |
+| 形式 | 48 file・ELF 19（全て AArch64）・試験の program 無し。Depends `libc6 (>= 2.38), libvulkan1, mesa-vulkan-drivers, libpam-systemd, kbd` |
+| 依存の解決 | 新しい RPi OS の rootfs で `apt-get install --simulate`: 43 package、exit 0（`mesa-vulkan-drivers 26.2.2-1~bpo13+0~rpt1` は RPi の archive から） |
+
+成果物（host、git の外）: `build/keiland-deb/rootfs/rpios13-arm64/20261006T180138-e80a76d960d0/`。
+未実施: 実機・RPi kernel・GPU・GUI（ユーザーの「ビルドが通ればOK」と D-b で対象外）、規約の見直し（p007）。
 
 ## Detailed procedure / q585 investigation
 
