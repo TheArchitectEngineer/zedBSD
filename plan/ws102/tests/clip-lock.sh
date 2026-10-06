@@ -64,8 +64,10 @@ expect_log $log 'KWL CLIP history count=0$' 1 >/dev/null
 tries=0
 until [ "$(guest "grep -c 'KWL CLIP add' $log" | tail -1)" -ge 2 ] 2>/dev/null || [ $tries -ge 10 ]; do tries=$((tries + 1)); sleep 1; done
 python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" move 22 16 sleep 200 down sleep 60 up sleep 2000 >/dev/null
-set -- $(guest "grep 'KWL HOME icon name=\"Log Out\"' $log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+# App Home's Power Off opens the power dialog (ws099-p037); its keys start on Cancel, Up takes Log Out and Enter chooses it.
+set -- $(guest "grep 'KWL HOME icon name=\"Power Off\"' $log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" move "${1:-0}" "${2:-0}" sleep 200 down sleep 60 up sleep 3000 >/dev/null
+sleep 1; python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<up>' '\n' >/dev/null
 expect_log $log 'KWL CLIP clear reason=logout count=1' 10
 guest "grep -E 'KWL (CLIP|LOCK|HANDOFF)' $log" > "$out/session.log"
 sh plan/ws035/tests/zdesktop-guest.sh stop >/dev/null 2>&1

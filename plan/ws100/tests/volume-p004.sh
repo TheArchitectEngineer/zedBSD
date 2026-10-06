@@ -159,8 +159,10 @@ echo "during the session: $during (the session began with: $conf_start)"
 [ "$during" = "$conf_start" ] && verdict ok "no write while the volume changes" || verdict no "no write while the volume changes"
 grep -q 'KWL VOLUME kept' "$out/session-first.log" && verdict no "no kept line during the session" || verdict ok "no kept line during the session"
 pointer move 23 17 sleep 300 down sleep 60 up sleep 1500
-set -- $(last 'KWL HOME icon name="Log Out"' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+# App Home's Power Off opens the power dialog (ws099-p037); its keys start on Cancel, Up takes Log Out and Enter chooses it.
+set -- $(last 'KWL HOME icon name="Power Off"' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 pointer move "${1:-0}" "${2:-0}" sleep 400 down sleep 60 up
+sleep 1; python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" '<up>' '\n' >/dev/null
 expect_more /var/log/sessiond.log 'SESSIOND GREETER adopt pid=' 0 20
 sleep 2
 kept=$(guest 'grep -E "^sound\.(volume|muted)=" /home/kei/.config/keiland/desktop.conf' | tr '\n' ' ')
