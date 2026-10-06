@@ -8,10 +8,13 @@
 /*
  * The menus of Text Editor in zdesktop's System Menu (plan/ws092/design.md
  * section 13): File, Edit, View and Help, and the context menu of the text
- * (Undo, Redo, Cut, Copy, Paste, Select All).  zdesktop draws them and
- * chooses an item for its shortcut; the choice comes back as an action
- * queued among the window's inputs.  A compositor without the System Menu
- * leaves the editor without menus, and the keys work as they do with them.
+ * (Undo, Redo, Cut, Copy, Paste, Select All), given to libkeiland as tables
+ * (WS131 p016: kl_window_set_menu, kl_window_popup_menu); the editor's
+ * state is the actions' state (kl_window_set_action_state), which every
+ * item and control of an action shows.  zdesktop draws them and chooses an
+ * item for its shortcut; the choice comes back as a KL_WINDOW_ACTION
+ * input among the window's.  A compositor without the System Menu leaves
+ * the editor without menus, and the keys work as they do with them.
  */
 
 #include "window.h"
@@ -85,88 +88,59 @@
 #define MENU_KEY_MINUS		0x2dU
 #define MENU_KEY_ZERO		0x30U
 
-/*
- * One item of the menus as the editor builds them: its ID, its parent,
- * its type, its label, its action, its role and its shortcut.
- */
-struct menu_item {
-	uint32_t id;
-	uint32_t parent;
-	unsigned type;
-	const char *label;
-	uint32_t action;
-	unsigned role;
-	unsigned modifiers;
-	uint32_t keysym;
-};
-
 /* The window's menus, in the order they are shown. */
-static const struct menu_item menu_items[] = {
-	{ MENU_FILE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "File", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_NEW, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "New", TE_ACTION_NEW, KEILAND_MENU_ROLE_NEW, KEILAND_MENU_CTRL, 'n' },
-	{ MENU_OPEN, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Open...", TE_ACTION_OPEN, KEILAND_MENU_ROLE_OPEN, KEILAND_MENU_CTRL, 'o' },
-	{ MENU_RECENT, MENU_FILE, KEILAND_MENU_ITEM_SUBMENU, "Open Recent", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_FILE_LINE, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_SAVE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Save", TE_ACTION_SAVE, KEILAND_MENU_ROLE_SAVE, KEILAND_MENU_CTRL, 's' },
-	{ MENU_SAVE_AS, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Save As...", TE_ACTION_SAVE_AS, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 's' },
-	{ MENU_FILE_LINE_2, MENU_FILE, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CLOSE, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Close", TE_ACTION_CLOSE, KEILAND_MENU_ROLE_CLOSE, KEILAND_MENU_CTRL, 'w' },
-	{ MENU_QUIT, MENU_FILE, KEILAND_MENU_ITEM_NORMAL, "Quit Text Editor", TE_ACTION_QUIT, KEILAND_MENU_ROLE_QUIT, KEILAND_MENU_CTRL, 'q' },
-	{ MENU_EDIT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Edit", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_UNDO, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Undo", TE_ACTION_UNDO, KEILAND_MENU_ROLE_UNDO, KEILAND_MENU_CTRL, 'z' },
-	{ MENU_REDO, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Redo", TE_ACTION_REDO, KEILAND_MENU_ROLE_REDO, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'z' },
-	{ MENU_EDIT_LINE, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CUT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Cut", TE_ACTION_CUT, KEILAND_MENU_ROLE_CUT, KEILAND_MENU_CTRL, 'x' },
-	{ MENU_COPY, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Copy", TE_ACTION_COPY, KEILAND_MENU_ROLE_COPY, KEILAND_MENU_CTRL, 'c' },
-	{ MENU_PASTE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Paste", TE_ACTION_PASTE, KEILAND_MENU_ROLE_PASTE, KEILAND_MENU_CTRL, 'v' },
-	{ MENU_SELECT_ALL, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Select All", TE_ACTION_SELECT_ALL, KEILAND_MENU_ROLE_SELECT_ALL, KEILAND_MENU_CTRL, 'a' },
-	{ MENU_EDIT_LINE_2, MENU_EDIT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_FIND, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find...", TE_ACTION_FIND, KEILAND_MENU_ROLE_FIND, KEILAND_MENU_CTRL, 'f' },
-	{ MENU_FIND_NEXT, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find Next", TE_ACTION_FIND_NEXT, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL, 'g' },
-	{ MENU_FIND_PREVIOUS, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Find Previous", TE_ACTION_FIND_PREVIOUS, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL | KEILAND_MENU_SHIFT, 'g' },
-	{ MENU_REPLACE, MENU_EDIT, KEILAND_MENU_ITEM_NORMAL, "Replace...", TE_ACTION_REPLACE, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL, 'h' },
-	{ MENU_VIEW, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "View", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_LINE_NUMBERS, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Line Numbers", TE_ACTION_LINE_NUMBERS, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_WORD_WRAP, MENU_VIEW, KEILAND_MENU_ITEM_CHECKBOX, "Word Wrap", TE_ACTION_WORD_WRAP, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_VIEW_LINE, MENU_VIEW, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_BIGGER, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Bigger Text", TE_ACTION_BIGGER, KEILAND_MENU_ROLE_ZOOM_IN, KEILAND_MENU_CTRL, MENU_KEY_EQUAL },
-	{ MENU_SMALLER, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Smaller Text", TE_ACTION_SMALLER, KEILAND_MENU_ROLE_ZOOM_OUT, KEILAND_MENU_CTRL, MENU_KEY_MINUS },
-	{ MENU_ACTUAL_SIZE, MENU_VIEW, KEILAND_MENU_ITEM_NORMAL, "Actual Size", TE_ACTION_ACTUAL_SIZE, KEILAND_MENU_ROLE_NONE, KEILAND_MENU_CTRL, MENU_KEY_ZERO },
-	{ MENU_HELP, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SUBMENU, "Help", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ABOUT, MENU_HELP, KEILAND_MENU_ITEM_NORMAL, "About Text Editor", TE_ACTION_ABOUT, KEILAND_MENU_ROLE_ABOUT, 0U, 0U }
+static const struct kl_menu_entry menu_items[] = {
+	{ MENU_FILE, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_NEW, MENU_FILE, KL_MENU_ITEM_NORMAL, "New", TE_ACTION_NEW, KL_MENU_ROLE_NEW, KL_MENU_CTRL, 'n' },
+	{ MENU_OPEN, MENU_FILE, KL_MENU_ITEM_NORMAL, "Open...", TE_ACTION_OPEN, KL_MENU_ROLE_OPEN, KL_MENU_CTRL, 'o' },
+	{ MENU_RECENT, MENU_FILE, KL_MENU_ITEM_SUBMENU, "Open Recent", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FILE_LINE, MENU_FILE, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_SAVE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Save", TE_ACTION_SAVE, KL_MENU_ROLE_SAVE, KL_MENU_CTRL, 's' },
+	{ MENU_SAVE_AS, MENU_FILE, KL_MENU_ITEM_NORMAL, "Save As...", TE_ACTION_SAVE_AS, KL_MENU_ROLE_NONE, KL_MENU_CTRL | KL_MENU_SHIFT, 's' },
+	{ MENU_FILE_LINE_2, MENU_FILE, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CLOSE, MENU_FILE, KL_MENU_ITEM_NORMAL, "Close", TE_ACTION_CLOSE, KL_MENU_ROLE_CLOSE, KL_MENU_CTRL, 'w' },
+	{ MENU_QUIT, MENU_FILE, KL_MENU_ITEM_NORMAL, "Quit Text Editor", TE_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+	{ MENU_EDIT, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Edit", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_UNDO, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Undo", TE_ACTION_UNDO, KL_MENU_ROLE_UNDO, KL_MENU_CTRL, 'z' },
+	{ MENU_REDO, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Redo", TE_ACTION_REDO, KL_MENU_ROLE_REDO, KL_MENU_CTRL | KL_MENU_SHIFT, 'z' },
+	{ MENU_EDIT_LINE, MENU_EDIT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CUT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Cut", TE_ACTION_CUT, KL_MENU_ROLE_CUT, KL_MENU_CTRL, 'x' },
+	{ MENU_COPY, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Copy", TE_ACTION_COPY, KL_MENU_ROLE_COPY, KL_MENU_CTRL, 'c' },
+	{ MENU_PASTE, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Paste", TE_ACTION_PASTE, KL_MENU_ROLE_PASTE, KL_MENU_CTRL, 'v' },
+	{ MENU_SELECT_ALL, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Select All", TE_ACTION_SELECT_ALL, KL_MENU_ROLE_SELECT_ALL, KL_MENU_CTRL, 'a' },
+	{ MENU_EDIT_LINE_2, MENU_EDIT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FIND, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Find...", TE_ACTION_FIND, KL_MENU_ROLE_FIND, KL_MENU_CTRL, 'f' },
+	{ MENU_FIND_NEXT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Find Next", TE_ACTION_FIND_NEXT, KL_MENU_ROLE_NONE, KL_MENU_CTRL, 'g' },
+	{ MENU_FIND_PREVIOUS, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Find Previous", TE_ACTION_FIND_PREVIOUS, KL_MENU_ROLE_NONE, KL_MENU_CTRL | KL_MENU_SHIFT, 'g' },
+	{ MENU_REPLACE, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Replace...", TE_ACTION_REPLACE, KL_MENU_ROLE_NONE, KL_MENU_CTRL, 'h' },
+	{ MENU_VIEW, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "View", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_LINE_NUMBERS, MENU_VIEW, KL_MENU_ITEM_CHECKBOX, "Line Numbers", TE_ACTION_LINE_NUMBERS, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_WORD_WRAP, MENU_VIEW, KL_MENU_ITEM_CHECKBOX, "Word Wrap", TE_ACTION_WORD_WRAP, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_VIEW_LINE, MENU_VIEW, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_BIGGER, MENU_VIEW, KL_MENU_ITEM_NORMAL, "Bigger Text", TE_ACTION_BIGGER, KL_MENU_ROLE_ZOOM_IN, KL_MENU_CTRL, MENU_KEY_EQUAL },
+	{ MENU_SMALLER, MENU_VIEW, KL_MENU_ITEM_NORMAL, "Smaller Text", TE_ACTION_SMALLER, KL_MENU_ROLE_ZOOM_OUT, KL_MENU_CTRL, MENU_KEY_MINUS },
+	{ MENU_ACTUAL_SIZE, MENU_VIEW, KL_MENU_ITEM_NORMAL, "Actual Size", TE_ACTION_ACTUAL_SIZE, KL_MENU_ROLE_NONE, KL_MENU_CTRL, MENU_KEY_ZERO },
+	{ MENU_HELP, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Help", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_ABOUT, MENU_HELP, KL_MENU_ITEM_NORMAL, "About Text Editor", TE_ACTION_ABOUT, KL_MENU_ROLE_ABOUT, 0U, 0U }
 };
 
 /* The context menu of the text, in its order. */
-static const struct menu_item menu_context_items[] = {
-	{ MENU_CONTEXT_UNDO, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Undo", TE_ACTION_UNDO, KEILAND_MENU_ROLE_UNDO, 0U, 0U },
-	{ MENU_CONTEXT_REDO, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Redo", TE_ACTION_REDO, KEILAND_MENU_ROLE_REDO, 0U, 0U },
-	{ MENU_CONTEXT_LINE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CONTEXT_CUT, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Cut", TE_ACTION_CUT, KEILAND_MENU_ROLE_CUT, 0U, 0U },
-	{ MENU_CONTEXT_COPY, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Copy", TE_ACTION_COPY, KEILAND_MENU_ROLE_COPY, 0U, 0U },
-	{ MENU_CONTEXT_PASTE, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Paste", TE_ACTION_PASTE, KEILAND_MENU_ROLE_PASTE, 0U, 0U },
-	{ MENU_CONTEXT_LINE_2, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_SEPARATOR, "", 0U, KEILAND_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_CONTEXT_ALL, KEILAND_MENU_ROOT, KEILAND_MENU_ITEM_NORMAL, "Select All", TE_ACTION_SELECT_ALL, KEILAND_MENU_ROLE_SELECT_ALL, 0U, 0U }
+static const struct kl_menu_entry menu_context_items[] = {
+	{ MENU_CONTEXT_UNDO, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Undo", TE_ACTION_UNDO, KL_MENU_ROLE_UNDO, 0U, 0U },
+	{ MENU_CONTEXT_REDO, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Redo", TE_ACTION_REDO, KL_MENU_ROLE_REDO, 0U, 0U },
+	{ MENU_CONTEXT_LINE, KL_MENU_ROOT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CONTEXT_CUT, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Cut", TE_ACTION_CUT, KL_MENU_ROLE_CUT, 0U, 0U },
+	{ MENU_CONTEXT_COPY, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Copy", TE_ACTION_COPY, KL_MENU_ROLE_COPY, 0U, 0U },
+	{ MENU_CONTEXT_PASTE, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Paste", TE_ACTION_PASTE, KL_MENU_ROLE_PASTE, 0U, 0U },
+	{ MENU_CONTEXT_LINE_2, KL_MENU_ROOT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_CONTEXT_ALL, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Select All", TE_ACTION_SELECT_ALL, KL_MENU_ROLE_SELECT_ALL, 0U, 0U }
 };
 
-static void menu_activated(void *data, struct keiland_window_menu *window_menu, uint32_t item, uint32_t action, struct wl_seat *seat, uint32_t serial);
-static void menu_context_activated(void *data, struct keiland_context_menu *context_menu, uint32_t item, uint32_t action, uint32_t serial);
-static void menu_context_done(void *data, struct keiland_context_menu *context_menu);
-static int menu_build(struct keiland_menu *model, const struct menu_item *items, size_t count);
-static int menu_state(struct te_menu *menu, const struct te_state *state);
-
-/* What the window menu tells the editor: only the choices. */
-static const struct keiland_window_menu_listener menu_listener = {
-	menu_activated, NULL, NULL
-};
-
-/* What the context menu tells the editor: the choice, and that it closed. */
-static const struct keiland_context_menu_listener menu_context_listener = {
-	menu_context_activated, menu_context_done
-};
+static int menu_send(struct te_menu *menu);
+static void menu_action_state(struct te_menu *menu, uint32_t action, int enabled, int checked);
 
 /*
- * Gives zdesktop the window's menus and the context menu's model, showing
- * a state.
+ * Gives zdesktop the window's menus, showing a state.
  *
  * Returns 0, also when the compositor has no System Menu (the editor then
  * has no menus), or an errno value when the menus could not be made.
@@ -183,45 +157,18 @@ te_menu_open(
 	memset(menu, 0, sizeof(*menu));
 	menu->window = window;
 
-	/* The connection's menu service; a compositor without one leaves the editor without menus. */
-	menu->service = keiland_menu_service_open(kui_window_display(window->kui));
-	if (menu->service == NULL) {
-		te_log("MENU none errno=%d", errno);
+	/* The menus; a compositor without the System Menu leaves the editor without them. */
+	error = menu_send(menu);
+	if (error == ENOTSUP) {
+		te_log("MENU none errno=%d", error);
 		return 0;
 	}
-
-	/* The menu, empty until it is built. */
-	menu->menu = keiland_menu_create(menu->service);
-	if (menu->menu == NULL)
-		return errno;
-
-	/* The window's place for a menu, which tells the editor what is chosen. */
-	menu->window_menu = keiland_window_menu_create(menu->service, kui_window_toplevel(window->kui), &menu_listener, menu);
-	if (menu->window_menu == NULL)
-		return errno;
-
-	/* The items in one transaction. */
-	error = menu_build(menu->menu, menu_items, sizeof(menu_items) / sizeof(menu_items[0]));
 	if (error != 0)
 		return error;
-
-	/* The window shows the menu from now on. */
-	error = keiland_window_menu_set(menu->window_menu, menu->menu);
-	if (error != 0)
-		return error;
-
-	/* The context menu's model. */
-	menu->context = keiland_menu_create(menu->service);
-	if (menu->context == NULL)
-		return errno;
-	error = menu_build(menu->context, menu_context_items, sizeof(menu_context_items) / sizeof(menu_context_items[0]));
-	if (error != 0)
-		return error;
+	menu->shown_once = 1;
 
 	/* The state they show. */
-	error = menu_state(menu, state);
-	if (error != 0)
-		return error;
+	te_menu_refresh(menu, state);
 
 	/* Succeeded: the menus are zdesktop's to show. */
 	te_log("MENU ready items=%u", (unsigned)(sizeof(menu_items) / sizeof(menu_items[0])));
@@ -229,7 +176,8 @@ te_menu_open(
 }
 
 /*
- * Tells the menus the editor's state when it differs from what they show.
+ * Tells the menus (and the titlebar's controls of the same actions) the
+ * editor's state when it differs from what they show.
  */
 void
 te_menu_refresh(
@@ -237,80 +185,79 @@ te_menu_refresh(
 	const struct te_state *state)
 {
 	int same;
-	int error;
 
-	/* Without menus nothing is sent. */
-	if (menu->menu == NULL || menu->context == NULL)
-		return;
-
-	/* Nor when the state is the one the menus show. */
+	/* Nothing when the state is the one shown. */
 	same = memcmp(state, &menu->shown, sizeof(*state));
-	if (same == 0)
+	if (same == 0 && menu->sent)
 		return;
 
-	/* The new state; a refusal is logged and the menus stay as they were. */
-	error = menu_state(menu, state);
-	if (error != 0)
-		te_log("MENU update-failed errno=%d", error);
+	/* Each action's state: Undo, Redo, Cut and Copy when they can act, Save with changes, View's switches checked. */
+	menu_action_state(menu, TE_ACTION_UNDO, state->can_undo, 0);
+	menu_action_state(menu, TE_ACTION_REDO, state->can_redo, 0);
+	menu_action_state(menu, TE_ACTION_CUT, state->selected, 0);
+	menu_action_state(menu, TE_ACTION_COPY, state->selected, 0);
+	menu_action_state(menu, TE_ACTION_SAVE, state->modified, 0);
+	menu_action_state(menu, TE_ACTION_LINE_NUMBERS, 1, state->line_numbers);
+	menu_action_state(menu, TE_ACTION_WORD_WRAP, 1, state->wrap);
+
+	/* Shown. */
+	menu->shown = *state;
+	menu->sent = 1;
 }
 
 /*
- * Shows the recent files in File > Open Recent (ws128-p003): the items of
- * the last list go, and one comes for each file, newest first, greyed when
- * the file is no longer there; without any, one greyed line says so.
+ * Shows the recent files in File > Open Recent (ws128-p003): an item for
+ * each file, newest first, greyed when the file is no longer there;
+ * without any, one greyed line says so.
  */
 void
 te_menu_recent(
 	struct te_menu *menu,
 	const struct te_app *app)
 {
-	struct keiland_menu *model;
+	struct kl_menu_entry *entry;
 	const char *name;
 	const char *slash;
-	uint32_t id;
 	size_t index;
 	int error;
 
-	/* Without menus nothing is sent. */
-	if (menu->menu == NULL)
-		return;
-
-	/* The last list's items go (an item that is not there is no error worth reporting). */
-	model = menu->menu;
-	error = keiland_menu_begin(model);
-	if (error != 0) {
-		te_log("MENU recent-failed errno=%d", error);
-		return;
-	}
-
-	/* Each item of the last list, and the line for none. */
-	for (index = 0; index < menu->recent_shown; index++)
-		(void)keiland_menu_remove(model, MENU_RECENT_FIRST + (uint32_t)index);
-	(void)keiland_menu_remove(model, MENU_RECENT_NONE);
-
 	/* A file an item, named by its file name; one that is gone is greyed. */
-	error = 0;
-	for (index = 0; index < app->recent_count && error == 0; index++) {
+	menu->recent_count = 0U;
+	for (index = 0; index < app->recent_count && index < TE_RECENT_MAX; index++) {
 		name = app->recent[index];
 		slash = strrchr(name, '/');
 		if (slash != NULL && slash[1] != '\0')
 			name = slash + 1;
-		id = MENU_RECENT_FIRST + (uint32_t)index;
-		error = keiland_menu_append(model, id, MENU_RECENT, KEILAND_MENU_ITEM_NORMAL, name, TE_ACTION_RECENT_FIRST + (uint32_t)index);
-		if (error == 0)
-			error = keiland_menu_set_enabled(model, id, app->recent_present[index]);
+		entry = &menu->recent[menu->recent_count];
+		memset(entry, 0, sizeof(*entry));
+		entry->id = MENU_RECENT_FIRST + (uint32_t)index;
+		entry->parent = MENU_RECENT;
+		entry->type = KL_MENU_ITEM_NORMAL;
+		entry->label = name;
+		entry->action = TE_ACTION_RECENT_FIRST + (uint32_t)index;
+		entry->role = KL_MENU_ROLE_NONE;
+		menu->recent_count++;
+		menu_action_state(menu, entry->action, app->recent_present[index], 0);
 	}
 
 	/* No recent file: a greyed line says so. */
-	if (error == 0 && app->recent_count == 0U) {
-		error = keiland_menu_append(model, MENU_RECENT_NONE, MENU_RECENT, KEILAND_MENU_ITEM_NORMAL, "No Recent Files", 0U);
-		if (error == 0)
-			error = keiland_menu_set_enabled(model, MENU_RECENT_NONE, 0);
+	if (menu->recent_count == 0U) {
+		entry = &menu->recent[0];
+		memset(entry, 0, sizeof(*entry));
+		entry->id = MENU_RECENT_NONE;
+		entry->parent = MENU_RECENT;
+		entry->type = KL_MENU_ITEM_NORMAL;
+		entry->label = "No Recent Files";
+		entry->action = TE_ACTION_RECENT_NONE;
+		entry->role = KL_MENU_ROLE_NONE;
+		menu->recent_count = 1U;
+		menu_action_state(menu, TE_ACTION_RECENT_NONE, 0, 0);
 	}
 
-	/* The list is shown together (a refusal still ends the transaction). */
-	menu->recent_shown = app->recent_count;
-	(void)keiland_menu_commit(model);
+	/* The menu with them; a compositor without the System Menu has none to show. */
+	if (!menu->shown_once)
+		return;
+	error = menu_send(menu);
 	if (error != 0) {
 		te_log("MENU recent-failed errno=%d", error);
 		return;
@@ -321,8 +268,8 @@ te_menu_recent(
 }
 
 /*
- * Opens the context menu of the text at a place of the window (one at a
- * time).
+ * Opens the context menu of the text at a place of the window, for its
+ * last press.
  */
 void
 te_menu_popup(
@@ -330,14 +277,12 @@ te_menu_popup(
 	int x,
 	int y)
 {
-	/* Without menus, or with one open, nothing opens. */
-	if (menu->context == NULL || menu->popup != NULL)
-		return;
+	int error;
 
-	/* The menu at the place, for the last press. */
-	menu->popup = keiland_menu_popup(menu->service, menu->context, kui_window_surface(menu->window->kui), x, y, kui_window_seat(menu->window->kui), kui_window_press_serial(menu->window->kui), &menu_context_listener, menu);
-	if (menu->popup == NULL) {
-		te_log("MENU popup-failed errno=%d", errno);
+	/* The menu at the place; without the System Menu nothing opens. */
+	error = kl_window_popup_menu(menu->window->kui, menu_context_items, sizeof(menu_context_items) / sizeof(menu_context_items[0]), x, y);
+	if (error != 0) {
+		te_log("MENU popup-failed errno=%d", error);
 		return;
 	}
 
@@ -352,189 +297,56 @@ void
 te_menu_close(
 	struct te_menu *menu)
 {
-	/* The context menu, the window's place, the menus, then the service. */
-	if (menu->popup != NULL)
-		keiland_context_menu_destroy(menu->popup);
-	if (menu->window_menu != NULL)
-		keiland_window_menu_destroy(menu->window_menu);
-	if (menu->context != NULL)
-		keiland_menu_destroy(menu->context);
-	if (menu->menu != NULL)
-		keiland_menu_destroy(menu->menu);
-	if (menu->service != NULL)
-		keiland_menu_service_close(menu->service);
+	/* No menu on the window, and nothing kept. */
+	if (menu->window != NULL && menu->shown_once)
+		(void)kl_window_set_menu(menu->window->kui, NULL, 0U);
 	memset(menu, 0, sizeof(*menu));
 }
 
-/* Queues a chosen action among the window's inputs. */
-static void
-menu_activated(
-	void *data,
-	struct keiland_window_menu *window_menu,
-	uint32_t item,
-	uint32_t action,
-	struct wl_seat *seat,
-	uint32_t serial)
-{
-	struct te_menu *menu;
-
-	/* The menus whose item was chosen. */
-	(void)window_menu;
-	(void)seat;
-	menu = data;
-
-	/* The log line the tests read, and the action. */
-	te_log("MENU item=%u action=%u serial=%u", item, action, serial);
-	kui_window_set_serial(menu->window->kui, serial);
-	te_window_action(menu->window, action);
-}
-
-/* Queues the action chosen in the context menu. */
-static void
-menu_context_activated(
-	void *data,
-	struct keiland_context_menu *context_menu,
-	uint32_t item,
-	uint32_t action,
-	uint32_t serial)
-{
-	struct te_menu *menu;
-
-	/* The action, with the choice's serial for a copy. */
-	(void)context_menu;
-	menu = data;
-	te_log("MENU context item=%u action=%u", item, action);
-	kui_window_set_serial(menu->window->kui, serial);
-	te_window_action(menu->window, action);
-}
-
-/* The context menu closed: it goes. */
-static void
-menu_context_done(
-	void *data,
-	struct keiland_context_menu *context_menu)
-{
-	struct te_menu *menu;
-
-	/* Destroyed, so that another may open. */
-	menu = data;
-	keiland_context_menu_destroy(context_menu);
-	if (menu->popup == context_menu)
-		menu->popup = NULL;
-}
-
-/* Gives zdesktop a menu's items, with their roles and shortcuts, in one transaction. */
+/* Gives libkeiland the window's menu: the table, with File > Open Recent's items after it. */
 static int
-menu_build(
-	struct keiland_menu *model,
-	const struct menu_item *items,
-	size_t count)
+menu_send(
+	struct te_menu *menu)
 {
-	const struct menu_item *item;
-	size_t index;
+	struct kl_menu_entry entries[sizeof(menu_items) / sizeof(menu_items[0]) + TE_RECENT_MAX];
+	size_t count;
 	int error;
 
-	/* The transaction. */
-	error = keiland_menu_begin(model);
+	/* The table, and the recent files' items (their parent is Open Recent). */
+	count = sizeof(menu_items) / sizeof(menu_items[0]);
+	memcpy(entries, menu_items, sizeof(menu_items));
+	memcpy(entries + count, menu->recent, sizeof(menu->recent[0]) * menu->recent_count);
+	count += menu->recent_count;
+
+	/* libkeiland sends what changed. */
+	error = kl_window_set_menu(menu->window->kui, entries, count);
 	if (error != 0)
 		return error;
 
-	/* Each item in its order under its parent. */
-	for (index = 0; index < count; index++) {
-		item = &items[index];
-		error = keiland_menu_append(model, item->id, item->parent, item->type, item->label, item->action);
-		if (error != 0)
-			return error;
-
-		/* Its role, when it has one. */
-		if (item->role != KEILAND_MENU_ROLE_NONE) {
-			error = keiland_menu_set_role(model, item->id, item->role);
-			if (error != 0)
-				return error;
-		}
-
-		/* Its shortcut, when it has one. */
-		if (item->keysym != 0U) {
-			error = keiland_menu_set_shortcut(model, item->id, item->modifiers, item->keysym);
-			if (error != 0)
-				return error;
-		}
-	}
-
-	/* The items are shown together. */
-	error = keiland_menu_commit(model);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the menu is built. */
+	/* Succeeded. */
 	return 0;
 }
 
-/*
- * Shows a state in the menus: Undo, Redo, Cut and Copy enabled when they
- * can act, and View's switches checked.
- */
-static int
-menu_state(
+/* Sets an action's state: enabled or greyed, checked or not (a refusal is logged). */
+static void
+menu_action_state(
 	struct te_menu *menu,
-	const struct te_state *state)
+	uint32_t action,
+	int enabled,
+	int checked)
 {
-	struct keiland_menu *model;
+	unsigned state;
 	int error;
 
-	/* The window's menus, in one transaction. */
-	model = menu->menu;
-	error = keiland_menu_begin(model);
-	if (error != 0)
-		return error;
-	error = keiland_menu_set_enabled(model, MENU_UNDO, state->can_undo);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_REDO, state->can_redo);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_CUT, state->selected);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_COPY, state->selected);
-	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_LINE_NUMBERS, state->line_numbers);
-	if (error == 0)
-		error = keiland_menu_set_checked(model, MENU_WORD_WRAP, state->wrap);
+	/* The bits. */
+	state = 0U;
+	if (!enabled)
+		state |= KL_ACTION_DISABLED;
+	if (checked)
+		state |= KL_ACTION_CHECKED;
 
-	/* A refused change still ends the transaction, and is reported. */
-	if (error != 0) {
-		(void)keiland_menu_commit(model);
-		return error;
-	}
-
-	/* The changes are shown together. */
-	error = keiland_menu_commit(model);
-	if (error != 0)
-		return error;
-
-	/* The context menu, likewise. */
-	model = menu->context;
-	error = keiland_menu_begin(model);
-	if (error != 0)
-		return error;
-	error = keiland_menu_set_enabled(model, MENU_CONTEXT_UNDO, state->can_undo);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_CONTEXT_REDO, state->can_redo);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_CONTEXT_CUT, state->selected);
-	if (error == 0)
-		error = keiland_menu_set_enabled(model, MENU_CONTEXT_COPY, state->selected);
-
-	/* A refused change still ends the transaction, and is reported. */
-	if (error != 0) {
-		(void)keiland_menu_commit(model);
-		return error;
-	}
-
-	/* The changes are shown together. */
-	error = keiland_menu_commit(model);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the menus show the state. */
-	menu->shown = *state;
-	return 0;
+	/* Kept by the window for its menu, its controls and its popups. */
+	error = kl_window_set_action_state(menu->window->kui, action, state);
+	if (error != 0 && error != ENOTSUP)
+		te_log("MENU update-failed errno=%d", error);
 }
