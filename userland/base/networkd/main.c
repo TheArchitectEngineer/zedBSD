@@ -382,6 +382,7 @@ static int prefer_resolver(const unsigned char *, size_t);
 static void lan_assign_link_local(const char *, uint64_t);
 static void lan_configure(const struct networkd_lan_work *);
 static void lan_take_down(const char *);
+static void lan_clear_address(const char *);
 static void lan_raise(const char *);
 static void run_lan_work(void);
 static void lan_note_configured(const char *);
@@ -1684,10 +1685,64 @@ lan_take_down(
 	    netutil_monotonic_us() + 15000000ULL, diagnostic);
 	(void)networkd_lan_down(&managed_lan, name);
 
+	/* Gives up the address the configuration gave, and its subnet's route (BUG-212, BUG-213). */
+	lan_clear_address(name);
+
 	/* Withdraws the lease's route and lets another interface carry the default. */
 	lan_l3_forget(name, 1);
 	apply_network_preference();
 	notify_state_changed();
+}
+
+/*
+ * Takes the IPv4 address off a wired interface whose cable went.
+ *
+ * The kernel keeps an address, and the route to its subnet, on an interface
+ * that is down, and the interface is raised again at once to see its next
+ * cable.  Left there, the address told the user an interface without a cable
+ * still had one (BUG-213), and the subnet's route stayed in the table: when
+ * the Wi-Fi is on the same network, the kernel kept sending the network's
+ * packets to the dead cable rather than to the radio (BUG-212).  The next
+ * cable configures the interface again, from the lease or from the static
+ * configuration, so nothing is lost by taking it off.  The netmask goes first,
+ * which is what removes the subnet's route; then the broadcast and the address.
+ */
+static void
+lan_clear_address(
+	const char *name)
+{
+	uint32_t address;
+	int descriptor;
+	int error;
+
+	/* A socket for the interface requests. */
+	descriptor = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (descriptor < 0)
+		return;
+
+	/* An interface without an address has nothing to give up. */
+	address = 0U;
+	error = get_interface_ipv4(descriptor, name, SIOCGIFADDR, &address);
+	if (error != 0 || address == 0U) {
+		(void)close(descriptor);
+		return;
+	}
+
+	/* Removes the subnet's route with the netmask. */
+	error = set_interface_ipv4(descriptor, name, SIOCSIFNETMASK, 0U);
+	if (error != 0)
+		fprintf(stderr, "networkd: %s: netmask not cleared: %s\n", name, strerror(errno));
+
+	/* Clears the broadcast address. */
+	error = set_interface_ipv4(descriptor, name, SIOCSIFBRDADDR, 0U);
+	if (error != 0)
+		fprintf(stderr, "networkd: %s: broadcast not cleared: %s\n", name, strerror(errno));
+
+	/* Clears the address itself. */
+	error = set_interface_ipv4(descriptor, name, SIOCSIFADDR, 0U);
+	if (error != 0)
+		fprintf(stderr, "networkd: %s: address not cleared: %s\n", name, strerror(errno));
+	(void)close(descriptor);
 }
 
 /*
