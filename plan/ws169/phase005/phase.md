@@ -2,7 +2,7 @@
 
 # ws169-p005: browser の認証 code の自動入力
 
-Status: in-progress（実装・host の試験・build 済み。QEMU は T1）
+Status: test-wait（T1-291）
 Disposition: normal
 Parent: [WS169](../ws.md)
 Queue: q831（2026-10-07、P2）
