@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent
 LABEL = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-FONTS = ["Keiland-Mono", "Keiland-Regular", "Keiland-Bold"]
+FONTS = ["Mahora-Mono", "Mahora-Regular", "Mahora-Bold"]
 
 
 def text(canvas, content, x, baseline, size, font_path):
@@ -22,14 +22,14 @@ def q_review(before_directory):
     draw = ImageDraw.Draw(canvas)
     heading = ImageFont.truetype(LABEL, 24)
     small = ImageFont.truetype(LABEL, 18)
-    draw.text((50, 28), "Keiland / q height alignment", font=heading, fill="#15202b")
+    draw.text((50, 28), "Mahora / q height alignment", font=heading, fill="#15202b")
     draw.text((50, 73), "Before 0.300 / After 0.301. Same size and shared baseline guides.",
               font=small, fill="#617386")
     for row, name in enumerate(FONTS):
         top = 140 + row * 290
         draw.text((50, top), name.replace("-", " "), font=heading, fill="#15202b")
         for index, (title, path) in enumerate([
-            ("Before", before_directory / f"{name}.ttf"),
+            ("Before", before_directory / f"{name.replace('Mahora', 'Keiland')}.ttf"),
             ("After", ROOT / f"{name}.ttf"),
         ]):
             x = 50 + index * 760
@@ -50,7 +50,7 @@ def main():
     draw = ImageDraw.Draw(specimen)
     heading = ImageFont.truetype(LABEL, 25)
     small = ImageFont.truetype(LABEL, 17)
-    draw.text((56, 24), "Keiland / Unicode ASCII typefaces 0.301", font=heading, fill="#15202b")
+    draw.text((56, 24), "Mahora / Unicode ASCII typefaces 0.301", font=heading, fill="#15202b")
     for index, name in enumerate(FONTS):
         path = ROOT / f"{name}.ttf"
         top = 85 + index * 515
@@ -62,7 +62,7 @@ def main():
             ("abcdefghijklmnopqrstuvwxyz", 191, 60),
             ("0123456789  Il1 O0  agp  &@% ?! {} [] ; ~", 260, 48),
             ("The quick brown fox jumps over the lazy dog.", 330, 40),
-            ('const align = { name: "Keiland", size: 16 };', 388, 35),
+            ('const align = { name: "Mahora", size: 16 };', 388, 35),
         ]:
             text(specimen, line, 56, top + y, size, path)
         for size, y in [(14, 432), (18, 465)]:
@@ -84,7 +84,7 @@ def main():
             text(grid, chr(codepoint), x + (140 - width) / 2, y + 96, 92, path)
             grid_draw.text((x + 12, y + 120), f"U+{codepoint:04X}", font=label, fill="#617386")
         grid.save(ROOT / f"{name}-ascii.png")
-    specimen.save(ROOT / "keiland-specimen.png")
+    specimen.save(ROOT / "mahora-specimen.png")
     if arguments.q_before_directory:
         q_review(arguments.q_before_directory)
     print("Rendered the three TTF specimens and all ASCII glyphs.")

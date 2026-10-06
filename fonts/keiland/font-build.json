@@ -73,16 +73,16 @@
   },
   "fonts": [
     {
-      "file": "Keiland-Bold.ttf",
-      "sha256": "afa8157d872aafb2470fb3c8a3be98302ad641c5ee770b2b092d28e3ad4a12a9"
+      "file": "Mahora-Bold.ttf",
+      "sha256": "8d84db7fceb295fbe9d6b337ad184d47a4bc2f5a798f50e69f59306287bcd3af"
     },
     {
-      "file": "Keiland-Mono.ttf",
-      "sha256": "2e3af57e9fed08b2107e8a19b1d8dde6bf6819145969e18ab0826aafa8ca917d"
+      "file": "Mahora-Mono.ttf",
+      "sha256": "bb99f208ce3c86c0d5006396635b112c12d6527bc4855b21ff25731f30d754fc"
     },
     {
-      "file": "Keiland-Regular.ttf",
-      "sha256": "5c9e84554f8329c7fe221dff439505e85894a9a039d7f46076876870063dc866"
+      "file": "Mahora-Regular.ttf",
+      "sha256": "9d2e9933058fa465f78572e423ac0926fde255b7d46df343043ca0e6e335ebd9"
     }
   ],
   "bold_svg_inputs": [

@@ -1,12 +1,12 @@
 {
   "fonts": {
-    "Keiland-Mono.ttf": {
-      "full_name": "Keiland Mono",
-      "sha256": "2e3af57e9fed08b2107e8a19b1d8dde6bf6819145969e18ab0826aafa8ca917d",
+    "Mahora-Mono.ttf": {
+      "full_name": "Mahora Mono",
+      "sha256": "bb99f208ce3c86c0d5006396635b112c12d6527bc4855b21ff25731f30d754fc",
       "unicode_mappings": 95,
       "glyphs": 96,
       "advance_count": 1,
-      "fontconfig": "Keiland Mono|Regular|TrueType|100|20-7e",
+      "fontconfig": "Mahora Mono|Regular|TrueType|100|20-7e",
       "H_measurement_768px": {
         "height_pixels": 503,
         "stem_widths_pixels": [
@@ -16,13 +16,13 @@
         "mean_stem_height_ratio": 0.1272365805168986
       }
     },
-    "Keiland-Regular.ttf": {
-      "full_name": "Keiland Regular",
-      "sha256": "5c9e84554f8329c7fe221dff439505e85894a9a039d7f46076876870063dc866",
+    "Mahora-Regular.ttf": {
+      "full_name": "Mahora Regular",
+      "sha256": "9d2e9933058fa465f78572e423ac0926fde255b7d46df343043ca0e6e335ebd9",
       "unicode_mappings": 95,
       "glyphs": 96,
       "advance_count": 80,
-      "fontconfig": "Keiland|Regular|TrueType||20-7e",
+      "fontconfig": "Mahora|Regular|TrueType||20-7e",
       "H_measurement_768px": {
         "height_pixels": 503,
         "stem_widths_pixels": [
@@ -32,13 +32,13 @@
         "mean_stem_height_ratio": 0.1272365805168986
       }
     },
-    "Keiland-Bold.ttf": {
-      "full_name": "Keiland Bold",
-      "sha256": "afa8157d872aafb2470fb3c8a3be98302ad641c5ee770b2b092d28e3ad4a12a9",
+    "Mahora-Bold.ttf": {
+      "full_name": "Mahora Bold",
+      "sha256": "8d84db7fceb295fbe9d6b337ad184d47a4bc2f5a798f50e69f59306287bcd3af",
       "unicode_mappings": 95,
       "glyphs": 96,
       "advance_count": 80,
-      "fontconfig": "Keiland|Bold|TrueType||20-7e",
+      "fontconfig": "Mahora|Bold|TrueType||20-7e",
       "H_measurement_768px": {
         "height_pixels": 502,
         "stem_widths_pixels": [
@@ -82,5 +82,64 @@
     "preserved_source_asset_count": 385,
     "rebuild_sha256_matches": true,
     "review": "q-height-review.png"
+  },
+  "name_revision": {
+    "from": "Keiland",
+    "to": "Mahora",
+    "version_unchanged": "0.301",
+    "source": "User confirmed use without problems and requested metadata/file names only",
+    "fonts": {
+      "Mahora-Mono.ttf": {
+        "previous_file": "Keiland-Mono.ttf",
+        "previous_sha256": "2e3af57e9fed08b2107e8a19b1d8dde6bf6819145969e18ab0826aafa8ca917d",
+        "all_non_name_tables_identical": true,
+        "head_identical_except_checksum_adjustment": true,
+        "verified_name_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          16,
+          17
+        ],
+        "fontconfig": "Mahora Mono|Regular|TrueType|100|20-7e"
+      },
+      "Mahora-Regular.ttf": {
+        "previous_file": "Keiland-Regular.ttf",
+        "previous_sha256": "5c9e84554f8329c7fe221dff439505e85894a9a039d7f46076876870063dc866",
+        "all_non_name_tables_identical": true,
+        "head_identical_except_checksum_adjustment": true,
+        "verified_name_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          16,
+          17
+        ],
+        "fontconfig": "Mahora|Regular|TrueType||20-7e"
+      },
+      "Mahora-Bold.ttf": {
+        "previous_file": "Keiland-Bold.ttf",
+        "previous_sha256": "afa8157d872aafb2470fb3c8a3be98302ad641c5ee770b2b092d28e3ad4a12a9",
+        "all_non_name_tables_identical": true,
+        "head_identical_except_checksum_adjustment": true,
+        "verified_name_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          16,
+          17
+        ],
+        "fontconfig": "Mahora|Bold|TrueType||20-7e"
+      }
+    }
   }
 }
