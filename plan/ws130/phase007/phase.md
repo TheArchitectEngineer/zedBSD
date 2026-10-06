@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p007`
 Parent: [WS130](../ws.md)
-Status: test-wait（q832、P1、2026-10-07: 正常系を実装、host の試験 PASS、T1 の試験待ち）
+Status: uncleared（2026-10-07 T1-292 FAIL 9 行: dhcpc -6 -i の exit・DNS server・renew・DUID の size と type・record・resolv.conf・DUID changed ほか、p007 だけでも同じ。P1 が直す）（旧: test-wait（q832、P1、2026-10-07: 正常系を実装、host の試験 PASS、T1 の試験待ち））
 設計: [p001](../phase001/phase.md) §5、H7（DUID-UUID）・H5（DNS の順）（2026-10-05 ユーザー決定）
 依存: [p006](../phase006/phase.md)（networkd の RA の処理、T1-289/290）
 

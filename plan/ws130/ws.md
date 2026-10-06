@@ -45,8 +45,8 @@ Resume point: p001（2026-10-05 P1 が設計の第 1 版を書いた。UAPI（H1
 | [p002](phase002/phase.md) | kernel の核（UAPI、`ipv6.c`・ICMPv6・NDP・DAD・MLDv2・address と route の表、RS・RA と route socket） | cleared（2026-10-06、T1-206b PASS） | p001（H1〜H4・H6、ユーザー承認 2026-10-05） |
 | [p003](phase003/phase.md) | transport（address を 16 byte に、`AF_INET6` の UDP・TCP・ICMPv6、`IPV6_V6ONLY`、PMTU、source の選択） | cleared（2026-10-06、T1-243） | p002、H2 |
 | [p004](phase004/phase.md) | libc（`inet_pton`・`inet_ntop`・`getaddrinfo`・`getnameinfo`・resolver） | cleared（2026-10-07、T1-286） | p003 |
-| [p005](phase005/phase.md) | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | uncleared（2026-10-07 T1-287 FAIL、P1 が直す） | p003、p004、H3 |
-| [p006](phase006/phase.md) | networkd の SLAAC（link-local・RFC 7217・RFC 8981・RA・既定の route・RDNSS・DNSSL） | test-wait（2026-10-07 q832 P1: 正常系を実装、host PASS、T1 待ち） | p002、p005、H4・H5 |
-| [p007](phase007/phase.md) | `dhcpc -6`（stateless・stateful、DUID、Renew） | test-wait（2026-10-07 q832 P1: 正常系を実装、host PASS、T1 待ち） | p006、H7 |
+| [p005](phase005/phase.md) | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | cleared（2026-10-07、T1-290） | p003、p004、H3 |
+| [p006](phase006/phase.md) | networkd の SLAAC（link-local・RFC 7217・RFC 8981・RA・既定の route・RDNSS・DNSSL） | uncleared（2026-10-07 T1-289 FAIL） | p002、p005、H4・H5 |
+| [p007](phase007/phase.md) | `dhcpc -6`（stateless・stateful、DUID、Renew） | uncleared（2026-10-07 T1-292 FAIL） | p006、H7 |
 | [p008](phase008/phase.md) | T1（slirp と tap+netns の dnsmasq を 1 つの QEMU で）と 5330 の UAT | test-wait（2026-10-07 P1: dnsmasq の script、T1 待ち。5330 は届かないので保留） | p007 |
 | p009 | 全文規約の見直し | planning | p008 |
