@@ -59,6 +59,9 @@ struct cal_window {
 	struct kl_style style;
 	struct cal_view view;
 	int dirty;
+
+	/* The pointer's buttons held now: while one is, every motion is drawn (a drag); otherwise only one that lights another widget (BUG-226). */
+	unsigned buttons_held;
 	int resized;
 	int moving;
 	int animating;
@@ -378,18 +381,33 @@ cal_input(
 	struct cal_window *calendar,
 	const struct kl_window_event *event)
 {
-	/* Any input may change the view. */
-	calendar->dirty = 1;
+	int redraw;
+
+	/*
+	 * Any input may change the view, but a motion of the pointer only when
+	 * it lights another widget or drags (BUG-226: a frame for every motion
+	 * left the pointer behind).
+	 */
+	if (event->kind != KL_WINDOW_MOTION)
+		calendar->dirty = 1;
 
 	/* Each kind of input. */
 	switch (event->kind) {
 	case KL_WINDOW_MOTION:
-		(void)kl_ui_pointer_motion(calendar->ui, event->x, event->y);
+		redraw = kl_ui_pointer_motion(calendar->ui, event->x, event->y);
+		if (redraw || calendar->buttons_held != 0U)
+			calendar->dirty = 1;
 		break;
 	case KL_WINDOW_LEAVE:
 		(void)kl_ui_pointer_leave(calendar->ui);
 		break;
 	case KL_WINDOW_BUTTON:
+		/* The buttons held, for the motions of a drag. */
+		if (event->pressed)
+			calendar->buttons_held++;
+		else if (calendar->buttons_held != 0U)
+			calendar->buttons_held--;
+
 		/* The left button presses the widgets. */
 		(void)kl_ui_pointer_motion(calendar->ui, event->x, event->y);
 		if (event->code == KL_BUTTON_LEFT)

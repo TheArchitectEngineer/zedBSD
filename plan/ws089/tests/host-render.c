@@ -34,6 +34,7 @@
  *   searchdone=HOW     (the search field's editing ended: 0 Enter, 1 Esc, 2 left)
  *   result=N           (clicks the search's result N of the last frame)
  *   draw=PATH          (draws the frame into a PPM picture)
+ *   peek=PATH          (writes the frame the last action drew, without drawing again: a lit row drawn alone)
  *   hits               (prints the clickable regions of the last frame)
  *   state              (prints what the titlebar and the menus show)
  */
@@ -233,6 +234,11 @@ main(
 			event.id = code;
 			event.detail = mods;
 			se_ui_titlebar(&app, &event);
+		} else if (strncmp(argv[index], "peek=", 5) == 0) {
+			/* The pixels as the last action's frame left them, not drawn again (BUG-226: a lit row drawn alone). */
+			error = host_write_ppm(argv[index] + 5, pixels, width, height);
+			if (error != 0)
+				return 1;
 		} else if (strncmp(argv[index], "draw=", 5) == 0) {
 			/* The Wallpaper page's small copies (BUG-152, read by a thread) are waited for, so the frame is the settled one. */
 			while (se_look_wait(&app) >= 0) {

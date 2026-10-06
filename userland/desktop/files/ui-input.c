@@ -128,6 +128,7 @@ static void input_select_item(struct fm_tab *tab, int index, uint32_t modifiers)
 static void input_release(struct fm_app *app);
 static void input_band_start(struct fm_app *app, int x, int y, uint32_t modifiers);
 static void input_band_update(struct fm_app *app, int x, int y);
+static void input_band_rect(const struct fm_app *app, const struct fm_tab *tab, struct fm_rect *band);
 static void input_sort(struct fm_app *app, int column);
 static void input_location_key(struct fm_app *app, const struct fm_event *event);
 static int input_command_key(struct fm_app *app, const struct fm_event *event);
@@ -151,9 +152,13 @@ fm_input_motion(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
+	struct fm_rect before;
+	struct fm_rect now;
 	unsigned kind;
 	int index;
 	int dragging;
+	int found_before;
+	int found_now;
 
 	/* The pointer's place. */
 	app->pointer_x = event->x;
@@ -176,13 +181,36 @@ fm_input_motion(
 	if (app->band != 0 && app->pressing != 0)
 		input_band_update(app, event->x, event->y);
 
-	/* A new region under it needs a new frame. */
+	/* An unchanged region under it needs nothing. */
 	(void)fm_input_hit_at(app, event->x, event->y, &kind, &index);
-	if (kind != app->hover_kind || index != app->hover_index) {
-		app->hover_kind = kind;
-		app->hover_index = index;
-		app->dirty = 1;
+	if (kind == app->hover_kind && index == app->hover_index)
+		return;
+
+	/*
+	 * A new region under it needs only it and the one before drawn again
+	 * (BUG-226), unless the whole frame is due anyway or either is not
+	 * known.
+	 */
+	if (app->dirty == 0) {
+		memset(&before, 0, sizeof(before));
+		memset(&now, 0, sizeof(now));
+		found_before = 1;
+		if (app->hover_kind != FM_HIT_NONE)
+			found_before = fm_ui_hit_rect(app, app->hover_kind, app->hover_index, &before);
+		found_now = 1;
+		if (kind != FM_HIT_NONE)
+			found_now = fm_ui_hit_rect(app, kind, index, &now);
+		if (found_before == 0 || found_now == 0) {
+			app->dirty = 1;
+		} else {
+			if (app->hover_kind != FM_HIT_NONE)
+				fm_ui_damage(app, &before);
+			if (kind != FM_HIT_NONE)
+				fm_ui_damage(app, &now);
+		}
 	}
+	app->hover_kind = kind;
+	app->hover_index = index;
 }
 
 /*
@@ -910,30 +938,22 @@ input_band_update(
 	struct fm_rect item;
 	size_t index;
 	int touches;
+	int selected;
+
+	/* The band as it was drawn, which the next frame draws again (BUG-221: only the band and what it changed). */
+	tab = fm_ui_tab(app);
+	input_band_rect(app, tab, &band);
+	fm_ui_damage(app, &band);
 
 	/* The far corner. */
-	tab = fm_ui_tab(app);
 	app->band_x1 = x;
 	app->band_y1 = y + tab->scroll;
-	app->dirty = 1;
 
-	/* The band on the screen, its corners in order. */
-	band.x = app->band_x0;
-	band.width = app->band_x1 - app->band_x0;
-	if (band.width < 0) {
-		band.x = app->band_x1;
-		band.width = -band.width;
-	}
+	/* The band on the screen now, drawn again too. */
+	input_band_rect(app, tab, &band);
+	fm_ui_damage(app, &band);
 
-	/* And its top and height. */
-	band.y = app->band_y0 - tab->scroll;
-	band.height = app->band_y1 - app->band_y0;
-	if (band.height < 0) {
-		band.y = app->band_y1 - tab->scroll;
-		band.height = -band.height;
-	}
-
-	/* Each item the band touches is selected; the others are not (unless Ctrl keeps them). */
+	/* Each item the band touches is selected; the others are not (unless Ctrl keeps them); one that changed is drawn again. */
 	for (index = 0; index < tab->listing.count; index++) {
 		fm_view_item_rect(app, (int)index, &item);
 		touches = 1;
@@ -941,10 +961,37 @@ input_band_update(
 			touches = 0;
 		if (item.y + item.height < band.y || band.y + band.height < item.y)
 			touches = 0;
+		selected = tab->listing.entries[index].selected;
 		if (touches != 0)
 			tab->listing.entries[index].selected = 1;
 		else if ((app->modifiers & FM_MOD_CTRL) == 0U)
 			tab->listing.entries[index].selected = 0;
+		if (tab->listing.entries[index].selected != selected)
+			fm_ui_damage(app, &item);
+	}
+}
+
+/* Works out the rubber band's rectangle on the screen, its corners in order. */
+static void
+input_band_rect(
+	const struct fm_app *app,
+	const struct fm_tab *tab,
+	struct fm_rect *band)
+{
+	/* Its left and width. */
+	band->x = app->band_x0;
+	band->width = app->band_x1 - app->band_x0;
+	if (band->width < 0) {
+		band->x = app->band_x1;
+		band->width = -band->width;
+	}
+
+	/* And its top and height. */
+	band->y = app->band_y0 - tab->scroll;
+	band->height = app->band_y1 - app->band_y0;
+	if (band->height < 0) {
+		band->y = app->band_y1 - tab->scroll;
+		band->height = -band->height;
 	}
 }
 

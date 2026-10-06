@@ -1190,33 +1190,51 @@ canvas_blend(
 	canvas_blend_premultiplied(pixel, (alpha << 24) | (red << 16) | (green << 8) | blue);
 }
 
-/* Lays a premultiplied color over a pixel. */
+/*
+ * Lays a premultiplied color over a pixel.
+ *
+ * Each channel is the source's plus the pixel's scaled by what the source
+ * leaves, (pixel * remaining + 127) / 255, at most 255.  Two channels are
+ * worked out at once, each in a 16-bit lane of one word (red and blue,
+ * then alpha and green), and the division by 255 is the exact
+ * (t + (t >> 8) + 1) >> 8 of t = pixel * remaining + 127 (BUG-226: this is
+ * most of the time of a frame's translucent panels).
+ */
 static void
 canvas_blend_premultiplied(
 	uint32_t *pixel,
 	uint32_t source)
 {
 	uint32_t destination;
-	uint32_t result;
-	unsigned remaining;
-	unsigned channel;
-	int shift;
+	uint32_t red_blue;
+	uint32_t alpha_green;
+	uint32_t overflow;
+	uint32_t remaining;
 
 	/* What the source leaves of the pixel under it. */
 	remaining = 255U - ((source >> 24) & 0xffU);
 	destination = *pixel;
 
-	/* Each channel: the source plus what shows through of the pixel. */
-	result = 0;
-	for (shift = 0; shift < 32; shift += 8) {
-		channel = ((source >> shift) & 0xffU) + (((destination >> shift) & 0xffU) * remaining + 127U) / 255U;
-		if (channel > 255U)
-			channel = 255U;
-		result |= (uint32_t)channel << shift;
-	}
+	/* Red and blue of the pixel, scaled and rounded, in their lanes. */
+	red_blue = (destination & 0x00ff00ffU) * remaining + 0x007f007fU;
+	red_blue = ((red_blue + ((red_blue >> 8) & 0x00ff00ffU) + 0x00010001U) >> 8) & 0x00ff00ffU;
+
+	/* Alpha and green, the same way. */
+	alpha_green = ((destination >> 8) & 0x00ff00ffU) * remaining + 0x007f007fU;
+	alpha_green = ((alpha_green + ((alpha_green >> 8) & 0x00ff00ffU) + 0x00010001U) >> 8) & 0x00ff00ffU;
+
+	/* The source's channels added (a lane reaches at most 510, so none carries into the next). */
+	red_blue += source & 0x00ff00ffU;
+	alpha_green += (source >> 8) & 0x00ff00ffU;
+
+	/* A lane past 255 is 255. */
+	overflow = ((red_blue & 0x01000100U) >> 8) * 0xffU;
+	red_blue = (red_blue | overflow) & 0x00ff00ffU;
+	overflow = ((alpha_green & 0x01000100U) >> 8) * 0xffU;
+	alpha_green = (alpha_green | overflow) & 0x00ff00ffU;
 
 	/* The pixel takes the blended color. */
-	*pixel = result;
+	*pixel = red_blue | (alpha_green << 8);
 }
 
 /* Adds a weight to the coverage of a span of a row, the partly covered end pixels in part. */

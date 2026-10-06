@@ -206,3 +206,14 @@ view_word_at(
 	*start = position;
 	*end = position + 1U;
 }
+
+/* The appearance libkeiland's theme asks for: the light one (the host test has no compositor to ask, q796). */
+unsigned
+kl_appearance_get(
+	const struct kl_appearance *appearance)
+{
+	(void)appearance;
+
+	/* The light appearance. */
+	return KL_APPEARANCE_LIGHT;
+}

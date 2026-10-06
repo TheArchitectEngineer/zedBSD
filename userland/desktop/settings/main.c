@@ -507,8 +507,8 @@ main_loop(
 			main_app.dirty = 1;
 		}
 
-		/* A frame when something changed. */
-		if (main_app.dirty != 0) {
+		/* A frame when something changed, or the lit region alone (BUG-226). */
+		if (main_app.dirty != 0 || main_app.hover_pending != 0) {
 			status = main_frame();
 			if (status != 0)
 				return -1;
@@ -612,8 +612,8 @@ main_timeout(
 	int storage;
 	int limit;
 
-	/* A frame the last one asked for (a scroll it corrected) is drawn at once. */
-	if (main_app.dirty != 0)
+	/* A frame the last one asked for (a scroll it corrected), or the lit region's, is drawn at once. */
+	if (main_app.dirty != 0 || main_app.hover_pending != 0)
 		return 0;
 
 	/* A touch pad's scrolling that flies on moves every frame (BUG-211). */

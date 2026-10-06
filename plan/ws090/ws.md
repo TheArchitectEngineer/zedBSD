@@ -72,4 +72,4 @@ p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 まで
 ## Phase（2026-10-06 追加: 再設計）
 
 - [ws090-p017](phase017/phase.md) 設計と実装: 慣性 scroll と開始の遅れ（test-wait、q790 で実装 58b9027a。他の app の慣性は残り）
-- [ws090-p018](phase018/phase.md) 設計: pointer の追従の再描画の frame rate（planned）
+- [ws090-p018](phase018/phase.md) 設計と実装: pointer の追従の再描画の frame rate（test-wait、q791）

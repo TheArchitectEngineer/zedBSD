@@ -57,6 +57,9 @@ struct ph_window {
 	struct kl_style style;
 	struct ph_view view;
 	int dirty;
+
+	/* The pointer's buttons held now: while one is, every motion is drawn (a drag); otherwise only one that lights another widget (BUG-226). */
+	unsigned buttons_held;
 	int resized;
 	int moving;
 	int glass_decided;
@@ -341,18 +344,33 @@ ph_input(
 	struct ph_window *phone,
 	const struct kl_window_event *event)
 {
-	/* Any input may change the view. */
-	phone->dirty = 1;
+	int redraw;
+
+	/*
+	 * Any input may change the view, but a motion of the pointer only when
+	 * it lights another widget or drags (BUG-226: a frame for every motion
+	 * left the pointer behind).
+	 */
+	if (event->kind != KL_WINDOW_MOTION)
+		phone->dirty = 1;
 
 	/* Each kind of input. */
 	switch (event->kind) {
 	case KL_WINDOW_MOTION:
-		(void)kl_ui_pointer_motion(phone->ui, event->x, event->y);
+		redraw = kl_ui_pointer_motion(phone->ui, event->x, event->y);
+		if (redraw || phone->buttons_held != 0U)
+			phone->dirty = 1;
 		break;
 	case KL_WINDOW_LEAVE:
 		(void)kl_ui_pointer_leave(phone->ui);
 		break;
 	case KL_WINDOW_BUTTON:
+		/* The buttons held, for the motions of a drag. */
+		if (event->pressed)
+			phone->buttons_held++;
+		else if (phone->buttons_held != 0U)
+			phone->buttons_held--;
+
 		/* The left button presses the widgets. */
 		(void)kl_ui_pointer_motion(phone->ui, event->x, event->y);
 		if (event->code == KL_BUTTON_LEFT)

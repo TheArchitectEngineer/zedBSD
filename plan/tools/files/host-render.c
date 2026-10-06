@@ -26,6 +26,7 @@
  *   wait=MS          (lets time pass and runs the ticks)
  *   hits             (prints the clickable regions of the last frame)
  *   draw=PATH        (draws the frame into a PPM picture)
+ *   peek=PATH        (writes the frame the last action drew, without drawing again: a part drawn alone)
  *   focus=0|1
  *   action=N         (a menu's action, fm_ui_action; a request for the window is printed)
  *   state            (prints what the menus show, fm_ui_menu_state)
@@ -242,6 +243,13 @@ main(
 			event.focused = x;
 			event.time = now;
 			fm_ui_event(&app, &event);
+		} else if (strncmp(argv[index], "peek=", 5) == 0) {
+			/* The frame as the last action left it, not drawn again (BUG-221, BUG-226: a part drawn alone). */
+			if (host_picture(&app, argv[index] + 5, pixels, composed, width, height, glass) != 0) {
+				fprintf(stderr, "files-render: cannot write %s\n", argv[index] + 5);
+				return 1;
+			}
+			printf("peeked %s\n", argv[index] + 5);
 		} else if (strncmp(argv[index], "draw=", 5) == 0) {
 			fm_ui_tick(&app, now);
 			fm_ui_draw(&app, &canvas);
@@ -255,7 +263,7 @@ main(
 			return 2;
 		}
 		fm_ui_tick(&app, now);
-		if (app.dirty)
+		if (app.dirty || app.damage_pending)
 			fm_ui_draw(&app, &canvas);
 	}
 

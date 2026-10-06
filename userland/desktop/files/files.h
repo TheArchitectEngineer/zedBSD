@@ -1112,6 +1112,15 @@ struct fm_app {
 	int focused;
 
 	/*
+	 * A change of the lit region or of a rubber band alone (BUG-221,
+	 * BUG-226): the next frame is drawn only within damage, clipped to it
+	 * (fm_ui_damage adds to it), the rest keeping the last frame's pixels.
+	 * Any other change (dirty) draws everything.
+	 */
+	int damage_pending;
+	struct fm_rect damage;
+
+	/*
 	 * Whether the window is glass: zdesktop draws frosted glass under the
 	 * panels and shows the desktop between them, so the frame leaves its
 	 * ground clear and tints the panels only lightly.  Set once, before the
@@ -1434,6 +1443,8 @@ void fm_app_release(struct fm_app *app);
 void fm_ui_event(struct fm_app *app, const struct fm_event *event);
 void fm_ui_tick(struct fm_app *app, uint64_t now);
 void fm_ui_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_ui_damage(struct fm_app *app, const struct fm_rect *rect);
+int fm_ui_hit_rect(const struct fm_app *app, unsigned kind, int index, struct fm_rect *rect);
 
 /* The desktop's icons and their input (ui-desktop.c, ws094-p003, p004). */
 void fm_desktop_draw(struct fm_app *app, struct fm_canvas *canvas);
