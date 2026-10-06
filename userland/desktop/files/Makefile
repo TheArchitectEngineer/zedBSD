@@ -11,7 +11,7 @@ KEILAND_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/mime.c userland/desktop/files/places.c userland/desktop/files/devices.c userland/desktop/files/mntent/mounts-mntent.c \
 	userland/desktop/files/ui-input.c userland/desktop/files/ui-list.c \
 	userland/desktop/files/ui-scrollbar.c userland/desktop/libkeiland/ui/scroll-bar.c \
-	userland/desktop/files/ui-field.c userland/desktop/files/select.c \
+	userland/desktop/files/ui-field.c userland/desktop/files/rename.c userland/desktop/files/select.c \
 	userland/desktop/files/task.c userland/desktop/files/trash.c \
 	userland/desktop/files/undo.c userland/desktop/files/clip.c \
 	userland/desktop/files/actions.c userland/desktop/files/ui-overlay.c \

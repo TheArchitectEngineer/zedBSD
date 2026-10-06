@@ -213,9 +213,12 @@ fm_ui_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_MOTION:
+		(void)fm_rename_input(app, event);
 		fm_input_motion(app, event);
 		break;
 	case FM_EVENT_BUTTON:
+		/* The field of the name being changed sees the press too (it places its caret; elsewhere the change ends). */
+		(void)fm_rename_input(app, event);
 		fm_input_motion(app, event);
 		fm_input_button(app, event);
 		break;
@@ -252,8 +255,8 @@ fm_ui_event(
 	case FM_EVENT_TEXT:
 	case FM_EVENT_TEXT_DELETE:
 	case FM_EVENT_PREEDIT:
-		/* An input method's text, for the name being changed (ws090-p022). */
-		fm_field_text_input(app, event);
+		/* An input method's text, for the name being changed (rename.c). */
+		(void)fm_rename_input(app, event);
 		break;
 	default:
 		break;

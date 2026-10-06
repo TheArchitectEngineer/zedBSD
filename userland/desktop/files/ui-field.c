@@ -17,7 +17,6 @@
 
 #include "files.h"
 
-#include <stdio.h>
 #include <string.h>
 
 /* The evdev codes of the keys a field handles. */
@@ -245,87 +244,6 @@ fm_field_insert(
 }
 
 /*
- * Deletes bytes before the cursor, back to a character's start, as an
- * input method asks; a selection goes first.
- */
-void
-fm_field_delete_before(
-	struct fm_field *field,
-	size_t bytes)
-{
-	size_t start;
-
-	/* A selection goes as the deletion. */
-	if (field->anchor != field->cursor) {
-		field_delete_selection(field);
-		return;
-	}
-
-	/* The first byte deleted, back to a character's start. */
-	start = 0;
-	if (bytes < field->cursor)
-		start = field->cursor - bytes;
-	while (start > 0 && ((unsigned char)field->text[start] & 0xc0U) == 0x80U)
-		start--;
-
-	/* The bytes after the cursor close up. */
-	memmove(field->text + start, field->text + field->cursor, field->length - field->cursor + 1U);
-	field->length -= field->cursor - start;
-	field->cursor = start;
-	field->anchor = start;
-}
-
-/*
- * Gives an input method's text to the name being changed (ws090-p022): a
- * commit in place of the selection (without control characters), bytes
- * deleted before the cursor, or the text being composed, drawn at the
- * cursor.  Nothing happens while no name is being changed.
- */
-void
-fm_field_text_input(
-	struct fm_app *app,
-	const struct fm_event *event)
-{
-	char clean[FM_TEXT_INPUT_MAX];
-	size_t length;
-	size_t at;
-	unsigned char byte;
-
-	/* Only while a name is being changed. */
-	if (app->focus != FM_FOCUS_RENAME) {
-		app->preedit[0] = '\0';
-		return;
-	}
-	app->dirty = 1;
-
-	/* The text being composed replaces the one before. */
-	if (event->type == FM_EVENT_PREEDIT) {
-		(void)snprintf(app->preedit, sizeof(app->preedit), "%s", event->text);
-		return;
-	}
-
-	/* Bytes before the cursor. */
-	if (event->type == FM_EVENT_TEXT_DELETE) {
-		fm_field_delete_before(&app->rename, (size_t)event->before);
-		return;
-	}
-
-	/* A commit, without control characters, which a name does not hold. */
-	length = 0;
-	for (at = 0; event->text[at] != '\0' && length + 1U < sizeof(clean); at++) {
-		byte = (unsigned char)event->text[at];
-		if (byte < 0x20U || byte == 0x7fU)
-			continue;
-		if (byte == '/')
-			continue;
-		clean[length] = (char)byte;
-		length++;
-	}
-	clean[length] = '\0';
-	fm_field_insert(&app->rename, clean, length);
-}
-
-/*
  * Draws a field's text in a rectangle at a size: the selection lit, the
  * cursor a thin bar, the text scrolled so that the cursor is in sight; a
  * faint placeholder when empty.
@@ -346,27 +264,15 @@ fm_field_draw(
 	int start_x;
 	int end_x;
 	int shift;
-	int composed;
-	int composing;
 
 	/* The baseline, the text's left end, and the cursor's place in it. */
 	baseline = kl_text_center(pixels, rect->y, rect->height);
 	cursor_x = kl_text_width(app->text, field->text, field->cursor, pixels, 0);
 
-	/* The text an input method is composing for the name being changed, shown at the cursor (ws090-p022). */
-	composing = 0;
-	if (field == &app->rename &&
-	    app->focus == FM_FOCUS_RENAME &&
-	    app->preedit[0] != '\0')
-		composing = 1;
-	composed = 0;
-	if (composing)
-		composed = kl_text_width(app->text, app->preedit, strlen(app->preedit), pixels, 0);
-
-	/* The text moves left when the cursor (after the composed text) would be past the right end. */
+	/* The text moves left when the cursor would be past the right end. */
 	shift = 0;
-	if (cursor_x + composed > rect->width - 4)
-		shift = cursor_x + composed - (rect->width - 4);
+	if (cursor_x > rect->width - 4)
+		shift = cursor_x - (rect->width - 4);
 	kl_canvas_clip_push(canvas, rect);
 
 	/* An empty field shows its placeholder. */
@@ -388,24 +294,10 @@ fm_field_draw(
 		kl_canvas_round(canvas, (float)(rect->x + start_x - shift), (float)(rect->y + 3), (float)(end_x - start_x), (float)(rect->height - 6), 3.0f, KL_RGBA(0x2f7cf6, 70));
 	}
 
-	/* The text, and the text an input method is composing at the cursor, underlined (the name being changed, ws090-p022). */
-	(void)kl_text_draw(app->text, canvas, rect->x - shift, baseline, field->text, field->cursor, pixels, 0, FM_COLOR_TEXT);
-	if (composing) {
-		(void)kl_text_draw(app->text, canvas, rect->x + cursor_x - shift, baseline, app->preedit, strlen(app->preedit), pixels, 0, FM_COLOR_TEXT);
-		kl_canvas_round(canvas, (float)(rect->x + cursor_x - shift), (float)(baseline + 3), (float)composed, 1.0f, 0.0f, FM_COLOR_TEXT);
-	}
-	(void)kl_text_draw(app->text, canvas, rect->x + cursor_x + composed - shift, baseline, field->text + field->cursor, field->length - field->cursor, pixels, 0, FM_COLOR_TEXT);
-	kl_canvas_round(canvas, (float)(rect->x + cursor_x + composed - shift), (float)(rect->y + 4), 1.5f, (float)(rect->height - 8), 0.5f, FM_COLOR_ACCENT);
+	/* The text and the cursor. */
+	(void)kl_text_draw(app->text, canvas, rect->x - shift, baseline, field->text, field->length, pixels, 0, FM_COLOR_TEXT);
+	kl_canvas_round(canvas, (float)(rect->x + cursor_x - shift), (float)(rect->y + 4), 1.5f, (float)(rect->height - 8), 0.5f, FM_COLOR_ACCENT);
 	kl_canvas_clip_pop(canvas);
-
-	/* Where the cursor is, for the window's text input. */
-	if (field == &app->rename) {
-		app->caret.x = rect->x + cursor_x + composed - shift;
-		app->caret.y = rect->y + 4;
-		app->caret.width = 2;
-		app->caret.height = rect->height - 8;
-		app->caret_known = 1;
-	}
 }
 
 /* Returns the offset of the character before one (0 at the start). */

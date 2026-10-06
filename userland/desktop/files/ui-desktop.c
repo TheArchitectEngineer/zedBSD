@@ -281,6 +281,9 @@ fm_desktop_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_BUTTON:
+		/* The field of the name being changed sees the press too (it places its caret there). */
+		(void)fm_rename_input(app, event);
+
 		/* The right button: the context menu of what it is on. */
 		if (event->button == FM_BUTTON_RIGHT) {
 			if (event->pressed)
@@ -308,7 +311,8 @@ fm_desktop_event(
 		/* Nothing more for a button. */
 		break;
 	case FM_EVENT_MOTION:
-		/* A press held on an item may become a drag. */
+		/* The field of the name being changed follows the pointer; a press held on an item may become a drag. */
+		(void)fm_rename_input(app, event);
 		dragging = fm_desktop_drag_motion(app, event->x, event->y);
 		if (dragging)
 			break;
@@ -333,8 +337,8 @@ fm_desktop_event(
 	case FM_EVENT_TEXT:
 	case FM_EVENT_TEXT_DELETE:
 	case FM_EVENT_PREEDIT:
-		/* An input method's text, for the name being changed (ws090-p022). */
-		fm_field_text_input(app, event);
+		/* An input method's text, for the name being changed (rename.c). */
+		(void)fm_rename_input(app, event);
 		break;
 	default:
 		break;
@@ -938,7 +942,7 @@ desktop_field(
 	int width;
 
 	/* As wide as the name and a little room, at least the cell and at most two cells. */
-	width = kl_text_width(app->text, app->rename.text, app->rename.length, DESKTOP_TEXT, 0) + 24;
+	width = kl_text_width(app->text, app->rename.text, app->rename.length, DESKTOP_TEXT, 0) + 32;
 	if (width < cell->width - 4)
 		width = cell->width - 4;
 	if (width > 2 * cell->width)
@@ -951,13 +955,9 @@ desktop_field(
 	field.y = cell->y + DESKTOP_FIELD_TOP;
 	field.width = width;
 	field.height = DESKTOP_FIELD_HEIGHT;
-	kl_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
-	kl_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
 
-	/* The text in it, a little in from its edges. */
-	field.x += 5;
-	field.width -= 10;
-	fm_field_draw(app, canvas, &app->rename, &field, DESKTOP_TEXT, NULL);
+	/* libkeiland's field there (rename.c). */
+	fm_rename_draw(app, canvas, &field);
 
 	/* Succeeded: the rename field is drawn in place. */
 	return;
@@ -1173,9 +1173,11 @@ desktop_press(
 	index = fm_desktop_item_at(app, event->x, event->y);
 	app->dirty = 1;
 
-	/* A press on the item whose name is being changed keeps the change; elsewhere it ends, keeping what was typed. */
+	/* A press on the field or the item whose name is being changed keeps the change; elsewhere it ends, keeping what was typed. */
 	if (app->focus == FM_FOCUS_RENAME) {
-		renaming = 0;
+		renaming = fm_rename_hit(app, event->x, event->y);
+		if (renaming)
+			return;
 		if (index >= 0)
 			renaming = desktop_renaming(app, &tab->listing.entries[index]);
 		if (renaming)
@@ -1248,18 +1250,13 @@ desktop_key(
 	const struct fm_event *event)
 {
 	struct fm_tab *tab;
-	unsigned result;
 	int handled;
 
 	/* The name being changed takes the keys: Enter renames, Esc gives up. */
 	tab = fm_ui_tab(app);
 	app->dirty = 1;
 	if (app->focus == FM_FOCUS_RENAME) {
-		result = fm_field_key(&app->rename, event->key, event->modifiers);
-		if (result == FM_FIELD_ENTER)
-			fm_desktop_rename_end(app, 1);
-		else if (result == FM_FIELD_CANCEL)
-			fm_desktop_rename_end(app, 0);
+		(void)fm_rename_input(app, event);
 		return;
 	}
 

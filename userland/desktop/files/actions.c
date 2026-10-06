@@ -431,7 +431,9 @@ fm_action_rename_begin(
 	struct fm_tab *tab;
 	struct fm_entry *entry;
 	const char *dot;
+	size_t stem;
 	int index;
+	int error;
 
 	/* The item: the cursor's, or else the first selected. */
 	tab = fm_ui_tab(app);
@@ -442,11 +444,16 @@ fm_action_rename_begin(
 		return;
 	entry = &tab->listing.entries[index];
 
-	/* The field over its name, the stem selected. */
-	fm_field_set(&app->rename, entry->name);
+	/* The field over its name, the stem selected (the whole name of a folder or one without an extension). */
+	stem = strlen(entry->name);
 	dot = strrchr(entry->name, '.');
 	if (dot != NULL && dot != entry->name && entry->folder == 0)
-		fm_field_select(&app->rename, 0, (size_t)(dot - entry->name));
+		stem = (size_t)(dot - entry->name);
+	error = fm_rename_start(app, entry->name, stem);
+	if (error != 0) {
+		fm_ui_message(app, "Out of memory");
+		return;
+	}
 	snprintf(app->rename_path, sizeof(app->rename_path), "%s", entry->path);
 	fm_select_only(tab, index);
 	app->focus = FM_FOCUS_RENAME;

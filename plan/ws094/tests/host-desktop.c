@@ -420,7 +420,7 @@ check_menus(
 	tab->cursor = 1 - index;
 	fm_desktop_action(&app, FM_ACTION_RENAME);
 	check(app.focus == FM_FOCUS_RENAME, "Rename opens the field");
-	fm_field_set(&app.rename, "todo.txt");
+	kl_field_set(&app.rename, "todo.txt");
 	fm_desktop_rename_end(&app, 1);
 	snprintf(renamed, sizeof(renamed), "%s/todo.txt", folder);
 	error = lstat(renamed, &status);
@@ -605,7 +605,7 @@ check_partial(
 	}
 
 	/* The fonts, a 1280x766 canvas and the model in the desktop mode. */
-	error = kl_text_open(&text, "build/ws035-fonts/Mahora-Regular.ttf", NULL);
+	error = kl_text_open(&text, "userland/desktop/fonts/Mahora-Regular.ttf", NULL);
 	check(error == 0, "partial: the font");
 	if (error != 0)
 		return;
@@ -754,7 +754,7 @@ check_label(void)
 	int error;
 
 	/* The desktop's font (the fallback for the Japanese name). */
-	error = kl_text_open(&text, "build/ws035-fonts/Mahora-Regular.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
+	error = kl_text_open(&text, "userland/desktop/fonts/Mahora-Regular.ttf", "userland/desktop/fonts/DroidSansFallbackFull.ttf");
 	check(error == 0, "label: the fonts");
 	if (error != 0)
 		return;
