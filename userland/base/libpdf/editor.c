@@ -82,10 +82,27 @@ struct editor_change {
 };
 
 /*
+ * One line of text of the page (ws175-p002b, design.md section 3.1): its
+ * shown strings (first and count in the scan's), its flags
+ * (PDF_EDIT_OBJECT_*), its corners, its characters in UTF-8 (in the
+ * editor's arena), its font's name and its size as shown.
+ */
+struct editor_line {
+	size_t first;
+	size_t count;
+	unsigned flags;
+	double quad[8];
+	char *text;
+	char font_name[64];
+	double size;
+};
+
+/*
  * One page's editor: the document and the page, the decoded content, the
- * scan of it, the page's PDF_EDIT_PAGE_* state, the changes of the page's
- * objects and of the inserted ones after them, the images given, and the
- * arena of the preview's objects.
+ * scan of it, the page's PDF_EDIT_PAGE_* state, the changes of the
+ * objects -- the page's images and graphics, then its lines of text, then
+ * the inserted ones --, the lines, the images given, and the arena of the
+ * preview's objects and the lines' text.
  */
 struct pdf_page_editor {
 	struct pdf_document *document;
@@ -100,6 +117,8 @@ struct pdf_page_editor {
 	struct editor_image *images;
 	size_t image_count;
 	size_t image_capacity;
+	struct editor_line *lines;
+	size_t line_count;
 	struct pdf_arena arena;
 };
 
@@ -119,6 +138,11 @@ static int editor_invert(const double matrix[6], double inverse[6]);
 static void editor_number(struct pdf_buffer *buffer, double number);
 static void editor_corners(const double placement[6], const double quad[8], double placed[8]);
 static int editor_inside(const double quad[8], double x, double y);
+static int editor_lines(struct pdf_page_editor *editor);
+static int editor_joins(const struct pdf_scan_show *before, const struct pdf_scan_show *show);
+static void editor_point(const double text[6], const double ctm[6], double x, double y, double point[2]);
+static int editor_line_text(struct pdf_page_editor *editor, struct editor_line *line);
+static size_t editor_drawn_at(const struct pdf_page_editor *editor, size_t index);
 
 /*
  * Opens the editor of a page: the page's content is scanned, and the
@@ -166,8 +190,15 @@ pdf_page_editor_open(
 	if (opened->scan.partial)
 		opened->status |= PDF_EDIT_PAGE_PARTIAL;
 
-	/* Every object of the page as it is. */
-	while (opened->capacity < opened->scan.count) {
+	/* The page's lines of text (p002b). */
+	error = editor_lines(opened);
+	if (error != 0) {
+		pdf_page_editor_close(opened);
+		return error;
+	}
+
+	/* Every object of the page as it is: its images and graphics, then its lines. */
+	while (opened->capacity < opened->scan.count + opened->line_count) {
 		error = editor_grow(opened);
 		if (error != 0) {
 			pdf_page_editor_close(opened);
@@ -176,9 +207,9 @@ pdf_page_editor_open(
 	}
 
 	/* Nothing done to them yet. */
-	for (at = 0; at < opened->scan.count; at++)
+	for (at = 0; at < opened->scan.count + opened->line_count; at++)
 		opened->changes[at].image = EDITOR_NONE;
-	opened->count = opened->scan.count;
+	opened->count = opened->scan.count + opened->line_count;
 
 	/* Succeeded: the page's objects are listed. */
 	*editor = opened;
@@ -211,6 +242,7 @@ pdf_page_editor_close(
 	pdf_scan_free(&editor->scan);
 	free(editor->content);
 	free(editor->changes);
+	free(editor->lines);
 	pdf_arena_free(&editor->arena);
 	free(editor);
 }
@@ -260,6 +292,7 @@ pdf_page_editor_object(
 {
 	const struct editor_change *change;
 	const struct pdf_scan_object *found;
+	const struct editor_line *line;
 	size_t size;
 
 	/* Refuses a missing editor or object, or one of an unknown size. */
@@ -281,6 +314,14 @@ pdf_page_editor_object(
 	object->kind = PDF_EDIT_IMAGE;
 	if (change->inserted) {
 		object->flags |= PDF_EDIT_OBJECT_INSERTED;
+	} else if (index >= editor->scan.count) {
+		/* A line of text: its characters, its font and size, its flags. */
+		line = &editor->lines[index - editor->scan.count];
+		object->kind = PDF_EDIT_TEXT;
+		object->flags |= line->flags;
+		object->text = line->text;
+		memcpy(object->font_name, line->font_name, sizeof(object->font_name));
+		object->font_size = line->size;
 	} else {
 		found = &editor->scan.objects[index];
 		if (found->kind != (unsigned)PDF_EDIT_IMAGE)
@@ -318,12 +359,26 @@ pdf_page_editor_key(
 	struct pdf_edit_key *key)
 {
 	const struct pdf_scan_object *found;
+	const struct pdf_scan_show *show;
 
 	/* Refuses a missing editor or key. */
 	if (editor == NULL || key == NULL)
 		return EINVAL;
 
-	/* An object of the page by its index. */
+	/* A line of text: its first shown string's bytes and their fingerprint (design.md [H3]). */
+	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count) {
+		show = &editor->scan.shows[editor->lines[index - editor->scan.count].first];
+		if (show->length > 0xffffffffUL)
+			return ERANGE;
+		memset(key, 0, sizeof(*key));
+		key->kind = PDF_EDIT_TEXT;
+		key->offset = (uint64_t)show->offset;
+		key->length = (uint32_t)show->length;
+		memcpy(key->fingerprint, show->fingerprint, sizeof(key->fingerprint));
+		return 0;
+	}
+
+	/* An image or a graphic of the page by its index. */
 	if (index >= editor->scan.count)
 		return ENOENT;
 	found = &editor->scan.objects[index];
@@ -365,8 +420,8 @@ pdf_page_editor_find(
 	if (editor == NULL || key == NULL || index == NULL)
 		return EINVAL;
 
-	/* Compares the key with each object's. */
-	for (at = 0; at < editor->scan.count; at++) {
+	/* Compares the key with each object's of the page (its lines too). */
+	for (at = 0; at < editor->scan.count + editor->line_count; at++) {
 		/* The object's key. */
 		error = pdf_page_editor_key(editor, at, &each);
 		if (error != 0)
@@ -404,28 +459,50 @@ pdf_page_editor_hit(
 	size_t *index)
 {
 	double quad[8];
+	size_t best;
+	size_t best_at;
+	size_t drawn;
 	size_t at;
+	int invisible;
+	int pass;
 	int inside;
 
 	/* Refuses a missing editor or result. */
 	if (editor == NULL || index == NULL)
 		return EINVAL;
 
-	/* From the last object drawn to the first. */
-	for (at = editor->count; at > 0; at--) {
-		/* A deleted object is not there. */
-		if (editor->changes[at - 1].state == EDITOR_DELETED)
-			continue;
+	/* The visible objects first; an invisible line (an OCR layer) only where nothing else is (design.md [M9]). */
+	for (pass = 0; pass < 2; pass++) {
+		/* The object drawn last whose corners hold the point. */
+		best = EDITOR_NONE;
+		best_at = 0;
+		for (at = 0; at < editor->count; at++) {
+			/* A deleted object is not there; the invisible lines wait for the second pass. */
+			if (editor->changes[at].state == EDITOR_DELETED)
+				continue;
+			invisible = 0;
+			if (at >= editor->scan.count && at < editor->scan.count + editor->line_count && (editor->lines[at - editor->scan.count].flags & PDF_EDIT_OBJECT_INVISIBLE) != 0U)
+				invisible = 1;
+			if (invisible != pass)
+				continue;
 
-		/* An object whose corners hold the point. */
-		editor_quad(editor, at - 1, quad);
-		inside = editor_inside(quad, x, y);
-		if (!inside)
-			continue;
+			/* Its corners, and where in the drawing it comes. */
+			editor_quad(editor, at, quad);
+			inside = editor_inside(quad, x, y);
+			if (!inside)
+				continue;
+			drawn = editor_drawn_at(editor, at);
+			if (best == EDITOR_NONE || drawn >= best_at) {
+				best = at;
+				best_at = drawn;
+			}
+		}
 
 		/* Succeeded: the object on top there. */
-		*index = at - 1;
-		return 0;
+		if (best != EDITOR_NONE) {
+			*index = best;
+			return 0;
+		}
 	}
 
 	/* Nothing there. */
@@ -467,10 +544,12 @@ pdf_page_editor_delete(
 {
 	int error;
 
-	/* An object of a page that can be edited. */
+	/* An object of a page that can be edited (a line of text is p004's). */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
+	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count)
+		return ENOTSUP;
 
 	/* Gone from the new content. */
 	editor->changes[index].state = EDITOR_DELETED;
@@ -495,10 +574,12 @@ pdf_page_editor_place(
 	size_t item;
 	int error;
 
-	/* An object of a page that can be edited, and a placement. */
+	/* An object of a page that can be edited (a line of text is p004's), and a placement. */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
+	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count)
+		return ENOTSUP;
 	if (transform == NULL)
 		return EINVAL;
 
@@ -541,10 +622,12 @@ pdf_page_editor_set_image(
 	size_t taken;
 	int error;
 
-	/* An object of a page that can be edited, and an image. */
+	/* An object of a page that can be edited (not a line of text), and an image. */
 	error = editor_writable(editor, index);
 	if (error != 0)
 		return error;
+	if (index >= editor->scan.count && index < editor->scan.count + editor->line_count)
+		return ENOTSUP;
 	error = editor_take_image(editor, image, &taken);
 	if (error != 0)
 		return error;
@@ -773,7 +856,7 @@ pdf_editor_content(
 	pdf_buffer_append(out, "Q\n", 2);
 
 	/* The inserted images over the page, in the page's first matrix (B). */
-	for (object_at = editor->scan.count; object_at < editor->count; object_at++) {
+	for (object_at = editor->scan.count + editor->line_count; object_at < editor->count; object_at++) {
 		/* One that is still there, where it is now. */
 		change = &editor->changes[object_at];
 		if (change->state == EDITOR_DELETED || object_at == hidden)
@@ -923,6 +1006,289 @@ editor_writable(
 	return 0;
 }
 
+/*
+ * Gathers the page's shown strings into lines (design.md section 3.1): a
+ * string joins the line before it when it is of the same text object, or
+ * of the next one with nothing drawn and no graphics state changed between
+ * (design.md [M9][N16]), in the same font, size and visibility, the same
+ * direction and baseline (within a quarter of the size), and starts within
+ * three sizes of where the line ends.  The strings of a text object that
+ * clips (rendering modes 4 to 7, design.md [H2]) and empty ones are left
+ * out.  Returns 0 or ENOMEM.
+ */
+static int
+editor_lines(
+	struct pdf_page_editor *editor)
+{
+	const struct pdf_scan_show *show;
+	struct editor_line *line;
+	struct editor_line *grown;
+	size_t capacity;
+	size_t at;
+	int joins;
+	int error;
+
+	/* Each shown string in the order of the content. */
+	capacity = 0;
+	for (at = 0; at < editor->scan.show_count; at++) {
+		/* A string of a clipping text object, or an empty one, is no line's. */
+		show = &editor->scan.shows[at];
+		if (show->characters_count == 0)
+			continue;
+		if (show->block < editor->scan.block_count && editor->scan.block_clips[show->block] != 0U)
+			continue;
+
+		/* Joins the line before it. */
+		joins = 0;
+		if (editor->line_count > 0) {
+			line = &editor->lines[editor->line_count - 1U];
+			joins = editor_joins(&editor->scan.shows[line->first + line->count - 1U], show);
+		}
+
+		/* The line grows by it. */
+		if (joins) {
+			line->count++;
+			continue;
+		}
+
+		/* Or starts a new one. */
+		if (editor->line_count == capacity) {
+			capacity = capacity + capacity / 2U + 8U;
+			grown = realloc(editor->lines, capacity * sizeof(*grown));
+			if (grown == NULL)
+				return ENOMEM;
+			editor->lines = grown;
+		}
+
+		/* The new line, of this string. */
+		line = &editor->lines[editor->line_count];
+		memset(line, 0, sizeof(*line));
+		line->first = at;
+		line->count = 1;
+		editor->line_count++;
+	}
+
+	/* Each line's corners, text, font and flags. */
+	for (at = 0; at < editor->line_count; at++) {
+		error = editor_line_text(editor, &editor->lines[at]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the lines. */
+	return 0;
+}
+
+/* Tells whether a shown string joins the line whose last string is before it. */
+static int
+editor_joins(
+	const struct pdf_scan_show *before,
+	const struct pdf_scan_show *show)
+{
+	double before_end[2];
+	double ahead[2];
+	double start[2];
+	double across;
+	double along;
+	double length;
+	double size;
+	int differs;
+
+	/* The same text object, or the next one with nothing drawn or changed between and the same matrix. */
+	if (show->block != before->block) {
+		if (show->block != before->block + 1U || show->drawn_before != 0)
+			return 0;
+		differs = memcmp(show->ctm, before->ctm, sizeof(show->ctm));
+		if (differs != 0)
+			return 0;
+	}
+
+	/* The same font, size, visibility and kind. */
+	if (show->font != before->font || show->font_size != before->font_size)
+		return 0;
+	if ((show->render_mode == 3) != (before->render_mode == 3) || show->flags != before->flags)
+		return 0;
+
+	/* The direction: where one unit of the text's x goes from the line's end, in the shown space. */
+	editor_point(before->end, before->ctm, 0.0, 0.0, before_end);
+	editor_point(before->end, before->ctm, 1.0, 0.0, ahead);
+	ahead[0] -= before_end[0];
+	ahead[1] -= before_end[1];
+	length = sqrt(ahead[0] * ahead[0] + ahead[1] * ahead[1]);
+	if (!(length > 1e-9))
+		return 0;
+	ahead[0] /= length;
+	ahead[1] /= length;
+
+	/* The new string's start, along the line and across it, from the line's end. */
+	editor_point(show->start, show->ctm, 0.0, 0.0, start);
+	along = (start[0] - before_end[0]) * ahead[0] + (start[1] - before_end[1]) * ahead[1];
+	across = -(start[0] - before_end[0]) * ahead[1] + (start[1] - before_end[1]) * ahead[0];
+
+	/* Within a quarter of the size of the baseline, from a size back to three ahead. */
+	size = fabs(before->font_size) * length;
+	across = fabs(across);
+	if (across > size / 4.0)
+		return 0;
+	if (along < -size || along > 3.0 * size)
+		return 0;
+
+	/* It joins. */
+	return 1;
+}
+
+/* Maps a point of the text space through the text matrix and the matrix in force to the shown space. */
+static void
+editor_point(
+	const double text[6],
+	const double ctm[6],
+	double x,
+	double y,
+	double point[2])
+{
+	double user[2];
+
+	/* Into the user space, then the shown space. */
+	user[0] = text[0] * x + text[2] * y + text[4];
+	user[1] = text[1] * x + text[3] * y + text[5];
+	point[0] = ctm[0] * user[0] + ctm[2] * user[1] + ctm[4];
+	point[1] = ctm[1] * user[0] + ctm[3] * user[1] + ctm[5];
+}
+
+/*
+ * Makes a line's corners (its first string's start to its last's end),
+ * its characters in UTF-8 (a space between two strings apart by more than
+ * a fifth of the size), its font's name without a subset's prefix, its size
+ * as shown, and its flags.  Returns 0 or ENOMEM.
+ */
+static int
+editor_line_text(
+	struct pdf_page_editor *editor,
+	struct editor_line *line)
+{
+	const struct pdf_scan_show *show;
+	const struct pdf_scan_show *last;
+	const struct pdf_object *dictionary;
+	const struct pdf_object *name;
+	double end[2];
+	double start[2];
+	double up[2];
+	double gap;
+	uint32_t character;
+	size_t bytes;
+	size_t length;
+	size_t skip;
+	size_t at;
+	size_t from;
+	char *text;
+
+	/* The corners: the first string's left side, the last's right side. */
+	show = &editor->scan.shows[line->first];
+	last = &editor->scan.shows[line->first + line->count - 1U];
+	line->quad[0] = show->quad[0];
+	line->quad[1] = show->quad[1];
+	line->quad[2] = last->quad[2];
+	line->quad[3] = last->quad[3];
+	line->quad[4] = last->quad[4];
+	line->quad[5] = last->quad[5];
+	line->quad[6] = show->quad[6];
+	line->quad[7] = show->quad[7];
+
+	/* The size as shown: how far one unit of the text's y goes, times the font size. */
+	editor_point(show->start, show->ctm, 0.0, 0.0, start);
+	editor_point(show->start, show->ctm, 0.0, 1.0, up);
+	line->size = fabs(show->font_size) * sqrt((up[0] - start[0]) * (up[0] - start[0]) + (up[1] - start[1]) * (up[1] - start[1]));
+
+	/* The flags: words that cannot be changed, an invisible line. */
+	if ((show->flags & (PDF_SCAN_SHOW_UNKNOWN | PDF_SCAN_SHOW_TYPE3 | PDF_SCAN_SHOW_VERTICAL)) != 0U)
+		line->flags |= PDF_EDIT_OBJECT_TEXT_FIXED;
+	for (at = 0; at < line->count; at++) {
+		if ((editor->scan.shows[line->first + at].flags & PDF_SCAN_SHOW_UNKNOWN) != 0U)
+			line->flags |= PDF_EDIT_OBJECT_TEXT_FIXED;
+	}
+
+	/* Rendering mode 3 shows nothing. */
+	if (show->render_mode == 3)
+		line->flags |= PDF_EDIT_OBJECT_INVISIBLE;
+
+	/* The font's name, without the six letters and the plus of a subset. */
+	dictionary = pdf_font_dictionary(show->font);
+	name = pdf_object_get(dictionary, "BaseFont");
+	if (name != NULL && name->type == PDF_OBJECT_NAME) {
+		skip = 0;
+		if (name->length > 7U && name->bytes[6] == '+')
+			skip = 7;
+		length = name->length - skip;
+		if (length >= sizeof(line->font_name))
+			length = sizeof(line->font_name) - 1U;
+		memcpy(line->font_name, name->bytes + skip, length);
+		line->font_name[length] = '\0';
+	}
+
+	/* The UTF-8 text: at most four bytes a character, a space between strings, the NUL. */
+	bytes = 1;
+	for (at = 0; at < line->count; at++)
+		bytes += 4U * editor->scan.shows[line->first + at].characters_count + 1U;
+	text = pdf_arena_allocate(&editor->arena, bytes);
+	if (text == NULL)
+		return ENOMEM;
+	length = 0;
+	for (at = 0; at < line->count; at++) {
+		/* A space where the string starts apart from the one before. */
+		show = &editor->scan.shows[line->first + at];
+		if (at > 0) {
+			editor_point(editor->scan.shows[line->first + at - 1U].end, show->ctm, 0.0, 0.0, end);
+			editor_point(show->start, show->ctm, 0.0, 0.0, start);
+			gap = sqrt((start[0] - end[0]) * (start[0] - end[0]) + (start[1] - end[1]) * (start[1] - end[1]));
+			if (gap > line->size / 5.0)
+				text[length++] = ' ';
+		}
+
+		/* Each character in UTF-8. */
+		for (from = 0; from < show->characters_count; from++) {
+			character = editor->scan.characters[show->characters_from + from];
+			if (character < 0x80U) {
+				text[length++] = (char)character;
+			} else if (character < 0x800U) {
+				text[length++] = (char)(0xc0U | (character >> 6));
+				text[length++] = (char)(0x80U | (character & 0x3fU));
+			} else if (character < 0x10000U) {
+				text[length++] = (char)(0xe0U | (character >> 12));
+				text[length++] = (char)(0x80U | ((character >> 6) & 0x3fU));
+				text[length++] = (char)(0x80U | (character & 0x3fU));
+			} else {
+				text[length++] = (char)(0xf0U | (character >> 18));
+				text[length++] = (char)(0x80U | ((character >> 12) & 0x3fU));
+				text[length++] = (char)(0x80U | ((character >> 6) & 0x3fU));
+				text[length++] = (char)(0x80U | (character & 0x3fU));
+			}
+		}
+	}
+
+	/* Succeeded: the text, ended. */
+	text[length] = '\0';
+	line->text = text;
+	return 0;
+}
+
+/* Gives where in the drawing an object comes: its bytes' place (an inserted one after every byte). */
+static size_t
+editor_drawn_at(
+	const struct pdf_page_editor *editor,
+	size_t index)
+{
+	/* An image or a graphic of the page. */
+	if (index < editor->scan.count)
+		return editor->scan.objects[index].offset;
+
+	/* A line: its last string's place. */
+	if (index < editor->scan.count + editor->line_count)
+		return editor->scan.shows[editor->lines[index - editor->scan.count].first + editor->lines[index - editor->scan.count].count - 1U].offset;
+
+	/* An inserted object: after the page's own, in the order inserted. */
+	return editor->size + index;
+}
+
 /* Grows the changes by half again.  Returns 0 or ENOMEM. */
 static int
 editor_grow(
@@ -1063,6 +1429,12 @@ editor_quad(
 		if (change->state == EDITOR_PLACED)
 			editor_multiply(change->square, change->placement, square);
 		editor_corners(square, unit, quad);
+		return;
+	}
+
+	/* A line of text: its corners (it is not moved yet, p004). */
+	if (index >= editor->scan.count) {
+		memcpy(quad, editor->lines[index - editor->scan.count].quad, 8U * sizeof(double));
 		return;
 	}
 

@@ -2,7 +2,7 @@
 # WS175: Notes で PDF の画像と文字を編集する
 
 Master: [master](../master.md)
-Status: planned（2026-10-06: p001 設計 cleared（D1〜D7 はユーザーが推奨どおりに決定）、ベータ2。実装は p002 以降）
+Status: incomplete（2026-10-06: p001 設計 cleared、p002a・p003 を実装。次は p006（libz-compat の許可待ち））
 Primary Milestone: MG006
 
 ## 由来
@@ -24,6 +24,9 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [ws175-p001](phase001/phase.md) | 設計: libpdf の書き出し（増分の更新か作り直しか）、content stream の text・image の object の取り出しと書き換え、font（埋め込みの subset の扱い、置き換えの font）、複数頁、Notes の UI、試験。design-reviewer | in-progress（設計 [design.md](phase001/design.md) と review 済み、review の反映は未了。判断 D1〜D7 待ち） | — |
+| [ws175-p001](phase001/phase.md) | 設計: libpdf の書き出し（増分の更新か作り直しか）、content stream の text・image の object の取り出しと書き換え、font（埋め込みの subset の扱い、置き換えの font）、複数頁、Notes の UI、試験。design-reviewer | cleared（2026-10-06 Q1、D1〜D7 は推奨どおり） | — |
+| [ws175-p002](phase002/phase.md) | libpdf の走査: p002a 画像と図形（先の段）、p002b 文字の行と Unicode の抽出（後の段） | p002a 実装済み（2026-10-06、host PASS）、p002b 未着手 | p001 |
+| [ws175-p003](phase003/phase.md) | libpdf の画像・図形の editor（削除・移動・大きさ・差し替え・挿入）、content の組み立て、preview、update の PLACE_EDIT、名前の接頭辞 [M4] | 実装済み（2026-10-06、p003a・p003b、host PASS）、cleared の判定待ち | p002a |
+| p004〜p011 | design.md §10 のとおり（p006 deflate と画像の取り込み → p007 Notes の model → p008 Notes の UI → p010 T1 → p011 規約、文字は p004・p005・p002b） | 未作成 | — |
 
-見積もり（Q1 の概算）: 6 LW。
+見積もり: design.md §10（全体 17.5〜21.5 LW、画像を先にする段は約 10 LW）。Q1 の当初の概算は 6 LW。
