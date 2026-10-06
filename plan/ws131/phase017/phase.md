@@ -2,10 +2,10 @@
 
 # ws131-p017: PDF Viewer・Image Viewer を新しい API へ
 
-Status: planning（p002 第 2 版はユーザーのレビュー済み（2026-10-03、D7 は確認中）。開始はユーザーの承認と P2 の終了の後に Q1 が指示）
+Status: test-wait（q807、P1、2026-10-06 実装済み・T1 の試験待ち。p016 の上で開始（Q1 の (1)）。下の「q807（P1）」）
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
-Queue: none
+Queue: q807（P1）
 依存: p016 cleared。D8 の単独走行で番号の順
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
 所有 path: `userland/desktop/pdfviewer/`・`imageview/`、API の不足の補い、`plan/ws131/`
@@ -37,3 +37,26 @@ Queue: none
 ## Resume
 
 依存の Phase の cleared と main への統合、関係する判断の決定の後に、Q1 が Queue を作る。
+
+## q807（P1、2026-10-06）
+
+### 変更（p016 と同じ形）
+
+- **名前**: pdfviewer・imageview の旧名を全て新名に、`<keiui.h>` を除いた。残るのは API でない物（`KEILAND_DATADIR`・`KEILAND_BINDIR` の path、artwork の `KEILAND_MARK_LAYERS`、
+  comment の `keiland_glass_v1`、build の Makefile の変数名）。
+- **app**: 両方とも `kl_app_open`・`kl_app_window_create`、loop は `kl_app_dispatch`・`kl_app_take`、外観は `KL_APP_THEME`、選択は `KL_WINDOW_ACTION`（log `ACTION id= action=`）。
+  `pv_window_action`・`iv_window_action`（`kl_window_post`）を除いた。chooser は `kl_app_display`。
+- **宣言的**: menu は `kl_menu_entry` の表と `kl_window_set_menu`、状態は action の状態（menu と titlebar に同時）。PDF の titlebar の「Page 3 of 10」、Image Viewer の「3 / 12」は
+  表の label を変えて送り直す（専用の action `PV_ACTION_PAGE_INFO`・`IV_ACTION_PLACE_INFO` で状態だけ持つ）。Image Viewer の Open With の slot は label を表に、使わない slot は
+  action の HIDDEN、submenu は専用の action `IV_ACTION_OPEN_WITH_MENU` で灰色に。文脈の menu は `kl_window_popup_menu`（log `CONTEXT-MENU open` は保つ）。glass は `kl_window_set_glass`。
+- **Image Viewer の present**: surface は `kl_window_vulkan_surface`（`vkCreateWaylandSurfaceKHR` を直に呼ばない）。`window.h` で Vulkan の header を先に include。
+- **PDF の password の card と inset**: 変えていない（`kl_window_on_keyboard_inset` のまま）。
+- **行数**: PDF menu.c 365→232、titlebar.c 321→163。Image Viewer menu.c 670→385、titlebar.c 369→159、glass.c 191→174。
+- **振る舞いの差**: PDF の View の Fit Width・Fit Page は文書が無い時は menu でも灰色（titlebar と同じ action の状態）。
+
+### 確認
+
+zedBSD amd64 の pdfviewer・imageview の build（warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning 0）、`plan/tools/imageview/run-host.sh` PASS、
+`plan/ws079/tests/run-pdf-render.sh`・`run-pdfviewer-host.sh` ok。`plan/ws081/tests/run-pdftouch.sh` は既存の壊れ: 消えた `chooser.c` と `keiland-ui.h` の欠けを直したが、
+`host-pdftouch.c` が古い touch の API（`PV_TOUCH_MOTION` など、今の `pv_touch_event` は `kl_window_event` を取る）で書かれていて build できない（この Phase の前から、別に直す要）。
+未実施: FreeBSD の build（環境が無い）、`keiland-os-boundary/check.sh`（Q1 が main で流す）。QEMU は T1 に依頼する。

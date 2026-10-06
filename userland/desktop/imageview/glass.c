@@ -16,8 +16,9 @@
  * The window is glass when its swapchain is see-through and zdesktop has
  * glass; otherwise it keeps an opaque ground.  A fullscreen window has no
  * glass (its ground is black).  The panels are worked out from each
- * frame's layout and sent before the frame is shown, only when they
- * changed, so that they take effect with that frame.
+ * frame's layout and given to libkeiland before the frame is shown, which
+ * sends them only when they changed (WS131 p017: kl_window_set_glass), so
+ * that they take effect with that frame.
  */
 
 #include "window.h"
@@ -26,21 +27,25 @@
 #include <string.h>
 
 static size_t glass_panels(const struct iv_app *app, struct kl_glass_panel *panels, size_t capacity);
-static int glass_same(const struct iv_glass *glass, const struct kl_glass_panel *panels, size_t count);
+static int glass_send(struct iv_glass *glass, const struct iv_app *app);
 
 /*
- * Makes the window glass when it can be: returns 1 when it is, 0 when it
- * keeps its opaque ground (a swapchain that is not see-through, or a
- * compositor without glass).
+ * Makes the window glass when it can be, with the viewer's first panels:
+ * returns 1 when it is, 0 when it keeps its opaque ground (a swapchain that
+ * is not see-through, or a compositor without glass).
  */
 int
 iv_glass_open(
 	struct iv_glass *glass,
 	struct iv_window *window,
-	const struct iv_present *present)
+	const struct iv_present *present,
+	const struct iv_app *app)
 {
+	int error;
+
 	/* Nothing sent yet. */
 	memset(glass, 0, sizeof(*glass));
+	glass->window = window;
 
 	/* A frame that zdesktop does not blend cannot let the desktop through. */
 	if (present->premultiplied == 0) {
@@ -48,14 +53,15 @@ iv_glass_open(
 		return 0;
 	}
 
-	/* zdesktop's glass for the window's surface. */
-	glass->glass = kl_glass_create(kl_window_display(window->kui), kl_window_surface(window->kui));
-	if (glass->glass == NULL) {
-		iv_log("GLASS off reason=compositor errno=%d", errno);
+	/* zdesktop's glass for the window, with the first panels; a compositor without glass refuses them. */
+	error = glass_send(glass, app);
+	if (error != 0) {
+		iv_log("GLASS off reason=compositor errno=%d", error);
 		return 0;
 	}
 
-	/* Logs the glass for the tests. */
+	/* Logs the glass for the tests, and the window is glass. */
+	glass->on = 1;
 	iv_log("GLASS on");
 
 	/* Succeeded: the window is glass. */
@@ -63,41 +69,24 @@ iv_glass_open(
 }
 
 /*
- * Sends the panels of the frame about to be shown, when they differ from
- * those sent last; they take effect with the frame's present.
+ * Gives libkeiland the panels of the frame about to be shown (it sends
+ * them only when they changed); they take effect with the frame's present.
  */
 void
 iv_glass_update(
 	struct iv_glass *glass,
 	const struct iv_app *app)
 {
-	struct kl_glass_panel panels[2];
-	size_t count;
-	int same;
 	int error;
 
 	/* A window that is not glass has no panels. */
-	if (glass->glass == NULL)
+	if (!glass->on)
 		return;
 
-	/* The frame's panels, unless they are the ones zdesktop has. */
-	count = glass_panels(app, panels, 2U);
-	same = glass_same(glass, panels, count);
-	if (same != 0)
-		return;
-
-	/* Sent with the frame; a refused list is logged and the old panels stay. */
-	error = kl_glass_set_panels(glass->glass, panels, count);
-	if (error != 0) {
-		iv_log("GLASS refused errno=%d count=%lu", error, (unsigned long)count);
-		return;
-	}
-
-	/* Remembered, to send again only what changes. */
-	memcpy(glass->panels, panels, sizeof(panels[0]) * count);
-	glass->count = count;
-	glass->sent = 1;
-	iv_log("GLASS panels count=%lu", (unsigned long)count);
+	/* The frame's panels; a refused list is logged and the old panels stay. */
+	error = glass_send(glass, app);
+	if (error != 0)
+		iv_log("GLASS refused errno=%d", error);
 }
 
 /*
@@ -107,12 +96,36 @@ void
 iv_glass_close(
 	struct iv_glass *glass)
 {
-	/* The glass object, when there is one. */
-	if (glass->glass != NULL)
-		kl_glass_destroy(glass->glass);
+	/* No panels on the window, and the window is not glass any more. */
+	if (glass->on)
+		(void)kl_window_set_glass(glass->window->kui, NULL, 0U);
+	memset(glass, 0, sizeof(*glass));
+}
 
-	/* The window is not glass any more. */
-	glass->glass = NULL;
+/* Gives libkeiland the frame's panels; 0 or an errno value. */
+static int
+glass_send(
+	struct iv_glass *glass,
+	const struct iv_app *app)
+{
+	struct kl_glass_panel panels[2];
+	size_t count;
+	int error;
+
+	/* The frame's panels, sent with the frame. */
+	count = glass_panels(app, panels, 2U);
+	error = kl_window_set_glass(glass->window->kui, panels, count);
+	if (error != 0)
+		return error;
+
+	/* A new count is logged once. */
+	if (count != glass->count || !glass->sent)
+		iv_log("GLASS panels count=%lu", (unsigned long)count);
+	glass->count = count;
+	glass->sent = 1;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Works out the frame's panels: the card (none when fullscreen) and the chip while it is drawn; returns how many. */
@@ -158,34 +171,4 @@ glass_panels(
 
 	/* Reports how many panels the frame has. */
 	return count;
-}
-
-/* Tells whether a list of panels is the one sent last. */
-static int
-glass_same(
-	const struct iv_glass *glass,
-	const struct kl_glass_panel *panels,
-	size_t count)
-{
-	size_t index;
-	int differs;
-
-	/* Nothing sent yet. */
-	if (glass->sent == 0)
-		return 0;
-
-	/* Another count of panels. */
-	if (glass->count != count)
-		return 0;
-
-	/* Any panel with another place, radius or kind. */
-	for (index = 0; index < count; index++) {
-		/* The panel byte for byte, as it was sent. */
-		differs = memcmp(&panels[index], &glass->panels[index], sizeof(panels[index]));
-		if (differs != 0)
-			return 0;
-	}
-
-	/* The same list. */
-	return 1;
 }
