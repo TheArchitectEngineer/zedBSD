@@ -341,4 +341,53 @@ struct pdf_crypt *pdf_reader_crypt(const struct pdf_document *document);
 int pdf_shading_image(struct pdf_document *document, struct pdf_object *object, const double matrix[6], const double bounds[4], unsigned char **pixels, size_t *width, size_t *height, double placement[6]);
 void pdf_reader_set_font_cache(struct pdf_document *document, struct pdf_font_cache *cache, void (*release)(struct pdf_font_cache *cache));
 
+/*
+ * One object of a page's content the editor can change (ws175-p002, the
+ * scan of design.md section 3.1): an image (an image XObject's Do, or an
+ * inline image) or a graphic (a form XObject's Do) at the content's top
+ * level.  offset and length are its bytes in the page's decoded content
+ * (the streams joined as the interpreter reads them), from its first
+ * operand to the end of its operator (an inline image from BI to EI); ctm
+ * is the matrix in force (user space to the shown space, C_rec), quad the
+ * corners it covers in the shown space (the image's top left, top right,
+ * bottom right and bottom left; a form's box the same way), width and
+ * height an image's samples, clipped whether a clip was in force, and
+ * fingerprint the first bytes of the SHA-256 of its bytes.
+ */
+struct pdf_scan_object {
+	unsigned kind;
+	size_t offset;
+	size_t length;
+	double ctm[6];
+	double quad[8];
+	size_t width;
+	size_t height;
+	int clipped;
+	unsigned char fingerprint[8];
+};
+
+/*
+ * What the scan of a page's content found: its objects in the order of the
+ * content, the q left open at its end, the Q that had no q to restore
+ * (their offsets; each is one byte, "Q"), whether the content ended inside
+ * a text object (BT without its ET), and whether objects were left out
+ * (past the limit of q's nesting, or after the content stopped).
+ */
+struct pdf_scan {
+	struct pdf_scan_object *objects;
+	size_t count;
+	size_t capacity;
+	size_t open_saves;
+	size_t *stray_restores;
+	size_t stray_count;
+	size_t stray_capacity;
+	int in_text;
+	int partial;
+	int error;
+};
+
+/* The scan of a page's content (content.c): the objects, and the decoded content they are ranges of. */
+int pdf_content_scan(struct pdf_document *document, size_t index, struct pdf_scan *scan, unsigned char **content, size_t *size, unsigned *read_flags);
+void pdf_scan_free(struct pdf_scan *scan);
+
 #endif /* LIBPDF_INTERNAL_H */

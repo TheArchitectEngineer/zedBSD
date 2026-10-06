@@ -29,6 +29,11 @@
  * clips, the forms' nesting and the list's size are bounded; a malformed
  * token ends the content (PDF_DISPLAY_DAMAGED) and a limit stops it
  * (PDF_DISPLAY_LIMITED), and in both cases what came before is drawn.
+ *
+ * The same run scans a page for the editor (ws175-p002, pdf_content_scan):
+ * the images and graphics at the content's top level, with their byte
+ * ranges, the matrix in force and the corners they cover, and how q and Q
+ * are balanced.
  */
 
 #include <errno.h>
@@ -37,6 +42,7 @@
 #include <string.h>
 
 #include <pdf.h>
+#include <sha2.h>
 
 #include "internal.h"
 
@@ -63,6 +69,10 @@
 /* How far a flattened curve may stray from the true one, and the width of a zero-width line, in page points. */
 #define PDF_CONTENT_TOLERANCE 0.05
 #define PDF_CONTENT_HAIRLINE 0.25
+
+/* The kinds of object the scan lists (pdf.h's enum pdf_edit_kind). */
+#define CONTENT_SCAN_IMAGE	1U
+#define CONTENT_SCAN_GRAPHIC	2U
 
 /*
  * The operators the interpreter knows.
@@ -240,6 +250,11 @@ struct content_path {
  * shown space) until ET makes them the clip.  text_resources are the
  * resources of the text operator being run, which a Type 3 glyph without
  * its own runs with.
+ *
+ * A scan (scan not NULL) records the page's own objects: content_level is
+ * how deep content runs nest (1 for the page's, more inside a form or a
+ * Type 3 glyph), scan_saves counts the page's q by their tokens, and the
+ * operator being run fills scan_object (scan_pending) when it draws one.
  */
 struct content_run {
 	struct pdf_document *document;
@@ -272,6 +287,11 @@ struct content_run {
 	struct pdf_point *text_clip_points;
 	size_t text_clip_point_count;
 	size_t text_clip_point_capacity;
+	struct pdf_scan *scan;
+	size_t content_level;
+	size_t scan_saves;
+	int scan_pending;
+	struct pdf_scan_object scan_object;
 };
 
 /*
@@ -450,6 +470,13 @@ static int inline_device_space(const struct pdf_object *name);
 static int inline_device_components(const struct pdf_object *name);
 static int is_white(unsigned char character);
 static void stop_for(struct content_run *run, int error);
+static int page_run(struct pdf_document *document, size_t index, struct pdf_scan *scan, struct pdf_display_list **list, unsigned char **kept, size_t *kept_size, unsigned *read_flags);
+static int scan_here(const struct content_run *run);
+static void scan_image(struct content_run *run, struct pdf_object *image);
+static void scan_form(struct content_run *run, struct pdf_object *form);
+static void scan_operator(struct content_run *run, enum content_operator code, size_t start, size_t keyword, size_t end, const unsigned char *data);
+static void scan_corners(const double matrix[6], const double corners[8], double quad[8]);
+static int scan_add_stray(struct pdf_scan *scan, size_t offset);
 static double clamp_unit(double value);
 
 /*
@@ -465,6 +492,102 @@ pdf_page_render(
 	size_t index,
 	struct pdf_display_list **list)
 {
+	int error;
+
+	/* Refuses a missing document or list. */
+	if (document == NULL)
+		return EINVAL;
+	if (list == NULL)
+		return EINVAL;
+
+	/* Runs the page without a scan, keeping only the list. */
+	error = page_run(document, index, NULL, list, NULL, NULL, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the list is the page's drawing. */
+	return 0;
+}
+
+/*
+ * Scans a page's content for the editor (ws175-p002): the page runs as it
+ * is drawn, and the scan gets the images and graphics of its top level and
+ * how its q and Q are balanced.  content gets the decoded content (a
+ * malloc'd buffer the objects' ranges are in, NULL for none) and
+ * read_flags the PDF_DISPLAY_* flags of reading its streams alone (a
+ * stream left out or damaged, before anything ran).
+ */
+int
+pdf_content_scan(
+	struct pdf_document *document,
+	size_t index,
+	struct pdf_scan *scan,
+	unsigned char **content,
+	size_t *size,
+	unsigned *read_flags)
+{
+	struct pdf_display_list *list;
+	int error;
+
+	/* Refuses a missing document or scan. */
+	if (document == NULL || scan == NULL || content == NULL || size == NULL || read_flags == NULL)
+		return EINVAL;
+
+	/* Runs the page with the scan; its drawing is not needed. */
+	memset(scan, 0, sizeof(*scan));
+	error = page_run(document, index, scan, &list, content, size, read_flags);
+	if (error != 0) {
+		pdf_scan_free(scan);
+		return error;
+	}
+
+	/* The drawing goes. */
+	pdf_display_list_destroy(list);
+
+	/* A scan that ran out of memory fails as a whole. */
+	if (scan->error != 0) {
+		error = scan->error;
+		pdf_scan_free(scan);
+		free(*content);
+		*content = NULL;
+		*size = 0;
+		return error;
+	}
+
+	/* Succeeded: the objects are listed. */
+	return 0;
+}
+
+/* Frees what a scan holds. */
+void
+pdf_scan_free(
+	struct pdf_scan *scan)
+{
+	/* Nothing to free. */
+	if (scan == NULL)
+		return;
+
+	/* The objects and the stray Q, then nothing. */
+	free(scan->objects);
+	free(scan->stray_restores);
+	memset(scan, 0, sizeof(*scan));
+}
+
+/*
+ * Interprets a page into a display list, with a scan or without one; kept
+ * (when not NULL) gets the decoded content instead of its being freed, and
+ * read_flags the flags of reading the streams.
+ */
+static int
+page_run(
+	struct pdf_document *document,
+	size_t index,
+	struct pdf_scan *scan,
+	struct pdf_display_list **list,
+	unsigned char **kept,
+	size_t *kept_size,
+	unsigned *read_flags)
+{
 	struct pdf_display_builder *builder;
 	struct pdf_page_box box;
 	struct pdf_object *page;
@@ -473,12 +596,6 @@ pdf_page_render(
 	unsigned char *content;
 	size_t size;
 	int error;
-
-	/* Refuses a missing document or list. */
-	if (document == NULL)
-		return EINVAL;
-	if (list == NULL)
-		return EINVAL;
 
 	/* Reads the page's boxes, which place the content on the page. */
 	error = pdf_document_page_box(document, index, &box);
@@ -507,6 +624,7 @@ pdf_page_render(
 	/* Starts with the initial graphics state on the page's shown space. */
 	run->document = document;
 	run->builder = builder;
+	run->scan = scan;
 	base_matrix(&box, run->stack[0].ctm);
 	memcpy(run->pattern_base, run->stack[0].ctm, sizeof(run->pattern_base));
 	run->stack[0].horizontal_scale = 1.0;
@@ -530,12 +648,30 @@ pdf_page_render(
 		return ENOMEM;
 	}
 
+	/* What reading the streams alone found, for the editor. */
+	if (read_flags != NULL)
+		*read_flags = run->flags;
+
 	/* Runs the content, then ends every level it left open and the page's own clips. */
 	if (error == 0)
 		run_content(run, content, size, resources);
 	unwind_to(run, 0);
 	end_clips(run);
-	free(content);
+
+	/* The scan's end: the q left open, and whether the content stopped before its end. */
+	if (scan != NULL) {
+		scan->open_saves = run->scan_saves;
+		if ((run->flags & (PDF_DISPLAY_DAMAGED | PDF_DISPLAY_LIMITED)) != 0U)
+			scan->partial = 1;
+	}
+
+	/* The content is kept for the editor, or freed. */
+	if (kept != NULL) {
+		*kept = content;
+		*kept_size = size;
+	} else {
+		free(content);
+	}
 
 	/* Frees the interpretation, keeping its flags for the list. */
 	builder->list.flags = run->flags;
@@ -733,14 +869,22 @@ run_content(
 	struct pdf_token token;
 	enum content_operator code;
 	size_t token_start;
+	size_t operator_start;
+	size_t first_operand;
+	int scanned;
 	int error;
 
-	/* Reads the content's tokens with the run's memory. */
+	/* Reads the content's tokens with the run's memory; the page's own content is the first level. */
 	memset(&lexer, 0, sizeof(lexer));
 	lexer.data = data;
 	lexer.size = size;
 	lexer.arena = &run->arena;
 	run->operand_count = 0;
+	run->content_level++;
+	first_operand = 0;
+	scanned = 0;
+	if (run->scan != NULL && run->content_level == 1)
+		scanned = 1;
 
 	/* Reads tokens until the end, an error or a limit. */
 	while (!run->stopped) {
@@ -757,8 +901,10 @@ run_content(
 		if (token.type == PDF_TOKEN_END)
 			break;
 
-		/* Gathers an operand. */
+		/* Gathers an operand (the first one starts the operator's bytes). */
 		if (token.type != PDF_TOKEN_KEYWORD) {
+			if (run->operand_count == 0)
+				first_operand = token_start;
 			error = read_operand(run, &lexer, &token, token_start);
 			if (error != 0) {
 				stop_for(run, error);
@@ -779,9 +925,21 @@ run_content(
 
 		/* Executes the operator with its operands, which it uses up. */
 		code = operator_code(&token);
+		operator_start = token_start;
+		if (run->operand_count > 0)
+			operator_start = first_operand;
+		if (scanned)
+			run->scan_pending = 0;
 		execute(run, code, &lexer, resources);
 		run->operand_count = 0;
+
+		/* The scan of the page's own content notes what the operator was (its bytes end where the lexer is now). */
+		if (scanned)
+			scan_operator(run, code, operator_start, token_start, lexer.position, data);
 	}
+
+	/* The level ends. */
+	run->content_level--;
 }
 
 /* Reads one operand: a number, a name, or an array, dictionary or string object. */
@@ -3357,6 +3515,7 @@ draw_xobject(
 	struct pdf_object *subtype;
 	int is_image;
 	int is_form;
+	int scanned;
 	int error;
 
 	/* Finds the XObject; a missing one is left out. */
@@ -3384,6 +3543,11 @@ draw_xobject(
 	is_form = pdf_object_is_name(subtype, "Form");
 	if (is_image)
 		draw_image(run, xobject);
+
+	/* A form at the page's top level is one graphic for the editor's scan. */
+	scanned = scan_here(run);
+	if (is_form && scanned)
+		scan_form(run, xobject);
 	if (is_form)
 		run_form(run, xobject, resources);
 }
@@ -3400,7 +3564,13 @@ draw_image(
 	size_t width;
 	size_t height;
 	int interpolate;
+	int scanned;
 	int error;
+
+	/* An image at the page's top level is one object for the editor's scan, drawn or not. */
+	scanned = scan_here(run);
+	if (scanned)
+		scan_image(run, image);
 
 	/* Decodes the image; one the reader cannot decode is left out. */
 	state = &run->stack[run->depth];
@@ -4166,4 +4336,245 @@ clamp_unit(
 
 	/* Within the range as it is. */
 	return value;
+}
+
+/* Tells whether the operator being run is of the page's own content, which a scan lists the objects of. */
+static int
+scan_here(
+	const struct content_run *run)
+{
+	/* A scan, at the first level, outside any form or glyph. */
+	if (run->scan == NULL || run->content_level != 1 || run->form_depth != 0)
+		return 0;
+
+	/* The page's own. */
+	return 1;
+}
+
+/* Notes an image being drawn as the operator's object: the matrix in force, the unit square's corners, its samples. */
+static void
+scan_image(
+	struct content_run *run,
+	struct pdf_object *image)
+{
+	static const double corners[8] = { 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0 };
+	struct pdf_scan_object *object;
+	struct pdf_object *value;
+	double number;
+	int error;
+
+	/* The image, where the matrix in force puts it. */
+	object = &run->scan_object;
+	memset(object, 0, sizeof(*object));
+	object->kind = CONTENT_SCAN_IMAGE;
+	memcpy(object->ctm, run->stack[run->depth].ctm, sizeof(object->ctm));
+	scan_corners(object->ctm, corners, object->quad);
+	if (run->clip_depth > 0)
+		object->clipped = 1;
+
+	/* Its width in samples, when the dictionary says. */
+	error = pdf_reader_resolve_key(run->document, image, "Width", &value);
+	if (error == 0)
+		error = pdf_object_number(value, &number);
+	if (error == 0 && number > 0.0 && number <= (double)PDF_IMAGE_SIDE_MAX)
+		object->width = (size_t)number;
+
+	/* And its height. */
+	error = pdf_reader_resolve_key(run->document, image, "Height", &value);
+	if (error == 0)
+		error = pdf_object_number(value, &number);
+	if (error == 0 && number > 0.0 && number <= (double)PDF_IMAGE_SIDE_MAX)
+		object->height = (size_t)number;
+
+	/* The operator's object, once its bytes are known. */
+	run->scan_pending = 1;
+}
+
+/* Notes a form being run as the operator's object: its box's corners through its matrix and the matrix in force. */
+static void
+scan_form(
+	struct content_run *run,
+	struct pdf_object *form)
+{
+	struct pdf_scan_object *object;
+	struct pdf_object *matrix_object;
+	struct pdf_object *box_object;
+	double matrix[6];
+	double placed[6];
+	double box[4];
+	double corners[8];
+	size_t index;
+	int error;
+
+	/* The form's matrix, the identity by default (a malformed one is not the editor's). */
+	matrix[0] = 1.0;
+	matrix[1] = 0.0;
+	matrix[2] = 0.0;
+	matrix[3] = 1.0;
+	matrix[4] = 0.0;
+	matrix[5] = 0.0;
+	error = pdf_reader_resolve_key(run->document, form, "Matrix", &matrix_object);
+	if (error != 0)
+		return;
+	if (matrix_object->type == PDF_OBJECT_ARRAY && matrix_object->count == 6) {
+		for (index = 0; index < 6; index++) {
+			error = pdf_object_number(matrix_object->values[index], &matrix[index]);
+			if (error != 0)
+				return;
+		}
+	}
+
+	/* Its box, which a form needs. */
+	error = pdf_reader_resolve_key(run->document, form, "BBox", &box_object);
+	if (error != 0 || box_object->type != PDF_OBJECT_ARRAY || box_object->count != 4)
+		return;
+	for (index = 0; index < 4; index++) {
+		error = pdf_object_number(box_object->values[index], &box[index]);
+		if (error != 0)
+			return;
+	}
+
+	/* The box's corners (top left, top right, bottom right, bottom left) through the form's matrix and the matrix in force. */
+	corners[0] = box[0];
+	corners[1] = box[3];
+	corners[2] = box[2];
+	corners[3] = box[3];
+	corners[4] = box[2];
+	corners[5] = box[1];
+	corners[6] = box[0];
+	corners[7] = box[1];
+	memcpy(placed, run->stack[run->depth].ctm, sizeof(placed));
+	concat_matrix(placed, matrix);
+	object = &run->scan_object;
+	memset(object, 0, sizeof(*object));
+	object->kind = CONTENT_SCAN_GRAPHIC;
+	memcpy(object->ctm, run->stack[run->depth].ctm, sizeof(object->ctm));
+	scan_corners(placed, corners, object->quad);
+	if (run->clip_depth > 0)
+		object->clipped = 1;
+
+	/* The operator's object, once its bytes are known. */
+	run->scan_pending = 1;
+}
+
+/*
+ * Notes what an operator of the page's own content did: q and Q counted by
+ * their tokens (a Q without a q is noted where it is), BT and ET, and the
+ * object it drew, with its bytes from start to end and their fingerprint.
+ * An object past the limit of q's nesting is left out (its matrix is not
+ * the one in force, design.md [N14]).
+ */
+static void
+scan_operator(
+	struct content_run *run,
+	enum content_operator code,
+	size_t start,
+	size_t keyword,
+	size_t end,
+	const unsigned char *data)
+{
+	struct pdf_scan *scan;
+	struct pdf_scan_object *grown;
+	unsigned char digest[SHA256_DIGEST_LENGTH];
+	SHA2_CTX context;
+	size_t capacity;
+	int error;
+
+	/* q and Q by their tokens. */
+	scan = run->scan;
+	if (code == OP_SAVE)
+		run->scan_saves++;
+	if (code == OP_RESTORE && run->scan_saves > 0) {
+		run->scan_saves--;
+	} else if (code == OP_RESTORE) {
+		error = scan_add_stray(scan, keyword);
+		if (error != 0)
+			scan->error = error;
+	}
+
+	/* Whether a text object is open. */
+	if (code == OP_TEXT_BEGIN)
+		scan->in_text = 1;
+	if (code == OP_TEXT_END)
+		scan->in_text = 0;
+
+	/* Only an operator that drew an object of the page goes on. */
+	if (!run->scan_pending)
+		return;
+	run->scan_pending = 0;
+
+	/* Past the limit of q's nesting the matrix is not known: the object is left out. */
+	if (run->ignored_saves > 0) {
+		scan->partial = 1;
+		return;
+	}
+
+	/* Grows the list by half again when it is full. */
+	if (scan->count == scan->capacity) {
+		capacity = scan->capacity + scan->capacity / 2 + 8;
+		grown = realloc(scan->objects, capacity * sizeof(*grown));
+		if (grown == NULL) {
+			scan->error = ENOMEM;
+			return;
+		}
+
+		/* The larger list. */
+		scan->objects = grown;
+		scan->capacity = capacity;
+	}
+
+	/* The object, its bytes and their fingerprint. */
+	run->scan_object.offset = start;
+	run->scan_object.length = end - start;
+	SHA256Init(&context);
+	SHA256Update(&context, data + start, end - start);
+	SHA256Final(digest, &context);
+	memcpy(run->scan_object.fingerprint, digest, sizeof(run->scan_object.fingerprint));
+	scan->objects[scan->count] = run->scan_object;
+	scan->count++;
+}
+
+/* Maps four corners (x, y pairs) through a matrix (a point p goes to p times the matrix). */
+static void
+scan_corners(
+	const double matrix[6],
+	const double corners[8],
+	double quad[8])
+{
+	size_t index;
+	double x;
+	double y;
+
+	/* Each corner. */
+	for (index = 0; index < 4; index++) {
+		x = corners[2 * index];
+		y = corners[2 * index + 1];
+		quad[2 * index] = matrix[0] * x + matrix[2] * y + matrix[4];
+		quad[2 * index + 1] = matrix[1] * x + matrix[3] * y + matrix[5];
+	}
+}
+
+/* Adds the offset of a Q without its q to a scan.  Returns 0 or ENOMEM. */
+static int
+scan_add_stray(
+	struct pdf_scan *scan,
+	size_t offset)
+{
+	size_t *grown;
+	size_t capacity;
+
+	/* Grows the list by half again when it is full. */
+	if (scan->stray_count == scan->stray_capacity) {
+		capacity = scan->stray_capacity + scan->stray_capacity / 2 + 8;
+		grown = realloc(scan->stray_restores, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		scan->stray_restores = grown;
+		scan->stray_capacity = capacity;
+	}
+
+	/* Succeeded: the Q is noted. */
+	scan->stray_restores[scan->stray_count] = offset;
+	scan->stray_count++;
+	return 0;
 }
