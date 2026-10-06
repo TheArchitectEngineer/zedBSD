@@ -21,6 +21,10 @@
  *
  * Typing while it is open searches: the text shows at the top and only the
  * applications whose name, command or keywords contain it stay, centred.
+ * The search takes an input method's text too (ws090-p022): while Home is
+ * open the input method serves it as zdesktop's own field (input-method.c,
+ * kwl_home_field_state and kwl_home_field_input), its composed text shown
+ * underlined after the search.
  * Enter starts the selected (at first the first) one; the arrow keys and
  * Tab move the selection; Backspace and Esc clear the search.
  *
@@ -46,6 +50,7 @@
 
 #include "glass.h"
 #include "activation.h"
+#include "ime.h"
 
 #include "userland/desktop/paths.h"
 
@@ -259,6 +264,8 @@ static void home_draw_search(struct kwl_server *server, VkCommandBuffer command,
 static void home_open(struct kwl_server *server, float from, const char *via);
 static void home_close(struct kwl_server *server, float from, const char *via);
 static void home_settle(struct kwl_server *server, float from, float to);
+static void home_erase(struct kwl_server *server, uint32_t characters);
+static void home_erase_bytes(struct kwl_server *server, uint32_t bytes);
 static int home_launch(struct kwl_server *server, unsigned app);
 static struct kwl_object *home_running_window(struct kwl_server *server, unsigned app);
 static void home_search_changed(struct kwl_server *server);
@@ -411,8 +418,8 @@ kwl_home_draw(
 		printf("ZWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
-	/* The search text, while something has been typed; the pages' dots, when there are pages. */
-	if (server->home_query_length != 0U)
+	/* The search text, while something has been typed or is being composed; the pages' dots, when there are pages. */
+	if (server->home_query_length != 0U || server->home_preedit[0] != '\0')
 		home_draw_search(server, command, progress);
 	if (home_pages > 1U)
 		home_draw_dots(server, command, progress);
@@ -667,10 +674,9 @@ kwl_home_key(
 		/* The key was Home's. */
 		return 1;
 	case HOME_KEY_BACKSPACE:
-		/* Backspace erases the last character. */
+		/* Backspace erases the last character, all its bytes. */
 		if (server->home_query_length != 0U) {
-			server->home_query_length--;
-			server->home_query[server->home_query_length] = '\0';
+			home_erase(server, 1U);
 			home_search_changed(server);
 		}
 
@@ -738,6 +744,140 @@ kwl_home_key(
 	server->home_query[server->home_query_length] = '\0';
 	home_search_changed(server);
 	return 1;
+}
+
+/*
+ * Reports the search as the input method's text field while Home is open
+ * or opening (ws090-p022): its text, the caret at its end, and the
+ * rectangle after it on the screen (zdesktop's own field has no window, so
+ * the rectangle is the output's).  Returns 1 with the state, 0 while Home
+ * is not to be open.
+ */
+int
+kwl_home_field_state(
+	struct kwl_server *server,
+	char *text,
+	size_t size,
+	int32_t *cursor,
+	int32_t *anchor,
+	int32_t *rectangle)
+{
+	int32_t width;
+	int32_t x;
+
+	/* Only while Home is open or opening. */
+	if (server->home_to <= 0.0f || size == 0U)
+		return 0;
+
+	/* The search, the caret at its end. */
+	(void)snprintf(text, size, "%s", server->home_query);
+	*cursor = (int32_t)strlen(text);
+	*anchor = *cursor;
+
+	/* The caret's place after the search text, as home_draw_search centres it. */
+	width = glass_text_width(server, SIZE_SEARCH, server->home_query);
+	x = ((int32_t)server->width - width) / 2;
+	rectangle[0] = x + width;
+	rectangle[1] = KWL_GLASS_BAR + 44;
+	rectangle[2] = 2;
+	rectangle[3] = 40;
+
+	/* Succeeded: the state. */
+	return 1;
+}
+
+/*
+ * Takes what the input method made for the search (ws090-p022): bytes to
+ * delete before the caret (its end), the text it committed (without
+ * control characters, as much as fits), and the text being composed, shown
+ * after the search.
+ */
+void
+kwl_home_field_input(
+	struct kwl_server *server,
+	const char *preedit,
+	const char *commit,
+	uint32_t before)
+{
+	size_t length;
+	size_t at;
+	unsigned char byte;
+	int changed;
+
+	/* The bytes before the caret, whole characters. */
+	changed = 0;
+	if (before != 0U && server->home_query_length != 0U) {
+		home_erase_bytes(server, before);
+		changed = 1;
+	}
+
+	/* The text committed, as much as fits, cut at a character's start. */
+	if (commit != NULL && commit[0] != '\0') {
+		length = server->home_query_length;
+		for (at = 0; commit[at] != '\0' && length + 1U < sizeof(server->home_query); at++) {
+			byte = (unsigned char)commit[at];
+			if (byte < 0x20U || byte == 0x7fU)
+				continue;
+			server->home_query[length] = (char)byte;
+			length++;
+		}
+
+		/* A character the room cut goes whole (a continuation byte left out means its first bytes go too). */
+		while (((unsigned char)commit[at] & 0xc0U) == 0x80U && length > server->home_query_length) {
+			at--;
+			length--;
+		}
+		server->home_query[length] = '\0';
+		server->home_query_length = (unsigned)length;
+		changed = 1;
+	}
+
+	/* The text being composed (none: empty). */
+	server->home_preedit[0] = '\0';
+	if (preedit != NULL)
+		(void)snprintf(server->home_preedit, sizeof(server->home_preedit), "%s", preedit);
+	server->dirty = 1;
+
+	/* A changed search finds again. */
+	if (changed)
+		home_search_changed(server);
+}
+
+/* Erases the search's last characters, all their bytes. */
+static void
+home_erase(
+	struct kwl_server *server,
+	uint32_t characters)
+{
+	uint32_t erased;
+
+	/* Each character: back over its continuation bytes to its first. */
+	for (erased = 0U; erased < characters && server->home_query_length != 0U; erased++) {
+		server->home_query_length--;
+		while (server->home_query_length != 0U && ((unsigned char)server->home_query[server->home_query_length] & 0xc0U) == 0x80U)
+			server->home_query_length--;
+	}
+
+	/* The new end. */
+	server->home_query[server->home_query_length] = '\0';
+}
+
+/* Erases at least a number of bytes from the search's end, back to a character's start. */
+static void
+home_erase_bytes(
+	struct kwl_server *server,
+	uint32_t bytes)
+{
+	/* The bytes, or all of them. */
+	if (bytes >= server->home_query_length)
+		server->home_query_length = 0U;
+	else
+		server->home_query_length -= bytes;
+
+	/* Back to a character's start. */
+	while (server->home_query_length != 0U && ((unsigned char)server->home_query[server->home_query_length] & 0xc0U) == 0x80U)
+		server->home_query_length--;
+	server->home_query[server->home_query_length] = '\0';
 }
 
 /*
@@ -1782,21 +1922,29 @@ home_draw_search(
 	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	float color[4];
 	int32_t width;
+	int32_t typed;
+	int32_t composed;
 	int32_t x;
 	int32_t y;
 
-	/* The text's width, and the pill a little wider, centred under the system bar. */
-	width = glass_text_width(server, SIZE_SEARCH, server->home_query);
+	/* The text's width with the one being composed after it, and the pill a little wider, centred under the system bar. */
+	typed = glass_text_width(server, SIZE_SEARCH, server->home_query);
+	composed = glass_text_width(server, SIZE_SEARCH, server->home_preedit);
+	width = typed + composed;
 	x = ((int32_t)server->width - width) / 2;
 	y = KWL_GLASS_BAR + 44;
 	memcpy(color, pill, sizeof(color));
 	color[3] = pill[3] * opacity;
 	glass_draw_solid(server, command, (float)(x - 22), (float)y, (float)(width + 44), 40.0f, 20.0f, color);
 
-	/* The text itself. */
+	/* The text itself, and the composed text after it, underlined. */
 	memcpy(color, ink, sizeof(color));
 	color[3] = opacity;
 	glass_draw_text(server, command, SIZE_SEARCH, x, y + 28, server->home_query, (int32_t)server->width, color);
+	if (composed > 0) {
+		glass_draw_text(server, command, SIZE_SEARCH, x + typed, y + 28, server->home_preedit, (int32_t)server->width, color);
+		glass_draw_solid(server, command, (float)(x + typed), (float)(y + 32), (float)composed, 1.5f, 0.0f, color);
+	}
 }
 
 /* Opens Home, from where it is now. */
@@ -1809,6 +1957,7 @@ home_open(
 	/* The search starts empty, the first application selected. */
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
+	server->home_preedit[0] = '\0';
 	server->home_selected = (int)(server->home_page * (unsigned)HOME_PAGE);
 	server->home_launch_app = -1;
 	server->home_page_press = 0;
@@ -1840,6 +1989,7 @@ home_close(
 	/* The search goes with it. */
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
+	server->home_preedit[0] = '\0';
 	printf("ZWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "home-close");
 	home_settle(server, from, 0.0f);
@@ -1858,6 +2008,9 @@ home_settle(
 	server->home_start_ms = kwl_milliseconds();
 	server->home_moving = 1;
 	server->dirty = 1;
+
+	/* The input method serves the search while Home is to be open, an application's text input otherwise (ws090-p022). */
+	kwl_ime_field_changed(server);
 }
 
 /*
@@ -2007,10 +2160,11 @@ home_search_changed(
 {
 	unsigned slot;
 
-	/* The first result is selected. */
+	/* The first result is selected; the input method serving the search hears its new text (ws090-p022). */
 	server->home_selected = 0;
 	home_layout(server);
 	server->dirty = 1;
+	kwl_ime_field_changed(server);
 
 	/* The search and its results, for whoever reads the log. */
 	printf("ZWL HOME search query=\"%s\" results=%u", server->home_query, home_shown_count);

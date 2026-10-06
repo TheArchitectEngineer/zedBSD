@@ -1109,8 +1109,9 @@ struct kwl_server {
 	uint64_t home_asked_ms;
 	unsigned home_cover_logged;
 	unsigned home_content_logged;
-	char home_query[48];
+	char home_query[96];
 	unsigned home_query_length;
+	char home_preedit[96];
 	int home_selected;
 	/*
 	 * A press at the bottom edge while Home shows, which may become the
@@ -1536,6 +1537,8 @@ void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *
 int kwl_home_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_home_motion(struct kwl_server *server);
 int kwl_home_key(struct kwl_server *server, uint32_t key, uint32_t state);
+int kwl_home_field_state(struct kwl_server *server, char *text, size_t size, int32_t *cursor, int32_t *anchor, int32_t *rectangle);
+void kwl_home_field_input(struct kwl_server *server, const char *preedit, const char *commit, uint32_t before);
 void kwl_home_tick(struct kwl_server *server);
 int kwl_home_axis(struct kwl_server *server, int32_t vertical, int32_t horizontal);
 int kwl_home_launched(struct kwl_server *server, int32_t *rect);
