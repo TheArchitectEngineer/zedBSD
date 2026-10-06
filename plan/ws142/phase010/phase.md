@@ -34,3 +34,8 @@ Queue: q781 / q781-i01
 
 - 切り分け: 試験の側。zedBSD の kernel は process の command line を 63 byte までしか持たず（`KERN_SYSTEM_PROCESS_COMMAND_MAX` 64）、`ps -o args` もそこまで。`/bin/wltest --windowed --size=400x280 --color=d0f4d0 --app-id=apps.b` は 68 byte で `--app-id=apps.b` が切れ、4. の `grep "[w]ltest .*app-id=apps.b"` が何にも当たらず kill されなかった（log に client=3 の CLIENT gone が無く、後の WiseView に client=3 の tile が残る、のとおり）。compositor の機能の問題ではない。
 - 直し（cbf196c1）: `open_app` の `--app-id` を先頭に（`/bin/wltest --app-id=apps.b …`）、kill の grep を `[w]ltest --app-id=apps.b `、kill の後に `ZWL CLIENT gone client=B` を確かめる項目 `apps-b-gone` を足した。`sh -n` ok。流し直しは T1。
+
+## q795-i02（2026-10-06 P2）: T1-224b でも 4. が FAIL、前の切り分けの訂正
+
+- 前の推定（command line が 63 byte で切れる）は誤り。zedBSD の kernel は process の command に **argv[0] だけ**を持つ（`src/kern/exec.c` の `kern_strncpy(process->command, argv[0], …)`）。`ps -o args` は `/bin/wltest` としか出さず、引数の `--app-id=apps.b` で探す grep はいつも空で、`kill` は何もしなかった（kill.txt は「killed」だけ）。compositor の切断の検出の問題ではない（kill されていない）。
+- 直し: `open_app` が起動した wltest の pid を guest の `/tmp/NAME.pid` に残し（`echo $! > /tmp/NAME.pid`）、4. はその pid を kill（kill.txt に ps のその行と pid）。kill の後の `apps-b-gone`（`ZWL CLIENT gone client=B`）で compositor の切断の検出も確かめる。`sh -n` ok。
