@@ -2,7 +2,7 @@
 # ws099-p037: 設計 — App Home の Power Off と、暗くする確認の dialog
 
 Parent: [WS099](../ws.md)
-Status: test-wait（T1 依頼中、2026-10-06 q783-i01 P2: 実装・build・host 試験まで。以前: planned（Q1 の設計の第 1 版））
+Status: cleared（2026-10-06 Q1 判定: T1-225 の再確認で wheel の kei は poweroff=1 restart=1、Esc・外の click で cancel、PNG を Q1 が目視。実機は UAT）
 Disposition: normal
 Related: [BUG-235](../../bugs/BUG-235.md)・[ws132-p008](../../ws132/phase008/phase.md)（電源 button の dialog）
 

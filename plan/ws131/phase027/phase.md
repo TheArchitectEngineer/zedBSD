@@ -1,6 +1,6 @@
 # ws131-p027: sessiond が session の socket で Power Off・Restart を受ける
 
-Status: test-wait（T1 依頼中、2026-10-06 q793 P2: 実装・build・host 試験まで。以前: planned（Q1 が作成））
+Status: cleared（2026-10-06 Q1 判定: T1-227b の (b) wheel でない時 poweroff=0 restart=0 で薄い、(a) Power Off で `SESSIOND POWER poweroff from=kei`・約 12 s で QEMU 終了。Restart は未実施。実機は UAT）
 WS: [WS131](../ws.md)
 Related: [ws099-p037](../../ws099/phase037/phase.md)（App Home の Power Off と確認の dialog）・[BUG-235](../../bugs/BUG-235.md)
 
