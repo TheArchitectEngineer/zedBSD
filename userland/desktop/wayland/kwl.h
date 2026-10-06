@@ -1512,6 +1512,7 @@ void kwl_settings_tick(struct kwl_server *server);
 void kwl_settings_logout(struct kwl_server *server);
 void kwl_settings_close(struct kwl_server *server);
 int kwl_settings_kept(struct kwl_server *server, const char *name, int *number);
+int kwl_settings_number(struct kwl_server *server, const char *name, int *number);
 int kwl_settings_global_visible(struct kwl_client *client, enum kwl_kind kind);
 int kwl_settings_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 int kwl_settings_home(char *home, size_t size);
