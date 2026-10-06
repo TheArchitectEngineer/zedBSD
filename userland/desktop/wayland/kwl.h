@@ -113,6 +113,7 @@
 struct kwl_server;
 struct kwl_client;
 struct kwl_object;
+struct kwl_notify_model;
 struct kwl_compose;
 struct kl_backend;
 struct kwl_import;
@@ -213,6 +214,8 @@ enum kwl_kind {
 	KWL_ACTIVATION_TOKEN,
 	/* kl_theme_v1, the desktop's appearance (theme.c, ws089-p017). */
 	KWL_THEME,
+	/* The system extension's notifications (notify-shell.c, ws156-p002). */
+	KWL_SYSTEM_NOTIFY,
 };
 
 /*
@@ -1512,6 +1515,7 @@ void kwl_settings_tick(struct kwl_server *server);
 void kwl_settings_logout(struct kwl_server *server);
 void kwl_settings_close(struct kwl_server *server);
 int kwl_settings_kept(struct kwl_server *server, const char *name, int *number);
+int kwl_settings_number(struct kwl_server *server, const char *name, int *number);
 int kwl_settings_global_visible(struct kwl_client *client, enum kwl_kind kind);
 int kwl_settings_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 int kwl_settings_home(char *home, size_t size);
@@ -1532,6 +1536,10 @@ int kwl_sysmon_create(struct kwl_object *manager, const unsigned char *bytes, si
 int kwl_sysmon_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void kwl_sysmon_tick(struct kwl_server *server);
 void kwl_sysmon_close(struct kwl_server *server);
+int kwl_notify_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+int kwl_notify_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
+struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);
 void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale);
 int kwl_home_button(struct kwl_server *server, uint32_t button, uint32_t state);

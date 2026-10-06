@@ -208,7 +208,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		12U
+#define KL_SYSTEM_MANAGER_VERSION		13U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -221,6 +221,7 @@
 #define KL_SYSTEM_MANAGER_GET_MONITOR		6U
 #define KL_SYSTEM_MANAGER_GET_ACCOUNT		7U
 #define KL_SYSTEM_MANAGER_GET_SHARING		8U
+#define KL_SYSTEM_MANAGER_GET_NOTIFY		9U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -234,6 +235,7 @@
 #define KL_SYSTEM_CAPABILITY_SHARING		0x80U
 #define KL_SYSTEM_CAPABILITY_ADMINISTER		0x100U
 #define KL_SYSTEM_CAPABILITY_PIN		0x200U
+#define KL_SYSTEM_CAPABILITY_NOTIFY		0x400U
 
 /* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
@@ -243,6 +245,9 @@
 #define KL_SYSTEM_SINCE_PIN			10U
 #define KL_SYSTEM_SINCE_ENROLLED		11U
 
+/* Since when the manager has get_notify (ws156-p002). */
+#define KL_SYSTEM_SINCE_NOTIFY			13U
+
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
@@ -251,6 +256,29 @@
 #define KL_SYSTEM_MONITOR_NAME			"kl_system_monitor_v1"
 #define KL_SYSTEM_ACCOUNT_NAME			"kl_system_account_v1"
 #define KL_SYSTEM_SHARING_NAME			"kl_system_sharing_v1"
+#define KL_SYSTEM_NOTIFY_NAME			"kl_system_notify_v1"
+
+/*
+ * kl_system_notify_v1's requests and events (ws156-p002,
+ * plan/ws156/phase001/phase.md section 2): post(request, replaces, app,
+ * title, body, flags), withdraw(request, id); posted(request, id),
+ * activated(id), closed(id, reason), result(request, applied, saved).
+ */
+#define KL_SYSTEM_NOTIFY_DESTROY		0U
+#define KL_SYSTEM_NOTIFY_POST			1U
+#define KL_SYSTEM_NOTIFY_WITHDRAW		2U
+#define KL_SYSTEM_NOTIFY_EVENT_POSTED		0U
+#define KL_SYSTEM_NOTIFY_EVENT_ACTIVATED	1U
+#define KL_SYSTEM_NOTIFY_EVENT_CLOSED		2U
+#define KL_SYSTEM_NOTIFY_EVENT_RESULT		3U
+
+/* A notification's flags, and why one closed (closed's reason). */
+#define KL_SYSTEM_NOTIFY_URGENT			0x1U
+#define KL_SYSTEM_NOTIFY_ACTION			0x2U
+#define KL_SYSTEM_NOTIFY_DISMISSED		1U
+#define KL_SYSTEM_NOTIFY_EXPIRED		2U
+#define KL_SYSTEM_NOTIFY_CLEARED		3U
+#define KL_SYSTEM_NOTIFY_WITHDRAWN		4U
 
 /* kl_system_sharing_v1's requests and events (ws089-p025), and the longest fingerprint it carries. */
 #define KL_SYSTEM_SHARING_DESTROY		0U

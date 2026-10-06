@@ -46,6 +46,9 @@ static const struct wl_interface *system_get_account_types[] = {
 static const struct wl_interface *system_get_sharing_types[] = {
 	&kl_system_sharing_v1_interface,
 };
+static const struct wl_interface *system_get_notify_types[] = {
+	&kl_system_notify_v1_interface,
+};
 
 /* The arguments of messages that name no interface (at most sixteen, a monitor's disk's). */
 static const struct wl_interface *system_plain_types[] = {
@@ -78,6 +81,7 @@ static const struct wl_message system_manager_requests[] = {
 	{ "get_monitor", "2nu", system_get_monitor_types },
 	{ "get_account", "4n", system_get_account_types },
 	{ "get_sharing", "7n", system_get_sharing_types },
+	{ "get_notify", "13n", system_get_notify_types },
 };
 
 /* The events of kl_system_manager_v1. */
@@ -85,11 +89,11 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: nine requests (get_monitor since 2, get_account since 4, get_sharing since 7) and one event.  It lives for the program. */
+/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: ten requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
 	KL_SYSTEM_MANAGER_VERSION,
-	9,
+	10,
 	system_manager_requests,
 	1,
 	system_manager_events
@@ -304,4 +308,29 @@ const struct wl_interface kl_system_sharing_v1_interface = {
 	system_sharing_requests,
 	3,
 	system_sharing_events
+};
+
+/* The requests of kl_system_notify_v1 (ws156-p002). */
+static const struct wl_message system_notify_requests[] = {
+	{ "destroy", "", NULL },
+	{ "post", "uusssu", system_plain_types },
+	{ "withdraw", "uu", system_plain_types },
+};
+
+/* The events of kl_system_notify_v1. */
+static const struct wl_message system_notify_events[] = {
+	{ "posted", "uu", system_plain_types },
+	{ "activated", "u", system_plain_types },
+	{ "closed", "uu", system_plain_types },
+	{ "result", "uuu", system_plain_types },
+};
+
+/* kl_system_notify_v1, made at the manager's version (13): three requests and four events.  It lives for the program. */
+const struct wl_interface kl_system_notify_v1_interface = {
+	KL_SYSTEM_NOTIFY_NAME,
+	KL_SYSTEM_SINCE_NOTIFY,
+	3,
+	system_notify_requests,
+	4,
+	system_notify_events
 };

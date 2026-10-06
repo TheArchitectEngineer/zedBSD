@@ -2,7 +2,7 @@
 # ws164-p002: Welcome の実装（設定の key、Settings の welcome の mode、About の button、compositor の起動）
 
 Parent: [WS164](../ws.md)
-Status: in-progress（2026-10-06 q821 P2: Settings の側（mode・5 段・About・設定の key）を実装し、build warning 0 と host 試験 PASS。compositor の起動は WS131 p022（ZWL→KWL）の main への統合の後。QEMU は T1 待ち）
+Status: in-progress（2026-10-06 q821 P2: Settings の側と compositor の起動を実装し、build warning 0 と host 試験 PASS。QEMU は T1 待ち）
 Disposition: normal
 Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
 依存: [p001](../phase001/phase.md)（H1〜H4 決定済み）
@@ -36,9 +36,16 @@ Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
 | build: zedBSD の `bin/settings`（-Werror）、keiland-linux の `bin/settings` | warning 0 |
 | style-check（welcome.c・page-about.c・main.c・look.c・settings-keys.c、ui.c の変えた所） | 新しい違反 0（ui.c の既存の 5 件は前から） |
 
+## compositor の起動（2026-10-06 P2、WS131 p022 の統合の後、Q1 の許可）
+
+- `wayland/desktop.c` の `desktop_welcome`（`kwl_desktop_tick` が desktop の program の起動の後に呼ぶ）: login の session（`server->session`、greeter でない）で
+  1 回だけ、`welcome.done` が 0 なら `KEILAND_BINDIR "/settings --welcome"` を `kwl_spawn` で起動する（落ちても起こし直さない）。`--testing`・login の画面は
+  session でないので起動しない。値が読めない（store が無い）時は起動しない。log `KWL WELCOME start pid=`・`KWL WELCOME skip done= error=`・`start-failed`。
+- `wayland/settings.c` に `kwl_settings_number`（設定の今の値を数で、`kwl.h`）。
+- build: zedBSD の `bin/wayland`・keiland-linux の `bin/wayland` warning 0。style-check の新しい違反 0（settings.c の既存の 1 件は前から）。host の
+  試験は無い（compositor の起動の規則は T1 で: 新しい account の最初の login で `KWL WELCOME start`、Done の後の login で `KWL WELCOME skip done=1`）。
+
 ## 未実施・残り
 
-- **compositor の起動**（最初の login で `welcome.done` が 0 なら `settings --welcome` を 1 回）: `userland/desktop/wayland/` は P1 の WS131 p022（接頭辞の
-  ZWL→KWL の一括の変更）の間は触らない（Q1、2026-10-06）。p022 が main に入った後に足す（P2 か P1、Q1 が決める）。
 - QEMU（T1）: 新しい account の最初の login で出ること（compositor の起動の後）、段の操作、Files の Today、2 回目の login で出ないこと。未実施。
 - 準正常系・異常系の未実装は [WS177 の P2 の一覧](../../ws177/backlog-p2.md)。

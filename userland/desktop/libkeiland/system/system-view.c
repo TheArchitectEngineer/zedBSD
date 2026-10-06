@@ -495,6 +495,52 @@ system_view_take_result(
 }
 
 /*
+ * Keeps a notification's event (ws156-p002): its number posted, its body
+ * clicked, or why it closed, for kl_system_take_notify_event; a full ring
+ * drops its oldest.
+ */
+void
+system_view_notify_event(
+	struct system_view *view,
+	const struct kl_notify_event *event)
+{
+	unsigned slot;
+
+	/* A full ring drops its oldest. */
+	if (view->notify_count == SYSTEM_VIEW_NOTIFY_EVENTS) {
+		view->notify_head = (view->notify_head + 1U) % SYSTEM_VIEW_NOTIFY_EVENTS;
+		view->notify_count--;
+	}
+
+	/* The event after the newest. */
+	slot = (view->notify_head + view->notify_count) % SYSTEM_VIEW_NOTIFY_EVENTS;
+	view->notify_events[slot] = *event;
+	view->notify_count++;
+	view->changed |= KL_SYSTEM_CHANGED_NOTIFY;
+}
+
+/*
+ * Takes the oldest notification event: 1 with it, 0 when none waits.
+ */
+int
+system_view_take_notify_event(
+	struct system_view *view,
+	struct kl_notify_event *event)
+{
+	/* None waits. */
+	if (view->notify_count == 0U)
+		return 0;
+
+	/* The oldest, out of the ring. */
+	*event = view->notify_events[view->notify_head];
+	view->notify_head = (view->notify_head + 1U) % SYSTEM_VIEW_NOTIFY_EVENTS;
+	view->notify_count--;
+
+	/* Succeeded: one event taken. */
+	return 1;
+}
+
+/*
  * Gives what changed since the last take, and starts again from nothing.
  */
 unsigned

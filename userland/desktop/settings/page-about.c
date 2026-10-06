@@ -22,6 +22,9 @@
 #define ABOUT_TEXT_NAME		44U
 #define ABOUT_TEXT_TAGLINE	14U
 
+/* How often the machine's monitor samples while About is open, in milliseconds (ws089-p013). */
+#define ABOUT_MONITOR_MS	2000U
+
 /* The space between two cards, and a button's height. */
 #define ABOUT_CARD_GAP		18
 #define ABOUT_BUTTON_HEIGHT	32
@@ -40,6 +43,7 @@ static int about_hero(struct se_app *app, struct kl_canvas *canvas, int x, int t
 static int about_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, const char *title, const struct about_row *rows, int count);
 static int about_add(struct about_row *rows, int count, const char *label, const char *value);
 static void about_uptime(uint64_t milliseconds, char *text, size_t size);
+static void about_memory(uint64_t total, uint64_t free_bytes, char *text, size_t size);
 
 /*
  * Draws the About page's cards from a top edge; returns the edge below
@@ -53,9 +57,10 @@ se_about_draw(
 	int top,
 	int width)
 {
-	struct about_row rows[6];
+	struct about_row rows[7];
 	const struct se_about *about;
 	const char *system;
+	char memory[64];
 	char text[64];
 	int count;
 	int y;
@@ -74,7 +79,17 @@ se_about_draw(
 	count = about_add(rows, count, "Processors", text);
 	count = about_add(rows, count, "Graphics", about->graphics);
 	count = about_add(rows, count, "Display", about->display);
+	memory[0] = '\0';
+	if (about->memory_known)
+		about_memory(about->memory_total, about->memory_free, memory, sizeof(memory));
+	count = about_add(rows, count, "Memory", memory);
 	y = about_card(app, canvas, x, y + ABOUT_CARD_GAP, width, "This computer", rows, count);
+
+	/* The memory follows the machine's monitor from now (ws089-p013). */
+	if (app->monitor == NULL && app->system != NULL) {
+		app->monitor = kl_system_monitor_open(app->system, ABOUT_MONITOR_MS);
+		se_log("ABOUT monitor open=%d", app->monitor != NULL);
+	}
 
 	/* Software: the system's version (Kei without os-release), the kernel, the architecture and the time since the machine started. */
 	count = 0;
@@ -222,4 +237,57 @@ about_uptime(
 	} else {
 		(void)snprintf(text, size, "%lu min", minutes);
 	}
+}
+
+/*
+ * Takes the newest frame of the machine's monitor (ws089-p013): the memory
+ * About shows, drawn again when it changed (logged the first time).
+ */
+void
+se_about_follow(
+	struct se_app *app)
+{
+	struct kl_monitor_frame frame;
+	int taken;
+	int first;
+
+	/* A monitor with a new frame of the memory. */
+	if (app->monitor == NULL)
+		return;
+	taken = kl_system_monitor_take(app->monitor, &frame);
+	if (!taken || (frame.valid & KL_MONITOR_FRAME_MEMORY) == 0U)
+		return;
+
+	/* Kept; About drawn again when it shows. */
+	first = !app->about.memory_known;
+	app->about.memory_known = 1;
+	app->about.memory_total = frame.memory_total;
+	app->about.memory_free = frame.memory_free;
+	if (app->page == SE_PAGE_ABOUT)
+		app->dirty = 1;
+	if (first)
+		se_log("ABOUT memory total=%llu free=%llu", (unsigned long long)frame.memory_total, (unsigned long long)frame.memory_free);
+}
+
+/* Writes the memory as "16 GB (9.3 GB free)". */
+static void
+about_memory(
+	uint64_t total,
+	uint64_t free_bytes,
+	char *text,
+	size_t size)
+{
+	double gib;
+	double free_gib;
+
+	/* In GB (binary), the total whole when it is large. */
+	gib = (double)total / (1024.0 * 1024.0 * 1024.0);
+	free_gib = (double)free_bytes / (1024.0 * 1024.0 * 1024.0);
+	if (gib >= 10.0) {
+		(void)snprintf(text, size, "%.0f GB (%.1f GB free)", gib, free_gib);
+		return;
+	}
+
+	/* Smaller, with a tenth. */
+	(void)snprintf(text, size, "%.1f GB (%.1f GB free)", gib, free_gib);
 }

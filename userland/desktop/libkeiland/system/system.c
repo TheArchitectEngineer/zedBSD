@@ -50,6 +50,7 @@ struct kl_system {
 	struct wl_proxy *devices;
 	struct wl_proxy *account;
 	struct wl_proxy *sharing;
+	struct wl_proxy *notify;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -109,6 +110,14 @@ struct system_sharing_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
+/* The listener of kl_system_notify_v1's events (ws156-p002), in their order. */
+struct system_notify_listener {
+	void (*posted)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t id);
+	void (*activated)(void *data, struct wl_proxy *proxy, uint32_t id);
+	void (*closed)(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t reason);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
 /* The listener of kl_system_devices_v1's events, in their order. */
 struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
@@ -119,6 +128,9 @@ struct system_devices_listener {
 };
 
 static void system_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
+static void system_notify_posted(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t id);
+static void system_notify_activated(void *data, struct wl_proxy *proxy, uint32_t id);
+static void system_notify_closed(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t reason);
 static void system_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void system_capabilities(void *data, struct wl_proxy *proxy, uint32_t bits);
 static void system_network_state(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t connected, uint32_t kind, const char *interface, const char *wired, uint32_t wifi, const char *wifi_interface, const char *ssid);
@@ -203,6 +215,14 @@ static const struct system_sharing_listener system_sharing_listener = {
 	system_result
 };
 
+/* The notify object's callbacks (ws156-p002). */
+static const struct system_notify_listener system_notify_listener = {
+	system_notify_posted,
+	system_notify_activated,
+	system_notify_closed,
+	system_result
+};
+
 /* The devices object's callbacks. */
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
@@ -273,6 +293,7 @@ kl_system_close(
 	system_destroy(system->devices, KL_SYSTEM_DEVICES_DESTROY);
 	system_destroy(system->account, KL_SYSTEM_ACCOUNT_DESTROY);
 	system_destroy(system->sharing, KL_SYSTEM_SHARING_DESTROY);
+	system_destroy(system->notify, KL_SYSTEM_NOTIFY_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -341,6 +362,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_ACCOUNT;
 	if (system->sharing != NULL)
 		bits |= KL_SYSTEM_HAS_SHARING;
+	if (system->notify != NULL)
+		bits |= KL_SYSTEM_HAS_NOTIFY;
 
 	/* The administration of the accounts, offered with the account to a manager bound at version 8 (ws089-p026). */
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
@@ -585,6 +608,82 @@ kl_system_network_configure_wired(
 
 	/* Succeeded: the answer comes once it is applied or refused. */
 	return 0;
+}
+
+/*
+ * Posts a notification (ws156-p002): its number comes as a
+ * KL_NOTIFY_POSTED event for the request, or a refusal as its result.
+ */
+int
+kl_system_notify(
+	struct kl_system *system,
+	const struct kl_notification *notification,
+	uint32_t *request)
+{
+	const char *app;
+	const char *title;
+	const char *body;
+	uint32_t number;
+
+	/* The notify object and the words. */
+	if (system == NULL || notification == NULL)
+		return EINVAL;
+	if (system->notify == NULL || system->lost)
+		return ENOTSUP;
+	app = notification->app;
+	if (app == NULL)
+		app = "";
+	title = notification->title;
+	if (title == NULL)
+		title = "";
+	body = notification->body;
+	if (body == NULL)
+		body = "";
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->notify, KL_SYSTEM_NOTIFY_POST, number, notification->replaces, app, title, body, (uint32_t)notification->flags);
+
+	/* Succeeded: the number comes later. */
+	return 0;
+}
+
+/*
+ * Takes back a notification the application posted (KL_NOTIFY_CLOSED,
+ * KL_NOTIFY_WITHDRAWN, follows).
+ */
+int
+kl_system_notify_withdraw(
+	struct kl_system *system,
+	uint32_t id,
+	uint32_t *request)
+{
+	uint32_t number;
+
+	/* The notify object. */
+	if (system == NULL)
+		return EINVAL;
+	if (system->notify == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->notify, KL_SYSTEM_NOTIFY_WITHDRAW, number, id);
+
+	/* Succeeded: the answer comes later. */
+	return 0;
+}
+
+/*
+ * Takes the oldest notification event: 1 with it, 0 when none waits.
+ */
+int
+kl_system_take_notify_event(
+	struct kl_system *system,
+	struct kl_notify_event *event)
+{
+	/* The view's ring. */
+	return system_view_take_notify_event(&system->view, event);
 }
 
 /*
@@ -1695,6 +1794,70 @@ system_result(
 	system_view_result(&system->view, request, applied);
 }
 
+/* A notification's number for the request that posted it (ws156-p002). */
+static void
+system_notify_posted(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request,
+	uint32_t id)
+{
+	struct kl_system *system;
+	struct kl_notify_event event;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_take_notify_event. */
+	system = data;
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_NOTIFY_POSTED;
+	event.request = request;
+	event.id = id;
+	system_view_notify_event(&system->view, &event);
+}
+
+/* A notification's body was clicked. */
+static void
+system_notify_activated(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t id)
+{
+	struct kl_system *system;
+	struct kl_notify_event event;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_take_notify_event. */
+	system = data;
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_NOTIFY_ACTIVATED;
+	event.id = id;
+	system_view_notify_event(&system->view, &event);
+}
+
+/* A notification closed, and why. */
+static void
+system_notify_closed(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t id,
+	uint32_t reason)
+{
+	struct kl_system *system;
+	struct kl_notify_event event;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_take_notify_event. */
+	system = data;
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_NOTIFY_CLOSED;
+	event.id = id;
+	event.reason = reason;
+	system_view_notify_event(&system->view, &event);
+}
+
 /*
  * Binds the compositor's system manager on the library's queue, makes the
  * objects it offers and waits once for their first state.  Returns 0,
@@ -1778,6 +1941,10 @@ system_bind(
 	/* Remote Login, offered to a manager bound at version 7 (ws089-p025). */
 	if (system->manager_version >= KL_SYSTEM_SINCE_SHARING)
 		system->sharing = system_make(system, KL_SYSTEM_CAPABILITY_SHARING, KL_SYSTEM_MANAGER_GET_SHARING, &kl_system_sharing_v1_interface, &system_sharing_listener);
+
+	/* The notifications, offered to a manager bound at version 13 (ws156-p002). */
+	if (system->manager_version >= KL_SYSTEM_SINCE_NOTIFY)
+		system->notify = system_make(system, KL_SYSTEM_CAPABILITY_NOTIFY, KL_SYSTEM_MANAGER_GET_NOTIFY, &kl_system_notify_v1_interface, &system_notify_listener);
 
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);

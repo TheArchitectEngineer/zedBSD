@@ -337,9 +337,11 @@ kwl_system_bind(
 	if (manager->version >= 4U)
 		bits |= KL_SYSTEM_CAPABILITY_ACCOUNT;
 
-	/* Remote Login, at version 7 (ws089-p025). */
+	/* Remote Login, at version 7 (ws089-p025); the notifications, at version 13 (ws156-p002). */
 	if (manager->version >= KL_SYSTEM_SINCE_SHARING)
 		bits |= KL_SYSTEM_CAPABILITY_SHARING;
+	if (manager->version >= KL_SYSTEM_SINCE_NOTIFY)
+		bits |= KL_SYSTEM_CAPABILITY_NOTIFY;
 
 	/* The administration of the accounts, at version 8 where the system has its tool (ws089-p026). */
 	administer = kl_backend_account_can_administer();
@@ -393,6 +395,9 @@ kwl_system_request(
 		break;
 	case KWL_SYSTEM_SHARING:
 		error = system_sharing_request(object, opcode, bytes, size);
+		break;
+	case KWL_SYSTEM_NOTIFY:
+		error = kwl_notify_request(object, opcode, bytes, size);
 		break;
 	default:
 		error = EPROTO;
@@ -648,6 +653,16 @@ system_manager_request(
 		if (manager->version < 2U)
 			return EPROTO;
 		error = kwl_sysmon_create(manager, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The notifications are notify-shell.c's, since version 13 (ws156-p002). */
+	if (opcode == KL_SYSTEM_MANAGER_GET_NOTIFY) {
+		if (manager->version < KL_SYSTEM_SINCE_NOTIFY)
+			return EPROTO;
+		error = kwl_notify_create(manager, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;

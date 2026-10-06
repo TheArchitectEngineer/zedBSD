@@ -2,10 +2,10 @@
 
 # ws089-p013: About の memory と Storage の使用量
 
-Status: planning（libkeiland の API の追加の main の許可、p010 のユーザーの採否が要る）
+Status: in-progress（2026-10-06 q821 P2: About の memory の行を実装、build warning 0 と host 試験 PASS。QEMU は T1 待ち）
 Disposition: normal
 Parent: [WS089](../ws.md)
-Queue: なし
+Queue: q821（2026-10-06 ユーザー「採る（第 1 段で）」、Q1 が libkeiland の API の追加を許可）
 依存: p010、[proposed/libkeiland-system.md](../proposed/libkeiland-system.md) の許可（KEILAND_VERSION を上げる → WS113 p005 と直列）
 目安: 2h（1 Queue）。実行者の目安: phase-runner-mid
 所有 path: `userland/desktop/libkeiland/`（system の照会）、`include/libc/keiland.h`、`userland/desktop/settings/about.c`・`page-about.c`
@@ -29,3 +29,25 @@ libkeiland の API の追加の許可（main）と採否（ユーザー）。
 ## Event
 
 2026-10-02 / ws089-beta1-plan: fg019 の計画で新設。
+
+## 実装（2026-10-06 P2、q821）
+
+- **libkeiland の API の追加は要らなかった**: 案（`keiland_system_get_info`）の代わりに、既存の machine の monitor（WS134 p012、`kl_system_monitor_open`・
+  `kl_system_monitor_take`、compositor が採る `memory_total`・`memory_free`）を使う。zedBSD・Linux・FreeBSD の backend が既に memory を読むので OS ごとの
+  code も要らない。`KEILAND_VERSION` も変えない（Q1 の許可は使わなかった）。
+- **About**（`page-about.c`）: 頁を初めて描いた時に monitor を開き（2 秒ごと、`ABOUT_MONITOR_MS`）、「This computer」の card に「Memory」の行
+  （例「16 GB (9.5 GB free)」、10 GB 未満は小数 1 桁）。monitor の無い desktop では行を出さない。`system.c` の `se_system_poll` が `se_about_follow` で
+  新しい frame を取り、About の表示中なら描き直す。窓を閉じる時に monitor を system より先に閉じる。log `ZSETTINGS ABOUT monitor open=0|1`・
+  `ABOUT memory total= free=`（最初の 1 回）。
+- **Storage の volume の使用量**: 既に有る（`look.c` の `se_look_volumes`、statvfs、ws089-p023 の Storage の頁）ので変更なし。
+- 試験の stand-in（`plan/ws089/tests/host-kl-system.c`）に monitor の 3 つの関数（`HOST_MEMORY` で 16 GB・9.5 GB free の frame）。
+
+## 試験と結果（host、2026-10-06）
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws089/tests/run-host-about-memory.sh <scratch>`（新規: monitor の有る時は行、無い時は無し） | 3/3 PASS、PNG を目視（Memory の行） |
+| `run-host-welcome.sh`・`tr-host-test.sh` | PASS |
+| build: zedBSD・keiland-linux の `bin/settings` | warning 0 |
+
+未実施: QEMU（About の memory の値が compositor の monitor から来ること）は T1。

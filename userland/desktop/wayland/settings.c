@@ -277,6 +277,36 @@ kwl_settings_kept(
 }
 
 /*
+ * Gives a setting's value now, as a number (ws164-p002: welcome.done).
+ * Returns 0, or ENOENT without settings (the login screen) or for a
+ * setting the store does not hold or whose value is not a number.
+ */
+int
+kwl_settings_number(
+	struct kwl_server *server,
+	const char *name,
+	int *number)
+{
+	struct kwl_settings_entry *entry;
+	int error;
+
+	/* Without settings nothing is known. */
+	if (server->settings == NULL)
+		return ENOENT;
+
+	/* The setting, its value as a number. */
+	entry = kwl_settings_store_find(server->settings, name);
+	if (entry == NULL)
+		return ENOENT;
+	error = kl_settings_key_number(entry->key, entry->value, number);
+	if (error != 0)
+		return ENOENT;
+
+	/* Succeeded: the number. */
+	return 0;
+}
+
+/*
  * Tells whether a client sees a global of the system extension: only a
  * session (not the login screen) shows it, and only to a client of the
  * compositor's own user (WS131 D5).  Every other global is everyone's.

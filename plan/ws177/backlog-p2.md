@@ -29,3 +29,8 @@
 | WS164 ws164-p002（Welcome） | 言語と入力の段（WS154 の Languages） | p001 の H3 のとおり Look と Keys の間に足す（今は 5 段のまま） | `settings/welcome.c` | 2026-10-06 |
 | WS164 ws164-p002（Welcome） | Welcome の窓の大きさが小さい・日本語の UI の長い文 | 帯と Skip が重ならないよう詰める・文を折り返す（今は固定の配置） | `settings/welcome.c` の `se_welcome_bar`・`se_welcome_draw` | 2026-10-06 |
 | WS164 ws164-p002（Welcome） | Welcome の key の操作（Enter で Next、Esc で閉じる） | keyboard だけで段を進める（今は pointer と指の click だけ） | `settings/ui.c` の `ui_key`、`welcome.c` | 2026-10-06 |
+| WS156 ws156-p002（通知の口） | 通知を出した client が切れた・notify の object を destroy した | その client の待ち・表示中の通知を ACTION 無しに変える（今は model に残り、closed は誰にも送られない） | `wayland/notify-shell.c` の `notify_tell_closed`、client の破棄の側 | 2026-10-06 |
+| WS156 ws156-p002（通知の口） | app の名前が空の通知 | client の window の app_id を名前にする（今は空のまま保つ。p003 の描画で決める） | `wayland/notify-shell.c` の `notify_post` | 2026-10-06 |
+| WS156 ws156-p002（通知の口） | 不正な UTF-8 の題・本文、制御文字 | 置き換えるか拒む（今は bytes のまま保つ） | `wayland/notify.c` の `kwl_notify_post` | 2026-10-06 |
+| WS156 ws156-p002（通知の口） | 一つの client が短い間に大量に post する | 速さの制限（今は client ごと 32 個の上限だけ） | `wayland/notify-shell.c` の `notify_post` | 2026-10-06 |
+| WS156 ws156-p002（通知の口） | libkeiland の事象の ring（32）が溢れる | 古い事象を捨てたことを app に知らせる（今は黙って捨てる） | `libkeiland/system/system-view.c` の `system_view_notify_event` | 2026-10-06 |

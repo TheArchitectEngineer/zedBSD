@@ -76,6 +76,9 @@ se_system_poll(
 		se_log("USERS enrolled changed");
 	}
 
+	/* The machine's memory for About (ws089-p013): the newest frame of the monitor, when one came. */
+	se_about_follow(app);
+
 	/* Each answer: the network's own, or one of the sound's, logged. */
 	for (;;) {
 		taken = kl_system_take_result(app->system, &request, &error);
@@ -103,7 +106,10 @@ se_system_close(
 	/* No password typed stays (ws160-p002). */
 	se_users_close(app);
 
-	/* The system, once. */
+	/* The monitor before its system (ws089-p013), then the system, once. */
+	if (app->monitor != NULL)
+		kl_system_monitor_close(app->monitor);
+	app->monitor = NULL;
 	if (app->system != NULL)
 		kl_system_close(app->system);
 	app->system = NULL;

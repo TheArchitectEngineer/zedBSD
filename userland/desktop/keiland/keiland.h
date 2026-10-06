@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions). */
-#define KL_VERSION	48U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets, <keiui.h>, with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now libkeiland's kui_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, keiland_network_* and keiland_audio_* removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify). */
+#define KL_VERSION	49U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1220,6 +1220,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_SHARING	0x80U	/* kl_system_sharing_* (KL_VERSION 30, ws089-p025) */
 #define KL_SYSTEM_HAS_ADMINISTER	0x100U	/* kl_system_account_administer (KL_VERSION 31, ws089-p026) */
 #define KL_SYSTEM_HAS_PIN	0x200U	/* kl_system_account_set_pin (KL_VERSION 34, ws163-p003) */
+#define KL_SYSTEM_HAS_NOTIFY	0x400U	/* kl_system_notify (KL_VERSION 49, ws156-p002) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1231,6 +1232,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_CHANGED_RESULT	0x40U	/* a request was answered */
 #define KL_SYSTEM_CHANGED_SHARING	0x80U	/* Remote Login's state (KL_VERSION 30) */
 #define KL_SYSTEM_CHANGED_ENROLLED	0x100U	/* the user's PIN and security keys (KL_VERSION 36) */
+#define KL_SYSTEM_CHANGED_NOTIFY	0x200U	/* a notification's event (KL_VERSION 49) */
 
 /*
  * The network: whether the daemon is reached, whether the machine is
@@ -1485,6 +1487,48 @@ int kl_system_sharing_set_ssh(struct kl_system *system, unsigned on, uint32_t *r
 
 /* Reads Remote Login's state again (KL_SYSTEM_CHANGED_SHARING follows).  Returns 0 or ENOTSUP. */
 int kl_system_sharing_query(struct kl_system *system, uint32_t *request);
+
+/*
+ * KL_VERSION 49 (ws156-p002, plan/ws156/phase001/phase.md section 2): a
+ * notification shown at the bottom of the screen and kept in the desktop's
+ * log.  app is the name shown (NULL: the window's application ID), title
+ * and body its words (at most 64, 128 and 512 bytes of UTF-8), replaces an
+ * earlier notification's number to give it new words (0 for a new one),
+ * flags KL_NOTIFY_URGENT (shown over a fullscreen window) and
+ * KL_NOTIFY_ACTION (a click of its body is told).  kl_system_notify asks;
+ * the answer comes as a notification event: KL_NOTIFY_POSTED with its
+ * number for the request, or the request's result (KL_SYSTEM_CHANGED_RESULT:
+ * EINVAL for words too long, EBUSY when the application has 32 already).
+ * Later events: KL_NOTIFY_ACTIVATED (its body clicked) and KL_NOTIFY_CLOSED
+ * with why (KL_NOTIFY_DISMISSED, _EXPIRED out of the log, _CLEARED, _WITHDRAWN).
+ * kl_system_notify_withdraw takes one back.  Returns 0 when asked, ENOTSUP
+ * without KL_SYSTEM_HAS_NOTIFY, or EINVAL.
+ */
+#define KL_NOTIFY_URGENT	0x1U
+#define KL_NOTIFY_ACTION	0x2U
+#define KL_NOTIFY_POSTED	1U
+#define KL_NOTIFY_ACTIVATED	2U
+#define KL_NOTIFY_CLOSED	3U
+#define KL_NOTIFY_DISMISSED	1U
+#define KL_NOTIFY_EXPIRED	2U
+#define KL_NOTIFY_CLEARED	3U
+#define KL_NOTIFY_WITHDRAWN	4U
+struct kl_notification {
+	const char *app;
+	const char *title;
+	const char *body;
+	uint32_t replaces;
+	unsigned flags;
+};
+struct kl_notify_event {
+	unsigned kind;
+	uint32_t request;
+	uint32_t id;
+	unsigned reason;
+};
+int kl_system_notify(struct kl_system *system, const struct kl_notification *notification, uint32_t *request);
+int kl_system_notify_withdraw(struct kl_system *system, uint32_t id, uint32_t *request);
+int kl_system_take_notify_event(struct kl_system *system, struct kl_notify_event *event);
 
 /*
  * Copy up to capacity of the details last asked for and return how many
