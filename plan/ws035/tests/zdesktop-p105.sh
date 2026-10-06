@@ -1,12 +1,12 @@
 #!/bin/sh
 # ws035-p105 (F-044): mview and xserver's windows honor xdg-shell's configure_bounds (version 4), as files and
 # terminal do.  On the Venus guest (the lean files image, plan/tools/files/build-files-image.sh), zdesktop --glass
-# at 1280x800 tells a window the space for its body (1256x690):
-#  1. mview.png: mview --windowed --size=1600x1000 takes the bounds (MVIEW WINDOW ... width=1256 height=690) and is
+# at 1280x800 tells a window the space for its body (1256x680 under the 44-pixel system bar, since 2026-10-05):
+#  1. mview.png: mview --windowed --size=1600x1000 takes the bounds (MVIEW WINDOW ... width=1256 height=680) and is
 #     seen whole under its title bar.
 #  2. zterm.png: zterm -geometry 300x100 on xserver (root 1280x800) makes an X window larger than the bounds;
 #     (zterm keeps it within the root: 1240x720); xserver cuts it to the bounds (X11SERVER BOUNDS ... width=1240
-#     height=690 was=1240x720) and zterm is seen whole.
+#     height=680 was=1240x720) and zterm is seen whole.
 #  3. small.png: an mview smaller than the bounds keeps its own size (640x460).
 #
 #   GUEST_RUNTIME=... plan/tools/files/files-guest.sh start build/<x>/hdd-image.img
@@ -57,24 +57,24 @@ guest "$stop_all" >/dev/null
 guest "$start" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/mview --windowed --size=1600x1000 --timeout-s=300 --token=big > /tmp/m1.log 2>&1 </dev/null & sleep 8; echo started' >/dev/null
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=690"
-expect_log /tmp/m1.log 'MVIEW WINDOW run=big width=1256 height=690 bounds=1256x690'
+expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
+expect_log /tmp/m1.log 'MVIEW WINDOW run=big width=1256 height=680 bounds=1256x680'
 shot mview.png
 guest "$stop_all" >/dev/null
 
 # 2. An X window larger than the bounds.
 guest "$start" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/.X11-unix/X0; DISPLAY=:0 /bin/xserver --size 1280x800 > /tmp/x11server.log 2>&1 </dev/null & sleep 3; DISPLAY=:0 /bin/zterm -geometry 300x100 > /tmp/zterm.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
-expect_log /tmp/x11server.log 'X11SERVER BOUNDS window=0x[0-9a-f]+ width=1240 height=690 was=1240x720'
+expect_log /tmp/x11server.log 'X11SERVER BOUNDS window=0x[0-9a-f]+ width=1240 height=680 was=1240x720'
 zwl_app_clients
-expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=690"
+expect_log /tmp/zdesktop.log "ZWL BOUNDS client=$zc1 surface=[0-9]+ width=1256 height=680"
 shot zterm.png
 guest "$stop_all" >/dev/null
 
 # 3. mview smaller than the bounds keeps its size.
 guest "$start" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/mview --windowed --size=640x460 --timeout-s=300 --token=small > /tmp/m2.log 2>&1 </dev/null & sleep 8; echo started' >/dev/null
-expect_log /tmp/m2.log 'MVIEW WINDOW run=small width=640 height=460 bounds=1256x690'
+expect_log /tmp/m2.log 'MVIEW WINDOW run=small width=640 height=460 bounds=1256x680'
 shot small.png
 
 errors=$(guest "grep -c ERROR /tmp/zdesktop.log" | tail -1)
