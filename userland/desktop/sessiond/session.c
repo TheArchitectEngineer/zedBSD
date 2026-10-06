@@ -57,8 +57,7 @@
  *                    or ERROR
  *   POWER poweroff|reboot
  *                    ends the machine (ws131-p027, power.c: the Power Off
- *                    dialog; alone on the machine, or root or wheel under
- *                    other users); OK, FAIL others, or ERROR
+ *                    dialog; root or wheel only); OK, FAIL wheel, or ERROR
  */
 
 #include "auth.h"

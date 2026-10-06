@@ -9,9 +9,9 @@
  * Ending the machine through sessiond (ws131-p027): the login screen's
  * "POWER poweroff|reboot" (greeter.c), and since ws131-p027 a session's
  * (the console session's Power Off dialog, ws099-p037), decided by
- * power-rules.c.  A session's answer is OK, "FAIL others" (other users are
- * logged in and the session's user is neither root nor in wheel) or ERROR
- * (another word, or the program could not be started).  Every request is
+ * power-rules.c.  A session's answer is OK, "FAIL wheel" (the session's
+ * user is neither root nor in wheel) or ERROR (another word, or the
+ * program could not be started).  Every request is
  * logged to the authentication log.
  */
 
@@ -24,9 +24,6 @@
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
-#include <utmpx.h>
-
-static unsigned power_others(const char *name);
 
 /*
  * Runs the program that ends the machine (it asks init, which stops
@@ -59,8 +56,8 @@ sessiond_power_run(
 }
 
 /*
- * Answers a session's "POWER poweroff|reboot": decided by power-rules.c with
- * the users logged in, then carried out.
+ * Answers a session's "POWER poweroff|reboot": decided by power-rules.c (root
+ * or wheel), then carried out.
  */
 void
 sessiond_power_session(
@@ -70,20 +67,18 @@ sessiond_power_session(
 {
 	const char *program;
 	const char *name;
-	unsigned others;
 	int in_wheel;
 	int decided;
 	int error;
 
-	/* Decided: the word, the users logged in besides the session's, the user's right. */
+	/* Decided: the word and the user's right. */
 	name = account->passwd.pw_name;
-	others = power_others(name);
 	in_wheel = account_in_wheel(name, account->passwd.pw_gid);
-	decided = sessiond_power_decide(what, account->passwd.pw_uid, in_wheel, others, &program);
+	decided = sessiond_power_decide(what, account->passwd.pw_uid, in_wheel, &program);
 	if (decided == EPERM) {
-		sessiond_log("SESSIOND POWER %.16s by %s refused others=%u", what, name, others);
-		syslog(LOG_WARNING, "%.16s by %s refused (%u other users logged in, not in wheel)", what, name, others);
-		(void)write(control, "FAIL others\n", 12U);
+		sessiond_log("SESSIOND POWER %.16s by %s refused (not in wheel)", what, name);
+		syslog(LOG_WARNING, "%.16s by %s refused (not in wheel)", what, name);
+		(void)write(control, "FAIL wheel\n", 11U);
 		return;
 	}
 
@@ -103,35 +98,4 @@ sessiond_power_session(
 
 	/* Succeeded: OK. */
 	(void)write(control, "OK\n", 3U);
-}
-
-/* Counts the users logged in (utmpx) other than one: an SSH login, another console's. */
-static unsigned
-power_others(
-	const char *name)
-{
-	struct utmpx *entry;
-	unsigned others;
-	int differs;
-
-	/* Every user process in utmpx. */
-	others = 0U;
-	setutxent();
-	for (;;) {
-		/* The next entry; none left ends the count. */
-		entry = getutxent();
-		if (entry == NULL)
-			break;
-
-		/* Only a logged-in user's, and not the session's user's. */
-		if (entry->ut_type != USER_PROCESS)
-			continue;
-		differs = strncmp(entry->ut_user, name, sizeof(entry->ut_user));
-		if (differs != 0)
-			others++;
-	}
-	endutxent();
-
-	/* Succeeded: the count. */
-	return others;
 }

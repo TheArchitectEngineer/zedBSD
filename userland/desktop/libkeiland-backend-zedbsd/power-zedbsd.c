@@ -12,12 +12,13 @@
  *
  * sessiond takes "POWER poweroff" and "POWER reboot" on the login screen's
  * descriptor (sessiond/greeter.c) and, since ws131-p027, on a session's
- * (sessiond/session.c, power.c: alone on the machine, or root or wheel
- * under other users; plan/ws131/design.md, decision D12 as revised).  The
- * request is one short line written whole.  sessiond's answer (OK, FAIL
- * others, ERROR) comes back on the same descriptor as its answers to the
- * other requests, and the session (session-zedbsd.c) reads them all; a
- * refusal lets the action be asked again.
+ * from root or a member of wheel only (sessiond/session.c, power.c; the
+ * 2026-10-06 user decision; plan/ws131/design.md, decision D12 as
+ * revised): a session of another user is offered no action.  The request
+ * is one short line written whole.  sessiond's answer (OK, FAIL wheel,
+ * ERROR) comes back on the same descriptor as its answers to the other
+ * requests, and the session (session-zedbsd.c) reads them all; a refusal
+ * lets the action be asked again.
  *
  * The power source and the battery are the kernel's KERN_SYSTEM_GET_POWER
  * (ws132-p003), read on a descriptor of /dev/system of their own, so that
@@ -30,6 +31,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -40,6 +43,7 @@
 #define POWER_LINE_MAX 32U
 
 static unsigned power_actions(const struct kl_backend *backend);
+static int power_administrator(void);
 static void power_read(struct kl_backend_power_state *state);
 
 /*
@@ -117,12 +121,20 @@ power_actions(
 	const struct kl_backend *backend)
 {
 	unsigned actions;
+	int administrator;
 
 	/* Without sessiond's descriptor nothing can be asked. */
 	if (backend->options.greeter_descriptor < 0 && backend->options.session_descriptor < 0)
 		return 0U;
 
-	/* Power off and restart (sessiond decides a session's right, power.c). */
+	/* A session's user that is neither root nor in wheel may not (sessiond refuses it too, power.c). */
+	if (backend->options.greeter_descriptor < 0) {
+		administrator = power_administrator();
+		if (!administrator)
+			return 0U;
+	}
+
+	/* Power off and restart. */
 	actions = KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_POWEROFF) |
 	    KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_REBOOT);
 	return actions;
@@ -168,4 +180,46 @@ power_read(
 		if (info.battery_charging != 0U)
 			state->charging = 1U;
 	}
+}
+
+/*
+ * Tells whether the compositor's user is root or a member of wheel (its
+ * primary group, or named in the group), as sessiond decides (the
+ * groups file is read each time: a change shows at the next look).
+ */
+static int
+power_administrator(void)
+{
+	struct passwd *user;
+	struct group *wheel;
+	unsigned index;
+	uid_t uid;
+	int same;
+
+	/* Root may. */
+	uid = getuid();
+	if (uid == 0)
+		return 1;
+
+	/* The user and the wheel group, both known. */
+	user = getpwuid(uid);
+	if (user == NULL)
+		return 0;
+	wheel = getgrnam("wheel");
+	if (wheel == NULL)
+		return 0;
+
+	/* Wheel as the primary group. */
+	if (wheel->gr_gid == user->pw_gid)
+		return 1;
+
+	/* Or a member by name. */
+	for (index = 0U; wheel->gr_mem != NULL && wheel->gr_mem[index] != NULL; index++) {
+		same = strcmp(wheel->gr_mem[index], user->pw_name);
+		if (same == 0)
+			return 1;
+	}
+
+	/* Not in it. */
+	return 0;
 }

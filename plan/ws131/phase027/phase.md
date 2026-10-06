@@ -54,3 +54,11 @@ libkeiland-backend-zedbsd の power_actions も session では 0（ENOTSUP）。
 ## 2026-10-06 ユーザーの決定（誰が頼めるか）
 
 P2 の既定（他の利用者がいなければ誰でも、いれば root・wheel だけ）を見せた質問へのクリックの回答「wheel だけに限る」: 他の利用者の有無に関わらず、Power Off・Restart を頼めるのは root と wheel の利用者だけ（console の session の control socket から）。wheel でない利用者の dialog では Power Off・Restart を押せない形にする。
+
+## q793-i02（2026-10-06 P2）: wheel だけに限る
+
+- ユーザーの決定（クリック）:「wheel だけに限る」→ 他の利用者の有無に関わらず Power Off・Restart は root と wheel の利用者だけ。前の「一人なら誰でも」（utmpx を数える）をやめた。
+- sessiond: `sessiond_power_decide(what, uid, in_wheel, program)`（others の引数と utmpx の数えを削除）、拒否の答えは `FAIL wheel`、log `SESSIOND POWER what by user refused (not in wheel)`。
+- backend: `power_actions` は session では `power_administrator()`（getuid が 0、または getpwuid と getgrnam("wheel") で primary か member）の時だけ poweroff・reboot を出す。毎回 /etc/group を読むので、group の変更は次に dialog を開いた時に効く。wheel でない利用者の dialog の Power Off・Restart は薄く押せない。
+- 試験: host-power-rules 11 ok（wheel・root は可、wheel でない利用者は一人でも EPERM）、host-session 52/52（host の利用者が wheel なら往復、違えば ENOTSUP。この host の awe は wheel でないので後者を確認）、host-power 17/17・6/6。sessiond・compositor の build warning 0、style-check 0。
+- AAT の image の kei は `userland/base/etc/group` で wheel（`wheel:x:0:root,kei`）なので dialog は `poweroff=1 restart=1`。

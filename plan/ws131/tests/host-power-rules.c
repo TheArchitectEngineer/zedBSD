@@ -10,8 +10,8 @@
  * userland/desktop/sessiond/power-rules.c compiled unchanged).
  *
  * Checks: "poweroff" and "reboot" name their programs, any other word none
- * (EINVAL); alone on the machine any session's user may; under other users
- * only root or a member of wheel may (EPERM otherwise).
+ * (EINVAL); only root or a member of wheel may (EPERM otherwise; the
+ * 2026-10-06 user decision: wheel only).
  *
  *   plan/ws131/tests/host-power-rules.sh
  */
@@ -59,22 +59,22 @@ main(void)
 	check(sessiond_power_program("") == NULL, "no word: no program");
 
 	/* 2. Another word is refused whoever asks. */
-	decided = sessiond_power_decide("suspend", 0, 1, 0U, &program);
+	decided = sessiond_power_decide("suspend", 0, 1, &program);
 	check(decided == EINVAL && program == NULL, "suspend: EINVAL even for root");
 
-	/* 3. Alone on the machine: the console's user may. */
-	decided = sessiond_power_decide("poweroff", 1001, 0, 0U, &program);
-	check(decided == 0 && strcmp(program, SESSIOND_POWEROFF) == 0, "alone: a user may power off");
-	decided = sessiond_power_decide("reboot", 1001, 0, 0U, &program);
-	check(decided == 0 && strcmp(program, SESSIOND_REBOOT) == 0, "alone: a user may restart");
+	/* 3. A member of wheel and root may. */
+	decided = sessiond_power_decide("poweroff", 1001, 1, &program);
+	check(decided == 0 && strcmp(program, SESSIOND_POWEROFF) == 0, "wheel: may power off");
+	decided = sessiond_power_decide("reboot", 1001, 1, &program);
+	check(decided == 0 && strcmp(program, SESSIOND_REBOOT) == 0, "wheel: may restart");
+	decided = sessiond_power_decide("poweroff", 0, 0, &program);
+	check(decided == 0, "root: may power off");
 
-	/* 4. Under other users: only root or wheel. */
-	decided = sessiond_power_decide("poweroff", 1001, 0, 1U, &program);
-	check(decided == EPERM, "another user logged in: a user is refused");
-	decided = sessiond_power_decide("reboot", 1001, 1, 2U, &program);
-	check(decided == 0, "other users logged in: a member of wheel may");
-	decided = sessiond_power_decide("poweroff", 0, 0, 3U, &program);
-	check(decided == 0, "other users logged in: root may");
+	/* 4. Another user may not, alone on the machine too. */
+	decided = sessiond_power_decide("poweroff", 1001, 0, &program);
+	check(decided == EPERM, "not in wheel: refused");
+	decided = sessiond_power_decide("reboot", 1002, 0, &program);
+	check(decided == EPERM, "not in wheel: restart refused");
 
 	/* The result. */
 	if (failures != 0) {

@@ -22,6 +22,6 @@
 #define SESSIOND_REBOOT		"/sbin/reboot"
 
 const char *sessiond_power_program(const char *what);
-int sessiond_power_decide(const char *what, uid_t uid, int in_wheel, unsigned others, const char **program);
+int sessiond_power_decide(const char *what, uid_t uid, int in_wheel, const char **program);
 
 #endif
