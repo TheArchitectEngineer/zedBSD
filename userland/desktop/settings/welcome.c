@@ -289,7 +289,7 @@ welcome_intro(
 
 	/* The greeting under it, with the account's name. */
 	welcome_name(name, sizeof(name));
-	(void)snprintf(words, sizeof(words), "%s, %s", kl_tr("Welcome to Kei"), name);
+	(void)kl_tr_format(words, sizeof(words), kl_tr("Welcome to Kei, {1}"), name, (const char *)NULL);
 	kl_text_metrics(app->text, WELCOME_TEXT_BIG, &title);
 	baseline = top + (int)WELCOME_MARK + 28 + title.ascent;
 	(void)kl_text_draw_fit(app->text, canvas, x, baseline, words, WELCOME_TEXT_BIG, 1, width, SE_COLOR_TITLE);
