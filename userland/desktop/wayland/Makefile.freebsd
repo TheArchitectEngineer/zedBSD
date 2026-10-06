@@ -22,7 +22,7 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/corner.c \
 	userland/desktop/wayland/keyboard.c \
 	userland/desktop/wayland/keyboard-layout.c \
-	userland/desktop/wayland/keyboard-hand.c \
+	userland/desktop/wayland/keyboard-hand.c userland/desktop/wayland/hand-cloud.c \
 	userland/desktop/wayland/menu.c \
 	userland/desktop/wayland/menu-shell.c \
 	userland/desktop/wayland/titlebar.c \

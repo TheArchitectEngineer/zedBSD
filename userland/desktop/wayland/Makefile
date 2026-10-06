@@ -15,7 +15,7 @@ KEILAND_SOURCES := userland/desktop/wayland/main.c userland/desktop/wayland/wire
 	$(KL_BACKEND_ZEDBSD_SOURCES) userland/desktop/wayland/gpu-host.c \
 	userland/desktop/wayland/seat.c userland/desktop/wayland/input.c userland/desktop/wayland/tablet.c userland/desktop/wayland/touch.c userland/desktop/wayland/touchpad.c userland/desktop/wayland/pointer-accel.c userland/desktop/wayland/network-info.c userland/desktop/wayland/super-tap.c userland/desktop/wayland/apps.c userland/desktop/wayland/apps-bar.c userland/desktop/wayland/switcher.c userland/desktop/wayland/switcher-shell.c userland/desktop/wayland/layout.c userland/desktop/wayland/swipe.c userland/desktop/wayland/power-layout.c userland/desktop/wayland/power-dialog.c userland/desktop/wayland/lid.c \
 	userland/desktop/wayland/compose.c userland/desktop/wayland/import.c userland/desktop/wayland/shm.c \
-	userland/desktop/wayland/glass.c userland/desktop/wayland/shell.c userland/desktop/wayland/home.c userland/desktop/wayland/corner.c userland/desktop/wayland/keyboard.c userland/desktop/wayland/keyboard-layout.c userland/desktop/wayland/keyboard-hand.c \
+	userland/desktop/wayland/glass.c userland/desktop/wayland/shell.c userland/desktop/wayland/home.c userland/desktop/wayland/corner.c userland/desktop/wayland/keyboard.c userland/desktop/wayland/keyboard-layout.c userland/desktop/wayland/keyboard-hand.c userland/desktop/wayland/hand-cloud.c \
 	userland/desktop/wayland/menu.c userland/desktop/wayland/menu-shell.c userland/desktop/wayland/titlebar.c \
 	userland/desktop/wayland/popup.c userland/desktop/wayland/toplevel.c userland/desktop/wayland/sheet.c userland/desktop/wayland/subsurface.c userland/desktop/wayland/keymap.c userland/desktop/wayland/data.c \
 	userland/desktop/wayland/icons.c userland/desktop/wayland/titlebar-shell.c \
@@ -44,4 +44,4 @@ KEILAND_FONT_DATA := /usr/share/fonts/keiland.ttf=userland/desktop/fonts/Mahora-
 	/usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt=userland/desktop/fonts/JetBrainsMono-OFL.txt \
 	/usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt=userland/desktop/fonts/DroidSansFallback-LICENSE.txt \
 	/usr/share/licenses/keiland-fonts/Apache-2.0.txt=userland/desktop/fonts/Apache-2.0.txt
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,desktop,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond base/libpng-compat base/libz-compat base/libjpeg-compat fonts/noto-color-emoji,0755,program,$(KEILAND_FONT_DATA),,bin))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,wayland,Wayland compositor,amd64,y,basic,$(KEILAND_SOURCES),y,desktop,desktop/wayland,desktop/libvulkan desktop/libtruetype desktop/libkeiland desktop/sessiond base/libpng-compat base/libz-compat base/libjpeg-compat fonts/noto-color-emoji fonts/hand-hershey,0755,program,$(KEILAND_FONT_DATA),,bin))

@@ -3217,9 +3217,11 @@ keyboard_hand_recognize(
 {
 	const char *first;
 	int32_t bounds[4];
+	int32_t area[4];
 
-	/* The answer, once for this ink. */
-	kwl_hand_recognize(&keyboard_ink, &keyboard.result);
+	/* The answer, once for this ink, by its size on the writing area. */
+	keyboard_hand_area(area);
+	kwl_hand_recognize(&keyboard_ink, area[3], &keyboard.result);
 	keyboard.recognized = 1;
 	server->dirty = 1;
 
