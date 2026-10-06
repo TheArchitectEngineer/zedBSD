@@ -694,35 +694,23 @@ info_pill(
 	int draw)
 {
 	struct kl_rect rect;
-	kl_color ground;
-	kl_color ink;
+	unsigned flags;
 	int width;
 
-	/* Its size fits its label. */
-	width = kl_text_width(app->text, label, strlen(label), INFO_TEXT_ROW, 1) + 24;
+	/* libkeiland's button fitting its label (ws090-p023); measured only when not drawn. */
+	width = fm_button_width(app, label);
 	if (draw == 0)
 		return width;
 
-	/* Its colors: the accent for the primary one, darker under the pointer. */
-	ground = FM_COLOR_BUTTON;
-	ink = FM_COLOR_TEXT;
-	if (primary != 0) {
-		ground = FM_COLOR_ACCENT;
-		ink = KL_RGB(0xffffff);
-	}
-
-	/* Darker under the pointer. */
-	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
-		ground = kl_color_mix(ground, KL_RGB(0x000000), 0.08f);
-
-	/* The pill, its label, and the region a click finds. */
+	/* The primary one in the accent. */
 	rect.x = x;
 	rect.y = y;
 	rect.width = width;
 	rect.height = INFO_ROW + 4;
-	kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, (float)rect.height * 0.5f, ground);
-	(void)kl_text_draw(app->text, canvas, x + 12, kl_text_center(INFO_TEXT_ROW, rect.y, rect.height), label, strlen(label), INFO_TEXT_ROW, 1, ink);
-	fm_ui_hit(app, &rect, FM_HIT_BUTTON, index);
+	flags = 0U;
+	if (primary != 0)
+		flags = KL_BUTTON_PRIMARY;
+	fm_button(app, canvas, &rect, label, index, flags);
 
 	/* Reports its width. */
 	return width;

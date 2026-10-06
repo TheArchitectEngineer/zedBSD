@@ -299,6 +299,32 @@ kl_sidebar_item(
 	const char *label,
 	int current)
 {
+	int clicked;
+
+	/* A place in the usual ink. */
+	clicked = kl_sidebar_place(ui, style, id, index, rect, icon, label, current, 0U);
+	return clicked;
+}
+
+/*
+ * Draws a sidebar's place as kl_sidebar_item does, with flags (KL_VERSION
+ * 48, ws090-p023): KL_PLACE_FAINT for a place that is not there (the
+ * faint ink), KL_PLACE_QUIET for one that is there but not ready (the
+ * secondary ink, a device not mounted).  The place shown keeps the
+ * accent.  Reports whether it was clicked.
+ */
+int
+kl_sidebar_place(
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	uint32_t id,
+	uint32_t index,
+	const struct kl_rect *rect,
+	enum kl_icon icon,
+	const char *label,
+	int current,
+	unsigned flags)
+{
 	const struct kl_theme *theme;
 	kl_color ink;
 	unsigned state;
@@ -307,8 +333,14 @@ kl_sidebar_item(
 	theme = style->theme;
 	state = kl_ui_hit(ui, id, index, rect);
 
-	/* The ground and the ink: the accent for the place shown, faint under the pointer. */
+	/* The ink: faint for a place not there, quiet for one not ready. */
 	ink = theme->text;
+	if ((flags & KL_PLACE_QUIET) != 0U)
+		ink = theme->text_secondary;
+	if ((flags & KL_PLACE_FAINT) != 0U)
+		ink = theme->text_faint;
+
+	/* The ground: the accent for the place shown, faint under the pointer. */
 	if (current) {
 		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->selection);
 		ink = theme->accent;

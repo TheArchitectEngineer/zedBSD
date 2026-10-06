@@ -1479,6 +1479,10 @@ unsigned kl_list_row(struct kl_ui *ui, const struct kl_style *style, uint32_t id
 void kl_list_end(struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *rect, struct kl_list *list);
 int kl_sidebar_section(const struct kl_style *style, int x, int y, int width, const char *title);
 int kl_sidebar_item(struct kl_ui *ui, const struct kl_style *style, uint32_t id, uint32_t index, const struct kl_rect *rect, enum kl_icon icon, const char *label, int current);
+/* KL_VERSION 48 (ws090-p023): a sidebar's place in the faint ink (not there) or the quiet one (not ready). */
+#define KL_PLACE_FAINT		1U
+#define KL_PLACE_QUIET		2U
+int kl_sidebar_place(struct kl_ui *ui, const struct kl_style *style, uint32_t id, uint32_t index, const struct kl_rect *rect, enum kl_icon icon, const char *label, int current, unsigned flags);
 void kl_panel(const struct kl_style *style, const struct kl_rect *rect, int sidebar);
 int kl_card(const struct kl_style *style, const struct kl_rect *rect, const char *title, const char *subtitle);
 int kl_row(const struct kl_style *style, int x, int y, int width, const char *label, const char *value, int last);

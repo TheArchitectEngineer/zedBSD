@@ -32,6 +32,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* The sidebar's places' ID among libkeiland's widgets (ui-widgets.c). */
+#define UI_WIDGET_PLACE		1001U
+
 /* The frame's measurements, in pixels: the tasks' place from the corner. */
 #define UI_MARGIN		12
 
@@ -179,8 +182,9 @@ fm_app_release(
 {
 	int index;
 
-	/* The operations, stopped and let go, the hero's pictures, the thumbnails and what the preview read. */
+	/* The operations, stopped and let go, the widgets' input, the hero's pictures, the thumbnails and what the preview read. */
 	fm_actions_release(app);
+	fm_widgets_release(app);
 	kl_image_release(&app->hero_source);
 	kl_image_release(&app->hero);
 	fm_thumb_release(app);
@@ -213,12 +217,12 @@ fm_ui_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_MOTION:
-		(void)fm_rename_input(app, event);
+		fm_widgets_input(app, event);
 		fm_input_motion(app, event);
 		break;
 	case FM_EVENT_BUTTON:
-		/* The field of the name being changed sees the press too (it places its caret; elsewhere the change ends). */
-		(void)fm_rename_input(app, event);
+		/* libkeiland's widgets see the press too (the field of the name being changed places its caret; elsewhere the change ends). */
+		fm_widgets_input(app, event);
 		fm_input_motion(app, event);
 		fm_input_button(app, event);
 		break;
@@ -226,6 +230,7 @@ fm_ui_event(
 		fm_input_scroll(app, event->scroll);
 		break;
 	case FM_EVENT_LEAVE:
+		fm_widgets_input(app, event);
 		app->pointer_inside = 0;
 		app->hover_kind = FM_HIT_NONE;
 		app->hover_index = -1;
@@ -369,7 +374,8 @@ fm_ui_draw(
 		kl_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
 	}
 
-	/* The sidebar, when shown. */
+	/* libkeiland's widgets' frame (ui-widgets.c), then the sidebar, when shown. */
+	(void)fm_widgets_begin(app);
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 
@@ -390,8 +396,9 @@ fm_ui_draw(
 	fm_help_draw(app, canvas);
 	fm_overlay_draw(app, canvas);
 
-	/* Items being dragged, over everything. */
+	/* Items being dragged, over everything; the widgets' frame ends. */
 	fm_drag_draw(app, canvas);
+	fm_widgets_end(app);
 	if (partial != 0)
 		kl_canvas_clip_pop(canvas);
 
@@ -1010,34 +1017,25 @@ ui_draw_sidebar(
 	static const char *const titles[] = { "Favorites", "Locations", "Devices" };
 	const struct fm_device *device;
 	const char *title;
+	struct kl_style style;
 	struct kl_rect eject;
 	float bright;
 	const struct kl_rect *panel;
 	const struct fm_place *place;
 	struct kl_rect row;
 	struct kl_rect remove;
-	kl_color header;
-	kl_color ink;
 	unsigned section;
+	unsigned flags;
 	int current;
 	int removable;
 	int hovered;
 	int index;
 	int y;
 
-	/* The sections' titles: faint, a little darker on glass (the desktop shows through it). */
-	header = FM_COLOR_TEXT_FAINT;
-	if (app->glass != 0)
-		header = FM_COLOR_TEXT_SECONDARY;
-
-	/* The panel: a light veil over zdesktop's glass, or over the window's ground with a bright edge. */
+	/* The panel: libkeiland's sidebar panel (a light veil on glass, else with a bright edge, ws090-p023). */
+	fm_style(app, canvas, &style);
 	panel = &app->layout.sidebar;
-	if (app->glass != 0) {
-		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_GLASS_SIDEBAR);
-	} else {
-		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_SIDEBAR);
-		kl_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_COLOR_PANEL_RIM);
-	}
+	kl_panel(&style, panel, 1);
 
 	/* The rows stay inside the panel. */
 	kl_canvas_clip_push(canvas, panel);
@@ -1054,7 +1052,7 @@ ui_draw_sidebar(
 			if (index > 0)
 				y += 8;
 			title = kl_tr(titles[section]);
-			(void)kl_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, title, strlen(title), UI_TEXT_HEADER, 1, header);
+			(void)kl_sidebar_section(&style, panel->x + 8, y, panel->width - 16, title);
 			row.x = panel->x + 8;
 			row.y = y;
 			row.width = panel->width - 16;
@@ -1063,41 +1061,30 @@ ui_draw_sidebar(
 			y += UI_SIDEBAR_HEADER;
 		}
 
-		/* The row, lit when it is the place shown or under the pointer. */
+		/* The row's place, the place shown, and its device. */
 		row.x = panel->x + 8;
 		row.y = y;
 		row.width = panel->width - 16;
 		row.height = UI_SIDEBAR_ROW;
 		current = ui_place_current(app, place);
-		ink = FM_COLOR_TEXT;
-		if (place->missing != 0)
-			ink = FM_COLOR_TEXT_FAINT;
-		if (current != 0) {
-			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_SELECTION);
-			ink = FM_COLOR_ACCENT;
-		} else if (app->hover_kind == FM_HIT_PLACE && app->hover_index == index) {
-			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_HOVER);
-		}
-
-		/* A new removable device blinks: its row lit and dimmed three times (ws132-p005). */
 		device = NULL;
 		if (place->device > 0 && place->device <= app->places.device_count)
 			device = &app->places.devices[place->device - 1];
+
+		/* A new removable device blinks: its row lit and dimmed three times (ws132-p005). */
 		bright = 1.0f;
 		if (device != NULL)
 			bright = fm_devices_blink(app, device);
 		if (bright < 1.0f)
 			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, KL_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
 
-		/* A device not mounted is drawn faint until a double click mounts it. */
-		if (device != NULL && !device->mounted && current == 0)
-			ink = FM_COLOR_TEXT_SECONDARY;
-
-		/* The icon. */
-		kl_icon_draw(canvas, (enum kl_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
-
-		/* The label. */
-		(void)kl_text_draw_fit(app->text, canvas, row.x + 36, kl_text_center(UI_TEXT_SIDEBAR, row.y, row.height), kl_tr(place->label), UI_TEXT_SIDEBAR, current, row.width - 44, ink);
+		/* libkeiland's place: faint when it is not there, quiet for a device not mounted until a double click mounts it. */
+		flags = 0U;
+		if (device != NULL && !device->mounted)
+			flags = KL_PLACE_QUIET;
+		if (place->missing != 0)
+			flags = KL_PLACE_FAINT;
+		(void)kl_sidebar_place(app->ui, &style, UI_WIDGET_PLACE, (uint32_t)index, &row, (enum kl_icon)place->icon, kl_tr(place->label), current, flags);
 		fm_ui_hit(app, &row, FM_HIT_PLACE, index);
 
 		/* A favorite folder under the pointer offers a small button that takes it off the sidebar. */

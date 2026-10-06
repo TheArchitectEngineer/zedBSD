@@ -363,6 +363,7 @@
 		kl_list_end;
 		kl_sidebar_section;
 		kl_sidebar_item;
+		kl_sidebar_place;
 		kl_panel;
 		kl_card;
 		kl_row;
