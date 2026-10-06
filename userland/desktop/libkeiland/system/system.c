@@ -96,11 +96,13 @@ struct system_power_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
-/* The listener of kl_system_account_v1's events (refused since version 8, ws089-p026; enrolled since 11, ws172-p002). */
+/* The listener of kl_system_account_v1's events (refused since version 8, ws089-p026; enrolled since 11, ws172-p002; key and touch since 14, ws172-p003). */
 struct system_account_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 	void (*refused)(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
 	void (*enrolled)(void *data, struct wl_proxy *proxy, uint32_t pin, uint32_t keys);
+	void (*key)(void *data, struct wl_proxy *proxy, const char *ref, const char *label);
+	void (*touch)(void *data, struct wl_proxy *proxy, uint32_t request);
 };
 
 /* The listener of kl_system_sharing_v1's events (ws089-p025), in their order. */
@@ -153,6 +155,9 @@ static void system_devices_busy(void *data, struct wl_proxy *proxy, uint32_t req
 static void system_devices_volume(void *data, struct wl_proxy *proxy, const char *id, const char *fs, uint32_t bytes_high, uint32_t bytes_low);
 static void system_account_refused(void *data, struct wl_proxy *proxy, uint32_t request, const char *reason);
 static void system_account_enrolled(void *data, struct wl_proxy *proxy, uint32_t pin, uint32_t keys);
+static void system_account_key(void *data, struct wl_proxy *proxy, const char *ref, const char *label);
+static void system_account_touch(void *data, struct wl_proxy *proxy, uint32_t request);
+static int system_key_secret_valid(const char *secret);
 static void system_result(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 static void system_sharing_state(void *data, struct wl_proxy *proxy, uint32_t available, uint32_t enabled, uint32_t running, uint32_t port, uint32_t allowed, const char *fingerprint);
 static void system_sharing_done(void *data, struct wl_proxy *proxy, uint32_t serial);
@@ -201,11 +206,13 @@ static const struct system_power_listener system_power_listener = {
 	system_result
 };
 
-/* The account object's callbacks (ws160-p002, ws089-p026, ws172-p002). */
+/* The account object's callbacks (ws160-p002, ws089-p026, ws172-p002, ws172-p003). */
 static const struct system_account_listener system_account_listener = {
 	system_result,
 	system_account_refused,
-	system_account_enrolled
+	system_account_enrolled,
+	system_account_key,
+	system_account_touch
 };
 
 /* The sharing object's callbacks (ws089-p025). */
@@ -372,6 +379,10 @@ kl_system_capabilities(
 	/* The PIN, offered with the account to a manager bound at version 10 where a session manager runs (ws163-p003). */
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_PIN) != 0U && system->manager_version >= KL_SYSTEM_SINCE_PIN)
 		bits |= KL_SYSTEM_HAS_PIN;
+
+	/* The security keys, offered with the PIN to a manager bound at version 14 (ws172-p003). */
+	if ((bits & KL_SYSTEM_HAS_PIN) != 0U && system->manager_version >= KL_SYSTEM_SINCE_KEYS)
+		bits |= KL_SYSTEM_HAS_KEYS;
 
 	/* The monitor, offered to a manager bound at version 2 (WS134 p012). */
 	if ((system->view.capabilities & KL_SYSTEM_CAPABILITY_MONITOR) != 0U && system->manager_version >= 2U)
@@ -1176,6 +1187,131 @@ kl_system_account_enrolled(
 }
 
 /*
+ * Copies the user's security keys the compositor last told (ws172-p003).
+ */
+size_t
+kl_system_account_keys(
+	const struct kl_system *system,
+	struct kl_system_key *keys,
+	size_t capacity)
+{
+	size_t count;
+
+	/* None before the compositor told them. */
+	if (system == NULL)
+		return 0U;
+
+	/* As many as fit. */
+	count = system->view.key_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(keys, system->view.keys, count * sizeof(keys[0]));
+	return system->view.key_count;
+}
+
+/*
+ * Asks for the security key plugged in to be registered (ws172-p003).
+ * Nothing secret is kept here: it goes out with the next flush.
+ */
+int
+kl_system_account_add_key(
+	struct kl_system *system,
+	const char *password,
+	const char *label,
+	const char *pin,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t length;
+	int valid;
+
+	/* The keys offered. */
+	if (system == NULL || system->account == NULL || system->lost)
+		return ENOTSUP;
+	if ((kl_system_capabilities(system) & KL_SYSTEM_HAS_KEYS) == 0U)
+		return ENOTSUP;
+
+	/* One line each; a label of 1 to 32 bytes without a colon. */
+	if (password == NULL || label == NULL || pin == NULL)
+		return EINVAL;
+	valid = system_key_secret_valid(password) && system_key_secret_valid(pin) && system_key_secret_valid(label);
+	length = strlen(label);
+	if (!valid || length > KL_SYSTEM_KEY_LABEL_MAX || strchr(label, ':') != NULL)
+		return EINVAL;
+
+	/* A refusal or a touch of an earlier request is not this one's. */
+	system->view.refused_request = 0U;
+	system->view.refused_reason[0] = '\0';
+	system->view.touched = 0U;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_ADD_KEY, number, password, label, pin);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Asks for one of the user's keys to be removed by its reference (ws172-p003).
+ */
+int
+kl_system_account_remove_key(
+	struct kl_system *system,
+	const char *password,
+	const char *ref,
+	uint32_t *request)
+{
+	uint32_t number;
+	size_t length;
+	int valid;
+
+	/* The keys offered. */
+	if (system == NULL || system->account == NULL || system->lost)
+		return ENOTSUP;
+	if ((kl_system_capabilities(system) & KL_SYSTEM_HAS_KEYS) == 0U)
+		return ENOTSUP;
+
+	/* The password, and a reference that fits. */
+	if (password == NULL || ref == NULL)
+		return EINVAL;
+	valid = system_key_secret_valid(password) && system_key_secret_valid(ref);
+	length = strlen(ref);
+	if (!valid || length == 0U || length > KL_SYSTEM_KEY_REF_MAX)
+		return EINVAL;
+
+	/* A refusal of an earlier request is not this one's. */
+	system->view.refused_request = 0U;
+	system->view.refused_reason[0] = '\0';
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->account, KL_SYSTEM_ACCOUNT_REMOVE_KEY, number, password, ref);
+
+	/* Succeeded: the answer comes as a result. */
+	return 0;
+}
+
+/*
+ * Gives, once, the request whose key waits to be touched (ws172-p003):
+ * 1 with it, 0 when no touch came since.
+ */
+int
+kl_system_account_touched(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	/* None. */
+	if (system == NULL || !system->view.touched)
+		return 0;
+
+	/* Taken. */
+	system->view.touched = 0U;
+	*request = system->view.touched_request;
+	return 1;
+}
+
+/*
  * Asks for an administrator's change of the people's accounts (ws089-p026):
  * the caller's password and the operation's lines.  Neither is kept here:
  * they go out with the application's next flush.
@@ -1772,7 +1908,53 @@ system_account_enrolled(
 	if (pin != 0U)
 		system->view.enrolled_pin = 1U;
 	system->view.enrolled_keys = keys;
+
+	/* The keys told before it are the list now (ws172-p003). */
+	memcpy(system->view.keys, system->view.keys_pending, system->view.keys_pending_count * sizeof(system->view.keys[0]));
+	system->view.key_count = system->view.keys_pending_count;
+	system->view.keys_pending_count = 0U;
 	system->view.changed |= KL_SYSTEM_CHANGED_ENROLLED;
+}
+
+/* Keeps one of the user's keys until the enrolled that ends the list (ws172-p003). */
+static void
+system_account_key(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *ref,
+	const char *label)
+{
+	struct kl_system *system;
+	struct kl_system_key *key;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The next place, while there is room. */
+	system = data;
+	if (system->view.keys_pending_count >= KL_SYSTEM_KEYS_MAX)
+		return;
+	key = &system->view.keys_pending[system->view.keys_pending_count];
+	system_view_copy(key->ref, sizeof(key->ref), ref);
+	system_view_copy(key->label, sizeof(key->label), label);
+	system->view.keys_pending_count++;
+}
+
+/* Keeps that a key waits to be touched for an addition (ws172-p003). */
+static void
+system_account_touch(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The request, told once. */
+	system = data;
+	system->view.touched = 1U;
+	system->view.touched_request = request;
+	system->view.changed |= KL_SYSTEM_CHANGED_TOUCH;
 }
 
 /* Keeps an answered request of any object. */
@@ -2013,4 +2195,22 @@ system_number(
 	if (request != NULL)
 		*request = number;
 	return number;
+}
+
+/* Tells whether a string goes as one line: not empty, at most KL_SYSTEM_PASSWORD_MAX bytes, no line end. */
+static int
+system_key_secret_valid(
+	const char *secret)
+{
+	size_t length;
+	size_t clean;
+
+	/* Its length, up to a line end. */
+	length = strlen(secret);
+	clean = strcspn(secret, "\n");
+	if (length == 0U || length > KL_SYSTEM_PASSWORD_MAX || clean != length)
+		return 0;
+
+	/* One line. */
+	return 1;
 }

@@ -143,6 +143,18 @@ main(void)
 	output[written] = '\0';
 	expect(error == 0 && strstr(output, ":AAAA:") != NULL, "another name's ID is not kei's key");
 
+	/* A line's fields and a key's reference. */
+	error = passkey_record_field("kei:1000:fido2:AAAA:BBBB:3:zedbsd.login:YubiKey 5:2026-10-05", 7U, line, sizeof(line));
+	expect(error == 0 && strcmp(line, "YubiKey 5") == 0, "the label field");
+	error = passkey_record_field("kei:1000:fido2:AAAA:BBBB:3:zedbsd.login:YubiKey 5:2026-10-05", 8U, line, sizeof(line));
+	expect(error == 0 && strcmp(line, "2026-10-05") == 0, "the last field");
+	error = passkey_record_field("kei:1000:pin:hash", 5U, line, sizeof(line));
+	expect(error == ENOENT, "no such field");
+	error = passkey_record_field("kei:1000:fido2:AAAA", 3U, line, 4U);
+	expect(error == ENAMETOOLONG, "a field too long");
+	passkey_record_ref("AAAA", line, PASSKEY_REF_SIZE);
+	expect(strcmp(line, "8943628b9f33b719") == 0, "a key's reference (FNV-1a)");
+
 	if (failures != 0) {
 		printf("passkey-host-test: FAIL (%u)\n", failures);
 		return 1;
