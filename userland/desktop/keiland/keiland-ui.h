@@ -1466,6 +1466,8 @@ int kl_button(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const
 int kl_button_width(const struct kl_style *style, const char *label);
 int kl_switch(struct kl_ui *ui, const struct kl_style *style, uint32_t id, int x, int y, int *on, unsigned flags);
 int kl_slider(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, double minimum, double maximum, double step, double *value);
+/* KL_VERSION 48 (ws090-p023): a slider with flags (KL_BUTTON_DISABLED: faded, no input). */
+int kl_slider_flags(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, double minimum, double maximum, double step, double *value, unsigned flags);
 void kl_field_set(struct kl_field *field, const char *text);
 unsigned kl_field(struct kl_ui *ui, const struct kl_style *style, uint32_t id, const struct kl_rect *rect, struct kl_field *field, const char *placeholder);
 void kl_text_area_set(struct kl_text_area *area, const char *text);
