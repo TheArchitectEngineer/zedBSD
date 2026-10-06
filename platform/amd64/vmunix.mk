@@ -824,6 +824,25 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
 endef
 $(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
+# Static programs (the class static, ws168-p002): linked with the static C
+# library alone and no runtime linker, as a child that sandbox_spawn starts
+# needs (it opens no file, so it cannot load a shared library).
+USER_STATIC_COMMANDS := $(foreach program,$(filter $(ZEDBSD_USER_PROGRAMS),$(USERLAND_PACKAGES)),\
+	$(if $(filter static,$(USERLAND_$(program)_CLASS)),$(program)))
+
+define AMD64_USER_STATIC_COMMAND
+$(BUILD)/bin/$(1): $(AMD64_USER_LIBC_OBJS) $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user64,$(1)) \
+	$(AMD64_PLATFORM)/user.ld $(AMD64_USER_ELF_CHECK)
+	@mkdir -p $$(dir $$@)
+	$(LD) -m elf_x86_64 --gc-sections -nostdlib -static \
+ -z max-page-size=4096 -z stack-size=0x100000 \
+ -T $(AMD64_PLATFORM)/user.ld $(AMD64_USER_LIBC_OBJS) \
+ $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user64,$(1)) -o $$@
+	@test -z "$$$$($(NM) -u $$@)" || { $(NM) -u $$@; exit 1; }
+	$(NOCT) --path=tools/build $(AMD64_USER_ELF_CHECK) --machine amd64 $$@
+endef
+$(foreach command,$(USER_STATIC_COMMANDS),\
+	$(eval $(call AMD64_USER_STATIC_COMMAND,$(command))))
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
 DYNAMIC_CPPFLAGS := -nostdinc -I. -Iinclude \
@@ -1952,6 +1971,8 @@ AMD64_ARCH_INPUTS += $(addprefix $(BUILD)/bin/,$(USERLAND_SELECTED_NETWORK_PROGR
 AMD64_ARCH_FILES += $(foreach command,$(USERLAND_SELECTED_NETWORK_PROGRAMS),--file $(call zedbsd_userland_destination,$(command))=$(BUILD)/bin/$(command))
 AMD64_ARCH_INPUTS += $(USER_BASIC_TARGETS)
 AMD64_ARCH_FILES += $(foreach command,$(USER_BASIC_COMMANDS),--file $(call zedbsd_userland_destination,$(command))=$(BUILD)/bin/$(command))
+AMD64_ARCH_INPUTS += $(addprefix $(BUILD)/bin/,$(USER_STATIC_COMMANDS))
+AMD64_ARCH_FILES += $(foreach command,$(USER_STATIC_COMMANDS),--file $(call zedbsd_userland_destination,$(command))=$(BUILD)/bin/$(command))
 AMD64_ARCH_FILES += $(ZEDBSD_USERLAND_FILE_MODES)
 AMD64_ARCH_INPUTS += $(ZEDBSD_ACCOUNT_INPUTS)
 AMD64_ARCH_FILES += $(ZEDBSD_ACCOUNT_FILES)
