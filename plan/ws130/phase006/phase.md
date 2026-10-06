@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p006`
 Parent: [WS130](../ws.md)
-Status: uncleared（2026-10-07 T1-289 FAIL 3 行: the secret・stable after a restart ほか、新しい guest で p006 だけでも同じ。P1 が直す）（旧: test-wait（q832、P1、2026-10-07: 正常系を実装、host の試験 PASS、T1 の試験待ち））
+Status: test-wait（2026-10-07 P1: T1-289 FAIL（/var/db が無く秘密を保存できない）の修正、再試験待ち。旧: uncleared（T1-289 FAIL 3 行）、test-wait（正常系を実装、host PASS））
 設計: [p001](../phase001/phase.md) §4、H4（RFC 7217）・H5（DNS の順）（2026-10-05 ユーザー決定）
 依存: p002（kernel の RA の事象）、[p005](../phase005/phase.md)（`net.conf` の `ipv6:`、T1-287）
 
