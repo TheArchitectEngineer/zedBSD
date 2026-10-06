@@ -35,8 +35,8 @@ struct about_row {
 	const char *value;
 };
 
-static int about_hero(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static int about_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *title, const struct about_row *rows, int count);
+static int about_hero(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static int about_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, const char *title, const struct about_row *rows, int count);
 static int about_add(struct about_row *rows, int count, const char *label, const char *value);
 static void about_uptime(uint64_t milliseconds, char *text, size_t size);
 
@@ -47,7 +47,7 @@ static void about_uptime(uint64_t milliseconds, char *text, size_t size);
 int
 se_about_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -95,13 +95,13 @@ se_about_draw(
 static int
 about_hero(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
-	struct fm_text_line name;
-	struct fm_text_line tagline;
+	struct kl_text_line name;
+	struct kl_text_line tagline;
 	int left;
 	int baseline;
 
@@ -112,15 +112,15 @@ about_hero(
 	se_mark_draw(canvas, x + 28, top + (ABOUT_HERO_HEIGHT - (int)ABOUT_MARK) / 2, ABOUT_MARK, 1.0f);
 
 	/* The word Kei (three letters, never a lone K), in slate, beside the mark. */
-	fm_text_metrics(app->text, ABOUT_TEXT_NAME, &name);
-	fm_text_metrics(app->text, ABOUT_TEXT_TAGLINE, &tagline);
+	kl_text_metrics(app->text, ABOUT_TEXT_NAME, &name);
+	kl_text_metrics(app->text, ABOUT_TEXT_TAGLINE, &tagline);
 	left = x + 28 + (int)ABOUT_MARK + 24;
 	baseline = top + (ABOUT_HERO_HEIGHT - name.height - 6 - tagline.height) / 2 + name.ascent;
-	(void)fm_text_draw(app->text, canvas, left, baseline, "Kei", 3U, ABOUT_TEXT_NAME, 0, SE_COLOR_TITLE);
+	(void)kl_text_draw(app->text, canvas, left, baseline, "Kei", 3U, ABOUT_TEXT_NAME, 0, SE_COLOR_TITLE);
 
 	/* The tagline under it: the kernel's name as it is written. */
 	baseline += name.descent + 6 + tagline.ascent;
-	(void)fm_text_draw_fit(app->text, canvas, left, baseline, "powered by zedBSD", ABOUT_TEXT_TAGLINE, 0, width - (left - x) - 20, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, left, baseline, "powered by zedBSD", ABOUT_TEXT_TAGLINE, 0, width - (left - x) - 20, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the card. */
 	return top + ABOUT_HERO_HEIGHT;
@@ -130,7 +130,7 @@ about_hero(
 static int
 about_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,

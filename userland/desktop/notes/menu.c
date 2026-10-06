@@ -7,7 +7,7 @@
 
 /*
  * The menus of Notes: File, Edit, Page, Tool and View (ws175-p008: Edit's
- * images of the PDF and Tool's Select).
+ * images and text of the PDF, and Tool's Select and Text).
  *
  * The compositor draws them from the table given to libkeiland's window
  * (kl_window_set_menu, WS131 p018; the System Menu, WS070) and runs their
@@ -52,6 +52,7 @@
 #define MENU_REPLACE_IMAGE	24U
 #define MENU_DELETE_OBJECT	25U
 #define MENU_RESET_OBJECT	26U
+#define MENU_EDIT_TEXT		27U
 
 /* Page. */
 #define MENU_PREVIOUS_PAGE	30U
@@ -62,6 +63,7 @@
 #define MENU_HIGHLIGHTER	41U
 #define MENU_ERASER		42U
 #define MENU_SELECT		43U
+#define MENU_TEXT		44U
 
 /* View. */
 #define MENU_FULLSCREEN		50U
@@ -84,6 +86,7 @@ static const struct kl_menu_entry menu_items[] = {
 	{ MENU_UNDO, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Undo", NOTES_ACTION_UNDO, KL_MENU_ROLE_UNDO, KL_MENU_CTRL, 'z' },
 	{ MENU_REDO, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Redo", NOTES_ACTION_REDO, KL_MENU_ROLE_REDO, KL_MENU_CTRL | KL_MENU_SHIFT, 'z' },
 	{ MENU_EDIT_LINE, MENU_EDIT, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_EDIT_TEXT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Edit Text", NOTES_ACTION_EDIT_TEXT, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_INSERT_IMAGE, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Insert Image...", NOTES_ACTION_INSERT_IMAGE, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_REPLACE_IMAGE, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Replace Image...", NOTES_ACTION_REPLACE_IMAGE, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_DELETE_OBJECT, MENU_EDIT, KL_MENU_ITEM_NORMAL, "Delete", NOTES_ACTION_DELETE_OBJECT, KL_MENU_ROLE_NONE, 0U, 0U },
@@ -96,6 +99,7 @@ static const struct kl_menu_entry menu_items[] = {
 	{ MENU_HIGHLIGHTER, MENU_TOOL, KL_MENU_ITEM_RADIO, "Marker", NOTES_ACTION_HIGHLIGHTER, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ERASER, MENU_TOOL, KL_MENU_ITEM_RADIO, "Eraser", NOTES_ACTION_ERASER, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_SELECT, MENU_TOOL, KL_MENU_ITEM_RADIO, "Select", NOTES_ACTION_SELECT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_TEXT, MENU_TOOL, KL_MENU_ITEM_RADIO, "Text", NOTES_ACTION_TEXT, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_VIEW, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "View", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_FULLSCREEN, MENU_VIEW, KL_MENU_ITEM_CHECKBOX, "Fullscreen", NOTES_ACTION_FULLSCREEN, KL_MENU_ROLE_FULLSCREEN, 0U, MENU_KEY_F11 }
 };
@@ -148,6 +152,7 @@ notes_menu_refresh(
 	menu_action_state(window, NOTES_ACTION_REPLACE_IMAGE, state->can_replace, 0);
 	menu_action_state(window, NOTES_ACTION_DELETE_OBJECT, state->selected, 0);
 	menu_action_state(window, NOTES_ACTION_RESET_OBJECT, state->can_reset, 0);
+	menu_action_state(window, NOTES_ACTION_EDIT_TEXT, state->can_edit_text, 0);
 
 	/* The page before and the page after, when there are such pages. */
 	earlier = 0;
@@ -164,6 +169,7 @@ notes_menu_refresh(
 	menu_action_state(window, NOTES_ACTION_HIGHLIGHTER, 1, menu_is(state->tool, NOTES_ACTION_HIGHLIGHTER));
 	menu_action_state(window, NOTES_ACTION_ERASER, 1, menu_is(state->tool, NOTES_ACTION_ERASER));
 	menu_action_state(window, NOTES_ACTION_SELECT, 1, menu_is(state->tool, NOTES_ACTION_SELECT));
+	menu_action_state(window, NOTES_ACTION_TEXT, 1, menu_is(state->tool, NOTES_ACTION_TEXT));
 	menu_action_state(window, NOTES_ACTION_FULLSCREEN, 1, state->fullscreen);
 }
 

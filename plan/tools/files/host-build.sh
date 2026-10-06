@@ -28,7 +28,8 @@ flags="-O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/i
 objects=""
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c \
     userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c \
-    userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c; do
+    userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c \
+    userland/desktop/libtruetype/color.c userland/desktop/libtruetype/contour.c; do
 	object="$out/obj/truetype-$(basename "$file" .c).o"
 	"$cc" $flags -Wno-error -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	objects="$objects $object"
@@ -56,6 +57,18 @@ fi
 "$cc" $flags -c userland/desktop/libkeiland/ui/scroll-bar.c -o "$out/obj/keiui-scroll-bar.o"
 objects="$objects $out/obj/keiui-scroll-bar.o"
 
+# libkeiland's canvas, text and icons (files draws with them since ws090-p009), the colour glyphs its text draws emoji with,
+# and its widgets' input and text field (the field of the name being changed, ws090-p010).
+for file in userland/desktop/libkeiland/ui/canvas.c userland/desktop/libkeiland/ui/text.c userland/desktop/libkeiland/ui/icons.c \
+    userland/desktop/libkeiland/ui/icons-line.c userland/desktop/picture/color-glyph.c \
+    userland/desktop/libkeiland/ui/ui.c userland/desktop/libkeiland/ui/field.c userland/desktop/libkeiland/ui/input.c \
+    userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/text-touch.c \
+    plan/tools/files/host-appearance.c; do
+	object="$out/obj/keiui-$(basename "$file" .c).o"
+	"$cc" $flags -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
+	objects="$objects $object"
+done
+
 # The desktop's settings (files/apps.c keeps the chosen ways there since WS135): libkeiland's cache and application
 # files and the settings' table, under the stand-in for kl_settings_* without Wayland (plan/tools/settings/host-kl-settings.c).
 for file in userland/desktop/libkeiland/settings-cache.c userland/desktop/libkeiland/settings-app.c \
@@ -80,7 +93,7 @@ objects="$objects $out/obj/keiland-translate.o"
 # The shared mount-table adapter supplies the same real table on the host and zedBSD.
 for file in $src/*.c $src/mntent/*.c; do
 	case $(basename "$file") in
-	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|dnd.c) continue ;;
+	main.c|window.c|present.c|menu.c|titlebar.c|glass.c|dnd.c|canvas.c|text.c|icons.c) continue ;;
 	esac
 	object="$out/obj/files-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"

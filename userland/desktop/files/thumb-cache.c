@@ -151,7 +151,7 @@ int
 fm_thumb_pdf(
 	const unsigned char *data,
 	size_t size,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	struct pdf_display_list *list;
 	struct pdf_document *document;
@@ -229,7 +229,7 @@ fm_thumb_pdf(
 		pixels_high = 1;
 
 	/* The image, white like paper. */
-	error = fm_image_create(image, pixels_wide, pixels_high);
+	error = kl_image_create(image, pixels_wide, pixels_high);
 	if (error != 0) {
 		cache_pdf.close(document);
 		return error;
@@ -253,7 +253,7 @@ fm_thumb_pdf(
 	/* A page that could not be drawn leaves no thumbnail. */
 	if (error != 0) {
 		fm_log("THUMB pdf stage=draw error=%d", error);
-		fm_image_release(image);
+		kl_image_release(image);
 		return EINVAL;
 	}
 
@@ -269,7 +269,7 @@ fm_thumb_pdf(
 int
 fm_thumb_cache_read(
 	const char *path,
-	struct fm_image *image)
+	struct kl_image *image)
 {
 	struct stat status;
 	char record[FM_PATH_MAX];
@@ -308,7 +308,7 @@ fm_thumb_cache_read(
 	}
 
 	/* The pixels, a row at a time. */
-	error = fm_image_create(image, width, height);
+	error = kl_image_create(image, width, height);
 	if (error != 0) {
 		fclose(file);
 		return ENOENT;
@@ -317,7 +317,7 @@ fm_thumb_cache_read(
 	/* A row of the record's bytes. */
 	row = malloc((size_t)width * 3U);
 	if (row == NULL) {
-		fm_image_release(image);
+		kl_image_release(image);
 		fclose(file);
 		return ENOENT;
 	}
@@ -339,7 +339,7 @@ fm_thumb_cache_read(
 
 	/* A short record is no thumbnail. */
 	if (y != height) {
-		fm_image_release(image);
+		kl_image_release(image);
 		return ENOENT;
 	}
 
@@ -356,7 +356,7 @@ fm_thumb_cache_read(
 int
 fm_thumb_cache_write(
 	const char *path,
-	const struct fm_image *image)
+	const struct kl_image *image)
 {
 	struct stat status;
 	char record[FM_PATH_MAX];

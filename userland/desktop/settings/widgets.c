@@ -17,6 +17,8 @@
 
 #include "../artwork/mark.h"
 
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -51,12 +53,20 @@
 #define WIDGETS_BUTTON_SIDE	16
 #define WIDGETS_TEXT_BUTTON	14U
 
-/* The keys of a US keyboard by their evdev codes (from code 2), without and with Shift; 0 is a key that types nothing. */
-static const char widgets_keys[] = "1234567890-=\0\0qwertyuiop[]\0\0asdfghjkl;'`\0\\zxcvbnm,./";
-static const char widgets_shifted[] = "!@#$%^&*()_+\0\0QWERTYUIOP{}\0\0ASDFGHJKL:\"~\0|ZXCVBNM<>?";
+/* The A key (Ctrl+A selects a field's whole text). */
+#define WIDGETS_KEY_A		30U
 
-/* The first evdev code the tables above start from. */
-#define WIDGETS_KEY_FIRST	2U
+/*
+ * The widgets' input every text field lives in (se_fields_open,
+ * ws090-p007), the text the fields are drawn with, and a canvas of one
+ * pixel a field's keys are carried out on at once (se_field_key).
+ */
+static struct kl_ui *widgets_fields;
+static struct kl_text *widgets_text;
+static uint32_t widgets_pixel;
+static struct kl_canvas widgets_tiny;
+
+static uint32_t widgets_field_id(const struct kl_field *field);
 
 /*
  * Draws a page's header: its name large and its summary under it.
@@ -65,27 +75,27 @@ static const char widgets_shifted[] = "!@#$%^&*()_+\0\0QWERTYUIOP{}\0\0ASDFGHJKL
 int
 se_page_header(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct se_page *page,
 	int x,
 	int top,
 	int width)
 {
-	struct fm_text_line title;
-	struct fm_text_line summary;
+	struct kl_text_line title;
+	struct kl_text_line summary;
 	int baseline;
 
 	/* The two lines' measurements. */
-	fm_text_metrics(app->text, WIDGETS_TEXT_TITLE, &title);
-	fm_text_metrics(app->text, WIDGETS_TEXT_SUMMARY, &summary);
+	kl_text_metrics(app->text, WIDGETS_TEXT_TITLE, &title);
+	kl_text_metrics(app->text, WIDGETS_TEXT_SUMMARY, &summary);
 
 	/* The name, bold. */
 	baseline = top + title.ascent;
-	(void)fm_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->name), WIDGETS_TEXT_TITLE, 1, width, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->name), WIDGETS_TEXT_TITLE, 1, width, SE_COLOR_TEXT);
 
 	/* The summary under it. */
 	baseline = top + title.height + 2 + summary.ascent;
-	(void)fm_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->summary), WIDGETS_TEXT_SUMMARY, 0, width, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x, baseline, kl_tr(page->summary), WIDGETS_TEXT_SUMMARY, 0, width, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the summary. */
 	return top + title.height + 2 + summary.height;
@@ -98,7 +108,7 @@ se_page_header(
 int
 se_card_begin(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -106,28 +116,28 @@ se_card_begin(
 	const char *title,
 	const char *subtitle)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	int baseline;
 
 	/* The card: a whiter veil with a bright edge. */
-	fm_canvas_round(canvas, (float)x, (float)top, (float)width, (float)height, WIDGETS_CARD_RADIUS, SE_COLOR_CARD);
-	fm_canvas_round_border(canvas, (float)x, (float)top, (float)width, (float)height, WIDGETS_CARD_RADIUS, 1.0f, SE_COLOR_CARD_EDGE);
+	kl_canvas_round(canvas, (float)x, (float)top, (float)width, (float)height, WIDGETS_CARD_RADIUS, SE_COLOR_CARD);
+	kl_canvas_round_border(canvas, (float)x, (float)top, (float)width, (float)height, WIDGETS_CARD_RADIUS, 1.0f, SE_COLOR_CARD_EDGE);
 
 	/* A card without a title starts at its margin. */
 	if (title == NULL)
 		return top + WIDGETS_CARD_PAD;
 
 	/* The title, bold. */
-	fm_text_metrics(app->text, WIDGETS_TEXT_CARD, &line);
+	kl_text_metrics(app->text, WIDGETS_TEXT_CARD, &line);
 	baseline = top + WIDGETS_CARD_PAD + line.ascent;
-	(void)fm_text_draw_fit(app->text, canvas, x + WIDGETS_CARD_PAD + 2, baseline, title, WIDGETS_TEXT_CARD, 1, width - 2 * WIDGETS_CARD_PAD, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + WIDGETS_CARD_PAD + 2, baseline, title, WIDGETS_TEXT_CARD, 1, width - 2 * WIDGETS_CARD_PAD, SE_COLOR_TEXT);
 
 	/* The subtitle under it, when there is one. */
 	if (subtitle != NULL) {
 		baseline += line.descent + 4;
-		fm_text_metrics(app->text, WIDGETS_TEXT_CARD_SUB, &line);
+		kl_text_metrics(app->text, WIDGETS_TEXT_CARD_SUB, &line);
 		baseline += line.ascent;
-		(void)fm_text_draw_fit(app->text, canvas, x + WIDGETS_CARD_PAD + 2, baseline, subtitle, WIDGETS_TEXT_CARD_SUB, 0, width - 2 * WIDGETS_CARD_PAD, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + WIDGETS_CARD_PAD + 2, baseline, subtitle, WIDGETS_TEXT_CARD_SUB, 0, width - 2 * WIDGETS_CARD_PAD, SE_COLOR_TEXT_SECONDARY);
 		return baseline + line.descent + 10;
 	}
 
@@ -165,7 +175,7 @@ se_card_height(
 int
 se_row_value(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -179,18 +189,18 @@ se_row_value(
 	int right;
 
 	/* The row's text line, and the columns of the label and the value. */
-	baseline = fm_text_center(WIDGETS_TEXT_ROW, top, WIDGETS_ROW_HEIGHT);
+	baseline = kl_text_center(WIDGETS_TEXT_ROW, top, WIDGETS_ROW_HEIGHT);
 	left = x + WIDGETS_CARD_PAD + 2;
 	right = x + width - WIDGETS_CARD_PAD;
 	label_width = (int)((float)(right - left) * WIDGETS_LABEL_SHARE);
 
 	/* The label, quiet, and the value, plain. */
-	(void)fm_text_draw_fit(app->text, canvas, left, baseline, label, WIDGETS_TEXT_ROW, 0, label_width - 12, SE_COLOR_TEXT_SECONDARY);
-	(void)fm_text_draw_fit(app->text, canvas, left + label_width, baseline, value, WIDGETS_TEXT_ROW, 0, right - left - label_width, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, left, baseline, label, WIDGETS_TEXT_ROW, 0, label_width - 12, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, left + label_width, baseline, value, WIDGETS_TEXT_ROW, 0, right - left - label_width, SE_COLOR_TEXT);
 
 	/* The line under the row, unless it is the last. */
 	if (last == 0)
-		fm_canvas_line(canvas, (float)left, (float)(top + WIDGETS_ROW_HEIGHT) - 0.5f, (float)right, (float)(top + WIDGETS_ROW_HEIGHT) - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
+		kl_canvas_line(canvas, (float)left, (float)(top + WIDGETS_ROW_HEIGHT) - 0.5f, (float)right, (float)(top + WIDGETS_ROW_HEIGHT) - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
 
 	/* The edge below the row. */
 	return top + WIDGETS_ROW_HEIGHT;
@@ -203,7 +213,7 @@ se_row_value(
  */
 void
 se_mark_draw(
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	unsigned pixels,
@@ -250,7 +260,7 @@ se_mark_draw(
 	/* Each layer in its colour, as opaque as asked. */
 	for (layer = 0; layer < KEILAND_MARK_LAYERS; layer++) {
 		alpha = (uint32_t)((float)colours[layer][1] * opacity + 0.5f);
-		fm_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, FM_RGBA(colours[layer][0], alpha));
+		kl_canvas_mask(canvas, x, y, layers[layer], (int)pixels, (int)pixels, pixels, KL_RGBA(colours[layer][0], alpha));
 	}
 }
 
@@ -262,16 +272,16 @@ se_mark_draw(
 void
 se_toggle_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int on,
 	int enabled,
 	int index)
 {
-	struct fm_rect rect;
-	fm_color track;
-	fm_color knob;
+	struct kl_rect rect;
+	kl_color track;
+	kl_color knob;
 	float knob_x;
 
 	/* The track's colour and the knob's place. */
@@ -283,17 +293,17 @@ se_toggle_draw(
 	}
 
 	/* The knob is white. */
-	knob = FM_RGB(0xffffff);
+	knob = KL_RGB(0xffffff);
 
 	/* A switch that does nothing is faded. */
 	if (enabled == 0) {
-		track = fm_color_mix(track, SE_COLOR_FADED, 0.6f);
-		knob = FM_RGB(0xf6f7f9);
+		track = kl_color_mix(track, SE_COLOR_FADED, 0.6f);
+		knob = KL_RGB(0xf6f7f9);
 	}
 
 	/* The track and the knob. */
-	fm_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_TOGGLE_WIDTH, (float)WIDGETS_TOGGLE_HEIGHT, (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, track);
-	fm_canvas_circle(canvas, knob_x, (float)y + (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, 9.5f, knob);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_TOGGLE_WIDTH, (float)WIDGETS_TOGGLE_HEIGHT, (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, track);
+	kl_canvas_circle(canvas, knob_x, (float)y + (float)WIDGETS_TOGGLE_HEIGHT * 0.5f, 9.5f, knob);
 
 	/* An enabled switch is clickable. */
 	if (enabled != 0) {
@@ -314,18 +324,18 @@ se_toggle_draw(
 void
 se_slider_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width,
 	float fraction,
 	int enabled,
 	int index,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
-	fm_color fill;
-	fm_color knob;
-	fm_color ring;
+	kl_color fill;
+	kl_color knob;
+	kl_color ring;
 	float knob_x;
 	float middle;
 
@@ -340,21 +350,21 @@ se_slider_draw(
 	knob_x = (float)x + fraction * (float)width;
 	fill = SE_COLOR_ACCENT;
 	if (enabled == 0)
-		fill = fm_color_mix(SE_COLOR_ACCENT, SE_COLOR_FADED, 0.6f);
-	fm_canvas_round(canvas, (float)x, middle - 3.0f, (float)width, 6.0f, 3.0f, SE_COLOR_RAIL);
-	fm_canvas_round(canvas, (float)x, middle - 3.0f, knob_x - (float)x, 6.0f, 3.0f, fill);
+		fill = kl_color_mix(SE_COLOR_ACCENT, SE_COLOR_FADED, 0.6f);
+	kl_canvas_round(canvas, (float)x, middle - 3.0f, (float)width, 6.0f, 3.0f, SE_COLOR_RAIL);
+	kl_canvas_round(canvas, (float)x, middle - 3.0f, knob_x - (float)x, 6.0f, 3.0f, fill);
 
 	/* The knob, with a quiet ring round it; greyed when the slider does nothing (ws089-p012 C4), so it does not look as if it could be dragged. */
-	knob = FM_RGB(0xffffff);
-	ring = FM_RGBA(0x5a6b85, 50);
+	knob = KL_RGB(0xffffff);
+	ring = KL_RGBA(0x5a6b85, 50);
 	if (enabled == 0) {
-		knob = FM_RGB(0xeef1f5);
-		ring = FM_RGBA(0x5a6b85, 24);
+		knob = KL_RGB(0xeef1f5);
+		ring = KL_RGBA(0x5a6b85, 24);
 	}
 
 	/* The ring, then the knob in it. */
-	fm_canvas_circle(canvas, knob_x, middle, 11.0f, ring);
-	fm_canvas_circle(canvas, knob_x, middle, 10.0f, knob);
+	kl_canvas_circle(canvas, knob_x, middle, 11.0f, ring);
+	kl_canvas_circle(canvas, knob_x, middle, 10.0f, knob);
 
 	/* The whole track takes presses and drags (a little taller than it looks). */
 	rect->x = x - 12;
@@ -371,7 +381,7 @@ se_slider_draw(
  */
 float
 se_slider_fraction(
-	const struct fm_rect *rect,
+	const struct kl_rect *rect,
 	int x)
 {
 	float fraction;
@@ -402,7 +412,7 @@ se_button_width(
 	int text;
 
 	/* The label and the margins. */
-	text = fm_text_width(app->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
+	text = kl_text_width(app->text, label, strlen(label), WIDGETS_TEXT_BUTTON, 1);
 
 	/* The button's width. */
 	return text + 2 * WIDGETS_BUTTON_SIDE;
@@ -417,7 +427,7 @@ se_button_width(
 int
 se_button_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	const char *label,
@@ -425,10 +435,10 @@ se_button_draw(
 	int enabled,
 	int index)
 {
-	struct fm_rect rect;
-	fm_color ground;
-	fm_color edge;
-	fm_color ink;
+	struct kl_rect rect;
+	kl_color ground;
+	kl_color edge;
+	kl_color ink;
 	int width;
 	int lit;
 
@@ -446,22 +456,22 @@ se_button_draw(
 	if (primary != 0) {
 		ground = SE_COLOR_ACCENT;
 		edge = SE_COLOR_ACCENT;
-		ink = FM_RGB(0xffffff);
+		ink = KL_RGB(0xffffff);
 	}
 
 	/* Darker under the pointer, faded when it does nothing. */
 	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
 	if (enabled != 0 && lit != 0)
-		ground = fm_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
+		ground = kl_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
 	if (enabled == 0) {
-		ground = fm_color_mix(ground, SE_COLOR_FADED, 0.6f);
+		ground = kl_color_mix(ground, SE_COLOR_FADED, 0.6f);
 		ink = SE_COLOR_TEXT_FAINT;
 	}
 
 	/* The button and its label, centred. */
-	fm_canvas_round(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
-	fm_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, edge);
-	(void)fm_text_draw(app->text, canvas, x + WIDGETS_BUTTON_SIDE, fm_text_center(WIDGETS_TEXT_BUTTON, y, WIDGETS_BUTTON_HEIGHT), label, strlen(label), WIDGETS_TEXT_BUTTON, 1, ink);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
+	kl_canvas_round_border(canvas, (float)x, (float)y, (float)width, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, edge);
+	(void)kl_text_draw(app->text, canvas, x + WIDGETS_BUTTON_SIDE, kl_text_center(WIDGETS_TEXT_BUTTON, y, WIDGETS_BUTTON_HEIGHT), label, strlen(label), WIDGETS_TEXT_BUTTON, 1, ink);
 
 	/* An enabled button is clickable. */
 	if (enabled != 0)
@@ -479,14 +489,14 @@ se_button_draw(
 void
 se_icon_button_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	unsigned glyph,
 	int index)
 {
-	struct fm_rect rect;
-	fm_color ground;
+	struct kl_rect rect;
+	kl_color ground;
 	int lit;
 
 	/* The button's square. */
@@ -499,11 +509,11 @@ se_icon_button_draw(
 	ground = SE_COLOR_CONTROL;
 	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
 	if (lit != 0)
-		ground = fm_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
+		ground = kl_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
 
 	/* The square, its edge and the picture in the middle. */
-	fm_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
-	fm_canvas_round_border(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, SE_COLOR_CONTROL_EDGE);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
+	kl_canvas_round_border(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, SE_COLOR_CONTROL_EDGE);
 	se_glyph_draw(canvas, glyph, (float)x + 6.0f, (float)y + 6.0f, (float)(WIDGETS_BUTTON_HEIGHT - 12), SE_COLOR_TEXT);
 
 	/* It is clickable. */
@@ -515,13 +525,13 @@ se_icon_button_draw(
  */
 void
 se_dot_draw(
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	float cx,
 	float cy,
-	fm_color color)
+	kl_color color)
 {
 	/* A small filled circle. */
-	fm_canvas_circle(canvas, cx, cy, 4.5f, color);
+	kl_canvas_circle(canvas, cx, cy, 4.5f, color);
 }
 
 /*
@@ -530,13 +540,13 @@ se_dot_draw(
  */
 void
 se_signal_draw(
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	float x,
 	float y,
 	int rssi,
-	fm_color color)
+	kl_color color)
 {
-	fm_color bar;
+	kl_color bar;
 	float height;
 	int bars;
 	int index;
@@ -554,9 +564,9 @@ se_signal_draw(
 	for (index = 0; index < 4; index++) {
 		bar = color;
 		if (index >= bars)
-			bar = FM_RGBA(0x8a96aa, 90);
+			bar = KL_RGBA(0x8a96aa, 90);
 		height = 4.0f + 3.5f * (float)index;
-		fm_canvas_round(canvas, x + 5.0f * (float)index, y - height, 3.0f, height, 1.0f, bar);
+		kl_canvas_round(canvas, x + 5.0f * (float)index, y - height, 3.0f, height, 1.0f, bar);
 	}
 }
 
@@ -597,112 +607,275 @@ se_bytes_text(
 }
 
 /*
- * Types a key press into a text field: a character of a US keyboard
- * (Shift held for the other of the key), or Backspace.  Returns 1 when the
- * field used the key.
+ * Opens the widgets' input the text fields live in (ws090-p007): every
+ * field of every page is libkeiland's kl_field under this one kl_ui.
+ * Returns 0, or ENOMEM.
+ */
+int
+se_fields_open(
+	struct kl_text *text)
+{
+	int error;
+
+	/* Made once. */
+	if (widgets_fields != NULL)
+		return 0;
+	widgets_fields = kl_ui_create();
+	if (widgets_fields == NULL)
+		return ENOMEM;
+
+	/* The text, and the one pixel the keys are carried out on. */
+	widgets_text = text;
+	error = kl_canvas_init(&widgets_tiny, &widgets_pixel, 1U, 1, 1);
+	if (error != 0) {
+		se_fields_close();
+		return error;
+	}
+
+	/* Succeeded: the fields can be drawn. */
+	return 0;
+}
+
+/*
+ * Closes the fields' input.
+ */
+void
+se_fields_close(void)
+{
+	/* The input and the pixel's canvas, and they are forgotten. */
+	kl_ui_destroy(widgets_fields);
+	widgets_fields = NULL;
+	kl_canvas_release(&widgets_tiny);
+}
+
+/*
+ * Begins a frame of the fields' input (before the pages are drawn).
+ */
+void
+se_fields_begin(
+	uint64_t now_us)
+{
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return;
+	kl_ui_begin(widgets_fields, now_us);
+}
+
+/*
+ * Ends a frame of the fields' input (after the pages are drawn); the keys
+ * no field took go.  Returns 1 while a field wants another frame.
+ */
+int
+se_fields_end(
+	uint64_t now_us)
+{
+	struct kl_event event;
+	int moving;
+	int taken;
+
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return 0;
+
+	/* The frame, and what no field took (the pages took their own keys before). */
+	moving = kl_ui_end(widgets_fields, now_us);
+	for (;;) {
+		taken = kl_ui_take(widgets_fields, &event);
+		if (!taken)
+			break;
+	}
+
+	/* Reports whether a field moves. */
+	return moving;
+}
+
+/*
+ * Gives the fields the pointer and an input method's text: the pointer's
+ * moves and the main button (a click puts a field's caret), and the
+ * text an input method sends for the field with the keyboard.
+ */
+void
+se_fields_input(
+	const struct se_event *event)
+{
+	struct kl_window_event text;
+
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return;
+
+	/* Each kind of input the fields take. */
+	switch (event->type) {
+	case SE_EVENT_MOTION:
+		(void)kl_ui_pointer_motion(widgets_fields, (double)event->x, (double)event->y);
+		return;
+	case SE_EVENT_BUTTON:
+		(void)kl_ui_pointer_motion(widgets_fields, (double)event->x, (double)event->y);
+		if (event->button == SE_BUTTON_LEFT)
+			(void)kl_ui_pointer_button(widgets_fields, event->pressed, event->time * 1000U);
+		return;
+	case SE_EVENT_TEXT:
+	case SE_EVENT_TEXT_DELETE:
+	case SE_EVENT_PREEDIT:
+		break;
+	default:
+		return;
+	}
+
+	/* An input method's text, as the window gave it. */
+	memset(&text, 0, sizeof(text));
+	text.kind = KL_WINDOW_TEXT_COMMIT;
+	if (event->type == SE_EVENT_TEXT_DELETE)
+		text.kind = KL_WINDOW_TEXT_DELETE;
+	else if (event->type == SE_EVENT_PREEDIT)
+		text.kind = KL_WINDOW_TEXT_PREEDIT;
+	memcpy(text.text, event->text, sizeof(text.text));
+	text.text[sizeof(text.text) - 1U] = '\0';
+	text.before = event->before;
+	text.begin = -1;
+	text.end = -1;
+	(void)kl_ui_text(widgets_fields, &text);
+}
+
+/*
+ * Reports the fields' input, for the window's text input (main.c,
+ * kl_ui_window_text); NULL before se_fields_open.
+ */
+struct kl_ui *
+se_fields_ui(void)
+{
+	/* Succeeded: the input, or none. */
+	return widgets_fields;
+}
+
+/*
+ * Types a key press into a text field (it gets the keyboard): a character,
+ * Left, Right, Home, End, Backspace, Delete, Ctrl+A.  Enter, Esc and Tab
+ * are the pages' own.  The field takes it in the next frame.  Returns 1
+ * when the key is the field's.
  */
 int
 se_field_key(
-	struct se_field *field,
+	struct kl_field *field,
 	const struct se_event *event)
 {
-	unsigned offset;
-	char typed;
+	struct kl_style style;
+	struct kl_rect rect;
+	uint32_t character;
+	uint32_t id;
+	int editing;
 
-	/* A key with Ctrl, Alt or Super held is a shortcut, not a character. */
-	if ((event->modifiers & (SE_MOD_CTRL | SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
+	/* Nothing without the input; Alt and Super are commands, Control's only key is A. */
+	if (widgets_fields == NULL)
+		return 0;
+	if ((event->modifiers & (SE_MOD_ALT | SE_MOD_SUPER)) != 0U)
+		return 0;
+	if ((event->modifiers & SE_MOD_CTRL) != 0U && event->key != WIDGETS_KEY_A)
 		return 0;
 
-	/* Backspace takes the last character away, all its bytes. */
-	if (event->key == SE_KEY_BACKSPACE) {
-		if (field->length > 0)
-			se_field_delete_before(field, 1U);
-
-		/* The field used the key, also when it was empty. */
-		return 1;
+	/* The editing keys, or a key that types a character. */
+	editing = 0;
+	switch (event->key) {
+	case KL_KEY_LEFT:
+	case KL_KEY_RIGHT:
+	case KL_KEY_HOME:
+	case KL_KEY_END:
+	case KL_KEY_BACKSPACE:
+	case KL_KEY_DELETE:
+	case WIDGETS_KEY_A:
+		editing = 1;
+		break;
+	default:
+		break;
 	}
-
-	/* The space. */
-	typed = '\0';
-	if (event->key == SE_KEY_SPACE)
-		typed = ' ';
-
-	/* The key's character, shifted when Shift is held. */
-	if (event->key >= WIDGETS_KEY_FIRST && event->key < WIDGETS_KEY_FIRST + sizeof(widgets_keys) - 1U) {
-		offset = event->key - WIDGETS_KEY_FIRST;
-		typed = widgets_keys[offset];
-		if ((event->modifiers & SE_MOD_SHIFT) != 0U)
-			typed = widgets_shifted[offset];
-	}
-
-	/* A key that types nothing is not the field's. */
-	if (typed == '\0')
+	character = kl_key_character(event->key, event->modifiers);
+	if (!editing && character == 0U)
 		return 0;
 
-	/* A full field keeps what it has. */
-	if (field->length + 1U >= sizeof(field->text))
-		return 1;
+	/*
+	 * The field has the keyboard, and the key is carried out at once in a
+	 * frame of the field alone on one pixel, so that the page reads the
+	 * new text before its next key (Enter right after the typing).
+	 */
+	id = widgets_field_id(field);
+	kl_ui_set_focus(widgets_fields, id, 0U);
+	(void)kl_ui_key(widgets_fields, event->key, 1, event->modifiers);
+	memset(&style, 0, sizeof(style));
+	style.canvas = &widgets_tiny;
+	style.text = widgets_text;
+	style.theme = kl_theme_default();
+	rect.x = 0;
+	rect.y = 0;
+	rect.width = 1;
+	rect.height = 1;
+	kl_ui_begin(widgets_fields, event->time * 1000U);
+	(void)kl_field(widgets_fields, &style, id, &rect, field, NULL);
+	(void)kl_ui_end(widgets_fields, event->time * 1000U);
 
-	/* The character at the end. */
-	field->text[field->length] = typed;
-	field->length++;
-	field->text[field->length] = '\0';
-
-	/* The field used the key. */
+	/* Succeeded: the field's key. */
 	return 1;
 }
 
 /*
- * Puts an input method's committed text at the end of a field (ws090-p022):
- * without control characters, as much as fits, cut at a character's start.
+ * Draws a text field in a rectangle (libkeiland's: white, the accent's
+ * edge with the keyboard, the caret, the selection, an input method's
+ * composed text) with the keyboard when focused says the page gave it, of
+ * a kind (SE_FIELD_*: a secret one as dots and, like a plain one, without
+ * an input method), a placeholder while it is empty.  Returns what happened
+ * (KL_FIELD_*).
  */
-void
-se_field_insert(
-	struct se_field *field,
-	const char *text)
+unsigned
+se_field_draw(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	struct kl_field *field,
+	const struct kl_rect *rect,
+	const char *placeholder,
+	unsigned kind,
+	int focused)
 {
-	size_t at;
-	size_t length;
-	unsigned char byte;
+	struct kl_style style;
+	uint32_t id;
+	int has;
+	unsigned changes;
 
-	/* Each byte that is no control character, while there is room. */
-	length = field->length;
-	for (at = 0; text[at] != '\0' && length + 1U < sizeof(field->text); at++) {
-		byte = (unsigned char)text[at];
-		if (byte < 0x20U || byte == 0x7fU)
-			continue;
-		field->text[length] = (char)byte;
-		length++;
-	}
+	/* Nothing without the input. */
+	if (widgets_fields == NULL)
+		return 0U;
 
-	/* A character the room cut goes whole. */
-	while (((unsigned char)text[at] & 0xc0U) == 0x80U && length > field->length) {
-		at--;
-		length--;
-	}
-	field->text[length] = '\0';
-	field->length = length;
+	/* Its kind, and the page's keyboard decides the field's. */
+	field->secret = 0;
+	if (kind == SE_FIELD_SECRET)
+		field->secret = 1;
+	field->plain = 0;
+	if (kind == SE_FIELD_PLAIN)
+		field->plain = 1;
+	id = widgets_field_id(field);
+	has = kl_ui_has_focus(widgets_fields, id, 0U);
+	if (focused && !has)
+		kl_ui_set_focus(widgets_fields, id, 0U);
+	if (!focused && has)
+		kl_ui_clear_focus(widgets_fields);
+
+	/* libkeiland's field in Settings' canvas and text. */
+	memset(&style, 0, sizeof(style));
+	style.canvas = canvas;
+	style.text = app->text;
+	style.theme = kl_theme_default();
+	changes = kl_field(widgets_fields, &style, id, rect, field, placeholder);
+	return changes;
 }
 
-/*
- * Deletes at least a number of bytes from a field's end, back to a
- * character's start (Backspace, or an input method's deletion).
- */
-void
-se_field_delete_before(
-	struct se_field *field,
-	size_t bytes)
+/* Reports a field's widget ID: where it lives in the program (each field is a part of the application's state, kept for its life). */
+static uint32_t
+widgets_field_id(
+	const struct kl_field *field)
 {
-	/* The bytes, or all of them. */
-	if (bytes >= field->length)
-		field->length = 0;
-	else
-		field->length -= bytes;
+	uintptr_t place;
 
-	/* Back to a character's start. */
-	while (field->length > 0 && ((unsigned char)field->text[field->length] & 0xc0U) == 0x80U)
-		field->length--;
-	field->text[field->length] = '\0';
+	/* Its address's low bits, never 0. */
+	place = (uintptr_t)field;
+	return (uint32_t)(place & 0xffffffffU) | 1U;
 }
 
 /*
@@ -710,7 +883,7 @@ se_field_delete_before(
  */
 void
 se_field_clear(
-	struct se_field *field)
+	struct kl_field *field)
 {
 	volatile char *byte;
 	size_t index;
@@ -720,6 +893,9 @@ se_field_clear(
 	for (index = 0; index < sizeof(field->text); index++)
 		byte[index] = '\0';
 
-	/* Nothing typed. */
+	/* Nothing typed, the caret at the start. */
 	field->length = 0;
+	field->caret = 0;
+	field->anchor = 0;
+	field->scroll = 0;
 }

@@ -102,7 +102,7 @@ static char main_desktop_folder[FM_PATH_MAX];
 static struct fm_window main_window;
 static struct fm_present main_present;
 static struct fm_app main_app;
-static struct fm_text main_text;
+static struct kl_text main_text;
 
 /*
  * The touch screen (touch.c, ws081-p010): the fingers' gestures and
@@ -161,7 +161,7 @@ static struct fm_titlebar_state main_titlebar_state;
  * the canvas over it.  They are remade when the window changes size.
  */
 static uint32_t *main_pixels;
-static struct fm_canvas main_canvas;
+static struct kl_canvas main_canvas;
 
 /* The current run's startup samples; zero means a step has not been recorded yet. */
 static struct main_startup main_startup;
@@ -226,7 +226,7 @@ main(
 	}
 
 	/* The fonts. */
-	error = fm_text_open(&main_text, options.font, options.fallback);
+	error = kl_text_open(&main_text, options.font, options.fallback);
 	if (error != 0) {
 		fprintf(stderr, "ZFILES FAILED operation=font path=%s error=%d\n", options.font, error);
 		return 1;
@@ -259,7 +259,7 @@ main(
 	/* A window that could not be opened ends the program. */
 	if (status != 0) {
 		fprintf(stderr, "ZFILES FAILED operation=window error=%d\n", errno);
-		fm_text_close(&main_text);
+		kl_text_close(&main_text);
 		return 1;
 	}
 
@@ -277,7 +277,7 @@ main(
 		fprintf(stderr, "ZFILES FAILED operation=%s result=%d\n", main_present.operation, (int)result);
 		fm_present_close(&main_present);
 		fm_window_close(&main_window);
-		fm_text_close(&main_text);
+		kl_text_close(&main_text);
 		return 1;
 	}
 
@@ -289,7 +289,7 @@ main(
 		fprintf(stderr, "ZFILES FAILED operation=app error=%d\n", error);
 		fm_present_close(&main_present);
 		fm_window_close(&main_window);
-		fm_text_close(&main_text);
+		kl_text_close(&main_text);
 		return 1;
 	}
 
@@ -312,7 +312,7 @@ main(
 			fm_app_release(&main_app);
 			fm_present_close(&main_present);
 			fm_window_close(&main_window);
-			fm_text_close(&main_text);
+			kl_text_close(&main_text);
 			return 1;
 		}
 	}
@@ -356,12 +356,12 @@ main(
 	fm_glass_close(&main_glass);
 	fm_desktop_release(&main_app.desk);
 	fm_app_release(&main_app);
-	fm_canvas_release(&main_canvas);
+	kl_canvas_release(&main_canvas);
 	free(main_pixels);
 	fm_present_close(&main_present);
 	fm_touch_close(&main_touch);
 	fm_window_close(&main_window);
-	fm_text_close(&main_text);
+	kl_text_close(&main_text);
 
 	/* Reports how the run ended. */
 	if (status != 0)
@@ -713,6 +713,9 @@ main_frame(void)
 			fm_ui_draw(&main_app, &main_canvas);
 		}
 
+		/* Enter or Esc in the field of the name being changed, after its frame (rename.c). */
+		fm_rename_take(&main_app);
+
 		/* The time drawing took, the first frame's kept for the start-up log. */
 		drawn = fm_clock();
 		if (main_startup.draw_ms == 0U)
@@ -782,7 +785,7 @@ main_canvas_make(void)
 	int error;
 
 	/* The old canvas and memory go, and with them the desktop's kept frame. */
-	fm_canvas_release(&main_canvas);
+	kl_canvas_release(&main_canvas);
 	free(main_pixels);
 	fm_desktop_repaint(&main_app.desk);
 
@@ -793,7 +796,7 @@ main_canvas_make(void)
 		return -1;
 
 	/* The canvas over it. */
-	error = fm_canvas_init(&main_canvas, main_pixels, (size_t)main_present.extent.width, (int)main_present.extent.width, (int)main_present.extent.height);
+	error = kl_canvas_init(&main_canvas, main_pixels, (size_t)main_present.extent.width, (int)main_present.extent.width, (int)main_present.extent.height);
 	if (error != 0)
 		return -1;
 
@@ -1347,25 +1350,21 @@ main_open_context_menus(void)
 }
 
 /*
- * Asks for the window's text input while a name is being changed, with
- * where its cursor was drawn, so that an input method's text reaches it
- * (ws090-p022); off otherwise, and what was being composed goes.
+ * Asks for the window's text input while the field of the name being
+ * changed has the keyboard, with where its caret is, so that an input
+ * method's text reaches it (ws090-p022, p010); off otherwise.
  */
 static void
 main_text_input(void)
 {
 	/* No name being changed: off. */
-	if (main_app.focus != FM_FOCUS_RENAME) {
-		main_app.preedit[0] = '\0';
-		main_app.caret_known = 0;
+	if (main_app.focus != FM_FOCUS_RENAME || main_app.rename_ui == NULL) {
 		kl_window_text_input(main_window.kui, 0);
 		return;
 	}
 
-	/* On, at the name's cursor once it was drawn. */
-	kl_window_text_input(main_window.kui, 1);
-	if (main_app.caret_known)
-		kl_window_text_cursor(main_window.kui, main_app.caret.x, main_app.caret.y, main_app.caret.width, main_app.caret.height);
+	/* On while its field has the keyboard, at its caret (libkeiland's field, rename.c). */
+	kl_ui_window_text(main_app.rename_ui, main_window.kui);
 }
 
 /* Hands an input to the desktop (files --desktop) or to the window's file manager. */

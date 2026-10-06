@@ -48,7 +48,7 @@ static void check_menus(const char *temporary);
 static int context_has(const struct fm_context *context, const char *label);
 static void check_drag(const char *temporary);
 static void check_partial(const char *temporary);
-static int partial_same(struct fm_app *app, struct fm_canvas *canvas, uint32_t *whole, const char *text);
+static int partial_same(struct fm_app *app, struct kl_canvas *canvas, uint32_t *whole, const char *text);
 static int saved_at(const struct fm_desktop *desk, const char *name, int column, int row);
 static void check_label(void);
 static void check_resize(void);
@@ -67,7 +67,7 @@ main(
 	struct fm_desktop_saved saved[3];
 	struct fm_desktop_saved *read;
 	struct fm_desktop desk;
-	struct fm_rect rect;
+	struct kl_rect rect;
 	char config[1024];
 	char path[1200];
 	size_t count;
@@ -420,7 +420,7 @@ check_menus(
 	tab->cursor = 1 - index;
 	fm_desktop_action(&app, FM_ACTION_RENAME);
 	check(app.focus == FM_FOCUS_RENAME, "Rename opens the field");
-	fm_field_set(&app.rename, "todo.txt");
+	kl_field_set(&app.rename, "todo.txt");
 	fm_desktop_rename_end(&app, 1);
 	snprintf(renamed, sizeof(renamed), "%s/todo.txt", folder);
 	error = lstat(renamed, &status);
@@ -571,8 +571,8 @@ check_partial(
 	const char *temporary)
 {
 	static struct fm_app app;
-	static struct fm_text text;
-	struct fm_canvas canvas;
+	static struct kl_text text;
+	struct kl_canvas canvas;
 	struct fm_tab *tab;
 	char folder[1024];
 	char file[1200];
@@ -605,7 +605,7 @@ check_partial(
 	}
 
 	/* The fonts, a 1280x766 canvas and the model in the desktop mode. */
-	error = fm_text_open(&text, "build/ws035-fonts/Mahora-Regular.ttf", NULL);
+	error = kl_text_open(&text, "userland/desktop/fonts/Mahora-Regular.ttf", NULL);
 	check(error == 0, "partial: the font");
 	if (error != 0)
 		return;
@@ -625,7 +625,7 @@ check_partial(
 	}
 
 	/* Attaches the canvas to the allocated pixel storage. */
-	error = fm_canvas_init(&canvas, pixels, 1280U, 1280, 766);
+	error = kl_canvas_init(&canvas, pixels, 1280U, 1280, 766);
 	check(error == 0, "partial: the canvas");
 	if (error != 0)
 		return;
@@ -671,10 +671,10 @@ check_partial(
 	/* The model and the canvas are done with. */
 	fm_desktop_release(&app.desk);
 	fm_app_release(&app);
-	fm_canvas_release(&canvas);
+	kl_canvas_release(&canvas);
 	free(pixels);
 	free(whole);
-	fm_text_close(&text);
+	kl_text_close(&text);
 
 	/* Succeeded: all retained-canvas comparisons finished. */
 	return;
@@ -688,7 +688,7 @@ check_partial(
 static int
 partial_same(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	uint32_t *whole,
 	const char *text)
 {
@@ -746,7 +746,7 @@ check_label(void)
 	};
 	char first[FM_DESKTOP_LABEL_MAX];
 	char second[FM_DESKTOP_LABEL_MAX];
-	struct fm_text text;
+	struct kl_text text;
 	size_t index;
 	size_t length;
 	int fits;
@@ -754,7 +754,7 @@ check_label(void)
 	int error;
 
 	/* The desktop's font (the fallback for the Japanese name). */
-	error = fm_text_open(&text, "build/ws035-fonts/Mahora-Regular.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf");
+	error = kl_text_open(&text, "userland/desktop/fonts/Mahora-Regular.ttf", "userland/desktop/fonts/DroidSansFallbackFull.ttf");
 	check(error == 0, "label: the fonts");
 	if (error != 0)
 		return;
@@ -765,9 +765,9 @@ check_label(void)
 
 		/* Checks the second line only when the first fits, preserving the short circuit. */
 		fits = 0;
-		width = fm_text_width(&text, first, strlen(first), 13U, 0);
+		width = kl_text_width(&text, first, strlen(first), 13U, 0);
 		if (width <= 88) {
-			width = fm_text_width(&text, second, strlen(second), 13U, 0);
+			width = kl_text_width(&text, second, strlen(second), 13U, 0);
 			if (width <= 88)
 				fits = 1;
 		}
@@ -801,7 +801,7 @@ check_label(void)
 	}
 
 	/* The fonts are done with. */
-	fm_text_close(&text);
+	kl_text_close(&text);
 
 	/* Succeeded: the label checks released their fonts. */
 	return;

@@ -237,6 +237,19 @@ i=0; while ! grep -aq 'ZFILES READY' /tmp/zdesktop.log && [ \$i -lt 60 ]; do sle
 		expect_log /tmp/zdesktop.log 'ZFILES DESKTOP ready items=100 cells=78 .* hidden=22$'
 		shot overflow.png
 		guest "grep -aE 'DESKTOP (prune|ready)' /tmp/zdesktop.log" > "$out/prune-log.txt"
+		# The overflow's files go again, so that the steps after this one find the desktop as it was (T1-257: the menu
+		# step's empty place at 700,400 was an icon of the overflow).
+		before=$(guest "grep -ac 'ZFILES DESKTOP ready items=5 ' /tmp/zdesktop.log" | tail -1)
+		guest 'rm -f /tmp/dhome/Desktop/overflow-*.txt' >/dev/null
+		tries=0
+		now=0
+		while [ $tries -lt 10 ]; do
+			now=$(guest "grep -ac 'ZFILES DESKTOP ready items=5 ' /tmp/zdesktop.log" | tail -1)
+			[ "${now:-0}" -gt "${before:-0}" ] 2>/dev/null && break
+			tries=$((tries + 1))
+			sleep 1
+		done
+		[ "${now:-0}" -gt "${before:-0}" ] 2>/dev/null && echo "overflow gone: ready items=5 ok" || { echo "overflow gone: ready items=5 MISSING"; status=1; }
 		;;
 	menu)
 		# The desktop surface is at y=44 (under the system bar): a screen point's surface y is 44 less.  Icons from the top right:

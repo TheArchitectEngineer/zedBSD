@@ -55,8 +55,8 @@
 #define LABEL_ELLIPSIS "\xe2\x80\xa6"
 
 static int layout_saved_index(const struct fm_desktop_saved *saved, size_t count, const char *name);
-static size_t label_prefix(struct fm_text *text, const char *name, size_t length, int width, unsigned pixels);
-static size_t label_suffix(struct fm_text *text, const char *name, size_t length, size_t from, int width, unsigned pixels);
+static size_t label_prefix(struct kl_text *text, const char *name, size_t length, int width, unsigned pixels);
+static size_t label_suffix(struct kl_text *text, const char *name, size_t length, size_t from, int width, unsigned pixels);
 static size_t label_next(const char *name, size_t length, size_t at);
 static size_t label_previous(const char *name, size_t at);
 
@@ -95,7 +95,7 @@ fm_desktop_cell_rect(
 	int row,
 	int width,
 	int height,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
 	int columns;
 	int rows;
@@ -686,7 +686,7 @@ fm_desktop_release(
  */
 void
 fm_desktop_label(
-	struct fm_text *text,
+	struct kl_text *text,
 	const char *name,
 	int width,
 	unsigned pixels,
@@ -707,7 +707,7 @@ fm_desktop_label(
 		length = label_previous(name, FM_DESKTOP_LABEL_MAX - sizeof(LABEL_ELLIPSIS));
 
 	/* The whole name on one line. */
-	wide = fm_text_width(text, name, length, pixels, 0);
+	wide = kl_text_width(text, name, length, pixels, 0);
 	if (wide <= width) {
 		memcpy(first, name, length);
 		first[length] = '\0';
@@ -734,7 +734,7 @@ fm_desktop_label(
 	if (space < length &&
 	    name[space] == ' ' &&
 	    space > 0U) {
-		wide = fm_text_width(text, name + space + 1U, length - space - 1U, pixels, 0);
+		wide = kl_text_width(text, name + space + 1U, length - space - 1U, pixels, 0);
 		if (wide <= width) {
 			memcpy(first, name, space);
 			first[space] = '\0';
@@ -749,7 +749,7 @@ fm_desktop_label(
 		head = label_next(name, length, 0U);
 	memcpy(first, name, head);
 	first[head] = '\0';
-	wide = fm_text_width(text, name + head, length - head, pixels, 0);
+	wide = kl_text_width(text, name + head, length - head, pixels, 0);
 	if (wide <= width) {
 		memcpy(second, name + head, length - head);
 		second[length - head] = '\0';
@@ -791,7 +791,7 @@ layout_saved_index(
 /* Finds how many bytes of a name's start fit a width (whole characters; 0 when not even one does). */
 static size_t
 label_prefix(
-	struct fm_text *text,
+	struct kl_text *text,
 	const char *name,
 	size_t length,
 	int width,
@@ -807,7 +807,7 @@ label_prefix(
 		next = label_next(name, length, fits);
 		if (next == fits)
 			break;
-		wide = fm_text_width(text, name, next, pixels, 0);
+		wide = kl_text_width(text, name, next, pixels, 0);
 		if (wide > width)
 			break;
 		fits = next;
@@ -824,7 +824,7 @@ label_prefix(
  */
 static size_t
 label_suffix(
-	struct fm_text *text,
+	struct kl_text *text,
 	const char *name,
 	size_t length,
 	size_t from,
@@ -848,7 +848,7 @@ label_suffix(
 		if (earlier == start || earlier < from)
 			break;
 		memcpy(line + ellipsis, name + earlier, length - earlier);
-		wide = fm_text_width(text, line, ellipsis + length - earlier, pixels, 0);
+		wide = kl_text_width(text, line, ellipsis + length - earlier, pixels, 0);
 		if (wide > width)
 			break;
 		start = earlier;

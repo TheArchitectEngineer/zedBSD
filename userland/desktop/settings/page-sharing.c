@@ -43,19 +43,19 @@ static void sharing_address(const struct se_app *app, char *text, size_t size);
 int
 se_sharing_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
 	const struct se_sharing *sharing;
 	const struct kl_sharing_state *state;
-	struct fm_text_line line;
+	struct kl_text_line line;
 	char port[16];
 	char address[96];
 	const char *status;
 	const char *note;
-	fm_color ink;
+	kl_color ink;
 	int capable;
 	int enabled;
 	int height;
@@ -69,8 +69,8 @@ se_sharing_draw(
 	y = se_card_begin(app, canvas, x, top, width, height, "Remote Login", "Other computers may log in here with SSH.");
 
 	/* The switch: on while it starts with the system; only for root and wheel. */
-	fm_text_metrics(app->text, SHARING_TEXT_TITLE, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 10 + line.ascent, "Remote Login (SSH)", SHARING_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	kl_text_metrics(app->text, SHARING_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 10 + line.ascent, "Remote Login (SSH)", SHARING_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 	note = "Turned on, it also starts with the computer.";
 	if (!capable)
 		note = "Remote Login is set by this desktop's own tools.";
@@ -78,7 +78,7 @@ se_sharing_draw(
 		note = "The SSH server is not installed on this computer.";
 	else if (!state->allowed)
 		note = "Only an administrator (a member of wheel) can change this.";
-	(void)fm_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 32 + line.ascent, note, SHARING_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 32 + line.ascent, note, SHARING_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 	enabled = capable && state->available && state->allowed && sharing->request == 0U;
 	se_toggle_draw(app, canvas, x + width - SHARING_PAD - 44, y + 16, state->enabled, enabled, SHARING_SWITCH);
 	y += 56;
@@ -109,14 +109,14 @@ se_sharing_draw(
 		ink = SE_COLOR_TEXT_SECONDARY;
 		if (sharing->message_bad)
 			ink = SE_COLOR_BAD;
-		(void)fm_text_draw_fit(app->text, canvas, x + 2, y + 18, sharing->message, SHARING_TEXT_SMALL, 0, width, ink);
+		(void)kl_text_draw_fit(app->text, canvas, x + 2, y + 18, sharing->message, SHARING_TEXT_SMALL, 0, width, ink);
 		y += 30;
 	}
 
 	/* What comes later. */
 	top = y + SHARING_GAP;
 	y = se_card_begin(app, canvas, x, top, width, 64 + 40, "Cloud storage", NULL);
-	(void)fm_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 18, "OneDrive and Kei's own storage come in a later version of Kei.", SHARING_TEXT_SMALL, 0, width - 2 * SHARING_PAD, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 18, "OneDrive and Kei's own storage come in a later version of Kei.", SHARING_TEXT_SMALL, 0, width - 2 * SHARING_PAD, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the cards. */
 	return top + 64 + 40;

@@ -19,60 +19,60 @@
 
 /* The light appearance's colours. */
 static const struct fm_palette palette_light = {
-	FM_RGB(0xeef2f7),		/* background_top */
-	FM_RGB(0xe6ebf3),		/* background_bottom */
-	FM_RGB(0xffffff),		/* panel */
-	FM_RGB(0xe2e7ef),		/* panel_edge */
-	FM_RGBA(0xffffff, 170),		/* panel_rim */
-	FM_RGBA(0xffffff, 120),		/* sidebar */
-	FM_RGBA(0xffffff, 40),		/* glass_sidebar */
-	FM_RGBA(0xffffff, 60),		/* glass_content */
-	FM_RGBA(0x1f3a66, 34),		/* shadow */
-	FM_RGB(0x1e2632),		/* text */
-	FM_RGB(0x56606f),		/* text_secondary */
-	FM_RGB(0xa3abb8),		/* text_faint */
-	FM_RGB(0x2e3a4c),		/* title */
-	FM_RGB(0x46526a),		/* icon */
-	FM_RGB(0x2f7cf6),		/* accent */
-	FM_RGBA(0x2f7cf6, 40),		/* selection */
-	FM_RGBA(0x7a8699, 38),		/* selection_inactive */
-	FM_RGBA(0x5a6b85, 18),		/* hover */
-	FM_RGB(0x5aa2f5),		/* folder */
-	FM_RGB(0xe8ecf2),		/* separator */
-	FM_RGB(0xeef1f6),		/* button */
-	FM_RGB(0xe2e7ef),		/* button_lit */
-	FM_RGB(0xf4f6fa),		/* inner */
-	FM_RGBA(0xffffff, 150),		/* tile */
-	FM_RGB(0xe6ebf2),		/* rail */
+	KL_RGB(0xeef2f7),		/* background_top */
+	KL_RGB(0xe6ebf3),		/* background_bottom */
+	KL_RGB(0xffffff),		/* panel */
+	KL_RGB(0xe2e7ef),		/* panel_edge */
+	KL_RGBA(0xffffff, 170),		/* panel_rim */
+	KL_RGBA(0xffffff, 120),		/* sidebar */
+	KL_RGBA(0xffffff, 40),		/* glass_sidebar */
+	KL_RGBA(0xffffff, 60),		/* glass_content */
+	KL_RGBA(0x1f3a66, 34),		/* shadow */
+	KL_RGB(0x1e2632),		/* text */
+	KL_RGB(0x56606f),		/* text_secondary */
+	KL_RGB(0xa3abb8),		/* text_faint */
+	KL_RGB(0x2e3a4c),		/* title */
+	KL_RGB(0x46526a),		/* icon */
+	KL_RGB(0x2f7cf6),		/* accent */
+	KL_RGBA(0x2f7cf6, 40),		/* selection */
+	KL_RGBA(0x7a8699, 38),		/* selection_inactive */
+	KL_RGBA(0x5a6b85, 18),		/* hover */
+	KL_RGB(0x5aa2f5),		/* folder */
+	KL_RGB(0xe8ecf2),		/* separator */
+	KL_RGB(0xeef1f6),		/* button */
+	KL_RGB(0xe2e7ef),		/* button_lit */
+	KL_RGB(0xf4f6fa),		/* inner */
+	KL_RGBA(0xffffff, 150),		/* tile */
+	KL_RGB(0xe6ebf2),		/* rail */
 };
 
 /* The dark appearance's colours. */
 static const struct fm_palette palette_dark = {
-	FM_RGB(0x1b1f26),		/* background_top */
-	FM_RGB(0x16191f),		/* background_bottom */
-	FM_RGB(0x23272f),		/* panel */
-	FM_RGB(0x343a45),		/* panel_edge */
-	FM_RGBA(0x3a404b, 170),		/* panel_rim */
-	FM_RGBA(0x1b1f26, 120),		/* sidebar */
-	FM_RGBA(0x000000, 40),		/* glass_sidebar */
-	FM_RGBA(0x000000, 60),		/* glass_content */
-	FM_RGBA(0x000000, 70),		/* shadow */
-	FM_RGB(0xe9edf3),		/* text */
-	FM_RGB(0xa9b2bf),		/* text_secondary */
-	FM_RGB(0x646d7a),		/* text_faint */
-	FM_RGB(0xdde3ec),		/* title */
-	FM_RGB(0xc1c9d6),		/* icon */
-	FM_RGB(0x2f7cf6),		/* accent */
-	FM_RGBA(0x2f7cf6, 70),		/* selection */
-	FM_RGBA(0x8a96aa, 50),		/* selection_inactive */
-	FM_RGBA(0xffffff, 18),		/* hover */
-	FM_RGB(0x5aa2f5),		/* folder */
-	FM_RGB(0x2e333c),		/* separator */
-	FM_RGB(0x2f3540),		/* button */
-	FM_RGB(0x3a414d),		/* button_lit */
-	FM_RGB(0x2a2f38),		/* inner */
-	FM_RGBA(0x2a2f38, 150),		/* tile */
-	FM_RGB(0x3f4652),		/* rail */
+	KL_RGB(0x1b1f26),		/* background_top */
+	KL_RGB(0x16191f),		/* background_bottom */
+	KL_RGB(0x23272f),		/* panel */
+	KL_RGB(0x343a45),		/* panel_edge */
+	KL_RGBA(0x3a404b, 170),		/* panel_rim */
+	KL_RGBA(0x1b1f26, 120),		/* sidebar */
+	KL_RGBA(0x000000, 40),		/* glass_sidebar */
+	KL_RGBA(0x000000, 60),		/* glass_content */
+	KL_RGBA(0x000000, 70),		/* shadow */
+	KL_RGB(0xe9edf3),		/* text */
+	KL_RGB(0xa9b2bf),		/* text_secondary */
+	KL_RGB(0x646d7a),		/* text_faint */
+	KL_RGB(0xdde3ec),		/* title */
+	KL_RGB(0xc1c9d6),		/* icon */
+	KL_RGB(0x2f7cf6),		/* accent */
+	KL_RGBA(0x2f7cf6, 70),		/* selection */
+	KL_RGBA(0x8a96aa, 50),		/* selection_inactive */
+	KL_RGBA(0xffffff, 18),		/* hover */
+	KL_RGB(0x5aa2f5),		/* folder */
+	KL_RGB(0x2e333c),		/* separator */
+	KL_RGB(0x2f3540),		/* button */
+	KL_RGB(0x3a414d),		/* button_lit */
+	KL_RGB(0x2a2f38),		/* inner */
+	KL_RGBA(0x2a2f38, 150),		/* tile */
+	KL_RGB(0x3f4652),		/* rail */
 };
 
 /* The set in use: the light one until the compositor tells the dark appearance. */

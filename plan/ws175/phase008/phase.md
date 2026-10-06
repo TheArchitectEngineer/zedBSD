@@ -1,16 +1,17 @@
 <!-- awesome-plan project=zedbsd record=ws175-p008 -->
-# ws175-p008: Notes の UI（画像の段: Select の道具・画像の挿入と差し替え・削除・Reset）
+# ws175-p008: Notes の UI（画像の段: Select の道具・画像の挿入と差し替え・削除・Reset。文字の段: Text の道具・編集の box・IME・font と size）
 
 Parent: [WS175](../ws.md)
-Status: in-progress（2026-10-06 P2: 画像の段を実装、build と host 試験 PASS。main に merge 3d42efb00。画面は T1-253（AAT の pdf-edit-image・pdf-insert-image、draft）の結果で Q1 が判定）
+Status: in-progress（画像の段は 2026-10-06 Q1 判定で cleared（画面の resize の確認だけ p010 に残す）。文字の段（ws079-p017 と一つの作業）を 2026-10-06 P2 が実装、build warning 0 と host 試験 PASS。画面は p010 の T1）
 Disposition: normal
 Queue: Q1 の順（2026-10-06「画像の段の UI の p008 を先に、その後 p004・p005」、D6 (b)）
 依存: [p007](../phase007/phase.md)（cleared）
 
-## 範囲（design.md §7 の画像の部分）
+## 範囲（design.md §7）
 
 道具（Select）、選択と handle、移動と大きさの drag、画像の挿入（file chooser）と差し替え、削除・Reset、key、描画（編集の在る page の背景）、
-menu、log [L9]、AAT の draft の手直し。文字（Text の道具・編集の box・IME・font の picker）は p004・p005 の後。
+menu、log [L9]、AAT の draft の手直し。文字の段（Text の道具・編集の box・IME [M7]・font の選択・Font/Size）は p004・p005 の後に、
+[ws079-p017](../../ws079/phase017/phase.md)（Notes の IME 対応の text box）と一つの作業として行う（2026-10-06 Q1「同じ機能なので」）。
 
 ## 実装（2026-10-06 P2）
 
@@ -64,8 +65,68 @@ menu、log [L9]、AAT の draft の手直し。文字（Text の道具・編集�
 | `python3 plan/tools/style-check.py userland/desktop/notes/*.c` | 0 |
 | `python3 plan/tools/aat/check-scenarios.py` | PASS |
 
+## 文字の段（2026-10-06 P2、ws079-p017 と一つの作業）
+
+Q1 の指示（2026-10-06）: 「IME は P1 が入れた libkeiland の kl_ui_window_input・kl_ui_window_text（KL 47）と kl_text_area を使えるなら使う。
+Notes の font の読み込みの周りは避ける。model が書けない text を受ける件は、UI で editor に確かめてから確定する形に。」
+
+- **編集の box**（新規 `box.c`）: libkeiland の widget を Notes の Vulkan の上に重ねる。既存の行は `kl_field`（1 行、Enter で確定）、挿入の文字は
+  `kl_text_area`（複数行、Enter は改行）。kl_ui が描く canvas は renderer の新しい overlay の texture（`NOTES_TEXTURE_OVERLAY`、窓の大きさ、
+  host が書く linear image、背景の texture と同じ作り）の上に作るので、widget の座標が窓の座標になり、pointer の入力と IME の caret の矩形
+  （`kl_ui_window_text`）がそのまま合う。canvas は premultiplied なので、描いた矩形だけ straight alpha に直す。box の font は box.c が自分で開く
+  （`keiland.ttf` と CJK の `keiland-fallback.ttf`。toolbar の `notes_ui_open`・`MAIN_FONT` は触っていない）。
+- **入力の配管 [M7]**（`window.c`）: box が開いている間（`notes_window_box`）、key（repeat を含む。box の間だけ `kl_window_set_repeat(1)`）と
+  `KL_WINDOW_TEXT_COMMIT/PREEDIT/DELETE` は box の queue だけに入り、pointer の motion・button（toolbar の帯の外）も box の queue に入る。main loop は
+  それを `kl_ui_window_input` に渡して box の frame を描き（`notes_box_draw`）、frame の後に `kl_ui_window_text` で text input の on/off と caret の
+  矩形を compositor に知らせる。toolbar の帯の press を box に渡さないのは、kl_ui が外の press で focus を外すため（Font・A-・A+・色を押しても
+  打ち続けられる）。
+- **Text の道具**（`main.c`、toolbar の Text、menu の Tool > Text、key T）: 頁の行の上の press はその行の文字を box で開く（行の下に出す。打つ間は
+  100 ms ごとに頁の editor に `set_text` の preview を入れて描き直す。box を閉じると editor を作り直す）。挿入した文字の上ならその文字・font・
+  size・色で開く。それ以外の頁の上の press は、release でそこに新しい文字の box（drag した横の幅が折り返しの幅、drag しなければ折り返さない）。
+  toolbar は Font（名前、押すと Sans→Mono→Japanese、既存の行は Original も）・A-・「12 pt」・A+（0.5 pt 刻み、6〜144）と pen の 5 色。
+- **Select の道具の文字**: 行と挿入した文字を選べる（青い枠と handle、移動・大きさ。文字の大きさの drag は Shift でも等倍）。double-click・
+  toolbar の Edit・Enter で box を開く。toolbar は Edit・Font・A-・size・A+・Delete・Reset。Font は 1 つの変更（行の今の文字で font を替える）、
+  A-/A+ は挿入の文字なら size、既存の行は左上を中心の等倍の拡大縮小。文字を変えられない行（TEXT_FIXED・INVISIBLE）は Edit が淡く、移動・削除だけ。
+- **確定と editor の確認**（p004 の残り、Q1 の「model が書けない text を受ける件」）: Esc・Enter（行）・box の外の press・box を閉じる他の操作
+  （道具・頁・保存など。Font・size・色・fullscreen は box を保つ）で確定する。確定の前に `notes_page_try_edit`（`edit.c`、新規）が page の editor に
+  その状態を当て、editor の答え（`PDF_EDIT_TEXT_*`）を返して editor を作り直させる。ENOTSUP（font が無い）・MISSING（どの font にも無い字）・
+  その他の失敗は model に入れず、box を開いたまま status に理由を出す（`NOTES EDIT text refused … error= result=`）。受けた時だけ
+  `notes_document_edit_object` で 1 つの変更（undo できる）にする。文字を空にすると行の削除・挿入の文字の取り消し。変えていなければ何もしない。
+  元の font に無い字で置き換えの font になった行は status で知らせる。box の間の Ctrl+Z は box の文字を開いた時に戻す（box の中の undo の代わり）。
+  Notes を閉じる時に開いている box は確定を試み、editor が受けなければ捨てる。
+- **log**: `NOTES TOOL 41 name=text`、`NOTES TEXT box open kind=line|inserted|new page= object= font= rect=x,y,w,h`、`NOTES TEXT box close`、
+  `NOTES EDIT select … kind=text … fixed= text="…"`（先頭 40 byte）、`NOTES EDIT text page= object= kind= chars= font= fallback=`（挿入は ` size= color=`）、
+  `NOTES EDIT font page= object= font= fallback=`、`NOTES EDIT size page= object= size=`、`NOTES EDIT text refused …`。
+- **build**: Notes の 3 つの Makefile に `box.c`。
+- **AAT の draft**: `pdf-edit-text.md`・`pdf-insert-text-font.md` を実装の操作と log に合わせた（Inter の記述を Sans（Mahora）に、ü の代わりに US 配列で
+  打てる大文字。status は draft のまま、p010 で active）。
+
+### 設計からの変更（Q1 に報告）
+
+- §7.4 の「行の位置に置き換えの後の font・size で文字を描き、caret を Notes が重ねる」その場の編集ではなく、行の下に libkeiland の field（UI の
+  font の 14 px）を出し、頁の行は 100 ms ごとの preview で打った文字を置き換えの font で見せる（Q1 の指示の kl_text_area・IME の部品を使うため。
+  挿入の文字は box の中だけに出て、確定で頁に描く）。
+- §7.2 の物の上の操作の帯は、画像の段と同じく toolbar のボタン（Edit・Font・A-・A+・Delete・Reset）。
+- box の中の key は libkeiland の field・text area の key（US 配列の文字、←→、Home・End、↑↓（area）、Shift の選択、Backspace・Delete、Ctrl+A）。
+  **Ctrl の語の移動、Ctrl+C・X・V（clipboard）、box の中の undo は無い**（libkeiland の widget に無い。Ctrl+Z は開いた時の文字に戻す）。
+- [L8] 回転した文字の向きに沿った caret は無い（box は常に横書きの field）。
+
+### 試験と結果（host、2026-10-06）
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws175/tests/run-host-notes-edit.sh <scratch>`（`host-notes-edit.c` に `notes_page_try_edit` の 5 項目: 行の新しい文字を試しても model と editor は変わらない、どの font にも無い字 U+0378 は MISSING、日本語は CJK で REPLACED、新しい文字の挿入を試しても頁に残らない） | notes-edit 49/49・picture 12/12 ×3（plain・ASan・UBSan）、qpdf ok、PASS |
+| `sh plan/ws079/tests/run-notes-host.sh` | ok |
+| build: zedBSD の `bin/notes`（config-amd64-zdesktop、-Werror）、keiland-linux の `bin/notes` | warning 0 |
+| `python3 plan/tools/style-check.py userland/desktop/notes/*.c --summary` | 0 |
+| `python3 plan/tools/aat/check-scenarios.py` | PASS（91） |
+
+未実施: 画面（box の表示・IME の preedit と候補の位置・screen keyboard・preview・Select の文字の操作）は QEMU で未確認。p010 で T1（AAT の
+pdf-edit-text・pdf-insert-text-font）。FreeBSD の Makefile は box.c を足したが build していない。
+
 ## 未実施・残り
 
 - 画面の確認（Select・drag・handle・挿入・差し替え・削除・Reset・undo、保存と開き直し）: 未実施。QEMU は p010 で T1（AAT の pdf-edit-image・pdf-insert-image）。
 - [M8] 指の long-press、[N13] 表示中の page の前後の外の editor を捨てること（今は各 page の editor を残す）、[M13] の autosave の cache と時間。
-- 文字の UI（Text の道具、編集の box、IME [M7]、font の picker、Edit Text・Font・Size のボタン）は p004・p005 の後。
+- 文字の段の画面の確認（上）、box の中の clipboard・語の移動・undo、回転した文字の caret [L8]、指で box の caret を動かすこと（指の tap は box に渡していない）、
+  box の表示中の zoom・scroll に box が付いて動くこと（今は開いた時の窓の位置に留まる）。

@@ -67,10 +67,10 @@
 #define UI_TOUCH_SLOP		10
 
 static void ui_layout(struct se_app *app);
-static void ui_draw_sidebar(struct se_app *app, struct fm_canvas *canvas);
-static void ui_reveal(struct se_app *app, const struct fm_rect *current);
+static void ui_draw_sidebar(struct se_app *app, struct kl_canvas *canvas);
+static void ui_reveal(struct se_app *app, const struct kl_rect *current);
 static void ui_log_controls(struct se_app *app);
-static void ui_draw_page(struct se_app *app, struct fm_canvas *canvas);
+static void ui_draw_page(struct se_app *app, struct kl_canvas *canvas);
 static int ui_hit_at(struct se_app *app, int x, int y, unsigned *kind, int *index);
 static void ui_motion(struct se_app *app, const struct se_event *event);
 static void ui_button(struct se_app *app, const struct se_event *event);
@@ -85,9 +85,9 @@ static int ui_scroll_by(struct se_app *app, int pane, int amount);
 static void ui_kinetic_step(struct se_app *app, uint64_t now);
 static int ui_kinetic_place(struct se_app *app, double position);
 static int ui_pane_scroll(const struct se_app *app, int pane, int *limit, int *height);
-static int ui_hit_rect(const struct se_app *app, unsigned kind, int index, struct fm_rect *rect);
-static void ui_damage_add(struct se_app *app, const struct fm_rect *rect);
-static void ui_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
+static int ui_hit_rect(const struct se_app *app, unsigned kind, int index, struct kl_rect *rect);
+static void ui_damage_add(struct se_app *app, const struct kl_rect *rect);
+static void ui_clear_rect(struct kl_canvas *canvas, const struct kl_rect *rect);
 static void ui_key(struct se_app *app, const struct se_event *event);
 static void ui_step_page(struct se_app *app, int direction);
 static void ui_scroll_page(struct se_app *app, int amount);
@@ -101,7 +101,7 @@ static int ui_clamp(int value, int minimum, int maximum);
 void
 se_ui_init(
 	struct se_app *app,
-	struct fm_text *text,
+	struct kl_text *text,
 	unsigned page)
 {
 	/* A page outside the table is Home. */
@@ -124,8 +124,9 @@ se_ui_init(
 	app->history_count = 1;
 	app->history_index = 0;
 
-	/* The scroller a touch pad's fingers scroll the panes with (none: they scroll without flying). */
+	/* The scroller a touch pad's fingers scroll the panes with (none: they scroll without flying), and the text fields' input (none: no field draws). */
 	app->kinetic.scroller = kl_scroller_create();
+	(void)se_fields_open(text);
 
 	/* The first frame is due. */
 	app->dirty = 1;
@@ -133,7 +134,8 @@ se_ui_init(
 }
 
 /*
- * Lets go of what the interface holds: the touch pad's scroller.
+ * Lets go of what the interface holds: the touch pad's scroller and the
+ * text fields' input.
  */
 void
 se_ui_close(
@@ -145,6 +147,9 @@ se_ui_close(
 	app->kinetic.scroller = NULL;
 	app->kinetic.flying = 0;
 	app->kinetic.holding = 0;
+
+	/* The text fields' input. */
+	se_fields_close();
 }
 
 /*
@@ -155,17 +160,18 @@ se_ui_event(
 	struct se_app *app,
 	const struct se_event *event)
 {
-	int taken;
-
 	/* The time of the input, for whatever measures time. */
 	app->now = event->time;
 
 	/* Each kind of input. */
 	switch (event->type) {
 	case SE_EVENT_MOTION:
+		se_fields_input(event);
 		ui_motion(app, event);
 		break;
 	case SE_EVENT_BUTTON:
+		/* The text fields see the press too (a click puts a field's caret). */
+		se_fields_input(event);
 		ui_button(app, event);
 		break;
 	case SE_EVENT_AXIS:
@@ -186,10 +192,9 @@ se_ui_event(
 	case SE_EVENT_TEXT:
 	case SE_EVENT_TEXT_DELETE:
 	case SE_EVENT_PREEDIT:
-		/* An input method's text, for the field that takes it (ws090-p022). */
-		taken = se_users_admin_text(app, event);
-		if (taken)
-			app->dirty = 1;
+		/* An input method's text, for the field with the keyboard (widgets.c). */
+		se_fields_input(event);
+		app->dirty = 1;
 		break;
 	case SE_EVENT_FOCUS:
 		/* The chosen page's row is drawn in the accent only while the window has the focus. */
@@ -342,9 +347,9 @@ se_ui_go(
 void
 se_ui_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
-	struct fm_rect whole;
+	struct kl_rect whole;
 	int partial;
 
 	/*
@@ -375,21 +380,23 @@ se_ui_draw(
 	whole.width = canvas->width;
 	whole.height = canvas->height;
 	if (partial != 0)
-		fm_canvas_clip_push(canvas, &app->hover_damage);
+		kl_canvas_clip_push(canvas, &app->hover_damage);
 	if (app->glass != 0 && partial != 0) {
 		ui_clear_rect(canvas, &app->hover_damage);
 	} else if (app->glass != 0) {
-		fm_canvas_clear(canvas);
+		kl_canvas_clear(canvas);
 	} else {
-		fm_canvas_gradient(canvas, &whole, SE_COLOR_BACKGROUND_TOP, SE_COLOR_BACKGROUND_BOTTOM);
+		kl_canvas_gradient(canvas, &whole, SE_COLOR_BACKGROUND_TOP, SE_COLOR_BACKGROUND_BOTTOM);
 	}
 
-	/* The list of pages, when shown, then the page. */
+	/* The list of pages, when shown, then the page; the text fields in their own frame of input (widgets.c, ws090-p007). */
+	se_fields_begin(app->now * 1000U);
 	if (app->show_sidebar != 0)
 		ui_draw_sidebar(app, canvas);
 	ui_draw_page(app, canvas);
+	(void)se_fields_end(app->now * 1000U);
 	if (partial != 0)
-		fm_canvas_clip_pop(canvas);
+		kl_canvas_clip_pop(canvas);
 
 	/* The page's controls, in the log when they changed. */
 	ui_log_controls(app);
@@ -406,7 +413,7 @@ se_ui_panels(
 	struct se_panel *panels,
 	size_t capacity)
 {
-	const struct fm_rect *cards[2];
+	const struct kl_rect *cards[2];
 	size_t count;
 	unsigned index;
 
@@ -438,7 +445,7 @@ se_ui_panels(
 void
 se_ui_hit(
 	struct se_app *app,
-	const struct fm_rect *rect,
+	const struct kl_rect *rect,
 	unsigned kind,
 	int index)
 {
@@ -658,14 +665,14 @@ ui_layout(
 static void
 ui_draw_sidebar(
 	struct se_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
-	const struct fm_rect *panel;
+	const struct kl_rect *panel;
 	const struct se_page *page;
-	struct fm_rect row;
-	struct fm_rect current_row;
-	fm_color ink;
-	fm_color glyph;
+	struct kl_rect row;
+	struct kl_rect current_row;
+	kl_color ink;
+	kl_color glyph;
 	unsigned group;
 	unsigned id;
 	int current;
@@ -676,17 +683,17 @@ ui_draw_sidebar(
 	/* The pane: a light veil over zdesktop's glass, or a whiter card with a bright edge over the window's ground. */
 	panel = &app->layout.sidebar;
 	if (app->glass != 0) {
-		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_GLASS_SIDEBAR);
+		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_GLASS_SIDEBAR);
 	} else {
-		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, SE_COLOR_PANEL_EDGE);
+		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_PANEL);
+		kl_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, SE_COLOR_PANEL_EDGE);
 	}
 
 	/* The pane itself is a region the wheel scrolls; the rows over it are recorded after it. */
 	se_ui_hit(app, panel, SE_HIT_SIDEBAR, 0);
 
 	/* The rows stay inside the pane. */
-	fm_canvas_clip_push(canvas, panel);
+	kl_canvas_clip_push(canvas, panel);
 
 	/* Each page after Home, a line between two groups; the page shown's row is kept (none for Home). */
 	memset(&current_row, 0, sizeof(current_row));
@@ -699,7 +706,7 @@ ui_draw_sidebar(
 		if (page->group != group) {
 			group = page->group;
 			y += UI_GROUP_GAP / 2;
-			fm_canvas_line(canvas, (float)panel->x + 18.0f, (float)y + 0.5f, (float)(panel->x + panel->width) - 18.0f, (float)y + 0.5f, 1.0f, SE_COLOR_SEPARATOR);
+			kl_canvas_line(canvas, (float)panel->x + 18.0f, (float)y + 0.5f, (float)(panel->x + panel->width) - 18.0f, (float)y + 0.5f, 1.0f, SE_COLOR_SEPARATOR);
 			y += UI_GROUP_GAP - UI_GROUP_GAP / 2;
 		}
 
@@ -719,26 +726,26 @@ ui_draw_sidebar(
 		glyph = SE_COLOR_ICON;
 		bold = 0;
 		if (current != 0 && app->focused != 0) {
-			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION);
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION);
 			ink = SE_COLOR_ACCENT;
 			glyph = SE_COLOR_ACCENT;
 			bold = 1;
 		} else if (current != 0) {
-			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION_INACTIVE);
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION_INACTIVE);
 			bold = 1;
 		} else if (app->hover_kind == SE_HIT_PAGE_ROW && app->hover_index == (int)id) {
-			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_HOVER);
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_HOVER);
 		}
 
 		/* The picture and the name. */
 		se_glyph_draw(canvas, page->glyph, (float)row.x + 10.0f, (float)row.y + 7.0f, 20.0f, glyph);
-		(void)fm_text_draw_fit(app->text, canvas, row.x + 42, fm_text_center(UI_TEXT_ROW, row.y, row.height), kl_tr(page->name), UI_TEXT_ROW, bold, row.width - 50, ink);
+		(void)kl_text_draw_fit(app->text, canvas, row.x + 42, kl_text_center(UI_TEXT_ROW, row.y, row.height), kl_tr(page->name), UI_TEXT_ROW, bold, row.width - 50, ink);
 		se_ui_hit(app, &row, SE_HIT_PAGE_ROW, (int)id);
 		y += UI_ROW_HEIGHT + UI_ROW_GAP;
 	}
 
 	/* How tall the list is, for its scroll; a list that shrank below its scroll comes back up next frame. */
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 	app->sidebar_extent = y + app->sidebar_scroll - panel->y + 8;
 	limit = app->sidebar_extent - panel->height;
 	if (limit < 0)
@@ -757,9 +764,9 @@ ui_draw_sidebar(
 static void
 ui_reveal(
 	struct se_app *app,
-	const struct fm_rect *current)
+	const struct kl_rect *current)
 {
-	const struct fm_rect *panel;
+	const struct kl_rect *panel;
 	int scroll;
 	int limit;
 
@@ -791,9 +798,9 @@ ui_reveal(
 static void
 ui_draw_page(
 	struct se_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
-	const struct fm_rect *panel;
+	const struct kl_rect *panel;
 	const struct se_page *page;
 	int bottom;
 	int limit;
@@ -803,17 +810,17 @@ ui_draw_page(
 	/* The pane: a light veil over zdesktop's glass, or a whiter card with a bright edge over the window's ground. */
 	panel = &app->layout.page;
 	if (app->glass != 0) {
-		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_GLASS_PAGE);
+		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_GLASS_PAGE);
 	} else {
-		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, SE_COLOR_PANEL_EDGE);
+		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, SE_COLOR_PANEL);
+		kl_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, SE_COLOR_PANEL_EDGE);
 	}
 
 	/* The pane itself is a region the wheel scrolls; the page's controls are recorded after it. */
 	se_ui_hit(app, panel, SE_HIT_PAGE, 0);
 
 	/* The page stays inside the pane, in a column within its margins. */
-	fm_canvas_clip_push(canvas, panel);
+	kl_canvas_clip_push(canvas, panel);
 	x = panel->x + UI_PAGE_SIDE;
 	width = panel->width - 2 * UI_PAGE_SIDE;
 	page = &se_pages[app->page];
@@ -828,7 +835,7 @@ ui_draw_page(
 	}
 
 	/* The pane's clip ends with the page. */
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 
 	/* How tall the page is, for its scroll; a page that shrank below its scroll comes back up next frame. */
 	app->page_extent = bottom + app->page_scroll - panel->y + UI_PAGE_BOTTOM;
@@ -856,7 +863,7 @@ ui_hit_at(
 	int *index)
 {
 	const struct se_hit *hit;
-	const struct fm_rect *pane;
+	const struct kl_rect *pane;
 	int found;
 
 	/* From the latest region back, so that the one drawn over wins. */
@@ -905,8 +912,8 @@ ui_motion(
 	const struct se_event *event)
 {
 	const struct se_page *page;
-	struct fm_rect before;
-	struct fm_rect now;
+	struct kl_rect before;
+	struct kl_rect now;
 	unsigned kind;
 	int index;
 	int found_before;
@@ -1058,7 +1065,7 @@ ui_touch_press(
 	const struct se_event *event,
 	unsigned kind)
 {
-	const struct fm_rect *page;
+	const struct kl_rect *page;
 	struct se_touch_scroll *touch;
 
 	/* The pane under the finger: the list for its rows and its ground, else the page when the finger is on it. */
@@ -1093,7 +1100,7 @@ ui_touch_move(
 	const struct se_event *event)
 {
 	struct se_touch_scroll *touch;
-	const struct fm_rect *pane;
+	const struct kl_rect *pane;
 	int moved_x;
 	int moved_y;
 	int distance_x;
@@ -1197,7 +1204,7 @@ ui_scroll(
 	struct se_app *app,
 	const struct se_event *event)
 {
-	const struct fm_rect *list;
+	const struct kl_rect *list;
 	double x;
 	double y;
 	int pane;
@@ -1400,7 +1407,7 @@ ui_key(
 	struct se_app *app,
 	const struct se_event *event)
 {
-	const struct fm_rect *pane;
+	const struct kl_rect *pane;
 	const struct se_page *page;
 	int used;
 
@@ -1670,7 +1677,7 @@ ui_hit_rect(
 	const struct se_app *app,
 	unsigned kind,
 	int index,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
 	int found;
 
@@ -1694,9 +1701,9 @@ ui_hit_rect(
 static void
 ui_damage_add(
 	struct se_app *app,
-	const struct fm_rect *rect)
+	const struct kl_rect *rect)
 {
-	struct fm_rect grown;
+	struct kl_rect grown;
 	int right;
 	int bottom;
 
@@ -1731,8 +1738,8 @@ ui_damage_add(
 /* Makes a rectangle of the canvas transparent (the glass shows through), within the canvas. */
 static void
 ui_clear_rect(
-	struct fm_canvas *canvas,
-	const struct fm_rect *rect)
+	struct kl_canvas *canvas,
+	const struct kl_rect *rect)
 {
 	uint32_t *row;
 	int left;

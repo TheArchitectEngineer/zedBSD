@@ -62,22 +62,22 @@
 #define LOOK_TEXT_BODY		13U
 #define LOOK_TEXT_LINE		19
 
-static void preview_panel(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void preview_place(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void preview_many(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, size_t count, uint64_t bytes);
-static void preview_one(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, struct fm_entry *entry);
-static int preview_picture(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, const struct fm_rect *box);
-static int preview_name(struct fm_app *app, struct fm_canvas *canvas, const char *name, int x, int width, int baseline);
-static int preview_row(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, int y, const char *label, const char *value);
-static int preview_text(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, int y);
+static void preview_panel(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void preview_place(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void preview_many(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area, size_t count, uint64_t bytes);
+static void preview_one(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area, struct fm_entry *entry);
+static int preview_picture(struct fm_app *app, struct kl_canvas *canvas, const struct fm_entry *entry, const struct kl_rect *box);
+static int preview_name(struct fm_app *app, struct kl_canvas *canvas, const char *name, int x, int width, int baseline);
+static int preview_row(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area, int y, const char *label, const char *value);
+static int preview_text(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area, int y);
 static void preview_size_text(struct fm_app *app, struct fm_entry *entry, char *text, size_t size);
 static void preview_where(struct fm_app *app, const char *path, char *text, size_t size);
-static void preview_centered(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area, int baseline, const char *text, unsigned pixels, int bold, fm_color color);
-static void look_card(struct fm_app *app, struct fm_canvas *canvas, int width, int height, struct fm_rect *card);
-static void look_header(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *card, struct fm_entry *entry);
-static void look_picture(struct fm_app *app, struct fm_canvas *canvas, struct fm_entry *entry, int room_width, int room_height);
-static void look_text(struct fm_app *app, struct fm_canvas *canvas, struct fm_entry *entry, int room_width, int room_height);
-static void look_other(struct fm_app *app, struct fm_canvas *canvas, struct fm_entry *entry);
+static void preview_centered(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
+static void look_card(struct fm_app *app, struct kl_canvas *canvas, int width, int height, struct kl_rect *card);
+static void look_header(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *card, struct fm_entry *entry);
+static void look_picture(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry, int room_width, int room_height);
+static void look_text(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry, int room_width, int room_height);
+static void look_other(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry);
 
 /*
  * Draws the preview pane in its area: the selected item, a summary of
@@ -86,8 +86,8 @@ static void look_other(struct fm_app *app, struct fm_canvas *canvas, struct fm_e
 void
 fm_preview_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	struct fm_tab *tab;
 	uint64_t bytes;
@@ -96,7 +96,7 @@ fm_preview_draw(
 
 	/* The panel, and nothing drawn outside it. */
 	preview_panel(app, canvas, area);
-	fm_canvas_clip_push(canvas, area);
+	kl_canvas_clip_push(canvas, area);
 
 	/* How many items are selected, and the one shown. */
 	tab = fm_ui_tab(app);
@@ -113,7 +113,7 @@ fm_preview_draw(
 	}
 
 	/* The panel's clip ends. */
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 }
 
 /*
@@ -123,11 +123,11 @@ fm_preview_draw(
 void
 fm_look_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct fm_entry *entry;
 	struct fm_tab *tab;
-	struct fm_rect whole;
+	struct kl_rect whole;
 	int room_width;
 	int room_height;
 	int textual;
@@ -153,7 +153,7 @@ fm_look_draw(
 	whole.y = 0;
 	whole.width = app->width;
 	whole.height = app->height;
-	fm_canvas_fill(canvas, &whole, FM_RGBA(0x1b2233, 110));
+	kl_canvas_fill(canvas, &whole, KL_RGBA(0x1b2233, 110));
 	fm_ui_hit(app, &whole, FM_HIT_OVERLAY, FM_OVERLAY_LOOK_GROUND);
 
 	/* What is read of the item, and the room the card has inside the margins. */
@@ -305,27 +305,27 @@ fm_preview_item(
 static void
 preview_panel(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	/* On glass, zdesktop draws the card: only the content's white tint. */
 	if (app->glass != 0) {
-		fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, FM_COLOR_GLASS_CONTENT);
+		kl_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, FM_COLOR_GLASS_CONTENT);
 		return;
 	}
 
 	/* The shadow, the panel and its thin edge, as the content's. */
-	fm_canvas_shadow(canvas, (float)area->x, (float)area->y + 4.0f, (float)area->width, (float)area->height, PREVIEW_RADIUS, 14.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, FM_COLOR_PANEL);
-	fm_canvas_round_border(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, 1.0f, FM_COLOR_PANEL_EDGE);
+	kl_canvas_shadow(canvas, (float)area->x, (float)area->y + 4.0f, (float)area->width, (float)area->height, PREVIEW_RADIUS, 14.0f, FM_COLOR_SHADOW);
+	kl_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, FM_COLOR_PANEL);
+	kl_canvas_round_border(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, PREVIEW_RADIUS, 1.0f, FM_COLOR_PANEL_EDGE);
 }
 
 /* Draws the place shown when nothing is selected: a large folder, its name, how many items it holds. */
 static void
 preview_place(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	const struct fm_location *location;
 	struct fm_tab *tab;
@@ -337,7 +337,7 @@ preview_place(
 	tab = fm_ui_tab(app);
 	location = &tab->history[tab->history_index].location;
 	top = area->y + PREVIEW_PADDING + (PREVIEW_PICTURE - PREVIEW_ICON) / 2;
-	fm_icon_folder(canvas, (float)(area->x + (area->width - PREVIEW_ICON) / 2), (float)top, (float)PREVIEW_ICON, FM_COLOR_FOLDER);
+	kl_icon_folder(canvas, (float)(area->x + (area->width - PREVIEW_ICON) / 2), (float)top, (float)PREVIEW_ICON, FM_COLOR_FOLDER);
 
 	/* The place's name under it. */
 	baseline = area->y + PREVIEW_PADDING + PREVIEW_PICTURE + 24;
@@ -357,8 +357,8 @@ preview_place(
 static void
 preview_many(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area,
+	struct kl_canvas *canvas,
+	const struct kl_rect *area,
 	size_t count,
 	uint64_t bytes)
 {
@@ -400,11 +400,11 @@ preview_many(
 static void
 preview_one(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area,
+	struct kl_canvas *canvas,
+	const struct kl_rect *area,
 	struct fm_entry *entry)
 {
-	struct fm_rect box;
+	struct kl_rect box;
 	char modified[64];
 	char where[FM_PATH_MAX];
 	char size[64];
@@ -427,9 +427,9 @@ preview_one(
 
 	/* A rule, and the information's header. */
 	y = baseline + 36;
-	fm_canvas_round(canvas, (float)box.x, (float)y, (float)box.width, 1.0f, 0.0f, FM_COLOR_SEPARATOR);
+	kl_canvas_round(canvas, (float)box.x, (float)y, (float)box.width, 1.0f, 0.0f, FM_COLOR_SEPARATOR);
 	y += 22;
-	(void)fm_text_draw(app->text, canvas, box.x, y, "Information", 11, PREVIEW_TEXT_HEADER, 1, FM_COLOR_TEXT_FAINT);
+	(void)kl_text_draw(app->text, canvas, box.x, y, "Information", 11, PREVIEW_TEXT_HEADER, 1, FM_COLOR_TEXT_FAINT);
 	y += 8;
 
 	/* The kind, the size (a folder's item count), when it changed, where it is. */
@@ -453,11 +453,11 @@ preview_one(
 static int
 preview_picture(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct fm_entry *entry,
-	const struct fm_rect *box)
+	const struct kl_rect *box)
 {
-	const struct fm_image *thumb;
+	const struct kl_image *thumb;
 	float x;
 	float y;
 	int width;
@@ -482,8 +482,8 @@ preview_picture(
 	fm_image_fit(thumb->width, thumb->height, box->width, box->height, &width, &height);
 	x = (float)(box->x + (box->width - width) / 2);
 	y = (float)(box->y + (box->height - height) / 2);
-	fm_canvas_shadow(canvas, x, y + 3.0f, (float)width, (float)height, 8.0f, 10.0f, FM_COLOR_SHADOW);
-	fm_canvas_image(canvas, thumb, x, y, (float)width, (float)height, 8.0f, 1.0f);
+	kl_canvas_shadow(canvas, x, y + 3.0f, (float)width, (float)height, 8.0f, 10.0f, FM_COLOR_SHADOW);
+	kl_canvas_image(canvas, thumb, x, y, (float)width, (float)height, 8.0f, 1.0f);
 
 	/* Succeeded: the thumbnail is shown. */
 	return 1;
@@ -493,32 +493,32 @@ preview_picture(
 static int
 preview_name(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const char *name,
 	int x,
 	int width,
 	int baseline)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	char second[FM_NAME_MAX];
 	size_t first_length;
 	int first_width;
 	int second_width;
 
 	/* The first line: what fits the width. */
-	first_length = fm_text_break(app->text, name, PREVIEW_TEXT_NAME, 1, width);
-	first_width = fm_text_width(app->text, name, first_length, PREVIEW_TEXT_NAME, 1);
-	(void)fm_text_draw(app->text, canvas, x + (width - first_width) / 2, baseline, name, first_length, PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
+	first_length = kl_text_break(app->text, name, PREVIEW_TEXT_NAME, 1, width);
+	first_width = kl_text_width(app->text, name, first_length, PREVIEW_TEXT_NAME, 1);
+	(void)kl_text_draw(app->text, canvas, x + (width - first_width) / 2, baseline, name, first_length, PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
 
 	/* A name of one line ends there. */
 	if (name[first_length] == '\0')
 		return baseline;
 
 	/* The rest on a second line, cut with an ellipsis. */
-	fm_text_metrics(app->text, PREVIEW_TEXT_NAME, &line);
-	(void)fm_text_fit(app->text, name + first_length, PREVIEW_TEXT_NAME, 1, width, second, sizeof(second));
-	second_width = fm_text_width(app->text, second, strlen(second), PREVIEW_TEXT_NAME, 1);
-	(void)fm_text_draw(app->text, canvas, x + (width - second_width) / 2, baseline + line.height, second, strlen(second), PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
+	kl_text_metrics(app->text, PREVIEW_TEXT_NAME, &line);
+	(void)kl_text_fit(app->text, name + first_length, PREVIEW_TEXT_NAME, 1, width, second, sizeof(second));
+	second_width = kl_text_width(app->text, second, strlen(second), PREVIEW_TEXT_NAME, 1);
+	(void)kl_text_draw(app->text, canvas, x + (width - second_width) / 2, baseline + line.height, second, strlen(second), PREVIEW_TEXT_NAME, 1, FM_COLOR_TEXT);
 
 	/* Reports the second line's baseline. */
 	return baseline + line.height;
@@ -528,8 +528,8 @@ preview_name(
 static int
 preview_row(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area,
+	struct kl_canvas *canvas,
+	const struct kl_rect *area,
 	int y,
 	const char *label,
 	const char *value)
@@ -545,14 +545,14 @@ preview_row(
 	/* The label, quiet, at the left. */
 	left = area->x + PREVIEW_PADDING;
 	right = area->x + area->width - PREVIEW_PADDING;
-	baseline = fm_text_center(PREVIEW_TEXT_INFO, y, PREVIEW_ROW);
-	label_width = fm_text_draw(app->text, canvas, left, baseline, label, strlen(label), PREVIEW_TEXT_INFO, 0, FM_COLOR_TEXT_SECONDARY);
+	baseline = kl_text_center(PREVIEW_TEXT_INFO, y, PREVIEW_ROW);
+	label_width = kl_text_draw(app->text, canvas, left, baseline, label, strlen(label), PREVIEW_TEXT_INFO, 0, FM_COLOR_TEXT_SECONDARY);
 
 	/* The value, cut to the room left, against the right edge. */
 	room = right - left - label_width - 12;
-	(void)fm_text_fit(app->text, value, PREVIEW_TEXT_INFO, 0, room, fitted, sizeof(fitted));
-	value_width = fm_text_width(app->text, fitted, strlen(fitted), PREVIEW_TEXT_INFO, 0);
-	(void)fm_text_draw(app->text, canvas, right - value_width, baseline, fitted, strlen(fitted), PREVIEW_TEXT_INFO, 0, FM_COLOR_TEXT);
+	(void)kl_text_fit(app->text, value, PREVIEW_TEXT_INFO, 0, room, fitted, sizeof(fitted));
+	value_width = kl_text_width(app->text, fitted, strlen(fitted), PREVIEW_TEXT_INFO, 0);
+	(void)kl_text_draw(app->text, canvas, right - value_width, baseline, fitted, strlen(fitted), PREVIEW_TEXT_INFO, 0, FM_COLOR_TEXT);
 
 	/* Reports where the next row starts. */
 	return y + PREVIEW_ROW;
@@ -562,8 +562,8 @@ preview_row(
 static int
 preview_text(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area,
+	struct kl_canvas *canvas,
+	const struct kl_rect *area,
 	int y)
 {
 	const char *line;
@@ -587,7 +587,7 @@ preview_text(
 	/* The box behind them. */
 	x = area->x + PREVIEW_PADDING;
 	height = room * PREVIEW_TEXT_LINE + 12;
-	fm_canvas_round(canvas, (float)x, (float)y, (float)(area->width - 2 * PREVIEW_PADDING), (float)height, 8.0f, FM_COLOR_INNER);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)(area->width - 2 * PREVIEW_PADDING), (float)height, 8.0f, FM_COLOR_INNER);
 
 	/* Each line, cut at the box's width. */
 	line = app->peek.text;
@@ -595,7 +595,7 @@ preview_text(
 		end = strchr(line, '\n');
 		if (end == NULL)
 			end = line + strlen(line);
-		(void)fm_text_draw(app->text, canvas, x + 8, y + 6 + (lines + 1) * PREVIEW_TEXT_LINE - 4, line, (size_t)(end - line), PREVIEW_TEXT_BODY, 0, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw(app->text, canvas, x + 8, y + 6 + (lines + 1) * PREVIEW_TEXT_LINE - 4, line, (size_t)(end - line), PREVIEW_TEXT_BODY, 0, FM_COLOR_TEXT_SECONDARY);
 
 		/* The next line starts after the newline. */
 		line = end;
@@ -670,31 +670,31 @@ preview_where(
 static void
 preview_centered(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area,
+	struct kl_canvas *canvas,
+	const struct kl_rect *area,
 	int baseline,
 	const char *text,
 	unsigned pixels,
 	int bold,
-	fm_color color)
+	kl_color color)
 {
 	char fitted[FM_PATH_MAX];
 	int width;
 
 	/* The text, cut to the area's width inside its padding, in the middle. */
-	(void)fm_text_fit(app->text, text, pixels, bold, area->width - 2 * PREVIEW_PADDING, fitted, sizeof(fitted));
-	width = fm_text_width(app->text, fitted, strlen(fitted), pixels, bold);
-	(void)fm_text_draw(app->text, canvas, area->x + (area->width - width) / 2, baseline, fitted, strlen(fitted), pixels, bold, color);
+	(void)kl_text_fit(app->text, text, pixels, bold, area->width - 2 * PREVIEW_PADDING, fitted, sizeof(fitted));
+	width = kl_text_width(app->text, fitted, strlen(fitted), pixels, bold);
+	(void)kl_text_draw(app->text, canvas, area->x + (area->width - width) / 2, baseline, fitted, strlen(fitted), pixels, bold, color);
 }
 
 /* Draws Quick Look's card of a size in the middle of the window, and reports where it is. */
 static void
 look_card(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int width,
 	int height,
-	struct fm_rect *card)
+	struct kl_rect *card)
 {
 	/* The card in the middle. */
 	card->width = width;
@@ -703,8 +703,8 @@ look_card(
 	card->y = (app->height - height) / 2;
 
 	/* Its shadow, its white face; a click on it stays there. */
-	fm_canvas_shadow(canvas, (float)card->x, (float)card->y + 10.0f, (float)width, (float)height, LOOK_RADIUS, 30.0f, FM_RGBA(0x0f1a33, 90));
-	fm_canvas_round(canvas, (float)card->x, (float)card->y, (float)width, (float)height, LOOK_RADIUS, FM_COLOR_PANEL);
+	kl_canvas_shadow(canvas, (float)card->x, (float)card->y + 10.0f, (float)width, (float)height, LOOK_RADIUS, 30.0f, KL_RGBA(0x0f1a33, 90));
+	kl_canvas_round(canvas, (float)card->x, (float)card->y, (float)width, (float)height, LOOK_RADIUS, FM_COLOR_PANEL);
 	fm_ui_hit(app, card, FM_HIT_OVERLAY, FM_OVERLAY_CARD);
 }
 
@@ -712,31 +712,31 @@ look_card(
 static void
 look_header(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *card,
+	struct kl_canvas *canvas,
+	const struct kl_rect *card,
 	struct fm_entry *entry)
 {
-	struct fm_rect close;
+	struct kl_rect close;
 	char size[64];
 	char detail[160];
 
 	/* The name. */
-	(void)fm_text_draw_fit(app->text, canvas, card->x + 22, card->y + 27, entry->name, 15U, 1, card->width - 90, FM_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, card->x + 22, card->y + 27, entry->name, 15U, 1, card->width - 90, FM_COLOR_TEXT);
 
 	/* The kind and the size under it. */
 	preview_size_text(app, entry, size, sizeof(size));
 	snprintf(detail, sizeof(detail), "%s \xc2\xb7 %s", app->peek.mime->kind, size);
-	(void)fm_text_draw_fit(app->text, canvas, card->x + 22, card->y + 45, detail, 12U, 0, card->width - 90, FM_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, card->x + 22, card->y + 45, detail, 12U, 0, card->width - 90, FM_COLOR_TEXT_SECONDARY);
 
 	/* The close button at the right, lit under the pointer. */
 	close.x = card->x + card->width - 44;
 	close.y = card->y + 14;
 	close.width = 28;
 	close.height = 28;
-	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
+	kl_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
 	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_LOOK_CLOSE)
-		fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
-	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
+		kl_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
+	kl_icon_draw(canvas, KL_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
 	fm_ui_hit(app, &close, FM_HIT_BUTTON, FM_BUTTON_LOOK_CLOSE);
 }
 
@@ -744,13 +744,13 @@ look_header(
 static void
 look_picture(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	struct fm_entry *entry,
 	int room_width,
 	int room_height)
 {
-	struct fm_rect card;
-	const struct fm_image *picture;
+	struct kl_rect card;
+	const struct kl_image *picture;
 	int width;
 	int height;
 	int box_width;
@@ -795,19 +795,19 @@ look_picture(
 	look_header(app, canvas, &card, entry);
 
 	/* The picture under the header. */
-	fm_canvas_image(canvas, picture, (float)(card.x + (card.width - width) / 2), (float)(card.y + LOOK_HEADER), (float)width, (float)height, 6.0f, 1.0f);
+	kl_canvas_image(canvas, picture, (float)(card.x + (card.width - width) / 2), (float)(card.y + LOOK_HEADER), (float)width, (float)height, 6.0f, 1.0f);
 }
 
 /* Draws text as its first lines on a tall card. */
 static void
 look_text(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	struct fm_entry *entry,
 	int room_width,
 	int room_height)
 {
-	struct fm_rect card;
+	struct kl_rect card;
 	const char *line;
 	const char *end;
 	int width;
@@ -823,7 +823,7 @@ look_text(
 	look_header(app, canvas, &card, entry);
 
 	/* The page's ground under the header. */
-	fm_canvas_round(canvas, (float)card.x + 12.0f, (float)(card.y + LOOK_HEADER), (float)card.width - 24.0f, (float)(card.height - LOOK_HEADER - 12), 10.0f, FM_COLOR_INNER);
+	kl_canvas_round(canvas, (float)card.x + 12.0f, (float)(card.y + LOOK_HEADER), (float)card.width - 24.0f, (float)(card.height - LOOK_HEADER - 12), 10.0f, FM_COLOR_INNER);
 
 	/* Each line that fits, cut at the page's width. */
 	bottom = card.y + card.height - 20;
@@ -835,7 +835,7 @@ look_text(
 		end = strchr(line, '\n');
 		if (end == NULL)
 			end = line + strlen(line);
-		(void)fm_text_draw(app->text, canvas, card.x + 28, baseline, line, (size_t)(end - line), LOOK_TEXT_BODY, 0, FM_COLOR_TEXT);
+		(void)kl_text_draw(app->text, canvas, card.x + 28, baseline, line, (size_t)(end - line), LOOK_TEXT_BODY, 0, FM_COLOR_TEXT);
 
 		/* The next line starts after the newline. */
 		baseline += LOOK_TEXT_LINE;
@@ -849,10 +849,10 @@ look_text(
 static void
 look_other(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	struct fm_entry *entry)
 {
-	struct fm_rect card;
+	struct kl_rect card;
 	char modified[64];
 	char text[96];
 	int icon;
@@ -869,6 +869,6 @@ look_other(
 	/* When it was modified, under the icon. */
 	fm_time_text(entry->modified, app->wall, modified, sizeof(modified));
 	snprintf(text, sizeof(text), "Modified %s", modified);
-	width = fm_text_width(app->text, text, strlen(text), 12U, 0);
-	(void)fm_text_draw(app->text, canvas, card.x + (card.width - width) / 2, card.y + card.height - 24, text, strlen(text), 12U, 0, FM_COLOR_TEXT_SECONDARY);
+	width = kl_text_width(app->text, text, strlen(text), 12U, 0);
+	(void)kl_text_draw(app->text, canvas, card.x + (card.width - width) / 2, card.y + card.height - 24, text, strlen(text), 12U, 0, FM_COLOR_TEXT_SECONDARY);
 }

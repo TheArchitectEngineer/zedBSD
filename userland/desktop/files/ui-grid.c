@@ -42,18 +42,18 @@
 /* The faint Kei mark over an empty place's words, in pixels a side (ws035-p108). */
 #define GRID_MARK		72
 
-static void grid_panel(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void grid_title(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void grid_items(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
-static void grid_cell(struct fm_app *app, struct fm_canvas *canvas, struct fm_entry *entry, int index, int x, int y);
-static int grid_name(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, int x, int y, int selected);
-static void grid_message(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner, const char *message);
-static void grid_band(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
-static void grid_status(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void grid_trash_buttons(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void grid_scope_chips(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-static void grid_button(struct fm_app *app, struct fm_canvas *canvas, int right, int y, const char *label, int index, int enabled);
-static void grid_thumbnail(struct fm_canvas *canvas, const struct fm_image *thumb, float x, float y, float size);
+static void grid_panel(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void grid_title(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void grid_items(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner);
+static void grid_cell(struct fm_app *app, struct kl_canvas *canvas, struct fm_entry *entry, int index, int x, int y);
+static int grid_name(struct fm_app *app, struct kl_canvas *canvas, const struct fm_entry *entry, int x, int y, int selected);
+static void grid_message(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner, const char *message);
+static void grid_band(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner);
+static void grid_status(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void grid_trash_buttons(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void grid_scope_chips(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+static void grid_button(struct fm_app *app, struct kl_canvas *canvas, int right, int y, const char *label, int index, int enabled);
+static void grid_thumbnail(struct kl_canvas *canvas, const struct kl_image *thumb, float x, float y, float size);
 
 /*
  * Draws the content panel for the place the tab shows.
@@ -61,10 +61,10 @@ static void grid_thumbnail(struct fm_canvas *canvas, const struct fm_image *thum
 void
 fm_grid_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
-	struct fm_rect inner;
+	struct kl_rect inner;
 	struct fm_tab *tab;
 	char message[128];
 
@@ -112,7 +112,7 @@ fm_grid_draw(
 	}
 
 	/* The items, as a list or a grid, and the rubber band over them. */
-	fm_canvas_clip_push(canvas, &inner);
+	kl_canvas_clip_push(canvas, &inner);
 	if (app->view == FM_VIEW_LIST) {
 		fm_list_draw(app, canvas, &inner);
 	} else {
@@ -121,7 +121,7 @@ fm_grid_draw(
 
 	/* The rubber band over the items. */
 	grid_band(app, canvas, &inner);
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 
 	/* The status pill, when there is something to say. */
 	grid_status(app, canvas, area);
@@ -135,7 +135,7 @@ void
 fm_view_item_rect(
 	struct fm_app *app,
 	int index,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
 	struct fm_tab *tab;
 	int columns;
@@ -167,19 +167,19 @@ fm_view_item_rect(
 void
 fm_grid_entry_icon(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct fm_entry *entry,
 	float x,
 	float y,
 	float size)
 {
-	const struct fm_image *thumb;
+	const struct kl_image *thumb;
 	char label[8];
 	int kind;
 
 	/* A folder is blue. */
 	if (entry->folder != 0) {
-		fm_icon_folder(canvas, x, y, size, FM_COLOR_FOLDER);
+		kl_icon_folder(canvas, x, y, size, FM_COLOR_FOLDER);
 		return;
 	}
 
@@ -195,37 +195,37 @@ fm_grid_entry_icon(
 
 	/* A file is a page with its kind's band and its extension. */
 	fm_mime_label(entry->name, label, sizeof(label));
-	fm_icon_file(canvas, app->text, x, y, size, fm_mime_color(entry->mime->category), label);
+	kl_icon_file(canvas, app->text, x, y, size, fm_mime_color(entry->mime->category), label);
 }
 
 /* Draws the content's card: the white panel with its shadow and edge, or its tint on zdesktop's glass. */
 static void
 grid_panel(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	/* The whole card, the row of tabs included (the content is under the row). */
 	area = &app->layout.card;
 
 	/* On glass, zdesktop draws the card, its rim and its shadow: only a light white tint for reading. */
 	if (app->glass != 0) {
-		fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, FM_COLOR_GLASS_CONTENT);
+		kl_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, FM_COLOR_GLASS_CONTENT);
 		return;
 	}
 
 	/* The shadow, the white panel and its thin edge. */
-	fm_canvas_shadow(canvas, (float)area->x, (float)area->y + 4.0f, (float)area->width, (float)area->height, GRID_RADIUS, 14.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, FM_COLOR_PANEL);
-	fm_canvas_round_border(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, 1.0f, FM_COLOR_PANEL_EDGE);
+	kl_canvas_shadow(canvas, (float)area->x, (float)area->y + 4.0f, (float)area->width, (float)area->height, GRID_RADIUS, 14.0f, FM_COLOR_SHADOW);
+	kl_canvas_round(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, FM_COLOR_PANEL);
+	kl_canvas_round_border(canvas, (float)area->x, (float)area->y, (float)area->width, (float)area->height, GRID_RADIUS, 1.0f, FM_COLOR_PANEL_EDGE);
 }
 
 /* Draws the place's name and how many items it holds. */
 static void
 grid_title(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	struct fm_tab *tab;
 	const struct fm_location *location;
@@ -250,7 +250,7 @@ grid_title(
 	left = area->x + 24;
 
 	/* The name itself. */
-	width = fm_text_draw_fit(app->text, canvas, left, baseline, name, GRID_TEXT_TITLE, 1, area->width / 2, FM_COLOR_TEXT);
+	width = kl_text_draw_fit(app->text, canvas, left, baseline, name, GRID_TEXT_TITLE, 1, area->width / 2, FM_COLOR_TEXT);
 	width += left - (area->x + 24);
 
 	/* In the trash: Put Back (for a selection) and Empty Trash at the right. */
@@ -267,15 +267,15 @@ grid_title(
 	fm_dir_items_text((long)tab->listing.count, count, sizeof(count));
 	if (location->kind == FM_LOCATION_SEARCH && app->search.active != 0)
 		snprintf(count + strlen(count), sizeof(count) - strlen(count), ", searching\u2026");
-	(void)fm_text_draw(app->text, canvas, area->x + 24 + width + 12, baseline, count, strlen(count), GRID_TEXT_COUNT, 0, FM_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw(app->text, canvas, area->x + 24 + width + 12, baseline, count, strlen(count), GRID_TEXT_COUNT, 0, FM_COLOR_TEXT_SECONDARY);
 }
 
 /* Draws the rows of cells that are in sight, and records each cell. */
 static void
 grid_items(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *inner)
+	struct kl_canvas *canvas,
+	const struct kl_rect *inner)
 {
 	struct fm_tab *tab;
 	size_t index;
@@ -318,15 +318,15 @@ grid_items(
 static void
 grid_cell(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	struct fm_entry *entry,
 	int index,
 	int x,
 	int y)
 {
-	struct fm_rect cell;
-	struct fm_rect field;
-	fm_color selection;
+	struct kl_rect cell;
+	struct kl_rect field;
+	kl_color selection;
 	char detail[64];
 	int renaming;
 	int match;
@@ -344,15 +344,15 @@ grid_cell(
 	if (app->focused == 0)
 		selection = FM_COLOR_SELECTION_INACTIVE;
 	if (entry->selected != 0) {
-		fm_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f - 6.0f, (float)y + 4.0f, GRID_ICON + 12.0f, GRID_ICON + 12.0f, 12.0f, selection);
+		kl_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f - 6.0f, (float)y + 4.0f, GRID_ICON + 12.0f, GRID_ICON + 12.0f, 12.0f, selection);
 	} else if (app->hover_kind == FM_HIT_ITEM && app->hover_index == index) {
-		fm_canvas_round(canvas, (float)cell.x, (float)cell.y, (float)cell.width, (float)cell.height, 12.0f, FM_COLOR_HOVER);
+		kl_canvas_round(canvas, (float)cell.x, (float)cell.y, (float)cell.width, (float)cell.height, 12.0f, FM_COLOR_HOVER);
 	}
 
 	/* The icon, faded when the item is cut. */
 	fm_grid_entry_icon(app, canvas, entry, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON);
 	if (entry->cut != 0)
-		fm_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_COLOR_TILE);
+		kl_canvas_round(canvas, (float)x + (GRID_CELL_WIDTH - GRID_ICON) * 0.5f, (float)y + 10.0f, (float)GRID_ICON, (float)GRID_ICON, 8.0f, FM_COLOR_TILE);
 
 	/* The name being changed is a field; otherwise the name, on the accent when selected. */
 	renaming = 0;
@@ -367,12 +367,8 @@ grid_cell(
 		field.x = x + 2;
 		field.y = y + GRID_ICON + 16;
 		field.width = GRID_CELL_WIDTH - 4;
-		field.height = 22;
-		fm_canvas_round(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, FM_COLOR_PANEL);
-		fm_canvas_round_border(canvas, (float)field.x, (float)field.y, (float)field.width, (float)field.height, 6.0f, 1.5f, FM_COLOR_ACCENT);
-		field.x += 5;
-		field.width -= 10;
-		fm_field_draw(app, canvas, &app->rename, &field, GRID_TEXT_NAME, NULL);
+		field.height = 24;
+		fm_rename_draw(app, canvas, &field);
 		baseline = y + GRID_ICON + 32;
 	} else {
 		baseline = grid_name(app, canvas, entry, x, y + GRID_ICON + 30, entry->selected);
@@ -388,8 +384,8 @@ grid_cell(
 	}
 
 	/* The detail, centred under the name. */
-	width = fm_text_width(app->text, detail, strlen(detail), GRID_TEXT_DETAIL, 0);
-	(void)fm_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - width) / 2, baseline + 16, detail, strlen(detail), GRID_TEXT_DETAIL, 0, FM_COLOR_TEXT_SECONDARY);
+	width = kl_text_width(app->text, detail, strlen(detail), GRID_TEXT_DETAIL, 0);
+	(void)kl_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - width) / 2, baseline + 16, detail, strlen(detail), GRID_TEXT_DETAIL, 0, FM_COLOR_TEXT_SECONDARY);
 
 	/* The cell can be clicked. */
 	fm_ui_hit(app, &cell, FM_HIT_ITEM, index);
@@ -399,15 +395,15 @@ grid_cell(
 static int
 grid_name(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct fm_entry *entry,
 	int x,
 	int baseline,
 	int selected)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	char second[FM_NAME_MAX];
-	fm_color ink;
+	kl_color ink;
 	size_t first_length;
 	int limit;
 	int first_width;
@@ -417,39 +413,39 @@ grid_name(
 
 	/* The first line: what fits the cell. */
 	limit = GRID_CELL_WIDTH - 12;
-	first_length = fm_text_break(app->text, entry->name, GRID_TEXT_NAME, 0, limit);
-	first_width = fm_text_width(app->text, entry->name, first_length, GRID_TEXT_NAME, 0);
+	first_length = kl_text_break(app->text, entry->name, GRID_TEXT_NAME, 0, limit);
+	first_width = kl_text_width(app->text, entry->name, first_length, GRID_TEXT_NAME, 0);
 
 	/* The second line: the rest, cut with an ellipsis. */
 	lines = 1;
 	second[0] = '\0';
 	second_width = 0;
 	if (entry->name[first_length] != '\0') {
-		(void)fm_text_fit(app->text, entry->name + first_length, GRID_TEXT_NAME, 0, limit, second, sizeof(second));
-		second_width = fm_text_width(app->text, second, strlen(second), GRID_TEXT_NAME, 0);
+		(void)kl_text_fit(app->text, entry->name + first_length, GRID_TEXT_NAME, 0, limit, second, sizeof(second));
+		second_width = kl_text_width(app->text, second, strlen(second), GRID_TEXT_NAME, 0);
 		lines = 2;
 	}
 
 	/* A selected name sits on an accent pill as wide as its widest line. */
-	fm_text_metrics(app->text, GRID_TEXT_NAME, &line);
+	kl_text_metrics(app->text, GRID_TEXT_NAME, &line);
 	ink = FM_COLOR_TEXT;
 	if (selected != 0) {
 		widest = first_width;
 		if (second_width > widest)
 			widest = second_width;
-		fm_canvas_round(canvas, (float)(x + (GRID_CELL_WIDTH - widest) / 2 - 6), (float)(baseline - line.ascent - 3), (float)(widest + 12), (float)(lines * line.height + 5), 7.0f, FM_COLOR_ACCENT);
-		ink = FM_RGB(0xffffff);
+		kl_canvas_round(canvas, (float)(x + (GRID_CELL_WIDTH - widest) / 2 - 6), (float)(baseline - line.ascent - 3), (float)(widest + 12), (float)(lines * line.height + 5), 7.0f, FM_COLOR_ACCENT);
+		ink = KL_RGB(0xffffff);
 	}
 
 	/* The first line, centred. */
-	(void)fm_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - first_width) / 2, baseline, entry->name, first_length, GRID_TEXT_NAME, 0, ink);
+	(void)kl_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - first_width) / 2, baseline, entry->name, first_length, GRID_TEXT_NAME, 0, ink);
 
 	/* A name of one line ends there. */
 	if (lines == 1)
 		return baseline;
 
 	/* The second line under it. */
-	(void)fm_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - second_width) / 2, baseline + line.height, second, strlen(second), GRID_TEXT_NAME, 0, ink);
+	(void)kl_text_draw(app->text, canvas, x + (GRID_CELL_WIDTH - second_width) / 2, baseline + line.height, second, strlen(second), GRID_TEXT_NAME, 0, ink);
 
 	/* Reports the second line's baseline. */
 	return baseline + line.height;
@@ -459,8 +455,8 @@ grid_name(
 static void
 grid_message(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *inner,
+	struct kl_canvas *canvas,
+	const struct kl_rect *inner,
 	const char *message)
 {
 	int width;
@@ -469,16 +465,16 @@ grid_message(
 	fm_mark_draw(canvas, inner->x + (inner->width - GRID_MARK) / 2, inner->y + inner->height / 2 - 44 - GRID_MARK, (unsigned)GRID_MARK, 0.45f);
 
 	/* Centred, faint. */
-	width = fm_text_width(app->text, message, strlen(message), 15U, 0);
-	(void)fm_text_draw(app->text, canvas, inner->x + (inner->width - width) / 2, inner->y + inner->height / 2 - 20, message, strlen(message), 15U, 0, FM_COLOR_TEXT_FAINT);
+	width = kl_text_width(app->text, message, strlen(message), 15U, 0);
+	(void)kl_text_draw(app->text, canvas, inner->x + (inner->width - width) / 2, inner->y + inner->height / 2 - 20, message, strlen(message), 15U, 0, FM_COLOR_TEXT_FAINT);
 }
 
 /* Draws the rubber band being dragged: a faint accent box with an edge. */
 static void
 grid_band(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *inner)
+	struct kl_canvas *canvas,
+	const struct kl_rect *inner)
 {
 	struct fm_tab *tab;
 	int left;
@@ -513,16 +509,16 @@ grid_band(
 
 	/* The box and its edge. */
 	(void)inner;
-	fm_canvas_round(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, FM_RGBA(0x2f7cf6, 30));
-	fm_canvas_round_border(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, 1.0f, FM_RGBA(0x2f7cf6, 150));
+	kl_canvas_round(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, KL_RGBA(0x2f7cf6, 30));
+	kl_canvas_round_border(canvas, (float)left, (float)top, (float)(right - left), (float)(bottom - top), 3.0f, 1.0f, KL_RGBA(0x2f7cf6, 150));
 }
 
 /* Draws the status pill at the bottom of the panel: a message, or the selection's count and size. */
 static void
 grid_status(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	struct fm_tab *tab;
 	uint64_t bytes;
@@ -558,20 +554,20 @@ grid_status(
 	}
 
 	/* A soft pill, centred at the bottom. */
-	width = fm_text_width(app->text, text, strlen(text), 12U, 0) + 32;
+	width = kl_text_width(app->text, text, strlen(text), 12U, 0) + 32;
 	x = area->x + (area->width - width) / 2;
 	y = area->y + area->height - 44;
-	fm_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 28.0f, 14.0f, 8.0f, FM_COLOR_SHADOW);
-	fm_canvas_round(canvas, (float)x, (float)y, (float)width, 28.0f, 14.0f, FM_RGBA(0x2a3345, 225));
-	(void)fm_text_draw(app->text, canvas, x + 16, fm_text_center(12U, y, 28), text, strlen(text), 12U, 0, FM_RGB(0xffffff));
+	kl_canvas_shadow(canvas, (float)x, (float)y + 2.0f, (float)width, 28.0f, 14.0f, 8.0f, FM_COLOR_SHADOW);
+	kl_canvas_round(canvas, (float)x, (float)y, (float)width, 28.0f, 14.0f, KL_RGBA(0x2a3345, 225));
+	(void)kl_text_draw(app->text, canvas, x + 16, kl_text_center(12U, y, 28), text, strlen(text), 12U, 0, KL_RGB(0xffffff));
 }
 
 /* Draws the trash's buttons at the right of the title: Put Back (with a selection) and Empty Trash. */
 static void
 grid_trash_buttons(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	struct fm_tab *tab;
 	uint64_t bytes;
@@ -590,20 +586,20 @@ grid_trash_buttons(
 static void
 grid_button(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int right,
 	int y,
 	const char *label,
 	int index,
 	int enabled)
 {
-	struct fm_rect rect;
-	fm_color ground;
-	fm_color ink;
+	struct kl_rect rect;
+	kl_color ground;
+	kl_color ink;
 	int width;
 
 	/* The pill fits its label. */
-	width = fm_text_width(app->text, label, strlen(label), 12U, 1) + 28;
+	width = kl_text_width(app->text, label, strlen(label), 12U, 1) + 28;
 	rect.x = right - width;
 	rect.y = y;
 	rect.width = width;
@@ -616,8 +612,8 @@ grid_button(
 		ink = FM_COLOR_TEXT_FAINT;
 	else if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
 		ground = FM_COLOR_BUTTON_LIT;
-	fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, ground);
-	(void)fm_text_draw(app->text, canvas, rect.x + 14, fm_text_center(12U, rect.y, rect.height), label, strlen(label), 12U, 1, ink);
+	kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, ground);
+	(void)kl_text_draw(app->text, canvas, rect.x + 14, kl_text_center(12U, rect.y, rect.height), label, strlen(label), 12U, 1, ink);
 
 	/* An enabled button can be clicked. */
 	if (enabled != 0)
@@ -628,13 +624,13 @@ grid_button(
 static void
 grid_scope_chips(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *area)
+	struct kl_canvas *canvas,
+	const struct kl_rect *area)
 {
 	static const char *const labels[] = { "This Folder", "Home", "Computer" };
-	struct fm_rect chip;
-	fm_color ground;
-	fm_color ink;
+	struct kl_rect chip;
+	kl_color ground;
+	kl_color ink;
 	int widths[3];
 	int right;
 	int index;
@@ -642,7 +638,7 @@ grid_scope_chips(
 	/* The chips' widths, laid out from the right edge. */
 	right = area->x + area->width - 20;
 	for (index = 2; index >= 0; index--) {
-		widths[index] = fm_text_width(app->text, labels[index], strlen(labels[index]), 12U, 1) + 24;
+		widths[index] = kl_text_width(app->text, labels[index], strlen(labels[index]), 12U, 1) + 24;
 		right -= widths[index] + 6;
 	}
 
@@ -662,8 +658,8 @@ grid_scope_chips(
 		}
 
 		/* The chip and its label. */
-		fm_canvas_round(canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 13.0f, ground);
-		(void)fm_text_draw(app->text, canvas, chip.x + 12, fm_text_center(12U, chip.y, chip.height), labels[index], strlen(labels[index]), 12U, 1, ink);
+		kl_canvas_round(canvas, (float)chip.x, (float)chip.y, (float)chip.width, (float)chip.height, 13.0f, ground);
+		(void)kl_text_draw(app->text, canvas, chip.x + 12, kl_text_center(12U, chip.y, chip.height), labels[index], strlen(labels[index]), 12U, 1, ink);
 		fm_ui_hit(app, &chip, FM_HIT_SCOPE, index);
 		chip.x += chip.width + 6;
 	}
@@ -672,8 +668,8 @@ grid_scope_chips(
 /* Draws a thumbnail fitted in an icon's square: a large one in a white frame with a shadow, a small one bare. */
 static void
 grid_thumbnail(
-	struct fm_canvas *canvas,
-	const struct fm_image *thumb,
+	struct kl_canvas *canvas,
+	const struct kl_image *thumb,
 	float x,
 	float y,
 	float size)
@@ -696,10 +692,10 @@ grid_thumbnail(
 
 	/* A large icon's white frame and soft shadow. */
 	if (frame > 0.0f) {
-		fm_canvas_shadow(canvas, left - frame, top - frame + 2.0f, (float)width + 2.0f * frame, (float)height + 2.0f * frame, 5.0f, 6.0f, FM_COLOR_SHADOW);
-		fm_canvas_round(canvas, left - frame, top - frame, (float)width + 2.0f * frame, (float)height + 2.0f * frame, 5.0f, FM_COLOR_PANEL);
+		kl_canvas_shadow(canvas, left - frame, top - frame + 2.0f, (float)width + 2.0f * frame, (float)height + 2.0f * frame, 5.0f, 6.0f, FM_COLOR_SHADOW);
+		kl_canvas_round(canvas, left - frame, top - frame, (float)width + 2.0f * frame, (float)height + 2.0f * frame, 5.0f, FM_COLOR_PANEL);
 	}
 
 	/* The picture. */
-	fm_canvas_image(canvas, thumb, left, top, (float)width, (float)height, 3.0f, 1.0f);
+	kl_canvas_image(canvas, thumb, left, top, (float)width, (float)height, 3.0f, 1.0f);
 }

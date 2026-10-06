@@ -69,7 +69,7 @@ struct main_options {
 static struct se_window main_window;
 static struct se_present main_present;
 static struct se_app main_app;
-static struct fm_text main_text;
+static struct kl_text main_text;
 
 /*
  * The one copy of Settings: the socket later starts hand their page to,
@@ -108,7 +108,7 @@ static struct se_titlebar_event main_titlebar_event;
  * the canvas over it.  They are remade when the window changes size.
  */
 static uint32_t *main_pixels;
-static struct fm_canvas main_canvas;
+static struct kl_canvas main_canvas;
 
 static int main_parse(int argc, char **argv, struct main_options *options);
 static const char *main_value(const char *argument, const char *name);
@@ -160,7 +160,7 @@ main(
 	}
 
 	/* The fonts. */
-	error = fm_text_open(&main_text, options.font, options.fallback);
+	error = kl_text_open(&main_text, options.font, options.fallback);
 	if (error != 0) {
 		fprintf(stderr, "ZSETTINGS FAILED operation=font path=%s error=%d\n", options.font, error);
 		kl_instance_close(main_instance);
@@ -172,7 +172,7 @@ main(
 	if (status != 0) {
 		fprintf(stderr, "ZSETTINGS FAILED operation=window error=%d\n", errno);
 		se_window_close(&main_window);
-		fm_text_close(&main_text);
+		kl_text_close(&main_text);
 		kl_instance_close(main_instance);
 		return 1;
 	}
@@ -183,7 +183,7 @@ main(
 		fprintf(stderr, "ZSETTINGS FAILED operation=%s result=%d\n", main_present.operation, (int)result);
 		se_present_close(&main_present);
 		se_window_close(&main_window);
-		fm_text_close(&main_text);
+		kl_text_close(&main_text);
 		kl_instance_close(main_instance);
 		return 1;
 	}
@@ -228,7 +228,7 @@ main(
 		se_glass_close(&main_glass);
 		se_present_close(&main_present);
 		se_window_close(&main_window);
-		fm_text_close(&main_text);
+		kl_text_close(&main_text);
 		kl_instance_close(main_instance);
 		return 1;
 	}
@@ -247,11 +247,11 @@ main(
 	se_titlebar_close(&main_titlebar);
 	se_menu_close(&main_menu);
 	se_glass_close(&main_glass);
-	fm_canvas_release(&main_canvas);
+	kl_canvas_release(&main_canvas);
 	free(main_pixels);
 	se_present_close(&main_present);
 	se_window_close(&main_window);
-	fm_text_close(&main_text);
+	kl_text_close(&main_text);
 	kl_instance_close(main_instance);
 
 	/* Reports how the run ended. */
@@ -577,28 +577,23 @@ main_frame(void)
 }
 
 /*
- * Asks for the window's text input while the field with the keyboard takes
- * an input method's text, with where its caret was drawn (ws090-p022); off
- * otherwise, and what was being composed goes.
+ * Asks for the window's text input while a text field that takes an input
+ * method has the keyboard, at its caret (widgets.c, ws090-p007).
  */
 static void
 main_text_input(void)
 {
-	int wanted;
+	struct kl_ui *fields;
 
-	/* No such field: off. */
-	wanted = se_users_admin_text_wanted(&main_app);
-	if (!wanted) {
-		main_app.preedit[0] = '\0';
-		main_app.caret_known = 0;
+	/* No fields' input: off. */
+	fields = se_fields_ui();
+	if (fields == NULL) {
 		kl_window_text_input(main_window.kui, 0);
 		return;
 	}
 
-	/* On, at its caret once it was drawn. */
-	kl_window_text_input(main_window.kui, 1);
-	if (main_app.caret_known)
-		kl_window_text_cursor(main_window.kui, main_app.caret.x, main_app.caret.y, main_app.caret.width, main_app.caret.height);
+	/* libkeiland's answer: on while a field that takes an input method has the keyboard, at its caret. */
+	kl_ui_window_text(fields, main_window.kui);
 }
 
 /* Makes the frame's memory and canvas at the swapchain's size; nonzero when memory runs out. */
@@ -609,7 +604,7 @@ main_canvas_make(void)
 	int error;
 
 	/* The old canvas and memory go. */
-	fm_canvas_release(&main_canvas);
+	kl_canvas_release(&main_canvas);
 	free(main_pixels);
 
 	/* Memory for the swapchain's size. */
@@ -619,7 +614,7 @@ main_canvas_make(void)
 		return -1;
 
 	/* The canvas over it. */
-	error = fm_canvas_init(&main_canvas, main_pixels, (size_t)main_present.extent.width, (int)main_present.extent.width, (int)main_present.extent.height);
+	error = kl_canvas_init(&main_canvas, main_pixels, (size_t)main_present.extent.width, (int)main_present.extent.width, (int)main_present.extent.height);
 	if (error != 0)
 		return -1;
 

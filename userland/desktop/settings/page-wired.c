@@ -43,7 +43,7 @@ static const char *const wired_labels[SE_WIRED_FIELDS] = { "IPv4 address", "Subn
 static const char *const wired_placeholders[SE_WIRED_FIELDS] = { "192.168.1.20", "255.255.255.0", "Optional", "From DHCP when empty", "Optional" };
 
 static int wired_counts(const struct se_wired *wired, int index);
-static void wired_field_draw(struct se_app *app, struct fm_canvas *canvas, int index, int x, int y, int width);
+static void wired_field_draw(struct se_app *app, struct kl_canvas *canvas, int index, int x, int y, int width);
 static const char *wired_mode_text(unsigned mode);
 
 /*
@@ -53,7 +53,7 @@ static const char *wired_mode_text(unsigned mode);
 int
 se_wired_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct kl_network_link *link,
 	int x,
 	int top,
@@ -62,7 +62,7 @@ se_wired_card(
 	struct se_wired *wired;
 	char title[48];
 	const char *router;
-	fm_color ink;
+	kl_color ink;
 	size_t which;
 	int editing;
 	int differs;
@@ -105,7 +105,7 @@ se_wired_card(
 	button = se_button_width(app, "DHCP");
 	(void)se_button_draw(app, canvas, x + WIRED_FIELD_X, y + 10, "DHCP", wired->mode == KL_WIRED_DHCP, !wired->asked, WIRED_DHCP);
 	(void)se_button_draw(app, canvas, x + WIRED_FIELD_X + button + 8, y + 10, "Static", wired->mode == KL_WIRED_STATIC, !wired->asked, WIRED_STATIC);
-	(void)fm_text_draw_fit(app->text, canvas, x + WIRED_PAD, fm_text_center(WIRED_TEXT_ROW, y + 8, 36), "Configure", WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "Configure", WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, SE_COLOR_TEXT);
 	y += 56;
 
 	/* Each field (the address, mask and router faint with DHCP). */
@@ -115,8 +115,8 @@ se_wired_card(
 	}
 
 	/* The IPv6, which Kei does not have yet (ws089-p022: the user's decision), faint. */
-	(void)fm_text_draw_fit(app->text, canvas, x + WIRED_PAD, fm_text_center(WIRED_TEXT_ROW, y + 8, 36), "IPv6", WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, SE_COLOR_TEXT_FAINT);
-	(void)fm_text_draw_fit(app->text, canvas, x + WIRED_FIELD_X, fm_text_center(WIRED_TEXT_ROW, y + 8, 36), "Not available on Kei yet", WIRED_TEXT_ROW, 0, width - WIRED_FIELD_X - WIRED_PAD, SE_COLOR_TEXT_FAINT);
+	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "IPv6", WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, SE_COLOR_TEXT_FAINT);
+	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_FIELD_X, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "Not available on Kei yet", WIRED_TEXT_ROW, 0, width - WIRED_FIELD_X - WIRED_PAD, SE_COLOR_TEXT_FAINT);
 	y += 50;
 
 	/* Apply and Cancel at the right. */
@@ -131,7 +131,7 @@ se_wired_card(
 	if (wired->message_bad)
 		ink = SE_COLOR_BAD;
 	if (wired->message[0] != '\0')
-		(void)fm_text_draw_fit(app->text, canvas, x + WIRED_PAD, y + 18, wired->message, WIRED_TEXT_SUB, 0, width - 2 * WIRED_PAD, ink);
+		(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, y + 18, wired->message, WIRED_TEXT_SUB, 0, width - 2 * WIRED_PAD, ink);
 
 	/* The edge below the card. */
 	return top + height;
@@ -292,20 +292,18 @@ wired_counts(
 static void
 wired_field_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int index,
 	int x,
 	int y,
 	int width)
 {
-	const struct se_wired *wired;
-	const struct se_field *field;
-	struct fm_rect box;
-	const char *text;
-	fm_color ink;
-	fm_color label;
+	struct se_wired *wired;
+	struct kl_field *field;
+	struct kl_rect box;
+	kl_color label;
 	int counts;
-	int right;
+	int focused;
 
 	/* The label, faint for a field that does not count. */
 	wired = &app->wired;
@@ -314,48 +312,28 @@ wired_field_draw(
 	label = SE_COLOR_TEXT;
 	if (!counts)
 		label = SE_COLOR_TEXT_FAINT;
-	(void)fm_text_draw_fit(app->text, canvas, x + WIRED_PAD, fm_text_center(WIRED_TEXT_ROW, y + 8, 36), wired_labels[index], WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, label);
+	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), wired_labels[index], WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, label);
 
-	/* The box: white, the accent's edge with the keyboard. */
+	/* The box's place; a click on it gives it the keyboard. */
 	box.x = x + WIRED_FIELD_X;
 	box.y = y + 8;
 	box.width = width - WIRED_FIELD_X - WIRED_PAD;
 	box.height = 36;
-	if (counts) {
-		fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	} else {
-		fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_SEPARATOR);
-	}
-
-	/* Its edge. */
-	if (counts && wired->focus == index) {
-		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
-	} else {
-		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
-	}
-
-	/* A click on it gives it the keyboard. */
 	se_ui_hit(app, &box, SE_HIT_CONTROL, WIRED_FIELD_FIRST + index);
 
-	/* The text, or what an empty field is for ("From DHCP" for a field that does not count). */
-	text = field->text;
-	ink = SE_COLOR_TEXT;
+	/* A field that does not count: grey, "From DHCP", nothing to type. */
 	if (!counts) {
-		text = "From DHCP";
-		ink = SE_COLOR_TEXT_FAINT;
-	} else if (field->length == 0) {
-		text = wired_placeholders[index];
-		ink = SE_COLOR_TEXT_FAINT;
+		kl_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_SEPARATOR);
+		kl_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
+		(void)kl_text_draw(app->text, canvas, box.x + 12, kl_text_center(WIRED_TEXT_ROW, box.y, box.height), "From DHCP", strlen("From DHCP"), WIRED_TEXT_ROW, 0, SE_COLOR_TEXT_FAINT);
+		return;
 	}
 
-	/* The text inside the box, and the cursor after it in the field with the keyboard. */
-	fm_canvas_clip_push(canvas, &box);
-	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, fm_text_center(WIRED_TEXT_ROW, box.y, box.height), text, strlen(text), WIRED_TEXT_ROW, 0, ink);
-	if (field->length == 0 || !counts)
-		right = box.x + 12;
-	if (counts && wired->focus == index)
-		fm_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	fm_canvas_clip_pop(canvas);
+	/* libkeiland's field, plain: an address takes no input method (ws090-p007). */
+	focused = 0;
+	if (wired->focus == index)
+		focused = 1;
+	(void)se_field_draw(app, canvas, field, &box, wired_placeholders[index], SE_FIELD_PLAIN, focused);
 }
 
 /* Says how a wired interface is configured, in words. */

@@ -90,10 +90,10 @@ static const char *const input_accel_words[] = { "None", "Mild", "Medium", "Stro
 static const struct input_slider *input_slider_of(int index);
 static int *input_value(struct se_app *app, int index);
 static void input_value_text(int index, int value, char *text, size_t size);
-static int input_slider_block(struct se_app *app, struct fm_canvas *canvas, const struct input_slider *slider, int x, int y, int width);
-static int input_pointer_card(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *title, int speed, int acceleration, int natural, int on, const char *line);
-static int input_note(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width, const char *text);
-static int input_saving(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
+static int input_slider_block(struct se_app *app, struct kl_canvas *canvas, const struct input_slider *slider, int x, int y, int width);
+static int input_pointer_card(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, const char *title, int speed, int acceleration, int natural, int on, const char *line);
+static int input_note(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, const char *text);
+static int input_saving(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 
 /*
  * Draws the Mouse page: a mouse's speed, acceleration and natural
@@ -102,7 +102,7 @@ static int input_saving(struct se_app *app, struct fm_canvas *canvas, int x, int
 int
 se_mouse_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -128,7 +128,7 @@ se_mouse_draw(
 int
 se_touchpad_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -160,7 +160,7 @@ se_touchpad_draw(
 int
 se_keyboard_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -193,12 +193,12 @@ se_keyboard_draw(
 int
 se_sound_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	const char *service;
 	const char *note;
 	char value[32];
@@ -216,8 +216,8 @@ se_sound_draw(
 	available = se_sound_available(app);
 	height = se_card_height(0, 1) + INPUT_BLOCK + 56;
 	y = se_card_begin(app, canvas, x, card, width, height, "Volume", NULL);
-	fm_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + line.ascent, "Output volume", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	kl_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + line.ascent, "Output volume", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 	if (available == 0) {
 		/* Without a sound output there is no volume to show (ws089-p012 C4). */
 		(void)snprintf(value, sizeof(value), "%s", "\xe2\x80\x94");
@@ -228,22 +228,22 @@ se_sound_draw(
 	}
 
 	/* The value at the right, then the slider (greyed without a sound output). */
-	value_width = fm_text_width(app->text, value, strlen(value), INPUT_TEXT_TITLE, 0);
-	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + line.ascent, value, strlen(value), INPUT_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
+	value_width = kl_text_width(app->text, value, strlen(value), INPUT_TEXT_TITLE, 0);
+	(void)kl_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + line.ascent, value, strlen(value), INPUT_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
 	se_slider_draw(app, canvas, x + INPUT_PAD + 14, y + 24, width - 2 * INPUT_PAD - 28, (float)app->sound.value / 100.0f, available, SE_SOUND_VOLUME, &app->sound.slider);
 
 	/* The ends' words. */
-	fm_text_metrics(app->text, INPUT_TEXT_SMALL, &line);
-	(void)fm_text_draw(app->text, canvas, x + INPUT_PAD + 2, y + 62 + line.ascent, "Quiet", 5U, INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
-	value_width = fm_text_width(app->text, "Loud", 4U, INPUT_TEXT_SMALL, 0);
-	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + 62 + line.ascent, "Loud", 4U, INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	kl_text_metrics(app->text, INPUT_TEXT_SMALL, &line);
+	(void)kl_text_draw(app->text, canvas, x + INPUT_PAD + 2, y + 62 + line.ascent, "Quiet", 5U, INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	value_width = kl_text_width(app->text, "Loud", 4U, INPUT_TEXT_SMALL, 0);
+	(void)kl_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + 62 + line.ascent, "Loud", 4U, INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
 	y += INPUT_BLOCK;
 
 	/* Mute: its label and line at the left, the switch at the right. */
-	fm_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
-	fm_canvas_line(canvas, (float)(x + INPUT_PAD), (float)y - 0.5f, (float)(x + width - INPUT_PAD), (float)y - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 10 + line.ascent, "Mute", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 32 + line.ascent, "No sound plays while it is on.", INPUT_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+	kl_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
+	kl_canvas_line(canvas, (float)(x + INPUT_PAD), (float)y - 0.5f, (float)(x + width - INPUT_PAD), (float)y - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 10 + line.ascent, "Mute", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 32 + line.ascent, "No sound plays while it is on.", INPUT_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 	se_toggle_draw(app, canvas, x + width - INPUT_PAD - 44, y + 16, app->sound.muted, available, SE_SOUND_MUTE);
 
 	/* The output's card: the service's state. */
@@ -415,13 +415,13 @@ input_value_text(
 static int
 input_slider_block(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	const struct input_slider *slider,
 	int x,
 	int y,
 	int width)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	char value[32];
 	float fraction;
 	int number;
@@ -430,11 +430,11 @@ input_slider_block(
 
 	/* The label at the left, the value at the right. */
 	number = *input_value(app, slider->index);
-	fm_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + line.ascent, slider->label, INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	kl_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + line.ascent, slider->label, INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 	input_value_text(slider->index, number, value, sizeof(value));
-	value_width = fm_text_width(app->text, value, strlen(value), INPUT_TEXT_TITLE, 0);
-	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + line.ascent, value, strlen(value), INPUT_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
+	value_width = kl_text_width(app->text, value, strlen(value), INPUT_TEXT_TITLE, 0);
+	(void)kl_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + line.ascent, value, strlen(value), INPUT_TEXT_TITLE, 0, SE_COLOR_TEXT_SECONDARY);
 
 	/* The slider; it works only when the settings can be changed. */
 	fraction = (float)(number - slider->minimum) / (float)(slider->maximum - slider->minimum);
@@ -444,10 +444,10 @@ input_slider_block(
 	se_slider_draw(app, canvas, x + INPUT_PAD + 14, y + 24, width - 2 * INPUT_PAD - 28, fraction, enabled, slider->index, &app->look.sliders[slider->index - INPUT_SPEED]);
 
 	/* The ends' words. */
-	fm_text_metrics(app->text, INPUT_TEXT_SMALL, &line);
-	(void)fm_text_draw(app->text, canvas, x + INPUT_PAD + 2, y + 62 + line.ascent, slider->left, strlen(slider->left), INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
-	value_width = fm_text_width(app->text, slider->right, strlen(slider->right), INPUT_TEXT_SMALL, 0);
-	(void)fm_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + 62 + line.ascent, slider->right, strlen(slider->right), INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	kl_text_metrics(app->text, INPUT_TEXT_SMALL, &line);
+	(void)kl_text_draw(app->text, canvas, x + INPUT_PAD + 2, y + 62 + line.ascent, slider->left, strlen(slider->left), INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
+	value_width = kl_text_width(app->text, slider->right, strlen(slider->right), INPUT_TEXT_SMALL, 0);
+	(void)kl_text_draw(app->text, canvas, x + width - INPUT_PAD - value_width, y + 62 + line.ascent, slider->right, strlen(slider->right), INPUT_TEXT_SMALL, 0, SE_COLOR_TEXT_FAINT);
 
 	/* The edge below the block. */
 	return y + INPUT_BLOCK;
@@ -461,7 +461,7 @@ input_slider_block(
 static int
 input_pointer_card(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -472,7 +472,7 @@ input_pointer_card(
 	int on,
 	const char *line_text)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	int enabled;
 	int height;
 	int y;
@@ -484,10 +484,10 @@ input_pointer_card(
 	y = input_slider_block(app, canvas, input_slider_of(acceleration), x, y, width);
 
 	/* Natural scrolling: its label and line at the left, the switch at the right. */
-	fm_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
-	fm_canvas_line(canvas, (float)(x + INPUT_PAD), (float)y - 0.5f, (float)(x + width - INPUT_PAD), (float)y - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 10 + line.ascent, "Natural scrolling", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 32 + line.ascent, line_text, INPUT_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+	kl_text_metrics(app->text, INPUT_TEXT_TITLE, &line);
+	kl_canvas_line(canvas, (float)(x + INPUT_PAD), (float)y - 0.5f, (float)(x + width - INPUT_PAD), (float)y - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 10 + line.ascent, "Natural scrolling", INPUT_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, y + 32 + line.ascent, line_text, INPUT_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 	enabled = 0;
 	if (app->look.writable)
 		enabled = 1;
@@ -501,7 +501,7 @@ input_pointer_card(
 static int
 input_note(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width,
@@ -513,8 +513,8 @@ input_note(
 	/* One line in a low card. */
 	height = 56;
 	(void)se_card_begin(app, canvas, x, top, width, height, NULL, NULL);
-	baseline = fm_text_center(INPUT_TEXT_SMALL, top, height);
-	(void)fm_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, baseline, text, INPUT_TEXT_SMALL, 0, width - 2 * INPUT_PAD, SE_COLOR_TEXT_SECONDARY);
+	baseline = kl_text_center(INPUT_TEXT_SMALL, top, height);
+	(void)kl_text_draw_fit(app->text, canvas, x + INPUT_PAD + 2, baseline, text, INPUT_TEXT_SMALL, 0, width - 2 * INPUT_PAD, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the card. */
 	return top + height;
@@ -524,7 +524,7 @@ input_note(
 static int
 input_saving(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -539,7 +539,7 @@ input_saving(
 		return top;
 
 	/* One line in red. */
-	(void)fm_text_draw_fit(app->text, canvas, x + 2, top + 16, text, INPUT_TEXT_SMALL, 0, width, SE_COLOR_BAD);
+	(void)kl_text_draw_fit(app->text, canvas, x + 2, top + 16, text, INPUT_TEXT_SMALL, 0, width, SE_COLOR_BAD);
 
 	/* The edge below the line. */
 	return top + 30;

@@ -27,14 +27,27 @@ flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOUR
 objects=""
 for file in userland/desktop/libtruetype/face.c userland/desktop/libtruetype/cmap.c \
     userland/desktop/libtruetype/outline.c userland/desktop/libtruetype/render.c \
-    userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c; do
+    userland/desktop/libtruetype/glyph.c userland/desktop/libtruetype/design.c userland/desktop/libtruetype/companion.c \
+    userland/desktop/libtruetype/color.c userland/desktop/libtruetype/contour.c; do
 	object="$out/obj/truetype-$(basename "$file" .c).o"
 	"$cc" -O2 -g -w -I$out/include -Iuserland/desktop/libtruetype -c "$file" -o "$object"
 	objects="$objects $object"
 done
-for file in userland/desktop/files/canvas.c userland/desktop/files/text.c userland/desktop/files/icons.c userland/desktop/artwork/mark.c; do
+# libkeiland's canvas, text and icons (Settings draws with them since ws090-p009), the colour glyphs, and the Kei mark.
+for file in userland/desktop/libkeiland/ui/canvas.c userland/desktop/libkeiland/ui/text.c userland/desktop/libkeiland/ui/icons.c \
+    userland/desktop/libkeiland/ui/icons-line.c userland/desktop/picture/color-glyph.c userland/desktop/artwork/mark.c; do
 	object="$out/obj/shared-$(basename "$file" .c).o"
-	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -c "$file" -o "$object"
+	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
+	objects="$objects $object"
+done
+# libkeiland's widgets' input and text field (Settings' fields are kl_field since ws090-p007), and the light appearance
+# its theme asks for (no compositor on the host).
+for file in userland/desktop/libkeiland/ui/ui.c userland/desktop/libkeiland/ui/field.c userland/desktop/libkeiland/ui/input.c \
+    userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/text-touch.c \
+    userland/desktop/libkeiland/ui/scroll-bar.c userland/desktop/libkeiland/gesture.c userland/desktop/libkeiland/motion.c \
+    plan/tools/files/host-appearance.c; do
+	object="$out/obj/shared-ui-$(basename "$file" .c).o"
+	"$cc" -O2 -g -Wall -Werror -D_GNU_SOURCE -I$out/include -I. -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
 	objects="$objects $object"
 done
 # The desktop's settings (WS135): libkeiland's cache and the settings' table, under a stand-in for kl_settings_*

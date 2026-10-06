@@ -36,7 +36,7 @@ main(
 	char **argv)
 {
 	static const char signature_only[] = "%PDF-1.4\n";
-	struct fm_image image;
+	struct kl_image image;
 	struct timeval times[2];
 	unsigned char *data;
 	unsigned char noise[4096];
@@ -61,25 +61,25 @@ main(
 	error = fm_thumb_pdf(data, size, &image);
 	printf("good: error=%d width=%d height=%d\n", error, image.width, image.height);
 	check(error == 0 && (image.width == 512 || image.height == 512), "a PDF's first page is drawn, its longest side 512");
-	fm_image_release(&image);
+	kl_image_release(&image);
 
 	/* 2. Damaged documents. */
 	error = fm_thumb_pdf(data, size / 3U, &image);
 	check(error == EINVAL && image.pixels == NULL, "a PDF cut to a third fails without a crash");
-	fm_image_release(&image);
+	kl_image_release(&image);
 	error = fm_thumb_pdf((const unsigned char *)signature_only, sizeof(signature_only) - 1U, &image);
 	check(error == EINVAL, "a PDF of only its signature fails");
-	fm_image_release(&image);
+	kl_image_release(&image);
 	error = fm_thumb_pdf((const unsigned char *)"", 0U, &image);
 	check(error == EINVAL, "an empty file fails");
-	fm_image_release(&image);
+	kl_image_release(&image);
 	srand(127);
 	memcpy(noise, "%PDF-1.7\n", 9U);
 	for (index = 9U; index < sizeof(noise); index++)
 		noise[index] = (unsigned char)(rand() & 0xff);
 	error = fm_thumb_pdf(noise, sizeof(noise), &image);
 	check(error == EINVAL, "random bytes behind the signature fail");
-	fm_image_release(&image);
+	kl_image_release(&image);
 	free(data);
 
 	/* 3. The trim: five records of different ages, three kept. */

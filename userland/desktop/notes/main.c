@@ -54,6 +54,19 @@
  * (edit.c), again every MAIN_DRAG_PREVIEW_MS while a drag moves its
  * object.
  *
+ * ws175-p008 with ws079-p017: the Text tool puts words on the page and
+ * changes the PDF's lines of text.  A press on a line opens its words in
+ * the text box (box.c: libkeiland's field, which takes an input method's
+ * text) under it, and the page shows the words as they are typed; a press
+ * elsewhere opens a box of several lines there for new words (a drag
+ * across sets the width they wrap at), in the toolbar's font, size and
+ * pen colour.  Enter in a line's box, Esc, or a press outside the box
+ * closes it keeping the words as one change -- once the page's editor
+ * takes them: words no font writes keep the box open with the reason.
+ * With the Select tool a line of text is chosen, moved and sized like an
+ * image, and a double click (or Edit, or Enter) opens its words in the
+ * box; its font and size are the toolbar's Font and A- / A+.
+ *
  * --timeout-s ends Notes after that many seconds as if it were closed (the
  * tests use it to bound a run).  The lines starting with "NOTES" on the
  * standard output are what the tests read.
@@ -101,6 +114,7 @@
 #define MAIN_KEY_ESC		1U
 #define MAIN_KEY_W		17U
 #define MAIN_KEY_E		18U
+#define MAIN_KEY_T		20U
 #define MAIN_KEY_Y		21U
 #define MAIN_KEY_O		24U
 #define MAIN_KEY_P		25U
@@ -117,6 +131,7 @@
 #define MAIN_KEY_RIGHT		106U
 #define MAIN_KEY_DOWN		108U
 #define MAIN_KEY_DELETE		111U
+#define MAIN_KEY_ENTER		28U
 
 /* The points of a circle the pen's mark is drawn with. */
 #define MAIN_CIRCLE_POINTS	40U
@@ -149,6 +164,8 @@
 #define MAIN_CONTACT_DRAW	2U
 #define MAIN_CONTACT_ERASE	3U
 #define MAIN_CONTACT_SELECT	4U
+#define MAIN_CONTACT_TEXT	5U
+#define MAIN_CONTACT_BOX	6U
 
 /*
  * The Select tool (ws175-p008): no object chosen; what a drag does (no
@@ -171,6 +188,29 @@
 #define MAIN_SIDE_MIN		4.0
 #define MAIN_SIDE_TIMES_PAGE	4.0
 #define MAIN_NUDGE		1.0
+
+/*
+ * ws175-p008 (with ws079-p017): what the text box edits -- a line of the
+ * page's own, an inserted text, new words -- and the box's sizes in pixels
+ * (a line's height; the words' box at least as wide, its height; the gap
+ * between an object and the box under it; the least drag that sets the
+ * width new words wrap at).  A double click is two presses within
+ * MAIN_DOUBLE_MS.  The text's size goes by MAIN_SIZE_STEP points between
+ * MAIN_SIZE_MIN and MAIN_SIZE_MAX, from MAIN_SIZE_DEFAULT.
+ */
+#define MAIN_BOX_LINE		0U
+#define MAIN_BOX_INSERTED	1U
+#define MAIN_BOX_NEW		2U
+#define MAIN_BOX_LINE_HEIGHT	36
+#define MAIN_BOX_WIDTH_MIN	240
+#define MAIN_BOX_AREA_HEIGHT	120
+#define MAIN_BOX_GAP		8
+#define MAIN_BOX_DRAG_MIN	8.0f
+#define MAIN_DOUBLE_MS		400U
+#define MAIN_SIZE_STEP		0.5f
+#define MAIN_SIZE_MIN		6.0f
+#define MAIN_SIZE_MAX		144.0f
+#define MAIN_SIZE_DEFAULT	12.0f
 
 /* What the file chooser is shown for: a PDF (Open, Save As), an image to insert, an image for the chosen object. */
 #define MAIN_CHOOSE_DOCUMENT	0U
@@ -273,6 +313,52 @@ struct notes_app {
 	uint64_t drag_previews;
 	uint64_t drag_previewed_at;
 	int drag_moved;
+
+	/*
+	 * ws175-p008: a text chosen (a line of the page's own or an inserted
+	 * one): whether its words cannot be changed, its font (enum
+	 * pdf_edit_font) and its size in points; and the last press of the
+	 * Select tool (when, on which object), which a second one soon after on
+	 * the same line of text makes a double click.
+	 */
+	int selected_fixed;
+	unsigned selected_font;
+	float selected_size;
+	uint32_t select_press_ms;
+	size_t select_press_object;
+
+	/*
+	 * The Text tool (ws175-p008 with ws079-p017): the font and the size new
+	 * words take (the colour is the pen's), and the press under way that
+	 * puts them (its place in the window; whether it is one).  The text box
+	 * and what it edits (MAIN_BOX_*): the object's index in the page's
+	 * editor, its state when the box opened (its words not kept), where new
+	 * words go (page points) and the width they wrap at (0: not wrapped),
+	 * and the font (and the one it opened with) and the size they are
+	 * written in.  While the box edits a line of the page's own, the page
+	 * shows the words typed (a preview in the page's editor): whether it
+	 * does, the previews drawn (they count into the look), when the last
+	 * was, and whether the words changed since.
+	 */
+	unsigned text_font;
+	float text_size;
+	int text_pressing;
+	float text_press_x;
+	float text_press_y;
+	struct notes_box box;
+	unsigned box_kind;
+	size_t box_object;
+	struct notes_edit box_edit;
+	float box_x;
+	float box_y;
+	float box_width;
+	unsigned box_font;
+	unsigned box_initial_font;
+	float box_size;
+	int box_previewing;
+	uint64_t text_previews;
+	uint64_t box_previewed_at;
+	int box_changed;
 
 	/* What the file chooser is shown for (MAIN_CHOOSE_*), and what it was shown for when it answered. */
 	unsigned chooser_purpose;
@@ -388,7 +474,7 @@ static void app_appearance_changed(void *data, unsigned appearance);
 static const char *app_tool_name(unsigned tool);
 static uint64_t app_look(const struct notes_app *app);
 static void app_count_edits(const struct notes_app *app, size_t *edits, size_t *pages);
-static void app_select_press(struct notes_app *app, float x, float y);
+static void app_select_press(struct notes_app *app, float x, float y, uint32_t time_ms);
 static void app_select_motion(struct notes_app *app, float x, float y);
 static void app_select_release(struct notes_app *app);
 static void app_select(struct notes_app *app, size_t index, int logged);
@@ -404,6 +490,25 @@ static void app_put_image(struct notes_app *app, const char *path, unsigned purp
 static void app_selection_draw(struct notes_app *app, const struct notes_view *view);
 static void app_map_multiply(const double left[6], const double right[6], double product[6]);
 static void app_map_point(const double map[6], double x, double y, double *mapped_x, double *mapped_y);
+static void app_text_press(struct notes_app *app, float x, float y);
+static void app_text_release(struct notes_app *app, const struct notes_input *input);
+static void app_box_edit(struct notes_app *app, size_t index);
+static void app_box_new(struct notes_app *app, float x, float y, float width);
+static void app_box_start(struct notes_app *app, unsigned shape, const struct kl_rect *rect, const char *text);
+static void app_box_place(struct notes_app *app, const double quad[8], int width, int height, struct kl_rect *rect);
+static void app_box_frame(struct notes_app *app);
+static int app_box_commit(struct notes_app *app);
+static int app_box_try(struct notes_app *app, const struct notes_edit *state, unsigned *result);
+static void app_box_close(struct notes_app *app);
+static void app_box_preview(struct notes_app *app, struct pdf_page_editor *editor);
+static int app_box_keeps(uint32_t action);
+static void app_text_font(struct notes_app *app);
+static void app_text_size(struct notes_app *app, float step);
+static unsigned app_next_font(unsigned font, int original);
+static const char *app_font_name(unsigned font);
+static const char *app_font_label(unsigned font);
+static unsigned app_color_index(uint32_t color);
+static size_t app_characters(const char *text);
 
 /*
  * Runs Notes.
@@ -468,7 +573,10 @@ main(
 	/* The notebook: recovered from a journal, or new. */
 	app.tool = NOTES_ACTION_PEN;
 	app.selected = MAIN_NONE;
+	app.select_press_object = MAIN_NONE;
 	app.width = 1U;
+	app.text_font = PDF_EDIT_FONT_SANS;
+	app.text_size = MAIN_SIZE_DEFAULT;
 	error = app_start_document(&app, file);
 	if (error != 0) {
 		fprintf(stderr, "notes: cannot start a notebook: %s\n", strerror(error));
@@ -546,9 +654,20 @@ main(
 				break;
 			}
 
-			/* Everything is drawn again at the new size. */
+			/* Everything is drawn again at the new size (the text box on an overlay of the size). */
 			app.redraw = 1;
 			app.toolbar_dirty = 1;
+			if (app.box.open)
+				app_box_frame(&app);
+		}
+
+		/* The text box's inputs, then its frame, which takes them (ws175-p008). */
+		if (app.window.box_count != 0U) {
+			for (index = 0; index < app.window.box_count; index++)
+				notes_box_input(&app.box, &app.window.box_events[index]);
+			app.window.box_count = 0;
+			if (app.box.open)
+				app_box_frame(&app);
 		}
 
 		/* The menus' choices. */
@@ -583,6 +702,10 @@ main(
 		    now >= app.changed_at + NOTES_AUTOSAVE_IDLE_MS)
 			(void)app_save(&app, "autosave");
 
+		/* The words typed in the text box are shown on the page once the preview's time comes. */
+		if (app.box_changed && now >= app.box_previewed_at + MAIN_DRAG_PREVIEW_MS)
+			app.redraw = 1;
+
 		/* A status whose time is up goes. */
 		if (app.status_until != 0U && now >= app.status_until) {
 			app.status[0] = '\0';
@@ -602,9 +725,16 @@ main(
 			app_draw(&app);
 	}
 
-	/* A stroke still being drawn is kept, and the notebook saved when it changed. */
+	/* A stroke still being drawn is kept, and so are the words of the text box when the editor takes them. */
 	if (app.live != NULL)
 		app_end_contact(&app, NULL);
+	if (app.box.open) {
+		status = app_box_commit(&app);
+		if (!status)
+			app_box_close(&app);
+	}
+
+	/* The notebook saved when it changed. */
 	if (app.document.dirty)
 		(void)app_save(&app, "close");
 
@@ -617,6 +747,7 @@ main(
 	kl_file_chooser_destroy(app.chooser);
 	app.chooser = NULL;
 	notes_touch_close(&app.touch);
+	notes_box_free(&app.box);
 	notes_ui_close(&app.ui);
 	notes_frame_free(&app.frame);
 	notes_frame_free(&app.page_frame);
@@ -860,9 +991,11 @@ app_background(
 	int edited;
 	int error;
 
-	/* Nothing to draw without the PDF, or (a page of Notes' own) without edits or a drag. */
+	/* Nothing to draw without the PDF, or (a page of Notes' own) without edits, a drag or the text box's words. */
 	dragged = 0;
 	if (app->drag != MAIN_DRAG_NONE && app->drag_previews > 0U)
+		dragged = 1;
+	if (app->box_previewing)
 		dragged = 1;
 	edited = 0;
 	if (page->edit_count > 0U || dragged)
@@ -899,8 +1032,10 @@ app_background(
 		app->background_look = look;
 		if (edited) {
 			error = notes_page_editor(&app->document, app->page, &editor);
-			if (error == 0 && dragged)
+			if (error == 0 && app->drag != MAIN_DRAG_NONE && app->drag_previews > 0U)
 				app_drag_preview(app, editor);
+			if (error == 0 && app->box_previewing)
+				app_box_preview(app, editor);
 			if (error == 0)
 				error = pdf_page_editor_render(editor, (size_t)-1, &list);
 		} else {
@@ -1095,6 +1230,24 @@ app_state(
 		if (app->selected_edited && !app->selected_inserted)
 			state->can_reset = 1;
 	}
+
+	/* A line of text chosen: its words in the box unless they cannot change, its font and size. */
+	if (app->selected != MAIN_NONE && app->selected_kind == PDF_EDIT_TEXT) {
+		state->text_selected = 1;
+		state->can_edit_text = !app->selected_fixed;
+		state->font_label = app_font_label(app->selected_font);
+		state->text_size = app->selected_size;
+	}
+
+	/* The Text tool's font and size: the box's while it is open (a line's size is its own), or the next words'. */
+	if (app->tool == NOTES_ACTION_TEXT) {
+		state->font_label = app_font_label(app->text_font);
+		state->text_size = app->text_size;
+		if (app->box.open) {
+			state->font_label = app_font_label(app->box_font);
+			state->text_size = app->box_size;
+		}
+	}
 }
 
 /* Carries out an action of the toolbar, a menu or a key. */
@@ -1105,8 +1258,38 @@ app_action(
 {
 	struct notes_edit which;
 	size_t page;
+	int closed;
+	int keeps;
 	int edit;
 	int error;
+
+	/*
+	 * The text box open (ws175-p008): an undo before it is done puts its
+	 * words back as they were; another action than the box's own (its font,
+	 * size and colour, the window's) closes it first, keeping its words --
+	 * unless the editor refuses them, when the box stays and the action is
+	 * not carried out (Close ends Notes all the same).
+	 */
+	if (app->box.open && action == NOTES_ACTION_UNDO) {
+		notes_box_revert(&app->box);
+		app->box_changed = 1;
+		app_box_frame(app);
+		return;
+	}
+
+	/* A redo has nothing to make again in the box. */
+	if (app->box.open && action == NOTES_ACTION_REDO)
+		return;
+
+	/* Other actions close the box first. */
+	keeps = app_box_keeps(action);
+	if (app->box.open && !keeps) {
+		closed = app_box_commit(app);
+		if (!closed && action != NOTES_ACTION_CLOSE)
+			return;
+		if (!closed)
+			app_box_close(app);
+	}
 
 	/* A colour or a width chooses by its index. */
 	if (action >= NOTES_ACTION_COLOR && action < NOTES_ACTION_COLOR + NOTES_COLORS) {
@@ -1131,6 +1314,7 @@ app_action(
 	case NOTES_ACTION_PEN:
 	case NOTES_ACTION_HIGHLIGHTER:
 	case NOTES_ACTION_SELECT:
+	case NOTES_ACTION_TEXT:
 		/* The tool (another than Select lets the chosen object go). */
 		app->tool = action;
 		if (action != NOTES_ACTION_SELECT)
@@ -1162,6 +1346,23 @@ app_action(
 	case NOTES_ACTION_RESET_OBJECT:
 		/* The chosen object as the page has it. */
 		app_reset_object(app);
+		break;
+	case NOTES_ACTION_EDIT_TEXT:
+		/* The chosen line's words in the text box (ws175-p008). */
+		if (app->selected != MAIN_NONE && app->selected_kind == PDF_EDIT_TEXT)
+			app_box_edit(app, app->selected);
+		break;
+	case NOTES_ACTION_FONT:
+		/* The next font of the box, the chosen text or the Text tool's. */
+		app_text_font(app);
+		break;
+	case NOTES_ACTION_SIZE_DOWN:
+		/* Smaller. */
+		app_text_size(app, -MAIN_SIZE_STEP);
+		break;
+	case NOTES_ACTION_SIZE_UP:
+		/* Larger. */
+		app_text_size(app, MAIN_SIZE_STEP);
 		break;
 	case NOTES_ACTION_UNDO:
 		/* The last change is taken back, and its page shown (the chosen object let go). */
@@ -1363,6 +1564,14 @@ app_key(
 	case MAIN_KEY_E:
 		app_action(app, NOTES_ACTION_ERASER);
 		break;
+	case MAIN_KEY_T:
+		app_action(app, NOTES_ACTION_TEXT);
+		break;
+	case MAIN_KEY_ENTER:
+		/* The chosen line's words in the text box (ws175-p008). */
+		if (app->selected != MAIN_NONE && app->selected_kind == PDF_EDIT_TEXT && !app->selected_fixed)
+			app_action(app, NOTES_ACTION_EDIT_TEXT);
+		break;
 	case MAIN_KEY_F11:
 		app_action(app, NOTES_ACTION_FULLSCREEN);
 		break;
@@ -1427,6 +1636,8 @@ app_input(
 	uint32_t id;
 	uint32_t color;
 	float width;
+	int inside;
+	int closed;
 	int near;
 
 	/*
@@ -1481,10 +1692,38 @@ app_input(
 		return;
 	}
 
+	/*
+	 * The text box open (ws175-p008): a press on it is the box's (its widget
+	 * has it); a press outside it closes it first, keeping its words, and
+	 * goes on as a press of the tool -- unless the editor refused the words,
+	 * when the box stays with the keyboard.
+	 */
+	if (app->box.open) {
+		inside = notes_box_hit(&app->box, input->x, input->y);
+		if (inside) {
+			app->contact = MAIN_CONTACT_BOX;
+			return;
+		}
+
+		/* Outside: closed first. */
+		closed = app_box_commit(app);
+		if (!closed) {
+			app->contact = MAIN_CONTACT_BOX;
+			return;
+		}
+	}
+
 	/* The Select tool chooses, moves and sizes the page's objects (ws175-p008). */
 	if (app->tool == NOTES_ACTION_SELECT && input->source != NOTES_SOURCE_ERASER) {
 		app->contact = MAIN_CONTACT_SELECT;
-		app_select_press(app, input->x, input->y);
+		app_select_press(app, input->x, input->y, input->time_ms);
+		return;
+	}
+
+	/* The Text tool opens the text box: on a line of text, or for new words where it is pressed (ws175-p008). */
+	if (app->tool == NOTES_ACTION_TEXT && input->source != NOTES_SOURCE_ERASER) {
+		app->contact = MAIN_CONTACT_TEXT;
+		app_text_press(app, input->x, input->y);
 		return;
 	}
 
@@ -1728,6 +1967,10 @@ app_end_contact(
 		app_select_release(app);
 	}
 
+	/* A press of the Text tool opens the box for new words (ws175-p008). */
+	if (app->contact == MAIN_CONTACT_TEXT)
+		app_text_release(app, input);
+
 	/* The frames the contact took, for the tests' line. */
 	app_frame_report(app);
 
@@ -1820,6 +2063,10 @@ app_abort_contact(
 	/* An eraser drag's removals are one change from now on. */
 	if (app->contact == MAIN_CONTACT_ERASE)
 		notes_document_erase_end(&app->document);
+
+	/* A press of the Text tool opens nothing. */
+	if (app->contact == MAIN_CONTACT_TEXT)
+		app->text_pressing = 0;
 
 	/* A drag of the Select tool is dropped: the object stays where it was, the page's editor is made again. */
 	if (app->contact == MAIN_CONTACT_SELECT && app->drag != MAIN_DRAG_NONE) {
@@ -1932,6 +2179,16 @@ app_draw(
 		app->drag_moved = 0;
 	}
 
+	/* So do the words typed in the text box on a line of the page. */
+	if (app->box_changed && now - app->box_previewed_at >= MAIN_DRAG_PREVIEW_MS) {
+		app->box_changed = 0;
+		app->box_previewed_at = now;
+		if (app->box.open && app->box_kind == MAIN_BOX_LINE) {
+			app->box_previewing = 1;
+			app->text_previews++;
+		}
+	}
+
 	/* The whole page's place, and the place the fingers' zoom and scroll give it (another page starts at its top). */
 	page = app->document.pages[app->page];
 	notes_view_layout(&view, app->renderer.extent.width, app->renderer.extent.height, page->width, page->height);
@@ -2036,6 +2293,12 @@ app_draw(
 	/* The chosen object's frame and handles (ws175-p008), then the pen's mark on the page. */
 	app_selection_draw(app, &view);
 	app_mark(app, &view, 0);
+
+	/* The text box over the page (ws175-p008), on the overlay of the size it was drawn at. */
+	if (app->box.open && app->renderer.overlay != VK_NULL_HANDLE) {
+		notes_frame_clip(&app->frame, 0, 0.0f, 0.0f, 0.0f, 0.0f);
+		notes_frame_texture(&app->frame, NOTES_TEXTURE_OVERLAY, 0.0f, 0.0f, (float)app->renderer.overlay_width, (float)app->renderer.overlay_height);
+	}
 
 	/* The toolbar across the top, and the pen's mark over it. */
 	notes_frame_clip(&app->frame, 0, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -2415,6 +2678,12 @@ app_timeout(
 	     app->deadline < due))
 		due = app->deadline;
 
+	/* The text box's words on the page, once typing let the preview's time pass (ws175-p008). */
+	if (app->box_changed &&
+	    (due == 0U ||
+	     app->box_previewed_at + MAIN_DRAG_PREVIEW_MS < due))
+		due = app->box_previewed_at + MAIN_DRAG_PREVIEW_MS;
+
 	/* A frame waiting to be drawn is due now. */
 	if (app->redraw)
 		return 0;
@@ -2772,6 +3041,8 @@ app_tool_name(
 		return "eraser";
 	case NOTES_ACTION_SELECT:
 		return "select";
+	case NOTES_ACTION_TEXT:
+		return "text";
 	default:
 		break;
 	}
@@ -2782,15 +3053,15 @@ app_tool_name(
 
 /*
  * Gives the look of the pages' objects (ws175-p008): it grows when an edit
- * changes and when a drag's preview is drawn, which is when the page's
- * background must be drawn again.
+ * changes and when a drag's or the text box's preview is drawn, which is
+ * when the page's background must be drawn again.
  */
 static uint64_t
 app_look(
 	const struct notes_app *app)
 {
-	/* The edits' changes and the drags' previews. */
-	return app->document.edit_serial + app->drag_previews;
+	/* The edits' changes, the drags' previews and the text box's. */
+	return app->document.edit_serial + app->drag_previews + app->text_previews;
 }
 
 /* Counts the notebook's edits and the pages that have any, for the tests' lines. */
@@ -2815,14 +3086,17 @@ app_count_edits(
 /*
  * Starts a contact of the Select tool at a point of the window
  * (ws175-p008, design.md section 7.1): on a handle of the chosen object it
- * sizes it, on an image or a graphic of the page it chooses it and moves
- * it, elsewhere it lets the chosen one go.
+ * sizes it, on an image, a graphic or a line of text of the page it
+ * chooses it and moves it, elsewhere it lets the chosen one go.  A second
+ * press on the chosen line of text within MAIN_DOUBLE_MS of the first (at
+ * the compositor's time) opens its words in the text box.
  */
 static void
 app_select_press(
 	struct notes_app *app,
 	float x,
-	float y)
+	float y,
+	uint32_t time_ms)
 {
 	struct pdf_page_editor *editor;
 	struct pdf_edit_object object;
@@ -2872,15 +3146,28 @@ app_select_press(
 		}
 	}
 
-	/* Otherwise the object under the point: an image or a graphic (lines of text come with ws175-p004). */
+	/* Otherwise the object under the point: an image, a graphic or a line of text. */
 	if (app->drag == MAIN_DRAG_NONE) {
 		error = pdf_page_editor_hit(editor, (double)page_x, (double)page_y, &index);
 		if (error == 0)
 			error = pdf_page_editor_object(editor, index, &object);
-		if (error != 0 || object.kind == PDF_EDIT_TEXT) {
+		if (error != 0) {
+			app->select_press_object = MAIN_NONE;
 			app_deselect(app);
 			return;
 		}
+
+		/* A double click on the chosen line of text: its words in the box. */
+		if (object.kind == PDF_EDIT_TEXT && index == app->selected && index == app->select_press_object &&
+		    time_ms - app->select_press_ms < MAIN_DOUBLE_MS) {
+			app->select_press_object = MAIN_NONE;
+			app_box_edit(app, index);
+			return;
+		}
+
+		/* The press, for a double click. */
+		app->select_press_object = index;
+		app->select_press_ms = time_ms;
 
 		/* Chosen (logged when it is another), and moved by the drag. */
 		if (index != app->selected)
@@ -2959,7 +3246,7 @@ app_select_motion(
 	to_y = page_y - anchor_y;
 	scale_x = 1.0;
 	scale_y = 1.0;
-	if ((app->window.modifiers & NOTES_MODIFIER_SHIFT) != 0U) {
+	if ((app->window.modifiers & NOTES_MODIFIER_SHIFT) != 0U && app->selected_kind != PDF_EDIT_TEXT) {
 		if (from_x > 1e-6 || from_x < -1e-6)
 			scale_x = to_x / from_x;
 		if (from_y > 1e-6 || from_y < -1e-6)
@@ -3065,15 +3352,29 @@ app_select(
 	app->selected_edited = state.flags != 0U;
 	app->toolbar_dirty = 1;
 	app->redraw = 1;
+
+	/* A line of text's: whether its words can change, its font and its size (an inserted text's own, or the line's). */
+	app->selected_fixed = (object.flags & (PDF_EDIT_OBJECT_TEXT_FIXED | PDF_EDIT_OBJECT_INVISIBLE)) != 0U;
+	app->selected_font = PDF_EDIT_FONT_ORIGINAL;
+	if ((state.flags & NOTES_EDIT_TEXT) != 0U)
+		app->selected_font = state.font;
+	app->selected_size = (float)object.font_size;
+	if (app->selected_inserted)
+		app->selected_size = state.text_size;
 	if (!logged)
 		return;
 
-	/* The tests' line, and the clip that hides what moves out of it. */
+	/* The tests' line (a text's first words too), and the clip that hides what moves out of it. */
 	kind = "graphic";
 	if (object.kind == PDF_EDIT_IMAGE)
 		kind = "image";
-	printf("NOTES EDIT select page=%lu object=%lu kind=%s inserted=%d clipped=%d\n", (unsigned long)app->page, (unsigned long)index, kind,
+	if (object.kind == PDF_EDIT_TEXT)
+		kind = "text";
+	printf("NOTES EDIT select page=%lu object=%lu kind=%s inserted=%d clipped=%d", (unsigned long)app->page, (unsigned long)index, kind,
 	       app->selected_inserted, (object.flags & PDF_EDIT_OBJECT_CLIPPED) != 0U);
+	if (object.kind == PDF_EDIT_TEXT && object.text != NULL)
+		printf(" fixed=%d text=\"%.40s\"", app->selected_fixed, object.text);
+	printf("\n");
 	fflush(stdout);
 	if ((object.flags & PDF_EDIT_OBJECT_CLIPPED) != 0U)
 		app_status(app, "Clipped: what moves out of the clip stays hidden");
@@ -3539,4 +3840,866 @@ app_reselect(
 
 	/* Chosen again. */
 	app_select(app, index, 0);
+}
+
+/*
+ * Starts a press of the Text tool at a point of the window (ws175-p008,
+ * design.md section 7.1): on a line of text it opens the line's words in
+ * the text box; elsewhere on a page that can be edited the press is kept,
+ * and its release opens the box for new words there.
+ */
+static void
+app_text_press(
+	struct notes_app *app,
+	float x,
+	float y)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	const struct notes_page *page;
+	float page_x;
+	float page_y;
+	size_t index;
+	unsigned status;
+	int error;
+
+	/* A point on the page. */
+	app->text_pressing = 0;
+	page = app->document.pages[app->page];
+	page_x = (x - app->view.x) / app->view.scale;
+	page_y = (y - app->view.y) / app->view.scale;
+	if (page_x < 0.0f || page_y < 0.0f || page_x >= page->width || page_y >= page->height)
+		return;
+
+	/* The page's editor, of a page that can be edited. */
+	error = notes_page_editor(&app->document, app->page, &editor);
+	if (error != 0) {
+		printf("NOTES EDIT page failed page=%lu error=%d\n", (unsigned long)app->page, error);
+		fflush(stdout);
+		app_status(app, "The objects of this page cannot be edited");
+		return;
+	}
+
+	/* A page with a stream that cannot be read cannot be edited (design.md [M5]). */
+	status = pdf_page_editor_status(editor);
+	if ((status & PDF_EDIT_PAGE_READ_ONLY) != 0U) {
+		app_status(app, "This page cannot be edited: part of it cannot be read");
+		return;
+	}
+
+	/* A line of text under the point: its words in the box. */
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = pdf_page_editor_hit(editor, (double)page_x, (double)page_y, &index);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, index, &object);
+	if (error == 0 && object.kind == PDF_EDIT_TEXT) {
+		app_box_edit(app, index);
+		return;
+	}
+
+	/* Elsewhere: new words, where the press started, once it ends. */
+	app->text_pressing = 1;
+	app->text_press_x = x;
+	app->text_press_y = y;
+}
+
+/*
+ * Ends a press of the Text tool: the box for new words opens where it
+ * started, wrapping them at the width it was dragged across (a press
+ * without a drag: not wrapped).
+ */
+static void
+app_text_release(
+	struct notes_app *app,
+	const struct notes_input *input)
+{
+	float across;
+	float width;
+
+	/* A press that opens new words. */
+	if (!app->text_pressing)
+		return;
+	app->text_pressing = 0;
+
+	/* The width dragged across, in points, when it is a drag. */
+	width = 0.0f;
+	if (input != NULL) {
+		across = input->x - app->text_press_x;
+		if (across >= MAIN_BOX_DRAG_MIN)
+			width = across / app->view.scale;
+	}
+
+	/* The box at the press's place on the page. */
+	app_box_new(app, (app->text_press_x - app->view.x) / app->view.scale, (app->text_press_y - app->view.y) / app->view.scale, width);
+}
+
+/*
+ * Opens the text box on a line of text of the page shown, by its index in
+ * the page's editor: a line of the page's own in a one-line box under it
+ * (the page shows the words as they are typed), an inserted text in a box
+ * of several lines under it, in its font, size and colour.  A line whose
+ * words cannot change is not opened (the status says why).
+ */
+static void
+app_box_edit(
+	struct notes_app *app,
+	size_t index)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	struct notes_edit state;
+	struct kl_rect rect;
+	double right;
+	int width;
+	int error;
+
+	/* The object and its state. */
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = notes_page_editor(&app->document, app->page, &editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, index, &object);
+	if (error == 0)
+		error = notes_page_object(&app->document, app->page, index, &state);
+	if (error != 0 || object.kind != PDF_EDIT_TEXT)
+		return;
+
+	/* Words that cannot change (their font's characters are not known, or they are invisible). */
+	if ((object.flags & (PDF_EDIT_OBJECT_TEXT_FIXED | PDF_EDIT_OBJECT_INVISIBLE)) != 0U) {
+		app_status(app, "The words of this line cannot be changed (they can be moved or deleted)");
+		return;
+	}
+
+	/* What the box edits: the object, its state without its words, its font. */
+	app->box_object = index;
+	app->box_edit = state;
+	app->box_edit.text = NULL;
+	app->box_edit.image = NULL;
+	app->box_font = PDF_EDIT_FONT_ORIGINAL;
+	if ((state.flags & NOTES_EDIT_TEXT) != 0U)
+		app->box_font = state.font;
+	app->box_initial_font = app->box_font;
+	app->box_size = 0.0f;
+
+	/* Its width: the object's across, at least the box's least. */
+	right = fmax(fmax(object.quad[0], object.quad[2]), fmax(object.quad[4], object.quad[6]));
+	width = (int)((right - fmin(fmin(object.quad[0], object.quad[2]), fmin(object.quad[4], object.quad[6]))) * (double)app->view.scale) + 24;
+	if (width < MAIN_BOX_WIDTH_MIN)
+		width = MAIN_BOX_WIDTH_MIN;
+
+	/* An inserted text: its words, size and colour, in a box of several lines. */
+	if ((state.flags & NOTES_EDIT_INSERTED) != 0U) {
+		app->box_kind = MAIN_BOX_INSERTED;
+		app->box_size = state.text_size;
+		app->color = app_color_index(state.color);
+		app_box_place(app, object.quad, width, MAIN_BOX_AREA_HEIGHT, &rect);
+		app_box_start(app, NOTES_BOX_AREA, &rect, state.text);
+		return;
+	}
+
+	/* A line of the page's own: its words as the page has them now, in one line. */
+	app->box_kind = MAIN_BOX_LINE;
+	app_box_place(app, object.quad, width, MAIN_BOX_LINE_HEIGHT, &rect);
+	if (object.text == NULL)
+		app_box_start(app, NOTES_BOX_LINE, &rect, "");
+	else
+		app_box_start(app, NOTES_BOX_LINE, &rect, object.text);
+}
+
+/*
+ * Opens the text box for new words at a point of the page shown (points),
+ * wrapped at a width (points; 0: not wrapped), in the Text tool's font and
+ * size and the pen's colour: a box of several lines whose top left is the
+ * words' place.
+ */
+static void
+app_box_new(
+	struct notes_app *app,
+	float x,
+	float y,
+	float width)
+{
+	struct kl_rect rect;
+	int pixels;
+
+	/* What the box edits: new words there. */
+	app->box_kind = MAIN_BOX_NEW;
+	app->box_object = MAIN_NONE;
+	memset(&app->box_edit, 0, sizeof(app->box_edit));
+	app->box_x = x;
+	app->box_y = y;
+	app->box_width = width;
+	app->box_font = app->text_font;
+	app->box_initial_font = app->box_font;
+	app->box_size = app->text_size;
+
+	/* The box from the point, as wide as the words wrap (at least the box's least), inside the window. */
+	pixels = (int)(width * app->view.scale);
+	if (pixels < MAIN_BOX_WIDTH_MIN)
+		pixels = MAIN_BOX_WIDTH_MIN;
+	rect.x = (int)(app->view.x + x * app->view.scale);
+	rect.y = (int)(app->view.y + y * app->view.scale);
+	rect.width = pixels;
+	rect.height = MAIN_BOX_AREA_HEIGHT;
+	if (rect.x + rect.width > (int)app->renderer.extent.width - MAIN_BOX_GAP)
+		rect.x = (int)app->renderer.extent.width - MAIN_BOX_GAP - rect.width;
+	if (rect.y + rect.height > (int)app->renderer.extent.height - MAIN_BOX_GAP)
+		rect.y = (int)app->renderer.extent.height - MAIN_BOX_GAP - rect.height;
+	if (rect.x < MAIN_BOX_GAP)
+		rect.x = MAIN_BOX_GAP;
+	if (rect.y < (int)NOTES_TOOLBAR_HEIGHT + MAIN_BOX_GAP)
+		rect.y = (int)NOTES_TOOLBAR_HEIGHT + MAIN_BOX_GAP;
+
+	/* Opened empty. */
+	app_box_start(app, NOTES_BOX_AREA, &rect, "");
+}
+
+/*
+ * Places the box of a size under an object's corners (page points), or
+ * above them when there is no room under them, inside the window and
+ * below the toolbar.
+ */
+static void
+app_box_place(
+	struct notes_app *app,
+	const double quad[8],
+	int width,
+	int height,
+	struct kl_rect *rect)
+{
+	double left;
+	double top;
+	double bottom;
+	unsigned corner;
+
+	/* The object's bounds in the window. */
+	left = quad[0];
+	top = quad[1];
+	bottom = quad[1];
+	for (corner = 1; corner < 4U; corner++) {
+		left = fmin(left, quad[corner * 2U]);
+		top = fmin(top, quad[corner * 2U + 1U]);
+		bottom = fmax(bottom, quad[corner * 2U + 1U]);
+	}
+
+	/* In the window's pixels. */
+	left = (double)app->view.x + left * (double)app->view.scale;
+	top = (double)app->view.y + top * (double)app->view.scale;
+	bottom = (double)app->view.y + bottom * (double)app->view.scale;
+
+	/* Under the object, or above it when the window ends first. */
+	rect->x = (int)left;
+	rect->y = (int)bottom + MAIN_BOX_GAP;
+	rect->width = width;
+	rect->height = height;
+	if (rect->y + height > (int)app->renderer.extent.height - MAIN_BOX_GAP)
+		rect->y = (int)top - MAIN_BOX_GAP - height;
+
+	/* Inside the window, below the toolbar. */
+	if (rect->x + width > (int)app->renderer.extent.width - MAIN_BOX_GAP)
+		rect->x = (int)app->renderer.extent.width - MAIN_BOX_GAP - width;
+	if (rect->x < MAIN_BOX_GAP)
+		rect->x = MAIN_BOX_GAP;
+	if (rect->y < (int)NOTES_TOOLBAR_HEIGHT + MAIN_BOX_GAP)
+		rect->y = (int)NOTES_TOOLBAR_HEIGHT + MAIN_BOX_GAP;
+}
+
+/*
+ * Opens the box of a shape in a rectangle with words in it: the window's
+ * keys and an input method's text go to it, and it is drawn (logged for
+ * the tests).
+ */
+static void
+app_box_start(
+	struct notes_app *app,
+	unsigned shape,
+	const struct kl_rect *rect,
+	const char *text)
+{
+	static const char *const kinds[] = { "line", "inserted", "new" };
+	int error;
+
+	/* The box, with the keyboard. */
+	error = notes_box_open(&app->box, shape, rect, text);
+	if (error != 0) {
+		printf("NOTES TEXT box failed error=%d\n", error);
+		fflush(stdout);
+		app_status(app, "The text box cannot be shown: its font is missing");
+		return;
+	}
+
+	/* The window's input goes to it; the page shows nothing typed yet. */
+	notes_window_box(&app->window, 1);
+	app->box_previewing = 0;
+	app->box_changed = 0;
+	app->box_previewed_at = 0;
+
+	/* The tests' line. */
+	printf("NOTES TEXT box open kind=%s page=%lu object=%ld font=%s rect=%d,%d,%d,%d\n", kinds[app->box_kind], (unsigned long)app->page,
+	       (long)app->box_object, app_font_name(app->box_font), rect->x, rect->y, rect->width, rect->height);
+	fflush(stdout);
+
+	/* Drawn, which also asks for the input method. */
+	app->toolbar_dirty = 1;
+	app_box_frame(app);
+}
+
+/*
+ * Draws the box's frame, which takes the input given to it, and carries
+ * out what its widget reported: changed words are shown on the page (a
+ * line's, after the preview's time), Enter in a line's box and Esc close
+ * it, keeping its words.
+ */
+static void
+app_box_frame(
+	struct notes_app *app)
+{
+	unsigned reported;
+	int error;
+
+	/* The frame. */
+	error = notes_box_draw(&app->box, &app->renderer, app->window.kui, app_microseconds());
+	if (error != 0) {
+		printf("NOTES TEXT box failed error=%d\n", error);
+		fflush(stdout);
+		app_status(app, "The text box cannot be drawn");
+		app_box_close(app);
+		return;
+	}
+
+	/* Shown with the next frame. */
+	app->redraw = 1;
+	reported = notes_box_take(&app->box);
+
+	/* Changed words: a line's shown on the page soon. */
+	if ((reported & KL_FIELD_CHANGED) != 0U && app->box_kind == MAIN_BOX_LINE)
+		app->box_changed = 1;
+
+	/* Done: the words kept (or the box stays when the editor refuses them). */
+	if ((reported & (KL_FIELD_SUBMITTED | KL_FIELD_CANCELLED)) != 0U)
+		(void)app_box_commit(app);
+}
+
+/*
+ * Closes the box keeping its words, as one change, once the page's editor
+ * takes them (ws175-p004: the model holds no words the PDF cannot be
+ * written with): a line's new words and font, an inserted text's words,
+ * font, size and colour, or new words put on the page (and chosen with
+ * the Select tool's frame when it is that tool).  Words emptied delete
+ * the line or take the inserted text off; words unchanged change nothing.
+ * Returns 1 when the box closed, 0 when the editor refused the words (the
+ * status says why; the box stays with the keyboard).
+ */
+static int
+app_box_commit(
+	struct notes_app *app)
+{
+	static const char *const kinds[] = { "line", "inserted", "new" };
+	static char text[KL_TEXT_AREA_MAX];
+	struct pdf_page_editor *editor;
+	struct notes_edit state;
+	uint32_t color;
+	unsigned result;
+	size_t object;
+	int unchanged;
+	int same;
+	int error;
+
+	/* The words (a copy the state names), and whether they are the ones the box opened with. */
+	if (!app->box.open)
+		return 1;
+	(void)snprintf(text, sizeof(text), "%s", notes_box_text(&app->box));
+	same = strcmp(text, notes_box_initial(&app->box));
+	state = app->box_edit;
+	state.text = text;
+
+	/* Nothing changed -- no new words, or the words, font, size and colour as they were: closed as it was. */
+	unchanged = 0;
+	if (app->box_kind == MAIN_BOX_NEW && text[0] == '\0')
+		unchanged = 1;
+	if (app->box_kind == MAIN_BOX_LINE && same == 0 && app->box_font == app->box_initial_font)
+		unchanged = 1;
+	color = notes_ui_color(NOTES_TOOL_PEN, app->color);
+	if (app->box_kind == MAIN_BOX_INSERTED && same == 0 && app->box_font == app->box_initial_font && app->box_size == app->box_edit.text_size &&
+	    color == app->box_edit.color)
+		unchanged = 1;
+	if (unchanged) {
+		app_box_close(app);
+		return 1;
+	}
+
+	/* Emptied: the line deleted, the inserted text taken off. */
+	if (text[0] == '\0') {
+		state.text = NULL;
+		if (app->box_kind == MAIN_BOX_INSERTED) {
+			error = notes_document_reset_object(&app->document, app->page, &state);
+		} else {
+			state.flags = NOTES_EDIT_DELETED;
+			error = notes_document_edit_object(&app->document, app->page, &state);
+		}
+
+		/* Closed either way; a failure is shown. */
+		object = app->box_object;
+		app_box_close(app);
+		if (error != 0) {
+			app_status(app, "Could not delete the words");
+			return 1;
+		}
+
+		/* Gone (the tests' line). */
+		if (app->selected == object)
+			app_deselect(app);
+		printf("NOTES EDIT delete page=%lu object=%lu\n", (unsigned long)app->page, (unsigned long)object);
+		fflush(stdout);
+		app_changed(app);
+		return 1;
+	}
+
+	/* The state: the words in the font, an inserted text's size and colour too. */
+	state.flags |= NOTES_EDIT_TEXT;
+	state.font = app->box_font;
+	if (app->box_kind != MAIN_BOX_LINE) {
+		state.text_size = app->box_size;
+		state.color = color;
+	}
+
+	/* New words: inserted, their box's top left at the place, wrapped at the width. */
+	if (app->box_kind == MAIN_BOX_NEW) {
+		state.flags = NOTES_EDIT_INSERTED | NOTES_EDIT_TEXT;
+		state.id = app->document.next_id;
+		state.box_width = app->box_width;
+		state.transform[0] = 1.0f;
+		state.transform[3] = 1.0f;
+		state.transform[4] = app->box_x;
+		state.transform[5] = app->box_y;
+	}
+
+	/* The editor asked first: words it cannot write stay in the box. */
+	error = app_box_try(app, &state, &result);
+	if (error != 0) {
+		notes_box_focus(&app->box);
+		app_box_frame(app);
+		return 0;
+	}
+
+	/* The change (a new object takes the document's next number). */
+	if (app->box_kind == MAIN_BOX_NEW)
+		app->document.next_id++;
+	error = notes_document_edit_object(&app->document, app->page, &state);
+	if (error != 0) {
+		printf("NOTES EDIT failed page=%lu object=%ld error=%d\n", (unsigned long)app->page, (long)app->box_object, error);
+		fflush(stdout);
+		app_status(app, "Could not keep the words");
+		app_box_close(app);
+		return 1;
+	}
+
+	/* The object's index now (new words are the page's last). */
+	object = app->box_object;
+	if (app->box_kind == MAIN_BOX_NEW) {
+		error = notes_page_editor(&app->document, app->page, &editor);
+		if (error == 0)
+			object = pdf_page_editor_count(editor) - 1U;
+	}
+
+	/* The box closed. */
+	app_box_close(app);
+
+	/* The tests' line. */
+	printf("NOTES EDIT text page=%lu object=%lu kind=%s chars=%lu font=%s fallback=%d", (unsigned long)app->page, (unsigned long)object,
+	       kinds[app->box_kind], (unsigned long)app_characters(text), app_font_name(state.font), (result & PDF_EDIT_TEXT_REPLACED) != 0U);
+	if (app->box_kind != MAIN_BOX_LINE)
+		printf(" size=%g color=%08x", (double)state.text_size, (unsigned)state.color);
+	printf("\n");
+	fflush(stdout);
+
+	/* A line its own font lacks characters for is written in a replacement: the status says so. */
+	if (app->box_kind == MAIN_BOX_LINE && state.font == PDF_EDIT_FONT_ORIGINAL && (result & PDF_EDIT_TEXT_REPLACED) != 0U)
+		app_status(app, "The line's font lacks some of these characters; it now uses Sans");
+
+	/* With the Select tool, the words stay chosen. */
+	if (app->tool == NOTES_ACTION_SELECT && object != MAIN_NONE)
+		app_select(app, object, 0);
+	app_changed(app);
+	return 1;
+}
+
+/*
+ * Asks the page's editor whether it writes a state's words (notes_page_try_edit):
+ * a font missing, characters no font has, or another refusal is shown and
+ * logged.  Returns 0 when it does, or an errno value.
+ */
+static int
+app_box_try(
+	struct notes_app *app,
+	const struct notes_edit *state,
+	unsigned *result)
+{
+	int error;
+
+	/* The editor's try. */
+	error = notes_page_try_edit(&app->document, app->page, state, result);
+	app->text_previews++;
+	if (error == 0 && (*result & PDF_EDIT_TEXT_MISSING) != 0U)
+		error = EILSEQ;
+
+	/* Taken. */
+	if (error == 0)
+		return 0;
+
+	/* Refused: why (the tests' line and the status). */
+	printf("NOTES EDIT text refused page=%lu object=%ld error=%d result=%u\n", (unsigned long)app->page, (long)app->box_object, error, *result);
+	fflush(stdout);
+	if (error == ENOTSUP)
+		app_status(app, "No font for these words is installed");
+	else if (error == EILSEQ)
+		app_status(app, "No font has some of these characters; change them to keep the words");
+	else
+		app_status(app, "These words cannot be written on this page");
+	return error;
+}
+
+/*
+ * Closes the box without keeping anything more: the window's input is
+ * Notes' again, and a preview of a line's words goes (the page's editor
+ * is made again from the edits).
+ */
+static void
+app_box_close(
+	struct notes_app *app)
+{
+	/* The box and the window's input. */
+	if (!app->box.open)
+		return;
+	notes_box_close(&app->box);
+	notes_window_box(&app->window, 0);
+	app->box_changed = 0;
+
+	/* The preview goes. */
+	if (app->box_previewing) {
+		notes_page_close_editor(app->document.pages[app->page]);
+		app->box_previewing = 0;
+		app->text_previews++;
+	}
+
+	/* Shown without the box (the tests' line). */
+	printf("NOTES TEXT box close\n");
+	fflush(stdout);
+	app->toolbar_dirty = 1;
+	app->redraw = 1;
+}
+
+/*
+ * Puts the words typed in the box on their line in the page's editor, for
+ * the preview only (closing the box makes the editor again): a line of the
+ * page's own, its words not empty, in the box's font; a refusal leaves the
+ * line as it was.
+ */
+static void
+app_box_preview(
+	struct notes_app *app,
+	struct pdf_page_editor *editor)
+{
+	struct pdf_edit_text words;
+	const char *text;
+	unsigned result;
+
+	/* A line's box with words. */
+	if (!app->box.open || app->box_kind != MAIN_BOX_LINE)
+		return;
+	text = notes_box_text(&app->box);
+	if (text[0] == '\0')
+		return;
+
+	/* The words in the font. */
+	memset(&words, 0, sizeof(words));
+	words.size = sizeof(words);
+	words.utf8 = text;
+	words.font = (enum pdf_edit_font)app->box_font;
+	(void)pdf_page_editor_set_text(editor, app->box_object, &words, &result);
+}
+
+/* Tells whether an action leaves the text box open: its font, its size, the colours, the window's own. */
+static int
+app_box_keeps(
+	uint32_t action)
+{
+	/* The colours. */
+	if (action >= NOTES_ACTION_COLOR && action < NOTES_ACTION_COLOR + NOTES_COLORS)
+		return 1;
+
+	/* The box's and the window's. */
+	switch (action) {
+	case NOTES_ACTION_FONT:
+	case NOTES_ACTION_SIZE_DOWN:
+	case NOTES_ACTION_SIZE_UP:
+	case NOTES_ACTION_FULLSCREEN:
+	case NOTES_ACTION_LEAVE_FULLSCREEN:
+	case NOTES_ACTION_FINGER:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Any other closes it. */
+	return 0;
+}
+
+/*
+ * Chooses the next font (ws175-p008): the open box's (a line's may go back
+ * to its own), the chosen text's as one change once the page's editor
+ * takes its words in it, or the Text tool's for the next words.
+ */
+static void
+app_text_font(
+	struct notes_app *app)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	struct notes_edit state;
+	unsigned result;
+	char *words;
+	int error;
+
+	/* The open box's: shown on a line at once. */
+	if (app->box.open) {
+		app->box_font = app_next_font(app->box_font, app->box_kind == MAIN_BOX_LINE);
+		if (app->box_kind == MAIN_BOX_LINE)
+			app->box_changed = 1;
+		app->toolbar_dirty = 1;
+		return;
+	}
+
+	/* The Text tool's, for the next words. */
+	if (app->tool != NOTES_ACTION_SELECT || app->selected == MAIN_NONE || app->selected_kind != PDF_EDIT_TEXT) {
+		app->text_font = app_next_font(app->text_font, 0);
+		app->toolbar_dirty = 1;
+		return;
+	}
+
+	/* The chosen text's words that can change, as they are now. */
+	if (app->selected_fixed) {
+		app_status(app, "The words of this line cannot be changed (they can be moved or deleted)");
+		return;
+	}
+
+	/* Its object and its state, and a copy of its words. */
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = notes_page_editor(&app->document, app->page, &editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, app->selected, &object);
+	if (error == 0)
+		error = app_selected_state(app, &state);
+	if (error != 0 || object.text == NULL)
+		return;
+	words = strdup(object.text);
+	if (words == NULL)
+		return;
+
+	/* In the next font (an inserted text's words are its own already). */
+	if ((state.flags & NOTES_EDIT_INSERTED) == 0U)
+		state.text = words;
+	state.flags |= NOTES_EDIT_TEXT;
+	state.font = app_next_font(app->selected_font, (state.flags & NOTES_EDIT_INSERTED) == 0U);
+	app->box_object = app->selected;
+	error = app_box_try(app, &state, &result);
+	if (error == 0)
+		error = notes_document_edit_object(&app->document, app->page, &state);
+	free(words);
+	if (error != 0)
+		return;
+
+	/* The tests' line; the text stays chosen. */
+	printf("NOTES EDIT font page=%lu object=%lu font=%s fallback=%d\n", (unsigned long)app->page, (unsigned long)app->selected,
+	       app_font_name(state.font), (result & PDF_EDIT_TEXT_REPLACED) != 0U);
+	fflush(stdout);
+	app_select(app, app->selected, 0);
+	app_changed(app);
+}
+
+/*
+ * Makes the text's size smaller or larger by a step (ws175-p008), within
+ * MAIN_SIZE_MIN and MAIN_SIZE_MAX: the open box's (new words', an inserted
+ * text's), the chosen text's as one change (an inserted text's size, a
+ * line sized about its top left), or the Text tool's for the next words.
+ */
+static void
+app_text_size(
+	struct notes_app *app,
+	float step)
+{
+	struct pdf_page_editor *editor;
+	struct pdf_edit_object object;
+	struct notes_edit state;
+	double map[6];
+	double scale;
+	float base;
+	float size;
+	unsigned result;
+	int error;
+
+	/* The open box's (a line keeps its own size: its handles size it). */
+	if (app->box.open) {
+		if (app->box_kind != MAIN_BOX_LINE)
+			app->box_size = fminf(fmaxf(app->box_size + step, MAIN_SIZE_MIN), MAIN_SIZE_MAX);
+		app->toolbar_dirty = 1;
+		return;
+	}
+
+	/* The Text tool's, for the next words. */
+	if (app->tool != NOTES_ACTION_SELECT || app->selected == MAIN_NONE || app->selected_kind != PDF_EDIT_TEXT) {
+		app->text_size = fminf(fmaxf(app->text_size + step, MAIN_SIZE_MIN), MAIN_SIZE_MAX);
+		app->toolbar_dirty = 1;
+		return;
+	}
+
+	/* The chosen text, its size now and after the step. */
+	base = app->selected_size;
+	if (base <= 0.0f)
+		base = MAIN_SIZE_DEFAULT;
+	size = fminf(fmaxf(base + step, MAIN_SIZE_MIN), MAIN_SIZE_MAX);
+	error = app_selected_state(app, &state);
+	if (error != 0)
+		return;
+
+	/* An inserted text: its size, once the page's editor takes its words at it. */
+	if ((state.flags & NOTES_EDIT_INSERTED) != 0U) {
+		state.text_size = size;
+		app->box_object = app->selected;
+		error = app_box_try(app, &state, &result);
+		if (error == 0)
+			error = notes_document_edit_object(&app->document, app->page, &state);
+		if (error != 0)
+			return;
+		printf("NOTES EDIT size page=%lu object=%lu size=%g\n", (unsigned long)app->page, (unsigned long)app->selected, (double)size);
+		fflush(stdout);
+		app_select(app, app->selected, 0);
+		app_changed(app);
+		return;
+	}
+
+	/* A line of the page's own: sized about its top left. */
+	memset(&object, 0, sizeof(object));
+	object.size = sizeof(object);
+	error = notes_page_editor(&app->document, app->page, &editor);
+	if (error == 0)
+		error = pdf_page_editor_object(editor, app->selected, &object);
+	if (error != 0)
+		return;
+	scale = (double)size / (double)base;
+	map[0] = scale;
+	map[1] = 0.0;
+	map[2] = 0.0;
+	map[3] = scale;
+	map[4] = object.quad[0] - scale * object.quad[0];
+	map[5] = object.quad[1] - scale * object.quad[1];
+	app_apply_map(app, map);
+	printf("NOTES EDIT resize page=%lu object=%lu sx=%.3f sy=%.3f\n", (unsigned long)app->page, (unsigned long)app->selected, map[0], map[3]);
+	fflush(stdout);
+}
+
+/* Gives the font after one (ws175-p008): Original (a line's own, when it may), Sans, Mono, Japanese, and round again. */
+static unsigned
+app_next_font(
+	unsigned font,
+	int original)
+{
+	/* Each to the next. */
+	switch (font) {
+	case PDF_EDIT_FONT_ORIGINAL:
+		return PDF_EDIT_FONT_SANS;
+	case PDF_EDIT_FONT_SANS:
+		return PDF_EDIT_FONT_MONO;
+	case PDF_EDIT_FONT_MONO:
+		return PDF_EDIT_FONT_CJK;
+	default:
+		break;
+	}
+
+	/* After the last, the first. */
+	if (original)
+		return PDF_EDIT_FONT_ORIGINAL;
+	return PDF_EDIT_FONT_SANS;
+}
+
+/* Names a font for the tests' lines. */
+static const char *
+app_font_name(
+	unsigned font)
+{
+	/* Each by its word. */
+	switch (font) {
+	case PDF_EDIT_FONT_SANS:
+		return "sans";
+	case PDF_EDIT_FONT_MONO:
+		return "mono";
+	case PDF_EDIT_FONT_CJK:
+		return "cjk";
+	default:
+		break;
+	}
+
+	/* The line's own. */
+	return "original";
+}
+
+/* Names a font for the toolbar. */
+static const char *
+app_font_label(
+	unsigned font)
+{
+	/* Each by its name. */
+	switch (font) {
+	case PDF_EDIT_FONT_SANS:
+		return "Sans";
+	case PDF_EDIT_FONT_MONO:
+		return "Mono";
+	case PDF_EDIT_FONT_CJK:
+		return "Japanese";
+	default:
+		break;
+	}
+
+	/* The line's own. */
+	return "Original";
+}
+
+/* Gives the index of the pen's colour a text is written in (the first when it is none of them). */
+static unsigned
+app_color_index(
+	uint32_t color)
+{
+	uint32_t pen;
+	unsigned index;
+
+	/* The pen's colour that is the same. */
+	for (index = 0; index < NOTES_COLORS; index++) {
+		pen = notes_ui_color(NOTES_TOOL_PEN, index);
+		if (pen == color)
+			return index;
+	}
+
+	/* None of them. */
+	return 0;
+}
+
+/* Counts the characters of UTF-8 words (the bytes that start one). */
+static size_t
+app_characters(
+	const char *text)
+{
+	size_t count;
+	size_t at;
+
+	/* Each byte that is not a continuation. */
+	count = 0;
+	for (at = 0; text[at] != '\0'; at++) {
+		if (((unsigned char)text[at] & 0xc0U) != 0x80U)
+			count++;
+	}
+
+	/* Reports them. */
+	return count;
 }

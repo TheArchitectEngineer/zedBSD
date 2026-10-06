@@ -62,8 +62,8 @@
 
 
 static void ui_layout(struct fm_app *app);
-static void ui_clear_rect(struct fm_canvas *canvas, const struct fm_rect *rect);
-static void ui_draw_sidebar(struct fm_app *app, struct fm_canvas *canvas);
+static void ui_clear_rect(struct kl_canvas *canvas, const struct kl_rect *rect);
+static void ui_draw_sidebar(struct fm_app *app, struct kl_canvas *canvas);
 static int ui_place_current(struct fm_app *app, const struct fm_place *place);
 static const char *ui_location_kind_name(unsigned kind);
 static void ui_leave(struct fm_tab *tab);
@@ -79,7 +79,7 @@ static void ui_select_paths(struct fm_app *app, struct fm_tab *tab);
 int
 fm_app_init(
 	struct fm_app *app,
-	struct fm_text *text,
+	struct kl_text *text,
 	const char *start)
 {
 	struct fm_location location;
@@ -181,8 +181,8 @@ fm_app_release(
 
 	/* The operations, stopped and let go, the hero's pictures, the thumbnails and what the preview read. */
 	fm_actions_release(app);
-	fm_image_release(&app->hero_source);
-	fm_image_release(&app->hero);
+	kl_image_release(&app->hero_source);
+	kl_image_release(&app->hero);
 	fm_thumb_release(app);
 	fm_peek_release(&app->peek);
 	fm_info_release(&app->info);
@@ -213,9 +213,12 @@ fm_ui_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case FM_EVENT_MOTION:
+		(void)fm_rename_input(app, event);
 		fm_input_motion(app, event);
 		break;
 	case FM_EVENT_BUTTON:
+		/* The field of the name being changed sees the press too (it places its caret; elsewhere the change ends). */
+		(void)fm_rename_input(app, event);
 		fm_input_motion(app, event);
 		fm_input_button(app, event);
 		break;
@@ -252,8 +255,8 @@ fm_ui_event(
 	case FM_EVENT_TEXT:
 	case FM_EVENT_TEXT_DELETE:
 	case FM_EVENT_PREEDIT:
-		/* An input method's text, for the name being changed (ws090-p022). */
-		fm_field_text_input(app, event);
+		/* An input method's text, for the name being changed (rename.c). */
+		(void)fm_rename_input(app, event);
 		break;
 	default:
 		break;
@@ -330,9 +333,9 @@ fm_ui_tick(
 void
 fm_ui_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
-	struct fm_rect whole;
+	struct kl_rect whole;
 	int partial;
 
 	/*
@@ -357,13 +360,13 @@ fm_ui_draw(
 	whole.width = canvas->width;
 	whole.height = canvas->height;
 	if (partial != 0)
-		fm_canvas_clip_push(canvas, &app->damage);
+		kl_canvas_clip_push(canvas, &app->damage);
 	if (app->glass != 0 && partial != 0) {
 		ui_clear_rect(canvas, &app->damage);
 	} else if (app->glass != 0) {
-		fm_canvas_clear(canvas);
+		kl_canvas_clear(canvas);
 	} else {
-		fm_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
+		kl_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
 	}
 
 	/* The sidebar, when shown. */
@@ -390,7 +393,7 @@ fm_ui_draw(
 	/* Items being dragged, over everything. */
 	fm_drag_draw(app, canvas);
 	if (partial != 0)
-		fm_canvas_clip_pop(canvas);
+		kl_canvas_clip_pop(canvas);
 
 	/* The frame is up to date. */
 	app->dirty = 0;
@@ -404,9 +407,9 @@ fm_ui_draw(
 void
 fm_ui_damage(
 	struct fm_app *app,
-	const struct fm_rect *rect)
+	const struct kl_rect *rect)
 {
-	struct fm_rect grown;
+	struct kl_rect grown;
 	int right;
 	int bottom;
 
@@ -447,7 +450,7 @@ fm_ui_hit_rect(
 	const struct fm_app *app,
 	unsigned kind,
 	int index,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
 	int found;
 
@@ -474,7 +477,7 @@ fm_ui_panels(
 	struct fm_panel *panels,
 	size_t capacity)
 {
-	const struct fm_rect *cards[3];
+	const struct kl_rect *cards[3];
 	size_t count;
 	unsigned index;
 
@@ -506,7 +509,7 @@ fm_ui_panels(
 void
 fm_ui_hit(
 	struct fm_app *app,
-	const struct fm_rect *rect,
+	const struct kl_rect *rect,
 	unsigned kind,
 	int index)
 {
@@ -1002,19 +1005,19 @@ ui_layout(
 static void
 ui_draw_sidebar(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	static const char *const titles[] = { "Favorites", "Locations", "Devices" };
 	const struct fm_device *device;
 	const char *title;
-	struct fm_rect eject;
+	struct kl_rect eject;
 	float bright;
-	const struct fm_rect *panel;
+	const struct kl_rect *panel;
 	const struct fm_place *place;
-	struct fm_rect row;
-	struct fm_rect remove;
-	fm_color header;
-	fm_color ink;
+	struct kl_rect row;
+	struct kl_rect remove;
+	kl_color header;
+	kl_color ink;
 	unsigned section;
 	int current;
 	int removable;
@@ -1030,14 +1033,14 @@ ui_draw_sidebar(
 	/* The panel: a light veil over zdesktop's glass, or over the window's ground with a bright edge. */
 	panel = &app->layout.sidebar;
 	if (app->glass != 0) {
-		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_GLASS_SIDEBAR);
+		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_GLASS_SIDEBAR);
 	} else {
-		fm_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_SIDEBAR);
-		fm_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_COLOR_PANEL_RIM);
+		kl_canvas_round(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, FM_COLOR_SIDEBAR);
+		kl_canvas_round_border(canvas, (float)panel->x, (float)panel->y, (float)panel->width, (float)panel->height, UI_PANEL_RADIUS, 1.0f, FM_COLOR_PANEL_RIM);
 	}
 
 	/* The rows stay inside the panel. */
-	fm_canvas_clip_push(canvas, panel);
+	kl_canvas_clip_push(canvas, panel);
 
 	/* Each place under its section's title, the list scrolled when it is taller than the panel. */
 	section = FM_PLACES;
@@ -1051,7 +1054,7 @@ ui_draw_sidebar(
 			if (index > 0)
 				y += 8;
 			title = kl_tr(titles[section]);
-			(void)fm_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, title, strlen(title), UI_TEXT_HEADER, 1, header);
+			(void)kl_text_draw(app->text, canvas, panel->x + 16, y + UI_SIDEBAR_HEADER - 10, title, strlen(title), UI_TEXT_HEADER, 1, header);
 			row.x = panel->x + 8;
 			row.y = y;
 			row.width = panel->width - 16;
@@ -1070,10 +1073,10 @@ ui_draw_sidebar(
 		if (place->missing != 0)
 			ink = FM_COLOR_TEXT_FAINT;
 		if (current != 0) {
-			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_SELECTION);
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_SELECTION);
 			ink = FM_COLOR_ACCENT;
 		} else if (app->hover_kind == FM_HIT_PLACE && app->hover_index == index) {
-			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_HOVER);
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_COLOR_HOVER);
 		}
 
 		/* A new removable device blinks: its row lit and dimmed three times (ws132-p005). */
@@ -1084,17 +1087,17 @@ ui_draw_sidebar(
 		if (device != NULL)
 			bright = fm_devices_blink(app, device);
 		if (bright < 1.0f)
-			fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, FM_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, KL_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
 
 		/* A device not mounted is drawn faint until a double click mounts it. */
 		if (device != NULL && !device->mounted && current == 0)
 			ink = FM_COLOR_TEXT_SECONDARY;
 
 		/* The icon. */
-		fm_icon_draw(canvas, (enum fm_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
+		kl_icon_draw(canvas, (enum kl_icon)place->icon, (float)row.x + 8.0f, (float)row.y + 6.0f, 18.0f, ink);
 
 		/* The label. */
-		(void)fm_text_draw_fit(app->text, canvas, row.x + 36, fm_text_center(UI_TEXT_SIDEBAR, row.y, row.height), kl_tr(place->label), UI_TEXT_SIDEBAR, current, row.width - 44, ink);
+		(void)kl_text_draw_fit(app->text, canvas, row.x + 36, kl_text_center(UI_TEXT_SIDEBAR, row.y, row.height), kl_tr(place->label), UI_TEXT_SIDEBAR, current, row.width - 44, ink);
 		fm_ui_hit(app, &row, FM_HIT_PLACE, index);
 
 		/* A favorite folder under the pointer offers a small button that takes it off the sidebar. */
@@ -1110,8 +1113,8 @@ ui_draw_sidebar(
 			remove.y = row.y + 5;
 			remove.width = 20;
 			remove.height = 20;
-			fm_canvas_circle(canvas, (float)remove.x + 10.0f, (float)remove.y + 10.0f, 9.0f, FM_RGBA(0x5a6b85, 40));
-			fm_icon_draw(canvas, FM_ICON_CLOSE, (float)remove.x + 3.0f, (float)remove.y + 3.0f, 14.0f, FM_COLOR_TEXT_SECONDARY);
+			kl_canvas_circle(canvas, (float)remove.x + 10.0f, (float)remove.y + 10.0f, 9.0f, KL_RGBA(0x5a6b85, 40));
+			kl_icon_draw(canvas, KL_ICON_CLOSE, (float)remove.x + 3.0f, (float)remove.y + 3.0f, 14.0f, FM_COLOR_TEXT_SECONDARY);
 			fm_ui_hit(app, &remove, FM_HIT_BUTTON, FM_BUTTON_REMOVE_PLACE + index);
 		}
 
@@ -1126,9 +1129,9 @@ ui_draw_sidebar(
 			eject.width = 20;
 			eject.height = 20;
 			if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_EJECT_PLACE + index)
-				fm_canvas_circle(canvas, (float)eject.x + 10.0f, (float)eject.y + 10.0f, 9.0f, FM_RGBA(0x5a6b85, 40));
-			fm_canvas_round(canvas, (float)eject.x + 5.0f, (float)eject.y + 12.0f, 10.0f, 2.0f, 1.0f, FM_COLOR_TEXT_SECONDARY);
-			fm_canvas_round(canvas, (float)eject.x + 6.0f, (float)eject.y + 5.0f, 8.0f, 5.0f, 1.5f, FM_COLOR_TEXT_SECONDARY);
+				kl_canvas_circle(canvas, (float)eject.x + 10.0f, (float)eject.y + 10.0f, 9.0f, KL_RGBA(0x5a6b85, 40));
+			kl_canvas_round(canvas, (float)eject.x + 5.0f, (float)eject.y + 12.0f, 10.0f, 2.0f, 1.0f, FM_COLOR_TEXT_SECONDARY);
+			kl_canvas_round(canvas, (float)eject.x + 6.0f, (float)eject.y + 5.0f, 8.0f, 5.0f, 1.5f, FM_COLOR_TEXT_SECONDARY);
 			fm_ui_hit(app, &eject, FM_HIT_BUTTON, FM_BUTTON_EJECT_PLACE + index);
 		}
 
@@ -1143,7 +1146,7 @@ ui_draw_sidebar(
 	app->layout.sidebar_height = y + app->sidebar_scroll - panel->y + 8;
 
 	/* The panel's clip ends. */
-	fm_canvas_clip_pop(canvas);
+	kl_canvas_clip_pop(canvas);
 }
 
 /* Tells whether a sidebar place is the place shown. */
@@ -1294,8 +1297,8 @@ ui_select_paths(
 /* Makes a rectangle of the canvas transparent (the glass shows through), within the canvas. */
 static void
 ui_clear_rect(
-	struct fm_canvas *canvas,
-	const struct fm_rect *rect)
+	struct kl_canvas *canvas,
+	const struct kl_rect *rect)
 {
 	uint32_t *row;
 	int left;

@@ -45,7 +45,7 @@ from PIL import Image
 for path in glob.glob(sys.argv[1] + "/users-*.ppm"):
     Image.open(path).save(path[:-4] + ".png")
 PY
-rm -f "$out/x.ppm"
+# x.ppm (the scratch picture) is left in place (2026-10-06 user: deleting is Q1's step).
 
 if [ $status -eq 0 ]; then echo "host-users: $checks checks passed"; else echo "host-users: FAILED"; fi
 exit $status

@@ -21,7 +21,7 @@
 #ifndef FILES_H
 #define FILES_H
 
-#include "canvas.h"
+#include <keiland.h>
 #include "ops.h"
 
 #include "userland/desktop/paths.h"
@@ -67,43 +67,43 @@
  */
 struct fm_palette {
 	/* The window's ground, at the top and at the bottom (a gradient). */
-	fm_color background_top;
-	fm_color background_bottom;
+	kl_color background_top;
+	kl_color background_bottom;
 
 	/* A panel, its edge and its rim on glass, and the sidebar on the plain ground. */
-	fm_color panel;
-	fm_color panel_edge;
-	fm_color panel_rim;
-	fm_color sidebar;
+	kl_color panel;
+	kl_color panel_edge;
+	kl_color panel_rim;
+	kl_color sidebar;
 
 	/* The tints a glass window lays over the compositor's frosted glass: the sidebar's veil, and the content's and the preview's a little stronger one (the glass shows through; the items stay easy to read). */
-	fm_color glass_sidebar;
-	fm_color glass_content;
+	kl_color glass_sidebar;
+	kl_color glass_content;
 
 	/* A card's shadow. */
-	fm_color shadow;
+	kl_color shadow;
 
 	/* The text: the main ink, the secondary, the faint, a heading's, and an icon's. */
-	fm_color text;
-	fm_color text_secondary;
-	fm_color text_faint;
-	fm_color title;
-	fm_color icon;
+	kl_color text;
+	kl_color text_secondary;
+	kl_color text_faint;
+	kl_color title;
+	kl_color icon;
 
 	/* The accent, a selection with and without the keyboard, the pointer's hover, a folder and a separator. */
-	fm_color accent;
-	fm_color selection;
-	fm_color selection_inactive;
-	fm_color hover;
-	fm_color folder;
-	fm_color separator;
+	kl_color accent;
+	kl_color selection;
+	kl_color selection_inactive;
+	kl_color hover;
+	kl_color folder;
+	kl_color separator;
 
 	/* A button's ground and under the pointer, a card's inner ground, a tile behind an icon, and a progress bar's rail. */
-	fm_color button;
-	fm_color button_lit;
-	fm_color inner;
-	fm_color tile;
-	fm_color rail;
+	kl_color button;
+	kl_color button_lit;
+	kl_color inner;
+	kl_color tile;
+	kl_color rail;
 };
 
 /* The set in use, and the choice of the appearance's (KL_APPEARANCE_*; palette.c). */
@@ -335,7 +335,7 @@ struct fm_desktop_saved {
  * did.
  */
 struct fm_desktop_painted {
-	const struct fm_image *thumb;
+	const struct kl_image *thumb;
 	int column;
 	int row;
 	int selected;
@@ -595,7 +595,7 @@ enum fm_hit_kind {
  * which one (an item's index, a place's, a crumb's).
  */
 struct fm_hit {
-	struct fm_rect rect;
+	struct kl_rect rect;
 	unsigned kind;
 	int index;
 };
@@ -613,7 +613,7 @@ struct fm_hit {
  * zdesktop with the frame.
  */
 struct fm_panel {
-	struct fm_rect rect;
+	struct kl_rect rect;
 	int radius;
 	unsigned kind;
 };
@@ -624,12 +624,12 @@ struct fm_panel {
  * content, whose items are drawn under the row.
  */
 struct fm_layout {
-	struct fm_rect tabbar;
-	struct fm_rect sidebar;
-	struct fm_rect card;
-	struct fm_rect content;
-	struct fm_rect preview;
-	struct fm_rect items;
+	struct kl_rect tabbar;
+	struct kl_rect sidebar;
+	struct kl_rect card;
+	struct kl_rect content;
+	struct kl_rect preview;
+	struct kl_rect items;
 	int grid_left;
 	int columns;
 	int cell_width;
@@ -735,7 +735,7 @@ struct fm_dashboard {
 struct fm_thumb {
 	char path[FM_PATH_MAX];
 	time_t modified;
-	struct fm_image image;
+	struct kl_image image;
 	uint64_t used;
 	int failed;
 };
@@ -760,7 +760,7 @@ struct fm_peek {
 	char *text;
 	size_t text_length;
 	int line_count;
-	struct fm_image picture;
+	struct kl_image picture;
 	int picture_tried;
 };
 
@@ -1110,17 +1110,8 @@ enum fm_help {
  * history) and freed with the app.
  */
 struct fm_app {
-	/*
-	 * The text an input method is composing for the name being changed,
-	 * and where the name's caret was last drawn (window pixels; known 0
-	 * until it is), for the window's text input (ws090-p022).
-	 */
-	char preedit[FM_TEXT_INPUT_MAX];
-	struct fm_rect caret;
-	int caret_known;
-
 	/* The fonts, the window's size, the time of the input being handled, and whether a new frame is due. */
-	struct fm_text *text;
+	struct kl_text *text;
 	int width;
 	int height;
 	uint64_t now;
@@ -1135,7 +1126,7 @@ struct fm_app {
 	 * Any other change (dirty) draws everything.
 	 */
 	int damage_pending;
-	struct fm_rect damage;
+	struct kl_rect damage;
 
 	/*
 	 * Whether the window is glass: zdesktop draws frosted glass under the
@@ -1322,8 +1313,17 @@ struct fm_app {
 	/* The undo and redo histories. */
 	struct fm_undo undo;
 
-	/* The name being changed: the field, the item's path and its index when the edit began. */
-	struct fm_field rename;
+	/*
+	 * The name being changed: libkeiland's field and its own widgets'
+	 * input (rename.c, ws090-p010), what its last frame did
+	 * (KL_FIELD_*), where it was drawn (window pixels; shown 0 until it
+	 * is), and the item's path.
+	 */
+	struct kl_field rename;
+	struct kl_ui *rename_ui;
+	unsigned rename_flags;
+	struct kl_rect rename_rect;
+	int rename_shown;
 	char rename_path[FM_PATH_MAX];
 
 	/* A question being asked (FM_DIALOG_*), and the paths it is about. */
@@ -1377,8 +1377,8 @@ struct fm_app {
 
 	/* The dashboard: what it shows, the hero's picture as read and as scaled for the card, and whether it was read. */
 	struct fm_dashboard dashboard;
-	struct fm_image hero_source;
-	struct fm_image hero;
+	struct kl_image hero_source;
+	struct kl_image hero;
 	int hero_tried;
 	char wallpaper[FM_PATH_MAX];
 
@@ -1464,16 +1464,16 @@ enum fm_dialog {
 #define FM_BUTTON_EJECT_PLACE	300
 
 /* The interface (ui.c). */
-int fm_app_init(struct fm_app *app, struct fm_text *text, const char *start);
+int fm_app_init(struct fm_app *app, struct kl_text *text, const char *start);
 void fm_app_release(struct fm_app *app);
 void fm_ui_event(struct fm_app *app, const struct fm_event *event);
 void fm_ui_tick(struct fm_app *app, uint64_t now);
-void fm_ui_draw(struct fm_app *app, struct fm_canvas *canvas);
-void fm_ui_damage(struct fm_app *app, const struct fm_rect *rect);
-int fm_ui_hit_rect(const struct fm_app *app, unsigned kind, int index, struct fm_rect *rect);
+void fm_ui_draw(struct fm_app *app, struct kl_canvas *canvas);
+void fm_ui_damage(struct fm_app *app, const struct kl_rect *rect);
+int fm_ui_hit_rect(const struct fm_app *app, unsigned kind, int index, struct kl_rect *rect);
 
 /* The desktop's icons and their input (ui-desktop.c, ws094-p003, p004). */
-void fm_desktop_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_desktop_draw(struct fm_app *app, struct kl_canvas *canvas);
 void fm_desktop_repaint(struct fm_desktop *desk);
 void fm_desktop_event(struct fm_app *app, const struct fm_event *event);
 void fm_desktop_open_selected(struct fm_app *app);
@@ -1484,7 +1484,7 @@ void fm_desktop_drag_press(struct fm_app *app, int index, int x, int y);
 int fm_desktop_drag_motion(struct fm_app *app, int x, int y);
 void fm_desktop_drag_release(struct fm_app *app);
 void fm_desktop_drop_event(struct fm_app *app, const struct fm_event *event);
-void fm_desktop_drop_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_desktop_drop_draw(struct fm_app *app, struct kl_canvas *canvas);
 int fm_desktop_drop_place(struct fm_app *app);
 void fm_desktop_dropped(struct fm_app *app, char *const *paths, size_t count);
 
@@ -1496,13 +1496,13 @@ int fm_desktop_can_change_wallpaper(void);
 
 /* The desktop's grid and its layout file (desktop-layout.c, ws094-p004). */
 void fm_desktop_grid(int width, int height, int *columns, int *rows);
-int fm_desktop_cell_rect(int column, int row, int width, int height, struct fm_rect *rect);
+int fm_desktop_cell_rect(int column, int row, int width, int height, struct kl_rect *rect);
 int fm_desktop_cell_at(int x, int y, int width, int height, int *column, int *row);
 void fm_desktop_arrange(const char *const *names, size_t count, const struct fm_desktop_saved *saved, size_t saved_count, int width, int height, struct fm_desktop_place *places);
 
 /* An item's name as the desktop shows it under its icon: one or two lines, the middle left out of a longer one (desktop-layout.c, ws094-p010). */
 #define FM_DESKTOP_LABEL_MAX	256U
-void fm_desktop_label(struct fm_text *text, const char *name, int width, unsigned pixels, char *first, char *second);
+void fm_desktop_label(struct kl_text *text, const char *name, int width, unsigned pixels, char *first, char *second);
 int fm_desktop_layout_path(char *path, size_t size);
 int fm_desktop_layout_read(const char *path, struct fm_desktop_saved **saved, size_t *count);
 int fm_desktop_layout_write(const char *path, const struct fm_desktop_saved *saved, size_t count);
@@ -1512,7 +1512,7 @@ int fm_desktop_clean_up(struct fm_desktop *desk);
 int fm_desktop_layout_rename(struct fm_desktop *desk, const char *old_name, const char *new_name);
 int fm_desktop_remember(struct fm_desktop *desk, const char *const *names, size_t count);
 void fm_desktop_release(struct fm_desktop *desk);
-void fm_ui_hit(struct fm_app *app, const struct fm_rect *rect, unsigned kind, int index);
+void fm_ui_hit(struct fm_app *app, const struct kl_rect *rect, unsigned kind, int index);
 size_t fm_ui_panels(struct fm_app *app, struct fm_panel *panels, size_t capacity);
 struct fm_tab *fm_ui_tab(struct fm_app *app);
 void fm_ui_go(struct fm_app *app, const struct fm_location *location);
@@ -1536,7 +1536,7 @@ int fm_scrollbar_motion(struct fm_app *app, int x, int y);
 int fm_scrollbar_press(struct fm_app *app, int x, int y);
 int fm_scrollbar_release(struct fm_app *app);
 void fm_scrollbar_leave(struct fm_app *app);
-void fm_scrollbar_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_scrollbar_draw(struct fm_app *app, struct kl_canvas *canvas);
 int fm_scrollbar_busy(struct fm_app *app);
 void fm_input_key(struct fm_app *app, const struct fm_event *event);
 int fm_input_hit_at(struct fm_app *app, int x, int y, unsigned *kind, int *index);
@@ -1548,12 +1548,12 @@ void fm_input_location_go(struct fm_app *app);
 void fm_location_tick(struct fm_app *app);
 
 /* The content panel and the icon view (ui-grid.c). */
-void fm_grid_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-void fm_grid_entry_icon(struct fm_app *app, struct fm_canvas *canvas, const struct fm_entry *entry, float x, float y, float size);
-void fm_view_item_rect(struct fm_app *app, int index, struct fm_rect *rect);
+void fm_grid_draw(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+void fm_grid_entry_icon(struct fm_app *app, struct kl_canvas *canvas, const struct fm_entry *entry, float x, float y, float size);
+void fm_view_item_rect(struct fm_app *app, int index, struct kl_rect *rect);
 
 /* The list view (ui-list.c). */
-void fm_list_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
+void fm_list_draw(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner);
 void fm_time_text(time_t when, time_t now, char *text, size_t size);
 int fm_list_sort_at(struct fm_app *app, int index);
 void fm_list_edge_press(struct fm_app *app, int column, int x);
@@ -1567,9 +1567,13 @@ void fm_field_set(struct fm_field *field, const char *text);
 void fm_field_select(struct fm_field *field, size_t start, size_t end);
 unsigned fm_field_key(struct fm_field *field, uint32_t key, uint32_t modifiers);
 void fm_field_insert(struct fm_field *field, const char *text, size_t length);
-void fm_field_delete_before(struct fm_field *field, size_t bytes);
-void fm_field_text_input(struct fm_app *app, const struct fm_event *event);
-void fm_field_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_field *field, const struct fm_rect *rect, unsigned pixels, const char *placeholder);
+int fm_rename_start(struct fm_app *app, const char *name, size_t stem);
+void fm_rename_select_all(struct fm_app *app);
+int fm_rename_input(struct fm_app *app, const struct fm_event *event);
+void fm_rename_draw(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *rect);
+int fm_rename_hit(const struct fm_app *app, int x, int y);
+void fm_rename_take(struct fm_app *app);
+void fm_field_draw(struct fm_app *app, struct kl_canvas *canvas, const struct fm_field *field, const struct kl_rect *rect, unsigned pixels, const char *placeholder);
 
 /* The search (search.c). */
 void fm_search_start(struct fm_search *search, const char *query, const char *base, int hidden);
@@ -1579,8 +1583,8 @@ void fm_search_stop(struct fm_search *search);
 /* Today, the dashboard (ui-home.c). */
 void fm_home_gather(struct fm_app *app);
 void fm_home_folder_opened(const char *folder);
-void fm_home_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *inner);
-void fm_mark_draw(struct fm_canvas *canvas, int x, int y, unsigned pixels, float opacity);
+void fm_home_draw(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *inner);
+void fm_mark_draw(struct kl_canvas *canvas, int x, int y, unsigned pixels, float opacity);
 void fm_home_click(struct fm_app *app, unsigned kind, int index, int double_click);
 
 /* The places that are not one folder and the search field (ui-search.c). */
@@ -1619,8 +1623,8 @@ const char *fm_current_folder(struct fm_app *app);
 int fm_selected_paths(struct fm_app *app, char ***paths, size_t *count);
 
 /* The dialogs and the tasks' list (ui-overlay.c). */
-void fm_overlay_draw(struct fm_app *app, struct fm_canvas *canvas);
-void fm_tasks_draw(struct fm_app *app, struct fm_canvas *canvas, int x, int y);
+void fm_overlay_draw(struct fm_app *app, struct kl_canvas *canvas);
+void fm_tasks_draw(struct fm_app *app, struct kl_canvas *canvas, int x, int y);
 void fm_task_text(const struct fm_task *task, char *text, size_t size);
 
 /* The selection (select.c). */
@@ -1647,14 +1651,14 @@ void fm_owner_text(uid_t uid, gid_t gid, char *text, size_t length);
 /* The file types (mime.c). */
 const struct fm_mime *fm_mime_guess(const char *name, mode_t mode);
 const struct fm_mime *fm_mime_sniff(const char *path, const struct fm_mime *guess);
-fm_color fm_mime_color(unsigned category);
+kl_color fm_mime_color(unsigned category);
 void fm_mime_label(const char *name, char *label, size_t size);
 int fm_mime_text(const unsigned char *bytes, size_t length);
 
 /* The pictures and the thumbnails (thumb.c). */
-int fm_image_load(const char *path, struct fm_image *image);
-int fm_image_thumbnail(const char *path, int side, struct fm_image *thumbnail);
-const struct fm_image *fm_thumb_get(struct fm_app *app, const char *path, time_t modified);
+int fm_image_load(const char *path, struct kl_image *image);
+int fm_image_thumbnail(const char *path, int side, struct kl_image *thumbnail);
+const struct kl_image *fm_thumb_get(struct fm_app *app, const char *path, time_t modified);
 int fm_thumb_tick(struct fm_app *app);
 void fm_thumb_release(struct fm_app *app);
 void fm_image_fit(int width, int height, int box_width, int box_height, int *fit_width, int *fit_height);
@@ -1665,8 +1669,8 @@ void fm_peek_picture(struct fm_peek *peek, int side);
 void fm_peek_release(struct fm_peek *peek);
 
 /* The preview pane and Quick Look (ui-preview.c). */
-void fm_preview_draw(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *area);
-void fm_look_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_preview_draw(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
+void fm_look_draw(struct fm_app *app, struct kl_canvas *canvas);
 void fm_look_toggle(struct fm_app *app);
 void fm_look_close(struct fm_app *app);
 void fm_look_step(struct fm_app *app, int step);
@@ -1691,7 +1695,7 @@ void fm_mode_text(mode_t mode, char *text, size_t size);
 /* The information card (ui-info.c). */
 void fm_info_open(struct fm_app *app);
 void fm_info_close(struct fm_app *app);
-void fm_info_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_info_draw(struct fm_app *app, struct kl_canvas *canvas);
 void fm_info_tick(struct fm_app *app);
 void fm_info_button(struct fm_app *app, int index);
 void fm_open_entry(struct fm_app *app, int index, int opener);
@@ -1707,16 +1711,16 @@ int fm_ui_context_action(struct fm_app *app, unsigned action);
 int fm_drag_motion(struct fm_app *app, int x, int y);
 int fm_drag_release(struct fm_app *app);
 void fm_drag_cancel(struct fm_app *app);
-void fm_drag_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_drag_draw(struct fm_app *app, struct kl_canvas *canvas);
 void fm_drop_event(struct fm_app *app, const struct fm_event *event);
 int fm_drag_tick(struct fm_app *app, uint64_t now);
 
 /* PDF thumbnails and the thumbnails kept on disk (thumb-cache.c, ws127-p002). */
 int fm_thumb_kind(const struct fm_entry *entry);
 int fm_thumb_is_pdf(const unsigned char *data, size_t size);
-int fm_thumb_pdf(const unsigned char *data, size_t size, struct fm_image *image);
-int fm_thumb_cache_read(const char *path, struct fm_image *image);
-int fm_thumb_cache_write(const char *path, const struct fm_image *image);
+int fm_thumb_pdf(const unsigned char *data, size_t size, struct kl_image *image);
+int fm_thumb_cache_read(const char *path, struct kl_image *image);
+int fm_thumb_cache_write(const char *path, const struct kl_image *image);
 int fm_thumb_cache_trim(unsigned maximum, unsigned keep);
 int fm_drop_accepts(const struct fm_app *app);
 void fm_drop_perform(struct fm_app *app, char *const *paths, size_t count);
@@ -1728,7 +1732,7 @@ void fm_tabs_close(struct fm_app *app, int index);
 void fm_tabs_select(struct fm_app *app, int index);
 void fm_tabs_step(struct fm_app *app, int step);
 int fm_tabs_layout(struct fm_app *app, int top, int left, int right);
-void fm_tabs_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_tabs_draw(struct fm_app *app, struct kl_canvas *canvas);
 
 /* The titlebar's state and what is done with it (ui-titlebar.c). */
 void fm_ui_titlebar_state(struct fm_app *app, struct fm_titlebar_state *state);
@@ -1737,7 +1741,7 @@ void fm_ui_titlebar(struct fm_app *app, const struct fm_titlebar_event *event);
 /* The Help cards (ui-help.c). */
 void fm_help_open(struct fm_app *app, unsigned help);
 void fm_help_close(struct fm_app *app);
-void fm_help_draw(struct fm_app *app, struct fm_canvas *canvas);
+void fm_help_draw(struct fm_app *app, struct kl_canvas *canvas);
 
 /* The sidebar's places (places.c). */
 void fm_places_init(struct fm_places *places, const char *home);

@@ -100,8 +100,8 @@ static void search_split(const char *query, struct search_words *words);
 static int search_matches(const struct search_words *words, const char *name, const char *more);
 static int search_begins(const char *haystack, const char *needle);
 static void search_add(struct se_app *app, unsigned page, const char *setting);
-static void search_row(struct se_app *app, struct fm_canvas *canvas, unsigned index, int x, int y, int width, int last);
-static void search_reveal(struct se_app *app, const struct fm_rect *row);
+static void search_row(struct se_app *app, struct kl_canvas *canvas, unsigned index, int x, int y, int width, int last);
+static void search_reveal(struct se_app *app, const struct kl_rect *row);
 
 /*
  * Searches the pages and their settings for a query as typed; a query
@@ -263,7 +263,7 @@ se_search_step(
 int
 se_search_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
@@ -469,7 +469,7 @@ search_add(
 static void
 search_row(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	unsigned index,
 	int x,
 	int y,
@@ -478,10 +478,10 @@ search_row(
 {
 	const struct se_search_result *result;
 	const struct se_page *page;
-	struct fm_rect row;
+	struct kl_rect row;
 	char where[96];
 	const char *name;
-	fm_color glyph;
+	kl_color glyph;
 	int left;
 	int right;
 	int lit;
@@ -500,9 +500,9 @@ search_row(
 	/* The chosen row has the selection's ground (as the list's page shown), another a shade under the pointer. */
 	lit = se_ui_lit(app, SE_HIT_RESULT, (int)index);
 	if (index == app->search.chosen) {
-		fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION);
+		kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION);
 	} else if (lit != 0) {
-		fm_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_HOVER);
+		kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_HOVER);
 	}
 
 	/* The chosen row the keys just moved to is scrolled into sight. */
@@ -529,8 +529,8 @@ search_row(
 
 	/* The two lines, beside the picture and short of the chevron. */
 	right = x + width - SEARCH_PAD;
-	(void)fm_text_draw_fit(app->text, canvas, left + 38, y + 22, name, SEARCH_TEXT_NAME, 1, right - left - 60, SE_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, left + 38, y + 40, where, SEARCH_TEXT_PAGE, 0, right - left - 60, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, left + 38, y + 22, name, SEARCH_TEXT_NAME, 1, right - left - 60, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, left + 38, y + 40, where, SEARCH_TEXT_PAGE, 0, right - left - 60, SE_COLOR_TEXT_SECONDARY);
 
 	/* The chevron at the right says the row opens a page. */
 	se_glyph_draw(canvas, SE_GLYPH_CHEVRON, (float)right - 18.0f, (float)y + 17.0f, 16.0f, SE_COLOR_TEXT_FAINT);
@@ -542,7 +542,7 @@ search_row(
 	if (index == app->search.chosen || index + 1U == app->search.chosen)
 		divided = 0;
 	if (divided != 0)
-		fm_canvas_line(canvas, (float)left + 38.0f, (float)(y + SEARCH_ROW) - 0.5f, (float)right, (float)(y + SEARCH_ROW) - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
+		kl_canvas_line(canvas, (float)left + 38.0f, (float)(y + SEARCH_ROW) - 0.5f, (float)right, (float)(y + SEARCH_ROW) - 0.5f, 1.0f, SE_COLOR_SEPARATOR);
 
 	/* A click opens the result's page. */
 	se_ui_hit(app, &row, SE_HIT_RESULT, (int)index);
@@ -552,9 +552,9 @@ search_row(
 static void
 search_reveal(
 	struct se_app *app,
-	const struct fm_rect *row)
+	const struct kl_rect *row)
 {
-	const struct fm_rect *pane;
+	const struct kl_rect *pane;
 	int scroll;
 
 	/* Only once for a move of the keys. */

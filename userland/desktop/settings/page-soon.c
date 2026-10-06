@@ -30,14 +30,14 @@
 int
 se_soon_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
 	const struct se_page *page;
-	struct fm_text_line name;
-	struct fm_text_line line;
+	struct kl_text_line name;
+	struct kl_text_line line;
 	int centre;
 	int text_width;
 	int baseline;
@@ -53,16 +53,16 @@ se_soon_draw(
 	se_glyph_draw(canvas, page->glyph, (float)centre - SOON_GLYPH * 0.5f, (float)glyph_top, SOON_GLYPH, SE_COLOR_TEXT_FAINT);
 
 	/* The name under it, centred. */
-	fm_text_metrics(app->text, SOON_TEXT_NAME, &name);
+	kl_text_metrics(app->text, SOON_TEXT_NAME, &name);
 	baseline = glyph_top + (int)SOON_GLYPH + 18 + name.ascent;
-	text_width = fm_text_width(app->text, page->name, strlen(page->name), SOON_TEXT_NAME, 1);
-	(void)fm_text_draw(app->text, canvas, centre - text_width / 2, baseline, page->name, strlen(page->name), SOON_TEXT_NAME, 1, SE_COLOR_TEXT);
+	text_width = kl_text_width(app->text, page->name, strlen(page->name), SOON_TEXT_NAME, 1);
+	(void)kl_text_draw(app->text, canvas, centre - text_width / 2, baseline, page->name, strlen(page->name), SOON_TEXT_NAME, 1, SE_COLOR_TEXT);
 
 	/* The line under that, centred. */
-	fm_text_metrics(app->text, SOON_TEXT_LINE, &line);
+	kl_text_metrics(app->text, SOON_TEXT_LINE, &line);
 	baseline += name.descent + 8 + line.ascent;
-	text_width = fm_text_width(app->text, SOON_MESSAGE, strlen(SOON_MESSAGE), SOON_TEXT_LINE, 0);
-	(void)fm_text_draw(app->text, canvas, centre - text_width / 2, baseline, SOON_MESSAGE, strlen(SOON_MESSAGE), SOON_TEXT_LINE, 0, SE_COLOR_TEXT_SECONDARY);
+	text_width = kl_text_width(app->text, SOON_MESSAGE, strlen(SOON_MESSAGE), SOON_TEXT_LINE, 0);
+	(void)kl_text_draw(app->text, canvas, centre - text_width / 2, baseline, SOON_MESSAGE, strlen(SOON_MESSAGE), SOON_TEXT_LINE, 0, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the card. */
 	return top + SOON_HEIGHT;

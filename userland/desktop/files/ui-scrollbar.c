@@ -158,13 +158,13 @@ fm_scrollbar_leave(
 void
 fm_scrollbar_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	struct kl_scroll_bar_shape shape;
 	struct kl_rect viewport;
 	struct fm_tab *tab;
-	fm_color track;
-	fm_color thumb;
+	kl_color track;
+	kl_color thumb;
 	int shown;
 
 	/* What shows of the bar now. */
@@ -177,12 +177,12 @@ fm_scrollbar_draw(
 	/* The faint track while the bar is thick. */
 	if (shape.thick != 0) {
 		track = 0x00f4f4f4U | ((uint32_t)(150.0 * shape.alpha) << 24);
-		fm_canvas_round(canvas, (float)shape.track_x, (float)shape.track_y, (float)shape.track_width, (float)shape.track_height, (float)shape.track_width / 2.0f, track);
+		kl_canvas_round(canvas, (float)shape.track_x, (float)shape.track_y, (float)shape.track_width, (float)shape.track_height, (float)shape.track_width / 2.0f, track);
 	}
 
 	/* The thumb, dark grey and rounded. */
 	thumb = 0x00303030U | ((uint32_t)(110.0 * shape.alpha) << 24);
-	fm_canvas_round(canvas, (float)shape.thumb_x, (float)shape.thumb_y, (float)shape.thumb_width, (float)shape.thumb_height, (float)shape.thumb_width / 2.0f, thumb);
+	kl_canvas_round(canvas, (float)shape.thumb_x, (float)shape.thumb_y, (float)shape.thumb_width, (float)shape.thumb_height, (float)shape.thumb_width / 2.0f, thumb);
 }
 
 /*

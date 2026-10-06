@@ -53,14 +53,17 @@ static int host_picture(struct fm_app *app, const char *path, const uint32_t *pi
 static void host_event(struct fm_app *app, unsigned type, int x, int y, uint32_t button, int pressed, uint32_t key, uint32_t modifiers, uint64_t *now);
 static void host_type(struct fm_app *app, const char *text, uint64_t *now);
 
+/* The canvas the frames are drawn in, for a frame between inputs while a name is being changed. */
+static struct kl_canvas *host_canvas;
+
 int
 main(
 	int argc,
 	char **argv)
 {
 	static struct fm_app app;
-	struct fm_canvas canvas;
-	struct fm_text text;
+	struct kl_canvas canvas;
+	struct kl_text text;
 	struct fm_event event;
 	const char *font;
 	const char *fallback;
@@ -104,12 +107,12 @@ main(
 	}
 
 	/* The fonts, the canvas and the app. */
-	if (fm_text_open(&text, font, fallback) != 0) {
+	if (kl_text_open(&text, font, fallback) != 0) {
 		fprintf(stderr, "files-render: cannot open %s\n", font);
 		return 1;
 	}
 	pixels = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
-	if (pixels == NULL || fm_canvas_init(&canvas, pixels, (size_t)width, width, height) != 0)
+	if (pixels == NULL || kl_canvas_init(&canvas, pixels, (size_t)width, width, height) != 0)
 		return 1;
 	now = 1000;
 	app.now = now;
@@ -125,6 +128,7 @@ main(
 	if (composed == NULL)
 		return 1;
 	fm_ui_draw(&app, &canvas);
+	host_canvas = &canvas;
 
 	/* The actions. */
 	for (; index < argc; index++) {
@@ -263,6 +267,7 @@ main(
 		} else if (strncmp(argv[index], "draw=", 5) == 0) {
 			fm_ui_tick(&app, now);
 			fm_ui_draw(&app, &canvas);
+			fm_rename_take(&app);
 			if (host_picture(&app, argv[index] + 5, pixels, composed, width, height, glass) != 0) {
 				fprintf(stderr, "files-render: cannot write %s\n", argv[index] + 5);
 				return 1;
@@ -278,8 +283,8 @@ main(
 	}
 
 	fm_app_release(&app);
-	fm_canvas_release(&canvas);
-	fm_text_close(&text);
+	kl_canvas_release(&canvas);
+	kl_text_close(&text);
 	free(pixels);
 	free(composed);
 	return 0;
@@ -313,6 +318,12 @@ host_event(
 	fm_ui_event(app, &event);
 	if (app->dirty) {
 		fm_ui_tick(app, *now);
+	}
+
+	/* The field of the name being changed takes its keys in a frame, and Enter or Esc after it (ws090-p010). */
+	if (app->focus == FM_FOCUS_RENAME && host_canvas != NULL) {
+		fm_ui_draw(app, host_canvas);
+		fm_rename_take(app);
 	}
 }
 

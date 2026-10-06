@@ -83,8 +83,8 @@ static const char *const languages_names[LANGUAGES_COUNT] = { "English", "\xe6\x
 /* The words of account-admin's refusals, and what the page says for each. */
 static const char *const languages_words[] = { "not-administrator", "bad-password", "busy" };
 
-static int languages_draw_system(struct se_app *app, struct fm_canvas *canvas, int x, int top, int width);
-static void languages_field_draw(struct se_app *app, struct fm_canvas *canvas, int x, int y, int width);
+static int languages_draw_system(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static void languages_field_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int width);
 static void languages_read_system(struct se_languages *languages);
 static int languages_ready(const struct se_app *app);
 static void languages_apply(struct se_app *app);
@@ -97,12 +97,12 @@ static const char *languages_saying(const char *word);
 int
 se_languages_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
-	struct fm_text_line line;
+	struct kl_text_line line;
 	const struct languages_choice *choice;
 	int height;
 	int y;
@@ -111,12 +111,12 @@ se_languages_draw(
 	/* The input method's card: one row a choice, a switch at each. */
 	height = se_card_height(0, 1) + 3 * LANGUAGES_ROW + 4;
 	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Input method"), kl_tr("What the keyboard types through. The change applies at once."));
-	fm_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
+	kl_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
 	for (i = 0; i < sizeof(languages_choices) / sizeof(languages_choices[0]); i++) {
 		/* The name, what it does, and its switch (on for the method chosen). */
 		choice = &languages_choices[i];
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, kl_tr(choice->name), LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, kl_tr(choice->line), LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, kl_tr(choice->name), LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, kl_tr(choice->line), LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 16, app->look.ime_method == choice->method, app->look.writable, choice->index);
 		y += LANGUAGES_ROW;
 	}
@@ -127,7 +127,7 @@ se_languages_draw(
 	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Display language"), kl_tr("The language of the desktop's words. The change applies at once."));
 	for (i = 0; i < LANGUAGES_COUNT; i++) {
 		/* The name, and its switch (on for the language shown). */
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, languages_names[i], LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, languages_names[i], LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 10, app->look.ui_language == (int)i, app->look.writable, LANGUAGES_SHOW_EN + (int)i);
 		y += LANGUAGES_SHORT_ROW;
 	}
@@ -148,15 +148,15 @@ se_languages_draw(
 static int
 languages_draw_system(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int top,
 	int width)
 {
 	struct se_languages *languages;
-	struct fm_text_line line;
+	struct kl_text_line line;
 	const char *now;
-	fm_color ink;
+	kl_color ink;
 	int administer;
 	int enabled;
 	int height;
@@ -184,15 +184,15 @@ languages_draw_system(
 	now = kl_tr("Not set (English)");
 	if (languages->system >= 0 && languages->system < LANGUAGES_COUNT)
 		now = languages_names[languages->system];
-	(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 18, kl_tr("Now"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT_SECONDARY);
-	(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_FIELD_X, y + 18, now, LANGUAGES_TEXT_SMALL, 0, width - LANGUAGES_FIELD_X - 20, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 18, kl_tr("Now"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_FIELD_X, y + 18, now, LANGUAGES_TEXT_SMALL, 0, width - LANGUAGES_FIELD_X - 20, SE_COLOR_TEXT);
 	y += 30;
 
 	/* The languages to choose, each named in its own language. */
-	fm_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
+	kl_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
 	for (i = 0; i < LANGUAGES_COUNT; i++) {
 		/* The name, and its switch (on for the one chosen). */
-		(void)fm_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, languages_names[i], LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, languages_names[i], LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
 		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 10, languages->chosen == i, 1, LANGUAGES_SYSTEM_EN + i);
 		y += LANGUAGES_SHORT_ROW;
 	}
@@ -213,7 +213,7 @@ languages_draw_system(
 	if (languages->message_bad)
 		ink = SE_COLOR_BAD;
 	if (languages->message[0] != '\0')
-		(void)fm_text_draw_fit(app->text, canvas, x + 20, y + 22, languages->message, LANGUAGES_TEXT_SMALL, 0, right - apply - x - 40, ink);
+		(void)kl_text_draw_fit(app->text, canvas, x + 20, y + 22, languages->message, LANGUAGES_TEXT_SMALL, 0, right - apply - x - 40, ink);
 
 	/* The edge below the card. */
 	return top + height;
@@ -223,58 +223,27 @@ languages_draw_system(
 static void
 languages_field_draw(
 	struct se_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	int width)
 {
-	const struct se_languages *languages;
-	struct fm_rect box;
-	char dots[SE_KEY_TEXT];
-	const char *text;
-	fm_color ink;
-	size_t count;
-	int right;
+	struct se_languages *languages;
+	struct kl_rect box;
 
 	/* The label. */
 	languages = &app->languages;
-	(void)fm_text_draw_fit(app->text, canvas, x + 20, fm_text_center(LANGUAGES_TEXT_SMALL, y + 8, LANGUAGES_FIELD_HEIGHT), kl_tr("Your password"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, x + 20, kl_text_center(LANGUAGES_TEXT_SMALL, y + 8, LANGUAGES_FIELD_HEIGHT), kl_tr("Your password"), LANGUAGES_TEXT_SMALL, 0, LANGUAGES_FIELD_X - 30, SE_COLOR_TEXT);
 
-	/* The field: white, the accent's edge when it has the keyboard. */
+	/* The field's place; a click on it gives it the keyboard. */
 	box.x = x + LANGUAGES_FIELD_X;
 	box.y = y + 8;
 	box.width = width - LANGUAGES_FIELD_X - 20;
 	box.height = LANGUAGES_FIELD_HEIGHT;
-	fm_canvas_round(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, SE_COLOR_FIELD);
-	if (languages->focused) {
-		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.5f, SE_COLOR_ACCENT);
-	} else {
-		fm_canvas_round_border(canvas, (float)box.x, (float)box.y, (float)box.width, (float)box.height, 8.0f, 1.0f, SE_COLOR_SEPARATOR);
-	}
-
-	/* A click on it gives it the keyboard. */
 	se_ui_hit(app, &box, SE_HIT_CONTROL, LANGUAGES_FIELD);
 
-	/* Dots for the password, or what the field is for while it is empty. */
-	for (count = 0; count < languages->password.length && count + 1U < sizeof(dots); count++)
-		dots[count] = '*';
-	dots[count] = '\0';
-	text = dots;
-	ink = SE_COLOR_TEXT;
-	if (languages->password.length == 0) {
-		text = kl_tr("Needed for the change");
-		ink = SE_COLOR_TEXT_FAINT;
-	}
-
-	/* The text inside the field, and the cursor after it when the field has the keyboard. */
-	fm_canvas_clip_push(canvas, &box);
-	right = box.x + 12 + fm_text_draw(app->text, canvas, box.x + 12, fm_text_center(LANGUAGES_TEXT_SMALL, box.y, box.height), text, strlen(text), LANGUAGES_TEXT_SMALL, 0, ink);
-	if (languages->password.length == 0)
-		right = box.x + 12;
-	if (languages->focused)
-		fm_canvas_line(canvas, (float)right + 1.5f, (float)box.y + 9.0f, (float)right + 1.5f, (float)(box.y + box.height) - 9.0f, 1.5f, SE_COLOR_ACCENT);
-	fm_canvas_clip_pop(canvas);
-	memset(dots, 0, sizeof(dots));
+	/* libkeiland's field: the password as dots, without an input method (ws090-p007). */
+	(void)se_field_draw(app, canvas, &languages->password, &box, kl_tr("Needed for the change"), SE_FIELD_SECRET, languages->focused);
 }
 
 /*

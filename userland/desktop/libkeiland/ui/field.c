@@ -19,6 +19,8 @@
  * method or the on-screen keyboard sends (kl_ui_text): a commit goes in
  * place of the selection, the bytes around the caret are deleted, and the
  * text being composed shows underlined at the caret until it is committed.
+ * A plain field (KL_VERSION 47: an address, a key shown as typed) shows
+ * its characters but takes no input method, as a secret one.
  */
 
 #include "internal.h"
@@ -135,7 +137,7 @@ kl_field(
 	preedit_begin = -1;
 	preedit_end = -1;
 	preedit = keiui_ui_preedit(ui, id, 0U, focused, &preedit_begin, &preedit_end);
-	if (field->secret)
+	if (field->secret || field->plain)
 		preedit = NULL;
 
 	/* The ground: white, with the accent's edge while it has the keyboard. */
@@ -224,8 +226,10 @@ kl_field(
 		kl_canvas_line(style->canvas, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)rect->y + 8.0f, (float)(rect->x + FIELD_SIDE + caret_x - field->scroll) + 0.75f, (float)(rect->y + rect->height) - 8.0f, 1.5f, theme->accent);
 	kl_canvas_clip_pop(style->canvas);
 
-	/* With the keyboard, a field that is not secret takes an input method's text at its caret (kl_ui_text_wanted). */
-	if (focused && !field->secret) {
+	/* With the keyboard, a field that is neither secret nor plain takes an input method's text at its caret (kl_ui_text_wanted). */
+	if (focused &&
+	    !field->secret &&
+	    !field->plain) {
 		caret.x = rect->x + FIELD_SIDE + caret_x - field->scroll;
 		caret.y = rect->y + 8;
 		caret.width = 2;

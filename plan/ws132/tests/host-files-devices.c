@@ -28,9 +28,9 @@
 static int failures;
 
 static void check(int condition, const char *text);
-static int find_hit(const struct fm_app *app, unsigned kind, int index, struct fm_rect *rect);
+static int find_hit(const struct fm_app *app, unsigned kind, int index, struct kl_rect *rect);
 static int find_place(const struct fm_app *app, int device);
-static void press(struct fm_app *app, const struct fm_rect *rect, uint64_t *now);
+static void press(struct fm_app *app, const struct kl_rect *rect, uint64_t *now);
 static int sidebar_has(const struct fm_app *app, const char *label, unsigned section);
 
 int
@@ -40,10 +40,10 @@ main(
 {
 	static struct fm_app app;
 	static uint32_t pixels[1280 * 800];
-	struct fm_text text;
-	struct fm_canvas canvas;
+	struct kl_text text;
+	struct kl_canvas canvas;
 	struct fm_device list[2];
-	struct fm_rect rect;
+	struct kl_rect rect;
 	struct fm_tab *tab;
 	uint64_t now;
 	float bright;
@@ -51,11 +51,11 @@ main(
 	int found;
 
 	/* The font, the canvas and the app on Today. */
-	if (argc != 2 || fm_text_open(&text, argv[1], NULL) != 0) {
+	if (argc != 2 || kl_text_open(&text, argv[1], NULL) != 0) {
 		fprintf(stderr, "usage: host-files-devices FONT\n");
 		return 2;
 	}
-	if (fm_canvas_init(&canvas, pixels, 1280U, 1280, 800) != 0)
+	if (kl_canvas_init(&canvas, pixels, 1280U, 1280, 800) != 0)
 		return 1;
 	now = 1000U;
 	app.now = now;
@@ -174,7 +174,7 @@ main(
 
 	/* The verdict. */
 	fm_app_release(&app);
-	fm_text_close(&text);
+	kl_text_close(&text);
 	if (failures != 0) {
 		printf("host-files-devices: FAIL (%d)\n", failures);
 		return 1;
@@ -189,7 +189,7 @@ find_hit(
 	const struct fm_app *app,
 	unsigned kind,
 	int index,
-	struct fm_rect *rect)
+	struct kl_rect *rect)
 {
 	int hit;
 
@@ -221,11 +221,11 @@ find_place(
 static void
 press(
 	struct fm_app *app,
-	const struct fm_rect *rect,
+	const struct kl_rect *rect,
 	uint64_t *now)
 {
 	static uint32_t frame[1280 * 800];
-	struct fm_canvas canvas;
+	struct kl_canvas canvas;
 	struct fm_event event;
 	int pressed;
 
@@ -244,7 +244,7 @@ press(
 		*now += 40U;
 		app->now = *now;
 	}
-	(void)fm_canvas_init(&canvas, frame, 1280U, 1280, 800);
+	(void)kl_canvas_init(&canvas, frame, 1280U, 1280, 800);
 	fm_ui_draw(app, &canvas);
 }
 

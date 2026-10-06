@@ -32,9 +32,6 @@ KEILAND_FREEBSD_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/page-input.c \
 	userland/desktop/settings/sound.c \
 	userland/desktop/settings/system.c \
-	userland/desktop/files/canvas.c \
-	userland/desktop/files/text.c \
-	userland/desktop/files/icons.c \
 	userland/desktop/artwork/mark.c \
 	userland/desktop/picture/wallpaper.c
 $(eval $(call KEILAND_FREEBSD_PROGRAM,settings,bin,$(KEILAND_FREEBSD_SETTINGS_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libpng-compat.so libjpeg-compat.so libz-compat.so libvulkan.so.1,-lm -pthread))

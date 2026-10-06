@@ -124,7 +124,7 @@ fm_peek_release(
 {
 	/* The lines and the picture. */
 	free(peek->text);
-	fm_image_release(&peek->picture);
+	kl_image_release(&peek->picture);
 
 	/* Nothing is read now. */
 	memset(peek, 0, sizeof(*peek));

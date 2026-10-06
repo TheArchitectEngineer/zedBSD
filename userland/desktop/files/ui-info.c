@@ -60,10 +60,10 @@ static void info_add(struct info_row *rows, int *count, const char *label, const
 static void info_date(time_t when, char *text, size_t size);
 static void info_bytes(uint64_t bytes, char *text, size_t size);
 static void info_person(struct fm_app *app, char *owner, size_t owner_size, char *group, size_t group_size);
-static void info_header(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *card);
-static int info_checksum_row(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *card, int y);
-static int info_openers(struct fm_app *app, struct fm_canvas *canvas, const struct fm_rect *card, int y, int draw);
-static int info_pill(struct fm_app *app, struct fm_canvas *canvas, int x, int y, const char *label, int index, int primary, int draw);
+static void info_header(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *card);
+static int info_checksum_row(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *card, int y);
+static int info_openers(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *card, int y, int draw);
+static int info_pill(struct fm_app *app, struct kl_canvas *canvas, int x, int y, const char *label, int index, int primary, int draw);
 
 /*
  * Opens the information card on the item shown by the preview (the
@@ -128,11 +128,11 @@ fm_info_close(
 void
 fm_info_draw(
 	struct fm_app *app,
-	struct fm_canvas *canvas)
+	struct kl_canvas *canvas)
 {
 	static struct info_row rows[INFO_ROWS];
-	struct fm_rect whole;
-	struct fm_rect card;
+	struct kl_rect whole;
+	struct kl_rect card;
 	int count;
 	int index;
 	int height;
@@ -148,7 +148,7 @@ fm_info_draw(
 	whole.y = 0;
 	whole.width = app->width;
 	whole.height = app->height;
-	fm_canvas_fill(canvas, &whole, FM_RGBA(0x1b2233, 90));
+	kl_canvas_fill(canvas, &whole, KL_RGBA(0x1b2233, 90));
 	fm_ui_hit(app, &whole, FM_HIT_OVERLAY, FM_OVERLAY_INFO_GROUND);
 
 	/* The rows, and the card's height: the header, the rows, the checksum and the openers. */
@@ -177,17 +177,17 @@ fm_info_draw(
 		card.y = 10;
 
 	/* The card; a click on it stays there. */
-	fm_canvas_shadow(canvas, (float)card.x, (float)card.y + 10.0f, (float)card.width, (float)card.height, 18.0f, 30.0f, FM_RGBA(0x0f1a33, 90));
-	fm_canvas_round(canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 18.0f, FM_COLOR_PANEL);
+	kl_canvas_shadow(canvas, (float)card.x, (float)card.y + 10.0f, (float)card.width, (float)card.height, 18.0f, 30.0f, KL_RGBA(0x0f1a33, 90));
+	kl_canvas_round(canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 18.0f, FM_COLOR_PANEL);
 	fm_ui_hit(app, &card, FM_HIT_OVERLAY, FM_OVERLAY_CARD);
 	info_header(app, canvas, &card);
 
 	/* Each row: its label in the quiet column, its value beside it. */
 	y = card.y + INFO_HEADER;
 	for (index = 0; index < count; index++) {
-		baseline = fm_text_center(INFO_TEXT_ROW, y, INFO_ROW);
-		(void)fm_text_draw(app->text, canvas, card.x + INFO_PADDING, baseline, rows[index].label, strlen(rows[index].label), INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
-		(void)fm_text_draw_fit(app->text, canvas, card.x + INFO_PADDING + INFO_LABEL_WIDTH, baseline, rows[index].value, INFO_TEXT_ROW, 0, card.width - 2 * INFO_PADDING - INFO_LABEL_WIDTH, FM_COLOR_TEXT);
+		baseline = kl_text_center(INFO_TEXT_ROW, y, INFO_ROW);
+		(void)kl_text_draw(app->text, canvas, card.x + INFO_PADDING, baseline, rows[index].label, strlen(rows[index].label), INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, card.x + INFO_PADDING + INFO_LABEL_WIDTH, baseline, rows[index].value, INFO_TEXT_ROW, 0, card.width - 2 * INFO_PADDING - INFO_LABEL_WIDTH, FM_COLOR_TEXT);
 		y += INFO_ROW;
 	}
 
@@ -540,11 +540,11 @@ info_person(
 static void
 info_header(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *card)
+	struct kl_canvas *canvas,
+	const struct kl_rect *card)
 {
 	struct fm_entry entry;
-	struct fm_rect close;
+	struct kl_rect close;
 	const char *name;
 
 	/* The item's icon, as the listing draws it. */
@@ -562,30 +562,30 @@ info_header(
 	fm_grid_entry_icon(app, canvas, &entry, (float)(card->x + INFO_PADDING), (float)card->y + 16.0f, 44.0f);
 
 	/* Its name and kind beside it. */
-	(void)fm_text_draw_fit(app->text, canvas, card->x + INFO_PADDING + 56, card->y + 36, name, INFO_TEXT_NAME, 1, card->width - 2 * INFO_PADDING - 100, FM_COLOR_TEXT);
-	(void)fm_text_draw_fit(app->text, canvas, card->x + INFO_PADDING + 56, card->y + 56, "Information", 12U, 0, card->width - 2 * INFO_PADDING - 100, FM_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, card->x + INFO_PADDING + 56, card->y + 36, name, INFO_TEXT_NAME, 1, card->width - 2 * INFO_PADDING - 100, FM_COLOR_TEXT);
+	(void)kl_text_draw_fit(app->text, canvas, card->x + INFO_PADDING + 56, card->y + 56, "Information", 12U, 0, card->width - 2 * INFO_PADDING - 100, FM_COLOR_TEXT_SECONDARY);
 
 	/* The close button at the right, lit under the pointer. */
 	close.x = card->x + card->width - 44;
 	close.y = card->y + 16;
 	close.width = 28;
 	close.height = 28;
-	fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
+	kl_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_BUTTON);
 	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_INFO_CLOSE)
-		fm_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
-	fm_icon_draw(canvas, FM_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
+		kl_canvas_circle(canvas, (float)close.x + 14.0f, (float)close.y + 14.0f, 14.0f, FM_COLOR_HOVER);
+	kl_icon_draw(canvas, KL_ICON_CLOSE, (float)close.x + 6.0f, (float)close.y + 6.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
 	fm_ui_hit(app, &close, FM_HIT_BUTTON, FM_BUTTON_INFO_CLOSE);
 
 	/* A rule under the header. */
-	fm_canvas_round(canvas, (float)(card->x + INFO_PADDING), (float)(card->y + INFO_HEADER - 8), (float)(card->width - 2 * INFO_PADDING), 1.0f, 0.0f, FM_COLOR_SEPARATOR);
+	kl_canvas_round(canvas, (float)(card->x + INFO_PADDING), (float)(card->y + INFO_HEADER - 8), (float)(card->width - 2 * INFO_PADDING), 1.0f, 0.0f, FM_COLOR_SEPARATOR);
 }
 
 /* Draws the checksum's two rows: a Compute button, its progress, or the digest in two halves; returns the next row's top. */
 static int
 info_checksum_row(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *card,
+	struct kl_canvas *canvas,
+	const struct kl_rect *card,
 	int y)
 {
 	const struct fm_info *info;
@@ -597,8 +597,8 @@ info_checksum_row(
 	/* The label. */
 	info = &app->info;
 	x = card->x + INFO_PADDING + INFO_LABEL_WIDTH;
-	baseline = fm_text_center(INFO_TEXT_ROW, y, INFO_ROW);
-	(void)fm_text_draw(app->text, canvas, card->x + INFO_PADDING, baseline, "SHA-256", 7, INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
+	baseline = kl_text_center(INFO_TEXT_ROW, y, INFO_ROW);
+	(void)kl_text_draw(app->text, canvas, card->x + INFO_PADDING, baseline, "SHA-256", 7, INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
 
 	/* Not asked for yet: the button that asks. */
 	if (info->checksum_state == FM_CHECKSUM_NONE) {
@@ -612,20 +612,20 @@ info_checksum_row(
 		if (info->size != 0U)
 			percent = (int)(info->checksum_done * 100U / info->size);
 		snprintf(text, sizeof(text), "Computing\xe2\x80\xa6 %d%%", percent);
-		(void)fm_text_draw(app->text, canvas, x, baseline, text, strlen(text), INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw(app->text, canvas, x, baseline, text, strlen(text), INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
 		return y + 2 * INFO_ROW;
 	}
 
 	/* Failed: why. */
 	if (info->checksum_state == FM_CHECKSUM_FAILED) {
 		snprintf(text, sizeof(text), "Can't compute: %s", strerror(info->checksum_error));
-		(void)fm_text_draw_fit(app->text, canvas, x, baseline, text, INFO_TEXT_ROW, 0, card->width - 2 * INFO_PADDING - INFO_LABEL_WIDTH, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x, baseline, text, INFO_TEXT_ROW, 0, card->width - 2 * INFO_PADDING - INFO_LABEL_WIDTH, FM_COLOR_TEXT_SECONDARY);
 		return y + 2 * INFO_ROW;
 	}
 
 	/* Done: the digest's two halves, one a line. */
-	(void)fm_text_draw(app->text, canvas, x, baseline, info->checksum, 32, INFO_TEXT_ROW, 0, FM_COLOR_TEXT);
-	(void)fm_text_draw(app->text, canvas, x, baseline + INFO_ROW, info->checksum + 32, strlen(info->checksum + 32), INFO_TEXT_ROW, 0, FM_COLOR_TEXT);
+	(void)kl_text_draw(app->text, canvas, x, baseline, info->checksum, 32, INFO_TEXT_ROW, 0, FM_COLOR_TEXT);
+	(void)kl_text_draw(app->text, canvas, x, baseline + INFO_ROW, info->checksum + 32, strlen(info->checksum + 32), INFO_TEXT_ROW, 0, FM_COLOR_TEXT);
 
 	/* Reports where the next row starts. */
 	return y + 2 * INFO_ROW;
@@ -639,8 +639,8 @@ info_checksum_row(
 static int
 info_openers(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
-	const struct fm_rect *card,
+	struct kl_canvas *canvas,
+	const struct kl_rect *card,
 	int y,
 	int draw)
 {
@@ -657,9 +657,9 @@ info_openers(
 	left = card->x + INFO_PADDING + INFO_LABEL_WIDTH;
 	right = card->x + card->width - INFO_PADDING;
 	if (draw != 0) {
-		baseline = fm_text_center(INFO_TEXT_ROW, y, INFO_ROW);
+		baseline = kl_text_center(INFO_TEXT_ROW, y, INFO_ROW);
 		label = "Open with";
-		(void)fm_text_draw(app->text, canvas, card->x + INFO_PADDING, baseline, label, strlen(label), INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw(app->text, canvas, card->x + INFO_PADDING, baseline, label, strlen(label), INFO_TEXT_ROW, 0, FM_COLOR_TEXT_SECONDARY);
 	}
 
 	/* Each way's pill, a new line when one does not fit. */
@@ -685,7 +685,7 @@ info_openers(
 static int
 info_pill(
 	struct fm_app *app,
-	struct fm_canvas *canvas,
+	struct kl_canvas *canvas,
 	int x,
 	int y,
 	const char *label,
@@ -693,13 +693,13 @@ info_pill(
 	int primary,
 	int draw)
 {
-	struct fm_rect rect;
-	fm_color ground;
-	fm_color ink;
+	struct kl_rect rect;
+	kl_color ground;
+	kl_color ink;
 	int width;
 
 	/* Its size fits its label. */
-	width = fm_text_width(app->text, label, strlen(label), INFO_TEXT_ROW, 1) + 24;
+	width = kl_text_width(app->text, label, strlen(label), INFO_TEXT_ROW, 1) + 24;
 	if (draw == 0)
 		return width;
 
@@ -708,20 +708,20 @@ info_pill(
 	ink = FM_COLOR_TEXT;
 	if (primary != 0) {
 		ground = FM_COLOR_ACCENT;
-		ink = FM_RGB(0xffffff);
+		ink = KL_RGB(0xffffff);
 	}
 
 	/* Darker under the pointer. */
 	if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == index)
-		ground = fm_color_mix(ground, FM_RGB(0x000000), 0.08f);
+		ground = kl_color_mix(ground, KL_RGB(0x000000), 0.08f);
 
 	/* The pill, its label, and the region a click finds. */
 	rect.x = x;
 	rect.y = y;
 	rect.width = width;
 	rect.height = INFO_ROW + 4;
-	fm_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, (float)rect.height * 0.5f, ground);
-	(void)fm_text_draw(app->text, canvas, x + 12, fm_text_center(INFO_TEXT_ROW, rect.y, rect.height), label, strlen(label), INFO_TEXT_ROW, 1, ink);
+	kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, (float)rect.height * 0.5f, ground);
+	(void)kl_text_draw(app->text, canvas, x + 12, kl_text_center(INFO_TEXT_ROW, rect.y, rect.height), label, strlen(label), INFO_TEXT_ROW, 1, ink);
 	fm_ui_hit(app, &rect, FM_HIT_BUTTON, index);
 
 	/* Reports its width. */
