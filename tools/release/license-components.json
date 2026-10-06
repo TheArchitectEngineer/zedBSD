@@ -138,13 +138,13 @@
   },
   {
    "id": "keiland-fonts",
-   "name": "Desktop fonts (Inter, JetBrains Mono, Droid Sans Fallback)",
+   "name": "Desktop fonts (Mahora, JetBrains Mono, Droid Sans Fallback)",
    "when": "program:wayland",
-   "license": "OFL-1.1 AND Apache-2.0",
-   "upstream": "rsms/inter, JetBrains/JetBrainsMono, AOSP",
+   "license": "Zlib AND OFL-1.1 AND Apache-2.0",
+   "upstream": "Mahora (Awe Morris), JetBrains/JetBrainsMono, AOSP",
    "version": "",
    "notices": [
-    "/usr/share/licenses/keiland-fonts/Inter-OFL.txt",
+    "/usr/share/licenses/keiland-fonts/Mahora-LICENSE.txt",
     "/usr/share/licenses/keiland-fonts/JetBrainsMono-OFL.txt",
     "/usr/share/licenses/keiland-fonts/DroidSansFallback-LICENSE.txt",
     "/usr/share/licenses/keiland-fonts/Apache-2.0.txt"
