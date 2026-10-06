@@ -4747,6 +4747,7 @@ scan_code(
 	double quad[8];
 	double low;
 	double high;
+	size_t needed;
 	size_t count;
 	size_t at;
 	int error;
@@ -4761,10 +4762,10 @@ scan_code(
 	}
 
 	/* Room for them and their corners. */
+	needed = (scan->character_count + count) * 8U;
 	error = scan_grow((void **)&scan->characters, &scan->character_capacity, scan->character_count + count, sizeof(*scan->characters));
 	if (error == 0)
-		error = scan_grow((void **)&scan->character_quads, &scan->character_quad_capacity, (scan->character_count + count) * 8U,
-				  sizeof(*scan->character_quads));
+		error = scan_grow((void **)&scan->character_quads, &scan->character_quad_capacity, needed, sizeof(*scan->character_quads));
 	if (error != 0) {
 		scan->error = error;
 		return;

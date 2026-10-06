@@ -4131,6 +4131,8 @@ pdf_page_text_open(
 		for (in = 0; in < line->count; in++)
 			total += editor->scan.shows[line->first + in].characters_count + 1U;
 	}
+
+	/* The text and its characters. */
 	made = calloc(1, sizeof(*made));
 	if (made != NULL && total > 0U)
 		made->characters = calloc(total, sizeof(*made->characters));
