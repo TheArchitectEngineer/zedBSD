@@ -58,6 +58,11 @@
 		pdf_page_editor_key;
 		pdf_page_editor_find;
 		pdf_page_editor_hit;
+		pdf_page_editor_reset;
+		pdf_page_editor_delete;
+		pdf_page_editor_place;
+		pdf_page_editor_render;
+		pdf_writer_begin_page_edited;
 	local:
 		*;
 };

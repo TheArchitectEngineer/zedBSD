@@ -470,7 +470,7 @@ static int inline_device_space(const struct pdf_object *name);
 static int inline_device_components(const struct pdf_object *name);
 static int is_white(unsigned char character);
 static void stop_for(struct content_run *run, int error);
-static int page_run(struct pdf_document *document, size_t index, struct pdf_scan *scan, struct pdf_display_list **list, unsigned char **kept, size_t *kept_size, unsigned *read_flags);
+static int page_run(struct pdf_document *document, size_t index, const unsigned char *given, size_t given_size, struct pdf_scan *scan, struct pdf_display_list **list, unsigned char **kept, size_t *kept_size, unsigned *read_flags);
 static int scan_here(const struct content_run *run);
 static void scan_image(struct content_run *run, struct pdf_object *image);
 static void scan_form(struct content_run *run, struct pdf_object *form);
@@ -501,7 +501,7 @@ pdf_page_render(
 		return EINVAL;
 
 	/* Runs the page without a scan, keeping only the list. */
-	error = page_run(document, index, NULL, list, NULL, NULL, NULL);
+	error = page_run(document, index, NULL, 0, NULL, list, NULL, NULL, NULL);
 	if (error != 0)
 		return error;
 
@@ -535,7 +535,7 @@ pdf_content_scan(
 
 	/* Runs the page with the scan; its drawing is not needed. */
 	memset(scan, 0, sizeof(*scan));
-	error = page_run(document, index, scan, &list, content, size, read_flags);
+	error = page_run(document, index, NULL, 0, scan, &list, content, size, read_flags);
 	if (error != 0) {
 		pdf_scan_free(scan);
 		return error;
@@ -558,6 +558,33 @@ pdf_content_scan(
 	return 0;
 }
 
+/*
+ * Interprets a page with a content of the caller's instead of its own (the
+ * editor's new content, ws175-p003), on the page's boxes and resources.
+ */
+int
+pdf_content_render(
+	struct pdf_document *document,
+	size_t index,
+	const unsigned char *content,
+	size_t size,
+	struct pdf_display_list **list)
+{
+	int error;
+
+	/* Refuses a missing document, content or list. */
+	if (document == NULL || list == NULL || (content == NULL && size != 0))
+		return EINVAL;
+
+	/* Runs the given content. */
+	error = page_run(document, index, content, size, NULL, list, NULL, NULL, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the list is the given content's drawing. */
+	return 0;
+}
+
 /* Frees what a scan holds. */
 void
 pdf_scan_free(
@@ -574,14 +601,17 @@ pdf_scan_free(
 }
 
 /*
- * Interprets a page into a display list, with a scan or without one; kept
- * (when not NULL) gets the decoded content instead of its being freed, and
- * read_flags the flags of reading the streams.
+ * Interprets a page into a display list, with a scan or without one, its
+ * own content or the one given; kept (when not NULL) gets the decoded
+ * content instead of its being freed, and read_flags the flags of reading
+ * the streams.
  */
 static int
 page_run(
 	struct pdf_document *document,
 	size_t index,
+	const unsigned char *given,
+	size_t given_size,
 	struct pdf_scan *scan,
 	struct pdf_display_list **list,
 	unsigned char **kept,
@@ -638,10 +668,12 @@ page_run(
 	run->stack[0].line_width = 1.0;
 	run->stack[0].miter_limit = 10.0;
 
-	/* Reads the page's content streams, joined. */
+	/* Reads the page's content streams, joined (or the content given, which is the caller's). */
 	content = NULL;
 	size = 0;
-	error = read_contents(document, page, &content, &size, &run->flags);
+	error = 0;
+	if (given == NULL)
+		error = read_contents(document, page, &content, &size, &run->flags);
 	if (error == ENOMEM) {
 		free(run);
 		pdf_display_free(builder);
@@ -653,7 +685,9 @@ page_run(
 		*read_flags = run->flags;
 
 	/* Runs the content, then ends every level it left open and the page's own clips. */
-	if (error == 0)
+	if (error == 0 && given != NULL)
+		run_content(run, given, given_size, resources);
+	if (error == 0 && given == NULL)
 		run_content(run, content, size, resources);
 	unwind_to(run, 0);
 	end_clips(run);

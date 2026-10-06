@@ -1,6 +1,7 @@
 #!/bin/sh
-# ws175-p002a: builds libpdf (with libz-compat, libjpeg-compat and libtruetype) and host-edit-scan with the host's C
-# compiler (plain, ASan and UBSan), writes edit-images.pdf (make-edit-samples.py) and runs the test with each build.
+# ws175-p002a, p003a: builds libpdf (with libz-compat, libjpeg-compat and libtruetype), host-edit-scan and
+# host-edit-change with the host's C compiler (plain, ASan and UBSan), writes edit-images.pdf (make-edit-samples.py) and
+# runs the tests with each build; the update host-edit-change saves is checked with qpdf --check.
 #   sh plan/ws175/tests/run-host-edit-scan.sh [OUTPUT]   (default build/ws175-host)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -46,13 +47,29 @@ for variant in plain asan ubsan; do
 		"$cc" $loose -Werror -c "$file" -o "$object"
 		objects="$objects $object"
 	done
-	# shellcheck disable=SC2086
-	"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf plan/ws175/tests/host-edit-scan.c $objects -lm \
-		-o "$out/host-edit-scan-$variant"
-	if "$out/host-edit-scan-$variant" "$out/edit-images.pdf" > "$out/$variant.txt" 2>&1; then
-		echo "host-edit-scan $variant: $(tail -1 "$out/$variant.txt")"
+	for test in host-edit-scan host-edit-change; do
+		# shellcheck disable=SC2086
+		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
+			-o "$out/$test-$variant"
+	done
+	if "$out/host-edit-scan-$variant" "$out/edit-images.pdf" > "$out/scan-$variant.txt" 2>&1; then
+		echo "host-edit-scan $variant: $(tail -1 "$out/scan-$variant.txt")"
 	else
-		grep -v '^ok' "$out/$variant.txt"
+		grep -v '^ok' "$out/scan-$variant.txt"
+		status=1
+	fi
+	if "$out/host-edit-change-$variant" "$out/edit-images.pdf" "$out/edited-$variant.pdf" > "$out/change-$variant.txt" 2>&1; then
+		echo "host-edit-change $variant: $(tail -1 "$out/change-$variant.txt")"
+	else
+		grep -v '^ok' "$out/change-$variant.txt"
+		status=1
+	fi
+	# The only error qpdf may find is the sample's own: page 3's stream of a filter no reader decodes here.
+	errors=$(qpdf --check "$out/edited-$variant.pdf" 2>&1 | grep 'ERROR' | grep -v 'page 3: content stream' || true)
+	if [ -z "$errors" ]; then
+		echo "qpdf --check edited-$variant.pdf: ok (page 3's own stream only)"
+	else
+		echo "$errors"
 		status=1
 	fi
 done

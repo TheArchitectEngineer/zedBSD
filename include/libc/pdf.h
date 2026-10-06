@@ -293,8 +293,9 @@ enum pdf_edit_kind {
 	PDF_EDIT_GRAPHIC = 2
 };
 
-/* An object's flags: a clip is in force where it is drawn. */
+/* An object's flags: a clip is in force where it is drawn; the editor deleted it (ws175-p003). */
 #define PDF_EDIT_OBJECT_CLIPPED	0x1U
+#define PDF_EDIT_OBJECT_DELETED	0x2U
 
 /*
  * The page's state (pdf_page_editor_status): a content stream could not
@@ -356,6 +357,21 @@ int pdf_page_editor_object(const struct pdf_page_editor *editor, size_t index, s
 int pdf_page_editor_key(const struct pdf_page_editor *editor, size_t index, struct pdf_edit_key *key);
 int pdf_page_editor_find(const struct pdf_page_editor *editor, const struct pdf_edit_key *key, size_t *index);
 int pdf_page_editor_hit(const struct pdf_page_editor *editor, double x, double y, size_t *index);
+
+/*
+ * The changes (ws175-p003): an object put back, deleted, or moved and sized
+ * by an affine map of the shown space (a point p goes to p times
+ * transform); the page drawn with them (hidden, an object left out of the
+ * drawing, or (size_t)-1); and an update's page written with them, its own
+ * content changed, the drawing that follows going over it (the page as
+ * shown, as pdf_writer_begin_page_over draws).  A page that cannot be
+ * edited (PDF_EDIT_PAGE_READ_ONLY) refuses the changes with EPERM.
+ */
+int pdf_page_editor_reset(struct pdf_page_editor *editor, size_t index);
+int pdf_page_editor_delete(struct pdf_page_editor *editor, size_t index);
+int pdf_page_editor_place(struct pdf_page_editor *editor, size_t index, const double transform[6]);
+int pdf_page_editor_render(struct pdf_page_editor *editor, size_t hidden, struct pdf_display_list **list);
+int pdf_writer_begin_page_edited(struct pdf_writer *writer, const struct pdf_page_editor *editor);
 
 #ifdef __cplusplus
 }

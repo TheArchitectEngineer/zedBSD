@@ -12,6 +12,7 @@ writes FOLDER/edit-images.pdf, four pages of 200 x 100 points:
   2. /Rotate 90, an image through cm
   3. two content streams, the second with a filter the reader does not read (/JBIG2Decode): the page is not editable
   4. an image, then q nested 70 deep (past the interpreter's 63) and an image inside: the second is left out
+  5. an image named /KeiIm0, as a revision Notes saved before would name it: an update's names take another prefix
 
 The bytes are written by hand (the cross-reference table computed here), so that the content is exactly the test's.
 """
@@ -54,7 +55,7 @@ def main() -> int:
 	resources = b"<< /XObject << /Im1 5 0 R /Fm1 6 0 R >> >>"
 	objects = [
 		b"<< /Type /Catalog /Pages 2 0 R >>",
-		b"<< /Type /Pages /Kids [3 0 R 8 0 R 10 0 R 13 0 R] /Count 4 >>",
+		b"<< /Type /Pages /Kids [3 0 R 8 0 R 10 0 R 13 0 R 15 0 R] /Count 5 >>",
 		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources " + resources + b" /Contents 4 0 R >>",
 		stream(b"<< >>", page1),
 		stream(b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 >>", IMAGE),
@@ -68,6 +69,8 @@ def main() -> int:
 		stream(b"<< /Filter /JBIG2Decode >>", b"\x00\x01\x02\x03"),
 		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources " + resources + b" /Contents 14 0 R >>",
 		stream(b"<< >>", page4),
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /XObject << /KeiIm0 5 0 R >> >> /Contents 16 0 R >>",
+		stream(b"<< >>", b"q 20 0 0 20 30 30 cm /KeiIm0 Do Q\n"),
 	]
 	write(folder / "edit-images.pdf", objects)
 	print(f"wrote {folder / 'edit-images.pdf'}")

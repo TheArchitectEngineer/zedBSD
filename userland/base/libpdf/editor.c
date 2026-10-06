@@ -17,12 +17,23 @@
  */
 
 #include <errno.h>
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <pdf.h>
 
 #include "internal.h"
+#include "writer.h"
+
+/* What has been done to an object (ws175-p003a): nothing, deleted, or placed by a matrix of the shown space. */
+#define EDITOR_KEPT	0U
+#define EDITOR_DELETED	1U
+#define EDITOR_PLACED	2U
+
+/* No object hidden from the preview. */
+#define EDITOR_NONE	((size_t)-1)
 
 /*
  * One page's editor: the document and the page, the decoded content, the
@@ -35,9 +46,16 @@ struct pdf_page_editor {
 	size_t size;
 	struct pdf_scan scan;
 	unsigned status;
+	unsigned *states;
+	double *placements;
 };
 
 static int editor_inside(const double quad[8], double x, double y);
+static int editor_writable(const struct pdf_page_editor *editor, size_t index);
+static void editor_multiply(const double left[6], const double right[6], double product[6]);
+static int editor_invert(const double matrix[6], double inverse[6]);
+static void editor_number(struct pdf_buffer *buffer, double number);
+static void editor_corners(const double placement[6], const double quad[8], double placed[8]);
 
 /*
  * Opens the editor of a page: the page's content is scanned, and the
@@ -84,6 +102,16 @@ pdf_page_editor_open(
 	if (opened->scan.partial)
 		opened->status |= PDF_EDIT_PAGE_PARTIAL;
 
+	/* Every object as it is, with room for a placement each (p003a). */
+	if (opened->scan.count > 0) {
+		opened->states = calloc(opened->scan.count, sizeof(*opened->states));
+		opened->placements = calloc(opened->scan.count * 6U, sizeof(*opened->placements));
+		if (opened->states == NULL || opened->placements == NULL) {
+			pdf_page_editor_close(opened);
+			return ENOMEM;
+		}
+	}
+
 	/* Succeeded: the page's objects are listed. */
 	*editor = opened;
 	return 0;
@@ -100,9 +128,11 @@ pdf_page_editor_close(
 	if (editor == NULL)
 		return;
 
-	/* The scan, the content, the record. */
+	/* The scan, the content, the objects' states, the record. */
 	pdf_scan_free(&editor->scan);
 	free(editor->content);
+	free(editor->states);
+	free(editor->placements);
 	free(editor);
 }
 
@@ -172,6 +202,12 @@ pdf_page_editor_object(
 	if (found->clipped)
 		object->flags |= PDF_EDIT_OBJECT_CLIPPED;
 	memcpy(object->quad, found->quad, sizeof(object->quad));
+
+	/* A deleted object says so; a placed one is where its placement puts it. */
+	if (editor->states[index] == EDITOR_DELETED)
+		object->flags |= PDF_EDIT_OBJECT_DELETED;
+	if (editor->states[index] == EDITOR_PLACED)
+		editor_corners(&editor->placements[6U * index], found->quad, object->quad);
 	object->text = "";
 	object->image_width = found->width;
 	object->image_height = found->height;
@@ -295,6 +331,386 @@ pdf_page_editor_hit(
 
 	/* Nothing there. */
 	return ENOENT;
+}
+
+/*
+ * Puts an object back as the page has it.  Returns 0, EINVAL, ENOENT, or
+ * EPERM for a page that cannot be edited.
+ */
+int
+pdf_page_editor_reset(
+	struct pdf_page_editor *editor,
+	size_t index)
+{
+	int error;
+
+	/* An object of a page that can be edited. */
+	error = editor_writable(editor, index);
+	if (error != 0)
+		return error;
+
+	/* As it was. */
+	editor->states[index] = EDITOR_KEPT;
+	return 0;
+}
+
+/*
+ * Deletes an object: the new content leaves its bytes out.  Returns 0,
+ * EINVAL, ENOENT, or EPERM for a page that cannot be edited.
+ */
+int
+pdf_page_editor_delete(
+	struct pdf_page_editor *editor,
+	size_t index)
+{
+	int error;
+
+	/* An object of a page that can be edited. */
+	error = editor_writable(editor, index);
+	if (error != 0)
+		return error;
+
+	/* Gone from the new content. */
+	editor->states[index] = EDITOR_DELETED;
+	return 0;
+}
+
+/*
+ * Moves and sizes an object: transform is the affine map of the shown
+ * space (a point p goes to p times it, design.md [M1]) from where the page
+ * draws the object to where it goes.  A placement that cannot be undone
+ * (no area) is refused.  Returns 0, EINVAL, ENOENT, or EPERM.
+ */
+int
+pdf_page_editor_place(
+	struct pdf_page_editor *editor,
+	size_t index,
+	const double transform[6])
+{
+	double inverse[6];
+	double size;
+	size_t item;
+	int error;
+
+	/* An object of a page that can be edited, and a placement. */
+	error = editor_writable(editor, index);
+	if (error != 0)
+		return error;
+	if (transform == NULL)
+		return EINVAL;
+
+	/* Numbers (not NaN, within what a PDF real holds), and a map that keeps an area (the object's matrix too). */
+	for (item = 0; item < 6; item++) {
+		size = fabs(transform[item]);
+		if (!(transform[item] == transform[item]) || size >= 1e9)
+			return EINVAL;
+	}
+
+	/* Both matrices keep an area. */
+	error = editor_invert(transform, inverse);
+	if (error != 0)
+		return EINVAL;
+	error = editor_invert(editor->scan.objects[index].ctm, inverse);
+	if (error != 0)
+		return EINVAL;
+
+	/* Placed. */
+	memcpy(&editor->placements[6U * index], transform, 6U * sizeof(double));
+	editor->states[index] = EDITOR_PLACED;
+	return 0;
+}
+
+/*
+ * Draws the page with the editor's changes (the preview): the new content
+ * on the page's resources, an object hidden from it when hidden is its
+ * index ((size_t)-1 for none, as while it is dragged).  Returns 0, EINVAL,
+ * ENOMEM, or the failure of the page.
+ */
+int
+pdf_page_editor_render(
+	struct pdf_page_editor *editor,
+	size_t hidden,
+	struct pdf_display_list **list)
+{
+	struct pdf_buffer content;
+	int error;
+
+	/* Refuses a missing editor or list. */
+	if (editor == NULL || list == NULL)
+		return EINVAL;
+
+	/* A page that cannot be edited is drawn as it is. */
+	if ((editor->status & PDF_EDIT_PAGE_READ_ONLY) != 0U)
+		return pdf_page_render(editor->document, editor->index, list);
+
+	/* The new content, then the page drawn with it. */
+	memset(&content, 0, sizeof(content));
+	error = pdf_editor_content(editor, hidden, &content);
+	if (error == 0)
+		error = pdf_content_render(editor->document, editor->index, content.data, content.length, list);
+	free(content.data);
+	return error;
+}
+
+/*
+ * Builds a page's new content (design.md section 3.4): the page's own
+ * within q and Q, each changed object's bytes replaced (a deleted one, or
+ * the one hidden, left out; a placed one inside q M cm ... Q, M the
+ * placement in the object's own space), the Q without a q left out, then
+ * the text object and the q the content left open closed.  Returns 0 or
+ * ENOMEM.
+ */
+int
+pdf_editor_content(
+	const struct pdf_page_editor *editor,
+	size_t hidden,
+	struct pdf_buffer *out)
+{
+	const struct pdf_scan_object *object;
+	double inverse[6];
+	double through[6];
+	double matrix[6];
+	size_t position;
+	size_t object_at;
+	size_t stray_at;
+	size_t offset;
+	size_t item;
+	unsigned state;
+	int error;
+
+	/* The page's content, from its start, within a level of its own. */
+	pdf_buffer_append(out, "q\n", 2);
+	position = 0;
+	object_at = 0;
+	stray_at = 0;
+
+	/* The changed objects and the stray Q, in the order of the content. */
+	for (;;) {
+		/* The next object that changed, and the next stray Q. */
+		while (object_at < editor->scan.count && editor->states[object_at] == EDITOR_KEPT && object_at != hidden)
+			object_at++;
+		if (object_at >= editor->scan.count && stray_at >= editor->scan.stray_count)
+			break;
+
+		/* A stray Q before the next changed object is left out. */
+		if (stray_at < editor->scan.stray_count && (object_at >= editor->scan.count || editor->scan.stray_restores[stray_at] < editor->scan.objects[object_at].offset)) {
+			offset = editor->scan.stray_restores[stray_at];
+			pdf_buffer_append(out, editor->content + position, offset - position);
+			pdf_buffer_append(out, " ", 1);
+			position = offset + 1U;
+			stray_at++;
+			continue;
+		}
+
+		/* The bytes before the object as they are. */
+		object = &editor->scan.objects[object_at];
+		pdf_buffer_append(out, editor->content + position, object->offset - position);
+		position = object->offset + object->length;
+		state = editor->states[object_at];
+		if (object_at == hidden)
+			state = EDITOR_DELETED;
+		object_at++;
+
+		/* A deleted object leaves only a space. */
+		if (state == EDITOR_DELETED) {
+			pdf_buffer_append(out, " ", 1);
+			continue;
+		}
+
+		/* A placed one: M = C_rec times S times C_rec's inverse, so that M times C_rec is C_rec times S. */
+		error = editor_invert(object->ctm, inverse);
+		if (error != 0)
+			return EINVAL;
+		editor_multiply(object->ctm, &editor->placements[6U * (object_at - 1U)], through);
+		editor_multiply(through, inverse, matrix);
+		pdf_buffer_append(out, " q ", 3);
+		for (item = 0; item < 6; item++) {
+			editor_number(out, matrix[item]);
+			pdf_buffer_append(out, " ", 1);
+		}
+
+		/* The object's own bytes inside its level. */
+		pdf_buffer_append(out, "cm ", 3);
+		pdf_buffer_append(out, editor->content + object->offset, object->length);
+		pdf_buffer_append(out, " Q ", 3);
+	}
+
+	/* The rest of the content, a text object left open closed, and every level it left open. */
+	pdf_buffer_append(out, editor->content + position, editor->size - position);
+	pdf_buffer_append(out, "\n", 1);
+	if (editor->scan.in_text)
+		pdf_buffer_append(out, "ET\n", 3);
+	for (item = 0; item < editor->scan.open_saves; item++)
+		pdf_buffer_append(out, "Q\n", 2);
+	pdf_buffer_append(out, "Q\n", 2);
+
+	/* Reports a buffer that could not grow. */
+	if (out->error != 0)
+		return out->error;
+
+	/* Succeeded: the content is built. */
+	return 0;
+}
+
+/*
+ * Lists the editor's page in an update with its changes (the editor's new
+ * content), and opens it for drawing over it, as
+ * pdf_writer_begin_page_over draws (the page as shown).  The editor must be
+ * of the update's document, its page the next to list and editable.
+ * Returns 0, EINVAL, EPERM, ENOMEM, or the failure of the page.
+ */
+int
+pdf_writer_begin_page_edited(
+	struct pdf_writer *writer,
+	const struct pdf_page_editor *editor)
+{
+	struct pdf_buffer edited;
+	int error;
+
+	/* An editor of this update's document, of a page that can be edited. */
+	if (writer == NULL || editor == NULL || editor->document != writer->base)
+		return EINVAL;
+	if ((editor->status & PDF_EDIT_PAGE_READ_ONLY) != 0U)
+		return EPERM;
+
+	/* The page's new content, which the update's page takes. */
+	memset(&edited, 0, sizeof(edited));
+	error = pdf_editor_content(editor, EDITOR_NONE, &edited);
+	if (error != 0) {
+		free(edited.data);
+		return error;
+	}
+
+	/* Listed, open for drawing over it. */
+	error = pdf_update_begin_edited(writer, editor->index, &edited);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: drawing goes over the changed page. */
+	return 0;
+}
+
+/*
+ * Tells whether an object of an editor may be changed.  Returns 0,
+ * EINVAL, ENOENT, or EPERM for a page that cannot be edited.
+ */
+static int
+editor_writable(
+	const struct pdf_page_editor *editor,
+	size_t index)
+{
+	/* An editor and an object of it. */
+	if (editor == NULL)
+		return EINVAL;
+	if (index >= editor->scan.count)
+		return ENOENT;
+
+	/* A page whose content was read whole. */
+	if ((editor->status & PDF_EDIT_PAGE_READ_ONLY) != 0U)
+		return EPERM;
+
+	/* It may. */
+	return 0;
+}
+
+/* Multiplies two matrices (a point goes through left, then right). */
+static void
+editor_multiply(
+	const double left[6],
+	const double right[6],
+	double product[6])
+{
+	double result[6];
+
+	/* The product of the 3 by 3 matrices whose third column is 0, 0, 1. */
+	result[0] = left[0] * right[0] + left[1] * right[2];
+	result[1] = left[0] * right[1] + left[1] * right[3];
+	result[2] = left[2] * right[0] + left[3] * right[2];
+	result[3] = left[2] * right[1] + left[3] * right[3];
+	result[4] = left[4] * right[0] + left[5] * right[2] + right[4];
+	result[5] = left[4] * right[1] + left[5] * right[3] + right[5];
+	memcpy(product, result, sizeof(result));
+}
+
+/* Inverts a matrix.  Returns 0, or EINVAL for one without area. */
+static int
+editor_invert(
+	const double matrix[6],
+	double inverse[6])
+{
+	double determinant;
+	double size;
+
+	/* A matrix that keeps an area. */
+	determinant = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+	size = fabs(determinant);
+	if (!(size > 1e-12))
+		return EINVAL;
+
+	/* The inverse. */
+	inverse[0] = matrix[3] / determinant;
+	inverse[1] = -matrix[1] / determinant;
+	inverse[2] = -matrix[2] / determinant;
+	inverse[3] = matrix[0] / determinant;
+	inverse[4] = (matrix[2] * matrix[5] - matrix[3] * matrix[4]) / determinant;
+	inverse[5] = (matrix[1] * matrix[4] - matrix[0] * matrix[5]) / determinant;
+	return 0;
+}
+
+/* Appends a number with nine decimals (design.md [L4]: four would show in a small scale of a large page). */
+static void
+editor_number(
+	struct pdf_buffer *buffer,
+	double number)
+{
+	char text[32];
+	double size;
+	int length;
+
+	/* Zero for a value too small to matter (no exponent in PDF). */
+	size = fabs(number);
+	if (size < 1e-9)
+		number = 0.0;
+
+	/* A value too large for PDF's reals is refused. */
+	if (size >= 1e9) {
+		pdf_buffer_fail(buffer, EINVAL);
+		return;
+	}
+
+	/* The digits, without an exponent. */
+	length = snprintf(text, sizeof(text), "%.9f", number);
+	if (length < 0 || (size_t)length >= sizeof(text)) {
+		pdf_buffer_fail(buffer, EINVAL);
+		return;
+	}
+
+	/* Trailing zeros and a bare point go. */
+	while (length > 1 && text[length - 1] == '0')
+		length--;
+	if (length > 1 && text[length - 1] == '.')
+		length--;
+	pdf_buffer_append(buffer, text, (size_t)length);
+}
+
+/* Maps an object's corners through a placement of the shown space. */
+static void
+editor_corners(
+	const double placement[6],
+	const double quad[8],
+	double placed[8])
+{
+	size_t corner;
+	double x;
+	double y;
+
+	/* Each corner. */
+	for (corner = 0; corner < 4; corner++) {
+		x = quad[2 * corner];
+		y = quad[2 * corner + 1];
+		placed[2 * corner] = placement[0] * x + placement[2] * y + placement[4];
+		placed[2 * corner + 1] = placement[1] * x + placement[3] * y + placement[5];
+	}
 }
 
 /*

@@ -100,6 +100,7 @@ pdf_writer_destroy(
 	/* Frees each page's content stream and the page itself. */
 	for (index = 0; index < writer->pages_count; index++) {
 		free(writer->pages[index]->content.data);
+		free(writer->pages[index]->edited.data);
 		free(writer->pages[index]);
 	}
 
@@ -726,6 +727,8 @@ pdf_writer_get_page_content_hash(
 	if (page->placement == PDF_WRITER_PLACE_KEEP)
 		return ENOENT;
 	if (page->placement == PDF_WRITER_PLACE_OVERLAY)
+		return ENOENT;
+	if (page->placement == PDF_WRITER_PLACE_EDIT)
 		return ENOENT;
 
 	/* Hashes the content stream as it will be saved. */

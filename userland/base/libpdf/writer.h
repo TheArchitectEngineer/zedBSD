@@ -40,6 +40,9 @@
 #define PDF_WRITER_PLACE_OVERLAY 2
 #define PDF_WRITER_PLACE_REPLACE 3
 
+/* An update's page whose own content the editor changed (ws175-p003): its new content, then the drawing over it. */
+#define PDF_WRITER_PLACE_EDIT 4
+
 /*
  * A growable run of bytes.
  *
@@ -64,12 +67,14 @@ struct pdf_buffer {
  * for a page of the document it adds to names that page by its index in
  * source, and prefixed says that its content follows a stream of its own
  * that saves the graphics state before the page's own content (OVERLAY on
- * a page that has content).
+ * a page that has content).  An EDIT page keeps the editor's new content of
+ * the page in edited, written before the page's drawing.
  */
 struct pdf_writer_page {
 	double width;
 	double height;
 	struct pdf_buffer content;
+	struct pdf_buffer edited;
 	int placement;
 	size_t source;
 	int prefixed;
@@ -149,9 +154,13 @@ struct pdf_writer {
 	struct pdf_document *base;
 	pdf_writer_update_layout update_layout;
 	const char *name_prefix;
+	char prefix_buffer[16];
 	size_t first_alpha_object;
 	size_t last_source;
 };
+
+/* An update's page with its content changed (update.c; the editor's, ws175-p003). */
+int pdf_update_begin_edited(struct pdf_writer *writer, size_t index, struct pdf_buffer *edited);
 
 /* The pages (writer.c). */
 int pdf_writer_add_page(struct pdf_writer *writer, double width, double height, const struct pdf_buffer *prologue, struct pdf_writer_page **page);

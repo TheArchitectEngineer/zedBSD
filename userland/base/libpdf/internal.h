@@ -389,5 +389,10 @@ struct pdf_scan {
 /* The scan of a page's content (content.c): the objects, and the decoded content they are ranges of. */
 int pdf_content_scan(struct pdf_document *document, size_t index, struct pdf_scan *scan, unsigned char **content, size_t *size, unsigned *read_flags);
 void pdf_scan_free(struct pdf_scan *scan);
+int pdf_content_render(struct pdf_document *document, size_t index, const unsigned char *content, size_t size, struct pdf_display_list **list);
+
+/* The editor's new content (editor.c). */
+struct pdf_buffer;
+int pdf_editor_content(const struct pdf_page_editor *editor, size_t hidden, struct pdf_buffer *out);
 
 #endif /* LIBPDF_INTERNAL_H */
