@@ -4,7 +4,7 @@
 
 Phase ID: `ws156-p002`
 Parent: [WS156](../ws.md)
-Status: in-progress（2026-10-06 P2。実装と host 試験まで。QEMU の確認は T1 に依頼）
+Status: cleared（2026-10-06 Q1 判定: T1-269 の QEMU で期待どおり。実機は UAT）
 Phase disposition: normal
 Queue: Q1 の P2 の列（2026-10-06、q823 → ws089-p013 → WS164 の起動 → **WS156 p002** → …）
 
