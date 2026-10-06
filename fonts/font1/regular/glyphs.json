@@ -1,8 +1,8 @@
 {
   "name": "font1",
-  "version": "design-05",
+  "version": "design-06",
   "weight": "Regular",
-  "status": "Regular with corrected g/p vertical positions; Unicode TrueType 0.202 available",
+  "status": "Regular with corrected g/p/q vertical positions; Unicode TrueType 0.203 available",
   "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
   "generation": {
     "tool": "built-in image_gen",
@@ -1755,12 +1755,12 @@
       "image": "glyphs/U0071.png",
       "ink_bbox_pixels": [
         335,
-        302,
+        368,
         672,
-        821
+        887
       ],
-      "status": "monoline lowercase revision; PNG rendered from filled SVG outline",
-      "image_sha256": "bbbd63d3fdaf34d6aadcabf5b5a7435b1c5b40a10031955c6dcbcdf460bce85b",
+      "status": "Existing shape translated down; PNG rendered from final SVG",
+      "image_sha256": "a936aae9972cac7dc2036e340ed9a494f5773210b1d20ba6c7d75891ebabe9c6",
       "previous_atlas_crop_pixels": [
         169,
         1053,
@@ -1768,7 +1768,8 @@
         1126
       ],
       "source": "svg/U0071.svg",
-      "construction_source": "lowercase-strokes.json"
+      "construction_source": "lowercase-strokes.json",
+      "vertical_shift_pixels": 66
     },
     {
       "codepoint": "U+0072",
@@ -2058,25 +2059,23 @@
   "svg_directory": "svg",
   "revision": {
     "date": "2026-10-06",
-    "source": "User reported g/p vertical imbalance in Suika3 screenshots; all other shapes approved",
+    "source": "User requested q height alignment only in all three Keiland faces",
     "changed_codepoints": [
-      "U+0067",
-      "U+0070"
+      "U+0071"
     ],
     "construction_source": "lowercase-strokes.json",
     "stroke_width_pixels": 62,
-    "font_version": "0.202",
+    "font_version": "0.203",
     "review": "lowercase-review.png",
-    "previous_revision_commit": "29d165824",
+    "previous_revision_commit": "2730f3b59",
     "restored_from_commit": "ef9c3295",
     "monoline_exceptions": [
       "g",
       "s"
     ],
     "vertical_shift_pixels": {
-      "g": 60,
-      "p": 27
+      "q": 66
     },
-    "position_review": "vertical-position-review.png"
+    "position_review": "../../keiland/q-height-review.png"
   }
 }

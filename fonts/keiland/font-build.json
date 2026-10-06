@@ -1,8 +1,8 @@
 {
-  "version": "0.300",
+  "version": "0.301",
   "coverage": "Unicode U+0020-U+007E / ASCII 95",
   "source_font": "../font1/regular/Font1-Regular.ttf",
-  "source_font_sha256": "b3f7533f80a686782ebd544f9bf950b5b83b6d79ac4e9b8824f4a41ff07eb1b3",
+  "source_font_sha256": "ab15ef424a1c749a794ac2b95f553489f8632154ba441b6a2c41dc5ca700443f",
   "sidebearing_units": 78,
   "space_advance_units": 614,
   "digits": "Tabular numerals in both proportional weights",
@@ -74,15 +74,15 @@
   "fonts": [
     {
       "file": "Keiland-Bold.ttf",
-      "sha256": "65e139d03b129f3aabe7bd46b75f642a4557a40c873ad92c607711562df951b1"
+      "sha256": "afa8157d872aafb2470fb3c8a3be98302ad641c5ee770b2b092d28e3ad4a12a9"
     },
     {
       "file": "Keiland-Mono.ttf",
-      "sha256": "1b49dc0defeed8bf4e9a16471f0a5e4f6db1c5ca099bc6e36b23b41d51b934a2"
+      "sha256": "2e3af57e9fed08b2107e8a19b1d8dde6bf6819145969e18ab0826aafa8ca917d"
     },
     {
       "file": "Keiland-Regular.ttf",
-      "sha256": "e6f63f0c4ef0746065199782df88d5342c0efc1d5cba21c99b1d974bc7cb3bed"
+      "sha256": "5c9e84554f8329c7fe221dff439505e85894a9a039d7f46076876870063dc866"
     }
   ],
   "bold_svg_inputs": [
@@ -416,7 +416,7 @@
     },
     {
       "file": "bold/svg/U0071.svg",
-      "sha256": "32bac4da8a00add2e8c68d6b6f71dfda36e38cdef7824e3d28c7b2cdfeb64466"
+      "sha256": "33ba241b2b4533954eb587f5caf2f98b556b5f9bf212e64c4355c617384bd08d"
     },
     {
       "file": "bold/svg/U0072.svg",

@@ -1,4 +1,8 @@
-# Font1 Regular — ASCII デザイン案 05 / TrueType 0.202
+# Font1 Regular — ASCII デザイン案 06 / TrueType 0.203
+
+## qの縦位置を調整（2026-10-06、0.203）
+
+userの指示により、qのSVGを下へ66px（TTFでは−176 units）平行移動し、丸い部分の高さと下端をほかの小文字に揃えた。輪郭・送り幅は保持。q以外の95グリフ（.notdefを含む）は前版0.202と一致する。PNGとTTFを更新し、Keiland 3書体へ反映した。比較は[Keilandのq修正見本](../../keiland/q-height-review.png)。構成データのqにも移動量を保存した。
 
 ## g・pの縦位置を調整（2026-10-06、0.202）
 
@@ -7,7 +11,7 @@ userがSuika3で実際に使ったスクリーンショットで「g, pの縦の
 SVGの座標だけを平行移動し、最終SVGから個別PNGを描画してTTFを0.202へ更新。`lowercase-strokes.json`のpに移動量を保存し、gは移動済みのSVGを保持するので、中心線から再生成しても位置が戻ったり二重に移動したりしない。
 
 - `vertical-position-review.png`: 0.201と0.202の比較。共通baseline・小文字の高さのガイド、ユーザーのスクリーンショットにある文章を32px・36pxで実際のTTFから描画。
-- `lowercase-review.png`: 小文字調整前の0.100と現行0.202の比較。
+- `lowercase-review.png`: 小文字調整前の0.100と現行0.203の比較。
 - 各一覧・文章・比較の見本とmetadataを現行版へ更新。
 
 TTFのg・pのすべての輪郭点が上記の移動量だけ変わり、輪郭の構成・送り幅が一致することを確認。他の94グリフの輪郭・送り幅、変更対象以外のPNG/SVGとBoldのSHA256は0.201と一致。UnicodeのASCII 95文字、等幅、復元PNGとの描画比較、再ビルド一致を確認した。g・pの下端はfontのdescent範囲内。アプリでの再確認はユーザーへ。
@@ -72,7 +76,7 @@ user「細い方をグリフごとにSVG化してください。そのあとTrue
 
 - `svg/U0020.svg`〜`svg/U007E.svg`: ASCII 95文字のSVG。1024×1024の元画像と同じ座標系。実際の輪郭pathだけで構成し、画像の埋め込みはない。SPACEにはpathがない。
 - `svg/.notdef.svg`: 未収録文字用の四角いグリフ。Unicodeの文字には割り当てず、TTFのglyph index 0に格納。
-- `Font1-Regular.ttf`: family **Font1**、style **Regular**、2048 units/em、全グリフの送り幅1229 unitsの等幅フォント。初回0.100、現行0.202。
+- `Font1-Regular.ttf`: family **Font1**、style **Regular**、2048 units/em、全グリフの送り幅1229 unitsの等幅フォント。初回0.100、現行0.203。
 - `ttf-ascii-overview.png` / `ttf-specimen.png`: 個別PNGではなく、TTF自体をFreeTypeで描画した一覧と見本。
 - `font-build.json`: 生成設定・SVGとTTFのSHA256・Unicode cmap・ツール版。
 - `font-verification.json`: 文字対応・等幅・元PNGとの描画比較・再ビルド一致の確認結果。
@@ -104,6 +108,6 @@ SVGはflatなpathを同じ1024×1024座標で編集する。別のSVG編集ツ�
 
 fontToolsでTTFを再読込してchecksum・95個のUnicode対応・96グリフ・等幅・Regularの名前とweight 400・空のSPACEを確認。Fontconfigはfamily Font1 / style Regular / format TrueType / spacing 100（monospace）/ charset `20-7e` と認識した。SVGがベクターpathであり、PNGを埋め込んでいないことも確認。
 
-0.100の確認では94個の非空文字をTTFから768pxで描画し、元PNGのalpha≥128と比較した。黒い領域のIoUは平均98.69%、最小97.09%、連結した部分の数はすべて一致。0.200も同じ方法で再確認した。0.201ではg・s、0.202ではg・pの描画比較を更新し、他の字形はPNGとTTF輪郭が前版と一致することを照合して既存の比較値を保持した。結果は`font-verification.json`。SVGからの再ビルドでTTFのSHA256が一致し、TTFの全95文字の一覧と12〜24pxの文章見本も目視確認した。
+0.100の確認では94個の非空文字をTTFから768pxで描画し、元PNGのalpha≥128と比較した。黒い領域のIoUは平均98.69%、最小97.09%、連結した部分の数はすべて一致。0.200も同じ方法で再確認した。0.201ではg・s、0.202ではg・pの描画比較を更新し、他の字形はPNGとTTF輪郭が前版と一致することを照合して既存の比較値を保持した。0.203ではqの描画比較を更新し、残り95グリフの輪郭・送り幅と他のPNGが前版と一致することを照合した。結果は`font-verification.json`。SVGからの再ビルドでTTFのSHA256が一致し、TTFの全95文字の一覧と12〜24pxの文章見本も目視確認した。
 
 この版は試作フォントで、小文字以外は生成画像のトレースを保持している。小文字のカーブと線幅は今回調整したが、全体のbaseline・overshootの細部調整やTrueType hintingは未実施。検証済みのSVGとTTFは使用・編集できる状態で保存した。

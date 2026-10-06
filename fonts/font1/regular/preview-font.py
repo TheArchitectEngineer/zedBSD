@@ -58,8 +58,8 @@ def specimen(from_font):
     canvas = Image.new("RGB", (1600, 1320), "#fafbfc")
     draw = ImageDraw.Draw(canvas)
     kind = "TrueType rendering" if from_font else "glyph PNG rendering"
-    draw.text((64, 32), f"Font1 Regular 0.202 / {kind}", font=label(24), fill="#1a2735")
-    draw.text((64, 74), "Refined lowercase / balanced g and p vertical positions", font=label(18), fill="#586878")
+    draw.text((64, 32), f"Font1 Regular 0.203 / {kind}", font=label(24), fill="#1a2735")
+    draw.text((64, 74), "Refined lowercase / balanced g, p and q vertical positions", font=label(18), fill="#586878")
 
     def line(text, y, size, x=64):
         if from_font:
@@ -98,7 +98,7 @@ def comparison():
     draw = ImageDraw.Draw(canvas)
     for row, (title, directory) in enumerate([
         ("Monaco", ROOT.parent.parent / "monaco-ascii"),
-        ("font1 Regular 0.202", ROOT),
+        ("font1 Regular 0.203", ROOT),
         ("Droid Sans", ROOT.parent.parent / "droid"),
         ("JetBrains Mono", ROOT.parent.parent / "jetbrains"),
     ]):
@@ -114,7 +114,7 @@ def lowercase_review(before_font):
     canvas = Image.new("RGB", (1600, 1220), "white")
     draw = ImageDraw.Draw(canvas)
     draw.text((64, 30), "Font1 Regular / lowercase refinement", font=label(28), fill="#1a2735")
-    draw.text((64, 79), "Same size and advance. Before 0.100 / After 0.202", font=label(18), fill="#586878")
+    draw.text((64, 79), "Same size and advance. Before 0.100 / After 0.203", font=label(18), fill="#586878")
     for group, characters in enumerate(["abcdefghijklm", "nopqrstuvwxyz"]):
         for revision, (title, font) in enumerate([
             ("Before", before_font), ("After", ROOT / "Font1-Regular.ttf"),
@@ -136,11 +136,11 @@ def lowercase_review(before_font):
 def weight_comparison():
     canvas = Image.new("RGB", (1600, 990), "#fafbfc")
     draw = ImageDraw.Draw(canvas)
-    draw.text((52, 30), "Font1 / Regular 0.202 and Bold", font=label(26), fill="#1a2735")
+    draw.text((52, 30), "Font1 / Regular 0.203 and Bold", font=label(26), fill="#1a2735")
     draw.text((52, 74), "Cap height matched across all three samples", font=label(18), fill="#586878")
     for index, (title, directory) in enumerate([
         ("Monaco Regular", ROOT.parent.parent / "monaco-ascii"),
-        ("font1 Regular 0.202", ROOT),
+        ("font1 Regular 0.203", ROOT),
         ("font1 Bold", ROOT.parent / "bold"),
     ]):
         alpha = np.asarray(Image.open(directory / "glyphs/U0048.png").getchannel("A"))
@@ -166,7 +166,7 @@ def position_review(before_font):
     draw.text((56, 78), "Same shapes and advance. Shared baseline / lowercase-height guides.",
               font=label(18), fill="#586878")
     for index, (title, font) in enumerate([
-        ("Before 0.201", before_font), ("After 0.202", ROOT / "Font1-Regular.ttf"),
+        ("Before 0.201", before_font), ("Current 0.203", ROOT / "Font1-Regular.ttf"),
     ]):
         x = 56 + index * 720
         draw.text((x, 129), title, font=label(20), fill="#405269")
@@ -175,7 +175,7 @@ def position_review(before_font):
         font_line(canvas, "angpo", x + 25, 260, 170, font)
 
     for index, (title, font) in enumerate([
-        ("Before 0.201", before_font), ("After 0.202", ROOT / "Font1-Regular.ttf"),
+        ("Before 0.201", before_font), ("Current 0.203", ROOT / "Font1-Regular.ttf"),
     ]):
         top = 374 + index * 372
         draw.rounded_rectangle((40, top, 1460, top + 337), radius=12, fill="#20242b")

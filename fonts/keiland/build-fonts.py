@@ -29,7 +29,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT.parent / "font1" / "regular"
 OLD_BOLD = ROOT.parent / "font1" / "bold"
-VERSION = "0.300"
+VERSION = "0.301"
 SIDEBEARING = 78
 SPACE_ADVANCE = 614
 SVG_NS = "http://www.w3.org/2000/svg"
