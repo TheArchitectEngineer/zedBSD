@@ -864,7 +864,6 @@ window_pointer_axis(
 
 	/* Only the vertical axis scrolls the window. */
 	(void)pointer;
-	(void)time;
 	window = data;
 	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
 		return;
@@ -882,6 +881,7 @@ window_pointer_axis(
 		return;
 	event->scroll = whole;
 	event->source = window->axis_source;
+	event->axis_ms = time;
 	event->time = se_clock();
 }
 
@@ -930,7 +930,6 @@ window_pointer_axis_stop(
 
 	/* Once a frame; the fraction left goes with the scrolling. */
 	(void)pointer;
-	(void)time;
 	(void)axis;
 	window = data;
 	if (window->axis_stopped != 0)
@@ -943,6 +942,7 @@ window_pointer_axis_stop(
 	if (event == NULL)
 		return;
 	event->source = window->axis_source;
+	event->axis_ms = time;
 	event->time = se_clock();
 }
 

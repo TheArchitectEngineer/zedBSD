@@ -1187,9 +1187,10 @@ ui_scroll(
 			app->kinetic.holding = 1;
 			app->kinetic.pane = pane;
 			kl_axis_track_reset(&app->kinetic.track);
+			se_log("KINETIC hold pane=%s", pane == SE_KINETIC_SIDEBAR ? "list" : "page");
 		}
 		pane = app->kinetic.pane;
-		kl_axis_track_add(&app->kinetic.track, 0.0, (double)event->scroll, event->time * 1000U);
+		kl_axis_track_add(&app->kinetic.track, 0.0, (double)event->scroll, (uint64_t)event->axis_ms * 1000U);
 	} else {
 		app->kinetic.holding = 0;
 	}
@@ -1216,10 +1217,12 @@ ui_scroll_stop(
 		return;
 	app->kinetic.holding = 0;
 
-	/* Their velocity; too slow a one throws nothing. */
-	kl_axis_track_velocity(&app->kinetic.track, event->time * 1000U, &vx, &vy);
-	if (fabs(vy) < UI_KINETIC_SLOWEST)
+	/* Their velocity, by the compositor's times of their moves; too slow a one throws nothing. */
+	kl_axis_track_velocity(&app->kinetic.track, (uint64_t)event->axis_ms * 1000U, &vx, &vy);
+	if (fabs(vy) < UI_KINETIC_SLOWEST) {
+		se_log("KINETIC none pane=%s velocity=%.0f moves=%u", app->kinetic.pane == SE_KINETIC_SIDEBAR ? "list" : "page", vy, app->kinetic.track.count);
 		return;
+	}
 
 	/* The flight, from now. */
 	app->kinetic.flying = 1;
