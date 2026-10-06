@@ -30,6 +30,9 @@
 #define KEIUI_WINDOW_TABS	32U
 #define KEIUI_TAB_TITLE		128U
 
+/* The most tools of a pen tablet a window follows (WS131 p018, Notes' tablet.c moved here). */
+#define KEIUI_TABLET_TOOLS	4U
+
 /* The longest text a drag of the window's own carries (WS131 p018, Terminal's drag of selected text). */
 #define KEIUI_DRAG_TEXT		4096U
 
@@ -59,6 +62,36 @@ struct kl_window_menu;
 struct kl_context_menu;
 struct kl_titlebar;
 struct kl_glass;
+struct zwp_tablet_manager_v2;
+struct zwp_tablet_seat_v2;
+struct zwp_tablet_tool_v2;
+struct kl_window;
+
+/*
+ * One tool of a pen tablet (tablet.c): its window and object, its kind
+ * (KL_TABLET_*) and whether it reports pressure; whether it is over the
+ * window, touching, in a contact told to the application, lifting and
+ * leaving in this frame, and moved in it; its buttons held
+ * (KL_TABLET_BUTTON_*); and its place, pressure (0 to 1) and tilt.
+ */
+struct keiui_tablet_tool {
+	struct kl_window *window;
+	struct zwp_tablet_tool_v2 *tool;
+	unsigned type;
+	int has_pressure;
+	int near;
+	int touching;
+	int down;
+	int lifting;
+	int leaving;
+	int moved;
+	unsigned buttons;
+	double x;
+	double y;
+	double pressure;
+	double tilt_x;
+	double tilt_y;
+};
 
 /* One tab as the titlebar shows it (WS131 p018): its ID, title and KL_TAB_* flags. */
 struct keiui_tab {
@@ -302,6 +335,18 @@ struct kl_window {
 	unsigned drop_offered;
 	int drop_pending;
 
+	/*
+	 * A pen tablet (tablet.c, WS131 p018): the manager and the seat's
+	 * tablets (NULL until kl_window_accept_tablet), and the tools.
+	 */
+	struct zwp_tablet_manager_v2 *tablet_manager;
+	struct zwp_tablet_seat_v2 *tablet_seat;
+	struct keiui_tablet_tool *tools[KEIUI_TABLET_TOOLS];
+	unsigned tool_count;
+
+	/* Whether a held key repeats (kl_window_set_repeat; on unless the application turned it off). */
+	int repeat_off;
+
 	/* Where the drag over the window is (surface pixels, from its enter and motions). */
 	double drop_x;
 	double drop_y;
@@ -459,6 +504,11 @@ void keiui_clipboard_close(struct kl_window *window);
 void keiui_primary_bind(struct kl_window *window, struct wl_registry *registry, uint32_t name);
 void keiui_primary_start(struct kl_window *window);
 void keiui_primary_close(struct kl_window *window);
+
+/* A pen tablet (tablet.c), and an input's time from the compositor's (window.c). */
+void keiui_tablet_bind(struct kl_window *window, struct wl_registry *registry, uint32_t name);
+void keiui_tablet_close(struct kl_window *window);
+void keiui_window_stamp(struct kl_window_event *event, uint32_t time);
 
 /* The text input (text-input.c). */
 void keiui_text_input_bind(struct kl_window *window, struct wl_registry *registry, uint32_t name);

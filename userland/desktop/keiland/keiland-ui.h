@@ -821,7 +821,10 @@ struct kl_window_options {
  * buttons, from the compositor's time; otherwise when it was read), when it
  * was read, and its serial (a press's, for a popup or
  * a selection); for the text input's (KUI_VERSION 6), its text, the
- * composed text's cursor, and the bytes to delete around the caret.
+ * composed text's cursor, and the bytes to delete around the caret; for a
+ * pen tablet's (KL_VERSION 44), its tool (KL_TABLET_*), its barrel buttons
+ * held (KL_TABLET_BUTTON_*), its pressure (0 to 1, -1 for a tool without
+ * it) and its tilt (degrees).
  */
 struct kl_window_event {
 	unsigned kind;
@@ -843,6 +846,11 @@ struct kl_window_event {
 	uint32_t before;
 	uint32_t after;
 	unsigned axis_source;
+	unsigned tool;
+	unsigned buttons;
+	double pressure;
+	double tilt_x;
+	double tilt_y;
 };
 
 struct kl_window *kl_window_open(const struct kl_window_options *options);
@@ -1196,6 +1204,28 @@ struct kl_tab_entry {
 	unsigned flags;
 };
 
+/*
+ * A pen tablet: a window whose application takes it
+ * (kl_window_accept_tablet) hears the pen as KL_WINDOW_TABLET_* inputs
+ * with its pressure and tilt (a contact's start, moves and end, a move
+ * over the window without touching it, and leaving it); any other window
+ * hears the pen as the pointer.  And a held key's repeat may be turned off
+ * for a window (kl_window_set_repeat).
+ */
+#define KL_WINDOW_TABLET_DOWN	27U
+#define KL_WINDOW_TABLET_MOTION	28U
+#define KL_WINDOW_TABLET_UP	29U
+#define KL_WINDOW_TABLET_HOVER	30U
+#define KL_WINDOW_TABLET_LEAVE	31U
+
+/* A tablet's tool, and its barrel buttons (bits). */
+#define KL_TABLET_PEN		0U
+#define KL_TABLET_ERASER	1U
+#define KL_TABLET_BUTTON_STYLUS	1U
+#define KL_TABLET_BUTTON_STYLUS2	2U
+
+int kl_window_accept_tablet(struct kl_window *window);
+int kl_window_set_repeat(struct kl_window *window, int enabled);
 int kl_window_set_tabs(struct kl_window *window, const struct kl_tab_entry *tabs, size_t count, unsigned options);
 int kl_window_selection_own(const struct kl_window *window, unsigned which);
 int kl_window_accept_drops(struct kl_window *window, unsigned types);

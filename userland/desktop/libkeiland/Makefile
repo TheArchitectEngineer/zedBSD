@@ -45,6 +45,7 @@ LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/clipboard.c \
 	userland/desktop/libkeiland/ui/primary.c \
 	userland/desktop/libkeiland/ui/text-input.c \
+	userland/desktop/libkeiland/ui/tablet.c \
 	userland/desktop/libkeiland/ui/edit.c \
 	userland/desktop/libkeiland/ui/widgets.c \
 	userland/desktop/libkeiland/ui/field.c \
