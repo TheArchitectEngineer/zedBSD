@@ -189,6 +189,12 @@ zwl_handoff_answer(
 		return;
 	}
 
+	/* A session's Power Off or Restart (the Power Off dialog, ws099-p037): refused (EACCES) or not done is said. */
+	if (request == KL_BACKEND_SESSION_POWER) {
+		printf("ZWL POWER answer error=%d\n", error);
+		return;
+	}
+
 	/* Anything else is not for this compositor. */
 	printf("ZWL HANDOFF answer request=%u error=%d\n", request, error);
 }

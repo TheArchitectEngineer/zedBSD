@@ -85,6 +85,7 @@ open_backend(
 	memset(&options, 0, sizeof(options));
 	memset(&host, 0, sizeof(host));
 	options.greeter_descriptor = descriptor;
+	options.session_descriptor = -1;
 	error = kl_backend_open(&options, &host, &backend);
 	if (error != 0)
 		return NULL;
@@ -195,7 +196,10 @@ test_login_screen(
 	(void)close(ends[1]);
 }
 
-/* A session: sessiond takes no power request on its descriptor, so nothing is offered. */
+/*
+ * A session without sessiond's descriptor: nothing can be asked, so nothing
+ * is offered (a session sessiond started asks it, ws131-p027: host-session.c).
+ */
 static void
 test_session(
 	void)
@@ -210,9 +214,9 @@ test_session(
 	if (backend == NULL)
 		return;
 	error = kl_backend_power_get_state(backend, &state);
-	check(error == 0 && state.actions == 0U, "session: no action offered");
+	check(error == 0 && state.actions == 0U, "session without sessiond: no action offered");
 	error = kl_backend_power_action(backend, KL_BACKEND_POWER_POWEROFF);
-	check(error == ENOTSUP, "session: poweroff is ENOTSUP");
+	check(error == ENOTSUP, "session without sessiond: poweroff is ENOTSUP");
 	kl_backend_close(backend);
 }
 #endif

@@ -55,6 +55,9 @@
  *                    (ws089-p025, service.c: sshd only, root or wheel);
  *                    SERVICE available= enabled= running= port=, DENIED,
  *                    or ERROR
+ *   POWER poweroff|reboot
+ *                    ends the machine (ws131-p027, power.c: the Power Off
+ *                    dialog; root or wheel only); OK, FAIL wheel, or ERROR
  */
 
 #include "auth.h"
@@ -337,6 +340,13 @@ session_request(
 	match = strncmp(line, "SERVICE ", 8);
 	if (match == 0) {
 		sessiond_service(account, control, line + 8);
+		return 0;
+	}
+
+	/* Power Off or Restart (ws131-p027). */
+	match = strncmp(line, "POWER ", 6);
+	if (match == 0) {
+		sessiond_power_session(account, control, line + 6);
 		return 0;
 	}
 

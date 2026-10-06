@@ -43,10 +43,16 @@
 #define NET_HTTP_MAX_RESPONSE	((size_t)256U * 1024U * 1024U)
 
 /*
- * The other headers of every request: any type (the star, the slash and the star
- * written apart so that they do not read as a comment) and no compression.
+ * The other headers of every request: the types a browser's navigation
+ * accepts, the star, the slash and the star (written apart so that they do
+ * not read as a comment) last; Japanese, then English; and no compression.
+ * A server may answer "any type" with nothing a page can use: AWS WAF's
+ * challenge (Amazon, BUG-227) sends its page, which gets the token, only
+ * to a client that accepts HTML, and an empty 202 otherwise.
  */
-#define NET_HTTP_HEADERS	"Accept: *" "/" "*\r\nAccept-Encoding: identity\r\n"
+#define NET_HTTP_HEADERS	"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*" "/" "*;q=0.8\r\n" \
+				"Accept-Language: ja,en-US;q=0.9,en;q=0.8\r\n" \
+				"Accept-Encoding: identity\r\n"
 
 /*
  * What the headers of a response say that the fetch uses (besides the

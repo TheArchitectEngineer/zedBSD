@@ -1116,6 +1116,16 @@ struct zwl_server {
 	/* App Home's Power Off dialog (power-dialog.c, ws099-p037): shown over everything while open. */
 	struct zwl_power_dialog power_dialog;
 	/*
+	 * The system bar's docked layout (ws099-p034b): how far it is (0, a
+	 * floating window's: the status and the clock at the right end; 1, a
+	 * docked window's: the window's buttons there, the status and the clock
+	 * left of them), the animation's ends and when it began (ms).
+	 */
+	float bar_dock;
+	float bar_dock_from;
+	float bar_dock_to;
+	uint64_t bar_dock_ms;
+	/*
 	 * App Home's pages (ws035-p071): the page shown; a press on Home that
 	 * may become a page drag (where it started, the application under it,
 	 * whether it has moved enough) and the drag's offset in pixels; the

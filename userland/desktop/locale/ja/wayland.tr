@@ -1,7 +1,7 @@
 # The compositor's texts in Japanese (domain wayland, WS158). tools/i18n/tr.py update keeps the translations.
 # userland/desktop/locale/wayland.keys:3
 msg	Lock Screen	画面をロック
-# userland/desktop/locale/wayland.keys:4, userland/desktop/wayland/power-dialog.c:537
+# userland/desktop/locale/wayland.keys:4, userland/desktop/wayland/power-dialog.c:544
 msg	Log Out	ログアウト
 # userland/desktop/locale/wayland.keys:7
 msg	Network	ネットワーク
@@ -35,7 +35,7 @@ msg	Signal	信号の強さ
 msg	Received	受信
 # userland/desktop/locale/wayland.keys:22
 msg	Sent	送信
-# userland/desktop/wayland/greeter.c:435, userland/desktop/wayland/power-dialog.c:535
+# userland/desktop/wayland/greeter.c:435, userland/desktop/wayland/power-dialog.c:542
 msg	Restart	再起動
 # userland/desktop/wayland/greeter.c:436
 msg	Shut Down	シャットダウン
@@ -213,19 +213,17 @@ msg	Wi-Fi is off; turn it on to join	Wi-Fi がオフです。接続するには�
 msg	This account may not control Wi-Fi	このアカウントは Wi-Fi を操作できません
 # userland/desktop/wayland/network.c:2020
 msg	{1} did not accept the key	{1} がパスワードを受け付けませんでした
-# userland/desktop/wayland/power-dialog.c:533
+# userland/desktop/wayland/power-dialog.c:540
 msg	Power Off	電源を切る
-# userland/desktop/wayland/power-dialog.c:539
+# userland/desktop/wayland/power-dialog.c:546
 msg	Cancel	キャンセル
 # userland/desktop/wayland/shell.c:3291
 msg	Window	ウインドウ
 # userland/desktop/wayland/shell.c:3295
 msg	{1} (not responding)	{1}（応答なし）
-# userland/desktop/wayland/shell.c:3482
-msg	Wiseview	Wiseview
-# userland/desktop/wayland/shell.c:5998
+# userland/desktop/wayland/shell.c:5992
 msg	No other windows	ほかのウインドウはありません
-# userland/desktop/wayland/shell.c:6004
+# userland/desktop/wayland/shell.c:5998
 msg	Swipe left or right to choose · Swipe down to open	左右にスワイプして選ぶ · 下にスワイプして開く
 # userland/desktop/wayland/volume.c:502
 msg	Sound	サウンド
@@ -237,3 +235,6 @@ msg	Mute	消音
 msg	Sound service is not running	サウンドサービスが動いていません
 # userland/desktop/wayland/volume.c:537
 msg	No sound output	音声の出力がありません
+
+# Not asked for by the source any more (kept for a text that comes back):
+# msg	Wiseview	Wiseview

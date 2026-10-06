@@ -1,0 +1,1926 @@
+{
+  "name": "font1",
+  "version": "design-01",
+  "status": "ASCII raster design concept, not a TrueType font",
+  "range": "U+0020-U+007E (95 printable ASCII characters including SPACE)",
+  "generation": {
+    "tool": "built-in image_gen",
+    "prompt": "generation-prompt.txt",
+    "atlas": "generated-atlas.png",
+    "atlas_size_pixels": [
+      1254,
+      1254
+    ],
+    "atlas_sha256": "30e31eaf901b1072f162e40c267366a37568724fe4bc808a891449a0994a164c",
+    "reference_font_sha256": {
+      "monaco-ascii": "3591226486df72fcb901b83565077bf05da5e9f809a7c94bca76593e5aa9805a",
+      "droid": "f51b88945f4c1b236f44b8d55a2d304316869127e95248c435c23f1e4142a7db",
+      "jetbrains": "e6fd0d7e91550b3ed2b735d4312474362c4716edc4fc0577a0f61ed782d5aed1"
+    }
+  },
+  "export": {
+    "canvas_pixels": [
+      1024,
+      1024
+    ],
+    "baseline_pixels": 745,
+    "proposed_advance_pixels": 460.875,
+    "left_origin_pixels": 282,
+    "uniform_atlas_scale": 7.0,
+    "background": "transparent",
+    "component_extraction": "whole connected components assigned to atlas cells; descenders are retained",
+    "baseline_normalization": "per-row median of non-descending anchor glyph bottoms, approximate"
+  },
+  "glyphs": [
+    {
+      "codepoint": "U+0020",
+      "character": " ",
+      "category": "space",
+      "image": "glyphs/U0020.png",
+      "ink_bbox_pixels": null,
+      "atlas_crop_pixels": null,
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0021",
+      "character": "!",
+      "category": "symbols",
+      "image": "glyphs/U0021.png",
+      "ink_bbox_pixels": [
+        456,
+        226,
+        617,
+        770
+      ],
+      "atlas_crop_pixels": [
+        180,
+        32,
+        203,
+        110
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0022",
+      "character": "\"",
+      "category": "symbols",
+      "image": "glyphs/U0022.png",
+      "ink_bbox_pixels": [
+        397,
+        224,
+        659,
+        437
+      ],
+      "atlas_crop_pixels": [
+        297,
+        32,
+        335,
+        63
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0023",
+      "character": "#",
+      "category": "symbols",
+      "image": "glyphs/U0023.png",
+      "ink_bbox_pixels": [
+        310,
+        230,
+        737,
+        762
+      ],
+      "atlas_crop_pixels": [
+        410,
+        33,
+        471,
+        109
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0024",
+      "character": "$",
+      "category": "symbols",
+      "image": "glyphs/U0024.png",
+      "ink_bbox_pixels": [
+        325,
+        146,
+        695,
+        825
+      ],
+      "atlas_crop_pixels": [
+        537,
+        21,
+        591,
+        118
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0025",
+      "character": "%",
+      "category": "symbols",
+      "image": "glyphs/U0025.png",
+      "ink_bbox_pixels": [
+        267,
+        206,
+        767,
+        746
+      ],
+      "atlas_crop_pixels": [
+        654,
+        29,
+        726,
+        107
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0026",
+      "character": "&",
+      "category": "symbols",
+      "image": "glyphs/U0026.png",
+      "ink_bbox_pixels": [
+        274,
+        202,
+        752,
+        762
+      ],
+      "atlas_crop_pixels": [
+        781,
+        29,
+        850,
+        109
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0027",
+      "character": "'",
+      "category": "symbols",
+      "image": "glyphs/U0027.png",
+      "ink_bbox_pixels": [
+        432,
+        224,
+        569,
+        462
+      ],
+      "atlas_crop_pixels": [
+        929,
+        32,
+        949,
+        66
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0028",
+      "character": "(",
+      "category": "symbols",
+      "image": "glyphs/U0028.png",
+      "ink_bbox_pixels": [
+        359,
+        161,
+        639,
+        800
+      ],
+      "atlas_crop_pixels": [
+        1044,
+        23,
+        1084,
+        115
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0029",
+      "character": ")",
+      "category": "symbols",
+      "image": "glyphs/U0029.png",
+      "ink_bbox_pixels": [
+        363,
+        162,
+        646,
+        803
+      ],
+      "atlas_crop_pixels": [
+        1170,
+        23,
+        1211,
+        115
+      ],
+      "atlas_row_baseline_pixels": 106.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+002A",
+      "character": "*",
+      "category": "symbols",
+      "image": "glyphs/U002A.png",
+      "ink_bbox_pixels": [
+        314,
+        252,
+        718,
+        681
+      ],
+      "atlas_crop_pixels": [
+        34,
+        160,
+        92,
+        222
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+002B",
+      "character": "+",
+      "category": "symbols",
+      "image": "glyphs/U002B.png",
+      "ink_bbox_pixels": [
+        316,
+        336,
+        718,
+        723
+      ],
+      "atlas_crop_pixels": [
+        160,
+        172,
+        218,
+        228
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+002C",
+      "character": ",",
+      "category": "symbols",
+      "image": "glyphs/U002C.png",
+      "ink_bbox_pixels": [
+        436,
+        560,
+        607,
+        833
+      ],
+      "atlas_crop_pixels": [
+        302,
+        204,
+        327,
+        243
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+002D",
+      "character": "-",
+      "category": "symbols",
+      "image": "glyphs/U002D.png",
+      "ink_bbox_pixels": [
+        377,
+        453,
+        667,
+        556
+      ],
+      "atlas_crop_pixels": [
+        419,
+        188,
+        461,
+        204
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+002E",
+      "character": ".",
+      "category": "symbols",
+      "image": "glyphs/U002E.png",
+      "ink_bbox_pixels": [
+        419,
+        565,
+        591,
+        730
+      ],
+      "atlas_crop_pixels": [
+        551,
+        204,
+        576,
+        229
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+002F",
+      "character": "/",
+      "category": "symbols",
+      "image": "glyphs/U002F.png",
+      "ink_bbox_pixels": [
+        298,
+        210,
+        683,
+        763
+      ],
+      "atlas_crop_pixels": [
+        659,
+        154,
+        714,
+        233
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0030",
+      "character": "0",
+      "category": "digits",
+      "image": "glyphs/U0030.png",
+      "ink_bbox_pixels": [
+        288,
+        210,
+        697,
+        770
+      ],
+      "atlas_crop_pixels": [
+        783,
+        154,
+        842,
+        234
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0031",
+      "character": "1",
+      "category": "digits",
+      "image": "glyphs/U0031.png",
+      "ink_bbox_pixels": [
+        330,
+        216,
+        680,
+        762
+      ],
+      "atlas_crop_pixels": [
+        914,
+        155,
+        965,
+        233
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0032",
+      "character": "2",
+      "category": "digits",
+      "image": "glyphs/U0032.png",
+      "ink_bbox_pixels": [
+        310,
+        210,
+        695,
+        763
+      ],
+      "atlas_crop_pixels": [
+        1037,
+        154,
+        1092,
+        233
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0033",
+      "character": "3",
+      "category": "digits",
+      "image": "glyphs/U0033.png",
+      "ink_bbox_pixels": [
+        342,
+        210,
+        710,
+        770
+      ],
+      "atlas_crop_pixels": [
+        1167,
+        154,
+        1220,
+        234
+      ],
+      "atlas_row_baseline_pixels": 230.5,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0034",
+      "character": "4",
+      "category": "digits",
+      "image": "glyphs/U0034.png",
+      "ink_bbox_pixels": [
+        295,
+        201,
+        737,
+        755
+      ],
+      "atlas_crop_pixels": [
+        31,
+        278,
+        95,
+        358
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0035",
+      "character": "5",
+      "category": "digits",
+      "image": "glyphs/U0035.png",
+      "ink_bbox_pixels": [
+        344,
+        202,
+        715,
+        762
+      ],
+      "atlas_crop_pixels": [
+        164,
+        278,
+        217,
+        359
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0036",
+      "character": "6",
+      "category": "digits",
+      "image": "glyphs/U0036.png",
+      "ink_bbox_pixels": [
+        310,
+        192,
+        726,
+        766
+      ],
+      "atlas_crop_pixels": [
+        284,
+        277,
+        344,
+        359
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0037",
+      "character": "7",
+      "category": "digits",
+      "image": "glyphs/U0037.png",
+      "ink_bbox_pixels": [
+        331,
+        203,
+        709,
+        755
+      ],
+      "atlas_crop_pixels": [
+        413,
+        278,
+        467,
+        358
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0038",
+      "character": "8",
+      "category": "digits",
+      "image": "glyphs/U0038.png",
+      "ink_bbox_pixels": [
+        307,
+        192,
+        702,
+        769
+      ],
+      "atlas_crop_pixels": [
+        535,
+        277,
+        592,
+        360
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0039",
+      "character": "9",
+      "category": "digits",
+      "image": "glyphs/U0039.png",
+      "ink_bbox_pixels": [
+        293,
+        192,
+        709,
+        766
+      ],
+      "atlas_crop_pixels": [
+        658,
+        277,
+        718,
+        359
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+003A",
+      "character": ":",
+      "category": "symbols",
+      "image": "glyphs/U003A.png",
+      "ink_bbox_pixels": [
+        407,
+        318,
+        575,
+        727
+      ],
+      "atlas_crop_pixels": [
+        800,
+        295,
+        824,
+        354
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+003B",
+      "character": ";",
+      "category": "symbols",
+      "image": "glyphs/U003B.png",
+      "ink_bbox_pixels": [
+        415,
+        318,
+        589,
+        825
+      ],
+      "atlas_crop_pixels": [
+        926,
+        295,
+        952,
+        368
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+003C",
+      "character": "<",
+      "category": "symbols",
+      "image": "glyphs/U003C.png",
+      "ink_bbox_pixels": [
+        314,
+        297,
+        702,
+        738
+      ],
+      "atlas_crop_pixels": [
+        1037,
+        292,
+        1093,
+        355
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+003D",
+      "character": "=",
+      "category": "symbols",
+      "image": "glyphs/U003D.png",
+      "ink_bbox_pixels": [
+        314,
+        383,
+        710,
+        624
+      ],
+      "atlas_crop_pixels": [
+        1163,
+        304,
+        1220,
+        339
+      ],
+      "atlas_row_baseline_pixels": 356.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+003E",
+      "character": ">",
+      "category": "symbols",
+      "image": "glyphs/U003E.png",
+      "ink_bbox_pixels": [
+        316,
+        311,
+        717,
+        752
+      ],
+      "atlas_crop_pixels": [
+        34,
+        419,
+        92,
+        482
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+003F",
+      "character": "?",
+      "category": "symbols",
+      "image": "glyphs/U003F.png",
+      "ink_bbox_pixels": [
+        337,
+        197,
+        697,
+        766
+      ],
+      "atlas_crop_pixels": [
+        163,
+        402,
+        215,
+        484
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0040",
+      "character": "@",
+      "category": "symbols",
+      "image": "glyphs/U0040.png",
+      "ink_bbox_pixels": [
+        264,
+        224,
+        772,
+        797
+      ],
+      "atlas_crop_pixels": [
+        278,
+        406,
+        351,
+        489
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0041",
+      "character": "A",
+      "category": "letters",
+      "image": "glyphs/U0041.png",
+      "ink_bbox_pixels": [
+        273,
+        220,
+        751,
+        766
+      ],
+      "atlas_crop_pixels": [
+        404,
+        406,
+        473,
+        484
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0042",
+      "character": "B",
+      "category": "letters",
+      "image": "glyphs/U0042.png",
+      "ink_bbox_pixels": [
+        321,
+        213,
+        702,
+        766
+      ],
+      "atlas_crop_pixels": [
+        537,
+        405,
+        592,
+        484
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0043",
+      "character": "C",
+      "category": "letters",
+      "image": "glyphs/U0043.png",
+      "ink_bbox_pixels": [
+        298,
+        206,
+        689,
+        776
+      ],
+      "atlas_crop_pixels": [
+        659,
+        404,
+        715,
+        486
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0044",
+      "character": "D",
+      "category": "letters",
+      "image": "glyphs/U0044.png",
+      "ink_bbox_pixels": [
+        309,
+        213,
+        710,
+        766
+      ],
+      "atlas_crop_pixels": [
+        786,
+        405,
+        844,
+        484
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0045",
+      "character": "E",
+      "category": "letters",
+      "image": "glyphs/U0045.png",
+      "ink_bbox_pixels": [
+        327,
+        213,
+        684,
+        769
+      ],
+      "atlas_crop_pixels": [
+        914,
+        405,
+        965,
+        485
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0046",
+      "character": "F",
+      "category": "letters",
+      "image": "glyphs/U0046.png",
+      "ink_bbox_pixels": [
+        339,
+        213,
+        695,
+        766
+      ],
+      "atlas_crop_pixels": [
+        1041,
+        405,
+        1092,
+        484
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0047",
+      "character": "G",
+      "category": "letters",
+      "image": "glyphs/U0047.png",
+      "ink_bbox_pixels": [
+        300,
+        211,
+        696,
+        780
+      ],
+      "atlas_crop_pixels": [
+        1161,
+        404,
+        1218,
+        486
+      ],
+      "atlas_row_baseline_pixels": 481.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0048",
+      "character": "H",
+      "category": "letters",
+      "image": "glyphs/U0048.png",
+      "ink_bbox_pixels": [
+        315,
+        222,
+        716,
+        766
+      ],
+      "atlas_crop_pixels": [
+        34,
+        532,
+        92,
+        610
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0049",
+      "character": "I",
+      "category": "letters",
+      "image": "glyphs/U0049.png",
+      "ink_bbox_pixels": [
+        337,
+        220,
+        687,
+        773
+      ],
+      "atlas_crop_pixels": [
+        163,
+        532,
+        213,
+        611
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+004A",
+      "character": "J",
+      "category": "letters",
+      "image": "glyphs/U004A.png",
+      "ink_bbox_pixels": [
+        334,
+        222,
+        674,
+        780
+      ],
+      "atlas_crop_pixels": [
+        288,
+        532,
+        337,
+        612
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+004B",
+      "character": "K",
+      "category": "letters",
+      "image": "glyphs/U004B.png",
+      "ink_bbox_pixels": [
+        314,
+        222,
+        737,
+        766
+      ],
+      "atlas_crop_pixels": [
+        410,
+        532,
+        471,
+        610
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+004C",
+      "character": "L",
+      "category": "letters",
+      "image": "glyphs/U004C.png",
+      "ink_bbox_pixels": [
+        328,
+        220,
+        692,
+        772
+      ],
+      "atlas_crop_pixels": [
+        538,
+        532,
+        590,
+        611
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+004D",
+      "character": "M",
+      "category": "letters",
+      "image": "glyphs/U004D.png",
+      "ink_bbox_pixels": [
+        277,
+        220,
+        718,
+        766
+      ],
+      "atlas_crop_pixels": [
+        656,
+        532,
+        719,
+        610
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+004E",
+      "character": "N",
+      "category": "letters",
+      "image": "glyphs/U004E.png",
+      "ink_bbox_pixels": [
+        295,
+        221,
+        682,
+        766
+      ],
+      "atlas_crop_pixels": [
+        784,
+        532,
+        840,
+        610
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+004F",
+      "character": "O",
+      "category": "letters",
+      "image": "glyphs/U004F.png",
+      "ink_bbox_pixels": [
+        285,
+        217,
+        712,
+        787
+      ],
+      "atlas_crop_pixels": [
+        908,
+        531,
+        969,
+        613
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0050",
+      "character": "P",
+      "category": "letters",
+      "image": "glyphs/U0050.png",
+      "ink_bbox_pixels": [
+        317,
+        220,
+        709,
+        766
+      ],
+      "atlas_crop_pixels": [
+        1038,
+        532,
+        1094,
+        610
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0051",
+      "character": "Q",
+      "category": "letters",
+      "image": "glyphs/U0051.png",
+      "ink_bbox_pixels": [
+        297,
+        206,
+        727,
+        909
+      ],
+      "atlas_crop_pixels": [
+        1160,
+        530,
+        1222,
+        631
+      ],
+      "atlas_row_baseline_pixels": 607.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0052",
+      "character": "R",
+      "category": "letters",
+      "image": "glyphs/U0052.png",
+      "ink_bbox_pixels": [
+        319,
+        213,
+        739,
+        762
+      ],
+      "atlas_crop_pixels": [
+        35,
+        659,
+        95,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0053",
+      "character": "S",
+      "category": "letters",
+      "image": "glyphs/U0053.png",
+      "ink_bbox_pixels": [
+        337,
+        199,
+        708,
+        773
+      ],
+      "atlas_crop_pixels": [
+        163,
+        657,
+        216,
+        739
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0054",
+      "character": "T",
+      "category": "letters",
+      "image": "glyphs/U0054.png",
+      "ink_bbox_pixels": [
+        303,
+        213,
+        731,
+        762
+      ],
+      "atlas_crop_pixels": [
+        283,
+        659,
+        345,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0055",
+      "character": "U",
+      "category": "letters",
+      "image": "glyphs/U0055.png",
+      "ink_bbox_pixels": [
+        314,
+        213,
+        709,
+        773
+      ],
+      "atlas_crop_pixels": [
+        410,
+        659,
+        467,
+        739
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0056",
+      "character": "V",
+      "category": "letters",
+      "image": "glyphs/U0056.png",
+      "ink_bbox_pixels": [
+        272,
+        213,
+        732,
+        762
+      ],
+      "atlas_crop_pixels": [
+        530,
+        659,
+        596,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0057",
+      "character": "W",
+      "category": "letters",
+      "image": "glyphs/U0057.png",
+      "ink_bbox_pixels": [
+        270,
+        213,
+        725,
+        762
+      ],
+      "atlas_crop_pixels": [
+        655,
+        659,
+        720,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0058",
+      "character": "X",
+      "category": "letters",
+      "image": "glyphs/U0058.png",
+      "ink_bbox_pixels": [
+        267,
+        213,
+        708,
+        766
+      ],
+      "atlas_crop_pixels": [
+        780,
+        659,
+        843,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0059",
+      "character": "Y",
+      "category": "letters",
+      "image": "glyphs/U0059.png",
+      "ink_bbox_pixels": [
+        282,
+        210,
+        719,
+        762
+      ],
+      "atlas_crop_pixels": [
+        907,
+        658,
+        970,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+005A",
+      "character": "Z",
+      "category": "letters",
+      "image": "glyphs/U005A.png",
+      "ink_bbox_pixels": [
+        296,
+        213,
+        702,
+        762
+      ],
+      "atlas_crop_pixels": [
+        1035,
+        659,
+        1093,
+        738
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+005B",
+      "character": "[",
+      "category": "symbols",
+      "image": "glyphs/U005B.png",
+      "ink_bbox_pixels": [
+        378,
+        196,
+        646,
+        846
+      ],
+      "atlas_crop_pixels": [
+        1172,
+        656,
+        1211,
+        750
+      ],
+      "atlas_row_baseline_pixels": 735.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+005C",
+      "character": "\\",
+      "category": "symbols",
+      "image": "glyphs/U005C.png",
+      "ink_bbox_pixels": [
+        312,
+        206,
+        704,
+        766
+      ],
+      "atlas_crop_pixels": [
+        34,
+        785,
+        90,
+        865
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+005D",
+      "character": "]",
+      "category": "symbols",
+      "image": "glyphs/U005D.png",
+      "ink_bbox_pixels": [
+        365,
+        178,
+        636,
+        836
+      ],
+      "atlas_crop_pixels": [
+        167,
+        781,
+        206,
+        875
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+005E",
+      "character": "^",
+      "category": "symbols",
+      "image": "glyphs/U005E.png",
+      "ink_bbox_pixels": [
+        320,
+        227,
+        705,
+        552
+      ],
+      "atlas_crop_pixels": [
+        286,
+        788,
+        341,
+        835
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+005F",
+      "character": "_",
+      "category": "symbols",
+      "image": "glyphs/U005F.png",
+      "ink_bbox_pixels": [
+        275,
+        693,
+        758,
+        801
+      ],
+      "atlas_crop_pixels": [
+        405,
+        854,
+        474,
+        870
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0060",
+      "character": "`",
+      "category": "symbols",
+      "image": "glyphs/U0060.png",
+      "ink_bbox_pixels": [
+        377,
+        190,
+        587,
+        360
+      ],
+      "atlas_crop_pixels": [
+        545,
+        782,
+        575,
+        807
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0061",
+      "character": "a",
+      "category": "letters",
+      "image": "glyphs/U0061.png",
+      "ink_bbox_pixels": [
+        295,
+        332,
+        700,
+        766
+      ],
+      "atlas_crop_pixels": [
+        658,
+        803,
+        717,
+        865
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0062",
+      "character": "b",
+      "category": "letters",
+      "image": "glyphs/U0062.png",
+      "ink_bbox_pixels": [
+        302,
+        183,
+        704,
+        766
+      ],
+      "atlas_crop_pixels": [
+        785,
+        781,
+        843,
+        865
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0063",
+      "character": "c",
+      "category": "letters",
+      "image": "glyphs/U0063.png",
+      "ink_bbox_pixels": [
+        310,
+        325,
+        684,
+        766
+      ],
+      "atlas_crop_pixels": [
+        911,
+        802,
+        965,
+        865
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0064",
+      "character": "d",
+      "category": "letters",
+      "image": "glyphs/U0064.png",
+      "ink_bbox_pixels": [
+        289,
+        178,
+        688,
+        766
+      ],
+      "atlas_crop_pixels": [
+        1034,
+        781,
+        1091,
+        865
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0065",
+      "character": "e",
+      "category": "letters",
+      "image": "glyphs/U0065.png",
+      "ink_bbox_pixels": [
+        309,
+        325,
+        710,
+        766
+      ],
+      "atlas_crop_pixels": [
+        1162,
+        802,
+        1220,
+        865
+      ],
+      "atlas_row_baseline_pixels": 862.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0066",
+      "character": "f",
+      "category": "letters",
+      "image": "glyphs/U0066.png",
+      "ink_bbox_pixels": [
+        333,
+        189,
+        717,
+        766
+      ],
+      "atlas_crop_pixels": [
+        37,
+        911,
+        92,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0067",
+      "character": "g",
+      "category": "letters",
+      "image": "glyphs/U0067.png",
+      "ink_bbox_pixels": [
+        309,
+        280,
+        708,
+        853
+      ],
+      "atlas_crop_pixels": [
+        159,
+        924,
+        216,
+        1007
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0068",
+      "character": "h",
+      "category": "letters",
+      "image": "glyphs/U0068.png",
+      "ink_bbox_pixels": [
+        320,
+        189,
+        705,
+        766
+      ],
+      "atlas_crop_pixels": [
+        286,
+        911,
+        341,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0069",
+      "character": "i",
+      "category": "letters",
+      "image": "glyphs/U0069.png",
+      "ink_bbox_pixels": [
+        349,
+        189,
+        674,
+        766
+      ],
+      "atlas_crop_pixels": [
+        415,
+        911,
+        462,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+006A",
+      "character": "j",
+      "category": "letters",
+      "image": "glyphs/U006A.png",
+      "ink_bbox_pixels": [
+        349,
+        161,
+        650,
+        843
+      ],
+      "atlas_crop_pixels": [
+        541,
+        907,
+        584,
+        1005
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+006B",
+      "character": "k",
+      "category": "letters",
+      "image": "glyphs/U006B.png",
+      "ink_bbox_pixels": [
+        319,
+        189,
+        718,
+        766
+      ],
+      "atlas_crop_pixels": [
+        662,
+        911,
+        719,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+006C",
+      "character": "l",
+      "category": "letters",
+      "image": "glyphs/U006C.png",
+      "ink_bbox_pixels": [
+        330,
+        199,
+        666,
+        766
+      ],
+      "atlas_crop_pixels": [
+        789,
+        913,
+        837,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+006D",
+      "character": "m",
+      "category": "letters",
+      "image": "glyphs/U006D.png",
+      "ink_bbox_pixels": [
+        292,
+        336,
+        719,
+        766
+      ],
+      "atlas_crop_pixels": [
+        909,
+        932,
+        970,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+006E",
+      "character": "n",
+      "category": "letters",
+      "image": "glyphs/U006E.png",
+      "ink_bbox_pixels": [
+        314,
+        334,
+        695,
+        766
+      ],
+      "atlas_crop_pixels": [
+        1037,
+        932,
+        1092,
+        994
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+006F",
+      "character": "o",
+      "category": "letters",
+      "image": "glyphs/U006F.png",
+      "ink_bbox_pixels": [
+        300,
+        332,
+        723,
+        776
+      ],
+      "atlas_crop_pixels": [
+        1161,
+        932,
+        1222,
+        996
+      ],
+      "atlas_row_baseline_pixels": 991.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0070",
+      "character": "p",
+      "category": "letters",
+      "image": "glyphs/U0070.png",
+      "ink_bbox_pixels": [
+        319,
+        329,
+        725,
+        885
+      ],
+      "atlas_crop_pixels": [
+        35,
+        1056,
+        93,
+        1136
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0071",
+      "character": "q",
+      "category": "letters",
+      "image": "glyphs/U0071.png",
+      "ink_bbox_pixels": [
+        302,
+        287,
+        701,
+        836
+      ],
+      "atlas_crop_pixels": [
+        158,
+        1050,
+        215,
+        1129
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0072",
+      "character": "r",
+      "category": "letters",
+      "image": "glyphs/U0072.png",
+      "ink_bbox_pixels": [
+        352,
+        346,
+        696,
+        766
+      ],
+      "atlas_crop_pixels": [
+        290,
+        1059,
+        340,
+        1119
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0073",
+      "character": "s",
+      "category": "letters",
+      "image": "glyphs/U0073.png",
+      "ink_bbox_pixels": [
+        331,
+        325,
+        695,
+        759
+      ],
+      "atlas_crop_pixels": [
+        413,
+        1056,
+        465,
+        1118
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0074",
+      "character": "t",
+      "category": "letters",
+      "image": "glyphs/U0074.png",
+      "ink_bbox_pixels": [
+        307,
+        255,
+        696,
+        766
+      ],
+      "atlas_crop_pixels": [
+        535,
+        1046,
+        591,
+        1119
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0075",
+      "character": "u",
+      "category": "letters",
+      "image": "glyphs/U0075.png",
+      "ink_bbox_pixels": [
+        307,
+        343,
+        690,
+        766
+      ],
+      "atlas_crop_pixels": [
+        660,
+        1058,
+        715,
+        1119
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0076",
+      "character": "v",
+      "category": "letters",
+      "image": "glyphs/U0076.png",
+      "ink_bbox_pixels": [
+        267,
+        346,
+        729,
+        766
+      ],
+      "atlas_crop_pixels": [
+        780,
+        1059,
+        846,
+        1119
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0077",
+      "character": "w",
+      "category": "letters",
+      "image": "glyphs/U0077.png",
+      "ink_bbox_pixels": [
+        274,
+        343,
+        726,
+        766
+      ],
+      "atlas_crop_pixels": [
+        906,
+        1058,
+        971,
+        1119
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0078",
+      "character": "x",
+      "category": "letters",
+      "image": "glyphs/U0078.png",
+      "ink_bbox_pixels": [
+        287,
+        343,
+        723,
+        766
+      ],
+      "atlas_crop_pixels": [
+        1033,
+        1058,
+        1096,
+        1119
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+0079",
+      "character": "y",
+      "category": "letters",
+      "image": "glyphs/U0079.png",
+      "ink_bbox_pixels": [
+        293,
+        322,
+        741,
+        867
+      ],
+      "atlas_crop_pixels": [
+        1160,
+        1055,
+        1224,
+        1134
+      ],
+      "atlas_row_baseline_pixels": 1116.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+007A",
+      "character": "z",
+      "category": "letters",
+      "image": "glyphs/U007A.png",
+      "ink_bbox_pixels": [
+        326,
+        360,
+        704,
+        766
+      ],
+      "atlas_crop_pixels": [
+        36,
+        1171,
+        90,
+        1229
+      ],
+      "atlas_row_baseline_pixels": 1226.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+007B",
+      "character": "{",
+      "category": "symbols",
+      "image": "glyphs/U007B.png",
+      "ink_bbox_pixels": [
+        351,
+        213,
+        655,
+        839
+      ],
+      "atlas_crop_pixels": [
+        165,
+        1150,
+        209,
+        1240
+      ],
+      "atlas_row_baseline_pixels": 1226.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+007C",
+      "character": "|",
+      "category": "symbols",
+      "image": "glyphs/U007C.png",
+      "ink_bbox_pixels": [
+        464,
+        213,
+        579,
+        829
+      ],
+      "atlas_crop_pixels": [
+        306,
+        1150,
+        323,
+        1238
+      ],
+      "atlas_row_baseline_pixels": 1226.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+007D",
+      "character": "}",
+      "category": "symbols",
+      "image": "glyphs/U007D.png",
+      "ink_bbox_pixels": [
+        339,
+        210,
+        648,
+        839
+      ],
+      "atlas_crop_pixels": [
+        414,
+        1149,
+        459,
+        1240
+      ],
+      "atlas_row_baseline_pixels": 1226.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    },
+    {
+      "codepoint": "U+007E",
+      "character": "~",
+      "category": "symbols",
+      "image": "glyphs/U007E.png",
+      "ink_bbox_pixels": [
+        293,
+        472,
+        711,
+        636
+      ],
+      "atlas_crop_pixels": [
+        533,
+        1187,
+        593,
+        1211
+      ],
+      "atlas_row_baseline_pixels": 1226.0,
+      "status": "generated design draft; outline and font metrics not finalized"
+    }
+  ]
+}

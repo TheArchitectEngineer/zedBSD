@@ -507,6 +507,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-06 ユーザー: light の bar は montage-5 の「このまま実装」。app の icon の中抜きは「デスクトップ背景が透けて見えるとうれしいです。ライトもダークも、Apps一覧も。」（bar の light・dark と App Home の Apps の一覧で、記号の部分から壁紙が透ける）。
+- 2026-10-06 ユーザー（クリック）: session からの Power Off・Restart は「wheel だけに限る」（root と wheel、他の利用者の有無に関わらず）。ws131-p027 の新しい attempt（q793-i02）。
+- 2026-10-06 ユーザー（クリック）: BUG-227 の残り（challenge.js に要る typed array・crypto・Worker/Blob・fetch の POST・canvas）は「ベータ2 の後に回す」。header の直しで止める。
 - 2026-10-06 ユーザー:「モンタージュの画面上部のバーですが、ダークモードではこの黒い色でOKです。ライトモードでは、ウィンドウタイトルバーと同じ色味にしてほしいです。」→ 上部の bar は dark では黒い glass のまま、light では窓の title bar と同じ色味（前の「light でも暗い bar」を置き換え）。ws099-p034b（q794）。
 - 2026-10-06 ユーザー（クリックの回答）: BUG-227「ChromeのUAでデバッグを続けます。」（UA は Chrome のまま、Amazon の WAF の challenge を通す方向で調べを続ける）。App Home の stage は **案 A（弱い）**、light の外観でも暗い stage。ws099-p037 の Power Off・Restart は「sessiond に口を足す（別の Phase）」→ [ws131-p027](ws131/phase027/phase.md)。
 - 2026-10-06 ユーザー（クリックの回答）: 素早い Alt+Tab の残った UI は既定のまま（Tab・Shift+Tab・矢印で選ぶ、Enter・click・tap で切り替え、Esc・外の click で閉じる）。bar の参考の画像 bar-1〜4 は tree に残す。WS175 の D1〜D7 は全部 phase001 の表の推奨どおり（ws175-p001 を cleared にでき、WS175 はベータ2 の実装の列へ）。
