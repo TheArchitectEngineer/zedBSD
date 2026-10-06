@@ -63,7 +63,8 @@ Related: [BUG-217](../../bugs/BUG-217.md)・[BUG-215](../../bugs/BUG-215.md)・[
 
 | Phase | 内容 | 見積もり |
 | --- | --- | --- |
-| p008 | `layout_mode` と `shell_switch_to`、全ての切り替えの入口の集約、全画面との整合、host 試験 | 1 LW |
+| p008 | `layout_mode` と `shell_switch_to`、全ての切り替えの入口の集約、全画面との整合、DOCKED の間は他の app の窓を描かない、大きさの固定の窓・File Chooser・親を持つ dialog の中央の配置（letterbox の暗い地）、host 試験 | 1 LW |
+| p008b | 中央の窓（大きさの固定の外部の窓・File Chooser・親を持つ dialog）の下の層（壁紙の地・同じ app の他の窓・dock した親）を 1 枚の blur にまとめて描く（上部の bar はぼかさない、glass の blur の経路の流用）。p008 の中央の配置と letterbox の後 | 0.5 LW |
 | p009 | gesture: TOP2、全画面の BOTTOM2、WiseView・preview の 1 swipe 1 つ、確定の下 swipe、題の文字の削除 | 1 LW |
 | p010 | AAT のシナリオ・T1・規約の見直し | 0.3 LW |
 
@@ -89,3 +90,7 @@ Related: [BUG-217](../../bugs/BUG-217.md)・[BUG-215](../../bugs/BUG-215.md)・[
 - 中央の窓を出す時は、**その下にある物（壁紙の地、同じ app の他の窓、dock した親の窓）をまとめてぼかす**（1 枚の blur の層、上部の bar はぼかさない）。中央の窓は ぼかしの上に鮮明に。
 - 他の app の窓は（ぼかしの下にも）表示しない。
 - 実装: compositor の合成で、中央の窓の下の層を blur の texture に描いてから中央の窓を重ねる（glass の blur の経路の流用）。File Chooser は client の側で dialog として map し、compositor が親と DOCKED を見て中央に置く。
+
+## 2026-10-06 Q1: Phase の分け方
+
+Q1（P2 の案）:「DOCKED の間は他の app を描かない」と「中央の配置（letterbox の暗い地）」は p008 に含め、「中央の窓の下の blur の層」は ws142-p008b に分ける（p010 の前、q781 の範囲の中）。製品の判断ではなく Phase の分け方。
