@@ -1,6 +1,6 @@
 {
-  "font_sha256": "b3f7533f80a686782ebd544f9bf950b5b83b6d79ac4e9b8824f4a41ff07eb1b3",
-  "font_version": "0.202",
+  "font_sha256": "ab15ef424a1c749a794ac2b95f553489f8632154ba441b6a2c41dc5ca700443f",
+  "font_version": "0.203",
   "unicode_mappings": 95,
   "glyphs_including_notdef": 96,
   "svg_files_including_notdef": 96,
@@ -10,14 +10,14 @@
   ],
   "fixed_advance": 1229,
   "fontconfig_spacing": 100,
-  "pixel_overlap_mean": 0.9876913686399483,
+  "pixel_overlap_mean": 0.9876909429150382,
   "pixel_overlap_min": 0.9751897875227957,
   "connected_component_counts_match": true,
   "rebuild_sha256_matches": true,
   "comparison_method": "Pillow/FreeType at 768px, same raster origin and baseline; ink threshold 128; IoU current PNG vs TTF",
-  "preserved_asset_sha256_count": 289,
+  "preserved_asset_sha256_count": 385,
   "preserved_non_lowercase_ttf_outlines_and_metrics": 70,
-  "lowercase_design_revision": "lowercase-03",
+  "lowercase_design_revision": "lowercase-04",
   "lowercase_stroke_width_pixels": 62,
   "straight_stem_samples_pixels": {
     "i": 62,
@@ -468,7 +468,7 @@
     {
       "codepoint": "U+0071",
       "character": "q",
-      "iou": 0.991222687618387
+      "iou": 0.9911826694768295
     },
     {
       "codepoint": "U+0072",
@@ -541,17 +541,15 @@
     "g",
     "s"
   ],
-  "validation_scope": "g/p rendered again; other PNGs and TTF outlines unchanged from 0.201, so their earlier pixel comparisons remain applicable",
-  "reference_font_version": "0.201",
-  "other_94_ttf_outlines_and_metrics_match_reference": true,
+  "validation_scope": "q rendered again; the other 95 TTF glyphs and metrics and all other source glyph assets match the prior revision. Earlier unchanged pixel comparisons retained.",
+  "reference_font_version": "0.202",
   "changed_glyph_shapes_and_advances_preserved_under_translation": true,
   "vertical_shift_svg_pixels": {
-    "g": 60,
-    "p": 27
+    "q": 66
   },
   "vertical_shift_font_units": {
-    "g": -160,
-    "p": -72
+    "q": -176
   },
-  "font_bounds_fit_ascent_descent": true
+  "font_bounds_fit_ascent_descent": true,
+  "other_95_ttf_outlines_and_metrics_match_reference": true
 }

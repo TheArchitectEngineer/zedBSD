@@ -132,9 +132,11 @@ pdf_display_add_path(
 	if (error != 0)
 		return error;
 
-	/* Copies the path to the end of the shared arrays. */
-	memcpy(builder->verbs + builder->verbs_count, verbs, verb_count);
-	memcpy(builder->points + builder->points_count, points, point_count * sizeof(*points));
+	/* Copies the path to the end of the shared arrays (an empty path, a clip of nothing, copies nothing). */
+	if (verb_count > 0)
+		memcpy(builder->verbs + builder->verbs_count, verbs, verb_count);
+	if (point_count > 0)
+		memcpy(builder->points + builder->points_count, points, point_count * sizeof(*points));
 
 	/* Fills in the item, which remembers where its path starts. */
 	item = &builder->items[builder->items_count];

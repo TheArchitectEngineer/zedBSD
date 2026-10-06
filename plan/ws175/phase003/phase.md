@@ -2,7 +2,7 @@
 # ws175-p003: libpdf の画像・図形の editor と書き戻し
 
 Parent: [WS175](../ws.md)
-Status: cleared の判定を Q1 に依頼（2026-10-06 q805 P2: p003a・p003b を実装、host 試験 PASS。blank の editor は p007 に移す、末尾）
+Status: cleared（2026-10-06 Q1 判定: host の範囲、QEMU は要さない。p003a・p003b を実装、host 試験 PASS。blank の editor は p007 に移す、末尾）
 Disposition: normal
 Queue: q805
 依存: [p002](../phase002/phase.md) の p002a（main に統合済み 78ecc1825）

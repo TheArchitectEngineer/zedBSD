@@ -1,10 +1,10 @@
 {
-  "revision": "lowercase-03",
+  "revision": "lowercase-04",
   "canvas_pixels": 1024,
   "stroke_width_pixels": 62,
   "line_cap": "butt",
   "line_join": "round",
-  "description": "Monoline centerlines for 24 lowercase letters; preserve restored g/s shapes. g shifted down 60px and p down 27px to align bowl bottoms with the lowercase baseline.",
+  "description": "Approved lowercase shapes; g/p/q vertical positions aligned to the lowercase baseline. Original g/s forms preserved.",
   "glyphs": {
     "a": {
       "paths": [
@@ -123,6 +123,10 @@
       "paths": [
         "M638 342 C599 332 573 336 544 342 C441 363 369 441 369 543 C369 610 402 645 460 645 C533 645 596 584 638 488",
         "M638 305 V818"
+      ],
+      "translation_pixels": [
+        0,
+        66
       ]
     },
     "r": {

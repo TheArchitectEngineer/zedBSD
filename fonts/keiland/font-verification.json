@@ -2,7 +2,7 @@
   "fonts": {
     "Keiland-Mono.ttf": {
       "full_name": "Keiland Mono",
-      "sha256": "1b49dc0defeed8bf4e9a16471f0a5e4f6db1c5ca099bc6e36b23b41d51b934a2",
+      "sha256": "2e3af57e9fed08b2107e8a19b1d8dde6bf6819145969e18ab0826aafa8ca917d",
       "unicode_mappings": 95,
       "glyphs": 96,
       "advance_count": 1,
@@ -18,7 +18,7 @@
     },
     "Keiland-Regular.ttf": {
       "full_name": "Keiland Regular",
-      "sha256": "e6f63f0c4ef0746065199782df88d5342c0efc1d5cba21c99b1d974bc7cb3bed",
+      "sha256": "5c9e84554f8329c7fe221dff439505e85894a9a039d7f46076876870063dc866",
       "unicode_mappings": 95,
       "glyphs": 96,
       "advance_count": 80,
@@ -34,7 +34,7 @@
     },
     "Keiland-Bold.ttf": {
       "full_name": "Keiland Bold",
-      "sha256": "65e139d03b129f3aabe7bd46b75f642a4557a40c873ad92c607711562df951b1",
+      "sha256": "afa8157d872aafb2470fb3c8a3be98302ad641c5ee770b2b092d28e3ad4a12a9",
       "unicode_mappings": 95,
       "glyphs": 96,
       "advance_count": 80,
@@ -55,6 +55,32 @@
   "bold_components_and_counters_preserved": true,
   "bold_H_target_ratio": 0.159,
   "raqm_layout_checks_performed": true,
-  "rebuild_sha256_matches": true,
-  "original_font1_source_files_unchanged": true
+  "q_height_revision": {
+    "reference_version": "0.300",
+    "version": "0.301",
+    "reference_commit": "2730f3b59",
+    "fonts": {
+      "Keiland-Mono.ttf": {
+        "q_vertical_shift_font_units": -176,
+        "q_shape_and_metrics_preserved": true,
+        "other_95_glyphs_and_metrics_unchanged": true,
+        "kerning_unchanged": true
+      },
+      "Keiland-Regular.ttf": {
+        "q_vertical_shift_font_units": -176,
+        "q_shape_and_metrics_preserved": true,
+        "other_95_glyphs_and_metrics_unchanged": true,
+        "kerning_unchanged": true
+      },
+      "Keiland-Bold.ttf": {
+        "q_vertical_shift_font_units": -170,
+        "q_shape_and_metrics_preserved": true,
+        "other_95_glyphs_and_metrics_unchanged": true,
+        "kerning_unchanged": true
+      }
+    },
+    "preserved_source_asset_count": 385,
+    "rebuild_sha256_matches": true,
+    "review": "q-height-review.png"
+  }
 }

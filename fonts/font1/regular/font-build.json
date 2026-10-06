@@ -1,9 +1,9 @@
 {
   "family": "Font1",
   "style": "Regular",
-  "version": "0.202",
+  "version": "0.203",
   "font": "Font1-Regular.ttf",
-  "font_sha256": "b3f7533f80a686782ebd544f9bf950b5b83b6d79ac4e9b8824f4a41ff07eb1b3",
+  "font_sha256": "ab15ef424a1c749a794ac2b95f553489f8632154ba441b6a2c41dc5ca700443f",
   "units_per_em": 2048,
   "advance_units": 1229,
   "ascent_units": 1638,
@@ -534,7 +534,7 @@
       "codepoint": "U+0071",
       "glyph": "q",
       "file": "svg/U0071.svg",
-      "sha256": "6aeb7a6e865ac8c82d11c0f5b20e03e5943babbaa695450b53b3f67c646359fc"
+      "sha256": "f930f31858e51441c412898b02142305a7c66b303ac219bd4b9e52b33f284c63"
     },
     {
       "codepoint": "U+0072",
@@ -617,7 +617,7 @@
   ],
   "lowercase_construction_reference": {
     "file": "lowercase-strokes.json",
-    "sha256": "4bcc4a88f994eb2e81627f16df6c54f13ae5b7b572b28806ca157e6e116bef17",
+    "sha256": "1ca562f3dbee0996b51ca19c455a77b1b5dc16f5d0dee1202328c75b6be683fc",
     "note": "Centerline source; editable filled SVGs remain the direct TTF inputs",
     "outline_trace_tolerance_pixels": 0.2
   }

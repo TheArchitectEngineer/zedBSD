@@ -292,6 +292,13 @@ struct content_run {
 	size_t scan_saves;
 	int scan_pending;
 	struct pdf_scan_object scan_object;
+	int scan_show_started;
+	double scan_show_start[6];
+	size_t scan_show_from;
+	unsigned scan_show_flags;
+	size_t scan_drawn;
+	size_t scan_marked;
+	size_t scan_marked_at_text;
 };
 
 /*
@@ -477,6 +484,10 @@ static void scan_form(struct content_run *run, struct pdf_object *form);
 static void scan_operator(struct content_run *run, enum content_operator code, size_t start, size_t keyword, size_t end, const unsigned char *data);
 static void scan_corners(const double matrix[6], const double corners[8], double quad[8]);
 static int scan_add_stray(struct pdf_scan *scan, size_t offset);
+static void scan_string(struct content_run *run, const unsigned char *bytes, size_t length);
+static void scan_show(struct content_run *run, size_t start, size_t end, const unsigned char *data);
+static void scan_text_operator(struct content_run *run, enum content_operator code, size_t keyword, const unsigned char *data);
+static int scan_grow(void **items, size_t *capacity, size_t count, size_t size);
 static double clamp_unit(double value);
 
 /*
@@ -596,9 +607,12 @@ pdf_scan_free(
 	if (scan == NULL)
 		return;
 
-	/* The objects and the stray Q, then nothing. */
+	/* The objects, the stray Q, the shown strings, their characters and the text objects' clips, then nothing. */
 	free(scan->objects);
 	free(scan->stray_restores);
+	free(scan->shows);
+	free(scan->characters);
+	free(scan->block_clips);
 	memset(scan, 0, sizeof(*scan));
 }
 
@@ -969,8 +983,14 @@ run_content(
 		operator_start = token_start;
 		if (run->operand_count > 0)
 			operator_start = first_operand;
-		if (scanned)
+		if (scanned) {
 			run->scan_pending = 0;
+			run->scan_show_started = 0;
+			run->scan_show_from = run->scan->character_count;
+			run->scan_show_flags = 0U;
+		}
+
+		/* The operator. */
 		execute(run, code, &lexer, resources);
 		run->operand_count = 0;
 
@@ -2870,6 +2890,7 @@ show_string(
 	int draws;
 	int adds;
 	int vertical;
+	int scanned;
 	int error;
 
 	/* A string without a usable font is not drawn and does not move. */
@@ -2878,6 +2899,11 @@ show_string(
 		run->flags |= PDF_DISPLAY_SKIPPED;
 		return;
 	}
+
+	/* The editor's scan notes where the page's own string starts and what it says (ws175-p002b). */
+	scanned = scan_here(run);
+	if (scanned)
+		scan_string(run, bytes, length);
 
 	/* A substituted or unreadable font marks the list; a vertical one moves down. */
 	run->flags |= pdf_font_status(state->font);
@@ -4539,6 +4565,11 @@ scan_operator(
 	if (code == OP_TEXT_END)
 		scan->in_text = 0;
 
+	/* The text: the shown strings, the text objects, the marked content and what is drawn between (p002b). */
+	scan_text_operator(run, code, keyword, data);
+	if (code == OP_TEXT_SHOW || code == OP_TEXT_SHOW_ARRAY || code == OP_TEXT_NEXT_SHOW || code == OP_TEXT_SPACED_SHOW)
+		scan_show(run, start, end, data);
+
 	/* Only an operator that drew an object of the page goes on. */
 	if (!run->scan_pending)
 		return;
@@ -4617,5 +4648,285 @@ scan_add_stray(
 	/* Succeeded: the Q is noted. */
 	scan->stray_restores[scan->stray_count] = offset;
 	scan->stray_count++;
+	return 0;
+}
+
+/*
+ * Notes a string of the page's own shown string as it starts: the text
+ * matrix before its first glyph (the first string of a TJ), and the
+ * characters its codes stand for.  A failure of memory fails the scan.
+ */
+static void
+scan_string(
+	struct content_run *run,
+	const unsigned char *bytes,
+	size_t length)
+{
+	struct content_state *state;
+	struct pdf_scan *scan;
+	uint32_t characters[8];
+	unsigned code;
+	size_t position;
+	size_t used;
+	size_t count;
+	size_t at;
+	int single_byte;
+	int kind;
+	int error;
+
+	/* The first glyph's place. */
+	state = &run->stack[run->depth];
+	scan = run->scan;
+	if (!run->scan_show_started) {
+		run->scan_show_started = 1;
+		memcpy(run->scan_show_start, run->text_matrix, sizeof(run->scan_show_start));
+	}
+
+	/* The font's kind. */
+	kind = pdf_font_type3(state->font);
+	if (kind)
+		run->scan_show_flags |= PDF_SCAN_SHOW_TYPE3;
+	kind = pdf_font_vertical(state->font);
+	if (kind)
+		run->scan_show_flags |= PDF_SCAN_SHOW_VERTICAL;
+
+	/* Each code's characters. */
+	position = 0;
+	while (position < length) {
+		/* The next code. */
+		used = pdf_font_next_code(state->font, bytes + position, length - position, &code, &single_byte);
+		position += used;
+		error = pdf_font_unicode(run->document, state->font, code, single_byte, characters, sizeof(characters) / sizeof(characters[0]), &count);
+		if (error != 0) {
+			scan->error = error;
+			return;
+		}
+
+		/* Appended; an unknown one is noted. */
+		error = scan_grow((void **)&scan->characters, &scan->character_capacity, scan->character_count + count, sizeof(*scan->characters));
+		if (error != 0) {
+			scan->error = error;
+			return;
+		}
+
+		/* Each character. */
+		for (at = 0; at < count; at++) {
+			if (characters[at] == 0xfffdU)
+				run->scan_show_flags |= PDF_SCAN_SHOW_UNKNOWN;
+			scan->characters[scan->character_count] = characters[at];
+			scan->character_count++;
+		}
+	}
+}
+
+/*
+ * Notes a shown string of the page's own content (Tj, TJ, ', "): its bytes,
+ * its text object, the text matrices before and after it, the state it was
+ * shown in, its characters and the corners of its line.
+ */
+static void
+scan_show(
+	struct content_run *run,
+	size_t start,
+	size_t end,
+	const unsigned char *data)
+{
+	unsigned char digest[SHA256_DIGEST_LENGTH];
+	SHA2_CTX context;
+	struct content_state *state;
+	struct pdf_scan_show *show;
+	struct pdf_scan *scan;
+	double from[6];
+	double to[6];
+	double corners[8];
+	double low;
+	double high;
+	int error;
+
+	/* Room for it. */
+	scan = run->scan;
+	state = &run->stack[run->depth];
+	error = scan_grow((void **)&scan->shows, &scan->show_capacity, scan->show_count + 1U, sizeof(*scan->shows));
+	if (error != 0) {
+		scan->error = error;
+		return;
+	}
+
+	/* Its bytes, its text object and its matrices (an empty string starts and ends where the position is). */
+	show = &scan->shows[scan->show_count];
+	memset(show, 0, sizeof(*show));
+	show->offset = start;
+	show->length = end - start;
+	SHA256Init(&context);
+	SHA256Update(&context, data + start, end - start);
+	SHA256Final(digest, &context);
+	memcpy(show->fingerprint, digest, sizeof(show->fingerprint));
+	show->block = 0;
+	if (scan->block_count > 0)
+		show->block = scan->block_count - 1U;
+	memcpy(show->start, run->text_matrix, sizeof(show->start));
+	if (run->scan_show_started)
+		memcpy(show->start, run->scan_show_start, sizeof(show->start));
+	memcpy(show->end, run->text_matrix, sizeof(show->end));
+	memcpy(show->ctm, state->ctm, sizeof(show->ctm));
+
+	/* The state it was shown in. */
+	show->font = state->font;
+	show->font_size = state->font_size;
+	show->character_spacing = state->character_spacing;
+	show->word_spacing = state->word_spacing;
+	show->horizontal_scale = state->horizontal_scale;
+	show->leading = state->leading;
+	show->rise = state->rise;
+	show->render_mode = state->render_mode;
+	if (state->fill_usable && !state->fill_pattern_space) {
+		memcpy(show->fill, state->fill, sizeof(show->fill));
+		show->fill_known = 1;
+	}
+
+	/* Its characters, what came between it and the shown string before, the marked content within its text object. */
+	show->characters_from = run->scan_show_from;
+	show->characters_count = scan->character_count - run->scan_show_from;
+	show->drawn_before = run->scan_drawn;
+	run->scan_drawn = 0;
+	show->marked_depth = 0;
+	if (run->scan_marked > run->scan_marked_at_text)
+		show->marked_depth = run->scan_marked - run->scan_marked_at_text;
+	show->flags = run->scan_show_flags;
+
+	/* The corners of its line: the text space from a descent to an ascent, from the first glyph's place to the last's end. */
+	low = (-0.2 * show->font_size) + show->rise;
+	high = (0.8 * show->font_size) + show->rise;
+	memcpy(from, show->ctm, sizeof(from));
+	concat_matrix(from, show->start);
+	memcpy(to, show->ctm, sizeof(to));
+	concat_matrix(to, show->end);
+	corners[0] = 0.0;
+	corners[1] = high;
+	corners[2] = 0.0;
+	corners[3] = high;
+	corners[4] = 0.0;
+	corners[5] = low;
+	corners[6] = 0.0;
+	corners[7] = low;
+	show->quad[0] = from[0] * corners[0] + from[2] * corners[1] + from[4];
+	show->quad[1] = from[1] * corners[0] + from[3] * corners[1] + from[5];
+	show->quad[2] = to[0] * corners[2] + to[2] * corners[3] + to[4];
+	show->quad[3] = to[1] * corners[2] + to[3] * corners[3] + to[5];
+	show->quad[4] = to[0] * corners[4] + to[2] * corners[5] + to[4];
+	show->quad[5] = to[1] * corners[4] + to[3] * corners[5] + to[5];
+	show->quad[6] = from[0] * corners[6] + from[2] * corners[7] + from[4];
+	show->quad[7] = from[1] * corners[6] + from[3] * corners[7] + from[5];
+	scan->show_count++;
+
+	/* A string that clips makes its text object one the editor does not change (design.md [H2]). */
+	if (show->render_mode >= 4 && show->block < scan->block_count)
+		scan->block_clips[show->block] = 1U;
+}
+
+/*
+ * Notes the text objects (BT), the marked content (BMC, BDC, EMC) and the
+ * operators that draw or change the graphics state, between which the
+ * lines of adjacent text objects do not join.
+ */
+static void
+scan_text_operator(
+	struct content_run *run,
+	enum content_operator code,
+	size_t keyword,
+	const unsigned char *data)
+{
+	struct pdf_scan *scan;
+	int marked;
+	int error;
+
+	/* A text object: its number, its clip not known yet, the marked content open as it starts. */
+	scan = run->scan;
+	if (code == OP_TEXT_BEGIN) {
+		error = scan_grow((void **)&scan->block_clips, &scan->block_clip_capacity, scan->block_count + 1U, 1U);
+		if (error != 0) {
+			scan->error = error;
+			return;
+		}
+
+		/* The new text object. */
+		scan->block_clips[scan->block_count] = 0U;
+		scan->block_count++;
+		run->scan_marked_at_text = run->scan_marked;
+		return;
+	}
+
+	/* Marked content: BMC and BDC open one, EMC closes one (the interpreter ignores them). */
+	if (code == OP_IGNORED) {
+		marked = memcmp(data + keyword, "BMC", 3) == 0 || memcmp(data + keyword, "BDC", 3) == 0;
+		if (marked)
+			run->scan_marked++;
+		marked = memcmp(data + keyword, "EMC", 3) == 0;
+		if (marked && run->scan_marked > 0)
+			run->scan_marked--;
+		return;
+	}
+
+	/* The operators that draw or change the graphics state (not the text's own). */
+	switch (code) {
+	case OP_SAVE:
+	case OP_RESTORE:
+	case OP_CONCAT:
+	case OP_EXTGSTATE:
+	case OP_STROKE:
+	case OP_CLOSE_STROKE:
+	case OP_FILL:
+	case OP_FILL_EVEN_ODD:
+	case OP_FILL_STROKE:
+	case OP_FILL_STROKE_EVEN_ODD:
+	case OP_CLOSE_FILL_STROKE:
+	case OP_CLOSE_FILL_STROKE_EVEN_ODD:
+	case OP_END_PATH:
+	case OP_GRAY_FILL:
+	case OP_GRAY_STROKE:
+	case OP_RGB_FILL:
+	case OP_RGB_STROKE:
+	case OP_CMYK_FILL:
+	case OP_CMYK_STROKE:
+	case OP_SPACE_FILL:
+	case OP_SPACE_STROKE:
+	case OP_COLOR_FILL:
+	case OP_COLOR_STROKE:
+	case OP_XOBJECT:
+	case OP_INLINE_IMAGE:
+	case OP_SHADING:
+		run->scan_drawn++;
+		break;
+	default:
+		break;
+	}
+}
+
+/* Grows an array of items of a size to hold count of them.  Returns 0 or ENOMEM. */
+static int
+scan_grow(
+	void **items,
+	size_t *capacity,
+	size_t count,
+	size_t size)
+{
+	void *grown;
+	size_t larger;
+
+	/* Room enough already. */
+	if (count <= *capacity)
+		return 0;
+
+	/* Half again, at least the count. */
+	larger = *capacity + *capacity / 2U + 16U;
+	if (larger < count)
+		larger = count;
+	grown = realloc(*items, larger * size);
+	if (grown == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the larger room. */
+	*items = grown;
+	*capacity = larger;
 	return 0;
 }

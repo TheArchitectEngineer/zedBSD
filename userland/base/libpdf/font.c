@@ -191,6 +191,13 @@ struct pdf_font {
 	unsigned outline_points_capacity;
 	unsigned *outline_ends;
 	unsigned outline_ends_capacity;
+	unsigned short code_unicode[256];
+	int has_code_unicode;
+	struct pdf_tounicode *tounicode;
+	int tounicode_read;
+	uint32_t *glyph_unicode;
+	size_t glyph_unicode_count;
+	int glyph_unicode_built;
 };
 
 /*
@@ -230,6 +237,8 @@ static void read_simple_widths(struct pdf_document *document, struct pdf_object 
 static int read_cid_widths(struct pdf_document *document, struct pdf_object *cid_font, struct pdf_font *font);
 static void read_vertical_metrics(struct pdf_document *document, struct pdf_object *cid_font, struct pdf_font *font);
 static int read_cid_map(struct pdf_document *document, struct pdf_object *cid_font, struct pdf_font *font);
+static int font_read_tounicode(struct pdf_document *document, struct pdf_font *font);
+static int font_build_glyph_unicode(struct pdf_font *font);
 static long descriptor_flags(struct pdf_document *document, struct pdf_object *descriptor);
 static int read_number(struct pdf_document *document, struct pdf_object *object, double *number);
 static int name_contains(const struct pdf_object *name, const char *part);
@@ -365,6 +374,33 @@ pdf_font_status(
 }
 
 /*
+ * Tells whether a font is a Type 3 font, whose glyphs are procedures
+ * (ws175-p002b: its text is not changed).
+ */
+int
+pdf_font_type3(
+	const struct pdf_font *font)
+{
+	/* The kind read. */
+	if (font != NULL && font->kind == FONT_KIND_TYPE3)
+		return 1;
+	return 0;
+}
+
+/*
+ * Gives a font's dictionary (its /BaseFont names it to the editor).
+ */
+const struct pdf_object *
+pdf_font_dictionary(
+	const struct pdf_font *font)
+{
+	/* The dictionary it was read from. */
+	if (font == NULL)
+		return NULL;
+	return font->dictionary;
+}
+
+/*
  * Reports whether a font writes vertically (Identity-V).
  */
 int
@@ -402,6 +438,82 @@ pdf_font_next_code(
 	*code = ((unsigned)bytes[0] << 8) | bytes[1];
 	*single_byte = 0;
 	return 2;
+}
+
+/*
+ * Finds the characters one code of a shown string stands for (ws175-p002b,
+ * design.md section 3.2; PDF 1.7 section 9.10.2): the font's /ToUnicode
+ * CMap, else a simple font's encoding and /Differences, else a composite
+ * font's embedded TrueType program's character map read backward (its
+ * CID's glyph), else U+FFFD.  single_byte is the code's length as
+ * pdf_font_next_code gave it.  Up to capacity characters; count is how
+ * many (one at least).  Returns 0, EINVAL, or ENOMEM.
+ */
+int
+pdf_font_unicode(
+	struct pdf_document *document,
+	struct pdf_font *font,
+	unsigned code,
+	int single_byte,
+	uint32_t *characters,
+	size_t capacity,
+	size_t *count)
+{
+	unsigned glyph;
+	unsigned length;
+	int error;
+
+	/* Refuses missing results. */
+	if (font == NULL || characters == NULL || count == NULL || capacity == 0)
+		return EINVAL;
+
+	/* The /ToUnicode CMap, read the first time. */
+	if (!font->tounicode_read) {
+		font->tounicode_read = 1;
+		error = font_read_tounicode(document, font);
+		if (error == ENOMEM)
+			return ENOMEM;
+	}
+
+	/* The CMap's entry of the code, by its byte length. */
+	length = 2U;
+	if (single_byte)
+		length = 1U;
+	if (font->tounicode != NULL) {
+		error = pdf_tounicode_lookup(font->tounicode, code, length, characters, capacity, count);
+		if (error == 0 && *count > 0)
+			return 0;
+	}
+
+	/* A simple font's encoding. */
+	if (font->kind != FONT_KIND_COMPOSITE && font->has_code_unicode && code < 256U && font->code_unicode[code] != 0U) {
+		characters[0] = font->code_unicode[code];
+		*count = 1;
+		return 0;
+	}
+
+	/* A composite font's TrueType program, its character map read backward. */
+	if (font->kind == FONT_KIND_COMPOSITE && font->face != NULL) {
+		if (!font->glyph_unicode_built) {
+			font->glyph_unicode_built = 1;
+			error = font_build_glyph_unicode(font);
+			if (error == ENOMEM)
+				return ENOMEM;
+		}
+
+		/* The CID's glyph, and the glyph's character. */
+		glyph = composite_glyph(font, code);
+		if (glyph < font->glyph_unicode_count && font->glyph_unicode[glyph] != 0U) {
+			characters[0] = font->glyph_unicode[glyph];
+			*count = 1;
+			return 0;
+		}
+	}
+
+	/* Nothing known. */
+	characters[0] = 0xfffdU;
+	*count = 1;
+	return 0;
 }
 
 /*
@@ -756,6 +868,10 @@ load_simple(
 	} else {
 		read_encoding(document, dictionary, symbolic, NULL, unicode);
 	}
+
+	/* The codes' characters are kept for the text the editor reads (ws175-p002b). */
+	memcpy(font->code_unicode, unicode, sizeof(font->code_unicode));
+	font->has_code_unicode = 1;
 
 	/* Reads the embedded program, when it is one libtruetype reads. */
 	foreign = 0;
@@ -3032,5 +3148,83 @@ free_font(
 	free(font->points);
 	free(font->outline_points);
 	free(font->outline_ends);
+	pdf_tounicode_free(font->tounicode);
+	free(font->glyph_unicode);
 	free(font);
+}
+
+/*
+ * Reads a font's /ToUnicode CMap, when it has one that can be decoded.
+ * Returns 0 (a CMap that cannot be read leaves the font without one) or
+ * ENOMEM.
+ */
+static int
+font_read_tounicode(
+	struct pdf_document *document,
+	struct pdf_font *font)
+{
+	struct pdf_object *stream;
+	const unsigned char *data;
+	unsigned char *owned;
+	size_t size;
+	int dct;
+	int error;
+
+	/* The stream the font's dictionary names. */
+	if (document == NULL || font->dictionary == NULL)
+		return 0;
+	error = pdf_reader_resolve_key(document, font->dictionary, "ToUnicode", &stream);
+	if (error != 0 || stream->type != PDF_OBJECT_STREAM)
+		return 0;
+
+	/* Its decoded bytes, read as a CMap. */
+	error = pdf_filter_decode(document, stream, 0, &data, &size, &owned, &dct);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0)
+		return 0;
+	error = pdf_tounicode_parse(data, size, &font->tounicode);
+	free(owned);
+	if (error == ENOMEM)
+		return ENOMEM;
+
+	/* Read (or not a CMap: left without one). */
+	return 0;
+}
+
+/*
+ * Reads a composite font's TrueType character map backward: for each
+ * character of the Basic Multilingual Plane the program maps, its glyph's
+ * character (the first, from U+0020 up, then the C0 controls left out).
+ * Returns 0 or ENOMEM.
+ */
+static int
+font_build_glyph_unicode(
+	struct pdf_font *font)
+{
+	uint32_t *table;
+	unsigned character;
+	unsigned glyph;
+	size_t count;
+
+	/* Room for every glyph a 16-bit index names. */
+	count = 65536U;
+	table = calloc(count, sizeof(*table));
+	if (table == NULL)
+		return ENOMEM;
+
+	/* Each character, its glyph's first one kept. */
+	for (character = 0x20U; character <= 0xffffU; character++) {
+		/* Not the surrogates, which no character map names. */
+		if (character >= 0xd800U && character <= 0xdfffU)
+			continue;
+		glyph = truetype_glyph_index(font->face, character);
+		if (glyph != 0U && glyph < count && table[glyph] == 0U)
+			table[glyph] = character;
+	}
+
+	/* Succeeded: the table. */
+	font->glyph_unicode = table;
+	font->glyph_unicode_count = count;
+	return 0;
 }
