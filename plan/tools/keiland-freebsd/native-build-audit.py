@@ -39,7 +39,11 @@ assert len(libraries) == 10
 assert not (stage / 'lib/libvulkan.so').exists()
 assert (stage / 'include/libseat.h').is_file()
 assert (stage / 'include/wayland-client.h').is_file()
-assert (stage / 'include/keiland.h').is_file()
+assert (stage / 'include/keiland/keiland.h').is_file()
+assert (stage / 'include/truetype/truetype.h').is_file()
+# The headers in their own directories since ws131-p026: <keiland/keiland.h>, <truetype/truetype.h>.
+assert not (stage / 'include/keiland.h').exists()
+assert not (stage / 'include/truetype.h').exists()
 # One public header of libkeiland since ws131-p023: keiui.h and keiland-ui.h joined keiland.h.
 assert not (stage / 'include/keiui.h').exists()
 assert not (stage / 'include/keiland-ui.h').exists()

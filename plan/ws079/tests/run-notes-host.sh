@@ -20,7 +20,8 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 # ws079-p007: the reader decodes cross-reference and object streams through filter.c and libz-compat.
 # ws175-p007: the edits of the PDF's objects (edit.c) use libpdf's editor, so the whole of libpdf (with libjpeg-compat
 # and libtruetype) is built.

@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* The kinds of touch input the window queues. */
 #define FM_TOUCH_DOWN		0U

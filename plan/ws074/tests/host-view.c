@@ -6,7 +6,7 @@
  */
 
 /*
- * ws074-p056: the host test of the view's input (<browser.h>): the keys
+ * ws074-p056: the host test of the view's input (<browser/browser.h>): the keys
  * with the DOM's names and their default actions (scrolling, Tab and the
  * focus ring, Enter on a link, the history's keys, reloading), the wheel,
  * the pointer's buttons and clicks, and the program's focus, on
@@ -20,7 +20,7 @@
  * per failed check and a summary; -v prints the console too.
  */
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <stdio.h>
 #include <stdlib.h>

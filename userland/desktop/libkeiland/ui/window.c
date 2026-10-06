@@ -25,7 +25,7 @@
 
 #include "userland/desktop/libwayland/content-type-v1-client-protocol.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <poll.h>

@@ -15,7 +15,7 @@
  *   host-widgets FONT FALLBACK OUTPUT-PREFIX
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <math.h>
 #include <stdio.h>

@@ -17,7 +17,7 @@
  *   plan/ws089/tests/run-host-instance.sh
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <poll.h>

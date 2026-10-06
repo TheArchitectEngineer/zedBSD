@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 /* The largest bitmap one glyph may take in the dump. */
 #define DUMP_BITMAP_MAX ((size_t)4096 * 4096)

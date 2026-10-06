@@ -17,7 +17,7 @@ asan)
 *) echo 'usage: run.sh [plain|asan]' >&2; exit 2 ;;
 esac
 BROWSER_HOST_BUILD="$base" sh plan/ws074/tests/host-build.sh "$variant"
-"$cc" $flags -Iuserland/desktop/keiland -o "$base/$variant/component-client" \
+"$cc" $flags -Iuserland/desktop/include -o "$base/$variant/component-client" \
     plan/tools/browser-component/client.c -L"$base/$variant" -Wl,-rpath,'$ORIGIN' \
     -Wl,--export-dynamic-symbol=strdup,--export-dynamic-symbol=vkCreateFramebuffer \
     -l:libbrowser.so -lvulkan -ldl

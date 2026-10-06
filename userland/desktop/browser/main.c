@@ -21,7 +21,7 @@
  * start page the package installs (MAIN_START_PAGE).  The headless
  * modes (added with the engine, one per phase) draw or dump a page, or run
  * a script, without a window; the tests use them on the host and in the
- * guest.  The modes that load a page do it through a view (<browser.h>),
+ * guest.  The modes that load a page do it through a view (<browser/browser.h>),
  * as the window does: the page's scripts run, its timers run on a virtual
  * clock up to --settle-ms (5000 by default, browser_view_settle), and the page is
  * drawn with the CPU (browser_view_draw_pixels), with the GPU into an
@@ -34,7 +34,7 @@
  * view's loader, and waits for them; without it they are read at once.
  *
  * Since ws074-p057 the engine is libbrowser.so and the program uses it
- * through <browser.h> only: the headless modes through a view, the
+ * through <browser/browser.h> only: the headless modes through a view, the
  * script modes (--js, --dump=ast, --dump=code) through the library's
  * script tools, and the window through shell/.
  * --ca-file (in any mode that loads a page) trusts the CA certificates of
@@ -43,7 +43,7 @@
 
 #include "shell/shell.h"
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include "userland/desktop/paths.h"
 

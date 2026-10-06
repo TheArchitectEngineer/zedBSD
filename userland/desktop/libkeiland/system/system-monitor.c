@@ -17,7 +17,7 @@
  * only then).  The info comes the same way, ended by info_done.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 

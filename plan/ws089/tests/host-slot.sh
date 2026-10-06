@@ -7,8 +7,10 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws089-host
 mkdir -p "$out/include" "$out/obj"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
-ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
+mkdir -p "$out/include/keiland"
+ln -sf "$(pwd)/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -Iuserland/desktop/settings -I."
 "$cc" $flags -c userland/desktop/settings/network.c -o "$out/obj/slot-network.o"

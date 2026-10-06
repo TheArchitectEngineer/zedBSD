@@ -24,7 +24,7 @@ else
 	set -- gcc -std=gnu17 -O2 -Wall -Wextra -Werror -Wno-format-truncation -D_GNU_SOURCE
 fi
 timeout 120 "$@" -DKEILAND_DATADIR='"/opt/keiland/share"' -DKEILAND_BINDIR='"/opt/keiland/bin"' \
-	-I. -Iuserland/desktop/keiland -I"$include" \
+	-I. -Iuserland/desktop/include -I"$include" \
 	plan/ws128/tests/terminal-p010.c userland/desktop/terminal/screen.c \
 	userland/desktop/terminal/width.c \
 	-o "$out/terminal-p010" || { echo "build: FAIL"; exit 1; }

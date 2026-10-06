@@ -13,7 +13,7 @@ mkdir -p "$out"
 cflags="--target=x86_64-unknown-zedbsd --sysroot=$sysroot -m64 -march=x86-64 -mno-red-zone
 	-DHAL_ARCH_AMD64 -DKERN_USER_ABI_LP64 -nostdinc -isystem $sysroot/usr/include
 	-ffreestanding -fno-pic -fno-pie -fno-stack-protector -O1 -Wall -Wextra -Werror
-	-I. -Iuserland/desktop/keiland"
+	-I. -Iuserland/desktop/include"
 link() {
 	"$clang" --target=x86_64-unknown-zedbsd --sysroot="$sysroot" -m64 -nostdlib -static \
 		-Wl,--build-id=none -Wl,-T,"$sysroot/usr/lib/zedbsd/amd64/user.ld" \

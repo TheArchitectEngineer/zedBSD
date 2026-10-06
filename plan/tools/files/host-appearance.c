@@ -11,7 +11,7 @@
  * changed).
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* Reports the light appearance. */
 unsigned

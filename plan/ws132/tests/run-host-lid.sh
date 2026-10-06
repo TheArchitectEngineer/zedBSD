@@ -7,7 +7,8 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws132-host-lid}
 mkdir -p "$out/include"
-cp userland/desktop/keiland/keiland.h "$out/include/keiland.h"
+mkdir -p "$out/include/keiland"
+cp userland/desktop/include/keiland/keiland.h "$out/include/keiland/keiland.h"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -I. -I"$out/include" \
 	plan/ws132/tests/host-lid.c userland/desktop/wayland/lid.c userland/desktop/wayland/backend-host.c \

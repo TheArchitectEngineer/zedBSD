@@ -8,7 +8,7 @@ Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q673（p012 と同じ Queue の続き、Q1 の指示）
 依存: p012 cleared
 目安: 3〜4h（1 Queue）。実行者: Q1 が割り当てる（high）
-所有 path: `userland/desktop/libkeiland/ui/`、`userland/desktop/keiland/`（新しい `keiland-ui.h`、互換の `keiui.h`、`keiland.h` の include）、`plan/ws131/tools/rename-map.py`、`plan/ws131/`
+所有 path: `userland/desktop/libkeiland/ui/`、`userland/desktop/include/`（新しい `keiland-ui.h`、互換の `keiui.h`、`keiland.h` の include）、`plan/ws131/tools/rename-map.py`、`plan/ws131/`
 
 ## 目的と結果
 
@@ -49,7 +49,7 @@ Queue: q673（p012 と同じ Queue の続き、Q1 の指示）
   3. 互換の `keiui.h`（`#include <keiland.h>`、`KUI_VERSION 12U`、旧名 339 の `#define kui_X kl_X` の列、「generated … do not edit」の印）
   を書く。印のある keiui.h には二度と走らない。`rename-map.py check-ui` が互換の macro の行き先が全て keiland-ui.h にあり、keiland-ui.h の code に旧名が無いことを確かめる（PASS、339）。
 - 例外の扱い: `kui_edit_fn` → `kl_window_edit_fn`、`kui_keyboard_inset_fn` → `kl_window_keyboard_inset_fn`、`KUI_EDIT_*`・`KUI_KEYBOARD_INSET_*` は keiland-ui.h に `KL_*` を一つずつ（`KEILAND_*` は p014 まで keiland.h に残る）。`kui_version` は除き、`ui/version.c` を消した（Makefile 3 本と host 試験の source の一覧からも）。
-- `keiland.h` の最後で `#include <keiland-ui.h>`。`exports.py` は keiland.h と keiland-ui.h を読む。FreeBSD の公開の header の表に `keiland-ui.h`（`keiui.h` も残す）。zedBSD の sysroot は `userland/desktop/keiland` の全 file を拾うので toolchain の変更は要らない。
+- `keiland.h` の最後で `#include <keiland-ui.h>`。`exports.py` は keiland.h と keiland-ui.h を読む。FreeBSD の公開の header の表に `keiland-ui.h`（`keiui.h` も残す）。zedBSD の sysroot は `userland/desktop/include` の全 file を拾うので toolchain の変更は要らない。
 - host の試験: keiland.h を include の directory に写す・link する 12 本に keiland-ui.h も（ws081 の 6 本・ws089 の 2 本・ws100・ws131・ws128・files の host-build、ws090・ws102・keiui・textedit の 6 本）。内部の header だけを include していた `host-chooser.c`・`host-inset.c` に `#include <keiui.h>`。`host-draw.c` の `kui_version()` の確かめを除いた（12/12）。
 - 古い試験の直し（main c21f9ab の素の tree でも失敗、WS134 の sysmon の追加の後）: `plan/ws131/tests/host-system.sh` に `wayland/sysmon.c`、`host-system.c` に monitor の backend の偽物（open は NULL、他は ENOTSUP）と `zwl_milliseconds`、能力の期待に `KL_SYSTEM_HAS_MONITOR`。
 

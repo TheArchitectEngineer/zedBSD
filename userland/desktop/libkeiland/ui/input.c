@@ -12,7 +12,7 @@
  * Terminal, PDF Viewer and the file chooser each carried a copy of.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* How many codes the character tables cover (up to the space bar). */
 #define INPUT_KEYS		58U

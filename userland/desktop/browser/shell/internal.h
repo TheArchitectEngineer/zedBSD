@@ -24,7 +24,7 @@
 #include "shell/shell.h"
 #include "shell/touch.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* How many descriptors of the network the main loop polls at most besides the compositor's. */
 #define SHELL_NET_FDS		64U

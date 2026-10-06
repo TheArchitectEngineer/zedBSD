@@ -48,7 +48,8 @@ ln -sf "$(pwd)/include/libc/sha2.h" "$out/include/sha2.h"
 # ws079-p008: the security handler (crypt.c) uses the C library's MD5, which openbsd-digest.c has with SHA-1.
 ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 
 # The substitute fonts: sans, serif and mono in four styles, from Liberation.
 liberation=/usr/share/fonts/truetype/liberation

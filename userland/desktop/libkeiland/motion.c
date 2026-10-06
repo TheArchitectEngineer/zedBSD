@@ -21,7 +21,7 @@
  * are in the design and its host comparison, plan/ws081/tests.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <math.h>

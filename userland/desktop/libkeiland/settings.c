@@ -24,7 +24,7 @@
  * the system (WS131 p010).
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 

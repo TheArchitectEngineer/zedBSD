@@ -13,7 +13,7 @@
  *   host-input
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <math.h>
 #include <stdio.h>

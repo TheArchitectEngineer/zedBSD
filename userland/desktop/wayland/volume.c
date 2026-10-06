@@ -41,7 +41,7 @@
 #include "glass.h"
 #include "titlebar.h"
 #include "settings-store.h"
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 

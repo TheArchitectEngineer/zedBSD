@@ -15,7 +15,7 @@
 
 #include "files.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* The light appearance's colours. */
 static const struct fm_palette palette_light = {

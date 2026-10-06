@@ -23,7 +23,7 @@ popup の描画と動き・× と click・全画面と lock・system の通知�
 
 ## 実装（2026-10-06 P2）
 
-- protocol: `userland/desktop/keiland/kl-system-protocol.h`（`KL_SYSTEM_MANAGER_VERSION` 13、`GET_NOTIFY` 9、`CAPABILITY_NOTIFY` 0x400、
+- protocol: `userland/desktop/include/kl-system-protocol.h`（`KL_SYSTEM_MANAGER_VERSION` 13、`GET_NOTIFY` 9、`CAPABILITY_NOTIFY` 0x400、
   request DESTROY/POST/WITHDRAW、event POSTED/ACTIVATED/CLOSED/RESULT、flag URGENT/ACTION、reason DISMISSED/EXPIRED/CLEARED/WITHDRAWN）。
 - compositor:
   - `userland/desktop/wayland/notify.h`・`notify.c`: 純粋な model（server を知らない。host で単独に試せる）。post・withdraw・show_next・hide・dismiss・clear・shown・log（新しい順）・waiting・find。

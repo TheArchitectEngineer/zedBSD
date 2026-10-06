@@ -11,7 +11,7 @@ The [approved partial scope](q588-approved-scope.md) determines edit ownership.
 SHA256, git blob, line count, original path, source origin commits, follow-up
 commits, ownership and manual scope. The inventory unions non-merge commits
 recorded by WS094 Phases and follows the public header to
-`userland/desktop/keiland/keiland.h`. Commit `cec34d3e` is a later WS104 relocation,
+`userland/desktop/include/keiland/keiland.h`. Commit `cec34d3e` is a later WS104 relocation,
 not the origin of every desktop source it touched; treating it as an origin would
 incorrectly import unrelated applications. Six WS094 shell test runners and eight current native Makefiles are
 included as supporting source-registration context.

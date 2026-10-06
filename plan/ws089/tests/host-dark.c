@@ -21,7 +21,7 @@
  * counted.  Last line: HOST-DARK PASS.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/libkeiland/ui/internal.h"
 #include "userland/desktop/settings/settings.h"

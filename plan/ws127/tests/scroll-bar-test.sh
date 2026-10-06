@@ -6,6 +6,6 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=build/ws127-host
 mkdir -p "$out"
-${CC:-cc} -O2 -g -Wall -Wextra -Werror -Iuserland/desktop/keiland -o "$out/scroll-bar-test" \
+${CC:-cc} -O2 -g -Wall -Wextra -Werror -Iuserland/desktop/include -o "$out/scroll-bar-test" \
 	plan/ws127/tests/scroll-bar-test.c userland/desktop/libkeiland/ui/scroll-bar.c -lm
 timeout 60 "$out/scroll-bar-test"

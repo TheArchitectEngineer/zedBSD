@@ -12,7 +12,7 @@
  *   sh plan/ws127/tests/scroll-bar-test.sh
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <math.h>
 #include <stdio.h>

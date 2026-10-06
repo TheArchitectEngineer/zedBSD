@@ -25,7 +25,7 @@
 #ifndef CALENDAR_RENDER3D_H
 #define CALENDAR_RENDER3D_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <stddef.h>
 #include <stdint.h>

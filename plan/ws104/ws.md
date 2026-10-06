@@ -13,7 +13,7 @@ Resume point: 受け入れ A1〜A6 を確認して完了。Linux の実装は [W
 ## 目的と成果
 
 Keiland の OS に依存する処理を OS ごとの source module に閉じ、zedBSD の振る舞いを保った。
-公開 header は `userland/desktop/keiland/`、libkeiland の network / audio と compositor の GPU / evdev / session は各 package の `zedbsd/` に置いた。
+公開 header は `userland/desktop/include/`、libkeiland の network / audio と compositor の GPU / evdev / session は各 package の `zedbsd/` に置いた。
 compositor の共通 code は Vulkan image と memory を受け取り、GPU・入力・OS の API は `zwl-gpu.h`・`zwl-input.h`・`zwl-os.h` に宣言した。
 install path は `userland/desktop/paths.h` の 4 macro で指定する。公開版は 21、Settings は `keiland_audio_available()` で audiod の有無を調べる。
 

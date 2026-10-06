@@ -2942,7 +2942,7 @@ void kl_window_select(struct kl_window *window, const char *text, size_t length)
  * start or end; a view that does not scroll stays).  The application may
  * hear the inset first: its callback returns 1 when it took care of it
  * itself (the default is skipped), 0 to keep the default.  The reasons are
- * KL_KEYBOARD_INSET_* of <keiland.h> (one definition since WS131 p014).
+ * KL_KEYBOARD_INSET_* of <keiland/keiland.h> (one definition since WS131 p014).
  */
 typedef int (*kl_window_keyboard_inset_fn)(void *data, int right, int bottom, unsigned reason);
 void kl_window_on_keyboard_inset(struct kl_window *window, kl_window_keyboard_inset_fn callback, void *data);
@@ -2962,7 +2962,7 @@ void kl_window_keyboard_inset(const struct kl_window *window, int *right, int *b
  * selection, undo and redo are taken to be there and paste follows the
  * clipboard.  The application may hear an operation first: its callback
  * returns 1 when it carried it out itself (the default is skipped).  The
- * operations and the state's bits are KL_EDIT_* of <keiland.h> (one
+ * operations and the state's bits are KL_EDIT_* of <keiland/keiland.h> (one
  * definition since WS131 p014).
  */
 typedef int (*kl_window_edit_fn)(void *data, unsigned operation);
@@ -3207,7 +3207,7 @@ int kl_window_focus_control(struct kl_window *window, uint32_t id);
  *
  * Tabs: the titlebar shows the table given (count 0 takes them away, and
  * the titlebar shows the controls again, or the menu): each tab's ID (not
- * 0), title and KL_TAB_* flags of <keiland.h>, with KL_TABS_* options.  A
+ * 0), title and KL_TAB_* flags of <keiland/keiland.h>, with KL_TABS_* options.  A
  * tab chosen, its close button or the new tab's button comes as a
  * KL_WINDOW_TAB input: KL_WINDOW_TAB_* in code, the tab's ID in id (0 for
  * a new one).

@@ -11,14 +11,14 @@
  *
  * main.c hands the window mode here.  The host tests build the engine
  * without this directory and supply their own shell_run that refuses.
- * The shell and main.c use the engine through <browser.h> only (the
+ * The shell and main.c use the engine through <browser/browser.h> only (the
  * engine is libbrowser.so, ws074-p057).
  */
 
 #ifndef KEILAND_BROWSER_SHELL_H
 #define KEILAND_BROWSER_SHELL_H
 
-#include <browser.h>
+#include <browser/browser.h>
 
 /* Marks a parameter a function has to take but does not use (the engine's base.h has the same). */
 #ifndef UNUSED_PARAMETER

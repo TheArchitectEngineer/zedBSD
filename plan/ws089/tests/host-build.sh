@@ -17,8 +17,10 @@ mkdir -p "$out/include" "$out/obj"
 # host-wallpaper.sh links the objects named in objects.list, not every obj/*.o, so objects of an earlier layout (as
 # shared-audio.o before ws131-p004) left in obj/ are not linked again (2026-10-06 user: deleting is Q1's step, so
 # this script removes nothing).
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
-ln -sf "$(pwd)/userland/desktop/keiland/keiland.h" "$out/include/keiland.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
+mkdir -p "$out/include/keiland"
+ln -sf "$(pwd)/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src -I."

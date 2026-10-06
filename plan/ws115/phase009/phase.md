@@ -34,7 +34,7 @@ Event ws115-beta1-plan-20261002: 2026-10-02 計画担当が依存 package の移
 
 ## q613-i01 の結果（2026-10-03、P3）
 
-承認: Q1 の継続 dispatch（q613、時限 4h）。base は main 396756c61（前回統合済み 581021c3e）。所有 path に `userland/desktop/keiland/wayland/`（libwayland-client の公開 header）を Q1 が加えた（2026-10-02、方針は追加だけ）。compositor の server 側（`userland/desktop/wayland/`、P2）は変えていない。
+承認: Q1 の継続 dispatch（q613、時限 4h）。base は main 396756c61（前回統合済み 581021c3e）。所有 path に `userland/desktop/include/wayland/`（libwayland-client の公開 header）を Q1 が加えた（2026-10-02、方針は追加だけ）。compositor の server 側（`userland/desktop/wayland/`、P2）は変えていない。
 
 ### commit
 

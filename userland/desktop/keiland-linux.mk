@@ -17,7 +17,7 @@ KEILAND_LINUX_EXTRA_CPPFLAGS ?=
 KEILAND_LINUX_CPPFLAGS := -D_GNU_SOURCE \
 	-DKEILAND_BINDIR='"$(KEILAND_PREFIX)/bin"' -DKEILAND_LIBEXECDIR='"$(KEILAND_PREFIX)/libexec"' \
 	-DKEILAND_DATADIR='"$(KEILAND_PREFIX)/share"' -DKEILAND_SYSCONFDIR='"$(KEILAND_PREFIX)/etc"' \
-	$(KEILAND_LINUX_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/keiland -I$(KEILAND_LINUX_BUILD)/include
+	$(KEILAND_LINUX_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/include -I$(KEILAND_LINUX_BUILD)/include
 # -Wno-format-truncation: gcc's guess that a display string may be cut short (the strings are cut on purpose; D24).
 KEILAND_LINUX_CFLAGS := $(KEILAND_LINUX_OPT) -std=gnu17 -Wall -Wextra -Werror -Wno-format-truncation -fPIC
 KEILAND_LINUX_LDFLAGS := -Wl,-rpath,$(KEILAND_PREFIX)/lib -Wl,--enable-new-dtags \

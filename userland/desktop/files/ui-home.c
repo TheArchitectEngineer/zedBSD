@@ -35,7 +35,7 @@
 #include <sys/statvfs.h>
 #include <time.h>
 #include <unistd.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include "../artwork/mark.h"
 
 

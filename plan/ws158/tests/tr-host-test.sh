@@ -28,7 +28,7 @@ EOF2
 # The shared catalog (CRLF line ends, which are read too).
 printf 'msg\tCopy\tコピー\r\nmsg\tCut\t切り取り\r\n' > "$tmp/locale/ja/keiland.tr"
 cc -std=c89 -Wall -Wextra -Werror -pedantic -Wno-long-long -Wno-overlength-strings -D_GNU_SOURCE \
-	-DKEILAND_DATADIR='"/nonexistent"' -I. -Iuserland/desktop/keiland \
+	-DKEILAND_DATADIR='"/nonexistent"' -I. -Iuserland/desktop/include \
 	-o "$tmp/tr-host-test" plan/ws158/tests/tr-host-test.c userland/desktop/libkeiland/translate.c 2> "$tmp/cc.txt" ||
 	{ cat "$tmp/cc.txt"; echo "tr-host-test: FAIL (build)"; exit 1; }
 [ -s "$tmp/cc.txt" ] && { cat "$tmp/cc.txt"; status=1; }

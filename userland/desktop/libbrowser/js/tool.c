@@ -6,7 +6,7 @@
  */
 
 /*
- * The script tools of the test suites (<browser.h>, browser_script_tool;
+ * The script tools of the test suites (<browser/browser.h>, browser_script_tool;
  * moved out of /bin/browser's main.c when the engine became libbrowser,
  * ws074-p057): a JavaScript file run in a realm of its own with print (the
  * test262 runner's --js), its syntax tree (--dump=ast), or its compiled
@@ -17,7 +17,7 @@
 #include "js/js.h"
 #include "vm/bytecode.h"
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <errno.h>
 #include <stdio.h>

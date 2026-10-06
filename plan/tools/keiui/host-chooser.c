@@ -16,7 +16,7 @@
  *   host-chooser FONT FALLBACK OUTPUT-PREFIX
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include "chooser.h"
 
 #include <errno.h>

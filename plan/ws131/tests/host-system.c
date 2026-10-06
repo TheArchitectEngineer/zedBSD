@@ -25,12 +25,12 @@
  */
 
 #include "userland/desktop/wayland/kwl.h"
-#include "userland/desktop/keiland/kl-system-protocol.h"
+#include "userland/desktop/include/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include "userland/desktop/libkeiland/system/system-private.h"
 #include "userland/desktop/libkeiland/system/system-protocol.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include <wayland-client.h>
 
 #include <errno.h>

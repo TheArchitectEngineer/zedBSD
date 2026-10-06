@@ -20,7 +20,7 @@
  *     G advance lsb xmin ymin xmax ymax | end end ... | x,y,on x,y,on ...
  */
 
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 #include <errno.h>
 #include <stdio.h>

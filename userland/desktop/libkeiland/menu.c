@@ -18,7 +18,7 @@
  * the choices arrive where the application dispatches its window's events.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "ui/internal.h"
 

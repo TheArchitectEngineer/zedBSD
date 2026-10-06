@@ -124,7 +124,7 @@ cc -std=gnu17 -Wall -Wextra -Werror -o build/keiland-linux/stage/opt/keiland/bin
 `dmabuf-forge.c` は我々の Vulkan frontend で本当の64×64のdma-bufをexportし、同じfdの高さだけ4096と偽る。compositorからparamsの`out_of_bounds`（6）を受けた時だけPASS。productionの試験用switchは使わない。
 
 ```sh
-cc -std=gnu17 -Wall -Wextra -Werror -I. -Iuserland/desktop/keiland \
+cc -std=gnu17 -Wall -Wextra -Werror -I. -Iuserland/desktop/include \
   -o build/keiland-linux/stage/opt/keiland/bin/dmabuf-forge \
   plan/tools/keiland-linux/dmabuf-forge.c -Lbuild/keiland-linux/lib \
   -l:libwayland-client.so -l:libvulkan.so.1 \
@@ -160,7 +160,7 @@ WiFiはnetdevのcontrolsocket権限を使う。radioのup/down ioctlはCAP_NET_A
 `dbus-wire.c` / `dbus-wire.py` は host の socketpair で production の D-Bus reader に独立に marshal した frame を送る。fragment / interleave / SCM_RIGHTS、missing fd、oversized body、partial EOF、ancillary overflow の5ケース。普通と ASan/UBSan の両方で確認する。
 
 ```sh
-clang -D_GNU_SOURCE -std=gnu17 -Wall -Wextra -Werror -I. -Iuserland/desktop/keiland \
+clang -D_GNU_SOURCE -std=gnu17 -Wall -Wextra -Werror -I. -Iuserland/desktop/include \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   plan/tools/keiland-linux/dbus-wire.c userland/desktop/libkeiland-backend-linux/dbus-linux.c \
   -o build/keiland-linux/test/dbus-wire

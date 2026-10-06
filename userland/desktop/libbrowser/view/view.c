@@ -6,7 +6,7 @@
  */
 
 /*
- * The view (the component's interface, <browser.h>): the page shown and
+ * The view (the component's interface, <browser/browser.h>): the page shown and
  * its session history, the page
  * being fetched, the scroll, the page's clock and the network, moved out
  * of the window (ws074-p054).  A file or data: page is read at once; an
@@ -42,7 +42,7 @@
 #include "page/page.h"
 #include "paint/gpu.h"
 
-#include <browser.h>
+#include <browser/browser.h>
 
 #include <errno.h>
 #include <math.h>

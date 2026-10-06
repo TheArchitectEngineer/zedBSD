@@ -29,7 +29,7 @@
  * _axis_stop).
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <math.h>

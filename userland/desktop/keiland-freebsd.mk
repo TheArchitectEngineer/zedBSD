@@ -13,7 +13,7 @@ KEILAND_FREEBSD_EXTRA_CPPFLAGS ?=
 KEILAND_FREEBSD_CPPFLAGS := \
 	-DKEILAND_BINDIR='"$(KEILAND_PREFIX)/bin"' -DKEILAND_LIBEXECDIR='"$(KEILAND_PREFIX)/libexec"' \
 	-DKEILAND_DATADIR='"$(KEILAND_PREFIX)/share"' -DKEILAND_SYSCONFDIR='"$(KEILAND_PREFIX)/etc"' \
-	$(KEILAND_FREEBSD_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/keiland \
+	$(KEILAND_FREEBSD_EXTRA_CPPFLAGS) -I. -Iuserland/desktop/include \
 	-I$(KEILAND_FREEBSD_BUILD)/include -I$(KEILAND_FREEBSD_LOCALBASE)/include
 KEILAND_FREEBSD_CFLAGS := $(KEILAND_FREEBSD_OPT) -std=gnu17 -Wall -Wextra -Werror -fPIC
 KEILAND_FREEBSD_LDFLAGS := -Wl,-rpath,$(KEILAND_PREFIX)/lib -Wl,--enable-new-dtags \
@@ -164,9 +164,10 @@ libraries: $(filter %.a %.so %.so.1,$(KEILAND_FREEBSD_ALL))
 
 # FreeBSD install has no GNU -D; create each destination directory explicitly.
 # Libraries and headers an earlier Keiland installed that are part of another now: the widgets joined libkeiland
-# (WS131 p012) and their headers <keiland.h> (WS131 p023).  An install over an earlier one removes them, so that
+# (WS131 p012) and their headers <keiland.h> (WS131 p023), and the headers that moved to their own directories,
+# <keiland/keiland.h> and <truetype/truetype.h> (WS131 p026).  An install over an earlier one removes them, so that
 # nothing loads or includes a stale copy.
-KEILAND_FREEBSD_RETIRED := lib/libkeiui.so include/keiland-ui.h include/keiui.h
+KEILAND_FREEBSD_RETIRED := lib/libkeiui.so include/keiland-ui.h include/keiui.h include/keiland.h include/truetype.h
 
 install: all install-headers
 	@set -e; for f in $(KEILAND_FREEBSD_INSTALL); do \
@@ -176,15 +177,15 @@ install: all install-headers
 	done
 	@set -e; for f in $(KEILAND_FREEBSD_RETIRED); do rm -f "$(DESTDIR)$(KEILAND_PREFIX)/$$f"; done
 
-KEILAND_FREEBSD_PUBLIC_HEADERS := $(shell find userland/desktop/keiland/wayland -type f -name '*.h') \
-	$(addprefix userland/desktop/keiland/,wayland-client.h wayland-client-core.h wayland-client-protocol.h \
+KEILAND_FREEBSD_PUBLIC_HEADERS := $(shell find userland/desktop/include/wayland -type f -name '*.h') \
+	$(addprefix userland/desktop/include/,wayland-client.h wayland-client-core.h wayland-client-protocol.h \
 	wayland-util.h xdg-shell-client-protocol.h primary-selection-unstable-v1-client-protocol.h \
-	tablet-unstable-v2-client-protocol.h truetype.h keiland.h)
+	tablet-unstable-v2-client-protocol.h truetype/truetype.h keiland/keiland.h)
 install-headers:
 	@mkdir -p "$(DESTDIR)$(KEILAND_PREFIX)/include"
 	install -m 0644 include/libc/pdf.h "$(DESTDIR)$(KEILAND_PREFIX)/include/pdf.h"
 	@set -e; for f in $(KEILAND_FREEBSD_PUBLIC_HEADERS); do \
-		rel=$${f#userland/desktop/keiland/}; \
+		rel=$${f#userland/desktop/include/}; \
 		mkdir -p "$(DESTDIR)$(KEILAND_PREFIX)/include/$$(dirname "$$rel")"; \
 		install -m 0644 "$$f" "$(DESTDIR)$(KEILAND_PREFIX)/include/$$rel"; \
 	done

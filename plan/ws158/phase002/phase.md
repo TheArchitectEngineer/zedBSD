@@ -14,7 +14,7 @@ p001 の D1（口）・D2（catalog）・D3（道具）・D4 の一部（言語�
 
 ## 作った物
 
-- **口**（`userland/desktop/keiland/keiland.h`、`KL_VERSION` 37）:
+- **口**（`userland/desktop/include/keiland/keiland.h`、`KL_VERSION` 37）:
   - `kl_tr(english)`・`kl_trc(context, english)`・`kl_trn(singular, plural, count)`: 今の言語の文。catalog に無ければ英語のまま（英語が基準、判断 ①）。
   - `kl_tr_format(out, size, pattern, ...)`: `{1}`〜`{9}` を NULL で終わる文字列の引数で埋める（語順の違い）。`{{` は `{`。切れたら `ERANGE`、引数の無い place は `EINVAL`。
   - `kl_tr_open(domain, language)`・`kl_tr_open_directory(directory, domain, language)`・`kl_tr_close()`・`kl_tr_language()`・`kl_tr_language_code(setting)`（0 `en`、1 `ja`）。
@@ -37,7 +37,7 @@ p001 の D1（口）・D2（catalog）・D3（道具）・D4 の一部（言語�
 - `sh plan/ws158/tests/tr-host-test.sh` → `tr-host-test: PASS`（口 33 項目: 英語、catalog の無い言語、msg・ctx・plural、共通の domain と自分の domain の順、escape、CRLF、壊れた行、後の行、format の place の順・`{{`・切れ・place の欠け、名前の拒否の後の英語、close。道具 15 項目）。
 - build: zedBSD の `dynamic/libkeiland.so`・`bin/settings`・`bin/wayland`（`config-amd64-zdesktop.mk`、BUILD=build/p2-b194）と `make keiland-linux` は rc 0・warning 0。`exports.py --check` OK。style-check 0（translate.c・translate-follow.c・試験）。`git diff --check` OK。
 - settings の host の試験: `plan/tools/settings/host-settings.sh` 38 passed、`host-store.sh` 43 passed（key を足した影響なし）。
-- `tools/i18n/tr.py extract userland/desktop/libkeiland userland/desktop/keiland`: literal でない呼び出しは translate.c の中の 1 つだけ（`kl_trc` が context 無しで `kl_tr` に回す所）。
+- `tools/i18n/tr.py extract userland/desktop/libkeiland userland/desktop/include`: literal でない呼び出しは translate.c の中の 1 つだけ（`kl_trc` が context 無しで `kl_tr` に回す所）。
 
 ## 未実施
 

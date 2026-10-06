@@ -17,7 +17,7 @@
 #ifndef IMAGEVIEW_WINDOW_H
 #define IMAGEVIEW_WINDOW_H
 
-/* The Vulkan header first, so that <keiland.h> declares kl_window_vulkan_surface. */
+/* The Vulkan header first, so that <keiland/keiland.h> declares kl_window_vulkan_surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
 
@@ -26,7 +26,7 @@
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /*
  * The window: libkeiland's window, which queues the input (the menus' and

@@ -24,8 +24,8 @@
  * check and "host-mahora: PASS" or "host-mahora: FAIL".
  */
 
-#include <keiland.h>
-#include <truetype.h>
+#include <keiland/keiland.h>
+#include <truetype/truetype.h>
 
 #include <errno.h>
 #include <stdio.h>

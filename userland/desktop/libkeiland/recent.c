@@ -28,7 +28,7 @@
  * is gone.  Files' Recents empties the list with kl_recent_clear.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <fcntl.h>

@@ -19,7 +19,7 @@
 
 #include "files.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <errno.h>
 #include <fcntl.h>

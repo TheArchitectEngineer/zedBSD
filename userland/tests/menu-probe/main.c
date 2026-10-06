@@ -19,7 +19,7 @@
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/libwayland/xdg-toplevel-menu-v1-client-protocol.h"
 

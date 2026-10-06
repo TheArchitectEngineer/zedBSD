@@ -27,7 +27,7 @@
 
 #include <stdint.h>
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /* The kinds of touch input the window queues. */
 #define TERMINAL_TOUCH_DOWN	0U

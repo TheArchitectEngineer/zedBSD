@@ -8,7 +8,7 @@
 /*
  * The GPU renderer (plan/ws074/design.md §8.2): a display list drawn with
  * Vulkan, one instanced quad per rectangle or glyph, into a framebuffer of
- * the caller's image (the view's target, <browser.h>).  It either submits
+ * the caller's image (the view's target, <browser/browser.h>).  It either submits
  * the drawing itself and waits for it (paint_gpu_draw), or records it into
  * the caller's command buffer (paint_gpu_prepare, then paint_gpu_record).
  * The offscreen image (paint_offscreen) is a device and an image of the

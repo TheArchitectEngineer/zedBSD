@@ -14,7 +14,7 @@
  *   host-inset
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include "internal.h"
 
 #include <stdio.h>

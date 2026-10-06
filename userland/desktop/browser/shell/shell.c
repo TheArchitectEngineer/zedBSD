@@ -6,7 +6,7 @@
  */
 
 /*
- * The window mode of browser: a view (<browser.h>) shown in a zdesktop
+ * The window mode of browser: a view (<browser/browser.h>) shown in a zdesktop
  * window, recording its drawing into the frames of the window's swapchain
  * on the shell's Vulkan device.  The view holds the page, its history, its
  * scroll, its timers, the network and the renderer; the shell holds the

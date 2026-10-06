@@ -8,7 +8,10 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws169/host-mailer}
 dir=$(dirname "$out")
 mkdir -p "$dir/inc"
-cp userland/desktop/keiland/truetype.h userland/desktop/keiland/keiland.h "$dir/inc/"
+mkdir -p "$dir/inc/truetype"
+cp userland/desktop/include/truetype/truetype.h "$dir/inc/truetype/"
+mkdir -p "$dir/inc/keiland"
+cp userland/desktop/include/keiland/keiland.h "$dir/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$dir/inc/compat"
 U=userland/desktop
 K=$U/libkeiland/ui

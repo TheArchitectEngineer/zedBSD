@@ -250,10 +250,10 @@ touch（1 本指の選択・2 本指の scroll・sheet の touch）は Windows �
   いつも `GUEST_RUNTIME=$PWD/build/<W>-...` を付ける。`zdesktop-guest.sh stop` を `GUEST_RUNTIME` なしで呼ばない（最後に起こした他の guest を止める）。
 - **既定の BUILD を上書きしない**: `textinput-p013.sh`・`demo-s8-s9.sh` は IMAGE を省くと `build/amd64` に作る。`build-*-image.sh` は BUILD を省くと `build/amd64`。
   image の build を 2 つ同時に走らせない（commands.md §0）。
-- **WS104 の後の path の変更**: ws104-p001 が `include/libc/keiland.h`・`keiui.h`・`truetype.h`・wayland の header を `userland/desktop/keiland/` へ移す。
+- **WS104 の後の path の変更**: ws104-p001 が `include/libc/keiland.h`・`keiui.h`・`truetype.h`・wayland の header を `userland/desktop/include/` へ移す。
   WS090 の host の script（`host-draw.sh`・`host-input.sh`・`host-widgets.sh`、`plan/tools/keiui/host-chooser.sh`・`plan/tools/textedit/host-core.sh`、WS081 の
   `run-termtouch.sh`・`run-notestouch.sh`）の header の path は [plan/ws104/patches/p001-paths.patch](../ws104/patches/p001-paths.patch) で直る（§5.1 の command は
-  そのまま）。その後は libkeiui の header の編集の場所が `userland/desktop/keiland/keiui.h` になる。ws104-p002・p003・p007 は settings・libkeiland・各 app の
+  そのまま）。その後は libkeiui の header の編集の場所が `userland/desktop/include/keiui.h` になる。ws104-p002・p003・p007 は settings・libkeiland・各 app の
   path の文字列に触れるので、p007（Settings）と p009・p010（Files）は WS104 と同時に走らせない。WS104・WS105 の Phase はこの WS の作業で触らない。
 - **ユーザーの判断**（ws.md・master）: 文字の編集の view は 1 本指の drag が選択・2 本指が scroll（Files・Image Viewer の 1 本指の pan は変えない）、
   file chooser は libkeiui に、sheet（親が無ければ独立）、chooser は不透明、名前 `libkeiui`・`kui_`（画面に出さない）。

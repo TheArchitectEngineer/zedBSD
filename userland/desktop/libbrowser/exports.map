@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the calls <browser.h> declares leave the library; the engine's modules stay inside it. */
+/* Only the calls <browser/browser.h> declares leave the library; the engine's modules stay inside it. */
 {
 	global:
 		browser_view_*;

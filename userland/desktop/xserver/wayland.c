@@ -39,7 +39,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <primary-selection-unstable-v1-client-protocol.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 

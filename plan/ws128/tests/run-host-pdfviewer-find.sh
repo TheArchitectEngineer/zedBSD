@@ -17,7 +17,8 @@ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 for header in pdf.h sha2.h md5.h sha1.h; do
 	ln -sf "$(pwd)/include/libc/$header" "$out/include/$header"
 done
-ln -sf "$(pwd)/userland/desktop/keiland/truetype.h" "$out/include/truetype.h"
+mkdir -p "$out/include/truetype"
+ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 python3 plan/ws175/tests/make-edit-samples.py "$out/samples" >/dev/null
 libpdf=$(ls userland/base/libpdf/*.c)
 viewer="userland/desktop/pdfviewer/view.c userland/desktop/pdfviewer/draw.c userland/desktop/pdfviewer/document.c

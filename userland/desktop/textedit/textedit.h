@@ -16,7 +16,7 @@
 #ifndef TEXTEDIT_TEXTEDIT_H
 #define TEXTEDIT_TEXTEDIT_H
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "userland/desktop/paths.h"
 

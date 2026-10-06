@@ -87,10 +87,10 @@ $(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
 	@test -f '$@'
 
 # The desktop's public headers (keiland.h, the Wayland client headers and the
-# others in userland/desktop/keiland) are not the C library's, but they go to
+# others in userland/desktop/include) are not the C library's, but they go to
 # the same usr/include, where the desktop's programs find them (WS104).
 ZEDBSD_SYSROOT_PUBLIC_HEADERS := $(shell \
-	find include/libc include/libc include/uapi userland/desktop/keiland \
+	find include/libc include/libc include/uapi userland/desktop/include \
 	-type f ! -name '*~' -print | LC_ALL=C sort)
 # The names the public headers have under a sysroot's usr/include, the same
 # mapping as the header loop of the rule below.  They come from the manifest,
@@ -100,7 +100,7 @@ ZEDBSD_SYSROOT_PUBLIC_HEADERS := $(shell \
 # files afterwards names a file that is gone (BUG-084).
 ZEDBSD_SYSROOT_INCLUDE_NAMES := $(patsubst include/libc/%,%,\
 	$(patsubst include/uapi/%,uapi/%,\
-	$(patsubst userland/desktop/keiland/%,%,$(ZEDBSD_SYSROOT_PUBLIC_HEADERS))))
+	$(patsubst userland/desktop/include/%,%,$(ZEDBSD_SYSROOT_PUBLIC_HEADERS))))
 ZEDBSD_SYSROOT_LINKER_SCRIPTS := \
 	platform/amd64/user.ld platform/amd64/vmunix.ld \
 	platform/pcat/user.ld platform/pcat/vmunix.ld \
@@ -149,7 +149,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		include/libc/*) relative=$$$${header#include/libc/} ;; \
 		include/libc/*) relative=$$$${header#include/libc/} ;; \
 		include/uapi/*) relative=$$$${header#include/} ;; \
-		userland/desktop/keiland/*) relative=$$$${header#userland/desktop/keiland/} ;; \
+		userland/desktop/include/*) relative=$$$${header#userland/desktop/include/} ;; \
 		*) echo "sysroot: non-public header in manifest: $$$$header" >&2; exit 1 ;; \
 		esac; \
 		case "$$$$relative" in */*) mkdir -p "$$$$temporary/usr/include/$$$${relative%/*}" ;; esac; \

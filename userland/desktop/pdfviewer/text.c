@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 /* The largest font file read. */
 #define TEXT_FILE_MAX		((size_t)64 * 1024 * 1024)

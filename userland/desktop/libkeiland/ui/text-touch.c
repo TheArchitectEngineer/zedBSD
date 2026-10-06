@@ -18,7 +18,7 @@
  * coordinates except the context menu's place, which is the window's.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <math.h>
 #include <string.h>

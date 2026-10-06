@@ -25,7 +25,7 @@
  * drawn in its colours (userland/desktop/picture/color-glyph.c).
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "../../picture/color-glyph.h"
 #include "userland/desktop/paths.h"
@@ -35,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <truetype.h>
+#include <truetype/truetype.h>
 #include <unistd.h>
 
 /* How many glyphs the cache holds before it is emptied. */

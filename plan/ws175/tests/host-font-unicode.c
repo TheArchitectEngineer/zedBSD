@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include <pdf.h>
-#include <truetype.h>
+#include <truetype/truetype.h>
 
 #include "internal.h"
 

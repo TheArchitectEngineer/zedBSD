@@ -21,7 +21,7 @@
 
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 /*
  * The window: libkeiland's window, which queues the input (the menus' and

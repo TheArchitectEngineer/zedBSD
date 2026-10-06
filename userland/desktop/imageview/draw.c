@@ -19,7 +19,7 @@
 
 #include "imageview.h"
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include "../artwork/mark.h"
 

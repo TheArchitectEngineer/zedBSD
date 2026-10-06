@@ -10,7 +10,7 @@
  * ws102-p017, plan/ws102/design.md section 2.10).
  *
  * The header is private: it is not installed, and applications reach the
- * protocol through libkeiland (<keiland.h>) only.  libkeiland includes it
+ * protocol through libkeiland (<keiland/keiland.h>) only.  libkeiland includes it
  * by its path in the tree.
  */
 

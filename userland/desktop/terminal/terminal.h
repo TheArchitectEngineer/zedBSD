@@ -28,7 +28,7 @@
 
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <stddef.h>
 #include <stdint.h>

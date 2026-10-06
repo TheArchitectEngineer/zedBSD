@@ -18,7 +18,7 @@
  * the view (system-view.c), and reports what changed.
  */
 
-#include <keiland.h>
+#include <keiland/keiland.h>
 
 #include <wayland-client.h>
 
