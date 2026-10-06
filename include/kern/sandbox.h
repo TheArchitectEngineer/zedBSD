@@ -39,6 +39,7 @@ struct sandbox {
 struct sandbox *sandbox_create(uint32_t flags, uint64_t allow);
 void sandbox_free(struct sandbox *sandbox);
 int sandbox_permits(const struct sandbox *sandbox, uint32_t number, const uintptr_t args[6]);
+int sandbox_answers(uint32_t number, const uintptr_t args[6], intptr_t *result);
 intptr_t sandbox_deny(struct process *process, uint32_t number);
 
 #endif

@@ -9574,13 +9574,17 @@ syscall_dispatch_body(
 	struct process *process;
 	intptr_t result;
 	int permitted;
+	int answered;
 	int error;
 
-	/* A sandboxed process makes only the calls of its set (ws168-p002), redispatched ones too. */
+	/* A sandboxed process makes only the calls of its set (ws168-p002), redispatched ones too; the terminal query is answered. */
 	process = NULL;
 	if (curthread != NULL)
 		process = curthread->proc;
 	if (process != NULL && process->sandbox != NULL) {
+		answered = sandbox_answers(number, args, &result);
+		if (answered)
+			return result;
 		permitted = sandbox_permits(process->sandbox, number, args);
 		if (!permitted) {
 			result = sandbox_deny(process, number);
