@@ -2,7 +2,7 @@
 
 # ws169-p004: メーラの app（一覧・読む・書く）
 
-Status: in-progress（実装・host の試験・build 済み。QEMU は WS169 の最後に T1）
+Status: test-wait（T1-291）
 Disposition: normal
 Parent: [WS169](../ws.md)
 Queue: q831（2026-10-07、P2）

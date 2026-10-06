@@ -86,3 +86,4 @@
 | WS169 ws169-p005 | 英字を含む code、`autocomplete="one-time-code"` の欄 | 英字の DOM の code、one-time-code の欄を探して入れる（今は数字の code だけ、focus の欄へ） | `browser/shell/mail.c`、`mailer/code.c` | 2026-10-07 |
 | WS169 ws169-p005 | 通知の popup（WS156 p003）が無い間 | 通知の click で入る経路の QEMU の確認（今は titlebar の control だけが見える） | `browser/shell/mail.c`、WS156 p003 | 2026-10-07 |
 | WS169 ws169-p005 | offer の 2 分の時間切れ | 時間で起きて取り下げる（今は loop が起きた時に見る） | `browser/shell/shell.c` の待ちの timeout | 2026-10-07 |
+| WS169 ws169-p005 | 窓の中の帯の UI | page の上に code の帯（「Sign-in code … — Fill in / ×」）を出す（今は titlebar の control だけ。shell に描く層が要り、libbrowser の描画に関わる。2026-10-07 Q1 了承で backlog） | `browser/shell/`、libbrowser | 2026-10-07 |
