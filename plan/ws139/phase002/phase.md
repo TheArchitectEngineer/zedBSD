@@ -2,10 +2,10 @@
 
 # ws139-p002: E2（5330 の host の i915 の Venus）で測る手順と基準値
 
-Status: planned
+Status: in-progress（2026-10-06 q832、P1。script を書き commit、手順 1 の読むだけの確かめは 5330 に届かず。手順 3〜8（5330 での計測）は T1 に依頼）
 Disposition: normal
 Parent: [WS139](../ws.md)
-Queue: none
+Queue: q832（P1）
 依存: p001（`perf-run.sh`・`type-only.sh`・`perf-summary.py`・`build-perf-image.sh` が main に統合済み）、ws.md の **U2（5330 の操作の承認と担当）**
 調べの上限: 3 h。手順 7 の確かめ（guest の Vulkan の device が Intel）まで届かなければ、そこで止めて uncleared にし、分かったことを記録する
 
@@ -137,4 +137,10 @@ ssh solaris10-man 'ls ~/zedbsd-q306-venus/dependencies/q312-quiesce/install/libe
 
 ## 結果
 
-（未実施）
+### 2026-10-06（P1、q832）
+
+- `plan/ws139/tests/e2-run.sh`・`e2-remote.sh` を書いた（使い方は先頭の comment）。計画からの変更: **rm を使わない**（2026-10-06 ユーザー: 削除は Q1 の手順）。5330 の側は run ごとに新しい `~/ws139-e2.XXXXXX`（`mktemp -d`）を作り、終わりにその path を出す（後始末は Q1）。centris の OUT も消さずに足すだけ。Intel の ICD は `/usr/share/vulkan/icd.d/intel_icd*.json` の最初の物を使い（手順 1 で名前を確かめられなかったため）、run ごとに `out-N/E2.txt` に device が Intel か llvmpipe かを書く。
+- 送る path は計画の一覧に `plan/tools/files`（`files-guest.sh` を呼ぶ script がある）を足した。grep（計画の手順 2 の命令）の結果: `plan/tools/files/files-guest.sh`・`plan/tools/guest/guest.py`・`plan/tools/qmp.py`・`plan/ws014/tests`・`plan/ws035/tests/{qmp-keys.py,qmp-pointer.py,zdesktop-check.py,zdesktop-guest.sh}`・`plan/ws089/tests/{build-settings-image.sh,settings-guest.sh,settings-wait.sh}`・`plan/ws095/tests/{latency-bug143.sh,type-latency.py}`・`plan/ws099/tests/{c5-parse.py,c5-transitions.sh}`・`plan/ws134/tests/{build-monitor-image.sh,monitor-p003.sh}`・`plan/ws139/tests/*`。全て送る一覧の中。
+- 手順 1（読むだけ）: centris の `/tmp/i915-hw.lock` は free。`ssh solaris10-man` は `connect to host 10.0.30.3 port 22: No route to host`（5330 が落ちているか IP が変わった。`~/.ssh/config` を直すのは Q1）。5330 の上の確かめ（ICD の名前・OVMF・memory・disk・AC・renderer）は**未実施**。centris の側: `guest.py` の OVMF の既定は `/usr/share/OVMF/OVMF_CODE_4M.fd`・`OVMF_VARS_4M.fd`（`guest.py:374-376`）。
+- 手順 3〜8 は T1 に依頼（U2）。T1 は 5330 に届くようになってから `build-perf-image.sh` の image で `e2-run.sh IMAGE OUT` を流す。
+
