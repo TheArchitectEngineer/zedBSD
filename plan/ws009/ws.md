@@ -10,6 +10,7 @@ Objectives: O2, O4, O5
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: p001〜p008 cleared。DOC-54 は GPU 文書の保留解除後に Phase 化
+Target: **ベータ3**（2026-10-08 ユーザー「ベータ3にします：WS009・026・106 文書・試験の整理・試験アプリの集約、WS139 デスクトップの速さ」）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS009 test index](tests/README.md)

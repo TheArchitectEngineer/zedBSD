@@ -10,6 +10,7 @@ Parent: [Master](../master.md)
 Queue: なし（q540 finished、partial scope cleared）
 Resume point: ime-probe の非競合回答後、p002残り2filesを選定。p003は全移動後。
 2026-10-02 user:「IME の人間の作業が終わったので、ime-probe を試験の場所へ移す作業を再開してよいです。」→ p002 の ime-probe の移動の判断待ちは解消。p002 を再開候補にする。
+Target: **ベータ3**（2026-10-08 ユーザー「ベータ3にします：WS009・026・106 文書・試験の整理・試験アプリの集約、WS139 デスクトップの速さ」）
 <!-- awesome-plan-current:end -->
 
 ## 目標・決定の出典

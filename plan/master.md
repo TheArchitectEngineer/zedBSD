@@ -517,6 +517,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-08 ユーザー「ベータ3にします：WS009・026・106 文書・試験の整理・試験アプリの集約、WS139 デスクトップの速さ」 → 4 つの WS の Target をベータ3 に。
 - 2026-10-08 ユーザー:「『そのほか』は見積もりが甘いです。releaseの作業は明らかに10/13以降です。Linux/FreeBSDも10/13以降です。翻訳はベータ3に回します。」→ WS129（release）と Linux・FreeBSD の作業（WS112、WS131 の 3 OS の回帰ほか）は 10/13 以降、WS158（翻訳）はベータ3。
 - 2026-10-08 ユーザーの UAT（5330、HDMI）: p007 の mouse の跨ぎと窓の移動は OK → ws113-p007 cleared。2 つ目の display のリサイズ不可、display ごとの dock の bar・docked/floating/整列の状態、App Home の時は他の display を背景だけに → [ws113-p015](ws113/phase015/phase.md)（P1、WS113 は優先順の 1 番なので WS090 の今の単位の後すぐ）。「次はUSB-C DPにしてみます。」
 - 2026-10-08 ユーザー:「sample.mp4はffmpegで変換してOKです。sudoが使えるのでインストールしてOKです。」→ Q1 が /home/awe/zedbsd-media/ に H.264 の Constrained Baseline・Main・High（1920x1080、150 frame、MP4 と Annex B の .h264、High＋AAC の MP4）を作った（ffmpeg 7.1.5・libx264、SHA256SUMS・README.txt）。repo には入れない（大きさと出所）。WS083 の実機・WS122 の player の試験に使う。

@@ -10,6 +10,7 @@ Objectives: O2
 Parent: [Master](../master.md)
 Queue: none（Q1 が割り当てる）
 Resume point: p001 から。p002 は 5330 の操作の承認（U2）を待つ。改善の Phase（p004 以降）は p003 のユーザーのレビューの後に定める。
+Target: **ベータ3**（2026-10-08 ユーザー「ベータ3にします：WS009・026・106 文書・試験の整理・試験アプリの集約、WS139 デスクトップの速さ」）
 <!-- awesome-plan-current:end -->
 
 ## 目標
