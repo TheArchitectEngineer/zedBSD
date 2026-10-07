@@ -82,7 +82,14 @@
 #define I915_IR_SYSTEM_GROUP_ID_X	4U
 #define I915_IR_SYSTEM_GROUP_ID_Y	5U
 #define I915_IR_SYSTEM_GROUP_ID_Z	6U
-#define I915_IR_SYSTEM_COUNT		7U
+
+/*
+ * The built-in value of a geometry invocation a LOAD_SYSTEM reads
+ * (ws075-p007a): gl_PrimitiveIDIn, the number of the input primitive the
+ * channel's invocation runs for.
+ */
+#define I915_IR_SYSTEM_PRIMITIVE_ID	7U
+#define I915_IR_SYSTEM_COUNT		8U
 
 /*
  * The operations of an ATOMIC instruction, as its `immediate`
@@ -119,6 +126,32 @@
  * Index 1, the second source of a dual-source blend (ws031-p032).
  */
 #define I915_IR_LOCATION_SECOND_COLOR	0xFFFFFFFCU
+
+/*
+ * The STORE_OUTPUT location of a geometry shader's Layer builtin, component
+ * 0 (ws075-p007a): the integer the VUE header carries as the render target
+ * array index of the primitive the vertex ends.
+ */
+#define I915_IR_LOCATION_LAYER		0xFFFFFFFBU
+
+/*
+ * The `immediate` bit of a LOAD_VERTEX_INPUT whose input vertex is chosen
+ * at run time (ws075-p007a): src[0] is then the integer number of the
+ * vertex, and the other bits are zero.
+ */
+#define I915_IR_VERTEX_DYNAMIC		0x80000000U
+
+/*
+ * The primitives a geometry shader emits, numbered as the hardware's
+ * primitive topology types (3D_Prim_Topo_Type) take them (ws075-p007a):
+ * points, line strips and triangle strips.
+ */
+#define I915_IR_OUTPUT_POINTS		1U
+#define I915_IR_OUTPUT_LINE_STRIP	3U
+#define I915_IR_OUTPUT_TRIANGLE_STRIP	5U
+
+/* The most vertices one invocation of a geometry shader may emit (the device reports it as maxGeometryOutputVertices). */
+#define I915_IR_MAX_OUTPUT_VERTICES	256U
 
 /*
  * The memory a FENCE orders, and whether it acquires, as bits of its
@@ -174,7 +207,8 @@ enum i915_shader_stage {
 	I915_STAGE_VERTEX = 0,
 	I915_STAGE_FRAGMENT = 1,
 	I915_STAGE_COMPUTE = 2,
-	I915_STAGE_COUNT = 3
+	I915_STAGE_GEOMETRY = 3,
+	I915_STAGE_COUNT = 4
 };
 
 /*
@@ -441,8 +475,9 @@ enum i915_shader_ir_op {
 	I915_IR_SKIP_END,
 
 	/*
-	 * dst = the compute built-in value `component` (I915_IR_SYSTEM_*) of
-	 * the channel's invocation (ws101-p002).
+	 * dst = the built-in value `component` (I915_IR_SYSTEM_*) of the
+	 * channel's compute invocation (ws101-p002) or geometry invocation
+	 * (ws075-p007a).
 	 */
 	I915_IR_LOAD_SYSTEM,
 
@@ -493,6 +528,33 @@ enum i915_shader_ir_op {
 	 * memory `immediate` names, I915_IR_FENCE_*) (ws101-p006).
 	 */
 	I915_IR_FENCE,
+
+	/*
+	 * dst = input `location`, component `component` of one vertex of the
+	 * input primitive (geometry only, ws075-p007a): the vertex `immediate`,
+	 * or, when `immediate` is I915_IR_VERTEX_DYNAMIC, the vertex whose
+	 * number is the integer src[0] (a number past the primitive's vertices
+	 * reads something undefined).  The location is a located input's own,
+	 * or I915_IR_LOCATION_POSITION or I915_IR_LOCATION_POINT_SIZE for gl_in's
+	 * builtins.  The value is read bit for bit, never interpolated.
+	 */
+	I915_IR_LOAD_VERTEX_INPUT,
+
+	/*
+	 * Emits one vertex of the output primitive from what the outputs hold
+	 * now (geometry only, ws075-p007a); with `component` 1 only for the
+	 * channels where the Boolean src[0] (the predicate of the block the
+	 * emit is in) holds.
+	 */
+	I915_IR_EMIT_VERTEX,
+
+	/*
+	 * Ends the output strip the vertices emitted so far make (geometry
+	 * only, ws075-p007a); the next vertex starts a new one.  With
+	 * `component` 1 only for the channels where the Boolean src[0] holds.
+	 * The parser leaves it out when the output is points.
+	 */
+	I915_IR_END_PRIMITIVE,
 
 	/* The number of operations above; it is not an operation of its own. */
 	I915_IR_OP_COUNT
@@ -594,6 +656,24 @@ struct i915_shader_ir {
 	 */
 	uint32_t shared_bytes;
 	uint32_t uses_barrier;
+
+	/*
+	 * Geometry (ws075-p007a), from the execution modes: the vertices of one
+	 * input primitive (1, 2, 4, 3 or 6), the primitive emitted
+	 * (I915_IR_OUTPUT_*) and the most vertices one invocation emits; zero
+	 * for another stage.
+	 */
+	uint32_t vertices_in;
+	uint32_t output_topology;
+	uint32_t max_vertices;
+
+	/*
+	 * Geometry (ws075-p007a): nonzero when the shader ends a strip
+	 * (END_PRIMITIVE), reads gl_PrimitiveIDIn, or writes gl_Layer.
+	 */
+	uint32_t uses_end_primitive;
+	uint32_t uses_primitive_id;
+	uint32_t writes_layer;
 };
 
 #endif /* DRIVERS_GPU_I915_COMPILER_IR_H */
