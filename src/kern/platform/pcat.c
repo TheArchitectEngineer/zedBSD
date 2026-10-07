@@ -564,7 +564,7 @@ kern_platform_poweroff(
  * Machines differ in which of them works (BUG-249: the Latitude 5320 kept
  * running after the keyboard controller's pulse, which was the only way
  * tried).  The FADT's register comes first, as the operating systems the
- * firmware is written for use it; on the Latitudes it is a request to
+ * firmware is written for use it; on the Latitude 5330 it is a request to
  * firmware (0x73 written to the SMI command port 0xb2).
  */
 void
