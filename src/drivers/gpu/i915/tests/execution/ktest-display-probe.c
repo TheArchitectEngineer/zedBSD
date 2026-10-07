@@ -2036,9 +2036,11 @@ i915_probe_dpll(
 	    ng->dplls[2].id == 2 &&
 	    ng->dplls[2].enable_reg == 0x46020U &&
 	    ng->dplls[2].funcs == I915_DPLL_FUNCS_TBT &&
-	    ng->dplls[3].enable_reg == 0x46030U &&
+	    ng->dplls[3].enable_reg == 0x46038U &&
+	    ng->dplls[4].enable_reg == 0x46040U &&
+	    ng->dplls[5].enable_reg == 0x46048U &&
 	    ng->dplls[6].id == 6 &&
-	    ng->dplls[6].enable_reg == 0x4603cU &&
+	    ng->dplls[6].enable_reg == 0x46050U &&
 	    ng->dplls[6].funcs == I915_DPLL_FUNCS_DKL &&
 	    ng->dplls[0].funcs == I915_DPLL_FUNCS_COMBO,
 	    "p5a: P5A-DPLL adlp_plls = DPLL0/1 + TBT + TC1..4 with the reference ids");
@@ -2300,6 +2302,7 @@ i915_probe_portmap(
 	int hdmic;
 	int hdmif;
 	int hdmii;
+	int dph;
 	int dpa;
 	int hdmid;
 	int legacy_hdmid;
@@ -2317,7 +2320,8 @@ i915_probe_portmap(
 	hdmib = drv_i915_dvo_port_to_port(13, 1U);
 	hdmic = drv_i915_dvo_port_to_port(13, 2U);
 	hdmif = drv_i915_dvo_port_to_port(13, 14U);
-	hdmii = drv_i915_dvo_port_to_port(13, 17U);
+	hdmii = drv_i915_dvo_port_to_port(13, 20U);
+	dph = drv_i915_dvo_port_to_port(13, 17U);
 	dpa = drv_i915_dvo_port_to_port(13, 10U);
 	hdmid = drv_i915_dvo_port_to_port(13, 3U);
 	legacy_hdmid = drv_i915_dvo_port_to_port(12, 3U);
@@ -2329,6 +2333,7 @@ i915_probe_portmap(
 	    hdmic == I915_PORT_C &&
 	    hdmif == I915_PORT_TC1 &&
 	    hdmii == I915_PORT_TC4 &&
+	    dph == I915_PORT_TC3 &&
 	    dpa == I915_PORT_A &&
 	    hdmid == I915_PORT_NONE &&
 	    legacy_hdmid == I915_PORT_D,
