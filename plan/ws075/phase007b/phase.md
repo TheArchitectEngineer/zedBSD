@@ -2,7 +2,7 @@
 
 # ws075-p007b: GL 3.2 の stage の実行器（render/）: 増分 b1〜b5
 
-Status: in-progress（q833、P1。2026-10-07 夜 b3、2026-10-07 b1 を実装と host 試験。次は b2）
+Status: in-progress（q833、P1。2026-10-07 夜 b3、2026-10-07 b1・b2 を実装と host 試験。次は b4。2026-10-07 ユーザーの指示で WS113 の display（q855）へ切り替えて中断）
 Disposition: normal
 Parent: [WS075](../ws.md)
 設計: [phase007/design.md](../phase007/design.md)（§5・§14 が優先）、増分の表は [phase007/phase.md](../phase007/phase.md)。
@@ -54,7 +54,29 @@ Q1（2026-10-07）: 判断 1〜8 を既定どおりで承認、Phase の ID は 
 - 未実施: 実機（b5 で T1）。b1 だけでは GS の draw は refuse（b2 で 3DSTATE_GS）。
 
 
-### 再開の情報（2026-10-07、P1。b1 の後に更新）
+- 2026-10-07 増分 b2（draw の state、base main の ef625f03b の merge の後）:
+  - `render/state.c`: `drv_i915_gfx_emit_urb(batch, vs_entry_size, gs_entry_size)`（int）: PUSH_CONSTANT_ALLOC を常に VS 8 KiB（0）・GS 8 KiB（8）・PS 16 KiB（16）（判断 2）。GS 有りは VS が chunk 4 から 21 chunk、GS が chunk 25 から 6 chunk（48 KiB）、entries = min(48 KiB / (size × 64), 1548)、size < 9 なら 8 の倍数、2 未満は ENOTSUP（何も出さない）。GS 無しは今の VS の分配のまま。`drv_i915_gfx_emit_constants` に GS の va・regs（CONSTANT_GS、push data は slot の 0x2c00 = 新 `I915_GFX_GS_PUSH_BUFFER`、`drv_i915_gfx_write_state` が書く）。新 `drv_i915_gfx_emit_geometry_shader`（§3.4: kernel 0x4000、Expected Vertex Count、scratch、dword 6 の grf（[3:0] と [5:4]）・Include Vertex Handles・read length 0・topology・vertex size、dword 7 の enable・Include Primitive ID・statistics・SIMD8（3）・control header、dword 8 の 335 threads と control format。GS 無しは 0 の packet）。CLIP dword 3 bit 5 Force Zero RTA Index（最後の stage が layer を書かなければ 1、GS 無しでも 1）、SF dword 2 の deref は GS 有りで PER_POLY。`drv_i915_gfx_topology` は GS のある pipeline だけ adjacency を 9〜12 に（GS 無しは今のまま 0 で refuse）、新 `drv_i915_gfx_topology_vertices`。
+  - `intel/genxml.h`: `GEN12_3DPRIM_*_ADJ`（gen70.xml）、URB の分配の定数（`GEN12_URB_VS_START_CHUNK` 4、`_SPLIT_CHUNKS` 21、`GEN12_URB_GS_CHUNKS` 6、`_MIN_ENTRIES` 2、`_ENTRIES` 1548、intel_urb_config.c・intel_device_info.c）、`GEN12_CLIP_FORCE_ZERO_RTA_INDEX`（gen80.xml start 101）、`GEN12_GS_DISPATCH_MODE_SIMD8`（gen110.xml）。出典は file と sha256。`render/heap.h`: `I915_GFX_GS_PUSH_BUFFER` 0x2c00、`I915_GFX_MAX_GS_THREADS` 336（XXX: 1 target 固定）、heap の注の window の並びを b1 に合わせた。
+  - `render/draw.c`: b1 の「the geometry stage is not programmed yet」の refuse を外し、`i915_draw_geometry_check`（S6: draw の topology の頂点の数 ≠ GS の入力の頂点の数は ENOTSUP と log、GS の scratch は b4 まで ENOTSUP）。URB の entry の不足は「draw refused」の log。3DSTATE_GS を `drv_i915_gfx_emit_geometry_shader` で、constants に GS。VS の URB entry は GS 有りなら VS の varying（新 kernels の `vs_varyings`）で測る（`varyings` は最後の stage の GS の物）。push の block の flush の判定と storage の判定に GS の block。`render/blit.c` は emit_urb(1, 0) と constants の新しい引数。
+  - 試験: pipe fixture の `test_geometry_state`（3DSTATE_GS の dword 1・3・6〜9、points.geom の CUT の形、URB_ALLOC_VS・GS（start 25、76 entries）と 32 KiB の entry の ENOTSUP、GS 無しの URB、PUSH_CONSTANT_ALLOC 8/8/16、CONSTANT_GS、CLIP bit 5（layer を書く GS で 0、GS 無しで 1）、SF の deref、SBE・SWIZ の slot 2、adjacency の 9〜12 と頂点の数、GS 無しの GS packet が 0）、`test_geometry_interfaces` に `vs_varyings`。
+  - GS 無しの batch の差分（受け入れ）: HEAD（b1、ef625f03b）と b2 の emitter（urb・constants・vs・gs・raster・pixel）を cuboid と cells+passthrough の 2 つの pipeline で dump して比べた（一回の比較、tree に入れない program、build/tmp）: 違いは PUSH_CONSTANT_ALLOC_VS（16 → 8 KiB）、PUSH_CONSTANT_ALLOC_GS（0 → 8 KiB at 8）、CLIP dword 3（0x0003ffc0 → 0x0003ffe0、bit 5）だけ。draw.c の順は不変（GS の packet は 0 のまま、CONSTANT_GS は regs 0 で今と同じ空）。
+
+| コマンド（b2） | 結果 |
+| --- | --- |
+| `sh plan/ws031/tests/run-vk-host-tests.sh`（10 個） | plain・ASan/UBSan 全て PASS |
+| `sh plan/ws075/tests/run-host-layered.sh`・`sh plan/ws083/tests/run-host-video-roundtrip.sh` | PASS |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+| `I915_TESTS=y I915_TEST_SET=vkx`・`vke2` の vmunix | 成功 warning 0 |
+| style-check（変えた file）、`git diff --check` | 増えない、問題無し |
+
+- 未実施: 実機（b5 で T1、GS の hang があれば engine reset で device lost）。draw.c の `i915_draw_geometry_check` と URB の refuse の log は host で通らない（draw.c は host の fixture に入らない、読んで確かめた）。
+
+### 再開の情報（2026-10-07、P1。b2 の後に更新、ユーザーの指示で q855 へ切り替え）
+
+- 済み: b3・b1・b2。次: b4（design.md §5.4・§14 S4・S8、phase007/phase.md の表: PrimitiveID の SBE_SWIZ と SBE dword 1 の override、GS の scratch の stage（draw.c の `i915_draw_geometry_check` の scratch の refuse を外す）、sampler・adjacency（GS 無し）の log、feature `geometryShader` と `maxGeometry*`）、その後 b5（T1 の場面）。
+- 再開の前に: main の今を merge、10 個の host 試験。
+
+### 再開の情報（旧、2026-10-07、P1。b1 の後）
 
 - 済み: b3・b1。次: b2（design.md §5.2、§14 S6、phase007/phase.md の表）。draw.c の「the geometry stage is not programmed yet」の refuse を b2 で外す。
 

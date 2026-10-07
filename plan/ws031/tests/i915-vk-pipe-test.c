@@ -84,6 +84,7 @@ static void fixture_shader(struct i915_gfx_shader *shader, const char *name, uin
 static int fixture_prepare_three(const char *vertex_name, const char *geometry_name, const char *fragment_name, struct i915_gfx_pipeline *pipeline);
 static void test_geometry_pipeline(void);
 static void test_geometry_interfaces(void);
+static void test_geometry_state(void);
 
 /*
  * Runs the pipeline checks.
@@ -98,6 +99,7 @@ main(void)
 	test_varying_routing();
 	test_geometry_pipeline();
 	test_geometry_interfaces();
+	test_geometry_state();
 
 	/* Succeeded: every check held. */
 	printf("i915 vk pipe host test PASS\n");
@@ -705,7 +707,7 @@ test_dynamic_push_pipeline(void)
 	batch.count = 0U;
 	batch.capacity = 256U;
 	batch.overflow = 0;
-	drv_i915_gfx_emit_constants(&batch, 0x123450000ULL, kernels.vs_push_regs, 0x123450400ULL, kernels.ps_push_regs, 0x6U);
+	drv_i915_gfx_emit_constants(&batch, 0x123450000ULL, kernels.vs_push_regs, 0x123450c00ULL, 0U, 0x123450400ULL, kernels.ps_push_regs, 0x6U);
 	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
 	assert(batch.overflow == 0);
 
@@ -1100,6 +1102,7 @@ test_geometry_interfaces(void)
 	assert(kernels.gs_vertices_in == 3U && kernels.gs_primitive_id != 0U && kernels.gs_writes_layer != 0U);
 	assert(kernels.gs_push_regs != 0U && kernels.gs_push.constant_bytes != 0U);
 	assert(kernels.varyings == 3U && kernels.ps_input_count == 1U && kernels.ps_input_slots[0] == 2U);
+	assert(kernels.vs_varyings == pipeline.vs_binary->varying_count && kernels.vs_varyings == 3U);
 	drv_i915_gfx_pipeline_release(&pipeline);
 
 	/* Without the geometry stage nothing writes gl_PrimitiveID: refused (until the setup makes it, b4). */
@@ -1133,4 +1136,187 @@ test_geometry_interfaces(void)
 	assert(pipeline.vs_binary == NULL && pipeline.gs_binary == NULL && pipeline.fs_binary == NULL);
 	printf("  geometry interfaces (ws075-p007b b1): gl_PrimitiveID from the geometry VUE's slot 2; a geometry input, a fragment input "
 	       "the last stage does not write and a 72 KiB URB entry refused\n");
+}
+
+/*
+ * ws075-p007b b2: the state a draw programs around a geometry kernel.
+ * 3DSTATE_GS starts the kernel at its offset with its input primitive,
+ * payload, output topology and vertex size, SIMD8 and 335 threads; the URB
+ * gives the geometry stage the 6 chunks after the vertex stage's 21, and
+ * refuses entries too large for two; the push constants keep one split for
+ * every draw; CONSTANT_GS points at the stage's push data; the clipper
+ * forces layer 0 unless the kernel writes the layer, the setup
+ * dereferences a primitive at a time, SBE reads the geometry kernel's VUE;
+ * the topologies with adjacency are taken only with a geometry kernel.
+ * Without one the packets are those of before but for the push constant
+ * split and the forced layer 0.
+ */
+static void
+test_geometry_state(void)
+{
+	struct i915_gfx_pipeline pipeline;
+	struct i915_gfx_pipeline plain;
+	struct i915_gfx_kernels kernels;
+	struct i915_gfx_kernels plain_kernels;
+	struct i915_gfx_batch batch;
+	uint32_t commands[512];
+	uint32_t vs_entries;
+	uint32_t gs_entries;
+	unsigned used;
+	int found;
+	int error;
+
+	/* varyings.geom: triangles in, a triangle strip out, the primitive's number read, the layer written, push constants. */
+	error = fixture_prepare_three("varyings.vert.spv", "varyings.geom.spv", "primitive-id.frag.spv", &pipeline);
+	assert(error == 0);
+	drv_i915_gfx_pipeline_kernels(&pipeline, &kernels);
+	memset(commands, 0, sizeof(commands));
+	batch.cmds = commands;
+	batch.count = 0U;
+	batch.capacity = 512U;
+	batch.overflow = 0;
+
+	/* 3DSTATE_GS: dwords 1, 3 and 6 to 9. */
+	drv_i915_gfx_emit_geometry_shader(&batch, &kernels);
+	assert(batch.overflow == 0 && batch.count == GEN12_3DSTATE_GS_DWORDS);
+	assert(commands[0] == GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS));
+	assert(commands[1] == I915_GFX_GS_KERNEL && commands[2] == 0U);
+	assert(commands[3] == 3U);
+	assert(commands[4] == 0U && commands[5] == 0U);
+	assert((commands[6] & 0xfU) == (kernels.gs_grf_start & 0xfU));
+	assert(((commands[6] >> 29) & 0x3U) == ((kernels.gs_grf_start >> 4) & 0x3U));
+	assert(((commands[6] >> 4) & 0x3fU) == 0U);
+	assert((commands[6] & (1U << 10)) != 0U);
+	assert(((commands[6] >> 11) & 0x3fU) == 0U);
+	assert(((commands[6] >> 17) & 0x3fU) == GEN12_3DPRIM_TRISTRIP);
+	assert(((commands[6] >> 23) & 0x3fU) == kernels.gs_output_vertex_hwords * 2U - 1U);
+	assert((commands[7] & 1U) != 0U && (commands[7] & (1U << 4)) != 0U && (commands[7] & (1U << 10)) != 0U);
+	assert(((commands[7] >> 11) & 0x3U) == 3U);
+	assert(((commands[7] >> 15) & 0x1fU) == 0U);
+	assert(((commands[7] >> 20) & 0xfU) == kernels.gs_control_hwords && kernels.gs_control_hwords == 1U);
+	assert((commands[8] & 0x1ffU) == 335U && (commands[8] >> 31) == 0U);
+	assert(commands[9] == 0U);
+
+	/* points.geom: points in, no primitive's number, a strip out with its cut bits. */
+	error = fixture_prepare_three("cells.vert.spv", "points.geom.spv", "passthrough.frag.spv", &plain);
+	assert(error == 0);
+	drv_i915_gfx_pipeline_kernels(&plain, &plain_kernels);
+	batch.count = 0U;
+	drv_i915_gfx_emit_geometry_shader(&batch, &plain_kernels);
+	assert(commands[3] == 1U && (commands[7] & (1U << 4)) == 0U && (commands[8] >> 31) == 0U);
+	assert(((commands[6] >> 17) & 0x3fU) == GEN12_3DPRIM_TRISTRIP && plain_kernels.gs_control_format == 0U);
+	drv_i915_gfx_pipeline_release(&plain);
+
+	/* The URB: VS from chunk 4 in its 21 chunks, GS from chunk 25, entries of its size, a multiple of 8 below nine units. */
+	batch.count = 0U;
+	error = drv_i915_gfx_emit_urb(&batch, 2U, kernels.gs_urb_entry_size);
+	assert(error == 0 && batch.overflow == 0);
+	used = batch.count;
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_VS);
+	assert(found >= 0 && commands[found + 1] == 8U);
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS);
+	assert(found >= 0 && commands[found + 1] == ((8U << 16) | 8U));
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS);
+	assert(found >= 0 && commands[found + 1] == ((16U << 16) | 16U));
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_URB_ALLOC_VS);
+	vs_entries = ((21U * 8192U) / (2U * 64U)) & ~7U;
+	assert(found >= 0 && commands[found + 1] == ((4U << 10) | (4U << 21) | 1U));
+	assert(commands[found + 2] == (vs_entries | (vs_entries << 16)));
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_URB_ALLOC_GS);
+	gs_entries = (6U * 8192U) / (kernels.gs_urb_entry_size * 64U);
+	if (gs_entries > 1548U)
+		gs_entries = 1548U;
+	if (kernels.gs_urb_entry_size < 9U)
+		gs_entries &= ~7U;
+	assert(gs_entries >= 2U);
+	assert(found >= 0 && commands[found + 1] == ((25U << 10) | (25U << 21) | (kernels.gs_urb_entry_size - 1U)));
+	assert(commands[found + 2] == (gs_entries | (gs_entries << 16)));
+
+	/* An entry of 32 KiB leaves room for one: refused, and nothing is emitted. */
+	batch.count = 0U;
+	error = drv_i915_gfx_emit_urb(&batch, 2U, 512U);
+	assert(error == ENOTSUP && batch.count == 0U);
+
+	/* Without a geometry stage: the same push constant split, the vertex stage's whole URB, no GS entries. */
+	batch.count = 0U;
+	error = drv_i915_gfx_emit_urb(&batch, 2U, 0U);
+	assert(error == 0);
+	used = batch.count;
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS);
+	assert(found >= 0 && commands[found + 1] == ((8U << 16) | 8U));
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_URB_ALLOC_VS);
+	vs_entries = ((3576U * 64U) / (2U * 64U)) & ~7U;
+	assert(found >= 0 && commands[found + 2] == (vs_entries | (vs_entries << 16)));
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_URB_ALLOC_GS);
+	assert(found >= 0 && commands[found + 1] == ((5U << 10) | (5U << 21)) && commands[found + 2] == 0U);
+
+	/* CONSTANT_GS: the geometry kernel's push registers from its buffer; CONSTANT_HS and _DS read nothing. */
+	batch.count = 0U;
+	drv_i915_gfx_emit_constants(&batch, 0x10002000ULL, kernels.vs_push_regs, 0x10002c00ULL, kernels.gs_push_regs, 0x10002400ULL, kernels.ps_push_regs, 0x6U);
+	used = batch.count;
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_CONSTANT_GS);
+	assert(found >= 0 && commands[found + 2] == (kernels.gs_push_regs << 16));
+	assert(commands[found + 9] == 0x10002c00U && commands[found + 10] == 0U);
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_CONSTANT_HS);
+	assert(found >= 0 && commands[found + 2] == 0U);
+
+	/* CLIP and SF: the layer from the VUE (the kernel writes it), a primitive at a time. */
+	batch.count = 0U;
+	drv_i915_gfx_emit_raster(&batch, &pipeline, &kernels);
+	used = batch.count;
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_CLIP);
+	assert(found >= 0 && (commands[found + 3] & GEN12_CLIP_FORCE_ZERO_RTA_INDEX) == 0U);
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_SF);
+	assert(found >= 0 && (commands[found + 2] >> 29) == GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY);
+
+	/* SBE and SBE_SWIZ: one attribute, gl_PrimitiveID, from the geometry kernel's slot 2, two pairs read. */
+	batch.count = 0U;
+	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
+	used = batch.count;
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_SBE);
+	assert(found >= 0 && ((commands[found + 1] >> 22) & 0x3fU) == 1U && ((commands[found + 1] >> 11) & 0x1fU) == 2U);
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_SBE_SWIZ);
+	assert(found >= 0 && (commands[found + 1] & 0xffffU) == 2U);
+
+	/* The topologies with adjacency are the geometry kernel's only; their primitives' vertices. */
+	pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY;
+	assert(drv_i915_gfx_topology(&pipeline) == GEN12_3DPRIM_TRILIST_ADJ);
+	pipeline.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY;
+	assert(drv_i915_gfx_topology(&pipeline) == GEN12_3DPRIM_LINELIST_ADJ);
+	pipeline.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY;
+	assert(drv_i915_gfx_topology(&pipeline) == GEN12_3DPRIM_LINESTRIP_ADJ);
+	pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY;
+	assert(drv_i915_gfx_topology(&pipeline) == GEN12_3DPRIM_TRISTRIP_ADJ);
+	pipeline.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+	assert(drv_i915_gfx_topology(&pipeline) == GEN12_3DPRIM_TRIFAN);
+	assert(drv_i915_gfx_topology_vertices(GEN12_3DPRIM_TRILIST_ADJ) == 6U);
+	assert(drv_i915_gfx_topology_vertices(GEN12_3DPRIM_LINESTRIP_ADJ) == 4U);
+	assert(drv_i915_gfx_topology_vertices(GEN12_3DPRIM_TRIFAN) == 3U);
+	assert(drv_i915_gfx_topology_vertices(GEN12_3DPRIM_LINELIST) == 2U);
+	assert(drv_i915_gfx_topology_vertices(GEN12_3DPRIM_POINTLIST) == 1U);
+	assert(drv_i915_gfx_topology_vertices(GEN12_3DPRIM_RECTLIST) == 0U);
+	drv_i915_gfx_pipeline_release(&pipeline);
+
+	/* Without a geometry kernel: adjacency refused, the stage off, layer 0 forced, the 32-vertex deref. */
+	error = fixture_prepare_three("cells.vert.spv", NULL, "passthrough.frag.spv", &plain);
+	assert(error == 0);
+	plain.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY;
+	assert(drv_i915_gfx_topology(&plain) == 0U);
+	drv_i915_gfx_pipeline_kernels(&plain, &plain_kernels);
+	batch.count = 0U;
+	drv_i915_gfx_emit_geometry_shader(&batch, &plain_kernels);
+	assert(batch.count == GEN12_3DSTATE_GS_DWORDS && commands[0] == GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS));
+	for (used = 1U; used < GEN12_3DSTATE_GS_DWORDS; used++)
+		assert(commands[used] == 0U);
+	batch.count = 0U;
+	drv_i915_gfx_emit_raster(&batch, &plain, &plain_kernels);
+	used = batch.count;
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_CLIP);
+	assert(found >= 0 && (commands[found + 3] & GEN12_CLIP_FORCE_ZERO_RTA_INDEX) != 0U);
+	found = fixture_find_command(commands, used, GEN12_CMD_3DSTATE_SF);
+	assert(found >= 0 && (commands[found + 2] >> 29) == GEN12_URB_DEREF_BLOCK_SIZE_32);
+	drv_i915_gfx_pipeline_release(&plain);
+	printf("  geometry state (ws075-p007b b2): 3DSTATE_GS (3 vertices in, triangle strip, SIMD8, 335 threads), "
+	       "URB GS from chunk 25 (%u entries), push constants 8/8/16 KiB, CONSTANT_GS, CLIP's layer, SF per primitive, adjacency 9-12\n",
+	       gs_entries);
 }

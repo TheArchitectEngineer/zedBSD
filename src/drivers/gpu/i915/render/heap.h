@@ -24,13 +24,16 @@
  *           3DSTATE_CONSTANT_VS): push constants, then uniform blocks
  *   0x2400  the pixel stage's push data, laid out the same way
  *   0x2800  the three vertices of a rectangle
+ *   0x2c00  the geometry stage's push data (ws075-p007b), laid out the
+ *           same way
  *   0x3000  scratch for the post-sync writes
  *
  * The kernel object is a row of instruction windows, each the instruction
- * heap of the operations that run one pair of kernels: the vertex kernel at
- * 0, the pixel kernel at 16 KiB, and threads that only end themselves
- * everywhere else.  A pipeline's kernels, and the rectangle kernels, are
- * placed in a window once and found there by every later operation.
+ * heap of the operations that run one set of kernels: the vertex kernel at
+ * 0, the geometry kernel at 16 KiB, the pixel kernel at 32 KiB, and
+ * threads that only end themselves everywhere else.  A pipeline's kernels,
+ * and the rectangle kernels, are placed in a window once and found there by
+ * every later operation.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_HEAP_H
@@ -76,11 +79,13 @@
 #define I915_GFX_BORDER_BYTES		64U
 
 /*
- * The push data of the vertex and of the pixel stage, addressed absolutely
- * by 3DSTATE_CONSTANT_VS and _PS, at most PUSH_DATA_BYTES each.
+ * The push data of the vertex, the pixel and the geometry stage, addressed
+ * absolutely by 3DSTATE_CONSTANT_VS, _PS and _GS, at most PUSH_DATA_BYTES
+ * each; the geometry stage's follows the rectangle's vertices.
  */
 #define I915_GFX_PUSH_BUFFER		0x2000U
 #define I915_GFX_PS_PUSH_BUFFER		0x2400U
+#define I915_GFX_GS_PUSH_BUFFER		0x2c00U
 #define I915_GFX_PUSH_DATA_BYTES	0x0400U
 
 /* The three vertices of a rectangle, twelve floats each. */
@@ -123,6 +128,14 @@
  * device information and is fixed here for the one target.
  */
 #define I915_GFX_MAX_VS_THREADS		546U
+
+/*
+ * The largest geometry shader thread count of the target (intel_device_info
+ * max_gs_threads of Gen12, GFX12_HW_INFO).
+ *
+ * XXX: a property of the device fixed here for the one target, as above.
+ */
+#define I915_GFX_MAX_GS_THREADS		336U
 
 /*
  * The thread ids the scratch memory of a stage has to cover (Mesa 25.0.7

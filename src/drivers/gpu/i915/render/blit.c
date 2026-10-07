@@ -1003,9 +1003,16 @@ i915_blit_build_batch(
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_TOPOLOGY, GEN12_3DSTATE_VF_TOPOLOGY_DWORDS));
 	drv_i915_batch_emit(batch, GEN12_3DPRIM_RECTLIST);
 
-	/* Gives the vertex stage one-slot URB entries and reads no push constants. */
-	drv_i915_gfx_emit_urb(batch, 1U);
-	drv_i915_gfx_emit_constants(batch, state_va + I915_GFX_PUSH_BUFFER, 0U, state_va + I915_GFX_PS_PUSH_BUFFER, 0U, mocs);
+	/* Gives the vertex stage one-slot URB entries (with no geometry stage the allocation cannot fail) and reads no push constants. */
+	(void)drv_i915_gfx_emit_urb(batch, 1U, 0U);
+	drv_i915_gfx_emit_constants(batch,
+				    state_va + I915_GFX_PUSH_BUFFER,
+				    0U,
+				    state_va + I915_GFX_GS_PUSH_BUFFER,
+				    0U,
+				    state_va + I915_GFX_PS_PUSH_BUFFER,
+				    0U,
+				    mocs);
 
 	/* Points the pipeline at the colour calc, blend, viewport and coarse pixel state. */
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, I915_GFX_DYN_COLOR_CALC | 1U);
