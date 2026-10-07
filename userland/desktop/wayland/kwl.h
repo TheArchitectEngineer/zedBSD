@@ -783,8 +783,14 @@ uint64_t kwl_cycles(void);
  * It alone owns its Vulkan device and output and the connections of its
  * clients.
  */
-/* The virtual desktops that keep a bar order of their own (shell.c has as many). */
-#define KWL_APPS_DESKTOPS	4U
+/*
+ * The virtual desktops that keep a bar order of their own (shell.c has as
+ * many): three, the middle one where a session starts, the others to its
+ * left and right (the 2026-10-07 UAT, ws181-p006: "go left or right of the
+ * middle", not "the n-th").
+ */
+#define KWL_APPS_DESKTOPS	3U
+#define KWL_DESKTOP_START	1U
 
 /* Whether the previews of an application's icon show: not, waiting on the pointer's rest, or shown (by the rest or a click). */
 #define KWL_APPS_IDLE		0U

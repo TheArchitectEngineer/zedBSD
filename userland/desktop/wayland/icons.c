@@ -353,6 +353,36 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_ARC, 12.0f, 19.0f, 14.3f, 225.0f, 90.0f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	},
+	/* The left desktop: a cat sitting, seen from the front, its two ears, its body, and its tail curled up at the right. */
+	{
+		{ ICON_DOT, 11.0f, 8.8f, 4.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_TRIANGLE, 6.9f, 7.0f, 7.4f, 2.6f, 10.2f, 4.8f },
+		{ ICON_TRIANGLE, 15.1f, 7.0f, 14.6f, 2.6f, 11.8f, 4.8f },
+		{ ICON_BOX, 6.6f, 12.0f, 15.4f, 21.4f, 4.2f, 0.0f },
+		{ ICON_SEGMENT, 13.0f, 20.4f, 18.6f, 20.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT, 18.6f, 20.0f, 19.8f, 14.6f, 2.2f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* The middle desktop: a bird perched, facing right, its round body, its head and beak, its tail and its legs. */
+	{
+		{ ICON_DOT, 10.8f, 13.2f, 5.8f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 15.8f, 8.6f, 3.4f, 0.0f, 0.0f, 0.0f },
+		{ ICON_TRIANGLE, 18.6f, 7.2f, 21.8f, 8.8f, 18.6f, 10.2f },
+		{ ICON_TRIANGLE, 5.8f, 11.4f, 2.4f, 9.0f, 3.0f, 15.8f },
+		{ ICON_SEGMENT, 9.6f, 18.4f, 9.0f, 21.4f, 1.4f, 0.0f },
+		{ ICON_SEGMENT, 12.6f, 18.4f, 13.2f, 21.4f, 1.4f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* The right desktop: a rabbit sitting, facing right, its two long ears, its head, its body, its tail and its feet. */
+	{
+		{ ICON_DOT, 10.6f, 15.4f, 5.6f, 0.0f, 0.0f, 0.0f },
+		{ ICON_DOT, 15.8f, 10.4f, 3.6f, 0.0f, 0.0f, 0.0f },
+		{ ICON_SEGMENT, 14.8f, 7.8f, 13.6f, 3.4f, 2.4f, 0.0f },
+		{ ICON_SEGMENT, 17.2f, 7.8f, 18.4f, 3.4f, 2.4f, 0.0f },
+		{ ICON_DOT, 5.2f, 16.4f, 1.9f, 0.0f, 0.0f, 0.0f },
+		{ ICON_BOX, 8.6f, 19.4f, 17.4f, 21.6f, 1.1f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
 	/* Files: a folder, its tab on the upper left, a line knocked out under the tab. */
 	{
 		{ ICON_BOX, 3.0f, 5.0f, 11.0f, 9.0f, 1.6f, 0.0f },

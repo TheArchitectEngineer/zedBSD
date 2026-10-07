@@ -4,7 +4,7 @@
 # the real compositor): (1) App Home's first page: the status and the clock in white without pills, the large clock
 # and the date, two rows of icons at the bottom, the pages' dots; (2) the arrangement menu, twice as wide and five
 # times as tall, seven layout drawings two to a row (the grid alone), frosted glass, no words; (3) the desktops' pill:
-# round dots, the shown desktop's dot in the accent (held, ws181-p006: not drawn here).
+# three desktops, a cat, a bird (the middle, where a session starts) and a rabbit, the shown one in the accent.
 #   p005-host.py TILE_DIR ICON_DIR SLOTS OUT.png
 # SLOTS: p005-icon-dump's lines "layout x y w h" (arrange.c's slots of each layout's drawing).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -110,15 +110,19 @@ def home(assets, picture, tiles72):
     return screen
 
 
-def old_pill():
-    """draw_desktops as shell.c draws it (ws181-p005; p006's round dots are held): 7 px dots, the shown one a capsule."""
+def animal_pill():
+    """draw_desktops as shell.c draws it (ws181-p006): three desktops, a cat, a bird and a rabbit, the shown one in the accent."""
     import inspect
-    bar.DESKTOP_DOT_WIDTH = 7
+    bar.DESKTOPS = 3
+    bar.ACCENT_PILL = ACCENT
     source = inspect.getsource(bar.draw_bar)
-    old = 'screen.ring((x, MID - DESKTOP_SHOWN_HEIGHT // 2, DESKTOP_WIDTH, DESKTOP_SHOWN_HEIGHT)'
-    new = 'screen.ring((x + 7.5, MID - DESKTOP_SHOWN_HEIGHT // 2, 15, DESKTOP_SHOWN_HEIGHT)'
-    assert source.count(old) == 1
-    exec(compile(source.replace(old, new), 'draw_bar', 'exec'), bar.__dict__)
+    start = source.index('    for desktop in range(DESKTOPS):')
+    end = source.index('    # draw_status')
+    new = ('    for desktop in range(DESKTOPS):\n'
+           '        x = bar[\'desktops_x\'] + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP) + (DESKTOP_WIDTH - 20) // 2\n'
+           '        colour = ACCENT_PILL if desktop == state[\'desktop\'] else (1, 1, 1, 0.42)\n'
+           '        screen.coverage(assets.icon([\'DESKTOP_CAT\', \'DESKTOP_BIRD\', \'DESKTOP_RABBIT\'][desktop]), x, MID - 10, colour)\n\n')
+    exec(compile(source[:start] + new + source[end:], 'draw_bar', 'exec'), bar.__dict__)
 
 
 def pill_layout():
@@ -173,7 +177,7 @@ def main():
             tiles72[name] = assets.tile(name, 72)
         except (ValueError, OSError):
             pass
-    old_pill()
+    animal_pill()
     slots = [[] for _ in range(LAYOUTS)]
     for line in open(slots_file):
         parts = line.split()
@@ -186,11 +190,19 @@ def main():
     shot = image(home(assets, picture, tiles72))
     rows.append(('(1) App Home, the first page: the clock, two rows of icons at the bottom, the pages\' dots '
                  '(half size)', shot.resize((W // 2, H // 2), Image.LANCZOS)))
-    screen, layout, origin = desktop(assets, picture, slots, 3, 0)
+    screen, layout, origin = desktop(assets, picture, slots, 3, 1)
     shot = image(screen)
     left = origin[0] - 30
-    rows.append(('(2) The arrangement menu, two to a row, the grid alone ("One on the Right" lit)',
+    rows.append(('(2) The arrangement menu, two to a row, the grid alone ("One on the Right" lit), and the pill',
                  shot.crop((left, 0, left + MENU_W + 60, BAR + MENU_H + 40))))
+    for shown in (1, 0, 2):
+        screen, layout, _ = desktop(assets, picture, slots, None, shown)
+        shot = image(screen)
+        x0 = layout['desktops_x'] - 10
+        rows.append(('(3) 4x: the pill, the %s desktop shown (cat, bird, rabbit; the shown one in the accent)'
+                     % ['left', 'middle', 'right'][shown],
+                     shot.crop((x0, 0, x0 + layout['desktops_width'] + 20, BAR)).resize(
+                         ((layout['desktops_width'] + 20) * 4, BAR * 4), Image.NEAREST)))
     height = 60 + sum(row[1].height + 30 for row in rows)
     sheet = Image.new('RGB', (max(row[1].width for row in rows) + 40, height), (246, 247, 250))
     draw = ImageDraw.Draw(sheet)

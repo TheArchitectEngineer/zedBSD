@@ -19,15 +19,15 @@ since: WS181-p004
 1. 操作: bar の desktop の pill を click。
    確認事項: メニュー。正解: pill の下に glass の popup、整列の 5 つの絵だけが横 1 列（左右に並べる・上下に並べる・右に 1 つ、左に分割・左に 1 つ、右に分割・格子、文字と desktop の絵は無い）。log `KWL ARRANGE menu open` と `KWL ARRANGE menu item=<形> x=… y=…` が 5 行。確認方法: log、撮影（人が見る）。
 2. 操作: 「右に 1 つ、左に分割」の絵（左から 3 つ目）を click。
-   確認事項: 枠。正解: 右半分に 1 つ、左半分に 2 つが縦に、各窓は元の位置に近い枠へ滑って入り、枠の大きさに描き直る。pill に整列の印は出ない。log `KWL ARRANGE apply layout=right-main desktop=1 windows=3 slots=…`、各窓の `KWL GLASS resized … width=W height=H` が最後の `KWL CONFIGURE` の大きさと同じ。確認方法: log、撮影。
+   確認事項: 枠。正解: 右半分に 1 つ、左半分に 2 つが縦に、各窓は元の位置に近い枠へ滑って入り、枠の大きさに描き直る。pill に整列の印は出ない。log `KWL ARRANGE apply layout=right-main desktop=2 windows=3 slots=…`、各窓の `KWL GLASS resized … width=W height=H` が最後の `KWL CONFIGURE` の大きさと同じ。確認方法: log、撮影。
 3. 操作: 左上の窓の title を右の枠へ drag して離す。
    確認事項: 入れ替え。正解: 2 つの窓が枠を入れ替える。log `KWL ARRANGE swap a=… b=… slots=1,0`。確認方法: log、撮影。
 4. 操作: どれかの窓の title を double click。
-   確認事項: 整列の終わり。正解: その窓が最大化、log `KWL ARRANGE end desktop=1 reason=dock` と `KWL LAYOUT mode=docked`。確認方法: log。
+   確認事項: 整列の終わり。正解: その窓が最大化、log `KWL ARRANGE end desktop=2 reason=dock` と `KWL LAYOUT mode=docked`。確認方法: log。
 5. 操作: bar の title を double click（最大化を戻す）。
    確認事項: 普通の floating。正解: 全部の窓が枠の場所のまま floating（`KWL LAYOUT windows … mode=windowed … docked=0`）、title の drag は普通の移動（`KWL GLASS moved`、`KWL ARRANGE swap-start` は出ない）。確認方法: log。
 6. 操作: pill の右から 2 つ目の点を click。
-   確認事項: desktop は切り替わらない。正解: メニューが開くだけ（`KWL ARRANGE menu open`、`KWL GLASS desktop=` の行は増えない）。Ctrl+Alt+Right で desktop 2（`KWL GLASS desktop=2 via=key`）。確認方法: log。
+   確認事項: desktop は切り替わらない。正解: メニューが開くだけ（`KWL ARRANGE menu open`、`KWL GLASS desktop=` の行は増えない）。Ctrl+Alt+Right で右の desktop（`KWL GLASS desktop=3 via=key`）。確認方法: log。
 
 ## 合格
 各段の log の行と、撮影で枠が重ならず隙間が揃うこと（needs-person）。
