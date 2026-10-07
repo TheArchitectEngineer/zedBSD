@@ -164,6 +164,7 @@ void kwl_volume_draw_popup(struct kwl_server *server, VkCommandBuffer command);
 
 /* App Home under the desktop layer (home.c). */
 void kwl_home_draw(struct kwl_server *server, VkCommandBuffer command, float progress);
+void kwl_home_draw_head(struct kwl_server *server, VkCommandBuffer command);
 void kwl_corner_draw(struct kwl_server *server, VkCommandBuffer command);
 
 /* The on-screen keyboard over everything (keyboard.c). */

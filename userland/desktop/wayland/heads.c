@@ -1313,8 +1313,8 @@ heads_record_extended(
 
 /*
  * Tells what a head shows besides its wallpaper: its windows (the frame's
- * list) and the pointer within a cursor's reach of it, as a mask (1 the
- * windows, 2 the pointer).
+ * list) and the pointer within a cursor's reach of it, and App Home's
+ * background, as a mask (1 the windows, 2 the pointer, 4 App Home).
  */
 static unsigned
 heads_shows(
@@ -1327,6 +1327,7 @@ heads_shows(
 	unsigned count;
 	int64_t left;
 	int64_t top;
+	float home;
 
 	/* Its windows in the frame being made. */
 	compose = server->compose;
@@ -1344,6 +1345,13 @@ heads_shows(
 	    server->pointer_y >= top &&
 	    server->pointer_y < top + head->height + 2 * HEADS_CURSOR_REACH)
 		shows |= 2U;
+
+	/* App Home's background, while it shows on the anchor (ws113-p015). */
+	home = 0.0f;
+	if (server->glass)
+		home = kwl_home_progress(server);
+	if (home > 0.0f)
+		shows |= 4U;
 
 	/* Succeeded: the mask. */
 	return shows;

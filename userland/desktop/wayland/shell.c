@@ -751,7 +751,8 @@ kwl_glass_draw(
  * each window of the desktop shown with its title bar, bottom to top, then
  * their popups.  The system bar, App Home, Wiseview and the other screens
  * are the anchor's; a window's glass shows the blurred wallpaper (no
- * blurred scene under it on a head).
+ * blurred scene under it on a head).  While App Home shows on the anchor,
+ * a head shows its background alone (ws113-p015).
  */
 void
 kwl_glass_draw_head(
@@ -763,12 +764,20 @@ kwl_glass_draw_head(
 	struct kwl_object *top;
 	unsigned focused;
 	unsigned index;
+	float home;
 	int hidden;
 	int layer;
 
 	/* Nothing of the session's on the login or the lock screen. */
 	if (server->greeter || server->locked || server->screen_off)
 		return;
+
+	/* App Home opening, open or closing: its dark stage over the head, and no window. */
+	home = kwl_home_progress(server);
+	if (home > 0.0f) {
+		kwl_home_draw_head(server, command);
+		return;
+	}
 
 	/* No layer of the anchor's (App Home's, the desktops' slide) on a head. */
 	layer = server->layer_on;
@@ -815,6 +824,7 @@ kwl_glass_button(
 	enum shell_hit hit;
 	uint32_t edges;
 	unsigned clicks;
+	float home;
 	int pressed;
 	int error;
 	int open;
@@ -906,8 +916,10 @@ kwl_glass_button(
 
 	pressed = 0;
 	if (remote) {
-		/* A head's press is not App Home's. */
-		pressed = 0;
+		/* A head's press is not App Home's, but while Home shows the head shows only its stage: nothing there to press (ws113-p015). */
+		home = kwl_home_progress(server);
+		if (home > 0.0f)
+			pressed = 1;
 	} else if (cover == NULL) {
 		/*
 		 * App Home takes the launcher, the top-left corner, and every button
@@ -4792,18 +4804,22 @@ frame_under_pointer(
 	uint32_t edges;
 
 	/*
-	 * The screen's own strips take a press before any frame (kwl_glass_button):
+	 * The anchor's own strips take a press before any frame (kwl_glass_button):
 	 * the system bar, the desktops' swipe at the left and right edges, and
-	 * Wiseview's at the bottom.  A frame there shows no resize arrow.
+	 * Wiseview's at the bottom.  A frame there shows no resize arrow.  A
+	 * head has none of them (ws113-p015: its frames showed no arrow, since
+	 * all of a head is beyond the anchor's right edge).
 	 */
-	if (server->pointer_y < KWL_GLASS_BAR)
-		return 0U;
-	if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE)
-		return 0U;
-	if (server->pointer_x < DESKTOP_EDGE)
-		return 0U;
-	if (server->pointer_x >= (int32_t)server->width - DESKTOP_EDGE)
-		return 0U;
+	if (server->pointer_output == KWL_PLANE_ANCHOR) {
+		if (server->pointer_y < KWL_GLASS_BAR)
+			return 0U;
+		if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE)
+			return 0U;
+		if (server->pointer_x < DESKTOP_EDGE)
+			return 0U;
+		if (server->pointer_x >= (int32_t)server->width - DESKTOP_EDGE)
+			return 0U;
+	}
 
 	/* The top window at the pointer, when it is its frame that is there. */
 	surface = window_at(server, server->pointer_x, server->pointer_y, &hit);
