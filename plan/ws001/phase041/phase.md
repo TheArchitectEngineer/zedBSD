@@ -2,7 +2,7 @@
 
 # ws001-p041: ls の XCU の option（台帳 #73）
 
-Status: in-progress（2026-10-07 q834 P2: 実装と host の差分 24/24、zedBSD の build warning 0。guest の回帰は p043 の後に T1 にまとめる）
+Status: uncleared（2026-10-07 T1-322: ls の 2 件が FAIL。mode（rw-r--r-- と host の rw-rw-r--）・directory の size（512 と 40）・group の欄の幅で、host の参照の umask と file system の違いの疑い。P2 が case を直す）（旧: in-progress（2026-10-07 q834 P2: 実装と host の差分 24/24、zedBSD の build warning 0。guest の回帰は p043 の後に T1 にまとめる））
 Parent: [WS001](../ws.md)
 Queue: q834（2026-10-07、P2）
 

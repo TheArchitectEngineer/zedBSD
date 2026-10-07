@@ -2,7 +2,7 @@
 
 # ws001-p043: tabs の XCU の形と幅（台帳 #117）
 
-Status: in-progress（2026-10-07 q834 P2: 実装、host の比較 55/55、zedBSD の build warning 0。guest は p041〜p043 をまとめて T1 へ）
+Status: cleared（2026-10-07 Q1 の判定: T1-322（lean の guest、93/95）で pinned の tabs の vt100 の bytes が PASS）（旧: in-progress（2026-10-07 q834 P2: 実装、host の比較 55/55、zedBSD の build warning 0。guest は p041〜p043 をまとめて T1 へ））
 Parent: [WS001](../ws.md)
 Queue: q834（2026-10-07、P2）
 

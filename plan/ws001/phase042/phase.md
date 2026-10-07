@@ -2,7 +2,7 @@
 
 # ws001-p042: find の XCU の primary と式（台帳 #47）
 
-Status: in-progress（2026-10-07 q834 P2: 実装、host の差分 38/38、zedBSD の build warning 0。guest の回帰は p043 の後に T1 にまとめる）
+Status: cleared（2026-10-07 Q1 の判定: T1-322（lean の guest、93/95）で find の 38 件と pinned の find -exec + の分割 が PASS）（旧: in-progress（2026-10-07 q834 P2: 実装、host の差分 38/38、zedBSD の build warning 0。guest の回帰は p043 の後に T1 にまとめる））
 Parent: [WS001](../ws.md)
 Queue: q834（2026-10-07、P2）
 
