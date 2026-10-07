@@ -32,7 +32,7 @@
 1. 担当の返却の SHA を merge（`source plan/tools/merge_one.sh && merge_one SHA`（Q1 の道具、T1 の台帳の衝突は自動で解く。cherry-pick は plan/tools/pick.sh）。`&&` で繋ぎ、commit -a と同じ command にしない）。
 2. P1・P2・T1 を新しい世代で起動（上の agents の列、phase.md の「再開の情報」から）。
 3. T1 の結果を判定（PNG は build/review/ に写してユーザーに見せる）。
-4. ユーザーの未決: M-3（5330 の iGPU を host の i915 に付け替える正解値の採取、ユーザーが質問を閉じた）。
+4. M-3 は 2026-10-07 ユーザーが「5330 で採取する」と決定（T1 の 5330 の試験の後、monitor の挿し込みはユーザー）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
@@ -510,6 +510,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「UCSIとDP alt modeってもう動いてるんですか？シェーダコンパイラより優先してほしいです」→ クリック「P1 を移す」（P1 は ws075-p007a a3 を安全な地点で止めて WS051 p003 から、P2 は WS052 を続ける）、M-3「5330 で採取する」（`/tmp/i915-hw.lock` の下で iGPU を一時的に host の i915 へ（`plan/ws031/tests/host/igpu-mode.sh host`）、USB-C の DP の monitor をユーザーが挿し、debugfs・intel_reg で採取、vfio に戻す。design §14.5）。WS075 p007a の残り（a3〜）は後に。
 - 2026-10-07 ユーザー: 5320（10.0.30.5、zedBSD）で Keiland が立たない → Q1 の調査（TGL の takeover の停止の失敗、DPLL の管理が空）。「サブエージェントP3を立てて、5320のDPLLに対応してほしいです。できれば世代やバリエーションにかかわらず表示できるようにフォールバックも実装してほしいですが、難しければいいです。」→ WS118 のブロックを解き p006・q846 を P3 に。
 - 2026-10-07 ユーザーの UAT:「アレンジメントは完璧ですね。整列方法の選択ポップアップは、glassを適用してほしいのと、広がって大きくなるようなアニメーションとともに透明度が高くなる演出で表示してほしいです。」→ ws181-p007（q845、P2、優先）。
 - 2026-10-07 ユーザー:「5330を再起動しましたので進めてみてくれますか？」（WS084 の d1・d3 の質問への答え）。5330（chaos、10.0.30.3）は SSH の host key が変わっていた → ユーザー（クリック）「新しい鍵を受け入れてよい」で Q1 が known_hosts を更新（ED25519 SHA256:+Hex0MHFbPMAH2mBJ7CxP/qw0Likn7XvqM832CqpEA4）。保留の T1-284（WS139 E2）・T1-334（ws051-p002 の ktest）を解除。
