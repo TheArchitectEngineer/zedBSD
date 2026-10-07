@@ -80,6 +80,33 @@ static struct typec_listener_entry typec_listeners[DRV_TYPEC_LISTENER_MAX];
  */
 static unsigned typec_listener_count;
 
+/*
+ * The operations waiting for the connector driver, oldest first: a ring of
+ * typec_request_count entries from typec_request_first.
+ *
+ * Filled by the drv_typec_connector_* operations and emptied by the
+ * connector driver's thread, both under the layer's lock.
+ */
+static struct drv_typec_request typec_requests[DRV_TYPEC_REQUEST_MAX];
+static unsigned typec_request_first;
+static unsigned typec_request_count;
+
+/*
+ * The serial given to the operation asked next.
+ *
+ * It only increases (from 1; 0 in a record means none was carried out),
+ * under the layer's lock.
+ */
+static uint32_t typec_request_serial;
+
+/*
+ * The connector driver's wake-up, called (outside the lock) after an
+ * operation is queued, and its argument; NULL until the driver names it.
+ */
+static void (*typec_kick)(void *argument);
+static void *typec_kick_argument;
+
+static int typec_request_put(struct drv_typec_request *request, uint32_t *serial);
 static void typec_text_line(struct typec_text *text, unsigned index, const struct drv_typec_connector *connector);
 static void typec_text_modes(struct typec_text *text, const char *name, const struct drv_typec_alt_mode_list *list);
 static const char *typec_text_partner(enum drv_typec_partner_type type);
@@ -234,6 +261,244 @@ drv_typec_connector_publish(
 }
 
 /*
+ * Asks a connector (0-based index) to swap to a data role, accepting the
+ * partner's swaps from then on.
+ *
+ * Returns 0 with the operation's serial, ENOENT for a connector that is
+ * not there, EINVAL for a role that is not one, or EBUSY when too many
+ * operations wait.
+ */
+int
+drv_typec_connector_set_data_role(
+	unsigned index,
+	enum drv_typec_data_role role,
+	uint32_t *serial)
+{
+	struct drv_typec_request request;
+	int error;
+
+	/* Refuses a role that is not one. */
+	if (role != DRV_TYPEC_DATA_DFP && role != DRV_TYPEC_DATA_UFP)
+		return EINVAL;
+
+	/* The operation, queued. */
+	kern_memset(&request, 0, sizeof(request));
+	request.kind = DRV_TYPEC_REQUEST_DATA_ROLE;
+	request.connector = index;
+	request.value = (unsigned)role;
+	error = typec_request_put(&request, serial);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the connector driver carries it out. */
+	return 0;
+}
+
+/*
+ * Asks a connector (0-based index) to swap to a power role, accepting the
+ * partner's swaps from then on.
+ *
+ * Returns 0 with the operation's serial, ENOENT, EINVAL or EBUSY.
+ */
+int
+drv_typec_connector_set_power_role(
+	unsigned index,
+	enum drv_typec_power_role role,
+	uint32_t *serial)
+{
+	struct drv_typec_request request;
+	int error;
+
+	/* Refuses a role that is not one. */
+	if (role != DRV_TYPEC_ROLE_SINK && role != DRV_TYPEC_ROLE_SOURCE)
+		return EINVAL;
+
+	/* The operation, queued. */
+	kern_memset(&request, 0, sizeof(request));
+	request.kind = DRV_TYPEC_REQUEST_POWER_ROLE;
+	request.connector = index;
+	request.value = (unsigned)role;
+	error = typec_request_put(&request, serial);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the connector driver carries it out. */
+	return 0;
+}
+
+/*
+ * Asks a connector (0-based index) to be reset.
+ *
+ * Returns 0 with the operation's serial, ENOENT, EINVAL or EBUSY.
+ */
+int
+drv_typec_connector_reset(
+	unsigned index,
+	enum drv_typec_reset kind,
+	uint32_t *serial)
+{
+	struct drv_typec_request request;
+	int error;
+
+	/* Refuses a kind that is not one. */
+	if (kind != DRV_TYPEC_RESET_HARD && kind != DRV_TYPEC_RESET_DATA)
+		return EINVAL;
+
+	/* The operation, queued. */
+	kern_memset(&request, 0, sizeof(request));
+	request.kind = DRV_TYPEC_REQUEST_RESET;
+	request.connector = index;
+	request.value = (unsigned)kind;
+	error = typec_request_put(&request, serial);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the connector driver carries it out. */
+	return 0;
+}
+
+/*
+ * Asks a connector (0-based index) to enter one of its Alternate Modes
+ * (an index into its connector_modes) with a mode-specific configuration.
+ *
+ * Returns 0 with the operation's serial, ENOENT, EINVAL for a mode the
+ * connector does not list, or EBUSY.
+ */
+int
+drv_typec_connector_enter_mode(
+	unsigned index,
+	unsigned mode,
+	uint32_t configuration,
+	uint32_t *serial)
+{
+	struct drv_typec_request request;
+	int error;
+
+	/* Refuses a mode beyond any list. */
+	if (mode >= DRV_TYPEC_ALT_MODE_MAX)
+		return EINVAL;
+
+	/* The operation, queued. */
+	kern_memset(&request, 0, sizeof(request));
+	request.kind = DRV_TYPEC_REQUEST_ENTER_MODE;
+	request.connector = index;
+	request.mode = mode;
+	request.configuration = configuration;
+	error = typec_request_put(&request, serial);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the connector driver carries it out. */
+	return 0;
+}
+
+/*
+ * Asks a connector (0-based index) to leave one of its Alternate Modes.
+ *
+ * Returns 0 with the operation's serial, ENOENT, EINVAL or EBUSY.
+ */
+int
+drv_typec_connector_exit_mode(
+	unsigned index,
+	unsigned mode,
+	uint32_t *serial)
+{
+	struct drv_typec_request request;
+	int error;
+
+	/* Refuses a mode beyond any list. */
+	if (mode >= DRV_TYPEC_ALT_MODE_MAX)
+		return EINVAL;
+
+	/* The operation, queued. */
+	kern_memset(&request, 0, sizeof(request));
+	request.kind = DRV_TYPEC_REQUEST_EXIT_MODE;
+	request.connector = index;
+	request.mode = mode;
+	error = typec_request_put(&request, serial);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the connector driver carries it out. */
+	return 0;
+}
+
+/*
+ * Names the connector driver's wake-up, called after each operation is
+ * queued.
+ */
+void
+drv_typec_operator_set(
+	void (*kick)(void *argument),
+	void *argument)
+{
+	/* Kept for the operations asked from now on. */
+	drv_typec_os_lock();
+
+	typec_kick = kick;
+	typec_kick_argument = argument;
+
+	drv_typec_os_unlock();
+}
+
+/*
+ * Takes the oldest waiting operation.  Returns true with it in *request,
+ * false when none waits.
+ */
+bool
+drv_typec_request_take(
+	struct drv_typec_request *request)
+{
+	/* The oldest, out of the ring. */
+	drv_typec_os_lock();
+
+	if (typec_request_count == 0) {
+		drv_typec_os_unlock();
+		return false;
+	}
+
+	/* The oldest, out of the ring. */
+	*request = typec_requests[typec_request_first];
+	typec_request_first = (typec_request_first + 1U) % DRV_TYPEC_REQUEST_MAX;
+	typec_request_count--;
+
+	drv_typec_os_unlock();
+
+	/* Succeeded: the connector driver carries it out. */
+	return true;
+}
+
+/*
+ * Notes an operation's outcome (its serial and errno value) in its
+ * connector's record without a new generation: the connector driver reads
+ * the connector again and publishes it, which tells the listeners.
+ *
+ * Returns 0, or ENOENT for a connector that is not there any more.
+ */
+int
+drv_typec_request_finish(
+	const struct drv_typec_request *request,
+	int error)
+{
+	/* The outcome in the record. */
+	drv_typec_os_lock();
+
+	if (request->connector >= typec_count) {
+		drv_typec_os_unlock();
+		return ENOENT;
+	}
+
+	/* Its serial and outcome. */
+	typec_connectors[request->connector].request_serial = request->serial;
+	typec_connectors[request->connector].request_error = error;
+
+	drv_typec_os_unlock();
+
+	/* Succeeded: the next published record carries it. */
+	return 0;
+}
+
+/*
  * Writes every connector record as text, one line each, for the diagnostic
  * /dev/typec: whether something is attached, the partner, the power, the
  * plug's orientation, the Alternate Modes and the partner's PDOs.
@@ -275,6 +540,55 @@ drv_typec_text(
 	return text.length;
 }
 
+/*
+ * Queues an operation under a new serial and wakes the connector driver.
+ * Returns 0, ENOENT for a connector that is not there, or EBUSY when the
+ * queue is full.
+ */
+static int
+typec_request_put(
+	struct drv_typec_request *request,
+	uint32_t *serial)
+{
+	void (*kick)(void *argument);
+	void *argument;
+	unsigned slot;
+
+	/* Into the ring, under a new serial. */
+	drv_typec_os_lock();
+
+	if (request->connector >= typec_count) {
+		drv_typec_os_unlock();
+		return ENOENT;
+	}
+
+	/* A full ring takes no more. */
+	if (typec_request_count == DRV_TYPEC_REQUEST_MAX) {
+		drv_typec_os_unlock();
+		return EBUSY;
+	}
+
+	/* The operation under its serial, at the ring's end. */
+	typec_request_serial++;
+	request->serial = typec_request_serial;
+	slot = (typec_request_first + typec_request_count) % DRV_TYPEC_REQUEST_MAX;
+	typec_requests[slot] = *request;
+	typec_request_count++;
+	kick = typec_kick;
+	argument = typec_kick_argument;
+
+	drv_typec_os_unlock();
+
+	/* The connector driver's thread wakes for it. */
+	if (kick != NULL)
+		kick(argument);
+
+	/* Succeeded: the caller knows the operation by its serial. */
+	if (serial != NULL)
+		*serial = request->serial;
+	return 0;
+}
+
 /* Writes the line of one connector. */
 static void
 typec_text_line(
@@ -283,6 +597,7 @@ typec_text_line(
 	const struct drv_typec_connector *connector)
 {
 	const char *separator;
+	const char *cable;
 	const char *role;
 	unsigned mode;
 	unsigned pdo;
@@ -344,6 +659,18 @@ typec_text_line(
 			separator = " pdos=";
 		typec_text_append(text, "%s0x%08x", separator, (unsigned)connector->partner_pdos[pdo]);
 	}
+
+	/* What the cable reports of itself. */
+	if (connector->cable.known) {
+		cable = "passive";
+		if (connector->cable.active)
+			cable = "active";
+		typec_text_append(text, " cable=%s speed=%llu current=%umA", cable, (unsigned long long)connector->cable.speed_bps, connector->cable.current_ma);
+	}
+
+	/* The last operation carried out, and its outcome. */
+	if (connector->request_serial != 0)
+		typec_text_append(text, " request=%u error=%d", (unsigned)connector->request_serial, connector->request_error);
 
 	/* The generation the record was published at, which ends the line. */
 	typec_text_append(text, " generation=%llu\n", (unsigned long long)connector->generation);
