@@ -457,6 +457,68 @@ drv_i915_display_output_name(
 }
 
 /*
+ * Describes a connector of the hotplug path for the display inventory as
+ * the hotplug path took it, except the built-in panel, which is connected
+ * with its own mode for as long as the node has it.
+ *
+ * The hotplug path never detects an eDP connector: its status stays
+ * unknown and it reads no EDID for it.  Taken as it is, the panel would be
+ * unplugged whenever another output is lit (the rest of BUG-250), and a
+ * claim that brings the output back to the panel (the lid opened,
+ * ws113-p011a) would be refused with ENXIO.  The panel's mode and size are
+ * the ones the resident dependencies read at the start (its EDID or the
+ * VBT); a node without them leaves the connector as the hotplug path took
+ * it.  0, or ENOENT for a connector the path does not have.
+ */
+int
+drv_i915_display_output_connector(
+	struct i915_display *display,
+	unsigned connector,
+	struct i915_hpd_output *found)
+{
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_millihz;
+	uint32_t width_mm;
+	uint32_t height_mm;
+	int error;
+
+	/* The connector as the hotplug path last took it. */
+	error = drv_i915_hpd_output(display, connector, found);
+	if (error != 0)
+		return error;
+
+	/* Any other kind is as it was detected. */
+	if (found->kind != I915_HPD_OUTPUT_EDP)
+		return 0;
+
+	/* A node without the panel's dependencies has no panel to show. */
+	if (display->rctx.lcd == NULL)
+		return 0;
+
+	/* The panel's own mode; without one there is no panel to show. */
+	error = drv_i915_display_panel_mode(display->rctx.lcd, &width, &height, &refresh_millihz);
+	if (error != 0)
+		return 0;
+
+	/* The panel is connected, with its mode, while the node has it. */
+	found->connected = 1;
+	found->width = width;
+	found->height = height;
+	found->refresh_millihz = refresh_millihz;
+
+	/* Its size, when its EDID gave one. */
+	error = drv_i915_display_panel_size_mm(display->rctx.lcd, &width_mm, &height_mm);
+	if (error == 0) {
+		found->width_mm = width_mm;
+		found->height_mm = height_mm;
+	}
+
+	/* Succeeded: the connector is described. */
+	return 0;
+}
+
+/*
  * Prepares another connected output for the resident run (ws113-p011a: a
  * claim that moves the output while no lease is held): reads what the
  * connector is and fills output for it, without detecting it again or
@@ -477,9 +539,9 @@ drv_i915_display_output_prepare(
 	struct i915_hpd_output found;
 	int error;
 
-	/* The connector as the hotplug path last took it. */
+	/* The connector as the hotplug path last took it (the panel connected while the node has it). */
 	kern_memset(output, 0, sizeof(*output));
-	error = drv_i915_hpd_output(display, connector, &found);
+	error = drv_i915_display_output_connector(display, connector, &found);
 	if (error != 0) {
 		*reason = "no such connector";
 		return ENXIO;

@@ -2973,24 +2973,20 @@ drv_i915_display_resident_identity(
 	if (resident < 0)
 		return 0;
 
-	/* The connector as the topology last took it. */
-	error = drv_i915_hpd_output(display, (unsigned)resident, &output);
+	/*
+	 * The connector as the topology last took it, the built-in panel
+	 * connected while the node has it (output.c): the hotplug path never
+	 * detects an eDP connector (BUG-250: taken as unplugged, every frame
+	 * was refused with ENXIO).
+	 */
+	error = drv_i915_display_output_connector(display, (unsigned)resident, &output);
 	if (error != 0)
 		return 0;
 
-	/* The connector's identity and generation, connected as the topology last took it. */
+	/* The connector's identity and generation, and whether it is connected. */
 	*display_id = I915_DISPLAY_OTHER_ID + (uint32_t)resident;
 	*generation = output.generation;
 	*connected = output.connected;
-
-	/*
-	 * The built-in panel is connected whenever the node drives it: the
-	 * hotplug path never detects an eDP connector, whose status stays
-	 * unknown (BUG-250: taken as unplugged, every frame was refused with
-	 * ENXIO).
-	 */
-	if (output.kind == I915_HPD_OUTPUT_EDP)
-		*connected = 1;
 
 	/* Succeeded: the connector's identity. */
 	return 0;
@@ -3311,8 +3307,8 @@ i915_display_other_query(
 	struct i915_hpd_output output;
 	int error;
 
-	/* The connector as the topology last took it. */
-	error = drv_i915_hpd_output(device->display, connector, &output);
+	/* The connector as the topology last took it (the panel connected, with its mode, while the node has it). */
+	error = drv_i915_display_output_connector(device->display, connector, &output);
 	if (error != 0)
 		return EINVAL;
 
@@ -3358,8 +3354,8 @@ i915_display_other_mode(
 	struct i915_hpd_output output;
 	int error;
 
-	/* The connector of the ID, of this generation, connected and with a mode. */
-	error = drv_i915_hpd_output(display, request->display_id - I915_DISPLAY_OTHER_ID, &output);
+	/* The connector of the ID, of this generation, connected and with a mode (the panel's own while the node has it). */
+	error = drv_i915_display_output_connector(display, request->display_id - I915_DISPLAY_OTHER_ID, &output);
 	if (error != 0)
 		return ENOENT;
 	if (request->generation != output.generation)
@@ -3500,8 +3496,8 @@ i915_display_other_check(
 	struct i915_hpd_output output;
 	int error;
 
-	/* The connector of the ID, of this generation. */
-	error = drv_i915_hpd_output(display, display_id - I915_DISPLAY_OTHER_ID, &output);
+	/* The connector of the ID, of this generation (the panel connected while the node has it). */
+	error = drv_i915_display_output_connector(display, display_id - I915_DISPLAY_OTHER_ID, &output);
 	if (error != 0)
 		return ENOENT;
 	if (generation != output.generation)
