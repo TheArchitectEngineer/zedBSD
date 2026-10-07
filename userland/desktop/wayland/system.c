@@ -1305,6 +1305,7 @@ system_power_request(
 {
 	uint32_t number;
 	uint32_t action;
+	int answers;
 	int error;
 
 	/* The object goes. */
@@ -1322,6 +1323,20 @@ system_power_request(
 	action = system_word(bytes, 4U);
 	if (action < KL_SYSTEM_POWER_POWEROFF || action > KL_SYSTEM_POWER_SUSPEND) {
 		system_result(object, KL_SYSTEM_POWER_EVENT_RESULT, number, KL_SYSTEM_RESULT_INVALID);
+		return 0;
+	}
+
+	/*
+	 * A sleep where sessiond answers it (zedBSD) goes through the
+	 * compositor's sleep, which locks the session first (ws052-p012,
+	 * section 1.3 of plan/ws052/phase007/phase.md); the result says it was
+	 * taken, not that the machine slept.
+	 */
+	answers = kwl_sleep_answers(object->client->server);
+	if (action == KL_SYSTEM_POWER_SUSPEND && answers) {
+		error = kwl_sleep_request(object->client->server, KWL_SLEEP_VIA_APP);
+		printf("KWL SYSTEM power client=%llu action=%u error=%d\n", (unsigned long long)object->client->number, action, error);
+		system_result(object, KL_SYSTEM_POWER_EVENT_RESULT, number, system_result_of(error));
 		return 0;
 	}
 

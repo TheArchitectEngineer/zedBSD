@@ -517,10 +517,18 @@ kwl_greeter_key(
 	uint32_t state)
 {
 	int error;
+	int held;
 
 	/* Releases do nothing, and nothing does once the session is starting or the machine ending. */
 	if (state == 0U || greeter_starting || greeter_powering[0] != '\0')
 		return 1;
+
+	/* A key around a sleep is not the user's (the one that woke the machine, or typed unseen, sleep.c). */
+	held = kwl_sleep_keys_held_now(server);
+	if (held) {
+		printf("KWL SLEEP ignore key\n");
+		return 1;
+	}
 
 	/* Routes the key by its code. */
 	server->dirty = 1;
@@ -567,6 +575,46 @@ kwl_greeter_key(
 	/* Any other key may type a character. */
 	greeter_type(server, key);
 	return 1;
+}
+
+/*
+ * Tells whether the login screen has logged in and waits for the session
+ * to take the display (it shows "Starting session..." until it ends).
+ */
+int
+kwl_greeter_starting(void)
+{
+	/* Starting once the login was accepted. */
+	if (greeter_starting)
+		return 1;
+
+	/* Succeeded: not starting. */
+	return 0;
+}
+
+/*
+ * Shows a line under the password field of the login or lock screen (a
+ * sleep's reason, ws052-p012), cut at a character's end to fit.
+ */
+void
+kwl_greeter_say(
+	struct kwl_server *server,
+	const char *text)
+{
+	size_t length;
+
+	/* The text, cut to the line's room without splitting a UTF-8 character. */
+	length = strlen(text);
+	if (length >= sizeof(greeter_message)) {
+		length = sizeof(greeter_message) - 1U;
+		while (length > 0U && ((unsigned char)text[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+	memcpy(greeter_message, text, length);
+	greeter_message[length] = '\0';
+
+	/* Drawn at the next frame. */
+	server->dirty = 1;
 }
 
 /*

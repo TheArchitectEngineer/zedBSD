@@ -50,6 +50,7 @@
 #include "swipe.h"
 #include "power-layout.h"
 #include "lid.h"
+#include "sleep-rules.h"
 #include "super-tap.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -917,6 +918,22 @@ struct kwl_server {
 	struct kl_backend_backlight *backlight;
 	unsigned backlight_saved;
 	unsigned backlight_out;
+	/*
+	 * The sleep (sleep.c, ws052-p012): its rules' state (sleep-rules.h);
+	 * sleep_hold: a sleep's request waits for its answer, and no frame is
+	 * drawn (the GPU driver parks the display); the times without input
+	 * before a sleep on the adapter and on battery (minutes, 0 never: the
+	 * settings power.sleep.ac and power.sleep.battery); screen_idle_off:
+	 * the screen is out because of the time without input (half the sleep's
+	 * time), and the next input lights it; sleep_lid_synced: the lid's
+	 * level was taken from the backend once.
+	 */
+	struct kwl_sleep sleep;
+	unsigned sleep_hold;
+	int32_t sleep_ac_minutes;
+	int32_t sleep_battery_minutes;
+	unsigned screen_idle_off;
+	unsigned sleep_lid_synced;
 	/* OS device authority can pause composition; zedBSD always leaves this zero. */
 	unsigned os_paused;
 	unsigned windowed;
@@ -1457,6 +1474,19 @@ void kwl_power_read(struct kwl_server *server);
 int kwl_lock(struct kwl_server *server, const char *reason);
 void kwl_lock_release(struct kwl_server *server, const char *reason);
 void kwl_lid_screen_restore(struct kwl_server *server);
+void kwl_lid_follow(struct kwl_server *server, unsigned open);
+void kwl_screen_off(struct kwl_server *server, const char *why);
+int kwl_output_lid_matters(struct kwl_server *server);
+void kwl_sleep_tick(struct kwl_server *server);
+void kwl_sleep_button(struct kwl_server *server);
+int kwl_sleep_request(struct kwl_server *server, enum kwl_sleep_via via);
+int kwl_sleep_answers(struct kwl_server *server);
+int kwl_sleep_waiting(struct kwl_server *server);
+void kwl_sleep_answer(struct kwl_server *server, int error);
+int kwl_sleep_keys_held_now(struct kwl_server *server);
+int kwl_sleep_lid_opened(struct kwl_server *server);
+int kwl_greeter_starting(void);
+void kwl_greeter_say(struct kwl_server *server, const char *text);
 void kwl_greeter_answer(struct kwl_server *server, unsigned request, int error);
 int kwl_emit(struct kwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 int kwl_emit_fd(struct kwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size, int descriptor);

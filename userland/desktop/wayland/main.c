@@ -129,6 +129,10 @@ main(
 		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
 	server.lock_input_ms = kwl_milliseconds();
 
+	/* The times without input before a sleep until the settings say others (the login screen keeps them, N9). */
+	server.sleep_ac_minutes = KWL_SLEEP_AC_MINUTES;
+	server.sleep_battery_minutes = KWL_SLEEP_BATTERY_MINUTES;
+
 	/* The session's descriptor to sessiond does not go to the programs the compositor starts, and is read without waiting. */
 	if (server.control_fd >= 0) {
 		(void)fcntl(server.control_fd, F_SETFD, FD_CLOEXEC);

@@ -107,8 +107,9 @@ struct kwl_backdrop {
 struct kwl_compose {
 	VkInstance instance;
 	VkPhysicalDevice physical;
-	/* The display chosen before the OS acquires it for the swapchain. */
+	/* The display chosen before the OS acquires it for the swapchain, and its name (empty when it has none). */
 	VkDisplayKHR display;
+	char display_name[64];
 	VkDevice device;
 	VkQueue queue;
 	uint32_t family;

@@ -102,3 +102,8 @@ FAIL（QEMU Venus）: 列挙・swapchain・120 frames・first-pixel 11 ms・firs
 - 1 出力（`t1-355-run1b`）: 最後の行は `power index=0 state=off result=0`。PNG 3 枚とも赤（off.png も）。probe は止まっていない見込み: Venus の guest では 1 frame（acquire・clear・submit・fence の待ち・present）が 50〜100 ms かかり、120 frame で 6〜12 秒、power off がその後で、試験の固定の待ち（2・5・6・9 秒）が早すぎた（off.png は off の前、`cat` は on の前）。直し: 試験は probe の行（present・power off・power on・done）を待ってから撮る（`wait_line`）、frame 60・hold 4。probe と libvulkan は変えない。
 - 2 出力（`t1-355-run2`、`VENUS_OUTPUTS=2`）: `displays count=1`。Venus の driver の CONNECTED は host の GET_DISPLAY_INFO の enabled（`venus/display.c` の `display_refresh`）。QEMU の virtio-gpu は head 0 だけを最初から enabled にし、他の head は UI が `ui_info` で大きさを渡した時だけ enabled にする（GTK の tab、D-Bus display の `SetUIInfo`）。今の launcher（`egl-headless` と VNC）は head 1 に `ui_info` を渡さないので、2 つ目は接続していない扱いになる。QEMU の設定の性質で、driver・libvulkan の不具合ではない。
   - 2 出力と抜き差しを QEMU で試すには、launcher に `-display dbus,gl=on`（session bus は `dbus-run-session`）を選べるようにし、`gdbus call … /org/qemu/Display1/Console_1 … SetUIInfo` で head 1 を有効・無効にする（`virtio_gpu_ui_info` が enabled を変え VIRTIO_GPU_EVENT_DISPLAY を出す＝抜き差しの模擬）。screendump は QMP の `head`。p004a の QEMU の試験（scanout 0 → 1）もこれが要る。Q1 に提案（launcher は WS035 の共有の道具）。
+
+## T1-355b（2026-10-07、FAIL 1 項目）の直し
+
+- first.png が黒（QEMU の「Display output is not active.」）: probe は 60 frame → first-pixel（6 ms）→ 直ぐ power off なので、試験が present の行を見て撮る頃には既に off だった。直し: probe は first-pixel の後に `showing index=0 seconds=HOLD` を出して hold の間（4 秒）frame を出したままにし、試験はその行の 1 秒後に撮る。
+- guest の起動直後の 1 回目で probe が走らない（`/tmp/events.txt` が無い）: 起動直後は ssh がまだ答えず、最初の command（greeter の停止と probe の起動）が失われた見込み（同じ guest の 2 回目は走る）。直し: 試験は `echo guest-ready` が返るまで（90 秒まで）待ってから始め、probe の起動の `started` を確かめる（無ければ FAIL と書く）。

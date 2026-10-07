@@ -21,6 +21,7 @@
  *   DISPLAY-EVENTS swapchain index=I result=R        (R is the VkResult; -3 is the output limit)
  *   DISPLAY-EVENTS present index=I frames=F result=R
  *   DISPLAY-EVENTS first-pixel index=I result=R ms=M
+ *   DISPLAY-EVENTS showing index=0 seconds=S           (the frames stay shown for the hold)
  *   DISPLAY-EVENTS power index=I state=off|on result=R
  *   DISPLAY-EVENTS reset-spent signaled=R after-reset=R
  *   DISPLAY-EVENTS hotplug count=N names=NAME,NAME
@@ -29,7 +30,7 @@
  *   display-events [--watch=SECONDS] [--frames=N] [--hold=SECONDS]
  *       watch: how long the hotplug fence is watched (default 10)
  *       frames: frames presented to each display (default 60)
- *       hold: how long the first display stays off (default 2)
+ *       hold: how long the frames stay shown, and how long the first display stays off (default 2)
  */
 
 #include <vulkan/vulkan.h>
@@ -185,6 +186,13 @@ main(
 		error = events_first_pixel(&state, state.outputs[index].display, &milliseconds);
 		printf("DISPLAY-EVENTS first-pixel index=%u result=%d ms=%llu\n", index, (int)error, (unsigned long long)milliseconds);
 		fflush(stdout);
+	}
+
+	/* The frames stay shown for the hold, so that a picture of them can be taken (T1-355b). */
+	if (state.output_count != 0U) {
+		printf("DISPLAY-EVENTS showing index=0 seconds=%u\n", hold);
+		fflush(stdout);
+		sleep(hold);
 	}
 
 	/* Powers the first display off and on again, and checks a reset event fence stays reset. */
