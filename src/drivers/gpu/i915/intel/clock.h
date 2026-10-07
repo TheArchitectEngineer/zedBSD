@@ -220,4 +220,25 @@ static const struct icl_combo_pll_params icl_dp_combo_pll_19_2MHz_values[] = {
 	    .pdiv = 0x1 /* 2 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
 };
 
+/*
+ * tgl_tbt_pll_19_2MHz_values and tgl_tbt_pll_24MHz_values
+ * (intel_dpll_mgr.c): the Thunderbolt PLL's DCO of display version 12 and
+ * later, on a 19.2 MHz (also 38.4 MHz) and a 24 MHz reference.  The PLL
+ * puts out every DP rate at once and the DDI clock select picks one, so
+ * the dividers are not used.  Taken without change to any value from Linux
+ * v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c (sha256
+ * 6b339fd5ed331c7e0f35544821c64a249fabff09ababb2b6629f2f89bea02bb7) for
+ * ws051-p003.
+ */
+static const struct skl_wrpll_params tgl_tbt_pll_19_2MHz_values = {
+	.dco_integer = 0x54, .dco_fraction = 0x3000,
+	/* the following params are unused */
+	.pdiv = 0, .kdiv = 0, .qdiv_mode = 0, .qdiv_ratio = 0,
+};
+
+static const struct skl_wrpll_params tgl_tbt_pll_24MHz_values = {
+	.dco_integer = 0x43, .dco_fraction = 0x4000,
+	/* the following params are unused */
+};
+
 #endif /* DRIVERS_GPU_I915_INTEL_CLOCK_H */

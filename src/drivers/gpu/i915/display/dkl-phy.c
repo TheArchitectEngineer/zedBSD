@@ -168,6 +168,42 @@ drv_i915_dkl_phy_write(
 }
 
 /*
+ * Clears and sets bits of a register of a Type-C port's DKL PHY, with the
+ * read and the write under one hold of the bank index lock.
+ */
+void
+drv_i915_dkl_phy_rmw(
+	struct i915_dkl_phy *dkl,
+	unsigned tc_port,
+	uint32_t phy_address,
+	uint32_t clear,
+	uint32_t set)
+{
+	uint32_t index_reg;
+	uint32_t index_value;
+	uint32_t window;
+	uint32_t value;
+
+	/* An access that is not prepared has no registers. */
+	if (!dkl->live)
+		return;
+
+	/* Finds the window and the bank. */
+	window = drv_i915_dkl_phy_window(tc_port, phy_address, &index_reg, &index_value);
+
+	/* Selects the bank, then reads, changes and writes through the window. */
+	spin_lock(&dkl->lock);
+
+	drv_i915_raw_write32(dkl->mmio, index_reg, index_value);
+	value = drv_i915_raw_read32(dkl->mmio, window);
+	value &= ~clear;
+	value |= set;
+	drv_i915_raw_write32(dkl->mmio, window, value);
+
+	spin_unlock(&dkl->lock);
+}
+
+/*
  * Waits until every bit of a mask is set in a register of a Type-C port's
  * DKL PHY, polling without sleeping.
  *

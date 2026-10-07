@@ -57,6 +57,8 @@ static void tc_kern_unlock(void *ctx, unsigned port);
 static int tc_kern_delay_us(void *ctx, unsigned us);
 static void tc_kern_log(void *ctx, const char *format, ...) __attribute__((format(printf, 2, 3)));
 static void tc_kern_declare_ports(struct i915_display *display, struct i915_tc_kern *k);
+static struct i915_tc *tc_kern_lcd_ports(struct i915_lcd_kernel *kernel, int tc_port, const char *what);
+static struct i915_dkl_phy *tc_kern_lcd_dkl(struct i915_lcd_kernel *kernel, int tc_port);
 
 /*
  * Binds the display's Type-C ports and reads how the firmware left them.
@@ -184,6 +186,170 @@ drv_i915_lcd_tc_put_link(
 
 	/* Gives the link back; the last one gives the PHY back at once. */
 	drv_i915_tc_put_link(kernel->d->tc, (unsigned)tc_port);
+}
+
+/*
+ * Takes an output's link to a Type-C port (the panel run's tc_get_link
+ * hook, intel_tc_port_get_link()): the port takes its PHY for the lanes if
+ * it does not hold it.
+ */
+void
+drv_i915_lcd_tc_get_link(
+	void *ctx,
+	int tc_port,
+	int required_lanes)
+{
+	struct i915_tc *tc;
+
+	/* Finds the run's Type-C ports; without them nothing is taken. */
+	tc = tc_kern_lcd_ports(ctx, tc_port, "get_link");
+	if (tc == NULL)
+		return;
+
+	/* Takes the link. */
+	drv_i915_tc_get_link(tc, (unsigned)tc_port, required_lanes);
+}
+
+/*
+ * Reports the mode a Type-C port is held in (the panel run's tc_mode
+ * hook): an enum i915_tc_mode, I915_TC_MODE_NONE without bound ports.
+ */
+int
+drv_i915_lcd_tc_mode(
+	void *ctx,
+	int tc_port)
+{
+	struct i915_tc *tc;
+	enum i915_tc_mode mode;
+
+	/* Finds the run's Type-C ports; without them the port is held in no mode. */
+	tc = tc_kern_lcd_ports(ctx, tc_port, "mode");
+	if (tc == NULL)
+		return (int)I915_TC_MODE_NONE;
+
+	/* Samples the mode under the port's lock. */
+	mode = drv_i915_tc_mode(tc, (unsigned)tc_port);
+
+	/* Succeeded: the mode. */
+	return (int)mode;
+}
+
+/*
+ * Programs the FIA's DisplayPort lanes of a Type-C port (the panel run's
+ * tc_set_fia_lane_count hook, intel_tc_port_set_fia_lane_count()).
+ */
+void
+drv_i915_lcd_tc_set_fia_lane_count(
+	void *ctx,
+	int tc_port,
+	int required_lanes,
+	int lane_reversal)
+{
+	struct i915_tc *tc;
+
+	/* Finds the run's Type-C ports; without them nothing is programmed. */
+	tc = tc_kern_lcd_ports(ctx, tc_port, "set_fia_lane_count");
+	if (tc == NULL)
+		return;
+
+	/* Programs the FIA. */
+	drv_i915_tc_set_fia_lane_count(tc, (unsigned)tc_port, required_lanes, lane_reversal);
+}
+
+/*
+ * Reads the FIA's DisplayPort pin assignment of a Type-C port (the panel
+ * run's tc_pin_assignment hook, intel_tc_port_get_pin_assignment_mask()):
+ * 0 without bound ports.
+ */
+unsigned
+drv_i915_lcd_tc_pin_assignment(
+	void *ctx,
+	int tc_port)
+{
+	struct i915_tc *tc;
+	unsigned pin_assignment;
+
+	/* Finds the run's Type-C ports; without them there is no assignment. */
+	tc = tc_kern_lcd_ports(ctx, tc_port, "pin_assignment");
+	if (tc == NULL)
+		return 0u;
+
+	/* Reads the FIA. */
+	pin_assignment = drv_i915_tc_pin_assignment(tc, (unsigned)tc_port);
+
+	/* Succeeded: the pin assignment. */
+	return pin_assignment;
+}
+
+/*
+ * Reads a register of a Type-C port's DKL PHY (the panel run's dkl_read
+ * hook, intel_dkl_phy_read()): all-ones, a PHY that does not answer, when
+ * the run has no DKL access.
+ */
+uint32_t
+drv_i915_lcd_dkl_read(
+	void *ctx,
+	int tc_port,
+	uint32_t phy_address)
+{
+	struct i915_dkl_phy *dkl;
+	uint32_t value;
+
+	/* Finds the display's DKL access; without it the PHY does not answer. */
+	dkl = tc_kern_lcd_dkl(ctx, tc_port);
+	if (dkl == NULL)
+		return 0xffffffffu;
+
+	/* Reads under the bank index lock. */
+	value = drv_i915_dkl_phy_read(dkl, (unsigned)tc_port, phy_address);
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Writes a register of a Type-C port's DKL PHY (the panel run's dkl_write
+ * hook, intel_dkl_phy_write()).
+ */
+void
+drv_i915_lcd_dkl_write(
+	void *ctx,
+	int tc_port,
+	uint32_t phy_address,
+	uint32_t value)
+{
+	struct i915_dkl_phy *dkl;
+
+	/* Finds the display's DKL access; without it nothing is written. */
+	dkl = tc_kern_lcd_dkl(ctx, tc_port);
+	if (dkl == NULL)
+		return;
+
+	/* Writes under the bank index lock. */
+	drv_i915_dkl_phy_write(dkl, (unsigned)tc_port, phy_address, value);
+}
+
+/*
+ * Clears and sets bits of a register of a Type-C port's DKL PHY (the panel
+ * run's dkl_rmw hook, intel_dkl_phy_rmw()).
+ */
+void
+drv_i915_lcd_dkl_rmw(
+	void *ctx,
+	int tc_port,
+	uint32_t phy_address,
+	uint32_t clear,
+	uint32_t set)
+{
+	struct i915_dkl_phy *dkl;
+
+	/* Finds the display's DKL access; without it nothing is changed. */
+	dkl = tc_kern_lcd_dkl(ctx, tc_port);
+	if (dkl == NULL)
+		return;
+
+	/* Changes the register under one hold of the bank index lock. */
+	drv_i915_dkl_phy_rmw(dkl, (unsigned)tc_port, phy_address, clear, set);
 }
 
 /*
@@ -443,4 +609,57 @@ tc_kern_declare_ports(
 		drv_i915_tc_declare(&k->tc, (unsigned)tc_port, legacy);
 		kern_logf("i915: TC%d: declared (DDI %c, legacy %d, AUX channel %d)\n", tc_port + 1, (char)('A' + encoder->port), legacy, k->aux_ch[tc_port]);
 	}
+}
+
+/*
+ * Finds the Type-C ports of a panel run for a hook that names a port, or
+ * NULL, logged, when the run's display has no bound ports or the number
+ * names none of the four.
+ */
+static struct i915_tc *
+tc_kern_lcd_ports(
+	struct i915_lcd_kernel *kernel,
+	int tc_port,
+	const char *what)
+{
+	/* A display without bound ports has none to use. */
+	if (kernel->d == NULL || kernel->d->tc == NULL) {
+		kern_logf("i915: TC: %s of TC%d without bound Type-C ports: nothing done\n", what, tc_port + 1);
+		return NULL;
+	}
+
+	/* A number outside the four ports names none. */
+	if (tc_port < 0 || tc_port >= (int)I915_TC_PORTS) {
+		kern_logf("i915: TC: %s of a port that is not Type-C (%d): nothing done\n", what, tc_port);
+		return NULL;
+	}
+
+	/* Succeeded: the run's ports. */
+	return kernel->d->tc;
+}
+
+/*
+ * Finds the DKL PHY access of a panel run's display for a hook that names
+ * a port, or NULL, logged, when the run has none or the number names none
+ * of the four Type-C ports.
+ */
+static struct i915_dkl_phy *
+tc_kern_lcd_dkl(
+	struct i915_lcd_kernel *kernel,
+	int tc_port)
+{
+	/* A run without the display's power context has no DKL access. */
+	if (kernel->d == NULL || kernel->d->pwc == NULL || kernel->d->pwc->dkl == NULL) {
+		kern_logf("i915: TC: DKL access of TC%d without the display's DKL PHYs: nothing done\n", tc_port + 1);
+		return NULL;
+	}
+
+	/* A number outside the four ports names none. */
+	if (tc_port < 0 || tc_port >= (int)I915_TC_PORTS) {
+		kern_logf("i915: TC: DKL access of a port that is not Type-C (%d): nothing done\n", tc_port);
+		return NULL;
+	}
+
+	/* Succeeded: the display's DKL access. */
+	return kernel->d->pwc->dkl;
 }

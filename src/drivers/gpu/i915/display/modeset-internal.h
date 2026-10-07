@@ -126,6 +126,7 @@
 #define DRIVERS_GPU_I915_DISPLAY_MODESET_INTERNAL_H
 
 #include "internal.h"
+#include "tc.h"
 
 #ifdef I915_DISPLAY_LINUX_WORLD
 #error "modeset-internal.h: another Linux environment is already included in this translation unit"
@@ -169,6 +170,7 @@ typedef uint64_t __u64;
 #include "../intel/mreg.h"
 #include "../intel/dp.h"
 #include "../intel/phy.h"
+#include "../intel/dkl.h"
 #include "../intel/fourcc.h"
 #include "../intel/psr.h"
 
@@ -570,12 +572,14 @@ typedef uint64_t __u64;
 
 /* ---- [fixed] answers of the supported configuration ---- */
 
-/* No big joiner, no MST, no Type-C port on the display outputs. */
+/* No big joiner, no MST. */
 #define intel_crtc_bigjoiner_slave_pipes(crtc_state) (0)
 #define intel_crtc_is_bigjoiner_slave(crtc_state) (0)
 #define intel_dp_mst_is_master_trans(crtc_state) (0)
-#define intel_tc_port_in_dp_alt_mode(dig_port) (0)
-#define intel_tc_port_in_legacy_mode(dig_port) (0)
+
+/* The modes of a Type-C port, from the Type-C core (i915_lcd_intel_tc_port_in_mode()). */
+#define intel_tc_port_in_dp_alt_mode(dig_port) i915_lcd_intel_tc_port_in_mode((dig_port), I915_TC_MODE_DP_ALT)
+#define intel_tc_port_in_legacy_mode(dig_port) i915_lcd_intel_tc_port_in_mode((dig_port), I915_TC_MODE_LEGACY)
 #define is_trans_port_sync_mode(crtc_state) (0)
 
 /* PCH transcoders do not exist on this platform. */
@@ -732,10 +736,6 @@ typedef uint64_t __u64;
  * in the supported configuration; the Linux condition is kept in meaning.
  */
 
-/* icl_program_mg_dp_mode(): returns unless the PHY is Type-C. */
-#define icl_program_mg_dp_mode(dig_port, cs) \
-	I915_LCD_GUARD(!drv_i915_lcd_intel_phy_is_tc(I915_LCD_SEQ_I915_ENCODER(&(dig_port)->base), drv_i915_lcd_intel_port_to_phy(I915_LCD_SEQ_I915_ENCODER(&(dig_port)->base), (dig_port)->base.port)), "icl_program_mg_dp_mode (Type-C PHY)")
-
 /* intel_dp_configure_protocol_converter(): returns for DPCD < 1.3 or a sink that is not a branch device. */
 #define intel_dp_configure_protocol_converter(intel_dp, cs) \
 	I915_LCD_GUARD((intel_dp)->dpcd[DP_DPCD_REV] < 0x13 || !dp_is_branch((intel_dp)->dpcd), "intel_dp_configure_protocol_converter (DPCD >= 1.3 branch device)")
@@ -786,9 +786,12 @@ typedef uint64_t __u64;
 #define intel_hdcp_enable(state, encoder, cs, conn) I915_LCD_GUARD((conn)->content_protection == 0, "intel_hdcp_enable (content protection requested)")
 #define intel_hdcp_disable(connector) ((void)0)
 
-/* intel_tc_port_link_cancel_reset_work(): returns unless the PHY is Type-C. */
-#define intel_tc_port_link_cancel_reset_work(dig_port) \
-	I915_LCD_GUARD(!drv_i915_lcd_intel_phy_is_tc(I915_LCD_SEQ_I915_ENCODER(&(dig_port)->base), drv_i915_lcd_intel_port_to_phy(I915_LCD_SEQ_I915_ENCODER(&(dig_port)->base), (dig_port)->base.port)), "intel_tc_port_link_cancel_reset_work (Type-C port)")
+/*
+ * intel_tc_port_link_cancel_reset_work(): cancels a Type-C port's pending
+ * link reset.  No link reset work is queued in this path (the reset of a
+ * Type-C link is not ported): a Type-C port records the step.
+ */
+#define intel_tc_port_link_cancel_reset_work(dig_port) i915_lcd_tc_port_link_cancel_reset_work(dig_port)
 
 /* Colour: the LUT / CSC loaders are reached only with a LUT blob, a non-8-bit gamma or a CSC. */
 #define glk_load_degamma_lut(cs, blob) I915_LCD_GUARD((blob) == 0, "glk_load_degamma_lut (a degamma LUT)")
@@ -872,20 +875,19 @@ typedef uint64_t __u64;
 #define intel_disable_primary_plane(cs) I915_LCD_STEP(I915_LCD_SEQ_I915_CRTC_STATE(cs), "intel_disable_primary_plane")
 
 /*
+ * The Type-C link of the DDI callers (ported, i915_lcd_tc_port_*()).
+ */
+#define intel_tc_port_get_link(dig_port, lanes) i915_lcd_tc_port_get_link((dig_port), (lanes))
+#define intel_tc_port_set_fia_lane_count(dig_port, lanes) i915_lcd_tc_port_set_fia_lane_count((dig_port), (lanes))
+
+/*
  * XXX: UNPORTED -- the DDI callers' callees that are not ported.
- *   intel_tc_port_get_link / intel_tc_port_set_fia_lane_count: the Type-C
- *     link reference and its FIA lane count (both outputs are combo PHYs).
- *   intel_ddi_update_active_dpll: which of a Type-C port's PLLs the crtc
- *     uses (a combo PHY port has one, programmed directly).
  *   bxt_ddi_phy_set_lane_optim_mask: the Broxton PHY lane latency.
  *   intel_dp_128b132b_sdp_crc16: UHBR link SDP CRC (these links are 8b/10b).
  *   mtl_ddi_pre_enable_dp / hsw_ddi_pre_enable_dp: the display 14 and the
  *     display <= 11 DP enable (this display takes tgl_ddi_pre_enable_dp).
  *   intel_ddi_config_transcoder_dp2: TRANS_DP2_CTL (DP 2.0 only).
  */
-#define intel_tc_port_get_link(dig_port, lanes) I915_LCD_STEP(I915_LCD_SEQ_I915_ENCODER(&(dig_port)->base), "intel_tc_port_get_link")
-#define intel_ddi_update_active_dpll(state, encoder, crtc) I915_LCD_STEP(I915_LCD_SEQ_I915_ENCODER(encoder), "intel_ddi_update_active_dpll")
-#define intel_tc_port_set_fia_lane_count(dig_port, lanes) I915_LCD_STEP(I915_LCD_SEQ_I915_ENCODER(&(dig_port)->base), "intel_tc_port_set_fia_lane_count")
 #define bxt_ddi_phy_set_lane_optim_mask(encoder, mask) I915_LCD_STEP(I915_LCD_SEQ_I915_ENCODER(encoder), "bxt_ddi_phy_set_lane_optim_mask")
 #define intel_dp_128b132b_sdp_crc16(intel_dp, cs) I915_LCD_STEP(I915_LCD_SEQ_I915_CRTC_STATE(cs), "intel_dp_128b132b_sdp_crc16")
 #define mtl_ddi_pre_enable_dp(state, encoder, cs, conn) I915_LCD_STEP(I915_LCD_SEQ_I915_ENCODER(encoder), "mtl_ddi_pre_enable_dp")
@@ -898,13 +900,12 @@ typedef uint64_t __u64;
  * file-scope variable).
  *   ilk_pfit_disable: PF_CTL = PF_WIN_POS = PF_WIN_SZ = 0.
  *   mtl_disable_ddi_buf: the display 14 DDI buffer disable.
- *   adlp_tbt_to_dp_alt_switch_wa: an ADL-P Type-C workaround (DKL_PCS_DW5).
  *   (intel_tc_port_put_link is ported: i915_lcd_tc_port_put_link() gives
- *   the Type-C link back through the device's tc_put_link hook, ws051-p002b.)
+ *   the Type-C link back through the device's tc_put_link hook, and
+ *   adlp_tbt_to_dp_alt_switch_wa is ddi.c's i915_adlp_tbt_to_dp_alt_switch_wa().)
  */
 #define I915_LCD_ILK_PFIT_DISABLE(i915, cs) I915_LCD_STEP(i915, "ilk_pfit_disable")
 #define I915_LCD_MTL_DISABLE_DDI_BUF(i915, encoder, cs) I915_LCD_STEP(i915, "mtl_disable_ddi_buf")
-#define I915_LCD_ADLP_TBT_TO_DP_ALT_SWITCH_WA(i915, encoder) I915_LCD_STEP(i915, "adlp_tbt_to_dp_alt_switch_wa")
 #define I915_LCD_INTEL_TC_PORT_PUT_LINK(i915, dig_port) i915_lcd_tc_port_put_link((i915), (dig_port))
 
 /*
@@ -2352,6 +2353,19 @@ void drv_i915_lcd_ms_vblank_off(struct i915_lcd_world *world);
  * Linux callers are static there).
  */
 void drv_i915_lcd_ms_bind_pll(struct i915_lcd_modeset *ms, int dpll_id);
+
+/*
+ * The Type-C PLLs (clock.c): the DKL PLL and Thunderbolt PLL descriptions
+ * a pool binds, the DKL PLL's words and frequency, and the choice between
+ * the two PLLs a Type-C port's crtc reserves.
+ */
+void drv_i915_dkl_pll_describe(struct dpll_info *info, enum tc_port tc_port);
+void drv_i915_tbt_pll_describe(struct dpll_info *info);
+int drv_i915_dkl_pll_calc(int port_clock, int is_hdmi, int ref_nssc, struct intel_dpll_hw_state *hw_state);
+int drv_i915_dkl_pll_freq(int ref_nssc, const struct intel_dpll_hw_state *hw_state);
+int drv_i915_icl_compute_tc_phy_dplls(struct intel_crtc_state *crtc_state, const struct intel_crtc_state *old_crtc_state);
+void drv_i915_icl_set_active_port_dpll(struct intel_crtc_state *crtc_state, enum icl_port_dpll_id port_dpll_id);
+void drv_i915_icl_update_active_dpll(struct intel_atomic_state *state, struct intel_crtc *crtc, struct intel_encoder *encoder);
 int drv_i915_lcd_ms_alloc_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, const struct intel_dpll_hw_state *hw_state);
 void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
@@ -2674,17 +2688,232 @@ i915_lcd_tc_port_put_link(
 }
 
 /*
+ * Tells which Type-C port a port is (the Linux intel_port_to_tc() of
+ * display version 12 and later, the only versions this environment
+ * drives): TC_PORT_1 for TC1, or TC_PORT_NONE for a port whose PHY is not
+ * a Type-C PHY.
+ */
+static __inline enum tc_port
+i915_lcd_intel_port_to_tc(
+	struct drm_i915_private *i915,
+	enum port port)
+{
+	enum phy phy;
+	bool is_tc;
+
+	/* A port whose PHY is not Type-C has no Type-C number. */
+	phy = drv_i915_lcd_intel_port_to_phy(i915, port);
+	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
+	if (!is_tc)
+		return TC_PORT_NONE;
+
+	/* Succeeded: TC1 is the first Type-C DDI port. */
+	return (enum tc_port)((int)TC_PORT_1 + (int)port - (int)PORT_TC1);
+}
+
+/*
+ * Reports the mode a digital port's Type-C PHY is held in (enum
+ * i915_tc_mode of tc.h), through the device's tc_mode hook.
+ *
+ * A port that is not Type-C is held in no mode.  A model without the hook
+ * records the step and answers no mode.
+ */
+static __inline int
+i915_lcd_tc_port_mode(
+	const struct intel_digital_port *dig_port)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+	int mode;
+
+	/* Finds the device and the Type-C port. */
+	i915 = i915_lcd_to_i915(dig_port->base.base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, dig_port->base.port);
+
+	/* A port that is not Type-C is held in no mode. */
+	if (tc_port == TC_PORT_NONE)
+		return I915_TC_MODE_NONE;
+
+	/* A model records the step. */
+	if (i915->emit->tc_mode == NULL) {
+		I915_LCD_STEP(i915, "intel_tc_port_in_mode");
+		return I915_TC_MODE_NONE;
+	}
+
+	/* Asks the Type-C core. */
+	mode = i915->emit->tc_mode(i915->emit->ctx, (int)tc_port);
+
+	/* Succeeded: the mode the port is held in. */
+	return mode;
+}
+
+/*
+ * Tells whether a digital port is a Type-C port held in a mode (the Linux
+ * intel_tc_port_in_mode(): intel_tc_port_in_tbt_alt_mode(),
+ * _in_dp_alt_mode() and _in_legacy_mode() name the three modes).
+ */
+static __inline bool
+i915_lcd_intel_tc_port_in_mode(
+	const struct intel_digital_port *dig_port,
+	int mode)
+{
+	int held_mode;
+
+	/* Asks the mode the port is held in; a port that is not Type-C has none. */
+	held_mode = i915_lcd_tc_port_mode(dig_port);
+	if (held_mode == I915_TC_MODE_NONE)
+		return false;
+
+	/* The port is in the mode only when that is the mode it is held in. */
+	if (held_mode != mode)
+		return false;
+
+	/* Succeeded: the port is held in the mode. */
+	return true;
+}
+
+/*
  * Tells whether a Type-C port is in Thunderbolt-alt mode (the Linux
- * intel_tc_port_in_tbt_alt_mode()): never, the ports here are combo PHYs.
+ * intel_tc_port_in_tbt_alt_mode()): the mode of a PHY the display does not
+ * own, which this path does not drive.
  */
 static __inline bool
 i915_lcd_intel_tc_port_in_tbt_alt_mode(
 	const struct intel_digital_port *dig_port)
 {
-	UNUSED_PARAMETER(dig_port);
+	bool in_mode;
 
-	/* Succeeded: only a Type-C PHY has an alt mode. */
-	return false;
+	/* Asks for the Thunderbolt-alt mode. */
+	in_mode = i915_lcd_intel_tc_port_in_mode(dig_port, I915_TC_MODE_TBT);
+
+	/* Succeeded: reports whether the port is in it. */
+	return in_mode;
+}
+
+/*
+ * Takes an output's link to a Type-C port (the Linux
+ * intel_tc_port_get_link()): the port takes its PHY for the lanes if it
+ * does not hold it, and keeps its mode until the link is put back.  A model
+ * without the hook records the step.
+ */
+static __inline void
+i915_lcd_tc_port_get_link(
+	struct intel_digital_port *dig_port,
+	int required_lanes)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+
+	/* Finds the device and the Type-C port. */
+	i915 = i915_lcd_to_i915(dig_port->base.base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, dig_port->base.port);
+
+	/* A model records the step. */
+	if (i915->emit->tc_get_link == NULL) {
+		I915_LCD_STEP(i915, "intel_tc_port_get_link");
+		return;
+	}
+
+	/* Takes the link of the Type-C port. */
+	i915->emit->tc_get_link(i915->emit->ctx, (int)tc_port, required_lanes);
+}
+
+/*
+ * Programs the FIA's DisplayPort lanes of a Type-C port (the Linux
+ * intel_tc_port_set_fia_lane_count()).
+ *
+ * The lanes are mirrored when the port's DDI buffer is lane-reversed, which
+ * only a legacy port may be (a warning of the Linux text otherwise).  A
+ * model without the hook records the step.
+ */
+static __inline void
+i915_lcd_tc_port_set_fia_lane_count(
+	struct intel_digital_port *dig_port,
+	int required_lanes)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+	int lane_reversal;
+	bool legacy;
+
+	/* Finds the device, the Type-C port and whether the buffer is lane-reversed. */
+	i915 = i915_lcd_to_i915(dig_port->base.base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, dig_port->base.port);
+	lane_reversal = 0;
+	if ((dig_port->saved_port_bits & DDI_BUF_PORT_REVERSAL) != 0u)
+		lane_reversal = 1;
+
+	/* A model records the step. */
+	if (i915->emit->tc_set_fia_lane_count == NULL) {
+		I915_LCD_STEP(i915, "intel_tc_port_set_fia_lane_count");
+		return;
+	}
+
+	/* Only a legacy port's lanes are reversed (drm_WARN_ON of the Linux text). */
+	if (lane_reversal) {
+		legacy = i915_lcd_intel_tc_port_in_mode(dig_port, I915_TC_MODE_LEGACY);
+		if (!legacy)
+			drv_i915_lcd_error("WARN_ON(lane_reversal && tc->mode != TC_PORT_LEGACY)\n");
+	}
+
+	/* Programs the FIA. */
+	i915->emit->tc_set_fia_lane_count(i915->emit->ctx, (int)tc_port, required_lanes, lane_reversal);
+}
+
+/*
+ * Cancels a Type-C port's pending link reset (the Linux
+ * intel_tc_port_link_cancel_reset_work()).  No link reset work is queued
+ * in this path (the reset of a Type-C link is not ported), so a Type-C
+ * port records the step and any other port has nothing to cancel.
+ */
+static __inline void
+i915_lcd_tc_port_link_cancel_reset_work(
+	struct intel_digital_port *dig_port)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+
+	/* Finds the device and the Type-C port. */
+	i915 = i915_lcd_to_i915(dig_port->base.base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, dig_port->base.port);
+
+	/* A port that is not Type-C has no link reset. */
+	if (tc_port == TC_PORT_NONE)
+		return;
+
+	/* Records that nothing was queued to cancel. */
+	I915_LCD_STEP(i915, "intel_tc_port_link_cancel_reset_work (no reset work is queued)");
+}
+
+/*
+ * Reads the DisplayPort pin assignment the FIA records for a Type-C port
+ * (the Linux intel_tc_port_get_pin_assignment_mask(): 3 is pin C, 4 pin D,
+ * 5 pin E, 0 a fixed connection).  A model without the hook records the
+ * step and answers 0.
+ */
+static __inline u32
+i915_lcd_tc_port_get_pin_assignment_mask(
+	struct intel_digital_port *dig_port)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+	u32 pin_assignment;
+
+	/* Finds the device and the Type-C port. */
+	i915 = i915_lcd_to_i915(dig_port->base.base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, dig_port->base.port);
+
+	/* A model records the step. */
+	if (i915->emit->tc_pin_assignment == NULL) {
+		I915_LCD_STEP(i915, "intel_tc_port_get_pin_assignment_mask");
+		return 0u;
+	}
+
+	/* Asks the Type-C core for the FIA's pin assignment. */
+	pin_assignment = i915->emit->tc_pin_assignment(i915->emit->ctx, (int)tc_port);
+
+	/* Succeeded: the pin assignment. */
+	return pin_assignment;
 }
 
 /* Reads a display register through the device's backend (the Linux intel_de_read()). */
@@ -2775,6 +3004,123 @@ i915_lcd_intel_de_posting_read(
 
 	/* Reads the register back. */
 	i915->emit->posting_read(i915->emit->ctx, reg.reg);
+}
+
+/*
+ * Reads a register of a Type-C port's DKL PHY (the Linux
+ * intel_dkl_phy_read()) at its PHY address.
+ *
+ * The device's dkl_read hook reads it under the lock the ports' bank index
+ * shares; a model without the hook is given the bank index write and the
+ * window read as two register accesses.
+ */
+static __inline u32
+i915_lcd_dkl_phy_read(
+	const struct drm_i915_private *i915,
+	enum tc_port tc_port,
+	u32 phy_address)
+{
+	uint32_t index_reg;
+	uint32_t index_value;
+	uint32_t window;
+	u32 value;
+
+	/* The device reads the register under the bank index lock. */
+	if (i915->emit->dkl_read != NULL) {
+		value = i915->emit->dkl_read(i915->emit->ctx, (int)tc_port, phy_address);
+		return value;
+	}
+
+	/* A model is told the bank, then reads through the port's window. */
+	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
+	value = i915_lcd_intel_de_read(i915, _MMIO(window));
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Writes a register of a Type-C port's DKL PHY (the Linux
+ * intel_dkl_phy_write()) at its PHY address, as i915_lcd_dkl_phy_read()
+ * reaches it.
+ */
+static __inline void
+i915_lcd_dkl_phy_write(
+	const struct drm_i915_private *i915,
+	enum tc_port tc_port,
+	u32 phy_address,
+	u32 value)
+{
+	uint32_t index_reg;
+	uint32_t index_value;
+	uint32_t window;
+
+	/* The device writes the register under the bank index lock. */
+	if (i915->emit->dkl_write != NULL) {
+		i915->emit->dkl_write(i915->emit->ctx, (int)tc_port, phy_address, value);
+		return;
+	}
+
+	/* A model is told the bank, then written through the port's window. */
+	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
+	i915_lcd_intel_de_write(i915, _MMIO(window), value);
+}
+
+/*
+ * Clears and sets bits of a register of a Type-C port's DKL PHY (the Linux
+ * intel_dkl_phy_rmw()): the read and the write happen under one hold of
+ * the bank index lock.
+ */
+static __inline void
+i915_lcd_dkl_phy_rmw(
+	const struct drm_i915_private *i915,
+	enum tc_port tc_port,
+	u32 phy_address,
+	u32 clear,
+	u32 set)
+{
+	uint32_t index_reg;
+	uint32_t index_value;
+	uint32_t window;
+
+	/* The device changes the register under the bank index lock. */
+	if (i915->emit->dkl_rmw != NULL) {
+		i915->emit->dkl_rmw(i915->emit->ctx, (int)tc_port, phy_address, clear, set);
+		return;
+	}
+
+	/* A model is told the bank, then changed through the port's window. */
+	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
+	(void)i915_lcd_intel_de_rmw(i915, _MMIO(window), clear, set);
+}
+
+/*
+ * Flushes the posted writes of a Type-C port's DKL PHY with a read of one
+ * of its registers (the Linux intel_dkl_phy_posting_read()).
+ */
+static __inline void
+i915_lcd_dkl_phy_posting_read(
+	const struct drm_i915_private *i915,
+	enum tc_port tc_port,
+	u32 phy_address)
+{
+	uint32_t index_reg;
+	uint32_t index_value;
+	uint32_t window;
+
+	/* The device reads the register back under the bank index lock. */
+	if (i915->emit->dkl_read != NULL) {
+		(void)i915->emit->dkl_read(i915->emit->ctx, (int)tc_port, phy_address);
+		return;
+	}
+
+	/* A model is told the bank, then the window is read back. */
+	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
+	i915_lcd_intel_de_posting_read(i915, _MMIO(window));
 }
 
 /*

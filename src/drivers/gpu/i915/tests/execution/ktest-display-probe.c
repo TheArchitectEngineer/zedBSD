@@ -279,6 +279,8 @@ static void i915_probe_dpll(struct i915_ktest *ktest);
 static void i915_probe_dpll_native(struct i915_ktest *ktest);
 static void i915_probe_dpll_unused(struct i915_ktest *ktest);
 static void i915_probe_dpll_tc(struct i915_ktest *ktest);
+static void i915_probe_dpll_tc_unknown(struct i915_ktest *ktest);
+static void i915_probe_dpll_tc_unused(struct i915_ktest *ktest);
 static void i915_probe_crtc(struct i915_ktest *ktest);
 static void i915_probe_max_cdclk(struct i915_ktest *ktest);
 static void i915_probe_wa(struct i915_ktest *ktest);
@@ -389,6 +391,8 @@ drv_i915_ktest_display_probe(
 	i915_probe_dpll_native(ktest);
 	i915_probe_dpll_unused(ktest);
 	i915_probe_dpll_tc(ktest);
+	i915_probe_dpll_tc_unknown(ktest);
+	i915_probe_dpll_tc_unused(ktest);
 	i915_probe_crtc(ktest);
 	i915_probe_max_cdclk(ktest);
 	i915_probe_wa(ktest);
@@ -2166,9 +2170,60 @@ i915_probe_dpll_unused(
 	    "p5c: P5C-DPLL-UNUSED DPLL0 feeds pipe A and stays; DPLL1 on but unused is disabled (reference behaviour)");
 }
 
-/* P5C-DPLL-TC: an active Type-C link whose PLL cannot be read disables nothing. */
+/*
+ * P5C-DPLL-TC: an active Type-C link reads the PLL its DDI clock select
+ * names (icl_ddi_tc_get_pll()): TC1 on MG runs on TC PLL 1, which stays,
+ * while DPLL1, on and unused, is disabled.
+ */
 static void
 i915_probe_dpll_tc(
+	struct i915_ktest *ktest)
+{
+	struct i915_display_nogem *t;
+	uint32_t dpll1;
+	uint32_t tc_pll1;
+
+	t = &i915_probe_nogem_scratch;
+
+	/* ADL-P DPLL records on an empty register model with DPLL1 and TC PLL 1 on. */
+	kern_memset(t, 0, sizeof(*t));
+	drv_i915_shared_dpll_init(t, 13, 1);
+	i915_fake_open();
+	drv_i915_raw_write32(&i915_probe_mmio, 0x46014U, 0xc0000000U);
+	drv_i915_raw_write32(&i915_probe_mmio, 0x46038U, 0xc0000000U);
+
+	/* TC1's DDI clock select (PORT_CLK_SEL D) names its MG PLL. */
+	drv_i915_raw_write32(&i915_probe_mmio, 0x4610cU, 0x80000000U);
+
+	/* Pipe B active on TC1. */
+	t->crtcs[1].state.active = 1;
+	t->num_encoders = 1U;
+	t->encoders[0].port = I915_PORT_TC1;
+	t->encoders[0].phy = I915_PHY_F;
+	t->encoders[0].clk_funcs = I915_DDI_CLK_ICL_TC;
+	t->encoders[0].crtc_linked = 1;
+	t->encoders[0].pipe_mask = 2U;
+
+	/* Reads the DPLLs and sanitizes them. */
+	drv_i915_dpll_readout(t, &i915_probe_mmio);
+	drv_i915_nogem_dpll_sanitize_state(t, &i915_probe_mmio, 13, 0);
+
+	/* TC PLL 1 feeds pipe B and stays; DPLL1 goes. */
+	dpll1 = drv_i915_raw_read32(&i915_probe_mmio, 0x46014U);
+	tc_pll1 = drv_i915_raw_read32(&i915_probe_mmio, 0x46038U);
+	drv_i915_ktest_check(ktest,
+	    t->encoders[0].shared_dpll_id == 3 &&
+	    t->dplls[3].readout_incomplete == 0 &&
+	    t->dplls[3].active_mask == 2U &&
+	    (tc_pll1 & 0x80000000U) != 0U &&
+	    (dpll1 & 0x80000000U) == 0U &&
+	    t->dplls_disabled == 1U,
+	    "p5c: P5C-DPLL-TC TC1 on MG runs on TC PLL 1 (stays); DPLL1 on but unused is disabled");
+}
+
+/* P5C-DPLL-TC-UNKNOWN: an active Type-C link whose clock select is not one the reference knows disables nothing. */
+static void
+i915_probe_dpll_tc_unknown(
 	struct i915_ktest *ktest)
 {
 	struct i915_display_nogem *t;
@@ -2181,6 +2236,9 @@ i915_probe_dpll_tc(
 	drv_i915_shared_dpll_init(t, 13, 1);
 	i915_fake_open();
 	drv_i915_raw_write32(&i915_probe_mmio, 0x46014U, 0xc0000000U);
+
+	/* TC1's DDI clock select holds a value that is neither MG nor a Thunderbolt rate. */
+	drv_i915_raw_write32(&i915_probe_mmio, 0x4610cU, 0x10000000U);
 
 	/* Pipe B active on TC1. */
 	t->crtcs[1].state.active = 1;
@@ -2201,7 +2259,39 @@ i915_probe_dpll_tc(
 	    t->dplls[1].readout_incomplete &&
 	    (dpll1 & 0x80000000U) != 0U &&
 	    t->dplls_disabled == 0U,
-	    "p5c: P5C-DPLL-TC an active TC link's PLL is unknown -> readout incomplete -> no PLL is disabled");
+	    "p5c: P5C-DPLL-TC-UNKNOWN an unknown TC clock select -> readout incomplete -> no PLL is disabled");
+}
+
+/*
+ * P5D-DPLL-TC-UNUSED: a Type-C PLL that is on but used by no pipe is
+ * turned off with the whole disable: enable and power request both clear.
+ */
+static void
+i915_probe_dpll_tc_unused(
+	struct i915_ktest *ktest)
+{
+	struct i915_display_nogem *t;
+	uint32_t tc_pll2;
+
+	t = &i915_probe_nogem_scratch;
+
+	/* ADL-P DPLL records on an empty register model with TC PLL 2 enabled and powered, no pipe active. */
+	kern_memset(t, 0, sizeof(*t));
+	drv_i915_shared_dpll_init(t, 13, 1);
+	i915_fake_open();
+	drv_i915_raw_write32(&i915_probe_mmio, 0x46040U, 0x88000000U);
+
+	/* Reads the DPLLs and sanitizes them. */
+	drv_i915_dpll_readout(t, &i915_probe_mmio);
+	drv_i915_nogem_dpll_sanitize_state(t, &i915_probe_mmio, 13, 0);
+
+	/* TC PLL 2 is off and unpowered. */
+	tc_pll2 = drv_i915_raw_read32(&i915_probe_mmio, 0x46040U);
+	drv_i915_ktest_check(ktest,
+	    (tc_pll2 & 0x88000000U) == 0U &&
+	    t->dplls[4].on == 0 &&
+	    t->dplls_disabled == 1U,
+	    "p5d: P5D-DPLL-TC-UNUSED TC PLL 2 on but unused is disabled: PLL_ENABLE and PLL_POWER_ENABLE clear");
 }
 
 /* P5A-CRTC: 6 planes per pipe (1 primary + 4 sprites + cursor). */

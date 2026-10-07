@@ -33,6 +33,8 @@
 #define REG_FIA1_DPSP		(0x163000u + 0x8a0u)
 #define REG_FIA2_DPSP		(0x16e000u + 0x8a0u)
 #define REG_FIA1_PA1		(0x163000u + 0x880u)
+#define REG_FIA1_MLE1		(0x163000u + 0x8c0u)
+#define REG_FIA2_MLE1		(0x16e000u + 0x8c0u)
 
 /* The bits. */
 #define TCSS_READY		(1u << 2)
@@ -86,6 +88,7 @@ static void test_refusals(void);
 static void test_lanes_and_slots(void);
 static void test_legacy_and_connected(void);
 static void test_dp_sample(void);
+static void test_fia_lane_count(void);
 
 /*
  * Runs every test and reports the count.
@@ -101,6 +104,7 @@ main(void)
 	test_lanes_and_slots();
 	test_legacy_and_connected();
 	test_dp_sample();
+	test_fia_lane_count();
 
 	/* The summary the script reads. */
 	printf("ws051-p002b host-tc checks=%u failures=%u\n", checks, failures);
@@ -671,4 +675,49 @@ test_dp_sample(void)
 	drv_i915_tc_dp_sample(&tc, 0u, &sample);
 	check(sample.hpd == 0 && sample.pin == 0u && sample.lanes == 0, "dp-sample: undeclared port");
 	check(fake.lock_errors == 0 && power_balanced(), "dp-sample: power and locks balanced");
+}
+
+/*
+ * The FIA's DisplayPort main link lanes (ws051-p003): the 5330's TC2 with
+ * four lanes reads 0xf0 in FIA1's DFLEXDPMLE1 (as Linux left it,
+ * plan/ws051/tests/m3-5330-20261007), one and two lanes from the near end
+ * and, reversed, from the far end, and the other slot is kept.
+ */
+static void
+test_fia_lane_count(void)
+{
+	struct i915_tc tc;
+
+	/* TC2 with four lanes, TC1's slot holding two lanes. */
+	fake_reset();
+	bind(&tc);
+	drv_i915_tc_declare(&tc, 1u, 0);
+	fake_set(REG_FIA1_MLE1, 0x3u);
+	drv_i915_tc_set_fia_lane_count(&tc, 1u, 4, 0);
+	check(fake_get(REG_FIA1_MLE1) == 0xf3u, "fia lanes: TC2 four lanes is 0xf in slot 1 (5330: 0xf0), TC1's slot kept");
+
+	/* One and two lanes from the near end. */
+	drv_i915_tc_set_fia_lane_count(&tc, 1u, 1, 0);
+	check(fake_get(REG_FIA1_MLE1) == 0x13u, "fia lanes: TC2 one lane is lane 0");
+	drv_i915_tc_set_fia_lane_count(&tc, 1u, 2, 0);
+	check(fake_get(REG_FIA1_MLE1) == 0x33u, "fia lanes: TC2 two lanes are lanes 0 and 1");
+
+	/* Reversed, from the far end. */
+	drv_i915_tc_set_fia_lane_count(&tc, 1u, 1, 1);
+	check(fake_get(REG_FIA1_MLE1) == 0x83u, "fia lanes: TC2 one reversed lane is lane 3");
+	drv_i915_tc_set_fia_lane_count(&tc, 1u, 2, 1);
+	check(fake_get(REG_FIA1_MLE1) == 0xc3u, "fia lanes: TC2 two reversed lanes are lanes 3 and 2");
+
+	/* A lane count the FIA has not is logged and leaves no lanes. */
+	drv_i915_tc_set_fia_lane_count(&tc, 1u, 3, 0);
+	check(fake_get(REG_FIA1_MLE1) == 0x03u, "fia lanes: three lanes leaves none");
+
+	/* TC3 is slot 0 of FIA2. */
+	drv_i915_tc_declare(&tc, 2u, 0);
+	drv_i915_tc_set_fia_lane_count(&tc, 2u, 4, 0);
+	check(fake_get(REG_FIA2_MLE1) == 0x0fu, "fia lanes: TC3 four lanes is FIA2 slot 0");
+
+	/* The 5330's TC2 pin assignment: FIA1's DFLEXPA1 0x30 is pin C. */
+	fake_set(REG_FIA1_PA1, 0x30u);
+	check(drv_i915_tc_pin_assignment(&tc, 1u) == 3u, "pins: the 5330's TC2 DFLEXPA1 0x30 is pin C");
 }

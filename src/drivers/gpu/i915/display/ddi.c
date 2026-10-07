@@ -193,6 +193,19 @@ static void i915_ddi_get_power_domains(struct intel_encoder *encoder, struct int
 static bool i915_icl_ddi_is_clock_enabled_reg(struct drm_i915_private *i915, i915_reg_t reg, u32 clk_off);
 static bool i915_icl_ddi_combo_is_clock_enabled(struct intel_encoder *encoder);
 static bool i915_ddi_connector_read_hw_state(struct intel_connector *intel_connector, struct intel_encoder *encoder);
+static void i915_icl_program_mg_dp_mode(struct intel_digital_port *dig_port, const struct intel_crtc_state *crtc_state);
+static void i915_ddi_update_active_dpll(struct intel_atomic_state *state, struct intel_encoder *encoder, struct intel_crtc *crtc);
+static void i915_adlp_tbt_to_dp_alt_switch_wa(struct intel_encoder *encoder);
+static u32 i915_icl_pll_to_ddi_clk_sel(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
+static void i915_icl_ddi_tc_enable_clock(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
+static void i915_icl_ddi_tc_disable_clock(struct intel_encoder *encoder);
+static bool i915_icl_ddi_tc_is_clock_enabled(struct intel_encoder *encoder);
+static struct intel_shared_dpll *i915_icl_ddi_tc_get_pll(struct intel_encoder *encoder);
+static int i915_icl_calc_tbt_pll_link(struct drm_i915_private *dev_priv, enum port port);
+static bool i915_icl_ddi_tc_pll_is_tbt(const struct intel_shared_dpll *pll);
+static void i915_icl_ddi_tc_get_clock(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state, struct intel_shared_dpll *pll);
+static void i915_icl_ddi_tc_get_config(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state);
+static void i915_tgl_dkl_phy_set_signal_levels(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 
 /*
  * ==== Public functions ====
@@ -521,6 +534,8 @@ drv_i915_lcd_ms_bind_readout(
 {
 	struct drm_i915_private *i915;
 	enum phy phy;
+	bool is_combo;
+	bool is_tc;
 
 	/* Binds the hooks the readout reaches through the encoder. */
 	encoder->get_hw_state = i915_ddi_get_hw_state;
@@ -536,8 +551,18 @@ drv_i915_lcd_ms_bind_readout(
 	 */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
 	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
-	if (drv_i915_phy_is_combo(i915, phy))
+	is_combo = drv_i915_phy_is_combo(i915, phy);
+	if (is_combo)
 		encoder->get_config = i915_icl_ddi_combo_get_config;
+
+	/*
+	 * A Type-C port reads the PLL its DDI clock select names
+	 * (icl_ddi_tc_get_config(), as intel_ddi_init() binds it from display
+	 * 12).
+	 */
+	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
+	if (is_tc)
+		encoder->get_config = i915_icl_ddi_tc_get_config;
 }
 
 /*
@@ -592,6 +617,9 @@ drv_i915_lcd_ms_bind_encoder(
 	struct i915_lcd_world *world;
 	struct intel_encoder *encoder;
 	struct intel_dp *intel_dp;
+	struct drm_i915_private *i915;
+	enum phy phy;
+	bool is_tc;
 
 	/* Finds the world the object belongs to, its encoder and its DP half. */
 	world = ms->world;
@@ -624,11 +652,24 @@ drv_i915_lcd_ms_bind_encoder(
 	encoder->post_disable = i915_ddi_post_disable;
 	encoder->post_pll_disable = i915_ddi_post_pll_disable;
 
-	/* Binds the combo PHY's clock and signal-level hooks. */
-	encoder->enable_clock = i915_icl_ddi_combo_enable_clock;
-	encoder->is_clock_enabled = i915_icl_ddi_combo_is_clock_enabled;
-	encoder->disable_clock = i915_icl_ddi_combo_disable_clock;
-	encoder->set_signal_levels = i915_icl_combo_phy_set_signal_levels;
+	/*
+	 * Binds the clock and signal-level hooks of the port's PHY: a Type-C
+	 * PHY's DDI clock select and DKL transmitters, or a combo PHY's.
+	 */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
+	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
+	if (is_tc) {
+		encoder->enable_clock = i915_icl_ddi_tc_enable_clock;
+		encoder->is_clock_enabled = i915_icl_ddi_tc_is_clock_enabled;
+		encoder->disable_clock = i915_icl_ddi_tc_disable_clock;
+		encoder->set_signal_levels = i915_tgl_dkl_phy_set_signal_levels;
+	} else {
+		encoder->enable_clock = i915_icl_ddi_combo_enable_clock;
+		encoder->is_clock_enabled = i915_icl_ddi_combo_is_clock_enabled;
+		encoder->disable_clock = i915_icl_ddi_combo_disable_clock;
+		encoder->set_signal_levels = i915_icl_combo_phy_set_signal_levels;
+	}
 
 	/* Binds the buffer-translation table of the port. */
 	drv_i915_lcd_ms_bind_buf_trans(encoder);
@@ -1334,7 +1375,7 @@ i915_tgl_ddi_pre_enable_dp(
 	}
 
 	/* 6. Program DP_MODE */
-	icl_program_mg_dp_mode(dig_port, crtc_state);
+	i915_icl_program_mg_dp_mode(dig_port, crtc_state);
 
 	/*
 	 * 7. The rest of the below are substeps under the bspec's "Enable and
@@ -1648,7 +1689,7 @@ i915_ddi_pre_pll_enable(
 		master_crtc = to_intel_crtc(crtc_state->uapi.crtc);
 
 		intel_tc_port_get_link(dig_port, crtc_state->lane_count);
-		intel_ddi_update_active_dpll(state, encoder, master_crtc);
+		i915_ddi_update_active_dpll(state, encoder, master_crtc);
 	}
 
 	/* Takes the main link's AUX power. */
@@ -2578,7 +2619,7 @@ i915_ddi_prepare_link_retrain(
 		in_dp_alt_mode = intel_tc_port_in_dp_alt_mode(dig_port);
 		in_legacy_mode = intel_tc_port_in_legacy_mode(dig_port);
 		if (in_dp_alt_mode || in_legacy_mode)
-			I915_LCD_ADLP_TBT_TO_DP_ALT_SWITCH_WA(cur_i915, encoder);
+			i915_adlp_tbt_to_dp_alt_switch_wa(encoder);
 	}
 
 	/* Enables the DDI buffer with the value computed at the pre-enable. */
@@ -3239,7 +3280,7 @@ i915_ddi_pre_enable_hdmi(
 								    dig_port->ddi_io_power_domain);
 
 	/* Programs the DP mode of a Type-C PHY and the transcoder's clock. */
-	icl_program_mg_dp_mode(dig_port, crtc_state);
+	i915_icl_program_mg_dp_mode(dig_port, crtc_state);
 
 	i915_ddi_enable_transcoder_clock(encoder, crtc_state);
 
@@ -4247,4 +4288,621 @@ i915_ddi_connector_read_hw_state(
 
 	/* Succeeded: any other mode drives no connector. */
 	return false;
+}
+
+/*
+ * Programs the DP mode of a Type-C port's two PHY lanes from its pin
+ * assignment and the link's lane count (the Linux
+ * icl_program_mg_dp_mode(), with the DKL PHY of display version 12 and
+ * later; Ice Lake's MG PHY is not ported and is reported).
+ *
+ * A port that is not Type-C, or one in Thunderbolt-alt mode, is left
+ * alone.
+ */
+static void
+i915_icl_program_mg_dp_mode(
+	struct intel_digital_port *dig_port,
+	const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *dev_priv;
+	enum tc_port tc_port;
+	enum phy phy;
+	u32 ln0;
+	u32 ln1;
+	u32 pin_assignment;
+	u8 width;
+	bool is_tc;
+	bool in_tbt_alt_mode;
+	bool in_legacy_mode;
+	int display_ver;
+
+	/* Finds the device, the Type-C port and the PHY. */
+	dev_priv = i915_lcd_to_i915(dig_port->base.base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(dev_priv, dig_port->base.port);
+	phy = drv_i915_lcd_intel_port_to_phy(dev_priv, dig_port->base.port);
+
+	/* Only a Type-C PHY has a DP mode. */
+	is_tc = drv_i915_lcd_intel_phy_is_tc(dev_priv, phy);
+	if (!is_tc)
+		return;
+
+	/* A port in Thunderbolt-alt mode is the Thunderbolt controller's. */
+	in_tbt_alt_mode = i915_lcd_intel_tc_port_in_tbt_alt_mode(dig_port);
+	if (in_tbt_alt_mode)
+		return;
+
+	/* Ice Lake's MG PHY is not ported. */
+	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
+	if (display_ver < 12) {
+		drv_i915_lcd_error("UNPORTED: the MG PHY DP mode of display version 11 (icl_program_mg_dp_mode)\n");
+		return;
+	}
+
+	/* Reads both lanes' DP mode and clears their width. */
+	ln0 = i915_lcd_dkl_phy_read(dev_priv, tc_port, DKL_DP_MODE(0));
+	ln1 = i915_lcd_dkl_phy_read(dev_priv, tc_port, DKL_DP_MODE(1));
+	ln0 &= ~(MG_DP_MODE_CFG_DP_X1_MODE | MG_DP_MODE_CFG_DP_X2_MODE);
+	ln1 &= ~(MG_DP_MODE_CFG_DP_X1_MODE | MG_DP_MODE_CFG_DP_X2_MODE);
+
+	/* The pin assignment (DPPATC) and the link's width. */
+	pin_assignment = i915_lcd_tc_port_get_pin_assignment_mask(dig_port);
+	width = (u8)crtc_state->lane_count;
+
+	/* Picks the lanes' width from the pin assignment and the link's width. */
+	switch (pin_assignment) {
+	case 0x0:
+		/* A fixed connection: only a legacy port has one. */
+		in_legacy_mode = intel_tc_port_in_legacy_mode(dig_port);
+		if (!in_legacy_mode)
+			drv_i915_lcd_error("WARN_ON(!intel_tc_port_in_legacy_mode(dig_port))\n");
+		if (width == 1) {
+			ln1 |= MG_DP_MODE_CFG_DP_X1_MODE;
+		} else {
+			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
+		}
+
+		break;
+	case 0x1:
+		/* Pin A: x2 only for four lanes. */
+		if (width == 4) {
+			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
+		}
+
+		break;
+	case 0x2:
+		/* Pin B: x2 only for two lanes. */
+		if (width == 2) {
+			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
+		}
+
+		break;
+	case 0x3:
+	case 0x5:
+		/* Pins C and E: x1 for one lane, x2 otherwise. */
+		if (width == 1) {
+			ln0 |= MG_DP_MODE_CFG_DP_X1_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X1_MODE;
+		} else {
+			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
+		}
+
+		break;
+	case 0x4:
+	case 0x6:
+		/* Pins D and F: x1 for one lane, x2 otherwise. */
+		if (width == 1) {
+			ln0 |= MG_DP_MODE_CFG_DP_X1_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X1_MODE;
+		} else {
+			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
+			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
+		}
+
+		break;
+	default:
+		I915_LCD_MISSING_CASE(pin_assignment);
+		break;
+	}
+
+	/* Writes both lanes' DP mode. */
+	i915_lcd_dkl_phy_write(dev_priv, tc_port, DKL_DP_MODE(0), ln0);
+	i915_lcd_dkl_phy_write(dev_priv, tc_port, DKL_DP_MODE(1), ln1);
+}
+
+/*
+ * Selects a Type-C port's crtc's active port PLL by the port's mode (the
+ * Linux intel_ddi_update_active_dpll() with the Alder Lake-P and Tiger
+ * Lake PLL manager's icl_update_active_dpll()).
+ *
+ * A port that is not Type-C, and display version 14, are left alone.  No
+ * big joiner slave pipes exist in this path.
+ */
+static void
+i915_ddi_update_active_dpll(
+	struct intel_atomic_state *state,
+	struct intel_encoder *encoder,
+	struct intel_crtc *crtc)
+{
+	struct drm_i915_private *i915;
+	enum phy phy;
+	bool is_tc;
+	int display_ver;
+
+	/* Finds the device, its display version and the port's PHY. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	display_ver = I915_LCD_DISPLAY_VER(i915);
+	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
+
+	/* Display version 14 has no such PLL manager yet (a FIXME of the reference). */
+	if (display_ver >= 14)
+		return;
+
+	/* Only a Type-C port has two PLLs to choose from. */
+	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
+	if (!is_tc)
+		return;
+
+	/* Selects the crtc's active port PLL. */
+	drv_i915_icl_update_active_dpll(state, crtc, encoder);
+}
+
+/*
+ * Releases the core soft reset of a Type-C port's two PHY lanes before its
+ * DDI buffer is enabled in DP-alt or legacy mode (the Linux
+ * adlp_tbt_to_dp_alt_switch_wa(), an Alder Lake-P workaround for a port
+ * that was in Thunderbolt-alt mode).
+ */
+static void
+i915_adlp_tbt_to_dp_alt_switch_wa(
+	struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+	int ln;
+
+	/* Finds the device and the Type-C port. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
+
+	/* Clears the core soft reset of both lanes. */
+	for (ln = 0; ln < 2; ln++)
+		i915_lcd_dkl_phy_rmw(i915, tc_port, DKL_PCS_DW5(ln), DKL_PCS_DW5_CORE_SOFTRESET, 0);
+}
+
+/*
+ * The DDI clock select of a Type-C port's crtc PLL (the Linux
+ * icl_pll_to_ddi_clk_sel()): the port's own PLL, or the Thunderbolt PLL's
+ * output of the link rate.  A combo PLL, or a rate the Thunderbolt PLL
+ * does not put out, is reported and selects nothing.
+ */
+static u32
+i915_icl_pll_to_ddi_clk_sel(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state)
+{
+	const struct intel_shared_dpll *pll;
+	int clock;
+	enum intel_dpll_id id;
+
+	UNUSED_PARAMETER(encoder);
+
+	/* Finds the crtc's PLL and link rate. */
+	pll = crtc_state->shared_dpll;
+	clock = crtc_state->port_clock;
+	id = pll->info->id;
+
+	/* The port's own PLL is selected as MG; the Thunderbolt PLL by rate. */
+	switch (id) {
+	case DPLL_ID_ICL_TBTPLL:
+		/* Picks the Thunderbolt PLL's output of the link rate. */
+		switch (clock) {
+		case 162000:
+			return DDI_CLK_SEL_TBT_162;
+		case 270000:
+			return DDI_CLK_SEL_TBT_270;
+		case 540000:
+			return DDI_CLK_SEL_TBT_540;
+		case 810000:
+			return DDI_CLK_SEL_TBT_810;
+		default:
+			I915_LCD_MISSING_CASE(clock);
+			return DDI_CLK_SEL_NONE;
+		}
+	case DPLL_ID_ICL_MGPLL1:
+	case DPLL_ID_ICL_MGPLL2:
+	case DPLL_ID_ICL_MGPLL3:
+	case DPLL_ID_ICL_MGPLL4:
+	case DPLL_ID_TGL_MGPLL5:
+	case DPLL_ID_TGL_MGPLL6:
+		return DDI_CLK_SEL_MG;
+	default:
+		/* DPLL0 and DPLL1 are never a Type-C port's PLL. */
+		I915_LCD_MISSING_CASE(id);
+		return DDI_CLK_SEL_NONE;
+	}
+}
+
+/*
+ * Selects a Type-C port's clock and ungates it (the Linux
+ * icl_ddi_tc_enable_clock(), the enable_clock hook).
+ *
+ * The port's DDI clock select names the crtc's PLL; the gate is in the
+ * clock register the combo PHYs share, changed under the DPLL lock.
+ */
+static void
+i915_icl_ddi_tc_enable_clock(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915;
+	struct drm_i915_private *cur_i915;
+	const struct intel_shared_dpll *pll;
+	enum tc_port tc_port;
+	enum port port;
+	u32 clk_sel;
+	bool warned;
+
+	/* Finds the devices, the crtc's PLL and the port. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	cur_i915 = i915_ddi_cur_i915(encoder);
+	pll = crtc_state->shared_dpll;
+	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
+	port = encoder->port;
+
+	/* A crtc state without a PLL is a warning, and nothing is selected. */
+	warned = I915_LCD_DRM_WARN_ON(&i915->drm, !pll);
+	if (warned)
+		return;
+
+	/* Selects the PLL for the port. */
+	clk_sel = i915_icl_pll_to_ddi_clk_sel(encoder, crtc_state);
+	i915_lcd_intel_de_write(i915, DDI_CLK_SEL(port), clk_sel);
+
+	/* Ungates the port's clock under the DPLL lock. */
+	I915_LCD_MUTEX_LOCK(cur_i915, &i915->display.dpll.lock);
+
+	(void)i915_lcd_intel_de_rmw(i915, ICL_DPCLKA_CFGCR0,
+				    ICL_DPCLKA_CFGCR0_TC_CLK_OFF(tc_port), 0);
+
+	I915_LCD_MUTEX_UNLOCK(cur_i915, &i915->display.dpll.lock);
+}
+
+/*
+ * Gates a Type-C port's clock and deselects it (the Linux
+ * icl_ddi_tc_disable_clock(), the disable_clock hook).
+ */
+static void
+i915_icl_ddi_tc_disable_clock(
+	struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915;
+	struct drm_i915_private *cur_i915;
+	enum tc_port tc_port;
+	enum port port;
+
+	/* Finds the devices and the port. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	cur_i915 = i915_ddi_cur_i915(encoder);
+	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
+	port = encoder->port;
+
+	/* Gates the port's clock under the DPLL lock. */
+	I915_LCD_MUTEX_LOCK(cur_i915, &i915->display.dpll.lock);
+
+	(void)i915_lcd_intel_de_rmw(i915, ICL_DPCLKA_CFGCR0,
+				    0, ICL_DPCLKA_CFGCR0_TC_CLK_OFF(tc_port));
+
+	I915_LCD_MUTEX_UNLOCK(cur_i915, &i915->display.dpll.lock);
+
+	/* Deselects the port's PLL. */
+	i915_lcd_intel_de_write(i915, DDI_CLK_SEL(port), DDI_CLK_SEL_NONE);
+}
+
+/*
+ * Tells whether a Type-C port's clock runs (the Linux
+ * icl_ddi_tc_is_clock_enabled(), the is_clock_enabled hook): a PLL is
+ * selected and the port's gate is open.
+ */
+static bool
+i915_icl_ddi_tc_is_clock_enabled(
+	struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915;
+	enum tc_port tc_port;
+	enum port port;
+	u32 tmp;
+	u32 clk_off;
+
+	/* Finds the device, the port and the port's clock gate. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
+	port = encoder->port;
+	clk_off = ICL_DPCLKA_CFGCR0_TC_CLK_OFF(tc_port);
+
+	/* A port that selects no PLL has no clock. */
+	tmp = i915_lcd_intel_de_read(i915, DDI_CLK_SEL(port));
+	if ((tmp & DDI_CLK_SEL_MASK) == DDI_CLK_SEL_NONE)
+		return false;
+
+	/* A gated port has no clock. */
+	tmp = i915_lcd_intel_de_read(i915, ICL_DPCLKA_CFGCR0);
+	if ((tmp & clk_off) != 0)
+		return false;
+
+	/* Succeeded: the port's clock runs. */
+	return true;
+}
+
+/*
+ * Finds the PLL a Type-C port's DDI clock select names (the Linux
+ * icl_ddi_tc_get_pll()): one of the Thunderbolt PLL's outputs, or the
+ * port's own PLL.  NULL when nothing is selected, or for a select value
+ * the reference does not know (reported).
+ */
+static struct intel_shared_dpll *
+i915_icl_ddi_tc_get_pll(
+	struct intel_encoder *encoder)
+{
+	struct drm_i915_private *i915;
+	struct intel_shared_dpll *pll;
+	enum tc_port tc_port;
+	enum port port;
+	enum intel_dpll_id id;
+	u32 tmp;
+
+	/* Finds the device and the port. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
+	port = encoder->port;
+
+	/* Reads the port's DDI clock select. */
+	tmp = i915_lcd_intel_de_read(i915, DDI_CLK_SEL(port));
+
+	/* Names the PLL the select value stands for. */
+	switch (tmp & DDI_CLK_SEL_MASK) {
+	case DDI_CLK_SEL_TBT_162:
+	case DDI_CLK_SEL_TBT_270:
+	case DDI_CLK_SEL_TBT_540:
+	case DDI_CLK_SEL_TBT_810:
+		id = DPLL_ID_ICL_TBTPLL;
+		break;
+	case DDI_CLK_SEL_MG:
+		id = (enum intel_dpll_id)((int)DPLL_ID_ICL_MGPLL1 + (int)tc_port - (int)TC_PORT_1);
+		break;
+	case DDI_CLK_SEL_NONE:
+		return NULL;
+	default:
+		I915_LCD_MISSING_CASE(tmp);
+		return NULL;
+	}
+
+	/* Finds the device's PLL of that id. */
+	pll = drv_i915_get_shared_dpll_by_id(i915, id);
+
+	/* Succeeded: reports the PLL (NULL when the id is not in the pool). */
+	return pll;
+}
+
+/*
+ * The link rate a Type-C port takes from the Thunderbolt PLL (the Linux
+ * icl_calc_tbt_pll_link()), from the rate its DDI clock select names; 0
+ * when nothing, or an unknown value, is selected.
+ */
+static int
+i915_icl_calc_tbt_pll_link(
+	struct drm_i915_private *dev_priv,
+	enum port port)
+{
+	u32 val;
+
+	/* Reads the port's DDI clock select. */
+	val = i915_lcd_intel_de_read(dev_priv, DDI_CLK_SEL(port)) & DDI_CLK_SEL_MASK;
+
+	/* The rate of each of the Thunderbolt PLL's outputs. */
+	switch (val) {
+	case DDI_CLK_SEL_NONE:
+		return 0;
+	case DDI_CLK_SEL_TBT_162:
+		return 162000;
+	case DDI_CLK_SEL_TBT_270:
+		return 270000;
+	case DDI_CLK_SEL_TBT_540:
+		return 540000;
+	case DDI_CLK_SEL_TBT_810:
+		return 810000;
+	default:
+		I915_LCD_MISSING_CASE(val);
+		return 0;
+	}
+}
+
+/* Tells whether a PLL is the Thunderbolt PLL (the Linux icl_ddi_tc_pll_is_tbt()). */
+static bool
+i915_icl_ddi_tc_pll_is_tbt(
+	const struct intel_shared_dpll *pll)
+{
+	/* Only the Thunderbolt PLL has its id. */
+	if (pll->info->id != DPLL_ID_ICL_TBTPLL)
+		return false;
+
+	/* Succeeded: it is the Thunderbolt PLL. */
+	return true;
+}
+
+/*
+ * Reads the PLL a Type-C port runs on into a crtc state and works out the
+ * link rate (the Linux icl_ddi_tc_get_clock()).
+ *
+ * The Thunderbolt PLL fills the default port PLL slot, the port's own PLL
+ * the MG PHY slot; that slot becomes the active one.  The Thunderbolt
+ * PLL's rate is the one the DDI clock select names, the port's own PLL's
+ * the one its words give.
+ */
+static void
+i915_icl_ddi_tc_get_clock(
+	struct intel_encoder *encoder,
+	struct intel_crtc_state *crtc_state,
+	struct intel_shared_dpll *pll)
+{
+	struct drm_i915_private *i915;
+	enum icl_port_dpll_id port_dpll_id;
+	struct icl_port_dpll *port_dpll;
+	bool pll_active;
+	bool is_tbt;
+	bool warned;
+
+	/* Finds the device. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+
+	/* A port without a PLL is a warning, and nothing is read. */
+	warned = I915_LCD_DRM_WARN_ON(&i915->drm, !pll);
+	if (warned)
+		return;
+
+	/* The Thunderbolt PLL is the default slot, the port's own PLL the MG PHY slot. */
+	is_tbt = i915_icl_ddi_tc_pll_is_tbt(pll);
+	if (is_tbt) {
+		port_dpll_id = ICL_PORT_DPLL_DEFAULT;
+	} else {
+		port_dpll_id = ICL_PORT_DPLL_MG_PHY;
+	}
+
+	/* Reads the PLL's state into its slot; an inactive PLL is a warning. */
+	port_dpll = &crtc_state->icl_port_dplls[port_dpll_id];
+	port_dpll->pll = pll;
+	pll_active = drv_i915_dpll_get_hw_state(i915, pll, &port_dpll->hw_state);
+	(void)I915_LCD_DRM_WARN_ON(&i915->drm, !pll_active);
+
+	/* Makes the slot the active one. */
+	drv_i915_icl_set_active_port_dpll(crtc_state, port_dpll_id);
+
+	/* Works the link rate out: by the clock select for the Thunderbolt PLL, by the words otherwise. */
+	if (is_tbt) {
+		crtc_state->port_clock = i915_icl_calc_tbt_pll_link(i915, encoder->port);
+	} else {
+		crtc_state->port_clock = drv_i915_dpll_get_freq(i915, crtc_state->shared_dpll,
+								&crtc_state->dpll_hw_state);
+	}
+}
+
+/*
+ * Reads the PLL and the configuration of a Type-C port (the Linux
+ * icl_ddi_tc_get_config(), the get_config hook of a Type-C DDI).
+ */
+static void
+i915_icl_ddi_tc_get_config(
+	struct intel_encoder *encoder,
+	struct intel_crtc_state *crtc_state)
+{
+	struct intel_shared_dpll *pll;
+
+	/* Reads the PLL the port selects and the link rate it gives. */
+	pll = i915_icl_ddi_tc_get_pll(encoder);
+	i915_icl_ddi_tc_get_clock(encoder, crtc_state, pll);
+
+	/* Reads the rest of the DDI's configuration. */
+	i915_ddi_get_config(encoder, crtc_state);
+}
+
+/*
+ * Programs a Type-C port's DKL PHY transmitters with the levels of its
+ * buffer translation table (the Linux tgl_dkl_phy_set_signal_levels(), the
+ * set_signal_levels hook).
+ *
+ * Each of the two PHY lanes drives two of the link's lanes (TX1 and TX2):
+ * DPCNTL0 takes the even link lane's level, DPCNTL1 the odd one's.  Alder
+ * Lake-P also selects the load generators (HDMI needs its own).  A port in
+ * Thunderbolt-alt mode is left alone.
+ */
+static void
+i915_tgl_dkl_phy_set_signal_levels(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *dev_priv;
+	enum tc_port tc_port;
+	const struct intel_ddi_buf_trans *trans;
+	int n_entries;
+	int ln;
+	int level;
+	u32 val;
+	bool in_tbt_alt_mode;
+	bool warned;
+	bool is_alderlake_p;
+	bool has_hdmi;
+
+	/* Finds the device and the Type-C port. */
+	dev_priv = i915_lcd_to_i915(encoder->base.dev);
+	tc_port = i915_lcd_intel_port_to_tc(dev_priv, encoder->port);
+
+	/* A port in Thunderbolt-alt mode is the Thunderbolt controller's. */
+	in_tbt_alt_mode = i915_lcd_intel_tc_port_in_tbt_alt_mode(i915_lcd_enc_to_dig_port(encoder));
+	if (in_tbt_alt_mode)
+		return;
+
+	/* Finds the port's buffer table; a port without one is a warning. */
+	trans = encoder->get_buf_trans(encoder, crtc_state, &n_entries);
+	warned = drm_WARN_ON_ONCE(&dev_priv->drm, !trans);
+	if (warned)
+		return;
+
+	/* Programs both PHY lanes. */
+	is_alderlake_p = I915_LCD_IS_ALDERLAKE_P(dev_priv);
+	for (ln = 0; ln < 2; ln++) {
+		/* Takes the lane out of its PMD suspend. */
+		i915_lcd_dkl_phy_write(dev_priv, tc_port, DKL_TX_PMD_LANE_SUS(ln), 0);
+
+		/* The even link lane's level in DPCNTL0. */
+		level = i915_ddi_level(encoder, crtc_state, 2 * ln + 0);
+		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL0(ln),
+				     DKL_TX_PRESHOOT_COEFF_MASK |
+				     DKL_TX_DE_EMPAHSIS_COEFF_MASK |
+				     DKL_TX_VSWING_CONTROL_MASK,
+				     DKL_TX_PRESHOOT_COEFF(trans->entries[level].dkl.preshoot) |
+				     DKL_TX_DE_EMPHASIS_COEFF(trans->entries[level].dkl.de_emphasis) |
+				     DKL_TX_VSWING_CONTROL(trans->entries[level].dkl.vswing));
+
+		/* The odd link lane's level in DPCNTL1. */
+		level = i915_ddi_level(encoder, crtc_state, 2 * ln + 1);
+		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL1(ln),
+				     DKL_TX_PRESHOOT_COEFF_MASK |
+				     DKL_TX_DE_EMPAHSIS_COEFF_MASK |
+				     DKL_TX_VSWING_CONTROL_MASK,
+				     DKL_TX_PRESHOOT_COEFF(trans->entries[level].dkl.preshoot) |
+				     DKL_TX_DE_EMPHASIS_COEFF(trans->entries[level].dkl.de_emphasis) |
+				     DKL_TX_VSWING_CONTROL(trans->entries[level].dkl.vswing));
+
+		/* The 8b/10b links of this path are not in 20-bit mode. */
+		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL2(ln),
+				     DKL_TX_DP20BITMODE, 0);
+
+		/* Only Alder Lake-P selects the load generators. */
+		if (!is_alderlake_p)
+			continue;
+
+		/* HDMI's lanes take their own load generators; DP's take 0. */
+		has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
+		if (has_hdmi) {
+			if (ln == 0) {
+				val = DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1(0);
+				val |= DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2(2);
+			} else {
+				val = DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1(3);
+				val |= DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2(3);
+			}
+		} else {
+			val = DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1(0);
+			val |= DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2(0);
+		}
+
+		/* Selects them. */
+		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL2(ln),
+				     DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1_MASK |
+				     DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2_MASK,
+				     val);
+	}
 }

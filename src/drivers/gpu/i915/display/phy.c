@@ -134,6 +134,10 @@ static const struct intel_ddi_buf_trans *i915_tgl_get_combo_buf_trans(struct int
 static const struct intel_ddi_buf_trans *i915_adlp_get_combo_buf_trans_dp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
 static const struct intel_ddi_buf_trans *i915_adlp_get_combo_buf_trans_edp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
 static const struct intel_ddi_buf_trans *i915_adlp_get_combo_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
+static const struct intel_ddi_buf_trans *i915_tgl_get_dkl_buf_trans_dp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
+static const struct intel_ddi_buf_trans *i915_tgl_get_dkl_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
+static const struct intel_ddi_buf_trans *i915_adlp_get_dkl_buf_trans_dp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
+static const struct intel_ddi_buf_trans *i915_adlp_get_dkl_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
 
 /*
  * Initializes combo PHYs A and B (intel_combo_phy_init()).
@@ -397,17 +401,37 @@ drv_i915_is_hobl_buf_trans(
 
 /*
  * Binds an encoder's buffer-translation hook as intel_ddi_buf_trans_init()
- * does for a combo PHY: Alder Lake-P (display version 13) and Tiger Lake
- * (version 12) have different translations.
+ * does for a combo PHY and a Type-C (DKL) PHY: Alder Lake-P (display
+ * version 13) and Tiger Lake (version 12) have different translations.
  */
 void
 drv_i915_lcd_ms_bind_buf_trans(
 	struct intel_encoder *encoder)
 {
+	struct drm_i915_private *i915;
+	enum phy phy;
 	int display_ver;
+	bool is_tc;
 
-	/* Picks the platform's hook. */
+	/* Finds the platform and whether the port's PHY is Type-C. */
 	display_ver = drv_i915_lcd_display_ver();
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
+	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
+
+	/* A Type-C PHY takes the platform's DKL tables. */
+	if (is_tc) {
+		if (display_ver >= 13) {
+			encoder->get_buf_trans = i915_adlp_get_dkl_buf_trans;
+		} else {
+			encoder->get_buf_trans = i915_tgl_get_dkl_buf_trans;
+		}
+
+		/* The combo tables are not a Type-C PHY's. */
+		return;
+	}
+
+	/* A combo PHY takes the platform's combo tables. */
 	if (display_ver >= 13)
 		encoder->get_buf_trans = i915_adlp_get_combo_buf_trans;
 	else
@@ -913,6 +937,93 @@ i915_adlp_get_combo_buf_trans(
 		table = i915_adlp_get_combo_buf_trans_edp(encoder, crtc_state, n_entries);
 	else
 		table = i915_adlp_get_combo_buf_trans_dp(encoder, crtc_state, n_entries);
+
+	/* Succeeded: reports the table. */
+	return table;
+}
+
+/* The Tiger Lake DKL DP table of a link rate (tgl_get_dkl_buf_trans_dp()). */
+static const struct intel_ddi_buf_trans *
+i915_tgl_get_dkl_buf_trans_dp(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state,
+	int *n_entries)
+{
+	const struct intel_ddi_buf_trans *table;
+
+	UNUSED_PARAMETER(encoder);
+
+	/* Above HBR the HBR2 table, HBR and below the HBR table. */
+	if (crtc_state->port_clock > 270000)
+		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_dp_hbr2, n_entries);
+	else
+		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_dp_hbr, n_entries);
+
+	/* Succeeded: reports the table. */
+	return table;
+}
+
+/* The Tiger Lake DKL PHY table of an output (tgl_get_dkl_buf_trans()). */
+static const struct intel_ddi_buf_trans *
+i915_tgl_get_dkl_buf_trans(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state,
+	int *n_entries)
+{
+	const struct intel_ddi_buf_trans *table;
+	bool is_hdmi;
+
+	/* HDMI has its own table, DP picks by rate. */
+	is_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
+	if (is_hdmi)
+		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_hdmi, n_entries);
+	else
+		table = i915_tgl_get_dkl_buf_trans_dp(encoder, crtc_state, n_entries);
+
+	/* Succeeded: reports the table. */
+	return table;
+}
+
+/* The Alder Lake-P DKL DP table of a link rate (adlp_get_dkl_buf_trans_dp()). */
+static const struct intel_ddi_buf_trans *
+i915_adlp_get_dkl_buf_trans_dp(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state,
+	int *n_entries)
+{
+	const struct intel_ddi_buf_trans *table;
+
+	UNUSED_PARAMETER(encoder);
+
+	/* Above HBR the HBR2 / HBR3 table, HBR and below the HBR table. */
+	if (crtc_state->port_clock > 270000)
+		table = i915_intel_get_buf_trans(&adlp_dkl_phy_trans_dp_hbr2_hbr3, n_entries);
+	else
+		table = i915_intel_get_buf_trans(&adlp_dkl_phy_trans_dp_hbr, n_entries);
+
+	/* Succeeded: reports the table. */
+	return table;
+}
+
+/*
+ * The Alder Lake-P DKL PHY table of an output (adlp_get_dkl_buf_trans()):
+ * HDMI takes Tiger Lake's table, DP Alder Lake-P's own.
+ */
+static const struct intel_ddi_buf_trans *
+i915_adlp_get_dkl_buf_trans(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state,
+	int *n_entries)
+{
+	const struct intel_ddi_buf_trans *table;
+	bool is_hdmi;
+
+	/* HDMI has Tiger Lake's table, DP picks by rate. */
+	is_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
+	if (is_hdmi)
+		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_hdmi, n_entries);
+	else
+		table = i915_adlp_get_dkl_buf_trans_dp(encoder, crtc_state, n_entries);
 
 	/* Succeeded: reports the table. */
 	return table;
