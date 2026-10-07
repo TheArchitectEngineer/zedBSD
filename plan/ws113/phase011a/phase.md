@@ -3,7 +3,7 @@
 # ws113-p011a: i915 の 1 出力の付け替え（Keiland の指示で点ける出力を替える）
 
 Parent: [WS113](../ws.md)
-Status: planned（2026-10-07 q850、P2: 設計の案。実装は Q1 の合図の後、i915 の display の file は P1 の WS051 p004a と重なるので着手の前に Q1 へ）
+Status: in-progress（2026-10-07 q850、P2: 実装・build（warning 0、vmunix の kernel include check PASS）まで。実機 5330 の確認は UAT）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue: q850（p004a の後）
@@ -42,3 +42,23 @@ Queue: q850（p004a の後）
 ## 依存と衝突
 
 依存: p002（inventory・HPD、in-progress・T1 待ち）。衝突: P1 の WS051 p004a（`takeover.c`・`output.c`・`display.c` の DP-alt）。実装の前に Q1 へ知らせ、同じ file は小さく commit して早く merge を頼む。
+
+## 実装（2026-10-07、P1 の依頼 R1〜R4 を入れた）
+
+| 部分 | file |
+| --- | --- |
+| R1 出力の種類 | `display/internal.h`: `enum i915_output_kind`（PANEL・HDMI・DP_EXT）、`struct i915_display_output` の `hdmi` を `kind` に、connector（`has_connector`・`connector`）、`display->gop_output`（起動時の GOP の出力）、`window.hold_cut`。`output.hdmi` の全ての使い（output.c・display.c・present.c・control.c・backlight.c・modeset.c）を `kind` に |
+| R2 準備の分岐 | `output.c` の `drv_i915_display_output_prepare`（hotplug の connector の種類ごと: eDP は panel、HDMI は DDI B だけ hotplug の道の EDID から mode と WRPLL（`i915_output_hdmi_mode`、検出し直さない）、DP は `EOPNOTSUPP`（ws051-p004b が埋める 1 か所）、他は `EOPNOTSUPP`）、`drv_i915_display_output_pipe`（種類ごとの pipe）、`drv_i915_display_output_panel` |
+| R4 run の選び方 | `modeset.c` の `i915_resident_output_way`（種類ごとの params・cfg・PLL pool を 1 か所で、DP_EXT は `EOPNOTSUPP`）、`drv_i915_lcd_kernel_resident_run` はそれを使う。pipe は `drv_i915_display_output_pipe` |
+| ID・generation | `display.c` の `drv_i915_display_resident_identity`（resident も connector の ID `0x100+connector` と hotplug の generation、hotplug の道が無ければ 1・1）、`i915_display_which`（resident か他か、ESTALE・ENOENT）で query・mode・claim・power・refresh を振り分け |
+| 付け替え | `display.c` の `i915_display_move`（lease が在れば ENOSPC、準備 → `drv_i915_present_cut`（hold を 1 度だけ終わらせ worker が window を出て止めるのを 2 秒まで待つ）→ IRQ lock の下で `display->output` を入れ替え）。claim で他の connector なら move の後に lease を渡す（点けるのは最初の frame） |
+| 戻し | `present.c` の window の終わり: sleep の後の panel への fallback は種類に依らず、`drv_i915_display_output_back`（lease が無く GOP の出力でなければ GOP の出力へ、hold が終わったと言う前に）、`hold_cut` を戻す。`drv_i915_present_hold_over` は `hold_cut` でも終わる |
+| R3 切断 | `present.c` の present: resident の connector の hotplug の `connected` が 0 なら ENXIO（種類に依らない topology の判定）。generation は resident の今の値 |
+| compositor（R4 の蓋） | `backend-host.c` の `kwl_lid_follow`: 内蔵に出していて外部が使えれば蓋を閉じた時に `kwl_output_use_external`（成功すれば lock も消灯もしない、蓋は閉じた扱い）、開けた時に `kwl_output_use_internal`。失敗（ENOSPC など）は今までどおり lock して眠る。`kwl.h` の `output_lid_moved` |
+
+## 確認（2026-10-07）
+
+- build（warning 0）: `make ZEDBSD_CONFIG=config/release/config-amd64-beta2.mk BUILD=build/ws113-p011a build/ws113-p011a/vmunix`（kernel include check PASS、amd64 vmunix check PASS）、compositor（zdesktop の config）・keiland-linux。style-check: 新しい違反 0。
+- host 試験: 書いていない（判断は display.c・output.c の static で hotplug の道に依る。実機で確かめる）。
+- 未実施: 実機（5330、eDP と HDMI、ユーザーの UAT）: (1) 内蔵で起動 → HDMI を挿す → 蓋を閉じる → 画面が HDMI に移り（`i915: resident display: the output moves to connector N (HDMI, Keiland's claim)`、`KWL LID external`、`KWL OUTPUT switch name=...:hdmi:B`）、内蔵は消え、HDMI で普段どおり使える。(2) 蓋を開ける → 内蔵に戻る（`KWL LID internal`）。(3) 蓋を閉じたまま HDMI を抜く → 内蔵に戻って lock して眠る。(4) compositor を終えて 10 秒後に GOP の出力に戻る（`the firmware's output (eDP panel) is the output again`）。
+- 制限: 起動時の出力が HDMI だった時は backlight の device を登録しない（今までと同じ）ので、後で内蔵へ移っても明るさは変えられない。HDMI は DDI B だけ。resident の display の ID が 1 から connector の ID に変わった（libvulkan は identity で追うので影響しない）。

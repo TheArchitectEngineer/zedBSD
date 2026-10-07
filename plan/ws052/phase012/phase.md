@@ -38,5 +38,5 @@ Queue: q850（2026-10-07 Q1「ws052-p012 の実装を始めてよい」、p011 �
 
 ## 残り
 
-- R4（蓋を閉じたら外部へ切り替え、開けたら内蔵へ）: WS113 p004a・p011a の後、`sleep_idle` の蓋の分岐に `kwl_output_use_external` を足す。
+- R4（蓋を閉じたら外部へ切り替え、開けたら内蔵へ）: 2026-10-07 に `backend-host.c` の `kwl_lid_follow` に入れた（ws113-p011a の記録）。確認は 5330 の UAT。
 - p013（Settings の Power の頁）。

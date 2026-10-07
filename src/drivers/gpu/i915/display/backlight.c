@@ -64,7 +64,7 @@ drv_i915_display_backlight_register(
 		return 0;
 	if (display->rctx.lcd == NULL)
 		return 0;
-	if (display->output.none || display->output.hdmi)
+	if (display->output.none || display->output.kind != I915_OUTPUT_KIND_PANEL)
 		return 0;
 
 	/* Publishes the backlight device. */
@@ -126,7 +126,7 @@ drv_i915_display_backlight_serve(
 	display = device->display;
 	if (display == NULL || !in_display)
 		return EBUSY;
-	if (display->output.none || display->output.hdmi)
+	if (display->output.none || display->output.kind != I915_OUTPUT_KIND_PANEL)
 		return EBUSY;
 
 	/* Switches the light (the panel's power for the display control, ws113-p012): the pipe keeps running. */
