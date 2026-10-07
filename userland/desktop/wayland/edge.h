@@ -10,8 +10,9 @@
  * the swipe up from the bottom edge that opens App Home, the swipe down
  * from the top edge's band that opens Wiseview (a touch only, the band
  * holding its press until it knows), a drag on Home that is mostly down
- * (closing Home) or sideways (the pages), and how far a docked title has
- * been pulled out of the system bar.
+ * (closing Home) or sideways (the pages), how far a docked title has
+ * been pulled out of the system bar, and how deep the desktop and Home's
+ * content are while Home opens or closes (ws181-p008).
  *
  * It knows nothing of the server: the caller gives points and distances,
  * and acts on what the rules say (shell.c, home.c).  So the host tests
@@ -58,9 +59,38 @@
 #define KWL_EDGE_DRAG_CLOSE		1U
 #define KWL_EDGE_DRAG_NONE		2U
 
+/*
+ * App Home's way in and out (ws181-p008, the 2026-10-07 UAT: as on iOS).
+ * The desktop layer goes back into the distance: it shrinks about the
+ * output's middle to KWL_EDGE_HOME_DESKTOP_DEPTH of its size as Home
+ * opens, and fades out between KWL_EDGE_HOME_FADE_START and
+ * KWL_EDGE_HOME_FADE_END of the way.  Home's content comes forward from
+ * the distance: it grows about the middle from KWL_EDGE_HOME_CONTENT_DEPTH
+ * of its size to its own.  Closing is the same way back.
+ */
+#define KWL_EDGE_HOME_DESKTOP_DEPTH	0.75f
+#define KWL_EDGE_HOME_CONTENT_DEPTH	0.85f
+#define KWL_EDGE_HOME_FADE_START	0.20f
+#define KWL_EDGE_HOME_FADE_END		0.90f
+
+/*
+ * Where a layer is drawn at one moment of Home's way in or out: its
+ * top-left corner on the output and its scale (a point (px, py) of the
+ * layer is drawn at (x + px * scale, y + py * scale)), and its opacity.
+ * The caller owns it.
+ */
+struct kwl_edge_depth {
+	float x;
+	float y;
+	float scale;
+	float opacity;
+};
+
 unsigned kwl_edge_classify(int32_t x, int32_t y, int32_t width, int32_t height, int touch);
 unsigned kwl_edge_band_motion(int32_t dx, int32_t dy);
 unsigned kwl_edge_drag_axis(int32_t dx, int32_t dy);
 int32_t kwl_edge_distance(int32_t dx, int32_t dy);
+void kwl_edge_home_desktop(float progress, int32_t width, int32_t height, struct kwl_edge_depth *depth);
+void kwl_edge_home_content(float progress, int32_t width, int32_t height, struct kwl_edge_depth *depth);
 
 #endif

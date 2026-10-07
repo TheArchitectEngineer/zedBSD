@@ -24,9 +24,10 @@
 #  9. On the desktop the bottom edge's swipe opens App Home (WS181,
 #     HOME open via=edge), not Wiseview; a stroke that starts above the edge
 #     does not.
-# 10. App Home by its corner drag, closed by a drag down on it (there is no
-#     desktop corner left in view, WS181), and docking by a double click on a
-#     title bar, still work.
+# 10. App Home by a click in its corner (its drag opens nothing since
+#     ws181-p008), closed by a drag down on it (there is no desktop corner
+#     left in view, WS181), and docking by a double click on a title bar,
+#     still work.
 #
 #   GUEST_RUNTIME=... plan/ws035/tests/zdesktop-guest.sh start IMAGE
 #   GUEST_RUNTIME=... plan/ws079/tests/zdesktop-p010.sh BUILD [OUTDIR [PREFIX]]
@@ -89,9 +90,9 @@ stroke() {
 	echo "$steps"
 }
 
-# Swipes from the top-left corner to open App Home and waits for it to settle.
+# Clicks in the top-left corner to open App Home and waits for it to settle (the corner's drag opens nothing, ws181-p008).
 open_home() {
-	pointer $(stroke 4 4 204 204 10 30) up sleep 1200
+	pointer move 4 4 sleep 300 down sleep 60 up sleep 1200
 }
 
 # The compositor and the clients under test, and the stand-in.
@@ -168,7 +169,7 @@ shot notes-raised --expect 640,400,fdf6e3 --expect 1275,4,fdf6e3 --expect 4,796,
 # 5. App Home over fullscreen Notes; the top-right swipe closes Home, Notes stays.
 already=$(count 'CORNER notes surface=[0-9]* already')
 open_home
-expect_log 'HOME open via=drag'
+expect_log 'HOME open via=launcher'
 shot home-over-notes >/dev/null
 pointer $(stroke 1272 6 1112 166 8 40) up sleep 2500
 expect_log 'HOME close via=notes'
@@ -218,11 +219,11 @@ pointer $(stroke 640 300 640 600 10 30) up sleep 1500
 pointer $(stroke 640 770 640 450 10 30) up sleep 1500
 expect_count "Home from above the edge" "$(count 'HOME open via=edge')" $((edge_opens + 1))
 
-# 10. App Home by its drag, closed by a drag down on it, and docking, still work.
-opens=$(count 'HOME open via=drag')
+# 10. App Home by its corner's click, closed by a drag down on it, and docking, still work.
+opens=$(count 'HOME open via=launcher')
 pulls=$(count 'HOME close via=pull-down')
 open_home
-expect_count "Home opened by the drag" "$(count 'HOME open via=drag')" $((opens + 1))
+expect_count "Home opened by the corner's click" "$(count 'HOME open via=launcher')" $((opens + 1))
 pointer $(stroke 640 300 640 600 10 30) up sleep 1500
 expect_count "Home closed by a drag down" "$(count 'HOME close via=pull-down')" $((pulls + 1))
 surface=$b_surface

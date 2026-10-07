@@ -7,10 +7,11 @@
 #  1. Docked, then a switch: a double click on apps.b's title bar docks it ("KWL LAYOUT mode=docked
 #     reason=double-click"); Alt held, Tab, Tab, Alt let go brings apps.a, which docks too ("KWL LAYOUT switch surface=A
 #     action=dock mode=docked via=switch"); apps.b is not drawn (layout-docked.png shows apps.a alone).
-#  2. Two fingers from the pad's top edge down (TOP2): apps.a floats again ("KWL GESTURE kind=top2 phase=begin",
-#     "KWL GLASS undock surface=A via=top2", "KWL LAYOUT mode=windowed reason=top2"), and apps.b, docked behind it,
-#     floats at once too (WS181, the 2026-10-07 UAT: "KWL LAYOUT float-quiet ... client=B", "KWL LAYOUT leave via=top2";
-#     layout-windowed.png shows both as windows).
+#  2. Two fingers from the pad's top edge down (TOP2) open App Home (ws181-p008: "KWL GESTURE kind=top2 phase=begin",
+#     "KWL HOME open via=pad"), which Esc closes; then a double click on apps.a's title in the bar floats it again
+#     ("KWL GLASS undock surface=A via=double-click", "KWL LAYOUT mode=windowed reason=double-click"), and apps.b,
+#     docked behind it, floats at once too (WS181, the 2026-10-07 UAT: "KWL LAYOUT float-quiet ... client=B",
+#     "KWL LAYOUT leave via=double-click"; layout-windowed.png shows both as windows).
 #  3. Windowed, a switch to apps.b: it is a window already, so it only comes forward ("KWL LAYOUT switch surface=B
 #     action=keep mode=windowed via=switch").
 #  4. Docked again (apps.b's title double-clicked), then apps.b ends by itself: the docked mode ends and apps.a stays a
@@ -61,6 +62,11 @@ pad() { name=$1; shift; script="pad 1336 760 5 scan\nwait 2600"; for line in "$@
 	grep -q '^replay=0$' "$out/$name.txt" || fail "$name replay"; sleep 0.5; }
 # The client number of the latest window of an application (its MAP line after its wltest started).
 client_of() { guest "grep -n 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*client=\([0-9]*\) .*/\1/p'; }
+# A double click on the docked window's title in the system bar (its x from the latest dock line).
+bar_double_click() {
+	set -- $(guest "grep 'KWL GLASS dock surface=' /tmp/zdesktop.log | tail -1" | sed -n 's/.* title=\([0-9]*\).*/\1/p')
+	pointer move $((${1:-200} + 60)) 30 sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500
+}
 # A double click on the title bar of the window mapped with a client number.
 title_double_click() {
 	set -- $(guest "grep 'KWL MAP client=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
@@ -93,13 +99,18 @@ sleep 1.5
 expect_some switch-docks "KWL LAYOUT switch surface=[0-9]* action=dock mode=docked via=switch client=${a:-0}\$"
 shot layout-docked
 
-# 2. Two fingers from the top edge down: apps.a floats again, the mode windowed.
+# 2. Two fingers from the top edge down: App Home (ws181-p008), closed by Esc; apps.a's title in the bar double-clicked:
+# it floats again, the mode windowed, and apps.b behind it floats too.
 pad top2 "down 0 500 10; down 1 700 20" "wait 30" "swipe 0 240 12 16" "up 0; up 1" "wait 600"
 expect_some top2-gesture 'KWL GESTURE kind=top2 phase=begin'
-expect_some top2-undock "KWL GLASS undock surface=[0-9]* via=top2 x=[-0-9]* y=[-0-9]* client=${a:-0}\$"
-expect_some top2-windowed 'KWL LAYOUT mode=windowed reason=top2'
-expect_some top2-behind-floats "KWL LAYOUT float-quiet surface=[0-9]* x=[-0-9]* y=[-0-9]* w=[0-9]* h=[0-9]* client=${b:-0}\$"
-expect_some top2-leave 'KWL LAYOUT leave via=top2 front=[0-9]* quiet=1'
+expect_some top2-home 'KWL HOME open via=pad'
+tap esc
+expect_some top2-home-esc 'KWL HOME close via=escape'
+bar_double_click
+expect_some bar-undock "KWL GLASS undock surface=[0-9]* via=double-click x=[-0-9]* y=[-0-9]* client=${a:-0}\$"
+expect_some bar-windowed 'KWL LAYOUT mode=windowed reason=double-click'
+expect_some bar-behind-floats "KWL LAYOUT float-quiet surface=[0-9]* x=[-0-9]* y=[-0-9]* w=[0-9]* h=[0-9]* client=${b:-0}\$"
+expect_some bar-leave 'KWL LAYOUT leave via=double-click front=[0-9]* quiet=1'
 sleep 1
 shot layout-windowed
 
@@ -161,7 +172,7 @@ expect_count fullscreen-no-wiseview 'KWL WISEVIEW opening from=' "${opened:-0}"
 # 9. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
-guest 'grep -E "KWL LAYOUT|KWL SWIPE|KWL WISEVIEW|KWL SWITCH|KWL GESTURE kind=(top2|bottom2|tap3)|KWL GLASS (dock|undock|open-docked|fullscreen-leave)|KWL WINDOW unfullscreen|KWL MAP|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL LAYOUT|KWL SWIPE|KWL WISEVIEW|KWL SWITCH|KWL HOME (open|close|pad)|KWL GESTURE kind=(top2|bottom2|tap3)|KWL GLASS (dock|undock|open-docked|fullscreen-leave)|KWL WINDOW unfullscreen|KWL MAP|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 

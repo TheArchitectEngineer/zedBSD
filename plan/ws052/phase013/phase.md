@@ -4,7 +4,7 @@
 
 Phase ID: `ws052-p013`
 Parent: [WS052](../ws.md)
-Status: in-progress（2026-10-07 q850、P2: 実装・build（warning 0）・host 試験まで。画面の確認は T1）
+Status: cleared（2026-10-07 Q1 の判定: T1-358 QEMU PASS: 電源 30・電池 15 minutes、sleep できない行、slider の drag で `ZSETTINGS LOOK set key=power.sleep.ac value=0 error=0` と `KWL PREFERENCES key=power.sleep.ac applied value=0`。実機の sleep の時間の効き目は p012 の 5330 の UAT）
 Phase disposition: normal
 Queue: q850（2026-10-07 Q1「先に ws052-p013 をしてよい」）
 

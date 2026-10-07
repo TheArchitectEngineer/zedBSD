@@ -3344,6 +3344,13 @@ struct i915_present_window {
 	uint64_t hold_until;
 
 	/*
+	 * Nonzero asks the hold in progress to end now, once (a claim that moves
+	 * the output, ws113-p011a); the worker clears it when it leaves the
+	 * window.  The device IRQ lock guards it.
+	 */
+	int hold_cut;
+
+	/*
 	 * Bit i is set while resident buffer i still holds a picture of a
 	 * lease that ended.  A frame that does not cover the whole buffer
 	 * clears it first, so nothing of the ended lease shows around it.
@@ -3466,18 +3473,36 @@ struct i915_tc_kern {
  */
 
 /*
+ * The kinds of output the resident run lights (ws113-p011a): the built-in
+ * eDP panel, an HDMI display, or an external DisplayPort display (a Type-C
+ * port's, ws051-p004b, which fills its part).  Zero is the panel.
+ */
+enum i915_output_kind {
+	I915_OUTPUT_KIND_PANEL = 0,
+	I915_OUTPUT_KIND_HDMI,
+	I915_OUTPUT_KIND_DP_EXT,
+	I915_OUTPUT_KIND_COUNT
+};
+
+/*
  * The output the resident node drives (output.c, ws075-p012).
  *
- * Chosen once, when the node's panel dependencies are filled at the device
- * start, from the display= boot parameter and the HDMI sink connected then;
- * it does not change while the device runs.  Zero is the eDP panel.
+ * Chosen when the node's panel dependencies are filled at the device start:
+ * the firmware's output (the GPU scanout rule).  Keiland moves it to another
+ * connected output while no lease is held (ws113-p011a, display.c's claim),
+ * and the end of such an output's last hold brings the firmware's back.
+ * Zeroed, it is the eDP panel of an unknown connector.
  */
 struct i915_display_output {
-	/* Nonzero: the HDMI display of DDI B on pipe B, in DVI mode, in place of the panel. */
-	int hdmi;
+	/* What it is: the panel, an HDMI display (DDI B on pipe B, DVI mode), an external DP display. */
+	enum i915_output_kind kind;
 
 	/* Nonzero: the node drives no output (the firmware's output could not be driven, ws113-p002). */
 	int none;
+
+	/* Nonzero once connector names the hotplug path's connector of the output (its ID and generation follow it). */
+	int has_connector;
+	unsigned connector;
 
 	/* The HDMI mode (its physical size included, 0 when unknown), link and WRPLL. */
 	struct i915_lcd_state state;
@@ -3587,8 +3612,15 @@ struct i915_display {
 	struct i915_resident_ctx rctx;
 	struct i915_lcd_kernel_deps rlcd;
 
-	/* The output the resident run lights: the panel, or the HDMI display (ws075-p012). */
+	/*
+	 * The output the resident run lights: the panel, or another output
+	 * (ws075-p012); and the firmware's, which the start chose and which
+	 * comes back when a moved output's last hold ends (ws113-p011a).  The
+	 * device IRQ lock covers a change of output against the worker, which
+	 * reads it only when it enters the display window.
+	 */
 	struct i915_display_output output;
+	struct i915_display_output gop_output;
 
 	/* The panel's backlight device while the node is published with the panel as its output (backlight.c), or NULL. */
 	struct kern_backlight *backlight;

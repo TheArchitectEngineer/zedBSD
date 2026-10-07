@@ -9,10 +9,13 @@
  * The rules of the screen edges' gestures (WS181; edge.h says what they
  * are).  Each answers one question the shell or Home asks at one moment:
  * where a press is, what a press held in the top band has become, what a
- * drag on Home is, how far a point is from another.
+ * drag on Home is, how far a point is from another, and how deep the
+ * desktop and Home's content are on Home's way in and out.
  */
 
 #include "edge.h"
+
+static void depth_about_middle(float scale, int32_t width, int32_t height, struct kwl_edge_depth *depth);
 
 /*
  * Tells where a press is for the edges' gestures: the bottom edge's strip
@@ -135,4 +138,85 @@ kwl_edge_distance(
 
 	/* Succeeded: the distance. */
 	return (int32_t)root;
+}
+
+/*
+ * Works out where the desktop layer is when App Home is open by progress
+ * (0 closed, 1 open): gone back into the distance about the output's
+ * middle, and faded out on the latter part of the way (ws181-p008).
+ */
+void
+kwl_edge_home_desktop(
+	float progress,
+	int32_t width,
+	int32_t height,
+	struct kwl_edge_depth *depth)
+{
+	float scale;
+	float opacity;
+
+	/* A progress outside the way is at its ends. */
+	if (progress < 0.0f)
+		progress = 0.0f;
+	if (progress > 1.0f)
+		progress = 1.0f;
+
+	/* Smaller the further Home has opened, about the middle. */
+	scale = 1.0f - (1.0f - KWL_EDGE_HOME_DESKTOP_DEPTH) * progress;
+	depth_about_middle(scale, width, height, depth);
+
+	/* Whole until the fade starts, gone once it ends, evenly between. */
+	if (progress <= KWL_EDGE_HOME_FADE_START) {
+		opacity = 1.0f;
+	} else if (progress >= KWL_EDGE_HOME_FADE_END) {
+		opacity = 0.0f;
+	} else {
+		opacity = (KWL_EDGE_HOME_FADE_END - progress) / (KWL_EDGE_HOME_FADE_END - KWL_EDGE_HOME_FADE_START);
+	}
+
+	/* Succeeded: the layer's place and opacity. */
+	depth->opacity = opacity;
+}
+
+/*
+ * Works out where Home's content (its clock, icons, floors and dots) is
+ * when Home is open by progress: come forward from the distance about the
+ * output's middle, its own size once open.  The content fades in by its
+ * own timing (home.c), so its opacity here is whole.
+ */
+void
+kwl_edge_home_content(
+	float progress,
+	int32_t width,
+	int32_t height,
+	struct kwl_edge_depth *depth)
+{
+	float scale;
+
+	/* A progress outside the way is at its ends. */
+	if (progress < 0.0f)
+		progress = 0.0f;
+	if (progress > 1.0f)
+		progress = 1.0f;
+
+	/* Larger the further Home has opened, about the middle. */
+	scale = KWL_EDGE_HOME_CONTENT_DEPTH + (1.0f - KWL_EDGE_HOME_CONTENT_DEPTH) * progress;
+	depth_about_middle(scale, width, height, depth);
+
+	/* Succeeded: whole, its fading being the content's own. */
+	depth->opacity = 1.0f;
+}
+
+/* Places a layer of the output's size scaled about the output's middle. */
+static void
+depth_about_middle(
+	float scale,
+	int32_t width,
+	int32_t height,
+	struct kwl_edge_depth *depth)
+{
+	/* The middle stays where it is: the corner moves in by half of what the layer lost. */
+	depth->scale = scale;
+	depth->x = (float)width * (1.0f - scale) * 0.5f;
+	depth->y = (float)height * (1.0f - scale) * 0.5f;
 }

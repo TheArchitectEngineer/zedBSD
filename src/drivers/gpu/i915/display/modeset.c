@@ -132,6 +132,19 @@
 #define I915_LCD_PIPEDSL_MASK		0x1fffU
 
 /*
+ * How the resident run lights an output of one kind other than the panel
+ * (ws113-p011a): its run parameters, its encoder's configuration over the
+ * filled panel configuration, and whether it owns the PLL pool and the
+ * DBUF state from their empty start (the only screen).  The panel needs
+ * none of them: the run's defaults are the panel's.
+ */
+struct i915_resident_output_way {
+	void (*params)(struct i915_display *display, struct i915_lcd_run_params *params);
+	void (*cfg)(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
+	int own_pool;
+};
+
+/*
  * The modeset world the Linux text's world-less hooks report to.
  *
  * Set by the world's creation and cleared by its destruction; one display
@@ -178,6 +191,7 @@ static int i915_resident_takeover(struct i915_display *display, struct i915_lcd_
 static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
 static int i915_resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
 static int i915_resident_passed(const struct i915_lcd_show_report *rep);
+static int i915_resident_output_way(enum i915_output_kind kind, struct i915_resident_output_way *way);
 
 /*
  * Allocates the modeset world of a display.
@@ -1679,7 +1693,8 @@ drv_i915_lcd_kernel_resident_run(
 	int (*serve)(void *ctx),
 	void *ctx)
 {
-	struct i915_lcd_run_params hdmi_params;
+	struct i915_lcd_run_params output_params;
+	struct i915_resident_output_way way;
 	const struct i915_lcd_state *lcd;
 	struct i915_lcd_kernel *k;
 	struct i915_lcd_show_env *env;
@@ -1696,6 +1711,7 @@ drv_i915_lcd_kernel_resident_run(
 	int preflight_error;
 	int fill_error;
 	int takeover_error;
+	int way_error;
 	int debug;
 	unsigned domain;
 
@@ -1751,18 +1767,27 @@ drv_i915_lcd_kernel_resident_run(
 		}
 	}
 
-	/*
-	 * The HDMI display in the panel's place (ws075-p012): the run's
-	 * parameters name port B and pipe B, and, as the only screen, it owns
-	 * the device's PLL pool and DBUF state from their empty start.
-	 */
+	/* How the output's kind is lit (the panel: the run's defaults). */
 	lcd = &d->edp->lcd;
-	if (display->output.hdmi) {
-		i915_resident_hdmi_params(display, &hdmi_params);
-		k->p = &hdmi_params;
+	way_error = i915_resident_output_way(display->output.kind, &way);
+	if (way_error != 0) {
+		kern_logf("i915: resident display: not started: this driver does not light the output's kind (%d) yet\n", (int)display->output.kind);
+		return EIO;
+	}
+
+	/*
+	 * Another output in the panel's place (ws075-p012, ws113-p011a): the
+	 * run's parameters name its port and pipe, and, as the only screen, it
+	 * may own the device's PLL pool and DBUF state from their empty start.
+	 */
+	if (way.params != NULL) {
+		way.params(display, &output_params);
+		k->p = &output_params;
 		lcd = &display->output.state;
-		drv_i915_lcd_dplls_reset(display->lcd_world);
-		drv_i915_lcd_dbuf_forget(display->wm_world);
+		if (way.own_pool) {
+			drv_i915_lcd_dplls_reset(display->lcd_world);
+			drv_i915_lcd_dbuf_forget(display->wm_world);
+		}
 	}
 
 	/* The hardware must be as the initialisation left it, and the inputs must be complete. */
@@ -1777,9 +1802,9 @@ drv_i915_lcd_kernel_resident_run(
 		return EIO;
 	}
 
-	/* The HDMI encoder of port B in place of the panel's eDP. */
-	if (display->output.hdmi)
-		i915_resident_hdmi_cfg(display, d, &env->cfg);
+	/* The output's encoder in place of the panel's eDP. */
+	if (way.cfg != NULL)
+		way.cfg(display, d, &env->cfg);
 
 	/* Creates, pins, clears and publishes both buffers at the output's size. */
 	buffers_error = i915_resident_buffers(display, d, lcd);
@@ -1808,9 +1833,8 @@ drv_i915_lcd_kernel_resident_run(
 	env->at_stage_ctx = k;
 	k->window_ms = 0U;
 
-	/* The HDMI display runs on its own pipe. */
-	if (display->output.hdmi)
-		env->pipe = I915_OUTPUT_HDMI_PIPE;
+	/* The output's pipe (the panel's is pipe A). */
+	env->pipe = (int)drv_i915_display_output_pipe(&display->output);
 
 	/* Shows buffer A, serves in the window, and stops through the reference's path. */
 	show_result = drv_i915_lcd_show_prepared(display, env, &display->resident_buf[0], i915_resident_verify, NULL, rep);
@@ -3816,4 +3840,40 @@ i915_resident_hdmi_cfg(
 	    display->output.state.pll.cfgcr1,
 	    cfg->vbt_hdmi_level_shift,
 	    cfg->saved_port_bits);
+}
+
+/*
+ * Says how the resident run lights an output of a kind: the one place that
+ * chooses among the kinds' parameters and configurations (ws113-p011a).
+ * Returns 0 with the way (all empty for the panel), or EOPNOTSUPP for a
+ * kind whose way is not written yet (an external DisplayPort display:
+ * ws051-p004b fills it here).
+ */
+static int
+i915_resident_output_way(
+	enum i915_output_kind kind,
+	struct i915_resident_output_way *way)
+{
+	/* Nothing to change for the panel. */
+	kern_memset(way, 0, sizeof(*way));
+
+	/* Each kind's way. */
+	switch (kind) {
+	case I915_OUTPUT_KIND_PANEL:
+		break;
+	case I915_OUTPUT_KIND_HDMI:
+		/* DDI B, pipe B, DVI mode, the PLL pool its own. */
+		way->params = i915_resident_hdmi_params;
+		way->cfg = i915_resident_hdmi_cfg;
+		way->own_pool = 1;
+		break;
+	case I915_OUTPUT_KIND_DP_EXT:
+		/* ws051-p004b. */
+		return EOPNOTSUPP;
+	default:
+		return EOPNOTSUPP;
+	}
+
+	/* Succeeded: the way is known. */
+	return 0;
 }

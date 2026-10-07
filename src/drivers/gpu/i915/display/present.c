@@ -49,6 +49,7 @@
 
 #include "internal.h"
 #include "display.h"
+#include "output.h"
 #include "modeset.h"
 #include "present.h"
 #include "scanout.h"
@@ -71,10 +72,6 @@
 
 #include <uapi/errno.h>
 #include <stddef.h>
-
-/* The one display of the node and its generation. */
-#define I915_PRESENT_DISPLAY_ID		1U
-#define I915_PRESENT_GENERATION		1U
 
 /* The FNV-1a offset basis and prime the first-frame check hashes with. */
 #define I915_PRESENT_FNV_BASIS		2166136261U
@@ -259,6 +256,68 @@ drv_i915_present_shutdown(
 }
 
 /*
+ * Ends the hold of the last picture now, for a claim that moves the
+ * output (ws113-p011a): the worker leaves the display window and stops the
+ * output that showed it.  Unlike the shutdown, later holds are not
+ * refused.  Waits a bounded time.  Returns 0 once nothing is held (also
+ * when nothing was), or ETIMEDOUT.
+ */
+int
+drv_i915_present_cut(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	unsigned long irq;
+	unsigned step;
+	int holding;
+
+	/* A device without a display holds nothing. */
+	display = device->display;
+	if (display == NULL)
+		return 0;
+
+	/* hold_cut ends the hold in progress once; the worker sees it in its next look at the queue. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	holding = display->window.holding;
+	if (holding)
+		display->window.hold_cut = 1;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Nothing is held: nothing to stop. */
+	if (!holding)
+		return 0;
+
+	/* Wakes the worker to see the end of the hold. */
+	drv_i915_worker_wake(device);
+
+	/* Waits, in bounded steps, until the worker has stopped the output. */
+	for (step = 0U; step < I915_PRESENT_SHUTDOWN_STEPS; step++) {
+		/* Gives the worker 10 ms to leave the window and stop the output. */
+		kern_usleep_range(10000U, 11000U);
+
+		/* Reads whether it still holds the picture. */
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		holding = display->window.holding;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		/* The worker has left the window and the output is stopped. */
+		if (!holding)
+			break;
+	}
+
+	/* Not stopped in time. */
+	if (holding)
+		return ETIMEDOUT;
+
+	/* Succeeded: nothing is held. */
+	return 0;
+}
+
+/*
  * Shows a frame of the lease holder on the panel (the display present
  * operation).
  *
@@ -285,7 +344,10 @@ drv_i915_present_display_present(
 	uint32_t width;
 	uint32_t height;
 	uint32_t refresh;
+	uint32_t display_id;
+	uint64_t generation;
 	uint64_t start;
+	int connected;
 	int error;
 
 	owner_device = device;
@@ -306,10 +368,17 @@ drv_i915_present_display_present(
 		return EINVAL;
 	}
 
-	/* Only the one generation of the display exists. */
-	if (request->generation != I915_PRESENT_GENERATION) {
+	/* The resident output of this generation, still connected (ws113-p011a: a connector's identity). */
+	(void)drv_i915_display_resident_identity(display, &display_id, &generation, &connected);
+	if (request->generation != generation) {
 		mutex_unlock(&rd->mutex);
 		return ESTALE;
+	}
+
+	/* Its connector unplugged: the frame cannot be shown (ws113-p011a, the kind's own detection does not matter). */
+	if (!connected) {
+		mutex_unlock(&rd->mutex);
+		return ENXIO;
 	}
 
 	/* The frame must fit the panel. */
@@ -397,11 +466,16 @@ drv_i915_present_display_wait(
 	struct gpu_display_wait *request)
 {
 	struct i915_device *owner_device;
+	struct i915_display *display;
 	struct i915_resident_display *rd;
+	uint32_t display_id;
+	uint64_t generation;
+	int connected;
 	int error;
 
 	owner_device = device;
-	rd = &owner_device->display->rd;
+	display = owner_device->display;
+	rd = &display->rd;
 
 	/* Reads the lease under its mutex. */
 	drv_i915_present_lease_init(owner_device->display);
@@ -429,7 +503,8 @@ drv_i915_present_display_wait(
 	/* The newest sequence, the tick it completed at, and the generation. */
 	request->completed_sequence = rd->sequence;
 	request->present_time_ns = rd->present_tick * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
-	request->generation = I915_PRESENT_GENERATION;
+	(void)drv_i915_display_resident_identity(display, &display_id, &generation, &connected);
+	request->generation = generation;
 
 	mutex_unlock(&rd->mutex);
 
@@ -588,11 +663,14 @@ drv_i915_present_window(
 	 */
 	after_resume = display->window.after_resume;
 	display->window.after_resume = 0;
-	if (error != 0 && after_resume && display->output.hdmi) {
-		kern_logf("i915: resident display: the HDMI display did not come back after the sleep (%d); trying the built-in panel\n", error);
-		display->output.hdmi = 0;
+	if (error != 0 && after_resume && display->output.kind != I915_OUTPUT_KIND_PANEL) {
+		kern_logf("i915: resident display: the %s display did not come back after the sleep (%d); trying the built-in panel\n", drv_i915_display_output_name(display), error);
+		drv_i915_display_output_panel(display, &display->output);
 		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	}
+
+	/* A moved output whose last hold ended without a lease gives the firmware's back (ws113-p011a), before the hold is over. */
+	drv_i915_display_output_back(device);
 
 	/*
 	 * The output is stopped: no picture is held any more (a shutdown waiting
@@ -602,6 +680,7 @@ drv_i915_present_window(
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	display->window.holding = 0;
+	display->window.hold_cut = 0;
 	display->window.stale_buffers = 0U;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
@@ -667,8 +746,10 @@ drv_i915_present_hold_over(
 	if (!display->window.holding)
 		return 0;
 
-	/* The shutdown ends the hold at once. */
+	/* The shutdown ends the hold at once, and so does a claim that moves the output (ws113-p011a). */
 	if (display->window.hold_ended)
+		return 1;
+	if (display->window.hold_cut)
 		return 1;
 
 	/* The hold ran out: no lease came to take the output. */

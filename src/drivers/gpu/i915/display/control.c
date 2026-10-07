@@ -218,11 +218,9 @@ i915_refresh_sample(
 	uint32_t frame;
 	int pipe;
 
-	/* The resident output's pipe: the panel's A, or the HDMI display's. */
+	/* The resident output's pipe: the panel's A, or another output's (output.c says which). */
 	display = device->display;
-	pipe = 0;
-	if (display->output.hdmi)
-		pipe = I915_OUTPUT_HDMI_PIPE;
+	pipe = (int)drv_i915_display_output_pipe(&display->output);
 
 	/* Counts what the counter moved since the last read, while the pipe runs. */
 	irq = spin_lock_irqsave(&display->refresh.lock);

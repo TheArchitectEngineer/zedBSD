@@ -28,9 +28,11 @@
  *   - the connectors are made when the hotplug path starts (Linux makes
  *     them in intel_ddi_init()); connector ids are their index plus one,
  *     and names follow drm's "<type>-<n>";
- *   - dig_port->hpd_pulse (intel_dp_hpd_pulse()) is not ported: each call
- *     is logged as a step and answers IRQ_HANDLED, which is what Linux
- *     answers for an eDP long pulse; the DP connector detect
+ *   - dig_port->hpd_pulse (intel_dp_hpd_pulse()) ignores every eDP pulse,
+ *     hands a long pulse of an external DP to the hotplug work, and checks
+ *     the sink of a Type-C DP port on a short one (its link checks are not
+ *     done); the Type-C link reset is armed but resets nothing; the DP
+ *     connector detect
  *     (intel_dp_detect()) runs for a Type-C DP connector, probing its sink
  *     through the external DP ports (dp-ext-kern.c), and is logged as
  *     unknown for the others; the Type-C connected check
@@ -126,6 +128,9 @@
 #define HPD_STORM_REENABLE_DELAY	(2 * 60 * 1000)
 #define HPD_RETRY_DELAY			1000
 
+/* How long a Type-C link keeps waiting for its DP-alt partner before it is reset, in milliseconds. */
+#define I915_HPD_TC_LINK_RESET_DELAY	2000
+
 /* The first port with an HPD pin of its own on display version 13 (PORT_D_XELPD = PORT_TC5). */
 #define I915_HPD_PORT_D_XELPD		7
 
@@ -186,6 +191,7 @@ static const char *i915_hpd_status_name(int status);
 static enum irqreturn i915_hpd_dp_pulse_step(struct intel_digital_port *dig_port, bool long_hpd);
 static int i915_hpd_dp_detect_step(struct drm_connector *connector, struct drm_modeset_acquire_ctx *ctx, bool force);
 static void i915_hpd_dp_set_edid(struct i915_hpd_world *world, struct drm_connector *connector, unsigned idx, unsigned bytes);
+static void i915_hpd_tc_link_reset_work(struct work_struct *work);
 static bool i915_hpd_tc_connected_step(struct intel_encoder *encoder);
 static enum intel_hotplug_state i915_hpd_hotplug_recorded(struct intel_encoder *encoder, struct intel_connector *connector);
 static void i915_hpd_make_objects(struct i915_hpd_world *world, const struct i915_display_nogem *nogem);
@@ -444,6 +450,7 @@ drv_i915_hpd_start(
 	struct i915_hpd_world *world;
 	struct drm_i915_private *i915;
 	enum hpd_pin pin;
+	unsigned tc_port;
 	int error;
 	const char *hdmi_name;
 	const char *backend;
@@ -485,6 +492,13 @@ drv_i915_hpd_start(
 	if (fake == NULL) {
 		world->tc = drv_i915_tc_kern_ports(display);
 		world->dp_display = display;
+	}
+
+	/* Prepares each Type-C port's delayed link reset. */
+	for (tc_port = 0u; tc_port < I915_TC_PORTS; tc_port++) {
+		world->tc_reset[tc_port].world = world;
+		world->tc_reset[tc_port].tc_port = tc_port;
+		i915_hpd_init_delayed_work(&world->tc_reset[tc_port].work, i915_hpd_tc_link_reset_work);
 	}
 
 	/* Records what the instance runs on. */
@@ -707,6 +721,7 @@ drv_i915_hpd_stop(
 	struct i915_hpd_world *world;
 	unsigned spins;
 	unsigned inflight;
+	unsigned tc_port;
 
 	/* A path that is not running has nothing to stop. */
 	world = i915_hpd_display_world(display);
@@ -732,6 +747,10 @@ drv_i915_hpd_stop(
 
 	/* Cancels the hotplug works and waits for a running one. */
 	i915_hpd_intel_hpd_cancel_work(&world->hpd_i915);
+
+	/* Cancels the Type-C ports' delayed link resets and waits for a running one. */
+	for (tc_port = 0u; tc_port < I915_TC_PORTS; tc_port++)
+		(void)i915_hpd_cancel_delayed_work_sync(&world->tc_reset[tc_port].work);
 
 	/* Destroys the work queues. */
 	if (world->hpd.wq_created) {
@@ -1962,28 +1981,43 @@ drv_i915_hpd_intel_phy_is_tc(
 }
 
 /*
- * Resets a Type-C port's link after a hotplug (the Linux
+ * Arms the reset of a Type-C port's link after a hotplug (the Linux
  * intel_tc_port_link_reset()).
  *
- * False unless the port is Type-C; the Type-C link reset itself is not
- * ported (a recorded step answering false).
+ * When an output's link holds the port in DP-alt mode and the partner is
+ * gone, the port is looked at again two seconds later (a partner that
+ * comes back meanwhile keeps the link), and true is answered: the link is
+ * not retrained now.  Otherwise false.
  */
 bool
 i915_hpd_intel_tc_port_link_reset(
 	struct intel_digital_port *dig_port)
 {
-	enum phy phy;
-	bool is_tc;
+	struct drm_i915_private *i915;
+	struct i915_hpd_world *world;
+	int tc_port;
+	int needs;
 
-	/* A port that is not Type-C has no link to reset. */
-	phy = drv_i915_hpd_intel_port_to_phy(NULL, dig_port->base.port);
-	is_tc = drv_i915_hpd_intel_phy_is_tc(NULL, phy);
-	if (!is_tc)
+	/* Finds the world and the port's Type-C number. */
+	i915 = i915_hpd_to_i915(dig_port->base.base.dev);
+	world = i915_hpd_world_of(i915);
+	tc_port = drv_i915_tc_kern_port_of((int)dig_port->base.port);
+
+	/* A port that is not a Type-C port of the hardware has no link to reset. */
+	if (world->tc == NULL || tc_port < 0)
 		return false;
 
-	/* Names the unported step. */
-	kern_logf("i915: hpd step intel_tc_port_link_reset (unported): %s -> false\n", dig_port->base.base.name);
-	return false;
+	/* A link that still has its partner, or no link at all, needs no reset. */
+	needs = drv_i915_tc_link_needs_reset(world->tc, (unsigned)tc_port);
+	if (!needs)
+		return false;
+
+	/* Looks again in two seconds; an armed look is not postponed. */
+	(void)i915_hpd_queue_delayed_work(i915->unordered_wq, &world->tc_reset[tc_port].work, i915_hpd_msecs_to_jiffies(I915_HPD_TC_LINK_RESET_DELAY));
+	kern_logf("i915: hpd TC%d: the link lost its DP-alt partner: looking again in %u ms\n", tc_port + 1, (unsigned)I915_HPD_TC_LINK_RESET_DELAY);
+
+	/* Succeeded: the reset is armed instead of a retraining. */
+	return true;
 }
 
 /*
@@ -3230,20 +3264,59 @@ i915_hpd_status_name(
 	return name;
 }
 
-/* Records a pulse of a DP port: intel_dp_hpd_pulse() is not ported and answers IRQ_HANDLED. */
+/*
+ * Takes a pulse of a DP port (the Linux intel_dp_hpd_pulse()).
+ *
+ * An eDP pulse is ignored (Linux ignores the long ones and those without
+ * panel power; this driver ignores every one).  A long pulse of an
+ * external DP goes to the hotplug work, which detects the port.  A short
+ * pulse (IRQ_HPD) of a Type-C DP port checks the sink over AUX, and a sink
+ * that changed goes to the hotplug work as well; the link checks of a
+ * short pulse are not done.  A short pulse of any other DP port is handled
+ * without a look.
+ */
 static enum irqreturn
 i915_hpd_dp_pulse_step(
 	struct intel_digital_port *dig_port,
 	bool long_hpd)
 {
 	struct i915_hpd_world *world;
+	const char *length;
+	int tc_port;
+	int handled;
 
-	/* Counts the pulse and names the step. */
+	/* Counts the pulse. */
 	world = i915_hpd_world_of(i915_hpd_to_i915(dig_port->base.base.dev));
 	world->hpd.hpd_pulse_steps++;
-	kern_logf("i915: hpd step intel_dp_hpd_pulse (unported): %s %s pulse -> IRQ_HANDLED\n", dig_port->base.base.name, long_hpd ? "long" : "short");
+	length = "short";
+	if (long_hpd)
+		length = "long";
 
-	/* Succeeded: the pulse counts as handled, as Linux answers for an eDP long pulse. */
+	/* An eDP pulse is ignored: VDD going off raises one, and handling it would turn VDD on again. */
+	if (dig_port->base.type == INTEL_OUTPUT_EDP) {
+		kern_logf("i915: hpd: ignoring %s hpd on eDP %s\n", length, dig_port->base.base.name);
+		return IRQ_HANDLED;
+	}
+
+	/* A long pulse is a plug or an unplug: the hotplug work detects the port. */
+	if (long_hpd) {
+		kern_logf("i915: hpd: long hpd on %s: detecting\n", dig_port->base.base.name);
+		return IRQ_NONE;
+	}
+
+	/* Only a Type-C DP port of the hardware has a sink this driver checks. */
+	tc_port = drv_i915_tc_kern_port_of((int)dig_port->base.port);
+	if (world->dp_display == NULL || tc_port < 0) {
+		kern_logf("i915: hpd: short hpd on %s: not checked\n", dig_port->base.base.name);
+		return IRQ_HANDLED;
+	}
+
+	/* Checks the sink; one that changed is detected again. */
+	handled = drv_i915_dp_ext_pulse(world->dp_display, (int)dig_port->base.port);
+	if (!handled)
+		return IRQ_NONE;
+
+	/* Succeeded: the sink is as it was. */
 	return IRQ_HANDLED;
 }
 
@@ -3400,13 +3473,16 @@ i915_hpd_hotplug_recorded(
 	unsigned idx;
 	int old;
 	int live;
+	int topology_changed;
 	u32 isr;
+	u64 old_epoch;
 	const char *state_name;
 
-	/* Finds the connector's index and the status before the detection. */
+	/* Finds the connector's index, and its status and epoch before the detection. */
 	world = i915_hpd_world_of(i915_hpd_to_i915(encoder->base.dev));
 	idx = (unsigned)(connector - world->hpd_conns);
 	old = connector->base.status;
+	old_epoch = connector->base.epoch_counter;
 
 	/* Runs the DDI hotplug handler. */
 	hotplug = i915_hpd_ddi_hotplug_fn();
@@ -3440,9 +3516,22 @@ i915_hpd_hotplug_recorded(
 		r->edid_blocks = ei.blocks;
 	}
 
-	/* A connector connected or disconnected is a topology change (ws113-p002). */
+	/*
+	 * A connector connected or disconnected is a topology change
+	 * (ws113-p002), and so is a connected connector whose EDID changed: a
+	 * display swapped within one detection may bring another mode
+	 * (ws051-p005a).
+	 */
+	topology_changed = 0;
 	if (old != (int)connector->base.status &&
-	    (connector->base.status == connector_status_connected || old == connector_status_connected))
+	    (connector->base.status == connector_status_connected || old == connector_status_connected)) {
+		topology_changed = 1;
+	} else if (connector->base.status == connector_status_connected && connector->base.epoch_counter != old_epoch) {
+		topology_changed = 1;
+	}
+
+	/* Publishes the change to the display sessions. */
+	if (topology_changed)
 		i915_hpd_topology_update(world, idx, 1);
 
 	/* Counts the HDMI connector's transitions. */
@@ -3627,4 +3716,39 @@ i915_hpd_make_objects(
 		world->hpd_last_status[world->hpd.num] = connector_status_unknown;
 		world->hpd.num++;
 	}
+}
+
+/*
+ * Looks at a Type-C port two seconds after its link lost its DP-alt
+ * partner (the Linux intel_tc_port_link_reset_work()).
+ *
+ * A partner that came back keeps the link.  A link still without one must
+ * be reset; stopping the output that holds it is not done here, so the
+ * port is logged as such.
+ */
+static void
+i915_hpd_tc_link_reset_work(
+	struct work_struct *work)
+{
+	struct i915_hpd_tc_reset *reset;
+	struct i915_hpd_world *world;
+	int needs;
+
+	/* Finds the port the work belongs to. */
+	reset = container_of(work, struct i915_hpd_tc_reset, work.work);
+	world = reset->world;
+
+	/* Without the Type-C ports there is nothing to look at. */
+	if (world->tc == NULL)
+		return;
+
+	/* A partner that came back keeps the link. */
+	needs = drv_i915_tc_link_needs_reset(world->tc, reset->tc_port);
+	if (!needs) {
+		kern_logf("i915: hpd TC%u: the DP-alt partner is back: the link is kept\n", reset->tc_port + 1u);
+		return;
+	}
+
+	/* Logs the link that must be reset. */
+	kern_logf("i915: hpd TC%u: the link has had no DP-alt partner for %u ms: it must be reset (the output is not stopped here)\n", reset->tc_port + 1u, (unsigned)I915_HPD_TC_LINK_RESET_DELAY);
 }

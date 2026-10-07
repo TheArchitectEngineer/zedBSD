@@ -194,6 +194,68 @@ drv_i915_dp_ext_probe(
 }
 
 /*
+ * Handles a short pulse (IRQ_HPD) of an external DP port (the DP part of
+ * the Linux intel_dp_hpd_pulse() for a short pulse).
+ *
+ * The port is held for the AUX messages as for a probe, and its sink is
+ * checked against what the last probe found (dp-ext.c).  Returns 1 when
+ * the pulse is handled, 0 when the port must be detected again (the
+ * hotplug work then probes it); a port that cannot be asked returns 0.
+ */
+int
+drv_i915_dp_ext_pulse(
+	struct i915_display *display,
+	int port)
+{
+	struct i915_dp_world *world;
+	struct i915_dp_ext_world *ext;
+	struct i915_dp_ext_port *p;
+	unsigned tc_port;
+	int handled;
+	int index;
+
+	/* Without bound external ports the pulse goes to a detection. */
+	world = display->dp_world;
+	if (world == NULL)
+		return 0;
+	ext = &world->ext;
+	if (!ext->live)
+		return 0;
+
+	/* Only a declared Type-C port has a sink to check. */
+	index = drv_i915_tc_kern_port_of(port);
+	if (index < 0)
+		return 0;
+	p = &ext->port[index];
+	if (!p->declared)
+		return 0;
+
+	/* Checks the sink with the port held for the messages, unless the ports stopped meanwhile. */
+	tc_port = (unsigned)index;
+	mutex_lock(&p->lock);
+
+	if (!ext->live) {
+		mutex_unlock(&p->lock);
+		return 0;
+	}
+
+	/* Holds the port, checks the sink, and gives the port back (its PHY at once when no output holds it). */
+	drv_i915_tc_get_link(ext->tc, tc_port, I915_DP_EXT_KERN_PROBE_LANES);
+	handled = drv_i915_dp_ext_short_pulse(&p->env, &p->sink);
+	drv_i915_tc_put_link(ext->tc, tc_port);
+	kern_logf("i915: DP-ext %s: short pulse %s\n", p->name, handled ? "handled" : "asks for a detection");
+
+	mutex_unlock(&p->lock);
+
+	/* Reports a sink that changed. */
+	if (!handled)
+		return 0;
+
+	/* Succeeded: the pulse is handled. */
+	return 1;
+}
+
+/*
  * Stops the external DP ports before the eDP device's backend goes: no
  * probe starts after this, and one running is waited for.
  */

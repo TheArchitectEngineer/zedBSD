@@ -934,6 +934,8 @@ struct kwl_server {
 	int32_t sleep_battery_minutes;
 	unsigned screen_idle_off;
 	unsigned sleep_lid_synced;
+	/* The lid's closing moved the desktop to an external display; its opening brings it back (N8, output-switch.c). */
+	unsigned output_lid_moved;
 	/* OS device authority can pause composition; zedBSD always leaves this zero. */
 	unsigned os_paused;
 	unsigned windowed;
@@ -1149,14 +1151,18 @@ struct kwl_server {
 	int32_t wiseview_press_y;
 	unsigned wiseview_dragging;
 	/*
-	 * The desktop layer's place while App Home pushes it aside: every glass
-	 * shape drawn with layer_on is moved to layer_x, layer_y and scaled by
-	 * layer_scale (glass.c); shell.c turns it on around the desktop only.
+	 * A layer's place: every glass shape drawn with layer_on is moved to
+	 * layer_x, layer_y, scaled by layer_scale and faded by layer_opacity
+	 * (glass.c; none is drawn at 0).  shell.c turns it on around the desktop
+	 * while App Home opens or closes (the desktop going back into the
+	 * distance, ws181-p008) or the desktops slide, and home.c around Home's
+	 * content coming forward.  Whoever turns it on sets all four.
 	 */
 	unsigned layer_on;
 	float layer_x;
 	float layer_y;
 	float layer_scale;
+	float layer_opacity;
 	/*
 	 * App Home (home.c): how far it is open (0 closed, 1 open) when settled;
 	 * a press in the top-left corner that may become the gesture, where it
@@ -1199,6 +1205,18 @@ struct kwl_server {
 	unsigned home_rise_dragging;
 	int32_t home_rise_start_y;
 	unsigned home_page_closing;
+	/*
+	 * A press on the launcher (or the top-left corner) that moved away is
+	 * no click (ws181-p008: the drag from the corner is no way into Home,
+	 * WS184 takes it): its release does nothing.
+	 */
+	unsigned home_press_moved;
+	/*
+	 * The touch pad's two fingers down from its top edge (TOP2, ws181-p008)
+	 * open Home following them: whether such a gesture is under way, from
+	 * its beginning until its end (the gestures' phases go to Home).
+	 */
+	unsigned home_pad;
 	/*
 	 * The virtual desktops (ws035-p065): the one shown; a press at the
 	 * left or right edge that may become the swipe (where it started,
@@ -1668,7 +1686,8 @@ void kwl_printers_tick(struct kwl_server *server);
 uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);
-void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale);
+void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale, float *opacity);
+void kwl_home_pad(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
 int kwl_home_edge_press(struct kwl_server *server);
 void kwl_home_close_now(struct kwl_server *server, const char *via);
 int kwl_home_button(struct kwl_server *server, uint32_t button, uint32_t state);

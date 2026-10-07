@@ -15,7 +15,8 @@
 #  2. Cancel: a finger on the client, then a second one swiped down from the
 #     top edge's band (WS181): Wiseview opens and the client hears cancel, and
 #     nothing more of the first finger.  A tap closes Wiseview.
-#  3. The edges by touch: the top-left corner opens App Home; on Home the
+#  3. The edges by touch: a tap in the top-left corner opens App Home (its
+#     swipe opens nothing since ws181-p008); on Home the
 #     bottom edge's swipe does nothing and a drag down closes it (WS181); the
 #     top-right corner brings Notes (the stand-in,
 #     plan/ws079/tests/notes-standin.sh) with the source "touch"; on the
@@ -163,11 +164,11 @@ guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop-edges.log 2>&1 </dev/null & sleep 5; ln -sf /tmp/zdesktop-edges.log /tmp/zdesktop.log; echo started' >/dev/null
 
-# 3. The edges by touch: Home from the top-left corner; its bottom edge does nothing, a drag down closes it (WS181).
-touches "down 1 8 8|swipe 200 200 8 30|up 1"
+# 3. The edges by touch: Home from a tap in the top-left corner; its bottom edge does nothing, a drag down closes it (WS181).
+touches "down 1 8 8|hold 60|up 1"
 sleep 1
 expect_log 'TOUCH shell contact=0 x=8 y=8'
-expect_log 'HOME open via=drag'
+expect_log 'HOME open via=launcher'
 shot home >/dev/null
 touches "down 1 640 795|swipe 0 -150 6 30|up 1"
 sleep 1
