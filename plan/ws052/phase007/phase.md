@@ -4,20 +4,14 @@
 
 Phase ID: `ws052-p007`
 Parent: [WS052](../ws.md)
-Status: planning（2026-10-07 P2: 設計の第 2 版。p006 の今の main（`KERN_SYSTEM_SLEEP` の S0 idle の mode、未対応は ioctl の `EOPNOTSUPP`、`KERN_SYSTEM_SLEEP_INFO` は無い）に合わせて直した。design-reviewer の後、人の判断 N1〜N7 を Q1 へ。code は ACK の後）（旧: 2026-10-05 P1 generation17 の第 1 版、§7 はユーザーが案のとおり決定）
+Status: planning（2026-10-07 P2: 設計の第 3 版。第 2 版の design-reviewer の blocking 10 を反映、2 回目の review の後に人の判断 N1〜N10 を Q1 へ。code は ACK の後、実装は §10 の 4 つの Phase に分ける案）（旧: 2026-10-05 P1 の第 1 版、2026-10-07 P2 の第 2 版）
 Phase disposition: normal
 Queue: 2026-10-07 Q1 の P2 への指示（設計の直し → ACK の後に実装）
 
-## 第 2 版の変更（2026-10-07）
+## 版の変更
 
-- **§6 を書き直した**: 第 1 版は p006 に無い `KERN_SYSTEM_SLEEP_INFO` で「sleep が使えるか」を読む前提だった。今の main では ioctl そのものが
-  支えの無い platform で `EOPNOTSUPP`（何も触らない）を返すだけで、事前に問う口は無い → 案 A（`KERN_SYSTEM_GET_POWER` の `known` に 1 bit、
-  UAPI の追加で承認が要る）と案 B（UAPI を変えず、最初の試みの `EOPNOTSUPP` を sessiond と backend が覚える）を並べ、A を勧める（N1）。
-- 今の main に合わせた: sessiond の `POWER` は session からも受けている（ws131-p027、root・wheel だけ）、通知（WS156 p002、`kwl_notify_post_system`）が
-  在る、無操作の lock（`--lock-idle`、既定 10 分、`shell.c` の tick）が在る、sleep button の事象が在る（`KL_BACKEND_BUTTON_SLEEP`）、networkd の
-  socket は binary の opcode（`userland/base/net/protocol.h`）、kernel の事象は class POWER・action CHANGE・subject `sleep.begin`・`end`・`failed`。
-- 加えた: sessiond は ioctl を子 process で行い待ちの間も loop を止めない（§1）、起こした電源ボタンの押下で直ぐ眠り直さない（§3.2）、lock の画面を
-  描いてから頼む（§3.2）、中止の理由は lock の画面の card の文の行と system の通知（§4）、Settings の頁（§8）、変える file の一覧（§9）。
+- **第 3 版（2026-10-07）**: review の B1〜B10 を反映。答えの経路を login の答えと分けた（§1.2）、起こした押下と要求の間の押下を捨てる（§3.3）、要求の間に蓋が開いたら取り消し猶予の unlock は答えの後（§3.4）、送る予定の状態で session の要求の衝突を待つ（§3.2）、蓋は tick で level で判断し蓋以外の理由の起床で眠り直す（§3.1）、延びる間隔と恒久の失敗（§5）、networkd の SLEEPING の状態・冪等・上限・居ない時（§2）、app の SUSPEND は compositor を通す（§1.3）、外部の monitor の判定の手段が無いので clamshell は範囲外の案（N8）、無操作の tick は lock・greeter の return の前（§3.1）。non-blocking のうち、2 frame の規則・要求の間は frame を出さない・outcome の buffer・device の照合・AC と電池の切り替え・sessiond の子の持ち主と fd・案 A の別の形・答えが来ない時の回復・起こした鍵・opcode の番号・Phase の分割・QEMU の試験の mode・resume の失敗の通知も入れた。
+- **第 2 版（2026-10-07）**: p006 に無い `KERN_SYSTEM_SLEEP_INFO` を前提にした §6 を書き直し（案 A・B）、今の main の事実（sessiond の `POWER` の session からの受け付け、通知、`--lock-idle`、sleep button、networkd の binary の opcode、kernel の事象）に合わせた。
 
 ## 範囲
 
@@ -33,7 +27,7 @@ Queue: 2026-10-07 Q1 の P2 への指示（設計の直し → ACK の後に実�
 | 部分 | 今 | p007 で変えること |
 | --- | --- | --- |
 | kernel の口（p006、`include/uapi/system.h`） | `KERN_SYSTEM_SLEEP`（`struct system_sleep_request`、64 byte）の mode `KERN_SYSTEM_SLEEP_S0IDLE`。root だけ（EPERM）、支えが無ければ ioctl が `EOPNOTSUPP`（何も触らない）、進行中なら `EBUSY`。それ以外は成功で `result`（0 = 眠った、EBUSY = 拒んだ device、EOPNOTSUPP = suspend の口の無い driver）・`resume_result`・`wake`（`KERN_SYSTEM_WAKE_*`）・`device`（`"pci 0000:00:14.3 intel-ax211"`）。事前に「眠れるか」を問う口は無い | 変えない（案 A を選べば `KERN_SYSTEM_GET_POWER` に 1 bit、§6） |
-| 蓋（`wayland/lid.c`・`backend-host.c` の `kwl_backend_lid_changed`、ws132-p008） | 閉じると lock して画面を消す（`KWL_LID_LOCK`・`KWL_LID_SCREEN_OFF`）、15 分以内に開けると password 無しで unlock（D2 の猶予） | sleep が使える時は「lock → 画面を消す → sleep を頼む」。外部の monitor に出している時は今のまま（sleep しない）。開けた時の規則は今の猶予のまま |
+| 蓋（`wayland/lid.c`・`backend-host.c` の `kwl_backend_lid_changed`、ws132-p008） | 閉じると lock して画面を消す（`KWL_LID_LOCK`・`KWL_LID_SCREEN_OFF`）、15 分以内に開けると password 無しで unlock（D2 の猶予） | sleep が使える時は「lock → 画面を消す → sleep を頼む」（tick で level で判断、§3.1）。外部の monitor の時は N8。開けた時の規則は今の猶予のまま（要求の間は §3.4） |
 | 電源ボタン・sleep button（`kwl_backend_power_button`、ws132-p003） | log だけ（`KWL EVENT power button`・`sleep button`） | 短押しで lock して sleep（D1: dialog 無し）、sleep button も同じ（N5）。起こした押下は捨てる（§3.2）。長押しは firmware の強制断で触らない |
 | 無操作 | `--lock-idle`（既定 10 分）で lock だけ（`shell.c` の tick、lock の間は数えない）。最後の入力は `server->lock_input_ms` | 新しい `idle.c` が lock の間も数え、設定の時間の半分で画面を消し、時間で lock して sleep。今の 10 分の lock は残す |
 | 電源の操作（`kl_backend_power_action`、`power-zedbsd.c`） | `POWER poweroff|reboot` を greeter か session の descriptor で送る。`SUSPEND` は定義だけ（`power_actions` は poweroff・reboot の bit だけ）。session は root・wheel だけ | `POWER suspend` を足す（greeter と、session の利用者は誰でも、N2）。答えの詳しさ（起床の理由、拒んだ device）を backend が保ち、compositor が読む（§1.2） |
@@ -44,157 +38,172 @@ Queue: 2026-10-07 Q1 の P2 への指示（設計の直し → ACK の後に実�
 
 ## 設計
 
+### 0. 不変条件
+
+1. **session では lock の画面が出てからしか眠らない**: 送る直前に `server->locked` を確かめる。`kwl_lock` が失敗（sessiond の管理でない session）なら眠らない（log `KWL SLEEP skip reason=not-locked`）。greeter は lock が無いので、そのまま。
+2. **sleep の要求は同時に 1 つ**（compositor・backend・sessiond の 3 段とも）。
+3. **要求から答えまで compositor は新しい frame を出さない**（`server->sleep_hold`）。i915 の park（`i915.c:359-372`）が進行中の present で EBUSY にならないため。答えの後は必ず再描画（`dirty`・`kwl_schedule`、i915 は次の present で出力を点ける、`i915.c:388-392`）。
+4. **起きた時に利用者が最初に見るのは lock の画面**: lock の画面の 2 frame（今の greeter の電源と同じ `greeter.c:1286-1288` の規則）が出てから送る。上限 `KWL_SLEEP_LOCK_MS`（500 ms）を過ぎても 2 frame が出なければ眠らない（失敗として §5）。
+
 ### 1. 経路（誰が何をするか）
 
 ```
-Keiland（compositor、利用者の session か greeter）
-  契機（蓋・電源ボタン/sleep button・無操作）→ lock（session だけ）→ lock の画面が 1 frame 出た後
-  → kl_backend_power_action(SUSPEND) → "POWER suspend\n"（session か greeter の descriptor）
-sessiond（root、session か greeter の loop）
-  sleep.c: pipe と子 process を作り、loop は poll を続ける
-  子: 1. networkd に SLEEP_PREPARE（上限 8 秒で答えを待つ）
-      2. ioctl(/dev/system, KERN_SYSTEM_SLEEP, S0IDLE) … S0i3 … wake
-      3. networkd に SLEEP_END（答えを待たない）
-      4. 1 行を pipe へ書いて終わる
-  親: 1 行を読み、session（か greeter）に答える
+Keiland（compositor、session か greeter）sleep.c
+  契機（§3）→ lock（session）→ 2 frame → sleep_hold → kl_backend_power_action(SUSPEND)
+    → "POWER suspend\n"（session か greeter の control の socket）
+sessiond（root）sleep.c
+  pipe（O_CLOEXEC）と子 process。子は control の socket・passkey の fd を閉じ（closefrom(3) の後に pipe の書き端だけ）、
+  1. networkd に SLEEP_PREPARE（connect できなければ飛ばす、上限 NETWORKD_CONTROL_YIELD_SECONDS + 5 = 20 秒）
+  2. 取り消し（§3.4）が来ていなければ ioctl(/dev/system, KERN_SYSTEM_SLEEP, S0IDLE) … S0i3 … wake
+  3. 結果の 1 行を pipe へ書く
+  4. PREPARE をしたなら networkd に SLEEP_END（答えを待たない）、終わる
+  親（session と greeter の loop のどちらでも）: pipe の 1 行を読み、要求した socket に答える。子を waitpid で回収。
 Keiland
-  OK: 起きた。画面を点け（蓋が閉じていなければ）、lock の画面のまま（蓋の wake なら lid.c の猶予）
-  FAIL: lock の画面の文の行と通知に理由（§4）、§5 の抑止
+  答え（§1.2）→ sleep_hold を解き再描画 → 起床の後の処理（§3.5）か中止の表示（§4）と §5
 ```
 
-- **sessiond が仲介する理由**: `KERN_SYSTEM_SLEEP` は root だけ。compositor は電源の操作を sessiond に頼む今の形（ws131）に揃える。sessiond は
-  自分が作った session の control の socket（descriptor 3）と greeter の socket からだけ受ける（今の `POWER` と同じ認証）。
-- **子 process にする理由**: networkd の答えを待つ間（最大 8 秒）と眠っている間、sessiond の loop（greeter の login、passkey の exchange、
-  session の終わりの検出）を止めない。眠っている間は kernel が user を止めるので、子の ioctl が戻るまで親も止まる（問題ない）。
-- **networkd を同期で呼ぶ理由**: radio を切り終える前に kernel が device を suspend すると AX211 が `EBUSY`（`net_opened`）で中止する。kernel の
-  事象（`sleep.begin`）で networkd に知らせる形は順序を保証できない。kernel の事象は表示と記録のためだけ。
-- **audiod は何もしない**: HDA は p005 で driver が stream を止めて保ち、resume で再開する（`pci-hda.c`）。docs/architecture/power-management.md の
-  「audiod closes streams」は今の実装と違う（Q1 へ: docs を直すか、audiod に準備を足すか）。
+- **sessiond が仲介する理由**: `KERN_SYSTEM_SLEEP` は root だけ。compositor は電源の操作を sessiond に頼む今の形（ws131）に揃える。sessiond は自分が作った session の control の socket と greeter の socket からだけ受ける（今の `POWER` と同じ認証）。
+- **子 process の理由**: networkd の答えを待つ間と眠っている間も、sessiond の loop（greeter の login、passkey の exchange、session の終わりの検出）を止めない。
+- **子の持ち主**: 子の pid・pipe の読み端・要求した側（session か greeter）は `struct sessiond` に置き、session の loop と greeter の loop の両方の poll が pipe を見て waitpid で回収する（session の loop は compositor の終わりで抜け、greeter の loop は login で抜けるため。zombie と恒久の busy を残さない）。要求した socket が答えの前に閉じたら、答えは捨てて子だけ回収する。
+- **networkd を同期で呼ぶ理由**: radio を切り終える前に kernel が device を suspend すると AX211 が `EBUSY`（`net_opened`、`intel-ax211.c:6578-6593`）で中止する。kernel の事象（`sleep.begin`）で知らせる形は順序を保証できない。
+- **audiod は何もしない**: HDA は p005 で driver が stream を止めて保ち、resume で再開する（`pci-hda.c:485-518`）。
 
-#### 1.1 sessiond の答え（1 行）
+#### 1.1 sessiond の答え（1 行、`session.c` と `greeter.c` の文書の一覧にも書く）
 
-| 答え | 意味 | backend の `session_answer(POWER, error)` |
+| 答え | 意味 | backend の outcome の error |
 | --- | --- | --- |
-| `OK woke=<理由>` | 眠って起きた。理由は `power-button`・`lid`・`keyboard`・`usb`・`ac`・`timer`・`spurious`・`other`（kernel の事象の名前と同じ） | 0 |
-| `FAIL unsupported` | ioctl が `EOPNOTSUPP`（platform が眠れない） | `EOPNOTSUPP` |
-| `FAIL device error=<errno の名前> device=<device>` | 眠らずに戻った（`result` が 0 でない）。device は kernel の文字列（空白を含むので行の最後） | `EBUSY` か `EOPNOTSUPP`（`result` のまま） |
-| `FAIL network radio=<if> error=<errno の名前>` | networkd が radio を止められなかった（ioctl はしない） | `EBUSY` |
-| `FAIL busy` | 他の sleep が進行中（ioctl の `EBUSY`、または sessiond が既に子を持つ） | `EBUSY` |
-| `ERROR` | それ以外（pipe・fork の失敗、子の異常な終わり） | `EIO` |
+| `SLEPT woke=<理由>` | 眠って起きた。理由は kernel の事象の名前（`power-button`・`lid`・`keyboard`・`usb`・`ac`・`timer`・`spurious`・`other`）。`resume_result` が 0 でなければ ` resume-error=<errno の名前> device=<device>` が続く | 0 |
+| `NOSLEEP unsupported` | ioctl が `EOPNOTSUPP`（platform が眠れない） | `EOPNOTSUPP`（恒久） |
+| `NOSLEEP device error=<errno の名前> device=<device>` | 眠らずに戻った（`result` が 0 でない）。device は kernel の文字列（空白を含むので行の最後） | `result`（`EBUSY`、`EOPNOTSUPP` は恒久） |
+| `NOSLEEP network radio=<if> error=<errno の名前>` | networkd が radio を止められなかった・時間切れ（ioctl はしない、END は送った） | `EBUSY` |
+| `NOSLEEP cancelled` | 取り消し（§3.4）で ioctl の前に止めた | `ECANCELED` |
+| `ERROR busy` | 他の sleep が進行中（ioctl の `EBUSY`、sessiond が既に子を持つ）。今の慣行（`session-zedbsd.c:91-98`）に揃える | `EBUSY` |
+| `ERROR` | pipe・fork の失敗、子の異常な終わり | `EIO` |
 
-- `resume_result` が 0 でない時は `OK` のまま、sessiond の log と syslog に `resume_result` と device を残す（利用者に見せる手段が無いので log だけ）。
-- 子の終わりの待ちの上限は無い（眠っている時間は利用者が決める）。子が死んだら（`waitpid`）`ERROR`。
+- sessiond は `NOSLEEP unsupported` と `result` が `EOPNOTSUPP` の時を覚え（process の間）、次からは networkd に頼まずに直ぐ同じ答えを返す。
+- 子の終わりの待ちの上限は無い（眠っている時間は利用者が決める）。
 
 #### 1.2 backend（`libkeiland-backend`）
 
-- `power_actions` に `KL_BACKEND_POWER_SUSPEND` の bit を足す: greeter の descriptor か session の descriptor があり、sleep が使える時（§6）。
-  session の利用者が wheel でなくてもよい（N2）。poweroff・reboot は今のまま。
-- `kl_backend_power_action(SUSPEND)` は `POWER suspend` を送る。答えの行の詳しさを `struct kl_backend_power_outcome`（error・wake の理由の番号・
-  device の文字列・radio の名前）として backend が保ち、新しい `kl_backend_power_outcome(backend, &outcome)` で compositor が読む
-  （`session_answer` の引数は error だけなので）。答えが来たら成功でも `power_asked` を 0 に戻す（poweroff・reboot は戻らないので今は失敗の時だけ）。
-- Linux・FreeBSD の backend: Linux は logind の Suspend を今のまま（outcome は error だけ）、FreeBSD は ENOTSUP。
+- 新しい答えの語 `SLEPT`・`NOSLEEP` を `session_kind`（`session-zedbsd.c`）に足し、**SUSPEND の答えは login の答えの経路に流さない**: backend は SUSPEND の答えを `struct kl_backend_power_outcome`（error、wake の理由の番号、`device[KERN_SYSTEM_SLEEP_DEVICE_MAX]`、`radio[16]`、resume の error）に解き、`session_answer(KL_BACKEND_SESSION_POWER, error)` を呼ぶ。`KL_BACKEND_SESSION_REASON`（24 byte）は使わない。
+- compositor の `handoff.c` の `kwl_handoff_answer` は、POWER の答えで SUSPEND が出ている時（`kwl_sleep_waiting`）は greeter・lock の分岐（`handoff.c:194-203`）より**前に** `kwl_sleep_answer` へ回す（「Wrong password」などが出ないように）。
+- `kl_backend_power_action` の `EBUSY` を分ける: 既に電源の要求が出ている時は `EALREADY`、他の session の要求（STYLES など）の答えを待つ時は `EBUSY`（§3.2 で送り直す）。
+- 答えで成功でも `power_asked` を 0 に戻す。session・greeter の descriptor が閉じた（`session_gone`）時も戻す（答えが来ないまま永遠に busy にしない）。`power_actions` は `session_gone` の時 0。
+- `power_actions` の SUSPEND の bit: greeter の descriptor か session の descriptor があり、sleep が使える時（§6）。session の利用者が wheel でなくてもよい（N2）。
+- 新しい関数 `kl_backend_power_outcome(backend, &outcome)`。Linux（`power-linux.c`、logind の Suspend の答えの error だけ）、unsupported（`power-unsupported.c`、ENOTSUP）、FreeBSD の backend にも置く（link のため）。
+
+#### 1.3 app からの SUSPEND（`system.c`）
+
+- system extension の `KL_SYSTEM_POWER_ACTION`（`system.c:1319-1335`）の SUSPEND は `kl_backend_power_action` を直に呼ばず、compositor の `kwl_sleep_request(server, KWL_SLEEP_VIA_APP)` を通す（lock → 2 frame → 送信、§0）。結果は `system_result` で直ぐ「受け付けた」か「使えない」。poweroff・reboot は今のまま。
 
 ### 2. networkd の SLEEP_PREPARE・SLEEP_END
 
-- 新しい opcode（`userland/base/net/protocol.h`、空いている番号）: `NETWORKD_OP_SLEEP_PREPARE`・`NETWORKD_OP_SLEEP_END`。`operation_allowed` の
-  member の一覧に入れない（root だけ = sessiond）。
-- `SLEEP_PREPARE`: 有効な Wi-Fi の radio を記録し、`stop_wlan_radios(radios, count, 1)`（disconnect・search-stop・down、状態の確かめ）で止める。
-  答えは OK と止めた数、失敗は ERROR と errno と最初の interface の名前。有線は触らない（suspend の口の無い有線の NIC の driver は kernel が
-  `EOPNOTSUPP` で中止し、§4 の言葉になる）。
-- `SLEEP_END`: PREPARE で止めた radio を元の状態（up と自動接続の方針）に戻す。止めていなければ何もしない。
-- PREPARE から END まで自動の仕事（`run_automatic_work`、自動接続・scan）を止め、利用者の Wi-Fi の要求（`WIFI_*`）は `EBUSY` で断る。
-- END が来ないまま 10 分経ったら（sessiond の子が死んだ等）、自分で END と同じことをする（安全側）。
-- 進行中の Wi-Fi の仕事（`wifi_pending`）がある時の PREPARE は、その仕事の終わりを待ってから止める（待ちの上限は sessiond の 8 秒の内）。
+- 新しい opcode（`userland/base/net/protocol.h`）: `NETWORKD_OP_SLEEP_PREPARE = 64`・`NETWORKD_OP_SLEEP_END = 65`（範囲で振り分ける所 `main.c:3592-3594` の 2〜14・`3607-3627` の 32〜39 と重ならない）。`operation_name` の表に足す。`operation_allowed` の member の一覧には入れない（root だけ = sessiond）。
+- **SLEEPING の状態**: PREPARE は、今の Wi-Fi の方針（`managed_wlan` の state と所有者）を記録し、`wifi_request_stop` と同じ順で退かせる（`retire_managed_connection` → radio の列挙 → `stop_wlan_radios(…, 1)`）。ただし方針（`networkd_managed_wlan_disable`）は書き換えず、保存もしない。進行中の Wi-Fi の仕事（`wifi_pending`）は待たずに `EINTR` で終わらせる（今の中止と同じ）。SLEEPING の間は自動の仕事（`run_automatic_work`）を止め、利用者の `WIFI_*` の変更と confirmed の transaction の開始は `EBUSY` で断る（SHOW・LIST は答える）。confirmed の transaction が進行中なら PREPARE は `EBUSY`（`NOSLEEP network`）。
+- **冪等**: SLEEPING の間の PREPARE は最初の記録を保ち、時計（下の 10 分）だけを更新して OK。
+- **END**: 記録した方針から再開する（AUTO_SEARCHING なら radio を up して自動接続、DISABLED なら何もしない）。SLEEPING でなければ何もしない。
+- **安全**: END が来ないまま 10 分経ったら自分で END と同じことをする（sessiond の子が死んだ等）。
+- **時間切れ**: sessiond の子は PREPARE の答えを最大 20 秒待つ。時間切れなら END を送ってから `NOSLEEP network radio=- error=ETIMEDOUT`。
+- **networkd が居ない**（connect が `ENOENT`・`ECONNREFUSED`）: PREPARE と END を飛ばして ioctl へ進む（Wi-Fi が on なら driver の EBUSY が守る）。
+- 有線は触らない（suspend の口の無い有線の driver は kernel が `EOPNOTSUPP` で中止し、§4 の言葉になる）。
 
-### 3. 3 つの契機（compositor）
+### 3. 契機（compositor の `sleep.c`）
 
 | 契機 | 条件 | 動作 |
 | --- | --- | --- |
-| 蓋を閉じた | session（greeter でない）で、sleep が使え（§6）、外部の monitor に出していない | lock（今の `KWL_LID_LOCK`）→ 画面を消す → sleep を頼む。開けて起きたら今の猶予（15 分以内なら password 無しで unlock） |
-| 電源ボタン・sleep button の短押し | session でも greeter でも、sleep が使える | session なら lock → sleep。greeter なら sleep だけ |
-| 無操作 | 最後の入力（`lock_input_ms`: key・pointer・touch・pen）から設定の時間（電源と電池で別、§7 の 2）。0 は「しない」。lock の間も数える | 時間の半分で画面を消す（入力で点く、lock しない）。時間で lock（まだなら）→ sleep |
+| 蓋が閉じている | session（greeter は N9）、sleep が使える（§6）、要求が出ていない、§5 の抑止の時間を過ぎた | lock（`KWL_LID_LOCK`、まだなら）→ 画面を消す → 要求（§3.2）。**tick で level で判断する**（§3.1） |
+| 電源ボタン・sleep button の短押し | session でも greeter でも、sleep が使える、要求が出ていない・予定が無い、§3.3 の窓の外 | session なら lock → 要求。greeter なら要求だけ |
+| 無操作 | 最後の入力（`lock_input_ms`）から設定の時間（電源と電池で別、§7.1 の 2）。0 は「しない」。lock の間も数える。全画面の窓が一番上の間は数えない（N7） | 時間の半分で画面を消す（入力で点く、lock しない）。時間で lock（まだなら）→ 要求 |
+| app の SUSPEND | §1.3 | 電源ボタンと同じ |
 
-- **sleep が使えない時**（§6）: 蓋は今の「lock して画面を消す」、電源ボタンは log だけ（今のまま）、無操作は半分で画面を消すだけ（今の 10 分の lock は残る）。
-- 契機が重なった時: sleep の要求が 1 つ出ている間（答えを待つ間、`power_asked`）は次を出さない（`kl_backend_power_action` が `EBUSY`）。
+- **sleep が使えない時**（§6）: 蓋は今の「lock して画面を消す」、電源ボタンは log だけ（今のまま）、無操作は設定の時間の半分で画面を消すだけ（今の 10 分の lock は残る）。§8 の Settings の文も同じ規則で書く。
 
-#### 3.1 無操作の抑止
+#### 3.1 tick と level の判断
 
-- 全画面の窓（`fullscreen`）が一番上にある間は数えない（動画）。
-- 範囲外（backlog、`plan/ws177/backlog-p2.md`）: Wayland の idle-inhibit の protocol（compositor に無い）、音を出している間（compositor は audiod の
-  stream を知らない）。N7。
+- `kwl_sleep_tick(server)` を `kwl_glass_tick` の**先頭**（greeter・lock の return（`shell.c:2709-2723`）より前）で呼ぶ。無操作の時計、蓋の level、送る予定、§5 の抑止はここで評価する。
+- 蓋: `server->lid.closed` が真で、上の条件を満たせば要求する（閉じた時の事象だけに頼らない）。蓋以外の理由（`ac`・`usb`・`timer`・`spurious`・`other`）で起きて蓋が閉じたままなら、次の tick で眠り直す（§5 の抑止は成功の後には掛からない）。
+- 電源の切り替え（AC ↔ 電池）は入力と同じに扱い、無操作の時計を今に戻す（20 分の無操作で AC を抜いた瞬間に眠らない）。source が UNKNOWN（AC を知らない機械・QEMU）の時は AC の時間。
 
-#### 3.2 順序と起床
+#### 3.2 送る予定（`KWL_SLEEP_PENDING`）
 
-- **lock の画面を描いてから頼む**: lock した後、lock の画面の 1 frame が出た（`kwl_schedule` の次の present の後）か 200 ms 経ってから
-  `POWER suspend` を送る。起きた時の最初の画面が desktop にならないため。
-- **起こした押下を捨てる**: 電源ボタンで起きると、その押下が kernel の事象（PRESS）として後から届き得る。答え（`OK`）を受けてから 2 秒の間の
-  電源ボタン・sleep button の押下は log だけにする（`KWL SLEEP ignore button`）。
-- 起きた後: 画面を点ける（蓋が閉じていれば点けない）。最後の入力の時刻を今にする（直ぐ無操作で眠り直さない）。蓋の wake は lid の open の事象が
-  別に来て lid.c が猶予を決める。
+- 状態: `IDLE` → `PENDING`（lock し、2 frame か上限を待つ）→ `WAITING`（送った、`sleep_hold`）→ 答えで `IDLE`。
+- `PENDING` で `kl_backend_power_action` が `EBUSY`（lock の直後の STYLES（`greeter.c:327`・`1484-1512`）や password の送信の答え待ち）なら、次の tick で送り直す（`greeter_styles_ask` と同じ型）。`EALREADY`（既に出ている）は送らない。上限 `KWL_SLEEP_SEND_MS`（3 秒）を過ぎたら失敗（§5、通知は出さない）。
+
+#### 3.3 押下を捨てる窓
+
+- `PENDING`・`WAITING` の間の電源ボタン・sleep button の押下は捨てる（log `KWL SLEEP ignore button`）。起こした押下は thaw の直後（答えより前）に PRESS として届く（`acpi-kern.c:819-820`、`sleep.c:197-200`）ので、この規則で捨てられる。
+- 答えを受けてから `KWL_SLEEP_BUTTON_QUIET_MS`（1 秒）の間の押下も捨てる（socket と事象の fd の処理の順に依らないため）。
+- 起きた直後 `KWL_SLEEP_KEY_QUIET_MS`（500 ms）の間の鍵は lock の画面に渡さない（起こした打鍵が password の欄に入り空の送信になるのを防ぐ）。
+
+#### 3.4 要求の間に蓋が開いた
+
+- `PENDING` の間に蓋が開いたら要求を取りやめる（送らない）。
+- `WAITING` の間に蓋が開いたら `POWER cancel` を送る。sessiond は子に取り消しを伝え（pipe の別の向き、または子が ioctl の直前に読む印）、子は ioctl の前なら `NOSLEEP cancelled`。ioctl に入った後なら間に合わない（眠り、蓋の open は wake の源なので直ぐ起きる）。
+- 猶予の unlock（`lid.c` の `KWL_LID_UNLOCK`）は `WAITING` の間は行わず、答えの後に蓋の今の状態で `kwl_lid_open` の判断をやり直す（unlock のまま眠ることが無い）。
+
+#### 3.5 起きた後
+
+- `sleep_hold` を解き再描画。画面を点ける（蓋が閉じていれば点けない）。最後の入力の時刻を今にする。
+- 利用者の起床（`power-button`・`lid`・`keyboard`・`usb`）でなければ（`ac`・`timer`・`spurious`・`other`）、無操作の時間の代わりに `KWL_SLEEP_REST_MS`（60 秒）の無入力で眠り直す（蓋が開いた鞄の中の AC の抜き差しなど）。
+- `resume-error` があれば通知（§4）。
 
 ### 4. 中止の理由の表示
 
-- backend の outcome から compositor が言葉を選ぶ（翻訳の対象、`wayland.keys` と `ja/wayland.tr`）:
+- 言葉（翻訳の対象、`wayland.keys`・`ja/wayland.tr`）:
 
 | 原因 | 言葉（英語の基） |
 | --- | --- |
-| `FAIL device`、device が `intel-ax211`・`rtl8822b` などの Wi-Fi で EBUSY | "Sleep was cancelled: Wi-Fi could not be turned off." |
-| `FAIL network` | "Sleep was cancelled: Wi-Fi could not be turned off." |
-| device が `nvme` で EBUSY | "Sleep was cancelled: the disk was busy." |
-| device が `xhci` で EBUSY | "Sleep was cancelled: a USB device was busy." |
-| device が `i915` で EBUSY | "Sleep was cancelled: the display was busy." |
-| `result` が EOPNOTSUPP（suspend の口の無い driver） | "Sleep was cancelled: DRIVER cannot sleep yet."（DRIVER は device の文字列の最後の語） |
-| `FAIL unsupported` | "This computer cannot sleep." |
-| `FAIL busy` | 何も出さない（他の sleep が進行中） |
-| それ以外 | "Sleep was cancelled (DEVICE, error E)." |
+| `NOSLEEP network`、または device が `pci ` で始まり driver の語が `intel-ax211` で EBUSY | "Sleep was cancelled: Wi-Fi could not be turned off." |
+| device が `pci ` で始まり driver が `nvme` で EBUSY | "Sleep was cancelled: the disk was busy." |
+| 同じく `xhci` で EBUSY | "Sleep was cancelled: a USB device was busy." |
+| 同じく `i915` で EBUSY | "Sleep was cancelled: the display was busy." |
+| 同じく、上以外の driver で EBUSY | "Sleep was cancelled: DRIVER was busy." |
+| `result` が EOPNOTSUPP（suspend の口の無い driver、`pci-power.c:799-800`） | "Sleep was cancelled: DRIVER cannot sleep yet." |
+| `NOSLEEP unsupported` | "This computer cannot sleep." |
+| device が `pci ` で始まらない（`lps0`・`acpi events`・`interrupts`・空） | "Sleep was cancelled (DEVICE, error E)."（空なら "Sleep was cancelled (error E)."） |
+| `resume-error`（眠って起きたが device が戻らない） | "A device did not come back after sleep: DEVICE." |
+| `ERROR busy`・`NOSLEEP cancelled` | 何も出さない |
 
-- 出し方（N3）: lock の画面か greeter が出ていれば、その card の文の行（`greeter_message`、今の「The login failed.」と同じ所）に出す（新しい
-  `kwl_greeter_say`）。同じ文を system の通知（`kwl_notify_post_system`、title "Sleep"）にも出し、unlock の後に通知の log で読める。lock の画面も
-  greeter も出ていない時（§6 の案 B の最初の電源ボタンなど）は通知だけ。
-- 中止の記録は sessiond の log（`SESSIOND SLEEP …`）と syslog、kernel の dmesg（`system: sleep …`）。
+- DRIVER は device の文字列の最後の語（`pci 0000:00:14.3 intel-ax211` → `intel-ax211`）。
+- 出し方（N3）: lock の画面か greeter が出ていればその card の文の行（`greeter_message`、128 byte、新しい `kwl_greeter_say`、UTF-8 の文字の境で切る）と、system の通知（`kwl_notify_post_system`、title "Sleep"）。同じ理由の通知は compositor の process の間 1 度だけ（文の行は毎回）。
 
-### 5. 再試行と連続の抑止
+### 5. 再試行と抑止
 
-- 中止の後、蓋と無操作は 30 秒は試さない（蓋を閉じたままの繰り返し、無操作の繰り返しを防ぐ）。電源ボタンは押すたびに試す（利用者の明示の操作）。
-- 蓋を閉じたまま中止が続く時は、今の「lock して画面を消した」状態に留まる。
-- `FAIL unsupported` を受けたら、その compositor の process の間は sleep が使えないとみなす（§6）。
+- 失敗の後の抑止は延びる間隔: 30 秒 → 2 分 → 10 分（上限）。成功・新しい入力・蓋の開閉で 30 秒に戻す。
+- 無操作の失敗は、新しい入力が来るまで試し直さない。蓋は抑止の時間の後に tick が試し直す。電源ボタン・app は押すたびに試す。
+- **恒久の失敗**: `NOSLEEP unsupported` と `result` が `EOPNOTSUPP` は、compositor の process の間「使えない」とみなす（§3 の使えない時の動き）。sessiond も覚える（§1.1）。
+- 蓋を閉じたまま失敗が続く時は、今の「lock して画面を消した」状態に留まる。
 
 ### 6. sleep が使えるかの判断（N1）
 
 p006 には「眠れるか」を問う口が無く、ioctl が支えの無い platform で `EOPNOTSUPP` を返すだけ。
 
-- **案 A（勧める、UAPI の追加で承認が要る）**: `KERN_SYSTEM_GET_POWER` の `known` に `KERN_SYSTEM_POWER_HAS_SLEEP 0x8U` を足し、kernel が
-  `kern_sleep_supported()` の時に立てる（構造体は変えない、`system-device.c` の数行と `system.h` の 1 行）。backend の `power_read` が読み、
-  `power_actions` の SUSPEND の bit に載せる。Keiland は起動時から分かり、§3 の「使えない時」の動きを最初から選べる。Settings の Power の頁も
-  「This computer cannot sleep.」を出せる。
-- **案 B（UAPI を変えない）**: 最初は「使える」とみなし、最初の試みの `FAIL unsupported` で backend が覚えて SUSPEND の bit を落とす。sessiond も
-  ioctl の `EOPNOTSUPP` を覚え、次からは networkd に頼まずに直ぐ `FAIL unsupported`。欠点: 支えの無い機械（QEMU を含む）で、最初の電源ボタンで
-  session が lock され、通知「This computer cannot sleep.」が 1 度出る（今は log だけ）。Wi-Fi のある機械では最初の 1 度だけ radio が切れて戻る。
-  ws132 の QEMU の試験（電源ボタンが log だけ）は最初の 1 度で変わる。
+- **案 A1（勧める、UAPI の追加で承認が要る）**: `struct system_power_info` の `reserved[0]` を `flags` にし、`KERN_SYSTEM_POWER_CAN_SLEEP 0x1U` を kernel が `kern_sleep_supported()` の時に立てる（`KERN_SYSTEM_GET_POWER`、構造体の大きさと配置は変えない。古い kernel は 0 = 使えない、安全側）。`known`（どの部分の値が分かるか、`system.h:351-353`）に能力を混ぜない。
+- **案 A2（同じく承認が要る）**: `known` に `KERN_SYSTEM_POWER_HAS_SLEEP 0x8U`。変更は最小だが `known` の意味がずれる。
+- **案 B（UAPI を変えない）**: 最初は「使える」とみなし、最初の `NOSLEEP unsupported` で backend と sessiond が覚える。欠点: 支えの無い機械（QEMU を含む）で compositor の process ごと（login・logout のたび）に、最初の電源ボタンで lock と通知が 1 度出る。Settings は最初の試みまで「cannot sleep」を出せない。ws132 の QEMU の試験（電源ボタンが log だけ）が変わる。
+- A の時: backend の `power_read` が flags を読み、`power_actions` の SUSPEND の bit に載せる。Settings は `kl_system_power_get_state` の actions で分かる。docs/architecture/power-management.md の UAPI の節も直す（Q1）。
 
 ### 7. 人間の判断
 
 #### 7.1 決定済み（2026-10-05 朝、ユーザーが案のとおり、Q1 の中継）
 
-1. 外部の monitor に出している時に蓋を閉じた: **sleep しない**（内蔵の panel だけ消し、外部に出し続ける）。**AC の有無に依らない**。
+1. 外部の monitor に出している時に蓋を閉じた: **sleep しない**（内蔵の panel だけ消し、外部に出し続ける）。**AC の有無に依らない**。→ 第 3 版の N8 で実現の範囲を確かめる。
 2. 無操作の時間の既定値: **AC 30 分・電池 15 分**、画面はその**半分**で消す。0 は「しない」。Settings の Power の頁で変える。
 3. greeter で電源ボタン: **sleep**（lock は無い）。
 4. sessiond が **session からも suspend を受ける**（ws131 の D12 の改訂。poweroff・reboot は今の規則のまま）。
 
-#### 7.2 新しい判断（第 2 版、既定の案）
+#### 7.2 新しい判断（第 3 版、既定の案）
 
-- **N1**（§6）: sleep が使えるかの判断。**案 A**（`KERN_SYSTEM_GET_POWER` の `known` に `KERN_SYSTEM_POWER_HAS_SLEEP`、UAPI の 1 bit の追加）を勧める。
-  案 B は UAPI を変えないが、支えの無い機械の最初の電源ボタンで lock と通知が 1 度出る。
-- **N2**: suspend を頼めるのは、greeter と、**session の利用者なら誰でも**（wheel でなくてよい。蓋を閉じた利用者の機械が眠らないのは困る）。
-  poweroff・reboot は今のまま root・wheel だけ。
-- **N3**: 中止の理由は lock の画面・greeter の card の文の行と system の通知に出す（第 1 版の「画面の下の中央の 5 秒の toast」の代わりに、在る
-  部品を使う）。
-- **N4**: Settings の「Battery」の頁（今は未実装の印）を「Power」の頁にし、sleep までの時間を電源・電池で選ぶ（Never・5・10・15・30・60・120 分、
-  既定 30・15）。画面を消す時間はその半分で、選ばない（文で書く）。電池の残りの表示は後（backlog）。
-- **N5**: sleep button（`KL_BACKEND_BUTTON_SLEEP`）も電源ボタンの短押しと同じ（lock して sleep）。
-- **N6**: 今の無操作の lock（`--lock-idle`、10 分）は残す。電池の既定（15 分）だと画面を消すのが 7.5 分で lock の 10 分より早いが、画面を消すのは
-  lock しない（入力で点く）。
-- **N7**: 無操作の抑止は全画面の窓だけ（idle-inhibit の protocol と音の再生中は backlog）。
+- **N1**（§6）: sleep が使えるかの判断。**案 A1**（`system_power_info` の `reserved[0]` を `flags`、`KERN_SYSTEM_POWER_CAN_SLEEP`）を勧める。A2・B は §6。
+- **N2**: suspend を頼めるのは greeter と **session の利用者なら誰でも**（wheel でなくてよい）。poweroff・reboot は今のまま root・wheel。
+- **N3**: 中止の理由は lock の画面・greeter の card の文の行と system の通知（第 1 版の「画面の下の 5 秒の toast」の代わりに在る部品）。
+- **N4**: Settings の「Battery」の頁（未実装の印）を「Power」にし、sleep までの時間を電源・電池で選ぶ（Never・5・10・15・30・60・120 分、既定 30・15）。画面を消すのはその半分で選ばない。電池の残りの表示は後。
+- **N5**: sleep button も電源ボタンの短押しと同じ。
+- **N6**: 今の無操作の lock（`--lock-idle`、10 分）は残す（電池の既定だと画面を消す 7.5 分の方が早いが、画面を消すのは lock しない）。
+- **N7**: 無操作の抑止は全画面の窓だけ（idle-inhibit の protocol と音の再生中は backlog）。ssh・Sharing の遠隔の利用中も局所の入力しか数えないので眠る（範囲外と明記）。
+- **N8**（review の B9）: 今の compositor は最初の 1 つの display だけを使い（`compose.c:803-818`）、外部の monitor に出していると知る口も「内蔵だけ消す」口も無い。**案: p007 では蓋を閉じると常に眠る**（7.1 の 1 の clamshell は複数の出力を扱う WS の後に）。別案: Vulkan の display の数が 2 以上なら蓋で眠らず今の「lock して全体を黒」に留める（数は起動時の値、hot-plug は追わない）。
+- **N9**: greeter で蓋を閉じた時・greeter の無操作でも眠る（無操作の時間は既定の AC 30・電池 15 分。利用者の設定は無い）。
+- **N10**: QEMU で userland の流れ全体（PREPARE → ioctl → END → 答え → 起きた後）を通すため、sessiond に試験の config だけで使う `--sleep-mode=devices`（ioctl の mode を `KERN_SYSTEM_SLEEP_DEVICES` にする、wake は NONE）を置く。規約の「試験だけの switch が本番の動きを変えない」に触れるので、置くかどうか。置かなければ QEMU は `NOSLEEP unsupported` まで。
 
 #### 7.3 第 1 版の判断の案の記録（決定の前、2026-10-05）
 
@@ -205,44 +214,47 @@ p006 には「眠れるか」を問う口が無く、ioctl が支えの無い pl
 
 ### 8. Settings の Power の頁（N4）
 
-- 鍵（`settings-keys.c`、resolver compositor、KEPT）: `power.sleep.ac`（INT、0〜240 分、既定 30）、`power.sleep.battery`（INT、0〜240、既定 15）。
-  0 は「Never」。compositor の `settings.c` が読み、`idle.c` に渡す（`KWL PREFERENCES key=power.sleep.ac applied value=N` の log）。
-- 頁（`settings/pages.c` の `SE_PAGE_BATTERY` の項を title "Power"・説明 "Sleep and the screen." に、新しい `page-power.c`）: 2 つの選択
-  （"Sleep after, on the power adapter"・"Sleep after, on battery"）と、文 "The screen turns off after half that time."。sleep が使えない時
-  （`kl_system_power_get_state` の actions に SUSPEND が無い、案 A）は文 "This computer cannot sleep." と、選択は画面を消す時間として効く
-  （文を "Turn the screen off after" に）。
-- 翻訳: `settings` の keys・ja。
+- 鍵（`settings-keys.c`、resolver compositor、KEPT）: `power.sleep.ac`（INT、0〜240 分、既定 30）、`power.sleep.battery`（INT、0〜240、既定 15）。0 は Never。compositor の `settings.c` が読み `sleep.c` に渡す（`KWL PREFERENCES key=power.sleep.ac applied value=N`）。
+- 頁（`settings/pages.c` の `SE_PAGE_BATTERY` を title "Power"・説明 "Sleep and the screen."、新しい `page-power.c`）: 2 つの選択（"Sleep after, on the power adapter"・"Sleep after, on battery"）と文 "The screen turns off after half that time."。sleep が使えない時（§6 の A、actions に SUSPEND が無い）は文を "This computer cannot sleep. The screen turns off after half that time." にする（選択と鍵は同じ。§3 の使えない時の動きと同じく時間の半分で画面を消す）。
+- 翻訳: settings の keys・ja。
 
-### 9. 変える file（実装の目安）
+### 9. 変える file
 
 | 部分 | file |
 | --- | --- |
-| （案 A のみ）kernel・UAPI | `include/uapi/system.h`（1 行）、`src/drivers/generic/system-device.c`（GET_POWER で bit） |
-| networkd | `userland/base/net/protocol.h`（2 opcode）、`userland/base/networkd/main.c`（PREPARE・END・自動の仕事の停止・10 分の安全） |
-| sessiond | 新しい `sleep.c`（子・pipe・答えの行）、`sleep-rules.c`（答えの行を作る純粋な関数、host 試験）、`session.c`・`greeter.c`（`POWER suspend` と poll の pipe）、`power-rules.c`（suspend は wheel を問わない） |
-| backend | `libkeiland-backend/keiland-backend.h`（outcome の struct と関数）、`libkeiland-backend-zedbsd/power-zedbsd.c`（SUSPEND の bit と送信、案 A の bit）、`session-zedbsd.c`（答えの行の解釈） |
-| compositor | 新しい `sleep.c`・`sleep.h`（契機の判断・抑止・起こした押下の窓・理由の言葉、server を知らない純粋な部分は host 試験）、新しい `idle.c`・`idle.h`（無操作の時間・画面を消す・sleep、純粋）、`backend-host.c`（電源ボタン・蓋から呼ぶ）、`lid.c`（外部の monitor の時の判断に引数）、`shell.c`（tick で `kwl_idle_tick` を lock の判断の前に 1 行）、`greeter.c`（`kwl_greeter_say`）、`settings.c`（2 つの鍵）、`locale`（言葉） |
-| Settings | `settings/pages.c`、新しい `page-power.c`、`settings-keys/settings-keys.c`（2 つの鍵） |
+| （N1 が A の時）kernel・UAPI | `include/uapi/system.h`、`src/drivers/generic/system-device.c`（GET_POWER）、docs の UAPI の節（Q1） |
+| networkd | `userland/base/net/protocol.h`、`userland/base/networkd/main.c` |
+| sessiond | 新しい `sleep.c`（子・pipe・取り消し・覚える）、`sleep-rules.c`（答えの行を作る純粋な関数）、`sessiond.h`（`struct sessiond` に子）、`session.c`・`greeter.c`（`POWER suspend`・`POWER cancel` と poll の pipe、文書の一覧）、`power-rules.c`（suspend は wheel を問わない） |
+| backend | `keiland-backend.h`（outcome）、`power-zedbsd.c`（SUSPEND の bit・送信・EALREADY・session_gone）、`session-zedbsd.c`（`SLEPT`・`NOSLEEP` の解釈）、`power-linux.c`・`power-unsupported.c`・FreeBSD の backend（outcome の関数） |
+| compositor | 新しい `sleep.c`・`sleep.h`（状態・契機・抑止・窓・言葉、server を知らない純粋な部分は host 試験）、`shell.c`（`kwl_glass_tick` の先頭に 1 行、frame を出さない判断に 1 行）、`backend-host.c`（電源ボタン・蓋から呼ぶ）、`handoff.c`（POWER の答えを先に）、`system.c`（app の SUSPEND）、`greeter.c`（`kwl_greeter_say`、鍵の窓）、`settings.c`（2 つの鍵）、`kwl.h`（`sleep_hold`）、locale |
+| Settings | `settings/pages.c`、新しい `page-power.c`、`settings-keys/settings-keys.c` |
 
-- WS181 で変えた `shell.c`・`home.c`・`arrange-shell.c` は最小限（`shell.c` の tick に 1 行だけ、他は新しい file）。
-- KL_VERSION: `kl_system_power_get_state` は在るので、libkeiland の公開の API は変えない（上げない）。
+- WS181 で変えた `shell.c`・`home.c`・`arrange-shell.c` は最小限（`shell.c` は 2 行）。
+- KL_VERSION: libkeiland の公開の API は変えない（上げない）。
+
+### 10. 実装の Phase の分け方（案、Q1 が WS052 に置く）
+
+| Phase | 内容 | 依存 |
+| --- | --- | --- |
+| p010 | networkd の SLEEP_PREPARE・END（§2）と host 試験 | p007 の ACK |
+| p011 | sessiond の sleep.c と backend（§1.1・§1.2）、N1 が A なら kernel の bit | p010、N1 |
+| p012 | compositor の sleep.c（§0・§3〜§5・§1.3）と翻訳 | p011 |
+| p013 | Settings の Power の頁（§8） | p012 |
+
+- 実機の確認（ws052-p008）は p006 の 5330 の UAT の後。
 
 ## 依存
 
-- p006: `KERN_SYSTEM_SLEEP` の S0 idle の mode と事象（main に在る、QEMU は T1-178 で拒否まで確認、5330 の UAT 待ち）。案 A は UAPI の承認。
-- WS132 p008（蓋の lock の今の形）、WS089（Settings）、WS156 p002（通知、在る）。
+- p006: `KERN_SYSTEM_SLEEP` の S0 idle の mode と事象（main に在る、QEMU は T1-178 で拒否まで、5330 の UAT 待ち）。N1 が A なら UAPI の承認。
+- WS132 p008（蓋の lock）、WS089（Settings）、WS156 p002（通知、在る）、WS131（sessiond、`POWER` の規則）、WS005 の networkd。
 
 ## 確かめ方（code の後）
 
-- host の試験: compositor の `sleep.c`・`idle.c`（蓋・電源ボタン・無操作・抑止・30 秒の抑止・起こした押下の 2 秒・使えない時・外部の monitor）、
-  sessiond の答えの行（`sleep-rules.c`: result・wake・device・errno の組から行、行から outcome）、compositor の理由の言葉の選び方、networkd の
-  PREPARE・END の状態（記録した radio、二重の PREPARE、END だけ、10 分の安全）を切り離した関数で。
-- QEMU（T1）: sleep が使えない platform で、案 A なら電源ボタン（`system_powerdown`）が log だけ・蓋は無い・無操作で半分の時間に画面が消える
-  （`--lock-idle` と同じく試験の短い時間の option で）。案 B なら最初の電源ボタンで `FAIL unsupported` と通知、2 回目は log だけ。sessiond の
-  `POWER suspend` の答え（`FAIL unsupported`）と networkd の PREPARE・END の往復（Wi-Fi の無い guest では `OK` と 0）。
+- host の試験: compositor の `sleep.c`（状態の遷移、蓋の level、押下の窓（PRESS → 答えの順と答え → PRESS の順の両方）、要求の間の蓋の open と取り消し、送る予定の EBUSY の送り直し、延びる間隔、恒久の失敗、AC と電池の切り替え、利用者でない起床の 60 秒、言葉の選び方）、sessiond の `sleep-rules.c`（result・wake・device・errno から行）と backend の解釈（行から outcome）、networkd の SLEEPING の状態（冪等の PREPARE、END だけ、10 分の安全、confirmed の間の拒否）。
+- QEMU（T1）: N1 が A なら電源ボタン（`system_powerdown`）が log だけ、無操作で半分の時間に画面が消える（試験の短い時間の option で）。N10 を置くなら devices の mode で `POWER suspend` → `SLEPT woke=none` と networkd の PREPARE・END の往復、起きた後の lock の画面。
 - 実機（5330、ユーザーの UAT）: 3 つの契機で入り、蓋・電源ボタンで戻る。Wi-Fi の接続が戻る。中止の理由（Wi-Fi を切れなくする等で起こす）。
 
-## design-reviewer の 1 回目（2026-10-07、第 2 版に対して、未反映）
+## design-reviewer の 1 回目（2026-10-07、第 2 版に対して、第 3 版で反映）
 
 blocking 10（第 3 版で直す）:
 - B1 sleep の答えが lock・greeter の「login の答え」に流れる（`handoff.c:194-203` → `greeter_answered` が EACCES を「Wrong password」に）→ SUSPEND の答えは handoff で先に sleep.c へ、`session_answered` で専用に解く、busy は `ERROR busy` に揃える。
