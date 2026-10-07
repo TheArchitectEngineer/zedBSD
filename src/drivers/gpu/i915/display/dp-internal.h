@@ -63,6 +63,9 @@
 #error "display/dp-internal.h: the VBT environment did not define itself"
 #endif
 
+/* The external DP sink's probe and cache, which the DP world keeps for each external port. */
+#include "dp-ext.h"
+
 /* The Linux environment this translation unit is compiled in: DP replaces VBT. */
 #undef I915_DISPLAY_LINUX_WORLD
 #define I915_DISPLAY_LINUX_WORLD "dp"
@@ -266,10 +269,14 @@ typedef u16 __le16;
 #define drm_dp_mst_dpcd_read(aux, offset, buffer, size) (-I915_DP_EINVAL)
 #define drm_dp_mst_dpcd_write(aux, offset, buffer, size) (-I915_DP_EINVAL)
 
-/* Type-C: the eDP port is a combo PHY, so the Type-C branches of the AUX transfer are never taken. */
-#define intel_tc_port_lock(d) ((void)(d))
-#define intel_tc_port_unlock(d) ((void)(d))
-#define intel_tc_port_connected_locked(enc) (true)
+/*
+ * Type-C: the AUX transfer of an external DP port on a Type-C port holds
+ * the port's lock around the message (tc.c); the eDP port is a combo PHY
+ * and never takes these branches.
+ */
+#define intel_tc_port_lock(d) i915_dp_tc_port_lock(d)
+#define intel_tc_port_unlock(d) i915_dp_tc_port_unlock(d)
+#define intel_tc_port_connected_locked(enc) i915_dp_tc_port_connected_locked(enc)
 
 /*
  * Quirks: QUIRK_FW_SYNC_LEN (one MTL laptop and panel) and
@@ -616,6 +623,15 @@ struct intel_digital_port {
 
 	/* The device the port belongs to. */
 	struct drm_i915_private *i915;
+
+	/*
+	 * The display's Type-C ports when the port is one of them, else NULL
+	 * (the eDP); the port's number among them; and the mode the port's
+	 * lock last held it in, valid while the AUX transfer holds the lock.
+	 */
+	struct i915_tc *tc;
+	unsigned tc_port;
+	enum i915_tc_mode tc_mode;
 };
 
 /*
@@ -697,6 +713,69 @@ struct i915_dp_edp {
 };
 
 /*
+ * One external DP port of the display: a Type-C port the display probes
+ * for a DP sink (the external DP object).
+ *
+ * It lives in the DP world for the display's lifetime.  The Linux objects
+ * (the digital port with its DP output and AUX channel, and the connector)
+ * are bound when the external ports start and never change after; the
+ * sink and the probe count change only under lock, which serializes the
+ * port's probes.
+ */
+struct i915_dp_ext_port {
+	/* Nonzero when the Type-C port is declared and bound here. */
+	int declared;
+
+	/* The port's name in the log ("TC1" ...), and its AUX channel's. */
+	char name[8];
+	char aux_name[32];
+
+	/* The digital port, with its DP output and AUX channel, that the Linux AUX text works on. */
+	struct intel_digital_port dig_port;
+
+	/* The connector the DP output drives; nothing reads its panel. */
+	struct intel_connector connector;
+
+	/* The probe's access to the AUX channel, and what the source offers. */
+	struct i915_dp_ext_env env;
+	struct i915_dp_ext_source source;
+
+	/* What the last probe found (dp-ext.h). */
+	struct i915_dp_ext_sink sink;
+
+	/* Serializes the port's probes and guards the sink. */
+	struct mutex lock;
+
+	/* How many probes ran (diagnostics). */
+	unsigned probes;
+};
+
+/*
+ * The display's external DP ports and the device the Linux AUX text sees
+ * for them (dp-ext-kern.c).
+ *
+ * It lives in the DP world.  live is set once the ports are bound to the
+ * eDP device's kernel backend (its locks, threads and power) and cleared
+ * before that backend stops; the probes refuse to run while it is clear.
+ */
+struct i915_dp_ext_world {
+	/* Nonzero while the external ports can be probed. */
+	int live;
+
+	/* The environment of the external ports: the eDP device's backend, with bookkeeping of its own. */
+	struct i915_dp_env env;
+
+	/* The device the external ports belong to: its PPS mutex and the environment. */
+	struct drm_i915_private i915;
+
+	/* The display's Type-C ports. */
+	struct i915_tc *tc;
+
+	/* The ports, TC1 first. */
+	struct i915_dp_ext_port port[I915_TC_PORTS];
+};
+
+/*
  * The DP environment's world state.
  *
  * It holds what the old DP translation units kept in file-scope variables.
@@ -730,6 +809,14 @@ struct i915_dp_world {
 	 * the result by each snapshot.
 	 */
 	unsigned dp_log_errors;
+
+	/*
+	 * The external DP ports (dp-ext-kern.c).
+	 *
+	 * Zero until the external ports start; the argument-less helpers use
+	 * its environment while no eDP is live.
+	 */
+	struct i915_dp_ext_world ext;
 };
 
 /*
@@ -1225,15 +1312,97 @@ i915_aux_power_domain(
 	return (int)domain;
 }
 
-/* Tells whether a Type-C port is in TBT-alt mode (the Linux intel_tc_port_in_tbt_alt_mode()): the eDP port is not Type-C. */
+/*
+ * Tells whether a Type-C port is in TBT-alt mode (the Linux
+ * intel_tc_port_in_tbt_alt_mode()), by the mode the AUX transfer's lock
+ * holds it in: a combo port never is, and a port in TBT-alt mode is
+ * refused before its message is built (Thunderbolt is outside the
+ * driver's scope).
+ */
 static __inline bool
 i915_dp_intel_tc_port_in_tbt_alt_mode(
 	struct intel_digital_port *dig_port)
 {
-	UNUSED_PARAMETER(dig_port);
+	/* A combo port is not Type-C. */
+	if (dig_port->tc == NULL)
+		return false;
 
-	/* Reports that the combo-PHY eDP port is never in TBT-alt mode. */
-	return false;
+	/* A port held in any other mode is not in TBT-alt mode. */
+	if (dig_port->tc_mode != I915_TC_MODE_TBT)
+		return false;
+
+	/* Succeeded: the port is in TBT-alt mode. */
+	return true;
+}
+
+/*
+ * Locks a Type-C port for one AUX message (the Linux intel_tc_port_lock()):
+ * a port no output holds is brought up to what is plugged in, taking its
+ * PHY for one lane.  The mode the lock holds the port in is kept for the
+ * message.
+ */
+static __inline void
+i915_dp_tc_port_lock(
+	struct intel_digital_port *dig_port)
+{
+	/* A combo port has no Type-C lock. */
+	if (dig_port->tc == NULL)
+		return;
+
+	/* Takes the lock and keeps the mode. */
+	dig_port->tc_mode = drv_i915_tc_lock(dig_port->tc, dig_port->tc_port, 1);
+}
+
+/*
+ * Unlocks a Type-C port after an AUX message (the Linux
+ * intel_tc_port_unlock()); a port no link holds gives its PHY back at once.
+ */
+static __inline void
+i915_dp_tc_port_unlock(
+	struct intel_digital_port *dig_port)
+{
+	/* A combo port has no Type-C lock. */
+	if (dig_port->tc == NULL)
+		return;
+
+	/* Releases the lock. */
+	drv_i915_tc_unlock(dig_port->tc, dig_port->tc_port);
+}
+
+/*
+ * Tells whether a Type-C port whose lock the AUX transfer holds has a
+ * partner the display can talk to (the Linux
+ * intel_tc_port_connected_locked()).
+ *
+ * Only a port held in DP-alt or legacy mode carries DP AUX for this
+ * driver: a Thunderbolt partner, or a port whose PHY could not be taken,
+ * counts as disconnected, so the transfer is refused.
+ */
+static __inline bool
+i915_dp_tc_port_connected_locked(
+	struct intel_encoder *encoder)
+{
+	struct intel_digital_port *dig_port;
+	int connected;
+
+	/* The encoder is embedded in its digital port. */
+	dig_port = container_of(encoder, struct intel_digital_port, base);
+
+	/* A combo port is always reachable. */
+	if (dig_port->tc == NULL)
+		return true;
+
+	/* Only DP-alt and legacy carry DP AUX here. */
+	if (dig_port->tc_mode != I915_TC_MODE_DP_ALT && dig_port->tc_mode != I915_TC_MODE_LEGACY)
+		return false;
+
+	/* Asks the live status in the mode the lock holds the port in. */
+	connected = drv_i915_tc_connected_locked(dig_port->tc, dig_port->tc_port);
+	if (!connected)
+		return false;
+
+	/* Succeeded: the partner is there. */
+	return true;
 }
 
 /* Tells whether a device quirk applies (the Linux intel_has_quirk()): none does. */
@@ -1260,6 +1429,29 @@ void drv_i915_dp_aux_init(struct intel_dp *intel_dp);
 
 /* Prepares an AUX channel's mutex and I2C-over-AUX adapter (dp-sink.c, the Linux drm_dp_aux_init()). */
 void drv_i915_drm_dp_aux_init(struct drm_dp_aux *aux);
+
+/*
+ * The DPCD helpers of any AUX channel (dp-sink.c, the Linux
+ * drm_dp_dpcd_read(), drm_dp_dpcd_write(), drm_dp_dpcd_probe() and
+ * drm_dp_read_dpcd_caps()): the bytes transferred, or 0, or a negative
+ * Linux errno.
+ */
+long drv_i915_drm_dp_dpcd_read(struct drm_dp_aux *aux, unsigned offset, void *buffer, size_t size);
+long drv_i915_drm_dp_dpcd_write(struct drm_dp_aux *aux, unsigned offset, const void *buffer, size_t size);
+int drv_i915_drm_dp_dpcd_probe(struct drm_dp_aux *aux, unsigned offset);
+int drv_i915_drm_dp_read_dpcd_caps(struct drm_dp_aux *aux, u8 dpcd[DP_RECEIVER_CAP_SIZE]);
+
+/* Starts the eDP device's locks and threads unless they run already (dp-sink.c): 0 or the error. */
+int drv_i915_edp_device_start(struct i915_edp_device *dev);
+
+/* Stops the external DP ports before the eDP device's backend goes (dp-ext-kern.c). */
+void drv_i915_dp_ext_stop(struct i915_dp_world *world);
+
+/*
+ * Tells whether a device answers at the EDID address of a DDC adapter
+ * (edid-read.c, the Linux drm_probe_ddc()).
+ */
+bool drv_i915_drm_probe_ddc(struct i2c_adapter *ddc);
 
 /*
  * Reads the base EDID block and its extensions over a DDC adapter

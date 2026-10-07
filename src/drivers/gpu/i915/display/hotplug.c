@@ -28,11 +28,13 @@
  *   - the connectors are made when the hotplug path starts (Linux makes
  *     them in intel_ddi_init()); connector ids are their index plus one,
  *     and names follow drm's "<type>-<n>";
- *   - dig_port->hpd_pulse (intel_dp_hpd_pulse()), the DP connector detect
- *     (intel_dp_detect()) and the Type-C connected check
- *     (intel_tc_port_connected()) are not ported: each call is logged as a
- *     step, and hpd_pulse answers IRQ_HANDLED, which is what Linux answers
- *     for an eDP long pulse;
+ *   - dig_port->hpd_pulse (intel_dp_hpd_pulse()) is not ported: each call
+ *     is logged as a step and answers IRQ_HANDLED, which is what Linux
+ *     answers for an eDP long pulse; the DP connector detect
+ *     (intel_dp_detect()) runs for a Type-C DP connector, probing its sink
+ *     through the external DP ports (dp-ext-kern.c), and is logged as
+ *     unknown for the others; the Type-C connected check
+ *     (intel_tc_port_connected()) asks the display's Type-C ports;
  *   - polling (drm_kms_helper_poll_*()), the uevents
  *     (drm_kms_helper_*hotplug_event()) and the GMBUS wait queue are
  *     counted;
@@ -102,6 +104,7 @@
 #include "output.h"
 #include "power.h"
 #include "tc-kern.h"
+#include "dp-ext-kern.h"
 #include "../mmio.h"
 #include <kern/kcrt.h>
 
@@ -182,6 +185,7 @@ static enum connector_status i915_drm_helper_probe_detect_ctx(struct drm_connect
 static const char *i915_hpd_status_name(int status);
 static enum irqreturn i915_hpd_dp_pulse_step(struct intel_digital_port *dig_port, bool long_hpd);
 static int i915_hpd_dp_detect_step(struct drm_connector *connector, struct drm_modeset_acquire_ctx *ctx, bool force);
+static void i915_hpd_dp_set_edid(struct i915_hpd_world *world, struct drm_connector *connector, unsigned idx, unsigned bytes);
 static bool i915_hpd_tc_connected_step(struct intel_encoder *encoder);
 static enum intel_hotplug_state i915_hpd_hotplug_recorded(struct intel_encoder *encoder, struct intel_connector *connector);
 static void i915_hpd_make_objects(struct i915_hpd_world *world, const struct i915_display_nogem *nogem);
@@ -210,8 +214,8 @@ static const struct drm_connector_funcs i915_hpd_dp_connector_funcs = {
 };
 
 /*
- * The connector helper callbacks of a DP or eDP connector: the unported
- * intel_dp_detect() as a recorded step.
+ * The connector helper callbacks of a DP or eDP connector: intel_dp_detect()
+ * for a Type-C DP connector, a recorded step for the others.
  */
 static const struct drm_connector_helper_funcs i915_hpd_dp_helper_funcs = {
 	i915_hpd_dp_detect_step
@@ -475,10 +479,13 @@ drv_i915_hpd_start(
 	kern_memset(&world->hpd_i915, 0, sizeof(world->hpd_i915));
 	i915 = &world->hpd_i915;
 
-	/* The Type-C ports a hardware instance asks the live status of (a model has none). */
+	/* The Type-C ports a hardware instance asks the live status of, and probes the DP sinks of (a model has none). */
 	world->tc = NULL;
-	if (fake == NULL)
+	world->dp_display = NULL;
+	if (fake == NULL) {
 		world->tc = drv_i915_tc_kern_ports(display);
+		world->dp_display = display;
+	}
 
 	/* Records what the instance runs on. */
 	world->hpd.hp = hp;
@@ -3240,21 +3247,105 @@ i915_hpd_dp_pulse_step(
 	return IRQ_HANDLED;
 }
 
-/* Records a DP connector detect: intel_dp_detect() is not ported and answers unknown. */
+/*
+ * Detects a DP connector (the Linux intel_dp_detect() for a port that is
+ * not eDP): the Type-C port's live status first, then the probe of its
+ * sink over AUX (dp-ext-kern.c), whose EDID becomes the connector's.
+ *
+ * Only a Type-C DP connector of a hardware instance is detected; the eDP
+ * connector, a DP connector of a combo port and every connector of a model
+ * instance are logged and stay unknown.
+ */
 static int
 i915_hpd_dp_detect_step(
 	struct drm_connector *connector,
 	struct drm_modeset_acquire_ctx *ctx,
 	bool force)
 {
+	struct i915_hpd_world *world;
+	struct intel_connector *ic;
+	struct intel_encoder *encoder;
+	struct intel_digital_port *dig_port;
+	struct i915_hpd_edid_slot *slot;
+	enum i915_dp_ext_status probed;
+	unsigned idx;
+	unsigned edid_bytes;
+	bool connected;
+	int tc_port;
+
 	UNUSED_PARAMETER(ctx);
 	UNUSED_PARAMETER(force);
 
-	/* Names the step. */
-	kern_logf("i915: hpd step intel_dp_detect (unported): %s -> unknown\n", connector->name);
+	/* Finds the world, the connector's index, its encoder and the encoder's Type-C port. */
+	world = i915_hpd_world_of(i915_hpd_to_i915(connector->dev));
+	ic = i915_hpd_to_intel_connector(connector);
+	idx = (unsigned)(ic - world->hpd_conns);
+	encoder = ic->encoder;
+	tc_port = drv_i915_tc_kern_port_of((int)encoder->port);
 
-	/* Succeeded: the status is unknown. */
+	/* Anything but a Type-C DP connector of a hardware instance is not detected. */
+	if (connector->connector_type != DRM_MODE_CONNECTOR_DisplayPort ||
+	    world->dp_display == NULL ||
+	    tc_port < 0) {
+		kern_logf("i915: hpd step intel_dp_detect (not a Type-C DP connector of the hardware): %s -> unknown\n", connector->name);
+		return connector_status_unknown;
+	}
+
+	/* Nothing plugged into the port: disconnected, and the connector's EDID goes (intel_dp_unset_edid()). */
+	dig_port = i915_hpd_enc_to_dig_port(encoder);
+	connected = dig_port->connected(encoder);
+	if (!connected) {
+		i915_hpd_dp_set_edid(world, connector, idx, 0u);
+		return connector_status_disconnected;
+	}
+
+	/* Probes the sink, reading its EDID into the connector's slot. */
+	slot = &world->hpd_edid[idx];
+	probed = drv_i915_dp_ext_probe(world->dp_display, (int)encoder->port, slot->buf, sizeof(slot->buf), &edid_bytes);
+	i915_hpd_dp_set_edid(world, connector, idx, edid_bytes);
+	kern_logf("i915: hpd DP detect %s: %s, EDID %u bytes\n", connector->name, drv_i915_dp_ext_status_name(probed), edid_bytes);
+
+	/* A display the probe found is connected. */
+	if (probed == I915_DP_EXT_CONNECTED)
+		return connector_status_connected;
+
+	/* A sink without a display is disconnected. */
+	if (probed == I915_DP_EXT_DISCONNECTED)
+		return connector_status_disconnected;
+
+	/* Succeeded: the probe could not tell. */
 	return connector_status_unknown;
+}
+
+/*
+ * Makes the first bytes of a connector's slot its EDID, or forgets the
+ * connector's EDID when there are none (the EDID part of the Linux
+ * intel_dp_set_edid() and intel_dp_unset_edid()).
+ */
+static void
+i915_hpd_dp_set_edid(
+	struct i915_hpd_world *world,
+	struct drm_connector *connector,
+	unsigned idx,
+	unsigned bytes)
+{
+	struct i915_hpd_edid_slot *slot;
+
+	/* The connector's slot. */
+	slot = &world->hpd_edid[idx];
+
+	/* No bytes: the connector has no EDID. */
+	if (bytes == 0u) {
+		slot->e.edid = NULL;
+		slot->e.size = 0u;
+		drm_edid_connector_update(connector, NULL);
+		return;
+	}
+
+	/* The bytes read become the connector's EDID. */
+	slot->e.edid = slot->buf;
+	slot->e.size = bytes;
+	drm_edid_connector_update(connector, &slot->e);
 }
 
 /*

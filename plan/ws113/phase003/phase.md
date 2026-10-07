@@ -3,7 +3,7 @@
 # ws113-p003: Vulkan Displayの列挙・通知
 
 Parent: [WS113](../ws.md)
-Status: in-progress（q850-i01、P2、2026-10-07。実装・build（warning 0）・host 試験まで。QEMU は T1 への依頼を Q1 へ送った（test-wait の番号は Q1 が付ける）、実機の抜き差しは p008）
+Status: cleared（2026-10-07 Q1 の判定: T1-355c QEMU Venus `display-events-p003: PASS`（両拡張・swapchain・first.png e60000・power off 000000/on e60000・reset-spent・hotplug なし・done error=0）。2 出力・hotplug の QEMU の確認は dbus の launcher の後（p004a と一緒）、実機は p008）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q850 / q850-i01（P2、2026-10-07 ユーザーの N8 の決定でベータ2 へ）
@@ -94,6 +94,9 @@ native の `ENOSPC`（同時に出せる数の制限）を `display_error()` の
 - style-check: 新規の file（wsi-display-control.c・display-events/main.c・host-display-events.c）は違反 0、変えた既存の file は新しい違反 0。
 - 未実施: QEMU（T1: `config-amd64-p003.mk` の image で `display-events-p003.sh`。2 出力は `zdesktop-guest.sh` の `max_outputs=1` が固定なので、`VENUS_OUTPUTS` を足す変更を Q1 に依頼した）、QEMU での抜き差し（QMP に virtio-gpu の出力を切る方法を見つけていない。抜き差しは実機の p008）、実機（5330: eDP の FIRST_PIXEL_OUT、2 つ目の出力の swapchain が `ENOSPC` → INITIALIZATION_FAILED（p011 の前）、HDMI の抜き差しで hotplug の fence が signal し再列挙が変わる。p008 にまとめる）。fence の status・reset の sync.c の経路は host では通していない（QEMU の reset-spent で確かめる）。
 
+## T1-355 の判定（2026-10-07 Q1）
+
+FAIL（QEMU Venus）: 列挙・swapchain・120 frames・first-pixel 11 ms・first.png 赤は ok、`power ... state=off result=0` の後に止まり power on・reset-spent・hotplug・done が出ない。`VENUS_OUTPUTS=2` でも displays count=1。P2 が解析して直す。
 ## T1-355（2026-10-07、FAIL）の解析
 
 - 1 出力（`t1-355-run1b`）: 最後の行は `power index=0 state=off result=0`。PNG 3 枚とも赤（off.png も）。probe は止まっていない見込み: Venus の guest では 1 frame（acquire・clear・submit・fence の待ち・present）が 50〜100 ms かかり、120 frame で 6〜12 秒、power off がその後で、試験の固定の待ち（2・5・6・9 秒）が早すぎた（off.png は off の前、`cat` は on の前）。直し: 試験は probe の行（present・power off・power on・done）を待ってから撮る（`wait_line`）、frame 60・hold 4。probe と libvulkan は変えない。

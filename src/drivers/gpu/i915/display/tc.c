@@ -129,6 +129,7 @@ static void tc_connect(struct i915_tc *tc, struct i915_tc_port *p, int required_
 static void tc_disconnect(struct i915_tc *tc, struct i915_tc_port *p);
 static void tc_update_mode(struct i915_tc *tc, struct i915_tc_port *p, int required_lanes);
 static void tc_readout_port(struct i915_tc *tc, struct i915_tc_port *p);
+static int tc_connected_locked(struct i915_tc *tc, const struct i915_tc_port *p);
 
 /*
  * Binds the environment and prepares the Type-C ports of a display.
@@ -279,8 +280,6 @@ drv_i915_tc_connected(
 	unsigned port)
 {
 	struct i915_tc_port *p;
-	uint32_t live;
-	uint32_t accepted;
 	int connected;
 
 	/* An undeclared port has nothing connected. */
@@ -293,24 +292,36 @@ drv_i915_tc_connected(
 	/* Reads the live status and the mode together under the port's lock. */
 	tc->env.lock(tc->env.ctx, port);
 
-	live = drv_i915_tc_live_status(tc, port);
-
-	/* The live bits the port's mode accepts. */
-	accepted = I915_TC_LIVE_DP_ALT | I915_TC_LIVE_TBT | I915_TC_LIVE_LEGACY;
-	if (p->mode == I915_TC_MODE_DP_ALT) {
-		accepted = I915_TC_LIVE_DP_ALT;
-	} else if (p->mode == I915_TC_MODE_TBT) {
-		accepted = I915_TC_LIVE_TBT;
-	} else if (p->mode == I915_TC_MODE_LEGACY) {
-		accepted = I915_TC_LIVE_LEGACY;
-	}
+	connected = tc_connected_locked(tc, p);
 
 	tc->env.unlock(tc->env.ctx, port);
 
-	/* Connected when an accepted bit is live. */
-	connected = 0;
-	if ((live & accepted) != 0u)
-		connected = 1;
+	/* Succeeded: reports whether the port is connected. */
+	return connected;
+}
+
+/*
+ * Tells whether something the display can use is plugged into a Type-C
+ * port whose lock the caller holds (the Linux
+ * intel_tc_port_connected_locked()): 1 or 0, as drv_i915_tc_connected().
+ */
+int
+drv_i915_tc_connected_locked(
+	struct i915_tc *tc,
+	unsigned port)
+{
+	struct i915_tc_port *p;
+	int connected;
+
+	/* An undeclared port has nothing connected. */
+	p = tc_port_of(tc, port);
+	if (p == NULL)
+		return 0;
+	if (!p->present)
+		return 0;
+
+	/* Compares the live status with the mode the lock holds the port in. */
+	connected = tc_connected_locked(tc, p);
 
 	/* Succeeded: reports whether the port is connected. */
 	return connected;
@@ -1434,4 +1445,34 @@ tc_readout_port(
 	/* A port nothing drives is given back. */
 	if (p->links == 0u)
 		tc_disconnect(tc, p);
+}
+
+/* Compares a port's live status with what its mode accepts; the caller holds the port's lock. */
+static int
+tc_connected_locked(
+	struct i915_tc *tc,
+	const struct i915_tc_port *p)
+{
+	uint32_t live;
+	uint32_t accepted;
+
+	/* Reads what is plugged in now. */
+	live = drv_i915_tc_live_status(tc, p->index);
+
+	/* The live bits the port's mode accepts: any of them while it is held in no mode. */
+	accepted = I915_TC_LIVE_DP_ALT | I915_TC_LIVE_TBT | I915_TC_LIVE_LEGACY;
+	if (p->mode == I915_TC_MODE_DP_ALT) {
+		accepted = I915_TC_LIVE_DP_ALT;
+	} else if (p->mode == I915_TC_MODE_TBT) {
+		accepted = I915_TC_LIVE_TBT;
+	} else if (p->mode == I915_TC_MODE_LEGACY) {
+		accepted = I915_TC_LIVE_LEGACY;
+	}
+
+	/* Something the mode accepts is not live. */
+	if ((live & accepted) == 0u)
+		return 0;
+
+	/* Succeeded: something the mode accepts is plugged in. */
+	return 1;
 }
