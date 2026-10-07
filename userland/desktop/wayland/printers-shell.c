@@ -239,7 +239,7 @@ printers_add(
 		return 0;
 	}
 
-	/*  kl_backend_print_add(=Asked of the backend. */
+	/* Asked of the backend. */
 	error = kl_backend_print_add(backend, protocol, host, port, path, &backend_request);
 	printf("KWL PRINTERS add client=%llu protocol=%u error=%d\n", (unsigned long long)object->client->number, protocol, error);
 	if (error != 0) {
@@ -521,7 +521,7 @@ printers_answers(
 			(void)kwl_emit(client, waiting->object, KL_SYSTEM_PRINTERS_EVENT_QUEUED, words, sizeof(words));
 		}
 
-		/*  printers_applied(error);=The result, not saved when the file could not be written. */
+		/* The result, not saved when the file could not be written. */
 		applied = printers_applied(error);
 		if (error == 0 && !saved)
 			applied = KL_SYSTEM_RESULT_NOT_SAVED;

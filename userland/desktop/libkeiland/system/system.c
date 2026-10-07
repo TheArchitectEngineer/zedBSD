@@ -1102,14 +1102,14 @@ kl_system_printers_print(
 		return error;
 	}
 
-	/*  S_ISREG(status.st_mode);=A regular file. */
+	/* A regular file. */
 	regular = S_ISREG(status.st_mode);
 	if (!regular) {
 		(void)close(fd);
 		return EINVAL;
 	}
 
-	/*  0 ||=Not empty, not too large. */
+	/* Not empty, not too large. */
 	if (status.st_size <= 0 || (long long)status.st_size > SYSTEM_PRINT_FILE_MAX) {
 		(void)close(fd);
 		return EFBIG;
@@ -2971,7 +2971,7 @@ system_print_title(
 			code = code << 6 | (byte[index] & 0x3fU);
 		}
 
-		/*  extra + 1U;=Its bytes. */
+		/* Its bytes. */
 		length = extra + 1U;
 
 		/* Cut where it would not fit. */
@@ -2987,7 +2987,7 @@ system_print_title(
 			kept += length;
 		}
 
-		/*  length;=The next character. */
+		/* The next character. */
 		byte += length;
 	}
 
