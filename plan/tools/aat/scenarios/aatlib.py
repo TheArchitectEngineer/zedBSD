@@ -91,6 +91,16 @@ PROGRAMS = ("files", "notes", "settings", "terminal", "pdfviewer", "imageview", 
 	"phone", "calendar", "mailer", "textedit", "monitor", "browser", "emacs")
 
 
+def stop_programs_command() -> str:
+	"""The shell command that ends the PROGRAMS running on the target, all but the desktop program (files --desktop)."""
+	pattern = "|".join(PROGRAMS)
+	return (
+		"for p in $(ps -A -o pid,args | awk '{n = $2; sub(/.*\\//, \"\", n); "
+		f"if (n ~ /^({pattern})$/ && !(n == \"files\" && $3 == \"--desktop\")) print $1}}'); "
+		"do kill $p 2>/dev/null; done"
+	)
+
+
 class ItemEnded(Exception):
 	"""Ends a scenario's run early with its verdict set."""
 
@@ -514,15 +524,13 @@ class Run:
 		return point
 
 	def stop_programs(self) -> None:
-		"""Ends the applications the items may have left (not the compositor and its daemons)."""
+		"""Ends the applications the items may have left (not the compositor and its daemons, nor the desktop program
+		"files --desktop": the compositor starts that again at most four times a minute, so ending it before and after
+		every scenario took the desktop's icons away for the rest of the run, T1-339)."""
 		# Never on this host (--local, the runner's own test): the names are common ones.
 		if "--local" in self.target:
 			return
-		pattern = "|".join(PROGRAMS)
-		self.sh(
-			"for p in $(ps -A -o pid,args | awk '{n = $2; sub(/.*\\//, \"\", n); "
-			f"if (n ~ /^({pattern})$/) print $1}}'); do kill $p 2>/dev/null; done; sleep 1; true"
-		)
+		self.sh(stop_programs_command() + "; sleep 1; true")
 
 	# The session's log of each scenario.
 
