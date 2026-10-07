@@ -2,7 +2,7 @@
 # WS181 設計: 窓の状態、App Home の独立のモード、画面の端の gesture、整列のメニューと整列モード
 
 Parent: [ws181-p001](phase.md)
-版: 第 2 版（2026-10-07 P2、第 1 版への design-reviewer の指摘 B1〜B4・S1〜S12・M1〜M9 を本文に反映。対応は §9）
+版: 第 3 版（2026-10-07 P2。第 2 版で第 1 版への指摘 B1〜B4・S1〜S12・M1〜M9 を反映（§9）、第 3 版で第 2 版への指摘 BL1・BL2・S-a〜S-i・minor 1〜10 と、ユーザーの回答（§7）を反映（§10））
 
 この文書は compositor（`userland/desktop/wayland/`）の挙動の設計で、実装は p002〜p004。ユーザーの原文は [ws.md](../ws.md) の「由来」。
 前提にした今の実装: `layout.c`（session の `layout_mode`、ws142-p008）、`shell.c` の `window_dock`・`window_undock`・`layout_match`・
@@ -41,15 +41,16 @@ Parent: [ws181-p001](phase.md)
 - **I2**: `layout_mode = DOCKED` の間、表示中の desktop で見える窓は前の app の窓だけ（前の app の docked の窓は複数あり得る: 同じ app の窓は隠さない）。他の app の窓は `maximized` の値によらず描かない。
 - **I3**: 整列モード（§5）は `layout_mode = WINDOWED` の間だけある。`layout_set(DOCKED)` が全 desktop の整列モードを終える（§5.3）。
 
-I1 は「docked mode を出る」1 つの関数 `layout_leave(server, front, via)`（shell.c）で守る:
+I1 は「docked mode を出る」1 つの関数 `layout_leave(server, front, x, y, via)`（shell.c、x・y は front を戻す場所。pull は pointer から計算した場所を渡す）で守る:
 
 1. `front`（floating にする操作の対象の docked の窓、無ければ NULL）は今どおり animation つきで `window_undock()`。
-2. それ以外の `maximized = 1` の窓（全 desktop、最小化の物、map の前の物も）は **animation 無しで** `window_float_quiet()`。全画面の窓で `fullscreen_docked = 1` の物は `fullscreen_docked = 0`（全画面を出ると floating に戻る）。
+2. それ以外の `maximized = 1` の窓（全 desktop、最小化の物、map の前の物も）は **animation 無しで** `window_float_quiet()`（どれをどうするかは純関数 `kwl_layout_leave_action()`: front は FLOAT、他の docked は QUIET、floating・全画面・dialog は KEEP）。全画面の窓で `fullscreen_docked = 1` の物はそのまま: windowed の mode で全画面を出ると、protocol.c が `restore_*`（floating の場所）へ戻す（p002 の実装で確かめた）。
 3. `server->dock_owner[]` と `server->dock_owner_gone[]` を全 desktop で消す（§1.4）。
 4. `layout_set(WINDOWED, via)`。
-5. log: `KWL LAYOUT leave via=<via> front=<id|0> quiet=<数>` と、状態の要約 `KWL LAYOUT windows desktop=<n> floating=<n> docked=<n> dock_hidden=<n> minimized=<n> fullscreen=<n>`（表示中の desktop、AAT が読む）。
+5. log: `KWL LAYOUT leave via=<via> front=<id|0> quiet=<数>` と、状態の要約 `KWL LAYOUT windows desktop=<n> mode=<docked|windowed> floating=<n> docked=<n> dock_hidden=<n> minimized=<n> fullscreen=<n>`（表示中の desktop、AAT が読む）。要約は leave・`window_dock`・持ち主が変わった時（手順 B）にも出す（S-f）。
+6. 2 の順（minor 5）: 自分の場所を持つ窓を先に、`restore_default` の窓を後に戻す（後の窓の `kwl_glass_place` が先に戻った窓を避ける）。
 
-- **M4（再帰しない）**: `window_undock()` は `layout_set()` を呼ばない形にする（今の終わりの `layout_set(WINDOWED)` を外す）。docked mode を出る操作（restore の button・bar の title の double click・pull・touchpad の TOP2・client の UNMAXIMIZE）は全部 `layout_leave(surface, via)` を呼び、`layout_leave` が中で `window_undock` を呼ぶ。`layout_match` の FLOAT は I1 の下では起きないが、念のため `window_undock` だけを呼ぶ（mode は変えない）。
+- **M4（再帰しない）**: `window_undock()` は `layout_set()` を呼ばない形にする（今の終わりの `layout_set(WINDOWED)` を外す）。docked mode を出る操作（restore の button・bar の title の double click・pull・touchpad の TOP2・client の UNMAXIMIZE・title の triple click（`click_docked_third`、leave の後に `window_lower`、S-a））は全部 `layout_leave(surface, x, y, via)` を呼び、`layout_leave` が中で `window_undock` を呼ぶ。client の UNMAXIMIZE は、前の窓（持ち主）からの時だけ leave にし、後ろの dock-hidden の窓からの時はその窓だけを `window_float_quiet()` する（裏の app の要求で前の窓まで floating にしない、S-c）。`layout_match` の FLOAT は I1 の下では起きないが、念のため `window_undock` だけを呼ぶ（mode は変えない）。
 - **`window_float_quiet(server, surface)`**（M5・S4）: `maximized = 0`。場所と大きさは `restore_*`。ただし `restore_default = 1`（`dock_restore_default()` が付けた既定の場所で、自分の floating の場所を持ったことが無い窓）の窓は `kwl_glass_place()` の段ずらしで場所を決める（dock で開いた窓が全部同じ場所に重ならない）。`kwl_glass_fit()` で領域の中へ。`server->anim`・`server->pull`・`server->click_docked`・`server->drag` がこの窓を指していれば消す。configure を送り `window_resized()`。log `KWL LAYOUT float-quiet surface=<id> x= y= w= h=`。
 - `restore_default` は surface の新しい field。`dock_restore_default()` が 1 にし、`window_dock()`（本当の floating の場所を記録する）と `window_float_quiet()`（場所を決めた後）が 0 にする。
 
@@ -61,13 +62,13 @@ I1 は「docked mode を出る」1 つの関数 `layout_leave(server, front, via
 | docked の窓を floating に（restore の button・bar の title の double click・pull・touchpad の TOP2・client の UNMAXIMIZE） | `layout_leave(その窓)`: **全部の窓が floating**、最小化は最小化のまま | 後ろの docked の窓も floating に（目標 1） |
 | docked mode で app の切り替え（Alt+Tab・Wiseview・bar の icon・App Home の起動中の app・activation） | `layout_match`: 切り替え先を dock（今どおり）。切り替え元は dock のまま後ろに残る（`dock-hidden`）。行き来のたびに大きさを変えない | 同じ |
 | docked mode で `layout_match` を通らない前面化（Super+Alt+P の FOCUS previous（edit.c）・menu・titlebar の raise・Notes の角（corner.c）） | 毎 tick の観測（§1.4 の手順 B）: 前に来た窓が floating なら dock して持ち主に（切り替えと同じ）。全画面なら持ち主は変えない | 同じ（今の `layout_keep_front` と同じ結果を、観測の手順で） |
-| docked mode で docked の窓を後ろへ（title の triple click・2 本指の flick（`kwl_glass_lower`）） | 前に来た窓を dock（切り替えと同じ、手順 B）。後ろへ行った窓は docked のまま `dock-hidden` | 同じ（表に明記） |
+| docked の窓の title の triple click（double click の dock の取り消し、`click_docked_third`） | `layout_leave(その窓)` の後に後ろへ（全部 floating） | 変更（S-a。2 本指の flick は floating の title にだけ効くので docked の窓には無い、minor 2） |
 | 窓の mode で app の切り替え・click | I1 により docked の窓は無いので、切り替え先は floating のまま前へ | `layout_press_switches()` を削除（目標 1 の「click で floating になる」が無くなる） |
 | **表示中の desktop の docked の窓を閉じる**（app が自分で閉じる、kill -9、unmap を含む） | `layout_leave(NULL, "closed")`: 隠れていた窓は floating で見える、最小化の窓は最小化のまま | **変更**: 2026-10-06 の「次の窓も最大化」を 2026-10-07 の UAT で置き換える（目標 2、D1） |
 | **表示中の desktop の docked の窓を最小化** | 閉じるのと同じ（`via = "minimized"`）。その窓は最小化で、戻すと floating | 変更（D2） |
 | docked の窓を**連れて**隣の desktop へ（Ctrl+Alt+Shift+矢印: 窓と desktop が一緒に動く） | docked のまま運ぶ。持ち主は新しい desktop へ移る、mode は docked のまま | 同じ（S7） |
 | docked の窓を**見えない** desktop へ（Wiseview の tile を他の desktop の絵へ drag） | 閉じるのと同じ（`via = "moved"`） | 変更（D2） |
-| **見えない desktop** の docked の持ち主が閉じる・最小化（app の要求）・消える | その desktop の持ち主を忘れるだけ（表示は変えない、mode は docked のまま）。その desktop へ移ると、前の窓を dock する（下の desktop の切り替えの行） | 新しく明記（B3）。表示中の画面が裏の出来事で変わらないため |
+| **見えない desktop** の docked の持ち主が閉じる・消える（見えない desktop の窓の最小化の要求は今も無視される、minor 3） | その desktop の持ち主を忘れるだけ（表示は変えない、mode は docked のまま）。その desktop へ移ると、前の窓を dock する（下の desktop の切り替えの行） | 新しく明記（B3）。表示中の画面が裏の出来事で変わらないため |
 | docked mode で新しい窓が開く | docked で開く（ws099-p033、`kwl_glass_open_docked`）。map の後の観測で持ち主になる。前の docked の窓は `dock-hidden`（別の app）か下に見える（同じ app） | 同じ（持ち主を付ける時が map の後、B1） |
 | docked mode で desktop を変える | 先の desktop の前の窓が floating なら dock して持ち主に（今の `layout_keep_front`、session の tablet mode）。空の desktop では何もしない | 同じ |
 | 全画面の出入り | `layout_mode` を変えない。出る時は mode に戻る（`kwl_glass_unfullscreen_docks`） | 同じ |
@@ -98,7 +99,8 @@ compositor には unmap・消滅を shell に知らせる一般の hook が無�
 - T が floating（親を持たない）: 切り替えと同じく `window_dock(T, …, "front")` して持ち主に（今の `layout_keep_front` と同じ log `KWL LAYOUT front surface=<id> action=dock`）。
 
 - 手順 A の 1・3 が手順 B より先なので、持ち主が閉じた時に次の窓が dock されることは無い（今の不具合の (4) の原因）。
-- `window_minimize()` と `window_to_desktop()` は終わりで `layout_follow()` を直に呼ぶ（tick を待たない。冪等）。
+- `window_dock()` は mapped の窓をその場で持ち主にする（観測の前に閉じても取りこぼさない、minor 1）。map の前の `kwl_glass_open_docked` は観測のまま（B1）。
+- `window_minimize()` は終わりで `layout_follow()` を直に呼ぶ（tick を待たない。冪等）。`window_to_desktop()` は呼ばない: Ctrl+Alt+Shift+矢印は `window_to_desktop()` の後に `desktop_turn()` するので、その間に確かめると「見えない desktop へ送った」と誤る（p002 の実装で分かった）。次の tick で確かめる。
 - 前の窓が全画面で、その下に docked の持ち主が残る（Notes の角など）間は、持ち主は下の窓のまま。全画面を出た窓は docked mode なら dock され（`kwl_glass_unfullscreen_docks`）、次の手順 B で持ち主になる。
 
 ### 1.5 試験（p002）
@@ -108,10 +110,10 @@ compositor には unmap・消滅を shell に知らせる一般の hook が無�
 - QEMU（T1）: Files・Terminal・Calculator を開き:
   1. Terminal を dock → Alt+Tab で Files → Files を restore → 3 つとも floating（`KWL LAYOUT windows … docked=0`）、Terminal を click しても大きさが変わらない。
   2. Calculator を最小化 → Files を dock → Files を閉じる → `KWL LAYOUT leave via=closed`、Terminal は floating で見え、Calculator は最小化のまま（`minimized=1`）。
-  3. （S12）docked mode で Terminal を開き、1 s 後も docked（`KWL LAYOUT windows … docked=1`、`leave` が無い）。
+  3. （S12）docked mode で Terminal を開き、1 s 後も docked（`KWL LAYOUT owner desktop=1 surface=<Terminal>` と `KWL LAYOUT windows … mode=docked docked=1`、`leave` が無い）。
   4. （S12）docked の Files を `kill -9` → `leave via=closed`。
   5. （S12）desktop 2 で Terminal を dock、desktop 1 へ（Files が dock される）、guest の shell から desktop 2 の Terminal を閉じる → `leave` が無く Files は docked のまま。desktop 2 へ移っても何もしない（空）。
-  6. （S12）docked mode で Super+Alt+P（FOCUS previous）→ 前に来た窓が dock → それを閉じる → `leave via=closed`。2 本指の flick（touch の注入）の後も同じ。
+  6. （S12）docked mode で Super+Alt+P（FOCUS previous）→ 前に来た窓が dock → それを閉じる → `leave via=closed`。
   7. （S12）docked の Terminal を Ctrl+Alt+Shift+→ で連れて行く → desktop 2 で docked のまま（`leave` が無い）。
 
 ## 2. App Home の独立のモード（p003）
@@ -123,7 +125,8 @@ compositor には unmap・消滅を shell に知らせる一般の hook が無�
 - 下端から上への swipe（§3）で開く時、層は指に付いて上がる（`progress = 上への距離 / HOME_RISE_DISTANCE`、360 px）。離した時 `HOME_THRESHOLD`（0.30）以上で開き、未満で戻る。
 - launcher の click・Super・左上の角からの drag で開く時も、同じ上への動き。左上の角の drag（右下へ）は今の対角の進み `(dx + dy) / 2 / HOME_DRAG_DISTANCE` を progress に使う（指の向きと層の向きは違うが、mouse 向きの古い入口なので動きを 1 つに揃える方を採る）。
 - 閉じる時は層が上から戻ってくる（逆の動き）。
-- **system bar は Home の上にも残す**（S9 の既定）: launcher で閉じる、時計・状態の icon が見える。層は bar の下を通って上へ出る。
+- Home は overview でない（S-g）: `layout_hides()` は Home の間も docked mode の他の app の窓を隠したまま（上へ出ていく層は、隠れた窓を含まない desktop のまま）。Wiseview・switcher は今どおり overview。
+- **system bar は Home の上にも残す**（S9、ユーザーの回答「このまま」）: launcher で閉じる、時計・状態の icon が見える。層は bar の下を通って上へ出る。
 
 ### 2.2 開く・閉じる
 
@@ -134,7 +137,7 @@ press の取り合いの順（上ほど先）: 上端の帯（§3、touch）→ 
 | 下端から上への swipe（desktop の上） | Home を開く（§3） |
 | launcher の click・tap、Super の単独 | 開く・閉じる（今どおり） |
 | 左上の角から右下への drag | 開く（今どおり、層の動きは上） |
-| Home の上で、縦が横より大きい下向きの drag（どこから始めても、上端の帯を除く） | **desktop の層を上から引き下ろして閉じる**。`HOME_PAGE_START`（10 px）を超えた時に向きを決め（`|dx| ≥ |dy|` なら頁の drag、`dy > 0` なら閉じる drag、上向きは何もしない）、閉じる drag は指に付く（`home_drag = 1 - dy / HOME_RISE_DISTANCE`）。離した時 `dy / HOME_RISE_DISTANCE ≥ 0.30` で閉じ、未満で開き直す。今の「左上への drag で閉じる」をこれに置き換える |
+| Home の上で、縦が横より大きい下向きの drag（どこから始めても、上端の帯を除く） | **desktop の層を上から引き下ろして閉じる**。`HOME_PAGE_START`（10 px）を超えた時に向きを決め（`|dx| ≥ |dy|` なら頁の drag、`dy > 0` なら閉じる drag、上向きは何もしない）、閉じる drag は指に付く（`home_drag = 1 - dy / HOME_RISE_DISTANCE`）。離した時 `dy / HOME_RISE_DISTANCE ≥ 0.30` で閉じ（log `KWL HOME close via=pull-down`、minor 7）、未満で開き直す（`KWL HOME close back`）。今の「左上への drag で閉じる」をこれに置き換える |
 | Home の上で下端から上への swipe | 何もしない（D4 の既定。今の `home_bottom_press`（同じ swipe で閉じる）は覗きの角と組だったので外す） |
 | Home の上で上端の帯から下への swipe（touch） | Home を animation 無しで閉じ、Wiseview を上端から開く gesture を始める（§3） |
 | Esc・app の起動・起動中の app の icon（BUG-232） | 閉じる（今どおり） |
@@ -165,12 +168,13 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 
 ### 3.1 上端の帯（B4・S8）
 
-- 帯: `y < TOP_EDGE_BAND`（10 px）、`x ≥ HOME_LAUNCHER_WIDTH`（40、launcher の幅。左上の角 28 px もこの中）、`x < 幅 - CORNER_ZONE`（28、Notes の角）。
-- **touch（と pen）だけ**（S8 の既定）: `server->shell_source == KWL_CONTACT_TOUCH`。mouse の press は今どおりその場で bar に届く（mouse の Wiseview は Super+Tab・touchpad）。
+- 帯: `y < TOP_EDGE_BAND`（10 px）、`x ≥ HOME_LAUNCHER_WIDTH`（40、launcher の幅。新しく kwl.h に定義し、home.c の直の 40 も置き換える、minor 6。左上の角 28 px もこの中）、`x < 幅 - CORNER_ZONE`（28、Notes の角）。
+- 帯は bar が描かれている時（`bar_cover() == NULL`）だけ。全画面の窓の上に floating の窓がある時（cover あり）、上端は client の物（touch.c は press の時に route を決めるので、流し直しで client に届けられない、S-h）。全画面の窓だけの時は `kwl_glass_edge_button`・`kwl_glass_edge_motion` の両方に帯を置く。
+- **touch だけ**（S8、ユーザーの回答「touch だけ」）: `server->shell_source == KWL_CONTACT_TOUCH`（pen は今は mouse と同じ扱い、minor 8）。mouse の press は今どおりその場で bar に届く（mouse の Wiseview は Super+Tab・touchpad）。
 - 置き場所（B4）: `kwl_glass_button` の、power dialog・switcher・Wiseview・`click_docked_third`・corner（Notes）・keyboard の後、**Home より前**（launcher・media・IME・volume・network・menu・apps bar・titlebar の controls・`bar_press` が press を先に取る前）。全画面の上は `kwl_glass_edge_button` の同じ位置。
 - press: 帯の中なら `server->band_press = 1`、始まりの x・y を覚えて press を取る（return 1）。
 - motion（`glass_motion_take` の Wiseview の後、corner の前）: 下へ 12 px 以上で縦が横より大きい → Wiseview の上端の gesture（下）。横か上へ 8 px（`PRESS_MOVE_TOUCH`）を超える → `band_press = 0`、`server->band_replay = 1` で press を `kwl_glass_button` に流し直し（帯の判定を飛ばす）、その motion を普通に流す。
-- release: gesture にならなかった press は、press と release を続けて流し直す。全画面の上では流し直さない（帯の 10 px の tap は全画面の app に届かない。S8 で知らせる）。
+- release: gesture にならなかった press は、press と release を続けて流し直す。流し直す press は押した点で（pointer を一時に押した点へ戻して流し、戻す）。`band_press` は release・lock・Wiseview の開き・Home の開きで消し、`wiseview_top` は Wiseview の gesture の終わりで消す。帯が押さえている間の長押し（apps bar の preview）は帯の中では効かない（minor 8、§8）。全画面の上では流し直さない（帯の 10 px の tap は全画面の app に届かない。S8 で知らせる）。
 - Wiseview の上端の gesture: `server->wiseview_gesture = 1`、新しい `server->wiseview_top = 1`、`wiseview_start_y`、`wiseview_current = 前の窓`（M2）。`wiseview_progress()` は `wiseview_top` なら `(pointer_y - start_y) / WISEVIEW_DISTANCE`（下向き）。離した時の閾値は今の `WISEVIEW_THRESHOLD`（0.35）。log `KWL WISEVIEW gesture via=top-edge`、開いたら今の `KWL WISEVIEW opening`。
 - Home の上で帯の gesture になった時は Home を animation 無しで閉じる（`kwl_home_dismiss` の animation 無しの版 `kwl_home_close_now`、log `KWL HOME close via=top-edge`）。
 
@@ -180,7 +184,8 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
   1. 外れる判定を下向きの距離から**押した点からの距離**（`hypot(dx, dy)`）に変える（横や斜めの drag でも外れる）。`server->pull_start_x` を足す。`PULL_DISTANCE` を 140 から 48 px に縮める（触って引き出す感じ）。`pulled_rect()` の補間の t も同じ距離 / 48（S2）。
   2. 外れた後は今どおり `server->drag` に移って、離すまで窓が指（pointer）に付いて動く。窓の中の掴んだ点は title の横の位置の比で決める（今どおり）。
   3. 外れた窓には `layout_leave(その窓, "pull")` が走り、他の窓も floating で見える（`window_undock` の代わりに）。
-  4. **S2**: 外れた直後の pointer は bar の中にあり得る（横の pull）。`kwl_glass_toplevel_move_end()` の「bar の中で離すと dock」は、move の間に一度 bar の外（`pointer_y ≥ KWL_GLASS_BAR`）へ出た時だけ効かせる（`server->drag_left_bar`。title の press から始まる普通の move は始めから 1、pull から移った move は 0 で始まる）。
+  4. **CSD の docked の窓**（S-d）: bar に title が無いので bar からは pull できない。client が自分の title の drag で move を要求した時（`KWL_TOPLEVEL_MOVE`、今は maximized の窓では拒否）、pull と同じく `layout_leave(その窓, pointer の下に title の上端が来る場所, "request-move")` して move を始める。
+  5. **S2**: 外れた直後の pointer は bar の中にあり得る（横の pull）。`kwl_glass_toplevel_move_end()` の「bar の中で離すと dock」は、move の間に一度 bar の外（`pointer_y ≥ KWL_GLASS_BAR`）へ出た時だけ効かせる（`server->drag_left_bar`。title の press から始まる普通の move は始めから 1、pull から移った move は 0 で始まる）。
 
 ### 3.3 試験（p003）
 
@@ -188,16 +193,16 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 - QEMU（T1、touch の注入 `/dev/input-inject` の MT と pointer）:
   1. 下端から上 → `KWL HOME open via=edge`、撮影（層が見えない Home）。
   2. 上端の帯から下（touch）→ `KWL WISEVIEW gesture via=top-edge`・`opening`。
-  3. docked の title を横に drag（mouse）→ `KWL LAYOUT leave via=pull` の後に `KWL GLASS move`。（S12）横に pull して bar の中で離す → dock されない（`KWL GLASS moved`、`dock via=drag` が無い）。
+  3. docked の title を横に drag（mouse）→ `KWL LAYOUT leave via=pull` の後に release で `KWL GLASS moved`（minor 7）。（S12）横に pull して bar の中で離す → dock されない（`KWL GLASS moved`、`dock via=drag` が無い）。
   4. （S12）帯の中の各 widget を touch で tap（時計 → Calendar、desktop の絵 → 切り替え、volume・network の icon → popup）→ 今と同じ log が release の後に出る。
-  5. Home の上で下向きの drag → `KWL HOME close via=drag`。Home の上で下端から上 → 何も起きない。
+  5. Home の上で下向きの drag → `KWL HOME close via=pull-down`。Home の上で下端から上 → 何も起きない。
 
 ## 4. 整列のメニュー（p004）
 
 ### 4.1 入口
 
-- bar の仮想 desktop の切り替えの pill で、**今の desktop の絵を tap・click** → 整列のメニューを開く（もう一度で閉じる）。他の desktop の絵は今どおりその desktop へ（D5 の既定）。
-- メニューは desktop の pill の下に出る glass の popup（network の menu と同じ描き方）。行は 5 つ、各行に小さな図（枠の配置の線画）と名前:
+- bar の仮想 desktop の切り替えの pill の**どこを tap・click しても** → 整列のメニューを開く（もう一度で閉じる）。desktop の切り替えはメニューの中に移す（D5、2026-10-07 ユーザーの回答「pill のどこでも」）。
+- メニューは desktop の pill の下に出る glass の popup（network の menu と同じ描き方）。上の段に desktop の絵 4 つ（今の pill と同じ絵、tap でその desktop へ切り替えてメニューを閉じる。log は今の `KWL GLASS desktop=<n> via=menu`）、その下に整列の行が 5 つ、各行に小さな図（枠の配置の線画）と名前:
 
 | ID | 名前（英、翻訳の catalog へ） | 日本語 | 配置 |
 | --- | --- | --- | --- |
@@ -209,7 +214,8 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 
 - 対象の窓: 表示中の desktop の、map 済み・最小化でない・全画面でない・親を持たない toplevel（desktop の icon の surface を除く）。docked mode の時は `dock-hidden` の窓も含む（整列は全部を floating にするので）。重なりの上から順に、その形の上限まで。上限を超えた窓は今の場所のまま下に残る（D7 の既定）。
 - n = 1 は全部の形で 1 つの枠（作業の領域の全体、ただし floating）。n = 2 の `right-main`・`left-main` は左右の 2 等分になる。対象が 0 の時、行は薄く描き、選んでも何もしない。
-- 操作: pointer の click・touch の tap・鍵盤（↑↓ と Enter、Esc で閉じる）。メニューの外の press で閉じる。
+- 操作: pointer の click・touch の tap・鍵盤（↑↓ と Enter、Esc で閉じる）。メニューの外の press で閉じる。メニューは帯の中でも外でも **release で開く**（minor 10）。
+- 今の「pill の絵の tap で desktop を切り替える」を使う試験（`desktop_picture_at` の bar の press の経路、Wiseview の tile を絵へ drag する経路は別で変えない）は、p004 でメニューの中の絵の tap に追従させる。
 - touch の tap は上端の帯（§3.1）を通るので、メニューは release の後に開く（p003 に依存、§6）。
 
 ### 4.2 枠の計算（`arrange.c`、純関数）
@@ -266,6 +272,8 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 
 - 終わった後の窓は全部ただの floating で、整列の記録は残さない（`on = 0`、枠の pointer を消す）。
 - surface の消滅は `kwl_glass_forget()`（§1.4）が枠の窓を NULL にして `gone` を立て、次の tick で終える。
+- **検出**（S-e）: 毎 tick の `arrange_follow()` が各 desktop の整列について、枠の窓が mapped・最小化でない・全画面でない・同じ desktop にいる・`window_width/height` が枠の body のまま（縁の大きさの変更で変わる）を確かめ、外れたら理由つきで終える。新しい窓は `kwl_glass_mapped()`（display.c の map）で、適用の時に覚えた `map_order` の上限より新しい親を持たない toplevel が整列の desktop に map された時だけ終える（D7 で枠の外に残った古い窓では終えない）。他の desktop から来た窓は `window_to_desktop()` で終える。
+- **入れ替えの後始末**（minor 9）: `server->swap` は forget・`desktop_turn`・最小化・lock・`window_float_quiet`・整列の終わりで消す。swap の間の client の move の要求は無視する。整列した窓は適用の時に枠の順で前へ上げ、上限を超えた窓はその下に残す。
 
 ### 5.4 試験（p004）
 
@@ -283,7 +291,11 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 | p003 | §2・§3: `kwl_home_layer` の上への動き、覗きの削除、Home の上の下向きの drag、`kwl_home_close_now`、端の判定（下 → Home、上端の帯の遅らせと流し直し、`wiseview_top`）、Home ↔ Wiseview の移り、pull の距離と `drag_left_bar`、host 試験、scenario の追従 | p002 | 1 LW |
 | p004 | §4・§5: `arrange.c`（枠・割り当て）、メニュー（描画・入力）、適用と glide、整列モードの入れ替え（`server->swap`、4 つの経路）・終わり・印、log、host 試験、AAT の scenario を draft で | p002・p003 | 1.3 LW |
 
-## 7. 人の判断（既定の案で進める、Q1 に送る）
+## 7. 人の判断
+
+**ユーザーの回答（2026-10-07、クリック、Q1 経由）**: D3 touchpad は「変えない」。**D5 は「pill のどこでも」**（既定と違う: pill のどこを tap してもメニュー、メニューの中に desktop の切り替えも置く、§4.1 を直した）。S6「整列モードを終える」。S8「touch だけ」。D1・D2・D4・D6・D7・S9 は「全部このまま」。N1〜N3（第 2 回の review で足した点）は未回答で、答えを待つ間は既定の案で進める。
+
+以下は Q1 に送った時の文（既定の案つき）:
 
 - **D1（知らせ）**: docked の窓を閉じた時、2026-10-06 の決定（次の窓も最大化）を 2026-10-07 の UAT（他の窓は floating で表示）で置き換える。見えない desktop の docked の窓が閉じた時は、表示を変えない（その desktop の持ち主を忘れるだけ）。
 - **D2**: docked の窓の**最小化**と、**見えない desktop への移動**（Wiseview の tile の drag）は閉じるのと同じ（docked mode を終えて他の窓を floating で見せる）。**連れて行く移動**（Ctrl+Alt+Shift+矢印）は docked のまま。既定: そうする。
@@ -295,6 +307,9 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 - **S6**: 整列モードの印は、bar の pill のその desktop の絵に形の線画を重ねる。枠の窓が閉じた・最小化した時は整列モードを終え、残りは詰め直さない。案: 同じ形で残りを詰め直してモードを続ける。既定: 終える。
 - **S8**: 上端の帯（10 px）は touch だけに効かせる（mouse の bar の click は今どおりその場で、mouse の Wiseview は Super+Tab）。全画面の app の上でも touch の上端 10 px の tap は app に届かない。案: mouse にも効かせる（bar の click が離した時になる）。既定: touch だけ。
 - **S9**: App Home の上にも system bar を残す（launcher で閉じる、時計・状態）。既定: 残す。
+- **N1**（第 2 回の review で足した、未回答）: docked の窓を閉じた時、他に窓が無くても docked mode を終える（次に開く app は floating で開く。2026-10-06 の「tablet mode は session の状態」と衝突する）。案: 他に窓が無い時は docked mode を保つ。既定: 終える（規則を 1 つに）。
+- **N2**（未回答）: touch で bar の上の 10 px から下への drag は、docked の title の上でも pull でなく Wiseview（pull は 10 px より下を押す）。既定: そうする。
+- **N3**（未回答）: 見えない desktop の docked の窓が閉じた時の代わりの案: その desktop の leave を保留し、その desktop へ移った時に docked mode を終える。既定: 保留しない（忘れるだけ、D1）。
 
 ## 8. 作らない物（正常系の外、plan/ws177/backlog-p2.md へ）
 
@@ -305,6 +320,7 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 - 鍵盤だけでの入れ替え。
 - touchpad の gesture の変更（D3 の既定）。
 - 上端の帯の流し直しで、全画面の app に press を届けること（S8）。
+- 帯の中での長押し（apps bar の preview）（minor 8）。
 
 ## 9. design-reviewer の指摘（第 1 版）と反映
 
@@ -339,6 +355,31 @@ pointer（mouse）と touch screen（first finger は shell の pointer の左 b
 | M9 | 整列中の desktop の切り替え、窓が他の desktop から来る | §5.3 |
 | D の判定 | D3・D5 は既定にせず聞く、D2 の移動、D6 と帯の mouse | §7 で全部を案つきで聞く（D3・D5 は案を並べた） |
 
-## 10. design-reviewer の指摘（第 2 版）
+## 10. design-reviewer の指摘（第 2 版）と反映
 
-（第 2 版の review の後に書く。）
+2026-10-07 の design-reviewer（第 2 版に対して、blocking 2・should-fix 9・minor 10）。p002 の実装の途中で受けたので、実装にも反映した。
+
+| 指摘 | 内容（要約） | 反映 |
+| --- | --- | --- |
+| BL1 | `window_to_desktop()` から直の `layout_follow()` は、連れて行く移動で「見えない desktop へ送った」と誤る | §1.4（直に呼ばない、tick に任せる）。実装は始めからこの形 |
+| BL2 | leave で `fullscreen_docked = 0` にすると全画面を出た窓が docked の大きさの floating になる | §1.2 の 2（消さない）。実装は始めからこの形 |
+| S-a | triple click が leave の経路から漏れ、表がコードと逆 | §1.2 の M4、§1.3 の行。実装済み（7ffe6036f） |
+| S-b | `layout_leave` の署名の食い違い、pull の x・y | §1.2（x・y を持つ） |
+| S-c | 後ろの窓の UNMAXIMIZE が docked mode 全体を終える | §1.2 の M4。実装済み（436594e02） |
+| S-d | CSD の docked の窓は bar から pull できない | §3.2 の 4（client の move の要求で leave して move、p003） |
+| S-e | 整列の終わりの検出が消滅以外に無い、D7 との衝突 | §5.3 の検出（`arrange_follow`、map の時の `map_order`） |
+| S-f | 試験 3 の `windows` の行が出ない、`mode=` の項 | §1.2 の 5（要約を dock・持ち主の変化でも出す、`mode=` を足す）、§1.5 の 3。実装済み |
+| S-g | Home の間に dock-hidden の窓が層に描かれる | §2.1（Home は overview でない）。実装済み（436594e02） |
+| S-h | 帯と bar_cover・`kwl_glass_edge_motion` | §3.1 |
+| S-i | D3・D5 の既定と §9 の食い違い | ユーザーが回答（§7、D5 は既定と違う「pill のどこでも」） |
+| minor 1 | 観測の前の取りこぼし | §1.4（`window_dock` でその場で持ち主に）。実装済み |
+| minor 2 | 2 本指の flick は docked の窓に効かない | §1.3・§1.5 から外した |
+| minor 3 | 見えない desktop の最小化の要求は起きない | §1.3 |
+| minor 4 | owner の結果の種類 | 実装の `KWL_LAYOUT_OWNER_MOVED` が「持ち主を表示中の desktop へ移す」に当たる（変更なし） |
+| minor 5 | quiet の順 | §1.2 の 6。実装済み（2 回に分けて回す） |
+| minor 6 | `HOME_LAUNCHER_WIDTH` は無い | §3.1（新しく定義） |
+| minor 7 | log の名前 | §3.3（`KWL GLASS moved`、`KWL HOME close via=pull-down`）。実装済み |
+| minor 8 | 帯の細部 | §3.1・§8 |
+| minor 9 | swap の後始末 | §5.3 |
+| minor 10 | メニューを開く時 | §4.1（release） |
+| 漏れの質問 | 他に窓が無い時、CSD の pull、帯と pull の優先、見えない desktop の保留 | §7 の N1〜N3、CSD は §3.2 の 4 |

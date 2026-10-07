@@ -82,7 +82,6 @@
  * from a launch that never came (ws099-p024, BUG-147).
  */
 #define HOME_LAUNCH_FORGET_MS	30000U
-#define HOME_CLOSE_DRAG		120
 
 /* The keys that turn pages and move to the next icon. */
 #define HOME_KEY_TAB		15U
@@ -107,23 +106,21 @@
 #define HOME_DRAG_DISTANCE	360.0f
 #define HOME_THRESHOLD		0.30f
 
-/* The corner the gesture starts in, and how much of the desktop stays in view when Home is open. */
+/* The corner the gesture starts in. */
 #define HOME_CORNER		28
-#define HOME_KEEP		26.0f
-#define HOME_KEEP_NEAR		40.0f
-#define HOME_NEAR		120
 
 /*
- * The swipe up from the bottom edge that closes Home (the 2026-09-28
- * decision at the end of plan/ws079/design-input-notes.md): where it starts
- * (the same strip that opens Wiseview on the desktop, shell.c), how far it
- * moves before it is one, how far up Home is closed by it, and the part of
- * that past which letting go closes Home.
+ * Home is a mode of its own (WS181, the 2026-10-07 UAT): the desktop layer
+ * goes up off the output, its shadow too, and none of it stays in view.
+ * The swipe up from the bottom edge of the desktop opens Home: where it
+ * starts, how far it moves before it is one, and how far up the layer has
+ * gone off.  The same distance down on Home brings the layer back (a drag
+ * that is mostly down closes Home); HOME_THRESHOLD of it decides.
  */
-#define HOME_BOTTOM_EDGE	20
-#define HOME_BOTTOM_START	12
-#define HOME_BOTTOM_DISTANCE	240.0f
-#define HOME_BOTTOM_THRESHOLD	0.35f
+#define HOME_SHADOW		120.0f
+#define HOME_RISE_EDGE		20
+#define HOME_RISE_START		12
+#define HOME_RISE_DISTANCE	360.0f
 
 /*
  * The grid: columns, a cell's size, the icon's size and corner, the label's
@@ -276,7 +273,8 @@ static void home_page_turn(struct kwl_server *server, int target, const char *vi
 static void home_page_release(struct kwl_server *server, float progress);
 static void home_draw_dots(struct kwl_server *server, VkCommandBuffer command, float opacity);
 static void home_select(struct kwl_server *server, int selected);
-static void home_bottom_release(struct kwl_server *server);
+static void home_rise_release(struct kwl_server *server);
+static void home_page_follow(struct kwl_server *server, int32_t dx, int32_t dy);
 
 /*
  * Returns how far Home is open now: 0 closed, 1 open, between while the
@@ -312,9 +310,9 @@ kwl_home_progress(
 }
 
 /*
- * Works out where the desktop layer is when Home is open by progress: slid
- * towards the bottom right and a little smaller, leaving HOME_KEEP pixels
- * (more when the pointer is near) of its corner in view.
+ * Works out where the desktop layer is when Home is open by progress: gone
+ * up off the output by progress, its shadow with it, and a little smaller
+ * (WS181: Home is a mode of its own, no part of the desktop stays in view).
  */
 void
 kwl_home_layer(
@@ -324,21 +322,81 @@ kwl_home_layer(
 	float *y,
 	float *scale)
 {
-	float keep;
-	int32_t near_x;
-	int32_t near_y;
+	/* Going up is the motion; the shrinking only helps it. */
+	*x = 0.0f;
+	*y = -progress * ((float)server->height + HOME_SHADOW);
+	*scale = 1.0f - 0.04f * progress;
+}
 
-	/* The corner left in view widens when the pointer comes near it, to show it can be taken. */
-	keep = HOME_KEEP;
-	near_x = (int32_t)server->width - server->pointer_x;
-	near_y = (int32_t)server->height - server->pointer_y;
-	if (progress >= 1.0f && near_x < HOME_NEAR && near_y < HOME_NEAR)
-		keep = HOME_KEEP_NEAR;
+/*
+ * Starts the swipe up from the bottom edge of the desktop that opens Home
+ * (WS181): a left press there, with Home closed, is Home's until it is let
+ * go.  Returns 1 when the press is taken.
+ */
+int
+kwl_home_edge_press(
+	struct kwl_server *server)
+{
+	float progress;
 
-	/* Sliding is the main motion; the shrinking only helps it. */
-	*x = progress * ((float)server->width - keep);
-	*y = progress * ((float)server->height - keep);
-	*scale = 1.0f - 0.03f * progress;
+	/* Only a press in the bottom edge. */
+	if (server->pointer_y < (int32_t)server->height - HOME_RISE_EDGE)
+		return 0;
+
+	/* Only with Home closed (on Home the same swipe does nothing). */
+	progress = kwl_home_progress(server);
+	if (progress > 0.0f || server->home_to > 0.0f)
+		return 0;
+
+	/* The swipe may start. */
+	server->home_rise_press = 1;
+	server->home_rise_dragging = 0;
+	server->home_rise_start_y = server->pointer_y;
+
+	/* Succeeded: the press is Home's. */
+	return 1;
+}
+
+/*
+ * Closes Home at once, without its animation (WS181: the swipe down from
+ * the top edge goes from Home straight to Wiseview); the search is
+ * forgotten.
+ */
+void
+kwl_home_close_now(
+	struct kwl_server *server,
+	const char *via)
+{
+	float progress;
+
+	/* Closed already: nothing to do. */
+	progress = kwl_home_progress(server);
+	if (progress <= 0.0f && server->home_to <= 0.0f)
+		return;
+
+	/* No press of Home's goes on. */
+	server->home_press = 0;
+	server->home_dragging = 0;
+	server->home_page_press = 0;
+	server->home_page_dragging = 0;
+	server->home_page_closing = 0;
+	server->home_page_offset = 0;
+	server->home_rise_press = 0;
+	server->home_rise_dragging = 0;
+
+	/* Settled closed now, without the search. */
+	server->home_query_length = 0U;
+	server->home_query[0] = '\0';
+	server->home_preedit[0] = '\0';
+	server->home = 0.0f;
+	server->home_from = 0.0f;
+	server->home_to = 0.0f;
+	server->home_moving = 0;
+	server->dirty = 1;
+	printf("KWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
+
+	/* The input method serves the applications' text input again (ws090-p022). */
+	kwl_ime_field_changed(server);
 }
 
 /*
@@ -479,13 +537,13 @@ kwl_home_button(
 		return 1;
 	}
 
-	/* The end of a swipe up from the bottom edge: far enough up closes Home, otherwise it opens again. */
-	if (state == 0 && server->home_bottom_press) {
-		home_bottom_release(server);
+	/* The end of a swipe up from the bottom edge of the desktop: far enough up opens Home, otherwise the desktop comes back. */
+	if (state == 0 && server->home_rise_press) {
+		home_rise_release(server);
 		return 1;
 	}
 
-	/* The end of a press on Home: a page drag snaps, a drag to the top left closes, a click on an icon starts it. */
+	/* The end of a press on Home: a page drag snaps, a drag down closes, a click on an icon starts it. */
 	if (state == 0 && server->home_page_press) {
 		home_page_release(server, progress);
 		return 1;
@@ -512,25 +570,11 @@ kwl_home_button(
 	if (progress <= 0.0f && server->home_to <= 0.0f)
 		return 0;
 
-	/* The corner of the desktop that is left in view takes it back. */
-	if (x >= (int32_t)server->width - (int32_t)HOME_KEEP_NEAR && y >= (int32_t)server->height - (int32_t)HOME_KEEP_NEAR) {
-		home_close(server, progress, "corner");
-		return 1;
-	}
-
-	/* A press at the bottom edge may be the swipe up that closes Home (on the desktop the same edge opens Wiseview). */
-	if (y >= (int32_t)server->height - HOME_BOTTOM_EDGE) {
-		server->home_bottom_press = 1;
-		server->home_bottom_dragging = 0;
-		server->home_bottom_start_y = y;
-		server->home_bottom_from = progress;
-		return 1;
-	}
-
-	/* Elsewhere on Home a press may be a click on an icon, a page drag, or a drag that closes Home: its release decides. */
+	/* A press on Home may be a click on an icon, a page drag, or a drag down that closes Home: its motion and release decide. */
 	app = home_icon_at(server, x, y);
 	server->home_page_press = 1;
 	server->home_page_dragging = 0;
+	server->home_page_closing = 0;
 	server->home_page_start_x = x;
 	server->home_page_start_y = y;
 	server->home_page_app = app;
@@ -551,26 +595,26 @@ kwl_home_motion(
 	float moved;
 	float progress;
 
-	/* A swipe up from the bottom edge: past HOME_BOTTOM_START Home follows it, closing. */
-	if (server->home_bottom_press) {
-		up = server->home_bottom_start_y - server->pointer_y;
-		if (!server->home_bottom_dragging) {
-			if (up < HOME_BOTTOM_START)
+	/* A swipe up from the bottom edge of the desktop: past HOME_RISE_START the desktop goes up with it, Home opening. */
+	if (server->home_rise_press) {
+		up = server->home_rise_start_y - server->pointer_y;
+		if (!server->home_rise_dragging) {
+			if (up < HOME_RISE_START)
 				return 1;
 
 			/* Far enough up: the swipe is one, and Home follows it instead of its animation. */
-			server->home_bottom_dragging = 1;
+			server->home_rise_dragging = 1;
 			server->home_dragging = 1;
 			server->home_moving = 0;
-			printf("KWL HOME bottom swipe\n");
+			printf("KWL HOME rise swipe\n");
 		}
 
-		/* Home closes as far as the pointer has come up, from where it was at the press. */
-		moved = server->home_bottom_from * (1.0f - (float)up / HOME_BOTTOM_DISTANCE);
+		/* Home is open as far as the pointer has come up. */
+		moved = (float)up / HOME_RISE_DISTANCE;
 		if (moved < 0.0f)
 			moved = 0.0f;
-		if (moved > server->home_bottom_from)
-			moved = server->home_bottom_from;
+		if (moved > 1.0f)
+			moved = 1.0f;
 
 		/* The swipe has the motion. */
 		server->home_drag = moved;
@@ -578,19 +622,32 @@ kwl_home_motion(
 		return 1;
 	}
 
-	/* A press on Home: past HOME_PAGE_START it is a drag, whose sideways part moves the pages. */
+	/* A press on Home: past HOME_PAGE_START it is a drag, sideways turning the pages, down closing Home. */
 	if (server->home_page_press) {
 		dx = server->pointer_x - server->home_page_start_x;
 		dy = server->pointer_y - server->home_page_start_y;
 		if (!server->home_page_dragging && dx * dx + dy * dy >= HOME_PAGE_START * HOME_PAGE_START) {
 			server->home_page_dragging = 1;
-			printf("KWL HOME page drag\n");
+			home_page_follow(server, dx, dy);
 		}
 
 		/* The pages follow the pointer, only when there are pages and no search. */
-		if (server->home_page_dragging && home_pages > 1U && server->home_query_length == 0U) {
+		if (server->home_page_dragging &&
+		    !server->home_page_closing &&
+		    home_pages > 1U &&
+		    server->home_query_length == 0U) {
 			server->home_page_moving = 0;
 			server->home_page_offset = dx;
+		}
+
+		/* A drag down brings the desktop back down over Home as far as it has gone. */
+		if (server->home_page_closing) {
+			moved = 1.0f - (float)dy / HOME_RISE_DISTANCE;
+			if (moved < 0.0f)
+				moved = 0.0f;
+			if (moved > 1.0f)
+				moved = 1.0f;
+			server->home_drag = moved;
 		}
 
 		/* Drawn again. */
@@ -1134,8 +1191,9 @@ kwl_home_dismiss(
 	server->home_page_press = 0;
 	server->home_page_dragging = 0;
 	server->home_page_offset = 0;
-	server->home_bottom_press = 0;
-	server->home_bottom_dragging = 0;
+	server->home_page_closing = 0;
+	server->home_rise_press = 0;
+	server->home_rise_dragging = 0;
 
 	/* Succeeded: Home closes from where it is. */
 	home_close(server, progress, via);
@@ -2287,8 +2345,8 @@ home_page_turn(
 }
 
 /*
- * Ends a press on Home: a drag mostly towards the top left closes Home, a
- * sideways drag turns to the next or the page before when it went a
+ * Ends a press on Home: a drag mostly down closes Home when it went far
+ * enough (WS181), one mostly up turns nothing, a sideways drag turns to the next or the page before when it went a
  * quarter of the output (else back), and a press that did not move starts
  * the application under it when it is still there.
  */
@@ -2307,11 +2365,29 @@ home_page_release(
 	dx = server->pointer_x - server->home_page_start_x;
 	dy = server->pointer_y - server->home_page_start_y;
 
-	/* A drag up and to the left closes Home (the way it opened, backwards). */
-	if (server->home_page_dragging && dy <= -HOME_CLOSE_DRAG && dx <= -HOME_CLOSE_DRAG / 2) {
+	/* A drag down closes Home when it went far enough, and Home opens again otherwise. */
+	if (server->home_page_closing) {
+		server->home_page_closing = 0;
 		server->home_page_dragging = 0;
-		server->home_page_offset = 0;
-		home_close(server, progress, "drag");
+		server->home_dragging = 0;
+		if ((float)dy >= HOME_RISE_DISTANCE * HOME_THRESHOLD) {
+			home_close(server, server->home_drag, "pull-down");
+		} else {
+			printf("KWL HOME close back\n");
+			home_settle(server, server->home_drag, 1.0f);
+		}
+
+		/* The drag was Home's closing. */
+		return;
+	}
+
+	/* A drag mostly up turns no page: the pages go back to where they were. */
+	if (server->home_page_dragging &&
+	    dy < 0 &&
+	    -dy > dx &&
+	    -dy > -dx) {
+		home_page_turn(server, (int)server->home_page, "drag");
+		server->home_page_dragging = 0;
 		return;
 	}
 
@@ -2339,30 +2415,64 @@ home_page_release(
 	}
 }
 
-/* Ends a swipe up from the bottom edge: far enough up, Home closes to the desktop; otherwise it opens again. */
+/* Ends a swipe up from the bottom edge of the desktop: far enough up, Home opens; otherwise the desktop comes back down. */
 static void
-home_bottom_release(
+home_rise_release(
 	struct kwl_server *server)
 {
-	int32_t up;
-
-	/* The press is over; one that never moved leaves Home as it is. */
-	server->home_bottom_press = 0;
-	if (!server->home_bottom_dragging)
+	/* The press is over; one that never moved does nothing. */
+	server->home_rise_press = 0;
+	if (!server->home_rise_dragging)
 		return;
-	server->home_bottom_dragging = 0;
+	server->home_rise_dragging = 0;
 	server->home_dragging = 0;
 
-	/* Far enough up: Home closes from where the swipe left it (Wiseview does not open). */
-	up = server->home_bottom_start_y - server->pointer_y;
-	if ((float)up >= HOME_BOTTOM_DISTANCE * HOME_BOTTOM_THRESHOLD) {
-		home_close(server, server->home_drag, "bottom");
+	/* Far enough up: Home opens from where the swipe left it. */
+	if (server->home_drag >= HOME_THRESHOLD) {
+		home_open(server, server->home_drag, "edge");
 		return;
 	}
 
-	/* Not far enough: Home opens again, keeping its search. */
-	printf("KWL HOME bottom back\n");
-	home_settle(server, server->home_drag, 1.0f);
+	/* Not far enough: the desktop comes back down. */
+	printf("KWL HOME rise back\n");
+	home_settle(server, server->home_drag, 0.0f);
+}
+
+/*
+ * Decides what a drag on Home is once it has gone HOME_PAGE_START (WS181):
+ * mostly sideways it turns the pages, mostly down it brings the desktop
+ * back over Home (Home follows the pointer closing), mostly up it does
+ * nothing.
+ */
+static void
+home_page_follow(
+	struct kwl_server *server,
+	int32_t dx,
+	int32_t dy)
+{
+	int32_t across;
+
+	/* How far sideways, whichever way. */
+	across = dx;
+	if (across < 0)
+		across = -across;
+
+	/* Sideways at least as far as down or up: the pages. */
+	if (across >= dy && across >= -dy) {
+		printf("KWL HOME page drag\n");
+		return;
+	}
+
+	/* Up: nothing. */
+	if (dy < 0)
+		return;
+
+	/* Down: Home follows the pointer, closing. */
+	server->home_page_closing = 1;
+	server->home_dragging = 1;
+	server->home_moving = 0;
+	server->home_drag = 1.0f;
+	printf("KWL HOME close drag\n");
 }
 
 /* Draws the pages' dots at the bottom centre, the page shown in the accent the user chose (for the stage's dark ground). */

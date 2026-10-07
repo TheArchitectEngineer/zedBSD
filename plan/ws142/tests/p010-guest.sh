@@ -8,13 +8,16 @@
 #     reason=double-click"); Alt held, Tab, Tab, Alt let go brings apps.a, which docks too ("KWL LAYOUT switch surface=A
 #     action=dock mode=docked via=switch"); apps.b is not drawn (layout-docked.png shows apps.a alone).
 #  2. Two fingers from the pad's top edge down (TOP2): apps.a floats again ("KWL GESTURE kind=top2 phase=begin",
-#     "KWL GLASS undock surface=A via=top2", "KWL LAYOUT mode=windowed reason=top2"; layout-windowed.png shows both).
-#  3. Windowed, a switch to the docked apps.b: it floats again ("KWL LAYOUT switch surface=B action=float
-#     mode=windowed via=switch").
-#  4. Docked again (apps.b's title double-clicked), then apps.b ends by itself: apps.a, now in front, docks ("KWL LAYOUT
-#     front surface=A action=dock").
-#  5. Docked, a window of one size opens (wltest --fixed 420x300, apps.f): it opens docked ("KWL GLASS open-docked
-#     client=F"), drawn at its size in the middle over the blurred, darkened scene (fixed-docked.png).
+#     "KWL GLASS undock surface=A via=top2", "KWL LAYOUT mode=windowed reason=top2"), and apps.b, docked behind it,
+#     floats at once too (WS181, the 2026-10-07 UAT: "KWL LAYOUT float-quiet ... client=B", "KWL LAYOUT leave via=top2";
+#     layout-windowed.png shows both as windows).
+#  3. Windowed, a switch to apps.b: it is a window already, so it only comes forward ("KWL LAYOUT switch surface=B
+#     action=keep mode=windowed via=switch").
+#  4. Docked again (apps.b's title double-clicked), then apps.b ends by itself: the docked mode ends and apps.a stays a
+#     window (WS181: "KWL LAYOUT leave via=closed", no "KWL LAYOUT front ... action=dock").
+#  5. apps.a docked (its title double-clicked), a window of one size opens (wltest --fixed 420x300, apps.f): it opens
+#     docked ("KWL GLASS open-docked client=F"), drawn at its size in the middle over the blurred, darkened scene
+#     (fixed-docked.png).
 #  6. Wiseview by two fingers up from the bottom edge, then two fingers across the middle 25 mm to the right: one step
 #     only ("KWL SWIPE right via=pad", one "KWL WISEVIEW select step=+1 via=swipe"); two fingers down 15 mm choose
 #     ("KWL WISEVIEW select surface=[0-9]* via=swipe"); wiseview-swipe.png before the choice, without the title text.
@@ -95,25 +98,32 @@ pad top2 "down 0 500 10; down 1 700 20" "wait 30" "swipe 0 240 12 16" "up 0; up 
 expect_some top2-gesture 'KWL GESTURE kind=top2 phase=begin'
 expect_some top2-undock "KWL GLASS undock surface=[0-9]* via=top2 x=[-0-9]* y=[-0-9]* client=${a:-0}\$"
 expect_some top2-windowed 'KWL LAYOUT mode=windowed reason=top2'
+expect_some top2-behind-floats "KWL LAYOUT float-quiet surface=[0-9]* x=[-0-9]* y=[-0-9]* w=[0-9]* h=[0-9]* client=${b:-0}\$"
+expect_some top2-leave 'KWL LAYOUT leave via=top2 front=[0-9]* quiet=1'
 sleep 1
 shot layout-windowed
 
-# 3. Windowed: Alt held, Tab, Tab (from apps.a to apps.b), Alt let go: the docked apps.b floats.
+# 3. Windowed: Alt held, Tab, Tab (from apps.a to apps.b), Alt let go: apps.b, a window already, comes forward.
 key alt true
 tap tab
 tap tab
 key alt false
 sleep 1.5
-expect_some switch-floats "KWL LAYOUT switch surface=[0-9]* action=float mode=windowed via=switch client=${b:-0}\$"
+expect_some switch-keeps "KWL LAYOUT switch surface=[0-9]* action=keep mode=windowed via=switch client=${b:-0}\$"
 
-# 4. apps.b docked again, then it ends by itself: apps.a in front docks.
+# 4. apps.b docked again, then it ends by itself: the docked mode ends, apps.a stays a window (WS181).
 title_double_click "${b:-0}"
 n=$(count 'KWL LAYOUT mode=docked'); [ "${n:-0}" -ge 2 ] 2>/dev/null && pass docked-again || fail "docked-again (${n:-?})"
 guest 'p=$(cat /tmp/apps.b.pid); ps -A -o pid,args | grep "^ *$p "; kill $p; sleep 2; echo killed pid=$p' > "$out/kill.txt"
 expect_some apps-b-gone "KWL CLIENT gone client=${b:-0} "
-expect_some front-docks "KWL LAYOUT front surface=[0-9]* action=dock client=${a:-0}\$"
+expect_some closed-leaves 'KWL LAYOUT leave via=closed front=0'
+expect_count front-not-docked "KWL LAYOUT front surface=[0-9]* action=dock client=${a:-0}\$" 0
 
-# 5. A window of one size opens docked, in the middle over the blurred scene.
+# 5. apps.a docked again, so that the window of one size opens docked.
+title_double_click "${a:-0}"
+n=$(count 'KWL LAYOUT mode=docked'); [ "${n:-0}" -ge 3 ] 2>/dev/null && pass docked-third || fail "docked-third (${n:-?})"
+
+# A window of one size opens docked, in the middle over the blurred scene.
 open_app apps.f f4f0c0 420x300 "--windowed --fixed"
 f=$(client_of)
 expect_some fixed-open-docked "KWL GLASS open-docked client=${f:-0} "

@@ -431,6 +431,13 @@ struct kwl_object {
 	uint32_t restore_width;
 	uint32_t restore_height;
 	/*
+	 * A restore place the shell made up (dock_restore_default, shell.c) for
+	 * a window docked before it ever floated: when the docked mode ends
+	 * without an animation, such a window is placed as a new window is
+	 * (kwl_glass_place), so that several are not left on one spot (WS181).
+	 */
+	unsigned restore_default;
+	/*
 	 * A window the shell docked or brought back whose client has not drawn
 	 * the new size yet (shell.c, BUG-179 and BUG-180): when the size was
 	 * sent (ms; 0 once an image drawn after it came), and the serial of
@@ -1130,14 +1137,16 @@ struct kwl_server {
 	char home_preedit[96];
 	int home_selected;
 	/*
-	 * A press at the bottom edge while Home shows, which may become the
-	 * swipe up that closes Home (ws079-p010): whether it has moved far
-	 * enough to be one, where it started, and how far Home was open then.
+	 * A press at the bottom edge of the desktop, which may become the swipe
+	 * up that opens Home (WS181, the 2026-10-07 UAT): whether it has moved
+	 * far enough up to be one, and where it started.  And a press on Home
+	 * that went mostly down, which pulls the desktop back over Home and
+	 * closes it (home_page_closing, while it follows the pointer).
 	 */
-	unsigned home_bottom_press;
-	unsigned home_bottom_dragging;
-	int32_t home_bottom_start_y;
-	float home_bottom_from;
+	unsigned home_rise_press;
+	unsigned home_rise_dragging;
+	int32_t home_rise_start_y;
+	unsigned home_page_closing;
 	/*
 	 * The virtual desktops (ws035-p065): the one shown; a press at the
 	 * left or right edge that may become the swipe (where it started,
@@ -1168,6 +1177,17 @@ struct kwl_server {
 	 * leaving fullscreen.  Windowed from the session's start.
 	 */
 	unsigned layout_mode;
+	/*
+	 * Each desktop's docked owner in the docked mode (WS181, shell.c's
+	 * layout_follow): the docked window in front of it, seen every frame
+	 * once it is mapped.  When the owner of the desktop shown is closed,
+	 * minimized or sent away, the docked mode ends and every window floats
+	 * again (the 2026-10-07 UAT), instead of the next one being docked.
+	 * owner_gone marks an owner destroyed since (kwl_glass_forget), whose
+	 * pointer is NULL already.  Both are cleared when the docked mode ends.
+	 */
+	struct kwl_object *dock_owner[KWL_APPS_DESKTOPS];
+	unsigned dock_owner_gone[KWL_APPS_DESKTOPS];
 	/*
 	 * The touch pad's swipe of two fingers while Wiseview or the switcher
 	 * shows (swipe.h, ws142-p009): one swipe a step, from the fingers
@@ -1577,6 +1597,8 @@ uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, co
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);
 void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale);
+int kwl_home_edge_press(struct kwl_server *server);
+void kwl_home_close_now(struct kwl_server *server, const char *via);
 int kwl_home_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_home_motion(struct kwl_server *server);
 int kwl_home_key(struct kwl_server *server, uint32_t key, uint32_t state);
@@ -1652,6 +1674,7 @@ int kwl_glass_overlay(struct kwl_server *server);
 struct kwl_object *kwl_glass_title_at(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_glass_lower(struct kwl_server *server, struct kwl_object *surface, const char *via);
 void kwl_glass_mapped(struct kwl_server *server, struct kwl_object *surface);
+void kwl_glass_forget(struct kwl_server *server, struct kwl_object *surface);
 void kwl_glass_committed(struct kwl_server *server, struct kwl_object *surface);
 int kwl_glass_key(struct kwl_server *server, uint32_t key, uint32_t state);
 

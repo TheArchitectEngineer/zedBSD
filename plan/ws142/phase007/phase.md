@@ -103,3 +103,8 @@ Q1（P2 の案）:「DOCKED の間は他の app を描かない」と「中央�
 
 「最大化の状態でほかの窓を閉じる操作はできないです。窓が自分から閉じることはあります。最大化状態で今の窓を閉じたときは、次の窓は最大化状態にします。最大化はウィンドウの状態というより、デスクトップ環境がタブレットモードであるという解釈をします。」
 → `layout_mode = DOCKED` は窓の状態でなく desktop の tablet mode。DOCKED の間に前の窓が閉じた（app が自分から閉じた場合を含む）・最小化した時、次に前に来た窓も dock する（p008 の `layout_keep_front`）。
+
+## 2026-10-07 WS181 による置き換え（2026-10-07 のユーザーの UAT）
+
+- §1 の「切り替え元は dock のまま後ろに残る」は docked mode の間は同じ。ただし docked mode を出る時（restore・pull・double click・TOP2）は、後ろに残った docked の窓も全部 floating に戻る（[WS181](../../ws181/ws.md) p002、design.md §1）。窓の mode で docked の窓への press が切り替えになる規則（`layout_press_switches`）は無くなった。
+- 「閉じた後の次の窓も最大化（tablet mode）」は、2026-10-07 の UAT で「docked の窓を閉じたら他の窓は floating で表示、明示に最小化した窓は最小化のまま」に置き換えた（WS181 p002）。試験 `plan/ws142/tests/p010-guest.sh` の 2〜5 段を追従させた（Q1 の許可、2026-10-07）。

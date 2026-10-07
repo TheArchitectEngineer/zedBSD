@@ -54,3 +54,7 @@ Related: [BUG-217](../../bugs/BUG-217.md)
 ## 残り
 
 - p008b（中央の窓の下の blur）、p009（gesture）、p010（AAT のシナリオ・T1・規約の見直し）。
+
+## 2026-10-07 WS181 による置き換え
+
+`layout_keep_front`（閉じた後に前に来た窓を dock）と `layout_press_switches` は [WS181](../../ws181/ws.md) p002 で `layout_follow`（持ち主の観測、閉じたら docked mode を出る）と `layout_leave`（全部の窓を floating に）に置き換えた。`window_undock` は mode を変えなくなった。p010-guest.sh の 2〜5 段を追従させた（Q1 の許可、2026-10-07）。
