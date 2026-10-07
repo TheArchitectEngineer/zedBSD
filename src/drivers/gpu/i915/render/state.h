@@ -48,7 +48,8 @@ struct i915_gfx_push_layout {
 };
 
 /*
- * The two kernels of a draw and what has to be programmed around them.
+ * The kernels of a draw (vertex, optional geometry, pixel) and what has to
+ * be programmed around them.
  *
  * It is filled from a pipeline's compiled binaries, or for a rectangle from
  * the transfer kernel, just before the state is written, and lives on the
@@ -72,17 +73,41 @@ struct i915_gfx_kernels {
 	uint32_t vs_input_count;
 	uint32_t vs_inputs[I915_GFX_MAX_VERTEX_ATTRIBUTES];
 
-	/* The VUE slots after the position the vertex kernel writes. */
+	/*
+	 * The geometry kernel (ws075-p007b); NULL and zeros for a draw without
+	 * one.  Its code and size, first payload register and push data, then
+	 * what 3DSTATE_GS and the URB take from it: the vertices of an input
+	 * primitive, the 3D_Prim_Topo_Type it emits, one output vertex and the
+	 * control data header in 32-byte units, the control data format, the
+	 * output URB entry in 64-byte units, and nonzero when it reads the
+	 * input primitive's number or writes the layer.
+	 */
+	const uint32_t *gs_code;
+	uint32_t gs_bytes;
+	uint32_t gs_grf_start;
+	uint32_t gs_push_regs;
+	struct i915_gfx_push_layout gs_push;
+	uint32_t gs_vertices_in;
+	uint32_t gs_output_topology;
+	uint32_t gs_output_vertex_hwords;
+	uint32_t gs_control_hwords;
+	uint32_t gs_control_format;
+	uint32_t gs_urb_entry_size;
+	uint32_t gs_primitive_id;
+	uint32_t gs_writes_layer;
+
+	/* The VUE slots after the position the last stage before the pixel stage writes (the geometry kernel when there is one). */
 	uint32_t varyings;
 
-	/* Nonzero when the vertex kernel writes the point size into its VUE header (0 for a rectangle). */
+	/* Nonzero when that last stage writes the point size into its VUE header (0 for a rectangle). */
 	uint32_t vs_point_size;
 
 	/*
 	 * The fragment inputs: when ps_inputs_mapped is nonzero, the pixel
 	 * kernel reads ps_input_count inputs and input n (in its payload order)
-	 * comes from VUE slot ps_input_slots[n] after the position; otherwise (a
-	 * rectangle kernel) input n is slot n of the `varyings` slots.
+	 * comes from VUE slot ps_input_slots[n] after the position of the last
+	 * stage's VUE; otherwise (a rectangle kernel) input n is slot n of the
+	 * `varyings` slots.
 	 */
 	uint32_t ps_inputs_mapped;
 	uint32_t ps_input_count;
@@ -124,9 +149,11 @@ struct i915_gfx_kernels {
 	 * spills), and where each stage's part starts in it.
 	 */
 	uint32_t vs_scratch_bytes;
+	uint32_t gs_scratch_bytes;
 	uint32_t ps_scratch_bytes;
 	uint64_t scratch_base;
 	uint64_t vs_scratch_offset;
+	uint64_t gs_scratch_offset;
 	uint64_t ps_scratch_offset;
 
 	/* A compute kernel's scratch space and where its part starts (ws101-p004); zero for a draw. */

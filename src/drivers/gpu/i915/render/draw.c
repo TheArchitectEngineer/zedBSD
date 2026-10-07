@@ -232,7 +232,8 @@ drv_i915_gfx_submit_end(
 }
 
 /*
- * Finds the instruction window of a pair of kernels, placing them in a new
+ * Finds the instruction window of a set of kernels (vertex, geometry,
+ * pixel; NULL for a stage the window does not hold), placing them in a new
  * window when they are not in one of the current generation.
  *
  * `owner`, `window` and `generation` are where the caller keeps the place
@@ -251,6 +252,8 @@ drv_i915_gfx_window(
 	uint32_t *generation,
 	const uint32_t *vs_code,
 	uint32_t vs_bytes,
+	const uint32_t *gs_code,
+	uint32_t gs_bytes,
 	const uint32_t *ps_code,
 	uint32_t ps_bytes,
 	struct i915_gfx_op_space *space)
@@ -287,6 +290,8 @@ drv_i915_gfx_window(
 		drv_i915_gfx_instruction_heap_clear(address);
 		if (vs_code != NULL)
 			kern_memcpy(address + I915_GFX_VS_KERNEL, vs_code, vs_bytes);
+		if (gs_code != NULL)
+			kern_memcpy(address + I915_GFX_GS_KERNEL, gs_code, gs_bytes);
 		if (ps_code != NULL)
 			kern_memcpy(address + I915_GFX_PS_KERNEL, ps_code, ps_bytes);
 
@@ -543,6 +548,17 @@ drv_i915_gfx_draw(
 	drv_i915_gfx_pipeline_kernels(state->pipeline, &kernels);
 
 	/*
+	 * XXX: a pipeline's geometry kernel is compiled and placed
+	 * (ws075-p007b b1), but the draw does not program 3DSTATE_GS and its
+	 * URB yet (b2): such a draw is refused rather than run without the
+	 * stage.
+	 */
+	if (kernels.gs_code != NULL) {
+		kern_logf("i915: vk: draw refused: the geometry stage is not programmed yet\n");
+		return ENOTSUP;
+	}
+
+	/*
 	 * Uniform data is copied into the push data by the CPU now, so a
 	 * rectangle recorded before the draw, which may have written the
 	 * buffer, runs first.
@@ -568,6 +584,8 @@ drv_i915_gfx_draw(
 				    &state->pipeline->kernel_generation,
 				    kernels.vs_code,
 				    kernels.vs_bytes,
+				    kernels.gs_code,
+				    kernels.gs_bytes,
 				    kernels.ps_code,
 				    kernels.ps_bytes,
 				    &space);

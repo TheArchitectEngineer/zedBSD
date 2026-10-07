@@ -90,10 +90,16 @@
 /* Where the post-sync writes of the depth workaround land. */
 #define I915_GFX_SCRATCH		0x3000U
 
-/* The kernel offsets from the start of an instruction window, and the window's size. */
+/*
+ * The kernel offsets from the start of an instruction window, and the
+ * window's size: 16 KiB for the vertex kernel, 16 KiB for the geometry
+ * kernel (ws075-p007b) and 32 KiB for the pixel kernel.  A compute kernel,
+ * or a blit's, has a window to itself.
+ */
 #define I915_GFX_VS_KERNEL		0x0000U
-#define I915_GFX_PS_KERNEL		0x4000U
-#define I915_GFX_INSTRUCTION_BYTES	0xc000U
+#define I915_GFX_GS_KERNEL		0x4000U
+#define I915_GFX_PS_KERNEL		0x8000U
+#define I915_GFX_INSTRUCTION_BYTES	0x10000U
 
 /* How many instruction windows the kernel object has. */
 #define I915_GFX_KERNEL_WINDOWS		32U

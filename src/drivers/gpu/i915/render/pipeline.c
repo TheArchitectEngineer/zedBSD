@@ -599,9 +599,11 @@ i915_gfx_decode_stages(
 		module_id = (uint64_t)(uintptr_t)stage.module;
 		shader = drv_i915_object_lookup(session, I915_VK_OBJ_SHADER_MODULE, module_id);
 
-		/* Only the vertex and the fragment stages are run. */
+		/* Only the vertex, the geometry (ws075-p007b) and the fragment stages are run. */
 		if (stage.stage == VK_SHADER_STAGE_VERTEX_BIT) {
 			pipeline->vertex = shader;
+		} else if (stage.stage == VK_SHADER_STAGE_GEOMETRY_BIT) {
+			pipeline->geometry = shader;
 		} else if (stage.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
 			pipeline->fragment = shader;
 		} else {

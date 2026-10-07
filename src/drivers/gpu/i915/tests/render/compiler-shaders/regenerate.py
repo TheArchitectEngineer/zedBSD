@@ -41,7 +41,8 @@ SHADERS = (
 )
 
 # The shaders of the geometry stage the host fixtures parse and compile (ws075-p007a): glxtest's three geometry
-# shaders, WS068's varyings, the ones the parser refuses, and a fragment shader reading gl_PrimitiveID.  Source, stage.
+# shaders, WS068's varyings, the ones the parser refuses, a fragment shader reading gl_PrimitiveID, and the vertex
+# shader varyings.geom reads (the three-stage pipelines of plan/ws031/tests/i915-vk-pipe-test.c).  Source, stage.
 GEOMETRY = (
     ('points.geom', 'geometry'),
     ('adjacency.geom', 'geometry'),
@@ -59,6 +60,7 @@ GEOMETRY = (
     ('refuse-viewport.geom', 'geometry'),
     ('refuse-clip-distance.geom', 'geometry'),
     ('primitive-id.frag', 'fragment'),
+    ('varyings.vert', 'vertex'),
 )
 
 # SPIR-V written by hand, for what no GLSL compiler emits: assembled with spirv-as.
