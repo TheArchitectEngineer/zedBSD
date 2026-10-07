@@ -54,6 +54,8 @@ fi
 # UI gives it a size, so with egl-headless head 1 is never connected).  VNC is still bound; whether it gets pictures
 # of GL scanouts without egl-headless is to be seen, so tests in this mode judge by the guest's lines.
 display="-display egl-headless,rendernode=/dev/dri/renderD128"
+# The VNC of the Venus head; QEMU refuses it next to the D-Bus display (its GL context), so dbus goes without it.
+vnc_venus=1
 case "$command" in
 start)
 	image=${2:-build/ws035-sq/hdd-image.img}
@@ -71,10 +73,13 @@ start)
 		DBUS_SESSION_BUS_ADDRESS=$(cat "$GUEST_RUNTIME/dbus.address")
 		export DBUS_SESSION_BUS_ADDRESS
 		display="-display dbus,gl=on,rendernode=/dev/dri/renderD128"
+		vnc_venus=0
 	fi
+	vnc=""
+	[ "$vnc_venus" = 1 ] && vnc=" -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus"
 	exec python3 plan/tools/guest/guest.py start "$image" \
 	    --symbols build/ws035-sq/vmunix \
-	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=$VENUS_HOSTMEM,max_outputs=${VENUS_OUTPUTS:-1}$size $display -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
+	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=$VENUS_HOSTMEM,max_outputs=${VENUS_OUTPUTS:-1}$size $display$vnc -device usb-tablet,bus=xhci.0,port=4"
 	;;
 stop)
 	# The D-Bus display's bus goes with the guest.
