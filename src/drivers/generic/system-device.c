@@ -279,18 +279,24 @@ system_event_subscribe(
 	return 0;
 }
 
-/* Copies out the power's present state (unknown without the ACPI power devices). */
+/* Copies out the power's present state (unknown without the ACPI power devices) and whether the machine can sleep to idle. */
 static int
 system_get_power(
 	uintptr_t argument)
 {
 	struct system_power_info info;
+	int supported;
 	int error;
 
 	/* Unknown unless the ACPI power devices say. */
 	kern_memset(&info, 0, sizeof(info));
 	if (drv_acpi_power_get != NULL)
 		drv_acpi_power_get(&info);
+
+	/* Whether the machine can sleep to idle (ws052-p011: KERN_SYSTEM_SLEEP would not refuse S0IDLE). */
+	supported = kern_sleep_supported();
+	if (supported)
+		info.flags |= KERN_SYSTEM_POWER_FLAG_CAN_SLEEP;
 
 	/* Copies it out. */
 	error = copyout(&info, argument, sizeof(info));

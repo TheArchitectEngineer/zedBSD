@@ -88,9 +88,17 @@ void sessiond_seat_give(uid_t uid, gid_t gid, int keys);
 void sessiond_seat_restore(void);
 void sessiond_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
-/* Ending the machine: the login screen's and a session's POWER (power.c, ws131-p027). */
+/* Ending the machine: the login screen's and a session's POWER (power.c, ws131-p027); nonzero once it is ending. */
+extern int sessiond_power_started;
 int sessiond_power_run(const char *program, const char *what, const char *from);
 void sessiond_power_session(const struct sessiond_account *account, int control, const char *what);
+
+/* The machine's sleep: POWER suspend and POWER cancel (sleep.c, ws052-p011). */
+void sessiond_sleep_request(int control, const char *from);
+void sessiond_sleep_cancel(void);
+int sessiond_sleep_fd(void);
+void sessiond_sleep_collect(void);
+void sessiond_sleep_forget(int control);
 
 /* A session's SERVICE request (service.c, ws089-p025). */
 void sessiond_service(const struct sessiond_account *account, int control, const char *arguments);
