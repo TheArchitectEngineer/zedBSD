@@ -60,9 +60,12 @@ class Server:
 		item.check(address, "the target does not say where its SSH connection comes from")
 		bind = "127.0.0.1" if address.startswith("10.0.2.") else address
 		self.host = address
-		# The CA and the certificate for mail.test and the address.
+		# The CA and the certificate for mail.test and the address, valid from a day ago: the target's clock can be
+		# behind this host's (T1-320: the guest at 02:05, the certificate from 02:06, and TLS refused it).
+		since = time.strftime("%Y%m%d%H%M%SZ", time.gmtime(time.time() - 86400))
 		for words in (
-			["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=aat-mail-ca",
+			["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-not_before", since,
+			 "-subj", "/CN=aat-mail-ca",
 			 "-keyout", str(folder / "ca.key"), "-out", str(folder / "ca.pem"),
 			 "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign"],
 			["openssl", "req", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={NAME}",
@@ -73,7 +76,8 @@ class Server:
 		(folder / "server.ext").write_text(f"subjectAltName=DNS:{NAME},IP:{address}\nbasicConstraints=CA:FALSE\n")
 		made = subprocess.run(
 			["openssl", "x509", "-req", "-in", str(folder / "server.csr"), "-CA", str(folder / "ca.pem"),
-			 "-CAkey", str(folder / "ca.key"), "-CAcreateserial", "-days", "2", "-extfile", str(folder / "server.ext"),
+			 "-CAkey", str(folder / "ca.key"), "-CAcreateserial", "-days", "2", "-not_before", since,
+			 "-extfile", str(folder / "server.ext"),
 			 "-out", str(folder / "server.pem")], capture_output=True, text=True, timeout=60)
 		item.check(made.returncode == 0, f"openssl x509: {made.stderr.strip()[-200:]}")
 		# The server, its ports.

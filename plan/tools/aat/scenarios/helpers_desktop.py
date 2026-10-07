@@ -416,6 +416,14 @@ def window_opacity(item):
 	item.check(1 in controls, "no opacity slider (control 1)")
 	x, y, width, height = controls[1]
 	left, right, middle = window.x + x + 2, window.x + x + width - 2, window.y + y + height // 2
+	if old == 100:
+		# Opaque already (an earlier scenario left it so, T1-320): the compositor applies only a change, so first
+		# the slider's left end.
+		mark = run.mark()
+		run.drag((left + right) // 2, middle, left - 40, middle, steps=10)
+		lowered = run.wait(r"ZSETTINGS LOOK set key=window.opacity value=\d+ error=0", mark, 10)
+		item.step("dragged the opacity slider to its left end first", lowered or "")
+		time.sleep(0.5)
 	mark = run.mark()
 	run.drag((left + right) // 2, middle, right + 40, middle, steps=10)
 	saved = run.wait(r"ZSETTINGS LOOK set key=window.opacity value=100 error=0", mark, 10)
@@ -696,6 +704,9 @@ def osk_emoji(item):
 	item.step("tapped the first emoji", commit)
 	item.check(commit, "no emoji commit")
 	emoji = aatlib.field(commit, "text")
+	# The emoji in the editor, for its colour (the shot above is from before the tap, T1-320).
+	time.sleep(0.8)
+	run.shot(item, "typed")
 	close_panel(item, "flick")
 	text = save(item, "emoji.txt")
 	item.step("read the file", repr(text))

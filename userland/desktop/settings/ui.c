@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /*
  * The panes reach the window's edges, so that their outer edges line up
@@ -33,6 +34,9 @@
  */
 #define UI_GAP			10
 #define UI_GLASS_GAP		8
+
+/* The longest log line written (a longer one is cut short). */
+#define UI_LOG_LINE_MAX		1024
 
 /* The margin round a lit region drawn again alone (its edge and shadow, BUG-226). */
 #define UI_DAMAGE_MARGIN	6
@@ -610,21 +614,39 @@ se_ui_menu_state(
 /*
  * Writes one line to standard error, prefixed ZSETTINGS (the tests read
  * these lines).
+ *
+ * The line is made whole first and written with one write: a second
+ * Settings shares the session's log while it hands its page over, and
+ * pieces written one by one were interleaved with the first one's
+ * ("ZSETTINGS ZSETTINGS DONE ...", T1-320).
  */
 void
 se_log(
 	const char *format,
 	...)
 {
+	char line[UI_LOG_LINE_MAX];
 	va_list arguments;
+	size_t room;
+	size_t length;
+	int written;
 
-	/* The prefix, the message and the end of the line, at once. */
-	fputs("ZSETTINGS ", stderr);
+	/* The prefix and the message (cut short when it is too long), leaving room for the end of the line. */
+	(void)memcpy(line, "ZSETTINGS ", sizeof("ZSETTINGS ") - 1U);
+	length = sizeof("ZSETTINGS ") - 1U;
+	room = sizeof(line) - length - 1U;
 	va_start(arguments, format);
-	vfprintf(stderr, format, arguments);
+	written = vsnprintf(&line[length], room, format, arguments);
 	va_end(arguments);
-	fputc('\n', stderr);
-	fflush(stderr);
+	if (written > 0 && (size_t)written < room)
+		length += (size_t)written;
+	else if (written > 0)
+		length += room - 1U;
+
+	/* The end of the line, and the whole line at once. */
+	line[length] = '\n';
+	length++;
+	(void)write(STDERR_FILENO, line, length);
 }
 
 /* Works out the panes' places at the window's size. */
