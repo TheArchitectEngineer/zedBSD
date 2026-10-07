@@ -449,6 +449,9 @@ struct kwl_object {
 	/* When the client acknowledged that configure, and when its latest commit came (ms; 0 before), which split the wait in the log (BUG-179). */
 	uint64_t resized_acked_ms;
 	uint64_t resized_commit_ms;
+	/* The size of the image the window had when the size was sent (0 without one): an image of it is an old one. */
+	uint32_t resized_from_width;
+	uint32_t resized_from_height;
 	/* A wl_shm buffer's place in its pool (NULL for a GPU buffer), and a pool object's memory. */
 	struct kwl_shm_buffer *shm;
 	struct kwl_pool *pool;
@@ -1702,7 +1705,6 @@ void kwl_glass_forget(struct kwl_server *server, struct kwl_object *surface);
 struct kwl_arrange_rect;
 void kwl_glass_desktops_pill(struct kwl_server *server, int32_t *x, int32_t *width);
 int kwl_glass_bar_control_at(struct kwl_server *server, int32_t x, int32_t y);
-void kwl_glass_desktop_turn(struct kwl_server *server, int desktop, const char *via);
 void kwl_glass_work_area(struct kwl_server *server, struct kwl_arrange_rect *area);
 void kwl_glass_leave_quiet(struct kwl_server *server, const char *via);
 void kwl_glass_place_body(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);

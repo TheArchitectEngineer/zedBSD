@@ -253,13 +253,3 @@ msg	Mute	消音
 msg	Sound service is not running	サウンドサービスが動いていません
 # ../wayland/volume.c:537
 msg	No sound output	音声の出力がありません
-# wayland.keys (WS181 the arrangement menu)
-msg	Side by Side	左右に並べる
-# wayland.keys (WS181)
-msg	Stacked	上下に並べる
-# wayland.keys (WS181)
-msg	One on the Right	右に 1 つ、左に分割
-# wayland.keys (WS181)
-msg	One on the Left	左に 1 つ、右に分割
-# wayland.keys (WS181)
-msg	Grid	格子

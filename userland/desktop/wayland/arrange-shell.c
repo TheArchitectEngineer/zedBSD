@@ -10,10 +10,11 @@
  * the 2026-10-07 UAT).
  *
  * A tap or a click anywhere on the system bar's desktops' pill opens the
- * menu under it (the 2026-10-07 user decision D5): a row of the four
- * desktops' pictures (one switches to that desktop), then the five
- * layouts (side by side, stacked, one on the right, one on the left, a
- * grid).  Choosing a layout arranges the windows of the desktop shown --
+ * menu under it (the 2026-10-07 user decision D5): the five layouts' small
+ * drawings in a row, without words (side by side, stacked, one on the
+ * right, one on the left, a grid; the 2026-10-07 UAT: the menu acts on the
+ * desktop shown, and a desktop is switched by the swipe and the keys, not
+ * from the pill).  Choosing a layout arranges the windows of the desktop shown --
  * up to the layout's limit, top first, the rest staying where they are --
  * each into the slot nearest to where it was (arrange.c), floating (the
  * docked mode ends quietly first), and they glide there.
@@ -48,14 +49,15 @@
 /* How long a window glides to its slot, in milliseconds. */
 #define ARRANGE_MS		180U
 
-/* The menu's width, its rows' heights, its corner, its pictures of the desktops, and its gap under the bar. */
-#define ARRANGE_MENU_WIDTH	248
-#define ARRANGE_MENU_DESKTOPS	52
-#define ARRANGE_MENU_ROW	38
-#define ARRANGE_MENU_PAD	6
-#define ARRANGE_MENU_RADIUS	14.0f
-#define ARRANGE_MENU_PICTURE	44
-#define ARRANGE_MENU_GAP	6
+/* The menu's cells (one a layout), the gap between them, its padding, its corner, and its gap under the bar. */
+#define ARRANGE_MENU_CELL_WIDTH		48
+#define ARRANGE_MENU_CELL_HEIGHT	40
+#define ARRANGE_MENU_CELL_GAP		4
+#define ARRANGE_MENU_PAD		6
+#define ARRANGE_MENU_RADIUS		14.0f
+#define ARRANGE_MENU_GAP		6
+#define ARRANGE_MENU_WIDTH		(2 * ARRANGE_MENU_PAD + (int32_t)KWL_ARRANGE_LAYOUTS * ARRANGE_MENU_CELL_WIDTH + ((int32_t)KWL_ARRANGE_LAYOUTS - 1) * ARRANGE_MENU_CELL_GAP)
+#define ARRANGE_MENU_HEIGHT		(2 * ARRANGE_MENU_PAD + ARRANGE_MENU_CELL_HEIGHT)
 
 /* The small drawing of a layout in a row (its slots scaled down from a ten times larger area). */
 #define ARRANGE_ICON_WIDTH	30
@@ -67,12 +69,12 @@
 #define ARRANGE_KEY_ENTER	28U
 #define ARRANGE_KEY_KP_ENTER	96U
 #define ARRANGE_KEY_UP		103U
+#define ARRANGE_KEY_LEFT	105U
+#define ARRANGE_KEY_RIGHT	106U
 #define ARRANGE_KEY_DOWN	108U
 
-/* The menu's items: the four desktops' pictures, then the layouts. */
-#define ARRANGE_ITEM_DESKTOP	0U
-#define ARRANGE_ITEM_LAYOUT	KWL_APPS_DESKTOPS
-#define ARRANGE_ITEMS		(KWL_APPS_DESKTOPS + KWL_ARRANGE_LAYOUTS)
+/* The menu's items: the layouts, in their order. */
+#define ARRANGE_ITEMS		KWL_ARRANGE_LAYOUTS
 #define ARRANGE_ITEM_NONE	(-1)
 
 /*
@@ -129,15 +131,6 @@ struct arrange_swap {
 	unsigned desktop;
 	int32_t dx;
 	int32_t dy;
-};
-
-/* The names of the layouts as the menu shows them (translated by kl_tr). */
-static const char *const arrange_labels[KWL_ARRANGE_LAYOUTS] = {
-	"Side by Side",
-	"Stacked",
-	"One on the Right",
-	"One on the Left",
-	"Grid"
 };
 
 /*
@@ -254,8 +247,8 @@ kwl_arrange_button(
 }
 
 /*
- * Handles a key while the menu is open: Up and Down move the selection,
- * Enter acts on it, Esc closes the menu.  Returns 1 when the key is the
+ * Handles a key while the menu is open: Left and Right (and Up and Down)
+ * move the selection, Enter acts on it, Esc closes the menu.  Returns 1 when the key is the
  * menu's (every key while it is open).
  */
 int
@@ -278,12 +271,14 @@ kwl_arrange_key(
 		arrange_menu_close(server, "key");
 		break;
 	case ARRANGE_KEY_UP:
+	case ARRANGE_KEY_LEFT:
 		arrange_menu.selected--;
 		if (arrange_menu.selected < 0)
 			arrange_menu.selected = (int)ARRANGE_ITEMS - 1;
 		server->dirty = 1;
 		break;
 	case ARRANGE_KEY_DOWN:
+	case ARRANGE_KEY_RIGHT:
 		arrange_menu.selected++;
 		if (arrange_menu.selected >= (int)ARRANGE_ITEMS)
 			arrange_menu.selected = 0;
@@ -647,9 +642,8 @@ kwl_arrange_moved(
 
 /*
  * Draws the arrangement menu, when it is open, under the desktops' pill:
- * the desktops' pictures (the one shown in the accent) and the layouts'
- * rows, each with its small drawing; the item under the pointer or
- * selected by the keyboard lit in the accent.
+ * frosted glass with the five layouts' small drawings in a row, the one
+ * under the pointer or selected by the keyboard lit in the accent.
  */
 void
 kwl_arrange_draw(
@@ -658,7 +652,6 @@ kwl_arrange_draw(
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
-	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
 	struct glass_shape shape;
 	struct kwl_object *windows[KWL_ARRANGE_MAX];
 	float accent[4];
@@ -672,13 +665,12 @@ kwl_arrange_draw(
 	int32_t y;
 	int32_t width;
 	int32_t height;
-	char number[4];
 
 	/* Only an open menu. */
 	if (!arrange_menu.open)
 		return;
 
-	/* The shadow and the white glass, as the network's menu. */
+	/* The shadow and the frosted glass (the 2026-10-07 UAT), as the power dialog's card. */
 	glass_shape_init(&shape, (float)arrange_menu.x, (float)arrange_menu.y + 6.0f, (float)ARRANGE_MENU_WIDTH, (float)arrange_menu.height);
 	shape.quad[0] -= 40.0f;
 	shape.quad[1] -= 40.0f;
@@ -690,16 +682,17 @@ kwl_arrange_draw(
 	shape.color[0] = 0.10f;
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
-	shape.color[3] = 0.24f;
+	shape.color[3] = 0.20f;
 	glass_shape_draw(server, command, &shape);
 	glass_shape_init(&shape, (float)arrange_menu.x, (float)arrange_menu.y, (float)ARRANGE_MENU_WIDTH, (float)arrange_menu.height);
 	shape.mode = MODE_GLASS;
 	shape.radius = ARRANGE_MENU_RADIUS;
+	shape.soft = 1.0f;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
-	shape.color[3] = 0.86f;
-	shape.edge = 0.85f;
+	shape.color[3] = 0.62f;
+	shape.edge = 0.70f;
 	glass_shape_draw(server, command, &shape);
 
 	/* The item under the pointer, or the keyboard's. */
@@ -707,78 +700,32 @@ kwl_arrange_draw(
 	if (over == ARRANGE_ITEM_NONE)
 		over = arrange_menu.selected;
 
-	/* How many windows the layouts would take (none: their rows are faint). */
+	/* How many windows the layouts would take (none: their drawings are faint). */
 	count = arrange_targets(server, windows, KWL_ARRANGE_MAX);
 
-	/* The accent and its ink, for the lit item and the desktop shown. */
+	/* The accent and its ink, for the lit item. */
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, accent);
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, accent_ink);
 
-	/* Each item. */
+	/* Each layout's cell: its drawing in the middle. */
 	for (item = 0U; item < ARRANGE_ITEMS; item++) {
 		arrange_menu_item_rect((int)item, &x, &y, &width, &height);
 
-		/* The lit item is a band of the accent with its ink, as they are. */
+		/* The lit cell is a rounded square of the accent with its ink, as they are. */
 		ink = dark;
 		kept = server->keep_colours;
 		if ((int)item == over) {
 			kept = kwl_accent_as_is(server);
-			glass_draw_solid(server, command, (float)x, (float)y, (float)width, (float)height, 8.0f, accent);
+			glass_draw_solid(server, command, (float)x, (float)y, (float)width, (float)height, 9.0f, accent);
 			ink = accent_ink;
 		}
 
-		/* A desktop's picture: its number, the desktop shown ringed in the accent. */
-		if (item < ARRANGE_ITEM_LAYOUT) {
-			if (item == server->desktop && (int)item != over) {
-				glass_shape_init(&shape, (float)(x + 4), (float)(y + 4), (float)(width - 8), (float)(height - 8));
-				shape.mode = MODE_RING;
-				shape.radius = 8.0f;
-				shape.soft = 1.6f;
-				memcpy(shape.color, accent, sizeof(shape.color));
-				glass_shape_draw(server, command, &shape);
-			}
-			snprintf(number, sizeof(number), "%u", item + 1U);
-			glass_draw_text(server, command, SIZE_TITLE, x + width / 2 - 4, y + height / 2 + 6, number, width, ink);
-			kwl_accent_done(server, kept);
-			continue;
-		}
-
-		/* A layout's row: its drawing and its name, faint with no window to arrange. */
+		/* The drawing, faint with no window to arrange. */
 		if (count == 0U && (int)item != over)
 			ink = soft;
-		arrange_draw_icon(server, command, item - ARRANGE_ITEM_LAYOUT, x + 10, y + (height - ARRANGE_ICON_HEIGHT) / 2, ink, 1.0f);
-		glass_draw_text(server, command, SIZE_BAR, x + 10 + ARRANGE_ICON_WIDTH + 12, y + height / 2 + 5, kl_tr(arrange_labels[item - ARRANGE_ITEM_LAYOUT]), width - ARRANGE_ICON_WIDTH - 30, ink);
+		arrange_draw_icon(server, command, item, x + (width - ARRANGE_ICON_WIDTH) / 2, y + (height - ARRANGE_ICON_HEIGHT) / 2, ink, 1.0f);
 		kwl_accent_done(server, kept);
 	}
-
-	/* The line between the desktops and the layouts. */
-	glass_draw_solid(server, command, (float)(arrange_menu.x + 12), (float)(arrange_menu.y + ARRANGE_MENU_PAD + ARRANGE_MENU_DESKTOPS), (float)(ARRANGE_MENU_WIDTH - 24), 1.0f, 0.0f, line);
-}
-
-/*
- * Draws a desktop's arrangement mark in the desktops' pill (WS181 S6, the
- * 2026-10-07 user decision): the small drawing of its layout over the
- * desktop's slot, while the desktop is in the arrangement mode.  Returns 1
- * when it drew one (the slot's own dot or ring is drawn faint then).
- */
-int
-kwl_arrange_draw_mark(
-	struct kwl_server *server,
-	VkCommandBuffer command,
-	unsigned desktop,
-	int32_t x,
-	int32_t middle,
-	const float *ink)
-{
-	/* Only an arranged desktop. */
-	if (desktop >= KWL_APPS_DESKTOPS || !arrange_desktops[desktop].on)
-		return 0;
-
-	/* Its layout's drawing, in the middle of the slot. */
-	arrange_draw_icon(server, command, arrange_desktops[desktop].layout, x, middle - ARRANGE_ICON_HEIGHT / 2 + 3, ink, 0.9f);
-
-	/* Succeeded: the mark is drawn. */
-	return 1;
 }
 
 /* Opens the menu under the desktops' pill, the keyboard's selection on the first layout; the log names each item's middle (the tests click them). */
@@ -802,21 +749,17 @@ arrange_menu_open(
 	if (arrange_menu.x + ARRANGE_MENU_WIDTH > (int32_t)server->width - 8)
 		arrange_menu.x = (int32_t)server->width - 8 - ARRANGE_MENU_WIDTH;
 	arrange_menu.y = KWL_GLASS_BAR + ARRANGE_MENU_GAP;
-	arrange_menu.height = 2 * ARRANGE_MENU_PAD + ARRANGE_MENU_DESKTOPS + (int32_t)KWL_ARRANGE_LAYOUTS * ARRANGE_MENU_ROW + ARRANGE_MENU_PAD;
+	arrange_menu.height = ARRANGE_MENU_HEIGHT;
 	arrange_menu.open = 1;
 	arrange_menu.pressed = ARRANGE_ITEM_NONE;
-	arrange_menu.selected = (int)ARRANGE_ITEM_LAYOUT;
+	arrange_menu.selected = 0;
 	server->dirty = 1;
 
-	/* The log: the menu, then each item's middle. */
+	/* The log: the menu, then each layout's middle. */
 	printf("KWL ARRANGE menu open x=%d y=%d width=%d height=%d\n", arrange_menu.x, arrange_menu.y, ARRANGE_MENU_WIDTH, arrange_menu.height);
 	for (item = 0U; item < ARRANGE_ITEMS; item++) {
 		arrange_menu_item_rect((int)item, &x, &y, &width, &height);
-		if (item < ARRANGE_ITEM_LAYOUT) {
-			printf("KWL ARRANGE menu item=desktop-%u x=%d y=%d\n", item + 1U, x + width / 2, y + height / 2);
-		} else {
-			printf("KWL ARRANGE menu item=%s x=%d y=%d\n", kwl_arrange_name(item - ARRANGE_ITEM_LAYOUT), x + width / 2, y + height / 2);
-		}
+		printf("KWL ARRANGE menu item=%s x=%d y=%d\n", kwl_arrange_name(item), x + width / 2, y + height / 2);
 	}
 }
 
@@ -859,7 +802,7 @@ arrange_menu_item_at(
 	return ARRANGE_ITEM_NONE;
 }
 
-/* Gives an item's rectangle: the desktops' pictures in a row at the top, the layouts' rows under them. */
+/* Gives a layout's cell in the menu: the five in a row. */
 static void
 arrange_menu_item_rect(
 	int item,
@@ -868,26 +811,14 @@ arrange_menu_item_rect(
 	int32_t *width,
 	int32_t *height)
 {
-	int32_t row_width;
-
-	/* A desktop's picture, the four centred in the top row. */
-	if (item < (int)ARRANGE_ITEM_LAYOUT) {
-		row_width = (int32_t)KWL_APPS_DESKTOPS * ARRANGE_MENU_PICTURE + ((int32_t)KWL_APPS_DESKTOPS - 1) * 8;
-		*x = arrange_menu.x + (ARRANGE_MENU_WIDTH - row_width) / 2 + item * (ARRANGE_MENU_PICTURE + 8);
-		*y = arrange_menu.y + ARRANGE_MENU_PAD + (ARRANGE_MENU_DESKTOPS - ARRANGE_MENU_PICTURE + 4) / 2;
-		*width = ARRANGE_MENU_PICTURE;
-		*height = ARRANGE_MENU_PICTURE - 4;
-		return;
-	}
-
-	/* A layout's row. */
-	*x = arrange_menu.x + ARRANGE_MENU_PAD;
-	*y = arrange_menu.y + 2 * ARRANGE_MENU_PAD + ARRANGE_MENU_DESKTOPS + (item - (int)ARRANGE_ITEM_LAYOUT) * ARRANGE_MENU_ROW;
-	*width = ARRANGE_MENU_WIDTH - 2 * ARRANGE_MENU_PAD;
-	*height = ARRANGE_MENU_ROW;
+	/* The cells from the left, inside the padding. */
+	*x = arrange_menu.x + ARRANGE_MENU_PAD + item * (ARRANGE_MENU_CELL_WIDTH + ARRANGE_MENU_CELL_GAP);
+	*y = arrange_menu.y + ARRANGE_MENU_PAD;
+	*width = ARRANGE_MENU_CELL_WIDTH;
+	*height = ARRANGE_MENU_CELL_HEIGHT;
 }
 
-/* Acts on a menu's item: a desktop's picture switches to it, a layout arranges the windows; the menu closes. */
+/* Acts on a menu's item: the layout arranges the windows of the desktop shown; the menu closes. */
 static void
 arrange_menu_act(
 	struct kwl_server *server,
@@ -900,14 +831,8 @@ arrange_menu_act(
 	/* The menu closes first. */
 	arrange_menu_close(server, "choice");
 
-	/* A desktop's picture: that desktop slides in. */
-	if (item < (int)ARRANGE_ITEM_LAYOUT) {
-		kwl_glass_desktop_turn(server, item, "menu");
-		return;
-	}
-
-	/* Succeeded: a layout arranges the windows. */
-	arrange_apply(server, (unsigned)item - ARRANGE_ITEM_LAYOUT);
+	/* Succeeded: the layout arranges the windows. */
+	arrange_apply(server, (unsigned)item);
 }
 
 /*

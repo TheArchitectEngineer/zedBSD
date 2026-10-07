@@ -24,7 +24,8 @@
 #      ("leave via=pull"), and is not docked again ("KWL GLASS moved", no new "dock ... via=drag").
 #  C. The arrangement (p004, design.md §5.4):
 #  10. A click on the desktops' pill opens the menu ("KWL ARRANGE menu open", arrange-menu.png); "One on the Right"
-#      arranges the three windows ("KWL ARRANGE apply layout=right-main desktop=1 windows=3", arranged.png).
+#      arranges the three windows ("KWL ARRANGE apply layout=right-main desktop=1 windows=3", arranged.png), and each
+#      client draws its slot's size ("KWL GLASS resized ... width=W height=H" after the apply, W x H its last configure's).
 #  11. The left top slot's window dragged by its title onto the right slot: "KWL ARRANGE swap".
 #  12. A double click on a title docks it and ends the mode ("KWL ARRANGE end desktop=1 reason=dock",
 #      "KWL LAYOUT mode=docked"); brought back, every window floats ("windows ... docked=0") and a title's drag is a
@@ -60,6 +61,15 @@ expect_some() { n=$(count "$2"); if [ "${n:-0}" -ge 1 ] 2>/dev/null; then pass "
 expect_more() { n=$(count "$2"); if [ "${n:-0}" -gt "$3" ] 2>/dev/null; then pass "$1"; else fail "$1 ($2: ${n:-?}, expected more than $3)"; fi; }
 # Each wltest's pid is kept in /tmp/NAME.pid when it starts (ps cannot tell two wltests apart).
 open_app() { guest "$env /bin/wltest --app-id=$1 --windowed --size=$3 --color=$2 --frames=3600 --delay-ms=250 > /tmp/$1.log 2>&1 </dev/null & echo \$! > /tmp/$1.pid; sleep 3; echo started" >/dev/null; }
+# fits_slot CLIENT: the client's latest image (KWL GLASS resized), drawn after the latest arrangement, has the size of its latest configure.
+fits_slot() {
+	applied=$(guest "grep -n 'KWL ARRANGE apply ' /tmp/zdesktop.log | tail -1" | sed -n 's/^\([0-9]*\):.*/\1/p')
+	configured=$(guest "grep 'KWL CONFIGURE client=$1 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* width=\([0-9]*\) height=\([0-9]*\) .*/\1x\2/p')
+	resized=$(guest "grep -n 'KWL GLASS resized .*client=$1\$' /tmp/zdesktop.log | tail -1")
+	at=$(echo "$resized" | sed -n 's/^\([0-9]*\):.*/\1/p')
+	drawn=$(echo "$resized" | sed -n 's/.* width=\([0-9]*\) height=\([0-9]*\) .*/\1x\2/p')
+	[ -n "$at" ] && [ -n "$applied" ] && [ "$at" -gt "$applied" ] && [ -n "$drawn" ] && [ "$drawn" = "$configured" ]
+}
 client_of() { guest "grep -n 'KWL MAP client=' /tmp/zdesktop.log | tail -1" | sed -n 's/.*client=\([0-9]*\) .*/\1/p'; }
 # Where a client's window floats now: its latest MAP, float-quiet or moved place (x y of the body).
 place_of() {
@@ -215,7 +225,9 @@ pointer move ${1:-640} ${2:-200} sleep 300 down sleep 60 up sleep 1200
 expect_some arranged 'KWL ARRANGE apply layout=right-main desktop=1 windows=3'
 # The picture is taken once the three windows' glides (180 ms) are over, and their clients have drawn the slot's size.
 i=0; while [ "$(count 'KWL ARRANGE glide-end')" -lt $((${glides:-0} + 3)) ] 2>/dev/null && [ $i -lt 10 ]; do sleep 0.3; i=$((i+1)); done
-sleep 0.5
+i=0; while [ $i -lt 20 ]; do fits_slot "${b:-0}" && fits_slot "${d:-0}" && fits_slot "${e:-0}" && break; sleep 0.4; i=$((i+1)); done
+for c in "${b:-0}" "${d:-0}" "${e:-0}"; do fits_slot "$c" && pass "arranged-size-$c" || fail "arranged-size-$c (its image is not the size of its slot)"; done
+sleep 0.3
 shot c10-arranged
 
 # C11. The window of slot 1 (left top) dragged by its title onto slot 0 (the right one): a swap.
@@ -247,6 +259,9 @@ expect_more moved-after 'KWL GLASS moved' "${moves:-0}"
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
 guest 'grep -E "KWL (LAYOUT|ARRANGE|HOME (open|close|rise)|WISEVIEW|EDGE)|KWL GLASS (dock|undock|moved|move-desktop)|KWL MAP|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+# The whole log and the clients' sizes, for a reader of a failure.
+guest 'cat /tmp/zdesktop.log' > "$out/zdesktop.log"
+guest 'grep -h "WLTEST RESIZE" /tmp/apps.*.log' > "$out/wltest-resize.log"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 
