@@ -1186,6 +1186,7 @@ drv_pcat_ps2_8042_init(
 		.open = mouse_input_open,
 		.close = mouse_input_close,
 	};
+	unsigned long irq;
 	size_t index;
 	int error;
 
@@ -1245,6 +1246,23 @@ drv_pcat_ps2_8042_init(
 
 	/* Lets the controller raise keyboard interrupts. */
 	kern_irq_unmask(PS2_KEYBOARD_IRQ);
+
+	/*
+	 * Empties the output buffer of the bytes typed before the handler was
+	 * in place (BUG-251).  A key held through the boot -- Ctrl or Shift
+	 * for the loader's choice -- leaves a scan code there that nobody
+	 * read: IRQ1 stays raised, the masked edge was lost, and with the
+	 * buffer full the 8042 makes no new edge, so the keyboard would never
+	 * interrupt again.  Reading the buffer after the unmask lowers the
+	 * line, and the next byte raises an edge the handler sees.  The
+	 * mouse is not started yet, so a byte of its port is not wanted
+	 * either.
+	 */
+	irq = spin_lock_irqsave(&controller_lock);
+
+	flush_output();
+
+	spin_unlock_irqrestore(&controller_lock, irq);
 
 	/* Succeeded. */
 	return 0;

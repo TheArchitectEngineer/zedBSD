@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p009 -->
 # ws181-p009: UAT 2026-10-07 の 6 回目（5320 実機）
 
-Status: planned（P2、q852 の後）
+Status: cleared（2026-10-07 Q1 の判定: T1-362 QEMU `ws181-p009: PASS` 全項目 ok、p009-bar.png で仮想 desktop の pill が status の左（x=917）。p009-calendar-arranged.png は calendar の代わりの窓（360 幅）が真ん中の枠より大きく左の窓に重なる（枠より大きい窓は backlog の WS181 p004 の「client の最小の大きさが枠より大きい」のまま）。5320 の UAT はユーザー）
 Disposition: normal
 Parent: [WS181](../ws.md)
 
@@ -32,3 +32,41 @@ Parent: [WS181](../ws.md)
 ## 受け入れ
 
 - build warning 0、host 試験、T1 の QEMU（ws181-guest.sh ほかの追従）、5320 でユーザーの UAT。
+
+## 実装（2026-10-07 P2）
+
+| 項目 | 原因と直し | file |
+| --- | --- | --- |
+| 1. 整列の popup のちらつき | 光る項目は「pointer の下の項目、無ければ keyboard の選択」で、選択は開いた時の 0 のまま。pointer が cell の間の gap を通ると pointer の下が無くなり、一瞬 1 番目が光った。motion で pointer の下の項目を選択にする（gap では最後に指した項目が光ったまま）。描き直しは光る項目が変わった時だけ | `arrange-shell.c` の `kwl_arrange_motion` |
+| 2. 描画が重い疑い | 下を参照。BUG-246 の `arrange_moving` は、描画の中で終わりを記録する状態（menu の settled、fade の closed_ms、窓の glide_ms）が描かれないと戻らず、その間は毎 tick に dirty を立て続けた（例: 整列した直後に別の desktop へ移る・App Home を開く → glide 中の窓が描かれない → 全 frame を描き続ける）。それぞれを時間で区切る（その時間 + 100 ms） | `arrange-shell.c` の `arrange_moving`・`ARRANGE_MOVING_GRACE_MS` |
+| 3. App Home で下端からの 2 本指 swipe up | `kwl_glass_gesture` が App Home の上で BOTTOM2 の始まりを `kwl_home_pad` へ渡す（端の判定は touchpad.c の今の規則、1 本が帯にあればよい）。`kwl_home_pad` は始まりに Home が出ていれば閉じる向き（`home_pad_closing`）: 開き具合 = 1 − travel/40 mm、離した時 0.30 以上か flick 100 mm/s で閉じる（`KWL HOME close via=pad`）、足りなければ開いたまま（`KWL HOME pad stays from=`）。log `KWL HOME pad swipe closing=0|1` | `shell.c`・`home.c` |
+| 4. App Home の頁の端 | 頁の drag の offset を、1 枚目では右へ（前の頁を出す向き）、最後の頁では左へは 0 に留める | `home.c` の `kwl_home_motion` |
+| 5. App Home の上の日付 | `bar_press` の App Home の判定を時計より先に（Home が出ている・開く途中なら何もしない） | `shell.c` の `bar_press` |
+| 6. 整列モードの Calendar | 時計の click の前に `kwl_arrange_join_prepare`（今の desktop が整列なら layout と時刻を覚える）、`kwl_home_open_app` に `running`（既に動いていて前に出したか）を足し、後に `kwl_arrange_join_opened`: 動いていた窓は今すぐ同じ layout で整列し直す（`KWL ARRANGE join via=running`）。起動した時は 10 秒以内にその desktop に map した最初の窓が整列を終えずに加わる（`kwl_arrange_mapped`、`KWL ARRANGE join surface=N via=mapped` の後 `KWL ARRANGE apply …`）。他の新しい窓は今どおり整列を終える（WS181 S6） | `arrange-shell.c`・`home.c`・`shell.c`・`kwl.h` |
+| 7. 仮想 desktop の island | `bar_layout` の desktops の pill を画面の真ん中から status の pill のすぐ左へ（`status_x − BAR_PILL_GAP − 幅`）。docked の時の bar の animation では status と一緒に動く。title と menu の領域（`desktops_line`）は右へ広がる | `shell.c` の `bar_layout` |
+
+### 2. の答え（描画の重さ、「completion wait」）
+
+- 毎 frame の経路（`compose.c`）に、新しい completion の wait は入っていない。frame の fence は前から `kwl_compose_complete` で待つ（fd が読めた時、または `vkGetFenceStatus`）。今日の p004a の変更は、出力の lost の判定と、250 ms ごとの hotplug の fence の `vkGetFenceStatus`（node への ioctl を 1 回）だけ。
+- 見つけて直した物: 上の表の 2.（BUG-246 の毎 tick の dirty が、終わりの描かれない movement で止まらない）。この状態になると、何もしなくても全部の frame を描き続ける（重く感じる・FPS が落ちる原因になりうる）。
+- 未確認: 5320 の session.log（`KWL PERF` の passes・frames・draw_ms）による前後の比較。2026-10-07 の作業中、10.0.30.5 は ssh・ping とも届かなかった。5320 が上がったら Q1 経由で読む: idle で `KWL PERF compose frames=` が 0 に近いか（毎秒数十なら dirty が止まっていない）、App Home の上で draw_ms が増えていないか。
+
+### 確認（2026-10-07）
+
+- build（warning 0）: `make -j16 BUILD=build/ws181-p009 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk build/ws181-p009/bin/wayland`、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws113-p004a-linux all`（どちらも rc 0）。
+- host: `run-host-edge.sh`（69 checks 0 failures）、`run-host-arrange.sh`（1213 checks 0 failures）。変えた所（motion・gesture・bar）の host 試験は無い。QEMU で T1 が確かめる。
+- style-check: 新規の違反 0（arrange-shell.c・home.c・shell.c は前後とも 12 件、既存）。`git diff --check` ok。
+- host の絵 `plan/ws181/tests/p005-host.py`・`p007-host.py` は ws099 の p034 の bar の model（desktops の pill が真ん中）から位置を取るので、7. の新しい位置を描かない（review の絵だけ、合否には使わない）。
+- 1. の確かめのため、光る項目が変わる時に `KWL ARRANGE menu lit item=NAME` を出す。
+- QEMU の試験（T1 が流す）: 新しい `plan/ws181/tests/p009-guest.sh BUILD OUTDIR`（pen の guest、7・1・6・5・4・3 の順、合格は最後の行 `ws181-p009: PASS`、PNG は p009-bar・p009-menu-gap・p009-calendar-arranged・p009-home-first-drag・p009-home-last-drag）。guest に /bin/calendar が無ければ、試験の間だけ wltest の窓を開く script を置く。
+- 未実施: QEMU（T1）、5320 の UAT。
+
+## T1-361 の判定（2026-10-07 Q1）
+
+FAIL（QEMU、pen の guest、main 9588f60bc）: `ws181-p009: FAIL`、14 項目（pill x=591 で 640 より右でない、`menu lit item=rows`・`join via=mapped`・`pad swipe closing=1` などの新しい行が 0）。2 回とも同じ。回帰の ws181-guest.sh・p003-guest.sh は PASS。build/t1-361/bin/wayland の中には新しい文字列（`menu lit`・`pad swipe closing`）があるのに guest の zdesktop.log に出ない → guest で試験の compositor でなく別の compositor が動いた（または試験の compositor の起動が失敗した）疑い。証拠: /home/awe/zedBSD-worktrees/t1/build/t1-361-out2/・t1-361-p009b.log。P2 が BUG-250・251 の後に見る。
+
+## T1-361 の FAIL の解析と試験の直し（2026-10-07 P2）
+
+- source の不具合ではなく、試験の準備の失敗。T1-361 の証拠: p009 の 2 回（`t1-361-out`・`t1-361-out2` の zdesktop.log）は `KWL GLASS desktops x=591`（古い、真ん中の pill）で `menu lit` も 0、その後に同じ guest・同じ `build/t1-361` で流した ws181-guest.sh（`t1-361-out-ws181/zdesktop.log`、22:04）は `desktops x=917`・`menu lit` 1 で、新しい compositor が動いていた。2 つの script の準備（stop_all → `put … /bin/wayland` → 起動）は同じ文面なので、p009 の時は `/bin/wayland` への複写が効かず（`put` は出力を捨てていた）、image の古い compositor を試験した。
+- 推定（未観測）: guest が起動した直後は image 自身の compositor（sessiond の greeter など）が `/bin/wayland` を動かしており、stop_all の後も再起動されて上書きが拒まれた（数分後の ws181-guest.sh の時には止んでいた）。ps の記録が無いので確定していない。
+- 直し（`plan/ws181/tests/p009-guest.sh`）: 試験の compositor は他の process が動かさない名前 `/bin/wayland-p009` に置いて起動する（stop_all・alive の照合もその名前を含める）。`/bin/wayland-p009`・`/bin/wltest` は複写の後に guest と host の `cksum` を比べ、違えば `setup:` の行と `ws181-p009: FAIL` で止まる。scp の出力は `OUTDIR/put.txt`、stop の前後の `ps -A -o pid,args` は `OUTDIR/ps.txt` に残す（image の compositor が動いていたかの確かめ）。`sh -n` ok。QEMU は T1 の再試験。

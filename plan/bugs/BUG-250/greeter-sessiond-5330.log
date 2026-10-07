@@ -1,0 +1,489 @@
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=3
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=8
+KWL STARTUP step=wallpaper ms=182
+KWL STARTUP step=glyphs-text ms=14
+KWL STARTUP step=glyphs-icons ms=4
+KWL STARTUP step=glyphs-mark ms=15
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=34
+KWL STARTUP step=tiles ms=58
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=279 at_ms=27577
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=2 at_ms=27579
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=27579
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=50 role=greeter
+KWL MEDIA volumes=0 icon=0
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=27589
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=50 input_events=0 seat_events=0 at_ms=27593
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=3
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=8
+KWL STARTUP step=wallpaper ms=183
+KWL STARTUP step=glyphs-text ms=13
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=14
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=33
+KWL STARTUP step=tiles ms=60
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=282 at_ms=28877
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=2 at_ms=28879
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=28879
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=51 role=greeter
+KWL MEDIA volumes=0 icon=0
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=28889
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=51 input_events=0 seat_events=0 at_ms=28893
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=4
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=8
+KWL STARTUP step=wallpaper ms=180
+KWL STARTUP step=glyphs-text ms=13
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=14
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=33
+KWL STARTUP step=tiles ms=59
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=282 at_ms=31176
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=1 at_ms=31177
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=31177
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=52 role=greeter
+KWL MEDIA volumes=0 icon=0
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=31188
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=52 input_events=0 seat_events=0 at_ms=31192
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=4
+KWL STARTUP step=vulkan-objects-arrow ms=0
+KWL STARTUP step=wallpaper-picture ms=8
+KWL STARTUP step=wallpaper ms=179
+KWL STARTUP step=glyphs-text ms=14
+KWL STARTUP step=glyphs-icons ms=4
+KWL STARTUP step=glyphs-mark ms=14
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=32
+KWL STARTUP step=tiles ms=59
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=275 at_ms=35469
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=3 at_ms=35472
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=35472
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=54 role=greeter
+KWL MEDIA volumes=0 icon=0
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=35482
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=54 input_events=0 seat_events=0 at_ms=35486
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=4
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=9
+KWL STARTUP step=wallpaper ms=198
+KWL STARTUP step=glyphs-text ms=14
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=15
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=36
+KWL STARTUP step=tiles ms=62
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=305 at_ms=43792
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=1 at_ms=43793
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=43793
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=56 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=3 at_ms=43807
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=56 input_events=0 seat_events=0 at_ms=43815
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=4
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=16
+KWL STARTUP step=wallpaper ms=222
+KWL STARTUP step=glyphs-text ms=23
+KWL STARTUP step=glyphs-icons ms=8
+KWL STARTUP step=glyphs-mark ms=25
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=57
+KWL STARTUP step=tiles ms=97
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=386 at_ms=60219
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=2 at_ms=60221
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=60221
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=58 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=60231
+KWL STARTUP step=output-display ms=1
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=58 input_events=0 seat_events=0 at_ms=60235
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=9
+KWL STARTUP step=vulkan-objects-arrow ms=2
+KWL STARTUP step=wallpaper-picture ms=10
+KWL STARTUP step=wallpaper ms=227
+KWL STARTUP step=glyphs-text ms=16
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=17
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=39
+KWL STARTUP step=tiles ms=68
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=346 at_ms=20968
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=1 at_ms=20969
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=20969
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=42 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=20980
+KWL STARTUP step=output-display ms=1
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=42 input_events=0 seat_events=0 at_ms=20984
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=3
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=9
+KWL STARTUP step=wallpaper ms=244
+KWL STARTUP step=glyphs-text ms=15
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=16
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=37
+KWL STARTUP step=tiles ms=67
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=357 at_ms=22344
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=3 at_ms=22347
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=22347
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=43 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=22357
+KWL STARTUP step=output-display ms=1
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=43 input_events=0 seat_events=0 at_ms=22361
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=3
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=11
+KWL STARTUP step=wallpaper ms=366
+KWL STARTUP step=glyphs-text ms=22
+KWL STARTUP step=glyphs-icons ms=6
+KWL STARTUP step=glyphs-mark ms=19
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=48
+KWL STARTUP step=tiles ms=77
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=496 at_ms=24860
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=2 at_ms=24862
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=24862
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=46 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=1 at_ms=24873
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=46 input_events=0 seat_events=0 at_ms=24876
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=3
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=11
+KWL STARTUP step=wallpaper ms=227
+KWL STARTUP step=glyphs-text ms=16
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=17
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=39
+KWL STARTUP step=tiles ms=68
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=342 at_ms=29221
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=1 at_ms=29222
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=29222
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=50 role=greeter
+KWL MEDIA volumes=0 icon=0
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=29233
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=50 input_events=0 seat_events=0 at_ms=29237
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=4
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=9
+KWL STARTUP step=wallpaper ms=184
+KWL STARTUP step=glyphs-text ms=13
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=14
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=34
+KWL STARTUP step=tiles ms=61
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=288 at_ms=37527
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=3 at_ms=37530
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=37530
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=58 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=37540
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=58 input_events=0 seat_events=0 at_ms=37543
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=4
+KWL STARTUP step=vulkan-objects-arrow ms=0
+KWL STARTUP step=wallpaper-picture ms=9
+KWL STARTUP step=wallpaper ms=182
+KWL STARTUP step=glyphs-text ms=14
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=14
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=34
+KWL STARTUP step=tiles ms=62
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=287 at_ms=53832
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=2 at_ms=53834
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=53834
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=60 role=greeter
+KWL MEDIA volumes=0 icon=0
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL HANDOFF go=1 waited_ms=0 at_ms=53844
+KWL STARTUP step=output-display ms=0
+KWL VULKAN_ERROR operation=format result=-1000000000
+KWL MODE_ERROR errno=5
+KWL EXIT frames=0 error=5 cleanup_failed=1 pid=60 input_events=0 seat_events=0 at_ms=53848
+1791377393 SESSIOND START greeter=/bin/wayland session=/etc/keiland/session pid=23
+1791377394 SESSIOND AUTOLOGIN user=kei
+1791377394 SESSIOND SEAT path=/dev/gpu0 uid=1000 mode=0600
+1791377394 SESSIOND SEAT path=/dev/input/event0 uid=1000 mode=0600
+1791377394 SESSIOND SEAT path=/dev/input/event1 uid=1000 mode=0600
+1791377394 SESSIOND SEAT path=/dev/input/event2 uid=1000 mode=0600
+1791377394 SESSIOND SEAT path=/dev/backlight/backlight0 uid=1000 mode=0600
+1791377394 SESSIOND SEAT path=/dev/smartcard0 uid=1000 mode=0600
+1791377394 SESSIOND SESSION start user=kei uid=1000 pid=26 runtime=/run/user/1000
+1791377394 SESSIOND NETWORK session open uid=1000
+1791377405 SESSIOND HANDOFF session ready=1 waited_ms=11218
+1791377405 SESSIOND HANDOFF go written=3 at_ms=25292
+1791377405 SESSIOND SESSION end user=kei pid=26 status=256
+1791377407 SESSIOND NETWORK session close uid=1000
+1791377407 SESSIOND SEAT path=/dev/gpu0 uid=78 mode=0600
+1791377407 SESSIOND SEAT path=/dev/input/event0 uid=78 mode=0600
+1791377407 SESSIOND SEAT path=/dev/input/event1 uid=78 mode=0600
+1791377407 SESSIOND SEAT path=/dev/input/event2 uid=78 mode=0600
+1791377407 SESSIOND SEAT path=/dev/backlight/backlight0 uid=78 mode=0600
+1791377407 SESSIOND SEAT path=/dev/smartcard0 uid=0 mode=0600
+1791377407 SESSIOND GREETER start pid=50 uid=78
+1791377407 SESSIOND HANDOFF greeter ready: go
+1791377407 SESSIOND GREETER end pid=50 status=256
+1791377407 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=50 input_events=0 seat_events=0 at_ms=27593"
+1791377407 SESSIOND GREETER retry failures=1 delay=1
+1791377408 SESSIOND GREETER start pid=51 uid=78
+1791377408 SESSIOND HANDOFF greeter ready: go
+1791377408 SESSIOND GREETER end pid=51 status=256
+1791377408 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=51 input_events=0 seat_events=0 at_ms=28893"
+1791377408 SESSIOND GREETER retry failures=2 delay=2
+1791377410 SESSIOND GREETER start pid=52 uid=78
+1791377411 SESSIOND HANDOFF greeter ready: go
+1791377411 SESSIOND GREETER end pid=52 status=256
+1791377411 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=52 input_events=0 seat_events=0 at_ms=31192"
+1791377411 SESSIOND GREETER retry failures=3 delay=4
+1791377415 SESSIOND GREETER start pid=54 uid=78
+1791377415 SESSIOND HANDOFF greeter ready: go
+1791377415 SESSIOND GREETER end pid=54 status=256
+1791377415 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=54 input_events=0 seat_events=0 at_ms=35486"
+1791377415 SESSIOND GREETER retry failures=4 delay=8
+1791377423 SESSIOND GREETER start pid=56 uid=78
+1791377423 SESSIOND HANDOFF greeter ready: go
+1791377423 SESSIOND GREETER end pid=56 status=256
+1791377423 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=56 input_events=0 seat_events=0 at_ms=43815"
+1791377423 SESSIOND GREETER retry failures=5 delay=16
+1791377439 SESSIOND GREETER start pid=58 uid=78
+1791377440 SESSIOND HANDOFF greeter ready: go
+1791377440 SESSIOND GREETER end pid=58 status=256
+1791377440 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=58 input_events=0 seat_events=0 at_ms=60235"
+1791377440 SESSIOND CONSOLE reason=greeter-failed failures=6
+1791377440 SESSIOND SEAT path=/dev/gpu0 uid=0 mode=0666
+1791377440 SESSIOND SEAT path=/dev/input/event0 uid=0 mode=0640
+1791377440 SESSIOND SEAT path=/dev/input/event1 uid=0 mode=0640
+1791377440 SESSIOND SEAT path=/dev/input/event2 uid=0 mode=0640
+1791377440 SESSIOND SEAT path=/dev/backlight/backlight0 uid=0 mode=0644
+1791377471 SESSIOND CONSOLE reason=boot-parameters
+1791377835 SESSIOND START greeter=/bin/wayland session=/etc/keiland/session pid=21
+1791377835 SESSIOND AUTOLOGIN user=kei
+1791377835 SESSIOND SEAT path=/dev/gpu0 uid=1000 mode=0600
+1791377835 SESSIOND SEAT path=/dev/input/event0 uid=1000 mode=0600
+1791377835 SESSIOND SEAT path=/dev/input/event1 uid=1000 mode=0600
+1791377835 SESSIOND SEAT path=/dev/input/event2 uid=1000 mode=0600
+1791377835 SESSIOND SEAT path=/dev/backlight/backlight0 uid=1000 mode=0600
+1791377835 SESSIOND SEAT path=/dev/smartcard0 uid=1000 mode=0600
+1791377835 SESSIOND SESSION start user=kei uid=1000 pid=23 runtime=/run/user/1000
+1791377835 SESSIOND NETWORK session open uid=1000
+1791377843 SESSIOND HANDOFF session ready=1 waited_ms=7531
+1791377843 SESSIOND HANDOFF go written=3 at_ms=16300
+1791377845 SESSIOND SESSION end user=kei pid=23 status=256
+1791377847 SESSIOND NETWORK session close uid=1000
+1791377847 SESSIOND SEAT path=/dev/gpu0 uid=78 mode=0600
+1791377847 SESSIOND SEAT path=/dev/input/event0 uid=78 mode=0600
+1791377847 SESSIOND SEAT path=/dev/input/event1 uid=78 mode=0600
+1791377847 SESSIOND SEAT path=/dev/input/event2 uid=78 mode=0600
+1791377847 SESSIOND SEAT path=/dev/backlight/backlight0 uid=78 mode=0600
+1791377847 SESSIOND SEAT path=/dev/smartcard0 uid=0 mode=0600
+1791377847 SESSIOND GREETER start pid=42 uid=78
+1791377847 SESSIOND HANDOFF greeter ready: go
+1791377847 SESSIOND GREETER end pid=42 status=256
+1791377847 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=42 input_events=0 seat_events=0 at_ms=20984"
+1791377847 SESSIOND GREETER retry failures=1 delay=1
+1791377848 SESSIOND GREETER start pid=43 uid=78
+1791377849 SESSIOND HANDOFF greeter ready: go
+1791377849 SESSIOND GREETER end pid=43 status=256
+1791377849 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=43 input_events=0 seat_events=0 at_ms=22361"
+1791377849 SESSIOND GREETER retry failures=2 delay=2
+1791377851 SESSIOND GREETER start pid=46 uid=78
+1791377851 SESSIOND HANDOFF greeter ready: go
+1791377851 SESSIOND GREETER end pid=46 status=256
+1791377851 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=46 input_events=0 seat_events=0 at_ms=24876"
+1791377851 SESSIOND GREETER retry failures=3 delay=4
+1791377855 SESSIOND GREETER start pid=50 uid=78
+1791377856 SESSIOND HANDOFF greeter ready: go
+1791377856 SESSIOND GREETER end pid=50 status=256
+1791377856 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=50 input_events=0 seat_events=0 at_ms=29237"
+1791377856 SESSIOND GREETER retry failures=4 delay=8
+1791377864 SESSIOND GREETER start pid=58 uid=78
+1791377864 SESSIOND HANDOFF greeter ready: go
+1791377864 SESSIOND GREETER end pid=58 status=256
+1791377864 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=58 input_events=0 seat_events=0 at_ms=37543"
+1791377864 SESSIOND GREETER retry failures=5 delay=16
+1791377880 SESSIOND GREETER start pid=60 uid=78
+1791377880 SESSIOND HANDOFF greeter ready: go
+1791377880 SESSIOND GREETER end pid=60 status=256
+1791377880 SESSIOND GREETER failed reason="KWL EXIT frames=0 error=5 cleanup_failed=1 pid=60 input_events=0 seat_events=0 at_ms=53848"
+1791377880 SESSIOND CONSOLE reason=greeter-failed failures=6
+1791377880 SESSIOND SEAT path=/dev/gpu0 uid=0 mode=0666
+1791377880 SESSIOND SEAT path=/dev/input/event0 uid=0 mode=0640
+1791377880 SESSIOND SEAT path=/dev/input/event1 uid=0 mode=0640
+1791377880 SESSIOND SEAT path=/dev/input/event2 uid=0 mode=0640
+1791377880 SESSIOND SEAT path=/dev/backlight/backlight0 uid=0 mode=0644

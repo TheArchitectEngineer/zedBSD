@@ -36,6 +36,7 @@
  */
 
 #include "internal.h"
+#include "display.h"
 #include "scanout.h"
 #include <kern/kcrt.h>
 
@@ -68,15 +69,16 @@
 #define I915_SCANOUT_MAX_WIDTH		8192U
 #define I915_SCANOUT_MAX_HEIGHT		4096U
 
-/* The one display of the resident node and its generation. */
-#define I915_SCANOUT_DISPLAY_ID		1U
-#define I915_SCANOUT_GENERATION		1U
+/* The one display of the capture node (capture.c) and its generation. */
+#define I915_SCANOUT_CAPTURE_DISPLAY_ID	1U
+#define I915_SCANOUT_CAPTURE_GENERATION	1U
 
 /* The alignments the display asks of a foreign linear render target or sampler surface. */
 #define I915_SCANOUT_IMPORT_ALIGN	64U
 
 static int i915_scanout_device_query(void *device, void *session, struct gpu_device_info *request);
 static int i915_scanout_constraints(void *device, void *session, struct gpu_scanout_constraints *request);
+static int i915_scanout_capture_constraints(void *device, void *session, struct gpu_scanout_constraints *request);
 
 /*
  * The display-only pairing operations of the resident node.
@@ -88,6 +90,19 @@ static int i915_scanout_constraints(void *device, void *session, struct gpu_scan
 const struct drv_gpu_scanout_ops drv_i915_scanout_ops = {
 	i915_scanout_device_query,
 	i915_scanout_constraints,
+	NULL
+};
+
+/*
+ * The display-only pairing operations of the capture node.
+ *
+ * The capture display keeps its own fixed identity, which is not the
+ * resident output's connector identity, so its constraints are answered
+ * by its own table.  The table never changes.
+ */
+const struct drv_gpu_scanout_ops drv_i915_capture_scanout_ops = {
+	i915_scanout_device_query,
+	i915_scanout_capture_constraints,
 	NULL
 };
 
@@ -543,9 +558,56 @@ i915_scanout_device_query(
 	return 0;
 }
 
-/* Answers the scanout constraints of the one display: shared or copied, BGRA or RGBA, 64-byte alignments. */
+/*
+ * Answers the scanout constraints of a display of the resident node:
+ * shared or copied, BGRA or RGBA, 64-byte alignments.
+ *
+ * The display is named as the display operations name it (ws113-p011a):
+ * the resident output by its connector's ID and generation, or another
+ * connected connector, which a claim moves the output to.  Returns 0,
+ * ENOENT for no display of the ID, ESTALE for another generation, or
+ * ENXIO for a connector with nothing connected.
+ */
 static int
 i915_scanout_constraints(
+	void *device,
+	void *session,
+	struct gpu_scanout_constraints *request)
+{
+	struct i915_device *owner_device;
+	int resident;
+	int connected;
+	int error;
+
+	UNUSED_PARAMETER(session);
+
+	/* Resolves the display the request names in the node's current topology. */
+	owner_device = device;
+	error = drv_i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
+	if (error != 0)
+		return error;
+
+	/* A connector with nothing connected has no output to present to. */
+	if (!resident && !connected)
+		return ENXIO;
+
+	/* A shared blob is copied by the GPU; a copied frame by the CPU. */
+	request->flags = GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY;
+	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
+
+	/* A linear render target or sampler surface. */
+	request->stride_alignment = I915_SCANOUT_IMPORT_ALIGN;
+	request->offset_alignment = I915_SCANOUT_IMPORT_ALIGN;
+	request->placement = 0U;
+	request->max_dma_address = 0U;
+
+	/* Succeeded: the constraints are filled in. */
+	return 0;
+}
+
+/* Answers the scanout constraints of the capture node's one display: shared or copied, BGRA or RGBA, 64-byte alignments. */
+static int
+i915_scanout_capture_constraints(
 	void *device,
 	void *session,
 	struct gpu_scanout_constraints *request)
@@ -554,9 +616,9 @@ i915_scanout_constraints(
 	UNUSED_PARAMETER(session);
 
 	/* Only the one display of this generation exists. */
-	if (request->display_id != I915_SCANOUT_DISPLAY_ID)
+	if (request->display_id != I915_SCANOUT_CAPTURE_DISPLAY_ID)
 		return ENOENT;
-	if (request->generation != I915_SCANOUT_GENERATION)
+	if (request->generation != I915_SCANOUT_CAPTURE_GENERATION)
 		return ESTALE;
 
 	/* A shared blob is copied by the GPU; a copied frame by the CPU. */

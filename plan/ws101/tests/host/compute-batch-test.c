@@ -94,6 +94,8 @@ drv_i915_gfx_window(
 	uint32_t *generation,
 	const uint32_t *vs_code,
 	uint32_t vs_bytes,
+	const uint32_t *gs_code,
+	uint32_t gs_bytes,
 	const uint32_t *ps_code,
 	uint32_t ps_bytes,
 	struct i915_gfx_op_space *space)
@@ -105,6 +107,8 @@ drv_i915_gfx_window(
 	UNUSED_PARAMETER(generation);
 	UNUSED_PARAMETER(vs_code);
 	UNUSED_PARAMETER(vs_bytes);
+	UNUSED_PARAMETER(gs_code);
+	UNUSED_PARAMETER(gs_bytes);
 	UNUSED_PARAMETER(ps_code);
 	UNUSED_PARAMETER(ps_bytes);
 	UNUSED_PARAMETER(space);

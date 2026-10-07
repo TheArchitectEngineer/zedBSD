@@ -1,0 +1,521 @@
+KWL LANGUAGE language=en from=setting error=0
+KWL SETTINGS open present=1
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=53
+KWL STARTUP step=vulkan-objects-arrow ms=54
+KWL STARTUP step=wallpaper-picture ms=18
+KWL STARTUP step=wallpaper ms=482
+KWL STARTUP step=glyphs-text ms=32
+KWL STARTUP step=glyphs-icons ms=48
+KWL STARTUP step=glyphs-mark ms=17
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=3167
+KWL STARTUP step=tiles ms=76
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=5388 at_ms=9769
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=1 at_ms=9770
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=9770
+KWL STARTUP step=socket ms=0 at_ms=9770
+KWL CLIENT client=1 fd=12 ime=1
+KWL IME started pid=35 client=1 --method=ja
+KWL READY socket=/run/user/1000/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=23 role=normal
+KWL CORNER zone x=1892 y=0 width=28 height=28
+KWL OSK zone kind=flick x=1892 y=1052 size=28
+KWL OSK zone kind=qwerty x=0 y=1052 size=28
+KWL ACTIVATION token client=0 app=KEILAND_DESKTOP_TOKEN=4ebe28948f8aa8ad271a5a81d75c403c exec /bi granted=1 reason=spawn at_ms=9788
+KWL DESKTOP start pid=36 command=/bin/files --desktop at_ms=9792
+KWL ACTIVATION token client=0 app=exec /bin/settings --welcome granted=1 reason=spawn at_ms=9792
+KWL WELCOME start pid=37
+KWL STARTUP step=output-display ms=1611
+KWL STARTUP step=output-pipelines ms=7
+KWL HANDOFF go=1 waited_ms=1 at_ms=11417
+KWL STARTUP step=output-swapchain ms=9
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL MODE window switch_ms=1629 at_ms=11427
+KWL GLASS desktops x=911 step=34 width=30
+KWL NETWORK icon x=1651 y=3 width=30 height=38
+KWL VOLUME icon x=1685 y=3 width=30 height=38
+KWL MEDIA volumes=0 icon=0
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL HOME skip name=X terminal missing=/bin/zterm
+KWL HOME prepared names=17
+KWL VOLUME reachable=1 device=1
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=9
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KEI-IME METHOD 1
+KEI-IME LANGUAGE id=direct
+KWL IME language=direct
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=11
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL IME indicator x=1619 label=A
+KEI-IME POPUP ready=1 error=0
+KEI-IME READY languages=2
+KWL CLIENT client=2 fd=18
+KWL CLIENT client=3 fd=19
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=1
+KWL STARTUP step=output-swapchain ms=11
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL INSET create client=3 inset=23 toplevel=21
+KWL EDIT create client=3 edit=25 toplevel=21
+KWL BOUNDS client=3 surface=19 width=1896 height=960
+KWL CONFIGURE client=3 surface=19 serial=2 width=0 height=0 fullscreen=0
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=1
+KWL STARTUP step=output-swapchain ms=11
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SEAT client=3 pointer=1 keyboard=0 touch=0
+KWL SEAT client=3 pointer=1 keyboard=1 touch=0
+KWL DESKTOP role client=2 surface=19 x=0 y=44 width=1920 height=1036
+KWL SEAT client=2 pointer=1 keyboard=0 touch=0
+KWL SEAT client=2 pointer=1 keyboard=1 touch=0
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL DESKTOP ack serial=3
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=15
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+ZSETTINGS ABOUT system=Kei/zedBSD 1.0.0 Beta 2 kernel=zedBSD 1.0.0-beta2+g2fe4a50 machine=x86_64 cores=12 host=kei
+KWL IMPORT client=3 buffer=32 width=1180 height=800 bytes=3776512
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL IMPORT client=3 buffer=33 width=1180 height=800 bytes=3776512
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+ZSETTINGS PAGE home
+ZSETTINGS WELCOME step=0 name=welcome
+KWL STARTUP step=output-pipelines ms=0
+ZFILES DESKTOP configure x=0 y=44 width=1920 height=1036
+KWL STARTUP step=output-swapchain ms=18
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL IMPORT client=3 buffer=34 width=1180 height=800 bytes=3776512
+KWL IMPORT client=2 buffer=30 width=1920 height=1036 bytes=7958528
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL IMPORT client=3 buffer=35 width=1180 height=800 bytes=3776512
+KWL IMPORT client=2 buffer=31 width=1920 height=1036 bytes=7958528
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+ZFILES LOCATION kind=folder path=/home/kei/Desktop items=0 error=0
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=11
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL IMPORT client=3 buffer=36 width=1180 height=800 bytes=3776512
+KWL IMPORT client=2 buffer=32 width=1920 height=1036 bytes=7958528
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL IMPORT client=3 buffer=37 width=1180 height=800 bytes=3776512
+KWL IMPORT client=2 buffer=33 width=1920 height=1036 bytes=7958528
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=11
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL IMPORT client=2 buffer=34 width=1920 height=1036 bytes=7958528
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL SYSTEM object client=3 get=2 id=42
+KWL SYSTEM object client=3 get=3 id=43
+KWL SYSTEM object client=3 get=4 id=44
+KWL SYSTEM object client=3 get=5 id=45
+KWL SYSTEM object client=3 get=7 id=46
+KWL SYSTEM object client=3 get=8 id=47
+KWL NOTIFY object client=3 id=48
+KWL MAIL object client=3 id=49
+KWL PHONE object client=3 id=50
+KWL PRINTERS object client=3 id=51
+ZSETTINGS SYSTEM open capabilities=0x7efe
+ZSETTINGS NETWORK state reachable=0 connected=0 kind=0 interface= wifi=0 ssid=
+KWL IMPORT client=2 buffer=35 width=1920 height=1036 bytes=7958528
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SETTINGS snapshot client=2 object=39
+KWL SETTINGS snapshot client=3 object=56
+ZSETTINGS LOOK open opacity=100 wallpaper= writable=1
+ZSETTINGS SOUND open live=1 reachable=1 value=100 muted=0
+ZSETTINGS SOUND report reachable=1 device=1 value=100 muted=0
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+ZFILES ZSETTINGS APPEARANCE appearance=0
+ACCENT index=0
+ZSETTINGS GLASS blur=1
+ZSETTINGS GLASS on
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+ZSETTINGS MENU state back=0 forward=0 sidebar=0 page=home
+ZSETTINGS MENU ready items=20
+ZSETTINGS TITLEBAR state back=0 forward=0 parts=1 last=Settings sidebar=0 query= focus=0
+ZSETTINGS TITLEBAR ready controls=6
+ZFILES DESKTOP layout saved=0 error=0
+ZFILES DESKTOP grid width=1920 height=1036 columns=19 rows=9
+ZFILES DESKTOP ready items=0 cells=0 width=1920 height=1036 at_ms=14074 newest_age_ms=-1 hidden=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SYSTEM result client=3 object=42 request=1 applied=0
+ZFILES MENU context-only
+ZFILES DESKTOP startup entered_ms=13239 fonts=546 instance=0 window=137 present=21 app=11 canvas=117 draw=3 shown=15 menus=0
+ZFILES READY width=1920 height=1036 token=-
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+ZSETTINGS LAYOUT page=home controls=2
+ZSETTINGS CONTROL index=9002 x=1089 y=28 width=59 height=32
+ZSETTINGS CONTROL index=9001 x=1094 y=752 width=62 height=32
+ZSETTINGS GLASS panels count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+ZSETTINGS READY width=1180 height=800 glass=1 page=home
+KWL STARTUP step=output-swapchain ms=13
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL DESKTOP drawn at_ms=14121
+ZSETTINGS NETWORK open links=3 dns=1 saved=0
+ZSETTINGS NETWORK wired-link name=ue0 mode=1 address=10.0.30.3 router=10.0.0.1
+KWL MENU set client=3 place=63 menu=64
+KWL MENU commit client=3 menu=64 serial=1 items=41 generation=1
+KWL MENU commit client=3 menu=64 serial=2 items=41 generation=2
+KWL MENU commit client=3 menu=64 serial=3 items=41 generation=3
+KWL TITLEBAR create client=3 titlebar=66 toplevel=21
+KWL TITLEBAR commit client=3 titlebar=66 serial=1 mode=1 controls=0 tabs=0 generation=1
+KWL TITLEBAR commit client=3 titlebar=66 serial=2 mode=1 controls=6 tabs=0 generation=2
+KWL TITLEBAR commit client=3 titlebar=66 serial=3 mode=1 controls=6 tabs=0 generation=3
+KWL TITLEBAR commit client=3 titlebar=66 serial=4 mode=1 controls=6 tabs=0 generation=4
+KWL TITLEBAR commit client=3 titlebar=66 serial=5 mode=1 controls=6 tabs=0 generation=5
+KWL TITLEBAR commit client=3 titlebar=66 serial=6 mode=1 controls=6 tabs=0 generation=6
+KWL GLASS client=3 surface=19 blur=1
+KWL GLASS client=3 surface=19 panels=1 card:0,0,1180,800,16
+KWL DECORATION applied client=3 surface=19 mode=2
+KWL EDIT state client=3 edit=25 actions=0xff flags=0xd
+KWL MAP client=3 surface=19 x=370 y=188
+KWL IME app key=app:settings language=direct from=inherited
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL GLASS glyph codepoint=U+2026 size=0 face=0 cell=0
+KWL TITLEBAR control client=3 surface=19 where=floating id=1 x=493 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=3 surface=19 where=floating id=2 x=527 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=3 surface=19 where=floating id=3 x=561 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=3 surface=19 where=floating id=4 x=601 y=143 width=72 height=30 shown=1
+KWL TITLEBAR control client=3 surface=19 where=floating id=5 x=1142 y=143 width=220 height=30 shown=1
+KWL TITLEBAR control client=3 surface=19 where=floating id=6 x=1366 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=3 surface=19 where=floating id=0 x=1406 y=143 width=30 height=30 shown=1
+KWL APPS bar count=1 hidden=0 desktop=2 apps=settings
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL PERF 5001ms: passes=316 timeouts=281 | poll 82.7% work 67.0%
+KWL PERF compose frames=15 draw_ms=17.71 (acquire 0.14 submit+present 17.17) frame_ms=19.04
+KWL NETWORK state reachable=0 connected=0 kind=none interface= wifi=absent ssid=
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SYSTEM sharing answer error=0
+ZSETTINGS SHARING state available=1 enabled=1 running=1 port=22 allowed=1 fingerprint=SHA256:5wUgx/N//rpIENM4/oFXl+GxgaSwnhTFmLqzLGs0YKo
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=12
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SYSTEM result client=3 object=42 request=2 applied=0
+KWL NETWORK state reachable=0 connected=0 kind=none interface= wifi=absent ssid=
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=1
+KWL STARTUP step=output-swapchain ms=13
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL NETWORK state reachable=1 connected=1 kind=wired interface=ue0 wifi=searching ssid=
+ZSETTINGS NETWORK state reachable=1 connected=1 kind=1 interface=ue0 wifi=2 ssid=
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=13
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SYSTEM result client=3 object=42 request=3 applied=0
+KWL SYSTEM enrolled pin=0 keys=0 listed=0
+ZSETTINGS USERS enrolled changed
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=11
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL SYSTEM result client=3 object=42 request=4 applied=0
+KWL SYSTEM result client=3 object=42 request=5 applied=0
+KWL SYSTEM result client=3 object=42 request=6 applied=0
+KWL PERF 5007ms: passes=497 timeouts=481 | poll 95.1% work 4.6%
+KWL PERF compose frames=5 draw_ms=15.89 (acquire 0.09 submit+present 15.42) frame_ms=16.93
+KWL SYSTEM result client=3 object=42 request=7 applied=0
+KWL SYSTEM result client=3 object=42 request=8 applied=0
+KWL SYSTEM result client=3 object=42 request=9 applied=0
+KWL SYSTEM result client=3 object=42 request=10 applied=0
+KWL SYSTEM result client=3 object=42 request=11 applied=0
+KWL PERF 5004ms: passes=494 timeouts=484 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=12 applied=0
+KWL SYSTEM result client=3 object=42 request=13 applied=0
+KWL SYSTEM result client=3 object=42 request=14 applied=0
+KWL SYSTEM result client=3 object=42 request=15 applied=0
+KWL SYSTEM result client=3 object=42 request=16 applied=0
+KWL PERF 5008ms: passes=472 timeouts=462 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=17 applied=0
+KWL SYSTEM result client=3 object=42 request=18 applied=0
+KWL SYSTEM result client=3 object=42 request=19 applied=0
+KWL SYSTEM result client=3 object=42 request=20 applied=0
+KWL SYSTEM result client=3 object=42 request=21 applied=0
+KWL PERF 5004ms: passes=501 timeouts=491 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=22 applied=0
+KWL SYSTEM result client=3 object=42 request=23 applied=0
+KWL SYSTEM result client=3 object=42 request=24 applied=0
+KWL SYSTEM result client=3 object=42 request=25 applied=0
+KWL SYSTEM result client=3 object=42 request=26 applied=0
+KWL PERF 5001ms: passes=490 timeouts=480 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=27 applied=0
+KWL SYSTEM result client=3 object=42 request=28 applied=0
+KWL SYSTEM result client=3 object=42 request=29 applied=0
+KWL SYSTEM result client=3 object=42 request=30 applied=0
+KWL SYSTEM result client=3 object=42 request=31 applied=0
+KWL PERF 5004ms: passes=509 timeouts=499 | poll 99.0% work 0.7%
+KWL SYSTEM result client=3 object=42 request=32 applied=0
+KWL SYSTEM result client=3 object=42 request=33 applied=0
+KWL SYSTEM result client=3 object=42 request=34 applied=0
+KWL SYSTEM result client=3 object=42 request=35 applied=0
+KWL SYSTEM result client=3 object=42 request=36 applied=0
+KWL PERF 5002ms: passes=508 timeouts=498 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=37 applied=0
+KWL SYSTEM result client=3 object=42 request=38 applied=0
+KWL SYSTEM result client=3 object=42 request=39 applied=0
+KWL SYSTEM result client=3 object=42 request=40 applied=0
+KWL SYSTEM result client=3 object=42 request=41 applied=0
+KWL PERF 5003ms: passes=497 timeouts=487 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=42 applied=0
+KWL SYSTEM result client=3 object=42 request=43 applied=0
+KWL SYSTEM result client=3 object=42 request=44 applied=0
+KWL SYSTEM result client=3 object=42 request=45 applied=0
+KWL SYSTEM result client=3 object=42 request=46 applied=0
+KWL PERF 5002ms: passes=483 timeouts=473 | poll 99.2% work 0.6%
+KWL SYSTEM result client=3 object=42 request=47 applied=0
+KWL SYSTEM result client=3 object=42 request=48 applied=0
+KWL SYSTEM result client=3 object=42 request=49 applied=0
+KWL SYSTEM result client=3 object=42 request=50 applied=0
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=10
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL PERF 5009ms: passes=506 timeouts=498 | poll 98.5% work 1.3%
+KWL PERF compose frames=1 draw_ms=16.13 (acquire 0.07 submit+present 15.77) frame_ms=17.85
+KWL SYSTEM result client=3 object=42 request=51 applied=0
+KWL SYSTEM result client=3 object=42 request=52 applied=0
+KWL SYSTEM result client=3 object=42 request=53 applied=0
+KWL SYSTEM result client=3 object=42 request=54 applied=0
+KWL SYSTEM result client=3 object=42 request=55 applied=0
+KWL PERF 5004ms: passes=485 timeouts=475 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=56 applied=0
+KWL SYSTEM result client=3 object=42 request=57 applied=0
+KWL SYSTEM result client=3 object=42 request=58 applied=0
+KWL SYSTEM result client=3 object=42 request=59 applied=0
+KWL SYSTEM result client=3 object=42 request=60 applied=0
+KWL PERF 5003ms: passes=489 timeouts=479 | poll 99.0% work 0.7%
+KWL SYSTEM result client=3 object=42 request=61 applied=0
+KWL SYSTEM result client=3 object=42 request=62 applied=0
+KWL SYSTEM result client=3 object=42 request=63 applied=0
+KWL SYSTEM result client=3 object=42 request=64 applied=0
+KWL SYSTEM result client=3 object=42 request=65 applied=0
+KWL PERF 5008ms: passes=506 timeouts=496 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=66 applied=0
+KWL SYSTEM result client=3 object=42 request=67 applied=0
+KWL SYSTEM result client=3 object=42 request=68 applied=0
+KWL SYSTEM result client=3 object=42 request=69 applied=0
+KWL SYSTEM result client=3 object=42 request=70 applied=0
+KWL PERF 5001ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=3 object=42 request=71 applied=0
+KWL SYSTEM result client=3 object=42 request=72 applied=0
+KWL SYSTEM result client=3 object=42 request=73 applied=0
+KWL SYSTEM result client=3 object=42 request=74 applied=0
+KWL SYSTEM result client=3 object=42 request=75 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=3 object=42 request=76 applied=0
+KWL SYSTEM result client=3 object=42 request=77 applied=0
+KWL SYSTEM result client=3 object=42 request=78 applied=0
+KWL SYSTEM result client=3 object=42 request=79 applied=0
+KWL SYSTEM result client=3 object=42 request=80 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=81 applied=0
+KWL SYSTEM result client=3 object=42 request=82 applied=0
+KWL SYSTEM result client=3 object=42 request=83 applied=0
+KWL SYSTEM result client=3 object=42 request=84 applied=0
+KWL SYSTEM result client=3 object=42 request=85 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=86 applied=0
+KWL SYSTEM result client=3 object=42 request=87 applied=0
+KWL SYSTEM result client=3 object=42 request=88 applied=0
+KWL SYSTEM result client=3 object=42 request=89 applied=0
+KWL SYSTEM result client=3 object=42 request=90 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=91 applied=0
+KWL SYSTEM result client=3 object=42 request=92 applied=0
+KWL SYSTEM result client=3 object=42 request=93 applied=0
+KWL SYSTEM result client=3 object=42 request=94 applied=0
+KWL SYSTEM result client=3 object=42 request=95 applied=0
+KWL PERF 5000ms: passes=506 timeouts=496 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=96 applied=0
+KWL SYSTEM result client=3 object=42 request=97 applied=0
+KWL SYSTEM result client=3 object=42 request=98 applied=0
+KWL SYSTEM result client=3 object=42 request=99 applied=0
+KWL SYSTEM result client=3 object=42 request=100 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=101 applied=0
+KWL SYSTEM result client=3 object=42 request=102 applied=0
+KWL SYSTEM result client=3 object=42 request=103 applied=0
+KWL SYSTEM result client=3 object=42 request=104 applied=0
+KWL SYSTEM result client=3 object=42 request=105 applied=0
+KWL PERF 5000ms: passes=506 timeouts=496 | poll 99.0% work 0.7%
+KWL SYSTEM result client=3 object=42 request=106 applied=0
+KWL SYSTEM result client=3 object=42 request=107 applied=0
+KWL SYSTEM result client=3 object=42 request=108 applied=0
+KWL SYSTEM result client=3 object=42 request=109 applied=0
+KWL OUTPUT lost operation=acquire result=-1000000000
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=10
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL PERF 5009ms: passes=502 timeouts=494 | poll 98.3% work 1.5%
+KWL PERF compose frames=1 draw_ms=15.49 (acquire 0.07 submit+present 15.11) frame_ms=17.42
+KWL SYSTEM result client=3 object=42 request=110 applied=0
+KWL SYSTEM result client=3 object=42 request=111 applied=0
+KWL SYSTEM result client=3 object=42 request=112 applied=0
+KWL SYSTEM result client=3 object=42 request=113 applied=0
+KWL SYSTEM result client=3 object=42 request=114 applied=0
+KWL PERF 5008ms: passes=506 timeouts=496 | poll 99.1% work 0.7%
+KWL SYSTEM result client=3 object=42 request=115 applied=0
+KWL SYSTEM result client=3 object=42 request=116 applied=0
+KWL SYSTEM result client=3 object=42 request=117 applied=0
+KWL SYSTEM result client=3 object=42 request=118 applied=0
+KWL SYSTEM result client=3 object=42 request=119 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=3 object=42 request=120 applied=0
+KWL SYSTEM result client=3 object=42 request=121 applied=0
+KWL SYSTEM result client=3 object=42 request=122 applied=0
+KWL SYSTEM result client=3 object=42 request=123 applied=0
