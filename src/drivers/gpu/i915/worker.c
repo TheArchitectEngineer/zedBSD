@@ -67,6 +67,14 @@
  */
 #define I915_WORKER_CONTEXTS		32U
 
+/*
+ * The hardware contexts the video decode engine (VCS0) may have at once
+ * (ws083-p003a).  A session gets one only when it makes its first video
+ * session, so few are live; each costs a context image, a ring and a
+ * timeline page like a render one.
+ */
+#define I915_WORKER_VIDEO_CONTEXTS	8U
+
 /* The ring size of a session context. */
 #define I915_WORKER_RING_BYTES		16384U
 
@@ -107,11 +115,15 @@
 #define I915_WORKER_SERVE_PARK		3
 
 /*
- * The hardware context behind one session context of the render engine.
+ * The hardware context behind one session context of the render engine or
+ * of the video decode engine.
  *
- * A record of the worker's table is free while owner is NULL.  Context
- * create fills it under the device mutex and context destroy empties it;
- * the worker uses it only while running a request of that context.
+ * A record of the worker's tables is free while owner is NULL and it is
+ * not retained.  Context create (render) and context attach (video) fill it
+ * under the device mutex and context destroy empties it; the worker uses it
+ * only while running a request of that context.  A video record whose
+ * request hung is retained: cut from its owner and never freed or reused,
+ * as the stopped engine may still read its image and ring.
  */
 struct i915_worker_context {
 	/* The session context this record stands behind; NULL for a free record. */
@@ -149,6 +161,9 @@ struct i915_worker_context {
 
 	/* The one request of the context; the worker runs them one at a time. */
 	struct i915_gt_request rq;
+
+	/* Nonzero once a request of the record hung on the video engine: kept, without an owner, until the device goes. */
+	int retained;
 };
 
 /*
@@ -198,8 +213,21 @@ struct i915_worker {
 	/* The index of the render engine in the GT's engine set. */
 	int render_index;
 
+	/* The index of the video decode engine VCS0 in the GT's engine set; -1 when the GT has none. */
+	int video_index;
+
+	/*
+	 * Nonzero once a request on the video engine hung or failed: no video
+	 * context is attached and no video request runs from then on, until
+	 * the device goes (there is no engine reset yet, ws083-p007).
+	 */
+	int video_dead;
+
 	/* The hardware contexts behind the session contexts of the render engine. */
 	struct i915_worker_context contexts[I915_WORKER_CONTEXTS];
+
+	/* The hardware contexts behind the session contexts of the video decode engine. */
+	struct i915_worker_context video_contexts[I915_WORKER_VIDEO_CONTEXTS];
 
 	/* The requests the kick handed over, oldest first. */
 	struct i915_request *run_head;
@@ -248,8 +276,10 @@ static void i915_worker_run_sync_item(struct i915_worker *worker, struct i915_wo
 static int i915_worker_queue_sync(struct i915_device *device, struct i915_worker_sync *item);
 static int i915_worker_run(struct i915_worker *worker, struct i915_context *context, uint64_t batch_va, int has_batch, uint32_t label);
 static int i915_worker_emit(struct i915_gt_request *rq, uint64_t batch_va, int has_batch);
-static int i915_worker_wait(struct i915_worker *worker, struct i915_gt_request *rq, uint64_t batch_va, uint32_t label);
+static int i915_worker_wait(struct i915_worker *worker, int gt_index, struct i915_gt_request *rq, uint64_t batch_va, uint32_t label);
 static struct i915_worker_context *i915_worker_find(struct i915_worker *worker, const struct i915_context *context);
+static int i915_worker_context_fill(struct i915_device *device, struct i915_worker_context *record, int gt_index, uint32_t sw_id, struct i915_context *context);
+static void i915_worker_video_hung(struct i915_worker *worker, struct i915_worker_context *record, int error);
 
 /*
  * Creates the request worker of a device.
@@ -275,13 +305,23 @@ drv_i915_worker_create(
 	if (worker == NULL)
 		return ENOMEM;
 
-	/* Finds the render engine every request runs on. */
+	/* Finds the render engine the render records' requests run on. */
 	worker->device = device;
 	worker->render_index = -1;
 	engines = &device->gt.engines;
 	for (index = 0U; index < engines->n; index++) {
 		if (engines->ge[index].info->class == I915_RENDER_CLASS) {
 			worker->render_index = (int)index;
+			break;
+		}
+	}
+
+	/* Finds the video decode engine VCS0, which only video sessions use. */
+	worker->video_index = -1;
+	for (index = 0U; index < engines->n; index++) {
+		if (engines->ge[index].info->class == I915_VIDEO_DECODE_CLASS &&
+		    engines->ge[index].info->instance == 0) {
+			worker->video_index = (int)index;
 			break;
 		}
 	}
@@ -595,9 +635,11 @@ drv_i915_worker_context_create(
 	context->sw_id = sw_id;
 
 	/*
-	 * XXX: only the render engine is connected.  Open makes one context per
-	 * engine record, so this is reached on every open; the context is a
-	 * record only and a request on it fails in the worker.
+	 * Open makes one context per engine record, so this is reached on every
+	 * open.  The copy engine's context is a record only (XXX: nothing runs
+	 * on the copy engine), and so is the video engine's until the session's
+	 * first video session attaches its hardware context
+	 * (drv_i915_worker_context_attach, ws083-p003a).
 	 */
 	if (engine->index != I915_ENGINE_RCS0) {
 		context->created = 1U;
@@ -609,10 +651,10 @@ drv_i915_worker_context_create(
 	if (worker == NULL || worker->serving == 0)
 		return ENODEV;
 
-	/* Finds a free context record. */
+	/* Finds a free context record; a retained one is not free. */
 	record = NULL;
 	for (index = 0U; index < I915_WORKER_CONTEXTS; index++) {
-		if (worker->contexts[index].owner == NULL) {
+		if (worker->contexts[index].owner == NULL && worker->contexts[index].retained == 0) {
 			record = &worker->contexts[index];
 			break;
 		}
@@ -624,61 +666,76 @@ drv_i915_worker_context_create(
 		return ENOMEM;
 	}
 
-	kern_memset(record, 0, sizeof(*record));
-
-	/*
-	 * The address space is the session's own (plain memory, built by
-	 * ppgtt.c).  The logical ring context reads exactly one thing from it:
-	 * the top-level table address for PDP0.
-	 */
-	record->vm.top_pd_dma = (uint64_t)vm->pml4.paddr;
-	record->vm.inited = 1;
-
-	/* Allocates the image and the ring on the render engine (intel_context_create()). */
-	error = drv_i915_lrc_alloc(
-		&record->ce,
-		&device->gt.engines.ge[worker->render_index],
-		&record->vm,
-		&device->gt.mem,
-		I915_WORKER_RING_BYTES,
-		sw_id);
-	if (error != 0) {
-		kern_logf("i915: resident shim: intel_context_create failed rc=%d\n", error);
+	/* Fills the hardware context on the render engine. */
+	error = i915_worker_context_fill(device, record, worker->render_index, sw_id, context);
+	if (error != 0)
 		return error;
+
+	/* Succeeded: requests of the session context run in the hardware context. */
+	return 0;
+}
+
+/*
+ * Attaches a hardware context to a session's video engine context.
+ *
+ * Open makes the session's VCS0 context a record only; the first video
+ * session of the session attaches the hardware context here (ws083-p003a).
+ * The caller holds the device mutex, so two attaches of one session make
+ * one.  Returns 0 when the context has one already or got one, EINVAL for
+ * a context of another engine, ENODEV when the worker is not serving or
+ * the GT has no VCS0, EIO once the video engine hung, and ENOMEM when every
+ * video record is in use.
+ */
+int
+drv_i915_worker_context_attach(
+	struct i915_device *device,
+	struct i915_context *context)
+{
+	struct i915_worker *worker;
+	struct i915_worker_context *record;
+	unsigned index;
+	int error;
+
+	/* Only a context of the video engine record is attached here. */
+	if (context->engine == NULL || context->engine->index != I915_ENGINE_VCS0)
+		return EINVAL;
+
+	/* A worker that is not serving, or a GT without VCS0, attaches nothing. */
+	worker = device->worker;
+	if (worker == NULL || worker->serving == 0)
+		return ENODEV;
+	if (worker->video_index < 0)
+		return ENODEV;
+
+	/* A video engine that hung takes no new context. */
+	if (worker->video_dead != 0)
+		return EIO;
+
+	/* A context attached before has its record already. */
+	record = i915_worker_find(worker, context);
+	if (record != NULL)
+		return 0;
+
+	/* Finds a free video record; a retained one is not free. */
+	for (index = 0U; index < I915_WORKER_VIDEO_CONTEXTS; index++) {
+		if (worker->video_contexts[index].owner == NULL && worker->video_contexts[index].retained == 0) {
+			record = &worker->video_contexts[index];
+			break;
+		}
 	}
 
-	/* Allocates the timeline page the breadcrumbs land in. */
-	record->tl_page = drv_i915_gt_object_create(&device->gt.mem, I915_WORKER_TIMELINE_BYTES);
-	if (record->tl_page == NULL) {
-		drv_i915_lrc_release(&record->ce, &device->gt.mem);
+	/* Every video record is in use. */
+	if (record == NULL) {
+		kern_logf("i915: resident shim: no free video context record (%u in use)\n", I915_WORKER_VIDEO_CONTEXTS);
 		return ENOMEM;
 	}
 
-	/* Binds the timeline page into the GGTT, where the breadcrumbs address it. */
-	error = drv_i915_gt_ggtt_bind(&device->gt.mem, record->tl_page);
-	if (error != 0) {
-		drv_i915_gt_object_destroy(&device->gt.mem, record->tl_page);
-		drv_i915_lrc_release(&record->ce, &device->gt.mem);
+	/* Fills the hardware context on the video engine. */
+	error = i915_worker_context_fill(device, record, worker->video_index, context->sw_id, context);
+	if (error != 0)
 		return error;
-	}
 
-	/* Lays out the register state and points the image at the empty ring. */
-	drv_i915_lrc_init_state(&record->ce);
-	(void)drv_i915_lrc_update_regs(&record->ce, record->ce.ring.tail);
-
-	/* The owner makes the record the session context's; the counts keep the worker alive. */
-	record->tl_seqno = 0U;
-	record->owner = context;
-	worker->live_contexts++;
-	worker->contexts_ever++;
-	context->created = 1U;
-	kern_logf("i915: resident shim: context sw_id=%u lrca=%08x pml4=0x%llx ring=%u bytes\n",
-	    sw_id,
-	    record->ce.lrca,
-	    (unsigned long long)record->vm.top_pd_dma,
-	    I915_WORKER_RING_BYTES);
-
-	/* Succeeded: requests of the session context run in the hardware context. */
+	/* Succeeded: requests of the video context run in the hardware context. */
 	return 0;
 }
 
@@ -1370,7 +1427,7 @@ i915_worker_run_sync_item(
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 }
 
-/* Runs one request of a session context on the render engine to its end. */
+/* Runs one request of a session context on its engine (render, or video for the video record) to its end. */
 static int
 i915_worker_run(
 	struct i915_worker *worker,
@@ -1383,16 +1440,35 @@ i915_worker_run(
 	struct i915_worker_context *record;
 	struct i915_gt_request *rq;
 	uint64_t start;
+	int gt_index;
 	int error;
 
 	device = worker->device;
 
-	/* XXX: only the render engine is connected; a request on any other engine record fails. */
-	if (context == NULL ||
-	    context->engine == NULL ||
-	    context->engine->index != I915_ENGINE_RCS0) {
-		kern_logf("i915: resident shim: XXX unimplemented path: request on an engine other than RCS0\n");
+	/* A request needs a context of an engine record. */
+	if (context == NULL || context->engine == NULL)
+		return EINVAL;
+
+	/*
+	 * Picks the GT engine the record's requests run on: the render engine,
+	 * or VCS0 for the video record (ws083-p003a).  XXX: nothing runs on the
+	 * copy engine.
+	 */
+	if (context->engine->index == I915_ENGINE_RCS0) {
+		gt_index = worker->render_index;
+	} else if (context->engine->index == I915_ENGINE_VCS0) {
+		gt_index = worker->video_index;
+	} else {
+		kern_logf("i915: resident shim: XXX unimplemented path: request on the copy engine\n");
 		return ENOTSUP;
+	}
+
+	/* The video engine runs nothing once it hung, nor on a GT without it. */
+	if (context->engine->index == I915_ENGINE_VCS0) {
+		if (gt_index < 0)
+			return ENODEV;
+		if (worker->video_dead != 0)
+			return EIO;
 	}
 
 	/* Finds the hardware context behind the session context. */
@@ -1436,10 +1512,10 @@ i915_worker_run(
 	if (error != 0)
 		return error;
 
-	/* Submits the request through the render engine's execlists. */
+	/* Submits the request through the engine's execlists. */
 	error = drv_i915_execlists_submit(
-		&device->gt.engines.ge[worker->render_index],
-		&device->gt.engines.el[worker->render_index],
+		&device->gt.engines.ge[gt_index],
+		&device->gt.engines.el[gt_index],
 		&device->gt.mmio,
 		rq);
 	if (error != 0) {
@@ -1452,12 +1528,16 @@ i915_worker_run(
 
 	/* Waits for the request to end, counting the engine's time to its context. */
 	start = drv_i915_perf_now();
-	error = i915_worker_wait(worker, rq, batch_va, label);
+	error = i915_worker_wait(worker, gt_index, rq, batch_va, label);
 	record->engine_ns += drv_i915_perf_now() - start;
 	record->engine_runs++;
 
 	/* The engine is done with it, whichever way it ended. */
 	drv_i915_rps_busy_end(&device->gt.init.rps);
+
+	/* A video request that hung or failed stops the video engine and keeps its context (ws083-p003a). */
+	if (error != 0 && context->engine->index == I915_ENGINE_VCS0)
+		i915_worker_video_hung(worker, record, error);
 
 	/* A request that did not end reports why. */
 	if (error != 0)
@@ -1522,6 +1602,7 @@ i915_worker_emit(
 static int
 i915_worker_wait(
 	struct i915_worker *worker,
+	int gt_index,
 	struct i915_gt_request *rq,
 	uint64_t batch_va,
 	uint32_t label)
@@ -1536,8 +1617,8 @@ i915_worker_wait(
 	int error;
 
 	device = worker->device;
-	ge = &device->gt.engines.ge[worker->render_index];
-	el = &device->gt.engines.el[worker->render_index];
+	ge = &device->gt.engines.ge[gt_index];
+	el = &device->gt.engines.el[gt_index];
 
 	/* Looks at the status buffer until the request ends, for at most the timeout. */
 	deadline = sched_ticks() + KERN_MS_TO_TICKS(I915_WORKER_TIMEOUT_MS);
@@ -1680,7 +1761,18 @@ i915_worker_find(
 {
 	unsigned index;
 
-	/* Scans the context table for the record the session context owns. */
+	/* A context of the video engine record has its record in the video table. */
+	if (context->engine != NULL && context->engine->index == I915_ENGINE_VCS0) {
+		for (index = 0U; index < I915_WORKER_VIDEO_CONTEXTS; index++) {
+			if (worker->video_contexts[index].owner == context)
+				return &worker->video_contexts[index];
+		}
+
+		/* No record stands behind the video context (yet). */
+		return NULL;
+	}
+
+	/* Scans the render table for the record the session context owns. */
 	for (index = 0U; index < I915_WORKER_CONTEXTS; index++) {
 		if (worker->contexts[index].owner == context)
 			return &worker->contexts[index];
@@ -1688,4 +1780,112 @@ i915_worker_find(
 
 	/* No record stands behind the session context. */
 	return NULL;
+}
+
+/* Fills a free record with a hardware context on an engine of the GT over the session context's address space, and gives it to the context. */
+static int
+i915_worker_context_fill(
+	struct i915_device *device,
+	struct i915_worker_context *record,
+	int gt_index,
+	uint32_t sw_id,
+	struct i915_context *context)
+{
+	struct i915_worker *worker;
+	int error;
+
+	worker = device->worker;
+	kern_memset(record, 0, sizeof(*record));
+
+	/*
+	 * The address space is the session's own (plain memory, built by
+	 * ppgtt.c).  The logical ring context reads exactly one thing from it:
+	 * the top-level table address for PDP0.
+	 */
+	record->vm.top_pd_dma = (uint64_t)context->vm->pml4.paddr;
+	record->vm.inited = 1;
+
+	/* Allocates the image and the ring on the engine (intel_context_create()); the engine's class picks the image's layout. */
+	error = drv_i915_lrc_alloc(
+		&record->ce,
+		&device->gt.engines.ge[gt_index],
+		&record->vm,
+		&device->gt.mem,
+		I915_WORKER_RING_BYTES,
+		sw_id);
+	if (error != 0) {
+		kern_logf("i915: resident shim: intel_context_create failed rc=%d\n", error);
+		return error;
+	}
+
+	/* Allocates the timeline page the breadcrumbs land in. */
+	record->tl_page = drv_i915_gt_object_create(&device->gt.mem, I915_WORKER_TIMELINE_BYTES);
+	if (record->tl_page == NULL) {
+		drv_i915_lrc_release(&record->ce, &device->gt.mem);
+		return ENOMEM;
+	}
+
+	/* Binds the timeline page into the GGTT, where the breadcrumbs address it. */
+	error = drv_i915_gt_ggtt_bind(&device->gt.mem, record->tl_page);
+	if (error != 0) {
+		drv_i915_gt_object_destroy(&device->gt.mem, record->tl_page);
+		drv_i915_lrc_release(&record->ce, &device->gt.mem);
+		return error;
+	}
+
+	/* Lays out the register state and points the image at the empty ring. */
+	drv_i915_lrc_init_state(&record->ce);
+	(void)drv_i915_lrc_update_regs(&record->ce, record->ce.ring.tail);
+
+	/* The owner makes the record the session context's; the counts keep the worker alive. */
+	record->tl_seqno = 0U;
+	record->owner = context;
+	worker->live_contexts++;
+	worker->contexts_ever++;
+	context->created = 1U;
+	kern_logf("i915: resident shim: context sw_id=%u lrca=%08x pml4=0x%llx ring=%u bytes engine=%s\n",
+	    sw_id,
+	    record->ce.lrca,
+	    (unsigned long long)record->vm.top_pd_dma,
+	    I915_WORKER_RING_BYTES,
+	    device->gt.engines.ge[gt_index].info->name);
+
+	/* Succeeded: the record stands behind the session context. */
+	return 0;
+}
+
+/*
+ * Stops the video engine after a request on it hung or failed: no video
+ * context is attached and no video request runs from now on, and the
+ * record is cut from its session context and retained, never freed or
+ * reused, as the stopped engine may still read its image, ring and batch.
+ * The live count keeps the worker; there is no engine reset yet
+ * (ws083-p007), so this lasts until the device goes.
+ */
+static void
+i915_worker_video_hung(
+	struct i915_worker *worker,
+	struct i915_worker_context *record,
+	int error)
+{
+	uint32_t sw_id;
+
+	/* The context's id, for the log. */
+	sw_id = 0U;
+	if (record->owner != NULL)
+		sw_id = record->owner->sw_id;
+
+	/*
+	 * video_dead stops every later video attach and request; retained
+	 * keeps the record out of the free search and of context destroy, and
+	 * the session context no longer finds it.
+	 */
+	worker->video_dead = 1;
+	record->retained = 1;
+	record->owner = NULL;
+
+	/* The log the tests and the reader of a hang look for. */
+	kern_logf("i915: video: request failed (error %d); video engine stopped, context sw_id=%u retained (no engine reset)\n",
+	    error,
+	    sw_id);
 }

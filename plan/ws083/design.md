@@ -1,6 +1,6 @@
 # WS083 の設計: Vulkan Video の H.264 decode と i915 の VCS・MFX（ws083-p001）
 
-**第 3 版**（2026-10-07 夕、P1）。第 1 版（同日、kernel-and-driver-designer）に design-reviewer の review（§15）の blocking 4・should-fix 17・minor を織り込んだのが第 2 版（反映先は §14）、第 2 版への再 review の blocking 2・should-fix 12・minor 12 を織り込んだのが第 3 版（反映先は §16）。
+**第 3.1 版**（2026-10-07 夕、P1）。第 1 版（同日、kernel-and-driver-designer）に design-reviewer の review（§15）の blocking 4・should-fix 17・minor を織り込んだのが第 2 版（反映先は §14）、第 2 版への再 review の blocking 2・should-fix 12・minor 12 を織り込んだのが第 3 版（反映先は §16）。
 
 範囲は [ws.md](ws.md) と Q1 の 2026-10-07 の指示: p001 はこの設計、p002 は libvulkan の骨組み（`VK_KHR_video_queue`・`VK_KHR_video_decode_queue`・`VK_KHR_video_decode_h264` の queue family・capability・format・session・parameters・memory の bind・`vkCmdBegin/End/ControlVideoCodingKHR`・`vkCmdDecodeVideoKHR` の記録と host の試験）、その後は host で build・試験できる物（VCS の ring・context の立ち上げの code、MFX AVC の command stream の builder と host の fixture）。実機（Dell Latitude 5330、Alder Lake-P、Gen12 LP、`8086:46a8`）の確認は 5330 が戻ってから。最初の到達点は H.264 8 bit 4:2:0 progressive、I frame から、次に P・B と DPB。encode・H.265・AV1 は範囲の外。Mesa・intel-media-driver の code は写さず、公開の PRM と両 project の **事実** だけを使う（§7）。
 
@@ -91,7 +91,7 @@
 | D16 | 実機の判定は **frame ごとの hash**（crop 後の NV12 の Y・UV の SHA-256）を host の ffmpeg の参照と比べる。試験の stream は**小さい合成の stream を tree に**（`plan/ws083/tests/streams/`、作った script・参照の hash と一緒に）。AGENTS.md の「試験の image は tests/ の config.mk と個別の file の複写だけ」に合わせる（HD4） | stream を build/ に置くと image の規則に合わない | 実写の stream・ITU-T の conformance の stream（HD4 の選択肢） |
 | D17 | **kernel は app の値を信じない**: 実行器は MFX の command を組む前に SPS・PPS・picture・slice の値を検べ（§6.6）、合わなければ**その picture を走らせずに飛ばす**（`VK_SUCCESS`、出力の中身は未定義、log の 1 行）。規格は不正な bitstream の decode の結果を未定義とするだけ | WS121 は信頼できない stream を流す。MFX に範囲外の値を渡すと読み越し・hang の危険 | 検べない（第 1 版） |
 | D18 | app の valid usage の違反（未 bind、reset 前、family の混在、slot の image の不一致）で submit を拒む時は `VK_ERROR_DEVICE_LOST`（`vkQueueSubmit` が返せる値）にする。batch の溢れは ENOMEM → `VK_ERROR_OUT_OF_DEVICE_MEMORY`。`i915_command_result` の他の用途は変えない | EINVAL → `VK_ERROR_INITIALIZATION_FAILED` は `vkQueueSubmit` の値でない | 今の写像 |
-| D19 | 実機の確認（p005）と engine reset（p007）までは、実行器が native の語の video の bit を立てるのは **boot の `i915.debug=video`** がある時だけ。`i915_boot_word`（`device.c` 801〜826）は値の完全一致なので、`i915.debug` の値を「`,` で区切った語の並び」として読むよう直す（`display,video` を同時に指定できる）。p008 で既定へ | 実機で未確認の engine を app に見せない。boot の行だけで T1 が試せる | 既定で出す |
+| D19 | 実機の確認（p005）と engine reset（p007）までは、実行器が native の語の video の bit を立てるのは **boot の `i915.debug=video`** がある時だけ。`i915_boot_word`（`device.c` 801〜826）は値の完全一致で、kernel の boot の parser（`src/kern/boot.c` 379〜389）は `i915.debug` に `off`・`display` しか受けない。p003b で boot.c に `video` と `display,video`（`,` で区切った語の並び）を足し、その試験と `i915_boot_word` の語の照合を直す（kernel の boot.c は i915 の外。p003b の範囲に入れる）。p008 で既定へ | 実機で未確認の engine を app に見せない。boot の行だけで T1 が試せる | 既定で出す |
 | D20 | `maxCodedExtent` は 4096x4096 のまま。picture ごとに**総 MB 数 ≤ 36864**（level 5.1 の MaxFS、Frame Size の 16 bit に入る）を D17 で検べる | 縦長の動画（1080x1920 など）を受けたい。Frame Size の field の幅 | 4096x2304 にする |
 | D21 | 使わない参照の address（Reference Picture[i]、Direct MV Buffer[i]）は **0 にせず**、その decode の宛先の image と書き込みの MV buffer を入れる | PPGTT の 0 番地は対応付けが無く、hardware が先読みすると fault | 0（ANV） |
 | D22 | parameters の SPS・PPS は**追加の時に 1 件ずつ**確保する（id → pointer の表、SPS 32・PPS 256 の枠） | 固定の表は SPS 32 + PPS 256 で約 150 KB の kernel memory | 固定の表 |
@@ -106,7 +106,7 @@ capset の native の語に video の bit がある session（§4.3）でだけ�
 
 | 拡張 | 条件 | bit |
 | --- | --- | --- |
-| `VK_KHR_synchronization2` | instance に `VK_KHR_get_physical_device_properties2` | `VULKAN_DEVICE_SYNCHRONIZATION2 = 256` |
+| `VK_KHR_synchronization2` | 一覧に出すのは native の bit がある時だけ。`vkCreateDevice` の時に instance の `VK_KHR_get_physical_device_properties2` を検べる | `VULKAN_DEVICE_SYNCHRONIZATION2 = 256` |
 | `VK_KHR_video_queue` | `VK_KHR_synchronization2` も enable | `VULKAN_DEVICE_VIDEO_QUEUE = 512` |
 | `VK_KHR_video_decode_queue` | `VK_KHR_video_queue` | `VULKAN_DEVICE_VIDEO_DECODE_QUEUE = 1024` |
 | `VK_KHR_video_decode_h264` | `VK_KHR_video_decode_queue` | `VULKAN_DEVICE_VIDEO_DECODE_H264 = 2048` |
@@ -210,8 +210,8 @@ family 1 の pool の **primary** の command buffer に記録する（新 file 
 
 [proposed/README.md](proposed/README.md) の「capset の native の語」のとおり。native の i915 だけが 176 byte（byte 168 tag `0x5a4e4154`、byte 172 の bit 0 = `VIDEO_DECODE_H264`）。libvulkan は vendor 部を `bytes == 168 || bytes == 176` で読み（flags の完全一致の判定は不変）、`bytes == 176` かつ tag が合う時だけ native の bit を読み、`context->video_h264` にする。fork と stock の Venus は 168 以下なので影響しない。実行器が bit を立てる条件は D19。
 
-- **順序**: 古い libvulkan は 176 byte を受けると vendor 部を読まず（`context.c` 170）OPAQUE・strict_queue・quiesce を失い compositor が退行する。i915 の `render/vulkan.c` の `i915_render_capset_fill`（271〜297）を 176 byte にするのは、libvulkan の変更（p002）が main に入った**後**の p003b で、**native の bit が立つ時だけ** 176 byte にする（D19 の門が閉じていれば今の 168 byte のまま）。`plan/ws031/tests/i915-vk-cmd-test.c` 723・734 の 168 の assert は p003b で両方の場合に直す。
-- **timeline**: libvulkan は queue ごとに timeline を予約し（`device.c` 99〜128・587〜619）、kernel は timeline 0〜2 を engine record に写す（`session.c` 60〜95、他は EINVAL）。capset byte 152 の timeline の数は今 1（`vulkan.c` 292）。video の queue を足すと、2 queue の device では video の queue が timeline 2（今は RCS0 の record）になり、同じ process の 2 つ目の device で timeline 3 → EINVAL になる。p003b で: native の bit の時は capset byte 152 を 2 にし、実行器は queue の family で engine を選ぶ（timeline は今の同期の実行では fence の順序だけに使う）、kernel の `drv_i915_engine_for_timeline` は timeline を `mod` で写さず「family 0 の queue → RCS0、family 1 の queue → VCS0」の表を session に持つ。2 つ目の device の扱いは p003b の host 試験で固定する。
+- **順序**: 古い libvulkan は 176 byte を受けると vendor 部を読まず（`context.c` 170）OPAQUE・strict_queue・quiesce を失い compositor が退行する。i915 の `render/vulkan.c` の `i915_render_capset_fill`（271〜297）を 176 byte にするのは、libvulkan の変更（p002）が main に入った**後**の p003b で、**native の bit が立つ時だけ** 176 byte にする（D19 の門が閉じていれば今の 168 byte のまま）。`plan/ws031/tests/i915-vk-cmd-test.c` 733・744 の 168 の assert は p003b で両方の場合に直す。
+- **timeline**（第 3.1 版で直し）: libvulkan は queue ごとに timeline を予約し（`device.c` 99〜128・587〜619）、kernel は timeline 0〜2 を engine record に写す（`session.c` 60〜95、他は EINVAL）。fence の marker は timeline の engine record の queue に積まれ、その record の context で走る（`command.c` 486〜512、`worker.c` 1280）。実行は同期なので timeline は順序にしか効かない。だから **全ての queue（video の queue も）の timeline を RCS0 の record に写す**: kernel の `drv_i915_engine_for_timeline` は「0 → RCS0（今のまま）、1・2 → RCS0（今のまま）、3 以上 → RCS0」とし（2 つ目の device・2 つ目の queue の EINVAL を無くす）、marker が VCS0 で走ることは無い（遅延の VCS0 の context の前の fence、hang した VCS0 への marker の積み込みを避ける）。engine を選ぶのは実行器の submit（queue の family、§3.2）だけ。capset byte 152 は変えない（libvulkan は 0 でないことしか見ない: `context.c` 153〜159、上限は `VULKAN_QUEUE_TIMELINE_COUNT` 64）。
 - **family 1 の出し方**: 実行器は native の bit が立つ時だけ family 1 を返す（D19 の門が閉じていれば family は 1 つ）。D3 の濾しで `queueFlags == 0` の family が見えることは無い。
 
 ## 5. libvulkan の構造
@@ -244,7 +244,7 @@ object の寿命は既存の device の子の形。command の記録は byte 列
 | 割込み | `irq.c` は変えない |
 | forcewake・電源 | service は 5 domain を持ち続ける。batch の先頭で `MI_FORCE_WAKEUP` と `MFX_WAIT`（ANV の Gen12 と同じ、§6.3） |
 | firmware | HuC は要らない見込み（U2、p005 で確かめる） |
-| **hang の封じ込め**（S6、第 3 版で直し） | VCS0 の decode が timeout（ETIMEDOUT）したら: その submit は `VK_ERROR_DEVICE_LOST`、device の **video を死んだ印**にし以後の video の submit を全部 `VK_ERROR_DEVICE_LOST`（render は続ける）。その session を既存の **quarantine**（`reset.c` 368〜397 の `i915_isolate` と同じ印 `session->quarantined = 1`）にし、vm（PPGTT の table）と object（app の VkDeviceMemory を含む）は checked reset まで残る（`session.c` 236〜240・`memory.c` 503〜522 の既存の扱い）。今の close は quarantine でも batch pool と context を解放する（`session.c` 224〜234）ので、video の死んだ印の時は **VCS0 の context（LRC・ring・timeline page）と hang した decode の batch も解放しない**（pool に戻さず device の保留の list に移し log を出す。memory を失うだけで、止まった MFX が解放・再利用された memory を読み書きする危険を避ける）。engine 単位の reset（`GRDOM_MEDIA`、reset_domain 0x8）は HD2 |
+| **hang の封じ込め**（S6、第 3・3.1 版で直し） | VCS0 の decode が timeout（ETIMEDOUT）または CSB の error（EIO、`worker.c` 1563〜1573）で終わったら: その submit は `VK_ERROR_DEVICE_LOST`、device の **video を死んだ印**にし以後の video の submit を全部 `VK_ERROR_DEVICE_LOST`（render は続ける）。その session を既存の **quarantine**（`reset.c` 368〜397 の `i915_isolate` と同じ印 `session->quarantined = 1`）にし、vm（PPGTT の table）と object（app の VkDeviceMemory を含む）は checked reset まで残る（`session.c` 236〜240・`memory.c` 503〜522 の既存の扱い）。今の close は quarantine の時 batch pool は残す（`session.c` 303〜306）が context は解放する（226〜233）ので、video の死んだ印の時は **VCS0 の context の record（LRC・ring・timeline page）を owner から切り離して「保持中」にし**（探索・再利用・解放の対象から外す。session は close の最後に `kern_free` されるので、owner の pointer を残すと同じ address の新しい session に一致する: `worker.c` 1685、`session.c` 248）、log を出す。`live_contexts` は 0 に戻らないので `drv_i915_worker_destroy` は worker を残す（`worker.c` 559〜563）。video の decode の batch の持ち主は **video session**（実行器の video の object）とし、`vkDestroyVideoSessionKHR` と `drv_i915_render_close`（`draw.c` 128〜158 は quarantine を見ない）でも、video が死んでいれば解放せず保留の list に移す。video が死んでいる間は attach と `vkCreateVideoSessionKHR` を拒む（`VK_ERROR_INITIALIZATION_FAILED`）。quarantine はその session の新しい resource・job を拒む（`resource.c` 110・310、`command.c` 419・496）ので「render は続ける」のは**他の session**だけ。checked reset は未実装（`worker.c` 1052〜1060 は ENOTSUP）なので、死んだ印と保持した物は再起動まで残る。p007 の engine reset で `i915_quarantine_release` に保留の list の解放を足す。engine 単位の reset（`GRDOM_MEDIA`、reset_domain 0x8）は HD2 |
 | display | `display/` は触らない（別の担当が変更中） |
 | device-info | 変えない |
 
@@ -254,9 +254,9 @@ object の寿命は既存の device の子の形。command の記録は byte 列
 - `struct i915_video_session`: profile、`max_coded`、`max_dpb_slots`、`max_refs`、bind の表と `bound_mask`、scratch の大きさ、DPB の slot 表 `slots[17]`（`{image, active}`）、`reset_done`。
 - `struct i915_video_params`: SPS・PPS の id → pointer の表（D22）、`update_sequence`。
 - 記録: `enum i915_gfx_op_kind`（`gfx.h` 87）に `VIDEO_BEGIN`・`VIDEO_CONTROL`・`VIDEO_DECODE`・`VIDEO_END`。slice offset の配列は 256 まで記録し、超える picture は §6.6 の 9 で飛ばす。
-- dispatch: `GPU_OP_OWN_FIRST..+9`（物理の問い合わせ・session・parameters）は video の module へ、`+10..+13`（CMD_*）は command buffer の記録へ（`dispatch.c` 142〜166 の command buffer の範囲と同じ扱い）。
+- dispatch: `dispatch.c` の route で video の module へ送るのは `GPU_OP_OWN_FIRST..+9`（物理の問い合わせ・session・parameters）だけ。`+10..+13`（CMD_*）は `drv_i915_gfx_rec_dispatch` が受けるよう、その範囲の検べ（`render/command.c` 284〜288、今は `opcode > GPU_OP_CMD_EXECUTE_COMMANDS` で `handled = 0`）に `0x1000a`〜`0x1000d` を足す（route の COMMAND_BUFFER は `i915_dispatch_unported` で拒む: `dispatch.c` 101〜103）。
 - video の context の表（8）が尽きたら `vkCreateVideoSessionKHR` は `VK_ERROR_OUT_OF_DEVICE_MEMORY`。parameters の update の途中で確保が失敗したら、その update で足した物を全部外して元に戻す（rollback）。wire の `StdVideo*` の bit field の flags は名前で 1 つずつ詰め・読む（memcpy にしない）。
-- submit: queue の family（§3.2）が 1 なら `drv_i915_video_submit`（新）。**video 専用の batch と cursor**（session の render の `work` の batch とは別、`drv_i915_gfx_flush` は RCS0 に固定なので使わない: `draw.c` 406〜437・426）に §6.3 を書き、engine を引数に取る flush で `drv_i915_worker_run_sync(device, &contexts[I915_ENGINE_VCS0], batch_va)`。1 decode が 1 op（固定部約 322 dword + slice ごと 11 dword、256 slice で約 3140 dword、`I915_GFX_OP_MAX_DWORDS` 4096 の中）。batch に次の decode の余地が無ければ flush して続ける（1 MiB を超える command buffer を失敗させない）。既存の溢れの error は ENOSPC（`draw.c` 372〜374）で `i915_command_result` では INITIALIZATION_FAILED になるので、video の submit は自分で `VK_ERROR_OUT_OF_DEVICE_MEMORY`／`DEVICE_LOST` に写す（D18）。
+- submit: queue の family（§3.2）が 1 なら `drv_i915_video_submit`（新）。**video 専用の batch と cursor**（session の render の `work` の batch とは別、`drv_i915_gfx_flush` は RCS0 に固定なので使わない: `draw.c` 406〜437・426）に §6.3 を書き、engine を引数に取る flush で `drv_i915_worker_run_sync(device, &contexts[I915_ENGINE_VCS0], batch_va)`。1 decode が 1 op（固定部約 328 dword（最後の `MI_FLUSH_DW` と BBE を含む） + slice ごと 11 dword、256 slice で約 3140 dword、`I915_GFX_OP_MAX_DWORDS` 4096 の中）。batch に次の decode の余地が無ければ flush して続ける（1 MiB を超える command buffer を失敗させない）。既存の溢れの error は ENOSPC（`draw.c` 372〜374）で `i915_command_result` では INITIALIZATION_FAILED になるので、video の submit は自分で `VK_ERROR_OUT_OF_DEVICE_MEMORY`／`DEVICE_LOST` に写す（D18）。
 
 ### 6.3 MFX AVC VLD の command 列と `StdVideo*` からの写像
 
@@ -280,7 +280,7 @@ object の寿命は既存の device の子の形。command の記録は byte 列
 | 14 | slice ごと: `MFD_AVC_SLICEADDR`（最後以外）と `MFD_AVC_BSD_OBJECT` | 4 / 7 | 1/1/7、1/1/8 | `skew = va − base`（7 の va と base）、start = skew + slice の NAL の先頭（§6.6 の 8 で start code の後ろ）、length = 次の offset（最後は `srcBufferRange`）− その先頭。SLICEADDR は次の slice。BSD_OBJECT の Last Slice・concealment の bit |
 | 15 | `MI_FLUSH_DW` + `MI_BATCH_BUFFER_END` | 5 + 1 | | |
 
-start code は 3 byte（`00 00 01`）。4 byte の start code を指す offset は D17 の検べ（offset の位置の 3 byte が `00 00 01`）で飛ばす picture になる（app の責任、README に書く）。
+start code は §6.6 の 8 で offset から 4 byte 以内の `00 00 01` を探してその後ろから読む（3 byte・4 byte のどちらも受ける。見つからなければ飛ばす）。
 
 ### 6.4 memory の形と大きさ
 
@@ -299,12 +299,12 @@ start code は 3 byte（`00 00 01`）。4 byte の start code を指す offset �
   - Control `RESET`: 全 slot を `active = 0`。
   - Begin: `pReferenceSlots[]` を scope の bind の一覧として覚える。`slotIndex ≥ 0` かつ resource が NULL の要素はその slot を `active = 0`。`slotIndex ≥ 0` の resource は、その slot が active ならその image と同じでなければ D18。
   - Decode: `pReferenceSlots[i]` は全て Begin で bind され active な slot（でなければ D18）。setup がある時、その resource は Begin で bind 済みで `dstPictureResource` と同じ（D18）。decode の後、`flags.is_reference` が立てば `slots[setup.slotIndex] = {image, active 1}`、立たなければ `slots[setup.slotIndex].active = 0`（版 9、U17）。
-  - **slot の遷移は GPU を走らせる前に submit 全体で模擬して検べる**（D18 の拒否は submit の最初に全部決め、一部だけ走ってから拒む形にしない）。D17 で飛ばす decode も slot の遷移（setup・`is_reference`）は行う（次の正しい decode の参照が D18 にかからないように）。
+  - **slot の遷移は GPU を走らせる前に submit 全体で模擬して検べる**。模擬は submit の中の順序で状態を進める（同じ submit の中の「RESET → decode」を受ける: `reset` は「その submit の模擬の中で RESET を過ぎた」で真）。模擬で D18 にする物に、`pReferenceSlots` の `slotIndex` の重複と、bind した memory の storage が外れている（`memory->object == NULL`、`render/memory.c` 191〜208 の blob の detach の後）を足す（D18 の拒否は submit の最初に全部決め、一部だけ走ってから拒む形にしない）。D17 で飛ばす decode も slot の遷移（setup・`is_reference`）は行う（次の正しい decode の参照が D18 にかからないように）。
   - Begin で inactive の slot を `slotIndex ≥ 0` の resource で bind する形は受けるが、規格で許されるかは未確認なので試験で「正しい形」として固定しない（FFmpeg は setup を −1 で bind する）。
   - 各 decode の MFX の表（DPB_STATE・PICID・DIRECTMODE）はその decode の `pReferenceSlots[]` から組む。
 - **scaling list**: SPS・PPS の `scaling_list_present_mask`・`use_default_scaling_matrix_mask` から規格 7.4.2.1.1.1・7.4.2.2 の fall-back 規則 A・B で 4x4 の 6 本・8x8 の 2 本（4:2:0）を導く（PPS が `pic_scaling_matrix_present_flag` なら PPS、でなければ SPS、どちらも無ければ Flat_16）。Default_4x4/8x8 と zig-zag の表（Table 7-3・7-4・8-12・8-13）は `render/video-h264-tables.c`（新、`static const`、出典の表番号）に置く（`.inc` は使わない）。導出の結果は scan 順で、§6.3 の 12 で raster 順に並べ替える。
 - 並行性: object 表は session の mutex、submit は device の worker で直列。decode と描画は互いに待つ（U8）。
-- memory の寿命: 今の buffer・image は bind した `VkDeviceMemory` の record を生の pointer で持ち、`vkFreeMemory` の後も残る（`memory.c` 588・617、397〜411。既存の欠陥、Bug ticket にする）。video は session の memory の bind を **memory の identity** で持ち、submit の時に object 表で引き直す（無ければ D18）。srcBuffer・宛先・参照も submit の時に引き直した memory で address を作る。
+- memory の寿命: 今の buffer・image は bind した `VkDeviceMemory` の record を生の pointer で持ち、`vkFreeMemory` の後も残る（`render/memory.c` 657・687 の bind_image・bind_buffer、free は 397〜411、XXX の注記は 231〜235。既存の欠陥、Bug ticket にする）。video は session の memory の bind を **memory の identity** で持ち、submit の時に object 表で引き直す（無ければ D18）。srcBuffer・宛先・参照も submit の時に引き直した memory で address を作る。
 
 ### 6.6 kernel の検べ（D17、B3）
 
@@ -314,13 +314,13 @@ start code は 3 byte（`00 00 01`）。4 byte の start code を指す offset �
 2. SPS: `chroma_format_idc == 1`、`bit_depth_luma_minus8 == 0`・`chroma == 0`、`frame_mbs_only_flag == 1`、`pic_order_cnt_type ≤ 2`、`log2_max_frame_num_minus4 ≤ 12`、`log2_max_pic_order_cnt_lsb_minus4 ≤ 12`。
 3. MB の幅・高さ（`pic_width_in_mbs_minus1 + 1`、`pic_height_in_map_units_minus1 + 1`）が session の `maxCodedExtent` の MB 以下、宛先と各参照の image の extent の MB 以下、総 MB ≤ 36864。
 4. PPS: `num_ref_idx_l0/l1_default_active_minus1 ≤ 31`、`weighted_bipred_idc ≤ 2`、`pic_init_qp_minus26` が −26〜25、chroma の QP offset が −12〜12。
-5. slice: `sliceCount` 1〜256、`pSliceOffsets` が厳密に増え、各 offset + 4 ≤ `srcBufferRange`、offset の 3 byte が `00 00 01`（memory の CPU view で読む）。`srcBufferOffset + srcBufferRange` が buffer の bind の範囲の中。
+5. slice: `sliceCount` 1 以上、`pSliceOffsets` が厳密に増え、各 offset + 4 ≤ `srcBufferRange`、`srcBufferOffset + srcBufferRange` が buffer の bind の範囲の中（start code の検べは 8）。
 6. 全ての参照の image の pitch・chroma の行（Y Offset for U/V）・format・tiling が宛先と同じ（MFX は宛先の `MFX_SURFACE_STATE` で参照も読むので、小さい参照は範囲の外を読む。ANV `genX_cmd_video.c` 927〜939 も宛先だけを書く）。
 7. 宛先・参照・row store・MV buffer の GPU address が 4 KiB 整列（bind の offset は今 整列を検べない: `memory.c` の `i915_gfx_bind_buffer`・`i915_gfx_bind_image`）、`codedOffset == 0`、`baseArrayLayer == 0`。
 8. slice の長さ: 「次の offset − offset ≥ 4」を明示に（u32 の underflow を防ぐ）。start code は offset から 4 byte 以内で `00 00 01` を探し、その後ろを slice の先頭にする（4 byte の start code `00 00 00 01` も受ける）。
 9. `sliceCount` が 256 を超える picture は飛ばす（1 op は `I915_GFX_OP_MAX_DWORDS` 4096 の中、`heap.h` 110）。規格に合わない点 N4 として README に書く。
 
-値の違反（1〜5・7〜9）は picture を飛ばす。`referenceSlotCount ≤ 16`、`slotIndex` が `0..maxDpbSlots−1`、parameters が Begin の session の物であることは app の valid usage なので D18（submit の前の模擬で拒む）。
+値の違反（1〜9、6 の参照の layout を含む）は picture を飛ばす。`referenceSlotCount ≤ 16`、`slotIndex` が `0..maxDpbSlots−1`、parameters が Begin の session の物であることは app の valid usage なので D18（submit の前の模擬で拒む）。
 
 app の valid usage の違反（§6.5 の D18）は submit を拒む（libvulkan はこれを context 全体の error にする: `sync.c` 456〜470 の `context->error`。browser の GPU context ごと止まるので、bitstream の値の違反は必ず「飛ばす」側に置く）。値の違反は picture を飛ばす（規格は不正な bitstream の結果を未定義とする）。
 
@@ -369,17 +369,17 @@ Venus の経路の回帰だけ: boot-test、compositor の起動、`vkdemo`。`v
 
 ### 8.4 試験の stream（HD4 の既定）
 
-`plan/ws083/tests/make-streams.sh`（新）: ffmpeg の `testsrc`・`mandelbrot` から libx264 で Baseline・Main・High、64x64・352x288（各 5〜15 frame）、`-bf 2`（Main・High だけ、Baseline に B は無い）、`slices=4`、非対称の cqm（`-x264-params cqmfile=…`、script が作る。x264 の cqm は High だけで効くので非対称の scaling list は High の stream だけで試す）、`-fps_mode passthrough`（frame の順を変えない）、`h264_mp4toannexb`。出力は `plan/ws083/tests/streams/`（合計 200 KiB 以下、commit する）、参照は `ffmpeg -i … -f rawvideo -pix_fmt nv12` の frame ごとの SHA-256 を `streams/*.sha256`（POC 順 = 表示順、`vkvideo-probe` も表示順で印字）。x264 が出さない形（long term、frame_num の gap、4 byte の start code）は host の golden（合成の `StdVideo*`）だけで確かめ、実機は HD4 の判断（ITU-T H.264.1 の conformance の stream を使うか）。1080p の性能の stream は 30 frame でも大きいので build/tmp で作り、image に入れる方法は p007 で決める。
+`plan/ws083/tests/make-streams.sh`（新）: ffmpeg の `testsrc`・`mandelbrot` から libx264 で Baseline・Main・High、64x64・352x288（各 5〜15 frame）、`-bf 2`（Main・High だけ、Baseline に B は無い）、`slices=4`、非対称の cqm（`-x264-params cqmfile=…`、script が作る。x264 の cqm は High だけで効くので非対称の scaling list は High の stream だけで試す）、`-fps_mode passthrough`（frame の順を変えない）、`h264_mp4toannexb`。出力は `plan/ws083/tests/streams/`（合計 200 KiB 以下、commit する）、参照は `ffmpeg -i … -f rawvideo -pix_fmt nv12` の frame ごとの SHA-256 を `streams/*.sha256`（POC 順 = 表示順、`vkvideo-probe` も表示順で印字）。x264 が出さない形（long term、frame_num の gap、4 byte の start code）は host の golden（合成の `StdVideo*`）だけで確かめ、実機は HD4 の判断（ITU-T H.264.1 の conformance の stream を使うか）。1080p の性能の stream は 30 frame でも大きいので build/tmp で作り、image に入れる方法は p008 で決める。
 
 ## 9. Phase の分け方と受け入れ（第 2 版で依存を直し、S10・S11）
 
 | Phase | 内容 | 受け入れ | 依存 |
 | --- | --- | --- | --- |
 | ws083-p001 | この設計、design-reviewer、人の判断の提示 | review の反映、Q1 の ACK | — |
-| ws083-p002 | libvulkan の骨組み（§5 の全部）、host の試験 §8.1 の 1 行目 | host の試験 PASS、build warning 0、export の数、PROVENANCE、T1 の §8.2 | p001、H1・H2・H3・HD1・HD6 |
-| ws083-p003a | i915 の VCS の土台（人の判断も wire も要らない）: engine record VCS0 と `i915.c` の class、worker の engine ごとの context 表・`context_attach`・`i915_worker_run` の engine の選択、hang の封じ込め（quarantine と VCS の context・batch の保持）、engine を引数に取る flush。VCS の host の試験 | §8.1 の 6 行目 PASS、vmunix の build warning 0 | p001 |
+| ws083-p002 | libvulkan の骨組み（§5 の全部）、host の試験 §8.1 の 1 行目 | host の試験 PASS、build warning 0、export の数、PROVENANCE（T1 の §8.2 は p004 の受け入れ） | p001、H1・H2・H3・HD1・HD6 |
+| ws083-p003a | i915 の VCS の土台（wire は要らない。hang の封じ込めは HD2 (a) の既定の形で作り、判断が (b) なら p007 を先にする）: engine record VCS0 と `i915.c` の class、worker の engine ごとの context 表・`context_attach`・`i915_worker_run` の engine の選択、hang の封じ込め（quarantine と VCS の context・batch の保持）、engine を引数に取る flush。VCS の host の試験 | §8.1 の 6 行目 PASS、vmunix の build warning 0 | p001 |
 | ws083-p003b | video の object（§6.2・§6.5 の slot 表・§6.6 の検べ）、capset の 176 byte と timeline（§4.3、native の bit の時だけ）、family 1、`vkGetDeviceQueue2` の family。往復の host の試験 | §8.1 の 2・3 行目 PASS、vmunix の build warning 0 | p002（main に入った後）、p003a、H1・HD1 |
-| ws083-p004 | MFX AVC の I frame の builder（`intel/genxml-video.h`、NV12 Tile Y、§6.3）、`genxml-decode.py`、試験の stream と `make-streams.sh`、`userland/tests/vkvideo-probe/`（host で build、§8.2 の `--list` もここで作る） | §8.1 の 4・5 行目 PASS（I frame の 2 本以上）、build warning 0 | p002（`vulkan_video.h`）、p003b、H4・H5・HD4 |
+| ws083-p004 | MFX AVC の I frame の builder（`intel/genxml-video.h`、NV12 Tile Y、§6.3）、`genxml-decode.py`、試験の stream と `make-streams.sh`、`userland/tests/vkvideo-probe/`（host で build、§8.2 の `--list` もここで作る） | §8.1 の 4・5 行目 PASS（I frame の 2 本以上）、build warning 0、T1 の §8.2（QEMU の回帰） | p002（`vulkan_video.h`）、p003b、H4・H5・HD4 |
 | ws083-p005 | 実機: VCS の bring-up、I frame の hash（`i915.debug=video`）、HuC 不要の確認 | §8.3 の 1・2 行目 PASS（T1） | p004、5330 |
 | ws083-p006a | P・B と DPB、scaling list の fall-back、複数 slice の host の golden（実機は要らない） | §8.1（P・B）PASS | p004 |
 | ws083-p006b | P・B と DPB の実機の hash | §8.3 の 3 行目 PASS（T1） | p005、p006a |
@@ -402,7 +402,7 @@ p003a は人の判断も wire も要らないので今から始められる。§
 | HD2 | engine reset の無い VCS に信頼できない動画を流す危険: (a) p002〜p006 は reset 無しで進め（hang は video だけ止め context を残す、§6.1）、WS121・WS122 に video を開く前に `GRDOM_MEDIA` の reset を別 Phase で入れる、(b) reset を先に作る | (a) |
 | HD3 | 5330 が戻った時、5330 の host の Linux で ANV（`ANV_VIDEO_DECODE=1`）に同じ stream を decode させ MFX の field を比べてよいか | 可（5330 が戻ってから） |
 | HD4 | 試験の stream: (a) 小さい合成の stream（合計 200 KiB 以下）と参照の hash を `plan/ws083/tests/streams/` に commit、(b) 加えて ITU-T H.264.1 の conformance の stream（long term・frame_num の gap）を取得して tree の外で使う、(c) どちらも tree に入れない | (a)、(b) は p006 で要れば改めて聞く |
-| HD5 | ベータ2（fg019）で decode した絵を画面に出す経路（SAMPLED・TRANSFER_SRC の usage）が要るか | 要らない（p007 で ws031-p037 と合わせて判断） |
+| HD5 | ベータ2（fg019）で decode した絵を画面に出す経路（SAMPLED・TRANSFER_SRC の usage）が要るか | 要らない（p008 で ws031-p037 と合わせて判断） |
 | HD6 | 規格に合わない点を全部記録して名乗る（N1 apiVersion 1.0、N2 ycbcr の拡張無しで NV12・plane の aspect、N3 OPTIMAL の subresource layout） | 可（H2 (a) と一緒に） |
 
 ## 11. リスクと確かめていない事
@@ -414,11 +414,11 @@ p003a は人の判断も wire も要らないので今から始められる。§
 | U3 | Gen12 LP の MFX の linear の宛先 | Tile Y で進める |
 | U4 | `MI_FORCE_WAKEUP` の要否 | ANV と同じく書く |
 | U5 | MV buffer の整列 4 KiB（ANV は 64 KiB） | 実機で崩れれば 64 KiB |
-| U6 | 4096 幅・level 5.1 の実機の性能 | p007 |
+| U6 | 4096 幅・level 5.1 の実機の性能 | p008 |
 | U7 | Venus の wire の video | D2 で送らない |
-| U8 | 1 worker の同期実行で decode と描画が互いに待つ | p007 で測る |
+| U8 | 1 worker の同期実行で decode と描画が互いに待つ | p008 で測る |
 | U9 | hang の回復が無い | §6.1 の封じ込め、HD2 |
-| U10 | 4 byte の start code の app | D17 で飛ばす、README |
+| U10 | 4 byte の start code の app | §6.6 の 8 で受ける |
 | U11 | 版 9 の意味（`is_reference`）の実装と、1.4.309 の video の構造体の配置が 1.3.269 の core と混ざって問題が無いか | p002 の host の試験と ABI の検査 |
 | U12 | zig-zag と default scaling list の表の誤り | D24 の decoder と非対称の cqm の stream |
 | U13 | libvulkan の export の数の checker の所在 | p002 |
@@ -448,7 +448,7 @@ p003a は人の判断も wire も要らないので今から始められる。§
 
 ## 13. 範囲外
 
-encode、H.265・AV1、interlace（field・MBAFF）、配列の DPB、保護 content、result status query と inline query、decode 出力の sampler・copy（p007 と HD5）、VCS2 の利用、engine reset（HD2）、非同期の実行、Venus での video。
+encode、H.265・AV1、interlace（field・MBAFF）、配列の DPB、保護 content、result status query と inline query、decode 出力の sampler・copy（p008 と HD5）、VCS2 の利用、engine reset（HD2）、非同期の実行、Venus での video。
 
 ## 14. 第 2 版の反映の対応（design-reviewer、2026-10-07）
 
@@ -520,3 +520,19 @@ encode、H.265・AV1、interlace（field・MBAFF）、配列の DPB、保護 con
 | minor 12 transport.c の行 | 事実の記述は 1858〜1893 として読む（§1.4 の 1860〜1893 は範囲の中） |
 
 第 2 版への再 review の全文は Q1 への報告にある（P1 の 2026-10-07 の返却）。要点: B2・B4 は解消、命令の長さ・SHA・版・engine の事実は確かめられた。
+
+## 17. 第 3.1 版（最後の review、2026-10-07）
+
+最後の review（第 3 版へ）: blocking 1・should-fix 7・minor 7。前回の blocking 1 は解消、blocking 2 は方向は正しく保持の穴が 1 つ（S1）。全部を本文に反映した（再 review はしない、P1 の規則の「1 回まで」）。
+
+| 指摘 | 反映 |
+| --- | --- |
+| B1 family 1 の timeline を VCS0 に写すと marker が VCS0 で走る | §4.3 の timeline（全て RCS0 に、byte 152 は変えない） |
+| S1 保持した record が解放済みの session を指す | §6.1（owner から切り離し「保持中」、attach を拒む、worker は残る） |
+| S2 batch pool の事実・video の batch の持ち主・EIO・「render は続ける」の範囲 | §6.1 |
+| S3 boot の parser | D19（`src/kern/boot.c` を p003b に） |
+| S4 dispatch の経路 | §6.2 |
+| S5 start code の矛盾・6 番の分類 | §6.6 の 5・8 と末、§6.3、U10 |
+| S6 §9 の循環 | §9（§8.2 は p004 の受け入れ） |
+| S7 模擬の定義 | §6.5 |
+| minor 1〜7 | proposed/README.md の版、行番号、p008 への参照、p003a の注、sync2 の条件、checked reset（§6.1）、328 dword |

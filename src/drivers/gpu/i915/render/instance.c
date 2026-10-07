@@ -390,8 +390,8 @@ i915_instance_limits(
 	limits->framebufferStencilSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	limits->framebufferNoAttachmentsSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	limits->maxColorAttachments = 4U;
-	limits->sampledImageColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limits->sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+	limits->sampledImageColorSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+	limits->sampledImageIntegerSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	limits->sampledImageDepthSampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	limits->sampledImageStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	limits->storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT;
@@ -806,13 +806,24 @@ i915_instance_image_format_properties(
 
 	/*
 	 * One sample; two or four for an optimal 2D image that is rendered to
-	 * and neither sampled nor stored; a resource of up to 1 GiB.
+	 * and not stored: a colour image may also be sampled (texelFetch of a
+	 * sampler2DMS reads its samples as layers, ws075-p006), a depth or
+	 * stencil one not (its samples are interleaved); a resource of up to
+	 * 1 GiB.
 	 */
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	if (type == VK_IMAGE_TYPE_2D && tiling == VK_IMAGE_TILING_OPTIMAL &&
-	    (features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) != 0U &&
-	    (usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT)) == 0U)
-		image.sampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+	if (type == VK_IMAGE_TYPE_2D &&
+	    tiling == VK_IMAGE_TILING_OPTIMAL &&
+	    (usage & VK_IMAGE_USAGE_STORAGE_BIT) == 0U) {
+		if ((features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0U) {
+			/* A colour target, sampled or not. */
+			image.sampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+		} else if ((features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U &&
+			   (usage & VK_IMAGE_USAGE_SAMPLED_BIT) == 0U) {
+			/* A depth or stencil target that is not sampled. */
+			image.sampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
+		}
+	}
 	image.maxResourceSize = 1ULL << 30;
 
 	/* Replies VK_SUCCESS, the present word and the record. */

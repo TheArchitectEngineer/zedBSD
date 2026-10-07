@@ -138,7 +138,8 @@ drv_i915_publish(
 	 * Fills the engine records.
 	 *
 	 * XXX: the records only number and queue requests; the request worker
-	 * runs them, and only on the render engine.
+	 * runs them, on the render engine and (synchronous batches of a video
+	 * session) on the video engine.
 	 */
 	for (index = 0U; index < I915_ENGINE_COUNT; index++) {
 		engine = &device->engines[index];
@@ -146,9 +147,11 @@ drv_i915_publish(
 		engine->device = device;
 		engine->index = index;
 
-		/* The first record is the render engine, the second the copy engine. */
+		/* The first record is the render engine, the second the copy engine, the third the video decode engine. */
 		if (index == I915_ENGINE_RCS0) {
 			engine->class = I915_CLASS_RENDER;
+		} else if (index == I915_ENGINE_VCS0) {
+			engine->class = I915_CLASS_VIDEO;
 		} else {
 			engine->class = I915_CLASS_COPY;
 		}
