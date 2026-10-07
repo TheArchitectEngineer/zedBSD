@@ -15,8 +15,11 @@
 #      Ctrl+Alt+Shift+Left.
 #   6. c killed with -9: "leave via=closed".
 #  B. Home and the edges (p003, design.md §3.3):
-#   7. The mouse's swipe up from the bottom edge opens Home ("KWL HOME open via=edge", home-edge.png shows no desktop);
-#      its bottom edge's swipe does nothing; a drag down closes it ("KWL HOME close via=pull-down").
+#   7. The mouse's swipe up from the bottom edge opens Home ("KWL HOME open via=edge", home-edge.png shows no desktop;
+#      b7-home-half.png, held half way, shows the desktop smaller in the middle and fading over Home's content coming
+#      forward, ws181-p008); its bottom edge's swipe does nothing; a drag down closes it ("KWL HOME close via=pull-down").
+#      A drag from the top-left corner opens nothing (ws181-p008, WS184 takes it: "KWL HOME press slipped"); a click
+#      there opens Home and a second one closes it ("KWL HOME open via=launcher", "close via=launcher").
 #   8. A finger's swipe down from the top band opens Wiseview ("KWL WISEVIEW gesture via=top-edge", "opening");
 #      a tap closes it.  A finger's tap on the desktops' pill in the band reaches it: the press is given again
 #      ("KWL EDGE band replay release=1") and the arrangement menu opens ("KWL ARRANGE menu open"); Esc closes it.
@@ -177,8 +180,10 @@ guest 'kill -9 $(cat /tmp/apps.c.pid); sleep 2; echo killed' >/dev/null
 expect_more killed-leaves 'KWL LAYOUT leave via=closed front=0' 1
 shot a6-after-kill
 
-# B7. Home from the bottom edge (mouse), its bottom edge does nothing, a drag down closes it.
-pointer $(stroke 640 796 640 356 10 30) up sleep 1500
+# B7. Home from the bottom edge (mouse), held half way for the eye, its bottom edge does nothing, a drag down closes it.
+pointer $(stroke 640 796 640 616 6 30) sleep 400
+shot b7-home-half
+pointer move 640 486 sleep 30 move 640 356 sleep 30 up sleep 1500
 expect_some home-edge 'KWL HOME open via=edge'
 shot b7-home-edge
 closes=$(count 'KWL HOME close via=')
@@ -186,6 +191,16 @@ pointer $(stroke 640 796 640 556 8 40) up sleep 1500
 expect_count home-bottom-nothing 'KWL HOME close via=' "${closes:-0}"
 pointer $(stroke 640 300 640 600 10 30) up sleep 1500
 expect_some home-pull-down 'KWL HOME close via=pull-down'
+
+# B7b. The top-left corner's drag opens nothing (WS184's); its click opens Home, a second click closes it.
+opens=$(count 'KWL HOME open via=')
+pointer $(stroke 8 8 300 300 10 30) up sleep 1000
+expect_some corner-slipped 'KWL HOME press slipped'
+expect_count corner-drag-no-home 'KWL HOME open via=' "${opens:-0}"
+pointer move 8 8 sleep 300 down sleep 60 up sleep 1200
+expect_some corner-click-opens 'KWL HOME open via=launcher'
+pointer move 8 8 sleep 300 down sleep 60 up sleep 1200
+expect_some corner-click-closes 'KWL HOME close via=launcher'
 
 # B8. Wiseview from the top band (a finger), closed by a tap; a tap on the clock in the band reaches it.
 touches "down 1 640 4|swipe 0 200 8 30|up 1"
@@ -263,12 +278,12 @@ expect_more moved-after 'KWL GLASS moved' "${moves:-0}"
 # 13. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
-guest 'grep -E "KWL (LAYOUT|ARRANGE|HOME (open|close|rise)|WISEVIEW|EDGE)|KWL GLASS (dock|undock|moved|move-desktop)|KWL MAP|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL (LAYOUT|ARRANGE|HOME (open|close|rise|press)|WISEVIEW|EDGE)|KWL GLASS (dock|undock|moved|move-desktop)|KWL MAP|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 # The whole log and the clients' sizes, for a reader of a failure.
 guest 'cat /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest 'grep -h "WLTEST RESIZE" /tmp/apps.*.log' > "$out/wltest-resize.log"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 
-echo "ws181-guest: status $status (outputs in $out; a1-windowed, a6-after-kill, b7-home-edge, b8-wiseview-top, c10-menu-opening, c10-arrange-menu, c10-arranged, c11-swapped .png for the eye)"
+echo "ws181-guest: status $status (outputs in $out; a1-windowed, a6-after-kill, b7-home-half, b7-home-edge, b8-wiseview-top, c10-menu-opening, c10-arrange-menu, c10-arranged, c11-swapped .png for the eye)"
 exit $status

@@ -14,5 +14,5 @@ extra=${EXTRA_CFLAGS:-}
 flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -I $root/userland/desktop/wayland"
 $cc $flags $extra -c "$root/userland/desktop/wayland/edge.c" -o "$out/edge.o"
 $cc $flags $extra -c "$root/plan/ws181/tests/host-edge.c" -o "$out/host-edge.o"
-$cc $extra "$out/host-edge.o" "$out/edge.o" -o "$out/host-edge"
+$cc $extra "$out/host-edge.o" "$out/edge.o" -lm -o "$out/host-edge"
 "$out/host-edge"

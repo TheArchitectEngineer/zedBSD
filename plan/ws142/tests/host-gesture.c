@@ -14,8 +14,9 @@
  * two fingers up from the bottom edge, right from the left edge and left
  * from the right edge are BOTTOM2, LEFT2 and RIGHT2, which begin, follow
  * the fingers' travel inward and end with their speed; fingers that land
- * in different reports are still a gesture; two fingers elsewhere, or
- * moving along an edge, scroll; three fingers moving up are UP3, moving
+ * in different reports are still a gesture, and so are two fingers of
+ * which only one is in the edge's band (ws181-p008); two fingers elsewhere,
+ * or moving along an edge, scroll; three fingers moving up are UP3, moving
  * otherwise nothing; a tap of three fingers is TAP3 and pressing the pad
  * with three is the middle button (D1); a finger more gives the gesture
  * up, a finger less or the pad pressed ends or gives it up, and the
@@ -484,7 +485,7 @@ main(void)
 	check(gestures() == 0U, "along the bottom edge: no gesture");
 	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "along the bottom edge: scrolls");
 
-	/* 6. Only one finger in the bottom edge: a scroll. */
+	/* 6. Only one finger in the bottom edge: still BOTTOM2 (ws181-p008, one finger in the band is enough). */
 	start_case(1);
 	y[1] = 500;
 	finger_down(0, x[0], y[0]);
@@ -494,7 +495,24 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gestures() == 0U, "one finger in the edge: no gesture");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_BOTTOM2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "one finger in the bottom edge: bottom2");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "one finger in the bottom edge: does not scroll");
+
+	/* 6b. Only one finger in the left edge, moving right: LEFT2 (ws181-p008). */
+	start_case(1);
+	x[0] = 30;
+	y[0] = 300;
+	x[1] = 300;
+	y[1] = 450;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 360, 0, 12, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_LEFT2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "one finger in the left edge: left2");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "one finger in the left edge: does not scroll");
 
 	/* 7. Two fingers right 30 mm from the left edge: LEFT2. */
 	start_case(1);
@@ -785,7 +803,7 @@ main(void)
 	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "top2: does not scroll");
 	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 0U, "top2: no swipe's end");
 
-	/* 23. From the top edge, but moving up (outward), and one finger only in the top edge: no gesture. */
+	/* 23. From the top edge, but moving up (outward): no gesture; one finger only in the top edge, moving down: TOP2 (ws181-p008). */
 	start_case(1);
 	y[0] = 60;
 	y[1] = 65;
@@ -807,7 +825,8 @@ main(void)
 	finger_up(0);
 	finger_up(1);
 	frame();
-	check(gestures() == 0U, "one finger in the top edge: no gesture");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_TOP2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "one finger in the top edge: top2");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "one finger in the top edge: does not scroll");
 
 	/* 24. A scroll's touch ends with one swipe's end, after its scrolling. */
 	start_case(1);

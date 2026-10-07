@@ -16,6 +16,11 @@
 #  6. A tap of three fingers: "kind=tap3 phase=end" (the switcher comes with ws142-p005).
 #  7. Two fingers in the middle moving up: a scroll, no gesture begins; its lift is told once as "kind=swipe2
 #     phase=end" (ws142-p009: one swipe is one step of Wiseview or the switcher).
+#  7b. One finger only in the right edge's band, two moving left (ws181-p008: one finger in the band is enough):
+#     "kind=right2", from the left desktop the middle one ("KWL GLASS desktop=2 via=pad" once more).
+#  7c. Two fingers down from the top edge, one finger only in its band (ws181-p008): App Home opens following them
+#     ("kind=top2 phase=begin", "KWL HOME pad swipe", "KWL HOME open via=pad"; home-pad.png shows Home); Esc closes
+#     it.  The same, 6 mm and slowly: Home goes back closed ("KWL HOME pad back").
 #  8. A fullscreen window (the bar hidden): the bottom edge's gesture is logged but opens nothing (D6).
 #  9. The compositor stays up, with no ERROR in its log.
 #   plan/ws079/tests/pen-guest.sh start IMAGE
@@ -113,6 +118,28 @@ pad scroll "down 0 500 500; down 1 700 500" "wait 30" "swipe 0 -240 12 16" "up 0
 expect_count scroll-no-gesture 'KWL GESTURE kind=[a-z0-9]* phase=begin' "${before:-0}"
 expect_count scroll-swipe-end 'KWL GESTURE kind=swipe2 phase=end' $(( ${swipes:-0} + 1 ))
 
+# 7b. One finger in the right edge's band: still the edge's gesture, the middle desktop again.
+pad right2-one "down 0 1320 300; down 1 1000 450" "wait 30" "swipe -480 0 12 16" "up 0; up 1"
+expect_count right2-one-begin 'KWL GESTURE kind=right2 phase=begin' 2
+expect_count right2-one-desktop 'KWL GLASS desktop=2 via=pad' 2
+sleep 1
+
+# 7c. Two fingers down from the top edge, one in its band: App Home follows them and opens; Esc closes it; a short slow one goes back.
+pad top2 "down 0 500 10; down 1 700 200" "wait 30" "swipe 0 360 12 16" "up 0; up 1"
+expect_count top2-begin 'KWL GESTURE kind=top2 phase=begin' 1
+expect_count top2-follows 'KWL HOME pad swipe' 1
+expect_count top2-home 'KWL HOME open via=pad' 1
+sleep 1
+shot home-pad
+tap esc
+expect_count top2-esc-closes 'KWL HOME close via=escape' 1
+sleep 1
+pad top2-short "down 0 500 10; down 1 700 200" "wait 30" "swipe 0 72 12 60" "up 0; up 1"
+expect_count top2-short-begin 'KWL GESTURE kind=top2 phase=begin' 2
+expect_count top2-short-back 'KWL HOME pad back' 1
+expect_count top2-short-no-home 'KWL HOME open via=pad' 1
+sleep 1
+
 # 8. A fullscreen window: the gesture opens nothing (D6).
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 expect_count fullscreen-bar-hidden 'KWL GLASS bar hidden fullscreen=' 1
@@ -123,9 +150,9 @@ expect_count fullscreen-no-wiseview 'KWL WISEVIEW gesture via=pad' 3
 # 9. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
 [ "$running" = "1" ] && pass alive || fail alive
-guest 'grep -E "KWL GESTURE|KWL WISEVIEW|KWL GLASS desktop|KWL GLASS bar|KWL INPUT|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
+guest 'grep -E "KWL GESTURE|KWL WISEVIEW|KWL HOME (open|close|pad)|KWL GLASS desktop|KWL GLASS bar|KWL INPUT|ERROR" /tmp/zdesktop.log' > "$out/log.txt"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 
-echo "p003-guest: status $status (outputs in $out; wiseview-pad.png for the eye)"
+echo "p003-guest: status $status (outputs in $out; wiseview-pad.png and home-pad.png for the eye)"
 exit $status
