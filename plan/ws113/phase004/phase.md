@@ -164,3 +164,7 @@ PASS（QEMU Venus、VENUS_DISPLAY=dbus・2 出力、6e8e0bb94）: head 0 1280x80
 - build（warning 0）: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p003.mk [ZEDBSD_TEST_SCREEN_CAPTURE=y] build/p1-wl/bin/wayland`（shot.c と shot-none.c の両方）、`keiland-shot`、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-wl-linux all`。style-check: 新しい file 0 件、変えた file は増えない。`git diff --check` ok。
 - 未実施: QEMU（T1: `displays-p004b.sh` と p004a の回帰 `output-switch-p004a.sh`、1 出力の boot-test）、FreeBSD の build（guest の中、T1）、実機（i915 は p011 の前は head の swapchain が ENOSPC → limited で 1 出力のまま、p011 の後に 5330）。
 - 制限: 拡張の head には窓が出ない（p007）。mirror は anchor の大きさの desktop を各 head へ縮小・拡大（GPU の blit、linear）。head の format が anchor と違う display は使わない（ENOTSUP → limited）。画面の keyboard の panel は anchor だけ。
+
+## T1-365 の判定（2026-10-07 Q1、p004b）
+
+FAIL（QEMU Venus 2 出力、T1-366 と同じ guest で p005 の後）: `displays-p004b.sh` の PLACE が `OK saved=6`（期待 saved=0）、重なる place が `ERROR errno=3`（期待 22）、displays.conf が位置を保たない、mirror の apply も saved=6、再起動で mode=extended。head 1 の抜き差し・生存は ok。回帰の output-switch-p004a・boot-test は PASS。p005 の試験の後の guest の状態の影響は切り分けていない。log: /home/awe/zedBSD-worktrees/t1/build/t1-366/out/displays-p004b.log・-retry.log。FreeBSD の backend-test の host-session・host-power が link で FAIL（`kl_backend_power_parse_outcome` が無い、ws052-p011 の後）。
