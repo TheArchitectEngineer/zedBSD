@@ -365,6 +365,10 @@ kwl_system_bind(
 	if (manager->version >= KL_SYSTEM_SINCE_PRINTERS && printers)
 		bits |= KL_SYSTEM_CAPABILITY_PRINTERS;
 
+	/* The displays, at version 18 (ws113-p005). */
+	if (manager->version >= KL_SYSTEM_SINCE_DISPLAYS)
+		bits |= KL_SYSTEM_CAPABILITY_DISPLAYS;
+
 	/* The administration of the accounts, at version 8 where the system has its tool (ws089-p026). */
 	administer = kl_backend_account_can_administer();
 	if (manager->version >= KL_SYSTEM_SINCE_ADMINISTER && administer)
@@ -429,6 +433,9 @@ kwl_system_request(
 		break;
 	case KWL_SYSTEM_PRINTERS:
 		error = kwl_printers_request(object, opcode, bytes, size);
+		break;
+	case KWL_SYSTEM_DISPLAYS:
+		error = kwl_displays_request(object, opcode, bytes, size);
 		break;
 	default:
 		error = EPROTO;
@@ -727,6 +734,16 @@ system_manager_request(
 		if (manager->version < KL_SYSTEM_SINCE_PRINTERS)
 			return EPROTO;
 		error = kwl_printers_create(manager, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The displays are displays-shell.c's, since version 18 (ws113-p005). */
+	if (opcode == KL_SYSTEM_MANAGER_GET_DISPLAYS) {
+		if (manager->version < KL_SYSTEM_SINCE_DISPLAYS)
+			return EPROTO;
+		error = kwl_displays_create(manager, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;

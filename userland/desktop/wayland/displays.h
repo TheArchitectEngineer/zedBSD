@@ -30,6 +30,7 @@
  *   place=KEY X Y             a display's place in the extended mode (the
  *                             key may hold spaces; X and Y are the last
  *                             two words)
+ *   brightness=N              the built-in panel's light, 0 to 100 (ws113-p005)
  *
  * KEY is a display's persistent connector key (D-ID A2, the display's name,
  * "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B").  Lines of other keys are left
@@ -77,10 +78,15 @@ struct kwl_display_place {
 	int32_t y;
 };
 
-/* The choice the file keeps: the mode, the mirror's anchor (empty: none) and the places. */
+/*
+ * The choice the file keeps: the mode, the mirror's anchor (empty: none),
+ * the built-in panel's light when one was chosen, and the places.
+ */
 struct kwl_display_config {
 	unsigned mode;
 	char anchor[KWL_DISPLAYS_KEY];
+	unsigned has_brightness;
+	unsigned brightness;
 	unsigned count;
 	struct kwl_display_place places[KWL_DISPLAYS_PLACES];
 };

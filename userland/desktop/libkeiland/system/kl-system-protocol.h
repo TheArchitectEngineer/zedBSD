@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 17; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 18; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -26,6 +26,7 @@
  *   request 10 get_mail(new_id kl_system_mail_v1)         since version 15 (ws169-p002)
  *   request 11 get_phone(new_id kl_system_phone_v1)       since version 16 (ws170-p004)
  *   request 12 get_printers(new_id kl_system_printers_v1) since version 17 (ws145-p003)
+ *   request 13 get_displays(new_id kl_system_displays_v1) since version 18 (ws113-p005)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -96,6 +97,32 @@
  *   event   2 result(uint request, uint applied, uint saved)
  *   A new object hears the state last known and a done, and the state is
  *   read again for it; every change comes to every object.
+ *
+ * kl_system_displays_v1 (ws113-p005: the Display page's two modes, places and brightness)
+ *   request 0 destroy
+ *   request 1 apply(uint request, uint serial, uint mode, string places)
+ *                                                     the mode (KL_SYSTEM_DISPLAYS_EXTENDED or _MIRROR)
+ *                                                     and, for the extended mode, places: lines
+ *                                                     "KEY X Y" (a display's key, which may hold
+ *                                                     spaces, and its signed place in the logical
+ *                                                     plane); a display not named keeps its place.
+ *                                                     serial is the snapshot the client saw
+ *   request 2 set_brightness(uint request, string key, uint percent)
+ *                                                     a built-in panel's light, 0 to 100
+ *   event   0 output(string key, string label, int x, int y, uint width, uint height, uint refresh_mhz,
+ *                    uint flags, uint brightness)     one display connected: KL_SYSTEM_DISPLAY_* flags, the
+ *                                                     light in percent (0 without one)
+ *   event   1 done(uint serial, uint mode)            the outputs before it are the whole snapshot
+ *   event   2 result(uint request, uint applied, uint saved)
+ *   A new object hears the snapshot (every display connected, then a
+ *   done); each change (a display plugged or unplugged, a choice applied,
+ *   the light changed by anyone or by the light keys) comes to every
+ *   object as a whole snapshot.  An apply whose serial is not the last
+ *   snapshot's is answered stale and changes nothing; places that overlap,
+ *   do not join or are out of range are answered invalid; a session not
+ *   active (the login screen, a locked one) is denied.  A choice applied
+ *   but not written to displays.conf is answered applied 1, saved 0.  The
+ *   light of a display without one is unsupported.
  *
  * kl_system_audio_v1
  *   request 0 destroy
@@ -225,7 +252,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		17U
+#define KL_SYSTEM_MANAGER_VERSION		18U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -242,6 +269,7 @@
 #define KL_SYSTEM_MANAGER_GET_MAIL		10U
 #define KL_SYSTEM_MANAGER_GET_PHONE		11U
 #define KL_SYSTEM_MANAGER_GET_PRINTERS		12U
+#define KL_SYSTEM_MANAGER_GET_DISPLAYS		13U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -259,6 +287,7 @@
 #define KL_SYSTEM_CAPABILITY_MAIL		0x800U
 #define KL_SYSTEM_CAPABILITY_PHONE		0x1000U
 #define KL_SYSTEM_CAPABILITY_PRINTERS		0x2000U
+#define KL_SYSTEM_CAPABILITY_DISPLAYS		0x4000U
 
 /* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
@@ -283,6 +312,9 @@
 /* Since when the manager has get_printers (ws145-p003). */
 #define KL_SYSTEM_SINCE_PRINTERS		17U
 
+/* The displays (ws113-p005). */
+#define KL_SYSTEM_SINCE_DISPLAYS		18U
+
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
@@ -295,6 +327,31 @@
 #define KL_SYSTEM_MAIL_NAME			"kl_system_mail_v1"
 #define KL_SYSTEM_PHONE_NAME			"kl_system_phone_v1"
 #define KL_SYSTEM_PRINTERS_NAME			"kl_system_printers_v1"
+#define KL_SYSTEM_DISPLAYS_NAME			"kl_system_displays_v1"
+
+/*
+ * kl_system_displays_v1's requests and events (ws113-p005), the modes, a
+ * display's flags (built in, the desktop's anchor, shown now, with a light
+ * the compositor can set, held back by the limit of the displays shown at
+ * once), and the longest key and label an output carries and places a
+ * request carries (with their NULs).
+ */
+#define KL_SYSTEM_DISPLAYS_DESTROY		0U
+#define KL_SYSTEM_DISPLAYS_APPLY		1U
+#define KL_SYSTEM_DISPLAYS_SET_BRIGHTNESS	2U
+#define KL_SYSTEM_DISPLAYS_EVENT_OUTPUT		0U
+#define KL_SYSTEM_DISPLAYS_EVENT_DONE		1U
+#define KL_SYSTEM_DISPLAYS_EVENT_RESULT		2U
+#define KL_SYSTEM_DISPLAYS_EXTENDED		0U
+#define KL_SYSTEM_DISPLAYS_MIRROR		1U
+#define KL_SYSTEM_DISPLAY_INTERNAL		0x1U
+#define KL_SYSTEM_DISPLAY_ANCHOR		0x2U
+#define KL_SYSTEM_DISPLAY_SHOWN			0x4U
+#define KL_SYSTEM_DISPLAY_BACKLIGHT		0x8U
+#define KL_SYSTEM_DISPLAY_LIMITED		0x10U
+#define KL_SYSTEM_DISPLAY_KEY_MAX		64U
+#define KL_SYSTEM_DISPLAY_LABEL_MAX		64U
+#define KL_SYSTEM_DISPLAY_PLACES_MAX		1024U
 
 /*
  * kl_system_notify_v1's requests and events (ws156-p002,
@@ -570,5 +627,8 @@
 #define KL_SYSTEM_RESULT_NO_KEY			8U
 #define KL_SYSTEM_RESULT_REFUSED		9U
 #define KL_SYSTEM_RESULT_UNREACHABLE		10U
+
+/* A displays' apply made against a snapshot that is no longer the last (ws113-p005). */
+#define KL_SYSTEM_RESULT_STALE			11U
 
 #endif

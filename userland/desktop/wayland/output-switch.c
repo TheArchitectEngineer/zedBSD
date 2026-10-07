@@ -331,6 +331,29 @@ kwl_output_use_external(
 	return error;
 }
 
+/* Tells whether a display connected now is the machine's own (see the file's comment). */
+int
+kwl_output_display_internal(
+	struct kwl_server *server,
+	VkDisplayKHR display)
+{
+	struct kwl_compose *compose;
+	int index;
+	int internal;
+
+	/* Its place in the list of the last enumeration. */
+	compose = server->compose;
+	if (compose == NULL)
+		return 0;
+	index = output_index(compose, display);
+	if (index < 0)
+		return 0;
+
+	/* Succeeded: whether it is built in. */
+	internal = output_internal(compose, (unsigned)index);
+	return internal;
+}
+
 /*
  * Moves the output back to the machine's own display.  Returns 0 (also
  * when it shows it already), ENOENT when it is not connected, or the

@@ -681,6 +681,8 @@ system_view_error_of(
 		return EACCES;
 	case KL_SYSTEM_RESULT_UNREACHABLE:
 		return ENETUNREACH;
+	case KL_SYSTEM_RESULT_STALE:
+		return ESTALE;
 	default:
 		break;
 	}
@@ -774,6 +776,51 @@ system_view_printers_done(
 	memcpy(view->print_jobs, view->print_jobs_pending, view->print_jobs_pending_count * sizeof(view->print_jobs[0]));
 	view->print_job_count = view->print_jobs_pending_count;
 	view->changed |= KL_SYSTEM_CHANGED_PRINTERS;
+}
+
+/*
+ * Adds a display to the pending snapshot (ws113-p005), starting a new one
+ * after the last done.
+ */
+void
+system_view_display(
+	struct system_view *view,
+	const struct kl_display *display)
+{
+	/* A new snapshot after the last done. */
+	if (!view->displays_open) {
+		view->displays_open = 1U;
+		view->displays_pending_count = 0U;
+	}
+
+	/* The display, while there is room. */
+	if (view->displays_pending_count >= KL_DISPLAYS_MAX)
+		return;
+	view->displays_pending[view->displays_pending_count] = *display;
+	view->displays_pending_count++;
+}
+
+/*
+ * Puts the pending snapshot of the displays into effect with its serial
+ * and mode (a done after no display empties the list).
+ */
+void
+system_view_displays_done(
+	struct system_view *view,
+	uint32_t serial,
+	uint32_t mode)
+{
+	/* A done after nothing: no display. */
+	if (!view->displays_open)
+		view->displays_pending_count = 0U;
+
+	/* The snapshot, as one state. */
+	view->displays_open = 0U;
+	memcpy(view->displays, view->displays_pending, view->displays_pending_count * sizeof(view->displays[0]));
+	view->display_count = view->displays_pending_count;
+	view->displays_serial = serial;
+	view->displays_mode = mode;
+	view->changed |= KL_SYSTEM_CHANGED_DISPLAYS;
 }
 
 /*

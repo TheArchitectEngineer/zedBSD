@@ -14,14 +14,19 @@
  * The commands run in order: "dump" (what the compositor offers and every
  * state), "scan", "join SSID", "disconnect", "wifi-on", "wifi-off",
  * "save-key SSID KEY", "details", "volume LEFT RIGHT MUTED", "feedback",
- * "power ACTION" (1 power off, 2 restart, 3 suspend), "eject ID" (each
- * request waits up to the timeout for its result), "watch" (the
+ * "power ACTION" (1 power off, 2 restart, 3 suspend), "eject ID",
+ * "display-mode extended|mirror", "display-place KEY X Y" (the extended
+ * mode with one display's place), "brightness KEY PERCENT" (ws113-p005;
+ * each request waits up to the timeout for its result), "displays" (the
+ * displays' snapshot), "watch" (the
  * changes until the timeout) and "monitor" (the machine's monitor at
  * 250 ms until the timeout: its info and each frame, WS134 p012).  Each
  * line starts with KEILAND-SYSTEM:
  *
  *   KEILAND-SYSTEM open capabilities=0xB | failed step=open errno=E
  *   KEILAND-SYSTEM network reachable=... ssid=S        (and ap, link, dns, saved, audio, power, device)
+ *   KEILAND-SYSTEM displays mode=extended|mirror count=N, then display key=K label=L x=X y=Y width=W
+ *       height=H refresh_mhz=R flags=0xF brightness=B for each
  *   KEILAND-SYSTEM result request=R error=E          (E: 0 or the errno's name)
  *   KEILAND-SYSTEM change bits=0xB
  *   KEILAND-SYSTEM monitor-info changes=N cpus=N host=H gpus=N disks=N links=N   (and monitor-disk, monitor-link, monitor-gpu)
@@ -60,6 +65,10 @@ static const struct probe_command probe_commands[] = {
 	{ "feedback", 0 },
 	{ "power", 1 },
 	{ "eject", 1 },
+	{ "display-mode", 1 },
+	{ "display-place", 3 },
+	{ "brightness", 2 },
+	{ "displays", 0 },
 	{ "watch", 0 },
 	{ "monitor", 0 },
 };
@@ -68,6 +77,8 @@ static const struct probe_command *probe_find(const char *word);
 static int probe_ask(struct kl_system *system, const char *name, char **words, uint32_t *request);
 static void probe_dump(const struct kl_system *system);
 static void probe_details(const struct kl_system *system);
+static void probe_displays(const struct kl_system *system);
+static int probe_display_ask(struct kl_system *system, const char *name, char **words, uint32_t *request);
 static int probe_wait(struct wl_display *display, struct kl_system *system, uint32_t request, int timeout_ms);
 static void probe_watch(struct wl_display *display, struct kl_system *system, int timeout_ms);
 static void probe_monitor(struct wl_display *display, struct kl_system *system, int timeout_ms);
@@ -146,6 +157,14 @@ main(
 		differs = strcmp(command->name, "dump");
 		if (differs == 0) {
 			probe_dump(system);
+			arg++;
+			continue;
+		}
+
+		/* The displays' snapshot. */
+		differs = strcmp(command->name, "displays");
+		if (differs == 0) {
+			probe_displays(system);
 			arg++;
 			continue;
 		}
@@ -257,11 +276,87 @@ probe_ask(
 	if (differs == 0)
 		return kl_system_audio_feedback(system, request);
 
-	/* The power's, and the devices'. */
+	/* The power's. */
 	differs = strcmp(name, "power");
 	if (differs == 0)
 		return kl_system_power_action(system, (unsigned)atoi(words[0]), request);
+
+	/* The displays' (ws113-p005). */
+	differs = strcmp(name, "eject");
+	if (differs != 0)
+		return probe_display_ask(system, name, words, request);
+
+	/* The devices'. */
 	return kl_system_devices_eject(system, words[0], request);
+}
+
+/* Asks the system for a displays' request: the mode, a place, a light (ws113-p005). */
+static int
+probe_display_ask(
+	struct kl_system *system,
+	const char *name,
+	char **words,
+	uint32_t *request)
+{
+	struct kl_display_place place;
+	unsigned mode;
+	int differs;
+
+	/* The mode alone. */
+	differs = strcmp(name, "display-mode");
+	if (differs == 0) {
+		mode = KL_DISPLAYS_EXTENDED;
+		differs = strcmp(words[0], "mirror");
+		if (differs == 0)
+			mode = KL_DISPLAYS_MIRROR;
+		return kl_system_displays_apply(system, mode, NULL, 0U, request);
+	}
+
+	/* The extended mode with one display's place. */
+	differs = strcmp(name, "display-place");
+	if (differs == 0) {
+		place.key = words[0];
+		place.x = (int32_t)atol(words[1]);
+		place.y = (int32_t)atol(words[2]);
+		return kl_system_displays_apply(system, KL_DISPLAYS_EXTENDED, &place, 1U, request);
+	}
+
+	/* A light. */
+	return kl_system_displays_set_brightness(system, words[0], (unsigned)atoi(words[1]), request);
+}
+
+/* Prints the displays' snapshot (ws113-p005). */
+static void
+probe_displays(
+	const struct kl_system *system)
+{
+	struct kl_display displays[KL_DISPLAYS_MAX];
+	const char *mode;
+	unsigned shown;
+	size_t count;
+	size_t index;
+
+	/* The mode and the count. */
+	count = kl_system_displays_get(system, displays, KL_DISPLAYS_MAX);
+	shown = kl_system_displays_mode(system);
+	mode = "extended";
+	if (shown == KL_DISPLAYS_MIRROR)
+		mode = "mirror";
+	printf("KEILAND-SYSTEM displays mode=%s count=%u\n", mode, (unsigned)count);
+
+	/* Each display. */
+	for (index = 0; index < count; index++) {
+		printf("KEILAND-SYSTEM display key=%s label=%s x=%ld y=%ld width=%u height=%u refresh_mhz=%u flags=0x%x brightness=%u\n",
+		    displays[index].key,
+		    displays[index].label,
+		    (long)displays[index].x,
+		    (long)displays[index].y,
+		    displays[index].width,
+		    displays[index].height,
+		    displays[index].refresh_mhz,
+		    displays[index].flags,
+		    displays[index].brightness);
+	}
 }
 
 /* Prints every state the system has. */
@@ -595,6 +690,8 @@ probe_error(
 		return "EPIPE";
 	case ENOMEM:
 		return "ENOMEM";
+	case ESTALE:
+		return "ESTALE";
 	default:
 		break;
 	}

@@ -28,6 +28,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -59,6 +60,7 @@ struct kl_system {
 	struct wl_proxy *mail;
 	struct wl_proxy *phone;
 	struct wl_proxy *printers;
+	struct wl_proxy *displays;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -150,6 +152,13 @@ struct system_printers_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
+/* The listener of kl_system_displays_v1's events (ws113-p005), in their order. */
+struct system_displays_listener {
+	void (*output)(void *data, struct wl_proxy *proxy, const char *key, const char *label, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t refresh_mhz, uint32_t flags, uint32_t brightness);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial, uint32_t mode);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
 /* The listener of kl_system_devices_v1's events, in their order. */
 struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
@@ -170,6 +179,8 @@ static void system_phone_status(void *data, struct wl_proxy *proxy, uint32_t req
 static void system_printer(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t protocol, const char *host, uint32_t port, const char *path, const char *name, uint32_t flags);
 static void system_print_job(void *data, struct wl_proxy *proxy, uint32_t job, uint32_t printer, uint32_t state, const char *title, const char *detail);
 static void system_printers_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_display(void *data, struct wl_proxy *proxy, const char *key, const char *label, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t refresh_mhz, uint32_t flags, uint32_t brightness);
+static void system_displays_done(void *data, struct wl_proxy *proxy, uint32_t serial, uint32_t mode);
 static void system_print_queued(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t job);
 static int system_print_title(const char *title, char *out, size_t size);
 static void system_global_remove(void *data, struct wl_registry *registry, uint32_t name);
@@ -291,6 +302,13 @@ static const struct system_printers_listener system_printers_listener = {
 	system_result
 };
 
+/* The displays object's callbacks (ws113-p005). */
+static const struct system_displays_listener system_displays_listener = {
+	system_display,
+	system_displays_done,
+	system_result
+};
+
 /* The devices object's callbacks. */
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
@@ -365,6 +383,7 @@ kl_system_close(
 	system_destroy(system->mail, KL_SYSTEM_MAIL_DESTROY);
 	system_destroy(system->phone, KL_SYSTEM_PHONE_DESTROY);
 	system_destroy(system->printers, KL_SYSTEM_PRINTERS_DESTROY);
+	system_destroy(system->displays, KL_SYSTEM_DISPLAYS_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -441,6 +460,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_PHONE;
 	if (system->printers != NULL)
 		bits |= KL_SYSTEM_HAS_PRINTERS;
+	if (system->displays != NULL)
+		bits |= KL_SYSTEM_HAS_DISPLAYS;
 
 	/* The administration of the accounts, offered with the account to a manager bound at version 8 (ws089-p026). */
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
@@ -1191,6 +1212,128 @@ kl_system_take_phone_event(
 
 	/* Succeeded: one event taken. */
 	return 1;
+}
+
+/*
+ * Copies the displays of the last snapshot (ws113-p005).
+ */
+size_t
+kl_system_displays_get(
+	const struct kl_system *system,
+	struct kl_display *displays,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as fit. */
+	if (system == NULL || displays == NULL)
+		return 0;
+	count = system->view.display_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(displays, system->view.displays, count * sizeof(displays[0]));
+	return count;
+}
+
+/*
+ * Tells the displays' mode (KL_DISPLAYS_EXTENDED or KL_DISPLAYS_MIRROR).
+ */
+unsigned
+kl_system_displays_mode(
+	const struct kl_system *system)
+{
+	/* The mode of the last snapshot. */
+	if (system == NULL)
+		return KL_DISPLAYS_EXTENDED;
+	return system->view.displays_mode;
+}
+
+/*
+ * Applies a choice of the displays: the mode and, for the extended mode,
+ * the places of the displays named.
+ */
+int
+kl_system_displays_apply(
+	struct kl_system *system,
+	unsigned mode,
+	const struct kl_display_place *places,
+	size_t count,
+	uint32_t *request)
+{
+	char text[KL_SYSTEM_DISPLAY_PLACES_MAX];
+	size_t used;
+	size_t index;
+	size_t length;
+	uint32_t number;
+	int written;
+
+	/* A mode of the two, and places that name their displays. */
+	if (system == NULL)
+		return EINVAL;
+	if (mode != KL_DISPLAYS_EXTENDED && mode != KL_DISPLAYS_MIRROR)
+		return EINVAL;
+	if (count != 0U && places == NULL)
+		return EINVAL;
+
+	/* The places as lines "KEY X Y", within what one request carries. */
+	used = 0U;
+	text[0] = '\0';
+	for (index = 0U; index < count; index++) {
+		if (places[index].key == NULL)
+			return EINVAL;
+		length = strlen(places[index].key);
+		if (length == 0U || length >= KL_DISPLAY_KEY_MAX)
+			return EINVAL;
+		written = snprintf(text + used, sizeof(text) - used, "%s %ld %ld\n", places[index].key, (long)places[index].x, (long)places[index].y);
+		if (written < 0 || (size_t)written >= sizeof(text) - used)
+			return EINVAL;
+		used += (size_t)written;
+	}
+
+	/* The displays object. */
+	if (system->displays == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush, against the snapshot in effect. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->displays, KL_SYSTEM_DISPLAYS_APPLY, number, system->view.displays_serial, (uint32_t)mode, text);
+
+	/* Succeeded: the snapshot and the answer come later. */
+	return 0;
+}
+
+/*
+ * Sets the light of a built-in panel (0 to 100).
+ */
+int
+kl_system_displays_set_brightness(
+	struct kl_system *system,
+	const char *key,
+	unsigned percent,
+	uint32_t *request)
+{
+	size_t length;
+	uint32_t number;
+
+	/* A display's key and a light in range. */
+	if (system == NULL ||
+	    key == NULL ||
+	    percent > 100U)
+		return EINVAL;
+	length = strlen(key);
+	if (length == 0U || length >= KL_DISPLAY_KEY_MAX)
+		return EINVAL;
+
+	/* The displays object. */
+	if (system->displays == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->displays, KL_SYSTEM_DISPLAYS_SET_BRIGHTNESS, number, key, (uint32_t)percent);
+
+	/* Succeeded: the snapshot and the answer come later. */
+	return 0;
 }
 
 /*
@@ -2746,6 +2889,10 @@ system_bind(
 	if (system->manager_version >= KL_SYSTEM_SINCE_PRINTERS)
 		system->printers = system_make(system, KL_SYSTEM_CAPABILITY_PRINTERS, KL_SYSTEM_MANAGER_GET_PRINTERS, &kl_system_printers_v1_interface, &system_printers_listener);
 
+	/* The displays, offered to a manager bound at version 18 (ws113-p005). */
+	if (system->manager_version >= KL_SYSTEM_SINCE_DISPLAYS)
+		system->displays = system_make(system, KL_SYSTEM_CAPABILITY_DISPLAYS, KL_SYSTEM_MANAGER_GET_DISPLAYS, &kl_system_displays_v1_interface, &system_displays_listener);
+
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);
 	if (status < 0)
@@ -2889,6 +3036,58 @@ system_print_job(
 	system_view_copy(record.title, sizeof(record.title), title);
 	system_view_copy(record.detail, sizeof(record.detail), detail);
 	system_view_print_job(&system->view, &record);
+}
+
+/* A display of the snapshot being sent (ws113-p005). */
+static void
+system_display(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *key,
+	const char *label,
+	int32_t x,
+	int32_t y,
+	uint32_t width,
+	uint32_t height,
+	uint32_t refresh_mhz,
+	uint32_t flags,
+	uint32_t brightness)
+{
+	struct kl_system *system;
+	struct kl_display display;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The display as the application's record. */
+	system = data;
+	memset(&display, 0, sizeof(display));
+	system_view_copy(display.key, sizeof(display.key), key);
+	system_view_copy(display.label, sizeof(display.label), label);
+	display.x = x;
+	display.y = y;
+	display.width = width;
+	display.height = height;
+	display.refresh_mhz = refresh_mhz;
+	display.flags = flags;
+	display.brightness = brightness;
+	system_view_display(&system->view, &display);
+}
+
+/* Puts the snapshot of the displays into effect (ws113-p005). */
+static void
+system_displays_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial,
+	uint32_t mode)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The snapshot, as one state. */
+	system = data;
+	system_view_displays_done(&system->view, serial, mode);
 }
 
 /* Puts the printers and the jobs into effect (ws145-p003). */

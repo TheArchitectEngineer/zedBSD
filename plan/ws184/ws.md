@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Target: ベータ2（2026-10-07 ユーザー「機能追加(ベータ2)」）
+Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 Resume point: p001 の設計から。
 <!-- awesome-plan-current:end -->
 

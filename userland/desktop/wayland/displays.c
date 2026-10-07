@@ -320,6 +320,14 @@ kwl_displays_format(
 		return 0U;
 	used = (size_t)written;
 
+	/* The built-in panel's light, when one was chosen. */
+	if (config->has_brightness) {
+		written = snprintf(text + used, size - used, "brightness=%u\n", config->brightness);
+		if (written < 0 || (size_t)written >= size - used)
+			return 0U;
+		used += (size_t)written;
+	}
+
 	/* The anchor, when there is one. */
 	if (config->anchor[0] != '\0') {
 		written = snprintf(text + used, size - used, "anchor=%s\n", config->anchor);
@@ -605,6 +613,21 @@ displays_line(
 		length = strlen(value);
 		if (length < KWL_DISPLAYS_KEY)
 			memcpy(config->anchor, value, length + 1U);
+		return 0;
+	}
+
+	/* The built-in panel's light, when it is one. */
+	differs = strcmp(line, "brightness");
+	if (differs == 0) {
+		number = strtoul(value, &end, 10);
+		if (end != value &&
+		    *end == '\0' &&
+		    number <= 100UL) {
+			config->has_brightness = 1U;
+			config->brightness = (unsigned)number;
+		}
+
+		/* The light is read (a value out of range is skipped). */
 		return 0;
 	}
 

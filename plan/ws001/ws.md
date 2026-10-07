@@ -10,6 +10,7 @@ Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: q834（2026-10-07、P2）
 Resume point: 2026-10-07 q834 P2: p041 ls（host 24/24）→ p042 find（host 38/38）→ p043 tabs（host 55/55）、guest の回帰は 3 つの後に T1 にまとめる。それ以前: p024〜p040 cleared（2026-09-27）
+Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
