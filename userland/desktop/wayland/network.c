@@ -65,6 +65,7 @@
  */
 
 #include "glass.h"
+#include "notify.h"
 #include "userland/desktop/wayland/network-info.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -301,6 +302,7 @@ static void network_key_open(struct kwl_server *server, const char *ssid);
 static void network_key_close(void);
 static void network_key_type(struct kwl_server *server, uint32_t key);
 static void network_key_submit(struct kwl_server *server);
+static void network_notify_failure(struct kwl_server *server, const char *ssid);
 static void network_key_wipe(void);
 static void network_finished(struct kwl_server *server, unsigned request, int error);
 static void network_send_waiting(struct kwl_server *server);
@@ -719,6 +721,7 @@ kwl_network_key_failed(
 	/* The failure in the menu, and no network shown as being joined. */
 	(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not join {1} ({2})"), ssid, strerror(error), (const char *)NULL);
 	network_connecting(NULL);
+	network_notify_failure(server, ssid);
 	server->dirty = 1;
 	printf("KWL NETWORK key failed ssid=%s error=%d\n", ssid, error);
 }
@@ -1983,6 +1986,23 @@ network_key_submit(
 	server->dirty = 1;
 }
 
+/*
+ * Tells a join that failed by a notification of the compositor's own
+ * (WS156, plan/ws156/phase001/phase.md section 6): "Could not join NAME",
+ * with the menu's failure line as its body.
+ */
+static void
+network_notify_failure(
+	struct kwl_server *server,
+	const char *ssid)
+{
+	char title[KWL_NOTIFY_TITLE_MAX + 1U];
+
+	/* The title, then the notification. */
+	(void)kl_tr_format(title, sizeof(title), kl_tr("Could not join {1}"), ssid, (const char *)NULL);
+	(void)kwl_notify_system_post(server, title, network_view.failure, 0U, NULL);
+}
+
 /* Wipes the key field's characters, every byte of it. */
 static void
 network_key_wipe(
@@ -2055,6 +2075,13 @@ network_finished(
 		/* Anything else that failed says the errno's text. */
 		(void)kl_tr_format(network_view.failure, sizeof(network_view.failure), kl_tr("Could not {1} ({2})"), network_request_phrase(request), strerror(error), (const char *)NULL);
 	}
+
+	/* A join that failed is told by a notification too, the menu's words its body (WS156); one that asks for a key has not failed. */
+	if (request == KL_BACKEND_NETWORK_REQUEST_JOIN &&
+	    error != 0 &&
+	    !network_view.key_open &&
+	    network_view.failure[0] != '\0')
+		network_notify_failure(server, network_view.joining);
 
 	/* What waited in the slot is sent now. */
 	network_send_waiting(server);

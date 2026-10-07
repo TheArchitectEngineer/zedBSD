@@ -401,6 +401,9 @@ kwl_power_read(
 	server->power = state;
 	printf("KWL POWER source=%s percent=%d charging=%u\n", power_source_text(state.source), state.percent,
 	       state.charging);
+
+	/* A low battery is warned of (notify-system.c, ws156-p003). */
+	kwl_notify_battery(server);
 }
 
 /*

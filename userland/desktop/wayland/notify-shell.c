@@ -16,7 +16,7 @@
  *       id), or by result(request, INVALID or BUSY) when it is refused
  *   withdraw(request, id)  the client's notification goes; closed(id,
  *       WITHDRAWN) and result(request, OK)
- *   activated(id)  its body was clicked (an ACTION one; p003)
+ *   activated(id)  its body was clicked (an ACTION one; the popup, p003)
  *   closed(id, reason)  it went: dismissed, expired out of the log, cleared,
  *       withdrawn
  *
@@ -140,6 +140,128 @@ kwl_notify_post_system(
 		notify_tell_closed(server, &closed[0]);
 	printf("KWL NOTIFY post client=0 id=%u flags=%u title=\"%.40s\" waiting=%lu\n", id, flags, title, (unsigned long)kwl_notify_waiting(&notify_model));
 	return id;
+}
+
+/*
+ * Ends the show of the notification shown (the popup's board started to
+ * leave, or it is not shown now): it goes to the log, whose oldest it may
+ * push out (that client told).
+ */
+void
+kwl_notify_hide_shown(
+	struct kwl_server *server)
+{
+	struct kwl_notify_closed closed[2];
+	size_t closed_count;
+	int error;
+
+	/* Into the log. */
+	notify_open();
+	error = kwl_notify_hide(&notify_model, closed, &closed_count);
+	if (error != 0)
+		return;
+
+	/* An oldest pushed out of the log is told to its client. */
+	if (closed_count > 0U)
+		notify_tell_closed(server, &closed[0]);
+}
+
+/*
+ * Dismisses a notification (its close sign): it goes, not logged, and its
+ * client is told closed(DISMISSED).  Returns 0, or ENOENT.
+ */
+int
+kwl_notify_dismiss_id(
+	struct kwl_server *server,
+	uint32_t id)
+{
+	struct kwl_notify_closed closed;
+	int error;
+
+	/* Gone from wherever it is. */
+	notify_open();
+	error = kwl_notify_dismiss(&notify_model, id, &closed);
+	if (error != 0)
+		return error;
+
+	/* Its client told. */
+	notify_tell_closed(server, &closed);
+	return 0;
+}
+
+/*
+ * Activates a notification (its body clicked, an ACTION one): its client
+ * is told activated(id), then it goes as dismissed (not logged).  The
+ * compositor's own runs its action (kwl_notify_system_activated).  Returns
+ * 0, or ENOENT.
+ */
+int
+kwl_notify_activate(
+	struct kwl_server *server,
+	uint32_t id)
+{
+	const struct kwl_notification *item;
+	struct kwl_client *client;
+	struct kwl_object *object;
+	uint64_t number;
+	uint32_t word;
+	int error;
+
+	/* The notification. */
+	notify_open();
+	item = kwl_notify_find(&notify_model, id);
+	if (item == NULL)
+		return ENOENT;
+	number = item->client;
+
+	/* Its client's object, told; the compositor's own runs its action. */
+	if (number == 0U) {
+		kwl_notify_system_activated(server, id);
+	} else {
+		for (client = server->clients; client != NULL; client = client->next) {
+			if (client->number != number || client->fatal)
+				continue;
+			object = kwl_find(client, item->object);
+			if (object == NULL || object->dead || object->kind != KWL_SYSTEM_NOTIFY)
+				break;
+			word = id;
+			(void)kwl_emit(client, object->id, KL_SYSTEM_NOTIFY_EVENT_ACTIVATED, &word, sizeof(word));
+			break;
+		}
+	}
+
+	/* Then it goes, not logged. */
+	error = kwl_notify_dismiss_id(server, id);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: activated. */
+	return 0;
+}
+
+/*
+ * Clears the log ("Clear all notifications", p004): every logged
+ * notification goes, each client told closed(CLEARED).  Returns how many
+ * went.
+ */
+size_t
+kwl_notify_clear_log(
+	struct kwl_server *server)
+{
+	struct kwl_notify_closed closed[KWL_NOTIFY_LOG];
+	size_t count;
+	size_t index;
+
+	/* The log emptied. */
+	notify_open();
+	count = kwl_notify_clear(&notify_model, closed, KWL_NOTIFY_LOG);
+
+	/* Each told. */
+	for (index = 0U; index < count && index < KWL_NOTIFY_LOG; index++)
+		notify_tell_closed(server, &closed[index]);
+
+	/* Succeeded: how many went. */
+	return count;
 }
 
 /* Gives the model of the notifications (for the popup and the log, p003). */

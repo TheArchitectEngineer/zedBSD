@@ -41,3 +41,7 @@ Parent: [WS083](../ws.md)
 
 - §8.2 の T1 の結果で cleared の判定（Q1）。
 - p005: 5330 の実機で VCS の bring-up と I frame の hash（`config-video-hw.mk`、`vkvideo-probe --expect`）。ユーザーの変換した `/home/awe/zedbsd-media/sample-h264-*.h264`（1920x1080、tree の外）は最初の IDR だけ（`--frames=1`、参照は host の ffmpeg で作る）を p005 で、全体は p006 で。
+
+## T1-371 の判定（2026-10-08 Q1）
+
+PASS（QEMU Venus、main b84e680a8）: boot-test、compositor（zdesktop-p054）、vkdemo（frames=23、offscreen の rgb_sha256 は T1-313 と同じ）、`vkvideo-probe --list` は `video families 0, video extensions 0`（family 0 だけ、sync2 の行無し）、存在しない file で exit 1。QEMU の回帰（§8.2）を満たす。実機は p005。

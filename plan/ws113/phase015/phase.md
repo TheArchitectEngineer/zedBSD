@@ -61,3 +61,7 @@ Q1 の ACK: 範囲 1〜5、1 → 4 → 2・3 の順。2 の head の帯に出す
 - build: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p005.mk build/p1-wl/bin/wayland`（`ZEDBSD_TEST_SCREEN_CAPTURE=y` も）exit 0、warning 0。`make keiland-linux` の gcc・clang warning・error 0。
 - host: `host-plane.sh`・`host-output-switch.sh`・`host-arrange.sh` PASS（plain、ASan/UBSan）。style-check は変えた file で HEAD と同じ数（shell.c・arrange-shell.c の残りは前からの物）。
 - QEMU の試験（T1 へ）: 新しい `plan/ws113/tests/displays-p015.sh`（image は新しい `config-amd64-p015.mk` = p006 ＋ wltest）。head 1 へ移した窓が head の bar の下、anchor で dock しても head の窓は隠れず anchor の数え方だけ、anchor の整列は anchor の窓だけ、App Home の間 head は stage だけ、抜去で戻る、PNG（head1-bar・head1-anchor-docked・home-head1 ほか）。head の上の press（head の bar・縁の resize・head での dock）は QEMU の tablet が anchor だけなので実機（5330、ユーザー）。
+
+## T1-372 の判定（2026-10-08 Q1）
+
+FAIL 2 行（retry も同じ）: `the anchor's count has b docked and nothing hidden (a is head 1's)`、`Side by Side arranges the anchor's b alone (found 0 of 1)`。他（head 1 の bar の下、anchor の docked mode、head 1 の render list、App Home、unplug の retreat、KWL FAILED 無し）は ok。PNG は D-Bus で `no surface`。回帰の displays-p007・p014・ws181 p009・ws142 p010・boot-test は PASS。log: /home/awe/zedBSD-worktrees/t1/build/t1-372-p015/・t1-372-p015b/。

@@ -279,3 +279,17 @@ msg	Mute	消音
 msg	Sound service is not running	サウンドサービスが動いていません
 # ../wayland/volume.c:540
 msg	No sound output	音声の出力がありません
+# ../wayland/media.c (ws156-p003)
+msg	USB drive connected	USB ドライブが接続されました
+# ../wayland/network.c (ws156-p003)
+msg	Could not join {1}	{1} に接続できませんでした
+# ../wayland/notify-system.c (ws156-p003)
+msg	Battery critically low	バッテリーの残量がほとんどありません
+# ../wayland/notify-system.c (ws156-p003)
+msg	Battery low	バッテリーの残量が少なくなっています
+# ../wayland/notify-system.c (ws156-p003)
+msg	{1}% of the battery is left	バッテリーの残りは {1}%です
+# ../wayland/notify-log.c (ws156-p004)
+msg	No notifications	通知はありません
+# ../wayland/notify-log.c (ws156-p004)
+msg	Clear all notifications	通知をすべて消去
