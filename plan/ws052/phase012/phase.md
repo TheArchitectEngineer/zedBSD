@@ -40,3 +40,7 @@ Queue: q850（2026-10-07 Q1「ws052-p012 の実装を始めてよい」、p011 �
 
 - R4（蓋を閉じたら外部へ切り替え、開けたら内蔵へ）: 2026-10-07 に `backend-host.c` の `kwl_lid_follow` に入れた（ws113-p011a の記録）。確認は 5330 の UAT。
 - p013（Settings の Power の頁）。
+
+## T1-356 の判定（2026-10-07 Q1）
+
+QEMU PASS（無操作で画面が消え入力で戻る、電源ボタンは `KWL EVENT power button` だけ、boot-test）。実機（5330: 蓋・sleep button・無操作で眠り起きる、中止の理由、外部 HDMI で蓋）は UAT。
