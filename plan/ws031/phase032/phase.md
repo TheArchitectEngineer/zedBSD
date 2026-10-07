@@ -3,7 +3,7 @@
 
 Phase ID: `ws031-p032`
 Parent: [WS031](../ws.md)
-Status: cleared 候補（q833、P1、2026-10-07: logic op・dual source とも実装と host の試験 PASS。dual source の feature は実機まで 0（ユーザー））
+Status: cleared（2026-10-07 Q1 の判定: host の fixture（plain・ASan/UBSan）PASS と build。logic op は有効、dual source は実装して feature 0（ユーザーの判断、5330 で確かめるまで）。Mesa の disassembler との照合と実機は未実施。旧: cleared 候補（q833、P1、2026-10-07: logic op・dual source とも実装と host の試験 PASS。dual source の feature は実機まで 0（ユーザー）））
 設計: [p019](../phase019/phase.md) §2.1・§2.2・§7（S1〜S4・S6・M5〜M11）
 ユーザーの決定（2026-10-07、Q1 経由のクリック）: logic op は feature を有効に。dual source は実装し、feature（`dualSrcBlend`・`maxFragmentDualSrcAttachments`）は実機で確かめるまで 0。
 
