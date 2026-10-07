@@ -83,7 +83,7 @@ static void resize_limit(struct kwl_server *server, struct kwl_object *surface, 
 static void resize_settle(struct kwl_object *surface, int32_t width, int32_t height);
 static void move_anchor(struct kwl_server *server, struct kwl_object *surface);
 static void resize_anchor(struct kwl_server *server);
-static int32_t window_lowest(const struct kwl_server *server);
+static int32_t window_lowest(struct kwl_server *server, const struct kwl_object *surface);
 static uint32_t toplevel_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -820,26 +820,35 @@ resize_limit(
 	int32_t *width,
 	int32_t *height)
 {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned count;
+	unsigned slot;
 	int32_t geometry_x;
 	int32_t geometry_y;
 	int32_t current_width;
 	int32_t current_height;
 	int32_t highest;
 
+	/* The window's output (ws113-p015: a head's size on a head; the anchor when it is not shown). */
+	count = kwl_outputs(server, outputs);
+	slot = surface->output;
+	if (slot >= count || outputs[slot].width == 0U)
+		slot = KWL_PLANE_ANCHOR;
+
 	/* No larger than the client can draw, nor than the output. */
 	if (surface->max_width > 0 && *width > surface->max_width)
 		*width = surface->max_width;
 	if (surface->max_height > 0 && *height > surface->max_height)
 		*height = surface->max_height;
-	if (*width > (int32_t)server->width)
-		*width = (int32_t)server->width;
-	if (*height > (int32_t)server->height)
-		*height = (int32_t)server->height;
+	if (*width > (int32_t)outputs[slot].width)
+		*width = (int32_t)outputs[slot].width;
+	if (*height > (int32_t)outputs[slot].height)
+		*height = (int32_t)outputs[slot].height;
 
 	/* Dragged from the top, the window's top may go no higher than the highest a window may be. */
 	if ((surface->resize_edges & KWL_EDGE_TOP) != 0U) {
 		window_extent(surface, &geometry_x, &geometry_y, &current_width, &current_height);
-		highest = surface->resize_bottom - geometry_y - window_lowest(server);
+		highest = surface->resize_bottom - geometry_y - window_lowest(server, surface);
 		if (*height > highest)
 			*height = highest;
 	}
@@ -884,7 +893,7 @@ move_anchor(
 	/* The window follows the motion made while the client was answering; its title bar stays below the system bar. */
 	surface->x = server->pointer_x - server->drag_dx;
 	surface->y = server->pointer_y - server->drag_dy;
-	lowest = window_lowest(server);
+	lowest = window_lowest(server, surface);
 	if (surface->y < lowest)
 		surface->y = lowest;
 
@@ -905,17 +914,32 @@ resize_anchor(
 	(void)kwl_toplevel_motion(server);
 }
 
-/* Tells the highest a window's image may be: under the glass look's system bar and title bar, or the output's top. */
+/*
+ * Tells the highest a window's image may be: under the glass look's system
+ * bar and title bar on the anchor, under a title bar at a head's top
+ * (ws113-p015), or the output's top.
+ */
 static int32_t
 window_lowest(
-	const struct kwl_server *server)
+	struct kwl_server *server,
+	const struct kwl_object *surface)
 {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned count;
+	unsigned slot;
+
 	/* The plain look puts windows anywhere. */
 	if (!server->glass)
 		return 0;
 
-	/* The glass look keeps the title bar below the system bar. */
-	return KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
+	/* The window's output (the anchor when it is not shown). */
+	count = kwl_outputs(server, outputs);
+	slot = surface->output;
+	if (slot >= count || outputs[slot].width == 0U)
+		slot = KWL_PLANE_ANCHOR;
+
+	/* Succeeded: the output's top and what keeps the title bar on it. */
+	return outputs[slot].y + kwl_output_top(server, slot);
 }
 
 /* Reads one native-endian protocol word. */

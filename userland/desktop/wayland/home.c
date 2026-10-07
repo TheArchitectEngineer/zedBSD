@@ -287,6 +287,7 @@ static void home_read_apps(struct kwl_server *server);
 static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
 static void home_draw_letter(struct kwl_server *server, VkCommandBuffer command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
+static void home_stage(struct kwl_server *server, VkCommandBuffer command, float x, float y, float width, float height);
 static void home_draw_tile(struct kwl_server *server, VkCommandBuffer command, float left, float top, float size, const float *color);
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
@@ -549,6 +550,64 @@ kwl_home_pad(
 }
 
 /*
+ * Draws App Home's background on a head (ws113-p015, the 2026-10-08 UAT):
+ * the dark stage over the head's rectangle of the plane (heads.c's pass
+ * gives it, server->view_*), without the icons, the clock or the search,
+ * which are the anchor's.
+ */
+void
+kwl_home_draw_head(
+	struct kwl_server *server,
+	VkCommandBuffer command)
+{
+	/* The stage over the head, then the appearance's colours again. */
+	home_stage(server, command, (float)server->view_x, (float)server->view_y, (float)server->view_width, (float)server->view_height);
+	server->keep_colours = 0U;
+}
+
+/*
+ * Draws the stage over a rectangle of the plane (ws099-p035b, its own
+ * colours in both appearances): the blurred scene under black glass, and a
+ * soft bluish light from the top's middle, as the bar's middle is lighter.
+ */
+static void
+home_stage(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	float x,
+	float y,
+	float width,
+	float height)
+{
+	struct glass_shape shape;
+
+	/* The stage keeps its own colours in both appearances (it is always dark). */
+	server->keep_colours = 1U;
+
+	/* The black glass over the blurred scene. */
+	glass_shape_init(&shape, x, y, width, height);
+	shape.mode = MODE_GLASS;
+	shape.light = 1U;
+	shape.color[3] = HOME_STAGE_DARK;
+	glass_shape_draw(server, command, &shape);
+
+	/* The light from the top's middle. */
+	glass_shape_init(&shape, x + width * 0.3f, y - height * 0.3f, width * 0.4f, height * 0.6f);
+	shape.quad[0] = x;
+	shape.quad[1] = y;
+	shape.quad[2] = width;
+	shape.quad[3] = height;
+	shape.mode = MODE_SHADOW;
+	shape.radius = height * 0.3f;
+	shape.soft = width * 0.3f;
+	shape.color[0] = 0.80f;
+	shape.color[1] = 0.86f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = HOME_STAGE_LIGHT;
+	glass_shape_draw(server, command, &shape);
+}
+
+/*
  * Draws Home, faded in by progress: the whitened blurred wallpaper and the
  * icons, and the search text while there is one.
  */
@@ -558,7 +617,6 @@ kwl_home_draw(
 	VkCommandBuffer command,
 	float progress)
 {
-	struct glass_shape shape;
 	struct kwl_edge_depth depth;
 	float content;
 	float width;
@@ -570,34 +628,12 @@ kwl_home_draw(
 	home_read_apps(server);
 	home_layout(server);
 
-	/* The stage keeps its own colours in both appearances (it is always dark, ws099-p035b). */
-	server->keep_colours = 1U;
-
 	/*
 	 * The dark stage, whole from the start (only the icons fade in): the
-	 * blurred desktop under black glass.
+	 * blurred desktop under black glass, in its own colours.
 	 */
 	width = (float)server->width;
-	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)server->height);
-	shape.mode = MODE_GLASS;
-	shape.light = 1U;
-	shape.color[3] = HOME_STAGE_DARK;
-	glass_shape_draw(server, command, &shape);
-
-	/* A soft bluish light from the top's middle, as the bar's middle is lighter. */
-	glass_shape_init(&shape, width * 0.3f, -(float)server->height * 0.3f, width * 0.4f, (float)server->height * 0.6f);
-	shape.quad[0] = 0.0f;
-	shape.quad[1] = 0.0f;
-	shape.quad[2] = width;
-	shape.quad[3] = (float)server->height;
-	shape.mode = MODE_SHADOW;
-	shape.radius = (float)server->height * 0.3f;
-	shape.soft = width * 0.3f;
-	shape.color[0] = 0.80f;
-	shape.color[1] = 0.86f;
-	shape.color[2] = 1.0f;
-	shape.color[3] = HOME_STAGE_LIGHT;
-	glass_shape_draw(server, command, &shape);
+	home_stage(server, command, 0.0f, 0.0f, width, (float)server->height);
 
 	/* The stage's first frame since Home was asked to open (BUG-225's wait, measured). */
 	if (!server->home_cover_logged && server->home_to > 0.0f) {
