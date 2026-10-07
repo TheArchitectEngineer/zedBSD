@@ -97,3 +97,7 @@ Q1 の ACK:「p006 の範囲で進めてよい。頁の文は他の Settings の
 - 実機（p008、5330）: 明るさの slider と Fn の key の追従。
 - `plan/ws089/tests/host-build.sh`（settings-render）は p006 の前から link で落ちる（`kl_system_printers_*`・`kl_system_print_*`・`kl_system_power_get_state`・`preview_picture` の偽物が無い）。page-display.c・arrange.c の compile（gnu89、-Wall -Wextra -Werror）はそこで通ったが、Display の頁の host の絵は作れていない。settings-render を直すのは WS089 の範囲。
 - 「保存できなかった（saved=0）」の表示: p005 の結果は errno だけで saved を運ばないので出していない。
+
+## T1-367 の判定（2026-10-08 Q1）
+
+FAIL（試験の道具）: displays-p006.sh の pointer() が `--width 1280 --height 800` を qmp-pointer.py に渡し `unknown step --width`、zdesktop-check.py の shot が D-Bus display で無い vnc.sock に繋ぐ（ConnectionRefusedError）。頁の表示・card が control・KWL FAILED 無し・生存は ok。
