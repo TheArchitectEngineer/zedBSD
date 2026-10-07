@@ -25,7 +25,7 @@ Home を overview から外す。純関数は新しい `edge.c`（`kwl_edge_clas
 ## 記録
 
 - 2026-10-07 P2: 436594e02（home.c の層・下端の swipe・Home の下向きの drag・Wiseview の下端・Home を overview から外す）、a9bca2f9c（edge.c/h と host 試験、上端の帯、`wiseview_top`、pull の距離と `drag_left_bar`、CSD の move の要求、Makefile・Makefile.linux・Makefile.freebsd に edge.c）。
-- 古い試験（ユーザーの 2026-10-06 の整理の基準）: Home の覗きの角・Home の上の下端の swipe を期待する `plan/ws035/tests/zdesktop-p069.sh`（`KWL HOME close via=corner`）、`plan/ws079/tests/zdesktop-p010.sh`（`HOME bottom swipe`・`close via=bottom`・`close via=corner`）、`plan/ws079/tests/zdesktop-p013-touch.sh`（`HOME bottom swipe`・`close via=bottom`）は、master の Tools・未完了の Phase・tests/ のシナリオ・T1 の未実行の依頼のどれからも参照されていない（cleared の Phase と completed の WS の記録だけ）→ 直さず削除を Q1 に依頼した。
+- 古い試験（ユーザーの 2026-10-06 の整理の基準）: Home の覗きの角・Home の上の下端の swipe を期待する `plan/ws035/tests/zdesktop-p069.sh`（`KWL HOME close via=corner`）、`plan/ws079/tests/zdesktop-p010.sh`（`HOME bottom swipe`・`close via=bottom`・`close via=corner`）、`plan/ws079/tests/zdesktop-p013-touch.sh`（`HOME bottom swipe`・`close via=bottom`）は、master の Tools・未完了の Phase・tests/ のシナリオ・T1 の未実行の依頼のどれからも参照されていない（cleared の Phase と completed の WS の記録だけ）→ 削除を Q1 に依頼した。Q1 の判断（2026-10-07）: zdesktop-p069.sh は削除、zdesktop-p010.sh（WS099・WS079 の guide.md が参照）と zdesktop-p013-touch.sh（WS079 の guide.md が参照）は残して WS181 の挙動に追従 → 53861f57c で直した（Home の上の下端は何もしない・下向きの drag で閉じる・desktop の下端で Home・touch の上端の帯で Wiseview）。
 
 ## 確認
 

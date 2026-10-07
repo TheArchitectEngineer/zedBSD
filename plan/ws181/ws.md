@@ -2,7 +2,7 @@
 
 # WS181: 窓の docked・floating・最小化の状態、App Home の独立のモード、gesture、整列のメニューと整列モード（UAT 2026-10-07）
 
-Status: planned（2026-10-07 ユーザーの UAT から作成。クリック: 「ベータ2、UAT として優先」）
+Status: incomplete（2026-10-07 p001 cleared、p002〜p004 は実装・build・host 試験まで、QEMU は T1 の `plan/ws181/tests/ws181-guest.sh` 待ち）。作成: 2026-10-07 ユーザーの UAT、クリック「ベータ2、UAT として優先」
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -32,10 +32,10 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 設計（窓の状態の機械: floating・docked・docking の隠れ・最小化・整列、App Home の独立のモード、gesture、整列のメニューと整列モード）、design-reviewer | planned |
-| p002 | 状態（目標 1・2） | planned |
-| p003 | App Home の独立のモードと gesture（目標 3・4） | planned |
-| p004 | 整列のメニューと整列モード（目標 5・6） | planned |
+| [p001](phase001/phase.md) | 設計（窓の状態の機械: floating・docked・docking の隠れ・最小化・整列、App Home の独立のモード、gesture、整列のメニューと整列モード）、design-reviewer 2 回 | cleared（2026-10-07 Q1） |
+| [p002](phase002/phase.md) | 状態（目標 1・2） | in-progress（実装済み、QEMU 待ち） |
+| [p003](phase003/phase.md) | App Home の独立のモードと gesture（目標 3・4） | in-progress（実装済み、QEMU 待ち） |
+| [p004](phase004/phase.md) | 整列のメニューと整列モード（目標 5・6） | in-progress（実装済み、QEMU 待ち） |
 
 ## 関連
 
