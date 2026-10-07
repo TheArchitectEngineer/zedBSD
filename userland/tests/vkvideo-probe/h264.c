@@ -56,6 +56,11 @@ static StdVideoH264LevelIdc h264_level(uint32_t level_idc);
 static int h264_high_profile(uint32_t profile_idc);
 static int h264_slice_start(const uint8_t *nal, size_t size, uint32_t *first_mb, uint32_t *slice_type);
 static const char *h264_slice_header(struct h264_stream *stream, const struct h264_nal *nal, struct h264_picture *picture);
+static const char *h264_slice_rest(struct h264_bits *bits, const StdVideoH264PictureParameterSet *pps, const struct h264_nal *nal, uint32_t slice_type, struct h264_picture *picture);
+static void h264_list_modification(struct h264_bits *bits);
+static void h264_weight_table(struct h264_bits *bits, uint32_t count);
+static const char *h264_marking(struct h264_bits *bits, const struct h264_nal *nal, struct h264_picture *picture);
+static size_t h264_start_code_of(const uint8_t *data, size_t offset);
 static void h264_order_counts(struct h264_stream *stream, const StdVideoH264SequenceParameterSet *sps, const struct h264_nal *nal, uint32_t lsb, int32_t bottom_delta, struct h264_picture *picture);
 
 /*
@@ -176,9 +181,10 @@ h264_next_picture(
 	int found;
 	int error;
 
-	/* Nothing yet. */
+	/* Nothing yet; the access unit starts at the first unit read. */
 	memset(picture, 0, sizeof(*picture));
 	picture->intra = 1;
+	picture->access_unit = (size_t)-1;
 	*reason = NULL;
 
 	/* The slice NAL units of one picture. */
@@ -188,6 +194,10 @@ h264_next_picture(
 		found = h264_nal_next(stream->data, stream->size, &stream->cursor, &nal);
 		if (!found)
 			break;
+
+		/* The picture's access unit starts at the start code of its first unit. */
+		if (picture->access_unit == (size_t)-1)
+			picture->access_unit = h264_start_code_of(stream->data, nal.offset);
 
 		/* A delimiter or a parameter set after slices ends the picture. */
 		if (nal.type != H264_NAL_SLICE && nal.type != H264_NAL_IDR) {
@@ -708,6 +718,7 @@ h264_slice_header(
 	uint32_t pps_id;
 	uint32_t lsb;
 	int32_t bottom_delta;
+	const char *reason;
 
 	/* The slice's macroblock, type and picture set. */
 	h264_bits_load(&bits, stream->data + nal->offset + 1U, nal->size - 1U);
@@ -740,8 +751,14 @@ h264_slice_header(
 	} else if (sps->pic_order_cnt_type != STD_VIDEO_H264_POC_TYPE_2) {
 		return "order count type 1";
 	}
+
+	/* The rest of the header up to the reference marking. */
+	reason = h264_slice_rest(&bits, pps, nal, slice_type, picture);
+	if (reason != NULL)
+		return reason;
 	if (bits.error != 0)
 		return "unreadable slice header";
+	picture->slice_type = slice_type;
 
 	/* The picture's information. */
 	picture->info.seq_parameter_set_id = pps->seq_parameter_set_id;
@@ -828,4 +845,200 @@ h264_order_counts(
 		stream->previous_msb = msb;
 		stream->previous_lsb = (int32_t)lsb;
 	}
+}
+
+/*
+ * Reads the slice header from after the order count fields to the end of
+ * the reference picture marking (7.3.3): the redundant picture count, the
+ * direct mode flag, the active reference counts, the list modifications,
+ * the weight table and the marking, which the probe needs for its DPB.
+ * Returns NULL, or why the probe cannot follow the header.
+ */
+static const char *
+h264_slice_rest(
+	struct h264_bits *bits,
+	const StdVideoH264PictureParameterSet *pps,
+	const struct h264_nal *nal,
+	uint32_t slice_type,
+	struct h264_picture *picture)
+{
+	uint32_t l0;
+	uint32_t l1;
+	uint32_t override;
+	int predicted;
+	int bi;
+	int weighted;
+	const char *reason;
+
+	/* The redundant picture count. */
+	if (pps->flags.redundant_pic_cnt_present_flag)
+		(void)h264_ue(bits);
+
+	/* A P, SP or B slice reads references; a B slice from two lists, after its direct mode flag. */
+	predicted = 0;
+	if (slice_type == H264_SLICE_P || slice_type == H264_SLICE_SP || slice_type == H264_SLICE_B)
+		predicted = 1;
+	bi = 0;
+	if (slice_type == H264_SLICE_B) {
+		bi = 1;
+		(void)h264_u(bits, 1U);
+	}
+
+	/* The active reference counts: the picture set's, or the slice's own. */
+	l0 = pps->num_ref_idx_l0_default_active_minus1 + 1U;
+	l1 = pps->num_ref_idx_l1_default_active_minus1 + 1U;
+	if (predicted) {
+		override = h264_u(bits, 1U);
+		if (override != 0U) {
+			l0 = h264_ue(bits) + 1U;
+			if (bi)
+				l1 = h264_ue(bits) + 1U;
+		}
+	}
+	if (l0 > 32U || l1 > 32U)
+		return "more than 32 active references";
+
+	/* The list modifications of each list read. */
+	if (predicted)
+		h264_list_modification(bits);
+	if (bi)
+		h264_list_modification(bits);
+
+	/* The weight table of an explicitly weighted slice. */
+	weighted = 0;
+	if (pps->flags.weighted_pred_flag && (slice_type == H264_SLICE_P || slice_type == H264_SLICE_SP))
+		weighted = 1;
+	if (pps->weighted_bipred_idc == STD_VIDEO_H264_WEIGHTED_BIPRED_IDC_EXPLICIT && bi)
+		weighted = 1;
+	if (weighted) {
+		(void)h264_ue(bits);
+		(void)h264_ue(bits);
+		h264_weight_table(bits, l0);
+		if (bi)
+			h264_weight_table(bits, l1);
+	}
+
+	/* The marking of a reference picture. */
+	if (nal->ref_idc != 0U) {
+		reason = h264_marking(bits, nal, picture);
+		if (reason != NULL)
+			return reason;
+	}
+
+	/* Succeeded: the header is read to its marking. */
+	return NULL;
+}
+
+/* Skips one list's reference picture list modification (7.3.3.1). */
+static void
+h264_list_modification(
+	struct h264_bits *bits)
+{
+	uint32_t flag;
+	uint32_t operation;
+	unsigned count;
+
+	/* The flag, then operations up to 3 (at most 33 of them). */
+	flag = h264_u(bits, 1U);
+	if (flag == 0U)
+		return;
+	for (count = 0U; count < 33U && bits->error == 0; count++) {
+		operation = h264_ue(bits);
+		if (operation == 3U)
+			break;
+		(void)h264_ue(bits);
+	}
+}
+
+/* Skips one list's prediction weights (7.3.3.2, 4:2:0): a luma and a chroma flag, each with its weights. */
+static void
+h264_weight_table(
+	struct h264_bits *bits,
+	uint32_t count)
+{
+	uint32_t index;
+	uint32_t flag;
+
+	/* Each active reference. */
+	for (index = 0U; index < count && bits->error == 0; index++) {
+		/* The luma weight and offset. */
+		flag = h264_u(bits, 1U);
+		if (flag != 0U) {
+			(void)h264_se(bits);
+			(void)h264_se(bits);
+		}
+
+		/* The two chroma weights and offsets. */
+		flag = h264_u(bits, 1U);
+		if (flag != 0U) {
+			(void)h264_se(bits);
+			(void)h264_se(bits);
+			(void)h264_se(bits);
+			(void)h264_se(bits);
+		}
+	}
+}
+
+/* Reads a reference picture's marking (7.3.3.3). */
+static const char *
+h264_marking(
+	struct h264_bits *bits,
+	const struct h264_nal *nal,
+	struct h264_picture *picture)
+{
+	struct h264_mmco *mmco;
+	uint32_t operation;
+
+	/* An IDR picture: no output of prior pictures, and whether it is long-term. */
+	if (nal->type == H264_NAL_IDR) {
+		(void)h264_u(bits, 1U);
+		picture->long_term_reference = (int)h264_u(bits, 1U);
+		return NULL;
+	}
+
+	/* Another picture: the sliding window, or the operations. */
+	picture->adaptive_marking = (int)h264_u(bits, 1U);
+	if (!picture->adaptive_marking)
+		return NULL;
+	for (;;) {
+		operation = h264_ue(bits);
+		if (operation == H264_MMCO_END || bits->error != 0)
+			break;
+		if (operation > H264_MMCO_CURRENT_TO_LONG)
+			return "unknown memory management operation";
+		if (picture->mmco_count >= H264_MAX_MMCO)
+			return "too many memory management operations";
+		mmco = &picture->mmco[picture->mmco_count];
+		memset(mmco, 0, sizeof(*mmco));
+		mmco->operation = operation;
+		if (operation == H264_MMCO_SHORT_UNUSED || operation == H264_MMCO_SHORT_TO_LONG)
+			mmco->difference_of_pic_nums_minus1 = h264_ue(bits);
+		if (operation == H264_MMCO_LONG_UNUSED)
+			mmco->long_term_pic_num = h264_ue(bits);
+		if (operation == H264_MMCO_SHORT_TO_LONG || operation == H264_MMCO_CURRENT_TO_LONG)
+			mmco->long_term_frame_idx = h264_ue(bits);
+		if (operation == H264_MMCO_MAX_LONG_INDEX)
+			mmco->max_long_term_frame_idx_plus1 = h264_ue(bits);
+		picture->mmco_count++;
+	}
+
+	/* Succeeded: the operations are kept. */
+	return NULL;
+}
+
+/* Reports where the start code of the unit at an offset starts: three bytes before it, four with a leading zero. */
+static size_t
+h264_start_code_of(
+	const uint8_t *data,
+	size_t offset)
+{
+	size_t start;
+
+	/* The three bytes 00 00 01, and a zero before them. */
+	start = offset - 3U;
+	if (start > 0U && data[start - 1U] == 0U)
+		start--;
+
+	/* Succeeded: the start code's first byte. */
+	return start;
 }
