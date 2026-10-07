@@ -158,6 +158,7 @@ void kwl_greeter_draw(struct kwl_server *server, VkCommandBuffer command);
 void kwl_network_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
 void kwl_network_draw_menu(struct kwl_server *server, VkCommandBuffer command);
 void kwl_arrange_draw(struct kwl_server *server, VkCommandBuffer command);
+int kwl_arrange_showing(void);
 void kwl_volume_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
 void kwl_volume_draw_popup(struct kwl_server *server, VkCommandBuffer command);
 

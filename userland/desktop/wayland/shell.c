@@ -531,6 +531,7 @@ kwl_glass_draw(
 	unsigned blur;
 	int centred;
 	int showing;
+	int menu;
 	float home;
 	float position;
 
@@ -700,8 +701,19 @@ kwl_glass_draw(
 	/* The network's menu, when open (network.c). */
 	kwl_network_draw_menu(server, command);
 
-	/* The arrangement menu, when open (arrange-shell.c). */
+	/*
+	 * The arrangement menu, when it shows (arrange-shell.c), on the scene
+	 * under it blurred as the windows' frosted panels (ws181-p007); solid
+	 * panels need no blur.
+	 */
+	menu = kwl_arrange_showing();
+	if (menu &&
+	    home <= 0.0f &&
+	    server->panels_opaque == 0U)
+		draw_backdrop(server, command, windows, count, position);
+	server->layer_on = 0;
 	kwl_arrange_draw(server, command);
+	kwl_backdrop_reset(server);
 
 	/* The volume's popup, when open (volume.c). */
 	kwl_volume_draw_popup(server, command);
