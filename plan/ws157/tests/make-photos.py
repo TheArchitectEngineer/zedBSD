@@ -3,6 +3,7 @@
 # headers with EXIF dates (DateTimeOriginal in the EXIF directory, or only IFD0's DateTime; little- and big-endian),
 # a PNG, a GIF and files that are not pictures, in albums, deep folders and hidden folders, with set file times.
 #   python3 plan/ws157/tests/make-photos.py FOLDER
+# With --other FOLDER (ws157-p004): one other beach.jpg of the same day, for the name taken.
 # With --view (ws157-p003, run-host-photos.sh): real pictures (PIL) in two albums over three months, a tall JPEG with an
 # EXIF orientation, a PNG with alpha, a GIF, and one damaged JPEG.
 #   python3 plan/ws157/tests/make-photos.py --view FOLDER
@@ -107,6 +108,10 @@ def view(top):
 def main():
     if sys.argv[1] == '--view':
         view(sys.argv[2])
+        return
+    if sys.argv[1] == '--other':
+        # ws157-p004: another content named beach.jpg, taken the same day (img/2024/08/15/beach-1.jpg).
+        jpeg(sys.argv[2] + '/beach.jpg', 'II', original='2024:08:15 18:45:00')
         return
     top = sys.argv[1]
     jpeg(top + '/beach.jpg', 'II', original='2024:08:15 10:30:00', changed='2024:09:01 08:00:00')

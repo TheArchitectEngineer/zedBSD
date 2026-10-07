@@ -158,7 +158,7 @@ se_printers_press(
 		return;
 	}
 
-	/*  PRINTERS_REMOVE_FIRST=Remove. */
+	/* Remove. */
 	if (index >= PRINTERS_REMOVE_FIRST && index < PRINTERS_REMOVE_FIRST + (int)count) {
 		error = kl_system_printers_remove(app->system, list[index - PRINTERS_REMOVE_FIRST].id, &printers->request);
 		printers_asked(app, error, "remove");
@@ -351,7 +351,7 @@ printers_list(
 			(void)se_button_draw(app, canvas, right - button, y + 10, "Make Default", 0, enabled, PRINTERS_DEFAULT_FIRST + (int)index);
 		}
 
-		/*  x + width - 20;=The next row. */
+		/* The next row. */
 		right = x + width - 20;
 		y += PRINTERS_ROW;
 	}
@@ -445,7 +445,7 @@ printers_jobs(
 			(void)se_button_draw(app, canvas, x + width - 20 - button, y + 6, "Cancel", 0, enabled, PRINTERS_CANCEL_FIRST + (int)index - 1);
 		}
 
-		/*  PRINTERS_JOB_ROW;=The next row. */
+		/* The next row. */
 		y += PRINTERS_JOB_ROW;
 	}
 

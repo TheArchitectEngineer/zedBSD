@@ -2,8 +2,8 @@
 
 # ws157-p003: Photos の app（grid・全面表示・slideshow・回転・お気に入り）
 
-Status: in-progress（実装と host の試験まで。QEMU は T1 に依頼）
-Disposition: normal
+Status: uncleared（2026-10-07 q835: ユーザーの要件（~/Pictures/Library・取り込み・db）で置き換え。code は p004・p005 で作り直した）
+Disposition: canceled（2026-10-07 ユーザーの要件で最初の既定案を置き換え。置き換え先 [p004](../phase004/phase.md)・[p005](../phase005/phase.md)）
 Parent: [WS157](../ws.md)
 Queue: q831（2026-10-07、P2）
 依存: [p002](../phase002/phase.md)

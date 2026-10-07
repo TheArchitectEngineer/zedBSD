@@ -478,7 +478,7 @@ main_loop(
 			return 0;
 		}
 
-		/*  pv_clock();=The time of this round. */
+		/* The time of this round. */
 		now = pv_clock();
 		main_app.now = now;
 
@@ -1063,7 +1063,7 @@ main_print_follow(void)
 			return;
 		}
 
-		/*  kl_system_print_job_of(=Its job, followed from here. */
+		/* Its job, followed from here. */
 		found = kl_system_print_job_of(system, request, &main_print_job);
 		if (!found)
 			main_print_job = 0U;

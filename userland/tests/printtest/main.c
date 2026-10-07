@@ -84,7 +84,7 @@ main(
 		return 1;
 	}
 
-	/*  kl_system_capabilities(system);=Whether it offers printers. */
+	/* Whether it offers printers. */
 	capabilities = kl_system_capabilities(system);
 	printf("PRINTTEST open printers=%d\n", (capabilities & KL_SYSTEM_HAS_PRINTERS) != 0U);
 
@@ -168,7 +168,7 @@ test_command(
 		error = kl_system_printers_add(system, protocol, words[2], (unsigned)atoi(words[3]), path, &request);
 	}
 
-	/*  strcmp(words[0], "default");=default, remove, cancel: a number. */
+	/* default, remove, cancel: a number. */
 	same = strcmp(words[0], "default");
 	if (same == 0 && count >= 2)
 		error = kl_system_printers_set_default(system, (uint32_t)atoi(words[1]), &request);

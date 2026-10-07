@@ -190,7 +190,7 @@ ph_turn(
 		height = picture->width;
 	}
 
-	/*  kl_image_create(turned=The turned picture. */
+	/* The turned picture. */
 	error = kl_image_create(turned, width, height);
 	if (error != 0)
 		return error;
@@ -214,7 +214,7 @@ ph_turn(
 				break;
 			}
 
-			/*  row[x];=The pixel. */
+			/* The pixel. */
 			*out = row[x];
 		}
 	}
@@ -250,7 +250,7 @@ decode_read(
 		return error;
 	}
 
-	/*  S_ISREG=A regular file. */
+	/* A regular file. */
 	regular = S_ISREG(status.st_mode);
 	if (!regular || status.st_size <= 0) {
 		(void)close(fd);
@@ -270,7 +270,7 @@ decode_read(
 		return ENOMEM;
 	}
 
-	/*  0;=Read to its end. */
+	/* Read to its end. */
 	done = 0;
 	while (done < (size_t)status.st_size) {
 		got = read(fd, *data + done, (size_t)status.st_size - done);
@@ -289,7 +289,7 @@ decode_read(
 		return EIO;
 	}
 
-	/*  done;=Succeeded. */
+	/* Succeeded. */
 	*size = done;
 	return 0;
 }
