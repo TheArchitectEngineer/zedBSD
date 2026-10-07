@@ -113,7 +113,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-243](bugs/BUG-243.md) | full の OSK で窓が縮むと app の表示が縦に圧縮される（resize が app に届かない疑い） | reproduced（ユーザーの UAT） / resolved（T1-332、2026-10-07） | 2026-10-07 ユーザーの ad-hoc UAT | WS102（P2、q841） |
 | [BUG-244](bugs/BUG-244.md) | i915 の render で vkFreeMemory の後に bind した buffer・image が解放済みの memory の record を使う（use-after-free） | unreproduced（code の読み） / tracking | 2026-10-07 WS083 の design-reviewer | WS031 |
 | [BUG-245](bugs/BUG-245.md) | docked の X の窓で bar の × を押しても閉じない（press を先の handler が取る疑い） | reproduced（QEMU） / resolved（T1-344、2026-10-07） | 2026-10-07 T1-340・341・343 | compositor の bar（P2） |
-| [BUG-246](bugs/BUG-246.md) | 整列の popup と入れ替えの animation が pointer の事象が無いと進まない、最初の click まで移動ごとにちらつく（5320 実機） | reproduced（実機） / scheduled | 2026-10-07 ユーザーの UAT | P2（UAT 優先） |
+| [BUG-246](bugs/BUG-246.md) | 整列の popup と入れ替えの animation が pointer の事象が無いと進まない、最初の click まで移動ごとにちらつく（5320 実機） | reproduced（実機） / scheduled（直しの実装済み、実機の確認待ち） | 2026-10-07 ユーザーの UAT | P2（UAT 優先） |
 | [BUG-247](bugs/BUG-247.md) | docked の窓の bar を touchpad で 2 回 tap しても解けず 3 回要る（5320 実機） | reproduced（実機） / scheduled | 2026-10-07 ユーザーの UAT | P2（BUG-246 の後） |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
