@@ -630,6 +630,10 @@ i915_dp_ext_probe_locked(
 		p->dig_port.dp.aux.i2c_nack_count = 0u;
 		p->dig_port.dp.aux.i2c_defer_count = 0u;
 		drv_i915_dp_ext_detect(&p->env, &p->source, &p->sink);
+
+		/* A sink the AUX channel could not reach: the port's Type-C state while it is still held, for the log. */
+		if (p->sink.status == I915_DP_EXT_DISCONNECTED && p->sink.error != 0)
+			drv_i915_tc_log_state(ext->tc, tc_port, "AUX failed");
 	}
 
 	/* Gives the link back: the port's last link gives the PHY back at once. */

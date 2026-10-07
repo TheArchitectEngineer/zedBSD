@@ -22,7 +22,8 @@
  * channel through (struct i915_lcd_emit).
  *
  * The messages of the Linux text show the format text only and never
- * evaluate their arguments (dp-internal.h).
+ * evaluate their arguments (dp-internal.h); a transfer the channel does not
+ * finish is reported with its values instead (i915_dp_aux_report()).
  *
  * The Linux original is under the MIT licence:
  *
@@ -52,9 +53,32 @@
 #include "aux.h"
 #include "dp-sink.h"
 
+#include <kern/klog.h>
+
 /* The bytes of an AUX request header without, and with, the length byte. */
 #define BARE_ADDRESS_SIZE	3
 #define HEADER_SIZE		(BARE_ADDRESS_SIZE + 1)
+
+/*
+ * The AUX power wells' BIOS and driver request registers (the Linux
+ * ICL_PWR_WELL_CTL_AUX1 and _AUX2), read into a failed transfer's report:
+ * two bits a well, the state at 2n and the request at 2n + 1.
+ */
+#define I915_DP_AUX_WELLS_BIOS		0x45440u
+#define I915_DP_AUX_WELLS_DRIVER	0x45444u
+
+/* The failed transfers reported in full: the first ones, then one of every so many. */
+#define I915_DP_AUX_REPORTS_FIRST	8u
+#define I915_DP_AUX_REPORTS_EVERY	64u
+
+/*
+ * How many failed AUX transfers were reported, of every port.
+ *
+ * It only grows, under the AUX mutex the transfers hold; it decides which
+ * failures are logged in full, so a sink that never answers does not flood
+ * the log.
+ */
+static unsigned i915_dp_aux_reports;
 
 static u32 i915_dp_aux_pack(const u8 *src, int src_bytes);
 static void i915_dp_aux_unpack(u32 src, u8 *dst, int dst_bytes);
@@ -72,6 +96,7 @@ static i915_dp_ssize_t i915_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_d
 static i915_reg_t i915_tgl_aux_ctl_reg(struct intel_dp *intel_dp);
 static i915_reg_t i915_tgl_aux_data_reg(struct intel_dp *intel_dp, int index);
 static struct i915_dp_world *i915_aux_emit_world(void *ctx);
+static void i915_dp_aux_report(struct intel_dp *intel_dp, struct drm_i915_private *i915, i915_reg_t ch_ctl, const char *what, u32 status);
 
 /*
  * Binds the AUX channel of an eDP port to this platform's hardware (the
@@ -245,12 +270,9 @@ i915_dp_aux_wait_done(
 					      DP_AUX_CH_CTL_SEND_BUSY, 0,
 					      2, timeout_ms, &status);
 
-	/* Reports a transfer that did not complete. */
-	if (waited == -I915_DP_ETIMEDOUT) {
-		I915_DP_DRM_ERR(&i915->drm,
-				"%s: did not complete or timeout within %ums (status 0x%08x)\n",
-				intel_dp->aux.name, timeout_ms, status);
-	}
+	/* Reports a transfer that did not complete within the 10 ms. */
+	if (waited == -I915_DP_ETIMEDOUT)
+		i915_dp_aux_report(intel_dp, i915, ch_ctl, "did not complete within 10 ms", status);
 
 	/* Succeeded: reports the last status read. */
 	return status;
@@ -507,15 +529,13 @@ i915_dp_aux_xfer_locked(
 
 	/* Reports a message the channel never finished. */
 	if ((status & DP_AUX_CH_CTL_DONE) == 0) {
-		I915_DP_DRM_ERR(&i915->drm, "%s: not done (status 0x%08x)\n",
-				intel_dp->aux.name, status);
+		i915_dp_aux_report(intel_dp, i915, ch_ctl, "not done", status);
 		return -I915_DP_EBUSY;
 	}
 
 	/* Reports a receive error. */
 	if (status & DP_AUX_CH_CTL_RECEIVE_ERROR) {
-		I915_DP_DRM_ERR(&i915->drm, "%s: receive error (status 0x%08x)\n",
-				intel_dp->aux.name, status);
+		i915_dp_aux_report(intel_dp, i915, ch_ctl, "receive error", status);
 		return -I915_DP_EIO;
 	}
 
@@ -870,4 +890,51 @@ i915_aux_emit_world(
 
 	/* Succeeded: reports the world. */
 	return world;
+}
+
+/*
+ * Reports a failed AUX transfer with its values: the channel, what went
+ * wrong, the last status, the control register and what it reads now, and
+ * the AUX power wells' BIOS and driver requests.  The failure is counted as
+ * a DP error; only the first ones, then one of every
+ * I915_DP_AUX_REPORTS_EVERY, are logged.
+ */
+static void
+i915_dp_aux_report(
+	struct intel_dp *intel_dp,
+	struct drm_i915_private *i915,
+	i915_reg_t ch_ctl,
+	const char *what,
+	u32 status)
+{
+	u32 control;
+	u32 wells_bios;
+	u32 wells_driver;
+	int shown;
+
+	/* Counts the error; a level that is not shown ends here. */
+	shown = drv_i915_dp_log_enabled(I915_VBT_LOG_ERR);
+	if (!shown)
+		return;
+
+	/* Only the first failures, then one of every so many, are logged. */
+	i915_dp_aux_reports++;
+	if (i915_dp_aux_reports > I915_DP_AUX_REPORTS_FIRST && (i915_dp_aux_reports % I915_DP_AUX_REPORTS_EVERY) != 0u)
+		return;
+
+	/* The control register now, and the AUX wells' requests and states. */
+	control = i915_dp_intel_de_read(i915, ch_ctl);
+	wells_bios = i915_dp_intel_de_read(i915, _MMIO(I915_DP_AUX_WELLS_BIOS));
+	wells_driver = i915_dp_intel_de_read(i915, _MMIO(I915_DP_AUX_WELLS_DRIVER));
+
+	/* One line with every value. */
+	kern_logf("i915: aux %s: %s (status 0x%08x; control 0x%05x reads 0x%08x; AUX wells bios 0x%08x driver 0x%08x; report %u)\n",
+		  intel_dp->aux.name,
+		  what,
+		  status,
+		  ch_ctl.reg,
+		  control,
+		  wells_bios,
+		  wells_driver,
+		  i915_dp_aux_reports);
 }
