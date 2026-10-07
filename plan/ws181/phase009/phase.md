@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p009 -->
 # ws181-p009: UAT 2026-10-07 の 6 回目（5320 実機）
 
-Status: in-progress（P2、実装・build・host まで、QEMU は T1、5320 の session.log は未読）
+Status: test-wait（2026-10-07 q852 P2 cb7ea0b96: 7 項目の実装、build warning 0、host run-host-edge 69/0・run-host-arrange 1213/0。QEMU は T1-361、5320 の UAT はユーザー）
 Disposition: normal
 Parent: [WS181](../ws.md)
 
