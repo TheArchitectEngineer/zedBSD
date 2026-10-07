@@ -523,3 +523,29 @@ QEMU の証拠と実機の証拠は分けて書く。実機は 5330 が戻るま
 | 13 | host の fixture の cmdbuf は既存の失敗（`test_blend_state`）がある。b3 の検査を足しても PASS にならず受け入れに使えない | b3 の検査は cmdbuf の既存の失敗より前に置き、個別に通る形にする。既存の失敗は p006 の記録どおり別件（直すなら Q1 に path を報告） |
 | 14 | 実機が無い間に p007b を merge すると、GS を使う app（無い）以外への影響は判断 2・CLIP の 2 点だけ。それでも実機の回帰まで「cleared」にしない | phase.md の受け入れに「実機は T1 の結果を Q1 が判定するまで cleared にしない」を書く |
 | 15 | design は Mesa 25.0.7 の file 行を引くが、genxml.h の既存の sha256 は別の Mesa（main）の物。転記のとき file を取り違えない | §0 の注記。新しい定数は 25.0.7 の sha256 と行を書く |
+
+## 14. design-reviewer の review の反映（2026-10-07、この節が本文より優先）
+
+| 指摘 | 反映 |
+| --- | --- |
+| B1 EmitVertex が max_vertices を越えて URB の外へ書く | a3 の EMIT の predicate を `P && vertex_count < max_vertices`（Mesa の `nir_lower_gs_intrinsics.c` 30〜55 と同じ guard、kernel の中の compiler は未定義の動作を GPU の破損にしない）。fixture に max_vertices+1 回の emit |
+| B2 増分の依存と受け入れ | a2 の受け入れは EmitVertex の無い GS と terminate の最小形（頂点数 0 の EOT）、b1 の依存は a3、b5 の依存に a3・b4（survey なら a4）（phase.md の表） |
+| S1 r1 の handle の mask | a2 の prologue で `AND r(vue_grf−2), r1, 0xFFFF`（NoMask）を 1 回、§4.4 の r1 の使用（301・303・324・325 行）は全てこの写し（Mesa `brw_fs_thread_payload.cpp` 114） |
+| S2 layered の depth・stencil の RTVE | b3 で 3DSTATE_DEPTH_BUFFER（`state.c` 1514〜1524）と stencil（3171 付近）の Render Target View Extent = layer_count − 1、Depth を合わせる（isl `isl_emit_depth_stencil.c` 148・164） |
+| S3 point size の source | b1 で `vs_point_size` を最後の stage の binary から。`shaderTessellationAndGeometryPointSize` は出さない（FALSE）ので GS の PointSize の store は refuse、GS がある時の幅は state の 1.0 |
+| S4 PrimitiveID の SBE | b4 で SBE_SWIZ と 3DSTATE_SBE dword 1 の Primitive ID Override（bits 0〜4、16〜19）の両方（anv `genX_pipeline.c` 714〜718・747〜754）、期待値は 0xF600 \| source。実機の場面は b5 の依頼に足す |
+| S5 「VERTEX でなければ FRAGMENT」の分岐 | a2 で次を GS の扱いに: `compile.c` 4507 の prologue、4343〜4349 の payload_end、2378 の point size、2384 以降の staged store、4555〜4610 の terminate、3725〜3810 の skip の解析（EMIT・END は STORE_STORAGE と同じく P の下の predicated）、891・1028 付近の operands・results の表 |
+| S6 topology と GS の入力の不一致 | b2 で draw の topology の頂点の数 ≠ `gs_vertices_in` なら ENOTSUP と「draw refused」の log |
+| S7 window の VS の上限と呼び出し | b1（phase.md の表） |
+| S8 feature と limit の増分 | `geometryShader`・`maxGeometry*` は b4（a3 の後）、`maxFramebufferLayers` だけ b3 |
+| S9 cut bits > 32 | 判断 6 を改訂し a3 に入れる。Invocations > 1 だけ a5。GS の sampler は refuse のまま、GL の `GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS` との矛盾は ws.md の「断って記録」に書く |
+| S10 道具の path | brw の道具は `build/mesa-tools/build-asm/src/intel/compiler/{brw_asm,brw_disasm}`、`refvk.c` は `plan/ws031/handover/tools/refvk.c`（Mesa の build が要るかは未確認）、regenerate.py は `--target-env=vulkan1.1 --target-spv=spv1.0`。a3 の受け入れに Mesa の disasm との URB の send の突き合わせ |
+| S11 p006 への依存と受け入れの文 | phase.md の「review の反映」（scoped dependency、受け入れ 1 の文）。Phase の ID は Q1 |
+| minor 1 mlen | emit 2 は mlen の field（bits 28:25）を 2 に置き換える（OR しない） |
+| minor 2 ClearAttachments の layer | b3（phase.md の表） |
+| minor 3 per-slot offset | emit ごとの ADD の累計（同じ predicate）、`mul` の UW 即値は使わない |
+| minor 4 window の費用 | session ごとに +512 KiB（`draw.c` 104）、EOT の詰めの clear（`state.c` 797）も 64 KiB に |
+| minor 5 gl_in の member | 宣言でなく access で refuse（glslc の gl_PerVertex は ClipDistance・CullDistance を持つ） |
+| minor 6 GS 無しの adjacency | 判断 4 の代案の根拠: anv は GS の有無に関わらず 9〜12 を出す（`genX_gfx_state.c` 128〜138） |
+| minor 7 実機の試験の並べ方 | b5（phase.md の表） |
+| minor 8 GS の push data の上限 | b1（phase.md の表） |
