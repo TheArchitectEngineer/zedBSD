@@ -521,14 +521,38 @@ spin_unlock_irqrestore(struct spinlock *lock, unsigned long flags)
 	(void)flags;
 }
 
-/* A batch run on an engine (draw.c): the host runs nothing. */
+/*
+ * GPU objects and the batches run on an engine (ws083-p004).  Off by
+ * default: no object is made (below) and a run runs nothing.  A test that
+ * sets stub_objects_on gets objects of host memory at made-up addresses,
+ * and each run's dwords appended to stub_batch_words (at most
+ * STUB_BATCH_WORDS of them; the test empties it by zeroing
+ * stub_batch_count) with the engine the last one ran on.
+ */
+#define STUB_BATCH_WORDS	8192U
+int stub_objects_on;
+uint32_t stub_batch_words[STUB_BATCH_WORDS];
+unsigned stub_batch_count;
+unsigned stub_batch_runs;
+unsigned stub_batch_engine;
+static uint64_t stub_object_next_va = 0x7000000000ULL;
+
+/* A batch run on an engine (draw.c): the host runs nothing, and keeps the dwords when objects are on. */
 int
 drv_i915_gfx_batch_run(struct i915_render_session *session, struct i915_gfx_batch *batch, uint64_t batch_va, unsigned engine)
 {
+	unsigned index;
+
 	(void)session;
-	(void)batch;
 	(void)batch_va;
-	(void)engine;
+	if (!stub_objects_on)
+		return 0;
+	for (index = 0U; index < batch->count && stub_batch_count < STUB_BATCH_WORDS; index++) {
+		stub_batch_words[stub_batch_count] = batch->cmds[index];
+		stub_batch_count++;
+	}
+	stub_batch_engine = engine;
+	stub_batch_runs++;
 	return 0;
 }
 
@@ -543,22 +567,44 @@ drv_i915_gfx_object_create(
 	uint64_t bytes,
 	struct i915_gem_object **result)
 {
-	UNUSED_PARAMETER(session);
-	UNUSED_PARAMETER(bytes);
+	struct i915_gem_object *object;
 
-	/* No object on the host. */
+	UNUSED_PARAMETER(session);
+
+	/* No object on the host unless a test turned objects on. */
 	*result = NULL;
-	return ENOMEM;
+	if (!stub_objects_on)
+		return ENOMEM;
+
+	/* An object of host memory at the next made-up address. */
+	object = kern_calloc(1U, sizeof(*object));
+	if (object == NULL)
+		return ENOMEM;
+	object->address = kern_calloc(1U, (size_t)bytes);
+	if (object->address == NULL) {
+		kern_free(object);
+		return ENOMEM;
+	}
+	object->bytes = bytes;
+	object->va = stub_object_next_va;
+	stub_object_next_va += (bytes + 0xffffULL) & ~0xffffULL;
+	*result = object;
+	return 0;
 }
 
-/* Stands in for destroying a GPU object: none was made. */
+/* Stands in for destroying a GPU object: frees one the stand-in made. */
 void
 drv_i915_gfx_object_destroy(
 	struct i915_render_session *session,
 	struct i915_gem_object *object)
 {
 	UNUSED_PARAMETER(session);
-	UNUSED_PARAMETER(object);
+
+	/* Only an object made above. */
+	if (object == NULL)
+		return;
+	kern_free(object->address);
+	kern_free(object);
 }
 
 /* Stands in for the session's draw objects: none on the host. */

@@ -67,10 +67,11 @@ static void i915_instance_limits(VkPhysicalDeviceLimits *limits);
 static int i915_instance_features(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_memory_properties(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_queue_families(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
-static void i915_instance_format_features(uint32_t format, VkFormatProperties *properties);
+static void i915_instance_format_features(uint32_t format, int video, VkFormatProperties *properties);
 static uint32_t i915_instance_usage_features(uint32_t usage);
-static int i915_instance_format_properties(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
-static int i915_instance_image_format_properties(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int i915_instance_format_properties(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int i915_instance_image_format_properties(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static void i915_instance_video_image_properties(uint32_t type, uint32_t tiling, uint32_t usage, uint32_t features, struct i915_wire_writer *reply);
 static int i915_instance_create_device(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_get_device_queue2(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_destroy(struct i915_render_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader);
@@ -113,11 +114,11 @@ drv_i915_render_instance_dispatch(
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES:
 		/* vkGetPhysicalDeviceFormatProperties */
-		error = i915_instance_format_properties(reader, reply);
+		error = i915_instance_format_properties(session, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES:
 		/* vkGetPhysicalDeviceImageFormatProperties */
-		error = i915_instance_image_format_properties(reader, reply);
+		error = i915_instance_image_format_properties(session, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES:
 		/* vkGetPhysicalDeviceProperties */
@@ -588,10 +589,14 @@ i915_instance_queue_families(
 	return 0;
 }
 
-/* Reports what the executor does with a format: render to it, sample it, copy it. */
+/*
+ * Reports what the executor does with a format: render to it, sample it,
+ * copy it; on a device with video decode, decode into NV12 (design D23).
+ */
 static void
 i915_instance_format_features(
 	uint32_t format,
+	int video,
 	VkFormatProperties *properties)
 {
 	uint32_t surface_format;
@@ -608,6 +613,13 @@ i915_instance_format_features(
 	 * features.
 	 */
 	switch (format) {
+	case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+		/* The video decoder's output and reference pictures, in Y tiles only. */
+		if (video) {
+			properties->optimalTilingFeatures = VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR |
+				VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR;
+		}
+		break;
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SRGB:
@@ -745,6 +757,7 @@ i915_instance_usage_features(
 /* vkGetPhysicalDeviceFormatProperties: [physical][format][present] -> [present][VkFormatProperties]. */
 static int
 i915_instance_format_properties(
+	struct i915_render_session *session,
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
@@ -759,7 +772,7 @@ i915_instance_format_properties(
 		return EINVAL;
 
 	/* Looks the format up and replies the present word and the record. */
-	i915_instance_format_features(format, &properties);
+	i915_instance_format_features(format, session->vk->video, &properties);
 	drv_i915_wire_reply_u64(reply, 1U);
 	i915_vkc_enc_VkFormatProperties(reply, &properties);
 
@@ -773,6 +786,7 @@ i915_instance_format_properties(
  */
 static int
 i915_instance_image_format_properties(
+	struct i915_render_session *session,
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
@@ -798,11 +812,17 @@ i915_instance_image_format_properties(
 		return EINVAL;
 
 	/* Looks the format up and takes the features of the tiling asked about. */
-	i915_instance_format_features(format, &properties);
+	i915_instance_format_features(format, session->vk->video, &properties);
 	kern_memset(&image, 0, sizeof(image));
 	features = properties.optimalTilingFeatures;
 	if (tiling == VK_IMAGE_TILING_LINEAR)
 		features = properties.linearTilingFeatures;
+
+	/* An NV12 picture of the video decoder has its own limits. */
+	if (format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+		i915_instance_video_image_properties(type, tiling, usage, features, reply);
+		return 0;
+	}
 
 	/* Finds the features the usage needs; a usage the executor never implements needs a feature no format has. */
 	required = i915_instance_usage_features(usage);
@@ -876,6 +896,52 @@ i915_instance_image_format_properties(
 
 	/* Succeeded: the image format's properties are reported. */
 	return 0;
+}
+
+/*
+ * Replies the properties of an NV12 image: a 2D picture in Y tiles used only
+ * as the video decoder's output and reference pictures (libvulkan answers
+ * another usage with the video profile's own result), of one level, one
+ * layer and one sample, at most 4096 a side (design §3.4).
+ */
+static void
+i915_instance_video_image_properties(
+	uint32_t type,
+	uint32_t tiling,
+	uint32_t usage,
+	uint32_t features,
+	struct i915_wire_writer *reply)
+{
+	VkImageFormatProperties image;
+	uint32_t video_usage;
+
+	/* Refuses a device without video decode, another type or tiling, and another usage. */
+	kern_memset(&image, 0, sizeof(image));
+	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+	if (features == 0U ||
+	    type != VK_IMAGE_TYPE_2D ||
+	    tiling != VK_IMAGE_TILING_OPTIMAL ||
+	    usage == 0U ||
+	    (usage & ~video_usage) != 0U) {
+		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+		drv_i915_wire_reply_u64(reply, 1U);
+		i915_vkc_enc_VkImageFormatProperties(reply, &image);
+		return;
+	}
+
+	/* One picture of one sample, at most 4096 a side, within 1 GiB. */
+	image.maxExtent.width = 4096U;
+	image.maxExtent.height = 4096U;
+	image.maxExtent.depth = 1U;
+	image.maxMipLevels = 1U;
+	image.maxArrayLayers = 1U;
+	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+	image.maxResourceSize = 1ULL << 30;
+
+	/* Replies VK_SUCCESS, the present word and the record. */
+	drv_i915_wire_reply_u32(reply, 0U);
+	drv_i915_wire_reply_u64(reply, 1U);
+	i915_vkc_enc_VkImageFormatProperties(reply, &image);
 }
 
 /* vkCreateDevice: [physical][present][VkDeviceCreateInfo][allocator][present][id] -> [result][present][id]. */

@@ -54,12 +54,27 @@
  */
 #define I915_GFX_IMAGE_LEVEL_ALIGN	4U
 
+/*
+ * The video decoder's NV12 pictures (ws083): at most 4096 a side, laid out
+ * from an extent rounded up to whole macroblocks, in Y tiles of 128 bytes
+ * by 32 rows, the whole image whole pages.
+ */
+#define I915_GFX_VIDEO_MAX_EXTENT	4096U
+#define I915_GFX_VIDEO_MB		16U
+#define I915_GFX_TILE_Y_BYTES		128U
+#define I915_GFX_TILE_Y_ROWS		32U
+#define I915_GFX_PAGE			4096U
+
 static uint32_t i915_gfx_row_pitch(uint32_t width, uint32_t texel_bytes);
 static void i915_gfx_stencil_layout(struct i915_gfx_image *image, uint32_t slices);
 static uint32_t i915_gfx_channel(uint32_t swizzle, uint32_t identity);
 static int i915_gfx_depth_format(uint32_t format);
 static int i915_gfx_is_depth(uint32_t format);
 static int i915_gfx_image_supported(const VkImageCreateInfo *info);
+static int i915_gfx_video_image_supported(const struct i915_render_session *session, const VkImageCreateInfo *info);
+static void i915_gfx_nv12_layout(struct i915_gfx_image *image);
+static void i915_gfx_plane_layout(const struct i915_gfx_image *image, const VkImageSubresource *subresource, VkSubresourceLayout *layout);
+static uint32_t i915_gfx_align(uint32_t value, uint32_t alignment);
 static uint32_t i915_gfx_image_max_levels(uint32_t width, uint32_t height, uint32_t depth);
 static uint32_t i915_gfx_one(uint32_t count);
 static uint32_t i915_gfx_minify(uint32_t extent, uint32_t level);
@@ -98,8 +113,11 @@ drv_i915_gfx_create_image(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Decides whether the image has the one layout the executor supports. */
-	supported = i915_gfx_image_supported(&info);
+	/* Decides whether the image has a layout the executor supports: an NV12 picture is the video decoder's. */
+	if (info.format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
+		supported = i915_gfx_video_image_supported(session, &info);
+	else
+		supported = i915_gfx_image_supported(&info);
 
 	/* Refuses any other image by name, and allocates a supported one. */
 	image = NULL;
@@ -357,13 +375,16 @@ drv_i915_gfx_subresource_layout(
 	 * Describes the level: its first texel in the mip layout, its rows at
 	 * the image's pitch up to its last texel, and the whole image as the
 	 * array and depth pitch.  A single-level image is its whole allocation,
-	 * padding rows of a depth image included.
+	 * padding rows of a depth image included.  An NV12 picture describes
+	 * the plane its aspect names.
 	 */
 	kern_memset(&layout, 0, sizeof(layout));
 	layers = 0U;
 	if (image != NULL)
 		layers = i915_gfx_one(image->layers);
-	if (image != NULL && subresource.mipLevel < image->levels && subresource.arrayLayer < layers) {
+	if (image != NULL && image->planar != 0U) {
+		i915_gfx_plane_layout(image, &subresource, &layout);
+	} else if (image != NULL && subresource.mipLevel < image->levels && subresource.arrayLayer < layers) {
 		i915_gfx_level_origin(image, subresource.mipLevel, &level_x, &level_y);
 		level_width = i915_gfx_minify(image->width, subresource.mipLevel);
 		level_height = i915_gfx_minify(image->height, subresource.mipLevel);
@@ -439,13 +460,19 @@ drv_i915_gfx_image_layout(
 	uint32_t slices;
 	int depth;
 
+	/* Refuses an empty image. */
+	if (image->width == 0U || image->height == 0U)
+		return EINVAL;
+
+	/* An NV12 picture of the video decoder has its own layout. */
+	if (image->format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM && image->levels == 1U) {
+		i915_gfx_nv12_layout(image);
+		return 0;
+	}
+
 	/* Refuses a format the executor does not lay out. */
 	texel_bytes = drv_i915_gfx_format_bytes(image->format);
 	if (texel_bytes == 0U)
-		return EINVAL;
-
-	/* Refuses an empty image. */
-	if (image->width == 0U || image->height == 0U)
 		return EINVAL;
 
 	/* Refuses no level, and more levels than halve the extent down to one texel. */
@@ -634,6 +661,10 @@ drv_i915_gfx_image_slice(
 	uint32_t level_y;
 	uint32_t slices;
 	uint64_t offset;
+
+	/* Refuses an NV12 picture: only the video decoder reads and writes one. */
+	if (image->planar != 0U)
+		return EINVAL;
 
 	/* Refuses a level or a slice the image does not have. */
 	if (level >= image->levels)
@@ -914,6 +945,130 @@ i915_gfx_image_supported(
 
 	/* Succeeded: the image has the supported layout. */
 	return 1;
+}
+
+/*
+ * Decides whether an NV12 image is a picture the video decoder takes: only
+ * on a device that offers video decode, 2D, one level, one layer, one
+ * sample, optimal tiling (Y tiles), no create flags, at most 4096 a side,
+ * and used only as the decoder's output and reference pictures (design
+ * §3.4).
+ */
+static int
+i915_gfx_video_image_supported(
+	const struct i915_render_session *session,
+	const VkImageCreateInfo *info)
+{
+	uint32_t video_usage;
+
+	/* Only a device that offers video decode has NV12 images. */
+	if (!session->vk->video)
+		return 0;
+
+	/* One 2D picture of one sample in Y tiles, without create flags. */
+	if (info->imageType != VK_IMAGE_TYPE_2D || info->tiling != VK_IMAGE_TILING_OPTIMAL)
+		return 0;
+	if (info->mipLevels != 1U || info->arrayLayers != 1U || info->samples != VK_SAMPLE_COUNT_1_BIT)
+		return 0;
+	if (info->flags != 0U)
+		return 0;
+
+	/* Not empty, and not larger than the decoder decodes. */
+	if (info->extent.width == 0U || info->extent.height == 0U || info->extent.depth != 1U)
+		return 0;
+	if (info->extent.width > I915_GFX_VIDEO_MAX_EXTENT || info->extent.height > I915_GFX_VIDEO_MAX_EXTENT)
+		return 0;
+
+	/* Used as the decoder's output, its reference pictures or both, and nothing else. */
+	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+	if (info->usage == 0U || (info->usage & ~video_usage) != 0U)
+		return 0;
+
+	/* Succeeded: the decoder takes the picture. */
+	return 1;
+}
+
+/*
+ * Lays an NV12 picture out as the video decoder writes it (design §6.4):
+ * the extent rounded up to whole macroblocks, a pitch of whole Y tiles
+ * (128 bytes), the Y plane's rows rounded up to whole tile rows (32), the
+ * interleaved CbCr plane (half the rows) below it, also of whole tile
+ * rows, and the whole image whole pages.
+ */
+static void
+i915_gfx_nv12_layout(
+	struct i915_gfx_image *image)
+{
+	uint32_t width;
+	uint32_t height;
+	uint32_t chroma_height;
+	uint64_t bytes;
+
+	/* The extent in whole macroblocks. */
+	width = i915_gfx_align(image->width, I915_GFX_VIDEO_MB);
+	height = i915_gfx_align(image->height, I915_GFX_VIDEO_MB);
+
+	/* The Y plane: whole tiles across, whole tile rows down. */
+	image->pitch = i915_gfx_align(width, I915_GFX_TILE_Y_BYTES);
+	image->chroma_rows = i915_gfx_align(height, I915_GFX_TILE_Y_ROWS);
+	image->chroma_offset = (uint64_t)image->pitch * image->chroma_rows;
+
+	/* The CbCr plane below it: half the rows, whole tile rows; the whole image whole pages. */
+	chroma_height = i915_gfx_align(height / 2U, I915_GFX_TILE_Y_ROWS);
+	bytes = image->chroma_offset + (uint64_t)image->pitch * chroma_height;
+	image->bytes = (bytes + I915_GFX_PAGE - 1U) & ~(uint64_t)(I915_GFX_PAGE - 1U);
+	image->planar = 1U;
+	image->slice_rows = 0U;
+	image->stencil = 0U;
+	image->sample_width = image->width;
+	image->sample_height = image->height;
+}
+
+/*
+ * Describes one plane of an NV12 picture (a private promise of zedBSD, the
+ * layout of an optimal image, design N3): VK_IMAGE_ASPECT_PLANE_0_BIT the Y
+ * plane, VK_IMAGE_ASPECT_PLANE_1_BIT the CbCr plane, each at the image's
+ * pitch in Y tiles; the whole image is the array and depth pitch.  Another
+ * aspect, level or layer is an empty layout.
+ */
+static void
+i915_gfx_plane_layout(
+	const struct i915_gfx_image *image,
+	const VkImageSubresource *subresource,
+	VkSubresourceLayout *layout)
+{
+	/* Only the one level and layer. */
+	if (subresource->mipLevel != 0U || subresource->arrayLayer != 0U)
+		return;
+
+	/* The plane the aspect names. */
+	if (subresource->aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT) {
+		/* The Y plane, from the start. */
+		layout->offset = 0U;
+		layout->size = image->chroma_offset;
+	} else if (subresource->aspectMask == VK_IMAGE_ASPECT_PLANE_1_BIT) {
+		/* The CbCr plane, to the image's end. */
+		layout->offset = image->chroma_offset;
+		layout->size = image->bytes - image->chroma_offset;
+	} else {
+		/* No other aspect has a layout. */
+		return;
+	}
+
+	/* Both planes have the image's pitch; the image is one slice. */
+	layout->rowPitch = image->pitch;
+	layout->arrayPitch = image->bytes;
+	layout->depthPitch = image->bytes;
+}
+
+/* Rounds a value up to a multiple of a power of two. */
+static uint32_t
+i915_gfx_align(
+	uint32_t value,
+	uint32_t alignment)
+{
+	/* Adds the alignment less one and clears the bits below it. */
+	return (value + alignment - 1U) & ~(alignment - 1U);
 }
 
 /* Reports how many mip levels an extent has down to one texel, the largest side halving each time. */

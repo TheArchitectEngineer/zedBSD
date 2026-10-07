@@ -24,18 +24,21 @@
  * decode of a bad stream is undefined.  Skipped pictures still move the
  * DPB slots, so the next good picture finds its references.
  *
- * XXX: the MFX commands of a decode are p004's.  A decode that passes every
- * check writes nothing yet, so no batch runs on VCS0; the batch, its run on
- * the video engine and the keeping of everything a hung decode may still
- * read are in place for them.
+ * A decode that passes every check is resolved -- its sets, its picture,
+ * the GPU addresses of its output, references, bitstream and session
+ * memory -- and the MFX commands of the picture (video-mfx.c) are written
+ * into the session's own batch, which runs to its end on VCS0 before the
+ * next operation.
  */
 
 #include "video.h"
+#include "video-mfx.h"
 #include "batch.h"
 #include "codec.h"
 #include "draw.h"
 #include "fence.h"
 #include "gfx.h"
+#include "heap.h"
 #include "object.h"
 
 #include "../memory.h"
@@ -53,6 +56,8 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "../intel/genxml.h"
 
 /* The H.264 decode limits the executor reports and holds sessions to (design §3.3). */
 #define I915_VIDEO_MAX_DPB_SLOTS	17U
@@ -82,6 +87,12 @@
 /* The alignment of every binding and decode surface, and the one memory type. */
 #define I915_VIDEO_ALIGN		4096U
 #define I915_VIDEO_MEMORY_TYPES		1U
+
+/*
+ * The bytes of a session's batch: one decode at a time, at most
+ * I915_VIDEO_MFX_MAX_DWORDS and the batch's end, with room to spare.
+ */
+#define I915_VIDEO_BATCH_BYTES		32768U
 
 /* The deepest chain a structure may carry. */
 #define I915_VIDEO_MAX_CHAIN		8U
@@ -144,71 +155,6 @@
 #define I915_VIDEO_ERROR_CODEC			(-1000023004)
 #define I915_VIDEO_ERROR_STD_VERSION		(-1000023005)
 
-/* The H.264 flag bits the checks read, by their place in the packed word. */
-#define I915_VIDEO_SPS_FRAME_MBS_ONLY		(1U << 8)
-#define I915_VIDEO_PICTURE_IS_REFERENCE		(1U << 4)
-
-/*
- * H.264 scaling lists as the wire carries them: which lists are present and
- * which of them use the default, then the six 4x4 and the six 8x8 lists in
- * their zig-zag scan order.
- */
-struct i915_video_scaling {
-	uint32_t present_mask;
-	uint32_t default_mask;
-	uint8_t list4[96];
-	uint8_t list8[384];
-};
-
-/*
- * One H.264 sequence parameter set a parameters object holds.  It is one
- * allocation (D22), made when the set is added and freed with the object or
- * when a later set of the same key replaces it.
- */
-struct i915_video_sps {
-	uint32_t flags;
-	uint32_t profile_idc;
-	uint32_t level_idc;
-	uint32_t chroma_format_idc;
-	uint32_t id;
-	uint32_t bit_depth_luma_minus8;
-	uint32_t bit_depth_chroma_minus8;
-	uint32_t log2_max_frame_num_minus4;
-	uint32_t pic_order_cnt_type;
-	int32_t offset_for_non_ref_pic;
-	int32_t offset_for_top_to_bottom_field;
-	uint32_t log2_max_pic_order_cnt_lsb_minus4;
-	uint32_t num_ref_frames_in_pic_order_cnt_cycle;
-	uint32_t max_num_ref_frames;
-	uint32_t pic_width_in_mbs_minus1;
-	uint32_t pic_height_in_map_units_minus1;
-	uint32_t crop[4];
-	uint32_t offset_count;
-	int32_t offsets[255];
-	int has_scaling;
-	struct i915_video_scaling scaling;
-};
-
-/*
- * One H.264 picture parameter set a parameters object holds, keyed by its
- * sequence and picture set ids; the sets of one picture set id are a list.
- */
-struct i915_video_pps {
-	struct i915_video_pps *next;
-	uint32_t flags;
-	uint32_t sps_id;
-	uint32_t pps_id;
-	uint32_t num_ref_idx_l0_default_active_minus1;
-	uint32_t num_ref_idx_l1_default_active_minus1;
-	uint32_t weighted_bipred_idc;
-	int32_t pic_init_qp_minus26;
-	int32_t pic_init_qs_minus26;
-	int32_t chroma_qp_index_offset;
-	int32_t second_chroma_qp_index_offset;
-	int has_scaling;
-	struct i915_video_scaling scaling;
-};
-
 /*
  * One VkVideoSessionParametersKHR: the H.264 parameter sets of one session.
  *
@@ -249,8 +195,9 @@ struct i915_video_bind {
  * It is published from its creation to its destruction or its session's
  * close.  Its DPB slots move only when a submission runs (their simulation
  * runs on a copy).  The batch is made on the first decode that writes MFX
- * commands (p004); a batch the video engine may still read when it hung is
- * kept, not freed (design §6.1).
+ * commands; a batch the video engine may still read when it hung is kept,
+ * not freed (design §6.1).  The slice bounds are the scratch of the decode
+ * being written (submissions of a session run one at a time).
  */
 struct i915_video_session {
 	/* The H.264 profile, the largest picture in macroblocks, and the slot and reference limits. */
@@ -272,6 +219,10 @@ struct i915_video_session {
 	/* The batch the session's decodes are written into, NULL until the first one, and its cursor. */
 	struct i915_gem_object *batch;
 	struct i915_gfx_batch cursor;
+
+	/* Where each slice of the decode being written begins (after its start code) and ends, from the range's start. */
+	uint32_t slice_starts[I915_VIDEO_MAX_SLICES];
+	uint32_t slice_ends[I915_VIDEO_MAX_SLICES];
 };
 
 /* The picture resource of a decode or a slot, as recorded. */
@@ -429,9 +380,9 @@ static int i915_video_bound(struct i915_render_session *session, const struct i9
 static const struct i915_video_slot_info *i915_video_begin_slot(const struct i915_video_command *begin, int32_t index);
 static int i915_video_begin_picture(const struct i915_video_command *begin, const struct i915_video_resource *picture);
 static int i915_video_same_picture(const struct i915_video_resource *first, const struct i915_video_resource *second);
-static const char *i915_video_check(struct i915_render_session *session, const struct i915_video_command *command, const struct i915_video_command *begin, struct i915_video_session *video);
+static const char *i915_video_check(struct i915_render_session *session, const struct i915_video_command *command, const struct i915_video_command *begin, struct i915_video_session *video, struct i915_video_mfx_decode *decode);
 static const char *i915_video_check_parameters(const struct i915_video_sps *sps, const struct i915_video_pps *pps);
-static const char *i915_video_check_slices(struct i915_render_session *session, const struct i915_video_command *command);
+static const char *i915_video_check_slices(struct i915_render_session *session, const struct i915_video_command *command, struct i915_video_session *video, struct i915_video_mfx_decode *decode);
 static const char *i915_video_check_picture(struct i915_render_session *session, const struct i915_video_resource *picture, const struct i915_video_sps *sps, const struct i915_gfx_image *reference);
 static const char *i915_video_check_binds(struct i915_render_session *session, const struct i915_video_session *video);
 static const struct i915_gfx_image *i915_video_view_image(struct i915_render_session *session, uint64_t view);
@@ -439,6 +390,10 @@ static const struct i915_video_pps *i915_video_find_pps(const struct i915_video_
 static void i915_video_skip(const char *reason);
 static uint32_t i915_video_mbs(uint32_t pixels);
 static int i915_video_run(struct i915_render_session *session, struct i915_video_session *video);
+static void i915_video_resolve(struct i915_render_session *session, const struct i915_video_command *command, const struct i915_video_command *begin, const struct i915_video_session *video, struct i915_video_mfx_decode *decode);
+static uint64_t i915_video_bind_address(struct i915_render_session *session, const struct i915_video_session *video, uint32_t index);
+static uint64_t i915_video_picture_address(struct i915_render_session *session, uint64_t view);
+static int i915_video_write(struct i915_render_session *session, struct i915_video_session *video, const struct i915_video_mfx_decode *decode);
 
 /*
  * Runs one of the video commands the dispatcher routes here: the physical
@@ -670,8 +625,10 @@ drv_i915_video_submit(
 	if (error != 0)
 		return (uint32_t)VK_ERROR_DEVICE_LOST;
 
-	/* Runs it: the slots move, and every decode is checked and skipped or written. */
+	/* Runs it: the slots move, and every decode is checked and skipped or written and run. */
 	error = i915_video_simulate(session, lists, counts, list_count, 1);
+	if (error == ENOMEM)
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 	if (error != 0)
 		return (uint32_t)VK_ERROR_DEVICE_LOST;
 
@@ -2268,8 +2225,9 @@ i915_video_simulated(
  * Without `apply` it is the simulation: every rule of the API is checked
  * and the slots move on copies; the first broken rule returns EBADMSG.  With
  * `apply` it runs: the same walk on the sessions themselves, where every
- * decode is checked against what the decoder takes and skipped or
- * (p004) written; a run that fails on the GPU returns its error.
+ * decode is checked against what the decoder takes and skipped, or written
+ * and run; a batch that cannot be made returns ENOMEM, a run that fails on
+ * the GPU its error.
  */
 static int
 i915_video_simulate(
@@ -2280,6 +2238,7 @@ i915_video_simulate(
 	int apply)
 {
 	struct i915_video_simulation table[I915_VIDEO_SUBMIT_SESSIONS];
+	struct i915_video_mfx_decode decode;
 	struct i915_video_simulation *state;
 	const struct i915_video_command *begin;
 	const struct i915_video_command *command;
@@ -2373,13 +2332,19 @@ i915_video_simulate(
 
 				/*
 				 * Running, the decode is checked against what the decoder
-				 * takes; a skipped decode still moves the slots.
-				 * XXX: the MFX commands of a decode that passes are p004's.
+				 * takes and written when it passes; a skipped decode still
+				 * moves the slots.
 				 */
 				if (apply) {
-					reason = i915_video_check(session, command, begin, state->session);
-					if (reason != NULL)
+					reason = i915_video_check(session, command, begin, state->session, &decode);
+					if (reason != NULL) {
 						i915_video_skip(reason);
+					} else {
+						i915_video_resolve(session, command, begin, state->session, &decode);
+						error = i915_video_write(session, state->session, &decode);
+						if (error != 0)
+							return error;
+					}
 					kern_memcpy(state->session->slots, state->slots, sizeof(state->slots));
 
 					/* Runs what the decode wrote on VCS0; a hang loses the submission. */
@@ -2629,14 +2594,16 @@ i915_video_same_picture(
 
 /*
  * Checks a decode against what the decoder takes (design §6.6, D17):
- * returns NULL when it can be decoded, or why it is skipped.
+ * returns NULL when it can be decoded, or why it is skipped.  A decode that
+ * passes has its sets, its slices and its bitstream in `decode`.
  */
 static const char *
 i915_video_check(
 	struct i915_render_session *session,
 	const struct i915_video_command *command,
 	const struct i915_video_command *begin,
-	struct i915_video_session *video)
+	struct i915_video_session *video,
+	struct i915_video_mfx_decode *decode)
 {
 	const struct i915_video_parameters *parameters;
 	const struct i915_video_sps *sps;
@@ -2671,7 +2638,7 @@ i915_video_check(
 		return "picture larger than the video session";
 
 	/* 5, 8 and 9: the slices must lie in the bitstream range, each with its start code. */
-	reason = i915_video_check_slices(session, command);
+	reason = i915_video_check_slices(session, command, video, decode);
 	if (reason != NULL)
 		return reason;
 
@@ -2696,6 +2663,10 @@ i915_video_check(
 	reason = i915_video_check_binds(session, video);
 	if (reason != NULL)
 		return reason;
+
+	/* Keeps the sets the picture decodes with. */
+	decode->sps = sps;
+	decode->pps = pps;
 
 	/* Succeeded: the decoder takes the picture. */
 	return NULL;
@@ -2751,16 +2722,23 @@ i915_video_check_parameters(
  * Checks a decode's slices (design §6.6, items 5, 8 and 9): one to 256 of
  * them, strictly increasing offsets at least four bytes apart, inside the
  * range, which is inside the bitstream buffer, and each starting with a
- * start code (three or four bytes) in its first four bytes.
+ * start code (three or four bytes) in its first four bytes.  Each slice's
+ * bounds go into the session's scratch, and the bitstream's addresses into
+ * `decode`: the page the range starts in, the bytes into that page, and
+ * the end of the buffer's bound range.
  */
 static const char *
 i915_video_check_slices(
 	struct i915_render_session *session,
-	const struct i915_video_command *command)
+	const struct i915_video_command *command,
+	struct i915_video_session *video,
+	struct i915_video_mfx_decode *decode)
 {
 	const struct i915_gfx_buffer *buffer;
 	const uint8_t *bytes;
 	uint64_t end;
+	uint64_t start;
+	uint64_t buffer_va;
 	uint32_t index;
 	uint32_t next;
 	uint32_t at;
@@ -2795,16 +2773,33 @@ i915_video_check_slices(
 		if ((uint64_t)command->slices[index] + 4U > end)
 			return "slice shorter than 4 bytes or out of order";
 
-		/* A start code, 00 00 01, in the slice's first four bytes. */
+		/* A start code, 00 00 01, in the slice's first four bytes; the slice begins after it. */
 		found = 0;
 		for (at = 0U; at + 2U < 4U && !found; at++) {
 			next = command->slices[index] + at;
-			if (bytes[next] == 0U && bytes[next + 1U] == 0U && bytes[next + 2U] == 1U)
+			if (bytes[next] == 0U && bytes[next + 1U] == 0U && bytes[next + 2U] == 1U) {
 				found = 1;
+				video->slice_starts[index] = next + 3U;
+				video->slice_ends[index] = (uint32_t)end;
+			}
 		}
 		if (!found)
 			return "slice without a start code";
 	}
+
+	/* The GPU addresses of the range and of the buffer's end. */
+	buffer_va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset);
+	if (buffer_va == 0U)
+		return "bitstream buffer without an address";
+	start = buffer_va + command->offset;
+	decode->bitstream_base = start & ~(uint64_t)(I915_VIDEO_ALIGN - 1U);
+	decode->skew = (uint32_t)(start - decode->bitstream_base);
+	decode->bitstream_end = buffer_va + buffer->size;
+
+	/* The slices, from the session's scratch. */
+	decode->slice_count = command->slice_count;
+	decode->slice_starts = video->slice_starts;
+	decode->slice_ends = video->slice_ends;
 
 	/* Succeeded: the slices lie in the bitstream. */
 	return NULL;
@@ -2826,11 +2821,11 @@ i915_video_check_picture(
 	const struct i915_gfx_image *image;
 	uint64_t va;
 
-	/* The picture's image must exist, be NV12 and bound. */
+	/* The picture's image must exist, be an NV12 picture of the decoder and bound. */
 	image = i915_video_view_image(session, picture->view);
 	if (image == NULL || image->memory == NULL)
 		return "picture without a bound image";
-	if (image->format != I915_VIDEO_FORMAT_NV12)
+	if (image->format != I915_VIDEO_FORMAT_NV12 || image->planar == 0U)
 		return "picture not NV12";
 
 	/* The whole picture from the image's origin. */
@@ -2840,8 +2835,11 @@ i915_video_check_picture(
 	    sps->pic_height_in_map_units_minus1 + 1U > i915_video_mbs(image->height))
 		return "picture larger than its image";
 
-	/* A reference must be laid out as the output: same format and pitch. */
-	if (reference != NULL && (image->format != reference->format || image->pitch != reference->pitch))
+	/* A reference must be laid out as the output: same format, pitch and CbCr plane row. */
+	if (reference != NULL &&
+	    (image->format != reference->format ||
+	     image->pitch != reference->pitch ||
+	     image->chroma_rows != reference->chroma_rows))
 		return "reference laid out unlike the output";
 
 	/* The image's address must be page-aligned. */
@@ -2916,13 +2914,13 @@ i915_video_mbs(
 }
 
 /*
- * Runs what a video session's batch holds on the video decode engine.
+ * Runs what a video session's batch holds on the video decode engine: the
+ * decode just written, or nothing after a skipped one.
  *
- * XXX: until the MFX commands of p004 are written the batch stays empty and
- * nothing runs.  A run that hung or failed has already stopped video for
- * the device (the worker keeps the hardware context); here the session is
- * quarantined, so its address space and objects stay for the checked reset,
- * and the batch is kept with the session (design §6.1).
+ * A run that hung or failed has already stopped video for the device (the
+ * worker keeps the hardware context); here the session is quarantined, so
+ * its address space and objects stay for the checked reset, and the batch
+ * is kept with the session (design §6.1).
  */
 static int
 i915_video_run(
@@ -2960,5 +2958,153 @@ i915_video_run(
 		return error;
 
 	/* Succeeded: the decodes ran. */
+	return 0;
+}
+
+/*
+ * Resolves a checked decode into what the MFX commands are built from: its
+ * picture information, the output's address and layout, the session's row
+ * stores, the references' pictures and motion vector buffers, and the
+ * motion vector buffer the picture writes (its setup slot's when the
+ * picture is a reference, the spare one otherwise).  Every address was
+ * found to exist by the checks before.
+ */
+static void
+i915_video_resolve(
+	struct i915_render_session *session,
+	const struct i915_video_command *command,
+	const struct i915_video_command *begin,
+	const struct i915_video_session *video,
+	struct i915_video_mfx_decode *decode)
+{
+	const struct i915_gfx_image *destination;
+	const struct i915_video_slot_info *slot;
+	const struct i915_video_slot_info *bound;
+	struct i915_video_mfx_reference *reference;
+	uint32_t motion;
+	uint32_t index;
+
+	/* The picture information. */
+	decode->picture_flags = command->picture_flags;
+	decode->frame_num = command->frame_num;
+	decode->poc[0] = command->poc[0];
+	decode->poc[1] = command->poc[1];
+
+	/* The output: its address, extent, pitch and the row its CbCr plane starts at. */
+	destination = i915_video_view_image(session, command->destination.view);
+	decode->destination = i915_video_picture_address(session, command->destination.view);
+	decode->width = destination->width;
+	decode->height = destination->height;
+	decode->pitch = destination->pitch;
+	decode->chroma_rows = destination->chroma_rows;
+
+	/* The four row stores, the session's first bindings. */
+	for (index = 0U; index < I915_VIDEO_MFX_ROW_STORES; index++)
+		decode->row_stores[index] = i915_video_bind_address(session, video, index);
+
+	/* The motion vectors the picture writes: its setup slot's for a reference picture, else the spare buffer. */
+	motion = I915_VIDEO_ROW_STORES + video->max_dpb_slots;
+	if (command->has_setup && (command->picture_flags & I915_VIDEO_PICTURE_IS_REFERENCE) != 0U)
+		motion = I915_VIDEO_ROW_STORES + (uint32_t)command->setup.index;
+	decode->motion_write = i915_video_bind_address(session, video, motion);
+
+	/* The references in the decode's order: their information, their pictures as the begin bound them, their slots' motion vectors. */
+	decode->reference_count = command->reference_count;
+	for (index = 0U; index < command->reference_count; index++) {
+		slot = &command->references[index];
+		bound = i915_video_begin_slot(begin, slot->index);
+		reference = &decode->references[index];
+		reference->slot_index = slot->index;
+		reference->flags = slot->reference_flags;
+		reference->frame_num = slot->frame_num;
+		reference->poc[0] = slot->poc[0];
+		reference->poc[1] = slot->poc[1];
+		reference->picture = i915_video_picture_address(session, bound->picture.view);
+		reference->motion = i915_video_bind_address(session, video, I915_VIDEO_ROW_STORES + (uint32_t)slot->index);
+	}
+
+	/* Every buffer is uncached, as the executor's surfaces are. */
+	decode->mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+}
+
+/* Reports the GPU address of one binding of a session's memory; 0 when its memory has none. */
+static uint64_t
+i915_video_bind_address(
+	struct i915_render_session *session,
+	const struct i915_video_session *video,
+	uint32_t index)
+{
+	struct i915_gfx_memory *memory;
+	uint64_t address;
+
+	/* The binding's memory, looked up by its identity, then the address at the binding's offset. */
+	memory = drv_i915_object_lookup(session, I915_VK_OBJ_MEMORY, video->binds[index].memory);
+	address = drv_i915_gfx_memory_va(memory, video->binds[index].offset);
+
+	/* Succeeded: reports the address. */
+	return address;
+}
+
+/* Reports the GPU address of the picture of a view (its image's start, the Y plane); 0 without one. */
+static uint64_t
+i915_video_picture_address(
+	struct i915_render_session *session,
+	uint64_t view)
+{
+	const struct i915_gfx_image *image;
+	uint64_t address;
+
+	/* The view's image. */
+	image = i915_video_view_image(session, view);
+	if (image == NULL)
+		return 0U;
+
+	/* The image's address in its memory. */
+	address = drv_i915_gfx_memory_va(image->memory, image->offset);
+
+	/* Succeeded: reports the address. */
+	return address;
+}
+
+/*
+ * Writes the MFX commands of one resolved decode into the session's batch,
+ * made on the session's first decode.  Returns ENOMEM when the batch cannot
+ * be made, ENOSPC when the decode does not fit it (never with the limits
+ * the checks hold decodes to).
+ */
+static int
+i915_video_write(
+	struct i915_render_session *session,
+	struct i915_video_session *video,
+	const struct i915_video_mfx_decode *decode)
+{
+	int error;
+
+	/* Makes the batch on the session's first decode. */
+	if (video->batch == NULL) {
+		error = drv_i915_gfx_object_create(session, I915_VIDEO_BATCH_BYTES, &video->batch);
+		if (error != 0) {
+			video->batch = NULL;
+			kern_logf("i915: video: no batch for a video session: error %d\n", error);
+			return ENOMEM;
+		}
+		video->cursor.cmds = video->batch->address;
+		video->cursor.capacity = I915_VIDEO_BATCH_BYTES / 4U;
+	}
+
+	/* The decode's commands from the batch's start (each decode runs before the next is written). */
+	video->cursor.count = 0U;
+	video->cursor.overflow = 0;
+	drv_i915_video_mfx_build(&video->cursor, decode);
+
+	/* A decode that did not fit, with the batch's end after it, is not run. */
+	if (video->cursor.overflow != 0 || video->cursor.count + 2U > video->cursor.capacity) {
+		kern_logf("i915: video: decode of %u dwords does not fit the batch\n", video->cursor.count);
+		video->cursor.count = 0U;
+		video->cursor.overflow = 0;
+		return ENOSPC;
+	}
+
+	/* Succeeded: the batch holds the decode. */
 	return 0;
 }
