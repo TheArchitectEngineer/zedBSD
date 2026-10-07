@@ -417,13 +417,9 @@ drv_i915_gfx_flush(
 		return 0;
 	}
 
-	/* Ends the batch and makes the CPU writes visible before the GPU reads them. */
-	drv_i915_gfx_emit_batch_end(&work->cursor);
-	kern_io_write_barrier();
-
 	/* Runs the batch to its end on the session's render context, timing it for the frame timing. */
 	start = drv_i915_perf_now();
-	error = drv_i915_worker_run_sync(session->vk->i915, &session->gpu->contexts[I915_ENGINE_RCS0], work->batch->va);
+	error = drv_i915_gfx_batch_run(session, &work->cursor, work->batch->va, I915_ENGINE_RCS0);
 	work->stat_run_ns += drv_i915_perf_now() - start;
 	work->stat_runs++;
 	work->stat_ops += work->ops_pending;
@@ -441,6 +437,31 @@ drv_i915_gfx_flush(
 		kern_logf("i915: vk: batch failed on the GPU: error %d\n", error);
 		return error;
 	}
+
+	/* Succeeded: the batch has run to its end. */
+	return 0;
+}
+
+/*
+ * Ends a batch and runs it to its end on one of the session's engine contexts.
+ */
+int
+drv_i915_gfx_batch_run(
+	struct i915_render_session *session,
+	struct i915_gfx_batch *batch,
+	uint64_t batch_va,
+	unsigned engine)
+{
+	int error;
+
+	/* Ends the batch and makes the CPU writes visible before the GPU reads them. */
+	drv_i915_gfx_emit_batch_end(batch);
+	kern_io_write_barrier();
+
+	/* Runs it in the session's context of the engine, to its end. */
+	error = drv_i915_worker_run_sync(session->vk->i915, &session->gpu->contexts[engine], batch_va);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the batch has run to its end. */
 	return 0;

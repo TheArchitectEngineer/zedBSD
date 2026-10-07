@@ -506,6 +506,32 @@ drv_i915_worker_context_attach(struct i915_device *device, struct i915_context *
 	return 0;
 }
 
+/* The IRQ lock a video hang quarantines a session under: one host thread needs no lock. */
+unsigned long
+spin_lock_irqsave(struct spinlock *lock)
+{
+	(void)lock;
+	return 0UL;
+}
+
+void
+spin_unlock_irqrestore(struct spinlock *lock, unsigned long flags)
+{
+	(void)lock;
+	(void)flags;
+}
+
+/* A batch run on an engine (draw.c): the host runs nothing. */
+int
+drv_i915_gfx_batch_run(struct i915_render_session *session, struct i915_gfx_batch *batch, uint64_t batch_va, unsigned engine)
+{
+	(void)session;
+	(void)batch;
+	(void)batch_va;
+	(void)engine;
+	return 0;
+}
+
 /*
  * Stand in for the query pools' GPU objects and batch (ws075-p006): the
  * host has no GPU, so creating a pool's counters fails and a recorded query

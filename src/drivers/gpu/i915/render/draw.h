@@ -154,6 +154,13 @@ int drv_i915_gfx_window(struct i915_render_session *session, struct i915_gfx_ses
 int drv_i915_gfx_op_begin(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_op_space *space);
 int drv_i915_gfx_op_end(struct i915_render_session *session, struct i915_gfx_session *work, int error);
 int drv_i915_gfx_flush(struct i915_render_session *session, struct i915_gfx_session *work);
+
+/*
+ * Ends a batch, makes it visible to the GPU and runs it to its end on one
+ * of the session's engine contexts (I915_ENGINE_RCS0 for the draws,
+ * I915_ENGINE_VCS0 for the video decodes).  Returns the run's error.
+ */
+int drv_i915_gfx_batch_run(struct i915_render_session *session, struct i915_gfx_batch *batch, uint64_t batch_va, unsigned engine);
 int drv_i915_gfx_scratch(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_kernels *kernels);
 struct i915_gem_object;
 int drv_i915_gfx_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result);

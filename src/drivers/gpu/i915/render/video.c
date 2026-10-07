@@ -31,6 +31,7 @@
  */
 
 #include "video.h"
+#include "batch.h"
 #include "codec.h"
 #include "draw.h"
 #include "fence.h"
@@ -268,8 +269,9 @@ struct i915_video_session {
 	struct i915_video_slot slots[I915_VIDEO_MAX_DPB_SLOTS];
 	int reset_done;
 
-	/* The batch the session's decodes are written into; NULL until the first one. */
+	/* The batch the session's decodes are written into, NULL until the first one, and its cursor. */
 	struct i915_gem_object *batch;
+	struct i915_gfx_batch cursor;
 };
 
 /* The picture resource of a decode or a slot, as recorded. */
@@ -436,6 +438,7 @@ static const struct i915_gfx_image *i915_video_view_image(struct i915_render_ses
 static const struct i915_video_pps *i915_video_find_pps(const struct i915_video_parameters *parameters, uint32_t sps_id, uint32_t pps_id);
 static void i915_video_skip(const char *reason);
 static uint32_t i915_video_mbs(uint32_t pixels);
+static int i915_video_run(struct i915_render_session *session, struct i915_video_session *video);
 
 /*
  * Runs one of the video commands the dispatcher routes here: the physical
@@ -2378,6 +2381,11 @@ i915_video_simulate(
 					if (reason != NULL)
 						i915_video_skip(reason);
 					kern_memcpy(state->session->slots, state->slots, sizeof(state->slots));
+
+					/* Runs what the decode wrote on VCS0; a hang loses the submission. */
+					error = i915_video_run(session, state->session);
+					if (error != 0)
+						return error;
 				}
 				break;
 			default:
@@ -2905,4 +2913,52 @@ i915_video_mbs(
 {
 	/* Rounds up to whole macroblocks. */
 	return (pixels + I915_VIDEO_MB - 1U) / I915_VIDEO_MB;
+}
+
+/*
+ * Runs what a video session's batch holds on the video decode engine.
+ *
+ * XXX: until the MFX commands of p004 are written the batch stays empty and
+ * nothing runs.  A run that hung or failed has already stopped video for
+ * the device (the worker keeps the hardware context); here the session is
+ * quarantined, so its address space and objects stay for the checked reset,
+ * and the batch is kept with the session (design §6.1).
+ */
+static int
+i915_video_run(
+	struct i915_render_session *session,
+	struct i915_video_session *video)
+{
+	struct i915_device *device;
+	unsigned long irq;
+	int error;
+
+	/* An empty batch has nothing to run. */
+	if (video->batch == NULL || video->cursor.count == 0U)
+		return 0;
+
+	/* Runs the batch to its end in the session's VCS0 context, then empties it. */
+	error = drv_i915_gfx_batch_run(session, &video->cursor, video->batch->va, I915_ENGINE_VCS0);
+	video->cursor.count = 0U;
+	video->cursor.overflow = 0;
+
+	/* A decode that hung or failed quarantines the session; the device's video is stopped. */
+	if (error == ETIMEDOUT || error == EIO) {
+		device = session->vk->i915;
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		session->gpu->quarantined = 1U;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		kern_logf("i915: video: decode failed on VCS0 (error %d): session quarantined, video stopped\n", error);
+		return EIO;
+	}
+
+	/* Reports another failure of the run. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the decodes ran. */
+	return 0;
 }

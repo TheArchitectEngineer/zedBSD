@@ -40,3 +40,22 @@ UAPI・HAL・toolchain・display/ は触らない。
   - `command.c`: 記録の範囲に `0x1000a`〜`0x1000d`、op の record を begin・reset・free で解放（`i915_command_ops_clear`）、submit は queue の family で分け family 1 は `drv_i915_video_submit`（render の batch は query reset のために開く）、graphics の family の video の op は EIO（DEVICE_LOST）。`dispatch.c` の route（`0x10000`〜`0x10009`）、`objects.c` の close の解放、`gfx.h` の op kind 4 つと `u.video`、`internal.h` の object kind 2 つ、`platform/amd64/vmunix.mk` に video.c。
   - 未: MFX の命令（p004）。p003b の decode は検べと遷移だけで batch を書かず、VCS0 で何も走らない。NV12 の image（p004）が無いので D17 の 3・6・7 の image の検べは今は必ず「NV12 でない」で飛ばす。
   - 試験: `plan/ws031/tests/run-vk-host-tests.sh` の executor に video、stub に `drv_i915_worker_context_attach`、cmd の試験に `drv_i915_video_dispatch` の stub。全 10 個 PASS（plain・ASan/UBSan）。`make … vmunix` warning 0。
+
+- 2026-10-07 夜 単位 3（engine を引数に取る run・quarantine・往復の試験）:
+  - `render/draw.c/h`: 新 `drv_i915_gfx_batch_run(session, batch, va, engine)`（batch の終わり・barrier・その engine の session の context で run_sync）。`drv_i915_gfx_flush` は RCS0 でこれを使う（動きは同じ）。
+  - `render/video.c`: session に batch の cursor、新 `i915_video_run`（空なら何もしない。VCS0 で走らせ ETIMEDOUT・EIO なら session を irq lock の下で quarantine、log、EIO → submit は DEVICE_LOST）。decode の検べの後に呼ぶ。MFX を書くのは p004 なので今は走らない。
+  - 試験（新）: `plan/ws083/tests/host-video-wire.c`（libvulkan の video.c で全部の stream を file に書く）・`host-video-executor.c`（その file を実行器に流す）・`run-host-video-roundtrip.sh`。確かめる事: capset 176 byte と native の語、caps の入れ子の返事の各 field、format（NV12・optimal・usage）、queue family 2 つと token、session の作成と VCS0 の attach 1 回、memory requirements 8 本（各 4 KiB）、bind、parameters の作成と update、同じ update の 2 回目の拒否、submit: reset → 参照の IDR → P（全部 decode、skip 無し）、graphics の family で同じ物は DEVICE_LOST、非参照の P が残した inactive な slot 1 を読む decode は DEVICE_LOST、slot 0 を読む decode は成功、start code の無い 2 つ目の slice は skip（成功）、NV12 でない出力は skip、出力と layout の違う参照は skip、begin で picture 無しの slot 0 は無効になり読むと DEVICE_LOST、終わらない scope は DEVICE_LOST、hang した engine では DEVICE_LOST・戻れば成功、destroy、close で leak 0。
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws083/tests/run-host-video-roundtrip.sh` | libvulkan 側（gnu89・ASan/UBSan）で stream を書き、実行器側 plain・ASan/UBSan とも PASS |
+| `sh plan/ws031/tests/run-vk-host-tests.sh` | 10 個とも plain・ASan/UBSan PASS |
+| `sh plan/ws083/tests/run-host-libvulkan-video.sh` | PASS（p002 の試験、不変） |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+
+## 受け入れ（design §9 の p003b）と状態
+
+- §8.1 の 2 行目（往復）・3 行目（D17 の検べ）: host で PASS。D17 は 5（start code）・6（参照の layout）・NV12 の検べを試した。1・2・4（parameter の値）・3（MB の数）・7（整列）・8・9 は読みと build（境界ごとの試験は SPS の値を変えた stream が要る、p004 の builder の試験と一緒に足す）。
+- build warning 0。
+- 残り（p004）: NV12 の image（Tile Y の layout、vkGetImageSubresourceLayout の PLANE_0/1）、format feature（D23）、MFX の命令の builder と batch の作成、§8.2 の QEMU 回帰（T1）。
+- 状態: 実装と host 試験は済み。cleared の判定は Q1。
