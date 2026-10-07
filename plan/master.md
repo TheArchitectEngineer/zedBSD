@@ -37,6 +37,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
+- **WS181 の設計の判断（P2、plan/ws181/phase001/design.md §7・§9、design-reviewer の後にユーザーへ）**: D1 10-07 の UAT が 10-06 の「閉じたら次も最大化」を置き換える（知らせ）。D2 docked の窓の最小化は閉じると同じ扱いか（review: Ctrl+Alt+Shift+矢印の移動は docked のまま運ぶ）。D3 touchpad も 2 本指の下端 = Home、上端 = Wiseview にするか。D4 Home の上で下からの swipe は何もしない、Home は下への drag で閉じる。D5 整列のメニューは今の desktop の絵からだけか、pill のどこからでもか。D6 全画面では上端で Wiseview。D7 整列の上限を超える窓はその場に。追加: mouse にも上端の帯を効かせ全画面の窓から 10 px を取るか（S8）、整列モードの印と窓が閉じた時の詰め直し（S6）、Home の上に bar を残すか（S9）。ws142 の試験・記録の変更の許可（S10、Q1 で可）。
 - **M-3（WS051）**: 5330 の iGPU を一時的に host の i915 に付け替えて USB-C の DP の正解の register を採るか（2026-10-07 ユーザーが質問を閉じた、5330 が戻った時に改めて聞く）。
 - **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
 - WS180（Emacs の graphical な editor）・WS117（Qt6）はベータ3 以降（決定済み）。
