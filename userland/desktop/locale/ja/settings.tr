@@ -52,9 +52,9 @@ msg	Storage	ストレージ
 # userland/desktop/locale/settings.keys:28
 msg	How the disks and folders are used, and the Trash.	ディスクとフォルダの使用量、ゴミ箱。
 # userland/desktop/locale/settings.keys:29
-msg	Battery	バッテリー
+msg	Power	電源
 # userland/desktop/locale/settings.keys:30
-msg	Charge and power saving.	充電と省電力。
+msg	Sleep and the screen.	スリープと画面。
 # userland/desktop/locale/settings.keys:31
 msg	Keyboard	キーボード
 # userland/desktop/locale/settings.keys:32
@@ -195,6 +195,22 @@ msg	Your password is wrong.	パスワードが違います。
 msg	Another change is under way. Try again in a moment.	ほかの変更が進行中です。少し待ってからやり直してください。
 # userland/desktop/settings/page-look.c:556
 msg	Accent color	アクセントカラー
+# userland/desktop/settings/page-power.c:67
+msg	The screen turns off after half that time.	画面はその半分の時間で消えます。
+# userland/desktop/settings/page-power.c:69
+msg	This computer cannot sleep. The screen turns off after half that time.	このコンピューターはスリープできません。画面はその半分の時間で消えます。
+# userland/desktop/settings/page-power.c:73
+msg	Sleep	スリープ
+# userland/desktop/settings/page-power.c:74
+msg	Sleep after, on the power adapter	電源アダプター使用時、スリープまで
+# userland/desktop/settings/page-power.c:75
+msg	Sleep after, on battery	バッテリー使用時、スリープまで
+# userland/desktop/settings/page-power.c:165, userland/desktop/settings/page-power.c:218
+msg	Never	しない
+# userland/desktop/settings/page-power.c:166
+msg	2 hours	2 時間
+# userland/desktop/settings/page-power.c:224
+plural	{1} minute	{1} minutes	{1} 分
 # userland/desktop/settings/search.c:527
 msg	Coming in a later version	今後のバージョンで対応予定
 # userland/desktop/settings/titlebar.c:227
@@ -213,3 +229,7 @@ msg	Start using Kei	Kei を使い始める
 msg	Welcome to Kei, {1}	Kei へようこそ、{1} さん
 # userland/desktop/settings/welcome.c:300
 msg	Let's set up a few things. You can change each of them later in Settings.	いくつか設定しましょう。どれもあとで設定から変えられます。
+
+# Not asked for by the source any more (kept for a text that comes back):
+# msg	Battery	バッテリー
+# msg	Charge and power saving.	充電と省電力。

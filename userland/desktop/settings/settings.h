@@ -246,7 +246,7 @@ enum se_page_id {
 	SE_PAGE_DISPLAY,
 	SE_PAGE_LANGUAGES,
 	SE_PAGE_STORAGE,
-	SE_PAGE_BATTERY,
+	SE_PAGE_POWER,
 	SE_PAGE_KEYBOARD,
 	SE_PAGE_MOUSE,
 	SE_PAGE_TOUCHPAD,
@@ -987,6 +987,9 @@ struct se_look {
 	int dark;
 	int accent;
 	int frosted;
+	/* The minutes without input before a sleep, on the adapter and on battery (0 never; ws052-p013). */
+	int sleep_ac;
+	int sleep_battery;
 	int dragging;
 	struct kl_rect slider;
 	struct kl_rect sliders[8];
@@ -1337,6 +1340,8 @@ int se_keyboard_draw(struct se_app *app, struct kl_canvas *canvas, int x, int to
 int se_sound_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_input_press(struct se_app *app, int index);
 void se_input_drag(struct se_app *app, int index, int x, unsigned phase);
+int se_power_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+void se_power_drag(struct se_app *app, int index, int x, unsigned phase);
 
 /* The sound's volume (sound.c, ws100-p005), and its page's controls (hit indices). */
 #define SE_SOUND_VOLUME		6

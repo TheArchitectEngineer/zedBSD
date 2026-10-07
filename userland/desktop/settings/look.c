@@ -59,6 +59,9 @@
 #define LOOK_DELAY_MIN		150
 #define LOOK_DELAY_MAX		1000
 #define LOOK_DELAY_DEFAULT	400
+/* The minutes without input before a sleep, as the compositor takes them (settings-keys.c power.sleep.*). */
+#define LOOK_SLEEP_AC		30
+#define LOOK_SLEEP_BATTERY	15
 
 /* The pictures: the default (the session's --wallpaper) and the folder of the others. */
 #define LOOK_DEFAULT_PICTURE	KEILAND_DATADIR "/keiland/wallpaper.png"
@@ -131,6 +134,8 @@ se_look_open(
 	look->repeat_rate = LOOK_RATE_DEFAULT;
 	look->ime_method = 1;
 	look->repeat_delay = LOOK_DELAY_DEFAULT;
+	look->sleep_ac = LOOK_SLEEP_AC;
+	look->sleep_battery = LOOK_SLEEP_BATTERY;
 	look->wallpaper[0] = '\0';
 
 	/* The settings; without them the pages still show the defaults. */
@@ -527,6 +532,10 @@ look_read(
 
 	/* The windows' glass panels, frosted unless chosen solid (BUG-214). */
 	look->frosted = kl_settings_get_int(look->settings, "window.frosted", 1);
+
+	/* The minutes without input before a sleep (ws052-p013; 30 on the adapter, 15 on battery). */
+	look->sleep_ac = kl_settings_get_int(look->settings, "power.sleep.ac", LOOK_SLEEP_AC);
+	look->sleep_battery = kl_settings_get_int(look->settings, "power.sleep.battery", LOOK_SLEEP_BATTERY);
 
 	/*
 	 * The picture: the chosen one, or none (empty) for the default.  flags
