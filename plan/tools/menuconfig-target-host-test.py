@@ -74,10 +74,12 @@ def check_packages() -> None:
     # A base program or a package is chosen by whoever configures the
     # build, not by the platform: only the kernel options, the drivers, the
     # desktop and the firmware are tied to one (BUG-080).  noct and zedinst
-    # need the Noct runtime, which some platforms lack.
+    # need the Noct runtime, which some platforms lack.  The security-key
+    # programs (fidoctl, passkey-fido2: OpenSSL and the hidraw device) and
+    # libavcodec (the media add-in) are built for amd64 only (2026-10-07 Q1).
     # The desktop's own packages (packages/desktop, such as GTK 4) go with
     # the desktop, which only some platforms have (BUG-129).
-    platform_tied = {"noct", "zedinst"}
+    platform_tied = {"noct", "fidoctl", "passkey-fido2", "libavcodec"}
     for row in rows:
         if row[0] in platform_tied:
             continue
