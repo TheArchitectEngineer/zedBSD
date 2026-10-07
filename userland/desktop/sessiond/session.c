@@ -58,6 +58,10 @@
  *   POWER poweroff|reboot
  *                    ends the machine (ws131-p027, power.c: the Power Off
  *                    dialog; root or wheel only); OK, FAIL wheel, or ERROR
+ *   POWER suspend    sleeps the machine (ws052-p011, sleep.c; any session
+ *                    user); SLEPT woke=…, NOSLEEP …, ERROR busy or ERROR
+ *                    once the sleep is done
+ *   POWER cancel     stops a sleep before the kernel is asked; no answer
  */
 
 #include "auth.h"
@@ -118,7 +122,7 @@ sessiond_session_run(
 	struct sessiond_account *account)
 {
 	struct sessiond_exchange exchange;
-	struct pollfd entry[2];
+	struct pollfd entry[3];
 	char directory[64];
 	pid_t child;
 	pid_t waited;
@@ -126,6 +130,7 @@ sessiond_session_run(
 	int control;
 	int leaving;
 	nfds_t entries;
+	nfds_t sleep_slot;
 	int timeout;
 	int busy;
 	int ready;
@@ -212,6 +217,14 @@ sessiond_session_run(
 		entry[1].revents = 0;
 		if (entry[1].fd >= 0)
 			entries = 2;
+
+		/* A sleep's answer, whoever asked it (sleep.c, ws052-p011). */
+		sleep_slot = entries;
+		entry[sleep_slot].fd = sessiond_sleep_fd();
+		entry[sleep_slot].events = POLLIN;
+		entry[sleep_slot].revents = 0;
+		if (entry[sleep_slot].fd >= 0)
+			entries++;
 		busy = sessiond_exchange_busy(&exchange);
 		timeout = 1000;
 		if (busy)
@@ -227,10 +240,15 @@ sessiond_session_run(
 			/* A session that closed its end says nothing more, and its attempt ends. */
 			if ((entry[0].revents & (POLLHUP | POLLERR)) != 0 && (entry[0].revents & POLLIN) == 0) {
 				sessiond_exchange_stop(&exchange);
+				sessiond_sleep_forget(control);
 				(void)close(control);
 				control = -1;
 			}
 		}
+
+		/* The sleep's answer goes to the compositor that asked. */
+		if (ready > 0 && sleep_slot < entries && entry[sleep_slot].revents != 0)
+			sessiond_sleep_collect();
 
 		/* An attempt under way moves on. */
 		if (control >= 0)
@@ -243,6 +261,7 @@ sessiond_session_run(
 
 	/* The session has ended: what is left of it goes, and the record says so. */
 	sessiond_exchange_stop(&exchange);
+	sessiond_sleep_forget(control);
 	if (control >= 0)
 		(void)close(control);
 	sessiond_log("SESSIOND SESSION end user=%s pid=%ld status=%d", account->passwd.pw_name, (long)child, status);

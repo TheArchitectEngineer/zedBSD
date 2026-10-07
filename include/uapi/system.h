@@ -349,12 +349,18 @@ _Static_assert(sizeof(struct system_event) == 128U,
 
 /*
  * The power's present state: which parts are known (KERN_SYSTEM_POWER_HAS_*),
- * the lid (1 open), the AC adapter (1 plugged), and the first battery
- * (percent, 1 charging).  An unknown part reads zero.
+ * the lid (1 open), the AC adapter (1 plugged), the first battery
+ * (percent, 1 charging), and what the machine can do
+ * (KERN_SYSTEM_POWER_FLAG_*, ws052-p011: KERN_SYSTEM_POWER_FLAG_CAN_SLEEP
+ * when KERN_SYSTEM_SLEEP in the mode KERN_SYSTEM_SLEEP_S0IDLE would not be
+ * refused with EOPNOTSUPP).  An unknown part reads zero; a kernel before
+ * the flags reads them zero (it cannot sleep).
  */
 #define KERN_SYSTEM_POWER_HAS_LID	0x1U
 #define KERN_SYSTEM_POWER_HAS_AC	0x2U
 #define KERN_SYSTEM_POWER_HAS_BATTERY	0x4U
+
+#define KERN_SYSTEM_POWER_FLAG_CAN_SLEEP	0x1U
 
 struct system_power_info {
 	uint32_t known;
@@ -362,8 +368,14 @@ struct system_power_info {
 	uint32_t ac_online;
 	uint32_t battery_percent;
 	uint32_t battery_charging;
-	uint32_t reserved[3];
+	uint32_t flags;
+	uint32_t reserved[2];
 };
+
+_Static_assert(sizeof(struct system_power_info) == 32U,
+    "power info ABI must be identical on ILP32 and LP64");
+_Static_assert(offsetof(struct system_power_info, flags) == 20U,
+    "power info flags offset is an ABI contract");
 
 #define KERN_SYSTEM_EVENT_SUBSCRIBE                                         \
 	_IOW(KERN_SYSTEM_IOC_GROUP, 17, struct system_event_subscription)
