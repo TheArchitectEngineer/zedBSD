@@ -45,7 +45,7 @@ Resume point: 2026-10-07 夕 P1（q833）: p001 の設計の第 2 版（[design.
 | [ws083-p001](phase001/phase.md) | 設計（[design.md](design.md)） | in-progress（P1、第 2 版） | — |
 | ws083-p002 | libvulkan の骨組み（拡張・queue family・capability・format・session・parameters・record・sync2 の翻訳・capset の native の語）、host の試験、T1 の QEMU の回帰 | planning | p001、H1・H2・H3・HD1・HD6 |
 | ws083-p003 | i915: engine record VCS0、worker の engine ごとの context、遅延の VCS0 の context、hang の封じ込め、video の object・slot 表・kernel の検べ、host の試験 | planning | p001（video の object は H1） |
-| ws083-p004 | MFX AVC の I frame の builder（genxml-video.h、NV12 Tile Y）、genxml の独立の decoder、試験の stream、`vkvideo-probe`（host で build） | planning | p003、H4・H5・HD4 |
+| [ws083-p004](phase004/phase.md) | MFX AVC の I frame の builder（genxml-video.h、NV12 Tile Y）、genxml の独立の decoder、試験の stream、`vkvideo-probe`（host で build） | in-progress（q857、P2。実装と host 試験済み、§8.2 の QEMU 回帰は T1 待ち） | p003、H4・H5・HD4 |
 | ws083-p005 | 実機: VCS の bring-up と I frame の hash（`i915.debug=video`）、HuC 不要の確認 | planning | p004、5330 |
 | ws083-p006 | P・B と DPB、scaling list の fall-back、複数 slice | planning | p005 |
 | ws083-p007 | 性能、`i915.debug=video` の門の既定化、利用者への案内、SAMPLED・TRANSFER_SRC（HD5） | planning | p006 |

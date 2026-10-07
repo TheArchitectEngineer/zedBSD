@@ -3,3 +3,5 @@
 # queue family).  Used with plan/ws075/tests/test-hw.sh as ZEDBSD_CONFIG.
 include plan/ws075/tests/config-test-hw.mk
 ZEDBSD_BOOT_EXTRA_LINES := i915.debug=video
+# ws083-p004/p005: vkvideo-probe decodes the test streams (copy plan/ws083/tests/streams/*.h264 and *.sha256 in).
+ZEDBSD_USER_PROGRAMS += vkvideo-probe

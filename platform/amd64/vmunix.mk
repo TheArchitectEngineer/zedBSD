@@ -831,7 +831,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo vkvideo-probe display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # Static programs (the class static, ws168-p002): linked with the static C
 # library alone and no runtime linker, as a child that sandbox_spawn starts
@@ -1140,6 +1140,23 @@ $(BUILD)/bin/vkdemo: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_VKDEMO_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
+ --needed libvulkan.so --needed libc.so $@
+
+# The Vulkan Video probe (ws083) is a plain Vulkan client like vkdemo.
+DYNAMIC_VKVIDEO_PROBE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,vkvideo-probe)
+
+$(BUILD)/bin/vkvideo-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+	$(DYNAMIC_VKVIDEO_PROBE_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_VKVIDEO_PROBE_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
