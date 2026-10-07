@@ -70,4 +70,7 @@ void drv_i915_scanout_unmap_panel(struct i915_display *display);
 /* The display-only pairing operations of the resident node (private data: the device). */
 extern const struct drv_gpu_scanout_ops drv_i915_scanout_ops;
 
+/* The display-only pairing operations of the capture node (private data: the device). */
+extern const struct drv_gpu_scanout_ops drv_i915_capture_scanout_ops;
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_SCANOUT_H */
