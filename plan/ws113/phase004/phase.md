@@ -91,3 +91,13 @@ anchor でない出力の swapchain の作成が `VK_ERROR_INITIALIZATION_FAILED
 Keiland の lease がどの出力にも無い時に、GOP の出力でない接続済みの出力の `GPU_DISPLAY_CLAIM` を許し、resident の pipe をその出力へ modeset し直す（eDP は pipe を止め panel の電源と backlight を落とす。HDMI の modeset は起動時の `display=hdmi` の道を動いている間に使う）。その出力の release で GOP の出力へ戻し console を出す。lease が 1 つでもある時の他の claim は今のまま `ENOSPC`（同時の 2 出力は p011）。実機（5330 の eDP と HDMI）の確認が要る。
 
 目安: p004a 4〜6 h（host と QEMU）、p011a 3〜5 h（実機）。
+
+### 設計の詳細（2026-10-07、source を読んで）
+
+- **surface の display の指定**: compositor は `userland/tests/vkdemo/display.c` を link している（`wayland/Makefile:28`・`Makefile.linux:73`）。`vkdemo_display_open` の loop の本体（mode・plane・surface）を新しい public の `vkdemo_display_open_on(instance, physical, VkDisplayKHR, w, h, out)` に出し、`vkdemo_display_open` はそれを呼ぶ（振る舞いは不変）。下書き: `plan/ws113/temp/p004a-vkdemo-open-on.patch`（git に入れない、sha256 99f47872…）。
+- **拡張の有効化**（`compose.c` の `compose_device`）: instance の拡張の一覧に `VK_EXT_display_surface_counter` があれば足し、device に `VK_EXT_display_control` があれば足して `vkRegisterDeviceEventEXT` を `vkGetDeviceProcAddr` で引く（Linux の libvulkan-compat など無い所では hotplug の通知なしで今の動き）。
+- **glass**（`glass.c` の新しい `kwl_glass_resize`）: device の idle → `glass->wallpaper`・`glass->blurred` を `kwl_host_image_release` → `wallpaper_create`（`server->wallpaper_path` は settings.c が今の選択に保つ）。atlas・tiles は大きさに依らない。
+- **窓**（`shell.c` の新しい `kwl_glass_output_resized`、`keyboard.c` の `keyboard_work_area`（3375-3452）と同じ型）: 全 client の窓（live・mapped・toplevel・desktop の icon でない）について、全画面は configure（`protocol.c:1527` が `server->width/height` を送る）、docked（`maximized`）は `docked_rect` → x・y・window_width・height → `kwl_window_send_configure` と `window_resized`、floating は `kwl_glass_fit` で今の大きさのまま新しい space の内へ。glass でない look は全画面の configure と位置の clamp だけ。log `KWL OUTPUT window surface=N state=docked|floating|fullscreen x= y= w= h=`。
+- **wl_output**（`protocol.c` の新しい `kwl_output_changed`）: bind した全ての `KWL_OUTPUT` の object に `output_send` と同じ geometry・mode（current|preferred、新しい width・height・refresh）・scale・name・description・done を送り直す。
+- **pointer**（`input.c`）: `server->pointer_x/y` を新しい範囲へ clamp。
+- **その他の cache**: 画面の keyboard（`keyboard.c` の panel の座標は開く時に計算、開いていれば閉じる）、backdrop（`kwl_backdrop_destroy` は output の close で既に呼ばれる）、App Home・bar・stage は毎 frame に `server->width` から計算（確かめて、cache があれば捨てる）。
