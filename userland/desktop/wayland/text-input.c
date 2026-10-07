@@ -23,6 +23,7 @@
 #include "ime.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -489,12 +490,16 @@ input_commit(
 	/* The commit's number is the serial of the dones that follow. */
 	input->commits++;
 
-	/* enable and disable start from no state; enable turns the input method on. */
+	/* enable and disable start from no state; enable turns the input method on (each said in the log, ws090-p025). */
 	if (input->pending_enable) {
 		input_clear(input);
 		input->enabled = 1;
+		printf("KWL TEXT enable client=%llu surface=%u\n", (unsigned long long)input->object->client->number,
+		    input->surface != NULL ? input->surface->id : 0U);
 	} else if (input->pending_disable) {
 		input_clear(input);
+		printf("KWL TEXT disable client=%llu surface=%u\n", (unsigned long long)input->object->client->number,
+		    input->surface != NULL ? input->surface->id : 0U);
 	}
 
 	input->pending_enable = 0;

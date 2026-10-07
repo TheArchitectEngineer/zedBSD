@@ -148,6 +148,8 @@
 #define OP_CONVERT_S_TO_F 111U
 #define OP_CONVERT_U_TO_F 112U
 #define OP_BITCAST 124U
+#define OP_U_CONVERT 113U
+#define OP_S_CONVERT 114U
 #define OP_SNEGATE 126U
 #define OP_FNEGATE 127U
 #define OP_IADD 128U
@@ -778,10 +780,16 @@ struct i915_spirv_parser {
 	struct i915_spirv_range closed[MAX_LOOPS];
 	uint32_t closed_count;
 
-	/* The shared constants the lowering introduces: 0.0, 1.0 and true; NO_VALUE until first needed. */
+	/*
+	 * The shared constants the lowering introduces: 0.0, 1.0 and true, and
+	 * the integers 16 and 0xFFFF of a 16-bit value's extension; NO_VALUE
+	 * until first needed.
+	 */
 	uint32_t zero_value;
 	uint32_t one_value;
 	uint32_t true_value;
+	uint32_t int_16_value;
+	uint32_t int_ffff_value;
 
 	/*
 	 * What the local variables and the outputs currently hold, one IR value
@@ -855,6 +863,7 @@ static uint32_t i915_spirv_lower_integer_component(struct i915_spirv_parser *par
 static uint32_t i915_spirv_absolute_integer(struct i915_spirv_parser *parser, uint32_t value, uint32_t negative);
 static int i915_spirv_lower_integer_unary(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_convert(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_width_convert(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_bitcast(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_float_remainder(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_lower_vector_times_scalar(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
@@ -927,6 +936,10 @@ static uint32_t i915_spirv_float_components(struct i915_spirv_parser *parser, ui
 static uint32_t i915_spirv_int_components(struct i915_spirv_parser *parser, uint32_t type_id);
 static uint32_t i915_spirv_bool_components(struct i915_spirv_parser *parser, uint32_t type_id);
 static uint32_t i915_spirv_value_components(struct i915_spirv_parser *parser, uint32_t type_id);
+static int i915_spirv_type_has_int16(struct i915_spirv_parser *parser, uint32_t type_id, uint32_t depth);
+static uint32_t i915_spirv_int_width(struct i915_spirv_parser *parser, uint32_t type_id);
+static uint32_t i915_spirv_operand_int_width(struct i915_spirv_parser *parser, uint32_t id);
+static uint32_t i915_spirv_extend16(struct i915_spirv_parser *parser, uint32_t value, uint32_t width, int is_signed);
 static uint32_t i915_spirv_matrix_components(struct i915_spirv_parser *parser, uint32_t type_id);
 static uint32_t i915_spirv_float_components_wide(struct i915_spirv_parser *parser, uint32_t type_id);
 static int i915_spirv_type_size(struct i915_spirv_parser *parser, uint32_t type_id, uint32_t depth, uint32_t *scalars, uint32_t *locations);
@@ -1023,6 +1036,8 @@ drv_i915_shader_parse(
 	parser.zero_value = NO_VALUE;
 	parser.one_value = NO_VALUE;
 	parser.true_value = NO_VALUE;
+	parser.int_16_value = NO_VALUE;
+	parser.int_ffff_value = NO_VALUE;
 	parser.ids = kern_calloc(parser.bound, sizeof(*parser.ids));
 	if (parser.ids == NULL) {
 		kern_free(ir);
@@ -1808,6 +1823,12 @@ i915_spirv_declare_variable(
 		}
 	}
 
+	/* A 16-bit integer is not lowered in an interface's memory (that needs the 16-bit storage extensions). */
+	if ((storage == SC_INPUT || storage == SC_OUTPUT || storage == SC_PUSH_CONSTANT || storage == SC_UNIFORM ||
+	     storage == SC_STORAGE_BUFFER) &&
+	    i915_spirv_type_has_int16(parser, record->pointee, 0U) != 0)
+		return i915_spirv_refuse(parser, opcode, offset, "16-bit integer in an input, output, push constant or buffer");
+
 	/* The storage class, and a location, decide what the variable is to the shader. */
 	if (storage == SC_INPUT && record->has_builtin != 0U && parser->ir->stage == I915_STAGE_COMPUTE) {
 		error = i915_spirv_declare_system(parser, record, opcode, offset);
@@ -2292,6 +2313,10 @@ i915_spirv_lower(
 	case OP_CONVERT_U_TO_F:
 		return i915_spirv_lower_convert(parser, word, count, opcode, offset);
 
+	case OP_S_CONVERT:
+	case OP_U_CONVERT:
+		return i915_spirv_lower_width_convert(parser, word, count, opcode, offset);
+
 	case OP_BITCAST:
 		return i915_spirv_lower_bitcast(parser, word, count, opcode, offset);
 
@@ -2583,6 +2608,8 @@ i915_spirv_chain_block(
 			scalar_count = i915_spirv_operand(parser, index_id, scalars);
 			if (scalar_count != 1U)
 				return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+			/* A 16-bit index made whole, signed as SPIR-V's indices are (ws031-p039). */
+			scalars[0] = i915_spirv_extend16(parser, scalars[0], i915_spirv_operand_int_width(parser, index_id), 1);
 
 			/* A storage buffer's second dynamic index folds the first into bytes, and itself after it (ws101-p002). */
 			if (record->dynamic_index != NO_VALUE) {
@@ -2769,6 +2796,8 @@ i915_spirv_chain_dynamic(
 	scalar_count = i915_spirv_operand(parser, index_id, scalars);
 	if (scalar_count != 1U)
 		return i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
+	/* A 16-bit index made whole, signed as SPIR-V's indices are (ws031-p039). */
+	scalars[0] = i915_spirv_extend16(parser, scalars[0], i915_spirv_operand_int_width(parser, index_id), 1);
 
 	/* The first index of the chain picks among its parts as they are. */
 	if (record->dynamic_index == NO_VALUE) {
@@ -3750,7 +3779,11 @@ i915_spirv_lower_integer(
 	uint32_t components;
 	uint32_t left_integers;
 	uint32_t right_integers;
+	uint32_t width;
+	uint32_t left_width;
+	uint32_t right_width;
 	uint32_t index;
+	int shift;
 
 	/* The instruction must carry both operands. */
 	if (count != 5U)
@@ -3768,6 +3801,32 @@ i915_spirv_lower_integer(
 		return i915_spirv_refuse(parser, opcode, offset, "integer operation on operands that are not integer scalars / vectors of the result's size");
 	if (left_integers != components || right_integers != components)
 		return i915_spirv_refuse(parser, opcode, offset, "integer operation on operands that are not integer scalars / vectors of the result's size");
+
+	/*
+	 * The widths (ws031-p039): a shift's base is the result's and its count
+	 * any; the other operations' operands are all of the result's.
+	 */
+	width = i915_spirv_int_width(parser, word[1]);
+	left_width = i915_spirv_operand_int_width(parser, word[3]);
+	right_width = i915_spirv_operand_int_width(parser, word[4]);
+	shift = opcode == OP_SHIFT_LEFT_LOGICAL || opcode == OP_SHIFT_RIGHT_LOGICAL || opcode == OP_SHIFT_RIGHT_ARITHMETIC;
+	if (left_width != width || (!shift && right_width != width))
+		return i915_spirv_refuse(parser, opcode, offset, "integer operation on operands of another width");
+
+	/* A 16-bit operand made whole where its high half would change the result (a shift count is used & 31). */
+	for (index = 0U; index < components && width == 16U; index++) {
+		if (opcode == OP_SDIV || opcode == OP_SREM || opcode == OP_SMOD) {
+			left[index] = i915_spirv_extend16(parser, left[index], width, 1);
+			right[index] = i915_spirv_extend16(parser, right[index], width, 1);
+		} else if (opcode == OP_UDIV || opcode == OP_UMOD) {
+			left[index] = i915_spirv_extend16(parser, left[index], width, 0);
+			right[index] = i915_spirv_extend16(parser, right[index], width, 0);
+		} else if (opcode == OP_SHIFT_RIGHT_ARITHMETIC) {
+			left[index] = i915_spirv_extend16(parser, left[index], width, 1);
+		} else if (opcode == OP_SHIFT_RIGHT_LOGICAL) {
+			left[index] = i915_spirv_extend16(parser, left[index], width, 0);
+		}
+	}
 
 	/* Declares the result; its scalars are named by the lowering of each component. */
 	record = i915_spirv_result(parser, word[2], word[1], components, 0);
@@ -3913,13 +3972,15 @@ i915_spirv_lower_integer_unary(
 	integers = i915_spirv_operand_int_components(parser, word[3]);
 	if (components == 0U || operand_count != components || integers != components)
 		return i915_spirv_refuse(parser, opcode, offset, "integer operation on an operand that is not an integer scalar / vector of the result's size");
+	if (i915_spirv_operand_int_width(parser, word[3]) != i915_spirv_int_width(parser, word[1]))
+		return i915_spirv_refuse(parser, opcode, offset, "integer operation on an operand of another width");
 
 	/* Declares the result as fresh scalars. */
 	record = i915_spirv_result(parser, word[2], word[1], components, 1);
 	if (record == NULL)
 		return EINVAL;
 
-	/* A negation or a complement. */
+	/* A negation or a complement (the low 16 bits of a 16-bit one are right whatever its high half). */
 	if (opcode == OP_SNEGATE) {
 		op = I915_IR_INEG;
 	} else {
@@ -3948,6 +4009,7 @@ i915_spirv_lower_convert(
 	uint32_t operand[4];
 	uint32_t operand_count;
 	uint32_t components;
+	uint32_t width;
 	uint32_t index;
 
 	/* The instruction must carry its operand. */
@@ -3988,11 +4050,65 @@ i915_spirv_lower_convert(
 		op = I915_IR_U2F;
 	}
 
-	/* Emits one conversion per component. */
+	/* A 16-bit integer converted to a float is made whole first, by the conversion's signedness (ws031-p039). */
+	width = 0U;
+	if (opcode == OP_CONVERT_S_TO_F || opcode == OP_CONVERT_U_TO_F)
+		width = i915_spirv_operand_int_width(parser, word[3]);
+	for (index = 0U; index < components && width == 16U; index++)
+		operand[index] = i915_spirv_extend16(parser, operand[index], width, opcode == OP_CONVERT_S_TO_F);
+
+	/* Emits one conversion per component (to a 16-bit integer, the 32-bit one's low half: SPIR-V leaves a value out of range undefined). */
 	for (index = 0U; index < components; index++)
 		(void)i915_spirv_emit(parser, op, record->comp[index], operand[index], 0U);
 
 	/* Succeeded: the conversion is lowered. */
+	return 0;
+}
+
+/*
+ * Lowers OpSConvert and OpUConvert between 16-bit and 32-bit integers
+ * (ws031-p039): to 32 bits the 16-bit value made whole, sign extended or
+ * zero extended; to 16 bits the 32-bit value as it is (its low half is the
+ * result).  The widths must differ (the SPIR-V rule).
+ */
+static int
+i915_spirv_lower_width_convert(
+	struct i915_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct i915_spirv_id *record;
+	uint32_t operand[4];
+	uint32_t operand_count;
+	uint32_t components;
+	uint32_t width;
+	uint32_t from;
+	uint32_t index;
+
+	/* The instruction must carry its operand. */
+	if (count != 4U)
+		return EINVAL;
+	operand_count = i915_spirv_operand(parser, word[3], operand);
+
+	/* Integers of one size, of two widths. */
+	components = i915_spirv_int_components(parser, word[1]);
+	if (components == 0U || operand_count != components || i915_spirv_operand_int_components(parser, word[3]) != components)
+		return i915_spirv_refuse(parser, opcode, offset, "width conversion between operands of other kinds or sizes");
+	width = i915_spirv_int_width(parser, word[1]);
+	from = i915_spirv_operand_int_width(parser, word[3]);
+	if (width == from)
+		return EINVAL;
+
+	/* Declares the result: named scalars, the operand's or its extension. */
+	record = i915_spirv_result(parser, word[2], word[1], components, 0);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Succeeded: each component, made whole when it widens. */
+	for (index = 0U; index < components; index++)
+		record->comp[index] = i915_spirv_extend16(parser, operand[index], from, opcode == OP_S_CONVERT);
 	return 0;
 }
 
@@ -4013,6 +4129,11 @@ i915_spirv_lower_bitcast(
 	uint32_t operand_count;
 	uint32_t components;
 	uint32_t booleans;
+	uint32_t width;
+	uint32_t from;
+	uint32_t sixteen;
+	uint32_t low;
+	uint32_t high;
 	uint32_t index;
 
 	/* The instruction must carry its operand. */
@@ -4022,20 +4143,42 @@ i915_spirv_lower_bitcast(
 	/* Resolves the operand; it may emit a constant. */
 	operand_count = i915_spirv_operand(parser, word[3], operand);
 
-	/* A float or integer scalar or vector of the operand's size; a Boolean has no bits to cast. */
+	/*
+	 * A float or integer scalar or vector of the operand's bits; a Boolean
+	 * has none.  A 16-bit integer's vector casts to or from 32-bit scalars
+	 * of the same bits, component 0 the low half (ws031-p039).
+	 */
 	components = i915_spirv_value_components(parser, word[1]);
 	booleans = i915_spirv_bool_components(parser, word[1]);
-	if (components == 0U || booleans != 0U || operand_count != components)
-		return i915_spirv_refuse(parser, opcode, offset, "bitcast that is not between 32-bit scalars / vectors of one size");
+	width = i915_spirv_int_width(parser, word[1]) == 16U ? 16U : 32U;
+	from = i915_spirv_operand_int_width(parser, word[3]) == 16U ? 16U : 32U;
+	if (components == 0U || booleans != 0U || operand_count == 0U || components * width != operand_count * from)
+		return i915_spirv_refuse(parser, opcode, offset, "bitcast that is not between scalars / vectors of the same bits");
 
-	/* Declares the result as the operand's scalars. */
+	/* Declares the result: the operand's scalars renamed, or packed and unpacked. */
 	record = i915_spirv_result(parser, word[2], word[1], components, 0);
 	if (record == NULL)
 		return EINVAL;
-	for (index = 0U; index < components; index++)
-		record->comp[index] = operand[index];
+	for (index = 0U; index < components; index++) {
+		if (width == from) {
+			record->comp[index] = operand[index];
+		} else if (width == 32U) {
+			/* Two 16-bit halves into one: the low one alone, the high one shifted up. */
+			sixteen = i915_spirv_shared_constant(parser, &parser->int_16_value, I915_IR_ICONST, 16U);
+			low = i915_spirv_extend16(parser, operand[2U * index], 16U, 0);
+			high = i915_spirv_emit_value(parser, I915_IR_SHL, operand[2U * index + 1U], sixteen);
+			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_IOR, low, high);
+		} else if ((index & 1U) == 0U) {
+			/* The low half: the value itself, its high half left undefined. */
+			record->comp[index] = operand[index / 2U];
+		} else {
+			/* The high half, shifted down. */
+			sixteen = i915_spirv_shared_constant(parser, &parser->int_16_value, I915_IR_ICONST, 16U);
+			record->comp[index] = i915_spirv_emit_value(parser, I915_IR_SHR, operand[index / 2U], sixteen);
+		}
+	}
 
-	/* Succeeded: the bits are renamed. */
+	/* Succeeded: the bits are renamed or moved. */
 	return 0;
 }
 
@@ -4786,6 +4929,8 @@ i915_spirv_lower_extended(
 	uint32_t components;
 	uint32_t function;
 	uint32_t index;
+	uint32_t width;
+	int is_signed;
 	int integers;
 
 	/* The instruction must carry the set, the number and one operand. */
@@ -4890,6 +5035,23 @@ i915_spirv_lower_extended(
 		if (operand_count[index] != components)
 			return i915_spirv_refuse(parser, opcode, offset, "extended instruction operand");
 	}
+
+	/*
+	 * The integer functions' 16-bit operands made whole (ws031-p039): sign
+	 * extended for SAbs, SSign, SMin, SMax and SClamp, zero extended for
+	 * UMin, UMax and UClamp; each operand of the result's width.
+	 */
+	width = 0U;
+	if (integers != 0)
+		width = i915_spirv_int_width(parser, word[1]);
+	for (index = 0U; index < operands && width != 0U; index++) {
+		if (i915_spirv_operand_int_width(parser, word[5U + index]) != width)
+			return i915_spirv_refuse(parser, opcode, offset, "extended instruction operand of another width");
+	}
+	is_signed = function != GLSL_UMIN && function != GLSL_UMAX && function != GLSL_UCLAMP;
+	for (index = 0U; index < operands * components && width == 16U; index++)
+		operand[index / components][index % components] =
+		    i915_spirv_extend16(parser, operand[index / components][index % components], width, is_signed);
 
 	/* Declares the result; its scalars are named by the lowering of each component. */
 	record = i915_spirv_result(parser, word[2], word[1], components, 0);
@@ -5361,7 +5523,7 @@ i915_spirv_lower_half(
 
 	/* Packing: a vec2 into one unsigned integer. */
 	if (word[4] == GLSL_PACK_HALF_2X16) {
-		components = i915_spirv_int_components(parser, word[1]);
+		components = i915_spirv_int_width(parser, word[1]) == 32U ? i915_spirv_int_components(parser, word[1]) : 0U;
 		if (operand_count != 2U || components != 1U)
 			return i915_spirv_refuse(parser, opcode, offset, "PackHalf2x16 that is not of a vec2 into a uint");
 		record = i915_spirv_result(parser, word[2], word[1], 1U, 0);
@@ -5703,6 +5865,8 @@ i915_spirv_lower_integer_compare(
 	uint32_t right_count;
 	uint32_t components;
 	uint32_t index;
+	uint32_t width;
+	int is_signed;
 	int swapped;
 
 	/* The instruction must carry both operands. */
@@ -5717,8 +5881,12 @@ i915_spirv_lower_integer_compare(
 	components = i915_spirv_bool_components(parser, word[1]);
 	if (components == 0U || left_count != components || right_count != components)
 		return i915_spirv_refuse(parser, opcode, offset, "comparison of operands that are not integer scalars / vectors of the result's size");
-	if (i915_spirv_operand_int_components(parser, word[3]) != components)
+	if (i915_spirv_operand_int_components(parser, word[3]) != components ||
+	    i915_spirv_operand_int_components(parser, word[4]) != components)
 		return i915_spirv_refuse(parser, opcode, offset, "comparison of operands that are not integer scalars / vectors of the result's size");
+	width = i915_spirv_operand_int_width(parser, word[3]);
+	if (i915_spirv_operand_int_width(parser, word[4]) != width)
+		return i915_spirv_refuse(parser, opcode, offset, "comparison of operands of different widths");
 
 	/* Picks the test and whether the operands are swapped. */
 	swapped = 0;
@@ -5767,6 +5935,13 @@ i915_spirv_lower_integer_compare(
 		op = I915_IR_IGE;
 		swapped = 1;
 		break;
+	}
+
+	/* 16-bit operands made whole: signed for the signed orderings, unsigned for the others and equality (ws031-p039). */
+	is_signed = op == I915_IR_ILT || op == I915_IR_IGE;
+	for (index = 0U; index < components && width == 16U; index++) {
+		left[index] = i915_spirv_extend16(parser, left[index], width, is_signed);
+		right[index] = i915_spirv_extend16(parser, right[index], width, is_signed);
 	}
 
 	/* Declares the Boolean result. */
@@ -6403,7 +6578,7 @@ i915_spirv_lower_texture(
 		return EINVAL;
 
 	/* The result: four floats or integers, or one float for a compare. */
-	components = i915_spirv_value_components(parser, word[1]);
+	components = i915_spirv_int_width(parser, word[1]) == 16U ? 0U : i915_spirv_value_components(parser, word[1]);
 	if ((compare == 0 && components != 4U) || (compare != 0 && components != 1U))
 		return i915_spirv_refuse(parser, opcode, offset, "sample whose result is not a vec4 (or a float of a compare)");
 
@@ -6583,7 +6758,7 @@ i915_spirv_lower_fetch(
 		return EINVAL;
 
 	/* The result is four floats or integers. */
-	scalar_count = i915_spirv_value_components(parser, word[1]);
+	scalar_count = i915_spirv_int_width(parser, word[1]) == 16U ? 0U : i915_spirv_value_components(parser, word[1]);
 	if (scalar_count != 4U)
 		return i915_spirv_refuse(parser, opcode, offset, "fetch whose result is not a vec4");
 
@@ -6681,7 +6856,7 @@ i915_spirv_lower_query(
 	}
 
 	/* The result: the level count, or the image's dimensions and its layers. */
-	components = i915_spirv_int_components(parser, word[1]);
+	components = i915_spirv_int_width(parser, word[1]) == 32U ? i915_spirv_int_components(parser, word[1]) : 0U;
 	expected = 1U;
 	if (opcode != OP_IMAGE_QUERY_LEVELS) {
 		expected = type->image_dim + 1U;
@@ -7269,6 +7444,10 @@ i915_spirv_loop_close(
 		parser->one_value = NO_VALUE;
 	if (parser->true_value != NO_VALUE && parser->true_value >= first && parser->true_value < end)
 		parser->true_value = NO_VALUE;
+	if (parser->int_16_value != NO_VALUE && parser->int_16_value >= first && parser->int_16_value < end)
+		parser->int_16_value = NO_VALUE;
+	if (parser->int_ffff_value != NO_VALUE && parser->int_ffff_value >= first && parser->int_ffff_value < end)
+		parser->int_ffff_value = NO_VALUE;
 
 	/* Drops the loop's construct, its carried components and the loop. */
 	parser->depth--;
@@ -7683,7 +7862,7 @@ i915_spirv_lower_switch(
 	selector_record = i915_spirv_id(parser, word[1]);
 	if (selector_record == NULL)
 		return EINVAL;
-	if (i915_spirv_kind_components(parser, selector_record->type, SCALAR_INT) != 1U)
+	if (i915_spirv_kind_components(parser, selector_record->type, SCALAR_INT) != 1U || i915_spirv_int_width(parser, selector_record->type) != 32U)
 		return i915_spirv_refuse(parser, opcode, offset, "OpSwitch selector that is not a 32-bit integer scalar");
 	selector_count = i915_spirv_operand(parser, word[1], selector);
 	if (selector_count != 1U)
@@ -8079,6 +8258,10 @@ i915_spirv_skip_close(
 		parser->one_value = NO_VALUE;
 	if (parser->true_value != NO_VALUE && parser->true_value >= first && parser->true_value < end)
 		parser->true_value = NO_VALUE;
+	if (parser->int_16_value != NO_VALUE && parser->int_16_value >= first && parser->int_16_value < end)
+		parser->int_16_value = NO_VALUE;
+	if (parser->int_ffff_value != NO_VALUE && parser->int_ffff_value >= first && parser->int_ffff_value < end)
+		parser->int_ffff_value = NO_VALUE;
 }
 
 /* Emits a float constant of the given bits and returns its value. */
@@ -8220,10 +8403,16 @@ i915_spirv_kind_components(
 			return 0U;
 	}
 
-	/* The scalar must be of the kind asked for, and 32 bits wide unless a Boolean. */
+	/*
+	 * The scalar must be of the kind asked for: a float of 32 bits, an
+	 * integer of 32 or 16 bits (ws031-p039: a 16-bit one is carried in a
+	 * 32-bit value, its high half undefined; i915_spirv_extend16() makes it
+	 * whole where that matters, and a 16-bit integer never reaches memory
+	 * other than a local or a shared one, i915_spirv_declare_variable()).
+	 */
 	if (scalar == SCALAR_FLOAT && type->kind == ID_TYPE_FLOAT && type->width == 32U)
 		return count;
-	if (scalar == SCALAR_INT && type->kind == ID_TYPE_INT && type->width == 32U)
+	if (scalar == SCALAR_INT && type->kind == ID_TYPE_INT && (type->width == 32U || type->width == 16U))
 		return count;
 	if (scalar == SCALAR_BOOL && type->kind == ID_TYPE_BOOL)
 		return count;
@@ -8298,6 +8487,118 @@ i915_spirv_value_components(
 	/* Succeeded: a Boolean type counts its Booleans, anything else nothing. */
 	components = i915_spirv_bool_components(parser, type_id);
 	return components;
+}
+
+/*
+ * Tells whether a type holds a 16-bit integer anywhere: a scalar, a
+ * vector's, a matrix's, an array's, a pointer's pointee or a structure's
+ * member (ws031-p039).  A type nested past MAX_TYPE_DEPTH is taken to.
+ */
+static int
+i915_spirv_type_has_int16(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id,
+	uint32_t depth)
+{
+	struct i915_spirv_id *type;
+	uint32_t index;
+	int found;
+
+	/* Bounded, and a type of the module. */
+	if (depth > MAX_TYPE_DEPTH)
+		return 1;
+	type = i915_spirv_id(parser, type_id);
+	if (type == NULL)
+		return 0;
+
+	/* The kinds that hold others, and the integer itself. */
+	switch (type->kind) {
+	case ID_TYPE_INT:
+		return type->width == 16U;
+	case ID_TYPE_VECTOR:
+	case ID_TYPE_MATRIX:
+	case ID_TYPE_ARRAY:
+	case ID_TYPE_POINTER:
+		return i915_spirv_type_has_int16(parser, type->type, depth + 1U);
+	case ID_TYPE_STRUCT:
+		for (index = 0U; index < type->count && index < MAX_MEMBERS; index++) {
+			found = i915_spirv_type_has_int16(parser, type->member_type[index], depth + 1U);
+			if (found != 0)
+				return 1;
+		}
+		return 0;
+	default:
+		/* Succeeded: no integer in it. */
+		return 0;
+	}
+}
+
+/* Gives the width of an integer scalar or vector type (16 or 32); 0 for any other type. */
+static uint32_t
+i915_spirv_int_width(
+	struct i915_spirv_parser *parser,
+	uint32_t type_id)
+{
+	struct i915_spirv_id *type;
+
+	/* A vector's scalar. */
+	type = i915_spirv_id(parser, type_id);
+	if (type != NULL && type->kind == ID_TYPE_VECTOR)
+		type = i915_spirv_id(parser, type->type);
+
+	/* Succeeded: the integer's width. */
+	if (type == NULL || type->kind != ID_TYPE_INT)
+		return 0U;
+	return type->width;
+}
+
+/* Gives the integer width of an operand id's type (16 or 32); 0 for another kind or an unknown id. */
+static uint32_t
+i915_spirv_operand_int_width(
+	struct i915_spirv_parser *parser,
+	uint32_t id)
+{
+	struct i915_spirv_id *record;
+
+	/* The id's type. */
+	record = i915_spirv_id(parser, id);
+	if (record == NULL)
+		return 0U;
+
+	/* Succeeded: its width. */
+	return i915_spirv_int_width(parser, record->type);
+}
+
+/*
+ * Makes a 16-bit integer's value whole (ws031-p039): its low half sign
+ * extended (SHL 16, ASR 16) or zero extended (IAND 0xFFFF), where its high
+ * half would change a result.  A 32-bit value is returned as it is.
+ */
+static uint32_t
+i915_spirv_extend16(
+	struct i915_spirv_parser *parser,
+	uint32_t value,
+	uint32_t width,
+	int is_signed)
+{
+	uint32_t sixteen;
+	uint32_t mask;
+	uint32_t shifted;
+
+	/* Only a 16-bit value. */
+	if (width != 16U)
+		return value;
+
+	/* Zero extended: the low half alone. */
+	if (!is_signed) {
+		mask = i915_spirv_shared_constant(parser, &parser->int_ffff_value, I915_IR_ICONST, 0xFFFFU);
+		return i915_spirv_emit_value(parser, I915_IR_IAND, value, mask);
+	}
+
+	/* Succeeded: sign extended, the low half up and back with its sign. */
+	sixteen = i915_spirv_shared_constant(parser, &parser->int_16_value, I915_IR_ICONST, 16U);
+	shifted = i915_spirv_emit_value(parser, I915_IR_SHL, value, sixteen);
+	return i915_spirv_emit_value(parser, I915_IR_ASR, shifted, sixteen);
 }
 
 /* Returns the scalar count of a float matrix type, columns times rows; 0 for anything else. */

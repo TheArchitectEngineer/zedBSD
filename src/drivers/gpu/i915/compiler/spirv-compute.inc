@@ -986,9 +986,9 @@ i915_spirv_declare_shared(
  * Returns the bytes of a type in shared memory's natural layout: 4 for a
  * 32-bit integer or float, 4 n for a vector of n, a column's bytes times the
  * columns for a matrix, the element's times the length for an array, the
- * members' in order for a structure.  0 for anything else (a Boolean, a
- * run-time array, a width other than 32 bits, more than
- * SHARED_MEASURE_LIMIT bytes), which is refused.
+ * members' in order for a structure (a 16-bit integer takes 4 bytes too).
+ * 0 for anything else (a Boolean, a run-time array, another width, more
+ * than SHARED_MEASURE_LIMIT bytes), which is refused.
  */
 static uint32_t
 i915_spirv_shared_bytes(
@@ -1009,8 +1009,13 @@ i915_spirv_shared_bytes(
 	switch (type->kind) {
 	case ID_TYPE_INT:
 	case ID_TYPE_FLOAT:
-		/* Only a 32-bit scalar is laid out. */
-		if (type->width != 32U)
+		/*
+		 * A 32-bit scalar is laid out, and a 16-bit integer in a 32-bit
+		 * slot of its own (ws031-p039: shared memory's layout is the
+		 * implementation's; the word holds the 32-bit value it is carried
+		 * in).
+		 */
+		if (type->width != 32U && !(type->kind == ID_TYPE_INT && type->width == 16U))
 			return 0U;
 
 		/* Reports the scalar's 4 bytes. */
@@ -1147,6 +1152,8 @@ i915_spirv_chain_shared(
 		error = i915_spirv_refuse(parser, opcode, offset, "dynamic index that is not an integer scalar");
 		return error;
 	}
+	/* A 16-bit index made whole, signed as SPIR-V's indices are (ws031-p039). */
+	scalars[0] = i915_spirv_extend16(parser, scalars[0], i915_spirv_operand_int_width(parser, index_id), 1);
 
 	/* Folds it with an earlier dynamic index into one in bytes, or keeps it with its stride when it is the first. */
 	if (record->dynamic_index != NO_VALUE) {

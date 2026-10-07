@@ -1376,6 +1376,43 @@ test_dual_source(void)
 	printf("  dual source: one SENDC, desc 0x%08x (Mesa brw_fb_write_desc: mlen 4, RT write, SIMD8 dual source, last), ex_mlen 4, src0 r124, src1 r120, both colours\n", desc);
 }
 
+/*
+ * 16-bit integers in an interface's memory are refused (ws031-p039): a
+ * uniform block's member at offset 0 (which a 32-bit load would otherwise
+ * take), a storage buffer's store, push constants, an input and an output.
+ */
+static void
+test_int16_refusals(void)
+{
+	static const char *const names[5] = { "ubo.frag.spv", "ssbo.frag.spv", "push.frag.spv", "input.frag.spv", "output.frag.spv" };
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
+	char path[512];
+	FILE *file;
+	long size;
+	uint32_t *spv;
+	unsigned index;
+	int error;
+
+	for (index = 0U; index < 5U; index++) {
+		snprintf(path, sizeof(path), "%s/plan/ws031/tests/int16/%s", VK_REPO, names[index]);
+		file = fopen(path, "rb");
+		assert(file != NULL);
+		fseek(file, 0, SEEK_END);
+		size = ftell(file);
+		fseek(file, 0, SEEK_SET);
+		spv = malloc((size_t)size);
+		assert(fread(spv, 1, (size_t)size, file) == (size_t)size);
+		fclose(file);
+		memset(&diag, 0, sizeof(diag));
+		error = drv_i915_shader_parse(spv, (size_t)size / 4U, I915_STAGE_FRAGMENT, &ir, &diag);
+		assert(error == ENOTSUP);
+		assert(diag.reason != NULL && strstr(diag.reason, "16-bit integer") != NULL);
+		free(spv);
+	}
+	printf("  int16: a uniform block, a storage buffer, push constants, an input and an output of 16-bit integers are refused\n");
+}
+
 /* compare.frag through the EU model: eight different pairs at a time, one of them NaN. */
 static void
 test_eu_comparisons(void)
@@ -1871,7 +1908,7 @@ test_eu_generality_fragment(void)
 		const uint32_t *words;
 		size_t bytes;
 		const uint32_t *expected;
-	} steps[7] = {
+	} steps[8] = {
 		{ "matrix.frag", i915_vke2_matrix_frag, sizeof(i915_vke2_matrix_frag), i915_vke2_matrix_expected },
 		{ "int.frag", i915_vke2_int_frag, sizeof(i915_vke2_int_frag), i915_vke2_int_expected },
 		{ "float.frag", i915_vke2_float_frag, sizeof(i915_vke2_float_frag), i915_vke2_float_expected },
@@ -1880,15 +1917,17 @@ test_eu_generality_fragment(void)
 		/* ws031-p024: the integer boundaries, and the undefined results (the models' words: 0, low-5-bit shifts) */
 		{ "edge.frag", i915_vke2_edge_frag, sizeof(i915_vke2_edge_frag), i915_vke2_edge_expected },
 		{ "undef.frag", i915_vke2_undef_frag, sizeof(i915_vke2_undef_frag), i915_vke2_undef_expected },
+		/* ws031-p039: 16-bit integers whose high half the compiler leaves undefined, made whole where it matters */
+		{ "int16.frag", i915_vke2_int16_frag, sizeof(i915_vke2_int16_frag), i915_vke2_int16_expected },
 	};
 	struct eu_model *m;
-	unsigned step, x0, y, c, divergent[7], spill_bytes = 0U;
+	unsigned step, x0, y, c, divergent[8], spill_bytes = 0U;
 
 	m = malloc(sizeof(*m));
 	eu_model_scratch_writes = 0U;
 	eu_model_scratch_reads = 0U;
 	eu_model_scratch_partial = 0U;
-	for (step = 0U; step < 7U; step++) {
+	for (step = 0U; step < 8U; step++) {
 		struct i915_shader_binary *binary;
 
 		binary = compile_words(steps[step].name, steps[step].words, steps[step].bytes, I915_STAGE_FRAGMENT, NULL);
@@ -1935,7 +1974,7 @@ test_eu_generality_fragment(void)
 	assert(divergent[4] > 0U && eu_model_scratch_writes > 0U && eu_model_scratch_reads > 0U);
 	assert(eu_model_scratch_partial > 0U);          /* a spilled loop variable written while a loop had stopped channels */
 	free(m);
-	printf("  EU model: generality matrix / int / float / loop / spill / edge / undef shaders match regenerate.py at 7 x 4096 pixels; loop.frag: %u divergent WHILE passes; "
+	printf("  EU model: generality matrix / int / float / loop / spill / edge / undef / int16 shaders match regenerate.py at 8 x 4096 pixels; loop.frag: %u divergent WHILE passes; "
 		"spill.frag: %u bytes of scratch a thread, %u scratch writes (%u on some channels only) and %u reads, %u divergent WHILE passes\n",
 		divergent[3], spill_bytes, eu_model_scratch_writes, eu_model_scratch_partial, eu_model_scratch_reads, divergent[4]);
 }
@@ -2224,6 +2263,7 @@ main(void)
 	test_eu_glsl_math();
 	test_eu_comparisons();
 	test_dual_source();
+	test_int16_refusals();
 	test_eu_branches_and_discard();
 	test_eu_vertex_shaders();
 	test_eu_mview();
