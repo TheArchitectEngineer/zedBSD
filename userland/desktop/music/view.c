@@ -67,10 +67,11 @@
 #define VIEW_ID_NEXT		9U
 #define VIEW_ID_POSITION	10U
 
-/* The ground of an opaque window, and of the cover of All Songs. */
+/* The ground of an opaque window, and the cover of All Songs (yamabuki like the app's icon, the UAT of 2026-10-07). */
 #define VIEW_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
 #define VIEW_COLOR_SIDEBAR	kl_theme_choose(KL_RGB(0xf4f6f9), KL_RGB(0x1f232a))
-#define VIEW_COLOR_TILE		KL_RGB(0xe8445a)
+#define VIEW_COLOR_TILE		KL_RGB(0xf2a900)
+#define VIEW_COLOR_TILE_LIGHT	KL_RGB(0xffc933)
 #define VIEW_COLOR_WHITE	KL_RGB(0xffffff)
 
 /* Where the three parts go. */
@@ -1093,9 +1094,9 @@ view_cover(
 		return;
 	}
 
-	/* A tile with the note: red for All Songs, grey for an album without a cover. */
+	/* A tile with the note: yamabuki for All Songs, grey for an album without a cover. */
 	if (album < 0)
-		kl_canvas_round_gradient(style->canvas, (float)x, (float)y, (float)side, (float)side, radius, KL_RGB(0xfb6a7c), VIEW_COLOR_TILE);
+		kl_canvas_round_gradient(style->canvas, (float)x, (float)y, (float)side, (float)side, radius, VIEW_COLOR_TILE_LIGHT, VIEW_COLOR_TILE);
 	else
 		kl_canvas_round_gradient(style->canvas, (float)x, (float)y, (float)side, (float)side, radius, KL_RGB(0xb9c0cb), KL_RGB(0x8a93a1));
 	kl_icon_draw(style->canvas, KL_ICON_MUSIC, (float)x + (float)side * 0.2f, (float)y + (float)side * 0.2f, (float)side * 0.6f, VIEW_COLOR_WHITE);
