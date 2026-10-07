@@ -45,6 +45,8 @@ static VkResult compose_corners(struct kwl_compose *compose);
 static VkResult compose_targets(struct kwl_compose *compose);
 static void compose_targets_destroy(struct kwl_compose *compose);
 static unsigned compose_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
+static unsigned compose_split(struct kwl_server *server, struct kwl_object **windows, unsigned count);
+static void compose_lists_log(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y);
 static void compose_quad_part(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
 static const struct kwl_import *surface_image(const struct kwl_object *surface);
@@ -431,6 +433,8 @@ kwl_compose_draw(
 	uint64_t now;
 	uint32_t image;
 	unsigned count;
+	unsigned all;
+	unsigned missed;
 	unsigned popups;
 	unsigned subsurfaces;
 	int partial;
@@ -447,13 +451,18 @@ kwl_compose_draw(
 	/* The windows to draw, bottom to top. */
 	compose->frame_start_cycles = kwl_cycles();
 	compose->frame_start_ms = kwl_milliseconds();
-	count = compose_windows(server, windows, KWL_FRAME_WINDOWS);
+	all = compose_windows(server, windows, KWL_FRAME_WINDOWS);
+
+	/* The anchor's windows first, then the heads' (heads.c draws them on theirs, ws113-p007). */
+	count = compose_split(server, windows, all);
+	compose->frame_heads = windows + count;
+	compose->frame_head_count = all - count;
 
 	/* The popups follow the windows in the list the frame holds (popup.c draws them). */
-	popups = kwl_popup_collect(server, windows + count, KWL_FRAME_WINDOWS - count);
+	popups = kwl_popup_collect(server, windows + all, KWL_FRAME_WINDOWS - all);
 
 	/* The sub-surfaces follow them, held and told like them (subsurface.c draws them with their parents). */
-	subsurfaces = kwl_subsurface_collect(server, windows + count + popups, KWL_FRAME_WINDOWS - count - popups);
+	subsurfaces = kwl_subsurface_collect(server, windows + all + popups, KWL_FRAME_WINDOWS - all - popups);
 
 	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
 	if (server->log_frames)
@@ -463,6 +472,12 @@ kwl_compose_draw(
 	mark = kwl_cycles();
 	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, UINT64_MAX, compose->acquired, VK_NULL_HANDLE, &image);
 	server->perf.compose_acquire_cycles += kwl_cycles() - mark;
+
+	/* No image: the heads' windows are not drawn either. */
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		compose->frame_heads = NULL;
+		compose->frame_head_count = 0U;
+	}
 
 	/* The display went (unplugged, or another generation): no frame until the output moves (ws113-p004a). */
 	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -483,8 +498,8 @@ kwl_compose_draw(
 	if (server->log_frames)
 		printf("KWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
-	/* The heads' images the frame draws too (ws113-p004b). */
-	kwl_heads_acquire(server);
+	/* The heads' images the frame draws too (ws113-p004b); one that is not ready asks for another frame. */
+	missed = kwl_heads_acquire(server);
 
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
 	partial = compose_region(server, image, &region);
@@ -518,8 +533,12 @@ kwl_compose_draw(
 	server->perf.compose_draw_cycles += kwl_cycles() - compose->frame_start_cycles;
 
 	/* The frame holds what it sampled until its fence signals, the popups and sub-surfaces too. */
-	compose_hold(server, windows, count + popups + subsurfaces);
+	compose_hold(server, windows, all + popups + subsurfaces);
+	compose->frame_heads = NULL;
+	compose->frame_head_count = 0U;
 	server->dirty = 0;
+	if (missed > 0U)
+		server->dirty = 1;
 	server->damaged = 0;
 	server->frame++;
 	/* The first frame after App Home or Wiseview was asked to open or close, logged once (C5, also without --log-frames). */
@@ -1667,6 +1686,117 @@ compose_windows(
 }
 
 /*
+ * Puts the anchor's windows first in a frame's list (bottom to top), then
+ * the heads' in the same order (ws113-p007); a window of an output not
+ * shown (the mirror, a head gone) is the anchor's.  Returns how many are
+ * the anchor's.
+ */
+static unsigned
+compose_split(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_object *heads[KWL_FRAME_WINDOWS];
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_object *parent;
+	unsigned anchor;
+	unsigned others;
+	unsigned slots;
+	unsigned slot;
+	unsigned index;
+
+	/* Each window in turn, to its output's part of the list. */
+	slots = kwl_outputs(server, outputs);
+	anchor = 0U;
+	others = 0U;
+	for (index = 0U; index < count; index++) {
+		/* A sheet is its parent's output's (ws090-p014's sheets are drawn under the parent's title bar). */
+		parent = kwl_sheet_parent(windows[index]);
+		if (parent != NULL)
+			windows[index]->output = parent->output;
+
+		/* A window of an output not shown is the anchor's. */
+		slot = windows[index]->output;
+		if (slot >= slots || outputs[slot].width == 0U) {
+			windows[index]->output = KWL_PLANE_ANCHOR;
+			slot = KWL_PLANE_ANCHOR;
+		}
+
+		/* The anchor's in place, the heads' aside. */
+		if (slot == KWL_PLANE_ANCHOR) {
+			windows[anchor] = windows[index];
+			anchor++;
+		} else {
+			heads[others] = windows[index];
+			others++;
+		}
+	}
+
+	/* The heads' after the anchor's, and each output's list logged when it changes. */
+	memcpy(windows + anchor, heads, others * sizeof(heads[0]));
+	compose_lists_log(server, windows, count);
+	return anchor;
+}
+
+/*
+ * Logs each output's windows (its render list's surfaces, bottom to top)
+ * when they differ from the last frame's: "KWL RENDER output=N
+ * surfaces=A,B" (ws113-p007, D-ATOMIC: a window is in its output's list
+ * alone).
+ */
+static void
+compose_lists_log(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_compose *compose;
+	char list[KWL_RENDER_LOG];
+	const char *separator;
+	size_t length;
+	unsigned slot;
+	unsigned index;
+	int written;
+	int same;
+
+	/* Each output's list. */
+	compose = server->compose;
+	for (slot = 0U; slot < KWL_PLANE_SLOTS; slot++) {
+		list[0] = '\0';
+		length = 0U;
+		for (index = 0U; index < count; index++) {
+			if (windows[index]->output != slot)
+				continue;
+			separator = ",";
+			if (length == 0U)
+				separator = "";
+			written = snprintf(list + length, sizeof(list) - length, "%s%u", separator, windows[index]->id);
+			if (written < 0 || (size_t)written >= sizeof(list) - length)
+				break;
+			length += (size_t)written;
+		}
+
+		/* Logged when it changed. */
+		same = strcmp(list, compose->render_lists[slot]);
+		if (same == 0)
+			continue;
+		memcpy(compose->render_lists[slot], list, sizeof(list));
+		printf("KWL RENDER output=%u surfaces=%s\n", slot, list);
+	}
+}
+
+/* Draws the cursor in the pass being recorded (the anchor's, or a head's, ws113-p007). */
+void
+kwl_compose_cursor(
+	struct kwl_server *server,
+	VkCommandBuffer command)
+{
+	/* The same cursor; the pass's part of the plane places it. */
+	compose_cursor(server, command);
+}
+
+/*
  * Returns the image window mode samples for a surface: its GPU buffer's
  * import, or its copy of a wl_shm image; NULL when there is none yet.
  */
@@ -1865,9 +1995,17 @@ compose_quad_part(
 	float width;
 	float height;
 
-	/* The rectangle in normalized device coordinates, and the part of the image. */
+	/* The output drawn: the anchor, or a head's part of the plane (ws113-p007). */
 	width = (float)server->width;
 	height = (float)server->height;
+	if (server->view_width != 0U) {
+		x -= server->view_x;
+		y -= server->view_y;
+		width = (float)server->view_width;
+		height = (float)server->view_height;
+	}
+
+	/* The rectangle in normalized device coordinates, and the part of the image. */
 	constants[0] = 2.0f * (float)x / width - 1.0f;
 	constants[1] = 2.0f * (float)y / height - 1.0f;
 	constants[2] = 2.0f * (float)(x + (int32_t)quad_width) / width - 1.0f;
@@ -2004,6 +2142,13 @@ compose_record(
 
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
+
+	/* The anchor's pass: its own part of the plane (ws113-p007). */
+	server->view_output = KWL_PLANE_ANCHOR;
+	server->view_x = 0;
+	server->view_y = 0;
+	server->view_width = 0U;
+	server->view_height = 0U;
 
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));

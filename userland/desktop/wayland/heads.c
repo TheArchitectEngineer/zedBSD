@@ -42,6 +42,9 @@
 #include "kwl.h"
 #include "compose.h"
 #include "displays.h"
+#include "extras.h"
+#include "popup.h"
+#include "subsurface.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -57,6 +60,9 @@
 #define HEADS_PATH_MAX		512U
 #define HEADS_TEXT_MAX		4096U
 
+/* How far past a head's edges the pointer's cursor may still reach into it (pixels, ws113-p007). */
+#define HEADS_CURSOR_REACH	64
+
 /* The first wl_output global name of a head, past every name of the fixed globals (protocol.c). */
 #define HEADS_GLOBAL_FIRST	1000U
 
@@ -70,6 +76,8 @@ static int heads_listed(const struct kwl_compose *compose, VkDisplayKHR display)
 static void heads_place(struct kwl_server *server, struct kwl_head *head);
 static unsigned heads_rects(struct kwl_server *server, const struct kwl_head *skip, struct kwl_display_rect *rects, unsigned room);
 static int heads_needs_frame(struct kwl_server *server, const struct kwl_head *head);
+static unsigned heads_shows(struct kwl_server *server, const struct kwl_head *head);
+static unsigned heads_windows(struct kwl_server *server, unsigned slot, struct kwl_object **windows, unsigned capacity);
 static void heads_record_mirror(struct kwl_server *server, VkCommandBuffer command, VkImage source, struct kwl_head *head);
 static void heads_record_extended(struct kwl_server *server, VkCommandBuffer command, struct kwl_head *head);
 static void heads_barrier(VkCommandBuffer command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
@@ -77,6 +85,11 @@ static int heads_path(char *path, size_t size, int folder);
 static int heads_save(const struct kwl_display_config *config);
 static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
+static void heads_evacuate(struct kwl_server *server, unsigned slot);
+static void heads_windows_follow(struct kwl_server *server, const struct kwl_plane_rect *before, unsigned leave);
+static void heads_window_place(struct kwl_server *server, struct kwl_object *window, const struct kwl_plane_rect *from, const struct kwl_plane_rect *to, unsigned slot, const char *why);
+static int heads_is_window(const struct kwl_object *object);
+static void heads_redraw(struct kwl_server *server);
 
 /*
  * Reads displays.conf once: the mode and the places the user chose.  A
@@ -287,20 +300,23 @@ kwl_heads_lost(
  * Acquires an image of each head the frame draws: every head in the
  * mirror mode, an extended head that is to be drawn again.  An image not
  * ready now leaves the head to the next frame; a display gone marks the
- * head lost.
+ * head lost.  Returns how many extended heads missed the frame (another
+ * frame is then wanted, ws113-p007).
  */
-void
+unsigned
 kwl_heads_acquire(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
 	struct kwl_head *head;
+	unsigned missed;
 	unsigned index;
 	int needs;
 	VkResult result;
 
 	/* Each open head. */
 	compose = server->compose;
+	missed = 0U;
 	for (index = 0U; index < KWL_HEADS; index++) {
 		head = &compose->heads[index];
 		head->in_frame = 0U;
@@ -319,14 +335,21 @@ kwl_heads_acquire(
 			continue;
 		}
 
-		/* Not ready: the next frame draws it. */
-		if (result == VK_NOT_READY || result == VK_TIMEOUT)
+		/* Not ready: the next frame draws it (one is asked for, ws113-p007). */
+		if (result == VK_NOT_READY || result == VK_TIMEOUT) {
+			head->dirty = 1U;
+			if (compose->display_mode == KWL_DISPLAYS_EXTENDED)
+				missed++;
 			continue;
+		}
 
 		/* The display went (or another failure of its swapchain): the head is closed at the next look. */
 		printf("KWL OUTPUT head lost operation=acquire name=%s result=%d\n", head->name, (int)result);
 		head->lost = 1U;
 	}
+
+	/* Succeeded: how many missed it. */
+	return missed;
 }
 
 /*
@@ -499,6 +522,7 @@ kwl_displays_apply(
 	int *saved)
 {
 	struct kwl_display_rect rects[KWL_DISPLAYS_PLACES];
+	struct kwl_plane_rect before[KWL_PLANE_SLOTS];
 	struct kwl_compose *compose;
 	struct kwl_head *head;
 	const char *mode;
@@ -567,7 +591,8 @@ kwl_displays_apply(
 		}
 	}
 
-	/* The mode and the places, applied. */
+	/* The mode and the places, applied; the windows and the pointer on the heads go along (ws113-p007). */
+	(void)kwl_outputs(server, before);
 	compose->display_mode = wanted->mode;
 	compose->output_x = output_x;
 	compose->output_y = output_y;
@@ -576,6 +601,9 @@ kwl_displays_apply(
 		compose->heads[index].y = head_y[index];
 		compose->heads[index].dirty = 1U;
 	}
+
+	/* The windows and the pointer on the heads go with them, or to the anchor for the mirror. */
+	heads_windows_follow(server, before, wanted->mode == KWL_DISPLAYS_MIRROR);
 
 	/* The choice kept: the mode, the anchor (the output's display) and every place shown now. */
 	compose->config.mode = wanted->mode;
@@ -855,8 +883,11 @@ heads_close(
 	struct kwl_compose *compose;
 	char name[KWL_COMPOSE_NAME];
 
-	/* The clients lose its global first. */
+	/* Its windows and the pointer go to the anchor while its place is still known (D-HOTPLUG, ws113-p007). */
 	compose = server->compose;
+	heads_evacuate(server, (unsigned)(head - compose->heads) + 1U);
+
+	/* The clients lose its global first. */
 	if (head->global != 0U)
 		kwl_output_global_remove(server, head->global);
 
@@ -1087,6 +1118,7 @@ heads_needs_frame(
 	const struct kwl_head *head)
 {
 	const struct kwl_import *wallpaper;
+	unsigned shows;
 
 	/* The mirror copies every frame. */
 	if (server->compose->display_mode == KWL_DISPLAYS_MIRROR)
@@ -1094,6 +1126,11 @@ heads_needs_frame(
 
 	/* An extended head asked to be drawn. */
 	if (head->dirty)
+		return 1;
+
+	/* A head with windows, or the pointer near, now or in its last picture (ws113-p007). */
+	shows = heads_shows(server, head);
+	if (shows != 0U || head->showed != 0U)
 		return 1;
 
 	/* An extended head whose wallpaper changed. */
@@ -1190,11 +1227,15 @@ heads_record_extended(
 {
 	struct kwl_compose *compose;
 	const struct kwl_import *wallpaper;
+	struct kwl_object *windows[KWL_FRAME_WINDOWS];
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear;
 	VkViewport viewport;
 	VkRect2D scissor;
 	VkDeviceSize offset;
+	unsigned count;
+	unsigned index;
+	unsigned slot;
 	float uv[4];
 
 	/* The output's pass on the head's image, cleared to the background. */
@@ -1236,8 +1277,112 @@ heads_record_extended(
 		head->wallpaper = wallpaper->image;
 	}
 
+	/* From here the pass draws the head's part of the plane: its windows and the cursor over them (ws113-p007). */
+	slot = (unsigned)(head - compose->heads) + 1U;
+	server->view_output = slot;
+	server->view_x = head->x - compose->output_x;
+	server->view_y = head->y - compose->output_y;
+	server->view_width = head->output.width;
+	server->view_height = head->output.height;
+	compose->scissor_now = scissor;
+	compose->backdrop_set = VK_NULL_HANDLE;
+	count = heads_windows(server, slot, windows, KWL_FRAME_WINDOWS);
+	if (server->glass) {
+		kwl_glass_draw_head(server, command, windows, count);
+	} else {
+		/* The plain look: each window between its sub-surfaces, then the popups. */
+		for (index = 0U; index < count; index++) {
+			kwl_subsurface_draw(server, command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
+			kwl_compose_surface_quad(server, command, windows[index], kwl_compose_surface_image(windows[index]), windows[index]->x, windows[index]->y);
+			kwl_subsurface_draw(server, command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
+		}
+
+		/* Their popups over them. */
+		kwl_popup_draw(server, command);
+	}
+
+	/* The cursor where it reaches the head, and what the head shows kept for the next frame's choice. */
+	kwl_compose_cursor(server, command);
+	head->showed = heads_shows(server, head);
+
+	/* The anchor's part of the plane again, for whatever draws next. */
+	server->view_output = KWL_PLANE_ANCHOR;
+	server->view_x = 0;
+	server->view_y = 0;
+	server->view_width = 0U;
+	server->view_height = 0U;
+
 	/* Done; the pass leaves the image for presentation. */
 	vkCmdEndRenderPass(command);
+}
+
+/*
+ * Tells what a head shows besides its wallpaper: its windows (the frame's
+ * list) and the pointer within a cursor's reach of it, as a mask (1 the
+ * windows, 2 the pointer).
+ */
+static unsigned
+heads_shows(
+	struct kwl_server *server,
+	const struct kwl_head *head)
+{
+	struct kwl_compose *compose;
+	unsigned shows;
+	unsigned slot;
+	unsigned count;
+	int64_t left;
+	int64_t top;
+
+	/* Its windows in the frame being made. */
+	compose = server->compose;
+	slot = (unsigned)(head - compose->heads) + 1U;
+	shows = 0U;
+	count = heads_windows(server, slot, NULL, 0U);
+	if (count > 0U)
+		shows |= 1U;
+
+	/* The pointer, a cursor's size around the head's rectangle included. */
+	left = (int64_t)head->x - compose->output_x - HEADS_CURSOR_REACH;
+	top = (int64_t)head->y - compose->output_y - HEADS_CURSOR_REACH;
+	if (server->pointer_x >= left &&
+	    server->pointer_x < left + head->width + 2 * HEADS_CURSOR_REACH &&
+	    server->pointer_y >= top &&
+	    server->pointer_y < top + head->height + 2 * HEADS_CURSOR_REACH)
+		shows |= 2U;
+
+	/* Succeeded: the mask. */
+	return shows;
+}
+
+/*
+ * Lists the windows of the frame being made that a head shows (bottom to
+ * top), at most `capacity` of them (none with no list).  Returns how many
+ * it has.
+ */
+static unsigned
+heads_windows(
+	struct kwl_server *server,
+	unsigned slot,
+	struct kwl_object **windows,
+	unsigned capacity)
+{
+	struct kwl_compose *compose;
+	unsigned count;
+	unsigned index;
+
+	/* The frame's heads' windows of this slot. */
+	compose = server->compose;
+	count = 0U;
+	for (index = 0U; index < compose->frame_head_count; index++) {
+		if (compose->frame_heads[index]->output != slot)
+			continue;
+		if (windows != NULL && count < capacity)
+			windows[count] = compose->frame_heads[index];
+		count++;
+	}
+
+	/* Succeeded: how many. */
+	return count;
 }
 
 /* Records one image layout change with its access and stages. */
@@ -1417,4 +1562,392 @@ heads_changed(
 	kwl_outputs_changed(server);
 	kwl_displays_tell(server);
 	server->dirty = 1;
+}
+
+/*
+ * Gives the outputs' rectangles of the plane (plane.h), KWL_PLANE_SLOTS of
+ * them: the anchor's at the origin, and in the extended mode each open
+ * head's at its place less the anchor's (the others without a size).
+ * Returns how many.
+ */
+unsigned
+kwl_outputs(
+	struct kwl_server *server,
+	struct kwl_plane_rect *outputs)
+{
+	struct kwl_compose *compose;
+	const struct kwl_head *head;
+	unsigned index;
+
+	/* The anchor, and no head. */
+	memset(outputs, 0, KWL_PLANE_SLOTS * sizeof(outputs[0]));
+	outputs[KWL_PLANE_ANCHOR].width = server->width;
+	outputs[KWL_PLANE_ANCHOR].height = server->height;
+	compose = server->compose;
+	if (compose == NULL || compose->display_mode != KWL_DISPLAYS_EXTENDED)
+		return KWL_PLANE_SLOTS;
+
+	/* Each head shown, while there are slots. */
+	for (index = 0U; index < KWL_HEADS && index + 1U < KWL_PLANE_SLOTS; index++) {
+		head = &compose->heads[index];
+		if (!head->open || head->lost)
+			continue;
+		outputs[index + 1U].x = head->x - compose->output_x;
+		outputs[index + 1U].y = head->y - compose->output_y;
+		outputs[index + 1U].width = head->width;
+		outputs[index + 1U].height = head->height;
+	}
+
+	/* Succeeded: every slot. */
+	return KWL_PLANE_SLOTS;
+}
+
+/* Gives the output that holds a point of the plane: its slot, the anchor where none does. */
+unsigned
+kwl_output_at(
+	struct kwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned count;
+	int slot;
+
+	/* The output, or the anchor. */
+	count = kwl_outputs(server, outputs);
+	slot = kwl_plane_at(outputs, count, x, y);
+	if (slot < 0)
+		return KWL_PLANE_ANCHOR;
+
+	/* Succeeded: its slot. */
+	return (unsigned)slot;
+}
+
+/*
+ * Gives the least distance of a window's place (its body) below an
+ * output's top: under the system bar and a floating title bar on the
+ * anchor, under the title bar alone on a head (the glass look; none
+ * otherwise).
+ */
+int32_t
+kwl_output_top(
+	struct kwl_server *server,
+	unsigned slot)
+{
+	/* Only the glass look has title bars above the bodies. */
+	if (!server->glass)
+		return 0;
+
+	/* The anchor has the system bar too. */
+	if (slot == KWL_PLANE_ANCHOR)
+		return KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
+
+	/* Succeeded: a head's. */
+	return KWL_GLASS_GAP + KWL_GLASS_TITLE;
+}
+
+/*
+ * Gives the output a surface is shown on: its window's (a sub-surface's
+ * parent's, a popup's toplevel's); the anchor for a surface of no window.
+ */
+unsigned
+kwl_window_output(
+	struct kwl_object *surface)
+{
+	struct kwl_object *root;
+
+	/* Up from a sub-surface to its parent. */
+	root = surface;
+	while (root != NULL && root->sub_parent != NULL)
+		root = root->sub_parent;
+
+	/* From a popup to its toplevel (the anchor for a popup without one). */
+	if (root != NULL && root->role != NULL && root->role->top != NULL && root->role->top->kind == KWL_POPUP)
+		root = kwl_popup_root(root);
+	if (root == NULL)
+		return KWL_PLANE_ANCHOR;
+
+	/* Succeeded: the window's output. */
+	return root->output;
+}
+
+/*
+ * Moves a window to an output (the keyboard's move, the retreat from an
+ * output gone): at the same share of the way across, kept inside it, and
+ * shown there from the next frame, its sheet with it.
+ */
+void
+kwl_window_to_output(
+	struct kwl_server *server,
+	struct kwl_object *window,
+	unsigned slot,
+	const char *why)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned count;
+	unsigned from;
+
+	/* Only to an output shown, from another. */
+	count = kwl_outputs(server, outputs);
+	if (slot >= count || outputs[slot].width == 0U || window->output == slot)
+		return;
+	from = window->output;
+	if (from >= count || outputs[from].width == 0U)
+		from = KWL_PLANE_ANCHOR;
+
+	/* Succeeded: carried there. */
+	heads_window_place(server, window, &outputs[from], &outputs[slot], slot, why);
+}
+
+/*
+ * Makes a window an output's where it is (a move across a shared edge,
+ * D-ATOMIC): from the next frame that output alone draws it, its sheet
+ * with it.
+ */
+void
+kwl_window_set_output(
+	struct kwl_server *server,
+	struct kwl_object *window,
+	unsigned slot,
+	const char *why)
+{
+	struct kwl_object *sheet;
+
+	/* Only another output's. */
+	if (window->output == slot || slot >= KWL_PLANE_SLOTS)
+		return;
+
+	/* The window and its sheet. */
+	window->output = slot;
+	sheet = kwl_sheet_of(window);
+	if (sheet != NULL)
+		sheet->output = slot;
+
+	/* Drawn again everywhere, and logged. */
+	heads_redraw(server);
+	printf("KWL WINDOW output surface=%u client=%llu output=%u x=%d y=%d why=%s\n", window->id, (unsigned long long)window->client->number, slot, window->x,
+	       window->y, why);
+}
+
+/*
+ * Moves the pointer by a relative motion over the outputs (plane.h): into
+ * the output the motion reaches, or stopped at an edge no output shares.
+ * Gives the new place; the output it is on is kept.
+ */
+void
+kwl_pointer_relative(
+	struct kwl_server *server,
+	int32_t dx,
+	int32_t dy,
+	int32_t *x,
+	int32_t *y)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned count;
+	unsigned slot;
+
+	/* Over the outputs shown. */
+	count = kwl_outputs(server, outputs);
+	slot = kwl_plane_move(outputs, count, server->pointer_output, server->pointer_x, server->pointer_y, dx, dy, x, y);
+
+	/* A crossing is logged once. */
+	if (slot != server->pointer_output) {
+		printf("KWL POINTER output=%u x=%d y=%d\n", slot, *x, *y);
+		server->dirty = 1;
+	}
+
+	/* Succeeded: the output it is on. */
+	server->pointer_output = slot;
+}
+
+/* Puts the pointer of an absolute device (a tablet, a touch screen) on the anchor, where it maps. */
+void
+kwl_pointer_absolute(
+	struct kwl_server *server)
+{
+	/* A crossing back is logged once. */
+	if (server->pointer_output != KWL_PLANE_ANCHOR) {
+		printf("KWL POINTER output=%u absolute\n", KWL_PLANE_ANCHOR);
+		server->dirty = 1;
+	}
+
+	/* Succeeded: the anchor's. */
+	server->pointer_output = KWL_PLANE_ANCHOR;
+}
+
+/*
+ * Takes the windows and the pointer off an output going away (a head
+ * closed, the mirror mode chosen) to the anchor, at the same share of the
+ * way across.
+ */
+static void
+heads_evacuate(
+	struct kwl_server *server,
+	unsigned slot)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_client *client;
+	struct kwl_object *object;
+	const struct kwl_head *head;
+	unsigned count;
+	int32_t x;
+	int32_t y;
+	int window;
+
+	/* The outputs, and the one going where it was (also when its display is already lost, so not shown). */
+	count = kwl_outputs(server, outputs);
+	if (slot == KWL_PLANE_ANCHOR || slot >= count || slot > KWL_HEADS)
+		return;
+	head = &server->compose->heads[slot - 1U];
+	outputs[slot].x = head->x - server->compose->output_x;
+	outputs[slot].y = head->y - server->compose->output_y;
+	outputs[slot].width = head->width;
+	outputs[slot].height = head->height;
+
+	/* Each window on it, carried to the anchor (no place to keep for one of an output not shown). */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (object = client->objects; object != NULL; object = object->next) {
+			window = heads_is_window(object);
+			if (!window || object->output != slot)
+				continue;
+			if (outputs[slot].width == 0U) {
+				object->output = KWL_PLANE_ANCHOR;
+				continue;
+			}
+
+			/* Carried. */
+			heads_window_place(server, object, &outputs[slot], &outputs[KWL_PLANE_ANCHOR], KWL_PLANE_ANCHOR, "retreat");
+		}
+	}
+
+	/* The pointer on it comes to the same share of the anchor. */
+	if (server->pointer_output != slot)
+		return;
+	kwl_plane_carry(&outputs[slot], &outputs[KWL_PLANE_ANCHOR], server->pointer_x, server->pointer_y, 1U, 1U, 0, &x, &y);
+	server->pointer_x = x;
+	server->pointer_y = y;
+	server->pointer_output = KWL_PLANE_ANCHOR;
+	server->dirty = 1;
+	printf("KWL POINTER output=0 x=%d y=%d why=retreat\n", x, y);
+}
+
+/*
+ * Keeps the windows and the pointer with their outputs after the places
+ * changed (`before`: the outputs' rectangles then): a head's go along by
+ * its move; with `leave` (the mirror chosen) every head's go to the anchor.
+ */
+static void
+heads_windows_follow(
+	struct kwl_server *server,
+	const struct kwl_plane_rect *before,
+	unsigned leave)
+{
+	struct kwl_plane_rect after[KWL_PLANE_SLOTS];
+	struct kwl_client *client;
+	struct kwl_object *object;
+	unsigned slot;
+	int32_t dx;
+	int32_t dy;
+	int window;
+
+	/* The mirror: everything on the anchor, carried from where the heads were. */
+	(void)kwl_outputs(server, after);
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (object = client->objects; object != NULL; object = object->next) {
+			window = heads_is_window(object);
+			if (!window || object->output == KWL_PLANE_ANCHOR || object->output >= KWL_PLANE_SLOTS)
+				continue;
+			slot = object->output;
+
+			/* To the anchor when the head is not shown now (or the mirror is chosen). */
+			if (leave || after[slot].width == 0U || before[slot].width == 0U) {
+				heads_window_place(server, object, &before[slot], &after[KWL_PLANE_ANCHOR], KWL_PLANE_ANCHOR, "mode");
+				continue;
+			}
+
+			/* Along with its head. */
+			dx = after[slot].x - before[slot].x;
+			dy = after[slot].y - before[slot].y;
+			object->x += dx;
+			object->y += dy;
+		}
+	}
+
+	/* The pointer on a head: along with it, or to the anchor. */
+	slot = server->pointer_output;
+	if (slot == KWL_PLANE_ANCHOR || slot >= KWL_PLANE_SLOTS)
+		return;
+	if (leave || after[slot].width == 0U || before[slot].width == 0U) {
+		kwl_plane_carry(&before[slot], &after[KWL_PLANE_ANCHOR], server->pointer_x, server->pointer_y, 1U, 1U, 0, &server->pointer_x, &server->pointer_y);
+		server->pointer_output = KWL_PLANE_ANCHOR;
+		return;
+	}
+
+	/* Along with its head. */
+	server->pointer_x += after[slot].x - before[slot].x;
+	server->pointer_y += after[slot].y - before[slot].y;
+}
+
+/* Carries a window (and its sheet) from one output's rectangle to another's, makes it that output's, and logs why. */
+static void
+heads_window_place(
+	struct kwl_server *server,
+	struct kwl_object *window,
+	const struct kwl_plane_rect *from,
+	const struct kwl_plane_rect *to,
+	unsigned slot,
+	const char *why)
+{
+	struct kwl_object *sheet;
+	uint32_t width;
+	uint32_t height;
+	int32_t x;
+	int32_t y;
+
+	/* Its size, and its place there. */
+	kwl_surface_size(window, &width, &height);
+	kwl_plane_carry(from, to, window->x, window->y, width, height, kwl_output_top(server, slot), &x, &y);
+	window->x = x;
+	window->y = y;
+	window->output = slot;
+
+	/* Its sheet goes with it (sheet.c places it under the parent's title bar). */
+	sheet = kwl_sheet_of(window);
+	if (sheet != NULL)
+		sheet->output = slot;
+
+	/* Drawn again everywhere, and logged. */
+	heads_redraw(server);
+	printf("KWL WINDOW output surface=%u client=%llu output=%u x=%d y=%d why=%s\n", window->id, (unsigned long long)window->client->number, slot, window->x,
+	       window->y, why);
+}
+
+/* Draws every output again at the next frame (a window came or went on one). */
+static void
+heads_redraw(
+	struct kwl_server *server)
+{
+	unsigned index;
+
+	/* The anchor's frame, and each head's with it. */
+	server->dirty = 1;
+	if (server->compose == NULL)
+		return;
+	for (index = 0U; index < KWL_HEADS; index++)
+		server->compose->heads[index].dirty = 1U;
+}
+
+/* Tells whether an object is a window: a live surface with a toplevel role. */
+static int
+heads_is_window(
+	const struct kwl_object *object)
+{
+	/* A surface of a toplevel. */
+	if (object->kind != KWL_SURFACE || object->dead || object->role == NULL || object->role->top == NULL)
+		return 0;
+	if (object->role->top->kind != KWL_TOPLEVEL)
+		return 0;
+
+	/* Succeeded: a window. */
+	return 1;
 }

@@ -52,6 +52,7 @@
 #include "lid.h"
 #include "sleep-rules.h"
 #include "super-tap.h"
+#include "plane.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -399,6 +400,8 @@ struct kwl_object {
 	unsigned minimized;
 	int32_t x;
 	int32_t y;
+	/* The output a window is shown on in the extended mode (plane.h's slot, 0 the anchor; ws113-p007); its place is in the plane. */
+	unsigned output;
 	unsigned fullscreen;
 	/*
 	 * A window that was docked when it went fullscreen (BUG-208): while it
@@ -902,6 +905,18 @@ struct kwl_server {
 	struct kwl_object *focus;
 	int32_t pointer_x;
 	int32_t pointer_y;
+	/*
+	 * The output the pointer is on (plane.h's slot, 0 the anchor; the
+	 * pointer's place is in the plane, ws113-p007), and the output a pass
+	 * draws now: its slot and its rectangle of the plane, which the quads
+	 * are placed in (no width: the anchor's).
+	 */
+	unsigned pointer_output;
+	unsigned view_output;
+	int32_t view_x;
+	int32_t view_y;
+	uint32_t view_width;
+	uint32_t view_height;
 	unsigned modifier_keys;
 	uint32_t modifiers;
 	/* The Windows key pressed alone (super-tap.c, ws142-p002): armed from its press until something else happens. */
@@ -1718,6 +1733,16 @@ int kwl_displays_request(struct kwl_object *object, uint32_t opcode, const unsig
 void kwl_displays_tell(struct kwl_server *server);
 int kwl_displays_key(struct kwl_server *server, uint32_t key, uint32_t state);
 void kwl_displays_tick(struct kwl_server *server);
+
+/* The outputs of the plane, the windows and the pointer on them (heads.c, ws113-p007). */
+unsigned kwl_outputs(struct kwl_server *server, struct kwl_plane_rect *outputs);
+unsigned kwl_output_at(struct kwl_server *server, int32_t x, int32_t y);
+int32_t kwl_output_top(struct kwl_server *server, unsigned slot);
+unsigned kwl_window_output(struct kwl_object *surface);
+void kwl_window_to_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
+void kwl_window_set_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
+void kwl_pointer_relative(struct kwl_server *server, int32_t dx, int32_t dy, int32_t *x, int32_t *y);
+void kwl_pointer_absolute(struct kwl_server *server);
 uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);

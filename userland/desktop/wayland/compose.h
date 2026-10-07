@@ -34,6 +34,9 @@
 #define KWL_SWAPCHAIN_MAX	8U
 #define KWL_FRAME_WINDOWS	64U
 
+/* The longest list of an output's windows the log keeps (KWL RENDER, ws113-p007). */
+#define KWL_RENDER_LOG		256U
+
 /* The vertices of a quad: two triangles of a triangle list. */
 #define KWL_QUAD_VERTICES	6U
 
@@ -141,6 +144,7 @@ struct kwl_head {
 	uint32_t refresh;
 	unsigned dirty;
 	VkImage wallpaper;
+	unsigned showed;
 	unsigned in_frame;
 	uint32_t image;
 	uint32_t global;
@@ -297,6 +301,11 @@ struct kwl_compose {
 	unsigned heads_stale;
 	uint32_t next_global;
 	unsigned mirror_unsupported_logged;
+	/* The heads' windows of the frame being recorded (bottom to top; ws113-p007), and how many. */
+	struct kwl_object **frame_heads;
+	unsigned frame_head_count;
+	/* Each output's windows of the last frame, as logged (KWL RENDER). */
+	char render_lists[KWL_PLANE_SLOTS][KWL_RENDER_LOG];
 };
 
 /* Host-written images (shm.c), sampled with the given sampler. */
@@ -310,6 +319,8 @@ int kwl_glass_open(struct kwl_server *server);
 void kwl_glass_close(struct kwl_server *server);
 void kwl_glass_draw(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
 void kwl_glass_draw_drag_badge(struct kwl_server *server, VkCommandBuffer command);
+void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
+void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
 
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);
@@ -355,7 +366,7 @@ void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
-void kwl_heads_acquire(struct kwl_server *server);
+unsigned kwl_heads_acquire(struct kwl_server *server);
 void kwl_heads_record(struct kwl_server *server, VkCommandBuffer command, VkImage source);
 unsigned kwl_heads_waits(struct kwl_server *server, VkSemaphore *semaphores, VkPipelineStageFlags *stages, unsigned room);
 unsigned kwl_heads_signals(struct kwl_server *server, VkSemaphore *semaphores, unsigned room);

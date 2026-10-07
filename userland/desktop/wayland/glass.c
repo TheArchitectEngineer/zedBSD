@@ -1659,6 +1659,16 @@ glass_shape_draw(
 		opacity = opacity * server->layer_opacity;
 	}
 
+	/* On a head, its part of the plane: the quad and the box in its own pixels (ws113-p007). */
+	if (server->view_width != 0U) {
+		quad[0] -= (float)server->view_x;
+		quad[1] -= (float)server->view_y;
+		box[0] -= (float)server->view_x;
+		box[1] -= (float)server->view_y;
+		width = (float)server->view_width;
+		height = (float)server->view_height;
+	}
+
 	/* The quad in normalized device coordinates. */
 	constants[0] = 2.0f * quad[0] / width - 1.0f;
 	constants[1] = 2.0f * quad[1] / height - 1.0f;

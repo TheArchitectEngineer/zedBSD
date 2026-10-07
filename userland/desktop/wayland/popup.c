@@ -467,6 +467,36 @@ kwl_popup_origin(
 }
 
 /*
+ * Finds the toplevel a popup's chain hangs from (its window, ws113-p007);
+ * NULL for a popup without one.
+ */
+struct kwl_object *
+kwl_popup_root(
+	struct kwl_object *surface)
+{
+	struct kwl_object *popup;
+	struct kwl_object *link;
+	unsigned depth;
+
+	/* Up the chain, no deeper than any menu. */
+	link = surface;
+	popup = popup_of(surface);
+	for (depth = 0U; popup != NULL && depth < POPUP_DEPTH; depth++) {
+		link = popup->popup_parent;
+		if (link == NULL)
+			return NULL;
+		popup = popup_of(link);
+	}
+
+	/* A chain too deep has no window. */
+	if (popup != NULL)
+		return NULL;
+
+	/* Succeeded: the toplevel. */
+	return link;
+}
+
+/*
  * Collects the popup surfaces to draw this frame, in the order the popups
  * were made (a submenu after its menu).  Returns how many were stored.
  */
@@ -558,11 +588,17 @@ kwl_popup_draw(
 	unsigned index;
 	int32_t x;
 	int32_t y;
+	unsigned output;
 	int shown;
 
 	/* The popups in the order they were made. */
 	count = kwl_popup_collect(server, popups, POPUP_MAX);
 	for (index = 0; index < count; index++) {
+		/* Only those of the output drawn: of its windows (ws113-p007). */
+		output = kwl_window_output(popups[index]);
+		if (output != server->view_output)
+			continue;
+
 		/* Its place, kept for the pointer's surface-local position. */
 		shown = kwl_popup_origin(server, popups[index], &x, &y);
 		if (shown != 0)
@@ -912,7 +948,10 @@ popup_place(
 	struct kwl_object *popup,
 	const struct kwl_positioner *rules)
 {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	struct kwl_server *server;
+	unsigned count;
+	unsigned slot;
 	int32_t base_x;
 	int32_t base_y;
 	int32_t own_x;
@@ -956,9 +995,15 @@ popup_place(
 		base_y += own_y;
 	}
 
-	/* Kept on the output, one axis at a time. */
-	popup_fit_axis(rules, 1U, base_x, (int32_t)server->width, &x, &width);
-	popup_fit_axis(rules, 0U, base_y, (int32_t)server->height, &y, &height);
+	/* Kept on the output of its window (ws113-p007), one axis at a time. */
+	count = kwl_outputs(server, outputs);
+	slot = KWL_PLANE_ANCHOR;
+	if (popup->popup_parent != NULL)
+		slot = kwl_window_output(popup->popup_parent);
+	if (slot >= count || outputs[slot].width == 0U)
+		slot = KWL_PLANE_ANCHOR;
+	popup_fit_axis(rules, 1U, base_x - outputs[slot].x, (int32_t)outputs[slot].width, &x, &width);
+	popup_fit_axis(rules, 0U, base_y - outputs[slot].y, (int32_t)outputs[slot].height, &y, &height);
 
 	/* The popup's place and size. */
 	popup->popup_x = x;

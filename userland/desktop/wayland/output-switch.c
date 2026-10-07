@@ -587,10 +587,10 @@ output_resized(
 	/* The windows. */
 	kwl_glass_output_resized(server);
 
-	/* The pointer inside the output. */
-	if (server->pointer_x >= (int32_t)server->width)
+	/* The pointer inside the output, when it is on it (not on a head, ws113-p007). */
+	if (server->pointer_output == KWL_PLANE_ANCHOR && server->pointer_x >= (int32_t)server->width)
 		server->pointer_x = (int32_t)server->width - 1;
-	if (server->pointer_y >= (int32_t)server->height)
+	if (server->pointer_output == KWL_PLANE_ANCHOR && server->pointer_y >= (int32_t)server->height)
 		server->pointer_y = (int32_t)server->height - 1;
 
 	/* Everything is drawn again. */
