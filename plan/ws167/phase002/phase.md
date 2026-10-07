@@ -3,7 +3,7 @@
 
 Phase ID: `ws167-p002`
 Parent: [WS167](../ws.md)
-Status: test-wait（q833、P1、2026-10-07: 実装と host の確認、T1 待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-313 で boot-test・zdesktop-p054 PASS、vkdemo は compositor 無しで frame=23・DONE と offscreen の readback。compositor が動く中の vkdemo の direct display の失敗は display の排他で、この変更とは無関係）（旧: test-wait（q833、P1、2026-10-07: 実装と host の確認、T1 待ち））
 設計: [p001](../phase001/phase.md) §2・§5、H1〜H3（2026-10-05 ユーザー決定）
 
 ## 実装（2026-10-07、P1）

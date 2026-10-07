@@ -3,7 +3,7 @@
 
 Phase ID: `ws130-p008`
 Parent: [WS130](../ws.md)
-Status: uncleared（2026-10-07 T1-293 FAIL 2 行: networkd on the M flag・T1。DHCPv6・SLAAC・record・ping・resolv.conf・renew・IPv4 は ok。P1 が直す。5330 の UAT は保留）（旧: test-wait（q832、P1、2026-10-07: dnsmasq の試験の script を書いた、T1 待ち。5330 の UAT は 5330 に届かないので保留））
+Status: test-wait（2026-10-07: QEMU の dnsmasq の試験は T1-316 PASS（record renew 60、後片付け ok）。残りは 5330 の UAT（5330 に届かず保留））（旧: uncleared（2026-10-07 T1-293 FAIL 2 行: networkd on the M flag・T1。DHCPv6・SLAAC・record・ping・resolv.conf・renew・IPv4 は ok。P1 が直す。5330 の UAT は保留）（旧: test-wait（q832、P1、2026-10-07: dnsmasq の試験の script を書いた、T1 待ち。5330 の UAT は 5330 に届かないので保留）））
 設計: [p001](../phase001/phase.md) §8 の p008
 依存: [p005](../phase005/phase.md)・[p006](../phase006/phase.md)・[p007](../phase007/phase.md)（T1-292 の IPv6 の束）
 

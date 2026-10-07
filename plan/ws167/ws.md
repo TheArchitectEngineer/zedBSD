@@ -20,5 +20,5 @@ Primary Milestone: MG006
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws167-p001](phase001/phase.md) | 要件と設計 | planning（設計の第 1 版、2026-10-05 P1 q730。ユーザーの判断 H1〜H3（license・UAPI の置き場所・名前）待ち） | — |
-| [ws167-p002](phase002/phase.md) | header・3 か所の置き換え・license の記録・値の照合・T1 | test-wait（2026-10-07 P1: 実装と host の確認、T1 待ち） | p001、H1〜H3 |
+| [ws167-p002](phase002/phase.md) | header・3 か所の置き換え・license の記録・値の照合・T1 | cleared（2026-10-07、T1-313） | p001、H1〜H3 |
 | ws167-p003 | 全文規約の見直し | planned | p002 |

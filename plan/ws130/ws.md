@@ -48,5 +48,5 @@ Resume point: p001（2026-10-05 P1 が設計の第 1 版を書いた。UAPI（H1
 | [p005](phase005/phase.md) | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | cleared（2026-10-07、T1-290） | p003、p004、H3 |
 | [p006](phase006/phase.md) | networkd の SLAAC（link-local・RFC 7217・RFC 8981・RA・既定の route・RDNSS・DNSSL） | cleared（2026-10-07、T1-296） | p002、p005、H4・H5 |
 | [p007](phase007/phase.md) | `dhcpc -6`（stateless・stateful、DUID、Renew） | cleared（2026-10-07、T1-300） | p006、H7 |
-| [p008](phase008/phase.md) | T1（slirp と tap+netns の dnsmasq を 1 つの QEMU で）と 5330 の UAT | uncleared（2026-10-07 T1-293 FAIL 2 行） | p007 |
+| [p008](phase008/phase.md) | T1（slirp と tap+netns の dnsmasq を 1 つの QEMU で）と 5330 の UAT | QEMU は T1-316 PASS、5330 の UAT は保留 | p007 |
 | p009 | 全文規約の見直し | planning | p008 |

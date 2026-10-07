@@ -2,7 +2,7 @@
 
 # ws131-p025: browser の shell の窓を新しい API へ（D7）
 
-Status: uncleared（2026-10-07 Q1 の判定: T1-272 で browser-p014 は PASS、browser-p045・p056 は `set -- $link` が空で走らない（試験の側の疑い）。P1 が直す）（旧: in-progress（2026-10-03 user「D7,browserのshellもlibkeilandで書きましょう。」で新設。2026-10-06 Q1 承認、q820 で P1 が実行。B1 は停止中、libbrowser は触らない））
+Status: cleared（2026-10-07 Q1 の判定: T1-311 で browser-p045・p056 PASS、T1-272 で browser-p014 PASS）（旧: uncleared（2026-10-07 Q1 の判定: T1-272 で browser-p014 は PASS、browser-p045・p056 は `set -- $link` が空で走らない（試験の側の疑い）。P1 が直す）（旧: in-progress（2026-10-03 user「D7,browserのshellもlibkeilandで書きましょう。」で新設。2026-10-06 Q1 承認、q820 で P1 が実行。B1 は停止中、libbrowser は触らない）））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q820（P1）
