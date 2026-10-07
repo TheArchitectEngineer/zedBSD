@@ -407,8 +407,6 @@ tabs_draw_one(
 	if (current == 0 && hovered == 0)
 		return;
 
-	/* Lit under the pointer. */
-	if (app->hover_kind == FM_HIT_TAB_CLOSE && app->hover_index == index)
-		kl_canvas_circle(canvas, (float)close.x + TABS_CLOSE / 2.0f, (float)close.y + TABS_CLOSE / 2.0f, TABS_CLOSE / 2.0f, FM_COLOR_HOVER);
-	kl_icon_draw(canvas, KL_ICON_CLOSE, (float)close.x + 4.0f, (float)close.y + 4.0f, (float)(TABS_CLOSE - 8), FM_COLOR_TEXT_SECONDARY);
+	/* libkeiland's quiet round button, lit under the pointer. */
+	fm_icon_button(app, canvas, FM_WIDGET_TAB_CLOSE, index, &close, KL_ICON_CLOSE, TABS_CLOSE - 8, KL_BUTTON_ROUND | KL_BUTTON_QUIET);
 }

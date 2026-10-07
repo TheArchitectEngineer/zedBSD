@@ -298,8 +298,7 @@ enum se_glyph {
 	SE_GLYPH_PERSON,
 	SE_GLYPH_REFRESH,
 	SE_GLYPH_INFO,
-	SE_GLYPH_CHEVRON,
-	SE_GLYPH_DISCONNECT
+	SE_GLYPH_CHEVRON
 };
 
 struct se_app;
@@ -1268,7 +1267,7 @@ int se_row_value(struct se_app *app, struct kl_canvas *canvas, int x, int top, i
 void se_mark_draw(struct kl_canvas *canvas, int x, int y, unsigned pixels, float opacity);
 void se_toggle_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, int on, int enabled, int index);
 int se_button_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, const char *label, int primary, int enabled, int index);
-void se_icon_button_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, unsigned glyph, int index);
+void se_icon_button_draw(struct se_app *app, struct kl_canvas *canvas, int x, int y, enum kl_icon icon, int index);
 int se_button_width(struct se_app *app, const char *label);
 void se_dot_draw(struct kl_canvas *canvas, float cx, float cy, kl_color color);
 void se_signal_draw(struct kl_canvas *canvas, float x, float y, int rssi, kl_color color);

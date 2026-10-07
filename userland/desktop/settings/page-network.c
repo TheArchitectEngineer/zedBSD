@@ -806,7 +806,7 @@ network_row_draw(
 
 	/* The network in use has Disconnect left of its lock, over the row's region (ws089-p021: a picture, not a word). */
 	if (current != 0)
-		se_icon_button_draw(app, canvas, x + width - 70 - NETWORK_DISCONNECT_ROOM + 4, y + (NETWORK_ROW - 32) / 2, SE_GLYPH_DISCONNECT, NETWORK_DISCONNECT);
+		se_icon_button_draw(app, canvas, x + width - 70 - NETWORK_DISCONNECT_ROOM + 4, y + (NETWORK_ROW - 32) / 2, KL_ICON_DISCONNECT, NETWORK_DISCONNECT);
 }
 
 /*

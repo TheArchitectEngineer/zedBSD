@@ -59,8 +59,8 @@ kl_icon_draw(
 	float play[6];
 	float thickness;
 
-	/* The line pictures are drawn by their own pen (Today, after them, is this file's). */
-	if (icon >= KL_ICON_TILES && icon <= KL_ICON_DISCLOSURE) {
+	/* The line pictures are drawn by their own pen (Today and the eject, after them, are this file's). */
+	if ((icon >= KL_ICON_TILES && icon <= KL_ICON_DISCLOSURE) || icon == KL_ICON_DISCONNECT) {
 		keiui_icon_line_draw(canvas, icon, x, y, size, color);
 		return;
 	}
@@ -187,6 +187,11 @@ kl_icon_draw(
 		icons_segment(canvas, x, y, size, 0.34f, 0.12f, 0.34f, 0.28f, thickness, color);
 		icons_segment(canvas, x, y, size, 0.66f, 0.12f, 0.66f, 0.28f, thickness, color);
 		kl_canvas_circle(canvas, x + 0.62f * size, y + 0.64f * size, 0.08f * size, color);
+		break;
+	case KL_ICON_EJECT:
+		/* A block over a bar, filled (Files' sidebar's eject, ws090-p023). */
+		kl_canvas_round(canvas, x + 0.30f * size, y + 0.25f * size, 0.40f * size, 0.25f * size, 0.075f * size, color);
+		kl_canvas_round(canvas, x + 0.25f * size, y + 0.60f * size, 0.50f * size, 0.10f * size, 0.05f * size, color);
 		break;
 	default:
 		break;

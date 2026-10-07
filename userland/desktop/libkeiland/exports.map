@@ -382,6 +382,7 @@
 		kl_ui_window_text;
 		kl_button;
 		kl_button_width;
+		kl_icon_button;
 		kl_switch;
 		kl_slider;
 		kl_slider_flags;

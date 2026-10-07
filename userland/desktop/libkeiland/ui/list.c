@@ -311,7 +311,8 @@ kl_sidebar_item(
  * 48, ws090-p023): KL_PLACE_FAINT for a place that is not there (the
  * faint ink), KL_PLACE_QUIET for one that is there but not ready (the
  * secondary ink, a device not mounted).  The place shown keeps the
- * accent.  Reports whether it was clicked.
+ * accent.  Without the input (a NULL ui, KL_VERSION 60) it is drawn
+ * unlit.  Reports whether it was clicked.
  */
 int
 kl_sidebar_place(
@@ -329,9 +330,11 @@ kl_sidebar_place(
 	kl_color ink;
 	unsigned state;
 
-	/* The record. */
+	/* The record (none without the input, KL_VERSION 60). */
 	theme = style->theme;
-	state = kl_ui_hit(ui, id, index, rect);
+	state = 0;
+	if (ui != NULL)
+		state = kl_ui_hit(ui, id, index, rect);
 
 	/* The ink: faint for a place not there, quiet for one not ready. */
 	ink = theme->text;

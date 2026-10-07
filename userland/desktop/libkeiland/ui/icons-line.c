@@ -244,6 +244,12 @@ keiui_icon_line_draw(
 		/* A chevron pointing right. */
 		glyph_polyline(&pen, chevron, 3);
 		break;
+	case KL_ICON_DISCONNECT:
+		/* A cross in a circle: leaving the network (Settings' ws089-p021, KL_VERSION 60). */
+		glyph_circle(&pen, 0.50f, 0.50f, 0.38f);
+		glyph_segment(&pen, 0.36f, 0.36f, 0.64f, 0.64f);
+		glyph_segment(&pen, 0.64f, 0.36f, 0.36f, 0.64f);
+		break;
 	default:
 		break;
 	}
