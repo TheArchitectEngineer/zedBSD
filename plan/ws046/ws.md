@@ -10,6 +10,7 @@ Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: p014（p011 の当て直し、BUG-033 の残り）。その後 p005
+Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 <!-- awesome-plan-current:end -->
 
 ## 目標

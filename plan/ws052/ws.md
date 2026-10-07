@@ -10,6 +10,7 @@ Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: p006（2026-10-05 P1 が HAL・kernel・UAPI を実装（910bc04c・ae2c61bf・58554e8b）。T1 の QEMU（S0IDLE の拒否・DEVICES の往復・拒否の試験）と 5330 の UAT（SLP_S0 の residency、電源ボタン・蓋での起床、counter と RTC）待ち）
+Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 <!-- awesome-plan-current:end -->
 
 ## 目標

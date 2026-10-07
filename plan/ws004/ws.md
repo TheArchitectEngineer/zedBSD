@@ -10,6 +10,7 @@ Objectives: O1, O2, O4
 Parent: [Master](../master.md)
 Queue: なし
 Resume point: 主な USB/WLAN の経路は完了。NVMe 実機・転送・driver 共通化の後続項目
+Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS004 test index](tests/README.md)

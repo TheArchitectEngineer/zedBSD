@@ -9,7 +9,7 @@ Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Target: **ベータ3**（2026-10-07 ユーザー「RTL8822Cは、WSを立てて、ベータ3にしておきます。けど、ベータ2が期日前に完成したら、やるかもしれません。」）
+Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 Resume point: p001 の調査と設計から。
 <!-- awesome-plan-current:end -->
 
