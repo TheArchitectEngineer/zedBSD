@@ -53,7 +53,9 @@ zedBSD i915で外部ディスプレイの接続/切断をVulkan Display拡張か
 | [ws113-p001](phase001/phase.md) | 契約・能力と実機fixture | hotplug/複数出力/拡張とmirror/Settings/窓所属の仕様を確定 | in-progress（q702-i01、[contracts-beta2.md](phase001/contracts-beta2.md)、確認 C1〜C4、判定は Q1）。q586-i01 は uncleared | — |
 | [ws113-p002](phase002/phase.md) | i915 の scanout の規則・inventory・HPD（2026-10-05 に絞った） | GOP の出力先だけを引き継ぎ外部の優先を廃止、接続の全出力の列挙と HPD の topology の sequence（WS051 p002 と共有、C4） | in-progress（q702-i02、P2。part A・B の実装と host 済み、QEMU・実機は T1 待ち） | p001 |
 | [ws113-p003](phase003/phase.md) | Vulkan Displayの列挙・通知 | libvulkanから標準Display API/拡張でhotplugと複数出力を公開 | planned（3h） | p002、p012 |
-| [ws113-p004](phase004/phase.md) | compositorの出力・表示モード | 全拡張または全mirrorで複数outputを描画、hotplug、displays.conf | planned（4〜5h） | p003 |
+| ws113-p004a | 1 出力の切り替え（2026-10-07 N8 のため p004 から分けた） | compositor が動いている間に使う 1 つの出力を替える（kwl_output_switch: swapchain を release → 別の display の surface・swapchain → server の大きさの変更と bar・stage・wallpaper・窓の詰め直し・wl_output の mode、失敗は元へ）。hotplug の fence（p003）で数え直し、ws052-p012 の蓋の方針（R4）へ。QEMU は Venus の 2 出力 | planned（設計を先に、実装は p003 の T1-355 の後） | p003 |
+| ws113-p011a | i915 の 1 出力の付け替え（2026-10-07 N8 のため） | Keiland の lease が無い時に GOP の出力でない接続済みの出力の claim を許し、resident の pipe をその出力へ modeset し直す（eDP は消灯・panel の電源を落とす）。release で GOP の出力へ戻す。同時 2 つは p011 のまま | planned（実機 5330 の HDMI） | p002 |
+| [ws113-p004](phase004/phase.md)（p004b） | 複数の同時の出力（p004a の後の残り） | 全拡張または全mirrorで複数outputを描画、hotplug、displays.conf | planned（4〜5h） | p003 |
 | [ws113-p005](phase005/phase.md) | compositor拡張とlibkeiland | `kl_system_manager_v1` v4 の `kl_system_displays_v1` と `kl_system_displays_*`、明るさ、Fn の key | planned（3〜4h） | p004、p013 |
 | [ws113-p006](phase006/phase.md) | Settings Displayページ | 拡張・mirror の二択、配置の drag、内蔵の panel の明るさの slider | planned（3h） | p005 |
 | [ws113-p007](phase007/phase.md) | 窓の出力所属と画面間移動 | 拡張表示で窓全体を1出力にだけ表示 | planned | p004 cleared/論理座標・出力描画（p006とは独立） |
