@@ -1154,42 +1154,56 @@ drv_i915_lcd_shared_dpll_state(
 }
 
 /*
- * Binds a device view to the world's pool of two combo PLLs, building the
- * pool on first use as intel_shared_dpll_init() leaves it.
+ * Binds a device view to the world's pool of PLLs, building the pool on
+ * first use as intel_shared_dpll_init() leaves it for Alder Lake-P
+ * (adlp_plls[]): DPLL 0 and DPLL 1, the Thunderbolt PLL, TC PLL 1 to 4.
  *
  * One pool serves every screen: two modeset objects that want the same
  * hardware state share one PLL object, and its active mask counts the
  * pipes that drive it, so one screen's stop never turns off a PLL the
- * other still uses.
+ * other still uses.  A PLL's place in the pool is its id, as in the
+ * reference's table.
  */
 void
 drv_i915_lcd_dpll_pool_bind(
 	struct i915_lcd_world *world,
 	struct drm_i915_private *i915)
 {
+	struct dpll_info *info;
+	enum tc_port tc_port;
 	int index;
 
-	/* Builds DPLL 0 and DPLL 1 once (the reference's adlp_plls[]: no power domain). */
+	/* Builds the pool once. */
 	if (!world->i915_lcd_dpll_pool_inited) {
-		for (index = 0; index < 2; index++) {
+		for (index = 0; index < I915_LCD_DPLL_POOL_SIZE; index++) {
 			kern_memset(&world->i915_lcd_dpll_pool[index], 0, sizeof(world->i915_lcd_dpll_pool[index]));
 			kern_memset(&world->i915_lcd_dpll_pool_state[index], 0, sizeof(world->i915_lcd_dpll_pool_state[index]));
+			info = &world->i915_lcd_dpll_pool_info[index];
 
-			/* Describes the PLL. */
-			if (index == DPLL_ID_ICL_DPLL1) {
-				world->i915_lcd_dpll_pool_info[index].name = "DPLL 1";
-				world->i915_lcd_dpll_pool_info[index].id = DPLL_ID_ICL_DPLL1;
+			/* Describes the PLL of this place (the reference's adlp_plls[] row). */
+			if (index == DPLL_ID_ICL_DPLL0) {
+				/* DPLL 0: the combo PLL hooks, no power domain. */
+				info->name = "DPLL 0";
+				info->id = DPLL_ID_ICL_DPLL0;
+				info->funcs = &i915_combo_pll_funcs;
+				info->power_domain = 0;
+			} else if (index == DPLL_ID_ICL_DPLL1) {
+				/* DPLL 1: the combo PLL hooks, no power domain. */
+				info->name = "DPLL 1";
+				info->id = DPLL_ID_ICL_DPLL1;
+				info->funcs = &i915_combo_pll_funcs;
+				info->power_domain = 0;
+			} else if (index == DPLL_ID_ICL_TBTPLL) {
+				/* The Thunderbolt PLL. */
+				drv_i915_tbt_pll_describe(info);
 			} else {
-				world->i915_lcd_dpll_pool_info[index].name = "DPLL 0";
-				world->i915_lcd_dpll_pool_info[index].id = DPLL_ID_ICL_DPLL0;
+				/* TC PLL n of the Type-C port n. */
+				tc_port = (enum tc_port)((int)TC_PORT_1 + index - I915_LCD_DPLL_POOL_FIRST_TC);
+				drv_i915_dkl_pll_describe(info, tc_port);
 			}
 
-			/* Binds the combo PLL hooks, no power domain. */
-			world->i915_lcd_dpll_pool_info[index].funcs = &i915_combo_pll_funcs;
-			world->i915_lcd_dpll_pool_info[index].power_domain = 0;
-
 			/* Links the PLL to its description and its place in the pool. */
-			world->i915_lcd_dpll_pool[index].info = &world->i915_lcd_dpll_pool_info[index];
+			world->i915_lcd_dpll_pool[index].info = info;
 			world->i915_lcd_dpll_pool[index].index = (enum intel_dpll_id)index;
 		}
 
@@ -1199,7 +1213,7 @@ drv_i915_lcd_dpll_pool_bind(
 
 	/* Points the device view at the pool. */
 	i915->display.dpll.shared_dplls = world->i915_lcd_dpll_pool;
-	i915->display.dpll.num_shared_dpll = 2;
+	i915->display.dpll.num_shared_dpll = I915_LCD_DPLL_POOL_SIZE;
 }
 
 /*
@@ -1214,7 +1228,7 @@ drv_i915_lcd_ms_release_pipe(
 	int index;
 
 	/* Clears the pipe from each PLL's state and from its atomic state. */
-	for (index = 0; index < 2; index++) {
+	for (index = 0; index < I915_LCD_DPLL_POOL_SIZE; index++) {
 		world->i915_lcd_dpll_pool_state[index].pipe_mask &= (u8)~BIT(pipe);
 		world->i915_lcd_dpll_pool[index].state.pipe_mask &= (u8)~BIT(pipe);
 	}
@@ -1233,8 +1247,8 @@ drv_i915_lcd_dplls_reset(
 	/* The pool is rebuilt on its next use. */
 	world->i915_lcd_dpll_pool_inited = 0;
 
-	/* Clears both PLLs and their atomic states. */
-	for (index = 0; index < 2; index++) {
+	/* Clears every PLL and its atomic state. */
+	for (index = 0; index < I915_LCD_DPLL_POOL_SIZE; index++) {
 		kern_memset(&world->i915_lcd_dpll_pool[index], 0, sizeof(world->i915_lcd_dpll_pool[index]));
 		kern_memset(&world->i915_lcd_dpll_pool_state[index], 0, sizeof(world->i915_lcd_dpll_pool_state[index]));
 	}

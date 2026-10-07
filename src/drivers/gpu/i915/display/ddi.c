@@ -85,6 +85,13 @@
  */
 typedef void (*i915_ddi_encoder_hook_t)(struct intel_atomic_state *state, struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 
+/* Which disable hook a walk over the encoders on a crtc runs. */
+enum i915_ddi_disable_hook {
+	I915_DDI_HOOK_DISABLE,
+	I915_DDI_HOOK_POST_DISABLE,
+	I915_DDI_HOOK_POST_PLL_DISABLE
+};
+
 /*
  * ==== File-scope constants ====
  */
@@ -118,6 +125,7 @@ static struct i915_lcd_modeset *i915_ddi_modeset(const struct intel_encoder *enc
 static struct drm_i915_private *i915_ddi_cur_i915(const struct intel_encoder *encoder);
 static struct i915_lcd_modeset *i915_encoders_bound(struct intel_atomic_state *state);
 static void i915_encoders_call(struct i915_lcd_modeset *ms, i915_ddi_encoder_hook_t hook, struct intel_atomic_state *state, const struct intel_crtc_state *crtc_state);
+static void i915_encoders_walk_disable(struct intel_atomic_state *state, struct intel_crtc *crtc, enum i915_ddi_disable_hook which);
 static u32 i915_ddi_buf_phy_link_rate(int port_clock);
 static void i915_ddi_init_dp_buf_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_set_dp_msa(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
@@ -603,12 +611,9 @@ drv_i915_lcd_ms_bound_connector(
  * Binds the one encoder of a modeset object to the DDI hooks.
  *
  * The hooks are bound as intel_ddi_init() and intel_ddi_init_dp_connector()
- * bind them for a combo-PHY DDI on display version 12 and later (the
- * `encoder->... =` and `dig_port->dp.... =` assignments of intel_ddi.c; the
- * buffer translations as intel_ddi_buf_trans_init() binds them).  The
- * object becomes the bound object of its world, and its encoder the only
- * encoder the modeset text walks.  The object's world is the one prepare
- * recorded in it.
+ * bind them (drv_i915_lcd_ms_bind_port_hooks()).  The object becomes the
+ * bound object of its world, and its encoder the only encoder the modeset
+ * text walks.  The object's world is the one prepare recorded in it.
  */
 void
 drv_i915_lcd_ms_bind_encoder(
@@ -616,15 +621,10 @@ drv_i915_lcd_ms_bind_encoder(
 {
 	struct i915_lcd_world *world;
 	struct intel_encoder *encoder;
-	struct intel_dp *intel_dp;
-	struct drm_i915_private *i915;
-	enum phy phy;
-	bool is_tc;
 
-	/* Finds the world the object belongs to, its encoder and its DP half. */
+	/* Finds the world the object belongs to and its encoder. */
 	world = ms->world;
 	encoder = &ms->dig_port.base;
-	intel_dp = &ms->dig_port.dp;
 
 	/*
 	 * The object is the one the DDI hooks and the level shift answer for
@@ -634,15 +634,54 @@ drv_i915_lcd_ms_bind_encoder(
 	world->ddi_ms = ms;
 	ms->state.world = world;
 
-	/*
-	 * intel_ddi_init(): encoder->power_domain =
-	 * intel_display_power_ddi_lanes_domain() = POWER_DOMAIN_PORT_DDI_LANES_A
-	 * + port.  The encoder is the first and only one of the device, and the
-	 * walk over the encoders of a mask visits it.
-	 */
-	encoder->power_domain = POWER_DOMAIN_PORT_DDI_LANES_A + (int)encoder->port;
+	/* The encoder is the first and only one of the device, and the walk over the encoders of a mask visits it. */
 	encoder->base.index = 0;
 	world->i915_lcd_only_encoder = &encoder->base;
+
+	/* Binds the port's hooks. */
+	drv_i915_lcd_ms_bind_port_hooks(ms);
+}
+
+/*
+ * Binds the encoder hooks of a modeset object's DDI port, as
+ * intel_ddi_init() and intel_ddi_init_dp_connector() bind them on display
+ * version 12 and later (the `encoder->... =` and `dig_port->dp.... =`
+ * assignments of intel_ddi.c; the buffer translations as
+ * intel_ddi_buf_trans_init() binds them), without making the object its
+ * world's bound one.
+ *
+ * The takeover binds the Type-C ports' readout encoders this way
+ * (ws051-p004b): a crtc the firmware left on such a port is stopped
+ * through that port's own hooks.
+ */
+void
+drv_i915_lcd_ms_bind_port_hooks(
+	struct i915_lcd_modeset *ms)
+{
+	struct intel_encoder *encoder;
+	struct intel_dp *intel_dp;
+	struct drm_i915_private *i915;
+	enum phy phy;
+	bool is_tc;
+
+	/* Finds the object's encoder and its DP half. */
+	encoder = &ms->dig_port.base;
+	intel_dp = &ms->dig_port.dp;
+
+	/*
+	 * intel_ddi_init(): encoder->power_domain =
+	 * intel_display_power_ddi_lanes_domain(): the port's DDI lanes, A to
+	 * C on the combo PHYs and TC1 to TC4 on the Type-C PHYs
+	 * (d13_port_domains[]).
+	 */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
+	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
+	if (is_tc) {
+		encoder->power_domain = POWER_DOMAIN_PORT_DDI_LANES_TC1 + ((int)encoder->port - (int)PORT_TC1);
+	} else {
+		encoder->power_domain = POWER_DOMAIN_PORT_DDI_LANES_A + (int)encoder->port;
+	}
 
 	/* Binds the enable and disable hooks of the crtc sequences. */
 	encoder->enable = i915_enable_ddi;
@@ -656,9 +695,6 @@ drv_i915_lcd_ms_bind_encoder(
 	 * Binds the clock and signal-level hooks of the port's PHY: a Type-C
 	 * PHY's DDI clock select and DKL transmitters, or a combo PHY's.
 	 */
-	i915 = i915_lcd_to_i915(encoder->base.dev);
-	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
-	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
 	if (is_tc) {
 		encoder->enable_clock = i915_icl_ddi_tc_enable_clock;
 		encoder->is_clock_enabled = i915_icl_ddi_tc_is_clock_enabled;
@@ -769,7 +805,11 @@ drv_i915_encoders_disable(
 {
 	struct i915_lcd_modeset *ms;
 
-	UNUSED_PARAMETER(crtc);
+	/* A state that walks encoders of its own runs the hook of each encoder on the crtc. */
+	if (state->encoder_at != NULL) {
+		i915_encoders_walk_disable(state, crtc, I915_DDI_HOOK_DISABLE);
+		return;
+	}
 
 	/* Finds the object the commit's world has bound; none is reported. */
 	ms = i915_encoders_bound(state);
@@ -793,7 +833,11 @@ drv_i915_encoders_post_disable(
 {
 	struct i915_lcd_modeset *ms;
 
-	UNUSED_PARAMETER(crtc);
+	/* A state that walks encoders of its own runs the hook of each encoder on the crtc. */
+	if (state->encoder_at != NULL) {
+		i915_encoders_walk_disable(state, crtc, I915_DDI_HOOK_POST_DISABLE);
+		return;
+	}
 
 	/* Finds the object the commit's world has bound; none is reported. */
 	ms = i915_encoders_bound(state);
@@ -817,7 +861,11 @@ drv_i915_encoders_post_pll_disable(
 {
 	struct i915_lcd_modeset *ms;
 
-	UNUSED_PARAMETER(crtc);
+	/* A state that walks encoders of its own runs the hook of each encoder on the crtc. */
+	if (state->encoder_at != NULL) {
+		i915_encoders_walk_disable(state, crtc, I915_DDI_HOOK_POST_PLL_DISABLE);
+		return;
+	}
 
 	/* Finds the object the commit's world has bound; none is reported. */
 	ms = i915_encoders_bound(state);
@@ -902,6 +950,52 @@ i915_encoders_call(
 
 	/* Runs the hook with the connector state of the object. */
 	hook(state, encoder, crtc_state, &ms->conn_state);
+}
+
+/*
+ * Runs one disable hook of every encoder of a state's own walk that is on
+ * the crtc (the Linux intel_encoders_disable(), _post_disable() and
+ * _post_pll_disable() over the old state's connectors), with the old crtc
+ * state and the connector state of the encoder's modeset object.
+ */
+static void
+i915_encoders_walk_disable(
+	struct intel_atomic_state *state,
+	struct intel_crtc *crtc,
+	enum i915_ddi_disable_hook which)
+{
+	struct i915_lcd_modeset *ms;
+	struct intel_encoder *encoder;
+	i915_ddi_encoder_hook_t hook;
+	unsigned index;
+
+	/* Walks the state's encoders until the walk ends. */
+	for (index = 0u; ; index++) {
+		encoder = state->encoder_at(state->walk, index);
+		if (encoder == NULL)
+			break;
+
+		/* An encoder on another crtc is not part of this disable. */
+		if (encoder->base.crtc != &crtc->base)
+			continue;
+
+		/* The hook the walk runs. */
+		switch (which) {
+		case I915_DDI_HOOK_DISABLE:
+			hook = encoder->disable;
+			break;
+		case I915_DDI_HOOK_POST_DISABLE:
+			hook = encoder->post_disable;
+			break;
+		default:
+			hook = encoder->post_pll_disable;
+			break;
+		}
+
+		/* Runs it with the connector state of the encoder's object. */
+		ms = i915_ddi_modeset(encoder);
+		i915_encoders_call(ms, hook, state, state->old_crtc_state);
+	}
 }
 
 /* Converts a DP port clock into the DDI_BUF_CTL PHY link rate field (the Linux ddi_buf_phy_link_rate()). */

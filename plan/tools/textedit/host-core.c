@@ -413,7 +413,7 @@ test_edit(void)
 	te_app_release(&app);
 }
 
-/* ws128-p003: Replace and Replace All (the undo group, an empty replacement, Japanese text). */
+/* ws128-p003: Replace and Replace All (the undo group, an empty replacement, Japanese text); BUG-248: the Find panel. */
 static void
 test_replace(void)
 {
@@ -462,11 +462,25 @@ test_replace(void)
 	te_app_replace(&app, "", "x", 1);
 	check(text_is(&app, "1 two 1") && strstr(app.message, "Type the text") != NULL, "replace: an empty find text changes nothing");
 	te_app_action(&app, TE_ACTION_REPLACE);
-	check(app.dialog == TE_DIALOG_REPLACE && app.replace_fresh, "replace: Edit > Replace opens the panel");
+	check(app.dialog == TE_DIALOG_REPLACE && app.panel_fresh, "replace: Edit > Replace opens the panel");
 	te_app_action(&app, TE_ACTION_UNDO);
 	check(text_is(&app, "1 two 1"), "replace: the panel holds the other actions back");
 	te_app_replace_close(&app);
 	check(app.dialog == TE_DIALOG_NONE, "replace: the panel closes");
+
+	/* Edit > Find's panel (BUG-248): it opens, finds as it is typed, lets Find Next through, holds Undo back and closes. */
+	set_text(&app, "one two one two", "");
+	app.panel_fresh = 0;
+	te_app_action(&app, TE_ACTION_FIND);
+	check(app.dialog == TE_DIALOG_FIND && app.panel_fresh, "find: Edit > Find opens the panel");
+	te_app_find_text(&app, "two");
+	check(strcmp(app.find, "two") == 0 && app.anchor == 4U && app.cursor == 7U, "find: the panel's text is found as it is typed");
+	te_app_action(&app, TE_ACTION_FIND_NEXT);
+	check(app.anchor == 12U && app.cursor == 15U, "find: Find Next goes past the panel to the next place");
+	te_app_action(&app, TE_ACTION_SELECT_ALL);
+	check(app.anchor == 12U && app.cursor == 15U, "find: the panel holds the other actions back");
+	te_app_find_close(&app);
+	check(app.dialog == TE_DIALOG_NONE, "find: the panel closes");
 
 	/* A text that occurs nowhere. */
 	set_text(&app, "nothing here", "zebra");

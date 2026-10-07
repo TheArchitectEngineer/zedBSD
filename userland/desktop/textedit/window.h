@@ -9,9 +9,9 @@
  * The parts of Text Editor that speak to zdesktop through libkeiland's
  * window (the window, its presenter, the clipboard and the primary
  * selection, WS090) and libkeiland's extensions: the editor's queue of
- * inputs (queue.c), the menus and the context menu (menu.c), the
- * titlebar's controls and find field (titlebar.c), and the glass
- * (glass.c).  The host tests build the rest of the program without them.
+ * inputs (queue.c), the menus (shown in the titlebar's menu bar) and the
+ * context menu (menu.c), and the glass (glass.c).  The host tests build
+ * the rest of the program without them.
  */
 
 #ifndef TEXTEDIT_WINDOW_H
@@ -27,8 +27,8 @@
 /*
  * The editor's window: libkeiland's window, and the queue of the editor's
  * inputs -- the window's pointer, keys and focus turned into te_event
- * values by the main loop, and the actions of the menus, the titlebar and
- * the file chooser -- in the order they came.  It lives for the whole run.
+ * values by the main loop, and the actions of the menus and the file
+ * chooser -- in the order they came.  It lives for the whole run.
  */
 struct te_window {
 	struct kl_window *kui;
@@ -45,7 +45,7 @@ struct te_window {
 };
 
 /*
- * What the menus and the titlebar show of the editor: whether a change can
+ * What the menus show of the editor: whether a change can
  * be undone and redone, whether text is selected, whether the document
  * has unsaved changes, and the two View switches.
  */
@@ -77,18 +77,6 @@ struct te_menu {
 };
 
 /*
- * The window's titlebar in zdesktop (titlebar.c, WS131 p016): the window,
- * whether its controls are shown (not without the compositor's titlebar),
- * and whether the find field should take the keyboard.  The controls'
- * state is the actions' (menu.c).
- */
-struct te_titlebar {
-	struct te_window *window;
-	int shown;
-	int want_focus;
-};
-
-/*
  * The window's glass (glass.c): the window, whether it is glass (the
  * window then keeps no ground of its own), and the card it was last told
  * of (libkeiland sends only a change).
@@ -110,12 +98,6 @@ void te_menu_refresh(struct te_menu *menu, const struct te_state *state);
 void te_menu_popup(struct te_menu *menu, int x, int y);
 void te_menu_recent(struct te_menu *menu, const struct te_app *app);
 void te_menu_close(struct te_menu *menu);
-
-/* The titlebar's controls (titlebar.c). */
-int te_titlebar_open(struct te_titlebar *titlebar, struct te_window *window);
-void te_titlebar_refresh(struct te_titlebar *titlebar);
-void te_titlebar_input(struct te_titlebar *titlebar, const struct kl_window_event *input);
-void te_titlebar_close(struct te_titlebar *titlebar);
 
 /* The glass (glass.c). */
 int te_glass_open(struct te_glass *glass, struct te_window *window, const struct te_app *app, int see_through);

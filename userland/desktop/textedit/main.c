@@ -53,6 +53,12 @@
 #define MAIN_REPLACE_ALL	6U
 #define MAIN_REPLACE_DONE	7U
 
+/* The Find panel's widgets (BUG-248): its field and its three buttons. */
+#define MAIN_FIND_TEXT		8U
+#define MAIN_FIND_NEXT		9U
+#define MAIN_FIND_PREVIOUS	10U
+#define MAIN_FIND_DONE		11U
+
 /* The Replace panel's size, its distance from the card's top, a field's and a button's height, and the space between rows. */
 #define MAIN_REPLACE_WIDTH	560
 #define MAIN_REPLACE_HEIGHT	232
@@ -60,7 +66,10 @@
 #define MAIN_REPLACE_ROW	36
 #define MAIN_REPLACE_GAP	12
 
-/* The evdev code of A: Edit > Select All (Ctrl+A, the menu's) selects the Replace panel's field instead of the text. */
+/* The Find panel's height (one row of a field fewer than the Replace panel's). */
+#define MAIN_FIND_HEIGHT	(MAIN_REPLACE_HEIGHT - MAIN_REPLACE_ROW - MAIN_REPLACE_GAP)
+
+/* The evdev code of A: Edit > Select All (Ctrl+A, the menu's) selects the Find or Replace panel's field instead of the text. */
 #define MAIN_KEY_A		30U
 
 /* How far above the card's bottom a message's chip stands. */
@@ -124,9 +133,9 @@ static struct kl_ui *main_input;
 static int main_moving;
 
 /*
- * The Replace panel's fields (ws128-p003): the text to find and its
- * replacement, filled from the editor each time the panel opens (the
- * editor's replace_fresh) and kept while it is open.
+ * The Find and Replace panels' fields (BUG-248, ws128-p003): the text to
+ * find (both panels') and its replacement, filled from the editor each
+ * time a panel opens (the editor's panel_fresh) and kept while it is open.
  */
 static struct kl_field main_find_field;
 static struct kl_field main_with_field;
@@ -152,9 +161,6 @@ static struct te_text main_ui;
  * before it; absent with a compositor without them.
  */
 static struct te_menu main_menu;
-
-/* The window's titlebar controls in the compositor, with the same life as the menus. */
-static struct te_titlebar main_titlebar;
 
 /* The window's glass, when zdesktop has glass and the swapchain is see-through. */
 static struct te_glass main_glass;
@@ -219,13 +225,14 @@ static void main_edit_state(const struct te_state *state);
 static void main_opened(void);
 static void main_recent_refresh(void);
 static void main_replace_panel(uint64_t now_us, const struct kl_style *style, const struct kl_rect *area);
+static void main_find_panel(uint64_t now_us, const struct kl_style *style, const struct kl_rect *area);
+static void main_panel_find_text(char *text, size_t size);
 static void main_host(struct te_app *app);
 static void main_copy(void *data, const char *text, size_t length);
 static size_t main_paste(void *data, char *text, size_t size);
 static void main_select(void *data, const char *text, size_t length);
 static size_t main_paste_primary(void *data, char *text, size_t size);
 static void main_context_menu(void *data, int x, int y);
-static void main_find_focus(void *data);
 static int main_choose(void *data, int saving, const char *folder, const char *name);
 static void main_window_event(const struct kl_window_event *event);
 static void main_fingers(uint64_t now_us);
@@ -326,7 +333,11 @@ main(
 	if (main_input == NULL)
 		te_log("TOUCH failed errno=%d", ENOMEM);
 
-	/* The menus and the titlebar; a window without them goes on with its keys. */
+	/*
+	 * The menus, shown in the titlebar's menu bar (BUG-248: the window
+	 * gives no titlebar controls, so zdesktop shows its menu); a window
+	 * without them goes on with its keys.
+	 */
 	main_state(&state);
 	error = te_menu_open(&main_menu, &main_window, &state);
 	if (error != 0) {
@@ -337,20 +348,12 @@ main(
 	/* File > Open Recent's files. */
 	main_recent_refresh();
 
-	/* The titlebar's controls. */
-	error = te_titlebar_open(&main_titlebar, &main_window);
-	if (error != 0) {
-		te_log("TITLEBAR failed errno=%d", error);
-		te_titlebar_close(&main_titlebar);
-	}
-
 	/* The loop, until the window closes. */
 	status = main_loop(&options);
 
-	/* Everything goes, the chooser, the titlebar, the menus and the editor before the window they belong to. */
+	/* Everything goes, the chooser, the menus and the editor before the window they belong to. */
 	kl_file_chooser_destroy(main_chooser);
 	main_chooser = NULL;
-	te_titlebar_close(&main_titlebar);
 	te_menu_close(&main_menu);
 	kl_ui_destroy(main_input);
 	te_glass_close(&main_glass);
@@ -638,7 +641,7 @@ main_loop(
 				te_log("READY width=%u height=%u lines=%lu focus=%d", main_width, main_height, (unsigned long)main_app.buffer.line_count, main_focus_came);
 		}
 
-		/* Every input queued (the menus' and the titlebar's among them). */
+		/* Every input queued (the menus' among them). */
 		for (;;) {
 			taken = te_window_take(&main_window, &event);
 			if (taken == 0)
@@ -670,12 +673,11 @@ main_loop(
 		main_opened();
 		main_title_refresh();
 
-		/* Time passes for the editor; the menus and the titlebar show its state. */
+		/* Time passes for the editor; the menus show its state. */
 		(void)te_app_tick(&main_app, now);
 		main_state(&state);
 		main_edit_state(&state);
 		te_menu_refresh(&main_menu, &state);
-		te_titlebar_refresh(&main_titlebar);
 
 		/* Close (with nothing unsaved, or dropped) ends the run. */
 		if (main_app.want_close != 0) {
@@ -801,6 +803,12 @@ main_overlay(
 		return;
 	}
 
+	/* Edit > Find's panel too (BUG-248). */
+	if (main_app.dialog == TE_DIALOG_FIND) {
+		main_find_panel(now_us, &style, &area);
+		return;
+	}
+
 	/* Any other dialog: its words and buttons (libkeiland's dialog). */
 	te_app_dialog_words(&main_app, title, sizeof(title), &words, &labels, &count);
 	kl_ui_begin(main_input, now_us);
@@ -879,7 +887,7 @@ main_canvas_make(void)
 	return 0;
 }
 
-/* Gathers what the menus and the titlebar show. */
+/* Gathers what the menus show. */
 static void
 main_state(
 	struct te_state *state)
@@ -1041,9 +1049,6 @@ main_replace_panel(
 	struct kl_rect panel;
 	struct kl_rect rect;
 	char selected[TE_FIND_MAX];
-	const char *newline;
-	size_t start;
-	size_t end;
 	unsigned find_flags;
 	unsigned with_flags;
 	int replace_one;
@@ -1054,17 +1059,9 @@ main_replace_panel(
 	int taken;
 
 	/* Opened just now: the text to find is the selection (a short one on one line) or the last, the replacement the last. */
-	if (main_app.replace_fresh) {
-		main_app.replace_fresh = 0;
-		snprintf(selected, sizeof(selected), "%s", main_app.find);
-		te_edit_selection(&main_app, &start, &end);
-		if (end > start && end - start < sizeof(selected)) {
-			te_buffer_copy(&main_app.buffer, start, end, selected);
-			selected[end - start] = '\0';
-			newline = strchr(selected, '\n');
-			if (newline != NULL)
-				snprintf(selected, sizeof(selected), "%s", main_app.find);
-		}
+	if (main_app.panel_fresh) {
+		main_app.panel_fresh = 0;
+		main_panel_find_text(selected, sizeof(selected));
 
 		/* The fields, and the keyboard for the replacement (for the text to find when there is none yet). */
 		kl_field_set(&main_find_field, selected);
@@ -1149,12 +1146,151 @@ main_replace_panel(
 	main_app.dirty = 1;
 }
 
+/*
+ * Draws Edit > Find's panel over the card and carries out what was done
+ * with it (BUG-248, in place of the titlebar's find field): the text to
+ * find is found as it is typed, Next (or Enter) and Previous go on to the
+ * next and the one before, and Done or Esc closes the panel with the place
+ * found selected.
+ */
+static void
+main_find_panel(
+	uint64_t now_us,
+	const struct kl_style *style,
+	const struct kl_rect *area)
+{
+	struct kl_event event;
+	struct kl_rect panel;
+	struct kl_rect rect;
+	char selected[TE_FIND_MAX];
+	unsigned find_flags;
+	int next;
+	int previous;
+	int done;
+	int width;
+	int top;
+	int taken;
+
+	/* Opened just now: the text to find is the selection (a short one on one line) or the last, with the keyboard. */
+	if (main_app.panel_fresh) {
+		main_app.panel_fresh = 0;
+		main_panel_find_text(selected, sizeof(selected));
+		kl_field_set(&main_find_field, selected);
+		kl_ui_set_focus(main_input, MAIN_FIND_TEXT, 0);
+
+		/* The log line the tests read. */
+		te_log("FIND open find=%s", main_find_field.text);
+	}
+
+	/* The panel near the card's top, in its middle, narrower in a narrow window. */
+	width = MAIN_REPLACE_WIDTH;
+	if (width > area->width - 32)
+		width = area->width - 32;
+	panel.x = area->x + (area->width - width) / 2;
+	panel.y = area->y + MAIN_REPLACE_TOP;
+	panel.width = width;
+	panel.height = MAIN_FIND_HEIGHT;
+
+	/* The frame of input of its own: the panel, the field and the buttons. */
+	kl_ui_begin(main_input, now_us);
+	kl_panel(style, &panel, 0);
+	top = kl_card(style, &panel, "Find", "The place found is selected as you type; Next and Previous go on.");
+	rect.x = panel.x + 20;
+	rect.width = panel.width - 40;
+	rect.height = MAIN_REPLACE_ROW;
+	rect.y = top;
+	find_flags = kl_field(main_input, style, MAIN_FIND_TEXT, &rect, &main_find_field, "Find");
+
+	/* The buttons at the bottom right: Next (the default), Previous, Done. */
+	rect.y = top + MAIN_REPLACE_ROW + MAIN_REPLACE_GAP + 4;
+	rect.width = kl_button_width(style, "Next");
+	rect.x = panel.x + panel.width - 20 - rect.width;
+	next = kl_button(main_input, style, MAIN_FIND_NEXT, &rect, "Next", KL_BUTTON_PRIMARY);
+	rect.width = kl_button_width(style, "Previous");
+	rect.x -= rect.width + 10;
+	previous = kl_button(main_input, style, MAIN_FIND_PREVIOUS, &rect, "Previous", 0U);
+	rect.width = kl_button_width(style, "Done");
+	rect.x -= rect.width + 10;
+	done = kl_button(main_input, style, MAIN_FIND_DONE, &rect, "Done", 0U);
+	main_moving = kl_ui_end(main_input, now_us);
+
+	/* A key no widget took: Esc closes the panel, anything else is nothing. */
+	for (;;) {
+		taken = kl_ui_take(main_input, &event);
+		if (taken == 0)
+			break;
+
+		/* Esc. */
+		if (event.kind == KL_EVENT_KEY && event.code == KL_KEY_ESC)
+			done = 1;
+	}
+
+	/* Esc in the field closes the panel too. */
+	if ((find_flags & KL_FIELD_CANCELLED) != 0U)
+		done = 1;
+
+	/* The text as it is typed is found from where the selection starts. */
+	if ((find_flags & KL_FIELD_CHANGED) != 0U)
+		te_app_find_text(&main_app, main_find_field.text);
+
+	/* Enter in the field is Next. */
+	if ((find_flags & KL_FIELD_SUBMITTED) != 0U)
+		next = 1;
+
+	/* Next and Previous go on with the field's text (one filled in when the panel opened is the editor's from then). */
+	if (next || previous) {
+		snprintf(main_app.find, sizeof(main_app.find), "%s", main_find_field.text);
+		main_app.find_length = strlen(main_app.find);
+	}
+
+	/* Next finds the place after the one found, Previous the one before. */
+	if (next) {
+		te_edit_find(&main_app, 1, 0);
+	} else if (previous) {
+		te_edit_find(&main_app, 0, 0);
+	}
+
+	/* Done, then the frame shows what was asked. */
+	if (done)
+		te_app_find_close(&main_app);
+	main_app.dirty = 1;
+}
+
+/*
+ * Gives the text a Find or Replace panel opens with: the selection when it
+ * is short and on one line, else the text looked for last.
+ */
+static void
+main_panel_find_text(
+	char *text,
+	size_t size)
+{
+	const char *newline;
+	size_t start;
+	size_t end;
+
+	/* The text looked for last, unless the selection says otherwise. */
+	snprintf(text, size, "%s", main_app.find);
+
+	/* No selection, or one too long for the field: the last text stays. */
+	te_edit_selection(&main_app, &start, &end);
+	if (end <= start || end - start >= size)
+		return;
+
+	/* The selection, unless it runs over a line. */
+	te_buffer_copy(&main_app.buffer, start, end, text);
+	text[end - start] = '\0';
+	newline = strchr(text, '\n');
+	if (newline != NULL)
+		snprintf(text, size, "%s", main_app.find);
+}
+
 /* Gives the editor the window's services. */
 static void
 main_host(
 	struct te_app *app)
 {
-	/* The clipboard, the primary selection, the context menu and the find field. */
+	/* The clipboard, the primary selection and the context menu. */
 	memset(&app->host, 0, sizeof(app->host));
 	app->host.data = &main_window;
 	app->host.copy = main_copy;
@@ -1162,7 +1298,6 @@ main_host(
 	app->host.select = main_select;
 	app->host.paste_primary = main_paste_primary;
 	app->host.context_menu = main_context_menu;
-	app->host.find_focus = main_find_focus;
 	app->host.choose = main_choose;
 }
 
@@ -1244,16 +1379,6 @@ main_context_menu(
 	/* The menus' context menu (the window is the only one). */
 	(void)data;
 	te_menu_popup(&main_menu, x, y);
-}
-
-/* Gives the titlebar's find field the keyboard (with the next refresh). */
-static void
-main_find_focus(
-	void *data)
-{
-	/* Asked of the titlebar. */
-	(void)data;
-	main_titlebar.want_focus = 1;
 }
 
 /*
@@ -1455,13 +1580,8 @@ main_window_event(
 		main_closed = 1;
 		break;
 	case KL_WINDOW_ACTION:
-		/* An item of the menus or a control of the titlebar, in its place among the keys. */
+		/* An item of the menus, in its place among the keys. */
 		main_action(event);
-		break;
-	case KL_WINDOW_CONTROL_TEXT:
-	case KL_WINDOW_CONTROL_DONE:
-		/* The find field's text. */
-		te_titlebar_input(&main_titlebar, event);
 		break;
 	default:
 		break;
@@ -1602,9 +1722,9 @@ main_appearance_changed(void)
 }
 
 /*
- * Carries out an item of the menus or a control of the titlebar: Select
- * All (zdesktop takes Ctrl+A for the menu) selects the focused field of
- * the Replace panel; any other action is the editor's.
+ * Carries out an item of the menus: Select All (zdesktop takes Ctrl+A for
+ * the menu) selects the focused field of the Find or Replace panel; any
+ * other action is the editor's.
  */
 static void
 main_action(
@@ -1613,9 +1733,9 @@ main_action(
 	/* The log line of the choice. */
 	te_log("ACTION id=%d action=%u", (int)event->id, (unsigned)event->code);
 
-	/* Select All in the Replace panel's field. */
+	/* Select All in the Find or Replace panel's field. */
 	if (event->code == TE_ACTION_SELECT_ALL &&
-	    main_app.dialog == TE_DIALOG_REPLACE &&
+	    (main_app.dialog == TE_DIALOG_REPLACE || main_app.dialog == TE_DIALOG_FIND) &&
 	    main_input != NULL) {
 		(void)kl_ui_key(main_input, MAIN_KEY_A, 1, KL_MOD_CTRL);
 		main_app.dirty = 1;

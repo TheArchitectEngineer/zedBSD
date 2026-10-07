@@ -2185,6 +2185,23 @@ enum i915_lcd_observe {
 #define I915_LCD_EIO       (-5)
 
 /*
+ * The DPCD access of one sink's own AUX channel (ws051-p004b).
+ *
+ * A modeset object whose sink is not the one the backend's DPCD hooks
+ * reach (those reach the panel's) names one of these: an external DP
+ * port's sink, reached over its Type-C port's AUX channel.  The hooks have
+ * the meaning of the backend's (bytes transferred, or a negative Linux
+ * errno; 0 or a negative errno for the capabilities) and the owner of the
+ * channel keeps it for as long as the object may use it.
+ */
+struct i915_lcd_aux_emit {
+	void *ctx;
+	long (*dpcd_read)(void *ctx, unsigned offset, uint8_t *buf, size_t size);
+	long (*dpcd_write)(void *ctx, unsigned offset, const uint8_t *buf, size_t size);
+	int (*read_dpcd_caps)(void *ctx, uint8_t dpcd[15]);
+};
+
+/*
  * The hooks the modeset code reaches the outside through: registers,
  * waits, time, DPCD, panel power, display power, vblank, locks and errors.
  */
@@ -2579,6 +2596,7 @@ struct i915_lcd_modeset_cfg {
 	int dpll_id;                    /* 0 = DPLL 0, 1 = DPLL 1 */
 	int aux_ch;                     /* enum aux_ch: 0 = A */
 	uint32_t saved_port_bits;       /* DDI_BUF_CTL readout & DDI_BUF_PORT_REVERSAL, | the VBT lane-reversal flag */
+	const struct i915_lcd_aux_emit *aux_emit;   /* the sink's own AUX channel (an external DP port's); NULL = the backend's */
 	uint8_t dpcd[15];               /* the sink's receiver capabilities (from the resident eDP) */
 	uint8_t edp_dpcd[3];
 	int vbt_low_vswing, vbt_hobl;   /* the panel's VBT eDP block */

@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p004b`
 Parent: [WS051](../ws.md)
-Status: planning（2026-10-07 P1: 設計だけ。code は P2 の [ws113-p011a](../../ws113/phase011a/phase.md)（1 出力の付け替え）の merge の後、Q1 の判断 2026-10-07）
+Status: in-progress（2026-10-07 P1: ws113-p011a の merge（9036a7ad4）の後に code。D4+D5 を実装と host 試験。続きは D1〜D3・D6・D7）
 Phase disposition: normal
 Queue: q847（P1）の続き。承認: ユーザー 2026-10-07「UCSIとDP alt modeってもう動いてるんですか？シェーダコンパイラより優先してほしいです」（Q1 経由）。設計の先行と code の順は Q1 2026-10-07。
 
@@ -139,3 +139,44 @@ p011a の claim の判断の表の「点けられない interface（DP）→ `EO
 
 p004a（cleared の後）、ws113-p011a の merge（R1〜R4）。p011（同時 2 出力）は不要（1 出力の付け替えで出す。同時の 2 つは p011 の後に TC の出力も
 その資源の検査に乗る）。p004c（GOP が USB-C の時の引き継ぎ）はこの後。
+
+## 記録
+
+### 2026-10-07 D4+D5（同じ commit、base main c4a1bc8ef）
+
+- D4（`clock.c`・`modeset-internal.h`）: pool を `I915_LCD_DPLL_POOL_SIZE` 7（DPLL 0・1、TBT PLL、TC PLL 1〜4、adlp_plls の並び、place = id）に。
+  `drv_i915_lcd_dpll_pool_bind` は TBT を `drv_i915_tbt_pll_describe`、TC を `drv_i915_dkl_pll_describe` で、`num_shared_dpll` 7。
+  `drv_i915_lcd_ms_release_pipe`・`drv_i915_lcd_dplls_reset` の「2」を pool の大きさに。combo の割り当て（`drv_i915_lcd_ms_alloc_pll` の mask）は不変。
+- D5（`takeover.c`・`takeover-internal.h`・`ddi.c`）: registry の walk を「bound の encoder ＋ VBT が宣言した TC の port ごとの readout の encoder」に
+  （`encoders[]`・`connectors[]`・`encoder_count`）。TC の port の object は takeover world の `tc_ms[4]`（`struct i915_lcd_modeset`、DDI の hook は
+  `ms` の container を前提にするため）で、encoder は INTEL_OUTPUT_DDI・port TC1+n・lanes/IO の power domain・AUX channel、connector は DisplayPort。
+  hook は新 `drv_i915_lcd_ms_bind_port_hooks`（`drv_i915_lcd_ms_bind_encoder` から world の bound の部分を分けた）と `drv_i915_lcd_ms_bind_readout`。
+- design との差（D5 を成り立たせるために足した物）:
+  1. takeover の noatomic の disable の encoder の walk: 今の `drv_i915_encoders_disable`・`_post_disable`・`_post_pll_disable` は world の bound の
+     （eDP の）encoder の hook を、どの crtc にも走らせていた。`struct intel_atomic_state` に `encoder_at`・`walk` を足し、takeover の state は
+     registry の walk を名乗る → crtc に載る encoder（Linux の old state の connector の walk と同じ意味）の hook を、その encoder の object の
+     connector state で走らせる。walk の無い state（modeset の object の）は今のまま。
+  2. AUX の routing: DPCD の macro は aux を評価していなかった（全部が backend の＝eDP の AUX）。`struct i915_lcd_aux_emit`（internal.h）と
+     object の `aux_emit`（cfg の `aux_emit` から）を足し、DPCD の helper は aux の container の object が名乗る hook を使う（NULL なら今の
+     backend）。TC の readout の object は `drv_i915_dp_ext_aux_emit`（dp-ext-kern.c、port の AUX、port の停止の後は -EIO）を、無ければ全部を
+     断る hook を持つ。これで takeover の disable の `DP_SET_POWER` D3 が eDP でなく TC の sink に行く。D7 の「bind_ops の DPCD の hook を出力が
+     DP_EXT なら外部 DP へ」はこの object ごとの routing で置き換える（resident の run の DP_EXT の cfg に `aux_emit`）。
+  3. `bind_port_hooks` の encoder の power domain: TC の port は `POWER_DOMAIN_PORT_DDI_LANES_TC1 + n`（今の「LANES_A + port」は TC で LANES_D 以降を
+     指していた。combo は不変）。
+- 未対応で残す（記録）: TC の readout の encoder の `sync_state` の `intel_tc_port_sanitize_mode` は今の step のまま（tc.c の readout が firmware の
+  DDI buffer の有効な port に link 1 を持つ: p002b）。takeover の crtc の power domain の確かめ（pipe.c の encoder mask の walk は world の only encoder
+  だけ）に TC の lanes の domain は入らない（takeover の間は INIT の参照が well を保つ。Linux との差は参照の数だけ）。
+
+| コマンド（D4+D5） | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+| `I915_TESTS=y I915_TEST_SET=display`・`execution` の vmunix | 成功 warning 0 |
+| `sh plan/ws051/tests/host-dkl.sh` | 51 checks 0 failures（新 `test_pool`: 7 PLL、id = place、名前、hook、pipe の release、reset と再 bind） |
+| `sh plan/ws051/tests/host-n1-tc.sh`（新） | 22 checks 0 failures（registry の walk、state の walk の disable が crtc の encoder だけを object の connector state で、walk の無い state は bound、DPCD の routing） |
+| `sh plan/ws051/tests/host-dpext.sh`・`host-tc.sh`・`host-vbt-pll.sh` | PASS（82・90+34・3） |
+| `python3 plan/tools/style-check.py`（変えた file の前後） | 同じ数か減（clock 40、ddi 107、takeover 59、dp-ext-kern 1、modeset-internal.h 10→9）、新しい試験 0 |
+| `git diff --check` | 問題無し |
+
+- 試験の直し: `host-dkl-stubs.c` に `drv_i915_worker_wake` と boot の parameter の 3 つ（ws113-p011a の後に present.c・output.c が link に入った）。
+  同じ理由で `plan/ws084/tests/run-native-decide-host-test.sh` と `plan/ws118/tests/run-tgl-display-host-test.sh` も link で落ちる（P1 の範囲外、Q1 へ）。
+- 未実施: 実機（clone の takeover、T1 は WS の最後）。

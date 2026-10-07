@@ -58,6 +58,9 @@ static int i915_dp_ext_read_caps(void *ctx, uint8_t dpcd[I915_DP_EXT_DPCD_SIZE])
 static int i915_dp_ext_ddc_probe(void *ctx);
 static int i915_dp_ext_edid_read(void *ctx, uint8_t *buffer, unsigned max_blocks, unsigned *extensions);
 static void i915_dp_ext_log(void *ctx, const char *format, ...) __attribute__((format(printf, 2, 3)));
+static long i915_dp_ext_emit_dpcd_read(void *ctx, unsigned offset, uint8_t *buffer, size_t size);
+static long i915_dp_ext_emit_dpcd_write(void *ctx, unsigned offset, const uint8_t *buffer, size_t size);
+static int i915_dp_ext_emit_read_caps(void *ctx, uint8_t dpcd[15]);
 
 /*
  * Binds the display's Type-C ports as external DP ports.
@@ -256,6 +259,46 @@ drv_i915_dp_ext_pulse(
 }
 
 /*
+ * Gives the DPCD access of an external DP port's sink for a modeset
+ * object of that sink.
+ *
+ * The access goes over the port's AUX channel, whose transfer holds the
+ * Type-C port for each message as the Linux AUX text does; it does not
+ * take the port's probe lock, so a probe and a modeset may interleave
+ * their messages (the channel's own mutex orders them).  NULL when the
+ * ports are not bound or the port is not a declared Type-C port.
+ */
+const struct i915_lcd_aux_emit *
+drv_i915_dp_ext_aux_emit(
+	struct i915_display *display,
+	int port)
+{
+	struct i915_dp_world *world;
+	struct i915_dp_ext_world *ext;
+	struct i915_dp_ext_port *p;
+	int tc_port;
+
+	/* Without bound external ports there is no channel. */
+	world = display->dp_world;
+	if (world == NULL)
+		return NULL;
+	ext = &world->ext;
+	if (!ext->live)
+		return NULL;
+
+	/* Only a declared Type-C port has a channel of its own. */
+	tc_port = drv_i915_tc_kern_port_of(port);
+	if (tc_port < 0)
+		return NULL;
+	p = &ext->port[tc_port];
+	if (!p->declared)
+		return NULL;
+
+	/* Succeeded: the port's access, bound with the port. */
+	return &p->aux_emit;
+}
+
+/*
  * Stops the external DP ports before the eDP device's backend goes: no
  * probe starts after this, and one running is waited for.
  */
@@ -387,6 +430,13 @@ i915_dp_ext_bind_port(
 	p->env.ddc_probe = i915_dp_ext_ddc_probe;
 	p->env.edid_read = i915_dp_ext_edid_read;
 	p->env.log = i915_dp_ext_log;
+
+	/* The DPCD access a modeset object of the sink takes, refused once the ports stop. */
+	p->ext = ext;
+	p->aux_emit.ctx = p;
+	p->aux_emit.dpcd_read = i915_dp_ext_emit_dpcd_read;
+	p->aux_emit.dpcd_write = i915_dp_ext_emit_dpcd_write;
+	p->aux_emit.read_dpcd_caps = i915_dp_ext_emit_read_caps;
 
 	/* The lock, and a sink not yet probed. */
 	(void)mutex_init(&p->lock, LOCK_RANK_DEVICE, "i915 dp-ext port");
@@ -596,4 +646,77 @@ i915_dp_ext_log(
 	(void)kern_vsnprintf(line, sizeof(line), format, arguments);
 	va_end(arguments);
 	kern_logf("%s", line);
+}
+
+/* Reads DPCD bytes of the port's sink for a modeset object: refused once the ports stopped. */
+static long
+i915_dp_ext_emit_dpcd_read(
+	void *ctx,
+	unsigned offset,
+	uint8_t *buffer,
+	size_t size)
+{
+	struct i915_dp_ext_port *p;
+	long transferred;
+
+	/* The channel's backend is gone once the ports stopped. */
+	p = ctx;
+	if (!p->ext->live)
+		return -(long)I915_DP_EIO;
+
+	/* Reads over the port's channel. */
+	transferred = drv_i915_drm_dp_dpcd_read(&p->dig_port.dp.aux, offset, buffer, size);
+	if (transferred < 0)
+		return transferred;
+
+	/* Succeeded: reports the bytes read. */
+	return transferred;
+}
+
+/* Writes DPCD bytes of the port's sink for a modeset object: refused once the ports stopped. */
+static long
+i915_dp_ext_emit_dpcd_write(
+	void *ctx,
+	unsigned offset,
+	const uint8_t *buffer,
+	size_t size)
+{
+	struct i915_dp_ext_port *p;
+	long transferred;
+
+	/* The channel's backend is gone once the ports stopped. */
+	p = ctx;
+	if (!p->ext->live)
+		return -(long)I915_DP_EIO;
+
+	/* Writes over the port's channel. */
+	transferred = drv_i915_drm_dp_dpcd_write(&p->dig_port.dp.aux, offset, buffer, size);
+	if (transferred < 0)
+		return transferred;
+
+	/* Succeeded: reports the bytes written. */
+	return transferred;
+}
+
+/* Reads the receiver capabilities of the port's sink for a modeset object: refused once the ports stopped. */
+static int
+i915_dp_ext_emit_read_caps(
+	void *ctx,
+	uint8_t dpcd[15])
+{
+	struct i915_dp_ext_port *p;
+	int error;
+
+	/* The channel's backend is gone once the ports stopped. */
+	p = ctx;
+	if (!p->ext->live)
+		return -I915_DP_EIO;
+
+	/* Reads over the port's channel. */
+	error = drv_i915_drm_dp_read_dpcd_caps(&p->dig_port.dp.aux, dpcd);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the capabilities are in dpcd. */
+	return 0;
 }
