@@ -44,6 +44,7 @@ static void window_button(struct shell_window *window, const struct kl_window_ev
 static void window_axis(struct shell_window *window, const struct kl_window_event *input);
 static void window_key(struct shell_window *window, const struct kl_window_event *input);
 static void window_focus(struct shell_window *window, const struct kl_window_event *input);
+static void window_text(struct shell_window *window, int type, const struct kl_window_event *input);
 static struct shell_event *window_push(struct shell_window *window, int type);
 static void window_push_motion(struct shell_window *window);
 static void window_pad_push(struct shell_window *window, unsigned type, const struct kl_window_event *input);
@@ -356,6 +357,15 @@ window_event(
 	case KL_WINDOW_FOCUS:
 		window_focus(window, input);
 		break;
+	case KL_WINDOW_TEXT_COMMIT:
+		window_text(window, SHELL_EVENT_TEXT_COMMIT, input);
+		break;
+	case KL_WINDOW_TEXT_PREEDIT:
+		window_text(window, SHELL_EVENT_TEXT_PREEDIT, input);
+		break;
+	case KL_WINDOW_TEXT_DELETE:
+		window_text(window, SHELL_EVENT_TEXT_DELETE, input);
+		break;
 	case KL_WINDOW_TOUCH_DOWN:
 		window_touch_push(window, SHELL_TOUCH_DOWN, input);
 		break;
@@ -490,6 +500,29 @@ window_focus(
 	event->pressed = 0;
 	if (input->pressed)
 		event->pressed = 1;
+}
+
+/* Queues an input method's text, its composing or its deletion for the page (ws090-p025). */
+static void
+window_text(
+	struct shell_window *window,
+	int type,
+	const struct kl_window_event *input)
+{
+	struct shell_event *event;
+
+	/* The input; a full queue drops it. */
+	event = window_push(window, type);
+	if (event == NULL)
+		return;
+
+	/* The text with its cursor, and the bytes to delete. */
+	memcpy(event->text, input->text, sizeof(event->text));
+	event->text[sizeof(event->text) - 1U] = '\0';
+	event->begin = input->begin;
+	event->end = input->end;
+	event->before = input->before;
+	event->after = input->after;
 }
 
 /* Queues a new input of a kind with the modifiers held; NULL when the queue is full. */

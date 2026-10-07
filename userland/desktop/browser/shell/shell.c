@@ -71,6 +71,8 @@ static void shell_show_state(struct shell_state *state);
 static void shell_input(struct shell_state *state, const struct shell_event *event);
 static void shell_button(struct shell_state *state, const struct shell_event *event);
 static void shell_key(struct shell_state *state, const struct shell_event *event);
+static int shell_text(struct shell_state *state, const struct shell_event *event);
+static void shell_text_input(struct shell_state *state);
 static int shell_shortcut(struct shell_state *state, const struct shell_event *event);
 static void shell_titlebar_input(struct shell_state *state, const struct shell_titlebar_event *event);
 static void shell_go(struct shell_state *state, int steps);
@@ -361,6 +363,11 @@ shell_input(
 	case SHELL_EVENT_FOCUS:
 		error = browser_view_focus(state->view, event->pressed);
 		break;
+	case SHELL_EVENT_TEXT_COMMIT:
+	case SHELL_EVENT_TEXT_PREEDIT:
+	case SHELL_EVENT_TEXT_DELETE:
+		error = shell_text(state, event);
+		break;
 	default:
 		break;
 	}
@@ -420,6 +427,57 @@ shell_key(
 		printf("ZBROWSER ERROR key error=%s\n", strerror(error));
 		fflush(stdout);
 	}
+}
+
+/* Gives the view an input method's text: committed, composed, or the bytes it deletes around the caret (ws090-p025). */
+static int
+shell_text(
+	struct shell_state *state,
+	const struct shell_event *event)
+{
+	int error;
+
+	/* Each kind to its call. */
+	switch (event->type) {
+	case SHELL_EVENT_TEXT_COMMIT:
+		error = browser_view_commit_text(state->view, event->text, 0U, 0U);
+		break;
+	case SHELL_EVENT_TEXT_PREEDIT:
+		error = browser_view_compose(state->view, event->text, event->begin, event->end);
+		break;
+	default:
+		error = browser_view_commit_text(state->view, "", event->before, event->after);
+		break;
+	}
+
+	/* A failure of the page's scripts is the caller's to report. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the view took it. */
+	return 0;
+}
+
+/*
+ * Asks for the window's text input while the page's focused element takes
+ * an input method's text, and tells where its caret is (after each frame,
+ * where the caret was just drawn).
+ */
+static void
+shell_text_input(
+	struct shell_state *state)
+{
+	float caret[4];
+	int wanted;
+
+	/* On while the focus is in a field or a textarea, off otherwise. */
+	wanted = browser_view_text_target(state->view, caret);
+	kl_window_text_input(state->window.kui, wanted);
+	if (!wanted)
+		return;
+
+	/* Where its caret is, for the candidates and the on-screen keyboard. */
+	kl_window_text_cursor(state->window.kui, (int)caret[0], (int)caret[1], (int)caret[2], (int)caret[3]);
 }
 
 /*
@@ -563,6 +621,9 @@ shell_frame(
 		fprintf(stderr, "browser: cannot draw a frame: %s failed (%d)\n", state->present.operation, (int)result);
 		return 1;
 	}
+
+	/* The window's text input follows the frame: on while the page's focus takes an input method's text. */
+	shell_text_input(state);
 
 	/* The line the tests read. */
 	printf("ZBROWSER FRAME scroll=%.0f width=%u height=%u\n", browser_view_scroll_y(state->view),

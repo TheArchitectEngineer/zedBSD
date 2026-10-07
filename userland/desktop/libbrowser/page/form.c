@@ -20,6 +20,12 @@
  * (UTF-8, or windows-1252 with the characters it lacks written as
  * "&#N;"), and gives the view the action with that query to follow.  Only
  * GET is submitted in this pass.
+ *
+ * An input method (ws090-p025) composes text at the caret of a text field
+ * or a textarea (not a password field): the text being composed is shown
+ * there underlined without being part of the value, and the text it
+ * commits goes in like typing, after the bytes it asks to delete around the
+ * caret.
  */
 
 #include "page/page.h"
@@ -99,6 +105,8 @@ static int form_action(const struct dom_element *form, struct wb_buffer *href);
 static int form_option_value(const struct dom_element *option, struct wb_units *out);
 static const struct dom_node *form_next(const struct dom_node *node, const struct dom_node *root);
 static int form_equal_folded(const struct vm_string *string, const char *ascii);
+static int form_delete_around(struct dom_element *element, uint32_t before, uint32_t after, int *changed);
+static size_t form_utf8_length(const struct wb_units *units, size_t start, size_t end);
 
 /*
  * Tells whether the focused element takes typing: a text field, a
@@ -471,6 +479,187 @@ page_paint_caret(
 
 	/* Succeeded: the caret is drawn. */
 	return 0;
+}
+
+/*
+ * Finds the focused control an input method composes in: a text field or a
+ * textarea that takes typing (a password field takes none); NULL otherwise.
+ */
+struct dom_element *
+page_compose_element(
+	struct page *page)
+{
+	struct dom_element *element;
+	int kind;
+
+	/* The focused control that takes typing, if any. */
+	element = form_editable(page);
+	if (element == NULL)
+		return NULL;
+
+	/* A password field is typed into key by key only. */
+	kind = dom_control_kind(element);
+	if (kind == DOM_CONTROL_PASSWORD)
+		return NULL;
+
+	/* The control an input method may compose in. */
+	return element;
+}
+
+/*
+ * Shows text an input method is composing at the focused control's caret
+ * (an empty text ends the composing), with its cursor cursor bytes into it
+ * (past the end when negative).  Line breaks are dropped; the value does
+ * not change and no event fires.
+ */
+int
+page_compose(
+	struct page *page,
+	const char *text,
+	int cursor)
+{
+	struct dom_element *element;
+	struct dom_control *control;
+	struct wb_units composed;
+	struct wb_units before;
+	size_t length;
+	size_t index;
+	size_t kept;
+	int error;
+
+	/* Only a control an input method composes in shows it. */
+	element = page_compose_element(page);
+	if (element == NULL)
+		return 0;
+	control = dom_control_of(element);
+	if (control == NULL)
+		return ENOMEM;
+
+	/* The text as UTF-16, without line breaks. */
+	wb_units_init(&composed);
+	length = strlen(text);
+	error = wb_utf8_to_units((const unsigned char *)text, length, &composed);
+	if (error != 0) {
+		wb_units_release(&composed);
+		return error;
+	}
+
+	/* Line breaks are dropped (the text shows on one line). */
+	kept = 0;
+	for (index = 0; index < composed.length; index++) {
+		if (composed.data[index] == 0x0aU || composed.data[index] == 0x0dU)
+			continue;
+		composed.data[kept] = composed.data[index];
+		kept++;
+	}
+	composed.length = kept;
+
+	/* The cursor in units: as many as the bytes before it make (the end when it is hidden or past it). */
+	if (cursor < 0 || (size_t)cursor > length)
+		cursor = (int)length;
+	wb_units_init(&before);
+	error = wb_utf8_to_units((const unsigned char *)text, (size_t)cursor, &before);
+	if (error != 0) {
+		wb_units_release(&composed);
+		wb_units_release(&before);
+		return error;
+	}
+
+	/* The control keeps it in place of what it composed before. */
+	wb_units_clear(&control->preedit);
+	error = wb_units_append(&control->preedit, composed.data, composed.length);
+	wb_units_release(&composed);
+	if (error != 0) {
+		wb_units_release(&before);
+		return error;
+	}
+
+	/* The cursor, which a dropped line break may have left past the end; the control is painted again with both. */
+	control->preedit_cursor = before.length;
+	if (control->preedit_cursor > control->preedit.length)
+		control->preedit_cursor = control->preedit.length;
+	wb_units_release(&before);
+	page->focus_generation++;
+
+	/* Succeeded: the composed text is shown at the caret. */
+	return 0;
+}
+
+/*
+ * Commits an input method's text to the focused control: what was being
+ * composed goes, before and after bytes of UTF-8 are deleted around the
+ * caret, and the text goes in at the caret.  input fires once for the
+ * change.
+ */
+int
+page_commit_text(
+	struct page *page,
+	const char *text,
+	uint32_t before,
+	uint32_t after)
+{
+	struct dom_element *element;
+	struct dom_control *control;
+	int changed;
+	int error;
+
+	/* Only a control an input method composes in takes it. */
+	element = page_compose_element(page);
+	if (element == NULL)
+		return 0;
+	control = dom_control_of(element);
+	if (control == NULL)
+		return ENOMEM;
+
+	/* The composed text is replaced by what is committed. */
+	if (control->preedit.length != 0) {
+		wb_units_clear(&control->preedit);
+		control->preedit_cursor = 0;
+		page->focus_generation++;
+	}
+
+	/* The bytes around the caret it asks to delete. */
+	error = form_delete_around(element, before, after, &changed);
+	if (error != 0)
+		return error;
+
+	/* The text goes in like typing, which fires input. */
+	if (text[0] != '\0') {
+		error = form_insert(page, element, text);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the text is in, and the page heard of it. */
+		return 0;
+	}
+
+	/* A deletion alone is a change the page hears of. */
+	if (changed) {
+		error = form_changed(page, element);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the text is committed. */
+	return 0;
+}
+
+/* Ends what an input method was composing in a control that loses the focus. */
+void
+page_compose_end(
+	struct page *page,
+	struct dom_element *element)
+{
+	/* A control that was not composing has nothing to end. */
+	if (element == NULL || element->control == NULL)
+		return;
+	if (element->control->preedit.length == 0)
+		return;
+
+	/* The composed text goes, and the control is painted again without it. */
+	wb_units_clear(&element->control->preedit);
+	element->control->preedit_cursor = 0;
+	page->focus_generation++;
 }
 
 /* Finds the focused element when it is a text control that takes typing (NULL otherwise). */
@@ -1601,4 +1790,114 @@ form_equal_folded(
 
 	/* The same word. */
 	return 1;
+}
+
+/*
+ * Deletes before and after bytes of the value's UTF-8 around its caret,
+ * whole characters only (no more than the value has); *changed says
+ * whether anything went.
+ */
+static int
+form_delete_around(
+	struct dom_element *element,
+	uint32_t before,
+	uint32_t after,
+	int *changed)
+{
+	struct dom_control *control;
+	struct wb_units value;
+	size_t caret;
+	size_t start;
+	size_t end;
+	size_t step;
+	size_t bytes;
+	int error;
+
+	/* Nothing to delete. */
+	*changed = 0;
+	if (before == 0U && after == 0U)
+		return 0;
+
+	/* The value and the caret. */
+	control = dom_control_of(element);
+	if (control == NULL)
+		return ENOMEM;
+	wb_units_init(&value);
+	error = dom_control_value(element, &value);
+	if (error != 0) {
+		wb_units_release(&value);
+		return error;
+	}
+	caret = control->caret;
+	if (caret > value.length)
+		caret = value.length;
+
+	/* Characters before the caret until their bytes cover before. */
+	start = caret;
+	bytes = 0;
+	while (start > 0 && bytes < before) {
+		step = form_step_back(&value, start);
+		bytes += form_utf8_length(&value, step, start);
+		start = step;
+	}
+
+	/* And after it until theirs cover after. */
+	end = caret;
+	bytes = 0;
+	while (end < value.length && bytes < after) {
+		step = form_step_on(&value, end);
+		bytes += form_utf8_length(&value, end, step);
+		end = step;
+	}
+
+	/* The range goes, and the caret stays at its start. */
+	if (end > start) {
+		memmove(value.data + start, value.data + end, (value.length - end) * sizeof(uint16_t));
+		value.length -= end - start;
+		error = dom_control_set_value(element, value.data, value.length);
+		if (error == 0) {
+			control->caret = start;
+			*changed = 1;
+		}
+	}
+
+	/* The value is the control's own again. */
+	wb_units_release(&value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes asked for are deleted. */
+	return 0;
+}
+
+/* Counts the bytes a run of UTF-16 units takes in UTF-8. */
+static size_t
+form_utf8_length(
+	const struct wb_units *units,
+	size_t start,
+	size_t end)
+{
+	uint32_t code_point;
+	size_t used;
+	size_t bytes;
+
+	/* Each character's bytes. */
+	bytes = 0;
+	while (start < end) {
+		used = wb_utf16_decode(units->data + start, end - start, &code_point);
+		if (used == 0)
+			used = 1;
+		if (code_point < 0x80U)
+			bytes += 1;
+		else if (code_point < 0x800U)
+			bytes += 2;
+		else if (code_point < 0x10000U)
+			bytes += 3;
+		else
+			bytes += 4;
+		start += used;
+	}
+
+	/* The run's length in UTF-8. */
+	return bytes;
 }
