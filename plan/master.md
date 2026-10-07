@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（WS157 写真の要件、P2 の既定案への回答）:「~/Pictures/Library 以下で管理します。取り込み機能ありです。データベースあり、サムネイル管理あり、フォルダ名は img/year/month/day で、ファイル名は維持。アルバムはデータベースのメタデータでリンクを管理。直接ファイルを置くのではなく、取り込みで管理。データベースはクラウドsyncしやすい形式（サイズが小さい、分割されてる）。」→ P2 の既定案（~/Pictures を読むだけ、album は folder、photos.conf）を置き換える。新しい Phase で作り直す（q835）。
 - 2026-10-07 ユーザー（クリック、WS120 音楽）: AAC は「今は libavcodec、独自は後」（videoplayer と同じ libavcodec の dlopen の add-in、decoder の口を分け、独自の AAC-LC は後の Phase で表の出典を決める）。既存の service（YouTube Music・Spotify・Apple Music）との連携は「その機能はベータ4へ。今は外部サービスのアイコンは権利の関係でいらないです。」→ Services の欄・外部の service の icon は作らない。
 - 2026-10-07 ユーザー（クリック、WS112）: D-a build の環境は「mmdebstrap の rootfs」（target ごとの固定の rootfs の中で native に build、arm64・RPi は host の qemu-aarch64 の binfmt、VM なし。2026-10-02 の QEMU の guest で build の指示を WS112 では置き換える）。D-b 確認は「生成＋形式・依存の解決」（apt-get install --simulate と dpkg-deb・ELF・manifest、導入・GUI の起動はしない）。
 - 2026-10-07 ユーザー（make menuconfig）: emacs は base（packages/editors の分類をやめた）。desktop の下の試験の program は tree ごと tests へ（userland/desktop/ime-probe → userland/tests/ime-probe、Desktop の menu にあった venus-frame も userland/gpu/venus → userland/tests/venus-frame）。zedinst は削除（userland/retro/zedinst、config の一覧からも）。X11（Xzed・zterm・zshell・zwm・zgears・glxtest・libGL・libX11・session）は userland/retro → userland/x11、menuconfig の Desktop と同じ階層の X11 の submenu へ。Packages に Multimedia の分類を足した（libavcodec が menu から漏れていた）。
