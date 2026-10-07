@@ -672,6 +672,23 @@ test_legacy_and_connected(void)
 	drv_i915_tc_put_link(&tc, 0u);
 	check(tc.port[0].mode != I915_TC_MODE_DP_ALT && (fake_get(REG_DDI_BUF_CTL(0u)) & BUF_OWNED) == 0u, "probe link: the last link gives the PHY back at once (M2)");
 	check(fake.lock_errors == 0 && power_balanced(), "probe link: power and locks balanced");
+
+	/* ws051-p005a: a link held in DP-alt needs a reset only while its partner is gone. */
+	fake_reset();
+	bind(&tc);
+	drv_i915_tc_declare(&tc, 0u, 0);
+	fake_set(REG_DE_HPD_ISR, 1u << 16);
+	fake_set(REG_TCSS(0u), TCSS_READY);
+	fake_set(REG_FIA1_DPSP, 0xfu);
+	check(drv_i915_tc_link_needs_reset(&tc, 0u) == 0, "link reset: no link, no reset");
+	drv_i915_tc_get_link(&tc, 0u, 4);
+	check(drv_i915_tc_link_needs_reset(&tc, 0u) == 0, "link reset: the partner is there");
+	fake_set(REG_DE_HPD_ISR, 0u);
+	check(drv_i915_tc_link_needs_reset(&tc, 0u) == 1, "link reset: the partner went");
+	fake_set(REG_DE_HPD_ISR, 1u << 16);
+	check(drv_i915_tc_link_needs_reset(&tc, 0u) == 0, "link reset: the partner came back");
+	drv_i915_tc_put_link(&tc, 0u);
+	check(fake.lock_errors == 0 && power_balanced(), "link reset: power and locks balanced");
 }
 
 /* What a port has of DisplayPort for the Type-C layer (ws050-p005). */

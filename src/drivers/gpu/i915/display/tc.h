@@ -190,6 +190,7 @@ void drv_i915_tc_readout(struct i915_tc *tc);
 uint32_t drv_i915_tc_live_status(struct i915_tc *tc, unsigned port);
 int drv_i915_tc_connected(struct i915_tc *tc, unsigned port);
 int drv_i915_tc_connected_locked(struct i915_tc *tc, unsigned port);
+int drv_i915_tc_link_needs_reset(struct i915_tc *tc, unsigned port);
 enum i915_tc_mode drv_i915_tc_lock(struct i915_tc *tc, unsigned port, int required_lanes);
 void drv_i915_tc_unlock(struct i915_tc *tc, unsigned port);
 void drv_i915_tc_get_link(struct i915_tc *tc, unsigned port, int required_lanes);

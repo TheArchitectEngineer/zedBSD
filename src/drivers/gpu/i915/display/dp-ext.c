@@ -63,6 +63,10 @@
 #define I915_DP_EXT_BRANCH_OUI			0x500u
 #define I915_DP_EXT_DESC_SIZE			12u
 
+/* The sink's service interrupt vectors, which a short pulse raises (DPCD 0x201 and 0x2005). */
+#define I915_DP_EXT_DEVICE_SERVICE_IRQ_VECTOR	0x201u
+#define I915_DP_EXT_LINK_SERVICE_IRQ_VECTOR_ESI0	0x2005u
+
 /* The protocol converter controls of a DPCD 1.3 branch (DPCD 0x3050 to 0x3052). */
 #define I915_DP_EXT_CONVERTER_CONTROL_0		0x3050u
 #define I915_DP_EXT_CONVERTER_CONTROL_1		0x3051u
@@ -134,7 +138,9 @@ static int i915_dp_ext_downstream_min_tmds(const struct i915_dp_ext_sink *sink);
 static int i915_dp_ext_downstream_max_dotclock(const struct i915_dp_ext_sink *sink);
 static int i915_dp_ext_downstream_max_bpc(const struct i915_dp_ext_sink *sink);
 static int i915_dp_ext_dpcd_writeb(const struct i915_dp_ext_env *env, unsigned offset, uint8_t value);
+static void i915_dp_ext_ack_service_irq(const struct i915_dp_ext_env *env, unsigned offset, const char *what);
 static int i915_dp_ext_first_error(int first_error, int error);
+static int i915_dp_ext_same_bytes(const uint8_t *a, const uint8_t *b, size_t size);
 static void i915_dp_ext_zero(void *bytes, size_t size);
 
 /*
@@ -226,6 +232,69 @@ drv_i915_dp_ext_detect(
 	/* Publishes the conclusion. */
 	sink->status = status;
 	sink->step = I915_DP_EXT_STEP_DONE;
+}
+
+/*
+ * Handles a short pulse (IRQ_HPD) of a sink the last probe found (the
+ * Linux intel_dp_short_pulse() up to the service interrupts).
+ *
+ * The receiver capabilities are read again, and a branch's sink count; a
+ * read that fails, or capabilities or a count that changed, ask for a
+ * full detection.  Otherwise the device and link service interrupts are
+ * acknowledged and logged (their handling -- link retraining, HDCP, the
+ * HDMI link status -- is not done here).  Returns 1 when the pulse is
+ * handled, 0 when the port must be detected again.
+ */
+int
+drv_i915_dp_ext_short_pulse(
+	const struct i915_dp_ext_env *env,
+	const struct i915_dp_ext_sink *sink)
+{
+	uint8_t dpcd[I915_DP_EXT_DPCD_SIZE];
+	uint8_t count;
+	long read;
+	int error;
+	int same;
+	int now;
+
+	/* A sink the last probe did not find connected is detected afresh. */
+	if (sink->status != I915_DP_EXT_CONNECTED)
+		return 0;
+
+	/* Reads the receiver capabilities again; a failure asks for a detection. */
+	error = env->read_caps(env->ctx, dpcd);
+	if (error != 0)
+		return 0;
+
+	/* Changed capabilities ask for a detection. */
+	same = i915_dp_ext_same_bytes(dpcd, sink->dpcd, sizeof(dpcd));
+	if (!same)
+		return 0;
+
+	/* A branch's sink count is read again: a failure or another count asks for a detection. */
+	if (sink->has_sink_count) {
+		read = env->dpcd_read(env->ctx, I915_DP_EXT_SINK_COUNT, &count, 1u);
+		if (read != 1)
+			return 0;
+
+		/* Bit 7 of the field is bit 6 of the count. */
+		now = (int)(count & I915_DP_EXT_SINK_COUNT_LOW_MASK);
+		if ((count & I915_DP_EXT_SINK_COUNT_HIGH_BIT) != 0u)
+			now |= 0x40;
+
+		/* Another count asks for a detection. */
+		if (now != sink->sink_count)
+			return 0;
+	}
+
+	/* Acknowledges the device and link service interrupts of a DPCD 1.1 sink. */
+	if (sink->dpcd[I915_DP_EXT_DPCD_REV] >= I915_DP_EXT_DPCD_REV_11) {
+		i915_dp_ext_ack_service_irq(env, I915_DP_EXT_DEVICE_SERVICE_IRQ_VECTOR, "device");
+		i915_dp_ext_ack_service_irq(env, I915_DP_EXT_LINK_SERVICE_IRQ_VECTOR_ESI0, "link");
+	}
+
+	/* Succeeded: the sink is as the probe found it. */
+	return 1;
 }
 
 /*
@@ -1303,6 +1372,32 @@ i915_dp_ext_dpcd_writeb(
 	return 0;
 }
 
+/*
+ * Acknowledges one service interrupt vector of the sink: a nonzero vector
+ * is written back, which clears it, and logged.
+ */
+static void
+i915_dp_ext_ack_service_irq(
+	const struct i915_dp_ext_env *env,
+	unsigned offset,
+	const char *what)
+{
+	uint8_t vector;
+	long read;
+	int written;
+
+	/* Reads the vector; nothing raised, or nothing read, needs no acknowledgement. */
+	read = env->dpcd_read(env->ctx, offset, &vector, 1u);
+	if (read != 1)
+		return;
+	if (vector == 0u)
+		return;
+
+	/* Writes the raised bits back, which clears them, and logs what was not handled. */
+	written = i915_dp_ext_dpcd_writeb(env, offset, vector);
+	env->log(env->ctx, "i915: DP-ext: %s service interrupt 0x%02x acknowledged (rc %d), not handled\n", what, vector, written);
+}
+
 /* Keeps the first of a series of errors: the one already kept, or this one. */
 static int
 i915_dp_ext_first_error(
@@ -1315,6 +1410,26 @@ i915_dp_ext_first_error(
 
 	/* Succeeded: this error is the first. */
 	return error;
+}
+
+/* Tells whether two byte strings are the same: 1 or 0. */
+static int
+i915_dp_ext_same_bytes(
+	const uint8_t *a,
+	const uint8_t *b,
+	size_t size)
+{
+	size_t i;
+
+	/* Compares byte by byte. */
+	for (i = 0u; i < size; i++) {
+		/* A byte that differs ends the comparison. */
+		if (a[i] != b[i])
+			return 0;
+	}
+
+	/* Succeeded: every byte is the same. */
+	return 1;
 }
 
 /* Clears bytes; the core links against neither the kernel nor libc. */
