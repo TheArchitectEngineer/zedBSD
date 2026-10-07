@@ -141,7 +141,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
 1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
 2. **第 2 段**: WS139 desktop の速さ（最適化、2026-10-06 夜 ユーザー: 第 1 段から移す）、app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、WS112 Debian の package（3 つの deb、2026-10-06 夜 ユーザー）、WS117（Qt6 の Linux の互換、ユーザーが検討中）。
-3. **第 3 段**（不確実性のある hardware 関連、2026-10-06 夜 ユーザー）: WS083 Vulkan Video（第 2 段から移す）、kernel・driver・電源（WS031、WS052、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。最後に低い優先度で [WS178](ws178/ws.md)（OpenGL を Desktop へ、GLX を xserver へ、2026-10-07 ユーザー）。
+3. **第 3 段**（不確実性のある hardware 関連、2026-10-06 夜 ユーザー）: WS083 Vulkan Video（第 2 段から移す）、kernel・driver・電源（WS031、WS052、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。続けて [WS179](ws179/ws.md)（アクセントカラー、2026-10-07 ユーザー）、最後に低い優先度で [WS178](ws178/ws.md)（OpenGL を Desktop へ、GLX を xserver へ、2026-10-07 ユーザー）。
 4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
 5. **デバッグに専念**して全ての Bug を消化する。
 - ベータ3 へ: WS068・WS101・WS171・WS176・WS152・WS115 GTK4・WS116 Qt6・WS126 Python（2026-10-06 夜 ユーザー「私たちのOSの価値は先進的なタブレットとデスクトップの融合したUI/UXであって、既存のデスクトップUIのツールキットはコアコンピタンスではない」「私たちには、私たちがよいと考えるスクリプト言語であるNoctがすでにある」）。ベータ4 以降（2026-10-05 ユーザー、Q1 の表の誤りを訂正）: WS112・WS124・WS125・WS143・WS118・WS119 ほか。止める: WS074 の描画（B1）・WS153（U2〜U15）。
@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「UIのボタンなどのアクセントカラーは、何色かから選べるようにしましょう。現状のUIが非常に完成度が高く、ちょっとよくばりな意見を持ってしまいました。満足している裏返しと思ってください。」クリック: 範囲「ベータ2（今の作業の後）」、色「8 色の固定」→ WS179 を作成。
 - 2026-10-07 ユーザー（クリック、WS031 p020・p039）: 「Int16 今、Int64 は後の Phase」（shaderInt16 を今、Int64 の 32 bit の組の模擬は後の Phase、Float64・Float16 は Future Work）。
 - 2026-10-07 ユーザー: 「make menuconfigの X11 -> OpenGL and GLX ですが、Desktop -> OpenGL に移動して、GLXは Desktop -> X11 server for the compositorのライブラリの1つに統合しましょう。ベータ2の範囲にして、優先度は低くていいです。」→ WS178 を作成（ベータ2、低い優先度、第 3 段の最後に）。
 - 2026-10-07 ユーザー（クリック、WS031 p032）: dual source blend は「実装、実機で確かめるまで 0」（compiler・state は実装、dualSrcBlend・maxFragmentDualSrcAttachments は 5330 で確かめるまで 0）。logic op は有効に。
