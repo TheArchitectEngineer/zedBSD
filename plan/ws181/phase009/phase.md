@@ -60,3 +60,7 @@ Parent: [WS181](../ws.md)
 - 1. の確かめのため、光る項目が変わる時に `KWL ARRANGE menu lit item=NAME` を出す。
 - QEMU の試験（T1 が流す）: 新しい `plan/ws181/tests/p009-guest.sh BUILD OUTDIR`（pen の guest、7・1・6・5・4・3 の順、合格は最後の行 `ws181-p009: PASS`、PNG は p009-bar・p009-menu-gap・p009-calendar-arranged・p009-home-first-drag・p009-home-last-drag）。guest に /bin/calendar が無ければ、試験の間だけ wltest の窓を開く script を置く。
 - 未実施: QEMU（T1）、5320 の UAT。
+
+## T1-361 の判定（2026-10-07 Q1）
+
+FAIL（QEMU、pen の guest、main 9588f60bc）: `ws181-p009: FAIL`、14 項目（pill x=591 で 640 より右でない、`menu lit item=rows`・`join via=mapped`・`pad swipe closing=1` などの新しい行が 0）。2 回とも同じ。回帰の ws181-guest.sh・p003-guest.sh は PASS。build/t1-361/bin/wayland の中には新しい文字列（`menu lit`・`pad swipe closing`）があるのに guest の zdesktop.log に出ない → guest で試験の compositor でなく別の compositor が動いた（または試験の compositor の起動が失敗した）疑い。証拠: /home/awe/zedBSD-worktrees/t1/build/t1-361-out2/・t1-361-p009b.log。P2 が BUG-250・251 の後に見る。
