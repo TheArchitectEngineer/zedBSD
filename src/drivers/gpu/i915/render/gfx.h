@@ -222,6 +222,17 @@ struct i915_gfx_image {
 	uint32_t stencil_pitch;
 	uint32_t stencil_slice_rows;
 
+	/*
+	 * A two-plane NV12 picture of the video decoder (ws083): nonzero, laid
+	 * out in Y tiles, the interleaved CbCr plane chroma_offset bytes in,
+	 * below chroma_rows rows of the Y plane, both at the image's pitch.
+	 * Only the video decoder reads or writes one; drv_i915_gfx_image_slice()
+	 * refuses it to every other use.
+	 */
+	uint32_t planar;
+	uint64_t chroma_offset;
+	uint32_t chroma_rows;
+
 	/* The allocation and the offset the image is bound at; NULL until bound. */
 	struct i915_gfx_memory *memory;
 	uint64_t offset;

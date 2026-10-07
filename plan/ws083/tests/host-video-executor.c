@@ -69,6 +69,11 @@ static uint32_t fixture_submit(uint64_t queue);
 static void test_queries(void);
 static void test_session(void);
 static void test_submissions(void);
+static void fixture_batch_expect(void);
+static void test_layouts(void);
+static void fixture_layout(uint32_t width, uint32_t height, uint32_t pitch, uint32_t rows, uint64_t chroma_offset, uint64_t bytes);
+static void fixture_check(FILE *expect, unsigned instruction, const char *field, unsigned long long value);
+static void fixture_named(FILE *expect, unsigned instruction, const char *name);
 
 /* Runs the round trip. */
 int
@@ -85,6 +90,7 @@ main(
 	/* A device whose boot asked for video and whose GT has a usable VCS0. */
 	mark = stub_allocation_mark();
 	stub_video_state = 0;
+	stub_objects_on = 1;
 	drv_i915_render_video_request(1);
 	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
 	fixture_storage_object.slot = 7U;
@@ -102,6 +108,7 @@ main(
 	test_queries();
 	test_session();
 	test_submissions();
+	test_layouts();
 
 	/* Closing frees every video object and record; nothing is left. */
 	stub_session_close();
@@ -183,14 +190,20 @@ fixture_picture(
 	struct i915_gfx_view *view;
 	int error;
 
-	/* The image: NV12, 64x64, pitch 128, bound at the offset. */
+	/* The image: NV12, 64x64, laid out as image.c lays a decoder's picture out (pitch 128, CbCr from row 64), bound at the offset. */
 	image = kern_calloc(1U, sizeof(*image));
 	assert(image != NULL);
 	image->format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
 	image->width = 64U;
 	image->height = 64U;
-	image->pitch = 128U;
 	image->levels = 1U;
+	image->layers = 1U;
+	image->samples = 1U;
+	image->type = VK_IMAGE_TYPE_2D;
+	error = drv_i915_gfx_image_layout(image);
+	assert(error == 0);
+	assert(image->planar == 1U && image->pitch == 128U && image->chroma_rows == 64U);
+	assert(image->chroma_offset == 128U * 64U && image->bytes == 3U * 4096U);
 	image->memory = drv_i915_object_lookup(stub_session, I915_VK_OBJ_MEMORY, FIXTURE_MEMORY);
 	image->offset = offset;
 	assert(image->memory != NULL);
@@ -463,11 +476,16 @@ test_submissions(void)
 	struct i915_gfx_image *image;
 	uint32_t result;
 
-	/* A reset, a reference IDR into slot 0, then a P picture reading it: every picture decodes. */
+	/* A reset, a reference IDR into slot 0, then a P picture reading it: every picture decodes, each in its own run on VCS0. */
 	fixture_record(idr, 7U);
+	stub_batch_count = 0U;
+	stub_batch_runs = 0U;
 	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
 	assert(result == VK_SUCCESS);
 	assert(strstr(stub_log, "skip decode") == NULL);
+	assert(stub_batch_runs == 2U);
+	assert(stub_batch_engine == I915_ENGINE_VCS0);
+	fixture_batch_expect();
 
 	/* The same on the graphics family breaks the rules. */
 	result = fixture_submit(FIXTURE_QUEUE);
@@ -538,4 +556,204 @@ test_submissions(void)
 	/* destroy_parameters and destroy_session withdraw both. */
 	(void)fixture_run("destroy_parameters");
 	(void)fixture_run("destroy_session");
+}
+
+/* Writes a field check of the two decodes' batch for genxml-decode.py. */
+static void
+fixture_check(
+	FILE *expect,
+	unsigned instruction,
+	const char *field,
+	unsigned long long value)
+{
+	/* The instruction's index, the field and its value. */
+	fprintf(expect, "F\t%u\t%s\t%llu\n", instruction, field, value);
+}
+
+/* Writes an instruction check of the two decodes' batch: the index-th instruction is the named one. */
+static void
+fixture_named(
+	FILE *expect,
+	unsigned instruction,
+	const char *name)
+{
+	/* The instruction's index and name. */
+	fprintf(expect, "I\t%u\t%s\n", instruction, name);
+}
+
+/*
+ * Writes the batch the IDR and the P picture ran (idr.bin) and what
+ * genxml-decode.py must read in it (idr.expect): the addresses the
+ * executor resolved from the wire's objects -- the pictures A and B, the
+ * session's eight bindings a page apart from the memory's start, the
+ * bitstream buffer -- and the fields of the wire's sets and pictures.
+ */
+static void
+fixture_batch_expect(void)
+{
+	static const char *const first[] = {
+		"MI_FLUSH_DW", "MI_FORCE_WAKEUP", "MFX_WAIT", "MFX_PIPE_MODE_SELECT", "MFX_WAIT",
+		"MFX_SURFACE_STATE", "MFX_PIPE_BUF_ADDR_STATE", "MFX_IND_OBJ_BASE_ADDR_STATE",
+		"MFX_BSP_BUF_BASE_ADDR_STATE", "MFD_AVC_DPB_STATE", "MFD_AVC_PICID_STATE",
+		"MFX_AVC_IMG_STATE", "MFX_QM_STATE", "MFX_QM_STATE", "MFX_AVC_DIRECTMODE_STATE"
+	};
+	char path[1024];
+	FILE *file;
+	FILE *expect;
+	size_t written;
+	unsigned base;
+	unsigned index;
+
+	/* The batch's dwords. */
+	snprintf(path, sizeof(path), "%s/idr.bin", fixture_directory);
+	file = fopen(path, "wb");
+	assert(file != NULL);
+	written = fwrite(stub_batch_words, 4U, stub_batch_count, file);
+	assert(written == stub_batch_count);
+	fclose(file);
+
+	/* The checks. */
+	snprintf(path, sizeof(path), "%s/idr.expect", fixture_directory);
+	expect = fopen(path, "w");
+	assert(expect != NULL);
+
+	/* The IDR picture: the fixed commands, the next slice's address, two slices, the flush. */
+	for (index = 0U; index < 15U; index++)
+		fixture_named(expect, index, first[index]);
+	fixture_named(expect, 15U, "MFD_AVC_SLICEADDR");
+	fixture_named(expect, 16U, "MFD_AVC_BSD_OBJECT");
+	fixture_named(expect, 17U, "MFD_AVC_BSD_OBJECT");
+	fixture_named(expect, 18U, "MI_FLUSH_DW");
+
+	/* Its surface: picture A, 64x64, pitch 128, CbCr from row 64. */
+	fixture_check(expect, 5U, "Width", 63U);
+	fixture_check(expect, 5U, "Height", 63U);
+	fixture_check(expect, 5U, "Surface Pitch", 127U);
+	fixture_check(expect, 5U, "Y Offset for U(Cb)", 64U);
+	fixture_check(expect, 5U, "Y Offset for V(Cr)", 64U);
+
+	/* Its buffers: A, row stores 0 and 1, every reference entry A itself (no reference). */
+	fixture_check(expect, 6U, "Post Deblocking Destination - Address", FIXTURE_STORAGE_VA + FIXTURE_IMAGE_A_OFFSET);
+	fixture_check(expect, 6U, "Intra Row Store Scratch Buffer - Address", FIXTURE_STORAGE_VA);
+	fixture_check(expect, 6U, "Deblocking Filter Row Store Scratch - Address", FIXTURE_STORAGE_VA + 0x1000U);
+	fixture_check(expect, 6U, "Reference Picture - Address[0]", FIXTURE_STORAGE_VA + FIXTURE_IMAGE_A_OFFSET);
+	fixture_check(expect, 6U, "Reference Picture - Address[15]", FIXTURE_STORAGE_VA + FIXTURE_IMAGE_A_OFFSET);
+
+	/* The bitstream: the buffer's page, bounded by its 4 KiB; row stores 2 and 3. */
+	fixture_check(expect, 7U, "MFX Indirect Bitstream Object - Address", FIXTURE_STORAGE_VA + FIXTURE_BUFFER_OFFSET);
+	fixture_check(expect, 7U, "MFX Indirect Bitstream Object - Upper Bound", FIXTURE_STORAGE_VA + FIXTURE_BUFFER_OFFSET + 4096U);
+	fixture_check(expect, 8U, "BSD/MPC Row Store Scratch Buffer - Address", FIXTURE_STORAGE_VA + 0x2000U);
+	fixture_check(expect, 8U, "MPR Row Store Scratch Buffer - Address", FIXTURE_STORAGE_VA + 0x3000U);
+
+	/* No reference; the picture state of the wire's sets (CABAC, deblocking control, POC type 0, LSB width 6). */
+	fixture_check(expect, 10U, "Picture ID[0]", 0xffffU);
+	fixture_check(expect, 11U, "Frame Size", 16U);
+	fixture_check(expect, 11U, "Frame Width", 3U);
+	fixture_check(expect, 11U, "Frame Height", 3U);
+	fixture_check(expect, 11U, "Non-Reference Picture", 0U);
+	fixture_check(expect, 11U, "Entropy Coding Sync Enable", 1U);
+	fixture_check(expect, 11U, "Deblocking Filter Control Present", 1U);
+	fixture_check(expect, 11U, "Direct 8x8 Inference", 1U);
+	fixture_check(expect, 11U, "Pic Order Count Type", 0U);
+	fixture_check(expect, 11U, "Log2 Max Pic Order Count LSB", 2U);
+	fixture_check(expect, 11U, "Number of Reference Frames", 0U);
+	fixture_check(expect, 12U, "Forward Quantizer Matrix[0]", 16U);
+
+	/* The reference IDR writes its slot 0's motion vectors (binding 4). */
+	fixture_check(expect, 14U, "Direct MV Buffer (Write) - Address", FIXTURE_STORAGE_VA + 0x4000U);
+	fixture_check(expect, 14U, "Direct MV Buffer - Address[0]", FIXTURE_STORAGE_VA + 0x4000U);
+
+	/* The slices: start codes at 0 (three bytes) and 64 (four bytes), the range 128 bytes. */
+	fixture_check(expect, 15U, "Indirect BSD Data Start Address", 68U);
+	fixture_check(expect, 15U, "Indirect BSD Data Length", 60U);
+	fixture_check(expect, 16U, "Indirect BSD Data Start Address", 3U);
+	fixture_check(expect, 16U, "Indirect BSD Data Length", 61U);
+	fixture_check(expect, 16U, "Inline Data.Last Slice", 0U);
+	fixture_check(expect, 17U, "Indirect BSD Data Start Address", 68U);
+	fixture_check(expect, 17U, "Inline Data.Last Slice", 1U);
+
+	/* The P picture: the fixed commands, one slice, the flush. */
+	base = 19U;
+	for (index = 0U; index < 15U; index++)
+		fixture_named(expect, base + index, first[index]);
+	fixture_named(expect, base + 15U, "MFD_AVC_BSD_OBJECT");
+	fixture_named(expect, base + 16U, "MI_FLUSH_DW");
+
+	/* Into B, reading A (slot 0) as its one reference; the unused entries B itself. */
+	fixture_check(expect, base + 6U, "Post Deblocking Destination - Address", FIXTURE_STORAGE_VA + FIXTURE_IMAGE_B_OFFSET);
+	fixture_check(expect, base + 6U, "Reference Picture - Address[0]", FIXTURE_STORAGE_VA + FIXTURE_IMAGE_A_OFFSET);
+	fixture_check(expect, base + 6U, "Reference Picture - Address[1]", FIXTURE_STORAGE_VA + FIXTURE_IMAGE_B_OFFSET);
+	fixture_check(expect, base + 9U, "Used for Reference[0]", 3U);
+	fixture_check(expect, base + 9U, "Used for Reference[1]", 0U);
+	fixture_check(expect, base + 10U, "Picture ID[0]", 0U);
+	fixture_check(expect, base + 10U, "Picture ID[1]", 0xffffU);
+	fixture_check(expect, base + 11U, "Non-Reference Picture", 1U);
+	fixture_check(expect, base + 11U, "Number of Reference Frames", 1U);
+	fixture_check(expect, base + 11U, "Current Picture Frame Number", 1U);
+
+	/* Slot 0's motion vectors read; a picture that is not a reference writes the spare buffer (binding 7). */
+	fixture_check(expect, base + 14U, "Direct MV Buffer - Address[0]", FIXTURE_STORAGE_VA + 0x4000U);
+	fixture_check(expect, base + 14U, "Direct MV Buffer - Address[1]", FIXTURE_STORAGE_VA + 0x7000U);
+	fixture_check(expect, base + 14U, "Direct MV Buffer (Write) - Address", FIXTURE_STORAGE_VA + 0x7000U);
+	fixture_check(expect, base + 14U, "POC List[32]", 2U);
+	fixture_check(expect, base + 15U, "Indirect BSD Data Start Address", 3U);
+	fixture_check(expect, base + 15U, "Indirect BSD Data Length", 125U);
+	fixture_check(expect, base + 15U, "Inline Data.Last Slice", 1U);
+	fprintf(expect, "N\t%u\n", base + 17U);
+	fclose(expect);
+}
+
+/* Lays one NV12 picture out and checks its pitch, its planes and its size, and that no other use takes it. */
+static void
+fixture_layout(
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	uint32_t rows,
+	uint64_t chroma_offset,
+	uint64_t bytes)
+{
+	struct i915_gfx_image image;
+	struct i915_gfx_surface surface;
+	int error;
+
+	/* The picture as vkCreateImage makes it. */
+	memset(&image, 0, sizeof(image));
+	image.format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+	image.width = width;
+	image.height = height;
+	image.levels = 1U;
+	image.layers = 1U;
+	image.samples = 1U;
+	image.type = VK_IMAGE_TYPE_2D;
+	error = drv_i915_gfx_image_layout(&image);
+	assert(error == 0);
+
+	/* Y tiles: the pitch, the Y plane's rows, where the CbCr plane starts, whole pages. */
+	assert(image.planar == 1U);
+	assert(image.pitch == pitch);
+	assert(image.chroma_rows == rows);
+	assert(image.chroma_offset == chroma_offset);
+	assert(image.bytes == bytes);
+
+	/* No copy, blit, clear or sampling takes it. */
+	error = drv_i915_gfx_image_slice(&image, 0U, 0U, &surface);
+	assert(error == EINVAL);
+}
+
+/* The NV12 layouts of design §8.1: 16x16, 1920x1080 and 4096x4096. */
+static void
+test_layouts(void)
+{
+	/* 16x16: one tile across, 32 rows of Y, 32 of CbCr. */
+	fixture_layout(16U, 16U, 128U, 32U, 4096U, 8192U);
+
+	/* 1920x1080: 1088 rows of Y, 544 of CbCr, 3 MiB less 12 KiB. */
+	fixture_layout(1920U, 1080U, 1920U, 1088U, 1920ULL * 1088U, 1920ULL * 1632U);
+
+	/* 4096x4096: the largest picture. */
+	fixture_layout(4096U, 4096U, 4096U, 4096U, 4096ULL * 4096U, 4096ULL * 6144U);
+
+	/* An extent not of whole macroblocks is rounded up first: 100x50 is 112x64. */
+	fixture_layout(100U, 50U, 128U, 64U, 128U * 64U, 128U * 96U);
 }
