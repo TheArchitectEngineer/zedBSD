@@ -264,6 +264,16 @@ static unsigned home_pages = 1U;
 static unsigned home_pad_closing;
 
 /*
+ * Whether Home's content is still coming in after it was asked to open
+ * (its icons rising one after another, home_content), which may go on after
+ * Home itself has opened.  Set by home_open when the content is animated,
+ * cleared by kwl_home_tick once the last icon shown has come, Home goes to
+ * close or a drag takes it.  While it is set the tick asks for every frame
+ * (BUG-252); the event loop's thread only.
+ */
+static unsigned home_content_rising;
+
+/*
  * The character each key types into the search (lower case), by evdev code; 0 for none.
  */
 static const char home_characters[HOME_KEYS] = {
@@ -289,6 +299,7 @@ static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct kwl_server *server, int32_t x, int32_t y);
 static void home_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned slot, float opacity, float rise);
 static float home_content(struct kwl_server *server, unsigned order, float progress, float *rise);
+static int home_content_coming(struct kwl_server *server, uint64_t now);
 static void home_prepare(struct kwl_server *server);
 static void home_draw_floors(struct kwl_server *server, VkCommandBuffer command, float opacity);
 static void home_draw_floor(struct kwl_server *server, VkCommandBuffer command, float left, float right, float y, float opacity);
@@ -1100,6 +1111,7 @@ kwl_home_tick(
 	uint64_t now;
 	pid_t child;
 	int status;
+	int coming;
 
 	/*
 	 * The applications' list is read ahead once the output shows
@@ -1129,6 +1141,20 @@ kwl_home_tick(
 			printf("KWL HOME page settled page=%u pages=%u\n", server->home_page + 1U, home_pages);
 			home_log_icons();
 		}
+	}
+
+	/*
+	 * The icons coming in one after another draw every frame until the last
+	 * one shown has come, also after Home itself has opened.  The tick asks
+	 * for the frames: one asked for while a frame is drawn is dropped when
+	 * it is submitted (compose.c), and only input asked for the next one
+	 * (BUG-252, the 5330's i915).  The frame after the end shows them all.
+	 */
+	if (home_content_rising) {
+		server->dirty = 1;
+		coming = home_content_coming(server, now);
+		if (!coming)
+			home_content_rising = 0U;
 	}
 
 	/* A launch whose window never came is forgotten. */
@@ -1832,25 +1858,68 @@ home_content(
 	if (server->home_to <= 0.0f || server->home_dragging || server->home_content_ms == 0U)
 		return progress;
 
-	/* Not begun yet. */
+	/* Not begun yet (kwl_home_tick asks for the frames until the last icon has come). */
 	now = kwl_milliseconds();
 	start = server->home_content_ms + (uint64_t)order * HOME_CONTENT_STEP_MS;
 	if (now <= start) {
 		*rise = HOME_CONTENT_RISE;
-		server->dirty = 1;
 		return 0.0f;
 	}
 
-	/* On its way (1 - (1 - t)^3), drawn every frame until it has come. */
+	/* On its way (1 - (1 - t)^3). */
 	t = (float)(now - start) / (float)HOME_CONTENT_MS;
 	if (t >= 1.0f)
 		return 1.0f;
-	server->dirty = 1;
 	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 	*rise = HOME_CONTENT_RISE * (1.0f - t);
 
 	/* Succeeded: partly in. */
 	return t;
+}
+
+/*
+ * Tells whether an icon shown is still coming in after Home was asked to
+ * open (home_content): 1 until the last one on the output has come.
+ */
+static int
+home_content_coming(
+	struct kwl_server *server,
+	uint64_t now)
+{
+	uint64_t end;
+	unsigned shown;
+	unsigned slot;
+
+	/* Closing, following a drag, or shown at once: the content goes with Home itself. */
+	if (server->home_to <= 0.0f)
+		return 0;
+	if (server->home_dragging)
+		return 0;
+	if (server->home_content_ms == 0U)
+		return 0;
+
+	/*
+	 * The icons on the output, which come in one after another (the floors
+	 * and the clock with the first), laid out as the next frame draws them
+	 * (a first frame may not have laid them out yet).
+	 */
+	home_layout(server);
+	shown = 0U;
+	for (slot = 0U; slot < home_shown_count; slot++) {
+		if (home_icon_x[slot] + HOME_CELL_WIDTH < 0 || home_icon_x[slot] - HOME_CELL_WIDTH > (int32_t)server->width)
+			continue;
+		shown++;
+	}
+
+	/* The last of them has come HOME_CONTENT_MS after its start. */
+	end = server->home_content_ms + HOME_CONTENT_MS;
+	if (shown > 1U)
+		end += (uint64_t)(shown - 1U) * HOME_CONTENT_STEP_MS;
+	if (now < end)
+		return 1;
+
+	/* All of them have come. */
+	return 0;
 }
 
 /*
@@ -2187,8 +2256,11 @@ home_open(
 	 */
 	server->home_asked_ms = kwl_milliseconds();
 	server->home_content_ms = server->home_asked_ms;
-	if (from > 0.0f)
+	home_content_rising = 1U;
+	if (from > 0.0f) {
 		server->home_content_ms = 0U;
+		home_content_rising = 0U;
+	}
 	server->home_cover_logged = 0U;
 	server->home_content_logged = 0U;
 	printf("KWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
