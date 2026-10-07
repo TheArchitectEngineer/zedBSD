@@ -150,7 +150,7 @@ struct i915_gfx_session *drv_i915_gfx_session_get(struct i915_render_session *se
 void drv_i915_gfx_session_close(struct i915_render_session *session);
 int drv_i915_gfx_submit_begin(struct i915_render_session *session);
 int drv_i915_gfx_submit_end(struct i915_render_session *session);
-int drv_i915_gfx_window(struct i915_render_session *session, struct i915_gfx_session *work, const void **owner, uint32_t *window, uint32_t *generation, const uint32_t *vs_code, uint32_t vs_bytes, const uint32_t *ps_code, uint32_t ps_bytes, struct i915_gfx_op_space *space);
+int drv_i915_gfx_window(struct i915_render_session *session, struct i915_gfx_session *work, const void **owner, uint32_t *window, uint32_t *generation, const uint32_t *vs_code, uint32_t vs_bytes, const uint32_t *gs_code, uint32_t gs_bytes, const uint32_t *ps_code, uint32_t ps_bytes, struct i915_gfx_op_space *space);
 int drv_i915_gfx_op_begin(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_op_space *space);
 int drv_i915_gfx_op_end(struct i915_render_session *session, struct i915_gfx_session *work, int error);
 int drv_i915_gfx_flush(struct i915_render_session *session, struct i915_gfx_session *work);

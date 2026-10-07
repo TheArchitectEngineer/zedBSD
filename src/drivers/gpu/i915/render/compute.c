@@ -154,6 +154,8 @@ drv_i915_gfx_dispatch(
 				    binary->code_bytes,
 				    NULL,
 				    0U,
+				    NULL,
+				    0U,
 				    &space);
 	if (error != 0)
 		return error;

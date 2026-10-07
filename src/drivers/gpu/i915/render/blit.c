@@ -345,6 +345,8 @@ drv_i915_gfx_resolve(
 				    &work->resolve_generation,
 				    NULL,
 				    0U,
+				    NULL,
+				    0U,
 				    i915_blit_resolve_kernel->code,
 				    i915_blit_resolve_kernel->code_bytes,
 				    &space);
@@ -586,6 +588,8 @@ i915_blit_window(
 					    &work->copy_generation,
 					    NULL,
 					    0U,
+					    NULL,
+					    0U,
 					    i915_blit_copy_kernel->code,
 					    i915_blit_copy_kernel->code_bytes,
 					    space);
@@ -595,6 +599,8 @@ i915_blit_window(
 					    NULL,
 					    &work->fill_window,
 					    &work->fill_generation,
+					    NULL,
+					    0U,
 					    NULL,
 					    0U,
 					    i915_blit_fill_kernel->code,

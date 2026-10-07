@@ -413,8 +413,12 @@ struct i915_gfx_pipeline {
 	/* The bind point the pipeline is bound at: VK_PIPELINE_BIND_POINT_GRAPHICS (zero) or _COMPUTE. */
 	uint32_t bind_point;
 
-	/* The vertex and fragment shader modules; NULL when a stage is absent. */
+	/*
+	 * The vertex, geometry and fragment shader modules; NULL when a stage
+	 * is absent (the geometry stage is optional, ws075-p007b).
+	 */
 	struct i915_gfx_shader *vertex;
+	struct i915_gfx_shader *geometry;
 	struct i915_gfx_shader *fragment;
 
 	/* The vertex buffer bindings: the binding number, the stride and the VkVertexInputRate. */
@@ -550,8 +554,12 @@ struct i915_gfx_pipeline {
 	uint32_t kernel_window;
 	uint32_t kernel_generation;
 
-	/* The kernels the executor's compiler made; NULL in a reference-kernel build. */
+	/*
+	 * The kernels the executor's compiler made; NULL in a reference-kernel
+	 * build, and gs_binary NULL for a pipeline without a geometry stage.
+	 */
 	struct i915_shader_binary *vs_binary;
+	struct i915_shader_binary *gs_binary;
 	struct i915_shader_binary *fs_binary;
 
 	/*

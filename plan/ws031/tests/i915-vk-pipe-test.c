@@ -15,7 +15,9 @@
  * executor's own compiler; the vertex and pixel shader state is then
  * emitted from those kernels.  A second pipeline, made from the executor
  * test's shaders, declares its viewport and scissor dynamic and reads push
- * constants in both stages, as the model viewer's pipelines do.
+ * constants in both stages, as the model viewer's pipelines do.  Pipelines
+ * of three stages (ws075-p007b) compile the geometry stage after the vertex
+ * stage and route the fragment inputs from the geometry kernel's VUE.
  */
 
 #include "i915-vk-render-stubs.inc"
@@ -54,13 +56,22 @@
 /* The shaders of the executor test, compiled next to their GLSL. */
 #define FIXTURE_EXECUTOR_SHADERS	"src/drivers/gpu/i915/tests/render/shaders"
 
+/* The compiler test's shaders, the geometry ones among them (ws075-p007a). */
+#define FIXTURE_COMPILER_SHADERS	"src/drivers/gpu/i915/tests/render/compiler-shaders"
+
+/* The wire identities of the three-stage pipeline's modules and the pipeline (ws075-p007b). */
+#define FIXTURE_CELLS_VS	0xd30ULL
+#define FIXTURE_POINTS_GS	0xd31ULL
+#define FIXTURE_PASS_FS		0xd32ULL
+#define FIXTURE_GEOMETRY_PIPELINE	0xe30ULL
+
 /* The stream every command is built in. */
 static struct stub_wire fixture_wire;
 
 static uint32_t *fixture_load_spirv(const char *directory, const char *name, size_t *words);
 static void fixture_shader_module(const uint32_t *code, size_t words, uint64_t identity);
 static void fixture_stage(uint32_t stage, uint64_t module);
-static void fixture_pipeline(uint64_t vertex, uint64_t fragment, uint64_t identity);
+static void fixture_pipeline(uint64_t vertex, uint64_t geometry, uint64_t fragment, uint64_t identity);
 static void fixture_dynamic_pipeline(uint64_t vertex, uint64_t fragment, uint64_t identity);
 static void fixture_destroy(uint32_t opcode, uint64_t identity);
 static int fixture_find_command(const uint32_t *batch, unsigned used, uint32_t opcode);
@@ -69,6 +80,10 @@ static void test_graphics_pipeline(void);
 static void test_dynamic_push_pipeline(void);
 static void fixture_generality_pipeline(struct i915_gfx_pipeline *pipeline, struct i915_gfx_shader *vertex, struct i915_gfx_shader *fragment, const uint32_t *vertex_words, size_t vertex_bytes, const uint32_t *fragment_words, size_t fragment_bytes);
 static void test_varying_routing(void);
+static void fixture_shader(struct i915_gfx_shader *shader, const char *name, uint32_t **words);
+static int fixture_prepare_three(const char *vertex_name, const char *geometry_name, const char *fragment_name, struct i915_gfx_pipeline *pipeline);
+static void test_geometry_pipeline(void);
+static void test_geometry_interfaces(void);
 
 /*
  * Runs the pipeline checks.
@@ -81,6 +96,8 @@ main(void)
 	test_graphics_pipeline();
 	test_dynamic_push_pipeline();
 	test_varying_routing();
+	test_geometry_pipeline();
+	test_geometry_interfaces();
 
 	/* Succeeded: every check held. */
 	printf("i915 vk pipe host test PASS\n");
@@ -181,14 +198,21 @@ fixture_stage(
 	stub_put64(&fixture_wire, 0U);
 }
 
-/* Appends vkCreateGraphicsPipelines of one triangle-list pipeline with two stages. */
+/* Appends vkCreateGraphicsPipelines of one triangle-list pipeline with two stages, or three with a geometry module (nonzero). */
 static void
 fixture_pipeline(
 	uint64_t vertex,
+	uint64_t geometry,
 	uint64_t fragment,
 	uint64_t identity)
 {
+	unsigned stages;
 	unsigned index;
+
+	/* Two stages, or three with the geometry stage between them. */
+	stages = 2U;
+	if (geometry != 0U)
+		stages = 3U;
 
 	/* The header, the device, no cache and one create info. */
 	stub_put32(&fixture_wire, FIXTURE_CREATE_GRAPHICS_PIPELINES);
@@ -198,13 +222,15 @@ fixture_pipeline(
 	stub_put32(&fixture_wire, 1U);
 	stub_put64(&fixture_wire, 1U);
 
-	/* VkGraphicsPipelineCreateInfo: sType 28, no chain, flags, two stages. */
+	/* VkGraphicsPipelineCreateInfo: sType 28, no chain, flags, the stages. */
 	stub_put32(&fixture_wire, 28U);
 	stub_put64(&fixture_wire, 0U);
 	stub_put32(&fixture_wire, 0U);
-	stub_put32(&fixture_wire, 2U);
-	stub_put64(&fixture_wire, 2U);
+	stub_put32(&fixture_wire, stages);
+	stub_put64(&fixture_wire, stages);
 	fixture_stage(VK_SHADER_STAGE_VERTEX_BIT, vertex);
+	if (geometry != 0U)
+		fixture_stage(VK_SHADER_STAGE_GEOMETRY_BIT, geometry);
 	fixture_stage(VK_SHADER_STAGE_FRAGMENT_BIT, fragment);
 
 	/* No vertex input; input assembly: sType 20, no chain, flags, triangle list, no restart. */
@@ -515,7 +541,7 @@ test_graphics_pipeline(void)
 	 */
 	mark = stub_allocation_mark();
 	stub_wire_begin(&fixture_wire);
-	fixture_pipeline(FIXTURE_BAD_VS, FIXTURE_FS, FIXTURE_BAD_PIPELINE);
+	fixture_pipeline(FIXTURE_BAD_VS, 0U, FIXTURE_FS, FIXTURE_BAD_PIPELINE);
 	reply_bytes = stub_execute_ok(&fixture_wire);
 	assert(reply_bytes == 24U);
 	assert(stub_get32(stub_reply, 0U) == FIXTURE_CREATE_GRAPHICS_PIPELINES);
@@ -536,7 +562,7 @@ test_graphics_pipeline(void)
 
 	/* The pipeline made from the shipped shaders: [65][VK_SUCCESS][count 1][identity]. */
 	stub_wire_begin(&fixture_wire);
-	fixture_pipeline(FIXTURE_VS, FIXTURE_FS, FIXTURE_PIPELINE);
+	fixture_pipeline(FIXTURE_VS, 0U, FIXTURE_FS, FIXTURE_PIPELINE);
 	reply_bytes = stub_execute_ok(&fixture_wire);
 	assert(reply_bytes == 24U);
 	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
@@ -555,11 +581,13 @@ test_graphics_pipeline(void)
 	assert(pipeline->vs_binary->code_bytes != 0U);
 	assert(pipeline->fs_binary->code_bytes != 0U);
 
-	/* The draw takes the kernels' code and interface from the pipeline. */
+	/* The draw takes the kernels' code and interface from the pipeline; there is no geometry kernel. */
 	drv_i915_gfx_pipeline_kernels(pipeline, &kernels);
 	assert(kernels.vs_code == pipeline->vs_binary->code);
 	assert(kernels.ps_code == pipeline->fs_binary->code);
 	assert(kernels.varyings == pipeline->vs_binary->varying_count);
+	assert(pipeline->geometry == NULL && pipeline->gs_binary == NULL);
+	assert(kernels.gs_code == NULL && kernels.gs_bytes == 0U && kernels.gs_urb_entry_size == 0U);
 
 	/* Emits the vertex and pixel shader state of those kernels into a batch. */
 	memset(commands, 0, sizeof(commands));
@@ -894,4 +922,215 @@ test_varying_routing(void)
 	drv_i915_gfx_pipeline_release(&pipeline);
 	printf("  varyings: 5 of 16 routed by location through SBE_SWIZ; an unwritten location refused; 16 attributes; "
 	       "16 attributes + 16 varyings and spill.frag spill 2 KiB a thread into the scratch fields of 3DSTATE_VS / PS\n");
+}
+
+/* Loads one of the compiler test's shaders as a module whose words the caller frees. */
+static void
+fixture_shader(
+	struct i915_gfx_shader *shader,
+	const char *name,
+	uint32_t **words)
+{
+	size_t count;
+
+	/* The module borrows the loaded words. */
+	*words = fixture_load_spirv(FIXTURE_COMPILER_SHADERS, name, &count);
+	memset(shader, 0, sizeof(*shader));
+	shader->words = *words;
+	shader->word_count = (uint32_t)count;
+}
+
+/*
+ * Prepares a pipeline of the compiler test's shaders by hand: a vertex,
+ * optionally a geometry (NULL for none) and a fragment shader.  Returns
+ * what the preparation returned; the words are freed, the pipeline's
+ * binaries are the caller's to release.
+ */
+static int
+fixture_prepare_three(
+	const char *vertex_name,
+	const char *geometry_name,
+	const char *fragment_name,
+	struct i915_gfx_pipeline *pipeline)
+{
+	struct i915_gfx_shader vertex;
+	struct i915_gfx_shader geometry;
+	struct i915_gfx_shader fragment;
+	uint32_t *vertex_words;
+	uint32_t *geometry_words;
+	uint32_t *fragment_words;
+	int error;
+
+	/* The modules, and the pipeline naming them. */
+	fixture_shader(&vertex, vertex_name, &vertex_words);
+	fixture_shader(&fragment, fragment_name, &fragment_words);
+	geometry_words = NULL;
+	memset(pipeline, 0, sizeof(*pipeline));
+	pipeline->vertex = &vertex;
+	pipeline->fragment = &fragment;
+	if (geometry_name != NULL) {
+		fixture_shader(&geometry, geometry_name, &geometry_words);
+		pipeline->geometry = &geometry;
+	}
+
+	/* Compiles the stages; the modules are not needed afterwards. */
+	error = drv_i915_gfx_pipeline_prepare(NULL, pipeline);
+	pipeline->vertex = NULL;
+	pipeline->geometry = NULL;
+	pipeline->fragment = NULL;
+	free(vertex_words);
+	free(geometry_words);
+	free(fragment_words);
+	return error;
+}
+
+/*
+ * ws075-p007b b1: a pipeline of a vertex, a geometry and a fragment stage
+ * made through the wire.  The decoder keeps the geometry module, the
+ * preparation compiles it after the vertex kernel and the pipeline is
+ * drawable; the kernels a draw takes carry the geometry kernel and route
+ * the fragment input from its VUE.
+ */
+static void
+test_geometry_pipeline(void)
+{
+	struct i915_gfx_pipeline *pipeline;
+	struct i915_gfx_kernels kernels;
+	const struct i915_shader_binary *geometry;
+	uint32_t *vertex;
+	uint32_t *points;
+	uint32_t *fragment;
+	size_t vertex_words;
+	size_t points_words;
+	size_t fragment_words;
+	size_t reply_bytes;
+
+	/* cells.vert writes location 0, points.geom makes a strip of four of each point, passthrough.frag reads location 0. */
+	vertex = fixture_load_spirv(FIXTURE_COMPILER_SHADERS, "cells.vert.spv", &vertex_words);
+	points = fixture_load_spirv(FIXTURE_COMPILER_SHADERS, "points.geom.spv", &points_words);
+	fragment = fixture_load_spirv(FIXTURE_COMPILER_SHADERS, "passthrough.frag.spv", &fragment_words);
+	stub_session_open(NULL);
+	stub_wire_begin(&fixture_wire);
+	fixture_shader_module(vertex, vertex_words, FIXTURE_CELLS_VS);
+	fixture_shader_module(points, points_words, FIXTURE_POINTS_GS);
+	fixture_shader_module(fragment, fragment_words, FIXTURE_PASS_FS);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 3U * 24U);
+
+	/* The three-stage pipeline: [65][VK_SUCCESS][count 1][identity]. */
+	stub_wire_begin(&fixture_wire);
+	fixture_pipeline(FIXTURE_CELLS_VS, FIXTURE_POINTS_GS, FIXTURE_PASS_FS, FIXTURE_GEOMETRY_PIPELINE);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get64(stub_reply, 16U) == FIXTURE_GEOMETRY_PIPELINE);
+
+	/* It keeps the geometry module and three kernels, the geometry one of points in and triangle strips out. */
+	pipeline = drv_i915_object_lookup(stub_session, I915_VK_OBJ_PIPELINE, FIXTURE_GEOMETRY_PIPELINE);
+	assert(pipeline != NULL && pipeline->kernels_ready != 0);
+	assert(pipeline->geometry == drv_i915_object_lookup(stub_session, I915_VK_OBJ_SHADER_MODULE, FIXTURE_POINTS_GS));
+	geometry = pipeline->gs_binary;
+	assert(pipeline->vs_binary != NULL && geometry != NULL && pipeline->fs_binary != NULL);
+	assert(geometry->stage == I915_STAGE_GEOMETRY);
+	assert(geometry->code_bytes != 0U && geometry->code_bytes <= I915_GFX_PS_KERNEL - I915_GFX_GS_KERNEL);
+	assert(geometry->vertices_in == 1U && geometry->output_topology == I915_IR_OUTPUT_TRIANGLE_STRIP);
+	assert(geometry->varying_count == 1U && geometry->varying_locations[0] == 0U);
+	assert(geometry->urb_entry_size != 0U && geometry->output_vertex_hwords != 0U);
+	assert(geometry->writes_point_size == 0U && geometry->sampler_count == 0U);
+
+	/* The kernels: the geometry kernel's code and URB numbers, the varyings and the route from its VUE. */
+	drv_i915_gfx_pipeline_kernels(pipeline, &kernels);
+	assert(kernels.gs_code == geometry->code && kernels.gs_bytes == geometry->code_bytes);
+	assert(kernels.gs_grf_start == geometry->dispatch_grf_start);
+	assert(kernels.gs_push_regs == geometry->push_regs && kernels.gs_push.constant_bytes == geometry->push_constant_bytes);
+	assert(kernels.gs_vertices_in == 1U && kernels.gs_output_topology == I915_IR_OUTPUT_TRIANGLE_STRIP);
+	assert(kernels.gs_output_vertex_hwords == geometry->output_vertex_hwords);
+	assert(kernels.gs_control_hwords == geometry->control_data_hwords);
+	assert(kernels.gs_control_format == geometry->control_data_format);
+	assert(kernels.gs_urb_entry_size == geometry->urb_entry_size);
+	assert(kernels.gs_primitive_id == 0U && kernels.gs_writes_layer == 0U);
+	assert(kernels.varyings == 1U && kernels.vs_point_size == 0U);
+	assert(kernels.ps_input_count == 1U && kernels.ps_input_slots[0] == 0U);
+
+	/* vkDestroyPipeline releases the three kernels; the modules go next. */
+	stub_wire_begin(&fixture_wire);
+	fixture_destroy(FIXTURE_DESTROY_PIPELINE, FIXTURE_GEOMETRY_PIPELINE);
+	fixture_destroy(FIXTURE_DESTROY_SHADER_MODULE, FIXTURE_CELLS_VS);
+	fixture_destroy(FIXTURE_DESTROY_SHADER_MODULE, FIXTURE_POINTS_GS);
+	fixture_destroy(FIXTURE_DESTROY_SHADER_MODULE, FIXTURE_PASS_FS);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 4U * 4U);
+
+	/* Closes the session; nothing stays allocated. */
+	stub_session_close();
+	assert(stub_live == 0U);
+	free(vertex);
+	free(points);
+	free(fragment);
+	printf("  geometry stage (ws075-p007b b1): cells.vert + points.geom + passthrough.frag through the wire, gs %u bytes, "
+	       "URB entry %u x 64 bytes, the fragment input from the geometry VUE\n",
+	       kernels.gs_bytes,
+	       kernels.gs_urb_entry_size);
+}
+
+/*
+ * ws075-p007b b1: the interfaces of three-stage pipelines.  The fragment
+ * inputs come from the last stage before the fragment stage, a geometry
+ * shader reads only what the vertex shader writes, and a geometry shader
+ * the compiler refuses refuses the pipeline; a refused pipeline keeps no
+ * kernel.
+ */
+static void
+test_geometry_interfaces(void)
+{
+	struct i915_gfx_pipeline pipeline;
+	struct i915_gfx_kernels kernels;
+	int error;
+
+	/*
+	 * varyings.vert writes 0, 1 and 2; varyings.geom reads them and writes
+	 * 0, 1 and gl_PrimitiveID (69), and the layer; primitive-id.frag reads
+	 * 69, the geometry kernel's third slot (the vertex shader does not
+	 * write it).
+	 */
+	error = fixture_prepare_three("varyings.vert.spv", "varyings.geom.spv", "primitive-id.frag.spv", &pipeline);
+	assert(error == 0 && pipeline.kernels_ready != 0);
+	assert(pipeline.gs_binary->varying_count == 3U && pipeline.gs_binary->varying_locations[2] == I915_SHADER_LOCATION_PRIMITIVE_ID);
+	drv_i915_gfx_pipeline_kernels(&pipeline, &kernels);
+	assert(kernels.gs_vertices_in == 3U && kernels.gs_primitive_id != 0U && kernels.gs_writes_layer != 0U);
+	assert(kernels.gs_push_regs != 0U && kernels.gs_push.constant_bytes != 0U);
+	assert(kernels.varyings == 3U && kernels.ps_input_count == 1U && kernels.ps_input_slots[0] == 2U);
+	drv_i915_gfx_pipeline_release(&pipeline);
+
+	/* Without the geometry stage nothing writes gl_PrimitiveID: refused (until the setup makes it, b4). */
+	error = fixture_prepare_three("cells.vert.spv", NULL, "primitive-id.frag.spv", &pipeline);
+	assert(error == ENOTSUP && pipeline.kernels_ready == 0);
+	assert(pipeline.vs_binary == NULL && pipeline.gs_binary == NULL && pipeline.fs_binary == NULL);
+
+	/* cells.vert writes location 0 only: varyings.geom's reads of 1 and 2 have no source, refused before the compiler. */
+	stub_log[0] = '\0';
+	error = fixture_prepare_three("cells.vert.spv", "varyings.geom.spv", "passthrough.frag.spv", &pipeline);
+	assert(error == ENOTSUP && pipeline.kernels_ready == 0);
+	assert(strstr(stub_log, "the geometry shader reads location 1, which the vertex shader does not write") != NULL);
+	assert(strstr(stub_log, "refused by the compiler") == NULL);
+	assert(pipeline.vs_binary == NULL && pipeline.gs_binary == NULL && pipeline.fs_binary == NULL);
+
+	/* shade.frag reads 0 and 1: varyings.vert writes both, points.geom only 0, so with it the pipeline is refused. */
+	error = fixture_prepare_three("varyings.vert.spv", NULL, "shade.frag.spv", &pipeline);
+	assert(error == 0);
+	drv_i915_gfx_pipeline_release(&pipeline);
+	stub_log[0] = '\0';
+	error = fixture_prepare_three("varyings.vert.spv", "points.geom.spv", "shade.frag.spv", &pipeline);
+	assert(error == ENOTSUP && pipeline.kernels_ready == 0 && pipeline.gs_binary == NULL);
+	assert(strstr(stub_log, "the fragment shader reads location 1, which the geometry shader does not write") != NULL);
+
+	/* refuse-entry.geom's output URB entry of 72 KiB: the compiler refuses it, and with it the pipeline. */
+	stub_log[0] = '\0';
+	error = fixture_prepare_three("cells.vert.spv", "refuse-entry.geom.spv", "passthrough.frag.spv", &pipeline);
+	assert(error == ENOTSUP && pipeline.kernels_ready == 0);
+	assert(strstr(stub_log, "geometry shader refused by the compiler") != NULL);
+	assert(strstr(stub_log, "the refused geometry shader: 1 vertices in, at most 256 vertices out (topology 1)") != NULL);
+	assert(pipeline.vs_binary == NULL && pipeline.gs_binary == NULL && pipeline.fs_binary == NULL);
+	printf("  geometry interfaces (ws075-p007b b1): gl_PrimitiveID from the geometry VUE's slot 2; a geometry input, a fragment input "
+	       "the last stage does not write and a 72 KiB URB entry refused\n");
 }

@@ -6,16 +6,17 @@
  */
 
 /*
- * The kernels of a pipeline: compiling a graphics pipeline's two stages or
- * a compute pipeline's one, and handing what the compiler reports to the
- * draw or the dispatch.
+ * The kernels of a pipeline: compiling a graphics pipeline's stages (vertex,
+ * optional geometry, fragment) or a compute pipeline's one, and handing what
+ * the compiler reports to the draw or the dispatch.
  *
  * The pipeline's SPIR-V goes through the executor's own compiler, and the
- * words of 3DSTATE_VS, PS, PS_EXTRA, WM, SBE and SBE_SWIZ are packed from
- * what that compiler reports about the kernels.  The kernels must fit the
- * fixed slots of the instruction heap (heap.h), the two stages' interfaces
- * must agree, and neither stage may read more push constants than a command
- * buffer carries.
+ * words of 3DSTATE_VS, GS, PS, PS_EXTRA, WM, SBE and SBE_SWIZ are packed
+ * from what that compiler reports about the kernels.  The kernels must fit
+ * the fixed slots of the instruction heap (heap.h), each stage's inputs
+ * must be outputs of the stage before it (a geometry kernel reads the
+ * vertex kernel's VUE, the pixel kernel the last stage's), and no stage may
+ * read more push constants than a command buffer carries.
  */
 
 #include "gfx.h"
@@ -34,50 +35,65 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enum i915_shader_stage stage, struct i915_shader_binary **result);
+static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enum i915_shader_stage stage, const struct i915_shader_binary *producer, struct i915_shader_binary **result);
+static int i915_pipeline_geometry_inputs(const struct i915_shader_ir *ir, const struct i915_shader_binary *producer);
 static int i915_pipeline_kernels_fit(const struct i915_gfx_pipeline *pipeline);
-static int i915_pipeline_input_slot(const struct i915_shader_binary *vertex, uint32_t location, uint32_t *slot);
+static int i915_pipeline_geometry_fits(const struct i915_shader_binary *geometry);
+static const struct i915_shader_binary *i915_pipeline_last_stage(const struct i915_gfx_pipeline *pipeline);
+static int i915_pipeline_input_slot(const struct i915_shader_binary *writer, uint32_t location, uint32_t *slot);
 static const char *i915_pipeline_stage_name(enum i915_shader_stage stage);
 static int i915_pipeline_compute_fits(const struct i915_shader_binary *binary);
 static int i915_pipeline_thread_ids(struct i915_gfx_pipeline *pipeline);
 
 /*
- * Compiles a pipeline's vertex and fragment kernels.
+ * Compiles a pipeline's vertex, geometry and fragment kernels.
  *
- * The pipeline needs both stages.  Returns the parser's or the compiler's
- * error, or ENOTSUP for kernels the draw path cannot place; the pipeline is
- * then left without kernels.
- * XXX: kernels of at most 16 KiB and 32 KiB.
+ * The pipeline needs the vertex and the fragment stage; the geometry stage
+ * is optional (ws075-p007b) and is compiled after the vertex stage, whose
+ * VUE it reads.  Returns the parser's or the compiler's error, or ENOTSUP
+ * for kernels the draw path cannot place or connect; the pipeline is then
+ * left without kernels.
+ * XXX: kernels of at most 16 KiB, 16 KiB and 32 KiB.
  */
 int
 drv_i915_gfx_pipeline_prepare(
 	struct i915_render_session *session,
 	struct i915_gfx_pipeline *pipeline)
 {
+	const struct i915_shader_binary *geometry;
 	int fits;
 	int error;
 
 	UNUSED_PARAMETER(session);
 
-	/* Refuses a pipeline without both stages. */
+	/* Refuses a pipeline without both the vertex and the fragment stage. */
 	if (pipeline->vertex == NULL || pipeline->fragment == NULL)
 		return EINVAL;
 
 	/* Compiles the vertex stage. */
-	error = i915_pipeline_compile_stage(pipeline->vertex, I915_STAGE_VERTEX, &pipeline->vs_binary);
+	error = i915_pipeline_compile_stage(pipeline->vertex, I915_STAGE_VERTEX, NULL, &pipeline->vs_binary);
 	if (error != 0) {
 		drv_i915_gfx_pipeline_release(pipeline);
 		return error;
+	}
+
+	/* Compiles the geometry stage, when there is one, against the vertex kernel's VUE. */
+	if (pipeline->geometry != NULL) {
+		error = i915_pipeline_compile_stage(pipeline->geometry, I915_STAGE_GEOMETRY, pipeline->vs_binary, &pipeline->gs_binary);
+		if (error != 0) {
+			drv_i915_gfx_pipeline_release(pipeline);
+			return error;
+		}
 	}
 
 	/* Compiles the fragment stage. */
-	error = i915_pipeline_compile_stage(pipeline->fragment, I915_STAGE_FRAGMENT, &pipeline->fs_binary);
+	error = i915_pipeline_compile_stage(pipeline->fragment, I915_STAGE_FRAGMENT, NULL, &pipeline->fs_binary);
 	if (error != 0) {
 		drv_i915_gfx_pipeline_release(pipeline);
 		return error;
 	}
 
-	/* Refuses kernels the draw path cannot place or connect. */
+	/* Refuses kernels the draw path cannot place or connect, naming the geometry kernel's numbers when there is one. */
 	fits = i915_pipeline_kernels_fit(pipeline);
 	if (fits == 0) {
 		kern_logf("i915: vk: XXX unimplemented path: vs %u bytes / %u varyings / %u push registers, "
@@ -88,6 +104,19 @@ drv_i915_gfx_pipeline_prepare(
 			  pipeline->fs_binary->code_bytes,
 			  pipeline->fs_binary->input_count,
 			  pipeline->fs_binary->push_regs);
+
+		/* The geometry kernel's numbers, when there is one. */
+		geometry = pipeline->gs_binary;
+		if (geometry != NULL) {
+			kern_logf("i915: vk: XXX unimplemented path: gs %u bytes / %u varyings / %u push registers (%u bytes of push constants) / %u sampled images\n",
+				  geometry->code_bytes,
+				  geometry->varying_count,
+				  geometry->push_regs,
+				  geometry->push_constant_bytes,
+				  geometry->sampler_count);
+		}
+
+		/* The pipeline keeps no kernel. */
 		drv_i915_gfx_pipeline_release(pipeline);
 		return ENOTSUP;
 	}
@@ -104,13 +133,29 @@ drv_i915_gfx_pipeline_prepare(
 		  pipeline->fs_binary->push_regs,
 		  pipeline->fs_binary->sampler_count);
 
+	/* Says what it made of the geometry stage, when there is one. */
+	geometry = pipeline->gs_binary;
+	if (geometry != NULL) {
+		kern_logf("i915: vk: geometry stage compiled by the executor: gs %u bytes (%u inputs of %u vertices, %u push registers, "
+			  "%u varyings, topology %u, vertex %u x 32 bytes, URB entry %u x 64 bytes, scratch %u bytes)\n",
+			  geometry->code_bytes,
+			  geometry->input_count,
+			  geometry->vertices_in,
+			  geometry->push_regs,
+			  geometry->varying_count,
+			  geometry->output_topology,
+			  geometry->output_vertex_hwords,
+			  geometry->urb_entry_size,
+			  geometry->scratch_bytes);
+	}
+
 	/* Keeps whether the fragment kernel writes dual source, which the blend reads. */
 	pipeline->dual_source = pipeline->fs_binary->dual_source;
 
 	/* Marks the pipeline drawable. */
 	pipeline->kernels_ready = 1;
 
-	/* Succeeded: both kernels are compiled and fit the draw path. */
+	/* Succeeded: every stage's kernel is compiled and fits the draw path. */
 	return 0;
 }
 
@@ -139,7 +184,7 @@ drv_i915_gfx_compute_prepare(
 		return EINVAL;
 
 	/* Compiles the compute stage. */
-	error = i915_pipeline_compile_stage(pipeline->compute, I915_STAGE_COMPUTE, &pipeline->cs_binary);
+	error = i915_pipeline_compile_stage(pipeline->compute, I915_STAGE_COMPUTE, NULL, &pipeline->cs_binary);
 	if (error != 0) {
 		drv_i915_gfx_pipeline_release(pipeline);
 		return error;
@@ -191,6 +236,7 @@ drv_i915_gfx_pipeline_release(
 {
 	/* Frees every binary and the compute threads' table; a stage never compiled has none. */
 	drv_i915_shader_binary_free(pipeline->vs_binary);
+	drv_i915_shader_binary_free(pipeline->gs_binary);
 	drv_i915_shader_binary_free(pipeline->fs_binary);
 	drv_i915_shader_binary_free(pipeline->cs_binary);
 	if (pipeline->thread_ids != NULL)
@@ -198,6 +244,7 @@ drv_i915_gfx_pipeline_release(
 
 	/* Forgets them, so the pipeline cannot be drawn or dispatched with. */
 	pipeline->vs_binary = NULL;
+	pipeline->gs_binary = NULL;
 	pipeline->fs_binary = NULL;
 	pipeline->cs_binary = NULL;
 	pipeline->thread_ids = NULL;
@@ -207,11 +254,13 @@ drv_i915_gfx_pipeline_release(
 }
 
 /*
- * Describes a prepared pipeline's two kernels for the state and the batch
- * of a draw.
+ * Describes a prepared pipeline's kernels for the state and the batch of a
+ * draw.
  *
- * The code pointers borrow the pipeline's binaries, which live until the
- * pipeline is released.
+ * The varyings, the point size and the fragment inputs' slots come from the
+ * last stage before the fragment stage: the geometry kernel when there is
+ * one (ws075-p007b), else the vertex kernel.  The code pointers borrow the
+ * pipeline's binaries, which live until the pipeline is released.
  */
 void
 drv_i915_gfx_pipeline_kernels(
@@ -219,7 +268,9 @@ drv_i915_gfx_pipeline_kernels(
 	struct i915_gfx_kernels *kernels)
 {
 	const struct i915_shader_binary *vertex;
+	const struct i915_shader_binary *geometry;
 	const struct i915_shader_binary *fragment;
+	const struct i915_shader_binary *last;
 	uint32_t index;
 	uint32_t slot;
 	int found;
@@ -227,7 +278,9 @@ drv_i915_gfx_pipeline_kernels(
 	/* Starts from nothing. */
 	kern_memset(kernels, 0, sizeof(*kernels));
 	vertex = pipeline->vs_binary;
+	geometry = pipeline->gs_binary;
 	fragment = pipeline->fs_binary;
+	last = i915_pipeline_last_stage(pipeline);
 
 	/* Takes the code of both kernels. */
 	kernels->vs_code = vertex->code;
@@ -246,13 +299,34 @@ drv_i915_gfx_pipeline_kernels(
 	for (index = 0U; index < kernels->vs_input_count && index < I915_GFX_MAX_VERTEX_ATTRIBUTES; index++)
 		kernels->vs_inputs[index] = vertex->input_locations[index];
 
-	/* Takes the varyings, and whether the vertex kernel writes the point size. */
-	kernels->varyings = vertex->varying_count;
-	kernels->vs_point_size = vertex->writes_point_size;
+	/* Takes the geometry kernel's code, payload, push data and what 3DSTATE_GS and the URB are given. */
+	if (geometry != NULL) {
+		kernels->gs_code = geometry->code;
+		kernels->gs_bytes = geometry->code_bytes;
+		kernels->gs_grf_start = geometry->dispatch_grf_start;
+		kernels->gs_push_regs = geometry->push_regs;
+		kernels->gs_push.regs = geometry->push_regs;
+		kernels->gs_push.constant_bytes = geometry->push_constant_bytes;
+		kernels->gs_push.block_count = geometry->block_count;
+		kernels->gs_push.blocks = geometry->blocks;
+		kernels->gs_vertices_in = geometry->vertices_in;
+		kernels->gs_output_topology = geometry->output_topology;
+		kernels->gs_output_vertex_hwords = geometry->output_vertex_hwords;
+		kernels->gs_control_hwords = geometry->control_data_hwords;
+		kernels->gs_control_format = geometry->control_data_format;
+		kernels->gs_urb_entry_size = geometry->urb_entry_size;
+		kernels->gs_primitive_id = geometry->uses_primitive_id;
+		kernels->gs_writes_layer = geometry->writes_layer;
+		kernels->gs_scratch_bytes = geometry->scratch_bytes;
+	}
+
+	/* Takes the last stage's varyings, and whether it writes the point size (a geometry kernel does not: its point size store is refused). */
+	kernels->varyings = last->varying_count;
+	kernels->vs_point_size = last->writes_point_size;
 
 	/*
 	 * Finds the VUE slot of each fragment input; the fit check made sure the
-	 * vertex kernel writes every location the pixel kernel reads.
+	 * last stage writes every location the pixel kernel reads.
 	 */
 	kernels->ps_inputs_mapped = 1U;
 	kernels->ps_input_count = fragment->input_count;
@@ -265,9 +339,9 @@ drv_i915_gfx_pipeline_kernels(
 			continue;
 		}
 
-		/* Any other input comes from the slot the vertex kernel writes its location to. */
+		/* Any other input comes from the slot the last stage writes its location to. */
 		slot = 0U;
-		found = i915_pipeline_input_slot(vertex, fragment->input_locations[index], &slot);
+		found = i915_pipeline_input_slot(last, fragment->input_locations[index], &slot);
 		if (found != 0)
 			slot = 0U;
 		kernels->ps_input_slots[index] = slot;
@@ -278,6 +352,7 @@ drv_i915_gfx_pipeline_kernels(
 	kernels->ps_source_depth = fragment->uses_source_depth;
 	kernels->ps_source_w = fragment->uses_source_w;
 
+	/* Takes the pixel kernel's first payload register and the images it samples. */
 	kernels->ps_grf_start = fragment->dispatch_grf_start;
 	kernels->ps_samplers = fragment->sampler_count;
 	kernels->ps_sampler_sets = fragment->sampler_set;
@@ -299,15 +374,18 @@ drv_i915_gfx_pipeline_kernels(
 }
 
 /*
- * Parses and compiles one stage of a pipeline.
+ * Parses and compiles one stage of a pipeline; `producer` is the vertex
+ * kernel a geometry stage reads, NULL for any other stage.
  *
  * A refusal is logged with the stage and, for the parser, the refused
- * instruction.
+ * instruction; a geometry shader that reads a location the vertex kernel
+ * does not write is refused before the compiler with that location.
  */
 static int
 i915_pipeline_compile_stage(
 	const struct i915_gfx_shader *shader,
 	enum i915_shader_stage stage,
+	const struct i915_shader_binary *producer,
 	struct i915_shader_binary **result)
 {
 	struct i915_shader_ir *ir;
@@ -344,13 +422,40 @@ i915_pipeline_compile_stage(
 		return EINVAL;
 	}
 
-	/* Compiles the IR to EU code, and frees the IR either way. */
-	error = drv_i915_shader_compile(ir, result);
-	drv_i915_shader_ir_free(ir);
+	/* A geometry shader reads only locations the vertex kernel writes. */
+	if (stage == I915_STAGE_GEOMETRY) {
+		error = i915_pipeline_geometry_inputs(ir, producer);
+		if (error != 0) {
+			drv_i915_shader_ir_free(ir);
+			return error;
+		}
+	}
+
+	/*
+	 * Compiles the IR to EU code after the producer.  The compiler gives no
+	 * reason of its own: for a geometry shader the log names the input
+	 * primitive and the vertices it may emit, which size its output URB
+	 * entry (refused past 32 KiB).  The IR is freed either way.
+	 */
+	error = drv_i915_shader_compile_stage(ir, producer, result);
 	if (error != 0) {
 		kern_logf("i915: vk: %s shader refused by the compiler: error %d\n", i915_pipeline_stage_name(stage), error);
+
+		/* A geometry shader's input primitive and output vertices, which size its URB entry. */
+		if (stage == I915_STAGE_GEOMETRY) {
+			kern_logf("i915: vk: the refused geometry shader: %u vertices in, at most %u vertices out (topology %u)\n",
+				  ir->vertices_in,
+				  ir->max_vertices,
+				  ir->output_topology);
+		}
+
+		/* The IR goes with the refusal. */
+		drv_i915_shader_ir_free(ir);
 		return error;
 	}
+
+	/* The IR is not needed once the binary is made. */
+	drv_i915_shader_ir_free(ir);
 
 	/* Succeeded: the stage has its binary. */
 	return 0;
@@ -359,25 +464,35 @@ i915_pipeline_compile_stage(
 /*
  * Reports whether a pipeline's compiled kernels fit the draw path.
  *
- * The vertex kernel must fit below the pixel kernel's slot and the pixel
- * kernel in the rest of the instruction heap; the vertex stage must write
- * every location the fragment stage reads; neither stage may read more push
+ * The vertex kernel must fit below the geometry kernel's slot, the geometry
+ * kernel below the pixel kernel's, and the pixel kernel in the rest of the
+ * instruction window; the last stage before the fragment stage must write
+ * every location the fragment stage reads; no stage may read more push
  * constants than a command buffer carries, nor more push data than its
  * buffer holds; the pixel kernel may sample no more textures than the
- * binding table has room for, and the vertex kernel none (it has no
- * binding table).
+ * binding table has room for, and the vertex and geometry kernels none
+ * (they have no binding table).
  */
 static int
 i915_pipeline_kernels_fit(
 	const struct i915_gfx_pipeline *pipeline)
 {
+	const struct i915_shader_binary *last;
 	uint32_t index;
 	uint32_t slot;
+	int fits;
 	int found;
 
-	/* The vertex kernel must fit its slot. */
-	if (pipeline->vs_binary->code_bytes > I915_GFX_PS_KERNEL - I915_GFX_VS_KERNEL)
+	/* The vertex kernel must fit its slot, below the geometry kernel's. */
+	if (pipeline->vs_binary->code_bytes > I915_GFX_GS_KERNEL - I915_GFX_VS_KERNEL)
 		return 0;
+
+	/* The geometry kernel, when there is one, must fit its slot and its stage's limits. */
+	if (pipeline->gs_binary != NULL) {
+		fits = i915_pipeline_geometry_fits(pipeline->gs_binary);
+		if (fits == 0)
+			return 0;
+	}
 
 	/* The pixel kernel must fit the rest of the heap. */
 	if (pipeline->fs_binary->code_bytes > I915_GFX_INSTRUCTION_BYTES - I915_GFX_PS_KERNEL)
@@ -389,16 +504,20 @@ i915_pipeline_kernels_fit(
 
 	/*
 	 * The stages' interfaces must agree: every location the fragment kernel
-	 * reads is one the vertex kernel writes (it may read only some of them,
-	 * in any order), but for gl_PointCoord, which the setup makes.
+	 * reads is one the last stage before it writes (it may read only some of
+	 * them, in any order), but for gl_PointCoord, which the setup makes.
+	 * XXX: gl_PrimitiveID without a geometry stage that writes it is
+	 * refused here until the setup makes it (ws075-p007b b4).
 	 */
+	last = i915_pipeline_last_stage(pipeline);
 	for (index = 0U; index < pipeline->fs_binary->input_count; index++) {
 		if (pipeline->fs_binary->input_locations[index] == I915_SHADER_LOCATION_POINT_COORD)
 			continue;
-		found = i915_pipeline_input_slot(pipeline->vs_binary, pipeline->fs_binary->input_locations[index], &slot);
+		found = i915_pipeline_input_slot(last, pipeline->fs_binary->input_locations[index], &slot);
 		if (found != 0) {
-			kern_logf("i915: vk: the fragment shader reads location %u, which the vertex shader does not write\n",
-				  pipeline->fs_binary->input_locations[index]);
+			kern_logf("i915: vk: the fragment shader reads location %u, which the %s shader does not write\n",
+				  pipeline->fs_binary->input_locations[index],
+				  i915_pipeline_stage_name(last->stage));
 			return 0;
 		}
 	}
@@ -432,27 +551,112 @@ i915_pipeline_kernels_fit(
 }
 
 /*
- * Finds the VUE slot after the position in which a vertex kernel writes a
- * location; ENOENT when it writes none there.
+ * Checks a geometry shader's inputs against the vertex kernel it reads:
+ * every located per-vertex input must be a varying of the vertex kernel
+ * (gl_in's gl_Position and gl_PointSize are in every VUE).  Returns 0, or
+ * ENOTSUP with the location logged.
+ */
+static int
+i915_pipeline_geometry_inputs(
+	const struct i915_shader_ir *ir,
+	const struct i915_shader_binary *producer)
+{
+	const struct i915_shader_ir_inst *inst;
+	uint32_t index;
+	uint32_t slot;
+	int found;
+
+	/* A geometry stage is compiled after the vertex stage, whose kernel it is given. */
+	if (producer == NULL)
+		return EINVAL;
+
+	/* Looks at every read of an input vertex's value. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		inst = &ir->instructions[index];
+		if (inst->op != I915_IR_LOAD_VERTEX_INPUT)
+			continue;
+
+		/* The position and the point size are in the header and the slot after it. */
+		if (inst->location == I915_IR_LOCATION_POSITION || inst->location == I915_IR_LOCATION_POINT_SIZE)
+			continue;
+
+		/* A located input is one of the vertex kernel's varyings. */
+		found = i915_pipeline_input_slot(producer, inst->location, &slot);
+		if (found != 0) {
+			kern_logf("i915: vk: the geometry shader reads location %u, which the vertex shader does not write\n", inst->location);
+			return ENOTSUP;
+		}
+	}
+
+	/* Succeeded: the vertex kernel writes every location the geometry shader reads. */
+	return 0;
+}
+
+/*
+ * Reports whether a geometry kernel fits the draw path: its slot of the
+ * instruction window, the push constants a command buffer carries, the push
+ * data room of its stage (as the other stages'), and no sampled image
+ * (the geometry stage has no binding table).
+ */
+static int
+i915_pipeline_geometry_fits(
+	const struct i915_shader_binary *geometry)
+{
+	/* The geometry kernel must fit its slot, below the pixel kernel's. */
+	if (geometry->code_bytes > I915_GFX_PS_KERNEL - I915_GFX_GS_KERNEL)
+		return 0;
+
+	/* Its push constants come from the command buffer's block. */
+	if (geometry->push_constant_bytes > I915_GFX_PUSH_BYTES)
+		return 0;
+
+	/* Its push data must fit its buffer. */
+	if (geometry->push_regs * 32U > I915_GFX_PUSH_DATA_BYTES)
+		return 0;
+
+	/* XXX: the geometry stage has no binding table, so a geometry kernel does not sample. */
+	if (geometry->sampler_count != 0U)
+		return 0;
+
+	/* Succeeded: the draw path can place the geometry kernel. */
+	return 1;
+}
+
+/* Gives the last stage before a pipeline's fragment stage: its geometry kernel, or its vertex kernel. */
+static const struct i915_shader_binary *
+i915_pipeline_last_stage(
+	const struct i915_gfx_pipeline *pipeline)
+{
+	/* A geometry kernel comes after the vertex kernel. */
+	if (pipeline->gs_binary != NULL)
+		return pipeline->gs_binary;
+
+	/* Succeeded: the vertex kernel is the last. */
+	return pipeline->vs_binary;
+}
+
+/*
+ * Finds the VUE slot after the position in which a vertex or geometry
+ * kernel writes a location; ENOENT when it writes none there.
  */
 static int
 i915_pipeline_input_slot(
-	const struct i915_shader_binary *vertex,
+	const struct i915_shader_binary *writer,
 	uint32_t location,
 	uint32_t *slot)
 {
 	uint32_t index;
 
-	/* Looks the location up among the slots the vertex kernel writes. */
-	for (index = 0U; index < vertex->varying_count && index < I915_SHADER_MAX_INPUTS; index++) {
-		if (vertex->varying_locations[index] == location) {
+	/* Looks the location up among the slots the kernel writes. */
+	for (index = 0U; index < writer->varying_count && index < I915_SHADER_MAX_INPUTS; index++) {
+		if (writer->varying_locations[index] == location) {
 			/* Succeeded: the location is this slot. */
 			*slot = index;
 			return 0;
 		}
 	}
 
-	/* The vertex kernel does not write the location. */
+	/* The kernel does not write the location. */
 	return ENOENT;
 }
 
