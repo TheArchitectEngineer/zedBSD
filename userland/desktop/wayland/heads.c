@@ -1628,9 +1628,9 @@ kwl_output_at(
 
 /*
  * Gives the least distance of a window's place (its body) below an
- * output's top: under the system bar and a floating title bar on the
- * anchor, under the title bar alone on a head (the glass look; none
- * otherwise).
+ * output's top: under its bar and a floating title bar (the system bar
+ * on the anchor, a head's own bar on a head, ws113-p015; the glass look,
+ * none otherwise).
  */
 int32_t
 kwl_output_top(
@@ -1641,12 +1641,9 @@ kwl_output_top(
 	if (!server->glass)
 		return 0;
 
-	/* The anchor has the system bar too. */
-	if (slot == KWL_PLANE_ANCHOR)
-		return KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
-
-	/* Succeeded: a head's. */
-	return KWL_GLASS_GAP + KWL_GLASS_TITLE;
+	/* The anchor has the system bar, a head its own bar (ws113-p015). */
+	(void)slot;
+	return KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
 }
 
 /*
@@ -1807,6 +1804,10 @@ heads_evacuate(
 	outputs[slot].width = head->width;
 	outputs[slot].height = head->height;
 
+	/* Its docked and arranged windows float where they were first (ws113-p015: the anchor keeps its own states). */
+	kwl_glass_leave_quiet(server, slot, "retreat");
+	kwl_arrange_end_all(server, slot, "retreat");
+
 	/* Each window on it, carried to the anchor (no place to keep for one of an output not shown). */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (object = client->objects; object != NULL; object = object->next) {
@@ -1853,8 +1854,16 @@ heads_windows_follow(
 	int32_t dy;
 	int window;
 
-	/* The mirror: everything on the anchor, carried from where the heads were. */
+	/* A head going away: its docked and arranged windows float where they were first (ws113-p015). */
 	(void)kwl_outputs(server, after);
+	for (slot = 1U; slot < KWL_PLANE_SLOTS; slot++) {
+		if (!leave && after[slot].width != 0U && before[slot].width != 0U)
+			continue;
+		kwl_glass_leave_quiet(server, slot, "mode");
+		kwl_arrange_end_all(server, slot, "mode");
+	}
+
+	/* The mirror: everything on the anchor, carried from where the heads were. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (object = client->objects; object != NULL; object = object->next) {
 			window = heads_is_window(object);
@@ -1868,11 +1877,13 @@ heads_windows_follow(
 				continue;
 			}
 
-			/* Along with its head. */
+			/* Along with its head, and the place it comes back to from docked. */
 			dx = after[slot].x - before[slot].x;
 			dy = after[slot].y - before[slot].y;
 			object->x += dx;
 			object->y += dy;
+			object->restore_x += dx;
+			object->restore_y += dy;
 		}
 	}
 

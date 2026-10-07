@@ -1267,20 +1267,23 @@ struct kwl_server {
 	 * The session's layout mode (KWL_LAYOUT_WINDOWED or KWL_LAYOUT_DOCKED of
 	 * layout.h, ws142-p008, BUG-217): set by the person docking a window or
 	 * bringing one back, followed by every window switched to, opened or
-	 * leaving fullscreen.  Windowed from the session's start.
+	 * leaving fullscreen.  Windowed from the session's start.  Each output
+	 * has its own (plane.h's slot, ws113-p015): a head docks its windows
+	 * under its own bar.
 	 */
-	unsigned layout_mode;
+	unsigned layout_mode[KWL_PLANE_SLOTS];
 	/*
-	 * Each desktop's docked owner in the docked mode (WS181, shell.c's
-	 * layout_follow): the docked window in front of it, seen every frame
+	 * Each desktop's docked owner in the docked mode of each output (WS181,
+	 * shell.c's layout_follow; the output's slot, ws113-p015): the docked
+	 * window in front of it, seen every frame
 	 * once it is mapped.  When the owner of the desktop shown is closed,
 	 * minimized or sent away, the docked mode ends and every window floats
 	 * again (the 2026-10-07 UAT), instead of the next one being docked.
 	 * owner_gone marks an owner destroyed since (kwl_glass_forget), whose
 	 * pointer is NULL already.  Both are cleared when the docked mode ends.
 	 */
-	struct kwl_object *dock_owner[KWL_APPS_DESKTOPS];
-	unsigned dock_owner_gone[KWL_APPS_DESKTOPS];
+	struct kwl_object *dock_owner[KWL_APPS_DESKTOPS][KWL_PLANE_SLOTS];
+	unsigned dock_owner_gone[KWL_APPS_DESKTOPS][KWL_PLANE_SLOTS];
 	/*
 	 * The touch pad's swipe of two fingers while Wiseview or the switcher
 	 * shows (swipe.h, ws142-p009): one swipe a step, from the fingers
@@ -1613,6 +1616,7 @@ int kwl_cursor_client_shown(struct kwl_server *server);
 int kwl_arrow_create(struct kwl_server *server);
 void kwl_arrow_destroy(struct kwl_server *server);
 struct kwl_object *kwl_top_window(struct kwl_server *server);
+struct kwl_object *kwl_output_top_window(struct kwl_server *server, unsigned slot);
 int kwl_glass_still(struct kwl_server *server);
 int kwl_glass_body_damage(struct kwl_server *server, struct kwl_object *surface, int32_t *rect);
 int kwl_glass_pointer_calm(struct kwl_server *server, int32_t x, int32_t y);
@@ -1829,8 +1833,8 @@ void kwl_glass_forget(struct kwl_server *server, struct kwl_object *surface);
 struct kwl_arrange_rect;
 void kwl_glass_desktops_pill(struct kwl_server *server, int32_t *x, int32_t *width);
 int kwl_glass_bar_control_at(struct kwl_server *server, int32_t x, int32_t y);
-void kwl_glass_work_area(struct kwl_server *server, struct kwl_arrange_rect *area);
-void kwl_glass_leave_quiet(struct kwl_server *server, const char *via);
+void kwl_glass_work_area(struct kwl_server *server, unsigned slot, struct kwl_arrange_rect *area);
+void kwl_glass_leave_quiet(struct kwl_server *server, unsigned slot, const char *via);
 void kwl_glass_place_body(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
 void kwl_glass_body(struct kwl_server *server, const struct kwl_object *surface, int32_t body[4]);
 void kwl_glass_dock_window(struct kwl_server *server, struct kwl_object *surface, const char *via);
@@ -1842,7 +1846,7 @@ int kwl_arrange_move_end(struct kwl_server *server);
 int kwl_arrange_glide(struct kwl_server *server, const struct kwl_object *surface, int32_t body[4]);
 void kwl_arrange_tick(struct kwl_server *server);
 void kwl_arrange_forget(struct kwl_server *server, struct kwl_object *surface);
-void kwl_arrange_end_all(struct kwl_server *server, const char *reason);
+void kwl_arrange_end_all(struct kwl_server *server, unsigned output, const char *reason);
 void kwl_arrange_mapped(struct kwl_server *server, struct kwl_object *surface);
 void kwl_arrange_join_prepare(struct kwl_server *server);
 void kwl_arrange_join_opened(struct kwl_server *server, int error, int running);

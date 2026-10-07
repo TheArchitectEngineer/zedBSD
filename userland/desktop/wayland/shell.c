@@ -370,6 +370,7 @@ struct shell_bar {
 	int32_t buttons_width;
 	int32_t menu_line;
 	int32_t title_x;
+	int32_t top;
 };
 
 static void bar_layout(struct kwl_server *server, struct shell_bar *bar);
@@ -394,9 +395,13 @@ static int glass_placed(struct kwl_server *server, struct kwl_object *surface, s
 static void shown_title(const struct kwl_object *surface, char *title, size_t size);
 static void draw_sign(struct kwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
 static void draw_system_bar(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
-static void draw_bar_strip(struct kwl_server *server, VkCommandBuffer command, const struct glass_bar_colours *colours);
+static void draw_bar_strip(struct kwl_server *server, VkCommandBuffer command, const struct glass_bar_colours *colours, int32_t x, int32_t y, int32_t width);
 static void draw_bar_buttons(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, struct kwl_object *docked, const struct glass_bar_colours *colours);
 static void draw_bar_group_faded(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height, float opacity);
+static void draw_bar_group_at(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t bar_top, int32_t width, int32_t height, float opacity);
+static void head_bar_layout(struct kwl_server *server, unsigned slot, struct shell_bar *bar);
+static void draw_head_bar(struct kwl_server *server, VkCommandBuffer command, unsigned slot);
+static int head_bar_press(struct kwl_server *server, unsigned slot);
 static void bar_dock_follow(struct kwl_server *server);
 static void draw_bar_group(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
 static void draw_desktops(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
@@ -408,7 +413,10 @@ static void draw_dock_hint(struct kwl_server *server, VkCommandBuffer command);
 static float animation_progress(struct kwl_server *server);
 static void lerp_rect(const struct shell_rect *from, const struct shell_rect *to, float t, struct shell_rect *result);
 static void body_rect(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
-static void docked_rect(struct kwl_server *server, struct shell_rect *body);
+static void docked_rect(struct kwl_server *server, unsigned slot, struct shell_rect *body);
+static unsigned window_slot(const struct kwl_object *surface);
+static int output_rect(struct kwl_server *server, unsigned slot, struct kwl_plane_rect *rect);
+static void glass_fit_on(struct kwl_server *server, unsigned slot, int32_t width, int32_t height, int32_t *x, int32_t *y);
 static void pulled_rect(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
 static void pull_back(struct kwl_server *server);
 static void window_minimize(struct kwl_server *server, struct kwl_object *surface);
@@ -426,7 +434,7 @@ static int button_at(const struct kwl_object *surface, int32_t x, int32_t y);
 static void button_centre(const struct kwl_object *surface, int button, int32_t *x, int32_t *y);
 static int bar_button_at(const struct shell_bar *bar, int32_t x, int32_t y);
 static struct kwl_object *window_at(struct kwl_server *server, int32_t x, int32_t y, enum shell_hit *hit);
-static struct kwl_object *docked_window(struct kwl_server *server);
+static struct kwl_object *docked_window(struct kwl_server *server, unsigned slot);
 static void window_raise(struct kwl_server *server, struct kwl_object *surface);
 static void sheet_place(struct kwl_server *server);
 static struct kwl_object *sheet_owner(struct kwl_object *surface);
@@ -438,16 +446,17 @@ static void window_dock(struct kwl_server *server, struct kwl_object *surface, i
 static void window_undock(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, const char *via);
 static void window_configure(struct kwl_object *surface);
 static void layout_window(const struct kwl_object *surface, struct kwl_layout_window *window);
-static void layout_set(struct kwl_server *server, unsigned mode, const char *via);
+static void layout_set(struct kwl_server *server, unsigned slot, unsigned mode, const char *via);
 static void layout_match(struct kwl_server *server, struct kwl_object *surface, const char *via);
 static int layout_hides(struct kwl_server *server, const struct kwl_object *surface);
 static int layout_takes_press(struct kwl_server *server);
-static void layout_leave(struct kwl_server *server, struct kwl_object *front, int32_t x, int32_t y, const char *via);
+static void layout_leave(struct kwl_server *server, unsigned slot, struct kwl_object *front, int32_t x, int32_t y, const char *via);
 static void window_float_quiet(struct kwl_server *server, struct kwl_object *surface);
 static void layout_follow(struct kwl_server *server);
+static void layout_follow_output(struct kwl_server *server, unsigned slot);
 static void layout_owner_describe(const struct kwl_object *owner, struct kwl_layout_owner *seen);
-static void layout_front_follow(struct kwl_server *server);
-static void layout_log_windows(struct kwl_server *server);
+static void layout_front_follow(struct kwl_server *server, unsigned slot);
+static void layout_log_windows(struct kwl_server *server, unsigned slot);
 static void docked_body(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
 static void dock_restore_default(struct kwl_server *server, struct kwl_object *surface);
 static int window_centred_over(struct kwl_server *server, const struct kwl_object *surface);
@@ -751,8 +760,9 @@ kwl_glass_draw(
  * each window of the desktop shown with its title bar, bottom to top, then
  * their popups.  The system bar, App Home, Wiseview and the other screens
  * are the anchor's; a window's glass shows the blurred wallpaper (no
- * blurred scene under it on a head).  While App Home shows on the anchor,
- * a head shows its background alone (ws113-p015).
+ * blurred scene under it on a head).  Its own bar is over them, with a
+ * window docked on the head (ws113-p015).  While App Home shows on the
+ * anchor, a head shows its background alone.
  */
 void
 kwl_glass_draw_head(
@@ -762,6 +772,7 @@ kwl_glass_draw_head(
 	unsigned count)
 {
 	struct kwl_object *top;
+	struct shell_bar bar;
 	unsigned focused;
 	unsigned index;
 	float home;
@@ -779,10 +790,11 @@ kwl_glass_draw_head(
 		return;
 	}
 
-	/* No layer of the anchor's (App Home's, the desktops' slide) on a head. */
+	/* No layer of the anchor's (App Home's, the desktops' slide) on a head; its own bar, where a docking title bar slides to. */
 	layer = server->layer_on;
 	server->layer_on = 0;
 	top = kwl_top_window(server);
+	head_bar_layout(server, server->view_output, &bar);
 
 	/* Each window of the desktop shown. */
 	for (index = 0U; index < count; index++) {
@@ -796,11 +808,13 @@ kwl_glass_draw_head(
 		focused = 0U;
 		if (windows[index] == top)
 			focused = 1U;
-		draw_window(server, command, windows[index], focused, NULL);
+		draw_window(server, command, windows[index], focused, &bar);
 	}
 
-	/* Their popups over them (popup.c draws those of the output drawn). */
+	/* The head's bar over them (ws113-p015), their popups over it (popup.c draws those of the output drawn), and the shell's menus opened on the head. */
+	draw_head_bar(server, command, server->view_output);
 	kwl_popup_draw(server, command);
+	kwl_menu_draw_popups(server, command);
 	server->layer_on = layer;
 }
 
@@ -818,6 +832,7 @@ kwl_glass_button(
 	uint32_t button,
 	uint32_t state)
 {
+	struct kwl_plane_rect output;
 	struct kwl_object *surface;
 	struct kwl_object *cover;
 	struct kwl_object *sheet;
@@ -1045,6 +1060,15 @@ kwl_glass_button(
 	if (server->pointer_y < KWL_GLASS_BAR && cover == NULL && !remote) {
 		pressed = bar_press(server);
 		return pressed;
+	}
+
+	/* A head's bar is too (ws113-p015). */
+	if (remote) {
+		(void)output_rect(server, server->pointer_output, &output);
+		if (server->pointer_y < output.y + KWL_GLASS_BAR) {
+			pressed = head_bar_press(server, server->pointer_output);
+			return pressed;
+		}
 	}
 
 	/* Only the left button acts on windows. */
@@ -2023,7 +2047,7 @@ kwl_glass_toplevel_request(
 		if (surface->maximized) {
 			x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
 			y = server->pointer_y - KWL_GLASS_GAP;
-			layout_leave(server, surface, x, y, "request-move");
+			layout_leave(server, window_slot(surface), surface, x, y, "request-move");
 		}
 
 		window_raise(server, surface);
@@ -2047,18 +2071,19 @@ kwl_glass_toplevel_request(
 		break;
 	case KWL_TOPLEVEL_UNMAXIMIZE:
 		/*
-		 * Back to its place before it docked: the docked window in front
-		 * ends the docked mode, another one hidden behind it only floats
-		 * again (WS181: an application behind does not end the mode).
+		 * Back to its place before it docked: the docked window in front of
+		 * its output ends that output's docked mode, another one hidden
+		 * behind it only floats again (WS181: an application behind does
+		 * not end the mode).
 		 */
 		if (!surface->maximized)
 			break;
-		front = sheet_owner(kwl_top_window(server));
+		front = sheet_owner(kwl_output_top_window(server, window_slot(surface)));
 		if (surface != front) {
 			window_float_quiet(server, surface);
 			break;
 		}
-		layout_leave(server, surface, surface->restore_x, surface->restore_y, "request");
+		layout_leave(server, window_slot(surface), surface, surface->restore_x, surface->restore_y, "request");
 		break;
 	case KWL_TOPLEVEL_MINIMIZE:
 		/* Hidden until Wiseview brings it back. */
@@ -2077,18 +2102,30 @@ kwl_glass_toplevel_move_end(
     struct kwl_server *server,
     struct kwl_object *surface)
 {
+	struct kwl_plane_rect output;
+	unsigned start;
+
 	/* Only the borrowed window currently moving can complete this operation. */
 	if (surface == NULL || server->drag != surface)
 		return;
 
 	/* Retires the moving identity before docking or emitting diagnostics. */
 	server->drag = NULL;
-	if (server->pointer_y < KWL_GLASS_BAR &&
+	(void)output_rect(server, server->pointer_output, &output);
+	if (server->pointer_y < output.y + KWL_GLASS_BAR &&
 	    server->drag_left_bar &&
-	    server->pointer_output == KWL_PLANE_ANCHOR) {
+	    server->pointer_output == surface->output) {
+		/* A move from another output comes back where it was let go, on this one. */
+		start = kwl_output_at(server, server->drag_start_x, server->drag_start_y);
+		if (start != server->pointer_output) {
+			server->drag_start_x = surface->x;
+			server->drag_start_y = surface->y;
+		}
+
+		/* Docked there. */
 		window_dock(server, surface, server->drag_start_x, server->drag_start_y, "drag");
 
-		/* The system bar keeps the previous position as the restore point. */
+		/* The bar (the system bar, or a head's, ws113-p015) keeps the previous position as the restore point. */
 		return;
 	}
 
@@ -2118,6 +2155,7 @@ kwl_glass_place(
 {
 	int32_t places[1 + 2 * GLASS_CASCADE_ROUNDS][2];
 	struct kwl_layout_window window;
+	unsigned slot;
 	int centred;
 	int32_t space_width;
 	int32_t space_height;
@@ -2140,7 +2178,8 @@ kwl_glass_place(
 
 	/* In the docked mode a dialog shows in the middle of the screen, over its docked parent (ws142-p008). */
 	layout_window(surface, &window);
-	centred = kwl_layout_centred(server->layout_mode, &window);
+	slot = window_slot(surface);
+	centred = kwl_layout_centred(server->layout_mode[slot], &window);
 	if (centred) {
 		kwl_glass_fit(server, width, height, &places[0][0], &places[0][1]);
 		surface->x = places[0][0];
@@ -2442,6 +2481,10 @@ kwl_glass_output_resized(
 			if (desktop)
 				continue;
 
+			/* Only the anchor's windows: a head's keep their places (ws113-p015). */
+			if (surface->output != KWL_PLANE_ANCHOR)
+				continue;
+
 			/* Fullscreen: the output's new size. */
 			if (surface->fullscreen) {
 				window_configure(surface);
@@ -2451,7 +2494,7 @@ kwl_glass_output_resized(
 
 			/* Docked: the docked space of the new output. */
 			if (surface->maximized && server->glass) {
-				docked_rect(server, &docked);
+				docked_rect(server, KWL_PLANE_ANCHOR, &docked);
 				surface->x = docked.x;
 				surface->y = docked.y;
 				surface->window_width = (uint32_t)docked.width;
@@ -2550,15 +2593,18 @@ kwl_glass_forget(
 	struct kwl_object *surface)
 {
 	unsigned desktop;
+	unsigned slot;
 
-	/* Each desktop it owned. */
+	/* Each desktop it owned, on each output. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
-		if (server->dock_owner[desktop] != surface)
-			continue;
+		for (slot = 0U; slot < KWL_PLANE_SLOTS; slot++) {
+			if (server->dock_owner[desktop][slot] != surface)
+				continue;
 
-		/* The pointer goes before the storage; the mark stays until the next frame looks at it. */
-		server->dock_owner[desktop] = NULL;
-		server->dock_owner_gone[desktop] = 1U;
+			/* The pointer goes before the storage; the mark stays until the next frame looks at it. */
+			server->dock_owner[desktop][slot] = NULL;
+			server->dock_owner_gone[desktop][slot] = 1U;
+		}
 	}
 
 	/* An arranged window that goes ends its desktop's arrangement (arrange-shell.c). */
@@ -2604,7 +2650,7 @@ kwl_glass_bar_control_at(
 		return 0;
 
 	/* Only a docked window has controls in the bar. */
-	docked = docked_window(server);
+	docked = docked_window(server, KWL_PLANE_ANCHOR);
 	if (docked == NULL)
 		return 0;
 
@@ -2627,10 +2673,22 @@ kwl_glass_bar_control_at(
 void
 kwl_glass_work_area(
 	struct kwl_server *server,
+	unsigned slot,
 	struct kwl_arrange_rect *area)
 {
+	struct kwl_plane_rect output;
 	int32_t right;
 	int32_t bottom;
+
+	/* A head's: under its bar (ws113-p015; no keyboard nor bottom strip there). */
+	if (slot != KWL_PLANE_ANCHOR) {
+		(void)output_rect(server, slot, &output);
+		area->x = output.x;
+		area->y = output.y + KWL_GLASS_BAR;
+		area->width = (int32_t)output.width;
+		area->height = (int32_t)output.height - KWL_GLASS_BAR;
+		return;
+	}
 
 	/* What the keyboard's panel takes when it has settled. */
 	kwl_keyboard_reserved(&right, &bottom);
@@ -2642,18 +2700,22 @@ kwl_glass_work_area(
 	area->height = (int32_t)server->height - KWL_GLASS_BAR - bottom - (KWL_EDGE_BOTTOM_HEIGHT - KWL_ARRANGE_MARGIN);
 }
 
-/* Ends the docked mode without any window's animation, when it is on (an arrangement starting, arrange-shell.c). */
+/*
+ * Ends an output's docked mode without any window's animation, when it is
+ * on (an arrangement starting, arrange-shell.c; a head closing, heads.c).
+ */
 void
 kwl_glass_leave_quiet(
 	struct kwl_server *server,
+	unsigned slot,
 	const char *via)
 {
 	/* Only the docked mode ends. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+	if (slot >= KWL_PLANE_SLOTS || server->layout_mode[slot] != KWL_LAYOUT_DOCKED)
 		return;
 
-	/* Every window floating at once. */
-	layout_leave(server, NULL, 0, 0, via);
+	/* Every window of the output floating at once. */
+	layout_leave(server, slot, NULL, 0, 0, via);
 }
 
 /*
@@ -2742,7 +2804,7 @@ kwl_glass_committed(
 
 	/* The new image's size, and the docked space's. */
 	kwl_surface_size(surface, &width, &height);
-	docked_rect(server, &docked);
+	docked_rect(server, window_slot(surface), &docked);
 
 	/*
 	 * An image of the size the window had before is one drawn before the
@@ -3099,6 +3161,9 @@ bar_layout(
 	/* On the left, after the launcher, a line and the docked title (ws035-p117: no word after the mark). */
 	bar->menu_line = BAR_LAUNCHER_X + BAR_LAUNCHER_SIZE + 10;
 	bar->title_x = bar->menu_line + 14;
+
+	/* The system bar is at the anchor's top. */
+	bar->top = 0;
 }
 
 /*
@@ -3964,7 +4029,7 @@ draw_system_bar(
 	}
 
 	/* The docked window, if one is on top and not moving. */
-	docked = docked_window(server);
+	docked = docked_window(server, KWL_PLANE_ANCHOR);
 
 	/*
 	 * The bar keeps its own colours (ws099-p034b): light ink on the dark
@@ -3975,7 +4040,7 @@ draw_system_bar(
 	server->keep_colours = 1U;
 
 	/* The strip. */
-	draw_bar_strip(server, command, &colours);
+	draw_bar_strip(server, command, &colours, 0, 0, (int32_t)server->width);
 
 	/* The launcher: the Kei mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
 	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
@@ -4026,31 +4091,199 @@ draw_system_bar(
 }
 
 /*
+ * Lays out a head's bar (ws113-p015, the 2026-10-08 UAT): across the
+ * head's top, a docked window's title from its left end (no launcher) and
+ * its buttons at its right end.  The clock, the status, the desktops and
+ * App Home are the system bar's.
+ */
+static void
+head_bar_layout(
+	struct kwl_server *server,
+	unsigned slot,
+	struct shell_bar *bar)
+{
+	struct kwl_plane_rect output;
+	int button;
+
+	/* The head's rectangle of the plane. */
+	memset(bar, 0, sizeof(*bar));
+	(void)output_rect(server, slot, &output);
+	bar->top = output.y;
+
+	/* The docked window's buttons in a pill at the right end. */
+	bar->buttons_width = BUTTON_COUNT * BAR_BUTTON_SPACING + 6;
+	bar->buttons_x = output.x + (int32_t)output.width - BAR_EDGE - bar->buttons_width;
+	for (button = 0; button < BUTTON_COUNT; button++)
+		bar->buttons[button] = bar->buttons_x + 3 + BAR_BUTTON_SPACING / 2 + (BUTTON_COUNT - 1 - button) * BAR_BUTTON_SPACING;
+
+	/* Its title from the left end, its room ending a gap before the buttons (desktops_line stands for that end). */
+	bar->menu_line = output.x + BAR_EDGE;
+	bar->title_x = bar->menu_line + 14;
+	bar->desktops_line = bar->buttons_x - BAR_PILL_GAP;
+}
+
+/*
+ * Draws a head's bar (heads.c's pass, ws113-p015): its strip, and for a
+ * docked window in front on the head its mark and title in a pill, its
+ * menu or controls after it, and its buttons at the right end.
+ */
+static void
+draw_head_bar(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	unsigned slot)
+{
+	struct glass_bar_colours colours;
+	struct kwl_plane_rect output;
+	struct kwl_menu_area area;
+	struct kwl_object *docked;
+	struct shell_bar bar;
+	int32_t available;
+	int32_t limit;
+	int32_t end;
+	int32_t middle;
+	int button;
+	int over;
+
+	/* The bar's colours and its strip. */
+	(void)output_rect(server, slot, &output);
+	head_bar_layout(server, slot, &bar);
+	kwl_glass_bar_colours(server, &colours);
+	server->keep_colours = 1U;
+	draw_bar_strip(server, command, &colours, output.x, output.y, (int32_t)output.width);
+
+	/* The docked window in front on the head, if any. */
+	docked = docked_window(server, slot);
+	if (docked != NULL) {
+		/* Its mark and title, sharing the room with its menu. */
+		middle = output.y + KWL_GLASS_BAR / 2;
+		available = bar.desktops_line - 12 - bar.title_x - 30;
+		limit = kwl_titlebar_title_limit(server, docked, available);
+		end = title_end(server, docked, limit);
+		draw_bar_group_at(server, command, bar.title_x - 7, output.y, 30 + end + 7 + 12, BAR_GROUP_HEIGHT, 1.0f);
+		draw_title(server, command, docked, bar.title_x, middle, limit, colours.ink);
+
+		/* Its menu or its controls after the title (titlebar-shell.c). */
+		area.x = bar.title_x + 30 + end + 24;
+		area.top = output.y;
+		area.right = bar.title_x + 30 + available;
+		area.height = KWL_GLASS_BAR;
+		area.origin = output.x;
+		kwl_titlebar_draw(server, command, docked, 1, &area, colours.ink, 1.0f);
+
+		/* Its buttons in their pill, the one under the pointer lit. */
+		draw_bar_group_at(server, command, bar.buttons_x, output.y, bar.buttons_width, BAR_BUTTONS_HEIGHT, 1.0f);
+		over = -1;
+		if (server->pointer_output == slot)
+			over = bar_button_at(&bar, server->pointer_x, server->pointer_y);
+		for (button = 0; button < BUTTON_COUNT; button++)
+			draw_sign(server, command, button, bar.buttons[button], middle, 1, over == button, 1.0f, colours.ink);
+	}
+
+	/* The rest is drawn in the appearance's colours again. */
+	server->keep_colours = 0U;
+}
+
+/*
+ * Handles a press on a head's bar (ws113-p015): a docked window's buttons
+ * (close, restore, minimize), and on its title a double click restores it
+ * and a single press may become a pull out of the bar, as on the system
+ * bar.  Every press on the bar is taken.  Returns 1.
+ */
+static int
+head_bar_press(
+	struct kwl_server *server,
+	unsigned slot)
+{
+	struct kwl_object *surface;
+	struct shell_bar bar;
+	unsigned second;
+	int pressed;
+
+	/* Only a docked window acts. */
+	head_bar_layout(server, slot, &bar);
+	surface = docked_window(server, slot);
+	if (surface == NULL)
+		return 1;
+
+	/* Its buttons. */
+	pressed = bar_button_at(&bar, server->pointer_x, server->pointer_y);
+	if (pressed == BUTTON_CLOSE) {
+		(void)kwl_emit(surface->client, surface->role->top->id, 1U, NULL, 0U);
+		printf("KWL GLASS close surface=%u output=%u client=%llu\n", surface->id, slot, (unsigned long long)surface->client->number);
+		return 1;
+	}
+
+	/* Restore brings it back where it was. */
+	if (pressed == BUTTON_MAXIMIZE) {
+		layout_leave(server, slot, surface, surface->restore_x, surface->restore_y, "button");
+		return 1;
+	}
+
+	/* Minimize hides it. */
+	if (pressed == BUTTON_MINIMIZE) {
+		window_minimize(server, surface);
+		return 1;
+	}
+
+	/* Its title: up to the buttons. */
+	if (server->pointer_x < bar.menu_line || server->pointer_x >= bar.buttons[BUTTON_MINIMIZE] - BUTTON_WIDTH / 2)
+		return 1;
+
+	/* A double click brings it back where it was. */
+	second = double_click(server, surface);
+	if (second) {
+		layout_leave(server, slot, surface, surface->restore_x, surface->restore_y, "double-click");
+		return 1;
+	}
+
+	/* A single press may become a pull. */
+	server->pull = surface;
+	server->pull_start_x = server->pointer_x;
+	server->pull_start_y = server->pointer_y;
+	server->pull_distance = 0;
+	return 1;
+}
+
+/*
  * Draws the bar's strip: dark glass over the blurred scene (the dark
  * appearance's dark glass, which darkens a bright wallpaper further so the
  * light ink keeps its contrast), lighter in a broad band about the middle,
  * a hairline along its bottom; lighter still while a dragged window is over
- * it (it would dock).
+ * it (it would dock).  It lies at (x, y) of the plane, as wide as given
+ * (the anchor's top, or a head's, ws113-p015).
  */
 static void
 draw_bar_strip(
 	struct kwl_server *server,
 	VkCommandBuffer command,
-	const struct glass_bar_colours *colours)
+	const struct glass_bar_colours *colours,
+	int32_t x,
+	int32_t y,
+	int32_t width)
 {
 	static const float hairline[4] = { 1.0f, 1.0f, 1.0f, 0.09f };
 	static const float light_hairline[4] = { 0.12f, 0.16f, 0.24f, 0.10f };
 	struct glass_shape shape;
-	float width;
+	float left;
+	float top;
+	float wide;
+	int over;
 
 	/*
 	 * The light appearance's bar is the floating title bar's white glass
 	 * (ws099-p034b), a dark hairline along its bottom; a dragged window over
 	 * it (it would dock) darkens it a little.
 	 */
-	width = (float)server->width;
+	left = (float)x;
+	top = (float)y;
+	wide = (float)width;
+	over = 0;
+	if (server->drag != NULL && server->pointer_y >= y && server->pointer_y < y + KWL_GLASS_BAR &&
+	    server->pointer_x >= x && server->pointer_x < x + width)
+		over = 1;
 	if (colours->light) {
-		glass_shape_init(&shape, 0.0f, 0.0f, width, (float)KWL_GLASS_BAR);
+		glass_shape_init(&shape, left, top, wide, (float)KWL_GLASS_BAR);
 		shape.mode = MODE_GLASS;
 		shape.soft = 1.0f;
 		shape.color[0] = 1.0f;
@@ -4058,14 +4291,14 @@ draw_bar_strip(
 		shape.color[2] = 1.0f;
 		shape.color[3] = 0.64f;
 		glass_shape_draw(server, command, &shape);
-		if (server->drag != NULL && server->pointer_y < KWL_GLASS_BAR)
-			glass_draw_solid(server, command, 0.0f, 0.0f, width, (float)KWL_GLASS_BAR, 0.0f, colours->lit);
-		glass_draw_solid(server, command, 0.0f, (float)(KWL_GLASS_BAR - 1), width, 1.0f, 0.0f, light_hairline);
+		if (over)
+			glass_draw_solid(server, command, left, top, wide, (float)KWL_GLASS_BAR, 0.0f, colours->lit);
+		glass_draw_solid(server, command, left, top + (float)(KWL_GLASS_BAR - 1), wide, 1.0f, 0.0f, light_hairline);
 		return;
 	}
 
 	/* The dark glass, a little bluish. */
-	glass_shape_init(&shape, 0.0f, 0.0f, width, (float)KWL_GLASS_BAR);
+	glass_shape_init(&shape, left, top, wide, (float)KWL_GLASS_BAR);
 	shape.mode = MODE_GLASS;
 	shape.dark_glass = 1U;
 	shape.soft = 1.0f;
@@ -4079,23 +4312,23 @@ draw_bar_strip(
 	 * The lighter middle: a soft white band, whole over the middle third and
 	 * fading out over a third of the width on each side, clipped to the bar.
 	 */
-	glass_shape_init(&shape, width / 3.0f, -200.0f, width / 3.0f, (float)KWL_GLASS_BAR + 400.0f);
-	shape.quad[0] = 0.0f;
-	shape.quad[1] = 0.0f;
-	shape.quad[2] = width;
+	glass_shape_init(&shape, left + wide / 3.0f, top - 200.0f, wide / 3.0f, (float)KWL_GLASS_BAR + 400.0f);
+	shape.quad[0] = left;
+	shape.quad[1] = top;
+	shape.quad[2] = wide;
 	shape.quad[3] = (float)KWL_GLASS_BAR;
 	shape.mode = MODE_SHADOW;
-	shape.soft = width / 3.0f;
+	shape.soft = wide / 3.0f;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
 	shape.color[3] = 0.07f;
-	if (server->drag != NULL && server->pointer_y < KWL_GLASS_BAR)
+	if (over)
 		shape.color[3] = 0.16f;
 	glass_shape_draw(server, command, &shape);
 
 	/* The hairline. */
-	glass_draw_solid(server, command, 0.0f, (float)(KWL_GLASS_BAR - 1), width, 1.0f, 0.0f, hairline);
+	glass_draw_solid(server, command, left, top + (float)(KWL_GLASS_BAR - 1), wide, 1.0f, 0.0f, hairline);
 }
 
 /* Draws one of the bar's group pills: a little darker than the bar, with a faint edge, centred on the bar's middle. */
@@ -4121,6 +4354,21 @@ draw_bar_group_faded(
 	int32_t height,
 	float opacity)
 {
+	/* In the system bar. */
+	draw_bar_group_at(server, command, x, 0, width, height, opacity);
+}
+
+/* Draws a pill of a bar whose top is at bar_top of the plane (the system bar's, or a head's, ws113-p015), faded by an opacity. */
+static void
+draw_bar_group_at(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	int32_t x,
+	int32_t bar_top,
+	int32_t width,
+	int32_t height,
+	float opacity)
+{
 	struct glass_bar_colours colours;
 	struct glass_shape shape;
 	float fill[4];
@@ -4130,7 +4378,7 @@ draw_bar_group_faded(
 	kwl_glass_bar_colours(server, &colours);
 	memcpy(fill, colours.fill, sizeof(fill));
 	fill[3] *= opacity;
-	top = (float)(KWL_GLASS_BAR_MIDDLE - height / 2);
+	top = (float)(bar_top + KWL_GLASS_BAR_MIDDLE - height / 2);
 	glass_draw_solid(server, command, (float)x, top, (float)width, (float)height, (float)height * 0.5f, fill);
 
 	/* Its edge. */
@@ -4416,7 +4664,7 @@ draw_dock_hint(
 		return;
 
 	/* The space, filled and outlined. */
-	docked_rect(server, &body);
+	docked_rect(server, KWL_PLANE_ANCHOR, &body);
 	glass_draw_solid(server, command, (float)(body.x + 6), (float)(body.y + 6), (float)(body.width - 12), (float)(body.height - 12), GLASS_RADIUS, fill);
 	glass_shape_init(&shape, (float)(body.x + 6), (float)(body.y + 6), (float)(body.width - 12), (float)(body.height - 12));
 	shape.quad[0] -= 1.0f;
@@ -4567,14 +4815,29 @@ body_rect(
 	window_size(surface, &body->width, &body->height);
 }
 
-/* The space a docked body takes: the output under the system bar. */
+/*
+ * The space a docked body takes on an output: under its bar (the system
+ * bar on the anchor, the head's own bar on a head, ws113-p015).
+ */
 static void
 docked_rect(
 	struct kwl_server *server,
+	unsigned slot,
 	struct shell_rect *body)
 {
+	struct kwl_plane_rect output;
 	int32_t right;
 	int32_t bottom;
+
+	/* A head: under its bar, KWL_GLASS_DOCK_PAD in from every side (no on-screen keyboard there). */
+	if (slot != KWL_PLANE_ANCHOR) {
+		(void)output_rect(server, slot, &output);
+		body->x = output.x + KWL_GLASS_DOCK_PAD;
+		body->y = output.y + DOCK_TOP;
+		body->width = (int32_t)output.width - 2 * KWL_GLASS_DOCK_PAD;
+		body->height = (int32_t)output.height - DOCK_TOP - KWL_GLASS_DOCK_PAD;
+		return;
+	}
 
 	/* What the on-screen keyboard's panel takes now, as it slides (keyboard.c, ws102-p007). */
 	kwl_keyboard_reserved_now(&right, &bottom);
@@ -4584,6 +4847,89 @@ docked_rect(
 	body->y = DOCK_TOP;
 	body->width = (int32_t)server->width - right - 2 * KWL_GLASS_DOCK_PAD;
 	body->height = (int32_t)server->height - DOCK_TOP - bottom - KWL_GLASS_DOCK_PAD;
+}
+
+/* Gives the output a window is on (plane.h's slot), the anchor for one out of range. */
+static unsigned
+window_slot(
+	const struct kwl_object *surface)
+{
+	/* A slot of the plane, else the anchor. */
+	if (surface->output >= KWL_PLANE_SLOTS)
+		return KWL_PLANE_ANCHOR;
+	return surface->output;
+}
+
+/* Gives an output's rectangle of the plane (the anchor's for one not shown); returns 1 when the output is shown. */
+static int
+output_rect(
+	struct kwl_server *server,
+	unsigned slot,
+	struct kwl_plane_rect *rect)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned count;
+	int shown;
+
+	/* The outputs shown now; one not shown is the anchor. */
+	count = kwl_outputs(server, outputs);
+	shown = 1;
+	if (slot >= count || outputs[slot].width == 0U) {
+		slot = KWL_PLANE_ANCHOR;
+		shown = 0;
+	}
+
+	/* Succeeded: its rectangle. */
+	*rect = outputs[slot];
+	return shown;
+}
+
+/*
+ * Moves a place so that a body of a size ends inside the space of an
+ * output for floating windows (kwl_glass_fit's on the anchor; on a head
+ * its rectangle less the margins, under a title bar at its top,
+ * ws113-p015).
+ */
+static void
+glass_fit_on(
+	struct kwl_server *server,
+	unsigned slot,
+	int32_t width,
+	int32_t height,
+	int32_t *x,
+	int32_t *y)
+{
+	struct kwl_plane_rect output;
+	int32_t right;
+	int32_t bottom;
+	int32_t left;
+	int32_t top;
+	int shown;
+
+	/* The anchor's space. */
+	if (slot == KWL_PLANE_ANCHOR) {
+		kwl_glass_fit(server, width, height, x, y);
+		return;
+	}
+
+	/* A head going away keeps the place (heads.c carries it to the anchor). */
+	shown = output_rect(server, slot, &output);
+	if (!shown)
+		return;
+
+	/* The head's: its right and bottom edges inside, then never above nor left of it. */
+	left = output.x + KWL_GLASS_MARGIN;
+	top = output.y + kwl_output_top(server, slot);
+	right = output.x + (int32_t)output.width - KWL_GLASS_MARGIN;
+	bottom = output.y + (int32_t)output.height - KWL_GLASS_MARGIN;
+	if (*x + width > right)
+		*x = right - width;
+	if (*y + height > bottom)
+		*y = bottom - height;
+	if (*x < left)
+		*x = left;
+	if (*y < top)
+		*y = top;
 }
 
 /* The floating title bar of a body: as wide as it, a gap above it. */
@@ -4612,7 +4958,7 @@ bar_title_slot(
 	/* The bar's height, from the mark's place to past the buttons. */
 	(void)server;
 	slot->x = bar->title_x - 14;
-	slot->y = 0;
+	slot->y = bar->top;
 	slot->width = bar->buttons[BUTTON_CLOSE] + 26 - slot->x;
 	slot->height = KWL_GLASS_BAR;
 }
@@ -4885,7 +5231,7 @@ bar_button_at(
 	int button;
 
 	/* Each button's box in the bar. */
-	if (y < 0 || y >= KWL_GLASS_BAR)
+	if (y < bar->top || y >= bar->top + KWL_GLASS_BAR)
 		return -1;
 	for (button = 0; button < BUTTON_COUNT; button++) {
 		if (x >= bar->buttons[button] - BUTTON_WIDTH / 2 && x < bar->buttons[button] + BUTTON_WIDTH / 2)
@@ -4950,10 +5296,15 @@ window_at(
 	return found;
 }
 
-/* The docked window whose title the system bar shows: the top window, docked and not moving. */
+/*
+ * The docked window whose title an output's bar shows (the system bar's,
+ * or a head's, ws113-p015): the output's top window, docked and not
+ * moving.
+ */
 static struct kwl_object *
 docked_window(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	unsigned slot)
 {
 	struct kwl_object *parent;
 	struct kwl_object *top;
@@ -4963,8 +5314,8 @@ docked_window(
 	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving)
 		return NULL;
 
-	/* The top window (a sheet's parent for a sheet, ws090-p014). */
-	top = kwl_top_window(server);
+	/* The output's top window (a sheet's parent for a sheet, ws090-p014). */
+	top = kwl_output_top_window(server, slot);
 	parent = kwl_sheet_parent(top);
 	if (parent != NULL)
 		top = parent;
@@ -5177,12 +5528,15 @@ sheet_centred(
 	struct kwl_server *server,
 	const struct kwl_object *parent)
 {
+	unsigned slot;
+
 	/* A floating or fullscreen parent hangs its sheet under its title bar. */
 	if (!parent->maximized)
 		return 0;
 
-	/* So does a docked parent left behind in the windowed mode. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+	/* So does a docked parent left behind in the windowed mode of its output. */
+	slot = window_slot(parent);
+	if (server->layout_mode[slot] != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* Succeeded: the sheet is in the middle. */
@@ -5274,13 +5628,6 @@ window_dock(
 	if (surface->fullscreen)
 		return;
 
-	/* A window on a head docks on the anchor, where the system bar is (ws113-p007): it comes back there. */
-	if (surface->output != KWL_PLANE_ANCHOR) {
-		kwl_window_to_output(server, surface, KWL_PLANE_ANCHOR, "dock");
-		restore_x = surface->x;
-		restore_y = surface->y;
-	}
-
 	/* The place and size to come back to (its own, not a made-up one), and where the body is now. */
 	surface->restore_default = 0U;
 	surface->restore_x = restore_x;
@@ -5292,7 +5639,7 @@ window_dock(
 
 	/* Docked: told the docked space, drawn there (a window of one size in its middle). */
 	surface->maximized = 1;
-	docked_rect(server, &to);
+	docked_rect(server, window_slot(surface), &to);
 	surface->x = to.x;
 	surface->y = to.y;
 	surface->window_width = (uint32_t)to.width;
@@ -5323,11 +5670,11 @@ window_dock(
 	 * docked is seen as the owner once it is mapped (layout_front_follow).
 	 */
 	if (surface->mapped && !surface->dead)
-		server->dock_owner[surface->desktop] = surface;
+		server->dock_owner[surface->desktop][window_slot(surface)] = surface;
 
 	/* A window docked makes the session's mode docked (ws142-p008, BUG-217); the log says what every window is now (WS181). */
-	layout_set(server, KWL_LAYOUT_DOCKED, via);
-	layout_log_windows(server);
+	layout_set(server, window_slot(surface), KWL_LAYOUT_DOCKED, via);
+	layout_log_windows(server, window_slot(surface));
 }
 
 /*
@@ -5350,8 +5697,8 @@ window_undock(
 	if (!surface->maximized)
 		return;
 
-	/* The place asked for, inside the space: its title bar never under the system bar (ws035-p138). */
-	kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &x, &y);
+	/* The place asked for, inside the space of its output: its title bar never under the bar (ws035-p138). */
+	glass_fit_on(server, window_slot(surface), (int32_t)surface->restore_width, (int32_t)surface->restore_height, &x, &y);
 
 	/*
 	 * From where the body is drawn now -- the docked space, part of the way
@@ -5447,27 +5794,33 @@ layout_window(
 }
 
 /*
- * Sets the session's layout mode (ws142-p008): every window is drawn again,
- * the other applications' shown or hidden, and the log says why it changed.
+ * Sets an output's layout mode (ws142-p008; each output its own,
+ * ws113-p015): every window is drawn again, the other applications' shown
+ * or hidden, and the log says why it changed (a head's line names it).
  */
 static void
 layout_set(
 	struct kwl_server *server,
+	unsigned slot,
 	unsigned mode,
 	const char *via)
 {
 	/* The same mode: nothing changes. */
-	if (server->layout_mode == mode)
+	if (server->layout_mode[slot] == mode)
 		return;
 
 	/* The new mode, drawn from the next frame (another application's windows show or go). */
-	server->layout_mode = mode;
+	server->layout_mode[slot] = mode;
 	server->dirty = 1;
-	printf("KWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
+	if (slot == KWL_PLANE_ANCHOR) {
+		printf("KWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
+	} else {
+		printf("KWL LAYOUT mode=%s reason=%s output=%u at_ms=%llu\n", kwl_layout_name(mode), via, slot, (unsigned long long)kwl_milliseconds());
+	}
 
-	/* No desktop stays arranged in the docked mode (WS181 I3). */
+	/* No desktop of the output stays arranged in the docked mode (WS181 I3). */
 	if (mode == KWL_LAYOUT_DOCKED)
-		kwl_arrange_end_all(server, "dock");
+		kwl_arrange_end_all(server, slot, "dock");
 }
 
 /*
@@ -5495,7 +5848,7 @@ layout_match(
 
 	/* What the mode makes of it. */
 	layout_window(owner, &window);
-	action = kwl_layout_switch_action(server->layout_mode, &window);
+	action = kwl_layout_switch_action(server->layout_mode[window_slot(owner)], &window);
 
 	/* Docked where it floats, or floating again where it was before it docked. */
 	if (action == KWL_LAYOUT_DOCK) {
@@ -5505,7 +5858,7 @@ layout_match(
 	}
 
 	/* The log says what the switch did (the tests read it). */
-	printf("KWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], kwl_layout_name(server->layout_mode), via, (unsigned long long)owner->client->number);
+	printf("KWL LAYOUT switch surface=%u action=%s mode=%s via=%s client=%llu\n", owner->id, actions[action], kwl_layout_name(server->layout_mode[window_slot(owner)]), via, (unsigned long long)owner->client->number);
 }
 
 /*
@@ -5520,13 +5873,15 @@ layout_hides(
 	const struct kwl_object *surface)
 {
 	struct kwl_object *top;
+	unsigned slot;
 	int desktop_surface;
 	int same_application;
 	int overview;
 	int hidden;
 
-	/* The windowed mode hides nothing (and needs no search for the top window). */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+	/* The windowed mode of the window's output hides nothing (and needs no search for the top window). */
+	slot = window_slot(surface);
+	if (server->layout_mode[slot] != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* Only the desktop shown has a current application; a neighbour sliding in shows whole. */
@@ -5538,8 +5893,8 @@ layout_hides(
 	if (desktop_surface)
 		return 0;
 
-	/* The current application is the top window's client (none: every window is its). */
-	top = kwl_top_window(server);
+	/* The current application is the top window's client on that output (none: every window is its). */
+	top = kwl_output_top_window(server, slot);
 	same_application = 0;
 	if (top == NULL || top->client == surface->client)
 		same_application = 1;
@@ -5558,7 +5913,7 @@ layout_hides(
 	}
 
 	/* The rule (layout.c). */
-	hidden = kwl_layout_hidden(server->layout_mode, same_application, overview);
+	hidden = kwl_layout_hidden(server->layout_mode[slot], same_application, overview);
 
 	/* Succeeded: whether the window is hidden. */
 	return hidden;
@@ -5576,18 +5931,22 @@ layout_takes_press(
 {
 	struct kwl_object *top;
 	struct shell_rect space;
+	unsigned slot;
 
-	/* Only the docked mode hides windows under the docked one. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+	/* Only the docked mode of the output under the pointer hides windows under the docked one. */
+	slot = server->pointer_output;
+	if (slot >= KWL_PLANE_SLOTS)
+		slot = KWL_PLANE_ANCHOR;
+	if (server->layout_mode[slot] != KWL_LAYOUT_DOCKED)
 		return 0;
 
-	/* The window in front (a sheet's parent for a sheet), docked. */
-	top = sheet_owner(kwl_top_window(server));
+	/* The window in front there (a sheet's parent for a sheet), docked. */
+	top = sheet_owner(kwl_output_top_window(server, slot));
 	if (top == NULL || !top->maximized)
 		return 0;
 
 	/* A press outside the docked space is the desktop's. */
-	docked_rect(server, &space);
+	docked_rect(server, slot, &space);
 	if (server->pointer_x < space.x ||
 	    server->pointer_x >= space.x + space.width ||
 	    server->pointer_y < space.y ||
@@ -5599,18 +5958,20 @@ layout_takes_press(
 }
 
 /*
- * Ends the docked mode (WS181, the 2026-10-07 UAT): the window the person
- * brings back (front; NULL when the docked window closed, was minimized or
- * was sent away) floats again at (x, y) with its animation, every other
- * docked window of every desktop -- minimized ones and ones not mapped yet
- * too -- floats again at once, the desktops' owners are forgotten, and the
- * session's mode becomes windowed.  So no window is left docked behind a
+ * Ends an output's docked mode (WS181, the 2026-10-07 UAT; each output its
+ * own, ws113-p015): the window the person brings back (front; NULL when
+ * the docked window closed, was minimized or was sent away) floats again
+ * at (x, y) with its animation, every other docked window of the output on
+ * every desktop -- minimized ones and ones not mapped yet too -- floats
+ * again at once, the desktops' owners there are forgotten, and the
+ * output's mode becomes windowed.  So no window is left docked behind a
  * floating one, and a window hidden by docking shows again while one the
  * person minimized stays minimized.
  */
 static void
 layout_leave(
 	struct kwl_server *server,
+	unsigned slot,
 	struct kwl_object *front,
 	int32_t x,
 	int32_t y,
@@ -5653,6 +6014,10 @@ layout_leave(
 				if (surface->restore_default != pass)
 					continue;
 
+				/* Only the output's. */
+				if (surface->output != slot)
+					continue;
+
 				/* What the end of the mode does to it. */
 				layout_window(surface, &window);
 				action = kwl_layout_leave_action(&window, 0);
@@ -5666,16 +6031,22 @@ layout_leave(
 		}
 	}
 
-	/* No desktop keeps a docked owner in the windowed mode. */
+	/* No desktop keeps a docked owner on the output in the windowed mode. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
-		server->dock_owner[desktop] = NULL;
-		server->dock_owner_gone[desktop] = 0U;
+		server->dock_owner[desktop][slot] = NULL;
+		server->dock_owner_gone[desktop][slot] = 0U;
 	}
 
-	/* The session's mode is windowed; the log says why, and what every window is now (the tests read it). */
-	layout_set(server, KWL_LAYOUT_WINDOWED, via);
-	printf("KWL LAYOUT leave via=%s front=%u quiet=%u\n", via, front_id, quiet);
-	layout_log_windows(server);
+	/* The output's mode is windowed; the log says why, and what every window is now (the tests read it; a head's line names it). */
+	layout_set(server, slot, KWL_LAYOUT_WINDOWED, via);
+	if (slot == KWL_PLANE_ANCHOR) {
+		printf("KWL LAYOUT leave via=%s front=%u quiet=%u\n", via, front_id, quiet);
+	} else {
+		printf("KWL LAYOUT leave via=%s front=%u quiet=%u output=%u\n", via, front_id, quiet, slot);
+	}
+
+	/* What every window of the output is now. */
+	layout_log_windows(server, slot);
 }
 
 /*
@@ -5715,7 +6086,7 @@ window_float_quiet(
 	} else {
 		surface->x = surface->restore_x;
 		surface->y = surface->restore_y;
-		kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &surface->x, &surface->y);
+		glass_fit_on(server, window_slot(surface), (int32_t)surface->restore_width, (int32_t)surface->restore_height, &surface->x, &surface->y);
 	}
 
 	/* The client draws that size; until it does, its docked image is drawn at it (BUG-180). */
@@ -5727,8 +6098,9 @@ window_float_quiet(
 }
 
 /*
- * Follows the docked mode every frame (WS181, replacing ws142-p008's rule
- * that the next window docks): first each desktop's docked owner is
+ * Follows the docked mode of each output every frame (WS181, replacing
+ * ws142-p008's rule that the next window docks; ws113-p015 each output
+ * its own): first each desktop's docked owner is
  * checked -- one closed, minimized, floating or sent away from the desktop
  * shown ends the docked mode, one gone on a desktop not shown is only
  * forgotten, one carried along goes on owning the desktop shown -- and only
@@ -5740,29 +6112,45 @@ static void
 layout_follow(
 	struct kwl_server *server)
 {
+	unsigned slot;
+
+	/* Each output in its docked mode (ws113-p015), the anchor first. */
+	for (slot = 0U; slot < KWL_PLANE_SLOTS; slot++) {
+		if (server->layout_mode[slot] == KWL_LAYOUT_DOCKED)
+			layout_follow_output(server, slot);
+	}
+}
+
+/*
+ * Follows one output's docked mode (layout_follow): its owners on each
+ * desktop checked, then the window in front of the desktop shown there.
+ */
+static void
+layout_follow_output(
+	struct kwl_server *server,
+	unsigned slot)
+{
 	struct kwl_layout_owner seen;
 	struct kwl_object *owner;
 	const char *reason;
 	unsigned desktop;
 	unsigned found;
 
-	/* Only the docked mode has owners. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
-		return;
-
 	/* Each desktop's owner, checked. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
 		/* A desktop with no owner, and none gone since, has nothing to check. */
-		owner = server->dock_owner[desktop];
-		if (owner == NULL && !server->dock_owner_gone[desktop])
+		owner = server->dock_owner[desktop][slot];
+		if (owner == NULL && !server->dock_owner_gone[desktop][slot])
 			continue;
 
-		/* The owner as the rule sees it: destroyed, or as it is now. */
+		/* The owner as the rule sees it: destroyed, or as it is now (one moved to another output is gone from this one). */
 		memset(&seen, 0, sizeof(seen));
-		seen.gone = server->dock_owner_gone[desktop];
+		seen.gone = server->dock_owner_gone[desktop][slot];
 		if (owner != NULL)
 			layout_owner_describe(owner, &seen);
-		server->dock_owner_gone[desktop] = 0U;
+		if (owner != NULL && owner->output != slot)
+			seen.gone = 1U;
+		server->dock_owner_gone[desktop][slot] = 0U;
 
 		/* What the rule finds (layout.c). */
 		found = kwl_layout_owner_check(&seen, desktop, server->desktop, &reason);
@@ -5770,18 +6158,18 @@ layout_follow(
 		/* The docked mode ends, is forgotten on this desktop, or follows the owner to the desktop shown. */
 		switch (found) {
 		case KWL_LAYOUT_OWNER_LEAVE:
-			layout_leave(server, NULL, 0, 0, reason);
+			layout_leave(server, slot, NULL, 0, 0, reason);
 			return;
 		case KWL_LAYOUT_OWNER_FORGET:
 			/* An owner gone between desktops not shown has no reason of its own. */
 			if (reason == NULL)
 				reason = "away";
-			server->dock_owner[desktop] = NULL;
+			server->dock_owner[desktop][slot] = NULL;
 			printf("KWL LAYOUT owner desktop=%u surface=0 forgotten=%s\n", desktop + 1U, reason);
 			break;
 		case KWL_LAYOUT_OWNER_MOVED:
-			server->dock_owner[desktop] = NULL;
-			server->dock_owner[owner->desktop] = owner;
+			server->dock_owner[desktop][slot] = NULL;
+			server->dock_owner[owner->desktop][slot] = owner;
 			printf("KWL LAYOUT owner desktop=%u surface=%u carried\n", owner->desktop + 1U, owner->id);
 			break;
 		default:
@@ -5790,7 +6178,7 @@ layout_follow(
 	}
 
 	/* The window in front of the desktop shown. */
-	layout_front_follow(server);
+	layout_front_follow(server, slot);
 }
 
 /* Describes a desktop's docked owner to the owner's rule (layout.c): mapped, minimized, docked, fullscreen, its desktop. */
@@ -5822,7 +6210,8 @@ layout_owner_describe(
  */
 static void
 layout_front_follow(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	unsigned slot)
 {
 	struct kwl_layout_window window;
 	struct kwl_object *top;
@@ -5844,8 +6233,8 @@ layout_front_follow(
 	if (server->drag != NULL || server->pull != NULL)
 		return;
 
-	/* The window in front (a sheet's parent for a sheet), shown with an image. */
-	top = sheet_owner(kwl_top_window(server));
+	/* The window in front on the output (a sheet's parent for a sheet), shown with an image. */
+	top = sheet_owner(kwl_output_top_window(server, slot));
 	if (top == NULL || top->dead || !top->mapped || top->current == NULL)
 		return;
 
@@ -5860,11 +6249,11 @@ layout_front_follow(
 
 	/* A docked window in front owns the desktop. */
 	if (top->maximized) {
-		if (server->dock_owner[server->desktop] == top)
+		if (server->dock_owner[server->desktop][slot] == top)
 			return;
-		server->dock_owner[server->desktop] = top;
+		server->dock_owner[server->desktop][slot] = top;
 		printf("KWL LAYOUT owner desktop=%u surface=%u client=%llu\n", server->desktop + 1U, top->id, (unsigned long long)top->client->number);
-		layout_log_windows(server);
+		layout_log_windows(server, slot);
 		return;
 	}
 
@@ -5874,23 +6263,25 @@ layout_front_follow(
 
 	/* What a switch to it would do; only a floating window that docks changes. */
 	layout_window(top, &window);
-	action = kwl_layout_switch_action(server->layout_mode, &window);
+	action = kwl_layout_switch_action(server->layout_mode[slot], &window);
 	if (action != KWL_LAYOUT_DOCK)
 		return;
 
 	/* Docked where it floats, owning the desktop, and the log says why. */
 	window_dock(server, top, top->x, top->y, "front");
-	server->dock_owner[server->desktop] = top;
+	server->dock_owner[server->desktop][slot] = top;
 	printf("KWL LAYOUT front surface=%u action=dock client=%llu\n", top->id, (unsigned long long)top->client->number);
 }
 
 /*
- * Logs what each window of the desktop shown is (WS181, for the tests): how
- * many float, are docked, hidden by docking, minimized or fullscreen.
+ * Logs what each window of the desktop shown on an output is (WS181, for
+ * the tests): how many float, are docked, hidden by docking, minimized or
+ * fullscreen (a head's line names it, ws113-p015).
  */
 static void
 layout_log_windows(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	unsigned slot)
 {
 	unsigned counts[KWL_LAYOUT_STATE_FULLSCREEN + 1U];
 	struct kwl_layout_window window;
@@ -5901,9 +6292,9 @@ layout_log_windows(
 	int desktop_surface;
 	int front;
 
-	/* The application in front: the top window's (its minimized windows are not in front). */
+	/* The application in front: the output's top window's (its minimized windows are not in front). */
 	memset(counts, 0, sizeof(counts));
-	top = kwl_top_window(server);
+	top = kwl_output_top_window(server, slot);
 
 	/* Each mapped window without a parent on the desktop shown, counted by its state. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -5917,7 +6308,8 @@ layout_log_windows(
 			    surface->role == NULL ||
 			    surface->cursor_role ||
 			    surface->parent_window != NULL ||
-			    surface->desktop != server->desktop)
+			    surface->desktop != server->desktop ||
+			    surface->output != slot)
 				continue;
 
 			/* Not the desktop's icons. */
@@ -5930,16 +6322,19 @@ layout_log_windows(
 			if (top == NULL || top->client == surface->client)
 				front = 1;
 			layout_window(surface, &window);
-			state = kwl_layout_state(server->layout_mode, &window, (int)surface->minimized, front);
+			state = kwl_layout_state(server->layout_mode[slot], &window, (int)surface->minimized, front);
 			counts[state]++;
 		}
 	}
 
-	/* The summary. */
-	printf("KWL LAYOUT windows desktop=%u mode=%s floating=%u docked=%u dock_hidden=%u minimized=%u fullscreen=%u\n",
-	       server->desktop + 1U, kwl_layout_name(server->layout_mode),
+	/* The summary (the anchor's line as before; a head's names it). */
+	printf("KWL LAYOUT windows desktop=%u mode=%s floating=%u docked=%u dock_hidden=%u minimized=%u fullscreen=%u",
+	       server->desktop + 1U, kwl_layout_name(server->layout_mode[slot]),
 	       counts[KWL_LAYOUT_STATE_FLOATING], counts[KWL_LAYOUT_STATE_DOCKED], counts[KWL_LAYOUT_STATE_DOCK_HIDDEN],
 	       counts[KWL_LAYOUT_STATE_MINIMIZED], counts[KWL_LAYOUT_STATE_FULLSCREEN]);
+	if (slot != KWL_PLANE_ANCHOR)
+		printf(" output=%u", slot);
+	printf("\n");
 }
 
 /*
@@ -5961,12 +6356,12 @@ docked_body(
 	int centred;
 
 	/* The docked space. */
-	docked_rect(server, body);
+	docked_rect(server, window_slot(surface), body);
 
 	/* Only a docked window of one size is centred. */
 	layout_window(surface, &window);
 	window.docked = 1U;
-	centred = kwl_layout_centred(server->layout_mode, &window);
+	centred = kwl_layout_centred(server->layout_mode[window_slot(surface)], &window);
 	if (!centred)
 		return;
 
@@ -5999,18 +6394,20 @@ window_centred_over(
 	struct shell_rect body;
 	struct shell_rect space;
 	struct kwl_object *parent;
+	unsigned slot;
 
 	/* A docked window: centred when its body is smaller than the docked space. */
 	if (surface->maximized) {
 		docked_body(server, surface, &body);
-		docked_rect(server, &space);
+		docked_rect(server, window_slot(surface), &space);
 		if (body.width != space.width || body.height != space.height)
 			return 1;
 		return 0;
 	}
 
-	/* Otherwise only the docked mode centres anything. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+	/* Otherwise only the docked mode of its output centres anything. */
+	slot = window_slot(surface);
+	if (server->layout_mode[slot] != KWL_LAYOUT_DOCKED)
 		return 0;
 
 	/* A dialog or a sheet over a docked parent that is shown. */
@@ -6065,9 +6462,9 @@ bar_dock_follow(
 	float t;
 	float home;
 
-	/* Docked: a docked window on top, not fullscreen, outside App Home and Wiseview. */
+	/* Docked: a docked window on top of the anchor (a head's are in its own bar, ws113-p015), not fullscreen, outside App Home and Wiseview. */
 	target = 0.0f;
-	top = sheet_owner(kwl_top_window(server));
+	top = sheet_owner(kwl_output_top_window(server, KWL_PLANE_ANCHOR));
 	home = kwl_home_progress(server);
 	if (top != NULL && top->maximized && !top->fullscreen && home <= 0.0f && server->wiseview <= 0.0f && !server->wiseview_gesture)
 		target = 1.0f;
@@ -6110,14 +6507,14 @@ dock_restore_default(
 	int32_t restore_y;
 
 	/* Seven tenths of the docked space. */
-	docked_rect(server, &docked);
+	docked_rect(server, window_slot(surface), &docked);
 	surface->restore_width = (uint32_t)(docked.width * 7 / 10);
 	surface->restore_height = (uint32_t)(docked.height * 7 / 10);
 
 	/* In its middle, inside the space for floating windows. */
 	restore_x = docked.x + (docked.width - (int32_t)surface->restore_width) / 2;
 	restore_y = docked.y + (docked.height - (int32_t)surface->restore_height) / 2;
-	kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
+	glass_fit_on(server, window_slot(surface), (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
 
@@ -6265,7 +6662,7 @@ click_docked_third(
 		return 0;
 
 	/* The window floats where it was and goes to the back, the next one coming forward. */
-	layout_leave(server, surface, surface->restore_x, surface->restore_y, "triple-click");
+	layout_leave(server, window_slot(surface), surface, surface->restore_x, surface->restore_y, "triple-click");
 	window_lower(server, surface, "triple-click");
 
 	/* Succeeded: the press was the triple click's. */
@@ -6442,7 +6839,7 @@ bar_press(
 	}
 
 	/* Otherwise only a docked window acts. */
-	surface = docked_window(server);
+	surface = docked_window(server, KWL_PLANE_ANCHOR);
 	if (surface == NULL)
 		return 1;
 
@@ -6456,7 +6853,7 @@ bar_press(
 
 	/* Restore brings it back where it was. */
 	if (pressed == BUTTON_MAXIMIZE) {
-		layout_leave(server, surface, surface->restore_x, surface->restore_y, "button");
+		layout_leave(server, window_slot(surface), surface, surface->restore_x, surface->restore_y, "button");
 		return 1;
 	}
 
@@ -6473,7 +6870,7 @@ bar_press(
 	/* A double click brings it back where it was. */
 	second = double_click(server, surface);
 	if (second) {
-		layout_leave(server, surface, surface->restore_x, surface->restore_y, "double-click");
+		layout_leave(server, window_slot(surface), surface, surface->restore_x, surface->restore_y, "double-click");
 		return 1;
 	}
 
@@ -7606,7 +8003,7 @@ kwl_glass_apps_room(
 
 	/* A fullscreen window, or a docked window's title. */
 	cover = bar_cover(server);
-	docked = docked_window(server);
+	docked = docked_window(server, KWL_PLANE_ANCHOR);
 	if (cover != NULL || docked != NULL)
 		return 0;
 
@@ -7706,7 +8103,7 @@ kwl_glass_open_docked(
 
 	/* Docked when the session's mode is and the window is one that docks. */
 	layout_window(surface, &window);
-	opens = kwl_layout_opens_docked(server->layout_mode, &window);
+	opens = kwl_layout_opens_docked(server->layout_mode[window_slot(surface)], &window);
 	if (!opens)
 		return 0;
 
@@ -7714,7 +8111,7 @@ kwl_glass_open_docked(
 	dock_restore_default(server, surface);
 
 	/* Docked: the first configure gives the docked space and the maximized state. */
-	docked_rect(server, &docked);
+	docked_rect(server, window_slot(surface), &docked);
 	surface->maximized = 1;
 	surface->x = docked.x;
 	surface->y = docked.y;
@@ -7763,7 +8160,7 @@ kwl_glass_unfullscreen_docks(
 
 	/* Docked when the mode is and the window is one that docks. */
 	layout_window(surface, &window);
-	docks = kwl_layout_unfullscreen_docked(server->layout_mode, &window);
+	docks = kwl_layout_unfullscreen_docked(server->layout_mode[window_slot(surface)], &window);
 	if (!docks)
 		return 0;
 
@@ -7780,7 +8177,7 @@ kwl_glass_unfullscreen_docks(
 	}
 
 	/* Docked: the space under the system bar, less what the on-screen keyboard's panel takes. */
-	docked_rect(server, &docked);
+	docked_rect(server, window_slot(surface), &docked);
 	surface->maximized = 1;
 	surface->x = docked.x;
 	surface->y = docked.y;
@@ -7888,7 +8285,7 @@ kwl_glass_switch_place(
 		return 0;
 
 	/* In the middle with a docked window. */
-	docked = docked_window(server);
+	docked = docked_window(server, KWL_PLANE_ANCHOR);
 	*placement = KWL_SWITCHER_BAR;
 	if (docked != NULL)
 		*placement = KWL_SWITCHER_CENTER;
@@ -8370,7 +8767,7 @@ gesture_fullscreen(
 		return 0;
 
 	/* Docked from now on: the window leaves fullscreen into the docked space (kwl_glass_unfullscreen_docks). */
-	layout_set(server, KWL_LAYOUT_DOCKED, gesture_name(gesture));
+	layout_set(server, window_slot(top), KWL_LAYOUT_DOCKED, gesture_name(gesture));
 	error = kwl_window_leave_fullscreen(top);
 	printf("KWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", top->id, gesture_name(gesture), error, (unsigned long long)top->client->number);
 
@@ -8543,17 +8940,19 @@ pulled_rect(
 	const struct kwl_object *surface,
 	struct shell_rect *body)
 {
+	struct kwl_plane_rect output;
 	struct shell_rect docked;
 	struct shell_rect own;
 	float t;
 
-	/* The docked space. */
-	docked_rect(server, &docked);
+	/* The docked space of its output. */
+	docked_rect(server, window_slot(surface), &docked);
+	(void)output_rect(server, window_slot(surface), &output);
 
-	/* Its own size, placed as the pull leaves it (the same part of the title under the pointer). */
+	/* Its own size, placed as the pull leaves it (the same part of the title under the pointer, across its output). */
 	own.width = (int32_t)surface->restore_width;
 	own.height = (int32_t)surface->restore_height;
-	own.x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
+	own.x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * (server->pointer_x - output.x) / (int32_t)output.width);
 	own.y = server->pointer_y + KWL_GLASS_GAP + KWL_GLASS_TITLE / 2;
 
 	/* Eased out along the pull. */
@@ -8590,7 +8989,7 @@ pull_back(
 	body_rect(server, surface, &from);
 	server->pull = NULL;
 	server->pull_distance = 0;
-	docked_rect(server, &to);
+	docked_rect(server, window_slot(surface), &to);
 	memcpy(server->anim_from, &from, sizeof(server->anim_from));
 	memcpy(server->anim_to, &to, sizeof(server->anim_to));
 	server->anim = surface;
@@ -8676,6 +9075,7 @@ static int
 glass_motion_take(
 	struct kwl_server *server)
 {
+	struct kwl_plane_rect output;
 	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	struct kwl_object *surface;
 	int32_t lowest;
@@ -8807,9 +9207,10 @@ glass_motion_take(
 		 * there), not from the docked space (BUG-180), so the pull's
 		 * distance is forgotten only after.
 		 */
-		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
+		(void)output_rect(server, window_slot(surface), &output);
+		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * (server->pointer_x - output.x) / (int32_t)output.width);
 		y = server->pointer_y + KWL_GLASS_GAP + KWL_GLASS_TITLE / 2;
-		layout_leave(server, surface, x, y, "pull");
+		layout_leave(server, window_slot(surface), surface, x, y, "pull");
 		server->pull_distance = 0;
 		server->pull = NULL;
 		server->drag = surface;
@@ -8832,8 +9233,9 @@ glass_motion_take(
 		return 1;
 	}
 
-	/* A move that has been out of the system bar (or off the anchor) may dock the window by a release back in it. */
-	if (server->pointer_y >= KWL_GLASS_BAR || server->pointer_output != KWL_PLANE_ANCHOR)
+	/* A move that has been out of the bar of the output the pointer is on (or crossed to another) may dock the window by a release back in it. */
+	(void)kwl_outputs(server, outputs);
+	if (server->pointer_y >= outputs[server->pointer_output].y + KWL_GLASS_BAR || server->pointer_output != surface->output)
 		server->drag_left_bar = 1U;
 
 	/*

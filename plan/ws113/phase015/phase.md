@@ -44,3 +44,20 @@ Q1 の ACK: 範囲 1〜5、1 → 4 → 2・3 の順。2 の head の帯に出す
 - build: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p005.mk build/p1-wl/bin/wayland` exit 0、warning 0。`make keiland-linux`（gcc）warning・error 0。
 - host: `host-plane.sh` PASS（plain、ASan/UBSan）、`host-output-switch.sh` PASS。style-check は変えた file で増えない（shell.c 5→5、home.c 3→3、heads.c・toplevel.c 0）。
 - 未実施: QEMU（T1、範囲 2・3 の後にまとめて依頼）: Super+Shift+Right で head 1 へ移した窓で App Home を開閉して head の PNG（stage だけ・閉じて窓が戻る）。head の縁の drag は実機（5330）。
+
+### 3. display ごとの状態（docked・floating・整列）と 2. head の bar（2026-10-08、P1）
+
+範囲 2 の head の帯に出す物は Q1 がユーザーに確認中。今の案（docked の窓の title bar だけ、時計・status・App Home・通知・desktops の pill は anchor だけ）で作った。答えが変われば直す。
+
+- 状態を出力ごとに（`kwl.h`）: `layout_mode[KWL_PLANE_SLOTS]`（docked・windowed）、`dock_owner[desktop][slot]`・`dock_owner_gone[desktop][slot]`。整列（`arrange-shell.c`）は `arrange_desktops[desktop][output]`、swap・join・menu に output。新しい `kwl_output_top_window(server, slot)`（display.c）。
+- shell.c: `layout_set`・`layout_leave`・`layout_front_follow`・`layout_log_windows` が slot を取り、`layout_follow` は docked の出力ごとに `layout_follow_output`。`layout_hides`・`layout_takes_press`・`docked_window`・`bar_dock_follow`・unmaximize の「前の窓」はその出力の top の窓で決める（anchor の docked が head の窓を隠さない）。`docked_rect(slot)` は head では head の矩形の bar の下、`glass_fit_on(slot)` は head の中に収める（undock・float-quiet・dock の戻り先）。`kwl_glass_work_area(slot)`・`kwl_glass_leave_quiet(slot)`・`kwl_arrange_end_all(output)`。anchor の log の行は今までと同じで、head の行だけ ` output=N` を付ける。
+- head への dock: `window_dock` は anchor へ移さない（p007 の why=dock を除いた）。title bar の double click・最大化のボタン・client の maximize・head の bar への drag（`kwl_glass_toplevel_move_end` は pointer の出力の bar で、別の出力から来た窓は放した所を戻り先に）で、その head で docked。pull（`pulled_rect`・pull の完了）は窓の出力の幅で。
+- head の bar（2）: `kwl_output_top` は head も system bar と同じ（bar＋間＋title bar）。`head_bar_layout`・`draw_head_bar`（strip、docked の窓の mark・title・menu か controls（`kwl_titlebar_draw`、area は head の上端）・ボタンの pill）・`head_bar_press`（閉じる・戻す・最小化、title の double click で戻す、press は pull に）。`kwl_glass_draw_head` が窓の上に bar、その上に popup と shell の menu（`kwl_menu_draw_popups`）。menu の popup の置き場（menu-shell.c `shell_layout`）は開いた点の出力の中に。docking の title bar の滑りは head の bar の位置へ（`bar_title_slot` は bar の top、head の pass も bar を渡す。前は NULL で、head の窓の dock の動きで落ちる所だった）。`draw_bar_strip`・`draw_bar_group_at` は位置を取る。
+- head が消える時（抜去・lost・mirror）: その出力の docked と整列を先に終え（`kwl_glass_leave_quiet`・`kwl_arrange_end_all`、why=retreat・mode）、窓を anchor へ。head が動く時は戻り先（restore）も一緒に動かす。
+- 制限: head の整列は状態は持つが始める口が無い（menu は anchor の pill から anchor の窓だけ。head の帯に pill を出すかはユーザーの答え次第）。fullscreen は今までどおり anchor へ移してから（protocol.c）。Wiseview・App Home・切り替えは anchor だけ。head の bar の dock の hint（drag の間の空間の絵）は無く、strip が明るくなるだけ。
+
+### 確認（host・build、範囲 1〜4）
+
+- build: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p005.mk build/p1-wl/bin/wayland`（`ZEDBSD_TEST_SCREEN_CAPTURE=y` も）exit 0、warning 0。`make keiland-linux` の gcc・clang warning・error 0。
+- host: `host-plane.sh`・`host-output-switch.sh`・`host-arrange.sh` PASS（plain、ASan/UBSan）。style-check は変えた file で HEAD と同じ数（shell.c・arrange-shell.c の残りは前からの物）。
+- QEMU の試験（T1 へ）: 新しい `plan/ws113/tests/displays-p015.sh`（image は新しい `config-amd64-p015.mk` = p006 ＋ wltest）。head 1 へ移した窓が head の bar の下、anchor で dock しても head の窓は隠れず anchor の数え方だけ、anchor の整列は anchor の窓だけ、App Home の間 head は stage だけ、抜去で戻る、PNG（head1-bar・head1-anchor-docked・home-head1 ほか）。head の上の press（head の bar・縁の resize・head での dock）は QEMU の tablet が anchor だけなので実機（5330、ユーザー）。

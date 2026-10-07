@@ -1427,10 +1427,14 @@ shell_layout(
 	unsigned level)
 {
 	const struct kwl_menu_item *rows[SHELL_ROWS];
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	const struct kwl_plane_rect *output;
 	struct shell_popup *popup;
 	char shortcut[48];
 	unsigned count;
 	unsigned index;
+	unsigned shown;
+	unsigned slot;
 	int32_t label;
 	int32_t hint;
 	int32_t width;
@@ -1469,10 +1473,17 @@ shell_layout(
 	/* Its height holds every row. */
 	popup->height = height;
 
+	/* The output it was opened on (a head's too, ws113-p015). */
+	shown = kwl_outputs(server, outputs);
+	slot = kwl_output_at(server, popup->anchor_x, popup->anchor_y);
+	if (slot >= shown || outputs[slot].width == 0U)
+		slot = KWL_PLANE_ANCHOR;
+	output = &outputs[slot];
+
 	/* Where it was opened from, pushed back from the right edge (a submenu flips to the left of its parent). */
 	popup->x = popup->anchor_x;
 	popup->y = popup->anchor_y;
-	right = (int32_t)server->width - POPUP_MARGIN;
+	right = output->x + (int32_t)output->width - POPUP_MARGIN;
 	if (popup->x + popup->width > right) {
 		/* Back inside the output. */
 		popup->x = right - popup->width;
@@ -1483,17 +1494,17 @@ shell_layout(
 	}
 
 	/* Never past the left edge. */
-	if (popup->x < POPUP_MARGIN)
-		popup->x = POPUP_MARGIN;
+	if (popup->x < output->x + POPUP_MARGIN)
+		popup->x = output->x + POPUP_MARGIN;
 
 	/* And from the bottom. */
-	bottom = (int32_t)server->height - POPUP_MARGIN;
+	bottom = output->y + (int32_t)output->height - POPUP_MARGIN;
 	if (popup->y + popup->height > bottom)
 		popup->y = bottom - popup->height;
 
-	/* Never over the system bar. */
-	if (popup->y < KWL_GLASS_BAR + 4)
-		popup->y = KWL_GLASS_BAR + 4;
+	/* Never over the bar (the system bar, or a head's). */
+	if (popup->y < output->y + KWL_GLASS_BAR + 4)
+		popup->y = output->y + KWL_GLASS_BAR + 4;
 }
 
 /* Finds the row of a popup at a point, and the row's top; NULL off its rows. */
