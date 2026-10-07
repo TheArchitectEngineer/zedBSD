@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（クリック、WS178）:「完全に分ける」（libGL.so は GL だけ、glX* は xserver の package の libGLX.so だけ、外から移植する X の GL の program は link の修正が要る）。T1 は再起動し、削除は全ての担当で禁止・Q1 が行う（plan/agents/protocol.md 末尾）。
 - 2026-10-07 ユーザー（クリック）: WS181 は「ベータ2、UAT として優先」、整列の形は 5 つ（水平に等分、垂直に等分、右に 1 つ・左に縦の分割、左に 1 つ・右に縦の分割、格子）。WS180（Emacs の graphical な editor）と WS117（Qt6 の Linux の互換）は「どちらもベータ3 以降」。WS178 の libGL・libGLX の分割はユーザーが互換性の説明を求めた（Q1 が回答）。
 - 2026-10-07 ユーザーの UAT（挙動の調整、4 点: docked から floating の時の他の窓、docking の隠れと最小化の区別、App Home を独立のモードに・gesture の遷移、整列のメニューと整列モード）→ [WS181](ws181/ws.md)。M-3（5330 の iGPU を host の i915 に付け替えて正解値を採る）の質問はユーザーが閉じた（未決、指示を待つ）。
 - 2026-10-07 ユーザー（クリック、WS179 design.md §10）: 1 既定の blue は「今のまま、例外として記録」（0x2f7cf6 と白い文字、contrast 3.94）、b compositor の 0x4085fa は accent に「揃える」、c「desktop の icon だけ従う」（greeter は既定の青）、a・d・e は「3 つともこのまま」（red・green はそのまま、yellow は light 0xa48207・dark 0xf5c518、dark の purple・pink・red・graphite の主の button の文字は黒）。

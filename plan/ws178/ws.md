@@ -15,7 +15,7 @@ Primary Milestone: MG006
 - 今の package `libgl`（label「OpenGL and GLX」、menu の X11、`userland/x11/libGL/`）を分ける。
   - OpenGL（libGL の GL の部分: gl3.c・fixed.c・immediate.c・shaders）は menu の Desktop の「OpenGL」へ（tree も `userland/desktop/` の下へ移す）。
   - GLX（glx.c）は Desktop の「X11 server for the compositor」（`xserver`、`userland/desktop/xserver/`）の library の 1 つにする（xserver を選ぶと GLX も入る）。
-- glxtest・zgears など libGL を要る X11 の program の依存（REQUIRE）と link を新しい置き場所に合わせる。libGL.so の soname・export（exports.map）は変えない（既存の program の ABI を保つ）。
+- glxtest・zgears など libGL を要る X11 の program の依存（REQUIRE）と link を新しい置き場所に合わせる。（2026-10-07 ユーザーの決定「完全に分ける」で置き換え）libGL.so は GL だけ、glX* は libGLX.so（xserver の package）だけにする。tree の program は -lGL -lGLX に直し、外から移植する X の GL の program は link の修正が要ることを文書に書く。
 - vmunix.mk（libGL の link の規則）・config の program の一覧・menuconfig の host 試験を追従する。
 
 ## Phase
