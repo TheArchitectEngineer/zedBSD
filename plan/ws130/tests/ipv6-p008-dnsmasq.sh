@@ -8,7 +8,8 @@
 #  1. The second interface (MAC 52:54:00:33:00:02) up; networkd restarted so that it solicits a router there.
 #  2. ifconfig IF: an "inet6 fd00:6::1.. prefixlen 128 dhcp" address (networkd ran dhcpc -6 on the M flag), and a
 #     SLAAC one "inet6 fd00:6::... prefixlen 64 autoconf".
-#  3. /var/db/dhcpc/IF.dhcp6: "mode stateful", "renew 60"; networkd ran dhcpc -6 on the M flag: dnsmasq's log has a
+#  3. /var/db/dhcpc/IF.dhcp6: "mode stateful", "renew N" with N from 1 to 60 (dnsmasq's T1 is half the lease time
+#     left, 60 for a new lease and less for one networkd renews after its restart); networkd ran dhcpc -6 on the M flag: dnsmasq's log has a
 #     DHCPSOLICIT and a DHCPREPLY before the test runs dhcpc itself (networkd's own lines go to the console, not read).
 #  4. ping -c 1 fd00:6::1 (the namespace's address).
 #  5. /etc/resolv.conf: "nameserver fd00:6::53" and "search zb6.test" (RDNSS or DHCPv6).
@@ -91,7 +92,9 @@ leased=$(sed -n 's/.*inet6 \(fd00:6::1[0-9a-f]*\) prefixlen 128 dhcp$/\1/p' "$ou
 # 3. The record, and networkd's exchange as dnsmasq saw it.
 guest "cat /var/db/dhcpc/$iface.dhcp6" > "$out/record.txt"
 cat "$out/record.txt"
-grep -q '^mode stateful$' "$out/record.txt" && grep -q '^renew 60$' "$out/record.txt" && ok "record: stateful, renew 60" ||
+renew=$(sed -n 's/^renew \([0-9]*\)$/\1/p' "$out/record.txt")
+grep -q '^mode stateful$' "$out/record.txt" && [ -n "$renew" ] && [ "$renew" -ge 1 ] && [ "$renew" -le 60 ] &&
+    ok "record: stateful, renew $renew" ||
     bad "record"
 grep -q 'DHCPSOLICIT(zbv1)' "$out/dnsmasq.log" && grep -q 'DHCPREPLY(zbv1) fd00:6::' "$out/dnsmasq.log" &&
     ok "networkd ran dhcpc -6 on the M flag" || bad "networkd on the M flag"
