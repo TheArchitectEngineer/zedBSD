@@ -3359,6 +3359,8 @@ i915_display_other_query(
 		if (limited)
 			request->flags |= GPU_DISPLAY_LIMITED;
 	}
+
+	/* One plane, the formats and the frame size of every output. */
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = I915_DISPLAY_MAX_FRAME_BYTES;

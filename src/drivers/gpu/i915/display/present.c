@@ -1306,6 +1306,7 @@ i915_present_window_serve(
 	/* A second output kept over the last window's end comes back with its picture (ws113-p011). */
 	drv_i915_head_resume(display);
 
+	/* Serves everything until the window is to be left. */
 	drv_i915_worker_serve_window(display->device);
 
 	/* A lit second output stops before the resident output does, its picture kept for the next window (ws113-p011); its lease stays. */
@@ -1654,6 +1655,7 @@ i915_present_head(
 
 	mutex_unlock(&display->rd.mutex);
 
+	/* Refused without it. */
 	if (resident_owner == NULL)
 		return ENXIO;
 
@@ -1672,11 +1674,13 @@ i915_present_head(
 		return ENXIO;
 	}
 
+	/* Another generation: the compositor opens the display again. */
 	if (request->generation != found.generation) {
 		mutex_unlock(&head->mutex);
 		return ESTALE;
 	}
 
+	/* Unplugged: the output is lost. */
 	if (!found.connected) {
 		mutex_unlock(&head->mutex);
 		return ENXIO;
@@ -1848,6 +1852,7 @@ i915_present_window_retry(
 			buffers_free = 0;
 	}
 
+	/* Buffers the display may still read: not tried again, nor spared. */
 	if (!buffers_free)
 		return 0;
 

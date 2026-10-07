@@ -647,6 +647,7 @@ drv_i915_head_stop(
 			i915_head_buffers_release(display, 1);
 			head->dormant = 0;
 		}
+
 		return;
 	}
 
@@ -719,6 +720,10 @@ drv_i915_head_resume(
 
 	/* A head that may not be lit waits for its release, which gives its buffers back. */
 	if (!may)
+		return;
+
+	/* A run that left no DBUF room for the head's pipe: the head's next frame lights the resident output again first. */
+	if ((display->window.run_pipes & (1U << head->pipe)) == 0U)
 		return;
 
 	/* Its connector, still connected, of the claim's generation (else the compositor opens it again). */
@@ -813,6 +818,8 @@ i915_head_light_once(
 	int params_error;
 	int preflight_error;
 	int fill_error;
+	const char *first_error;
+	unsigned held;
 	int buffers_error;
 	int prepare_error;
 	int begin_error;
@@ -904,10 +911,13 @@ i915_head_light_once(
 	/* What the failed enable left running is stopped; a crtc that never ran only gives its buffer back. */
 	drv_i915_lcd_modeset_status(display, &status);
 	(void)drv_i915_lcd_modeset_select(display, I915_HEAD_RESIDENT_SCREEN);
+	first_error = "-";
+	if (status.first_error != NULL)
+		first_error = status.first_error;
 	kern_logf("i915: display head: the enable failed (rc=%d, crtc active %d, first error %s)\n",
 	    *enable_rc,
 	    status.crtc_active,
-	    status.first_error != NULL ? status.first_error : "-");
+	    first_error);
 	stop_error = 0;
 	if (status.crtc_active) {
 		head->up = 1;
@@ -922,7 +932,8 @@ i915_head_light_once(
 
 	/* The buffers back, or kept for ever when the stop was not confirmed. */
 	i915_head_buffers_release(display, stop_error == 0);
-	if (stop_error != 0 || i915_head_held_refs(&head->k) != 0U)
+	held = i915_head_held_refs(&head->k);
+	if (stop_error != 0 || held != 0U)
 		head->broken = 1;
 
 	/* The head is not lit. */

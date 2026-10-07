@@ -982,6 +982,7 @@ drv_i915_lcd_modeset_commit_disable(
 		keep_pipes |= other->also_active_pipes;
 	}
 
+	/* The new DBUF state with only the pipes that stay. */
 	drv_i915_lcd_ms_wm_compute_off(display->wm_world, ms, keep_pipes);
 
 	/* The new state of this commit: the crtc inactive. */
@@ -1406,6 +1407,7 @@ drv_i915_lcd_modeset_flip_wait_screen(
 	if (screen >= I915_LCD_MS_SCREENS)
 		return EINVAL;
 
+	/* The named screen's object and hooks. */
 	world = display->lcd_world;
 	ms = &world->ms_pool[screen];
 	ms_ops = world->ms_ops_pool[screen];
@@ -1847,6 +1849,7 @@ drv_i915_lcd_kernel_resident_run(
 		return EBUSY;
 	}
 
+	/* Buffers of an earlier run that were not kept for this one are retained. */
 	if (!kept &&
 	    (display->resident_buf[0].state != I915_SCANOUT_NONE ||
 	     display->resident_buf[1].state != I915_SCANOUT_NONE)) {
@@ -4140,6 +4143,8 @@ i915_resident_hdmi_cfg(
 	const struct i915_vbt_encoder *encoder;
 	const struct i915_lcd_mode *mode;
 
+	UNUSED_PARAMETER(display);
+
 	/* Port B, pipe and transcoder B, DPLL 0, and the port's saved reversal and lane bits. */
 	cfg->output_hdmi = 1;
 	cfg->port = I915_OUTPUT_HDMI_PORT;
@@ -4159,8 +4164,6 @@ i915_resident_hdmi_cfg(
 		cfg->vbt_hdmi_level_shift = encoder->hdmi_level_shift;
 
 	/* Logs what the run drives. */
-	UNUSED_PARAMETER(display);
-
 	mode = &output->state.mode;
 	kern_logf("i915: resident display: HDMI on port %d, pipe %d, DVI mode: %ux%u %d kHz | PLL cfgcr0=0x%08x cfgcr1=0x%08x | VBT level shift %d | saved DDI_BUF_CTL bits 0x%x\n",
 	    cfg->port,

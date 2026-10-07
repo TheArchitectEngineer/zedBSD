@@ -1460,6 +1460,7 @@ i915_worker_run_sync_item(
 		} else {
 			error = drv_i915_present_blob_frame(device, item->present);
 		}
+
 		break;
 	case I915_WORKER_SYNC_RELEASE:
 		/* The second output stops at once, without a hold (D-RELEASE); a resident release has nothing left to do. */
