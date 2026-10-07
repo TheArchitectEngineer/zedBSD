@@ -54,6 +54,7 @@ SHADERS = (
     ('killoop.frag', 'fragment', 'i915_vke2_killoop_frag'),
     ('noinput.vert', 'vertex', 'i915_vke2_noinput_vert'),
     ('noinput.frag', 'fragment', 'i915_vke2_noinput_frag'),
+    ('int16.frag', 'fragment', 'i915_vke2_int16_frag'),
 )
 
 SIZE = 64
@@ -719,6 +720,73 @@ def edge_pixel(x, y):
     return u32(r)
 
 
+# The int16 step's 32-bit values, truncated to 16 bits by the shader (int16.frag, ws031-p039).
+INT16_BOUNDARY = (0, 1, -1, 0x12348000, 0x00017fff, 0x7fff, -32768, 0x0003fffe, 2,
+                  -7, 0x10000, 0xffff, 0x2345ff9c, 100, -100, 0x7ffe0005)
+INT16_TABLE = (11, 22, 33, 44)
+
+
+def s16(v):
+    """The signed 16-bit integer of an integer's low 16 bits."""
+    v &= 0xffff
+    return v - 0x10000 if v & 0x8000 else v
+
+
+def u16(v):
+    """The unsigned 16-bit integer of an integer's low 16 bits."""
+    return v & 0xffff
+
+
+def fbits(v):
+    """The bits of an integer converted to a float (exact: 16-bit values are)."""
+    return bits(f32(float(v)))
+
+
+def int16_pixel(x, y):
+    op = y & 15
+    a32 = INT16_BOUNDARY[x & 15]
+    b32 = INT16_BOUNDARY[(y >> 4) * 4 + ((x >> 4) & 3)]
+    a, b, ua, ub = s16(a32), s16(b32), u16(a32), u16(b32)
+    undefined_signed = b == 0 or (a == -32768 and b == -1)
+    if op == 0:
+        r = EDGE_MARKER if undefined_signed else s16(sdiv(a, b))
+    elif op == 1:
+        r = EDGE_MARKER if undefined_signed else s16(smod(a, b))
+    elif op == 2:
+        r = EDGE_MARKER if ub == 0 else ua // ub
+    elif op == 3:
+        r = EDGE_MARKER if ub == 0 else ua % ub
+    elif op == 4:
+        r = s16(a >> (ub & 15))
+    elif op == 5:
+        r = u16(ua >> (ub & 15))
+    elif op == 6:
+        r = s16(a << (ub & 15))
+    elif op == 7:
+        r = s16(a * b)
+    elif op == 8:
+        r = s16(a + b)
+    elif op == 9:
+        r = s16(a - b)
+    elif op == 10:
+        r = min(a, b) ^ (max(a, b) << 8)
+    elif op == 11:
+        r = min(ua, ub) ^ (max(ua, ub) << 8)
+    elif op == 12:
+        r = (int(a == b) | int(a < b) << 1 | int(a > b) << 2 | int(ua < ub) << 3 | int(ua > ub) << 4 |
+             int(ua != u16(b)) << 5 | int(a >= b) << 6 | int(ua <= ub) << 7)
+    elif op == 13:
+        r = fbits(a) ^ fbits(ub)
+    elif op == 14:
+        sign = (b > 0) - (b < 0)
+        r = s16(abs(a)) ^ (min(max(a, -100), 100) << 16) ^ (sign * 7)
+    else:
+        index = s16((a32 & 3) | 0x30000)
+        packed = u16(a) | (u16(b) << 16)
+        r = packed ^ (u16(u32(a32) >> 16) * 3) ^ INT16_TABLE[index]
+    return u32(r)
+
+
 def undef_pixel(x, y):
     """The guard rows' words, and on the odd rows what the host models give (0 for a division SPIR-V leaves
     undefined, a shift by its count's low five bits, as the EU does): the kernel test does not judge those."""
@@ -780,7 +848,7 @@ def main():
         ' */',
     ]
     boundary = ('i915_vke2_edge_frag', 'i915_vke2_undef_frag', 'i915_vke2_killoop_frag', 'i915_vke2_noinput_vert',
-                'i915_vke2_noinput_frag')
+                'i915_vke2_noinput_frag', 'i915_vke2_int16_frag')
     for source, stage, symbol in SHADERS:
         path = directory / source
         output = directory / (source + '.spv')
@@ -876,12 +944,13 @@ def main():
                                  ('edge', edge_pixel, 'its 32-bit result, or the marker of an undefined division'),
                                  ('undef', undef_pixel, 'the guard word on even rows, the host models\' word on odd rows'),
                                  ('killoop', killoop_pixel, 'its accumulator with the top byte 0x81, or zero when discarded'),
-                                 ('noinput', noinput_pixel, 'x, y and the mark 0xa5')):
+                                 ('noinput', noinput_pixel, 'x, y and the mark 0xa5'),
+                                 ('int16', int16_pixel, 'its 16-bit result made a 32-bit word, or the marker of an undefined division')):
         lines.extend(['', f'/* Every pixel of the {name} step: {what}. */'])
-        if name in ('edge', 'undef', 'killoop', 'noinput'):
+        if name in ('edge', 'undef', 'killoop', 'noinput', 'int16'):
             lines.append(BOUNDARY_ONLY)
         c_words(lines, f'i915_vke2_{name}_expected', image(function), per_line=8)
-        if name in ('edge', 'undef', 'killoop', 'noinput'):
+        if name in ('edge', 'undef', 'killoop', 'noinput', 'int16'):
             lines.append('#endif')
     lines.append('')
     (fixtures / 'generality-shaders-gen.inc').write_text('\n'.join(lines))

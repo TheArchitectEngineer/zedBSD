@@ -94,7 +94,7 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 | ws031-p036 | executor: UBOのdataport読み出し（push dataの上限超え）とdraw間の順序 | planning | p019 | p016 | `render/`、`compiler/` |
 | ws031-p037 | executor: tiling（Y-tile/Tile4のoptimal image、copy・blit・sampling）。設計で更に分けてよい | planning | p019 | p016 | `render/`、gem |
 | ws031-p038 | compiler: 整数varying（Flat）と整数頂点属性 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/`、`render/` |
-| ws031-p039 | compiler: 16 bitの整数（Int16、shaderInt16、2026-10-07 範囲の変更: 64 bit は p051、Float64・Float16 は Future Work） | planned | p020 | p017 | `compiler/` |
+| [ws031-p039](phase039/phase.md) | compiler: 16 bitの整数（Int16、shaderInt16、2026-10-07 範囲の変更: 64 bit は p051、Float64・Float16 は Future Work） | cleared 候補（2026-10-07 P1、host PASS） | p020 | p017 | `compiler/` |
 | ws031-p051 | compiler: 64 bitの整数（Int64、32 bitの対のlowering、Mesa nir_lower_int64 が手本。Gen12 LP は 64 bit を持たない） | planned（2026-10-07 追加） | p039 | 新規 | `compiler/` |
 | ws031-p040 | compiler: localの配列・構造体、動的index、行列の`OpPhi`、ループ内で初めてstoreするlocal | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
 | ws031-p041 | compiler: `OpSwitch`、関数呼出し（inline化）、ループ内return、trip count 0の形 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
