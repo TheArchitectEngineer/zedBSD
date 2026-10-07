@@ -1,7 +1,7 @@
 #!/bin/sh
-# ws157-p003: builds and runs the host test of Photos' view (host-photos.c with view.c, thumbs.c, decode.c,
-# library.c, exif.c, store.c, the pictures' decoding and libkeiland's drawing, text and widgets and libtruetype) on
-# Linux, on the folder make-photos.py --view writes into a fresh folder each run, and turns the pictures into PNG files
+# ws157-p003, p005: builds and runs the host test of Photos' view (host-photos.c with view.c, thumbs.c, decode.c,
+# library.c, exif.c, db.c, import.c, the pictures' decoding and libkeiland's drawing, text and widgets and libtruetype) on
+# Linux, on the folder make-photos.py --view writes into a fresh folder each run (imported into a library there), and turns the pictures into PNG files
 # (the frame on glass laid on a wallpaper, roughly as zdesktop shows it).
 #   sh plan/ws157/tests/run-host-photos.sh [OUTPUT]   (default build/ws157/host-photos; pictures beside it; Q1's
 #   cleaning removes the old folders)
@@ -14,13 +14,15 @@ mkdir -p "$dir/inc/truetype" "$dir/inc/keiland"
 cp userland/desktop/include/truetype/truetype.h "$dir/inc/truetype/"
 cp userland/desktop/include/keiland/keiland.h "$dir/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$dir/inc/compat"
+cp include/libc/sha2.h "$dir/inc/sha2.h"
+cc -std=gnu99 -D_GNU_SOURCE -O1 -w -c src/libc/openbsd-sha2.c -I"$dir/inc" -o "$dir/sha2.o"
 U=userland/desktop
 K=$U/libkeiland/ui
 L=$U/libkeiland
 M=$U/photos
 B=userland/base
 cc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$U/libtruetype \
-	plan/ws157/tests/host-photos.c $M/view.c $M/thumbs.c $M/decode.c $M/library.c $M/exif.c $M/store.c \
+	plan/ws157/tests/host-photos.c $M/view.c $M/thumbs.c $M/decode.c $M/library.c $M/exif.c $M/db.c $M/import.c "$dir/sha2.o" \
 	$U/picture/picture.c \
 	$K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/scroll-bar.c \
 	$K/text-touch.c $K/ui.c $K/widgets.c $K/field.c $K/text-area.c $K/list.c $K/cards.c \
@@ -33,7 +35,7 @@ cc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$
 folder=$(mktemp -d "$dir/photos-view.XXXXXX")
 python3 plan/ws157/tests/make-photos.py --view "$folder/Pictures"
 F=$U/fonts
-TZ=UTC timeout 120 "$out" $F/Mahora-Regular.ttf $F/DroidSansFallbackFull.ttf "$out" "$folder/Pictures"
+TZ=UTC timeout 120 "$out" $F/Mahora-Regular.ttf $F/DroidSansFallbackFull.ttf "$out" "$folder/Pictures" "$folder/Library" "$folder/cache"
 for p in "$out"-*.ppm; do
 	python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$p" "${p%.ppm}.png"
 done

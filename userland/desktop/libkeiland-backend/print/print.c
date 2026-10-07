@@ -210,7 +210,7 @@ kl_backend_print_close(
 			(void)close(print->jobs[index].fd);
 	}
 
-	/*  0; index < print->printer_count=The default's line. */
+	/* Each queued job's descriptor. */
 	for (index = 0; index < print->queue_count; index++) {
 		if (print->queue[index].fd >= 0)
 			(void)close(print->queue[index].fd);
@@ -366,7 +366,7 @@ kl_backend_print_add(
 			error = EINVAL;
 	}
 
-	/*  0) {=Refused: answered at once. */
+	/* Refused: answered at once. */
 	if (error != 0) {
 		print_unlock(lock);
 		print_result(print, *request, error, 0);
@@ -456,7 +456,7 @@ kl_backend_print_remove(
 				found = &print->printers[index];
 		}
 
-		/*  1;=It is the default. */
+		/* It is the default. */
 		found->is_default = 1;
 	}
 
@@ -560,7 +560,7 @@ kl_backend_print_submit(
 			active++;
 	}
 
-	/*  PRINT_ACTIVE_MAX) {=Too many jobs held: busy. */
+	/* Too many jobs held: busy. */
 	if (active >= PRINT_ACTIVE_MAX) {
 		(void)close(fd);
 		print_result(print, *request, EBUSY, 1);
@@ -584,7 +584,7 @@ kl_backend_print_submit(
 		return 0;
 	}
 
-	/*  "lpd";=The JOB line, with the document beside it. */
+	/* The JOB line, with the document beside it. */
 	protocol = "lpd";
 	if (found->protocol == KL_BACKEND_PRINTER_IPP)
 		protocol = "ipp";
@@ -778,13 +778,13 @@ print_save(
 		    print->printers[index].port, print->printers[index].path, print->printers[index].name);
 	}
 
-	/*  0; index < print->printer_count=The default's line. */
+	/* The default's line. */
 	for (index = 0; index < print->printer_count; index++) {
 		if (print->printers[index].is_default)
 			fprintf(file, "default %lu\n", (unsigned long)print->printers[index].id);
 	}
 
-	/*  fflush(file);=Written out and closed. */
+	/* Written out and closed. */
 	flushed = fflush(file);
 	failed = ferror(file);
 	closed = fclose(file);
@@ -1009,7 +1009,7 @@ print_start(
 		count++;
 	}
 
-	/*  NULL;=The list's end. */
+	/* The list's end. */
 	environment[count] = NULL;
 
 	/* The daemon: its descriptor 3, its signals as they start, no mask. */
@@ -1067,7 +1067,7 @@ print_stopped(
 			(void)close(print->queue[index].fd);
 	}
 
-	/*  0;=None waits, and no name is asked. */
+	/* None waits, and no name is asked. */
 	print->queue_count = 0;
 	print->name_count = 0;
 
@@ -1165,7 +1165,7 @@ print_flush(
 			memcpy(CMSG_DATA(rights), &line->fd, sizeof(int));
 		}
 
-		/*  sendmsg(=Sent as far as the socket takes it. */
+		/* Sent as far as the socket takes it. */
 		sent = sendmsg(print->socket, &message, MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (sent < 0)
 			return;
@@ -1177,7 +1177,7 @@ print_flush(
 				job->sent = 1;
 		}
 
-		/*  -1;=Its descriptor is not sent again. */
+		/* Its descriptor is not sent again. */
 		line->fd = -1;
 
 		/* Part of it: the rest waits. */
@@ -1224,7 +1224,7 @@ print_read(
 				continue;
 			}
 
-			/*  '\0';=A whole line. */
+			/* A whole line. */
 			print->input[print->input_length] = '\0';
 			print->input_length = 0;
 			print_line(print, print->input);
@@ -1272,7 +1272,7 @@ print_line(
 		return;
 	}
 
-	/*  '\0';=Its word, when it has one. */
+	/* Its word, when it has one. */
 	detail[0] = '\0';
 	fields = sscanf(line, "REJECTED %lu %31s", &number, detail);
 	if (fields >= 1) {
@@ -1356,7 +1356,7 @@ print_job_state(
 		return;
 	}
 
-	/*  strcmp(state, "cancelled");=Cancelled. */
+	/* Waiting. */
 	same = strcmp(state, "waiting");
 	if (same == 0) {
 		job->job.state = KL_BACKEND_PRINT_WAITING;
@@ -1364,14 +1364,14 @@ print_job_state(
 		return;
 	}
 
-	/*  strcmp(state, "cancelled");=Cancelled. */
+	/* Done. */
 	same = strcmp(state, "done");
 	if (same == 0) {
 		print_end_job(print, job, KL_BACKEND_PRINT_DONE, detail);
 		return;
 	}
 
-	/*  strcmp(state, "cancelled");=Cancelled. */
+	/* Cancelled. */
 	same = strcmp(state, "cancelled");
 	if (same == 0) {
 		print_end_job(print, job, KL_BACKEND_PRINT_CANCELLED, detail);

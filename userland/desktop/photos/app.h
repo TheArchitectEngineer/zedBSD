@@ -46,6 +46,9 @@
 #define PH_ACTION_NEXT		8U
 #define PH_ACTION_PREVIOUS	9U
 #define PH_ACTION_OPEN		10U
+#define PH_ACTION_IMPORT	11U	/* a photo chosen in the file chooser */
+#define PH_ACTION_IMPORT_FOLDER	12U	/* the folder of a photo chosen in it */
+#define PH_ACTION_ALBUM		13U	/* the card that adds the photo to an album */
 
 /* What the view has of a photo's thumbnail. */
 #define PH_THUMB_NONE		0
@@ -78,8 +81,13 @@ struct ph_thumb {
  * The thumbnails (one a photo), how many are kept and the frames drawn;
  * the photos wanted this frame.
  *
- * For the window: the marks changed (to save), the library to read again,
- * the generation of the library (a result of another is not taken).  The
+ * The card that adds a photo to an album: whether it shows, the photo it
+ * adds, and the name of a new album typed in it.
+ *
+ * For the window: the marks or the albums changed (to save), the library
+ * to read again, an import asked for (PH_ACTION_IMPORT or
+ * PH_ACTION_IMPORT_FOLDER; 0 for none), the generation of the library (a
+ * result of another is not taken).  The
  * notice at the bottom until a time, whether the window stands on glass,
  * and whether the program is to end.
  */
@@ -106,8 +114,13 @@ struct ph_view {
 	size_t wants[PH_WANTS_MAX];
 	size_t want_count;
 
+	int adding;
+	long card_photo;
+	struct kl_field album_name;
+
 	int save;
 	int refresh;
+	unsigned import;
 	unsigned generation;
 	char notice[160];
 	uint64_t notice_until;
@@ -135,10 +148,10 @@ int ph_thumbnail(const struct kl_image *picture, int side, struct kl_image *thum
 int ph_fit(const struct kl_image *picture, int side, struct kl_image *fitted);
 int ph_turn(const struct kl_image *picture, int turns, struct kl_image *turned);
 
-/* The thread that makes them (thumbs.c). */
-int ph_worker_start(void);
+/* The thread that makes them, the thumbnails kept in a cache folder (thumbs.c). */
+int ph_worker_start(const char *cache);
 void ph_worker_stop(void);
-int ph_worker_queue(size_t photo, int whole, int turns, const char *path, unsigned generation);
+int ph_worker_queue(size_t photo, int whole, int turns, const char *path, const char *id, unsigned generation);
 void ph_worker_drop_thumbs(void);
 int ph_worker_take(struct ph_result *result);
 int ph_worker_busy(void);

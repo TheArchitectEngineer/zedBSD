@@ -19,6 +19,11 @@
  * sight without a thumbnail, the photo shown whole) by listing them; the
  * window gives the pictures the thread made (ph_view_result).  At most
  * PH_THUMBS_KEPT thumbnails are kept: the ones drawn longest ago go.
+ *
+ * ws157-p005: the albums are the database's (an album links photos by
+ * their ids); Photo > Add to Album... shows a card over the view with the
+ * albums and a field for a new one.  An import (the grid's Import button,
+ * File > Import...) is asked of the window, which shows the file chooser.
  */
 
 #include "app.h"
@@ -62,7 +67,8 @@
 /* How long a notice shows. */
 #define VIEW_NOTICE_US		3000000U
 
-/* The keys taken without a modifier: F (favourite), R (turn; Shift+R the other way), F5 (read again). */
+/* The keys taken without a modifier: F (favourite), R (turn; Shift+R the other way), A (Add to Album), F5 (read again). */
+#define VIEW_KEY_A		30U
 #define VIEW_KEY_F		33U
 #define VIEW_KEY_R		19U
 #define VIEW_KEY_F5		63U
@@ -80,6 +86,16 @@
 #define VIEW_ID_PLAY		10U
 #define VIEW_ID_PREVIOUS	11U
 #define VIEW_ID_NEXT		12U
+#define VIEW_ID_IMPORT		13U
+#define VIEW_ID_CARD_ALBUM	1000U
+#define VIEW_ID_CARD_NAME	15U
+#define VIEW_ID_CARD_NEW	16U
+#define VIEW_ID_CARD_CANCEL	17U
+
+/* The card of Add to Album: its width, a row's height, and the most albums it lists. */
+#define VIEW_CARD_WIDTH		360
+#define VIEW_CARD_ROW		36
+#define VIEW_CARD_ALBUMS	8U
 
 /* The ground of an opaque window, of the lists, of a photo shown whole, and of a cell waiting for its picture. */
 #define VIEW_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
@@ -133,6 +149,8 @@ static void view_date(ph_time when, char *text, size_t size);
 static void view_want(struct ph_view *view, size_t photo);
 static void view_keep(struct ph_view *view);
 static void view_drop_thumbs(struct ph_view *view);
+static void view_card(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
+static void view_add_to(struct ph_view *view, size_t album, uint64_t now_us);
 
 /*
  * Makes the view's state: the timeline shown, nothing chosen or open, a
@@ -221,7 +239,7 @@ ph_view_reset(
 			return ENOMEM;
 	}
 
-	/*  count;=Their count. */
+	/* Their count. */
 	view->thumb_count = count;
 
 	/* The timeline, from its top. */
@@ -280,6 +298,18 @@ ph_view_action(
 		if (view->chosen >= 0)
 			ph_view_open(view, view->chosen, now_us);
 		break;
+	case PH_ACTION_IMPORT:
+	case PH_ACTION_IMPORT_FOLDER:
+		view->import = action;
+		ph_log("REQUEST import=%u", action);
+		break;
+	case PH_ACTION_ALBUM:
+		view->card_photo = view_target(view);
+		view->adding = view->card_photo >= 0;
+		kl_field_set(&view->album_name, "");
+		if (view->adding)
+			ph_log("CARD album photo=%ld", view->card_photo);
+		break;
 	default:
 		break;
 	}
@@ -289,7 +319,8 @@ ph_view_action(
  * Takes a key no widget took.  In the grid: the arrows move the choice,
  * Enter shows it whole.  Shown whole: Left and Right go to the photos
  * beside it, Escape goes back.  Both: Space plays the slideshow, F marks
- * a favourite, R turns right (Shift+R left), F5 reads the library again.
+ * a favourite, R turns right (Shift+R left), A adds to an album, F5 reads
+ * the library again.  While the album card shows, Escape closes it.
  */
 void
 ph_view_key(
@@ -305,6 +336,13 @@ ph_view_key(
 	/* The keys with Ctrl, Alt or Super are the menu's. */
 	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return;
+
+	/* The album card takes the keys: Escape closes it. */
+	if (view->adding) {
+		if (key == KL_KEY_ESC)
+			view->adding = 0;
+		return;
+	}
 
 	/* The keys of both. */
 	switch (key) {
@@ -322,6 +360,9 @@ ph_view_key(
 		return;
 	case VIEW_KEY_F5:
 		ph_view_action(view, PH_ACTION_REFRESH, now_us);
+		return;
+	case VIEW_KEY_A:
+		ph_view_action(view, PH_ACTION_ALBUM, now_us);
 		return;
 	default:
 		break;
@@ -398,7 +439,7 @@ ph_view_result(
 			return;
 		}
 
-		/*  result->image;=Taken. */
+		/* Taken. */
 		view->picture = result->image;
 		view->picture_turns = photos[result->photo].turns;
 		view->picture_failed = result->error != 0;
@@ -414,7 +455,7 @@ ph_view_result(
 		return;
 	}
 
-	/*  0) {=One that cannot be made is not asked for again. */
+	/* One that cannot be made is not asked for again. */
 	if (result->error != 0) {
 		thumb->state = PH_THUMB_FAILED;
 		ph_log("THUMB photo=%lu error=%d", (unsigned long)result->photo, result->error);
@@ -534,6 +575,8 @@ ph_view_draw(
 	/* A photo shown whole has the window. */
 	if (view->open >= 0) {
 		view_whole(view, ui, style, width, height, now_us);
+		if (view->adding)
+			view_card(view, ui, style, width, height, now_us);
 		if (view->notice[0] != '\0' && now_us < view->notice_until)
 			kl_chip(style, width / 2, height - VIEW_BOTTOM - 12, view->notice);
 		return;
@@ -562,7 +605,9 @@ ph_view_draw(
 	view_sidebar(view, ui, style, &layout.sidebar, now_us);
 	view_grid(view, ui, style, &layout.content, now_us);
 
-	/* The notice over the bottom of the grid while it shows. */
+	/* The album card over it, and the notice over the bottom of the grid while it shows. */
+	if (view->adding)
+		view_card(view, ui, style, width, height, now_us);
 	if (view->notice[0] != '\0' && now_us < view->notice_until)
 		kl_chip(style, layout.content.x + layout.content.width / 2, layout.content.y + layout.content.height - 16, view->notice);
 }
@@ -810,7 +855,7 @@ view_step(
 		return;
 	}
 
-	/*  (long)indices[place];=Chosen. */
+	/* Chosen. */
 	view->chosen = (long)indices[place];
 	view->reveal = 1;
 }
@@ -943,7 +988,7 @@ view_sidebar(
 			y += VIEW_ALBUM_LABEL;
 		}
 
-		/*  list.x + 8;=The row. */
+		/* The row. */
 		rect.x = list.x + 8;
 		rect.y = y;
 		rect.width = list.width - 16;
@@ -1116,9 +1161,18 @@ view_grid(
 		ph_view_action(view, PH_ACTION_SLIDESHOW, now_us);
 	}
 
+	/* Import, beside it: the folder of a photo chosen. */
+	button.width = kl_button_width(style, "Import");
+	button.x -= button.width + 8;
+	clicked = kl_button(ui, style, VIEW_ID_IMPORT, &button, "Import", 0U);
+	if (clicked) {
+		kl_ui_clear_focus(ui);
+		ph_view_action(view, PH_ACTION_IMPORT_FOLDER, now_us);
+	}
+
 	/* Nothing to show. */
 	if (count == 0U) {
-		empty = "Put photos in the Pictures folder to see them here.";
+		empty = "Import photos with Import (a folder) or File > Import Photo...";
 		if (view->list == PH_LIST_FAVORITES)
 			empty = "Mark a photo a favorite (F) to see it here.";
 		else if (view->list == PH_LIST_ALBUM)
@@ -1177,7 +1231,7 @@ view_grid(
 				    style->theme->text);
 			}
 
-			/*  VIEW_MONTH;=Below the heading. */
+			/* Below the heading. */
 			y += VIEW_MONTH;
 		}
 
@@ -1487,7 +1541,7 @@ view_whole(
 		view_favorite(view, now_us);
 	}
 
-	/*  kl_button_width(style, "Rotate Left");=Rotate Left. */
+	/* Rotate Right. */
 	button.width = kl_button_width(style, "Rotate Right");
 	right -= button.width + 8;
 	button.x = right;
@@ -1497,7 +1551,7 @@ view_whole(
 		view_turn(view, 1, now_us);
 	}
 
-	/*  kl_button_width(style, "Rotate Left");=Rotate Left. */
+	/* Rotate Left. */
 	button.width = kl_button_width(style, "Rotate Left");
 	right -= button.width + 8;
 	button.x = right;
@@ -1507,7 +1561,7 @@ view_whole(
 		view_turn(view, 3, now_us);
 	}
 
-	/*  "Slideshow";=The slideshow. */
+	/* The slideshow. */
 	label = "Slideshow";
 	if (view->slideshow)
 		label = "Stop";
@@ -1689,6 +1743,141 @@ view_drop_thumbs(
 		view->thumbs[index].state = PH_THUMB_NONE;
 	}
 
-	/*  0;=None kept. */
+	/* None kept. */
 	view->kept = 0;
+}
+
+/*
+ * Draws the card of Add to Album over the view: the albums (a click adds
+ * the photo to one), a field for a new album's name with New Album (or
+ * Enter), and Cancel.
+ */
+static void
+view_card(
+	struct ph_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	int width,
+	int height,
+	uint64_t now_us)
+{
+	struct ph_album *albums;
+	struct kl_rect whole;
+	struct kl_rect card;
+	struct kl_rect row;
+	char label[PH_NAME_MAX + 32];
+	char shown_id[PH_ID_SIZE];
+	size_t count;
+	size_t shown;
+	size_t index;
+	size_t album;
+	unsigned changes;
+	int clicked;
+	int error;
+	int same;
+
+	/* The view dimmed, the card in its middle. */
+	albums = ph_albums(&count);
+	shown = count;
+	if (shown > VIEW_CARD_ALBUMS)
+		shown = VIEW_CARD_ALBUMS;
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = width;
+	whole.height = height;
+	kl_canvas_fill(style->canvas, &whole, KL_RGBA(0x000000, 0x60));
+	card.width = VIEW_CARD_WIDTH;
+	card.height = 160 + (int)shown * VIEW_CARD_ROW;
+	card.x = (width - card.width) / 2;
+	card.y = (height - card.height) / 2;
+	kl_canvas_shadow(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, 18.0f, KL_RGBA(0x000000, 0x50));
+	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, VIEW_COLOR_SURFACE);
+	(void)kl_text_draw(style->text, style->canvas, card.x + 20, card.y + 34, "Add to Album", strlen("Add to Album"), VIEW_TEXT_HEADING, 1, style->theme->text);
+
+	/* Each album (the first ones), a click adds the photo to it. */
+	for (index = 0; index < shown; index++) {
+		row.x = card.x + 16;
+		row.y = card.y + 48 + (int)index * VIEW_CARD_ROW;
+		row.width = card.width - 32;
+		row.height = VIEW_CARD_ROW - 4;
+		(void)snprintf(label, sizeof(label), "%s (%lu)", albums[index].name, (unsigned long)albums[index].count);
+		clicked = kl_button(ui, style, VIEW_ID_CARD_ALBUM + (uint32_t)index, &row, label, 0U);
+		if (clicked) {
+			view_add_to(view, index, now_us);
+			return;
+		}
+	}
+
+	/* A new album's name, and New Album (Enter does the same). */
+	row.x = card.x + 16;
+	row.y = card.y + 56 + (int)shown * VIEW_CARD_ROW;
+	row.width = card.width - 32 - 120;
+	row.height = 30;
+	changes = kl_field(ui, style, VIEW_ID_CARD_NAME, &row, &view->album_name, "New album name");
+	row.x += row.width + 8;
+	row.width = 112;
+	clicked = kl_button(ui, style, VIEW_ID_CARD_NEW, &row, "New Album", KL_BUTTON_PRIMARY);
+	if ((clicked || (changes & KL_FIELD_SUBMITTED) != 0U) && view->album_name.length > 0U) {
+		/* The album shown keeps its place in the list (the albums are sorted again). */
+		shown_id[0] = '\0';
+		if (view->list == PH_LIST_ALBUM && view->album < count)
+			(void)snprintf(shown_id, sizeof(shown_id), "%s", albums[view->album].id);
+		error = ph_album_create(view->album_name.text, &album);
+		albums = ph_albums(&count);
+		for (index = 0; index < count && shown_id[0] != '\0'; index++) {
+			same = strcmp(albums[index].id, shown_id);
+			if (same == 0)
+				view->album = index;
+		}
+
+		/* The album shown kept, and the photo added to the new one. */
+		ph_log("ALBUM create name=%s error=%d", view->album_name.text, error);
+		if (error == 0)
+			view_add_to(view, album, now_us);
+		else
+			ph_view_notice(view, "That name cannot be an album's.", now_us);
+		return;
+	}
+
+	/* Cancel. */
+	row.x = card.x + card.width - 16 - 96;
+	row.y = card.y + card.height - 40;
+	row.width = 96;
+	row.height = 28;
+	clicked = kl_button(ui, style, VIEW_ID_CARD_CANCEL, &row, "Cancel", 0U);
+	if (clicked)
+		view->adding = 0;
+}
+
+/* Adds the photo shown whole or chosen to an album, the card closed and the database to be written. */
+static void
+view_add_to(
+	struct ph_view *view,
+	size_t album,
+	uint64_t now_us)
+{
+	struct ph_photo *photos;
+	struct ph_album *albums;
+	char words[PH_NAME_MAX + 32];
+	size_t count;
+	size_t album_count;
+	long photo;
+	int error;
+
+	/* The photo the card was shown for, into the album. */
+	view->adding = 0;
+	photo = view->card_photo;
+	photos = ph_photos(&count);
+	albums = ph_albums(&album_count);
+	if (photo < 0 || (size_t)photo >= count || album >= album_count)
+		return;
+	error = ph_album_add(album, photos[photo].id);
+	ph_log("ALBUM add album=%s photo=%ld error=%d", albums[album].name, photo, error);
+	if (error != 0)
+		return;
+
+	/* Written, and said. */
+	view->save = 1;
+	(void)snprintf(words, sizeof(words), "Added to %s", albums[album].name);
+	ph_view_notice(view, words, now_us);
 }

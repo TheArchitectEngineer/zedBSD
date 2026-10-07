@@ -6,17 +6,21 @@
  */
 
 /*
- * Photos' window (ws157-p003; photos.h, app.h): a libkeiland application
- * with one window that shows the view (view.c), its menu (File: Refresh,
- * Quit; Photo: Favorite, Rotate Left, Rotate Right, Slideshow, Back to
- * Photos), and the view's input.  The photos are ~/Pictures' (library.c)
- * with the marks kept (store.c), and the file named on the command line,
- * which shows whole at once.  The pictures the view wants are queued to
- * the thread (thumbs.c) and given to the view when made.  Ctrl+Q quits.
- * What happens is logged on standard error as "PHOTOS" lines for the
- * tests.
+ * Photos' window (ws157-p005; photos.h, app.h): a libkeiland application
+ * with one window that shows the view (view.c), its menu (File: Import
+ * Photo..., Import Folder..., Refresh, Quit; Photo: Favorite, Rotate Left,
+ * Rotate Right, Add to Album..., Slideshow, Back to Photos), and the
+ * view's input.  The photos are the library's in ~/Pictures/Library (its
+ * database, db.c); an import (import.c) takes a photo, or the folder of a
+ * photo, chosen in libkeiland's file chooser, or the path given with
+ * --import before the window opens.  What the view changes (marks,
+ * albums) is written to the database.  The pictures the view wants are
+ * queued to the thread (thumbs.c, its thumbnails kept in
+ * $XDG_CACHE_HOME/keiland/photos) and given to the view when made.
+ * Ctrl+Q quits.  What happens is logged on standard error as "PHOTOS"
+ * lines for the tests.
  *
- *   photos [--width=N] [--height=N] [--timeout-s=N] [FILE]
+ *   photos [--width=N] [--height=N] [--timeout-s=N] [--import=PATH]
  */
 
 #include "app.h"
@@ -44,14 +48,17 @@
 /* The key Q, which quits with Ctrl. */
 #define PH_KEY_Q		16U
 
-/* The folder of the photos under the home. */
-#define PH_FOLDER		"Pictures"
+/* The application's id, which the file chooser's window takes too, and the thumbnails' folder under the cache folder. */
+#define PH_APPLICATION		"photos"
+#define PH_CACHE		"keiland/photos"
 
 /*
  * The window's state: the application, the window and its input, the
  * frame (its pixels, size and canvas), the text and the style, the view,
- * the file of the marks, whether a frame is due, the window changed size,
- * a widget moves, and the glass was decided.
+ * the library's folder (and whether there is one), the file chooser shown
+ * and what for (PH_ACTION_IMPORT or _FOLDER), whether it answered and the
+ * path it chose to import (empty when cancelled), whether a frame is due, the window changed size, a
+ * widget moves, and the glass was decided.
  */
 struct ph_window {
 	struct kl_app *app;
@@ -65,8 +72,12 @@ struct ph_window {
 	struct kl_text text;
 	struct kl_style style;
 	struct ph_view view;
-	char store[PH_PATH_MAX];
-	int store_known;
+	char root[PH_PATH_MAX];
+	int root_known;
+	struct kl_file_chooser *chooser;
+	unsigned chooser_for;
+	int answered;
+	char chosen[PH_PATH_MAX];
 	int dirty;
 	int resized;
 	int moving;
@@ -76,20 +87,28 @@ struct ph_window {
 /* The window's menu. */
 static const struct kl_menu_entry ph_menu[] = {
 	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Refresh", PH_ACTION_REFRESH, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 3U, 1U, KL_MENU_ITEM_NORMAL, "Quit Photos", PH_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
-	{ 4U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Photo", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 5U, 4U, KL_MENU_ITEM_NORMAL, "Favorite", PH_ACTION_FAVORITE, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 6U, 4U, KL_MENU_ITEM_NORMAL, "Rotate Left", PH_ACTION_TURN_LEFT, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 7U, 4U, KL_MENU_ITEM_NORMAL, "Rotate Right", PH_ACTION_TURN_RIGHT, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 8U, 4U, KL_MENU_ITEM_NORMAL, "Slideshow", PH_ACTION_SLIDESHOW, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 9U, 4U, KL_MENU_ITEM_NORMAL, "Back to Photos", PH_ACTION_BACK, KL_MENU_ROLE_NONE, 0U, 0U }
+	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Import Photo...", PH_ACTION_IMPORT, KL_MENU_ROLE_NONE, KL_MENU_CTRL, 'i' },
+	{ 3U, 1U, KL_MENU_ITEM_NORMAL, "Import Folder...", PH_ACTION_IMPORT_FOLDER, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 4U, 1U, KL_MENU_ITEM_NORMAL, "Refresh", PH_ACTION_REFRESH, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 5U, 1U, KL_MENU_ITEM_NORMAL, "Quit Photos", PH_ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+	{ 6U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Photo", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 7U, 6U, KL_MENU_ITEM_NORMAL, "Favorite", PH_ACTION_FAVORITE, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 8U, 6U, KL_MENU_ITEM_NORMAL, "Rotate Left", PH_ACTION_TURN_LEFT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 9U, 6U, KL_MENU_ITEM_NORMAL, "Rotate Right", PH_ACTION_TURN_RIGHT, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 10U, 6U, KL_MENU_ITEM_NORMAL, "Add to Album...", PH_ACTION_ALBUM, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 11U, 6U, KL_MENU_ITEM_NORMAL, "Slideshow", PH_ACTION_SLIDESHOW, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 12U, 6U, KL_MENU_ITEM_NORMAL, "Back to Photos", PH_ACTION_BACK, KL_MENU_ROLE_NONE, 0U, 0U }
 };
 
 int main(int argc, char **argv);
-static int ph_parse(int argc, char **argv, unsigned *width, unsigned *height, unsigned *timeout, const char **file);
-static void ph_library_start(struct ph_window *photos, const char *file, long *photo);
+static int ph_parse(int argc, char **argv, unsigned *width, unsigned *height, unsigned *timeout, const char **source);
+static void ph_library_start(struct ph_window *photos);
+static void ph_import_path(struct ph_window *photos, const char *source, int notice);
 static void ph_refresh(struct ph_window *photos);
+static void ph_choose(struct ph_window *photos, unsigned purpose);
+static void ph_chooser_done(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void ph_chosen(struct ph_window *photos);
+static void ph_cache_folder(char *folder, size_t size);
 static int ph_loop(struct ph_window *photos, unsigned timeout);
 static void ph_input(struct ph_window *photos, const struct kl_window_event *event);
 static void ph_results(struct ph_window *photos);
@@ -110,18 +129,18 @@ main(
 	struct kl_window_options window_options;
 	struct kl_app_options app_options;
 	static struct ph_window photos;
-	const char *file;
+	char cache[PH_PATH_MAX];
+	const char *source;
 	unsigned timeout;
 	unsigned width;
 	unsigned height;
-	long photo;
 	int status;
 	int error;
 
 	/* The command line. */
-	status = ph_parse(argc, argv, &width, &height, &timeout, &file);
+	status = ph_parse(argc, argv, &width, &height, &timeout, &source);
 	if (status != 0) {
-		fprintf(stderr, "usage: photos [--width=N] [--height=N] [--timeout-s=N] [FILE]\n");
+		fprintf(stderr, "usage: photos [--width=N] [--height=N] [--timeout-s=N] [--import=PATH]\n");
 		return 2;
 	}
 
@@ -130,8 +149,10 @@ main(
 	if (error != 0)
 		ph_log("FONT missing error=%d", error);
 
-	/* The photos with their marks, and the file named. */
-	ph_library_start(&photos, file, &photo);
+	/* The library, and the import asked for. */
+	ph_library_start(&photos);
+	if (source != NULL)
+		ph_import_path(&photos, source, 0);
 
 	/* The view's state. */
 	error = ph_view_init(&photos.view);
@@ -140,8 +161,9 @@ main(
 		return 1;
 	}
 
-	/* The thread that makes the pictures. */
-	error = ph_worker_start();
+	/* The thread that makes the pictures, the thumbnails kept in the cache. */
+	ph_cache_folder(cache, sizeof(cache));
+	error = ph_worker_start(cache);
 	if (error != 0) {
 		ph_log("FAILED operation=thread error=%d", error);
 		ph_view_release(&photos.view);
@@ -150,7 +172,7 @@ main(
 
 	/* The application. */
 	memset(&app_options, 0, sizeof(app_options));
-	app_options.application = "photos";
+	app_options.application = PH_APPLICATION;
 	photos.app = kl_app_open(&app_options);
 	if (photos.app == NULL) {
 		ph_log("FAILED operation=app error=%d", errno);
@@ -191,14 +213,11 @@ main(
 	photos.style.glass = 0;
 	photos.view.glass = 0;
 
-	/* The file named shows whole at once. */
-	if (photo >= 0)
-		ph_view_open(&photos.view, photo, kl_clock_us());
-
 	/* The loop until the window closes. */
 	status = ph_loop(&photos, timeout);
 
 	/* Everything goes. */
+	kl_file_chooser_destroy(photos.chooser);
 	ph_worker_stop();
 	kl_ui_destroy(photos.ui);
 	if (photos.canvas_made)
@@ -207,7 +226,6 @@ main(
 	kl_app_close(photos.app);
 	ph_view_release(&photos.view);
 	ph_library_release();
-	ph_store_release();
 	kl_text_close(&photos.text);
 
 	/* Reports how the loop ended. */
@@ -246,7 +264,7 @@ ph_parse(
 	unsigned *width,
 	unsigned *height,
 	unsigned *timeout,
-	const char **file)
+	const char **source)
 {
 	int index;
 	int same;
@@ -255,7 +273,7 @@ ph_parse(
 	*width = PH_WIDTH;
 	*height = PH_HEIGHT;
 	*timeout = 0U;
-	*file = NULL;
+	*source = NULL;
 
 	/* Each argument. */
 	for (index = 1; index < argc; index++) {
@@ -280,12 +298,11 @@ ph_parse(
 			continue;
 		}
 
-		/* An option not known, or a second file. */
-		if (argv[index][0] == '-' || *file != NULL)
+		/* A file or a folder to import. */
+		same = strncmp(argv[index], "--import=", 9U);
+		if (same != 0 || argv[index][9] == '\0')
 			return -1;
-
-		/* The file. */
-		*file = argv[index];
+		*source = argv[index] + 9;
 	}
 
 	/* A window needs a size. */
@@ -296,69 +313,200 @@ ph_parse(
 	return 0;
 }
 
-/*
- * Reads the photos of the home's Pictures folder and their marks, and adds
- * the file named (-1 for none, or one that is not a picture).
- */
+/* Reads the library's database (none when there is no home: nothing is kept). */
 static void
 ph_library_start(
-	struct ph_window *photos,
-	const char *file,
-	long *photo)
+	struct ph_window *photos)
 {
-	char folder[PH_PATH_MAX];
-	const char *home;
 	size_t count;
 	size_t albums;
 	int error;
 
-	/* The home's Pictures folder. */
-	*photo = -1;
-	home = getenv("HOME");
-	if (home == NULL || home[0] == '\0')
-		home = "/tmp";
-	(void)snprintf(folder, sizeof(folder), "%s/%s", home, PH_FOLDER);
-	error = ph_library_scan(folder);
+	/* The library's folder and its database. */
+	error = ph_library_root(photos->root, sizeof(photos->root));
+	photos->root_known = error == 0;
+	if (photos->root_known)
+		error = ph_db_load(photos->root);
 	(void)ph_photos(&count);
 	(void)ph_albums(&albums);
-	ph_log("LIBRARY photos=%lu albums=%lu error=%d", (unsigned long)count, (unsigned long)albums, error);
-
-	/* The file named. */
-	if (file != NULL) {
-		error = ph_library_add_file(file, photo);
-		ph_log("FILE photo=%ld error=%d", *photo, error);
-		if (error != 0)
-			*photo = -1;
-	}
-
-	/* The marks. */
-	error = ph_store_path(photos->store, sizeof(photos->store));
-	photos->store_known = error == 0;
-	if (photos->store_known) {
-		error = ph_store_load(photos->store);
-		ph_log("MARKS error=%d", error);
-	}
+	ph_log("LIBRARY root=%s photos=%lu albums=%lu error=%d", photos->root, (unsigned long)count, (unsigned long)albums, error);
 }
 
-/* Reads the library again (the marks kept), and starts the view on it. */
+/*
+ * Imports a file or a folder into the library and writes the database;
+ * with notice, the view starts again on the library and says what came
+ * of it.
+ */
+static void
+ph_import_path(
+	struct ph_window *photos,
+	const char *source,
+	int notice)
+{
+	struct ph_import_result result;
+	char words[160];
+	int error;
+	int saved;
+
+	/* Into the library, written. */
+	if (!photos->root_known)
+		return;
+	error = ph_import(photos->root, source, &result);
+	saved = ph_db_save(photos->root);
+	ph_log("IMPORT done source=%s imported=%u duplicates=%u failed=%u error=%d save=%d", source, result.imported, result.duplicates, result.failed,
+	    error, saved);
+	if (!notice)
+		return;
+
+	/* The view on the new order, and what came of it. */
+	ph_worker_drop_thumbs();
+	(void)ph_view_reset(&photos->view);
+	if (error != 0)
+		(void)snprintf(words, sizeof(words), "Nothing could be imported.");
+	else if (result.duplicates > 0U)
+		(void)snprintf(words, sizeof(words), "Imported %u photos (%u already in the library).", result.imported, result.duplicates);
+	else
+		(void)snprintf(words, sizeof(words), "Imported %u photos.", result.imported);
+	ph_view_notice(&photos->view, words, kl_clock_us());
+	photos->dirty = 1;
+}
+
+/* Reads the library again, and starts the view on it. */
 static void
 ph_refresh(
 	struct ph_window *photos)
 {
-	long photo;
 	int error;
 
-	/* The library and the marks again. */
+	/* The library again. */
 	ph_worker_drop_thumbs();
 	ph_library_release();
-	ph_store_release();
-	ph_library_start(photos, NULL, &photo);
+	ph_library_start(photos);
 
 	/* The view from the timeline's top. */
 	error = ph_view_reset(&photos->view);
 	ph_log("REFRESH error=%d", error);
-	ph_view_notice(&photos->view, "Pictures read again", kl_clock_us());
+	ph_view_notice(&photos->view, "The library was read again.", kl_clock_us());
 	photos->dirty = 1;
+}
+
+/*
+ * Shows libkeiland's file chooser for an import: a photo, or a photo in
+ * the folder to import (PH_ACTION_IMPORT or _FOLDER), the pictures shown
+ * first.  One shown already answers in its time.
+ */
+static void
+ph_choose(
+	struct ph_window *photos,
+	unsigned purpose)
+{
+	static const struct kl_file_filter filters[] = {
+		{ "Pictures", "jpg jpeg jpe png gif" },
+		{ "All files", NULL }
+	};
+	static const struct kl_file_chooser_listener listener = {
+		ph_chooser_done
+	};
+	struct kl_file_chooser_options options;
+	char folder[PH_PATH_MAX];
+	const char *home;
+
+	/* One at a time. */
+	if (photos->chooser != NULL)
+		return;
+	photos->chooser_for = purpose;
+
+	/* From the home's Pictures folder. */
+	home = getenv("HOME");
+	folder[0] = '\0';
+	if (home != NULL)
+		(void)snprintf(folder, sizeof(folder), "%s/Pictures", home);
+	memset(&options, 0, sizeof(options));
+	options.mode = KL_FILE_CHOOSER_OPEN;
+	options.title = "Import Photo";
+	if (purpose == PH_ACTION_IMPORT_FOLDER)
+		options.title = "Import the Folder of a Photo";
+	options.application = PH_APPLICATION;
+	options.folder = folder;
+	options.filters = filters;
+	options.filter_count = sizeof(filters) / sizeof(filters[0]);
+	options.font = PH_FONT;
+	photos->chooser = kl_file_chooser_open(kl_app_display(photos->app), kl_window_toplevel(photos->window), &options, &listener, photos);
+	ph_log("CHOOSER open for=%u ok=%d", purpose, photos->chooser != NULL);
+	if (photos->chooser == NULL)
+		ph_view_notice(&photos->view, "The file chooser could not be shown.", kl_clock_us());
+}
+
+/* Takes the file chooser's answer: the path to import, later in the loop (not from inside the chooser's own call). */
+static void
+ph_chooser_done(
+	void *data,
+	struct kl_file_chooser *chooser,
+	unsigned result,
+	const char *path,
+	size_t filter)
+{
+	struct ph_window *photos;
+	char *slash;
+
+	/* A path chosen: the photo, or its folder. */
+	(void)chooser;
+	(void)filter;
+	photos = data;
+	photos->chosen[0] = '\0';
+	if (result == KL_FILE_CHOOSER_CHOSEN && path != NULL)
+		(void)snprintf(photos->chosen, sizeof(photos->chosen), "%s", path);
+	if (photos->chooser_for == PH_ACTION_IMPORT_FOLDER) {
+		slash = strrchr(photos->chosen, '/');
+		if (slash != NULL && slash != photos->chosen)
+			*slash = '\0';
+	}
+
+	/* Taken by the loop; the log line the tests read. */
+	photos->answered = 1;
+	ph_log("CHOOSER done result=%u path=%s", result, photos->chosen);
+}
+
+/* Imports what the file chooser chose, when it has answered. */
+static void
+ph_chosen(
+	struct ph_window *photos)
+{
+	char source[PH_PATH_MAX];
+
+	/* The chooser goes once it has answered (its answer is kept). */
+	if (!photos->answered)
+		return;
+	photos->answered = 0;
+	kl_file_chooser_destroy(photos->chooser);
+	photos->chooser = NULL;
+	photos->dirty = 1;
+
+	/* The import, unless it was cancelled. */
+	if (photos->chosen[0] == '\0')
+		return;
+	(void)snprintf(source, sizeof(source), "%s", photos->chosen);
+	photos->chosen[0] = '\0';
+	ph_import_path(photos, source, 1);
+}
+
+/* Writes the thumbnails' cache folder: $XDG_CACHE_HOME, else ~/.cache, then keiland/photos (empty when neither is known). */
+static void
+ph_cache_folder(
+	char *folder,
+	size_t size)
+{
+	const char *cache;
+	const char *home;
+
+	/* $XDG_CACHE_HOME, else ~/.cache. */
+	folder[0] = '\0';
+	cache = getenv("XDG_CACHE_HOME");
+	home = getenv("HOME");
+	if (cache != NULL && cache[0] == '/')
+		(void)snprintf(folder, size, "%s/%s", cache, PH_CACHE);
+	else if (home != NULL && home[0] == '/')
+		(void)snprintf(folder, size, "%s/.cache/%s", home, PH_CACHE);
 }
 
 /*
@@ -428,6 +576,13 @@ ph_loop(
 		if (moved)
 			photos->dirty = 1;
 		ph_marks(photos);
+		if (photos->view.import != 0U) {
+			ph_choose(photos, photos->view.import);
+			photos->view.import = 0;
+		}
+
+		/* The import the chooser answered. */
+		ph_chosen(photos);
 		if (photos->view.refresh) {
 			photos->view.refresh = 0;
 			ph_refresh(photos);
@@ -538,11 +693,11 @@ ph_jobs(
 		if (photo >= count)
 			continue;
 		whole = (long)photo == view->open;
-		(void)ph_worker_queue(photo, whole, list[photo].turns, list[photo].path, view->generation);
+		(void)ph_worker_queue(photo, whole, list[photo].turns, list[photo].path, list[photo].id, view->generation);
 	}
 }
 
-/* Keeps the marks when the view changed them. */
+/* Writes the database when the view changed the marks or the albums. */
 static void
 ph_marks(
 	struct ph_window *photos)
@@ -553,14 +708,14 @@ ph_marks(
 	if (!photos->view.save)
 		return;
 	photos->view.save = 0;
-	if (!photos->store_known)
+	if (!photos->root_known)
 		return;
 
-	/* Written. */
-	error = ph_store_save(photos->store);
+	/* Written: the months and the albums that changed. */
+	error = ph_db_save(photos->root);
 	ph_log("SAVE error=%d", error);
 	if (error != 0)
-		ph_view_notice(&photos->view, "The favorites and turns could not be saved.", kl_clock_us());
+		ph_view_notice(&photos->view, "The library could not be saved.", kl_clock_us());
 }
 
 /*

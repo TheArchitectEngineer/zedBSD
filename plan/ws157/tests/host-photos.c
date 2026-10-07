@@ -16,7 +16,10 @@
  *
  *     host-photos FONT FALLBACK PREFIX FOLDER
  *
- * FOLDER is the Pictures folder make-photos.py --view writes.  Writes
+ * SOURCE is the folder make-photos.py --view writes; it is imported into
+ * LIBRARY (ws157-p004), whose albums Family and Trips are made here, and
+ * the thumbnails are kept in CACHE (ws157-p005).  The card of Add to Album
+ * makes a third album with the photo shown.  Writes
  * PREFIX-NAME.ppm for each picture (PREFIX-NAME.pam and .panels on glass)
  * and prints "PASS name" or "FAIL name ..." for each check; exits with 1
  * when one failed.
@@ -24,6 +27,7 @@
 
 #include "userland/desktop/photos/app.h"
 
+#include <dirent.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,6 +73,7 @@ static void test_check(const char *name, const char *expected);
 static void test_true(const char *name, int passed);
 static int test_save(const struct ph_view *view, const struct kl_canvas *canvas, const char *prefix, const char *name);
 unsigned kl_appearance_get(const struct kl_appearance *appearance);
+static int test_cached(const char *folder);
 
 /*
  * Draws and drives the view and checks what it did.
@@ -84,13 +89,16 @@ main(
 	struct kl_text text;
 	struct ph_view view;
 	struct kl_ui *ui;
+	struct ph_import_result imported;
+	struct ph_album *albums;
 	uint32_t *pixels;
 	size_t count;
+	size_t album;
 	int error;
 
 	/* The arguments. */
-	if (argc != 5) {
-		fprintf(stderr, "usage: host-photos FONT FALLBACK PREFIX FOLDER\n");
+	if (argc != 7) {
+		fprintf(stderr, "usage: host-photos FONT FALLBACK PREFIX SOURCE LIBRARY CACHE\n");
 		return 2;
 	}
 
@@ -119,19 +127,29 @@ main(
 	style.theme = kl_theme_default();
 	style.glass = 0;
 
-	/* The library and the thread. */
-	error = ph_library_scan(argv[4]);
+	/* The library: the folder imported (the damaged JPEG too: its kind is a JPEG's), two albums. */
+	error = ph_import(argv[5], argv[4], &imported);
 	photos = ph_photos(&count);
-	if (error != 0 || count != 9U) {
+	if (error != 0 || count != 9U || imported.imported != 9U) {
 		printf("FAIL library error=%d photos=%lu (9 expected)\n", error, (unsigned long)count);
 		return 1;
 	}
 
-	/*  ph_view_init(&view);=The view. */
+	/* Two albums. */
+	error = ph_album_create("Family", &album);
+	error |= ph_album_add(album, photos[3].id);
+	error |= ph_album_add(album, photos[4].id);
+	error |= ph_album_create("Trips", &album);
+	error |= ph_album_add(album, photos[0].id);
+	error |= ph_album_add(album, photos[1].id);
+	error |= ph_album_add(album, photos[2].id);
+	test_true("albums", error == 0);
+
+	/* The view. */
 	error = ph_view_init(&view);
 	if (error != 0)
 		return 2;
-	error = ph_worker_start();
+	error = ph_worker_start(argv[6]);
 	if (error != 0)
 		return 2;
 
@@ -222,6 +240,32 @@ main(
 	test_check("broken-whole", "PICTURE photo=8 error=22");
 	(void)test_save(&view, &canvas, argv[3], "broken");
 	test_key(&view, ui, &style, KL_KEY_ESC, 0U);
+
+	/* Add to Album on the photo shown: a new album's name and New Album (the card 360 wide in the middle, below the albums). */
+	ph_view_open(&view, 6, test_now);
+	test_pictures(&view, ui, &style);
+	ph_view_action(&view, PH_ACTION_ALBUM, test_now);
+	test_check("card", "CARD album photo=6");
+	test_frame(&view, ui, &style);
+	(void)test_save(&view, &canvas, argv[3], "card");
+	kl_field_set(&view.album_name, "Waves");
+	test_click(&view, ui, &style, 628, (700 - (160 + 2 * 36)) / 2 + 56 + 2 * 36 + 15, 0);
+	test_check("album-create", "ALBUM create name=Waves error=0");
+	albums = ph_albums(&count);
+	test_true("album-added", count == 3U && strcmp(albums[2].name, "Waves") == 0 && albums[2].count == 1U && view.save == 1 && !view.adding);
+	view.save = 0;
+	test_key(&view, ui, &style, KL_KEY_ESC, 0U);
+
+	/* The grid's Import asks the window for the file chooser. */
+	ph_view_action(&view, PH_ACTION_IMPORT_FOLDER, test_now);
+	test_true("import-request", view.import == PH_ACTION_IMPORT_FOLDER);
+	view.import = 0;
+
+	/* The thumbnails were kept in the cache: a new view reads them from there. */
+	ph_worker_drop_thumbs();
+	error = ph_view_reset(&view);
+	test_pictures(&view, ui, &style);
+	test_true("cache", error == 0 && view.kept == 8U && test_cached(argv[6]) == 8);
 
 	/* On glass: the two cards. */
 	view.glass = 1;
@@ -328,7 +372,7 @@ test_pictures(
 		ph_worker_drop_thumbs();
 		for (index = 0; index < view->want_count; index++) {
 			photo = view->wants[index];
-			(void)ph_worker_queue(photo, (long)photo == view->open, photos[photo].turns, photos[photo].path, view->generation);
+			(void)ph_worker_queue(photo, (long)photo == view->open, photos[photo].turns, photos[photo].path, photos[photo].id, view->generation);
 		}
 
 		/* Made. */
@@ -508,4 +552,37 @@ kl_appearance_get(
 	/* The light appearance. */
 	(void)appearance;
 	return KL_APPEARANCE_LIGHT;
+}
+
+/* Counts the thumbnails in the cache folder. */
+static int
+test_cached(
+	const char *folder)
+{
+	struct dirent *entry;
+	size_t length;
+	int count;
+	int same;
+	DIR *opened;
+
+	/* Each .ppm. */
+	opened = opendir(folder);
+	if (opened == NULL)
+		return -1;
+	count = 0;
+	for (;;) {
+		entry = readdir(opened);
+		if (entry == NULL)
+			break;
+		length = strlen(entry->d_name);
+		if (length < 5U)
+			continue;
+		same = strcmp(entry->d_name + length - 4U, ".ppm");
+		if (same == 0)
+			count++;
+	}
+
+	/* Read through. */
+	(void)closedir(opened);
+	return count;
 }
