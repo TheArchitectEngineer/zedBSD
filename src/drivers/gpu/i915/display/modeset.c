@@ -144,8 +144,8 @@
  * none of them: the run's defaults are the panel's.
  */
 struct i915_resident_output_way {
-	void (*params)(struct i915_display *display, struct i915_lcd_run_params *params);
-	void (*cfg)(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
+	void (*params)(const struct i915_display_output *output, struct i915_lcd_run_params *params);
+	void (*cfg)(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_display_output *output, struct i915_lcd_modeset_cfg *cfg);
 	int own_pool;
 };
 
@@ -191,16 +191,16 @@ static int i915_kernel_preflight_hdmi(struct i915_lcd_kernel *k);
 static int i915_resident_window(void *ctx, struct i915_lcd_observer *o);
 static uint32_t i915_resident_verify(void *ctx, const struct i915_scanout *so);
 static int i915_resident_buffers(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_lcd_state *lcd);
-static void i915_resident_hdmi_params(struct i915_display *display, struct i915_lcd_run_params *params);
+static void i915_resident_hdmi_params(const struct i915_display_output *output, struct i915_lcd_run_params *params);
 static int i915_resident_takeover(struct i915_display *display, struct i915_lcd_kernel *k);
-static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
+static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_display_output *output, struct i915_lcd_modeset_cfg *cfg);
 static int i915_resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
 static int i915_resident_passed(const struct i915_lcd_show_report *rep);
 static int i915_resident_output_way(enum i915_output_kind kind, struct i915_resident_output_way *way);
-static void i915_resident_dp_ext_params(struct i915_display *display, struct i915_lcd_run_params *params);
-static void i915_resident_dp_ext_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
+static void i915_resident_dp_ext_params(const struct i915_display_output *output, struct i915_lcd_run_params *params);
+static void i915_resident_dp_ext_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_display_output *output, struct i915_lcd_modeset_cfg *cfg);
 static int i915_kernel_preflight_dp_ext(struct i915_lcd_kernel *k);
-static int i915_resident_dp_ext_fallback(struct i915_display *display, const struct i915_lcd_show_report *rep);
+static int i915_resident_dp_ext_fallback(struct i915_display *display, struct i915_display_output *output, int enable_rc);
 
 /*
  * Allocates the modeset world of a display.
@@ -1355,6 +1355,61 @@ drv_i915_lcd_modeset_flip_wait(
 }
 
 /*
+ * Waits until the armed flip of a named screen has latched, from a thread
+ * that is not the worker (ws113-p011).
+ *
+ * As drv_i915_lcd_modeset_flip_wait(), but the screen is the caller's and
+ * not the selected one: the worker selects the second output's screen
+ * while it works on it, and a presenting thread must never wait on the
+ * screen the worker happens to have selected.  Returns 0, EINVAL for a
+ * screen out of range, or EIO when the flip did not latch.
+ */
+int
+drv_i915_lcd_modeset_flip_wait_screen(
+	struct i915_display *display,
+	unsigned screen)
+{
+	struct i915_lcd_world *world;
+	struct i915_lcd_modeset *ms;
+	struct i915_lcd_emit *ms_ops;
+	uint32_t live;
+	int event_rc;
+
+	/* Refuses a screen the pools have no room for. */
+	if (screen >= I915_LCD_MS_SCREENS)
+		return EINVAL;
+
+	world = display->lcd_world;
+	ms = &world->ms_pool[screen];
+	ms_ops = world->ms_ops_pool[screen];
+
+	/* A screen that never ran, nothing armed, or a flip that will never complete: nothing to wait for. */
+	if (ms_ops == NULL)
+		return 0;
+	if (!ms->flip_pending || ms->flip_stuck)
+		return 0;
+
+	/* A flip that has latched already. */
+	live = ms_ops->read32(ms_ops->ctx, i915_mmio_reg_offset(PLANE_SURFLIVE(ms->crtc.pipe, PLANE_PRIMARY)));
+	if (live == ms->pend_surf)
+		return 0;
+
+	/* Waits for the vblank the flip latches at, then checks that it did. */
+	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
+	live = ms_ops->read32(ms_ops->ctx, i915_mmio_reg_offset(PLANE_SURFLIVE(ms->crtc.pipe, PLANE_PRIMARY)));
+	if (live == ms->pend_surf)
+		return 0;
+
+	/* The vblank came and went without the new buffer, or never came. */
+	kern_logf("i915: display screen %u: flip to 0x%08x did not latch: event_rc=%d live 0x%08x\n",
+	    screen,
+	    ms->pend_surf,
+	    event_rc,
+	    live);
+	return EIO;
+}
+
+/*
  * Waits for the armed flip of the selected screen to complete, before the
  * buffers change hands (the stop, or a flip that waits).
  *
@@ -1806,7 +1861,7 @@ drv_i915_lcd_kernel_resident_run(
 	 * may own the device's PLL pool and DBUF state from their empty start.
 	 */
 	if (way.params != NULL) {
-		way.params(display, &output_params);
+		way.params(&display->output, &output_params);
 		k->p = &output_params;
 		lcd = &display->output.state;
 		if (way.own_pool) {
@@ -1829,7 +1884,7 @@ drv_i915_lcd_kernel_resident_run(
 
 	/* The output's encoder in place of the panel's eDP. */
 	if (way.cfg != NULL)
-		way.cfg(display, d, &env->cfg);
+		way.cfg(display, d, &display->output, &env->cfg);
 
 	/* Creates, pins, clears and publishes both buffers at the output's size. */
 	buffers_error = i915_resident_buffers(display, d, lcd);
@@ -1924,7 +1979,7 @@ drv_i915_lcd_kernel_resident_run(
 	 * tried again at the lower link (ws051-p004b).
 	 */
 	if (!passed && released && held == 0 && display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
-		fallback_error = i915_resident_dp_ext_fallback(display, rep);
+		fallback_error = i915_resident_dp_ext_fallback(display, &display->output, rep->enable_rc);
 		if (fallback_error == 0)
 			return EAGAIN;
 	}
@@ -3275,10 +3330,12 @@ i915_kernel_display(
 {
 	struct i915_lcd_kernel *k;
 
-	/* The run is the display's lk member. */
+	/* A run that names its display (a second output's, ws113-p011). */
 	k = ctx;
+	if (k->display != NULL)
+		return k->display;
 
-	/* Reports the owner. */
+	/* Otherwise the run is the display's lk member. */
 	return container_of(k, struct i915_display, lk);
 }
 
@@ -3864,7 +3921,7 @@ i915_resident_takeover(
  */
 static void
 i915_resident_hdmi_params(
-	struct i915_display *display,
+	const struct i915_display_output *output,
 	struct i915_lcd_run_params *params)
 {
 	/* The HDMI output of DDI B, alone, with the mode output.c chose. */
@@ -3875,7 +3932,7 @@ i915_resident_hdmi_params(
 	params->cpu_transcoder = I915_OUTPUT_HDMI_PIPE;
 	params->dpll_id = 0;
 	params->reset_dplls = 1;
-	params->state = &display->output.state;
+	params->state = &output->state;
 	params->tag = "resident HDMI";
 }
 
@@ -3888,6 +3945,7 @@ static void
 i915_resident_hdmi_cfg(
 	struct i915_display *display,
 	const struct i915_lcd_kernel_deps *d,
+	const struct i915_display_output *output,
 	struct i915_lcd_modeset_cfg *cfg)
 {
 	const struct i915_vbt_encoder *encoder;
@@ -3912,15 +3970,17 @@ i915_resident_hdmi_cfg(
 		cfg->vbt_hdmi_level_shift = encoder->hdmi_level_shift;
 
 	/* Logs what the run drives. */
-	mode = &display->output.state.mode;
+	UNUSED_PARAMETER(display);
+
+	mode = &output->state.mode;
 	kern_logf("i915: resident display: HDMI on port %d, pipe %d, DVI mode: %ux%u %d kHz | PLL cfgcr0=0x%08x cfgcr1=0x%08x | VBT level shift %d | saved DDI_BUF_CTL bits 0x%x\n",
 	    cfg->port,
 	    cfg->pipe,
 	    mode->hdisplay,
 	    mode->vdisplay,
 	    mode->clock_khz,
-	    display->output.state.pll.cfgcr0,
-	    display->output.state.pll.cfgcr1,
+	    output->state.pll.cfgcr0,
+	    output->state.pll.cfgcr1,
 	    cfg->vbt_hdmi_level_shift,
 	    cfg->saved_port_bits);
 }
@@ -3932,18 +3992,18 @@ i915_resident_hdmi_cfg(
  */
 static void
 i915_resident_dp_ext_params(
-	struct i915_display *display,
+	const struct i915_display_output *output,
 	struct i915_lcd_run_params *params)
 {
 	/* The external DP output of the Type-C port, alone. */
 	kern_memset(params, 0, sizeof(*params));
 	params->output_dp_ext = 1;
-	params->port = display->output.port;
+	params->port = output->port;
 	params->pipe = I915_OUTPUT_DP_EXT_PIPE;
 	params->cpu_transcoder = I915_OUTPUT_DP_EXT_PIPE;
-	params->dpll_id = (int)DPLL_ID_ICL_MGPLL1 + (int)display->output.tc_port;
+	params->dpll_id = (int)DPLL_ID_ICL_MGPLL1 + (int)output->tc_port;
 	params->reset_dplls = 1;
-	params->state = &display->output.state;
+	params->state = &output->state;
 	params->tag = "resident DP";
 }
 
@@ -3959,6 +4019,7 @@ static void
 i915_resident_dp_ext_cfg(
 	struct i915_display *display,
 	const struct i915_lcd_kernel_deps *d,
+	const struct i915_display_output *output,
 	struct i915_lcd_modeset_cfg *cfg)
 {
 	const struct i915_lcd_mode *mode;
@@ -3969,16 +4030,16 @@ i915_resident_dp_ext_cfg(
 	/* The Type-C port's DDI, pipe and transcoder B, the port's TC PLL. */
 	cfg->output_hdmi = 0;
 	cfg->output_dp_ext = 1;
-	cfg->port = display->output.port;
+	cfg->port = output->port;
 	cfg->pipe = I915_OUTPUT_DP_EXT_PIPE;
 	cfg->cpu_transcoder = I915_OUTPUT_DP_EXT_PIPE;
-	cfg->dpll_id = (int)DPLL_ID_ICL_MGPLL1 + (int)display->output.tc_port;
+	cfg->dpll_id = (int)DPLL_ID_ICL_MGPLL1 + (int)output->tc_port;
 	cfg->saved_port_bits = 0U;
 
 	/* The port's AUX channel, and the sink reached over it. */
-	cfg->aux_ch = display->tck.aux_ch[display->output.tc_port];
-	cfg->aux_emit = drv_i915_dp_ext_aux_emit(display, display->output.port);
-	kern_memcpy(cfg->dpcd, display->output.sink.dpcd, sizeof(cfg->dpcd));
+	cfg->aux_ch = display->tck.aux_ch[output->tc_port];
+	cfg->aux_emit = drv_i915_dp_ext_aux_emit(display, output->port);
+	kern_memcpy(cfg->dpcd, output->sink.dpcd, sizeof(cfg->dpcd));
 	kern_memset(cfg->edp_dpcd, 0, sizeof(cfg->edp_dpcd));
 
 	/* An external display has no panel power sequencer and no backlight of ours. */
@@ -3988,10 +4049,10 @@ i915_resident_dp_ext_cfg(
 	cfg->vbt_hdmi_level_shift = -1;
 
 	/* Logs what the run drives. */
-	mode = &display->output.state.mode;
-	link = &display->output.state.link;
+	mode = &output->state.mode;
+	link = &output->state.link;
 	kern_logf("i915: resident display: DP on TC%u (port %d), pipe %d: %ux%u %d kHz | link %d kHz x%d %d bpp | TC PLL %d (div0 0x%08x) | DPCD rev 0x%02x branch %d\n",
-	    display->output.tc_port + 1U,
+	    output->tc_port + 1U,
 	    cfg->port,
 	    cfg->pipe,
 	    mode->hdisplay,
@@ -4001,9 +4062,9 @@ i915_resident_dp_ext_cfg(
 	    link->lanes,
 	    link->bpp,
 	    cfg->dpll_id,
-	    display->output.state.pll.dkl.div0,
+	    output->state.pll.dkl.div0,
 	    cfg->dpcd[0],
-	    display->output.sink.branch);
+	    output->sink.branch);
 }
 
 /*
@@ -4015,17 +4076,15 @@ i915_kernel_preflight_dp_ext(
 	struct i915_lcd_kernel *k)
 {
 	const struct i915_lcd_kernel_deps *d;
-	struct i915_display *display;
 	uint32_t transconf;
 	uint32_t buf_ctl;
 	uint32_t buf_ctl_reg;
 
-	/* The run's dependencies and its display. */
+	/* The run's dependencies; its parameters name the Type-C port's DDI (the resident output's or the second output's). */
 	d = k->d;
-	display = i915_kernel_display(k);
 
 	/* Reads TRANSCONF(B) and the port's DDI_BUF_CTL. */
-	buf_ctl_reg = I915_LCD_DDI_BUF_CTL_A + I915_LCD_DDI_BUF_CTL_STRIDE * (uint32_t)display->output.port;
+	buf_ctl_reg = I915_LCD_DDI_BUF_CTL_A + I915_LCD_DDI_BUF_CTL_STRIDE * (uint32_t)k->p->port;
 	transconf = drv_i915_read32(d->mmio, I915_LCD_TRANSCONF_B);
 	buf_ctl = drv_i915_read32(d->mmio, buf_ctl_reg);
 
@@ -4055,7 +4114,8 @@ i915_kernel_preflight_dp_ext(
  * Lowers an external DP output's link after its link did not train, and
  * computes the output's link again for the next run (the Linux
  * intel_dp_get_link_train_fallback_values() and the modeset the retry work
- * asks for, ws051-p004b).  Only an enable that reported the link as not
+ * asks for, ws051-p004b).  The output is the resident one or the second
+ * output (ws113-p011).  Only an enable that reported the link as not
  * trained is retried.  Returns 0 when the next run may try the lower link,
  * ENOSPC when no lower link carries the mode, or EINVAL for a run that did
  * not fail at the link.
@@ -4063,7 +4123,8 @@ i915_kernel_preflight_dp_ext(
 static int
 i915_resident_dp_ext_fallback(
 	struct i915_display *display,
-	const struct i915_lcd_show_report *rep)
+	struct i915_display_output *output,
+	int enable_rc)
 {
 	struct i915_lcd_state next;
 	struct i915_lcd_link *link;
@@ -4073,30 +4134,30 @@ i915_resident_dp_ext_fallback(
 	int error;
 
 	/* Only a link that did not train is retried. */
-	if (rep->enable_rc != I915_LCD_MS_LINK_NOT_TRAINED)
+	if (enable_rc != I915_LCD_MS_LINK_NOT_TRAINED)
 		return EINVAL;
 
 	/* Lowers the port's limits below the link that failed. */
-	link = &display->output.state.link;
-	error = drv_i915_dp_ext_link_fallback(display, display->output.port, link->rate_khz, link->lanes);
+	link = &output->state.link;
+	error = drv_i915_dp_ext_link_fallback(display, output->port, link->rate_khz, link->lanes);
 	if (error != 0)
 		return ENOSPC;
 
 	/* The limits now in force. */
-	error = drv_i915_dp_ext_link_limits(display, display->output.port, &max_rate, &max_lanes);
+	error = drv_i915_dp_ext_link_limits(display, output->port, &max_rate, &max_lanes);
 	if (error != 0)
 		return ENOSPC;
 
 	/* The mode's link under them, computed apart so a refusal leaves the output as it was. */
-	error = drv_i915_lcd_compute_dp_ext(&display->output.state.mode, &display->output.sink, max_rate, max_lanes, display->output.state.pll.ref_khz, &next);
+	error = drv_i915_lcd_compute_dp_ext(&output->state.mode, &output->sink, max_rate, max_lanes, output->state.pll.ref_khz, &next);
 	if (error != 0) {
-		kern_logf("i915: resident display: DP on TC%u: no lower link carries the mode (%d)\n", display->output.tc_port + 1U, error);
+		kern_logf("i915: resident display: DP on TC%u: no lower link carries the mode (%d)\n", output->tc_port + 1U, error);
 		return ENOSPC;
 	}
 
 	/* Logs the retry. */
 	kern_logf("i915: resident display: DP on TC%u: retrying at %d kHz x%d (was %d kHz x%d)\n",
-	    display->output.tc_port + 1U,
+	    output->tc_port + 1U,
 	    next.link.rate_khz,
 	    next.link.lanes,
 	    link->rate_khz,
@@ -4105,7 +4166,7 @@ i915_resident_dp_ext_fallback(
 	/* The next run drives the lower link, under the lock a change of output takes. */
 	irq = spin_lock_irqsave(&display->device->irq_lock);
 
-	display->output.state = next;
+	output->state = next;
 
 	spin_unlock_irqrestore(&display->device->irq_lock, irq);
 

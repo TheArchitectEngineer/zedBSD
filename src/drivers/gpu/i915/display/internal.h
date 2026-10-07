@@ -3427,6 +3427,13 @@ struct i915_lcd_kernel {
 	/* The parameters of the run; NULL before it starts. */
 	const struct i915_lcd_run_params *p;
 
+	/*
+	 * The display the run belongs to; NULL for a run that is the display's
+	 * lk member (the hooks then find the display around it).  A second
+	 * output's run (ws113-p011) is not lk and names its display here.
+	 */
+	struct i915_display *display;
+
 	/* What the run drives. */
 	const struct i915_lcd_kernel_deps *d;
 

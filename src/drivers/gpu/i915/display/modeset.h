@@ -88,6 +88,7 @@ int drv_i915_lcd_modeset_flip_nowait(struct i915_display *display, uint32_t new_
 int drv_i915_lcd_modeset_flip_poll(struct i915_display *display);
 int drv_i915_lcd_modeset_flip_settle(struct i915_display *display);
 int drv_i915_lcd_modeset_flip_wait(struct i915_display *display);
+int drv_i915_lcd_modeset_flip_wait_screen(struct i915_display *display, unsigned screen);
 
 /*
  * ==== One picture on the panel ====
