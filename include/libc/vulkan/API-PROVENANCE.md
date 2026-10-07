@@ -161,3 +161,37 @@ protocol's wire format 1 (virglrenderer 1.1.0) for the same Vulkan commands, so
 that a Venus renderer on a virtual machine's host accepts the stream; the file,
 its names and later numbers are zedBSD's. No virglrenderer file is read to make
 it, and libvulkan no longer carries `opcodes.h` or `LICENSE-PROTOCOL`.
+
+## Vulkan Video and synchronization2 declarations (ws083-p002)
+
+`vulkan_video.h` selects declaration data for `VK_KHR_video_queue` (revision 8),
+`VK_KHR_video_decode_queue` (8), `VK_KHR_video_decode_h264` (9) and
+`VK_KHR_synchronization2` (1), with the Vulkan 1.3 types synchronization2's names
+alias (`VkFlags64`, the stage and access flags and constants, `VkSubmitFlagBits`,
+the barrier, dependency, submit and feature structures). The input is a different
+revision from the core selection above, because the pinned 1.3.269 input is not
+available to the maintainers; the selected extensions' declarations have not
+changed since their final revisions:
+
+- Khronos Vulkan-Headers 1.4.309, as packaged by Debian (`libvulkan-dev`
+  1.4.309.0-1): `/usr/include/vulkan/vulkan_core.h`, SHA-256
+  `39f358bb99f7be5206524d119de4a5b5ab5c515c329c2857ff395d37e6387b4c`.
+- The H.264 standard headers are copied unchanged from the same package into
+  `vk_video/` (std header `VK_STD_vulkan_video_codec_h264_decode` 1.0.0):
+  `vulkan_video_codecs_common.h` `7afc98e84d3bea72e40a65161463abbd4be2ff1e1853eca3f8c331afb7329a8b`,
+  `vulkan_video_codec_h264std.h` `05859b58e094a8dcc88cb3766a1fcbfd62bcaab20c93d2c3e5cec853628f277c`,
+  `vulkan_video_codec_h264std_decode.h` `d2be01f84f773644a24b7634f49e63ff8c6f0e807119b1bf609176585031f93a`.
+- Declaration license: Apache-2.0, copyright 2015–2025 The Khronos Group Inc.
+  (`LICENSE-API`). The independent selection tool `tools/maintain-video.noct` is Zlib.
+
+```sh
+timeout 90 build/NoctLang/build-static/noct \
+  userland/desktop/libvulkan/tools/maintain-video.noct \
+  /usr/include/vulkan/vulkan_core.h include/libc/vulkan/vulkan_video.h
+```
+
+`vulkan.h` includes `vulkan_video.h`. The declarations do not advertise support:
+libvulkan offers these extensions only on a backend whose capset declares video
+(the native i915), and it names Vulkan 1.0 there, which the registry's
+dependencies of these extensions do not allow. The libvulkan README lists every
+such point.

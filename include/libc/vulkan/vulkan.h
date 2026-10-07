@@ -13,6 +13,7 @@
 #define KERN_VULKAN_H
 
 #include "vulkan_core.h"
+#include "vulkan_video.h"
 
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 #include "vulkan_wayland.h"
