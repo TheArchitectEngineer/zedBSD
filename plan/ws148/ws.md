@@ -38,5 +38,5 @@ Settings の Privacy の頁（今は stub）で何を設定すべきかを検討
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws148-p001](phase001/phase.md) | 検討（上の観点、他の desktop の調べ、今の実体の有無）と結論の案、ユーザーの判断 | cleared（2026-10-06 ユーザー: (a) 頁を無くす） | — |
-| [ws148-p002](phase002/phase.md) | (a) 頁の削除と、最近の履歴の口（Files の Clear Recents、Storage の Keep recent items） | in-progress（q824 P2、host 試験 PASS、T1 待ち） | p001 |
+| [ws148-p002](phase002/phase.md) | (a) 頁の削除と、最近の履歴の口（Files の Clear Recents、Storage の Keep recent items） | cleared（2026-10-08 Q1、T1-271） | p001 |
 | ws148-p003 | (b) の時の実装と回帰 | canceled（(a) に決まったので不要、2026-10-06） | p002 |

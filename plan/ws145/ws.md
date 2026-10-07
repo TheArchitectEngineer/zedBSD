@@ -33,7 +33,7 @@ app が libkeiland に PDF の場所を渡して印刷を依頼すると、netwo
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws145-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | in-progress（第 3.1 版、ユーザーの判断待ち） | — |
+| [ws145-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | cleared（2026-10-08 Q1） | — |
 | [ws145-p002](phase002/phase.md) | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host の符号化・通し・寿命の試験 | cleared（2026-10-07、T1-318） | p001 |
 | [ws145-p003](phase003/phase.md) | backend の print（設定の file・printd の起動と通信・状態遷移）、compositor の printers の object、protocol version 17、libkeiland の口（KL_VERSION 56 の案）、`printtest`、host の backend の試験 | cleared（2026-10-07、T1-318） | p002 |
 | [ws145-p004](phase004/phase.md) | Settings の Printers の頁（IP address・port・protocol、詳しい設定の path・queue） | cleared（2026-10-07、T1-318） | p003 |
