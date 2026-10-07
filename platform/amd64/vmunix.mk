@@ -1918,23 +1918,35 @@ $(BUILD)/bin/browser-probe: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine amd64 --role application \
  --needed libbrowser.so --needed libc.so $@
 
-# OpenGL with GLX for Xzed (WS069 p004): libGLESv2's translation with GLX and a private libX11 inside.
+# OpenGL (WS069 p004; WS178): libGLESv2's translation with the fixed function and OpenGL 3.x, GL only.
 DYNAMIC_GL_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libgl)
 
 $(DYNAMIC_DIR)/libGL.so: $(DYNAMIC_GL_OBJS) $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
-	userland/x11/libGL/exports.map tools/build/check-dynamic-elf.py
+	userland/desktop/libGL/exports.map tools/build/check-dynamic-elf.py
 	$(LD) -m elf_x86_64 -shared -soname libGL.so --hash-style=both -Bsymbolic-functions \
  -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
- --version-script=userland/x11/libGL/exports.map \
+ --version-script=userland/desktop/libGL/exports.map \
  $(DYNAMIC_GL_OBJS) -L$(DYNAMIC_DIR) -l:libEGL.so -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
  --needed libEGL.so --needed libvulkan.so --needed libc.so --soname libGL.so $@
 
-# The GLX test application (WS069 p004): Xlib built in, GL and GLX from libGL.
+# GLX (WS069 p004; WS178): xserver's library, contexts of libGL's GL for X windows, a private libX11 inside.
+DYNAMIC_GLX_OBJS := $(patsubst %.c,$(DYNAMIC_DIR)/obj/%.o,$(KEILAND_LIBGLX_SOURCES))
+
+$(DYNAMIC_DIR)/libGLX.so: $(DYNAMIC_GLX_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libEGL.so $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/xserver/libGLX/exports.map tools/build/check-dynamic-elf.py
+	$(LD) -m elf_x86_64 -shared -soname libGLX.so --hash-style=both -Bsymbolic-functions \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/xserver/libGLX/exports.map \
+ $(DYNAMIC_GLX_OBJS) -L$(DYNAMIC_DIR) -l:libGL.so -l:libEGL.so -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine amd64 --role shared-library \
+ --needed libGL.so --needed libEGL.so --needed libc.so --soname libGLX.so $@
+
+# The GLX test application (WS069 p004): Xlib built in, GL from libGL and GLX from libGLX.
 DYNAMIC_GLXTEST_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,glxtest)
 
 $(BUILD)/bin/glxtest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_GLXTEST_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
+	$(DYNAMIC_GLXTEST_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libGLX.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
@@ -1942,13 +1954,13 @@ $(BUILD)/bin/glxtest: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_GLXTEST_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libGL.so -l:libc.so -o $@
+ -l:libGL.so -l:libGLX.so -l:libc.so -o $@
 
-# Gears (WS069 p005): OpenGL 1.x's fixed function through GLX, Xlib built in.
+# Gears (WS069 p005): OpenGL 1.x's fixed function through GLX, Xlib built in; GL from libGL, GLX from libGLX.
 DYNAMIC_ZGEARS_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,zgears)
 
 $(BUILD)/bin/zgears: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
-	$(DYNAMIC_ZGEARS_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
+	$(DYNAMIC_ZGEARS_OBJS) $(DYNAMIC_DIR)/libGL.so $(DYNAMIC_DIR)/libGLX.so $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
 	@mkdir -p $(dir $@)
 	$(CC) -m64 -nostdlib -pie -Wl,--no-relax \
  -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
@@ -1956,7 +1968,7 @@ $(BUILD)/bin/zgears: $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o $(DYNAMIC_ZGEARS_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
- -l:libGL.so -l:libc.so -o $@
+ -l:libGL.so -l:libGLX.so -l:libc.so -o $@
 
 # The EGL test application (WS068 p002) imports standard Wayland, EGL and GLES entry points.
 DYNAMIC_EGLTEST_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,egltest)

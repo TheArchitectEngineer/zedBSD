@@ -9,9 +9,9 @@
  * zedBSD's GLX (WS069 p004): OpenGL contexts for Xzed's windows.
  *
  * Rendering is direct.  A GLX context is an EGL context (OpenGL ES 2,
- * libGLESv2's translation to Vulkan, built into this library, with the
- * fixed-function OpenGL 1.x of fixed.c and immediate.c) on a
- * surfaceless EGL display, current on a pbuffer the size of the window.
+ * libGLESv2's translation to Vulkan in libGL.so, with libGL's
+ * fixed-function OpenGL 1.x) on a surfaceless EGL display, current on a
+ * pbuffer the size of the window.
  * glXSwapBuffers reads the pbuffer back and puts it into the window with
  * XzedPutImageRGB24; a window that changed size gets a new pbuffer.
  * Xzed's GLX extension answers the version and the strings (Xzed's
@@ -25,10 +25,14 @@
  * glXCreateNewContext make OpenGL 1.4 contexts (the fixed function, and
  * the rest of the calls as they are); glXCreateContextAttribsARB
  * (WS068 p013, p031) makes OpenGL 3.0 and 3.1 ones, whose version and
- * flags GL reports (fixed.c asks glx_version).
+ * flags GL reports (libGL asks through the private interface of
+ * zgl-glx.h, which this library attaches before its first context).
+ *
+ * This is libGLX.so, xserver's library (WS178): GLX alone, apart from
+ * libGL.so, which holds GL.  X programs link both, -lGL -lGLX.
  */
 
-#include "fixed.h"
+#include "userland/desktop/libGL/zgl-glx.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -50,7 +54,7 @@
 #define GLX_CLIENT_MINOR		4
 
 /* The desktop GL versions of a context, major * 10 + minor: glXCreateContext's and glXCreateContextAttribsARB's. */
-#define GLX_GL_LEGACY			14U
+#define GLX_GL_LEGACY			ZGL_GL_LEGACY
 #define GLX_GL_THREE			30U
 #define GLX_GL_THREE_ONE		31U
 #define GLX_GL_THREE_TWO		32U
@@ -135,6 +139,19 @@ volatile int zglx_swap_step;
 /* The key of each thread's current context, made once. */
 static pthread_key_t glx_current_key;
 static pthread_once_t glx_current_once = PTHREAD_ONCE_INIT;
+
+static unsigned glx_version(GLint *flags);
+static GLint glx_profile(void);
+
+/*
+ * The answers about the thread's current context that libGL asks for
+ * (zgl-glx.h), attached before each context is made; it lives as long
+ * as the process, as libGL keeps a pointer to it.
+ */
+static const struct zgl_glx_query glx_query = {
+	glx_version,
+	glx_profile
+};
 
 static int glx_setup(Display *dpy);
 static XVisualInfo *glx_visual_info(int depth);
@@ -861,45 +878,6 @@ glXCreateContextAttribsARB(
 }
 
 /*
- * Returns the GL_CONTEXT_PROFILE_MASK of the calling thread's current
- * context: 0 before 3.2 (and without one).
- */
-GLint
-glx_profile(void)
-{
-	GLXContext ctx;
-
-	/* The thread's context. */
-	ctx = glx_current();
-	if (ctx == NULL)
-		return 0;
-
-	/* Succeeded: its profile. */
-	return ctx->profile;
-}
-
-/*
- * Returns the desktop GL version of the calling thread's current context
- * (major * 10 + minor; 1.4 without one) and its GL_CONTEXT_FLAGS.
- */
-unsigned
-glx_version(
-	GLint *flags)
-{
-	GLXContext ctx;
-
-	/* The thread's context. */
-	ctx = glx_current();
-	*flags = 0;
-	if (ctx == NULL)
-		return GLX_GL_LEGACY;
-
-	/* Its own. */
-	*flags = ctx->flags;
-	return ctx->version;
-}
-
-/*
  * Makes a context current on a window for drawing (reading is the same
  * window).
  */
@@ -1120,11 +1098,11 @@ glx_context(
 	EGLint count;
 	int status;
 
-	/* GLX on the server, the fixed-function layer's hooks, and the EGL display. */
+	/* GLX on the server, libGL's view of the contexts and its fixed-function layer, and the EGL display. */
 	status = glx_setup(dpy);
 	if (status != 0)
 		return NULL;
-	fixed_install();
+	zgl_glx_attach(&glx_query);
 	if (glx_egl == EGL_NO_DISPLAY) {
 		glx_egl = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
 		done = eglInitialize(glx_egl, NULL, NULL);
@@ -1288,4 +1266,37 @@ glx_get32(
 {
 	/* Four bytes. */
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
+}
+
+/* Returns the GL_CONTEXT_PROFILE_MASK of the calling thread's current context: 0 before 3.2 (and without one). */
+static GLint
+glx_profile(void)
+{
+	GLXContext ctx;
+
+	/* The thread's context. */
+	ctx = glx_current();
+	if (ctx == NULL)
+		return 0;
+
+	/* Succeeded: its profile. */
+	return ctx->profile;
+}
+
+/* Returns the desktop GL version of the calling thread's current context (major * 10 + minor; 1.4 without one) and its GL_CONTEXT_FLAGS. */
+static unsigned
+glx_version(
+	GLint *flags)
+{
+	GLXContext ctx;
+
+	/* The thread's context. */
+	ctx = glx_current();
+	*flags = 0;
+	if (ctx == NULL)
+		return GLX_GL_LEGACY;
+
+	/* Its own. */
+	*flags = ctx->flags;
+	return ctx->version;
 }

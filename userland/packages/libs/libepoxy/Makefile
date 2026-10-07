@@ -30,7 +30,7 @@ $(eval $(call ZEDBSD_EXTERNAL_SOURCE,libepoxy))
 
 # Meson, through the common rule.  epoxy carries its own GL and EGL headers
 # and finds the implementation at run time with dlopen(); patch 0001 gives it
-# the names of zedBSD's libraries (libEGL.so, libGLESv2.so, libGL.so), and
+# the names of zedBSD's libraries (libEGL.so, libGLESv2.so, libGL.so, libGLX.so), and
 # patch 0002 copes with a dlopen() without RTLD_NOLOAD.  EGL
 # is on; GLX and the rest of X11 are off (GTK runs on Wayland here), as are
 # the tests and the documentation.

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the OpenGL ES calls and GLX leave the library (libX11 inside it stays inside). */
+/* Only the GL calls leave the library, and the private interface libGLX attaches through (zgl-glx.h). */
 {
 	global:
 		glActiveTexture;
@@ -392,35 +392,7 @@
 		glVertexPointer;
 		glViewport;
 		glWaitSync;
-		glXChooseFBConfig;
-		glXChooseVisual;
-		glXCreateContext;
-		glXCreateContextAttribsARB;
-		glXCreateNewContext;
-		glXCreateWindow;
-		glXDestroyContext;
-		glXDestroyWindow;
-		glXGetClientString;
-		glXGetConfig;
-		glXGetCurrentContext;
-		glXGetCurrentDisplay;
-		glXGetCurrentDrawable;
-		glXGetFBConfigAttrib;
-		glXGetFBConfigs;
-		glXGetProcAddress;
-		glXGetProcAddressARB;
-		glXGetVisualFromFBConfig;
-		glXIsDirect;
-		glXMakeContextCurrent;
-		glXMakeCurrent;
-		glXQueryExtension;
-		glXQueryExtensionsString;
-		glXQueryServerString;
-		glXQueryVersion;
-		glXSwapBuffers;
-		glXWaitGL;
-		glXWaitX;
-		zglx_swap_step;
+		zgl_glx_attach;
 	local:
 		*;
 };

@@ -37,7 +37,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- **WS181 の設計の判断（P2、plan/ws181/phase001/design.md §7・§9、design-reviewer の後にユーザーへ）**: D1 10-07 の UAT が 10-06 の「閉じたら次も最大化」を置き換える（知らせ）。D2 docked の窓の最小化は閉じると同じ扱いか（review: Ctrl+Alt+Shift+矢印の移動は docked のまま運ぶ）。D3 touchpad も 2 本指の下端 = Home、上端 = Wiseview にするか。D4 Home の上で下からの swipe は何もしない、Home は下への drag で閉じる。D5 整列のメニューは今の desktop の絵からだけか、pill のどこからでもか。D6 全画面では上端で Wiseview。D7 整列の上限を超える窓はその場に。追加: mouse にも上端の帯を効かせ全画面の窓から 10 px を取るか（S8）、整列モードの印と窓が閉じた時の詰め直し（S6）、Home の上に bar を残すか（S9）。ws142 の試験・記録の変更の許可（S10、Q1 で可）。
+- （解決 2026-10-07、decisions-log）WS181 の設計の判断: D1 10-07 の UAT が 10-06 の「閉じたら次も最大化」を置き換える（知らせ）。D2 docked の窓の最小化は閉じると同じ扱いか（review: Ctrl+Alt+Shift+矢印の移動は docked のまま運ぶ）。D3 touchpad も 2 本指の下端 = Home、上端 = Wiseview にするか。D4 Home の上で下からの swipe は何もしない、Home は下への drag で閉じる。D5 整列のメニューは今の desktop の絵からだけか、pill のどこからでもか。D6 全画面では上端で Wiseview。D7 整列の上限を超える窓はその場に。追加: mouse にも上端の帯を効かせ全画面の窓から 10 px を取るか（S8）、整列モードの印と窓が閉じた時の詰め直し（S6）、Home の上に bar を残すか（S9）。ws142 の試験・記録の変更の許可（S10、Q1 で可）。
 - **M-3（WS051）**: 5330 の iGPU を一時的に host の i915 に付け替えて USB-C の DP の正解の register を採るか（2026-10-07 ユーザーが質問を閉じた、5330 が戻った時に改めて聞く）。
 - **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
 - WS180（Emacs の graphical な editor）・WS117（Qt6）はベータ3 以降（決定済み）。
@@ -508,6 +508,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（クリック、WS181 design.md §7）: D3 touchpad は「変えない」、D5 整列のメニューは「pill のどこでも」（中に desktop の切り替えも置く）、S6「整列モードを終える」（詰め直さない）、S8 上端の帯は「touch だけ」、D1・D2・D4・D6・D7・S9 は「全部このまま」（既定どおり）。
 - 2026-10-07 ユーザー（クリック、WS178）:「完全に分ける」（libGL.so は GL だけ、glX* は xserver の package の libGLX.so だけ、外から移植する X の GL の program は link の修正が要る）。T1 は再起動し、削除は全ての担当で禁止・Q1 が行う（plan/agents/protocol.md 末尾）。
 - 2026-10-07 ユーザー（クリック）: WS181 は「ベータ2、UAT として優先」、整列の形は 5 つ（水平に等分、垂直に等分、右に 1 つ・左に縦の分割、左に 1 つ・右に縦の分割、格子）。WS180（Emacs の graphical な editor）と WS117（Qt6 の Linux の互換）は「どちらもベータ3 以降」。WS178 の libGL・libGLX の分割はユーザーが互換性の説明を求めた（Q1 が回答）。
 - 2026-10-07 ユーザーの UAT（挙動の調整、4 点: docked から floating の時の他の窓、docking の隠れと最小化の区別、App Home を独立のモードに・gesture の遷移、整列のメニューと整列モード）→ [WS181](ws181/ws.md)。M-3（5330 の iGPU を host の i915 に付け替えて正解値を採る）の質問はユーザーが閉じた（未決、指示を待つ）。

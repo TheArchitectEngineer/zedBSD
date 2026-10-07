@@ -21,7 +21,7 @@ gen60 の import の連鎖）で読んだものである。実装の Phase は�
 | device の情報 | queue に COMPUTE_BIT。上限は ES 3.1 の最小値と同じ（shared 16384、invocation 128、size 128・128・64、count 65535）。stage あたりの storage buffer は 4 | `render/instance.c` |
 | kernel の compute の試験 | `eu-test.c`: 3D で SBA → GPGPU の選択 → VFE（最大 thread 112×DSS−1、URB 2・2）→ MSF → IDL（1 thread）→ GPGPU_WALKER（SIMD8、1 group、right mask 1）→ MSF。kernel は r0 を r127 へ写し SFID 7（thread spawner）へ EOT。5330 の実機で動いた | `tests/execution/eu-test.c` |
 | libvulkan | `vkCreateComputePipelines`・`vkCmdDispatch`・`vkCmdDispatchIndirect` の encode は既にある（Venus ではそのまま host に行く） | `userland/desktop/libvulkan/` |
-| libglesv2 | GLSL ES 3.00 まで。compute の stage・buffer block（SSBO）・`shared`・atomic・barrier は無い。`GL_VERSION` は「OpenGL ES 3.0 Kei」。GL の buffer は CPU の bytes を持ち、device が書いた buffer（transform feedback）は CPU の読みの前に読み戻す。`glFlush`・`glFinish` は何もしない（submit は swap の frame の終わりか、`glReadPixels`・fence・読み戻しの `query_finish`）。source は libGL にも組み込まれる | `userland/desktop/libglesv2/`、`userland/x11/libGL/` |
+| libglesv2 | GLSL ES 3.00 まで。compute の stage・buffer block（SSBO）・`shared`・atomic・barrier は無い。`GL_VERSION` は「OpenGL ES 3.0 Kei」。GL の buffer は CPU の bytes を持ち、device が書いた buffer（transform feedback）は CPU の読みの前に読み戻す。`glFlush`・`glFinish` は何もしない（submit は swap の frame の終わりか、`glReadPixels`・fence・読み戻しの `query_finish`）。source は libGL にも組み込まれる | `userland/desktop/libglesv2/`、`userland/desktop/libGL/` |
 | libegl | `eglGetPlatformDisplayEXT(EGL_PLATFORM_SURFACELESS_MESA)`、pbuffer、`EGL_OPENGL_ES3_BIT` は既にある。`eglMakeCurrent` の release は pass を閉じるだけで submit しない | `userland/desktop/libegl/egl.c` |
 | header | `include/libc/GLES3/gl3.h` はある。`gl31.h` は無い（Noct の `accel_opengles.c` は `<GLES3/gl31.h>` を include する） | `include/libc/GLES3/` |
 | Noct | snapshot `fcf5759`。`NOCT_ENABLE_ACCEL` は OFF。OpenGL ES の backend は CMake の `CMAKE_SYSTEM_NAME` が Linux・FreeBSD のときだけ選ばれ、zedBSD の toolchain file は `zedBSD` を名乗るので、ON にしても backend が入らない。**GLES の backend は float を使う program を断り（CPU に戻る）、dispatch の group の数が device の上限を越えると error、shader の compile・link の失敗は CPU への fallback ではなく error** | `build/NoctLang/`（読み取りのみ） |
@@ -322,7 +322,7 @@ compiler の出した kernel を走らせ、次に 1 group の複数 thread、�
 - ws068-p035 に残す: desktop GL の `GL_ARB_compute_shader`（libGL）、image load/store、atomic counter、program interface query の全体。
   ws068-p035 の「p037 に依存」は desktop GL の順の話で、GLES 3.1 の compute の部分集合はそれに依らない。
   **ws068 の ws.md の p035 の行に「GLES 3.1 の compute の部分集合は WS101 へ移した」と書くのは main の作業**（WS101 の範囲の外）。
-- libglesv2 の source は libGL にも組み込まれる（`userland/x11/libGL/Makefile`）。ES 3.1 の stub・export・版の名乗りが desktop GL に漏れない
+- libglesv2 の source は libGL にも組み込まれる（`userland/desktop/libGL/Makefile`）。ES 3.1 の stub・export・版の名乗りが desktop GL に漏れない
   分け方（libGL の `gles_fixed` の有無で分ける既存の形）を p010 で決める。
 
 ### 3.2 GLSL ES 3.10 の compute を自前の compiler から SPIR-V へ（`userland/desktop/libglesv2/glsl/`、[glsl-design](../ws068/glsl-design.md) の延長）

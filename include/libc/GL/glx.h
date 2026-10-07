@@ -8,8 +8,12 @@
 /*
  * zedBSD's GLX 1.4 (WS069 p004): OpenGL contexts for Xzed's windows.
  * Rendering is direct (libGL draws with EGL and OpenGL ES on Vulkan and
- * puts each frame into the window).  glXCreateContextAttribsARB makes an
- * OpenGL 3.0 context (WS068 p013).
+ * libGLX puts each frame into the window).  glXCreateContextAttribsARB
+ * makes an OpenGL 3.0 context (WS068 p013).
+ *
+ * GLX is its own library, libGLX.so, apart from GL's libGL.so (WS178):
+ * a program that uses GLX links both, -lGL -lGLX.  A program ported from
+ * a system whose libGL also holds GLX needs -lGLX added to its link.
  */
 
 #ifndef LIBC_GL_GLX_H
