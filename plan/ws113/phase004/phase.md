@@ -168,3 +168,11 @@ PASS（QEMU Venus、VENUS_DISPLAY=dbus・2 出力、6e8e0bb94）: head 0 1280x80
 ## T1-365 の判定（2026-10-07 Q1、p004b）
 
 FAIL（QEMU Venus 2 出力、T1-366 と同じ guest で p005 の後）: `displays-p004b.sh` の PLACE が `OK saved=6`（期待 saved=0）、重なる place が `ERROR errno=3`（期待 22）、displays.conf が位置を保たない、mirror の apply も saved=6、再起動で mode=extended。head 1 の抜き差し・生存は ok。回帰の output-switch-p004a・boot-test は PASS。p005 の試験の後の guest の状態の影響は切り分けていない。log: /home/awe/zedBSD-worktrees/t1/build/t1-366/out/displays-p004b.log・-retry.log。FreeBSD の backend-test の host-session・host-power が link で FAIL（`kl_backend_power_parse_outcome` が無い、ws052-p011 の後）。
+
+## T1-365 の FAIL の原因と修正（2026-10-07 P1）
+
+- `saved=6`: zedBSD の errno の 6 は ENOENT（`include/uapi/errno.h`、Linux の番号ではない）。`heads_save` は `$HOME/.config/keiland` を 1 段の `mkdir` で作っていたので、`.config` の無い新しい home（試験の `/tmp/p004b-home`）では folder が作れず `mkstemp` が ENOENT。displays.conf が書かれないので、place が保たれない・再起動で mode=extended に戻るのも同じ原因。p005 の試験は saved を見ないので PASS していた（p005 の変更の影響ではない）。修正: `heads.c` に `heads_mkdir`（`mkdir -p` と同じく上の段から作る、settings-store.c の store_mkdir と同じ形）。
+- `ERROR errno=3`: zedBSD の EINVAL は 3。重なりは正しく EINVAL で拒否されている。試験の期待（22、Linux の番号）が誤り。`displays-p004b.sh` の期待を `errno=3` に直した（注記つき）。
+- 同じ依頼の FreeBSD の backend-test: `plan/ws131/tests/host-session.sh`・`host-power.sh` の source の一覧に `libkeiland-backend-zedbsd/power-outcome.c`（ws052-p011 で session-zedbsd.c が呼ぶ）を足した（Q1 の許可）。Linux の host で `host-session: 63/63 passed`・`host-power: 6/6 passed`。
+- build（warning 0）: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p005.mk build/p1-wl/bin/wayland`、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-wl-linux all`。style-check: heads.c 指摘 0。
+- 未実施: QEMU の再試験（T1: `displays-p004b.sh`、FreeBSD guest の backend-test の host-session・host-power）。

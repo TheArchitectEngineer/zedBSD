@@ -23,6 +23,7 @@
 
 #include "storage-scan.h"
 #include "storage-trash.h"
+#include "arrange.h"
 
 #include <keiland/keiland.h>
 
@@ -562,6 +563,40 @@ struct se_sharing {
 	uint32_t request;
 	char message[SE_MESSAGE];
 	int message_bad;
+};
+
+/*
+ * The Display page (ws113-p006, page-display.c): the displays and the mode
+ * the desktop last told, the draft the page edits (the places and the mode
+ * the user arranged, apart from the desktop's until Apply), whether the
+ * draft differs, a card being dragged (its index, the pointer's offset in
+ * it in the plane's units), the plane's mapping onto the arrangement's box
+ * in the last frame (arrange.h), the light's slider (its rectangle, being
+ * dragged, the light shown and when it was last sent), the requests
+ * awaited (0 for none), the last answer (red for a failure), and whether
+ * the first snapshot was taken.
+ */
+struct se_display {
+	struct kl_display displays[KL_DISPLAYS_MAX];
+	size_t count;
+	unsigned mode;
+	struct kl_display draft[KL_DISPLAYS_MAX];
+	unsigned draft_mode;
+	unsigned edited;
+	int dragging;
+	int drag_index;
+	int32_t grab_x;
+	int32_t grab_y;
+	struct se_arrange_view view;
+	struct kl_rect slider;
+	int light_dragging;
+	unsigned light;
+	uint64_t light_sent_ms;
+	uint32_t request;
+	uint32_t light_request;
+	char message[SE_MESSAGE];
+	int message_bad;
+	int taken;
 };
 
 /* The Printers page's fields (ws145-p004): the address, the port, the path or queue. */
@@ -1128,6 +1163,9 @@ struct se_app {
 	unsigned press_kind;
 	int press_index;
 
+	/* Where the pointer is while a page's control is dragged, down the window (page->drag is given only x). */
+	int drag_y;
+
 	/* The minute of the clock last drawn (About shows how long the machine has run). */
 	uint64_t minute;
 
@@ -1172,6 +1210,7 @@ struct se_app {
 
 	/* The Sharing page's Remote Login (ws089-p025). */
 	struct se_sharing sharing;
+	struct se_display display;
 
 	/* The Printers page (ws145-p004). */
 	struct se_printers printers;
@@ -1274,6 +1313,13 @@ int se_printers_draw(struct se_app *app, struct kl_canvas *canvas, int x, int to
 void se_printers_press(struct se_app *app, int index);
 int se_printers_key(struct se_app *app, const struct se_event *event);
 void se_printers_poll(struct se_app *app);
+
+/* The Display page (page-display.c, ws113-p006). */
+int se_display_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+void se_display_press(struct se_app *app, int index);
+void se_display_drag(struct se_app *app, int index, int x, unsigned phase);
+void se_display_poll(struct se_app *app);
+int se_display_result(struct se_app *app, uint32_t request, int error);
 int se_printers_result(struct se_app *app, uint32_t request, int error);
 void se_storage_stop(struct se_app *app);
 void se_storage_empty_trash(struct se_app *app);
@@ -1328,7 +1374,6 @@ const char *se_look_wallpaper_name(const struct se_app *app);
 /* The look's pages (page-look.c). */
 int se_appearance_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_wallpaper_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
-int se_display_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 int se_storage_draw(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 void se_look_press(struct se_app *app, int index);
 void se_look_drag(struct se_app *app, int index, int x, unsigned phase);
