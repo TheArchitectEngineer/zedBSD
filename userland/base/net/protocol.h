@@ -146,8 +146,26 @@ enum networkd_opcode {
 	 * and a watch connection carries nothing but that one subscription,
 	 * so reusing its id cannot be mistaken for the answer to anything else.
 	 */
-	NETWORKD_OP_SUBSCRIBE = 64
+	NETWORKD_OP_SUBSCRIBE = 64,
+
+	/*
+	 * The machine's sleep (ws052-p010).  sessiond (root only) asks
+	 * SLEEP_PREPARE before it asks the kernel for S0 idle: networkd
+	 * records the Wi-Fi policy, retires the connection and turns the
+	 * radios off without changing the policy, and answers once they are
+	 * off (within NETWORKD_SLEEP_PREPARE_SECONDS).  SLEEP_END after the
+	 * sleep takes the recorded policy up again; it is never refused.
+	 */
+	NETWORKD_OP_SLEEP_PREPARE = 80,
+	NETWORKD_OP_SLEEP_END = 81
 };
+
+/*
+ * How long a SLEEP_PREPARE may take in the daemon, in seconds: the cleanup
+ * of an automatic Wi-Fi attempt it stops, and a radio's three Wi-Fi helper
+ * runs (disconnect, search-stop, down) of up to 10 seconds each.
+ */
+#define NETWORKD_SLEEP_PREPARE_SECONDS	(NETWORKD_WIFI_CLEANUP_SECONDS + 30U)
 
 /*
  * How many watchers the daemon keeps.

@@ -18,6 +18,9 @@
  *                          after a delay that grows with the failures
  *   CANCEL                 stops a security key attempt
  *   POWER poweroff|reboot  ends the machine; OK
+ *   POWER suspend          sleeps it (sleep.c, ws052-p011): SLEPT woke=…,
+ *                          NOSLEEP …, ERROR busy or ERROR when it is done
+ *   POWER cancel           stops a sleep before the kernel is asked; no answer
  *
  * Anything else is answered ERROR.  The secret is erased as soon as it is
  * written to passkey, and never written anywhere else.  sessiond's loop
@@ -105,11 +108,12 @@ sessiond_greeter_run(
 {
 	struct sessiond_account greeter_account;
 	struct greeter greeter;
-	struct pollfd poll_entry[2];
+	struct pollfd poll_entry[3];
 	enum sessiond_greeter_end end;
 	long long seat_ms;
 	long long now_ms;
 	nfds_t entries;
+	nfds_t sleep_slot;
 	int timeout;
 	int busy;
 	int ready;
@@ -157,6 +161,14 @@ sessiond_greeter_run(
 		poll_entry[1].revents = 0;
 		if (poll_entry[1].fd >= 0)
 			entries = 2;
+
+		/* A sleep's answer, whoever asked it (sleep.c, ws052-p011). */
+		sleep_slot = entries;
+		poll_entry[sleep_slot].fd = sessiond_sleep_fd();
+		poll_entry[sleep_slot].events = POLLIN;
+		poll_entry[sleep_slot].revents = 0;
+		if (poll_entry[sleep_slot].fd >= 0)
+			entries++;
 		busy = sessiond_exchange_busy(&greeter.exchange);
 		timeout = 1000;
 		if (busy)
@@ -166,6 +178,10 @@ sessiond_greeter_run(
 		/* Reads what came; the greeter closing its end is its end. */
 		if (ready > 0 && poll_entry[0].revents != 0)
 			closed = greeter_read(&greeter);
+
+		/* The sleep's answer goes to the compositor that asked. */
+		if (ready > 0 && sleep_slot < entries && poll_entry[sleep_slot].revents != 0)
+			sessiond_sleep_collect();
 
 		/* The attempt moves on; a login passkey granted takes the account. */
 		sessiond_exchange_tick(&greeter.exchange);
@@ -197,6 +213,7 @@ sessiond_greeter_run(
 
 	/* The greeter ends: after a login it ends itself, otherwise it has already. */
 	end = greeter_wait(&greeter);
+	sessiond_sleep_forget(greeter.socket);
 	(void)close(greeter.socket);
 	memset(&greeter_account, 0, sizeof(greeter_account));
 
@@ -224,6 +241,7 @@ sessiond_greeter_finish(
 	greeter.pid = daemon->greeter_pid;
 	greeter.socket = daemon->greeter_socket;
 	greeter.logged_in = 1;
+	sessiond_sleep_forget(greeter.socket);
 	(void)close(greeter.socket);
 	(void)greeter_wait(&greeter);
 
@@ -549,14 +567,27 @@ greeter_request(
 	greeter_reply(greeter, "ERROR");
 }
 
-/* Ends the machine the way the greeter's power button asks (no one is logged in on the console). */
+/* Ends the machine the way the greeter's power button asks (no one is logged in on the console), or sleeps it. */
 static void
 greeter_power(
 	struct greeter *greeter,
 	const char *what)
 {
 	const char *program;
+	int differs;
 	int error;
+
+	/* The sleep, and its cancel (never answered), for the login screen too (ws052-p011). */
+	differs = strcmp(what, "suspend");
+	if (differs == 0) {
+		sessiond_sleep_request(greeter->socket, "the graphical login");
+		return;
+	}
+	differs = strcmp(what, "cancel");
+	if (differs == 0) {
+		sessiond_sleep_cancel();
+		return;
+	}
 
 	/* Which program ends the machine that way (power-rules.c). */
 	program = sessiond_power_program(what);

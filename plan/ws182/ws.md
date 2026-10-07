@@ -1,0 +1,29 @@
+<!-- awesome-plan project=zedbsd record=ws182 -->
+
+# WS182: 電源ボタンのメニュー（Log Out・Shut Down などを選ぶ）
+
+<!-- awesome-plan-current:start -->
+Status: planning
+Primary Milestone: MG006
+Related Milestones: MG003
+Objectives: O1
+Parent: [Master](../master.md)
+Queue: なし
+Target: **ベータ2 の最後**（2026-10-07 ユーザー）
+Resume point: p001 の設計から。
+<!-- awesome-plan-current:end -->
+
+## 目標（2026-10-07 ユーザー）
+
+「電源ボタンのハンドリングは、あとで実装でいいです。ログオフ、電源オフ、などのメニューを表示できるようにしたいです。独立WSにして、ベータ2の最後に実装しましょう。」
+
+- 電源ボタンを押すと、Keiland が Log Out・Shut Down など（Restart・Sleep を含めるかは設計で決めてユーザーに確かめる）のメニューを出す。
+- 既知の事実（2026-10-07 Q1、5320）: 押下は `\_SB.PBTN` の Notify で届き、compositor の session.log に `KWL EVENT power button` が出る（1 回の押下で 2 行、押下と解放の数え方を確かめる）。App Home の Power Off の dialog（ws099-p037）が既にある。
+- WS052 p012（電源ボタンの短押しで sleep、N5）との関係を設計で整理する。
+
+## Phase
+
+| Phase | 目的 | Status | 依存 |
+| --- | --- | --- | --- |
+| p001 | 設計: 電源ボタンの事象 → メニュー（App Home の Power Off の dialog の再利用か）、greeter・lock の時、WS052 p012 との関係、2 行の事象 | planned | — |
+| p002 | 実装と QEMU・実機（5320・5330）の確認 | planned | p001 |

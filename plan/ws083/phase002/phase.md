@@ -55,3 +55,7 @@ kernel（boot.c）と i915 は触らない（p003b）。toolchain は触らな�
 6. `tools/maintain-codec.noct`・`maintain-dispatch.noct` で codec と dispatch を生成し直す（173 → 192）、`Makefile`・export の数の検査（所在は U13）。
 7. README の非適合 N1〜N4。
 8. host の試験 `plan/ws083/tests/host-libvulkan-video.c`（transport の stub）。
+
+## T1-351 の判定（2026-10-07 Q1）
+
+T1-348 の C（i915.debug=video）・D（既定）の zdesktop の capture を 5330 の passthrough で流し直した（capture.c の build error は be2544532 で直した）。sheet.png の desktop は C・D とも普段どおり → 門（video）を入れても desktop は変わらない、の受け入れは満たす。result.json の `wiseview_closes`・`close_ends_viewer` が C・D とも false（門に依らない）。WS181 の Wiseview・App Home の作り直しに capture の scenario（plan/ws031/tests/i915-capture.py）が追いついていない疑い。scenario を使う時に、試験の整理の基準で直すか削除する。C の guest の video の行の確認は未実施。

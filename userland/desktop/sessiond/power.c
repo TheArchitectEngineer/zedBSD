@@ -26,6 +26,12 @@
 #include <unistd.h>
 
 /*
+ * Whether a program that ends the machine was started (a sleep is then
+ * refused, sleep.c).  sessiond's one thread sets and reads it.
+ */
+int sessiond_power_started;
+
+/*
  * Runs the program that ends the machine (it asks init, which stops
  * sessiond among the rest), and logs who asked.  Returns 0, or the errno of
  * the fork.
@@ -51,13 +57,15 @@ sessiond_power_run(
 		_exit(127);
 	}
 
-	/* Succeeded: the machine is ending. */
+	/* Succeeded: the machine is ending (no sleep from now on). */
+	sessiond_power_started = 1;
 	return 0;
 }
 
 /*
  * Answers a session's "POWER poweroff|reboot": decided by power-rules.c (root
- * or wheel), then carried out.
+ * or wheel), then carried out; "POWER suspend" and "POWER cancel" go to the
+ * sleep (sleep.c), for any session user.
  */
 void
 sessiond_power_session(
@@ -69,10 +77,23 @@ sessiond_power_session(
 	const char *name;
 	int in_wheel;
 	int decided;
+	int differs;
 	int error;
 
-	/* Decided: the word and the user's right. */
+	/* The sleep is any session user's (ws052-p011, the 2026-10-07 user decision N2); its cancel is never answered. */
 	name = account->passwd.pw_name;
+	differs = strcmp(what, "suspend");
+	if (differs == 0) {
+		sessiond_sleep_request(control, name);
+		return;
+	}
+	differs = strcmp(what, "cancel");
+	if (differs == 0) {
+		sessiond_sleep_cancel();
+		return;
+	}
+
+	/* Decided: the word and the user's right. */
 	in_wheel = account_in_wheel(name, account->passwd.pw_gid);
 	decided = sessiond_power_decide(what, account->passwd.pw_uid, in_wheel, &program);
 	if (decided == EPERM) {

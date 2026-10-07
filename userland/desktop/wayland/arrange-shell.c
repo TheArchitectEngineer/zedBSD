@@ -207,6 +207,7 @@ static float arrange_menu_grown(struct kwl_server *server);
 static void arrange_menu_grow(struct kwl_server *server, float grown, struct arrange_view *view);
 static void arrange_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned layout, float x, float y, float scale, const float *ink, float alpha);
 static void arrange_swap_end(struct kwl_server *server);
+static int arrange_moving(void);
 
 /*
  * Handles a pointer button for the arrangement menu: a release of a press
@@ -559,6 +560,17 @@ kwl_arrange_tick(
 	unsigned desktop;
 	unsigned index;
 	const char *reason;
+	int moving;
+
+	/*
+	 * The menu growing or fading and the windows gliding draw every frame
+	 * until they are over.  The tick asks for the frames: one asked for
+	 * while a frame is drawn is dropped when it is submitted (compose.c),
+	 * and only input asked for the next one (BUG-246, the 5320's i915).
+	 */
+	moving = arrange_moving();
+	if (moving)
+		server->dirty = 1;
 
 	/* Each desktop in the arrangement mode. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
@@ -1340,6 +1352,35 @@ arrange_draw_icon(
 				 3.0f * scale,
 				 colour);
 	}
+}
+
+/* Tells whether something of the arrangement moves: the menu growing or fading, or a window gliding to its slot. */
+static int
+arrange_moving(void)
+{
+	unsigned desktop;
+	unsigned index;
+
+	/* The open menu still growing. */
+	if (arrange_menu.open && !arrange_menu.settled)
+		return 1;
+
+	/* The closed menu still fading. */
+	if (!arrange_menu.open && arrange_menu.closed_ms != 0U)
+		return 1;
+
+	/* A window of any desktop in the arrangement mode on its way to its slot. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		if (!arrange_desktops[desktop].on)
+			continue;
+		for (index = 0U; index < arrange_desktops[desktop].count; index++) {
+			if (arrange_desktops[desktop].slots[index].glide_ms != 0U)
+				return 1;
+		}
+	}
+
+	/* Succeeded: nothing moves. */
+	return 0;
 }
 
 /* Ends a swap being dragged without a release (the arrangement ended): the window stays where it is. */

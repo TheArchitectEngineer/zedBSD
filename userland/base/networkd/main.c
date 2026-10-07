@@ -21,6 +21,7 @@
 #include "userland/base/networkd/lan-configure.h"
 #include "userland/base/networkd/managed-lan.h"
 #include "userland/base/networkd/managed-wlan.h"
+#include "userland/base/networkd/sleep-state.h"
 #include "userland/base/networkd/wifi-child.h"
 
 #include <arpa/inet.h>
@@ -207,6 +208,22 @@ struct networkd_lan_l3 {
 
 static volatile sig_atomic_t stopping;
 static struct networkd_managed_wlan managed_wlan;
+
+/*
+ * The machine's sleep (ws052-p010): whether networkd is asleep for it and
+ * the Wi-Fi policy it takes up again.  Only the event loop's thread uses it.
+ */
+static struct networkd_sleep sleep_state;
+
+/*
+ * What the end of a sleep takes up again, done by the event loop's next
+ * pass (run_due_work) rather than in the request's own handler, which may
+ * run inside other Wi-Fi work: whether one is waiting, what, and the end's
+ * name for the log.  Only the event loop's thread uses them.
+ */
+static unsigned sleep_resume_due;
+static enum networkd_sleep_resume sleep_resume_pending;
+static const char *sleep_resume_via;
 
 /*
  * The wired interfaces, and what is to happen to them.
@@ -495,6 +512,10 @@ static void wifi_scan_request(int, const struct networkd_request *);
 static int wifi_scan_wanted(void);
 static int wifi_scan_poll_timeout(void);
 static void run_requested_scan(void);
+static void handle_sleep_request(int client, const struct networkd_request *request);
+static int sleep_radios_off(void);
+static void sleep_resume(enum networkd_sleep_resume resume, const char *via);
+static void sleep_resume_later(enum networkd_sleep_resume resume, const char *via);
 static int default_route_index(uint32_t *);
 static void recheck_connection_profile(void);
 static void wifi_off_remember(int);
@@ -557,6 +578,7 @@ main(
 	(void)signal(SIGINT, handle_signal);
 	status = 0;
 	networkd_managed_wlan_init(&managed_wlan);
+	networkd_sleep_init(&sleep_state);
 	networkd_confirmed_init(&confirmed);
 
 	/* Creates and verifies the privileged network control endpoint. */
@@ -2639,12 +2661,17 @@ event_poll_timeout(
 	/* Wired work that is waiting is done before anything is waited for. */
 	if (lan_work_due)
 		return 0;
-	automatic = networkd_confirmed_active(&confirmed) ? -1 :
+	automatic = networkd_confirmed_active(&confirmed) || sleep_state.asleep ? -1 :
 	    automatic_poll_timeout();
+
+	/* While asleep only the sleep's own end wakes the Wi-Fi side (ws052-p010). */
+	scan = networkd_sleep_poll_timeout(&sleep_state, netutil_monotonic_us());
+	if (scan >= 0 && (automatic < 0 || scan < automatic))
+		automatic = scan;
 
 	/* A scan a desktop asked for, or the end of its lease, wakes the loop too (ws089-p021). */
 	scan = -1;
-	if (!networkd_confirmed_active(&confirmed))
+	if (!networkd_confirmed_active(&confirmed) && !sleep_state.asleep)
 		scan = wifi_scan_poll_timeout();
 	if (scan >= 0 && (automatic < 0 || scan < automatic))
 		automatic = scan;
@@ -2688,6 +2715,22 @@ static void
 run_due_work(
 	void)
 {
+	enum networkd_sleep_resume resume;
+	int due;
+
+	/* A sleep whose SLEEP_END never came ends by itself (ws052-p010). */
+	due = networkd_sleep_due(&sleep_state, netutil_monotonic_us());
+	if (due) {
+		resume = networkd_sleep_end(&sleep_state);
+		sleep_resume_later(resume, "safety");
+	}
+
+	/* The end of a sleep takes the recorded policy up again. */
+	if (sleep_resume_due) {
+		sleep_resume_due = 0U;
+		sleep_resume(sleep_resume_pending, sleep_resume_via);
+	}
+
 	/* The wired work is done first: it is bounded and it is cheap. */
 	if (lan_work_due) {
 		lan_work_due = 0;
@@ -2707,7 +2750,7 @@ run_due_work(
 	/* DHCPv6's Renew, or the information again (ws130-p007). */
 	if (!networkd_confirmed_active(&confirmed))
 		networkd_ipv6_run_due();
-	if (!networkd_confirmed_active(&confirmed) &&
+	if (!networkd_confirmed_active(&confirmed) && !sleep_state.asleep &&
 	    automatic_poll_timeout() == 0) {
 		if (managed_wlan.state == NETWORKD_WLAN_RETIRING)
 			retry_managed_retirement();
@@ -2718,7 +2761,7 @@ run_due_work(
 	}
 
 	/* A scan a desktop asked for, while the radios are on and left unconnected (ws089-p021). */
-	if (!networkd_confirmed_active(&confirmed) &&
+	if (!networkd_confirmed_active(&confirmed) && !sleep_state.asleep &&
 	    wifi_scan_poll_timeout() == 0)
 		run_requested_scan();
 }
@@ -3470,6 +3513,7 @@ dispatch_request(
 	const char *operation;
 	uint64_t mutation_deadline;
 	size_t response_length;
+	int admitted;
 	int result;
 	int error;
 
@@ -3493,6 +3537,26 @@ dispatch_request(
 
 	/* A request arriving with the timer event cannot disarm an expired owner. */
 	run_confirmed_due();
+
+	/* The machine's sleep, asked by sessiond (ws052-p010). */
+	if (request->header.opcode == NETWORKD_OP_SLEEP_PREPARE ||
+	    request->header.opcode == NETWORKD_OP_SLEEP_END) {
+		handle_sleep_request(client, request);
+		networkd_protocol_clear(response, sizeof(response));
+		networkd_protocol_clear(diagnostic, sizeof(diagnostic));
+		return;
+	}
+
+	/* While asleep the Wi-Fi changes and a new confirmed transaction wait for the end. */
+	admitted = networkd_sleep_admits(&sleep_state, request->header.opcode);
+	if (!admitted) {
+		send_response(client, request->header.request_id,
+		    request->header.opcode, NETWORKD_RESULT_ERROR, EBUSY,
+		    "asleep", NULL, 0U);
+		networkd_protocol_clear(response, sizeof(response));
+		networkd_protocol_clear(diagnostic, sizeof(diagnostic));
+		return;
+	}
 
 	/*
 	 * Wired management says what is to happen from now on.  The answer
@@ -5420,6 +5484,9 @@ service_wifi_wait(
 	    request.header.opcode == NETWORKD_OP_WIFI_SCAN_STOP) {
 		/* Asking for scans only records the lease; the running work goes on. */
 		wifi_scan_request(client, &request);
+	} else if (request.header.opcode == NETWORKD_OP_SLEEP_END) {
+		/* The sleep's end is never kept waiting; what it takes up again waits for the loop (ws052-p010). */
+		handle_sleep_request(client, &request);
 	} else if (request.header.opcode == NETWORKD_OP_WIFI_PROFILES_CHANGED) {
 		wifi_profiles_changed(&peer);
 		send_response(client, request.header.request_id, request.header.opcode,
@@ -5468,6 +5535,170 @@ service_wifi_wait(
 }
 
 /*
+ * Answers the machine's sleep (ws052-p010).  SLEEP_PREPARE records the
+ * Wi-Fi policy, retires the connection and turns the radios off without
+ * changing the policy; a second one while asleep only moves the sleep's
+ * end; a confirmed transaction under way refuses it (EBUSY), and so does
+ * a radio that would not go off (the policy is then taken up again).
+ * SLEEP_END is never refused, even inside other Wi-Fi work: the recorded
+ * policy is taken up again by the event loop's next pass (or nothing, when
+ * networkd was not asleep).
+ */
+static void
+handle_sleep_request(
+	int client,
+	const struct networkd_request *request)
+{
+	enum networkd_sleep_resume resume;
+	uint32_t opcode;
+	int active;
+	int began;
+	int error;
+
+	/* The end: the recorded policy is taken up again by the loop's next pass. */
+	opcode = request->header.opcode;
+	if (opcode == NETWORKD_OP_SLEEP_END) {
+		resume = networkd_sleep_end(&sleep_state);
+		sleep_resume_later(resume, "end");
+		send_response(client, request->header.request_id, opcode,
+		    NETWORKD_RESULT_OK, 0, NULL, NULL, 0U);
+		return;
+	}
+
+	/* A confirmed transaction under way keeps the network as it is until it is decided. */
+	active = networkd_confirmed_active(&confirmed);
+	if (active) {
+		send_response(client, request->header.request_id, opcode,
+		    NETWORKD_RESULT_ERROR, EBUSY, "confirmed transaction", NULL, 0U);
+		return;
+	}
+
+	/* An end not yet taken up is taken up first, so that the record is the policy's own. */
+	if (sleep_resume_due) {
+		sleep_resume_due = 0U;
+		sleep_resume(sleep_resume_pending, sleep_resume_via);
+	}
+
+	/* The policy recorded; asleep already, only the end moves. */
+	began = networkd_sleep_begin(&sleep_state, managed_wlan.state,
+	    managed_wlan.retire_target, netutil_monotonic_us());
+	if (!began) {
+		send_response(client, request->header.request_id, opcode,
+		    NETWORKD_RESULT_OK, 0, NULL, NULL, 0U);
+		return;
+	}
+
+	/* The connection retired and the radios off; one that stays on ends the sleep again. */
+	error = sleep_radios_off();
+	if (error != 0) {
+		resume = networkd_sleep_end(&sleep_state);
+		sleep_resume_later(resume, "failed");
+		send_response(client, request->header.request_id, opcode,
+		    NETWORKD_RESULT_ERROR, error, "sleep: Wi-Fi radio", NULL, 0U);
+		return;
+	}
+
+	/* Succeeded: asleep, the radios off. */
+	fprintf(stderr, "networkd: asleep (Wi-Fi state %d recorded)\n",
+	    (int)sleep_state.recorded);
+	send_response(client, request->header.request_id, opcode,
+	    NETWORKD_RESULT_OK, 0, NULL, NULL, 0U);
+}
+
+/*
+ * Retires the Wi-Fi connection, leaving the enabled policy disconnected
+ * (not changed: SLEEP_END takes it up again), and turns every radio off,
+ * checked.  Returns 0, or the errno of the step that failed.
+ */
+static int
+sleep_radios_off(
+	void)
+{
+	struct networkd_wlan_radio radios[NETWORKD_WLAN_RADIO_MAX];
+	size_t radio_count;
+	int result;
+
+	/* The connection retires first; no automatic attempt is due while asleep. */
+	automatic_retry_at = 0U;
+	if (managed_wlan.owner_valid &&
+	    managed_wlan.state != NETWORKD_WLAN_DISABLED) {
+		result = retire_managed_connection(NETWORKD_WLAN_MANUAL_DISCONNECTED, 1);
+		if (result != 0)
+			return errno != 0 ? errno : EIO;
+	}
+
+	/* Every radio there is. */
+	radio_count = 0U;
+	result = enumerate_wlan_radios(radios, NETWORKD_WLAN_RADIO_MAX, &radio_count);
+	if (result != 0)
+		return errno != 0 ? errno : EIO;
+
+	/* Each one stopped and seen to be off. */
+	result = stop_wlan_radios(radios, radio_count, 1);
+	if (result != 0)
+		return errno != 0 ? errno : EIO;
+
+	/* Succeeded: no radio is on. */
+	return 0;
+}
+
+/* Leaves what the end of a sleep asks for to the event loop's next pass (run_due_work). */
+static void
+sleep_resume_later(
+	enum networkd_sleep_resume resume,
+	const char *via)
+{
+	/* One end is waiting; a later one replaces it. */
+	sleep_resume_pending = resume;
+	sleep_resume_via = via;
+	sleep_resume_due = 1U;
+}
+
+/*
+ * Takes up again what the end of a sleep asks for: the automatic search
+ * for the saved networks (which brings the radios up), the radios up with
+ * no connection, or nothing.  via names the end in the log ("end", the
+ * safety's "safety", a failed SLEEP_PREPARE's "failed").
+ */
+static void
+sleep_resume(
+	enum networkd_sleep_resume resume,
+	const char *via)
+{
+	struct networkd_wlan_radio radios[NETWORKD_WLAN_RADIO_MAX];
+	size_t radio_count;
+	const char *name;
+	int result;
+
+	/* What the recorded policy asks for. */
+	name = "none";
+	switch (resume) {
+	case NETWORKD_SLEEP_RESUME_SEARCH:
+		/* The automatic search, at once; it brings the radios up (run_automatic_work). */
+		name = "search";
+		result = networkd_managed_wlan_resume(&managed_wlan, NETWORKD_WLAN_AUTO_SEARCHING);
+		if (result == 0)
+			schedule_automatic_work(0U);
+		break;
+	case NETWORKD_SLEEP_RESUME_MANUAL:
+		/* The radios up, and no connection of networkd's own. */
+		name = "manual";
+		radio_count = 0U;
+		result = enumerate_wlan_radios(radios, NETWORKD_WLAN_RADIO_MAX, &radio_count);
+		if (result == 0)
+			(void)prepare_wlan_radios(radios, radio_count, NULL, 0U, NULL);
+		break;
+	case NETWORKD_SLEEP_RESUME_NONE:
+	default:
+		/* Nothing: Wi-Fi was off, or networkd was not asleep. */
+		break;
+	}
+
+	/* The end, in the log. */
+	fprintf(stderr, "networkd: awake via=%s resume=%s\n", via, name);
+}
+
+/*
  * Tests whether a request arriving during background Wi-Fi work stops it.
  *
  * Wired requests always do.  So does an explicit Wi-Fi on, off, join or
@@ -5490,6 +5721,10 @@ interrupts_background_work(
 
 	/* Turning Wi-Fi on is open to every admitted peer, as on dispatch. */
 	if (opcode == NETWORKD_OP_WIFI_ENABLE)
+		return 1;
+
+	/* The machine's sleep stops the automatic search (ws052-p010; only root may ask it). */
+	if (opcode == NETWORKD_OP_SLEEP_PREPARE)
 		return 1;
 
 	/*
@@ -5822,6 +6057,12 @@ operation_name(
 		return "CONFIRMED_ROLLBACK";
 	if (opcode == NETWORKD_OP_CONFIRMED_CHECK)
 		return "CONFIRMED_CHECK";
+
+	/* The machine's sleep (ws052-p010): root only, so not in the members' list. */
+	if (opcode == NETWORKD_OP_SLEEP_PREPARE)
+		return "SLEEP_PREPARE";
+	if (opcode == NETWORKD_OP_SLEEP_END)
+		return "SLEEP_END";
 
 	/* Maps the separately allocated WLAN range. */
 	if (opcode == NETWORKD_OP_WIFI_ENABLE)

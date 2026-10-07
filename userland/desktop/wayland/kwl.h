@@ -1041,6 +1041,8 @@ struct kwl_server {
 	int32_t drag_start_y;
 	struct kwl_object *click_surface;
 	uint64_t click_ms;
+	/* When the left button was last let go (BUG-247: a touch pad's tap holds its press until the next tap lifts). */
+	uint64_t click_release_ms;
 	/*
 	 * The presses of the latest run of quick clicks on click_surface's
 	 * floating title bar (1, 2 or 3), and the window a double click docked

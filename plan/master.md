@@ -483,6 +483,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS174](ws174/ws.md) | MG003 | 起動時に Ctrl で kernel の message を console に、Shift で console の login に（UEFI の bootloader だけ、BIOS は後日）（2026-10-05 ユーザー） | incomplete（p001・p002・p005 cleared、p003 は T1-213 待ち） | — |
 | [WS175](ws175/ws.md) | MG006 | Notes で PDF の画像と文字を編集（移動・大きさ・差し替え・挿入、文字の編集・削除・挿入・font、複数頁）（2026-10-06 ユーザー） | planning（ベータ2 の案） | — |
 | [WS176](ws176/ws.md) | MG006 | Canvas: pen と touch のイラスト制作・画像編集（layer・brush・素材集・CLIP STUDIO と PSD の互換）（2026-10-06 ユーザー、ベータ3） | planning（ベータ3） | — |
+| [WS182](ws182/ws.md) | MG006 | 電源ボタンで Log Out・Shut Down などのメニュー（ベータ2 の最後、2026-10-07 ユーザー） | planning | p001 設計 |
+| [WS183](ws183/ws.md) | MG003 | I2C HID の Extended Interrupt と TGL の GPIO の group（5320 の touchpad を割り込みで、ベータ2・後回し） | planning | p001 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -511,6 +513,12 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「電源ボタンのハンドリングは、あとで実装でいいです。ログオフ、電源オフ、などのメニューを表示できるようにしたいです。独立WSにして、ベータ2の最後に実装しましょう。」→ [WS182](ws182/ws.md)。「5320の/bin/waylandは更新してOKです。」→ Q1 が main 5f6da8bba の compositor を入れた（元は /bin/wayland.orig）。「タッチパッドは独立WSにして、ほかベータ2WSと同じ優先度で後回しにします。」→ [WS183](ws183/ws.md)（P3 は立てない）。
+- 2026-10-07 ユーザー:「そのGPU/GOPの設計をdocs/のドキュメントに残しておいてください。」→ docs/architecture/kernel-and-hal.md に「Display path」の節（text console と /dev/graphics は board の対、GPU driver は通知も console の引き継ぎもしない、表示は lease の claim で初めて引き継ぐ、その後 console は firmware の framebuffer のメモリに描き画面には出ない）。未決（ユーザーに WS を立てるか確認中）: GPU が表示している間・手放した後の text console（console の login・panic の表示）。`drv_i915_n1_mirror_console()` は呼ばれていない。
+- 2026-10-07 ユーザー:「タッチパッドが動いたらP3は畳んでいいです。」→ ws118-p007 の後、P3 は次の Queue を入れずに終える。
+- 2026-10-07 ユーザー（クリック）: N8 は「ベータ2 に入れる」（WS113 p003・p004 を ws052-p012 の前に、WS113 p004 を 1 出力の切り替え（先）と複数の同時の出力に分ける）、蓋を開けた時は「内蔵の画面に戻す」（拡張表示の後は拡張へ）、N3〜N7・N9 は「既定の案のままでよい」。P2 の順: ws052-p011 → WS113 p003 → p004 の 1 出力の切り替え → ws052-p012 → p013。
+- 2026-10-07 ユーザー（ws052-p007 第 4 版の N、クリック）: N1「A1: UAPI に flag を足す」（system_power_info の reserved[0] を flags、KERN_SYSTEM_POWER_FLAG_CAN_SLEEP）、N2「利用者なら誰でも」、N8「外部画面のみに切り替えて通常の利用を継続する」（蓋を閉じても外部の monitor があれば眠らず外部だけで続ける。compositor の複数出力が要る）、N10「作らない」。N3〜N7・N9 は既定の案でユーザーに確認中。
+- 2026-10-07 Q1: P2 の ws052-p007 設計 第 4 版（e97fb018b）。人の判断 N1〜N10 はユーザーへ。docs/architecture/power-management.md の 52-54 行・91 行が今の code と違う（P2 の指摘、N の決定の後に直す）。p010 を先に着手。
 - 2026-10-07 ユーザー:「UCSIとDP alt modeってもう動いてるんですか？シェーダコンパイラより優先してほしいです」→ クリック「P1 を移す」（P1 は ws075-p007a a3 を安全な地点で止めて WS051 p003 から、P2 は WS052 を続ける）、M-3「5330 で採取する」（`/tmp/i915-hw.lock` の下で iGPU を一時的に host の i915 へ（`plan/ws031/tests/host/igpu-mode.sh host`）、USB-C の DP の monitor をユーザーが挿し、debugfs・intel_reg で採取、vfio に戻す。design §14.5）。WS075 p007a の残り（a3〜）は後に。
 - 2026-10-07 ユーザー: 5320（10.0.30.5、zedBSD）で Keiland が立たない → Q1 の調査（TGL の takeover の停止の失敗、DPLL の管理が空）。「サブエージェントP3を立てて、5320のDPLLに対応してほしいです。できれば世代やバリエーションにかかわらず表示できるようにフォールバックも実装してほしいですが、難しければいいです。」→ WS118 のブロックを解き p006・q846 を P3 に。
 - 2026-10-07 ユーザーの UAT:「アレンジメントは完璧ですね。整列方法の選択ポップアップは、glassを適用してほしいのと、広がって大きくなるようなアニメーションとともに透明度が高くなる演出で表示してほしいです。」→ ws181-p007（q845、P2、優先）。

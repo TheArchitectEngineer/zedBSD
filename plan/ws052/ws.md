@@ -54,6 +54,10 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | [ws052-p007](phase007/phase.md) | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示、networkd が sleep の前に radio を切る流れ | planning（2026-10-05: 設計の第 1 版、Q1 のレビュー待ち。code は p006 の口の後） | p006、WS132 p008、WS089 | |
 | ws052-p008 | 実機の確認と規約の全文 | planned | p007 | |
 | [ws052-p009](phase009/phase.md) | i915 の suspend・resume（display・DC9・GT の RC6・GGTT・display の core の再初期化・出力の設定の再適用）。設計から、検証は 5330 の UAT | in-progress（2026-10-05: 段 (a)(b)(c) を実装、5330 の UAT 待ち） | p004 | `src/drivers/gpu/i915/park.c`、`worker.c` |
+| [ws052-p010](phase010/phase.md) | networkd の SLEEP_PREPARE（opcode 80）・SLEEP_END（81）（p007 の設計 第 4 版 §10） | test-wait（2026-10-07 P2: 実装、build warning 0、host 20/0。QEMU・実機は p011 の後） | p007 の設計 | |
+| ws052-p011 | sessiond の sleep の子 process と backend の `POWER suspend`、kernel の CAN_SLEEP の bit（N1 = A1） | in-progress（2026-10-07 P2） | p010、N1〜N3 | |
+| ws052-p012 | compositor の sleep.c（契機・lock の 2 frame・中止の理由の表示） | planned | p011、N5〜N9 | |
+| ws052-p013 | Settings の Power の頁（sleep・画面の時間） | planned | p012、N4 | |
 
 ## 人間の判断が要る点
 
