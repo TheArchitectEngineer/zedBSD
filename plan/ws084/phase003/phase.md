@@ -4,7 +4,7 @@
 
 Phase ID: `ws084-p003`
 Parent: [WS084](../ws.md)
-Status: planned（2026-10-01 作成。ws.md の「段の計画」の L2 と「進め方とハーネス」から）
+Status: in-progress（2026-10-07 P2: host でできる所（reboot-loop.sh）まで。image の build と QEMU の boot test は T1、素の 5330 の 10 回は 5330 が届いてから）（旧: planned、2026-10-01 作成）
 Phase disposition: normal
 承認: なし（Queue に入れるときに main が承認を記録する）
 依存: p002（cleared）。ユーザーが 5330 を USB から起動できること。
@@ -84,4 +84,11 @@ plan/ws084/tests/reboot-loop.sh HOST COUNT OUTDIR
 
 ## 結果
 
-（未実施）
+### 2026-10-07 P2（Q1 の ACK「範囲 1・2 で ACK、dmesg は SSH で読む、script に削除の command を入れない」）
+
+- `plan/ws084/tests/reboot-loop.sh` を上の仕様どおりに書いた（各回 `/sbin/reboot` → ssh が落ちるのを最大 60 秒待つ → 5 秒ごとに最大 300 秒 ssh の戻りを待つ → 30 秒 →
+  ssh で `dmesg`・`ps -A -o pid,args` を OUTDIR へ → 判定の 1 行。判定は完了の条件 1 の 4 つの行（`still active 0x0` を含む）と 3 つの無い行と compositor、最初に欠けた物を
+  reason に。各回の比べる行（N0・takeover・resident display・pipe_off・preflight・DC_off）を `  bootN:` で並べる）。console・serial は使わず、削除の command は無い。
+- 確かめ: `bash -n` OK。偽の ssh（scratchpad の shell script: reboot の後 1 回だけ応答しない、dmesg と ps は用意した text）で dry run: 正常の dmesg で
+  `REBOOT-LOOP 1 ok`・`2 ok`・`reboot-loop: 2/2 ok`（exit 0）、`still active 0x1` で `fail reason=pipe-still-active`（exit 1）。待ちの秒は偽物なので 0。
+- 未実施: 手順 1 の demo の既定の image の build と QEMU の boot test（T1 へ依頼する）、手順 3〜7 の素の 5330（5330 に届かない、ユーザーの USB の起動が要る）。完了の条件 1〜4 は未達。
