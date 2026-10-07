@@ -57,4 +57,6 @@ Parent: [WS181](../ws.md)
 - host: `run-host-edge.sh`（69 checks 0 failures）、`run-host-arrange.sh`（1213 checks 0 failures）。変えた所（motion・gesture・bar）の host 試験は無い。QEMU で T1 が確かめる。
 - style-check: 新規の違反 0（arrange-shell.c・home.c・shell.c は前後とも 12 件、既存）。`git diff --check` ok。
 - host の絵 `plan/ws181/tests/p005-host.py`・`p007-host.py` は ws099 の p034 の bar の model（desktops の pill が真ん中）から位置を取るので、7. の新しい位置を描かない（review の絵だけ、合否には使わない）。
+- 1. の確かめのため、光る項目が変わる時に `KWL ARRANGE menu lit item=NAME` を出す。
+- QEMU の試験（T1 が流す）: 新しい `plan/ws181/tests/p009-guest.sh BUILD OUTDIR`（pen の guest、7・1・6・5・4・3 の順、合格は最後の行 `ws181-p009: PASS`、PNG は p009-bar・p009-menu-gap・p009-calendar-arranged・p009-home-first-drag・p009-home-last-drag）。guest に /bin/calendar が無ければ、試験の間だけ wltest の窓を開く script を置く。
 - 未実施: QEMU（T1）、5320 の UAT。

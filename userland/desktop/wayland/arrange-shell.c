@@ -418,6 +418,7 @@ kwl_arrange_motion(
 		if (over != ARRANGE_ITEM_NONE && over != arrange_menu.selected) {
 			arrange_menu.selected = over;
 			server->dirty = 1;
+			printf("KWL ARRANGE menu lit item=%s\n", kwl_arrange_name((unsigned)over));
 		}
 
 		/* The motion was the menu's. */
