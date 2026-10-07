@@ -3,7 +3,8 @@
 # The guest must be started with VENUS_DISPLAY=dbus (plan/ws035/tests/zdesktop-guest.sh, and the launchers that call
 # it), which puts QEMU's D-Bus display on the runtime's own bus.  A head is enabled when its console is given a size
 # (SetUIInfo) and disabled when given 0x0; QEMU then sends the guest VIRTIO_GPU_EVENT_DISPLAY, as a monitor plugged or
-# unplugged.
+# unplugged.  QEMU ignores a SetUIInfo equal to the last one the console was given, and a console never given one holds
+# 0x0: give a head its size once before unplugging it (head 0 included, which QEMU enables by itself at its xres/yres).
 #
 #   plan/tools/guest/venus-head.sh list                 the consoles: number, head, label
 #   plan/tools/guest/venus-head.sh HEAD WIDTHxHEIGHT    plugs head HEAD of the Venus device at that size

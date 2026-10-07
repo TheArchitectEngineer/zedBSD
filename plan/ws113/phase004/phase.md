@@ -123,3 +123,19 @@ Keiland の lease がどの出力にも無い時に、GOP の出力でない接�
 ## T1-357 の判定（2026-10-07 Q1）
 
 FAIL（QEMU Venus、VENUS_DISPLAY=dbus、2 出力）。列挙・2 つ目の swapchain・refresh・hotplug の fence・compositor が 2 を数える・KWL FAILED 無しは ok。1 回目は head 0 を抜いても 20 秒以内に display 1 へ移らず、retry では移ったが display 0 への戻りが無く `KWL OUTPUT displays count=1` で終わる（失敗の所が回ごとに違う）。証拠は /home/awe/zedBSD-worktrees/t1/build/t1-357-out/。
+
+## T1-357 の解析と直し（2026-10-07 q852-i01、P2）
+
+証拠（T1 の worktree の `build/t1-357-out/`、run/・run2/ の zdesktop.log）を読んで、原因は 2 つ（と 1 つの潜在の不具合）。
+
+1. **試験（QEMU の仕様）**: QEMU 10.0 の `dpy_set_ui_info`（ui/console.c）は、console が前に受けた UIInfo と同じ値を無視する（`memcmp` → "nothing changed -- ignore"）。UI の client の無い D-Bus display では head 0 の console の UIInfo は 0x0 のまま（head 0 は QEMU が xres/yres で自分で有効にする）なので、1 回目の `venus-head.sh 0 off`（0x0）は何も起こさなかった。run/ では head 0 を抜いた後の hotplug が無く、20 秒後の挿し直し（1280x800、初めての変化）で初めて topology が動いた。その generation の変化で acquire が OUT_OF_DATE（`lost operation=acquire`）→ 一覧に display 0 が残る → `use_internal` で display 0 に開き直し、その行 `switch name=...display 0` が「display 0 へ戻る」に誤って一致し、大きさが変わらないので `resized width=1280` は出なかった。retry（run2/、同じ QEMU で前回の最後に head 0 が 1280x800 を受けていた）では抜く操作が効いた。
+2. **compositor**: 見せている display が hotplug の後の一覧から消えても、出力を失ったと判定していなかった（判定は次の frame の acquire・present の SURFACE_LOST・OUT_OF_DATE だけ）。何も動かない desktop は frame を描かないので、run2/ の最後（head 1 を抜いた後 `displays count=1` に display 0 だけ）で移らずに終わった。run2/ の head 0 を抜いた時に移れたのは、時計などで偶然 frame が描かれたから（`PERF compose frames=2` の後の `lost operation=acquire`）。
+3. **潜在（compositor）**: kernel（Venus の `display_refresh`）は topology の event ごとに全ての出力の generation を進めるので、他の display の抜き差しでも見せている display の swapchain は OUT_OF_DATE になる。その時に `output_recover` が `use_internal` を先に試すので、外部を選んでいても内蔵へ移ってしまう（run/ の display 0 への開き直しは同じ道）。
+
+直し:
+
+- `output-switch.c`: hotplug の fence の後の列挙で見せている display が一覧に無ければ `KWL OUTPUT lost operation=hotplug name=…` で失ったとする（frame を待たない）。`output_recover` は、見せている display がまだ一覧にあればまず同じ display に開き直す（`KWL OUTPUT reopen name=…`、移動の `switch` の行と分ける）、無い時だけ内蔵 → 他へ。列挙が読めない時（`VK_ERROR_UNKNOWN` など、列挙の途中の topology の変化）は前の一覧を保ち（`KWL OUTPUT displays unreadable result=R`）、失ったとはせず、recover の中なら次の hotplug を待つ（新しい fence は列挙より先に登録してあるので再び signal する）。`compose.h` の `output_lost` の注記を合わせた。
+- `plan/ws113/tests/output-switch-p004a.sh`: 1. で head 0 にも大きさ（1280x800）を与える（後の抜く操作が変化になる）。head 0 を挿し直した後に出力が display 1 に留まる（`switch name=…display 0` がまだ無い）の確認を足した。`plan/tools/guest/venus-head.sh` の注記に QEMU の無視の規則を書いた。
+- `plan/ws113/tests/host-output-switch.c`: 外部で OUT_OF_DATE（一覧に残る）→ 同じ display に開き直す・大きさは不変、読めない一覧で何も失わない、frame 無しで hotplug だけで一覧から消えた display から内蔵へ移る、を足した。
+
+確認（2026-10-07）: `sh plan/ws113/tests/host-output-switch.sh` PASS（plain・ASan/UBSan）。build（warning 0）: `make -j16 BUILD=build/ws113-p004a ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p003.mk build/ws113-p004a/bin/wayland`（rc 0、warning 0）、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws113-p004a-linux all`（rc 0、warning 0）。`plan/tools/style-check.py` の output-switch.c・host-output-switch.c は 0 件（前後とも）、`git diff --check` ok。未実施: QEMU（T1-357b に依頼）、実機。

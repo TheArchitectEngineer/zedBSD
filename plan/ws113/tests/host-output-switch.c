@@ -14,7 +14,10 @@
  * the clients told; a refused swapchain marked limited and the output back
  * on the display it had; a display gone and the output moved to the
  * machine's own; the hotplug fence registered again before the old one
- * goes; and the output waiting when no display takes it.
+ * goes; the output waiting when no display takes it; a display gone from
+ * the list at a hotplug, with no frame drawn, losing the output; a
+ * display still listed whose swapchain went out of date opened again
+ * rather than left; and an unreadable list changing nothing.
  */
 
 #include "userland/desktop/wayland/kwl.h"
@@ -38,6 +41,9 @@ struct test_display {
 /* The displays connected now. */
 static struct test_display test_displays[4];
 static unsigned test_display_count;
+
+/* The list cannot be read (the topology moved under the enumeration). */
+static int test_list_error;
 
 /* The hotplug fence's state: signaled, how many were registered and destroyed. */
 static int test_hotplug_signaled;
@@ -79,6 +85,10 @@ vkGetPhysicalDeviceDisplayPropertiesKHR(
 
 	/* The stand-in has one GPU. */
 	(void)physicalDevice;
+
+	/* An unreadable list, as when the topology moves under the walk. */
+	if (test_list_error)
+		return VK_ERROR_UNKNOWN;
 
 	/* Each connected display. */
 	for (index = 0U; index < test_display_count && index < *pPropertyCount; index++) {
@@ -346,6 +356,31 @@ main(void)
 	test_opens = 0U;
 	error = kwl_output_use_internal(&server);
 	check(error == 0 && test_opens == 0U, "the display shown is not opened again");
+
+	/* On the external display, out of date (a hotplug elsewhere): opened again there, not moved. */
+	error = kwl_output_use_external(&server);
+	check(error == 0 && compose.display == (VkDisplayKHR)(uintptr_t)0x55U, "on the external virtual display");
+	test_opens = 0U;
+	compose.output_lost = 1U;
+	test_now += 1U;
+	kwl_output_tick(&server);
+	check(compose.display == (VkDisplayKHR)(uintptr_t)0x55U && compose.output_lost == 0U && test_opens == 1U, "an out-of-date display still listed is opened again");
+	check(server.width == 1024U, "the size stays the external display's");
+
+	/* A hotplug whose list cannot be read: nothing is lost, the list read before stays. */
+	test_list_error = 1;
+	test_now += 300U;
+	test_hotplug_signaled = 1;
+	kwl_output_tick(&server);
+	check(compose.output_lost == 0U && compose.display_count == 2U, "an unreadable list changes nothing");
+	test_list_error = 0;
+
+	/* The external display unplugged while no frame is drawn: the hotplug alone moves the output. */
+	test_display_count = 1U;
+	test_now += 300U;
+	test_hotplug_signaled = 1;
+	kwl_output_tick(&server);
+	check(compose.display == (VkDisplayKHR)(uintptr_t)0x44U && compose.output_lost == 0U && server.width == 1280U, "a display gone from the list loses the output and it moves");
 
 	/* Reports the outcome. */
 	if (test_failures != 0) {

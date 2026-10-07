@@ -197,8 +197,9 @@ struct kwl_compose {
 	uint32_t limited;
 	/*
 	 * The display under the output was lost (unplugged): 1 until the output
-	 * moves (output-switch.c), 2 when no display took it and the next
-	 * hotplug is waited for; no frame is drawn meanwhile.
+	 * moves (output-switch.c), 2 when no display took it (or the list of
+	 * displays could not be read) and the next hotplug is waited for; no
+	 * frame is drawn meanwhile.
 	 */
 	unsigned output_lost;
 	uint64_t frame_start_cycles;
