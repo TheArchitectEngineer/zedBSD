@@ -2,7 +2,7 @@
 # ws181-p001: 設計 — 窓の状態の機械、App Home の独立のモード、画面の端の gesture、整列のメニューと整列モード
 
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q842-i01 P2: 第 3 版まで。受け入れの 4 項を満たした、clearance は Q1 の判定。N1〜N3 は未回答で既定の案で進める）
+Status: cleared（2026-10-07 Q1、第 3 版。N1〜N3 も回答済み）
 Disposition: normal
 Queue: q842 / q842-i01
 
