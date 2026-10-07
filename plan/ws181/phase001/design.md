@@ -44,7 +44,7 @@ Parent: [ws181-p001](phase.md)
 I1 は「docked mode を出る」1 つの関数 `layout_leave(server, front, via)`（shell.c）で守る:
 
 1. `front`（floating にする操作の対象の docked の窓、無ければ NULL）は今どおり animation つきで `window_undock()`。
-2. それ以外の `maximized = 1` の窓（全 desktop、最小化の物、map の前の物も）は **animation 無しで** `window_float_quiet()`。全画面の窓で `fullscreen_docked = 1` の物は `fullscreen_docked = 0`（全画面を出ると floating に戻る）。
+2. それ以外の `maximized = 1` の窓（全 desktop、最小化の物、map の前の物も）は **animation 無しで** `window_float_quiet()`（どれをどうするかは純関数 `kwl_layout_leave_action()`: front は FLOAT、他の docked は QUIET、floating・全画面・dialog は KEEP）。全画面の窓で `fullscreen_docked = 1` の物はそのまま: windowed の mode で全画面を出ると、protocol.c が `restore_*`（floating の場所）へ戻す（p002 の実装で確かめた）。
 3. `server->dock_owner[]` と `server->dock_owner_gone[]` を全 desktop で消す（§1.4）。
 4. `layout_set(WINDOWED, via)`。
 5. log: `KWL LAYOUT leave via=<via> front=<id|0> quiet=<数>` と、状態の要約 `KWL LAYOUT windows desktop=<n> floating=<n> docked=<n> dock_hidden=<n> minimized=<n> fullscreen=<n>`（表示中の desktop、AAT が読む）。
@@ -98,7 +98,7 @@ compositor には unmap・消滅を shell に知らせる一般の hook が無�
 - T が floating（親を持たない）: 切り替えと同じく `window_dock(T, …, "front")` して持ち主に（今の `layout_keep_front` と同じ log `KWL LAYOUT front surface=<id> action=dock`）。
 
 - 手順 A の 1・3 が手順 B より先なので、持ち主が閉じた時に次の窓が dock されることは無い（今の不具合の (4) の原因）。
-- `window_minimize()` と `window_to_desktop()` は終わりで `layout_follow()` を直に呼ぶ（tick を待たない。冪等）。
+- `window_minimize()` は終わりで `layout_follow()` を直に呼ぶ（tick を待たない。冪等）。`window_to_desktop()` は呼ばない: Ctrl+Alt+Shift+矢印は `window_to_desktop()` の後に `desktop_turn()` するので、その間に確かめると「見えない desktop へ送った」と誤る（p002 の実装で分かった）。次の tick で確かめる。
 - 前の窓が全画面で、その下に docked の持ち主が残る（Notes の角など）間は、持ち主は下の窓のまま。全画面を出た窓は docked mode なら dock され（`kwl_glass_unfullscreen_docks`）、次の手順 B で持ち主になる。
 
 ### 1.5 試験（p002）
