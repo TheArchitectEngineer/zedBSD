@@ -1450,6 +1450,9 @@ struct i915_display_nogem;
 #define I915_GEN11_DE_HPD_IMR       0x44474u
 #define I915_GEN11_TBT_HOTPLUG_CTL  0x44030u
 #define I915_GEN11_TC_HOTPLUG_CTL   0x44038u
+/* The DP-alt (bits 16 to 21) and Thunderbolt (bits 0 to 5) hotplug bits of TC1 to TC6 in GEN11_DE_HPD_IIR. */
+#define I915_GEN11_DE_TC_HOTPLUG_MASK   0x003f0000u
+#define I915_GEN11_DE_TBT_HOTPLUG_MASK  0x0000003fu
 #define I915_SDEIMR                 0xc4004u
 #define I915_SHOTPLUG_CTL_DDI       0xc4030u
 #define I915_SHOTPLUG_CTL_TC        0xc4034u

@@ -114,6 +114,7 @@ static int tc_take_phy(struct i915_tc *tc, struct i915_tc_port *p, int required_
 static void tc_connect(struct i915_tc *tc, struct i915_tc_port *p, int required_lanes);
 static void tc_disconnect(struct i915_tc *tc, struct i915_tc_port *p);
 static void tc_update_mode(struct i915_tc *tc, struct i915_tc_port *p, int required_lanes);
+static void tc_readout_port(struct i915_tc *tc, struct i915_tc_port *p);
 
 /*
  * Binds the environment and prepares the Type-C ports of a display.
@@ -190,8 +191,6 @@ drv_i915_tc_readout(
 {
 	struct i915_tc_port *p;
 	unsigned index;
-	uint32_t buffer;
-	int error;
 
 	/* A display without Type-C ports has nothing to read. */
 	if (!tc->live)
@@ -204,35 +203,10 @@ drv_i915_tc_readout(
 		if (!p->present)
 			continue;
 
-		/* Reads the mode under the port's lock and with its DDI lanes powered. */
+		/* Reads and settles the port under its lock. */
 		tc->env.lock(tc->env.ctx, index);
 
-		error = tc_power_get(tc, I915_TC_POWER_PORT, index);
-		if (error != 0) {
-			tc->env.unlock(tc->env.ctx, index);
-			tc->env.log(tc->env.ctx, "i915: TC%u: readout skipped: the port's power did not come (error %d)\n", index + 1u, error);
-			continue;
-		}
-
-		p->mode = tc_current_mode(tc, p);
-
-		/* A port the display holds keeps TC cold blocked; a failed block leaves the PHY unheld. */
-		if (p->mode == I915_TC_MODE_DP_ALT || p->mode == I915_TC_MODE_LEGACY) {
-			error = tc_block_cold(tc, p);
-			if (error != 0)
-				p->mode = I915_TC_MODE_TBT;
-		}
-
-		/* An enabled DDI buffer on a held PHY is the firmware's output on the port. */
-		buffer = tc_read(tc, tc_ddi_buf_ctl(p));
-		if ((buffer & I915_TC_DDI_BUF_ENABLE) != 0u && p->cold_held)
-			p->links = 1u;
-
-		tc_power_put(tc, I915_TC_POWER_PORT, index);
-
-		/* A port nothing drives is given back. */
-		if (p->links == 0u)
-			tc_disconnect(tc, p);
+		tc_readout_port(tc, p);
 
 		tc->env.unlock(tc->env.ctx, index);
 
@@ -429,6 +403,7 @@ drv_i915_tc_put_link(
 	/* Drops the link under the lock; the unlock gives the PHY back when it was the last. */
 	tc->env.lock(tc->env.ctx, port);
 
+	/* A link never taken is reported, not counted below zero. */
 	if (p->links == 0u) {
 		tc->env.log(tc->env.ctx, "i915: TC%u: a link was put back that was never taken\n", port + 1u);
 	} else {
@@ -559,18 +534,21 @@ drv_i915_tc_log_state(
 	if (error != 0)
 		return;
 
+	/* The port's lanes, for its DDI buffer control. */
 	error = tc_power_get(tc, I915_TC_POWER_PORT, port);
 	if (error != 0) {
 		tc_power_put(tc, I915_TC_POWER_CORE, port);
 		return;
 	}
 
+	/* The live status, the Type-C subsystem's status, the FIA's lanes and pins, and the buffer control. */
 	live = tc_live_status_raw(tc, port);
 	tcss = tc_read(tc, I915_TC_TCSS_DDI_STATUS + I915_TC_TCSS_DDI_STATUS_STRIDE * p->index);
 	lanes = tc_read(tc, tc_fia_base(p) + I915_TC_FIA_DFLEXDPSP);
 	pins = tc_read(tc, tc_fia_base(p) + I915_TC_FIA_DFLEXPA1);
 	buffer = tc_read(tc, tc_ddi_buf_ctl(p));
 
+	/* The power was needed for the reads only. */
 	tc_power_put(tc, I915_TC_POWER_PORT, port);
 	tc_power_put(tc, I915_TC_POWER_CORE, port);
 
@@ -962,6 +940,7 @@ tc_wait_ready(
 		if (delay_error != 0)
 			break;
 
+		/* The time waited so far. */
 		waited_us += I915_TC_READY_POLL_US;
 	}
 
@@ -1284,4 +1263,51 @@ tc_update_mode(
 
 	/* Logs the change. */
 	tc->env.log(tc->env.ctx, "i915: TC%u: mode %s -> %s\n", p->index + 1u, drv_i915_tc_mode_name(old_mode), drv_i915_tc_mode_name(p->mode));
+}
+
+/*
+ * Reads how the firmware left a port and settles it; the caller holds the
+ * port's lock.
+ *
+ * A held PHY keeps TC cold blocked; one whose DDI buffer is enabled is the
+ * firmware's output and counts one link.  Any other held PHY is given back.
+ */
+static void
+tc_readout_port(
+	struct i915_tc *tc,
+	struct i915_tc_port *p)
+{
+	uint32_t buffer;
+	int error;
+
+	/* The port's DDI lanes are powered for the ownership and the buffer. */
+	error = tc_power_get(tc, I915_TC_POWER_PORT, p->index);
+	if (error != 0) {
+		tc->env.log(tc->env.ctx, "i915: TC%u: readout skipped: the port's power did not come (error %d)\n", p->index + 1u, error);
+		return;
+	}
+
+	/* Reads the mode the hardware is in. */
+	p->mode = tc_current_mode(tc, p);
+
+	/* A PHY the display holds keeps TC cold blocked; one that cannot is given back to the Type-C subsystem. */
+	if (p->mode == I915_TC_MODE_DP_ALT || p->mode == I915_TC_MODE_LEGACY) {
+		error = tc_block_cold(tc, p);
+		if (error != 0) {
+			tc_set_ownership(tc, p, 0);
+			p->mode = I915_TC_MODE_NONE;
+		}
+	}
+
+	/* An enabled DDI buffer on a held PHY is the firmware's output on the port: one link. */
+	buffer = tc_read(tc, tc_ddi_buf_ctl(p));
+	if ((buffer & I915_TC_DDI_BUF_ENABLE) != 0u && p->cold_held)
+		p->links = 1u;
+
+	/* The lanes' power was needed for the reads only. */
+	tc_power_put(tc, I915_TC_POWER_PORT, p->index);
+
+	/* A port nothing drives is given back. */
+	if (p->links == 0u)
+		tc_disconnect(tc, p);
 }

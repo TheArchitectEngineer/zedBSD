@@ -56,6 +56,7 @@ void drv_i915_hpd_poll_disable(struct i915_hotplug *hp, struct i915_power_domain
 
 int drv_i915_hpd_start(struct i915_display *display, struct i915_hotplug *hp, struct i915_mmio *m, const struct i915_display_nogem *nogem, struct i915_power_domains *pd, struct i915_pw_ctx *c, int pch_type, int intel_irqs_enabled, struct i915_hpd_fake_regs *fake);
 void drv_i915_hpd_pch_irq(struct i915_display *display, uint32_t sde_iir);
+void drv_i915_hpd_de_irq(struct i915_display *display, uint32_t de_hpd_iir);
 void drv_i915_hpd_stop(struct i915_display *display);
 int drv_i915_hpd_probe_connector(struct i915_display *display, unsigned idx);
 

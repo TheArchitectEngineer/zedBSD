@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p002b`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-07 P2: 途中。UAT の ws181-p005 を先にするため区切った）
+Status: in-progress（2026-10-07 P2: 実装・host の試験・build まで。ktest・実機は 5330 の後（Type-C は QEMU に無い））
 Phase disposition: normal
 Queue: q834 の続き（P2、Q1 の ACK 2026-10-07「範囲 1〜6 で ACK、display/ の下だけ」。Linux の intel_tc.c・intel_dkl_phy.c は値と手順の事実の確認だけに使い、code・注・名前の並びは写さない）
 
@@ -30,7 +30,30 @@ Queue: q834 の続き（P2、Q1 の ACK 2026-10-07「範囲 1〜6 で ACK、disp
   `rlcd->tc`、lcd の emit の `tc_put_link` hook（`modeset.c` で bind、`modeset-internal.h` の `I915_LCD_INTEL_TC_PORT_PUT_LINK` が使う。model では STEP のまま）。
 - `vmunix.mk` に dkl-phy.c・tc.c・tc-kern.c（別の行）。
 
+- H5（2026-10-07 の 2 回目）: `hotplug.c` の `drv_i915_hpd_de_irq`（pch と同じ入口の gate、`de_entries`・`de_unexpected`）と `i915_hpd_gen11_irq_handler`
+  （GEN11_TC_HOTPLUG_CTL・GEN11_TBT_HOTPLUG_CTL を rmw(0,0) で ack、long は pin の 4 bit の bit 1、`i915_get_hpd_pins` → `i915_hpd_intel_hpd_irq_handler`）、
+  `interrupts.c` が GEN11_DE_HPD_IIR の ack の後に呼ぶ。`internal.h` に `I915_GEN11_DE_TC_HOTPLUG_MASK`・`TBT`。
+- hotplug の world に `tc`（hardware の instance の start で `drv_i915_tc_kern_ports(display)`、model は NULL）、`i915_hpd_tc_connected_step` は
+  `drv_i915_tc_connected`（無ければ false と log）。
+- `tc.c` の readout を `tc_readout_port` に分け、TC cold を block できなかった port は ownership も返す（host 試験で見つけた漏れ）。
+
+## 確かめ（2026-10-07）
+
+- host: `sh plan/ws051/tests/host-tc.sh` → host-tc 67/0（tc.c を fake の env で、ASan・UBSan: live status、readout（firmware の出力の link、idle の port の
+  返却、cold の失敗）、connect の順（ownership が最初の書き込み）と unlock での返却、get・put_link、拒否の巻き戻し（ready でない、lane 不足、cold の
+  power の失敗、TCSS の all-ones）、FIA の lane の mask と slot、pin、legacy の flag の訂正、connected）、host-tc-tables 34/0（power.c の AUX の domain の表、
+  dkl-phy.c の window と bank、hotplug.c の long pulse を sed で取り出す）。
+- kernel: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p2-ci vmunix` warning 0。`I915_TESTS=y` の `I915_TEST_SET=` execution・display・
+  display_ktest・display_ktest2（`build/p2-i915t`）warning 0。
+- style-check: 新しい file の指摘は critical section の本体の段落だけ（規約の例の形）。
+- 未実施: ktest・実機（5330 が戻った後、Type-C は QEMU に無い。T1 の boot test は TC の port の無い QEMU で display の probe が変わらない確認だけ意味がある）。
+
 ## 再開の情報（残り）
+
+- 無し（p002b の範囲は実装済み）。積み残しは plan/ws177/backlog-p2.md の WS051 ws051-p002b の行。次は p003（DKL PHY と TC PLL、正解値の後）。
+
+## 旧: 再開の情報（2026-10-07 の 1 回目の区切り、済み）
+
 
 1. H5: `hotplug.c` に `drv_i915_hpd_de_irq(display, iir)`（`drv_i915_hpd_pch_irq` と同じ入口の gate、GEN11_TC/TBT_HOTPLUG_CTL を rmw(0,0) で ack、long は
    `2 << (pin − TC1) × 4`、`i915_get_hpd_pins` → `i915_hpd_intel_hpd_irq_handler`）、`interrupts.c` の GEN11_DE_HPD_IIR の ack の後に呼ぶ。

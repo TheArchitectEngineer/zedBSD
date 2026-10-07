@@ -203,6 +203,7 @@ drv_i915_dkl_phy_wait_set(
 		if (delay_result != 0)
 			return EIO;
 
+		/* The time waited so far. */
 		waited_us += I915_DKL_POLL_US;
 	}
 

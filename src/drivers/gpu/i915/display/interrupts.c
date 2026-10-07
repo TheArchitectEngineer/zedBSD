@@ -1162,12 +1162,16 @@ i915_gen8_de_irq_handler(
 		}
 	}
 
-	/* Acknowledges the Type-C hotplug sources. */
+	/* Acknowledges the Type-C hotplug sources and hands them to the hotplug path (gen11_hpd_irq_handler(), ws051-p002b). */
 	if (d->display_ver >= 11 && (master_ctl & GEN11_DE_HPD_IRQ) != 0U) {
 		iir = drv_i915_read32(d->m, GEN11_DE_HPD_IIR);
 		if (iir != 0U) {
 			drv_i915_write32(d->m, GEN11_DE_HPD_IIR, iir);
 			d->de_hpd_acks++;
+
+			/* The hotplug path drops the event until it is started. */
+			display = container_of(d, struct i915_display, irq);
+			drv_i915_hpd_de_irq(display, iir);
 		} else {
 			d->de_lied_count++;
 		}
