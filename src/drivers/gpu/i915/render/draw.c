@@ -58,6 +58,7 @@ extern void drv_i915_gfx_draw_checkpoint(const struct i915_gfx_image *target, un
 static int i915_draw_object_create(struct i915_render_session *session, uint64_t bytes, struct i915_gem_object **result);
 static int i915_draw_scratch(struct i915_render_session *session, struct i915_gfx_session *work, struct i915_gfx_kernels *kernels);
 static int i915_draw_writes_storage(const struct i915_gfx_kernels *kernels);
+static int i915_draw_geometry_check(const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels);
 static int i915_draw_scratch_grow(struct i915_render_session *session, struct i915_gfx_session *work, const struct i915_gfx_kernels *kernels);
 static void i915_draw_object_destroy(struct i915_render_session *session, struct i915_gem_object *object);
 static int i915_draw_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, const struct i915_gfx_image *depth, uint32_t mocs, const struct i915_gfx_draw_args *args);
@@ -547,15 +548,11 @@ drv_i915_gfx_draw(
 	/* Takes the pipeline's kernels and their push data layouts. */
 	drv_i915_gfx_pipeline_kernels(state->pipeline, &kernels);
 
-	/*
-	 * XXX: a pipeline's geometry kernel is compiled and placed
-	 * (ws075-p007b b1), but the draw does not program 3DSTATE_GS and its
-	 * URB yet (b2): such a draw is refused rather than run without the
-	 * stage.
-	 */
+	/* Refuses a geometry stage the draw cannot run: its input primitive, or its scratch. */
 	if (kernels.gs_code != NULL) {
-		kern_logf("i915: vk: draw refused: the geometry stage is not programmed yet\n");
-		return ENOTSUP;
+		error = i915_draw_geometry_check(state->pipeline, &kernels);
+		if (error != 0)
+			return error;
 	}
 
 	/*
@@ -564,7 +561,9 @@ drv_i915_gfx_draw(
 	 * buffer, runs first.
 	 */
 	if (work->transfer_pending != 0) {
-		if (kernels.vs_push.block_count != 0U || kernels.ps_push.block_count != 0U) {
+		if (kernels.vs_push.block_count != 0U ||
+		    kernels.gs_push.block_count != 0U ||
+		    kernels.ps_push.block_count != 0U) {
 			error = drv_i915_gfx_flush(session, work);
 			if (error != 0)
 				return error;
@@ -693,7 +692,7 @@ drv_i915_gfx_scratch(
 
 /*
  * Reports whether a draw's kernels name a storage buffer, which they may
- * write: 1 when either stage's push data carries a storage buffer's address.
+ * write: 1 when a stage's push data carries a storage buffer's address.
  */
 static int
 i915_draw_writes_storage(
@@ -707,6 +706,12 @@ i915_draw_writes_storage(
 			return 1;
 	}
 
+	/* The geometry stage's blocks. */
+	for (index = 0U; index < kernels->gs_push.block_count; index++) {
+		if (kernels->gs_push.blocks[index].address != 0U)
+			return 1;
+	}
+
 	/* The pixel stage's blocks. */
 	for (index = 0U; index < kernels->ps_push.block_count; index++) {
 		if (kernels->ps_push.blocks[index].address != 0U)
@@ -714,6 +719,44 @@ i915_draw_writes_storage(
 	}
 
 	/* Succeeded: no storage buffer. */
+	return 0;
+}
+
+/*
+ * Checks that a draw can run its pipeline's geometry kernel: the primitives
+ * of the draw's topology must have the vertices the kernel expects of its
+ * input primitive, and the kernel must not spill (XXX: the geometry stage's
+ * scratch, ws075-p007b b4).  Returns 0, or ENOTSUP with the reason logged.
+ */
+static int
+i915_draw_geometry_check(
+	const struct i915_gfx_pipeline *pipeline,
+	const struct i915_gfx_kernels *kernels)
+{
+	uint32_t topology;
+	uint32_t vertices;
+
+	/* The vertices of one of the draw's primitives (0 for a topology the vertex input refuses). */
+	topology = drv_i915_gfx_topology(pipeline);
+	vertices = drv_i915_gfx_topology_vertices(topology);
+
+	/* A primitive of other vertices than the kernel's input primitive is refused. */
+	if (vertices != kernels->gs_vertices_in) {
+		kern_logf("i915: vk: draw refused: primitive topology %u gives %u vertices a primitive, the geometry shader takes %u\n",
+			  pipeline->topology,
+			  vertices,
+			  kernels->gs_vertices_in);
+		return ENOTSUP;
+	}
+
+	/* XXX: a geometry kernel that spills has no scratch space yet. */
+	if (kernels->gs_scratch_bytes != 0U) {
+		kern_logf("i915: vk: draw refused: the geometry shader spills %u bytes a thread, which is not given scratch space yet\n",
+			  kernels->gs_scratch_bytes);
+		return ENOTSUP;
+	}
+
+	/* Succeeded: the draw can run the geometry kernel. */
 	return 0;
 }
 
@@ -929,7 +972,7 @@ i915_draw_scratch_grow(
  * The order is the fixture draw's: the context setup at the draw's slot and
  * instruction window, the vertex fetcher (with the index buffer of an
  * indexed draw), the URB and push constants, the state pointers, the
- * geometry stages with only the vertex shader enabled, the rasterizer, the
+ * vertex and the geometry stage (no tessellation), the rasterizer, the
  * pixel stage, the depth state, and the primitive with its closing flush.
  */
 static int
@@ -975,18 +1018,31 @@ i915_draw_build_batch(
 	 * Sizes a VUE entry, in 64-byte units of four 16-byte slots: the vertex
 	 * fetcher writes the attributes into the entry the vertex shader then
 	 * overwrites with the header, the position and the varyings, so it holds
-	 * the larger of the two (brw_compile_vs.cpp, urb_entry_size).
+	 * the larger of the two (brw_compile_vs.cpp, urb_entry_size).  With a
+	 * geometry kernel the varyings are the vertex kernel's own, not the
+	 * geometry kernel's the setup reads.
 	 */
 	slots = 2U + kernels->varyings;
+	if (kernels->gs_code != NULL)
+		slots = 2U + kernels->vs_varyings;
 	if (kernels->vs_input_count > slots)
 		slots = kernels->vs_input_count;
 	entry_size = (slots + 3U) / 4U;
-	drv_i915_gfx_emit_urb(batch, entry_size);
 
-	/* Points the vertex and the pixel stage at their push data. */
+	/* Allocates the push constants and the URB, the geometry stage's entries of its kernel's size. */
+	error = drv_i915_gfx_emit_urb(batch, entry_size, kernels->gs_urb_entry_size);
+	if (error != 0) {
+		kern_logf("i915: vk: draw refused: the geometry stage's URB entries (%u x 64 bytes) leave room for fewer than two\n",
+			  kernels->gs_urb_entry_size);
+		return error;
+	}
+
+	/* Points the vertex, the geometry and the pixel stage at their push data. */
 	drv_i915_gfx_emit_constants(batch,
 				    state_va + I915_GFX_PUSH_BUFFER,
 				    kernels->vs_push_regs,
+				    state_va + I915_GFX_GS_PUSH_BUFFER,
+				    kernels->gs_push_regs,
 				    state_va + I915_GFX_PS_PUSH_BUFFER,
 				    kernels->ps_push_regs,
 				    mocs);
@@ -1023,7 +1079,7 @@ i915_draw_build_batch(
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SAMPLE_MASK, GEN12_3DSTATE_SAMPLE_MASK_DWORDS));
 	drv_i915_batch_emit(batch, sample_mask & ((1U << samples) - 1U));
 
-	/* Enables the vertex shader and no other geometry stage. */
+	/* Enables the vertex shader and neither tessellation stage. */
 	drv_i915_gfx_emit_vertex_shader(batch, kernels);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HS, GEN12_3DSTATE_HS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_TE, GEN12_3DSTATE_TE_DWORDS);
@@ -1042,8 +1098,8 @@ i915_draw_build_batch(
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 
-	/* No geometry shader and no primitive replication. */
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
+	/* The geometry kernel when the pipeline has one, and no primitive replication. */
+	drv_i915_gfx_emit_geometry_shader(batch, kernels);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	/* Programs the clipper, setup and rasterizer, then the pixel stage. */

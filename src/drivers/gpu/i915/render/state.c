@@ -31,6 +31,17 @@
 #include "../intel/genxml.h"
 
 /* The genxml SURFACE_FORMAT values of the VkFormats the render paths read and write. */
+/*
+ * The push constant space (32 KiB) of every draw: 8 KiB to the vertex
+ * stage from 0, 8 KiB to the geometry stage from 8 KiB, 16 KiB to the pixel
+ * stage from 16 KiB (ws075-p007b), the same whether or not the draw has a
+ * geometry stage, so the allocation never changes between draws.  Each
+ * stage's push data is at most I915_GFX_PUSH_DATA_BYTES.
+ */
+#define I915_GFX_PUSH_ALLOC_VS_KB	8U
+#define I915_GFX_PUSH_ALLOC_GS_KB	8U
+#define I915_GFX_PUSH_ALLOC_PS_KB	16U
+
 #define I915_GFX_SURFACE_R8G8B8A8_UNORM		0x0c7U
 #define I915_GFX_SURFACE_B8G8R8A8_UNORM		0x0c0U
 #define I915_GFX_SURFACE_R8G8B8A8_UNORM_SRGB	0x0c8U
@@ -477,6 +488,11 @@ drv_i915_gfx_write_state(
 	if (error != 0)
 		return error;
 
+	/* Fills the geometry stage's push data, when the draw has a geometry kernel (an empty layout writes nothing). */
+	error = i915_state_write_push(page + I915_GFX_GS_PUSH_BUFFER, state, &kernels->gs_push);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the state object holds everything the batch points at. */
 	return 0;
 }
@@ -914,13 +930,31 @@ drv_i915_gfx_emit_context_setup(
 /*
  * Returns the GEN primitive type (GEN12_3DPRIM_*) of a pipeline's Vulkan
  * topology: the point, line and triangle lists, the line and triangle
- * strips and the triangle fan; 0 for a topology with adjacency or of
- * patches, which the draw path does not take.
+ * strips and the triangle fan, and the topologies with adjacency for a
+ * pipeline with a geometry kernel (ws075-p007b); 0 for one with adjacency
+ * and no geometry kernel, or of patches, which the draw path does not take.
  */
 uint32_t
 drv_i915_gfx_topology(
 	const struct i915_gfx_pipeline *pipeline)
 {
+	/* The topologies with adjacency, which only a geometry kernel reads (anv passes them on as they are). */
+	if (pipeline->gs_binary != NULL) {
+		/* Vulkan's topology with adjacency, as GEN names it. */
+		switch (pipeline->topology) {
+		case VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY:
+			return GEN12_3DPRIM_LINELIST_ADJ;
+		case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY:
+			return GEN12_3DPRIM_LINESTRIP_ADJ;
+		case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY:
+			return GEN12_3DPRIM_TRILIST_ADJ;
+		case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY:
+			return GEN12_3DPRIM_TRISTRIP_ADJ;
+		default:
+			break;
+		}
+	}
+
 	/* Vulkan's topology, as GEN names it. */
 	switch (pipeline->topology) {
 	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
@@ -940,6 +974,41 @@ drv_i915_gfx_topology(
 	}
 
 	/* A topology the draw path does not take. */
+	return 0U;
+}
+
+/*
+ * Returns the vertices of one primitive of a GEN primitive type, as a
+ * geometry kernel receives them (its input primitive): 1 for points, 2 for
+ * lines, 3 for triangles, 4 and 6 with adjacency; 0 for a type that has
+ * none (the rectangle list).
+ */
+uint32_t
+drv_i915_gfx_topology_vertices(
+	uint32_t topology)
+{
+	/* The vertices of each type's primitive. */
+	switch (topology) {
+	case GEN12_3DPRIM_POINTLIST:
+		return 1U;
+	case GEN12_3DPRIM_LINELIST:
+	case GEN12_3DPRIM_LINESTRIP:
+		return 2U;
+	case GEN12_3DPRIM_TRILIST:
+	case GEN12_3DPRIM_TRISTRIP:
+	case GEN12_3DPRIM_TRIFAN:
+		return 3U;
+	case GEN12_3DPRIM_LINELIST_ADJ:
+	case GEN12_3DPRIM_LINESTRIP_ADJ:
+		return 4U;
+	case GEN12_3DPRIM_TRILIST_ADJ:
+	case GEN12_3DPRIM_TRISTRIP_ADJ:
+		return 6U;
+	default:
+		break;
+	}
+
+	/* A type no geometry kernel takes. */
 	return 0U;
 }
 
@@ -1212,64 +1281,111 @@ drv_i915_gfx_emit_index_buffer(
 /*
  * Emits the push constant and URB allocations.
  *
- * The push constant space is split in halves between the vertex and the
- * pixel stage.  The vertex stage owns the URB past the push constants:
- * entries of entry_size 64-byte units, as many as fit, at most 3576 (a
- * multiple of eight, as Mesa's intel_get_urb_config() keeps the vertex
- * stage's count); the other geometry stages get none.
+ * The push constant space goes 8 KiB to the vertex stage, 8 KiB to the
+ * geometry stage and 16 KiB to the pixel stage on every draw.  Without a
+ * geometry stage (gs_entry_size 0) the vertex stage owns the URB past the
+ * push constants: entries of vs_entry_size 64-byte units, as many as fit,
+ * at most 3576 (a multiple of eight, as Mesa's intel_get_urb_config() keeps
+ * the vertex stage's count).  With one (ws075-p007b) the vertex stage keeps
+ * 21 of those chunks and the geometry stage the next 6: entries of
+ * gs_entry_size units, at most 1548, a multiple of eight when an entry is
+ * smaller than nine units.  The hull and domain stages get none.  Returns
+ * 0, or ENOTSUP when fewer than two geometry entries fit; nothing is
+ * emitted then.
  */
-void
+int
 drv_i915_gfx_emit_urb(
 	struct i915_gfx_batch *batch,
-	uint32_t entry_size)
+	uint32_t vs_entry_size,
+	uint32_t gs_entry_size)
 {
 	uint32_t opcode;
+	uint32_t vs_bytes;
 	uint32_t entries;
+	uint32_t gs_entries;
+	uint32_t gs_start;
 
-	/* Counts the entries the URB past the push constants holds. */
-	entries = GEN12_URB_VS_BYTES / (entry_size * 64U);
+	/* Counts the geometry stage's entries in its chunks, and gives the vertex stage the chunks before them. */
+	vs_bytes = GEN12_URB_VS_BYTES;
+	gs_entries = 0U;
+	gs_start = 0U;
+	if (gs_entry_size != 0U) {
+		vs_bytes = GEN12_URB_VS_SPLIT_CHUNKS * GEN12_URB_CHUNK_KB * 1024U;
+		gs_start = GEN12_URB_VS_START_CHUNK + GEN12_URB_VS_SPLIT_CHUNKS;
+		gs_entries = (GEN12_URB_GS_CHUNKS * GEN12_URB_CHUNK_KB * 1024U) / (gs_entry_size * 64U);
+		if (gs_entries > GEN12_URB_GS_ENTRIES)
+			gs_entries = GEN12_URB_GS_ENTRIES;
+		if (gs_entry_size < 9U)
+			gs_entries &= ~7U;
+
+		/* Refuses entries so large that the geometry stage cannot run two (its DUAL_OBJECT minimum). */
+		if (gs_entries < GEN12_URB_GS_MIN_ENTRIES)
+			return ENOTSUP;
+	}
+
+	/* Counts the entries the vertex stage's URB holds. */
+	entries = vs_bytes / (vs_entry_size * 64U);
 	if (entries > GEN12_URB_VS_ENTRIES)
 		entries = GEN12_URB_VS_ENTRIES;
 	entries &= ~7U;
 
-	/* Gives the vertex stage the first half of the push constant space. */
+	/* Gives the vertex stage the first 8 KiB of the push constant space. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_VS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
-	drv_i915_batch_emit(batch, (0U << 16) | (GEN12_PUSH_CONSTANT_KB / 2U));
+	drv_i915_batch_emit(batch, (0U << 16) | I915_GFX_PUSH_ALLOC_VS_KB);
 
-	/* Gives the hull, domain and geometry stages none. */
-	for (opcode = GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_HS; opcode < GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS; opcode++)
+	/* Gives the hull and domain stages none. */
+	for (opcode = GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_HS; opcode < GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS; opcode++)
 		drv_i915_batch_zero(batch, opcode, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS);
 
-	/* Gives the pixel stage the second half. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
-	drv_i915_batch_emit(batch, ((GEN12_PUSH_CONSTANT_KB / 2U) << 16) | (GEN12_PUSH_CONSTANT_KB / 2U));
+	/* Gives the geometry stage the next 8 KiB, whether or not the draw has one. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
+	drv_i915_batch_emit(batch, (I915_GFX_PUSH_ALLOC_VS_KB << 16) | I915_GFX_PUSH_ALLOC_GS_KB);
 
-	/* Gives the vertex stage the URB past the push constants. */
+	/* Gives the pixel stage the last 16 KiB. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
+	drv_i915_batch_emit(batch, ((I915_GFX_PUSH_ALLOC_VS_KB + I915_GFX_PUSH_ALLOC_GS_KB) << 16) | I915_GFX_PUSH_ALLOC_PS_KB);
+
+	/* Gives the vertex stage its URB past the push constants. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_URB_ALLOC_VS, GEN12_3DSTATE_URB_ALLOC_DWORDS));
-	drv_i915_batch_emit(batch, (4U << 10) | (4U << 21) | (entry_size - 1U));
+	drv_i915_batch_emit(batch, (GEN12_URB_VS_START_CHUNK << 10) | (GEN12_URB_VS_START_CHUNK << 21) | (vs_entry_size - 1U));
 	drv_i915_batch_emit(batch, entries | (entries << 16));
 
-	/* Gives the hull, domain and geometry stages no URB entries. */
-	for (opcode = GEN12_CMD_3DSTATE_URB_ALLOC_HS; opcode <= GEN12_CMD_3DSTATE_URB_ALLOC_GS; opcode++) {
+	/* Gives the hull and domain stages no URB entries. */
+	for (opcode = GEN12_CMD_3DSTATE_URB_ALLOC_HS; opcode < GEN12_CMD_3DSTATE_URB_ALLOC_GS; opcode++) {
 		drv_i915_batch_emit(batch, GEN12_CMD_HEADER(opcode, GEN12_3DSTATE_URB_ALLOC_DWORDS));
 		drv_i915_batch_emit(batch, (5U << 10) | (5U << 21));
 		drv_i915_batch_emit(batch, 0U);
 	}
+
+	/* Gives the geometry stage its chunks and entries, or none as the hull and domain stages. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_URB_ALLOC_GS, GEN12_3DSTATE_URB_ALLOC_DWORDS));
+	if (gs_entries != 0U) {
+		drv_i915_batch_emit(batch, (gs_start << 10) | (gs_start << 21) | (gs_entry_size - 1U));
+		drv_i915_batch_emit(batch, gs_entries | (gs_entries << 16));
+	} else {
+		drv_i915_batch_emit(batch, (5U << 10) | (5U << 21));
+		drv_i915_batch_emit(batch, 0U);
+	}
+
+	/* Succeeded: the push constants and the URB are allocated. */
+	return 0;
 }
 
 /*
  * Emits the 3DSTATE_CONSTANT_* packets of all five stages.
  *
- * The vertex and the pixel stage each read their own push data, as many
- * registers as its kernel uses.  Like anv, the buffer goes in the highest
- * slot, so that slot 0 is never the only one in use; a stage that reads
- * nothing is given an empty packet.
+ * The vertex, the geometry (ws075-p007b) and the pixel stage each read
+ * their own push data, as many registers as its kernel uses.  Like anv, the
+ * buffer goes in the highest slot, so that slot 0 is never the only one in
+ * use; a stage that reads nothing is given an empty packet.
  */
 void
 drv_i915_gfx_emit_constants(
 	struct i915_gfx_batch *batch,
 	uint64_t vs_push_va,
 	uint32_t vs_push_regs,
+	uint64_t gs_push_va,
+	uint32_t gs_push_regs,
 	uint64_t ps_push_va,
 	uint32_t ps_push_regs,
 	uint32_t mocs)
@@ -1283,12 +1399,15 @@ drv_i915_gfx_emit_constants(
 	for (stage = 0U; stage < 5U; stage++) {
 		drv_i915_batch_emit(batch, GEN12_CMD_HEADER(i915_gfx_constant_opcodes[stage], GEN12_3DSTATE_CONSTANT_DWORDS) | (mocs << 8));
 
-		/* The vertex stage (first) and the pixel stage (last) read push data; the others none. */
+		/* The vertex stage (first), the geometry stage (fourth) and the pixel stage (last) read push data; the others none. */
 		push_regs = 0U;
 		push_va = 0U;
 		if (stage == 0U) {
 			push_regs = vs_push_regs;
 			push_va = vs_push_va;
+		} else if (stage == 3U) {
+			push_regs = gs_push_regs;
+			push_va = gs_push_va;
 		} else if (stage == 4U) {
 			push_regs = ps_push_regs;
 			push_va = ps_push_va;
@@ -1335,8 +1454,11 @@ drv_i915_gfx_samples_log2(
  * Emits 3DSTATE_CLIP, SF and RASTER of an ordinary Vulkan pipeline, as anv
  * programs them.
  *
- * A vertex kernel that writes the point size has the setup take the point
- * width from each vertex; any other draws its points one pixel wide.
+ * A last stage that writes the point size has the setup take the point
+ * width from each vertex; any other draws its points one pixel wide.  The
+ * clipper takes each primitive's layer from the VUE only when the last
+ * stage writes it (a geometry kernel, ws075-p007b), else layer 0; with a
+ * geometry kernel the setup dereferences the URB a primitive at a time.
  */
 void
 drv_i915_gfx_emit_raster(
@@ -1349,6 +1471,8 @@ drv_i915_gfx_emit_raster(
 	uint32_t point_width;
 	uint32_t linear;
 	uint32_t multisample;
+	uint32_t zero_layer;
+	uint32_t deref;
 	uint32_t index;
 
 	/* The clipper prepares the linear barycentrics when the pixel kernel reads them. */
@@ -1357,20 +1481,34 @@ drv_i915_gfx_emit_raster(
 		linear = GEN12_CLIP_NON_PERSPECTIVE_BARYCENTRIC;
 
 	/*
+	 * Forces render target array index 0 unless the last stage writes the
+	 * layer (Vulkan: a layer not written is layer 0; anv's
+	 * ForceZeroRTAIndexEnable).
+	 */
+	zero_layer = GEN12_CLIP_FORCE_ZERO_RTA_INDEX;
+	if (kernels->gs_writes_layer != 0U)
+		zero_layer = 0U;
+
+	/* The setup dereferences the URB a primitive at a time when a geometry kernel is the last stage (Gen12, intel_get_urb_config()). */
+	deref = GEN12_URB_DEREF_BLOCK_SIZE_32;
+	if (kernels->gs_code != NULL)
+		deref = GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY;
+
+	/*
 	 * Clips with statistics, early cull and 8-bit subpixel precision; the
 	 * D3D API mode (z in [0, 1]), viewport XY test and guardband, and the
-	 * linear barycentrics when asked; a fan's
-	 * provoking vertex is the second of each triangle (Vulkan's first-vertex
-	 * convention); point widths 0.125 .. 255.875.
+	 * linear barycentrics when asked; a fan's provoking vertex is the
+	 * second of each triangle (Vulkan's first-vertex convention); point
+	 * widths 0.125 .. 255.875 and the forced layer 0.
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CLIP, GEN12_3DSTATE_CLIP_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 10) | (1U << 18));
 	drv_i915_batch_emit(batch,
 			    (1U << 31) | (1U << 30) | (1U << 28) | (1U << 26) | linear |
 			    (GEN12_FAN_PROVOKING_SECOND << GEN12_CLIP_FAN_PROVOKING_SHIFT));
-	drv_i915_batch_emit(batch, (1U << 17) | (2047U << 6));
+	drv_i915_batch_emit(batch, (1U << 17) | (2047U << 6) | zero_layer);
 
-	/* The point width comes from the vertices when the vertex kernel writes it, else it is 1.0 from state. */
+	/* The point width comes from the vertices when the last stage writes it, else it is 1.0 from state. */
 	point_width = GEN12_SF_POINT_WIDTH_ONE | GEN12_SF_POINT_WIDTH_FROM_STATE;
 	if (kernels->vs_point_size != 0U)
 		point_width = GEN12_SF_POINT_WIDTH_ONE;
@@ -1382,7 +1520,7 @@ drv_i915_gfx_emit_raster(
 	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SF, GEN12_3DSTATE_SF_DWORDS));
 	drv_i915_batch_emit(batch, (1U << 1) | (1U << 10) | (128U << 12));
-	drv_i915_batch_emit(batch, GEN12_URB_DEREF_BLOCK_SIZE_32 << 29);
+	drv_i915_batch_emit(batch, deref << 29);
 	drv_i915_batch_emit(batch, point_width | (1U << 14) | (GEN12_FAN_PROVOKING_SECOND << GEN12_SF_FAN_PROVOKING_SHIFT));
 
 	/* Translates the pipeline's cull mode; front and back together cull both. */
@@ -1594,9 +1732,73 @@ drv_i915_gfx_emit_vertex_shader(
 }
 
 /*
+ * Emits 3DSTATE_GS: the geometry kernel when the draw has one
+ * (ws075-p007b), as anv programs it, else an empty packet (the stage off).
+ *
+ * The kernel starts at the geometry kernel offset and runs SIMD8 with
+ * statistics, one input primitive to a channel, with no samplers and no
+ * binding table.  Its payload carries the input vertices' URB handles (and
+ * the primitive's number when it reads it) and no vertex data: every input
+ * is pulled from the URB.  The vertex count of each thread's output is
+ * dynamic, written by the kernel at the start of its URB entry.
+ */
+void
+drv_i915_gfx_emit_geometry_shader(
+	struct i915_gfx_batch *batch,
+	const struct i915_gfx_kernels *kernels)
+{
+	uint64_t scratch;
+	uint32_t grf;
+	uint32_t primitive_id;
+
+	/* A draw without a geometry kernel turns the stage off. */
+	if (kernels->gs_code == NULL) {
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
+		return;
+	}
+
+	/* The scratch space of a kernel that spills, the first payload register after the fixed ones, and the primitive's number. */
+	scratch = i915_state_scratch(kernels->gs_scratch_bytes, kernels->gs_scratch_offset);
+	grf = kernels->gs_grf_start;
+	primitive_id = 0U;
+	if (kernels->gs_primitive_id != 0U)
+		primitive_id = 1U;
+
+	/*
+	 * Writes the kernel start pointer; the vertices of an input primitive,
+	 * IEEE-754, no samplers and no binding table; the scratch space; the
+	 * first payload register (bits 3:0, and 5:4 in bits 30:29), the vertex
+	 * handles included and no vertex data read, the output topology and
+	 * vertex size (in 16-byte units, less one); enable, the primitive's
+	 * number, statistics, SIMD8 dispatch, one instance and the control data
+	 * header's size; the thread count and the control data format.
+	 */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS));
+	drv_i915_batch_emit(batch, I915_GFX_GS_KERNEL);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, kernels->gs_vertices_in & 0x3fU);
+	drv_i915_batch_emit(batch, (uint32_t)scratch);
+	drv_i915_batch_emit(batch, (uint32_t)(scratch >> 32));
+	drv_i915_batch_emit(batch,
+			    (grf & 0xfU) |
+			    (1U << 10) |
+			    (kernels->gs_output_topology << 17) |
+			    ((kernels->gs_output_vertex_hwords * 2U - 1U) << 23) |
+			    (((grf >> 4) & 0x3U) << 29));
+	drv_i915_batch_emit(batch,
+			    1U |
+			    (primitive_id << 4) |
+			    (1U << 10) |
+			    (GEN12_GS_DISPATCH_MODE_SIMD8 << 11) |
+			    (kernels->gs_control_hwords << 20));
+	drv_i915_batch_emit(batch, (I915_GFX_MAX_GS_THREADS - 1U) | (kernels->gs_control_format << 31));
+	drv_i915_batch_emit(batch, 0U);
+}
+
+/*
  * Emits SBE, SBE_SWIZ, WM, PS and PS_EXTRA for the pixel kernel.
  *
- * Every varying the vertex kernel writes is read from VUE slot 2 on, and
+ * Every varying the last stage writes is read from VUE slot 2 on, and
  * fragment input n takes the slot the pipeline routed it from (the n-th
  * for a rectangle kernel).  The kernel starts at the pixel kernel offset
  * and runs 8-pixel dispatch only.

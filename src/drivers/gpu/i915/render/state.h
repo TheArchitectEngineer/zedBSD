@@ -74,6 +74,13 @@ struct i915_gfx_kernels {
 	uint32_t vs_inputs[I915_GFX_MAX_VERTEX_ATTRIBUTES];
 
 	/*
+	 * The VUE slots after the position the vertex kernel itself writes,
+	 * which size its URB entries when a geometry kernel follows it (then
+	 * `varyings` below is the geometry kernel's).
+	 */
+	uint32_t vs_varyings;
+
+	/*
 	 * The geometry kernel (ws075-p007b); NULL and zeros for a draw without
 	 * one.  Its code and size, first payload register and push data, then
 	 * what 3DSTATE_GS and the URB take from it: the vertices of an input
@@ -199,14 +206,16 @@ void drv_i915_gfx_instruction_heap_clear(uint8_t *window);
 
 void drv_i915_gfx_emit_context_setup(struct i915_gfx_batch *batch, uint64_t state_va, uint64_t instruction_va, uint64_t general_va, uint32_t mocs);
 uint32_t drv_i915_gfx_topology(const struct i915_gfx_pipeline *pipeline);
+uint32_t drv_i915_gfx_topology_vertices(uint32_t topology);
 int drv_i915_gfx_emit_vertex_input(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, uint32_t mocs);
 int drv_i915_gfx_emit_index_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, uint32_t mocs);
-void drv_i915_gfx_emit_urb(struct i915_gfx_batch *batch, uint32_t entry_size);
-void drv_i915_gfx_emit_constants(struct i915_gfx_batch *batch, uint64_t vs_push_va, uint32_t vs_push_regs, uint64_t ps_push_va, uint32_t ps_push_regs, uint32_t mocs);
+int drv_i915_gfx_emit_urb(struct i915_gfx_batch *batch, uint32_t vs_entry_size, uint32_t gs_entry_size);
+void drv_i915_gfx_emit_constants(struct i915_gfx_batch *batch, uint64_t vs_push_va, uint32_t vs_push_regs, uint64_t gs_push_va, uint32_t gs_push_regs, uint64_t ps_push_va, uint32_t ps_push_regs, uint32_t mocs);
 uint32_t drv_i915_gfx_samples_log2(uint32_t samples);
 void drv_i915_gfx_emit_raster(struct i915_gfx_batch *batch, const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels);
 int drv_i915_gfx_emit_depth(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *depth, uint64_t scratch_va, uint32_t mocs);
 void drv_i915_gfx_emit_vertex_shader(struct i915_gfx_batch *batch, const struct i915_gfx_kernels *kernels);
+void drv_i915_gfx_emit_geometry_shader(struct i915_gfx_batch *batch, const struct i915_gfx_kernels *kernels);
 void drv_i915_gfx_emit_pixel_shader(struct i915_gfx_batch *batch, const struct i915_gfx_kernels *kernels);
 void drv_i915_gfx_emit_ps_blend(struct i915_gfx_batch *batch, const struct i915_gfx_pipeline *pipeline);
 void drv_i915_gfx_emit_primitive(struct i915_gfx_batch *batch, uint32_t width, uint32_t height, const struct i915_gfx_primitive *primitive);

@@ -299,6 +299,9 @@ drv_i915_gfx_pipeline_kernels(
 	for (index = 0U; index < kernels->vs_input_count && index < I915_GFX_MAX_VERTEX_ATTRIBUTES; index++)
 		kernels->vs_inputs[index] = vertex->input_locations[index];
 
+	/* Takes the vertex kernel's own varyings, which size its URB entries. */
+	kernels->vs_varyings = vertex->varying_count;
+
 	/* Takes the geometry kernel's code, payload, push data and what 3DSTATE_GS and the URB are given. */
 	if (geometry != NULL) {
 		kernels->gs_code = geometry->code;

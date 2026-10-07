@@ -218,6 +218,18 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_3DPRIM_TRIFAN			6U
 
 /*
+ * 3D_Prim_Topo_Type of the topologies with adjacency, which only a draw
+ * with a geometry shader takes (ws075-p007b): the line list and strip, the
+ * triangle list and strip (Mesa 25.0.7 gen70.xml, sha256
+ * dd7c942fc12afd2defdc435997ccdb5b48841d344f40625dbb2b4e746eca09ef,
+ * 3D_Prim_Topo_Type LINELIST_ADJ .. TRISTRIP_ADJ).
+ */
+#define GEN12_3DPRIM_LINELIST_ADJ		9U
+#define GEN12_3DPRIM_LINESTRIP_ADJ		10U
+#define GEN12_3DPRIM_TRILIST_ADJ		11U
+#define GEN12_3DPRIM_TRISTRIP_ADJ		12U
+
+/*
  * The triangle fan's provoking vertex select of 3DSTATE_SF (dword 3, bits
  * 26:25) and 3DSTATE_CLIP (dword 2, bits 1:0): 1 is the second vertex of
  * each triangle, Vulkan's first-vertex convention for a fan (the list and
@@ -254,6 +266,24 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * uses_nonperspective_interp_modes).
  */
 #define GEN12_CLIP_NON_PERSPECTIVE_BARYCENTRIC	(1U << 8)
+
+/*
+ * 3DSTATE_CLIP dword 3 bit 5, Force Zero RTA Index Enable (Mesa 25.0.7
+ * gen80.xml, sha256
+ * 2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d, start
+ * 101): every primitive goes to render target array index 0.  anv sets it
+ * unless the last vertex processing stage writes the layer (genX_pipeline.c
+ * above, ForceZeroRTAIndexEnable; ws075-p007b).
+ */
+#define GEN12_CLIP_FORCE_ZERO_RTA_INDEX		(1U << 5)
+
+/*
+ * 3DSTATE_GS dword 7 bits 12:11, Dispatch Mode: SIMD8, one input
+ * primitive to a channel (Mesa 25.0.7 gen110.xml, sha256
+ * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d,
+ * DISPATCH_MODE_SIMD8; ws075-p007b).
+ */
+#define GEN12_GS_DISPATCH_MODE_SIMD8		3U
 
 /*
  * 3DSTATE_STREAMOUT dword 1 bit 30, API Rendering Disable (gen12.xml, start
@@ -328,6 +358,23 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  */
 #define GEN12_URB_VS_BYTES			(3576U * 64U)
 #define GEN12_URB_VS_ENTRIES			3576U
+
+/*
+ * With a geometry shader (ws075-p007b) the vertex stage's URB is split: the
+ * vertex stage keeps 21 of its chunks from chunk 4, the geometry stage the
+ * next 6 (48 KiB), so the URB in use does not grow.  A geometry stage needs
+ * at least 2 entries (it runs in DUAL_OBJECT mode) and has at most 1548
+ * (Mesa 25.0.7 src/intel/common/intel_urb_config.c, sha256
+ * e1e7ddc142f020e49c21c27085fab34b80f192afec19c03d3a4426cc8cddc414,
+ * min_entries; src/intel/dev/intel_device_info.c, sha256
+ * 1a3c7c6d87c4a60af5d1003096b4add0a34c4a02afc12b40a378cc060540afd8,
+ * GFX12_HW_INFO urb.max_entries[MESA_SHADER_GEOMETRY]).
+ */
+#define GEN12_URB_VS_START_CHUNK		4U
+#define GEN12_URB_VS_SPLIT_CHUNKS		21U
+#define GEN12_URB_GS_CHUNKS			6U
+#define GEN12_URB_GS_MIN_ENTRIES		2U
+#define GEN12_URB_GS_ENTRIES			1548U
 
 /* 3DSTATE_SF deref block size (intel_l3_config.h). */
 #define GEN12_URB_DEREF_BLOCK_SIZE_32		0U
