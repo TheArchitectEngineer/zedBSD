@@ -17,6 +17,12 @@
  *           collection is FIDO's (os-linux.c; no grab)
  *
  * The report functions on an open node are the same on both (os-posix.c).
+ *
+ * The smart card slots (ws161-p005): on zedBSD /dev/smartcardN, a reader's
+ * slot (an NFC reader's contactless one, where a key is held) whose card
+ * is present; opened, its card powered and its APDUs exchanged through
+ * CCID_TRANSMIT for the NFC transport (nfc.h).  Linux and FreeBSD list
+ * none (NFC there is later, plan/ws161/phase001 section 9.4).
  * The report descriptor's reading is a pure function (descriptor.c), so the
  * host tests try it alone.  Each system's file is built only for its own
  * system.
@@ -29,6 +35,7 @@
 #include <stdint.h>
 
 #include "hid.h"
+#include "nfc.h"
 
 /* The longest node path and product name kept (with the NUL), and the most keys listed. */
 #define PK_OS_PATH_MAX		64U
@@ -53,5 +60,14 @@ int pk_os_open(struct pk_os_hid *handle, const char *path, int grab, struct pk_h
 void pk_os_close(struct pk_os_hid *handle);
 void pk_os_posix_io(struct pk_os_hid *handle, struct pk_hid_io *io);
 int pk_os_descriptor_is_fido(const uint8_t *descriptor, size_t size);
+
+/* An open smart card slot: its node (-1 when closed), its card powered while open. */
+struct pk_os_card {
+	int descriptor;
+};
+
+int pk_os_list_cards(struct pk_os_device *devices, size_t capacity, size_t *count);
+int pk_os_card_open(struct pk_os_card *card, const char *path, struct pk_nfc_io *io);
+void pk_os_card_close(struct pk_os_card *card);
 
 #endif

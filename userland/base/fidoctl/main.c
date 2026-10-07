@@ -18,7 +18,9 @@
  *   fidoctl verify RP CREDENTIAL KEY CLIENT-DATA-HASH AUTH-DATA SIGNATURE
  *
  * Without -d the first key listed is used, taken for this program alone
- * while it runs (zedBSD's grab).  -p reads the PIN from standard input and
+ * while it runs (zedBSD's grab); with no USB key, the first key held to an
+ * NFC reader (ws161-p005: a smart card slot /dev/smartcardN with a card,
+ * listed as "card" lines; -d names one too).  -p reads the PIN from standard input and
  * asks the key to verify the user.  A PIN never comes from the command line.
  *
  * register prints the new credential's ID, its COSE public key and its
@@ -32,6 +34,7 @@
 #include "userland/base/libpasskey/crypto.h"
 #include "userland/base/libpasskey/ctap2.h"
 #include "userland/base/libpasskey/hid.h"
+#include "userland/base/libpasskey/nfc.h"
 #include "userland/base/libpasskey/os.h"
 #include "userland/base/libpasskey/verify.h"
 
@@ -50,10 +53,15 @@
 #define FIDOCTL_USER_ID_SIZE	16U
 #define FIDOCTL_BYTES_MAX	1024U
 
-/* An open key: its node, its channel and transport, the device, what it is, and the PIN protocol chosen. */
+/* The start of a smart card slot's node (a key held to an NFC reader). */
+#define FIDOCTL_CARD_PREFIX	"/dev/smartcard"
+
+/* An open key: its node (a raw HID one, or a smart card slot), its channel or applet and transport, the device, what it is, and the PIN protocol chosen. */
 struct fidoctl_key {
 	struct pk_os_hid handle;
+	struct pk_os_card card;
 	struct pk_hid hid;
+	struct pk_nfc nfc;
 	struct pk_transport transport;
 	struct pk_device device;
 	struct pk_info info;
@@ -94,6 +102,8 @@ static int fidoctl_touch_asked;
 
 static int fidoctl_list(void);
 static int fidoctl_open(const char *path, struct fidoctl_key *key);
+static int fidoctl_open_card(const char *path, struct fidoctl_key *key);
+static int fidoctl_ready(struct fidoctl_key *key);
 static void fidoctl_close(struct fidoctl_key *key);
 static int fidoctl_info(struct fidoctl_key *key);
 static int fidoctl_set_pin(struct fidoctl_key *key);
@@ -221,6 +231,14 @@ fidoctl_list(void)
 		printf("device %s %04x:%04x %s\n", devices[index].path, devices[index].vendor, devices[index].product, devices[index].name);
 	printf("devices %lu\n", (unsigned long)count);
 
+	/* The smart card slots with a card (a key held to an NFC reader, or another card: info tells). */
+	error = pk_os_list_cards(devices, PK_OS_DEVICES_MAX, &count);
+	if (error != 0)
+		count = 0U;
+	for (index = 0U; index < count; index++)
+		printf("card %s %04x:%04x %s\n", devices[index].path, devices[index].vendor, devices[index].product, devices[index].name);
+	printf("cards %lu\n", (unsigned long)count);
+
 	/* Succeeded. */
 	return 0;
 }
@@ -238,15 +256,24 @@ fidoctl_open(
 	struct pk_hid_io io;
 	size_t count;
 	int error;
+	int same;
 
-	/* The first key, when none is named. */
+	/* The first key, when none is named: a USB one, else one held to an NFC reader. */
 	memset(key, 0, sizeof(*key));
 	key->handle.descriptor = -1;
+	key->card.descriptor = -1;
 	if (path == NULL) {
 		error = pk_os_list(devices, PK_OS_DEVICES_MAX, &count);
 		if (error != 0) {
 			(void)fidoctl_fail("list", error, NULL);
 			return error;
+		}
+
+		/* No USB key: the keys held to an NFC reader. */
+		if (count == 0U) {
+			error = pk_os_list_cards(devices, PK_OS_DEVICES_MAX, &count);
+			if (error != 0)
+				count = 0U;
 		}
 
 		/* At least one key, the first taken. */
@@ -257,6 +284,15 @@ fidoctl_open(
 
 		/* Its node. */
 		path = devices[0].path;
+	}
+
+	/* A smart card slot: the NFC transport. */
+	same = strncmp(path, FIDOCTL_CARD_PREFIX, sizeof(FIDOCTL_CARD_PREFIX) - 1U);
+	if (same == 0) {
+		error = fidoctl_open_card(path, key);
+		if (error != 0)
+			return error;
+		return fidoctl_ready(key);
 	}
 
 	/* The node, taken for this program alone. */
@@ -274,16 +310,67 @@ fidoctl_open(
 		return error;
 	}
 
-	/* CTAP2 over the channel, a touch's wait told. */
+	/* CTAP2 over the channel. */
 	(void)pk_hid_transport(&key->transport, &key->hid);
+
+	/* Succeeded when the key says what it is. */
+	error = fidoctl_ready(key);
+	return error;
+}
+
+/*
+ * Opens a key held to an NFC reader: the slot's card powered and the FIDO
+ * applet selected, CTAP2 over it.  Returns 0, or an errno value after
+ * printing why.
+ */
+static int
+fidoctl_open_card(
+	const char *path,
+	struct fidoctl_key *key)
+{
+	struct pk_nfc_io io;
+	int error;
+
+	/* The slot, its card powered and claimed for this program. */
+	error = pk_os_card_open(&key->card, path, &io);
+	if (error != 0) {
+		(void)fidoctl_fail(path, error, NULL);
+		return error;
+	}
+
+	/* The FIDO applet. */
+	error = pk_nfc_open(&key->nfc, &io, FIDOCTL_OPEN_MS);
+	if (error != 0) {
+		(void)fidoctl_fail("NFC SELECT", error, NULL);
+		pk_os_card_close(&key->card);
+		return error;
+	}
+
+	/* Succeeded: CTAP2 over the applet. */
+	(void)pk_nfc_transport(&key->transport, &key->nfc);
+	return 0;
+}
+
+/*
+ * Starts CTAP2 on an open key's transport (a touch's wait told), asks what
+ * the key is and chooses its PIN protocol.  Returns 0, or an errno value
+ * after printing why (the key closed).
+ */
+static int
+fidoctl_ready(
+	struct fidoctl_key *key)
+{
+	int error;
+
+	/* The device, a touch's wait told. */
 	pk_device_init(&key->device, &key->transport, FIDOCTL_COMMAND_MS);
 	key->device.keepalive = fidoctl_keepalive;
 
-	/* What the key is, and the PIN protocol to use with it. */
+	/* What the key is. */
 	error = pk_ctap2_get_info(&key->device, &key->info);
 	if (error != 0) {
 		(void)fidoctl_fail("GetInfo", error, key);
-		pk_os_close(&key->handle);
+		fidoctl_close(key);
 		return error;
 	}
 
@@ -299,8 +386,9 @@ static void
 fidoctl_close(
 	struct fidoctl_key *key)
 {
-	/* The node (and the grab). */
+	/* The node (and the grab), or the slot (its card powered off). */
 	pk_os_close(&key->handle);
+	pk_os_card_close(&key->card);
 }
 
 /* Prints what the key is, and its PIN's retries when it has a PIN. */

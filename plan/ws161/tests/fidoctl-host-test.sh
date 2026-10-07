@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws161-p004: fidoctl built for Linux on the host (libpasskey with os-linux.c), with the host's OpenSSL: list answers
-# (no key is needed: "devices N"), a wrong use exits 2, verify takes an assertion made by fidoctl-assertion.py and
+# (no key is needed: "devices N", and "cards 0": Linux lists no NFC slot), a wrong use exits 2, verify takes an assertion made by fidoctl-assertion.py and
 # refuses one whose signature is over other client data.  A real key is the UAT's (p006).
 #   sh plan/ws161/tests/fidoctl-host-test.sh   (from the repository's top; OUT= to choose the build folder)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -10,9 +10,9 @@ mkdir -p "$OUT"
 LIB=userland/base/libpasskey
 cc -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -I. \
 	-o "$OUT/fidoctl" userland/base/fidoctl/main.c $LIB/cbor.c $LIB/crypto-openssl.c $LIB/ctap2.c $LIB/descriptor.c \
-	$LIB/hid.c $LIB/os-posix.c $LIB/os-linux.c $LIB/pin.c $LIB/verify.c -lcrypto
+	$LIB/hid.c $LIB/os-posix.c $LIB/os-linux.c $LIB/pin.c $LIB/transport-nfc.c $LIB/verify.c -lcrypto
 status=0
-"$OUT/fidoctl" list > "$OUT/list.txt" && grep -q '^devices [0-9]' "$OUT/list.txt" && echo "ok list" || { echo "FAIL list"; status=1; }
+"$OUT/fidoctl" list > "$OUT/list.txt" && grep -q '^devices [0-9]' "$OUT/list.txt" && grep -q '^cards 0$' "$OUT/list.txt" && echo "ok list" || { echo "FAIL list"; status=1; }
 set +e
 "$OUT/fidoctl" 2> /dev/null; code=$?
 set -e
