@@ -4,7 +4,7 @@
 
 Phase ID: `ws050-p002`
 Parent: [WS050](../ws.md)
-Status: in-progress（2026-10-07 q834 P2: 実装と host の試験 31/31、kernel の flag で warning 0。kernel への組み込みは p003）
+Status: cleared（2026-10-07 Q1 の判定: host 31/31（疑似の PPM）、kernel の build warning 0。実機の確認は 5330 が戻ってから（p006））（旧: in-progress（2026-10-07 q834 P2: 実装と host の試験 31/31、kernel の flag で warning 0。kernel への組み込みは p003））
 Phase disposition: normal
 Queue: q834（P2）
 

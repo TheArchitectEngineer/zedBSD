@@ -2,7 +2,7 @@
 
 # ws157-p005: Photos の app（取り込み・album・縮小画像の cache）
 
-Status: in-progress（2026-10-07 q835 P2: 実装と host の試験 PASS、zedBSD の build warning 0。QEMU は T1 に依頼、判定は Q1）
+Status: cleared（2026-10-07 Q1 の判定: T1-331 で photos.browse の fail が消え（2026-08.tsv の sea.jpg の行にお気に入りと回転）、timeline の PNG を Q1 が目視）（旧: in-progress（2026-10-07 q835 P2: 実装と host の試験 PASS、zedBSD の build warning 0。QEMU は T1 に依頼、判定は Q1））
 Disposition: normal
 Parent: [WS157](../ws.md)
 Queue: q835（2026-10-07、P2）

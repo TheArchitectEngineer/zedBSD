@@ -247,6 +247,10 @@ int page_submit_form(struct page *page, struct dom_element *form, struct dom_ele
 int page_place_caret(struct page *page, int x);
 int page_caret_to_end(struct page *page);
 int page_paint_caret(struct page *page);
+struct dom_element *page_compose_element(struct page *page);
+int page_compose(struct page *page, const char *text, int cursor);
+int page_commit_text(struct page *page, const char *text, uint32_t before, uint32_t after);
+void page_compose_end(struct page *page, struct dom_element *element);
 
 /* Links (link.c). */
 int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *found);

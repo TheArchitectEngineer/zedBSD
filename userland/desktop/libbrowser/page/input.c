@@ -741,6 +741,7 @@ input_focused(
 	/* An element out of the document loses the focus without events. */
 	connected = dom_is_inclusive_ancestor(&page->document->node, &page->focused->node);
 	if (!connected) {
+		page_compose_end(page, page->focused);
 		page->focused = NULL;
 		page->focus_visible = 0;
 		page->focus_generation++;
@@ -780,8 +781,10 @@ input_set_focus(
 
 	/*
 	 * The new focus is recorded before the events run, so a listener that
-	 * asks sees it; the generation paints the ring where it now is.
+	 * asks sees it; the generation paints the ring where it now is.  What
+	 * an input method was composing in the old element goes with the focus.
 	 */
+	page_compose_end(page, old);
 	page->focused = element;
 	page->focus_visible = visible;
 	page->focus_generation++;

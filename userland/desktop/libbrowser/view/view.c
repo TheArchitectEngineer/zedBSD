@@ -1148,6 +1148,121 @@ browser_view_focus(
 }
 
 /*
+ * Tells whether the focused element takes an input method's text: a text
+ * field or a textarea that takes typing (a password field does not).
+ * caret gets the caret's rectangle in the view's pixels as the last
+ * drawing placed it (x, y, width, height; zero before the control is
+ * drawn).
+ */
+int
+browser_view_text_target(
+	struct browser_view *view,
+	float caret[4])
+{
+	struct dom_element *element;
+	struct dom_control *control;
+	layout_unit top;
+
+	/* No caret until one is found. */
+	caret[0] = 0.0f;
+	caret[1] = 0.0f;
+	caret[2] = 0.0f;
+	caret[3] = 0.0f;
+	if (view->page == NULL)
+		return 0;
+
+	/* The control an input method composes in, if the focus is in one. */
+	element = page_compose_element(view->page);
+	if (element == NULL)
+		return 0;
+
+	/* Its caret where the display list drew it, below the scroll the page is drawn at. */
+	control = element->control;
+	if (control != NULL && control->drawn) {
+		top = control->caret_top - view_drawn_scroll(view);
+		caret[0] = layout_to_px(control->caret_x);
+		caret[1] = layout_to_px(top);
+		caret[2] = 1.0f;
+		caret[3] = layout_to_px(control->caret_height);
+	}
+
+	/* The focus takes an input method's text. */
+	return 1;
+}
+
+/*
+ * Shows the text an input method is composing at the focused control's
+ * caret, underlined, without changing its value (an empty text ends it):
+ * begin and end are its cursor's byte offsets, -1 when hidden (the caret
+ * is drawn at end, or at the text's end when hidden).
+ */
+int
+browser_view_compose(
+	struct browser_view *view,
+	const char *preedit,
+	int begin,
+	int end)
+{
+	int cursor;
+	int error;
+
+	/* No page has nothing to compose in. */
+	if (view->page == NULL)
+		return 0;
+
+	/* The cursor: its end, its begin, or none (the text's end). */
+	cursor = end;
+	if (cursor < 0)
+		cursor = begin;
+
+	/* A missing text ends the composing. */
+	if (preedit == NULL)
+		preedit = "";
+
+	/* The control shows it, drawn again. */
+	error = page_compose(view->page, preedit, cursor);
+	if (error != 0)
+		return error;
+	view_changed(view);
+
+	/* Succeeded: the composed text shows. */
+	return 0;
+}
+
+/*
+ * Commits an input method's text to the focused control: what it was
+ * composing goes, delete_before and delete_after bytes of UTF-8 are deleted
+ * before and after the caret, and the text goes in at the caret, which
+ * fires input.  Reports 0, or why the page's scripts failed.
+ */
+int
+browser_view_commit_text(
+	struct browser_view *view,
+	const char *text,
+	uint32_t delete_before,
+	uint32_t delete_after)
+{
+	int error;
+
+	/* No page has nothing to commit to. */
+	if (view->page == NULL)
+		return 0;
+
+	/* A missing text commits only the deletion. */
+	if (text == NULL)
+		text = "";
+
+	/* The control takes it, drawn again with what its input listeners did. */
+	error = page_commit_text(view->page, text, delete_before, delete_after);
+	view_changed(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the text is committed. */
+	return 0;
+}
+
+/*
  * Brings the page to rest for a headless caller: the page being fetched
  * arrives, the page's timers run on a virtual clock up to budget
  * milliseconds, and with BROWSER_SETTLE_LAYOUT the page is laid out, the

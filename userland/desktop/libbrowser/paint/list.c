@@ -164,6 +164,9 @@ static int list_caret_offset(struct list_walk *walk, const struct text_font *fon
 static void list_textarea(struct list_walk *walk, const struct layout_box *box, struct dom_element *element, const struct list_area *content, const struct text_font *font, layout_unit line, layout_unit ascent);
 static void list_select(struct list_walk *walk, const struct layout_box *box, struct dom_element *element, const struct list_area *content, const struct text_font *font, layout_unit line, layout_unit ascent);
 static void list_control_record(struct list_walk *walk, const struct layout_box *box, struct dom_control *control, const struct list_area *content, const struct text_font *font, layout_unit text_x, layout_unit caret_x, layout_unit line_top, layout_unit ascent);
+static int list_composing(const struct layout_box *box, const struct dom_control *control);
+static int list_insert_preedit(const struct dom_control *control, struct wb_units *value);
+static void list_preedit_underline(struct list_walk *walk, const struct text_font *font, const struct dom_control *control, layout_unit caret_x, layout_unit baseline, uint32_t color);
 static void list_style_font(struct list_walk *walk, const struct css_style *style, struct text_font *font);
 static void list_text_run(struct list_walk *walk, const struct text_font *font, uint32_t color, const uint16_t *units, size_t length, layout_unit x, layout_unit baseline);
 static void list_image_item(struct list_walk *walk, const struct img_bitmap *image, layout_unit x, layout_unit y, layout_unit width, layout_unit height);
@@ -1276,6 +1279,7 @@ list_control_text(
 	layout_unit top;
 	uint32_t color;
 	int editable;
+	int composing;
 	int error;
 
 	/* Only an element's control has text. */
@@ -1375,9 +1379,12 @@ list_control_text(
 			control->scroll_x = 0;
 	}
 
-	/* The text, scrolled and clipped to the content box. */
+	/* The text, scrolled and clipped to the content box, with what an input method composes underlined. */
 	list_clip_rect(walk, &content);
 	list_text_run(walk, &font, color, shown.data, shown.length, content.x + indent - control->scroll_x, top + ascent);
+	composing = list_composing(box, control);
+	if (composing)
+		list_preedit_underline(walk, &font, control, content.x + indent + caret - control->scroll_x, top + ascent, color);
 	list_unclip(walk);
 	wb_units_release(&shown);
 
@@ -1406,6 +1413,7 @@ list_control_shown(
 	struct wb_units value;
 	size_t index;
 	uint16_t unit;
+	int composing;
 	int error;
 
 	/* A button shows its label. */
@@ -1420,6 +1428,25 @@ list_control_shown(
 	if (error != 0) {
 		wb_units_release(&value);
 		return error;
+	}
+
+	/* While an input method composes, the value shows with the composed text at the caret (and no placeholder). */
+	composing = list_composing(box, control);
+	if (composing) {
+		error = list_insert_preedit(control, &value);
+		if (error != 0) {
+			wb_units_release(&value);
+			return error;
+		}
+
+		/* The composed value is what shows. */
+		error = wb_units_append(shown, value.data, value.length);
+		wb_units_release(&value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the composed value is written. */
+		return 0;
 	}
 
 	/* An empty field shows its placeholder in gray. */
@@ -1473,6 +1500,8 @@ list_caret_offset(
 	size_t index;
 	uint16_t bullet;
 	layout_unit one;
+	layout_unit into;
+	int composing;
 	int error;
 
 	/* The value, and a caret that fell past its end moves back to it. */
@@ -1503,6 +1532,15 @@ list_caret_offset(
 	if (error != 0)
 		return error;
 
+	/* While an input method composes, the caret is at the composed text's cursor. */
+	composing = list_composing(box, control);
+	if (composing) {
+		error = layout_units_width(walk->text, font, control->preedit.data, control->preedit_cursor, &into);
+		if (error != 0)
+			return error;
+		*offset += into;
+	}
+
 	/* Succeeded: the caret's offset. */
 	return 0;
 }
@@ -1527,8 +1565,10 @@ list_textarea(
 	layout_unit caret_x;
 	layout_unit caret_top;
 	layout_unit y;
+	size_t caret;
 	size_t start;
 	size_t index;
+	int composing;
 	int error;
 
 	/* The state that the caret is kept in, and the value. */
@@ -1551,6 +1591,19 @@ list_textarea(
 	if (control->caret > value.length)
 		control->caret = value.length;
 
+	/* While an input method composes, its text shows at the caret, and the caret at its cursor. */
+	caret = control->caret;
+	composing = list_composing(box, control);
+	if (composing) {
+		error = list_insert_preedit(control, &value);
+		if (error != 0) {
+			wb_units_release(&value);
+			walk->error = error;
+			return;
+		}
+		caret += control->preedit_cursor;
+	}
+
 	/* Each line, and the caret on the line it is in. */
 	control->scroll_x = 0;
 	caret_x = content->x;
@@ -1564,16 +1617,22 @@ list_textarea(
 			continue;
 
 		/* The caret is on this line when it falls within it. */
-		if (control->caret >= start && control->caret <= index) {
-			error = layout_units_width(walk->text, font, value.data + start, control->caret - start, &caret_x);
+		if (caret >= start && caret <= index) {
+			error = layout_units_width(walk->text, font, value.data + start, caret - start, &caret_x);
 			if (error != 0)
 				walk->error = error;
 			caret_x += content->x;
 			caret_top = y;
 		}
 
-		/* The line's text, then the next line below it. */
+		/* The line's text, with the composed text underlined when it is on it. */
 		list_text_run(walk, font, box->style.color, value.data + start, index - start, content->x, y + ascent);
+		if (composing &&
+		    caret >= start &&
+		    caret <= index)
+			list_preedit_underline(walk, font, control, caret_x, y + ascent, box->style.color);
+
+		/* The next line below it. */
 		y += line;
 		start = index + 1U;
 	}
@@ -1684,6 +1743,85 @@ list_control_record(
 	control->caret_top = line_top + ascent - (layout_unit)metrics.ascent * LAYOUT_UNIT;
 	control->caret_height = (layout_unit)(metrics.ascent + metrics.descent) * LAYOUT_UNIT;
 	control->caret_color = box->style.color;
+}
+
+/* Tells whether a field or a textarea shows text an input method is composing (a password field never does). */
+static int
+list_composing(
+	const struct layout_box *box,
+	const struct dom_control *control)
+{
+	/* Nothing composed. */
+	if (control == NULL || control->preedit.length == 0)
+		return 0;
+
+	/* A password field shows bullets only. */
+	if (box->control == DOM_CONTROL_PASSWORD)
+		return 0;
+
+	/* The composed text shows. */
+	return 1;
+}
+
+/* Inserts a control's composed text into its value at the caret. */
+static int
+list_insert_preedit(
+	const struct dom_control *control,
+	struct wb_units *value)
+{
+	size_t caret;
+	size_t length;
+	int error;
+
+	/* Room for the composed text. */
+	length = control->preedit.length;
+	error = wb_units_reserve(value, length);
+	if (error != 0)
+		return error;
+
+	/* The part after the caret moves on, and the composed text goes between. */
+	caret = control->caret;
+	if (caret > value->length)
+		caret = value->length;
+	memmove(value->data + caret + length, value->data + caret, (value->length - caret) * sizeof(uint16_t));
+	memcpy(value->data + caret, control->preedit.data, length * sizeof(uint16_t));
+	value->length += length;
+
+	/* Succeeded: the composed text is in. */
+	return 0;
+}
+
+/*
+ * Underlines a control's composed text, whose cursor is at caret_x, a
+ * pixel below the baseline in the text's color.
+ */
+static void
+list_preedit_underline(
+	struct list_walk *walk,
+	const struct text_font *font,
+	const struct dom_control *control,
+	layout_unit caret_x,
+	layout_unit baseline,
+	uint32_t color)
+{
+	layout_unit into;
+	layout_unit width;
+	int error;
+
+	/* How far the cursor is into the composed text, and how wide the text is. */
+	error = layout_units_width(walk->text, font, control->preedit.data, control->preedit_cursor, &into);
+	if (error != 0) {
+		walk->error = error;
+		return;
+	}
+	error = layout_units_width(walk->text, font, control->preedit.data, control->preedit.length, &width);
+	if (error != 0) {
+		walk->error = error;
+		return;
+	}
+
+	/* The line under it. */
+	list_rect(walk, caret_x - into, baseline + LAYOUT_UNIT, width, LAYOUT_UNIT, color);
 }
 
 /* Picks the font a style draws text with (as the layout picks it). */
