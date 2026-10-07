@@ -540,14 +540,14 @@ typedef uint64_t __u64;
 	(i915)->emit->power_put_async((i915)->emit->ctx, (int)(domain), (wakeref), (delay_ms))
 
 /*
- * The power domains of an AUX channel.  For display version 12-13 the
- * platform's port-domain table puts AUX channel n at POWER_DOMAIN_AUX_A + n
- * and its I/O at POWER_DOMAIN_AUX_IO_A + n [fixed]; the Thunderbolt AUX
- * domain belongs to Type-C ports only.
+ * The power domains of an AUX channel, from the port-domain table of the
+ * display version (power.c): a Type-C channel's legacy domain is its
+ * AUX_USBC well, which also blocks TC cold, and only a Type-C channel has a
+ * Thunderbolt AUX domain.  The values are those of enum i915_power_domain.
  */
-#define intel_display_power_legacy_aux_domain(i915, aux_ch) ((enum intel_display_power_domain)(POWER_DOMAIN_AUX_A + (int)(aux_ch)))
-#define intel_display_power_tbt_aux_domain(i915, aux_ch) POWER_DOMAIN_INVALID
-#define intel_display_power_aux_io_domain(i915, aux_ch) ((enum intel_display_power_domain)(POWER_DOMAIN_AUX_IO_A + (int)(aux_ch)))
+#define intel_display_power_legacy_aux_domain(i915, aux_ch) ((enum intel_display_power_domain)drv_i915_aux_legacy_power_domain((unsigned)I915_LCD_DISPLAY_VER(i915), (int)(aux_ch)))
+#define intel_display_power_tbt_aux_domain(i915, aux_ch) ((enum intel_display_power_domain)drv_i915_aux_tbt_power_domain((unsigned)I915_LCD_DISPLAY_VER(i915), (int)(aux_ch)))
+#define intel_display_power_aux_io_domain(i915, aux_ch) ((enum intel_display_power_domain)drv_i915_aux_io_power_domain((unsigned)I915_LCD_DISPLAY_VER(i915), (int)(aux_ch)))
 
 /* [fixed] PSR is not enabled (crtc_state->has_psr stays false). */
 #define intel_psr_needs_aux_io_power(encoder, crtc_state) (0)

@@ -270,9 +270,9 @@ drv_i915_aux_power_domain(
 	bool tbt;
 
 	/*
-	 * The domain helpers of this platform number the AUX domains by the
-	 * channel alone (modeset-internal.h); they do not evaluate the port's
-	 * device.
+	 * The domain helpers take the AUX domains from the display version's
+	 * port-domain table (power.c): a Type-C channel's domain is its
+	 * AUX_USBC well, which also blocks TC cold.
 	 */
 
 	/* A Type-C port in Thunderbolt-alt mode uses the Thunderbolt AUX domain. */
