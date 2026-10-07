@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p008 -->
 # ws181-p008: UAT 2026-10-07 の 5 回目（App Home への遷移の effect、touchpad の端の 2 本指 swipe、上端の swipe down）
 
-Status: in-progress（2026-10-07 q851-i01 P2: 実装・build・host 試験まで。QEMU は T1 へ、実機は 5320 のユーザーの UAT）
+Status: test-wait（2026-10-07 q851 P2 930fc5dbc: 実装、build warning 0、host run-host-edge 69/0・gesture 66 ok。QEMU は T1-359、実機は 5320 の UAT）
 Disposition: normal
 Parent: [WS181](../ws.md)
 Queue: q851 / q851-i01（ユーザーの UAT 2026-10-07）
