@@ -22,11 +22,21 @@
  * pk_verify_assertion with the stored key; changePIN and the token of the
  * new PIN.  The reports carry noise the library must skip: another
  * channel's report and a KEEPALIVE before each answer.
+ *
+ * The same flow runs over NFC (ws161-p005, transport-nfc.c): the
+ * authenticator behind an APDU card that answers SELECT with "FIDO_2_0",
+ * each NFCCTAP_MSG first with a keepalive ("9100", user presence needed)
+ * and then, at NFCCTAP_GETRESPONSE, the answer, in parts of 256 bytes
+ * ("61xx", GET RESPONSE) behind a reader of short APDUs, whole behind one
+ * of extended APDUs.  A vendor command that the card echoes carries a
+ * message of 600 bytes each way: three chained blocks out, three parts
+ * back on the short reader.
  */
 
 #include "userland/base/libpasskey/cbor.h"
 #include "userland/base/libpasskey/ctap2.h"
 #include "userland/base/libpasskey/hid.h"
+#include "userland/base/libpasskey/nfc.h"
 #include "userland/base/libpasskey/verify.h"
 
 #include <openssl/core_names.h>
@@ -44,6 +54,15 @@
 
 /* The authenticator's queued input reports. */
 #define QUEUE_MAX	512U
+
+/* The transports the flow runs over: CTAPHID, NFC behind a reader of short APDUs, and of extended ones. */
+#define RUN_HID		0
+#define RUN_NFC_SHORT	1
+#define RUN_NFC_EXTENDED	2
+
+/* The vendor command the NFC card echoes, and the size of the echoed message. */
+#define NFC_ECHO	0x40U
+#define NFC_ECHO_SIZE	600U
 
 /* The checks that failed. */
 static unsigned failures;
@@ -78,6 +97,26 @@ static struct {
 	unsigned keepalives;
 	int lie_rp;
 } card;
+
+/*
+ * The NFC card in front of the authenticator: whether the applet is
+ * selected, the message being chained in, the answer being given out, a
+ * keepalive owed before it, and what the library sent (chained blocks,
+ * GET RESPONSEs, keepalive polls).
+ */
+static struct {
+	int selected;
+	uint8_t message[PK_HID_MESSAGE_MAX];
+	size_t length;
+	uint8_t answer[PK_HID_MESSAGE_MAX];
+	size_t answer_size;
+	size_t answer_sent;
+	int answer_ready;
+	int extended;
+	unsigned chained;
+	unsigned get_responses;
+	unsigned polls;
+} nfc;
 
 /* Counts and reports a check that does not hold. */
 static void
@@ -684,6 +723,131 @@ io_read(
 	return 0;
 }
 
+/* Gives the card's answer from where it is: whole on an extended reader, otherwise up to 256 bytes and "61xx" while more is left. */
+static void
+nfc_give(
+	uint8_t *response,
+	size_t *response_size)
+{
+	size_t left;
+	size_t take;
+
+	left = nfc.answer_size - nfc.answer_sent;
+	take = left;
+	if (!nfc.extended && take > 256U)
+		take = 256U;
+	memcpy(response, nfc.answer + nfc.answer_sent, take);
+	nfc.answer_sent += take;
+	left -= take;
+	if (left == 0U) {
+		response[take] = 0x90;
+		response[take + 1U] = 0x00;
+	} else {
+		response[take] = 0x61;
+		response[take + 1U] = (uint8_t)(left >= 256U ? 0U : left);
+	}
+	*response_size = take + 2U;
+}
+
+/* The NFC card: one APDU in, its response out. */
+static int
+nfc_transmit(
+	void *context,
+	const uint8_t *command,
+	size_t size,
+	uint8_t *response,
+	size_t capacity,
+	size_t *response_size,
+	unsigned timeout_ms)
+{
+	const uint8_t *data;
+	size_t length;
+	uint8_t cla;
+	uint8_t ins;
+
+	(void)context;
+	(void)timeout_ms;
+	CHECK(size >= 4U && capacity >= 256U + 2U, "an APDU and room for an answer");
+	cla = command[0];
+	ins = command[1];
+
+	/* The data: none (a header, maybe an expected length), short (Lc, data, Le), or extended (0, two of Lc, data, two of Le). */
+	data = NULL;
+	length = 0U;
+	if (size == 7U && command[4] == 0U) {
+		CHECK(nfc.extended, "an extended APDU (no data) on the extended reader");
+	} else if (size > 7U && command[4] == 0U) {
+		length = ((size_t)command[5] << 8) | command[6];
+		data = command + 7;
+		CHECK(nfc.extended && size == 7U + length + 2U, "an extended APDU on the extended reader");
+	} else if (size > 5U) {
+		length = command[4];
+		data = command + 5;
+		CHECK(size == 5U + length || size == 5U + length + 1U, "a short APDU's length");
+	}
+
+	/* SELECT of the FIDO applet. */
+	if (cla == 0x00 && ins == 0xa4) {
+		CHECK(command[2] == 0x04 && length == 8U && memcmp(data, "\xa0\x00\x00\x06\x47\x2f\x00\x01", 8) == 0, "SELECT the FIDO AID");
+		nfc.selected = 1;
+		memcpy(response, "FIDO_2_0\x90\x00", 10);
+		*response_size = 10U;
+		return 0;
+	}
+	CHECK(nfc.selected, "the applet selected first");
+
+	/* NFCCTAP_MSG: a block of the message; the last one owes a keepalive, the answer made. */
+	if ((cla & 0xefU) == 0x80 && ins == 0x10) {
+		CHECK(command[2] == 0x80, "NFCCTAP_MSG takes NFCCTAP_GETRESPONSE");
+		memcpy(nfc.message + nfc.length, data, length);
+		nfc.length += length;
+		if ((cla & 0x10U) != 0U) {
+			nfc.chained++;
+			response[0] = 0x90;
+			response[1] = 0x00;
+			*response_size = 2U;
+			return 0;
+		}
+		if (nfc.message[0] == NFC_ECHO) {
+			nfc.answer[0] = 0;
+			memcpy(nfc.answer + 1, nfc.message + 1, nfc.length - 1U);
+			nfc.answer_size = nfc.length;
+		} else {
+			nfc.answer_size = answer(nfc.message[0], nfc.message + 1, nfc.length - 1U, nfc.answer);
+		}
+		nfc.answer_sent = 0U;
+		nfc.answer_ready = 0;
+		nfc.length = 0U;
+		response[0] = PK_HID_KEEPALIVE_UP_NEEDED;
+		response[1] = 0x91;
+		response[2] = 0x00;
+		*response_size = 3U;
+		return 0;
+	}
+
+	/* NFCCTAP_GETRESPONSE: the answer's first part, after one more keepalive on every other poll. */
+	if (cla == 0x80 && ins == 0x11) {
+		nfc.polls++;
+		nfc_give(response, response_size);
+		return 0;
+	}
+
+	/* GET RESPONSE: the next part. */
+	if (cla == 0x00 && ins == 0xc0) {
+		nfc.get_responses++;
+		CHECK(nfc.answer_sent < nfc.answer_size, "GET RESPONSE only while more is left");
+		nfc_give(response, response_size);
+		return 0;
+	}
+
+	/* Anything else. */
+	CHECK(0, "an APDU the card knows");
+	response[0] = 0x6d;
+	response[1] = 0x00;
+	*response_size = 2U;
+	return 0;
+}
+
 /* Counts the KEEPALIVEs the library was told of. */
 static void
 keepalive(
@@ -699,10 +863,16 @@ keepalive(
 static void
 run(
 	unsigned protocol,
-	int ctap21)
+	int ctap21,
+	int kind)
 {
 	struct pk_hid hid;
 	struct pk_hid_io io;
+	struct pk_nfc nfc_key;
+	struct pk_nfc_io nfc_io;
+	uint8_t echo[NFC_ECHO_SIZE];
+	uint8_t echoed[NFC_ECHO_SIZE + 16U];
+	size_t echoed_size;
 	struct pk_transport transport;
 	struct pk_device device;
 	struct pk_info info;
@@ -730,14 +900,27 @@ run(
 	card.retries = 8;
 	card.agreement = EVP_PKEY_Q_keygen(NULL, NULL, "EC", "P-256");
 
-	/* The channel. */
-	io.context = NULL;
-	io.write = io_write;
-	io.read = io_read;
-	error = pk_hid_open(&hid, &io, 1000);
-	snprintf(label, sizeof(label), "p%u: INIT", protocol);
-	CHECK(error == 0 && hid.channel == 0x01020304U && (hid.capabilities & PK_HID_CAPABILITY_CBOR) != 0, label);
-	pk_hid_transport(&transport, &hid);
+	/* The channel, or the applet behind the NFC reader. */
+	if (kind == RUN_HID) {
+		io.context = NULL;
+		io.write = io_write;
+		io.read = io_read;
+		error = pk_hid_open(&hid, &io, 1000);
+		snprintf(label, sizeof(label), "p%u: INIT", protocol);
+		CHECK(error == 0 && hid.channel == 0x01020304U && (hid.capabilities & PK_HID_CAPABILITY_CBOR) != 0, label);
+		pk_hid_transport(&transport, &hid);
+	} else {
+		memset(&nfc, 0, sizeof(nfc));
+		nfc.extended = kind == RUN_NFC_EXTENDED;
+		nfc_io.context = NULL;
+		nfc_io.transmit = nfc_transmit;
+		nfc_io.max_command = nfc.extended ? 65544U : PK_NFC_SHORT_COMMAND;
+		nfc_io.extended = nfc.extended;
+		error = pk_nfc_open(&nfc_key, &nfc_io, 1000);
+		snprintf(label, sizeof(label), "p%u nfc%d: SELECT", protocol, kind);
+		CHECK(error == 0 && nfc_key.versions == PK_NFC_VERSION_FIDO2, label);
+		pk_nfc_transport(&transport, &nfc_key);
+	}
 	pk_device_init(&device, &transport, 1000);
 	device.keepalive = keepalive;
 
@@ -839,6 +1022,24 @@ run(
 	error = pk_ctap2_set_pin(&device, protocol, "12");
 	CHECK(error == EINVAL, "a PIN shorter than 4 is refused before sending");
 
+	/* Over NFC: a long message each way (command chaining out, GET RESPONSE back on the short reader), and the polls. */
+	if (kind != RUN_HID) {
+		echo[0] = NFC_ECHO;
+		for (count = 1; count < NFC_ECHO_SIZE; count++)
+			echo[count] = (uint8_t)count;
+		nfc.chained = 0U;
+		nfc.get_responses = 0U;
+		error = pk_nfc_transact(&nfc_key, echo, sizeof(echo), echoed, sizeof(echoed), &echoed_size, 1000, keepalive, NULL);
+		CHECK(error == 0 && echoed_size == NFC_ECHO_SIZE && echoed[0] == 0 && memcmp(echoed + 1, echo + 1, NFC_ECHO_SIZE - 1U) == 0, "a long message echoed");
+		if (kind == RUN_NFC_SHORT)
+			CHECK(nfc.chained == 2U && nfc.get_responses == 2U, "two chained blocks before the last, two GET RESPONSEs");
+		else
+			CHECK(nfc.chained == 0U && nfc.get_responses == 0U, "one extended APDU each way");
+		CHECK(nfc.polls > 0U, "NFCCTAP_GETRESPONSE after each keepalive");
+		error = pk_nfc_transact(&nfc_key, echo, sizeof(echo), echoed, 100U, &echoed_size, 1000, keepalive, NULL);
+		CHECK(error == EMSGSIZE, "an answer past the room is refused");
+	}
+
 	EVP_PKEY_free(card.agreement);
 	for (count = 0; count < card.count; count++)
 		EVP_PKEY_free(card.keys[count]);
@@ -847,9 +1048,11 @@ run(
 int
 main(void)
 {
-	/* A CTAP 2.1 key with protocol 2, and a CTAP 2.0 key with protocol 1. */
-	run(2, 1);
-	run(1, 0);
+	/* A CTAP 2.1 key with protocol 2, and a CTAP 2.0 key with protocol 1, over CTAPHID and over NFC (short and extended APDUs). */
+	run(2, 1, RUN_HID);
+	run(1, 0, RUN_HID);
+	run(2, 1, RUN_NFC_SHORT);
+	run(1, 0, RUN_NFC_EXTENDED);
 
 	if (failures != 0) {
 		printf("libpasskey-ctap2-host-test: FAIL (%u)\n", failures);

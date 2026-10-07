@@ -187,3 +187,40 @@ os_is_key(
 	key = pk_os_descriptor_is_fido(report.value, report.size);
 	return key;
 }
+
+/* Lists no smart card slot: NFC on Linux is later (plan/ws161/phase001 section 9.4). */
+int
+pk_os_list_cards(
+	struct pk_os_device *devices,
+	size_t capacity,
+	size_t *count)
+{
+	/* None. */
+	(void)devices;
+	(void)capacity;
+	*count = 0U;
+	return 0;
+}
+
+/* Opens no smart card slot (none is listed). */
+int
+pk_os_card_open(
+	struct pk_os_card *card,
+	const char *path,
+	struct pk_nfc_io *io)
+{
+	/* Not on this system. */
+	(void)path;
+	(void)io;
+	card->descriptor = -1;
+	return ENOTSUP;
+}
+
+/* Closes no smart card slot. */
+void
+pk_os_card_close(
+	struct pk_os_card *card)
+{
+	/* Nothing open. */
+	card->descriptor = -1;
+}
