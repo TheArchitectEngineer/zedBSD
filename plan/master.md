@@ -8,11 +8,12 @@
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
-- **2026-10-06 の session（ユーザー承認の q780〜q784）**: P1（phase-runner high）・P2（同）・T1（test-runner、Sonnet 5.5 medium）、N=2。ゴールはベータ2 までの範囲の全消化（UAT の指摘 → ベータ1・2 の未実装 → UAT 以外の Bug）。試験待ちの Phase は `test-wait（T1-NNN）`（[protocol](agents/protocol.md) の 2026-10-06）。
-  - **P1**: q780（BUG-212 → 222 → 213）→ q782（BUG-233・234 → 227）。
-  - **P2**: q784 の AAT の smoke の 3 fail の helper の直し（小）→ q781（ws142-p008〜p010）→ q783（ws099-p035a → p037）。
-  - **T1**: q784 の台帳の未実行（T1-205・206b・207・215〜220・202b）を束ねて流す。
-  - **B1**（WS074 p178）: ユーザーの指示まで起動しない。
+<!-- master:agents:start -->
+- 2026-10-07 夜（利用の上限の前のラップアップ、ユーザーの指示）。体制は N=2（P1・P2、phase-runner high）＋T1（test-runner、Sonnet 5.5 medium）。全担当は削除の command を実行しない（Q1 が消す、plan/agents/protocol.md 末尾）。
+  - **P1**（q833・q836・q839）: WS179 アクセントカラー p001・p002 は merge 済み（KL 57、T1-335・337 の撮影待ち）→ WS083 Vulkan Video（p001 設計から、host で作れる所まで）→ WS178 libGL を GL だけ・libGLX.so を xserver に「完全に分ける」→ WS075 → WS052。ws090-p025 の Settings の User name の IME（T1-336 で key は欄に届くのに画面は n だけ、描画か ja の keysym を疑う）。
+  - **P2**（q842 → q834）: WS181（窓の状態・App Home の独立のモード・gesture・整列、UAT 優先）p001 設計の途中 → p002〜p004 → ws051-p002b（TC の核）→ WS050 p005 → WS084（p003 は実機）。
+  - **T1**: T1-335・337（アクセントカラーの撮影、やり直し中）。T1-334 は 5330 待ち、T1-216・202b・227 は保留。
+  - 再開: 各担当の返却の報告（SHA・再開の情報）を Q1 が merge し、同じ列で新しく起動する（context が大きいので新しい世代で）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -27,17 +28,18 @@
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 担当の区切りの報告を受けて merge（`git merge --no-ff --no-commit <SHA>` → 確かめ → `git commit -m WIP`）、試験の依頼を T1 の台帳に積む、T1 の結果で `test-wait` の印を外す（PASS → cleared、FAIL → 直しの attempt を次に投入）。
-2. 空いた担当には priority の順で次を投入: UAT の指摘（BUG-211〜237 と設計の Phase: ws090-p017・p018、ws102-p025、ws122-p005、残りの UAT の Bug）→ ベータ1・2 の未実装 → UAT 以外の Bug。
-3. UAT の image はユーザーが `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image` で作る。safe boot は起動時に Ctrl・Shift を押したまま Space。
-4. image の履歴の片付けの残り（merge の block）。
+1. 担当の返却の SHA を merge（`source /tmp/claude-1000/merge_one.sh && merge_one SHA`、`&&` で繋ぐ、commit -a と同じ command にしない）。merge_one.sh は /tmp にあるので消えていたら作り直す（merge --no-ff --no-commit → 衝突と marker の確かめ → commit -m WIP）。
+2. P1・P2・T1 を新しい世代で起動（上の agents の列、phase.md の「再開の情報」から）。
+3. T1 の結果を判定（PNG は build/review/ に写してユーザーに見せる）。
+4. ユーザーの未決: M-3（5330 の iGPU を host の i915 に付け替える正解値の採取、ユーザーが質問を閉じた）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
+- **M-3（WS051）**: 5330 の iGPU を一時的に host の i915 に付け替えて USB-C の DP の正解の register を採るか（2026-10-07 ユーザーが質問を閉じた、5330 が戻った時に改めて聞く）。
 - **WS153 U2〜U15**: ユーザーが検討中（聞かない）。
-- ws142-p007 の dock の規則は決定済み（dock できない窓は無い、固定の大きさ・File Chooser・親を持つ dialog は中央に、下をぼかす、他の app は見せない）。
+- WS180（Emacs の graphical な editor）・WS117（Qt6）はベータ3 以降（決定済み）。
 <!-- master:open-decisions:end -->
 
 ### Focus
@@ -51,9 +53,9 @@
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS074 のレンダリングの改善: ユーザーの指示まで止める（Acid3 100/100、pixel の一致 37.04%）。B1 の p178 はユーザーの指示で起動。
-- WS153: U2〜U15 のユーザーの判断まで p002 以降を止める。
-- 5330: AX211 の passthrough は再開を許可（iwlwifi を blacklist して再起動）。iGPU と AX211 の同時は禁止。i915 は `/tmp/i915-hw.lock` の下で。素の起動はユーザーが USB で（AAT・UAT）。
+- 5330（10.0.30.3）に届かない（No route to host、2026-10-06 夜から）: WS139 の計測（T1-284）、ws051-p002 の ktest（T1-334）、各 hardware の WS の実機の確認、WS173 p005 が止まる。
+- WS074 のレンダリングの改善: ユーザーの指示まで止める（B1 は起動しない）。
+- WS153: U2〜U15 のユーザーの判断まで止める。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
