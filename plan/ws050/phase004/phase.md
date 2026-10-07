@@ -4,7 +4,7 @@
 
 Phase ID: `ws050-p004`
 Parent: [WS050](../ws.md)
-Status: in-progress（2026-10-07 q834 P2: 正常系の実装、host 75/75（核 47 + ACPI 28）、kernel の build warning 0。QEMU は不要（UCSI の device が無い）、実機は対象外）
+Status: cleared（2026-10-07 Q1 の判定: host 75/75、kernel の build warning 0。実機の確認は 5330 が戻ってから（p006））（旧: in-progress（2026-10-07 q834 P2: 正常系の実装、host 75/75（核 47 + ACPI 28）、kernel の build warning 0。QEMU は不要（UCSI の device が無い）、実機は対象外））
 Phase disposition: normal
 Queue: q834（P2）
 

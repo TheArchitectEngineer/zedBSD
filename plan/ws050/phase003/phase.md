@@ -4,7 +4,7 @@
 
 Phase ID: `ws050-p003`
 Parent: [WS050](../ws.md)
-Status: in-progress（2026-10-07 q834 P2: 実装、host 57/57（p002 の 31 と p003 の 26）、kernel の build warning 0。QEMU の起動の確認は T1 へ（Q1 に文面）、実機は対象外）
+Status: cleared（2026-10-07 Q1 の判定: host 57/57（5330 の ACPI の table）と T1-330 の boot-test PASS（QEMU に device は無く何もしない）、kernel の build warning 0。実機の確認は 5330 が戻ってから（p006））（旧: in-progress（2026-10-07 q834 P2: 実装、host 57/57（p002 の 31 と p003 の 26）、kernel の build warning 0。QEMU の起動の確認は T1 へ（Q1 に文面）、実機は対象外））
 Phase disposition: normal
 Queue: q834（P2）
 
