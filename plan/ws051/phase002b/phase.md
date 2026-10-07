@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p002b`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-07 P2: 実装・host の試験・build まで。ktest・実機は 5330 の後（Type-C は QEMU に無い））
+Status: test-wait（2026-10-07: 実装と host 試験 host-tc 67・tables 34、build warning 0。ktest は 5330 の後（T1-334 と一緒に））（旧: in-progress（2026-10-07 P2: 実装・host の試験・build まで。ktest・実機は 5330 の後（Type-C は QEMU に無い）））
 Phase disposition: normal
 Queue: q834 の続き（P2、Q1 の ACK 2026-10-07「範囲 1〜6 で ACK、display/ の下だけ」。Linux の intel_tc.c・intel_dkl_phy.c は値と手順の事実の確認だけに使い、code・注・名前の並びは写さない）
 
