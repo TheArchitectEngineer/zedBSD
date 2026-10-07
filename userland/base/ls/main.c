@@ -10,7 +10,16 @@
 /*
  * Lists directory contents (POSIX XCU ls, laid out as GNU ls lays it out).
  *
- *	ls [-1aCdFhiLlmNqRrtx] [-T cols] [-w cols] [file...]
+ *	ls [-1AaCcdFfgHhikLlmNnopqRrSstux] [-T cols] [-w cols] [file...]
+ *
+ * ws001-p041: the options of XCU that were missing: -A (the dot names but
+ * . and ..), -c and -u (the status change or the access time for -t and
+ * -l; alone they sort by it, as GNU ls does), -f (the directory's order,
+ * -a), -g and -o (the long format without the owner or the group), -H
+ * (the symbolic links named on the command line followed), -k (blocks of
+ * 1024 bytes), -p (a slash after a directory), -s (the blocks a file takes
+ * before its name, and a total) and -S (the largest first).  Blocks are
+ * of 512 bytes unless -k, as XCU says (the total of -l too).
  *
  * With no operand the current directory is listed.  Operands that are not
  * directories (all of them with -d) are listed first as one sorted group,
@@ -106,11 +115,30 @@ enum ls_shell_class {
 };
 
 /*
+ * Which time -t sorts by and -l shows.
+ */
+enum ls_time_field {
+	LS_TIME_MODIFIED,	/* the default: the last change of the contents */
+	LS_TIME_CHANGED,	/* -c: the last change of the status */
+	LS_TIME_ACCESSED	/* -u: the last access */
+};
+
+/*
  * The options of one run of ls.  main() fills it from the command line
  * and the environment, and everything else only reads it.
  */
 struct options {
-	int all;		/* -a: names starting with a dot too */
+	int all;		/* -a, -A, -f: names starting with a dot too */
+	int dots;		/* -a, -f: . and .. too */
+	int unsorted;		/* -f: the directory's own order */
+	int time_field;		/* an ls_time_field: -c or -u */
+	int size_sort;		/* -S: the largest first */
+	int no_owner;		/* -g: the long format without the owner */
+	int no_group;		/* -o: the long format without the group */
+	int follow_operands;	/* -H: the symbolic links named on the command line followed */
+	int kilobytes;		/* -k: blocks of 1024 bytes */
+	int slash;		/* -p: a slash after a directory's name */
+	int blocks;		/* -s: the blocks a file takes, before its name */
 	int directory;		/* -d: a directory operand as itself */
 	int classify;		/* -F: a mark after the name for the type */
 	int human;		/* -h: sizes with a unit */
@@ -166,6 +194,7 @@ struct long_widths {
  */
 struct name_layout {
 	size_t inode_width;
+	size_t blocks_width;
 	int some_quoted;
 };
 
@@ -241,6 +270,12 @@ static void ls_time(time_t value, char out[32]);
 static int days_in_year(long long year);
 static int days_in_month(int month, long long year);
 static char type_mark(mode_t mode);
+static char entry_mark(const struct entry *item, const struct options *options);
+static void blocks_text(const struct entry *item, const struct options *options, char out[24]);
+static unsigned long long blocks_in_units(unsigned long long blocks, const struct options *options);
+static const struct timespec *entry_time(const struct entry *item, const struct options *options);
+static int compare_times(const struct timespec *left, const struct timespec *right);
+static void print_total(const struct entry *items, size_t count, const struct options *options);
 static void free_entries(struct entry *items, size_t count);
 
 /*
@@ -345,7 +380,7 @@ parse_options(
 	scan.argc = argc;
 	scan.argv = argv;
 	scan.program = "ls";
-	scan.letters = "1aCdFhiLlmnNqRrtxT:w:";
+	scan.letters = "1AaCcdFfgHhikLlmnNopqRrSstuxT:w:";
 	scan.names = ls_long_options;
 	command_options_start(&scan);
 
@@ -359,6 +394,52 @@ parse_options(
 		switch (code) {
 		case 'a':
 			options->all = 1;
+			options->dots = 1;
+			break;
+		case 'A':
+			/* The dot names, but . and .. (the later of -a and -A wins, as GNU ls takes them). */
+			options->all = 1;
+			options->dots = 0;
+			break;
+		case 'f':
+			/* The directory's own order, every name. */
+			options->all = 1;
+			options->dots = 1;
+			options->unsorted = 1;
+			break;
+		case 'c':
+			options->time_field = LS_TIME_CHANGED;
+			break;
+		case 'u':
+			options->time_field = LS_TIME_ACCESSED;
+			break;
+		case 'S':
+			options->size_sort = 1;
+			options->time_sort = 0;
+			break;
+		case 'g':
+			/* The long format without the owner. */
+			options->no_owner = 1;
+			options->format = LS_FORMAT_LONG;
+			options->format_given = 1;
+			break;
+		case 'o':
+			/* The long format without the group. */
+			options->no_group = 1;
+			options->format = LS_FORMAT_LONG;
+			options->format_given = 1;
+			break;
+		case 'H':
+			options->follow_operands = 1;
+			break;
+		case 'k':
+			options->kilobytes = 1;
+			break;
+		case 'p':
+			options->slash = 1;
+			break;
+		case 's':
+			options->blocks = 1;
 			break;
 		case 'd':
 			options->directory = 1;
@@ -388,7 +469,9 @@ parse_options(
 			options->reverse = 1;
 			break;
 		case 't':
+			/* The later of -t and -S wins. */
 			options->time_sort = 1;
+			options->size_sort = 0;
 			break;
 		case 'l':
 			options->format = LS_FORMAT_LONG;
@@ -449,10 +532,14 @@ parse_options(
 			options->tab_given = 1;
 			break;
 		default:
-			fprintf(stderr, "usage: ls [-1aCdFhiLlmnNqRrtx] [-T cols] [-w cols] [file...]\n");
+			fprintf(stderr, "usage: ls [-1AaCcdFfgHhikLlmNnopqRrSstux] [-T cols] [-w cols] [file...]\n");
 			return 1;
 		}
 	}
+
+	/* -c and -u without the long format sort by their time, as GNU ls does (with it, only -t sorts by time); -S keeps its order. */
+	if (options->time_field != LS_TIME_MODIFIED && options->format != LS_FORMAT_LONG && !options->size_sort)
+		options->time_sort = 1;
 
 	/* Succeeded: the operands the scan set aside. */
 	*operands = scan.operands;
@@ -771,8 +858,8 @@ operand_status(
 	int follows;
 	int directory;
 
-	/* -L follows the link when it leads somewhere. */
-	if (options->follow) {
+	/* -L, and -H for a name on the command line, follow the link when it leads somewhere. */
+	if (options->follow || (command_line && options->follow_operands)) {
 		error = stat(name, status);
 		if (error == 0)
 			return 0;
@@ -1070,7 +1157,7 @@ read_entries(
 	capacity = 0;
 	dot = 0;
 	for (;;) {
-		if (options->all && dot < 2U) {
+		if (options->dots && !options->unsorted && dot < 2U) {
 			/* -a lists . and .. first, whatever order the directory has them in. */
 			name = dots[dot];
 			dot++;
@@ -1088,10 +1175,11 @@ read_entries(
 			if (!options->all && name[0] == '.')
 				continue;
 
-			/* With -a, . and .. have been listed already. */
+			/* With -a, . and .. have been listed already (with -f they come in the directory's order); -A leaves them out. */
 			dot_name = strcmp(name, ".");
 			dot_dot_name = strcmp(name, "..");
 			if (options->all &&
+			    !(options->dots && options->unsorted) &&
 			    (dot_name == 0 ||
 			     dot_dot_name == 0))
 				continue;
@@ -1199,6 +1287,10 @@ sort_entries(
 	size_t at;
 	int order;
 
+	/* -f keeps the directory's own order. */
+	if (options->unsorted)
+		return;
+
 	/* An insertion sort: each entry moves back past the ones that follow it in order. */
 	for (index = 1; index < count; index++) {
 		value = items[index];
@@ -1217,8 +1309,9 @@ sort_entries(
 }
 
 /*
- * Orders two entries: by name, or with -t newest first and then by name;
- * -r reverses the order.  Returns less than, equal to or greater than 0.
+ * Orders two entries: by name, with -S the largest first and with -t the
+ * newest first (the time -c or -u chose), then by name; -r reverses the
+ * order.  Returns less than, equal to or greater than 0.
  */
 static int
 compare(
@@ -1227,21 +1320,26 @@ compare(
 	const struct options *options)
 {
 	int order;
+	int known;
 
-	/* -t, when both times are known: newer first, then by name. */
-	if (options->time_sort &&
-	    left->status_valid &&
-	    right->status_valid) {
-		if (left->status.st_mtime > right->status.st_mtime) {
+	/* By name unless a key below decides. */
+	order = 0;
+	known = left->status_valid && right->status_valid;
+
+	/* -S, when both sizes are known: larger first (the later of -S and -t was kept). */
+	if (options->size_sort && known) {
+		if (left->status.st_size > right->status.st_size)
 			order = -1;
-		} else if (left->status.st_mtime < right->status.st_mtime) {
+		else if (left->status.st_size < right->status.st_size)
 			order = 1;
-		} else {
-			order = strcmp(left->name, right->name);
-		}
-	} else {
-		order = strcmp(left->name, right->name);
+	} else if (options->time_sort && known) {
+		/* -t: newer first. */
+		order = -compare_times(entry_time(left, options), entry_time(right, options));
 	}
+
+	/* Then by name. */
+	if (order == 0)
+		order = strcmp(left->name, right->name);
 
 	/* -r turns it around. */
 	if (options->reverse)
@@ -1302,6 +1400,10 @@ print_entries(
 		return 1;
 	}
 
+	/* -s: a directory's total first, in every format. */
+	if (options->blocks && total)
+		print_total(items, count, options);
+
 	/* Every other format writes nothing at all for no names. */
 	if (count == 0)
 		return 1;
@@ -1357,8 +1459,9 @@ prepare_names(
 	if (options->classify)
 		quoted_too = LS_CLASSIFY_QUOTED;
 
-	/* Each entry's text, and the widest serial number. */
+	/* Each entry's text, and the widest serial number and block count. */
 	layout->inode_width = 0;
+	layout->blocks_width = 0;
 	layout->some_quoted = 0;
 	for (index = 0; index < count; index++) {
 		free(items[index].shown);
@@ -1381,6 +1484,12 @@ prepare_names(
 		length = strlen(digits);
 		if (length > layout->inode_width)
 			layout->inode_width = length;
+
+		/* -s: the digits of the block count. */
+		blocks_text(&items[index], options, digits);
+		length = strlen(digits);
+		if (length > layout->blocks_width)
+			layout->blocks_width = length;
 	}
 
 	/* Succeeded: every name has its text. */
@@ -1404,33 +1513,18 @@ print_long_entries(
 	int total)
 {
 	struct long_widths widths;
-	unsigned long long blocks;
-	char total_text[24];
 	size_t index;
 	int printed;
 	int ok;
 
-	/* The widths of the columns, and the blocks the entries take. */
+	/* The widths of the columns. */
 	memset(&widths, 0, sizeof(widths));
 	measure_long(items, count, options, &widths);
 	measure_long(measured_too, measured_count, options, &widths);
-	blocks = 0;
-	for (index = 0; index < count; index++) {
-		if (items[index].status_valid && items[index].status.st_blocks > 0)
-			blocks += (unsigned long long)items[index].status.st_blocks;
-	}
 
-	/* The total in kilobytes, or with -h in bytes with a unit, for a directory. */
-	if (total) {
-		if (options->human) {
-			human_size((off_t)(blocks * 512ULL), total_text);
-		} else {
-			snprintf(total_text, sizeof(total_text), "%llu", (blocks + 1ULL) / 2ULL);
-		}
-
-		/* The line of the total. */
-		printf("total %s\n", total_text);
-	}
+	/* The total of the blocks, for a directory. */
+	if (total)
+		print_total(items, count, options);
 
 	/* Each entry. */
 	ok = 1;
@@ -1820,18 +1914,26 @@ name_length(
 		}
 	}
 
+	/* -s: the block count, as wide as the widest except with -m, and a space. */
+	if (options->blocks) {
+		if (options->format == LS_FORMAT_COMMAS) {
+			blocks_text(item, options, digits);
+			length += strlen(digits) + 1U;
+		} else {
+			length += layout->blocks_width + 1U;
+		}
+	}
+
 	/* The name as written, with the space that lines it up. */
 	length += item->shown_width;
 	padded = name_padded(item, options, layout);
 	if (padded)
 		length++;
 
-	/* -F: the mark, when the type has one. */
-	if (options->classify && item->status_valid) {
-		mark = type_mark(item->status.st_mode);
-		if (mark != '\0')
-			length++;
-	}
+	/* -F or -p: the mark, when the type has one. */
+	mark = entry_mark(item, options);
+	if (mark != '\0')
+		length++;
 
 	/* Succeeded: the columns. */
 	return length;
@@ -1861,18 +1963,25 @@ print_name(
 		printf("%*s ", width, digits);
 	}
 
+	/* -s: the block count, right-aligned except with -m. */
+	if (options->blocks) {
+		blocks_text(item, options, digits);
+		width = (int)layout->blocks_width;
+		if (options->format == LS_FORMAT_COMMAS)
+			width = 0;
+		printf("%*s ", width, digits);
+	}
+
 	/* The name, after a space when others in the listing are quoted. */
 	padded = name_padded(item, options, layout);
 	if (padded)
 		putchar(' ');
 	fputs(item->shown, stdout);
 
-	/* -F: the mark, when the type has one. */
-	if (options->classify && item->status_valid) {
-		mark = type_mark(item->status.st_mode);
-		if (mark != '\0')
-			putchar(mark);
-	}
+	/* -F or -p: the mark, when the type has one. */
+	mark = entry_mark(item, options);
+	if (mark != '\0')
+		putchar(mark);
 }
 
 /* Returns 1 when a name gets a space before it to line up with the quoted names of its listing. */
@@ -2695,8 +2804,8 @@ print_long(
 		snprintf(size, sizeof(size), "%lld", (long long)item->status.st_size);
 	}
 
-	/* The time, and the owner and the group by name. */
-	ls_time(item->status.st_mtime, when);
+	/* The time (-c, -u), and the owner and the group by name. */
+	ls_time(entry_time(item, options)->tv_sec, when);
 	user = uid_name(item->status.st_uid, options->numeric, user_buffer);
 	group = gid_name(item->status.st_gid, options->numeric, group_buffer);
 
@@ -2706,18 +2815,19 @@ print_long(
 		printf("%*s ", (int)layout->inode_width, digits);
 	}
 
-	/* The columns. */
-	printf("%s %*lu %-*s %-*s %*s %s ",
-	       mode,
-	       (int)widths->links,
-	       (unsigned long)item->status.st_nlink,
-	       (int)widths->user,
-	       user,
-	       (int)widths->group,
-	       group,
-	       (int)widths->size,
-	       size,
-	       when);
+	/* -s: the block count, as wide as the widest. */
+	if (options->blocks) {
+		blocks_text(item, options, digits);
+		printf("%*s ", (int)layout->blocks_width, digits);
+	}
+
+	/* The mode and the links, the owner (but -g) and the group (but -o), the size and the time. */
+	printf("%s %*lu ", mode, (int)widths->links, (unsigned long)item->status.st_nlink);
+	if (!options->no_owner)
+		printf("%-*s ", (int)widths->user, user);
+	if (!options->no_group)
+		printf("%-*s ", (int)widths->group, group);
+	printf("%*s %s ", (int)widths->size, size, when);
 
 	/* The name, after a space when others in the listing are quoted. */
 	padded = name_padded(item, options, layout);
@@ -2731,9 +2841,9 @@ print_long(
 		joined = join_path(directory, item->name, path, sizeof(path));
 		if (joined)
 			print_link_target(path, options);
-	} else if (options->classify) {
-		/* -F: the mark of the type, when it has one. */
-		mark = type_mark(item->status.st_mode);
+	} else {
+		/* -F or -p: the mark of the type, when it has one. */
+		mark = entry_mark(item, options);
 		if (mark != '\0')
 			putchar(mark);
 	}
@@ -3028,4 +3138,135 @@ free_entries(
 
 	/* The array itself. */
 	free(items);
+}
+
+/* The mark after a name: -F's for its type, or -p's slash after a directory; '\0' for none. */
+static char
+entry_mark(
+	const struct entry *item,
+	const struct options *options)
+{
+	int directory;
+
+	/* Nothing is known without the status. */
+	if (!item->status_valid)
+		return '\0';
+
+	/* -F: by the type. */
+	if (options->classify)
+		return type_mark(item->status.st_mode);
+
+	/* -p: a directory's slash. */
+	directory = S_ISDIR(item->status.st_mode);
+	if (options->slash && directory)
+		return '/';
+
+	/* None. */
+	return '\0';
+}
+
+/* Writes the blocks an entry takes (-s) in the units asked for, with -h as a size; ? without the status. */
+static void
+blocks_text(
+	const struct entry *item,
+	const struct options *options,
+	char out[24])
+{
+	unsigned long long blocks;
+
+	/* No status, no count. */
+	if (!item->status_valid) {
+		snprintf(out, 24, "?");
+		return;
+	}
+
+	/* The count in blocks of 512 bytes, then as asked. */
+	blocks = 0;
+	if (item->status.st_blocks > 0)
+		blocks = (unsigned long long)item->status.st_blocks;
+	if (options->human) {
+		human_size((off_t)(blocks * 512ULL), out);
+		return;
+	}
+
+	/* The count. */
+	snprintf(out, 24, "%llu", blocks_in_units(blocks, options));
+}
+
+/* Turns a count of 512-byte blocks into the units of the output: 512 bytes, or 1024 with -k (rounded up). */
+static unsigned long long
+blocks_in_units(
+	unsigned long long blocks,
+	const struct options *options)
+{
+	/* -k: kilobytes. */
+	if (options->kilobytes)
+		return (blocks + 1ULL) / 2ULL;
+
+	/* XCU's unit. */
+	return blocks;
+}
+
+/* The time of an entry that -t sorts by and -l shows: modified, or with -c changed, with -u accessed. */
+static const struct timespec *
+entry_time(
+	const struct entry *item,
+	const struct options *options)
+{
+	/* The field chosen. */
+	if (options->time_field == LS_TIME_CHANGED)
+		return &item->status.st_ctim;
+	if (options->time_field == LS_TIME_ACCESSED)
+		return &item->status.st_atim;
+	return &item->status.st_mtim;
+}
+
+/* Orders two times: less than, equal to or greater than 0 as the first is older, the same or newer. */
+static int
+compare_times(
+	const struct timespec *left,
+	const struct timespec *right)
+{
+	/* The seconds, then the nanoseconds. */
+	if (left->tv_sec != right->tv_sec) {
+		if (left->tv_sec < right->tv_sec)
+			return -1;
+		return 1;
+	}
+
+	/* The same second. */
+	if (left->tv_nsec != right->tv_nsec) {
+		if (left->tv_nsec < right->tv_nsec)
+			return -1;
+		return 1;
+	}
+
+	/* The same. */
+	return 0;
+}
+
+/* Writes a directory's total of the blocks its entries take, in the units of the output (-k, -h). */
+static void
+print_total(
+	const struct entry *items,
+	size_t count,
+	const struct options *options)
+{
+	unsigned long long blocks;
+	char text[24];
+	size_t index;
+
+	/* The blocks of 512 bytes each entry takes. */
+	blocks = 0;
+	for (index = 0; index < count; index++) {
+		if (items[index].status_valid && items[index].status.st_blocks > 0)
+			blocks += (unsigned long long)items[index].status.st_blocks;
+	}
+
+	/* In the units asked for, or with -h as a size. */
+	if (options->human)
+		human_size((off_t)(blocks * 512ULL), text);
+	else
+		snprintf(text, sizeof(text), "%llu", blocks_in_units(blocks, options));
+	printf("total %s\n", text);
 }

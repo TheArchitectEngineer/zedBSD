@@ -2,7 +2,7 @@
 
 # ws173-p003: AAT の host の道具と AAT の image の config
 
-Status: in-progress（2026-10-05 夜、P2 g16、q777。CLI・SSH・log・窓の座標・撮影の取得・P1 の `aat-input` に合わせた入力と host の自己試験まで。target での確かめは未（`keiland-shot` は P1 の package 待ち））
+Status: test-done（2026-10-07 q834 P2: target（QEMU）での確かめは T1 の AAT の実行で済み（T1-200c で注入・撮影・転送・log の待ちが PASS、その後 T1-202c・T1-232・T1-305・T1-315 などで runner と一緒に使われている）。判定は Q1）（旧: in-progress（2026-10-05 夜、host の自己試験まで））
 Disposition: normal
 Parent: [WS173](../ws.md)
 Queue: q777（Q1、2026-10-05 夜、最優先）
@@ -38,6 +38,5 @@ host の道具 `plan/tools/aat/`: SSH で素の 5330（UAT の image、10.0.30.3
 
 ## 未実施
 
-- target（QEMU・5330）での確かめ: P1 の p001・p002 の後。QEMU は T1（README の「自己試験」）。SSH・run・get・put・mark・wait-log の部分は今の image でも QEMU で確かめられる（README の手順の 2）。
-- 5330 の実機: 未実施（AAT の image を USB に書くのはユーザー）。
-- `keiland-shot` の package の名前が決まったら `config-amd64-aat.mk` に足す。`aat-input` の package は P1 の 88700c5c が main に入ってから build できる。
+- 5330 の実機: 未実施（AAT の image を USB に書くのはユーザー。WS173 p005）。
+- （済み、2026-10-07 の見直し）target の QEMU での確かめは T1-200c 以降の AAT の実行で済み。`keiland-shot`・`aat-input` は `config-amd64-aat.mk` に入っている。

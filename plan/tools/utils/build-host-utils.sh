@@ -22,8 +22,9 @@ for utility in sed grep awk cut wc head tail sort uniq tr od expr paste join com
 		extra=userland/base/cp/copy.c
 	fi
 	# mkdir and mkfifo share chmod's mode operand (ws001-p026).
+	# find reads -perm's mode the same way (ws001-p042).
 	case $utility in
-	mkdir|mkfifo)
+	mkdir|mkfifo|find)
 		extra=userland/base/chmod/mode.c
 		;;
 	esac
