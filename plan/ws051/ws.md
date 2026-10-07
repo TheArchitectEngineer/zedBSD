@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-04 p001 の design.md 第 1 版（調査と移植の範囲、Phase の案）。次は design-reviewer のレビューの反映。§10 は 2026-10-04 に決定済み（TBT-alt 範囲外、GOP の出力先の引き継ぎ、hotplug は Vulkan の Display の拡張で Keiland へ）。i915 の display が前提、UCSI（WS050）は必須でない（2026-10-04 ユーザーの決定 5）
+Resume point: 2026-10-07 P2: p001 の design.md 第 4 版（§14）、design-reviewer の後に p002（TC PLL の enable の番地・DVO の code）。それ以前: 2026-10-04 p001 の design.md 第 1 版（調査と移植の範囲、Phase の案）。次は design-reviewer のレビューの反映。§10 は 2026-10-04 に決定済み（TBT-alt 範囲外、GOP の出力先の引き継ぎ、hotplug は Vulkan の Display の拡張で Keiland へ）。i915 の display が前提、UCSI（WS050）は必須でない（2026-10-04 ユーザーの決定 5）
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -54,12 +54,13 @@ Keiland が決める）。i915 は GOP の出力先以外に自分の判断で s
 
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
-| [ws051-p001](phase001/phase.md) | 調査と設計: i915 の TCSS・Type-C PHY（DKL）・TC PLL・DDI の手順、今の i915 の display の範囲、画面の構成、WS050 との連携 | in-progress（2026-10-04。[design.md](design.md) 第 1 版、レビュー待ち） | — | 設計文書 |
-| ws051-p002 | GOP の出力先の引き継ぎと外部優先の廃止（Guardrail の scanout の規則）、VBT の DVO の code の修正 | planned | p001 | `src/drivers/gpu/i915/display/`（takeover.c・output.c） |
-| ws051-p002b | TC の port の核（`tc.c`）、TC の HPD、診断（向きの確かめを含む） | planned | p002 | `src/drivers/gpu/i915/display/` |
-| ws051-p003 | DKL PHY と TC PLL、DDI の TC の clock、buffer translation | planned | p002、bare metal の Linux の正解値 | 同上 |
-| ws051-p004 | 外部 DP の検出と display の UAPI での出力（TC の AUX、DPCD・EDID、列挙、claim・present での link training・modeset） | planned | p003、WS113 の契約 | 同上 |
-| ws051-p005 | 抜き差しの事象（`GPU_DISPLAY_EVENT_CHANGE`、scanout 中の抜けの停止、IRQ_HPD） | planned | p004 | 同上 |
+| [ws051-p001](phase001/phase.md) | 調査と設計: i915 の TCSS・Type-C PHY（DKL）・TC PLL・DDI の手順、今の i915 の display の範囲、画面の構成、WS050 との連携 | in-progress（2026-10-07 P2: [design.md](design.md) 第 4 版（§14: §13 の決定、WS113 p002 との分担、WS050 の口、WS084）、design-reviewer に掛ける） | — | 設計文書 |
+| ws051-p002 | TC PLL の enable の番地（H8）、VBT の DVO の code を vbt-defs.h に（L1）（GOP の引き継ぎと外部優先の廃止、GOP が USB-C の時に firmware の画面を保つ判定は WS113 p002 part A が実装・host 試験済み、design §14.2） | planned | p001 | `src/drivers/gpu/i915/display/`（takeover.c・diagnostics.c）、i915 の ktest |
+| ws051-p002b | TC の port の核（`tc.c`）、TC の AUX の power domain（H1）、AUX_USBC の well の TC の分岐（H2）、DE の HPD の配送（H5）、診断（向きは記録だけ） | planned | p002 | `src/drivers/gpu/i915/display/` |
+| ws051-p003 | DKL PHY と TC PLL、DDI の TC の clock、ADL-P の DKL の buffer translation、DP_MODE、FIA の lane 数、GOP が USB-C の時の引き継ぎ（M5） | planned | p002b、bare metal の Linux の正解値（読み取り） | 同上 |
+| ws051-p004a | TC の AUX・DPCD・EDID の診断、外部 DP の object（M6）、調べた後の同期の disconnect（M2）、branch device と sink count（H7） | planned | p003 | 同上 |
+| ws051-p004b | display の UAPI での出力（QUERY への TC の output、claim・mode・present での link training（fallback、M3）・modeset・scanout） | planned | p004a、WS113 の契約 | 同上 |
+| ws051-p005 | 抜き差しの事象（`GPU_DISPLAY_EVENT_CHANGE`、2 秒の猶予と 5 回の retry、scanout 中の抜けの停止、IRQ_HPD の retrain、M4）、S0ix の口（M10） | planned | p004b | 同上 |
 | ws051-p006 | 規約の全文の確認と最終の確認 | planned | p002〜p005 | WS の全 source |
 
 ## 2026-10-04 予定（Q1）
