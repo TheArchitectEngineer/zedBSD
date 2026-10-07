@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws118-p006 -->
 # ws118-p006: Tiger Lake の DPLL と firmware の表示の引き継ぎ（5320 で Keiland を表示する）、世代に依らない fallback
 
-Status: in-progress（q846-i01、P3、2026-10-07）
+Status: in-progress, test-wait（T1-352、5330 の回帰。5320 の実機は 2026-10-07 に表示を確認）（q846-i01、P3、2026-10-07）
 Disposition: normal
 Parent: [WS118](../ws.md)
 Queue: q846
