@@ -70,3 +70,17 @@ Queue: q846
 
 - `IS_TIGERLAKE_UY` は常に 0（9a49 は Linux では UY）。HBR2 以上の DP/eDP の buf trans の表だけが変わる。5320 の panel は HBR x1 なので影響なし。
 - VBT と DP の環境（`vbt.h` の `i915_vbt_display_ver()` が 13 固定）: TGL の Type-C/HDMI の port の対応（xelpd の表）と DPLS の WA（TGL でも掛かる、無害）。eDP の AUX の power domain は 12 と 13 で同じ。範囲外（TC/TBT）として残す。
+
+### 範囲 4（世代に依らない fallback）の設計と見積もり（未実装）
+
+firmware の pipe を止めずに使う「adopt」の経路。takeover（N1）の readout の後、`crtc_disable_noatomic` と full modeset の代わりに:
+
+1. 条件: N1 の readout が 1 本の pipe を active と読み、encoder（eDP）・PLL・transcoder が結ばれ、**PIPESRC が panel の mode と同じで pfit が無い**こと。
+   pfit がある（5320 の 640x480 の起動）なら PIPESRC と scaler を変える fastset（Linux の `intel_update_pipe_config` 相当: PIPESRC、`skl_pfit_enable`/`skl_detach_scalers`、plane の DDB・WM の再計算）が要り、規模が倍になる。
+2. modeset の object（`struct i915_lcd_modeset`）を readout の crtc の state で埋める: `crtc.active=1`、`prepared=1`、crtc の power domain（readout の `hw_readout_power_domains`）と PLL の参照（pool の pipe_mask）を引き継ぐ、encoder の `ddi_io_wakeref`/`aux_wakeref` を取る、backlight は今の duty から。
+3. `drv_i915_lcd_modeset_commit_enable` の crtc の enable を飛ばし、DBUF の pre-plane（旧の DBUF の state = readout の値）→ plane の update（自分の buffer の PLANE_SURF/STRIDE/SIZE/CTL と WM・BUF_CFG）→ post-plane。以降の flip（`i915_modeset_flip_arm`）と停止（`commit_disable`）は今の経路のまま。
+4. 起動の option（例 `i915.display=adopt`）で強制し、既定は takeover が失敗した時（`i915_resident_takeover` の EIO、または preflight の not idle）だけ adopt に落ちる。5330 の既定の経路（takeover が成功）は通らない。
+5. 確認: option で 5330 と 5320 の両方で 1 回ずつ（T1・実機）。
+
+見積もり: pfit 無しの adopt で 1〜1.5 日（実機の往復 3〜4 回）、pfit の fastset まで含めて 2.5〜3 日。危険: readout の state と自分の計算の差（link rate・bpp・WM）で underrun、firmware の DDB を引き継ぐ時の DBUF の状態の不整合。
+判断: 今回の修正（readout が PLL を結ぶ）で takeover が通るなら fallback は急がない。実機の結果を見てから Q1 が Queue にするか決める（Future Work の候補）。
