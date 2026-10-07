@@ -188,6 +188,7 @@
 static int ucsi_execute(struct drv_ucsi *ucsi, uint64_t control, uint8_t *message_in, size_t *length);
 static int ucsi_command(struct drv_ucsi *ucsi, uint64_t control);
 static int ucsi_acknowledge(struct drv_ucsi *ucsi, uint64_t which);
+static int ucsi_acknowledge_change(struct drv_ucsi *ucsi);
 static int ucsi_reset(struct drv_ucsi *ucsi);
 static int ucsi_notifications(struct drv_ucsi *ucsi, uint16_t notifications);
 static int ucsi_capability(struct drv_ucsi *ucsi);
@@ -570,6 +571,44 @@ ucsi_acknowledge(
 		return error;
 
 	/* Succeeded: the PPM may send its next completion or change. */
+	return 0;
+}
+
+/*
+ * Acknowledges a connector change together with the completion of a
+ * command that changes nothing (GET_CAPABILITY), never alone.
+ *
+ * Some PPMs stop answering after an ACK_CC_CI that acknowledges a
+ * connector change without a command completion: the next command never
+ * completes.  The Latitude 5320's does (its GET_CONNECTOR_STATUS after the
+ * first change acknowledgement timed out with CCI 0 at every boot), and
+ * Linux v6.8's ucsi_acpi works around the same on every Dell machine
+ * (ucsi_dell_sync_write()) in this way.  Acknowledging both at once is
+ * what the specification allows (section 4.5.4), so it is done for every
+ * PPM: the kernel cannot tell a Dell machine.  The command's own CCI may
+ * repeat the change it is acknowledged with; the caller clears that
+ * connector's pending change after this returns.
+ */
+static int
+ucsi_acknowledge_change(
+	struct drv_ucsi *ucsi)
+{
+	uint8_t discarded[DRV_UCSI_MESSAGE_MAX];
+	size_t length;
+	int command_error;
+	int error;
+
+	/* Runs the command whose completion goes with the change; its answer is not kept. */
+	command_error = ucsi_execute(ucsi, UCSI_GET_CAPABILITY, discarded, &length);
+	if (command_error == ETIMEDOUT || command_error == EIO)
+		return command_error;
+
+	/* Acknowledges the change and that completion in one ACK_CC_CI. */
+	error = ucsi_acknowledge(ucsi, UCSI_ACK_CONNECTOR_CHANGE | UCSI_ACK_COMMAND_COMPLETED);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the change is acknowledged and no completion is owed. */
 	return 0;
 }
 
@@ -1151,7 +1190,7 @@ ucsi_pending_handle(
 		}
 
 		/* Acknowledges the change; the PPM may then indicate the next. */
-		error = ucsi_acknowledge(ucsi, UCSI_ACK_CONNECTOR_CHANGE);
+		error = ucsi_acknowledge_change(ucsi);
 		if (error != 0)
 			return error;
 		ucsi->pending[byte] &= (uint8_t)~bit;

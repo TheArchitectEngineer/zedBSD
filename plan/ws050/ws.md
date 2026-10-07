@@ -63,3 +63,19 @@ Alternate Mode・USB PD の contract）を読み、変化を受け取り、必�
 
 公開は `/dev/typec`（診断）→ 正式は `/dev/system`。role の切替・CONNECTOR_RESET・SET_NEW_CAM は**範囲に入れる**（目標は今のまま、Phase を足した）。
 UCSI 1.x と 2.x の両方。向きは 1.x でも i915 から。HPD・pin は UCSI 2.0 以上と i915 の両方の経路（1.x は i915 だけ）。
+
+## 2026-10-07 P1: 5320 の UCSI の timeout（q847、Q1 の依頼）
+
+- 症状（5320、Tiger Lake、Dell subsys 1028:0a1f、zedBSD b35bf04、毎回の起動）: `ucsi: 2 connectors, 4 Alternate Modes, features 0x000014` の後に
+  `ucsi: command 0x12 timed out (CCI 0x00000000)`・`ucsi: the PPM did not start (error 42)`（[log](../ws118/tests/k5320-20261007-greeter-fail.log)、
+  2026-10-07 の 5320 の dmesg でも同じ。読むだけ）。`/dev/typec` は connector 1（PD の sink、generation 7）・connector 2（detached、generation 6）まで読めていた。
+- 原因（source と実機の log からの推定）: `ucsi_pending_handle` が connector の変化を ACK_CC_CI の CONNECTOR_CHANGE だけで acknowledge していた。
+  この PPM は completion の無い change だけの ACK の後に次の command に答えなくなる（CCI が 0 のまま、次の GET_CONNECTOR_STATUS が 5 秒で timeout）。
+  Linux v6.8 の ucsi_acpi は同じ不具合を Dell の全機で `ucsi_dell_sync_write()` で避ける（GET_CAPABILITY の dummy を先に送り、その completion と change を
+  1 回の ACK で）。AML の確認は未実施（ACK の振る舞いは EC の firmware の中で、AML からは見えない）。
+- 修正: `src/drivers/typec/ucsi.c` の `ucsi_acknowledge_change`（GET_CAPABILITY を流し、CONNECTOR_CHANGE と COMMAND_COMPLETED を 1 回の ACK_CC_CI で）。
+  仕様（§4.5.4）が許す形なので全 PPM に適用（kernel に DMI が無く Dell を判別できない、5320・5330 はともに Dell）。
+- 確かめ: `make -C plan/ws050/tests` 94 PASS（疑似の PPM に「change だけの ACK の後は答えない」5320 の規則を足した。旧の ucsi.c ではこの規則で 10 件 FAIL、
+  `two-changes` が error 110 で 5320 と同じ形になることを確かめた）、ACPI の host（5330 の table）PASS、`kernel-check` warning 0（stack の最大は
+  `ucsi_pending_handle` 584 byte、旧 312）、kernel の build warning 0。
+- 未実施: 5320・5330 の実機（kernel の入れ替えは Q1 経由。合否: dmesg に timeout と「did not start」が無く、`/dev/typec` の 2 connector が読めること）。

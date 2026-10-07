@@ -119,6 +119,13 @@ struct fake_ppm {
 	unsigned queue[FAKE_QUEUE];
 	unsigned queue_count;
 
+	/*
+	 * Set once a change was acknowledged without a command completion:
+	 * the PPM then answers no command, as the Latitude 5320's does (the
+	 * reason drv_ucsi acknowledges a change with a completion, ws050).
+	 */
+	bool stalled;
+
 	/* Waits a command stays busy, and the command and its CCI kept for then. */
 	unsigned busy_waits;
 	uint64_t busy_control;
@@ -686,6 +693,10 @@ fake_write(
 			fake_violation("a completion acknowledged that was not owed");
 		if (change != 0 && fake.change_indicated == 0)
 			fake_violation("a change acknowledged that was not indicated");
+		if (change != 0 && acknowledged == 0) {
+			fake_violation("a change acknowledged without a command completion (the 5320's PPM stops answering)");
+			fake.stalled = true;
+		}
 		if (acknowledged != 0)
 			fake.completion_pending = false;
 		if (change != 0)
@@ -703,6 +714,13 @@ fake_write(
 	/* Any other command: the previous completion must have been acknowledged. */
 	if (fake.completion_pending)
 		fake_violation("a command sent before the last completion was acknowledged");
+
+	/* A stalled PPM answers nothing and leaves CCI empty. */
+	if (fake.stalled) {
+		cci = 0;
+		memcpy(&fake.mailbox[fake.layout->cci_offset], &cci, sizeof(cci));
+		return 0;
+	}
 
 	/* A busy PPM answers later. */
 	if (fake.busy_waits != 0) {
