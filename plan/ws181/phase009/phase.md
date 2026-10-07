@@ -64,3 +64,9 @@ Parent: [WS181](../ws.md)
 ## T1-361 の判定（2026-10-07 Q1）
 
 FAIL（QEMU、pen の guest、main 9588f60bc）: `ws181-p009: FAIL`、14 項目（pill x=591 で 640 より右でない、`menu lit item=rows`・`join via=mapped`・`pad swipe closing=1` などの新しい行が 0）。2 回とも同じ。回帰の ws181-guest.sh・p003-guest.sh は PASS。build/t1-361/bin/wayland の中には新しい文字列（`menu lit`・`pad swipe closing`）があるのに guest の zdesktop.log に出ない → guest で試験の compositor でなく別の compositor が動いた（または試験の compositor の起動が失敗した）疑い。証拠: /home/awe/zedBSD-worktrees/t1/build/t1-361-out2/・t1-361-p009b.log。P2 が BUG-250・251 の後に見る。
+
+## T1-361 の FAIL の解析と試験の直し（2026-10-07 P2）
+
+- source の不具合ではなく、試験の準備の失敗。T1-361 の証拠: p009 の 2 回（`t1-361-out`・`t1-361-out2` の zdesktop.log）は `KWL GLASS desktops x=591`（古い、真ん中の pill）で `menu lit` も 0、その後に同じ guest・同じ `build/t1-361` で流した ws181-guest.sh（`t1-361-out-ws181/zdesktop.log`、22:04）は `desktops x=917`・`menu lit` 1 で、新しい compositor が動いていた。2 つの script の準備（stop_all → `put … /bin/wayland` → 起動）は同じ文面なので、p009 の時は `/bin/wayland` への複写が効かず（`put` は出力を捨てていた）、image の古い compositor を試験した。
+- 推定（未観測）: guest が起動した直後は image 自身の compositor（sessiond の greeter など）が `/bin/wayland` を動かしており、stop_all の後も再起動されて上書きが拒まれた（数分後の ws181-guest.sh の時には止んでいた）。ps の記録が無いので確定していない。
+- 直し（`plan/ws181/tests/p009-guest.sh`）: 試験の compositor は他の process が動かさない名前 `/bin/wayland-p009` に置いて起動する（stop_all・alive の照合もその名前を含める）。`/bin/wayland-p009`・`/bin/wltest` は複写の後に guest と host の `cksum` を比べ、違えば `setup:` の行と `ws181-p009: FAIL` で止まる。scp の出力は `OUTDIR/put.txt`、stop の前後の `ps -A -o pid,args` は `OUTDIR/ps.txt` に残す（image の compositor が動いていたかの確かめ）。`sh -n` ok。QEMU は T1 の再試験。
