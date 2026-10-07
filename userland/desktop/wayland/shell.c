@@ -2320,6 +2320,91 @@ kwl_glass_fit(
 }
 
 /*
+ * Fits every window to an output of a new size (ws113-p004a, an output
+ * moved to another display): a fullscreen window is told the output's
+ * size, a docked one the docked space's, and a floating one keeps its size
+ * and is moved inside the space (its title bar never under the system bar).
+ * The look draws everything again.
+ */
+void
+kwl_glass_output_resized(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct shell_rect docked;
+	uint32_t width;
+	uint32_t height;
+	int32_t x;
+	int32_t y;
+	int desktop;
+
+	/* Each live window of every client. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only a mapped toplevel, not the desktop's icons. */
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
+				continue;
+			if (surface->role == NULL || surface->role->top == NULL)
+				continue;
+			desktop = kwl_desktop_is(surface);
+			if (desktop)
+				continue;
+
+			/* Fullscreen: the output's new size. */
+			if (surface->fullscreen) {
+				window_configure(surface);
+				printf("KWL OUTPUT window surface=%u state=fullscreen w=%u h=%u\n", surface->id, server->width, server->height);
+				continue;
+			}
+
+			/* Docked: the docked space of the new output. */
+			if (surface->maximized && server->glass) {
+				docked_rect(server, &docked);
+				surface->x = docked.x;
+				surface->y = docked.y;
+				surface->window_width = (uint32_t)docked.width;
+				surface->window_height = (uint32_t)docked.height;
+				window_configure(surface);
+				window_resized(surface);
+				printf("KWL OUTPUT window surface=%u state=docked x=%d y=%d w=%d h=%d\n", surface->id, (int)docked.x, (int)docked.y, (int)docked.width, (int)docked.height);
+				continue;
+			}
+
+			/* Floating: its size kept, moved inside the space. */
+			width = 0U;
+			height = 0U;
+			kwl_decoration_geometry(surface, &width, &height);
+			x = surface->x;
+			y = surface->y;
+			if (server->glass) {
+				kwl_glass_fit(server, (int32_t)width, (int32_t)height, &x, &y);
+			} else {
+				/* Its right and bottom edges inside the output. */
+				if (x + (int32_t)width > (int32_t)server->width)
+					x = (int32_t)server->width - (int32_t)width;
+				if (y + (int32_t)height > (int32_t)server->height)
+					y = (int32_t)server->height - (int32_t)height;
+
+				/* Never left of it nor above it. */
+				if (x < 0)
+					x = 0;
+				if (y < 0)
+					y = 0;
+			}
+
+			/* The window's place. */
+			surface->x = x;
+			surface->y = y;
+			printf("KWL OUTPUT window surface=%u state=floating x=%d y=%d w=%u h=%u\n", surface->id, (int)x, (int)y, width, height);
+		}
+	}
+
+	/* Everything is drawn again at the new size. */
+	server->dirty = 1;
+}
+
+/*
  * Starts the growth of a newly mapped window out of App Home's icon, when
  * it is the window of an application Home just started (ws035-p071).
  */

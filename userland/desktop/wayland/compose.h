@@ -26,6 +26,10 @@
 #include "../../tests/vkdemo/display.h"
 
 /* Bound the swapchain images and the buffers one frame may sample. */
+/* The most displays the compositor follows at once (ws113-p004a). */
+#define KWL_COMPOSE_DISPLAYS	8U
+/* The room of a display's name (VkDisplayPropertiesKHR's displayName, cut). */
+#define KWL_COMPOSE_NAME	64U
 #define KWL_SWAPCHAIN_MAX	8U
 #define KWL_FRAME_WINDOWS	64U
 
@@ -109,7 +113,7 @@ struct kwl_compose {
 	VkPhysicalDevice physical;
 	/* The display chosen before the OS acquires it for the swapchain, and its name (empty when it has none). */
 	VkDisplayKHR display;
-	char display_name[64];
+	char display_name[KWL_COMPOSE_NAME];
 	VkDevice device;
 	VkQueue queue;
 	uint32_t family;
@@ -169,6 +173,34 @@ struct kwl_compose {
 	unsigned fence_fd;
 	/* The export entrypoint resolved once for the device while fence_fd is set. */
 	PFN_vkGetFenceFdKHR get_fence_fd;
+	/*
+	 * VK_EXT_display_control (ws113-p004a): the device enabled it when the
+	 * library offers it, and its hotplug entry point; NULL elsewhere (a
+	 * renderer without it, Linux), where no hotplug is followed.
+	 */
+	PFN_vkRegisterDeviceEventEXT register_device_event;
+	/*
+	 * The displays followed (output-switch.c, ws113-p004a): the hotplug
+	 * fence registered last (VK_NULL_HANDLE: none), when it was last looked
+	 * at; the display the compositor started on (the machine's own when no
+	 * name says which is built in); and the displays connected at the last
+	 * enumeration with their names and, as bits by their place, those whose
+	 * swapchain was refused for the limit of outputs shown at once (tried
+	 * again after the next hotplug).
+	 */
+	VkFence hotplug;
+	uint64_t hotplug_checked_ms;
+	VkDisplayKHR boot_display;
+	VkDisplayKHR displays[KWL_COMPOSE_DISPLAYS];
+	char display_names[KWL_COMPOSE_DISPLAYS][KWL_COMPOSE_NAME];
+	unsigned display_count;
+	uint32_t limited;
+	/*
+	 * The display under the output was lost (unplugged): 1 until the output
+	 * moves (output-switch.c), 2 when no display took it and the next
+	 * hotplug is waited for; no frame is drawn meanwhile.
+	 */
+	unsigned output_lost;
 	uint64_t frame_start_cycles;
 	uint64_t frame_start_ms;
 	/*
@@ -218,6 +250,8 @@ void kwl_glass_draw_drag_badge(struct kwl_server *server, VkCommandBuffer comman
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);
 void kwl_compose_set_put(struct kwl_compose *compose, VkDescriptorSet set);
+int kwl_output_switch(struct kwl_server *server, VkDisplayKHR target);
+VkResult kwl_compose_display_read(struct kwl_server *server, VkDisplayKHR display, uint32_t *width, uint32_t *height, uint32_t *refresh, char *name, size_t size);
 
 /* Gives an image a second, linearly sampled descriptor set (compose.c). */
 VkResult kwl_compose_linear_set(struct kwl_compose *compose, struct kwl_import *import);

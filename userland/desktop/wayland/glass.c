@@ -435,6 +435,49 @@ kwl_glass_landscape(
 }
 
 /*
+ * Makes the look's output-sized images again for an output of another size
+ * (ws113-p004a): the wallpaper and its blurred copy, with the picture the
+ * settings hold now.  The device finishes what it is drawing from them
+ * first.  Returns 0 or an errno value (the look is then drawn without its
+ * wallpaper until the next change).
+ */
+int
+kwl_glass_resize(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+	uint64_t started;
+	int error;
+
+	/* Without the look there is no wallpaper. */
+	if (server->compose == NULL || server->compose->glass == NULL)
+		return 0;
+	glass = server->compose->glass;
+
+	/* The frames in flight read the images; they end first. */
+	started = kwl_milliseconds();
+	(void)vkDeviceWaitIdle(server->compose->device);
+
+	/* The images of the old size go. */
+	kwl_host_image_release(server->compose, &glass->wallpaper);
+	kwl_host_image_release(server->compose, &glass->blurred);
+
+	/* The images of the new size, with the picture in them. */
+	error = wallpaper_create(server, glass);
+	if (error != 0) {
+		printf("KWL GLASS resize errno=%d\n", error);
+		return error;
+	}
+
+	/* Everything stands on them. */
+	server->dirty = 1;
+	printf("KWL GLASS resize width=%u height=%u ms=%llu\n", server->width, server->height, (unsigned long long)(kwl_milliseconds() - started));
+
+	/* Succeeded: the look fits the output. */
+	return 0;
+}
+
+/*
  * Starts reading a wallpaper chosen during the session on a thread of its
  * own (WS135): the event loop goes on, and kwl_glass_wallpaper_poll shows
  * the picture once it is read.  Returns 0, EBUSY while another is being

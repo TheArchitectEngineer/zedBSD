@@ -36,7 +36,7 @@
 static VkResult compose_device(struct kwl_compose *compose);
 static VkResult compose_display(struct kwl_server *server);
 static void compose_limits(struct kwl_server *server);
-static VkResult compose_refresh(struct kwl_server *server, VkDisplayKHR display, uint32_t *refresh);
+static VkResult compose_refresh(struct kwl_server *server, VkDisplayKHR display, uint32_t width, uint32_t height, uint32_t *refresh);
 static VkResult compose_objects(struct kwl_compose *compose);
 static VkResult compose_pass(struct kwl_compose *compose);
 static VkResult compose_pipeline(struct kwl_compose *compose, enum kwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
@@ -134,6 +134,64 @@ kwl_compose_open(
 }
 
 /*
+ * Reads a display's native size, its refresh at that size and its name
+ * (empty when it has none), for an output moved to it while the compositor
+ * runs (ws113-p004a).  Returns VK_SUCCESS, or VK_ERROR_SURFACE_LOST_KHR
+ * when the display is not connected now.
+ */
+VkResult
+kwl_compose_display_read(
+	struct kwl_server *server,
+	VkDisplayKHR display,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh,
+	char *name,
+	size_t size)
+{
+	struct kwl_compose *compose;
+	VkDisplayPropertiesKHR properties[KWL_COMPOSE_DISPLAYS];
+	VkResult result;
+	uint32_t count;
+	uint32_t index;
+
+	/* The displays connected now. */
+	compose = server->compose;
+	count = KWL_COMPOSE_DISPLAYS;
+	result = vkGetPhysicalDeviceDisplayPropertiesKHR(compose->physical, &count, properties);
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+		return result;
+
+	/* The display among them. */
+	for (index = 0U; index < count; index++) {
+		/* Handles compare only for equality. */
+		if (properties[index].display == display)
+			break;
+	}
+
+	/* Not connected now. */
+	if (index == count)
+		return VK_ERROR_SURFACE_LOST_KHR;
+
+	/* Its size and name. */
+	*width = properties[index].physicalResolution.width;
+	*height = properties[index].physicalResolution.height;
+	if (size > 0U) {
+		name[0] = '\0';
+		if (properties[index].displayName != NULL)
+			(void)snprintf(name, size, "%s", properties[index].displayName);
+	}
+
+	/* The refresh of its mode at that size. */
+	result = compose_refresh(server, display, *width, *height, refresh);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the display's size, refresh and name are known. */
+	return VK_SUCCESS;
+}
+
+/*
  * Tells whether the lid matters to the output shown: it does unless that
  * output is an external display (an HDMI or DisplayPort connector's key,
  * D-ID A2 "zedbsd-port-v1:...:hdmi:B"), which goes on with the lid closed
@@ -191,7 +249,7 @@ kwl_compose_output_prepare(
 
 	/* The display plane's surface at the compositor's size. */
 	started = kwl_milliseconds();
-	result = vkdemo_display_open(compose->instance, compose->physical, server->width, server->height, &compose->output);
+	result = vkdemo_display_open_on(compose->instance, compose->physical, compose->display, server->width, server->height, &compose->output);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
@@ -369,7 +427,7 @@ kwl_compose_draw(
 
 	/* One frame at a time, and only with an output. */
 	compose = server->compose;
-	if (compose->in_flight || !compose->output_open)
+	if (compose->in_flight || !compose->output_open || compose->output_lost)
 		return 0;
 
 	/* The frame shows the pointer where it is now. */
@@ -394,6 +452,19 @@ kwl_compose_draw(
 	mark = kwl_cycles();
 	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, UINT64_MAX, compose->acquired, VK_NULL_HANDLE, &image);
 	server->perf.compose_acquire_cycles += kwl_cycles() - mark;
+
+	/* The display went (unplugged, or another generation): no frame until the output moves (ws113-p004a). */
+	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
+		if (!compose->output_lost) {
+			printf("KWL OUTPUT lost operation=acquire result=%d\n", (int)result);
+			compose->output_lost = 1U;
+		}
+
+		/* No frame, and no failure. */
+		return 0;
+	}
+
+	/* Any other failure ends the compositor. */
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		printf("KWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
 		return EIO;
@@ -622,6 +693,7 @@ kwl_compose_close(
 		vkDestroyDescriptorPool(compose->device, compose->descriptors, NULL);
 		vkDestroySemaphore(compose->device, compose->acquired, NULL);
 		vkDestroyFence(compose->device, compose->fence, NULL);
+		vkDestroyFence(compose->device, compose->hotplug, NULL);
 		vkDestroyCommandPool(compose->device, compose->pool, NULL);
 		vkDestroyDevice(compose->device, NULL);
 	}
@@ -665,6 +737,8 @@ compose_device(
 	uint32_t instance_count;
 	uint32_t device_count;
 	uint32_t extra;
+	int surface_counter;
+	int display_control;
 	VkExternalFenceHandleTypeFlagBits fence_type;
 	VkExtensionProperties available[32];
 	uint32_t found;
@@ -683,6 +757,27 @@ compose_device(
 	/* Append the OS extensions to the existing instance extension list. */
 	memcpy(instance_names, instance_extensions, sizeof(instance_extensions));
 	instance_count = 5U;
+
+	/* The surface counters, which the display control needs, when the library offers them (ws113-p004a). */
+	surface_counter = 0;
+	found = 32U;
+	result = vkEnumerateInstanceExtensionProperties(NULL, &found, available);
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+		found = 0U;
+	for (index = 0; index < found; index++) {
+		/* The extension's name. */
+		match = strcmp(available[index].extensionName, VK_EXT_DISPLAY_SURFACE_COUNTER_EXTENSION_NAME);
+		if (match == 0)
+			surface_counter = 1;
+	}
+
+	/* Enabled when offered. */
+	if (surface_counter) {
+		instance_names[instance_count] = VK_EXT_DISPLAY_SURFACE_COUNTER_EXTENSION_NAME;
+		instance_count++;
+	}
+
+	/* The OS's own instance extensions after them. */
 	extra = kl_backend_gpu_instance_extensions(instance_names + instance_count, COMPOSE_EXTENSIONS_MAX - instance_count);
 	if (extra > COMPOSE_EXTENSIONS_MAX - instance_count)
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -731,6 +826,7 @@ compose_device(
 	if (result != VK_SUCCESS && result != VK_INCOMPLETE)
 		return result;
 	wanted = 0;
+	display_control = 0;
 	for (index = 0; index < found; index++) {
 		match = strcmp(available[index].extensionName, VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME);
 		if (match == 0)
@@ -738,6 +834,11 @@ compose_device(
 		match = strcmp(available[index].extensionName, VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
 		if (match == 0)
 			wanted++;
+
+		/* The display control (hotplug), with the instance's surface counters. */
+		match = strcmp(available[index].extensionName, VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME);
+		if (match == 0 && surface_counter)
+			display_control = 1;
 	}
 
 	/* Export only when the device and the OS both support frame fence fds. */
@@ -757,6 +858,14 @@ compose_device(
 	if (extra > COMPOSE_EXTENSIONS_MAX - device_count)
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	device_count += extra;
+
+	/* The display control last, when the library offers it and there is room. */
+	if (display_control && device_count < COMPOSE_EXTENSIONS_MAX) {
+		device_names[device_count] = VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME;
+		device_count++;
+	} else {
+		display_control = 0;
+	}
 
 	/* The device, with one queue, the swapchain and the external memory (and fence) fd extensions. */
 	priority = 1.0f;
@@ -784,6 +893,11 @@ compose_device(
 		if (compose->get_fence_fd == NULL)
 			compose->fence_fd = 0;
 	}
+
+	/* The hotplug's entry point (ws113-p004a). */
+	compose->register_device_event = NULL;
+	if (display_control)
+		compose->register_device_event = (PFN_vkRegisterDeviceEventEXT)vkGetDeviceProcAddr(compose->device, "vkRegisterDeviceEventEXT");
 
 	/* Succeeded: the queue the frames are submitted to. */
 	vkGetDeviceQueue(compose->device, compose->family, 0U, &compose->queue);
@@ -855,6 +969,7 @@ compose_display(
 
 	/* Keeps the chosen display for the OS acquire and release hooks. */
 	compose->display = display;
+	compose->boot_display = display;
 
 	/* The display handle stays valid after its properties are freed. */
 	free(properties);
@@ -876,7 +991,7 @@ compose_display(
 	}
 
 	/* The refresh of the mode at the output's size, which wl_output tells the clients. */
-	result = compose_refresh(server, display, &refresh);
+	result = compose_refresh(server, display, server->width, server->height, &refresh);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -925,6 +1040,8 @@ static VkResult
 compose_refresh(
 	struct kwl_server *server,
 	VkDisplayKHR display,
+	uint32_t width,
+	uint32_t height,
 	uint32_t *refresh)
 {
 	struct kwl_compose *compose;
@@ -932,8 +1049,8 @@ compose_refresh(
 	VkResult result;
 	uint32_t count;
 	uint32_t index;
-	uint32_t width;
-	uint32_t height;
+	uint32_t mode_width;
+	uint32_t mode_height;
 
 	/* Counts the display's modes. */
 	compose = server->compose;
@@ -962,11 +1079,11 @@ compose_refresh(
 	*refresh = modes[0].parameters.refreshRate;
 	for (index = 0U; index < count; index++) {
 		/* The mode's visible size. */
-		width = modes[index].parameters.visibleRegion.width;
-		height = modes[index].parameters.visibleRegion.height;
+		mode_width = modes[index].parameters.visibleRegion.width;
+		mode_height = modes[index].parameters.visibleRegion.height;
 
 		/* A mode at the output's size gives its own refresh. */
-		if (width == server->width && height == server->height) {
+		if (mode_width == width && mode_height == height) {
 			*refresh = modes[index].parameters.refreshRate;
 			break;
 		}
@@ -2058,6 +2175,16 @@ compose_submit(
 	present.pSwapchains = &compose->output.swapchain;
 	present.pImageIndices = &image;
 	result = vkQueuePresentKHR(compose->queue, &present);
+
+	/* The display went: the frame still completes, and the output moves (ws113-p004a). */
+	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
+		printf("KWL OUTPUT lost operation=present result=%d\n", (int)result);
+		if (!compose->output_lost)
+			compose->output_lost = 1U;
+		result = VK_SUCCESS;
+	}
+
+	/* Any other failure is the frame's. */
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 		return result;
 
