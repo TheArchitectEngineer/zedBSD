@@ -110,6 +110,8 @@ struct ppm {
 	unsigned change;
 	bool query;
 	unsigned commands;
+	unsigned last_command;
+	unsigned resets;
 	unsigned writes;
 	unsigned changes_acknowledged;
 };
@@ -383,6 +385,7 @@ static void
 test_plug(void)
 {
 	struct drv_typec_connector connector;
+	uint32_t serial;
 	int error;
 
 	/* The plug, indicated in CCI and raised as the EC query. */
@@ -399,6 +402,15 @@ test_plug(void)
 	/* Another step with nothing raised. */
 	error = drv_ucsi_acpi_step(10);
 	test_check("idle", error == 0, "no notification, nothing read");
+
+	/* An operation asked by another driver wakes the thread, which sends it through _DSM 1. */
+	ppm.last_command = 0;
+	error = drv_typec_connector_reset(0, DRV_TYPEC_RESET_HARD, &serial);
+	test_check("request-asked", error == 0 && signalled, "queued and the thread woken");
+	error = drv_ucsi_acpi_step(10);
+	memset(&connector, 0, sizeof(connector));
+	(void)drv_typec_connector_get(0, &connector);
+	test_check("request-done", error == 1 && ppm.resets == 1U && connector.request_serial == serial && connector.request_error == 0, "CONNECTOR_RESET reached the EC and its outcome the record");
 }
 
 /* Checks the text /dev/typec gives. */
@@ -684,6 +696,9 @@ ppm_command(void)
 	number = (unsigned)((control >> 16) & 0x7FU);
 	ppm.writes++;
 	ppm.commands++;
+	ppm.last_command = command;
+	if (command == 0x03U)
+		ppm.resets++;
 	memset(message, 0, sizeof(message));
 
 	/* Each command the core sends. */
@@ -990,15 +1005,10 @@ drv_typec_os_signal_init(void)
 void
 drv_typec_os_signal(void)
 {
-	/* Raised inside the interpreter, as the kernel's handler is. */
-	if (!interpreter_locked) {
-		fprintf(stderr, "ucsi-acpi-host: the signal raised outside the interpreter\n");
-		abort();
-	}
-
-	/* Raised. */
+	/* Raised (by the notification inside the interpreter, or by an operation outside it). */
 	signalled = true;
-	notifications++;
+	if (interpreter_locked)
+		notifications++;
 }
 
 int

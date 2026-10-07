@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <uapi/errno.h>
+
 #include <drivers/typec/typec.h>
 
 #include "drivers/typec/typec-os.h"
@@ -33,6 +35,11 @@
 
 /* The commands the fake PPM answers (UCSI 1.2 Table A-1). */
 #define FAKE_PPM_RESET 0x01U
+#define FAKE_CONNECTOR_RESET 0x03U
+#define FAKE_SET_UOR 0x09U
+#define FAKE_SET_PDR 0x0BU
+#define FAKE_SET_NEW_CAM 0x0FU
+#define FAKE_GET_CABLE_PROPERTY 0x11U
 #define FAKE_ACK_CC_CI 0x04U
 #define FAKE_SET_NOTIFICATION_ENABLE 0x05U
 #define FAKE_GET_CAPABILITY 0x06U
@@ -113,6 +120,9 @@ struct fake_ppm {
 	unsigned busy_waits;
 	uint64_t busy_control;
 
+	/* The CONTROL of the last operation (reset, role, mode) the PPM was asked. */
+	uint64_t operation_control;
+
 	/* Commands answered, waits that refreshed, and breaks of the rules. */
 	unsigned commands;
 	unsigned violations;
@@ -121,6 +131,9 @@ struct fake_ppm {
 
 /* The fake PPM the transport's operations use. */
 static struct fake_ppm fake;
+
+/* How many times the layer woke the connector driver for an operation. */
+static unsigned kicked;
 
 /* The checks that failed. */
 static int test_failures;
@@ -157,6 +170,10 @@ static void test_changes(struct drv_ucsi *ucsi);
 static void test_busy(struct drv_ucsi *ucsi);
 static void test_start_2(struct drv_ucsi *ucsi, const struct drv_ucsi_transport *transport);
 static void test_layouts(void);
+static void test_requests(struct drv_ucsi *ucsi);
+static void test_requests_2(struct drv_ucsi *ucsi);
+static void test_kick(void *argument);
+static bool test_take_run(struct drv_ucsi *ucsi, uint32_t serial);
 
 /*
  * Runs the scenarios.
@@ -190,7 +207,9 @@ main(
 	test_start_1(&ucsi, &transport);
 	test_changes(&ucsi);
 	test_busy(&ucsi);
+	test_requests(&ucsi);
 	test_start_2(&ucsi, &transport);
+	test_requests_2(&ucsi);
 	test_layouts();
 
 	/* Reports whether every check passed. */
@@ -334,6 +353,8 @@ fake_answer(
 	unsigned command;
 	unsigned number;
 	uint32_t length;
+	uint32_t first;
+	uint32_t second;
 
 	/* MESSAGE IN, emptied. */
 	message = &fake.mailbox[fake.layout->message_in_offset];
@@ -384,6 +405,48 @@ fake_answer(
 		break;
 	case FAKE_GET_PDOS:
 		length = fake_answer_pdos(control, message);
+		break;
+	case FAKE_CONNECTOR_RESET:
+		fake.operation_control = control;
+		break;
+	case FAKE_SET_UOR:
+		/* A swap to DFP leaves a UFP partner, to UFP a DFP one. */
+		fake.operation_control = control;
+		first = fake_get(control, 23, 1);
+		second = fake_get(control, 24, 1);
+		if (connector != NULL && first != 0)
+			connector->partner_type = 2;
+		if (connector != NULL && second != 0)
+			connector->partner_type = 1;
+		break;
+	case FAKE_SET_PDR:
+		/* A swap to Source or to Sink. */
+		fake.operation_control = control;
+		first = fake_get(control, 23, 1);
+		second = fake_get(control, 24, 1);
+		if (connector != NULL && first != 0)
+			connector->provider = true;
+		if (connector != NULL && second != 0)
+			connector->provider = false;
+		break;
+	case FAKE_SET_NEW_CAM:
+		/* The mode entered, or none any more. */
+		fake.operation_control = control;
+		first = fake_get(control, 23, 1);
+		second = fake_get(control, 24, 8);
+		if (connector != NULL && first != 0)
+			connector->current = (uint8_t)second;
+		if (connector != NULL && first == 0)
+			connector->current = 0xFFU;
+		break;
+	case FAKE_GET_CABLE_PROPERTY:
+		/* A passive Type-C cable of 10 Gb/s and 5 A that carries VBUS. */
+		fake_set(message, 0, 2, 3);
+		fake_set(message, 2, 14, 10);
+		fake_set(message, 16, 8, 100);
+		fake_set(message, 24, 1, 1);
+		fake_set(message, 27, 2, 2);
+		length = 5;
 		break;
 	default:
 		fake_violation("a command the fake PPM does not know");
@@ -891,4 +954,143 @@ test_layouts(void)
 	test_check("layout-0x38", drv_ucsi_layout_select(0x38U) == &drv_ucsi_layout_1, "not 1.x");
 	test_check("layout-0x210", drv_ucsi_layout_select(0x210U) == &drv_ucsi_layout_2, "not 2.x");
 	test_check("layout-0x20", drv_ucsi_layout_select(0x20U) == NULL, "an arrangement");
+}
+
+/* Counts a wake-up of the connector driver. */
+static void
+test_kick(
+	void *argument)
+{
+	(void)argument;
+	kicked++;
+}
+
+/* Takes the oldest operation, checks it is the one asked, and carries it out. */
+static bool
+test_take_run(
+	struct drv_ucsi *ucsi,
+	uint32_t serial)
+{
+	struct drv_typec_request request;
+	bool taken;
+	int error;
+
+	/* The operation. */
+	taken = drv_typec_request_take(&request);
+	if (!taken || request.serial != serial)
+		return false;
+
+	/* Carried out. */
+	error = drv_ucsi_request(ucsi, &request);
+	if (error != 0)
+		return false;
+	return true;
+}
+
+/* The operations on a 1.2 PPM: roles, resets, modes, and the cable read with them. */
+static void
+test_requests(
+	struct drv_ucsi *ucsi)
+{
+	struct drv_typec_connector record;
+	struct drv_typec_request request;
+	char text[2048];
+	char detail[320];
+	uint32_t serial;
+	uint32_t other;
+	unsigned commands;
+	unsigned index;
+	bool ran;
+	int error;
+
+	/* The PPM lets the OPM choose the mode and reports cables. */
+	fake.optional_features |= (1U << 3) | (1U << 5);
+	ucsi->optional_features = fake.optional_features;
+	drv_typec_operator_set(test_kick, NULL);
+	kicked = 0;
+
+	/* A swap to Source on connector 1. */
+	error = drv_typec_connector_set_power_role(0, DRV_TYPEC_ROLE_SOURCE, &serial);
+	test_check("request-queued", error == 0 && serial != 0 && kicked == 1U, "the operation was not queued or the driver not woken");
+	ran = test_take_run(ucsi, serial);
+	(void)drv_typec_connector_get(0, &record);
+	(void)snprintf(detail, sizeof(detail), "control 0x%llx, role %d, serial %u error %d", (unsigned long long)fake.operation_control, record.power_role, (unsigned)record.request_serial, record.request_error);
+	test_check("power-role", ran && fake.operation_control == (0x0BULL | (1ULL << 16) | (1ULL << 23) | (1ULL << 25)) && record.power_role == DRV_TYPEC_ROLE_SOURCE && record.request_serial == serial && record.request_error == 0, detail);
+	test_check("power-role-told", listened_connector == 0U && listened_generation == record.generation, "the listener was not told");
+
+	/* The cable, read with the connector. */
+	(void)snprintf(detail, sizeof(detail), "known %d speed %llu current %u", record.cable.known, (unsigned long long)record.cable.speed_bps, record.cable.current_ma);
+	test_check("cable", record.cable.known && record.cable.speed_bps == 10000000000ULL && record.cable.current_ma == 5000U && record.cable.vbus && !record.cable.active && record.cable.plug_end == DRV_TYPEC_PLUG_TYPE_C, detail);
+
+	/* A swap to UFP. */
+	(void)drv_typec_connector_set_data_role(0, DRV_TYPEC_DATA_UFP, &serial);
+	ran = test_take_run(ucsi, serial);
+	(void)drv_typec_connector_get(0, &record);
+	test_check("data-role", ran && fake.operation_control == (0x09ULL | (1ULL << 16) | (1ULL << 24) | (1ULL << 25)) && record.partner_type == DRV_TYPEC_PARTNER_DFP && record.request_error == 0, "SET_UOR to UFP");
+
+	/* A Hard Reset (1.2: bit 23 clear), and a Data Reset the 1.2 PPM is not asked. */
+	(void)drv_typec_connector_reset(0, DRV_TYPEC_RESET_HARD, &serial);
+	ran = test_take_run(ucsi, serial);
+	test_check("reset-hard", ran && fake.operation_control == (0x03ULL | (1ULL << 16)), "CONNECTOR_RESET hard on 1.2");
+	commands = fake.commands;
+	fake.operation_control = 0;
+	(void)drv_typec_connector_reset(0, DRV_TYPEC_RESET_DATA, &serial);
+	ran = test_take_run(ucsi, serial);
+	(void)drv_typec_connector_get(0, &record);
+	test_check("reset-data-1.x", ran && fake.operation_control == 0 && record.request_serial == serial && record.request_error == ENOTSUP && fake.commands > commands, "a Data Reset on 1.2 is not supported (the connector is read again)");
+
+	/* DisplayPort entered with a configuration, then left. */
+	(void)drv_typec_connector_enter_mode(0, 0, 0x00000406U, &serial);
+	ran = test_take_run(ucsi, serial);
+	(void)drv_typec_connector_get(0, &record);
+	(void)snprintf(detail, sizeof(detail), "control 0x%llx, current %u/%u", (unsigned long long)fake.operation_control, record.current_mode_count, record.current_modes[0]);
+	test_check("enter-mode", ran && fake.operation_control == (0x0FULL | (1ULL << 16) | (1ULL << 23) | (0x00000406ULL << 32)) && record.current_mode_count == 1U && record.current_modes[0] == 0U, detail);
+	(void)drv_typec_connector_exit_mode(0, 0, &serial);
+	ran = test_take_run(ucsi, serial);
+	(void)drv_typec_connector_get(0, &record);
+	test_check("exit-mode", ran && fake.operation_control == (0x0FULL | (1ULL << 16)) && record.current_mode_count == 0U, "SET_NEW_CAM exit");
+
+	/* A mode the connector does not list. */
+	(void)drv_typec_connector_enter_mode(0, 5, 0, &serial);
+	ran = test_take_run(ucsi, serial);
+	(void)drv_typec_connector_get(0, &record);
+	test_check("enter-unknown", ran && record.request_error == EINVAL, "a mode beyond the list");
+
+	/* The text shows the cable and the last operation. */
+	(void)drv_typec_text(text, sizeof(text));
+	(void)snprintf(detail, sizeof(detail), " error=%d ", EINVAL);
+	test_check("text-cable", strstr(text, "cable=passive speed=10000000000 current=5000mA") != NULL && strstr(text, detail) != NULL, text);
+
+	/* A connector that is not there, and a full queue. */
+	error = drv_typec_connector_reset(7, DRV_TYPEC_RESET_HARD, &other);
+	test_check("request-absent", error == ENOENT, "a connector that is not there");
+	for (index = 0; index < DRV_TYPEC_REQUEST_MAX; index++)
+		(void)drv_typec_connector_reset(1, DRV_TYPEC_RESET_HARD, &other);
+	error = drv_typec_connector_reset(1, DRV_TYPEC_RESET_HARD, &other);
+	test_check("request-full", error == EBUSY, "a ninth operation");
+	for (index = 0; index < DRV_TYPEC_REQUEST_MAX; index++)
+		(void)drv_typec_request_take(&request);
+
+	/* No rule broken. */
+	(void)snprintf(detail, sizeof(detail), "%u breaks, the last: %s", fake.violations, fake.last_violation);
+	test_check("request-rules", fake.violations == 0, detail);
+}
+
+/* The resets on a 2.x PPM: bit 23 set for a Data Reset, clear for a Hard Reset. */
+static void
+test_requests_2(
+	struct drv_ucsi *ucsi)
+{
+	uint32_t serial;
+	bool ran;
+
+	/* A Data Reset. */
+	(void)drv_typec_connector_reset(0, DRV_TYPEC_RESET_DATA, &serial);
+	ran = test_take_run(ucsi, serial);
+	test_check("reset-data-2.x", ran && fake.operation_control == (0x03ULL | (1ULL << 16) | (1ULL << 23)), "CONNECTOR_RESET data on 2.x");
+
+	/* A Hard Reset. */
+	(void)drv_typec_connector_reset(0, DRV_TYPEC_RESET_HARD, &serial);
+	ran = test_take_run(ucsi, serial);
+	test_check("reset-hard-2.x", ran && fake.operation_control == (0x03ULL | (1ULL << 16)), "CONNECTOR_RESET hard on 2.x");
 }

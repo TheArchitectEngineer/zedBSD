@@ -29,6 +29,11 @@
  * The command codes (Table A-1; the same in 3.1 Table A-1).
  */
 #define UCSI_PPM_RESET 0x01U
+#define UCSI_CONNECTOR_RESET 0x03U
+#define UCSI_SET_UOR 0x09U
+#define UCSI_SET_PDR 0x0BU
+#define UCSI_SET_NEW_CAM 0x0FU
+#define UCSI_GET_CABLE_PROPERTY 0x11U
 #define UCSI_ACK_CC_CI 0x04U
 #define UCSI_SET_NOTIFICATION_ENABLE 0x05U
 #define UCSI_GET_CAPABILITY 0x06U
@@ -84,6 +89,8 @@
  * 4-54).
  */
 #define UCSI_FEATURE_ALT_MODE_DETAILS (1U << 2)
+#define UCSI_FEATURE_ALT_MODE_OVERRIDE (1U << 3)
+#define UCSI_FEATURE_CABLE_DETAILS (1U << 5)
 #define UCSI_FEATURE_PDO_DETAILS (1U << 4)
 #define UCSI_FEATURE_EXTERNAL_SUPPLY (1U << 6)
 #define UCSI_FEATURE_PD_RESET (1U << 7)
@@ -110,6 +117,27 @@
  */
 #define UCSI_PDOS_PER_COMMAND 4U
 #define UCSI_PDO_LAST_INDEX 7U
+
+/*
+ * The fields of the operations' CONTROL (3.1 Table 6-5, 6-20, 6-22 and
+ * 6-33; the same bits in 1.2): CONNECTOR_RESET's reset type at bit 23,
+ * SET_UOR's and SET_PDR's role (bit 23 swap to DFP or Source, 24 to UFP
+ * or Sink, 25 accept the partner's swaps), SET_NEW_CAM's EnterOrExit at
+ * 23, its New CAM at 24 and its AMSpecific at 32.
+ *
+ * CONNECTOR_RESET's bit 23 changed meaning: from 2.0 it is 1 for a Data
+ * Reset and 0 for a Hard Reset (3.1 Table 6-5); in 1.0 it was 1 for a Hard
+ * Reset, and from 1.1 it is not used (inferred from the Linux driver's
+ * definitions; unconfirmed in the 1.x documents).
+ */
+#define UCSI_RESET_TYPE_BIT (1ULL << 23)
+#define UCSI_ROLE_FIRST_BIT (1ULL << 23)
+#define UCSI_ROLE_SECOND_BIT (1ULL << 24)
+#define UCSI_ROLE_ACCEPT_BIT (1ULL << 25)
+#define UCSI_CAM_ENTER_BIT (1ULL << 23)
+#define UCSI_CAM_SHIFT 24U
+#define UCSI_CAM_SPECIFIC_SHIFT 32U
+#define UCSI_VERSION_1_0 0x0100U
 
 /*
  * GET_CURRENT_CAM's value for "in no Alternate Mode" (Table 4-31).
@@ -149,6 +177,8 @@ static int ucsi_alt_modes(struct drv_ucsi *ucsi, unsigned number, unsigned recip
 static int ucsi_current_modes(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
 static int ucsi_partner_pdos(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
 static int ucsi_pending_handle(struct drv_ucsi *ucsi);
+static int ucsi_request_control(const struct drv_ucsi *ucsi, const struct drv_typec_request *request, uint64_t *control);
+static int ucsi_cable(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
 static void ucsi_latch(struct drv_ucsi *ucsi, uint32_t cci);
 static uint64_t ucsi_connector_control(unsigned command, unsigned number);
 static uint32_t ucsi_get16(const uint8_t *data);
@@ -318,6 +348,55 @@ drv_ucsi_service(
 
 	/* Succeeded: the records of the changed connectors are current. */
 	return 0;
+}
+
+/*
+ * Carries out an operation another driver asked of a connector
+ * (SET_UOR, SET_PDR, CONNECTOR_RESET or SET_NEW_CAM), notes its outcome
+ * in the connector's record, and reads the connector again, which
+ * publishes the record and tells the listeners.
+ *
+ * Returns 0 when the connector was read again (the operation's own errno
+ * value is in the record), or the errno value of that read.
+ */
+int
+drv_ucsi_request(
+	struct drv_ucsi *ucsi,
+	const struct drv_typec_request *request)
+{
+	struct drv_typec_connector *record;
+	uint64_t control;
+	unsigned number;
+	int request_error;
+	int error;
+	int got;
+
+	/* The command; one the PPM cannot be asked is the operation's outcome. */
+	number = request->connector + 1U;
+	request_error = ucsi_request_control(ucsi, request, &control);
+	if (request_error == 0)
+		request_error = ucsi_command(ucsi, control);
+	drv_typec_os_log("ucsi: connector %u request %u kind %u error %d\n", number, (unsigned)request->serial, (unsigned)request->kind, request_error);
+
+	/* The outcome in the record, then the connector read again and published. */
+	error = drv_typec_request_finish(request, request_error);
+	if (error != 0)
+		return error;
+	error = ucsi_connector_update(ucsi, number);
+	if (error == 0) {
+		/* The changes the PPM indicated meanwhile (the operation may have made one). */
+		error = ucsi_pending_handle(ucsi);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A connector that could not be read is published as it was, so the outcome is told. */
+	record = &ucsi->record;
+	got = drv_typec_connector_get(request->connector, record);
+	if (got == 0)
+		(void)drv_typec_connector_publish(request->connector, record);
+	return error;
 }
 
 /*
@@ -664,6 +743,10 @@ ucsi_connector_update(
 	if ((ucsi->optional_features & UCSI_FEATURE_PDO_DETAILS) != 0 && record->power_operation == DRV_TYPEC_POWER_PD)
 		(void)ucsi_partner_pdos(ucsi, number, record);
 
+	/* The cable's properties, when the PPM reports them (a cable that tells nothing leaves them unknown). */
+	if ((ucsi->optional_features & UCSI_FEATURE_CABLE_DETAILS) != 0)
+		(void)ucsi_cable(ucsi, number, record);
+
 	/* Publishes the new state. */
 	error = drv_typec_connector_publish(number - 1U, record);
 	if (error != 0)
@@ -765,6 +848,7 @@ ucsi_partner_clear(
 	record->current_mode_count = 0;
 	kern_memset(record->partner_pdos, 0, sizeof(record->partner_pdos));
 	record->partner_pdo_count = 0;
+	kern_memset(&record->cable, 0, sizeof(record->cable));
 }
 
 /*
@@ -964,6 +1048,136 @@ ucsi_pending_handle(
 	}
 
 	/* Succeeded: no change is pending. */
+	return 0;
+}
+
+/*
+ * Makes the CONTROL of an operation.  Returns 0, EINVAL for a mode the
+ * connector does not list or a kind that is not one, or ENOTSUP for an
+ * operation this PPM's version or features cannot do.
+ */
+static int
+ucsi_request_control(
+	const struct drv_ucsi *ucsi,
+	const struct drv_typec_request *request,
+	uint64_t *control)
+{
+	struct drv_typec_connector record;
+	unsigned number;
+	int error;
+
+	/* The connector it names. */
+	number = request->connector + 1U;
+	if (number > ucsi->connector_count)
+		return EINVAL;
+
+	/* Each kind's command. */
+	switch (request->kind) {
+	case DRV_TYPEC_REQUEST_DATA_ROLE:
+		/* A swap to DFP or to UFP, and the partner's swaps accepted (policy 0: all). */
+		*control = ucsi_connector_control(UCSI_SET_UOR, number) | UCSI_ROLE_ACCEPT_BIT;
+		if (request->value == DRV_TYPEC_DATA_DFP) {
+			*control |= UCSI_ROLE_FIRST_BIT;
+		} else {
+			*control |= UCSI_ROLE_SECOND_BIT;
+		}
+
+		break;
+	case DRV_TYPEC_REQUEST_POWER_ROLE:
+		/* A swap to Source or to Sink, and the partner's swaps accepted. */
+		*control = ucsi_connector_control(UCSI_SET_PDR, number) | UCSI_ROLE_ACCEPT_BIT;
+		if (request->value == DRV_TYPEC_ROLE_SOURCE) {
+			*control |= UCSI_ROLE_FIRST_BIT;
+		} else {
+			*control |= UCSI_ROLE_SECOND_BIT;
+		}
+
+		break;
+	case DRV_TYPEC_REQUEST_RESET:
+		/* The reset type's bit as the PPM's version reads it; a 1.x PPM has no Data Reset. */
+		*control = ucsi_connector_control(UCSI_CONNECTOR_RESET, number);
+		if (request->value == DRV_TYPEC_RESET_DATA) {
+			if (ucsi->version < UCSI_VERSION_2)
+				return ENOTSUP;
+			*control |= UCSI_RESET_TYPE_BIT;
+		} else if (ucsi->version == UCSI_VERSION_1_0) {
+			*control |= UCSI_RESET_TYPE_BIT;
+		}
+
+		break;
+	case DRV_TYPEC_REQUEST_ENTER_MODE:
+	case DRV_TYPEC_REQUEST_EXIT_MODE:
+		/* Only a PPM that lets the OPM choose the mode, and only a mode the connector lists. */
+		if ((ucsi->optional_features & UCSI_FEATURE_ALT_MODE_OVERRIDE) == 0)
+			return ENOTSUP;
+		error = drv_typec_connector_get(request->connector, &record);
+		if (error != 0)
+			return error;
+		if (request->mode >= record.connector_modes.count)
+			return EINVAL;
+		*control = ucsi_connector_control(UCSI_SET_NEW_CAM, number) | ((uint64_t)request->mode << UCSI_CAM_SHIFT);
+		if (request->kind == DRV_TYPEC_REQUEST_ENTER_MODE)
+			*control |= UCSI_CAM_ENTER_BIT | ((uint64_t)request->configuration << UCSI_CAM_SPECIFIC_SHIFT);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the command. */
+	return 0;
+}
+
+/*
+ * Reads the attached cable's properties (GET_CABLE_PROPERTY, 3.1 Table
+ * 6-38 to 6-40): its speed (a mantissa at bits 2-15 times 1000 to the
+ * exponent at bits 0-1, in bits per second), its current (bits 16-23, in
+ * 50 mA), whether it carries VBUS (24), is active (25), has configurable
+ * lanes (26), its far end (27-28) and, for an active cable, whether it
+ * has Alternate Modes (29).
+ */
+static int
+ucsi_cable(
+	struct drv_ucsi *ucsi,
+	unsigned number,
+	struct drv_typec_connector *record)
+{
+	struct drv_typec_cable *cable;
+	uint32_t mantissa;
+	uint32_t exponent;
+	uint64_t speed;
+	int error;
+
+	/* Asks. */
+	cable = &record->cable;
+	kern_memset(cable, 0, sizeof(*cable));
+	error = ucsi_command(ucsi, ucsi_connector_control(UCSI_GET_CABLE_PROPERTY, number));
+	if (error != 0)
+		return error;
+
+	/* A cable that answered nothing is not known. */
+	if (ucsi->message_length < 5U)
+		return 0;
+
+	/* The speed in bits per second. */
+	exponent = ucsi_bits(ucsi->message_in, ucsi->message_length, 0, 2);
+	mantissa = ucsi_bits(ucsi->message_in, ucsi->message_length, 2, 14);
+	speed = mantissa;
+	while (exponent > 0) {
+		speed *= 1000U;
+		exponent--;
+	}
+
+	/* The fields. */
+	cable->known = true;
+	cable->speed_bps = speed;
+	cable->current_ma = ucsi_bits(ucsi->message_in, ucsi->message_length, 16, 8) * 50U;
+	cable->vbus = ucsi_bits(ucsi->message_in, ucsi->message_length, 24, 1);
+	cable->active = ucsi_bits(ucsi->message_in, ucsi->message_length, 25, 1);
+	cable->directional = ucsi_bits(ucsi->message_in, ucsi->message_length, 26, 1);
+	cable->plug_end = (enum drv_typec_plug_end)ucsi_bits(ucsi->message_in, ucsi->message_length, 27, 2);
+	cable->modes = ucsi_bits(ucsi->message_in, ucsi->message_length, 29, 1);
+
+	/* Succeeded: the cable is known. */
 	return 0;
 }
 
