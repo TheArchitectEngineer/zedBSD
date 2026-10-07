@@ -157,6 +157,7 @@ static void main_annotate(void);
 static void main_print(void);
 static void main_print_follow(void);
 static void main_appearance_changed(void);
+static void main_accent(void);
 
 /*
  * Runs PDF Viewer.
@@ -230,6 +231,7 @@ main(
 
 	/* The desktop's appearance (the application's): the viewer's colours follow it, the pages stay white. */
 	pv_draw_set_dark(kl_appearance_get(NULL) == KL_APPEARANCE_DARK);
+	main_accent();
 
 	/* The on-screen keyboard's inset keeps the password card in the part it leaves. */
 	kl_window_on_keyboard_inset(main_window.kui, main_keyboard_inset, &main_app);
@@ -980,8 +982,20 @@ main_appearance_changed(void)
 	/* The colours, and a new frame. */
 	appearance = kl_appearance_get(NULL);
 	pv_draw_set_dark(appearance == KL_APPEARANCE_DARK);
+	main_accent();
 	main_app.dirty = 1;
-	pv_log("APPEARANCE appearance=%u", appearance);
+	pv_log("APPEARANCE appearance=%u accent=%u", appearance, kl_accent_get());
+}
+
+/* Gives the frame the accent the user chose and its ink, as libkeiland's theme has them (ws179-p002). */
+static void
+main_accent(void)
+{
+	const struct kl_theme *theme;
+
+	/* The theme's accent colours. */
+	theme = kl_theme_default();
+	pv_draw_set_accent(theme->accent, theme->accent_ink);
 }
 
 /*

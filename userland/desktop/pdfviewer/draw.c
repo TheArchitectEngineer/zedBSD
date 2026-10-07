@@ -33,6 +33,14 @@
  */
 static int draw_dark;
 
+/*
+ * The accent the user chose and the ink on it (ws179-p002), 0xAARRGGBB:
+ * set by pv_draw_set_accent when the desktop tells it (main.c), blue and
+ * white until then; the main thread alone uses them.
+ */
+static uint32_t draw_accent = 0xff2f7cf6U;
+static uint32_t draw_accent_ink = 0xffffffffU;
+
 /* The colours of the frame (0xAARRGGBB, not premultiplied), the light appearance's and the dark one's (ws089-p017; the pages stay white). */
 #define DRAW_BACKGROUND		draw_choose(0xffdfe2e7U, 0xff16191fU)
 #define DRAW_SHADOW		0x22000000U
@@ -50,13 +58,13 @@ static int draw_dark;
 #define DRAW_NOTICE_MARK	0xffe0a526U
 #define DRAW_SIDEBAR		draw_choose(0xffeceef2U, 0xff1f232aU)
 #define DRAW_SIDEBAR_EDGE	draw_choose(0xffcfd3daU, 0xff343a45U)
-#define DRAW_CURRENT		0x402f7cf6U
-#define DRAW_CURRENT_EDGE	0xff2f7cf6U
+#define DRAW_CURRENT		((draw_accent & 0x00ffffffU) | 0x40000000U)
+#define DRAW_CURRENT_EDGE	draw_accent
 #define DRAW_FIELD		draw_choose(0xffffffffU, 0xff1f232aU)
 #define DRAW_FIELD_EDGE		draw_choose(0xffb9bfc9U, 0xff4a515dU)
 #define DRAW_WRONG		0xffc0392bU
 #define DRAW_BUTTON		draw_choose(0xffe3e6ebU, 0xff2f3540U)
-#define DRAW_BUTTON_DEFAULT	0xff2f7cf6U
+#define DRAW_BUTTON_DEFAULT	draw_accent
 #define DRAW_LOCK		draw_choose(0xff5a6070U, 0xffa9b2bfU)
 
 /* What the notice says, and the display-list flags that call for it. */
@@ -610,7 +618,7 @@ draw_button(
 	ink = DRAW_TITLE;
 	if (is_default) {
 		fill = DRAW_BUTTON_DEFAULT;
-		ink = 0xffffffffU;
+		ink = draw_accent_ink;
 	}
 
 	/* The button and its label. */
@@ -646,6 +654,31 @@ pv_draw_set_dark(
 {
 	/* The appearance. */
 	draw_dark = dark;
+}
+
+/*
+ * Draws the frame's accent (the current page, the default button, the
+ * found text) in the accent the user chose, with its ink, 0xAARRGGBB.
+ */
+void
+pv_draw_set_accent(
+	uint32_t accent,
+	uint32_t ink)
+{
+	/* The colours. */
+	draw_accent = accent;
+	draw_accent_ink = ink;
+}
+
+/*
+ * Reports the frame's accent, 0xAARRGGBB (find.c tints the found text with
+ * it).
+ */
+uint32_t
+pv_draw_accent(void)
+{
+	/* The accent set last. */
+	return draw_accent;
 }
 
 /* Chooses a colour of the frame by the appearance. */

@@ -134,7 +134,7 @@
 #define CAL_COLOR_MEMO		KL_RGB(0xf59e0b)
 #define CAL_COLOR_MEMO_EDGE	KL_RGBA(0x64748b, 120)
 #define CAL_COLOR_SUNDAY	KL_RGBA(0xe5484d, 12)
-#define CAL_COLOR_SATURDAY	KL_RGBA(0x2f7cf6, 12)
+#define CAL_COLOR_SATURDAY	KL_RGBA(0x2f7cf6U, 12)
 #define CAL_COLOR_SUNDAY_TEXT	KL_RGB(0xd2434a)
 #define CAL_COLOR_SATURDAY_TEXT	KL_RGB(0x2b6fd6)
 #define CAL_COLOR_WHITE		KL_RGB(0xffffff)
@@ -851,7 +851,7 @@ view_sidebar(
 	tip.y = area->y + area->height - 12 - tip.height;
 	if (tip.y < y + 44)
 		return;
-	kl_canvas_round(style->canvas, (float)tip.x, (float)tip.y, (float)tip.width, (float)tip.height, 14.0f, KL_RGBA(0x2f7cf6, 22));
+	kl_canvas_round(style->canvas, (float)tip.x, (float)tip.y, (float)tip.width, (float)tip.height, 14.0f, KL_RGBA(style->theme->accent, 22));
 	kl_canvas_image(style->canvas, &view->icons[SC_ICON_STUDY], (float)tip.x + 8.0f, (float)tip.y + 6.0f, 40.0f, 40.0f, 0.0f, 1.0f);
 	(void)kl_text_draw_fit(style->text, style->canvas, tip.x + 12, tip.y + 66, "A more organized you", 13U, 1, tip.width - 24, style->theme->text);
 	line = "Plan today for a brighter tomorrow.";
@@ -950,7 +950,7 @@ view_topbar(
 		chosen = 0;
 		if (i == view->mode) {
 			kl_canvas_round(style->canvas, (float)button.x, (float)button.y, (float)button.width, (float)button.height, 8.0f, style->theme->accent);
-			ink = CAL_COLOR_WHITE;
+			ink = style->theme->accent_ink;
 			chosen = 1;
 		} else if ((hit & KL_HIT_HOT) != 0U) {
 			kl_canvas_round(style->canvas, (float)button.x, (float)button.y, (float)button.width, (float)button.height, 8.0f, style->theme->hover);
@@ -1211,7 +1211,7 @@ view_cell(
 		ground.y += (int)(3.0f * depth);
 		ground.width -= (int)(6.0f * depth);
 		ground.height -= (int)(6.0f * depth);
-		kl_canvas_round(style->canvas, (float)ground.x, (float)ground.y, (float)ground.width, (float)ground.height, 8.0f, KL_RGBA(0x2f7cf6, (unsigned)(60.0f * depth)));
+		kl_canvas_round(style->canvas, (float)ground.x, (float)ground.y, (float)ground.width, (float)ground.height, 8.0f, KL_RGBA(style->theme->accent, (unsigned)(60.0f * depth)));
 	}
 
 	/* The number's color: red on a Sunday, blue on a Saturday. */
@@ -1224,9 +1224,9 @@ view_cell(
 	/* Today: the cell in the accent's tint, its number white in an accent circle. */
 	today = cal_same_day(date, &view->today);
 	if (today) {
-		kl_canvas_round(style->canvas, (float)ground.x + 2.0f, (float)ground.y + 2.0f, (float)ground.width - 4.0f, (float)ground.height - 4.0f, 8.0f, KL_RGBA(0x2f7cf6, 30));
+		kl_canvas_round(style->canvas, (float)ground.x + 2.0f, (float)ground.y + 2.0f, (float)ground.width - 4.0f, (float)ground.height - 4.0f, 8.0f, KL_RGBA(style->theme->accent, 30));
 		kl_canvas_circle(style->canvas, (float)cell->x + 17.0f, (float)ground.y + 16.0f, 12.0f, style->theme->accent);
-		ink = CAL_COLOR_WHITE;
+		ink = style->theme->accent_ink;
 	}
 
 	/* The number. */
@@ -1289,8 +1289,8 @@ view_cell(
 		    px < cell->x + cell->width &&
 		    py >= cell->y &&
 		    py < cell->y + cell->height) {
-			kl_canvas_round(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, KL_RGBA(0x2f7cf6, 24));
-			kl_canvas_round_border(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, 2.0f, KL_RGBA(0x2f7cf6, 160));
+			kl_canvas_round(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, KL_RGBA(style->theme->accent, 24));
+			kl_canvas_round_border(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, 2.0f, KL_RGBA(style->theme->accent, 160));
 		}
 	}
 }
@@ -1390,7 +1390,7 @@ view_kind_cards(
 			ground = CAL_COLOR_KIND_GLASS;
 		kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, ground);
 		if ((hit & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
-			kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, KL_RGBA(0x2f7cf6, 16));
+			kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, KL_RGBA(style->theme->accent, 16));
 		kl_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, 1.0f, style->theme->panel_edge);
 		kl_canvas_image(style->canvas, &view->icons[i], (float)(card.x + (card.width - CAL_ICON) / 2), (float)card.y + 6.0f, (float)CAL_ICON, (float)CAL_ICON, 0.0f, 1.0f);
 		view_centred(style, card.x + card.width / 2, card.y + 78, view_kinds[i], 13U, 1, style->theme->text);
@@ -1410,9 +1410,9 @@ view_kind_cards(
 		ground = CAL_COLOR_KIND_GLASS;
 	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, ground);
 	if ((hit & KL_HIT_HOT) != 0U)
-		kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, KL_RGBA(0x2f7cf6, 16));
+		kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, KL_RGBA(style->theme->accent, 16));
 	kl_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 14.0f, 1.0f, style->theme->panel_edge);
-	kl_canvas_circle(style->canvas, (float)card.x + 28.0f, (float)card.y + 26.0f, 16.0f, KL_RGBA(0x2f7cf6, 30));
+	kl_canvas_circle(style->canvas, (float)card.x + 28.0f, (float)card.y + 26.0f, 16.0f, KL_RGBA(style->theme->accent, 30));
 	kl_icon_draw(style->canvas, KL_ICON_PLUS, (float)card.x + 19.0f, (float)card.y + 17.0f, 18.0f, style->theme->accent);
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 23, "Custom", strlen("Custom"), 13U, 1, style->theme->text);
 	(void)kl_text_draw(style->text, style->canvas, card.x + 54, card.y + 40, "Create your own", strlen("Create your own"), 11U, 0, style->theme->text_secondary);
@@ -1563,6 +1563,7 @@ view_page(
 	struct kl_rect rect;
 	char text[32];
 	kl_color band;
+	kl_color band_ink;
 	kl_color ink;
 	int weekday;
 	int error;
@@ -1578,9 +1579,9 @@ view_page(
 		view->page_dates[index].year = 0;
 	}
 
-	/* Showing the day already. */
+	/* Showing the day already, in the accent the user chose now (ws179-p002). */
 	same = cal_same_day(&view->page_dates[index], date);
-	if (same)
+	if (same && view->page_accents[index] == style->theme->accent)
 		return;
 
 	/* A canvas on it. */
@@ -1588,12 +1589,14 @@ view_page(
 	if (error != 0)
 		return;
 
-	/* The colors: the band in the accent (red on a Sunday), the number red on a Sunday and blue on a Saturday. */
+	/* The colors: the band in the accent the user chose with its ink (red with white on a Sunday), the number red on a Sunday and blue on a Saturday. */
 	weekday = cal_weekday(date);
-	band = KL_RGB(0x2f7cf6);
+	band = style->theme->accent;
+	band_ink = style->theme->accent_ink;
 	ink = style->theme->text;
 	if (weekday == 0) {
 		band = KL_RGB(0xe5484d);
+		band_ink = CAL_COLOR_WHITE;
 		ink = CAL_COLOR_SUNDAY_TEXT;
 	} else if (weekday == 6) {
 		ink = CAL_COLOR_SATURDAY_TEXT;
@@ -1619,7 +1622,7 @@ view_page(
 	/* The words, centred, through a style on the page's canvas. */
 	page_style = *style;
 	page_style.canvas = &canvas;
-	view_centred(&page_style, image->width / 2, 42, text, 20U, 1, CAL_COLOR_WHITE);
+	view_centred(&page_style, image->width / 2, 42, text, 20U, 1, band_ink);
 	(void)snprintf(text, sizeof(text), "%d", date->day);
 	view_centred(&page_style, image->width / 2, 196, text, 118U, 1, ink);
 	view_centred(&page_style, image->width / 2, 240, cal_weekday_name(weekday), 22U, 0, style->theme->text_secondary);
@@ -1632,6 +1635,7 @@ view_page(
 	/* Done: it shows the day. */
 	kl_canvas_release(&canvas);
 	view->page_dates[index] = *date;
+	view->page_accents[index] = style->theme->accent;
 }
 
 /*
@@ -1802,7 +1806,7 @@ view_chosen_day(
 	int y;
 
 	/* The card, a faint veil. */
-	kl_canvas_round(style->canvas, (float)card->x, (float)card->y, (float)card->width, (float)card->height, 14.0f, KL_RGBA(0x2f7cf6, 14));
+	kl_canvas_round(style->canvas, (float)card->x, (float)card->y, (float)card->width, (float)card->height, 14.0f, KL_RGBA(style->theme->accent, 14));
 
 	/* The small desk calendar at the left of its header. */
 	desk.x = card->x + 6;

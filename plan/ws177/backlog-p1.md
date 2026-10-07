@@ -32,3 +32,4 @@
 | ws090-p025 | 準正常系: `<textarea>` の `value` が script で `undefined`（host-browser-ime で見つけた、WS074 の binding） | HTMLTextAreaElement の value の getter・setter を DOM の control の値に結ぶ | `userland/desktop/libbrowser/bind/`（WS074） | 2026-10-07 |
 | ws179-p001 | 準正常系: Settings の accent の丸を keyboard（左右・Tab）で選べない（click だけ） | 丸の列を Settings の keyboard の focus に入れ、左右で動き Space・Enter で選ぶ | `userland/desktop/settings/page-look.c`（`look_accents`） | 2026-10-07 |
 | ws179-p001 | 準正常系: network の行が hover の間、同じ行の中の他の部品（padlock・signal の ink は accent の ink）の他は dark の写像を外したまま描く | 行の中の部品ごとに as_is を囲む | `userland/desktop/wayland/network.c`（`network_draw_row_in`） | 2026-10-07 |
+| ws179-p002 | 準正常系: IME の候補の popup（kei-ime の別の program）が accent に従わない（`0x2563eb` 固定、外観も watch しない） | IME が `kl_appearance` を watch して popup の選んだ候補の地を accent、文字を ink に | `userland/desktop/ime/popup.c` | 2026-10-07 |

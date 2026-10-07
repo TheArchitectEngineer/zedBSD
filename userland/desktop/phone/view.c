@@ -1013,9 +1013,9 @@ view_header(
 	hit = kl_ui_hit(ui, PH_ID_CALL, 0U, &button);
 	if ((hit & KL_HIT_CLICKED) != 0U)
 		ph_view_action(view, PH_ACTION_CALL, now_us);
-	ground = KL_RGBA(0x2f7cf6, 28);
+	ground = KL_RGBA(style->theme->accent, 28);
 	if ((hit & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
-		ground = KL_RGBA(0x2f7cf6, 56);
+		ground = KL_RGBA(style->theme->accent, 56);
 	kl_canvas_circle(style->canvas, (float)button.x + 20.0f, (float)button.y + 20.0f, 20.0f, ground);
 	view_handset(style->canvas, (float)button.x + 11.0f, (float)button.y + 11.0f, 18.0f, style->theme->accent);
 }

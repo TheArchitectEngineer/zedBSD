@@ -126,7 +126,8 @@ struct cal_cell {
  *
  * The 3D: the desk calendar's target and picture, what the last full frame
  * had under it (its area, and whether it is kept), its mesh, the icons of
- * the kinds of event, and the pictures of the two pages with their days.
+ * the kinds of event, and the pictures of the two pages with their days
+ * and the accent they were drawn in (ws179-p002).
  */
 struct cal_view {
 	struct cal_date today;
@@ -180,6 +181,7 @@ struct cal_view {
 	struct kl_image icons[SC_ICONS];
 	struct kl_image pages[SC_TEXTURES];
 	struct cal_date page_dates[SC_TEXTURES];
+	kl_color page_accents[SC_TEXTURES];
 };
 
 /* The days (date.c). */

@@ -183,7 +183,7 @@
 #define MAIN_DRAG_RESIZE	2U
 #define MAIN_HANDLE_SIZE	8.0f
 #define MAIN_HANDLE_REACH	12.0f
-#define MAIN_SELECT_COLOR	0x2f7cf6ffU
+#define MAIN_SELECT_COLOR	(((kl_theme_default()->accent & 0xffffffU) << 8) | 0xffU)
 #define MAIN_DRAG_PREVIEW_MS	100U
 
 /* The most extra frames the text box draws at once to take keys that wait for it (one key a frame). */

@@ -83,7 +83,8 @@
 /*
  * Kei's colours, as 0xRRGGBB, with the alphas they are laid on with:
  * the glass's white veil, its rim and its slate edge, the slate text in
- * three strengths, Kei's blue and its pale tint, and the shadow's slate
+ * three strengths, the accent the user chose (ws179-p002) as a mark and as
+ * text and its pale tint, and the shadow's slate
  * (the same values as the File Manager's).  The veil, its rim and the
  * text have the dark appearance's colours too (ws089-p017).
  */
@@ -96,7 +97,8 @@
 #define UI_TEXT			kl_theme_choose(0x1e2632U, 0xe9edf3U)
 #define UI_TEXT_SECONDARY	kl_theme_choose(0x6b7585U, 0xa9b2bfU)
 #define UI_TEXT_DISABLED	kl_theme_choose(0xa3abb8U, 0x646d7aU)
-#define UI_ACCENT		0x2f7cf6U
+#define UI_ACCENT		(kl_theme_default()->accent & 0xffffffU)
+#define UI_ACCENT_TEXT		(kl_theme_default()->accent_text & 0xffffffU)
 #define UI_ACCENT_TINT_ALPHA	52U
 #define UI_SEPARATOR_ALPHA	40U
 
@@ -976,7 +978,7 @@ ui_label_button(
 	if (action == chosen) {
 		ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)width, (float)UI_BUTTON_HEIGHT,
 			   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
-		rgb = UI_ACCENT;
+		rgb = UI_ACCENT_TEXT;
 	}
 
 	/* A button that cannot be used is pale. */
@@ -1058,7 +1060,7 @@ ui_eraser_button(
 	if (state->tool == NOTES_ACTION_ERASER) {
 		ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)width, (float)UI_BUTTON_HEIGHT,
 			   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
-		rgb = UI_ACCENT;
+		rgb = UI_ACCENT_TEXT;
 	}
 
 	/* The label, where the other tools have theirs. */
