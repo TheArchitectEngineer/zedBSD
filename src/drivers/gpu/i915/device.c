@@ -28,6 +28,7 @@
 #include "irq.h"
 #include "display/display.h"
 #include "display/diagnostics.h"
+#include "render/render.h"
 #include <kern/kcrt.h>
 #include <kern/sysctl.h>
 
@@ -173,6 +174,7 @@ static const struct i915_irq_display_ops i915_interim_display_irq_ops = {
 static void i915_start_registry_init(void);
 static int i915_start_held_locked(void);
 static int i915_boot_word(enum kern_boot_parameter_key key, const char *word);
+static int i915_boot_word_listed(enum kern_boot_parameter_key key, const char *word);
 static void i915_start_launch(void);
 static void i915_start_worker(void *argument);
 static void i915_attach_settled_locked(struct i915_device *device);
@@ -214,15 +216,23 @@ drv_i915_runtime_ready(void)
 	unsigned held;
 	int manual;
 	int debug;
+	int video;
 	unsigned long enabled;
 
 	/* Makes sure the registry lock exists before it is taken. */
 	i915_start_registry_init();
 
-	/* Reads whether root starts the devices (i915.start=manual) and whether the display path is logged in detail. */
+	/*
+	 * Reads whether root starts the devices (i915.start=manual), whether the
+	 * display path is logged in detail (i915.debug=display), and whether the
+	 * video decode engine, not yet confirmed on hardware, is offered to
+	 * Vulkan (i915.debug=video).  i915.debug= lists its words with commas.
+	 */
 	manual = i915_boot_word(KERN_BOOT_PARAMETER_I915_START, "manual");
-	debug = i915_boot_word(KERN_BOOT_PARAMETER_I915_DEBUG, "display");
+	debug = i915_boot_word_listed(KERN_BOOT_PARAMETER_I915_DEBUG, "display");
 	drv_i915_lcd_debug_set(debug);
+	video = i915_boot_word_listed(KERN_BOOT_PARAMETER_I915_DEBUG, "video");
+	drv_i915_render_video_request(video);
 
 	/* Marks the kernel ready for every current and later device. */
 	enabled = spin_lock_irqsave(&i915_start_registry.lock);
@@ -257,6 +267,10 @@ drv_i915_runtime_ready(void)
 	/* Notes the detailed display log. */
 	if (debug)
 		kern_logf("i915: i915.debug=display: the display path is logged in detail\n");
+
+	/* Notes the video decode engine offered before its hardware confirmation. */
+	if (video)
+		kern_logf("i915: i915.debug=video: Vulkan video decode is offered on a GT with VCS0\n");
 
 	/* Starts the devices that attached before readiness, unless they are held. */
 	i915_start_launch();
@@ -823,6 +837,59 @@ i915_boot_word(
 
 	/* Succeeded: the parameter is the word. */
 	return 1;
+}
+
+/*
+ * Reports whether a comma-separated word list boot parameter lists the word.
+ */
+static int
+i915_boot_word_listed(
+	enum kern_boot_parameter_key key,
+	const char *word)
+{
+	const struct kern_boot_parameters *parameters;
+	const char *value;
+	size_t start;
+	size_t end;
+	size_t length;
+	int different;
+
+	/* Without valid boot parameters nothing was given. */
+	parameters = kern_boot_parameters_current();
+	if (parameters == NULL)
+		return 0;
+
+	/* A parameter that was not given lists nothing. */
+	value = kern_boot_parameters_value(parameters, key);
+	if (value == NULL)
+		return 0;
+
+	/* Compares the word with each item of the list in turn. */
+	length = kern_strlen(word);
+	start = 0U;
+	for (;;) {
+		/* The item runs to the next comma or to the end of the value. */
+		end = start;
+		while (value[end] != '\0' && value[end] != ',')
+			end++;
+
+		/* The item is the word when it has the word's length and characters. */
+		if (end - start == length) {
+			different = kern_memcmp(value + start, word, length);
+			if (different == 0)
+				return 1;
+		}
+
+		/* The last item ends the list. */
+		if (value[end] == '\0')
+			break;
+
+		/* The next item starts after the comma. */
+		start = end + 1U;
+	}
+
+	/* No item is the word. */
+	return 0;
 }
 
 /* Launches a start worker for every pending device once the kernel is ready. */

@@ -22,6 +22,8 @@
 #include "transport.h"
 #include <kern/kcrt.h>
 
+#include "../worker.h"
+
 #include <kern/device-io.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
@@ -37,6 +39,23 @@
 /* The vendor suffix of the capset: its tag ("SDBZ" read little endian) and its flags. */
 #define I915_CAPSET_VENDOR_TAG		0x5a424453U
 #define I915_CAPSET_VENDOR_FLAGS	7U
+
+/*
+ * The native word after the vendor suffix, which only this executor writes
+ * (the Venus renderers stop at the vendor suffix): its tag ("TANZ" read
+ * little endian) and its feature bits, of which bit 0 is H.264 decode.
+ */
+#define I915_CAPSET_NATIVE_TAG		0x5a4e4154U
+#define I915_CAPSET_NATIVE_VIDEO_H264	1U
+
+/*
+ * Whether the boot asked for Vulkan video decode (i915.debug=video).
+ *
+ * It is written once by the boot path before any device attaches and only
+ * read afterwards, so it needs no lock.  Zero, the default, keeps every
+ * device without video decode.
+ */
+static int i915_render_video_requested;
 
 static void i915_render_capset_fill(struct i915_render_device *vk);
 
@@ -75,6 +94,18 @@ drv_i915_render_attach(
 		drv_i915_object_table_destroy(vk->objects);
 		kern_free(vk);
 		return error;
+	}
+
+	/*
+	 * Offers video decode when the boot asked for it and the GT has the
+	 * video decode engine; the worker, created before the node is
+	 * published, knows the engines.
+	 */
+	vk->video = 0;
+	if (i915_render_video_requested) {
+		error = drv_i915_worker_video_state(device);
+		if (error == 0)
+			vk->video = 1;
 	}
 
 	/* Fills the capset that lets libvulkan accept the node as a Vulkan backend. */
@@ -222,6 +253,17 @@ drv_i915_render_execute(
 }
 
 /*
+ * Records whether the boot asked for Vulkan video decode.
+ */
+void
+drv_i915_render_video_request(
+	int requested)
+{
+	/* The request applies to every device that attaches from now on. */
+	i915_render_video_requested = requested;
+}
+
+/*
  * Copies the executor's capset into a capset request.
  *
  * Returns EINVAL when the capset does not fit the requested capacity.
@@ -294,4 +336,16 @@ i915_render_capset_fill(
 	vk->capset[164U / 4U] = I915_CAPSET_VENDOR_FLAGS;
 	vk->capset_bytes = 168U;
 	kern_logf("i915: vk: XXX capset declares vendor flags 7 for the connectivity check (contracts not implemented beyond the happy path)\n");
+
+	/*
+	 * A device that offers video decode appends the native word.  An older
+	 * libvulkan reads no vendor suffix from a 176-byte record, so the
+	 * record grows only when there is something to say.
+	 */
+	if (vk->video) {
+		vk->capset[168U / 4U] = I915_CAPSET_NATIVE_TAG;
+		vk->capset[172U / 4U] = I915_CAPSET_NATIVE_VIDEO_H264;
+		vk->capset_bytes = 176U;
+		kern_logf("i915: vk: capset declares H.264 video decode (i915.debug=video)\n");
+	}
 }

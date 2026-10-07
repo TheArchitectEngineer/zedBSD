@@ -84,6 +84,19 @@ kern_logf(const char *format, ...)
 #include "../../../src/drivers/gpu/i915/render/batch.c"
 
 /*
+ * The video decode engine's state (ws083-p003b): ENODEV (no VCS0) unless a
+ * scenario makes it usable.
+ */
+static int fixture_video_state = ENODEV;
+
+int
+drv_i915_worker_video_state(struct i915_device *device)
+{
+	(void)device;
+	return fixture_video_state;
+}
+
+/*
  * The query pools' GPU objects and batch (ws075-p006), as in
  * i915-vk-render-stubs.inc: the host has no GPU, so creating a pool's
  * counters fails and a recorded query command cannot take a batch
@@ -743,9 +756,39 @@ test_lifetime(void)
 	error = drv_i915_render_get_capset(fixture_vk, &capset);
 	assert(error == 0 && capset.bytes == 168U && memcmp(capset.data, fixture_vk->capset, 168U) == 0);
 
+	/* Without i915.debug=video the device offers no video: one family, no native word. */
+	assert(fixture_vk->video == 0);
+
 	/* Close releases the graphics session state; nothing leaks. */
 	fixture_close();
 	assert(gfx_closed == closed + 1U);
+
+	/* The boot's request alone does not offer video on a GT without VCS0 (ws083-p003b). */
+	drv_i915_render_video_request(1);
+	fixture_open();
+	assert(fixture_vk->video == 0 && fixture_vk->capset_bytes == 168U);
+	fixture_close();
+
+	/* The request and a usable VCS0 append the native word: 176 bytes, tag and the H.264 bit. */
+	fixture_video_state = 0;
+	fixture_log[0] = '\0';
+	fixture_open();
+	assert(fixture_vk->video == 1 && fixture_vk->capset_bytes == 176U);
+	assert(fixture_vk->capset[41] == 7U && fixture_vk->capset[42] == 0x5a4e4154U && fixture_vk->capset[43] == 1U);
+	assert(strstr(fixture_log, "H.264 video decode") != NULL);
+	memset(&capset, 0, sizeof(capset));
+	capset.capacity = sizeof(capset.data);
+	error = drv_i915_render_get_capset(fixture_vk, &capset);
+	assert(error == 0 && capset.bytes == 176U);
+	fixture_close();
+
+	/* A hung video engine (EIO) offers nothing either. */
+	fixture_video_state = EIO;
+	fixture_open();
+	assert(fixture_vk->video == 0 && fixture_vk->capset_bytes == 168U);
+	fixture_close();
+	fixture_video_state = ENODEV;
+	drv_i915_render_video_request(0);
 	assert(fixture_live == before);
 	assert(drv_i915_render_errno(0) == 0 && drv_i915_render_errno(-2) == ENOMEM && drv_i915_render_errno(-3) == EINVAL);
 }
