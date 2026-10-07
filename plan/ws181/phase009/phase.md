@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p009 -->
 # ws181-p009: UAT 2026-10-07 の 6 回目（5320 実機）
 
-Status: test-wait（2026-10-07 q852 P2 cb7ea0b96: 7 項目の実装、build warning 0、host run-host-edge 69/0・run-host-arrange 1213/0。QEMU は T1-361、5320 の UAT はユーザー）
+Status: cleared（2026-10-07 Q1 の判定: T1-362 QEMU `ws181-p009: PASS` 全項目 ok、p009-bar.png で仮想 desktop の pill が status の左（x=917）。p009-calendar-arranged.png は calendar の代わりの窓（360 幅）が真ん中の枠より大きく左の窓に重なる（枠より大きい窓は backlog の WS181 p004 の「client の最小の大きさが枠より大きい」のまま）。5320 の UAT はユーザー）
 Disposition: normal
 Parent: [WS181](../ws.md)
 
