@@ -2,7 +2,7 @@
 
 # ws121-p004: `<video>` の DOM・layout・描画と最小の再生（autoplay muted）
 
-Status: in-progress（2026-10-07 q831 P2）
+Status: cleared（2026-10-07 Q1 の判定: T1-315 の AAT browser.video（`MEDIA play position_ms=0`・`pause position_ms=5083`）と playing の PNG で絵と操作の帯（一時停止の印・進みの bar）を Q1 が目視。音は QEMU では聞いていない）（旧: in-progress（2026-10-07 q831 P2））
 Disposition: normal
 Parent: [WS121](../ws.md)
 Queue: q831（2026-10-07、P2）
