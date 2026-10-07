@@ -8,4 +8,4 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 include config/release/config-amd64-beta2.mk
 ZEDBSD_RELEASE_BUILD := n
-ZEDBSD_USER_PROGRAMS += systemevents sleepctl phone calendar mailer account-admin keiland-settings music
+ZEDBSD_USER_PROGRAMS += systemevents sleepctl phone calendar mailer account-admin keiland-settings music photos keiland-printd printtest
