@@ -57,7 +57,7 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | [ws052-p010](phase010/phase.md) | networkd の SLEEP_PREPARE（opcode 80）・SLEEP_END（81）（p007 の設計 第 4 版 §10） | test-wait（2026-10-07 P2: 実装、build warning 0、host 20/0。QEMU・実機は p011 の後） | p007 の設計 | |
 | ws052-p011 | sessiond の sleep の子 process と backend の `POWER suspend`、kernel の CAN_SLEEP の bit（N1 = A1） | test-wait（2026-10-07 P2: kernel の CAN_SLEEP の flag・sessiond の sleep.c・backend、host 13/0・21/0、build warning 0。QEMU・実機は p012 の後） | p010、N1〜N3 | |
 | [ws052-p012](phase012/phase.md) | compositor の sleep.c（契機・lock の 2 frame・中止の理由の表示）。電源ボタンは眠らせない（WS182 の口）、外部の出力への切り替えは p004a・p011a の後 | in-progress（2026-10-07 P2: 実装・host 試験・build、QEMU は T1-356） | p011、N5〜N9 | |
-| ws052-p013 | Settings の Power の頁（sleep・画面の時間） | planned | p012、N4 | |
+| [ws052-p013](phase013/phase.md) | Settings の Power の頁（sleep・画面の時間） | in-progress（2026-10-07 P2: 実装・host 38/0・build、QEMU は T1-358） | p012、N4 | |
 
 ## 人間の判断が要る点
 
