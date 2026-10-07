@@ -96,7 +96,9 @@
  * arrangement and version the PPM reported, and the core's instance.
  *
  * Filled once by drv_ucsi_acpi_attach(); after that only the driver's
- * thread uses it (the notification handler touches nothing here).
+ * thread uses it, but for notified: the notification handler raises it
+ * (atomically, inside the interpreter) and the thread lowers it, so the
+ * thread tells a notification from a wake-up for an operation.
  */
 struct ucsi_acpi {
 	struct drv_acpi_node *device;
@@ -106,6 +108,7 @@ struct ucsi_acpi {
 	const struct drv_ucsi_layout *layout;
 	uint16_t version;
 	bool firmware_mutex;
+	int notified;
 	struct drv_ucsi_transport transport;
 	struct drv_ucsi ucsi;
 };
@@ -153,6 +156,7 @@ static int ucsi_acpi_functions(struct ucsi_acpi *driver);
 static int ucsi_acpi_dsm(struct ucsi_acpi *driver, unsigned function, struct drv_acpi_object **result);
 static void ucsi_acpi_notify(struct drv_acpi_node *node, uint32_t value, void *argument);
 static void ucsi_acpi_thread(void *argument);
+static void ucsi_acpi_kick(void *argument);
 static int ucsi_acpi_write(void *context, uint64_t control, const uint8_t *message_out, size_t length);
 static int ucsi_acpi_read(void *context, bool refresh, uint32_t *cci, uint8_t *message_in, size_t size);
 static int ucsi_acpi_wait(void *context, uint32_t milliseconds);
@@ -203,6 +207,9 @@ drv_ucsi_acpi_attach(void)
 		return error;
 	}
 
+	/* The operations other drivers ask wake the thread. */
+	drv_typec_operator_set(ucsi_acpi_kick, driver);
+
 	/* The diagnostic text; the driver works without it. */
 	error = drv_typec_os_device_register();
 	if (error != 0)
@@ -249,35 +256,57 @@ drv_ucsi_acpi_start(void)
 }
 
 /*
- * Waits at most some milliseconds for a notification and, when one came,
- * reads and acknowledges the connector changes it tells of.
+ * Waits at most some milliseconds for a notification or an operation;
+ * then reads and acknowledges the connector changes a notification tells
+ * of, and carries out the operations other drivers asked, oldest first.
  *
- * Returns 1 when a notification came, 0 when none did, or a negative errno
- * value when the PPM could not be read.
+ * Returns 1 when something was done, 0 when nothing came, or a negative
+ * errno value when the PPM could not be read.
  */
 int
 drv_ucsi_acpi_step(
 	uint32_t milliseconds)
 {
+	struct drv_typec_request request;
 	struct ucsi_acpi *driver;
+	bool requested;
 	int notified;
+	int done;
 	int error;
 
-	/* The notification, or the time. */
+	/* A notification or an operation, or the time. */
 	driver = &ucsi_acpi;
-	notified = drv_typec_os_wait(milliseconds);
-	if (notified == 0)
-		return 0;
+	(void)drv_typec_os_wait(milliseconds);
+	done = 0;
 
-	/* The changes it tells of. */
-	error = drv_ucsi_service(&driver->ucsi);
-	if (error != 0) {
-		drv_typec_os_log("ucsi: a notification was not handled (error %d)\n", error);
-		return -error;
+	/* The changes a notification tells of (a wake-up for an operation reads nothing). */
+	notified = __atomic_exchange_n(&driver->notified, 0, __ATOMIC_ACQ_REL);
+	if (notified != 0) {
+		done = 1;
+		error = drv_ucsi_service(&driver->ucsi);
+		if (error != 0) {
+			drv_typec_os_log("ucsi: a notification was not handled (error %d)\n", error);
+			return -error;
+		}
 	}
 
-	/* Succeeded: the changed connectors' records are current. */
-	return 1;
+	/* Each operation waiting. */
+	for (;;) {
+		requested = drv_typec_request_take(&request);
+		if (!requested)
+			break;
+
+		/* Carried out; its outcome is in the connector's record. */
+		done = 1;
+		error = drv_ucsi_request(&driver->ucsi, &request);
+		if (error != 0) {
+			drv_typec_os_log("ucsi: an operation's connector was not read (error %d)\n", error);
+			return -error;
+		}
+	}
+
+	/* Succeeded: 1 when a notification or an operation was handled. */
+	return done;
 }
 
 /* Takes the first present device the namespace names as a UCSI interface. */
@@ -619,6 +648,19 @@ ucsi_acpi_notify(
 		return;
 
 	/* The thread reads the mailbox. */
+	__atomic_store_n(&ucsi_acpi.notified, 1, __ATOMIC_RELEASE);
+	drv_typec_os_signal();
+}
+
+/* Wakes the driver's thread for an operation another driver asked. */
+static void
+ucsi_acpi_kick(
+	void *argument)
+{
+	/* The driver does not matter: there is one. */
+	(void)argument;
+
+	/* The thread takes the operation. */
 	drv_typec_os_signal();
 }
 
@@ -704,13 +746,19 @@ ucsi_acpi_wait(
 	void *context,
 	uint32_t milliseconds)
 {
+	struct ucsi_acpi *driver;
 	int notified;
 
-	/* The driver does not matter: the signal is the device's. */
-	(void)context;
-
 	/* The signal, or the time. */
+	driver = context;
 	notified = drv_typec_os_wait(milliseconds);
+
+	/*
+	 * A command's wait takes the notifications that came with it: the
+	 * core reads CCI next and keeps any connector change it shows, which
+	 * it handles before its operation ends.
+	 */
+	__atomic_store_n(&driver->notified, 0, __ATOMIC_RELEASE);
 
 	/* Succeeded: 1 for a notification, 0 for none. */
 	return notified;
