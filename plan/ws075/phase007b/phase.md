@@ -2,7 +2,7 @@
 
 # ws075-p007b: GL 3.2 の stage の実行器（render/）: 増分 b1〜b5
 
-Status: in-progress（q833、P1。2026-10-07 夜 b3 を実装と host 試験）
+Status: in-progress（q833、P1。2026-10-07 夜 b3 を実装と host 試験。b1 は未着手で中断: ws051-p004b を優先、再開は下の「再開の情報」）
 Disposition: normal
 Parent: [WS075](../ws.md)
 設計: [phase007/design.md](../phase007/design.md)（§5・§14 が優先）、増分の表は [phase007/phase.md](../phase007/phase.md)。
@@ -31,3 +31,9 @@ Q1（2026-10-07）: 判断 1〜8 を既定どおりで承認、Phase の ID は 
 未実施: 実機（RTAI による layer の書き分け、design §12 の 10。b5 で T1）。libvulkan の wire が `layers`・`VkClearRect` の layer を運ぶことは codec の decoder（generic）と host の wire で確かめた（§12 の 11 の b3 の分）。
 
 残り: b1・b2・b4・b5（p007a の a3 の後）。
+
+### 再開の情報（2026-10-07、P1。ws113-p011a の merge を受け、Q1 の指示で ws051-p004b の code を優先して中断）
+
+- 済み: b3。base main 3b004a2c6 で `sh plan/ws031/tests/run-vk-host-tests.sh`（10 個）を流し plain・ASan/UBSan 全て PASS（3 分 49 秒）。
+- b1 は code に未着手（変更無し）。次: b1（design.md §5.1・§14 S3・S7・minor 8、phase007/phase.md の増分の表）。p007a の再開の情報の b1 の項（prepare の GS の検査と compiler の refuse の理由の log の決め）もここで扱う。
+- 再開の前に: main の今を merge、10 個の host 試験を一度流す。
