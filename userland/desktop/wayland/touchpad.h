@@ -108,8 +108,9 @@ struct kwl_touchpad_actions {
 
 /*
  * One finger as the reports left it: its tracking identifier (-1 for no
- * finger), its place, its place at the last report's end, and whether it
- * came in this report.
+ * finger), its place, its place at the last report's end, whether it came
+ * in this report, and where and when it landed (the edges' gestures judge
+ * a touch by where its fingers landed, BUG-254).
  */
 struct kwl_touchpad_finger {
 	int32_t tracking;
@@ -118,6 +119,9 @@ struct kwl_touchpad_finger {
 	int32_t last_x;
 	int32_t last_y;
 	uint32_t fresh;
+	int32_t start_x;
+	int32_t start_y;
+	uint64_t start_ms;
 };
 
 /*
@@ -177,14 +181,16 @@ struct kwl_touchpad {
 	int32_t natural_scroll;
 	int32_t acceleration;
 	/*
-	 * The gestures (ws142-p003): the pad's size in units (0 while it is not
-	 * known: no edge then), the edges a finger of a two-finger touch
+	 * The gestures (ws142-p003): the pad's least and largest places in
+	 * units (the largest 0 while they are not known: no edge then), the edges a finger of a two-finger touch
 	 * started in (EDGE_* bits), whether the touch is decided (a scroll, or
 	 * none, or a gesture), the gesture under way and its fingers, the
 	 * fingers' mean travel since the decision began (micrometres), the
 	 * travel along its way, and its speed; the travel at its latest
 	 * reports with their times, which the speed is measured over.
 	 */
+	int32_t x_min;
+	int32_t y_min;
 	int32_t x_max;
 	int32_t y_max;
 	uint32_t edges;
@@ -203,6 +209,7 @@ struct kwl_touchpad {
 
 void kwl_touchpad_init(struct kwl_touchpad *pad, int32_t resolution_x, int32_t resolution_y);
 void kwl_touchpad_set_size(struct kwl_touchpad *pad, int32_t x_max, int32_t y_max);
+void kwl_touchpad_set_range(struct kwl_touchpad *pad, int32_t x_min, int32_t x_max, int32_t y_min, int32_t y_max);
 void kwl_touchpad_set_feel(struct kwl_touchpad *pad, int32_t acceleration, int32_t natural);
 void kwl_touchpad_event(struct kwl_touchpad *pad, uint16_t type, uint16_t code, int32_t value);
 void kwl_touchpad_frame(struct kwl_touchpad *pad, uint64_t now_ms, struct kwl_touchpad_actions *actions);

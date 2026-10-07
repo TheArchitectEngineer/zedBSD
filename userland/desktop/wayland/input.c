@@ -1086,7 +1086,7 @@ attach_touchpad(
 	device->touchpad = 1;
 	snprintf(device->path, sizeof(device->path), "%s", path);
 	kwl_touchpad_init(&device->pad, x.resolution, y.resolution);
-	kwl_touchpad_set_size(&device->pad, x.maximum, y.maximum);
+	kwl_touchpad_set_range(&device->pad, x.minimum, x.maximum, y.minimum, y.maximum);
 	kwl_touchpad_set_feel(&device->pad, server->touchpad_acceleration, server->touchpad_natural);
 
 	/* The slot is published only when it is completely filled in. */

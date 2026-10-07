@@ -37,6 +37,10 @@
  *     rather than a scroll (one finger in the band is enough, ws181-p008):
  *     the first DECIDE_UM of their mean travel decides, and is held back
  *     meanwhile (a touch that turns out to be a scroll scrolls by it then);
+ *   - the band is judged where each finger landed, measured from the
+ *     axes' least and largest places alike, and fingers that land up to
+ *     STAGGER_MS apart are one landing even if the first one has moved
+ *     meanwhile (BUG-254: fingers seldom land at once);
  *   - two fingers of which one touches within EDGE_UM of the top edge and
  *     that move down are TOP2 (ws142-p009; App Home, ws181-p008);
  *   - the end of a touch of two fingers that scrolled (all of them lifted,
@@ -92,6 +96,9 @@
 #define DECIDE_UM			4000
 #define DECIDE3_UM			8000
 
+/* Two fingers that land at most this far apart in time landed together: the edges are judged where they landed (BUG-254). */
+#define STAGGER_MS			150U
+
 /* The edges a finger of a two-finger touch started in. */
 #define EDGE_BOTTOM			0x1U
 #define EDGE_LEFT			0x2U
@@ -141,6 +148,7 @@ static void tap_finish(struct kwl_touchpad *pad, struct kwl_touchpad_actions *ac
 static void swipe_finish(struct kwl_touchpad *pad, struct kwl_touchpad_actions *actions);
 static void fingers_changed(struct kwl_touchpad *pad, uint64_t now_ms, unsigned fingers, struct kwl_touchpad_actions *actions);
 static uint32_t edges_of_fingers(const struct kwl_touchpad *pad);
+static int fingers_landed_together(const struct kwl_touchpad *pad);
 static void gesture_motion(struct kwl_touchpad *pad, uint64_t now_ms, unsigned fingers, int64_t dx_um, int64_t dy_um, struct kwl_touchpad_actions *actions);
 static void gesture_begin(struct kwl_touchpad *pad, uint64_t now_ms, uint32_t gesture, unsigned fingers, struct kwl_touchpad_actions *actions);
 static void gesture_end(struct kwl_touchpad *pad, uint32_t phase, uint64_t now_ms, struct kwl_touchpad_actions *actions);
@@ -188,7 +196,8 @@ kwl_touchpad_init(
 
 /*
  * Gives the pad's size, its largest place across and down in its units
- * (the axes' maxima), which the edges' gestures need.
+ * (the axes' maxima, the least places being zero), which the edges'
+ * gestures need.
  */
 void
 kwl_touchpad_set_size(
@@ -196,10 +205,31 @@ kwl_touchpad_set_size(
 	int32_t x_max,
 	int32_t y_max)
 {
-	/* A size of nothing is not known. */
+	/* Axes that start at zero. */
+	kwl_touchpad_set_range(pad, 0, x_max, 0, y_max);
+}
+
+/*
+ * Gives the pad's least and largest places across and down in its units
+ * (the axes' minima and maxima), which the edges' gestures are measured
+ * from (BUG-254: each edge from its own end of the axis).
+ */
+void
+kwl_touchpad_set_range(
+	struct kwl_touchpad *pad,
+	int32_t x_min,
+	int32_t x_max,
+	int32_t y_min,
+	int32_t y_max)
+{
+	/* A range of nothing is not known: no edge then. */
+	pad->x_min = 0;
+	pad->y_min = 0;
 	pad->x_max = 0;
 	pad->y_max = 0;
-	if (x_max > 0 && y_max > 0) {
+	if (x_max > x_min && y_max > y_min) {
+		pad->x_min = x_min;
+		pad->y_min = y_min;
 		pad->x_max = x_max;
 		pad->y_max = y_max;
 	}
@@ -304,6 +334,15 @@ kwl_touchpad_frame(
 	/* Nothing to do yet; the fingers now on the pad. */
 	actions->count = 0;
 	fingers = active_fingers(pad);
+
+	/* A finger that came in this report landed here and now. */
+	for (index = 0; index < KWL_TOUCHPAD_SLOTS; index++) {
+		if (pad->fingers[index].tracking >= 0 && pad->fingers[index].fresh) {
+			pad->fingers[index].start_x = pad->fingers[index].x;
+			pad->fingers[index].start_y = pad->fingers[index].y;
+			pad->fingers[index].start_ms = now_ms;
+		}
+	}
 
 	/* The pad pressed or let go. */
 	if (pad->button_changed)
@@ -785,7 +824,9 @@ scroll(
  * ends (fingers lifting one after the other) or is given up (a finger
  * more), and the rest of the touch does nothing; otherwise the new count
  * starts deciding afresh (fingers seldom land in the same report).  Two
- * fingers keep their edges only while the touch has hardly moved.
+ * fingers keep the edges they landed in while the touch has hardly moved,
+ * or when they landed within STAGGER_MS of each other however far the
+ * first one moved meanwhile (BUG-254).
  */
 static void
 fingers_changed(
@@ -794,6 +835,8 @@ fingers_changed(
 	unsigned fingers,
 	struct kwl_touchpad_actions *actions)
 {
+	int together;
+
 	/* A gesture under way. */
 	if (pad->gesture != KWL_TOUCHPAD_GESTURE_NONE) {
 		if (fingers > pad->gesture_fingers) {
@@ -819,15 +862,25 @@ fingers_changed(
 	pad->edges = 0;
 	pad->gesture_dx_um = 0;
 	pad->gesture_dy_um = 0;
-	if (fingers == 2U && pad->touch_travel_um < TAP_TRAVEL_UM)
+
+	/* Only two fingers have edges to keep. */
+	if (fingers != 2U)
+		return;
+
+	/* Two fingers that landed together, or a touch that has hardly moved, keep their edges. */
+	together = fingers_landed_together(pad);
+	if (together || pad->touch_travel_um < TAP_TRAVEL_UM)
 		pad->edges = edges_of_fingers(pad);
 }
 
 /*
- * Tells the edges a finger on the pad touches (EDGE_* bits; none while the
- * pad's size is not known).  One finger of the two in an edge's band is
- * enough (ws181-p008, the 2026-10-07 UAT: fingers seldom land side by side
- * along an edge).
+ * Tells the edges the fingers on the pad landed in (EDGE_* bits; none
+ * while the pad's size is not known).  One finger of the two in an edge's
+ * band is enough (ws181-p008, the 2026-10-07 UAT: fingers seldom land side
+ * by side along an edge).  Each band is measured inward from its own end
+ * of the axis, the least place for the left and the top edges and the
+ * largest for the right and the bottom ones, and a finger is judged where
+ * it landed, not where it has moved since (BUG-254).
  */
 static uint32_t
 edges_of_fingers(
@@ -853,19 +906,67 @@ edges_of_fingers(
 		if (finger->tracking < 0)
 			continue;
 
-		/* An edge it is near is the touch's. */
-		if (finger->y >= pad->y_max - band_y)
+		/* An edge it landed near is the touch's. */
+		if (finger->start_y >= pad->y_max - band_y)
 			edges |= EDGE_BOTTOM;
-		if (finger->x <= band_x)
+		if (finger->start_x <= pad->x_min + band_x)
 			edges |= EDGE_LEFT;
-		if (finger->x >= pad->x_max - band_x)
+		if (finger->start_x >= pad->x_max - band_x)
 			edges |= EDGE_RIGHT;
-		if (finger->y <= band_y)
+		if (finger->start_y <= pad->y_min + band_y)
 			edges |= EDGE_TOP;
 	}
 
 	/* Succeeded: the edges. */
 	return edges;
+}
+
+/*
+ * Tells whether the fingers on the pad landed together: the last of them
+ * at most STAGGER_MS after the first (BUG-254).
+ */
+static int
+fingers_landed_together(
+	const struct kwl_touchpad *pad)
+{
+	const struct kwl_touchpad_finger *finger;
+	uint64_t earliest;
+	uint64_t latest;
+	unsigned found;
+	unsigned index;
+
+	/* The first and the last landing among the fingers on the pad. */
+	earliest = 0;
+	latest = 0;
+	found = 0;
+	for (index = 0; index < KWL_TOUCHPAD_SLOTS; index++) {
+		/* Each finger. */
+		finger = &pad->fingers[index];
+		if (finger->tracking < 0)
+			continue;
+
+		/* The first finger seen sets both ends; the others widen them. */
+		if (!found) {
+			earliest = finger->start_ms;
+			latest = finger->start_ms;
+			found = 1;
+		} else if (finger->start_ms < earliest) {
+			earliest = finger->start_ms;
+		} else if (finger->start_ms > latest) {
+			latest = finger->start_ms;
+		}
+	}
+
+	/* No finger landed at all. */
+	if (!found)
+		return 0;
+
+	/* Landings further apart than STAGGER_MS are two touches' worth. */
+	if (latest - earliest > STAGGER_MS)
+		return 0;
+
+	/* Succeeded: the fingers landed together. */
+	return 1;
 }
 
 /*
