@@ -66,6 +66,9 @@
  */
 extern void kern_sleep_note_wake(unsigned reason) __attribute__((weak));
 
+/* The largest GPE number ACPI has (the blocks hold at most 256 events). */
+#define GPE_NUMBER_MAX		0xffU
+
 /* _BST: charging, and a value the battery does not know. */
 #define BATTERY_CHARGING	0x02U
 #define BATTERY_UNKNOWN		0xffffffffU
@@ -112,6 +115,7 @@ static enum power_kind kind_of(struct drv_acpi_node *node);
 static void notify_handler(struct drv_acpi_node *node, uint32_t value, void *argument);
 static void power_note_wake(unsigned reason);
 static void power_thread(void *argument);
+static void enable_events(struct power_device *device);
 static void refresh(struct power_device *device, bool post);
 static int32_t read_lid(struct power_device *device);
 static int32_t read_ac(struct power_device *device);
@@ -145,6 +149,9 @@ drv_acpi_power_attach(void)
 		error = drv_acpi_notify_install(power_devices[index].node, notify_handler, &power_devices[index]);
 		if (error != 0)
 			kern_logf("acpi: %s notify not taken (%d)\n", power_devices[index].subject, error);
+
+		/* The GPE a lid's or a button's notifies come through raises SCIs while the system runs. */
+		enable_events(&power_devices[index]);
 	}
 
 	/* Reads of the state may start. */
@@ -381,6 +388,56 @@ notify_handler(
 	waitq_wake_all(&power_waitq);
 
 	spin_unlock_irqrestore(&power_lock, irq);
+}
+
+/*
+ * Enables at runtime the GPE a lid's or a button's _PRW names.
+ *
+ * Firmware may notify the lid and the buttons from the method of the GPE
+ * their _PRW names, which is kept masked at runtime as a wake-only event
+ * until a driver asks for it; without it a lid's closing never comes
+ * (BUG-253, the Latitude 5330's GPE 0x18).  A _PRW whose GPE is in a GPE
+ * block device (a package, not an integer) is left as it is.
+ */
+static void
+enable_events(
+	struct power_device *device)
+{
+	struct drv_acpi_object *wake;
+	uint64_t gpe;
+	int error;
+
+	/* Only a lid and the buttons, whose events the operating system is to take while it runs. */
+	if (device->kind != POWER_LID &&
+	    device->kind != POWER_BUTTON_POWER &&
+	    device->kind != POWER_BUTTON_SLEEP)
+		return;
+
+	/* The device's wake event: a package whose first element is the GPE (none: nothing to enable). */
+	wake = NULL;
+	error = drv_acpi_evaluate(device->node, "_PRW", NULL, 0U, &wake);
+	if (error != 0 || wake == NULL)
+		return;
+
+	/* The GPE number, when it is an integer; the package is not needed after it. */
+	error = package_integer(wake, 0U, &gpe);
+	drv_acpi_object_release(wake);
+	if (error != 0)
+		return;
+
+	/* A number past the last GPE ACPI has is not one. */
+	if (gpe > GPE_NUMBER_MAX)
+		return;
+
+	/* The GPE at runtime; the log shows which GPE carries the device's events. */
+	error = drv_acpi_gpe_runtime_enable((unsigned)gpe);
+	if (error != 0) {
+		kern_logf("acpi: %s GPE 0x%x not enabled (%d)\n", device->subject, (unsigned)gpe, error);
+		return;
+	}
+
+	/* Succeeded: the device's notifies come while the system runs. */
+	kern_logf("acpi: %s events on GPE 0x%x\n", device->subject, (unsigned)gpe);
 }
 
 /* Notes for a sleep under way what woke the system, when the kernel has the sleep's coordinator. */
