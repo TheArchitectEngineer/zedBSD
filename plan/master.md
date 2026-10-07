@@ -483,6 +483,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS174](ws174/ws.md) | MG003 | 起動時に Ctrl で kernel の message を console に、Shift で console の login に（UEFI の bootloader だけ、BIOS は後日）（2026-10-05 ユーザー） | incomplete（p001・p002・p005 cleared、p003 は T1-213 待ち） | — |
 | [WS175](ws175/ws.md) | MG006 | Notes で PDF の画像と文字を編集（移動・大きさ・差し替え・挿入、文字の編集・削除・挿入・font、複数頁）（2026-10-06 ユーザー） | planning（ベータ2 の案） | — |
 | [WS176](ws176/ws.md) | MG006 | Canvas: pen と touch のイラスト制作・画像編集（layer・brush・素材集・CLIP STUDIO と PSD の互換）（2026-10-06 ユーザー、ベータ3） | planning（ベータ3） | — |
+| [WS182](ws182/ws.md) | MG006 | 電源ボタンで Log Out・Shut Down などのメニュー（ベータ2 の最後、2026-10-07 ユーザー） | planning | p001 設計 |
+| [WS183](ws183/ws.md) | MG003 | I2C HID の Extended Interrupt と TGL の GPIO の group（5320 の touchpad を割り込みで、ベータ2・後回し） | planning | p001 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -511,6 +513,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「電源ボタンのハンドリングは、あとで実装でいいです。ログオフ、電源オフ、などのメニューを表示できるようにしたいです。独立WSにして、ベータ2の最後に実装しましょう。」→ [WS182](ws182/ws.md)。「5320の/bin/waylandは更新してOKです。」→ Q1 が main 5f6da8bba の compositor を入れた（元は /bin/wayland.orig）。「タッチパッドは独立WSにして、ほかベータ2WSと同じ優先度で後回しにします。」→ [WS183](ws183/ws.md)（P3 は立てない）。
 - 2026-10-07 ユーザー:「そのGPU/GOPの設計をdocs/のドキュメントに残しておいてください。」→ docs/architecture/kernel-and-hal.md に「Display path」の節（text console と /dev/graphics は board の対、GPU driver は通知も console の引き継ぎもしない、表示は lease の claim で初めて引き継ぐ、その後 console は firmware の framebuffer のメモリに描き画面には出ない）。未決（ユーザーに WS を立てるか確認中）: GPU が表示している間・手放した後の text console（console の login・panic の表示）。`drv_i915_n1_mirror_console()` は呼ばれていない。
 - 2026-10-07 ユーザー:「タッチパッドが動いたらP3は畳んでいいです。」→ ws118-p007 の後、P3 は次の Queue を入れずに終える。
 - 2026-10-07 ユーザー（クリック）: N8 は「ベータ2 に入れる」（WS113 p003・p004 を ws052-p012 の前に、WS113 p004 を 1 出力の切り替え（先）と複数の同時の出力に分ける）、蓋を開けた時は「内蔵の画面に戻す」（拡張表示の後は拡張へ）、N3〜N7・N9 は「既定の案のままでよい」。P2 の順: ws052-p011 → WS113 p003 → p004 の 1 出力の切り替え → ws052-p012 → p013。
