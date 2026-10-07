@@ -218,6 +218,8 @@ p006 には「眠れるか」を問う口が無く、ioctl が支えの無い pl
 
 #### 7.2 新しい判断（第 3 版、既定の案）
 
+- **決定（2026-10-07 ユーザー、クリック、Q1 の中継）**: N1 = A1（`reserved[0]` を `flags`、`KERN_SYSTEM_POWER_FLAG_CAN_SLEEP`、UAPI の追加として承認）、N2 = 利用者なら誰でも、N10 = 作らない、N8 = 外部の画面だけに切り替えて使い続ける（§11）。N3〜N7・N9 は既定の案でユーザーに確認中。
+
 - **N1**（§6）: sleep が使えるかの判断。**案 A1**（`system_power_info` の `reserved[0]` を `flags`、`KERN_SYSTEM_POWER_FLAG_CAN_SLEEP`）を勧める。A2・B は §6。
 - **N2**: suspend を頼めるのは greeter と **session の利用者なら誰でも**（wheel でなくてよい）。poweroff・reboot は今のまま root・wheel。
 - **N3**: 中止の理由は lock の画面・greeter の card の文の行と system の通知（第 1 版の「画面の下の 5 秒の toast」の代わりに在る部品）。
