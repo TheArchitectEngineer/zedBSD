@@ -6,7 +6,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # libjpeg-compat, libgif-compat through userland/desktop/picture, libtruetype and libpdf (built without substitute
 # font files, PDF_FONT_FILES 0) and the C library's mathematics (both in platform/amd64/vmunix.mk).  amd64 zedBSD.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-KEILAND_PREVIEW_SOURCES := userland/desktop/preview/main.c userland/desktop/preview/decode.c \
+KEILAND_PREVIEW_SOURCES := userland/desktop/preview/main.c userland/desktop/preview/make.c userland/desktop/preview/decode.c \
 	userland/desktop/preview/scale.c userland/desktop/preview/zedbsd/confine.c userland/desktop/picture/picture.c \
 	$(wildcard userland/base/libpdf/*.c) $(wildcard userland/desktop/libtruetype/*.c) \
 	$(wildcard userland/base/libz-compat/*.c) $(wildcard userland/base/libpng-compat/*.c) \
