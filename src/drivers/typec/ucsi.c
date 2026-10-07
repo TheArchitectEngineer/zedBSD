@@ -196,16 +196,16 @@ const struct drv_ucsi_layout *
 drv_ucsi_layout_select(
 	size_t region_size)
 {
+	/* A region too small for either. */
+	if (region_size < drv_ucsi_layout_1.size)
+		return NULL;
+
 	/* A region that holds the large messages. */
 	if (region_size >= drv_ucsi_layout_2.size)
 		return &drv_ucsi_layout_2;
 
-	/* A region that holds the 1.x mailbox (a PC's is often a little larger). */
-	if (region_size >= drv_ucsi_layout_1.size)
-		return &drv_ucsi_layout_1;
-
-	/* Neither fits. */
-	return NULL;
+	/* Succeeded: a region that holds the 1.x mailbox (a PC's is often a little larger). */
+	return &drv_ucsi_layout_1;
 }
 
 /*
@@ -373,7 +373,9 @@ ucsi_execute(
 			return EIO;
 
 		/* CCI and MESSAGE IN, fetched from the PPM when nothing said they changed. */
-		refresh = notified == 0;
+		refresh = false;
+		if (notified == 0)
+			refresh = true;
 		status = transport->read(transport->context, refresh, &cci, message_in, size);
 		if (status < 0)
 			return EIO;
@@ -481,6 +483,7 @@ ucsi_reset(
 	uint32_t elapsed;
 	uint32_t cci;
 	int status;
+	bool completed;
 
 	/* Tells the PPM. */
 	transport = ucsi->transport;
@@ -489,7 +492,8 @@ ucsi_reset(
 		return EIO;
 
 	/* Looks at CCI every step until the reset completed or the timeout. */
-	for (elapsed = 0; elapsed < UCSI_RESET_TIMEOUT_MS; elapsed += UCSI_STEP_FIRST_MS) {
+	completed = false;
+	for (elapsed = 0; elapsed < UCSI_RESET_TIMEOUT_MS && !completed; elapsed += UCSI_STEP_FIRST_MS) {
 		/* The step. */
 		status = transport->wait(transport->context, UCSI_STEP_FIRST_MS);
 		if (status < 0)
@@ -500,16 +504,20 @@ ucsi_reset(
 		if (status < 0)
 			return EIO;
 
-		/* The reset completed; nothing before it is pending any more. */
-		if ((cci & UCSI_CCI_RESET_COMPLETED) != 0) {
-			kern_memset(ucsi->pending, 0, sizeof(ucsi->pending));
-			return 0;
-		}
+		/* The reset completed. */
+		if ((cci & UCSI_CCI_RESET_COMPLETED) != 0)
+			completed = true;
 	}
 
 	/* The PPM did not complete the reset. */
-	drv_typec_os_log("ucsi: PPM_RESET did not complete\n");
-	return ETIMEDOUT;
+	if (!completed) {
+		drv_typec_os_log("ucsi: PPM_RESET did not complete\n");
+		return ETIMEDOUT;
+	}
+
+	/* Succeeded: nothing from before the reset is pending any more. */
+	kern_memset(ucsi->pending, 0, sizeof(ucsi->pending));
+	return 0;
 }
 
 /* Enables the notifications given (SET_NOTIFICATION_ENABLE, section 4.5.5). */
@@ -630,10 +638,14 @@ ucsi_connector_update(
 	if (error != 0)
 		return error;
 
-	/* Nothing attached: no partner, no cable, no mode, no PDO. */
+	/* Nothing attached: no partner, no cable, no mode, no PDO, and that is the record. */
 	ucsi_partner_clear(record);
-	if (!record->connected)
-		return drv_typec_connector_publish(number - 1U, record);
+	if (!record->connected) {
+		error = drv_typec_connector_publish(number - 1U, record);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/*
 	 * The partner's and the cable's Alternate Modes and the mode the
@@ -674,6 +686,7 @@ ucsi_status(
 	const uint8_t *data;
 	uint32_t operation;
 	uint32_t flags;
+	uint32_t bit;
 	size_t length;
 	int error;
 
@@ -686,7 +699,8 @@ ucsi_status(
 
 	/* Whether something is attached (bit 19). */
 	record->connected = false;
-	if (ucsi_bits(data, length, 19, 1) != 0)
+	bit = ucsi_bits(data, length, 19, 1);
+	if (bit != 0)
 		record->connected = true;
 
 	/* How power is delivered (bits 16-18; 6, 5 A, is from 3.1), unknown when the value is reserved. */
@@ -697,7 +711,8 @@ ucsi_status(
 
 	/* The role in the power (bit 20: 1 is the provider). */
 	record->power_role = DRV_TYPEC_ROLE_SINK;
-	if (ucsi_bits(data, length, 20, 1) != 0)
+	bit = ucsi_bits(data, length, 20, 1);
+	if (bit != 0)
 		record->power_role = DRV_TYPEC_ROLE_SOURCE;
 
 	/* What is carried to the partner (bits 21-28: USB, Alternate Mode; USB4 from 3.1 only). */
@@ -718,7 +733,8 @@ ucsi_status(
 	record->orientation = DRV_TYPEC_ORIENTATION_UNKNOWN;
 	if (ucsi->version >= UCSI_VERSION_2 && length >= UCSI_STATUS_ORIENTATION_BYTES) {
 		record->orientation = DRV_TYPEC_ORIENTATION_NORMAL;
-		if (ucsi_bits(data, length, UCSI_STATUS_ORIENTATION_BIT, 1) != 0)
+		bit = ucsi_bits(data, length, UCSI_STATUS_ORIENTATION_BIT, 1);
+		if (bit != 0)
 			record->orientation = DRV_TYPEC_ORIENTATION_FLIPPED;
 	}
 
