@@ -486,6 +486,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS176](ws176/ws.md) | MG006 | Canvas: pen と touch のイラスト制作・画像編集（layer・brush・素材集・CLIP STUDIO と PSD の互換）（2026-10-06 ユーザー、ベータ3） | planning（ベータ3） | — |
 | [WS182](ws182/ws.md) | MG006 | 電源ボタンで Log Out・Shut Down などのメニュー（ベータ2 の最後、2026-10-07 ユーザー） | planning | p001 設計 |
 | [WS183](ws183/ws.md) | MG003 | I2C HID の Extended Interrupt と TGL の GPIO の group（5320 の touchpad を割り込みで、ベータ2・後回し） | planning | p001 |
+| [WS184](ws184/ws.md) | MG006 | 左手デバイスの OSK（クリエイターモード: ダイヤル・ホイール・ボタン 2×5、左上の swipe で出す、ベータ2） | planning | p001 設計 |
+| [WS185](ws185/ws.md) | MG006 | ゲームパッドの OSK とゲームコンソールモード（両上隅の同時 swipe、Xbox の pad を模す、段 1 は mview、ベータ2） | planning | p001 設計 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -514,6 +516,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「5320のカーネルは変えていいです」→ Q1 が main 173fa2115 の kernel を /esp/vmunix に（前は vmunix.prev、最初は vmunix.orig）、再起動はユーザー。UAT（App Home の遷移を iOS の奥へ・奥から、touchpad の端の 2 本指 swipe は 1 本が端なら、上端の swipe down を App Home へ）→ [ws181-p008](ws181/phase008/phase.md)。機能追加（ベータ2）: 左手デバイスの OSK → [WS184](ws184/ws.md)、ゲームパッドの OSK・ゲームコンソールモード → [WS185](ws185/ws.md)。
 - 2026-10-07 ユーザー:「電源ボタンのハンドリングは、あとで実装でいいです。ログオフ、電源オフ、などのメニューを表示できるようにしたいです。独立WSにして、ベータ2の最後に実装しましょう。」→ [WS182](ws182/ws.md)。「5320の/bin/waylandは更新してOKです。」→ Q1 が main 5f6da8bba の compositor を入れた（元は /bin/wayland.orig）。「タッチパッドは独立WSにして、ほかベータ2WSと同じ優先度で後回しにします。」→ [WS183](ws183/ws.md)（P3 は立てない）。
 - 2026-10-07 ユーザー:「そのGPU/GOPの設計をdocs/のドキュメントに残しておいてください。」→ docs/architecture/kernel-and-hal.md に「Display path」の節（text console と /dev/graphics は board の対、GPU driver は通知も console の引き継ぎもしない、表示は lease の claim で初めて引き継ぐ、その後 console は firmware の framebuffer のメモリに描き画面には出ない）。未決（ユーザーに WS を立てるか確認中）: GPU が表示している間・手放した後の text console（console の login・panic の表示）。`drv_i915_n1_mirror_console()` は呼ばれていない。
 - 2026-10-07 ユーザー:「タッチパッドが動いたらP3は畳んでいいです。」→ ws118-p007 の後、P3 は次の Queue を入れずに終える。

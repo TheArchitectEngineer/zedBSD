@@ -39,6 +39,7 @@ Primary Milestone: MG006
 | [p005](phase005/phase.md) | UAT 2026-10-07 の 2 回目: App Home の上の bar（status と時計だけ白）、整列のメニュー（絵だけ・今の desktop・glass）、pill（印を外す・capsule 半分・点を正円）、整列の適用で窓が枠の大きさにならない件 | in-progress（実装・host まで、QEMU は T1） |
 | [p006](phase006/phase.md) | UAT 2026-10-07 の 3 回目: 整列のメニューの大きな grid（7 つの形）、App Home の時計と下寄せ・page、3 つの仮想 desktop（真ん中から、猫・鳥・ウサギ） | cleared（2026-10-07 Q1、T1-346・347） |
 | [p007](phase007/phase.md) | UAT 2026-10-07 の 4 回目: 整列のメニューを窓の panel と同じ本当の glass（後ろが blur で透ける）に、pill から広がって透けていく開き方（180 ms）と閉じる fade | cleared（T1-349 QEMU） |
+| [p008](phase008/phase.md) | UAT 2026-10-07 の 5 回目: App Home への遷移を iOS と同じ奥へ・奥から、touchpad の端の 2 本指 swipe は 1 本が端なら、上端の swipe down を App Home へ | planned | p007 |
 
 ## 関連
 
