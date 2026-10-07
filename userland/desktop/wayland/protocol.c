@@ -1526,8 +1526,12 @@ kwl_window_enter_fullscreen(
 	if (surface->fullscreen)
 		return 0;
 
-	/* Its place and its image's size before fullscreen, to come back to. */
+	/* A window on a head goes fullscreen on the anchor (ws113-p007): it is carried there first. */
 	server = surface->client->server;
+	if (surface->output != KWL_PLANE_ANCHOR)
+		kwl_window_to_output(server, surface, KWL_PLANE_ANCHOR, "fullscreen");
+
+	/* Its place and its image's size before fullscreen, to come back to. */
 	sent_width = surface->window_width;
 	sent_height = surface->window_height;
 	surface->fullscreen = 1;

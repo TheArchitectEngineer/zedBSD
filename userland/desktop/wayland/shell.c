@@ -139,6 +139,9 @@ static unsigned sheet_lowering;
  */
 static uint32_t fullscreen_leave_eaten;
 
+/* The arrow whose press moved a window to another display (ws113-p007); its release is eaten too. */
+static uint32_t display_move_eaten;
+
 /* How much narrower than its parent's body a sheet is at least asked to be on each side, and the narrowest it is asked to be. */
 #define SHEET_MARGIN		24
 #define SHEET_NARROWEST		320
@@ -473,6 +476,7 @@ static const char *gesture_name(uint32_t gesture);
 static const char *gesture_phase_name(uint32_t phase);
 static int wiseview_showing(struct kwl_server *server);
 static int fullscreen_leave_key(struct kwl_server *server, uint32_t key, uint32_t state);
+static int display_move_key(struct kwl_server *server, uint32_t key, uint32_t state);
 static void wiseview_open_key(struct kwl_server *server);
 static void wiseview_key(struct kwl_server *server, uint32_t key, uint32_t state);
 static void wiseview_close_key(struct kwl_server *server);
@@ -743,6 +747,55 @@ kwl_glass_draw(
 }
 
 /*
+ * Draws a head's windows in the glass look (heads.c's pass, ws113-p007):
+ * each window of the desktop shown with its title bar, bottom to top, then
+ * their popups.  The system bar, App Home, Wiseview and the other screens
+ * are the anchor's; a window's glass shows the blurred wallpaper (no
+ * blurred scene under it on a head).
+ */
+void
+kwl_glass_draw_head(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_object *top;
+	unsigned focused;
+	unsigned index;
+	int hidden;
+	int layer;
+
+	/* Nothing of the session's on the login or the lock screen. */
+	if (server->greeter || server->locked || server->screen_off)
+		return;
+
+	/* No layer of the anchor's (App Home's, the desktops' slide) on a head. */
+	layer = server->layer_on;
+	server->layer_on = 0;
+	top = kwl_top_window(server);
+
+	/* Each window of the desktop shown. */
+	for (index = 0U; index < count; index++) {
+		if (windows[index]->desktop != server->desktop || windows[index]->minimized)
+			continue;
+		hidden = layout_hides(server, windows[index]);
+		if (hidden)
+			continue;
+
+		/* The window, the focused one lit. */
+		focused = 0U;
+		if (windows[index] == top)
+			focused = 1U;
+		draw_window(server, command, windows[index], focused, NULL);
+	}
+
+	/* Their popups over them (popup.c draws those of the output drawn). */
+	kwl_popup_draw(server, command);
+	server->layer_on = layer;
+}
+
+/*
  * Handles a pointer button in the glass look.  A press raises the window
  * under the pointer; on its title bar it starts a move, presses a button,
  * (twice) docks it or (three times) sends it to the back; on the system bar
@@ -766,6 +819,7 @@ kwl_glass_button(
 	int error;
 	int open;
 	int passes;
+	int remote;
 
 	/* The login screen takes every button (greeter.c). */
 	if (server->greeter) {
@@ -793,8 +847,17 @@ kwl_glass_button(
 		return pressed;
 	}
 
+	/*
+	 * A press with the pointer on a head (ws113-p007) is for the head's
+	 * windows alone: the corners, the edges, the system bar and its
+	 * widgets are the anchor's (their releases still come here).
+	 */
+	remote = 0;
+	if (server->pointer_output != KWL_PLANE_ANCHOR && state != 0)
+		remote = 1;
+
 	/* A third quick press after a double click that docked a window takes the dock back (ws079-p013). */
-	if (state != 0 && button == KWL_BUTTON_LEFT) {
+	if (state != 0 && button == KWL_BUTTON_LEFT && !remote) {
 		pressed = click_docked_third(server);
 		if (pressed)
 			return 1;
@@ -805,7 +868,9 @@ kwl_glass_button(
 	 * starts in the corner, and that contact's release; before Home, so
 	 * that it works over Home too (its corner is not Home's).
 	 */
-	pressed = kwl_corner_button(server, button, state);
+	pressed = 0;
+	if (!remote)
+		pressed = kwl_corner_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -815,7 +880,8 @@ kwl_glass_button(
 	 * bottom edge and the desktops' side edges, which start outside the
 	 * corners.
 	 */
-	pressed = kwl_keyboard_button(server, button, state);
+	if (!remote)
+		pressed = kwl_keyboard_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -832,14 +898,17 @@ kwl_glass_button(
 	 * Wiseview or a press of what is under it (WS181), before App Home and
 	 * the bar's widgets take it; only where the bar is drawn.
 	 */
-	if (cover == NULL || server->band_press) {
+	if ((cover == NULL && !remote) || server->band_press) {
 		pressed = band_button(server, button, state, 1);
 		if (pressed)
 			return 1;
 	}
 
 	pressed = 0;
-	if (cover == NULL) {
+	if (remote) {
+		/* A head's press is not App Home's. */
+		pressed = 0;
+	} else if (cover == NULL) {
 		/*
 		 * App Home takes the launcher, the top-left corner, and every button
 		 * while it shows, except what goes to the status and the clock it
@@ -860,14 +929,14 @@ kwl_glass_button(
 		return 1;
 
 	/* The removable media's icon takes a press on it: Files on its devices (media.c). */
-	if (cover == NULL) {
+	if (cover == NULL && !remote) {
 		pressed = kwl_media_button(server, button, state);
 		if (pressed)
 			return 1;
 	}
 
 	/* The input method's indicator takes a press on it: the next language (input-method.c). */
-	if (cover == NULL) {
+	if (cover == NULL && !remote) {
 		pressed = kwl_ime_indicator_button(server, button, state);
 		if (pressed)
 			return 1;
@@ -875,7 +944,7 @@ kwl_glass_button(
 
 	/* The volume takes a press on its icon, and every button while its popup is open (volume.c). */
 	open = kwl_volume_is_open();
-	if (cover == NULL || open) {
+	if ((cover == NULL && !remote) || open) {
 		pressed = kwl_volume_button(server, button, state);
 		if (pressed)
 			return 1;
@@ -883,14 +952,14 @@ kwl_glass_button(
 
 	/* The network takes a press on its icon, and every button while its menu is open (network.c). */
 	open = kwl_network_is_open();
-	if (cover == NULL || open) {
+	if ((cover == NULL && !remote) || open) {
 		pressed = kwl_network_button(server, button, state);
 		if (pressed)
 			return 1;
 	}
 
 	/* The arrangement menu takes a press on the desktops' pill, and every button while it is open (arrange-shell.c, WS181). */
-	if (cover == NULL) {
+	if (cover == NULL && !remote) {
 		pressed = kwl_arrange_button(server, button, state);
 		if (pressed)
 			return 1;
@@ -902,7 +971,8 @@ kwl_glass_button(
 		return 1;
 
 	/* The bar's applications take a press on an icon or a preview, and its release (apps-bar.c). */
-	pressed = kwl_apps_bar_button(server, button, state);
+	if (!remote)
+		pressed = kwl_apps_bar_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -920,6 +990,7 @@ kwl_glass_button(
 	/* A left press at the left or right edge (under the system bar) may become the desktops' swipe. */
 	if (state != 0 &&
 	    button == KWL_BUTTON_LEFT &&
+	    !remote &&
 	    server->pointer_y >= KWL_GLASS_BAR &&
 	    (server->pointer_x < DESKTOP_EDGE || server->pointer_x >= (int32_t)server->width - DESKTOP_EDGE)) {
 		server->desktop_press = 1;
@@ -930,7 +1001,8 @@ kwl_glass_button(
 	}
 
 	/* A left press at the bottom edge starts the swipe up that opens App Home (WS181; Wiseview is the top edge's). */
-	pressed = home_edge_press(server, button, state);
+	if (!remote)
+		pressed = home_edge_press(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -957,8 +1029,8 @@ kwl_glass_button(
 		return 1;
 	}
 
-	/* The system bar is zdesktop's, where it is drawn. */
-	if (server->pointer_y < KWL_GLASS_BAR && cover == NULL) {
+	/* The system bar is zdesktop's, where it is drawn (on the anchor). */
+	if (server->pointer_y < KWL_GLASS_BAR && cover == NULL && !remote) {
 		pressed = bar_press(server);
 		return pressed;
 	}
@@ -971,14 +1043,14 @@ kwl_glass_button(
 	 * dark rest of the docked space, where another application's windows
 	 * are not shown) reaches nothing under it (ws142-p008).
 	 */
-	if (surface == NULL) {
+	if (surface == NULL && !remote) {
 		open = layout_takes_press(server);
 		if (open)
 			return 1;
 	}
 
 	/* A press where no window is goes to the desktop's icons when there are any (desktop.c); a window's press takes the keyboard back from them. */
-	if (surface == NULL) {
+	if (surface == NULL && !remote) {
 		open = kwl_desktop_press(server);
 		if (open)
 			return 0;
@@ -1999,7 +2071,9 @@ kwl_glass_toplevel_move_end(
 
 	/* Retires the moving identity before docking or emitting diagnostics. */
 	server->drag = NULL;
-	if (server->pointer_y < KWL_GLASS_BAR && server->drag_left_bar) {
+	if (server->pointer_y < KWL_GLASS_BAR &&
+	    server->drag_left_bar &&
+	    server->pointer_output == KWL_PLANE_ANCHOR) {
 		window_dock(server, surface, server->drag_start_x, server->drag_start_y, "drag");
 
 		/* The system bar keeps the previous position as the restore point. */
@@ -2242,6 +2316,10 @@ glass_placed(
 	if (other == surface || other->kind != KWL_SURFACE || other->dead || !other->mapped)
 		return 0;
 	if (other->role == NULL || other->cursor_role || other->minimized || other->maximized || other->fullscreen)
+		return 0;
+
+	/* A new window opens on the anchor: only the anchor's windows are looked at (ws113-p007). */
+	if (other->output != KWL_PLANE_ANCHOR)
 		return 0;
 
 	/* Succeeded: when on the desktop shown. */
@@ -2761,6 +2839,11 @@ kwl_glass_key(
 
 	/* The way out of fullscreen, the compositor's own (BUG-194). */
 	taken = fullscreen_leave_key(server, key, state);
+	if (taken)
+		return 1;
+
+	/* Super+Shift with an arrow: the focused window to the display beside (ws113-p007). */
+	taken = display_move_key(server, key, state);
 	if (taken)
 		return 1;
 
@@ -4809,23 +4892,26 @@ window_at(
 	struct kwl_object *surface;
 	struct kwl_object *found;
 	enum shell_hit place;
+	unsigned output;
 	int hidden;
 
-	/* The hit with the highest map order. */
+	/* The hit with the highest map order, of the windows the output at the point shows (ws113-p007). */
 	found = NULL;
 	*hit = HIT_NONE;
+	output = kwl_output_at(server, x, y);
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
 			continue;
 		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			/* Only mapped windows of the desktop shown. */
+			/* Only mapped windows of the desktop shown, on that output. */
 			if (surface->kind != KWL_SURFACE ||
 			    surface->dead ||
 			    !surface->mapped ||
 			    surface->role == NULL ||
 			    surface->cursor_role ||
 			    surface->desktop != server->desktop ||
-			    surface->minimized)
+			    surface->minimized ||
+			    surface->output != output)
 				continue;
 
 			/* Not a window the docked mode leaves out of the scene (ws142-p008). */
@@ -5106,6 +5192,7 @@ draw_sheet(
 	VkRect2D cut;
 	int32_t x;
 	int32_t top;
+	int32_t cut_top;
 	int32_t bottom;
 	int centred;
 
@@ -5120,12 +5207,15 @@ draw_sheet(
 	/* Where the parent's title bar ends. */
 	sheet_anchor(server, parent, body.width, body.height, &x, &top);
 
-	/* Only below the title bar (its shadow and, while it slides, itself): the frame's scissor cut there. */
+	/* Only below the title bar (its shadow and, while it slides, itself): the frame's scissor cut there, in the pass's pixels (a head's, ws113-p007). */
 	saved = server->compose->scissor_now;
 	cut = saved;
 	bottom = saved.offset.y + (int32_t)saved.extent.height;
-	if (cut.offset.y < top)
-		cut.offset.y = top;
+	cut_top = top;
+	if (server->view_width != 0U)
+		cut_top = top - server->view_y;
+	if (cut.offset.y < cut_top)
+		cut.offset.y = cut_top;
 	if (bottom < cut.offset.y)
 		bottom = cut.offset.y;
 	cut.extent.height = (uint32_t)(bottom - cut.offset.y);
@@ -5167,6 +5257,13 @@ window_dock(
 	/* A fullscreen window is not docked; it is docked on leaving only when it was docked before (BUG-208). */
 	if (surface->fullscreen)
 		return;
+
+	/* A window on a head docks on the anchor, where the system bar is (ws113-p007): it comes back there. */
+	if (surface->output != KWL_PLANE_ANCHOR) {
+		kwl_window_to_output(server, surface, KWL_PLANE_ANCHOR, "dock");
+		restore_x = surface->x;
+		restore_y = surface->y;
+	}
 
 	/* The place and size to come back to (its own, not a made-up one), and where the body is now. */
 	surface->restore_default = 0U;
@@ -8563,6 +8660,7 @@ static int
 glass_motion_take(
 	struct kwl_server *server)
 {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	struct kwl_object *surface;
 	int32_t lowest;
 	int32_t x;
@@ -8718,14 +8816,23 @@ glass_motion_take(
 		return 1;
 	}
 
-	/* A move that has been out of the system bar may dock the window by a release back in it. */
-	if (server->pointer_y >= KWL_GLASS_BAR)
+	/* A move that has been out of the system bar (or off the anchor) may dock the window by a release back in it. */
+	if (server->pointer_y >= KWL_GLASS_BAR || server->pointer_output != KWL_PLANE_ANCHOR)
 		server->drag_left_bar = 1U;
 
-	/* The body follows the pointer; the title bar stays below the system bar. */
+	/*
+	 * The window is the output's the pointer is on: across a shared edge
+	 * it goes there whole at once, drawn by that output alone from the next
+	 * frame (D-ATOMIC, ws113-p007).
+	 */
+	if (surface->output != server->pointer_output)
+		kwl_window_set_output(server, surface, server->pointer_output, "drag");
+
+	/* The body follows the pointer; the title bar stays below the system bar (below the head's top on a head). */
 	surface->x = server->pointer_x - server->drag_dx;
 	surface->y = server->pointer_y - server->drag_dy;
-	lowest = KWL_GLASS_BAR + KWL_GLASS_GAP + KWL_GLASS_TITLE;
+	(void)kwl_outputs(server, outputs);
+	lowest = outputs[surface->output].y + kwl_output_top(server, surface->output);
 	if (surface->y < lowest)
 		surface->y = lowest;
 
@@ -8779,5 +8886,62 @@ fullscreen_leave_key(
 	printf("KWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", surface->id, via, error, (unsigned long long)surface->client->number);
 
 	/* Succeeded: the key was the compositor's. */
+	return 1;
+}
+
+/*
+ * Moves the focused window to the display beside it with Super+Shift and
+ * Left or Right (ws113-p007, as Windows does): in the extended mode, to
+ * the output whose middle is nearest that way, at the same share of the
+ * way across.  A docked or fullscreen window stays (it is the anchor's).
+ * Returns 1 when the key was taken, its release with it.
+ */
+static int
+display_move_key(
+	struct kwl_server *server,
+	uint32_t key,
+	uint32_t state)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_object *surface;
+	unsigned count;
+	int direction;
+	int target;
+
+	/* The release of the press taken goes no further. */
+	if (state == 0U) {
+		if (display_move_eaten == 0U || key != display_move_eaten)
+			return 0;
+		display_move_eaten = 0U;
+		return 1;
+	}
+
+	/* Left or Right with Super and Shift, and nothing else. */
+	if (key != SHORTCUT_LEFT && key != SHORTCUT_RIGHT)
+		return 0;
+	if ((server->modifiers & MODIFIERS_ANY) != (MODIFIER_SUPER | MODIFIER_SHIFT))
+		return 0;
+	display_move_eaten = key;
+	direction = 1;
+	if (key == SHORTCUT_LEFT)
+		direction = -1;
+
+	/* The focused window (a sheet's parent for a sheet), floating. */
+	surface = sheet_owner(kwl_top_window(server));
+	if (surface == NULL || surface->maximized || surface->fullscreen) {
+		printf("KWL WINDOW output none direction=%d why=key\n", direction);
+		return 1;
+	}
+
+	/* The display beside it, if there is one that way. */
+	count = kwl_outputs(server, outputs);
+	target = kwl_plane_neighbour(outputs, count, surface->output, direction);
+	if (target < 0) {
+		printf("KWL WINDOW output none surface=%u direction=%d why=key\n", surface->id, direction);
+		return 1;
+	}
+
+	/* Succeeded: carried there. */
+	kwl_window_to_output(server, surface, (unsigned)target, "key");
 	return 1;
 }

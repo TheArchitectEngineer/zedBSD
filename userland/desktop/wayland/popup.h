@@ -50,6 +50,7 @@ unsigned kwl_popup_collect(struct kwl_server *server, struct kwl_object **popups
 void kwl_popup_draw(struct kwl_server *server, VkCommandBuffer command);
 struct kwl_object *kwl_popup_focus(struct kwl_server *server, struct kwl_object *target);
 struct kwl_object *kwl_popup_chain_at(struct kwl_server *server);
+struct kwl_object *kwl_popup_root(struct kwl_object *surface);
 int kwl_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 
 /* What popup.c needs from the compositor and the shell. */

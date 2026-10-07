@@ -1014,7 +1014,8 @@ place_pointer(
 	device->place_x = scale_fixed(device->raw_x, device->axis_x.minimum, device->axis_x.maximum, server->width);
 	device->place_y = scale_fixed(device->raw_y, device->axis_y.minimum, device->axis_y.maximum, server->height);
 
-	/* The pointer follows in whole pixels; the cursor is redrawn where it was and is (damage.c). */
+	/* The pointer follows in whole pixels on the anchor (ws113-p007); the cursor is redrawn where it was and is (damage.c). */
+	kwl_pointer_absolute(server);
 	old_x = server->pointer_x;
 	old_y = server->pointer_y;
 	server->pointer_x = device->place_x / 256;

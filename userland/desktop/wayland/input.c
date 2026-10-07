@@ -762,9 +762,17 @@ apply_frame(
 		delta_y = moved_y;
 	}
 
-	/* The relative movement, kept on the output. */
-	x = clamp_position((int64_t)x + delta_x, server->width);
-	y = clamp_position((int64_t)y + delta_y, server->height);
+	/*
+	 * An absolute device maps onto the anchor; relative movement goes over
+	 * the outputs shown, across their shared edges (ws113-p007).
+	 */
+	if (absolute_seen) {
+		kwl_pointer_absolute(server);
+		x = clamp_position((int64_t)x + delta_x, server->width);
+		y = clamp_position((int64_t)y + delta_y, server->height);
+	} else {
+		kwl_pointer_relative(server, delta_x, delta_y, &x, &y);
+	}
 
 	/* A changed position is reported as motion before any button of the same report. */
 	pointer_activity = 0;
@@ -1000,9 +1008,8 @@ pointer_move(
 		delta_y /= 100;
 	}
 
-	/* The new place, kept on the output. */
-	x = clamp_position((int64_t)server->pointer_x + delta_x, server->width);
-	y = clamp_position((int64_t)server->pointer_y + delta_y, server->height);
+	/* The new place, over the outputs shown (ws113-p007). */
+	kwl_pointer_relative(server, delta_x, delta_y, &x, &y);
 	if (x == server->pointer_x && y == server->pointer_y)
 		return 0;
 

@@ -1849,7 +1849,8 @@ place_pointer(
 	if (x == server->pointer_x && y == server->pointer_y)
 		return;
 
-	/* Succeeded: the pointer moves, and the cursor is redrawn (damage.c). */
+	/* Succeeded: the pointer moves (on the anchor, where the screen maps, ws113-p007), and the cursor is redrawn (damage.c). */
+	kwl_pointer_absolute(server);
 	old_x = server->pointer_x;
 	old_y = server->pointer_y;
 	server->pointer_x = x;
