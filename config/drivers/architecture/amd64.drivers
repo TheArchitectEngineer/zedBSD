@@ -3,3 +3,4 @@
 -|fixed|APIC, HPET/PIT and i8042 platform devices|amd64|y|
 CONFIG_DRIVER_GRAPHICS|bool|Framebuffer driver|amd64|y|
 CONFIG_DRIVER_ACPI|bool|ACPI AML interpreter, events and Embedded Controller|amd64|y|
+CONFIG_DRIVER_TYPEC|bool|USB-C connectors (UCSI over ACPI, /dev/typec)|amd64|y|

@@ -210,6 +210,10 @@ ifeq ($(CONFIG_DRIVER_ACPI),y)
 AMD64_ACPI_SOURCES += $(sort $(wildcard src/drivers/acpi/*.c))
 # The PC/AT host places the BARs the firmware left unassigned in the _CRS windows (BUG-210).
 AMD64_ACPI_SOURCES += src/drivers/pci/pci-pcat-assign.c src/drivers/pci/pci-window.c
+# The USB-C connectors' UCSI driver (WS050) runs over the ACPI device USBC000.
+ifeq ($(CONFIG_DRIVER_TYPEC),y)
+AMD64_ACPI_SOURCES += $(sort $(wildcard src/drivers/typec/*.c))
+endif
 endif
 AMD64_I2C_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_LPSS_I2C),y)
