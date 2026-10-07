@@ -511,6 +511,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（ws052-p007 第 4 版の N、クリック）: N1「A1: UAPI に flag を足す」（system_power_info の reserved[0] を flags、KERN_SYSTEM_POWER_FLAG_CAN_SLEEP）、N2「利用者なら誰でも」、N8「外部画面のみに切り替えて通常の利用を継続する」（蓋を閉じても外部の monitor があれば眠らず外部だけで続ける。compositor の複数出力が要る）、N10「作らない」。N3〜N7・N9 は既定の案でユーザーに確認中。
 - 2026-10-07 Q1: P2 の ws052-p007 設計 第 4 版（e97fb018b）。人の判断 N1〜N10 はユーザーへ。docs/architecture/power-management.md の 52-54 行・91 行が今の code と違う（P2 の指摘、N の決定の後に直す）。p010 を先に着手。
 - 2026-10-07 ユーザー:「UCSIとDP alt modeってもう動いてるんですか？シェーダコンパイラより優先してほしいです」→ クリック「P1 を移す」（P1 は ws075-p007a a3 を安全な地点で止めて WS051 p003 から、P2 は WS052 を続ける）、M-3「5330 で採取する」（`/tmp/i915-hw.lock` の下で iGPU を一時的に host の i915 へ（`plan/ws031/tests/host/igpu-mode.sh host`）、USB-C の DP の monitor をユーザーが挿し、debugfs・intel_reg で採取、vfio に戻す。design §14.5）。WS075 p007a の残り（a3〜）は後に。
 - 2026-10-07 ユーザー: 5320（10.0.30.5、zedBSD）で Keiland が立たない → Q1 の調査（TGL の takeover の停止の失敗、DPLL の管理が空）。「サブエージェントP3を立てて、5320のDPLLに対応してほしいです。できれば世代やバリエーションにかかわらず表示できるようにフォールバックも実装してほしいですが、難しければいいです。」→ WS118 のブロックを解き p006・q846 を P3 に。
