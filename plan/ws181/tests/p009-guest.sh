@@ -1,7 +1,10 @@
 #!/bin/sh
 # ws181-p009 (the 2026-10-07 UAT on the 5320): on the pen test guest (plan/ws079/tests/config-amd64-pen.mk;
 # plan/ws079/tests/pen-guest.sh start IMAGE), the compositor and wltest under test (BUILD/bin/wayland,
-# BUILD/bin/wltest) copied in, 1280x800, two wltest windows a and b.  The mouse and keys through QMP, the touch pad
+# BUILD/bin/wltest) copied in, 1280x800, two wltest windows a and b.  The compositor goes to /bin/wayland-p009, a
+# name no other process runs (T1-361: the copy over /bin/wayland did not take while the image's own compositor ran it,
+# and the image's old compositor was tested); both copies are checked with cksum before anything runs, and the
+# processes before and after the stop are kept in OUTDIR/ps.txt.  The mouse and keys through QMP, the touch pad
 # through touchinject's "pad" scripts (1336x760 units at 12 a millimetre; each waits 2.6 s for the compositor's scan).
 # A guest without /bin/calendar is given one for the run: a script that opens a wltest window (app id calendar).
 #  7. The desktops' pill is in the bar's right half, just left of the status ("KWL GLASS desktops x=" past 640);
@@ -31,7 +34,16 @@ out=${2:-build/ws181-p009-guest}
 mkdir -p "$out"
 qmp="$GUEST_RUNTIME/qmp.sock"
 guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
-put() { timeout 90 python3 plan/tools/guest/guest.py put "$1" "$2" >/dev/null 2>&1; }
+put() { timeout 90 python3 plan/tools/guest/guest.py put "$1" "$2" >> "$out/put.txt" 2>&1; }
+# Copies a file in and proves the guest's copy is the same bytes (cksum), or says why not.
+install_file() {
+	want=$(cksum < "$1" | awk '{print $1, $2}')
+	put "$1" "$2"
+	got=$(guest "cksum < $2" | tail -1 | awk '{print $1, $2}')
+	[ "$got" = "$want" ] && return 0
+	echo "install_file $2: guest cksum '$got', host '$want'" >> "$out/put.txt"
+	return 1
+}
 send() { timeout 40 python3 plan/ws049/tests/qmp-send.py "$qmp" "$@" >> "$out/qmp.txt" 2>&1; }
 # A picture for the eye, read from the Venus head through QEMU's VNC.
 shot() { timeout 60 python3 plan/ws035/tests/zdesktop-check.py "$out/$1.png" --runtime "$GUEST_RUNTIME" >> "$out/qmp.txt" 2>&1; }
@@ -40,7 +52,7 @@ key() { send input-send-event "{\"events\":[{\"type\":\"key\",\"data\":{\"down\"
 tap() { key "$1" true; sleep 0.12; key "$1" false; sleep 0.6; }
 count() { guest "grep -c -- '$1' /tmp/zdesktop.log" | tail -1; }
 last() { guest "grep -- '$1' /tmp/zdesktop.log | tail -1"; }
-stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]ltest|[t]ouchinject" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland(-p009)?( |$)|[w]ltest|[t]ouchinject" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland(-p009)?( |$)|[w]ltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 env='export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0;'
 status=0
 pass() { echo "$1: ok"; }
@@ -72,12 +84,18 @@ home_open() {
 : > "$out/qmp.txt"
 
 # The compositor and wltest under test, a Calendar for the clock, and two windows.
+: > "$out/put.txt"
+guest 'echo "before the stop:"; ps -A -o pid,args' > "$out/ps.txt"
 guest "$stop_all" >/dev/null
-put "$build/bin/wayland" /bin/wayland
-put "$build/bin/wltest" /bin/wltest
+guest 'echo "after the stop:"; ps -A -o pid,args' >> "$out/ps.txt"
+if ! install_file "$build/bin/wayland" /bin/wayland-p009 || ! install_file "$build/bin/wltest" /bin/wltest; then
+	echo "setup: the compositor or wltest under test is not in the guest ($out/put.txt, $out/ps.txt)"
+	echo "ws181-p009: FAIL"
+	exit 1
+fi
 guest '[ -x /bin/calendar ] || { printf "#!/bin/sh\nexec /bin/wltest --app-id=calendar --windowed --size=360x260 --color=e8e0f8 --frames=3600 --delay-ms=250\n" > /bin/calendar; chmod 755 /bin/calendar; echo calendar-script; }' > "$out/calendar.txt"
-guest 'chmod 755 /bin/wayland /bin/wltest; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
-/bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
+guest 'chmod 755 /bin/wayland-p009 /bin/wltest; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
+/bin/wayland-p009 --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 open_app apps.a f4d0d0 380x260
 open_app apps.b d0f4d0 400x280
 pointer move 640 600 sleep 300
@@ -168,7 +186,7 @@ tap esc
 # The compositor stays up.
 failed=$(count 'KWL FAILED')
 [ "${failed:-1}" -eq 0 ] 2>/dev/null && pass no-failed || fail "no-failed (${failed:-?})"
-alive=$(guest 'ps -A -o args | grep -cE "^/bin/wayland( |$)"' | tail -1)
+alive=$(guest 'ps -A -o args | grep -cE "^/bin/wayland-p009( |$)"' | tail -1)
 [ "${alive:-0}" -gt 0 ] 2>/dev/null && pass alive || fail alive
 guest 'cat /tmp/zdesktop.log' > "$out/zdesktop.log"
 guest "$stop_all" >/dev/null
