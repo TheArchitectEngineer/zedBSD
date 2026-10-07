@@ -107,6 +107,9 @@ def browse(item):
 		run.wait(r"PHOTOS PICTURE photo=2 error=0", mark, 15)
 		run.key("r")
 		turned = run.wait(r"PHOTOS TURN photo=2 turns=1", mark, 5)
+		# The turn is saved on its own; the favourite's save is the one after the next mark.
+		run.wait(r"PHOTOS SAVE error=\d+", mark, 5)
+		mark = run.mark()
 		run.key("f")
 		marked = run.wait(r"PHOTOS FAVORITE photo=2 on=1", mark, 5)
 		saved = run.wait(r"PHOTOS SAVE error=\d+", mark, 5)

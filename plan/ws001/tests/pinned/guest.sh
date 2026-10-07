@@ -154,3 +154,20 @@ st=0
 is y
 w
 st=2
+
+#### find -exec + splits at the argument limit
+# Guest only: zedBSD's {ARG_MAX} is 16 KiB, so 600 long names need two runs or more (ws001-p042).
+mkdir d; i=0; while [ $i -lt 600 ]; do : > d/file-with-a-rather-long-name-$i; i=$((i + 1)); done; find d -type f -exec sh -c 'echo $#' sh {} + > counts; echo "st=$?"; awk 'END { print (NR >= 2) }' counts; awk '{ s += $1 } END { print s }' counts
+## expect
+st=0
+1
+600
+
+#### tabs on the vt100 entry
+# Guest only: the entry is /lib/terminfo/vt100.zti (ws001-p043).
+TERM=vt100 COLUMNS=80 tabs 1,10,20 | tr '\033\r' 'E^'; echo; TERM=vt100 COLUMNS=80 tabs -0 | tr '\033\r' 'E^'; echo; TERM=vt100 COLUMNS=80 tabs -1 | tr '\033' '\n' | grep -c '^H'; unset TERM; COLUMNS=80 tabs -2 | tr '\033' '\n' | grep -c '^H'
+## expect
+^E[3gE[9CEHE[10CEH^
+^E[3g^
+79
+39

@@ -196,6 +196,10 @@ def settings_pages(item):
 		mark = run.mark()
 		run.as_user(f"/bin/settings {page}")
 		layout = run.wait(rf"ZSETTINGS LAYOUT page={page} controls=", mark, 15)
+		if page == "wallpaper":
+			# The tiles are made one by one by keiland-preview's child; the shot waits for all (T1-320 showed three
+			# empty).
+			run.wait(r"ZSETTINGS LOOK pictures ready count=\d+", mark, 20)
 		time.sleep(0.8)
 		failed = run.lines(r"ZSETTINGS FAILED", mark)
 		item.step(f"page {page}", layout or "no layout")

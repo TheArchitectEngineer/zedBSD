@@ -2,7 +2,7 @@
 
 # ws145-p002: keiland-printd（約束の行・spool・IPP・LPD）
 
-Status: in-progress（2026-10-07 q831 P2）
+Status: cleared（2026-10-07 Q1 の判定: T1-318 の AAT settings.printers（needs-person）で IPP・LPD の printer の追加と 3 つの job が Done、PDF Viewer の Printed、Printers の頁の PNG（Mock Printer が Default、LPD の printer、form）を Q1 が目視。T1-320 の full の中の fail は前の scenario の状態の残りの疑いで P2 が切り分ける）（旧: in-progress（2026-10-07 q831 P2））
 Disposition: normal
 Parent: [WS145](../ws.md)
 Queue: q831（2026-10-07、P2）

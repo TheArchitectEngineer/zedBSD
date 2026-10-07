@@ -1,6 +1,6 @@
 # ws165-p005: 手書きの認識率の改善（区別できない字の組を分ける）
 
-Status: in-progress（2026-10-07 q831 P2: 実装と host の試験 PASS。QEMU の回帰は T1 に依頼、判定は Q1）
+Status: cleared（2026-10-07 Q1 の判定: T1-318 (c) で osk-guest: PASS（templates count=228、認識、第 1 候補「-」が key で ime-probe に届く）。host の top-1 90.6%）（旧: in-progress（2026-10-07 q831 P2: 実装と host の試験 PASS。QEMU の回帰は T1 に依頼、判定は Q1））
 Queue: q831（2026-10-07、P2）
 WS: [WS165](../ws.md)
 
