@@ -1,0 +1,541 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The executor half of the video round trip (ws083-p003b).
+ *
+ * Feeds the streams host-video-wire.c wrote with libvulkan's own encoders
+ * to the i915 Vulkan executor (linked as the kernel builds it, with the
+ * services of i915-vk-render-stubs.inc), and checks the replies, the
+ * capset's native word, the families, the slot rules a submission is held
+ * to (refused with VK_ERROR_DEVICE_LOST) and the bitstream checks that skip
+ * a picture.
+ */
+
+#include "../../ws031/tests/i915-vk-render-stubs.inc"
+
+#include "../../../src/drivers/gpu/i915/render/instance.h"
+#include "../../../src/drivers/gpu/i915/render/video.h"
+
+#define FIXTURE_QUEUE_SUBMIT			18U
+#define FIXTURE_ALLOCATE_MEMORY			21U
+#define FIXTURE_CREATE_BUFFER			50U
+#define FIXTURE_BIND_BUFFER_MEMORY		28U
+#define FIXTURE_GET_DEVICE_QUEUE2		155U
+#define FIXTURE_CREATE_COMMAND_POOL		85U
+#define FIXTURE_ALLOCATE_COMMAND_BUFFERS	88U
+#define FIXTURE_BEGIN_COMMAND_BUFFER		90U
+#define FIXTURE_END_COMMAND_BUFFER		91U
+
+/* The identities shared with host-video-wire.c, and the fixture's own. */
+#define FIXTURE_DEVICE		0xd0ULL
+#define FIXTURE_QUEUE		0xd1ULL
+#define FIXTURE_VIDEO_QUEUE	0xd2ULL
+#define FIXTURE_MEMORY		0x100ULL
+#define FIXTURE_BUFFER		0x200ULL
+#define FIXTURE_IMAGE_A		0x300ULL
+#define FIXTURE_IMAGE_B		0x301ULL
+#define FIXTURE_VIEW_A		0x400ULL
+#define FIXTURE_VIEW_B		0x401ULL
+#define FIXTURE_POOL		0x900ULL
+#define FIXTURE_CMDBUF		0xa00ULL
+
+/* The storage of the memory and where its parts are. */
+#define FIXTURE_STORAGE_BYTES	262144U
+#define FIXTURE_STORAGE_VA	0x200000000ULL
+#define FIXTURE_BUFFER_OFFSET	0x20000U
+#define FIXTURE_IMAGE_A_OFFSET	0x10000U
+#define FIXTURE_IMAGE_B_OFFSET	0x18000U
+
+/* The memory's storage, the blob that is it, and the wire of each stream. */
+static uint8_t fixture_storage[FIXTURE_STORAGE_BYTES] __attribute__((aligned(4096)));
+static struct i915_gem_object fixture_storage_object;
+static struct stub_wire fixture_wire;
+
+/* The directory host-video-wire.c wrote into. */
+static const char *fixture_directory;
+
+static void fixture_append(const char *name);
+static size_t fixture_run(const char *name);
+static void fixture_queue(uint64_t identity, uint32_t family);
+static void fixture_objects(void);
+static void fixture_picture(uint64_t image_identity, uint64_t view_identity, uint64_t offset);
+static void fixture_record(const char *const *names, unsigned count);
+static uint32_t fixture_submit(uint64_t queue);
+static void test_queries(void);
+static void test_session(void);
+static void test_submissions(void);
+
+/* Runs the round trip. */
+int
+main(
+	int argc,
+	char **argv)
+{
+	unsigned long mark;
+
+	/* The streams' directory. */
+	assert(argc == 2);
+	fixture_directory = argv[1];
+
+	/* A device whose boot asked for video and whose GT has a usable VCS0. */
+	mark = stub_allocation_mark();
+	stub_video_state = 0;
+	drv_i915_render_video_request(1);
+	memset(&fixture_storage_object, 0, sizeof(fixture_storage_object));
+	fixture_storage_object.slot = 7U;
+	fixture_storage_object.bytes = sizeof(fixture_storage);
+	fixture_storage_object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	fixture_storage_object.va = FIXTURE_STORAGE_VA;
+	stub_session_open(&fixture_storage_object);
+
+	/* The capset carries the native word, so libvulkan names the video extensions. */
+	assert(stub_vk->video == 1);
+	assert(stub_vk->capset_bytes == 176U);
+	assert(stub_vk->capset[42] == 0x5a4e4154U && stub_vk->capset[43] == 1U);
+
+	/* The scenarios. */
+	test_queries();
+	test_session();
+	test_submissions();
+
+	/* Closing frees every video object and record; nothing is left. */
+	stub_session_close();
+	assert(stub_live_since(mark) == 0U);
+	printf("ws083 video executor host test PASS\n");
+	return 0;
+}
+
+/* Appends one stream host-video-wire.c wrote. */
+static void
+fixture_append(
+	const char *name)
+{
+	char path[512];
+	FILE *file;
+	size_t read;
+
+	/* <directory>/<name>.bin, after what the wire holds. */
+	snprintf(path, sizeof(path), "%s/%s.bin", fixture_directory, name);
+	file = fopen(path, "rb");
+	assert(file != NULL);
+	read = fread(fixture_wire.bytes + fixture_wire.size, 1, sizeof(fixture_wire.bytes) - fixture_wire.size, file);
+	assert(read > 0U);
+	fixture_wire.size += read;
+	assert(fclose(file) == 0);
+}
+
+/* Runs one stream alone and reports the length of its reply. */
+static size_t
+fixture_run(
+	const char *name)
+{
+	size_t reply_bytes;
+
+	/* The reply selector, then the stream. */
+	stub_wire_begin(&fixture_wire);
+	fixture_append(name);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	return reply_bytes;
+}
+
+/* vkGetDeviceQueue2 of a queue of a family, as device.c sends it. */
+static void
+fixture_queue(
+	uint64_t identity,
+	uint32_t family)
+{
+	size_t reply_bytes;
+
+	/* [device][present][sType][link][timeline sType][no link][timeline][flags][family][index][present][identity]. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_GET_DEVICE_QUEUE2);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 1000145003U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 1000384005U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, family + 1U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, family);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, identity);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 20U);
+	assert(stub_get64(stub_reply, 12U) == identity);
+}
+
+/* Inserts an NV12 64x64 image in the memory and a view of it, as image.c will make them (p004). */
+static void
+fixture_picture(
+	uint64_t image_identity,
+	uint64_t view_identity,
+	uint64_t offset)
+{
+	struct i915_gfx_image *image;
+	struct i915_gfx_view *view;
+	int error;
+
+	/* The image: NV12, 64x64, pitch 128, bound at the offset. */
+	image = kern_calloc(1U, sizeof(*image));
+	assert(image != NULL);
+	image->format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+	image->width = 64U;
+	image->height = 64U;
+	image->pitch = 128U;
+	image->levels = 1U;
+	image->memory = drv_i915_object_lookup(stub_session, I915_VK_OBJ_MEMORY, FIXTURE_MEMORY);
+	image->offset = offset;
+	assert(image->memory != NULL);
+	error = drv_i915_object_insert(stub_session, I915_VK_OBJ_IMAGE, image_identity, image);
+	assert(error == 0);
+
+	/* The view of the whole image. */
+	view = kern_calloc(1U, sizeof(*view));
+	assert(view != NULL);
+	view->image = image;
+	view->format = image->format;
+	view->level_count = 1U;
+	error = drv_i915_object_insert(stub_session, I915_VK_OBJ_IMAGE_VIEW, view_identity, view);
+	assert(error == 0);
+}
+
+/* Makes the memory with its storage, the bitstream buffer, the two pictures, the queues and the command buffer. */
+static void
+fixture_objects(void)
+{
+	size_t reply_bytes;
+	int error;
+
+	/* vkAllocateMemory of the storage, then vkCreateBuffer of 4 KiB and its bind. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_MEMORY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 5U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_STORAGE_BYTES);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_MEMORY);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 12U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 4096U);
+	stub_put32(&fixture_wire, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+	stub_put32(&fixture_wire, VK_SHARING_MODE_EXCLUSIVE);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+	stub_put32(&fixture_wire, FIXTURE_BIND_BUFFER_MEMORY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER);
+	stub_put64(&fixture_wire, FIXTURE_MEMORY);
+	stub_put64(&fixture_wire, FIXTURE_BUFFER_OFFSET);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 2U * 24U + 8U);
+	error = drv_i915_render_blob_attach(stub_vk, &stub_gpu, FIXTURE_MEMORY, &fixture_storage_object);
+	assert(error == 0);
+
+	/* The bitstream: start codes at the two slices, 0 and 64 (the second a 4-byte one). */
+	memset(fixture_storage + FIXTURE_BUFFER_OFFSET, 0x55, 128U);
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 0U] = 0U;
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 1U] = 0U;
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 2U] = 1U;
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 64U] = 0U;
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 65U] = 0U;
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 66U] = 0U;
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 67U] = 1U;
+
+	/* The two pictures. */
+	fixture_picture(FIXTURE_IMAGE_A, FIXTURE_VIEW_A, FIXTURE_IMAGE_A_OFFSET);
+	fixture_picture(FIXTURE_IMAGE_B, FIXTURE_VIEW_B, FIXTURE_IMAGE_B_OFFSET);
+
+	/* A graphics queue and a video queue; a family past the two is refused. */
+	fixture_queue(FIXTURE_QUEUE, 0U);
+	fixture_queue(FIXTURE_VIDEO_QUEUE, 1U);
+	assert(drv_i915_render_queue_family(stub_session, FIXTURE_QUEUE) == 0U);
+	assert(drv_i915_render_queue_family(stub_session, FIXTURE_VIDEO_QUEUE) == 1U);
+
+	/* vkCreateCommandPool and one primary command buffer. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_CREATE_COMMAND_POOL);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 39U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, FIXTURE_ALLOCATE_COMMAND_BUFFERS);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_DEVICE);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 40U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, FIXTURE_POOL);
+	stub_put32(&fixture_wire, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CMDBUF);
+	(void)stub_execute_ok(&fixture_wire);
+	assert(drv_i915_object_lookup(stub_session, I915_VK_OBJ_COMMAND_BUFFER, FIXTURE_CMDBUF) != NULL);
+}
+
+/* Records the named streams into the command buffer between a begin and an end. */
+static void
+fixture_record(
+	const char *const *names,
+	unsigned count)
+{
+	size_t reply_bytes;
+	unsigned index;
+
+	/* vkBeginCommandBuffer, the recordings, vkEndCommandBuffer. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_BEGIN_COMMAND_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CMDBUF);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 42U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	for (index = 0U; index < count; index++)
+		fixture_append(names[index]);
+	stub_put32(&fixture_wire, FIXTURE_END_COMMAND_BUFFER);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CMDBUF);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 16U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 12U) == VK_SUCCESS);
+}
+
+/* Submits the command buffer on a queue and reports the submission's VkResult. */
+static uint32_t
+fixture_submit(
+	uint64_t queue)
+{
+	size_t reply_bytes;
+
+	/* One VkSubmitInfo with the command buffer, no semaphores, no fence. */
+	stub_wire_begin(&fixture_wire);
+	stub_put32(&fixture_wire, FIXTURE_QUEUE_SUBMIT);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, queue);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put32(&fixture_wire, 4U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put32(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, 1U);
+	stub_put64(&fixture_wire, FIXTURE_CMDBUF);
+	stub_put32(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	stub_put64(&fixture_wire, 0U);
+	reply_bytes = stub_execute_ok(&fixture_wire);
+	assert(reply_bytes == 8U);
+	return stub_get32(stub_reply, 4U);
+}
+
+/* The physical-device queries libvulkan sends: capabilities and formats. */
+static void
+test_queries(void)
+{
+	size_t reply_bytes;
+	size_t at;
+
+	/* caps: VK_SUCCESS, then capabilities, decode and H.264 records nested in the asked order. */
+	reply_bytes = fixture_run("caps");
+	assert(stub_get32(stub_reply, 0U) == GPU_OP_GET_PHYSICAL_DEVICE_VIDEO_CAPABILITIES);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get64(stub_reply, 8U) == 1U);
+	assert(stub_get32(stub_reply, 16U) == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
+	assert(stub_get64(stub_reply, 20U) == 1U);
+	assert(stub_get32(stub_reply, 28U) == VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR);
+	assert(stub_get64(stub_reply, 32U) == 1U);
+	assert(stub_get32(stub_reply, 40U) == VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR);
+	assert(stub_get64(stub_reply, 44U) == 0U);
+	assert(stub_get32(stub_reply, 52U) == 14U);
+	at = 64U;
+	assert(stub_get32(stub_reply, at) == 1U);
+	at += 4U;
+	assert(stub_get32(stub_reply, at) == 2U);
+	assert(stub_get64(stub_reply, at + 4U) == 32U);
+	assert(stub_get64(stub_reply, at + 12U) == 1U);
+	assert(stub_get32(stub_reply, at + 36U) == 4096U && stub_get32(stub_reply, at + 40U) == 4096U);
+	assert(stub_get32(stub_reply, at + 44U) == 17U && stub_get32(stub_reply, at + 48U) == 16U);
+	assert(stub_get64(stub_reply, at + 52U) == 256U);
+	assert(memcmp(stub_reply + at + 60U, "VK_STD_vulkan_video_codec_h264_decode", 38U) == 0);
+	assert(stub_get32(stub_reply, at + 60U + 256U) == (1U << 22));
+	assert(reply_bytes == at + 60U + 256U + 4U);
+
+	/* format: one NV12 optimal format for decode output and reference. */
+	reply_bytes = fixture_run("format");
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 16U) == 1U && stub_get64(stub_reply, 20U) == 1U);
+	assert(stub_get32(stub_reply, 28U) == VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR);
+	assert(stub_get32(stub_reply, 40U) == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+	assert(stub_get32(stub_reply, 68U) == VK_IMAGE_TILING_OPTIMAL);
+	assert(stub_get32(stub_reply, 72U) == (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR));
+	assert(reply_bytes == 76U);
+}
+
+/* The session, its memory and its parameters. */
+static void
+test_session(void)
+{
+	size_t reply_bytes;
+	unsigned attaches;
+	unsigned index;
+
+	/* The objects the commands name. */
+	fixture_objects();
+
+	/* session: created under its identity, attaching the VCS0 context once. */
+	attaches = stub_video_attaches;
+	reply_bytes = fixture_run("session");
+	assert(reply_bytes == 24U);
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(drv_i915_object_lookup(stub_session, I915_VK_OBJ_VIDEO_SESSION, stub_get64(stub_reply, 16U)) != NULL);
+	assert(stub_video_attaches == attaches + 1U);
+
+	/* requirements: four row stores and four motion vector buffers (three slots and one spare), a page each. */
+	reply_bytes = fixture_run("requirements");
+	assert(stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	assert(stub_get32(stub_reply, 16U) == 8U);
+	for (index = 0U; index < 8U; index++) {
+		assert(stub_get32(stub_reply, 28U + index * 36U) == VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR);
+		assert(stub_get32(stub_reply, 28U + index * 36U + 12U) == index);
+		assert(stub_get64(stub_reply, 28U + index * 36U + 16U) == 4096U);
+		assert(stub_get64(stub_reply, 28U + index * 36U + 24U) == 4096U);
+		assert(stub_get32(stub_reply, 28U + index * 36U + 32U) == 1U);
+	}
+	assert(reply_bytes == 28U + 8U * 36U);
+
+	/* bind: every binding a page of the memory. */
+	reply_bytes = fixture_run("bind");
+	assert(reply_bytes == 8U && stub_get32(stub_reply, 4U) == VK_SUCCESS);
+
+	/* parameters and update: SPS 0 with PPS (0,0), then PPS (0,1) as update 1. */
+	reply_bytes = fixture_run("parameters");
+	assert(reply_bytes == 24U && stub_get32(stub_reply, 4U) == VK_SUCCESS);
+	reply_bytes = fixture_run("update");
+	assert(reply_bytes == 8U && stub_get32(stub_reply, 4U) == VK_SUCCESS);
+
+	/* The same update again is not the next one and adds a key held: refused. */
+	reply_bytes = fixture_run("update");
+	assert(stub_get32(stub_reply, 4U) == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
+}
+
+/* Submissions on the video family: the rules a submission is held to and the skipped pictures. */
+static void
+test_submissions(void)
+{
+	static const char *const idr[] = { "begin1", "control", "decode1", "end", "begin2", "decode2", "end" };
+	static const char *const stale[] = { "begin2", "decode3", "end" };
+	static const char *const reference[] = { "begin2", "decode2", "end" };
+	static const char *const deactivate[] = { "begin3", "end" };
+	static const char *const open_scope[] = { "begin1", "control" };
+	struct i915_gfx_image *image;
+	uint32_t result;
+
+	/* A reset, a reference IDR into slot 0, then a P picture reading it: every picture decodes. */
+	fixture_record(idr, 7U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+	assert(strstr(stub_log, "skip decode") == NULL);
+
+	/* The same on the graphics family breaks the rules. */
+	result = fixture_submit(FIXTURE_QUEUE);
+	assert(result == (uint32_t)VK_ERROR_DEVICE_LOST);
+
+	/* A picture reading slot 1, which the non-reference P picture left inactive, breaks the rules. */
+	fixture_record(stale, 3U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == (uint32_t)VK_ERROR_DEVICE_LOST);
+	assert(strstr(stub_log, "submission refused") == NULL);
+
+	/* A picture reading slot 0, which still holds the IDR picture, decodes. */
+	fixture_record(reference, 3U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+
+	/* A second slice without its start code skips the IDR picture, and the submission succeeds. */
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 67U] = 0x55U;
+	fixture_record(idr, 7U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+	assert(strstr(stub_log, "skip decode: slice without a start code") != NULL);
+	fixture_storage[FIXTURE_BUFFER_OFFSET + 67U] = 1U;
+
+	/* An output that is not NV12 skips the picture. */
+	image = drv_i915_object_lookup(stub_session, I915_VK_OBJ_IMAGE, FIXTURE_IMAGE_A);
+	assert(image != NULL);
+	image->format = VK_FORMAT_R8G8B8A8_UNORM;
+	fixture_record(idr, 7U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+	assert(strstr(stub_log, "skip decode: picture not NV12") != NULL);
+	image->format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+
+	/* A reference laid out unlike the output skips the picture that reads it. */
+	image = drv_i915_object_lookup(stub_session, I915_VK_OBJ_IMAGE, FIXTURE_IMAGE_B);
+	assert(image != NULL);
+	image->pitch = 256U;
+	fixture_record(reference, 3U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+	assert(strstr(stub_log, "skip decode: reference laid out unlike the output") != NULL);
+	image->pitch = 128U;
+
+	/* A begin without a picture deactivates slot 0; reading it afterwards breaks the rules. */
+	fixture_record(deactivate, 2U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+	fixture_record(reference, 3U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == (uint32_t)VK_ERROR_DEVICE_LOST);
+
+	/* A coding scope left open at the end of the command buffer breaks the rules. */
+	fixture_record(open_scope, 2U);
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == (uint32_t)VK_ERROR_DEVICE_LOST);
+	assert(strstr(stub_log, "coding scope is not ended") != NULL);
+
+	/* A hung video engine loses every later video submission. */
+	fixture_record(idr, 7U);
+	stub_video_state = EIO;
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == (uint32_t)VK_ERROR_DEVICE_LOST);
+	stub_video_state = 0;
+	result = fixture_submit(FIXTURE_VIDEO_QUEUE);
+	assert(result == VK_SUCCESS);
+
+	/* destroy_parameters and destroy_session withdraw both. */
+	(void)fixture_run("destroy_parameters");
+	(void)fixture_run("destroy_session");
+}

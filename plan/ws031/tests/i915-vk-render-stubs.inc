@@ -483,12 +483,53 @@ drv_i915_gfx_submit_end(
 	return 0;
 }
 
-/* The video decode engine (ws083-p003b): the host has none. */
+/*
+ * The video decode engine (ws083-p003b): none unless a test sets the state,
+ * and an attach that succeeds and is counted.
+ */
+int stub_video_state = ENODEV;
+unsigned stub_video_attaches;
+
 int
 drv_i915_worker_video_state(struct i915_device *device)
 {
 	(void)device;
-	return ENODEV;
+	return stub_video_state;
+}
+
+int
+drv_i915_worker_context_attach(struct i915_device *device, struct i915_context *context)
+{
+	(void)device;
+	(void)context;
+	stub_video_attaches++;
+	return 0;
+}
+
+/* The IRQ lock a video hang quarantines a session under: one host thread needs no lock. */
+unsigned long
+spin_lock_irqsave(struct spinlock *lock)
+{
+	(void)lock;
+	return 0UL;
+}
+
+void
+spin_unlock_irqrestore(struct spinlock *lock, unsigned long flags)
+{
+	(void)lock;
+	(void)flags;
+}
+
+/* A batch run on an engine (draw.c): the host runs nothing. */
+int
+drv_i915_gfx_batch_run(struct i915_render_session *session, struct i915_gfx_batch *batch, uint64_t batch_va, unsigned engine)
+{
+	(void)session;
+	(void)batch;
+	(void)batch_va;
+	(void)engine;
+	return 0;
 }
 
 /*

@@ -25,6 +25,7 @@
 #include "gfx.h"
 #include "instance.h"
 #include "transport.h"
+#include "video.h"
 
 #include <kern/klog.h>
 
@@ -107,6 +108,9 @@ drv_i915_render_dispatch(
 	case I915_VK_OBJ_SWAPCHAIN:
 		error = i915_dispatch_unported(opcode, "wsi", reader);
 		break;
+	case I915_VK_OBJ_VIDEO_SESSION:
+		error = drv_i915_video_dispatch(session, opcode, reader, reply);
+		break;
 	default:
 		error = i915_dispatch_builtin(session, opcode, reader, reply);
 		break;
@@ -165,6 +169,10 @@ i915_dispatch_route(
 		return I915_VK_OBJ_COMMAND_BUFFER;
 	if (opcode >= GPU_OP_CREATE_COMMAND_POOL && opcode <= GPU_OP_CMD_EXECUTE_COMMANDS)
 		return I915_VK_OBJ_COMMAND_BUFFER;
+
+	/* zedBSD's video queries, sessions and parameters belong to video (the video recordings to cmdbuf). */
+	if (opcode >= GPU_OP_OWN_FIRST && opcode <= I915_VK_VIDEO_OP_LAST_ROUTED)
+		return I915_VK_OBJ_VIDEO_SESSION;
 
 	/* Everything else (instance, device, queue, version, transport) is the router's own. */
 	return I915_VK_OBJ_NONE;

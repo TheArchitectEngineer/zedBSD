@@ -110,11 +110,18 @@ enum i915_gfx_op_kind {
 	I915_GFX_OP_SET_STENCIL,
 	I915_GFX_OP_RESOLVE_IMAGE,
 	I915_GFX_OP_DISPATCH,
-	I915_GFX_OP_DISPATCH_INDIRECT
+	I915_GFX_OP_DISPATCH_INDIRECT,
+	I915_GFX_OP_VIDEO_BEGIN,
+	I915_GFX_OP_VIDEO_CONTROL,
+	I915_GFX_OP_VIDEO_DECODE,
+	I915_GFX_OP_VIDEO_END
 };
 
 /* An occlusion query pool (fence.c). */
 struct i915_gfx_query_pool;
+
+/* A recorded video command (video.c). */
+struct i915_video_command;
 
 /*
  * One VkDeviceMemory.
@@ -662,6 +669,9 @@ struct i915_gfx_op {
 
 		/* The pipeline a bind names. */
 		struct i915_gfx_pipeline *pipeline;
+
+		/* A video coding command: its record, owned by the operation (video.c). */
+		struct i915_video_command *video;
 
 		/* A vertex buffer bind. */
 		struct {
