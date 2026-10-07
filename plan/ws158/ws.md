@@ -9,6 +9,7 @@ Related Milestones: MG007
 Parent: [Master](../master.md)
 Queue: q738（P2、2026-10-05）、p002（P2 g17、Q1 2026-10-05 夜）
 Resume point: p001 cleared（判断 ①〜⑤ は推奨どおり）。p002（libkeiland の kl_tr_*・catalog・`ui.language`・`tools/i18n/tr.py`）、p003（compositor・greeter・lock の文、`ja/wayland.tr`、install）を実装、host の試験まで。p003 は T1 の QEMU 待ち。次は p004（各 app）。F-068 をこの WS へ昇格。
+Target: **ベータ3**（2026-10-08 ユーザー「翻訳はベータ3に回します。」）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
