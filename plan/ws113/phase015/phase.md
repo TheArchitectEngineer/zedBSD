@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws113-p015 -->
 # ws113-p015: 2 つ目以降の display の窓の状態（dock・floating・整列）、bar、リサイズ、App Home の背景
 
-Status: planned（P1、WS090 の今の単位の後）
+Status: test-wait（2026-10-08 P1: 範囲 1〜4 を実装、main 6a6974bcc。T1-372 の結果と、head の帯の中身のユーザーの答え待ち。head の上での press は 5330 の実機）
 Disposition: normal
 Parent: [WS113](../ws.md)
 
