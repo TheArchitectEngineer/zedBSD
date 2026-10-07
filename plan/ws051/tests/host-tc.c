@@ -617,6 +617,7 @@ static void
 test_legacy_and_connected(void)
 {
 	struct i915_tc tc;
+	enum i915_tc_mode mode;
 	int connected;
 
 	/* A port the VBT calls legacy with a DP-alt partner: the flag is corrected at the connect. */
@@ -646,6 +647,31 @@ test_legacy_and_connected(void)
 	connected = drv_i915_tc_connected(&tc, 0u);
 	check(connected == 1, "connected: a DP-alt port counts its partner");
 	check(fake.lock_errors == 0 && power_balanced(), "connected: power and locks balanced");
+
+	/*
+	 * ws051-p004a: a probe holds a link for its AUX messages; each message
+	 * locks the port and asks the locked answer, which takes no lock; the
+	 * probe's last link gives the PHY back at once.
+	 */
+	fake_reset();
+	bind(&tc);
+	drv_i915_tc_declare(&tc, 0u, 0);
+	fake_set(REG_DE_HPD_ISR, 1u << 16);
+	fake_set(REG_TCSS(0u), TCSS_READY);
+	fake_set(REG_FIA1_DPSP, 0xfu);
+	drv_i915_tc_get_link(&tc, 0u, 1);
+	mode = drv_i915_tc_lock(&tc, 0u, 1);
+	connected = drv_i915_tc_connected_locked(&tc, 0u);
+	check(mode == I915_TC_MODE_DP_ALT && connected == 1, "connected_locked: the probe's port is DP-alt with its partner");
+	check(fake.lock_errors == 0, "connected_locked: no lock taken under the caller's");
+	fake_set(REG_DE_HPD_ISR, 0u);
+	connected = drv_i915_tc_connected_locked(&tc, 0u);
+	check(connected == 0, "connected_locked: an unplugged partner");
+	drv_i915_tc_unlock(&tc, 0u);
+	check(tc.port[0].mode == I915_TC_MODE_DP_ALT && (fake_get(REG_DDI_BUF_CTL(0u)) & BUF_OWNED) != 0u, "probe link: the PHY stays between the messages");
+	drv_i915_tc_put_link(&tc, 0u);
+	check(tc.port[0].mode != I915_TC_MODE_DP_ALT && (fake_get(REG_DDI_BUF_CTL(0u)) & BUF_OWNED) == 0u, "probe link: the last link gives the PHY back at once (M2)");
+	check(fake.lock_errors == 0 && power_balanced(), "probe link: power and locks balanced");
 }
 
 /* What a port has of DisplayPort for the Type-C layer (ws050-p005). */

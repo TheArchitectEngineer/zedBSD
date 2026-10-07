@@ -141,6 +141,26 @@ drv_i915_drm_edid_read(
 	return (int)block;
 }
 
+/*
+ * Tells whether a device answers at the EDID address of a DDC adapter (the
+ * Linux drm_probe_ddc()): one byte of the base block is read.
+ */
+bool
+drv_i915_drm_probe_ddc(
+	struct i2c_adapter *ddc)
+{
+	unsigned char out;
+	int read;
+
+	/* Reads the first byte of the base block. */
+	read = i915_drm_do_probe_ddc_edid(ddc, &out, 0, 1);
+	if (read != 0)
+		return false;
+
+	/* Succeeded: a device answered. */
+	return true;
+}
+
 /* Scores the header of a base EDID block: 8 when perfect, down to 0. */
 static int
 i915_drm_edid_header_is_valid(

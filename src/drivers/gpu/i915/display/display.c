@@ -42,6 +42,7 @@
 #include "state.h"
 #include "takeover.h"
 #include "tc-kern.h"
+#include "dp-ext-kern.h"
 #include "vbt-parse.h"
 #include "watermark.h"
 #include <kern/kcrt.h>
@@ -622,6 +623,10 @@ drv_i915_display_register(
 		/* The Type-C ports first: the hotplug path asks them whether something is plugged in (ws051-p002b). */
 		drv_i915_tc_kern_start(display, &device->gt.mmio, (unsigned)device->gt.display_ver);
 
+		/* Then the external DP ports on them, whose sinks the DP connectors' detection probes (ws051-p004a). */
+		drv_i915_dp_ext_start(display);
+
+		/* Then the hotplug path, with the connectors of the encoders the output setup made. */
 		started = drv_i915_hpd_start(display, &dprobe->hp, &device->gt.mmio, &display->nogem, &display->power_domains, &display->pwc, display->pch.type, device->gt.irq.irqs_enabled, NULL);
 		if (started == 0)
 			display->hpd_started = 1;

@@ -819,9 +819,10 @@ i915_output_hdmi_wait(
 /*
  * Takes every connector's connection and preferred mode into the display
  * inventory once (ws113-p002): an HDMI connector other than the resident
- * output's is detected first (it reads the sink's EDID); the resident
- * HDMI connector was detected by its choice.  No scanout starts.  Type-C
- * DP connectors are left to their hotplug (WS051).
+ * output's, and every DP connector, is detected first (it reads the sink's
+ * EDID; a Type-C DP connector probes its sink over AUX and gives the
+ * port's PHY back, ws051-p004a); the resident HDMI connector was detected
+ * by its choice.  No scanout starts.
  */
 static void
 i915_output_inventory(
@@ -847,6 +848,12 @@ i915_output_inventory(
 		if (error != 0)
 			continue;
 		if (output.kind == I915_HPD_OUTPUT_HDMI && !(display->output.hdmi && (int)index == summary.hdmi_connector)) {
+			status = drv_i915_hpd_probe_connector(display, index);
+			kern_logf("i915: display inventory: %s detected at the start (status %d), not lit\n", output.name, status);
+		}
+
+		/* A DP connector is detected now: a Type-C one probes its sink and releases the port. */
+		if (output.kind == I915_HPD_OUTPUT_DP) {
 			status = drv_i915_hpd_probe_connector(display, index);
 			kern_logf("i915: display inventory: %s detected at the start (status %d), not lit\n", output.name, status);
 		}

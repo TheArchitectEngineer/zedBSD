@@ -206,7 +206,6 @@ static void i915_edp_log_bytes(const char *tag, const uint8_t *bytes, unsigned c
 static void i915_edp_log_pps(const char *when, const struct i915_edp_pps_regs *regs);
 static void i915_edp_cfg_from_panel(struct i915_edp_config *cfg, const struct i915_vbt_encoder *enc, const struct i915_vbt_panel *panel, int have_panel);
 static unsigned i915_edp_well_refs(struct i915_power_domains *pd);
-static int i915_edp_device_start(struct i915_edp_device *dev);
 static void i915_edp_device_log_acquire(struct i915_edp_device *dev, int rc);
 static void i915_edp_device_late(struct i915_edp_device *dev, const struct i915_vbt_encoder *enc, int port);
 static void i915_edp_device_lcd_a(struct i915_edp_device *dev);
@@ -343,7 +342,8 @@ drv_i915_dp_note(
 }
 
 /*
- * Reports the environment of the live eDP, or NULL when no eDP is live.
+ * Reports the environment the argument-less helpers use: the live eDP's,
+ * else the external DP ports' once they started, else NULL.
  */
 struct i915_dp_env *
 drv_i915_dp_env_current(void)
@@ -355,12 +355,16 @@ drv_i915_dp_env_current(void)
 	if (world == NULL)
 		return NULL;
 
-	/* An eDP that is not live has no environment. */
-	if (!world->edp.live)
-		return NULL;
+	/* A live eDP's environment serves the helpers. */
+	if (world->edp.live)
+		return world->edp.env;
 
-	/* Succeeded: reports the live eDP's environment. */
-	return world->edp.env;
+	/* Without one, the external ports' environment does (the same backend). */
+	if (world->ext.live)
+		return &world->ext.env;
+
+	/* Nothing is live: no environment. */
+	return NULL;
 }
 
 /*
@@ -1102,6 +1106,95 @@ drv_i915_drm_dp_aux_init(
 }
 
 /*
+ * Reads DPCD bytes over any AUX channel (the Linux drm_dp_dpcd_read()), for
+ * the external DP ports.
+ *
+ * It returns the bytes transferred, or a negative Linux errno.
+ */
+long
+drv_i915_drm_dp_dpcd_read(
+	struct drm_dp_aux *aux,
+	unsigned offset,
+	void *buffer,
+	size_t size)
+{
+	long transferred;
+
+	/* Reads the bytes. */
+	transferred = i915_drm_dp_dpcd_read(aux, offset, buffer, size);
+	if (transferred < 0)
+		return transferred;
+
+	/* Succeeded: reports the bytes read. */
+	return transferred;
+}
+
+/*
+ * Writes DPCD bytes over any AUX channel (the Linux drm_dp_dpcd_write()),
+ * as drv_i915_drm_dp_dpcd_read().
+ */
+long
+drv_i915_drm_dp_dpcd_write(
+	struct drm_dp_aux *aux,
+	unsigned offset,
+	const void *buffer,
+	size_t size)
+{
+	long transferred;
+
+	/* Writes the bytes; the Linux helper takes a writable buffer but only reads it. */
+	transferred = i915_drm_dp_dpcd_write(aux, offset, (void *)buffer, size);
+	if (transferred < 0)
+		return transferred;
+
+	/* Succeeded: reports the bytes written. */
+	return transferred;
+}
+
+/*
+ * Wakes a sink with a throw-away read (the Linux drm_dp_dpcd_probe()).
+ *
+ * It returns 0, or a negative Linux errno.
+ */
+int
+drv_i915_drm_dp_dpcd_probe(
+	struct drm_dp_aux *aux,
+	unsigned offset)
+{
+	int error;
+
+	/* Reads one byte and throws it away. */
+	error = i915_drm_dp_dpcd_probe(aux, offset);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sink answered. */
+	return 0;
+}
+
+/*
+ * Reads a sink's receiver capabilities, with the extended ones where it
+ * has them (the Linux drm_dp_read_dpcd_caps()).
+ *
+ * It returns 0, or a negative Linux errno.
+ */
+int
+drv_i915_drm_dp_read_dpcd_caps(
+	struct drm_dp_aux *aux,
+	u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	int error;
+
+	/* Reads the capabilities. */
+	error = i915_drm_dp_read_dpcd_caps(aux, dpcd);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the capabilities are in dpcd. */
+	return 0;
+}
+
+/*
  * Sleeps with the kernel's ordinary sleep (msleep() and usleep_range() of the
  * Linux text on the real GPU).
  *
@@ -1292,6 +1385,41 @@ drv_i915_edp_device_prepare(
 }
 
 /*
+ * Starts the resident eDP device's locks and threads and binds the
+ * environment and the asynchronous power put to them.
+ *
+ * The eDP connector starts them, and so do the external DP ports when no
+ * eDP did (their AUX transfers use the same locks, threads and power).
+ * A started device is left as it is.  Returns 0, or the error of the
+ * thread creation.
+ */
+int
+drv_i915_edp_device_start(
+	struct i915_edp_device *dev)
+{
+	int error;
+
+	/* A started device keeps its threads. */
+	if (dev->started)
+		return 0;
+
+	/* Starts the mutexes and threads. */
+	error = drv_i915_dp_kernel_sync_start(&dev->k);
+	if (error != 0)
+		return error;
+
+	/* Binds the power layer's asynchronous put and every environment hook to them. */
+	drv_i915_display_power_async_bind(dev->k.pd, &i915_dp_kernel_pd_async_ops, &dev->k, dev->k.pwc);
+	drv_i915_dp_kernel_bind(&dev->k, &dev->env);
+
+	/* The locks and threads exist until the device stops. */
+	dev->started = 1;
+
+	/* Succeeded: the device is started. */
+	return 0;
+}
+
+/*
  * Builds the eDP connector of a port (the intel_ddi_init() ->
  * intel_dp_init_connector() -> intel_edp_init_connector() step), called by
  * the output setup for a DP-capable encoder.
@@ -1342,7 +1470,7 @@ drv_i915_edp_device_init_connector(
 
 	/* The locks and threads exist only on a machine that has the panel. */
 	if (!dev->started) {
-		error = i915_edp_device_start(dev);
+		error = drv_i915_edp_device_start(dev);
 		if (error != 0) {
 			kern_logf("i915: edp: worker/timer threads could not start rc=%d\n", error);
 			return -I915_EDP_EIO;
@@ -1418,11 +1546,14 @@ drv_i915_edp_device_fini(
 	if (!dev->started)
 		return;
 
+	/* The external DP ports stop using the backend first. */
+	world = drv_i915_edp_world_of(dev);
+	drv_i915_dp_ext_stop(world);
+
 	/* Ends the connector; the delayed work is cancelled before the PPS lock is taken. */
 	pd = dev->k.pd;
 	end_rc = 0;
 	if (dev->connector_live) {
-		world = drv_i915_edp_world_of(dev);
 		end_rc = drv_i915_edp_end(world, &dev->res);
 		dev->connector_live = 0;
 	}
@@ -2788,34 +2919,6 @@ i915_edp_well_refs(
 
 	/* Succeeded: reports the sum. */
 	return n;
-}
-
-/*
- * Starts the resident eDP device's locks and threads and binds the
- * environment and the asynchronous power put to them.
- *
- * Returns 0, or the error of the thread creation.
- */
-static int
-i915_edp_device_start(
-	struct i915_edp_device *dev)
-{
-	int error;
-
-	/* Starts the mutexes and threads. */
-	error = drv_i915_dp_kernel_sync_start(&dev->k);
-	if (error != 0)
-		return error;
-
-	/* Binds the power layer's asynchronous put and every environment hook to them. */
-	drv_i915_display_power_async_bind(dev->k.pd, &i915_dp_kernel_pd_async_ops, &dev->k, dev->k.pwc);
-	drv_i915_dp_kernel_bind(&dev->k, &dev->env);
-
-	/* The locks and threads exist until the device stops. */
-	dev->started = 1;
-
-	/* Succeeded: the device is started. */
-	return 0;
 }
 
 /* Logs what the bring-up up to the EDID found. */

@@ -908,6 +908,13 @@ struct i915_hpd_world {
 	 */
 	struct i915_tc *tc;
 
+	/*
+	 * The display whose external DP ports (dp-ext-kern.c) the Type-C DP
+	 * connectors' detection probes; NULL for a model instance.  Set by
+	 * every start.
+	 */
+	struct i915_display *dp_display;
+
 	/* EDID reads attempted and failed since the start. */
 	unsigned hpd_edid_reads;
 	unsigned hpd_edid_fails;
