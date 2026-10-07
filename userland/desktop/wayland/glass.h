@@ -167,6 +167,9 @@ void kwl_home_draw(struct kwl_server *server, VkCommandBuffer command, float pro
 void kwl_home_draw_head(struct kwl_server *server, VkCommandBuffer command);
 void kwl_corner_draw(struct kwl_server *server, VkCommandBuffer command);
 
+/* The notifications' popup over the windows and the bar (notify-popup.c, ws156-p003). */
+void kwl_notify_popup_draw(struct kwl_server *server, VkCommandBuffer command);
+
 /* The on-screen keyboard over everything (keyboard.c). */
 void kwl_keyboard_draw(struct kwl_server *server, VkCommandBuffer command);
 
