@@ -2,7 +2,7 @@
 
 # ws179-p001: アクセントカラーの選択
 
-Status: in-progress（q833、P1。2026-10-07 実装済み、host 試験 PASS、T1 の撮影待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-335・339（QEMU、light の 4 色と dark の 5 色の Settings・Files・検索・OSK・bar、主の button の文字、App Home の tile が変わらない、Files の desktop の pill が選び直さずに変わる）を Q1 が PNG で目視。greeter は未撮影（設計で accent に従わせない））（旧: in-progress（q833、P1。2026-10-07 実装済み、host 試験 PASS、T1 の撮影待ち））
 Disposition: normal
 Parent: [WS179](../ws.md)
 

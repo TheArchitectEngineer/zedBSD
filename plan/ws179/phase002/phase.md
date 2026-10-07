@@ -2,7 +2,7 @@
 
 # ws179-p002: 残りの app の accent を theme に従わせる
 
-Status: in-progress（q833、P1。2026-10-07 実装と host 試験済み、T1 の撮影待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-337 の purple・yellow で Calendar・PDF Viewer・Phone・Mailer・Notes・Image Viewer・Music が accent に従う（Q1 が PNG を目視）。PDF Viewer の検索の highlight は橙のまま（accent でない、意図どおり））（旧: in-progress（q833、P1。2026-10-07 実装と host 試験済み、T1 の撮影待ち））
 Disposition: normal
 Parent: [WS179](../ws.md)
 
