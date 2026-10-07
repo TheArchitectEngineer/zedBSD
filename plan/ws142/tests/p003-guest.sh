@@ -14,7 +14,8 @@
 #     ("desktop=1 via=pad" once more).
 #  5. Three fingers up 25 mm in the middle: "kind=up3", Wiseview opens; Esc closes it.
 #  6. A tap of three fingers: "kind=tap3 phase=end" (the switcher comes with ws142-p005).
-#  7. Two fingers in the middle moving up: a scroll, no gesture.
+#  7. Two fingers in the middle moving up: a scroll, no gesture begins; its lift is told once as "kind=swipe2
+#     phase=end" (ws142-p009: one swipe is one step of Wiseview or the switcher).
 #  8. A fullscreen window (the bar hidden): the bottom edge's gesture is logged but opens nothing (D6).
 #  9. The compositor stays up, with no ERROR in its log.
 #   plan/ws079/tests/pen-guest.sh start IMAGE
@@ -105,10 +106,12 @@ sleep 1
 pad tap3 "down 0 400 500; down 1 550 480; down 2 700 500" "wait 40" "up 0; up 1; up 2"
 expect_count tap3 'KWL GESTURE kind=tap3 phase=end' 1
 
-# 7. Two fingers in the middle moving up: no gesture.
-before=$(count 'KWL GESTURE ')
+# 7. Two fingers in the middle moving up: no gesture begins, and the scroll's lift is one swipe2 end.
+before=$(count 'KWL GESTURE kind=[a-z0-9]* phase=begin')
+swipes=$(count 'KWL GESTURE kind=swipe2 phase=end')
 pad scroll "down 0 500 500; down 1 700 500" "wait 30" "swipe 0 -240 12 16" "up 0; up 1"
-expect_count scroll-no-gesture 'KWL GESTURE ' "${before:-0}"
+expect_count scroll-no-gesture 'KWL GESTURE kind=[a-z0-9]* phase=begin' "${before:-0}"
+expect_count scroll-swipe-end 'KWL GESTURE kind=swipe2 phase=end' $(( ${swipes:-0} + 1 ))
 
 # 8. A fullscreen window: the gesture opens nothing (D6).
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
