@@ -57,6 +57,7 @@
 static uint32_t i915_gfx_row_pitch(uint32_t width, uint32_t texel_bytes);
 static void i915_gfx_stencil_layout(struct i915_gfx_image *image, uint32_t slices);
 static uint32_t i915_gfx_channel(uint32_t swizzle, uint32_t identity);
+static int i915_gfx_depth_format(uint32_t format);
 static int i915_gfx_is_depth(uint32_t format);
 static int i915_gfx_image_supported(const VkImageCreateInfo *info);
 static uint32_t i915_gfx_image_max_levels(uint32_t width, uint32_t height, uint32_t depth);
@@ -149,8 +150,7 @@ drv_i915_gfx_create_image(
  * layers (VK_REMAINING_MIP_LEVELS and VK_REMAINING_ARRAY_LAYERS run to the
  * last one).  A view of an unknown image, or of levels or layers the image
  * does not have, fails.  The component swizzle becomes the surface state's
- * shader channel select.  XXX: a swizzle of ZERO for all four components
- * reads as the identity.
+ * shader channel select.
  */
 int
 drv_i915_gfx_create_image_view(
@@ -246,6 +246,7 @@ drv_i915_gfx_create_image_view(
 		    (i915_gfx_channel(info.components.g, 5U) << 22) |
 		    (i915_gfx_channel(info.components.b, 6U) << 19) |
 		    (i915_gfx_channel(info.components.a, 7U) << 16);
+		view->swizzle_set = 1U;
 	}
 
 	/* Publishes the view and answers; a failed view is reported there. */
@@ -792,6 +793,59 @@ drv_i915_gfx_format_bytes(
 	default:
 		/* Not a format the executor lays out. */
 		return 0U;
+	}
+}
+
+/*
+ * Gives the VkFormat a view's surfaces are described in (ws031-p033): the
+ * view's own, reinterpreting the image's texels (VK_IMAGE_CREATE_MUTABLE_
+ * FORMAT_BIT, e.g. an UNORM image drawn as SRGB), when both are colour
+ * formats the executor lays out with texels of the same size; otherwise the
+ * image's.  A depth or stencil view, a format of no known size and a view
+ * of another texel size keep the image's format.
+ */
+uint32_t
+drv_i915_gfx_view_format(
+	const struct i915_gfx_view *view)
+{
+	uint32_t image_bytes;
+	uint32_t view_bytes;
+	int depth;
+
+	/* The image's own format, or no other given. */
+	if (view->format == view->image->format || view->format == VK_FORMAT_UNDEFINED)
+		return view->image->format;
+
+	/* Not a depth or stencil image or view. */
+	depth = i915_gfx_depth_format(view->format) || i915_gfx_depth_format(view->image->format);
+	if (depth)
+		return view->image->format;
+
+	/* Texels of the same, known size. */
+	image_bytes = drv_i915_gfx_format_bytes(view->image->format);
+	view_bytes = drv_i915_gfx_format_bytes(view->format);
+	if (view_bytes == 0U || view_bytes != image_bytes)
+		return view->image->format;
+
+	/* Succeeded: the view's format. */
+	return view->format;
+}
+
+/* Tells whether a VkFormat is one of the depth and stencil formats the executor lays out. */
+static int
+i915_gfx_depth_format(
+	uint32_t format)
+{
+	/* The four. */
+	switch (format) {
+	case VK_FORMAT_D16_UNORM:
+	case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
+	case VK_FORMAT_S8_UINT:
+		return 1;
+	default:
+		/* Succeeded: a colour format. */
+		return 0;
 	}
 }
 

@@ -292,8 +292,10 @@ static int i915_surface_format(uint32_t format, uint32_t *surface_format);
 static int i915_vertex_format(uint32_t format, const struct i915_gfx_vertex_format **entry);
 /*
  * What of an image a surface state shows: the view's type, its levels and
- * its layers (a 3D image's slices for a render target), and whether it is
- * the render target, which writes its first level and layer.
+ * its layers (a 3D image's slices for a render target), the VkFormat its
+ * texels are read as (0: the image's; a colour view may reinterpret them,
+ * ws031-p033), the view's channel select when swizzle_set, and whether it
+ * is the render target, which writes its first level and layer.
  */
 struct i915_image_range {
 	uint32_t view_type;
@@ -301,7 +303,9 @@ struct i915_image_range {
 	uint32_t level_count;
 	uint32_t base_layer;
 	uint32_t layer_count;
+	uint32_t format;
 	uint32_t channel_select;
+	uint32_t swizzle_set;
 	int render_target;
 };
 
@@ -1982,6 +1986,10 @@ i915_image_surface_write(
 	} else if (image->format == VK_FORMAT_D16_UNORM) {
 		format = I915_GFX_SURFACE_R16_UNORM;
 		tile = GEN12_TILEMODE_YMAJOR;
+	} else if (range->format != 0U) {
+		error = i915_surface_format(range->format, &format);
+		if (error != 0)
+			return EINVAL;
 	} else {
 		error = i915_surface_format(image->format, &format);
 		if (error != 0)
@@ -2081,7 +2089,7 @@ i915_image_surface_write(
 	/* The levels, the mip tail start, the view's channel select (identity for a target) and the address. */
 	rss[5] = lod | ((image->levels & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_TAIL_START_SHIFT);
 	rss[7] = (4U << 25) | (5U << 22) | (6U << 19) | (7U << 16);
-	if (range->render_target == 0 && range->channel_select != 0U)
+	if (range->render_target == 0 && range->swizzle_set != 0U)
 		rss[7] = range->channel_select;
 	rss[8] = (uint32_t)va;
 	rss[9] = (uint32_t)(va >> 32);
@@ -2175,7 +2183,9 @@ i915_state_write_surfaces(
 		range.layer_count = view->layer_count;
 		if (range.layer_count == 0U)
 			range.layer_count = 1U;
+		range.format = drv_i915_gfx_view_format(view);
 		range.channel_select = view->channel_select;
+		range.swizzle_set = view->swizzle_set;
 		range.render_target = 0;
 		error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs);
 		if (error != 0)
@@ -2239,6 +2249,7 @@ i915_state_target_range(
 		return;
 	range->base_level = view->base_level;
 	range->base_layer = view->base_layer;
+	range->format = drv_i915_gfx_view_format(view);
 }
 
 /* Finds the view colour slot `slot` of the draw's subpass draws into; NULL for none. */
@@ -2824,8 +2835,8 @@ i915_state_target_integer(
 	if (view == NULL)
 		return 0;
 
-	/* The integer formats the executor lays out. */
-	switch (view->image->format) {
+	/* The integer formats the executor lays out, as the view reads the texels. */
+	switch (drv_i915_gfx_view_format(view)) {
 	case VK_FORMAT_R8G8B8A8_UINT:
 	case VK_FORMAT_R8G8B8A8_SINT:
 	case VK_FORMAT_R32_UINT:
