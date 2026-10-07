@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws005-p023 -->
 # ws005-p023: ベータ1 の network の実機の受け入れ（ユーザーと一緒に）
 
-Status: planning（ユーザーの時期、p020〜p022）
+Status: planning（ユーザーの時期、p020〜p022。2026-10-08 P1 / q861: 手順書 [checklist.md](checklist.md) を用意した。実施は Q1 がユーザーと決める）
 Disposition: normal
 Parent: [WS005](../ws.md)
 Focused goal: fg019（ベータ1）
