@@ -2978,10 +2978,21 @@ drv_i915_display_resident_identity(
 	if (error != 0)
 		return 0;
 
-	/* Succeeded: the connector's identity. */
+	/* The connector's identity and generation, connected as the topology last took it. */
 	*display_id = I915_DISPLAY_OTHER_ID + (uint32_t)resident;
 	*generation = output.generation;
 	*connected = output.connected;
+
+	/*
+	 * The built-in panel is connected whenever the node drives it: the
+	 * hotplug path never detects an eDP connector, whose status stays
+	 * unknown (BUG-250: taken as unplugged, every frame was refused with
+	 * ENXIO).
+	 */
+	if (output.kind == I915_HPD_OUTPUT_EDP)
+		*connected = 1;
+
+	/* Succeeded: the connector's identity. */
 	return 0;
 }
 
