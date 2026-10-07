@@ -43,6 +43,7 @@
 #define UCSI_GET_CURRENT_CAM 0x0EU
 #define UCSI_GET_PDOS 0x10U
 #define UCSI_GET_CONNECTOR_STATUS 0x12U
+#define UCSI_GET_CAM_CS 0x18U
 
 /*
  * The fields of CCI (Table 3-2): the connector a change occurred on (bits
@@ -154,6 +155,27 @@
 #define UCSI_STATUS_ORIENTATION_BYTES 11U
 
 /*
+ * The first UCSI version whose GET_CAM_CS this driver asks (3.1 section
+ * 6.5.22; which revision brought the command is not in the 3.1 document's
+ * history, so the 2.x PPMs, whose documents were not at hand, are not
+ * asked).  Its data (Table 6-60): the Status of the current mode at bit
+ * 8, the number of VDOs at bit 40 and the first VDO at bit 48.
+ */
+#define UCSI_VERSION_3 0x0300U
+#define UCSI_CAM_CS_STATUS_BIT 8U
+#define UCSI_CAM_CS_COUNT_BIT 40U
+#define UCSI_CAM_CS_VDO_BIT 48U
+
+/*
+ * The DisplayPort Status VDO's hot plug detect (bit 7) and the
+ * Configuration VDO's pin assignment (bits 15:8, one bit per pin from A at
+ * bit 8) (VESA DisplayPort Alt Mode on USB Type-C, Tables 5-3 and 5-4).
+ */
+#define UCSI_DP_STATUS_HPD (1U << 7)
+#define UCSI_DP_CONFIG_PIN_SHIFT 8U
+#define UCSI_DP_CONFIG_PIN_MASK 0x3FU
+
+/*
  * How long a command may take, how long PPM_RESET may take, and the
  * first and the longest step of the wait between two looks at CCI when
  * no notification comes.
@@ -176,6 +198,7 @@ static void ucsi_partner_clear(struct drv_typec_connector *record);
 static int ucsi_alt_modes(struct drv_ucsi *ucsi, unsigned number, unsigned recipient, struct drv_typec_alt_mode_list *list);
 static int ucsi_current_modes(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
 static int ucsi_partner_pdos(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
+static int ucsi_dp_status(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
 static int ucsi_pending_handle(struct drv_ucsi *ucsi);
 static int ucsi_request_control(const struct drv_ucsi *ucsi, const struct drv_typec_request *request, uint64_t *control);
 static int ucsi_cable(struct drv_ucsi *ucsi, unsigned number, struct drv_typec_connector *record);
@@ -737,6 +760,14 @@ ucsi_connector_update(
 		error = ucsi_current_modes(ucsi, number, record);
 		if (error != 0)
 			return error;
+
+		/*
+		 * The hot plug detect and the pin assignment of a DisplayPort mode
+		 * the connector is in, which a 3.x PPM reports; one that cannot
+		 * leaves them unknown.
+		 */
+		if (ucsi->version >= UCSI_VERSION_3)
+			(void)ucsi_dp_status(ucsi, number, record);
 	}
 
 	/* The partner's PDOs, when the PPM reports PDOs and the contract is USB PD. */
@@ -849,6 +880,7 @@ ucsi_partner_clear(
 	kern_memset(record->partner_pdos, 0, sizeof(record->partner_pdos));
 	record->partner_pdo_count = 0;
 	kern_memset(&record->cable, 0, sizeof(record->cable));
+	kern_memset(&record->dp_ucsi, 0, sizeof(record->dp_ucsi));
 }
 
 /*
@@ -1004,6 +1036,85 @@ ucsi_partner_pdos(
 	}
 
 	/* Succeeded: the record holds the partner's PDOs. */
+	return 0;
+}
+
+/*
+ * Reads the configuration and status of the DisplayPort mode a connector
+ * is in (GET_CAM_CS, 3.1 section 6.5.22): the hot plug detect from the
+ * DisplayPort Status, and the pin assignment from the Configuration VDO.
+ *
+ * The command names the mode by "one of the current Alternate Modes
+ * obtained from GET_CURRENT_CAM"; this driver gives the mode's index as
+ * GET_CURRENT_CAM returned it (an index into the connector's modes), not
+ * its place in that array -- the 3.1 text reads either way and no PPM was
+ * at hand to tell (unconfirmed).
+ *
+ * Returns 0 with record->dp_ucsi known, ENOENT when the connector is in no
+ * DisplayPort mode, or the command's errno value (the state stays unknown).
+ */
+static int
+ucsi_dp_status(
+	struct drv_ucsi *ucsi,
+	unsigned number,
+	struct drv_typec_connector *record)
+{
+	uint64_t control;
+	uint32_t status;
+	uint32_t configuration;
+	uint32_t pins;
+	unsigned count;
+	unsigned mode;
+	unsigned index;
+	unsigned pin;
+	int error;
+
+	/* The first current mode that is DisplayPort. */
+	mode = UCSI_NO_CURRENT_MODE;
+	for (index = 0; index < record->current_mode_count; index++) {
+		if (record->connector_modes.modes[record->current_modes[index]].svid == DRV_TYPEC_SVID_DISPLAYPORT) {
+			mode = record->current_modes[index];
+			break;
+		}
+	}
+
+	/* A connector in no DisplayPort mode has nothing to report. */
+	if (mode == UCSI_NO_CURRENT_MODE)
+		return ENOENT;
+
+	/* Asks: the connector (bits 16-22) and the current mode (bits 24-31) (Table 6-58). */
+	control = ucsi_connector_control(UCSI_GET_CAM_CS, number);
+	control |= (uint64_t)mode << 24;
+	error = ucsi_command(ucsi, control);
+	if (error != 0)
+		return error;
+
+	/* The DisplayPort Status: the hot plug detect. */
+	status = ucsi_bits(ucsi->message_in, ucsi->message_length, UCSI_CAM_CS_STATUS_BIT, 32);
+	record->dp_ucsi.hpd = false;
+	if ((status & UCSI_DP_STATUS_HPD) != 0)
+		record->dp_ucsi.hpd = true;
+
+	/* The Configuration VDO, when one came: its lowest pin bit names the assignment (A for bit 8). */
+	record->dp_ucsi.pin = DRV_TYPEC_DP_PIN_NONE;
+	count = ucsi_bits(ucsi->message_in, ucsi->message_length, UCSI_CAM_CS_COUNT_BIT, 8);
+	if (count != 0) {
+		configuration = ucsi_bits(ucsi->message_in, ucsi->message_length, UCSI_CAM_CS_VDO_BIT, 32);
+		pins = (configuration >> UCSI_DP_CONFIG_PIN_SHIFT) & UCSI_DP_CONFIG_PIN_MASK;
+		for (pin = 0; pin < (unsigned)DRV_TYPEC_DP_PIN_F; pin++) {
+			if ((pins & (1U << pin)) != 0) {
+				record->dp_ucsi.pin = (enum drv_typec_dp_pin)(DRV_TYPEC_DP_PIN_A + (int)pin);
+				break;
+			}
+		}
+	}
+
+	/* The orientation is the status's; the lanes are the display driver's to know. */
+	record->dp_ucsi.orientation = record->orientation;
+	record->dp_ucsi.lanes = 0;
+
+	/* Succeeded: UCSI's report of DisplayPort on the connector. */
+	record->dp_ucsi.known = true;
 	return 0;
 }
 

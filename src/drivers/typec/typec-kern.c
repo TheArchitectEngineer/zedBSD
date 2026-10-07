@@ -120,6 +120,24 @@ drv_typec_os_unlock(void)
 }
 
 /*
+ * Reports the milliseconds since the kernel started, from the scheduler's
+ * ticks.
+ */
+uint64_t
+drv_typec_os_now_ms(void)
+{
+	uint64_t ticks;
+	uint64_t milliseconds;
+
+	/* The ticks counted so far, in milliseconds. */
+	ticks = sched_ticks();
+	milliseconds = kern_ticks_to_ms(ticks);
+
+	/* Succeeded: the time. */
+	return milliseconds;
+}
+
+/*
  * Writes a line of the driver's log to the kernel's log.
  */
 void

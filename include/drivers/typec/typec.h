@@ -61,6 +61,26 @@
 #define DRV_TYPEC_SVID_DISPLAYPORT 0xFF01U
 
 /*
+ * The most Type-C ports a display driver reports of (Alder Lake-P has
+ * TC1 to TC4).
+ */
+#define DRV_TYPEC_DISPLAY_PORT_MAX 4U
+
+/*
+ * The connector of a display port that is bound to none, and the display
+ * port of a connector that has none bound.
+ */
+#define DRV_TYPEC_CONNECTOR_NONE 0xFFFFFFFFU
+#define DRV_TYPEC_DISPLAY_PORT_NONE 0xFFFFFFFFU
+
+/*
+ * How long the display driver's and UCSI's DisplayPort state may differ
+ * before the layer calls it a disagreement: the PPM's notification and the
+ * display's hotplug interrupt come in no fixed order.
+ */
+#define DRV_TYPEC_DISAGREE_MS 200U
+
+/*
  * What a connector can do (from its capability), as bits.
  */
 enum drv_typec_capability {
@@ -141,6 +161,30 @@ enum drv_typec_data_role {
 };
 
 /*
+ * The DisplayPort pin assignment a partner chose (VESA DisplayPort Alt
+ * Mode, A to F), numbered as the letters are: 1 is A.  Intel's FIA records
+ * it with the same numbers (3 is C, 4 is D, 5 is E).
+ */
+enum drv_typec_dp_pin {
+	DRV_TYPEC_DP_PIN_NONE = 0,
+	DRV_TYPEC_DP_PIN_A = 1,
+	DRV_TYPEC_DP_PIN_B = 2,
+	DRV_TYPEC_DP_PIN_C = 3,
+	DRV_TYPEC_DP_PIN_D = 4,
+	DRV_TYPEC_DP_PIN_E = 5,
+	DRV_TYPEC_DP_PIN_F = 6,
+};
+
+/*
+ * Which report a connector's DisplayPort state was taken from.
+ */
+enum drv_typec_dp_source {
+	DRV_TYPEC_DP_SOURCE_NONE = 0,
+	DRV_TYPEC_DP_SOURCE_DISPLAY = 1,
+	DRV_TYPEC_DP_SOURCE_UCSI = 2,
+};
+
+/*
  * The kinds of connector reset: a USB PD Hard Reset, or a Data Reset
  * (which UCSI 2.0 and later offer).
  */
@@ -198,6 +242,32 @@ struct drv_typec_cable {
 	bool directional;
 	enum drv_typec_plug_end plug_end;
 	bool modes;
+};
+
+/*
+ * What one source reports of DisplayPort on a USB-C port: whether it
+ * reported at all (known), the hot plug detect, the pin assignment, the
+ * lanes DisplayPort has (0: not reported) and the plug's orientation.
+ */
+struct drv_typec_dp_state {
+	bool known;
+	bool hpd;
+	enum drv_typec_dp_pin pin;
+	unsigned lanes;
+	enum drv_typec_orientation orientation;
+};
+
+/*
+ * What the display driver last reported of one of its Type-C ports, and
+ * the connector the port is bound to.
+ *
+ * A copy is what drv_typec_display_get() hands out.  generation is the
+ * layer's generation at the report (0: never reported).
+ */
+struct drv_typec_display {
+	uint64_t generation;
+	struct drv_typec_dp_state state;
+	unsigned connector;
 };
 
 /*
@@ -269,12 +339,34 @@ struct drv_typec_connector {
 	/* The last operation carried out on the connector (serial 0: none yet) and its errno value. */
 	uint32_t request_serial;
 	int request_error;
+
+	/*
+	 * What UCSI reports of the DisplayPort mode the connector is in
+	 * (GET_CAM_CS, UCSI 3.0 and later; not known otherwise).  The
+	 * connector driver fills it.
+	 */
+	struct drv_typec_dp_state dp_ucsi;
+
+	/*
+	 * The layer fills the rest in each copy it hands out, and ignores what
+	 * a published record holds there: the display port bound to the
+	 * connector (DRV_TYPEC_DISPLAY_PORT_NONE when none), what the display
+	 * driver reports of it, the state taken (the display driver's when it
+	 * reports, which is what lights the display, else UCSI's) and its
+	 * source, and whether the two have differed for DRV_TYPEC_DISAGREE_MS.
+	 */
+	unsigned display_port;
+	struct drv_typec_dp_state dp_display;
+	struct drv_typec_dp_state dp;
+	enum drv_typec_dp_source dp_source;
+	bool dp_disagree;
 };
 
 /*
  * A listener: told the connector index (0-based) and the generation of
- * each published change.  It runs on the connector driver's thread and
- * must not block or wait for that thread.
+ * each published change.  It runs on the thread that published the change
+ * (the connector driver's, or the display driver's for a report of a bound
+ * port) and must not block or wait for either.
  */
 typedef void (*drv_typec_listener)(void *argument, unsigned connector, uint64_t generation);
 
@@ -391,6 +483,40 @@ int
 drv_typec_request_finish(
 	const struct drv_typec_request *request,
 	int error);
+
+/*
+ * Records what the display driver reads of DisplayPort on one of its
+ * Type-C ports (0-based, TC1 is 0).
+ */
+int
+drv_typec_display_report(
+	unsigned port,
+	const struct drv_typec_dp_state *state);
+
+/*
+ * Copies what the display driver last reported of one of its Type-C ports.
+ */
+int
+drv_typec_display_get(
+	unsigned port,
+	struct drv_typec_display *display);
+
+/*
+ * Binds a display port to the connector (0-based) it is wired to, or
+ * unbinds it with DRV_TYPEC_CONNECTOR_NONE.
+ */
+int
+drv_typec_display_bind(
+	unsigned port,
+	unsigned connector);
+
+/*
+ * Compares the display driver's and UCSI's DisplayPort state of every
+ * bound connector, and reports how many milliseconds until a difference
+ * seen now is old enough to be a disagreement (0: none waits).
+ */
+uint32_t
+drv_typec_display_check(void);
 
 /*
  * Writes every connector record as text, one line each (the diagnostic

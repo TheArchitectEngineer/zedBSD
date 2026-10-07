@@ -27,6 +27,8 @@
 #include <kern/klog.h>
 #include <kern/lock.h>
 
+#include <drivers/typec/typec.h>
+
 #include <stdarg.h>
 
 /* The display version whose Type-C ports the core knows (Alder Lake-P). */
@@ -34,6 +36,16 @@
 
 /* The longest line the core logs. */
 #define I915_TC_KERN_LOG_LINE		256u
+
+/*
+ * The USB Type-C connector layer, which the ports' DisplayPort state is
+ * reported to.
+ *
+ * It is linked only with CONFIG_DRIVER_ACPI and CONFIG_DRIVER_TYPEC (the
+ * UCSI driver); without it the symbol is weak and NULL, and a report is
+ * not made.
+ */
+extern int drv_typec_display_report(unsigned port, const struct drv_typec_dp_state *state) __attribute__((weak));
 
 static uint32_t tc_kern_read32(void *ctx, uint32_t reg);
 static void tc_kern_write32(void *ctx, uint32_t reg, uint32_t value);
@@ -102,6 +114,12 @@ drv_i915_tc_kern_start(
 	/* Declares the ports the VBT names and reads how the firmware left them. */
 	tc_kern_declare_ports(display, k);
 	drv_i915_tc_readout(&k->tc);
+
+	/* Tells the Type-C layer what each declared port has of DisplayPort after the readout. */
+	for (port = 0u; port < I915_TC_PORTS; port++) {
+		if (k->tc.port[port].present)
+			drv_i915_tc_kern_report(&k->tc, port);
+	}
 }
 
 /*
@@ -166,6 +184,48 @@ drv_i915_lcd_tc_put_link(
 
 	/* Gives the link back; the last one gives the PHY back at once. */
 	drv_i915_tc_put_link(kernel->d->tc, (unsigned)tc_port);
+}
+
+/*
+ * Tells the USB Type-C connector layer what a Type-C port has of
+ * DisplayPort: the DP-alt hot plug detect, the pin assignment and the
+ * lanes (the plug's orientation is not known to the display).
+ *
+ * Called from the display's start and its hotplug work, never from the
+ * interrupt, and with the port's lock not held (the sample takes it).  A
+ * kernel without the Type-C layer reports nothing.
+ */
+void
+drv_i915_tc_kern_report(
+	struct i915_tc *tc,
+	unsigned port)
+{
+	struct i915_tc_dp_sample sample;
+	struct drv_typec_dp_state state;
+	int error;
+
+	/* A kernel without the Type-C layer has no one to tell. */
+	if (drv_typec_display_report == NULL)
+		return;
+
+	/* Reads the port. */
+	drv_i915_tc_dp_sample(tc, port, &sample);
+
+	/* The layer's form: the FIA numbers the pin assignments as the layer does (3 is C). */
+	kern_memset(&state, 0, sizeof(state));
+	state.known = true;
+	if (sample.hpd)
+		state.hpd = true;
+	state.pin = DRV_TYPEC_DP_PIN_NONE;
+	if (sample.pin <= (unsigned)DRV_TYPEC_DP_PIN_F)
+		state.pin = (enum drv_typec_dp_pin)sample.pin;
+	state.lanes = (unsigned)sample.lanes;
+	state.orientation = DRV_TYPEC_ORIENTATION_UNKNOWN;
+
+	/* Tells the layer; a refusal is only logged. */
+	error = drv_typec_display_report(port, &state);
+	if (error != 0)
+		kern_logf("i915: TC%u: the Type-C layer refused the DisplayPort report (error %d)\n", port + 1u, error);
 }
 
 /* Reads a display register for the core. */

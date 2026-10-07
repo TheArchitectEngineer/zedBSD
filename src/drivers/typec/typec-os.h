@@ -33,6 +33,13 @@ void
 drv_typec_os_unlock(void);
 
 /*
+ * Reports the milliseconds since the kernel started (a clock that only
+ * moves forward).
+ */
+uint64_t
+drv_typec_os_now_ms(void);
+
+/*
  * Writes a line of the driver's log.
  */
 void

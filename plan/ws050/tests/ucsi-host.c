@@ -49,6 +49,7 @@
 #define FAKE_GET_CURRENT_CAM 0x0EU
 #define FAKE_GET_PDOS 0x10U
 #define FAKE_GET_CONNECTOR_STATUS 0x12U
+#define FAKE_GET_CAM_CS 0x18U
 
 /* The CCI indicators (Table 3-2). */
 #define FAKE_CCI_RESET (1U << 27)
@@ -89,6 +90,8 @@ struct fake_connector {
 	uint32_t pdos[DRV_TYPEC_PDO_MAX];
 	unsigned pdo_count;
 	uint16_t change;
+	uint32_t dp_status;
+	uint32_t dp_configuration;
 };
 
 /*
@@ -123,6 +126,10 @@ struct fake_ppm {
 	/* The CONTROL of the last operation (reset, role, mode) the PPM was asked. */
 	uint64_t operation_control;
 
+	/* The GET_CAM_CS asked, and the current mode it named last. */
+	unsigned cam_cs_asked;
+	unsigned cam_cs_mode;
+
 	/* Commands answered, waits that refreshed, and breaks of the rules. */
 	unsigned commands;
 	unsigned violations;
@@ -149,6 +156,12 @@ static bool locked;
 /* Whether to print the driver's log. */
 static bool verbose;
 
+/* The time the layer is told (milliseconds), moved on by the scenarios. */
+static uint64_t test_now_ms;
+
+/* How many DisplayPort disagreements the layer logged. */
+static unsigned logged_disagreements;
+
 static void fake_reset(const struct drv_ucsi_layout *layout, uint16_t version);
 static void fake_violation(const char *what);
 static void fake_set(uint8_t *data, unsigned offset, unsigned width, uint32_t value);
@@ -174,6 +187,7 @@ static void test_requests(struct drv_ucsi *ucsi);
 static void test_requests_2(struct drv_ucsi *ucsi);
 static void test_kick(void *argument);
 static bool test_take_run(struct drv_ucsi *ucsi, uint32_t serial);
+static void test_display(struct drv_ucsi *ucsi, const struct drv_ucsi_transport *transport);
 
 /*
  * Runs the scenarios.
@@ -210,6 +224,7 @@ main(
 	test_requests(&ucsi);
 	test_start_2(&ucsi, &transport);
 	test_requests_2(&ucsi);
+	test_display(&ucsi, &transport);
 	test_layouts();
 
 	/* Reports whether every check passed. */
@@ -244,7 +259,18 @@ drv_typec_os_unlock(void)
 }
 
 /*
- * Prints a line of the driver's log when asked to.
+ * Reports the scenario's time.
+ */
+uint64_t
+drv_typec_os_now_ms(void)
+{
+	/* The time the scenarios set. */
+	return test_now_ms;
+}
+
+/*
+ * Counts the DisplayPort disagreements logged, and prints a line of the
+ * driver's log when asked to.
  */
 void
 drv_typec_os_log(
@@ -252,15 +278,20 @@ drv_typec_os_log(
 	...)
 {
 	va_list arguments;
-
-	/* Quiet unless -v. */
-	if (!verbose)
-		return;
+	char line[512];
 
 	/* The line. */
 	va_start(arguments, format);
-	(void)vprintf(format, arguments);
+	(void)vsnprintf(line, sizeof(line), format, arguments);
 	va_end(arguments);
+
+	/* A disagreement, counted. */
+	if (strstr(line, "DisplayPort disagree") != NULL)
+		logged_disagreements++;
+
+	/* Printed with -v. */
+	if (verbose)
+		(void)fputs(line, stdout);
 }
 
 /* Starts the fake PPM afresh with an arrangement and a version. */
@@ -405,6 +436,20 @@ fake_answer(
 		break;
 	case FAKE_GET_PDOS:
 		length = fake_answer_pdos(control, message);
+		break;
+	case FAKE_GET_CAM_CS:
+		/* The mode asked, its DisplayPort Status, and one VDO: its Configuration (3.1 Table 6-60). */
+		fake.cam_cs_asked++;
+		fake.cam_cs_mode = fake_get(control, 24, 8);
+		if (fake.version < 0x0300U)
+			fake_violation("GET_CAM_CS asked of a PPM before 3.0");
+		if (connector != NULL) {
+			fake_set(message, 0, 8, fake.cam_cs_mode);
+			fake_set(message, 8, 32, connector->dp_status);
+			fake_set(message, 40, 8, 1);
+			fake_set(message, 48, 32, connector->dp_configuration);
+		}
+		length = 10;
 		break;
 	case FAKE_CONNECTOR_RESET:
 		fake.operation_control = control;
@@ -825,6 +870,7 @@ test_start_1(
 	(void)snprintf(detail, sizeof(detail), "%u PDOs", record.partner_pdo_count);
 	test_check("first-pdos", record.partner_pdo_count == 5U && record.partner_pdos[4] == 0x00064145U, detail);
 	test_check("first-orientation", record.orientation == DRV_TYPEC_ORIENTATION_UNKNOWN, "a 1.x orientation");
+	test_check("first-dp-1.x", !record.dp_ucsi.known && fake.cam_cs_asked == 0U && record.dp_source == DRV_TYPEC_DP_SOURCE_NONE, "GET_CAM_CS asked of a 1.2 PPM");
 
 	/* The second, empty. */
 	(void)drv_typec_connector_get(1, &record);
@@ -1093,4 +1139,137 @@ test_requests_2(
 	(void)drv_typec_connector_reset(0, DRV_TYPEC_RESET_HARD, &serial);
 	ran = test_take_run(ucsi, serial);
 	test_check("reset-hard-2.x", ran && fake.operation_control == (0x03ULL | (1ULL << 16)), "CONNECTOR_RESET hard on 2.x");
+}
+
+/*
+ * DisplayPort from two sources on a 3.1 PPM: UCSI's GET_CAM_CS alone, the
+ * display driver's report before and after its port is bound, a difference
+ * that becomes a disagreement after DRV_TYPEC_DISAGREE_MS and is logged
+ * once, agreement again, a second binding refused, and an unbinding.
+ */
+static void
+test_display(
+	struct drv_ucsi *ucsi,
+	const struct drv_ucsi_transport *transport)
+{
+	struct drv_typec_connector record;
+	struct drv_typec_display display;
+	struct drv_typec_dp_state report;
+	struct fake_connector *only;
+	uint64_t before;
+	uint32_t wait;
+	char text[2048];
+	char detail[320];
+	unsigned logged;
+	int error;
+
+	/* A 3.1 PPM with one connector in DisplayPort mode, HPD high, pin D. */
+	fake_reset(&drv_ucsi_layout_2, 0x0310U);
+	fake.connector_count = 1;
+	fake.optional_features = 1U << 2;
+	fake.alt_mode_count = 1;
+	only = &fake.connectors[0];
+	only->capability = (1U << 2) | (1U << 7);
+	only->connected = true;
+	only->power_operation = 1;
+	only->partner_flags = 0x2U;
+	only->partner_type = 2;
+	only->modes[0].svid = 0xFF01U;
+	only->modes[0].vdo = 0x001C0045U;
+	only->mode_count = 1;
+	only->partner_modes[0].svid = 0xFF01U;
+	only->partner_modes[0].vdo = 0x000C0005U;
+	only->partner_mode_count = 1;
+	only->supported = 0x01U;
+	only->current = 0;
+	only->dp_status = (1U << 7) | 0x2U;
+	only->dp_configuration = (1U << 11) | 0x2U;
+	test_now_ms = 1000;
+
+	/* UCSI's report alone. */
+	error = drv_ucsi_start(ucsi, transport, &drv_ucsi_layout_2, 0x0310U);
+	(void)snprintf(detail, sizeof(detail), "error %d, breaks %u (%s)", error, fake.violations, fake.last_violation);
+	test_check("dp-start-3.x", error == 0 && fake.violations == 0U, detail);
+	(void)drv_typec_connector_get(0, &record);
+	(void)snprintf(detail, sizeof(detail), "asked %u mode %u, known %d hpd %d pin %d source %d", fake.cam_cs_asked, fake.cam_cs_mode, record.dp_ucsi.known, record.dp_ucsi.hpd, (int)record.dp_ucsi.pin, (int)record.dp_source);
+	test_check("dp-ucsi", fake.cam_cs_asked != 0 && fake.cam_cs_mode == 0 && record.dp_ucsi.known && record.dp_ucsi.hpd && record.dp_ucsi.pin == DRV_TYPEC_DP_PIN_D, detail);
+	test_check("dp-ucsi-taken", record.dp_source == DRV_TYPEC_DP_SOURCE_UCSI && record.dp.hpd && record.dp.pin == DRV_TYPEC_DP_PIN_D && record.display_port == DRV_TYPEC_DISPLAY_PORT_NONE && !record.dp_disagree, detail);
+
+	/* The display driver's report of an unbound port goes into no connector. */
+	before = record.generation;
+	listened = 0;
+	kicked = 0;
+	drv_typec_operator_set(test_kick, NULL);
+	memset(&report, 0, sizeof(report));
+	report.hpd = true;
+	report.pin = DRV_TYPEC_DP_PIN_C;
+	report.lanes = 4;
+	error = drv_typec_display_report(0, &report);
+	(void)drv_typec_connector_get(0, &record);
+	(void)drv_typec_display_get(0, &display);
+	test_check("dp-unbound", error == 0 && record.generation == before && listened == 0U && record.dp_source == DRV_TYPEC_DP_SOURCE_UCSI, "an unbound report changed the connector");
+	test_check("dp-unbound-kept", display.generation != 0 && display.state.known && display.state.pin == DRV_TYPEC_DP_PIN_C && display.connector == DRV_TYPEC_CONNECTOR_NONE, "the report was not kept");
+
+	/* Bound: the display driver's report is taken, UCSI's beside it; pin C and pin D start a wait. */
+	error = drv_typec_display_bind(0, 0);
+	(void)drv_typec_connector_get(0, &record);
+	(void)snprintf(detail, sizeof(detail), "error %d, told %u, port %u, source %d, pin %d, lanes %u", error, listened, record.display_port, (int)record.dp_source, (int)record.dp.pin, record.dp.lanes);
+	test_check("dp-bound", error == 0 && listened == 1U && listened_generation == record.generation && record.display_port == 0U && record.dp_source == DRV_TYPEC_DP_SOURCE_DISPLAY && record.dp.pin == DRV_TYPEC_DP_PIN_C && record.dp.lanes == 4U, detail);
+	wait = drv_typec_display_check();
+	(void)snprintf(detail, sizeof(detail), "wait %u, disagree %d", (unsigned)wait, record.dp_disagree);
+	test_check("dp-wait", wait == DRV_TYPEC_DISAGREE_MS && !record.dp_disagree, detail);
+
+	/* Half the wait later the difference still waits; the same report again kicks the thread and is no new change. */
+	test_now_ms += 100;
+	before = record.generation;
+	listened = 0;
+	error = drv_typec_display_report(0, &report);
+	wait = drv_typec_display_check();
+	(void)drv_typec_connector_get(0, &record);
+	(void)snprintf(detail, sizeof(detail), "wait %u, disagree %d, kicked %u, logged %u", (unsigned)wait, record.dp_disagree, kicked, logged_disagreements);
+	test_check("dp-wait-half", error == 0 && wait == 100U && !record.dp_disagree && kicked == 1U && logged_disagreements == 0U, detail);
+	test_check("dp-same-report", record.generation == before && listened == 0U, "the same report again was told as a change");
+
+	/* The wait over: a disagreement, logged once, shown in the text. */
+	test_now_ms += 150;
+	logged = logged_disagreements;
+	wait = drv_typec_display_check();
+	(void)drv_typec_connector_get(0, &record);
+	(void)drv_typec_display_check();
+	(void)snprintf(detail, sizeof(detail), "wait %u, disagree %d, logged %u", (unsigned)wait, record.dp_disagree, logged_disagreements - logged);
+	test_check("dp-disagree", wait == 0 && record.dp_disagree && logged_disagreements - logged == 1U, detail);
+	(void)drv_typec_text(text, sizeof(text));
+	test_check("dp-text", strstr(text, " display-port=1 hpd=1(display) ucsi=1 pin=C(display) ucsi=D lanes=4 disagree") != NULL && strstr(text, "display-port 1: hpd=1 pin=C lanes=4 connector=1 generation=") != NULL, text);
+
+	/* The display driver now reads pin D: the reports agree and the disagreement ends. */
+	report.pin = DRV_TYPEC_DP_PIN_D;
+	error = drv_typec_display_report(0, &report);
+	wait = drv_typec_display_check();
+	(void)drv_typec_connector_get(0, &record);
+	test_check("dp-agree", error == 0 && wait == 0 && !record.dp_disagree && record.dp.pin == DRV_TYPEC_DP_PIN_D, "the disagreement did not end");
+
+	/* A second port is not bound to the same connector; a port and a connector beyond the room are refused. */
+	error = drv_typec_display_bind(1, 0);
+	test_check("dp-bind-busy", error == EBUSY, "a second port bound to one connector");
+	error = drv_typec_display_bind(DRV_TYPEC_DISPLAY_PORT_MAX, 0);
+	test_check("dp-bind-range", error == EINVAL, "a port beyond the room");
+	error = drv_typec_display_report(DRV_TYPEC_DISPLAY_PORT_MAX, &report);
+	test_check("dp-report-range", error == EINVAL, "a report beyond the room");
+
+	/* Unbound: UCSI's report is taken again. */
+	error = drv_typec_display_bind(0, DRV_TYPEC_CONNECTOR_NONE);
+	(void)drv_typec_connector_get(0, &record);
+	test_check("dp-unbind", error == 0 && record.display_port == DRV_TYPEC_DISPLAY_PORT_NONE && record.dp_source == DRV_TYPEC_DP_SOURCE_UCSI, "the binding was not removed");
+
+	/* The partner leaves: UCSI's report is no longer known. */
+	only->connected = false;
+	only->change = (uint16_t)(1U << 14);
+	fake_event(1);
+	error = drv_ucsi_service(ucsi);
+	(void)drv_typec_connector_get(0, &record);
+	test_check("dp-unplug", error == 0 && !record.dp_ucsi.known && record.dp_source == DRV_TYPEC_DP_SOURCE_NONE, "UCSI's DisplayPort kept after the unplug");
+
+	/* No rule broken. */
+	(void)snprintf(detail, sizeof(detail), "%u breaks, the last: %s", fake.violations, fake.last_violation);
+	test_check("dp-rules", fake.violations == 0, detail);
 }

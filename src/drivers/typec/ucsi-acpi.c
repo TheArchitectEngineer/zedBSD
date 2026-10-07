@@ -669,6 +669,7 @@ static void
 ucsi_acpi_thread(
 	void *argument)
 {
+	uint32_t milliseconds;
 	int error;
 
 	/* No argument: the driver is the attached one. */
@@ -679,9 +680,16 @@ ucsi_acpi_thread(
 	if (error != 0)
 		return;
 
-	/* Each notification. */
-	for (;;)
-		(void)drv_ucsi_acpi_step(UCSI_ACPI_IDLE_MS);
+	/*
+	 * Each notification, waiting no longer than the Type-C layer's next
+	 * comparison of the display driver's DisplayPort report with UCSI's.
+	 */
+	for (;;) {
+		milliseconds = drv_typec_display_check();
+		if (milliseconds == 0)
+			milliseconds = UCSI_ACPI_IDLE_MS;
+		(void)drv_ucsi_acpi_step(milliseconds);
+	}
 }
 
 /* Writes CONTROL and MESSAGE OUT and tells the PPM (_DSM function 1). */
