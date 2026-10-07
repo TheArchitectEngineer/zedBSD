@@ -8,11 +8,12 @@
 #  1. The second interface (MAC 52:54:00:33:00:02) up; networkd restarted so that it solicits a router there.
 #  2. ifconfig IF: an "inet6 fd00:6::1.. prefixlen 128 dhcp" address (networkd ran dhcpc -6 on the M flag), and a
 #     SLAAC one "inet6 fd00:6::... prefixlen 64 autoconf".
-#  3. /var/db/dhcpc/IF.dhcp6: "mode stateful", "renew 60"; networkd's line "IF: DHCPv6 stateful, again in 60 seconds".
+#  3. /var/db/dhcpc/IF.dhcp6: "mode stateful", "renew 60"; networkd ran dhcpc -6 on the M flag: dnsmasq's log has a
+#     DHCPSOLICIT and a DHCPREPLY before the test runs dhcpc itself (networkd's own lines go to the console, not read).
 #  4. ping -c 1 fd00:6::1 (the namespace's address).
 #  5. /etc/resolv.conf: "nameserver fd00:6::53" and "search zb6.test" (RDNSS or DHCPv6).
 #  6. dhcpc -6 -v IF: "renew taken" and the same address (a Renew of the recorded lease).
-#  7. After 70 seconds: networkd ran dhcpc -6 again at T1 (two "IF: DHCPv6 stateful" lines in its log).
+#  7. After 70 seconds: networkd ran dhcpc -6 again at T1: dnsmasq's log has two DHCPRENEW (step 6's and networkd's).
 #  8. IPv4 on the first adapter unchanged: ping -c 1 10.0.2.2.
 # PASS: every "ok" line and the last line ipv6-p008-dnsmasq: PASS.  The host's part needs sudo (ip, dnsmasq); the
 # guest runs under its own runtime directory (build/ws130-p008-run), and both are taken down at the end.
@@ -87,14 +88,13 @@ grep -q 'inet6 fd00:6::1[0-9a-f][0-9a-f] prefixlen 128 dhcp$' "$out/ifconfig.txt
 grep -q 'inet6 fd00:6::.* prefixlen 64 autoconf$' "$out/ifconfig.txt" && ok "the SLAAC address" || bad "SLAAC address"
 leased=$(sed -n 's/.*inet6 \(fd00:6::1[0-9a-f]*\) prefixlen 128 dhcp$/\1/p' "$out/ifconfig.txt" | head -1)
 
-# 3. The record and networkd's line.
-guest "cat /var/db/dhcpc/$iface.dhcp6; grep -h 'DHCPv6' /var/log/networkd.log /var/log/messages 2>/dev/null" \
-    > "$out/record.txt"
+# 3. The record, and networkd's exchange as dnsmasq saw it.
+guest "cat /var/db/dhcpc/$iface.dhcp6" > "$out/record.txt"
 cat "$out/record.txt"
 grep -q '^mode stateful$' "$out/record.txt" && grep -q '^renew 60$' "$out/record.txt" && ok "record: stateful, renew 60" ||
     bad "record"
-grep -q "$iface: DHCPv6 stateful, again in 60 seconds" "$out/record.txt" && ok "networkd ran dhcpc -6 on the M flag" ||
-    bad "networkd on the M flag"
+grep -q 'DHCPSOLICIT(zbv1)' "$out/dnsmasq.log" && grep -q 'DHCPREPLY(zbv1) fd00:6::' "$out/dnsmasq.log" &&
+    ok "networkd ran dhcpc -6 on the M flag" || bad "networkd on the M flag"
 
 # 4. The namespace's address.
 guest "ping -c 1 fd00:6::1" > "$out/ping.txt"
@@ -114,9 +114,10 @@ grep -q "^dhcpc: $iface: renew taken" "$out/renew.txt" && ok "renew taken" || ba
     bad "the same address"
 
 # 7. networkd's run at T1.
-guest "sleep 70; grep -h '$iface: DHCPv6 stateful' /var/log/networkd.log /var/log/messages 2>/dev/null" > "$out/t1.txt"
+guest "sleep 70; echo waited" >/dev/null
+grep 'DHCPRENEW(zbv1)' "$out/dnsmasq.log" > "$out/t1.txt"
 cat "$out/t1.txt"
-[ "$(grep -c "$iface: DHCPv6 stateful" "$out/t1.txt")" -ge 2 ] && ok "networkd ran dhcpc -6 again at T1" || bad "T1"
+[ "$(grep -c 'DHCPRENEW(zbv1)' "$out/t1.txt")" -ge 2 ] && ok "networkd ran dhcpc -6 again at T1" || bad "T1"
 
 # 8. IPv4 unchanged.
 guest 'ping -c 1 10.0.2.2 >/dev/null 2>&1 && echo yes' | tail -1 | grep -q yes && ok "IPv4 still works" || bad "IPv4"

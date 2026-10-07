@@ -12,6 +12,8 @@ checked: its fields, every ELF's machine, no test program, and its dependencies 
 Each run writes a new directory, KEILAND_DEB_BUILD/rootfs/TARGET/STAMP; nothing is deleted.
 """
 import argparse
+import gzip
+import hashlib
 import importlib.util
 import io
 import json
@@ -50,18 +52,99 @@ def snapshot_function():
 
 
 def raspberrypi_keyring(directory):
-    """The Raspberry Pi archive's key, its fingerprint checked against rootfs.json, dearmored."""
+    """
+    The Raspberry Pi archive's keyring as apt (sqv) takes it.  The key at rootfs.json's URL, its
+    fingerprint checked, verifies the archive's InRelease (gpgv); its SHA256 of the arm64 Packages
+    leads to raspberrypi-archive-keyring's deb, whose keyring carries the same key with binding
+    signatures sqv's policy accepts (the published key's are SHA-1).  apt reads the keyring as the
+    namespace's root, which cannot enter a private home: it is kept in KEILAND_DEB_TMPDIR (default
+    /var/tmp) under its hash, made once and reused.
+    """
     config = CONFIG['raspberrypi_key']
+    archive = config['archive']
+
+    # The published key, by its fingerprint.
     armored = directory / 'raspberrypi.gpg.key'
-    run(['curl', '-fsSL', '--retry', '2', '--max-time', '120', config['url'], '-o', str(armored)], timeout=140)
+    fetch(config['url'], armored)
     listing = run(['gpg', '--batch', '--with-colons', '--show-keys', str(armored)],
                   capture_output=True, text=True).stdout
     fingerprints = [line.split(':')[9] for line in listing.splitlines() if line.startswith('fpr:')]
     if not fingerprints or fingerprints[0] != config['fingerprint']:
         raise RuntimeError('Raspberry Pi archive key fingerprint mismatch: ' + ' '.join(fingerprints))
-    keyring = directory / 'raspberrypi.gpg'
-    run(['gpg', '--batch', '--yes', '--dearmor', '-o', str(keyring), str(armored)])
+    published = directory / 'raspberrypi.gpg'
+    run(['gpg', '--batch', '--yes', '--dearmor', '-o', str(published), str(armored)])
+
+    # The archive's InRelease, signed by it.
+    release = directory / 'InRelease'
+    fetch(archive + '/dists/trixie/InRelease', release)
+    verdict = run(['gpgv', '--keyring', str(published), str(release)], capture_output=True, text=True).stderr
+    if config['fingerprint'] not in verdict.replace(' ', ''):
+        raise RuntimeError('InRelease not signed by the pinned key')
+
+    # The arm64 Packages by its SHA256 there, and the keyring package by its SHA256 in it.
+    packages_name = 'main/binary-arm64/Packages.gz'
+    expected = released_sha256(release.read_text(), packages_name)
+    packages = directory / 'Packages.gz'
+    fetch(archive + '/dists/trixie/' + packages_name, packages)
+    if sha256(packages) != expected:
+        raise RuntimeError('Packages.gz hash mismatch')
+    stanza = package_stanza(gzip.decompress(packages.read_bytes()).decode(), 'raspberrypi-archive-keyring')
+    package = directory / 'raspberrypi-archive-keyring.deb'
+    fetch(archive + '/' + stanza['Filename'], package)
+    if sha256(package) != stanza['SHA256']:
+        raise RuntimeError('raspberrypi-archive-keyring hash mismatch')
+
+    # Its keyring, which must carry the pinned key.
+    data = run(['dpkg-deb', '--fsys-tarfile', str(package)], capture_output=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as contents:
+        keyring_data = contents.extractfile('./usr/share/keyrings/raspberrypi-archive-keyring.pgp').read()
+    keys = Path(os.environ.get('KEILAND_DEB_TMPDIR', '/var/tmp')) / 'keiland-deb-keys'
+    keys.mkdir(mode=0o755, exist_ok=True)
+    keyring = keys / ('raspberrypi-archive-keyring-' + hashlib.sha256(keyring_data).hexdigest()[:16] + '.pgp')
+    if not keyring.exists():
+        keyring.write_bytes(keyring_data)
+        keyring.chmod(0o644)
+    listing = run(['gpg', '--batch', '--with-colons', '--show-keys', str(keyring)], capture_output=True, text=True).stdout
+    if config['fingerprint'] not in listing:
+        raise RuntimeError('the packaged keyring lacks the pinned key')
     return keyring
+
+
+def fetch(url, path):
+    """Downloads a file, bounded in time."""
+    run(['curl', '-fsSL', '--retry', '2', '--max-time', '300', url, '-o', str(path)], timeout=320)
+
+
+def sha256(path):
+    """A file's SHA-256 in hexadecimal."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def released_sha256(text, name):
+    """The SHA256 an InRelease gives a file."""
+    section = text.split('\nSHA256:\n', 1)[1]
+    for line in section.splitlines():
+        if not line.startswith(' '):
+            break
+        fields = line.split()
+        if len(fields) == 3 and fields[2] == name:
+            return fields[0]
+    raise RuntimeError('no SHA256 for ' + name)
+
+
+def package_stanza(text, name):
+    """A package's fields in a Packages file (the highest version is not chosen: the first is taken)."""
+    for stanza in text.split('\n\n'):
+        fields = dict(line.split(': ', 1) for line in stanza.splitlines() if ': ' in line and not line.startswith(' '))
+        if fields.get('Package') == name:
+            return fields
+    raise RuntimeError('no package ' + name)
+
+
+def mirrors(lines, keyrings):
+    """The mirror lines with the Raspberry Pi keyring's path put in."""
+    path = str(keyrings[0]) if keyrings else ''
+    return [line.replace('{raspberrypi_keyring}', path) for line in lines]
 
 
 def mmdebstrap(architecture, suite, mirrors, include, keyrings, hooks, log, timeout):
@@ -114,14 +197,14 @@ def inspect(package, architecture):
 def resolve(package, architecture, name, directory, keyrings):
     """apt's --simulate of the deb in a fresh rootfs of one distribution; the transcript and its status."""
     environment = CONFIG['environments'][name]
-    keys = [environment['keyring']] if 'keyring' in environment else [DEBIAN_KEYRING, *keyrings]
+    keys = [environment['keyring']] if 'keyring' in environment else [DEBIAN_KEYRING]
     out = directory / ('check-' + name)
     out.mkdir()
     script = 'apt-get install --simulate /tmp/' + package.name + ' > /tmp/simulate.txt 2>&1; echo exit=$? >> /tmp/simulate.txt'
     hooks = ['copy-in ' + shlex.quote(str(package)) + ' /tmp',
              'chroot "$1" sh -c ' + shlex.quote(script),
              'copy-out /tmp/simulate.txt ' + shlex.quote(str(out))]
-    mmdebstrap(architecture, environment['suite'], environment['mirrors'][architecture], [], keys, hooks,
+    mmdebstrap(architecture, environment['suite'], mirrors(environment['mirrors'][architecture], keyrings), [], keys, hooks,
                directory / ('check-' + name + '.log'), 3600)
     transcript = (out / 'simulate.txt').read_text()
     return {'environment': name, 'resolved': transcript.rstrip().endswith('exit=0'),
@@ -164,7 +247,7 @@ def main():
              'chroot "$1" env SOURCE_DATE_EPOCH=%d LC_ALL=C.UTF-8 sh -c %s' % (epoch, shlex.quote(script)),
              'sync-out /tmp/keiland-output ' + shlex.quote(str(output))]
     started = time.monotonic()
-    mmdebstrap(architecture, target['suite'], target['mirrors'], include, [DEBIAN_KEYRING, *keyrings], hooks,
+    mmdebstrap(architecture, target['suite'], mirrors(target['mirrors'], keyrings), include, [DEBIAN_KEYRING], hooks,
                directory / 'build.log', 14400)
     elapsed = int(time.monotonic() - started)
     packages = sorted(output.glob('*.deb'))
