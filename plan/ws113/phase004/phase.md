@@ -66,3 +66,28 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 ### D-LIMIT の反映（2026-10-05）
 
 anchor でない出力の swapchain の作成が `VK_ERROR_INITIALIZATION_FAILED` なら、その出力を limited にして使わずに続ける（server・他の出力は保つ、窓をその出力に置かない）。topology の変化と、他の出力の swapchain の解放の後に再び試す。QEMU の試験に「Venus の出力を上限より多くつないで、limited の出力があっても落ちない」を足すか p004 で確かめる。
+
+## p004a: 1 出力の切り替え（設計の案、2026-10-07 q850、P2）
+
+2026-10-07 ユーザーの N8（[ws052-p007](../../ws052/phase007/phase.md) §11、ベータ2）:「外部画面のみに切り替えて通常の利用を継続する」、蓋を開けたら内蔵へ戻す。そのための部分集合をこの Phase から分ける案（行は Q1 が ws.md に置く）。同時に 2 つ以上を出す・拡張・mirror・displays.conf・transaction は p004b に残す。
+
+### 今の事実（main 4e0e65d1f を読んだ）
+
+- compositor は起動時に `compose_display()`（`compose.c:766-855`）で最初の恒等変換の display を選び、その native の解像度を `server->width/height` に入れる。surface・swapchain は vkdemo の `vkdemo_display_open`（最初の display を選ぶ）で作り、`kwl_compose_output_open`・`_close` が swapchain と OS の acquire・release を持つ（handoff の時に閉じて開く道は在る）。動いている間に `server->width/height` を変える道は無い（代入は `compose.c:835` と `main.c` の option だけ）。
+- `server->width/height` の参照は 27 file・約 250 箇所。大半は毎 frame・毎入力に読むだけ。起動時に大きさで作る物: glass の wallpaper と blur の image（`glass.c:596・961`）、backdrop の形（`backdrop.c:529`）、wl_output の mode と description（`protocol.c:537・594`）、xdg の configure（最大化・全画面・docked、`protocol.c:1399・1528・1636`）、画面の中央に置く surface（`display.c:278-294・422-443`）、pointer の clamp（`input.c:750-767・1004`）。
+- i915 は p002 で GOP の出力（resident）だけを点け、他の出力の claim は `ENOSPC`（`display.c:2884`）。eDP を release すると console の絵が eDP に戻る（D-RELEASE）。HDMI だけに切り替えるには i915 の「点ける 1 出力の付け替え」が要る（案 p011a、下）。Venus は scanout ごとに独立に claim できる見込み（D-LIMIT の上限まで、T1 の p003 の 2 出力の試験で確かめる）。
+
+### 設計
+
+1. **出力の選択の口**（`compose.c`）: `compose_display` を「display を選ぶ」と「その display の size と refresh を読む」に分け、`compose->display` を任意の display にできるようにする。surface は vkdemo の関数ではなく compositor の中の `compose_surface_open(server, display)`（指定の display の mode と plane を選ぶ。plane の選び方は vkdemo と同じ）。
+2. **切り替え**（新しい `output-switch.c`、`kwl_output_switch(server, VkDisplayKHR target)`）: (a) 今の出力を `kwl_compose_output_close`（device の idle → targets・swapchain・surface → release）。(b) target の size・refresh を読み、`compose->display = target`、`kwl_compose_output_open`。(c) 失敗（`VK_ERROR_INITIALIZATION_FAILED`＝D-LIMIT の limited、OUT_OF_DATE、SURFACE_LOST）なら元の display で (b) をやり直し、`KWL OUTPUT switch failed target=NAME result=R` を出す。元にも戻れなければ出力の無い状態（server は動き続け、hotplug を待つ）。(d) 成功なら `kwl_server_resize(server, width, height, refresh)`。
+3. **大きさの変更**（`kwl_server_resize`、shell と各部の通知）: glass の wallpaper・blur・backdrop を作り直す、wl_output を bind した全 client に mode・geometry・description・done（`protocol.c`）、最大化・全画面・docked の窓に新しい size の configure、floating の窓は画面の内へ詰める（左上の点を新しい範囲に clamp、大きさは変えない）、pointer の位置を clamp、bar・App Home・画面の keyboard の layout の cache を捨てる、全体を damage。`KWL OUTPUT resized width=W height=H refresh_mhz=R`。
+4. **数え直しと口**（`output-switch.c`）: device の hotplug の fence（p003 の `vkRegisterDeviceEventEXT`）を compositor の tick（`kwl_glass_tick` か main loop の 250 ms の周期）で `vkGetFenceStatus` で見て、signal なら新しい fence を登録 → 列挙し直す → 古い fence を壊す。結果を「内蔵（name が eDP・LVDS・DSI で始まる。A2 の displayName は connector の kind を含む）」と「外部」の一覧で持つ。ws052-p012 への口: `kwl_output_external_available(server)`（外部が 1 つ以上で、limited と覚えた物を除く）、`kwl_output_use_external(server)`・`kwl_output_use_internal(server)`。今の出力が抜かれた（SURFACE_LOST・OUT_OF_DATE、または列挙から消えた）時は残る出力へ切り替える（内蔵を先に）。
+5. **起動時**: 今のまま（GOP の出力＝最初の display。保存の設定・D-BOOT2 の全拡張は p004b）。
+6. **試験**: host（`plan/ws113/tests/host-output-switch.c`: 内蔵と外部の分類、切り替えの順と失敗の戻し、floating の窓の clamp の計算、resize の通知の順を stub で）。QEMU（T1、Venus の 2 出力、`VENUS_OUTPUTS=2`）: `kwl-output` の試験の口（compositor の debug の command か `keiland-system` の probe）で scanout 0 → 1 → 0 に切り替え、各 PNG（QMP の screendump の head 1）で desktop が出る、窓の大きさが新しい size、`KWL OUTPUT resized` の行。1 出力の回帰（boot-test）。実機（5330 の HDMI、p011a の後）は ws052-p012 の UAT にまとめる。
+
+### p011a（i915 の 1 出力の付け替え、案）
+
+Keiland の lease がどの出力にも無い時に、GOP の出力でない接続済みの出力の `GPU_DISPLAY_CLAIM` を許し、resident の pipe をその出力へ modeset し直す（eDP は pipe を止め panel の電源と backlight を落とす。HDMI の modeset は起動時の `display=hdmi` の道を動いている間に使う）。その出力の release で GOP の出力へ戻し console を出す。lease が 1 つでもある時の他の claim は今のまま `ENOSPC`（同時の 2 出力は p011）。実機（5330 の eDP と HDMI）の確認が要る。
+
+目安: p004a 4〜6 h（host と QEMU）、p011a 3〜5 h（実機）。
