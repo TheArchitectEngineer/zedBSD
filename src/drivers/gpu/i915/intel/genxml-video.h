@@ -217,8 +217,8 @@
  *   dword 4: Field Picture (0), MBAFF Mode (1), Frame MB Only (2), 8x8 IDCT
  *            Transform Mode (3), Direct 8x8 Inference (4), Constrained Intra
  *            Prediction (5), Non-Reference Picture (6), Entropy Coding Sync
- *            Enable (7, CABAC), Chroma Format IDC (11:10) and Trellis
- *            Quantization Chroma Disable (27)
+ *            Enable (7, CABAC) and Chroma Format IDC (11:10)
+ *   dword 5: Trellis Quantization Chroma Disable (27)
  *   dword 13: Initial QP Value (7:0, signed), Number of Active Reference
  *            Pictures from L0 (13:8) and L1 (21:16), Number of Reference
  *            Frames (28:24)
