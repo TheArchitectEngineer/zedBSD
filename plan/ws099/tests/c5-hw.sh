@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws099-p002 (C5): App Home's and Wiseview's openings and closings on the 5330's i915 passthrough (WS075's harness,
 # plan/ws075/tests/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), with the ten applications
-# of App Home open (hdmi/apps8.sh's tiles, as resize-hw.sh).  ROUNDS times: Wiseview opened with Super+Tab and closed
+# of App Home open (plan/ws035/demo/apps.conf, opened by App Home's search).  ROUNDS times: Wiseview opened with Super+Tab and closed
 # with Esc, App Home opened with the launcher and closed with Esc.  The compositor logs each request's first frame
 # (KWL FIRST_FRAME what=... ms=..., the request to the frame's submission, ws099-p002) in the session's log, which
 # Terminal copies to /home/kei/c5-hw.log (/run is not on the disk) and is read from the image afterwards.
@@ -21,12 +21,17 @@ h4=plan/ws075/tests/hdmi-h4-hw.sh
 ctl() { timeout 120 "$h4" ctl "$@"; }
 mkdir -p "$out"
 
-# The machine, the session and the ten applications.
+# The machine, the session and the ten applications.  The first session of kei shows Settings' Welcome (WS164): its
+# Skip (1920x1080, the window centred) closes it.  Each application is opened by App Home's search (its name and
+# Enter start the first match in the list's order, home.c; "pdf viewer" because Notes' keywords hold "pdf"), not by
+# its tile's place, which App Home's layout moves (ws181-p006).
 H4_MINUTES=${H4_MINUTES:-20} "$h4" start "$image" "$out" || exit 1
 sleep 75
-for tile in files:600:386 notes:743:386 settings:887:386 terminal:1031:386 pdf:1175:386 images:1319:386 browser:600:538 mview:743:538 gears:887:538 xterm:1031:538; do
-	set -- $(echo "$tile" | tr : ' ')
-	ctl pointer move 22 16 sleep 100 down up sleep 1500 move "$2" "$3" sleep 150 down up sleep 8000 > /dev/null
+ctl pointer move 1487 232 sleep 150 down up sleep 2000 > /dev/null
+for name in files notes settings terminal pdf_viewer image text monitor browser xterm; do
+	ctl pointer move 22 16 sleep 100 down up sleep 1500 > /dev/null
+	ctl keys "'$(echo "$name" | tr _ ' ')\\n'" > /dev/null
+	sleep 8
 done
 ctl shot opened > /dev/null
 
@@ -45,8 +50,10 @@ while [ $n -le "$rounds" ]; do
 	n=$((n + 1))
 done
 
-# The session's log onto the disk: Terminal (App Home), a command, and the log read from the image.
-ctl pointer move 22 16 sleep 100 down up sleep 1500 move 1031 386 sleep 150 down up sleep 6000 > /dev/null
+# The session's log onto the disk: Terminal (App Home's search), a command, and the log read from the image.
+ctl pointer move 22 16 sleep 100 down up sleep 1500 > /dev/null
+ctl keys "'terminal\\n'" > /dev/null
+sleep 6
 ctl keys "'cp /run/user/1000/session.log /home/kei/c5-hw.log; sync\\n'" > /dev/null
 sleep 4
 ctl shot saved > /dev/null
