@@ -49,6 +49,7 @@
  */
 
 #include "glass.h"
+#include "edge.h"
 #include "activation.h"
 #include "ime.h"
 
@@ -118,7 +119,6 @@
  * that is mostly down closes Home); HOME_THRESHOLD of it decides.
  */
 #define HOME_SHADOW		120.0f
-#define HOME_RISE_EDGE		20
 #define HOME_RISE_START		12
 #define HOME_RISE_DISTANCE	360.0f
 
@@ -337,10 +337,12 @@ int
 kwl_home_edge_press(
 	struct kwl_server *server)
 {
+	unsigned edge;
 	float progress;
 
-	/* Only a press in the bottom edge. */
-	if (server->pointer_y < (int32_t)server->height - HOME_RISE_EDGE)
+	/* Only a press in the bottom edge's strip (edge.c). */
+	edge = kwl_edge_classify(server->pointer_x, server->pointer_y, (int32_t)server->width, (int32_t)server->height, 0);
+	if (edge != KWL_EDGE_BOTTOM_STRIP)
 		return 0;
 
 	/* Only with Home closed (on Home the same swipe does nothing). */
@@ -558,7 +560,7 @@ kwl_home_button(
 		return progress > 0.0f;
 
 	/* A press on the launcher or in the top-left corner: a click or the start of the gesture. */
-	if ((x < 40 && y < KWL_GLASS_BAR) || (x < HOME_CORNER && y < HOME_CORNER)) {
+	if ((x < KWL_EDGE_LAUNCHER_WIDTH && y < KWL_GLASS_BAR) || (x < HOME_CORNER && y < HOME_CORNER)) {
 		server->home_press = 1;
 		server->home_dragging = 0;
 		server->home_start_x = x;
@@ -2355,6 +2357,7 @@ home_page_release(
 	struct kwl_server *server,
 	float progress)
 {
+	unsigned axis;
 	int32_t dx;
 	int32_t dy;
 	int closed;
@@ -2382,10 +2385,8 @@ home_page_release(
 	}
 
 	/* A drag mostly up turns no page: the pages go back to where they were. */
-	if (server->home_page_dragging &&
-	    dy < 0 &&
-	    -dy > dx &&
-	    -dy > -dx) {
+	axis = kwl_edge_drag_axis(dx, dy);
+	if (server->home_page_dragging && axis == KWL_EDGE_DRAG_NONE) {
 		home_page_turn(server, (int)server->home_page, "drag");
 		server->home_page_dragging = 0;
 		return;
@@ -2450,21 +2451,19 @@ home_page_follow(
 	int32_t dx,
 	int32_t dy)
 {
-	int32_t across;
+	unsigned axis;
 
-	/* How far sideways, whichever way. */
-	across = dx;
-	if (across < 0)
-		across = -across;
+	/* Which way the drag went (edge.c). */
+	axis = kwl_edge_drag_axis(dx, dy);
 
 	/* Sideways at least as far as down or up: the pages. */
-	if (across >= dy && across >= -dy) {
+	if (axis == KWL_EDGE_DRAG_PAGES) {
 		printf("KWL HOME page drag\n");
 		return;
 	}
 
 	/* Up: nothing. */
-	if (dy < 0)
+	if (axis == KWL_EDGE_DRAG_NONE)
 		return;
 
 	/* Down: Home follows the pointer, closing. */
