@@ -122,6 +122,7 @@ struct window_found {
 	uint32_t shell_version;
 	uint32_t seat;
 	uint32_t seat_version;
+	uint32_t text_manager;
 };
 
 /* The registry's callbacks of that search. */
@@ -1261,6 +1262,10 @@ window_setup_shared(
 	if (found.seat != 0U)
 		window->seat = wl_registry_bind(registry, found.seat, &wl_seat_interface, found.seat_version);
 
+	/* The text input's manager, for the window's own text input. */
+	if (found.text_manager != 0U)
+		keiui_text_input_bind(window, registry, found.text_manager);
+
 	/* The search's objects go. */
 	wl_registry_destroy(registry);
 	wl_proxy_wrapper_destroy(wrapper);
@@ -1280,6 +1285,11 @@ window_setup_shared(
 		wl_proxy_set_queue((struct wl_proxy *)window->seat, NULL);
 		(void)wl_seat_add_listener(window->seat, &seat_listener, window);
 	}
+
+	/* And the text input, made from its manager on the application's queue. */
+	if (window->text_manager != NULL)
+		wl_proxy_set_queue((struct wl_proxy *)window->text_manager, NULL);
+	keiui_text_input_start(window);
 
 	/* The search's queue is empty and goes. */
 	wl_event_queue_destroy(queue);
@@ -1488,6 +1498,13 @@ window_search(
 		found->shell_version = version;
 		if (version > 4U)
 			found->shell_version = 4U;
+		return;
+	}
+
+	/* The text input's manager (a file chooser's fields take an input method's text, ws090-p022). */
+	match = strcmp(interface, "zwp_text_input_manager_v3");
+	if (match == 0 && found->text_manager == 0U) {
+		found->text_manager = name;
 		return;
 	}
 
