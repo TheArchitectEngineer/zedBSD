@@ -144,6 +144,7 @@ dom_control_of(
 
 	/* Clean native text state starts without an independently owned value buffer. */
 	wb_units_init(&control->value);
+	wb_units_init(&control->preedit);
 
 	/* The element owns it from now on. */
 	element->control = control;
@@ -443,8 +444,9 @@ dom_control_free(
 	if (element->control == NULL)
 		return;
 
-	/* The value's units, then the state. */
+	/* The value's units and the text being composed, then the state. */
 	wb_units_release(&element->control->value);
+	wb_units_release(&element->control->preedit);
 	free(element->control);
 	element->control = NULL;
 

@@ -308,6 +308,21 @@ int browser_view_key(struct browser_view *view, const char *key, const char *cod
 int browser_view_focus(struct browser_view *view, int focused);
 
 /*
+ * An input method (ws090-p025): whether the focused element takes its text
+ * (a text field or a textarea; a password field takes keys only), with the
+ * caret's rectangle in the view's pixels (x, y, width, height) for the
+ * program's text input; the text it is composing, shown at the caret
+ * underlined without changing the value (empty when it goes; begin and
+ * end are its cursor's byte offsets, -1 when hidden); and the text it
+ * commits, after delete_before and delete_after bytes of UTF-8 around the
+ * caret are deleted, which fires input.  Each reports 0, or an errno value
+ * when the page's scripts failed.
+ */
+int browser_view_text_target(struct browser_view *view, float caret[4]);
+int browser_view_compose(struct browser_view *view, const char *preedit, int begin, int end);
+int browser_view_commit_text(struct browser_view *view, const char *text, uint32_t delete_before, uint32_t delete_after);
+
+/*
  * The side without a window: the page brought to rest (the page being
  * fetched has arrived, its timers have run on a virtual clock up to budget
  * milliseconds, and with BROWSER_SETTLE_LAYOUT it is laid out with the

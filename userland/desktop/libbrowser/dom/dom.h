@@ -304,7 +304,10 @@ struct dom_attribute {
  * element's value attribute (or a textarea's text); caret is an offset
  * into the value in UTF-16 units.  checked is a checkbox's or radio
  * button's checkedness once checked_dirty says it no longer follows the
- * checked attribute.
+ * checked attribute.  preedit is the text an input method is composing
+ * at the caret (UTF-16, not part of the value; empty when none), drawn
+ * underlined there with its own cursor preedit_cursor units into it
+ * (ws090-p025).
  *
  * The rest is what the display list last drew (drawn says it did), in
  * layout units in the document's coordinates: the text's unscrolled origin
@@ -323,6 +326,8 @@ struct dom_control {
 	int checked_initialized;
 	/* Independent input presentation state, initially false and copied by cloning. */
 	int indeterminate;
+	struct wb_units preedit;
+	size_t preedit_cursor;
 	int drawn;
 	int32_t scroll_x;
 	int32_t content_x;

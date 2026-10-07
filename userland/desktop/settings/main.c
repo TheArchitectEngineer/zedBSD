@@ -78,6 +78,9 @@ struct main_options {
 static struct se_window main_window;
 static struct se_present main_present;
 static struct se_app main_app;
+
+/* Whether the fields last asked for the text input (-1 before the first frame), for the log when it changes (ws090-p025, a diagnostic); the main thread's alone. */
+static int main_text_wanted = -1;
 static struct kl_text main_text;
 
 /*
@@ -606,6 +609,7 @@ static void
 main_text_input(void)
 {
 	struct kl_ui *fields;
+	int wanted;
 
 	/* No fields' input: off. */
 	fields = se_fields_ui();
@@ -616,6 +620,15 @@ main_text_input(void)
 
 	/* libkeiland's answer: on while a field that takes an input method has the keyboard, at its caret. */
 	kl_ui_window_text(fields, main_window.kui);
+
+	/* A change of the answer is logged with the page's keyboard (a diagnostic of the input method's fields). */
+	wanted = kl_ui_text_wanted(fields, NULL);
+	if (wanted != main_text_wanted) {
+		main_text_wanted = wanted;
+		se_log("TEXT wanted=%d page=%d keyboard=%d admin_focus=%d admin_mode=%d name_plain=%d", wanted, (int)main_app.page,
+		    (int)main_app.users.keyboard, main_app.users.admin_focus, (int)main_app.users.admin_mode,
+		    main_app.users.admin_fields[SE_ADMIN_NAME].plain);
+	}
 }
 
 /* Makes the frame's memory and canvas at the swapchain's size; nonzero when memory runs out. */

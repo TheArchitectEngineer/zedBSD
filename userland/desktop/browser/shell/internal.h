@@ -42,7 +42,10 @@ enum shell_event_type {
 	SHELL_EVENT_BUTTON,
 	SHELL_EVENT_MOTION,
 	SHELL_EVENT_LEAVE,
-	SHELL_EVENT_FOCUS
+	SHELL_EVENT_FOCUS,
+	SHELL_EVENT_TEXT_COMMIT,
+	SHELL_EVENT_TEXT_PREEDIT,
+	SHELL_EVENT_TEXT_DELETE
 };
 
 /* The modifier bits of an input. */
@@ -64,7 +67,9 @@ enum shell_event_type {
  * positive), a pointer button pressed or let go (its evdev code), the
  * pointer moving or leaving, or the keyboard's focus gained or lost
  * (pressed), with the pointer's place in the window and the modifiers
- * held.
+ * held.  An input method's text (ws090-p025) is the text it commits, the
+ * text it composes with its cursor's byte offsets (begin and end, -1 when
+ * hidden), or the bytes it deletes before and after the caret.
  */
 struct shell_event {
 	int type;
@@ -77,6 +82,11 @@ struct shell_event {
 	int x;
 	int y;
 	uint32_t modifiers;
+	char text[KL_WINDOW_TEXT_MAX];
+	int32_t begin;
+	int32_t end;
+	uint32_t before;
+	uint32_t after;
 };
 
 /*

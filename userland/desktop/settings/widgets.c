@@ -664,6 +664,9 @@ se_fields_input(
 	text.begin = -1;
 	text.end = -1;
 	(void)kl_ui_text(widgets_ui, &text);
+
+	/* Each one in the log by its kind and length, not its text (a diagnostic of the input method's fields, ws090-p025). */
+	se_log("TEXT event=%u bytes=%zu before=%u", text.kind, strlen(text.text), (unsigned)text.before);
 }
 
 /*
