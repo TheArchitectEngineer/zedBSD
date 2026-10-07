@@ -65,7 +65,6 @@ for spv in "$repo"/userland/tests/mview/shaders/*.spv "$repo"/src/drivers/gpu/i9
 	case $name in
 	dual-alone.frag) continue ;;    # refused on purpose (ws031-p032: a second colour without the first)
 	refuse-*) continue ;;           # refused on purpose (ws075-p007a: what a geometry shader may not do)
-	points.geom|adjacency.geom|layers.geom|varyings.geom) continue ;;  # XXX EmitVertex: ws075-p007a increment a3
 	*.geom) stage=geometry ;;
 	*.vert) stage=vertex ;;
 	*) stage=fragment ;;

@@ -41,8 +41,21 @@
  *
  * The output URB entry (brw_compile_gs.cpp, with the vertex count dynamic):
  * the vertex count in its first 32 bytes, then the control data header (the
- * cut bits), then the vertices, each a whole number of 32-byte units.  The
- * thread ends with the write of the vertex count.
+ * cut bits), then the vertices, each a whole number of 32-byte units.
+ *
+ * An emit writes the staged VUE two slots at a time with per-slot offsets
+ * -- the vertex's place, the vertex count times the vertex's size -- for the
+ * channels of its block that have room for one more vertex (a shader that
+ * emits past its OutputVertices loses the extra vertices, as Mesa's
+ * nir_lower_gs_intrinsics guard does, instead of writing past its entry);
+ * then the count and the offset move on.  The payload is split after the
+ * header (the handles and the offsets) as Mesa's brw_opt_split_sends()
+ * splits it.  An end sets the cut bit of the last vertex emitted.  The cut
+ * bits are gathered a dword at a time: written once at the thread's end
+ * when they are 32 or fewer, otherwise each time 32 more vertices start
+ * (with a channel mask, and per-slot offsets past 128 bits) and once more
+ * at the end (Mesa's emit_gs_control_data_bits()).  The thread ends with
+ * the write of the vertex count.
  *
  * The file is part of compile.c's translation unit: it uses that file's
  * state, constants and helpers, and its functions are declared with the
@@ -74,6 +87,27 @@
 #define COMPILE_GS_HWORD_BITS		256U
 
 /*
+ * Geometry: the cut bits one register gathers before they are written (a
+ * dword to a channel), and the header size past which a write needs a
+ * channel mask (one dword of four in an OWord) and per-slot offsets (one
+ * OWord of several).
+ */
+#define COMPILE_GS_CUT_DWORD_BITS	32U
+#define COMPILE_GS_CUT_DWORD_SHIFT	5U
+#define COMPILE_GS_CUT_OWORD_BITS	128U
+
+/* Geometry: the OWord, in OWords, of the control data header, after the vertex count's 32 bytes. */
+#define COMPILE_GS_CONTROL_OWORD	2U
+
+/* Geometry: one OWord is four dwords, the dword a channel mask picks; its bits are 23:16 of the mask register. */
+#define COMPILE_GS_OWORD_DWORDS_SHIFT	2U
+#define COMPILE_GS_OWORD_DWORD_MASK	3U
+#define COMPILE_GS_CHANNEL_MASK_SHIFT	16U
+
+/* The registers of data a write with a channel mask carries: the dword four times, one for each it may land on. */
+#define COMPILE_GS_MASKED_DATA_REGS	4U
+
+/*
  * Geometry: the control data formats of 3DSTATE_GS -- cut bits (a strip
  * ends after the vertex whose bit is set) and stream IDs, which a shader
  * emitting points has (Mesa 25.0.7 brw_eu_defines.h,
@@ -81,6 +115,16 @@
  */
 #define COMPILE_GS_CONTROL_CUT		0U
 #define COMPILE_GS_CONTROL_SID		1U
+
+/*
+ * The URB's SIMD8 write message (Mesa 25.0.7 brw_eu_defines.h,
+ * GFX8_URB_OPCODE_SIMD8_WRITE; brw_eu.h brw_urb_desc()): bit 17 says
+ * per-slot offsets follow the handles, bit 15 a channel mask after them.
+ */
+#define COMPILE_URB_OPCODE_SIMD8_WRITE	7U
+#define COMPILE_URB_PER_SLOT_PRESENT	(1U << 17)
+#define COMPILE_URB_CHANNEL_MASK_PRESENT	(1U << 15)
+#define COMPILE_URB_GLOBAL_OFFSET_SHIFT	4U
 
 /*
  * The URB's SIMD8 read message (Mesa 25.0.7 brw_eu_defines.h,
@@ -151,6 +195,7 @@ i915_compile_geometry_interface(
 	control_bits = 0U;
 	if (state->ir->output_topology != I915_IR_OUTPUT_POINTS && state->ir->uses_end_primitive != 0U)
 		control_bits = state->ir->max_vertices;
+	state->gs_control_bits = control_bits;
 	state->gs_control_hwords = (control_bits + COMPILE_GS_HWORD_BITS - 1U) / COMPILE_GS_HWORD_BITS;
 
 	/* The entry: the vertex count, the control data header, then every vertex the shader may emit. */
@@ -195,6 +240,11 @@ i915_compile_geometry_prologue(
 
 	/* No strip is ended yet. */
 	counter = drv_i915_eu_grf_ud(state->gs_cut_grf);
+	counter.type = COMPILE_TYPE_D;
+	drv_i915_eu_mov(&state->code, counter, drv_i915_eu_imm_d(0U));
+
+	/* The first vertex goes to the start of the vertices: a per-slot offset of zero. */
+	counter = drv_i915_eu_grf_ud(handles + 1U);
 	counter.type = COMPILE_TYPE_D;
 	drv_i915_eu_mov(&state->code, counter, drv_i915_eu_imm_d(0U));
 }
@@ -373,19 +423,35 @@ i915_compile_geometry_system(
 }
 
 /*
- * Ends a geometry thread: writes how many vertices it emitted into the first
- * dword of its output URB entry, and retires (Mesa's thread end with a
- * dynamic vertex count).  The handles and the count are the payload in
- * r112..r127, as a message that ends the thread needs.
+ * Ends a geometry thread: writes the cut bits gathered last, then how many
+ * vertices it emitted into the first dword of its output URB entry, and
+ * retires (Mesa's thread end with a dynamic vertex count).  The handles and
+ * the count are the payload in r112..r127, as a message that ends the
+ * thread needs.
  */
 static void
 i915_compile_terminate_geometry(
 	struct i915_compile_state *state)
 {
 	struct i915_eu_buf *code;
+	struct i915_eu_reg null;
 
 	/* Emits into the shader's encoder buffer. */
 	code = &state->code;
+
+	/*
+	 * The cut bits gathered since the last write: all of them in one dword
+	 * when they are 32 or fewer; past that, the dword of the last vertex,
+	 * for the channels that emitted one (no vertex, no dword to name).
+	 */
+	if (state->gs_control_bits > COMPILE_GS_CUT_DWORD_BITS) {
+		null = drv_i915_eu_null();
+		null.type = COMPILE_TYPE_D;
+		drv_i915_eu_cmp(code, I915_EU_COND_NE, I915_EU_FLAG_F0_1, 0, null, drv_i915_eu_grf_d(state->gs_count_grf), drv_i915_eu_imm_d(0U));
+		i915_compile_control_write(state, 1);
+	} else if (state->gs_control_bits != 0U) {
+		i915_compile_control_write(state, 0);
+	}
 
 	/* The handles, without the instance bits, and the count, in the last two registers. */
 	drv_i915_eu_mov(code, drv_i915_eu_grf_ud(COMPILE_MAX_GRF), drv_i915_eu_grf_ud(state->vue_grf - COMPILE_GS_WRITE_HEADER_REGS));
@@ -401,6 +467,388 @@ i915_compile_terminate_geometry(
 			 COMPILE_EX_MLEN(1U),
 			 0,
 			 1);
+}
+
+/*
+ * Lowers EMIT_VERTEX: for the channels of the emit's block that have room
+ * for one more vertex, writes the staged VUE at the vertex's place in the
+ * output entry, then counts the vertex and moves the place on.  Past 32 cut
+ * bits, the vertex that starts a new dword first writes the dword before.
+ */
+static void
+i915_compile_emit_vertex(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_buf *code;
+	struct i915_eu_reg null;
+	uint32_t predicate_grf;
+	uint32_t live_grf;
+	uint32_t handles;
+	uint32_t vertices;
+	uint32_t slots;
+	uint32_t first;
+	uint32_t count;
+	uint32_t descriptor;
+
+	/* Emits into the shader's encoder buffer. */
+	code = &state->code;
+
+	/* Reads the predicate of the emit's block when it has one. */
+	predicate_grf = COMPILE_NO_GRF;
+	if (inst->component != 0U)
+		predicate_grf = i915_compile_grf(state, inst->src[0]);
+
+	/* Takes the register of the channels that emit. */
+	live_grf = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* The channels with room for one more vertex, and of those the ones whose block runs the emit. */
+	drv_i915_eu_cmp(code,
+			I915_EU_COND_LT,
+			I915_EU_FLAG_F0_0,
+			0,
+			drv_i915_eu_grf_d(live_grf),
+			drv_i915_eu_grf_d(state->gs_count_grf),
+			drv_i915_eu_imm_d(state->ir->max_vertices));
+	if (predicate_grf != COMPILE_NO_GRF)
+		drv_i915_eu_alu2(code, I915_EU_AND, drv_i915_eu_grf_d(live_grf), drv_i915_eu_grf_d(live_grf), drv_i915_eu_grf_d(predicate_grf));
+
+	/* Past 32 cut bits, a vertex that starts a new dword writes the dword before first. */
+	if (state->gs_control_bits > COMPILE_GS_CUT_DWORD_BITS)
+		i915_compile_flush_cut_bits(state, live_grf);
+
+	/* f0.0 holds the channels that emit. */
+	null = drv_i915_eu_null();
+	null.type = COMPILE_TYPE_D;
+	drv_i915_eu_cmp(code, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, null, drv_i915_eu_grf_d(live_grf), drv_i915_eu_imm_d(0U));
+
+	/* Writes the staged VUE two slots at a time, after the vertex count and the control data, at the vertex's place. */
+	handles = state->vue_grf - COMPILE_GS_WRITE_HEADER_REGS;
+	slots = 2U + state->varying_count;
+	for (first = 0U; first < slots; first += count) {
+		/* Two slots a write, one for a lone last slot. */
+		count = COMPILE_URB_WRITE_SLOTS;
+		if (slots - first < COMPILE_URB_WRITE_SLOTS)
+			count = slots - first;
+
+		/* The slots after the vertex count and the control data header, offset per channel by the vertex's place. */
+		descriptor = i915_compile_urb_write_descriptor(COMPILE_GS_CONTROL_OWORD + 2U * state->gs_control_hwords + first,
+							      COMPILE_GS_WRITE_HEADER_REGS,
+							      1,
+							      0);
+		drv_i915_eu_send_masked(code,
+					I915_EU_FLAG_F0_0,
+					drv_i915_eu_null(),
+					drv_i915_eu_grf_ud(handles),
+					drv_i915_eu_grf_ud(state->vue_grf + 4U * first),
+					EU_SFID_URB,
+					descriptor,
+					COMPILE_EX_MLEN(4U * count),
+					0,
+					0);
+	}
+
+	/* Counts the vertex and moves the place on by one vertex, in OWords. */
+	vertices = 2U * state->gs_vertex_hwords;
+	drv_i915_eu_alu2_masked(code,
+				I915_EU_FLAG_F0_0,
+				I915_EU_ADD,
+				drv_i915_eu_grf_d(state->gs_count_grf),
+				drv_i915_eu_grf_d(state->gs_count_grf),
+				drv_i915_eu_imm_d(1U));
+	drv_i915_eu_alu2_masked(code,
+				I915_EU_FLAG_F0_0,
+				I915_EU_ADD,
+				drv_i915_eu_grf_d(handles + 1U),
+				drv_i915_eu_grf_d(handles + 1U),
+				drv_i915_eu_imm_d(vertices));
+
+	/* The register of the channels that emit is free again. */
+	state->grf_busy[live_grf] = 0U;
+}
+
+/*
+ * Writes the cut bits gathered so far when a vertex starts a new dword of
+ * them (the count a multiple of 32), for the channels in `live_grf` that
+ * emit: the dword before is written unless no vertex came before, and the
+ * gathering starts again from zero (which also forgets an end before the
+ * first vertex).
+ */
+static void
+i915_compile_flush_cut_bits(
+	struct i915_compile_state *state,
+	uint32_t live_grf)
+{
+	struct i915_eu_buf *code;
+	struct i915_eu_reg null;
+	uint32_t start_grf;
+	uint32_t nonzero_grf;
+
+	/* Emits into the shader's encoder buffer. */
+	code = &state->code;
+
+	/* Takes the registers of the two decisions. */
+	start_grf = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+	nonzero_grf = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* The emitting channels whose count is a multiple of 32: they start a new dword. */
+	drv_i915_eu_alu2(code,
+			 I915_EU_AND,
+			 drv_i915_eu_grf_d(start_grf),
+			 drv_i915_eu_grf_d(state->gs_count_grf),
+			 drv_i915_eu_imm_d(COMPILE_GS_CUT_DWORD_BITS - 1U));
+	drv_i915_eu_cmp(code,
+			I915_EU_COND_EQ,
+			I915_EU_FLAG_F0_1,
+			0,
+			drv_i915_eu_grf_d(start_grf),
+			drv_i915_eu_grf_d(start_grf),
+			drv_i915_eu_imm_d(0U));
+	drv_i915_eu_alu2(code, I915_EU_AND, drv_i915_eu_grf_d(start_grf), drv_i915_eu_grf_d(start_grf), drv_i915_eu_grf_d(live_grf));
+
+	/* Of those, the ones with a dword before to write. */
+	drv_i915_eu_cmp(code,
+			I915_EU_COND_NE,
+			I915_EU_FLAG_F0_1,
+			0,
+			drv_i915_eu_grf_d(nonzero_grf),
+			drv_i915_eu_grf_d(state->gs_count_grf),
+			drv_i915_eu_imm_d(0U));
+	drv_i915_eu_alu2(code, I915_EU_AND, drv_i915_eu_grf_d(nonzero_grf), drv_i915_eu_grf_d(nonzero_grf), drv_i915_eu_grf_d(start_grf));
+
+	/* Writes the dword before for them. */
+	null = drv_i915_eu_null();
+	null.type = COMPILE_TYPE_D;
+	drv_i915_eu_cmp(code, I915_EU_COND_NE, I915_EU_FLAG_F0_1, 0, null, drv_i915_eu_grf_d(nonzero_grf), drv_i915_eu_imm_d(0U));
+	i915_compile_control_write(state, 1);
+
+	/*
+	 * Starts gathering again on every channel that starts a new dword
+	 * (under f0.0, which the emit sets again after: Mesa's brw_asm reads a
+	 * predicated AND with an immediate back as f0.0 whatever its flag).
+	 */
+	drv_i915_eu_cmp(code, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, null, drv_i915_eu_grf_d(start_grf), drv_i915_eu_imm_d(0U));
+	drv_i915_eu_alu2_masked(code,
+				I915_EU_FLAG_F0_0,
+				I915_EU_AND,
+				drv_i915_eu_grf_d(state->gs_cut_grf),
+				drv_i915_eu_grf_d(state->gs_cut_grf),
+				drv_i915_eu_imm_d(0U));
+
+	/* The registers of the decisions are free again. */
+	state->grf_busy[start_grf] = 0U;
+	state->grf_busy[nonzero_grf] = 0U;
+}
+
+/*
+ * Writes the dword of cut bits the last vertex emitted falls in, for the
+ * channels of f0.1 when `predicated`, all of them otherwise.  With 32 bits
+ * or fewer the dword is the header's only one, written whole; past that a
+ * channel mask picks the dword in its OWord and, past 128 bits, a per-slot
+ * offset picks the OWord (Mesa's emit_gs_control_data_bits()).
+ */
+static void
+i915_compile_control_write(
+	struct i915_compile_state *state,
+	int predicated)
+{
+	struct i915_eu_buf *code;
+	uint32_t header_grf;
+	uint32_t data_grf;
+	uint32_t index_grf;
+	uint32_t header_regs;
+	uint32_t data_regs;
+	uint32_t descriptor;
+	uint32_t next;
+	uint32_t data;
+	int per_slot;
+	int channel_mask;
+
+	/* Emits into the shader's encoder buffer. */
+	code = &state->code;
+
+	/* Past 32 bits a channel mask picks the dword, past 128 bits a per-slot offset the OWord. */
+	channel_mask = 0;
+	per_slot = 0;
+	if (state->gs_control_bits > COMPILE_GS_CUT_DWORD_BITS)
+		channel_mask = 1;
+	if (state->gs_control_bits > COMPILE_GS_CUT_OWORD_BITS)
+		per_slot = 1;
+
+	/* The handles, the per-slot offsets and the channel mask; the dword once, or four times under a mask. */
+	header_regs = 1U + (uint32_t)per_slot + (uint32_t)channel_mask;
+	data_regs = 1U;
+	if (channel_mask != 0)
+		data_regs = COMPILE_GS_MASKED_DATA_REGS;
+
+	/* Takes the registers of the message and of the dword's index. */
+	header_grf = i915_compile_temporaries(state, header_regs);
+	if (state->out_of_registers != 0)
+		return;
+	data_grf = i915_compile_temporaries(state, data_regs);
+	if (state->out_of_registers != 0)
+		return;
+	index_grf = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* The handles every write goes to. */
+	drv_i915_eu_mov(code, drv_i915_eu_grf_ud(header_grf), drv_i915_eu_grf_ud(state->vue_grf - COMPILE_GS_WRITE_HEADER_REGS));
+
+	/* The dword of the last vertex's bit: (count - 1) / 32. */
+	drv_i915_eu_alu2(code, I915_EU_ADD, drv_i915_eu_grf_d(index_grf), drv_i915_eu_grf_d(state->gs_count_grf), drv_i915_eu_imm_d(0xFFFFFFFFU));
+	drv_i915_eu_alu2(code, I915_EU_SHR, drv_i915_eu_grf_ud(index_grf), drv_i915_eu_grf_ud(index_grf), drv_i915_eu_imm_ud(COMPILE_GS_CUT_DWORD_SHIFT));
+
+	/* The OWord of the dword: its index / 4. */
+	next = header_grf + 1U;
+	if (per_slot != 0) {
+		drv_i915_eu_alu2(code,
+				 I915_EU_SHR,
+				 drv_i915_eu_grf_ud(next),
+				 drv_i915_eu_grf_ud(index_grf),
+				 drv_i915_eu_imm_ud(COMPILE_GS_OWORD_DWORDS_SHIFT));
+		next++;
+	}
+
+	/* The dword in its OWord: bit (index % 4) of the mask's bits 23:16. */
+	if (channel_mask != 0) {
+		drv_i915_eu_alu2(code, I915_EU_AND, drv_i915_eu_grf_ud(index_grf), drv_i915_eu_grf_ud(index_grf), drv_i915_eu_imm_ud(COMPILE_GS_OWORD_DWORD_MASK));
+		drv_i915_eu_mov(code, drv_i915_eu_grf_ud(next), drv_i915_eu_imm_ud(1U));
+		drv_i915_eu_alu2(code, I915_EU_SHL, drv_i915_eu_grf_ud(next), drv_i915_eu_grf_ud(next), drv_i915_eu_grf_ud(index_grf));
+		drv_i915_eu_alu2(code, I915_EU_SHL, drv_i915_eu_grf_ud(next), drv_i915_eu_grf_ud(next), drv_i915_eu_imm_ud(COMPILE_GS_CHANNEL_MASK_SHIFT));
+	}
+
+	/* The cut bits, once for each dword the write may land on. */
+	for (data = 0U; data < data_regs; data++)
+		drv_i915_eu_mov(code, drv_i915_eu_grf_ud(data_grf + data), drv_i915_eu_grf_ud(state->gs_cut_grf));
+
+	/* Writes them after the vertex count. */
+	descriptor = i915_compile_urb_write_descriptor(COMPILE_GS_CONTROL_OWORD, header_regs, per_slot, channel_mask);
+	if (predicated != 0) {
+		drv_i915_eu_send_masked(code,
+					I915_EU_FLAG_F0_1,
+					drv_i915_eu_null(),
+					drv_i915_eu_grf_ud(header_grf),
+					drv_i915_eu_grf_ud(data_grf),
+					EU_SFID_URB,
+					descriptor,
+					COMPILE_EX_MLEN(data_regs),
+					0,
+					0);
+	} else {
+		drv_i915_eu_send(code,
+				 drv_i915_eu_null(),
+				 drv_i915_eu_grf_ud(header_grf),
+				 drv_i915_eu_grf_ud(data_grf),
+				 EU_SFID_URB,
+				 descriptor,
+				 COMPILE_EX_MLEN(data_regs),
+				 0,
+				 0);
+	}
+
+	/* The registers of the message are free again. */
+	for (data = 0U; data < header_regs; data++)
+		state->grf_busy[header_grf + data] = 0U;
+	for (data = 0U; data < data_regs; data++)
+		state->grf_busy[data_grf + data] = 0U;
+	state->grf_busy[index_grf] = 0U;
+}
+
+/*
+ * Lowers END_PRIMITIVE: sets the cut bit of the last vertex emitted, bit
+ * (count - 1) % 32 of the gathered dword (the SHL reads the low five bits
+ * of its count; Mesa's emit_gs_end_primitive()), for the channels of the
+ * end's block.
+ */
+static void
+i915_compile_end_primitive(
+	struct i915_compile_state *state,
+	const struct i915_shader_ir_inst *inst)
+{
+	struct i915_eu_buf *code;
+	struct i915_eu_reg null;
+	uint32_t predicate_grf;
+	uint32_t bit_grf;
+
+	/* Emits into the shader's encoder buffer. */
+	code = &state->code;
+
+	/* A shader without cut bits (points) has no strip to end. */
+	if (state->gs_control_bits == 0U)
+		return;
+
+	/* Reads the predicate of the end's block when it has one. */
+	predicate_grf = COMPILE_NO_GRF;
+	if (inst->component != 0U)
+		predicate_grf = i915_compile_grf(state, inst->src[0]);
+
+	/* Takes the registers of the bit. */
+	bit_grf = i915_compile_temporaries(state, 2U);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* The bit of the last vertex: 1 << (count - 1). */
+	drv_i915_eu_alu2(code, I915_EU_ADD, drv_i915_eu_grf_d(bit_grf + 1U), drv_i915_eu_grf_d(state->gs_count_grf), drv_i915_eu_imm_d(0xFFFFFFFFU));
+	drv_i915_eu_mov(code, drv_i915_eu_grf_ud(bit_grf), drv_i915_eu_imm_ud(1U));
+	drv_i915_eu_alu2(code, I915_EU_SHL, drv_i915_eu_grf_ud(bit_grf), drv_i915_eu_grf_ud(bit_grf), drv_i915_eu_grf_ud(bit_grf + 1U));
+
+	/* Sets it for the channels of the block, all of them when the block always runs. */
+	if (predicate_grf != COMPILE_NO_GRF) {
+		null = drv_i915_eu_null();
+		null.type = COMPILE_TYPE_D;
+		drv_i915_eu_cmp(code, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, null, drv_i915_eu_grf_d(predicate_grf), drv_i915_eu_imm_d(0U));
+		drv_i915_eu_alu2_masked(code,
+					I915_EU_FLAG_F0_0,
+					I915_EU_OR,
+					drv_i915_eu_grf_ud(state->gs_cut_grf),
+					drv_i915_eu_grf_ud(state->gs_cut_grf),
+					drv_i915_eu_grf_ud(bit_grf));
+	} else {
+		drv_i915_eu_alu2(code,
+				 I915_EU_OR,
+				 drv_i915_eu_grf_ud(state->gs_cut_grf),
+				 drv_i915_eu_grf_ud(state->gs_cut_grf),
+				 drv_i915_eu_grf_ud(bit_grf));
+	}
+
+	/* The registers of the bit are free again. */
+	state->grf_busy[bit_grf] = 0U;
+	state->grf_busy[bit_grf + 1U] = 0U;
+}
+
+/*
+ * Returns the descriptor of a SIMD8 URB write at OWord `global`, whose
+ * first payload run is `header_regs` registers -- the handles, then the
+ * per-slot offsets and the channel mask when present.
+ */
+static uint32_t
+i915_compile_urb_write_descriptor(
+	uint32_t global,
+	uint32_t header_regs,
+	int per_slot,
+	int channel_mask)
+{
+	uint32_t descriptor;
+
+	/* The header run, the write and its offset. */
+	descriptor = (header_regs << EU_DESC_MLEN_SHIFT) | EU_DESC_HEADER_PRESENT | COMPILE_URB_OPCODE_SIMD8_WRITE;
+	descriptor |= global << COMPILE_URB_GLOBAL_OFFSET_SHIFT;
+
+	/* What follows the handles. */
+	if (per_slot != 0)
+		descriptor |= COMPILE_URB_PER_SLOT_PRESENT;
+	if (channel_mask != 0)
+		descriptor |= COMPILE_URB_CHANNEL_MASK_PRESENT;
+
+	/* Succeeded: the descriptor. */
+	return descriptor;
 }
 
 /* Records in the binary what the draw programs around a geometry kernel. */
