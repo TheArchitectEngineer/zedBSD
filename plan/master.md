@@ -28,7 +28,7 @@
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 担当の返却の SHA を merge（`source /tmp/claude-1000/merge_one.sh && merge_one SHA`、`&&` で繋ぐ、commit -a と同じ command にしない）。merge_one.sh は /tmp にあるので消えていたら作り直す（merge --no-ff --no-commit → 衝突と marker の確かめ → commit -m WIP）。
+1. 担当の返却の SHA を merge（`source plan/tools/merge_one.sh && merge_one SHA`（Q1 の道具、T1 の台帳の衝突は自動で解く。cherry-pick は plan/tools/pick.sh）。`&&` で繋ぎ、commit -a と同じ command にしない）。
 2. P1・P2・T1 を新しい世代で起動（上の agents の列、phase.md の「再開の情報」から）。
 3. T1 の結果を判定（PNG は build/review/ に写してユーザーに見せる）。
 4. ユーザーの未決: M-3（5330 の iGPU を host の i915 に付け替える正解値の採取、ユーザーが質問を閉じた）。
