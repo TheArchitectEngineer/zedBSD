@@ -12,13 +12,15 @@
  * The function is brought to D0, its private reset register lets the core
  * out of reset, and the core is checked by its component type.  It is then
  * an I2C master in fast mode (400 kHz) or standard mode (100 kHz), whose
- * SCL counts come from the input clock (LPSS_CLOCK_KHZ: the Alder Lake
- * PCH's 133 MHz).  A transfer runs without the controller's interrupt: the
- * commands go into the transmit FIFO, the bytes read come out of the
- * receive FIFO, and the thread sleeps a tick whenever neither moved.  A
- * 64-byte read at 400 kHz takes about 1.6 ms, so a transfer sleeps a tick
- * or two rather than spinning.  The bus is registered with the I2C
- * registry (i2c.c), where the I2C-HID driver finds it by its ACPI path.
+ * SCL counts come from the input clock, which the PCH generation sets
+ * (the Alder Lake PCH's 133 MHz, the Tiger Lake-LP PCH's 120 MHz, as
+ * Linux's intel-lpss-pci gives them).  A transfer runs without the
+ * controller's interrupt: the commands go into the transmit FIFO, the
+ * bytes read come out of the receive FIFO, and the thread sleeps a tick
+ * whenever neither moved.  A 64-byte read at 400 kHz takes about 1.6 ms,
+ * so a transfer sleeps a tick or two rather than spinning.  The bus is
+ * registered with the I2C registry (i2c.c), where the I2C-HID driver finds
+ * it by its ACPI path.
  */
 
 #include <drivers/i2c/i2c.h>
@@ -34,14 +36,26 @@
 
 #include <stdbool.h>
 
-/* The PCI vendor of Intel, and the Alder Lake PCH's serial I/O I2C functions 0 to 5. */
+/* The PCI vendor of Intel. */
 #define LPSS_VENDOR_INTEL	0x8086U
+
+/* The Alder Lake PCH's serial I/O I2C functions 0 to 5. */
 #define LPSS_ADL_I2C0		0x51e8U
 #define LPSS_ADL_I2C1		0x51e9U
 #define LPSS_ADL_I2C2		0x51eaU
 #define LPSS_ADL_I2C3		0x51ebU
 #define LPSS_ADL_I2C4		0x51c5U
 #define LPSS_ADL_I2C5		0x51c6U
+
+/* The Tiger Lake-LP PCH's serial I/O I2C functions 0 to 7 (the Latitude 5320's touch pad is on 1). */
+#define LPSS_TGL_LP_I2C0	0xa0e8U
+#define LPSS_TGL_LP_I2C1	0xa0e9U
+#define LPSS_TGL_LP_I2C2	0xa0eaU
+#define LPSS_TGL_LP_I2C3	0xa0ebU
+#define LPSS_TGL_LP_I2C4	0xa0c5U
+#define LPSS_TGL_LP_I2C5	0xa0c6U
+#define LPSS_TGL_LP_I2C6	0xa0d8U
+#define LPSS_TGL_LP_I2C7	0xa0d9U
 
 /* The least size of BAR0: the core's registers and the LPSS private ones after them. */
 #define LPSS_BAR_SIZE		0x1000U
@@ -58,8 +72,13 @@
 #define LPSS_PRIVATE_RESETS	0x204U
 #define LPSS_RESETS_RELEASED	0x7U
 
-/* The input clock of the I2C core on the Alder Lake PCH, in kilohertz. */
-#define LPSS_CLOCK_KHZ		133000U
+/*
+ * The input clocks of the I2C core, in kilohertz, which the identifier
+ * tables carry as their driver data: Linux's bxt_i2c_info for the Alder
+ * Lake PCH and its spt_i2c_info for the Tiger Lake-LP PCH.
+ */
+#define LPSS_ADL_CLOCK_KHZ	133000U
+#define LPSS_TGL_LP_CLOCK_KHZ	120000U
 
 /*
  * The SCL high and low times the counts are made for, in nanoseconds:
@@ -134,7 +153,8 @@
 
 /*
  * One controller: its PCI function, its mapped registers, the depths of
- * its FIFOs, the counts written for each speed, and its bus.
+ * its FIFOs, the input clock the counts of each speed are made from, and
+ * its bus.
  *
  * An instance lives from attach for as long as the kernel runs: the bus it
  * registers is never removed, so detach refuses.
@@ -145,6 +165,7 @@ struct lpss_i2c {
 	struct drv_pci_enable_state enable_state;
 	unsigned tx_depth;
 	unsigned rx_depth;
+	uint32_t clock_khz;
 	struct drv_i2c_bus *bus;
 
 	/* Nonzero from a suspend, which holds the bus, to its resume (ws052-p005). */
@@ -160,24 +181,32 @@ static int lpss_core_start(struct lpss_i2c *controller);
 static int lpss_transfer(void *argument, uint16_t address, uint32_t speed, const uint8_t *write, size_t write_length, uint8_t *read, size_t read_length);
 static int lpss_run(struct lpss_i2c *controller, const uint8_t *write, size_t write_length, uint8_t *read, size_t read_length);
 static int lpss_set_enabled(struct lpss_i2c *controller, bool on);
-static uint32_t lpss_count(unsigned nanoseconds);
+static uint32_t lpss_count(const struct lpss_i2c *controller, unsigned nanoseconds);
 static uint32_t lpss_read(struct lpss_i2c *controller, unsigned offset);
 static void lpss_write(struct lpss_i2c *controller, unsigned offset, uint32_t value);
 static void lpss_pause(void);
 
 /*
- * Registers the driver for the Alder Lake PCH's I2C controllers.
+ * Registers the driver for the Alder Lake and Tiger Lake-LP PCHs' I2C controllers.
  */
 int
 drv_pci_lpss_i2c_driver_register(void)
 {
 	static const struct drv_pci_id identifiers[] = {
-		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C0, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U },
-		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C1, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U },
-		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C2, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U },
-		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C3, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U },
-		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C4, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U },
-		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C5, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U }
+		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C0, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_ADL_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C1, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_ADL_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C2, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_ADL_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C3, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_ADL_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C4, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_ADL_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_ADL_I2C5, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_ADL_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C0, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C1, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C2, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C3, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C4, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C5, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C6, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ },
+		{ LPSS_VENDOR_INTEL, LPSS_TGL_LP_I2C7, DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, LPSS_TGL_LP_CLOCK_KHZ }
 	};
 	static struct drv_pci_driver driver = {
 		"lpss-i2c", identifiers, sizeof(identifiers) / sizeof(identifiers[0]), NULL, lpss_attach, lpss_detach,
@@ -205,14 +234,14 @@ lpss_attach(
 	struct drv_pci_address address;
 	int error;
 
-	/* Matching has already chosen the controller. */
-	(void)id;
-
 	/* Allocates the controller's state. */
 	controller = kern_calloc(1U, sizeof(*controller));
 	if (controller == NULL)
 		return ENOMEM;
 	controller->pci = device;
+
+	/* The input clock of the PCH generation the matched identifier names. */
+	controller->clock_khz = (uint32_t)id->driver_data;
 
 	/* Gives PCI the owner before the hardware is touched. */
 	error = drv_pci_device_set_driver_data(device, controller);
@@ -257,7 +286,7 @@ lpss_attach(
 		  (unsigned)address.function,
 		  controller->tx_depth,
 		  controller->rx_depth,
-		  LPSS_CLOCK_KHZ);
+		  (unsigned)controller->clock_khz);
 	return 0;
 }
 
@@ -450,10 +479,10 @@ lpss_core_start(
 		return error;
 
 	/* The SCL counts of both speeds, from the input clock. */
-	lpss_write(controller, IC_SS_SCL_HCNT, lpss_count(STANDARD_HIGH_NS));
-	lpss_write(controller, IC_SS_SCL_LCNT, lpss_count(STANDARD_LOW_NS));
-	lpss_write(controller, IC_FS_SCL_HCNT, lpss_count(FAST_HIGH_NS));
-	lpss_write(controller, IC_FS_SCL_LCNT, lpss_count(FAST_LOW_NS));
+	lpss_write(controller, IC_SS_SCL_HCNT, lpss_count(controller, STANDARD_HIGH_NS));
+	lpss_write(controller, IC_SS_SCL_LCNT, lpss_count(controller, STANDARD_LOW_NS));
+	lpss_write(controller, IC_FS_SCL_HCNT, lpss_count(controller, FAST_HIGH_NS));
+	lpss_write(controller, IC_FS_SCL_LCNT, lpss_count(controller, FAST_LOW_NS));
 
 	/* A fast mode master; transfers choose the speed again (lpss_transfer). */
 	lpss_write(controller, IC_CON, IC_CON_MASTER | IC_CON_SPEED_FAST | IC_CON_RESTART_EN | IC_CON_SLAVE_DISABLE);
@@ -690,15 +719,16 @@ lpss_set_enabled(
 	return 0;
 }
 
-/* Gives the count of input clock periods that lasts a time, rounded to the nearest. */
+/* Gives the count of the controller's input clock periods that lasts a time, rounded to the nearest. */
 static uint32_t
 lpss_count(
+	const struct lpss_i2c *controller,
 	unsigned nanoseconds)
 {
 	uint64_t count;
 
 	/* Clock periods in kilohertz times nanoseconds, over a million, rounded. */
-	count = ((uint64_t)LPSS_CLOCK_KHZ * nanoseconds + 500000U) / 1000000U;
+	count = ((uint64_t)controller->clock_khz * nanoseconds + 500000U) / 1000000U;
 
 	/* Succeeded: the count of the time. */
 	return (uint32_t)count;

@@ -108,3 +108,4 @@ firmware の pipe を止めずに使う「adopt」の経路。takeover（N1）�
 (2) driver が attach するのは TGL と ADL-P の device ID だけで、「別の世代」は fallback があっても bind しない、
 (3) adopt の経路は firmware の点けた pipe が要るので T1 の 5330 passthrough（OVMF は iGPU を点けない）で試せず、確認は素の実機の起動（ユーザー）だけになる。
 再開の条件: 別の variant（例 Type-C が最初の output の機種、RPL-U など）で full modeset が失敗した時、またはユーザーが fallback を求めた時。Future Work の候補として Q1 に送る。
+- T1-352（2026-10-07）: harness が FAIL（`C5-HW RESULT count=0`）。kernel.log は `resident display: picture up`・flip・first frame があり、reference error・UNPORTED・pipe_off・to get idle は 0。原因は harness: 新しい image の kei の最初の session で Settings の Welcome（WS164）が開き、c5-hw の打鍵が Terminal に届かない（opened-live.png が「Welcome to Kei」）。stop の確認は未実施。c5-hw の image で welcome.done=1 にする直しの後に流し直す。
