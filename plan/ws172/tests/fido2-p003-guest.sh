@@ -108,10 +108,16 @@ expect_log /var/log/greeter.log 'KWL GREETER style=1$' 5
 keys 'kei' '\n'
 expect_log /var/log/sessiond.log 'SESSIOND AUTH ok user=kei uid=1000 style=password' 10
 expect_log $session 'KWL HANDOFF go=1' 20
-expect_log $session 'KWL SYSTEM enrolled pin=0 keys=1 listed=1' 20
 expect_log $session 'KWL WELCOME skip done=1 error=0' 10
-guest "su kei -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/settings --page=users >/tmp/fido2-settings.log 2>&1 &'; sleep 4; echo started" >/dev/null
+# Settings on the session's own socket (its compositor's KWL READY line names it; T1-309: wayland-0 was not it), then
+# the key's line the Users page asks for.
+socket=$(guest "grep -o 'KWL READY socket=[^ ]*' $session | tail -1 | sed 's/KWL READY socket=//'" | tail -1)
+socket=${socket:-/run/user/1000/wayland-0}
+echo "session socket: $socket"
+guest "su kei -c 'XDG_RUNTIME_DIR=$(dirname "$socket") WAYLAND_DISPLAY=$(basename "$socket") /bin/settings --page=users >/tmp/fido2-settings.log 2>&1 &'; sleep 4; echo started" >/dev/null
 expect_log /tmp/fido2-settings.log 'ZSETTINGS PAGE users' 20
+expect_log $session 'KWL SYSTEM enrolled pin=0 keys=1 listed=1' 20
+guest "tail -5 /tmp/fido2-settings.log" | sed 's/^/settings: /'
 sleep 2
 check "$out/settings.png" >/dev/null
 

@@ -784,18 +784,31 @@ ph_draw(
 	struct kl_glass_panel panels[PH_PANELS_MAX];
 	struct kl_event event;
 	size_t count;
+	size_t album;
+	long open;
+	long chosen;
 	int status;
 	int error;
 	int taken;
+	int list;
+	int adding;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!photos->dirty && !photos->moving)
 		return;
 
-	/* The view, and the pictures it wants. */
+	/* The view, and the pictures it wants; what its widgets changed while it drew is drawn in the next frame. */
 	photos->dirty = 0;
+	open = photos->view.open;
+	chosen = photos->view.chosen;
+	list = photos->view.list;
+	album = photos->view.album;
+	adding = photos->view.adding;
 	kl_ui_begin(photos->ui, now_us);
 	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
+	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
+	    adding != photos->view.adding)
+		photos->dirty = 1;
 	photos->moving = kl_ui_end(photos->ui, now_us);
 	kl_ui_window_text(photos->ui, photos->window);
 	ph_jobs(photos);
