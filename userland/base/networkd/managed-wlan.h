@@ -21,17 +21,9 @@
 #include <sys/types.h>
 #include <uapi/wlan.h>
 
-#define NETWORKD_MANAGED_RESOLVER_MAX	1024U
+#include "userland/base/networkd/managed-wlan-state.h"
 
-enum networkd_managed_wlan_state {
-	NETWORKD_WLAN_DISABLED,
-	NETWORKD_WLAN_AUTO_SEARCHING,
-	NETWORKD_WLAN_CONNECTING,
-	NETWORKD_WLAN_CONNECTED,
-	NETWORKD_WLAN_MANUAL_DISCONNECTED,
-	NETWORKD_WLAN_RECONNECTING,
-	NETWORKD_WLAN_RETIRING
-};
+#define NETWORKD_MANAGED_RESOLVER_MAX	1024U
 
 enum networkd_managed_wlan_action {
 	NETWORKD_WLAN_ACTION_NONE,
@@ -97,6 +89,7 @@ struct networkd_managed_wlan {
 void networkd_managed_wlan_init(struct networkd_managed_wlan *);
 int networkd_managed_wlan_enable(struct networkd_managed_wlan *, uid_t);
 int networkd_managed_wlan_disable(struct networkd_managed_wlan *);
+int networkd_managed_wlan_resume(struct networkd_managed_wlan *, enum networkd_managed_wlan_state);
 int networkd_managed_wlan_owner_matches(const struct networkd_managed_wlan *, uid_t);
 int networkd_managed_wlan_begin_connect(struct networkd_managed_wlan *, const char *, uint32_t, uint64_t, const void *, size_t);
 int networkd_managed_wlan_commit_l3(struct networkd_managed_wlan *, const struct networkd_managed_l3 *);

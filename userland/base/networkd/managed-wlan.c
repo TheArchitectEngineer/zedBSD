@@ -100,6 +100,46 @@ networkd_managed_wlan_disable(
 }
 
 /*
+ * Takes an enabled, idle policy to another idle state for the same owner
+ * (ws052-p010: the end of networkd's sleep takes the automatic search up
+ * again after the sleep left the policy disconnected).  An active
+ * connection, a disabled policy and a state that is not idle are refused
+ * (EBUSY, EINVAL).
+ */
+int
+networkd_managed_wlan_resume(
+	struct networkd_managed_wlan *managed,
+	enum networkd_managed_wlan_state state)
+{
+	int idle;
+	int active;
+
+	/* Rejects a missing or ownerless policy and a state that is not idle. */
+	if (managed == NULL || !managed->owner_valid) {
+		errno = EINVAL;
+		return -1;
+	}
+	idle = idle_state(state);
+	if (!idle) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Preserves an active connection and its exact cleanup token. */
+	active = connection_active(managed);
+	if (active) {
+		errno = EBUSY;
+		return -1;
+	}
+
+	/* The idle state asked for, the owner kept. */
+	managed->state = state;
+
+	/* Succeeded: the policy is in that state. */
+	return 0;
+}
+
+/*
  * Tests whether one peer owns the enabled WLAN policy.
  */
 int
