@@ -3,7 +3,7 @@
 
 Phase ID: `ws031-p039`
 Parent: [WS031](../ws.md)
-Status: cleared 候補（q833、P1、2026-10-07: 実装と host の試験 PASS。実機は対象外）
+Status: cleared（2026-10-07 Q1 の判定: host の fixture（int16.frag の 16 演算 × 4096、Python の参照と bit 一致、mutation で fail、拒否の 5 本）PASS と build。実 GPU の vke2 と 16 bit の shared の compute は未実施）（旧: cleared 候補（q833、P1、2026-10-07: 実装と host の試験 PASS。実機は対象外））
 設計: [p020](../phase020/phase.md) §2・§7。範囲（2026-10-07 ユーザー）: Int16 だけ、Int64 は ws031-p051、Float64・Float16 は Future Work（F-080）。
 
 ## 実装（2026-10-07、P1、`compiler/spirv.c`・`spirv-compute.inc`・`render/instance.c`）
