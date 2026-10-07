@@ -488,6 +488,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS183](ws183/ws.md) | MG003 | I2C HID の Extended Interrupt と TGL の GPIO の group（5320 の touchpad を割り込みで、ベータ2・後回し） | planning | p001 |
 | [WS184](ws184/ws.md) | MG006 | 左手デバイスの OSK（クリエイターモード: ダイヤル・ホイール・ボタン 2×5、左上の swipe で出す、ベータ2） | planning | p001 設計 |
 | [WS185](ws185/ws.md) | MG006 | ゲームパッドの OSK とゲームコンソールモード（両上隅の同時 swipe、Xbox の pad を模す、段 1 は mview、ベータ2） | planning | p001 設計 |
+| [WS186](ws186/ws.md) | MG003 | Realtek RTL8822CE（5320 の PCIe の WiFi、ベータ3、ベータ2 が早く終われば前倒し） | planning | p001 調査と設計 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -516,6 +517,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「RTL8822Cは、WSを立てて、ベータ3にしておきます。けど、ベータ2が期日前に完成したら、やるかもしれません。」→ [WS186](ws186/ws.md)。
 - 2026-10-07 ユーザー（ws113-p011 の DBUF）:「2 つ目の画面を足す時に、1 つ目の画面を点け直す、でお願いします。」→ 1 出力の時の DBUF・既存の eDP の run は変えず、2 つ目を足す時に resident を点け直す（一瞬消える）。Q1: 5330 に kernel（P2 の build/bug250、cksum 2877465438、BUG-251・253・eDP の connected）と compositor（main、cksum 184482127、BUG-252・ws181-p009）を入れた（元は /esp/vmunix.prev・/bin/wayland.orig）。
 - 2026-10-07 Q1: ws075-p007b b2（d23a536b9）を merge。GS の無い draw の dword も変わる（PUSH_CONSTANT_ALLOC_VS 16→8 KiB・ALLOC_GS・CLIP bit5）ので、**main の kernel を実機に入れる前に T1-363（5330 の passthrough の vkx・vke・vkc・zdesktop の capture）**。5330 が zedBSD で動いている間は passthrough ができない。BUG の確かめで 5330・5320 に入れる kernel は d23a536b9 の前（P2 の build/bug250 の系統）か T1-363 PASS の後に。
 - 2026-10-07 ユーザー:「シェーダはやることがないときに取り組んでほしいです。Settingsのディスプレイ設定を、拡張・ミラーありで実装する作業に切り替えてください。」→ P1 は ws075-p007b の b2 を区切り、q855: WS113 p011（i915 の 2 出力の同時）→ p004b（compositor の複数の出力、全拡張・全 mirror）→ p005（kl_system_displays・明るさ）→ p006（Settings の Display の頁: 拡張・mirror の二択、配置の drag、明るさ）→ p007（窓の出力の所属）。シェーダ（WS075）は他にやることが無い時だけ。
