@@ -1,0 +1,2325 @@
+KWL LANGUAGE language=en from=setting error=0
+KWL SETTINGS open present=1
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1920 height=1080 refresh_mhz=60011
+KWL STARTUP step=vulkan-device ms=59
+KWL STARTUP step=vulkan-objects-arrow ms=54
+KWL STARTUP step=wallpaper-picture ms=12
+KWL STARTUP step=wallpaper ms=406
+KWL STARTUP step=glyphs-text ms=31
+KWL STARTUP step=glyphs-icons ms=40
+KWL STARTUP step=glyphs-mark ms=18
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=3141
+KWL STARTUP step=tiles ms=79
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=3749 at_ms=12941
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL INPUT device=/dev/input/event2 kind=touchpad abs=0 resolution=12,12 size=1336,760
+KWL STARTUP step=input ms=1 at_ms=12942
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=12942
+KWL STARTUP step=socket ms=0 at_ms=12942
+KWL CLIENT client=1 fd=12 ime=1
+KWL IME started pid=32 client=1 --method=ja
+KWL READY socket=/run/user/1000/wayland-0 width=1920 height=1080 timeout_ms=18446744073709551615 pid=22 role=normal
+KWL CORNER zone x=1892 y=0 width=28 height=28
+KWL OSK zone kind=flick x=1892 y=1052 size=28
+KWL OSK zone kind=qwerty x=0 y=1052 size=28
+KWL ACTIVATION token client=0 app=KEILAND_DESKTOP_TOKEN=ba8ac7e77ed7edd4489f0dba867f5c32 exec /bi granted=1 reason=spawn at_ms=12957
+KWL DESKTOP start pid=33 command=/bin/files --desktop at_ms=12961
+KWL ACTIVATION token client=0 app=exec /bin/settings --welcome granted=1 reason=spawn at_ms=12961
+KWL WELCOME start pid=34
+KWL STARTUP step=output-display ms=22
+KWL STARTUP step=output-pipelines ms=8
+KWL HANDOFF go=1 waited_ms=0 at_ms=12997
+KWL STARTUP step=output-swapchain ms=10
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL MODE window switch_ms=40 at_ms=13007
+KWL GLASS desktops x=1523 step=34 width=30
+KWL NETWORK icon x=1651 y=3 width=30 height=38
+KWL VOLUME icon x=1685 y=3 width=30 height=38
+KWL MEDIA volumes=0 icon=0
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KEI-IME METHOD 1
+KWL HOME skip name=X terminal missing=/bin/zterm
+KWL HOME prepared names=17
+KWL NETWORK state reachable=1 connected=0 kind=none interface= wifi=searching ssid=
+KWL VOLUME reachable=1 device=1
+KEI-IME LANGUAGE id=direct
+KWL CLIENT client=2 fd=17
+KWL IME language=direct
+KEI-IME POPUP ready=1 error=0
+KEI-IME READY languages=2
+KWL IME indicator x=1619 label=A
+KWL CLIENT client=3 fd=18
+KWL INSET create client=2 inset=23 toplevel=21
+KWL EDIT create client=2 edit=25 toplevel=21
+KWL BOUNDS client=2 surface=19 width=1896 height=960
+KWL CONFIGURE client=2 surface=19 serial=2 width=0 height=0 fullscreen=0
+KWL SEAT client=2 pointer=1 keyboard=0 touch=0
+KWL SEAT client=2 pointer=1 keyboard=1 touch=0
+KWL DESKTOP role client=3 surface=19 x=0 y=44 width=1920 height=1036
+KWL SEAT client=3 pointer=1 keyboard=0 touch=0
+KWL SEAT client=3 pointer=1 keyboard=1 touch=0
+KWL DESKTOP ack serial=3
+ZFILES DESKTOP configure x=0 y=44 width=1920 height=1036
+KWL IMPORT client=2 buffer=32 width=1180 height=800 bytes=3776512
+ZSETTINGS ABOUT system=Kei/zedBSD 1.0.0 Beta 2 kernel=zedBSD 1.0.0-beta2+g2fe4a50 machine=x86_64 cores=12 host=kei
+ZSETTINGS PAGE home
+ZSETTINGS WELCOME step=0 name=welcome
+KWL IMPORT client=2 buffer=33 width=1180 height=800 bytes=3776512
+KWL IMPORT client=2 buffer=34 width=1180 height=800 bytes=3776512
+KWL IMPORT client=3 buffer=30 width=1920 height=1036 bytes=7958528
+KWL IMPORT client=2 buffer=35 width=1180 height=800 bytes=3776512
+ZFILES LOCATION kind=folder path=/home/kei/Desktop items=0 error=0
+KWL IMPORT client=3 buffer=31 width=1920 height=1036 bytes=7958528
+KWL IMPORT client=2 buffer=36 width=1180 height=800 bytes=3776512
+KWL IMPORT client=3 buffer=32 width=1920 height=1036 bytes=7958528
+KWL IMPORT client=2 buffer=37 width=1180 height=800 bytes=3776512
+KWL IMPORT client=3 buffer=33 width=1920 height=1036 bytes=7958528
+KWL IMPORT client=3 buffer=34 width=1920 height=1036 bytes=7958528
+KWL SYSTEM object client=2 get=2 id=42
+KWL SYSTEM object client=2 get=3 id=43
+KWL SYSTEM object client=2 get=4 id=44
+KWL SYSTEM object client=2 get=5 id=45
+KWL SYSTEM object client=2 get=7 id=46
+KWL SYSTEM object client=2 get=8 id=47
+KWL NOTIFY object client=2 id=48
+KWL MAIL object client=2 id=49
+KWL PHONE object client=2 id=50
+KWL PRINTERS object client=2 id=51
+ZSETTINGS SYSTEM open capabilities=0x7efe
+ZSETTINGS NETWORK state reachable=1 connected=0 kind=0 interface= wifi=2 ssid=
+KWL IMPORT client=3 buffer=35 width=1920 height=1036 bytes=7958528
+KWL SYSTEM result client=2 object=42 request=1 applied=0
+KWL SETTINGS snapshot client=3 object=39
+KWL SETTINGS snapshot client=2 object=56
+ZSETTINGS LOOK open opacity=100 wallpaper= writable=1
+ZSETTINGS SOUND open live=1 reachable=1 value=100 muted=0
+ZSETTINGS SOUND report reachable=1 device=1 value=100 muted=0
+ZSETTINGS APPEARANCE appearance=0
+ZSETTINGS GLASS blur=1
+ZSETTINGS GLASS on
+ZFILES ACCENT index=0
+ZSETTINGS MENU state back=0 forward=0 sidebar=0 page=home
+ZSETTINGS MENU ready items=20
+ZSETTINGS TITLEBAR state back=0 forward=0 parts=1 last=Settings sidebar=0 query= focus=0
+ZSETTINGS TITLEBAR ready controls=6
+ZFILES DESKTOP layout saved=0 error=0
+ZFILES DESKTOP grid width=1920 height=1036 columns=19 rows=9
+ZFILES DESKTOP ready items=0 cells=0 width=1920 height=1036 at_ms=15934 newest_age_ms=-1 hidden=0
+ZSETTINGS LAYOUT page=home controls=2
+ZSETTINGS CONTROL index=9002 x=1089 y=28 width=59 height=32
+ZSETTINGS CONTROL index=9001 x=1094 y=752 width=62 height=32
+ZSETTINGS GLASS panels count=1
+KWL MENU set client=2 place=63 menu=64
+ZFILES MENU context-only
+ZFILES DESKTOP startup entered_ms=13114 fonts=422 instance=0 window=2246 present=29 app=20 canvas=99 draw=4 shown=15 menus=0
+ZFILES READY width=1920 height=1036 token=-
+KWL MENU commit client=2 menu=64 serial=1 items=41 generation=1
+KWL MENU commit client=2 menu=64 serial=2 items=41 generation=2
+KWL MENU commit client=2 menu=64 serial=3 items=41 generation=3
+KWL TITLEBAR create client=2 titlebar=66 toplevel=21
+KWL TITLEBAR commit client=2 titlebar=66 serial=1 mode=1 controls=0 tabs=0 generation=1
+KWL TITLEBAR commit client=2 titlebar=66 serial=2 mode=1 controls=6 tabs=0 generation=2
+ZSETTINGS READY width=1180 height=800 glass=1 page=home
+KWL TITLEBAR commit client=2 titlebar=66 serial=3 mode=1 controls=6 tabs=0 generation=3
+KWL TITLEBAR commit client=2 titlebar=66 serial=4 mode=1 controls=6 tabs=0 generation=4
+KWL TITLEBAR commit client=2 titlebar=66 serial=5 mode=1 controls=6 tabs=0 generation=5
+KWL TITLEBAR commit client=2 titlebar=66 serial=6 mode=1 controls=6 tabs=0 generation=6
+ZSETTINGS NETWORK open links=2 dns=1 saved=0
+KWL DESKTOP drawn at_ms=15959
+KWL GLASS client=2 surface=19 blur=1
+KWL GLASS client=2 surface=19 panels=1 card:0,0,1180,800,16
+KWL DECORATION applied client=2 surface=19 mode=2
+KWL EDIT state client=2 edit=25 actions=0xff flags=0xd
+KWL MAP client=2 surface=19 x=370 y=188
+KWL IME app key=app:settings language=direct from=inherited
+KWL GLASS glyph codepoint=U+2026 size=0 face=0 cell=0
+KWL TITLEBAR control client=2 surface=19 where=floating id=1 x=493 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=2 surface=19 where=floating id=2 x=527 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=2 surface=19 where=floating id=3 x=561 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=2 surface=19 where=floating id=4 x=601 y=143 width=72 height=30 shown=1
+KWL TITLEBAR control client=2 surface=19 where=floating id=5 x=1142 y=143 width=220 height=30 shown=1
+KWL TITLEBAR control client=2 surface=19 where=floating id=6 x=1366 y=143 width=30 height=30 shown=1
+KWL TITLEBAR control client=2 surface=19 where=floating id=0 x=1406 y=143 width=30 height=30 shown=1
+KWL APPS bar count=1 hidden=0 desktop=2 apps=settings
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL SYSTEM sharing answer error=0
+ZSETTINGS SHARING state available=1 enabled=1 running=1 port=22 allowed=1 fingerprint=SHA256:5wUgx/N//rpIENM4/oFXl+GxgaSwnhTFmLqzLGs0YKo
+KWL SYSTEM enrolled pin=0 keys=0 listed=0
+ZSETTINGS USERS enrolled changed
+KWL SYSTEM result client=2 object=42 request=2 applied=0
+KWL PERF 5007ms: passes=349 timeouts=314 | poll 62.4% work 39.1%
+KWL PERF compose frames=24 draw_ms=75.74 (acquire 64.70 submit+present 10.85) frame_ms=76.46
+KWL SYSTEM result client=2 object=42 request=3 applied=0
+KWL SYSTEM result client=2 object=42 request=4 applied=0
+KWL SYSTEM result client=2 object=42 request=5 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=429
+KWL CURSOR frame edges=4
+KWL CURSOR frame edges=0
+KWL SYSTEM result client=2 object=42 request=6 applied=0
+KWL PERF 5003ms: passes=479 timeouts=375 | poll 77.6% work 22.2%
+KWL PERF compose frames=69 draw_ms=15.24 (acquire 4.74 submit+present 10.17) frame_ms=15.53
+KWL SYSTEM result client=2 object=42 request=7 applied=0
+KWL GESTURE kind=top2 phase=begin travel_um=4165 speed=0
+KWL HOME pad swipe closing=0
+KWL GESTURE kind=top2 phase=update travel_um=6956 speed=55820
+KWL GESTURE kind=top2 phase=update travel_um=10539 speed=127480
+KWL GESTURE kind=top2 phase=update travel_um=13872 speed=194140
+KWL GESTURE kind=top2 phase=update travel_um=13872 speed=194140
+KWL GESTURE kind=top2 phase=update travel_um=21205 speed=340800
+KWL GESTURE kind=top2 phase=end travel_um=21205 speed=340800
+KWL HOME open via=pad at_ms=23101
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=0
+KWL HOME layer=content after_ms=1
+KWL FIRST_FRAME what=home-open frame=95 request_ms=23101 ms=21
+KWL HOME opened apps=17 pages=2 page=1 at_ms=23390
+KWL HOME icon name="Files" x=600 y=760
+KWL HOME icon name="Notes" x=744 y=760
+KWL HOME icon name="Settings" x=888 y=760
+KWL HOME icon name="Terminal" x=1032 y=760
+KWL HOME icon name="PDF Viewer" x=1176 y=760
+KWL HOME icon name="Image Viewer" x=1320 y=760
+KWL HOME icon name="Video Player" x=600 y=912
+KWL HOME icon name="Music" x=744 y=912
+KWL HOME icon name="Photos" x=888 y=912
+KWL HOME icon name="Phone" x=1032 y=912
+KWL HOME icon name="Calendar" x=1176 y=912
+KWL HOME icon name="Mail" x=1320 y=912
+KWL HOME icon name="Text Editor" x=2520 y=912
+KWL HOME icon name="System Monitor" x=2664 y=912
+KWL HOME icon name="Browser" x=2808 y=912
+KWL HOME icon name="Lock Screen" x=2952 y=912
+KWL HOME icon name="Power Off" x=3096 y=912
+KWL SYSTEM result client=2 object=42 request=8 applied=0
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL HOME page page=2 pages=2 via=wheel
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+KWL HOME page settled page=2 pages=2
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL GESTURE kind=bottom2 phase=begin travel_um=4082 speed=0
+KWL HOME pad swipe closing=1
+KWL GESTURE kind=bottom2 phase=update travel_um=6123 speed=40820
+KWL GESTURE kind=bottom2 phase=update travel_um=8497 speed=88300
+KWL GESTURE kind=bottom2 phase=update travel_um=11080 speed=139960
+KWL GESTURE kind=bottom2 phase=update travel_um=13871 speed=195780
+KWL GESTURE kind=bottom2 phase=update travel_um=16870 speed=255760
+KWL GESTURE kind=bottom2 phase=update travel_um=19828 speed=314920
+KWL GESTURE kind=bottom2 phase=update travel_um=22869 speed=272275
+KWL GESTURE kind=bottom2 phase=update travel_um=25827 speed=315144
+KWL GESTURE kind=bottom2 phase=update travel_um=27077 speed=333260
+KWL GESTURE kind=bottom2 phase=end travel_um=27077 speed=306600
+KWL HOME close via=pad at_ms=25600
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=128 request_ms=25600 ms=21
+KWL SYSTEM result client=2 object=42 request=9 applied=0
+KWL HOME closed at_ms=25861
+KWL GESTURE kind=top2 phase=begin travel_um=3831 speed=0
+KWL HOME pad swipe closing=0
+KWL GESTURE kind=top2 phase=update travel_um=5705 speed=37480
+KWL GESTURE kind=top2 phase=update travel_um=7788 speed=79140
+KWL GESTURE kind=top2 phase=update travel_um=10204 speed=127460
+KWL GESTURE kind=top2 phase=update travel_um=12703 speed=177440
+KWL GESTURE kind=top2 phase=update travel_um=15452 speed=232420
+KWL GESTURE kind=top2 phase=update travel_um=18368 speed=210681
+KWL GESTURE kind=top2 phase=update travel_um=21534 speed=256565
+KWL GESTURE kind=top2 phase=update travel_um=23200 speed=280710
+KWL GESTURE kind=top2 phase=end travel_um=23200 speed=280710
+KWL HOME open via=pad at_ms=26545
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=0
+KWL HOME layer=content after_ms=1
+KWL FIRST_FRAME what=home-open frame=137 request_ms=26545 ms=16
+KWL SYSTEM result client=2 object=42 request=10 applied=0
+KWL HOME opened apps=17 pages=2 page=2 at_ms=26848
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL GESTURE kind=bottom2 phase=begin travel_um=4373 speed=0
+KWL HOME pad swipe closing=1
+KWL GESTURE kind=bottom2 phase=update travel_um=6289 speed=38320
+KWL GESTURE kind=bottom2 phase=update travel_um=8497 speed=82480
+KWL GESTURE kind=bottom2 phase=update travel_um=10955 speed=131640
+KWL GESTURE kind=bottom2 phase=update travel_um=13621 speed=184960
+KWL GESTURE kind=bottom2 phase=update travel_um=16620 speed=244940
+KWL GESTURE kind=bottom2 phase=update travel_um=19661 speed=305760
+KWL GESTURE kind=bottom2 phase=update travel_um=22702 speed=269544
+KWL GESTURE kind=bottom2 phase=update travel_um=25743 speed=314264
+KWL GESTURE kind=bottom2 phase=update travel_um=27159 speed=335088
+KWL GESTURE kind=bottom2 phase=end travel_um=27159 speed=335088
+KWL HOME close via=pad at_ms=27254
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=148 request_ms=27254 ms=17
+KWL HOME closed at_ms=27515
+KWL SYSTEM result client=2 object=42 request=11 applied=0
+KWL PERF 5002ms: passes=458 timeouts=339 | poll 71.9% work 27.8%
+KWL PERF compose frames=61 draw_ms=21.91 (acquire 0.20 submit+present 20.67) frame_ms=23.26
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=-6214
+KWL SYSTEM result client=2 object=42 request=12 applied=0
+KWL GESTURE kind=top2 phase=begin travel_um=3623 speed=0
+KWL HOME pad swipe closing=0
+KWL GESTURE kind=top2 phase=update travel_um=5247 speed=32480
+KWL GESTURE kind=top2 phase=update travel_um=7330 speed=74140
+KWL GESTURE kind=top2 phase=update travel_um=9579 speed=119120
+KWL GESTURE kind=top2 phase=update travel_um=12245 speed=172440
+KWL GESTURE kind=top2 phase=update travel_um=15078 speed=229100
+KWL GESTURE kind=top2 phase=update travel_um=18202 speed=291580
+KWL GESTURE kind=top2 phase=update travel_um=21576 speed=267955
+KWL GESTURE kind=top2 phase=update travel_um=25075 speed=320179
+KWL GESTURE kind=top2 phase=update travel_um=28741 speed=374895
+KWL GESTURE kind=top2 phase=update travel_um=32449 speed=411800
+KWL GESTURE kind=top2 phase=update travel_um=36157 speed=422519
+KWL GESTURE kind=top2 phase=update travel_um=39740 speed=429964
+KWL GESTURE kind=top2 phase=update travel_um=43281 speed=388803
+KWL GESTURE kind=top2 phase=update travel_um=43281 speed=388803
+KWL GESTURE kind=top2 phase=end travel_um=43281 speed=360527
+KWL HOME open via=pad at_ms=29082
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=0
+KWL HOME layer=content after_ms=0
+KWL FIRST_FRAME what=home-open frame=161 request_ms=29082 ms=10
+KWL HOME opened apps=17 pages=2 page=2 at_ms=29327
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL SYSTEM result client=2 object=42 request=13 applied=0
+KWL GESTURE kind=bottom2 phase=begin travel_um=4997 speed=0
+KWL HOME pad swipe closing=1
+KWL GESTURE kind=bottom2 phase=update travel_um=6663 speed=33320
+KWL GESTURE kind=bottom2 phase=update travel_um=8579 speed=71640
+KWL GESTURE kind=bottom2 phase=update travel_um=10662 speed=113300
+KWL GESTURE kind=bottom2 phase=update travel_um=12870 speed=157460
+KWL GESTURE kind=bottom2 phase=update travel_um=15244 speed=204940
+KWL GESTURE kind=bottom2 phase=update travel_um=17702 speed=254100
+KWL GESTURE kind=bottom2 phase=update travel_um=20243 speed=227552
+KWL GESTURE kind=bottom2 phase=update travel_um=22826 speed=266104
+KWL GESTURE kind=bottom2 phase=update travel_um=25284 speed=302791
+KWL GESTURE kind=bottom2 phase=update travel_um=27659 speed=323742
+KWL GESTURE kind=bottom2 phase=update travel_um=29867 speed=322987
+KWL GESTURE kind=bottom2 phase=update travel_um=31783 speed=318880
+KWL GESTURE kind=bottom2 phase=update travel_um=32658 speed=265971
+KWL GESTURE kind=bottom2 phase=end travel_um=32658 speed=265971
+KWL HOME close via=pad at_ms=30098
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=172 request_ms=30098 ms=18
+KWL HOME closed at_ms=30350
+KWL SYSTEM result client=2 object=42 request=14 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+KWL DESKTOP focus client=3 surface=19
+KWL IME app key=desktop language=direct from=desktop
+ZFILES DESKTOP context empty x=343 y=210
+ZFILES CONTEXT-MENU open rows=7 x=343 y=210 serial=36
+KWL PING pong client=3 serial=37
+KWL MENU commit client=3 menu=43 serial=1 items=7 generation=1
+KWL MENU context client=3 context=44 surface=19 x=343 y=254 rows=7
+KWL MENU open client=3 surface=19 item=0 depth=1 x=343 y=254 width=227 height=184
+KWL MENU row item=1002 depth=1 y=260 height=30
+KWL MENU row item=1011 depth=1 y=290 height=30
+KWL MENU row item=3 depth=1 y=320 height=11
+KWL MENU row item=1056 depth=1 y=331 height=30
+KWL MENU row item=1055 depth=1 y=361 height=30
+KWL MENU row item=6 depth=1 y=391 height=11
+KWL MENU row item=1057 depth=1 y=402 height=30
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZFILES TOUCH rest area=1 scroll=0
+KWL MENU close client=3 surface=19 item=0 depth=0
+KWL MENU context-done client=3 context=44
+ZFILES CONTEXT-MENU done
+KWL SYSTEM result client=2 object=42 request=15 applied=0
+KWL IME app key=app:settings language=direct from=remembered
+KWL DESKTOP unfocus via=press
+KWL PING pong client=2 serial=62
+KWL PERF 5000ms: passes=518 timeouts=364 | poll 82.2% work 17.6%
+KWL PERF compose frames=45 draw_ms=18.37 (acquire 0.53 submit+present 17.41) frame_ms=19.46
+KWL SYSTEM result client=2 object=42 request=16 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=330
+KWL GESTURE kind=left2 phase=begin travel_um=4624 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=6957 speed=46660
+KWL GESTURE kind=left2 phase=update travel_um=9373 speed=94980
+KWL GESTURE kind=left2 phase=update travel_um=11997 speed=147460
+KWL GESTURE kind=left2 phase=update travel_um=14830 speed=204120
+KWL GESTURE kind=left2 phase=update travel_um=17871 speed=264940
+KWL GESTURE kind=left2 phase=update travel_um=21079 speed=299181
+KWL GESTURE kind=left2 phase=update travel_um=24412 speed=359781
+KWL GESTURE kind=left2 phase=update travel_um=26203 speed=385339
+KWL GESTURE kind=left2 phase=end travel_um=26203 speed=342523
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=1 via=pad
+KWL SYSTEM result client=2 object=42 request=17 applied=0
+KWL GLASS desktop settled desktop=1 windows=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=18 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4874 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=7165 speed=45820
+KWL GESTURE kind=left2 phase=update travel_um=9956 speed=101640
+KWL GESTURE kind=left2 phase=update travel_um=13039 speed=163300
+KWL GESTURE kind=left2 phase=update travel_um=16288 speed=228280
+KWL GESTURE kind=left2 phase=update travel_um=19704 speed=296600
+KWL GESTURE kind=left2 phase=update travel_um=23162 speed=365760
+KWL GESTURE kind=left2 phase=update travel_um=26620 speed=434920
+KWL SYSTEM result client=2 object=42 request=19 applied=0
+KWL GESTURE kind=left2 phase=update travel_um=30161 speed=451553
+KWL GESTURE kind=left2 phase=update travel_um=33744 speed=400972
+KWL GESTURE kind=left2 phase=update travel_um=35535 speed=425847
+KWL GESTURE kind=left2 phase=end travel_um=35535 speed=398194
+KWL GLASS desktop=1 via=pad
+KWL GLASS desktop settled desktop=1 windows=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=20 applied=0
+KWL PERF 5006ms: passes=527 timeouts=340 | poll 81.1% work 18.6%
+KWL PERF compose frames=61 draw_ms=14.37 (acquire 1.54 submit+present 12.61) frame_ms=15.16
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=21 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=22 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=23 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=24 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=3623 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5206 speed=31660
+KWL GESTURE kind=right2 phase=update travel_um=6956 speed=66660
+KWL GESTURE kind=right2 phase=update travel_um=9039 speed=108320
+KWL GESTURE kind=right2 phase=update travel_um=11289 speed=153320
+KWL GESTURE kind=right2 phase=update travel_um=13789 speed=203320
+KWL GESTURE kind=right2 phase=update travel_um=16455 speed=256640
+KWL GESTURE kind=right2 phase=update travel_um=19413 speed=315800
+KWL GESTURE kind=right2 phase=update travel_um=22579 speed=338500
+KWL GESTURE kind=right2 phase=update travel_um=25870 speed=304753
+KWL GESTURE kind=right2 phase=update travel_um=29328 speed=352123
+KWL GESTURE kind=right2 phase=update travel_um=32786 speed=378740
+KWL GESTURE kind=right2 phase=update travel_um=36327 speed=389333
+KWL GESTURE kind=right2 phase=update travel_um=38077 speed=362673
+KWL GESTURE kind=right2 phase=end travel_um=38077 speed=351571
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL PERF 5004ms: passes=554 timeouts=290 | poll 81.8% work 18.0%
+KWL PERF compose frames=62 draw_ms=13.75 (acquire 2.00 submit+present 11.59) frame_ms=14.22
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=25 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=4248 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5956 speed=34160
+KWL GESTURE kind=right2 phase=update travel_um=7914 speed=73320
+KWL GESTURE kind=right2 phase=update travel_um=10122 speed=117480
+KWL GESTURE kind=right2 phase=update travel_um=12663 speed=168300
+KWL GESTURE kind=right2 phase=update travel_um=15371 speed=222460
+KWL GESTURE kind=right2 phase=update travel_um=18287 speed=280780
+KWL GESTURE kind=right2 phase=update travel_um=21411 speed=343260
+KWL GESTURE kind=right2 phase=update travel_um=24660 speed=364500
+KWL GESTURE kind=right2 phase=update travel_um=28076 speed=366584
+KWL GESTURE kind=right2 phase=update travel_um=31617 speed=390985
+KWL GESTURE kind=right2 phase=update travel_um=35241 speed=397346
+KWL GESTURE kind=right2 phase=update travel_um=38949 speed=413107
+KWL GESTURE kind=right2 phase=update travel_um=42740 speed=418391
+KWL GESTURE kind=right2 phase=update travel_um=47114 speed=437408
+KWL GESTURE kind=right2 phase=end travel_um=47114 speed=408247
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL SYSTEM result client=2 object=42 request=26 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4956 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=6539 speed=31660
+KWL GESTURE kind=left2 phase=update travel_um=8247 speed=65820
+KWL GESTURE kind=left2 phase=update travel_um=10205 speed=104980
+KWL GESTURE kind=left2 phase=update travel_um=12246 speed=145800
+KWL GESTURE kind=left2 phase=update travel_um=14495 speed=190780
+KWL GESTURE kind=left2 phase=update travel_um=16786 speed=236600
+KWL GESTURE kind=left2 phase=update travel_um=19327 speed=287420
+KWL GESTURE kind=left2 phase=update travel_um=21993 speed=304232
+KWL GESTURE kind=left2 phase=update travel_um=24951 speed=273904
+KWL GESTURE kind=left2 phase=update travel_um=28617 speed=324123
+KWL GESTURE kind=left2 phase=update travel_um=32200 speed=353818
+KWL GESTURE kind=left2 phase=update travel_um=36783 speed=378892
+KWL GESTURE kind=left2 phase=update travel_um=41449 speed=384136
+KWL GESTURE kind=left2 phase=update travel_um=46032 speed=419142
+KWL GESTURE kind=left2 phase=update travel_um=50698 speed=435638
+KWL GESTURE kind=left2 phase=update travel_um=55072 speed=454611
+KWL GESTURE kind=left2 phase=update travel_um=55072 speed=454611
+KWL GESTURE kind=left2 phase=end travel_um=55072 speed=378991
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=27 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=360
+KWL SYSTEM result client=2 object=42 request=28 applied=0
+KWL PERF 5004ms: passes=556 timeouts=275 | poll 83.8% work 16.0%
+KWL PERF compose frames=50 draw_ms=15.29 (acquire 0.42 submit+present 14.70) frame_ms=16.20
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=-514
+KWL SYSTEM result client=2 object=42 request=29 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=-429
+KWL SYSTEM result client=2 object=42 request=30 applied=0
+KWL SYSTEM result client=2 object=42 request=31 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=-214
+KWL PERF 5008ms: passes=597 timeouts=280 | poll 94.5% work 5.3%
+KWL PERF compose frames=15 draw_ms=15.54 (acquire 1.63 submit+present 13.73) frame_ms=15.68
+KWL SYSTEM result client=2 object=42 request=32 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=4956 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=6581 speed=32500
+KWL GESTURE kind=right2 phase=update travel_um=8372 speed=68320
+KWL GESTURE kind=right2 phase=update travel_um=10413 speed=109140
+KWL GESTURE kind=right2 phase=update travel_um=12621 speed=153300
+KWL GESTURE kind=right2 phase=update travel_um=14912 speed=199120
+KWL GESTURE kind=right2 phase=update travel_um=17453 speed=249940
+KWL GESTURE kind=right2 phase=update travel_um=20119 speed=303260
+KWL GESTURE kind=right2 phase=update travel_um=22868 speed=308827
+KWL GESTURE kind=right2 phase=update travel_um=25742 speed=329936
+KWL GESTURE kind=right2 phase=update travel_um=28741 speed=330347
+KWL GESTURE kind=right2 phase=update travel_um=31740 speed=311441
+KWL GESTURE kind=right2 phase=update travel_um=34739 speed=346313
+KWL GESTURE kind=right2 phase=update travel_um=37822 speed=361164
+KWL GESTURE kind=right2 phase=update travel_um=40905 speed=355930
+KWL GESTURE kind=right2 phase=update travel_um=43904 speed=370933
+KWL GESTURE kind=right2 phase=update travel_um=46862 speed=433129
+KWL GESTURE kind=right2 phase=update travel_um=49862 speed=368682
+KWL GESTURE kind=right2 phase=update travel_um=52695 speed=395158
+KWL GESTURE kind=right2 phase=end travel_um=52695 speed=377517
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL SYSTEM result client=2 object=42 request=33 applied=0
+KWL SYSTEM result client=2 object=42 request=34 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4580 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=5996 speed=28320
+KWL GESTURE kind=left2 phase=update travel_um=7454 speed=57480
+KWL GESTURE kind=left2 phase=update travel_um=9245 speed=93300
+KWL GESTURE kind=left2 phase=update travel_um=11078 speed=129960
+KWL GESTURE kind=left2 phase=update travel_um=13119 speed=170780
+KWL GESTURE kind=left2 phase=update travel_um=15243 speed=213260
+KWL GESTURE kind=left2 phase=update travel_um=17534 speed=259080
+KWL GESTURE kind=left2 phase=update travel_um=19950 speed=274464
+KWL GESTURE kind=left2 phase=update travel_um=22533 speed=249347
+KWL GESTURE kind=left2 phase=update travel_um=25199 speed=286375
+KWL GESTURE kind=left2 phase=update travel_um=27990 speed=304025
+KWL GESTURE kind=left2 phase=update travel_um=30989 speed=261475
+KWL GESTURE kind=left2 phase=update travel_um=34030 speed=291584
+KWL GESTURE kind=left2 phase=update travel_um=37030 speed=321287
+KWL GESTURE kind=left2 phase=update travel_um=40113 speed=338409
+KWL GESTURE kind=left2 phase=update travel_um=43279 speed=392452
+KWL GESTURE kind=left2 phase=update travel_um=44945 speed=332029
+KWL GESTURE kind=left2 phase=update travel_um=44945 speed=332029
+KWL GESTURE kind=left2 phase=end travel_um=44945 speed=322542
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=35 applied=0
+KWL DESKTOP focus client=3 surface=19
+KWL IME app key=desktop language=direct from=desktop
+ZFILES DESKTOP band start x=31 y=3
+KWL PING pong client=3 serial=85
+KWL PERF 5013ms: passes=545 timeouts=320 | poll 82.0% work 17.8%
+KWL PERF compose frames=55 draw_ms=15.16 (acquire 0.28 submit+present 14.60) frame_ms=16.09
+ZFILES DESKTOP band end first=-1
+KWL SYSTEM result client=2 object=42 request=36 applied=0
+KWL SYSTEM result client=2 object=42 request=37 applied=0
+KWL SYSTEM result client=2 object=42 request=38 applied=0
+KWL SYSTEM result client=2 object=42 request=39 applied=0
+KWL SYSTEM result client=2 object=42 request=40 applied=0
+KWL PERF 5001ms: passes=504 timeouts=469 | poll 93.4% work 6.4%
+KWL PERF compose frames=18 draw_ms=15.01 (acquire 2.33 submit+present 12.31) frame_ms=16.31
+KWL SYSTEM result client=2 object=42 request=41 applied=0
+KWL SYSTEM result client=2 object=42 request=42 applied=0
+KWL SYSTEM result client=2 object=42 request=43 applied=0
+KWL SYSTEM result client=2 object=42 request=44 applied=0
+KWL SYSTEM result client=2 object=42 request=45 applied=0
+KWL PERF 5002ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=46 applied=0
+KWL SYSTEM result client=2 object=42 request=47 applied=0
+KWL SYSTEM result client=2 object=42 request=48 applied=0
+KWL SYSTEM result client=2 object=42 request=49 applied=0
+KWL SYSTEM result client=2 object=42 request=50 applied=0
+KWL PERF 5001ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=51 applied=0
+KWL SYSTEM result client=2 object=42 request=52 applied=0
+KWL SYSTEM result client=2 object=42 request=53 applied=0
+KWL SYSTEM result client=2 object=42 request=54 applied=0
+KWL SYSTEM result client=2 object=42 request=55 applied=0
+KWL PERF 5001ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=56 applied=0
+KWL SYSTEM result client=2 object=42 request=57 applied=0
+KWL SYSTEM result client=2 object=42 request=58 applied=0
+KWL SYSTEM result client=2 object=42 request=59 applied=0
+KWL SYSTEM result client=2 object=42 request=60 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=61 applied=0
+KWL SYSTEM result client=2 object=42 request=62 applied=0
+KWL SYSTEM result client=2 object=42 request=63 applied=0
+KWL SYSTEM result client=2 object=42 request=64 applied=0
+KWL SYSTEM result client=2 object=42 request=65 applied=0
+KWL PERF 5002ms: passes=509 timeouts=499 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=66 applied=0
+KWL SYSTEM result client=2 object=42 request=67 applied=0
+KWL SYSTEM result client=2 object=42 request=68 applied=0
+KWL SYSTEM result client=2 object=42 request=69 applied=0
+KWL SYSTEM result client=2 object=42 request=70 applied=0
+KWL PERF 5003ms: passes=504 timeouts=494 | poll 98.7% work 1.1%
+KWL PERF compose frames=1 draw_ms=24.49 (acquire 0.03 submit+present 24.18) frame_ms=27.05
+KWL SYSTEM result client=2 object=42 request=71 applied=0
+KWL SYSTEM result client=2 object=42 request=72 applied=0
+KWL SYSTEM result client=2 object=42 request=73 applied=0
+KWL SYSTEM result client=2 object=42 request=74 applied=0
+KWL SYSTEM result client=2 object=42 request=75 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=76 applied=0
+KWL SYSTEM result client=2 object=42 request=77 applied=0
+KWL SYSTEM result client=2 object=42 request=78 applied=0
+KWL SYSTEM result client=2 object=42 request=79 applied=0
+KWL SYSTEM result client=2 object=42 request=80 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=81 applied=0
+KWL GESTURE kind=top2 phase=begin travel_um=3956 speed=0
+KWL HOME pad swipe closing=0
+KWL GESTURE kind=top2 phase=update travel_um=4830 speed=17480
+KWL GESTURE kind=top2 phase=update travel_um=5704 speed=34960
+KWL GESTURE kind=top2 phase=update travel_um=6662 speed=54120
+KWL GESTURE kind=top2 phase=update travel_um=7578 speed=72440
+KWL GESTURE kind=top2 phase=update travel_um=8578 speed=92440
+KWL GESTURE kind=top2 phase=update travel_um=9744 speed=115760
+KWL GESTURE kind=top2 phase=update travel_um=10868 speed=138240
+KWL GESTURE kind=top2 phase=update travel_um=11992 speed=157568
+KWL GESTURE kind=top2 phase=update travel_um=13242 speed=117544
+KWL GESTURE kind=top2 phase=update travel_um=14616 speed=134936
+KWL GESTURE kind=top2 phase=update travel_um=15949 speed=151810
+KWL GESTURE kind=top2 phase=update travel_um=17532 speed=171848
+KWL GESTURE kind=top2 phase=update travel_um=19156 speed=176744
+KWL GESTURE kind=top2 phase=update travel_um=20906 speed=140082
+KWL GESTURE kind=top2 phase=update travel_um=22822 speed=155917
+KWL GESTURE kind=top2 phase=update travel_um=24905 speed=223055
+KWL GESTURE kind=top2 phase=update travel_um=27071 speed=237411
+KWL GESTURE kind=top2 phase=update travel_um=29362 speed=252222
+KWL GESTURE kind=top2 phase=update travel_um=31861 speed=250340
+KWL GESTURE kind=top2 phase=update travel_um=33152 speed=245740
+KWL GESTURE kind=top2 phase=update travel_um=34485 speed=204481
+KWL GESTURE kind=top2 phase=end travel_um=34485 speed=204481
+KWL HOME open via=pad at_ms=104162
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=0
+KWL HOME layer=content after_ms=1
+KWL FIRST_FRAME what=home-open frame=466 request_ms=104162 ms=15
+KWL HOME opened apps=17 pages=2 page=2 at_ms=104448
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL SYSTEM result client=2 object=42 request=82 applied=0
+KWL GESTURE kind=bottom2 phase=begin travel_um=4038 speed=0
+KWL HOME pad swipe closing=1
+KWL GESTURE kind=bottom2 phase=update travel_um=5287 speed=24980
+KWL GESTURE kind=bottom2 phase=update travel_um=6661 speed=52460
+KWL GESTURE kind=bottom2 phase=update travel_um=8285 speed=84940
+KWL GESTURE kind=bottom2 phase=update travel_um=10034 speed=119920
+KWL GESTURE kind=bottom2 phase=update travel_um=11950 speed=158240
+KWL GESTURE kind=bottom2 phase=update travel_um=13908 speed=197400
+KWL GESTURE kind=bottom2 phase=update travel_um=16074 speed=177000
+KWL GESTURE kind=bottom2 phase=update travel_um=18240 speed=208852
+KWL GESTURE kind=bottom2 phase=update travel_um=20573 speed=243161
+KWL GESTURE kind=bottom2 phase=update travel_um=22989 speed=270728
+KWL GESTURE kind=bottom2 phase=update travel_um=25447 speed=278038
+KWL GESTURE kind=bottom2 phase=update travel_um=27863 speed=283630
+KWL GESTURE kind=bottom2 phase=update travel_um=30196 speed=249123
+KWL GESTURE kind=bottom2 phase=update travel_um=32529 speed=271342
+KWL GESTURE kind=bottom2 phase=update travel_um=34695 speed=291971
+KWL GESTURE kind=bottom2 phase=update travel_um=35736 speed=349988
+KWL GESTURE kind=bottom2 phase=end travel_um=35736 speed=204000
+KWL HOME close via=pad at_ms=105254
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=478 request_ms=105254 ms=17
+KWL HOME closed at_ms=105515
+KWL SYSTEM result client=2 object=42 request=83 applied=0
+KWL GESTURE kind=bottom2 phase=begin travel_um=4033 speed=0
+KWL WISEVIEW gesture via=pad
+KWL GLASS glyph codepoint=U+00B7 size=0 face=0 cell=1
+KWL SYSTEM result client=2 object=42 request=84 applied=0
+KWL GESTURE kind=bottom2 phase=update travel_um=4783 speed=15000
+KWL GESTURE kind=bottom2 phase=update travel_um=5533 speed=30000
+KWL GESTURE kind=bottom2 phase=update travel_um=5533 speed=30000
+KWL GESTURE kind=bottom2 phase=update travel_um=11324 speed=145820
+KWL GESTURE kind=bottom2 phase=end travel_um=11324 speed=145820
+KWL WISEVIEW opening from=0.28
+KWL WISEVIEW open windows=1 at_ms=107195
+KWL WISEVIEW tile client=2 surface=19 x=662 y=329 width=596 height=404
+KWL WISEVIEW close
+KWL WISEVIEW closed at_ms=107952
+KWL SYSTEM result client=2 object=42 request=85 applied=0
+KWL PERF 5009ms: passes=525 timeouts=325 | poll 81.3% work 18.5%
+KWL PERF compose frames=40 draw_ms=21.97 (acquire 0.08 submit+present 21.25) frame_ms=23.52
+KWL SYSTEM result client=2 object=42 request=86 applied=0
+KWL GESTURE kind=top2 phase=begin travel_um=4040 speed=0
+KWL HOME pad swipe closing=0
+KWL GESTURE kind=top2 phase=update travel_um=5290 speed=25000
+KWL GESTURE kind=top2 phase=update travel_um=6790 speed=55000
+KWL GESTURE kind=top2 phase=update travel_um=8331 speed=85820
+KWL GESTURE kind=top2 phase=update travel_um=10080 speed=120800
+KWL GESTURE kind=top2 phase=update travel_um=11954 speed=158280
+KWL GESTURE kind=top2 phase=update travel_um=13995 speed=199100
+KWL GESTURE kind=top2 phase=update travel_um=16161 speed=192396
+KWL GESTURE kind=top2 phase=update travel_um=17369 speed=211571
+KWL GESTURE kind=top2 phase=update travel_um=18660 speed=232063
+KWL GESTURE kind=top2 phase=end travel_um=18660 speed=208857
+KWL HOME open via=pad at_ms=109413
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=0
+KWL HOME layer=content after_ms=0
+KWL FIRST_FRAME what=home-open frame=508 request_ms=109413 ms=19
+KWL HOME opened apps=17 pages=2 page=2 at_ms=109706
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL SYSTEM result client=2 object=42 request=87 applied=0
+KWL HOME close via=launcher at_ms=110426
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=517 request_ms=110426 ms=21
+KWL HOME closed at_ms=110688
+KWL SYSTEM result client=2 object=42 request=88 applied=0
+KWL SYSTEM result client=2 object=42 request=89 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZFILES TOUCH rest area=1 scroll=0
+KWL PERF 5001ms: passes=541 timeouts=331 | poll 87.7% work 12.0%
+KWL PERF compose frames=28 draw_ms=19.96 (acquire 0.12 submit+present 19.29) frame_ms=21.23
+KWL SYSTEM result client=2 object=42 request=90 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=4207 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5581 speed=27480
+KWL GESTURE kind=right2 phase=update travel_um=6914 speed=54140
+KWL GESTURE kind=right2 phase=update travel_um=8539 speed=86640
+KWL GESTURE kind=right2 phase=update travel_um=10205 speed=119960
+KWL GESTURE kind=right2 phase=update travel_um=12121 speed=158280
+KWL GESTURE kind=right2 phase=update travel_um=14037 speed=196600
+KWL GESTURE kind=right2 phase=update travel_um=16078 speed=237420
+KWL GESTURE kind=right2 phase=update travel_um=18411 speed=215212
+KWL GESTURE kind=right2 phase=update travel_um=20785 speed=251181
+KWL GESTURE kind=right2 phase=update travel_um=23326 speed=273128
+KWL GESTURE kind=right2 phase=update travel_um=26034 speed=232202
+KWL GESTURE kind=right2 phase=update travel_um=28867 speed=262340
+KWL GESTURE kind=right2 phase=update travel_um=30450 speed=279180
+KWL GESTURE kind=right2 phase=update travel_um=32075 speed=284367
+KWL GESTURE kind=right2 phase=end travel_um=32075 speed=233029
+KWL GLASS desktop=3 via=pad
+KWL DESKTOP unfocus via=window
+KWL SYSTEM result client=2 object=42 request=91 applied=0
+KWL GLASS desktop settled desktop=3 windows=0
+KWL SYSTEM result client=2 object=42 request=92 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=3913 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5204 speed=25820
+KWL GESTURE kind=right2 phase=update travel_um=6495 speed=51640
+KWL GESTURE kind=right2 phase=update travel_um=8036 speed=82460
+KWL GESTURE kind=right2 phase=update travel_um=9702 speed=115780
+KWL GESTURE kind=right2 phase=update travel_um=11535 speed=152440
+KWL GESTURE kind=right2 phase=update travel_um=13534 speed=192420
+KWL GESTURE kind=right2 phase=update travel_um=15658 speed=234900
+KWL GESTURE kind=right2 phase=update travel_um=17991 speed=251392
+KWL GESTURE kind=right2 phase=update travel_um=20449 speed=229666
+KWL GESTURE kind=right2 phase=update travel_um=23032 speed=265541
+KWL GESTURE kind=right2 phase=update travel_um=24323 speed=265064
+KWL GESTURE kind=right2 phase=update travel_um=28323 speed=246565
+KWL GESTURE kind=right2 phase=end travel_um=28323 speed=246565
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL HOME press slipped
+KWL SYSTEM result client=2 object=42 request=93 applied=0
+KWL SYSTEM result client=2 object=42 request=94 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL PERF 5003ms: passes=587 timeouts=257 | poll 83.5% work 16.3%
+KWL PERF compose frames=50 draw_ms=15.33 (acquire 1.42 submit+present 13.71) frame_ms=16.24
+KWL SYSTEM result client=2 object=42 request=95 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4873 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=6456 speed=31660
+KWL GESTURE kind=left2 phase=update travel_um=8289 speed=68320
+KWL GESTURE kind=left2 phase=update travel_um=10372 speed=109980
+KWL GESTURE kind=left2 phase=update travel_um=12788 speed=158300
+KWL GESTURE kind=left2 phase=update travel_um=15496 speed=212460
+KWL GESTURE kind=left2 phase=update travel_um=18412 speed=270780
+KWL GESTURE kind=left2 phase=update travel_um=21578 speed=334100
+KWL GESTURE kind=left2 phase=update travel_um=24869 speed=357071
+KWL GESTURE kind=left2 phase=update travel_um=28244 speed=315824
+KWL GESTURE kind=left2 phase=update travel_um=30035 speed=340027
+KWL GESTURE kind=left2 phase=end travel_um=30035 speed=326779
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=429
+KWL SYSTEM result client=2 object=42 request=96 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=-725
+ZSETTINGS KINETIC hold pane=page
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=0
+KWL SYSTEM result client=2 object=42 request=97 applied=0
+ZSETTINGS KINETIC hold pane=page
+KWL SYSTEM result client=2 object=42 request=98 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=360
+KWL SYSTEM result client=2 object=42 request=99 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=3497 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=4913 speed=28320
+KWL GESTURE kind=right2 phase=update travel_um=6371 speed=57480
+KWL GESTURE kind=right2 phase=update travel_um=8162 speed=93300
+KWL GESTURE kind=right2 phase=update travel_um=10078 speed=131620
+KWL GESTURE kind=right2 phase=update travel_um=12202 speed=174100
+KWL GESTURE kind=right2 phase=update travel_um=14618 speed=222420
+KWL GESTURE kind=right2 phase=update travel_um=17034 speed=270740
+KWL GESTURE kind=right2 phase=update travel_um=19659 speed=237676
+KWL GESTURE kind=right2 phase=update travel_um=22575 speed=280558
+KWL GESTURE kind=right2 phase=update travel_um=25616 speed=315985
+KWL GESTURE kind=right2 phase=update travel_um=28699 speed=286386
+KWL GESTURE kind=right2 phase=update travel_um=31782 speed=321420
+KWL GESTURE kind=right2 phase=update travel_um=34865 speed=344703
+KWL GESTURE kind=right2 phase=update travel_um=36490 speed=336663
+KWL GESTURE kind=right2 phase=end travel_um=36490 speed=297234
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL PERF 5014ms: passes=570 timeouts=244 | poll 76.8% work 22.9%
+KWL PERF compose frames=73 draw_ms=14.97 (acquire 1.64 submit+present 13.04) frame_ms=15.73
+KWL SYSTEM result client=2 object=42 request=100 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=3913 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5288 speed=27500
+KWL GESTURE kind=right2 phase=update travel_um=6912 speed=59980
+KWL GESTURE kind=right2 phase=update travel_um=8662 speed=94980
+KWL GESTURE kind=right2 phase=update travel_um=10786 speed=137460
+KWL GESTURE kind=right2 phase=update travel_um=13119 speed=184120
+KWL GESTURE kind=right2 phase=update travel_um=15577 speed=233280
+KWL GESTURE kind=right2 phase=update travel_um=18202 speed=285780
+KWL GESTURE kind=right2 phase=update travel_um=21076 speed=306482
+KWL GESTURE kind=right2 phase=update travel_um=24034 speed=279458
+KWL GESTURE kind=right2 phase=update travel_um=26992 speed=320541
+KWL GESTURE kind=right2 phase=update travel_um=30033 speed=339220
+KWL GESTURE kind=right2 phase=update travel_um=33199 speed=348642
+KWL GESTURE kind=right2 phase=update travel_um=36240 speed=326535
+KWL GESTURE kind=right2 phase=update travel_um=39281 speed=357252
+KWL GESTURE kind=right2 phase=update travel_um=42447 speed=366990
+KWL GESTURE kind=right2 phase=update travel_um=45613 speed=420052
+KWL GESTURE kind=right2 phase=update travel_um=48696 speed=379100
+KWL GESTURE kind=right2 phase=update travel_um=50279 speed=394930
+KWL GESTURE kind=right2 phase=end travel_um=50279 speed=376123
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL SYSTEM result client=2 object=42 request=101 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=5005 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=6588 speed=31660
+KWL GESTURE kind=left2 phase=update travel_um=8504 speed=69980
+KWL GESTURE kind=left2 phase=update travel_um=10587 speed=111640
+KWL GESTURE kind=left2 phase=update travel_um=12837 speed=156640
+KWL GESTURE kind=left2 phase=update travel_um=15211 speed=204120
+KWL GESTURE kind=left2 phase=update travel_um=17752 speed=254940
+KWL GESTURE kind=left2 phase=update travel_um=20376 speed=307420
+KWL GESTURE kind=left2 phase=update travel_um=23209 speed=249369
+KWL GESTURE kind=left2 phase=update travel_um=26167 speed=289890
+KWL GESTURE kind=left2 phase=update travel_um=29375 speed=333835
+KWL GESTURE kind=left2 phase=update travel_um=32541 speed=357610
+KWL GESTURE kind=left2 phase=update travel_um=35790 speed=366488
+KWL GESTURE kind=left2 phase=update travel_um=39039 speed=333666
+KWL GESTURE kind=left2 phase=update travel_um=42413 speed=366745
+KWL GESTURE kind=left2 phase=update travel_um=45787 speed=388400
+KWL GESTURE kind=left2 phase=update travel_um=47495 speed=426114
+KWL GESTURE kind=left2 phase=end travel_um=47495 speed=358330
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=102 applied=0
+KWL PERF 5005ms: passes=575 timeouts=279 | poll 87.2% work 12.6%
+KWL PERF compose frames=37 draw_ms=15.83 (acquire 0.06 submit+present 15.55) frame_ms=17.06
+ZSETTINGS KINETIC hold pane=page
+KWL SYSTEM result client=2 object=42 request=103 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL AXIS stop
+ZSETTINGS KINETIC none pane=page velocity=0
+KWL SYSTEM result client=2 object=42 request=104 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=3997 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=5288 speed=25820
+KWL GESTURE kind=left2 phase=update travel_um=6912 speed=58300
+KWL GESTURE kind=left2 phase=update travel_um=8662 speed=93300
+KWL GESTURE kind=left2 phase=update travel_um=10703 speed=134120
+KWL GESTURE kind=left2 phase=update travel_um=12744 speed=174940
+KWL GESTURE kind=left2 phase=update travel_um=14952 speed=219100
+KWL GESTURE kind=left2 phase=update travel_um=17410 speed=186291
+KWL GESTURE kind=left2 phase=update travel_um=19868 speed=220430
+KWL GESTURE kind=left2 phase=update travel_um=22493 speed=256888
+KWL GESTURE kind=left2 phase=update travel_um=25242 speed=295069
+KWL GESTURE kind=left2 phase=update travel_um=27991 speed=311610
+KWL GESTURE kind=left2 phase=update travel_um=30949 speed=320857
+KWL GESTURE kind=left2 phase=update travel_um=33907 speed=293235
+KWL GESTURE kind=left2 phase=update travel_um=36865 speed=322235
+KWL GESTURE kind=left2 phase=update travel_um=39781 speed=340800
+KWL GESTURE kind=left2 phase=update travel_um=42780 speed=317594
+KWL GESTURE kind=left2 phase=update travel_um=44238 speed=332029
+KWL GESTURE kind=left2 phase=end travel_um=44238 speed=325582
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=1 via=pad
+KWL GLASS desktop settled desktop=1 windows=0
+KWL SYSTEM result client=2 object=42 request=105 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=4331 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5705 speed=27480
+KWL GESTURE kind=right2 phase=update travel_um=7205 speed=57480
+KWL GESTURE kind=right2 phase=update travel_um=8871 speed=90800
+KWL GESTURE kind=right2 phase=update travel_um=10787 speed=129120
+KWL GESTURE kind=right2 phase=update travel_um=12953 speed=172440
+KWL GESTURE kind=right2 phase=update travel_um=15286 speed=219100
+KWL GESTURE kind=right2 phase=update travel_um=17785 speed=269080
+KWL GESTURE kind=right2 phase=update travel_um=20493 speed=288607
+KWL GESTURE kind=right2 phase=update travel_um=23201 speed=251600
+KWL GESTURE kind=right2 phase=update travel_um=26034 speed=289373
+KWL GESTURE kind=right2 phase=update travel_um=29033 speed=320805
+KWL GESTURE kind=right2 phase=update travel_um=32158 speed=275514
+KWL GESTURE kind=right2 phase=update travel_um=35282 speed=306445
+KWL GESTURE kind=right2 phase=update travel_um=38490 speed=338207
+KWL GESTURE kind=right2 phase=update travel_um=41781 speed=356666
+KWL GESTURE kind=right2 phase=update travel_um=45030 speed=413947
+KWL GESTURE kind=right2 phase=update travel_um=48196 speed=363194
+KWL GESTURE kind=right2 phase=update travel_um=49779 speed=378563
+KWL GESTURE kind=right2 phase=end travel_um=49779 speed=371352
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=106 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=4164 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5372 speed=24160
+KWL GESTURE kind=right2 phase=update travel_um=6747 speed=51660
+KWL GESTURE kind=right2 phase=update travel_um=8330 speed=83320
+KWL GESTURE kind=right2 phase=update travel_um=10121 speed=119140
+KWL GESTURE kind=right2 phase=update travel_um=11995 speed=156620
+KWL GESTURE kind=right2 phase=update travel_um=13911 speed=194940
+KWL GESTURE kind=right2 phase=update travel_um=16077 speed=238260
+KWL GESTURE kind=right2 phase=update travel_um=18326 speed=202314
+KWL GESTURE kind=right2 phase=update travel_um=20784 speed=237428
+KWL GESTURE kind=right2 phase=update travel_um=23117 speed=270757
+KWL GESTURE kind=right2 phase=update travel_um=25533 speed=296791
+KWL GESTURE kind=right2 phase=update travel_um=27907 speed=263811
+KWL GESTURE kind=right2 phase=update travel_um=30323 speed=290655
+KWL GESTURE kind=right2 phase=update travel_um=32864 speed=308602
+KWL GESTURE kind=right2 phase=update travel_um=35197 speed=274628
+KWL GESTURE kind=right2 phase=update travel_um=37696 speed=343872
+KWL GESTURE kind=right2 phase=update travel_um=40154 speed=351652
+KWL GESTURE kind=right2 phase=update travel_um=42695 speed=316252
+KWL GESTURE kind=right2 phase=update travel_um=45069 speed=339300
+KWL GESTURE kind=right2 phase=update travel_um=47402 speed=372705
+KWL GESTURE kind=right2 phase=update travel_um=49651 speed=350392
+KWL GESTURE kind=right2 phase=end travel_um=49651 speed=297115
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL GESTURE kind=left2 phase=begin travel_um=3997 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=5122 speed=22500
+KWL GESTURE kind=left2 phase=update travel_um=6580 speed=51660
+KWL GESTURE kind=left2 phase=update travel_um=8246 speed=84980
+KWL GESTURE kind=left2 phase=update travel_um=9996 speed=119980
+KWL GESTURE kind=left2 phase=update travel_um=11870 speed=157460
+KWL GESTURE kind=left2 phase=update travel_um=13953 speed=199120
+KWL GESTURE kind=left2 phase=update travel_um=16077 speed=241600
+KWL GESTURE kind=left2 phase=update travel_um=18368 speed=196863
+KWL GESTURE kind=left2 phase=update travel_um=20659 speed=228246
+KWL GESTURE kind=left2 phase=update travel_um=23158 speed=262479
+KWL GESTURE kind=left2 phase=update travel_um=25866 speed=284012
+KWL GESTURE kind=left2 phase=update travel_um=28574 speed=245770
+KWL GESTURE kind=left2 phase=update travel_um=31407 speed=274100
+KWL GESTURE kind=left2 phase=update travel_um=34365 speed=303680
+KWL GESTURE kind=left2 phase=update travel_um=37448 speed=318580
+KWL GESTURE kind=left2 phase=update travel_um=40447 speed=367968
+KWL GESTURE kind=left2 phase=update travel_um=43488 speed=328352
+KWL GESTURE kind=left2 phase=update travel_um=46654 speed=359392
+KWL GESTURE kind=left2 phase=update travel_um=49820 speed=379276
+KWL GESTURE kind=left2 phase=update travel_um=51361 speed=407123
+KWL GESTURE kind=left2 phase=update travel_um=57361 speed=378752
+KWL GESTURE kind=left2 phase=end travel_um=57361 speed=378752
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL PERF 5015ms: passes=579 timeouts=240 | poll 76.3% work 23.4%
+KWL PERF compose frames=70 draw_ms=15.84 (acquire 0.16 submit+present 15.37) frame_ms=16.84
+KWL SYSTEM result client=2 object=42 request=107 applied=0
+KWL GLASS desktop settled desktop=2 windows=1
+KWL GESTURE kind=right2 phase=begin travel_um=3122 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=4163 speed=20820
+KWL GESTURE kind=right2 phase=update travel_um=5746 speed=52480
+KWL GESTURE kind=right2 phase=update travel_um=7412 speed=85800
+KWL GESTURE kind=right2 phase=update travel_um=9536 speed=128280
+KWL GESTURE kind=right2 phase=update travel_um=11869 speed=174940
+KWL GESTURE kind=right2 phase=update travel_um=14910 speed=235760
+KWL GESTURE kind=right2 phase=update travel_um=17951 speed=296580
+KWL GESTURE kind=right2 phase=update travel_um=21534 speed=283261
+KWL GESTURE kind=right2 phase=update travel_um=23450 speed=312738
+KWL GESTURE kind=right2 phase=end travel_um=23450 speed=254100
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=3 via=pad
+KWL GLASS desktop settled desktop=3 windows=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=108 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=109 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=110 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=111 applied=0
+KWL PERF 5000ms: passes=599 timeouts=311 | poll 89.1% work 10.7%
+KWL PERF compose frames=32 draw_ms=15.16 (acquire 0.38 submit+present 14.50) frame_ms=16.46
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=112 applied=0
+KWL SYSTEM result client=2 object=42 request=113 applied=0
+KWL DESKTOP focus client=3 surface=19
+ZFILES DESKTOP band start x=1643 y=26
+KWL PING pong client=3 serial=115
+KWL SYSTEM result client=2 object=42 request=114 applied=0
+ZFILES DESKTOP band end first=-1
+KWL SYSTEM result client=2 object=42 request=115 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=3873 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=5414 speed=30820
+KWL GESTURE kind=left2 phase=update travel_um=7163 speed=65800
+KWL GESTURE kind=left2 phase=update travel_um=9204 speed=106620
+KWL GESTURE kind=left2 phase=update travel_um=11453 speed=151600
+KWL GESTURE kind=left2 phase=update travel_um=13952 speed=201580
+KWL GESTURE kind=left2 phase=update travel_um=16576 speed=254060
+KWL GESTURE kind=left2 phase=update travel_um=19367 speed=309880
+KWL GESTURE kind=left2 phase=update travel_um=22241 speed=328000
+KWL GESTURE kind=left2 phase=update travel_um=25282 speed=285453
+KWL GESTURE kind=left2 phase=update travel_um=28532 speed=328786
+KWL GESTURE kind=left2 phase=update travel_um=31948 speed=364610
+KWL GESTURE kind=left2 phase=update travel_um=35406 speed=306145
+KWL GESTURE kind=left2 phase=update travel_um=39030 speed=341330
+KWL GESTURE kind=left2 phase=update travel_um=42738 speed=377330
+KWL GESTURE kind=left2 phase=update travel_um=46488 speed=405857
+KWL GESTURE kind=left2 phase=update travel_um=50154 speed=470947
+KWL GESTURE kind=left2 phase=update travel_um=53779 speed=428605
+KWL GESTURE kind=left2 phase=update travel_um=55529 speed=441190
+KWL GESTURE kind=left2 phase=end travel_um=55529 speed=332880
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL DESKTOP unfocus via=window
+KWL GLASS desktop settled desktop=2 windows=1
+KWL PERF 5007ms: passes=542 timeouts=291 | poll 81.5% work 18.2%
+KWL PERF compose frames=54 draw_ms=15.72 (acquire 2.51 submit+present 12.94) frame_ms=16.58
+KWL SYSTEM result client=2 object=42 request=116 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4831 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=6247 speed=28320
+KWL GESTURE kind=left2 phase=update travel_um=7830 speed=59980
+KWL GESTURE kind=left2 phase=update travel_um=9621 speed=95800
+KWL GESTURE kind=left2 phase=update travel_um=11495 speed=133280
+KWL GESTURE kind=left2 phase=update travel_um=13578 speed=174940
+KWL GESTURE kind=left2 phase=update travel_um=15828 speed=199945
+KWL GESTURE kind=left2 phase=update travel_um=18202 speed=243109
+KWL GESTURE kind=left2 phase=update travel_um=20743 speed=284142
+KWL GESTURE kind=left2 phase=update travel_um=23367 speed=294222
+KWL GESTURE kind=left2 phase=update travel_um=26033 speed=302885
+KWL GESTURE kind=left2 phase=update travel_um=29032 speed=271921
+KWL GESTURE kind=left2 phase=update travel_um=32198 speed=307494
+KWL GESTURE kind=left2 phase=update travel_um=35489 speed=336901
+KWL GESTURE kind=left2 phase=update travel_um=39489 speed=353653
+KWL GESTURE kind=left2 phase=update travel_um=43864 speed=361416
+KWL GESTURE kind=left2 phase=update travel_um=48488 speed=459141
+KWL GESTURE kind=left2 phase=update travel_um=52779 speed=454030
+KWL GESTURE kind=left2 phase=update travel_um=56570 speed=429920
+KWL GESTURE kind=left2 phase=update travel_um=60153 speed=465750
+KWL GESTURE kind=left2 phase=update travel_um=60153 speed=443571
+KWL GESTURE kind=left2 phase=end travel_um=60153 speed=415848
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=1 via=pad
+KWL GLASS desktop settled desktop=1 windows=0
+KWL SYSTEM result client=2 object=42 request=117 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=118 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=4664 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5913 speed=24980
+KWL GESTURE kind=right2 phase=update travel_um=7329 speed=53300
+KWL GESTURE kind=right2 phase=update travel_um=8954 speed=85800
+KWL GESTURE kind=right2 phase=update travel_um=10703 speed=120780
+KWL GESTURE kind=right2 phase=update travel_um=12702 speed=160760
+KWL GESTURE kind=right2 phase=update travel_um=14785 speed=202420
+KWL GESTURE kind=right2 phase=update travel_um=17035 speed=247420
+KWL GESTURE kind=right2 phase=update travel_um=19409 speed=263303
+KWL GESTURE kind=right2 phase=update travel_um=21992 speed=234162
+KWL GESTURE kind=right2 phase=update travel_um=24700 speed=270756
+KWL GESTURE kind=right2 phase=update travel_um=27616 speed=298077
+KWL GESTURE kind=right2 phase=update travel_um=30657 speed=309440
+KWL GESTURE kind=right2 phase=update travel_um=33781 speed=291170
+KWL GESTURE kind=right2 phase=update travel_um=36947 speed=322830
+KWL GESTURE kind=right2 phase=update travel_um=40238 speed=338800
+KWL GESTURE kind=right2 phase=update travel_um=44112 speed=402094
+KWL GESTURE kind=right2 phase=update travel_um=47695 speed=359145
+KWL GESTURE kind=right2 phase=update travel_um=51070 speed=391912
+KWL GESTURE kind=right2 phase=update travel_um=52861 speed=401504
+KWL GESTURE kind=right2 phase=end travel_um=52861 speed=315584
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=119 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4373 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=5748 speed=27500
+KWL GESTURE kind=left2 phase=update travel_um=7289 speed=58320
+KWL GESTURE kind=left2 phase=update travel_um=9080 speed=94140
+KWL GESTURE kind=left2 phase=update travel_um=11079 speed=134120
+KWL GESTURE kind=left2 phase=update travel_um=13245 speed=177440
+KWL GESTURE kind=left2 phase=update travel_um=15661 speed=225760
+KWL GESTURE kind=left2 phase=update travel_um=18202 speed=276580
+KWL GESTURE kind=left2 phase=update travel_um=21035 speed=248686
+KWL GESTURE kind=left2 phase=update travel_um=24118 speed=294701
+KWL GESTURE kind=left2 phase=update travel_um=27492 speed=330271
+KWL GESTURE kind=left2 phase=update travel_um=30991 speed=345688
+KWL GESTURE kind=left2 phase=update travel_um=34574 speed=321287
+KWL GESTURE kind=left2 phase=update travel_um=38282 speed=360734
+KWL PERF 5023ms: passes=535 timeouts=264 | poll 80.0% work 19.8%
+KWL PERF compose frames=60 draw_ms=15.68 (acquire 0.72 submit+present 14.72) frame_ms=16.59
+KWL GESTURE kind=left2 phase=update travel_um=41990 speed=383846
+KWL GESTURE kind=left2 phase=update travel_um=45656 speed=393171
+KWL GESTURE kind=left2 phase=update travel_um=49197 speed=397198
+KWL GESTURE kind=left2 phase=update travel_um=49197 speed=397198
+KWL GESTURE kind=left2 phase=end travel_um=49197 speed=370077
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=1 via=pad
+KWL GLASS desktop settled desktop=1 windows=0
+KWL SYSTEM result client=2 object=42 request=120 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=121 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=3748 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5247 speed=29980
+KWL GESTURE kind=right2 phase=update travel_um=6997 speed=64980
+KWL GESTURE kind=right2 phase=update travel_um=9080 speed=106640
+KWL GESTURE kind=right2 phase=update travel_um=11454 speed=154120
+KWL GESTURE kind=right2 phase=update travel_um=14037 speed=205780
+KWL GESTURE kind=right2 phase=update travel_um=16870 speed=262440
+KWL GESTURE kind=right2 phase=update travel_um=20036 speed=325760
+KWL GESTURE kind=right2 phase=update travel_um=23369 speed=292850
+KWL GESTURE kind=right2 phase=update travel_um=26910 speed=345701
+KWL GESTURE kind=right2 phase=update travel_um=30618 speed=383857
+KWL GESTURE kind=right2 phase=update travel_um=34909 speed=404688
+KWL GESTURE kind=right2 phase=update travel_um=38908 speed=374042
+KWL GESTURE kind=right2 phase=update travel_um=42574 speed=413042
+KWL GESTURE kind=right2 phase=update travel_um=46323 speed=434438
+KWL GESTURE kind=right2 phase=update travel_um=49989 speed=440390
+KWL GESTURE kind=right2 phase=update travel_um=53572 speed=423409
+KWL GESTURE kind=right2 phase=update travel_um=56946 speed=454081
+KWL GESTURE kind=right2 phase=update travel_um=58571 speed=543857
+KWL GESTURE kind=right2 phase=end travel_um=58571 speed=505010
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=122 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4790 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=6331 speed=30820
+KWL GESTURE kind=left2 phase=update travel_um=8039 speed=64980
+KWL GESTURE kind=left2 phase=update travel_um=9955 speed=103300
+KWL GESTURE kind=left2 phase=update travel_um=12080 speed=145800
+KWL GESTURE kind=left2 phase=update travel_um=14329 speed=190780
+KWL GESTURE kind=left2 phase=update travel_um=16870 speed=219636
+KWL GESTURE kind=left2 phase=update travel_um=19536 speed=268109
+KWL GESTURE kind=left2 phase=update travel_um=22369 speed=313910
+KWL GESTURE kind=left2 phase=update travel_um=25369 speed=326650
+KWL GESTURE kind=left2 phase=update travel_um=28577 speed=339814
+KWL GESTURE kind=left2 phase=update travel_um=31951 speed=305179
+KWL GESTURE kind=left2 phase=update travel_um=35451 speed=344505
+KWL GESTURE kind=left2 phase=update travel_um=39159 speed=377681
+KWL GESTURE kind=left2 phase=update travel_um=42950 speed=389387
+KWL GESTURE kind=left2 phase=update travel_um=47366 speed=397906
+KWL GESTURE kind=left2 phase=update travel_um=51824 speed=437850
+KWL GESTURE kind=left2 phase=update travel_um=53824 speed=457850
+KWL GESTURE kind=left2 phase=end travel_um=53824 speed=405281
+KWL IME app key=desktop language=direct from=desktop
+KWL GLASS desktop=1 via=pad
+KWL GLASS desktop settled desktop=1 windows=0
+KWL PERF 5001ms: passes=509 timeouts=267 | poll 78.0% work 21.8%
+KWL PERF compose frames=68 draw_ms=15.20 (acquire 1.26 submit+present 13.70) frame_ms=16.37
+KWL SYSTEM result client=2 object=42 request=123 applied=0
+KWL GESTURE kind=swipe2 phase=end travel_um=0 speed=0
+KWL SYSTEM result client=2 object=42 request=124 applied=0
+KWL SYSTEM result client=2 object=42 request=125 applied=0
+KWL HOME open via=launcher at_ms=155756
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=1
+KWL HOME layer=content after_ms=1
+KWL FIRST_FRAME what=home-open frame=985 request_ms=155756 ms=24
+KWL HOME opened apps=17 pages=2 page=2 at_ms=156050
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL SYSTEM result client=2 object=42 request=126 applied=0
+KWL SYSTEM result client=2 object=42 request=127 applied=0
+KWL GESTURE kind=bottom2 phase=begin travel_um=4624 speed=0
+KWL HOME pad swipe closing=1
+KWL GESTURE kind=bottom2 phase=update travel_um=6707 speed=41660
+KWL GESTURE kind=bottom2 phase=update travel_um=9040 speed=88320
+KWL GESTURE kind=bottom2 phase=update travel_um=11581 speed=139140
+KWL GESTURE kind=bottom2 phase=update travel_um=14289 speed=193300
+KWL GESTURE kind=bottom2 phase=update travel_um=15705 speed=221620
+KWL GESTURE kind=bottom2 phase=end travel_um=15705 speed=191051
+KWL HOME close via=pad at_ms=157478
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=999 request_ms=157478 ms=14
+KWL HOME closed at_ms=157723
+KWL PERF 5010ms: passes=508 timeouts=317 | poll 87.4% work 12.4%
+KWL PERF compose frames=32 draw_ms=17.81 (acquire 0.14 submit+present 17.14) frame_ms=19.09
+KWL SYSTEM result client=2 object=42 request=128 applied=0
+KWL GESTURE kind=left2 phase=begin travel_um=4370 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=left2 phase=update travel_um=5578 speed=24160
+KWL GESTURE kind=left2 phase=update travel_um=6953 speed=51660
+KWL GESTURE kind=left2 phase=update travel_um=8453 speed=81660
+KWL GESTURE kind=left2 phase=update travel_um=10119 speed=114980
+KWL GESTURE kind=left2 phase=update travel_um=11952 speed=151640
+KWL GESTURE kind=left2 phase=update travel_um=13951 speed=191620
+KWL GESTURE kind=left2 phase=update travel_um=16075 speed=234100
+KWL GESTURE kind=left2 phase=update travel_um=18325 speed=249196
+KWL GESTURE kind=left2 phase=update travel_um=20658 speed=223123
+KWL GESTURE kind=left2 phase=update travel_um=23074 speed=256219
+KWL GESTURE kind=left2 phase=update travel_um=25740 speed=277532
+KWL GESTURE kind=left2 phase=update travel_um=28656 speed=289119
+KWL GESTURE kind=left2 phase=update travel_um=31656 speed=275616
+KWL GESTURE kind=left2 phase=update travel_um=34822 speed=307595
+KWL GESTURE kind=left2 phase=update travel_um=38196 speed=322152
+KWL GESTURE kind=left2 phase=update travel_um=41696 speed=380189
+KWL GESTURE kind=left2 phase=update travel_um=45320 speed=348524
+KWL GESTURE kind=left2 phase=update travel_um=48903 speed=384000
+KWL GESTURE kind=left2 phase=end travel_um=48903 speed=369371
+KWL GLASS desktop=1 via=pad
+KWL GLASS desktop settled desktop=1 windows=0
+KWL SYSTEM result client=2 object=42 request=129 applied=0
+KWL GESTURE kind=right2 phase=begin travel_um=3874 speed=0
+KWL GLASS desktop swipe via=pad
+KWL GESTURE kind=right2 phase=update travel_um=5373 speed=29980
+KWL GESTURE kind=right2 phase=update travel_um=6997 speed=62460
+KWL GESTURE kind=right2 phase=update travel_um=8913 speed=100780
+KWL GESTURE kind=right2 phase=update travel_um=10954 speed=141600
+KWL GESTURE kind=right2 phase=update travel_um=13203 speed=186580
+KWL GESTURE kind=right2 phase=update travel_um=15494 speed=232400
+KWL GESTURE kind=right2 phase=update travel_um=17952 speed=281560
+KWL GESTURE kind=right2 phase=update travel_um=20493 speed=296767
+KWL GESTURE kind=right2 phase=update travel_um=23117 speed=260040
+KWL GESTURE kind=right2 phase=update travel_um=25825 speed=296635
+KWL GESTURE kind=right2 phase=update travel_um=28575 speed=320792
+KWL GESTURE kind=right2 phase=update travel_um=31283 speed=326297
+KWL GESTURE kind=right2 phase=update travel_um=34033 speed=292805
+KWL GESTURE kind=right2 phase=update travel_um=36783 speed=319504
+KWL GESTURE kind=right2 phase=update travel_um=39574 speed=340000
+KWL GESTURE kind=right2 phase=update travel_um=42323 speed=388947
+KWL GESTURE kind=right2 phase=update travel_um=45031 speed=347288
+KWL GESTURE kind=right2 phase=update travel_um=47614 speed=368580
+KWL GESTURE kind=right2 phase=update travel_um=50239 speed=374142
+KWL GESTURE kind=right2 phase=update travel_um=52863 speed=345653
+KWL GESTURE kind=right2 phase=update travel_um=55362 speed=370396
+KWL GESTURE kind=right2 phase=update travel_um=57820 speed=379695
+KWL GESTURE kind=right2 phase=update travel_um=60153 speed=377714
+KWL GESTURE kind=right2 phase=update travel_um=62486 speed=326067
+KWL GESTURE kind=right2 phase=update travel_um=64819 speed=348500
+KWL GESTURE kind=right2 phase=update travel_um=67193 speed=367790
+KWL GESTURE kind=right2 phase=update travel_um=69609 speed=365009
+KWL GESTURE kind=right2 phase=update travel_um=72025 speed=408516
+KWL GESTURE kind=right2 phase=update travel_um=73275 speed=294780
+KWL GESTURE kind=right2 phase=end travel_um=73275 speed=294780
+KWL IME app key=app:settings language=direct from=remembered
+KWL GLASS desktop=2 via=pad
+KWL GLASS desktop settled desktop=2 windows=1
+KWL SYSTEM result client=2 object=42 request=130 applied=0
+KWL SYSTEM result client=2 object=42 request=131 applied=0
+KWL SYSTEM result client=2 object=42 request=132 applied=0
+KWL PERF 5010ms: passes=475 timeouts=379 | poll 85.9% work 13.9%
+KWL PERF compose frames=41 draw_ms=15.76 (acquire 0.42 submit+present 15.07) frame_ms=17.09
+KWL SYSTEM result client=2 object=42 request=133 applied=0
+KWL SYSTEM result client=2 object=42 request=134 applied=0
+KWL SYSTEM result client=2 object=42 request=135 applied=0
+KWL SYSTEM result client=2 object=42 request=136 applied=0
+KWL SYSTEM result client=2 object=42 request=137 applied=0
+KWL PERF 5003ms: passes=468 timeouts=458 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=138 applied=0
+KWL SYSTEM result client=2 object=42 request=139 applied=0
+KWL SYSTEM result client=2 object=42 request=140 applied=0
+KWL SYSTEM result client=2 object=42 request=141 applied=0
+KWL SYSTEM result client=2 object=42 request=142 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=143 applied=0
+KWL SYSTEM result client=2 object=42 request=144 applied=0
+KWL SYSTEM result client=2 object=42 request=145 applied=0
+KWL SYSTEM result client=2 object=42 request=146 applied=0
+KWL SYSTEM result client=2 object=42 request=147 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 99.4% work 0.5%
+KWL SYSTEM result client=2 object=42 request=148 applied=0
+KWL SYSTEM result client=2 object=42 request=149 applied=0
+KWL SYSTEM result client=2 object=42 request=150 applied=0
+KWL SYSTEM result client=2 object=42 request=151 applied=0
+KWL SYSTEM result client=2 object=42 request=152 applied=0
+KWL PERF 5001ms: passes=508 timeouts=498 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=153 applied=0
+KWL SYSTEM result client=2 object=42 request=154 applied=0
+KWL SYSTEM result client=2 object=42 request=155 applied=0
+KWL SYSTEM result client=2 object=42 request=156 applied=0
+KWL SYSTEM result client=2 object=42 request=157 applied=0
+KWL PERF 5002ms: passes=510 timeouts=500 | poll 99.4% work 0.5%
+KWL SYSTEM result client=2 object=42 request=158 applied=0
+KWL SYSTEM result client=2 object=42 request=159 applied=0
+KWL SYSTEM result client=2 object=42 request=160 applied=0
+KWL SYSTEM result client=2 object=42 request=161 applied=0
+KWL PERF 5000ms: passes=507 timeouts=498 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=162 applied=0
+KWL SYSTEM result client=2 object=42 request=163 applied=0
+KWL SYSTEM result client=2 object=42 request=164 applied=0
+KWL SYSTEM result client=2 object=42 request=165 applied=0
+KWL SYSTEM result client=2 object=42 request=166 applied=0
+KWL PERF 5000ms: passes=509 timeouts=500 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=167 applied=0
+KWL SYSTEM result client=2 object=42 request=168 applied=0
+KWL SYSTEM result client=2 object=42 request=169 applied=0
+KWL SYSTEM result client=2 object=42 request=170 applied=0
+KWL SYSTEM result client=2 object=42 request=171 applied=0
+KWL PERF 5005ms: passes=506 timeouts=496 | poll 99.3% work 0.6%
+KWL SYSTEM result client=2 object=42 request=172 applied=0
+KWL SYSTEM result client=2 object=42 request=173 applied=0
+KWL SYSTEM result client=2 object=42 request=174 applied=0
+KWL SYSTEM result client=2 object=42 request=175 applied=0
+KWL SYSTEM result client=2 object=42 request=176 applied=0
+KWL PERF 5005ms: passes=510 timeouts=500 | poll 99.4% work 0.4%
+KWL SYSTEM result client=2 object=42 request=177 applied=0
+KWL SYSTEM result client=2 object=42 request=178 applied=0
+KWL SYSTEM result client=2 object=42 request=179 applied=0
+KWL SYSTEM result client=2 object=42 request=180 applied=0
+KWL SYSTEM result client=2 object=42 request=181 applied=0
+KWL PERF 5001ms: passes=505 timeouts=495 | poll 98.9% work 0.9%
+KWL PERF compose frames=1 draw_ms=23.90 (acquire 0.02 submit+present 23.69) frame_ms=26.09
+KWL SYSTEM result client=2 object=42 request=182 applied=0
+KWL SYSTEM result client=2 object=42 request=183 applied=0
+KWL SYSTEM result client=2 object=42 request=184 applied=0
+KWL SYSTEM result client=2 object=42 request=185 applied=0
+KWL SYSTEM result client=2 object=42 request=186 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.3% work 0.5%
+KWL SYSTEM result client=2 object=42 request=187 applied=0
+KWL SYSTEM result client=2 object=42 request=188 applied=0
+KWL SYSTEM result client=2 object=42 request=189 applied=0
+KWL SYSTEM result client=2 object=42 request=190 applied=0
+KWL SYSTEM result client=2 object=42 request=191 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=192 applied=0
+KWL SYSTEM result client=2 object=42 request=193 applied=0
+KWL SYSTEM result client=2 object=42 request=194 applied=0
+KWL SYSTEM result client=2 object=42 request=195 applied=0
+KWL SYSTEM result client=2 object=42 request=196 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=197 applied=0
+KWL SYSTEM result client=2 object=42 request=198 applied=0
+KWL SYSTEM result client=2 object=42 request=199 applied=0
+KWL SYSTEM result client=2 object=42 request=200 applied=0
+KWL SYSTEM result client=2 object=42 request=201 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=202 applied=0
+KWL SYSTEM result client=2 object=42 request=203 applied=0
+KWL SYSTEM result client=2 object=42 request=204 applied=0
+KWL SYSTEM result client=2 object=42 request=205 applied=0
+KWL SYSTEM result client=2 object=42 request=206 applied=0
+KWL PERF 5000ms: passes=506 timeouts=496 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=207 applied=0
+KWL SYSTEM result client=2 object=42 request=208 applied=0
+KWL SYSTEM result client=2 object=42 request=209 applied=0
+KWL SYSTEM result client=2 object=42 request=210 applied=0
+KWL SYSTEM result client=2 object=42 request=211 applied=0
+KWL PERF 5000ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=212 applied=0
+KWL SYSTEM result client=2 object=42 request=213 applied=0
+KWL SYSTEM result client=2 object=42 request=214 applied=0
+KWL SYSTEM result client=2 object=42 request=215 applied=0
+KWL SYSTEM result client=2 object=42 request=216 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.4% work 0.4%
+KWL SYSTEM result client=2 object=42 request=217 applied=0
+KWL SYSTEM result client=2 object=42 request=218 applied=0
+KWL SYSTEM result client=2 object=42 request=219 applied=0
+KWL SYSTEM result client=2 object=42 request=220 applied=0
+KWL SYSTEM result client=2 object=42 request=221 applied=0
+KWL PERF 5000ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=222 applied=0
+KWL SYSTEM result client=2 object=42 request=223 applied=0
+KWL SYSTEM result client=2 object=42 request=224 applied=0
+KWL SYSTEM result client=2 object=42 request=225 applied=0
+KWL SYSTEM result client=2 object=42 request=226 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=227 applied=0
+KWL SYSTEM result client=2 object=42 request=228 applied=0
+KWL SYSTEM result client=2 object=42 request=229 applied=0
+KWL SYSTEM result client=2 object=42 request=230 applied=0
+KWL SYSTEM result client=2 object=42 request=231 applied=0
+KWL PERF 5004ms: passes=506 timeouts=496 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=232 applied=0
+KWL SYSTEM result client=2 object=42 request=233 applied=0
+KWL SYSTEM result client=2 object=42 request=234 applied=0
+KWL SYSTEM result client=2 object=42 request=235 applied=0
+KWL SYSTEM result client=2 object=42 request=236 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=237 applied=0
+KWL SYSTEM result client=2 object=42 request=238 applied=0
+KWL SYSTEM result client=2 object=42 request=239 applied=0
+KWL SYSTEM result client=2 object=42 request=240 applied=0
+KWL SYSTEM result client=2 object=42 request=241 applied=0
+KWL PERF 5000ms: passes=504 timeouts=494 | poll 98.6% work 1.2%
+KWL PERF compose frames=1 draw_ms=22.50 (acquire 0.03 submit+present 22.18) frame_ms=25.03
+KWL SYSTEM result client=2 object=42 request=242 applied=0
+KWL SYSTEM result client=2 object=42 request=243 applied=0
+KWL SYSTEM result client=2 object=42 request=244 applied=0
+KWL SYSTEM result client=2 object=42 request=245 applied=0
+KWL SYSTEM result client=2 object=42 request=246 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=247 applied=0
+KWL SYSTEM result client=2 object=42 request=248 applied=0
+KWL SYSTEM result client=2 object=42 request=249 applied=0
+KWL SYSTEM result client=2 object=42 request=250 applied=0
+KWL SYSTEM result client=2 object=42 request=251 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=252 applied=0
+KWL SYSTEM result client=2 object=42 request=253 applied=0
+KWL SYSTEM result client=2 object=42 request=254 applied=0
+KWL SYSTEM result client=2 object=42 request=255 applied=0
+KWL SYSTEM result client=2 object=42 request=256 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=257 applied=0
+KWL SYSTEM result client=2 object=42 request=258 applied=0
+KWL SYSTEM result client=2 object=42 request=259 applied=0
+KWL SYSTEM result client=2 object=42 request=260 applied=0
+KWL SYSTEM result client=2 object=42 request=261 applied=0
+KWL PERF 5000ms: passes=504 timeouts=494 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=262 applied=0
+KWL SYSTEM result client=2 object=42 request=263 applied=0
+KWL SYSTEM result client=2 object=42 request=264 applied=0
+KWL SYSTEM result client=2 object=42 request=265 applied=0
+KWL PERF 5000ms: passes=505 timeouts=497 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=266 applied=0
+KWL SYSTEM result client=2 object=42 request=267 applied=0
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT display index=1 name=zedbsd-port-v1:pci:0000:00:02.0:hdmi:B internal=0 shown=0 width=1920 height=1280
+KWL OUTPUT displays count=2
+KWL SYSTEM result client=2 object=42 request=268 applied=0
+KWL SYSTEM result client=2 object=42 request=269 applied=0
+KWL SYSTEM result client=2 object=42 request=270 applied=0
+KWL PERF 5002ms: passes=507 timeouts=497 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=271 applied=0
+KWL SYSTEM result client=2 object=42 request=272 applied=0
+KWL SYSTEM result client=2 object=42 request=273 applied=0
+KWL SYSTEM result client=2 object=42 request=274 applied=0
+KWL SYSTEM result client=2 object=42 request=275 applied=0
+KWL PERF 5004ms: passes=510 timeouts=500 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=276 applied=0
+KWL SYSTEM result client=2 object=42 request=277 applied=0
+KWL SYSTEM result client=2 object=42 request=278 applied=0
+KWL SYSTEM result client=2 object=42 request=279 applied=0
+KWL SYSTEM result client=2 object=42 request=280 applied=0
+KWL PERF 5005ms: passes=510 timeouts=500 | poll 99.4% work 0.4%
+KWL SYSTEM result client=2 object=42 request=281 applied=0
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT displays count=1
+KWL SYSTEM result client=2 object=42 request=282 applied=0
+KWL SYSTEM result client=2 object=42 request=283 applied=0
+KWL OUTPUT display index=0 name=zedbsd-port-v1:pci:0000:00:02.0:edp:A internal=1 shown=1 width=1920 height=1080
+KWL OUTPUT display index=1 name=zedbsd-port-v1:pci:0000:00:02.0:hdmi:B internal=0 shown=0 width=1920 height=1280
+KWL OUTPUT displays count=2
+KWL SYSTEM result client=2 object=42 request=284 applied=0
+KWL EVENT lid closed
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=430
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1920 height=1280 images=3 format=37
+KWL STARTUP step=wallpaper-picture ms=10
+KWL GLASS resize width=1920 height=1280 ms=201
+KWL OUTPUT window surface=19 state=floating x=370 y=188 w=1180 h=800
+KWL OUTPUT resized width=1920 height=1280 refresh_mhz=59999
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:hdmi:B width=1920 height=1280 refresh_mhz=59999
+KWL LID external: the desktop moved to the external display
+KWL EVENT lid open
+KWL OUTPUT closed
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=0
+KWL STARTUP step=output-swapchain ms=10
+KWL STARTUP step=output-targets ms=1
+KWL OUTPUT open width=1920 height=1080 images=3 format=37
+KWL STARTUP step=wallpaper-picture ms=10
+KWL GLASS resize width=1920 height=1080 ms=203
+KWL OUTPUT window surface=19 state=floating x=370 y=188 w=1180 h=800
+KWL OUTPUT resized width=1920 height=1080 refresh_mhz=60011
+KWL OUTPUT switch name=zedbsd-port-v1:pci:0000:00:02.0:edp:A width=1920 height=1080 refresh_mhz=60011
+KWL LID internal: the desktop comes back to the panel errno=0
+KWL SYSTEM result client=2 object=42 request=285 applied=0
+KWL PERF 5006ms: passes=373 timeouts=349 | poll 71.0% work 28.8%
+KWL PERF compose frames=4 draw_ms=137.37 (acquire 123.76 submit+present 13.38) frame_ms=138.36
+KWL SYSTEM result client=2 object=42 request=286 applied=0
+KWL SYSTEM result client=2 object=42 request=287 applied=0
+KWL SYSTEM result client=2 object=42 request=288 applied=0
+KWL SYSTEM result client=2 object=42 request=289 applied=0
+KWL SYSTEM result client=2 object=42 request=290 applied=0
+KWL PERF 5000ms: passes=506 timeouts=496 | poll 98.9% work 0.9%
+KWL SYSTEM result client=2 object=42 request=291 applied=0
+KWL SYSTEM result client=2 object=42 request=292 applied=0
+KWL SYSTEM result client=2 object=42 request=293 applied=0
+KWL SYSTEM result client=2 object=42 request=294 applied=0
+KWL SYSTEM result client=2 object=42 request=295 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=296 applied=0
+KWL SYSTEM result client=2 object=42 request=297 applied=0
+KWL SYSTEM result client=2 object=42 request=298 applied=0
+KWL SYSTEM result client=2 object=42 request=299 applied=0
+KWL SYSTEM result client=2 object=42 request=300 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 98.6% work 1.2%
+KWL PERF compose frames=1 draw_ms=22.15 (acquire 0.02 submit+present 21.90) frame_ms=24.05
+KWL SYSTEM result client=2 object=42 request=301 applied=0
+KWL SYSTEM result client=2 object=42 request=302 applied=0
+KWL SYSTEM result client=2 object=42 request=303 applied=0
+KWL SYSTEM result client=2 object=42 request=304 applied=0
+KWL SYSTEM result client=2 object=42 request=305 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.1% work 0.8%
+KWL SYSTEM result client=2 object=42 request=306 applied=0
+KWL SYSTEM result client=2 object=42 request=307 applied=0
+KWL SYSTEM result client=2 object=42 request=308 applied=0
+KWL SYSTEM result client=2 object=42 request=309 applied=0
+KWL PERF 5000ms: passes=508 timeouts=500 | poll 99.1% work 0.8%
+KWL SYSTEM result client=2 object=42 request=310 applied=0
+KWL SYSTEM result client=2 object=42 request=311 applied=0
+KWL SYSTEM result client=2 object=42 request=312 applied=0
+KWL SYSTEM result client=2 object=42 request=313 applied=0
+KWL SYSTEM result client=2 object=42 request=314 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=315 applied=0
+KWL SYSTEM result client=2 object=42 request=316 applied=0
+KWL SYSTEM result client=2 object=42 request=317 applied=0
+KWL SYSTEM result client=2 object=42 request=318 applied=0
+KWL SYSTEM result client=2 object=42 request=319 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.8%
+KWL SYSTEM result client=2 object=42 request=320 applied=0
+KWL SYSTEM result client=2 object=42 request=321 applied=0
+KWL SYSTEM result client=2 object=42 request=322 applied=0
+KWL SYSTEM result client=2 object=42 request=323 applied=0
+KWL SYSTEM result client=2 object=42 request=324 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.8%
+KWL SYSTEM result client=2 object=42 request=325 applied=0
+KWL SYSTEM result client=2 object=42 request=326 applied=0
+KWL SYSTEM result client=2 object=42 request=327 applied=0
+KWL SYSTEM result client=2 object=42 request=328 applied=0
+KWL SYSTEM result client=2 object=42 request=329 applied=0
+KWL PERF 5000ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=330 applied=0
+KWL SYSTEM result client=2 object=42 request=331 applied=0
+KWL SYSTEM result client=2 object=42 request=332 applied=0
+KWL SYSTEM result client=2 object=42 request=333 applied=0
+KWL SYSTEM result client=2 object=42 request=334 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=335 applied=0
+KWL SYSTEM result client=2 object=42 request=336 applied=0
+KWL SYSTEM result client=2 object=42 request=337 applied=0
+KWL SYSTEM result client=2 object=42 request=338 applied=0
+KWL SYSTEM result client=2 object=42 request=339 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=340 applied=0
+KWL SYSTEM result client=2 object=42 request=341 applied=0
+KWL SYSTEM result client=2 object=42 request=342 applied=0
+KWL SYSTEM result client=2 object=42 request=343 applied=0
+KWL SYSTEM result client=2 object=42 request=344 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=345 applied=0
+KWL SYSTEM result client=2 object=42 request=346 applied=0
+KWL SYSTEM result client=2 object=42 request=347 applied=0
+KWL SYSTEM result client=2 object=42 request=348 applied=0
+KWL SYSTEM result client=2 object=42 request=349 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=350 applied=0
+KWL SYSTEM result client=2 object=42 request=351 applied=0
+KWL SYSTEM result client=2 object=42 request=352 applied=0
+KWL SYSTEM result client=2 object=42 request=353 applied=0
+KWL SYSTEM result client=2 object=42 request=354 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=355 applied=0
+KWL SYSTEM result client=2 object=42 request=356 applied=0
+KWL SYSTEM result client=2 object=42 request=357 applied=0
+KWL SYSTEM result client=2 object=42 request=358 applied=0
+KWL SYSTEM result client=2 object=42 request=359 applied=0
+KWL PERF 5000ms: passes=504 timeouts=494 | poll 98.6% work 1.2%
+KWL PERF compose frames=1 draw_ms=22.61 (acquire 0.03 submit+present 22.27) frame_ms=25.05
+KWL SYSTEM result client=2 object=42 request=360 applied=0
+KWL SYSTEM result client=2 object=42 request=361 applied=0
+KWL SYSTEM result client=2 object=42 request=362 applied=0
+KWL SYSTEM result client=2 object=42 request=363 applied=0
+KWL SYSTEM result client=2 object=42 request=364 applied=0
+KWL PERF 5001ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=365 applied=0
+KWL SYSTEM result client=2 object=42 request=366 applied=0
+KWL SYSTEM result client=2 object=42 request=367 applied=0
+KWL SYSTEM result client=2 object=42 request=368 applied=0
+KWL SYSTEM result client=2 object=42 request=369 applied=0
+KWL PERF 5000ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=370 applied=0
+KWL SYSTEM result client=2 object=42 request=371 applied=0
+KWL SYSTEM result client=2 object=42 request=372 applied=0
+KWL SYSTEM result client=2 object=42 request=373 applied=0
+KWL SYSTEM result client=2 object=42 request=374 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 99.0% work 0.7%
+KWL SYSTEM result client=2 object=42 request=375 applied=0
+KWL SYSTEM result client=2 object=42 request=376 applied=0
+KWL SYSTEM result client=2 object=42 request=377 applied=0
+KWL SYSTEM result client=2 object=42 request=378 applied=0
+KWL SYSTEM result client=2 object=42 request=379 applied=0
+KWL PERF 5002ms: passes=508 timeouts=498 | poll 99.0% work 0.7%
+KWL SYSTEM result client=2 object=42 request=380 applied=0
+KWL SYSTEM result client=2 object=42 request=381 applied=0
+KWL SYSTEM result client=2 object=42 request=382 applied=0
+KWL SYSTEM result client=2 object=42 request=383 applied=0
+KWL SYSTEM result client=2 object=42 request=384 applied=0
+KWL PERF 5001ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=385 applied=0
+KWL SYSTEM result client=2 object=42 request=386 applied=0
+KWL SYSTEM result client=2 object=42 request=387 applied=0
+KWL SYSTEM result client=2 object=42 request=388 applied=0
+KWL SYSTEM result client=2 object=42 request=389 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=390 applied=0
+KWL SYSTEM result client=2 object=42 request=391 applied=0
+KWL SYSTEM result client=2 object=42 request=392 applied=0
+KWL SYSTEM result client=2 object=42 request=393 applied=0
+KWL SYSTEM result client=2 object=42 request=394 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=395 applied=0
+KWL SYSTEM result client=2 object=42 request=396 applied=0
+KWL SYSTEM result client=2 object=42 request=397 applied=0
+KWL SYSTEM result client=2 object=42 request=398 applied=0
+KWL SYSTEM result client=2 object=42 request=399 applied=0
+KWL PERF 5000ms: passes=509 timeouts=499 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=400 applied=0
+KWL SYSTEM result client=2 object=42 request=401 applied=0
+KWL SYSTEM result client=2 object=42 request=402 applied=0
+KWL SYSTEM result client=2 object=42 request=403 applied=0
+KWL SYSTEM result client=2 object=42 request=404 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=405 applied=0
+KWL SYSTEM result client=2 object=42 request=406 applied=0
+KWL SYSTEM result client=2 object=42 request=407 applied=0
+KWL SYSTEM result client=2 object=42 request=408 applied=0
+KWL PERF 5003ms: passes=508 timeouts=500 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=409 applied=0
+KWL SYSTEM result client=2 object=42 request=410 applied=0
+KWL SYSTEM result client=2 object=42 request=411 applied=0
+KWL SYSTEM result client=2 object=42 request=412 applied=0
+KWL SYSTEM result client=2 object=42 request=413 applied=0
+KWL PERF 5005ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=414 applied=0
+KWL SYSTEM result client=2 object=42 request=415 applied=0
+KWL SYSTEM result client=2 object=42 request=416 applied=0
+KWL SYSTEM result client=2 object=42 request=417 applied=0
+KWL SYSTEM result client=2 object=42 request=418 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 98.6% work 1.2%
+KWL PERF compose frames=1 draw_ms=22.30 (acquire 0.03 submit+present 21.96) frame_ms=24.05
+KWL SYSTEM result client=2 object=42 request=419 applied=0
+KWL SYSTEM result client=2 object=42 request=420 applied=0
+KWL SYSTEM result client=2 object=42 request=421 applied=0
+KWL SYSTEM result client=2 object=42 request=422 applied=0
+KWL SYSTEM result client=2 object=42 request=423 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=424 applied=0
+KWL SYSTEM result client=2 object=42 request=425 applied=0
+KWL SYSTEM result client=2 object=42 request=426 applied=0
+KWL SYSTEM result client=2 object=42 request=427 applied=0
+KWL SYSTEM result client=2 object=42 request=428 applied=0
+KWL PERF 5000ms: passes=506 timeouts=496 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=429 applied=0
+KWL SYSTEM result client=2 object=42 request=430 applied=0
+KWL SYSTEM result client=2 object=42 request=431 applied=0
+KWL SYSTEM result client=2 object=42 request=432 applied=0
+KWL SYSTEM result client=2 object=42 request=433 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=434 applied=0
+KWL SYSTEM result client=2 object=42 request=435 applied=0
+KWL SYSTEM result client=2 object=42 request=436 applied=0
+KWL SYSTEM result client=2 object=42 request=437 applied=0
+KWL SYSTEM result client=2 object=42 request=438 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 99.0% work 0.7%
+KWL SYSTEM result client=2 object=42 request=439 applied=0
+KWL SYSTEM result client=2 object=42 request=440 applied=0
+KWL SYSTEM result client=2 object=42 request=441 applied=0
+KWL SYSTEM result client=2 object=42 request=442 applied=0
+KWL SYSTEM result client=2 object=42 request=443 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=444 applied=0
+KWL SYSTEM result client=2 object=42 request=445 applied=0
+KWL SYSTEM result client=2 object=42 request=446 applied=0
+KWL SYSTEM result client=2 object=42 request=447 applied=0
+KWL SYSTEM result client=2 object=42 request=448 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=449 applied=0
+KWL SYSTEM result client=2 object=42 request=450 applied=0
+KWL SYSTEM result client=2 object=42 request=451 applied=0
+KWL SYSTEM result client=2 object=42 request=452 applied=0
+KWL SYSTEM result client=2 object=42 request=453 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=454 applied=0
+KWL SYSTEM result client=2 object=42 request=455 applied=0
+KWL SYSTEM result client=2 object=42 request=456 applied=0
+KWL SYSTEM result client=2 object=42 request=457 applied=0
+KWL SYSTEM result client=2 object=42 request=458 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=459 applied=0
+KWL SYSTEM result client=2 object=42 request=460 applied=0
+KWL SYSTEM result client=2 object=42 request=461 applied=0
+KWL SYSTEM result client=2 object=42 request=462 applied=0
+KWL SYSTEM result client=2 object=42 request=463 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=464 applied=0
+KWL SYSTEM result client=2 object=42 request=465 applied=0
+KWL SYSTEM result client=2 object=42 request=466 applied=0
+KWL SYSTEM result client=2 object=42 request=467 applied=0
+KWL SYSTEM result client=2 object=42 request=468 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=469 applied=0
+KWL SYSTEM result client=2 object=42 request=470 applied=0
+KWL SYSTEM result client=2 object=42 request=471 applied=0
+KWL SYSTEM result client=2 object=42 request=472 applied=0
+KWL SYSTEM result client=2 object=42 request=473 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=474 applied=0
+KWL SYSTEM result client=2 object=42 request=475 applied=0
+KWL SYSTEM result client=2 object=42 request=476 applied=0
+KWL SYSTEM result client=2 object=42 request=477 applied=0
+KWL SYSTEM result client=2 object=42 request=478 applied=0
+KWL PERF 5000ms: passes=508 timeouts=498 | poll 98.8% work 1.0%
+KWL PERF compose frames=1 draw_ms=22.30 (acquire 0.02 submit+present 22.08) frame_ms=24.06
+KWL SYSTEM result client=2 object=42 request=479 applied=0
+KWL SYSTEM result client=2 object=42 request=480 applied=0
+KWL SYSTEM result client=2 object=42 request=481 applied=0
+KWL SYSTEM result client=2 object=42 request=482 applied=0
+KWL SYSTEM result client=2 object=42 request=483 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=484 applied=0
+KWL SYSTEM result client=2 object=42 request=485 applied=0
+KWL SYSTEM result client=2 object=42 request=486 applied=0
+KWL SYSTEM result client=2 object=42 request=487 applied=0
+KWL SYSTEM result client=2 object=42 request=488 applied=0
+KWL PERF 5002ms: passes=510 timeouts=500 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=489 applied=0
+KWL SYSTEM result client=2 object=42 request=490 applied=0
+KWL SYSTEM result client=2 object=42 request=491 applied=0
+KWL SYSTEM result client=2 object=42 request=492 applied=0
+KWL SYSTEM result client=2 object=42 request=493 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 98.9% work 0.8%
+KWL SYSTEM result client=2 object=42 request=494 applied=0
+KWL SYSTEM result client=2 object=42 request=495 applied=0
+KWL SYSTEM result client=2 object=42 request=496 applied=0
+KWL SYSTEM result client=2 object=42 request=497 applied=0
+KWL SYSTEM result client=2 object=42 request=498 applied=0
+KWL PERF 5010ms: passes=508 timeouts=498 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=499 applied=0
+KWL SYSTEM result client=2 object=42 request=500 applied=0
+KWL SYSTEM result client=2 object=42 request=501 applied=0
+KWL SYSTEM result client=2 object=42 request=502 applied=0
+KWL SYSTEM result client=2 object=42 request=503 applied=0
+KWL PERF 5000ms: passes=467 timeouts=457 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=504 applied=0
+KWL SYSTEM result client=2 object=42 request=505 applied=0
+KWL SYSTEM result client=2 object=42 request=506 applied=0
+KWL SYSTEM result client=2 object=42 request=507 applied=0
+KWL PERF 5000ms: passes=465 timeouts=456 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=508 applied=0
+KWL SYSTEM result client=2 object=42 request=509 applied=0
+KWL SYSTEM result client=2 object=42 request=510 applied=0
+KWL SYSTEM result client=2 object=42 request=511 applied=0
+KWL SYSTEM result client=2 object=42 request=512 applied=0
+KWL PERF 5004ms: passes=467 timeouts=458 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=513 applied=0
+KWL SYSTEM result client=2 object=42 request=514 applied=0
+KWL SYSTEM result client=2 object=42 request=515 applied=0
+KWL SYSTEM result client=2 object=42 request=516 applied=0
+KWL SYSTEM result client=2 object=42 request=517 applied=0
+KWL PERF 5005ms: passes=467 timeouts=457 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=518 applied=0
+KWL SYSTEM result client=2 object=42 request=519 applied=0
+KWL SYSTEM result client=2 object=42 request=520 applied=0
+KWL SYSTEM result client=2 object=42 request=521 applied=0
+KWL SYSTEM result client=2 object=42 request=522 applied=0
+KWL PERF 5010ms: passes=470 timeouts=460 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=523 applied=0
+KWL SYSTEM result client=2 object=42 request=524 applied=0
+KWL SYSTEM result client=2 object=42 request=525 applied=0
+KWL SYSTEM result client=2 object=42 request=526 applied=0
+KWL SYSTEM result client=2 object=42 request=527 applied=0
+KWL PERF 5004ms: passes=467 timeouts=457 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=528 applied=0
+KWL SYSTEM result client=2 object=42 request=529 applied=0
+KWL SYSTEM result client=2 object=42 request=530 applied=0
+KWL SYSTEM result client=2 object=42 request=531 applied=0
+KWL SYSTEM result client=2 object=42 request=532 applied=0
+KWL PERF 5009ms: passes=469 timeouts=459 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=533 applied=0
+KWL SYSTEM result client=2 object=42 request=534 applied=0
+KWL SYSTEM result client=2 object=42 request=535 applied=0
+KWL SYSTEM result client=2 object=42 request=536 applied=0
+KWL SYSTEM result client=2 object=42 request=537 applied=0
+KWL PERF 5006ms: passes=466 timeouts=456 | poll 98.6% work 1.2%
+KWL PERF compose frames=1 draw_ms=22.34 (acquire 0.03 submit+present 22.01) frame_ms=25.05
+KWL SYSTEM result client=2 object=42 request=538 applied=0
+KWL SYSTEM result client=2 object=42 request=539 applied=0
+KWL SYSTEM result client=2 object=42 request=540 applied=0
+KWL SYSTEM result client=2 object=42 request=541 applied=0
+KWL SYSTEM result client=2 object=42 request=542 applied=0
+KWL PERF 5003ms: passes=467 timeouts=457 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=543 applied=0
+KWL SYSTEM result client=2 object=42 request=544 applied=0
+KWL SYSTEM result client=2 object=42 request=545 applied=0
+KWL SYSTEM result client=2 object=42 request=546 applied=0
+KWL SYSTEM result client=2 object=42 request=547 applied=0
+KWL PERF 5006ms: passes=467 timeouts=457 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=548 applied=0
+KWL SYSTEM result client=2 object=42 request=549 applied=0
+KWL SYSTEM result client=2 object=42 request=550 applied=0
+KWL SYSTEM result client=2 object=42 request=551 applied=0
+KWL SYSTEM result client=2 object=42 request=552 applied=0
+KWL PERF 5010ms: passes=469 timeouts=459 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=553 applied=0
+KWL SYSTEM result client=2 object=42 request=554 applied=0
+KWL SYSTEM result client=2 object=42 request=555 applied=0
+KWL SYSTEM result client=2 object=42 request=556 applied=0
+KWL SYSTEM result client=2 object=42 request=557 applied=0
+KWL PERF 5000ms: passes=471 timeouts=461 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=558 applied=0
+KWL SYSTEM result client=2 object=42 request=559 applied=0
+KWL SYSTEM result client=2 object=42 request=560 applied=0
+KWL SYSTEM result client=2 object=42 request=561 applied=0
+KWL SYSTEM result client=2 object=42 request=562 applied=0
+KWL PERF 5005ms: passes=480 timeouts=422 | poll 84.7% work 15.1%
+KWL PERF compose frames=43 draw_ms=16.49 (acquire 5.00 submit+present 11.20) frame_ms=16.23
+KWL SYSTEM result client=2 object=42 request=563 applied=0
+KWL HOME open via=launcher at_ms=599149
+KWL IME activate field home
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=1
+KWL HOME layer=content after_ms=1
+KWL FIRST_FRAME what=home-open frame=1124 request_ms=599149 ms=28
+KWL HOME opened apps=17 pages=2 page=2 at_ms=599449
+KWL HOME icon name="Files" x=-1320 y=760
+KWL HOME icon name="Notes" x=-1176 y=760
+KWL HOME icon name="Settings" x=-1032 y=760
+KWL HOME icon name="Terminal" x=-888 y=760
+KWL HOME icon name="PDF Viewer" x=-744 y=760
+KWL HOME icon name="Image Viewer" x=-600 y=760
+KWL HOME icon name="Video Player" x=-1320 y=912
+KWL HOME icon name="Music" x=-1176 y=912
+KWL HOME icon name="Photos" x=-1032 y=912
+KWL HOME icon name="Phone" x=-888 y=912
+KWL HOME icon name="Calendar" x=-744 y=912
+KWL HOME icon name="Mail" x=-600 y=912
+KWL HOME icon name="Text Editor" x=600 y=912
+KWL HOME icon name="System Monitor" x=744 y=912
+KWL HOME icon name="Browser" x=888 y=912
+KWL HOME icon name="Lock Screen" x=1032 y=912
+KWL HOME icon name="Power Off" x=1176 y=912
+KWL HOME search query="t" results=13 [Notes] [Settings] [Terminal] [PDF Viewer] [Image Viewer] [Photos] [Phone] [Calendar] [Mail] [Text Editor] [System Monitor] [Browser] [Power Off]
+KWL HOME icon name="Notes" x=600 y=608
+KWL HOME icon name="Settings" x=744 y=608
+KWL HOME icon name="Terminal" x=888 y=608
+KWL HOME icon name="PDF Viewer" x=1032 y=608
+KWL HOME icon name="Image Viewer" x=1176 y=608
+KWL HOME icon name="Photos" x=1320 y=608
+KWL HOME icon name="Phone" x=600 y=760
+KWL HOME icon name="Calendar" x=744 y=760
+KWL HOME icon name="Mail" x=888 y=760
+KWL HOME icon name="Text Editor" x=1032 y=760
+KWL HOME icon name="System Monitor" x=1176 y=760
+KWL HOME icon name="Browser" x=1320 y=760
+KWL HOME icon name="Power Off" x=600 y=912
+KWL HOME search query="te" results=7 [Notes] [Settings] [Terminal] [Calendar] [Text Editor] [System Monitor] [Browser]
+KWL HOME icon name="Notes" x=600 y=760
+KWL HOME icon name="Settings" x=744 y=760
+KWL HOME icon name="Terminal" x=888 y=760
+KWL HOME icon name="Calendar" x=1032 y=760
+KWL HOME icon name="Text Editor" x=1176 y=760
+KWL HOME icon name="System Monitor" x=1320 y=760
+KWL HOME icon name="Browser" x=600 y=912
+KWL SYSTEM result client=2 object=42 request=564 applied=0
+KWL HOME search query="ter" results=2 [Terminal] [Browser]
+KWL HOME icon name="Terminal" x=888 y=912
+KWL HOME icon name="Browser" x=1032 y=912
+KWL SYSTEM result client=2 object=42 request=565 applied=0
+KWL ACTIVATION token client=0 app=/bin/terminal granted=1 reason=spawn at_ms=601380
+KWL HOME launch name=Terminal pid=95
+KWL HOME close via=launch at_ms=601383
+KWL IME deactivate
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=1135 request_ms=601383 ms=26
+KWL CLIENT client=4 fd=20
+KWL INSET create client=4 inset=23 toplevel=21
+KWL EDIT create client=4 edit=25 toplevel=21
+KWL BOUNDS client=4 surface=19 width=1896 height=960
+KWL CONFIGURE client=4 surface=19 serial=138 width=0 height=0 fullscreen=0
+KWL SEAT client=4 pointer=1 keyboard=0 touch=0
+KWL SEAT client=4 pointer=1 keyboard=1 touch=0
+ZTERM SETTINGS run=term ambiguous_wide=0 font_size=16 theme=0
+ZTERM MENU state selection=0 clipboard=0 pixels=16 fullscreen=0 ambiguous_wide=0 theme=0 find=0
+ZTERM MENU ready items=39
+ZTERM TAB active id=1
+ZTERM TAB new run=term id=1 count=1
+ZTERM START run=term columns=90 rows=28 cell=10x22 window=916x632
+ZTERM TABS count=1 active=1 mode=0
+ZTERM TITLE tab=1 title=Terminal
+KWL IMPORT client=4 buffer=32 width=916 height=632 bytes=2318336
+KWL IMPORT client=4 buffer=33 width=916 height=632 bytes=2318336
+KWL IMPORT client=4 buffer=34 width=916 height=632 bytes=2318336
+KWL MENU set client=4 place=36 menu=37
+KWL MENU commit client=4 menu=37 serial=1 items=39 generation=1
+KWL MENU commit client=4 menu=37 serial=2 items=39 generation=2
+KWL MENU commit client=4 menu=37 serial=3 items=39 generation=3
+KWL MENU commit client=4 menu=37 serial=4 items=39 generation=4
+KWL MENU commit client=4 menu=37 serial=5 items=39 generation=5
+KWL MENU commit client=4 menu=37 serial=6 items=39 generation=6
+KWL MENU commit client=4 menu=37 serial=7 items=39 generation=7
+KWL DECORATION applied client=4 surface=19 mode=2
+KWL MAP client=4 surface=19 x=502 y=272
+KWL HOME launched waited_ms=75 at_ms=601458
+KWL GLASS launch surface=19 from=852,876 to=502,272 size=916x632 client=4
+KWL IME app key=app:terminal language=direct from=inherited
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+KWL TEXT enable client=4 surface=19
+KWL HOME closed at_ms=601626
+KWL IME activate client=4
+KEI-IME ACTIVATE
+KWL APPS bar count=2 hidden=0 desktop=2 apps=settings,terminal
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL APPS icon app=terminal x=92 y=0 width=34 height=44 windows=1
+KWL MENU bar client=4 surface=19 where=floating item=1 offset=121 top=220 width=52 height=44
+KWL MENU bar client=4 surface=19 where=floating item=2 offset=175 top=220 width=47 height=44
+KWL MENU bar client=4 surface=19 where=floating item=3 offset=224 top=220 width=51 height=44
+KWL MENU bar client=4 surface=19 where=floating item=4 offset=277 top=220 width=69 height=44
+KWL MENU bar client=4 surface=19 where=floating item=5 offset=348 top=220 width=49 height=44
+KWL HOME open via=launcher at_ms=602511
+KWL IME deactivate
+KWL IME activate field home
+KEI-IME DEACTIVATE
+KEI-IME ACTIVATE
+KWL HOME layer=cover after_ms=1
+KWL HOME layer=content after_ms=1
+KWL FIRST_FRAME what=home-open frame=1145 request_ms=602511 ms=37
+KWL SYSTEM result client=2 object=42 request=566 applied=0
+KWL HOME opened apps=17 pages=2 page=1 at_ms=602796
+KWL HOME icon name="Files" x=600 y=760
+KWL HOME icon name="Notes" x=744 y=760
+KWL HOME icon name="Settings" x=888 y=760
+KWL HOME icon name="Terminal" x=1032 y=760
+KWL HOME icon name="PDF Viewer" x=1176 y=760
+KWL HOME icon name="Image Viewer" x=1320 y=760
+KWL HOME icon name="Video Player" x=600 y=912
+KWL HOME icon name="Music" x=744 y=912
+KWL HOME icon name="Photos" x=888 y=912
+KWL HOME icon name="Phone" x=1032 y=912
+KWL HOME icon name="Calendar" x=1176 y=912
+KWL HOME icon name="Mail" x=1320 y=912
+KWL HOME icon name="Text Editor" x=2520 y=912
+KWL HOME icon name="System Monitor" x=2664 y=912
+KWL HOME icon name="Browser" x=2808 y=912
+KWL HOME icon name="Lock Screen" x=2952 y=912
+KWL HOME icon name="Power Off" x=3096 y=912
+KWL PERF 5002ms: passes=468 timeouts=380 | poll 76.0% work 23.8%
+KWL PERF compose frames=56 draw_ms=20.18 (acquire 1.40 submit+present 18.04) frame_ms=21.68
+KWL SYSTEM result client=2 object=42 request=567 applied=0
+KWL SYSTEM result client=2 object=42 request=568 applied=0
+KWL SYSTEM result client=2 object=42 request=569 applied=0
+KWL HOME switch name=Terminal surface=19 client=4
+KWL HOME close via=home at_ms=605746
+KWL IME deactivate
+KWL APPS raise surface=19 via=home at_ms=605746 client=4
+KWL LAYOUT switch surface=19 action=keep mode=windowed via=home client=4
+KEI-IME DEACTIVATE
+KWL FIRST_FRAME what=home-close frame=1197 request_ms=605746 ms=25
+KWL HOME closed at_ms=605990
+KWL IME activate client=4
+KEI-IME ACTIVATE
+KWL SYSTEM result client=2 object=42 request=570 applied=0
+KWL SYSTEM result client=2 object=42 request=571 applied=0
+KWL PERF 5004ms: passes=495 timeouts=380 | poll 80.6% work 19.1%
+KWL PERF compose frames=50 draw_ms=18.13 (acquire 0.62 submit+present 16.30) frame_ms=18.74
+KWL SYSTEM result client=2 object=42 request=572 applied=0
+KWL SYSTEM result client=2 object=42 request=573 applied=0
+KWL SYSTEM result client=2 object=42 request=574 applied=0
+KWL SYSTEM result client=2 object=42 request=575 applied=0
+KWL SYSTEM result client=2 object=42 request=576 applied=0
+KWL PERF 5004ms: passes=514 timeouts=482 | poll 97.0% work 2.8%
+KWL PERF compose frames=6 draw_ms=16.30 (acquire 0.03 submit+present 15.88) frame_ms=18.13
+KWL SYSTEM result client=2 object=42 request=577 applied=0
+KWL PING pong client=4 serial=243
+KWL SYSTEM result client=2 object=42 request=578 applied=0
+KWL SYSTEM result client=2 object=42 request=579 applied=0
+KWL SYSTEM result client=2 object=42 request=580 applied=0
+KWL SYSTEM result client=2 object=42 request=581 applied=0
+KWL PERF 5004ms: passes=514 timeouts=415 | poll 88.1% work 11.7%
+KWL PERF compose frames=38 draw_ms=14.14 (acquire 3.90 submit+present 9.83) frame_ms=14.49
+KWL SYSTEM result client=2 object=42 request=582 applied=0
+KWL NETWORK state reachable=1 connected=0 kind=none interface= wifi=searching ssid=
+KWL SYSTEM result client=2 object=42 request=583 applied=0
+ZSETTINGS NETWORK wired-link name=ue0 mode=1 address= router=
+KWL SYSTEM result client=2 object=42 request=584 applied=0
+KWL SYSTEM result client=2 object=42 request=585 applied=0
+KWL NETWORK state reachable=1 connected=0 kind=none interface= wifi=searching ssid=
+KWL PERF 5004ms: passes=504 timeouts=494 | poll 97.7% work 2.1%
+KWL PERF compose frames=3 draw_ms=22.73 (acquire 0.03 submit+present 22.28) frame_ms=24.55
+KWL NETWORK state reachable=1 connected=1 kind=wired interface=ue0 wifi=searching ssid=
+ZSETTINGS NETWORK state reachable=1 connected=1 kind=1 interface=ue0 wifi=2 ssid=
+KWL SYSTEM result client=2 object=42 request=586 applied=0
+ZSETTINGS NETWORK wired-link name=ue0 mode=1 address=10.0.30.3 router=10.0.0.1
+KWL SYSTEM result client=2 object=42 request=587 applied=0
+KWL SYSTEM result client=2 object=42 request=588 applied=0
+KWL SYSTEM result client=2 object=42 request=589 applied=0
+KWL SYSTEM result client=2 object=42 request=590 applied=0
+KWL PERF 5003ms: passes=507 timeouts=495 | poll 97.6% work 2.2%
+KWL PERF compose frames=3 draw_ms=21.74 (acquire 0.03 submit+present 21.12) frame_ms=23.45
+KWL SYSTEM result client=2 object=42 request=591 applied=0
+KWL SYSTEM result client=2 object=42 request=592 applied=0
+KWL SYSTEM result client=2 object=42 request=593 applied=0
+KWL SYSTEM result client=2 object=42 request=594 applied=0
+KWL SYSTEM result client=2 object=42 request=595 applied=0
+KWL PERF 5005ms: passes=513 timeouts=493 | poll 97.6% work 2.1%
+KWL PERF compose frames=4 draw_ms=15.40 (acquire 0.04 submit+present 14.87) frame_ms=17.04
+KWL SYSTEM result client=2 object=42 request=596 applied=0
+KWL SYSTEM result client=2 object=42 request=597 applied=0
+KWL NETWORK state reachable=1 connected=1 kind=wired interface=ue0 wifi=searching ssid=
+KWL SYSTEM result client=2 object=42 request=598 applied=0
+KWL SYSTEM result client=2 object=42 request=599 applied=0
+KWL SYSTEM result client=2 object=42 request=600 applied=0
+KWL PERF 5004ms: passes=508 timeouts=498 | poll 98.4% work 1.3%
+KWL PERF compose frames=1 draw_ms=21.68 (acquire 0.04 submit+present 21.11) frame_ms=23.76
+KWL SYSTEM result client=2 object=42 request=601 applied=0
+KWL SYSTEM result client=2 object=42 request=602 applied=0
+KWL SYSTEM result client=2 object=42 request=603 applied=0
+KWL SYSTEM result client=2 object=42 request=604 applied=0
+KWL SYSTEM result client=2 object=42 request=605 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.0% work 0.7%
+KWL SYSTEM result client=2 object=42 request=606 applied=0
+KWL SYSTEM result client=2 object=42 request=607 applied=0
+KWL SYSTEM result client=2 object=42 request=608 applied=0
+KWL SYSTEM result client=2 object=42 request=609 applied=0
+KWL SYSTEM result client=2 object=42 request=610 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=611 applied=0
+KWL SYSTEM result client=2 object=42 request=612 applied=0
+KWL SYSTEM result client=2 object=42 request=613 applied=0
+KWL SYSTEM result client=2 object=42 request=614 applied=0
+KWL SYSTEM result client=2 object=42 request=615 applied=0
+KWL PERF 5002ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=616 applied=0
+KWL SYSTEM result client=2 object=42 request=617 applied=0
+KWL SYSTEM result client=2 object=42 request=618 applied=0
+KWL SYSTEM result client=2 object=42 request=619 applied=0
+KWL PERF 5001ms: passes=504 timeouts=496 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=620 applied=0
+KWL SYSTEM result client=2 object=42 request=621 applied=0
+KWL SYSTEM result client=2 object=42 request=622 applied=0
+KWL SYSTEM result client=2 object=42 request=623 applied=0
+KWL SYSTEM result client=2 object=42 request=624 applied=0
+KWL PERF 5001ms: passes=507 timeouts=497 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=625 applied=0
+KWL SYSTEM result client=2 object=42 request=626 applied=0
+KWL SYSTEM result client=2 object=42 request=627 applied=0
+KWL SYSTEM result client=2 object=42 request=628 applied=0
+KWL SYSTEM result client=2 object=42 request=629 applied=0
+KWL PERF 5004ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=630 applied=0
+KWL SYSTEM result client=2 object=42 request=631 applied=0
+KWL SYSTEM result client=2 object=42 request=632 applied=0
+KWL SYSTEM result client=2 object=42 request=633 applied=0
+KWL SYSTEM result client=2 object=42 request=634 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=635 applied=0
+KWL SYSTEM result client=2 object=42 request=636 applied=0
+KWL SYSTEM result client=2 object=42 request=637 applied=0
+KWL SYSTEM result client=2 object=42 request=638 applied=0
+KWL SYSTEM result client=2 object=42 request=639 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.1% work 0.6%
+KWL SYSTEM result client=2 object=42 request=640 applied=0
+KWL SYSTEM result client=2 object=42 request=641 applied=0
+KWL SYSTEM result client=2 object=42 request=642 applied=0
+KWL SYSTEM result client=2 object=42 request=643 applied=0
+KWL SYSTEM result client=2 object=42 request=644 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.2% work 0.6%
+KWL SYSTEM result client=2 object=42 request=645 applied=0
+KWL SYSTEM result client=2 object=42 request=646 applied=0
+KWL SYSTEM result client=2 object=42 request=647 applied=0
+KWL SYSTEM result client=2 object=42 request=648 applied=0
+KWL SYSTEM result client=2 object=42 request=649 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=650 applied=0
+KWL SYSTEM result client=2 object=42 request=651 applied=0
+KWL SYSTEM result client=2 object=42 request=652 applied=0
+KWL SYSTEM result client=2 object=42 request=653 applied=0
+KWL SYSTEM result client=2 object=42 request=654 applied=0
+KWL PERF 5005ms: passes=504 timeouts=494 | poll 98.6% work 1.1%
+KWL PERF compose frames=1 draw_ms=24.16 (acquire 0.03 submit+present 23.70) frame_ms=27.10
+KWL SYSTEM result client=2 object=42 request=655 applied=0
+KWL SYSTEM result client=2 object=42 request=656 applied=0
+KWL SYSTEM result client=2 object=42 request=657 applied=0
+KWL SYSTEM result client=2 object=42 request=658 applied=0
+KWL SYSTEM result client=2 object=42 request=659 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=660 applied=0
+KWL SYSTEM result client=2 object=42 request=661 applied=0
+KWL SYSTEM result client=2 object=42 request=662 applied=0
+KWL SYSTEM result client=2 object=42 request=663 applied=0
+KWL SYSTEM result client=2 object=42 request=664 applied=0
+KWL PERF 5005ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=665 applied=0
+KWL SYSTEM result client=2 object=42 request=666 applied=0
+KWL SYSTEM result client=2 object=42 request=667 applied=0
+KWL SYSTEM result client=2 object=42 request=668 applied=0
+KWL SYSTEM result client=2 object=42 request=669 applied=0
+KWL PERF 5003ms: passes=505 timeouts=495 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=670 applied=0
+KWL SYSTEM result client=2 object=42 request=671 applied=0
+KWL SYSTEM result client=2 object=42 request=672 applied=0
+KWL SYSTEM result client=2 object=42 request=673 applied=0
+KWL SYSTEM result client=2 object=42 request=674 applied=0
+KWL PERF 5000ms: passes=507 timeouts=497 | poll 98.9% work 0.9%
+KWL SYSTEM result client=2 object=42 request=675 applied=0
+KWL SYSTEM result client=2 object=42 request=676 applied=0
+KWL SYSTEM result client=2 object=42 request=677 applied=0
+KWL SYSTEM result client=2 object=42 request=678 applied=0
+KWL SYSTEM result client=2 object=42 request=679 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=680 applied=0
+KWL SYSTEM result client=2 object=42 request=681 applied=0
+KWL SYSTEM result client=2 object=42 request=682 applied=0
+KWL SYSTEM result client=2 object=42 request=683 applied=0
+KWL SYSTEM result client=2 object=42 request=684 applied=0
+KWL PERF 5001ms: passes=510 timeouts=500 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=685 applied=0
+KWL SYSTEM result client=2 object=42 request=686 applied=0
+KWL SYSTEM result client=2 object=42 request=687 applied=0
+KWL SYSTEM result client=2 object=42 request=688 applied=0
+KWL SYSTEM result client=2 object=42 request=689 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=690 applied=0
+KWL SYSTEM result client=2 object=42 request=691 applied=0
+KWL SYSTEM result client=2 object=42 request=692 applied=0
+KWL SYSTEM result client=2 object=42 request=693 applied=0
+KWL SYSTEM result client=2 object=42 request=694 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.2% work 0.7%
+KWL SYSTEM result client=2 object=42 request=695 applied=0
+KWL SYSTEM result client=2 object=42 request=696 applied=0
+KWL SYSTEM result client=2 object=42 request=697 applied=0
+KWL SYSTEM result client=2 object=42 request=698 applied=0
+KWL SYSTEM result client=2 object=42 request=699 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=700 applied=0
+KWL SYSTEM result client=2 object=42 request=701 applied=0
+KWL SYSTEM result client=2 object=42 request=702 applied=0
+KWL SYSTEM result client=2 object=42 request=703 applied=0
+KWL SYSTEM result client=2 object=42 request=704 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=705 applied=0
+KWL SYSTEM result client=2 object=42 request=706 applied=0
+KWL SYSTEM result client=2 object=42 request=707 applied=0
+KWL SYSTEM result client=2 object=42 request=708 applied=0
+KWL SYSTEM result client=2 object=42 request=709 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=710 applied=0
+KWL SYSTEM result client=2 object=42 request=711 applied=0
+KWL SYSTEM result client=2 object=42 request=712 applied=0
+KWL SYSTEM result client=2 object=42 request=713 applied=0
+KWL SYSTEM result client=2 object=42 request=714 applied=0
+KWL PERF 5001ms: passes=508 timeouts=498 | poll 98.6% work 1.2%
+KWL PERF compose frames=1 draw_ms=24.02 (acquire 0.03 submit+present 23.58) frame_ms=26.06
+KWL SYSTEM result client=2 object=42 request=715 applied=0
+KWL SYSTEM result client=2 object=42 request=716 applied=0
+KWL SYSTEM result client=2 object=42 request=717 applied=0
+KWL SYSTEM result client=2 object=42 request=718 applied=0
+KWL PERF 5004ms: passes=508 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=719 applied=0
+KWL SYSTEM result client=2 object=42 request=720 applied=0
+KWL SYSTEM result client=2 object=42 request=721 applied=0
+KWL SYSTEM result client=2 object=42 request=722 applied=0
+KWL SYSTEM result client=2 object=42 request=723 applied=0
+KWL PERF 5005ms: passes=510 timeouts=501 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=724 applied=0
+KWL SYSTEM result client=2 object=42 request=725 applied=0
+KWL SYSTEM result client=2 object=42 request=726 applied=0
+KWL SYSTEM result client=2 object=42 request=727 applied=0
+KWL SYSTEM result client=2 object=42 request=728 applied=0
+KWL PERF 5001ms: passes=506 timeouts=496 | poll 99.0% work 0.7%
+KWL SYSTEM result client=2 object=42 request=729 applied=0
+KWL SYSTEM result client=2 object=42 request=730 applied=0
+KWL SYSTEM result client=2 object=42 request=731 applied=0
+KWL SYSTEM result client=2 object=42 request=732 applied=0
+KWL SYSTEM result client=2 object=42 request=733 applied=0
+KWL PERF 5000ms: passes=505 timeouts=495 | poll 99.0% work 0.7%
+KWL SYSTEM result client=2 object=42 request=734 applied=0
+KWL SYSTEM result client=2 object=42 request=735 applied=0
+KWL SYSTEM result client=2 object=42 request=736 applied=0
+KWL SYSTEM result client=2 object=42 request=737 applied=0
+KWL SYSTEM result client=2 object=42 request=738 applied=0
+KWL PERF 5001ms: passes=509 timeouts=499 | poll 99.1% work 0.7%
+KWL SYSTEM result client=2 object=42 request=739 applied=0
+KWL SYSTEM result client=2 object=42 request=740 applied=0
+KWL SYSTEM result client=2 object=42 request=741 applied=0
+KWL SYSTEM result client=2 object=42 request=742 applied=0
+KWL SYSTEM result client=2 object=42 request=743 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=744 applied=0
+KWL SYSTEM result client=2 object=42 request=745 applied=0
+KWL SYSTEM result client=2 object=42 request=746 applied=0
+KWL SYSTEM result client=2 object=42 request=747 applied=0
+KWL SYSTEM result client=2 object=42 request=748 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=749 applied=0
+KWL SYSTEM result client=2 object=42 request=750 applied=0
+KWL SYSTEM result client=2 object=42 request=751 applied=0
+KWL SYSTEM result client=2 object=42 request=752 applied=0
+KWL SYSTEM result client=2 object=42 request=753 applied=0
+KWL PERF 5000ms: passes=510 timeouts=500 | poll 99.0% work 0.8%
+KWL SYSTEM result client=2 object=42 request=754 applied=0
+KWL SYSTEM result client=2 object=42 request=755 applied=0
+KWL SYSTEM result client=2 object=42 request=756 applied=0

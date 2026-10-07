@@ -16,6 +16,8 @@
  * that is not a device.  The test checks:
  *   - attach takes the lid, the AC adapter, the present battery and the
  *     button, installs their notifies and starts the thread;
+ *   - attach enables at runtime the GPE the lid's and the button's _PRW
+ *     name (BUG-253), and no other;
  *   - KERN_SYSTEM_GET_POWER's state (lid open, AC online, 50 %, charging);
  *   - a Notify 0x80 on the lid or the AC adapter that changes their state
  *     posts one CHANGE with the new value; one that changes nothing posts
@@ -45,6 +47,12 @@
 #define EISA_BATTERY		0x0a0cd041U
 #define EISA_POWER_BUTTON	0x0c0cd041U
 #define EISA_PCI_ROOT		0x080ad041U
+
+/* The GPE the lid's and the button's _PRW name (the Latitude 5330's, BUG-253). */
+#define WAKE_GPE		0x18U
+
+/* The most GPEs enabled at runtime the test keeps. */
+#define GPES_MAX		8U
 
 /* The most elements of a package, and of events kept. */
 #define ELEMENTS_MAX		20U
@@ -105,6 +113,7 @@ void waitq_init(struct wait_queue *queue, const char *name);
 uint64_t waitq_sequence(const struct wait_queue *queue);
 int waitq_sleep(struct wait_queue *queue, struct spinlock *lock, uint64_t observed, uint64_t deadline, unsigned flags);
 void waitq_wake_all(struct wait_queue *queue);
+int drv_acpi_gpe_runtime_enable(unsigned gpe);
 static void check(int condition, const char *what);
 static struct drv_acpi_object *integer_new(uint64_t value);
 static struct drv_acpi_object *package_new(const uint64_t *values, unsigned count);
@@ -124,6 +133,10 @@ static uint64_t battery_remaining = 2500;
 static uint64_t battery_full = 5000;
 static int bix_fails;
 static int bif_asked;
+
+/* The GPEs the driver enabled at runtime, in order. */
+static unsigned runtime_gpes[GPES_MAX];
+static unsigned runtime_gpe_count;
 
 /* The events posted, the lock's depth, and the clock in ticks. */
 static struct posted_event events[EVENTS_MAX];
@@ -356,6 +369,17 @@ drv_acpi_notify_install(
 }
 
 int
+drv_acpi_gpe_runtime_enable(
+	unsigned gpe)
+{
+	/* Keeps the GPE for the checks. */
+	check(runtime_gpe_count < GPES_MAX, "room for the GPE enabled");
+	if (runtime_gpe_count < GPES_MAX)
+		runtime_gpes[runtime_gpe_count++] = gpe;
+	return 0;
+}
+
+int
 drv_acpi_evaluate(
 	struct drv_acpi_node *scope,
 	const char *path,
@@ -370,6 +394,7 @@ drv_acpi_evaluate(
 	int is_bix;
 	int is_bif;
 	int is_bst;
+	int is_prw;
 
 	/* No method here takes arguments. */
 	(void)arguments;
@@ -382,6 +407,7 @@ drv_acpi_evaluate(
 	is_bix = battery && strcmp(path, "_BIX") == 0;
 	is_bif = battery && strcmp(path, "_BIF") == 0;
 	is_bst = battery && strcmp(path, "_BST") == 0;
+	is_prw = strcmp(path, "_PRW") == 0;
 
 	/* _HID of each device. */
 	if (is_hid) {
@@ -400,6 +426,16 @@ drv_acpi_evaluate(
 		}
 
 		/* The identifier. */
+		return 0;
+	}
+
+	/* The lid's and the button's wake event: the GPE and S3; the others have none. */
+	if (is_prw) {
+		if (node != &nodes[NODE_LID] && node != &nodes[NODE_BUTTON])
+			return 6;
+		values[0] = WAKE_GPE;
+		values[1] = 3;
+		*result = package_new(values, 2U);
 		return 0;
 	}
 
@@ -676,6 +712,8 @@ main(void)
 	      "the notifies of the lid, the AC adapter, the battery and the button");
 	check(nodes[NODE_ABSENT].handler == NULL, "not the absent battery's");
 	check(nodes[NODE_PCI].handler == NULL && nodes[NODE_SCOPE].handler == NULL, "not the other nodes'");
+	check(runtime_gpe_count == 2U && runtime_gpes[0] == WAKE_GPE && runtime_gpes[1] == WAKE_GPE,
+	      "the lid's and the button's GPE enabled at runtime, nothing else (BUG-253)");
 
 	/* The state at attach. */
 	memset(&info, 0, sizeof(info));

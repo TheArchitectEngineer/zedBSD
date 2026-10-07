@@ -23,7 +23,11 @@
  * fingers left do nothing; without the pad's size there are no edges.
  * Two fingers down from the top edge are TOP2 (ws142-p009); a touch of two
  * fingers that scrolled ends with one SWIPE2 end, after its scrolling (when
- * one finger lifts, or both), and no other touch says one.
+ * one finger lifts, or both), and no other touch says one.  BUG-254: one
+ * finger in the right edge is enough, as in the left; fingers that land
+ * up to 150 ms apart are judged where they landed in every edge, even when
+ * the first has left the band meanwhile, but not ones 400 ms apart; a pad
+ * whose axes start above zero measures its left and top edges from there.
  *
  *   plan/ws142/tests/run-host-gesture.sh
  */
@@ -404,6 +408,9 @@ main(void)
 	int32_t travel;
 	int burst;
 	int step;
+	int32_t dx_edge;
+	int32_t dy_edge;
+	uint32_t edge_gesture;
 
 	/* 1. Two fingers up 20 mm from the bottom edge, quickly: BOTTOM2 begins, follows and ends fast. */
 	start_case(1);
@@ -867,6 +874,167 @@ main(void)
 	finger_up(0);
 	frame();
 	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 0U, "one finger: no swipe's end");
+
+	/* 27. Only one finger in the right edge, moving left: RIGHT2, as on the left (BUG-254). */
+	start_case(1);
+	x[0] = 1320;
+	y[0] = 300;
+	x[1] = 1050;
+	y[1] = 450;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, -360, 0, 12, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_RIGHT2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "one finger in the right edge: right2");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "one finger in the right edge: does not scroll");
+
+	/*
+	 * 28. Each edge, its finger landing first and already moving inward
+	 * (0.5 mm every 8 ms: out of the band and past a tap's travel) when
+	 * the other lands about 130 ms later: still the edge's gesture
+	 * (BUG-254).
+	 */
+	for (step = 0; step < 4; step++) {
+		start_case(1);
+		if (step == 0) {
+			/* The right edge, moving left. */
+			x[0] = 1330;
+			y[0] = 300;
+			x[1] = 1100;
+			y[1] = 450;
+			dx_edge = -6;
+			dy_edge = 0;
+			edge_gesture = KWL_TOUCHPAD_GESTURE_RIGHT2;
+		} else if (step == 1) {
+			/* The left edge, moving right. */
+			x[0] = 6;
+			y[0] = 300;
+			x[1] = 236;
+			y[1] = 450;
+			dx_edge = 6;
+			dy_edge = 0;
+			edge_gesture = KWL_TOUCHPAD_GESTURE_LEFT2;
+		} else if (step == 2) {
+			/* The bottom edge, moving up. */
+			x[0] = 500;
+			y[0] = 755;
+			x[1] = 700;
+			y[1] = 560;
+			dx_edge = 0;
+			dy_edge = -6;
+			edge_gesture = KWL_TOUCHPAD_GESTURE_BOTTOM2;
+		} else {
+			/* The top edge, moving down. */
+			x[0] = 500;
+			y[0] = 5;
+			x[1] = 700;
+			y[1] = 200;
+			dx_edge = 0;
+			dy_edge = 6;
+			edge_gesture = KWL_TOUCHPAD_GESTURE_TOP2;
+		}
+
+		/* The edge's finger lands and moves for 15 reports before the other lands. */
+		finger_down(0, x[0], y[0]);
+		frame();
+		move_fingers(1U, x, y, dx_edge * 15, dy_edge * 15, 15, 8U);
+		x[0] += dx_edge * 15;
+		y[0] += dy_edge * 15;
+		finger_down(1, x[1], y[1]);
+		frame();
+
+		/* Both move on inward 30 mm. */
+		move_fingers(2U, x, y, dx_edge * 60, dy_edge * 60, 12, 8U);
+		finger_up(0);
+		finger_up(1);
+		frame();
+		check(gesture_count(edge_gesture, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "staggered, the edge's finger moving: the edge's gesture");
+		check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "staggered, the edge's finger moving: does not scroll");
+	}
+
+	/* 29. The inner finger landing first and moving, the right edge's finger about 100 ms after it: RIGHT2 (BUG-254). */
+	start_case(1);
+	x[0] = 1100;
+	y[0] = 450;
+	x[1] = 1325;
+	y[1] = 300;
+	finger_down(0, x[0], y[0]);
+	frame();
+	move_fingers(1U, x, y, -60, 0, 12, 8U);
+	x[0] -= 60;
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, -360, 0, 12, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_RIGHT2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "inner finger first, the edge's finger later: right2");
+
+	/* 30. A finger that landed in the right edge and moved 20 mm in 400 ms before the other came: a scroll, no gesture. */
+	start_case(1);
+	x[0] = 1320;
+	y[0] = 300;
+	x[1] = 900;
+	y[1] = 450;
+	finger_down(0, x[0], y[0]);
+	frame();
+	move_fingers(1U, x, y, -240, 0, 50, 8U);
+	x[0] -= 240;
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, -360, 0, 12, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "the other finger long after a move from the edge: no gesture");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "the other finger long after a move from the edge: scrolls");
+
+	/* 31. A pad whose axes start above zero: the left and the top edges are measured from its least places (BUG-254). */
+	start_case(0);
+	kwl_touchpad_set_range(&pad, 100, 100 + PAD_X_MAX, 50, 50 + PAD_Y_MAX);
+	x[0] = 130;
+	y[0] = 350;
+	x[1] = 400;
+	y[1] = 500;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 360, 0, 12, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_LEFT2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "offset axes: left2 from the least place");
+	start_case(0);
+	kwl_touchpad_set_range(&pad, 100, 100 + PAD_X_MAX, 50, 50 + PAD_Y_MAX);
+	x[0] = 300;
+	y[0] = 70;
+	x[1] = 500;
+	y[1] = 300;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_TOP2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "offset axes: top2 from the least place");
+	start_case(0);
+	kwl_touchpad_set_range(&pad, 100, 100 + PAD_X_MAX, 50, 50 + PAD_Y_MAX);
+	x[0] = 190;
+	y[0] = 350;
+	x[1] = 400;
+	y[1] = 500;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 360, 0, 12, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "offset axes: 7.5 mm from the least place is outside the band");
 
 	/* The result. */
 	if (failures != 0) {

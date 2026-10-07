@@ -9,6 +9,7 @@ Related Milestones: —
 Parent: [Master](../master.md)
 Queue: q835（2026-10-07、P2）
 Resume point: p005 の T1 の結果（`apps.photos.*`）。T1-307 は最初の既定案の AAT なので判定しない（Q1）。
+Target: **ベータ3**（続き）（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

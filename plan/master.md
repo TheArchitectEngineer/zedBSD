@@ -488,6 +488,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS183](ws183/ws.md) | MG003 | I2C HID の Extended Interrupt と TGL の GPIO の group（5320 の touchpad を割り込みで、ベータ2・後回し） | planning | p001 |
 | [WS184](ws184/ws.md) | MG006 | 左手デバイスの OSK（クリエイターモード: ダイヤル・ホイール・ボタン 2×5、左上の swipe で出す、ベータ2） | planning | p001 設計 |
 | [WS185](ws185/ws.md) | MG006 | ゲームパッドの OSK とゲームコンソールモード（両上隅の同時 swipe、Xbox の pad を模す、段 1 は mview、ベータ2） | planning | p001 設計 |
+| [WS186](ws186/ws.md) | MG003 | Realtek RTL8822CE（5320 の PCIe の WiFi、ベータ3、ベータ2 が早く終われば前倒し） | planning | p001 調査と設計 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -516,6 +517,15 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「そもそもハードウェアがおかしいかも。蓋を閉じても画面が消えないのに、蓋をちょっと開けると画面が消えます。方針を変更して、蓋を閉じたら自動で変更するのは後回しにして、そのためのトークンのリソースをSettingsからのディスプレイ変更に使いましょう。」→ BUG-255（蓋で HDMI へ移る）と N8 の蓋の自動の切り替えは後回し（ベータ3、WS052 と同じ）。P2 は BUG-255 を止め、ws113-p011（Settings の拡張・mirror に要る i915 の 2 出力）へ。
+- 2026-10-07 ユーザー（優先順位）:「え、Vulkan Videoよりもシェーダーを優先してたんですか？…Videoが優先だと伝えたはずですし、シェーダーは優先度が低いと伝えたはずだったのですが。気をつけてください。改めて話すと、Settings (display), USB-C & DP Alt, Vulkan VIdeo, widget, 通知, タッチパッド割り込み, YubiKey Passkey, 写真, カレンダー, Bluettoh, 左手デバイスOSK, ゲームパッドOSKくらいの順で、そのあとに残りですね。明確に優先度を下げて、空き時間にやるのは、IME, RTL8822C, Vulkan executor, i915高度化、です。そのほかは両者の間くらい。」
+  → **ベータ2 の優先順**: 1 WS113（Settings の Display）、2 WS051・WS050（USB-C・DP Alt）、3 WS083（Vulkan Video）、4 WS090（widget）、5 WS156（通知）、6 WS183（touchpad の割り込み）、7 WS161・WS172（YubiKey・passkey）、8 WS157（写真）、9 WS155（カレンダー）、10 WS143（Bluetooth）、（11・12 の左手 OSK・gamepad OSK はベータ3 へ移した）、その後に残り。**空き時間だけ**: WS095（IME）、WS186（RTL8822C）、WS031（Vulkan の executor）、WS075（i915 の高度化、shader の compiler を含む）。他はその間。
+- 2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」→ WS184・WS185・WS157（続き）・WS155（続き）・WS095（続き）・WS001・WS004・WS046・WS186・WS052 の Target をベータ3 に。
+- 2026-10-07 ユーザー:「修正完了後に、5330のカーネルとコンポジタを入れ替えてください。再起動もやってほしかったのですが、rebootコマンドはリセットができていないことを確認しました。」→ BUG-255 の後に Q1 が 5330 に kernel（BUG-249 の reboot の fallback 入り）と compositor を入れ、SSH で再起動する。今の 5330 の kernel（cksum 2877465438）は BUG-249 の前なので、その reboot は効かない見込み（BUG-249 は 5330 でも起きる）。新しい kernel が入った後の reboot から効く。
+- 2026-10-07 ユーザー:「P2はP1の仕事を少し分担できますか？…もし分担しても効率化できなそうなら、左手デバイスですね。」→ Q1: P2 は BUG-254 の後に WS113 p011（i915 の 2 出力の同時、DBUF は「足す時に 1 つ目を点け直す」）を受け持つ（i915 の側、P1 の compositor の p004b〜p007 と並べられる）。P1 は p004b → p005 → p006 → p007。
+- 2026-10-07 ユーザー:「RTL8822Cは、WSを立てて、ベータ3にしておきます。けど、ベータ2が期日前に完成したら、やるかもしれません。」→ [WS186](ws186/ws.md)。
+- 2026-10-07 ユーザー（ws113-p011 の DBUF）:「2 つ目の画面を足す時に、1 つ目の画面を点け直す、でお願いします。」→ 1 出力の時の DBUF・既存の eDP の run は変えず、2 つ目を足す時に resident を点け直す（一瞬消える）。Q1: 5330 に kernel（P2 の build/bug250、cksum 2877465438、BUG-251・253・eDP の connected）と compositor（main、cksum 184482127、BUG-252・ws181-p009）を入れた（元は /esp/vmunix.prev・/bin/wayland.orig）。
+- 2026-10-07 Q1: ws075-p007b b2（d23a536b9）を merge。GS の無い draw の dword も変わる（PUSH_CONSTANT_ALLOC_VS 16→8 KiB・ALLOC_GS・CLIP bit5）ので、**main の kernel を実機に入れる前に T1-363（5330 の passthrough の vkx・vke・vkc・zdesktop の capture）**。5330 が zedBSD で動いている間は passthrough ができない。BUG の確かめで 5330・5320 に入れる kernel は d23a536b9 の前（P2 の build/bug250 の系統）か T1-363 PASS の後に。
 - 2026-10-07 ユーザー:「シェーダはやることがないときに取り組んでほしいです。Settingsのディスプレイ設定を、拡張・ミラーありで実装する作業に切り替えてください。」→ P1 は ws075-p007b の b2 を区切り、q855: WS113 p011（i915 の 2 出力の同時）→ p004b（compositor の複数の出力、全拡張・全 mirror）→ p005（kl_system_displays・明るさ）→ p006（Settings の Display の頁: 拡張・mirror の二択、配置の drag、明るさ）→ p007（窓の出力の所属）。シェーダ（WS075）は他にやることが無い時だけ。
 - 2026-10-07 ユーザー:「今後、実機のホスト鍵は無視してクリアして接続してください。」→ 実機（10.0.30.3 の 5330・10.0.30.5 の 5320）の SSH の host 鍵が変わっていたら `ssh-keygen -R` して `StrictHostKeyChecking=accept-new` で繋いでよい（他の host は今までどおり確かめる）。
 - 2026-10-07 Q1: ws051-p004b の code（c1dd58f19、D1〜D8、host 試験 PASS、build warning 0）を merge。判断: (a) present.c の `display_failed` が 1 度の run の失敗で以後の presentation を全部失敗にするのは p011a の「失敗したら元の出力へ戻す」と食い違う → 次の P1 が直す（ws113 の file、Q1 の許可）。(b) `userland/tests/display-control` に `--index=N` を足す（DP-2 を選んで claim するため、P1、Q1 の許可）。素の 5330 の確認に「display-control で DP-2 を claim して present → release → 10 秒で eDP に戻る、link 162000 kHz x4 24 bpp、USB-C→HDMI の adapter も」を足す。

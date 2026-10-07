@@ -45,6 +45,8 @@
 #define FADT_GPE1_BLK_LEN	93U
 #define FADT_GPE1_BASE		94U
 #define FADT_FLAGS		112U
+#define FADT_RESET_REG		116U
+#define FADT_RESET_VALUE	128U
 #define FADT_X_PM1A_EVT_BLK	148U
 #define FADT_X_PM1B_EVT_BLK	160U
 #define FADT_X_PM1A_CNT_BLK	172U
@@ -55,9 +57,11 @@
 #define FADT_V1_LENGTH		116U
 
 /*
- * The length of a Generic Address Structure, and where its address is.
+ * The length of a Generic Address Structure, where its register width in
+ * bits and its address are.
  */
 #define GAS_LENGTH		12U
+#define GAS_WIDTH		1U
 #define GAS_ADDRESS		4U
 
 /*
@@ -65,6 +69,7 @@
  */
 #define FADT_FLAG_POWER_BUTTON	(1U << 4)
 #define FADT_FLAG_SLEEP_BUTTON	(1U << 5)
+#define FADT_FLAG_RESET_REG	(1U << 10)
 #define FADT_FLAG_HW_REDUCED	(1U << 20)
 
 /*
@@ -239,8 +244,24 @@ static struct {
 	uint8_t known;
 } soft_off;
 
+/*
+ * The reset register the FADT names (ACPI 6.5 section 4.8.3.6): the I/O
+ * port that RESET_VALUE is written to to reset the machine.
+ * drv_acpi_events_init() fills it from the FADT, also on a
+ * hardware-reduced platform; drv_acpi_reset_machine() only reads it.
+ * known is zero until a supported register was read, and stays zero on a
+ * platform whose FADT says it has none or names one this driver does not
+ * write (in memory or in PCI configuration space).
+ */
+static struct {
+	uint32_t port;
+	uint8_t value;
+	uint8_t known;
+} reset_register;
+
 static uint32_t load_u32(const uint8_t *bytes);
 static void read_soft_off(const uint8_t *fadt, size_t length, uint32_t flags);
+static void read_reset_register(const uint8_t *fadt, size_t length, uint32_t flags);
 static struct register_block fadt_block(const uint8_t *fadt, size_t length, unsigned legacy, unsigned wide, unsigned block_length);
 static int enable_acpi_mode(void);
 static bool gpe_present(unsigned gpe);
@@ -287,9 +308,10 @@ drv_acpi_events_init(
 	/* Starts from no event hardware known, so that a failure leaves the SCI unready. */
 	kern_memset(&events, 0, sizeof(events));
 
-	/* Learns how the power is turned off, while AML still runs freely. */
+	/* Learns how the power is turned off, while AML still runs freely, and how the machine is reset. */
 	flags = load_u32(fadt + FADT_FLAGS);
 	read_soft_off(fadt, length, flags);
+	read_reset_register(fadt, length, flags);
 
 	/* A hardware-reduced platform has no fixed hardware and no GPE blocks. */
 	if ((flags & FADT_FLAG_HW_REDUCED) != 0) {
@@ -487,6 +509,66 @@ drv_acpi_gpe_install(
 	drv_acpi_os_event_unlock(state);
 
 	/* Succeeded: the GPE raises an SCI and reaches the handler. */
+	return 0;
+}
+
+/*
+ * Enables at runtime a GPE that a device's _PRW names, for a driver that
+ * needs the device's events while the system runs.
+ *
+ * A GPE some _PRW names is kept masked at runtime, as a wake-only event.
+ * Firmware often signals a lid or a button through that same GPE, whose
+ * _Lxx or _Exx method then notifies the device (BUG-253: the Latitude
+ * 5330's lid is GPE 0x18, which LID0's and PBTN's _PRW name); the lid and
+ * button driver enables it, as the operating systems the firmware is
+ * written for do.  During a sleep the GPE goes on following its wake
+ * sources and becomes a runtime one when the sleep ends.  It reports
+ * EINVAL for a GPE the blocks do not have and ENOENT for one that no
+ * method or handler handles, which would fire once and stay masked.
+ */
+int
+drv_acpi_gpe_runtime_enable(
+	unsigned gpe)
+{
+	struct gpe_entry *entry;
+	unsigned long state;
+	bool present;
+	bool pending;
+
+	/* Refuses a GPE before initialization or outside the blocks. */
+	if (!events.ready || gpe >= events.gpe_count)
+		return EINVAL;
+
+	/* Refuses a number between the two blocks, which no register carries. */
+	present = gpe_present(gpe);
+	if (!present)
+		return EINVAL;
+
+	/* Makes the GPE a runtime event, with the interrupt kept out. */
+	entry = &events.gpes[gpe];
+	state = drv_acpi_os_event_lock();
+
+	/* Refuses a GPE nothing handles. */
+	if (entry->kind == GPE_NONE) {
+		drv_acpi_os_event_unlock(state);
+		return ENOENT;
+	}
+
+	/*
+	 * enabled tells the thread to unmask the GPE again after each event
+	 * and the end of a sleep to leave it unmasked.  Outside a sleep it is
+	 * unmasked now, unless the thread has still to handle it and unmasks
+	 * it itself; a status that latched while it was masked is an event
+	 * still to be handled (the method reads what changed).
+	 */
+	entry->enabled = 1;
+	pending = gpe_is_pending(gpe);
+	if (!events.sleeping && !pending)
+		gpe_set_enable(gpe, true);
+
+	drv_acpi_os_event_unlock(state);
+
+	/* Succeeded: the GPE raises SCIs at runtime. */
 	return 0;
 }
 
@@ -1011,6 +1093,35 @@ drv_acpi_poweroff(void)
 	return ETIMEDOUT;
 }
 
+/*
+ * Resets the machine through the FADT's reset register (ACPI 6.5 section
+ * 4.8.3.6): RESET_VALUE written to the register's I/O port.
+ *
+ * The write normally resets the machine at once (on many machines it is a
+ * request to firmware, a write to the SMI command port); the caller waits a
+ * moment and tries the platform's other ways when it did not.  Nothing is
+ * evaluated, so it may be called after the devices were shut down.  It
+ * reports ENODEV when the FADT gave no register this driver can write, and
+ * the port write's error.
+ */
+int
+drv_acpi_reset_machine(void)
+{
+	int error;
+
+	/* Refuses a platform without a usable reset register. */
+	if (!reset_register.known)
+		return ENODEV;
+
+	/* Writes the reset value; the register is one byte wide. */
+	error = drv_acpi_os_port_write(reset_register.port, 8, reset_register.value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reset was asked for. */
+	return 0;
+}
+
 /* Reads a little-endian 32-bit value. */
 static uint32_t
 load_u32(
@@ -1090,6 +1201,51 @@ read_soft_off(
 	soft_off.type_b = types[1];
 	soft_off.known = 1;
 	drv_acpi_os_log("ACPI: S5 is SLP_TYP %u/%u\n", types[0], types[1]);
+}
+
+/*
+ * Reads the FADT's reset register: a register in I/O space, one byte wide,
+ * with the value that resets the machine, when the FADT's flags say it is
+ * supported.  The log tells what was found.
+ */
+static void
+read_reset_register(
+	const uint8_t *fadt,
+	size_t length,
+	uint32_t flags)
+{
+	const uint8_t *gas;
+	uint32_t port;
+
+	/* A FADT too short to have the register, or one whose flags say it has none. */
+	if (length < FADT_RESET_VALUE + 1U || (flags & FADT_FLAG_RESET_REG) == 0) {
+		drv_acpi_os_log("ACPI: no reset register\n");
+		return;
+	}
+
+	/* Only a register in I/O space, which is how the PC platforms name it. */
+	gas = fadt + FADT_RESET_REG;
+	if (gas[0] != GAS_SPACE_SYSTEM_IO) {
+		drv_acpi_os_log("ACPI: reset register in address space %u is not used\n", (unsigned)gas[0]);
+		return;
+	}
+
+	/* A register at port zero, or past the 64 KiB of I/O space, is none. */
+	port = load_u32(gas + GAS_ADDRESS);
+	if (port == 0U || port > 0xffffU) {
+		drv_acpi_os_log("ACPI: no reset register\n");
+		return;
+	}
+
+	/*
+	 * known tells drv_acpi_reset_machine() that the port and the value
+	 * may be written (the register is one byte wide by the
+	 * specification, whatever width the structure gives).
+	 */
+	reset_register.port = port;
+	reset_register.value = fadt[FADT_RESET_VALUE];
+	reset_register.known = 1;
+	drv_acpi_os_log("ACPI: reset register port 0x%x value 0x%x width %u\n", (unsigned)port, (unsigned)reset_register.value, (unsigned)gas[GAS_WIDTH]);
 }
 
 /*
