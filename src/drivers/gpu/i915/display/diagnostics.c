@@ -166,14 +166,15 @@ static const char *const i915_survey_ddi_names[I915_SURVEY_DDIS] = {
 
 /*
  * The enable registers of the PLLs the readout survey reads (DPLL0, DPLL1,
- * the TBT PLL, TC PLL 1..4), and their log names in the same order.
+ * the TBT PLL, TC PLL 1..4 at ADL-P's PORTTC_PLL_ENABLE, every 8 bytes from
+ * 0x46038), and their log names in the same order.
  *
  * The tables never change.
  */
 static const uint32_t i915_survey_pll_regs[I915_SURVEY_PLLS] = {
 	0x46010u, 0x46014u,
 	0x46020u,
-	0x46030u, 0x46034u, 0x46038u, 0x4603cu
+	0x46038u, 0x46040u, 0x46048u, 0x46050u
 };
 static const char *const i915_survey_pll_names[I915_SURVEY_PLLS] = {
 	"DPLL0", "DPLL1", "TBT", "TC1", "TC2", "TC3", "TC4"
