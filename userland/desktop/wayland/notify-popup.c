@@ -34,6 +34,7 @@
 #include "glass.h"
 #include "notify.h"
 #include "notify-flow.h"
+#include "notify-view.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -42,7 +43,7 @@
 #define POPUP_SHARE		5
 #define POPUP_WIDTH_LEAST	320
 #define POPUP_WIDTH_MOST	640
-#define POPUP_HEIGHT		76
+#define POPUP_HEIGHT		KWL_NOTIFY_BOARD_HEIGHT
 
 /* How far above the bottom edge the board is, its corner radius and its padding. */
 #define POPUP_BOTTOM		48
@@ -97,11 +98,11 @@ static struct {
 } popup;
 
 static void popup_open(void);
-static int32_t popup_width(const struct kwl_server *server);
 static int popup_route(struct kwl_server *server, const struct kwl_notification *item);
 static void popup_show_next(struct kwl_server *server, uint64_t now);
 static unsigned popup_part(const struct kwl_server *server, uint32_t *id);
 static void popup_draw_board(struct kwl_server *server, VkCommandBuffer command, const struct kwl_notify_board *board, uint64_t now, unsigned slot);
+static int popup_board_part(const struct popup_place *place, int32_t x, int32_t y);
 static void popup_draw_icon(struct kwl_server *server, VkCommandBuffer command, const struct kwl_notification *item, int32_t x, int32_t y, float opacity);
 static size_t popup_line_break(struct kwl_server *server, const struct kwl_notification *item, int32_t width);
 static const char *popup_app_id(const struct kwl_server *server, uint64_t client);
@@ -174,6 +175,9 @@ kwl_notify_popup_tick(
 	moving = kwl_notify_flow_moving(&popup.flow);
 	if (moving)
 		server->dirty = 1;
+
+	/* The log's board closes after a while untouched (notify-log.c). */
+	kwl_notify_log_tick(server);
 }
 
 /*
@@ -200,6 +204,9 @@ kwl_notify_popup_draw(
 		popup_draw_board(server, command, &popup.flow.leaving, now, 1U);
 	if (popup.flow.current.stage != KWL_NOTIFY_FLOW_NONE)
 		popup_draw_board(server, command, &popup.flow.current, now, 0U);
+
+	/* The log's board over them, when open (notify-log.c). */
+	kwl_notify_log_draw(server, command);
 }
 
 /*
@@ -217,7 +224,13 @@ kwl_notify_popup_button(
 	const struct kwl_notification *item;
 	uint32_t id;
 	unsigned part;
+	int taken;
 	int error;
+
+	/* The log's board, when open, first (notify-log.c). */
+	taken = kwl_notify_log_button(server, button, state);
+	if (taken)
+		return 1;
 
 	/* Only the left button, and only with a board on the screen or a press followed. */
 	if (button != KWL_BUTTON_LEFT || !popup.ready)
@@ -268,11 +281,17 @@ kwl_notify_popup_button(
 	return 1;
 }
 
-/* Reports whether a board is on the screen (the glass look is then not still, and draws over a fullscreen window). */
+/* Reports whether a board, or the log's, is on the screen (the glass look is then not still, and draws over a fullscreen window). */
 int
 kwl_notify_popup_showing(void)
 {
 	int moving;
+	int open;
+
+	/* The log's board. */
+	open = kwl_notify_log_showing();
+	if (open)
+		return 1;
 
 	/* Nothing before the first notification. */
 	if (!popup.ready)
@@ -281,6 +300,15 @@ kwl_notify_popup_showing(void)
 	/* Succeeded: whether a board moves. */
 	moving = kwl_notify_flow_moving(&popup.flow);
 	return moving;
+}
+
+/* Reports where a notification's board's top is: 48 pixels above the bottom edge. */
+int32_t
+kwl_notify_board_top(
+	const struct kwl_server *server)
+{
+	/* Its height and the gap above the bottom edge. */
+	return (int32_t)server->height - POPUP_BOTTOM - POPUP_HEIGHT;
 }
 
 /* Starts the popup's state the first time it is needed. */
@@ -295,9 +323,9 @@ popup_open(void)
 	popup.ready = 1;
 }
 
-/* Reports the board's width: a fifth of the screen's, within 320 and 640 pixels. */
-static int32_t
-popup_width(
+/* Reports the width of a notification's board (the popup's and the log's): a fifth of the screen's, within 320 and 640 pixels. */
+int32_t
+kwl_notify_board_width(
 	const struct kwl_server *server)
 {
 	int32_t width;
@@ -399,6 +427,7 @@ popup_part(
 	int32_t x;
 	int32_t y;
 	unsigned slot;
+	unsigned part;
 
 	/* Nothing, unless the pointer is on the anchor's output over a board. */
 	*id = 0U;
@@ -412,26 +441,18 @@ popup_part(
 		place = &popup.places[slot];
 		if (place->id == 0U)
 			continue;
-		if (x < place->left || x >= place->left + place->width || y < place->top || y >= place->top + place->height)
+		part = (unsigned)popup_board_part(place, x, y);
+		if (part == POPUP_PART_NONE)
 			continue;
-
-		/* The close sign's square at the top right, or the body. */
 		*id = place->id;
-		if (x >= place->left + place->width - POPUP_PADDING / 2 - POPUP_CLOSE && y < place->top + POPUP_PADDING / 2 + POPUP_CLOSE)
-			return POPUP_PART_CLOSE;
-		return POPUP_PART_BODY;
+		return part;
 	}
 
 	/* Succeeded: no board under the pointer. */
 	return POPUP_PART_NONE;
 }
 
-/*
- * Draws one board where its movement has it: the shadow, the white glass,
- * the icon, the application's name and the title, the body on two lines,
- * and the close sign, all as opaque as the movement makes it.  Keeps its
- * place for the pointer.
- */
+/* Draws one board where its movement has it, as opaque as it makes it, and keeps its place for the pointer. */
 static void
 popup_draw_board(
 	struct kwl_server *server,
@@ -440,23 +461,12 @@ popup_draw_board(
 	uint64_t now,
 	unsigned slot)
 {
-	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
 	const struct kwl_notification *item;
-	struct glass_shape shape;
 	struct popup_place *place;
-	const char *app;
-	char first[KWL_NOTIFY_BODY_MAX + 1U];
-	float ink[4];
-	float faint[4];
 	float opacity;
 	int32_t width;
 	int32_t left;
 	int32_t top;
-	int32_t text_left;
-	int32_t text_width;
-	int32_t app_width;
-	size_t at;
 
 	/* The notification, if it is still kept. */
 	item = kwl_notify_find(kwl_notify_model(), board->id);
@@ -464,9 +474,9 @@ popup_draw_board(
 		return;
 
 	/* Where the board is and how opaque. */
-	width = popup_width(server);
+	width = kwl_notify_board_width(server);
 	kwl_notify_flow_place(board, now, (int32_t)server->width, width, &left, &opacity);
-	top = (int32_t)server->height - POPUP_BOTTOM - POPUP_HEIGHT;
+	top = kwl_notify_board_top(server);
 	place = &popup.places[slot];
 	place->id = board->id;
 	place->left = left;
@@ -474,39 +484,96 @@ popup_draw_board(
 	place->width = width;
 	place->height = POPUP_HEIGHT;
 
-	/* The inks, as opaque as the board. */
+	/* The card. */
+	kwl_notify_draw_card(server, command, item, left, top, width, opacity);
+}
+
+/*
+ * Reports the part of a board under a point: the close sign's square at the
+ * top right, the body, or none.
+ */
+static int
+popup_board_part(
+	const struct popup_place *place,
+	int32_t x,
+	int32_t y)
+{
+	/* Outside the board. */
+	if (x < place->left || x >= place->left + place->width || y < place->top || y >= place->top + place->height)
+		return POPUP_PART_NONE;
+
+	/* The close sign's square, or the rest. */
+	if (x >= place->left + place->width - POPUP_PADDING / 2 - POPUP_CLOSE && y < place->top + POPUP_PADDING / 2 + POPUP_CLOSE)
+		return POPUP_PART_CLOSE;
+
+	/* Succeeded: the body. */
+	return POPUP_PART_BODY;
+}
+
+/*
+ * Reports whether a point is on the close sign of a notification's card
+ * drawn at (left, top) a width wide (the log's board asks).
+ */
+int
+kwl_notify_card_close_at(
+	int32_t left,
+	int32_t top,
+	int32_t width,
+	int32_t x,
+	int32_t y)
+{
+	struct popup_place place;
+	int part;
+
+	/* The card's place, then its part. */
+	place.id = 1U;
+	place.left = left;
+	place.top = top;
+	place.width = width;
+	place.height = POPUP_HEIGHT;
+	part = popup_board_part(&place, x, y);
+	if (part == POPUP_PART_CLOSE)
+		return 1;
+
+	/* Succeeded: not the close sign. */
+	return 0;
+}
+
+/*
+ * Draws a notification's card at (left, top), a width wide, as opaque as
+ * asked: the shadow, the white glass, the icon, the application's name and
+ * the title, the body on two lines, and the close sign (the popup's boards
+ * and the log's).
+ */
+void
+kwl_notify_draw_card(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	const struct kwl_notification *item,
+	int32_t left,
+	int32_t top,
+	int32_t width,
+	float opacity)
+{
+	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
+	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
+	const char *app;
+	char first[KWL_NOTIFY_BODY_MAX + 1U];
+	float ink[4];
+	float faint[4];
+	int32_t text_left;
+	int32_t text_width;
+	int32_t app_width;
+	size_t at;
+
+	/* The inks, as opaque as the card. */
 	memcpy(ink, dark, sizeof(ink));
 	memcpy(faint, soft, sizeof(faint));
 	ink[3] = opacity;
 	faint[3] = opacity;
 
-	/* The shadow. */
-	glass_shape_init(&shape, (float)left, (float)top + 6.0f, (float)width, (float)POPUP_HEIGHT);
-	shape.quad[0] -= 40.0f;
-	shape.quad[1] -= 40.0f;
-	shape.quad[2] += 80.0f;
-	shape.quad[3] += 80.0f;
-	shape.mode = MODE_SHADOW;
-	shape.radius = POPUP_RADIUS;
-	shape.soft = 18.0f;
-	shape.color[0] = 0.10f;
-	shape.color[1] = 0.18f;
-	shape.color[2] = 0.35f;
-	shape.color[3] = 0.24f;
-	shape.opacity = opacity;
-	glass_shape_draw(server, command, &shape);
-
-	/* The glass, as white as the volume's popup. */
-	glass_shape_init(&shape, (float)left, (float)top, (float)width, (float)POPUP_HEIGHT);
-	shape.mode = MODE_GLASS;
-	shape.radius = POPUP_RADIUS;
-	shape.color[0] = 1.0f;
-	shape.color[1] = 1.0f;
-	shape.color[2] = 1.0f;
-	shape.color[3] = 0.86f;
-	shape.edge = 0.85f;
-	shape.opacity = opacity;
-	glass_shape_draw(server, command, &shape);
+	/* The shadow and the glass. */
+	kwl_notify_draw_glass(server, command, left, top, width, opacity);
 
 	/* The application's icon at the left, in the middle of the height. */
 	popup_draw_icon(server, command, item, left + POPUP_PADDING, top + (POPUP_HEIGHT - POPUP_ICON) / 2, opacity);
@@ -543,6 +610,47 @@ popup_draw_board(
 
 	/* The close sign at the top right. */
 	glass_draw_glyph(server, command, SIZE_SIGN, GLASS_CLOSE_GLYPH, left + width - POPUP_PADDING / 2 - POPUP_CLOSE + 6, top + POPUP_PADDING / 2 + 18, faint);
+}
+
+/* Draws a board's shadow and white glass at (left, top), a width wide, as opaque as asked. */
+void
+kwl_notify_draw_glass(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	int32_t left,
+	int32_t top,
+	int32_t width,
+	float opacity)
+{
+	struct glass_shape shape;
+
+	/* The shadow. */
+	glass_shape_init(&shape, (float)left, (float)top + 6.0f, (float)width, (float)POPUP_HEIGHT);
+	shape.quad[0] -= 40.0f;
+	shape.quad[1] -= 40.0f;
+	shape.quad[2] += 80.0f;
+	shape.quad[3] += 80.0f;
+	shape.mode = MODE_SHADOW;
+	shape.radius = POPUP_RADIUS;
+	shape.soft = 18.0f;
+	shape.color[0] = 0.10f;
+	shape.color[1] = 0.18f;
+	shape.color[2] = 0.35f;
+	shape.color[3] = 0.24f;
+	shape.opacity = opacity;
+	glass_shape_draw(server, command, &shape);
+
+	/* The glass, as white as the volume's popup. */
+	glass_shape_init(&shape, (float)left, (float)top, (float)width, (float)POPUP_HEIGHT);
+	shape.mode = MODE_GLASS;
+	shape.radius = POPUP_RADIUS;
+	shape.color[0] = 1.0f;
+	shape.color[1] = 1.0f;
+	shape.color[2] = 1.0f;
+	shape.color[3] = 0.86f;
+	shape.edge = 0.85f;
+	shape.opacity = opacity;
+	glass_shape_draw(server, command, &shape);
 }
 
 /*

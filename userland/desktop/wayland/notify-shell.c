@@ -239,6 +239,31 @@ kwl_notify_activate(
 	return 0;
 }
 
+/*
+ * Clears the log ("Clear all notifications", p004): every logged
+ * notification goes, each client told closed(CLEARED).  Returns how many
+ * went.
+ */
+size_t
+kwl_notify_clear_log(
+	struct kwl_server *server)
+{
+	struct kwl_notify_closed closed[KWL_NOTIFY_LOG];
+	size_t count;
+	size_t index;
+
+	/* The log emptied. */
+	notify_open();
+	count = kwl_notify_clear(&notify_model, closed, KWL_NOTIFY_LOG);
+
+	/* Each told. */
+	for (index = 0U; index < count && index < KWL_NOTIFY_LOG; index++)
+		notify_tell_closed(server, &closed[index]);
+
+	/* Succeeded: how many went. */
+	return count;
+}
+
 /* Gives the model of the notifications (for the popup and the log, p003). */
 struct kwl_notify_model *
 kwl_notify_model(void)
