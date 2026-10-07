@@ -135,6 +135,10 @@ main(
 		return 1;
 	}
 
+	/* Saved as Photos saves after an import, so a mark's change must name its month again. */
+	error = ph_db_save(argv[5]);
+	test_true("import-saved", error == 0 && !photos[2].changed);
+
 	/* Two albums. */
 	error = ph_album_create("Family", &album);
 	error |= ph_album_add(album, photos[3].id);
@@ -189,7 +193,7 @@ main(
 	test_true("turned", view.picture.width == 450 && view.picture.height == 800 && view.thumbs[2].turns == 1);
 	test_key(&view, ui, &style, TEST_KEY_F, 0U);
 	test_check("favorite", "FAVORITE photo=2 on=1");
-	test_true("save", view.save == 1 && photos[2].favorite && photos[2].turns == 1);
+	test_true("save", view.save == 1 && photos[2].favorite && photos[2].turns == 1 && photos[2].changed);
 	view.save = 0;
 	test_frame(&view, ui, &style);
 	(void)test_save(&view, &canvas, argv[3], "turned");
