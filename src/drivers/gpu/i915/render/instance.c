@@ -412,7 +412,7 @@ i915_instance_limits(
 	 */
 	limits->maxFramebufferWidth = 16384U;
 	limits->maxFramebufferHeight = 16384U;
-	limits->maxFramebufferLayers = 1U;
+	limits->maxFramebufferLayers = 2048U;
 	limits->framebufferColorSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	limits->framebufferDepthSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;
 	limits->framebufferStencilSampleCounts = I915_INSTANCE_ATTACHMENT_SAMPLES;

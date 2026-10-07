@@ -1449,6 +1449,7 @@ drv_i915_gfx_emit_depth(
 	uint32_t test_enable;
 	uint32_t format;
 	uint32_t layer;
+	uint32_t layers;
 	uint32_t rows;
 	uint32_t index;
 	uint64_t va;
@@ -1498,12 +1499,16 @@ drv_i915_gfx_emit_depth(
 			return EINVAL;
 		}
 
-		/* The layer the pass's depth view writes, and the rows from layer to layer. */
+		/* The first layer the pass's depth view writes and how many, and the rows from layer to layer. */
 		layer = 0U;
+		layers = 1U;
 		if (state->framebuffer != NULL && state->pass != NULL &&
 		    state->pass->depth_attachment < state->framebuffer->view_count &&
-		    state->framebuffer->views[state->pass->depth_attachment] != NULL)
+		    state->framebuffer->views[state->pass->depth_attachment] != NULL) {
 			layer = state->framebuffer->views[state->pass->depth_attachment]->base_layer;
+			if (state->framebuffer->views[state->pass->depth_attachment]->layer_count > 1U)
+				layers = state->framebuffer->views[state->pass->depth_attachment]->layer_count;
+		}
 		rows = depth->slice_rows;
 		if (rows == 0U)
 			rows = (depth->height + 3U) & ~3U;
@@ -1512,16 +1517,21 @@ drv_i915_gfx_emit_depth(
 		 * Writes what isl_emit_depth_stencil_hiz_s() writes: 2D, the
 		 * format, write enable and the pitch (Y-tiled: Gen9+ depth always
 		 * is); the address; the extent; MOCS, the first array element (the
-		 * layer written) and the depth (the layers less one); the QPitch.
+		 * view's first layer) and the depth (the view's layers less one);
+		 * the QPitch and the render target view extent, which is the depth
+		 * again (isl_emit_depth_stencil.c of Mesa 25.0.7, sha256
+		 * d0a71883586e838971621169f7439a9d1ebddb919241cf5937620e5742a56778,
+		 * 147-163; gen120.xml 3DSTATE_DEPTH_BUFFER, Render Target View
+		 * Extent bits 245-255, dword 7 bits 31:21).
 		 */
 		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (format << 24) | (depth->pitch - 1U));
 		drv_i915_batch_emit(batch, (uint32_t)va);
 		drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
 		drv_i915_batch_emit(batch, ((depth->width - 1U) << 1) | ((depth->height - 1U) << 17));
 		drv_i915_batch_emit(batch, mocs | ((layer & GEN12_RSS_DEPTH_MASK) << 8) |
-		    (((drv_i915_gfx_image_slices(depth, 0U) - 1U) & GEN12_RSS_DEPTH_MASK) << 20));
+		    (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << 20));
 		drv_i915_batch_emit(batch, 0U);
-		drv_i915_batch_emit(batch, rows / 4U);
+		drv_i915_batch_emit(batch, (rows / 4U) | (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << 21));
 	} else {
 		/* A null depth buffer is still typed D32_FLOAT. */
 		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24));
@@ -2339,13 +2349,22 @@ i915_state_target_range(
 	range->layer_count = 1U;
 	range->render_target = 1;
 
-	/* The colour attachment view names the level and the layer. */
+	/* The colour attachment view names the level, the layer and how many layers a draw may reach. */
 	view = i915_state_target_view(state, slot);
 	if (view == NULL)
 		return;
 	range->base_level = view->base_level;
 	range->base_layer = view->base_layer;
 	range->format = drv_i915_gfx_view_format(view);
+
+	/*
+	 * A view of several layers is a layered target: the render target
+	 * view extent covers them, and the layer a primitive goes to is its
+	 * render target array index (gl_Layer).  A 3D image's view keeps its
+	 * one slice.
+	 */
+	if (view->layer_count > 1U && view->image != NULL && view->image->type != VK_IMAGE_TYPE_3D)
+		range->layer_count = view->layer_count;
 }
 
 /* Finds the view colour slot `slot` of the draw's subpass draws into; NULL for none. */
@@ -3140,6 +3159,7 @@ i915_state_stencil_buffer(
 {
 	uint64_t va;
 	uint32_t layer;
+	uint32_t layers;
 	uint32_t index;
 
 	/* A null stencil buffer when the attachment has none. */
@@ -3156,22 +3176,30 @@ i915_state_stencil_buffer(
 	if (va == 0U)
 		return EINVAL;
 
-	/* The layer the pass's depth view writes. */
+	/* The first layer the pass's depth view writes, and how many. */
 	layer = 0U;
+	layers = 1U;
 	if (state->framebuffer != NULL && state->pass != NULL &&
 	    state->pass->depth_attachment < state->framebuffer->view_count &&
-	    state->framebuffer->views[state->pass->depth_attachment] != NULL)
+	    state->framebuffer->views[state->pass->depth_attachment] != NULL) {
 		layer = state->framebuffer->views[state->pass->depth_attachment]->base_layer;
+		if (state->framebuffer->views[state->pass->depth_attachment]->layer_count > 1U)
+			layers = state->framebuffer->views[state->pass->depth_attachment]->layer_count;
+	}
 
-	/* The plane. */
+	/*
+	 * The plane: its first array element and depth are the view's layers,
+	 * and the render target view extent the depth again, as for the depth
+	 * buffer (gen120.xml 3DSTATE_STENCIL_BUFFER, bits 245-255).
+	 */
 	drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (image->stencil_pitch - 1U));
 	drv_i915_batch_emit(batch, (uint32_t)va);
 	drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
 	drv_i915_batch_emit(batch, ((image->width - 1U) << 1) | ((image->height - 1U) << 17));
 	drv_i915_batch_emit(batch, mocs | ((layer & GEN12_RSS_DEPTH_MASK) << 8) |
-	    (((drv_i915_gfx_image_slices(image, 0U) - 1U) & GEN12_RSS_DEPTH_MASK) << 20));
+	    (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << 20));
 	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, image->stencil_slice_rows / 4U);
+	drv_i915_batch_emit(batch, (image->stencil_slice_rows / 4U) | (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << 21));
 
 	/* Succeeded: the stencil buffer is described. */
 	return 0;
