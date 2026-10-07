@@ -47,6 +47,7 @@
 #include "dp-sink.h"
 #include "dp-ext-kern.h"
 #include "edid.h"
+#include "head.h"
 #include "output.h"
 #include "hdmi-mode.h"
 #include "panel.h"
@@ -191,6 +192,7 @@ static int i915_kernel_preflight_hdmi(struct i915_lcd_kernel *k);
 static int i915_resident_window(void *ctx, struct i915_lcd_observer *o);
 static uint32_t i915_resident_verify(void *ctx, const struct i915_scanout *so);
 static int i915_resident_buffers(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_lcd_state *lcd);
+static int i915_resident_buffers_kept(struct i915_display *display);
 static void i915_resident_hdmi_params(const struct i915_display_output *output, struct i915_lcd_run_params *params);
 static int i915_resident_takeover(struct i915_display *display, struct i915_lcd_kernel *k);
 static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_display_output *output, struct i915_lcd_modeset_cfg *cfg);
@@ -1793,6 +1795,7 @@ drv_i915_lcd_kernel_resident_run(
 	int way_error;
 	int fallback_error;
 	int debug;
+	int kept;
 	unsigned domain;
 
 	k = &display->lk;
@@ -1805,13 +1808,23 @@ drv_i915_lcd_kernel_resident_run(
 		return EINVAL;
 	}
 
-	/* An earlier run left resources the display may still read: refused. */
+	/*
+	 * An earlier run left resources the display may still read: refused.
+	 * Buffers an earlier run kept pinned for this one, when the resident
+	 * output is lit again for two pipes (ws113-p011), are this run's.
+	 */
 	retained = drv_i915_lcd_show_retained(display);
 	if (!retained)
 		retained = drv_i915_lcd_modeset_retained(display);
-	if (retained ||
-	    display->resident_buf[0].state != I915_SCANOUT_NONE ||
-	    display->resident_buf[1].state != I915_SCANOUT_NONE) {
+	kept = i915_resident_buffers_kept(display);
+	if (retained) {
+		kern_logf("i915: resident display: refused (resources of an earlier run are retained)\n");
+		return EBUSY;
+	}
+
+	if (!kept &&
+	    (display->resident_buf[0].state != I915_SCANOUT_NONE ||
+	     display->resident_buf[1].state != I915_SCANOUT_NONE)) {
 		kern_logf("i915: resident display: refused (resources of an earlier run are retained)\n");
 		return EBUSY;
 	}
@@ -1886,11 +1899,36 @@ drv_i915_lcd_kernel_resident_run(
 	if (way.cfg != NULL)
 		way.cfg(display, d, &display->output, &env->cfg);
 
-	/* Creates, pins, clears and publishes both buffers at the output's size. */
-	buffers_error = i915_resident_buffers(display, d, lcd);
-	if (buffers_error != 0) {
-		k->p = NULL;
-		return EIO;
+	/*
+	 * The DBUF share leaves room for a claimed second output's pipe
+	 * (ws113-p011); without one the output has the DBUF to itself, as
+	 * before.  The window remembers which pipes the run was lit for.
+	 */
+	display->window.run_pipes = drv_i915_head_run_pipes(display);
+	env->cfg.also_active_pipes = display->window.run_pipes;
+
+	/* Kept buffers of another size (the output changed meanwhile) are given back and made again. */
+	if (kept &&
+	    (display->resident_buf[0].width != (uint32_t)lcd->mode.hdisplay ||
+	     display->resident_buf[0].height != (uint32_t)lcd->mode.vdisplay)) {
+		(void)drv_i915_scanout_unpin(&display->resident_buf[1]);
+		(void)drv_i915_scanout_destroy(&display->resident_buf[1]);
+		(void)drv_i915_scanout_unpin(&display->resident_buf[0]);
+		(void)drv_i915_scanout_destroy(&display->resident_buf[0]);
+		display->window.keep_buffers = 0;
+		kept = 0;
+	}
+
+	/* Creates, pins, clears and publishes both buffers at the output's size, or takes the ones kept for this run. */
+	if (kept) {
+		display->window.keep_buffers = 0;
+		kern_logf("i915: resident display: the buffers and their picture are kept for this lighting (pipes besides it 0x%x)\n", display->window.run_pipes);
+	} else {
+		buffers_error = i915_resident_buffers(display, d, lcd);
+		if (buffers_error != 0) {
+			k->p = NULL;
+			return EIO;
+		}
 	}
 
 	/* Buffer A is shown first; the serve loop runs in the window. */
@@ -1989,6 +2027,91 @@ drv_i915_lcd_kernel_resident_run(
 		return EIO;
 
 	/* Succeeded: the panel came up, stopped and was released. */
+	return 0;
+}
+
+/*
+ * Fills the run parameters of an output that is not the built-in panel,
+ * for the second output's run (ws113-p011): the kind's port, pipe,
+ * transcoder and PLL, as the resident run of that kind has them.  The
+ * second output never empties the PLL pool the resident output draws from.
+ * Returns 0, or EOPNOTSUPP for the panel (which has no parameters of its
+ * own) or a kind this driver does not light.
+ */
+int
+drv_i915_lcd_output_params(
+	const struct i915_display_output *output,
+	struct i915_lcd_run_params *params)
+{
+	struct i915_resident_output_way way;
+	int way_error;
+
+	/* The kind's way; the panel's has no parameters. */
+	way_error = i915_resident_output_way(output->kind, &way);
+	if (way_error != 0)
+		return EOPNOTSUPP;
+	if (way.params == NULL)
+		return EOPNOTSUPP;
+
+	/* The kind's parameters, beside the resident output's PLL. */
+	way.params(output, params);
+	params->reset_dplls = 0;
+
+	/* Succeeded: the parameters name the output. */
+	return 0;
+}
+
+/*
+ * Turns a filled panel configuration into the encoder's of an output that
+ * is not the built-in panel, for the second output's run (ws113-p011).
+ * The panel's configuration is left as it is.
+ */
+void
+drv_i915_lcd_output_cfg(
+	struct i915_display *display,
+	const struct i915_lcd_kernel_deps *d,
+	const struct i915_display_output *output,
+	struct i915_lcd_modeset_cfg *cfg)
+{
+	struct i915_resident_output_way way;
+	int way_error;
+
+	/* The kind's way; the panel's leaves the configuration as it is. */
+	way_error = i915_resident_output_way(output->kind, &way);
+	if (way_error != 0)
+		return;
+	if (way.cfg == NULL)
+		return;
+
+	/* The kind's encoder. */
+	way.cfg(display, d, output, cfg);
+}
+
+/*
+ * Lowers an external DP output's link after an enable that reported it as
+ * not trained, for the second output's run (ws113-p011), as the resident
+ * run does for its own output.  Returns 0 when the output may be lit again
+ * at the lower link, ENOSPC when no lower link carries the mode, or EINVAL
+ * for an output or an enable that did not fail at the link.
+ */
+int
+drv_i915_lcd_output_link_fallback(
+	struct i915_display *display,
+	struct i915_display_output *output,
+	int enable_rc)
+{
+	int error;
+
+	/* Only an external DP output trains a link. */
+	if (output->kind != I915_OUTPUT_KIND_DP_EXT)
+		return EINVAL;
+
+	/* The resident run's fallback, on this output. */
+	error = i915_resident_dp_ext_fallback(display, output, enable_rc);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the output may be lit again. */
 	return 0;
 }
 
@@ -3651,6 +3774,16 @@ i915_resident_window(
 	/* A flip armed without waiting completes before the buffers change hands (it logs a failure). */
 	(void)drv_i915_lcd_modeset_flip_settle(display);
 
+	/*
+	 * Lit again for two pipes next (ws113-p011): buffer A, which the next
+	 * lighting shows first, takes the picture B shows, so the output comes
+	 * back with its last picture and not an older one.
+	 */
+	if (display->window.relight && display->resident_front != 0U) {
+		kern_memcpy(display->resident_buf[0].cpu, display->resident_buf[1].cpu, display->resident_buf[0].size);
+		drv_i915_scanout_publish(&display->resident_buf[0]);
+	}
+
 	/* Ends on buffer A; the flip back is only armed, so it is settled too. */
 	if (display->resident_front != 0U) {
 		flip_error = drv_i915_lcd_resident_flip(display);
@@ -3746,6 +3879,30 @@ i915_resident_buffers(
 }
 
 /*
+ * Tells whether an earlier run kept both resident buffers pinned for this
+ * one (ws113-p011: the resident output lit again for two pipes, with its
+ * picture).  A keep that does not find both buffers pinned is forgotten.
+ */
+static int
+i915_resident_buffers_kept(
+	struct i915_display *display)
+{
+	/* Nothing was kept. */
+	if (!display->window.keep_buffers)
+		return 0;
+
+	/* Both must be pinned and unused, as the earlier run left them. */
+	if (display->resident_buf[0].state != I915_SCANOUT_PINNED ||
+	    display->resident_buf[1].state != I915_SCANOUT_PINNED) {
+		display->window.keep_buffers = 0;
+		return 0;
+	}
+
+	/* Succeeded: the buffers are this run's. */
+	return 1;
+}
+
+/*
  * Releases both resident buffers when the display provably reads neither,
  * or abandons them when it may.  Reports whether both were released.
  */
@@ -3771,6 +3928,10 @@ i915_resident_release(
 
 	/* The show body ended A; B's last use ends here. */
 	drv_i915_scanout_end(&display->resident_buf[1]);
+
+	/* Kept pinned, with their picture, for the lighting for two pipes that follows (ws113-p011). */
+	if (display->window.relight && display->window.keep_buffers)
+		return 1;
 
 	/* Unpins and destroys A then B, stopping at the first refusal. */
 	error = drv_i915_scanout_unpin(&display->resident_buf[0]);

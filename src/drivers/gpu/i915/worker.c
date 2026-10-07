@@ -23,6 +23,7 @@
 #include "context.h"
 #include "device-info.h"
 #include "display/backlight.h"
+#include "display/head.h"
 #include "display/present.h"
 #include "engine.h"
 #include "ggtt.h"
@@ -1170,6 +1171,7 @@ i915_worker_loop(
 	int ready;
 	int holding;
 	int hold_over;
+	int relight;
 
 	device = worker->device;
 
@@ -1226,6 +1228,22 @@ i915_worker_loop(
 			}
 
 			/*
+			 * A frame of the second output while the resident output was lit
+			 * for one pipe leaves the window: the resident output is lit
+			 * again for two pipes first (ws113-p011), and the frame stays at
+			 * the head of the queue for the new window.
+			 */
+			relight = 0;
+			if ((item->kind == I915_WORKER_SYNC_PRESENT || item->kind == I915_WORKER_SYNC_PRESENT_BLOB) &&
+			    in_display &&
+			    item->present->head)
+				relight = drv_i915_present_relight_begin(device);
+			if (relight) {
+				spin_unlock_irqrestore(&device->irq_lock, irq);
+				return I915_WORKER_SERVE_LEAVE_DISPLAY;
+			}
+
+			/*
 			 * A release inside the window holds the last picture for the
 			 * next lease (ws075-p016) and stays in the window.  When a stop
 			 * is asked for or the shutdown refuses the hold, it leaves the
@@ -1233,7 +1251,7 @@ i915_worker_loop(
 			 * the output is stopped.
 			 */
 			holding = 0;
-			if (item->kind == I915_WORKER_SYNC_RELEASE && in_display) {
+			if (item->kind == I915_WORKER_SYNC_RELEASE && in_display && !item->present->head) {
 				if (worker->stop == 0)
 					holding = drv_i915_present_hold_start(device);
 
@@ -1425,16 +1443,29 @@ i915_worker_run_sync_item(
 		}
 		break;
 	case I915_WORKER_SYNC_PRESENT:
-		/* Inside the window; outside it only when the panel could not be brought up. */
-		error = EIO;
-		if (in_display)
-			error = drv_i915_present_frame(device, item->present);
-		break;
 	case I915_WORKER_SYNC_PRESENT_BLOB:
-		/* Inside the window; outside it only when the panel could not be brought up. */
-		error = EIO;
-		if (in_display)
+		/*
+		 * Inside the window; outside it only when the panel could not be
+		 * brought up.  The second output's frame lights it first
+		 * (ws113-p011); without the window it cannot be lit.
+		 */
+		if (item->present->head) {
+			error = ENXIO;
+			if (in_display)
+				error = drv_i915_head_frame(device, item->present);
+		} else if (!in_display) {
+			error = EIO;
+		} else if (item->kind == I915_WORKER_SYNC_PRESENT) {
+			error = drv_i915_present_frame(device, item->present);
+		} else {
 			error = drv_i915_present_blob_frame(device, item->present);
+		}
+		break;
+	case I915_WORKER_SYNC_RELEASE:
+		/* The second output stops at once, without a hold (D-RELEASE); a resident release has nothing left to do. */
+		error = 0;
+		if (item->present->head && in_display)
+			drv_i915_head_stop(device->display);
 		break;
 	case I915_WORKER_SYNC_BACKLIGHT:
 		/* The panel's light, which only the window's lit panel has. */

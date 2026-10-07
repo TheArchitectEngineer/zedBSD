@@ -54,6 +54,7 @@
 #include "present.h"
 #include "scanout.h"
 #include "control.h"
+#include "head.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -120,7 +121,10 @@ struct i915_present_blit {
 
 static int i915_present_release_locked(struct i915_device *device);
 static int i915_present_blit_build(void *ctx, uint64_t dst_va, uint32_t width, uint32_t height, uint32_t pitch, uint64_t *batch_va);
-static int i915_present_shared(struct i915_device *device, void *session, void *object, struct gpu_display_present *request);
+static int i915_present_shared(struct i915_device *device, void *session, void *object, struct gpu_display_present *request, int head);
+static int i915_present_head(struct i915_device *device, void *session, void *object, struct gpu_display_present *request);
+static int i915_present_head_wait(struct i915_device *device, void *session, struct gpu_display_wait *request);
+static int i915_present_window_retry(struct i915_display *display, int error);
 static int i915_present_window_serve(void *ctx);
 static void i915_present_check_frame(struct i915_display *display, const struct i915_worker_present *frame, struct i915_scanout *back, unsigned index);
 static struct i915_scanout *i915_present_target(struct i915_display *display, int *flip);
@@ -348,12 +352,24 @@ drv_i915_present_display_present(
 	uint64_t generation;
 	uint64_t start;
 	int connected;
+	int owns_head;
 	int error;
 
 	owner_device = device;
 	display = owner_device->display;
 	rd = &display->rd;
 	storage = object;
+
+	/* The second output's lease presents on the second output (ws113-p011). */
+	owns_head = drv_i915_head_owns(display, session, request->lease);
+	if (owns_head) {
+		error = i915_present_head(owner_device, session, object, request);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the frame is on the second output. */
+		return 0;
+	}
 
 	/* The whole presentation is timed, the wait for the lease included. */
 	start = drv_i915_perf_now();
@@ -402,7 +418,7 @@ drv_i915_present_display_present(
 
 	/* The shared route: the GPU copies the imported blob into the panel's back buffer. */
 	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
-		error = i915_present_shared(owner_device, session, object, request);
+		error = i915_present_shared(owner_device, session, object, request, 0);
 	} else {
 		/* The copied route: the core checked the extent against the storage, which is ordinary managed RAM. */
 		pixels = (const uint8_t *)kern_pmem_to_kernel(storage->run.paddr) + request->offset;
@@ -471,11 +487,23 @@ drv_i915_present_display_wait(
 	uint32_t display_id;
 	uint64_t generation;
 	int connected;
+	int owns_head;
 	int error;
 
 	owner_device = device;
 	display = owner_device->display;
 	rd = &display->rd;
+
+	/* The second output's lease waits on the second output (ws113-p011). */
+	owns_head = drv_i915_head_owns(display, session, request->lease);
+	if (owns_head) {
+		error = i915_present_head_wait(owner_device, session, request);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the sequence has completed. */
+		return 0;
+	}
 
 	/* Reads the lease under its mutex. */
 	drv_i915_present_lease_init(owner_device->display);
@@ -526,10 +554,22 @@ drv_i915_present_display_release(
 {
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
+	int owns_head;
 	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
+
+	/* The second output's lease ends the second output (ws113-p011): it goes dark at once. */
+	owns_head = drv_i915_head_owns(owner_device->display, session, request->lease);
+	if (owns_head) {
+		error = drv_i915_head_release(owner_device, session, request->lease);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the lease is free. */
+		return 0;
+	}
 
 	/* Ends the lease under its mutex. */
 	drv_i915_present_lease_init(owner_device->display);
@@ -588,6 +628,9 @@ drv_i915_present_lease_close(
 	/* A device without a display has no lease. */
 	if (device->display == NULL)
 		return;
+
+	/* The second output's lease ends first, as the compositor would end it (ws113-p011). */
+	drv_i915_head_lease_close(device, session);
 
 	rd = &device->display->rd;
 
@@ -657,6 +700,7 @@ drv_i915_present_window(
 	unsigned long irq;
 	int after_resume;
 	int moved;
+	int retry;
 	int error;
 
 	display = device->display;
@@ -665,13 +709,20 @@ drv_i915_present_window(
 	 * Lights the panel; the window serves until a hold is over or a stop.
 	 * An external DP link that did not train is lowered and lit again
 	 * (EAGAIN, ws051-p004b); every retry lowers the port's link, so the
-	 * retries end.  moved tells whether the run lights an output a claim
-	 * moved to, not the firmware's (ws113-p011a).
+	 * retries end.  A window left so that a second output's first frame
+	 * finds the resident output lit for two pipes is lit again at once,
+	 * and so is a run for two pipes that failed cleanly, for one pipe with
+	 * the second output latched limited (ws113-p011).  moved tells whether
+	 * the run lights an output a claim moved to, not the firmware's
+	 * (ws113-p011a).
 	 */
 	moved = drv_i915_display_output_moved(display);
 	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
-	while (error == EAGAIN)
+	retry = i915_present_window_retry(display, error);
+	while (retry) {
 		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+		retry = i915_present_window_retry(display, error);
+	}
 
 	/*
 	 * The first entry after a sleep whose HDMI display did not come up:
@@ -807,6 +858,40 @@ drv_i915_present_hold_prepare(
 	kern_logf("i915: resident display: lease released; holding the last picture (buffer %c) for the next lease for up to %u ms\n",
 	    (char)('A' + display->resident_front),
 	    I915_PRESENT_HOLD_MS);
+}
+
+/*
+ * Asks for the window to be left and the resident output lit again for
+ * two pipes, when a frame of the second output finds the resident output
+ * lit for one (ws113-p011, the 2026-10-07 user decision: the first output
+ * is lit again when the second is added).  The resident buffers, and
+ * their picture, are kept across the new lighting.  Runs on the worker
+ * inside the window; the caller holds the device IRQ lock.  Returns 1 when
+ * the window is to be left, 0 otherwise.
+ */
+int
+drv_i915_present_relight_begin(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	int needs;
+
+	display = device->display;
+
+	/* Only a second output that the run left no room for. */
+	needs = drv_i915_head_needs_relight(device);
+	if (!needs)
+		return 0;
+
+	/*
+	 * relight makes the window's end light the resident output again at
+	 * once; keep_buffers keeps its buffers for it.
+	 */
+	display->window.relight = 1;
+	display->window.keep_buffers = 1;
+
+	/* Succeeded: the window is to be left. */
+	return 1;
 }
 
 /*
@@ -1129,7 +1214,8 @@ i915_present_blit_build(
 }
 
 /*
- * Presents an imported blob through the GPU copy.
+ * Presents an imported blob through the GPU copy, on the resident output
+ * or on the second output (head, ws113-p011).
  *
  * The copy's kernels and the session's objects are made here, on the
  * asking thread, not on the worker.
@@ -1139,7 +1225,8 @@ i915_present_shared(
 	struct i915_device *device,
 	void *session,
 	void *object,
-	struct gpu_display_present *request)
+	struct gpu_display_present *request,
+	int head)
 {
 	struct i915_session *owner;
 	struct i915_gem_object *storage;
@@ -1186,6 +1273,7 @@ i915_present_shared(
 	item.vm = owner->vm;
 	item.build = i915_present_blit_build;
 	item.build_ctx = &blit;
+	item.head = head;
 	error = drv_i915_worker_sync_display(device, I915_WORKER_SYNC_PRESENT_BLOB, &item);
 	if (error != 0)
 		return error;
@@ -1210,6 +1298,9 @@ i915_present_window_serve(
 	/* The worker is inside the window while it serves; the pipe's refresh boundaries can be read from now on. */
 	drv_i915_display_refresh_up(display, 1);
 	drv_i915_worker_serve_window(display->device);
+
+	/* A lit second output stops before the resident output does (ws113-p011); its lease stays. */
+	drv_i915_head_stop(display);
 
 	/* The mappings go first; the window is left. */
 	drv_i915_scanout_unmap_panel(display);
@@ -1496,9 +1587,13 @@ i915_present_latch(
 	if (!device->display->resident_up)
 		return 0;
 
-	/* The vblank the armed flip latches at (none armed returns at once), timed. */
+	/*
+	 * The vblank the armed flip latches at (none armed returns at once),
+	 * timed, on the resident output's screen 0 by name: the worker may
+	 * have the second output's screen selected meanwhile (ws113-p011).
+	 */
 	start = drv_i915_perf_now();
-	error = drv_i915_lcd_modeset_flip_wait(device->display);
+	error = drv_i915_lcd_modeset_flip_wait_screen(device->display, 0U);
 	drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_FLIP, start);
 
 	/* Reports a flip that did not latch. */
@@ -1507,4 +1602,228 @@ i915_present_latch(
 
 	/* Succeeded: no flip is pending any more. */
 	return 0;
+}
+
+/*
+ * Shows a frame of the second output's lease on it (ws113-p011): the
+ * lease, the connector's generation and connection, the frame's size,
+ * then the latch of the head's armed flip and the frame queued to the
+ * worker, which lights the head first when it is not lit.  A failure of
+ * the head is told as the output's loss (ENXIO), never as the device's.
+ * Returns 0 with the sequence, EINVAL, ESTALE, ENXIO, or the copy's
+ * preparation's error.
+ */
+static int
+i915_present_head(
+	struct i915_device *device,
+	void *session,
+	void *object,
+	struct gpu_display_present *request)
+{
+	struct i915_display *display;
+	struct i915_display_head *head;
+	struct i915_gem_object *storage;
+	struct i915_worker_present item;
+	struct i915_hpd_output found;
+	const uint8_t *pixels;
+	int error;
+
+	display = device->display;
+	head = &display->head;
+	storage = object;
+
+	/* The lease, under the head's mutex. */
+	mutex_lock(&head->mutex);
+
+	if (head->owner != session || head->lease != request->lease) {
+		mutex_unlock(&head->mutex);
+		return EINVAL;
+	}
+
+	/* The connector of this generation, still connected. */
+	error = drv_i915_display_output_connector(display, head->connector, &found);
+	if (error != 0) {
+		mutex_unlock(&head->mutex);
+		return ENXIO;
+	}
+
+	if (request->generation != found.generation) {
+		mutex_unlock(&head->mutex);
+		return ESTALE;
+	}
+
+	if (!found.connected) {
+		mutex_unlock(&head->mutex);
+		return ENXIO;
+	}
+
+	/* The frame must fit the head's mode. */
+	if (request->width > (uint32_t)head->output.state.mode.hdisplay ||
+	    request->height > (uint32_t)head->output.state.mode.vdisplay) {
+		mutex_unlock(&head->mutex);
+		return EINVAL;
+	}
+
+	/* FIFO: the head's armed flip latches before this frame takes the buffer it leaves. */
+	if (!I915_PRESENT_NO_VSYNC && head->up) {
+		error = drv_i915_lcd_modeset_flip_wait_screen(display, 1U);
+		if (error != 0) {
+			mutex_unlock(&head->mutex);
+			return ENXIO;
+		}
+	}
+
+	/* The shared route copies the blob by the GPU; the copied route by the CPU. */
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
+		error = i915_present_shared(device, session, object, request, 1);
+	} else {
+		pixels = (const uint8_t *)kern_pmem_to_kernel(storage->run.paddr) + request->offset;
+		kern_memset(&item, 0, sizeof(item));
+		item.pixels = pixels;
+		item.width = request->width;
+		item.height = request->height;
+		item.stride = request->stride;
+		item.bgra = request->format == GPU_PIXEL_BGRA8888;
+		item.head = 1;
+		error = drv_i915_worker_sync_display(device, I915_WORKER_SYNC_PRESENT, &item);
+	}
+
+	/* A head that could not be lit, copied or flipped is the output's loss, not the device's. */
+	if (error == EIO)
+		error = ENXIO;
+
+	/* A completed presentation: the sequence advances; the first frame is named. */
+	if (error == 0) {
+		head->sequence++;
+		head->present_tick = sched_ticks();
+		request->sequence = head->sequence;
+		if (head->sequence == 1U)
+			kern_logf("i915: display head: first frame %ux%u shown (connector %u)\n", request->width, request->height, head->connector);
+	}
+
+	mutex_unlock(&head->mutex);
+
+	/* Reports a failed presentation. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame is on the second output. */
+	return 0;
+}
+
+/*
+ * Reports the completed sequence of the second output's lease (the display
+ * wait operation on it, ws113-p011): the head's newest flip latches first.
+ * Returns 0, EINVAL, EAGAIN before the first presentation, or ENXIO when
+ * the flip did not latch.
+ */
+static int
+i915_present_head_wait(
+	struct i915_device *device,
+	void *session,
+	struct gpu_display_wait *request)
+{
+	struct i915_display *display;
+	struct i915_display_head *head;
+	struct i915_hpd_output found;
+	int error;
+
+	display = device->display;
+	head = &display->head;
+
+	/* The lease, under the head's mutex: only a sequence it presented. */
+	mutex_lock(&head->mutex);
+
+	if (head->owner != session ||
+	    head->lease != request->lease ||
+	    request->sequence > head->sequence) {
+		mutex_unlock(&head->mutex);
+		return EINVAL;
+	}
+
+	/* Nothing has been presented yet. */
+	if (head->sequence == 0U) {
+		mutex_unlock(&head->mutex);
+		return EAGAIN;
+	}
+
+	/* The newest flip latches; a head that stopped meanwhile has nothing armed. */
+	if (!I915_PRESENT_NO_VSYNC && head->up) {
+		error = drv_i915_lcd_modeset_flip_wait_screen(display, 1U);
+		if (error != 0) {
+			mutex_unlock(&head->mutex);
+			return ENXIO;
+		}
+	}
+
+	/* The newest sequence, the tick it completed at, and the connector's generation. */
+	request->completed_sequence = head->sequence;
+	request->present_time_ns = head->present_tick * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+	request->generation = head->generation;
+	error = drv_i915_display_output_connector(display, head->connector, &found);
+	if (error == 0)
+		request->generation = found.generation;
+
+	mutex_unlock(&head->mutex);
+
+	/* Succeeded: the sequence has completed. */
+	return 0;
+}
+
+/*
+ * Tells whether the resident run is to be tried again at once: an external
+ * DP link that did not train (EAGAIN, ws051-p004b), a window left so that
+ * the resident output is lit again for two pipes (ws113-p011), or a run
+ * for two pipes that failed before it held anything, which is tried for
+ * one pipe with the second output latched limited.  Runs on the worker.
+ */
+static int
+i915_present_window_retry(
+	struct i915_display *display,
+	int error)
+{
+	unsigned i;
+	int retained;
+	int buffers_free;
+
+	/* A lower DP link is tried. */
+	if (error == EAGAIN)
+		return 1;
+
+	/* The window was left to light the resident output again for two pipes. */
+	if (display->window.relight) {
+		display->window.relight = 0;
+		if (error == 0) {
+			kern_logf("i915: resident display: lit again for two pipes, for the second output's first frame\n");
+			return 1;
+		}
+	}
+
+	/* A run for one pipe, or one that came up, is not tried again. */
+	if (error == 0 || display->window.run_pipes == 0U)
+		return 0;
+
+	/* A run that holds something the display may read is not tried again. */
+	retained = drv_i915_lcd_show_retained(display);
+	if (!retained)
+		retained = drv_i915_lcd_modeset_retained(display);
+	if (retained)
+		return 0;
+
+	/* Its buffers must be given back, or kept pinned for the next lighting. */
+	buffers_free = 1;
+	for (i = 0U; i < 2U; i++) {
+		if (display->resident_buf[i].state != I915_SCANOUT_NONE && display->resident_buf[i].state != I915_SCANOUT_PINNED)
+			buffers_free = 0;
+	}
+
+	if (!buffers_free)
+		return 0;
+
+	/* The second output is the limit until the topology moves; the resident output is lit for one pipe. */
+	drv_i915_head_limit(display, "the resident output could not be lit beside it");
+	display->window.run_pipes = 0U;
+
+	/* Succeeded: the run is tried again for one pipe. */
+	return 1;
 }

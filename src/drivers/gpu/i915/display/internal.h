@@ -3412,16 +3412,58 @@ struct i915_present_window {
 	 * Only the worker reads and writes it.
 	 */
 	unsigned stale_buffers;
+
+	/*
+	 * The pipes besides the resident output's that the run lit the
+	 * resident output for (its DBUF share leaves them room, ws113-p011):
+	 * BIT(the head's pipe) when a head was claimed as the run began, else
+	 * 0.  Only the worker reads and writes it.
+	 */
+	unsigned run_pipes;
+
+	/*
+	 * Nonzero asks the window to be left and the resident output lit again
+	 * at once, for two pipes, because a head's first frame came while the
+	 * run had no room for it (the 2026-10-07 user decision: the first
+	 * output is lit again when the second is added).  keep_buffers keeps
+	 * the resident buffers, and their picture, across that new lighting.
+	 * Only the worker reads and writes both.
+	 */
+	int relight;
+	int keep_buffers;
+};
+
+/*
+ * The parameters of one panel run.
+ *
+ * The resident run of the panel has none (its pointer stays NULL); the
+ * resident run of another output and the second output (ws113-p011) name
+ * the output's port, pipe and PLL; a scenario of the tests also names the
+ * picture and the window.  It is kept with the run that points at it.
+ */
+struct i915_lcd_run_params {
+	unsigned pattern_id;
+	uint64_t pattern_fnv;
+	unsigned window_ms;
+	int (*in_window)(void *ctx, struct i915_lcd_observer *o);
+	int output_hdmi;
+	int output_dp_ext;
+	int port;
+	int pipe;
+	int cpu_transcoder;
+	int dpll_id;
+	const struct i915_lcd_state *state;
+	const char *tag;
+	int reset_dplls;
 };
 
 /*
  * One run of the panel from the resident path or a scenario.
  *
- * The run's parameters live with the modeset code; the rest is what the
- * run took (power references, events) and what it saw, kept so the
- * teardown gives back exactly what the run holds.
+ * The run's parameters are above; the rest is what the run took (power
+ * references, events) and what it saw, kept so the teardown gives back
+ * exactly what the run holds.
  */
-struct i915_lcd_run_params;
 
 struct i915_lcd_kernel {
 	/* The parameters of the run; NULL before it starts. */
@@ -3582,6 +3624,70 @@ struct i915_display_output {
 	const char *mode_source;
 };
 
+/*
+ * The second output, the head (ws113-p011, plan/ws113/phase011/design.md):
+ * an HDMI or an external DisplayPort display shown beside the resident
+ * output while Keiland holds both leases.
+ *
+ * The claim (display.c) gives the head its lease and prepares its output;
+ * the head's first frame lights it on modeset screen 1, from inside the
+ * display window the resident output keeps; its release, and the window's
+ * end, stop it.  The lease fields are guarded by the head's own mutex, so
+ * that a frame waiting for the head's flip never holds up the resident
+ * output's.  The worker reads claimed and pipe under the device IRQ lock
+ * when it decides whether the resident output is lit again for two pipes;
+ * everything else of the lit head is the worker's alone.
+ */
+struct i915_display_head {
+	/* Serializes the lease, the sequence and the claim; inited once the mutex is. */
+	struct mutex mutex;
+	int inited;
+
+	/* The session holding the head's lease, NULL while there is none, and the lease (numbered with the resident output's). */
+	void *owner;
+	uint64_t lease;
+
+	/* Completed presentations of the lease, and the tick of the last one. */
+	uint64_t sequence;
+	uint64_t present_tick;
+
+	/* Nonzero while the head is claimed; the connector, its generation at the claim, and the head's pipe. */
+	int claimed;
+	unsigned connector;
+	uint64_t generation;
+	unsigned pipe;
+
+	/* The output the claim prepared (its mode, link and PLL); the worker lights it. */
+	struct i915_display_output output;
+
+	/* Nonzero while the head is lit (the worker writes it). */
+	int up;
+
+	/* The head's two buffers at its mode's size, the one it shows, and what the presenting space maps of them. */
+	struct i915_scanout buf[2];
+	unsigned front;
+	struct i915_ppgtt *map_vm;
+	uint64_t map_va[2];
+	unsigned map_pages[2];
+
+	/* The head's run: its hooks, its vblank event, its power references, the parameters its pipe is read from, its configuration (kept off the stack). */
+	struct i915_lcd_kernel k;
+	struct i915_lcd_run_params params;
+	struct i915_lcd_modeset_cfg cfg;
+
+	/*
+	 * A connector that could not be lit beside the resident output, and the
+	 * topology sequence it was latched at (D-LIMIT): its claims are the
+	 * limit until the topology moves.  The device IRQ lock guards both.
+	 */
+	int limited;
+	unsigned limited_connector;
+	uint64_t limited_sequence;
+
+	/* Nonzero once a head's stop was not confirmed: its buffers are abandoned and no head is lit again. */
+	int broken;
+};
+
 struct i915_lcd_world;
 struct kern_backlight;
 struct i915_wm_world;
@@ -3708,6 +3814,9 @@ struct i915_display {
 
 	/* The serving thread's side of the display window. */
 	struct i915_present_window window;
+
+	/* The second output (ws113-p011). */
+	struct i915_display_head head;
 
 	/* The panel run of the resident path; written by the serving thread only. */
 	struct i915_lcd_kernel lk;

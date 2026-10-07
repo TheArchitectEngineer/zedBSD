@@ -53,6 +53,9 @@ int drv_i915_present_display_present(void *device, void *session, void *object, 
 int drv_i915_present_display_wait(void *device, void *session, struct gpu_display_wait *request);
 int drv_i915_present_display_release(void *device, void *session, const struct gpu_display_release *request);
 
+/* Leaves the window to light the resident output again for two pipes, for a second output's first frame (the worker, IRQ lock held). */
+int drv_i915_present_relight_begin(struct i915_device *device);
+
 /* Prepares the display lease once (its mutex and numbering). */
 void drv_i915_present_lease_init(struct i915_display *display);
 

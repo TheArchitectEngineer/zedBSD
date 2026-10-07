@@ -114,28 +114,10 @@ int drv_i915_lcd_show_discard_model(struct i915_display *display, struct i915_lc
  * with its own parameters.  The run is always the display's lk member.
  */
 
-/*
- * The parameters of one panel run.
- *
- * The resident run has none (its pointer stays NULL); a scenario of the
- * tests names the picture, the window, an HDMI output instead of the
- * panel, and whether the run starts from an empty DPLL pool.
- */
-struct i915_lcd_run_params {
-	unsigned pattern_id;
-	uint64_t pattern_fnv;
-	unsigned window_ms;
-	int (*in_window)(void *ctx, struct i915_lcd_observer *o);
-	int output_hdmi;
-	int output_dp_ext;
-	int port;
-	int pipe;
-	int cpu_transcoder;
-	int dpll_id;
-	const struct i915_lcd_state *state;
-	const char *tag;
-	int reset_dplls;
-};
+/* The second output's parameters, encoder and link fallback, as the resident run's of that kind (ws113-p011). */
+int drv_i915_lcd_output_params(const struct i915_display_output *output, struct i915_lcd_run_params *params);
+void drv_i915_lcd_output_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_display_output *output, struct i915_lcd_modeset_cfg *cfg);
+int drv_i915_lcd_output_link_fallback(struct i915_display *display, struct i915_display_output *output, int enable_rc);
 
 /* Creates the two modeset mutexes once; they live as long as the device. */
 void drv_i915_lcd_kernel_locks_init(struct i915_display *display);
