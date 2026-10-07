@@ -139,3 +139,7 @@ FAIL（QEMU Venus、VENUS_DISPLAY=dbus、2 出力）。列挙・2 つ目の swap
 - `plan/ws113/tests/host-output-switch.c`: 外部で OUT_OF_DATE（一覧に残る）→ 同じ display に開き直す・大きさは不変、読めない一覧で何も失わない、frame 無しで hotplug だけで一覧から消えた display から内蔵へ移る、を足した。
 
 確認（2026-10-07）: `sh plan/ws113/tests/host-output-switch.sh` PASS（plain・ASan/UBSan）。build（warning 0）: `make -j16 BUILD=build/ws113-p004a ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p003.mk build/ws113-p004a/bin/wayland`（rc 0、warning 0）、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws113-p004a-linux all`（rc 0、warning 0）。`plan/tools/style-check.py` の output-switch.c・host-output-switch.c は 0 件（前後とも）、`git diff --check` ok。未実施: QEMU（T1-357b に依頼）、実機。
+
+## T1-357b の判定（2026-10-07 Q1）
+
+PASS（QEMU Venus、VENUS_DISPLAY=dbus・2 出力、6e8e0bb94）: head 0 1280x800・head 1 1024x768、hotplug の fence、head 0 を抜くと display 1 へ 1024x768、挿し直しても display 1 に残る、head 1 を抜くと display 0 へ 1280x800、KWL FAILED 無し。p004a の QEMU の受け入れを満たす（実機は p011a の 5330 の UAT と一緒）。
