@@ -164,7 +164,8 @@ static volatile struct i915_capture_slot *i915_capture_slot_header(uint8_t *area
  *
  * Query, mode, claim, release and present are the capture display's own;
  * the wait and the event sequence are the panel's, which read only the
- * lease and never change.  The table never changes.
+ * lease and never change.  The capture area has no display control (no
+ * power, no refresh).  The table never changes.
  */
 static const struct drv_gpu_display_ops i915_capture_ops = {
 	i915_capture_query,
@@ -173,7 +174,9 @@ static const struct drv_gpu_display_ops i915_capture_ops = {
 	i915_capture_release,
 	i915_capture_present,
 	drv_i915_present_display_wait,
-	drv_i915_display_events
+	drv_i915_display_events,
+	NULL,
+	NULL
 };
 
 /*
