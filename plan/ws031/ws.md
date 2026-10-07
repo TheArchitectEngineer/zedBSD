@@ -83,7 +83,7 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 | ws031-p028 | 入力とmview: PS/2 keyboardのkeyがzwlに届かない件、QMP abortの回避記録、mviewの再現性・blend material・pixel shadingのLCD写真 | planning | 同上 | p015 | `zwl`、input |
 | ws031-p029 | WS031の統合回帰（p014の回帰一覧を1回） | planning | p022〜p028 | p015 | 試験のみ |
 | [ws031-p019](phase019/phase.md) | 設計: executorの未実装機能（正常系: p032・p033） | cleared 候補（2026-10-07 P1、design-reviewer の review を反映） | — | 新規 | 文書 |
-| ws031-p020 | 設計: compilerの未実装機能（p038〜p043） | planning | p024 | 新規 | 文書 |
+| [ws031-p020](phase020/phase.md) | 設計: compiler の 16 bit の整数（p039、2026-10-07 ユーザーの範囲。p038〜p043 の他は別の設計） | cleared 候補（2026-10-07 P1、design-reviewer の review を反映） | p024 | 新規 | 文書 |
 | ws031-p021 | 設計: 性能の構造（p044〜p047）。schedulerの扱い（本WSか新WSか）の判断を含む | planning | p029 | 新規 | 文書 |
 | ws031-p030 | executor: mip level 0以外・array layerへの描画とattachment clear | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p031 | executor: 複数colour attachment（MRT） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p006） | p019 | p016 | `render/` |
@@ -94,7 +94,8 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 | ws031-p036 | executor: UBOのdataport読み出し（push dataの上限超え）とdraw間の順序 | planning | p019 | p016 | `render/`、`compiler/` |
 | ws031-p037 | executor: tiling（Y-tile/Tile4のoptimal image、copy・blit・sampling）。設計で更に分けてよい | planning | p019 | p016 | `render/`、gem |
 | ws031-p038 | compiler: 整数varying（Flat）と整数頂点属性 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/`、`render/` |
-| ws031-p039 | compiler: 16 bit・64 bitの整数と浮動小数 | planning | p020 | p017 | `compiler/` |
+| ws031-p039 | compiler: 16 bitの整数（Int16、shaderInt16、2026-10-07 範囲の変更: 64 bit は p051、Float64・Float16 は Future Work） | planned | p020 | p017 | `compiler/` |
+| ws031-p051 | compiler: 64 bitの整数（Int64、32 bitの対のlowering、Mesa nir_lower_int64 が手本。Gen12 LP は 64 bit を持たない） | planned（2026-10-07 追加） | p039 | 新規 | `compiler/` |
 | ws031-p040 | compiler: localの配列・構造体、動的index、行列の`OpPhi`、ループ内で初めてstoreするlocal | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
 | ws031-p041 | compiler: `OpSwitch`、関数呼出し（inline化）、ループ内return、trip count 0の形 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
 | ws031-p042 | compiler: SWSBを依存に基づく指定へ、命令の並べ替え | planning | p020, p038〜p041 | p017 | `compiler/` |
