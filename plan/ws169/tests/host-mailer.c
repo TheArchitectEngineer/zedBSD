@@ -83,8 +83,10 @@ main(
 	struct kl_text text;
 	struct ml_view view;
 	struct kl_ui *ui;
+	struct kl_glass_panel panels[4];
 	uint32_t *pixels;
 	uint32_t *narrow_pixels;
+	size_t panel_count;
 	int error;
 
 	/* The fonts and the prefix of the pictures. */
@@ -217,6 +219,22 @@ main(
 	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
 	test_frame(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT);
 	(void)test_save_glass(&view, &canvas, argv[3], "glass");
+
+	/*
+	 * On glass, Add Account: the form on one card in the list's and the
+	 * message's place, so the glass under it is one panel (the UAT of
+	 * 2026-10-07: two panels showed their gap through the form).
+	 */
+	test_click(&view, ui, &style, TEST_WIDTH, TEST_HEIGHT, 110, TEST_HEIGHT - 88);
+	test_check("glass-setup", "SETUP open");
+	(void)test_save_glass(&view, &canvas, argv[3], "glass-setup");
+	panel_count = ml_view_panels(&view, TEST_WIDTH, TEST_HEIGHT, panels, sizeof(panels) / sizeof(panels[0]));
+	if (panel_count == 2U && panels[1].x + panels[1].width == TEST_WIDTH) {
+		printf("PASS glass-setup-panels\n");
+	} else {
+		printf("FAIL glass-setup-panels count=%zu\n", panel_count);
+		test_failures++;
+	}
 
 	/* Everything goes. */
 	ml_view_release(&view);

@@ -92,6 +92,8 @@ struct view_layout {
 	struct kl_rect sidebar;
 	struct kl_rect list;
 	struct kl_rect reader;
+	/* The form of a new account, which takes the list's and the message's place (width 0 when it does not show). */
+	struct kl_rect form;
 };
 
 /* The folders' icons. */
@@ -102,6 +104,7 @@ static const char *const view_tools[] = { "Reply", "Reply All", "Forward" };
 static const unsigned view_tool_actions[] = { ML_ACTION_REPLY, ML_ACTION_REPLY_ALL, ML_ACTION_FORWARD };
 
 static void view_layout(const struct ml_view *view, int width, int height, struct view_layout *layout);
+static void view_layout_panes(const struct ml_view *view, int width, int height, struct view_layout *layout);
 static void view_sidebar(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_list(struct ml_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_row(struct ml_view *view, const struct kl_style *style, size_t index, const struct kl_rect *row, int chosen);
@@ -318,8 +321,6 @@ ml_view_draw(
 	struct view_layout layout;
 	struct kl_rect whole;
 	struct kl_rect bottom;
-	struct kl_rect form;
-	size_t account_count;
 
 	/* The ground: clear on glass (the desktop shows between the cards), else white. */
 	whole.x = 0;
@@ -350,26 +351,15 @@ ml_view_draw(
 		view_sidebar(view, ui, style, &layout.sidebar, now_us);
 	}
 
-	/* Without an account, or after Add Account: the form of a new account where the list and the message go. */
-	(void)ml_accounts(&account_count);
-	if (view->adding || account_count == 0U) {
-		form = layout.reader;
-		if (layout.list.width > 0) {
-			form.x = layout.list.x;
-			form.width = layout.reader.x + layout.reader.width - layout.list.x;
-		}
-
-		/* A narrow window gives the form the whole window. */
-		if (view->narrow) {
-			form = whole;
-		}
-
-		/* The form's card on glass. */
+	/*
+	 * Without an account, or after Add Account: the form of a new account
+	 * on one card where the list and the message go (ws169, the UAT of
+	 * 2026-10-07: on two cards the gap between them showed through it).
+	 */
+	if (layout.form.width > 0) {
 		if (view->glass)
-			kl_canvas_round(style->canvas, (float)form.x, (float)form.y, (float)form.width, (float)form.height, ML_VIEW_CARD_RADIUS, style->theme->glass_content);
-		view_setup(view, ui, style, &form, now_us);
-		layout.list.width = 0;
-		layout.reader.width = 0;
+			kl_canvas_round(style->canvas, (float)layout.form.x, (float)layout.form.y, (float)layout.form.width, (float)layout.form.height, ML_VIEW_CARD_RADIUS, style->theme->glass_content);
+		view_setup(view, ui, style, &layout.form, now_us);
 	}
 
 	/* The list, on its card on glass. */
@@ -425,17 +415,18 @@ ml_view_panels(
 	size_t capacity)
 {
 	struct view_layout layout;
-	const struct kl_rect *cards[3];
+	const struct kl_rect *cards[4];
 	size_t count;
 	size_t i;
 
-	/* The three panes, as the frame draws them. */
+	/* The panes, as the frame draws them (the form, when it shows, in the list's and the message's place). */
 	view_layout(view, width, height, &layout);
 	cards[0] = &layout.sidebar;
 	cards[1] = &layout.list;
 	cards[2] = &layout.reader;
+	cards[3] = &layout.form;
 	count = 0;
-	for (i = 0; i < 3U && count < capacity; i++) {
+	for (i = 0; i < 4U && count < capacity; i++) {
 		/* A pane left out has no panel. */
 		if (cards[i]->width <= 0 || cards[i]->height <= 0)
 			continue;
@@ -476,12 +467,52 @@ ml_view_wait(
 }
 
 /*
+ * Lays out the panes in a window of a size; without an account or while
+ * one is added, the form of a new account takes the list's and the
+ * message's place (the whole window when it is narrow).
+ */
+static void
+view_layout(
+	const struct ml_view *view,
+	int width,
+	int height,
+	struct view_layout *layout)
+{
+	size_t account_count;
+
+	/* The panes. */
+	view_layout_panes(view, width, height, layout);
+
+	/* The form, when there is no account or one is being added. */
+	(void)ml_accounts(&account_count);
+	if (!view->adding && account_count != 0U)
+		return;
+
+	/* One card from the list's left to the message's right, or the whole narrow window. */
+	if (view->narrow) {
+		layout->form.x = 0;
+		layout->form.y = 0;
+		layout->form.width = width;
+		layout->form.height = height;
+	} else {
+		layout->form.x = layout->list.x;
+		layout->form.y = layout->list.y;
+		layout->form.width = layout->reader.x + layout->reader.width - layout->list.x;
+		layout->form.height = layout->list.height;
+	}
+
+	/* The list and the message do not show under it. */
+	layout->list.width = 0;
+	layout->reader.width = 0;
+}
+
+/*
  * Lays out the panes in a window of a size: the folders, the list and the
  * message side by side, or in a narrow window the list or the message
  * alone; on glass, as cards with a gap between.
  */
 static void
-view_layout(
+view_layout_panes(
 	const struct ml_view *view,
 	int width,
 	int height,

@@ -1319,12 +1319,16 @@ compare(
 	const struct entry *right,
 	const struct options *options)
 {
+	const struct timespec *left_time;
+	const struct timespec *right_time;
 	int order;
 	int known;
 
-	/* By name unless a key below decides. */
+	/* By name unless a key below decides; the keys need both entries' status. */
 	order = 0;
-	known = left->status_valid && right->status_valid;
+	known = 0;
+	if (left->status_valid && right->status_valid)
+		known = 1;
 
 	/* -S, when both sizes are known: larger first (the later of -S and -t was kept). */
 	if (options->size_sort && known) {
@@ -1334,7 +1338,9 @@ compare(
 			order = 1;
 	} else if (options->time_sort && known) {
 		/* -t: newer first. */
-		order = -compare_times(entry_time(left, options), entry_time(right, options));
+		left_time = entry_time(left, options);
+		right_time = entry_time(right, options);
+		order = -compare_times(left_time, right_time);
 	}
 
 	/* Then by name. */
