@@ -86,7 +86,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q838 / q838-i01 | P2 | glass の panel の間の隙間に後ろの窓（例 Settings）の文字・縁が鮮明に透ける（T1-323 の PNG、x≈265〜280） | 隙間を blur の掛かった背景にするか、隙間を作らない。全 app に共通なら compositor の側で | q837 | cleared（2026-10-07 T1-324 (b): 隙間は壁紙の blur だけで後ろの Settings の文字は見えない、Q1 が PNG を目視） |
 | q839 / q839-i01 | P1（2026-10-07、hardware より先） | WS179 アクセントカラー（8 色の固定、2026-10-07 ユーザー） | ws179-p001 | — | pending |
 | q840 / q840-i01 | P2（UAT、小さい・先に） | Music の icon の背景を山吹色に（2026-10-07 ユーザー「MusicのアイコンがAppleに似すぎているので、背景色を山吹色にしましょう。」） | App Home の GLASS_ICON_APP_MUSIC と bar の icon、app の中の All Songs の札（今は赤・ピンクの gradient）も山吹色（#F8B500 前後）に。host の PNG と T1 の撮影 | — | cleared（2026-10-07 T1-327、Q1 が PNG を目視: App Home・bar・titlebar・All Songs が山吹色） |
-| q841 / q841-i01 | P2（UAT、優先） | [BUG-243](bugs/BUG-243.md) full の OSK で窓が縮むと表示が縦に圧縮される | compositor が app に新しい大きさを送り app が描き直すように。host か QEMU の撮影で確かめる | — | pending |
+| q841 / q841-i01 | P2（UAT、優先） | [BUG-243](bugs/BUG-243.md) full の OSK で窓が縮むと表示が縦に圧縮される | compositor が app に新しい大きさを送り app が描き直すように。host か QEMU の撮影で確かめる | — | cleared（2026-10-07 T1-332） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）
