@@ -667,8 +667,14 @@ main(
 				app_box_frame(&app);
 		}
 
-		/* The text box's inputs (the keys and an input method's text counted for the tests' line), then its frame, which takes them (ws175-p008). */
-		if (app.window.box_count != 0U) {
+		/*
+		 * The text box's inputs (the keys and an input method's text
+		 * counted for the tests' line), then its frame, which takes them
+		 * (ws175-p008); keys still waiting after a frame take the next
+		 * frames without new input (T1-324: the last letters and Esc of
+		 * a quick typing waited for the next event).
+		 */
+		if (app.window.box_count != 0U || (app.box.open && app.box.again)) {
 			box_keys = 0;
 			box_texts = 0;
 			for (index = 0; index < app.window.box_count; index++) {

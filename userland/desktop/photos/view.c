@@ -740,8 +740,9 @@ view_favorite(
 	if (photo < 0 || (size_t)photo >= count)
 		return;
 
-	/* The other way, saved by the window. */
+	/* The other way, saved by the window (changed names the month the save writes). */
 	photos[photo].favorite = !photos[photo].favorite;
+	photos[photo].changed = 1;
 	view->save = 1;
 	ph_log("FAVORITE photo=%ld on=%d", photo, photos[photo].favorite);
 	if (photos[photo].favorite)
@@ -769,8 +770,9 @@ view_turn(
 	if (photo < 0 || (size_t)photo >= count)
 		return;
 
-	/* Its turns, saved by the window (the file is not written). */
+	/* Its turns, saved by the window in its month's line (the picture's file is not written). */
 	photos[photo].turns = (photos[photo].turns + step) & 3;
+	photos[photo].changed = 1;
 	view->save = 1;
 	ph_log("TURN photo=%ld turns=%d", photo, photos[photo].turns);
 
