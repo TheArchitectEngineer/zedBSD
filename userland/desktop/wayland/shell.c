@@ -208,6 +208,9 @@ static uint32_t fullscreen_leave_eaten;
 /* How far from a double click's second press its third may be and still take the dock back (ws079-p013). */
 #define TRIPLE_CLICK_SLOP	8
 
+/* How far a docked window's title may be pulled before the window follows: a tap's jitter is no pull (BUG-247). */
+#define PULL_SLOP		8
+
 /*
  * How long a window brought back from the docked space is drawn at the size
  * it was sent while its client has not drawn that size (BUG-180): a client
@@ -447,6 +450,7 @@ static int window_centred_over(struct kwl_server *server, const struct kwl_objec
 static void draw_centred_cover(struct kwl_server *server, VkCommandBuffer command);
 static unsigned double_click(struct kwl_server *server, struct kwl_object *surface);
 static unsigned title_clicks(struct kwl_server *server, struct kwl_object *surface);
+static int click_quick(struct kwl_server *server, struct kwl_object *surface, uint64_t now);
 static int click_docked_third(struct kwl_server *server);
 static void window_resized(struct kwl_object *surface);
 static void window_lower(struct kwl_server *server, struct kwl_object *surface, const char *via);
@@ -767,6 +771,10 @@ kwl_glass_button(
 		pressed = kwl_greeter_button(server, button, state);
 		return pressed;
 	}
+
+	/* A double click is measured from the release before too (BUG-247, click_quick). */
+	if (button == KWL_BUTTON_LEFT && state == 0)
+		server->click_release_ms = kwl_milliseconds();
 
 	/* The power dialog, while it shows, takes every button (power-dialog.c, ws099-p037). */
 	pressed = kwl_power_dialog_button(server, button, state);
@@ -5923,10 +5931,12 @@ double_click(
 	struct kwl_object *surface)
 {
 	uint64_t now;
+	int quick;
 
 	/* The second press of a pair. */
 	now = kwl_milliseconds();
-	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
+	quick = click_quick(server, surface, now);
+	if (quick) {
 		server->click_surface = NULL;
 		server->click_count = 0;
 		return 1;
@@ -5952,10 +5962,12 @@ title_clicks(
 	struct kwl_object *surface)
 {
 	uint64_t now;
+	int quick;
 
 	/* A quick press after the one before on the same window goes on the run. */
 	now = kwl_milliseconds();
-	if (server->click_surface == surface && now - server->click_ms < DOUBLE_CLICK_MS) {
+	quick = click_quick(server, surface, now);
+	if (quick) {
 		server->click_count++;
 	} else {
 		server->click_surface = surface;
@@ -5970,6 +5982,35 @@ title_clicks(
 
 	/* Succeeded: how many presses the run has. */
 	return server->click_count;
+}
+
+/*
+ * Tells whether a press on a window's title is quick after the one before
+ * on the same window: within DOUBLE_CLICK_MS of that press, or of its
+ * release.  A touch pad's tap gives its press at the lift and holds it
+ * until the next tap lifts (touchpad.c), so a double tap's second press
+ * comes a whole tap after the first but right after its release (BUG-247).
+ */
+static int
+click_quick(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	uint64_t now)
+{
+	/* Only a press on the window of the run. */
+	if (server->click_surface != surface)
+		return 0;
+
+	/* Within the time of the press before. */
+	if (now - server->click_ms < DOUBLE_CLICK_MS)
+		return 1;
+
+	/* Within the time of that press's release. */
+	if (server->click_release_ms >= server->click_ms && now - server->click_release_ms < DOUBLE_CLICK_MS)
+		return 1;
+
+	/* Succeeded: a slow press, which starts a new run. */
+	return 0;
 }
 
 /*
@@ -8535,8 +8576,10 @@ glass_motion_take(
 			return 1;
 		}
 
-		/* Not far enough yet, in any direction (WS181): the window follows the pull. */
+		/* Not far enough yet, in any direction (WS181): the window follows the pull, past a tap's jitter (BUG-247). */
 		server->pull_distance = kwl_edge_distance(server->pointer_x - server->pull_start_x, server->pointer_y - server->pull_start_y);
+		if (server->pull_distance < PULL_SLOP)
+			server->pull_distance = 0;
 		if (server->pull_distance < PULL_DISTANCE)
 			return 1;
 
