@@ -90,8 +90,14 @@
 #define I915_KTEST_FAKE_REGS		96U
 #define I915_KTEST_FAKE_WRITES		96U
 
-/* How many entries the GGTT table in RAM has. */
-#define I915_KTEST_GGTT_ENTRIES		512U
+/*
+ * How many entries the GGTT table in RAM has: the GT window (memory.h) and
+ * 512 entries below it.  It was 512 alone while the window was 256 pages;
+ * the window is 64 MiB since ws035-p066 (T1-334: the window check failed and
+ * the GT memory tests after it did not run).  The table is allocated at
+ * the first run (about 132 KiB) and kept, not in the kernel image.
+ */
+#define I915_KTEST_GGTT_ENTRIES		(I915_GT_GGTT_PAGES + 512U)
 
 /* How many dwords the batch and state buffers of the fixture tests hold. */
 #define I915_KTEST_BATCH_DWORDS		1024U
@@ -188,8 +194,8 @@ struct i915_ktest_gt_state {
 	struct i915_rc6 rc6;
 	struct i915_rps rps;
 
-	/* The GGTT table in RAM, the DMA device, the GT memory and the kernel PPGTT. */
-	uint64_t ggtt_table[I915_KTEST_GGTT_ENTRIES];
+	/* The GGTT table in RAM (I915_KTEST_GGTT_ENTRIES, allocated by the first run), the DMA device, the GT memory and the kernel PPGTT. */
+	uint64_t *ggtt_table;
 	struct drv_dma_device *dma;
 	struct i915_gt_mem gm;
 	struct i915_gt_ppgtt pp;
@@ -1628,6 +1634,14 @@ i915_ktest_gt_memory(
 	/* The PPGTT entry encodings need no memory. */
 	i915_ktest_gt_encode(ktest);
 
+	/* The GGTT table in RAM, as large as the real GT window needs, allocated by the first run and kept. */
+	if (t->ggtt_table == NULL)
+		t->ggtt_table = kern_calloc(I915_KTEST_GGTT_ENTRIES, sizeof(*t->ggtt_table));
+	if (t->ggtt_table == NULL) {
+		drv_i915_ktest_check(ktest, 0, "p6c0: could not allocate the GGTT table for the GT object tests");
+		return;
+	}
+
 	/* Creates the DMA device the test objects come from. */
 	t->dma = NULL;
 	error = drv_dma_device_create(&i915_ktest_dma_constraints, &t->dma);
@@ -1697,7 +1711,7 @@ i915_ktest_gt_memory(
 		    t->pp.top_pd == NULL,
 		"p6c0: P6C0-OBJ teardown releases every object and its GGTT run");
 
-	/* Gives the DMA device back. */
+	/* Gives the DMA device back (the table is kept for the next run). */
 	(void)drv_dma_device_destroy(t->dma);
 	t->dma = NULL;
 }

@@ -28,12 +28,19 @@
 
 #include <drivers/generic/dma.h>
 #include <kern/klog.h>
+#include <kern/kmem.h>
 
 #include <uapi/errno.h>
 #include <stdint.h>
 
-/* How many entries the stand-in GGTT has (64 MiB of GGTT space). */
-#define I915_SCANOUT_KTEST_TABLE_ENTRIES	16384U
+/*
+ * How many entries the stand-in GGTT has: the GT window, the display window
+ * below it (memory.h) and 512 entries below that.  It was 16384 (64 MiB)
+ * while the two windows were 1 MiB and 32 MiB; they are 64 MiB and 1 GiB
+ * since ws035-p066 (T1-334: the setup failed).  The table is allocated at
+ * the first run (about 2.2 MiB), not in the kernel image.
+ */
+#define I915_SCANOUT_KTEST_TABLE_ENTRIES	(I915_GT_GGTT_PAGES + I915_GT_DISPLAY_PAGES + 512U)
 
 /* What an entry nobody wrote holds; any other value is a write. */
 #define I915_SCANOUT_KTEST_SENTINEL		0x5a5a5a5a5a5a5a5aULL
@@ -48,13 +55,15 @@
 #define I915_SCANOUT_KTEST_MOD_X_TILED		1ULL
 
 /*
- * The stand-in GGTT.
+ * The stand-in GGTT, I915_SCANOUT_KTEST_TABLE_ENTRIES entries allocated by
+ * the first run and kept for the boot (NULL before it): the buffer the
+ * abandon check keeps on purpose has its entries there.
  *
  * It is refilled with the sentinel at the start of the run, so any entry
  * that differs afterwards was written by the code under test.  Only the
  * one ktest thread uses it.
  */
-static uint64_t i915_scanout_ktest_table[I915_SCANOUT_KTEST_TABLE_ENTRIES];
+static uint64_t *i915_scanout_ktest_table;
 
 /*
  * The GT memory over the stand-in GGTT.
@@ -97,6 +106,14 @@ drv_i915_display_ktest_scanout(
 {
 	struct drv_dma_device *dma;
 	int error;
+
+	/* The stand-in GGTT, as large as the real windows need (the body fills it). */
+	if (i915_scanout_ktest_table == NULL)
+		i915_scanout_ktest_table = kern_calloc(I915_SCANOUT_KTEST_TABLE_ENTRIES, sizeof(*i915_scanout_ktest_table));
+	if (i915_scanout_ktest_table == NULL) {
+		drv_i915_ktest_check(ktest, 0, "scanout: could not allocate the stand-in GGTT for the scanout tests");
+		return;
+	}
 
 	/* Creates the DMA device the backing pages come from. */
 	dma = NULL;
