@@ -150,6 +150,7 @@
 		kl_system_displays_mode;
 		kl_system_displays_apply;
 		kl_system_displays_set_brightness;
+		kl_system_displays_set_shown;
 		kl_system_network_get_links;
 		kl_system_network_get_dns;
 		kl_system_network_get_saved;

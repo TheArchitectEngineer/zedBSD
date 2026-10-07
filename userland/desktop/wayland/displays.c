@@ -345,6 +345,14 @@ kwl_displays_format(
 		used += (size_t)written;
 	}
 
+	/* Each display turned off (ws113-p014). */
+	for (index = 0U; index < config->off_count && index < KWL_DISPLAYS_PLACES; index++) {
+		written = snprintf(text + used, size - used, "off=%s\n", config->off[index]);
+		if (written < 0 || (size_t)written >= size - used)
+			return 0U;
+		used += (size_t)written;
+	}
+
 	/* Succeeded: the text and its length. */
 	return used;
 }
@@ -639,6 +647,13 @@ displays_line(
 		return 0;
 	}
 
+	/* A display turned off (ws113-p014); a key too long, or one too many, is skipped. */
+	differs = strcmp(line, "off");
+	if (differs == 0) {
+		(void)kwl_displays_set_off(config, value, 1U);
+		return 0;
+	}
+
 	/* Succeeded: a key of a later version, skipped. */
 	return 0;
 }
@@ -693,5 +708,71 @@ displays_number(
 
 	/* Succeeded: the coordinate. */
 	*number = (int32_t)value;
+	return 0;
+}
+
+/* Tells whether the choice has a display turned off (ws113-p014). */
+int
+kwl_displays_is_off(
+	const struct kwl_display_config *config,
+	const char *key)
+{
+	unsigned index;
+	int differs;
+
+	/* Each display turned off. */
+	for (index = 0U; index < config->off_count && index < KWL_DISPLAYS_PLACES; index++) {
+		differs = strcmp(config->off[index], key);
+		if (differs == 0)
+			return 1;
+	}
+
+	/* Not off. */
+	return 0;
+}
+
+/*
+ * Turns a display off in the choice, or on again (ws113-p014).  Returns 0
+ * (also when it was so already), EINVAL for a key the file cannot keep, or
+ * ENOSPC when too many are off.
+ */
+int
+kwl_displays_set_off(
+	struct kwl_display_config *config,
+	const char *key,
+	unsigned off)
+{
+	size_t length;
+	unsigned index;
+	int differs;
+
+	/* A key the file can keep. */
+	length = strlen(key);
+	if (length == 0U || length >= KWL_DISPLAYS_KEY)
+		return EINVAL;
+
+	/* Its line, when it has one: kept for off, taken out for on. */
+	for (index = 0U; index < config->off_count; index++) {
+		differs = strcmp(config->off[index], key);
+		if (differs != 0)
+			continue;
+		if (!off) {
+			config->off_count--;
+			memmove(config->off[index], config->off[index + 1U], (config->off_count - index) * sizeof(config->off[0]));
+		}
+
+		/* As asked. */
+		return 0;
+	}
+
+	/* On already, or a new line while there is room. */
+	if (!off)
+		return 0;
+	if (config->off_count >= KWL_DISPLAYS_PLACES)
+		return ENOSPC;
+	memcpy(config->off[config->off_count], key, length + 1U);
+	config->off_count++;
+
+	/* Succeeded: off. */
 	return 0;
 }

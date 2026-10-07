@@ -109,6 +109,10 @@
  *                                                     serial is the snapshot the client saw
  *   request 2 set_brightness(uint request, string key, uint percent)
  *                                                     a built-in panel's light, 0 to 100
+ *   request 3 set_shown(uint request, string key, uint shown)   (since 19, ws113-p014)
+ *                                                     a display turned off (0) or on (1) in the
+ *                                                     extended mode; the anchor turned off moves to
+ *                                                     a display on
  *   event   0 output(string key, string label, int x, int y, uint width, uint height, uint refresh_mhz,
  *                    uint flags, uint brightness)     one display connected: KL_SYSTEM_DISPLAY_* flags, the
  *                                                     light in percent (0 without one)
@@ -122,7 +126,10 @@
  *   do not join or are out of range are answered invalid; a session not
  *   active (the login screen, a locked one) is denied.  A choice applied
  *   but not written to displays.conf is answered applied 1, saved 0.  The
- *   light of a display without one is unsupported.
+ *   light of a display without one is unsupported.  A display turned off
+ *   carries the flag OFF (also in the mirror, which shows it still); turning
+ *   off the last display on, or any in the mirror, is invalid; a key not
+ *   connected is not found.
  *
  * kl_system_audio_v1
  *   request 0 destroy
@@ -252,7 +259,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		18U
+#define KL_SYSTEM_MANAGER_VERSION		19U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -315,6 +322,9 @@
 /* The displays (ws113-p005). */
 #define KL_SYSTEM_SINCE_DISPLAYS		18U
 
+/* Since when the displays have set_shown (ws113-p014). */
+#define KL_SYSTEM_SINCE_SHOWN			19U
+
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
@@ -333,12 +343,13 @@
  * kl_system_displays_v1's requests and events (ws113-p005), the modes, a
  * display's flags (built in, the desktop's anchor, shown now, with a light
  * the compositor can set, held back by the limit of the displays shown at
- * once), and the longest key and label an output carries and places a
+ * once, turned off by the user, ws113-p014), and the longest key and label an output carries and places a
  * request carries (with their NULs).
  */
 #define KL_SYSTEM_DISPLAYS_DESTROY		0U
 #define KL_SYSTEM_DISPLAYS_APPLY		1U
 #define KL_SYSTEM_DISPLAYS_SET_BRIGHTNESS	2U
+#define KL_SYSTEM_DISPLAYS_SET_SHOWN		3U
 #define KL_SYSTEM_DISPLAYS_EVENT_OUTPUT		0U
 #define KL_SYSTEM_DISPLAYS_EVENT_DONE		1U
 #define KL_SYSTEM_DISPLAYS_EVENT_RESULT		2U
@@ -349,6 +360,7 @@
 #define KL_SYSTEM_DISPLAY_SHOWN			0x4U
 #define KL_SYSTEM_DISPLAY_BACKLIGHT		0x8U
 #define KL_SYSTEM_DISPLAY_LIMITED		0x10U
+#define KL_SYSTEM_DISPLAY_OFF			0x20U
 #define KL_SYSTEM_DISPLAY_KEY_MAX		64U
 #define KL_SYSTEM_DISPLAY_LABEL_MAX		64U
 #define KL_SYSTEM_DISPLAY_PLACES_MAX		1024U

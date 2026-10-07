@@ -72,7 +72,6 @@ static VkResult heads_targets(struct kwl_compose *compose, struct kwl_head *head
 static void heads_targets_destroy(struct kwl_compose *compose, struct kwl_head *head);
 static struct kwl_head *heads_find(struct kwl_compose *compose, VkDisplayKHR display);
 static struct kwl_head *heads_free(struct kwl_compose *compose);
-static int heads_listed(const struct kwl_compose *compose, VkDisplayKHR display);
 static void heads_place(struct kwl_server *server, struct kwl_head *head);
 static unsigned heads_rects(struct kwl_server *server, const struct kwl_head *skip, struct kwl_display_rect *rects, unsigned room);
 static int heads_needs_frame(struct kwl_server *server, const struct kwl_head *head);
@@ -90,6 +89,8 @@ static void heads_windows_follow(struct kwl_server *server, const struct kwl_pla
 static void heads_window_place(struct kwl_server *server, struct kwl_object *window, const struct kwl_plane_rect *from, const struct kwl_plane_rect *to, unsigned slot, const char *why);
 static int heads_is_window(const struct kwl_object *object);
 static void heads_redraw(struct kwl_server *server);
+static int heads_index(const struct kwl_compose *compose, VkDisplayKHR display);
+static int heads_off(const struct kwl_compose *compose, unsigned index);
 
 /*
  * Reads displays.conf once: the mode and the places the user chose.  A
@@ -143,9 +144,9 @@ kwl_heads_config_load(
 
 /*
  * Brings the heads in line with the displays of the last enumeration:
- * a head for each display connected but the output's, the one kept off and
- * the ones refused since the last hotplug; no head for a display gone or
- * lost.
+ * a head for each display connected but the output's, the one kept off,
+ * the ones the user turned off (ws113-p014) and the ones refused since the
+ * last hotplug; no head for a display gone or lost.
  */
 void
 kwl_heads_sync(
@@ -156,6 +157,7 @@ kwl_heads_sync(
 	unsigned index;
 	unsigned changed;
 	int listed;
+	int off;
 	int error;
 
 	/* Only window mode's open output has heads. */
@@ -169,9 +171,13 @@ kwl_heads_sync(
 		head = &compose->heads[index];
 		if (!head->open)
 			continue;
-		listed = heads_listed(compose, head->display);
-		if (listed &&
+		listed = heads_index(compose, head->display);
+		off = 0;
+		if (listed >= 0)
+			off = heads_off(compose, (unsigned)listed);
+		if (listed >= 0 &&
 		    !head->lost &&
+		    !off &&
 		    head->display != compose->display &&
 		    head->display != compose->kept_off) {
 			/* Kept, and drawn again: a hotplug may have made its swapchain out of date, which its next acquire tells. */
@@ -180,7 +186,7 @@ kwl_heads_sync(
 			continue;
 		}
 
-		/* Its display is gone, lost, or the output's now. */
+		/* Its display is gone, lost, turned off (ws113-p014), or the output's now. */
 		heads_close(server, head);
 		changed = 1U;
 	}
@@ -201,6 +207,9 @@ kwl_heads_sync(
 		if (compose->displays[index] == compose->kept_off)
 			continue;
 		if ((compose->limited & ((uint32_t)1U << index)) != 0U)
+			continue;
+		off = heads_off(compose, index);
+		if (off)
 			continue;
 		head = heads_find(compose, compose->displays[index]);
 		if (head != NULL)
@@ -604,6 +613,10 @@ kwl_displays_apply(
 
 	/* The windows and the pointer on the heads go with them, or to the anchor for the mirror. */
 	heads_windows_follow(server, before, wanted->mode == KWL_DISPLAYS_MIRROR);
+
+	/* The displays turned off follow the mode: shown in the mirror, no head in the extended mode (ws113-p014). */
+	kwl_heads_sync(server);
+	kwl_displays_anchor_follow(server);
 
 	/* The choice kept: the mode, the anchor (the output's display) and every place shown now. */
 	compose->config.mode = wanted->mode;
@@ -1014,24 +1027,6 @@ heads_free(
 
 	/* Every head is open. */
 	return NULL;
-}
-
-/* Tells whether a display is in the list of the last enumeration. */
-static int
-heads_listed(
-	const struct kwl_compose *compose,
-	VkDisplayKHR display)
-{
-	unsigned index;
-
-	/* Handles compare only for equality. */
-	for (index = 0U; index < compose->display_count; index++) {
-		if (compose->displays[index] == display)
-			return 1;
-	}
-
-	/* Not connected. */
-	return 0;
 }
 
 /*
@@ -1950,4 +1945,183 @@ heads_is_window(
 
 	/* Succeeded: a window. */
 	return 1;
+}
+
+/*
+ * Turns a display off, or on again, in the extended mode (ws113-p014,
+ * the system extension's set_shown): kept in displays.conf, its head
+ * closed (its windows to the anchor) or opened, and an anchor turned off
+ * gives the desktop to a display on.  *saved is 0, or the error of writing
+ * the file.  Returns 0, EINVAL in the mirror or for the last display on,
+ * ENOENT for a key not connected, or the choice's error.
+ */
+int
+kwl_displays_set_shown(
+	struct kwl_server *server,
+	const char *key,
+	unsigned shown,
+	int *saved)
+{
+	struct kwl_compose *compose;
+	struct kwl_head *head;
+	const char *what;
+	unsigned index;
+	unsigned other;
+	unsigned others;
+	int differs;
+	int off;
+	int error;
+
+	/* Only the extended mode turns a display off. */
+	*saved = 0;
+	compose = server->compose;
+	if (compose == NULL)
+		return ENODEV;
+	if (compose->display_mode != KWL_DISPLAYS_EXTENDED)
+		return EINVAL;
+
+	/* The display named, connected now. */
+	for (index = 0U; index < compose->display_count; index++) {
+		differs = strcmp(compose->display_names[index], key);
+		if (differs == 0)
+			break;
+	}
+
+	/* Not connected now. */
+	if (index == compose->display_count)
+		return ENOENT;
+
+	/* Not the last display on (one kept off under a closed lid is not on). */
+	others = 0U;
+	for (other = 0U; other < compose->display_count && !shown; other++) {
+		if (other == index || compose->displays[other] == compose->kept_off)
+			continue;
+		off = kwl_displays_is_off(&compose->config, compose->display_names[other]);
+		if (!off)
+			others++;
+	}
+
+	/* The last display on stays on. */
+	if (!shown && others == 0U)
+		return EINVAL;
+
+	/* The choice, and the file. */
+	error = kwl_displays_set_off(&compose->config, key, !shown);
+	if (error != 0)
+		return error;
+	*saved = heads_save(&compose->config);
+	if (*saved != 0)
+		printf("KWL DISPLAYS save failed errno=%d\n", *saved);
+
+	/* Its head closed (its windows and the pointer to the anchor), the heads of the displays on opened. */
+	head = heads_find(compose, compose->displays[index]);
+	if (!shown && head != NULL)
+		heads_close(server, head);
+	kwl_heads_sync(server);
+
+	/* An anchor turned off gives the desktop away, and the clients hear of it. */
+	kwl_displays_anchor_follow(server);
+	heads_changed(server);
+	what = "off";
+	if (shown)
+		what = "on";
+	printf("KWL DISPLAYS %s name=%s\n", what, key);
+
+	/* Succeeded: turned off or on. */
+	return 0;
+}
+
+/*
+ * Gives the desktop to a display on when the anchor's display is turned
+ * off (ws113-p014): the output moves to the first connected display on that
+ * takes it.  Nothing when the anchor is on, or no other display is on.
+ */
+void
+kwl_displays_anchor_follow(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	unsigned index;
+	int anchor;
+	int off;
+	int error;
+
+	/* An open output whose display is turned off. */
+	compose = server->compose;
+	if (compose == NULL || !compose->output_open || compose->output_lost)
+		return;
+	anchor = heads_index(compose, compose->display);
+	if (anchor < 0)
+		return;
+	off = heads_off(compose, (unsigned)anchor);
+	if (!off)
+		return;
+
+	/* The first display on that takes the output. */
+	for (index = 0U; index < compose->display_count; index++) {
+		if ((int)index == anchor || compose->displays[index] == compose->kept_off)
+			continue;
+		if ((compose->limited & ((uint32_t)1U << index)) != 0U)
+			continue;
+		off = heads_off(compose, index);
+		if (off)
+			continue;
+
+		/* The move. */
+		printf("KWL DISPLAYS anchor off name=%s to=%s\n", compose->display_name, compose->display_names[index]);
+		error = kwl_output_switch(server, compose->displays[index]);
+		if (error == 0)
+			return;
+	}
+}
+
+/* Finds a display's place in the last enumeration: its index, or -1 when it is not connected. */
+static int
+heads_index(
+	const struct kwl_compose *compose,
+	VkDisplayKHR display)
+{
+	unsigned index;
+
+	/* Handles compare only for equality. */
+	for (index = 0U; index < compose->display_count; index++) {
+		if (compose->displays[index] == display)
+			return (int)index;
+	}
+
+	/* Not connected. */
+	return -1;
+}
+
+/*
+ * Tells whether a display connected now is off (ws113-p014): turned off
+ * by the user, in the extended mode, while another connected display is
+ * on (with none on, every display shows: the screen is never all off).
+ */
+static int
+heads_off(
+	const struct kwl_compose *compose,
+	unsigned index)
+{
+	unsigned other;
+	int off;
+
+	/* Turned off, in the extended mode. */
+	if (compose->display_mode != KWL_DISPLAYS_EXTENDED || index >= compose->display_count)
+		return 0;
+	off = kwl_displays_is_off(&compose->config, compose->display_names[index]);
+	if (!off)
+		return 0;
+
+	/* Another display connected and on (not one kept off under a closed lid). */
+	for (other = 0U; other < compose->display_count; other++) {
+		if (other == index || compose->displays[other] == compose->kept_off)
+			continue;
+		off = kwl_displays_is_off(&compose->config, compose->display_names[other]);
+		if (!off)
+			return 1;
+	}
+
+	/* None: it shows. */
+	return 0;
 }

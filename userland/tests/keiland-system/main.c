@@ -17,7 +17,8 @@
  * "power ACTION" (1 power off, 2 restart, 3 suspend), "eject ID",
  * "display-mode extended|mirror", "display-place KEY X Y" (the extended
  * mode with one display's place), "brightness KEY PERCENT" (ws113-p005;
- * each request waits up to the timeout for its result), "displays" (the
+ * each request waits up to the timeout for its result), "display-shown
+ * KEY on|off" (ws113-p014: a display turned on or off), "displays" (the
  * displays' snapshot), "watch" (the
  * changes until the timeout) and "monitor" (the machine's monitor at
  * 250 ms until the timeout: its info and each frame, WS134 p012).  Each
@@ -68,6 +69,7 @@ static const struct probe_command probe_commands[] = {
 	{ "display-mode", 1 },
 	{ "display-place", 3 },
 	{ "brightness", 2 },
+	{ "display-shown", 2 },
 	{ "displays", 0 },
 	{ "watch", 0 },
 	{ "monitor", 0 },
@@ -300,6 +302,7 @@ probe_display_ask(
 {
 	struct kl_display_place place;
 	unsigned mode;
+	unsigned shown;
 	int differs;
 
 	/* The mode alone. */
@@ -319,6 +322,14 @@ probe_display_ask(
 		place.x = (int32_t)atol(words[1]);
 		place.y = (int32_t)atol(words[2]);
 		return kl_system_displays_apply(system, KL_DISPLAYS_EXTENDED, &place, 1U, request);
+	}
+
+	/* A display turned on or off (ws113-p014). */
+	differs = strcmp(name, "display-shown");
+	if (differs == 0) {
+		differs = strcmp(words[1], "off");
+		shown = (unsigned)(differs != 0);
+		return kl_system_displays_set_shown(system, words[0], shown, request);
 	}
 
 	/* A light. */

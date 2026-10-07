@@ -223,6 +223,8 @@ test_file(void)
 		"place=broken\n"
 		"place=Venus virtual display 1 -1024 0\n"
 		"place=1 2\n"
+		"off=Venus virtual display 1\n"
+		"off=Venus virtual display 1\n"
 		"no equals here\n";
 	struct kwl_display_config config;
 	struct kwl_display_config again;
@@ -254,6 +256,25 @@ test_file(void)
 	check(error == 0 && again.mode == config.mode && again.count == config.count, "written and read again");
 	check(strcmp(again.places[0].key, config.places[0].key) == 0 && again.places[1].x == -1280, "the places again");
 	check(again.has_brightness == 1U && again.brightness == 40U, "the light again");
+
+	/* The displays turned off (ws113-p014): one line however often named, kept through writing, turned on again. */
+	check(config.off_count == 1U && kwl_displays_is_off(&config, "Venus virtual display 1") == 1, "a display off");
+	check(again.off_count == 1U && kwl_displays_is_off(&again, "Venus virtual display 1") == 1, "the display off again");
+	check(kwl_displays_is_off(&again, "zedbsd-port-v1:pci:0000:00:02.0:edp:A") == 0, "another display on");
+	error = kwl_displays_set_off(&again, "zedbsd-port-v1:pci:0000:00:02.0:edp:A", 1U);
+	check(error == 0 && again.off_count == 2U, "a second display off");
+	error = kwl_displays_set_off(&again, "Venus virtual display 1", 0U);
+	check(error == 0 && again.off_count == 1U && kwl_displays_is_off(&again, "Venus virtual display 1") == 0, "turned on again");
+	check(kwl_displays_is_off(&again, "zedbsd-port-v1:pci:0000:00:02.0:edp:A") == 1, "the other stays off");
+	error = kwl_displays_set_off(&again, "", 1U);
+	check(error == EINVAL, "an empty key refused");
+	for (index = 0U; index < KWL_DISPLAYS_PLACES + 1U; index++) {
+		(void)snprintf(key, sizeof(key), "display %u", index);
+		error = kwl_displays_set_off(&again, key, 1U);
+	}
+
+	/* Past the limit, refused. */
+	check(error == ENOSPC && again.off_count == KWL_DISPLAYS_PLACES, "the limit of displays off");
 	error = kwl_displays_parse("version=1\nbrightness=101\n", 26U, &again);
 	check(error == 0 && again.has_brightness == 0U, "a light out of range is skipped");
 

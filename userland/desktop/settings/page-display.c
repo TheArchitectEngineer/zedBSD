@@ -32,13 +32,14 @@
 #include <string.h>
 #include <time.h>
 
-/* The page's controls (hit indices): the two modes, Apply, Revert, the light, and the displays' cards from DISPLAY_CARD. */
+/* The page's controls (hit indices): the two modes, Apply, Revert, the light, the displays' cards from DISPLAY_CARD, and their on/off switches from DISPLAY_SHOWN (ws113-p014). */
 #define DISPLAY_EXTEND		1
 #define DISPLAY_MIRROR		2
 #define DISPLAY_APPLY		3
 #define DISPLAY_REVERT		4
 #define DISPLAY_LIGHT		5
 #define DISPLAY_CARD		10
+#define DISPLAY_SHOWN		30
 
 /* The cards' margin, the space between cards, the arrangement's height, a row's height and the text sizes. */
 #define DISPLAY_PAD		18
@@ -49,6 +50,11 @@
 #define DISPLAY_TITLED		70
 #define DISPLAY_TEXT_TITLE	15U
 #define DISPLAY_TEXT_SMALL	13U
+
+/* The room a row's switch takes at its right, and the switch's size (widgets.c's). */
+#define DISPLAY_SWITCH		64
+#define DISPLAY_TOGGLE		44
+#define DISPLAY_TOGGLE_HEIGHT	24
 
 /* How often a light being dragged is sent (ms). */
 #define DISPLAY_LIGHT_MS	100U
@@ -65,6 +71,8 @@ static void display_take(struct se_app *app, int keep_draft);
 static int display_same_set(const struct se_display *display, const struct kl_display *displays, size_t count);
 static void display_apply(struct se_app *app);
 static void display_send_light(struct se_app *app, int final);
+static void display_send_shown(struct se_app *app, unsigned index);
+static unsigned display_on_count(const struct se_display *display);
 static void display_message(struct se_display *display, const char *text, int bad);
 static uint64_t display_now_ms(void);
 
@@ -178,6 +186,12 @@ se_display_press(
 	/* The draft sent. */
 	if (index == DISPLAY_APPLY && display->edited) {
 		display_apply(app);
+		return;
+	}
+
+	/* A display turned off or on, at once (ws113-p014). */
+	if (index >= DISPLAY_SHOWN && (size_t)(index - DISPLAY_SHOWN) < display->count) {
+		display_send_shown(app, (unsigned)(index - DISPLAY_SHOWN));
 		return;
 	}
 
@@ -317,6 +331,33 @@ se_display_result(
 		if (error != 0)
 			display_message(display, kl_tr("The brightness could not be changed."), 1);
 		app->dirty = 1;
+		return 1;
+	}
+
+	/* A display turned off or on (ws113-p014): only its failure is told. */
+	if (display->shown_request != 0U && request == display->shown_request) {
+		display->shown_request = 0U;
+		se_log("DISPLAY shown result errno=%d", error);
+		app->dirty = 1;
+		switch (error) {
+		case 0:
+			display_message(display, "", 0);
+			break;
+		case EINVAL:
+			display_message(display, kl_tr("At least one display stays on."), 1);
+			break;
+		case ENODEV:
+			display_message(display, kl_tr("The display is not connected."), 1);
+			break;
+		case EPERM:
+			display_message(display, kl_tr("The displays can be changed only in an unlocked session."), 1);
+			break;
+		default:
+			display_message(display, kl_tr("The display could not be turned off or on."), 1);
+			break;
+		}
+
+		/* The answer was the page's. */
 		return 1;
 	}
 
@@ -485,9 +526,23 @@ display_rows(
 	char value[96];
 	char label[KL_DISPLAY_LABEL_MAX + 32];
 	size_t index;
+	unsigned on_count;
+	int switches;
+	int row_width;
+	int on;
+	int enabled;
+	int top;
 
-	/* Each display. */
+	/*
+	 * Each display; in the extended mode each has a switch that turns it off
+	 * or on at once (ws113-p014), the last one on kept on.
+	 */
 	display = &app->display;
+	switches = display->mode == KL_DISPLAYS_EXTENDED && display->count > 1U;
+	row_width = width;
+	if (switches)
+		row_width = width - DISPLAY_SWITCH;
+	on_count = display_on_count(display);
 	for (index = 0U; index < display->count; index++) {
 		shown = &display->displays[index];
 
@@ -502,7 +557,17 @@ display_rows(
 			(void)snprintf(value, sizeof(value), "%s", kl_tr("Not shown: the computer shows no more displays at once"));
 		else if ((shown->flags & KL_DISPLAY_SHOWN) == 0U)
 			(void)snprintf(value, sizeof(value), "%s", kl_tr("Off"));
-		y = se_row_value(app, canvas, x, y, width, label, value, index + 1U == display->count);
+		top = y;
+		y = se_row_value(app, canvas, x, y, row_width, label, value, index + 1U == display->count);
+		if (!switches)
+			continue;
+
+		/* Its switch: on unless turned off; the last one on, and any while a request is awaited, cannot be flipped. */
+		on = (shown->flags & KL_DISPLAY_OFF) == 0U;
+		enabled = display->shown_request == 0U && display->request == 0U;
+		if (on && on_count <= 1U)
+			enabled = 0;
+		se_toggle_draw(app, canvas, x + width - DISPLAY_PAD - DISPLAY_TOGGLE, top + (DISPLAY_ROW - DISPLAY_TOGGLE_HEIGHT) / 2, on, enabled, DISPLAY_SHOWN + (int)index);
 	}
 
 	/* The edge below the rows. */
@@ -576,6 +641,8 @@ display_rects(
 	for (index = 0U; index < display->count && count < SE_ARRANGE_MAX; index++) {
 		draft = &display->draft[index];
 		if ((draft->flags & KL_DISPLAY_LIMITED) != 0U)
+			continue;
+		if ((draft->flags & KL_DISPLAY_OFF) != 0U && display->draft_mode == KL_DISPLAYS_EXTENDED)
 			continue;
 
 		/* Its draft place and size; the mirror's at the origin. */
@@ -663,6 +730,9 @@ display_take(
 	struct se_display *display;
 	struct kl_display displays[KL_DISPLAYS_MAX];
 	size_t count;
+	size_t slot;
+	int32_t x;
+	int32_t y;
 	int same;
 	int index;
 
@@ -680,9 +750,19 @@ display_take(
 	if (index >= 0 && !display->light_dragging)
 		display->light = display->displays[index].brightness;
 
-	/* An edited draft of the same displays is kept (a card being dragged too). */
-	if (keep_draft && display->edited && same)
+	/* An edited draft of the same displays is kept (a card being dragged too), with what the desktop tells of each now but its place. */
+	if (keep_draft && display->edited && same) {
+		for (slot = 0U; slot < count; slot++) {
+			x = display->draft[slot].x;
+			y = display->draft[slot].y;
+			display->draft[slot] = displays[slot];
+			display->draft[slot].x = x;
+			display->draft[slot].y = y;
+		}
+
+		/* Kept. */
 		return;
+	}
 
 	/* The draft is the desktop's choice; a draft lost to other displays is said. */
 	if (keep_draft && display->edited && !same)
@@ -734,7 +814,7 @@ display_apply(
 	display = &app->display;
 	count = 0U;
 	for (index = 0U; index < display->count && display->draft_mode == KL_DISPLAYS_EXTENDED; index++) {
-		if ((display->draft[index].flags & KL_DISPLAY_LIMITED) != 0U)
+		if ((display->draft[index].flags & (KL_DISPLAY_LIMITED | KL_DISPLAY_OFF)) != 0U)
 			continue;
 		places[count].key = display->draft[index].key;
 		places[count].x = display->draft[index].x;
@@ -808,4 +888,52 @@ display_now_ms(void)
 	/* The clock. */
 	(void)clock_gettime(CLOCK_MONOTONIC, &now);
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+}
+
+/* Turns a display off when it is on, on when it is off (ws113-p014): asked of the desktop at once. */
+static void
+display_send_shown(
+	struct se_app *app,
+	unsigned index)
+{
+	struct se_display *display;
+	unsigned shown;
+	int error;
+
+	/* Not while another request is awaited. */
+	display = &app->display;
+	if (display->shown_request != 0U || app->system == NULL)
+		return;
+
+	/* The other way from now. */
+	display->message[0] = '\0';
+	shown = (unsigned)((display->displays[index].flags & KL_DISPLAY_OFF) != 0U);
+	error = kl_system_displays_set_shown(app->system, display->displays[index].key, shown, &display->shown_request);
+	se_log("DISPLAY shown %s shown=%u error=%d", display->displays[index].key, shown, error);
+	if (error != 0) {
+		display->shown_request = 0U;
+		display_message(display, kl_tr("This desktop cannot turn displays off."), 1);
+	}
+
+	/* The page shows it. */
+	app->dirty = 1;
+}
+
+/* Counts the displays on: connected, not turned off, not held back (ws113-p014). */
+static unsigned
+display_on_count(
+	const struct se_display *display)
+{
+	unsigned count;
+	size_t index;
+
+	/* Each display. */
+	count = 0U;
+	for (index = 0U; index < display->count; index++) {
+		if ((display->displays[index].flags & (KL_DISPLAY_OFF | KL_DISPLAY_LIMITED)) == 0U)
+			count++;
+	}
+
+	/* Succeeded: how many. */
+	return count;
 }

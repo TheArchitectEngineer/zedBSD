@@ -85,6 +85,7 @@ kwl_output_tick(
 		output_hotplug_register(server);
 		output_enumerate(server);
 		kwl_heads_sync(server);
+		kwl_displays_anchor_follow(server);
 		return;
 	}
 
@@ -139,6 +140,9 @@ kwl_output_tick(
 	if (!signalled)
 		(void)output_enumerate(server);
 	kwl_heads_sync(server);
+
+	/* An anchor turned off by the user gives the desktop to a display on (ws113-p014). */
+	kwl_displays_anchor_follow(server);
 }
 
 /*

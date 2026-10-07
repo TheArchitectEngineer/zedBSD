@@ -31,6 +31,9 @@
  *                             key may hold spaces; X and Y are the last
  *                             two words)
  *   brightness=N              the built-in panel's light, 0 to 100 (ws113-p005)
+ *   off=KEY                   a display the user turned off in the extended mode
+ *                             (ws113-p014; the mirror shows it still, and it is
+ *                             shown when no other display is connected)
  *
  * KEY is a display's persistent connector key (D-ID A2, the display's name,
  * "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B").  Lines of other keys are left
@@ -80,7 +83,8 @@ struct kwl_display_place {
 
 /*
  * The choice the file keeps: the mode, the mirror's anchor (empty: none),
- * the built-in panel's light when one was chosen, and the places.
+ * the built-in panel's light when one was chosen, the places, and the
+ * displays turned off (ws113-p014).
  */
 struct kwl_display_config {
 	unsigned mode;
@@ -89,6 +93,8 @@ struct kwl_display_config {
 	unsigned brightness;
 	unsigned count;
 	struct kwl_display_place places[KWL_DISPLAYS_PLACES];
+	unsigned off_count;
+	char off[KWL_DISPLAYS_PLACES][KWL_DISPLAYS_KEY];
 };
 
 void kwl_displays_fit(uint32_t source_width, uint32_t source_height, uint32_t width, uint32_t height, struct kwl_display_rect *fitted);
@@ -101,5 +107,7 @@ size_t kwl_displays_format(const struct kwl_display_config *config, char *text, 
 int kwl_displays_parse_place(const char *text, char *key, size_t size, int32_t *x, int32_t *y);
 int kwl_displays_find(const struct kwl_display_config *config, const char *key);
 int kwl_displays_set(struct kwl_display_config *config, const char *key, int32_t x, int32_t y);
+int kwl_displays_is_off(const struct kwl_display_config *config, const char *key);
+int kwl_displays_set_off(struct kwl_display_config *config, const char *key, unsigned off);
 
 #endif

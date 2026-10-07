@@ -573,8 +573,9 @@ struct se_sharing {
  * it in the plane's units), the plane's mapping onto the arrangement's box
  * in the last frame (arrange.h), the light's slider (its rectangle, being
  * dragged, the light shown and when it was last sent), the requests
- * awaited (0 for none), the last answer (red for a failure), and whether
- * the first snapshot was taken.
+ * awaited (0 for none; a display turned off or on too, ws113-p014), the
+ * last answer (red for a failure), and whether the first snapshot was
+ * taken.
  */
 struct se_display {
 	struct kl_display displays[KL_DISPLAYS_MAX];
@@ -594,6 +595,7 @@ struct se_display {
 	uint64_t light_sent_ms;
 	uint32_t request;
 	uint32_t light_request;
+	uint32_t shown_request;
 	char message[SE_MESSAGE];
 	int message_bad;
 	int taken;

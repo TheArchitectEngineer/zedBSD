@@ -149,46 +149,54 @@ msg	Green	緑
 msg	Graphite	グラファイト
 # userland/desktop/settings/page-about.c:113
 msg	Show Welcome again	ようこそをもう一度見る
-# userland/desktop/settings/page-display.c:100
+# userland/desktop/settings/page-display.c:108
 msg	Extend spreads the desktop over the displays. Mirror shows it on each.	拡張はデスクトップを複数のディスプレイに広げます。ミラーはどのディスプレイにも同じものを映します。
-# userland/desktop/settings/page-display.c:102
+# userland/desktop/settings/page-display.c:110
 msg	Displays	ディスプレイ
-# userland/desktop/settings/page-display.c:106
+# userland/desktop/settings/page-display.c:114
 msg	Extend	拡張
-# userland/desktop/settings/page-display.c:107
+# userland/desktop/settings/page-display.c:115
 msg	Mirror	ミラー
-# userland/desktop/settings/page-display.c:111
+# userland/desktop/settings/page-display.c:119
 msg	With one display both show the same.	ディスプレイが1つの時はどちらも同じです。
-# userland/desktop/settings/page-display.c:120, userland/desktop/settings/page-display.c:121, userland/desktop/settings/page-languages.c:206
+# userland/desktop/settings/page-display.c:131, userland/desktop/settings/page-display.c:132, userland/desktop/settings/page-languages.c:206
 msg	Apply	適用
-# userland/desktop/settings/page-display.c:122, userland/desktop/settings/page-display.c:123
+# userland/desktop/settings/page-display.c:133, userland/desktop/settings/page-display.c:134
 msg	Revert	元に戻す
-# userland/desktop/settings/page-display.c:315, userland/desktop/settings/page-display.c:779
+# userland/desktop/settings/page-display.c:332, userland/desktop/settings/page-display.c:862
 msg	The brightness could not be changed.	明るさを変えられませんでした。
-# userland/desktop/settings/page-display.c:335, userland/desktop/settings/page-display.c:686
-msg	The displays changed. Arrange them again.	ディスプレイが変わりました。もう一度並べてください。
-# userland/desktop/settings/page-display.c:338
-msg	The displays must touch along an edge and not overlap.	ディスプレイは辺で接し、重ならないように並べてください。
-# userland/desktop/settings/page-display.c:341
-msg	The displays can be changed only in an unlocked session.	ディスプレイはロックされていないセッションでだけ変えられます。
-# userland/desktop/settings/page-display.c:344, userland/desktop/settings/page-display.c:747
-msg	This desktop cannot change the displays.	このデスクトップではディスプレイを変えられません。
 # userland/desktop/settings/page-display.c:347
+msg	At least one display stays on.	少なくとも 1 つのディスプレイはオンのままです。
+# userland/desktop/settings/page-display.c:350
+msg	The display is not connected.	ディスプレイが接続されていません。
+# userland/desktop/settings/page-display.c:353, userland/desktop/settings/page-display.c:385
+msg	The displays can be changed only in an unlocked session.	ディスプレイはロックされていないセッションでだけ変えられます。
+# userland/desktop/settings/page-display.c:356
+msg	The display could not be turned off or on.	ディスプレイをオフ・オンにできませんでした。
+# userland/desktop/settings/page-display.c:379, userland/desktop/settings/page-display.c:769
+msg	The displays changed. Arrange them again.	ディスプレイが変わりました。もう一度並べてください。
+# userland/desktop/settings/page-display.c:382
+msg	The displays must touch along an edge and not overlap.	ディスプレイは辺で接し、重ならないように並べてください。
+# userland/desktop/settings/page-display.c:388, userland/desktop/settings/page-display.c:830
+msg	This desktop cannot change the displays.	このデスクトップではディスプレイを変えられません。
+# userland/desktop/settings/page-display.c:391
 msg	The displays could not be changed.	ディスプレイを変えられませんでした。
-# userland/desktop/settings/page-display.c:377
+# userland/desktop/settings/page-display.c:421
 msg	Screen	画面
-# userland/desktop/settings/page-display.c:378
+# userland/desktop/settings/page-display.c:422
 msg	Mode	モード
-# userland/desktop/settings/page-display.c:379
+# userland/desktop/settings/page-display.c:423
 msg	Graphics	グラフィックス
-# userland/desktop/settings/page-display.c:494
+# userland/desktop/settings/page-display.c:552
 msg	built in	内蔵
-# userland/desktop/settings/page-display.c:499
+# userland/desktop/settings/page-display.c:557
 msg	Not shown: the computer shows no more displays at once	表示されていません: このコンピューターが同時に映せるディスプレイの数を超えています
-# userland/desktop/settings/page-display.c:501
+# userland/desktop/settings/page-display.c:559
 msg	Off	オフ
-# userland/desktop/settings/page-display.c:530
+# userland/desktop/settings/page-display.c:598
 msg	Brightness	明るさ
+# userland/desktop/settings/page-display.c:915
+msg	This desktop cannot turn displays off.	このデスクトップではディスプレイをオフにできません。
 # userland/desktop/settings/page-home.c:60
 msg	Connectivity	接続
 # userland/desktop/settings/page-home.c:61

@@ -373,6 +373,8 @@ unsigned kwl_heads_signals(struct kwl_server *server, VkSemaphore *semaphores, u
 void kwl_heads_present(struct kwl_server *server);
 void kwl_heads_frame_skipped(struct kwl_server *server);
 int kwl_displays_apply(struct kwl_server *server, const struct kwl_display_config *wanted, int *saved);
+int kwl_displays_set_shown(struct kwl_server *server, const char *key, unsigned shown, int *saved);
+void kwl_displays_anchor_follow(struct kwl_server *server);
 size_t kwl_displays_describe(struct kwl_server *server, char *text, size_t size);
 
 #endif

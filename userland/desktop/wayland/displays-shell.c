@@ -64,6 +64,7 @@ static int displays_light_get(struct kwl_server *server, unsigned *percent);
 static int displays_light_set(struct kwl_server *server, unsigned percent, int *saved);
 static int displays_apply_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int displays_brightness_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static int displays_shown_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int displays_places(const char *text, struct kwl_display_config *wanted);
 static void displays_result(struct kwl_object *object, uint32_t request, uint32_t applied, uint32_t saved);
 static int displays_active(struct kwl_server *server);
@@ -130,6 +131,14 @@ kwl_displays_request(
 	/* A light set. */
 	if (opcode == KL_SYSTEM_DISPLAYS_SET_BRIGHTNESS) {
 		error = displays_brightness_request(object, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A display turned off or on (since 19, ws113-p014). */
+	if (opcode == KL_SYSTEM_DISPLAYS_SET_SHOWN && object->version >= KL_SYSTEM_SINCE_SHOWN) {
+		error = displays_shown_request(object, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;
@@ -293,6 +302,7 @@ displays_output(
 	size_t offset;
 	int internal;
 	int place;
+	int off;
 	int error;
 
 	/* The display, its key and its label. */
@@ -306,6 +316,9 @@ displays_output(
 		flags |= KL_SYSTEM_DISPLAY_INTERNAL;
 	if ((compose->limited & ((uint32_t)1U << index)) != 0U)
 		flags |= KL_SYSTEM_DISPLAY_LIMITED;
+	off = kwl_displays_is_off(&compose->config, key);
+	if (off)
+		flags |= KL_SYSTEM_DISPLAY_OFF;
 
 	/* Where it is and what it shows: the anchor's, a head's, or its own mode and the place kept for it. */
 	x = 0;
@@ -672,6 +685,67 @@ displays_brightness_request(
 	if (saved == 0)
 		written = 1U;
 	displays_result(object, request, KL_SYSTEM_RESULT_OK, written);
+	return 0;
+}
+
+/* Carries out a set_shown(request, key, shown) (ws113-p014). */
+static int
+displays_shown_request(
+	struct kwl_object *object,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct kwl_server *server;
+	const char *key;
+	uint32_t request;
+	uint32_t shown;
+	uint32_t applied;
+	uint32_t written;
+	size_t next;
+	int active;
+	int saved;
+	int error;
+
+	/* The request's words and key. */
+	if (size < 12U)
+		return EPROTO;
+	request = displays_word(bytes, 0U);
+	error = displays_string(bytes, size, 4U, KL_SYSTEM_DISPLAY_KEY_MAX, &key, &next);
+	if (error != 0 || next + 4U != size)
+		return EPROTO;
+	shown = displays_word(bytes, next);
+
+	/* Only an active session turns a display off or on (D-AUTH2). */
+	server = object->client->server;
+	active = displays_active(server);
+	if (!active) {
+		displays_result(object, request, KL_SYSTEM_RESULT_DENIED, 0U);
+		return 0;
+	}
+
+	/* Turned off or on (heads.c), and the answer. */
+	error = kwl_displays_set_shown(server, key, shown != 0U, &saved);
+	printf("KWL DISPLAYS shown client=%llu key=%s shown=%u error=%d saved=%d\n", (unsigned long long)object->client->number, key, shown, error, saved);
+	switch (error) {
+	case 0:
+		applied = KL_SYSTEM_RESULT_OK;
+		break;
+	case EINVAL:
+		applied = KL_SYSTEM_RESULT_INVALID;
+		break;
+	case ENOENT:
+		applied = KL_SYSTEM_RESULT_UNAVAILABLE;
+		break;
+	default:
+		applied = KL_SYSTEM_RESULT_FAILED;
+		break;
+	}
+
+	/* Succeeded: answered, with whether it was written. */
+	written = 0U;
+	if (error == 0 && saved == 0)
+		written = 1U;
+	displays_result(object, request, applied, written);
 	return 0;
 }
 
