@@ -10,8 +10,11 @@
 # services and the GPU runs from i915-vk-render-stubs.inc.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-work=$(mktemp -d "${TMPDIR:-/tmp}/ws031-vk-host.XXXXXX")
-trap "rm -rf -- \"$work\"" EXIT HUP INT TERM
+# A new directory for each run under build/tmp; nothing is removed here (Q1's
+# plan/tools/q1-clean.sh removes the runs build/tmp/ws031-vk-host does not point at).
+. "$repo/plan/tools/fresh-out.sh"
+fresh_out "$repo/build/tmp/ws031-vk-host"
+work=$fresh_dir
 compiler=${CC:-cc}
 tests=${1:-"cmd spirv lower res resdispatch sync eu compile pipe cmdbuf"}
 base="-std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO=\"$repo\" -I$repo/include -I$repo -idirafter $repo/include/libc"
