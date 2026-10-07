@@ -114,7 +114,7 @@ expect_log $session 'KWL WELCOME skip done=1 error=0' 10
 socket=$(guest "grep -o 'KWL READY socket=[^ ]*' $session | tail -1 | sed 's/KWL READY socket=//'" | tail -1)
 socket=${socket:-/run/user/1000/wayland-0}
 echo "session socket: $socket"
-guest "su kei -c 'XDG_RUNTIME_DIR=$(dirname "$socket") WAYLAND_DISPLAY=$(basename "$socket") /bin/settings --page=users >/tmp/fido2-settings.log 2>&1 &'; sleep 4; echo started" >/dev/null
+guest "su kei -c 'XDG_RUNTIME_DIR=$(dirname "$socket") WAYLAND_DISPLAY=$(basename "$socket") /bin/settings users >/tmp/fido2-settings.log 2>&1 &'; sleep 4; echo started" >/dev/null
 expect_log /tmp/fido2-settings.log 'ZSETTINGS PAGE users' 20
 expect_log $session 'KWL SYSTEM enrolled pin=0 keys=1 listed=1' 20
 guest "tail -5 /tmp/fido2-settings.log" | sed 's/^/settings: /'

@@ -23,6 +23,10 @@
  * panels and its title bar) shows the windows under it blurred, which
  * costs a drawing of the scene under the window every frame (backdrop.c),
  * or only the blurred wallpaper (the default).  It is double-buffered too.
+ *
+ * The gaps between a window's panels (q838, the UAT of 2026-10-07) are
+ * glass too, only not whitened and without a rim: the blurred desktop, so
+ * that the window under it does not show sharp between the cards.
  */
 
 #include "panels.h"
@@ -60,6 +64,7 @@ static int panels_set(struct kwl_object *glass, struct kwl_object *surface, cons
 static int panels_check(const struct kwl_panel *panel);
 static void panels_shadow(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panel *panel, const float *place, float opacity);
 static void panels_glass(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panel *panel, const float *place, float opacity, unsigned light);
+static void panels_gaps(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panels *panels, const float *place, float opacity, unsigned light);
 static uint32_t panels_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -262,6 +267,12 @@ kwl_panels_draw(
 	if (panels == NULL || panels->count == 0U)
 		return;
 
+	/* The gaps between the panels, blurred, under the shadows and the panels. */
+	light = 0U;
+	if (surface->client->theme_bound == 0U)
+		light = 1U;
+	panels_gaps(server, command, panels, place, opacity, light);
+
 	/* The cards' shadows, under every panel, when asked for. */
 	for (index = 0; index < panels->count; index++) {
 		if (shadows != 0U)
@@ -272,9 +283,6 @@ kwl_panels_draw(
 	 * The glass of each panel: in the dark appearance dark, unless the
 	 * client does not know the appearance and draws light (ws089-p017).
 	 */
-	light = 0U;
-	if (surface->client->theme_bound == 0U)
-		light = 1U;
 	for (index = 0; index < panels->count; index++)
 		panels_glass(server, command, &panels->current[index], place, opacity, light);
 }
@@ -479,6 +487,83 @@ panels_glass(
 	shape.edge = GLASS_RIM;
 	shape.opacity = opacity;
 	shape.light = light;
+	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Draws the glass under the gaps between a surface's panels: the box round
+ * all of them (rounded like the most rounded panel) as the blurred desktop
+ * alone, neither whitened nor rimmed; the panels are drawn over it.  With
+ * the panels opaque (BUG-171) the gaps are opaque too.  One panel leaves
+ * no gap.
+ */
+static void
+panels_gaps(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	const struct kwl_panels *panels,
+	const float *place,
+	float opacity,
+	unsigned light)
+{
+	struct glass_shape shape;
+	const struct kwl_panel *panel;
+	int32_t left;
+	int32_t top;
+	int32_t right;
+	int32_t bottom;
+	int32_t radius;
+	unsigned index;
+
+	/* One panel has no gap. */
+	if (panels->count < 2U)
+		return;
+
+	/* The box round every panel, and the largest corner. */
+	left = panels->current[0].x;
+	top = panels->current[0].y;
+	right = panels->current[0].x + panels->current[0].width;
+	bottom = panels->current[0].y + panels->current[0].height;
+	radius = panels->current[0].radius;
+	for (index = 1; index < panels->count; index++) {
+		panel = &panels->current[index];
+		if (panel->x < left)
+			left = panel->x;
+		if (panel->y < top)
+			top = panel->y;
+		if (panel->x + panel->width > right)
+			right = panel->x + panel->width;
+		if (panel->y + panel->height > bottom)
+			bottom = panel->y + panel->height;
+		if (panel->radius > radius)
+			radius = panel->radius;
+	}
+
+	/*
+	 * The blurred desktop: glass of no colour (not white, so the shader
+	 * does not lift it) and no rim; flat like the panels.
+	 */
+	glass_shape_init(&shape, place[0] + (float)left * place[2], place[1] + (float)top * place[3], (float)(right - left) * place[2], (float)(bottom - top) * place[3]);
+	shape.mode = MODE_GLASS;
+	shape.radius = (float)radius * place[2];
+	shape.soft = 1.0f;
+	shape.color[0] = 0.0f;
+	shape.color[1] = 0.0f;
+	shape.color[2] = 0.0f;
+	shape.color[3] = 0.0f;
+	shape.edge = 0.0f;
+	shape.opacity = opacity;
+	shape.light = light;
+
+	/* Opaque panels: the gaps are their colour, so nothing shows through the window. */
+	if (server->panels_opaque != 0U) {
+		shape.color[0] = 1.0f;
+		shape.color[1] = 1.0f;
+		shape.color[2] = 1.0f;
+		shape.color[3] = 1.0f;
+	}
+
+	/* Drawn. */
 	glass_shape_draw(server, command, &shape);
 }
 

@@ -54,8 +54,12 @@ def event(item):
 		mark = run.mark()
 		run.click(screen_width - 60, 15)
 		opened = run.wait(r"KWL HOME open name=Calendar via=clock", mark, 10)
-		ready = run.wait(r"CALENDAR READY ", mark, 15)
+		# The window's READY (with its size; "READY today=" comes before the window) and its map (T1-320's shot,
+		# taken after the first, was of the bare desktop).
+		ready = run.wait(r"CALENDAR READY width=", mark, 15)
+		run.wait(r"KWL MAP client=\d+ surface=\d+", mark, 10)
 		item.step("clicked the clock", f"{opened}; {ready}")
+		time.sleep(1.0)
 		run.shot(item, "from-clock")
 		item.check(opened and ready, "the clock did not open Calendar")
 		item.person("the editor, the event on today's cell, and Calendar opened from the clock")
