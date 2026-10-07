@@ -23,7 +23,7 @@
 #include "settings.h"
 
 #include "userland/desktop/paths.h"
-#include "../picture/wallpaper.h"
+#include "../preview/client.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -68,9 +68,6 @@
 #define LOOK_THUMB_WIDTH	240
 #define LOOK_THUMB_HEIGHT	150
 
-/* The largest picture file read for a small copy, as the compositor reads at most. */
-#define LOOK_FILE_MAX		(16U * 1024U * 1024U)
-
 /* A file name the page lists at most (with its ending). */
 #define LOOK_NAME_MAX		64U
 
@@ -105,7 +102,6 @@ static void look_load_take(struct se_app *app);
 static void look_load_stop(struct se_app *app);
 static unsigned look_found_add(struct look_found *found, unsigned count, const char *name);
 static int look_thumbnail(const char *path, struct kl_image *image);
-static unsigned char *look_file_read(const char *path, size_t *size, int *error);
 static int look_compare_names(const void *left, const void *right);
 
 /*
@@ -935,188 +931,37 @@ look_found_add(
 }
 
 /*
- * Reads a picture (a PNG or a JPEG, ws138-p001; transparency over black)
- * into a small copy (LOOK_THUMB_WIDTH by LOOK_THUMB_HEIGHT, the middle of
- * the picture in the tile's proportions, each small pixel the average of 3
- * by 3 samples).  The picture is decoded whole (kl_wallpaper_decode bounds
- * its size), then let go.  Returns 0 or an errno value.
+ * Makes the small copy of a picture (LOOK_THUMB_WIDTH by LOOK_THUMB_HEIGHT,
+ * the middle of the picture in the tile's proportions): keiland-preview
+ * makes it in a sandbox (ws168-p004; on FreeBSD, until Capsicum, in this
+ * process), and Settings reads back only the PPM it wrote.  Returns 0 or
+ * an errno value.
  */
 static int
 look_thumbnail(
 	const char *path,
 	struct kl_image *image)
 {
-	struct kl_wallpaper_image picture;
-	const unsigned char *row;
-	const unsigned char *pixel;
-	unsigned char *data;
-	size_t size;
-	size_t row_bytes;
-	unsigned width;
-	unsigned height;
-	unsigned x;
-	unsigned y;
-	unsigned source_x;
-	unsigned source_y;
-	unsigned sums[LOOK_THUMB_WIDTH][3];
-	unsigned dx;
-	unsigned dy;
-	unsigned channel;
-	unsigned crop_width;
-	unsigned crop_height;
-	unsigned crop_left;
-	unsigned crop_top;
+	struct preview_request request;
+	struct preview_picture picture;
 	int error;
 
-	/* The file's bytes. */
-	data = look_file_read(path, &size, &error);
-	if (data == NULL)
-		return error;
-
-	/* The picture's pixels; the file's bytes are not needed after. */
-	error = kl_wallpaper_decode(data, size, &picture);
-	free(data);
+	/* The tile's size, cut to it. */
+	memset(image, 0, sizeof(*image));
+	memset(&request, 0, sizeof(request));
+	request.width = LOOK_THUMB_WIDTH;
+	request.height = LOOK_THUMB_HEIGHT;
+	request.cover = 1;
+	error = preview_picture(path, &request, &picture);
 	if (error != 0)
 		return error;
-	width = picture.width;
-	height = picture.height;
-	row_bytes = (size_t)width * 3U;
 
-	/*
-	 * The middle of the picture in the tile's proportions (16:10): a wider
-	 * picture loses its sides, a taller one its top and bottom.
-	 */
-	crop_width = width;
-	crop_height = height;
-	if ((uint64_t)width * LOOK_THUMB_HEIGHT > (uint64_t)height * LOOK_THUMB_WIDTH) {
-		crop_width = (unsigned)((uint64_t)height * LOOK_THUMB_WIDTH / LOOK_THUMB_HEIGHT);
-	} else {
-		crop_height = (unsigned)((uint64_t)width * LOOK_THUMB_HEIGHT / LOOK_THUMB_WIDTH);
-	}
-
-	/* The crop's corner, in the middle. */
-	crop_left = (width - crop_width) / 2U;
-	crop_top = (height - crop_height) / 2U;
-
-	/* The small image. */
-	error = kl_image_create(image, LOOK_THUMB_WIDTH, LOOK_THUMB_HEIGHT);
-	if (error != 0) {
-		free(picture.rgb);
-		return error;
-	}
-
-	/* Each small row averages the samples of three source rows. */
-	for (y = 0; y < (unsigned)LOOK_THUMB_HEIGHT; y++) {
-		memset(sums, 0, sizeof(sums));
-		for (dy = 0; dy < 3U; dy++) {
-			/* The source row this sample row falls on. */
-			source_y = crop_top + (unsigned)(((uint64_t)y * 3U + dy) * crop_height / (LOOK_THUMB_HEIGHT * 3U));
-			row = picture.rgb + (size_t)source_y * row_bytes;
-
-			/* Three samples across for each small pixel. */
-			for (x = 0; x < (unsigned)LOOK_THUMB_WIDTH; x++) {
-				for (dx = 0; dx < 3U; dx++) {
-					source_x = crop_left + (unsigned)(((uint64_t)x * 3U + dx) * crop_width / (LOOK_THUMB_WIDTH * 3U));
-					pixel = row + (size_t)source_x * 3U;
-					for (channel = 0; channel < 3U; channel++)
-						sums[x][channel] += pixel[channel];
-				}
-			}
-		}
-
-		/* The row's pixels, opaque, in the canvas's order (0xAARRGGBB). */
-		for (x = 0; x < (unsigned)LOOK_THUMB_WIDTH; x++) {
-			image->pixels[(size_t)y * image->stride + x] = 0xff000000U |
-			    ((sums[x][0] / 9U) << 16) |
-			    ((sums[x][1] / 9U) << 8) |
-			    (sums[x][2] / 9U);
-		}
-	}
-
-	/* The picture is not needed any more. */
-	free(picture.rgb);
-
-	/* Succeeded: the small copy is made. */
+	/* The image takes its pixels (no padding between the rows). */
+	image->pixels = picture.pixels;
+	image->width = picture.width;
+	image->height = picture.height;
+	image->stride = (size_t)picture.width;
 	return 0;
-}
-
-/*
- * Reads a whole ordinary file of at most LOOK_FILE_MAX bytes.  Returns its
- * bytes (the caller frees them), or NULL with *error the errno value
- * (EINVAL for an empty file, EFBIG for a larger one).
- */
-static unsigned char *
-look_file_read(
-	const char *path,
-	size_t *size,
-	int *error)
-{
-	struct stat status;
-	unsigned char *data;
-	ssize_t count;
-	size_t length;
-	size_t capacity;
-	int descriptor;
-	int ordinary;
-	int result;
-
-	/* The file; a FIFO or a device does not hold the reader. */
-	descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
-	if (descriptor < 0) {
-		*error = errno;
-		return NULL;
-	}
-
-	/* Only an ordinary file of a size within the bound. */
-	result = fstat(descriptor, &status);
-	*error = 0;
-	if (result != 0)
-		*error = errno;
-	ordinary = 0;
-	if (*error == 0)
-		ordinary = S_ISREG(status.st_mode);
-	if (*error == 0 && !ordinary)
-		*error = EINVAL;
-	if (*error == 0 && status.st_size <= 0)
-		*error = EINVAL;
-	if (*error == 0 && (uint64_t)status.st_size > LOOK_FILE_MAX)
-		*error = EFBIG;
-	if (*error != 0) {
-		(void)close(descriptor);
-		return NULL;
-	}
-
-	/* A buffer as large as the file. */
-	capacity = (size_t)status.st_size;
-	data = malloc(capacity);
-	if (data == NULL) {
-		(void)close(descriptor);
-		*error = ENOMEM;
-		return NULL;
-	}
-
-	/* Read to the end: normally one read. */
-	length = 0;
-	while (length < capacity) {
-		count = read(descriptor, data + length, capacity - length);
-		if (count <= 0)
-			break;
-		length += (size_t)count;
-	}
-
-	/* The file is not needed any more. */
-	(void)close(descriptor);
-
-	/* A file that shrank meanwhile is read as far as it goes; nothing read is nothing. */
-	if (length == 0U) {
-		free(data);
-		*error = EIO;
-		return NULL;
-	}
-
-	/* Succeeded: the caller owns the bytes. */
-	*size = length;
-	return data;
 }
 
 /* Orders two pictures found by their names without the ending, as strcmp does (for qsort). */

@@ -2,7 +2,7 @@
 
 # ws120-p008: m4a の metadata と `~/Music` の collection
 
-Status: test-wait（T1-301）
+Status: cleared（2026-10-07 Q1 の判定: T1-315 の AAT music.play（HDA 付き、PLAY・POSITION 2026・ENDED・FILE）と playing の PNG（Tone A の cover・再生の bar）を Q1 が目視。音は耳で聞いていない）（旧: test-wait（T1-301））
 Disposition: normal
 Parent: [WS120](../ws.md)
 Queue: q831（2026-10-07、P2）

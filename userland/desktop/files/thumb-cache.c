@@ -6,12 +6,10 @@
  */
 
 /*
- * The thumbnails of PDF documents and the thumbnails kept on disk
- * (ws127-p002, F-035).
- *
- * A PDF's thumbnail is its first page, drawn by libpdf (as PDF Viewer draws
- * it).  libpdf is opened with dlopen the first time a PDF asks: files does
- * not link it, so a system without it shows the PDF's icon as before.
+ * The thumbnails kept on disk (ws127-p002, F-035).  ws168-p004: the
+ * records are written by keiland-preview (thumb.c), the first page of a
+ * PDF too; this file finds a record's place and stamp, reads records back
+ * and trims the cache.
  *
  * A thumbnail made once is kept in the user's cache folder
  * ($XDG_CACHE_HOME, else ~/.cache, then keiland/thumbnails), named by the
@@ -19,9 +17,9 @@
  * file's modification time and size.  A file that changed has a stale
  * record, which is made again; the folder is the user's alone (0700).
  *
- * The cache is kept small (ws127-p004): when a write leaves more than
- * CACHE_RECORDS_MAX records, the oldest written are removed until
- * CACHE_RECORDS_KEEP are left.  A record is named by the SHA-256 of a
+ * The cache is kept small (ws127-p004): when a new record leaves more than
+ * FM_THUMB_RECORDS_MAX records, the oldest written are removed until
+ * FM_THUMB_RECORDS_KEEP are left.  A record is named by the SHA-256 of a
  * path, so a record whose file is gone cannot be told apart; it goes in
  * its turn.
  */
@@ -29,10 +27,8 @@
 #include "files.h"
 
 #include <dirent.h>
-#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <pdf.h>
 #include <sha2.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,40 +36,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* The longest side a PDF's first page is drawn at before it is shrunk to a thumbnail, in pixels. */
-#define CACHE_PDF_SIDE		512
-
-/* The first bytes of a PDF. */
-#define CACHE_PDF_SIGNATURE	"%PDF-"
-
 /* The largest thumbnail read back from the cache, a side in pixels. */
 #define CACHE_SIDE_MAX		1024
-
-/* How many records the cache holds before a write trims it, and how many the trim leaves (ws127-p004). */
-#define CACHE_RECORDS_MAX	2000U
-#define CACHE_RECORDS_KEEP	1800U
 
 /* The cache's folder under the user's cache folder, and the comment that marks a record. */
 #define CACHE_FOLDER		"keiland/thumbnails"
 #define CACHE_MARK		"# keiland-thumbnail"
-
-/*
- * The calls of libpdf files uses, found with dlsym.  Loaded is 0 before
- * the first attempt, 1 when they are all there and -1 when libpdf could not
- * be opened (it is not tried again); the library stays open for the life
- * of the program.
- */
-struct cache_pdf_calls {
-	int loaded;
-	void *library;
-	int (*open_memory)(const void *data, size_t size, struct pdf_document **document);
-	void (*close)(struct pdf_document *document);
-	size_t (*page_count)(const struct pdf_document *document);
-	int (*page_box)(struct pdf_document *document, size_t index, struct pdf_page_box *box);
-	int (*render)(struct pdf_document *document, size_t index, struct pdf_display_list **list);
-	void (*list_destroy)(struct pdf_display_list *list);
-	int (*rasterize)(const struct pdf_display_list *list, uint32_t *pixels, size_t stride, size_t width, size_t height, double scale, double offset_x, double offset_y);
-};
 
 /*
  * One record of the cache as a trim sees it: its name in the cache's
@@ -84,10 +52,6 @@ struct cache_entry {
 	time_t written;
 };
 
-/* libpdf's calls, opened on the first PDF (see the structure). */
-static struct cache_pdf_calls cache_pdf;
-
-static int cache_pdf_load(void);
 static int cache_trim(const char *folder, unsigned maximum, unsigned keep);
 static int cache_trim_list(const char *folder, struct cache_entry **entries, size_t *count);
 static int cache_compare_written(const void *left, const void *right);
@@ -118,146 +82,6 @@ fm_thumb_kind(
 		return 1;
 
 	/* Anything else is drawn with its kind's icon. */
-	return 0;
-}
-
-/*
- * Tells whether a file's bytes are a PDF's.
- */
-int
-fm_thumb_is_pdf(
-	const unsigned char *data,
-	size_t size)
-{
-	int differs;
-
-	/* The signature, and something after it. */
-	if (size <= sizeof(CACHE_PDF_SIGNATURE) - 1U)
-		return 0;
-	differs = memcmp(data, CACHE_PDF_SIGNATURE, sizeof(CACHE_PDF_SIGNATURE) - 1U);
-	if (differs != 0)
-		return 0;
-
-	/* A PDF. */
-	return 1;
-}
-
-/*
- * Draws a PDF's first page into an image (on white), its longest side
- * CACHE_PDF_SIDE pixels.  Returns 0, ENOTSUP when libpdf is not there,
- * EINVAL for a document that cannot be read, or another errno value.
- */
-int
-fm_thumb_pdf(
-	const unsigned char *data,
-	size_t size,
-	struct kl_image *image)
-{
-	struct pdf_display_list *list;
-	struct pdf_document *document;
-	struct pdf_page_box box;
-	double width;
-	double height;
-	double scale;
-	size_t count;
-	size_t index;
-	int pixels_wide;
-	int pixels_high;
-	int loaded;
-	int error;
-
-	/* libpdf, opened the first time. */
-	memset(image, 0, sizeof(*image));
-	loaded = cache_pdf_load();
-	if (loaded == 0)
-		return ENOTSUP;
-
-	/* The document and its first page's size as shown (libpdf's, turned and cropped), else its crop or media box. */
-	document = NULL;
-	error = cache_pdf.open_memory(data, size, &document);
-	if (error != 0 || document == NULL) {
-		fm_log("THUMB pdf stage=open error=%d", error);
-		return EINVAL;
-	}
-
-	/* A document without pages has no thumbnail. */
-	count = cache_pdf.page_count(document);
-	if (count == 0) {
-		cache_pdf.close(document);
-		return EINVAL;
-	}
-
-	/* The first page's box. */
-	memset(&box, 0, sizeof(box));
-	error = cache_pdf.page_box(document, 0, &box);
-	if (error != 0) {
-		fm_log("THUMB pdf stage=box error=%d", error);
-		cache_pdf.close(document);
-		return EINVAL;
-	}
-
-	/* The size libpdf shows the page at, else the crop box's. */
-	width = box.width;
-	height = box.height;
-	if (width <= 0.0 || height <= 0.0) {
-		width = box.crop_right - box.crop_left;
-		height = box.crop_top - box.crop_bottom;
-	}
-
-	/* Without either, the media box's. */
-	if (width <= 0.0 || height <= 0.0) {
-		width = box.media_right - box.media_left;
-		height = box.media_top - box.media_bottom;
-	}
-
-	/* A page of no size cannot be drawn. */
-	if (width <= 0.0 || height <= 0.0) {
-		fm_log("THUMB pdf stage=size width=%g height=%g", width, height);
-		cache_pdf.close(document);
-		return EINVAL;
-	}
-
-	/* The scale that makes its longest side CACHE_PDF_SIDE pixels. */
-	scale = (double)CACHE_PDF_SIDE / width;
-	if (height > width)
-		scale = (double)CACHE_PDF_SIDE / height;
-	pixels_wide = (int)(width * scale + 0.5);
-	pixels_high = (int)(height * scale + 0.5);
-	if (pixels_wide < 1)
-		pixels_wide = 1;
-	if (pixels_high < 1)
-		pixels_high = 1;
-
-	/* The image, white like paper. */
-	error = kl_image_create(image, pixels_wide, pixels_high);
-	if (error != 0) {
-		cache_pdf.close(document);
-		return error;
-	}
-
-	/* Every pixel white. */
-	for (index = 0; index < (size_t)pixels_wide * (size_t)pixels_high; index++)
-		image->pixels[index] = 0xffffffffU;
-
-	/* The page drawn on it. */
-	list = NULL;
-	error = cache_pdf.render(document, 0, &list);
-	if (error == 0 && list != NULL) {
-		error = cache_pdf.rasterize(list, image->pixels, image->stride, (size_t)pixels_wide, (size_t)pixels_high, scale, 0.0, 0.0);
-		cache_pdf.list_destroy(list);
-	}
-
-	/* The document is not needed any more. */
-	cache_pdf.close(document);
-
-	/* A page that could not be drawn leaves no thumbnail. */
-	if (error != 0) {
-		fm_log("THUMB pdf stage=draw error=%d", error);
-		kl_image_release(image);
-		return EINVAL;
-	}
-
-	/* Succeeded: the first page. */
 	return 0;
 }
 
@@ -348,91 +172,37 @@ fm_thumb_cache_read(
 }
 
 /*
- * Keeps a thumbnail of a file in the cache, recorded with the file's
- * modification time and size.  Written to a temporary name and renamed, so
- * a reader never sees half of it.  Returns 0 or an errno value (a cache that
- * cannot be written only costs the next window the time to make it).
+ * Writes the place of a file's record in the cache (its folder made) and
+ * the stamp its comment line holds for the file as it is now (its
+ * modification time and size; the comment's text without "# ").  Returns
+ * 0 or an errno value.
  */
 int
-fm_thumb_cache_write(
+fm_thumb_cache_target(
 	const char *path,
-	const struct kl_image *image)
+	char *record,
+	size_t record_size,
+	char *stamp,
+	size_t stamp_size)
 {
 	struct stat status;
-	char record[FM_PATH_MAX];
-	char temporary[FM_PATH_MAX + 16];
-	char folder[FM_PATH_MAX];
-	unsigned char *row;
-	uint32_t pixel;
-	FILE *file;
-	int closed;
+	int written;
 	int error;
-	int x;
-	int y;
 
-	/* The file as it is now, and the record's place (its folder made). */
+	/* The file as it is now. */
 	error = stat(path, &status);
 	if (error != 0)
 		return errno;
-	error = cache_record_path(path, record, sizeof(record));
+
+	/* The record's place. */
+	error = cache_record_path(path, record, record_size);
 	if (error != 0)
 		return error;
-	snprintf(temporary, sizeof(temporary), "%s.%ld", record, (long)getpid());
 
-	/* The header, then the pixels a row at a time. */
-	file = fopen(temporary, "wb");
-	if (file == NULL)
-		return errno;
-	fprintf(file, "P6\n%s mtime=%lld size=%llu\n%d %d\n255\n", CACHE_MARK, (long long)status.st_mtime, (unsigned long long)status.st_size, image->width, image->height);
-	row = malloc((size_t)image->width * 3U);
-	if (row == NULL) {
-		fclose(file);
-		unlink(temporary);
-		return ENOMEM;
-	}
-
-	/* Each row of the image as bytes. */
-	for (y = 0; y < image->height; y++) {
-		for (x = 0; x < image->width; x++) {
-			pixel = image->pixels[(size_t)y * (image->stride) + (size_t)x];
-			row[x * 3] = (unsigned char)(pixel >> 16);
-			row[x * 3 + 1] = (unsigned char)(pixel >> 8);
-			row[x * 3 + 2] = (unsigned char)pixel;
-		}
-
-		/* The row into the record. */
-		(void)fwrite(row, 3U, (size_t)image->width, file);
-	}
-
-	/* The row is let go. */
-	free(row);
-
-	/* The record takes its name once it is whole. */
-	error = ferror(file);
-	closed = fclose(file);
-	if (closed != 0)
-		error = 1;
-
-	/* A record that could not be written whole goes. */
-	if (error != 0) {
-		unlink(temporary);
-		return EIO;
-	}
-
-	/* The whole record takes its name. */
-	error = rename(temporary, record);
-	if (error != 0) {
-		error = errno;
-		unlink(temporary);
-		return error;
-	}
-
-	/* The cache trimmed when it grew past its bound; a trim that fails leaves it as it is. */
-	error = cache_folder(folder, sizeof(folder));
-	if (error == 0)
-		(void)cache_trim(folder, CACHE_RECORDS_MAX, CACHE_RECORDS_KEEP);
-
-	/* Succeeded: the thumbnail is kept. */
+	/* The stamp. */
+	written = snprintf(stamp, stamp_size, "%s mtime=%lld size=%llu", &CACHE_MARK[2], (long long)status.st_mtime, (unsigned long long)status.st_size);
+	if (written < 0 || (size_t)written >= stamp_size)
+		return ENAMETOOLONG;
 	return 0;
 }
 
@@ -463,43 +233,6 @@ fm_thumb_cache_trim(
 
 	/* Succeeded: reports how many went. */
 	return removed;
-}
-
-/* Opens libpdf and finds its calls the first time; returns 1 when they are there, 0 otherwise. */
-static int
-cache_pdf_load(
-	void)
-{
-	/* Tried before: the same answer. */
-	if (cache_pdf.loaded != 0)
-		return cache_pdf.loaded > 0;
-
-	/* The library; without it PDFs keep their icon. */
-	cache_pdf.loaded = -1;
-	cache_pdf.library = dlopen("libpdf.so", RTLD_NOW | RTLD_LOCAL);
-	if (cache_pdf.library == NULL)
-		return 0;
-
-	/* Each call. */
-	*(void **)&cache_pdf.open_memory = dlsym(cache_pdf.library, "pdf_document_open_memory");
-	*(void **)&cache_pdf.close = dlsym(cache_pdf.library, "pdf_document_close");
-	*(void **)&cache_pdf.page_count = dlsym(cache_pdf.library, "pdf_document_page_count");
-	*(void **)&cache_pdf.page_box = dlsym(cache_pdf.library, "pdf_document_page_box");
-	*(void **)&cache_pdf.render = dlsym(cache_pdf.library, "pdf_page_render");
-	*(void **)&cache_pdf.list_destroy = dlsym(cache_pdf.library, "pdf_display_list_destroy");
-	*(void **)&cache_pdf.rasterize = dlsym(cache_pdf.library, "pdf_display_list_rasterize");
-	if (cache_pdf.open_memory == NULL ||
-	    cache_pdf.close == NULL ||
-	    cache_pdf.page_count == NULL ||
-	    cache_pdf.page_box == NULL ||
-	    cache_pdf.render == NULL ||
-	    cache_pdf.list_destroy == NULL ||
-	    cache_pdf.rasterize == NULL)
-		return 0;
-
-	/* Succeeded: libpdf is there. */
-	cache_pdf.loaded = 1;
-	return 1;
 }
 
 /* Writes the place of a file's record in the cache (the cache's folder made); returns 0 or an errno value. */

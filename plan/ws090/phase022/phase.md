@@ -1,6 +1,6 @@
 # ws090-p022: 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ
 
-Status: in-progress（q816、P1。1〜5・7 は T1-260・T1-312 で確認済み（cleared の候補）、6（Browser の form）は WS131 p025 の後で未着手。下の「整理」）
+Status: cleared（2026-10-07 Q1 の判定: 項目 1・3・5・7 は T1-260・T1-312、2 の Calendar と 4 の Full name も確認。Mailer の本文と User name の欄は T1-317 で確かめる。項目 6（Browser の web の form）は ws090-p025 に分けた）（旧: in-progress（q816、P1。1〜5・7 は T1-260・T1-312 で確認済み（cleared の候補）、6（Browser の form）は WS131 p025 の後で未着手。下の「整理」））
 WS: [WS090](../ws.md)
 Related: [WS095](../../ws095/ws.md)（IME）
 

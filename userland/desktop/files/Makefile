@@ -28,5 +28,7 @@ KEILAND_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/ui-desktop-drag.c \
 	userland/desktop/files/desktop-layout.c \
 	userland/desktop/files/touch.c userland/desktop/artwork/mark.c \
-	userland/desktop/picture/picture.c
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,files,File manager,amd64,y,basic,$(KEILAND_FILES_SOURCES),y,desktop,desktop/files,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype base/libz-compat base/libpng-compat base/libjpeg-compat base/libgif-compat,0755,program,,,bin))
+	userland/desktop/preview/client.c userland/desktop/preview/zedbsd/spawn.c
+# ws168-p004: the pictures (thumbnails, preview, Quick Look, the Today page) are made by keiland-preview in a sandbox;
+# files decodes none itself and links no decoder.
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,files,File manager,amd64,y,basic,$(KEILAND_FILES_SOURCES),y,desktop,desktop/files,desktop/libvulkan desktop/libwayland desktop/libkeiland desktop/libtruetype desktop/preview,0755,program,,,bin))
