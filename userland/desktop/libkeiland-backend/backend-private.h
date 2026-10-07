@@ -59,6 +59,15 @@ struct kl_backend {
 	size_t session_key_count;
 	char session_reason[KL_BACKEND_SESSION_REASON];
 	int events_descriptor;
+	/*
+	 * A power button's press whose release is awaited (zedBSD's
+	 * events-zedbsd.c, WS182): the firmware tells the release as another
+	 * press, so the next record soon after a press is dropped.
+	 * power_release_due is 1 from a press passed on until the next record,
+	 * and power_press_ms is that press's time (the record's clock).
+	 */
+	unsigned power_release_due;
+	uint64_t power_press_ms;
 	struct kl_backend_power_outcome power_outcome;
 	/* Remote Login's state as sessiond last answered it (ws089-p025). */
 	struct kl_backend_sharing sharing;

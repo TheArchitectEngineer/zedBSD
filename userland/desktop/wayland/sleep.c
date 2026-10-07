@@ -12,8 +12,8 @@
  * tick, as a level), the sleep button, and the time without input the
  * settings give (power.sleep.ac and power.sleep.battery; the screen goes
  * out at half that time).  An application's SUSPEND comes here too.  The
- * power button's short press does not sleep the machine: it waits for its
- * menu (WS182, the 2026-10-07 user decision).
+ * power button's short press does not sleep the machine: it opens the
+ * power dialog (WS182, the 2026-10-07 user decision, backend-host.c).
  *
  * A session is locked first, and the request is sent to sessiond once the
  * lock screen (or the lid's black) was drawn twice, so that the user wakes

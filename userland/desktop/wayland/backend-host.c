@@ -198,9 +198,11 @@ kwl_backend_power_changed(
 
 /*
  * A power or sleep button was pressed (ws132-p003).  The sleep button
- * sleeps the machine (ws052-p012, N5); the power button's short press is
- * only written in the log until its menu (Log Out, Shut Down; WS182, the
- * 2026-10-07 user decision) is called from here.
+ * sleeps the machine (ws052-p012, N5).  The power button opens the power
+ * dialog (Power Off, Restart, Log Out, Cancel; WS182, the 2026-10-07 user
+ * decision) over the desktop; it counts as input on every screen, and is
+ * passed over around a sleep, on the login and lock screens, and while the
+ * dialog shows.
  */
 void
 kwl_backend_power_button(
@@ -208,6 +210,8 @@ kwl_backend_power_button(
 	unsigned button)
 {
 	struct kwl_server *server;
+	uint64_t now;
+	int ignored;
 
 	/* The sleep button: the sleep's rules decide (sleep.c). */
 	server = data;
@@ -217,8 +221,40 @@ kwl_backend_power_button(
 		return;
 	}
 
-	/* The power button: its menu (WS182) is called here. */
-	printf("KWL EVENT power button\n");
+	/* The power button's press, logged with its time. */
+	now = kwl_milliseconds();
+	printf("KWL EVENT power button ms=%llu\n", (unsigned long long)now);
+
+	/* A press around a sleep is not the user's (the release of the press that woke the machine comes then). */
+	ignored = kwl_sleep_button_ignored(&server->sleep, now);
+	if (ignored) {
+		printf("KWL POWER button skip reason=sleep\n");
+		return;
+	}
+
+	/* The press is the user's input: a screen out for the time without input lights, and that time counts again (sleep.c). */
+	server->lock_input_ms = now;
+
+	/* The login screen shows its own Restart and Shut Down. */
+	if (server->greeter) {
+		printf("KWL POWER button skip reason=greeter\n");
+		return;
+	}
+
+	/* The lock screen offers no power choices to one who has not unlocked it (ws035-p102). */
+	if (server->locked) {
+		printf("KWL POWER button skip reason=locked\n");
+		return;
+	}
+
+	/* The dialog shown already stays as it is (one that is closing opens again). */
+	if (server->power_dialog.open && !server->power_dialog.closing) {
+		printf("KWL POWER button skip reason=showing\n");
+		return;
+	}
+
+	/* The power dialog over the desktop. */
+	kwl_power_dialog_open(server, "button");
 }
 
 /*
