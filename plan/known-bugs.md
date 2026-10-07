@@ -119,7 +119,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-249](bugs/BUG-249.md) | 5320 で Restart が終わらない（popup のまま）、Power Off は可 | reproduced（実機） / tracking | 2026-10-07 ユーザー | 担当は後で（keyboard の reset だけで ACPI・0xcf9 の fallback が無い疑い） |
 | [BUG-250](bugs/BUG-250.md) | 5330 で greeter が display を掴めない（VK_ERROR_SURFACE_LOST_KHR、claim の前） | reproduced（実機） / scheduled | 2026-10-07 ユーザー | P2 修正済み（scanout.c の constraints が p011a の ID を照合していなかった）・実機 5330 の確認待ち |
 | [BUG-251](bugs/BUG-251.md) | Ctrl+Shift を押して起動すると PS/2 の keyboard の割り込みが来ない（5330・5320） | reproduced（実機） / scheduled | 2026-10-07 ユーザー | P2 修正済み（起動前の scan code で 8042 の output buffer が詰まり IRQ1 の edge が来ない → init で unmask の後に flush）・実機の確認待ち |
-| [BUG-252](bugs/BUG-252.md) | App Home の animation が pointer の事象が無いと終わらない（Calendar の icon の位置で止まる、i915 実機） | reproduced（実機） / scheduled | 2026-10-07 ユーザーの UAT | P2（BUG-246 と同じ種類の疑い） |
+| [BUG-252](bugs/BUG-252.md) | App Home の animation が pointer の事象が無いと終わらない（Calendar の icon の位置で止まる、i915 実機） | reproduced（実機） / scheduled | 2026-10-07 ユーザーの UAT | P2 が直した（`home_content` の描画中の frame の頼みを tick へ）、5330 の実機の確認待ち |
 | [BUG-253](bugs/BUG-253.md) | 5330 で蓋を閉じても何も起きない（蓋の事象が kernel にも compositor にも出ない、AC は届く） | reproduced（実機） / scheduled | 2026-10-07 ユーザー | P2（BUG-252 の次） |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
