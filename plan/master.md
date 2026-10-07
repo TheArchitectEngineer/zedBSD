@@ -516,6 +516,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（ws113-p011 の DBUF）:「2 つ目の画面を足す時に、1 つ目の画面を点け直す、でお願いします。」→ 1 出力の時の DBUF・既存の eDP の run は変えず、2 つ目を足す時に resident を点け直す（一瞬消える）。Q1: 5330 に kernel（P2 の build/bug250、cksum 2877465438、BUG-251・253・eDP の connected）と compositor（main、cksum 184482127、BUG-252・ws181-p009）を入れた（元は /esp/vmunix.prev・/bin/wayland.orig）。
 - 2026-10-07 Q1: ws075-p007b b2（d23a536b9）を merge。GS の無い draw の dword も変わる（PUSH_CONSTANT_ALLOC_VS 16→8 KiB・ALLOC_GS・CLIP bit5）ので、**main の kernel を実機に入れる前に T1-363（5330 の passthrough の vkx・vke・vkc・zdesktop の capture）**。5330 が zedBSD で動いている間は passthrough ができない。BUG の確かめで 5330・5320 に入れる kernel は d23a536b9 の前（P2 の build/bug250 の系統）か T1-363 PASS の後に。
 - 2026-10-07 ユーザー:「シェーダはやることがないときに取り組んでほしいです。Settingsのディスプレイ設定を、拡張・ミラーありで実装する作業に切り替えてください。」→ P1 は ws075-p007b の b2 を区切り、q855: WS113 p011（i915 の 2 出力の同時）→ p004b（compositor の複数の出力、全拡張・全 mirror）→ p005（kl_system_displays・明るさ）→ p006（Settings の Display の頁: 拡張・mirror の二択、配置の drag、明るさ）→ p007（窓の出力の所属）。シェーダ（WS075）は他にやることが無い時だけ。
 - 2026-10-07 ユーザー:「今後、実機のホスト鍵は無視してクリアして接続してください。」→ 実機（10.0.30.3 の 5330・10.0.30.5 の 5320）の SSH の host 鍵が変わっていたら `ssh-keygen -R` して `StrictHostKeyChecking=accept-new` で繋いでよい（他の host は今までどおり確かめる）。
