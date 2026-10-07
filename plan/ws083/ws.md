@@ -3,13 +3,13 @@
 # WS083: Vulkan Video の拡張と i915 の対応（最初の目標 H.264 の decode）
 
 <!-- awesome-plan-current:start -->
-Status: planning（p001 の設計中）
+Status: planning（p001 の設計の第 2 版、P1）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-07 P1（q833）: p001 の設計の第 1 版（[design.md](design.md)）と design-reviewer の review（design.md §13、blocking 4・should-fix 17、未反映）。次は §13 を織り込み第 2 版にして人の判断（H1〜H5・HD1〜HD6）を Q1 経由で出す。2026-10-07 ユーザーの回答で、p001・p002 と host で作れる所まで P1 が進める（10-02 の「別セッション」の指示を置き換え、p003 以降の実機は 5330 が戻ってから）。以前: p001（設計）から。OSC のデモ（fg010）には必須ではない
+Resume point: 2026-10-07 夕 P1（q833）: p001 の設計の第 2 版（[design.md](design.md)、review の反映は §14）、UAPI の差分は [proposed/](proposed/README.md)。次は design-reviewer の再 review と人の判断（design.md §10 の H1〜H5・HD1〜HD6）。判断の要らない p003 の engine record・worker の部分から実装できる。2026-10-07 ユーザーの回答で、p001・p002 と host で作れる所まで P1 が進める（10-02 の「別セッション」の指示を置き換え、p003 以降の実機は 5330 が戻ってから）。以前: p001（設計）から。OSC のデモ（fg010）には必須ではない
 2026-10-02 user: fg019（ベータ1、10/17）に入れる。「Vulkanのビデオ再生拡張をIntel Xe-LPで実装する。H.264を最初のターゲットとする。」動画プレーヤ（WS122）・ブラウザ（WS121）の土台（VA-API の WS123 は canceled、アプリが Vulkan Video を直接使う）。**別セッションでユーザーと進める。このセッションは割り当てない。ベータ1 では drop 可の努力目標。**
 <!-- awesome-plan-current:end -->
 
@@ -42,10 +42,11 @@ Resume point: 2026-10-07 P1（q833）: p001 の設計の第 1 版（[design.md](
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| ws083-p001 | 設計（上の項目） | planning | — |
-| ws083-p002 | libvulkan: Vulkan Video の API の骨組み（queue family・capability・session・parameters・command の記録）、host の試験 | planning | p001 |
-| ws083-p003 | i915: VCS の engine の立ち上げ（ring・context・submission）、実機で空の batch と fence | planning | p001 |
-| ws083-p004 | i915: MFX の AVC の I frame の decode、NV12 の出力、参照との frame の一致 | planning | p002、p003 |
-| ws083-p005 | P・B frame、DPB、参照の list、複数の slice、High profile の 8x8 transform・scaling list | planning | p004 |
-| ws083-p006 | 試験の app と性能の測定（fps、CPU の負荷）、利用者の検討 | planning | p005 |
+| [ws083-p001](phase001/phase.md) | 設計（[design.md](design.md)） | in-progress（P1、第 2 版） | — |
+| ws083-p002 | libvulkan の骨組み（拡張・queue family・capability・format・session・parameters・record・sync2 の翻訳・capset の native の語）、host の試験、T1 の QEMU の回帰 | planning | p001、H1・H2・H3・HD1・HD6 |
+| ws083-p003 | i915: engine record VCS0、worker の engine ごとの context、遅延の VCS0 の context、hang の封じ込め、video の object・slot 表・kernel の検べ、host の試験 | planning | p001（video の object は H1） |
+| ws083-p004 | MFX AVC の I frame の builder（genxml-video.h、NV12 Tile Y）、genxml の独立の decoder、試験の stream、`vkvideo-probe`（host で build） | planning | p003、H4・H5・HD4 |
+| ws083-p005 | 実機: VCS の bring-up と I frame の hash（`i915.debug=video`）、HuC 不要の確認 | planning | p004、5330 |
+| ws083-p006 | P・B と DPB、scaling list の fall-back、複数 slice | planning | p005 |
+| ws083-p007 | 性能、`i915.debug=video` の門の既定化、利用者への案内、SAMPLED・TRANSFER_SRC（HD5） | planning | p006 |
 | ws083-p009 | 全文規約確認と回帰（必須の最終確認） | planning | 全 Phase |
