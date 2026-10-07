@@ -55,6 +55,42 @@ syscall, a BIO and a hardware command are different transfer units: reducing
 syscall splitting does not imply one hardware command or one durability flush.
 A UAS descriptor decoder exists; it is not an operational storage transport.
 
+## Display path
+
+Three parts can draw on the screen. Each has its own owner, and none of them
+hands the screen to another by itself.
+
+| Part | What it draws on | Who sets it up |
+| --- | --- | --- |
+| Text console (`/dev/console`) | The board's display, through the [text-display table](../../include/kern/text-display.h) | The board's display driver, once, during its bring-up. On PC/AT that is the [text driver](../../src/drivers/platform/pcat/graphics/text.c), which draws into the firmware's framebuffer (the UEFI GOP framebuffer, or VGA text memory on a BIOS boot) |
+| `/dev/graphics` | The same board display, in a drawing mode | The board's [graphics driver](../../src/drivers/platform/pcat/graphics/pcat-graphics.c). Entering a mode suspends the text console, and the final close resumes it |
+| GPU node (`/dev/gpu0`) | The panel and outputs the GPU drives | The GPU driver ([i915](../../src/drivers/gpu/i915), [Venus](../../src/drivers/gpu/venus)). Keiland's compositor is its user |
+
+The text console and `/dev/graphics` are one board-level pair. The text
+console calls only the text-display table, so it stays a platform-independent
+multiplexer. The board driver registers that table once. Until it does, every
+console write is a no-op, which is the right behaviour on a board with no
+display.
+
+A GPU driver is not part of that pair:
+
+- Loading a GPU driver and publishing `/dev/gpu0` sends no notice to
+  `/dev/console` or `/dev/graphics`. The console's back end does not move to
+  the GPU, and a GPU driver never registers the text-display table.
+- `/dev/graphics` has no native GPU takeover. It always draws on the board
+  display.
+- At load, a GPU driver leaves the screen as the firmware lit it. The firmware's
+  picture (the GOP output with the console on it) stays on screen.
+- The GPU driver takes the display only when a client claims it through the GPU
+  display interface: a display lease, which Keiland's compositor takes when it
+  starts. Then the driver reads out the pipe the firmware left lit, stops it,
+  sets its own mode and shows the client's buffers.
+- From then on the text console still draws into the firmware framebuffer in
+  memory. The panel no longer scans that memory out, so console output is not
+  on screen while the GPU drives the panel.
+- Keiland does not show the text console between the greeter and the session
+  either (see [Keiland](keiland.md)).
+
 ## Interfaces and policy
 
 Public C headers live in [include/libc](../../include/libc); zedBSD-specific
