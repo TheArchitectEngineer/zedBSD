@@ -2,7 +2,7 @@
 
 # WS180: Emacs の拡張 — Emacs をベースにしたグラフィカルなエディタ（エージェント開発のための次世代のエディタ）
 
-Status: planning（2026-10-07 ユーザーの依頼で WS だけ作成。段（ベータ）・見積もり・Phase は未定、Queue なし）
+Status: planning（2026-10-07 ユーザーの依頼で WS だけ作成。段（ベータ）・見積もり・Phase は未定、Queue なし）（2026-10-07 ユーザー（クリック）: ベータ3 以降）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

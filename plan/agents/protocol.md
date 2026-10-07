@@ -80,3 +80,9 @@ user「テストはメインエージェントが集約してサブエージェ�
 - 担当（P・T）は rm を走らせない。担当が使う script にも rm を入れない（例: host-run.sh の `--fresh` は新しい `run.*` の directory を作る形に変え、古い物は Q1 が `plan/tools/files/host-clean.sh WORKTREE` で消す）。消す物がある時は path と理由を Q1 に送る。guest の中（QEMU の中の `/tmp` など）の rm は host の削除ではないので対象外。
 - security・権限の判定で止められたら、担当も Q1 も別の経路で回避しない。Q1 がユーザーに内容と対処の案を示して指示を待つ（2026-10-02 の「権限で止まったとき」の再起動の手順は、ユーザーがそれを選んだ時だけ）。
 - 範囲（2026-10-06 ユーザー、クリック「make の規則の rm は可」）: make の規則が自分の worktree の build/ の中の自分の出力を消すのは対象外。担当が直に打つ rm と試験の script の中の host の rm は禁止のまま。script は `plan/tools/fresh-out.sh`（`fresh_out NAME`）か `build/tmp/` の mktemp を使い、Q1 が `plan/tools/q1-clean.sh WORKTREE` で古い物を消す。
+
+## 削除はメインエージェントの仕事（2026-10-07 ユーザー）
+
+- ユーザー（2026-10-07、T1 が host で `rm -f /dev/null` を誤って打ち、続く script が auto-mode で拒否された件の後）:「T1は再起動します。削除コマンドの実行は禁止として、メインエージェントにaskして実行してもらうパイプラインを作って対策します。削除自体はメインエージェントの仕事にします。」
+- 全ての担当（P1〜P8・T1・B1）は削除の command（rm・rmdir・unlink・find -delete・shutil.rmtree・os.remove など、script の中も）を一切実行しない。消す必要がある物は SendMessage で Q1 に path と理由を送り（「削除の依頼」）、Q1 が中身を確かめて自分の pipeline で消し、結果を返す。
+- 担当は削除を待たずに続けてよい（新しい出力先は fresh_out か build/tmp の新しい directory）。
