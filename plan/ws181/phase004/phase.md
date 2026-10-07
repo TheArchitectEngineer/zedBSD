@@ -2,7 +2,7 @@
 # ws181-p004: 整列のメニューと整列モード
 
 Parent: [WS181](../ws.md)
-Status: test-wait（T1-342）。旧: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は T1 へ依頼（WS181 の区切り）、test-wait にするのは Q1）
+Status: cleared（2026-10-07 Q1 の判定: T1-342 で ws181-guest.sh status 0（A1〜C12）・p010-guest.sh・zdesktop-p013-touch.sh・zdesktop-p010.sh・zdesktop-p065.sh PASS、Q1 が PNG を目視（Home は独立、整列のメニュー、入れ替えの後の右に 1 つ）。c10-arranged の PNG は glide の途中の撮影（試験の待ちを P2 が直す））（旧: test-wait（T1-342）。旧: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は T1 へ依頼（WS181 の区切り）、test-wait にするのは Q1））
 Disposition: normal
 Queue: q842 / q842-i01
 Design: [p001 design.md](../phase001/design.md) §4・§5
