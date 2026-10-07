@@ -6,8 +6,11 @@
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 gentool=${GENTOOL:-$repo/plan/ws031/mesa-refs/mesa/build-gentool/src/intel/compiler/gen/gentool}
-work=$(mktemp -d "${TMPDIR:-/tmp}/ws031-gentool.XXXXXX")
-trap "rm -rf -- \"$work\"" EXIT HUP INT TERM
+# A new directory for each run under build/tmp; nothing is removed here (Q1's plan/tools/q1-clean.sh removes the
+# runs build/tmp/ws031-gentool does not point at).
+. "$repo/plan/tools/fresh-out.sh"
+fresh_out "$repo/build/tmp/ws031-gentool"
+work=$fresh_dir
 base="-std=gnu11 -Wall -Wextra -Werror -DKERN_USER_ABI_LP64 -I$repo/include -I$repo -idirafter $repo/include/libc"
 
 disasm() {	# binary -> text on stdout
@@ -61,6 +64,9 @@ for spv in "$repo"/userland/tests/mview/shaders/*.spv "$repo"/src/drivers/gpu/i9
 	name=$(basename "$spv" .spv)
 	case $name in
 	dual-alone.frag) continue ;;    # refused on purpose (ws031-p032: a second colour without the first)
+	refuse-*) continue ;;           # refused on purpose (ws075-p007a: what a geometry shader may not do)
+	points.geom|adjacency.geom|layers.geom|varyings.geom) continue ;;  # XXX EmitVertex: ws075-p007a increment a3
+	*.geom) stage=geometry ;;
 	*.vert) stage=vertex ;;
 	*) stage=fragment ;;
 	esac

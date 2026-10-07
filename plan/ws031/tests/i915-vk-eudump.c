@@ -1,7 +1,8 @@
 /*
  * WS031 E-128: host tool -- runs the executor's own compiler (spirv.c -> compile.c -> eu.c) on a SPIR-V
  * module and writes the kernel it produces, for Mesa's gentool to disassemble / re-assemble.
- *   i915-vk-eudump vertex|fragment module.spv kernel.bin
+ *   i915-vk-eudump vertex|fragment|geometry module.spv kernel.bin
+ * A geometry shader is compiled after a vertex shader that writes exactly the locations it reads (ws075-p007a).
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -20,6 +21,9 @@ main(int argc, char **argv)
 {
 	struct i915_shader_ir *ir;
 	struct i915_shader_binary *binary;
+	struct i915_shader_binary producer;
+	enum i915_shader_stage stage;
+	uint32_t index;
 	struct i915_compile_diagnostic diag;
 	uint32_t *words;
 	long bytes;
@@ -39,15 +43,27 @@ main(int argc, char **argv)
 		return 2;
 	fclose(f);
 
+	stage = I915_STAGE_FRAGMENT;
+	if (strcmp(argv[1], "vertex") == 0)
+		stage = I915_STAGE_VERTEX;
+	if (strcmp(argv[1], "geometry") == 0)
+		stage = I915_STAGE_GEOMETRY;
 	memset(&diag, 0, sizeof(diag));
-	error = drv_i915_shader_parse(words, (size_t)bytes / 4U,
-		strcmp(argv[1], "vertex") == 0 ? I915_STAGE_VERTEX : I915_STAGE_FRAGMENT, &ir, &diag);
+	error = drv_i915_shader_parse(words, (size_t)bytes / 4U, stage, &ir, &diag);
 	if (error != 0) {
 		fprintf(stderr, "parse: error %d (%s, opcode %u at word %u)\n", error,
 			diag.reason != NULL ? diag.reason : "?", diag.opcode, diag.word_offset);
 		return 1;
 	}
-	error = drv_i915_shader_compile(ir, &binary);
+	/* a geometry shader's producer writes the locations it reads, in ascending order (the parser lists them so) */
+	memset(&producer, 0, sizeof(producer));
+	producer.stage = I915_STAGE_VERTEX;
+	for (index = 0U; index < ir->input_count && index < I915_SHADER_MAX_INPUTS; index++)
+		producer.varying_locations[producer.varying_count++] = ir->inputs[index].location;
+	if (stage == I915_STAGE_GEOMETRY)
+		error = drv_i915_shader_compile_stage(ir, &producer, &binary);
+	else
+		error = drv_i915_shader_compile(ir, &binary);
 	if (error != 0) {
 		fprintf(stderr, "compile: error %d\n", error);
 		return 1;
