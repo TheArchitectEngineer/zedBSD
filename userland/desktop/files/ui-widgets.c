@@ -155,12 +155,35 @@ fm_button(
 {
 	struct kl_style style;
 
-	/* The button in the frame's widgets' input. */
+	/* The button in the frame's widgets' input (unlit without it). */
 	fm_style(app, canvas, &style);
-	if (app->ui != NULL)
-		(void)kl_button(app->ui, &style, FM_WIDGET_BUTTON + (uint32_t)index, rect, label, flags);
+	(void)kl_button(app->ui, &style, FM_WIDGET_BUTTON + (uint32_t)index, rect, label, flags);
 
 	/* An enabled one can be clicked. */
 	if ((flags & KL_BUTTON_DISABLED) == 0U)
 		fm_ui_hit(app, rect, FM_HIT_BUTTON, index);
+}
+
+/*
+ * Draws libkeiland's button that is a picture alone in a rectangle (an
+ * id among the widgets and its index, the icon pixels square, flags
+ * KL_BUTTON_*), lit under the pointer (unlit without the widgets' input).
+ * files keeps the region its click is carried out by (fm_ui_hit).
+ */
+void
+fm_icon_button(
+	struct fm_app *app,
+	struct kl_canvas *canvas,
+	uint32_t id,
+	int index,
+	const struct kl_rect *rect,
+	enum kl_icon icon,
+	int pixels,
+	unsigned flags)
+{
+	struct kl_style style;
+
+	/* The button in the frame's widgets' input. */
+	fm_style(app, canvas, &style);
+	(void)kl_icon_button(app->ui, &style, id, (uint32_t)index, rect, icon, pixels, flags);
 }

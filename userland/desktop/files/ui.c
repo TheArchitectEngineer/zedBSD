@@ -1105,8 +1105,7 @@ ui_draw_sidebar(
 			remove.y = row.y + 5;
 			remove.width = 20;
 			remove.height = 20;
-			kl_canvas_circle(canvas, (float)remove.x + 10.0f, (float)remove.y + 10.0f, 9.0f, KL_RGBA(0x5a6b85, 40));
-			kl_icon_draw(canvas, KL_ICON_CLOSE, (float)remove.x + 3.0f, (float)remove.y + 3.0f, 14.0f, FM_COLOR_TEXT_SECONDARY);
+			fm_icon_button(app, canvas, FM_WIDGET_ICON, FM_BUTTON_REMOVE_PLACE + index, &remove, KL_ICON_CLOSE, 14, KL_BUTTON_ROUND | KL_BUTTON_QUIET);
 			fm_ui_hit(app, &remove, FM_HIT_BUTTON, FM_BUTTON_REMOVE_PLACE + index);
 		}
 
@@ -1120,10 +1119,7 @@ ui_draw_sidebar(
 			eject.y = row.y + 5;
 			eject.width = 20;
 			eject.height = 20;
-			if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_EJECT_PLACE + index)
-				kl_canvas_circle(canvas, (float)eject.x + 10.0f, (float)eject.y + 10.0f, 9.0f, KL_RGBA(0x5a6b85, 40));
-			kl_canvas_round(canvas, (float)eject.x + 5.0f, (float)eject.y + 12.0f, 10.0f, 2.0f, 1.0f, FM_COLOR_TEXT_SECONDARY);
-			kl_canvas_round(canvas, (float)eject.x + 6.0f, (float)eject.y + 5.0f, 8.0f, 5.0f, 1.5f, FM_COLOR_TEXT_SECONDARY);
+			fm_icon_button(app, canvas, FM_WIDGET_ICON, FM_BUTTON_EJECT_PLACE + index, &eject, KL_ICON_EJECT, 20, KL_BUTTON_ROUND | KL_BUTTON_QUIET);
 			fm_ui_hit(app, &eject, FM_HIT_BUTTON, FM_BUTTON_EJECT_PLACE + index);
 		}
 

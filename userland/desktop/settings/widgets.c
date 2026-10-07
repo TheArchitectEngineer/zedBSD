@@ -412,8 +412,9 @@ se_button_draw(
 
 /*
  * Draws a button that is a picture alone, WIDGETS_BUTTON_HEIGHT square with
- * its top left at (x, y): white within a thin edge, darker under the
- * pointer, the glyph in the middle.  It is a page's control (index).
+ * its top left at (x, y): libkeiland's (white within a thin edge, darker
+ * under the pointer, the icon in the middle).  It is a page's control
+ * (index).
  */
 void
 se_icon_button_draw(
@@ -421,12 +422,11 @@ se_icon_button_draw(
 	struct kl_canvas *canvas,
 	int x,
 	int y,
-	unsigned glyph,
+	enum kl_icon icon,
 	int index)
 {
+	struct kl_style style;
 	struct kl_rect rect;
-	kl_color ground;
-	int lit;
 
 	/* The button's square. */
 	rect.x = x;
@@ -434,16 +434,9 @@ se_icon_button_draw(
 	rect.width = WIDGETS_BUTTON_HEIGHT;
 	rect.height = WIDGETS_BUTTON_HEIGHT;
 
-	/* The control's ground, darker (lighter in the dark appearance) under the pointer or while pressed. */
-	ground = SE_COLOR_CONTROL;
-	lit = se_ui_lit(app, SE_HIT_CONTROL, index);
-	if (lit != 0)
-		ground = kl_color_mix(ground, SE_COLOR_PRESSED, 0.08f);
-
-	/* The square, its edge and the picture in the middle. */
-	kl_canvas_round(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, ground);
-	kl_canvas_round_border(canvas, (float)x, (float)y, (float)WIDGETS_BUTTON_HEIGHT, (float)WIDGETS_BUTTON_HEIGHT, 8.0f, 1.0f, SE_COLOR_CONTROL_EDGE);
-	se_glyph_draw(canvas, glyph, (float)x + 6.0f, (float)y + 6.0f, (float)(WIDGETS_BUTTON_HEIGHT - 12), SE_COLOR_TEXT);
+	/* libkeiland's button (its click is the page's, through the control's hit). */
+	widgets_style(app, canvas, &style);
+	(void)kl_icon_button(widgets_ui, &style, widgets_control_id(index), 0U, &rect, icon, WIDGETS_BUTTON_HEIGHT - 12, 0U);
 
 	/* It is clickable. */
 	se_ui_hit(app, &rect, SE_HIT_CONTROL, index);
@@ -718,6 +711,8 @@ se_field_key(
 	default:
 		break;
 	}
+
+	/* A key that neither edits nor types is the page's. */
 	character = kl_key_character(event->key, event->modifiers);
 	if (!editing && character == 0U)
 		return 0;

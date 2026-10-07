@@ -1589,9 +1589,14 @@ void fm_widgets_release(struct fm_app *app);
 void fm_style(struct fm_app *app, struct kl_canvas *canvas, struct kl_style *style);
 int fm_button_width(struct fm_app *app, const char *label);
 void fm_button(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *rect, const char *label, int index, unsigned flags);
+void fm_icon_button(struct fm_app *app, struct kl_canvas *canvas, uint32_t id, int index, const struct kl_rect *rect, enum kl_icon icon, int pixels, unsigned flags);
 
 /* files' buttons' IDs among libkeiland's widgets (ui-widgets.c), the button's index after it. */
 #define FM_WIDGET_BUTTON	0x20000000U
+
+/* The IDs of files' buttons that are a picture alone: a button's (its FM_BUTTON_* index), and a tab's close button (the tab's index). */
+#define FM_WIDGET_ICON		0x30000000U
+#define FM_WIDGET_TAB_CLOSE	0x30000001U
 int fm_rename_start(struct fm_app *app, const char *name, size_t stem);
 void fm_rename_select_all(struct fm_app *app);
 int fm_rename_input(struct fm_app *app, const struct fm_event *event);

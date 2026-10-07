@@ -125,9 +125,11 @@ keiui_button(
 	if ((flags & KL_BUTTON_DISABLED) != 0U)
 		enabled = 0;
 	state = 0;
-	if (enabled)
+	if (enabled && ui != NULL)
 		state = keiui_ui_widget(ui, id, index, rect, KEIUI_FOCUSABLE);
-	ring = keiui_ui_focus_ring(ui);
+	ring = 0;
+	if (ui != NULL)
+		ring = keiui_ui_focus_ring(ui);
 
 	/* Its colours: white with an edge, the accent for the main one, red for a dangerous one. */
 	ground = theme->control;
@@ -179,8 +181,112 @@ keiui_button(
 	if ((state & KL_HIT_FOCUSED) != 0U && ring)
 		widgets_ring(style, rect, theme->control_radius);
 
-	/* A disabled button is never pressed. */
-	if (!enabled)
+	/* A disabled button, or one without the input, is never pressed. */
+	if (!enabled || ui == NULL)
+		return 0;
+
+	/* Pressed: clicked, tapped, or Enter or Space while it has the focus. */
+	pressed = 0;
+	if ((state & KL_HIT_CLICKED) != 0U)
+		pressed = 1;
+	if ((state & KL_HIT_FOCUSED) != 0U)
+		pressed |= keiui_ui_take_activate(ui, id, index);
+
+	/* Reports whether it was pressed. */
+	return pressed;
+}
+
+/*
+ * Draws a button that is a picture alone (KL_BUTTON_* flags) and reports
+ * 1 when it was pressed since the last frame.
+ */
+int
+kl_icon_button(
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	uint32_t id,
+	uint32_t index,
+	const struct kl_rect *rect,
+	enum kl_icon icon,
+	int pixels,
+	unsigned flags)
+{
+	const struct kl_theme *theme;
+	kl_color ground;
+	kl_color edge;
+	kl_color ink;
+	unsigned state;
+	float radius;
+	int enabled;
+	int pressed;
+	int quiet;
+	int side;
+	int lit;
+	int ring;
+
+	/* The record: a working button takes the keyboard. */
+	theme = style->theme;
+	enabled = 1;
+	if ((flags & KL_BUTTON_DISABLED) != 0U)
+		enabled = 0;
+	state = 0;
+	if (enabled && ui != NULL)
+		state = keiui_ui_widget(ui, id, index, rect, KEIUI_FOCUSABLE);
+	ring = 0;
+	if (ui != NULL)
+		ring = keiui_ui_focus_ring(ui);
+	lit = 0;
+	if ((state & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
+		lit = 1;
+
+	/* Its shape: the control's rounded square, or a circle as wide as its shorter side. */
+	radius = theme->control_radius;
+	if ((flags & KL_BUTTON_ROUND) != 0U) {
+		side = rect->width;
+		if (rect->height < side)
+			side = rect->height;
+		radius = (float)side * 0.5f;
+	}
+
+	/* Its colours: white within an edge and the main ink, darker under the pointer or while held. */
+	quiet = 0;
+	if ((flags & KL_BUTTON_QUIET) != 0U)
+		quiet = 1;
+	ground = theme->control;
+	edge = theme->control_edge;
+	ink = theme->text;
+	if (lit)
+		ground = kl_color_mix(ground, theme->text, WIDGETS_HOVER_SHADE);
+
+	/* A quiet one: the secondary ink, and only the hover's ground under the pointer or while held. */
+	if (quiet) {
+		ground = 0;
+		edge = 0;
+		ink = theme->text_secondary;
+		if (lit)
+			ground = theme->hover;
+	}
+
+	/* Faded when it does nothing: the faint ink, and a faded ground and edge (a quiet one has none). */
+	if (!enabled) {
+		ink = theme->text_faint;
+		if (!quiet) {
+			ground = kl_color_mix(ground, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
+			edge = kl_color_mix(edge, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
+		}
+	}
+
+	/* The ground and its edge (none for a quiet one at rest), the icon in the middle, and the focus's ring. */
+	if (ground != 0)
+		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, radius, ground);
+	if (edge != 0)
+		kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, radius, 1.0f, edge);
+	kl_icon_draw(style->canvas, icon, (float)rect->x + (float)(rect->width - pixels) * 0.5f, (float)rect->y + (float)(rect->height - pixels) * 0.5f, (float)pixels, ink);
+	if ((state & KL_HIT_FOCUSED) != 0U && ring)
+		widgets_ring(style, rect, radius);
+
+	/* A disabled button, or one without the input, is never pressed. */
+	if (!enabled || ui == NULL)
 		return 0;
 
 	/* Pressed: clicked, tapped, or Enter or Space while it has the focus. */

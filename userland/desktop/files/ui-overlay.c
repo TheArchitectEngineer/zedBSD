@@ -166,9 +166,7 @@ fm_tasks_draw(
 		cancel.y = row + 12;
 		cancel.width = 26;
 		cancel.height = 26;
-		if (app->hover_kind == FM_HIT_BUTTON && app->hover_index == FM_BUTTON_TASK_CANCEL + index)
-			kl_canvas_circle(canvas, (float)cancel.x + 13.0f, (float)cancel.y + 13.0f, 13.0f, FM_COLOR_HOVER);
-		kl_icon_draw(canvas, KL_ICON_CLOSE, (float)cancel.x + 5.0f, (float)cancel.y + 5.0f, 16.0f, FM_COLOR_TEXT_SECONDARY);
+		fm_icon_button(app, canvas, FM_WIDGET_ICON, FM_BUTTON_TASK_CANCEL + index, &cancel, KL_ICON_CLOSE, 16, KL_BUTTON_ROUND | KL_BUTTON_QUIET);
 		fm_ui_hit(app, &cancel, FM_HIT_BUTTON, FM_BUTTON_TASK_CANCEL + index);
 	}
 }
