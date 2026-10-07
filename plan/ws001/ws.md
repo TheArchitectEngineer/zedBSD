@@ -9,7 +9,7 @@ Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
 Queue: q834（2026-10-07、P2）
-Resume point: 2026-10-07 q834 P2: p041 ls（host 24/24）→ p042 find（host 38/38）→ p043 tabs、guest の回帰は 3 つの後に T1 にまとめる。それ以前: p024〜p040 cleared（2026-09-27）
+Resume point: 2026-10-07 q834 P2: p041 ls（host 24/24）→ p042 find（host 38/38）→ p043 tabs（host 55/55）、guest の回帰は 3 つの後に T1 にまとめる。それ以前: p024〜p040 cleared（2026-09-27）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -62,6 +62,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p040` | [mesg](phase040/phase.md) | cleared（2026-09-27） | 書き直し（最初の端末の descriptor、`y`/`n`/`--`、他の bit を保つ、状態 0/1/2）、host 9/9、style 0、amd64 guest の pinned 31/31（console の case は BUG-067 の修正の後に PASS） |
 | `ws001-p041` | [ls の XCU の option](phase041/phase.md) | in-progress（2026-10-07 P2） | -A・-c・-u・-f・-g・-o・-H・-k・-p・-s・-S、512 byte の block。host の差分 24/24、zedBSD の build。guest は T1 待ち |
 | `ws001-p042` | [find の XCU の primary と式](phase042/phase.md) | in-progress（2026-10-07 P2） | -exec … {} + の束ね、-perm の symbolic mode、-L/-H の dangling link、loop の診断。host の差分 38/38、zedBSD の build。guest は T1 待ち |
+| `ws001-p043` | [tabs の XCU の形と幅](phase043/phase.md) | in-progress（2026-10-07 P2） | -0、-1・-2、column 1 の `\E[0C` のずれ、幅（COLUMNS・端末・cols）、TERM の既定、複数の operand。host の比較 55/55、zedBSD の build。guest は T1 待ち |
 
 ### q042 pre-merge identifier migration
 
