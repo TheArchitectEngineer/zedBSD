@@ -13,3 +13,10 @@
 | src/intel/compiler/brw/brw_eu.c | yes | 278e0e8ad79d6ecd1a604cf36ab968831966a788927cfb43f9a2e977648b5b47 |
 | src/intel/isl/isl_format.c | yes | bd4db86433308c18f420b46d312062955bb53b82c43103671f8aaca3c803349d |
 | src/intel/isl/isl_surface_state.c | yes | 91cfad233c67d7ea033bb351a5ca424b0c8df796d6c268b14f32f9c776def4e8 |
+
+## ws083-p004 の追加（2026-10-08、Q1 が P2 の文面から）
+
+| zedBSD の file | 出所と扱い | Phase |
+| --- | --- | --- |
+| src/drivers/gpu/i915/intel/genxml-video.h | Mesa 25.0.7 genxml（MIT、Intel の PRM の hardware の事実）の MFX/MFD AVC と MI_FLUSH_DW・MI_FORCE_WAKEUP・MFX_WAIT の opcode・長さ・field の bit の値だけを転記（gen120/110/90/80/75 の SHA-256 は file の先頭）、命令列・写像・DPB の論理は新規 | ws083-p004 |
+| src/drivers/gpu/i915/render/video-h264-tables.c | ITU-T H.264 の表の値（Table 7-3・7-4・8-12・8-13） | ws083-p004 |
