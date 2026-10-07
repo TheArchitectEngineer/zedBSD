@@ -101,3 +101,21 @@ Keiland の lease がどの出力にも無い時に、GOP の出力でない接�
 - **wl_output**（`protocol.c` の新しい `kwl_output_changed`）: bind した全ての `KWL_OUTPUT` の object に `output_send` と同じ geometry・mode（current|preferred、新しい width・height・refresh）・scale・name・description・done を送り直す。
 - **pointer**（`input.c`）: `server->pointer_x/y` を新しい範囲へ clamp。
 - **その他の cache**: 画面の keyboard（`keyboard.c` の panel の座標は開く時に計算、開いていれば閉じる）、backdrop（`kwl_backdrop_destroy` は output の close で既に呼ばれる）、App Home・bar・stage は毎 frame に `server->width` から計算（確かめて、cache があれば捨てる）。
+
+## p004a の実装（2026-10-07 q850、P2）
+
+| 部分 | file |
+| --- | --- |
+| surface の display の指定 | `userland/tests/vkdemo/display.c`・`.h`: `vkdemo_display_open_on`（`vkdemo_display_open` はそれを呼ぶ、振る舞いは不変） |
+| compositor の Vulkan | `compose.c`: instance の surface_counter と device の display_control を任意に有効化し `vkRegisterDeviceEventEXT` を引く、surface は `compose->display` に開く、`kwl_compose_display_read`（size・refresh・名前）、`compose_refresh` は size を引数に、起動の display を `boot_display` に、acquire・present の SURFACE_LOST・OUT_OF_DATE は失敗でなく `output_lost`（frame を出さない）、close で hotplug の fence を壊す。`compose.h`: 出力の追跡の欄（hotplug・displays・名前・limited・output_lost）、`KWL_COMPOSE_DISPLAYS`・`KWL_COMPOSE_NAME` |
+| 切り替え | 新しい `output-switch.c`: `kwl_output_tick`（`display.c` の `kwl_schedule`、250 ms ごと。fence の signal で新しい fence → 列挙 → 古い fence、limited を忘れる、失った出力を内蔵 → 他へ）、`kwl_output_switch`（close → 別の display の native の size で open → 失敗は limited にして元へ、元も開かなければ次の hotplug を待つ → size が変われば fit → wl_output を全 client へ）、`kwl_output_external_available`・`_use_external`・`_use_internal`（ws052-p012 の R4 の口）。内蔵は名前の `:edp:`、無ければ起動の display |
+| 大きさの変更 | `glass.c` の `kwl_glass_resize`（wallpaper・blur を作り直す）、`shell.c` の `kwl_glass_output_resized`（全画面は configure、docked は docked_rect で configure、floating は大きさのまま space の内へ）、`protocol.c` の `kwl_outputs_changed`（bind した wl_output に geometry・mode・scale・name・description・done）、pointer の clamp |
+| QEMU の道具 | `plan/ws035/tests/zdesktop-guest.sh` の `VENUS_DISPLAY=dbus`（選ぶ時だけ、runtime の私的な session bus に QEMU の D-Bus display、既定は不変、2026-10-07 Q1 の許可）、新しい `plan/tools/guest/venus-head.sh`（`SetUIInfo` で head を挿す・抜く）、`plan/ws113/tests/output-switch-p004a.sh`（T1） |
+| 試験 | `plan/ws113/tests/host-output-switch.c`・`.sh` |
+
+## 確認（2026-10-07）
+
+- `sh plan/ws113/tests/host-output-switch.sh` PASS（plain・ASan/UBSan: 内蔵と外部の分類（名前、無ければ起動の display）、外部への切り替えで size・fit・client への通知・pointer の clamp、内蔵へ戻る、拒否で limited と元への戻り、hotplug で新しい fence を先に・limited を忘れる、250 ms の間引き、失った出力の内蔵への移動、display 0 台で待ち次の display に開く、仮想の display の内蔵の扱い、同じ display への切り替えは何もしない）。
+- build（warning 0）: zedBSD の `wayland`・`vkdemo`（`config-amd64-zdesktop.mk`）、`keiland-linux`（rc 0）。style-check は新規の違反 0。
+- 未実施: QEMU（T1: `VENUS_DISPLAY=dbus VENUS_OUTPUTS=2` で `output-switch-p004a.sh`。D-Bus display で VNC が絵を取れるかは未確認なので試験は guest の行で判定）、実機（p011a の後、ws052-p012 の R4 とまとめて 5330 の UAT）。
+- 制限: 画面の keyboard が開いている時の panel の座標は開き直すまで古い大きさ（p004b で）。

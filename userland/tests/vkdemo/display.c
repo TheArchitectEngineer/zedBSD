@@ -19,7 +19,8 @@ static VkResult choose_plane(VkPhysicalDevice physical, VkDisplayKHR display, Vk
 static VkResult choose_format(VkPhysicalDevice physical, VkSurfaceKHR surface, VkFormat *format);
 
 /*
- * Create a surface using an enumerated display, mode and compatible plane.
+ * Opens a direct-display surface of the requested size on the first display
+ * that can show it.
  */
 VkResult
 vkdemo_display_open(
@@ -30,13 +31,9 @@ vkdemo_display_open(
 	struct vkdemo_display *display)
 {
 	VkDisplayPropertiesKHR *properties;
-	VkDisplaySurfaceCreateInfoKHR create;
-	VkDisplayModeKHR mode;
 	VkResult status;
 	uint32_t count;
 	uint32_t index;
-	uint32_t plane;
-	uint32_t stack;
 
 	/* Preserve requested geometry without treating any device as a special case. */
 	memset(display, 0, sizeof(*display));
@@ -76,30 +73,8 @@ vkdemo_display_open(
 		if ((properties[index].supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) == 0)
 			continue;
 
-		/* Reuse a matching mode or ask this display to validate the requested size. */
-		status = choose_mode(physical, properties[index].display, width, height, &mode);
-		if (status != VK_SUCCESS)
-			continue;
-
-		/* Require a plane that supports this display, geometry and opaque pixels. */
-		status = choose_plane(physical, properties[index].display, mode, width, height, &plane, &stack);
-		if (status != VK_SUCCESS)
-			continue;
-
-		/* Initialize the one-to-one, opaque direct-display surface. */
-		memset(&create, 0, sizeof(create));
-		create.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
-		create.displayMode = mode;
-		create.planeIndex = plane;
-		create.planeStackIndex = stack;
-		create.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-		create.globalAlpha = 1.0f;
-		create.alphaMode = VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR;
-		create.imageExtent.width = width;
-		create.imageExtent.height = height;
-
-		/* Publish only a surface accepted by the selected Vulkan implementation. */
-		status = vkCreateDisplayPlaneSurfaceKHR(instance, &create, NULL, &display->surface);
+		/* The first display that takes a surface of this size is the one. */
+		status = vkdemo_display_open_on(instance, physical, properties[index].display, width, height, display);
 		if (status == VK_SUCCESS)
 			break;
 	}
@@ -109,11 +84,64 @@ vkdemo_display_open(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Refuse an all-incompatible list that never attempted surface creation. */
-	if (display->surface == VK_NULL_HANDLE)
-		return VK_ERROR_INITIALIZATION_FAILED;
-
 	/* Succeeded: the renderer owns one direct-display surface. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Opens a direct-display surface of the requested size on one given display.
+ *
+ * A compositor that moves to another display while it runs names the
+ * display itself (ws113-p004a).
+ */
+VkResult
+vkdemo_display_open_on(
+	VkInstance instance,
+	VkPhysicalDevice physical,
+	VkDisplayKHR target,
+	uint32_t width,
+	uint32_t height,
+	struct vkdemo_display *display)
+{
+	VkDisplaySurfaceCreateInfoKHR create;
+	VkDisplayModeKHR mode;
+	VkResult status;
+	uint32_t plane;
+	uint32_t stack;
+
+	/* Preserve requested geometry; no surface is owned yet. */
+	memset(display, 0, sizeof(*display));
+	display->width = width;
+	display->height = height;
+
+	/* Reuse a matching mode or ask this display to validate the requested size. */
+	status = choose_mode(physical, target, width, height, &mode);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Require a plane that supports this display, geometry and opaque pixels. */
+	status = choose_plane(physical, target, mode, width, height, &plane, &stack);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Initialize the one-to-one, opaque direct-display surface. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
+	create.displayMode = mode;
+	create.planeIndex = plane;
+	create.planeStackIndex = stack;
+	create.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	create.globalAlpha = 1.0f;
+	create.alphaMode = VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR;
+	create.imageExtent.width = width;
+	create.imageExtent.height = height;
+
+	/* Publish only a surface accepted by the selected Vulkan implementation. */
+	status = vkCreateDisplayPlaneSurfaceKHR(instance, &create, NULL, &display->surface);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the caller owns one direct-display surface on the display. */
 	return VK_SUCCESS;
 }
 

@@ -375,6 +375,37 @@ kwl_dispatch(
 	return 0;
 }
 
+/*
+ * Tells every bound wl_output the output's new size and refresh (ws113-p004a,
+ * an output moved to another display), as a binding learns them: geometry,
+ * mode, scale, name, description and done.  A client the events cannot be
+ * queued for is left to its own failure.
+ */
+void
+kwl_outputs_changed(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *object;
+	int error;
+
+	/* Each wl_output object of every live client. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (object = client->objects; object != NULL; object = object->next) {
+			/* Only an output binding. */
+			if (object->kind != KWL_OUTPUT)
+				continue;
+
+			/* The whole snapshot again; a failure is the client's. */
+			error = output_events(object);
+			if (error != 0)
+				printf("KWL OUTPUT tell client=%llu errno=%d\n", (unsigned long long)client->number, error);
+		}
+	}
+}
+
 /* Reads one possibly unaligned native-endian protocol word. */
 static uint32_t
 word_at(

@@ -120,6 +120,9 @@ kwl_schedule(
 	/* The sleep's causes and its course (sleep.c, ws052-p012), before the lock screen's own tick. */
 	kwl_sleep_tick(server);
 
+	/* The displays followed, and the output moved from one that is gone (output-switch.c, ws113-p004a). */
+	kwl_output_tick(server);
+
 	/* The glass look's clock turns over. */
 	if (server->glass)
 		kwl_glass_tick(server);
