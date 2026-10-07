@@ -221,15 +221,16 @@ static uint32_t fullscreen_leave_eaten;
 /*
  * The virtual desktops in the middle of the bar (ws099-p034): how many, each
  * one's slot (its width and the gap after it), the pill's padding, a dot's
- * size, and the size of the shown desktop's outlined pill.  A dot's
+ * diameter (a circle, the 2026-10-07 UAT), and the size of the shown
+ * desktop's outlined capsule (half the slot's width, the same UAT).  A dot's
  * brightness does not change with the windows (the 2026-10-06 user decision).
  */
 #define DESKTOPS		4
 #define DESKTOP_WIDTH		30
 #define DESKTOP_GAP		4
 #define DESKTOPS_PAD		10
-#define DESKTOP_DOT_WIDTH	18
-#define DESKTOP_DOT_HEIGHT	7
+#define DESKTOP_DOT		7
+#define DESKTOP_SHOWN_WIDTH	15
 #define DESKTOP_SHOWN_HEIGHT	12
 
 /* The desktops' swipe: how near the edge it starts, how far it moves before it is one, and how long a slide takes. */
@@ -394,6 +395,8 @@ static void bar_dock_follow(struct kwl_server *server);
 static void draw_bar_group(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
 static void draw_desktops(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
 static void draw_status(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
+static void draw_home_status(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
+static int home_bar_passes(struct kwl_server *server, uint32_t state);
 static void draw_battery(struct kwl_server *server, VkCommandBuffer command, int32_t x, int percent, unsigned charging, const float *ink);
 static void draw_dock_hint(struct kwl_server *server, VkCommandBuffer command);
 static float animation_progress(struct kwl_server *server);
@@ -746,6 +749,7 @@ kwl_glass_button(
 	int pressed;
 	int error;
 	int open;
+	int passes;
 
 	/* The login screen takes every button (greeter.c). */
 	if (server->greeter) {
@@ -816,8 +820,14 @@ kwl_glass_button(
 
 	pressed = 0;
 	if (cover == NULL) {
-		/* App Home takes the launcher, the top-left corner, and every button while it shows. */
-		pressed = kwl_home_button(server, button, state);
+		/*
+		 * App Home takes the launcher, the top-left corner, and every button
+		 * while it shows, except what goes to the status and the clock it
+		 * leaves in the bar (the 2026-10-07 UAT, home_bar_passes).
+		 */
+		passes = home_bar_passes(server, state);
+		if (!passes)
+			pressed = kwl_home_button(server, button, state);
 	} else {
 		/* Only the corner's press, and the rest of one of Home's own presses. */
 		open = home_without_bar(server, button, state);
@@ -2413,17 +2423,6 @@ kwl_glass_bar_control_at(
 	return 1;
 }
 
-/* Switches to a desktop, sliding (for the arrangement menu's pictures, arrange-shell.c). */
-void
-kwl_glass_desktop_turn(
-	struct kwl_server *server,
-	int desktop,
-	const char *via)
-{
-	/* The same slide as the bar's and the keys'. */
-	desktop_turn(server, desktop, via);
-}
-
 /*
  * Gives the work area an arrangement fills (WS181): under the system bar,
  * less the on-screen keyboard's settled column or row, and above the
@@ -2563,6 +2562,16 @@ kwl_glass_committed(
 	} else {
 		/* Brought back: the docked size is the old one. */
 		if ((int32_t)width == docked.width && (int32_t)height == docked.height)
+			stale = 1U;
+
+		/*
+		 * Floating and sent a new size (an arranged window, WS181): the size
+		 * of its image when the size was sent is the old one, unless it is
+		 * also the size sent.
+		 */
+		if (width == surface->resized_from_width &&
+		    height == surface->resized_from_height &&
+		    (width != surface->window_width || height != surface->window_height))
 			stale = 1U;
 	}
 
@@ -3720,6 +3729,8 @@ draw_sign(
  * title and its buttons' pill; the desktops' pill in the middle; the status
  * pill and the clock's pill at the right.  Its ink is light; the glass's
  * colours are kept from the dark appearance's mapping while it is drawn.
+ * Over App Home only the status and the clock are drawn, in white (the
+ * 2026-10-07 UAT).
  */
 static void
 draw_system_bar(
@@ -3729,7 +3740,6 @@ draw_system_bar(
 {
 	struct glass_bar_colours colours;
 	struct kwl_menu_area area;
-	struct glass_shape shape;
 	struct kwl_object *docked;
 	int32_t available;
 	int32_t limit;
@@ -3737,11 +3747,18 @@ draw_system_bar(
 	float progress;
 	float home;
 
-	/* The docked window, if one is on top and not moving (not while App Home shows). */
-	docked = docked_window(server);
+	/*
+	 * Over App Home the bar is not drawn: only the status and the clock,
+	 * in white without their pills (the 2026-10-07 UAT).
+	 */
 	home = kwl_home_progress(server);
-	if (home > 0.0f)
-		docked = NULL;
+	if (home > 0.0f) {
+		draw_home_status(server, command, bar);
+		return;
+	}
+
+	/* The docked window, if one is on top and not moving. */
+	docked = docked_window(server);
 
 	/*
 	 * The bar keeps its own colours (ws099-p034b): light ink on the dark
@@ -3756,19 +3773,6 @@ draw_system_bar(
 
 	/* The launcher: the Kei mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
 	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
-
-	/* In App Home the launcher is marked by a ring around the mark. */
-	if (home > 0.0f) {
-		glass_shape_init(&shape, (float)(BAR_LAUNCHER_X - 2), (float)(BAR_LAUNCHER_Y - 2), (float)(BAR_LAUNCHER_SIZE + 4), (float)(BAR_LAUNCHER_SIZE + 4));
-		shape.mode = MODE_RING;
-		shape.radius = 9.0f;
-		shape.soft = 2.0f;
-		shape.color[0] = 0.25f;
-		shape.color[1] = 0.52f;
-		shape.color[2] = 0.98f;
-		shape.color[3] = home;
-		glass_shape_draw(server, command, &shape);
-	}
 
 	/* The line after the launcher. */
 	glass_draw_solid(server, command, (float)bar->menu_line, (float)BAR_LINE_TOP, 1.0f, (float)BAR_LINE_LENGTH, 0.0f, colours.line);
@@ -3805,8 +3809,10 @@ draw_system_bar(
 	if (docked == NULL && progress <= 0.0f)
 		(void)kwl_apps_bar_draw(server, command);
 
-	/* The desktops, then the status. */
+	/* The desktops, then the status in its pills. */
 	draw_desktops(server, command, bar, &colours);
+	draw_bar_group(server, command, bar->status_x, bar->status_width, BAR_GROUP_HEIGHT);
+	draw_bar_group(server, command, bar->clock_pill_x, bar->clock_pill_width, BAR_GROUP_HEIGHT);
 	draw_status(server, command, bar, colours.ink);
 
 	/* The rest of the frame is drawn in the appearance's colours again. */
@@ -3995,7 +4001,6 @@ draw_desktops(
 	float progress;
 	int32_t x;
 	int desktop;
-	int marked;
 
 	/* The current desktop's colour: the accent the user chose, on the bar's ground. */
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, current);
@@ -4026,18 +4031,11 @@ draw_desktops(
 		printf("KWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
 	}
 
-	/*
-	 * Each desktop's slot: a dot, or for the one shown an outlined pill as
-	 * wide as the slot; an arranged desktop's slot shows its layout's
-	 * drawing instead of the dot (WS181, arrange-shell.c).
-	 */
+	/* Each desktop's slot: a round dot, or for the one shown an outlined capsule half as wide as the slot, in its middle. */
 	for (desktop = 0; desktop < DESKTOPS; desktop++) {
 		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
-		marked = kwl_arrange_draw_mark(server, command, (unsigned)desktop, x, KWL_GLASS_BAR_MIDDLE, colours->ink);
-		if (marked && desktop != (int)server->desktop)
-			continue;
 		if (desktop == (int)server->desktop) {
-			glass_shape_init(&shape, (float)x, (float)(KWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
+			glass_shape_init(&shape, (float)(x + (DESKTOP_WIDTH - DESKTOP_SHOWN_WIDTH) / 2), (float)(KWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_SHOWN_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
 			shape.mode = MODE_RING;
 			shape.radius = (float)DESKTOP_SHOWN_HEIGHT * 0.5f;
 			shape.soft = 1.6f;
@@ -4045,16 +4043,16 @@ draw_desktops(
 			shape.color[3] = 0.95f;
 			glass_shape_draw(server, command, &shape);
 		} else {
-			glass_draw_solid(server, command, (float)(x + (DESKTOP_WIDTH - DESKTOP_DOT_WIDTH) / 2), (float)KWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT_HEIGHT * 0.5f,
-					 (float)DESKTOP_DOT_WIDTH, (float)DESKTOP_DOT_HEIGHT, (float)DESKTOP_DOT_HEIGHT * 0.5f, colours->faint);
+			glass_draw_solid(server, command, (float)x + (float)(DESKTOP_WIDTH - DESKTOP_DOT) * 0.5f, (float)KWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT * 0.5f,
+					 (float)DESKTOP_DOT, (float)DESKTOP_DOT, (float)DESKTOP_DOT * 0.5f, colours->faint);
 		}
 	}
 }
 
 /*
- * Draws the status at the right: the status pill (the input method's
- * language, the removable media, the network, the volume and the battery
- * when the machine has one) and the clock's pill.
+ * Draws the status at the right in an ink: the input method's language,
+ * the removable media, the network, the volume and the battery when the
+ * machine has one, and the clock (their pills are the caller's).
  */
 static void
 draw_status(
@@ -4063,10 +4061,6 @@ draw_status(
 	const struct shell_bar *bar,
 	const float *ink)
 {
-	/* The two pills. */
-	draw_bar_group(server, command, bar->status_x, bar->status_width, BAR_GROUP_HEIGHT);
-	draw_bar_group(server, command, bar->clock_pill_x, bar->clock_pill_width, BAR_GROUP_HEIGHT);
-
 	/* The date and time. */
 	glass_draw_text(server, command, SIZE_BAR, bar->clock_x, BAR_BASELINE, bar->clock, 400, ink);
 
@@ -4085,6 +4079,75 @@ draw_status(
 
 	/* The input method's language (A, あ), which a click changes (input-method.c). */
 	kwl_ime_indicator_draw(server, command, bar->ime_x, ink);
+}
+
+/*
+ * Draws what the bar keeps over App Home (the 2026-10-07 UAT): the status
+ * and the clock where they always are, in white, without the strip and
+ * without their pills.
+ */
+static void
+draw_home_status(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	const struct shell_bar *bar)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.96f };
+
+	/* White as it is, not mapped by the appearance, while it is drawn. */
+	server->keep_colours = 1U;
+	draw_status(server, command, bar, white);
+	server->keep_colours = 0U;
+}
+
+/*
+ * Tells whether a button over App Home goes past Home to the status and the
+ * clock the bar keeps there (the 2026-10-07 UAT): a press on the status or
+ * the clock, and every button while the volume's popup or the network's
+ * menu is open, as outside Home.  A press Home started keeps its buttons.
+ * Returns 1 when it goes past, 0 when it is Home's (or Home is not shown).
+ */
+static int
+home_bar_passes(
+	struct kwl_server *server,
+	uint32_t state)
+{
+	struct shell_bar bar;
+	float home;
+	int open;
+
+	/* Only over App Home, opening, open or closing. */
+	home = kwl_home_progress(server);
+	if (home <= 0.0f && server->home_to <= 0.0f)
+		return 0;
+
+	/* A press Home started has its release and its motion. */
+	if (server->home_press || server->home_page_press || server->home_rise_press)
+		return 0;
+
+	/* The volume's popup and the network's menu, while open, have every button. */
+	open = kwl_volume_is_open();
+	if (open)
+		return 1;
+	open = kwl_network_is_open();
+	if (open)
+		return 1;
+
+	/* Only a press in the bar's height goes to the status or the clock. */
+	if (state == 0 || server->pointer_y >= KWL_GLASS_BAR)
+		return 0;
+
+	/* The status pill's place. */
+	bar_layout(server, &bar);
+	if (server->pointer_x >= bar.status_x && server->pointer_x < bar.status_x + bar.status_width)
+		return 1;
+
+	/* The clock's place. */
+	if (server->pointer_x >= bar.clock_pill_x && server->pointer_x < bar.clock_pill_x + bar.clock_pill_width)
+		return 1;
+
+	/* Succeeded: the button is Home's. */
+	return 0;
 }
 
 /*
@@ -5133,6 +5196,12 @@ window_resized(
 	surface->resized_acked_ms = 0U;
 	surface->resized_commit_ms = 0U;
 
+	/* The size of the image it has now, which an image drawn before the client read the configure still has. */
+	surface->resized_from_width = 0U;
+	surface->resized_from_height = 0U;
+	if (surface->current != NULL)
+		kwl_surface_size(surface, &surface->resized_from_width, &surface->resized_from_height);
+
 	/* Succeeded: the window waits for its image of the new size. */
 	return;
 }
@@ -6096,6 +6165,7 @@ bar_press(
 	struct shell_bar bar;
 	unsigned second;
 	int pressed;
+	float home;
 
 	/* The desktops' pill is the arrangement menu's (arrange-shell.c, WS181: its pictures switch desktops there). */
 	bar_layout(server, &bar);
@@ -6105,6 +6175,11 @@ bar_press(
 		(void)kwl_home_open_app(server, "Calendar", "clock");
 		return 1;
 	}
+
+	/* Over App Home the bar has only the status and the clock: nothing else acts (the 2026-10-07 UAT). */
+	home = kwl_home_progress(server);
+	if (home > 0.0f)
+		return 1;
 
 	/* Otherwise only a docked window acts. */
 	surface = docked_window(server);
