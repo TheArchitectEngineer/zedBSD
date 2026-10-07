@@ -2,7 +2,7 @@
 
 # ws173-p006: シナリオの選択の helper（git の範囲 → paths）と suite の runner
 
-Status: in-progress（2026-10-05 夜、P2 g17。helper と runner への組み込み、host の確かめまで）
+Status: test-done（2026-10-07 q834 P2: runner は T1 の AAT の実行（T1-202c の smoke・full、T1-232、T1-305 など）で target で使われ、選択（`changed:`・suite・id・pattern）は host の git だけで決まる。判定は Q1）（旧: in-progress（2026-10-05 夜、host の確かめまで））
 Disposition: normal
 Parent: [WS173](../ws.md)
 Queue: Q1 の指示（2026-10-05 夜「p006（paths で選ぶ helper）へ進んでよい」）
@@ -32,5 +32,5 @@ Queue: Q1 の指示（2026-10-05 夜「p006（paths で選ぶ helper）へ進ん
 
 ## 未実施
 
-- target での runner の実行（p004 の T1-202 と同じ道具。選択は host の git だけで決まる）。
+- （済み、2026-10-07）target での runner の実行は T1-202c 以降。
 - plan/tests.md §5 への使い方の追記（Q1 の文書）。

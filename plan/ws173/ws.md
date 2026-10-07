@@ -21,7 +21,7 @@ Q1 の問い「実機をベアメタル起動したときに、SSH越しにマ�
 | --- | --- | --- | --- | --- |
 | p001 | kernel: `/dev/input-inject` にマウスとキーボード（UAPI の追加、試験の kernel の設定だけ） | P1 | planning | — |
 | p002 | compositor: 試験の image だけの画面の撮影の口と `keiland-shot`（i915 の実機で合成した画面を読み戻して PNG、QEMU でも同じ口） | P1 | planning | — |
-| [p003](phase003/phase.md) | host の道具 `plan/tools/aat/`（SSH で click・drag・wheel・key・type・shot の取得・log の行の待ち）と AAT の image の config | P2 | in-progress（2026-10-05 夜、CLI・SSH・host の自己試験まで。P1 の aat-input に合わせた） | p001・p002 |
+| [p003](phase003/phase.md) | host の道具 `plan/tools/aat/`（SSH で click・drag・wheel・key・type・shot の取得・log の行の待ち）と AAT の image の config | P2 | test-done（2026-10-07: T1-200c 以降の AAT の実行で target で確認、判定は Q1） | p001・p002 |
 | p004 | AAT の項目の一覧（今の実装済みの機能、UAT の項目から機器と使用感を除いた物）と判定の基準 | Q1 | planning | — |
 | p005 | 素の 5330 で AAT を行い、結果を記録 | T1 か専任 | planning | p001〜p004、素の起動の方法（ユーザーの判断） |
 
