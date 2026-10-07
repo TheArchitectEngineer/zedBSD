@@ -538,6 +538,7 @@ refresh(
 	bool post)
 {
 	unsigned long irq;
+	const char *outcome;
 	uint32_t class_bit;
 	int32_t value;
 	bool charging;
@@ -586,12 +587,16 @@ refresh(
 	 * closed (BUG-255) is told from a real one by its time.
 	 */
 	if (device->kind == POWER_LID) {
+		outcome = "unchanged";
+		if (changed)
+			outcome = "posted";
 		kern_logf("acpi: lid notify: _LID %d (%s) at %llu ms\n",
 		    value,
-		    changed ? "posted" : "unchanged",
+		    outcome,
 		    (unsigned long long)kern_ticks_to_ms(sched_ticks()));
 	}
 
+	/* Only a change is posted. */
 	if (!changed)
 		return;
 	if (charging) {

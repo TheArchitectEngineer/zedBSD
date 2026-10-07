@@ -148,6 +148,7 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/command.c src/drivers/gpu/i915/compil
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dkl-phy.c src/drivers/gpu/i915/display/tc.c src/drivers/gpu/i915/display/tc-kern.c
 # The external DP ports on the Type-C ports: the sink probe and its binding (ws051-p004a).
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dp-ext.c src/drivers/gpu/i915/display/dp-ext-kern.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/display/head.c src/drivers/gpu/i915/display/head-rules.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;

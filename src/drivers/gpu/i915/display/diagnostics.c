@@ -1527,6 +1527,10 @@ drv_i915_lcd_kernel_abandoned(
 	if (retained)
 		return 1;
 
+	/* The second output's stop was not confirmed: pipe B may still read its buffers (ws113-p011). */
+	if (display->head.broken)
+		return 1;
+
 	/* Succeeded: nothing was kept. */
 	return 0;
 }

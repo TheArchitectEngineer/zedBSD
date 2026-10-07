@@ -2405,7 +2405,7 @@ void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_port_hooks(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_buf_trans(struct intel_encoder *encoder);
 void drv_i915_lcd_ms_plane_data_rates(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
 int drv_i915_lcd_ms_cdclk_check(struct i915_takeover_world *takeover, struct i915_lcd_modeset *ms);
 int drv_i915_lcd_ms_bw_min_cdclk(struct i915_lcd_modeset *ms);
 unsigned int drv_i915_lcd_ms_bw_data_rate(struct i915_lcd_modeset *ms);
