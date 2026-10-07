@@ -2,7 +2,7 @@
 # ws148-p002: Privacy・Security・Accessibility の頁を無くし、最近の履歴の口を Files と Storage に置く（q824）
 
 Parent: [WS148](../ws.md)（WS149・WS151 の p002 も兼ねる）
-Status: in-progress（2026-10-06 P2 q824: 実装と host 試験まで。QEMU の目視は T1）
+Status: cleared（2026-10-08 Q1 の判定: T1-271（AAT の image）で Settings に Privacy・Security・Accessibility の頁が無い、Storage の Keep recent items の on/off、Files の Clear Recents で 0 items。`ZFILES RECENTS clear` の log の行が無いだけ（WS177 の backlog））
 Disposition: normal
 Queue: q824
 

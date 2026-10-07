@@ -2,7 +2,7 @@
 # ws142-p007: 設計 — 最大化を desktop の session の状態にする、touchpad の gesture の体系
 
 Parent: [WS142](../ws.md)
-Status: planned（2026-10-06 Q1 の設計の第 1 版。実装に取りかかれる。ユーザーの判断は「未決」の 2 点）
+Status: cleared（2026-10-08 Q1 の判定: 設計の内容は p008・p008b・p009 で実装され、未決の 2 点はユーザーが 2026-10-06 に決めた）
 Disposition: normal
 Related: [BUG-217](../../bugs/BUG-217.md)・[BUG-215](../../bugs/BUG-215.md)・[BUG-216](../../bugs/BUG-216.md)・[BUG-224](../../bugs/BUG-224.md)・[BUG-228](../../bugs/BUG-228.md)・[BUG-209](../../bugs/BUG-209.md)・[BUG-232](../../bugs/BUG-232.md)
 

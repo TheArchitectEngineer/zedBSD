@@ -2,7 +2,7 @@
 
 # ws142-p008b: 中央の窓の下の層を 1 枚の blur にまとめて描く
 
-Status: test-wait（T1 依頼中、p010-guest.sh。以前: in-progress、2026-10-06 q781-i01 P2: 実装・build まで。QEMU は p010 で T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-08 Q1 の判定: p010-guest.sh が T1-342（2026-10-07、status 0）と T1-359（status 0）で PASS）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q781 / q781-i01（Q1 の分け方、2026-10-06: p008 から分けた）

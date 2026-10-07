@@ -2,7 +2,7 @@
 
 # ws142-p009: touchpad の gesture の体系（TOP2、全画面の BOTTOM2、WiseView・preview の 1 swipe 1 つ）
 
-Status: test-wait（T1 依頼中、p010-guest.sh。以前: in-progress、2026-10-06 q781-i01 P2: 実装・build・host 試験まで。QEMU は p010 で T1 に依頼、5330 の感触はユーザーの UAT。結果の判定まで cleared にしない）
+Status: cleared（2026-10-08 Q1 の判定: p010-guest.sh が T1-342（2026-10-07、status 0）と T1-359（status 0）で PASS）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q781 / q781-i01

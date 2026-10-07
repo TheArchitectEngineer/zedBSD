@@ -2,7 +2,7 @@
 
 # ws142-p010: AAT のシナリオ・T1 の試験・規約の見直し（p008〜p009 の締め）
 
-Status: test-wait（T1 依頼中、2026-10-06 q781-i01 P2: シナリオと guest の試験を書き、Q1 経由で T1 に依頼。結果の判定まで cleared にしない）
+Status: cleared（2026-10-08 Q1 の判定: p010-guest.sh が T1-342（2026-10-07、status 0）と T1-359（status 0）で PASS）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q781 / q781-i01

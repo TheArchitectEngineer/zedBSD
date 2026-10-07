@@ -2,7 +2,7 @@
 
 # ws142-p001: デスクトップのアプリの切り替えの設計
 
-Status: cleared（2026-10-05 Q1: 設計を返し、D1〜D11 と追加の要望（bar の icon の並べ替え）はユーザーが回答済み（2026-10-05、本文の末尾）。p002〜p006 が cleared）。以前: in-progress（2026-10-05 P1 generation17 / q701-i01。設計を書いた。人間の判断が要る点 D1〜D11 が残る）
+Status: cleared（2026-10-08 Q1 の判定: 設計は p002〜p006 で実装され cleared、D1〜D11 はその時に決めた）
 Disposition: normal
 Parent: [WS142](../ws.md)
 Queue: q701 / q701-i01（Q1 の投入、ベータ2）。design-reviewer は省く（2026-10-05 ユーザー）。code は書かない

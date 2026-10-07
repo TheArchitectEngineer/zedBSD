@@ -2,7 +2,7 @@
 
 # ws145-p001: 印刷の調査と設計
 
-Status: cleared の提案（2026-10-07 q831 P2: 第 3.1 版、D2〜D9 はユーザーが決定（master の記録）、p002 から実装に入った。判定は Q1）。以前: in-progress（第 3.1 版まで。3 回目の敵対的レビューで重大なし。ユーザーの判断 D2〜D9 は 2026-10-05 夜に決定（下）、Q1 の clearance の判定待ち）
+Status: cleared（2026-10-08 Q1 の判定: 第 3.1 版、D2〜D9 はユーザーが決定、p002〜p004・p007 が実装され T1-318 で cleared）
 Disposition: normal
 Parent: [WS145](../ws.md)
 Queue: q754（Q1、2026-10-05、P2 g15）
