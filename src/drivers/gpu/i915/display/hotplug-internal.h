@@ -765,6 +765,10 @@ struct i915_hpd_instance {
 	unsigned ddi_triggers;
 	unsigned gmbus_irqs;
 
+	/* Display engine hotplug interrupts (the Type-C ports' DP-alt and Thunderbolt bits) entered, and those with no pin (ws051-p002b). */
+	unsigned de_entries;
+	unsigned de_unexpected;
+
 	/* Work counters. */
 	unsigned hotplug_works;
 	unsigned digport_works;
@@ -896,6 +900,13 @@ struct i915_hpd_world {
 
 	/* What the last EDID read found; written with the slots. */
 	struct i915_hpd_edid_info hpd_edid_last;
+
+	/*
+	 * The display's Type-C ports (tc.c), which the Type-C connectors' live
+	 * status is asked of; NULL for a model instance or a display without
+	 * them.  Set by every start.
+	 */
+	struct i915_tc *tc;
 
 	/* EDID reads attempted and failed since the start. */
 	unsigned hpd_edid_reads;

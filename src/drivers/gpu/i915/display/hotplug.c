@@ -101,6 +101,7 @@
 #include "hdmi.h"
 #include "output.h"
 #include "power.h"
+#include "tc-kern.h"
 #include "../mmio.h"
 #include <kern/kcrt.h>
 
@@ -171,6 +172,8 @@ static void i915_hotplug_work_func(struct work_struct *work);
 static void i915_hpd_poll_init_work(struct work_struct *work);
 static bool i915_icp_ddi_port_hotplug_long_detect(enum hpd_pin pin, u32 val);
 static bool i915_icp_tc_port_hotplug_long_detect(enum hpd_pin pin, u32 val);
+static bool i915_gen11_port_hotplug_long_detect(enum hpd_pin pin, u32 val);
+static void i915_hpd_gen11_irq_handler(struct i915_hpd_world *world, u32 iir);
 static void i915_get_hpd_pins(struct drm_i915_private *dev_priv, u32 *pin_mask, u32 *long_mask, u32 hotplug_trigger, u32 dig_hotplug_reg, const u32 hpd[HPD_NUM_PINS], bool long_pulse_detect(enum hpd_pin pin, u32 val));
 static enum intel_hotplug_state i915_ddi_hotplug(struct intel_encoder *encoder, struct intel_connector *connector);
 static bool i915_lpt_digital_port_connected(struct intel_encoder *encoder);
@@ -472,6 +475,11 @@ drv_i915_hpd_start(
 	kern_memset(&world->hpd_i915, 0, sizeof(world->hpd_i915));
 	i915 = &world->hpd_i915;
 
+	/* The Type-C ports a hardware instance asks the live status of (a model has none). */
+	world->tc = NULL;
+	if (fake == NULL)
+		world->tc = drv_i915_tc_kern_ports(display);
+
 	/* Records what the instance runs on. */
 	world->hpd.hp = hp;
 	world->hpd.m = m;
@@ -631,6 +639,49 @@ drv_i915_hpd_icp_entry(
 		world->hpd.irq[n].event_bits_after = world->hpd_i915.display.hotplug.event_bits;
 		world->hpd.n_irq = n + 1u;
 	}
+
+	/* The entry has left. */
+	__atomic_sub_fetch(&world->hpd.inflight, 1u, __ATOMIC_SEQ_CST);
+}
+
+/*
+ * Hands a display engine hotplug interrupt (GEN11_DE_HPD_IIR: the DP-alt and
+ * Thunderbolt bits of each Type-C port) to the hotplug path, which drops it
+ * until it is started (ws051-p002b).
+ *
+ * The caller has acknowledged the IIR and runs with interrupts disabled.
+ */
+void
+drv_i915_hpd_de_irq(
+	struct i915_display *display,
+	uint32_t de_hpd_iir)
+{
+	struct i915_hpd_world *world;
+	int live;
+
+	/* A display without a world has no hotplug path. */
+	world = i915_hpd_display_world(display);
+	if (world == NULL)
+		return;
+
+	/* Counts a hardware interrupt that arrived while a model ran; its own counters stay untouched. */
+	if (world->hpd.fake != NULL) {
+		world->i915_hpd_hw_irqs_during_model++;
+		return;
+	}
+
+	/* Counts the entry in flight before looking at the gate, so the stop can wait for it. */
+	__atomic_add_fetch(&world->hpd.inflight, 1u, __ATOMIC_SEQ_CST);
+	live = __atomic_load_n(&world->hpd.live, __ATOMIC_SEQ_CST);
+	if (!live) {
+		world->hpd.irq_dropped++;
+		__atomic_sub_fetch(&world->hpd.inflight, 1u, __ATOMIC_SEQ_CST);
+		return;
+	}
+
+	/* Decodes the pins and their pulses and hands them on. */
+	world->hpd.de_entries++;
+	i915_hpd_gen11_irq_handler(world, de_hpd_iir);
 
 	/* The entry has left. */
 	__atomic_sub_fetch(&world->hpd.inflight, 1u, __ATOMIC_SEQ_CST);
@@ -2817,6 +2868,80 @@ i915_icp_ddi_port_hotplug_long_detect(
 	}
 }
 
+/*
+ * Decodes a display engine hotplug interrupt of the Type-C ports (the
+ * Linux gen11_hpd_irq_handler()): the DP-alt and the Thunderbolt triggers
+ * are each acknowledged in their hotplug control register, which also says
+ * which pulses were long, and the triggered pins go to the main handler.
+ *
+ * The register facts (GEN11_TC_HOTPLUG_CTL 0x44038, GEN11_TBT_HOTPLUG_CTL
+ * 0x44030, a pin's long pulse at bit 1 of its 4-bit field) are Linux
+ * v6.8.12's i915_reg.h (MIT).
+ */
+static void
+i915_hpd_gen11_irq_handler(
+	struct i915_hpd_world *world,
+	u32 iir)
+{
+	struct drm_i915_private *dev_priv;
+	u32 tc_trigger;
+	u32 tbt_trigger;
+	u32 pin_mask;
+	u32 long_mask;
+	u32 hotplug_ctl;
+
+	/* Splits the interrupt into its DP-alt and Thunderbolt triggers. */
+	dev_priv = &world->hpd_i915;
+	tc_trigger = iir & I915_GEN11_DE_TC_HOTPLUG_MASK;
+	tbt_trigger = iir & I915_GEN11_DE_TBT_HOTPLUG_MASK;
+	pin_mask = 0;
+	long_mask = 0;
+
+	/* Acknowledges the DP-alt pulses (writing back what was read) and learns which were long. */
+	if (tc_trigger != 0) {
+		hotplug_ctl = drv_i915_hpd_rmw(world, I915_GEN11_TC_HOTPLUG_CTL, 0, 0);
+		i915_get_hpd_pins(dev_priv, &pin_mask, &long_mask, tc_trigger, hotplug_ctl, dev_priv->display.hotplug.hpd, i915_gen11_port_hotplug_long_detect);
+	}
+
+	/* Acknowledges the Thunderbolt pulses the same way. */
+	if (tbt_trigger != 0) {
+		hotplug_ctl = drv_i915_hpd_rmw(world, I915_GEN11_TBT_HOTPLUG_CTL, 0, 0);
+		i915_get_hpd_pins(dev_priv, &pin_mask, &long_mask, tbt_trigger, hotplug_ctl, dev_priv->display.hotplug.hpd, i915_gen11_port_hotplug_long_detect);
+	}
+
+	/* An interrupt with no pin is counted and logged. */
+	if (pin_mask == 0) {
+		world->hpd.de_unexpected++;
+		kern_logf("i915: unexpected DE HPD interrupt 0x%08x\n", iir);
+		return;
+	}
+
+	/* Logs the pins, then hands them to the main handler. */
+	kern_logf("i915: DE HPD iir=0x%08x pins=0x%08x long=0x%08x\n", iir, pin_mask, long_mask);
+	i915_hpd_intel_hpd_irq_handler(dev_priv, pin_mask, long_mask);
+}
+
+/* Tells whether a Type-C pin's pulse was long in GEN11_TC_HOTPLUG_CTL or GEN11_TBT_HOTPLUG_CTL (gen11_port_hotplug_long_detect()). */
+static bool
+i915_gen11_port_hotplug_long_detect(
+	enum hpd_pin pin,
+	u32 val)
+{
+	u32 long_bit;
+
+	/* Only the Type-C pins have a field there. */
+	if (pin < HPD_PORT_TC1 || pin > HPD_PORT_TC6)
+		return false;
+
+	/* The long bit is bit 1 of the pin's 4-bit field. */
+	long_bit = 2u << ((pin - HPD_PORT_TC1) * 4);
+	if ((val & long_bit) == 0)
+		return false;
+
+	/* Succeeded: the pulse was long. */
+	return true;
+}
+
 /* Tells whether a TC pin's pulse was long (icp_tc_port_hotplug_long_detect()). */
 static bool
 i915_icp_tc_port_hotplug_long_detect(
@@ -3132,16 +3257,37 @@ i915_hpd_dp_detect_step(
 	return connector_status_unknown;
 }
 
-/* Records a Type-C live-status check: intel_tc_port_connected() is not ported and answers false. */
+/*
+ * Tells whether something is plugged into a Type-C port (the Linux
+ * intel_tc_port_connected()): the display's Type-C ports answer (tc.c); an
+ * instance without them answers false and logs the step.
+ */
 static bool
 i915_hpd_tc_connected_step(
 	struct intel_encoder *encoder)
 {
-	/* Names the step. */
-	kern_logf("i915: hpd step intel_tc_port_connected (unported): %s -> false\n", encoder->base.name);
+	struct i915_hpd_world *world;
+	int tc_port;
+	int connected;
 
-	/* Succeeded: the port counts as not connected. */
-	return false;
+	/* Finds the world and the encoder's Type-C port. */
+	world = i915_hpd_world_of(i915_hpd_to_i915(encoder->base.dev));
+	tc_port = drv_i915_tc_kern_port_of((int)encoder->port);
+
+	/* Without the display's Type-C ports, or for a port they do not have, nothing is connected. */
+	if (world->tc == NULL || tc_port < 0) {
+		kern_logf("i915: hpd step intel_tc_port_connected (no Type-C ports): %s -> false\n", encoder->base.name);
+		return false;
+	}
+
+	/* Asks the port's live status in the mode it is held in. */
+	connected = drv_i915_tc_connected(world->tc, (unsigned)tc_port);
+	kern_logf("i915: hpd TC%d connected=%d (%s)\n", tc_port + 1, connected, encoder->base.name);
+	if (!connected)
+		return false;
+
+	/* Succeeded: something the display can use is plugged in. */
+	return true;
 }
 
 /* Runs intel_ddi_hotplug() for the hotplug work and records the call. */

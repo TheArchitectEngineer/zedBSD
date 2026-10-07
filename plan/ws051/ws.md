@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-07 P2: p001 の design.md 第 4 版（§14、[レビュー](design-review-2026-10-07.md) を反映）。p002 を実装（host PASS、ktest は 5330 の後）。次は p002b（TC の核）。§14.5 の正解値の採取の手順はユーザーの判断待ち（Q1 経由）。それ以前: 2026-10-04 の第 1〜3 版、§10・§13 の決定
+Resume point: 2026-10-07 P2: p002b を実装（host 101/0、build warning 0、ktest・実機は 5330 の後）。次は p003（正解値の後）。それ以前: p001 の design.md 第 4 版（§14、[レビュー](design-review-2026-10-07.md) を反映）。p002 を実装（host PASS、ktest は 5330 の後）。次は p002b（TC の核）。§14.5 の正解値の採取の手順はユーザーの判断待ち（Q1 経由）。それ以前: 2026-10-04 の第 1〜3 版、§10・§13 の決定
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -56,7 +56,7 @@ Keiland が決める）。i915 は GOP の出力先以外に自分の判断で s
 | --- | --- | --- | --- | --- |
 | [ws051-p001](phase001/phase.md) | 調査と設計: i915 の TCSS・Type-C PHY（DKL）・TC PLL・DDI の手順、今の i915 の display の範囲、画面の構成、WS050 との連携 | in-progress（2026-10-07 P2: [design.md](design.md) 第 4 版（§14: §13 の決定、WS113 p002 との分担、WS050 の口、WS084）、design-reviewer に掛ける） | — | 設計文書 |
 | [ws051-p002](phase002/phase.md) | TC PLL の enable の番地（H8、sanitize の対象から TC を外す）、VBT の DVO の code の値（L1）、clone の log、新しい host の試験、ktest の期待値（GOP の引き継ぎと外部優先の廃止は WS113 p002 part A、design §14.2） | in-progress（2026-10-07 P2: 実装、host PASS、build warning 0。ktest は 5330 の後の T1、ws113-p002 の clearance 待ち） | p001、ws113-p002 の clearance | `src/drivers/gpu/i915/display/`（takeover.c・diagnostics.c）、i915 の ktest |
-| ws051-p002b | TC の port の核（`tc.c`）、TC の AUX の power domain（H1）、AUX_USBC の well の TC の分岐（H2）、DE の HPD の配送（H5）、診断（向きは記録だけ） | planned | p002 | `src/drivers/gpu/i915/display/` |
+| [ws051-p002b](phase002b/phase.md) | TC の port の核（`tc.c`）、TC の AUX の power domain（H1）、AUX_USBC の well の TC の分岐（H2）、DE の HPD の配送（H5）、診断（向きは記録だけ） | in-progress（2026-10-07 P2: 実装、host 101/0、kernel と I915_TESTS の 4 つの set の build warning 0。ktest・実機は 5330 の後） | p002 | `src/drivers/gpu/i915/display/` |
 | ws051-p003 | DKL PHY と TC PLL（ADL-P の enable の番地の分岐）、DDI の TC の clock、ADL-P の DKL の buffer translation、DP_MODE、FIA の lane 数、TC PLL・init_mode・sanitize の readout（判定は変えない） | planned | p002b、正解値（design §14.5、ユーザーの判断） | 同上 |
 | ws051-p004a | TC の AUX・DPCD・EDID の診断、外部 DP の object（M6）、調べた後の同期の disconnect（M2）、branch device と sink count（H7） | planned | p003 | 同上 |
 | ws051-p004b | display の UAPI での出力（QUERY への TC の output、claim・mode・present での link training（fallback、M3）・modeset・scanout） | planned | p004a、WS113 の契約、ws113-p011 | 同上 |
