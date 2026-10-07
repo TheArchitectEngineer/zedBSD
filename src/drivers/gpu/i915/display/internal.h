@@ -2244,6 +2244,12 @@ struct i915_lcd_emit {
 	/* drm_err / drm_WARN in the reference text: the FIRST one is what a failed run is read from */
 	void (*error)(void *ctx, const char *what);
 	void (*debug)(void *ctx, const char *what);     /* drm_dbg_kms: the format string only */
+	/*
+	 * intel_tc_port_put_link(): an output's link to a Type-C port (0 = TC1)
+	 * is given back, and the last one gives the PHY back.  NULL in a
+	 * model: the step is recorded instead.
+	 */
+	void (*tc_put_link)(void *ctx, int tc_port);
 };
 /*
  * The state calculation (state.c).
@@ -2798,6 +2804,8 @@ struct i915_lcd_kernel_deps {
 	/* the CPU-mappable aperture, and the probe state whose INIT reference the run returns */
 	uint64_t gmadr_base, gmadr_size;
 	struct i915_driver_probe *dprobe;
+	/* the display's Type-C ports, whose links an output's disable gives back */
+	struct i915_tc *tc;
 };
 /* the release decision after a draw and (maybe) a show -- exported for the GPU-free test */
 struct i915_fhd_render;
@@ -3382,6 +3390,41 @@ struct i915_lcd_kernel {
 #define I915_NATIVE_VBT_COPY_SIZE 16384u
 
 /*
+ * What binds the display's Type-C ports (tc.c) to the device (tc-kern.c).
+ *
+ * It lives in the display for the device's lifetime and is filled once the
+ * display probe has made its encoders.  Each port's mutex is the lock tc.c
+ * takes through its environment; it is taken before the power domains'
+ * lock.  aux_ch is the AUX channel the VBT gives each port, whose AUX_USBC
+ * domain blocks TC cold.  live is zero on a display without Type-C ports,
+ * and then nothing here is used.
+ */
+struct i915_tc_kern {
+	/* The Type-C core and its ports. */
+	struct i915_tc tc;
+
+	/* Each port's lock. */
+	struct mutex locks[I915_TC_PORTS];
+
+	/* Each port's AUX channel (enum aux_ch). */
+	int aux_ch[I915_TC_PORTS];
+
+	/* The registers and the power the ports use. */
+	struct i915_mmio *mmio;
+	struct i915_power_domains *pd;
+	struct i915_pw_ctx *pwc;
+
+	/* The display version the domains are named for. */
+	unsigned display_ver;
+
+	/* How many power gets of the ports failed (diagnostics). */
+	unsigned power_failures;
+
+	/* Nonzero once the ports are bound. */
+	int live;
+};
+
+/*
  * The display part of one device.
  *
  * The device owns exactly one; the device start fills it in the order of
@@ -3396,6 +3439,7 @@ struct i915_lcd_kernel {
  * only, which run on the start worker one at a time; after the start the
  * resident serving thread is the only other writer.
  */
+
 /*
  * The output the resident node drives (output.c, ws075-p012).
  *
@@ -3504,6 +3548,9 @@ struct i915_display {
 
 	/* The Dekel PHY access of the Type-C ports, which the AUX_USBC wells' enable reads through (pwc.dkl). */
 	struct i915_dkl_phy dkl;
+
+	/* The Type-C ports and what binds them to this display (tc-kern.c). */
+	struct i915_tc_kern tck;
 
 	/* Nonzero once the display core was initialized (intel_power_domains_init_hw). */
 	int display_core_inited;
