@@ -111,6 +111,16 @@ main(void)
 	check(slots[0].x < slots[1].x && slots[1].x == slots[2].x, "left-main n=3", "one on the left");
 	made = kwl_arrange_slots(KWL_ARRANGE_RIGHT_MAIN, 2U, &area, slots);
 	check(slots[0].y == slots[1].y && slots[0].height == slots[1].height && slots[0].x > slots[1].x, "right-main n=2", "two halves");
+	made = kwl_arrange_slots(KWL_ARRANGE_TOP_MAIN, 3U, &area, slots);
+	check(slots[0].y < slots[1].y && slots[1].y == slots[2].y && slots[1].x < slots[2].x, "top-main n=3", "one on the top");
+	check(slots[0].width == AREA_W - 2 * KWL_ARRANGE_MARGIN, "top-main n=3", "the top one is whole width");
+	check(slots[1].y == slots[0].y + slots[0].height + KWL_ARRANGE_GAP, "top-main n=3", "gap under the top one");
+	made = kwl_arrange_slots(KWL_ARRANGE_BOTTOM_MAIN, 3U, &area, slots);
+	check(slots[0].y > slots[1].y && slots[1].y == slots[2].y && slots[0].width == AREA_W - 2 * KWL_ARRANGE_MARGIN, "bottom-main n=3", "one on the bottom");
+	made = kwl_arrange_slots(KWL_ARRANGE_BOTTOM_MAIN, 1U, &area, slots);
+	check(made == 1U && slots[0].height == AREA_H - 2 * KWL_ARRANGE_MARGIN, "bottom-main n=1", "one window takes the whole area");
+	check(strcmp(kwl_arrange_name(KWL_ARRANGE_TOP_MAIN), "top-main") == 0 && strcmp(kwl_arrange_name(KWL_ARRANGE_BOTTOM_MAIN), "bottom-main") == 0, "the new names", "name");
+	check(kwl_arrange_limit(KWL_ARRANGE_TOP_MAIN) == 4U, "top-main limit", "four");
 	made = kwl_arrange_slots(KWL_ARRANGE_GRID, 3U, &area, slots);
 	check(slots[2].width > slots[0].width && slots[2].y > slots[0].y, "grid n=3", "the last row widened");
 	made = kwl_arrange_slots(KWL_ARRANGE_GRID, 4U, &area, slots);

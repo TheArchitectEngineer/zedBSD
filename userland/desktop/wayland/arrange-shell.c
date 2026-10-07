@@ -10,11 +10,13 @@
  * the 2026-10-07 UAT).
  *
  * A tap or a click anywhere on the system bar's desktops' pill opens the
- * menu under it (the 2026-10-07 user decision D5): the five layouts' small
- * drawings in a row, without words (side by side, stacked, one on the
- * right, one on the left, a grid; the 2026-10-07 UAT: the menu acts on the
- * desktop shown, and a desktop is switched by the swipe and the keys, not
- * from the pill).  Choosing a layout arranges the windows of the desktop shown --
+ * menu under it (the 2026-10-07 user decision D5): the seven layouts'
+ * drawings, without words, two to a row in a large menu (the 2026-10-07
+ * UAT, ws181-p006: an important choice should look it): side by side and
+ * stacked; one on the left and one on the right; one on the top and one on
+ * the bottom; the grid alone on the last row.  The menu acts on the desktop
+ * shown; a desktop is switched by the swipe and the keys, not from the
+ * pill.  Choosing a layout arranges the windows of the desktop shown --
  * up to the layout's limit, top first, the rest staying where they are --
  * each into the slot nearest to where it was (arrange.c), floating (the
  * docked mode ends quietly first), and they glide there.
@@ -49,20 +51,26 @@
 /* How long a window glides to its slot, in milliseconds. */
 #define ARRANGE_MS		180U
 
-/* The menu's cells (one a layout), the gap between them, its padding, its corner, and its gap under the bar. */
-#define ARRANGE_MENU_CELL_WIDTH		48
-#define ARRANGE_MENU_CELL_HEIGHT	40
-#define ARRANGE_MENU_CELL_GAP		4
+/*
+ * The menu's cells (one a layout) in two columns and four rows, the gap
+ * between them, its padding, its corner, and its gap under the bar: twice
+ * as wide and five times as tall as the row of ws181-p005.
+ */
+#define ARRANGE_MENU_COLUMNS		2
+#define ARRANGE_MENU_ROWS		4
+#define ARRANGE_MENU_CELL_WIDTH		258
+#define ARRANGE_MENU_CELL_HEIGHT	56
+#define ARRANGE_MENU_CELL_GAP		8
 #define ARRANGE_MENU_PAD		6
-#define ARRANGE_MENU_RADIUS		14.0f
+#define ARRANGE_MENU_RADIUS		18.0f
 #define ARRANGE_MENU_GAP		6
-#define ARRANGE_MENU_WIDTH		(2 * ARRANGE_MENU_PAD + (int32_t)KWL_ARRANGE_LAYOUTS * ARRANGE_MENU_CELL_WIDTH + ((int32_t)KWL_ARRANGE_LAYOUTS - 1) * ARRANGE_MENU_CELL_GAP)
-#define ARRANGE_MENU_HEIGHT		(2 * ARRANGE_MENU_PAD + ARRANGE_MENU_CELL_HEIGHT)
+#define ARRANGE_MENU_WIDTH		(2 * ARRANGE_MENU_PAD + ARRANGE_MENU_COLUMNS * ARRANGE_MENU_CELL_WIDTH + (ARRANGE_MENU_COLUMNS - 1) * ARRANGE_MENU_CELL_GAP)
+#define ARRANGE_MENU_HEIGHT		(2 * ARRANGE_MENU_PAD + ARRANGE_MENU_ROWS * ARRANGE_MENU_CELL_HEIGHT + (ARRANGE_MENU_ROWS - 1) * ARRANGE_MENU_CELL_GAP)
 
-/* The small drawing of a layout in a row (its slots scaled down from a ten times larger area). */
-#define ARRANGE_ICON_WIDTH	30
-#define ARRANGE_ICON_HEIGHT	20
-#define ARRANGE_ICON_SCALE	10
+/* The drawing of a layout in its cell (its slots scaled down from a five times larger area). */
+#define ARRANGE_ICON_WIDTH	60
+#define ARRANGE_ICON_HEIGHT	40
+#define ARRANGE_ICON_SCALE	5
 
 /* The keys the open menu takes. */
 #define ARRANGE_KEY_ESC		1U
@@ -247,8 +255,9 @@ kwl_arrange_button(
 }
 
 /*
- * Handles a key while the menu is open: Left and Right (and Up and Down)
- * move the selection, Enter acts on it, Esc closes the menu.  Returns 1 when the key is the
+ * Handles a key while the menu is open: Left and Right move the selection
+ * along the cells, Up and Down a row, Enter acts on it, Esc closes the
+ * menu.  Returns 1 when the key is the
  * menu's (every key while it is open).
  */
 int
@@ -270,18 +279,29 @@ kwl_arrange_key(
 	case ARRANGE_KEY_ESC:
 		arrange_menu_close(server, "key");
 		break;
-	case ARRANGE_KEY_UP:
 	case ARRANGE_KEY_LEFT:
 		arrange_menu.selected--;
 		if (arrange_menu.selected < 0)
 			arrange_menu.selected = (int)ARRANGE_ITEMS - 1;
 		server->dirty = 1;
 		break;
-	case ARRANGE_KEY_DOWN:
 	case ARRANGE_KEY_RIGHT:
 		arrange_menu.selected++;
 		if (arrange_menu.selected >= (int)ARRANGE_ITEMS)
 			arrange_menu.selected = 0;
+		server->dirty = 1;
+		break;
+	case ARRANGE_KEY_UP:
+		/* A row up; the first row stays. */
+		if (arrange_menu.selected >= ARRANGE_MENU_COLUMNS)
+			arrange_menu.selected -= ARRANGE_MENU_COLUMNS;
+		server->dirty = 1;
+		break;
+	case ARRANGE_KEY_DOWN:
+		/* A row down; the last row (the grid alone) takes either cell above it. */
+		arrange_menu.selected += ARRANGE_MENU_COLUMNS;
+		if (arrange_menu.selected >= (int)ARRANGE_ITEMS)
+			arrange_menu.selected = (int)ARRANGE_ITEMS - 1;
 		server->dirty = 1;
 		break;
 	case ARRANGE_KEY_ENTER:
@@ -642,7 +662,7 @@ kwl_arrange_moved(
 
 /*
  * Draws the arrangement menu, when it is open, under the desktops' pill:
- * frosted glass with the five layouts' small drawings in a row, the one
+ * frosted glass with the seven layouts' drawings in their cells, the one
  * under the pointer or selected by the keyboard lit in the accent.
  */
 void
@@ -716,7 +736,7 @@ kwl_arrange_draw(
 		kept = server->keep_colours;
 		if ((int)item == over) {
 			kept = kwl_accent_as_is(server);
-			glass_draw_solid(server, command, (float)x, (float)y, (float)width, (float)height, 9.0f, accent);
+			glass_draw_solid(server, command, (float)x, (float)y, (float)width, (float)height, 12.0f, accent);
 			ink = accent_ink;
 		}
 
@@ -802,7 +822,7 @@ arrange_menu_item_at(
 	return ARRANGE_ITEM_NONE;
 }
 
-/* Gives a layout's cell in the menu: the five in a row. */
+/* Gives a layout's cell in the menu: two to a row, the grid alone across the last row. */
 static void
 arrange_menu_item_rect(
 	int item,
@@ -811,11 +831,20 @@ arrange_menu_item_rect(
 	int32_t *width,
 	int32_t *height)
 {
-	/* The cells from the left, inside the padding. */
-	*x = arrange_menu.x + ARRANGE_MENU_PAD + item * (ARRANGE_MENU_CELL_WIDTH + ARRANGE_MENU_CELL_GAP);
-	*y = arrange_menu.y + ARRANGE_MENU_PAD;
+	int column;
+	int row;
+
+	/* The cell's column and row, inside the padding. */
+	column = item % ARRANGE_MENU_COLUMNS;
+	row = item / ARRANGE_MENU_COLUMNS;
+	*x = arrange_menu.x + ARRANGE_MENU_PAD + column * (ARRANGE_MENU_CELL_WIDTH + ARRANGE_MENU_CELL_GAP);
+	*y = arrange_menu.y + ARRANGE_MENU_PAD + row * (ARRANGE_MENU_CELL_HEIGHT + ARRANGE_MENU_CELL_GAP);
 	*width = ARRANGE_MENU_CELL_WIDTH;
 	*height = ARRANGE_MENU_CELL_HEIGHT;
+
+	/* The grid, alone on its row, takes the row's whole width. */
+	if (item == (int)KWL_ARRANGE_GRID)
+		*width = ARRANGE_MENU_COLUMNS * ARRANGE_MENU_CELL_WIDTH + (ARRANGE_MENU_COLUMNS - 1) * ARRANGE_MENU_CELL_GAP;
 }
 
 /* Acts on a menu's item: the layout arranges the windows of the desktop shown; the menu closes. */
@@ -1073,7 +1102,7 @@ arrange_draw_icon(
 	unsigned made;
 	unsigned index;
 
-	/* Three windows, four in the grid, in an area ten times the drawing's size. */
+	/* Three windows, four in the grid, in an area five times the drawing's size. */
 	count = 3U;
 	if (layout == KWL_ARRANGE_GRID)
 		count = 4U;
@@ -1090,9 +1119,9 @@ arrange_draw_icon(
 		glass_draw_solid(server, command,
 				 (float)x + (float)slots[index].x / (float)ARRANGE_ICON_SCALE,
 				 (float)y + (float)slots[index].y / (float)ARRANGE_ICON_SCALE,
-				 (float)slots[index].width / (float)ARRANGE_ICON_SCALE - 1.5f,
-				 (float)slots[index].height / (float)ARRANGE_ICON_SCALE - 1.5f,
-				 2.0f,
+				 (float)slots[index].width / (float)ARRANGE_ICON_SCALE - 2.0f,
+				 (float)slots[index].height / (float)ARRANGE_ICON_SCALE - 2.0f,
+				 3.0f,
 				 colour);
 	}
 }

@@ -59,13 +59,18 @@ enum glass_hole {
 	GLASS_HOLE_WALLPAPER
 };
 
-/* The text sizes: the system bar, the titles, the close sign, App Home's icon letters and its search text. */
+/*
+ * The text sizes: the system bar, the titles, the close sign, App Home's
+ * icon letters, its search text, and its clock's time (ws181-p006: the
+ * digits and the colon only).
+ */
 enum glass_size {
 	SIZE_BAR,
 	SIZE_TITLE,
 	SIZE_SIGN,
 	SIZE_ICON,
-	SIZE_SEARCH
+	SIZE_SEARCH,
+	SIZE_CLOCK
 };
 
 /*

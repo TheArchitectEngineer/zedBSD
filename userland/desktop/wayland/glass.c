@@ -59,10 +59,12 @@
 /*
  * The atlas holds printable ASCII, the multiplication sign (the close
  * button), the check mark and the right angle quote (the System Menu) at
- * five sizes.
+ * five sizes, and at the sixth (App Home's clock, ws181-p006) only the
+ * space, the digits and the colon: the glyphs up to GLASS_CLOCK_LAST.
  */
 #define GLASS_GLYPHS		98U
-#define GLASS_SIZES		5U
+#define GLASS_SIZES		6U
+#define GLASS_CLOCK_LAST	(':' - 32U)
 #define GLASS_ATLAS_WIDTH	1024U
 #define GLASS_ATLAS_HEIGHT	1024U
 #define GLASS_FILE_MAX		(16U * 1024U * 1024U)
@@ -224,7 +226,7 @@ struct kwl_glass {
 	uint64_t clock;
 };
 
-static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U };
+static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U, 64U };
 
 /* The icons' sizes in pixels. */
 static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
@@ -1194,8 +1196,10 @@ atlas_fill(
 		if (error != 0)
 			return EINVAL;
 
-		/* Each glyph of this size. */
+		/* Each glyph of this size; the clock's size has the digits and the colon only. */
 		for (index = 0; index < GLASS_GLYPHS; index++) {
+			if (size == SIZE_CLOCK && index > GLASS_CLOCK_LAST)
+				break;
 			codepoint = 32U + index;
 			if (index == GLASS_CLOSE_GLYPH)
 				codepoint = 0xd7U;
