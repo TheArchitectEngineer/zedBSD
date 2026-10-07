@@ -150,6 +150,15 @@ drv_ucsi_start(
 	uint16_t version);
 
 /*
+ * Carries out an operation another driver asked of a connector and
+ * publishes the connector's record with its outcome.
+ */
+int
+drv_ucsi_request(
+	struct drv_ucsi *ucsi,
+	const struct drv_typec_request *request);
+
+/*
  * Handles a notification that came while no command was running: reads
  * CCI and every connector whose change it indicates.
  */

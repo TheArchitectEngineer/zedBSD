@@ -302,8 +302,10 @@ struct notes_ui {
  * (NOTES_BOX_AREA, several lines).  It holds its widgets' state, its own
  * font, the canvas over the overlay, the words as they were when it was
  * opened, whether it is open and its rectangle in the window, the
- * rectangle it covered when last drawn (with its shadow), and what the
- * widget reported since taken (KL_FIELD_*).
+ * rectangle it covered when last drawn (with its shadow), what the
+ * widget reported since taken (KL_FIELD_*), and whether it wants another
+ * frame (keys typed faster than the widget takes them wait for the next
+ * frames, one at a time).
  */
 #define NOTES_BOX_LINE		0U
 #define NOTES_BOX_AREA		1U
@@ -321,6 +323,7 @@ struct notes_box {
 	struct kl_rect rect;
 	struct kl_rect drawn;
 	unsigned reported;
+	int again;
 };
 
 /*

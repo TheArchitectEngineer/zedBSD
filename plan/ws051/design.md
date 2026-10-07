@@ -1,6 +1,6 @@
 # WS051 設計: USB-C の DisplayPort Alternate Mode
 
-Status: 案の第 3 版（2026-10-04、ws051-p001、P1 generation16）。WS050 §10 のユーザーの決定（[WS050 design](../ws050/design.md) の末尾）と、
+Status: 案の第 4 版（2026-10-07、ws051-p001、P2。§13 の 2 つの決定、WS113 p002 との分担（C4）、WS050 p003・p004 の実装、WS084 との関係を §14 に）。第 3 版（2026-10-04、P1 generation16）まで: WS050 §10 のユーザーの決定（[WS050 design](../ws050/design.md) の末尾）と、
 WS051 §10 のユーザーの決定（この文書の末尾）、Guardrail の「GPU の driver の scanout の規則」（2026-10-04）を反映し（第 2 版）、第 1 版への
 [敵対的レビュー](design-review-2026-10-04.md)（H1〜H8・M1〜M10・L1〜L4）を反映した（第 3 版、§11 に各項目の扱い、§12 に追加の設計）。
 
@@ -260,3 +260,51 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
 ## §13 (2) の決定（2026-10-05 ユーザー、クリックの回答「向きは受け入れから外す」）
 
 ケーブルの向き（CC1/CC2）は、取れれば表示する（UCSI 2.0 以上か i915 の pin D の時）が、WS050・WS051 の受け入れの条件にしない。WS050 の design の決定 4（1.x でも i915 から取る）はこの決定で「取れる時だけ、受け入れの外」に改める。
+
+## 14. 第 4 版（2026-10-07、P2）
+
+### 14.1 §13 の決定の反映
+
+- **試験の環境**（§13 (1)）: 試験は 5330 に USB で zedBSD を素で起動する（UAT の形）。正解の register の値は 5330 の Linux（10.0.30.3）で USB-C の DP を
+  挿した状態を読み取りだけで採る（host の設定は変えない）。§7 の「VFIO では…要確認」と §12 の H6 の VFIO の選択肢は無効（VFIO の passthrough で Type-C の
+  試験をしない）。p002b・p003 の診断の log は素の起動で読む（UAT の dmesg、ユーザーが採る）。
+- **向き**（§13 (2)）: 向きは受け入れの条件にしない。取れれば表示する（UCSI 2.0 以上の GET_CONNECTOR_STATUS の bit 86、または i915 の pin D の時の FIA の
+  lane mask）。p002b の「向きの確かめの register の記録」は診断の log に残すだけで、Phase の受け入れから外す。§8・§12 の M9 の扱いはこれで閉じる。
+
+### 14.2 WS113 p002 との分担（C4、2026-10-05 Q1 の決定）
+
+GOP の出力先の引き継ぎと外部の優先の廃止は **WS113 p002 part A が 1 回だけ実装した**（`drv_i915_gop_output_read`・`i915_display_native_check`・
+`drv_i915_display_output_select`、`display=` の選択の廃止。firmware の出力が i915 の点けられない interface（Type-C の DP など）なら display を absent に
+して firmware の画面を保つ）。WS051 p002 はこれを使い、重ねて書かない。よって p002 の範囲は次に絞る:
+
+1. **TC PLL の enable の register**（H8）: ADL-P の TC PLL n（n = 1〜4）の enable は `ADLP_PORTTC_PLL_ENABLE`（TC1 0x46038、TC2 0x46040、間隔 8:
+   0x46038 + 8 × (n − 1)。Linux v6.8.12 の `i915_reg.h` の `PORTTC1_PLL_ENABLE`・`PORTTC2_PLL_ENABLE` と `intel_tc_pll_enable_reg`）。`takeover.c` の
+   `adlp_plls` の表（0x46030 + 4n）と `diagnostics.c` の TC PLL の enable の dump の番地を直す。
+2. **VBT の DVO port の code**（L1）: `takeover.c` の自前の `I915_DVO_PORT_*`（HDMIG 15・DPG 16・HDMIH 16・HDMII 17・DPH 20・DPI 21 が Linux と違う）を
+   やめ、`vbt.c` と同じ `intel/vbt-defs.h` の `DVO_PORT_*` を使う（DPG 15・HDMIG 16・DPH 17・HDMIH 18・DPI 19・HDMII 20）。`ktest-display-probe.c` の
+   P5B-PORTMAP の期待値（code 17 が TC4）も Linux の値（17 は DPH = TC3、HDMII は 20 = TC4）に直す。
+3. **GOP が USB-C に出していた時**: WS113 part A の判定は Type-C の DP を「点けられない interface」（`I915_GOP_OTHER`）として firmware の画面を保ち、
+   その場面は WS113 の host の試験（`plan/ws113/tests/host-gop.c` の「DP TC1」「HDMI TC2」）に既にある。p002 では足さない。TC の port の引き継ぎ
+   （init_mode・sanitize・TC PLL の readout、M5）は p002b・p003 で TC の核が入った後に、この判定を「引き継ぐ」に変える（p003 の受け入れに足し、その時
+   host-gop.c の期待値も直す）。
+
+受け入れ（p002）: host の試験（TC PLL の enable の番地の表、DVO の code の写像）、kernel の build warning 0、
+QEMU の boot test（T1、i915 の無い image の回帰）。実機は対象外（5330 が戻った後の UAT で、eDP の起動が変わらないこと）。
+
+### 14.3 WS050 との口（WS050 p003・p004 の実装、2026-10-07）
+
+- Type-C の層（`include/drivers/typec/typec.h`、`CONFIG_DRIVER_TYPEC`）は kernel に入った。i915 が使える口: `drv_typec_connector_get`（record の
+  connector_modes・partner_modes・current_modes、cable）、`drv_typec_listener_register`（抜き差し・mode の変化の通知、callback は UCSI の thread で block
+  しない）、`drv_typec_connector_enter_mode(index, mode, configuration, &serial)`（SET_NEW_CAM、DP の Configure VDO を AMSpecific に。§8 の「firmware が
+  自分で DP mode に入らない時」の経路）。
+- `typec_display_report`（i915 → 層、HPD・pin・lane 数・向き）はまだ無い（WS050 p005、ws051-p002b の後）。i915 は `CONFIG_DRIVER_TYPEC` が無い build でも
+  link できるよう、WS050 p005 で weak の口か config の分岐にする（L4、理由の comment を付ける）。
+- 対応付け（i915 の TC1・TC2 と UCSI の connector の番号）は未確認（WS050 の A9）。WS050 p005 で `_PLD` と実機で決めるまで、i915 は UCSI の値を画面の
+  判断に使わない（§2 の「画面を出す判断は常に i915 の値」のまま）。
+
+### 14.4 WS084 との関係（2026-10-07 Q1: WS084 を P2 に、WS051 p002 の後）
+
+WS084（素の 5330 の UEFI の起動で firmware の画面を引き継ぐ）は `modeset.c` の `i915_resident_takeover`（N1 の readout・takeover・release）で、WS113 p002 の
+GOP の出力先の判定（N0 の後）と WS051 p002 の TC PLL の番地（readout が読む PLL の表）に触れる。順は WS051 p002 → WS084 p004（parity の N1 との乖離の整理、
+patch の案）。WS084 p003（素の 5330 の 10 回の reboot）は実機の作業で、5330 が戻るまで止まる。WS051 p002 の TC PLL の表の修正は WS084 の readout の
+「DPLL の pool を空に」の手順にも効く（TC PLL の enable の bit を正しい番地で読む）ので、WS084 p004 の記録にこの修正を書く。

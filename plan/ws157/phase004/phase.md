@@ -2,7 +2,7 @@
 
 # ws157-p004: 写真の library・データベース・取り込み
 
-Status: in-progress（2026-10-07 q835 P2: 実装と host の試験 PASS。QEMU は p005 の T1 にまとめる、判定は Q1）
+Status: cleared（2026-10-07 Q1 の判定: T1-331 で photos.browse の fail が消え（2026-08.tsv の sea.jpg の行にお気に入りと回転）、timeline の PNG を Q1 が目視）（旧: in-progress（2026-10-07 q835 P2: 実装と host の試験 PASS。QEMU は p005 の T1 にまとめる、判定は Q1））
 Disposition: normal
 Parent: [WS157](../ws.md)
 Queue: q835（2026-10-07、P2）

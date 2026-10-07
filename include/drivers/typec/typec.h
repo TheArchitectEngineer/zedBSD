@@ -51,6 +51,11 @@
 #define DRV_TYPEC_LISTENER_MAX 4U
 
 /*
+ * The most operations waiting for the connector driver at once.
+ */
+#define DRV_TYPEC_REQUEST_MAX 8U
+
+/*
  * The Standard or Vendor ID of the DisplayPort Alternate Mode.
  */
 #define DRV_TYPEC_SVID_DISPLAYPORT 0xFF01U
@@ -128,6 +133,74 @@ enum drv_typec_orientation {
 };
 
 /*
+ * The role a connector plays in the data it carries (USB host or device).
+ */
+enum drv_typec_data_role {
+	DRV_TYPEC_DATA_DFP = 0,
+	DRV_TYPEC_DATA_UFP = 1,
+};
+
+/*
+ * The kinds of connector reset: a USB PD Hard Reset, or a Data Reset
+ * (which UCSI 2.0 and later offer).
+ */
+enum drv_typec_reset {
+	DRV_TYPEC_RESET_HARD = 0,
+	DRV_TYPEC_RESET_DATA = 1,
+};
+
+/*
+ * What is at the far end of a cable.
+ */
+enum drv_typec_plug_end {
+	DRV_TYPEC_PLUG_TYPE_A = 0,
+	DRV_TYPEC_PLUG_TYPE_B = 1,
+	DRV_TYPEC_PLUG_TYPE_C = 2,
+	DRV_TYPEC_PLUG_OTHER = 3,
+};
+
+/*
+ * The operations another driver asks of a connector.
+ */
+enum drv_typec_request_kind {
+	DRV_TYPEC_REQUEST_DATA_ROLE = 1,
+	DRV_TYPEC_REQUEST_POWER_ROLE = 2,
+	DRV_TYPEC_REQUEST_RESET = 3,
+	DRV_TYPEC_REQUEST_ENTER_MODE = 4,
+	DRV_TYPEC_REQUEST_EXIT_MODE = 5,
+};
+
+/*
+ * One operation waiting for the connector driver: its kind, the connector
+ * (0-based), the role or the reset kind (value), the index into the
+ * connector's modes and the mode-specific configuration (for DisplayPort,
+ * its Configure VDO), and the serial it was given.
+ */
+struct drv_typec_request {
+	enum drv_typec_request_kind kind;
+	unsigned connector;
+	unsigned value;
+	unsigned mode;
+	uint32_t configuration;
+	uint32_t serial;
+};
+
+/*
+ * What the attached cable reports of itself, when the connector driver
+ * can ask (known is false otherwise).
+ */
+struct drv_typec_cable {
+	bool known;
+	uint64_t speed_bps;
+	unsigned current_ma;
+	bool vbus;
+	bool active;
+	bool directional;
+	enum drv_typec_plug_end plug_end;
+	bool modes;
+};
+
+/*
  * One Alternate Mode: its Standard or Vendor ID and the mode's VDO.
  */
 struct drv_typec_alt_mode {
@@ -189,6 +262,13 @@ struct drv_typec_connector {
 	/* The partner's Power Data Objects (its source ones when this side sinks, else its sink ones). */
 	uint32_t partner_pdos[DRV_TYPEC_PDO_MAX];
 	unsigned partner_pdo_count;
+
+	/* The attached cable's properties. */
+	struct drv_typec_cable cable;
+
+	/* The last operation carried out on the connector (serial 0: none yet) and its errno value. */
+	uint32_t request_serial;
+	int request_error;
 };
 
 /*
@@ -234,5 +314,91 @@ int
 drv_typec_connector_publish(
 	unsigned index,
 	const struct drv_typec_connector *connector);
+
+/*
+ * Asks a connector to swap to a data role (and to accept the partner's
+ * swaps); the outcome comes with a later published record.
+ */
+int
+drv_typec_connector_set_data_role(
+	unsigned index,
+	enum drv_typec_data_role role,
+	uint32_t *serial);
+
+/*
+ * Asks a connector to swap to a power role (and to accept the partner's
+ * swaps); the outcome comes with a later published record.
+ */
+int
+drv_typec_connector_set_power_role(
+	unsigned index,
+	enum drv_typec_power_role role,
+	uint32_t *serial);
+
+/*
+ * Asks a connector to be reset; the outcome comes with a later published
+ * record.
+ */
+int
+drv_typec_connector_reset(
+	unsigned index,
+	enum drv_typec_reset kind,
+	uint32_t *serial);
+
+/*
+ * Asks a connector to enter one of its Alternate Modes (an index into its
+ * connector_modes) with a mode-specific configuration; the outcome comes
+ * with a later published record.
+ */
+int
+drv_typec_connector_enter_mode(
+	unsigned index,
+	unsigned mode,
+	uint32_t configuration,
+	uint32_t *serial);
+
+/*
+ * Asks a connector to leave one of its Alternate Modes; the outcome comes
+ * with a later published record.
+ */
+int
+drv_typec_connector_exit_mode(
+	unsigned index,
+	unsigned mode,
+	uint32_t *serial);
+
+/*
+ * Names the function the layer calls when an operation waits, so the
+ * connector driver's thread wakes (the connector driver calls it once).
+ */
+void
+drv_typec_operator_set(
+	void (*kick)(void *argument),
+	void *argument);
+
+/*
+ * Takes the oldest waiting operation, for the connector driver's thread.
+ */
+bool
+drv_typec_request_take(
+	struct drv_typec_request *request);
+
+/*
+ * Notes an operation's outcome in its connector's record, which the
+ * connector driver publishes next.
+ */
+int
+drv_typec_request_finish(
+	const struct drv_typec_request *request,
+	int error);
+
+/*
+ * Writes every connector record as text, one line each (the diagnostic
+ * /dev/typec).
+ */
+size_t
+drv_typec_text(
+	char *buffer,
+	size_t size);
 
 #endif

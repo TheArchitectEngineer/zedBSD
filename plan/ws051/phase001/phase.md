@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p001`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-04。[design.md](../design.md) 第 3 版（§10 の決定とレビューを反映）。§13 の人間の判断待ち）
+Status: in-progress（2026-10-07 P2: [design.md](../design.md) 第 4 版（§14）、[レビュー](../design-review-2026-10-07.md)（高 2・中 7）の反映が残り。BUG-243 の UAT を先にした）
 Phase disposition: normal
 Queue: q680 / q680-i01（P1）
 
@@ -61,3 +61,12 @@ Queue: q680 / q680-i01（P1）
 - design §13 の人間の判断: (1) 試験・正解値の環境（native か VFIO か、host の TCSS の PM、bare metal の Linux での採取の承認）、(2) 向きの受け入れの
   見直し（WS050 の決定 4、i915 から取れても pin D の時だけの見込み）。
 - 判断の後、ws.md の Phase の表を第 3 版（p004a・p004b）に合わせる（今の ws.md は第 2 版の表）。
+
+## 第 4 版（2026-10-07、P2）
+
+§14 を足した: §13 の 2 つの決定の反映、WS113 p002 との分担（p002 は TC PLL の enable の番地と DVO の code に絞る）、WS050 p003・p004 の口、WS084 との関係。
+design-reviewer の結果は [design-review-2026-10-07.md](../design-review-2026-10-07.md)（高 H-1 試験の無い受け入れと ktest の期待値、H-2 M5 は p004b の後。中 M-1〜M-7）。
+
+## 再開点
+
+レビューの反映（§14 と §7・§8・§9・§12、ws.md、WS050 ws.md の p005 の依存は Q1 へ）、M-3 の採取の手順はユーザーへ（Q1 経由）。その後 p002。
