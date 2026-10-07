@@ -52,6 +52,10 @@ Queue: none（設計だけ。実装の Queue は Q1 が p007a・p007b として�
 | 7 | b3 を p007a より先に流す | 可 |
 | 8 | fixture の GS の SPIR-V は glslc で | 採る（WS068 の compiler の出力は i915-shader-check で別に） |
 
+## Q1 の判断（2026-10-07）
+
+- 人の判断 1〜8 は技術の判断として Q1 が既定どおりで承認（ユーザーの UAT・製品の判断に当たらない）。Phase の ID は p007a・p007b（ws051-p002b と同じ形）で可。
+
 ## review の反映（2026-10-07、design-reviewer: blocking 2・should-fix 11・minor 8）
 
 design.md §14 に全部を書いた（本文より §14 が優先）。上の増分の表と判断 6 はそれに合わせて直した。依存: p007 は p006 の成果のうち「増分 5 の MS と増分 7・8 の texel buffer・sampler2DMS の source」（main に統合済み）だけを使い、p006 の実機の clearance は待たない（scoped dependency）。Phase の ID（p007a・p007b は ID の規則 `wsNNN-pNNN` に合わない）を分けるかは Q1 が決める。
