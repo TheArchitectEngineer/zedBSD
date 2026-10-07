@@ -161,6 +161,9 @@ drv_i915_gfx_create_framebuffer(
 	if (framebuffer != NULL) {
 		framebuffer->width = info.width;
 		framebuffer->height = info.height;
+		framebuffer->layers = info.layers;
+		if (framebuffer->layers == 0U)
+			framebuffer->layers = 1U;
 		framebuffer->view_count = info.attachmentCount;
 		for (index = 0U; index < info.attachmentCount; index++) {
 			/* The decoded handles are the wire's 64-bit identities, eight bytes apart. */

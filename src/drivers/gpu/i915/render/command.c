@@ -192,6 +192,8 @@ static uint32_t i915_unorm8_float_bits(uint32_t value);
 static int i915_record_set_stencil(struct i915_gfx_cmdbuf *cmdbuf, struct i915_wire_reader *reader, uint32_t which);
 static void i915_execute_set_stencil(struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
 static int i915_execute_clear(struct i915_render_session *session, const struct i915_gfx_op *op);
+static int i915_execute_clear_layer(struct i915_render_session *session, const struct i915_gfx_op *op, uint32_t index, const struct i915_gfx_view *view);
+static int i915_execute_clear_rect(struct i915_render_session *session, const struct i915_gfx_op *op, const struct i915_gfx_view *view);
 static int i915_execute_buffer_image_copy(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_image(struct i915_render_session *session, const struct i915_gfx_op *op);
 static int i915_execute_clear_attachment(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_op *op);
@@ -1370,7 +1372,8 @@ i915_record_begin_pass(
  *
  * Every attachment and rectangle pair is one operation.  The pass has one
  * subpass, so a colour clear names one of the subpass's colour attachments
- * and a depth clear its depth attachment.  The layers are not acted on.
+ * and a depth clear its depth attachment.  The rectangle's layers are
+ * kept and cleared one by one.
  */
 static int
 i915_record_clear_attachments(
@@ -1438,6 +1441,8 @@ i915_record_clear_attachments(
 			op->u.clear_attachment.rect.y = rects[rect].rect.offset.y;
 			op->u.clear_attachment.rect.w = rects[rect].rect.extent.width;
 			op->u.clear_attachment.rect.h = rects[rect].rect.extent.height;
+			op->u.clear_attachment.base_layer = rects[rect].baseArrayLayer;
+			op->u.clear_attachment.layer_count = rects[rect].layerCount;
 		}
 	}
 
@@ -2247,8 +2252,8 @@ i915_image_plane_surface(
  * Describes the image of a render pass attachment: the level and the layer
  * its view starts at, in the format the view reads the texels as (a clear
  * of an SRGB view of an UNORM image encodes as the draw does, ws031-p033).
- * XXX: a view of several layers is written at its first layer only (no
- * layered rendering).
+ * A clear of several layers describes each layer through a view of that one
+ * layer (ws075-p007b).
  */
 static int
 i915_attachment_surface(
@@ -2389,11 +2394,11 @@ i915_execute_clear(
 {
 	struct i915_gfx_framebuffer *framebuffer;
 	struct i915_gfx_pass *pass;
-	struct i915_gfx_image *image;
-	struct i915_gfx_surface surface;
-	struct i915_gfx_rect rect;
+	struct i915_gfx_view layer_view;
 	uint32_t index;
-	uint32_t words[4];
+	uint32_t layers;
+	uint32_t view_layers;
+	uint32_t layer;
 	int error;
 
 	/* A begin without a pass or a framebuffer clears nothing. */
@@ -2402,57 +2407,97 @@ i915_execute_clear(
 	if (pass == NULL || framebuffer == NULL)
 		return 0;
 
-	/* Fills every attachment that loads with a clear. */
+	/* Fills every attachment that loads with a clear, on every layer of the framebuffer. */
 	for (index = 0U; index < pass->attachment_count && index < framebuffer->view_count; index++) {
 		/* Skips an attachment the begin gave no clear value, or the framebuffer no view. */
 		if (index >= op->u.begin.clear_count || framebuffer->views[index] == NULL)
 			continue;
 
-		/* A stencil plane that loads with a clear is filled with the stencil value. */
-		image = framebuffer->views[index]->image;
-		if (image->stencil != 0U && pass->attachments[index].stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) {
-			rect.x = 0;
-			rect.y = 0;
-			rect.w = image->width;
-			rect.h = image->height;
-			i915_sample_rect(image, &rect);
-			error = i915_clear_stencil(session, framebuffer->views[index], &rect, op->u.begin.clear_words[index][1]);
+		/* The layers the begin clears: the framebuffer's, within the view's (zero reads as one). */
+		layers = framebuffer->layers;
+		if (layers == 0U)
+			layers = 1U;
+		view_layers = framebuffer->views[index]->layer_count;
+		if (view_layers == 0U)
+			view_layers = 1U;
+		if (layers > view_layers)
+			layers = view_layers;
+
+		/* Clears each layer through a view of that one layer. */
+		for (layer = 0U; layer < layers; layer++) {
+			layer_view = *framebuffer->views[index];
+			layer_view.base_layer += layer;
+			layer_view.layer_count = 1U;
+			error = i915_execute_clear_layer(session, op, index, &layer_view);
 			if (error != 0)
 				return error;
 		}
+	}
 
-		/* Skips an attachment whose colour or depth does not load with a clear, and a stencil-only one. */
-		if (pass->attachments[index].load_op != VK_ATTACHMENT_LOAD_OP_CLEAR || image->format == VK_FORMAT_S8_UINT)
-			continue;
+	/* Succeeded: every attachment that loads with a clear is cleared. */
+	return 0;
+}
 
-		/* Describes the attachment's image. */
-		error = i915_attachment_surface(framebuffer->views[index], &surface);
-		if (error != 0)
-			return error;
+/* Runs the clears of one attachment of a render pass's begin on one layer of its view. */
+static int
+i915_execute_clear_layer(
+	struct i915_render_session *session,
+	const struct i915_gfx_op *op,
+	uint32_t index,
+	const struct i915_gfx_view *view)
+{
+	struct i915_gfx_pass *pass;
+	struct i915_gfx_image *image;
+	struct i915_gfx_surface surface;
+	struct i915_gfx_rect rect;
+	uint32_t words[4];
+	int error;
 
-		/* Takes the value: D32 through the R32_FLOAT view, D16 as the target's colour, or the four colour words. */
-		kern_memset(words, 0, sizeof(words));
-		if (op->u.begin.clear_is_depth[index] != 0U &&
-		    (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT)) {
-			i915_depth_words_surface(image, &surface);
-			words[0] = drv_i915_gfx_depth_clear_word(image->format, op->u.begin.clear_words[index][0]);
-		} else if (op->u.begin.clear_is_depth[index] != 0U) {
-			words[0] = op->u.begin.clear_words[index][0];
-		} else {
-			kern_memcpy(words, op->u.begin.clear_words[index], sizeof(words));
-		}
-
-		/* Fills the whole surface, on every sample. */
+	/* A stencil plane that loads with a clear is filled with the stencil value. */
+	pass = op->u.begin.pass;
+	image = view->image;
+	if (image->stencil != 0U && pass->attachments[index].stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) {
 		rect.x = 0;
 		rect.y = 0;
-		rect.w = surface.width;
-		rect.h = surface.height;
-		error = i915_fill_samples(session, image, &surface, &rect, words);
+		rect.w = image->width;
+		rect.h = image->height;
+		i915_sample_rect(image, &rect);
+		error = i915_clear_stencil(session, view, &rect, op->u.begin.clear_words[index][1]);
 		if (error != 0)
 			return error;
 	}
 
-	/* Succeeded: every attachment that loads with a clear is cleared. */
+	/* Skips an attachment whose colour or depth does not load with a clear, and a stencil-only one. */
+	if (pass->attachments[index].load_op != VK_ATTACHMENT_LOAD_OP_CLEAR || image->format == VK_FORMAT_S8_UINT)
+		return 0;
+
+	/* Describes the attachment's image. */
+	error = i915_attachment_surface(view, &surface);
+	if (error != 0)
+		return error;
+
+	/* Takes the value: D32 through the R32_FLOAT view, D16 as the target's colour, or the four colour words. */
+	kern_memset(words, 0, sizeof(words));
+	if (op->u.begin.clear_is_depth[index] != 0U &&
+	    (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT)) {
+		i915_depth_words_surface(image, &surface);
+		words[0] = drv_i915_gfx_depth_clear_word(image->format, op->u.begin.clear_words[index][0]);
+	} else if (op->u.begin.clear_is_depth[index] != 0U) {
+		words[0] = op->u.begin.clear_words[index][0];
+	} else {
+		kern_memcpy(words, op->u.begin.clear_words[index], sizeof(words));
+	}
+
+	/* Fills the whole surface, on every sample. */
+	rect.x = 0;
+	rect.y = 0;
+	rect.w = surface.width;
+	rect.h = surface.height;
+	error = i915_fill_samples(session, image, &surface, &rect, words);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the layer of the attachment is cleared. */
 	return 0;
 }
 
@@ -2473,13 +2518,10 @@ i915_execute_clear_attachment(
 	const struct i915_gfx_op *op)
 {
 	struct i915_gfx_framebuffer *framebuffer;
-	struct i915_gfx_image *image;
-	struct i915_gfx_surface surface;
-	struct i915_gfx_rect rect;
+	struct i915_gfx_view layer_view;
 	uint32_t attachment;
-	uint32_t words[4];
-	int64_t right;
-	int64_t bottom;
+	uint32_t layers;
+	uint32_t layer;
 	int error;
 
 	/* A clear outside a pass is refused. */
@@ -2494,15 +2536,47 @@ i915_execute_clear_attachment(
 	if (attachment >= framebuffer->view_count || framebuffer->views[attachment] == NULL)
 		return 0;
 
+	/* Clears each layer of the rectangle (a count of zero reads as one) through a view of that layer. */
+	layers = op->u.clear_attachment.layer_count;
+	if (layers == 0U)
+		layers = 1U;
+	for (layer = 0U; layer < layers; layer++) {
+		layer_view = *framebuffer->views[attachment];
+		layer_view.base_layer += op->u.clear_attachment.base_layer + layer;
+		layer_view.layer_count = 1U;
+		error = i915_execute_clear_rect(session, op, &layer_view);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every layer of the rectangle is cleared. */
+	return 0;
+}
+
+/* Runs one vkCmdClearAttachments rectangle on one layer of the attachment's view. */
+static int
+i915_execute_clear_rect(
+	struct i915_render_session *session,
+	const struct i915_gfx_op *op,
+	const struct i915_gfx_view *view)
+{
+	struct i915_gfx_image *image;
+	struct i915_gfx_surface surface;
+	struct i915_gfx_rect rect;
+	uint32_t words[4];
+	int64_t right;
+	int64_t bottom;
+	int error;
+
 	/* A stencil clear fills the rectangle of the stencil plane; a depth or stencil rectangle is one of samples. */
-	image = framebuffer->views[attachment]->image;
+	image = view->image;
 	rect = op->u.clear_attachment.rect;
 	if (op->u.clear_attachment.is_depth != 0U)
 		i915_sample_rect(image, &rect);
 	if (op->u.clear_attachment.is_depth != 0U &&
 	    (op->u.clear_attachment.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U &&
 	    image->stencil != 0U) {
-		error = i915_clear_stencil(session, framebuffer->views[attachment], &rect, op->u.clear_attachment.words[1]);
+		error = i915_clear_stencil(session, view, &rect, op->u.clear_attachment.words[1]);
 		if (error != 0)
 			return error;
 	}
@@ -2515,7 +2589,7 @@ i915_execute_clear_attachment(
 		return 0;
 
 	/* Describes the attachment's image. */
-	error = i915_attachment_surface(framebuffer->views[attachment], &surface);
+	error = i915_attachment_surface(view, &surface);
 	if (error != 0)
 		return error;
 	kern_memcpy(words, op->u.clear_attachment.words, sizeof(words));

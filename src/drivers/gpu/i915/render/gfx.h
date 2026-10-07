@@ -378,9 +378,10 @@ struct i915_gfx_pass {
  * One VkFramebuffer: the extent and the views a render pass draws into.
  */
 struct i915_gfx_framebuffer {
-	/* The extent of the framebuffer. */
+	/* The extent of the framebuffer, and its layers (VkFramebufferCreateInfo.layers, at least one). */
 	uint32_t width;
 	uint32_t height;
+	uint32_t layers;
 
 	/* The view of each attachment; an unknown identity leaves NULL. */
 	uint32_t view_count;
@@ -772,6 +773,10 @@ struct i915_gfx_op {
 			/* A colour clear is RGBA float bits; a depth / stencil clear is the depth's bits and the stencil. */
 			uint32_t words[4];
 			struct i915_gfx_rect rect;
+
+			/* The layers of the attachment's view the rectangle clears (VkClearRect), from the view's first. */
+			uint32_t base_layer;
+			uint32_t layer_count;
 		} clear_attachment;
 	} u;
 };
