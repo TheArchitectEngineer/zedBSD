@@ -1755,6 +1755,7 @@ int kwl_notify_dismiss_id(struct kwl_server *server, uint32_t id);
 int kwl_notify_activate(struct kwl_server *server, uint32_t id);
 uint32_t kwl_notify_system_post(struct kwl_server *server, const char *title, const char *body, unsigned flags, const char *command);
 void kwl_notify_system_activated(struct kwl_server *server, uint32_t id);
+void kwl_notify_battery(struct kwl_server *server);
 void kwl_notify_popup_tick(struct kwl_server *server);
 int kwl_notify_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_notify_popup_showing(void);
