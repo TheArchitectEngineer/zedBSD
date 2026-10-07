@@ -566,6 +566,14 @@ kwl_volume_audio_state(struct kl_backend_audio_state *state)
 	pthread_mutex_unlock(&world.lock);
 }
 
+/* The compositor's own notifications' actions (notify-system.c, ws156-p003): none run here. */
+void
+kwl_notify_system_activated(struct kwl_server *server, uint32_t id)
+{
+	(void)server;
+	(void)id;
+}
+
 /* The removable media (media.c, ws132-p004): none here, and a request is not offered (as on a system without volumed). */
 unsigned
 kwl_media_tick(struct kwl_server *server)

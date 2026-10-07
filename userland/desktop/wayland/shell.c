@@ -730,6 +730,9 @@ kwl_glass_draw(
 	/* The top-right corner's hint, while its swipe is followed or settles (corner.c). */
 	kwl_corner_draw(server, command);
 
+	/* The notifications' popup (notify-popup.c). */
+	kwl_notify_popup_draw(server, command);
+
 	/*
 	 * The on-screen keyboard over everything (keyboard.c, ws102).  Its glass
 	 * shows the scene under it blurred when zdesktop was started so
@@ -843,6 +846,11 @@ kwl_glass_button(
 
 	/* The power dialog, while it shows, takes every button (power-dialog.c, ws099-p037). */
 	pressed = kwl_power_dialog_button(server, button, state);
+	if (pressed)
+		return 1;
+
+	/* A press on a notification's board (notify-popup.c). */
+	pressed = kwl_notify_popup_button(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -1525,6 +1533,11 @@ kwl_glass_overlay(
 	if (showing)
 		return 1;
 
+	/* A notification's board (an urgent one shows over a fullscreen window, notify-popup.c). */
+	showing = kwl_notify_popup_showing();
+	if (showing)
+		return 1;
+
 	/* App Home, opening, open or closing. */
 	progress = kwl_home_progress(server);
 	if (progress > 0.0f || server->home_to > 0.0f)
@@ -1853,6 +1866,11 @@ kwl_glass_still(
 
 	/* The top-right corner's hint (corner.c). */
 	open = (unsigned)kwl_corner_showing();
+	if (open)
+		return 0;
+
+	/* A notification's board on the screen (notify-popup.c). */
+	open = (unsigned)kwl_notify_popup_showing();
 	if (open)
 		return 0;
 
@@ -2904,6 +2922,9 @@ kwl_glass_tick(
 
 	/* What the session manager sent the session (handoff.c). */
 	kwl_handoff_tick(server);
+
+	/* The notifications' popup moves on; while locked they go to the log unseen (notify-popup.c). */
+	kwl_notify_popup_tick(server);
 
 	/* The lock screen has only its clock (its answers came above). */
 	if (server->locked) {

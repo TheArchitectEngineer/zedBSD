@@ -60,6 +60,9 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/sysmon.c \
 	userland/desktop/wayland/notify.c \
 	userland/desktop/wayland/notify-shell.c \
+	userland/desktop/wayland/notify-flow.c \
+	userland/desktop/wayland/notify-popup.c \
+	userland/desktop/wayland/notify-system.c \
 	userland/desktop/wayland/mail-shell.c \
 	userland/desktop/wayland/phone-shell.c \
 	userland/desktop/wayland/printers-shell.c \
