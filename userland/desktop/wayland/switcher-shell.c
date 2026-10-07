@@ -439,12 +439,13 @@ kwl_switch_draw(
 	VkCommandBuffer command)
 {
 	static const float faint[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
-	static const float lit[4] = { 0.25f, 0.52f, 0.98f, 0.30f };
 	struct apps_view view;
 	struct switch_center center;
 	struct glass_shape shape;
 	struct kwl_object *surface;
 	unsigned index;
+	unsigned kept;
+	float lit[4];
 	float alpha;
 	int found;
 	int built;
@@ -491,12 +492,16 @@ kwl_switch_draw(
 			glass_draw_solid(server, command, (float)center.panel.tiles[index].x, (float)center.panel.tiles[index].y, (float)center.panel.tiles[index].width, (float)center.panel.tiles[index].height, 10.0f, faint);
 	}
 
-	/* The row of icons, the selected one lit, those all minimized faint. */
+	/* The row of icons, the selected one lit in the accent the user chose (as it is), those all minimized faint. */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.30f, lit);
 	for (index = 0; index < center.icon_count; index++) {
 		if (center.apps[index] < 0)
 			continue;
-		if ((int)index == center.selected)
+		if ((int)index == center.selected) {
+			kept = kwl_accent_as_is(server);
 			glass_draw_solid(server, command, (float)center.icons[index].x, (float)center.icons[index].y, (float)CENTER_ICON, (float)CENTER_ICON, 14.0f, lit);
+			kwl_accent_done(server, kept);
+		}
 		surface = view.surfaces[view.apps.apps[center.apps[index]].windows[0]];
 		alpha = 1.0f;
 		if (view.apps.apps[center.apps[index]].minimized)

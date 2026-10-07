@@ -648,9 +648,9 @@ home_section(
 		rect.y = y;
 		rect.width = label_width + 8;
 		rect.height = 22;
-		ink = FM_COLOR_ACCENT;
+		ink = FM_COLOR_ACCENT_TEXT;
 		if (app->hover_kind == FM_HIT_SHOW_ALL && app->hover_index == link)
-			ink = kl_color_mix(FM_COLOR_ACCENT, KL_RGB(0x000000), 0.25f);
+			ink = kl_color_mix(FM_COLOR_ACCENT_TEXT, KL_RGB(0x000000), 0.25f);
 		(void)kl_text_draw(app->text, canvas, rect.x + 4, y + 16, label, strlen(label), 13U, 0, ink);
 		fm_ui_hit(app, &rect, FM_HIT_SHOW_ALL, link);
 	}
@@ -751,7 +751,7 @@ home_devices(
 		/* A new device blinks: the card lit and dimmed three times. */
 		bright = fm_devices_blink(app, device);
 		if (bright < 1.0f)
-			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, KL_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
+			kl_canvas_round(canvas, (float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height, 14.0f, KL_RGBA(FM_COLOR_ACCENT, (uint32_t)((1.0f - bright) * 110.0f)));
 
 		/* The volume, the name, and where it is or how to mount it. */
 		kl_icon_draw(canvas, KL_ICON_VOLUME, (float)rect.x + 14.0f, (float)rect.y + 12.0f, 40.0f, FM_COLOR_ACCENT);

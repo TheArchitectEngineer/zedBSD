@@ -754,7 +754,7 @@ ui_draw_sidebar(
 		bold = 0;
 		if (current != 0 && app->focused != 0) {
 			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 10.0f, SE_COLOR_SELECTION);
-			ink = SE_COLOR_ACCENT;
+			ink = SE_COLOR_ACCENT_TEXT;
 			glyph = SE_COLOR_ACCENT;
 			bold = 1;
 		} else if (current != 0) {

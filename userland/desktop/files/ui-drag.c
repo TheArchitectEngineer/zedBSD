@@ -63,6 +63,7 @@
 #define DRAG_COLOR_COPY		KL_RGB(0x2fb45a)
 #define DRAG_COLOR_LINK		KL_RGB(0x6b7585)
 #define DRAG_COLOR_BADGE_TEXT	KL_RGB(0xffffff)
+#define DRAG_COLOR_COUNT_TEXT	FM_COLOR_ACCENT_INK
 
 static void drag_start(struct fm_app *app);
 static void drag_start_place(struct fm_app *app);
@@ -981,7 +982,7 @@ drag_draw_badges(
 		kl_canvas_circle(canvas, cx, cy, (float)DRAG_BADGE, DRAG_COLOR_COUNT);
 		width = kl_text_width(app->text, count, strlen(count), 11U, 1);
 		baseline = kl_text_center(11U, (int)cy - DRAG_BADGE, 2 * DRAG_BADGE);
-		(void)kl_text_draw(app->text, canvas, (int)cx - width / 2, baseline, count, strlen(count), 11U, 1, DRAG_COLOR_BADGE_TEXT);
+		(void)kl_text_draw(app->text, canvas, (int)cx - width / 2, baseline, count, strlen(count), 11U, 1, DRAG_COLOR_COUNT_TEXT);
 	}
 
 	/* A folder target's operation; a move has no badge. */

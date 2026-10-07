@@ -2365,19 +2365,22 @@ home_bottom_release(
 	home_settle(server, server->home_drag, 1.0f);
 }
 
-/* Draws the pages' dots at the bottom centre, the page shown in zedBSD's blue. */
+/* Draws the pages' dots at the bottom centre, the page shown in the accent the user chose (for the stage's dark ground). */
 static void
 home_draw_dots(
 	struct kwl_server *server,
 	VkCommandBuffer command,
 	float opacity)
 {
-	static const float current[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	static const float other[4] = { 1.0f, 1.0f, 1.0f, 0.32f };
+	float current[4];
 	float color[4];
 	float left;
 	float y;
 	unsigned page;
+
+	/* The page shown's colour (App Home keeps its colours, the stage is always dark). */
+	kwl_accent_colour(server, 1, KWL_ACCENT_FILL, 1.0f, current);
 
 	/* A dot a page, 18 px apart, centred. */
 	left = ((float)server->width - (float)(home_pages - 1U) * 18.0f) * 0.5f - 4.0f;

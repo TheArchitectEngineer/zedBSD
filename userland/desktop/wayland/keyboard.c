@@ -536,6 +536,15 @@ struct keyboard_state {
  */
 static struct keyboard_state keyboard;
 
+/*
+ * The accent the user chose (ws179-p001) for the held key, and the ink on
+ * it, as 0 to 1 RGBA for the panel's ground: made again at the start of
+ * each drawing of the keyboard (kwl_keyboard_draw); the event loop's thread
+ * alone uses them.
+ */
+static float keyboard_blue[4];
+static float keyboard_on_blue[4];
+
 static int keyboard_contact_begin(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
 static int keyboard_contact_move(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
 static int keyboard_contact_end(struct kwl_server *server, int32_t x, int32_t y, uint32_t time);
@@ -1107,6 +1116,10 @@ kwl_keyboard_draw(
 	struct kwl_server *server,
 	VkCommandBuffer command)
 {
+	/* The held key's colours: the accent the user chose, on the panel's ground. */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, keyboard_blue);
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, keyboard_on_blue);
+
 	/* The open panel, grown out of its edge as far as its slide has come. */
 	if (keyboard.open != PANEL_NONE)
 		keyboard_draw_sliding(server, command, 0);
@@ -2245,9 +2258,7 @@ keyboard_draw_keys(
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	const struct kwl_flick_key *key;
 	const float *ground;
 	const float *ink;
@@ -2268,8 +2279,8 @@ keyboard_draw_keys(
 			if (key->action != KWL_FLICK_TYPE)
 				ground = grey;
 			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == column) {
-				ground = blue;
-				ink = light;
+				ground = keyboard_blue;
+				ink = keyboard_on_blue;
 			}
 
 			/* A single character large, a longer label a size smaller (the same for all of them). */
@@ -2295,6 +2306,12 @@ keyboard_draw_key(
 {
 	int32_t width;
 	int32_t baseline;
+	unsigned kept;
+
+	/* A key in the accent is drawn in its colours as they are (the dark appearance's mapping would turn its ink over). */
+	kept = server->keep_colours;
+	if (ground == keyboard_blue)
+		kept = kwl_accent_as_is(server);
 
 	/* The ground. */
 	glass_draw_solid(server, command, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3], KEYBOARD_KEY_RADIUS, ground);
@@ -2305,6 +2322,7 @@ keyboard_draw_key(
 	if (size == SIZE_SIGN)
 		baseline = rect[1] + rect[3] / 2 + 7;
 	glass_draw_text(server, command, size, rect[0] + (rect[2] - width) / 2, baseline, label, rect[2], ink);
+	kwl_accent_done(server, kept);
 }
 
 /*
@@ -2318,9 +2336,7 @@ keyboard_draw_petals(
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	struct glass_shape shape;
 	const struct kwl_flick_key *key;
 	const char *text;
@@ -2380,7 +2396,7 @@ keyboard_draw_petals(
 
 		/* Blue when the flick points at it. */
 		if (side == direction) {
-			keyboard_draw_key(server, command, petal, text, blue, light, SIZE_SEARCH);
+			keyboard_draw_key(server, command, petal, text, keyboard_blue, keyboard_on_blue, SIZE_SEARCH);
 		} else {
 			keyboard_draw_key(server, command, petal, text, white, dark, SIZE_SEARCH);
 		}
@@ -2874,9 +2890,7 @@ keyboard_draw_qwerty(
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
 	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	const struct kwl_qwerty_key *keys;
 	const float *ground;
 	const float *ink;
@@ -2908,14 +2922,14 @@ keyboard_draw_qwerty(
 			if (keys[index].action == KWL_FLICK_ALT && (keyboard.held & KEYBOARD_ALT) != 0U)
 				ground = pale;
 			if (keys[index].action == KWL_FLICK_SHIFT && keyboard.shift == KEYBOARD_SHIFT_LOCKED) {
-				ground = blue;
-				ink = light;
+				ground = keyboard_blue;
+				ink = keyboard_on_blue;
 			}
 
 			/* The held key is blue. */
 			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == index) {
-				ground = blue;
-				ink = light;
+				ground = keyboard_blue;
+				ink = keyboard_on_blue;
 			}
 
 			/* A single character large, a word a size smaller. */
@@ -3249,10 +3263,8 @@ keyboard_draw_hand(
 	static const float ink[4] = { 0.10f, 0.20f, 0.45f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const char *const labels[KEYBOARD_HAND_KEYS] = { "", "", "", "消す", "Del", "space", "Enter" };
 	const struct kwl_hand_stroke *stroke;
 	const float *ground;
@@ -3319,8 +3331,8 @@ keyboard_draw_hand(
 
 		/* The held key is blue. */
 		if (keyboard.hand_key_active && keyboard.hand_key == index) {
-			ground = blue;
-			text_ink = light;
+			ground = keyboard_blue;
+			text_ink = keyboard_on_blue;
 		}
 
 		/* The key. */
@@ -3989,10 +4001,8 @@ keyboard_draw_tools(
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
 	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float faint[4] = { 0.12f, 0.16f, 0.24f, 0.30f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	const struct keyboard_tool *tool;
 	const float *ground;
 	const float *ink;
@@ -4033,8 +4043,8 @@ keyboard_draw_tools(
 
 		/* The held tool is blue. */
 		if (keyboard.tool_active && keyboard.tool == index) {
-			ground = blue;
-			ink = light;
+			ground = keyboard_blue;
+			ink = keyboard_on_blue;
 		}
 
 		/* The tool. */
@@ -4128,10 +4138,8 @@ keyboard_draw_history(
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	char line[KEYBOARD_HISTORY_TEXT + 1U];
 	const float *ground;
 	const float *ink;
@@ -4170,8 +4178,8 @@ keyboard_draw_history(
 		ground = white;
 		ink = dark;
 		if (keyboard.history_active && keyboard.history_row == index) {
-			ground = blue;
-			ink = light;
+			ground = keyboard_blue;
+			ink = keyboard_on_blue;
 		}
 
 		/* Its ground and its text, cut in the middle to the row. */
@@ -4337,9 +4345,7 @@ keyboard_draw_emoji(
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	const float *ground;
 	const float *ink;
 	const char *text;
@@ -4356,8 +4362,8 @@ keyboard_draw_emoji(
 		if (slot == keyboard.emoji_category)
 			ground = pale;
 		if (keyboard.emoji_active && keyboard.emoji_slot == slot) {
-			ground = blue;
-			ink = light;
+			ground = keyboard_blue;
+			ink = keyboard_on_blue;
 		}
 
 		/* The tab with its category's name. */
@@ -4377,7 +4383,7 @@ keyboard_draw_emoji(
 		keyboard_emoji_rect(server, KWL_EMOJI_CATEGORIES + slot, rect);
 		ground = white;
 		if (keyboard.emoji_active && keyboard.emoji_slot == KWL_EMOJI_CATEGORIES + slot)
-			ground = blue;
+			ground = keyboard_blue;
 		keyboard_draw_key(server, command, rect, text, ground, dark, size);
 	}
 }
@@ -4857,10 +4863,8 @@ keyboard_draw_candidates(
 	VkCommandBuffer command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
-	static const float blue[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
-	static const float light[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	const float *ground;
 	const float *ink;
 	const char *note;
@@ -4884,8 +4888,8 @@ keyboard_draw_candidates(
 		ground = white;
 		ink = dark;
 		if (keyboard.candidate_active && keyboard.candidate_slot == index) {
-			ground = blue;
-			ink = light;
+			ground = keyboard_blue;
+			ink = keyboard_on_blue;
 		}
 
 		/* Its ground and its word, cut in the middle to the cell. */

@@ -19,7 +19,9 @@
 /*
  * Every setting the desktop knows, in the order the compositor reports
  * them.  The compositor's keys come first; the ranges are the ones
- * zdesktop and Settings used before (ws089-p007).  The pointer is set for
+ * zdesktop and Settings used before (ws089-p007).  appearance.accent
+ * (ws179-p001) is the accent the user chose, 0 blue to 7 graphite
+ * (artwork/accent.h).  The pointer is set for
  * a mouse and for the touch pads apart (ws089-p024): the speed in percent,
  * the acceleration's level (0 none, 1 mild, 2 medium, 3 strong) and the
  * natural scrolling; a mouse 150% and strong without natural scrolling, a
@@ -39,6 +41,7 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "window.opacity", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 85, 100, 100, KL_SETTINGS_KEY_KEPT },
 	{ "window.frosted", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 1, KL_SETTINGS_KEY_KEPT },
 	{ "appearance.dark", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
+	{ "appearance.accent", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 7, 0, KL_SETTINGS_KEY_KEPT },
 	{ "mouse.speed", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 25, 300, 150, KL_SETTINGS_KEY_KEPT },
 	{ "mouse.acceleration", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 3, 3, KL_SETTINGS_KEY_KEPT },
 	{ "mouse.natural", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },

@@ -51,7 +51,7 @@
  */
 #define TABS_COLOR_SHOWN_GLASS	KL_RGBA(0xffffff, 120)
 #define TABS_COLOR_HOVER_GLASS	KL_RGBA(0xffffff, 60)
-#define TABS_COLOR_SHOWN	KL_RGBA(0x2f7cf6, 18)
+#define TABS_COLOR_SHOWN	KL_RGBA(FM_COLOR_ACCENT, 18)
 #define TABS_COLOR_HOVER	KL_RGBA(0x5a6b85, 14)
 #define TABS_COLOR_RULE		KL_RGBA(0x5a6b85, 40)
 
@@ -365,7 +365,7 @@ tabs_draw_one(
 		ground = TABS_COLOR_SHOWN;
 		if (app->glass != 0)
 			ground = TABS_COLOR_SHOWN_GLASS;
-		ink = FM_COLOR_ACCENT;
+		ink = FM_COLOR_ACCENT_TEXT;
 	} else if (hovered != 0) {
 		ground = TABS_COLOR_HOVER;
 		if (app->glass != 0)

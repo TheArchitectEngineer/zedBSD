@@ -29,6 +29,9 @@
 
 /* How much darker a control is under the pointer, and how far a disabled one fades. */
 #define WIDGETS_HOVER_SHADE	0.08f
+
+/* The sum of an ink's channels above which it is light (the ground under it is shaded darker). */
+#define WIDGETS_INK_MIDDLE	384U
 #define WIDGETS_DISABLED_FADE	0.6f
 
 /* The faded ground a disabled control mixes into. */
@@ -50,6 +53,7 @@
 #define WIDGETS_RING		2.0f
 
 static void widgets_ring(const struct kl_style *style, const struct kl_rect *rect, float radius);
+static kl_color widgets_shade(kl_color ground, kl_color ink);
 static int widgets_slider_key(uint32_t code, unsigned modifiers);
 static double widgets_snap(double value, double minimum, double maximum, double step);
 
@@ -113,6 +117,7 @@ keiui_button(
 	int width;
 	int pressed;
 	int ring;
+	int strong;
 
 	/* The record: a working button takes the keyboard. */
 	theme = style->theme;
@@ -131,7 +136,7 @@ keiui_button(
 	if ((flags & KL_BUTTON_PRIMARY) != 0U) {
 		ground = theme->accent;
 		edge = theme->accent;
-		ink = KL_RGB(0xffffff);
+		ink = theme->accent_ink;
 	}
 
 	/* A dangerous one is red. */
@@ -141,15 +146,29 @@ keiui_button(
 		ink = KL_RGB(0xffffff);
 	}
 
-	/* Darker under the pointer or while held, faded when it does nothing. */
-	if ((state & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
-		ground = kl_color_mix(ground, theme->text, WIDGETS_HOVER_SHADE);
+	/*
+	 * Darker under the pointer or while held; the main and the dangerous
+	 * one are shaded away from their ink instead, so that the label keeps
+	 * its contrast on any accent (ws179-p001).
+	 */
+	strong = 0;
+	if ((flags & (KL_BUTTON_PRIMARY | KL_BUTTON_DANGER)) != 0U)
+		strong = 1;
+	if ((state & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U) {
+		if (strong)
+			ground = widgets_shade(ground, ink);
+		else
+			ground = kl_color_mix(ground, theme->text, WIDGETS_HOVER_SHADE);
+	}
+
+	/* Faded when it does nothing: the main and the dangerous one keep their ink a little fainter. */
 	if (!enabled) {
 		ground = kl_color_mix(ground, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
 		edge = kl_color_mix(edge, WIDGETS_FADED, WIDGETS_DISABLED_FADE);
-		ink = theme->text_faint;
-		if ((flags & (KL_BUTTON_PRIMARY | KL_BUTTON_DANGER)) != 0U)
-			ink = KL_RGBA(0xffffff, 220);
+		if (strong)
+			ink = KL_RGBA(ink, 220);
+		else
+			ink = theme->text_faint;
 	}
 
 	/* The button, its label in the middle, and the focus's ring. */
@@ -416,7 +435,29 @@ widgets_ring(
 				(float)rect->height + 2.0f * WIDGETS_RING_GAP,
 				radius + WIDGETS_RING_GAP,
 				WIDGETS_RING,
-				KL_RGBA(0x2f7cf6, 150));
+				KL_RGBA(style->theme->accent, 150));
+}
+
+/* Shades a ground away from the ink drawn on it: darker under a light ink, lighter under a dark one. */
+static kl_color
+widgets_shade(
+	kl_color ground,
+	kl_color ink)
+{
+	unsigned brightness;
+	kl_color shaded;
+
+	/* How bright the ink is: the sum of its channels. */
+	brightness = ((ink >> 16) & 0xffU) + ((ink >> 8) & 0xffU) + (ink & 0xffU);
+
+	/* A light ink: the ground darker; a dark one: lighter. */
+	if (brightness > WIDGETS_INK_MIDDLE)
+		shaded = kl_color_mix(ground, KL_RGB(0x000000), WIDGETS_HOVER_SHADE);
+	else
+		shaded = kl_color_mix(ground, KL_RGB(0xffffff), WIDGETS_HOVER_SHADE);
+
+	/* The shaded ground. */
+	return shaded;
 }
 
 /* Keeps a value within its ends and on its steps (none when step is 0). */

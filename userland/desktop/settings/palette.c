@@ -10,7 +10,9 @@
  * (ws089-p017).  The light set is the colours Settings always had; the
  * dark set turns the greys over -- a dark ground and cards, light text --
  * and keeps the accent and the news.  Its text on its cards and controls
- * keeps a contrast of 4.5 or more (plan/ws089/tests/host-dark.c).
+ * keeps a contrast of 4.5 or more (plan/ws089/tests/host-dark.c).  The set
+ * in use takes the accent the user chose (ws179-p001) from libkeiland's
+ * theme over blue.
  */
 
 #include "settings.h"
@@ -46,6 +48,7 @@ static const struct se_palette palette_light = {
 	KL_RGB(0xd3d9e2),		/* rail */
 	KL_RGB(0xeef1f5),		/* faded */
 	KL_RGB(0x1e2632),		/* pressed */
+	KL_RGB(0x2f7cf6),		/* accent_text */
 };
 
 /* The dark appearance's colours. */
@@ -79,21 +82,37 @@ static const struct se_palette palette_dark = {
 	KL_RGB(0x3f4652),		/* rail */
 	KL_RGB(0x2a2e36),		/* faded */
 	KL_RGB(0xffffff),		/* pressed */
+	KL_RGB(0x2f7cf6),		/* accent_text */
 };
+
+/*
+ * The set in use, written by se_palette_set: the appearance's with the
+ * accent's colours (the main thread alone writes it).
+ */
+static struct se_palette palette_now;
 
 /* The set in use: the light one until the compositor tells the dark appearance. */
 const struct se_palette *se_palette = &palette_light;
 
 /*
  * Uses the set of an appearance (KL_APPEARANCE_*; any other value is
- * light).
+ * light) with the accent the user chose, as libkeiland's theme has it now.
  */
 void
 se_palette_set(
 	unsigned appearance)
 {
+	const struct kl_theme *theme;
+
 	/* The appearance's set. */
-	se_palette = se_palette_of(appearance);
+	palette_now = *se_palette_of(appearance);
+
+	/* The accent's colours over its blue. */
+	theme = kl_theme_default();
+	palette_now.accent = theme->accent;
+	palette_now.selection = theme->selection;
+	palette_now.accent_text = theme->accent_text;
+	se_palette = &palette_now;
 }
 
 /*

@@ -1081,7 +1081,7 @@ ui_draw_sidebar(
 		if (device != NULL)
 			bright = fm_devices_blink(app, device);
 		if (bright < 1.0f)
-			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, KL_RGBA(0x2f7cf6, (uint32_t)((1.0f - bright) * 110.0f)));
+			kl_canvas_round(canvas, (float)row.x, (float)row.y, (float)row.width, (float)row.height, 9.0f, KL_RGBA(FM_COLOR_ACCENT, (uint32_t)((1.0f - bright) * 110.0f)));
 
 		/* libkeiland's place: faint when it is not there, quiet for a device not mounted until a double click mounts it. */
 		flags = 0U;

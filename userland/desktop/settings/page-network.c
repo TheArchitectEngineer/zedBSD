@@ -781,7 +781,7 @@ network_row_draw(
 	ink = SE_COLOR_TEXT_SECONDARY;
 	glyph = SE_COLOR_ICON;
 	if (current != 0) {
-		ink = SE_COLOR_ACCENT;
+		ink = SE_COLOR_ACCENT_TEXT;
 		glyph = SE_COLOR_ACCENT;
 	}
 

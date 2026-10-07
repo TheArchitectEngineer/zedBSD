@@ -33,8 +33,8 @@
 #define DESKTOP_DRAG_START	6
 
 /* The target's colours: a folder item's ground and ring, and the cell's edge. */
-#define DESKTOP_TARGET_GROUND	KL_RGBA(0x2f7cf6, 60)
-#define DESKTOP_TARGET_RING	KL_RGBA(0x2f7cf6, 200)
+#define DESKTOP_TARGET_GROUND	KL_RGBA(FM_COLOR_ACCENT, 60)
+#define DESKTOP_TARGET_RING	KL_RGBA(FM_COLOR_ACCENT, 200)
 
 static void drop_find(struct fm_app *app, int x, int y);
 static int drop_cell_taken(const struct fm_desktop *desk, const struct fm_tab *tab, int column, int row, int moving);

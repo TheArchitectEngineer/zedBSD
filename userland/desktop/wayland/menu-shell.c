@@ -333,7 +333,6 @@ kwl_menu_draw_bar(
 	float fade)
 {
 	static const float hover[4] = { 1.0f, 1.0f, 1.0f, 0.62f };
-	static const float opened[4] = { 0.25f, 0.52f, 0.98f, 0.20f };
 	const struct kwl_menu_item *tops[SHELL_ROWS];
 	const struct kwl_menu_model *model;
 	struct kwl_object *place;
@@ -344,6 +343,7 @@ kwl_menu_draw_bar(
 	unsigned index;
 	unsigned recording;
 	unsigned open;
+	unsigned kept;
 	uint32_t checksum;
 	int32_t widths[SHELL_ROWS];
 	float underline[4];
@@ -430,9 +430,10 @@ kwl_menu_draw_bar(
 
 		/* The open item is tinted; the one under the pointer, with no menu open, is lit. */
 		if (open) {
-			memcpy(pill, opened, sizeof(pill));
-			pill[3] *= fade;
+			kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.20f * fade, pill);
+			kept = kwl_accent_as_is(server);
 			glass_draw_solid(server, command, (float)x, (float)pill_y, (float)widths[index], (float)pill_height, 7.0f, pill);
+			kwl_accent_done(server, kept);
 		} else if (shell_menu.surface == NULL &&
 			   server->pointer_x >= x && server->pointer_x < x + widths[index] &&
 			   server->pointer_y >= area->top && server->pointer_y < area->top + area->height) {
@@ -2493,11 +2494,11 @@ shell_draw_row(
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	char shortcut[48];
+	float blue[4];
 	float ink[4];
 	float hint[4];
+	unsigned kept;
 	int32_t middle;
 	int32_t baseline;
 	int32_t right;
@@ -2509,14 +2510,19 @@ shell_draw_row(
 	baseline = middle + 5;
 	right = popup->x + popup->width - 14;
 
-	/* The selected row is a blue band with white text; a disabled row is pale. */
+	/*
+	 * The selected row is a band of the accent the user chose with its ink,
+	 * the row drawn as it is (ws179-p001); a disabled row is pale.
+	 */
 	memcpy(ink, dark, sizeof(ink));
 	memcpy(hint, soft, sizeof(hint));
+	kept = server->keep_colours;
 	if (row->id == popup->selected) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, blue);
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, ink);
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 0.85f, hint);
+		kept = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)(popup->x + 5), (float)(row_y + 1), (float)(popup->width - 10), (float)(ROW_HEIGHT - 2), 6.0f, blue);
-		memcpy(ink, white, sizeof(ink));
-		memcpy(hint, white, sizeof(hint));
-		hint[3] = 0.85f;
 	} else if (!row->enabled) {
 		ink[3] = 0.35f;
 		hint[3] = 0.35f;
@@ -2556,6 +2562,9 @@ shell_draw_row(
 		width = glass_text_width(server, SIZE_BAR, shortcut);
 		glass_draw_text(server, command, SIZE_BAR, right - width, baseline, shortcut, width + 8, hint);
 	}
+
+	/* The colours' mapping as it was before the row. */
+	kwl_accent_done(server, kept);
 }
 
 /* Finds the model of a window's open menu: its own, or the empty one while "..." holds only hidden controls. */

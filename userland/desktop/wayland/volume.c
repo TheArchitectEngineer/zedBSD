@@ -394,7 +394,7 @@ kwl_volume_draw_icon(
 	int32_t x,
 	const float *ink)
 {
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 0.28f };
+	float blue[4];
 	float faint[4];
 	unsigned icon;
 	int sound;
@@ -409,9 +409,11 @@ kwl_volume_draw_icon(
 		printf("KWL VOLUME icon x=%d y=%d width=%d height=%d\n", volume_view.icon_x, volume_view.icon_y, volume_view.icon_width, volume_view.icon_height);
 	}
 
-	/* While the popup is open its icon has a pale blue back, on the bar's middle. */
-	if (volume_view.open)
+	/* While the popup is open its icon has a pale back of the accent the user chose, on the bar's middle (the bar keeps its colours). */
+	if (volume_view.open) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.28f, blue);
 		glass_draw_solid(server, command, (float)volume_view.icon_x, (float)(KWL_GLASS_BAR_MIDDLE - 14), (float)volume_view.icon_width, 28.0f, 7.0f, blue);
+	}
 
 	/* No sound: a pale speaker, struck through. */
 	sound = volume_sound();
@@ -452,13 +454,13 @@ kwl_volume_draw_popup(
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
 	static const float track[4] = { 0.62f, 0.66f, 0.72f, 0.55f };
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float edge[4] = { 0.12f, 0.16f, 0.24f, 0.25f };
 	struct glass_shape shape;
 	char text[32];
 	float fade;
 	float fill[4];
+	unsigned kept;
 	int32_t left;
 	int32_t width;
 	int32_t top;
@@ -515,11 +517,12 @@ kwl_volume_draw_popup(
 
 	/* The slider: the track, its filled part and the knob at the volume. */
 	top = volume_slider_top();
-	memcpy(fill, blue, sizeof(fill));
-	fill[3] *= fade;
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, fade, fill);
 	glass_draw_solid(server, command, (float)left, (float)(top + (VOLUME_SLIDER_HEIGHT - VOLUME_TRACK_HEIGHT) / 2), (float)width, (float)VOLUME_TRACK_HEIGHT, 3.0f, track);
 	knob = left + (int32_t)((unsigned)(width - VOLUME_KNOB) * volume_view.value / 100U);
+	kept = kwl_accent_as_is(server);
 	glass_draw_solid(server, command, (float)left, (float)(top + (VOLUME_SLIDER_HEIGHT - VOLUME_TRACK_HEIGHT) / 2), (float)(knob - left + VOLUME_KNOB / 2), (float)VOLUME_TRACK_HEIGHT, 3.0f, fill);
+	kwl_accent_done(server, kept);
 	glass_draw_solid(server, command, (float)knob - 1.0f, (float)(top + (VOLUME_SLIDER_HEIGHT - VOLUME_KNOB) / 2) - 1.0f, (float)VOLUME_KNOB + 2.0f, (float)VOLUME_KNOB + 2.0f, (float)VOLUME_KNOB / 2.0f + 1.0f, edge);
 	glass_draw_solid(server, command, (float)knob, (float)(top + (VOLUME_SLIDER_HEIGHT - VOLUME_KNOB) / 2), (float)VOLUME_KNOB, (float)VOLUME_KNOB, (float)VOLUME_KNOB / 2.0f, white);
 
@@ -983,13 +986,14 @@ volume_draw_switch(
 {
 	float pill[4] = { 0.62f, 0.66f, 0.72f, 1.0f };
 	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	unsigned kept;
 	int32_t x;
 
-	/* The pill: blue when on. */
+	/* The pill: the accent the user chose when on, drawn as it is with its knob (ws179-p001). */
+	kept = server->keep_colours;
 	if (on) {
-		pill[0] = 0.25f;
-		pill[1] = 0.52f;
-		pill[2] = 0.98f;
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, pill);
+		kept = kwl_accent_as_is(server);
 	}
 
 	/* Faded when it cannot be used, and drawn. */
@@ -1004,4 +1008,5 @@ volume_draw_switch(
 	} else {
 		glass_draw_solid(server, command, (float)(x + 2), (float)(middle - 8), 16.0f, 16.0f, 8.0f, white);
 	}
+	kwl_accent_done(server, kept);
 }

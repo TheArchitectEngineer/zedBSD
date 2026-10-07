@@ -30,3 +30,5 @@
 | ws090-p025 | 準正常系: preedit の cursor の範囲（begin < end の選んだ文節）を描かない（下線は全体に 1 本、caret は end） | 範囲を太い下線か背景で描く | `userland/desktop/libbrowser/paint/list.c`（`list_preedit_underline`） | 2026-10-07 |
 | ws090-p025 | 準正常系: 合成中の click・script の value の書き換えで preedit が残る（focus の移動でだけ消す） | click で caret を動かす前・`dom_control_set_value` の時に合成を終える | `userland/desktop/libbrowser/page/form.c`（`page_place_caret`）・`dom/control.c` | 2026-10-07 |
 | ws090-p025 | 準正常系: `<textarea>` の `value` が script で `undefined`（host-browser-ime で見つけた、WS074 の binding） | HTMLTextAreaElement の value の getter・setter を DOM の control の値に結ぶ | `userland/desktop/libbrowser/bind/`（WS074） | 2026-10-07 |
+| ws179-p001 | 準正常系: Settings の accent の丸を keyboard（左右・Tab）で選べない（click だけ） | 丸の列を Settings の keyboard の focus に入れ、左右で動き Space・Enter で選ぶ | `userland/desktop/settings/page-look.c`（`look_accents`） | 2026-10-07 |
+| ws179-p001 | 準正常系: network の行が hover の間、同じ行の中の他の部品（padlock・signal の ink は accent の ink）の他は dark の写像を外したまま描く | 行の中の部品ごとに as_is を囲む | `userland/desktop/wayland/network.c`（`network_draw_row_in`） | 2026-10-07 |

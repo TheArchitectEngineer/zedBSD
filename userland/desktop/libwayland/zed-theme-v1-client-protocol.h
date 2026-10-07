@@ -6,9 +6,10 @@
  */
 
 /*
- * Declares zdesktop's appearance protocol (kl_theme_v1, version 1;
- * ws089-p017): the desktop's appearance, light or dark, told when the
- * global is bound and whenever it changes.
+ * Declares zdesktop's appearance protocol (kl_theme_v1, version 2;
+ * ws089-p017, ws179-p001): the desktop's appearance, light or dark, and
+ * (version 2) the accent the user chose, told when the global is bound and
+ * whenever they change.
  *
  * The header is private: it is not installed, and applications reach the
  * protocol through libkeiland (<keiland/keiland.h>) only.  libkeiland includes it
@@ -33,12 +34,15 @@ extern const struct wl_interface kl_theme_v1_interface;
 
 /*
  * kl_theme_v1: the global.  appearance is 0 for light and 1 for dark
- * (a value a client does not know is taken as light).
+ * (a value a client does not know is taken as light); accent (version 2)
+ * is the index of the accent, 0 blue to 7 graphite (one a client does
+ * not know is taken as blue), told after the appearance.
  */
 #define KL_THEME_V1_APPEARANCE_LIGHT 0U
 #define KL_THEME_V1_APPEARANCE_DARK 1U
 struct kl_theme_v1_listener {
 	void (*appearance)(void *data, struct kl_theme_v1 *object, uint32_t appearance);
+	void (*accent)(void *data, struct kl_theme_v1 *object, uint32_t accent);
 };
 int kl_theme_v1_add_listener(struct kl_theme_v1 *object, const struct kl_theme_v1_listener *listener, void *data);
 #define KL_THEME_V1_DESTROY 0U

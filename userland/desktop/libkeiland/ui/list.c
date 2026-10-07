@@ -229,7 +229,7 @@ kl_list_row(
 	if ((long)index == list->selected) {
 		if (focused) {
 			kl_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->accent);
-			*ink = KL_RGB(0xffffff);
+			*ink = theme->accent_ink;
 		} else {
 			kl_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, LIST_ROW_RADIUS, theme->selection_inactive);
 		}
@@ -343,7 +343,7 @@ kl_sidebar_place(
 	/* The ground: the accent for the place shown, faint under the pointer. */
 	if (current) {
 		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->selection);
-		ink = theme->accent;
+		ink = theme->accent_text;
 	} else if ((state & KL_HIT_HOT) != 0U) {
 		kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, LIST_PLACE_RADIUS, theme->hover);
 	}

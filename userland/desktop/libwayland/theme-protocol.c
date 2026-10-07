@@ -24,19 +24,20 @@ static const struct wl_message theme_requests[] = {
 	{ "destroy", "", NULL },
 };
 
-/* The events of kl_theme_v1, in wire opcode order. */
+/* The events of kl_theme_v1, in wire opcode order (accent since version 2, ws179-p001). */
 static const struct wl_message theme_events[] = {
 	{ "appearance", "u", theme_plain_types },
+	{ "accent", "2u", theme_plain_types },
 };
 
 /* The immutable kl_theme_v1 description. */
 const struct wl_interface kl_theme_v1_interface = {
-	"kl_theme_v1", 1, 1, theme_requests,
-	1, theme_events
+	"kl_theme_v1", 2, 1, theme_requests,
+	2, theme_events
 };
 
 /*
- * Installs a listener of kl_theme_v1 (appearance).
+ * Installs a listener of kl_theme_v1 (appearance, accent).
  */
 int
 kl_theme_v1_add_listener(

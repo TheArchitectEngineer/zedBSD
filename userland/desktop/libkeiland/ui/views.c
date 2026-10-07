@@ -28,10 +28,9 @@
 #define VIEWS_HEADER_RADIUS	6.0f
 #define VIEWS_ARROW		12.0f
 
-/* A list row's corner radius, and the ink of the secondary text on the accent. */
+/* A list row's corner radius, and the opacity of the secondary text on the accent (its ink is the theme's accent_ink). */
 #define VIEWS_ROW_RADIUS	7.0f
-#define VIEWS_ON_ACCENT		KL_RGB(0xffffff)
-#define VIEWS_ON_ACCENT_FAINT	KL_RGBA(0xffffff, 210)
+#define VIEWS_ON_ACCENT_FAINT	210U
 
 /* A grid item: the margin of its lit ground, the corner radius, the icon's top and the name's first baseline under it. */
 #define VIEWS_CELL_MARGIN_X	4
@@ -133,8 +132,8 @@ kl_list_item(
 	/* Selected while the view has the keyboard: on the accent. */
 	if ((state & KL_ITEM_SELECTED) != 0U && (state & KL_ITEM_FOCUSED) != 0U) {
 		kl_canvas_round(style->canvas, (float)row->x, (float)row->y + 1.0f, (float)row->width, (float)row->height - 2.0f, VIEWS_ROW_RADIUS, theme->accent);
-		*ink = VIEWS_ON_ACCENT;
-		*faint = VIEWS_ON_ACCENT_FAINT;
+		*ink = theme->accent_ink;
+		*faint = KL_RGBA(theme->accent_ink, VIEWS_ON_ACCENT_FAINT);
 		return;
 	}
 
@@ -300,7 +299,7 @@ kl_grid_item(
 		if (second_width > widest)
 			widest = second_width;
 		kl_canvas_round(style->canvas, (float)(cell->x + (cell->width - widest) / 2 - 6), (float)(baseline - line.ascent - 3), (float)(widest + 12), (float)(lines * line.height + 5), VIEWS_PILL_RADIUS, theme->accent);
-		ink = VIEWS_ON_ACCENT;
+		ink = theme->accent_ink;
 	}
 
 	/* The first line, centred. */

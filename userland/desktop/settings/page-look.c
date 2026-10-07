@@ -9,7 +9,8 @@
  * The pages of the desktop's look and of the machine's screen and disks
  * (ws089-p004):
  *
- *   Appearance  light or dark (ws089-p017), a switch; the windows'
+ *   Appearance  light or dark (ws089-p017), a switch; the accent colour
+ *               (ws179-p001), eight swatches; the windows'
  *               contents' opacity, a slider saved when let go, and
  *               whether their glass panels are frosted, a switch (BUG-214);
  *   Wallpaper   the pictures, the default first, one click to choose;
@@ -29,6 +30,7 @@
 #define LOOK_OPACITY		1
 #define LOOK_DARK		2
 #define LOOK_FROSTED		3
+#define LOOK_ACCENT_FIRST	90
 #define LOOK_PICTURE_FIRST	100
 
 /* The space between two cards, a card's inner margin, and the text sizes. */
@@ -52,6 +54,11 @@
 /* The card of the appearance: its height, and the switch's width and height. */
 #define LOOK_DARK_HEIGHT	76
 
+/* The card of the accent: its height, a swatch's diameter and the room between two. */
+#define LOOK_ACCENT_HEIGHT	112
+#define LOOK_SWATCH		26
+#define LOOK_SWATCH_GAP		14
+
 /* The frosted glass's row in the card of the windows (BUG-214). */
 #define LOOK_FROSTED_HEIGHT	80
 #define LOOK_SWITCH_WIDTH	44
@@ -61,6 +68,23 @@ static int look_note(struct se_app *app, struct kl_canvas *canvas, int x, int to
 static int look_message(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
 static void look_tile(struct se_app *app, struct kl_canvas *canvas, unsigned index, int x, int y, int width, int height);
 static int look_volume(struct se_app *app, struct kl_canvas *canvas, const struct se_volume *volume, int x, int top, int width);
+static int look_accents(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width, int enabled);
+
+/*
+ * The accents' names, in the order of KL_ACCENT_*.  The table is constant
+ * for the life of the program (each name reaches kl_tr through it,
+ * locale/settings.keys).
+ */
+static const char *const look_accent_names[KL_ACCENTS] = {
+	"Blue",
+	"Purple",
+	"Pink",
+	"Red",
+	"Orange",
+	"Yellow",
+	"Green",
+	"Graphite"
+};
 
 /*
  * Draws the Appearance page: light or dark, and the windows'
@@ -97,6 +121,9 @@ se_appearance_draw(
 	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 24 + line.ascent, "Dark windows and desktop, easier on the eyes at night.", LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD - LOOK_SWITCH_WIDTH - 16, SE_COLOR_TEXT_SECONDARY);
 	se_toggle_draw(app, canvas, x + width - LOOK_PAD - LOOK_SWITCH_WIDTH, card + (LOOK_DARK_HEIGHT - LOOK_SWITCH_HEIGHT) / 2, app->look.dark, enabled, LOOK_DARK);
 	card += LOOK_DARK_HEIGHT + LOOK_GAP;
+
+	/* The card of the accent colour (ws179-p001). */
+	card = look_accents(app, canvas, x, card, width, enabled);
 
 	/* The card of the windows: a title, a line, the slider with its value, and the frosted glass's switch (BUG-214). */
 	height = 150 + LOOK_FROSTED_HEIGHT;
@@ -276,6 +303,15 @@ se_look_press(
 	if (index == LOOK_FROSTED) {
 		app->look.frosted = !app->look.frosted;
 		se_look_set_number(app, "window.frosted", app->look.frosted, 1);
+		app->dirty = 1;
+		return;
+	}
+
+	/* An accent's swatch: chosen, and saved; the compositor tells every program, this one too. */
+	if (index >= LOOK_ACCENT_FIRST && index < LOOK_ACCENT_FIRST + (int)KL_ACCENTS) {
+		app->look.accent = index - LOOK_ACCENT_FIRST;
+		se_look_set_number(app, "appearance.accent", app->look.accent, 0);
+		se_log("ACCENT index=%d", app->look.accent);
 		app->dirty = 1;
 		return;
 	}
@@ -486,4 +522,74 @@ look_volume(
 
 	/* The edge below the card. */
 	return top + height;
+}
+
+/*
+ * Draws the card of the accent colour from a top edge: a title, the eight
+ * swatches in the appearance's colours (the chosen one ringed with a dot of
+ * its ink), and the chosen one's name; a swatch works only when the
+ * settings can be changed.  Returns the edge below the card and its gap.
+ */
+static int
+look_accents(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	int x,
+	int top,
+	int width,
+	int enabled)
+{
+	struct kl_text_line line;
+	struct kl_accent values;
+	struct kl_rect box;
+	unsigned appearance;
+	unsigned index;
+	float cx;
+	float cy;
+	float radius;
+	int chosen;
+	int y;
+
+	/* The card and its title. */
+	y = se_card_begin(app, canvas, x, top, width, LOOK_ACCENT_HEIGHT, NULL, NULL);
+	kl_text_metrics(app->text, LOOK_TEXT_TITLE, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + line.ascent, kl_tr("Accent color"), LOOK_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
+
+	/* The chosen accent (one out of the table is blue), in the appearance the page is drawn in. */
+	chosen = app->look.accent;
+	if (chosen < 0 || chosen >= (int)KL_ACCENTS)
+		chosen = 0;
+	appearance = KL_APPEARANCE_LIGHT;
+	if (app->look.dark)
+		appearance = KL_APPEARANCE_DARK;
+
+	/* Each swatch on one row under the title: its disc, a ring and its ink's dot when chosen, and its click. */
+	radius = (float)LOOK_SWATCH * 0.5f;
+	cy = (float)(y + 32) + radius;
+	for (index = 0; index < KL_ACCENTS; index++) {
+		cx = (float)(x + LOOK_PAD + 2) + radius + (float)(index * (LOOK_SWATCH + LOOK_SWATCH_GAP));
+		kl_accent_values(index, appearance, &values);
+		if ((int)index == chosen) {
+			kl_canvas_circle(canvas, cx, cy, radius + 4.0f, SE_COLOR_TEXT_SECONDARY);
+			kl_canvas_circle(canvas, cx, cy, radius + 2.0f, SE_COLOR_CARD);
+		}
+		kl_canvas_circle(canvas, cx, cy, radius, values.accent);
+		if ((int)index == chosen)
+			kl_canvas_circle(canvas, cx, cy, 4.0f, values.ink);
+
+		/* A click on it chooses it. */
+		box.x = (int)(cx - radius) - 4;
+		box.y = (int)(cy - radius) - 4;
+		box.width = LOOK_SWATCH + 8;
+		box.height = LOOK_SWATCH + 8;
+		if (enabled)
+			se_ui_hit(app, &box, SE_HIT_CONTROL, LOOK_ACCENT_FIRST + (int)index);
+	}
+
+	/* The chosen one's name under the row. */
+	kl_text_metrics(app->text, LOOK_TEXT_SMALL, &line);
+	(void)kl_text_draw_fit(app->text, canvas, x + LOOK_PAD + 2, y + 32 + LOOK_SWATCH + 12 + line.ascent, kl_tr(look_accent_names[chosen]), LOOK_TEXT_SMALL, 0, width - 2 * LOOK_PAD, SE_COLOR_TEXT_SECONDARY);
+
+	/* The edge below the card, and the gap to the next. */
+	return top + LOOK_ACCENT_HEIGHT + LOOK_GAP;
 }
