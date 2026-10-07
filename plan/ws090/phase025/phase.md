@@ -2,7 +2,7 @@
 
 # ws090-p025: Browser の web の form の欄で IME を受け付ける
 
-Status: in-progress（q833、P1。2026-10-07 browser の部分を実装・host 試験 28/28、QEMU は T1 待ち。Settings の User name は診断の log を足して T1 の再試験待ち）
+Status: in-progress（q833、P1。2026-10-07 browser の部分は T1-328 で期待どおり。Settings の User name は原因を決めて直した、T1 の確認待ち）
 Disposition: normal
 Parent: [WS090](../ws.md)
 Queue: q833（P1、WS031 の後）
@@ -52,3 +52,12 @@ Queue: q833（P1、WS031 の後）
 - Settings の stderr（順序は Settings の中で確か）: 開いた時 `wanted=0`、次の行が `wanted=1 page=19 keyboard=1 admin_focus=1 admin_mode=1 name_plain=1`（Full name に focus）。User name で「nihon」の間に Settings の `TEXT event=` は 0 行、Full name では preedit・commit が届く。よって User name（plain）の間 Settings は text input を求めていない（正しい）。compositor の `KWL TEXT enable`・`KWL IME activate` の行は compositor の stdout（block buffer の見込み）で、T1 の MARK の行との前後は確かでない。
 - 画面: User name に `n` だけ、Space で空。「n・i・h・o・n」のうち母音の後に前の文字が消えるように見える（n → BS+に → h → BS+ほ → n、Space → BS）。IME が User name の key を受け、変換した文字を key に戻せず BackSpace だけが届く、という仮説。ただし Settings が wanted=0 の間に IME が activate するはずがなく、矛盾が残る。
 - 今回: Settings の管理の欄（User name・Full name だけ、secret の欄は出さない）が受ける key を log に出した（`ZSETTINGS USERS key code= modifiers= field= length=`）。T1 の再試験で、User name で Settings に届く key の code（14 が BackSpace）と欄の長さの推移を見る。
+
+### T1-336 の結果と原因・修正（2026-10-07）
+
+- T1-336: User name で「nihon」の key（49・23・35・24・49）、Space（57）、Enter（28）は全部 Settings の User name の欄に届き、欄の長さは 0→6 と増える（`ZSETTINGS USERS key … length=`）。text input の enable は Enter で Full name に移った後。つまり IME は関係なく、欄は「nihon 」を持つのに画面には最後の `n` だけ（Space の後は何も無い）。
+- 原因: Settings の `se_field_key`（`settings/widgets.c`）は key を「1 pixel の矩形の欄だけの frame」で `kl_field` に渡す。`kl_field` は caret を欄の幅の中に入れるように `field->scroll` を増やす（`width = rect->width - 2 * FIELD_SIDE`、負）ので、1 文字ごとに text が左へ押し出され、本当の frame では scroll は caret が見える限り減らないので、text が欄の左の外に出たままになる。Full name は IME の commit で入る（この frame を通らない）ので出なかった。IME ではなく Settings の欄に key で打つ全ての所（ja でも direct でも）で起きる。
+- 再現（host、scratch の実験、commit しない）: 300 px の plain の欄に 1 pixel の frame で「nihon」を打つと `scroll=34`、scroll を frame の前後で保つと `scroll=0`。
+- 修正: `se_field_key` が 1 pixel の frame の前の `field->scroll` を保ち、後で戻す（次の page の frame が欄の本当の幅で scroll を決める）。
+- 診断の log（Settings の `TEXT wanted`・`TEXT event`・`USERS key`）は外した。compositor の `KWL TEXT enable|disable` の log（状態が変わる時だけ）は IME の試験に役立つので残す。
+- 確認: target の clang（`-Werror -fsyntax-only`）で `settings/main.c`・`widgets.c`・`page-users-admin.c` は warning 0。QEMU は T1（User name に「nihon」→ 欄に「nihon」が全部見える、Space の後も「nihon 」）。

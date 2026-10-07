@@ -292,10 +292,6 @@ se_users_admin_key(
 	if (users->keyboard != SE_USERS_KEYBOARD_ADMIN || users->admin_mode == SE_ADMIN_NONE)
 		return 0;
 
-	/* A key in a field that is not secret, in the log by its code (a diagnostic of the input method's fields, ws090-p025). */
-	if (users->admin_focus == SE_ADMIN_NAME || users->admin_focus == SE_ADMIN_FULL_NAME)
-		se_log("USERS key code=%u modifiers=%u field=%d length=%zu", (unsigned)event->key, (unsigned)event->modifiers, users->admin_focus, users->admin_fields[users->admin_focus].length);
-
 	/* Tab and Shift+Tab, through the fields the change uses. */
 	if (event->key == SE_KEY_TAB) {
 		if ((event->modifiers & SE_MOD_SHIFT) != 0U)
