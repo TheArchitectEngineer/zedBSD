@@ -204,7 +204,6 @@ static int i915_display_other_mode(struct i915_display *display, struct gpu_disp
 static int i915_display_power(void *device, void *session, const struct gpu_display_power *request);
 static int i915_display_refresh(void *device, void *session, struct gpu_display_refresh *request);
 static int i915_display_other_check(struct i915_display *display, uint32_t display_id, uint64_t generation, int *connected);
-static int i915_display_which(struct i915_display *display, uint32_t display_id, uint64_t generation, int *resident, int *connected);
 static int i915_display_move(struct i915_device *device, unsigned connector);
 static int i915_display_outputs_differ(const struct i915_display_output *one, const struct i915_display_output *other);
 
@@ -2817,7 +2816,7 @@ i915_display_mode(
 	owner_device = device;
 
 	/* The resident display of this generation, or another connector. */
-	error = i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
+	error = drv_i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
 	if (error != 0)
 		return error;
 
@@ -2891,7 +2890,7 @@ i915_display_claim(
 	rd = &owner_device->display->rd;
 
 	/* The resident display of this generation, or another connector. */
-	error = i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
+	error = drv_i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
 	if (error != 0)
 		return error;
 
@@ -2983,6 +2982,45 @@ drv_i915_display_resident_identity(
 	*display_id = I915_DISPLAY_OTHER_ID + (uint32_t)resident;
 	*generation = output.generation;
 	*connected = output.connected;
+	return 0;
+}
+
+/*
+ * Tells whether a display ID and generation name the resident output
+ * (resident 1) or another connector (resident 0, with whether it is
+ * connected).  Returns 0, ENOENT for no display of the ID, or ESTALE for
+ * another generation.
+ */
+int
+drv_i915_display_which(
+	struct i915_display *display,
+	uint32_t display_id,
+	uint64_t generation,
+	int *resident,
+	int *connected)
+{
+	uint32_t resident_id;
+	uint64_t resident_generation;
+	int error;
+
+	/* The resident output's identity. */
+	(void)drv_i915_display_resident_identity(display, &resident_id, &resident_generation, connected);
+	if (display_id == resident_id) {
+		*resident = 1;
+		if (generation != resident_generation)
+			return ESTALE;
+		return 0;
+	}
+
+	/* Another connector of the inventory. */
+	*resident = 0;
+	if (display_id < I915_DISPLAY_OTHER_ID)
+		return ENOENT;
+	error = i915_display_other_check(display, display_id, generation, connected);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: another connector. */
 	return 0;
 }
 
@@ -3369,7 +3407,7 @@ i915_display_power(
 	display = owner_device->display;
 
 	/* The resident display of this generation, or another connector. */
-	error = i915_display_which(display, request->display_id, request->generation, &resident, &connected);
+	error = drv_i915_display_which(display, request->display_id, request->generation, &resident, &connected);
 	if (error != 0)
 		return error;
 
@@ -3421,7 +3459,7 @@ i915_display_refresh(
 	display = owner_device->display;
 
 	/* The resident display of this generation, or another connector, which is not lit. */
-	error = i915_display_which(display, request->display_id, request->generation, &resident, &connected);
+	error = drv_i915_display_which(display, request->display_id, request->generation, &resident, &connected);
 	if (error != 0)
 		return error;
 	lit_possible = 1;
@@ -3460,45 +3498,6 @@ i915_display_other_check(
 
 	/* Succeeded: the connector is known. */
 	*connected = output.connected;
-	return 0;
-}
-
-/*
- * Says whether a display ID and generation name the resident output
- * (resident 1) or another connector (resident 0, with whether it is
- * connected).  Returns 0, ENOENT for no display of the ID, or ESTALE for
- * another generation.
- */
-static int
-i915_display_which(
-	struct i915_display *display,
-	uint32_t display_id,
-	uint64_t generation,
-	int *resident,
-	int *connected)
-{
-	uint32_t resident_id;
-	uint64_t resident_generation;
-	int error;
-
-	/* The resident output's identity. */
-	(void)drv_i915_display_resident_identity(display, &resident_id, &resident_generation, connected);
-	if (display_id == resident_id) {
-		*resident = 1;
-		if (generation != resident_generation)
-			return ESTALE;
-		return 0;
-	}
-
-	/* Another connector of the inventory. */
-	*resident = 0;
-	if (display_id < I915_DISPLAY_OTHER_ID)
-		return ENOENT;
-	error = i915_display_other_check(display, display_id, generation, connected);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: another connector. */
 	return 0;
 }
 

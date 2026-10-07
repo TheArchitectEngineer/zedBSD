@@ -207,7 +207,7 @@ drv_i915_capture_bind_ops(
 
 	/* The capture display and the display-only pairing, with their capabilities. */
 	ops->display = &i915_capture_ops;
-	ops->scanout = &drv_i915_scanout_ops;
+	ops->scanout = &drv_i915_capture_scanout_ops;
 	ops->capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS;
 }
 
