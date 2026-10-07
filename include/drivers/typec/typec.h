@@ -235,4 +235,13 @@ drv_typec_connector_publish(
 	unsigned index,
 	const struct drv_typec_connector *connector);
 
+/*
+ * Writes every connector record as text, one line each (the diagnostic
+ * /dev/typec).
+ */
+size_t
+drv_typec_text(
+	char *buffer,
+	size_t size);
+
 #endif
