@@ -517,6 +517,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-08 ユーザーの UAT（5330、HDMI）: p007 の mouse の跨ぎと窓の移動は OK → ws113-p007 cleared。2 つ目の display のリサイズ不可、display ごとの dock の bar・docked/floating/整列の状態、App Home の時は他の display を背景だけに → [ws113-p015](ws113/phase015/phase.md)（P1、WS113 は優先順の 1 番なので WS090 の今の単位の後すぐ）。「次はUSB-C DPにしてみます。」
 - 2026-10-08 ユーザー:「sample.mp4はffmpegで変換してOKです。sudoが使えるのでインストールしてOKです。」→ Q1 が /home/awe/zedbsd-media/ に H.264 の Constrained Baseline・Main・High（1920x1080、150 frame、MP4 と Annex B の .h264、High＋AAC の MP4）を作った（ffmpeg 7.1.5・libx264、SHA256SUMS・README.txt）。repo には入れない（大きさと出所）。WS083 の実機・WS122 の player の試験に使う。
 - 2026-10-08 ユーザーの UAT（5330 の実機、p011 の kernel・main の compositor・settings）:「HDMIに出力されました。extendもmirrorも動いています。マウスはまだextendに移動できません。extendのとき、個別のディスプレイをオフにできる設定を作ってください。そうすれば、タッチパネルのテストができるのではかどります！」→ ws113-p004b・p006・p011 は実機で動いた（mouse の移動は p007 で作業中）。[ws113-p014](ws113/phase014/phase.md)（拡張の時の display ごとの off、D-MODES を置き換え）を P1 の p007 の後に。
 - 2026-10-08 Q1: 5330 に kernel（P2 の ws113-p011、cksum 1836440229）・compositor（3117189562）・settings（1903582430）・libkeiland.so（459659771）を入れ（元は /esp/vmunix.prev・/bin/wayland.orig・/bin/settings.orig・/lib/libkeiland.so.orig）、SSH で reboot（効いた）。HDMI を挿した起動で `display head: lit (connector 1, HDMI, 1920x1280, pipe B)`・`first frame 1920x1280 shown`、`resident display: lit again for two pipes`。ユーザー: 動画の試験に ~/sample.mp4（HEVC Main 1920x1080 150 frame、AAC。WS083 は H.264 だけなので用途を確認中）。

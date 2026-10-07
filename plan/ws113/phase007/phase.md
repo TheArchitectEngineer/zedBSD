@@ -3,7 +3,7 @@
 # ws113-p007: 窓の出力所属と画面間移動
 
 Parent: [WS113](../ws.md)
-Status: test-wait（2026-10-08 T1-369 QEMU PASS、mouse の跨ぎ・drag は 5330 の実機の UAT）
+Status: cleared（2026-10-08 Q1 の判定: T1-369 QEMU PASS、5330 の実機でユーザー「2つめのディスプレイにカーソール移動でき、ウィンドウも移動できました。」。残りは p015）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q855（P1、2026-10-07〜08、Q1 の ACK「p007 の範囲 1)〜6) で進めてよい」）
@@ -79,3 +79,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 ## T1-369 の判定（2026-10-08 Q1）
 
 PASS（QEMU Venus 2 出力、`displays-p007: PASS`: 新しい窓は anchor、Super+Shift+Right で head 1・Left で戻る、head 1 を抜くと anchor、mirror で anchor、mirror の隣は none、KWL FAILED 無し、生存）。mouse の跨ぎと title bar の drag は QEMU の tablet が絶対座標なので実機（5330、ユーザー）で。
+
+## 5330 の実機の UAT（2026-10-08 ユーザー）
+
+「2つめのディスプレイにカーソール移動でき、ウィンドウも移動できました。」→ mouse の跨ぎと窓の移動は実機で OK。リサイズが効かない件と head の dock・状態・App Home の背景は [p015](../phase015/phase.md)。
