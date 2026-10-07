@@ -60,10 +60,16 @@ expect() {
 # Stops sessiond, its greeter and any session.
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[s]essiond|[w]ayland( |$)" | awk "{print \$1}"); do kill $p; done; sleep 2'
 
-# 0. The program and the account; the logs emptied, the autologin emptied.
+# 0. The program and the account; the logs emptied, the autologin emptied.  kei has taken Settings' Welcome already
+#    (welcome.done=1 in ~/.config/keiland/desktop.conf): its first session would otherwise open the Welcome, and the
+#    Users page asked for in 4 would go to that window (T1-278).
 guest "$stop_all
 [ -f /tmp/fido2-autologin.saved ] || cp /etc/keiland/autologin /tmp/fido2-autologin.saved; : > /etc/keiland/autologin
-: > /var/log/sessiond.log; : > /var/log/greeter.log" >/dev/null
+: > /var/log/sessiond.log; : > /var/log/greeter.log
+conf=/home/kei/.config/keiland/desktop.conf; mkdir -p /home/kei/.config/keiland; touch \$conf
+grep -v '^welcome.done=' \$conf > /tmp/fido2-desktop.conf; echo welcome.done=1 >> /tmp/fido2-desktop.conf; cat /tmp/fido2-desktop.conf > \$conf
+chown -R kei /home/kei/.config" >/dev/null
+expect welcome-done '^welcome.done=1$' "$(guest 'grep "^welcome.done=" /home/kei/.config/keiland/desktop.conf' | tail -1)"
 expect fido2-mode '^-r-x------ .* root ' "$(guest 'ls -l /usr/libexec/passkey-fido2' | tail -1)"
 expect passkey-account '^_passkey:x:79:79:' "$(guest 'grep "^_passkey:" /etc/passwd' | tail -1)"
 
@@ -103,6 +109,7 @@ keys 'kei' '\n'
 expect_log /var/log/sessiond.log 'SESSIOND AUTH ok user=kei uid=1000 style=password' 10
 expect_log $session 'KWL HANDOFF go=1' 20
 expect_log $session 'KWL SYSTEM enrolled pin=0 keys=1 listed=1' 20
+expect_log $session 'KWL WELCOME skip done=1 error=0' 10
 guest "su kei -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/settings --page=users >/tmp/fido2-settings.log 2>&1 &'; sleep 4; echo started" >/dev/null
 expect_log /tmp/fido2-settings.log 'ZSETTINGS PAGE users' 20
 sleep 2

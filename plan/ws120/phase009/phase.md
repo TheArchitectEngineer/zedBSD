@@ -35,3 +35,9 @@ Queue: q831（2026-10-07、P2）
 ## 積み残し
 
 [WS177 backlog-p2](../../ws177/backlog-p2.md) の WS120 の行。
+
+## T1-301 の直し（2026-10-07 q834 P2）
+
+- 原因は試験の環境: AAT の QEMU の guest に音の device が無く、audiod が使えない（`MUSIC AUDIO error=13` は zedBSD の ENODEV）。app の扱い（音が無い時は「No sound」を出して落ちない）は今のまま。
+- `plan/tools/aat/scenarios/helpers_music.py` の注記と check の文に、QEMU を `--qemu-extra '-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0'` で起動することを書いた。`tests/scenarios/apps/music/play.md` の準備にも同じ。
+- 再試験は T1 に（`apps.music.play`、HDA 付きの QEMU）。
