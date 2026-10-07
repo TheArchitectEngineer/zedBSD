@@ -25,6 +25,8 @@
  */
 
 #include "drivers/gpu/i915/display/modeset-internal.h"
+#include "drivers/gpu/i915/display/takeover-internal.h"
+#include "drivers/gpu/i915/display/clock.h"
 #include "drivers/gpu/i915/display/state.h"
 #include "drivers/gpu/i915/tests/display/host-test.h"
 
@@ -81,6 +83,7 @@ static void test_linux_sweep(void);
 static void test_enable(void);
 static void test_tbt_describe(void);
 static void test_buf_trans(void);
+static void test_pool(void);
 
 /*
  * The 5330's TC PLL 2 words, as debugfs i915_shared_dplls_info reported
@@ -100,6 +103,9 @@ static unsigned errors;
  * bound once by main().
  */
 static struct i915_lcd_world error_world;
+
+/* The world whose PLL pool test_pool() builds (ws051-p004b).  Zeroed, used once. */
+static struct i915_lcd_world pool_world;
 
 /*
  * Runs the checks and reports the tally.
@@ -127,6 +133,7 @@ main(int argc, char **argv)
 	test_enable();
 	test_tbt_describe();
 	test_buf_trans();
+	test_pool();
 
 	/* Reports the tally. */
 	report = i915_host_report("host-dkl");
@@ -668,4 +675,72 @@ test_buf_trans(void)
 	trans = encoder.get_buf_trans(&encoder, &crtc_state, &n_entries);
 	i915_host_check(n_entries == 10 && trans->hdmi_default_entry == 9, "buf trans: HDMI on a Type-C port takes TGL's DKL table (default 9)");
 	i915_host_check(trans->entries[9].dkl.de_emphasis == 0xA, "buf trans: TGL DKL HDMI entry 9 is { 0x0, 0x0, 0xA }");
+}
+
+/*
+ * The device's PLL pool is Alder Lake-P's adlp_plls[] (ws051-p004b): DPLL 0
+ * and 1, the Thunderbolt PLL and TC PLL 1 to 4, each at the place of its
+ * id; a pipe's release clears it from every PLL, and a reset forgets the
+ * pool.
+ */
+static void
+test_pool(void)
+{
+	static const char *const names[I915_LCD_DPLL_POOL_SIZE] = {
+		"DPLL 0", "DPLL 1", "TBT PLL", "TC PLL 1", "TC PLL 2", "TC PLL 3", "TC PLL 4"
+	};
+	struct drm_i915_private i915;
+	int index;
+	int ids_ok;
+	int names_ok;
+	int funcs_ok;
+	int cleared;
+
+	/* Binds a device view to the pool. */
+	memset(&i915, 0, sizeof(i915));
+	drv_i915_lcd_dpll_pool_bind(&pool_world, &i915);
+	i915_host_check(i915.display.dpll.num_shared_dpll == 7, "pool: seven PLLs");
+	i915_host_check(i915.display.dpll.shared_dplls == pool_world.i915_lcd_dpll_pool, "pool: the device view is the world's pool");
+
+	/* Each PLL is at the place of its id, with its name and hooks. */
+	ids_ok = 1;
+	names_ok = 1;
+	funcs_ok = 1;
+	for (index = 0; index < I915_LCD_DPLL_POOL_SIZE; index++) {
+		if ((int)pool_world.i915_lcd_dpll_pool[index].info->id != index)
+			ids_ok = 0;
+		if ((int)pool_world.i915_lcd_dpll_pool[index].index != index)
+			ids_ok = 0;
+		if (strcmp(pool_world.i915_lcd_dpll_pool[index].info->name, names[index]) != 0)
+			names_ok = 0;
+		if (pool_world.i915_lcd_dpll_pool[index].info->funcs == NULL)
+			funcs_ok = 0;
+	}
+	i915_host_check(ids_ok, "pool: each PLL's id is its place (DPLL 0 .. TC PLL 4 = 0 .. 6)");
+	i915_host_check(names_ok, "pool: the names of adlp_plls[]");
+	i915_host_check(funcs_ok, "pool: every PLL has its hooks");
+	i915_host_check(pool_world.i915_lcd_dpll_pool[DPLL_ID_ICL_TBTPLL].info->id == DPLL_ID_ICL_TBTPLL, "pool: the Thunderbolt PLL is id 2");
+	i915_host_check(pool_world.i915_lcd_dpll_pool[I915_LCD_DPLL_POOL_FIRST_TC + 1].info->id == DPLL_ID_ICL_MGPLL2, "pool: TC2's PLL is id 4");
+
+	/* A pipe's release clears it from every PLL. */
+	for (index = 0; index < I915_LCD_DPLL_POOL_SIZE; index++) {
+		pool_world.i915_lcd_dpll_pool_state[index].pipe_mask = 0x3;
+		pool_world.i915_lcd_dpll_pool[index].state.pipe_mask = 0x3;
+	}
+	drv_i915_lcd_ms_release_pipe(&pool_world, PIPE_B);
+	cleared = 1;
+	for (index = 0; index < I915_LCD_DPLL_POOL_SIZE; index++) {
+		if (pool_world.i915_lcd_dpll_pool_state[index].pipe_mask != 0x1)
+			cleared = 0;
+		if (pool_world.i915_lcd_dpll_pool[index].state.pipe_mask != 0x1)
+			cleared = 0;
+	}
+	i915_host_check(cleared, "pool: releasing pipe B clears it from all seven PLLs and keeps pipe A");
+
+	/* A reset forgets the pool, and the next bind builds it again. */
+	drv_i915_lcd_dplls_reset(&pool_world);
+	i915_host_check(pool_world.i915_lcd_dpll_pool_inited == 0, "pool: a reset forgets the pool");
+	i915_host_check(pool_world.i915_lcd_dpll_pool[6].info == NULL, "pool: a reset clears the last Type-C PLL too");
+	drv_i915_lcd_dpll_pool_bind(&pool_world, &i915);
+	i915_host_check(pool_world.i915_lcd_dpll_pool[6].info->id == DPLL_ID_ICL_MGPLL4, "pool: the next bind builds TC PLL 4 again");
 }

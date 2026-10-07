@@ -196,6 +196,19 @@ typedef uint64_t __u64;
 /* The number of screens (modeset objects) the one-screen path keeps at once. */
 #define I915_LCD_MS_SCREENS 2
 
+/*
+ * The PLLs of the device's pool, in the reference's adlp_plls[] order:
+ * DPLL 0 and DPLL 1 (the combo PHYs), the Thunderbolt PLL and TC PLL 1 to
+ * 4 (the Type-C ports).  A PLL's place in the pool is its id.
+ */
+#define I915_LCD_DPLL_POOL_SIZE 7
+
+/* The first Type-C PLL of the pool (TC PLL 1, the id DPLL_ID_ICL_MGPLL1). */
+#define I915_LCD_DPLL_POOL_FIRST_TC 3
+
+/* The Type-C ports the pool has a PLL for (TC1 to TC4). */
+#define I915_LCD_DPLL_POOL_TC_PORTS 4
+
 /* ---- linux/kernel.h, linux/math.h: the arithmetic helpers of the text ---- */
 
 /* Reads a little-endian 16-bit word: the host is little endian. */
@@ -929,18 +942,18 @@ typedef uint64_t __u64;
 /* ---- the DP link layer: DPCD access, link-training logs, fallback [ops] ---- */
 
 /*
- * The Linux DPCD accessors on the named device's AUX hooks.  The aux
- * argument is not evaluated: the sink is the one the device's hooks reach.
+ * The Linux DPCD accessors on the sink of an AUX channel: the channel's
+ * own hooks when its modeset object names them (an external DP port's,
+ * ws051-p004b), otherwise the named device's backend hooks (the panel's).
  */
-#define I915_LCD_DRM_DP_DPCD_READ(i915, aux, offset, buffer, size) i915_lcd_dpcd_read((i915), (offset), (buffer), (size))
-#define I915_LCD_DRM_DP_DPCD_WRITE(i915, aux, offset, buffer, size) i915_lcd_dpcd_write((i915), (offset), (buffer), (size))
-#define I915_LCD_DRM_DP_DPCD_READB(i915, aux, offset, valuep) i915_lcd_dpcd_readb((i915), (offset), (valuep))
-#define I915_LCD_DRM_DP_DPCD_WRITEB(i915, aux, offset, value) i915_lcd_dpcd_writeb((i915), (offset), (value))
-#define I915_LCD_DRM_DP_DPCD_PROBE(i915, aux, offset) i915_lcd_dpcd_probe((i915), (offset))
+#define I915_LCD_DRM_DP_DPCD_READ(i915, aux, offset, buffer, size) i915_lcd_dpcd_read((i915), (aux), (offset), (buffer), (size))
+#define I915_LCD_DRM_DP_DPCD_WRITE(i915, aux, offset, buffer, size) i915_lcd_dpcd_write((i915), (aux), (offset), (buffer), (size))
+#define I915_LCD_DRM_DP_DPCD_READB(i915, aux, offset, valuep) i915_lcd_dpcd_readb((i915), (aux), (offset), (valuep))
+#define I915_LCD_DRM_DP_DPCD_WRITEB(i915, aux, offset, value) i915_lcd_dpcd_writeb((i915), (aux), (offset), (value))
+#define I915_LCD_DRM_DP_DPCD_PROBE(i915, aux, offset) i915_lcd_dpcd_probe((i915), (aux), (offset))
 
-/* drm_dp_read_dpcd_caps(): executed by the DP part's own copy of the Linux function. */
-#define I915_LCD_DRM_DP_READ_DPCD_CAPS(i915, aux, dpcd) \
-	((i915)->emit->read_dpcd_caps != 0 ? (i915)->emit->read_dpcd_caps((i915)->emit->ctx, (dpcd)) : I915_LCD_EIO)
+/* drm_dp_read_dpcd_caps(): executed by the DP part's own copy of the Linux function, on the channel's sink as above. */
+#define I915_LCD_DRM_DP_READ_DPCD_CAPS(i915, aux, dpcd) i915_lcd_read_dpcd_caps((i915), (aux), (dpcd))
 
 /* The link-training log lines: the format string reaches the debug or the error hook. */
 #define lt_dbg(_intel_dp, _dp_phy, _format, ...) \
@@ -1878,6 +1891,14 @@ struct intel_atomic_state {
 	 * state.
 	 */
 	struct i915_lcd_world *world;
+	/*
+	 * The encoders a disable of this state walks (ws051-p004b): the
+	 * encoder at an index, NULL past the last, over walk.  NULL: the
+	 * world's bound encoder is the only one.  The takeover sets it in its
+	 * throw-away state, whose crtcs may each run on a different port.
+	 */
+	struct intel_encoder *(*encoder_at)(void *walk, unsigned idx);
+	void *walk;
 };
 
 /* The hooks of one shared DPLL kind (intel_dpll_mgr.h). */
@@ -2060,6 +2081,12 @@ struct i915_lcd_modeset {
 	int hdmi_level_shift;		/* intel_bios_hdmi_level_shift() of this port (< 0 = not in the VBT) */
 	int dpll_id;			/* the shared DPLL the reference's rule gave this crtc */
 	unsigned also_active_pipes;	/* the other pipes of this configuration (cfg) */
+	/*
+	 * The DPCD hooks of the port's own AUX channel (an external DP port's,
+	 * ws051-p004b), or NULL: the backend's DPCD hooks reach the sink (the
+	 * panel's).  Its owner keeps it for as long as the object is used.
+	 */
+	const struct i915_lcd_aux_emit *aux_emit;
 	struct drm_i915_private i915;
 	struct intel_crtc crtc;
 	struct intel_crtc_state crtc_state;	/* the new state of the enable == the old state of the disable */
@@ -2223,19 +2250,20 @@ struct i915_lcd_world {
 	struct drm_i915_private i915_icl_dp_combo_pll_i915;
 
 	/*
-	 * The device's two combo PLLs (DPLL 0 and DPLL 1): one pool for the
-	 * whole device, so two screens that want the same hardware state share
-	 * one object and its active_mask counts the pipes that drive it.  Built
-	 * on first use (i915_lcd_dpll_pool_inited), cleared when the pool is
-	 * forgotten.
+	 * The device's PLLs (I915_LCD_DPLL_POOL_SIZE: the two combo PLLs, the
+	 * Thunderbolt PLL and the four Type-C PLLs, ws051-p004b): one pool for
+	 * the whole device, so two screens that want the same hardware state
+	 * share one object and its active_mask counts the pipes that drive it.
+	 * Built on first use (i915_lcd_dpll_pool_inited), cleared when the pool
+	 * is forgotten.
 	 */
-	struct intel_shared_dpll i915_lcd_dpll_pool[2];
+	struct intel_shared_dpll i915_lcd_dpll_pool[I915_LCD_DPLL_POOL_SIZE];
 
 	/* The descriptions of the pool's PLLs (name, hooks, id), built with the pool. */
-	struct dpll_info i915_lcd_dpll_pool_info[2];
+	struct dpll_info i915_lcd_dpll_pool_info[I915_LCD_DPLL_POOL_SIZE];
 
 	/* The atomic state's shared_dpll[] of the pool: the pipes using each PLL and its state. */
-	struct intel_shared_dpll_state i915_lcd_dpll_pool_state[2];
+	struct intel_shared_dpll_state i915_lcd_dpll_pool_state[I915_LCD_DPLL_POOL_SIZE];
 
 	/* Nonzero once the pool above is built; zero after it is forgotten. */
 	int i915_lcd_dpll_pool_inited;
@@ -2369,6 +2397,7 @@ void drv_i915_icl_update_active_dpll(struct intel_atomic_state *state, struct in
 int drv_i915_lcd_ms_alloc_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, const struct intel_dpll_hw_state *hw_state);
 void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_bind_port_hooks(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_buf_trans(struct intel_encoder *encoder);
 void drv_i915_lcd_ms_plane_data_rates(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms);
@@ -3391,24 +3420,56 @@ i915_lcd_intel_digital_port_connected(
 }
 
 /*
- * Reads DPCD bytes of the named device's sink (drm_dp_dpcd_read()): the
+ * Finds the DPCD hooks of an AUX channel's own sink: the hooks its modeset
+ * object names, or NULL when the object's sink is the one the device's
+ * backend hooks reach.  Every AUX channel of this environment is the DP
+ * half of a modeset object's digital port.
+ */
+static __inline const struct i915_lcd_aux_emit *
+i915_lcd_aux_emit_of(
+	const struct drm_dp_aux *aux)
+{
+	const struct i915_lcd_modeset *ms;
+
+	/* The object the channel is part of. */
+	ms = container_of(aux, struct i915_lcd_modeset, dig_port.dp.aux);
+
+	/* Succeeded: the object's own hooks, or NULL. */
+	return ms->aux_emit;
+}
+
+/*
+ * Reads DPCD bytes of an AUX channel's sink (drm_dp_dpcd_read()): the
  * number of bytes transferred, or a negative errno (I915_LCD_EIO without a
  * DPCD hook).
  */
 static __inline long
 i915_lcd_dpcd_read(
 	const struct drm_i915_private *i915,
+	const struct drm_dp_aux *aux,
 	unsigned int offset,
 	void *buffer,
 	size_t size)
 {
+	const struct i915_lcd_aux_emit *own;
 	long transferred;
+
+	/* A channel of its own reads its own sink. */
+	own = i915_lcd_aux_emit_of(aux);
+	if (own != NULL) {
+		transferred = own->dpcd_read(own->ctx, offset, buffer, size);
+		if (transferred < 0)
+			return transferred;
+
+		/* Succeeded: reports the bytes read. */
+		return transferred;
+	}
 
 	/* A backend without a sink cannot answer. */
 	if (i915->emit->dpcd_read == NULL)
 		return I915_LCD_EIO;
 
-	/* Reads over the AUX channel. */
+	/* Reads over the backend's AUX channel. */
 	transferred = i915->emit->dpcd_read(i915->emit->ctx, offset, buffer, size);
 
 	/* Reports a failed transfer. */
@@ -3419,21 +3480,34 @@ i915_lcd_dpcd_read(
 	return transferred;
 }
 
-/* Writes DPCD bytes of the named device's sink (drm_dp_dpcd_write()), as i915_lcd_dpcd_read(). */
+/* Writes DPCD bytes of an AUX channel's sink (drm_dp_dpcd_write()), as i915_lcd_dpcd_read(). */
 static __inline long
 i915_lcd_dpcd_write(
 	const struct drm_i915_private *i915,
+	const struct drm_dp_aux *aux,
 	unsigned int offset,
 	const void *buffer,
 	size_t size)
 {
+	const struct i915_lcd_aux_emit *own;
 	long transferred;
+
+	/* A channel of its own writes its own sink. */
+	own = i915_lcd_aux_emit_of(aux);
+	if (own != NULL) {
+		transferred = own->dpcd_write(own->ctx, offset, buffer, size);
+		if (transferred < 0)
+			return transferred;
+
+		/* Succeeded: reports the bytes written. */
+		return transferred;
+	}
 
 	/* A backend without a sink cannot answer. */
 	if (i915->emit->dpcd_write == NULL)
 		return I915_LCD_EIO;
 
-	/* Writes over the AUX channel. */
+	/* Writes over the backend's AUX channel. */
 	transferred = i915->emit->dpcd_write(i915->emit->ctx, offset, buffer, size);
 
 	/* Reports a failed transfer. */
@@ -3448,13 +3522,14 @@ i915_lcd_dpcd_write(
 static __inline long
 i915_lcd_dpcd_readb(
 	const struct drm_i915_private *i915,
+	const struct drm_dp_aux *aux,
 	unsigned int offset,
 	u8 *valuep)
 {
 	long transferred;
 
 	/* Reads the byte. */
-	transferred = i915_lcd_dpcd_read(i915, offset, valuep, 1);
+	transferred = i915_lcd_dpcd_read(i915, aux, offset, valuep, 1);
 
 	/* Reports a failed transfer. */
 	if (transferred < 0)
@@ -3468,13 +3543,14 @@ i915_lcd_dpcd_readb(
 static __inline long
 i915_lcd_dpcd_writeb(
 	const struct drm_i915_private *i915,
+	const struct drm_dp_aux *aux,
 	unsigned int offset,
 	u8 value)
 {
 	long transferred;
 
 	/* Writes the byte. */
-	transferred = i915_lcd_dpcd_write(i915, offset, &value, 1);
+	transferred = i915_lcd_dpcd_write(i915, aux, offset, &value, 1);
 
 	/* Reports a failed transfer. */
 	if (transferred < 0)
@@ -3491,13 +3567,14 @@ i915_lcd_dpcd_writeb(
 static __inline int
 i915_lcd_dpcd_probe(
 	const struct drm_i915_private *i915,
+	const struct drm_dp_aux *aux,
 	unsigned int offset)
 {
 	u8 byte;
 	long transferred;
 
 	/* Reads one byte at the offset. */
-	transferred = i915_lcd_dpcd_read(i915, offset, &byte, 1);
+	transferred = i915_lcd_dpcd_read(i915, aux, offset, &byte, 1);
 
 	/* Reports a failed read. */
 	if (transferred < 0)
@@ -3508,6 +3585,44 @@ i915_lcd_dpcd_probe(
 		return I915_LCD_EIO;
 
 	/* Succeeded: the sink answered. */
+	return 0;
+}
+
+/*
+ * Reads the receiver capabilities of an AUX channel's sink, the extended
+ * ones where it has them (drm_dp_read_dpcd_caps()): 0, or a negative errno
+ * (I915_LCD_EIO without a hook).
+ */
+static __inline int
+i915_lcd_read_dpcd_caps(
+	const struct drm_i915_private *i915,
+	const struct drm_dp_aux *aux,
+	u8 dpcd[15])
+{
+	const struct i915_lcd_aux_emit *own;
+	int error;
+
+	/* A channel of its own asks its own sink. */
+	own = i915_lcd_aux_emit_of(aux);
+	if (own != NULL) {
+		error = own->read_dpcd_caps(own->ctx, dpcd);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the capabilities are in dpcd. */
+		return 0;
+	}
+
+	/* A backend without a sink cannot answer. */
+	if (i915->emit->read_dpcd_caps == NULL)
+		return I915_LCD_EIO;
+
+	/* Asks over the backend's AUX channel. */
+	error = i915->emit->read_dpcd_caps(i915->emit->ctx, dpcd);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the capabilities are in dpcd. */
 	return 0;
 }
 

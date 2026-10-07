@@ -2588,6 +2588,7 @@ i915_modeset_prepare_state(
 	ms->output_hdmi = cfg->output_hdmi;
 	ms->hdmi_level_shift = cfg->vbt_hdmi_level_shift;
 	ms->also_active_pipes = cfg->also_active_pipes;
+	ms->aux_emit = cfg->aux_emit;
 
 	/* The backend of the screen's commits, and a clean error count bound to this world. */
 	world->ms_ops_pool[world->ms_sel] = ops;

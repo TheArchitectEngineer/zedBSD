@@ -92,6 +92,12 @@
 /* The pipes the takeover registry holds one crtc and one primary plane for. */
 #define I915_N1_PIPES 4
 
+/* The Type-C ports the takeover registry can hold a readout encoder for (TC1 to TC4, ws051-p004b). */
+#define I915_N1_TC_PORTS 4
+
+/* The encoders and connectors of the registry: the bound screen's and one per declared Type-C port. */
+#define I915_N1_ENCODERS (1 + I915_N1_TC_PORTS)
+
 /* ---- the walks over the registry ---- */
 
 /*
@@ -101,7 +107,7 @@
 #define I915_TAKEOVER_FOR_EACH_INTEL_CRTC(takeover, crtc, index) \
 	for ((index) = 0u; ((crtc) = drv_i915_n1_crtc_at((takeover), (index))) != NULL; (index)++)
 
-/* The encoders of the device (the Linux for_each_intel_encoder()): the registry's encoder. */
+/* The encoders of the device (the Linux for_each_intel_encoder()): the registry's encoders. */
 #define I915_TAKEOVER_FOR_EACH_INTEL_ENCODER(takeover, encoder, index) \
 	for ((index) = 0u; ((encoder) = drv_i915_n1_encoder_at((takeover), (index))) != NULL; (index)++)
 
@@ -446,8 +452,9 @@ struct intel_pmdemand_state {
 /*
  * The takeover registry: the device's objects as the readout walks them --
  * one crtc and one primary plane per pipe, the encoder and connector of
- * the screen the DDI callers are bound to -- and the device-wide states the
- * takeover clears.
+ * the screen the DDI callers are bound to, and an encoder and connector
+ * for each Type-C port the display declares (ws051-p004b) -- and the
+ * device-wide states the takeover clears.
  *
  * The runner builds it from the same configuration the modeset object is
  * built from (clearing it first), marks it live for the readout, and the
@@ -477,6 +484,15 @@ struct i915_n1_registry {
 
 	/* The connector's state. */
 	struct drm_connector_state conn_state;
+
+	/*
+	 * Every encoder and connector the walks answer with, index 0 the bound
+	 * screen's and then the declared Type-C ports' (the takeover world's
+	 * tc_ms objects); count of each.
+	 */
+	struct intel_encoder *encoders[I915_N1_ENCODERS];
+	struct intel_connector *connectors[I915_N1_ENCODERS];
+	unsigned encoder_count;
 
 	/* The throw-away atomic state of the takeover's noatomic disable. */
 	struct intel_atomic_state state;
@@ -525,6 +541,15 @@ struct i915_takeover_world {
 	 * The registry walks read its register-trace switch through it.
 	 */
 	struct i915_display *display;
+
+	/*
+	 * The Type-C ports' readout objects (ws051-p004b): each one's encoder
+	 * and connector are the registry's for that port, with the port's own
+	 * DDI hooks and AUX channel, so a crtc the firmware left on the port
+	 * is read out on it and stopped through it.  Cleared and built with
+	 * the registry; nothing else uses them.
+	 */
+	struct i915_lcd_modeset tc_ms[I915_N1_TC_PORTS];
 };
 
 /*

@@ -18,6 +18,7 @@
 #include <stdlib.h>
 
 #include <drivers/pci/pci.h>
+#include <kern/boot.h>
 #include <kern/sched.h>
 
 #include "drivers/gpu/i915/worker.h"
@@ -67,6 +68,67 @@ drv_i915_worker_sync_backlight(
 
 	/* The Type-C PLL text does not touch the backlight. */
 	stub_unreachable("drv_i915_worker_sync_backlight");
+}
+
+/*
+ * Stands in for the i915 worker's wake (the present path's, ws113-p011a).
+ */
+void
+drv_i915_worker_wake(
+	struct i915_device *device)
+{
+	(void)device;
+
+	/* The Type-C PLL text does not present. */
+	stub_unreachable("drv_i915_worker_wake");
+}
+
+/*
+ * Stands in for the boot parameters (display.mode= of the HDMI mode,
+ * ws075-p012, reached since ws113-p011a's output preparation).
+ */
+const struct kern_boot_parameters *
+kern_boot_parameters_current(
+	void)
+{
+	/* The Type-C PLL text does not read the boot parameters. */
+	stub_unreachable("kern_boot_parameters_current");
+}
+
+/*
+ * Stands in for a boot parameter's value.
+ */
+const char *
+kern_boot_parameters_value(
+	const struct kern_boot_parameters *parameters,
+	enum kern_boot_parameter_key key)
+{
+	(void)parameters;
+	(void)key;
+
+	/* The Type-C PLL text does not read the boot parameters. */
+	stub_unreachable("kern_boot_parameters_value");
+}
+
+/*
+ * Stands in for the display.mode= parser.
+ */
+int
+kern_boot_display_mode_parse(
+	const char *text,
+	size_t length,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_hz)
+{
+	(void)text;
+	(void)length;
+	(void)width;
+	(void)height;
+	(void)refresh_hz;
+
+	/* The Type-C PLL text does not pick an HDMI mode. */
+	stub_unreachable("kern_boot_display_mode_parse");
 }
 
 /* Ends the test with the name of a service the tested path must not reach. */
