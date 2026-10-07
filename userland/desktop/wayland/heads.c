@@ -1390,7 +1390,8 @@ static void
 heads_changed(
 	struct kwl_server *server)
 {
-	/* The wl_output of every display, and a whole frame. */
+	/* The wl_output of every display, the displays objects' snapshot (ws113-p005), and a whole frame. */
 	kwl_outputs_changed(server);
+	kwl_displays_tell(server);
 	server->dirty = 1;
 }

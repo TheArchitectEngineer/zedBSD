@@ -657,6 +657,161 @@ static unsigned captured_count;
 
 static void emit_raw(int fd, uint32_t object, uint32_t opcode, const void *payload, size_t size);
 
+/*
+ * The displays (ws113-p005): a stand-in for displays-shell.c that tells two displays (the panel, an HDMI one), keeps
+ * the serial of its snapshot (7 at first; moved without a new snapshot to make a stale choice), and answers an apply
+ * against another serial stale, otherwise applied with a new snapshot of the mode asked.  The places last asked are
+ * kept for the test to read.
+ */
+static struct {
+	uint32_t serial;
+	uint32_t mode;
+	char places[KL_SYSTEM_DISPLAY_PLACES_MAX];
+	uint32_t brightness;
+} fake_displays = { 7U, KL_SYSTEM_DISPLAYS_EXTENDED, { 0 }, 40U };
+
+static size_t fake_put_string(unsigned char *payload, size_t offset, const char *text);
+static void fake_displays_snapshot(struct kwl_object *object);
+
+/* The compositor's sleep (sleep.c, ws052-p012): the host has no sessiond, so a suspend goes the old way. */
+int
+kwl_sleep_answers(struct kwl_server *server)
+{
+	(void)server;
+	return 0;
+}
+
+int
+kwl_sleep_request(struct kwl_server *server, enum kwl_sleep_via via)
+{
+	(void)server;
+	(void)via;
+	return ENOTSUP;
+}
+
+int
+kwl_displays_create(struct kwl_object *manager, const unsigned char *bytes, size_t size)
+{
+	struct kwl_object *created;
+	uint32_t id;
+
+	if (size != 4U)
+		return EPROTO;
+	memcpy(&id, bytes, 4U);
+	created = kwl_create(manager->client, id, KWL_SYSTEM_DISPLAYS, manager->version);
+	if (created == NULL)
+		return EPROTO;
+	fake_displays_snapshot(created);
+	return 0;
+}
+
+int
+kwl_displays_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size)
+{
+	uint32_t words[3];
+	uint32_t length;
+
+	if (opcode == KL_SYSTEM_DISPLAYS_DESTROY) {
+		kwl_object_destroy(object);
+		return 0;
+	}
+	if (opcode == KL_SYSTEM_DISPLAYS_APPLY) {
+		if (size < 16U)
+			return EPROTO;
+		memcpy(words, bytes, 12U);
+		memcpy(&length, bytes + 12, 4U);
+		if (length == 0U || 16U + length > size)
+			return EPROTO;
+		pthread_mutex_lock(&world.lock);
+		if (words[1] != fake_displays.serial) {
+			pthread_mutex_unlock(&world.lock);
+			words[1] = KL_SYSTEM_RESULT_STALE;
+			words[2] = 0U;
+			(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_RESULT, words, sizeof(words));
+			return 0;
+		}
+		memcpy(fake_displays.places, bytes + 16, length);
+		fake_displays.mode = words[2];
+		fake_displays.serial++;
+		pthread_mutex_unlock(&world.lock);
+		fake_displays_snapshot(object);
+		words[1] = KL_SYSTEM_RESULT_OK;
+		words[2] = 1U;
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_RESULT, words, sizeof(words));
+		return 0;
+	}
+	if (opcode == KL_SYSTEM_DISPLAYS_SET_BRIGHTNESS) {
+		if (size < 12U)
+			return EPROTO;
+		memcpy(words, bytes, 4U);
+		memcpy(&length, bytes + 4, 4U);
+		if (8U + ((length + 3U) & ~3U) + 4U != size)
+			return EPROTO;
+		pthread_mutex_lock(&world.lock);
+		memcpy(&fake_displays.brightness, bytes + 8U + ((length + 3U) & ~3U), 4U);
+		fake_displays.serial++;
+		pthread_mutex_unlock(&world.lock);
+		fake_displays_snapshot(object);
+		words[1] = KL_SYSTEM_RESULT_OK;
+		words[2] = 1U;
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_RESULT, words, sizeof(words));
+		return 0;
+	}
+	return EPROTO;
+}
+
+static size_t
+fake_put_string(unsigned char *payload, size_t offset, const char *text)
+{
+	uint32_t length;
+	size_t padded;
+
+	length = (uint32_t)strlen(text) + 1U;
+	padded = ((size_t)length + 3U) & ~(size_t)3U;
+	memcpy(payload + offset, &length, 4U);
+	memset(payload + offset + 4U, 0, padded);
+	memcpy(payload + offset + 4U, text, length);
+	return offset + 4U + padded;
+}
+
+static void
+fake_displays_snapshot(struct kwl_object *object)
+{
+	unsigned char payload[256];
+	uint32_t words[7];
+	size_t offset;
+
+	offset = fake_put_string(payload, 0U, "zedbsd-port-v1:pci:0000:00:02.0:edp:A");
+	offset = fake_put_string(payload, offset, "Built-in display");
+	words[0] = 0U;
+	words[1] = 0U;
+	words[2] = 1920U;
+	words[3] = 1200U;
+	words[4] = 60000U;
+	words[5] = KL_SYSTEM_DISPLAY_INTERNAL | KL_SYSTEM_DISPLAY_ANCHOR | KL_SYSTEM_DISPLAY_SHOWN | KL_SYSTEM_DISPLAY_BACKLIGHT;
+	pthread_mutex_lock(&world.lock);
+	words[6] = fake_displays.brightness;
+	pthread_mutex_unlock(&world.lock);
+	memcpy(payload + offset, words, sizeof(words));
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_OUTPUT, payload, offset + sizeof(words));
+	offset = fake_put_string(payload, 0U, "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B");
+	offset = fake_put_string(payload, offset, "HDMI B");
+	words[0] = (uint32_t)-1280;
+	words[1] = 0U;
+	words[2] = 1280U;
+	words[3] = 720U;
+	words[4] = 60000U;
+	words[5] = KL_SYSTEM_DISPLAY_SHOWN;
+	words[6] = 0U;
+	memcpy(payload + offset, words, sizeof(words));
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_OUTPUT, payload, offset + sizeof(words));
+	pthread_mutex_lock(&world.lock);
+	words[0] = fake_displays.serial;
+	words[1] = fake_displays.mode;
+	pthread_mutex_unlock(&world.lock);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_DONE, words, 8U);
+}
+
 int
 kwl_emit(struct kwl_client *client, uint32_t object, uint32_t opcode, const void *payload, size_t size)
 {
@@ -1319,6 +1474,8 @@ test_both_ends(void)
 	uint32_t second;
 	struct kl_network_wired_config wired;
 	struct kl_sharing_state sharing;
+	struct kl_display displays[KL_DISPLAYS_MAX];
+	struct kl_display_place places[1];
 	struct kl_notification notification;
 	struct kl_notify_event event;
 	struct kl_notify_event second_event;
@@ -1359,7 +1516,7 @@ test_both_ends(void)
 		return;
 	/* The library's table describes the version it binds (zedBSD's libwayland refuses more than the table; T1-144). */
 	CHECK(kl_system_manager_v1_interface.version == (int)KL_SYSTEM_MANAGER_VERSION, "manager table version %d", kl_system_manager_v1_interface.version);
-	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY | KL_SYSTEM_HAS_KEYS | KL_SYSTEM_HAS_MAIL | KL_SYSTEM_HAS_PHONE), "capabilities");
+	CHECK(kl_system_capabilities(system) == (KL_SYSTEM_HAS_NETWORK | KL_SYSTEM_HAS_AUDIO | KL_SYSTEM_HAS_POWER | KL_SYSTEM_HAS_DEVICES | KL_SYSTEM_HAS_MONITOR | KL_SYSTEM_HAS_ACCOUNT | KL_SYSTEM_HAS_SHARING | KL_SYSTEM_HAS_PIN | KL_SYSTEM_HAS_NOTIFY | KL_SYSTEM_HAS_KEYS | KL_SYSTEM_HAS_MAIL | KL_SYSTEM_HAS_PHONE | KL_SYSTEM_HAS_DISPLAYS), "capabilities");
 	kl_system_network_get_state(system, &state);
 	CHECK(state.reachable == 1U && state.connected == 1U && state.kind == KL_NETWORK_WIFI && state.wifi == KL_WIFI_CONNECTED, "first network state");
 	CHECK(strcmp(state.interface, "wlan0") == 0 && strcmp(state.ssid, "Home") == 0 && state.wired[0] == '\0', "first network names");
@@ -1451,6 +1608,35 @@ test_both_ends(void)
 	CHECK(sharing.port == 22U && sharing.allowed == 1U && strcmp(sharing.fingerprint, "SHA256:test") == 0, "sharing state told");
 	CHECK(kl_system_sharing_set_ssh(system, 1U, &first) == 0, "ssh on asked");
 	expect_result(display, system, first, ENOTSUP, "ssh on without sessiond");
+
+	/*
+	 * The displays (ws113-p005): two told; the mirror applied with its places' text and a new snapshot; a choice made
+	 * from a snapshot that is no longer the last answered stale; the light set; a mode not one, an empty key refused.
+	 */
+	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_DISPLAYS) != 0U, "displays offered");
+	CHECK(kl_system_displays_get(system, displays, KL_DISPLAYS_MAX) == 2U, "two displays told");
+	CHECK(strcmp(displays[0].label, "Built-in display") == 0 && displays[0].width == 1920U && displays[0].brightness == 40U &&
+	    displays[0].flags == (KL_DISPLAY_INTERNAL | KL_DISPLAY_ANCHOR | KL_DISPLAY_SHOWN | KL_DISPLAY_BACKLIGHT), "the panel told");
+	CHECK(strcmp(displays[1].key, "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B") == 0 && displays[1].x == -1280 && displays[1].height == 720U, "the HDMI display told");
+	CHECK(kl_system_displays_mode(system) == KL_DISPLAYS_EXTENDED, "extended first");
+	places[0].key = displays[1].key;
+	places[0].x = 1920;
+	places[0].y = 0;
+	CHECK(kl_system_displays_apply(system, KL_DISPLAYS_MIRROR, places, 1U, &first) == 0, "mirror asked");
+	expect_result(display, system, first, 0, "mirror applied");
+	CHECK(kl_system_displays_mode(system) == KL_DISPLAYS_MIRROR, "mirror after the snapshot");
+	pthread_mutex_lock(&world.lock);
+	CHECK(strcmp(fake_displays.places, "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B 1920 0\n") == 0, "the places' text: %s", fake_displays.places);
+	fake_displays.serial++;
+	pthread_mutex_unlock(&world.lock);
+	CHECK(kl_system_displays_apply(system, KL_DISPLAYS_EXTENDED, NULL, 0U, &first) == 0, "a stale choice asked");
+	expect_result(display, system, first, ESTALE, "a stale choice refused");
+	CHECK(kl_system_displays_set_brightness(system, displays[0].key, 65U, &first) == 0, "light asked");
+	expect_result(display, system, first, 0, "light set");
+	CHECK(kl_system_displays_get(system, displays, KL_DISPLAYS_MAX) == 2U && displays[0].brightness == 65U, "the light told");
+	CHECK(kl_system_displays_apply(system, 5U, NULL, 0U, NULL) == EINVAL, "a mode not one refused");
+	CHECK(kl_system_displays_set_brightness(system, "", 10U, NULL) == EINVAL, "an empty key refused");
+	CHECK(kl_system_displays_set_brightness(system, displays[0].key, 101U, NULL) == EINVAL, "a light out of range refused");
 
 	/* The notifications (ws156-p002): a post numbered, new words for it, a body too long refused, a withdrawal closed and answered. */
 	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_NOTIFY) != 0U, "notify offered");

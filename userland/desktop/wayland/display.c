@@ -123,6 +123,9 @@ kwl_schedule(
 	/* The displays followed, and the output moved from one that is gone (output-switch.c, ws113-p004a). */
 	kwl_output_tick(server);
 
+	/* The light a session keeps, once its first frame is up (displays-shell.c, ws113-p005). */
+	kwl_displays_tick(server);
+
 	/* The glass look's clock turns over. */
 	if (server->glass)
 		kwl_glass_tick(server);

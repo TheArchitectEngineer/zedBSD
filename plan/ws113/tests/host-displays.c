@@ -240,6 +240,7 @@ test_file(void)
 	check(error == 0, "the file is read");
 	check(config.mode == KWL_DISPLAYS_MIRROR, "the mode is mirror");
 	check(strcmp(config.anchor, "zedbsd-port-v1:pci:0000:00:02.0:edp:A") == 0, "the anchor");
+	check(config.has_brightness == 1U && config.brightness == 40U, "the panel's light");
 	check(config.count == 3U, "three places");
 	found = kwl_displays_find(&config, "Venus virtual display 1");
 	check(found == 2 && config.places[2].x == -1024 && config.places[2].y == 0, "a key with spaces");
@@ -252,6 +253,9 @@ test_file(void)
 	error = kwl_displays_parse(written, length, &again);
 	check(error == 0 && again.mode == config.mode && again.count == config.count, "written and read again");
 	check(strcmp(again.places[0].key, config.places[0].key) == 0 && again.places[1].x == -1280, "the places again");
+	check(again.has_brightness == 1U && again.brightness == 40U, "the light again");
+	error = kwl_displays_parse("version=1\nbrightness=101\n", 26U, &again);
+	check(error == 0 && again.has_brightness == 0U, "a light out of range is skipped");
 
 	/* Too small a buffer writes nothing. */
 	length = kwl_displays_format(&config, written, 20U);

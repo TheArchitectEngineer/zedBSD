@@ -1058,6 +1058,11 @@ kwl_seat_key(
 		return;
 	}
 
+	/* The light keys move the built-in panel's light (displays-shell.c, ws113-p005). */
+	taken = kwl_displays_key(server, key, state);
+	if (taken)
+		return;
+
 	/* The input method's keys come first: Alt+Space, and a release whose press went to it (input-method.c). */
 	taken = kwl_ime_key_early(server, time, key, state);
 	if (taken)

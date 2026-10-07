@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band; 54: the arrivals of mail, kl_system_mail_arrived, kl_system_mail_listen and kl_system_take_mail_event; 55: the phone, kl_system_phone_send, kl_system_phone_call and kl_system_take_phone_event; 56: the printers, kl_system_printers_* and kl_system_print_*; 57: the accent the user chose, kl_accent_get and kl_accent_values, the theme's accent_ink and accent_text). */
-#define KL_VERSION	57U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band; 54: the arrivals of mail, kl_system_mail_arrived, kl_system_mail_listen and kl_system_take_mail_event; 55: the phone, kl_system_phone_send, kl_system_phone_call and kl_system_take_phone_event; 56: the printers, kl_system_printers_* and kl_system_print_*; 57: the accent the user chose, kl_accent_get and kl_accent_values, the theme's accent_ink and accent_text; 58: the displays, kl_system_displays_*). */
+#define KL_VERSION	58U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -1243,6 +1243,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_MAIL	0x1000U	/* kl_system_mail_arrived and kl_system_mail_listen (KL_VERSION 54, ws169-p002) */
 #define KL_SYSTEM_HAS_PHONE	0x2000U	/* kl_system_phone_send and kl_system_phone_call (KL_VERSION 55, ws170-p004) */
 #define KL_SYSTEM_HAS_PRINTERS	0x4000U	/* kl_system_printers_* and kl_system_print_* (KL_VERSION 56, ws145-p003) */
+#define KL_SYSTEM_HAS_DISPLAYS	0x8000U	/* kl_system_displays_* (KL_VERSION 58, ws113-p005) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
@@ -1259,6 +1260,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_CHANGED_MAIL	0x800U	/* a message arrived for a listener (KL_VERSION 54) */
 #define KL_SYSTEM_CHANGED_PHONE	0x1000U	/* a phone's message came, or a message's or call's state (KL_VERSION 55) */
 #define KL_SYSTEM_CHANGED_PRINTERS	0x2000U	/* the printers or the print jobs (KL_VERSION 56) */
+#define KL_SYSTEM_CHANGED_DISPLAYS	0x4000U	/* the displays, their mode or a light (KL_VERSION 58) */
 
 /*
  * The network: whether the daemon is reached, whether the machine is
@@ -1684,6 +1686,57 @@ int kl_system_printers_set_default(struct kl_system *system, uint32_t printer, u
 int kl_system_printers_print(struct kl_system *system, uint32_t printer, const char *path, const char *title, uint32_t *request);
 int kl_system_print_job_of(const struct kl_system *system, uint32_t request, uint32_t *job);
 int kl_system_print_cancel(struct kl_system *system, uint32_t job, uint32_t *request);
+
+/*
+ * KL_VERSION 58 (ws113-p005, plan/ws113/phase005/phase.md): the displays.
+ * The compositor shows every display connected in one of two modes, all
+ * extended (each its own part of one plane) or all mirrored.
+ * kl_system_displays_get copies the displays (each one's key, a label for
+ * people, its place in the plane, its mode, KL_DISPLAY_* flags and the
+ * light of a built-in panel in percent), kl_system_displays_mode tells the
+ * mode; a change of either (a display plugged or unplugged, a choice
+ * applied by anyone, a light changed, by the light keys too) is
+ * KL_SYSTEM_CHANGED_DISPLAYS.  kl_system_displays_apply chooses the mode
+ * and, for the extended mode, the places of the displays named (by their
+ * keys; the others keep theirs); kl_system_displays_set_brightness sets
+ * the light of a built-in panel (0 to 100).  Both are answered as a result
+ * (kl_system_take_result): 0, ESTALE when the displays changed after the
+ * copy the choice was made from (copy them again), EINVAL for places that
+ * overlap, are not joined by an edge or are out of range, EPERM outside an
+ * active session (the login screen, a lock), ENOTSUP for a display without
+ * a light the compositor sets, or EIO.  The calls return 0 when asked,
+ * ENOTSUP without KL_SYSTEM_HAS_DISPLAYS, or EINVAL.
+ */
+#define KL_DISPLAYS_MAX			8U
+#define KL_DISPLAY_KEY_MAX		64U
+#define KL_DISPLAY_LABEL_MAX		64U
+#define KL_DISPLAYS_EXTENDED		0U
+#define KL_DISPLAYS_MIRROR		1U
+#define KL_DISPLAY_INTERNAL		0x1U	/* the machine's own panel */
+#define KL_DISPLAY_ANCHOR		0x2U	/* the desktop's display: the bar and the windows are on it */
+#define KL_DISPLAY_SHOWN		0x4U	/* shown now */
+#define KL_DISPLAY_BACKLIGHT		0x8U	/* its light can be set */
+#define KL_DISPLAY_LIMITED		0x10U	/* held back: the machine shows no more displays at once */
+struct kl_display {
+	char key[KL_DISPLAY_KEY_MAX];
+	char label[KL_DISPLAY_LABEL_MAX];
+	int32_t x;
+	int32_t y;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_mhz;
+	unsigned flags;
+	unsigned brightness;
+};
+struct kl_display_place {
+	const char *key;
+	int32_t x;
+	int32_t y;
+};
+size_t kl_system_displays_get(const struct kl_system *system, struct kl_display *displays, size_t capacity);
+unsigned kl_system_displays_mode(const struct kl_system *system);
+int kl_system_displays_apply(struct kl_system *system, unsigned mode, const struct kl_display_place *places, size_t count, uint32_t *request);
+int kl_system_displays_set_brightness(struct kl_system *system, const char *key, unsigned percent, uint32_t *request);
 
 /*
  * Copy up to capacity of the details last asked for and return how many
