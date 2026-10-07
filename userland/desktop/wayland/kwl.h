@@ -1698,7 +1698,7 @@ void kwl_home_field_input(struct kwl_server *server, const char *preedit, const 
 void kwl_home_tick(struct kwl_server *server);
 int kwl_home_axis(struct kwl_server *server, int32_t vertical, int32_t horizontal);
 int kwl_home_launched(struct kwl_server *server, int32_t *rect);
-int kwl_home_open_app(struct kwl_server *server, const char *name, const char *via);
+int kwl_home_open_app(struct kwl_server *server, const char *name, const char *via, int *running);
 void kwl_home_dismiss(struct kwl_server *server, const char *via);
 void kwl_home_toggle(struct kwl_server *server, const char *via);
 pid_t kwl_spawn(struct kwl_server *server, const char *command);
@@ -1784,6 +1784,8 @@ void kwl_arrange_tick(struct kwl_server *server);
 void kwl_arrange_forget(struct kwl_server *server, struct kwl_object *surface);
 void kwl_arrange_end_all(struct kwl_server *server, const char *reason);
 void kwl_arrange_mapped(struct kwl_server *server, struct kwl_object *surface);
+void kwl_arrange_join_prepare(struct kwl_server *server);
+void kwl_arrange_join_opened(struct kwl_server *server, int error, int running);
 void kwl_arrange_moved(struct kwl_server *server, struct kwl_object *surface, unsigned from);
 void kwl_glass_committed(struct kwl_server *server, struct kwl_object *surface);
 int kwl_glass_key(struct kwl_server *server, uint32_t key, uint32_t state);

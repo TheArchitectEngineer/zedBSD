@@ -342,9 +342,10 @@ struct shell_rect {
 /*
  * Where the system bar's parts are (ws099-p034): the clock's pill and text at
  * the right, the status pill left of it with each icon's left edge, the
- * desktops' pill in the middle (desktops_line: where the room left of it
- * ends), the docked window's buttons left of that, and on the left the
- * launcher's line and the docked title (or the applications' pill).
+ * desktops' pill left of that (ws181-p009; desktops_line: where the room
+ * left of it ends), the docked window's buttons at the right end, and on
+ * the left the launcher's line and the docked title (or the applications'
+ * pill).
  */
 struct shell_bar {
 	char clock[64];
@@ -2910,8 +2911,8 @@ kwl_glass_tick(
  * Lays out the system bar (ws099-p034): from the right the clock's pill and
  * the status pill (the input method's language, the removable media, the
  * network, the volume and the battery, each in a slot); the desktops' pill
- * in the middle of the output and the docked window's buttons left of it;
- * from the left the launcher, a line and the docked title.
+ * left of the status pill (ws181-p009) and the docked window's buttons at
+ * the right end; from the left the launcher, a line and the docked title.
  */
 static void
 bar_layout(
@@ -2990,9 +2991,14 @@ bar_layout(
 	slot += BAR_SLOT;
 	bar->battery_x = slot + (BAR_SLOT - 26) / 2;
 
-	/* The desktops' pill in the middle of the output; the room left of it ends a gap before it. */
+	/*
+	 * The desktops' pill just left of the status pill (ws181-p009, the
+	 * 2026-10-07 UAT: the middle of the bar is where a camera's hole may
+	 * be, and an application's menus ran on past it); the room left of it
+	 * ends a gap before it.
+	 */
 	bar->desktops_width = 2 * DESKTOPS_PAD + DESKTOPS * DESKTOP_WIDTH + (DESKTOPS - 1) * DESKTOP_GAP;
-	bar->desktops_x = ((int32_t)server->width - bar->desktops_width) / 2;
+	bar->desktops_x = bar->status_x - BAR_PILL_GAP - bar->desktops_width;
 	bar->desktops_line = bar->desktops_x - 12;
 
 	/* On the left, after the launcher, a line and the docked title (ws035-p117: no word after the mark). */
@@ -6284,9 +6290,8 @@ window_lower(
 /*
  * Handles a press in the system bar: on the docked window's buttons their
  * action, on its title a double click (back) or the start of a pull.  The
- * clock opens Calendar (ws155-p004).  The launcher and the status do
- * nothing yet.  The press is
- * always zdesktop's.
+ * clock opens Calendar (ws155-p004), not over App Home (ws181-p009).  The
+ * launcher and the status do nothing yet.  The press is always zdesktop's.
  */
 static int
 bar_press(
@@ -6296,21 +6301,32 @@ bar_press(
 	struct shell_bar bar;
 	unsigned second;
 	int pressed;
+	int running;
+	int error;
 	float home;
 
 	/* The desktops' pill is the arrangement menu's (arrange-shell.c, WS181: its pictures switch desktops there). */
 	bar_layout(server, &bar);
 
-	/* The clock opens Calendar (ws155-p004, the 2026-10-04 user request). */
+	/*
+	 * Over App Home the bar has only the status and the clock, and nothing
+	 * acts, the clock neither (the 2026-10-07 UATs, ws181-p009).
+	 */
+	home = kwl_home_progress(server);
+	if (home > 0.0f || server->home_to > 0.0f)
+		return 1;
+
+	/*
+	 * The clock opens Calendar (ws155-p004, the 2026-10-04 user request);
+	 * on a desktop in the arrangement mode its window joins the
+	 * arrangement (ws181-p009, the 2026-10-07 UAT).
+	 */
 	if (server->pointer_x >= bar.clock_pill_x && server->pointer_x < bar.clock_pill_x + bar.clock_pill_width) {
-		(void)kwl_home_open_app(server, "Calendar", "clock");
+		kwl_arrange_join_prepare(server);
+		error = kwl_home_open_app(server, "Calendar", "clock", &running);
+		kwl_arrange_join_opened(server, error, running);
 		return 1;
 	}
-
-	/* Over App Home the bar has only the status and the clock: nothing else acts (the 2026-10-07 UAT). */
-	home = kwl_home_progress(server);
-	if (home > 0.0f)
-		return 1;
 
 	/* Otherwise only a docked window acts. */
 	surface = docked_window(server);
@@ -7928,7 +7944,8 @@ kwl_glass_pad_scroll(
  * fingers in from the left or the right edge switch to the desktop on that
  * side, each following the fingers as the pointer's edge drags do (D10);
  * two fingers down from the top edge open App Home following them
- * (ws181-p008); a tap of three fingers shows the switcher (ws142-p005).
+ * (ws181-p008) and on App Home two fingers up from the bottom edge close it
+ * (ws181-p009); a tap of three fingers shows the switcher (ws142-p005).
  * Nothing starts over the login and lock screens, a fullscreen window
  * (D6), App Home, an open Wiseview or another swipe.
  */
@@ -7943,6 +7960,7 @@ kwl_glass_gesture(
 	const char *name;
 	const char *phase_name;
 	unsigned direction;
+	float home;
 	int switching;
 	int dialog;
 	int taken;
@@ -8007,6 +8025,18 @@ kwl_glass_gesture(
 	/* Otherwise only a beginning, or a tap, starts anything. */
 	if (phase != KWL_TOUCHPAD_PHASE_BEGIN && gesture != KWL_TOUCHPAD_GESTURE_TAP3)
 		return;
+
+	/*
+	 * On App Home, two fingers up from the bottom edge bring the desktop
+	 * back following them (home.c, ws181-p009, the 2026-10-07 UAT; one
+	 * finger on the edge is enough, as for every edge).
+	 */
+	home = kwl_home_progress(server);
+	if (gesture == KWL_TOUCHPAD_GESTURE_BOTTOM2 &&
+	    (home > 0.0f || server->home_to > 0.0f)) {
+		kwl_home_pad(server, phase, travel_um, speed);
+		return;
+	}
 
 	/* While Wiseview shows, an edge's swipe of two fingers is a swipe of its tiles (from the top edge down chooses). */
 	if (phase == KWL_TOUCHPAD_PHASE_BEGIN) {
