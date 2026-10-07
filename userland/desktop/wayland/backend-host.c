@@ -260,6 +260,8 @@ kwl_lid_follow(
 	int locked;
 	int matters;
 	int deferred;
+	int available;
+	int error;
 
 	/*
 	 * Opened while a sleep's request waits: the sleep is cancelled if it
@@ -279,6 +281,37 @@ kwl_lid_follow(
 			printf("KWL LID ignored: the output shown is an external display\n");
 			return;
 		}
+	}
+
+	/*
+	 * Closed with an external display connected: the desktop moves to it and
+	 * goes on, unlocked and lit (N8, R4).  The lid counts as closed, so that
+	 * the machine sleeps if the external display goes and the output comes
+	 * back to the panel.
+	 */
+	if (open == 0U) {
+		available = kwl_output_external_available(server);
+		if (available) {
+			error = kwl_output_use_external(server);
+			if (error == 0) {
+				server->lid.closed = 1U;
+				server->lid.closed_ms = kwl_milliseconds();
+				server->lid.lock_is_lid = 0U;
+				server->output_lid_moved = 1U;
+				printf("KWL LID external: the desktop moved to the external display\n");
+				return;
+			}
+
+			/* Refused (the limit of outputs shown at once): the closing locks and sleeps as usual. */
+			printf("KWL LID external refused errno=%d\n", error);
+		}
+	}
+
+	/* Opened after the closing moved the desktop to an external display: it comes back to the panel (N8). */
+	if (open != 0U && server->output_lid_moved) {
+		server->output_lid_moved = 0U;
+		error = kwl_output_use_internal(server);
+		printf("KWL LID internal: the desktop comes back to the panel errno=%d\n", error);
 	}
 
 	/* What it asks for: a session is any but the login screen's. */

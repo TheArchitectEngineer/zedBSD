@@ -56,6 +56,8 @@ void drv_i915_display_destroy(struct i915_device *device);
 
 /* Reports the display topology's sequence (the display events operation, ws113-p002). */
 int drv_i915_display_events(void *device, void *session, uint64_t *sequence);
+int drv_i915_display_resident_identity(struct i915_display *display, uint32_t *display_id, uint64_t *generation, int *connected);
+void drv_i915_display_output_back(struct i915_device *device);
 
 /* Reads the OpRegion and its VBT, then the DRAM and the memory bandwidth (the end of the hardware probe). */
 void drv_i915_display_init_opregion(struct i915_device *device);

@@ -934,6 +934,8 @@ struct kwl_server {
 	int32_t sleep_battery_minutes;
 	unsigned screen_idle_off;
 	unsigned sleep_lid_synced;
+	/* The lid's closing moved the desktop to an external display; its opening brings it back (N8, output-switch.c). */
+	unsigned output_lid_moved;
 	/* OS device authority can pause composition; zedBSD always leaves this zero. */
 	unsigned os_paused;
 	unsigned windowed;

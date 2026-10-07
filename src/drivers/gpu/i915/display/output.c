@@ -183,6 +183,8 @@ static const struct i915_lcd_mode i915_output_cea_modes[] = {
 #define I915_OUTPUT_CEA_COUNT		(sizeof(i915_output_cea_modes) / sizeof(i915_output_cea_modes[0]))
 
 static int i915_output_hdmi(struct i915_display *display, const char **reason);
+static int i915_output_hdmi_mode(struct i915_display *display, unsigned connector, struct i915_display_output *output, const char **reason);
+static void i915_output_panel_connector(struct i915_display *display, struct i915_display_output *output);
 static void i915_output_hdmi_wait(struct i915_display *display, const char *name);
 static void i915_output_choose(struct i915_display *display);
 static void i915_output_inventory(struct i915_display *display);
@@ -291,6 +293,9 @@ drv_i915_display_output_select(
 	/* The resident output, then every connector's state for the inventory. */
 	i915_output_choose(display);
 	i915_output_inventory(display);
+
+	/* The firmware's output, which comes back when a moved output's last hold ends (ws113-p011a). */
+	display->gop_output = display->output;
 }
 
 /* Chooses the resident output: the firmware's (see drv_i915_display_output_select). */
@@ -303,8 +308,8 @@ i915_output_choose(
 	char name[48];
 	uint32_t refresh;
 
-	/* The panel until the firmware's output says otherwise. */
-	kern_memset(&display->output, 0, sizeof(display->output));
+	/* The panel (its connector, when the hotplug path knows it) until the firmware's output says otherwise. */
+	drv_i915_display_output_panel(display, &display->output);
 	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
 
 	/* display= no longer chooses the output. */
@@ -334,7 +339,7 @@ i915_output_choose(
 
 	/* The firmware's HDMI display, asked again while its sink is not answering yet. */
 	i915_output_hdmi_wait(display, name);
-	if (!display->output.hdmi)
+	if (display->output.kind != I915_OUTPUT_KIND_HDMI)
 		return;
 
 	/* The node shows the HDMI display from here on. */
@@ -372,7 +377,7 @@ drv_i915_display_output_mode(
 		return ENXIO;
 
 	/* The panel: its own timing. */
-	if (!display->output.hdmi) {
+	if (display->output.kind == I915_OUTPUT_KIND_PANEL) {
 		error = drv_i915_display_panel_mode(display->rctx.lcd, width, height, refresh_millihz);
 		if (error != 0)
 			return ENXIO;
@@ -381,9 +386,11 @@ drv_i915_display_output_mode(
 		return 0;
 	}
 
-	/* The HDMI mode, and its refresh in millihertz. */
+	/* Another output's mode (fixed when it was chosen), and its refresh in millihertz. */
 	m = &display->output.state.mode;
 	pixels = (uint64_t)m->htotal * m->vtotal;
+	if (pixels == 0U)
+		return ENXIO;
 	*width = m->hdisplay;
 	*height = m->vdisplay;
 	*refresh_millihz = (uint32_t)(((uint64_t)m->clock_khz * 1000000ULL + pixels / 2U) / pixels);
@@ -408,7 +415,7 @@ drv_i915_display_output_size_mm(
 		return ENODEV;
 
 	/* The panel: the size its EDID reported. */
-	if (!display->output.hdmi) {
+	if (display->output.kind == I915_OUTPUT_KIND_PANEL) {
 		error = drv_i915_display_panel_size_mm(display->rctx.lcd, width_mm, height_mm);
 		if (error != 0)
 			return ENODEV;
@@ -417,7 +424,7 @@ drv_i915_display_output_size_mm(
 		return 0;
 	}
 
-	/* The HDMI display has a size only when its EDID reported one. */
+	/* Another output has a size only when its EDID reported one. */
 	if (display->output.state.mode.width_mm == 0U || display->output.state.mode.height_mm == 0U)
 		return ENODEV;
 
@@ -436,12 +443,124 @@ const char *
 drv_i915_display_output_name(
 	const struct i915_display *display)
 {
-	/* The HDMI display of DDI B. */
-	if (display->output.hdmi)
+	/* The HDMI display of DDI B, or an external DisplayPort display. */
+	if (display->output.kind == I915_OUTPUT_KIND_HDMI)
 		return "HDMI";
+	if (display->output.kind == I915_OUTPUT_KIND_DP_EXT)
+		return "DisplayPort";
 
 	/* The built-in panel. */
 	return "eDP panel";
+}
+
+/*
+ * Prepares another connected output for the resident run (ws113-p011a: a
+ * claim that moves the output while no lease is held): reads what the
+ * connector is and fills output for it, without detecting it again or
+ * writing the hardware.  Each kind of connector has its own preparation;
+ * this is the one place that chooses among them.  Returns 0, ENXIO for a
+ * connector that is gone or not connected, EOPNOTSUPP for a kind this
+ * driver does not light yet (an external DisplayPort display until
+ * ws051-p004b fills its part), or the preparation's error; reason says
+ * why.
+ */
+int
+drv_i915_display_output_prepare(
+	struct i915_display *display,
+	unsigned connector,
+	struct i915_display_output *output,
+	const char **reason)
+{
+	struct i915_hpd_output found;
+	int error;
+
+	/* The connector as the hotplug path last took it. */
+	kern_memset(output, 0, sizeof(*output));
+	error = drv_i915_hpd_output(display, connector, &found);
+	if (error != 0) {
+		*reason = "no such connector";
+		return ENXIO;
+	}
+
+	/* A connector with nothing plugged in cannot be lit. */
+	if (!found.connected) {
+		*reason = "the connector is not connected";
+		return ENXIO;
+	}
+
+	/* Each kind's preparation. */
+	switch (found.kind) {
+	case I915_HPD_OUTPUT_EDP:
+		/* The built-in panel: the resident dependencies describe it. */
+		output->kind = I915_OUTPUT_KIND_PANEL;
+		output->has_connector = 1;
+		output->connector = connector;
+		break;
+	case I915_HPD_OUTPUT_HDMI:
+		/* An HDMI display: only DDI B's path (pipe B, DVI mode) is lit. */
+		if (found.port != I915_OUTPUT_PORT_B) {
+			*reason = "an HDMI port other than DDI B";
+			return EOPNOTSUPP;
+		}
+
+		/* Its mode from the EDID the hotplug path read. */
+		error = i915_output_hdmi_mode(display, connector, output, reason);
+		if (error != 0)
+			return error;
+		break;
+	case I915_HPD_OUTPUT_DP:
+		/* An external DisplayPort display (a Type-C port's): ws051-p004b prepares it here. */
+		*reason = "an external DisplayPort display is not lit yet (ws051-p004b)";
+		return EOPNOTSUPP;
+	default:
+		*reason = "a connector of a kind this driver does not light";
+		return EOPNOTSUPP;
+	}
+
+	/* Succeeded: output is ready for the resident run. */
+	return 0;
+}
+
+/*
+ * Makes an output the built-in panel, of its connector when the hotplug
+ * path knows it (the start's default, and the panel a moved output falls
+ * back to after a sleep).
+ */
+void
+drv_i915_display_output_panel(
+	struct i915_display *display,
+	struct i915_display_output *output)
+{
+	/* The panel, of no known connector yet. */
+	kern_memset(output, 0, sizeof(*output));
+	output->kind = I915_OUTPUT_KIND_PANEL;
+
+	/* Succeeded: its connector, when there is one. */
+	i915_output_panel_connector(display, output);
+}
+
+/*
+ * Gives the pipe the resident run drives the output on: the panel's pipe
+ * A, the HDMI display's pipe B (the one place that says so for each kind;
+ * an external DisplayPort display's is ws051-p004b's).
+ */
+unsigned
+drv_i915_display_output_pipe(
+	const struct i915_display_output *output)
+{
+	/* Each kind's pipe. */
+	switch (output->kind) {
+	case I915_OUTPUT_KIND_HDMI:
+		return I915_OUTPUT_HDMI_PIPE;
+	case I915_OUTPUT_KIND_DP_EXT:
+		/* ws051-p004b chooses it. */
+		return I915_OUTPUT_HDMI_PIPE;
+	default:
+		break;
+	}
+
+	/* Succeeded: the panel's pipe. */
+	return 0U;
 }
 
 /*
@@ -692,13 +811,6 @@ i915_output_hdmi(
 	const char **reason)
 {
 	struct i915_hpd_summary summary;
-	struct i915_lcd_mode mode;
-	const uint8_t *edid;
-	unsigned edid_size;
-	uint32_t want_width;
-	uint32_t want_height;
-	uint32_t want_refresh;
-	int ref_khz;
 	int status;
 	int error;
 
@@ -730,9 +842,40 @@ i915_output_hdmi(
 		return EAGAIN;
 	}
 
+	/* The mode from the EDID the detection read. */
+	error = i915_output_hdmi_mode(display, (unsigned)summary.hdmi_connector, &display->output, reason);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the HDMI display can be lit. */
+	return 0;
+}
+
+/*
+ * Chooses an HDMI connector's mode from the EDID the hotplug path last read
+ * of it (no detection here: the hotplug path keeps it current), computes
+ * its link and WRPLL into output's state, and makes output that HDMI
+ * display.  reason says what refused it.
+ */
+static int
+i915_output_hdmi_mode(
+	struct i915_display *display,
+	unsigned connector,
+	struct i915_display_output *output,
+	const char **reason)
+{
+	struct i915_lcd_mode mode;
+	const uint8_t *edid;
+	unsigned edid_size;
+	uint32_t want_width;
+	uint32_t want_height;
+	uint32_t want_refresh;
+	int ref_khz;
+	int error;
+
 	/* The EDID the detection read, if it read one. */
 	edid_size = 0U;
-	edid = drv_i915_hpd_edid_bytes(display->hpd_world, (unsigned)summary.hdmi_connector, &edid_size);
+	edid = drv_i915_hpd_edid_bytes(display->hpd_world, connector, &edid_size);
 	if (edid == NULL)
 		edid_size = 0U;
 
@@ -744,7 +887,7 @@ i915_output_hdmi(
 	}
 
 	/* The mode to drive. */
-	error = drv_i915_output_pick_mode(want_width, want_height, want_refresh, edid, edid_size, &mode, &display->output.mode_source);
+	error = drv_i915_output_pick_mode(want_width, want_height, want_refresh, edid, edid_size, &mode, &output->mode_source);
 	if (error != 0) {
 		*reason = "no timing serves display.mode";
 		return error;
@@ -762,13 +905,16 @@ i915_output_hdmi(
 		ref_khz = I915_OUTPUT_REF_KHZ;
 
 	/* Computes the link and the WRPLL of the mode; the state is written whole. */
-	error = drv_i915_lcd_compute_hdmi(&mode, ref_khz, &display->output.state);
+	error = drv_i915_lcd_compute_hdmi(&mode, ref_khz, &output->state);
 	if (error != 0) {
 		*reason = "the WRPLL refused the mode's clock";
 		return error;
 	}
 
-	/* Succeeded: the HDMI display can be lit. */
+	/* Succeeded: the output is that HDMI display. */
+	output->kind = I915_OUTPUT_KIND_HDMI;
+	output->has_connector = 1;
+	output->connector = connector;
 	return 0;
 }
 
@@ -812,8 +958,8 @@ i915_output_hdmi_wait(
 		return;
 	}
 
-	/* Succeeded: the HDMI display is the output. */
-	display->output.hdmi = 1;
+	/* Succeeded: the HDMI display is the output (i915_output_hdmi_mode made it so). */
+	return;
 }
 
 /*
@@ -847,7 +993,7 @@ i915_output_inventory(
 		error = drv_i915_hpd_output(display, index, &output);
 		if (error != 0)
 			continue;
-		if (output.kind == I915_HPD_OUTPUT_HDMI && !(display->output.hdmi && (int)index == summary.hdmi_connector)) {
+		if (output.kind == I915_HPD_OUTPUT_HDMI && !(display->output.kind == I915_OUTPUT_KIND_HDMI && (int)index == summary.hdmi_connector)) {
 			status = drv_i915_hpd_probe_connector(display, index);
 			kern_logf("i915: display inventory: %s detected at the start (status %d), not lit\n", output.name, status);
 		}
@@ -1067,4 +1213,31 @@ i915_output_cvt_vsync(
 
 	/* Any other aspect ratio. */
 	return 10U;
+}
+
+/* Names the panel's connector in output when the hotplug path has one (the first eDP connector). */
+static void
+i915_output_panel_connector(
+	struct i915_display *display,
+	struct i915_display_output *output)
+{
+	struct i915_hpd_output found;
+	unsigned count;
+	unsigned index;
+	int error;
+
+	/* Nothing without the hotplug path. */
+	if (!display->hpd_started)
+		return;
+
+	/* The first eDP connector. */
+	count = drv_i915_hpd_output_count(display);
+	for (index = 0U; index < count; index++) {
+		error = drv_i915_hpd_output(display, index, &found);
+		if (error != 0 || found.kind != I915_HPD_OUTPUT_EDP)
+			continue;
+		output->has_connector = 1;
+		output->connector = index;
+		return;
+	}
 }
