@@ -508,6 +508,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（クリック、WS181 の第 2 回の review の追加）: N1 docked の窓を閉じて他に窓が無い時も「docked mode を終える」（10-06 の「tablet mode は session の状態」を置き換え、次に開く app は floating）。N2 上端 10 px からの touch の下への drag は docked の title の上でも Wiseview「そうする」。N3 見えない desktop の docked の窓が裏で閉じた時は「何もしない」。
 - 2026-10-07 ユーザー（クリック、WS181 design.md §7）: D3 touchpad は「変えない」、D5 整列のメニューは「pill のどこでも」（中に desktop の切り替えも置く）、S6「整列モードを終える」（詰め直さない）、S8 上端の帯は「touch だけ」、D1・D2・D4・D6・D7・S9 は「全部このまま」（既定どおり）。
 - 2026-10-07 ユーザー（クリック、WS178）:「完全に分ける」（libGL.so は GL だけ、glX* は xserver の package の libGLX.so だけ、外から移植する X の GL の program は link の修正が要る）。T1 は再起動し、削除は全ての担当で禁止・Q1 が行う（plan/agents/protocol.md 末尾）。
 - 2026-10-07 ユーザー（クリック）: WS181 は「ベータ2、UAT として優先」、整列の形は 5 つ（水平に等分、垂直に等分、右に 1 つ・左に縦の分割、左に 1 つ・右に縦の分割、格子）。WS180（Emacs の graphical な editor）と WS117（Qt6 の Linux の互換）は「どちらもベータ3 以降」。WS178 の libGL・libGLX の分割はユーザーが互換性の説明を求めた（Q1 が回答）。
