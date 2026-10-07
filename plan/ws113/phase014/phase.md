@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws113-p014 -->
 # ws113-p014: 拡張の時に個々の display を off にする（Settings の Display の頁）
 
-Status: in-progress（実装済み、T1 の QEMU とユーザーの 5330 の UAT 待ち）
+Status: test-wait（2026-10-08 T1-370: 機能は全 ok、試験の期待の 2 行を Q1 が直した。5330 の実機の UAT 待ち）
 Disposition: normal
 Parent: [WS113](../ws.md)
 
@@ -43,3 +43,7 @@ Q1 の ACK:「p014 の範囲 1〜5 で進めてよい（protocol v19・KL_VERSIO
 未実施:
 - QEMU（T1 `plan/ws113/tests/displays-p014.sh`、image は `config-amd64-p006.mk`）: head 1 の off・on、anchor の off で head 1 へ移る、最後の on の拒否、displays.conf の保存と再起動、mirror での表示と拒否。
 - 5330 の実機（ユーザー）: 内蔵を off にして HDMI だけ、HDMI を off にして内蔵だけ、touch の試験。FreeBSD の build。
+
+## T1-370 の判定（2026-10-08 Q1）
+
+試験の期待の誤りだけで FAIL（retry も同じ）: display 0 は Venus でも最初の display として KL_DISPLAY_INTERNAL（0x1）を持つ（最初の snapshot が flags=0x7）ので、off の後 0x21・on に戻して 0x5 が正しい。他の項目（head 1 の off・on、anchor が display 1（0x6）へ、最後の on の off が EINVAL、displays.conf の off= が残る、mirror の拒否、拡張に戻って off のまま、KWL FAILED 無し）は全部 ok → Q1 が試験の 90・97 行の期待を 0x21・0x5 に直した。機能は QEMU で PASS とみなし、test-wait（5330 の実機の UAT）。

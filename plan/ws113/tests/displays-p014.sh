@@ -87,14 +87,14 @@ expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 1 .* flags
 ask "display-shown $one off displays"
 expect_text "$text" 'KEILAND-SYSTEM result request=[0-9]+ error=0' "display 0 (the anchor) turned off"
 expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 1 .* flags=0x6 ' "display 1 is the anchor now"
-expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 0 .* flags=0x20 ' "display 0 is off"
+expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 0 .* flags=0x21 ' "display 0 is off"
 wait_line /tmp/zdesktop.log 'KWL DISPLAYS anchor off name=Venus virtual display 0 to=Venus virtual display 1' 10 && echo "ok: the anchor moved" ||
     { echo "FAIL: the anchor moved"; status=1; }
 ask "display-shown $two off"
 expect_text "$text" 'KEILAND-SYSTEM result request=[0-9]+ error=EINVAL' "the last display on stays on"
 ask "display-shown $one on displays"
 expect_text "$text" 'KEILAND-SYSTEM result request=[0-9]+ error=0' "display 0 turned on"
-expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 0 .* flags=0x4 ' "display 0 shown again"
+expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 0 .* flags=0x5 ' "display 0 shown again"
 expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 1 .* flags=0x6 ' "display 1 stays the anchor"
 
 # 3. Kept in displays.conf: a new compositor starts without display 1's head.
