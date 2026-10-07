@@ -1941,6 +1941,15 @@ drv_i915_lcd_kernel_bind_ops(
 
 	/* The Type-C ports' links, which an output's disable gives back. */
 	k->ops.tc_put_link = drv_i915_lcd_tc_put_link;
+	k->ops.tc_get_link = drv_i915_lcd_tc_get_link;
+	k->ops.tc_mode = drv_i915_lcd_tc_mode;
+	k->ops.tc_set_fia_lane_count = drv_i915_lcd_tc_set_fia_lane_count;
+	k->ops.tc_pin_assignment = drv_i915_lcd_tc_pin_assignment;
+
+	/* The Type-C ports' DKL PHYs, behind the bank index their lock orders. */
+	k->ops.dkl_read = drv_i915_lcd_dkl_read;
+	k->ops.dkl_write = drv_i915_lcd_dkl_write;
+	k->ops.dkl_rmw = drv_i915_lcd_dkl_rmw;
 
 	/* The synchronous update: vblank references, the vblank sleep, the section's interrupts and the event. */
 	k->ops.vblank_get = drv_i915_lcd_kernel_vblank_get;

@@ -2253,6 +2253,28 @@ struct i915_lcd_emit {
 	 * model: the step is recorded instead.
 	 */
 	void (*tc_put_link)(void *ctx, int tc_port);
+	/*
+	 * The rest of a Type-C port's link (tc_port 0 = TC1), all NULL in a
+	 * model, which records a step instead:
+	 *   tc_get_link            intel_tc_port_get_link(): an output takes a link, and with it the PHY for the lanes
+	 *   tc_mode                the mode the port is held in (enum i915_tc_mode of tc.h; a model answers NONE)
+	 *   tc_set_fia_lane_count  intel_tc_port_set_fia_lane_count(): the FIA's DP lanes, mirrored when lane_reversal
+	 *   tc_pin_assignment      intel_tc_port_get_pin_assignment_mask(): the FIA's DP pin assignment (a model answers 0)
+	 */
+	void (*tc_get_link)(void *ctx, int tc_port, int lanes);
+	int (*tc_mode)(void *ctx, int tc_port);
+	void (*tc_set_fia_lane_count)(void *ctx, int tc_port, int lanes, int lane_reversal);
+	unsigned (*tc_pin_assignment)(void *ctx, int tc_port);
+	/*
+	 * intel_dkl_phy_read / _write / _rmw: a register of a Type-C port's DKL
+	 * PHY at its PHY address (the bank in bits 15..12), under the lock the
+	 * ports' bank index shares.  NULL in a model: the bank index and the
+	 * window are written and read through write32 / read32 (dkl-phy.c's
+	 * drv_i915_dkl_phy_window() gives the registers).
+	 */
+	uint32_t (*dkl_read)(void *ctx, int tc_port, uint32_t phy_address);
+	void (*dkl_write)(void *ctx, int tc_port, uint32_t phy_address, uint32_t value);
+	void (*dkl_rmw)(void *ctx, int tc_port, uint32_t phy_address, uint32_t clear, uint32_t set);
 };
 /*
  * The state calculation (state.c).

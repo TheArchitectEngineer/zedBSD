@@ -196,6 +196,7 @@ void drv_i915_tc_put_link(struct i915_tc *tc, unsigned port);
 enum i915_tc_mode drv_i915_tc_mode(struct i915_tc *tc, unsigned port);
 int drv_i915_tc_max_lanes(struct i915_tc *tc, unsigned port);
 unsigned drv_i915_tc_pin_assignment(struct i915_tc *tc, unsigned port);
+void drv_i915_tc_set_fia_lane_count(struct i915_tc *tc, unsigned port, int required_lanes, int lane_reversal);
 void drv_i915_tc_dp_sample(struct i915_tc *tc, unsigned port, struct i915_tc_dp_sample *sample);
 void drv_i915_tc_log_state(struct i915_tc *tc, unsigned port, const char *why);
 const char *drv_i915_tc_mode_name(enum i915_tc_mode mode);

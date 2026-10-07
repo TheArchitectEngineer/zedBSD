@@ -58,6 +58,20 @@
 #define I915_TC_FIA_PIN_SHIFT		4u
 #define I915_TC_FIA_PIN_MASK		0xfu
 
+/*
+ * The FIA's DisplayPort main link lanes (PORT_TX_DFLEXDPMLE1): a 4-bit
+ * lane mask per slot, 4 bits apart.  One lane is lane 0 (lane 3 when the
+ * lanes are reversed), two lanes are 0 and 1 (3 and 2), four are all.
+ */
+#define I915_TC_FIA_DFLEXDPMLE1		0x8c0u
+#define I915_TC_FIA_MLE_SHIFT		4u
+#define I915_TC_FIA_MLE_MASK		0xfu
+#define I915_TC_FIA_MLE_ONE		0x1u
+#define I915_TC_FIA_MLE_ONE_REVERSED	0x8u
+#define I915_TC_FIA_MLE_TWO		0x3u
+#define I915_TC_FIA_MLE_TWO_REVERSED	0xcu
+#define I915_TC_FIA_MLE_FOUR		0xfu
+
 /* How many Type-C ports one modular FIA serves (display version 13). */
 #define I915_TC_PORTS_PER_FIA		2u
 
@@ -498,6 +512,60 @@ drv_i915_tc_pin_assignment(
 
 	/* Succeeded: the pin assignment. */
 	return pins;
+}
+
+/*
+ * Tells the FIA which of a Type-C port's lanes carry the DisplayPort main
+ * link: one, two or four, counted from the far end when the lanes are
+ * reversed (which only a legacy port's are).
+ *
+ * The caller holds a link to the port, so the PHY is held and TC cold is
+ * blocked.  Another lane count is logged and leaves the port with no
+ * lanes, as it was asked for none the FIA has.
+ */
+void
+drv_i915_tc_set_fia_lane_count(
+	struct i915_tc *tc,
+	unsigned port,
+	int required_lanes,
+	int lane_reversal)
+{
+	struct i915_tc_port *p;
+	uint32_t lanes;
+	uint32_t value;
+	unsigned shift;
+
+	/* An undeclared port has no FIA slot. */
+	p = tc_port_of(tc, port);
+	if (p == NULL)
+		return;
+
+	/* The lanes the link needs, from the near end or from the far end. */
+	lanes = 0u;
+	if (required_lanes == 1) {
+		if (lane_reversal) {
+			lanes = I915_TC_FIA_MLE_ONE_REVERSED;
+		} else {
+			lanes = I915_TC_FIA_MLE_ONE;
+		}
+	} else if (required_lanes == 2) {
+		if (lane_reversal) {
+			lanes = I915_TC_FIA_MLE_TWO_REVERSED;
+		} else {
+			lanes = I915_TC_FIA_MLE_TWO;
+		}
+	} else if (required_lanes == 4) {
+		lanes = I915_TC_FIA_MLE_FOUR;
+	} else {
+		tc->env.log(tc->env.ctx, "i915: TC%u: no FIA lanes for a %d-lane link\n", port + 1u, required_lanes);
+	}
+
+	/* Replaces the port's slot of the FIA's main link lanes. */
+	shift = p->fia_slot * I915_TC_FIA_MLE_SHIFT;
+	value = tc_read(tc, tc_fia_base(p) + I915_TC_FIA_DFLEXDPMLE1);
+	value &= ~(I915_TC_FIA_MLE_MASK << shift);
+	value |= lanes << shift;
+	tc_write(tc, tc_fia_base(p) + I915_TC_FIA_DFLEXDPMLE1, value);
 }
 
 /*

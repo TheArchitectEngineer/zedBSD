@@ -159,6 +159,17 @@
 #define I915_MG_PLL_ENABLE_STRIDE		4U
 #define I915_PLL_ENABLE_BIT			(1U << 31)
 
+/*
+ * The other bits of a PLL enable register (Linux v6.8.12 i915_reg.h
+ * PLL_LOCK, PLL_POWER_ENABLE, PLL_POWER_STATE), and how long the disable
+ * waits for each to follow (icl_pll_disable(): 1 ms, polled every 10 us).
+ */
+#define I915_PLL_LOCK_BIT			(1U << 30)
+#define I915_PLL_POWER_ENABLE_BIT		(1U << 27)
+#define I915_PLL_POWER_STATE_BIT		(1U << 26)
+#define I915_PLL_DISABLE_TIMEOUT_US		1000U
+#define I915_PLL_DISABLE_POLL_US		10U
+
 /* enum intel_dpll_id, ICL naming (values preserved). */
 #define I915_DPLL_ID_ICL_DPLL0			0
 #define I915_DPLL_ID_ICL_DPLL1			1
@@ -231,6 +242,16 @@
 #define I915_ICL_DPCLKA_CFGCR0			0x164280U
 #define I915_DDI_CLK_SEL_MASK			0xf0000000U
 #define I915_DDI_CLK_SEL_NONE			0x00000000U
+
+/*
+ * The Type-C clock select values (Linux v6.8.12 i915_reg.h DDI_CLK_SEL_*):
+ * the port's own MG / DKL PLL, or one of the Thunderbolt PLL's rates.
+ */
+#define I915_DDI_CLK_SEL_MG			0x80000000U
+#define I915_DDI_CLK_SEL_TBT_162		0xc0000000U
+#define I915_DDI_CLK_SEL_TBT_270		0xd0000000U
+#define I915_DDI_CLK_SEL_TBT_540		0xe0000000U
+#define I915_DDI_CLK_SEL_TBT_810		0xf0000000U
 #define I915_PORT_CLK_SEL_A			0x46100U
 
 /*
@@ -384,6 +405,9 @@ static void i915_nogem_fbc_sanitize(struct i915_display_nogem *d, struct i915_mm
 static void i915_nogem_sanitize_encoder_pll_mapping(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m);
 static int i915_nogem_sanitize_crtc(struct i915_display_nogem *d, struct i915_crtc *crtc);
 static void i915_nogem_adlp_cmtg_clock_gating_wa(struct i915_display_nogem *d, struct i915_mmio *m, int display_ver, int display_step, const struct i915_dpll *pll);
+static int i915_nogem_tc_get_pll_id(struct i915_encoder *e, struct i915_mmio *m, int *pll_id);
+static int i915_nogem_wait_clear(struct i915_mmio *m, uint32_t reg, uint32_t mask);
+static void i915_nogem_icl_pll_disable(struct i915_display_nogem *d, struct i915_mmio *m, struct i915_dpll *pll);
 static void i915_nogem_power_domains_sanitize_state(struct i915_display_nogem *d, struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 static int i915_vga_client_register(struct i915_vga_client *c);
 static int i915_vga_get_legacy_io(struct i915_display *display);
@@ -2095,10 +2119,12 @@ drv_i915_modeset_readout_hw_state(
  *
  * encoder->get_config() for the linked encoders: icl_ddi_combo_get_config()
  * -> intel_ddi_get_clock(icl_ddi_combo_get_pll()), the id of the PLL feeding
- * the PHY from ICL_DPCLKA_CFGCR0.  icl_ddi_tc_get_pll() is not ported: a
- * linked Type-C encoder leaves its PLL unknown and marks every DPLL's
- * readout incomplete.  Then intel_dpll_readout_hw_state(): each DPLL's
- * enable bit and the active pipes it feeds.
+ * the PHY from ICL_DPCLKA_CFGCR0; icl_ddi_tc_get_config() ->
+ * icl_ddi_tc_get_pll(), the PLL a Type-C port's DDI clock select names.
+ * A select value the reference does not know leaves the PLL unknown and
+ * marks every DPLL's readout incomplete.  Then
+ * intel_dpll_readout_hw_state(): each DPLL's enable bit and the active
+ * pipes it feeds.
  */
 void
 drv_i915_dpll_readout(
@@ -2113,6 +2139,7 @@ drv_i915_dpll_readout(
 	unsigned k;
 	uint32_t enable;
 	int tc_unknown;
+	int known;
 
 	/* Reads the PLL id feeding each linked encoder's PHY. */
 	tc_unknown = 0;
@@ -2129,9 +2156,14 @@ drv_i915_dpll_readout(
 			e->shared_dpll_id = (int)((e->dpclka_cfgcr0 >> (2U * (unsigned)e->phy)) & 0x3U);
 			kern_logf("i915: P5c [ENCODER port %c] get_config: ICL_DPCLKA_CFGCR0=0x%08x -> "
 				"shared_dpll id %d\n", (char)('A' + e->port), e->dpclka_cfgcr0, e->shared_dpll_id);
+		} else if (e->clk_funcs == I915_DDI_CLK_ICL_TC) {
+			/* icl_ddi_tc_get_pll(): the PLL the port's DDI clock select names. */
+			known = i915_nogem_tc_get_pll_id(e, m, &e->shared_dpll_id);
+			if (!known)
+				tc_unknown = 1;
 		} else {
 			tc_unknown = 1;
-			kern_logf("i915: P5c [ENCODER port %c] get_config: icl_ddi_tc_get_pll not ported -- the PLL "
+			kern_logf("i915: P5c [ENCODER port %c] get_config: no clock operations -- the PLL "
 				"of this active link is unknown\n", (char)('A' + e->port));
 		}
 	}
@@ -2329,12 +2361,15 @@ drv_i915_nogem_dpll_sanitize_state(
 		}
 
 		/*
-		 * A Type-C PLL is left on: the DKL PLL's disable (the lock's wait,
-		 * PLL_POWER_ENABLE) is not ported yet (ws051-p003), and clearing
-		 * PLL_ENABLE alone is not Linux's sequence.
+		 * A Type-C PLL is turned off with the whole of Linux's disable
+		 * (icl_pll_disable() through mg_pll_disable()): the enable, the
+		 * lock's going, the power and its going.
 		 */
 		if (pll->funcs == I915_DPLL_FUNCS_DKL) {
-			kern_logf("i915: %s enabled but not in use: NOT disabled (the Type-C PLL's disable is not ported)\n", pll->name);
+			kern_logf("i915: %s enabled but not in use, disabling\n", pll->name);
+			i915_nogem_icl_pll_disable(d, m, pll);
+			pll->on = 0;
+			d->dplls_disabled++;
 			continue;
 		}
 
@@ -6153,4 +6188,128 @@ i915_sha_prefix(
 
 	/* Ends the string. */
 	text[16] = '\0';
+}
+
+/*
+ * Finds the PLL a Type-C encoder's DDI clock select names
+ * (icl_ddi_tc_get_pll()): the Thunderbolt PLL for one of its rates, the
+ * port's own TC PLL for MG, none for nothing selected.
+ *
+ * Stores the PLL id (-1 for none) and returns 1, or returns 0 for a select
+ * value the reference does not know, which leaves the PLL unknown.
+ */
+static int
+i915_nogem_tc_get_pll_id(
+	struct i915_encoder *e,
+	struct i915_mmio *m,
+	int *pll_id)
+{
+	uint32_t clk_sel;
+	int tc_port;
+
+	/* Reads the port's DDI clock select. */
+	tc_port = e->port - I915_PORT_TC1;
+	clk_sel = drv_i915_read32(m, I915_PORT_CLK_SEL_A + (unsigned)e->port * 4U);
+	clk_sel &= I915_DDI_CLK_SEL_MASK;
+
+	/* Names the PLL the value stands for. */
+	switch (clk_sel) {
+	case I915_DDI_CLK_SEL_TBT_162:
+	case I915_DDI_CLK_SEL_TBT_270:
+	case I915_DDI_CLK_SEL_TBT_540:
+	case I915_DDI_CLK_SEL_TBT_810:
+		*pll_id = I915_DPLL_ID_ICL_TBTPLL;
+		break;
+	case I915_DDI_CLK_SEL_MG:
+		*pll_id = I915_DPLL_ID_ICL_MGPLL1 + tc_port;
+		break;
+	case I915_DDI_CLK_SEL_NONE:
+		*pll_id = -1;
+		break;
+	default:
+		*pll_id = -1;
+		kern_logf("i915: P5c [ENCODER port %c] get_config: DDI_CLK_SEL=0x%08x is not a Type-C clock select "
+			"-- the PLL of this active link is unknown\n", (char)('A' + e->port), clk_sel);
+		return 0;
+	}
+
+	/* Reports what was found. */
+	kern_logf("i915: P5c [ENCODER port %c] get_config: DDI_CLK_SEL=0x%08x -> shared_dpll id %d\n",
+		(char)('A' + e->port), clk_sel, *pll_id);
+
+	/* Succeeded: the PLL is known (or known to be none). */
+	return 1;
+}
+
+/*
+ * Waits until every bit of a mask is clear in a display register, polling
+ * every 10 us for at most 1 ms (the waits of icl_pll_disable()).
+ *
+ * Returns 0, ETIMEDOUT when the bits stayed, or EIO when the time base
+ * failed.
+ */
+static int
+i915_nogem_wait_clear(
+	struct i915_mmio *m,
+	uint32_t reg,
+	uint32_t mask)
+{
+	uint32_t value;
+	unsigned waited_us;
+	int delay_result;
+
+	/* Polls until the bits are clear or the time is up; the last read decides. */
+	waited_us = 0U;
+	for (;;) {
+		/* Reads the register; the wait is over once the bits are clear. */
+		value = drv_i915_read32(m, reg);
+		if ((value & mask) == 0U)
+			break;
+
+		/* The time is up: the bits stayed. */
+		if (waited_us >= I915_PLL_DISABLE_TIMEOUT_US)
+			return ETIMEDOUT;
+
+		/* Waits a little before the next read. */
+		delay_result = drv_i915_udelay(I915_PLL_DISABLE_POLL_US);
+		if (delay_result != 0)
+			return EIO;
+
+		/* The time waited so far. */
+		waited_us += I915_PLL_DISABLE_POLL_US;
+	}
+
+	/* Succeeded: the bits are clear. */
+	return 0;
+}
+
+/*
+ * Turns a PLL off with Linux's whole disable (icl_pll_disable()): clears
+ * the enable and waits for the lock to go, then clears the power request
+ * and waits for the power to go.  A wait that ends without its bit going
+ * is logged, as the reference logs it, and the disable goes on.
+ */
+static void
+i915_nogem_icl_pll_disable(
+	struct i915_display_nogem *d,
+	struct i915_mmio *m,
+	struct i915_dpll *pll)
+{
+	int wait_result;
+
+	/* Clears the enable. */
+	(void)i915_nogem_rmw(d, m, pll->enable_reg, I915_PLL_ENABLE_BIT, 0U);
+
+	/* Waits for the lock to go. */
+	wait_result = i915_nogem_wait_clear(m, pll->enable_reg, I915_PLL_LOCK_BIT);
+	if (wait_result != 0)
+		kern_logf("i915: PLL %d locked (error %d)\n", pll->id, wait_result);
+
+	/* Removes the PLL power. */
+	(void)i915_nogem_rmw(d, m, pll->enable_reg, I915_PLL_POWER_ENABLE_BIT, 0U);
+
+	/* Waits for the power to go. */
+	wait_result = i915_nogem_wait_clear(m, pll->enable_reg, I915_PLL_POWER_STATE_BIT);
+	if (wait_result != 0)
+		kern_logf("i915: PLL %d Power not disabled (error %d)\n", pll->id, wait_result);
 }

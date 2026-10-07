@@ -53,6 +53,7 @@ void drv_i915_dkl_phy_init(struct i915_dkl_phy *dkl, struct i915_mmio *mmio);
 uint32_t drv_i915_dkl_phy_window(unsigned tc_port, uint32_t phy_address, uint32_t *index_reg, uint32_t *index_value);
 uint32_t drv_i915_dkl_phy_read(struct i915_dkl_phy *dkl, unsigned tc_port, uint32_t phy_address);
 void drv_i915_dkl_phy_write(struct i915_dkl_phy *dkl, unsigned tc_port, uint32_t phy_address, uint32_t value);
+void drv_i915_dkl_phy_rmw(struct i915_dkl_phy *dkl, unsigned tc_port, uint32_t phy_address, uint32_t clear, uint32_t set);
 int drv_i915_dkl_phy_wait_set(struct i915_dkl_phy *dkl, unsigned tc_port, uint32_t phy_address, uint32_t mask, unsigned timeout_us);
 
 #endif
