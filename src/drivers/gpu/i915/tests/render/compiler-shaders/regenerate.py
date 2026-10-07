@@ -52,6 +52,7 @@ GEOMETRY = (
     ('emitif.geom', 'geometry'),
     ('cut64.geom', 'geometry'),
     ('cut160.geom', 'geometry'),
+    ('spill.geom', 'geometry'),
     ('refuse-entry.geom', 'geometry'),
     ('refuse-invocations.geom', 'geometry'),
     ('refuse-invocation-id.geom', 'geometry'),

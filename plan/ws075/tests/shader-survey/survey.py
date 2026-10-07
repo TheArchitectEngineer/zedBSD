@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # ws075-p001: lists everything in SPIR-V modules that the i915 executor's shader compiler does not take, without stopping
 # at the first thing (the compiler itself refuses the whole module at its first refusal).  The rules copy what
-# src/drivers/gpu/i915/compiler/spirv.c (and compile.c) accept as of 2026-09-28; each rule names the function it copies.  Shape rules
+# src/drivers/gpu/i915/compiler/spirv.c (and compile.c) accept as of 2026-09-28, and the geometry stage of ws075-p007a
+# (spirv-geometry.inc, 2026-10-07); each rule names the function it copies.  Shape rules
 # (operand sizes, nesting depths, dynamic indices, phis) are not copied: the compiler's first refusal is compared by
 # run.sh to catch a module whose only gaps are of that kind.
 #
@@ -48,17 +49,26 @@ BODY = {'OpReturn', 'OpUnreachable', 'OpBranch', 'OpBranchConditional', 'OpSelec
         'OpDPdyFine', 'OpFwidthFine', 'OpImageSampleDrefImplicitLod', 'OpImageSampleDrefExplicitLod',
         'OpImageSampleProjImplicitLod', 'OpImageSampleProjExplicitLod', 'OpImageSampleProjDrefImplicitLod',
         'OpImageSampleProjDrefExplicitLod', 'OpImageFetch', 'OpImage', 'OpImageQuerySizeLod', 'OpImageQuerySize',
-        'OpImageQueryLevels'}
+        'OpImageQueryLevels', 'OpEmitVertex', 'OpEndPrimitive'}
+
+# i915_spirv_geometry_mode: the execution modes of a geometry shader (Invocations of 1 alone, OutputVertices of 1 to 256).
+GEOMETRY_MODES = {'InputPoints', 'InputLines', 'InputLinesAdjacency', 'Triangles', 'InputTrianglesAdjacency',
+                  'OutputPoints', 'OutputLineStrip', 'OutputTriangleStrip', 'OutputVertices', 'Invocations'}
+
+# i915_spirv_lower_load_vertex_input: the members of gl_in a geometry shader reads.
+GL_IN_MEMBERS = {'Position', 'PointSize'}
 
 # i915_spirv_lower_sample and i915_spirv_lower_texture: the image operands of a sample that are lowered.
 SAMPLE_OPERANDS = {'Bias', 'Lod', 'Grad', 'ConstOffset'}
 
-# i915_spirv_lower_fetch: the image operands of a fetch that are lowered.
-FETCH_OPERANDS = {'Lod', 'ConstOffset'}
+# i915_spirv_lower_fetch: the image operands of a fetch that are lowered (Sample: of a multisampled image).
+FETCH_OPERANDS = {'Lod', 'ConstOffset', 'Sample'}
 
-# The image kinds a sample, a fetch and a query take (i915_spirv_image_type() and its callers): not multisampled.
+# The image kinds a sample, a fetch and a query take (i915_spirv_image_type() and its callers): a sample not of a
+# multisampled image; a fetch also of a texel buffer, and of a multisampled 2D image (not an array); a query of any
+# 1D, 2D, 3D or cube image, multisampled or not.
 SAMPLE_DIMS = {'1D', '2D', '3D', 'Cube'}
-FETCH_DIMS = {'1D', '2D', '3D'}
+FETCH_DIMS = {'1D', '2D', '3D', 'Buffer'}
 
 # i915_spirv_lower_extended: GLSL.std.450.
 EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Floor', 'Ceil', 'Fract', 'Radians', 'Degrees',
@@ -66,8 +76,9 @@ EXTENDED = {'Round', 'RoundEven', 'Trunc', 'FAbs', 'SAbs', 'FSign', 'SSign', 'Fl
             'UMax', 'SMax', 'FClamp', 'UClamp', 'SClamp', 'FMix', 'Step', 'SmoothStep', 'Length', 'Distance', 'Cross',
             'Normalize', 'Reflect', 'Determinant', 'MatrixInverse', 'PackHalf2x16', 'UnpackHalf2x16'}
 
-# i915_spirv_lower_store_output: the output builtins that are written.
-OUTPUT_BUILTINS = {'Position', 'PointSize'}
+# i915_spirv_lower_store_output and i915_spirv_geometry_output: the output builtins that are written, by stage (a
+# geometry shader's gl_PointSize is refused: shaderTessellationAndGeometryPointSize is not offered).
+OUTPUT_BUILTINS = {'Vertex': {'Position', 'PointSize'}, 'Geometry': {'Position', 'Layer', 'PrimitiveId'}}
 
 
 def disassemble(path):
@@ -121,8 +132,17 @@ def survey(path):
 		# The entry point's stage.
 		if opcode == 'OpEntryPoint':
 			stage = operands[0]
-			if stage not in ('Vertex', 'Fragment'):
+			if stage not in ('Vertex', 'Fragment', 'GLCompute', 'Geometry'):
 				gap('execution model %s' % stage)
+
+		# A geometry shader's execution modes.
+		if opcode == 'OpExecutionMode' and stage == 'Geometry':
+			if operands[1] not in GEOMETRY_MODES:
+				gap('geometry execution mode %s' % operands[1])
+			if operands[1] == 'Invocations' and int(operands[2]) != 1:
+				gap('geometry invocations other than one')
+			if operands[1] == 'OutputVertices' and not 1 <= int(operands[2]) <= 256:
+				gap('geometry OutputVertices past 256')
 
 		# Decorations; the builtins kept for the variables.
 		if opcode == 'OpDecorate':
@@ -175,7 +195,10 @@ def survey(path):
 					# A fragment shader's FrontFacing, FragCoord and PointCoord are the payload's facing bit, pixel
 					# position, depth and w, and the point sprite's coordinate.
 					generated = stage == 'Vertex' and builtins[result] in ('VertexIndex', 'InstanceIndex')
-					if stage == 'Fragment' and builtins[result] in ('FrontFacing', 'FragCoord', 'PointCoord'):
+					if stage == 'Fragment' and builtins[result] in ('FrontFacing', 'FragCoord', 'PointCoord', 'PrimitiveId'):
+						generated = True
+					# i915_spirv_declare_geometry_input: gl_PrimitiveIDIn is the thread's payload.
+					if stage == 'Geometry' and builtins[result] == 'PrimitiveId':
 						generated = True
 					if not generated:
 						gap('input builtin %s' % builtins[result])
@@ -186,9 +209,10 @@ def survey(path):
 						pointee = types.get(pointee[1], ['?'])
 					if pointee[0] == 'OpTypeInt' and stage != 'Vertex' and result not in flats:
 						gap('integer inputs')
-				# i915_compile_store_output: a fragment shader writes one colour, at location 0.
-				if storage == 'Output' and stage == 'Fragment' and locations.get(result, 0) != 0:
-					gap('colour outputs past location 0 (MRT)')
+				# i915_compile_store_output: a fragment shader writes colours at locations 0 to 3
+				# (I915_SHADER_MAX_COLOR_OUTPUTS).
+				if storage == 'Output' and stage == 'Fragment' and locations.get(result, 0) >= 4:
+					gap('colour outputs past location 3')
 			continue
 
 		# A function body.
@@ -199,6 +223,8 @@ def survey(path):
 				gap('function calls (more than one function)')
 			else:
 				gap('instruction %s' % opcode)
+		if opcode in ('OpEmitVertex', 'OpEndPrimitive') and stage != 'Geometry':
+			gap('%s outside a geometry shader' % opcode)
 		if opcode == 'OpExtInst' and operands[2] not in EXTENDED:
 			gap('GLSL.std.450 %s' % operands[2])
 		if opcode == 'OpLoad':
@@ -217,12 +243,15 @@ def survey(path):
 			if image[0] == 'OpTypeImage' and (image[2] not in SAMPLE_DIMS or image[5] != '0'):
 				gap('texture() of a sampler%s%s' % (image[2], 'MS' if image[5] != '0' else ''))
 		if opcode in ('OpImageFetch', 'OpImageQuerySizeLod', 'OpImageQuerySize', 'OpImageQueryLevels'):
-			# i915_spirv_lower_fetch and _query: 1D, 2D and 3D images (a query also a cube), not multisampled.
+			# i915_spirv_lower_fetch and _query: what FETCH_DIMS and SAMPLE_DIMS say.
 			image = types.get(loads.get(operands[1], ''), ['?', '', '?', '0', '0', '0'])
 			if image[0] == 'OpTypeSampledImage':
 				image = types.get(image[1], ['?', '', '?', '0', '0', '0'])
 			dims = FETCH_DIMS if opcode == 'OpImageFetch' else SAMPLE_DIMS
-			if image[0] == 'OpTypeImage' and (image[2] not in dims or image[5] != '0'):
+			multisampled = image[5] != '0'
+			if opcode != 'OpImageFetch' or (image[2] == '2D' and image[4] == '0'):
+				multisampled = False
+			if image[0] == 'OpTypeImage' and (image[2] not in dims or multisampled):
 				gap('%s of a sampler%s%s' % ('texelFetch()' if opcode == 'OpImageFetch' else 'textureSize()', image[2],
 				                             'MS' if image[5] != '0' else ''))
 			if opcode == 'OpImageFetch' and len(operands) > 3 and not set(operands[3].split('|')) <= FETCH_OPERANDS:
@@ -233,6 +262,15 @@ def survey(path):
 				gap('local variable initializer')
 		if opcode == 'OpAccessChain':
 			chains[result] = (operands[2], operands[3:])
+			# i915_spirv_lower_load_vertex_input: gl_in (an unlocated, built-in-less input of a geometry shader) is
+			# read at a vertex, then a member, which must be gl_Position or gl_PointSize.
+			base = operands[2]
+			if (stage == 'Geometry' and base in variables and variables[base][0] == 'Input' and base not in builtins and
+			    base not in locations and len(operands) > 4):
+				array = types.get(types.get(variables[base][1], ['', '', ''])[2], ['?', ''])
+				name = member_builtins.get((array[1], constants.get(operands[4])))
+				if name is not None and name not in GL_IN_MEMBERS:
+					gap('gl_in member %s' % name)
 		if opcode == 'OpStore':
 			base, indices = chains.get(operands[0], (operands[0], []))
 			if base in variables and variables[base][0] == 'Output':
@@ -240,7 +278,7 @@ def survey(path):
 				pointer = types.get(variables[base][1])
 				if name is None and pointer is not None and indices:
 					name = member_builtins.get((pointer[2], constants.get(indices[0])))
-				if name is not None and name not in OUTPUT_BUILTINS:
+				if name is not None and name not in OUTPUT_BUILTINS.get(stage, set()):
 					gap('output builtin %s' % name)
 	return gaps
 
