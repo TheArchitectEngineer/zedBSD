@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-07 P2: p001 の design.md 第 4 版（§14、[レビュー](design-review-2026-10-07.md) を反映）。p002 を実装（host PASS、ktest は 5330 の後）。次は p002b（TC の核）。§14.5 の正解値の採取の手順はユーザーの判断待ち（Q1 経由）。それ以前: 2026-10-04 の第 1〜3 版、§10・§13 の決定
+Resume point: 2026-10-07 P2: p002b を実装（host 101/0、build warning 0、ktest・実機は 5330 の後）。次は p003（正解値の後）。それ以前: p001 の design.md 第 4 版（§14、[レビュー](design-review-2026-10-07.md) を反映）。p002 を実装（host PASS、ktest は 5330 の後）。次は p002b（TC の核）。§14.5 の正解値の採取の手順はユーザーの判断待ち（Q1 経由）。それ以前: 2026-10-04 の第 1〜3 版、§10・§13 の決定
 <!-- awesome-plan-current:end -->
 
 ## 目標
