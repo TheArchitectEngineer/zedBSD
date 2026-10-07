@@ -15,6 +15,7 @@ columns or more of about 150 square 6 apart; the card of Add to Album 360 wide i
 its name field 56 down and 16 in.
 """
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -27,6 +28,19 @@ SOURCE = "/home/kei/AATPhotos"
 LIBRARY = "/home/kei/Pictures/Library"
 CACHE = "/home/kei/.cache/keiland/photos"
 MAKER = pathlib.Path(__file__).resolve().parents[4] / "plan/ws157/tests/make-photos.py"
+
+
+def sized(window, mark):
+	"""A window started outside App Home, its size taken from Photos' READY line (the compositor's lines give only
+	its place)."""
+	regex = r"PHOTOS READY width=(\d+) height=(\d+)"
+	if window is None or window.sized():
+		return window
+	ready = run.wait(regex, mark, 5)
+	if not ready:
+		return window
+	width, height = (int(value) for value in re.search(regex, ready).groups())
+	return aatlib.Window(window.client, window.surface, window.x, window.y, width, height, window.docked)
 
 
 def put_photos(item) -> None:
@@ -62,7 +76,8 @@ def browse(item):
 		put_photos(item)
 		# The import before the window: nine photos copied, the database written.
 		mark = run.mark()
-		window = run.open_as_user(item, f"/bin/photos --import={SOURCE}", ready=r"PHOTOS READY ")
+		window = run.open_as_user(item, f"/bin/photos --import={SOURCE}", ready=r"PHOTOS READY ", timeout=40)
+		window = sized(window, mark)
 		imported = run.wait(r"PHOTOS IMPORT done source=\S+ imported=\d+ duplicates=\d+ failed=\d+ error=\d+ save=\d+", mark, 30)
 		library = run.wait(r"PHOTOS LIBRARY root=\S+ photos=\d+ albums=\d+ error=\d+", mark, 10)
 		glass = run.wait(r"PHOTOS GLASS see_through=\d", mark, 5)
@@ -130,7 +145,8 @@ def browse(item):
 		run.close(item, window)
 		# Open again: the library read back, the album in the list; the thumbnails from the cache.
 		mark = run.mark()
-		window = run.open_as_user(item, f"/bin/photos --import={SOURCE}", ready=r"PHOTOS READY ")
+		window = run.open_as_user(item, f"/bin/photos --import={SOURCE}", ready=r"PHOTOS READY ", timeout=40)
+		window = sized(window, mark)
 		again = run.wait(r"PHOTOS IMPORT done source=\S+ imported=\d+ duplicates=\d+", mark, 30)
 		library = run.wait(r"PHOTOS LIBRARY root=\S+ photos=\d+ albums=\d+", mark, 10)
 		run.click(window.x + min(max(int(window.width * 0.24), 200), 260) // 2, window.y + 212)

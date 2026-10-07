@@ -186,7 +186,7 @@ test_command(
 			error = ETIMEDOUT;
 	}
 
-	/* %d\n", error);=The answer. */
+	/* The answer. */
 	printf("PRINTTEST result error=%d\n", error);
 	test_list(system);
 	if (error != 0)

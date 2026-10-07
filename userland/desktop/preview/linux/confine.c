@@ -10,10 +10,12 @@
  * plan/ws168/phase001/phase.md section 7): no new privileges, then a
  * seccomp filter that lets the process read and write the descriptors it
  * has, map anonymous memory that cannot run, read the clock and random
- * bytes and end; any other system call ends the process
- * (SECCOMP_RET_KILL_PROCESS).  It is entered before a byte of the input is
- * read; what ran before it (the dynamic linker and the C library's start)
- * read nothing the caller did not trust.
+ * bytes and end; opening a file (openat, which the C library uses) is
+ * refused with EACCES (the shared libpdf looks for a substitute font file,
+ * which it then goes without, ws168-p004) and any other system call ends
+ * the process (SECCOMP_RET_KILL_PROCESS).  It is entered before a byte of
+ * the input is read; what ran before it (the dynamic linker and the C
+ * library's start) read nothing the caller did not trust.
  */
 
 #include "../preview.h"
@@ -88,6 +90,10 @@ preview_confine(void)
 		CONFINE_ALLOW(__NR_rt_sigreturn),
 		CONFINE_ALLOW(__NR_exit),
 		CONFINE_ALLOW(__NR_exit_group),
+
+		/* Opening a file is refused, not fatal. */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_openat, 0, 1),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EACCES),
 
 		/* Anything else ends the process. */
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS)
