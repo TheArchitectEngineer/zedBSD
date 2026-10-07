@@ -432,6 +432,7 @@
 #define DIM_2D 1U
 #define DIM_3D 2U
 #define DIM_CUBE 3U
+#define DIM_BUFFER 5U
 
 /* Pointer target kinds. */
 #define PTR_NONE 0U
@@ -6672,7 +6673,8 @@ i915_spirv_lower_texture(
  * coordinate and level, u v lod r on Gen9+ (Mesa's
  * lower_sampler_logical_send()); a constant offset is added to the
  * coordinate, as Mesa lowers it for ld (nir_lower_tex's lower_txf_offset).
- * A 1D image gets v = 0, its layer r.
+ * A 1D image gets v = 0, its layer r; a texel buffer (a buffer surface)
+ * is read the same way at level 0, as Mesa's ld of a buffer is.
  */
 static int
 i915_spirv_lower_fetch(
@@ -6700,21 +6702,34 @@ i915_spirv_lower_fetch(
 	uint32_t first;
 	uint32_t index;
 	int32_t moved;
+	int buffer;
 	int error;
 
 	/* The instruction must carry the image and the coordinate. */
 	if (count < 5U)
 		return EINVAL;
 
-	/* Resolves the image; a 1D, 2D or 3D image is fetched from. */
+	/* Resolves the image; a 1D, 2D or 3D image, or a texel buffer, is fetched from. */
 	image = i915_spirv_id(parser, word[3]);
 	type = i915_spirv_image_type(parser, image);
-	if (type == NULL || type->image_dim > DIM_3D)
-		return i915_spirv_refuse(parser, opcode, offset, "fetch from something that is not a 1D, 2D or 3D image");
+	if (type == NULL)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch from something that is not an image");
 
-	/* The integer coordinate: the image's dimensions and the layer of an array. */
+	/* A texel buffer is fetched as a 1D image (its one coordinate, v = 0, level 0); it has no layers. */
+	buffer = 0;
+	if (type->image_dim == DIM_BUFFER) {
+		if (type->image_arrayed != 0U)
+			return i915_spirv_refuse(parser, opcode, offset, "fetch from an arrayed texel buffer");
+		buffer = 1;
+	} else if (type->image_dim > DIM_3D) {
+		return i915_spirv_refuse(parser, opcode, offset, "fetch from something that is not a 1D, 2D or 3D image or a texel buffer");
+	}
+
+	/* The integer coordinate: the image's dimensions and the layer of an array (one for a texel buffer). */
 	coordinate_count = i915_spirv_operand(parser, word[4], coordinate);
 	position_count = type->image_dim + 1U + type->image_arrayed;
+	if (buffer != 0)
+		position_count = 1U;
 	if (coordinate_count != position_count)
 		return i915_spirv_refuse(parser, opcode, offset, "fetch at a coordinate that is not the image's");
 
@@ -6762,6 +6777,10 @@ i915_spirv_lower_fetch(
 	if (scalar_count != 4U)
 		return i915_spirv_refuse(parser, opcode, offset, "fetch whose result is not a vec4");
 
+	/* A texel buffer has no level and no offset. */
+	if (buffer != 0 && (level != NO_VALUE || texel_offset != 0U))
+		return i915_spirv_refuse(parser, opcode, offset, "fetch from a texel buffer with a level or an offset");
+
 	/* Adds the offset to each dimension of the coordinate. */
 	for (index = 0U; index <= type->image_dim && texel_offset != 0U; index++) {
 		moved = (int32_t)(((texel_offset >> (8U - 4U * index)) & 0xFU) << 28) >> 28;
@@ -6776,7 +6795,7 @@ i915_spirv_lower_fetch(
 		level = i915_spirv_integer_constant(parser, 0U);
 	param_count = 0U;
 	i915_spirv_texture_param(params, &param_count, coordinate[0]);
-	if (type->image_dim == DIM_1D) {
+	if (type->image_dim == DIM_1D || buffer != 0) {
 		i915_spirv_texture_param(params, &param_count, i915_spirv_integer_constant(parser, 0U));
 		i915_spirv_texture_param(params, &param_count, level);
 		if (type->image_arrayed != 0U)

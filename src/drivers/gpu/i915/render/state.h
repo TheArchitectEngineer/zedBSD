@@ -159,6 +159,7 @@ struct i915_gfx_primitive {
 };
 
 int drv_i915_gfx_vertex_format_supported(uint32_t format);
+int drv_i915_gfx_texel_buffer_format(uint32_t format, uint32_t *surface_format, uint32_t *bytes);
 
 void drv_i915_gfx_pipeline_kernels(const struct i915_gfx_pipeline *pipeline, struct i915_gfx_kernels *kernels);
 

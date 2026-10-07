@@ -388,6 +388,9 @@ fixture_format_features(
 	int optimal)
 {
 	size_t reply_bytes;
+	uint32_t expected;
+	uint32_t surface_format;
+	uint32_t texel_bytes;
 
 	/* [4][reply][physical][format][present]. */
 	stub_wire_begin(&fixture_wire);
@@ -402,11 +405,17 @@ fixture_format_features(
 	assert(reply_bytes == 24U);
 	assert(stub_get32(stub_reply, 0U) == FIXTURE_FORMAT_PROPERTIES);
 	assert(stub_get64(stub_reply, 4U) == 1U);
-	/* The buffer features are the vertex buffer's, for exactly the formats the vertex fetcher reads. */
+	/*
+	 * The buffer features are the vertex buffer's, for exactly the formats
+	 * the vertex fetcher reads, and the uniform texel buffer's, for exactly
+	 * the formats the sampler reads from a buffer (ws075-p006).
+	 */
+	expected = 0U;
 	if (drv_i915_gfx_vertex_format_supported(format) != 0)
-		assert(stub_get32(stub_reply, 20U) == (uint32_t)VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT);
-	else
-		assert(stub_get32(stub_reply, 20U) == 0U);
+		expected |= (uint32_t)VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
+	if (drv_i915_gfx_texel_buffer_format(format, &surface_format, &texel_bytes) == 0)
+		expected |= (uint32_t)VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
+	assert(stub_get32(stub_reply, 20U) == expected);
 
 	/* Reports the optimal tiling's features. */
 	if (optimal)

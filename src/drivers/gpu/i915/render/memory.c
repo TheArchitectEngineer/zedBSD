@@ -19,6 +19,7 @@
 #include "internal.h"
 #include "object.h"
 #include "render.h"
+#include "state.h"
 #include "reply.h"
 #include "../i915.h"
 #include "../memory.h"
@@ -556,6 +557,76 @@ drv_i915_gfx_create_buffer(
 
 	/* Publishes the buffer and answers; a failed allocation is reported there. */
 	drv_i915_gfx_create_reply(session, reply, I915_VK_OBJ_BUFFER, identity, buffer, 0);
+
+	/* Succeeded: the reply carries the result of the create. */
+	return 0;
+}
+
+/*
+ * Creates a VkBufferView: vkCreateBufferView, a generic create.
+ *
+ * The view keeps the buffer, the format and the range; a view of an
+ * unknown buffer, or in a format the sampler cannot read from a buffer,
+ * fails.  The range is resolved against the buffer's size at each draw
+ * that reads it (the buffer may be bound later than the view is made).
+ */
+int
+drv_i915_gfx_create_buffer_view(
+	struct i915_render_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	VkBufferViewCreateInfo info;
+	struct i915_gfx_buffer_view *view;
+	struct i915_gfx_buffer *buffer;
+	uint64_t identity;
+	uint32_t surface_format;
+	uint32_t bytes;
+	int error;
+
+	/* Decodes the create info behind the device and its presence marker. */
+	kern_memset(&info, 0, sizeof(info));
+	(void)drv_i915_wire_read_u64(reader);
+	(void)drv_i915_wire_read_u64(reader);
+	i915_vkc_dec_VkBufferViewCreateInfo(reader, &session->arena, &info);
+	identity = drv_i915_gfx_create_tail(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Resolves the buffer the view reads; a view of an unknown buffer fails. */
+	view = NULL;
+	buffer = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER, (uint64_t)(uintptr_t)info.buffer);
+	error = 0;
+	if (buffer == NULL)
+		error = EINVAL;
+
+	/* Refuses a format the sampler does not read from a buffer. */
+	if (error == 0) {
+		error = drv_i915_gfx_texel_buffer_format(info.format, &surface_format, &bytes);
+		if (error != 0) {
+			kern_logf("i915: vk: vkCreateBufferView refused: format %u is not a texel buffer format\n", (unsigned)info.format);
+			error = EINVAL;
+		}
+	}
+
+	/* Refuses a first byte past the buffer's end. */
+	if (error == 0 && info.offset > buffer->size)
+		error = EINVAL;
+
+	/* Allocates an accepted view. */
+	if (error == 0)
+		view = kern_calloc(1U, sizeof(*view));
+
+	/* Records the buffer, the format and the range the view was created with. */
+	if (view != NULL) {
+		view->buffer = buffer;
+		view->format = info.format;
+		view->offset = info.offset;
+		view->range = info.range;
+	}
+
+	/* Publishes the view and answers; a failed view is reported there. */
+	drv_i915_gfx_create_reply(session, reply, I915_VK_OBJ_BUFFER_VIEW, identity, view, error);
 
 	/* Succeeded: the reply carries the result of the create. */
 	return 0;

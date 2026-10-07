@@ -46,6 +46,8 @@
 #define I915_VK_COMMAND_DESTROY_SEMAPHORE		41U
 #define I915_VK_COMMAND_CREATE_BUFFER			50U
 #define I915_VK_COMMAND_DESTROY_BUFFER			51U
+#define I915_VK_COMMAND_CREATE_BUFFER_VIEW		52U
+#define I915_VK_COMMAND_DESTROY_BUFFER_VIEW		53U
 #define I915_VK_COMMAND_CREATE_IMAGE			54U
 #define I915_VK_COMMAND_DESTROY_IMAGE			55U
 #define I915_VK_COMMAND_GET_IMAGE_SUBRESOURCE_LAYOUT	56U
@@ -126,6 +128,12 @@ drv_i915_gfx_obj_dispatch(
 		break;
 	case I915_VK_COMMAND_DESTROY_BUFFER:
 		error = i915_gfx_destroy_plain(session, reader, I915_VK_OBJ_BUFFER);
+		break;
+	case I915_VK_COMMAND_CREATE_BUFFER_VIEW:
+		error = drv_i915_gfx_create_buffer_view(session, reader, reply);
+		break;
+	case I915_VK_COMMAND_DESTROY_BUFFER_VIEW:
+		error = i915_gfx_destroy_plain(session, reader, I915_VK_OBJ_BUFFER_VIEW);
 		break;
 	case I915_VK_COMMAND_CREATE_IMAGE:
 		error = drv_i915_gfx_create_image(session, reader, reply);
@@ -255,6 +263,7 @@ i915_gfx_destroy_plain(
  */
 static const enum i915_vk_object_kind i915_gfx_plain_kinds[] = {
 	I915_VK_OBJ_BUFFER,
+	I915_VK_OBJ_BUFFER_VIEW,
 	I915_VK_OBJ_IMAGE_VIEW,
 	I915_VK_OBJ_IMAGE,
 	I915_VK_OBJ_SAMPLER,
