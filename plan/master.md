@@ -517,6 +517,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-08 ユーザー:「Super+Shift+左右、使いやすくてすばらしい設計ですね！…あとでいいので、Ctrl+Shift+左右で、Virtual Desktopを移動できるようにお願いします。」→ ws181-p010（後で）。Ctrl+Shift+左右は app の単語の選択と重なる点をユーザーに確認中。
 - 2026-10-07 ユーザー:「そもそもハードウェアがおかしいかも。蓋を閉じても画面が消えないのに、蓋をちょっと開けると画面が消えます。方針を変更して、蓋を閉じたら自動で変更するのは後回しにして、そのためのトークンのリソースをSettingsからのディスプレイ変更に使いましょう。」→ BUG-255（蓋で HDMI へ移る）と N8 の蓋の自動の切り替えは後回し（ベータ3、WS052 と同じ）。P2 は BUG-255 を止め、ws113-p011（Settings の拡張・mirror に要る i915 の 2 出力）へ。
 - 2026-10-07 ユーザー（優先順位）:「え、Vulkan Videoよりもシェーダーを優先してたんですか？…Videoが優先だと伝えたはずですし、シェーダーは優先度が低いと伝えたはずだったのですが。気をつけてください。改めて話すと、Settings (display), USB-C & DP Alt, Vulkan VIdeo, widget, 通知, タッチパッド割り込み, YubiKey Passkey, 写真, カレンダー, Bluettoh, 左手デバイスOSK, ゲームパッドOSKくらいの順で、そのあとに残りですね。明確に優先度を下げて、空き時間にやるのは、IME, RTL8822C, Vulkan executor, i915高度化、です。そのほかは両者の間くらい。」
   → **ベータ2 の優先順**: 1 WS113（Settings の Display）、2 WS051・WS050（USB-C・DP Alt）、3 WS083（Vulkan Video）、4 WS090（widget）、5 WS156（通知）、6 WS183（touchpad の割り込み）、7 WS161・WS172（YubiKey・passkey）、8 WS157（写真）、9 WS155（カレンダー）、10 WS143（Bluetooth）、（11・12 の左手 OSK・gamepad OSK はベータ3 へ移した）、その後に残り。**空き時間だけ**: WS095（IME）、WS186（RTL8822C）、WS031（Vulkan の executor）、WS075（i915 の高度化、shader の compiler を含む）。他はその間。
