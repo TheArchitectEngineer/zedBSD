@@ -91,6 +91,7 @@ notes_box_open(
 	kl_text_area_set(&box->area, text);
 	(void)snprintf(box->initial, sizeof(box->initial), "%s", text);
 	box->reported = 0;
+	box->again = 0;
 
 	/* Succeeded: open, with the keyboard. */
 	kl_ui_set_focus(box->ui, BOX_WIDGET, 0U);
@@ -106,8 +107,9 @@ void
 notes_box_close(
 	struct notes_box *box)
 {
-	/* Closed, without the keyboard. */
+	/* Closed, without the keyboard, wanting no frame. */
 	box->open = 0;
+	box->again = 0;
 	if (box->ui != NULL)
 		kl_ui_clear_focus(box->ui);
 }
@@ -172,7 +174,7 @@ notes_box_draw(
 		reported = kl_text_area(box->ui, &style, BOX_WIDGET, &box->rect, &box->area, "Type here");
 	else
 		reported = kl_field(box->ui, &style, BOX_WIDGET, &box->rect, &box->field, "Type the line");
-	(void)kl_ui_end(box->ui, now_us);
+	box->again = kl_ui_end(box->ui, now_us);
 	box->reported |= reported;
 
 	/* What no part took is nothing (a press outside is the main loop's, which closes the box). */
