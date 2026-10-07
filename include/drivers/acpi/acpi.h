@@ -418,6 +418,10 @@ drv_acpi_sci_interrupt(void);
 int
 drv_acpi_poweroff(void);
 
+/* The FADT's reset register (acpi-event.c, BUG-249): 0 once the reset is asked for. */
+int
+drv_acpi_reset_machine(void);
+
 void
 drv_acpi_events_process(void);
 

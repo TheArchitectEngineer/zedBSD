@@ -116,7 +116,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-246](bugs/BUG-246.md) | 整列の popup と入れ替えの animation が pointer の事象が無いと進まない、最初の click まで移動ごとにちらつく（5320 実機） | reproduced（実機） / scheduled（直しの実装済み、実機の確認待ち） | 2026-10-07 ユーザーの UAT | P2（UAT 優先） |
 | [BUG-247](bugs/BUG-247.md) | docked の窓の bar を touchpad で 2 回 tap しても解けず 3 回要る（5320 実機） | reproduced（実機） / scheduled（直しの実装済み、実機の確認待ち） | 2026-10-07 ユーザーの UAT | P2（BUG-246 の後） |
 | [BUG-248](bugs/BUG-248.md) | Text Editor のメニューが独自の形、他の app と同じ下線の付いた共通のメニューに | reproduced（UAT） / scheduled | 2026-10-07 ユーザーの UAT | q851 P2: 修正済み（title bar の controls を外して menu bar、Find は panel）、build・host まで。T1 の QEMU と 5320 の UAT 待ち |
-| [BUG-249](bugs/BUG-249.md) | 5320 で Restart が終わらない（popup のまま）、Power Off は可 | reproduced（実機） / tracking | 2026-10-07 ユーザー | 担当は後で（keyboard の reset だけで ACPI・0xcf9 の fallback が無い疑い） |
+| [BUG-249](bugs/BUG-249.md) | 5320 で Restart が終わらない（popup のまま）、Power Off は可 | reproduced（実機） / scheduled | 2026-10-07 ユーザー | P2 が fallback を実装（ACPI の reset register → 0xcf9 → keyboard、5330 の FADT は 0xB2←0x73）、実機の確認待ち |
 | [BUG-250](bugs/BUG-250.md) | 5330 で greeter が display を掴めない（VK_ERROR_SURFACE_LOST_KHR、claim の前） | reproduced（実機） / scheduled | 2026-10-07 ユーザー | P2 修正済み（scanout.c の constraints が p011a の ID を照合していなかった）・実機 5330 の確認待ち |
 | [BUG-251](bugs/BUG-251.md) | Ctrl+Shift を押して起動すると PS/2 の keyboard の割り込みが来ない（5330・5320） | reproduced（実機） / scheduled | 2026-10-07 ユーザー | P2 修正済み（起動前の scan code で 8042 の output buffer が詰まり IRQ1 の edge が来ない → init で unmask の後に flush）・実機の確認待ち |
 | [BUG-252](bugs/BUG-252.md) | App Home の animation が pointer の事象が無いと終わらない（Calendar の icon の位置で止まる、i915 実機） | reproduced（実機） / scheduled | 2026-10-07 ユーザーの UAT | P2 が直した（`home_content` の描画中の frame の頼みを tick へ）、5330 の実機の確認待ち |

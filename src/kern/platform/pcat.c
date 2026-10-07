@@ -91,6 +91,40 @@
 #include <hal/hal.h>
 #include "kern/klog.h"
 
+/*
+ * How long each way of resetting the machine is given before the next one
+ * is tried, in microseconds: a reset that works takes effect at once.
+ */
+#define REBOOT_WAIT_US		100000U
+
+/*
+ * The reset control register of the PC chipsets (Intel's PCH, and the
+ * AMD and QEMU chipsets alike): SYS_RST (bit 1) chooses a system reset
+ * over an INIT, RST_CPU (bit 2) starts the reset on its rising edge, and
+ * FULL_RST (bit 3) also cycles the power, a cold reset.
+ */
+#define RESET_CONTROL_PORT	0xcf9U
+#define RESET_CONTROL_SYS_RST	0x02U
+#define RESET_CONTROL_RST_CPU	0x04U
+#define RESET_CONTROL_FULL_RST	0x08U
+
+/*
+ * The keyboard controller's status and command port, its input buffer
+ * full bit, and the command that pulses the CPU's reset line.
+ */
+#define KBC_PORT		0x64U
+#define KBC_STATUS_INPUT_FULL	0x02U
+#define KBC_PULSE_RESET		0xfeU
+
+/* How many reads of the status bound the wait for the controller's input buffer. */
+#define KBC_DRAIN_SPINS		1000000U
+
+static void reboot_wait(uint64_t microseconds);
+static void reset_control_reset(void);
+static void keyboard_reset(void);
+static uint8_t port_read(uint16_t port);
+static void port_write(uint16_t port, uint8_t value);
+
 #if CONFIG_KERNEL_USB_HID_CHECKPOINT
 int drv_usb_hid_checkpoint_driver_register(void);
 #endif
@@ -523,23 +557,135 @@ kern_platform_poweroff(
 }
 
 /*
- * Reboots the machine through the keyboard controller.
+ * Reboots the machine: through the FADT's reset register, then the
+ * chipset's reset control register, then the keyboard controller, and
+ * halts when none of them reset it.
+ *
+ * Machines differ in which of them works (BUG-249: the Latitude 5320 kept
+ * running after the keyboard controller's pulse, which was the only way
+ * tried).  The FADT's register comes first, as the operating systems the
+ * firmware is written for use it; on the Latitudes it is a request to
+ * firmware (0x73 written to the SMI command port 0xb2).
  */
 void
 kern_platform_reboot(
 	void)
 {
+#if CONFIG_DRIVER_ACPI
+	int error;
+
+	/* The FADT's reset register, when ACPI names one; a reset that works takes effect within the wait. */
+	error = drv_acpi_reset_machine();
+	if (error == 0) {
+		reboot_wait(REBOOT_WAIT_US);
+		kern_logf("platform: reboot: the ACPI reset register did not reset the machine\n");
+	}
+#endif
+
+	/* The chipset's reset control register. */
+	reset_control_reset();
+	kern_logf("platform: reboot: the reset control register did not reset the machine\n");
+
+	/* The keyboard controller's reset line, then a halt in case that fails too. */
+	keyboard_reset();
+	kern_platform_halt();
+}
+
+/* Spins for a time, by the monotonic counter, or by a bounded count of port reads when there is none. */
+static void
+reboot_wait(
+	uint64_t microseconds)
+{
+	uint64_t start;
+	uint64_t now;
+	uint64_t frequency;
+	uint64_t rate;
+	uint64_t span;
+	uint64_t spin;
+	bool available;
+
+	/* The counter and its rate. */
+	available = kern_rtc_read_counter(&start, &frequency);
+	if (!available || frequency == 0U) {
+		/* Without them, one read of an unused port takes about a microsecond on the PC buses. */
+		for (spin = 0U; spin < microseconds; spin++)
+			(void)port_read(0x80U);
+		return;
+	}
+
+	/* The counts the wait lasts, rounded up. */
+	span = (microseconds * frequency + 999999U) / 1000000U;
+
+	/* Spins until they have passed; a counter that fails or changes rate ends the wait. */
+	for (;;) {
+		available = kern_rtc_read_counter(&now, &rate);
+		if (!available || rate != frequency)
+			return;
+		if (now - start >= span)
+			return;
+	}
+}
+
+/*
+ * Resets the machine through the chipset's reset control register: a
+ * system reset with the power cycled, started by the rising edge of
+ * RST_CPU, then waits for it.
+ */
+static void
+reset_control_reset(void)
+{
+	uint8_t control;
+
+	/* The register's other bits are kept; the reset's own bits start clear. */
+	control = port_read(RESET_CONTROL_PORT);
+	control &= (uint8_t)~(RESET_CONTROL_SYS_RST | RESET_CONTROL_RST_CPU | RESET_CONTROL_FULL_RST);
+
+	/* A system reset with the power cycled is chosen first, then started by RST_CPU's rising edge. */
+	port_write(RESET_CONTROL_PORT, (uint8_t)(control | RESET_CONTROL_SYS_RST | RESET_CONTROL_FULL_RST));
+	reboot_wait(50U);
+	port_write(RESET_CONTROL_PORT, (uint8_t)(control | RESET_CONTROL_SYS_RST | RESET_CONTROL_RST_CPU | RESET_CONTROL_FULL_RST));
+
+	/* A reset that works takes effect within the wait. */
+	reboot_wait(REBOOT_WAIT_US);
+}
+
+/* Pulses the CPU's reset line through the keyboard controller, then waits for it. */
+static void
+keyboard_reset(void)
+{
 	unsigned spin;
 	uint8_t status;
 
-	/* Waits a bounded time for the controller input buffer to drain. */
-	for (spin = 0; spin < 1000000U; spin++) {
-		__asm__ volatile("inb $0x64,%0" : "=a"(status));
-		if (!(status & 2U))
+	/* Waits a bounded time for the controller's input buffer to drain. */
+	for (spin = 0U; spin < KBC_DRAIN_SPINS; spin++) {
+		status = port_read(KBC_PORT);
+		if ((status & KBC_STATUS_INPUT_FULL) == 0U)
 			break;
 	}
 
-	/* Pulses the CPU reset line, then halts in case that fails. */
-	__asm__ volatile("movb $0xfe,%%al; outb %%al,$0x64" ::: "eax");
-	kern_platform_halt();
+	/* The pulse; a reset that works takes effect within the wait. */
+	port_write(KBC_PORT, KBC_PULSE_RESET);
+	reboot_wait(REBOOT_WAIT_US);
+}
+
+/* Reads one byte from an I/O port. */
+static uint8_t
+port_read(
+	uint16_t port)
+{
+	uint8_t value;
+
+	/* The byte the port gives. */
+	__asm__ volatile("inb %1,%0" : "=a"(value) : "Nd"(port));
+	return value;
+}
+
+/* Writes one byte to an I/O port. */
+static void
+port_write(
+	uint16_t port,
+	uint8_t value)
+{
+	/* The byte goes to the port. */
+	__asm__ volatile("outb %0,%1" : : "a"(value), "Nd"(port));
 }
