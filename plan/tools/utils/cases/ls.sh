@@ -32,10 +32,10 @@ mkdir d; : > d/a; : > d/b; touch -m -d '2021-01-01 00:00' d/a d/b; touch -a -d '
 mkdir d; : > d/a; : > d/b; sleep 1; chmod 600 d/a; ls -c d; ls -ct d; ls -lc d | awk 'NR > 1 { print $9 }'
 
 #### ls -l columns and the old year
-mkdir d; printf 'hello' > d/f; touch -d '2000-01-02 03:04' d/f; mkdir d/sub; touch -d '2001-05-06 07:08' d/sub; ls -l d | sed 's/ [^ ]* [^ ]* / OWNER GROUP /' | sed 's/^total .*/total/'
+umask 022; mkdir d; printf 'hello' > d/f; touch -d '2000-01-02 03:04' d/f; mkdir d/sub; touch -d '2001-05-06 07:08' d/sub; ls -l d | awk 'NR == 1 { print $1 } NR > 1 { size = $5; if ($1 ~ /^d/) size = "-"; print NF, $1, size, $6, $7, $8, $9 }'
 
 #### ls -g and -o leave out the owner or the group
-mkdir d; printf 'hello' > d/f; touch -d '2000-01-02 03:04' d/f; ls -g d | awk 'NR > 1 { print NF, $1, $4, $5, $6, $7, $8 }'; ls -o d | awk 'NR > 1 { print NF, $1, $4, $5, $6, $7, $8 }'; ls -go d | awk 'NR > 1 { print NF, $1, $3, $4, $5, $6, $7 }'
+umask 022; mkdir d; printf 'hello' > d/f; touch -d '2000-01-02 03:04' d/f; ls -g d | awk 'NR > 1 { print NF, $1, $4, $5, $6, $7, $8 }'; ls -o d | awk 'NR > 1 { print NF, $1, $4, $5, $6, $7, $8 }'; ls -go d | awk 'NR > 1 { print NF, $1, $3, $4, $5, $6, $7 }'
 
 #### ls -n writes the numbers
 mkdir d; : > d/f; touch -d '2000-01-02 03:04' d/f; ls -n d | awk 'NR > 1 { print ($3 ~ /^[0-9]+$/), ($4 ~ /^[0-9]+$/), $5, $9 }'
