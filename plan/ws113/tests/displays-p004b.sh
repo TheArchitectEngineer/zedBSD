@@ -9,7 +9,7 @@
 #     (KWL OUTPUT head open name=Venus virtual display 1 width=1024 height=768 ... x=1280 y=0); DISPLAYS says
 #     mode=extended and the head's place.
 #  2. PLACE display 1 left of display 0 (-1024 0) is applied (OK saved=0, DISPLAYS x=-1024); a place that overlaps
-#     (100 0) is refused (ERROR errno=22) and nothing changes; displays.conf keeps the place.
+#     (100 0) is refused (ERROR errno=3: EINVAL is 3 in zedBSD's include/uapi/errno.h) and nothing changes; displays.conf keeps the place.
 #  3. Head 1 unplugged: its head closes; plugged again: it opens at the place kept (x=-1024).
 #  4. MODE mirror is applied (KWL DISPLAYS applied mode=mirror, DISPLAYS mode=mirror) and kept in displays.conf;
 #     the compositor started again reads it (KWL DISPLAYS config mode=1) and opens the head in the mirror mode.
@@ -82,7 +82,7 @@ expect_text "$listing" '^head name=Venus virtual display 1 width=1024 height=768
 answer=$(ask 'PLACE Venus virtual display 1 -1024 0')
 expect_text "$answer" '^OK saved=0$' "the place left of display 0 is applied and saved"
 answer=$(ask 'PLACE Venus virtual display 1 100 0')
-expect_text "$answer" '^ERROR errno=22$' "an overlapping place is refused"
+expect_text "$answer" '^ERROR errno=3$' "an overlapping place is refused"
 listing=$(ask DISPLAYS)
 printf '%s\n' "$listing" > "$out/displays-2.txt"
 expect_text "$listing" '^head name=Venus virtual display 1 width=1024 height=768 x=-1024 y=0$' "the refused place changed nothing"

@@ -75,6 +75,7 @@ static void heads_record_extended(struct kwl_server *server, VkCommandBuffer com
 static void heads_barrier(VkCommandBuffer command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
 static int heads_path(char *path, size_t size, int folder);
 static int heads_save(const struct kwl_display_config *config);
+static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 
 /*
@@ -1299,6 +1300,28 @@ heads_path(
 	return 0;
 }
 
+/* Makes a folder and the missing folders above it (as mkdir -p), for the user alone; one that exists is left alone. */
+static void
+heads_mkdir(
+	char *folder)
+{
+	size_t index;
+
+	/* Each prefix that ends at a slash. */
+	for (index = 1U; folder[index] != '\0'; index++) {
+		if (folder[index] != '/')
+			continue;
+
+		/* The folder up to this slash. */
+		folder[index] = '\0';
+		(void)mkdir(folder, 0700);
+		folder[index] = '/';
+	}
+
+	/* The folder itself. */
+	(void)mkdir(folder, 0700);
+}
+
 /*
  * Writes a choice to displays.conf: a new file beside it, flushed, then
  * renamed over it (D-STORE), in the folder made when it is missing.
@@ -1324,14 +1347,14 @@ heads_save(
 	if (length == 0U)
 		return ENOSPC;
 
-	/* The paths, and the folder (made the user's alone when it is missing). */
+	/* The paths, and the folder and those above it (made the user's alone when they are missing: a new home has no .config). */
 	error = heads_path(path, sizeof(path), 0);
 	if (error != 0)
 		return error;
 	error = heads_path(folder, sizeof(folder), 1);
 	if (error != 0)
 		return error;
-	(void)mkdir(folder, 0700);
+	heads_mkdir(folder);
 
 	/* A new file beside the file. */
 	(void)snprintf(temporary, sizeof(temporary), "%s.XXXXXX", path);
