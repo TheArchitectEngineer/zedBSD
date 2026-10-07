@@ -14,6 +14,7 @@
 
 #include "vulkan_core.h"
 #include "vulkan_video.h"
+#include "vulkan_display_control.h"
 
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 #include "vulkan_wayland.h"

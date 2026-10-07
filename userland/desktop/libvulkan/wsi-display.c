@@ -265,6 +265,88 @@ vulkan_wsi_display_mode_validate(
 	return VK_SUCCESS;
 }
 
+/*
+ * Powers a display on or off for the logical device presenting to it.
+ *
+ * The native request needs this device's own lease on the display, so a
+ * display the device has no swapchain on cannot be powered.  A request made
+ * against an old generation is asked once more after the display's snapshot
+ * is refreshed.
+ */
+VkResult
+vulkan_wsi_display_power(
+	struct VkDevice_T *device,
+	struct vulkan_display *display,
+	uint32_t state)
+{
+	struct wsi_display_plane *plane;
+	struct vulkan_wsi_output output;
+	struct gpu_display_power request;
+	uint32_t attempt;
+	VkResult error;
+	int status;
+	int native_error;
+
+	/* Asks the display's lease, and once more after a generation change. */
+	status = -1;
+	native_error = EBUSY;
+	for (attempt = 0U; attempt < 2U; attempt++) {
+		/* The current identity and generation name the output to the kernel. */
+		error = vulkan_wsi_display_snapshot(display, &output);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* Finds this device's lease on the display and asks the kernel under it. */
+		pthread_mutex_lock(&display_mutex);
+
+		status = -1;
+		native_error = EBUSY;
+		for (plane = display_planes; plane != NULL; plane = plane->next) {
+			/* Only this device's own claim on the same node's output holds the lease. */
+			if (plane->device == device &&
+			    plane->display == output.identifier &&
+			    plane->connection->device_identifier == output.device_identifier)
+				break;
+		}
+
+		/* The lease's open makes the request; no lease leaves EBUSY. */
+		if (plane != NULL) {
+			memset(&request, 0, sizeof(request));
+			request.version = GPU_ABI_VERSION;
+			request.size = sizeof(request);
+			request.display_id = (uint32_t)output.identifier;
+			request.state = state;
+			request.generation = output.generation;
+			status = ioctl(plane->connection->fd, GPU_DISPLAY_POWER, &request);
+			native_error = errno;
+		}
+
+		pthread_mutex_unlock(&display_mutex);
+
+		/* Only an old generation is worth asking again. */
+		if (status == 0 || native_error != ESTALE)
+			break;
+
+		/* Takes the display's current generation before the second request. */
+		error = vulkan_wsi_display_refresh(display);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* Reports a refused power change: no lease, no power control, or a lost output. */
+	if (status != 0) {
+		/* Kernel allocation pressure is the one failure the command names. */
+		if (native_error == ENOMEM)
+			return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+		/* Every other refusal is an unknown failure of this command. */
+		return VK_ERROR_UNKNOWN;
+	}
+
+	/* Succeeded: the display is in the requested power state. */
+	return VK_SUCCESS;
+}
+
 /* Describes the full-output, identity-transform plane backed by this surface. */
 static VkResult
 display_capabilities(
@@ -643,6 +725,17 @@ display_claim_native(
 			vulkan_free(&device->object.allocator, new_connection);
 			vulkan_free(&surface->object.allocator, candidate);
 			error = display_error(native_error);
+
+			/*
+			 * The limit of outputs shown at once is not a lost surface: the
+			 * swapchain cannot be made now and may be after another output
+			 * is released or the topology changes, so the caller keeps its
+			 * device and its other outputs (D-LIMIT).
+			 */
+			if (native_error == ENOSPC)
+				error = VK_ERROR_INITIALIZATION_FAILED;
+
+			/* Reports why the display could not be claimed. */
 			return error;
 		}
 

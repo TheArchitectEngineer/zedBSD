@@ -147,6 +147,10 @@ vkResetFences(
 			if (status != VK_SUCCESS)
 				break;
 
+			/* A signaled display event is not replayed; a pending one keeps observing. */
+			if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->software_signaled)
+				sync->event = VULKAN_SYNC_EVENT_SPENT;
+
 			sync->notification = 0;
 			sync->software_signaled = VK_FALSE;
 		}
@@ -178,6 +182,7 @@ vkGetFenceStatus(
 	struct VkDevice_T *owner;
 	struct vulkan_sync *sync;
 	VkResult status;
+	VkBool32 fired;
 
 	/* Resolve the ordinary fence object before its brief payload transaction. */
 	owner = vulkan_device(device);
@@ -186,11 +191,25 @@ vkGetFenceStatus(
 
 	status = vulkan_sync_device_status_locked(owner);
 	if (status == VK_SUCCESS) {
+		/* Observes a pending display event of the fence's permanent payload. */
+		fired = VK_FALSE;
+		if (sync->external == NULL &&
+		    !sync->software_signaled &&
+		    sync->event != VULKAN_SYNC_EVENT_NONE)
+			fired = vulkan_display_event_poll(owner, sync);
+
+		/* An observed display event stays signaled until the fence is reset. */
+		if (fired)
+			sync->software_signaled = VK_TRUE;
+
 		/* Software completion is valid only after WSI released the actual image. */
 		if (sync->external != NULL) {
 			status = vulkan_external_fence_status_locked(owner, sync);
 		} else if (sync->software_signaled) {
 			status = VK_SUCCESS;
+		} else if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->native_unsubmitted) {
+			/* No queue ever had this event fence: the native payload is unsignaled. */
+			status = VK_NOT_READY;
 		} else {
 			status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
 		}

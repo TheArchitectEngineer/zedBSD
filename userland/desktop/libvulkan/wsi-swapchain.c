@@ -846,6 +846,8 @@ swapchain_validate(
 	struct vulkan_surface **result)
 {
 	struct vulkan_surface *surface;
+	const VkBaseInStructure *extension;
+	const VkSwapchainCounterCreateInfoEXT *counters;
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSurfaceFormatKHR formats[2];
 	VkPresentModeKHR modes[4];
@@ -866,6 +868,20 @@ swapchain_validate(
 	/* Refuses unadvertised swapchain flags or layered native scanout. */
 	if (info->flags != 0U || info->imageArrayLayers != 1U)
 		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* No surface offers a counter (VK_EXT_display_surface_counter), so none can be asked for. */
+	for (extension = info->pNext; extension != NULL; extension = extension->pNext) {
+		/* Other chained records are ignored as before. */
+		if (extension->sType != VK_STRUCTURE_TYPE_SWAPCHAIN_COUNTER_CREATE_INFO_EXT)
+			continue;
+
+		/* An empty counter set is the only one a surface supports. */
+		counters = (const VkSwapchainCounterCreateInfoEXT *)extension;
+		if (counters->surfaceCounters != 0U)
+			return VK_ERROR_INITIALIZATION_FAILED;
+	}
+
+	/* Asks the surface for the limits the creation is checked against. */
 	error = surface->platform->capabilities(surface, device->physical, &capabilities);
 	if (error != VK_SUCCESS)
 		return error;

@@ -15,7 +15,8 @@ LIBVULKAN_SOURCES := userland/desktop/libvulkan/objects.c \
 	userland/desktop/libvulkan/queue.c userland/desktop/libvulkan/query.c \
 	userland/desktop/libvulkan/wsi.c userland/desktop/libvulkan/wsi-display.c \
 	userland/desktop/libvulkan/wsi-swapchain.c userland/desktop/libvulkan/wsi-wayland.c \
-	userland/desktop/libvulkan/wsi-image.c userland/desktop/libvulkan/wsi-display-nodes.c
+	userland/desktop/libvulkan/wsi-image.c userland/desktop/libvulkan/wsi-display-nodes.c \
+	userland/desktop/libvulkan/wsi-display-control.c
 
 # The image metadata owns /lib placement; standalone installation honors PREFIX.
 # The command numbers are the Kei GPU command protocol's (uapi/gpu-op.h, ws167-p002): no third-party notice.

@@ -87,6 +87,35 @@ parameter set の key の重複と H.264 の範囲の外の id は `VK_ERROR_INI
 で拒みます（固定した 1.3.269 の header では `VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR`
 が beta の encode の値のため）。result status query・inline query は持ちません。
 
+## Display の制御と抜き差しの通知（ws113-p003）
+
+instance の `VK_EXT_display_surface_counter` と device の `VK_EXT_display_control`（4 command）を
+提供します。device の拡張は、renderer の node が display・topology の事象・display の制御
+（`GPU_CAP_DISPLAY`・`GPU_CAP_DISPLAY_EVENTS`・`GPU_CAP_DISPLAY_CONTROL`）を持つ時だけ列挙します
+（display が別の display 専用 node にある構成では出しません）。
+
+- `vkRegisterDeviceEventEXT`（DISPLAY_HOTPLUG）: fence は登録時の topology の sequence
+  （この renderer に属す display node の `GPU_DISPLAY_EVENTS` の値の和、非破壊の QUERY で ACK しない）を
+  cursor に持ち、後の観測で和が cursor を超えたら signal します。thread は持たず、
+  `vkGetFenceStatus`・`vkWaitForFences` の観測ごとに kernel に一度だけ待たずに聞きます
+  （wait は 1 ms ごとの観測）。fence ごとの cursor なので、ある client の観測が別の fence を消費しません。
+  client は signal の後に新しい fence を登録してから display を列挙し直し、古い fence を壊します。
+- `vkRegisterDisplayEventEXT`（FIRST_PIXEL_OUT）: 登録時の `GPU_DISPLAY_REFRESH` の数を cursor にし、
+  その後の refresh の境界で signal します。scanout していない出力は境界を作りません。generation が
+  変わった（抜いて挿した）display は新しい cursor を取り直し、次の実の境界で signal します（挿したこと
+  自体では signal しません）。
+- signal した event の fence を reset すると、その event は再び signal しません（過去の event を再生しない）。
+  未発火の fence の reset は監視を取り消しません。
+- `vkDisplayPowerControlEXT`: この device が swapchain を持つ display の lease で `GPU_DISPLAY_POWER` を送ります。
+  lease が無い・出力に power の制御が無い（i915 の HDMI など）・切断の時は `VK_ERROR_UNKNOWN`
+  （規格がこの command に挙げる失敗は OUT_OF_HOST_MEMORY だけ）。lease の終わりで ON に戻ります。
+- surface の counter は持ちません（`supportedSurfaceCounters = 0`）。`vkGetSwapchainCounterEXT` は
+  `VK_ERROR_OUT_OF_DATE_KHR`、counter を求める swapchain の作成は `VK_ERROR_INITIALIZATION_FAILED`。
+- 同時に出せる出力の数の制限（native の claim の `ENOSPC`）は、swapchain の作成で
+  `VK_ERROR_INITIALIZATION_FAILED`（device を失わない、一時的）になります。
+
+host の試験は `plan/ws113/tests/host-display-events.sh`、独立の client は `userland/tests/display-events/`。
+
 ## 宣言とprotocolの来歴
 
 [API-PROVENANCE.md](../../../include/libc/vulkan/API-PROVENANCE.md) に

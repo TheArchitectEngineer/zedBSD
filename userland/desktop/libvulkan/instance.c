@@ -428,7 +428,7 @@ vkEnumerateInstanceExtensionProperties(
 	uint32_t *pPropertyCount,
 	VkExtensionProperties *pProperties)
 {
-	VkExtensionProperties available[6];
+	VkExtensionProperties available[7];
 	VkResult status;
 
 	/* This library does not impersonate a separately installable validation layer. */
@@ -449,9 +449,11 @@ vkEnumerateInstanceExtensionProperties(
 	available[4].specVersion = VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_SPEC_VERSION;
 	strcpy(available[5].extensionName, VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME);
 	available[5].specVersion = VK_KHR_EXTERNAL_FENCE_CAPABILITIES_SPEC_VERSION;
+	strcpy(available[6].extensionName, VK_EXT_DISPLAY_SURFACE_COUNTER_EXTENSION_NAME);
+	available[6].specVersion = VK_EXT_DISPLAY_SURFACE_COUNTER_SPEC_VERSION;
 
 	/* Preserves the required partial-array result when caller capacity is smaller. */
-	status = enumerate_extensions(available, 6, pPropertyCount, pProperties);
+	status = enumerate_extensions(available, 7, pPropertyCount, pProperties);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -470,7 +472,7 @@ vkEnumerateDeviceExtensionProperties(
 	VkExtensionProperties *pProperties)
 {
 	struct VkPhysicalDevice_T *physical;
-	VkExtensionProperties available[12];
+	VkExtensionProperties available[13];
 	uint32_t count;
 	VkResult status;
 
@@ -535,6 +537,13 @@ vkEnumerateDeviceExtensionProperties(
 	if (physical->supported_extensions & VULKAN_DEVICE_SYNCHRONIZATION2) {
 		strcpy(available[count].extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 		available[count].specVersion = VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION;
+		count++;
+	}
+
+	/* Display power, hotplug and refresh events need the node's event and control requests. */
+	if (physical->supported_extensions & VULKAN_DEVICE_DISPLAY_CONTROL) {
+		strcpy(available[count].extensionName, VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME);
+		available[count].specVersion = VK_EXT_DISPLAY_CONTROL_SPEC_VERSION;
 		count++;
 	}
 
@@ -653,12 +662,23 @@ instance_extensions(
 			continue;
 		}
 
+		/* The surface capability query with counters; this library offers no counter. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_EXT_DISPLAY_SURFACE_COUNTER_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_INSTANCE_SURFACE_COUNTER;
+			continue;
+		}
+
 		/* An unknown requested extension cannot be silently treated as implemented. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
 
 	/* Both presentation backends require the surface capability in the same instance. */
 	if ((bits & (VULKAN_INSTANCE_DISPLAY | VULKAN_INSTANCE_WAYLAND)) && !(bits & VULKAN_INSTANCE_SURFACE))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+	/* The surface counters are a direct-display extension. */
+	if ((bits & VULKAN_INSTANCE_SURFACE_COUNTER) && !(bits & VULKAN_INSTANCE_DISPLAY))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Vulkan 1.0 external capabilities depend on the properties2 extension. */
@@ -1128,6 +1148,15 @@ physical_load(
 		physical->supported_extensions |= VULKAN_DEVICE_EXTERNAL_MEMORY | VULKAN_DEVICE_EXTERNAL_MEMORY_FD;
 	if (physical->object.context->capabilities & GPU_CAP_FENCE)
 		physical->supported_extensions |= VULKAN_DEVICE_EXTERNAL_FENCE | VULKAN_DEVICE_EXTERNAL_FENCE_FD;
+
+	/*
+	 * VK_EXT_display_control needs the node's topology events, power and
+	 * refresh requests (ws113-p003).  A renderer whose displays live on a
+	 * separate display-only node does not offer it.
+	 */
+	if ((physical->object.context->capabilities & (GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL)) ==
+	    (GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL))
+		physical->supported_extensions |= VULKAN_DEVICE_DISPLAY_CONTROL;
 
 	/* Asks the codec operations of each family when the renderer promised video decode. */
 	status = physical_load_video(physical);
