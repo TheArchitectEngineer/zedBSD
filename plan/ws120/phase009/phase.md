@@ -2,7 +2,7 @@
 
 # ws120-p009: Music の app
 
-Status: uncleared（2026-10-07 Q1 の判定: T1-301 で play が `MUSIC AUDIO error=13`（QEMU の guest に sound device が無い）で止まる。open-from-home は pass。P2 が直す）（旧: test-wait（T1-301））
+Status: cleared（2026-10-07 Q1 の判定: T1-315 の AAT music.play（HDA 付き、PLAY・POSITION 2026・ENDED・FILE）と playing の PNG（Tone A の cover・再生の bar）を Q1 が目視。音は耳で聞いていない）（旧: uncleared（2026-10-07 Q1 の判定: T1-301 で play が `MUSIC AUDIO error=13`（QEMU の guest に sound device が無い）で止まる。open-from-home は pass。P2 が直す）（旧: test-wait（T1-301）））
 Disposition: normal
 Parent: [WS120](../ws.md)
 Queue: q831（2026-10-07、P2）

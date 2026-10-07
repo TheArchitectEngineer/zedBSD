@@ -75,6 +75,11 @@ def printers(item):
 		# PDF Viewer's File > Print (Ctrl+P) on the default printer.
 		mark = run.mark()
 		viewer = run.open_as_user(item, f"/bin/pdfviewer {SAMPLE}")
+		# A window started outside App Home has only its place in the compositor's lines: its size is PDF Viewer's own.
+		ready = run.wait(r"PDFVIEWER READY width=\d+ height=\d+", mark, 10)
+		if viewer is not None and ready and not viewer.sized():
+			width, height = (int(value) for value in re.search(r"width=(\d+) height=(\d+)", ready).groups())
+			viewer = aatlib.Window(viewer.client, viewer.surface, viewer.x, viewer.y, width, height, viewer.docked)
 		time.sleep(1.0)
 		run.click(*viewer.middle())
 		run.key("ctrl+p")

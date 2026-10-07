@@ -104,6 +104,9 @@ drv_i915_gfx_pipeline_prepare(
 		  pipeline->fs_binary->push_regs,
 		  pipeline->fs_binary->sampler_count);
 
+	/* Keeps whether the fragment kernel writes dual source, which the blend reads. */
+	pipeline->dual_source = pipeline->fs_binary->dual_source;
+
 	/* Marks the pipeline drawable. */
 	pipeline->kernels_ready = 1;
 

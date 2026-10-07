@@ -87,7 +87,7 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 | ws031-p021 | 設計: 性能の構造（p044〜p047）。schedulerの扱い（本WSか新WSか）の判断を含む | planning | p029 | 新規 | 文書 |
 | ws031-p030 | executor: mip level 0以外・array layerへの描画とattachment clear | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p031 | executor: 複数colour attachment（MRT） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p006） | p019 | p016 | `render/` |
-| ws031-p032 | executor: blendのlogic op・dual source | planning | p019 | p016 | `render/` |
+| [ws031-p032](phase032/phase.md) | executor: blendのlogic op・dual source | cleared 候補（2026-10-07 P1: host PASS。dual source の feature は実機まで 0） | p019, p033 | p016 | `render/`、`compiler/` |
 | [ws031-p033](phase033/phase.md) | executor: image viewのformat読替え（MUTABLE_FORMAT）・component swizzle（usage照合は変えない、2026-10-07 範囲の変更） | cleared 候補（2026-10-07 P1、host PASS） | p019 | p016 | `render/` |
 | ws031-p034 | executor: sampler（anisotropy、depth compare、border colour、unnormalized座標）、mirrored blit | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p035 | executor: descriptor配列・`vkUpdateDescriptorSets` のcopy・VSのsampled image | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/`、`vk/` |

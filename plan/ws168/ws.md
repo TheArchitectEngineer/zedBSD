@@ -32,4 +32,4 @@ Primary Milestone: MG006
 | [ws168-p001](phase001/phase.md) | 要件と設計（kernel の capability mode の UAPI の案を含む） | planning（設計の第 2 版（子を sandbox の中に起こす `sandbox_spawn`）、2026-10-05 P1。ユーザーの review と §8 の H1〜H7 の判断待ち） | — |
 | [ws168-p002](phase002/phase.md) | kernel の `sandbox_spawn`・libc の wrapper・sandboxtest | cleared（2026-10-06） | p001 |
 | [ws168-p003](phase003/phase.md) | `keiland-preview`（静的 link、Linux の seccomp）と host 試験 | in-progress（2026-10-07 P2: host PASS、zedBSD build。QEMU は p004 の T1） | p002 |
-| ws168-p004 | Files・Settings を keiland-preview に切り替え（設計 §5）、T1 | planned | p003 |
+| [ws168-p004](phase004/phase.md) | Files・Settings を keiland-preview の子に切り替え（設計 §5、FreeBSD は in-process のまま） | in-progress（2026-10-07 P2: host PASS、zedBSD・Linux の build。T1 待ち） | p003 |

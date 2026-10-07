@@ -272,6 +272,7 @@
 #define DEC_FLAT 14U
 #define DEC_CENTROID 16U
 #define DEC_LOCATION 30U
+#define DEC_INDEX 32U
 #define DEC_BINDING 33U
 #define DEC_DESCRIPTOR_SET 34U
 #define DEC_OFFSET 35U
@@ -530,6 +531,9 @@ struct i915_spirv_id {
 
 	/* A structure type decorated BufferBlock: a storage buffer's block. */
 	uint8_t buffer_block;
+
+	/* A fragment output's Index decoration: 1 is the second colour of a dual-source blend (ws031-p032). */
+	uint8_t index;
 
 	/* Pointer type or variable storage class. */
 	uint16_t storage;
@@ -1351,6 +1355,8 @@ i915_spirv_declare_decoration(
 	if (word[2] == DEC_LOCATION && count >= 4U) {
 		record->has_location = 1U;
 		record->location = word[3];
+	} else if (word[2] == DEC_INDEX && count >= 4U && word[3] <= 1U) {
+		record->index = (uint8_t)word[3];
 	} else if (word[2] == DEC_BINDING && count >= 4U) {
 		record->has_binding = 1U;
 		record->binding = word[3];
@@ -3614,6 +3620,16 @@ i915_spirv_lower_store_output(
 	if (error != 0 || map_count != count)
 		return i915_spirv_refuse(parser, opcode, offset, "store to an output of something that is not made of scalars");
 
+	/* A second colour (Index 1) is a fragment shader's, of Location 0, four components at most (Vulkan: attachment 0 alone). */
+	if (variable->index != 0U) {
+		if (parser->ir->stage != I915_STAGE_FRAGMENT || variable->location != 0U)
+			return i915_spirv_refuse(parser, opcode, offset, "Index 1 output other than a fragment shader's Location 0");
+		for (index = 0U; index < count; index++) {
+			if (map[index] >= 4U)
+				return i915_spirv_refuse(parser, opcode, offset, "Index 1 output of more than one location");
+		}
+	}
+
 	/* Emits one output write to each scalar. */
 	for (index = 0U; index < count; index++) {
 		slot = i915_spirv_variable_slot(parser, variable, map[index]);
@@ -3644,6 +3660,10 @@ i915_spirv_lower_store_output(
 		} else if (is_builtin != 0) {
 			inst->location = I915_IR_LOCATION_POINT_SIZE;
 			inst->component = 0U;
+		} else if (variable->index != 0U) {
+			/* The second colour (Index 1) of Location 0: a fragment shader's dual-source write. */
+			inst->location = I915_IR_LOCATION_SECOND_COLOR;
+			inst->component = map[index] % 4U;
 		} else {
 			inst->location = variable->location + map[index] / 4U;
 			inst->component = map[index] % 4U;

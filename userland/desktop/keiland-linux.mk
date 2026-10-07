@@ -108,6 +108,7 @@ include userland/tests/wltest/Makefile.linux
 include userland/tests/mview/Makefile.linux
 
 include userland/base/libpdf/Makefile.linux
+include userland/desktop/preview/Makefile.linux
 include userland/desktop/terminal/Makefile.linux
 include userland/desktop/files/Makefile.linux
 include userland/desktop/settings/Makefile.linux

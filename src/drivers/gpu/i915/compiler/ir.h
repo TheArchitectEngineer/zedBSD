@@ -115,6 +115,12 @@
 #define I915_IR_LOCATION_SHARED		0xFFFFFFFDU
 
 /*
+ * The location a fragment shader's second colour is stored to: Location 0
+ * Index 1, the second source of a dual-source blend (ws031-p032).
+ */
+#define I915_IR_LOCATION_SECOND_COLOR	0xFFFFFFFCU
+
+/*
  * The memory a FENCE orders, and whether it acquires, as bits of its
  * `immediate`; a BARRIER's `immediate` names the fences before it
  * (ws101-p006).

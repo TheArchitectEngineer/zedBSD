@@ -170,6 +170,12 @@ struct i915_shader_binary {
 	uint32_t uses_kill;
 
 	/*
+	 * Fragment: nonzero when the kernel writes a second colour (Location 0
+	 * Index 1) with one dual-source render-target write (ws031-p032).
+	 */
+	uint32_t dual_source;
+
+	/*
 	 * Vertex: nonzero when the kernel writes the point size into its VUE
 	 * header, which the draw has the setup read (3DSTATE_SF Point Width
 	 * Source).
