@@ -46,6 +46,7 @@ int drv_i915_present_release(struct i915_device *device);
 
 /* Ends a hold of the last picture before the machine goes down: the panel is stopped (the PCI shutdown). */
 void drv_i915_present_shutdown(struct i915_device *device);
+int drv_i915_present_cut(struct i915_device *device);
 
 /* The present, wait and release operations of the node's display (private data: the device). */
 int drv_i915_present_display_present(void *device, void *session, void *object, struct gpu_display_present *request);

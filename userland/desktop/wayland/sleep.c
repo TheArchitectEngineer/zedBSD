@@ -28,9 +28,9 @@
  * a sleep (zedBSD) takes part: elsewhere the causes do what they did.
  *
  * The lid of a machine showing an external display does not sleep it
- * (kwl_output_lid_matters, N8 R5); moving to an external display when the
- * lid closes waits for WS113 p004a and p011a, until when a closed lid
- * sleeps the machine even with an external display connected.
+ * (kwl_output_lid_matters, N8 R5), and closing the lid with an external
+ * display connected moves the desktop to it instead (backend-host.c's
+ * kwl_lid_follow, R4; WS113 p004a and p011a); the opening brings it back.
  */
 
 #include "kwl.h"

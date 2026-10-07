@@ -60,6 +60,9 @@ int drv_i915_display_output_size_mm(struct i915_display *display, uint32_t *widt
 
 /* Names the chosen output for the display query: "HDMI" or "eDP panel". */
 const char *drv_i915_display_output_name(const struct i915_display *display);
+int drv_i915_display_output_prepare(struct i915_display *display, unsigned connector, struct i915_display_output *output, const char **reason);
+unsigned drv_i915_display_output_pipe(const struct i915_display_output *output);
+void drv_i915_display_output_panel(struct i915_display *display, struct i915_display_output *output);
 
 /*
  * Decodes one EDID detailed timing descriptor (18 bytes) into a mode: 0,

@@ -204,6 +204,9 @@ static int i915_display_other_mode(struct i915_display *display, struct gpu_disp
 static int i915_display_power(void *device, void *session, const struct gpu_display_power *request);
 static int i915_display_refresh(void *device, void *session, struct gpu_display_refresh *request);
 static int i915_display_other_check(struct i915_display *display, uint32_t display_id, uint64_t generation, int *connected);
+static int i915_display_which(struct i915_display *display, uint32_t display_id, uint64_t generation, int *resident, int *connected);
+static int i915_display_move(struct i915_device *device, unsigned connector);
+static int i915_display_outputs_differ(const struct i915_display_output *one, const struct i915_display_output *other);
 
 /*
  * The display operations of the resident node.
@@ -2694,6 +2697,7 @@ i915_display_query(
 	unsigned connector;
 	unsigned kind;
 	int resident;
+	int connected;
 	int port;
 	int error;
 	int size_error;
@@ -2727,9 +2731,8 @@ i915_display_query(
 		return error;
 	}
 
-	/* The display, its state and its formats. */
-	request->display_id = I915_DISPLAY_ID;
-	request->generation = I915_DISPLAY_GENERATION;
+	/* The display, by its connector's ID and generation (ws113-p011a), its state and its formats. */
+	(void)drv_i915_display_resident_identity(display, &request->display_id, &request->generation, &connected);
 	/* Frames are presented from shared resources (present.c), so BLOB is offered. */
 	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
 	if (display->rd.active)
@@ -2737,7 +2740,7 @@ i915_display_query(
 
 	/* The pipe's frames are its refresh boundaries; the panel's light is its power (not an HDMI display's). */
 	request->flags |= GPU_DISPLAY_REFRESH_COUNTER;
-	if (!display->output.hdmi && !display->output.none)
+	if (display->output.kind == I915_OUTPUT_KIND_PANEL && !display->output.none)
 		request->flags |= GPU_DISPLAY_POWER_CONTROL;
 	if (display->rd.power_off)
 		request->flags |= GPU_DISPLAY_POWERED_OFF;
@@ -2762,12 +2765,14 @@ i915_display_query(
 		request->physical_height_mm = height_mm;
 	}
 
-	/* The output's name: its port's key (ws113-p002, D-ID A2): the panel's DDI A, or the HDMI display's DDI B. */
+	/* The output's name: its port's key (ws113-p002, D-ID A2): the panel's DDI A, or the other output's port. */
 	kind = I915_HPD_OUTPUT_EDP;
 	port = 0;
-	if (display->output.hdmi) {
+	if (display->output.kind == I915_OUTPUT_KIND_HDMI) {
 		kind = I915_HPD_OUTPUT_HDMI;
 		port = I915_OUTPUT_HDMI_PORT;
+	} else if (display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
+		kind = I915_HPD_OUTPUT_DP;
 	}
 
 	/* The port of its connector, when the hotplug path has one. */
@@ -2803,23 +2808,24 @@ i915_display_mode(
 	uint32_t width;
 	uint32_t height;
 	uint32_t refresh;
+	int resident;
+	int connected;
 	int error;
 
 	UNUSED_PARAMETER(session);
 
 	owner_device = device;
 
+	/* The resident display of this generation, or another connector. */
+	error = i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
+	if (error != 0)
+		return error;
+
 	/* Another connector of the inventory: its preferred mode, which it is not lit with. */
-	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
+	if (!resident) {
 		error = i915_display_other_mode(owner_device->display, request);
 		return error;
 	}
-
-	/* The resident display of this generation. */
-	if (request->display_id != I915_DISPLAY_ID)
-		return ENOENT;
-	if (request->generation != I915_DISPLAY_GENERATION)
-		return ESTALE;
 
 	/* The panel's mode. */
 	error = drv_i915_display_panel(owner_device->display, &width, &height, &refresh);
@@ -2876,27 +2882,36 @@ i915_display_claim(
 {
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
+	int resident;
+	int connected;
+	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/*
-	 * Another connector: the node lights one output at a time until
-	 * ws113-p011, so this is the limit of the outputs shown at once, told
-	 * as one (ENOSPC, the 2026-10-05 user decision), not a failure.
-	 */
-	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
-		kern_logf("i915: resident display: claim of display %u refused: the limit of outputs shown at once (1) is reached\n", request->display_id);
-		return ENOSPC;
-	}
+	/* The resident display of this generation, or another connector. */
+	error = i915_display_which(owner_device->display, request->display_id, request->generation, &resident, &connected);
+	if (error != 0)
+		return error;
 
-	/* Only plane 0 of the resident display of this generation exists. */
-	if (request->display_id != I915_DISPLAY_ID)
-		return ENOENT;
-	if (request->generation != I915_DISPLAY_GENERATION)
-		return ESTALE;
+	/* Only plane 0 exists. */
 	if (request->plane_index != 0U)
 		return EINVAL;
+
+	/*
+	 * Another connector: the node lights one output at a time until
+	 * ws113-p011.  With no lease held the output moves to it (Keiland's
+	 * explicit claim, ws113-p011a); with one, this is the limit of the
+	 * outputs shown at once, told as one (ENOSPC, the 2026-10-05 user
+	 * decision), not a failure.
+	 */
+	if (!resident) {
+		if (!connected)
+			return ENXIO;
+		error = i915_display_move(owner_device, request->display_id - I915_DISPLAY_OTHER_ID);
+		if (error != 0)
+			return error;
+	}
 
 	/* Takes the lease under its mutex. */
 	drv_i915_present_lease_init(owner_device->display);
@@ -2921,6 +2936,91 @@ i915_display_claim(
 
 	/* Succeeded: the session holds the display. */
 	return 0;
+}
+
+/*
+ * Gives the resident output's display ID and generation, and whether its
+ * connector is connected (ws113-p011a): its connector's ID and generation
+ * in the inventory, so that a display keeps one identity whichever output
+ * the node lights; display 1 of generation 1 without the hotplug path.
+ */
+int
+drv_i915_display_resident_identity(
+	struct i915_display *display,
+	uint32_t *display_id,
+	uint64_t *generation,
+	int *connected)
+{
+	struct i915_hpd_output output;
+	int resident;
+	int error;
+
+	/* Without the hotplug path's connector: the fixed identity. */
+	*display_id = I915_DISPLAY_ID;
+	*generation = I915_DISPLAY_GENERATION;
+	*connected = 1;
+	resident = i915_display_resident_connector(display);
+	if (resident < 0)
+		return 0;
+
+	/* The connector as the topology last took it. */
+	error = drv_i915_hpd_output(display, (unsigned)resident, &output);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the connector's identity. */
+	*display_id = I915_DISPLAY_OTHER_ID + (uint32_t)resident;
+	*generation = output.generation;
+	*connected = output.connected;
+	return 0;
+}
+
+/*
+ * Brings the firmware's output back as the resident output when a moved
+ * output's last hold ended with no lease held (ws113-p011a, D-RELEASE):
+ * the output is not lit until the next claim and frame.  Runs on the
+ * worker after it left the display window, before the hold is said to be
+ * over, so that a claim waiting for the hold's end moves the output after
+ * this.
+ */
+void
+drv_i915_display_output_back(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	struct i915_resident_display *rd;
+	unsigned long irq;
+	void *owner;
+	int differ;
+
+	/* The firmware's output already. */
+	display = device->display;
+	differ = i915_display_outputs_differ(&display->output, &display->gop_output);
+	if (!differ)
+		return;
+
+	/* A lease held keeps its output. */
+	rd = &display->rd;
+	drv_i915_present_lease_init(display);
+	mutex_lock(&rd->mutex);
+
+	owner = rd->owner;
+
+	mutex_unlock(&rd->mutex);
+
+	/* A lease is held: nothing comes back. */
+	if (owner != NULL)
+		return;
+
+	/* The firmware's output, under the lock the worker's readers share. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	display->output = display->gop_output;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the firmware's output is the resident output again. */
+	kern_logf("i915: resident display: the firmware's output (%s) is the output again\n", drv_i915_display_output_name(display));
 }
 
 /*
@@ -2967,8 +3067,12 @@ i915_display_resident_connector(
 	if (!display->hpd_started)
 		return -1;
 
+	/* The connector the output names (ws113-p011a). */
+	if (display->output.has_connector)
+		return (int)display->output.connector;
+
 	/* The HDMI connector. */
-	if (display->output.hdmi) {
+	if (display->output.kind == I915_OUTPUT_KIND_HDMI) {
 		drv_i915_hpd_summary(display, &summary);
 		return summary.hdmi_connector;
 	}
@@ -3180,6 +3284,7 @@ i915_display_power(
 {
 	struct i915_device *owner_device;
 	struct i915_display *display;
+	int resident;
 	int connected;
 	int off;
 	int error;
@@ -3188,24 +3293,20 @@ i915_display_power(
 	owner_device = device;
 	display = owner_device->display;
 
-	/* Another connector of this generation: nobody leases it while the resident output is lit. */
-	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
-		error = i915_display_other_check(display, request->display_id, request->generation, &connected);
-		if (error != 0)
-			return error;
+	/* The resident display of this generation, or another connector. */
+	error = i915_display_which(display, request->display_id, request->generation, &resident, &connected);
+	if (error != 0)
+		return error;
+
+	/* Another connector: nobody leases it while the resident output is lit. */
+	if (!resident) {
 		if (!connected)
 			return ENXIO;
 		return EBUSY;
 	}
 
-	/* The resident display of this generation. */
-	if (request->display_id != I915_DISPLAY_ID)
-		return ENOENT;
-	if (request->generation != I915_DISPLAY_GENERATION)
-		return ESTALE;
-
 	/* Only the eDP panel's light is switched. */
-	if (display->output.hdmi || display->output.none)
+	if (display->output.kind != I915_OUTPUT_KIND_PANEL || display->output.none)
 		return EOPNOTSUPP;
 
 	/* The display control switches it for the lease holder. */
@@ -3233,6 +3334,7 @@ i915_display_refresh(
 {
 	struct i915_device *owner_device;
 	struct i915_display *display;
+	int resident;
 	int connected;
 	int lit_possible;
 	int error;
@@ -3243,19 +3345,15 @@ i915_display_refresh(
 	owner_device = device;
 	display = owner_device->display;
 
-	/* Another connector of this generation, or the resident display of its own. */
+	/* The resident display of this generation, or another connector, which is not lit. */
+	error = i915_display_which(display, request->display_id, request->generation, &resident, &connected);
+	if (error != 0)
+		return error;
 	lit_possible = 1;
-	if (request->display_id >= I915_DISPLAY_OTHER_ID) {
-		error = i915_display_other_check(display, request->display_id, request->generation, &connected);
-		if (error != 0)
-			return error;
+	if (!resident) {
 		if (!connected)
 			return ENXIO;
 		lit_possible = 0;
-	} else if (request->display_id != I915_DISPLAY_ID) {
-		return ENOENT;
-	} else if (request->generation != I915_DISPLAY_GENERATION) {
-		return ESTALE;
 	}
 
 	/* The display control waits for the boundary. */
@@ -3287,5 +3385,128 @@ i915_display_other_check(
 
 	/* Succeeded: the connector is known. */
 	*connected = output.connected;
+	return 0;
+}
+
+/*
+ * Says whether a display ID and generation name the resident output
+ * (resident 1) or another connector (resident 0, with whether it is
+ * connected).  Returns 0, ENOENT for no display of the ID, or ESTALE for
+ * another generation.
+ */
+static int
+i915_display_which(
+	struct i915_display *display,
+	uint32_t display_id,
+	uint64_t generation,
+	int *resident,
+	int *connected)
+{
+	uint32_t resident_id;
+	uint64_t resident_generation;
+	int error;
+
+	/* The resident output's identity. */
+	(void)drv_i915_display_resident_identity(display, &resident_id, &resident_generation, connected);
+	if (display_id == resident_id) {
+		*resident = 1;
+		if (generation != resident_generation)
+			return ESTALE;
+		return 0;
+	}
+
+	/* Another connector of the inventory. */
+	*resident = 0;
+	if (display_id < I915_DISPLAY_OTHER_ID)
+		return ENOENT;
+	error = i915_display_other_check(display, display_id, generation, connected);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: another connector. */
+	return 0;
+}
+
+/*
+ * Moves the resident output to another connected connector (ws113-p011a,
+ * Keiland's explicit claim): only while no lease is held (otherwise the
+ * limit of the outputs shown at once, ENOSPC).  The connector's kind
+ * prepares its output (output.c), the hold of the last picture, if any,
+ * ends and the output that showed it is stopped, and the prepared output
+ * becomes the one the next frame lights.  Returns 0, ENOSPC, EBUSY when
+ * the hold did not end in time, or the preparation's error (ENXIO,
+ * EOPNOTSUPP, ...).
+ */
+static int
+i915_display_move(
+	struct i915_device *device,
+	unsigned connector)
+{
+	struct i915_display_output next;
+	struct i915_display *display;
+	struct i915_resident_display *rd;
+	const char *reason;
+	unsigned long irq;
+	void *owner;
+	int error;
+
+	/* A lease held: the limit of the outputs shown at once. */
+	display = device->display;
+	rd = &display->rd;
+	drv_i915_present_lease_init(display);
+	mutex_lock(&rd->mutex);
+
+	owner = rd->owner;
+
+	mutex_unlock(&rd->mutex);
+
+	/* Refused for the limit. */
+	if (owner != NULL) {
+		kern_logf("i915: resident display: claim of connector %u refused: the limit of outputs shown at once (1) is reached\n", connector);
+		return ENOSPC;
+	}
+
+	/* The connector's own preparation (no hardware is written). */
+	reason = "";
+	error = drv_i915_display_output_prepare(display, connector, &next, &reason);
+	if (error != 0) {
+		kern_logf("i915: resident display: connector %u cannot be the output: %s (%d)\n", connector, reason, error);
+		return error;
+	}
+
+	/* The last picture's hold ends, and the output that showed it stops. */
+	error = drv_i915_present_cut(device);
+	if (error != 0) {
+		kern_logf("i915: resident display: connector %u: the held picture was not stopped in time\n", connector);
+		return EBUSY;
+	}
+
+	/* The prepared output, under the lock the worker's readers share. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	display->output = next;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the next frame lights the connector. */
+	kern_logf("i915: resident display: the output moves to connector %u (%s, Keiland's claim)\n", connector, drv_i915_display_output_name(display));
+	return 0;
+}
+
+/* Tells whether two outputs are different ones (kind, or connector). */
+static int
+i915_display_outputs_differ(
+	const struct i915_display_output *one,
+	const struct i915_display_output *other)
+{
+	/* Another kind. */
+	if (one->kind != other->kind || one->none != other->none)
+		return 1;
+
+	/* Another connector, when both name one. */
+	if (one->has_connector && other->has_connector && one->connector != other->connector)
+		return 1;
+
+	/* Succeeded: the same output. */
 	return 0;
 }
