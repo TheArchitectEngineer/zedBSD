@@ -14,11 +14,17 @@
  * -ipath, -wholename, -iwholename, -regex, -iregex, -empty, -executable,
  * -readable, -writable, -false, -amin, -cmin, -mmin, -delete, -printf,
  * -quit, and the operators -and and -or.
+ *
+ * ws001-p042: -exec ... {} + gathers the pathnames into as few
+ * invocations as the argument limit allows, -perm takes a symbolic mode,
+ * -L and -H give a dangling link's own information, and a directory that
+ * would start a loop is diagnosed without being tested.
  */
 
 #include <dirent.h>
 #include <errno.h>
 #include "include/libc/fnmatch.h"
+#include "userland/base/chmod/mode.h"
 #include <grp.h>
 #include <limits.h>
 #include <pwd.h>
@@ -95,6 +101,10 @@ struct node {
 	FILE *output;
 	/* -regex and -iregex own their compiled regex. */
 	regex_t *regex;
+	/* -exec ... {} +: the pathnames gathered, their count and their bytes (with a pointer each). */
+	char **batch;
+	int batch_count;
+	size_t batch_bytes;
 };
 
 struct parser {
@@ -109,6 +119,9 @@ struct parser {
 	long min_depth;
 	int regex_extended;
 };
+
+/* The bytes POSIX keeps free of {ARG_MAX} for the utility's own use. */
+#define FIND_ARG_RESERVE 2048U
 
 struct walk_state {
 	dev_t ancestors_dev[128];
@@ -188,6 +201,14 @@ static int evaluate(struct node *node, const char *path, const char *name, const
 static int file_type(mode_t mode, char type);
 static int number_matches(const struct number *number, unsigned long long value);
 static int run_command(const struct node *node, const char *path);
+static char *replace_braces(const char *argument, const char *path);
+static int run_vector(char **arguments);
+static void batch_add(struct node *node, const char *path, struct walk_state *state);
+static void batch_run(struct node *node, struct walk_state *state);
+static void batch_finish(struct node *node, struct walk_state *state);
+static size_t batch_room(const struct node *node);
+static int parse_perm(const char *text, struct node *node);
+static int stat_file(const char *path, int follow, struct stat *status);
 static struct node *parse_gnu_primary(struct parser *parser, const char *token, int *handled);
 static void parse_gnu_option(struct parser *parser, const char *token, const char *operand);
 static int compile_find_regex(struct parser *parser, struct node *node);
@@ -297,6 +318,9 @@ main(
 			(void)walk_path(argv[index], expression, &state);
 		}
 	}
+
+	/* The pathnames -exec ... {} + still holds. */
+	batch_finish(expression, &state);
 
 	/* Buffered manifest failures must be observed before declaring success. */
 	output_error = finish_outputs(expression);
@@ -459,12 +483,10 @@ parse_primary(
 {
 	struct node *function_result;
 	char *value_local;
-	char *end_local;
 	char *value_local1;
 	char *end_local2;
 	char *value_local3;
 	char *type;
-	unsigned long mode;
 	struct passwd *account;
 	struct group *group;
 	unsigned long id;
@@ -473,6 +495,9 @@ parse_primary(
 	int begin;
 	int prompt;
 	int handled;
+	int error;
+	int batched;
+	int ended;
 	struct node *node;
 	char *token;
 
@@ -619,19 +644,11 @@ parse_primary(
 		/* Handles the value local availability. */
 		if (value_local == NULL || node == NULL)
 			return node;
-		node->number.comparison = *value_local == '-' ? -1 : 0;
-
-		/* Handles the value local condition. */
-		if (*value_local == '-')
-			value_local++;
-		errno = 0;
-		mode = strtoul(value_local, &end_local, 8);
-
-		/* Handles the reported system error. */
-		if (errno != 0 || *value_local == '\0' || *end_local != '\0' ||
-		    mode > 07777)
+		error = parse_perm(value_local, node);
+		if (error != 0) {
+			fprintf(stderr, "find: -perm: invalid mode: %s\n", value_local);
 			parser->failed = 1;
-		node->mode = (mode_t)mode;
+		}
 
 		/* Returns the computed result. */
 		return node;
@@ -758,11 +775,17 @@ parse_primary(
 		begin = parser->index;
 		prompt = strcmp(token, "-ok") == 0;
 
-		/* Process each remaining command-line operand. */
-		while (parser->index < parser->argc &&
-		       strcmp(parser->argv[parser->index], ";") != 0 &&
-		       strcmp(parser->argv[parser->index], "+") != 0)
+		/* Up to ";", or for -exec a "+" right after a "{}" of its own. */
+		batched = 0;
+		while (parser->index < parser->argc) {
+			ended = strcmp(parser->argv[parser->index], ";") == 0;
+			if (ended)
+				break;
+			batched = !prompt && parser->index > begin + 1 && strcmp(parser->argv[parser->index], "+") == 0 && strcmp(parser->argv[parser->index - 1], "{}") == 0;
+			if (batched)
+				break;
 			parser->index++;
+		}
 
 		/* Validates the command-line arguments. */
 		if (parser->index == begin || parser->index == parser->argc) {
@@ -775,11 +798,15 @@ parse_primary(
 		}
 		node = new_node(NODE_EXEC);
 
-		/* Handles the node availability. */
+		/* The utility and its arguments; with "+" the last, "{}", is where the pathnames go. */
 		if (node != NULL) {
 			node->arguments = &parser->argv[begin];
 			node->argument_count = parser->index - begin;
-			node->type = prompt ? 'o' : 'e';
+			node->type = 'e';
+			if (prompt)
+				node->type = 'o';
+			if (batched)
+				node->type = '+';
 		}
 		parser->index++;
 
@@ -851,6 +878,8 @@ static void
 free_expression(
 	struct node *node)
 {
+	int index;
+
 	/* Handles the node availability. */
 	if (node == NULL)
 		return;
@@ -866,6 +895,11 @@ free_expression(
 		regfree(node->regex);
 		free(node->regex);
 	}
+
+	/* The pathnames of -exec ... {} + not run (after a failure). */
+	for (index = 0; index < node->batch_count; index++)
+		free(node->batch[index]);
+	free(node->batch);
 
 	free(node);
 }
@@ -972,9 +1006,14 @@ walk_path(
 	unsigned ancestor;
 	struct stat status;
 	const char *name;
+	const char *format;
+	size_t path_length;
 	int directory;
 	int in_depth;
 	int result;
+	int follow;
+	int error;
+	int looped;
 
 	/* -quit ends the walk. */
 	if (state->quit)
@@ -985,17 +1024,28 @@ walk_path(
 
 	name = name != NULL && name[1] != '\0' ? name + 1 : path;
 
-	/* Handles a failed stat operation. */
-	if ((state->follow || (state->follow_root && state->depth == 0)
-		 ? stat(path, &status)
-		 : lstat(path, &status)) != 0) {
-		fprintf(stderr, "find: %s: %s\n", path, strerror(errno));
+	/* The file's information: what a link names under -L (and -H for an operand). */
+	follow = state->follow || (state->follow_root && state->depth == 0);
+	error = stat_file(path, follow, &status);
+	if (error != 0) {
+		fprintf(stderr, "find: %s: %s\n", path, strerror(error));
 		state->errors = 1;
 
 		/* Reports successful completion. */
 		return 0;
 	}
 	directory = S_ISDIR(status.st_mode);
+	path_length = strlen(path);
+
+	/* A directory that is one of its own ancestors (a loop through a link) is diagnosed, not tested. */
+	for (ancestor = 0; directory && ancestor < state->depth; ancestor++) {
+		looped = state->ancestors_dev[ancestor] == status.st_dev && state->ancestors_ino[ancestor] == status.st_ino;
+		if (looped) {
+			fprintf(stderr, "find: %s: directory cycle\n", path);
+			state->errors = 1;
+			return 0;
+		}
+	}
 
 	/* Handles the state condition. */
 	if (!state->have_root_device) {
@@ -1024,20 +1074,6 @@ walk_path(
 	/* Handles the directory condition. */
 	if (directory && !state->prune &&
 	    (!state->same_device || status.st_dev == state->root_device)) {
-		/* Process each element required by the operation. */
-		for (ancestor = 0; ancestor < state->depth; ancestor++) {
-			/* Handles the state condition. */
-			if (state->ancestors_dev[ancestor] == status.st_dev &&
-			    state->ancestors_ino[ancestor] == status.st_ino) {
-				fprintf(stderr, "find: %s: directory cycle\n",
-					path);
-				state->errors = 1;
-
-				/* Reports successful completion. */
-				return 0;
-			}
-		}
-
 		/* Handles the state condition. */
 		if (state->depth == sizeof(state->ancestors_dev) /
 					sizeof(state->ancestors_dev[0])) {
@@ -1075,10 +1111,12 @@ walk_path(
 				if (strcmp(entry->d_name, ".") == 0 ||
 				    strcmp(entry->d_name, "..") == 0)
 					continue;
-				length = snprintf(
-				    child, sizeof(child),
-				    strcmp(path, "/") == 0 ? "%s%s" : "%s/%s",
-				    path, entry->d_name);
+
+				/* The entry's pathname, with no second slash after one the operand ends with. */
+				format = "%s/%s";
+				if (path[path_length - 1U] == '/')
+					format = "%s%s";
+				length = snprintf(child, sizeof(child), format, path, entry->d_name);
 
 				/* Checks the current data length. */
 				if (length < 0 ||
@@ -1275,6 +1313,12 @@ evaluate(
 		/* Reports operation failure. */
 		return 1;
 	case NODE_EXEC:
+		/* With "+" the pathname is gathered and the primary is true. */
+		if (node->type == '+') {
+			batch_add(node, path, state);
+			return 1;
+		}
+
 		/* Obtains the run command result. */
 		function_result = run_command(node, path);
 
@@ -1973,81 +2017,329 @@ number_matches(
 	return value == number->value;
 }
 
-/* Supports the run command operation. */
+/*
+ * Runs the utility of -exec or -ok (";") for one pathname: each "{}" in
+ * its arguments, alone or inside one, is the pathname.  -ok asks first on
+ * standard error and runs it on an answer starting with y.  Returns 1 when
+ * the utility exited with 0, else 0.
+ */
 static int
 run_command(
 	const struct node *node,
 	const char *path)
 {
-	int function_result;
-	int next;
-	int answer;
 	char **arguments;
-	pid_t child;
-	int status;
+	int answer;
+	int next;
 	int index;
+	int made;
+	int passed;
 
+	/* The arguments with the pathname in them. */
 	arguments = calloc((size_t)node->argument_count + 1U, sizeof(*arguments));
-
-	/* Handles the arguments availability. */
 	if (arguments == NULL)
 		return 0;
-
-	/* Process each remaining element. */
+	made = 1;
 	for (index = 0; index < node->argument_count; index++) {
-		arguments[index] = strcmp(node->arguments[index], "{}") == 0
-				       ? (char *)path
-				       : node->arguments[index];
+		arguments[index] = replace_braces(node->arguments[index], path);
+		if (arguments[index] == NULL)
+			made = 0;
 	}
 
-	/* Handles the node condition. */
-	if (node->type == 'o') {
+	/* -ok: the question and the answer's line. */
+	answer = 'y';
+	if (made && node->type == 'o') {
 		fprintf(stderr, "< %s ... %s > ? ", arguments[0], path);
 		(void)fflush(stderr);
-
-		/* Continue while the operation condition remains true. */
 		answer = getchar();
-		while (answer != '\n' && answer != EOF) {
+		next = answer;
+		while (next != '\n' && next != EOF)
 			next = getchar();
-
-			/* Handles the end-of-file condition. */
-			if (next == '\n' || next == EOF)
-				break;
-		}
-
-		/* Handles the answer condition. */
-		if (answer != 'y' && answer != 'Y') {
-			free(arguments);
-
-			/* Reports successful completion. */
-			return 0;
-		}
 	}
-	child = fork();
 
-	/* Checks the child process state. */
+	/* Run when made and agreed to. */
+	passed = 0;
+	if (made && (answer == 'y' || answer == 'Y'))
+		passed = run_vector(arguments);
+
+	/* The arguments made. */
+	for (index = 0; index < node->argument_count; index++)
+		free(arguments[index]);
+	free(arguments);
+	return passed;
+}
+
+/* A copy of an argument with each "{}" in it the pathname; NULL without memory. */
+static char *
+replace_braces(
+	const char *argument,
+	const char *path)
+{
+	const char *from;
+	const char *found;
+	char *copy;
+	char *to;
+	size_t count;
+	size_t size;
+
+	/* How many "{}" there are. */
+	count = 0;
+	for (from = strstr(argument, "{}"); from != NULL; from = strstr(from + 2, "{}"))
+		count++;
+
+	/* The copy's room. */
+	size = strlen(argument) + count * strlen(path) + 1U;
+	copy = malloc(size);
+	if (copy == NULL)
+		return NULL;
+
+	/* The text between them, and the pathname for each. */
+	to = copy;
+	from = argument;
+	for (;;) {
+		found = strstr(from, "{}");
+		if (found == NULL)
+			break;
+		memcpy(to, from, (size_t)(found - from));
+		to += found - from;
+		memcpy(to, path, strlen(path));
+		to += strlen(path);
+		from = found + 2;
+	}
+
+	/* The rest. */
+	memcpy(to, from, strlen(from) + 1U);
+	return copy;
+}
+
+/* Runs a utility with its arguments (a NULL at the end) and waits; 1 when it exited with 0, else 0. */
+static int
+run_vector(
+	char **arguments)
+{
+	pid_t child;
+	pid_t ended;
+	int status;
+	int passed;
+
+	/* Its process. */
+	(void)fflush(stdout);
+	child = fork();
 	if (child == 0) {
 		execvp(arguments[0], arguments);
-		fprintf(stderr, "find: %s: %s\n", arguments[0],
-			strerror(errno));
+		fprintf(stderr, "find: %s: %s\n", arguments[0], strerror(errno));
 		_exit(127);
 	}
-	free(arguments);
 
-	/* Checks the child process state. */
+	/* Not started. */
 	if (child < 0)
 		return 0;
 
-	/* Continue while the operation condition remains true. */
-	while (waitpid(child, &status, 0) < 0) {
-		/* Handles the reported system error. */
-		if (errno != EINTR)
-			return 0;
+	/* Its end. */
+	for (;;) {
+		ended = waitpid(child, &status, 0);
+		if (ended >= 0 || errno != EINTR)
+			break;
 	}
 
-	/* Computes the function result. */
-	function_result = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+	/* Not collected. */
+	if (ended < 0)
+		return 0;
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Exited with 0. */
+	passed = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+	return passed;
+}
+
+/*
+ * Gathers a pathname for -exec ... {} +, running the utility first with
+ * those gathered when this one would take them past the argument limit.
+ */
+static void
+batch_add(
+	struct node *node,
+	const char *path,
+	struct walk_state *state)
+{
+	char **grown;
+	char *copy;
+	size_t bytes;
+	size_t room;
+
+	/* Room for it, else the ones gathered are run first. */
+	bytes = strlen(path) + 1U + sizeof(char *);
+	room = batch_room(node);
+	if (node->batch_count > 0 && node->batch_bytes + bytes > room)
+		batch_run(node, state);
+
+	/* Kept. */
+	copy = strdup(path);
+	grown = realloc(node->batch, ((size_t)node->batch_count + 1U) * sizeof(*grown));
+	if (copy == NULL || grown == NULL) {
+		free(copy);
+		if (grown != NULL)
+			node->batch = grown;
+		fprintf(stderr, "find: %s: %s\n", path, strerror(ENOMEM));
+		state->errors = 1;
+		return;
+	}
+
+	/* At the end of the set. */
+	node->batch = grown;
+	node->batch[node->batch_count++] = copy;
+	node->batch_bytes += bytes;
+}
+
+/* Runs the utility of -exec ... {} + with the pathnames gathered; a failure makes find's status nonzero. */
+static void
+batch_run(
+	struct node *node,
+	struct walk_state *state)
+{
+	char **arguments;
+	int fixed;
+	int index;
+	int passed;
+
+	/* Nothing gathered. */
+	if (node->batch_count == 0)
+		return;
+
+	/* The utility, its arguments before the "{}", then the pathnames. */
+	fixed = node->argument_count - 1;
+	arguments = calloc((size_t)fixed + (size_t)node->batch_count + 1U, sizeof(*arguments));
+	passed = 0;
+	if (arguments != NULL) {
+		for (index = 0; index < fixed; index++)
+			arguments[index] = node->arguments[index];
+		for (index = 0; index < node->batch_count; index++)
+			arguments[fixed + index] = node->batch[index];
+		passed = run_vector(arguments);
+	}
+
+	/* A failure is find's too. */
+	if (!passed)
+		state->errors = 1;
+
+	/* The next set starts empty. */
+	free(arguments);
+	for (index = 0; index < node->batch_count; index++)
+		free(node->batch[index]);
+	node->batch_count = 0;
+	node->batch_bytes = 0;
+}
+
+/* Runs every -exec ... {} + of an expression with what it still holds. */
+static void
+batch_finish(
+	struct node *node,
+	struct walk_state *state)
+{
+	/* Each node of the tree. */
+	if (node == NULL)
+		return;
+	batch_finish(node->left, state);
+	batch_finish(node->right, state);
+	if (node->kind == NODE_EXEC && node->type == '+')
+		batch_run(node, state);
+}
+
+/*
+ * The bytes the pathnames of one invocation may take: {ARG_MAX} less the
+ * 2048 bytes POSIX keeps free, the environment, and the utility and its
+ * other arguments (each string with a pointer, as the kernel counts them).
+ */
+static size_t
+batch_room(
+	const struct node *node)
+{
+	extern char **environ;
+	char **entry;
+	size_t taken;
+	long limit;
+	int index;
+
+	/* The limit, or the POSIX minimum when it is not known. */
+	limit = sysconf(_SC_ARG_MAX);
+	if (limit <= 0)
+		limit = _POSIX_ARG_MAX;
+
+	/* What is taken already. */
+	taken = FIND_ARG_RESERVE + sizeof(char *);
+	for (entry = environ; entry != NULL && *entry != NULL; entry++)
+		taken += strlen(*entry) + 1U + sizeof(char *);
+	for (index = 0; index < node->argument_count - 1; index++)
+		taken += strlen(node->arguments[index]) + 1U + sizeof(char *);
+
+	/* What is left, never nothing (one pathname is always run). */
+	if ((size_t)limit <= taken)
+		return 0;
+	return (size_t)limit - taken;
+}
+
+/*
+ * Reads the mode of -perm: an octal number, or a symbolic mode applied to
+ * a template with no bits set (the file mode creation mask applies to +
+ * without who letters, as for chmod), after an optional "-" that asks for
+ * at least those bits.  Returns 0, or EINVAL.
+ */
+static int
+parse_perm(
+	const char *text,
+	struct node *node)
+{
+	mode_t mask;
+	mode_t mode;
+	int error;
+
+	/* "-": at least the bits. */
+	node->number.comparison = 0;
+	if (text[0] == '-') {
+		node->number.comparison = -1;
+		text++;
+	}
+
+	/* The bits, as chmod gives them to a file that had none. */
+	if (text[0] == '\0' || text[0] == '-')
+		return EINVAL;
+	mask = umask(0);
+	(void)umask(mask);
+	error = mode_apply(text, 0, mask, 0, &mode);
+	if (error != 0)
+		return EINVAL;
+	node->mode = mode & 07777;
+	return 0;
+}
+
+/*
+ * Reads a file's information: when following, what a link names, else
+ * the link itself; a link that names nothing gives its own.  Returns 0 or
+ * an errno value.
+ */
+static int
+stat_file(
+	const char *path,
+	int follow,
+	struct stat *status)
+{
+	int error;
+
+	/* The link itself. */
+	if (!follow) {
+		error = lstat(path, status);
+		if (error != 0)
+			return errno;
+		return 0;
+	}
+
+	/* What it names, or the link when that is not there. */
+	error = stat(path, status);
+	if (error == 0)
+		return 0;
+	if (errno != ENOENT)
+		return errno;
+	error = lstat(path, status);
+	if (error != 0)
+		return errno;
+	return 0;
 }
