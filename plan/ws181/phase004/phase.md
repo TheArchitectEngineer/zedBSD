@@ -2,7 +2,7 @@
 # ws181-p004: 整列のメニューと整列モード
 
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は T1 へ依頼（WS181 の区切り）、test-wait にするのは Q1）
+Status: test-wait（T1-342）。旧: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は T1 へ依頼（WS181 の区切り）、test-wait にするのは Q1）
 Disposition: normal
 Queue: q842 / q842-i01
 Design: [p001 design.md](../phase001/design.md) §4・§5

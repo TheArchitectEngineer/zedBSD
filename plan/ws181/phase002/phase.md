@@ -2,7 +2,7 @@
 # ws181-p002: 窓の状態 — docked から floating で全部の窓を floating に、docking の隠れと最小化を分ける、docked の窓を閉じたら floating
 
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は WS181 の区切りで T1 へ）
+Status: test-wait（T1-342）。旧: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は WS181 の区切りで T1 へ）
 Disposition: normal
 Queue: q842 / q842-i01
 Design: [p001 design.md](../phase001/design.md) §1

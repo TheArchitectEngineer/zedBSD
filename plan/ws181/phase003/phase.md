@@ -2,7 +2,7 @@
 # ws181-p003: App Home の独立のモードと画面の端の gesture
 
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は WS181 の区切り（p004 の後）で T1 へ）
+Status: test-wait（T1-342）。旧: in-progress（2026-10-07 q842-i01 P2: 実装・build・host 試験まで。QEMU は WS181 の区切り（p004 の後）で T1 へ）
 Disposition: normal
 Queue: q842 / q842-i01
 Design: [p001 design.md](../phase001/design.md) §2・§3
