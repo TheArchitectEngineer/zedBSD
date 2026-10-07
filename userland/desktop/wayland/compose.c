@@ -848,6 +848,8 @@ compose_display(
 		if (properties[index].displayName != NULL) {
 			(void)snprintf(compose->display_name, sizeof(compose->display_name), "%s", properties[index].displayName);
 		}
+
+		/* The first such display is the one. */
 		break;
 	}
 

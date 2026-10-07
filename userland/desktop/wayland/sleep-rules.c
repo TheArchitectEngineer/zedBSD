@@ -259,9 +259,13 @@ kwl_sleep_answered(
 		sleep->idle_blocked = 0U;
 
 		/* A wake soon after the sleep is a short one; several in a row pause like a failure. */
-		sleep->short_wakes = 0U;
-		if (now_ms >= sleep->waiting_ms && now_ms - sleep->waiting_ms < KWL_SLEEP_SHORT_MS)
+		if (now_ms >= sleep->waiting_ms && now_ms - sleep->waiting_ms < KWL_SLEEP_SHORT_MS) {
 			sleep->short_wakes++;
+		} else {
+			sleep->short_wakes = 0U;
+		}
+
+		/* Several short wakes in a row pause like a failure. */
 		if (sleep->short_wakes >= KWL_SLEEP_SHORT_COUNT) {
 			sleep->short_wakes = 0U;
 			sleep->failures = 1U;
@@ -285,6 +289,8 @@ kwl_sleep_answered(
 			sleep->failures = 3U;
 			sleep->pause_until_ms = now_ms + sleep_pause_ms(sleep->failures);
 		}
+
+		/* The refusal is counted. */
 		break;
 	case KL_BACKEND_SLEEP_NETWORK:
 	case KL_BACKEND_SLEEP_ERROR:
@@ -471,6 +477,8 @@ kwl_sleep_reason_of(
 			(void)strncpy(name, outcome->device, size - 1U);
 			name[size - 1U] = '\0';
 		}
+
+		/* The part as the kernel names it. */
 		return KWL_SLEEP_REASON_DEVICE;
 	}
 

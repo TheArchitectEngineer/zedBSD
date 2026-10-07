@@ -610,6 +610,8 @@ kwl_greeter_say(
 		while (length > 0U && ((unsigned char)text[length] & 0xc0U) == 0x80U)
 			length--;
 	}
+
+	/* The line holds the text. */
 	memcpy(greeter_message, text, length);
 	greeter_message[length] = '\0';
 
