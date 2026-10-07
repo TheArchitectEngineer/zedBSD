@@ -74,6 +74,30 @@
 #include "edid.h"
 #include <kern/kcrt.h>
 
+/*
+ * The pipe scalers (the Linux i915_reg.h SKL_PS_*): scaler 1 of pipe A at
+ * 0x68180, scaler 2 0x100 above it, and the next pipe 0x800 above.
+ */
+#define I915_PS_1A_CTRL			0x68180
+#define I915_PS_WIN_POS_1A		0x68170
+#define I915_PS_WIN_SZ_1A		0x68174
+#define I915_PS_SCALER_STRIDE		0x100
+#define I915_PS_PIPE_STRIDE		0x800
+#define I915_SKL_PS_REG(pipe, id, reg_1a) \
+	_MMIO((reg_1a) + (pipe) * I915_PS_PIPE_STRIDE + (id) * I915_PS_SCALER_STRIDE)
+#define I915_SKL_PS_CTRL(pipe, id)	I915_SKL_PS_REG(pipe, id, I915_PS_1A_CTRL)
+#define I915_SKL_PS_WIN_POS(pipe, id)	I915_SKL_PS_REG(pipe, id, I915_PS_WIN_POS_1A)
+#define I915_SKL_PS_WIN_SZ(pipe, id)	I915_SKL_PS_REG(pipe, id, I915_PS_WIN_SZ_1A)
+#define I915_PS_SCALER_EN		REG_BIT(31)
+#define I915_PS_PLANE_SEL_MASK		REG_GENMASK(27, 25)
+#define I915_PS_WIN_XPOS_MASK		REG_GENMASK(31, 16)
+#define I915_PS_WIN_YPOS_MASK		REG_GENMASK(15, 0)
+#define I915_PS_WIN_XSIZE_MASK		REG_GENMASK(31, 16)
+#define I915_PS_WIN_YSIZE_MASK		REG_GENMASK(15, 0)
+
+/* The bit of the crtc itself in a scaler users mask (the Linux SKL_CRTC_INDEX). */
+#define I915_SKL_CRTC_INDEX		31
+
 static void i915_reduce_m_n_ratio(u32 *num, u32 *den);
 static void i915_compute_m_n(u32 *ret_m, u32 *ret_n, u32 m, u32 n, u32 constant_n);
 static void i915_set_m_n(struct drm_i915_private *i915, const struct intel_link_m_n *m_n, i915_reg_t data_m_reg, i915_reg_t data_n_reg, i915_reg_t link_m_reg, i915_reg_t link_n_reg);
@@ -639,6 +663,93 @@ drv_i915_plane_disable_noatomic(
 	/* Disables the plane and waits for the vblank that applies it. */
 	drv_i915_lcd_plane_disable_arm(plane, crtc_state);
 	drv_i915_crtc_wait_for_next_vblank(crtc);
+}
+
+/*
+ * Reads out the pipe scaler a running pipe uses as its panel fitter (the
+ * Linux skl_scaler_get_config()).
+ *
+ * A scaler that is on and bound to no plane scales the whole pipe: its
+ * window becomes the panel fitter's destination.  The firmware leaves one
+ * on when it lights the panel at a smaller mode than the panel's own
+ * (5320: 640x480 fitted to 1366x768).
+ */
+void
+drv_i915_skl_scaler_get_config(
+	struct intel_crtc_state *crtc_state)
+{
+	struct intel_crtc *crtc;
+	struct drm_i915_private *dev_priv;
+	u32 ctl;
+	u32 pos;
+	u32 size;
+	int id;
+	int i;
+
+	/* Finds the crtc and its device; no scaler is known yet. */
+	crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	dev_priv = i915_lcd_to_i915(crtc->base.dev);
+	id = -1;
+
+	/* Finds the scaler attached to this pipe. */
+	for (i = 0; i < I915_LCD_SKL_NUM_SCALERS; i++) {
+		/* A scaler that is off or scales a plane is not the pipe's. */
+		ctl = i915_lcd_intel_de_read(dev_priv, I915_SKL_PS_CTRL(crtc->pipe, i));
+		if ((ctl & (I915_PS_SCALER_EN | I915_PS_PLANE_SEL_MASK)) != I915_PS_SCALER_EN)
+			continue;
+
+		/* The scaler fits the pipe: the panel fitter is on. */
+		id = i;
+		crtc_state->pch_pfit.enabled = true;
+
+		/* The window the pipe is scaled into. */
+		pos = i915_lcd_intel_de_read(dev_priv, I915_SKL_PS_WIN_POS(crtc->pipe, i));
+		size = i915_lcd_intel_de_read(dev_priv, I915_SKL_PS_WIN_SZ(crtc->pipe, i));
+		crtc_state->pch_pfit.dst.x1 = (int)REG_FIELD_GET(I915_PS_WIN_XPOS_MASK, pos);
+		crtc_state->pch_pfit.dst.y1 = (int)REG_FIELD_GET(I915_PS_WIN_YPOS_MASK, pos);
+		crtc_state->pch_pfit.dst.x2 = crtc_state->pch_pfit.dst.x1 + (int)REG_FIELD_GET(I915_PS_WIN_XSIZE_MASK, size);
+		crtc_state->pch_pfit.dst.y2 = crtc_state->pch_pfit.dst.y1 + (int)REG_FIELD_GET(I915_PS_WIN_YSIZE_MASK, size);
+
+		/* The scaler is in use. */
+		crtc_state->scaler_state.scalers[i].in_use = true;
+		break;
+	}
+
+	/* Records the crtc's scaler and whether the crtc is a scaler user. */
+	crtc_state->scaler_state.scaler_id = id;
+	if (id >= 0) {
+		crtc_state->scaler_state.scaler_users |= 1u << I915_SKL_CRTC_INDEX;
+	} else {
+		crtc_state->scaler_state.scaler_users &= ~(1u << I915_SKL_CRTC_INDEX);
+	}
+}
+
+/*
+ * Detaches every scaler of a pipe that is being disabled (the Linux
+ * skl_scaler_disable() and skl_detach_scaler()).
+ *
+ * Every scaler of the pipe is cleared, used or not, as Linux does: a
+ * scaler the firmware left fitting the pipe stops with it, and the next
+ * mode of the pipe starts unscaled.
+ */
+void
+drv_i915_skl_scaler_disable(
+	const struct intel_crtc_state *old_crtc_state)
+{
+	struct intel_crtc *crtc;
+	struct drm_i915_private *dev_priv;
+	int i;
+
+	/* Finds the crtc and its device. */
+	crtc = to_intel_crtc(old_crtc_state->uapi.crtc);
+	dev_priv = i915_lcd_to_i915(crtc->base.dev);
+
+	/* Turns each scaler off and clears its window. */
+	for (i = 0; i < I915_LCD_SKL_NUM_SCALERS; i++) {
+		i915_lcd_intel_de_write(dev_priv, I915_SKL_PS_CTRL(crtc->pipe, i), 0);
+		i915_lcd_intel_de_write(dev_priv, I915_SKL_PS_WIN_POS(crtc->pipe, i), 0);
+		i915_lcd_intel_de_write(dev_priv, I915_SKL_PS_WIN_SZ(crtc->pipe, i), 0);
+	}
 }
 
 /*
@@ -2626,7 +2737,7 @@ i915_hsw_get_pipe_config(
 										 POWER_DOMAIN_PIPE_PANEL_FITTER(crtc->pipe));
 		if (powered) {
 			if (I915_LCD_DISPLAY_VER(dev_priv) >= 9) {
-				I915_TAKEOVER_SKL_SCALER_GET_CONFIG(dev_priv, pipe_config);
+				drv_i915_skl_scaler_get_config(pipe_config);
 			} else {
 				I915_TAKEOVER_ILK_GET_PFIT_CONFIG(dev_priv, pipe_config);
 			}

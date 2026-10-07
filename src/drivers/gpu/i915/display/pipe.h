@@ -68,6 +68,13 @@ void drv_i915_plane_fixup_bitmasks(struct i915_takeover_world *takeover, struct 
 void drv_i915_plane_disable_noatomic(struct i915_takeover_world *takeover, struct intel_crtc *crtc, struct intel_plane *plane);
 
 /*
+ * ==== The pipe scalers ====
+ */
+
+void drv_i915_skl_scaler_get_config(struct intel_crtc_state *crtc_state);
+void drv_i915_skl_scaler_disable(const struct intel_crtc_state *old_crtc_state);
+
+/*
  * ==== The register words of the transcoder, recorded ====
  */
 

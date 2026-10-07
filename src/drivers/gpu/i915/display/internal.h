@@ -1113,7 +1113,7 @@ struct i915_vbt_state;
 
 #define I915_NOGEM_MAX_PIPES    4
 #define I915_NOGEM_MAX_PLANES   6    /* primary + 4 sprites + cursor */
-#define I915_NOGEM_MAX_DPLLS    8    /* adlp_plls has 7 + terminator */
+#define I915_NOGEM_MAX_DPLLS    10   /* tgl_plls has 9, adlp_plls 7, + terminator */
 #define I915_NOGEM_MAX_WM_LVL   8    /* I915_MAX_WM / skl_latency[] */
 #define I915_NOGEM_MAX_GMBUS    15   /* pin indices 1..14 */
 #define I915_NOGEM_MAX_ENCODERS 8

@@ -330,8 +330,8 @@
  *     (this path trains the link itself in the re-light).
  *   intel_tc_port_sanitize_mode / icl_set_active_port_dpll: Type-C only.
  *   hsw_ips_get_config / hsw_ips_disable: IPS (Haswell / Broadwell).
- *   ilk_get_pfit_config / skl_scaler_get_config: the panel fitter and the
- *     scalers (nothing is scaled here).
+ *   ilk_get_pfit_config: the pre-Gen9 panel fitter (skl_scaler_get_config
+ *     is ported, pipe.c: a firmware's scaled mode is read out).
  *   drm_crtc_wait_one_vblank: the DRM vblank layer (not in this path).
  *   intel_set_memory_cxsr: CxSR (pre-Gen9 only).
  */
@@ -356,7 +356,6 @@
 #define I915_TAKEOVER_ICL_SET_ACTIVE_PORT_DPLL(i915, cs, port_dpll_id) I915_N1_STEP(i915, "icl_set_active_port_dpll")
 #define I915_TAKEOVER_HSW_IPS_GET_CONFIG(i915, cs) I915_N1_STEP(i915, "hsw_ips_get_config")
 #define I915_TAKEOVER_ILK_GET_PFIT_CONFIG(i915, cs) I915_N1_STEP(i915, "ilk_get_pfit_config")
-#define I915_TAKEOVER_SKL_SCALER_GET_CONFIG(i915, cs) I915_N1_STEP(i915, "skl_scaler_get_config")
 #define I915_TAKEOVER_DRM_CRTC_WAIT_ONE_VBLANK(i915, crtc) I915_N1_STEP(i915, "drm_crtc_wait_one_vblank")
 #define I915_TAKEOVER_HSW_IPS_DISABLE(i915, cs) (I915_N1_STEP(i915, "hsw_ips_disable"), false)
 #define I915_TAKEOVER_INTEL_SET_MEMORY_CXSR(cur_i915, i915, enable) (I915_N1_STEP(cur_i915, "intel_set_memory_cxsr"), false)

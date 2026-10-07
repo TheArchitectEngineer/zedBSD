@@ -301,6 +301,7 @@ drv_i915_init_cdclk_hooks(
 	 */
 	if (!is_alderlake_p && display_ver == 12) {
 		cd->table = i915_icl_cdclk_table;
+		cd->funcs = I915_CDCLK_FUNCS_TGL;
 	} else if (is_alderlake_p && display_ver >= 12) {
 		if (display_step >= I915_STEP_A0 && display_step < I915_STEP_B0) {
 			/* adlp_a_step_cdclk_table would be this stepping's. */
@@ -315,8 +316,14 @@ drv_i915_init_cdclk_hooks(
 		cd->funcs = I915_CDCLK_FUNCS_TGL;
 	}
 
-	/* The platform capabilities (xe_lpd_display: crawl yes, squash no). */
-	cd->has_cdclk_crawl = 1;
+	/*
+	 * The platform capabilities: xe_lpd_display (Alder Lake-P) crawls the
+	 * CDCLK PLL, Tiger Lake's gen12 display does not (its VCO changes
+	 * disable and re-enable the PLL); neither squashes.
+	 */
+	cd->has_cdclk_crawl = 0;
+	if (is_alderlake_p)
+		cd->has_cdclk_crawl = 1;
 	cd->has_cdclk_squash = 0;
 }
 
