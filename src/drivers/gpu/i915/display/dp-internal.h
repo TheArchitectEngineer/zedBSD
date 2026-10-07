@@ -748,6 +748,15 @@ struct i915_dp_ext_port {
 
 	/* How many probes ran (diagnostics). */
 	unsigned probes;
+
+	/*
+	 * The DPCD access a modeset object of this port's sink takes
+	 * (ws051-p004b): the port's AUX channel, refused once the ports
+	 * stopped.  Bound with the port; ext is the world that says whether
+	 * the ports still run.
+	 */
+	struct i915_lcd_aux_emit aux_emit;
+	struct i915_dp_ext_world *ext;
 };
 
 /*

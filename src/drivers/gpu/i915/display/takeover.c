@@ -58,9 +58,11 @@
 #include "color.h"
 #include "ddi.h"
 #include "dmc.h"
+#include "dp-ext-kern.h"
 #include "pipe.h"
 #include "power.h"
 #include "scanout.h"
+#include "tc-kern.h"
 #include "vblank.h"
 #include "vbt-parse.h"
 #include "watermark.h"
@@ -358,6 +360,11 @@ static struct i915_takeover_world *i915_takeover_of_device(const struct drm_devi
 static bool i915_n1_plane_get_hw_state(struct intel_plane *plane, enum pipe *pipe);
 static void i915_n1_build_device(struct i915_takeover_world *takeover, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
 static void i915_n1_fill_report(struct i915_takeover_world *takeover, struct i915_n1_report *out);
+static void i915_n1_add_tc_ports(struct i915_takeover_world *takeover);
+static struct intel_encoder *i915_n1_state_encoder_at(void *walk, unsigned idx);
+static long i915_n1_no_dpcd_read(void *ctx, unsigned offset, uint8_t *buffer, size_t size);
+static long i915_n1_no_dpcd_write(void *ctx, unsigned offset, const uint8_t *buffer, size_t size);
+static int i915_n1_no_read_dpcd_caps(void *ctx, uint8_t dpcd[15]);
 static bool i915_crtc_needs_link_reset(struct i915_takeover_world *takeover, struct intel_crtc *crtc);
 static u8 i915_get_bigjoiner_slave_pipes(struct i915_takeover_world *takeover, struct drm_i915_private *i915, u8 master_pipes_mask);
 static void i915_get_portsync_pipes(struct i915_takeover_world *takeover, struct intel_crtc *crtc, u8 *master_pipe_mask, u8 *slave_pipes_mask);
@@ -582,9 +589,10 @@ drv_i915_n1_primary_plane(
 /*
  * Reports the registry's encoder at an index (the walk over the device's encoders).
  *
- * The registry holds one encoder, at index 0: the encoder of the screen the
- * DDI callers are bound to.  NULL for any other index and whenever the
- * registry is not live; the step is printed while the register trace is on.
+ * Index 0 is the encoder of the screen the DDI callers are bound to, and
+ * the declared Type-C ports' readout encoders follow (ws051-p004b).  NULL
+ * past the last one and whenever the registry is not live; the step is
+ * printed while the register trace is on.
  */
 struct intel_encoder *
 drv_i915_n1_encoder_at(
@@ -602,20 +610,21 @@ drv_i915_n1_encoder_at(
 	if (!takeover->n1.live)
 		return NULL;
 
-	/* Answers nothing past the one encoder. */
-	if (idx != 0u)
+	/* Answers nothing past the last encoder. */
+	if (idx >= takeover->n1.encoder_count)
 		return NULL;
 
-	/* Succeeded: reports the bound screen's encoder. */
-	return takeover->n1.encoder;
+	/* Succeeded: reports the encoder of the index. */
+	return takeover->n1.encoders[idx];
 }
 
 /*
  * Reports the registry's connector at an index (the walk over the device's connectors).
  *
- * The registry holds one connector, at index 0.  NULL for any other index
- * and whenever the registry is not live; the step is printed while the
- * register trace is on.
+ * The connectors follow the encoders: index 0 the bound screen's, then
+ * the declared Type-C ports'.  NULL past the last one and whenever the
+ * registry is not live; the step is printed while the register trace is
+ * on.
  */
 struct intel_connector *
 drv_i915_n1_connector_at(
@@ -633,12 +642,12 @@ drv_i915_n1_connector_at(
 	if (!takeover->n1.live)
 		return NULL;
 
-	/* Answers nothing past the one connector. */
-	if (idx != 0u)
+	/* Answers nothing past the last connector. */
+	if (idx >= takeover->n1.encoder_count)
 		return NULL;
 
-	/* Succeeded: reports the bound screen's connector. */
-	return takeover->n1.connector;
+	/* Succeeded: reports the connector of the index. */
+	return takeover->n1.connectors[idx];
 }
 
 /*
@@ -734,6 +743,10 @@ drv_i915_n1_atomic_state(
 
 	/* The encoder walks of the state find the display's modeset world through it. */
 	takeover->n1.state.world = takeover->display->lcd_world;
+
+	/* A disable of the state runs the hooks of the registry's encoders on the crtc, whichever port each drives. */
+	takeover->n1.state.encoder_at = i915_n1_state_encoder_at;
+	takeover->n1.state.walk = takeover;
 
 	/* Succeeded: reports the registry's state. */
 	return &takeover->n1.state;
@@ -897,6 +910,14 @@ drv_i915_n1_readout(
 	/* Binds the encoder's readout hooks (get_hw_state, get_config, sync_state, get_power_domains). */
 	drv_i915_lcd_ms_bind_readout(n1->encoder);
 
+	/* The bound screen's encoder and connector are the walks' first. */
+	n1->encoders[0] = n1->encoder;
+	n1->connectors[0] = n1->connector;
+	n1->encoder_count = 1u;
+
+	/* Each declared Type-C port's readout encoder and connector follow. */
+	i915_n1_add_tc_ports(takeover);
+
 	/* From here the walks answer with the registry's objects. */
 	n1->live = 1;
 
@@ -1001,6 +1022,7 @@ drv_i915_n1_release(
 	struct i915_display *display)
 {
 	struct i915_n1_registry *n1;
+	unsigned index;
 
 	/* Resolves the registry. */
 	n1 = &display->takeover_world->n1;
@@ -1009,17 +1031,15 @@ drv_i915_n1_release(
 	if (!n1->live)
 		return;
 
-	/* Unlinks the encoder from the readout's crtc. */
-	if (n1->encoder != NULL)
-		n1->encoder->base.crtc = NULL;
-
-	/* Unlinks the connector from the readout's state and encoder. */
-	if (n1->connector != NULL) {
-		n1->connector->base.state = NULL;
-		n1->connector->base.encoder = NULL;
+	/* Unlinks every encoder from the readout's crtcs and every connector from the readout's state and encoder. */
+	for (index = 0u; index < n1->encoder_count; index++) {
+		n1->encoders[index]->base.crtc = NULL;
+		n1->connectors[index]->base.state = NULL;
+		n1->connectors[index]->base.encoder = NULL;
 	}
 
 	/* From here the walks answer nothing. */
+	n1->encoder_count = 0u;
 	n1->live = 0;
 }
 
@@ -3573,6 +3593,172 @@ i915_n1_fill_report(
 	out->takeovers = n1->takeovers;
 	out->still_active = n1->still_active;
 	out->live = n1->live;
+}
+
+/*
+ * Adds a readout encoder and connector for each Type-C port the display
+ * declares (ws051-p004b; the Linux intel_ddi_init() makes one for every
+ * port of the VBT).
+ *
+ * Each is the takeover world's object for the port, built as
+ * intel_ddi_init() and intel_dp_init_connector() leave a Type-C DDI with
+ * DisplayPort: the port's DDI hooks and readout hooks, its lanes and I/O
+ * power domains, and its AUX channel's own DPCD access, so that a crtc
+ * the firmware left on the port (a clone of the panel) is read out with
+ * its Type-C PLL and stopped through the port.  An inactive port reads
+ * out as off and is left as it is.
+ */
+static void
+i915_n1_add_tc_ports(
+	struct i915_takeover_world *takeover)
+{
+	/* The DPCD access of a port whose AUX channel is not bound: every message refused. */
+	static const struct i915_lcd_aux_emit no_aux = {
+		NULL,
+		i915_n1_no_dpcd_read,
+		i915_n1_no_dpcd_write,
+		i915_n1_no_read_dpcd_caps
+	};
+	struct i915_n1_registry *n1;
+	struct i915_display *display;
+	struct i915_lcd_modeset *ms;
+	struct i915_tc *tc;
+	unsigned tc_port;
+	unsigned index;
+	int port;
+
+	/* Resolves the registry and its display. */
+	n1 = &takeover->n1;
+	display = takeover->display;
+
+	/* A display without bound Type-C ports has none to add. */
+	tc = drv_i915_tc_kern_ports(display);
+	if (tc == NULL)
+		return;
+
+	/* Adds each port the VBT declares. */
+	for (tc_port = 0u; tc_port < I915_N1_TC_PORTS; tc_port++) {
+		if (!tc->port[tc_port].present)
+			continue;
+
+		/* The port's object, its DDI port and its place in the walks. */
+		ms = &takeover->tc_ms[tc_port];
+		kern_memset(ms, 0, sizeof(*ms));
+		port = (int)PORT_TC1 + (int)tc_port;
+		index = n1->encoder_count;
+
+		/*
+		 * The object belongs to the display's modeset world and reaches
+		 * its sink over the port's own AUX channel; without bound
+		 * external ports that access refuses (a disable then writes
+		 * nothing to any other sink).
+		 */
+		ms->world = display->lcd_world;
+		ms->hdmi_level_shift = -1;
+		ms->aux_emit = drv_i915_dp_ext_aux_emit(display, port);
+		if (ms->aux_emit == NULL)
+			ms->aux_emit = &no_aux;
+
+		/* The encoder and digital port as intel_ddi_init() leaves them for a Type-C DDI with DP. */
+		ms->dig_port.base.base.dev = &n1->i915.drm;
+		ms->dig_port.base.base.name = "DDI TC";
+		ms->dig_port.base.base.index = index;
+		ms->dig_port.base.base.crtc = NULL;
+		ms->dig_port.base.port = (enum port)port;
+		ms->dig_port.base.type = INTEL_OUTPUT_DDI;
+		ms->dig_port.aux_ch = display->tck.aux_ch[tc_port];
+		ms->dig_port.max_lanes = 4;
+		ms->dig_port.ddi_io_power_domain = POWER_DOMAIN_PORT_DDI_IO_TC1 + (int)tc_port;
+		ms->dig_port.dp.attached_connector = &ms->connector;
+		ms->dig_port.dp.aux.name = "AUX USBC";
+
+		/* The connector: the port's DisplayPort connector, with no panel. */
+		ms->connector.base.dev = &n1->i915.drm;
+		ms->connector.base.name = "DP";
+		ms->connector.base.state = &ms->conn_state;
+		ms->connector.base.index = index;
+		ms->connector.base.connector_type = DRM_MODE_CONNECTOR_DisplayPort;
+		ms->connector.encoder = &ms->dig_port.base;
+		ms->connector.get_hw_state = drv_i915_ddi_connector_get_hw_state;
+		ms->connector.panel.vbt.backlight.controller = -1;
+		ms->conn_state.connector = &ms->connector;
+
+		/* Binds the port's DDI hooks, then the readout hooks (the Type-C clock readout). */
+		drv_i915_lcd_ms_bind_port_hooks(ms);
+		drv_i915_lcd_ms_bind_readout(&ms->dig_port.base);
+
+		/* The walks answer with the port's encoder and connector from here. */
+		n1->encoders[index] = &ms->dig_port.base;
+		n1->connectors[index] = &ms->connector;
+		n1->encoder_count++;
+	}
+
+	/* Reports what the walks hold. */
+	kern_logf("i915: N1 registry: %u encoder(s): the bound screen's and %u Type-C port(s)\n",
+		  n1->encoder_count,
+		  n1->encoder_count - 1u);
+}
+
+/* Reports the registry's encoder at an index for a disable of its throw-away state. */
+static struct intel_encoder *
+i915_n1_state_encoder_at(
+	void *walk,
+	unsigned idx)
+{
+	struct intel_encoder *encoder;
+
+	/* Asks the registry's walk. */
+	encoder = drv_i915_n1_encoder_at(walk, idx);
+
+	/* Succeeded: the encoder, or NULL past the last. */
+	return encoder;
+}
+
+/* Refuses a DPCD read of a Type-C port whose AUX channel is not bound. */
+static long
+i915_n1_no_dpcd_read(
+	void *ctx,
+	unsigned offset,
+	uint8_t *buffer,
+	size_t size)
+{
+	UNUSED_PARAMETER(ctx);
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(buffer);
+	UNUSED_PARAMETER(size);
+
+	/* No channel answers. */
+	return I915_LCD_EIO;
+}
+
+/* Refuses a DPCD write of a Type-C port whose AUX channel is not bound. */
+static long
+i915_n1_no_dpcd_write(
+	void *ctx,
+	unsigned offset,
+	const uint8_t *buffer,
+	size_t size)
+{
+	UNUSED_PARAMETER(ctx);
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(buffer);
+	UNUSED_PARAMETER(size);
+
+	/* No channel answers. */
+	return I915_LCD_EIO;
+}
+
+/* Refuses the capabilities of a Type-C port whose AUX channel is not bound. */
+static int
+i915_n1_no_read_dpcd_caps(
+	void *ctx,
+	uint8_t dpcd[15])
+{
+	UNUSED_PARAMETER(ctx);
+	UNUSED_PARAMETER(dpcd);
+
+	/* No channel answers. */
+	return I915_LCD_EIO;
 }
 
 /* Tells whether a Type-C link of an encoder on the crtc must be reset first (intel_crtc_needs_link_reset()). */
