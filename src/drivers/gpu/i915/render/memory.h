@@ -29,5 +29,6 @@ int drv_i915_gfx_free_memory(struct i915_render_session *session, struct i915_wi
 int drv_i915_gfx_bind(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int image);
 int drv_i915_gfx_requirements(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int image);
 int drv_i915_gfx_create_buffer(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+int drv_i915_gfx_create_buffer_view(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
 #endif

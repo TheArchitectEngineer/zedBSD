@@ -310,6 +310,7 @@ struct i915_image_range {
 };
 
 static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, const struct i915_image_range *range, uint32_t mocs);
+static int i915_buffer_surface_write(uint32_t *rss, const struct i915_gfx_buffer_view *view, uint32_t mocs);
 static void i915_state_target_range(const struct i915_gfx_draw_state *state, uint32_t slot, struct i915_image_range *range);
 static const struct i915_gfx_view *i915_state_target_view(const struct i915_gfx_draw_state *state, uint32_t slot);
 static int i915_state_target_integer(const struct i915_gfx_draw_state *state, uint32_t slot);
@@ -358,6 +359,66 @@ drv_i915_gfx_vertex_format_supported(
 
 	/* Succeeded: the fetcher reads the format. */
 	return 1;
+}
+
+/*
+ * Finds the surface format and the texel size of a texel buffer's format.
+ *
+ * A uniform texel buffer is a buffer surface the sampler reads with the ld
+ * message; its formats are the ones the surface state names whose texel
+ * size is known here.  Returns 0, or ENOTSUP for any other format.
+ */
+int
+drv_i915_gfx_texel_buffer_format(
+	uint32_t format,
+	uint32_t *surface_format,
+	uint32_t *bytes)
+{
+	int error;
+
+	/* The texel's size; a format of another size is not a texel buffer's here. */
+	switch (format) {
+	case VK_FORMAT_R8_UNORM:
+		*bytes = 1U;
+		break;
+	case VK_FORMAT_R8G8_UNORM:
+		*bytes = 2U;
+		break;
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SINT:
+	case VK_FORMAT_R8G8B8A8_UINT:
+	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R32_SINT:
+	case VK_FORMAT_R32_UINT:
+		*bytes = 4U;
+		break;
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+	case VK_FORMAT_R32G32_SFLOAT:
+	case VK_FORMAT_R32G32_SINT:
+	case VK_FORMAT_R32G32_UINT:
+		*bytes = 8U;
+		break;
+	case VK_FORMAT_R32G32B32_SFLOAT:
+	case VK_FORMAT_R32G32B32_SINT:
+	case VK_FORMAT_R32G32B32_UINT:
+		*bytes = 12U;
+		break;
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+	case VK_FORMAT_R32G32B32A32_SINT:
+	case VK_FORMAT_R32G32B32A32_UINT:
+		*bytes = 16U;
+		break;
+	default:
+		return ENOTSUP;
+	}
+
+	/* The surface format the surface state names it by. */
+	error = i915_surface_format(format, surface_format);
+	if (error != 0)
+		return ENOTSUP;
+
+	/* Succeeded: the format is a texel buffer's. */
+	return 0;
 }
 
 /*
@@ -2152,10 +2213,32 @@ i915_state_write_surfaces(
 			binding = kernels->ps_sampler_bindings[texture];
 		}
 
-		/* Refuses a draw whose set and binding lack the view or the sampler. */
+		/* The set the kernel names. */
 		set = NULL;
 		if (set_index < I915_GFX_BOUND_SETS && binding < I915_GFX_MAX_BINDINGS)
 			set = state->dset[set_index];
+
+		/*
+		 * A uniform texel buffer: a buffer surface read with ld, which
+		 * takes no sampler state (the heap's entry stays zero).
+		 */
+		if (set != NULL &&
+		    set->slots[binding].view == NULL &&
+		    set->slots[binding].texel != NULL) {
+			rss = I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES;
+			surface[I915_GFX_BINDING_TABLE / 4U + 1U + texture] = rss;
+			error = i915_buffer_surface_write(&surface[rss / 4U], set->slots[binding].texel, mocs);
+			if (error != 0) {
+				kern_logf("i915: vk: draw refused: set %u binding %u: texel buffer cannot be read (error %d)\n",
+					  set_index,
+					  binding,
+					  error);
+				return error;
+			}
+			continue;
+		}
+
+		/* Refuses a draw whose set and binding lack the view or the sampler. */
 		if (set == NULL ||
 		    set->slots[binding].view == NULL ||
 		    set->slots[binding].sampler == NULL) {
@@ -3081,5 +3164,78 @@ i915_state_stencil_buffer(
 	drv_i915_batch_emit(batch, image->stencil_slice_rows / 4U);
 
 	/* Succeeded: the stencil buffer is described. */
+	return 0;
+}
+
+/*
+ * Writes the RENDER_SURFACE_STATE of a uniform texel buffer, as isl fills
+ * it for a buffer (isl_buffer_fill_state_s): SURFTYPE_BUFFER of the view's
+ * format, linear, the element count less one spread over width (7 bits),
+ * height (14) and depth (11), the texel size less one as the pitch, the
+ * identity channel select and the first byte's address.  Refuses a view
+ * whose buffer is not bound, whose range runs past the buffer, or that
+ * holds no whole texel.
+ */
+static int
+i915_buffer_surface_write(
+	uint32_t *rss,
+	const struct i915_gfx_buffer_view *view,
+	uint32_t mocs)
+{
+	const struct i915_gfx_buffer *buffer;
+	uint64_t size;
+	uint64_t elements;
+	uint64_t va;
+	uint32_t format;
+	uint32_t bytes;
+	uint32_t last;
+	int error;
+
+	/* The buffer must be bound, and the view must start inside it. */
+	buffer = view->buffer;
+	if (buffer == NULL || buffer->memory == NULL)
+		return EINVAL;
+	if (view->offset > buffer->size)
+		return EINVAL;
+
+	/* The surface format and the texel size of the view's format. */
+	error = drv_i915_gfx_texel_buffer_format(view->format, &format, &bytes);
+	if (error != 0)
+		return error;
+
+	/* The bytes the view reads: to the buffer's end for VK_WHOLE_SIZE, and never past it. */
+	size = buffer->size - view->offset;
+	if (view->range != VK_WHOLE_SIZE) {
+		if (view->range > size)
+			return EINVAL;
+		size = view->range;
+	}
+
+	/* Whole texels only, at most 2^27 of them (the device's limit). */
+	elements = size / bytes;
+	if (elements == 0U)
+		return EINVAL;
+	if (elements > (1U << 27))
+		elements = 1U << 27;
+	last = (uint32_t)(elements - 1U);
+
+	/* The first texel's address. */
+	va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + view->offset);
+
+	/* Fills the surface state. */
+	kern_memset(rss, 0, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
+	rss[0] = (GEN12_SURFTYPE_BUFFER << 29) |
+	    (format << 18) |
+	    (GEN12_SURFACE_ALIGN_4 << 16) |
+	    (GEN12_SURFACE_ALIGN_4 << 14) |
+	    (GEN12_TILEMODE_LINEAR << 12);
+	rss[1] = mocs << 24;
+	rss[2] = (last & 0x7fU) | (((last >> 7) & 0x3fffU) << 16);
+	rss[3] = (((last >> 21) & 0x7ffU) << 21) | (bytes - 1U);
+	rss[7] = (4U << 25) | (5U << 22) | (6U << 19) | (7U << 16);
+	rss[8] = (uint32_t)va;
+	rss[9] = (uint32_t)(va >> 32);
+
+	/* Succeeded: the surface state describes the texels. */
 	return 0;
 }

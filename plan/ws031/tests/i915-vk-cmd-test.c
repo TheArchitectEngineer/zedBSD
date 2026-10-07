@@ -188,6 +188,16 @@ drv_i915_gfx_vertex_format_supported(uint32_t format)
 	return 0;
 }
 
+/* The texel buffer format stand-in (state.c is not in this fixture): no format is a texel buffer's. */
+int
+drv_i915_gfx_texel_buffer_format(uint32_t format, uint32_t *surface_format, uint32_t *bytes)
+{
+	(void)format;
+	(void)surface_format;
+	(void)bytes;
+	return ENOTSUP;
+}
+
 /* The graphics path stand-ins: each claims one opcode and records that it did. */
 static uint32_t gfx_obj_opcode = UINT32_MAX;
 static uint32_t gfx_rec_opcode = UINT32_MAX;

@@ -299,6 +299,22 @@ struct i915_gfx_dsl {
 };
 
 /*
+ * One VkBufferView: a range of a buffer read as texels of one format, the
+ * view a uniform texel buffer descriptor names (a GL buffer texture).  The
+ * buffer is the application's and outlives every use of the view, as
+ * Vulkan requires; the view is one allocation, freed by its destroy.
+ */
+struct i915_gfx_buffer_view {
+	/* The buffer the view reads, and the VkFormat of its texels. */
+	struct i915_gfx_buffer *buffer;
+	uint32_t format;
+
+	/* The first byte the view reads within the buffer, and how many (VK_WHOLE_SIZE: to the buffer's end). */
+	uint64_t offset;
+	uint64_t range;
+};
+
+/*
  * One VkDescriptorSet: what each binding of its layout was updated to.
  */
 struct i915_gfx_dset {
@@ -311,11 +327,13 @@ struct i915_gfx_dset {
 	/*
 	 * What each binding, indexed by binding number, was updated to: the
 	 * view and the sampler of a combined image sampler, or the buffer and
-	 * the range of a uniform buffer.  A dynamic uniform buffer's range
-	 * moves by the dynamic offset its descriptor set bind gives it.
+	 * the range of a uniform buffer, or the buffer view of a uniform texel
+	 * buffer.  A dynamic uniform buffer's range moves by the dynamic
+	 * offset its descriptor set bind gives it.
 	 */
 	struct {
 		struct i915_gfx_view *view;
+		struct i915_gfx_buffer_view *texel;
 		struct i915_gfx_sampler *sampler;
 		struct i915_gfx_buffer *buffer;
 		uint64_t offset;

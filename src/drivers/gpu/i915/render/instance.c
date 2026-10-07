@@ -551,7 +551,10 @@ i915_instance_format_features(
 	uint32_t format,
 	VkFormatProperties *properties)
 {
+	uint32_t surface_format;
+	uint32_t texel_bytes;
 	int supported;
+	int error;
 
 	/* A format not listed below has no feature. */
 	kern_memset(properties, 0, sizeof(*properties));
@@ -648,6 +651,11 @@ i915_instance_format_features(
 	supported = drv_i915_gfx_vertex_format_supported(format);
 	if (supported != 0)
 		properties->bufferFeatures |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
+
+	/* A format the sampler reads from a buffer may be a uniform texel buffer's (a GL buffer texture). */
+	error = drv_i915_gfx_texel_buffer_format(format, &surface_format, &texel_bytes);
+	if (error == 0)
+		properties->bufferFeatures |= VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
 }
 
 /*

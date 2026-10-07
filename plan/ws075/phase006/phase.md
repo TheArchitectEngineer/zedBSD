@@ -226,3 +226,17 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
    増分ごとに host の fixture（`sh plan/ws031/tests/run-vk-host-tests.sh "pipe cmdbuf compile"`）を先に通す。
 4. 回帰（3 の範囲）: guide.md §5.3 と §6.4 の test-hw（`I915_HOST=solaris10-man`）、boot test（guide.md §5.4）。
 5. 結果を「検証」の表に、passthrough と QEMU を分けて書く。
+
+## 増分 7: uniform texel buffer（2026-10-07 夕、P1、q833）
+
+- 範囲（Q1 の ACK）: p006 の残りのうち texel buffer（buffer view）。sampler2DMS は次の増分。render の compiler・実行器だけ、display は触らない。
+- 以前は `vkCreateBufferView`（opcode 52）を実行器のどの module も持たず、stream ごと拒まれていた（libglesv2 は buffer texture と「黒い」texel buffer に buffer view を作る）。
+- 実行器: `struct i915_gfx_buffer_view`（gfx.h）、`drv_i915_gfx_create_buffer_view`（memory.c、知らない buffer・texel buffer に無い format・buffer の外の offset は失敗）、destroy は generic（objects.c、session の close の解放の表にも）。descriptor の texel buffer view を binding に（descriptor.c、image と texel は互いに消す）。draw の binding table で texel の slot は SURFTYPE_BUFFER の surface state（state.c `i915_buffer_surface_write`、isl_buffer_fill_state_s の事実: 要素数 −1 を width 7・height 14・depth 11 bit に、pitch = texel −1、linear、identity の channel select）。sampler state は書かない（ld は使わない、heap は 0）。`drv_i915_gfx_texel_buffer_format`（state.c、R8・RG8・RGBA8 unorm/sint/uint・R32・RG32・RGB32・RGBA32 の float/sint/uint・RGBA16F）と、その format の `bufferFeatures` に `UNIFORM_TEXEL_BUFFER_BIT`（instance.c）。`GEN12_SURFTYPE_BUFFER 4`（intel/genxml.h、gen120.xml 141 行の値）。
+- compiler: `OpImageFetch` が Dim Buffer の image を受ける（1 座標、v = 0、level 0 の ld、level・offset・arrayed は拒む）。
+- 試験の直し（見つけた担当の直し）: `plan/ws031/tests/i915-vk-cmd-test.c` に `drv_i915_gfx_texel_buffer_format` の stand-in、`i915-vk-resdispatch-test.c` の bufferFeatures の期待に texel buffer の bit。
+
+| コマンド | 結果 |
+| --- | --- |
+| `plan/ws031/tests/run-vk-host-tests.sh` の写し（trap の rm を外し、work を build/tmp に） | 10 個 × plain・ASan/UBSan すべて PASS（`WS031 vk host fixtures PASS`） |
+
+未実施: texel buffer を実際に読む host の fixture（surface state の dword の検算）、vmunix の build、実機（GL の samplerBuffer の場面、5330）。VS の texel buffer は VS の sampled image と同じく実行器が PS だけなので未対応（backlog）。`textureSize(samplerBuffer)`（OpImageQuerySize の buffer）は未対応（backlog）。

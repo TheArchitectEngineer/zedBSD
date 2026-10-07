@@ -335,9 +335,9 @@ i915_gfx_update_unknown_image(
 }
 
 /*
- * Reads one descriptor write and applies its first image descriptor, or
- * its first buffer descriptor when it is a uniform buffer, plain or
- * dynamic.
+ * Reads one descriptor write and applies its first image descriptor, its
+ * first buffer descriptor when it is a uniform or storage buffer, plain or
+ * dynamic, or its first texel buffer view (a uniform texel buffer).
  *
  * A write is [sType][pNext][set][binding][element][count][type][images]
  * {[sampler][view][layout]}[buffers]{VkDescriptorBufferInfo}[texel views]
@@ -356,6 +356,7 @@ i915_gfx_update_write(
 	uint64_t sampler;
 	uint64_t view;
 	uint64_t buffer_id;
+	uint64_t texel;
 	uint32_t binding;
 	uint32_t type;
 
@@ -394,9 +395,10 @@ i915_gfx_update_write(
 		    binding >= I915_GFX_MAX_BINDINGS)
 			continue;
 
-		/* The binding samples this view with this sampler from here on. */
+		/* The binding samples this view with this sampler from here on, and no texel buffer. */
 		dset->slots[binding].sampler = drv_i915_object_lookup(session, I915_VK_OBJ_SAMPLER, sampler);
 		dset->slots[binding].view = drv_i915_object_lookup(session, I915_VK_OBJ_IMAGE_VIEW, view);
+		dset->slots[binding].texel = NULL;
 
 		/* Says so when a handle names no object of the session (BUG-117): the draws that sample the binding are refused. */
 		if ((dset->slots[binding].sampler == NULL && sampler != 0U) ||
@@ -454,11 +456,29 @@ i915_gfx_update_write(
 	if (count > I915_GFX_MAX_UPDATE_ITEMS)
 		return EINVAL;
 
-	/* Skips each texel buffer view; none is bound. */
-	for (item = 0U; item < count; item++)
-		(void)drv_i915_wire_read_u64(reader);
+	/* Reads every texel buffer view and applies the first to a known set's binding. */
+	for (item = 0U; item < count; item++) {
+		texel = drv_i915_wire_read_u64(reader);
 
-	/* Succeeded: the write is read and its first image or uniform buffer descriptor applied. */
+		/* Only the first descriptor of a known set within the set's bindings is applied. */
+		if (item != 0U ||
+		    dset == NULL ||
+		    binding >= I915_GFX_MAX_BINDINGS)
+			continue;
+
+		/* The binding reads this view's texels from here on, and no image. */
+		dset->slots[binding].texel = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER_VIEW, texel);
+		dset->slots[binding].view = NULL;
+		dset->slots[binding].sampler = NULL;
+
+		/* Says so when the handle names no buffer view of the session: the draws that read the binding are refused. */
+		if (dset->slots[binding].texel == NULL && texel != 0U)
+			kern_logf("i915: vk: vkUpdateDescriptorSets: binding %u: texel buffer view 0x%llx is not known\n",
+				  binding,
+				  (unsigned long long)texel);
+	}
+
+	/* Succeeded: the write is read and its first image, uniform buffer or texel buffer descriptor applied. */
 	return 0;
 }
 
