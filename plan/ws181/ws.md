@@ -2,7 +2,7 @@
 
 # WS181: 窓の docked・floating・最小化の状態、App Home の独立のモード、gesture、整列のメニューと整列モード（UAT 2026-10-07）
 
-Status: planning（2026-10-07 ユーザーの UAT から作成。段・Phase は Q1 の質問の答えの後）
+Status: planned（2026-10-07 ユーザーの UAT から作成。クリック: 「ベータ2、UAT として優先」）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -23,10 +23,21 @@ Primary Milestone: MG006
 5. **整列のメニュー**: dock の bar の仮想 desktop の切り替えの switch を tap → 整列のメニュー（水平に等分、垂直に等分、右に 1 つと左に縦の分割、など）。どの app をどの枠にするかは今の窓の位置から大まかに決める。
 6. **整列モード**: 整列モードで title bar を drag すると、他の枠の窓と位置を入れ替える。整列モードで title bar の double click か dock の bar への drag → その窓が最大化され整列モードは終わる。最大化が終わると普通の floating（整列の解除の手順は要らない）。
 
+## 決定（2026-10-07 ユーザー、クリック）
+
+- 段と優先: ベータ2、UAT として優先（P2 が hardware より先に）。
+- 整列のメニューの形（全部）: 水平に等分（左右に並べる）、垂直に等分（上下に並べる）、右に 1 つと左に縦の分割、左に 1 つと右に縦の分割（ユーザーの追加「左に1つ、右に縦分割も。」）、格子（2×2 など）。
+
+## Phase（案）
+
+| Phase | 内容 | Status |
+| --- | --- | --- |
+| p001 | 設計（窓の状態の機械: floating・docked・docking の隠れ・最小化・整列、App Home の独立のモード、gesture、整列のメニューと整列モード）、design-reviewer | planned |
+| p002 | 状態（目標 1・2） | planned |
+| p003 | App Home の独立のモードと gesture（目標 3・4） | planned |
+| p004 | 整列のメニューと整列モード（目標 5・6） | planned |
+
 ## 関連
 
 - ws142（app の切り替え・Alt+Tab・gesture）、ws099（compositor）、2026-10-06 の「最大化は desktop の tablet mode」の解釈（master の decisions-log）、docs/architecture/keiland.md の Desktop modes。
 
-## Phase
-
-（Q1 がユーザーの答えの後に作る）

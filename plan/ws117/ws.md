@@ -3,7 +3,7 @@
 # WS117: Linux の本物の Qt6 の動作を調査し、素の Qt6 アプリが動くように compositor を改良する
 
 <!-- awesome-plan-current:start -->
-Status: planned
+Status: planned（2026-10-07 ユーザー（クリック）: ベータ3 以降）
 Primary Milestone: MG006
 Related Milestones: MG002（WS115/WS116 の移植の前提）
 Objectives: O2
