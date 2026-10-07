@@ -104,7 +104,7 @@ blocking 4・should-fix 10・minor 6。人の判断は §10。
 | S5 色の丸の check が白固定、各色の ink を返す API が無い | §9 B1 の `ka_accent_values` が accent・ink・accent_text・selection を返す。丸の check はその色の ink |
 | S6 protocol の細部 | `theme-protocol.c` の interface の version 2・event 2（`accent` の signature は `"2u"`、version 1 の proxy への event は libwayland の wire が拒む）。compositor の `protocol.c` の global を 2 に、`theme_send` は `object->version >= 2` の時だけ opcode 1。log は `KWL THEME appearance=N accent=M`（両方を 1 行） |
 | S7 ws.md に p002 と規約の見直しが無い | ws.md の Phase の表に p002（6 app）と p003（規約の全文の見直し）を足す |
-| S8 試験の不足 | 追加: index 0 の結果が今の `theme_light`・`theme_dark`・Settings と Files の palette の accent・selection と同じ（回帰）、compositor の `theme_send` が version 1 の object に opcode 1 を送らない（host、wire の記録）、`kwl_accent` が `shape.light = 1` を立てる。T1 は log（`KWL THEME … accent=N`、Settings・Files の `ACCENT index=N` の行）で判定し、撮影は 3 色（blue・yellow・graphite）× light・dark に絞り、Files の desktop の icon も撮る。AAT のシナリオ（`tests/scenarios/desktop/appearance/`）に accent を 1 本足すのは p003 の前に。色の丸の control の index は `LOOK_ACCENT_FIRST = 200`（`LOOK_DARK=2`・`LOOK_PICTURE_FIRST=100` と重ならない） |
+| S8 試験の不足 | 追加: index 0 の結果が今の `theme_light`・`theme_dark`・Settings と Files の palette の accent・selection と同じ（回帰）、compositor の `theme_send` が version 1 の object に opcode 1 を送らない（host、wire の記録）、`kwl_accent` が `shape.light = 1` を立てる。T1 は log（`KWL THEME … accent=N`、Settings・Files の `ACCENT index=N` の行）で判定し、撮影は 3 色（blue・yellow・graphite）× light・dark に絞り、Files の desktop の icon も撮る。AAT のシナリオ（`tests/scenarios/desktop/appearance/`）に accent を 1 本足すのは p003 の前に。色の丸の control の index は `LOOK_ACCENT_FIRST = 90`〜97（`LOOK_DARK=2` と、`index >= LOOK_PICTURE_FIRST(100)` の壁紙の範囲の手前） |
 | S9 Settings の Network の graph の色（`page-network.c`） | data の色として従わせない（記録） |
 | S10 red・green が danger・good と近い | §10 (a) |
 | M1 | `exports.py` で `exports.map` を作り直し、`keiland.h` の KL_VERSION の説明に 57、`struct kl_theme` の説明（「One theme exists so far」）と `kl_appearance_fn` の説明（accent の変化でも呼ぶ）を直す |
@@ -121,15 +121,15 @@ blocking 4・should-fix 10・minor 6。人の判断は §10。
 | index | 名 | light: accent / ink / text | dark: accent / ink / text |
 | --- | --- | --- | --- |
 | 0 | blue（既定） | `0x2f7cf6` / 白 / `0x2f7cf6`（今のまま、例外 §10） | `0x2f7cf6` / 白 / `0x2f7cf6`（今のまま、例外） |
-| 1 | purple | `0x8553f5` / 白 / `0x6628f2` | `0x9367f7` / 黒 / `0xb99dfa` |
-| 2 | pink | `0xdb2676` / 白 / `0xaa1c5b` | `0xe1488c` / 黒 / `0xec8ab5` |
-| 3 | red | `0xdc2f3c` / 白 / `0xb01e29` | `0xe1505a` / 黒 / `0xec8e94` |
-| 4 | orange | `0xd4690b` / 黒 / `0x944908` | `0xe8730c` / 黒 / `0xf69b4b` |
-| 5 | yellow | `0xa48207` / 黒 / `0x735c05` | `0xf5c518` / 黒 / `0xf5c518` |
-| 6 | green | `0x1e9a53` / 黒 / `0x156b3a` | `0x1f9d55` / 黒 / `0x27c66b` |
-| 7 | graphite | `0x5b6472` / 白 / `0x545c69` | `0x798494` / 黒 / `0xa7afb9` |
+| 1 | purple | `0x8553f5` / 白 / `0x6526f2` | `0x9367f7` / 黒 / `0xc0a6fa` |
+| 2 | pink | `0xdb2676` / 白 / `0xa91c5a` | `0xe1488c` / 黒 / `0xee95bc` |
+| 3 | red | `0xdc2f3c` / 白 / `0xaf1d28` | `0xe1505a` / 黒 / `0xee999f` |
+| 4 | orange | `0xd4690b` / 黒 / `0x934908` | `0xe8730c` / 黒 / `0xf7a65e` |
+| 5 | yellow | `0xa48207` / 黒 / `0x735b05` | `0xf5c518` / 黒 / `0xf6cc32` |
+| 6 | green | `0x1e9a53` / 黒 / `0x156b3a` | `0x1f9d55` / 黒 / `0x29cf70` |
+| 7 | graphite | `0x5b6472` / 白 / `0x4d5460` | `0x798494` / 黒 / `0xb9bfc7` |
 
-黒は `0x16191f`。dark の外観では地の control・card が明るいので、purple・pink・red・graphite も accent が明るくなり ink は黒になる（§10 (e)）。
+黒は `0x16191f`。text の列は実装の時に、selection を card・control の上にも重ねた地で 4.6 を満たすよう取り直した（graphite の selection は α 60・90、host-accent.c が固定）。dark の外観では地の control・card が明るいので、purple・pink・red・graphite も accent が明るくなり ink は黒になる（§10 (e)）。
 
 ## 10. 人の判断（第 2 版、§7 を置き換える）
 
@@ -141,3 +141,14 @@ blocking 4・should-fix 10・minor 6。人の判断は §10。
 | (c) | login・lock の画面（greeter）と、Files の desktop の icon を accent に従わせるか | desktop の icon は従う、greeter は従わない（user の設定の前の画面を兼ねる） |
 | (d) | yellow の light `0xa48207`（暗い芥子色）と dark `0xf5c518` の違いを「yellow」として出してよいか | よい（light の地の上で 3.0 を満たす最も明るい黄） |
 | (e) | dark の外観で purple・pink・red・graphite の主の button の文字が黒になってよいか（白にすると accent が暗くなり dark の control・card の上で 3.0 を割る） | よい |
+
+### 10.1 ユーザーの回答（2026-10-07、Q1 経由のクリック）
+
+全部推奨どおり: 1 既定の blue は今のまま（例外として記録）、(a) red・green はそのまま、(b) compositor の `0x4085fa` は accent に揃える、(c) Files の desktop の icon だけ従い greeter は既定の青、(d) yellow は light `0xa48207`・dark `0xf5c518`、(e) dark の purple・pink・red・graphite の主の button の文字は黒。
+
+### 10.2 実装で決めたこと（技術の範囲）
+
+- compositor の dark の写像の外し方: shape を直に作る所は `shape.light = 1`、`glass_draw_*` を通す所は `kwl_accent_as_is`・`kwl_accent_done`（`server->keep_colours` を退避して立てる）で accent の図形とその上の ink だけを囲む。ground の選び方は `server->dark`、App Home と Wiseview は暗い地（1）。
+- Files の desktop mode は外観を watch しない（libkeiland の theme が dark になり、desktop の rename の欄が暗くなるため）。代わりに `kl_settings` で `appearance.accent` を読み watch し、light の値を `fm_palette_take` で取る。
+- 主の button の hover の陰: 主と危険の button は ink から遠ざかる向き（`widgets_shade`）、他の button は今のまま `theme->text` へ。blue の dark の hover は前（明るく）から暗くなる向きに変わる。
+- Settings の色の丸の keyboard の操作（左右）は今回入れない（click だけ、backlog）。

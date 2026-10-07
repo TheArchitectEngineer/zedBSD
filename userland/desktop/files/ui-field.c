@@ -291,7 +291,7 @@ fm_field_draw(
 		/* Where the selection starts and ends on the screen. */
 		start_x = kl_text_width(app->text, field->text, first, pixels, 0);
 		end_x = kl_text_width(app->text, field->text, last, pixels, 0);
-		kl_canvas_round(canvas, (float)(rect->x + start_x - shift), (float)(rect->y + 3), (float)(end_x - start_x), (float)(rect->height - 6), 3.0f, KL_RGBA(0x2f7cf6, 70));
+		kl_canvas_round(canvas, (float)(rect->x + start_x - shift), (float)(rect->y + 3), (float)(end_x - start_x), (float)(rect->height - 6), 3.0f, KL_RGBA(FM_COLOR_ACCENT, 70));
 	}
 
 	/* The text and the cursor. */

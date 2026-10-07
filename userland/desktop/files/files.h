@@ -104,11 +104,16 @@ struct fm_palette {
 	kl_color inner;
 	kl_color tile;
 	kl_color rail;
+
+	/* The ink of text and marks on the accent, and the accent as the colour of text (ws179-p001). */
+	kl_color accent_ink;
+	kl_color accent_text;
 };
 
 /* The set in use, and the choice of the appearance's (KL_APPEARANCE_*; palette.c). */
 extern const struct fm_palette *fm_palette;
 void fm_palette_set(unsigned appearance);
+void fm_palette_take(unsigned appearance, const struct kl_accent *values);
 const struct fm_palette *fm_palette_of(unsigned appearance);
 
 #define FM_COLOR_BACKGROUND_TOP	(fm_palette->background_top)
@@ -126,6 +131,8 @@ const struct fm_palette *fm_palette_of(unsigned appearance);
 #define FM_COLOR_TITLE		(fm_palette->title)
 #define FM_COLOR_ICON		(fm_palette->icon)
 #define FM_COLOR_ACCENT		(fm_palette->accent)
+#define FM_COLOR_ACCENT_INK	(fm_palette->accent_ink)
+#define FM_COLOR_ACCENT_TEXT	(fm_palette->accent_text)
 #define FM_COLOR_SELECTION	(fm_palette->selection)
 #define FM_COLOR_SELECTION_INACTIVE	(fm_palette->selection_inactive)
 #define FM_COLOR_HOVER		(fm_palette->hover)

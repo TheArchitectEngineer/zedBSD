@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band; 54: the arrivals of mail, kl_system_mail_arrived, kl_system_mail_listen and kl_system_take_mail_event; 55: the phone, kl_system_phone_send, kl_system_phone_call and kl_system_take_phone_event; 56: the printers, kl_system_printers_* and kl_system_print_*). */
-#define KL_VERSION	56U
+/* The interface version this header describes (2: the System Menu; 3: the recent files; 4: the titlebar; 5: the glass panels; 6: context menus; 7: drop targets in the titlebar; 8: the network; 9: the touch motion; 10: the scroller and the gestures; 11: the network's links, DNS and saved keys; 12: the file chooser (moved to the widgets with 16); 13: the desktop's preferences; 14: the desktop surface; 15: the sound output's volume; 16: the file chooser removed, now the widgets' kl_file_chooser; 17: kl_glass_set_blur; 18: the keyboard inset; 19: the editing operations; 20: the titlebar's sheet mode; 21: whether a sound service runs; 22: the network and the sound moved to kl_system_*, the old network and sound calls removed; 23: the machine's monitor, kl_system_monitor_*; 24: kl_system_network_set_scanning; 25: kl_titlebar_set_suggestions; 26: the application, kl_app_*, and the declarative menus, controls and glass of a window; 27: kl_system_account_set_password; 28: the removable volumes, kl_system_devices_mount; 29: the wired interfaces' configuration, kl_system_network_configure_wired; 30: Remote Login, kl_system_sharing_*; 31: the administration of the accounts, kl_system_account_administer; 32: one copy of a program and the activation, kl_instance_* and kl_activation_*; 33: a removable device's file system and size, kl_system_devices_info; 34: the lock screen's PIN, kl_system_account_set_pin; 35: the desktop's appearance, light or dark, kl_appearance_*; 36: what the user has enrolled, kl_system_account_enrolled; 37: the translations, kl_tr_*; 38: an input method's text for the focused widget, kl_ui_text and kl_ui_text_wanted; 39: a network link's speed, kl_network_link's link_mbps; 40: a touch pad's scrolling that flies on, kl_window_event's axis_source and KL_WINDOW_AXIS_STOP, kl_ui_axis, kl_scroll_axis and kl_axis_track; 41: the one inertia of every program, a touch pad's fingers on kl_scroller, kl_scroller_axis, _axis_stop and _axis_holding, kl_scroller_release's answer; 42: what a window shows, kl_window_set_content_type; 43: KL_WINDOW_AXIS_STOP is 18, apart from KL_WINDOW_ACTION; 44: a window's tabs, its selections' changes, drag and drop, kl_window_set_tabs and the others; 45: a window maximized, minimized, its screen's mode, its device, its frame's times and a breadcrumb's parts; 46: the desktop surface's role, drag and drop's actions and data, a drag over the titlebar's controls; 47: a window's input for its widgets and the text input of their fields, kl_ui_window_input and kl_ui_window_text, and the text area; 48: kl_slider_flags, kl_sidebar_place, kl_text_companions; 49: notifications, kl_system_notify, kl_system_notify_withdraw, kl_system_take_notify_event and kl_app_notify; 50: the recent list emptied and stopped, kl_recent_clear, kl_recent_set_keep and kl_recent_keep; 51: an application watches up to 64 descriptors, KL_APP_FDS_MAX; 52: the user's security keys, kl_system_account_add_key, kl_system_account_remove_key, kl_system_account_keys and kl_system_account_touched; 53: the views of many items, kl_list_header, kl_list_item, kl_list_cell, kl_grid_layout, kl_grid_cell, kl_grid_icon, kl_grid_item and kl_band; 54: the arrivals of mail, kl_system_mail_arrived, kl_system_mail_listen and kl_system_take_mail_event; 55: the phone, kl_system_phone_send, kl_system_phone_call and kl_system_take_phone_event; 56: the printers, kl_system_printers_* and kl_system_print_*; 57: the accent the user chose, kl_accent_get and kl_accent_values, the theme's accent_ink and accent_text). */
+#define KL_VERSION	57U
 
 /*
  * Reports the interface version of the library that was loaded.
@@ -2095,7 +2095,7 @@ int kl_activate(struct wl_display *display, struct wl_surface *surface, const ch
 /* The appearance watched on one connection. */
 struct kl_appearance;
 
-/* Called with the new appearance (KL_APPEARANCE_*) when it changes, within the dispatch of the display's default queue. */
+/* Called with the appearance (KL_APPEARANCE_*) when it or the accent changes (KL_VERSION 57), within the dispatch of the display's default queue. */
 typedef void (*kl_appearance_fn)(void *data, unsigned appearance);
 
 /*
@@ -2468,9 +2468,9 @@ uint32_t kl_utf8_next(const char *string, size_t length, size_t *index);
 
 /*
  * The theme: the colours and sizes of the Kei look, which every widget
- * draws with (the file manager's values, plan/ws071/spec.md).  One theme
- * exists so far, the light one; an application reads it and does not
- * change it.
+ * draws with (the file manager's values, plan/ws071/spec.md), in the
+ * light or the dark appearance with the accent the user chose (KL_VERSION
+ * 57); an application reads it and does not change it.
  */
 struct kl_theme {
 	/* The window's ground (a vertical gradient) and the cards on it. */
@@ -2525,6 +2525,14 @@ struct kl_theme {
 	int control_height;
 	int switch_width;
 	int switch_height;
+
+	/*
+	 * KL_VERSION 57 (ws179-p001): the ink of text and marks drawn on the
+	 * accent (white or nearly black, whichever reads), and the accent as
+	 * the colour of text on the window's ground.
+	 */
+	kl_color accent_ink;
+	kl_color accent_text;
 };
 
 /* The theme (theme.c). */
@@ -2536,6 +2544,37 @@ const struct kl_theme *kl_theme_default(void);
  * dark one -- for a program's colours of its own beside the theme's.
  */
 kl_color kl_theme_choose(kl_color light, kl_color dark);
+
+/*
+ * The accent the user chose in Settings (KL_VERSION 57, ws179-p001): one of
+ * eight colours, told with the appearance (kl_theme_v1 version 2); the
+ * theme's accent, selection, accent_ink and accent_text follow it, and a
+ * watch's callback is called when it changes.  A compositor that does not
+ * tell it leaves blue.
+ */
+#define KL_ACCENT_BLUE		0U
+#define KL_ACCENT_PURPLE	1U
+#define KL_ACCENT_PINK		2U
+#define KL_ACCENT_RED		3U
+#define KL_ACCENT_ORANGE	4U
+#define KL_ACCENT_YELLOW	5U
+#define KL_ACCENT_GREEN		6U
+#define KL_ACCENT_GRAPHITE	7U
+#define KL_ACCENTS		8U
+
+/* An accent's colours in one appearance: the accent, the ink on it, the accent as text, and the selection's ground. */
+struct kl_accent {
+	kl_color accent;
+	kl_color ink;
+	kl_color text;
+	kl_color selection;
+};
+
+/* The accent (KL_ACCENT_*) the program was told last (blue before any). */
+unsigned kl_accent_get(void);
+
+/* An accent's colours in an appearance (KL_APPEARANCE_*), for a program that shows the choices. */
+void kl_accent_values(unsigned accent, unsigned appearance, struct kl_accent *values);
 
 /* The icons (icons.c and icons-line.c). */
 void kl_icon_draw(struct kl_canvas *canvas, enum kl_icon icon, float x, float y, float size, kl_color color);

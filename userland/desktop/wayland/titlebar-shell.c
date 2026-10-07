@@ -1285,15 +1285,16 @@ kwl_titlebar_draw_suggestions(
 	struct kwl_server *server,
 	VkCommandBuffer command)
 {
-	static const float lit_ground[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	struct shell_suggestions *suggestions;
 	struct shell_field *field;
 	struct glass_shape shape;
-	const float *colour;
+	float lit_ground[4];
+	float lit_ink[4];
+	unsigned kept;
 	int32_t height;
 	int32_t row_y;
+	int lit;
 	int under;
 	size_t index;
 
@@ -1333,19 +1334,30 @@ kwl_titlebar_draw_suggestions(
 		printf("KWL TITLEBAR suggestions shown x=%d y=%d width=%d row=%d first=%d count=%u\n", suggestions->x, suggestions->y, suggestions->width, SUGGEST_ROW, suggestions->y + SUGGEST_PADDING, (unsigned)suggestions->count);
 	}
 
+	/* The lit row's ground and ink: the accent the user chose, on the popup's ground (ws179-p001). */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, lit_ground);
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, lit_ink);
+
 	/* Each row: lit by the keys, or under the pointer when none is. */
 	suggestions->drawn = 1;
 	under = shell_suggest_at(server->pointer_x, server->pointer_y);
 	for (index = 0; index < suggestions->count; index++) {
 		row_y = suggestions->y + SUGGEST_PADDING + (int32_t)index * SUGGEST_ROW;
-		colour = ink;
-		if ((int)index == suggestions->lit || (suggestions->lit < 0 && (int)index == under)) {
-			glass_draw_solid(server, command, (float)(suggestions->x + 4), (float)row_y, (float)(suggestions->width - 8), (float)SUGGEST_ROW, 7.0f, lit_ground);
-			colour = white;
+		lit = 0;
+		if ((int)index == suggestions->lit || (suggestions->lit < 0 && (int)index == under))
+			lit = 1;
+
+		/* A row not lit: its label in the popup's ink. */
+		if (!lit) {
+			glass_draw_text(server, command, SIZE_BAR, suggestions->x + 14, row_y + SUGGEST_ROW / 2 + 5, suggestions->labels[index], suggestions->width - 28, ink);
+			continue;
 		}
 
-		/* The label. */
-		glass_draw_text(server, command, SIZE_BAR, suggestions->x + 14, row_y + SUGGEST_ROW / 2 + 5, suggestions->labels[index], suggestions->width - 28, colour);
+		/* The lit row: the accent's ground and its ink, drawn as they are. */
+		kept = kwl_accent_as_is(server);
+		glass_draw_solid(server, command, (float)(suggestions->x + 4), (float)row_y, (float)(suggestions->width - 8), (float)SUGGEST_ROW, 7.0f, lit_ground);
+		glass_draw_text(server, command, SIZE_BAR, suggestions->x + 14, row_y + SUGGEST_ROW / 2 + 5, suggestions->labels[index], suggestions->width - 28, lit_ink);
+		kwl_accent_done(server, kept);
 	}
 }
 
@@ -1766,12 +1778,13 @@ shell_draw_button(
 	float fade,
 	unsigned recording)
 {
-	static const float accent[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	float accent[4];
 	float ground[4];
 	float colour[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	unsigned icon;
 	unsigned enabled;
 	unsigned checked;
+	unsigned kept;
 	int32_t label_width;
 	int hovered;
 
@@ -1806,10 +1819,14 @@ shell_draw_button(
 		glass_draw_solid(server, command, (float)x, (float)y, (float)width, (float)size, (float)(size / 2), ground);
 	}
 
-	/* The icon (the accent when checked), or a label, pale when it does nothing. */
+	/* The icon (the accent the user chose when checked, as it is), or a label, pale when it does nothing. */
 	shell_colour(colour, ink, fade);
-	if (checked != 0U)
+	kept = server->keep_colours;
+	if (checked != 0U) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, accent);
 		shell_colour(colour, accent, fade);
+		kept = kwl_accent_as_is(server);
+	}
 	if (enabled == 0U)
 		colour[3] *= 0.35f;
 	if (control != NULL && (control->role == KWL_CONTROL_GENERIC || control->role == KWL_CONTROL_PRIMARY_ACTION) && width > size) {
@@ -1818,6 +1835,7 @@ shell_draw_button(
 	} else {
 		glass_draw_icon(server, command, icon, x + (width - (int32_t)ICON_PIXELS) / 2, y + (size - (int32_t)ICON_PIXELS) / 2, ICON_PIXELS, colour);
 	}
+	kwl_accent_done(server, kept);
 
 	/* A control (not "...", which the menus record) can be pressed. */
 	if (recording != 0U && control != NULL)
@@ -1844,7 +1862,7 @@ shell_draw_search(
 	float fade,
 	unsigned recording)
 {
-	static const float accent[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
+	float accent[4];
 	float ground[4];
 	float colour[4];
 	const char *text;
@@ -1852,6 +1870,7 @@ shell_draw_search(
 	int32_t height;
 	int32_t top;
 	unsigned focused;
+	unsigned kept;
 
 	/* The field is a little lower than a button, in the middle. */
 	height = size - 4;
@@ -1863,11 +1882,14 @@ shell_draw_search(
 	if (shell_titlebar.field.surface == surface && shell_titlebar.field.id == control->id)
 		focused = 1;
 
-	/* The accent edge while it has the keyboard, and the field's ground. */
+	/* The edge in the accent the user chose (as it is) while it has the keyboard, and the field's ground. */
 	if (focused != 0U) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, accent);
 		shell_colour(colour, accent, fade);
 		colour[3] *= 0.8f;
+		kept = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)x - 1.5f, (float)top - 1.5f, (float)width + 3.0f, (float)height + 3.0f, (float)(height / 2) + 1.5f, colour);
+		kwl_accent_done(server, kept);
 	}
 
 	/* The ground, whiter while it has the keyboard. */
@@ -2030,7 +2052,6 @@ shell_draw_field_text(
 	const float *ink,
 	float fade)
 {
-	static const float selection[4] = { 0.18f, 0.49f, 0.96f, 0.25f };
 	struct shell_field *field;
 	char before[KWL_TITLEBAR_TEXT_MAX + 1U];
 	char shown[2U * KWL_TITLEBAR_TEXT_MAX + 1U];
@@ -2042,6 +2063,7 @@ shell_draw_field_text(
 	int32_t start_x;
 	int32_t end_x;
 	int32_t cursor_x;
+	unsigned kept;
 
 	/* The selection's ends in order. */
 	field = &shell_titlebar.field;
@@ -2073,9 +2095,10 @@ shell_draw_field_text(
 	if (end_x > width)
 		end_x = width;
 	if (end > start && end_x > start_x) {
-		memcpy(colour, selection, sizeof(colour));
-		colour[3] *= fade;
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.25f * fade, colour);
+		kept = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)(x + start_x), (float)(baseline - 14), (float)(end_x - start_x), 18.0f, 2.0f, colour);
+		kwl_accent_done(server, kept);
 	}
 
 	/* The text with the input method's preedit at the cursor (BUG-177), underlined; the cursor after it. */
@@ -2107,9 +2130,9 @@ shell_draw_progress(
 	float fade)
 {
 	static const float track[4] = { 0.12f, 0.16f, 0.24f, 0.14f };
-	static const float accent[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	float colour[4];
 	float share;
+	unsigned kept;
 
 	/* The share done. */
 	share = (float)control->value / 1000.0f;
@@ -2120,9 +2143,10 @@ shell_draw_progress(
 	memcpy(colour, track, sizeof(colour));
 	colour[3] *= fade;
 	glass_draw_solid(server, command, (float)x + 4.0f, (float)(y + size / 2 - 3), (float)size - 8.0f, 6.0f, 3.0f, colour);
-	memcpy(colour, accent, sizeof(colour));
-	colour[3] *= fade;
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, fade, colour);
+	kept = kwl_accent_as_is(server);
 	glass_draw_solid(server, command, (float)x + 4.0f, (float)(y + size / 2 - 3), ((float)size - 8.0f) * share, 6.0f, 3.0f, colour);
+	kwl_accent_done(server, kept);
 }
 
 /*
@@ -2490,12 +2514,12 @@ shell_draw_tab(
 	unsigned recording,
 	int32_t *close_x)
 {
-	static const float accent[4] = { 0.18f, 0.49f, 0.96f, 1.0f };
 	float ground[4];
 	float colour[4];
 	unsigned active;
 	unsigned closable;
 	unsigned shows_close;
+	unsigned kept;
 	int32_t text_x;
 	int32_t text_room;
 	int32_t close;
@@ -2536,9 +2560,10 @@ shell_draw_tab(
 	/* A dot before the title of a tab that wants attention. */
 	text_x = tab->x + TAB_PADDING;
 	if ((tab->tab->flags & KWL_TAB_ATTENTION) != 0U) {
-		memcpy(colour, accent, sizeof(colour));
-		colour[3] *= fade;
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, fade, colour);
+		kept = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)text_x, (float)(y + size / 2 - 3), 6.0f, 6.0f, 3.0f, colour);
+		kwl_accent_done(server, kept);
 		text_x += TAB_ATTENTION;
 	}
 
@@ -2689,11 +2714,11 @@ shell_draw_drop_part(
 	int32_t size,
 	float fade)
 {
-	static const float edge[4] = { 0.18f, 0.49f, 0.96f, 0.9f };
-	static const float face[4] = { 0.86f, 0.92f, 1.0f, 0.95f };
+	static const float face[4] = { 1.0f, 1.0f, 1.0f, 0.95f };
 	struct kwl_titlebar_model *model;
 	struct kwl_object *titlebar;
 	float colour[4];
+	unsigned kept;
 
 	/* Only the part the drag is over, of this window's titlebar. */
 	if (!server->dnd_active || server->dnd_titlebar == NULL)
@@ -2704,13 +2729,20 @@ shell_draw_drop_part(
 	if (titlebar != server->dnd_titlebar)
 		return;
 
-	/* The edge, then the face within it. */
-	memcpy(colour, edge, sizeof(colour));
-	colour[3] *= fade;
+	/* The edge in the accent the user chose, as it is. */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.9f * fade, colour);
+	kept = kwl_accent_as_is(server);
 	glass_draw_solid(server, command, (float)x - 1.0f, (float)y + 1.0f, (float)width + 2.0f, (float)size - 2.0f, 9.0f, colour);
+	kwl_accent_done(server, kept);
+
+	/* The face within it: the ground's white (mapped in the dark appearance), tinted with the accent. */
 	memcpy(colour, face, sizeof(colour));
 	colour[3] *= fade;
 	glass_draw_solid(server, command, (float)x + 1.0f, (float)y + 3.0f, (float)width - 2.0f, (float)size - 6.0f, 7.0f, colour);
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.16f * fade, colour);
+	kept = kwl_accent_as_is(server);
+	glass_draw_solid(server, command, (float)x + 1.0f, (float)y + 3.0f, (float)width - 2.0f, (float)size - 6.0f, 7.0f, colour);
+	kwl_accent_done(server, kept);
 }
 
 /* Records a region of the frame, when there is room. */

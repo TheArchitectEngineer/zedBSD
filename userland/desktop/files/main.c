@@ -126,6 +126,9 @@ static struct kl_appearance *main_appearance;
 
 /* The desktop's settings the window's words follow the display language through (kl_tr_follow, ws158-p004). */
 static struct kl_settings *main_language;
+
+/* The desktop's settings the desktop's icons take the accent from (ws179-p001; NULL in a window); the main thread alone uses it. */
+static struct kl_settings *main_accent_settings;
 static uint32_t main_device_request;
 static unsigned main_device_kind;
 static char main_device_id[64];
@@ -188,6 +191,8 @@ static void main_dispatch(const struct fm_event *event);
 static void main_text_input(void);
 static void main_devices_open(const struct main_options *options);
 static void main_appearance_changed(void *data, unsigned appearance);
+static void main_desktop_accent_open(void);
+static void main_desktop_accent_changed(void *data, const char *key, const char *value, unsigned flags);
 static void main_language_changed(void *data, const char *language);
 static void main_language_open(void);
 static void main_devices_poll(void);
@@ -331,8 +336,17 @@ main(
 		if (error != 0)
 			fm_log("APPEARANCE none errno=%d", error);
 		fm_palette_set(kl_appearance_get(main_appearance));
-		fm_log("APPEARANCE appearance=%u", kl_appearance_get(main_appearance));
+		fm_log("APPEARANCE appearance=%u accent=%u", kl_appearance_get(main_appearance), kl_accent_get());
 	}
+
+	/*
+	 * The desktop's icons stay light (they do not watch the appearance,
+	 * which would turn libkeiland's theme dark), but take the accent the
+	 * user chose, read from the desktop's settings, for their selection,
+	 * band and drop (ws179-p001).
+	 */
+	if (options.desktop)
+		main_desktop_accent_open();
 
 	/* The window's words in the display language, and again when it changes (ws158-p004). */
 	if (!options.desktop)
@@ -348,6 +362,7 @@ main(
 	kl_appearance_close(main_appearance);
 	main_appearance = NULL;
 	kl_settings_close(main_language);
+	kl_settings_close(main_accent_settings);
 	main_language = NULL;
 
 	/* Everything goes, the titlebar, the menus, the glass and the app before the window they belong to. */
@@ -1582,6 +1597,54 @@ main_devices_result(
 	fm_ui_message(&main_app, "The device could not be ejected.");
 }
 
+/* Opens the desktop's settings for the desktop's icons' accent, takes it now and follows it. */
+static void
+main_desktop_accent_open(
+	void)
+{
+	int error;
+
+	/* The compositor's keys, on the window's display. */
+	main_accent_settings = kl_settings_open(main_window.display, NULL);
+	if (main_accent_settings == NULL) {
+		fm_log("ACCENT none errno=%d", errno);
+		return;
+	}
+
+	/* The accent now, and the watch of its changes. */
+	main_desktop_accent_changed(NULL, "appearance.accent", NULL, 0U);
+	error = kl_settings_watch(main_accent_settings, "appearance.accent", main_desktop_accent_changed, NULL, NULL);
+	if (error != 0)
+		fm_log("ACCENT watch errno=%d", error);
+}
+
+/* Takes the accent for the desktop's icons: the light set with the accent's light colours, and the icons drawn again. */
+static void
+main_desktop_accent_changed(
+	void *data,
+	const char *key,
+	const char *value,
+	unsigned flags)
+{
+	struct kl_accent values;
+	int accent;
+
+	/* The accent the settings hold (blue for one out of the table). */
+	(void)data;
+	(void)key;
+	(void)value;
+	(void)flags;
+	accent = kl_settings_get_int(main_accent_settings, "appearance.accent", 0);
+	if (accent < 0 || accent >= (int)KL_ACCENTS)
+		accent = 0;
+
+	/* The icons stay light whatever the appearance. */
+	kl_accent_values((unsigned)accent, KL_APPEARANCE_LIGHT, &values);
+	fm_palette_take(KL_APPEARANCE_LIGHT, &values);
+	main_app.dirty = 1;
+	fm_log("ACCENT index=%d", accent);
+}
+
 /* Takes the desktop's new appearance: the window's colours become its, and the frame is drawn again. */
 static void
 main_appearance_changed(
@@ -1592,7 +1655,7 @@ main_appearance_changed(
 	(void)data;
 	fm_palette_set(appearance);
 	main_app.dirty = 1;
-	fm_log("APPEARANCE appearance=%u", appearance);
+	fm_log("APPEARANCE appearance=%u accent=%u", appearance, kl_accent_get());
 }
 
 /*

@@ -1,5 +1,5 @@
 # Settings' texts in Japanese (domain settings, WS158 p004). tools/i18n/tr.py update keeps the translations.
-# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:514
+# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:518
 msg	Settings	設定
 # userland/desktop/locale/settings.keys:4
 msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
@@ -131,7 +131,23 @@ msg	Lock the screen	画面をロック
 msg	Move between desktops	デスクトップを移る
 # userland/desktop/locale/settings.keys:71
 msg	Switch the input language	入力の言語を切り替える
-# userland/desktop/settings/page-about.c:108
+# userland/desktop/locale/settings.keys:73
+msg	Blue	青
+# userland/desktop/locale/settings.keys:74
+msg	Purple	紫
+# userland/desktop/locale/settings.keys:75
+msg	Pink	ピンク
+# userland/desktop/locale/settings.keys:76
+msg	Red	赤
+# userland/desktop/locale/settings.keys:77
+msg	Orange	オレンジ
+# userland/desktop/locale/settings.keys:78
+msg	Yellow	黄
+# userland/desktop/locale/settings.keys:79
+msg	Green	緑
+# userland/desktop/locale/settings.keys:80
+msg	Graphite	グラファイト
+# userland/desktop/settings/page-about.c:113
 msg	Show Welcome again	ようこそをもう一度見る
 # userland/desktop/settings/page-home.c:60
 msg	Connectivity	接続
@@ -177,11 +193,13 @@ msg	Only an administrator can change the login screen's language.	ログイン�
 msg	Your password is wrong.	パスワードが違います。
 # userland/desktop/settings/page-languages.c:549
 msg	Another change is under way. Try again in a moment.	ほかの変更が進行中です。少し待ってからやり直してください。
+# userland/desktop/settings/page-look.c:556
+msg	Accent color	アクセントカラー
 # userland/desktop/settings/search.c:527
 msg	Coming in a later version	今後のバージョンで対応予定
 # userland/desktop/settings/titlebar.c:227
 msg	Search settings	設定を検索
-# userland/desktop/settings/ui.c:517
+# userland/desktop/settings/ui.c:521
 msg	Search	検索
 # userland/desktop/settings/welcome.c:114, userland/desktop/settings/welcome.c:115
 msg	Skip	スキップ

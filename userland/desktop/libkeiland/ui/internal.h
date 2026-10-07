@@ -37,8 +37,9 @@ struct keiui_global_search {
 	const char *interface;
 };
 
-/* The theme handed out made the appearance's, and the light or the dark theme itself (theme.c, ws089-p017). */
-void keiui_theme_set(unsigned appearance);
+/* The theme handed out made the appearance's with an accent's colours, one written so for the tests, and the light or the dark theme itself (theme.c, ws089-p017, ws179-p001). */
+void keiui_theme_set(unsigned appearance, unsigned accent);
+void keiui_theme_with(unsigned appearance, unsigned accent, struct kl_theme *theme);
 const struct kl_theme *keiui_theme_of(unsigned appearance);
 
 /* Finds a global (0 or ENOMEM), binds it on the default queue (NULL when it cannot), and ends the search. */

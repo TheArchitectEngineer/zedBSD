@@ -69,3 +69,12 @@ msg	Switch between windows
 msg	Lock the screen
 msg	Move between desktops
 msg	Switch the input language
+# The accent colours' names (page-look.c look_accent_names, ws179-p001), drawn with kl_tr(look_accent_names[chosen]).
+msg	Blue
+msg	Purple
+msg	Pink
+msg	Red
+msg	Orange
+msg	Yellow
+msg	Green
+msg	Graphite

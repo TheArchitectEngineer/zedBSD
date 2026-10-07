@@ -1640,7 +1640,8 @@ kwl_glass_draw_drag_badge(
 {
 	static const float edge[4] = { 0.12f, 0.16f, 0.24f, 0.35f };
 	static const float page[4] = { 1.0f, 1.0f, 1.0f, 0.97f };
-	static const float line[4] = { 0.25f, 0.52f, 0.98f, 0.75f };
+	float line[4];
+	unsigned kept;
 	float x;
 	float y;
 
@@ -1652,9 +1653,12 @@ kwl_glass_draw_drag_badge(
 	glass_draw_solid(server, command, x - 1.0f, y - 1.0f, 24.0f, 30.0f, 5.0f, edge);
 	glass_draw_solid(server, command, x, y, 22.0f, 28.0f, 4.0f, page);
 
-	/* Two lines of text on it. */
+	/* Two lines of text on it, in the accent the user chose (as it is). */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.75f, line);
+	kept = kwl_accent_as_is(server);
 	glass_draw_solid(server, command, x + 5.0f, y + 8.0f, 12.0f, 2.0f, 1.0f, line);
 	glass_draw_solid(server, command, x + 5.0f, y + 14.0f, 9.0f, 2.0f, 1.0f, line);
+	kwl_accent_done(server, kept);
 }
 
 /*
@@ -3705,11 +3709,14 @@ draw_desktops(
 	const struct shell_bar *bar,
 	const struct glass_bar_colours *colours)
 {
-	static const float current[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	struct glass_shape shape;
+	float current[4];
 	float progress;
 	int32_t x;
 	int desktop;
+
+	/* The current desktop's colour: the accent the user chose, on the bar's ground. */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, current);
 
 	/* The pill. */
 	draw_bar_group(server, command, bar->desktops_x, bar->desktops_width, BAR_PILL_HEIGHT);
@@ -3726,6 +3733,7 @@ draw_desktops(
 		shape.radius = (float)BAR_PILL_HEIGHT * 0.5f;
 		shape.soft = 1.5f;
 		memcpy(shape.color, current, sizeof(shape.color));
+		shape.light = 1U;
 		shape.opacity = progress * 0.8f;
 		glass_shape_draw(server, command, &shape);
 	}
@@ -3849,7 +3857,6 @@ draw_dock_hint(
 	VkCommandBuffer command)
 {
 	static const float fill[4] = { 1.0f, 1.0f, 1.0f, 0.22f };
-	static const float edge[4] = { 0.25f, 0.52f, 0.98f, 0.9f };
 	struct glass_shape shape;
 	struct shell_rect body;
 
@@ -3868,7 +3875,8 @@ draw_dock_hint(
 	shape.mode = MODE_RING;
 	shape.radius = GLASS_RADIUS;
 	shape.soft = 2.0f;
-	memcpy(shape.color, edge, sizeof(shape.color));
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.9f, shape.color);
+	shape.light = 1U;
 	glass_shape_draw(server, command, &shape);
 }
 
@@ -6198,9 +6206,9 @@ draw_tile(
 	unsigned current,
 	unsigned over)
 {
-	static const float glow[4] = { 0.25f, 0.52f, 0.98f, 0.45f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float button[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	float glow[4];
 	const struct kwl_import *image;
 	struct glass_shape shape;
 	struct shell_rect panel;
@@ -6219,13 +6227,16 @@ draw_tile(
 	unsigned square;
 	int decorated;
 
+	/* The glow's colour: the accent the user chose, for the overview's darkened ground. */
+	kwl_accent_colour(server, 1, KWL_ACCENT_FILL, 0.45f, glow);
+
 	/* The tile's corners: rounded, or square for a window that keeps them (window_square). */
 	radius = WISEVIEW_RADIUS;
 	square = window_square(surface);
 	if (square)
 		radius = 0.0f;
 
-	/* The shadow, or a blue glow for the window that was on top or is under the pointer. */
+	/* The shadow, or a glow of the accent for the window that was on top or is under the pointer. */
 	glass_shape_init(&shape, (float)tile->x, (float)tile->y + 6.0f, (float)tile->width, (float)tile->height);
 	shape.quad[0] -= 48.0f;
 	shape.quad[1] -= 48.0f;
@@ -6240,6 +6251,7 @@ draw_tile(
 	shape.color[3] = 0.22f;
 	if (current || over) {
 		memcpy(shape.color, glow, sizeof(shape.color));
+		shape.light = 1U;
 		shape.opacity = progress;
 		if (over)
 			shape.color[3] = 0.70f;
@@ -6288,6 +6300,7 @@ draw_tile(
 		shape.radius = radius + 3.0f;
 		shape.soft = 2.0f;
 		memcpy(shape.color, glow, sizeof(shape.color));
+		shape.light = 1U;
 		shape.color[3] = 0.9f;
 		shape.opacity = progress;
 		glass_shape_draw(server, command, &shape);

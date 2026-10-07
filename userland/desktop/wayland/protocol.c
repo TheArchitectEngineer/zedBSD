@@ -73,7 +73,7 @@ static const struct kwl_global globals[] = {
 	{ 24, "org_kde_kwin_server_decoration_manager", 1, KWL_KDE_DECORATION_MANAGER },
 	{ 25, KL_SYSTEM_MANAGER_NAME, KL_SYSTEM_MANAGER_VERSION, KWL_SYSTEM_MANAGER },
 	{ 26, "xdg_activation_v1", 1, KWL_ACTIVATION_MANAGER },
-	{ 27, "kl_theme_v1", 1, KWL_THEME },
+	{ 27, "kl_theme_v1", 2, KWL_THEME },
 	{ 28, "wp_content_type_manager_v1", 1, KWL_CONTENT_TYPE_MANAGER },
 };
 

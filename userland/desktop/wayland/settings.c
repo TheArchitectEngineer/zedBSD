@@ -30,6 +30,7 @@
 #include "kwl.h"
 #include "settings-store.h"
 #include "ime.h"
+#include "../artwork/accent.h"
 
 #include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -86,6 +87,7 @@ static void settings_apply_opacity(struct kwl_server *server);
 static void settings_apply_number(struct kwl_server *server, const char *name, int32_t *target);
 static void settings_apply_repeat(struct kwl_server *server, int starting);
 static void settings_apply_appearance(struct kwl_server *server, int starting);
+static void settings_apply_accent(struct kwl_server *server, int starting);
 static void settings_mark(struct kwl_server *server, const char *name);
 static void settings_flush(struct kwl_server *server);
 static int settings_emit_value(struct kwl_client *client, uint32_t id, const struct kwl_settings_entry *entry);
@@ -601,6 +603,13 @@ settings_apply(
 		return;
 	}
 
+	/* Sets the accent the user chose, and tells the clients (ws179-p001). */
+	differs = strcmp(name, "appearance.accent");
+	if (differs == 0) {
+		settings_apply_accent(server, starting);
+		return;
+	}
+
 	/* Chooses the language of the desktop's text, the compositor's at once (WS158). */
 	differs = strcmp(name, "ui.language");
 	if (differs == 0) {
@@ -648,6 +657,38 @@ settings_apply_appearance(
 
 	/* Draws everything again in the new appearance. */
 	server->dark = dark;
+	server->dirty = 1;
+
+	/* Tells the clients, once anything can be bound. */
+	if (!starting)
+		kwl_theme_changed(server);
+}
+
+/*
+ * Sets the accent the settings hold (0 blue to 7 graphite; anything else
+ * is blue): the compositor's controls are drawn again in it and the
+ * clients that bound kl_theme_v1 at version 2 are told (theme.c).
+ * Nothing is bound at the start.
+ */
+static void
+settings_apply_accent(
+	struct kwl_server *server,
+	int starting)
+{
+	int32_t accent;
+
+	/* The setting's value; one out of the table is blue. */
+	accent = server->accent;
+	settings_apply_number(server, "appearance.accent", &accent);
+	if (accent < 0 || accent >= (int32_t)KA_ACCENTS)
+		accent = 0;
+
+	/* The same accent changes nothing. */
+	if (accent == server->accent)
+		return;
+
+	/* Draws everything again in the new accent. */
+	server->accent = accent;
 	server->dirty = 1;
 
 	/* Tells the clients, once anything can be bound. */

@@ -993,6 +993,13 @@ struct kwl_server {
 	 */
 	int32_t dark;
 	/*
+	 * The accent the user chose (appearance.accent, ws179-p001): 0 blue to
+	 * 7 graphite (artwork/accent.h).  The compositor's own controls draw
+	 * with it (kwl_accent) and kl_theme_v1 version 2 tells the clients.
+	 * The event loop's thread alone changes it.
+	 */
+	int32_t accent;
+	/*
 	 * Nonzero while the system bar is drawn (shell.c, ws099-p034): the bar
 	 * is dark glass with light ink in both appearances, so the glass's
 	 * drawing keeps the colours it is given instead of mapping them for the
@@ -1478,6 +1485,19 @@ void kwl_glass_activate(struct kwl_server *server, struct kwl_object *surface, c
 int kwl_theme_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 int kwl_theme_bind(struct kwl_object *theme);
 void kwl_theme_changed(struct kwl_server *server);
+
+/*
+ * The accent the user chose (theme.c, ws179-p001): a part of its colours
+ * for a light or a dark ground with an opacity, as 0 to 1 RGBA, and the
+ * drawing of shapes in it as they are (the dark appearance's mapping of
+ * the colours left out, which would turn a grey accent or the ink over).
+ */
+#define KWL_ACCENT_FILL		0U
+#define KWL_ACCENT_INK		1U
+#define KWL_ACCENT_TEXT		2U
+void kwl_accent_colour(const struct kwl_server *server, int dark_ground, unsigned part, float alpha, float *out);
+unsigned kwl_accent_as_is(struct kwl_server *server);
+void kwl_accent_done(struct kwl_server *server, unsigned previous);
 int kwl_glass_open_docked(struct kwl_server *server, struct kwl_object *surface);
 void kwl_glass_open_wiseview(struct kwl_server *server, const char *via);
 

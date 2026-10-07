@@ -46,3 +46,9 @@ Queue: q833（P1、WS031 の後）
 | target の clang（amd64、`-Werror -fsyntax-only`）: libbrowser の 5 file、shell の 2 file、Settings の main.c・widgets.c | warning 0 |
 
 未実施: QEMU（T1 に依頼: AAT の image で Browser の form に「nihon」→ 日本）、実機。準正常系の残り（surrounding text・文節の範囲・click での合成の終わり・textarea の value）は `plan/ws177/backlog-p1.md`。
+
+### T1-329 の結果（2026-10-07）と次の診断
+
+- Settings の stderr（順序は Settings の中で確か）: 開いた時 `wanted=0`、次の行が `wanted=1 page=19 keyboard=1 admin_focus=1 admin_mode=1 name_plain=1`（Full name に focus）。User name で「nihon」の間に Settings の `TEXT event=` は 0 行、Full name では preedit・commit が届く。よって User name（plain）の間 Settings は text input を求めていない（正しい）。compositor の `KWL TEXT enable`・`KWL IME activate` の行は compositor の stdout（block buffer の見込み）で、T1 の MARK の行との前後は確かでない。
+- 画面: User name に `n` だけ、Space で空。「n・i・h・o・n」のうち母音の後に前の文字が消えるように見える（n → BS+に → h → BS+ほ → n、Space → BS）。IME が User name の key を受け、変換した文字を key に戻せず BackSpace だけが届く、という仮説。ただし Settings が wanted=0 の間に IME が activate するはずがなく、矛盾が残る。
+- 今回: Settings の管理の欄（User name・Full name だけ、secret の欄は出さない）が受ける key を log に出した（`ZSETTINGS USERS key code= modifiers= field= length=`）。T1 の再試験で、User name で Settings に届く key の code（14 が BackSpace）と欄の長さの推移を見る。

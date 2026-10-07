@@ -105,6 +105,9 @@ struct se_palette {
 	kl_color rail;
 	kl_color faded;
 	kl_color pressed;
+
+	/* The accent as the colour of text on the page (ws179-p001). */
+	kl_color accent_text;
 };
 
 /* The set in use, and the choice of the appearance's (KL_APPEARANCE_*; palette.c). */
@@ -128,6 +131,7 @@ const struct se_palette *se_palette_of(unsigned appearance);
 #define SE_COLOR_TITLE		(se_palette->title)
 #define SE_COLOR_ICON		(se_palette->icon)
 #define SE_COLOR_ACCENT		(se_palette->accent)
+#define SE_COLOR_ACCENT_TEXT	(se_palette->accent_text)
 #define SE_COLOR_SELECTION	(se_palette->selection)
 #define SE_COLOR_SELECTION_INACTIVE	(se_palette->selection_inactive)
 #define SE_COLOR_HOVER		(se_palette->hover)
@@ -956,6 +960,7 @@ struct se_volume {
  * and so are a mouse's and the touch pads' speed (percent), acceleration
  * (0 none to 3 strong) and natural scrolling (ws089-p024) and the
  * keyboards' repeat (keys a second, milliseconds before it starts);
+ * accent is the accent colour chosen (KL_ACCENT_*, ws179-p001);
  * wallpaper is the settings' picture (empty for the default).  The
  * pictures are found and read when the Wallpaper page is first shown; the
  * default's (the session's --wallpaper) is wallpapers[0] when it exists.
@@ -980,6 +985,7 @@ struct se_look {
 	int ime_method;
 	int ui_language;
 	int dark;
+	int accent;
 	int frosted;
 	int dragging;
 	struct kl_rect slider;

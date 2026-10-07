@@ -339,8 +339,8 @@ overlay_check(
 	/* The box: blue and ticked when on, an outline when off. */
 	if (checked != 0) {
 		kl_canvas_round(canvas, (float)x, (float)y, OVERLAY_CHECK_SIZE, OVERLAY_CHECK_SIZE, 4.0f, FM_COLOR_ACCENT);
-		kl_canvas_line(canvas, (float)x + 4.0f, (float)y + 8.5f, (float)x + 7.0f, (float)y + 11.5f, 2.0f, KL_RGB(0xffffff));
-		kl_canvas_line(canvas, (float)x + 7.0f, (float)y + 11.5f, (float)x + 12.5f, (float)y + 5.0f, 2.0f, KL_RGB(0xffffff));
+		kl_canvas_line(canvas, (float)x + 4.0f, (float)y + 8.5f, (float)x + 7.0f, (float)y + 11.5f, 2.0f, FM_COLOR_ACCENT_INK);
+		kl_canvas_line(canvas, (float)x + 7.0f, (float)y + 11.5f, (float)x + 12.5f, (float)y + 5.0f, 2.0f, FM_COLOR_ACCENT_INK);
 	} else {
 		kl_canvas_round(canvas, (float)x, (float)y, OVERLAY_CHECK_SIZE, OVERLAY_CHECK_SIZE, 4.0f, FM_COLOR_PANEL);
 		kl_canvas_round_border(canvas, (float)x, (float)y, OVERLAY_CHECK_SIZE, OVERLAY_CHECK_SIZE, 4.0f, 1.5f, edge);

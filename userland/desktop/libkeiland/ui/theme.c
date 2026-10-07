@@ -10,12 +10,16 @@
  * the file manager's specification set (plan/ws071/spec.md, Files'
  * files.h) and Settings' (plan/ws089, settings.h and widgets.c: the cards,
  * the controls, the switches), so that every widget drawn with it matches
- * Files and Settings.
+ * Files and Settings.  The accent, the selection, the ink on the accent and
+ * the accent as text come from the accent the user chose (ws179-p001,
+ * artwork/accent.h); the tables below hold blue's.
  */
 
 #include <keiland/keiland.h>
 
 #include "internal.h"
+
+#include "../../artwork/accent.h"
 
 /*
  * The light theme, the program's until the compositor tells the dark
@@ -57,7 +61,9 @@ static const struct kl_theme theme_light = {
 	KL_RGB(0xe0533d),		/* bad */
 	32,				/* control_height */
 	44,				/* switch_width */
-	24				/* switch_height */
+	24,				/* switch_height */
+	KL_RGB(0xffffff),		/* accent_ink */
+	KL_RGB(0x2f7cf6)		/* accent_text */
 };
 
 /*
@@ -103,7 +109,9 @@ static const struct kl_theme theme_dark = {
 	KL_RGB(0xe0533d),		/* bad */
 	32,				/* control_height */
 	44,				/* switch_width */
-	24				/* switch_height */
+	24,				/* switch_height */
+	KL_RGB(0xffffff),		/* accent_ink */
+	KL_RGB(0x2f7cf6)		/* accent_text */
 };
 
 /*
@@ -133,17 +141,61 @@ kl_theme_default(void)
 
 /*
  * Makes the theme handed out the appearance's (KL_APPEARANCE_*; any other
- * value is light).
+ * value is light) with an accent's colours (KL_ACCENT_*; past the last is
+ * blue).
  */
 void
 keiui_theme_set(
-	unsigned appearance)
+	unsigned appearance,
+	unsigned accent)
 {
-	/* The appearance's theme. */
-	theme_now = theme_light;
-	if (appearance == KL_APPEARANCE_DARK)
-		theme_now = theme_dark;
+	/* The appearance's theme, with the accent's colours. */
+	keiui_theme_with(appearance, accent, &theme_now);
 	theme_made = 1;
+}
+
+/*
+ * Writes the theme of an appearance with an accent's colours (for the
+ * theme handed out, and for the library's tests).
+ */
+void
+keiui_theme_with(
+	unsigned appearance,
+	unsigned accent,
+	struct kl_theme *theme)
+{
+	struct kl_accent values;
+
+	/* The appearance's theme. */
+	*theme = theme_light;
+	if (appearance == KL_APPEARANCE_DARK)
+		*theme = theme_dark;
+
+	/* The accent's colours over its blue. */
+	kl_accent_values(accent, appearance, &values);
+	theme->accent = values.accent;
+	theme->selection = values.selection;
+	theme->accent_ink = values.ink;
+	theme->accent_text = values.text;
+}
+
+/*
+ * Writes an accent's colours in an appearance (keiland.h).
+ */
+void
+kl_accent_values(
+	unsigned accent,
+	unsigned appearance,
+	struct kl_accent *values)
+{
+	struct ka_accent table;
+
+	/* The shared table's row. */
+	ka_accent_values(accent, appearance, &table);
+	values->accent = table.accent;
+	values->ink = table.ink;
+	values->text = table.text;
+	values->selection = table.selection;
 }
 
 /*

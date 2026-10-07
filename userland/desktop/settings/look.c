@@ -522,6 +522,9 @@ look_read(
 	/* The appearance, light unless dark is chosen (ws089-p017). */
 	look->dark = kl_settings_get_int(look->settings, "appearance.dark", 0);
 
+	/* The accent colour, blue unless another is chosen (ws179-p001). */
+	look->accent = kl_settings_get_int(look->settings, "appearance.accent", 0);
+
 	/* The windows' glass panels, frosted unless chosen solid (BUG-214). */
 	look->frosted = kl_settings_get_int(look->settings, "window.frosted", 1);
 

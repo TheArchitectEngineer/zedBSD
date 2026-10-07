@@ -286,6 +286,7 @@ static void network_draw_bars(struct kwl_server *server, VkCommandBuffer command
 static void network_draw_fan(struct kwl_server *server, VkCommandBuffer command, int32_t x, unsigned lit, const float *ink, float faint);
 static void network_draw_wired(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
 static void network_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over);
+static void network_draw_row_in(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over, unsigned *kept);
 static void network_draw_check(struct kwl_server *server, VkCommandBuffer command, int32_t left, int32_t middle, int32_t baseline, const float *ink);
 static void network_draw_disconnect(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, int on_button);
 static void network_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on);
@@ -416,7 +417,7 @@ kwl_network_draw_icon(
 	int32_t x,
 	const float *ink)
 {
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 0.28f };
+	float blue[4];
 	const struct kl_backend_network_state *state;
 	unsigned lit;
 	unsigned index;
@@ -432,9 +433,11 @@ kwl_network_draw_icon(
 		printf("KWL NETWORK icon x=%d y=%d width=%d height=%d\n", network_view.icon_x, network_view.icon_y, network_view.icon_width, network_view.icon_height);
 	}
 
-	/* While the menu is open its icon has a pale blue back, on the bar's middle. */
-	if (network_view.open)
+	/* While the menu is open its icon has a pale back of the accent the user chose, on the bar's middle (the bar keeps its colours). */
+	if (network_view.open) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.28f, blue);
 		glass_draw_solid(server, command, (float)network_view.icon_x, (float)(KWL_GLASS_BAR_MIDDLE - 14), (float)network_view.icon_width, 28.0f, 7.0f, blue);
+	}
 
 	/* A wired connection is the tree. */
 	state = &network_view.state;
@@ -1438,7 +1441,12 @@ network_draw_wired(
 	glass_draw_solid(server, command, (float)(x + 11), (float)(KWL_GLASS_BAR_MIDDLE + 3), 8.0f, 6.0f, 1.5f, ink);
 }
 
-/* Draws one row at top: its band when lit, and what the row shows. */
+/*
+ * Draws one row at top: its band when lit, and what the row shows.  A lit
+ * row is drawn in the accent's colours as they are (ws179-p001): the dark
+ * appearance's mapping is left out from its band on, and comes back after
+ * the row.
+ */
 static void
 network_draw_row(
 	struct kwl_server *server,
@@ -1447,13 +1455,30 @@ network_draw_row(
 	int32_t top,
 	unsigned over)
 {
+	unsigned kept;
+
+	/* The row, which may draw its band and ink as they are, then the mapping as it was. */
+	kept = server->keep_colours;
+	network_draw_row_in(server, command, row, top, over, &kept);
+	kwl_accent_done(server, kept);
+}
+
+/* Draws one row's band and content for network_draw_row (kept is the mapping to come back to). */
+static void
+network_draw_row_in(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	const struct network_row *row,
+	int32_t top,
+	unsigned over,
+	unsigned *kept)
+{
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	static const float line[4] = { 0.12f, 0.16f, 0.24f, 0.16f };
 	static const float field[4] = { 1.0f, 1.0f, 1.0f, 0.95f };
-	static const float frame[4] = { 0.25f, 0.52f, 0.98f, 0.70f };
+	float blue[4];
+	float frame[4];
 	const struct kl_backend_network_ap *ap;
 	const char *connecting;
 	char stars[NETWORK_KEY_MAX + 2U];
@@ -1468,6 +1493,7 @@ network_draw_row(
 	int joining;
 	int current;
 	int on_button;
+	unsigned framed;
 
 	/* The row's edges, its middle and the text's baseline. */
 	left = network_view.menu_x;
@@ -1487,19 +1513,22 @@ network_draw_row(
 		return;
 	}
 
-	/* The lit row is a blue band with white text (not the network it is on: only its button acts). */
+	/* The lit row is a band of the accent with its ink, as they are (not the network it is on: only its button acts). */
 	memcpy(ink, dark, sizeof(ink));
 	current = network_is_current(row);
 	if (current && network_view.connecting[0] == '\0')
 		over = 0;
 	if (over) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, blue);
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, ink);
+		*kept = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)(left + 5), (float)(top + 1), (float)(NETWORK_MENU_WIDTH - 10), (float)(row->height - 2), 6.0f, blue);
-		memcpy(ink, white, sizeof(ink));
 	}
 
-	/* The switch's row: its label and the switch at the right. */
+	/* The switch's row: its label, then the switch at the right in the popup's colours. */
 	if (row->kind == NETWORK_ROW_SWITCH) {
 		glass_draw_text(server, command, SIZE_TITLE, left + 14, baseline + 1, row->text, 160, ink);
+		kwl_accent_done(server, *kept);
 		network_draw_switch(server, command, right, middle, network_switch_on());
 		return;
 	}
@@ -1562,7 +1591,10 @@ network_draw_row(
 
 	/* The key field: a pale box with a star for each character typed and the cursor. */
 	if (row->kind == NETWORK_ROW_KEY) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.70f, frame);
+		framed = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)(left + 11), (float)(top + 2), (float)(NETWORK_MENU_WIDTH - 22), (float)(row->height - 4), 6.0f, frame);
+		kwl_accent_done(server, framed);
 		glass_draw_solid(server, command, (float)(left + 12), (float)(top + 3), (float)(NETWORK_MENU_WIDTH - 24), (float)(row->height - 6), 5.0f, field);
 
 		/* The key is never drawn, only its length. */
@@ -1587,25 +1619,26 @@ network_draw_switch(
 	int32_t middle,
 	unsigned on)
 {
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	static const float grey[4] = { 0.62f, 0.66f, 0.72f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float blue[4];
+	unsigned kept;
 	int32_t x;
 
-	/* The pill. */
+	/* Off: a grey pill with its knob at the left, in the popup's colours. */
 	x = right - 36;
-	if (on) {
-		glass_draw_solid(server, command, (float)x, (float)(middle - 10), 36.0f, 20.0f, 10.0f, blue);
-	} else {
+	if (!on) {
 		glass_draw_solid(server, command, (float)x, (float)(middle - 10), 36.0f, 20.0f, 10.0f, grey);
+		glass_draw_solid(server, command, (float)(x + 2), (float)(middle - 8), 16.0f, 16.0f, 8.0f, white);
+		return;
 	}
 
-	/* The knob, right when on. */
-	if (on) {
-		glass_draw_solid(server, command, (float)(x + 18), (float)(middle - 8), 16.0f, 16.0f, 8.0f, white);
-	} else {
-		glass_draw_solid(server, command, (float)(x + 2), (float)(middle - 8), 16.0f, 16.0f, 8.0f, white);
-	}
+	/* On: a pill of the accent the user chose with a white knob at the right, as they are (ws179-p001). */
+	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, blue);
+	kept = kwl_accent_as_is(server);
+	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 36.0f, 20.0f, 10.0f, blue);
+	glass_draw_solid(server, command, (float)(x + 18), (float)(middle - 8), 16.0f, 16.0f, 8.0f, white);
+	kwl_accent_done(server, kept);
 }
 
 /* Draws a small padlock: a body and its shackle. */
@@ -2161,11 +2194,12 @@ network_draw_disconnect(
 	int on_button)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
-	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	static const float blue[4] = { 0.25f, 0.52f, 0.98f, 1.0f };
 	static const float edge[4] = { 0.12f, 0.16f, 0.24f, 0.28f };
 	static const float face[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	float blue[4];
+	float on_blue[4];
 	const float *ink;
+	unsigned kept;
 	int32_t x;
 	int32_t y;
 	int32_t height;
@@ -2175,11 +2209,15 @@ network_draw_disconnect(
 	y = top + NETWORK_DISCONNECT_INSET;
 	height = row->height - 2 * NETWORK_DISCONNECT_INSET;
 
-	/* Its face: blue under the pointer, else white within a thin edge. */
+	/* Its face: the accent the user chose under the pointer (as it is), else white within a thin edge. */
 	ink = dark;
+	kept = server->keep_colours;
 	if (on_button) {
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, blue);
+		kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, on_blue);
+		kept = kwl_accent_as_is(server);
 		glass_draw_solid(server, command, (float)x, (float)y, (float)NETWORK_DISCONNECT_WIDTH, (float)height, 6.0f, blue);
-		ink = white;
+		ink = on_blue;
 	} else {
 		glass_draw_solid(server, command, (float)x, (float)y, (float)NETWORK_DISCONNECT_WIDTH, (float)height, 6.0f, edge);
 		glass_draw_solid(server, command, (float)(x + 1), (float)(y + 1), (float)(NETWORK_DISCONNECT_WIDTH - 2), (float)(height - 2), 5.0f, face);
@@ -2187,6 +2225,7 @@ network_draw_disconnect(
 
 	/* Its icon, the cross of leaving, in the middle (the tests name the button Disconnect). */
 	glass_draw_icon(server, command, GLASS_ICON_CLOSE, x + (NETWORK_DISCONNECT_WIDTH - NETWORK_DISCONNECT_ICON) / 2, y + (height - NETWORK_DISCONNECT_ICON) / 2, NETWORK_DISCONNECT_ICON, ink);
+	kwl_accent_done(server, kept);
 }
 
 /*

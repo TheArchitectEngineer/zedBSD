@@ -573,7 +573,7 @@ grid_scope_chips(
 		ink = FM_COLOR_TEXT_SECONDARY;
 		if ((unsigned)index == app->search_scope) {
 			ground = FM_COLOR_SELECTION;
-			ink = FM_COLOR_ACCENT;
+			ink = FM_COLOR_ACCENT_TEXT;
 		} else if (app->hover_kind == FM_HIT_SCOPE && app->hover_index == index) {
 			ground = FM_COLOR_BUTTON_LIT;
 		}

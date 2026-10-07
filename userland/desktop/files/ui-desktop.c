@@ -51,13 +51,13 @@
 /* The name's colours: dark text, a white halo; a selected name's pill and text. */
 #define DESKTOP_TEXT_COLOR	KL_RGB(0x1e293b)
 #define DESKTOP_HALO_COLOR	KL_RGBA(0xffffff, 150)
-#define DESKTOP_PILL_COLOR	KL_RGB(0x2f7cf6)
-#define DESKTOP_PILL_TEXT	KL_RGB(0xffffff)
+#define DESKTOP_PILL_COLOR	FM_COLOR_ACCENT
+#define DESKTOP_PILL_TEXT	FM_COLOR_ACCENT_INK
 
 /* A selected icon's ground, and the rubber band's fill and edge. */
 #define DESKTOP_GROUND_COLOR	KL_RGBA(0xffffff, 110)
-#define DESKTOP_BAND_FILL	KL_RGBA(0x2f7cf6, 40)
-#define DESKTOP_BAND_EDGE	KL_RGBA(0x2f7cf6, 160)
+#define DESKTOP_BAND_FILL	KL_RGBA(FM_COLOR_ACCENT, 40)
+#define DESKTOP_BAND_EDGE	KL_RGBA(FM_COLOR_ACCENT, 160)
 
 /* The field of a name being changed: its height and how far it is under the icon. */
 #define DESKTOP_FIELD_HEIGHT	22

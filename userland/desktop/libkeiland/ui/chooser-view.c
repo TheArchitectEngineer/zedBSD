@@ -568,12 +568,12 @@ view_row(
 	int lit;
 	int right;
 
-	/* The ink of the row: the list's (white on the accent), the quiet one a little fainter. */
+	/* The ink of the row: the list's (the accent's ink on the accent), the quiet one a little fainter. */
 	entry = &chooser->entries[index];
 	faint = style->theme->text_secondary;
 	lit = 0;
 	if (ink != style->theme->text) {
-		faint = KL_RGBA(0xffffff, 210);
+		faint = KL_RGBA(ink, 210);
 		lit = 1;
 	}
 
