@@ -241,3 +241,19 @@ p006 には「眠れるか」を問う口が無く、ioctl が支えの無い pl
   （`--lock-idle` と同じく試験の短い時間の option で）。案 B なら最初の電源ボタンで `FAIL unsupported` と通知、2 回目は log だけ。sessiond の
   `POWER suspend` の答え（`FAIL unsupported`）と networkd の PREPARE・END の往復（Wi-Fi の無い guest では `OK` と 0）。
 - 実機（5330、ユーザーの UAT）: 3 つの契機で入り、蓋・電源ボタンで戻る。Wi-Fi の接続が戻る。中止の理由（Wi-Fi を切れなくする等で起こす）。
+
+## design-reviewer の 1 回目（2026-10-07、第 2 版に対して、未反映）
+
+blocking 10（第 3 版で直す）:
+- B1 sleep の答えが lock・greeter の「login の答え」に流れる（`handoff.c:194-203` → `greeter_answered` が EACCES を「Wrong password」に）→ SUSPEND の答えは handoff で先に sleep.c へ、`session_answered` で専用に解く、busy は `ERROR busy` に揃える。
+- B2 起こした押下は thaw の直後（OK より前）に届く → kernel の事象 `sleep.begin`・`end`・`failed` を backend から host へ渡し、begin から end の後の数百 ms と SUSPEND が出ている間の押下を捨てる、予約の送信を取り消す。
+- B3 PREPARE の最中に蓋を開けると猶予で unlock され unlock のまま眠る → SUSPEND の間は猶予の unlock を遅らせる（か `POWER cancel`）、「session では locked でなければ送らない」を不変条件に、`kwl_lock` の失敗では眠らない。
+- B4 lock 直後の STYLES と衝突して `session_request` の EBUSY → 「送る予定」の状態を持ち後の tick で送り直す。
+- B5 蓋が閉じたまま蓋以外の理由（AC・USB・spurious）で起きると眠り直さない → 蓋は level で tick で判断、蓋以外の理由の起床で蓋が閉じていれば直ぐ眠り直す。
+- B6 失敗が続くと 30 秒ごとに Wi-Fi が落ち通知が積もる → 延びる間隔、無操作は新しい入力まで再試行しない、`result=EOPNOTSUPP` は恒久（sessiond も覚えて PREPARE を飛ばす）、同じ理由の通知は 1 度。
+- B7 networkd の PREPARE・END の上限と状態の戻し → SLEEPING の状態（`retire_managed_connection` で退かせ END で前の方針から再開）、冪等、上限を networkd の予算に合わせ、時間切れでは END を送ってから失敗、networkd が居なければ飛ばす、進行中の仕事は中止させる。
+- B8 system extension の `KL_SYSTEM_POWER_ACTION`（`system.c:1319-1335`）で app が lock なしで眠らせられる → compositor の sleep.c を通す（か受けない）。
+- B9 外部の monitor を判定する手段が無い（compose.c は最初の 1 display だけ）→ 情報源を書くか、「内蔵だけ消す」は単一出力の今では不可として範囲を Q1・ユーザーに確かめる。
+- B10 無操作の tick は `kwl_glass_tick` の greeter・lock の return より前に置く、greeter の無操作で眠るかも決める。
+
+non-blocking 19（主な物）: 2 frame の規則に揃える、要求から答えまで新しい frame を出さない・OK の後は必ず再描画、outcome の buffer（REASON 24 byte に device は入らない）、device の照合は `pci ` で始まる時だけ、§3 と §8 の使えない時の画面を消す時間の矛盾、greeter で蓋・無操作、AC と電池の切り替えで時計を戻す、sessiond の子の持ち主は `struct sessiond` に・pipe は O_CLOEXEC・closefrom、案 A は `known` でなく `reserved[0]` を flags にする案も、案 B の欠点の補い、§9 の抜け（linux・unsupported の backend、handoff.c・system.c・events-zedbsd.c）、答えが来ない時の `power_asked` の回復、docs と code の食い違い（power-management.md:52-54・91）、起こした鍵が password の欄に入る、networkd の opcode の番号と confirmed transaction、範囲外（遠隔の利用中も眠る）、Phase の分割、QEMU で `KERN_SYSTEM_SLEEP_DEVICES` を使う試験の mode、resume の失敗の通知。
