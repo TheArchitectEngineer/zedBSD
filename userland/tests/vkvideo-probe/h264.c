@@ -441,6 +441,7 @@ h264_parse_sps(
 	StdVideoH264ScalingLists lists;
 	int32_t offsets[255];
 	uint32_t profile_idc;
+	int high;
 	uint32_t constraints;
 	uint32_t level_idc;
 	uint32_t id;
@@ -472,7 +473,8 @@ h264_parse_sps(
 
 	/* The format and the scaling matrix of the High profiles; 4:2:0 8-bit otherwise. */
 	sps.chroma_format_idc = STD_VIDEO_H264_CHROMA_FORMAT_IDC_420;
-	if (h264_high_profile(profile_idc)) {
+	high = h264_high_profile(profile_idc);
+	if (high) {
 		value = h264_ue(&bits);
 		sps.chroma_format_idc = (StdVideoH264ChromaFormatIdc)value;
 		if (value == 3U)
