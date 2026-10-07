@@ -39,6 +39,10 @@ kwl_arrange_name(
 		return "right-main";
 	case KWL_ARRANGE_LEFT_MAIN:
 		return "left-main";
+	case KWL_ARRANGE_TOP_MAIN:
+		return "top-main";
+	case KWL_ARRANGE_BOTTOM_MAIN:
+		return "bottom-main";
 	default:
 		break;
 	}
@@ -49,7 +53,7 @@ kwl_arrange_name(
 
 /*
  * Tells how many windows a layout takes at most: four side by side,
- * stacked, or beside one, nine in a grid.  The windows past it stay where
+ * stacked, or beside or under or over one, nine in a grid.  The windows past it stay where
  * they are (the 2026-10-07 user decision D7).
  */
 unsigned
@@ -69,7 +73,8 @@ kwl_arrange_limit(
  * space; the slots keep KWL_ARRANGE_MARGIN from its sides and
  * KWL_ARRANGE_GAP between them): side by side across, stacked down, one
  * on the right (or left) half beside the others stacked on the other half,
- * or a grid of rows whose last row's slots widen to fill it.  A slot is a
+ * one on the top (or bottom) half over the others side by side on the
+ * other half, or a grid of rows whose last row's slots widen to fill it.  A slot is a
  * window's whole frame, its title bar included.  Returns the number of
  * slots made: count, at most the layout's limit.
  */
@@ -134,6 +139,29 @@ kwl_arrange_slots(
 		for (index = 1U; index < count; index++) {
 			arrange_split(inner.x, inner.width, 2U, other_side, &slots[index].x, &slots[index].width);
 			arrange_split(inner.y, inner.height, count - 1U, index - 1U, &slots[index].y, &slots[index].height);
+		}
+		break;
+	case KWL_ARRANGE_TOP_MAIN:
+	case KWL_ARRANGE_BOTTOM_MAIN:
+		/* One window: the whole area. */
+		if (count == 1U) {
+			slots[0] = inner;
+			break;
+		}
+
+		/* The main slot on its half, the others side by side on the other half. */
+		main_side = 0U;
+		other_side = 1U;
+		if (layout == KWL_ARRANGE_BOTTOM_MAIN) {
+			main_side = 1U;
+			other_side = 0U;
+		}
+		slots[0].x = inner.x;
+		slots[0].width = inner.width;
+		arrange_split(inner.y, inner.height, 2U, main_side, &slots[0].y, &slots[0].height);
+		for (index = 1U; index < count; index++) {
+			arrange_split(inner.y, inner.height, 2U, other_side, &slots[index].y, &slots[index].height);
+			arrange_split(inner.x, inner.width, count - 1U, index - 1U, &slots[index].x, &slots[index].width);
 		}
 		break;
 	case KWL_ARRANGE_GRID:

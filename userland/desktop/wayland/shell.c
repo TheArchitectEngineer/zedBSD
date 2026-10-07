@@ -219,19 +219,18 @@ static uint32_t fullscreen_leave_eaten;
 #define DOCK_TOP		KWL_GLASS_DOCK_TOP
 
 /*
- * The virtual desktops in the middle of the bar (ws099-p034): how many, each
- * one's slot (its width and the gap after it), the pill's padding, a dot's
- * diameter (a circle, the 2026-10-07 UAT), and the size of the shown
- * desktop's outlined capsule (half the slot's width, the same UAT).  A dot's
- * brightness does not change with the windows (the 2026-10-06 user decision).
+ * The virtual desktops in the middle of the bar (ws099-p034): how many (the
+ * left, the middle and the right one, ws181-p006), each one's slot (its
+ * width and the gap after it), the pill's padding, and each desktop's mark:
+ * the silhouette of a cat, a bird or a rabbit (the 2026-10-07 UAT), the
+ * desktop shown in the accent and the others faint.  A mark's brightness
+ * does not change with the windows (the 2026-10-06 user decision).
  */
-#define DESKTOPS		4
+#define DESKTOPS		((int)KWL_APPS_DESKTOPS)
 #define DESKTOP_WIDTH		30
 #define DESKTOP_GAP		4
 #define DESKTOPS_PAD		10
-#define DESKTOP_DOT		7
-#define DESKTOP_SHOWN_WIDTH	15
-#define DESKTOP_SHOWN_HEIGHT	12
+#define DESKTOP_ICON		20U
 
 /* The desktops' swipe: how near the edge it starts, how far it moves before it is one, and how long a slide takes. */
 #define DESKTOP_EDGE		16
@@ -3998,6 +3997,7 @@ draw_desktops(
 {
 	struct glass_shape shape;
 	float current[4];
+	const float *ink;
 	float progress;
 	int32_t x;
 	int desktop;
@@ -4031,21 +4031,13 @@ draw_desktops(
 		printf("KWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
 	}
 
-	/* Each desktop's slot: a round dot, or for the one shown an outlined capsule half as wide as the slot, in its middle. */
+	/* Each desktop's silhouette in the middle of its slot: the cat, the bird and the rabbit, the desktop shown in the accent. */
 	for (desktop = 0; desktop < DESKTOPS; desktop++) {
-		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
-		if (desktop == (int)server->desktop) {
-			glass_shape_init(&shape, (float)(x + (DESKTOP_WIDTH - DESKTOP_SHOWN_WIDTH) / 2), (float)(KWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_SHOWN_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
-			shape.mode = MODE_RING;
-			shape.radius = (float)DESKTOP_SHOWN_HEIGHT * 0.5f;
-			shape.soft = 1.6f;
-			memcpy(shape.color, colours->ink, sizeof(shape.color));
-			shape.color[3] = 0.95f;
-			glass_shape_draw(server, command, &shape);
-		} else {
-			glass_draw_solid(server, command, (float)x + (float)(DESKTOP_WIDTH - DESKTOP_DOT) * 0.5f, (float)KWL_GLASS_BAR_MIDDLE - (float)DESKTOP_DOT * 0.5f,
-					 (float)DESKTOP_DOT, (float)DESKTOP_DOT, (float)DESKTOP_DOT * 0.5f, colours->faint);
-		}
+		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP) + (DESKTOP_WIDTH - (int32_t)DESKTOP_ICON) / 2;
+		ink = colours->faint;
+		if (desktop == (int)server->desktop)
+			ink = current;
+		glass_draw_icon(server, command, (unsigned)GLASS_ICON_DESKTOP_CAT + (unsigned)desktop, x, KWL_GLASS_BAR_MIDDLE - (int32_t)DESKTOP_ICON / 2, DESKTOP_ICON, ink);
 	}
 }
 

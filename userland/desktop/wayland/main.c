@@ -87,6 +87,11 @@ main(
 	server.ime_method = 1;
 	server.width = 320;
 	server.height = 240;
+
+	/* The session starts on the middle desktop, the others to its left and right (ws181-p006). */
+	server.desktop = KWL_DESKTOP_START;
+	server.desktop_from = (float)KWL_DESKTOP_START;
+	server.desktop_to = (float)KWL_DESKTOP_START;
 	strcpy(server.socket_path, "/tmp/wayland-0");
 	setvbuf(stdout, NULL, _IOLBF, 0);
 

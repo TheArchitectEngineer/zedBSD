@@ -56,6 +56,14 @@ enum glass_icon {
 	GLASS_ICON_WIFI_2,
 	GLASS_ICON_WIFI_3,
 	GLASS_ICON_WIFI_4,
+	/*
+	 * The system bar's virtual desktops (ws181-p006, the 2026-10-07 UAT):
+	 * silhouettes of a cat (the left desktop), a bird (the middle one) and
+	 * a rabbit (the right one).
+	 */
+	GLASS_ICON_DESKTOP_CAT,
+	GLASS_ICON_DESKTOP_BIRD,
+	GLASS_ICON_DESKTOP_RABBIT,
 	GLASS_ICON_APP_FILES,
 	GLASS_ICON_APP_NOTES,
 	GLASS_ICON_APP_TERMINAL,

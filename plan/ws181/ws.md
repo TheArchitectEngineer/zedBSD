@@ -37,6 +37,7 @@ Primary Milestone: MG006
 | [p003](phase003/phase.md) | App Home の独立のモードと gesture（目標 3・4） | in-progress（実装済み、QEMU 待ち） |
 | [p004](phase004/phase.md) | 整列のメニューと整列モード（目標 5・6） | in-progress（実装済み、QEMU 待ち） |
 | [p005](phase005/phase.md) | UAT 2026-10-07 の 2 回目: App Home の上の bar（status と時計だけ白）、整列のメニュー（絵だけ・今の desktop・glass）、pill（印を外す・capsule 半分・点を正円）、整列の適用で窓が枠の大きさにならない件 | in-progress（実装・host まで、QEMU は T1） |
+| [p006](phase006/phase.md) | UAT 2026-10-07 の 3 回目: 整列のメニューの大きな grid（7 つの形）、App Home の時計と下寄せ・page、3 つの仮想 desktop（真ん中から、猫・鳥・ウサギ） | in-progress（実装・host まで、QEMU は T1） |
 
 ## 関連
 

@@ -7,9 +7,11 @@
 #     Wiseview opens following them ("KWL WISEVIEW gesture via=pad", "KWL WISEVIEW opening"; wiseview-pad.png); Esc
 #     closes it.
 #  2. The same, 8 mm and slowly: Wiseview goes back closed ("KWL WISEVIEW cancel").
-#  3. Two fingers left 40 mm from the right edge: the desktop to the right ("KWL GLASS desktop=2 via=pad").
-#  4. Two fingers right 40 mm from the left edge: back to the first ("KWL GLASS desktop=1 via=pad"); again on the
-#     first, where there is no neighbour on the left: it stays ("desktop=1 via=pad" once more).
+#  3. Two fingers left 40 mm from the right edge: from the middle desktop, where a session starts (ws181-p006), the
+#     desktop to the right ("KWL GLASS desktop=3 via=pad").
+#  4. Two fingers right 40 mm from the left edge: back to the middle ("KWL GLASS desktop=2 via=pad"), then to the left
+#     one ("desktop=1 via=pad"); again on the left one, where there is no neighbour on the left: it stays
+#     ("desktop=1 via=pad" once more).
 #  5. Three fingers up 25 mm in the middle: "kind=up3", Wiseview opens; Esc closes it.
 #  6. A tap of three fingers: "kind=tap3 phase=end" (the switcher comes with ws142-p005).
 #  7. Two fingers in the middle moving up: a scroll, no gesture.
@@ -73,15 +75,18 @@ opened=$(count 'KWL WISEVIEW opening from=')
 [ "${opened:-0}" -gt 1 ] 2>/dev/null && tap esc
 sleep 1
 
-# 3. Two fingers left 40 mm from the right edge: the second desktop.
+# 3. Two fingers left 40 mm from the right edge: from the middle desktop, the right one.
 pad right2 "down 0 1320 300; down 1 1310 450" "wait 30" "swipe -480 0 12 16" "up 0; up 1"
 expect_count right2-begin 'KWL GESTURE kind=right2 phase=begin' 1
-expect_count right2-desktop 'KWL GLASS desktop=2 via=pad' 1
+expect_count right2-desktop 'KWL GLASS desktop=3 via=pad' 1
 sleep 1
 
-# 4. Two fingers right 40 mm from the left edge: the first desktop; again there: it stays.
+# 4. Two fingers right 40 mm from the left edge: the middle desktop, then the left one; again there: it stays.
 pad left2 "down 0 20 300; down 1 30 450" "wait 30" "swipe 480 0 12 16" "up 0; up 1"
 expect_count left2-begin 'KWL GESTURE kind=left2 phase=begin' 1
+expect_count left2-middle 'KWL GLASS desktop=2 via=pad' 1
+sleep 1
+pad left2-left "down 0 20 300; down 1 30 450" "wait 30" "swipe 480 0 12 16" "up 0; up 1"
 expect_count left2-desktop 'KWL GLASS desktop=1 via=pad' 1
 sleep 1
 pad left2-end "down 0 20 300; down 1 30 450" "wait 30" "swipe 480 0 12 16" "up 0; up 1"

@@ -7,8 +7,9 @@
 
 /*
  * The arrangement of windows (arrange.c, WS181, the 2026-10-07 UAT): the
- * five layouts of the arrangement menu (side by side, stacked, one on the
- * right, one on the left, a grid), the slots each makes of the work area
+ * seven layouts of the arrangement menu (side by side, stacked, one on the
+ * left, one on the right, one on the top, one on the bottom, a grid), the
+ * slots each makes of the work area
  * for a number of windows, and which window goes to which slot (the one
  * nearest to where it is, the person's "roughly from where they are").
  *
@@ -22,13 +23,15 @@
 
 #include <stdint.h>
 
-/* The layouts, in the menu's order. */
+/* The layouts, in the menu's order (its rows of two, ws181-p006: the grid alone on the last). */
 #define KWL_ARRANGE_COLUMNS		0U
 #define KWL_ARRANGE_ROWS		1U
-#define KWL_ARRANGE_RIGHT_MAIN		2U
-#define KWL_ARRANGE_LEFT_MAIN		3U
-#define KWL_ARRANGE_GRID		4U
-#define KWL_ARRANGE_LAYOUTS		5U
+#define KWL_ARRANGE_LEFT_MAIN		2U
+#define KWL_ARRANGE_RIGHT_MAIN		3U
+#define KWL_ARRANGE_TOP_MAIN		4U
+#define KWL_ARRANGE_BOTTOM_MAIN		5U
+#define KWL_ARRANGE_GRID		6U
+#define KWL_ARRANGE_LAYOUTS		7U
 
 /* The most windows a layout takes (the grid's), and the margin and gap around and between its slots. */
 #define KWL_ARRANGE_MAX			9U

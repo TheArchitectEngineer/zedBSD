@@ -9,7 +9,7 @@
 #   2. A click on b's body changes nothing of its size (no "KWL GLASS undock", no "action=float").
 #   3. a docked; a ends (killed): the docked mode ends, the other windows stay windows ("leave via=closed front=0",
 #      no "KWL LAYOUT front ... action=dock").
-#   4. b docked; c, opened in the docked mode, opens docked and owns the desktop ("KWL LAYOUT owner desktop=1"),
+#   4. b docked; c, opened in the docked mode, opens docked and owns the desktop ("KWL LAYOUT owner desktop=2"),
 #      and 1.5 s later the mode is still docked (no new "leave").
 #   5. c carried to desktop 2 (Ctrl+Alt+Shift+Right): still docked ("carried"), no "leave"; back with
 #      Ctrl+Alt+Shift+Left.
@@ -24,10 +24,10 @@
 #      ("leave via=pull"), and is not docked again ("KWL GLASS moved", no new "dock ... via=drag").
 #  C. The arrangement (p004, design.md §5.4):
 #  10. A click on the desktops' pill opens the menu ("KWL ARRANGE menu open", arrange-menu.png); "One on the Right"
-#      arranges the three windows ("KWL ARRANGE apply layout=right-main desktop=1 windows=3", arranged.png), and each
+#      arranges the three windows ("KWL ARRANGE apply layout=right-main desktop=2 windows=3", arranged.png), and each
 #      client draws its slot's size ("KWL GLASS resized ... width=W height=H" after the apply, W x H its last configure's).
 #  11. The left top slot's window dragged by its title onto the right slot: "KWL ARRANGE swap".
-#  12. A double click on a title docks it and ends the mode ("KWL ARRANGE end desktop=1 reason=dock",
+#  12. A double click on a title docks it and ends the mode ("KWL ARRANGE end desktop=2 reason=dock",
 #      "KWL LAYOUT mode=docked"); brought back, every window floats ("windows ... docked=0") and a title's drag is a
 #      move ("KWL GLASS moved"), not a swap.
 #  13. The compositor stays up, with no ERROR in its log.
@@ -131,7 +131,7 @@ expect_some switch-docks "KWL LAYOUT switch surface=[0-9]* action=dock mode=dock
 bar_double_click
 expect_some leave-all-float 'KWL LAYOUT leave via=double-click front=[0-9]* quiet=1'
 expect_some behind-floats "KWL LAYOUT float-quiet surface=[0-9]* .*client=${b:-0}\$"
-expect_some none-docked 'KWL LAYOUT windows desktop=1 mode=windowed floating=2 docked=0'
+expect_some none-docked 'KWL LAYOUT windows desktop=2 mode=windowed floating=2 docked=0'
 shot a1-windowed
 
 # A2. A click on b's body: it comes forward, its size unchanged.
@@ -154,16 +154,16 @@ c=$(client_of)
 sleep 1.5
 leaves=$(count 'KWL LAYOUT leave ')
 expect_some c-open-docked "KWL GLASS open-docked client=${c:-0} "
-expect_some c-owner "KWL LAYOUT owner desktop=1 surface=[0-9]* client=${c:-0}\$"
+expect_some c-owner "KWL LAYOUT owner desktop=2 surface=[0-9]* client=${c:-0}\$"
 sleep 1.5
 expect_count c-still-docked 'KWL LAYOUT leave ' "${leaves:-0}"
 
-# A5. c carried to desktop 2 and back: still docked.
+# A5. c carried to the right desktop and back: still docked.
 key ctrl true; key alt true; key shift true
 tap right
 key shift false; key alt false; key ctrl false
 sleep 1.5
-expect_some carried 'KWL LAYOUT owner desktop=2 surface=[0-9]* carried'
+expect_some carried 'KWL LAYOUT owner desktop=3 surface=[0-9]* carried'
 expect_count carried-no-leave 'KWL LAYOUT leave ' "${leaves:-0}"
 key ctrl true; key alt true; key shift true
 tap left
@@ -222,7 +222,7 @@ shot c10-arrange-menu
 set -- $(last 'KWL ARRANGE menu item=right-main ' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 glides=$(count 'KWL ARRANGE glide-end')
 pointer move ${1:-640} ${2:-200} sleep 300 down sleep 60 up sleep 1200
-expect_some arranged 'KWL ARRANGE apply layout=right-main desktop=1 windows=3'
+expect_some arranged 'KWL ARRANGE apply layout=right-main desktop=2 windows=3'
 # The picture is taken once the three windows' glides (180 ms) are over, and their clients have drawn the slot's size.
 i=0; while [ "$(count 'KWL ARRANGE glide-end')" -lt $((${glides:-0} + 3)) ] 2>/dev/null && [ $i -lt 10 ]; do sleep 0.3; i=$((i+1)); done
 i=0; while [ $i -lt 20 ]; do fits_slot "${b:-0}" && fits_slot "${d:-0}" && fits_slot "${e:-0}" && break; sleep 0.4; i=$((i+1)); done
@@ -245,9 +245,9 @@ shot c11-swapped
 # C12. A double click on the right slot's title docks it, the mode ends; brought back, a title drag is a move.
 set -- $s0
 pointer move $((${1:-660} + 60)) $((${2:-60} + 22)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 1500
-expect_some arrange-end-dock 'KWL ARRANGE end desktop=1 reason=dock'
+expect_some arrange-end-dock 'KWL ARRANGE end desktop=2 reason=dock'
 bar_double_click
-expect_some arranged-floats 'KWL LAYOUT windows desktop=1 mode=windowed .* docked=0'
+expect_some arranged-floats 'KWL LAYOUT windows desktop=2 mode=windowed .* docked=0'
 swaps=$(count 'KWL ARRANGE swap-start')
 moves=$(count 'KWL GLASS moved')
 set -- $s1

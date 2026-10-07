@@ -3,7 +3,7 @@
 # (plan/ws079/tests/config-amd64-pen.mk; plan/ws079/tests/pen-guest.sh start IMAGE).  The compositor under test
 # (BUILD/bin/wayland) is copied in, 1280x800.  Three applications by wltest --app-id: apps.a (one window), apps.b
 # (two windows) and apps.c (one window), opened in that order.  The mouse is QMP's tablet.
-#  1. The bar: "KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.a,apps.b,apps.c" (the opening order), an icon each.
+#  1. The bar: "KWL APPS bar count=3 hidden=0 desktop=2 apps=apps.a,apps.b,apps.c" (the opening order), an icon each.
 #  2. The pointer resting on apps.b's icon: after 400 ms "KWL APPS preview app=apps.b windows=2 via=hover"
 #     (preview-hover.png); away from it: "KWL APPS preview close via=leave".
 #  3. A click on apps.a's icon (one window): "KWL APPS raise surface=<its window> via=bar".
@@ -11,10 +11,10 @@
 #     ("KWL APPS raise surface=<it> via=preview").
 #  5. Two clicks on apps.b's icon: shown, then hidden ("preview close via=click"); shown again, Esc hides
 #     ("preview close via=escape").
-#  6. apps.c's icon dragged onto apps.a's place: "KWL APPS reorder app=apps.c place=0 desktop=1", the bar
+#  6. apps.c's icon dragged onto apps.a's place: "KWL APPS reorder app=apps.c place=0 desktop=2", the bar
 #     "apps=apps.c,apps.a,apps.b".
-#  7. Desktop 2 (Ctrl+Alt+Right) with a window of apps.d: "desktop=2 apps=apps.d"; back on desktop 1 (Ctrl+Alt+Left)
-#     the dragged order is still there ("desktop=1 apps=apps.c,apps.a,apps.b" again).
+#  7. The right desktop (Ctrl+Alt+Right; the session starts on the middle one, ws181-p006) with a window of apps.d: "desktop=3 apps=apps.d"; back on the middle one (Ctrl+Alt+Left)
+#     the dragged order is still there ("desktop=2 apps=apps.c,apps.a,apps.b" again).
 #  8. A docked window (double click on the top window's title): the docked title has the bar, no icon shows its
 #     previews (docked.png).
 #  9. The compositor stays up, with no ERROR in its log.
@@ -65,7 +65,7 @@ open_app apps.c d0d0f4 420x300
 pointer move 640 700 sleep 300
 
 # 1. The bar in the opening order.
-expect_some bar-opening-order 'KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.a,apps.b,apps.c'
+expect_some bar-opening-order 'KWL APPS bar count=3 hidden=0 desktop=2 apps=apps.a,apps.b,apps.c'
 ax=$(icon_x apps.a); bx=$(icon_x apps.b); cx=$(icon_x apps.c)
 echo "icons: apps.a=${ax:-?} apps.b=${bx:-?} apps.c=${cx:-?}"
 [ -n "$ax" ] && [ -n "$bx" ] && [ -n "$cx" ] && [ "$ax" -lt "$bx" ] && [ "$bx" -lt "$cx" ] && pass icons-left-to-right || fail icons-left-to-right
@@ -100,17 +100,17 @@ pointer move 640 700 sleep 600
 
 # 6. apps.c's icon dragged onto apps.a's place.
 pointer move $((cx + 18)) 22 sleep 100 down sleep 60 move $((cx + 6)) 22 sleep 60 move $((bx + 10)) 22 sleep 60 move $((ax + 10)) 22 sleep 60 move $((ax + 6)) 22 sleep 100 up sleep 500
-expect_count drag-reorders 'KWL APPS reorder app=apps.c place=0 desktop=1' 1
-expect_some drag-bar 'KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b'
+expect_count drag-reorders 'KWL APPS reorder app=apps.c place=0 desktop=2' 1
+expect_some drag-bar 'KWL APPS bar count=3 hidden=0 desktop=2 apps=apps.c,apps.a,apps.b'
 pointer move 640 700 sleep 300
 
-# 7. Desktop 2 with apps.d; back on desktop 1, the order kept.
+# 7. The right desktop with apps.d; back on the middle one, the order kept.
 combo right
 open_app apps.d f4f4c0 380x260
-expect_some desktop2-bar 'KWL APPS bar count=1 hidden=0 desktop=2 apps=apps.d'
+expect_some desktop2-bar 'KWL APPS bar count=1 hidden=0 desktop=3 apps=apps.d'
 combo left
 sleep 1
-n=$(count 'KWL APPS bar count=3 hidden=0 desktop=1 apps=apps.c,apps.a,apps.b')
+n=$(count 'KWL APPS bar count=3 hidden=0 desktop=2 apps=apps.c,apps.a,apps.b')
 [ "${n:-0}" -ge 2 ] 2>/dev/null && pass desktop1-order-kept || fail "desktop1-order-kept (${n:-?})"
 
 # 8. A docked window: the window brought by the preview (on top since; found by its client, T1-134) docked by a double click on its title.

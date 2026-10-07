@@ -52,6 +52,7 @@
 #include "edge.h"
 #include "activation.h"
 #include "ime.h"
+#include "language.h"
 
 #include "userland/desktop/paths.h"
 
@@ -65,11 +66,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
-/* A page of icons: its columns and rows, how long a page turn takes, and how far a press moves before it is a drag. */
+/*
+ * A page of icons: its columns and rows, how long a page turn takes, and how
+ * far a press moves before it is a drag.  The first page has the clock over
+ * HOME_FIRST_ROWS rows of icons (ws181-p006, the 2026-10-07 UAT: Home is
+ * the place to rest, its weight at the bottom); the others have HOME_ROWS.
+ */
 #define HOME_ROWS		4
+#define HOME_FIRST_ROWS		2
 #define HOME_PAGE		(HOME_COLUMNS * HOME_ROWS)
+#define HOME_FIRST_PAGE		(HOME_COLUMNS * HOME_FIRST_ROWS)
+
+/* The icons' grid ends this far above the output's bottom (over the pages' dots). */
+#define HOME_GRID_BOTTOM	72
 #define HOME_PAGE_MS		200U
 #define HOME_PAGE_START		10
 
@@ -248,6 +260,9 @@ static void home_draw_tile(struct kwl_server *server, VkCommandBuffer command, f
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
 static void home_layout(struct kwl_server *server);
+static unsigned home_page_of(unsigned slot);
+static unsigned home_page_first(unsigned page);
+static void home_draw_clock(struct kwl_server *server, VkCommandBuffer command, float opacity);
 static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct kwl_server *server, int32_t x, int32_t y);
@@ -457,8 +472,9 @@ kwl_home_draw(
 		printf("KWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
-	/* The rows' floors, under the icons, coming in with the first of them. */
+	/* The rows' floors, under the icons, coming in with the first of them; the first page's clock over them. */
 	content = home_content(server, 0U, progress, &rise);
+	home_draw_clock(server, command, content);
 	home_draw_floors(server, command, content);
 
 	/* Each icon shown on the output, coming in after the one before it (fading out with Home as it closes). */
@@ -1397,8 +1413,10 @@ home_hex(
 
 /*
  * Works out which applications show and where their icons go: a centred
- * grid of up to six columns; without a search, pages of HOME_PAGE side by
- * side, moved by where the pages are (dragged or turning).
+ * grid of up to six columns, its rows at the bottom of the output; without
+ * a search, pages side by side (the first with HOME_FIRST_PAGE under the
+ * clock, the others with HOME_PAGE), moved by where the pages are (dragged
+ * or turning).
  */
 static void
 home_layout(
@@ -1410,10 +1428,11 @@ home_layout(
 	unsigned slot;
 	unsigned place;
 	unsigned page;
+	unsigned first;
+	unsigned in_page;
 	float position;
 	int32_t left;
-	int32_t top;
-	int32_t space;
+	int32_t bottom;
 	int32_t shift;
 	int found;
 
@@ -1431,10 +1450,10 @@ home_layout(
 	if (server->home_selected < 0 && home_shown_count != 0U)
 		server->home_selected = 0;
 
-	/* The pages: one while searching, else as many as the icons fill; the page shown is one of them. */
+	/* The pages: one while searching, else the first and as many more as the icons fill; the page shown is one of them. */
 	home_pages = 1U;
-	if (server->home_query_length == 0U && home_shown_count > (unsigned)HOME_PAGE)
-		home_pages = (home_shown_count + (unsigned)HOME_PAGE - 1U) / (unsigned)HOME_PAGE;
+	if (server->home_query_length == 0U && home_shown_count > (unsigned)HOME_FIRST_PAGE)
+		home_pages = 1U + (home_shown_count - (unsigned)HOME_FIRST_PAGE + (unsigned)HOME_PAGE - 1U) / (unsigned)HOME_PAGE;
 	if (server->home_page >= home_pages)
 		server->home_page = home_pages - 1U;
 
@@ -1442,16 +1461,12 @@ home_layout(
 	if (home_shown_count == 0U)
 		return;
 
-	/* The grid (one page's, the fullest), centred in the space under the system bar (a little above the middle). */
+	/* The grid's columns, centred across; its rows end at the bottom, over the pages' dots. */
 	columns = home_shown_count;
 	if (columns > HOME_COLUMNS)
 		columns = HOME_COLUMNS;
-	rows = (home_shown_count + columns - 1U) / columns;
-	if (home_pages > 1U)
-		rows = HOME_ROWS;
 	left = ((int32_t)server->width - (int32_t)columns * HOME_CELL_WIDTH) / 2;
-	space = (int32_t)server->height - KWL_GLASS_BAR;
-	top = KWL_GLASS_BAR + (space - (int32_t)rows * HOME_CELL_HEIGHT) * 2 / 5;
+	bottom = (int32_t)server->height - HOME_GRID_BOTTOM;
 
 	/* Where the pages are: the page shown, or between two while dragged or turning. */
 	position = 0.0f;
@@ -1460,17 +1475,26 @@ home_layout(
 
 	/* Each icon's top-left corner, centred in its cell, its page a screen's width from the next. */
 	for (slot = 0U; slot < home_shown_count; slot++) {
+		/* Its page, and its place among the icons of the page (one page while searching). */
 		page = 0U;
-		place = slot;
+		first = 0U;
+		in_page = home_shown_count;
 		if (home_pages > 1U) {
-			page = slot / (unsigned)HOME_PAGE;
-			place = slot % (unsigned)HOME_PAGE;
+			page = home_page_of(slot);
+			first = home_page_first(page);
+			in_page = home_page_first(page + 1U) - first;
+			if (first + in_page > home_shown_count)
+				in_page = home_shown_count - first;
 		}
+		place = slot - first;
+
+		/* The page's rows, the last of them at the bottom. */
+		rows = (in_page + columns - 1U) / columns;
 
 		/* The page's shift, and the cell. */
 		shift = (int32_t)(((float)page - position) * (float)server->width);
 		home_icon_x[slot] = shift + left + (int32_t)(place % columns) * HOME_CELL_WIDTH + (HOME_CELL_WIDTH - HOME_ICON) / 2;
-		home_icon_y[slot] = top + (int32_t)(place / columns) * HOME_CELL_HEIGHT + 20;
+		home_icon_y[slot] = bottom - (int32_t)(rows - place / columns) * HOME_CELL_HEIGHT + 20;
 	}
 }
 
@@ -2018,7 +2042,7 @@ home_open(
 	server->home_query_length = 0U;
 	server->home_query[0] = '\0';
 	server->home_preedit[0] = '\0';
-	server->home_selected = (int)(server->home_page * (unsigned)HOME_PAGE);
+	server->home_selected = (int)home_page_first(server->home_page);
 	server->home_launch_app = -1;
 	server->home_page_press = 0;
 	server->drag = NULL;
@@ -2523,7 +2547,95 @@ home_select(
 	/* Its page, when there are pages. */
 	if (home_pages <= 1U)
 		return;
-	page = (unsigned)selected / (unsigned)HOME_PAGE;
+	page = home_page_of((unsigned)selected);
 	if (page != server->home_page)
 		home_page_turn(server, (int)page, "select");
+}
+
+/* The page an icon's slot is on (the first page holds HOME_FIRST_PAGE, the others HOME_PAGE). */
+static unsigned
+home_page_of(
+	unsigned slot)
+{
+	/* The first page's icons. */
+	if (slot < (unsigned)HOME_FIRST_PAGE)
+		return 0U;
+
+	/* Succeeded: one of the later pages. */
+	return 1U + (slot - (unsigned)HOME_FIRST_PAGE) / (unsigned)HOME_PAGE;
+}
+
+/* The slot of a page's first icon. */
+static unsigned
+home_page_first(
+	unsigned page)
+{
+	/* The first page starts with the first icon. */
+	if (page == 0U)
+		return 0U;
+
+	/* Succeeded: after the first page and the full pages before it. */
+	return (unsigned)HOME_FIRST_PAGE + (page - 1U) * (unsigned)HOME_PAGE;
+}
+
+/*
+ * Draws the first page's clock (ws181-p006, the 2026-10-07 UAT: Home has
+ * a clock, the place to rest): the time, large, and the long date under
+ * it, in the middle of the space over the first page's icons, moving with
+ * the first page.  A search has no clock.
+ */
+static void
+home_draw_clock(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	float opacity)
+{
+	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.96f };
+	static const float soft[4] = { 1.0f, 1.0f, 1.0f, 0.72f };
+	char text[64];
+	struct tm local;
+	time_t now;
+	float position;
+	float colour[4];
+	int32_t shift;
+	int32_t middle;
+	int32_t grid_top;
+	int32_t baseline;
+	int32_t width;
+
+	/* A search, or the content not shown yet, has no clock. */
+	if (server->home_query_length != 0U || server->home_preedit[0] != '\0')
+		return;
+	if (opacity <= 0.0f)
+		return;
+
+	/* The first page's place: off the output while another page is shown. */
+	position = 0.0f;
+	if (home_pages > 1U)
+		position = home_page_position(server);
+	shift = (int32_t)((0.0f - position) * (float)server->width);
+	middle = (int32_t)server->width / 2 + shift;
+
+	/* The middle of the space between the top and the first page's icons. */
+	grid_top = (int32_t)server->height - HOME_GRID_BOTTOM - HOME_FIRST_ROWS * HOME_CELL_HEIGHT;
+	baseline = grid_top / 2 + 16;
+
+	/* The time now. */
+	now = time(NULL);
+	memset(&local, 0, sizeof(local));
+	(void)localtime_r(&now, &local);
+
+	/* The time, large, centred. */
+	(void)strftime(text, sizeof(text), "%H:%M", &local);
+	memcpy(colour, white, sizeof(colour));
+	colour[3] *= opacity;
+	width = glass_text_width(server, SIZE_CLOCK, text);
+	glass_draw_text(server, command, SIZE_CLOCK, middle - width / 2, baseline, text, (int32_t)server->width, colour);
+
+	/* The long date under it. */
+	kwl_language_date(&local, KWL_LANGUAGE_DATE_LONG, text, sizeof(text));
+	memcpy(colour, soft, sizeof(colour));
+	colour[3] *= opacity;
+	width = glass_text_width(server, SIZE_SEARCH, text);
+	glass_draw_text(server, command, SIZE_SEARCH, middle - width / 2, baseline + 46, text, (int32_t)server->width, colour);
 }
