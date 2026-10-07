@@ -52,6 +52,22 @@
 #define ARRANGE_MS		180U
 
 /*
+ * How long past its time a movement still asks for frames (ms): enough
+ * for the frame that draws its end, which a draw notes (settled, faded,
+ * glide-end), and no more, so that a movement whose end is never drawn (a
+ * window on a desktop not shown, under App Home) does not keep every frame
+ * drawn (ws181-p009).
+ */
+#define ARRANGE_MOVING_GRACE_MS	100U
+
+/*
+ * How long a window asked for into an arrangement (the clock's Calendar,
+ * ws181-p009) may take to map and still join it (ms): a program's start,
+ * with room for a slow machine.
+ */
+#define ARRANGE_JOIN_MS		10000U
+
+/*
  * The menu's cells (one a layout) in two columns and four rows, the gap
  * between them, its padding, its corner, and its gap under the bar: twice
  * as wide and five times as tall as the row of ws181-p005.
@@ -180,6 +196,20 @@ struct arrange_swap {
 };
 
 /*
+ * A window asked for into the arrangement of the desktop shown (the
+ * system bar's clock opening Calendar there, ws181-p009, the 2026-10-07
+ * UAT): the desktop, its layout, and when it was asked.  The first window
+ * mapped on that desktop within ARRANGE_JOIN_MS joins the arrangement
+ * instead of ending it.
+ */
+struct arrange_join {
+	unsigned on;
+	unsigned desktop;
+	unsigned layout;
+	uint64_t asked_ms;
+};
+
+/*
  * Each desktop's arrangement, for the session.  A desktop out of the
  * arrangement mode has on 0; its slots are forgotten then.
  */
@@ -190,6 +220,13 @@ static struct arrange_menu arrange_menu;
 
 /* The swap being dragged; window is NULL when none is. */
 static struct arrange_swap arrange_swap;
+
+/*
+ * The window asked for into an arrangement; on is 0 when none is waited
+ * for (set by kwl_arrange_join_prepare, used once by kwl_arrange_join_opened
+ * or kwl_arrange_mapped).
+ */
+static struct arrange_join arrange_join;
 
 static void arrange_menu_open(struct kwl_server *server);
 static void arrange_menu_close(struct kwl_server *server, const char *via);
@@ -368,10 +405,22 @@ kwl_arrange_motion(
 	struct kwl_server *server)
 {
 	struct kwl_object *surface;
+	int over;
 
-	/* An open menu lights the item under the pointer. */
+	/*
+	 * An open menu lights the item under the pointer, and the selection
+	 * follows it: between two cells the item last pointed at stays lit,
+	 * not the selection the menu opened with (ws181-p009, the first item
+	 * flashed as the pointer crossed a gap).  Only a change is drawn.
+	 */
 	if (arrange_menu.open) {
-		server->dirty = 1;
+		over = arrange_menu_item_at(server, server->pointer_x, server->pointer_y);
+		if (over != ARRANGE_ITEM_NONE && over != arrange_menu.selected) {
+			arrange_menu.selected = over;
+			server->dirty = 1;
+		}
+
+		/* The motion was the menu's. */
 		return 1;
 	}
 
@@ -678,6 +727,8 @@ kwl_arrange_mapped(
 {
 	struct arrange_desktop *arranged;
 
+	uint64_t waited;
+
 	/* Only a window without a parent on an arranged desktop, newer than its arrangement. */
 	if (surface->parent_window != NULL || surface->desktop >= KWL_APPS_DESKTOPS)
 		return;
@@ -685,8 +736,85 @@ kwl_arrange_mapped(
 	if (!arranged->on || surface->map_order <= arranged->map_order)
 		return;
 
+	/*
+	 * The window asked for into this arrangement, on the desktop shown,
+	 * in time: the layout arranges it with the others (ws181-p009).
+	 */
+	waited = kwl_milliseconds() - arrange_join.asked_ms;
+	if (arrange_join.on &&
+	    arrange_join.desktop == surface->desktop &&
+	    surface->desktop == server->desktop &&
+	    waited < ARRANGE_JOIN_MS) {
+		arrange_join.on = 0U;
+		printf("KWL ARRANGE join surface=%u via=mapped\n", surface->id);
+		arrange_apply(server, arranged->layout);
+		return;
+	}
+
 	/* The mode ends; the new window is placed as a new window is. */
 	arrange_end(server, surface->desktop, "new");
+}
+
+/*
+ * Notes that a window is about to be asked for into the arrangement of the
+ * desktop shown (the system bar's clock opening Calendar, ws181-p009): its
+ * window joins the arrangement when it maps, or when it runs already, at
+ * kwl_arrange_join_opened.  A desktop out of the arrangement mode waits
+ * for nothing.
+ */
+void
+kwl_arrange_join_prepare(
+	struct kwl_server *server)
+{
+	struct arrange_desktop *arranged;
+
+	/* Nothing is waited for unless the desktop shown is arranged. */
+	arrange_join.on = 0U;
+	if (server->desktop >= KWL_APPS_DESKTOPS)
+		return;
+	arranged = &arrange_desktops[server->desktop];
+	if (!arranged->on)
+		return;
+
+	/* The desktop, its layout, and now. */
+	arrange_join.on = 1U;
+	arrange_join.desktop = server->desktop;
+	arrange_join.layout = arranged->layout;
+	arrange_join.asked_ms = kwl_milliseconds();
+}
+
+/*
+ * Follows the request kwl_arrange_join_prepare noted, once it was made: a
+ * failed one waits for nothing; a window that ran already (brought to the
+ * front on the desktop shown, which may have ended the arrangement) joins
+ * the layout now; a program started is waited for (kwl_arrange_mapped).
+ */
+void
+kwl_arrange_join_opened(
+	struct kwl_server *server,
+	int error,
+	int running)
+{
+	/* Nothing waited for. */
+	if (!arrange_join.on)
+		return;
+
+	/* The request failed: nothing comes. */
+	if (error != 0) {
+		arrange_join.on = 0U;
+		return;
+	}
+
+	/* A program started: its window is waited for. */
+	if (!running)
+		return;
+
+	/* The window that ran already, on the desktop shown: the layout arranges it with the others. */
+	arrange_join.on = 0U;
+	if (server->desktop != arrange_join.desktop)
+		return;
+	printf("KWL ARRANGE join via=running\n");
+	arrange_apply(server, arrange_join.layout);
 }
 
 /*
@@ -1358,23 +1486,33 @@ arrange_draw_icon(
 static int
 arrange_moving(void)
 {
+	const struct arrange_slot *slot;
 	unsigned desktop;
 	unsigned index;
+	uint64_t now;
 
-	/* The open menu still growing. */
-	if (arrange_menu.open && !arrange_menu.settled)
+	/* The time the movements are measured against. */
+	now = kwl_milliseconds();
+
+	/* The open menu still growing, until its time and the frame after it. */
+	if (arrange_menu.open &&
+	    !arrange_menu.settled &&
+	    now - arrange_menu.opened_ms < ARRANGE_MENU_OPEN_MS + ARRANGE_MOVING_GRACE_MS)
 		return 1;
 
-	/* The closed menu still fading. */
-	if (!arrange_menu.open && arrange_menu.closed_ms != 0U)
+	/* The closed menu still fading, likewise. */
+	if (!arrange_menu.open &&
+	    arrange_menu.closed_ms != 0U &&
+	    now - arrange_menu.closed_ms < ARRANGE_MENU_CLOSE_MS + ARRANGE_MOVING_GRACE_MS)
 		return 1;
 
-	/* A window of any desktop in the arrangement mode on its way to its slot. */
+	/* A window of any desktop in the arrangement mode on its way to its slot, likewise. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
 		if (!arrange_desktops[desktop].on)
 			continue;
 		for (index = 0U; index < arrange_desktops[desktop].count; index++) {
-			if (arrange_desktops[desktop].slots[index].glide_ms != 0U)
+			slot = &arrange_desktops[desktop].slots[index];
+			if (slot->glide_ms != 0U && now - slot->glide_ms < ARRANGE_MS + ARRANGE_MOVING_GRACE_MS)
 				return 1;
 		}
 	}

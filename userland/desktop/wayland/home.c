@@ -256,6 +256,14 @@ static int32_t home_icon_y[HOME_APPS_MAX];
 static unsigned home_pages = 1U;
 
 /*
+ * Whether the touch pad's gesture Home follows closes it (two fingers up
+ * from the pad's bottom edge on Home, ws181-p009) rather than opens it
+ * (two fingers down from the top edge): set at the gesture's beginning in
+ * kwl_home_pad, read by its later phases; the event loop's thread only.
+ */
+static unsigned home_pad_closing;
+
+/*
  * The character each key types into the search (lower case), by evdev code; 0 for none.
  */
 static const char home_characters[HOME_KEYS] = {
@@ -438,12 +446,13 @@ kwl_home_close_now(
 }
 
 /*
- * Follows the touch pad's two fingers down from its top edge (TOP2,
- * ws181-p008, the 2026-10-07 UAT): Home opens as far as they have come,
- * and at their lift it opens past HOME_THRESHOLD of HOME_PAD_UM or when
- * flicked, and goes back closed otherwise (or when the gesture is given
- * up).  shell.c gives it every phase of the gesture, from a beginning
- * while Home is closed.
+ * Follows a touch pad gesture of Home's.  Two fingers down from the pad's
+ * top edge (TOP2, ws181-p008, the 2026-10-07 UAT) with Home closed open it
+ * as far as they have come, and at their lift it opens past HOME_THRESHOLD
+ * of HOME_PAD_UM or when flicked, and goes back closed otherwise (or when
+ * the gesture is given up).  Two fingers up from the pad's bottom edge
+ * (BOTTOM2, ws181-p009) with Home open close it the same way, the desktop
+ * coming back as they go.  shell.c gives it every phase of the gesture.
  */
 void
 kwl_home_pad(
@@ -453,14 +462,25 @@ kwl_home_pad(
 	int32_t speed)
 {
 	float progress;
+	float closed;
 
-	/* The beginning: Home follows the fingers instead of its animation. */
+	/*
+	 * The beginning: Home follows the fingers instead of its animation,
+	 * closing when it shows (open, or on its way to open) and opening
+	 * otherwise.
+	 */
 	if (phase == KWL_TOUCHPAD_PHASE_BEGIN) {
+		progress = kwl_home_progress(server);
+		home_pad_closing = 0U;
+		if (progress > 0.0f || server->home_to > 0.0f)
+			home_pad_closing = 1U;
 		server->home_pad = 1;
 		server->home_dragging = 1;
 		server->home_moving = 0;
 		server->home_drag = 0.0f;
-		printf("KWL HOME pad swipe\n");
+		if (home_pad_closing)
+			server->home_drag = 1.0f;
+		printf("KWL HOME pad swipe closing=%u\n", home_pad_closing);
 	}
 
 	/* Something else ended the following already (Home dismissed): the rest of the gesture does nothing. */
@@ -470,12 +490,17 @@ kwl_home_pad(
 		return;
 	}
 
-	/* How far it is open by the fingers' travel. */
+	/* How far the fingers have come of the way, from Home's side the gesture starts at. */
 	progress = (float)travel_um / (float)HOME_PAD_UM;
 	if (progress < 0.0f)
 		progress = 0.0f;
 	if (progress > 1.0f)
 		progress = 1.0f;
+
+	/* How far Home is open by it: the way itself opening, the rest of it closing. */
+	closed = progress;
+	if (home_pad_closing)
+		progress = 1.0f - closed;
 	server->home_drag = progress;
 	server->dirty = 1;
 
@@ -483,9 +508,24 @@ kwl_home_pad(
 	if (phase == KWL_TOUCHPAD_PHASE_BEGIN || phase == KWL_TOUCHPAD_PHASE_UPDATE)
 		return;
 
-	/* The end: past the threshold or flicked down it opens from where the fingers left it. */
+	/* The end of a closing: past the threshold or flicked up the desktop comes back; otherwise Home stays. */
 	server->home_pad = 0;
 	server->home_dragging = 0;
+	if (home_pad_closing) {
+		home_pad_closing = 0U;
+		if (phase == KWL_TOUCHPAD_PHASE_END &&
+		    (closed >= HOME_THRESHOLD || speed >= HOME_PAD_FLICK)) {
+			home_close(server, progress, "pad");
+			return;
+		}
+
+		/* Not far enough, or given up: Home stays open. */
+		printf("KWL HOME pad stays from=%.2f\n", (double)progress);
+		home_settle(server, progress, 1.0f);
+		return;
+	}
+
+	/* The end of an opening: past the threshold or flicked down it opens from where the fingers left it. */
 	if (phase == KWL_TOUCHPAD_PHASE_END &&
 	    (progress >= HOME_THRESHOLD || speed >= HOME_PAD_FLICK)) {
 		home_open(server, progress, "pad");
@@ -741,12 +781,20 @@ kwl_home_motion(
 			home_page_follow(server, dx, dy);
 		}
 
-		/* The pages follow the pointer, only when there are pages and no search. */
+		/*
+		 * The pages follow the pointer, only when there are pages and no
+		 * search, and not past the first or the last: no page that is not
+		 * there slides in (ws181-p009, the 2026-10-07 UAT).
+		 */
 		if (server->home_page_dragging &&
 		    !server->home_page_closing &&
 		    home_pages > 1U &&
 		    server->home_query_length == 0U) {
 			server->home_page_moving = 0;
+			if (server->home_page == 0U && dx > 0)
+				dx = 0;
+			if (server->home_page + 1U >= home_pages && dx < 0)
+				dx = 0;
 			server->home_page_offset = dx;
 		}
 
@@ -2258,18 +2306,21 @@ home_launch(
 /*
  * Opens an application of the list by its name from elsewhere than Home
  * (ws155-p004: the system bar's clock opens Calendar): started, or its
- * window brought to the front when it runs already.  Its first window
- * does not grow out of an icon.  Returns 0, or ENOENT for a name the list
- * does not have.
+ * window brought to the front when it runs already (running says which,
+ * for the arrangement it may join, ws181-p009).  Its first window does
+ * not grow out of an icon.  Returns 0, or ENOENT for a name the list does
+ * not have.
  */
 int
 kwl_home_open_app(
 	struct kwl_server *server,
 	const char *name,
-	const char *via)
+	const char *via,
+	int *running)
 {
 	unsigned index;
 	int same;
+	int switched;
 
 	/* The list (read once). */
 	home_read_apps(server);
@@ -2280,14 +2331,16 @@ kwl_home_open_app(
 		if (same != 0)
 			continue;
 
-		/* Started or brought to the front, not growing from an icon of Home. */
+		/* Started or brought to the front (switched), not growing from an icon of Home. */
 		printf("KWL HOME open name=%s via=%s\n", name, via);
-		(void)home_launch(server, index);
+		switched = home_launch(server, index);
 		server->home_launching = 0;
+		*running = switched;
 		return 0;
 	}
 
 	/* Not in the list (an image without it). */
+	*running = 0;
 	printf("KWL HOME open name=%s via=%s error=%d\n", name, via, ENOENT);
 	return ENOENT;
 }
