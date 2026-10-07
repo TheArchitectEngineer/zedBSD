@@ -144,3 +144,4 @@
 | WS001 ws001-p041（ls） | C 以外の locale の照合と時刻の書式、block・character の device の欄（major, minor）、-f と -l・-s の組み合わせ | XCU の locale の照合（LC_COLLATE）・LC_TIME の書式、device の番号の欄（今は C の照合、時刻は固定の英語、device も大きさを書く） | `userland/base/ls/main.c` の `compare`・`ls_time`・`print_long` | 2026-10-07 |
 | WS001 ws001-p042（find） | -ok の答えの locale、深さ 128 を超える木、loop の後の位置の回復 | XCU の yesexpr（今は y/Y）、木の深さの上限（今は 128 で「nesting limit exceeded」）、loop の診断の後の続け方の確認 | `userland/base/find/main.c` の `run_command`・`walk_path`（`ancestors_dev`） | 2026-10-07 |
 | WS001 ws001-p043（tabs） | +m の余白、tbc・hts の無い端末、書き込みの途中の失敗 | XCU 以前の +m、stop を設けられない端末での代わりの道（今は 1 で終わる）、出力の失敗の後の端末の状態 | `userland/base/tabs/main.c` の `set_stops` | 2026-10-07 |
+| WS173（AAT の基盤）・T1-320 | 長い full の suite の間の guest の時計の遅れ（約 1.5 分、host より遅い） | guest の時計が host と合う（ntpdate か起動中の時計の補正。今は試験の証明書を 1 日前からにして避けた） | QEMU の起動の option（`-rtc`）、guest の時計の補正（kernel の timecounter、ntpdate の有無） | 2026-10-07 |
