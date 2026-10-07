@@ -169,25 +169,47 @@ probe_arguments(
 	char **argv,
 	struct probe_options *options)
 {
+	const char *argument;
 	char *end;
 	int index;
+	int differs;
 
 	/* Each argument. */
 	for (index = 1; index < argc; index++) {
-		if (strcmp(argv[index], "--list") == 0) {
+		argument = argv[index];
+
+		/* The first argument that is not an option is the stream. */
+		if (argument[0] != '-' && options->stream == NULL) {
+			options->stream = argument;
+			continue;
+		}
+
+		/* --list. */
+		differs = strcmp(argument, "--list");
+		if (differs == 0) {
 			options->list = 1;
-		} else if (strncmp(argv[index], "--frames=", 9U) == 0) {
+			continue;
+		}
+
+		/* --frames=N: decode at most N frames. */
+		differs = strncmp(argument, "--frames=", 9U);
+		if (differs == 0) {
 			errno = 0;
-			options->frames = (uint32_t)strtoul(argv[index] + 9, &end, 10);
+			options->frames = (uint32_t)strtoul(argument + 9, &end, 10);
 			if (errno != 0 || *end != '\0')
 				return -1;
-		} else if (strncmp(argv[index], "--expect=", 9U) == 0) {
-			options->expect = argv[index] + 9;
-		} else if (argv[index][0] != '-' && options->stream == NULL) {
-			options->stream = argv[index];
-		} else {
-			return -1;
+			continue;
 		}
+
+		/* --expect=FILE: the reference hashes. */
+		differs = strncmp(argument, "--expect=", 9U);
+		if (differs == 0) {
+			options->expect = argument + 9;
+			continue;
+		}
+
+		/* Anything else is not an argument of the probe. */
+		return -1;
 	}
 
 	/* Exactly one of the list and a stream. */
@@ -249,10 +271,13 @@ probe_list(
 	VkQueueFamilyVideoPropertiesKHR video[PROBE_FAMILIES];
 	static VkExtensionProperties extensions[PROBE_EXTENSIONS];
 	VkResult result;
+	const char *name;
+	const char *video_word;
 	uint32_t count;
 	uint32_t index;
 	uint32_t video_families;
 	uint32_t video_extensions;
+	int differs;
 
 	/* The device. */
 	vkGetPhysicalDeviceProperties(probe->physical, &properties);
@@ -286,11 +311,14 @@ probe_list(
 		return probe_failed(result, "vkEnumerateDeviceExtensionProperties");
 	video_extensions = 0U;
 	for (index = 0U; index < count; index++) {
-		if (strstr(extensions[index].extensionName, "video") == NULL &&
-		    strcmp(extensions[index].extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME) != 0)
+		/* A video extension, or synchronization2, which the video extensions need. */
+		name = extensions[index].extensionName;
+		video_word = strstr(name, "video");
+		differs = strcmp(name, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+		if (video_word == NULL && differs != 0)
 			continue;
-		printf("vkvideo-probe: extension %s %u\n", extensions[index].extensionName, extensions[index].specVersion);
-		if (strstr(extensions[index].extensionName, "video") != NULL)
+		printf("vkvideo-probe: extension %s %u\n", name, extensions[index].specVersion);
+		if (video_word != NULL)
 			video_extensions++;
 	}
 
@@ -977,7 +1005,9 @@ probe_run(
 	uint32_t matched;
 	char expected[80];
 	char text[65];
+	char *line;
 	FILE *expect;
+	int differs;
 	int found;
 	int first_sps;
 	int error;
@@ -1084,10 +1114,14 @@ probe_run(
 			break;
 		probe_hash(probe, &stream.sps[picture.info.seq_parameter_set_id], text);
 
-		/* Compares it with the expected line. */
-		if (expect != NULL && fgets(expected, sizeof(expected), expect) != NULL) {
+		/* Compares it with the expected line, when there is one. */
+		line = NULL;
+		if (expect != NULL)
+			line = fgets(expected, sizeof(expected), expect);
+		if (line != NULL) {
 			expected[strcspn(expected, "\n")] = '\0';
-			if (strcmp(expected, text) == 0) {
+			differs = strcmp(expected, text);
+			if (differs == 0) {
 				matched++;
 				printf("vkvideo-probe: frame %u %s match\n", frames, text);
 			} else {
