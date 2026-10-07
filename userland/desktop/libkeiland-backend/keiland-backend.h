@@ -862,13 +862,59 @@ int kl_backend_peer_uid(int descriptor, uid_t *uid);
  * percent (-1 when unknown), whether it charges, and the
  * KL_BACKEND_POWER_ACTION_BIT of each action a user may take now (0 when
  * none: without a session manager, or a zedBSD session of a user neither
- * root nor in wheel, ws131-p027).
+ * root nor in wheel, ws131-p027); the lid (1 open, 0 closed, -1 unknown)
+ * and whether the machine can sleep to idle (ws052-p011, zedBSD's
+ * KERN_SYSTEM_POWER_FLAG_CAN_SLEEP; 0 elsewhere).
  */
 struct kl_backend_power_state {
 	unsigned source;
 	int percent;
 	unsigned charging;
 	unsigned actions;
+	int lid;
+	unsigned can_sleep;
+};
+
+/*
+ * What a sleep (kl_backend_power_action(KL_BACKEND_POWER_SUSPEND)) came to,
+ * as zedBSD's sessiond answered it (ws052-p011,
+ * plan/ws052/phase007/phase.md section 1.1): the kind, the error the
+ * session_answer carried (0 slept; EOPNOTSUPP unsupported; the device's
+ * error; EBUSY networkd or busy; ECANCELED; EIO), the wake's name as the
+ * kernel's events say it ("lid", "power-button", "keyboard", "usb", "ac",
+ * "timer", "spurious", "other", "none"), the device that refused, why
+ * networkd could not turn the radios off, and the error of a device that
+ * did not come back after the sleep (0 when every one did).
+ */
+#define KL_BACKEND_POWER_DEVICE_MAX	48U
+#define KL_BACKEND_POWER_WAKE_MAX	16U
+
+enum kl_backend_sleep_kind {
+	KL_BACKEND_SLEEP_NONE,
+	KL_BACKEND_SLEEP_SLEPT,
+	KL_BACKEND_SLEEP_UNSUPPORTED,
+	KL_BACKEND_SLEEP_DEVICE,
+	KL_BACKEND_SLEEP_NETWORK,
+	KL_BACKEND_SLEEP_CANCELLED,
+	KL_BACKEND_SLEEP_BUSY,
+	KL_BACKEND_SLEEP_ERROR
+};
+
+enum kl_backend_sleep_network {
+	KL_BACKEND_SLEEP_NETWORK_NONE,
+	KL_BACKEND_SLEEP_NETWORK_RADIO,
+	KL_BACKEND_SLEEP_NETWORK_TIMEOUT,
+	KL_BACKEND_SLEEP_NETWORK_CONFIRMED,
+	KL_BACKEND_SLEEP_NETWORK_BUSY
+};
+
+struct kl_backend_power_outcome {
+	enum kl_backend_sleep_kind kind;
+	int error;
+	char wake[KL_BACKEND_POWER_WAKE_MAX];
+	char device[KL_BACKEND_POWER_DEVICE_MAX];
+	enum kl_backend_sleep_network network;
+	int resume_error;
 };
 
 /*
@@ -878,10 +924,29 @@ int kl_backend_power_get_state(const struct kl_backend *backend, struct kl_backe
 
 /*
  * Asks for an action (KL_BACKEND_POWER_*).  Returns 0 when it was asked,
- * ENOTSUP for an action not in the state's actions, EBUSY when one was
- * asked already, EINVAL, or the error of sending.
+ * ENOTSUP for an action not in the state's actions (a sleep: a machine
+ * that cannot sleep, or no sessiond), EBUSY when one was asked already
+ * (EALREADY for a sleep while a sleep is asked; EBUSY while another
+ * request of sessiond's awaits its answer, to be asked again), EINVAL, or
+ * the error of sending.
  */
 int kl_backend_power_action(struct kl_backend *backend, unsigned action);
+
+/*
+ * Copies what the last sleep came to (kind KL_BACKEND_SLEEP_NONE before
+ * one was answered).  Returns 0, EINVAL, or ENOTSUP where sleeps are not
+ * answered so (Linux, FreeBSD).
+ */
+int kl_backend_power_outcome(const struct kl_backend *backend, struct kl_backend_power_outcome *outcome);
+
+/*
+ * Asks sessiond to stop the sleep asked for before the kernel is asked
+ * (ws052-p011: a lid opened while the sleep waits for networkd); it is
+ * never answered, the sleep's own answer still comes.  Returns 0, EALREADY
+ * when no sleep is asked for, ENOTSUP where there is no sessiond, or the
+ * error of sending.
+ */
+int kl_backend_power_cancel_sleep(struct kl_backend *backend);
 
 
 /*
