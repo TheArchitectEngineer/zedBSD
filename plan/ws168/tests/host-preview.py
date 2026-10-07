@@ -2,8 +2,8 @@
 # ws168-p003: the host test of keiland-preview (run-host-preview.sh builds it on Linux, with its seccomp confinement):
 # the pictures and documents made here (PIL, a hand-made PDF), each made a preview of as Files (256 contain) and
 # Settings (240x150 cover) ask, the output's size, stamp and colours checked; a damaged, an unknown and an empty file,
-# wrong arguments, an input that is not a regular file; and the test build's escapes (open, socket, fork after the
-# confinement) ending the process by SIGSYS with nothing written.
+# wrong arguments, an input that is not a regular file; and the test build's escapes after the confinement: open
+# refused (EACCES), socket and fork ending the process by SIGSYS with nothing written.
 #   python3 plan/ws168/tests/host-preview.py PROGRAM ESCAPE-PROGRAM FOLDER
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import io
@@ -183,7 +183,11 @@ os.close(writer)
 check('pipe', result.returncode == 64, f'status {result.returncode}')
 
 # The test build's escapes after the confinement: killed by SIGSYS, nothing written.
-for name in ('open', 'socket', 'fork'):
+# (ws168-p004: an open is refused with EACCES rather than fatal, so that the shared libpdf goes without a substitute
+# font file; the test build then says what came of it and ends with 70.)
+status, data = run(escape_program, os.path.join(folder, 'a.png'), '--width=64', '--height=64', '--test-escape=open')
+check('escape open', status == 70 and data == b'ESCAPED result=-1 errno=13\n', f'status {status} output {data[:40]!r}')
+for name in ('socket', 'fork'):
     status, data = run(escape_program, os.path.join(folder, 'a.png'), '--width=64', '--height=64', '--test-escape=' + name)
     check('escape ' + name, status == -signal.SIGSYS and data == b'', f'status {status} output {data[:40]!r}')
 

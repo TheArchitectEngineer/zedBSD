@@ -546,7 +546,7 @@ kl_backend_print_submit(
 			found = &print->printers[index];
 	}
 
-	/* = NULL) {=No such printer: refused. */
+	/* No such printer: refused. */
 	if (found == NULL) {
 		(void)close(fd);
 		print_result(print, *request, EINVAL, 1);
@@ -893,7 +893,7 @@ print_new_job(
 			}
 		}
 
-		/* = KL_BACKEND_PRINT_JOBS_MAX)=None ended: the oldest of all. */
+		/* None ended: the oldest of all. */
 		if (oldest == KL_BACKEND_PRINT_JOBS_MAX)
 			oldest = 0;
 		memmove(&print->jobs[oldest], &print->jobs[oldest + 1U], (print->job_count - oldest - 1U) * sizeof(print->jobs[0]));
@@ -1406,7 +1406,7 @@ print_named(
 		break;
 	}
 
-	/* = 0U || rest[0] != ' ')=None asked, or no name found. */
+	/* None asked, or no name found. */
 	if (id == 0U || rest[0] != ' ')
 		return;
 

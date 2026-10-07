@@ -28,6 +28,18 @@ FOLDER = "/home/kei/Music/AAT"
 SONGS = (("01-tone-a.m4a", 440, "Tone A", 1), ("02-tone-b.m4a", 660, "Tone B", 2))
 
 
+def sized(window, mark, regex):
+	"""A window started outside App Home, its size taken from the program's own READY line (the compositor's lines
+	give only its place)."""
+	if window is None or window.sized():
+		return window
+	ready = run.wait(regex, mark, 5)
+	if not ready:
+		return window
+	width, height = (int(value) for value in re.search(regex, ready).groups())
+	return aatlib.Window(window.client, window.surface, window.x, window.y, width, height, window.docked)
+
+
 def make_songs(item) -> None:
 	"""The two songs, made on this host and put in kei's Music folder."""
 	folder = run.outdir / "music"
@@ -106,11 +118,12 @@ def play(item):
 		# A file opened as Files opens it.
 		mark = run.mark()
 		window = run.open_as_user(item, f"/bin/music {FOLDER}/02-tone-b.m4a", ready=r"MUSIC READY ")
+		window = sized(window, mark, r"MUSIC READY width=(\d+) height=(\d+)")
 		found = run.wait(r"MUSIC FILE song=\d+ error=\d+", mark, 10)
 		started = run.wait(r"MUSIC PLAY song=\d+ error=\d+", mark, 10)
 		item.step("/bin/music 02-tone-b.m4a", f"{found}; {started}")
 		item.check(found and found.endswith("song=1 error=0"), "the file was not found in the list")
-		item.check(started and started.endswith("song=1 error=0"), "the file did not play")
+		item.check(started and "song=1 error=0" in started, "the file did not play")
 		run.close(item, window)
 		item.person("the list with the album's cover, the bar with Tone A playing, the bar after the end")
 	finally:

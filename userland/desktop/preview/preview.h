@@ -90,7 +90,8 @@ void preview_fit(int width, int height, const struct preview_request *request, i
 int preview_scale(const struct preview_image *source, const struct preview_request *request, struct preview_image *scaled);
 void preview_image_release(struct preview_image *image);
 
-/* The output (main.c). */
+/* The making and the output (make.c). */
+int preview_make(int input, int output, const struct preview_request *request);
 int preview_write_ppm(int fd, const struct preview_image *image, const char *stamp);
 
 /* The system's confinement (each system's confine.c). */

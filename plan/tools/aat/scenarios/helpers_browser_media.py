@@ -31,6 +31,11 @@ def video(item):
 	run.sh(f"chmod 644 {PAGE}")
 	mark = run.mark()
 	window = run.open_as_user(item, f"/bin/browser {PAGE}")
+	# A window started outside App Home has only its place in the compositor's lines: its size is the browser's own.
+	ready = run.wait(r"ZBROWSER READY width=\d+ height=\d+", mark, 10)
+	if ready and not window.sized():
+		width, height = (int(value) for value in re.search(r"width=(\d+) height=(\d+)", ready).groups())
+		window = aatlib.Window(window.client, window.surface, window.x, window.y, width, height, window.docked)
 	opened = run.wait(r"BROWSER MEDIA MEDIA open width=640 height=360 .*", mark, 20)
 	item.step("the page with the video", opened or "")
 	item.check(opened and "video=mpeg4" in opened, "the video did not open")
