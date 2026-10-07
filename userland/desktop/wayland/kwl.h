@@ -1137,14 +1137,16 @@ struct kwl_server {
 	char home_preedit[96];
 	int home_selected;
 	/*
-	 * A press at the bottom edge while Home shows, which may become the
-	 * swipe up that closes Home (ws079-p010): whether it has moved far
-	 * enough to be one, where it started, and how far Home was open then.
+	 * A press at the bottom edge of the desktop, which may become the swipe
+	 * up that opens Home (WS181, the 2026-10-07 UAT): whether it has moved
+	 * far enough up to be one, and where it started.  And a press on Home
+	 * that went mostly down, which pulls the desktop back over Home and
+	 * closes it (home_page_closing, while it follows the pointer).
 	 */
-	unsigned home_bottom_press;
-	unsigned home_bottom_dragging;
-	int32_t home_bottom_start_y;
-	float home_bottom_from;
+	unsigned home_rise_press;
+	unsigned home_rise_dragging;
+	int32_t home_rise_start_y;
+	unsigned home_page_closing;
 	/*
 	 * The virtual desktops (ws035-p065): the one shown; a press at the
 	 * left or right edge that may become the swipe (where it started,
@@ -1595,6 +1597,8 @@ uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, co
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);
 void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale);
+int kwl_home_edge_press(struct kwl_server *server);
+void kwl_home_close_now(struct kwl_server *server, const char *via);
 int kwl_home_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_home_motion(struct kwl_server *server);
 int kwl_home_key(struct kwl_server *server, uint32_t key, uint32_t state);

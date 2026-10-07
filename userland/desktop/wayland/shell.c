@@ -473,7 +473,7 @@ static void draw_wiseview(struct kwl_server *server, VkCommandBuffer command, st
 static void draw_tile(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct kwl_server *server);
-static int wiseview_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
+static int home_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
@@ -871,8 +871,8 @@ kwl_glass_button(
 		return 1;
 	}
 
-	/* A left press at the bottom edge starts opening Wiseview. */
-	pressed = wiseview_edge_press(server, button, state);
+	/* A left press at the bottom edge starts the swipe up that opens App Home (WS181; Wiseview is the top edge's). */
+	pressed = home_edge_press(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -1087,7 +1087,7 @@ kwl_glass_edge_button(
 	    server->home_to > 0.0f ||
 	    server->home_press ||
 	    server->home_page_press ||
-	    server->home_bottom_press) {
+	    server->home_rise_press) {
 		pressed = kwl_home_button(server, button, state);
 		return pressed;
 	}
@@ -1829,6 +1829,8 @@ kwl_glass_toplevel_request(
 	struct kwl_object *surface,
 	int request)
 {
+	struct kwl_object *front;
+
 	/* Only a shown window of the desktop shown. */
 	if (surface->dead || !surface->mapped || surface->desktop != server->desktop)
 		return;
@@ -1852,7 +1854,18 @@ kwl_glass_toplevel_request(
 		window_dock(server, surface, surface->x, surface->y, "request");
 		break;
 	case KWL_TOPLEVEL_UNMAXIMIZE:
-		/* Back to its place before it docked. */
+		/*
+		 * Back to its place before it docked: the docked window in front
+		 * ends the docked mode, another one hidden behind it only floats
+		 * again (WS181: an application behind does not end the mode).
+		 */
+		if (!surface->maximized)
+			break;
+		front = sheet_owner(kwl_top_window(server));
+		if (surface != front) {
+			window_float_quiet(server, surface);
+			break;
+		}
 		layout_leave(server, surface, surface->restore_x, surface->restore_y, "request");
 		break;
 	case KWL_TOPLEVEL_MINIMIZE:
@@ -4757,6 +4770,14 @@ window_dock(
 	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
 	window_resized(surface);
 
+	/*
+	 * A shown window docked owns its desktop at once (WS181), so that it
+	 * closing before the next frame ends the docked mode too; one opened
+	 * docked is seen as the owner once it is mapped (layout_front_follow).
+	 */
+	if (surface->mapped && !surface->dead)
+		server->dock_owner[surface->desktop] = surface;
+
 	/* A window docked makes the session's mode docked (ws142-p008, BUG-217); the log says what every window is now (WS181). */
 	layout_set(server, KWL_LAYOUT_DOCKED, via);
 	layout_log_windows(server);
@@ -4942,7 +4963,6 @@ layout_hides(
 	const struct kwl_object *surface)
 {
 	struct kwl_object *top;
-	float home;
 	int desktop_surface;
 	int same_application;
 	int overview;
@@ -4967,12 +4987,14 @@ layout_hides(
 	if (top == NULL || top->client == surface->client)
 		same_application = 1;
 
-	/* App Home, Wiseview and the switcher show every application. */
+	/*
+	 * Wiseview and the switcher show every application.  App Home does not
+	 * (WS181): it is a mode of its own, and the desktop going up off the
+	 * output as it opens is the desktop as it was, its hidden windows
+	 * hidden.
+	 */
 	overview = 0;
-	home = kwl_home_progress(server);
-	if (home > 0.0f) {
-		overview = 1;
-	} else if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
 		overview = 1;
 	} else if (server->switcher.on) {
 		overview = 1;
@@ -5044,6 +5066,7 @@ layout_leave(
 	unsigned action;
 	unsigned quiet;
 	unsigned desktop;
+	unsigned pass;
 
 	/* The window brought back is seen coming back. */
 	front_id = 0U;
@@ -5052,28 +5075,37 @@ layout_leave(
 		window_undock(server, front, x, y, via);
 	}
 
-	/* Every other docked window floats again at once (it was not shown). */
+	/*
+	 * Every other docked window floats again at once (it was not shown):
+	 * first those with a place of their own, then those whose place was
+	 * made up, which are placed as new windows among the others already
+	 * floating (pass 0, then pass 1).
+	 */
 	quiet = 0U;
-	for (client = server->clients; client != NULL; client = client->next) {
-		if (client->fatal)
-			continue;
-		for (surface = client->objects; surface != NULL; surface = surface->next) {
-			/* Only live windows. */
-			if (surface->kind != KWL_SURFACE ||
-			    surface->dead ||
-			    surface->role == NULL ||
-			    surface->cursor_role)
+	for (pass = 0U; pass < 2U; pass++) {
+		for (client = server->clients; client != NULL; client = client->next) {
+			if (client->fatal)
 				continue;
+			for (surface = client->objects; surface != NULL; surface = surface->next) {
+				/* Only live windows, of this pass. */
+				if (surface->kind != KWL_SURFACE ||
+				    surface->dead ||
+				    surface->role == NULL ||
+				    surface->cursor_role)
+					continue;
+				if (surface->restore_default != pass)
+					continue;
 
-			/* What the end of the mode does to it. */
-			layout_window(surface, &window);
-			action = kwl_layout_leave_action(&window, 0);
-			if (action != KWL_LAYOUT_QUIET)
-				continue;
+				/* What the end of the mode does to it. */
+				layout_window(surface, &window);
+				action = kwl_layout_leave_action(&window, 0);
+				if (action != KWL_LAYOUT_QUIET)
+					continue;
 
-			/* Floating at its place before, told so. */
-			window_float_quiet(server, surface);
-			quiet++;
+				/* Floating at its place before, told so. */
+				window_float_quiet(server, surface);
+				quiet++;
+			}
 		}
 	}
 
@@ -5275,6 +5307,7 @@ layout_front_follow(
 			return;
 		server->dock_owner[server->desktop] = top;
 		printf("KWL LAYOUT owner desktop=%u surface=%u client=%llu\n", server->desktop + 1U, top->id, (unsigned long long)top->client->number);
+		layout_log_windows(server);
 		return;
 	}
 
@@ -5947,7 +5980,7 @@ home_without_bar(
 	uint32_t state)
 {
 	/* A press Home follows goes on being Home's. */
-	if (server->home_press || server->home_page_press || server->home_bottom_press)
+	if (server->home_press || server->home_page_press || server->home_rise_press)
 		return 1;
 
 	/* Only a left press starts one. */
@@ -6001,28 +6034,25 @@ wiseview_progress(
 	return server->wiseview_from + (server->wiseview_to - server->wiseview_from) * t;
 }
 
-/* Starts the swipe up from the bottom edge that opens Wiseview, for a left press in that edge.  Returns 1 when it started. */
+/* Starts the swipe up from the bottom edge that opens App Home (WS181), for a left press in that edge.  Returns 1 when it started. */
 static int
-wiseview_edge_press(
+home_edge_press(
 	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
+	int taken;
+
 	/* Only a left press. */
 	if (state == 0 || button != KWL_BUTTON_LEFT)
 		return 0;
 
-	/* Only in the bottom edge: a stroke that starts above it is not the gesture. */
-	if (server->pointer_y < (int32_t)server->height - WISEVIEW_EDGE)
+	/* Home takes it when it is in the bottom edge (home.c). */
+	taken = kwl_home_edge_press(server);
+	if (!taken)
 		return 0;
 
-	/* The gesture starts; the window on top is the current tile. */
-	server->wiseview_gesture = 1;
-	server->wiseview_start_y = server->pointer_y;
-	server->wiseview_current = sheet_owner(kwl_top_window(server));
-	server->dirty = 1;
-
-	/* Succeeded: the press is the gesture's. */
+	/* Succeeded: the press is the swipe's. */
 	return 1;
 }
 
@@ -6685,6 +6715,18 @@ wiseview_button(
 	/* Only a left press on the settled Wiseview acts. */
 	if (state == 0 || button != KWL_BUTTON_LEFT || server->wiseview_moving)
 		return 1;
+
+	/* A press at the bottom edge closes Wiseview at once and starts the swipe up to App Home (WS181). */
+	if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE) {
+		server->wiseview = 0.0f;
+		server->wiseview_moving = 0;
+		server->wiseview_press = NULL;
+		server->wiseview_dragging = 0;
+		server->dirty = 1;
+		printf("KWL WISEVIEW close via=bottom-edge\n");
+		(void)kwl_home_edge_press(server);
+		return 1;
+	}
 
 	/* The tile under the pointer. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
