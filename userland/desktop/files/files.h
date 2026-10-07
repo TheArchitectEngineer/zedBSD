@@ -723,14 +723,19 @@ struct fm_dashboard {
 #define FM_THUMBS		64
 #define FM_THUMB_SIDE		256
 
+/* How many records the cache on disk holds before it is trimmed, and how many the trim leaves (ws127-p004). */
+#define FM_THUMB_RECORDS_MAX	2000U
+#define FM_THUMB_RECORDS_KEEP	1800U
+
 /*
  * One kept thumbnail: the file it was made from as the file was then (its
  * path and modification time), the small picture, and when it was last
  * drawn.
  *
  * failed marks a file that could not be read as a picture, so that it is
- * not read again every frame; a file changed since is another file.  An
- * empty path is a free slot.
+ * not read again every frame; a file changed since is another file;
+ * pending marks the one a child is making (ws168-p004).  An empty path is
+ * a free slot.
  */
 struct fm_thumb {
 	char path[FM_PATH_MAX];
@@ -738,6 +743,7 @@ struct fm_thumb {
 	struct kl_image image;
 	uint64_t used;
 	int failed;
+	int pending;
 };
 
 /* How much of a file is read to preview it, and how many of its lines are kept. */
@@ -1673,6 +1679,7 @@ int fm_image_load(const char *path, struct kl_image *image);
 int fm_image_thumbnail(const char *path, int side, struct kl_image *thumbnail);
 const struct kl_image *fm_thumb_get(struct fm_app *app, const char *path, time_t modified);
 int fm_thumb_tick(struct fm_app *app);
+int fm_thumb_busy(void);
 void fm_thumb_release(struct fm_app *app);
 void fm_image_fit(int width, int height, int box_width, int box_height, int *fit_width, int *fit_height);
 
@@ -1728,12 +1735,10 @@ void fm_drag_draw(struct fm_app *app, struct kl_canvas *canvas);
 void fm_drop_event(struct fm_app *app, const struct fm_event *event);
 int fm_drag_tick(struct fm_app *app, uint64_t now);
 
-/* PDF thumbnails and the thumbnails kept on disk (thumb-cache.c, ws127-p002). */
+/* The thumbnails kept on disk (thumb-cache.c, ws127-p002; ws168-p004: written by keiland-preview). */
 int fm_thumb_kind(const struct fm_entry *entry);
-int fm_thumb_is_pdf(const unsigned char *data, size_t size);
-int fm_thumb_pdf(const unsigned char *data, size_t size, struct kl_image *image);
 int fm_thumb_cache_read(const char *path, struct kl_image *image);
-int fm_thumb_cache_write(const char *path, const struct kl_image *image);
+int fm_thumb_cache_target(const char *path, char *record, size_t record_size, char *stamp, size_t stamp_size);
 int fm_thumb_cache_trim(unsigned maximum, unsigned keep);
 int fm_drop_accepts(const struct fm_app *app);
 void fm_drop_perform(struct fm_app *app, char *const *paths, size_t count);

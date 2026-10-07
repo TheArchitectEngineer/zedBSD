@@ -512,8 +512,15 @@ hold 1500'
 		first=$(sed -n 's/.*KWL OSK hand recognize strokes=3 .* first=\([^ ]*\) note=$/\1/p' "$out/osk-now.txt" | tail -1)
 		pointer move 1022 577 sleep 200 down sleep 60 up sleep 800
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-hand.log"
-		[ -n "$first" ] && grep -qF "PROBE TEXT text=$first" "$out/ime-probe-hand.log" && echo "hand: the first candidate $first sent ok" ||
-			{ echo "hand: the first candidate ($first) MISSING"; status=1; }
+		# A candidate a US key types (one ASCII byte: a Latin letter, a digit, a sign) arrives as that key, the others as
+		# text (T1-310: "-" came as key 12).
+		sent=
+		if [ -n "$first" ] && [ "$(printf '%s' "$first" | wc -c)" -eq 1 ]; then
+			grep -qE 'PROBE KEY key=[0-9]+ state=1' "$out/ime-probe-hand.log" && sent=key
+		elif [ -n "$first" ]; then
+			grep -qF "PROBE TEXT text=$first" "$out/ime-probe-hand.log" && sent=text
+		fi
+		[ -n "$sent" ] && echo "hand: the first candidate $first sent ($sent) ok" || { echo "hand: the first candidate ($first) MISSING"; status=1; }
 		# A stroke, then clear (1035,668): no recognition follows.
 		recognized=$(count 'KWL OSK hand recognize')
 		pointer move 300 600 sleep 150 down sleep 16 move 330 610 sleep 16 move 360 620 sleep 60 up sleep 150

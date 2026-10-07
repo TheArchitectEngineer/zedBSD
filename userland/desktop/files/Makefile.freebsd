@@ -51,5 +51,12 @@ KEILAND_FREEBSD_FILES_SOURCES := userland/desktop/files/main.c \
 	userland/desktop/files/desktop-layout.c \
 	userland/desktop/files/touch.c \
 	userland/desktop/artwork/mark.c \
-	userland/desktop/picture/picture.c
-$(eval $(call KEILAND_FREEBSD_PROGRAM,files,bin,$(KEILAND_FREEBSD_FILES_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libpng-compat.so libjpeg-compat.so libgif-compat.so libz-compat.so libvulkan.so.1 libkeiland-compat.a,-lm))
+	userland/desktop/picture/picture.c \
+	userland/desktop/preview/client.c \
+	userland/desktop/preview/freebsd/spawn.c \
+	userland/desktop/preview/make.c \
+	userland/desktop/preview/decode.c \
+	userland/desktop/preview/scale.c
+# ws168-p004: until keiland-preview confines itself with Capsicum, FreeBSD makes the pictures in this process (Q1,
+# 2026-10-07), with the decoders linked as before and libpdf for the first page of a PDF.
+$(eval $(call KEILAND_FREEBSD_PROGRAM,files,bin,$(KEILAND_FREEBSD_FILES_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libpdf.so libpng-compat.so libjpeg-compat.so libgif-compat.so libz-compat.so libvulkan.so.1 libkeiland-compat.a,-lm))
