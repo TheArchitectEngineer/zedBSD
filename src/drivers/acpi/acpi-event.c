@@ -491,6 +491,66 @@ drv_acpi_gpe_install(
 }
 
 /*
+ * Enables at runtime a GPE that a device's _PRW names, for a driver that
+ * needs the device's events while the system runs.
+ *
+ * A GPE some _PRW names is kept masked at runtime, as a wake-only event.
+ * Firmware often signals a lid or a button through that same GPE, whose
+ * _Lxx or _Exx method then notifies the device (BUG-253: the Latitude
+ * 5330's lid is GPE 0x18, which LID0's and PBTN's _PRW name); the lid and
+ * button driver enables it, as the operating systems the firmware is
+ * written for do.  During a sleep the GPE goes on following its wake
+ * sources and becomes a runtime one when the sleep ends.  It reports
+ * EINVAL for a GPE the blocks do not have and ENOENT for one that no
+ * method or handler handles, which would fire once and stay masked.
+ */
+int
+drv_acpi_gpe_runtime_enable(
+	unsigned gpe)
+{
+	struct gpe_entry *entry;
+	unsigned long state;
+	bool present;
+	bool pending;
+
+	/* Refuses a GPE before initialization or outside the blocks. */
+	if (!events.ready || gpe >= events.gpe_count)
+		return EINVAL;
+
+	/* Refuses a number between the two blocks, which no register carries. */
+	present = gpe_present(gpe);
+	if (!present)
+		return EINVAL;
+
+	/* Makes the GPE a runtime event, with the interrupt kept out. */
+	entry = &events.gpes[gpe];
+	state = drv_acpi_os_event_lock();
+
+	/* Refuses a GPE nothing handles. */
+	if (entry->kind == GPE_NONE) {
+		drv_acpi_os_event_unlock(state);
+		return ENOENT;
+	}
+
+	/*
+	 * enabled tells the thread to unmask the GPE again after each event
+	 * and the end of a sleep to leave it unmasked.  Outside a sleep it is
+	 * unmasked now, unless the thread has still to handle it and unmasks
+	 * it itself; a status that latched while it was masked is an event
+	 * still to be handled (the method reads what changed).
+	 */
+	entry->enabled = 1;
+	pending = gpe_is_pending(gpe);
+	if (!events.sleeping && !pending)
+		gpe_set_enable(gpe, true);
+
+	drv_acpi_os_event_unlock(state);
+
+	/* Succeeded: the GPE raises SCIs at runtime. */
+	return 0;
+}
+
+/*
  * Arms or disarms a GPE as a wake source of S0 idle.
  *
  * Each wake source that wants the GPE to wake the system (a device whose

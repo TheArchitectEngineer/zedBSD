@@ -407,6 +407,11 @@ drv_acpi_gpe_install(
 	drv_acpi_gpe_handler_t handler,
 	void *argument);
 
+/* A GPE a device's _PRW names, enabled at runtime for its driver (acpi-event.c, BUG-253). */
+int
+drv_acpi_gpe_runtime_enable(
+	unsigned gpe);
+
 bool
 drv_acpi_sci_interrupt(void);
 
