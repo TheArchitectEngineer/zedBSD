@@ -3,7 +3,6 @@
 KEILAND_FREEBSD_TEXTEDIT_SOURCES := userland/desktop/textedit/main.c \
 	userland/desktop/textedit/queue.c \
 	userland/desktop/textedit/menu.c \
-	userland/desktop/textedit/titlebar.c \
 	userland/desktop/textedit/glass.c \
 	userland/desktop/textedit/app.c \
 	userland/desktop/textedit/edit.c \
