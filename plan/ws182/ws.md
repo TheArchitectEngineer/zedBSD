@@ -3,14 +3,14 @@
 # WS182: 電源ボタンのメニュー（Log Out・Shut Down などを選ぶ）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: なし
+Queue: q861 / q861-i01（P1）
 Target: **ベータ2 の最後**（2026-10-07 ユーザー）
-Resume point: p001 の設計から。
+Resume point: p001 の設計を書いた（D1: greeter・lock でメニューを出さない、ユーザーの確認待ち）。p002 を実装し build warning 0・host 試験 PASS、QEMU は T1 の試験待ち、実機は人の手（2026-10-08 P1）。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-07 ユーザー）
@@ -25,5 +25,5 @@ Resume point: p001 の設計から。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| p001 | 設計: 電源ボタンの事象 → メニュー（App Home の Power Off の dialog の再利用か）、greeter・lock の時、WS052 p012 との関係、2 行の事象 | planned | — |
-| p002 | 実装と QEMU・実機（5320・5330）の確認 | planned | p001 |
+| [p001](phase001/phase.md) | 設計: 電源ボタンの事象 → メニュー（App Home の Power Off の dialog の再利用）、greeter・lock の時、WS052 p012 との関係、2 行の事象（押下と解放の 2 つの Notify） | 設計済み（D1 はユーザーの確認待ち） | — |
+| [p002](phase002/phase.md) | 実装と QEMU・実機（5320・5330）の確認 | in-progress（test-wait: T1 の依頼は Q1 へ） | p001 |

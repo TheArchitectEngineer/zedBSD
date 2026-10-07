@@ -8,11 +8,13 @@
 /*
  * The power dialog on the desktop (ws099-p037, BUG-235, the 2026-10-06
  * user requests: Log Out ended the session without asking, and a tablet
- * wants Power Off).  App Home's Power Off opens it: the desktop darkens in
- * POWER_OPEN_MS, and a card in the middle offers Power Off, Restart, Log
- * Out and Cancel (power-layout.c).  Power Off and Restart are asked of the
- * session's backend when it offers them (kl_backend_power_get_state's
- * actions; a zedBSD session offers none yet, so they show faint), Log Out
+ * wants Power Off).  App Home's Power Off and the power button (WS182,
+ * backend-host.c) open it: the desktop darkens in POWER_OPEN_MS, and a
+ * card in the middle offers Power Off, Restart, Log Out and Cancel
+ * (power-layout.c).  Power Off and Restart are asked of the session's
+ * backend when it offers them (kl_backend_power_get_state's actions; a
+ * zedBSD session offers them to root and wheel only, and shows them faint
+ * to other users), Log Out
  * ends the session as App Home's Log Out did, Cancel closes it.  Esc, a
  * press outside the card and a swipe of two fingers down on the touch pad
  * cancel; Tab and the arrows move the keys' choice, Enter and Space take
@@ -51,8 +53,8 @@ static const char *power_words(int choice);
 static int power_enabled(struct kwl_server *server, int choice);
 
 /*
- * Opens the power dialog (App Home's Power Off, "home"; the power button
- * later, "button"): the choices the session may take now, the keys on
+ * Opens the power dialog (App Home's Power Off, "home"; the power button,
+ * "button"): the choices the session may take now, the keys on
  * Cancel, the darkening from now.
  */
 void

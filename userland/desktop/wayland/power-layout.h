@@ -7,10 +7,11 @@
 
 /*
  * The power dialog's state and layout (power-layout.c, ws099-p037,
- * BUG-235): App Home's Power Off (and later the power button) darkens the
- * desktop and offers Power Off, Restart, Log Out and Cancel in a card in
- * the middle.  The choices the session may not take (a zedBSD session's
- * Power Off and Restart, for one) are shown faint and take no press.
+ * BUG-235): App Home's Power Off and the power button (WS182) darken the
+ * desktop and offer Power Off, Restart, Log Out and Cancel in a card in
+ * the middle.  The choices the session may not take (Power Off and
+ * Restart for a zedBSD user outside wheel, for one) are shown faint and
+ * take no press.
  *
  * It knows nothing of the server: the caller hands it the output's size
  * and the places pressed, and draws and acts on what it says

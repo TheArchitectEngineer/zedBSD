@@ -15,7 +15,8 @@
  * record waiting, in reads of a few records, until none is left:
  *   - INPUT (a device came or went): input_changed, once a read;
  *   - AC and BATTERY: power_changed, once a read;
- *   - POWER's PRESS: power_button with the button the subject names;
+ *   - POWER's PRESS: power_button with the button the subject names,
+ *     except a power button's release (events_power_release);
  *   - LID: lid_changed with the record's value (1 open, 0 closed);
  *   - OVERFLOW (records were lost): input_changed and power_changed, which
  *     make the compositor look at the devices and the power again.
@@ -45,11 +46,18 @@
 /* The records one read takes. */
 #define EVENTS_READ	8U
 
+/*
+ * The time after a power button's press within which the next power
+ * button's record is taken as its release (milliseconds, WS182).
+ */
+#define EVENTS_RELEASE_MS	2000U
+
 /* What one pass of records asks of the compositor once, after them. */
 #define EVENTS_INPUT	1U
 #define EVENTS_POWER	2U
 
 static unsigned events_dispatch(struct kl_backend *backend, const struct system_event *event);
+static int events_power_release(struct kl_backend *backend, const struct system_event *event);
 static void events_fail(struct kl_backend *backend, const char *what, int error);
 
 /*
@@ -201,6 +209,7 @@ events_dispatch(
 	unsigned button;
 	unsigned open;
 	int sleep_button;
+	int release;
 
 	/* Each class. */
 	switch (event->class_bit) {
@@ -220,6 +229,15 @@ events_dispatch(
 		sleep_button = strncmp(event->subject, "sleep-button", sizeof(event->subject));
 		if (sleep_button == 0)
 			button = KL_BACKEND_BUTTON_SLEEP;
+
+		/* A power button's release is no press. */
+		if (button == KL_BACKEND_BUTTON_POWER) {
+			release = events_power_release(backend, event);
+			if (release)
+				return 0U;
+		}
+
+		/* The press, told to the compositor. */
 		if (backend->host.power_button != NULL)
 			backend->host.power_button(backend->host.data, button);
 		return 0U;
@@ -235,6 +253,45 @@ events_dispatch(
 		/* A class not subscribed to. */
 		return 0U;
 	}
+}
+
+/*
+ * Tells whether a power button's record is the release of the press
+ * before it.  The Dell firmware of the Latitude 5320 and 5330 tells the
+ * press and the release alike (the EC's query 0x66 runs Notify (PBTN,
+ * 0x80) on both edges, WS182 p001), so the record that follows a press
+ * within EVENTS_RELEASE_MS is taken as its release.  A record later than
+ * that, or after a release, is a new press.  Returns 1 for a release.
+ */
+static int
+events_power_release(
+	struct kl_backend *backend,
+	const struct system_event *event)
+{
+	uint64_t now_ms;
+	uint64_t gap_ms;
+	unsigned due;
+
+	/* The record's time, and whether a press awaits its release (only the next record may be it). */
+	now_ms = event->time_ns / 1000000U;
+	due = backend->power_release_due;
+	backend->power_release_due = 0U;
+
+	/* Soon enough after the press: its release, dropped. */
+	if (due != 0U && now_ms >= backend->power_press_ms) {
+		gap_ms = now_ms - backend->power_press_ms;
+		if (gap_ms < EVENTS_RELEASE_MS) {
+			printf("KL EVENTS power-button release gap_ms=%llu\n", (unsigned long long)gap_ms);
+			return 1;
+		}
+	}
+
+	/* A new press: its release is awaited from now. */
+	backend->power_release_due = 1U;
+	backend->power_press_ms = now_ms;
+
+	/* Succeeded: the record is a press. */
+	return 0;
 }
 
 /* Gives up on the events after a failure, and says so in the log. */
