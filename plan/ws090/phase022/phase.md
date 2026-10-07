@@ -1,6 +1,6 @@
 # ws090-p022: 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ
 
-Status: in-progress（q816、P1。1〜5・7 は実装と host の確認まで、6 は WS131 p025 の後。T1 の結果待ち）
+Status: cleared（2026-10-07 Q1 の判定: 項目 1・3・5・7 は T1-260・T1-312、2 の Calendar と 4 の Full name も確認。Mailer の本文と User name の欄は T1-317 で確かめる。項目 6（Browser の web の form）は ws090-p025 に分けた）（旧: in-progress（q816、P1。1〜5・7 は T1-260・T1-312 で確認済み（cleared の候補）、6（Browser の form）は WS131 p025 の後で未着手。下の「整理」））
 WS: [WS090](../ws.md)
 Related: [WS095](../../ws095/ws.md)（IME）
 
@@ -64,3 +64,17 @@ Q1 が source を調べた（読むだけ、2026-10-06）。IME を受けるの�
 原因: file chooser の窓は app の接続の上の別の窓（`keiui_window_open_shared`）で、その global の探索が `zwp_text_input_manager_v3` を拾わず、窓の text input が作られていなかった（`kl_ui_window_text` が `kl_window_text_input` を呼んでも、送る相手が無い）。全ての app の file chooser で同じ。
 修正: `libkeiland/ui/window.c` の `window_search`・`window_setup_shared` で text input の manager を探して bind し、app の queue に移して `keiui_text_input_start`。compositor は client の全ての text input に enter を送り、各窓は自分の surface の enter だけを受ける（既存）。
 確認: Linux の build と disk-image が warning 0。QEMU は未実施（T1 に依頼）。
+
+## 整理（2026-10-07、P1、T1-312 の後）
+
+| 項目 | 状態 | 証拠 |
+| --- | --- | --- |
+| 1. libkeiland の結線（file chooser・置換の dialog） | 済み | T1-260（置換の 2 欄）、T1-312（Save As の名前の欄: preedit・候補・`日本.txt`、file chooser の text input の修正の後） |
+| 2. 複数行の部品（Mailer の本文・Calendar の memo） | Calendar は済み、**Mailer の本文は未確認** | T1-260（Calendar の memo）。Mailer の New Message は account が無いと Add an Account の画面になり、本文の欄に届かなかった（未実施） |
+| 3. Files の改名 | 済み | T1-260 |
+| 4. Settings の氏名 | 済み（User name の欄は未確認） | T1-260（Add User の Full name） |
+| 5. Terminal の検索 | 済み | T1-260 |
+| 6. Browser の web の form | **未着手**（WS131 p025 の後の予定） | — |
+| 7. App Home の検索 | 済み | T1-260 |
+
+cleared の可否（Q1 へ）: 6 が未着手なので Phase 全体は cleared にならない。案: (a) 6 を別 Phase（WS090 か WS074）に分けてこの Phase を 1〜5・7 で cleared（Mailer の本文の確認は試験用の account を作る T1 の追加で）、(b) 6 まで待つ。

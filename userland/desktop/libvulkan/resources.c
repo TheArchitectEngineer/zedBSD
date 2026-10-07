@@ -65,11 +65,11 @@ vkCreateRenderPass(
 
 	/* Encodes attachment layouts through the common direct-display preservation mapping. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateRenderPass);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_RENDER_PASS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkRenderPassCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyRenderPass);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_RENDER_PASS);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		render_pass_free(pass);
@@ -110,7 +110,7 @@ vkDestroyRenderPass(
 	}
 
 	/* Consumes the native object before returning its local metadata to the caller's allocator. */
-	status = vulkan_object_destroy_remote(owner, &pass->object, VULKAN_OPCODE_vkDestroyRenderPass);
+	status = vulkan_object_destroy_remote(owner, &pass->object, GPU_OP_DESTROY_RENDER_PASS);
 	(void)status;
 	render_pass_free(pass);
 
@@ -133,7 +133,7 @@ vkBindBufferMemory(
 
 	/* Native binding validates the same type index and resource requirements exposed to the caller. */
 	owner = vulkan_device(device);
-	status = resource_bind(owner, (uint64_t)buffer, memory, memoryOffset, VULKAN_OPCODE_vkBindBufferMemory);
+	status = resource_bind(owner, (uint64_t)buffer, memory, memoryOffset, GPU_OP_BIND_BUFFER_MEMORY);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -156,7 +156,7 @@ vkBindImageMemory(
 
 	/* Presentable and offscreen images use exactly the same standard memory binding operation. */
 	owner = vulkan_device(device);
-	status = resource_bind(owner, (uint64_t)image, memory, memoryOffset, VULKAN_OPCODE_vkBindImageMemory);
+	status = resource_bind(owner, (uint64_t)image, memory, memoryOffset, GPU_OP_BIND_IMAGE_MEMORY);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -174,7 +174,7 @@ vkGetBufferMemoryRequirements(
 	VkMemoryRequirements *pMemoryRequirements)
 {
 	/* Queries the actual created resource rather than predicting requirements from its size. */
-	resource_requirements(vulkan_device(device), (uint64_t)buffer, VULKAN_OPCODE_vkGetBufferMemoryRequirements, pMemoryRequirements);
+	resource_requirements(vulkan_device(device), (uint64_t)buffer, GPU_OP_GET_BUFFER_MEMORY_REQUIREMENTS, pMemoryRequirements);
 
 	/* Succeeded: the output is fully initialized by the common typed query path. */
 	return;
@@ -199,7 +199,7 @@ vkGetImageMemoryRequirements(
 	}
 
 	/* Native tiling, mip levels, layers, samples, and formats determine these requirements. */
-	resource_requirements(vulkan_device(device), (uint64_t)image, VULKAN_OPCODE_vkGetImageMemoryRequirements, pMemoryRequirements);
+	resource_requirements(vulkan_device(device), (uint64_t)image, GPU_OP_GET_IMAGE_MEMORY_REQUIREMENTS, pMemoryRequirements);
 
 	/* A complete answer (a failed one is all zero) is kept for the next question. */
 	if (object != NULL && pMemoryRequirements->size != 0U) {
@@ -249,7 +249,7 @@ vkGetImageSubresourceLayout(
 	/* Requests the selected aspect, mip level, and array layer from the real native image. */
 	owner = vulkan_device(device);
 	vulkan_writer_init_for_object(&writer, &owner->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetImageSubresourceLayout);
+	vulkan_command_begin(&writer, GPU_OP_GET_IMAGE_SUBRESOURCE_LAYOUT);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_encode_handle(&writer, (uint64_t)image);
 	vulkan_write_u64(&writer, 1);
@@ -305,7 +305,7 @@ vkGetRenderAreaGranularity(
 	/* Retrieves the actual render pass's native implementation granularity. */
 	owner = vulkan_device(device);
 	vulkan_writer_init_for_object(&writer, &owner->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetRenderAreaGranularity);
+	vulkan_command_begin(&writer, GPU_OP_GET_RENDER_AREA_GRANULARITY);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_encode_handle(&writer, (uint64_t)renderPass);
 	vulkan_write_u64(&writer, 1);
@@ -375,7 +375,7 @@ vkGetImageSparseMemoryRequirements(
 	/* Requests the actual resource's sparse requirements, including the zero-count case. */
 	owner = vulkan_device(device);
 	vulkan_writer_init_for_object(&writer, &owner->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetImageSparseMemoryRequirements);
+	vulkan_command_begin(&writer, GPU_OP_GET_IMAGE_SPARSE_MEMORY_REQUIREMENTS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_encode_handle(&writer, (uint64_t)image);
 	vulkan_write_u64(&writer, 1);
@@ -560,7 +560,7 @@ vkGetPhysicalDeviceSparseImageFormatProperties(
 	/* Sends every format, usage, and sample-count input without guessing support. */
 	physical = vulkan_physical_device(physicalDevice);
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceSparseImageFormatProperties);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_SPARSE_IMAGE_FORMAT_PROPERTIES);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u32(&writer, format);
 	vulkan_write_u32(&writer, type);

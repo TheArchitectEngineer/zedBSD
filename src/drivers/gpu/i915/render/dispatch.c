@@ -143,27 +143,27 @@ i915_dispatch_route(
 	uint32_t opcode)
 {
 	/* Fences, semaphores, events and queries belong to sync. */
-	if (opcode >= 35U && opcode <= 49U)
+	if (opcode >= GPU_OP_CREATE_FENCE && opcode <= GPU_OP_GET_QUERY_POOL_RESULTS)
 		return I915_VK_OBJ_FENCE;
 
 	/* Memory, buffer, image, sampler and descriptor objects belong to res. */
-	if (opcode >= 21U && opcode <= 34U)
+	if (opcode >= GPU_OP_ALLOCATE_MEMORY && opcode <= GPU_OP_QUEUE_BIND_SPARSE)
 		return I915_VK_OBJ_MEMORY;
-	if (opcode >= 50U && opcode <= 58U)
+	if (opcode >= GPU_OP_CREATE_BUFFER && opcode <= GPU_OP_DESTROY_IMAGE_VIEW)
 		return I915_VK_OBJ_MEMORY;
-	if (opcode >= 70U && opcode <= 79U)
+	if (opcode >= GPU_OP_CREATE_SAMPLER && opcode <= GPU_OP_UPDATE_DESCRIPTOR_SETS)
 		return I915_VK_OBJ_MEMORY;
 
 	/* Shader modules, pipelines, framebuffers and render passes belong to pipe. */
-	if (opcode >= 59U && opcode <= 69U)
+	if (opcode >= GPU_OP_CREATE_SHADER_MODULE && opcode <= GPU_OP_DESTROY_PIPELINE_LAYOUT)
 		return I915_VK_OBJ_PIPELINE;
-	if (opcode >= 80U && opcode <= 84U)
+	if (opcode >= GPU_OP_CREATE_FRAMEBUFFER && opcode <= GPU_OP_GET_RENDER_AREA_GRANULARITY)
 		return I915_VK_OBJ_PIPELINE;
 
 	/* vkQueueSubmit (18), command pools, command buffers and every vkCmd* belong to cmdbuf. */
-	if (opcode == 18U)
+	if (opcode == GPU_OP_QUEUE_SUBMIT)
 		return I915_VK_OBJ_COMMAND_BUFFER;
-	if (opcode >= 85U && opcode <= 136U)
+	if (opcode >= GPU_OP_CREATE_COMMAND_POOL && opcode <= GPU_OP_CMD_EXECUTE_COMMANDS)
 		return I915_VK_OBJ_COMMAND_BUFFER;
 
 	/* Everything else (instance, device, queue, version, transport) is the router's own. */

@@ -423,9 +423,9 @@ queue_attempt(
 
 	/* Both native entrypoints use the same count and binary synchronization layout. */
 	if (sparse != VK_FALSE) {
-		vulkan_command_begin(&writer, VULKAN_OPCODE_vkQueueBindSparse);
+		vulkan_command_begin(&writer, GPU_OP_QUEUE_BIND_SPARSE);
 	} else {
-		vulkan_command_begin(&writer, VULKAN_OPCODE_vkQueueSubmit);
+		vulkan_command_begin(&writer, GPU_OP_QUEUE_SUBMIT);
 	}
 
 	/* A failure observed while capacity was unavailable invalidates this retry before submission. */

@@ -25,11 +25,11 @@ Resume point: p002・p004〜p006 の T1（apps.browser.video）、p001 の U0〜
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 要件・設計（software decode の `<video>`、libmedia、Range、JS の API、音） | in-progress（2026-10-05 夜、第 2 版、review 2 回目とユーザーの判断 U0〜U7 待ち） | — |
-| [p002](phase002/phase.md) | libmedia（mediafile の source、engine、共有の library） | in-progress（2026-10-07 P2、host 済み） | p001（既定で） |
+| [p002](phase002/phase.md) | libmedia（mediafile の source、engine、共有の library） | cleared（2026-10-07、T1-315） | p001（既定で） |
 | p003 | Range の loader と media-fetch（大きな remote の media） | planning（後に回した: 今は loader で全体を 64 MiB まで） | p002 |
-| [p004](phase004/phase.md) | `<video>` の DOM・layout・描画、autoplay muted | in-progress（2026-10-07 P2、host 済み） | p002 |
-| [p005](phase005/phase.md) | JS の HTMLMediaElement と event | in-progress（2026-10-07 P2、host 済み） | p004 |
-| [p006](phase006/phase.md) | 音と controls の帯、AAT | in-progress（2026-10-07 P2、host 済み、T1 未依頼） | p005 |
+| [p004](phase004/phase.md) | `<video>` の DOM・layout・描画、autoplay muted | cleared（2026-10-07、T1-315） | p002 |
+| [p005](phase005/phase.md) | JS の HTMLMediaElement と event | cleared（2026-10-07、T1-315） | p004 |
+| [p006](phase006/phase.md) | 音と controls の帯、AAT | cleared（2026-10-07、T1-315） | p005 |
 | 最後 | 全文規約と回帰 | planning | 実装 Phase |
 
 2026-10-05 Q1 records reconciliation: 「このセッションは割り当てない」「Codex 側と調整」は 2026-10-05 のユーザーの指示で置き換わった（上の Status の block の 2 行目）。Master の「動画（別セッション）」「別セッション（ユーザー） WS083 → WS122 → WS121」の行と段（ベータ1・2・3）の不一致は Q1 に直しを提案した。Status は planning のまま、Queue なし。

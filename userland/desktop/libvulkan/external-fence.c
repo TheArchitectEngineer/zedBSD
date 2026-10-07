@@ -145,7 +145,7 @@ vkImportFenceFdKHR(
 		/* Retain the original permanent state before a temporary import hides it. */
 		signaled = sync->software_signaled;
 		if (!signaled) {
-			status = vulkan_sync_status_locked(owner, sync, VULKAN_OPCODE_vkGetFenceStatus);
+			status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
 			if (status == VK_SUCCESS)
 				signaled = VK_TRUE;
 
@@ -402,7 +402,7 @@ vulkan_external_fence_prepare_locked(
 
 	/* An imported alias may have reset the shared payload without resetting this native object. */
 	vulkan_writer_init_for_object(&writer, &sync->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetFences);
+	vulkan_command_begin(&writer, GPU_OP_RESET_FENCES);
 	vulkan_write_u64(&writer, device->object.wire_id);
 	vulkan_write_u32(&writer, 1);
 	vulkan_write_u64(&writer, 1);

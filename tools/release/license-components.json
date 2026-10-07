@@ -105,21 +105,6 @@
    "note": "Each header carries its own license text, which travels with it into the development root filesystem."
   },
   {
-   "id": "libvulkan-registry",
-   "name": "libvulkan's Venus protocol declarations (virglrenderer 1.1.0, Google)",
-   "when": "program:libvulkan",
-   "license": "MIT",
-   "upstream": "virglrenderer 1.1.0 (userland/desktop/libvulkan/LICENSE-PROTOCOL)",
-   "version": "",
-   "notices": [
-    "/usr/share/licenses/libvulkan/LICENSE-PROTOCOL"
-   ],
-   "paths": [
-    "userland/desktop/libvulkan/"
-   ],
-   "note": "The libvulkan package installs LICENSE-PROTOCOL beside the library."
-  },
-  {
    "id": "browser-data",
    "name": "Browser tables (Unicode data, WHATWG named character references)",
    "when": "program:libbrowser",

@@ -9,16 +9,17 @@
  * The types every part of the Vulkan executor shares.
  *
  * The executor decodes the Vulkan command stream that libvulkan submits
- * through the GPU node (Venus wire opcodes, reused only as a Vulkan
- * serialization) and turns it into Gen12 work.  This header holds the
- * executor's device and session, the wire cursors and the per-command
- * arena.  Types private to one part are defined inside that part.
+ * through the GPU node (the Kei GPU command protocol, uapi/gpu-op.h) and
+ * turns it into Gen12 work.  This header holds the executor's device and
+ * session, the wire cursors and the per-command arena.  Types private to
+ * one part are defined inside that part.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_INTERNAL_H
 #define DRIVERS_GPU_I915_RENDER_INTERNAL_H
 
 #include <kern/lock.h>
+#include <uapi/gpu-op.h>
 #include <stddef.h>
 #include <stdint.h>
 

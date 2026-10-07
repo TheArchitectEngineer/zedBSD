@@ -334,7 +334,7 @@ vulkan_physical_identity(
 
 	/* Only the output chain shape is serialized in this partial native query. */
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceProperties2);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u64(&writer, 1U);
 	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
@@ -457,7 +457,7 @@ external_buffer_properties(
 	/* Encodes the requested flags and usage exactly, translating only the handle type. */
 	native_type = external_native_type(physical->object.context);
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceExternalBufferProperties);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_EXTERNAL_BUFFER_PROPERTIES);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u64(&writer, 1U);
 	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO);
@@ -511,7 +511,7 @@ external_image_properties(
 	/* Input geometry and usage remain application-selected native Vulkan parameters. */
 	native_type = external_native_type(physical->object.context);
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceImageFormatProperties2);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES2);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u64(&writer, 1U);
 	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2);

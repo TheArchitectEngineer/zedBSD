@@ -69,8 +69,8 @@ Resume point: p008（tags.c・library.c と host の試験）→ p009（app）�
 | [ws120-p004](phase004/phase.md) | decoder: MP3 | planning、**canceled**（2026-10-07: 形式は m4a だけ） | — | — |
 | [ws120-p005](phase005/phase.md) | Music の app の MVP（WAV・FLAC・MP3） | planning、**canceled**（2026-10-07: p008・p009 に置き換え） | — | — |
 | [ws120-p006](phase006/phase.md) | Ogg Vorbis | planning、**canceled**（2026-10-07: 形式は m4a だけ） | — | — |
-| [ws120-p008](phase008/phase.md) | m4a の metadata と `~/Music` の collection（tags.c・library.c）、host の試験 | test-wait（T1-301） | p001 | — |
-| [ws120-p009](phase009/phase.md) | Music の app（一覧・再生・seek・次・Files・App Home）、libavcodec の add-in と audiod | uncleared（2026-10-07） | p008 | — |
+| [ws120-p008](phase008/phase.md) | m4a の metadata と `~/Music` の collection（tags.c・library.c）、host の試験 | cleared（2026-10-07、T1-315） | p001 | — |
+| [ws120-p009](phase009/phase.md) | Music の app（一覧・再生・seek・次・Files・App Home）、libavcodec の add-in と audiod | cleared（2026-10-07、T1-315） | p008 | — |
 | [ws120-p007](phase007/phase.md) | 全文規約と回帰、制限の整理（必須の最終確認、後回し） | planning | p009 | 2h |
 
 Graph（2026-10-07）: p001 → p008 → p009 → p007。p002〜p006 は canceled。
