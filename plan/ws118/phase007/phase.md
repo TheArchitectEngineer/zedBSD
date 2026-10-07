@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws118-p007 -->
 # ws118-p007: 5320 の touchpad（Tiger Lake の LPSS I2C）、最小の修正
 
-Status: in-progress（q849-i01、P3、2026-10-07）
+Status: cleared（2026-10-07 Q1 の判定: 95ff56166、build warning 0、5320 実機の kernel.log で lpss-i2c ready 120000 kHz・TPD0 0488:1024 の attach・/dev/input/event2、ユーザーの目視「タッチパッドは5320で動きました！」。割り込みでなく sampling で読む（Extended Interrupt の経路は WS177 backlog-p1））
 Disposition: normal
 Parent: [WS118](../ws.md)
 Queue: q849
