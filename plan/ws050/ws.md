@@ -51,8 +51,8 @@ Alternate Mode・USB PD の contract）を読み、変化を受け取り、必�
 | [ws050-p001](phase001/phase.md) | 調査と設計: UCSI の仕様（1.2/2.x）、対象機の `USBC000` の AML（共有 memory の配置、`_DSM` の function）、Type-C の層の設計、公開の形 | in-progress（2026-10-04。[design.md](design.md) 第 3 版、レビューとユーザーの決定を反映） | WS049 の namespace と評価器 | 設計文書 |
 | [ws050-p002](phase002/phase.md) | UCSI の核・Type-C の層の状態と kernel 内の口、1.x・2.x の配置、疑似の PPM と記録の再生の host の試験 | in-progress（2026-10-07 P2: 正常系、host 31/31、kernel の flag で warning 0。記録の再生は p006） | p001、仕様書での確認、実機の VERSION と mailbox の記録（UAT） | `src/drivers/typec/` |
 | ws050-p003 | ACPI の transport と kernel への組み込み（`ucsi-acpi.c`、attach、Notify、thread、`/dev/typec`） | planned | p002、ws049-p017（q696、WS049 の公開の口）、ws049-p007・p008 | 同上 |
-| ws050-p004 | 操作の command（CONNECTOR_RESET・SET_UOR・SET_PDR・SET_NEW_CAM・GET_CABLE_PROPERTY）と操作の口 | planned | p003 | 同上 |
-| ws050-p005 | i915 との連携（HPD・pin・向きの二つの出所の統合、TC の port と connector の対応付け） | planned | p003、ws051-p002 | 同上 |
+| [ws050-p004](phase004/phase.md) | 操作の command（CONNECTOR_RESET・SET_UOR・SET_PDR・SET_NEW_CAM・GET_CABLE_PROPERTY）と操作の口 | planned | p003 | 同上 |
+| [ws050-p005](phase005/phase.md) | i915 との連携（HPD・pin・向きの二つの出所の統合、TC の port と connector の対応付け） | planned | p003、ws051-p002 | 同上 |
 | ws050-p006 | 実機の確認と規約の全文の確認 | planned | p003〜p005、実機 | WS の全 source |
 
 ## 2026-10-04 予定（Q1）
