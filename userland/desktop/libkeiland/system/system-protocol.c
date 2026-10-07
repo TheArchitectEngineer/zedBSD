@@ -105,7 +105,7 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: fourteen requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15, get_phone since 16, get_printers since 17, get_displays since 18) and one event.  It lives for the program. */
+/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: fourteen requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15, get_phone since 16, get_printers since 17, get_displays since 18; the displays' set_shown since 19) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
 	KL_SYSTEM_MANAGER_NAME,
 	KL_SYSTEM_MANAGER_VERSION,
@@ -436,6 +436,7 @@ static const struct wl_message system_displays_requests[] = {
 	{ "destroy", "", NULL },
 	{ "apply", "uuus", system_plain_types },
 	{ "set_brightness", "usu", system_plain_types },
+	{ "set_shown", "usu", system_plain_types },
 };
 
 /* The events of kl_system_displays_v1. */
@@ -445,11 +446,11 @@ static const struct wl_message system_displays_events[] = {
 	{ "result", "uuu", system_plain_types },
 };
 
-/* kl_system_displays_v1, made at the manager's version (18): three requests and three events.  It lives for the program. */
+/* kl_system_displays_v1, made at the manager's version (18; set_shown since 19, ws113-p014): four requests and three events.  It lives for the program. */
 const struct wl_interface kl_system_displays_v1_interface = {
 	KL_SYSTEM_DISPLAYS_NAME,
-	KL_SYSTEM_SINCE_DISPLAYS,
-	3,
+	KL_SYSTEM_SINCE_SHOWN,
+	4,
 	system_displays_requests,
 	3,
 	system_displays_events

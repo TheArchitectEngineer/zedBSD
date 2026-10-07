@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws113-p014 -->
 # ws113-p014: 拡張の時に個々の display を off にする（Settings の Display の頁）
 
-Status: planned（P1、p007 の後）
+Status: in-progress（実装済み、T1 の QEMU とユーザーの 5330 の UAT 待ち）
 Disposition: normal
 Parent: [WS113](../ws.md)
 
@@ -21,3 +21,25 @@ Parent: [WS113](../ws.md)
 ## 受け入れ
 
 - build warning 0、host 試験、T1 の QEMU、5330 でユーザーの UAT。
+
+## 2026-10-08 実装（q855、P1）
+
+Q1 の ACK:「p014 の範囲 1〜5 で進めてよい（protocol v19・KL_VERSION 59 も可）」。
+
+| 区分 | 内容 |
+| --- | --- |
+| protocol（v19） | `kl_system_displays_v1` に request 3 `set_shown(request, key, shown)`（since 19、`KL_SYSTEM_SINCE_SHOWN`）、snapshot の flag `KL_SYSTEM_DISPLAY_OFF` 0x20（mirror でも付く）。`KL_SYSTEM_MANAGER_VERSION` 19。結果: 0、mirror と最後の 1 つの on は INVALID（EINVAL）、接続していない key は UNAVAILABLE（ENODEV）、session が active でなければ DENIED（EPERM）。 |
+| libkeiland（KL_VERSION 59） | `kl_system_displays_set_shown`（v19 より前の compositor には ENOTSUP）、`KL_DISPLAY_OFF`、exports.map、interface の版 19 と request 4 つ。 |
+| compositor | `displays.c`: displays.conf の `off=KEY` 行（`kwl_displays_is_off`・`kwl_displays_set_off`、16 まで）。`heads.c`: `heads_off`（拡張で off、かつ他に on の display が接続している時だけ off = 全部が消えることは無い。lid の kept_off は別）、`kwl_heads_sync` は off の display の head を開かず、開いていれば閉じる（窓・pointer は anchor へ退避、p007）。`kwl_displays_set_shown`（拡張だけ、最後の on は拒否、保存、head を閉じる・開く、anchor が off なら移す）、`kwl_displays_anchor_follow`（anchor の display が off なら on の display へ `kwl_output_switch`、`KWL DISPLAYS anchor off name=.. to=..`）を set_shown・apply（mode の変更）・`kwl_output_tick` の最初の look と hotplug の後に。mirror では off の display も複製に映る（設定は保つ）。`displays-shell.c`: request の処理と OFF の flag。 |
+| Settings | 拡張の時、display の行ごとに switch（on/off、押すとすぐ `set_shown`）、最後の on と要求の待ちの間は押せない。off の display は配置の図と Apply の place から外す。結果の文（EINVAL「At least one display stays on.」など）と ja の翻訳 4 つ（tr.py check 0 problems）。編集中の draft は位置だけを保ち、flag などは snapshot の値に更新。 |
+| probe | `keiland-system` に `display-shown KEY on\|off`。 |
+
+確認（host、2026-10-08）:
+- `sh plan/ws113/tests/host-displays.sh` PASS（off 行の読み書き、重複は 1 行、on に戻す、空の key、上限 16）。
+- `sh plan/ws131/tests/host-system.sh` PASS（manager の版 19 の表、HDMI の off・on と flag、最後の on の拒否、接続していない key の ENODEV、空の key）。
+- `sh plan/ws113/tests/host-output-switch.sh` PASS（`kwl_displays_anchor_follow` の stub を足した）、`sh plan/ws113/tests/host-plane.sh` PASS。
+- build（warning 0）: zedBSD（wayland・settings・keiland-system、main の merge の後も）、Linux（`keiland-linux.mk all`）。Settings の page-display.c は gnu89 の host compile も通る（settings-render の link の失敗は以前からの WS089 の backlog）。style-check: 変えた file で増えない。
+
+未実施:
+- QEMU（T1 `plan/ws113/tests/displays-p014.sh`、image は `config-amd64-p006.mk`）: head 1 の off・on、anchor の off で head 1 へ移る、最後の on の拒否、displays.conf の保存と再起動、mirror での表示と拒否。
+- 5330 の実機（ユーザー）: 内蔵を off にして HDMI だけ、HDMI を off にして内蔵だけ、touch の試験。FreeBSD の build。

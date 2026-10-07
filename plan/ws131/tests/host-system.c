@@ -661,14 +661,16 @@ static void emit_raw(int fd, uint32_t object, uint32_t opcode, const void *paylo
  * The displays (ws113-p005): a stand-in for displays-shell.c that tells two displays (the panel, an HDMI one), keeps
  * the serial of its snapshot (7 at first; moved without a new snapshot to make a stale choice), and answers an apply
  * against another serial stale, otherwise applied with a new snapshot of the mode asked.  The places last asked are
- * kept for the test to read.
+ * kept for the test to read.  set_shown (ws113-p014) turns the HDMI display off or on (its flag OFF), refuses to
+ * turn off the panel while the HDMI display is off (the last one on), and does not know other keys.
  */
 static struct {
 	uint32_t serial;
 	uint32_t mode;
 	char places[KL_SYSTEM_DISPLAY_PLACES_MAX];
 	uint32_t brightness;
-} fake_displays = { 7U, KL_SYSTEM_DISPLAYS_EXTENDED, { 0 }, 40U };
+	uint32_t hdmi_off;
+} fake_displays = { 7U, KL_SYSTEM_DISPLAYS_EXTENDED, { 0 }, 40U, 0U };
 
 static size_t fake_put_string(unsigned char *payload, size_t offset, const char *text);
 static void fake_displays_snapshot(struct kwl_object *object);
@@ -757,6 +759,32 @@ kwl_displays_request(struct kwl_object *object, uint32_t opcode, const unsigned 
 		(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_RESULT, words, sizeof(words));
 		return 0;
 	}
+	if (opcode == KL_SYSTEM_DISPLAYS_SET_SHOWN) {
+		if (size < 12U)
+			return EPROTO;
+		memcpy(words, bytes, 4U);
+		memcpy(&length, bytes + 4, 4U);
+		if (8U + ((length + 3U) & ~3U) + 4U != size)
+			return EPROTO;
+		memcpy(&words[2], bytes + 8U + ((length + 3U) & ~3U), 4U);
+		words[1] = KL_SYSTEM_RESULT_UNAVAILABLE;
+		pthread_mutex_lock(&world.lock);
+		if (strcmp((const char *)bytes + 8, "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B") == 0) {
+			fake_displays.hdmi_off = words[2] == 0U;
+			fake_displays.serial++;
+			words[1] = KL_SYSTEM_RESULT_OK;
+		} else if (strcmp((const char *)bytes + 8, "zedbsd-port-v1:pci:0000:00:02.0:edp:A") == 0) {
+			words[1] = KL_SYSTEM_RESULT_OK;
+			if (words[2] == 0U && fake_displays.hdmi_off)
+				words[1] = KL_SYSTEM_RESULT_INVALID;
+		}
+		pthread_mutex_unlock(&world.lock);
+		if (words[1] == KL_SYSTEM_RESULT_OK)
+			fake_displays_snapshot(object);
+		words[2] = 1U;
+		(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_RESULT, words, sizeof(words));
+		return 0;
+	}
 	return EPROTO;
 }
 
@@ -802,6 +830,10 @@ fake_displays_snapshot(struct kwl_object *object)
 	words[3] = 720U;
 	words[4] = 60000U;
 	words[5] = KL_SYSTEM_DISPLAY_SHOWN;
+	pthread_mutex_lock(&world.lock);
+	if (fake_displays.hdmi_off)
+		words[5] = KL_SYSTEM_DISPLAY_OFF;
+	pthread_mutex_unlock(&world.lock);
 	words[6] = 0U;
 	memcpy(payload + offset, words, sizeof(words));
 	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_OUTPUT, payload, offset + sizeof(words));
@@ -1637,6 +1669,19 @@ test_both_ends(void)
 	CHECK(kl_system_displays_apply(system, 5U, NULL, 0U, NULL) == EINVAL, "a mode not one refused");
 	CHECK(kl_system_displays_set_brightness(system, "", 10U, NULL) == EINVAL, "an empty key refused");
 	CHECK(kl_system_displays_set_brightness(system, displays[0].key, 101U, NULL) == EINVAL, "a light out of range refused");
+
+	/* A display turned off and on (ws113-p014): its flag told, the last one on refused, a key not connected unavailable. */
+	CHECK(kl_system_displays_set_shown(system, displays[1].key, 0U, &first) == 0, "HDMI off asked");
+	expect_result(display, system, first, 0, "HDMI off");
+	CHECK(kl_system_displays_get(system, displays, KL_DISPLAYS_MAX) == 2U && displays[1].flags == KL_DISPLAY_OFF, "the HDMI display told off");
+	CHECK(kl_system_displays_set_shown(system, displays[0].key, 0U, &first) == 0, "panel off asked");
+	expect_result(display, system, first, EINVAL, "the last display on refused");
+	CHECK(kl_system_displays_set_shown(system, "zedbsd-port-v1:pci:0000:00:02.0:dp:C", 1U, &first) == 0, "a display not connected asked");
+	expect_result(display, system, first, ENODEV, "a display not connected unavailable");
+	CHECK(kl_system_displays_set_shown(system, displays[1].key, 7U, &first) == 0, "HDMI on asked");
+	expect_result(display, system, first, 0, "HDMI on");
+	CHECK(kl_system_displays_get(system, displays, KL_DISPLAYS_MAX) == 2U && displays[1].flags == KL_DISPLAY_SHOWN, "the HDMI display told on");
+	CHECK(kl_system_displays_set_shown(system, "", 1U, NULL) == EINVAL, "an empty key refused for set_shown");
 
 	/* The notifications (ws156-p002): a post numbered, new words for it, a body too long refused, a withdrawal closed and answered. */
 	CHECK((kl_system_capabilities(system) & KL_SYSTEM_HAS_NOTIFY) != 0U, "notify offered");

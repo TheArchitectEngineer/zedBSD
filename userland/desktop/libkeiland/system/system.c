@@ -1337,6 +1337,39 @@ kl_system_displays_set_brightness(
 }
 
 /*
+ * Turns a display off, or on again, in the extended mode (ws113-p014).
+ */
+int
+kl_system_displays_set_shown(
+	struct kl_system *system,
+	const char *key,
+	unsigned shown,
+	uint32_t *request)
+{
+	size_t length;
+	uint32_t number;
+
+	/* A display's key. */
+	if (system == NULL || key == NULL)
+		return EINVAL;
+	length = strlen(key);
+	if (length == 0U || length >= KL_DISPLAY_KEY_MAX)
+		return EINVAL;
+
+	/* The displays object, from a compositor that has set_shown. */
+	if (system->displays == NULL || system->lost || system->manager_version < KL_SYSTEM_SINCE_SHOWN)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	shown = (unsigned)(shown != 0U);
+	wl_proxy_marshal(system->displays, KL_SYSTEM_DISPLAYS_SET_SHOWN, number, key, (uint32_t)shown);
+
+	/* Succeeded: the snapshot and the answer come later. */
+	return 0;
+}
+
+/*
  * Copies Remote Login's state (ws089-p025).
  */
 void

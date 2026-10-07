@@ -246,6 +246,15 @@ kwl_heads_sync(
 	test_syncs++;
 }
 
+/* Stands in for the anchor's move off a display turned off (heads.c, ws113-p014): no display is off here. */
+void
+kwl_displays_anchor_follow(
+	struct kwl_server *server)
+{
+	/* Nothing to follow. */
+	(void)server;
+}
+
 /* Stands in for a head's lost display (heads.c). */
 int
 kwl_heads_lost(
