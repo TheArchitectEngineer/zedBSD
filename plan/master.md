@@ -9,6 +9,7 @@
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
 <!-- master:agents:start -->
+- 2026-10-07 18 時半: **P1** は ws075-p007a a3 で止め（8e17f0e2c merge、a4 から再開）、新しい世代で q847（WS051 p003 → p004a・p004b、WS050 の 5320 の UCSI の PPM 不起動の解析）。T1 は返却済み（次は T1-351、M-3 の採取の後）。
 - 2026-10-07 18 時: **P3**（phase-runner high、worktree p3）を追加 → q846 [ws118-p006](ws118/phase006/phase.md)（5320 の TGL の DPLL・takeover・fallback、実機 10.0.30.5）。
 - 2026-10-07 夜（利用の上限の前のラップアップ、ユーザーの指示）。体制は N=2（P1・P2、phase-runner high）＋T1（test-runner、Sonnet 5.5 medium）。全担当は削除の command を実行しない（Q1 が消す、plan/agents/protocol.md 末尾）。
   - **P1**（q833・q836・q839）: 75d7e4b84 まで merge 済み。WS179 p001・p002（T1-335・337 待ち、Files の desktop の pill が青のまま → 直す）、ws090-p025 の User name は kl_field の scroll の直し（66dcf6edd、T1-338 待ち）。WS083 p001 設計の第 1 版と design-reviewer の結果（blocking 4、§13 に未反映、人の判断 H1〜H5・HD1〜HD6 は第 2 版の後にユーザーへ）→ WS178 libGL を GL だけ・libGLX.so を xserver に「完全に分ける」→ WS075 → WS052。ws090-p025 の Settings の User name の IME（T1-336 で key は欄に届くのに画面は n だけ、描画か ja の keysym を疑う）。
