@@ -4,7 +4,7 @@
 
 Phase ID: `ws181-p007`
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q845 P2: 実装・build・host の PNG まで。QEMU は T1 へ）
+Status: cleared（2026-10-07 Q1 の判定: T1-349 QEMU PASS `ws181-guest: status 0`（menu-settled を含む）、c10-arrange-menu.png で popup の後ろの窓・壁紙が blur で透ける glass、c10-menu-opening.png は click 直後で popup がまだ見えない（開く animation の始まり）。実機・ユーザーの UAT は未実施）
 Phase disposition: normal
 Queue: q845（P2、Q1 の ACK 2026-10-07「ws181-p007 の範囲 1〜5 で ACK」）
 
