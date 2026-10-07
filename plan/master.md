@@ -516,6 +516,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー:「今後、実機のホスト鍵は無視してクリアして接続してください。」→ 実機（10.0.30.3 の 5330・10.0.30.5 の 5320）の SSH の host 鍵が変わっていたら `ssh-keygen -R` して `StrictHostKeyChecking=accept-new` で繋いでよい（他の host は今までどおり確かめる）。
 - 2026-10-07 Q1: ws051-p004b の code（c1dd58f19、D1〜D8、host 試験 PASS、build warning 0）を merge。判断: (a) present.c の `display_failed` が 1 度の run の失敗で以後の presentation を全部失敗にするのは p011a の「失敗したら元の出力へ戻す」と食い違う → 次の P1 が直す（ws113 の file、Q1 の許可）。(b) `userland/tests/display-control` に `--index=N` を足す（DP-2 を選んで claim するため、P1、Q1 の許可）。素の 5330 の確認に「display-control で DP-2 を claim して present → release → 10 秒で eDP に戻る、link 162000 kHz x4 24 bpp、USB-C→HDMI の adapter も」を足す。
 - 2026-10-07 ユーザーの UAT（5320）→ [ws181-p009](ws181/phase009/phase.md)（P2 の q852 に足す）。5320 で HDA の音が鳴った（ユーザーの報告）。
 - 2026-10-07 Q1: ws113-p011a（9036a7ad4、i915 の resident の出力の付け替え・connector ごとの ID と generation・R1〜R4、compositor の蓋で外部へ移る R4）を merge。q850 は finished（試験待ち: T1-357 の QEMU、5330 の HDMI の UAT（phase011a/phase.md の「確認」(1)〜(4)））。P1 は ws075-p007b を区切って ws051-p004b の code へ。
