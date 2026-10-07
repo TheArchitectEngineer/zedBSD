@@ -1313,11 +1313,6 @@ arrange_apply(
 		arranged->slots[slot].slot = slots[slot];
 
 	/* Each window into its slot, gliding from where it was drawn, the arranged ones on top in the slots' order. */
-	printf("KWL ARRANGE apply layout=%s desktop=%u windows=%u ", kwl_arrange_name(layout), server->desktop + 1U, made);
-	if (output != KWL_PLANE_ANCHOR)
-		printf("output=%u ", output);
-	printf("slots=");
-
 	/* The windows into their slots, the arranged ones raised in the slots' order. */
 	for (index = made; index > 0U; index--) {
 		slot = order[index - 1U];
@@ -1330,8 +1325,15 @@ arrange_apply(
 		kwl_glass_place_body(server, arranged->slots[slot].window, body[0], body[1], body[2], body[3]);
 		memcpy(arranged->slots[slot].to, body, sizeof(arranged->slots[slot].to));
 		arranged->slots[slot].glide_ms = kwl_milliseconds();
-		printf("%s%u@%d,%d,%d,%d", slot == 0U ? "" : ";", arranged->slots[slot].window->id, slots[slot].x, slots[slot].y, slots[slot].width, slots[slot].height);
 	}
+
+	/* The log, whole on one line after the windows' own lines (the tests read it). */
+	printf("KWL ARRANGE apply layout=%s desktop=%u windows=%u ", kwl_arrange_name(layout), server->desktop + 1U, made);
+	if (output != KWL_PLANE_ANCHOR)
+		printf("output=%u ", output);
+	printf("slots=");
+	for (slot = 0U; slot < made; slot++)
+		printf("%s%u@%d,%d,%d,%d", slot == 0U ? "" : ";", arranged->slots[slot].window->id, slots[slot].x, slots[slot].y, slots[slot].width, slots[slot].height);
 	printf("\n");
 	server->dirty = 1;
 }

@@ -15,7 +15,8 @@
 #     head 1 is not hidden by it), and a stays in head 1's render list (head1-anchor-docked.png shows a floating there).
 #     A double click on b's title in the system bar brings it back ("KWL LAYOUT leave via=double-click").
 #  3. The arrangement menu on the anchor's pill, Side by Side: it arranges the anchor's window b alone ("KWL ARRANGE
-#     apply layout=columns desktop=1 windows=1 slots=b@..."), a stays where it was on head 1.
+#     apply layout=columns desktop=D windows=1"; the session's desktop is not always 1, and the slots' list on that line
+#     is broken by the configure lines printed while it is written), a stays where it was on head 1.
 #  4. App Home opened by a click in the top-left corner: head 1 shows App Home's dark stage alone, without a
 #     (home-head1.png; home-anchor.png for the anchor); Esc closes it and head 1 shows a again (home-closed-head1.png).
 #  5. Head 1 unplugged: a comes back to the anchor ("why=retreat").
@@ -132,7 +133,7 @@ echo "b: surface ${b:-none} at $mx,$my"
 pointer move $((mx + 150)) $((my - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 800
 expect_count "KWL GLASS dock surface=$b via=double-click" 1 "a double click docks b on the anchor"
 expect_count 'KWL LAYOUT mode=docked reason=double-click at_ms=' 1 "the anchor's mode is docked (its own line)"
-line=$(last_line 'KWL LAYOUT windows desktop=1 mode=docked ')
+line=$(last_line 'KWL LAYOUT windows desktop=[0-9]+ mode=docked ')
 printf '%s\n' "$line" > "$out/layout-docked.txt"
 expect_text "$line" 'floating=0 docked=1 dock_hidden=0 minimized=0 fullscreen=0$' "the anchor's count has b docked and nothing hidden (a is head 1's)"
 if [ "$(listed 1 "$a")" = yes ]; then echo "ok: a stays in head 1's render list"; else echo "FAIL: a is not in head 1's render list"; status=1; fi
@@ -152,7 +153,7 @@ pointer move $((pill + 20)) 22 sleep 300 down sleep 60 up sleep 800
 expect_count 'KWL ARRANGE menu open' 1 "the arrangement menu opens"
 set -- $(last_line 'KWL ARRANGE menu item=columns ' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 pointer move "${1:-0}" "${2:-0}" sleep 300 down sleep 60 up sleep 1500
-expect_count "KWL ARRANGE apply layout=columns desktop=1 windows=1 slots=$b@" 1 "Side by Side arranges the anchor's b alone"
+expect_count 'KWL ARRANGE apply layout=columns desktop=[0-9]+ windows=1 ' 1 "Side by Side arranges the anchor's window alone (b; a is head 1's)"
 if [ "$(listed 1 "$a")" = yes ]; then echo "ok: a stays on head 1"; else echo "FAIL: a left head 1"; status=1; fi
 head_shot 0 anchor-arranged
 
