@@ -39,3 +39,12 @@ Queue: q846
 
 - HAL の API は変えない。toolchain は変えない。rm は打たない（Q1 に path を送る）。security の判定で止まったら止まって Q1 に返す。
 - 実機 5320 への image・kernel の入れ替えと再起動は、方法を決めたら Q1 に送る（ユーザーの立会いが要るなら Q1 が聞く）。
+
+## q846-i01 の途中の結果（2026-10-07 Q1）
+
+- P3 の 13573574f（I915_LCD_IS_DISPLAY_VER を本当の版に、skl_scaler の readout・停止、TGL の PLL の表、TGL の CDCLK）を main に merge（0d7271925）。
+- 実機 5320（ユーザーの承認「進めてよい（vmunix を上書き）」、/esp/vmunix を置き換え、元は /esp/vmunix.orig、ユーザーが BIOS で USB 起動を固定して再起動）:
+  kernel.log に `takeover: readout: ... DPLL0 port 0`、`takeover: rc=0, crtcs stopped 1`、preflight の idle、`resident display: picture up`、
+  `first frame 1366x768 ... shown on the 1366x768 panel`、flip が続く。DPLL の値は Linux と same。kei の session（IME・Files・Settings が READY）。
+- **ユーザーの目視（実機）: 「5320でKeilandデスクトップが表示されました！」（2026-10-07）**。
+- 残り: 5330 の回帰（T1）、世代に依らない fallback（範囲 4）、keyboard・touchpad の確認（ユーザー）。
