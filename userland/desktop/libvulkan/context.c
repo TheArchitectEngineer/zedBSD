@@ -30,6 +30,9 @@
 #define VULKAN_VENDOR_CAPSET_STRICT_QUEUE 2U
 #define VULKAN_VENDOR_CAPSET_QUIESCE 4U
 #define VULKAN_VENDOR_CAPSET_HOST_SCANOUT 8U
+#define VULKAN_NATIVE_CAPSET_BYTES 176U
+#define VULKAN_NATIVE_CAPSET_MAGIC 0x5a4e4154U
+#define VULKAN_NATIVE_CAPSET_VIDEO_DECODE_H264 1U
 
 /* Retains mapped transport backing through growth, rollback and descriptor close. */
 struct vulkan_transport_storage {
@@ -68,6 +71,8 @@ vulkan_context_open(
 	uint32_t timelines;
 	uint32_t vendor_magic;
 	uint32_t vendor_flags;
+	uint32_t native_magic;
+	uint32_t native_flags;
 	int status;
 	size_t path_bytes;
 
@@ -166,8 +171,11 @@ vulkan_context_open(
 	/*
 	 * An exact vendor suffix identifies the paired renderer's raw OPAQUE support.
 	 * Stock, unknown and future capset layouts retain the proven DMA-BUF subset.
+	 * The native renderer's longer record keeps the same vendor suffix and
+	 * appends its own word after it.
 	 */
-	if (capset.bytes == VULKAN_VENDOR_CAPSET_BYTES) {
+	if (capset.bytes == VULKAN_VENDOR_CAPSET_BYTES ||
+	    capset.bytes == VULKAN_NATIVE_CAPSET_BYTES) {
 		vendor_magic = vulkan_load_word(capset.data + 160);
 		vendor_flags = vulkan_load_word(capset.data + 164);
 		if (vendor_magic == VULKAN_VENDOR_CAPSET_MAGIC) {
@@ -195,6 +203,19 @@ vulkan_context_open(
 			    vendor_flags == (VULKAN_VENDOR_CAPSET_OPAQUE | VULKAN_VENDOR_CAPSET_STRICT_QUEUE | VULKAN_VENDOR_CAPSET_QUIESCE | VULKAN_VENDOR_CAPSET_HOST_SCANOUT))
 				context->copy_display = VK_FALSE;
 		}
+	}
+
+	/*
+	 * Only the native renderer's record carries the native word.  The video
+	 * decode bit is the renderer's promise that a video decode queue family
+	 * exists; unknown bits are ignored so a later renderer stays usable.
+	 */
+	if (capset.bytes == VULKAN_NATIVE_CAPSET_BYTES) {
+		native_magic = vulkan_load_word(capset.data + 168);
+		native_flags = vulkan_load_word(capset.data + 172);
+		if (native_magic == VULKAN_NATIVE_CAPSET_MAGIC &&
+		    (native_flags & VULKAN_NATIVE_CAPSET_VIDEO_DECODE_H264) != 0)
+			context->video_h264 = VK_TRUE;
 	}
 
 	/* Succeeded: the caller owns one compatible session with no fixed reply allocation. */

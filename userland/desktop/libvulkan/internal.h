@@ -22,6 +22,23 @@
 /* The pinned renderer reserves ring zero and owns at most sixty-three device timelines. */
 #define VULKAN_QUEUE_TIMELINE_COUNT 64U
 
+/*
+ * The queue flags a family has only on a renderer with video coding.  The
+ * encode flag (0x40) is a beta enumerant in the pinned 1.3.269 header, so it
+ * is written by value.
+ */
+#define VULKAN_VIDEO_QUEUE_FLAGS ((uint32_t)VK_QUEUE_VIDEO_DECODE_BIT_KHR | 0x40U)
+
+/*
+ * The format features that name video decode and encode pictures.  The two
+ * encode features (0x08000000, 0x10000000) are beta enumerants in the
+ * pinned 1.3.269 header, so they are written by value.
+ */
+#define VULKAN_VIDEO_FORMAT_FEATURES ((uint32_t)VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR | \
+	(uint32_t)VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR | \
+	0x08000000U | \
+	0x10000000U)
+
 struct vulkan_context;
 struct vulkan_transport_storage;
 struct vulkan_instance_context;
@@ -64,7 +81,9 @@ enum vulkan_object_kind {
 	VULKAN_OBJECT_SURFACE,
 	VULKAN_OBJECT_SWAPCHAIN,
 	VULKAN_OBJECT_DISPLAY,
-	VULKAN_OBJECT_DISPLAY_MODE
+	VULKAN_OBJECT_DISPLAY_MODE,
+	VULKAN_OBJECT_VIDEO_SESSION,
+	VULKAN_OBJECT_VIDEO_SESSION_PARAMETERS
 };
 
 /* Retains the application callbacks used for one ownership lifetime. */
@@ -109,6 +128,12 @@ struct VkPhysicalDevice_T {
 	VkQueueFamilyProperties *queue_families;
 	uint32_t queue_family_count;
 	uint64_t supported_extensions;
+	/*
+	 * The video codec operations of each queue family, by family index.
+	 * They are asked of the renderer once, and only when its native word
+	 * promises video decode; otherwise every entry stays zero.
+	 */
+	VkVideoCodecOperationFlagsKHR queue_video_operations[VULKAN_QUEUE_TIMELINE_COUNT];
 };
 
 /* Owns logical-device children and briefly serializes host sync state. */
@@ -253,7 +278,11 @@ enum vulkan_device_extension_bits {
 	VULKAN_DEVICE_EXTERNAL_FENCE = 16,
 	VULKAN_DEVICE_EXTERNAL_FENCE_FD = 32,
 	VULKAN_DEVICE_MEMORY_REQUIREMENTS2 = 64,
-	VULKAN_DEVICE_DEDICATED_ALLOCATION = 128
+	VULKAN_DEVICE_DEDICATED_ALLOCATION = 128,
+	VULKAN_DEVICE_SYNCHRONIZATION2 = 256,
+	VULKAN_DEVICE_VIDEO_QUEUE = 512,
+	VULKAN_DEVICE_VIDEO_DECODE_QUEUE = 1024,
+	VULKAN_DEVICE_VIDEO_DECODE_H264 = 2048
 };
 
 /* Owns a completed reply after the transport transaction unlocks. */
@@ -306,6 +335,12 @@ struct vulkan_context {
 	VkBool32 strict_queue;
 	VkBool32 native_quiescence;
 	VkBool32 copy_display;
+	/*
+	 * The native renderer's promise of an H.264 decode queue family.  Only
+	 * a session whose capability record carries the native word can set it,
+	 * and it is what lets the video extensions be named at all.
+	 */
+	VkBool32 video_h264;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;
@@ -666,6 +701,24 @@ vulkan_read_bytes(
 VkResult
 vulkan_read_result(
 	struct vulkan_reader *reader);
+
+/* Video commands are recorded with the same framing as the ordinary vkCmd* calls. */
+VkBool32
+vulkan_command_record_begin(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_writer *writer,
+	uint32_t opcode);
+
+void
+vulkan_command_record_finish(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_writer *writer);
+
+/* Checks a video profile list on an image query against the one supported profile. */
+VkResult
+vulkan_video_profile_list_check(
+	struct VkPhysicalDevice_T *physical,
+	const VkVideoProfileListInfoKHR *list);
 
 /* The caller owns queue->mutex across submission and presentation publication. */
 void vulkan_queue_finish(struct VkQueue_T *queue);

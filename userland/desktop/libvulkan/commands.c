@@ -528,6 +528,41 @@ vkResetCommandBuffer(
 	return VK_SUCCESS;
 }
 
+/*
+ * Starts one video coding record with the ordinary recording framing.
+ */
+VkBool32
+vulkan_command_record_begin(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_writer *writer,
+	uint32_t opcode)
+{
+	VkBool32 active;
+
+	/* Applies the same state and earlier-failure checks as every vkCmd* call. */
+	active = command_record_begin(command, writer, opcode);
+	if (!active)
+		return VK_FALSE;
+
+	/* Succeeded: the caller appends the video command's arguments. */
+	return VK_TRUE;
+}
+
+/*
+ * Retains one complete video coding record in its command buffer.
+ */
+void
+vulkan_command_record_finish(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_writer *writer)
+{
+	/* Appends or flushes the record exactly as an ordinary command is. */
+	command_record_finish(command, writer);
+
+	/* Succeeded: the record is kept or its failure is latched on the command buffer. */
+	return;
+}
+
 #include "commands-generated.inc"
 
 /* Starts one ordinary recording call without losing an earlier encoding failure. */

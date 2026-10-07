@@ -17,7 +17,7 @@ func lines(text) {
 }
 func main(args) {
     if (Array.size(args) != 2) { System.error("usage: maintain-dispatch.noct PUBLIC_HEADER OUTPUT_DIRECTORY"); }
-    var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("include/libc/vulkan/vulkan_wayland.h") + FileUtil.readText("include/libc/vulkan/vulkan_external.h"));
+    var source = lines(FileUtil.readText(args[0]) + FileUtil.readText("include/libc/vulkan/vulkan_wayland.h") + FileUtil.readText("include/libc/vulkan/vulkan_external.h") + FileUtil.readText("include/libc/vulkan/vulkan_video.h"));
     var banner = "/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n";
     var table = banner + "/*\n * Maintained declaration metadata, see include/libc/vulkan/API-PROVENANCE.md.\n */\n\n";
     var manifest = "name\tscope\textension\n"; var extension = "0"; var count = 0;
@@ -35,6 +35,9 @@ func main(args) {
         if (line == "#define VK_KHR_external_fence_fd 1") { extension = "VULKAN_DEVICE_EXTERNAL_FENCE_FD"; }
         if (line == "#define VK_KHR_get_memory_requirements2 1") { extension = "VULKAN_DEVICE_MEMORY_REQUIREMENTS2"; }
         if (line == "#define VK_KHR_dedicated_allocation 1") { extension = "VULKAN_DEVICE_DEDICATED_ALLOCATION"; }
+        if (line == "#define VK_KHR_video_queue 1") { extension = "VULKAN_DEVICE_VIDEO_QUEUE"; }
+        if (line == "#define VK_KHR_video_decode_queue 1") { extension = "VULKAN_DEVICE_VIDEO_DECODE_QUEUE"; }
+        if (line == "#define VK_KHR_synchronization2 1") { extension = "VULKAN_DEVICE_SYNCHRONIZATION2"; }
         var at = String.indexOf(line, "(VKAPI_PTR *PFN_vk");
         if (at < 0) { continue; }
         var rest = String.substring(line, at + 16, -1);
@@ -50,8 +53,8 @@ func main(args) {
         manifest = manifest + name + "\t" + scope + "\t" + extension + "\n";
         count = count + 1;
     }
-    if (count != 173) { System.error("expected 173 public command records, got " + count); }
+    if (count != 192) { System.error("expected 192 public command records, got " + count); }
     FileUtil.writeText(args[1] + "/dispatch-table.inc", table);
     FileUtil.writeText(args[1] + "/api-commands.tsv", manifest);
-    print("maintained 173 dispatch records");
+    print("maintained 192 dispatch records");
 }

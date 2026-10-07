@@ -156,7 +156,7 @@ backend が返す family を 2 つにする（`render/instance.c` の queue fami
 - `vkCreateVideoSessionKHR`: `queueFamilyIndex` 1、`flags` 0（`INLINE_QUERIES`・`PROTECTED_CONTENT` は `VK_ERROR_FEATURE_NOT_PRESENT`）、profile §3.3、format NV12、`maxCodedExtent` ≤ 4096x4096（16 に切り上げ）、`maxDpbSlots` ≤ 17、`maxActiveReferencePictures` ≤ 16、std header の名と版 ≤ 1.0.0（違えば `VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR`）。backend は session を作り、最初の session なら VCS0 の hardware context を作る（D11）。
 - `vkGetVideoSessionMemoryRequirementsKHR`: bind index 0〜3 は row store 4 本、4〜4+maxDpbSlots−1 は slot ごとの MV buffer、4+maxDpbSlots は setup の無い picture の MV buffer（§6.4）。
 - `vkBindVideoSessionMemoryKHR`: 全 bind index を bind するまで decode の submit は D18 で拒む。
-- `vkCreateVideoSessionParametersKHR`・`vkUpdateVideoSessionParametersKHR`: SPS ≤ 32、PPS ≤ 256、template の写し、`updateSequenceCount` は今の +1、既にある id の追加は `VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR`（規格）。SPS・PPS は libvulkan が規格の error のために手元に写し、backend にも送る（実行器が真実、D22 で 1 件ずつ確保）。`pOffsetForRefFrame`・`pScalingLists` は deep copy、VUI は捨てる。
+- `vkCreateVideoSessionParametersKHR`・`vkUpdateVideoSessionParametersKHR`: SPS ≤ 32、PPS ≤ 256、template の写し、`updateSequenceCount` は今の +1、既にある key の追加（update）と H.264 の範囲の外の id は `VK_ERROR_INITIALIZATION_FAILED`（p002 で直し: 固定した 1.3.269 の header では `VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR` が `VK_ENABLE_BETA_EXTENSIONS` の中の encode の値。create は template の key を同じ key の set で置き換えてよい）。SPS・PPS は libvulkan が規格の error のために手元に写し、backend にも送る（実行器が真実、D22 で 1 件ずつ確保）。`pOffsetForRefFrame`・`pScalingLists` は deep copy、VUI は捨てる。
 - 破棄: `GPU_OP_DESTROY_*`。session の destroy は bind した memory を解放しない。
 
 ### 3.6 command buffer の video coding scope（第 2 版で規格から書き直し、B1）
@@ -192,17 +192,18 @@ family 1 の pool の **primary** の command buffer に記録する（新 file 
 
 - pNext の連鎖: `VkVideoProfileInfoKHR` → `VkVideoDecodeH264ProfileInfoKHR`・`VkVideoDecodeUsageInfoKHR`、`VkVideoCapabilitiesKHR` → `VkVideoDecodeCapabilitiesKHR`・`VkVideoDecodeH264CapabilitiesKHR`、parameters の create → `VkVideoDecodeH264SessionParametersCreateInfoKHR`、update → `VkVideoDecodeH264SessionParametersAddInfoKHR`、`VkVideoDecodeInfoKHR` → `VkVideoDecodeH264PictureInfoKHR`、`VkVideoReferenceSlotInfoKHR` → `VkVideoDecodeH264DpbSlotInfoKHR`、`VkPhysicalDeviceVideoFormatInfoKHR` → `VkVideoProfileListInfoKHR`。
 - `VkVideoReferenceSlotInfoKHR`: `[sType][pNext…][slotIndex i32][present][VkVideoPictureResourceInfoKHR]`（present 0 が NULL = slot の無効化、§3.6）。
-- `StdVideo*` は field を宣言順に（bit field の flags は u32）。SPS の `pOffsetForRefFrame` は `num_ref_frames_in_pic_order_cnt_cycle` 個（255 まで）、`pScalingLists` は present + 本体（`StdVideoH264ScalingLists`: 2 つの mask と 4x4 の 6 本×16、8x8 の 6 本×64、全て scan 順）、VUI は present 0。
+- 構造体の中の数の field は宣言の位置に u32 で書き、配列の pointer は `[u64 数]{要素}`（core の codec と同じ）。値で持つ構造体（`dstPictureResource`）は sType から全部。符号付きの値（`int8_t`・`int32_t`）は符号を広げて u32。
+- `StdVideo*` は field を宣言順に（bit field の flags は u32、宣言の最初の flag が bit 0。reserved の field も書く。`PicOrderCnt[2]` は `[u64 2]{u32 ×2}`）。SPS の `pOffsetForRefFrame` は `num_ref_frames_in_pic_order_cnt_cycle` 個（255 まで）、`pScalingLists` は present + 本体（`StdVideoH264ScalingLists`: 2 つの mask を u32 で、4x4 の 6 本×16 を `[u64 96]` + 96 byte、8x8 の 6 本×64 を `[u64 384]` + 384 byte、全て scan 順）。pOffsetForRefFrame は `[u64 数]{u32}`（NULL は数 0）、VUI は present 0。
 
 | op | 送る物 | 返事 |
 | --- | --- | --- |
-| VIDEO_CAPABILITIES | `[physical][present][profile+chain][present][caps の chain の sType 列]` | `[result][present][caps+chain]` |
-| VIDEO_FORMAT_PROPERTIES | `[physical][present][format info+chain][count 要求][present][array count]` | `[result][count][array count]{VkVideoFormatPropertiesKHR}` |
-| QUEUE_FAMILY_VIDEO_PROPERTIES | `[physical][count]` | `[present][count]{u32}` |
+| VIDEO_CAPABILITIES | `[physical][present][profile+chain][present][caps の形]`（形 = `[sType][link]`、link は `0` か `1` + 次の形。decode・H.264 の caps だけ） | `[result][present][caps+chain]`（chain は入れ子: caps の sType、link 1、decode の sType、link 1、H.264 の sType、link 0、H.264 の field、decode の field、caps の field） |
+| VIDEO_FORMAT_PROPERTIES | `[physical][present][format info+chain][present 1][u32 32][u64 32]`（libvulkan は常に 32 個まで一度に聞き、手元で切り詰めて `VK_INCOMPLETE`） | `[result][present][u32 count][u64 count]{[sType][link 0][field]}`（count ≤ 32） |
+| QUEUE_FAMILY_VIDEO_PROPERTIES | `[physical][u32 family の数]` | `[present][u32 family の数]{u32 codec ops}` |
 | CREATE_VIDEO_SESSION | `[device][present][create info+chain][allocator 0][present][id]` | `[result][present][id]` |
 | DESTROY_VIDEO_SESSION | `[device][session][allocator 0]` | なし |
-| GET_VIDEO_SESSION_MEMORY_REQUIREMENTS | `[device][session][count 要求][array count]` | `[result][count][array count]{…}` |
-| BIND_VIDEO_SESSION_MEMORY | `[device][session][count]{VkBindVideoSessionMemoryInfoKHR}` | `[result]` |
+| GET_VIDEO_SESSION_MEMORY_REQUIREMENTS | `[device][session][present 1][u32 32][u64 32]` | `[result][present][u32 count][u64 count]{[sType][link 0][bind index][VkMemoryRequirements]}`（count ≤ 32） |
+| BIND_VIDEO_SESSION_MEMORY | `[device][session][u32 count][u64 count]{VkBindVideoSessionMemoryInfoKHR}` | `[result]` |
 | CREATE/UPDATE/DESTROY_VIDEO_SESSION_PARAMETERS | create `[device][present][create+chain][allocator 0][present][id]`、update `[device][params][present][update+chain]`、destroy `[device][params][allocator 0]` | create・update `[result]`（create は `[present][id]` も） |
 | CMD_BEGIN/END/CONTROL_VIDEO_CODING、CMD_DECODE_VIDEO | `[cmdbuf][present][struct+chain]` | なし（記録） |
 

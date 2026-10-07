@@ -195,3 +195,11 @@ libvulkan offers these extensions only on a backend whose capset declares video
 (the native i915), and it names Vulkan 1.0 there, which the registry's
 dependencies of these extensions do not allow. The libvulkan README lists every
 such point.
+
+The Khronos files keep their line comments, so a translation unit that includes
+`vulkan.h` needs C99 or GNU89.  `tools/maintain-dispatch.noct` reads this header
+too: the 13 video and 6 synchronization2 commands bring the dispatch table from
+173 to 192 records.  The video structures are encoded by hand in
+`userland/desktop/libvulkan/video.c` (not by `tools/maintain-codec.noct`, whose
+input stays the core selection), because their chains, their bit-field flags and
+the H.264 two-dimensional scaling lists need rules of their own.
