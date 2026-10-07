@@ -61,9 +61,12 @@ drv_i915_session_bind_ops(
 /*
  * Maps a submission timeline to an engine record.
  *
- * Zero names the copy engine record, one and two the render engine record:
- * the Vulkan client numbers the capset's one queue timeline 1.  Any other
- * timeline is EINVAL.
+ * Zero names the copy engine record, every other timeline the render
+ * engine record: the Vulkan client numbers its queues' timelines from 1, one
+ * for each queue of each family (the video decode queue's too).  The
+ * submissions run to their end in order, so a timeline only orders fences,
+ * and a fence's marker always runs on the render engine, never on a video
+ * engine whose context may not exist yet or may have hung (ws083 §4.3).
  */
 int
 drv_i915_engine_for_timeline(
@@ -83,13 +86,11 @@ drv_i915_engine_for_timeline(
 		return 0;
 	}
 
-	/* Picks the record the remaining timelines name. */
+	/* Picks the record the remaining timelines name: the copy record for zero, the render record otherwise. */
 	if (timeline == I915_TIMELINE_DEFAULT) {
 		*engine = &device->engines[I915_ENGINE_BCS0];
-	} else if (timeline == I915_TIMELINE_RCS0) {
-		*engine = &device->engines[I915_ENGINE_RCS0];
 	} else {
-		return EINVAL;
+		*engine = &device->engines[I915_ENGINE_RCS0];
 	}
 
 	/* Succeeded: the engine record was filled when the node was published. */

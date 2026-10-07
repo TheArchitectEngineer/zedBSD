@@ -676,6 +676,35 @@ drv_i915_worker_context_create(
 }
 
 /*
+ * Reports whether the video decode engine can take work.
+ *
+ * Returns 0 when the GT has VCS0 and it has not hung, ENODEV when there is
+ * no worker or no VCS0, and EIO once a request on it hung or failed.
+ * video_dead only ever goes from zero to one, so the answer read without
+ * the device mutex is at worst one hang late, which the submit then sees.
+ */
+int
+drv_i915_worker_video_state(
+	struct i915_device *device)
+{
+	struct i915_worker *worker;
+
+	/* A device without a worker, or a GT without VCS0, has no video engine. */
+	worker = device->worker;
+	if (worker == NULL)
+		return ENODEV;
+	if (worker->video_index < 0)
+		return ENODEV;
+
+	/* A video engine that hung takes nothing more. */
+	if (worker->video_dead != 0)
+		return EIO;
+
+	/* Succeeded: the video engine can take work. */
+	return 0;
+}
+
+/*
  * Attaches a hardware context to a session's video engine context.
  *
  * Open makes the session's VCS0 context a record only; the first video

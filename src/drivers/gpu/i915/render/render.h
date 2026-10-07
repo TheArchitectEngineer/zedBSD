@@ -35,6 +35,14 @@ int drv_i915_render_execute(struct i915_render_session *session, const void *wir
 int drv_i915_render_get_capset(const struct i915_render_device *vk, struct gpu_capset *capset);
 
 /*
+ * Records whether the boot asked for Vulkan video decode before its
+ * hardware confirmation (i915.debug=video).  It is called once, before any
+ * device attaches; a device then offers video decode only when its GT has
+ * the video decode engine as well.
+ */
+void drv_i915_render_video_request(int requested);
+
+/*
  * The blob libvulkan exports for a device memory allocation names it by
  * blob_id, and that blob is the allocation's storage; attach reports
  * ENOENT when no allocation has that identity.  The memory part of the

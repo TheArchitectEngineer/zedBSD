@@ -53,6 +53,13 @@
  */
 static int i915_instance_token;
 
+/*
+ * What the object table records for a queue of the video decode family
+ * (family 1), so that a submission can tell its queue's family.  Like the
+ * token above it is static and never freed.
+ */
+static int i915_instance_video_queue_token;
+
 static int i915_instance_create(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_enumerate_physical_devices(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_instance_properties(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -152,6 +159,27 @@ drv_i915_render_instance_dispatch(
 
 	/* Succeeded: the command was executed. */
 	return 0;
+}
+
+/*
+ * Reports the queue family of a queue: 1 for a queue of the video decode
+ * family, 0 for any other identity, a queue of the graphics family or one
+ * the executor does not know (a submission then runs as before).
+ */
+uint32_t
+drv_i915_render_queue_family(
+	struct i915_render_session *session,
+	uint64_t identity)
+{
+	void *token;
+
+	/* The token the queue was recorded with tells its family. */
+	token = drv_i915_object_lookup(session, I915_VK_OBJ_QUEUE, identity);
+	if (token == &i915_instance_video_queue_token)
+		return 1U;
+
+	/* Every other queue is of the graphics family. */
+	return 0U;
 }
 
 /* vkCreateInstance: [pCreateInfo][allocator = 0][pInstance: id] -> [result][present][id]. */
@@ -510,9 +538,9 @@ i915_instance_queue_families(
 	struct i915_wire_writer *reply)
 {
 	VkQueueFamilyProperties family;
+	VkQueueFamilyProperties video;
 	uint64_t array_count;
-
-	UNUSED_PARAMETER(session);
+	uint32_t count;
 
 	/* Skips the physical device, the present word and the count, and reads the array count. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -522,8 +550,13 @@ i915_instance_queue_families(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* There is one family, so an array longer than one is malformed. */
-	if (array_count > 1U)
+	/* A device that offers video decode has its video family after the graphics one. */
+	count = 1U;
+	if (session->vk->video)
+		count = 2U;
+
+	/* An array longer than the families is malformed. */
+	if (array_count > count)
 		return EINVAL;
 
 	/* Describes one family of one queue: graphics, with the compute and transfer it implies, on RCS0. */
@@ -534,12 +567,22 @@ i915_instance_queue_families(
 	family.minImageTransferGranularity.height = 1U;
 	family.minImageTransferGranularity.depth = 1U;
 
-	/* Replies the present word, the count and the array. */
+	/*
+	 * Describes the video family: one queue of video decode only, on VCS0,
+	 * with no timestamps and no image transfer.
+	 */
+	kern_memset(&video, 0, sizeof(video));
+	video.queueFlags = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
+	video.queueCount = 1U;
+
+	/* Replies the present word, the count and as many families as the array holds. */
 	drv_i915_wire_reply_u64(reply, 1U);
-	drv_i915_wire_reply_u32(reply, 1U);
+	drv_i915_wire_reply_u32(reply, count);
 	drv_i915_wire_reply_u64(reply, array_count);
-	if (array_count != 0U)
+	if (array_count >= 1U)
 		i915_vkc_enc_VkQueueFamilyProperties(reply, &family);
+	if (array_count >= 2U)
+		i915_vkc_enc_VkQueueFamilyProperties(reply, &video);
 
 	/* Succeeded: the queue family is reported. */
 	return 0;
@@ -887,10 +930,14 @@ i915_instance_get_device_queue2(
 	struct i915_wire_writer *reply)
 {
 	uint64_t identity;
+	uint32_t family;
+	void *token;
 
 	/*
-	 * Skips the device, the queue info and its chained timeline record, and
-	 * reads the identity.  XXX: there is one timeline, on RCS0; the timeline
+	 * Skips the device, the queue info and its chained timeline record up
+	 * to the family, reads the family, skips the queue index and the
+	 * present word, and reads the identity.  XXX: every timeline is served
+	 * on RCS0 (the submissions run to their end in order); the timeline
 	 * index is not checked.
 	 */
 	(void)drv_i915_wire_read_u64(reader);
@@ -901,15 +948,22 @@ i915_instance_get_device_queue2(
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	family = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	identity = drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Remembers the queue; a failure to remember it is not reported, and the reply is the same. */
-	(void)drv_i915_object_insert(session, I915_VK_OBJ_QUEUE, identity, &i915_instance_token);
+	/* The family is the graphics family, or the video family of a device that offers it. */
+	token = &i915_instance_token;
+	if (family == 1U && session->vk->video)
+		token = &i915_instance_video_queue_token;
+	else if (family != 0U)
+		return EINVAL;
+
+	/* Remembers the queue and its family; a failure to remember it is not reported, and the reply is the same. */
+	(void)drv_i915_object_insert(session, I915_VK_OBJ_QUEUE, identity, token);
 
 	/* Replies the present word and the identity. */
 	drv_i915_wire_reply_u64(reply, 1U);

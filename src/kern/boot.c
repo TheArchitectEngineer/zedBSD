@@ -375,11 +375,19 @@ parameter_word(
 		return 0;
 	}
 
-	/* i915.debug= keeps the i915's display path quiet (off) or logs it in detail (display). */
+	/*
+	 * i915.debug= keeps the i915's display path quiet (off), logs it in
+	 * detail (display), offers the video decode engine that is not yet
+	 * confirmed on hardware (video), or both (display,video).
+	 */
 	if (key == KERN_BOOT_PARAMETER_I915_DEBUG) {
 		other = parameter_text_is(value, length, "off");
 		if (!other)
 			other = parameter_text_is(value, length, "display");
+		if (!other)
+			other = parameter_text_is(value, length, "video");
+		if (!other)
+			other = parameter_text_is(value, length, "display,video");
 		if (!other)
 			return EINVAL;
 

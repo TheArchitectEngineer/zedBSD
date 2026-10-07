@@ -483,6 +483,14 @@ drv_i915_gfx_submit_end(
 	return 0;
 }
 
+/* The video decode engine (ws083-p003b): the host has none. */
+int
+drv_i915_worker_video_state(struct i915_device *device)
+{
+	(void)device;
+	return ENODEV;
+}
+
 /*
  * Stand in for the query pools' GPU objects and batch (ws075-p006): the
  * host has no GPU, so creating a pool's counters fails and a recorded query

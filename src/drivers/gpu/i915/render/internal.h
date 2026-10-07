@@ -154,6 +154,14 @@ struct i915_render_device {
 	uint32_t capset[I915_RENDER_CAPSET_WORDS];
 	uint32_t capset_bytes;
 
+	/*
+	 * Nonzero when the device offers Vulkan video decode: the boot asked
+	 * for it (i915.debug=video) and the GT has the video decode engine
+	 * VCS0.  It is fixed at attach and decides the capset's native word,
+	 * the second queue family and every video command.
+	 */
+	int video;
+
 	/* The active display mode, filled by the display path. */
 	uint32_t display_width;
 	uint32_t display_height;
