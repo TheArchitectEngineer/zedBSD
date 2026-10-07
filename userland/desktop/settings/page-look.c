@@ -211,43 +211,6 @@ se_wallpaper_draw(
 }
 
 /*
- * Draws the Display page: the screen's mode and the graphics device, read
- * only.  Returns the edge below it.
- */
-int
-se_display_draw(
-	struct se_app *app,
-	struct kl_canvas *canvas,
-	int x,
-	int top,
-	int width)
-{
-	const char *mode;
-	const char *graphics;
-	int y;
-
-	/* The values, or a dash for what is not known. */
-	mode = app->about.display;
-	if (mode[0] == '\0')
-		mode = "-";
-	graphics = app->about.graphics;
-	if (graphics[0] == '\0')
-		graphics = "-";
-
-	/* The screen's card. */
-	y = se_card_begin(app, canvas, x, top, width, se_card_height(3, 1), "Built-in Screen", NULL);
-	y = se_row_value(app, canvas, x, y, width, "Mode", mode, 0);
-	y = se_row_value(app, canvas, x, y, width, "Scale", "100%", 0);
-	y = se_row_value(app, canvas, x, y, width, "Graphics", graphics, 1);
-
-	/* What comes later. */
-	y = look_note(app, canvas, x, top + se_card_height(3, 1) + LOOK_GAP, width, "Changing the resolution and the scale is coming in a later version of Kei.");
-
-	/* The edge below the cards. */
-	return y;
-}
-
-/*
  * Draws the Storage page: each file system's use, read now.  Returns the
  * edge below it.
  */

@@ -31,6 +31,8 @@ KEILAND_LINUX_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/look.c \
 	userland/desktop/settings/palette.c \
 	userland/desktop/settings/page-look.c \
+	userland/desktop/settings/page-display.c \
+	userland/desktop/settings/arrange.c \
 	userland/desktop/settings/page-input.c \
 	userland/desktop/settings/sound.c \
 	userland/desktop/settings/system.c \

@@ -3,10 +3,10 @@
 # ws113-p006: Settings Displayページ
 
 Parent: [WS113](../ws.md)
-Status: planned
+Status: in-progress（実装済み、T1 の QEMU 待ち）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
-Queue / attempts: none / 実装未承認
+Queue / attempts: q855（P1、2026-10-07、ユーザー「Settingsのディスプレイ設定を、拡張・ミラーありで実装する作業に切り替えてください。」）
 Purpose / goal: モード選択とドラッグ配置を提供
 Prerequisites: p005 cleared/libkeiland公開API
 Investigation bound: 90分の有限1 Phase Queue案。選定時にscope/時間を再照合する。
@@ -71,3 +71,29 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 ### D-LIMIT の反映（2026-10-05）
 
 limited の出力の card を薄く描き「同時に表示できる数の制限で使えません」と示す（drag はできない）。hotplug や他の出力の解放で limited が外れたら通常の card に戻る。
+
+## 2026-10-07 実装（q855、P1）
+
+Q1 の ACK:「p006 の範囲で進めてよい。頁の文は他の Settings の頁と同じく英語を元にし、ja の翻訳（settings.tr）を足す。settings.h の drag の y は今 WS089 を触る担当がいないので可。」
+
+| 区分 | 内容 |
+| --- | --- |
+| 配置の計算 | 新しい `userland/desktop/settings/arrange.c`・`arrange.h`: 平面を箱へ写す（`se_arrange_fit` は箱の 0.7 を埋めて中央、`_to_box`・`_from_box`）、drag した出力の snap（`se_arrange_snap`: 他の出力の 4 辺の隣、辺の長さを共有、重ならない、辺が 1/8 以内なら揃える、求めた位置に最も近い候補。出力が 1 つなら動かない）。描画・libkeiland を知らないので host で単体に試験する。 |
+| 頁 | 新しい `page-display.c`（`page-look.c` の旧 `se_display_draw` を置き換え）。Displays の card: Extend・Mirror（選んだ方を primary）、配置の箱（limited でない出力の card、anchor は accent、拡張で 2 つ以上の時だけ card が drag の control）、出力ごとの行（大きさ・Hz、内蔵の印、limited は「Not shown: …」）、Apply・Revert（draft が違い、要求の待ちが無い時だけ）、結果の行。Brightness の card は BACKLIGHT の出力がある時だけ（slider、drag 中は 100 ms ごと・離した時に set_brightness）。system が無い・displays を出さない desktop では旧来の Mode・Graphics の読み取り専用の card。出力が 1 つの時は「With one display both show the same.」。 |
+| draft | snapshot（`kl_system_displays_get`）と別の draft。KL_SYSTEM_CHANGED_DISPLAYS で snapshot を取り直し、編集中で同じ出力の集合なら draft を保つ、集合が変わったら draft を捨てて「The displays changed. Arrange them again.」。Mirror → Extend で配置が重なっていたら anchor から右へ一列に並べ直す（`display_spread`）。Apply は limited でない出力の place を送る（mirror は place 無し）。ESTALE は取り直して同じ文、EINVAL・EPERM・ENOTSUP・その他は各々の文。 |
+| 結線 | `settings.h`（`struct se_display`、`se_app` の `drag_y` と `display`、宣言）、`ui.c`（drag の START・MOVE・END の前に `app->drag_y = event->y`）、`main.c`（`se_display_poll`）、`system.c`（`se_display_result` を結果の鎖へ）、`pages.c`（press・drag、要約「Arrange the displays and set the brightness.」、検索語に extend mirror arrange brightness）、Makefile・Makefile.linux・Makefile.freebsd に 2 file。 |
+| 翻訳 | `userland/desktop/locale/settings.keys` の要約を差し替え、`ja/settings.tr` を `tools/i18n/tr.py update` で更新して 20 の文を訳した（check: 134 entries, 134 translated, 0 problems）。update が消した「Not asked for」の注記（Battery 等）は手で戻した。 |
+| 試験 | `plan/ws113/tests/host-arrange.c`・`.sh`（fit・各辺・揃え・内側から・単独・3 出力・乱数 20000 回。snap の結果を compositor の `kwl_displays_validate` でも検査）。T1 用の `displays-p006.sh`・`config-amd64-p006.mk`（p005 の image に settings）。 |
+
+確認（host、2026-10-07）:
+- `sh plan/ws113/tests/host-arrange.sh` → `WS113 p006 arrange host test PASS (plain, ASan/UBSan)`
+- `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p005.mk build/p1-wl/bin/settings` → exit 0、warning 0（-Werror）
+- `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-wl-linux all` → exit 0、warning 0
+- `python3 plan/tools/style-check.py` page-display.c・arrange.c・arrange.h・host-arrange.c → 指摘 0
+- FreeBSD の build は未実施（Makefile.freebsd に 2 file を足しただけ）。
+
+未実施・制限:
+- QEMU（T1 `displays-p006.sh`: Venus の 2 出力、拡張 ⇔ mirror を 5 回、card の drag で左右の入れ替え、PNG）。M2 の判定はこの結果。
+- 実機（p008、5330）: 明るさの slider と Fn の key の追従。
+- `plan/ws089/tests/host-build.sh`（settings-render）は p006 の前から link で落ちる（`kl_system_printers_*`・`kl_system_print_*`・`kl_system_power_get_state`・`preview_picture` の偽物が無い）。page-display.c・arrange.c の compile（gnu89、-Wall -Wextra -Werror）はそこで通ったが、Display の頁の host の絵は作れていない。settings-render を直すのは WS089 の範囲。
+- 「保存できなかった（saved=0）」の表示: p005 の結果は errno だけで saved を運ばないので出していない。

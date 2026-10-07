@@ -42,7 +42,7 @@ msg	Volume and the sound output.	音量と音の出力。
 # userland/desktop/locale/settings.keys:23
 msg	Display	ディスプレイ
 # userland/desktop/locale/settings.keys:24
-msg	Resolution and the screens.	解像度と画面。
+msg	Arrange the displays and set the brightness.	ディスプレイを並べ、明るさを設定します。
 # userland/desktop/locale/settings.keys:25
 msg	Languages	言語
 # userland/desktop/locale/settings.keys:26
@@ -149,6 +149,46 @@ msg	Green	緑
 msg	Graphite	グラファイト
 # userland/desktop/settings/page-about.c:113
 msg	Show Welcome again	ようこそをもう一度見る
+# userland/desktop/settings/page-display.c:100
+msg	Extend spreads the desktop over the displays. Mirror shows it on each.	拡張はデスクトップを複数のディスプレイに広げます。ミラーはどのディスプレイにも同じものを映します。
+# userland/desktop/settings/page-display.c:102
+msg	Displays	ディスプレイ
+# userland/desktop/settings/page-display.c:106
+msg	Extend	拡張
+# userland/desktop/settings/page-display.c:107
+msg	Mirror	ミラー
+# userland/desktop/settings/page-display.c:111
+msg	With one display both show the same.	ディスプレイが1つの時はどちらも同じです。
+# userland/desktop/settings/page-display.c:120, userland/desktop/settings/page-display.c:121, userland/desktop/settings/page-languages.c:206
+msg	Apply	適用
+# userland/desktop/settings/page-display.c:122, userland/desktop/settings/page-display.c:123
+msg	Revert	元に戻す
+# userland/desktop/settings/page-display.c:315, userland/desktop/settings/page-display.c:779
+msg	The brightness could not be changed.	明るさを変えられませんでした。
+# userland/desktop/settings/page-display.c:335, userland/desktop/settings/page-display.c:686
+msg	The displays changed. Arrange them again.	ディスプレイが変わりました。もう一度並べてください。
+# userland/desktop/settings/page-display.c:338
+msg	The displays must touch along an edge and not overlap.	ディスプレイは辺で接し、重ならないように並べてください。
+# userland/desktop/settings/page-display.c:341
+msg	The displays can be changed only in an unlocked session.	ディスプレイはロックされていないセッションでだけ変えられます。
+# userland/desktop/settings/page-display.c:344, userland/desktop/settings/page-display.c:747
+msg	This desktop cannot change the displays.	このデスクトップではディスプレイを変えられません。
+# userland/desktop/settings/page-display.c:347
+msg	The displays could not be changed.	ディスプレイを変えられませんでした。
+# userland/desktop/settings/page-display.c:377
+msg	Screen	画面
+# userland/desktop/settings/page-display.c:378
+msg	Mode	モード
+# userland/desktop/settings/page-display.c:379
+msg	Graphics	グラフィックス
+# userland/desktop/settings/page-display.c:494
+msg	built in	内蔵
+# userland/desktop/settings/page-display.c:499
+msg	Not shown: the computer shows no more displays at once	表示されていません: このコンピューターが同時に映せるディスプレイの数を超えています
+# userland/desktop/settings/page-display.c:501
+msg	Off	オフ
+# userland/desktop/settings/page-display.c:530
+msg	Brightness	明るさ
 # userland/desktop/settings/page-home.c:60
 msg	Connectivity	接続
 # userland/desktop/settings/page-home.c:61
@@ -173,8 +213,6 @@ msg	The language of the login screen, for everyone on this computer.	このコ�
 msg	Not set (English)	未設定（英語）
 # userland/desktop/settings/page-languages.c:187
 msg	Now	現在
-# userland/desktop/settings/page-languages.c:206, userland/desktop/settings/page-languages.c:209
-msg	Apply	適用
 # userland/desktop/settings/page-languages.c:236
 msg	Your password	あなたのパスワード
 # userland/desktop/settings/page-languages.c:246
@@ -193,7 +231,7 @@ msg	Only an administrator can change the login screen's language.	ログイン�
 msg	Your password is wrong.	パスワードが違います。
 # userland/desktop/settings/page-languages.c:549
 msg	Another change is under way. Try again in a moment.	ほかの変更が進行中です。少し待ってからやり直してください。
-# userland/desktop/settings/page-look.c:556
+# userland/desktop/settings/page-look.c:519
 msg	Accent color	アクセントカラー
 # userland/desktop/settings/page-power.c:67
 msg	The screen turns off after half that time.	画面はその半分の時間で消えます。
@@ -233,3 +271,4 @@ msg	Let's set up a few things. You can change each of them later in Settings.	�
 # Not asked for by the source any more (kept for a text that comes back):
 # msg	Battery	バッテリー
 # msg	Charge and power saving.	充電と省電力。
+# msg	Resolution and the screens.	解像度と画面。

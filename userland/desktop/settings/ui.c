@@ -970,6 +970,7 @@ ui_motion(
 	if (app->press_kind == SE_HIT_CONTROL &&
 	    page->drag != NULL &&
 	    app->search.active == 0) {
+		app->drag_y = event->y;
 		page->drag(app, app->press_index, event->x, SE_DRAG_MOVE);
 		return;
 	}
@@ -1039,6 +1040,7 @@ ui_button(
 		if (kind == SE_HIT_CONTROL &&
 		    page->drag != NULL &&
 		    app->search.active == 0) {
+			app->drag_y = event->y;
 			page->drag(app, index, event->x, SE_DRAG_START);
 			return;
 		}
@@ -1055,8 +1057,10 @@ ui_button(
 	/* The release ends a drag wherever it lands. */
 	if (app->press_kind == SE_HIT_CONTROL &&
 	    page->drag != NULL &&
-	    app->search.active == 0)
+	    app->search.active == 0) {
+		app->drag_y = event->y;
 		page->drag(app, app->press_index, event->x, SE_DRAG_END);
+	}
 
 	/* A release over the same region clicks it, unless the finger scrolled. */
 	if (scrolled == 0 && kind == app->press_kind && index == app->press_index)
