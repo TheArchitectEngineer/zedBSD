@@ -36,8 +36,8 @@
 #define DRAW_CHIP_DARK		0xb3202530U
 #define DRAW_CHIP_TEXT		kl_theme_choose(0xff334155U, 0xffe2e8f0U)
 #define DRAW_CHIP_TEXT_DARK	0xffffffffU
-#define DRAW_BUTTON		0xff2f7cf6U
-#define DRAW_BUTTON_TEXT	0xffffffffU
+#define DRAW_BUTTON		(kl_theme_default()->accent)
+#define DRAW_BUTTON_TEXT	(kl_theme_default()->accent_ink)
 #define DRAW_MESSAGE		kl_theme_choose(0xf0ffffffU, 0xf0262b34U)
 #define DRAW_MESSAGE_TEXT	kl_theme_choose(0xff334155U, 0xffe2e8f0U)
 #define DRAW_WARNING		0xffe0a526U

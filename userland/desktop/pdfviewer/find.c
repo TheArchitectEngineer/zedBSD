@@ -39,7 +39,7 @@
 /* The marks' colours (0xAARRGGBB, not premultiplied): the places found (yellow), the one shown (orange), the selection (Kei's blue). */
 #define FIND_MATCH		0x60ffd400U
 #define FIND_CURRENT		0x80ff8a00U
-#define FIND_SELECTION		0x502f7cf6U
+#define FIND_SELECTION		((pv_draw_accent() & 0x00ffffffU) | 0x50000000U)
 
 /* Where the place shown stands in the view: across its middle, a third down. */
 #define FIND_SHOW_DOWN		3.0

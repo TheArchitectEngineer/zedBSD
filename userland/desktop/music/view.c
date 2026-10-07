@@ -741,7 +741,7 @@ view_header(
 	/* The words beside the cover. */
 	left = area->x + 24 + VIEW_COVER + 24;
 	(void)kl_text_draw_fit(style->text, style->canvas, left, area->y + 62, title, VIEW_TEXT_ALBUM, 1, area->x + area->width - left - 24, style->theme->text);
-	(void)kl_text_draw_fit(style->text, style->canvas, left, area->y + 88, artist, VIEW_TEXT_NAME + 2U, 0, area->x + area->width - left - 24, style->theme->accent);
+	(void)kl_text_draw_fit(style->text, style->canvas, left, area->y + 88, artist, VIEW_TEXT_NAME + 2U, 0, area->x + area->width - left - 24, style->theme->accent_text);
 	(void)kl_text_draw(style->text, style->canvas, left, area->y + 110, summary, strlen(summary), VIEW_TEXT_SMALL, 0, style->theme->text_secondary);
 
 	/* Play: the first song shown. */
@@ -806,7 +806,7 @@ view_song_row(
 	baseline = row->y + 25;
 	ink = style->theme->text;
 	if (playing) {
-		ink = style->theme->accent;
+		ink = style->theme->accent_text;
 		if (view->state == MU_PLAYING)
 			view_glyph_play(style->canvas, (float)row->x + 18.0f, (float)row->y + (float)row->height / 2.0f, 12.0f, ink);
 		else
@@ -881,9 +881,9 @@ view_bar(
 		mu_view_action(view, MU_ACTION_PREVIOUS, now_us);
 	clicked = view_round_button(ui, style, VIEW_ID_PLAY, middle, area->y + 28, 20, 1);
 	if (view->state == MU_PLAYING)
-		view_glyph_pause(style->canvas, (float)middle, (float)area->y + 28.0f, 16.0f, VIEW_COLOR_WHITE);
+		view_glyph_pause(style->canvas, (float)middle, (float)area->y + 28.0f, 16.0f, style->theme->accent_ink);
 	else
-		view_glyph_play(style->canvas, (float)middle + 2.0f, (float)area->y + 28.0f, 16.0f, VIEW_COLOR_WHITE);
+		view_glyph_play(style->canvas, (float)middle + 2.0f, (float)area->y + 28.0f, 16.0f, style->theme->accent_ink);
 	if (clicked)
 		mu_view_action(view, MU_ACTION_PLAY, now_us);
 	clicked = view_round_button(ui, style, VIEW_ID_NEXT, middle + 52, area->y + 28, 16, 0);
