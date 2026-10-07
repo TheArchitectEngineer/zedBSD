@@ -41,3 +41,4 @@
 | WS089 の試験 settings-render（plan/ws089/tests/host-build.sh） | p006 の前から link で FAIL: kl_system_printers_*・print_*・kl_system_power_get_state・preview_picture の偽物が無い（P1 2026-10-07） | 偽物を足す（試験を次に使う時に、試験の整理の基準で直すか削除） | plan/ws089/tests/host-build.sh | 2026-10-07 |
 | WS113 ws113-p007（窓の出力の所属） | compositor は wl_surface.enter/leave を 1 出力の時から一度も送っていない（P1 2026-10-08）。p007 の窓の出力の移動でも送らない | 出力ごとの wl_output に合わせて enter/leave を送る | `userland/desktop/wayland/protocol.c` | 2026-10-08 |
 | keiland の OS の境界の検査（keiland-os-boundary/check.sh） | B3 の 2 件で FAIL: userland/desktop/sessiond/Makefile:16・printd/Makefile:3（前から、P1 2026-10-08） | 境界の規則に合わせて Makefile を直す | userland/desktop/sessiond/Makefile・printd/Makefile | 2026-10-08 |
+| WS090（Files の Help のカード） | T1-373: File Manager Help のカードの本文に省略の `…` が出る（本文の幅が足りない、p023 の icon ボタンと別） | 本文の折り返し・カードの高さを見直す | `userland/desktop/files/` の Help | 2026-10-08 |
