@@ -9,15 +9,18 @@
  * App Home (ws035-p069, plan/ws035/app-home-design.md): the applications'
  * home screen, under the desktop.
  *
- * Opening it does not darken the desktop: the desktop layer (the wallpaper
- * and the windows) slides towards the bottom right and shrinks a little,
- * until only its top-left corner and its shadow are left in the output's
- * bottom-right corner, and the bright home screen under it shows: the
- * blurred wallpaper, whitened, with a grid of application icons.  The
- * launcher in the system bar, or a drag from the top-left corner towards
- * the bottom right, opens it; the drag follows the pointer.  The launcher
- * again, the corner of the desktop that is left, Esc, or starting an
- * application closes it the opposite way.
+ * Home is a mode of its own (WS181), entered the way iOS goes home
+ * (ws181-p008, the 2026-10-07 UAT): the desktop layer (the wallpaper and
+ * the windows) shrinks back into the distance about the output's middle
+ * and fades out, and Home's content (the clock and the grid of application
+ * icons on the dark stage) comes forward from the distance, growing to its
+ * own size; closing is the same way back (edge.c gives the depths).  The
+ * launcher in the system bar (a click or a tap), the Windows key alone, a
+ * swipe up from the bottom edge of the desktop and the touch pad's two
+ * fingers down from its top edge open it, the last two following the
+ * finger.  The launcher again, the Windows key, a drag down on Home, Esc,
+ * or starting an application closes it.  A drag from the top-left corner
+ * opens nothing any more (WS184 takes that swipe).
  *
  * Typing while it is open searches: the text shows at the top and only the
  * applications whose name, command or keywords contain it stay, centred.
@@ -31,11 +34,8 @@
  * Without a search the icons are in pages of six columns and four rows
  * (ws035-p071): a sideways drag on Home follows the pointer and snaps to a
  * page, the wheel and PageUp/PageDown turn pages, the dots at the bottom
- * show where one is.  A drag towards the top left closes Home, and so does a
- * swipe up from the bottom edge (which opens Wiseview only on the desktop,
- * never over Home, ws079-p010).  A started
- * application's icon grows as Home closes, and its first window grows out
- * of the icon's place (shell.c).
+ * show where one is.  A started application's icon grows as Home closes,
+ * and its first window grows out of the icon's place (shell.c).
  *
  * The applications come from /etc/keiland/apps.conf, one a line:
  * name|command|keywords|RRGGBB|picture; without the file, a built-in list.
@@ -50,6 +50,7 @@
 
 #include "glass.h"
 #include "edge.h"
+#include "touchpad.h"
 #include "activation.h"
 #include "ime.h"
 #include "language.h"
@@ -112,27 +113,39 @@
 #define HOME_BROWSER_START	KEILAND_DATADIR "/browser/start.html"
 #define HOME_APPS_MAX		48U
 
-/* How long opening and closing take, and the least move of the corner drag. */
+/*
+ * How long opening and closing take, and how far a press on the launcher
+ * or in the top-left corner moves before it is no click (ws181-p008: it
+ * then opens nothing, the corner's drag being WS184's).
+ */
 #define HOME_OPEN_MS		280U
 #define HOME_CLOSE_MS		240U
 #define HOME_DRAG_START		14
-#define HOME_DRAG_DISTANCE	360.0f
 #define HOME_THRESHOLD		0.30f
 
-/* The corner the gesture starts in. */
+/* The corner whose press is the launcher's too. */
 #define HOME_CORNER		28
 
 /*
- * Home is a mode of its own (WS181, the 2026-10-07 UAT): the desktop layer
- * goes up off the output, its shadow too, and none of it stays in view.
- * The swipe up from the bottom edge of the desktop opens Home: where it
- * starts, how far it moves before it is one, and how far up the layer has
- * gone off.  The same distance down on Home brings the layer back (a drag
- * that is mostly down closes Home); HOME_THRESHOLD of it decides.
+ * Home is a mode of its own (WS181, the 2026-10-07 UAT): none of the
+ * desktop stays in view once it is open.  The swipe up from the bottom
+ * edge of the desktop opens Home: how far it moves before it is one, and
+ * how far it goes for Home to be open.  The same distance down on Home
+ * brings the desktop back (a drag that is mostly down closes Home);
+ * HOME_THRESHOLD of it decides.
  */
-#define HOME_SHADOW		120.0f
 #define HOME_RISE_START		12
 #define HOME_RISE_DISTANCE	360.0f
+
+/*
+ * The touch pad's two fingers down from its top edge (ws181-p008): the
+ * fingers' travel that opens Home all the way (micrometres; Wiseview's
+ * from the bottom edge is as long, shell.c), and the speed at the lift
+ * that opens it whatever the travel (micrometres a second, shell.c's
+ * GESTURE_FLICK).
+ */
+#define HOME_PAD_UM		40000
+#define HOME_PAD_FLICK		100000
 
 /*
  * The grid: columns, a cell's size, the icon's size and corner, the label's
@@ -326,8 +339,8 @@ kwl_home_progress(
 
 /*
  * Works out where the desktop layer is when Home is open by progress: gone
- * up off the output by progress, its shadow with it, and a little smaller
- * (WS181: Home is a mode of its own, no part of the desktop stays in view).
+ * back into the distance about the output's middle and faded out on the
+ * latter part of the way (ws181-p008, as iOS goes home; edge.c).
  */
 void
 kwl_home_layer(
@@ -335,12 +348,19 @@ kwl_home_layer(
 	float progress,
 	float *x,
 	float *y,
-	float *scale)
+	float *scale,
+	float *opacity)
 {
-	/* Going up is the motion; the shrinking only helps it. */
-	*x = 0.0f;
-	*y = -progress * ((float)server->height + HOME_SHADOW);
-	*scale = 1.0f - 0.04f * progress;
+	struct kwl_edge_depth depth;
+
+	/* The depth the rule gives for this far open. */
+	kwl_edge_home_desktop(progress, (int32_t)server->width, (int32_t)server->height, &depth);
+
+	/* Succeeded: the layer's place, scale and opacity. */
+	*x = depth.x;
+	*y = depth.y;
+	*scale = depth.scale;
+	*opacity = depth.opacity;
 }
 
 /*
@@ -393,6 +413,7 @@ kwl_home_close_now(
 
 	/* No press of Home's goes on. */
 	server->home_press = 0;
+	server->home_press_moved = 0;
 	server->home_dragging = 0;
 	server->home_page_press = 0;
 	server->home_page_dragging = 0;
@@ -417,6 +438,66 @@ kwl_home_close_now(
 }
 
 /*
+ * Follows the touch pad's two fingers down from its top edge (TOP2,
+ * ws181-p008, the 2026-10-07 UAT): Home opens as far as they have come,
+ * and at their lift it opens past HOME_THRESHOLD of HOME_PAD_UM or when
+ * flicked, and goes back closed otherwise (or when the gesture is given
+ * up).  shell.c gives it every phase of the gesture, from a beginning
+ * while Home is closed.
+ */
+void
+kwl_home_pad(
+	struct kwl_server *server,
+	uint32_t phase,
+	int32_t travel_um,
+	int32_t speed)
+{
+	float progress;
+
+	/* The beginning: Home follows the fingers instead of its animation. */
+	if (phase == KWL_TOUCHPAD_PHASE_BEGIN) {
+		server->home_pad = 1;
+		server->home_dragging = 1;
+		server->home_moving = 0;
+		server->home_drag = 0.0f;
+		printf("KWL HOME pad swipe\n");
+	}
+
+	/* Something else ended the following already (Home dismissed): the rest of the gesture does nothing. */
+	if (!server->home_dragging) {
+		if (phase == KWL_TOUCHPAD_PHASE_END || phase == KWL_TOUCHPAD_PHASE_CANCEL)
+			server->home_pad = 0;
+		return;
+	}
+
+	/* How far it is open by the fingers' travel. */
+	progress = (float)travel_um / (float)HOME_PAD_UM;
+	if (progress < 0.0f)
+		progress = 0.0f;
+	if (progress > 1.0f)
+		progress = 1.0f;
+	server->home_drag = progress;
+	server->dirty = 1;
+
+	/* Under way: it follows. */
+	if (phase == KWL_TOUCHPAD_PHASE_BEGIN || phase == KWL_TOUCHPAD_PHASE_UPDATE)
+		return;
+
+	/* The end: past the threshold or flicked down it opens from where the fingers left it. */
+	server->home_pad = 0;
+	server->home_dragging = 0;
+	if (phase == KWL_TOUCHPAD_PHASE_END &&
+	    (progress >= HOME_THRESHOLD || speed >= HOME_PAD_FLICK)) {
+		home_open(server, progress, "pad");
+		return;
+	}
+
+	/* Not far enough, or given up: the desktop comes back. */
+	printf("KWL HOME pad back from=%.2f\n", (double)progress);
+	home_settle(server, progress, 0.0f);
+}
+
+/*
  * Draws Home, faded in by progress: the whitened blurred wallpaper and the
  * icons, and the search text while there is one.
  */
@@ -427,6 +508,7 @@ kwl_home_draw(
 	float progress)
 {
 	struct glass_shape shape;
+	struct kwl_edge_depth depth;
 	float content;
 	float width;
 	float rise;
@@ -472,6 +554,18 @@ kwl_home_draw(
 		printf("KWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
+	/*
+	 * The content comes forward from the distance as Home opens and goes
+	 * back as it closes (ws181-p008, edge.c), drawn as a layer; the stage
+	 * under it stays whole.
+	 */
+	kwl_edge_home_content(progress, (int32_t)server->width, (int32_t)server->height, &depth);
+	server->layer_on = 1;
+	server->layer_x = depth.x;
+	server->layer_y = depth.y;
+	server->layer_scale = depth.scale;
+	server->layer_opacity = depth.opacity;
+
 	/* The rows' floors, under the icons, coming in with the first of them; the first page's clock over them. */
 	content = home_content(server, 0U, progress, &rise);
 	home_draw_clock(server, command, content);
@@ -500,16 +594,19 @@ kwl_home_draw(
 	if (home_pages > 1U)
 		home_draw_dots(server, command, progress);
 
-	/* The rest of the frame is drawn in the appearance's colours again. */
+	/* The rest of the frame is drawn where it is, in the appearance's colours again. */
+	server->layer_on = 0;
 	server->keep_colours = 0U;
 }
 
 /*
  * Handles a pointer button for Home.  While Home is open (or opening) it
- * takes every button: the launcher and the desktop's corner close it, an
- * icon starts its application.  While it is closed, a press on the launcher
- * or in the top-left corner may open it: a click opens it, a drag towards
- * the bottom right follows the pointer.  Returns 1 when the button is Home's.
+ * takes every button: the launcher closes it, an icon starts its
+ * application, a drag turns the pages or (down) closes Home.  While it is
+ * closed, a click on the launcher or in the top-left corner opens it (a
+ * press there that moves away does nothing, ws181-p008), and the release of
+ * the swipe up from the bottom edge (kwl_home_edge_press) opens it or not.
+ * Returns 1 when the button is Home's.
  */
 int
 kwl_home_button(
@@ -527,31 +624,24 @@ kwl_home_button(
 	y = server->pointer_y;
 	progress = kwl_home_progress(server);
 
-	/* The end of a press that may have been the gesture. */
+	/* The end of a press on the launcher or the corner. */
 	if (state == 0 && server->home_press) {
 		server->home_press = 0;
 
-		/* A click on the launcher or the corner toggles Home. */
-		if (!server->home_dragging) {
-			if (progress > 0.0f && server->home_to > 0.0f) {
-				home_close(server, progress, "launcher");
-			} else {
-				home_open(server, progress, "launcher");
-			}
-
-			/* The click was Home's. */
+		/* One that moved away was no click, and does nothing (ws181-p008). */
+		if (server->home_press_moved) {
+			server->home_press_moved = 0;
 			return 1;
 		}
 
-		/* A drag opens Home past the threshold, and goes back otherwise. */
-		server->home_dragging = 0;
-		if (server->home_drag >= HOME_THRESHOLD) {
-			home_open(server, server->home_drag, "drag");
+		/* A click toggles Home. */
+		if (progress > 0.0f && server->home_to > 0.0f) {
+			home_close(server, progress, "launcher");
 		} else {
-			home_close(server, server->home_drag, "drag");
+			home_open(server, progress, "launcher");
 		}
 
-		/* The drag was Home's. */
+		/* The click was Home's. */
 		return 1;
 	}
 
@@ -575,10 +665,10 @@ kwl_home_button(
 	if (button != KWL_BUTTON_LEFT)
 		return progress > 0.0f;
 
-	/* A press on the launcher or in the top-left corner: a click or the start of the gesture. */
+	/* A press on the launcher or in the top-left corner: a click, unless it moves away. */
 	if ((x < KWL_EDGE_LAUNCHER_WIDTH && y < KWL_GLASS_BAR) || (x < HOME_CORNER && y < HOME_CORNER)) {
 		server->home_press = 1;
-		server->home_dragging = 0;
+		server->home_press_moved = 0;
 		server->home_start_x = x;
 		server->home_start_y = y;
 		return 1;
@@ -601,7 +691,9 @@ kwl_home_button(
 }
 
 /*
- * Follows the corner gesture.  Returns 1 when the motion is Home's.
+ * Follows Home's presses: the swipe up from the bottom edge, a drag on
+ * Home, and a press on the launcher that may move away.  Returns 1 when
+ * the motion is Home's.
  */
 int
 kwl_home_motion(
@@ -613,7 +705,7 @@ kwl_home_motion(
 	float moved;
 	float progress;
 
-	/* A swipe up from the bottom edge of the desktop: past HOME_RISE_START the desktop goes up with it, Home opening. */
+	/* A swipe up from the bottom edge of the desktop: past HOME_RISE_START the desktop goes back with it, Home opening. */
 	if (server->home_rise_press) {
 		up = server->home_rise_start_y - server->pointer_y;
 		if (!server->home_rise_dragging) {
@@ -658,7 +750,7 @@ kwl_home_motion(
 			server->home_page_offset = dx;
 		}
 
-		/* A drag down brings the desktop back down over Home as far as it has gone. */
+		/* A drag down brings the desktop back over Home as far as it has gone. */
 		if (server->home_page_closing) {
 			moved = 1.0f - (float)dy / HOME_RISE_DISTANCE;
 			if (moved < 0.0f)
@@ -685,27 +777,19 @@ kwl_home_motion(
 		return 0;
 	}
 
-	/* The gesture starts once the pointer has moved right and down by enough. */
+	/*
+	 * A press on the launcher or the corner that has moved HOME_DRAG_START
+	 * away is no click: its release does nothing.  The corner's drag opens
+	 * nothing (ws181-p008, WS184 takes it).
+	 */
 	dx = server->pointer_x - server->home_start_x;
 	dy = server->pointer_y - server->home_start_y;
-	if (!server->home_dragging) {
-		if (dx < HOME_DRAG_START || dy < HOME_DRAG_START)
-			return 1;
-		server->home_dragging = 1;
-		server->home_moving = 0;
-		printf("KWL HOME gesture\n");
+	if (!server->home_press_moved && dx * dx + dy * dy >= HOME_DRAG_START * HOME_DRAG_START) {
+		server->home_press_moved = 1;
+		printf("KWL HOME press slipped\n");
 	}
 
-	/* How far along the diagonal the pointer is, from the start. */
-	moved = ((float)dx + (float)dy) * 0.5f / HOME_DRAG_DISTANCE;
-	if (moved < 0.0f)
-		moved = 0.0f;
-	if (moved > 1.0f)
-		moved = 1.0f;
-
-	/* Succeeded: Home follows the pointer. */
-	server->home_drag = moved;
-	server->dirty = 1;
+	/* Succeeded: the press's motion is Home's until its release. */
 	return 1;
 }
 
@@ -1205,6 +1289,7 @@ kwl_home_dismiss(
 
 	/* Any press Home was following is over. */
 	server->home_press = 0;
+	server->home_press_moved = 0;
 	server->home_dragging = 0;
 	server->home_page_press = 0;
 	server->home_page_dragging = 0;

@@ -464,7 +464,6 @@ static void wiseview_choose(struct kwl_server *server, const char *via);
 static void wiseview_move(struct kwl_server *server, int step);
 static int wiseview_pad_swipe(struct kwl_server *server, unsigned direction);
 static int gesture_fullscreen(struct kwl_server *server, uint32_t gesture);
-static int gesture_undock(struct kwl_server *server);
 static unsigned gesture_as_swipe(uint32_t gesture);
 static void gesture_wiseview(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
 static void gesture_desktop(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
@@ -561,12 +560,13 @@ kwl_glass_draw(
 
 	/*
 	 * App Home, opening, open or closing, lies under the desktop layer,
-	 * which slides aside over it with its shadow (home.c).
+	 * which goes back into the distance over it with its shadow, fading out
+	 * (home.c, ws181-p008).
 	 */
 	home = kwl_home_progress(server);
 	if (home > 0.0f) {
 		kwl_home_draw(server, command, home);
-		kwl_home_layer(server, home, &server->layer_x, &server->layer_y, &server->layer_scale);
+		kwl_home_layer(server, home, &server->layer_x, &server->layer_y, &server->layer_scale, &server->layer_opacity);
 		glass_shape_init(&shape, server->layer_x, server->layer_y, (float)server->width * server->layer_scale, (float)server->height * server->layer_scale);
 		shape.quad[0] -= 80.0f;
 		shape.quad[1] -= 80.0f;
@@ -578,7 +578,7 @@ kwl_glass_draw(
 		shape.color[0] = 0.08f;
 		shape.color[1] = 0.12f;
 		shape.color[2] = 0.24f;
-		shape.color[3] = 0.40f * home;
+		shape.color[3] = 0.40f * home * server->layer_opacity;
 		glass_shape_draw(server, command, &shape);
 		server->layer_on = 1;
 	}
@@ -3055,6 +3055,7 @@ window_layer(
 	server->layer_x = shift;
 	server->layer_y = 0.0f;
 	server->layer_scale = 1.0f;
+	server->layer_opacity = 1.0f;
 }
 
 /*
@@ -7926,9 +7927,10 @@ kwl_glass_pad_scroll(
  * from the pad's bottom edge or three fingers up open Wiseview, two
  * fingers in from the left or the right edge switch to the desktop on that
  * side, each following the fingers as the pointer's edge drags do (D10);
- * a tap of three fingers will show the switcher (ws142-p005).  Nothing
- * starts over the login and lock screens, a fullscreen window (D6), App
- * Home, an open Wiseview or another swipe.
+ * two fingers down from the top edge open App Home following them
+ * (ws181-p008); a tap of three fingers shows the switcher (ws142-p005).
+ * Nothing starts over the login and lock screens, a fullscreen window
+ * (D6), App Home, an open Wiseview or another swipe.
  */
 void
 kwl_glass_gesture(
@@ -7996,6 +7998,12 @@ kwl_glass_gesture(
 		return;
 	}
 
+	/* App Home following two fingers from the top edge goes on (home.c, ws181-p008). */
+	if (server->home_pad) {
+		kwl_home_pad(server, phase, travel_um, speed);
+		return;
+	}
+
 	/* Otherwise only a beginning, or a tap, starts anything. */
 	if (phase != KWL_TOUCHPAD_PHASE_BEGIN && gesture != KWL_TOUCHPAD_GESTURE_TAP3)
 		return;
@@ -8018,9 +8026,13 @@ kwl_glass_gesture(
 	if (!may)
 		return;
 
-	/* Two fingers from the top edge down: the docked window floats again (BUG-224), nothing otherwise. */
+	/*
+	 * Two fingers from the top edge down: App Home opens following them
+	 * (ws181-p008, the 2026-10-07 UAT; a docked window floats again by its
+	 * title in the bar instead, BUG-224's way before).
+	 */
 	if (gesture == KWL_TOUCHPAD_GESTURE_TOP2) {
-		(void)gesture_undock(server);
+		kwl_home_pad(server, phase, travel_um, speed);
 		return;
 	}
 
@@ -8220,29 +8232,6 @@ gesture_fullscreen(
 	printf("KWL GLASS fullscreen-leave surface=%u via=%s error=%d client=%llu\n", top->id, gesture_name(gesture), error, (unsigned long long)top->client->number);
 
 	/* Succeeded: the gesture was the fullscreen window's way out. */
-	return 1;
-}
-
-/*
- * Takes two fingers from the top edge down over a docked window (BUG-224):
- * it floats again at its place before, and the session's layout mode
- * becomes windowed.  Returns 1 when a window floated.
- */
-static int
-gesture_undock(
-	struct kwl_server *server)
-{
-	struct kwl_object *top;
-
-	/* The window on top (a sheet's parent for a sheet), docked and not fullscreen. */
-	top = sheet_owner(kwl_top_window(server));
-	if (top == NULL || !top->maximized || top->fullscreen)
-		return 0;
-
-	/* Floating where it was before it docked. */
-	layout_leave(server, top, top->restore_x, top->restore_y, "top2");
-
-	/* Succeeded: the window floats. */
 	return 1;
 }
 

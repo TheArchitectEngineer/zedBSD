@@ -48,8 +48,9 @@ enum kwl_touchpad_action_kind {
  * fingers from the left edge to the right and from the right edge to the
  * left (the desktop on that side), and a tap of three fingers (the
  * application switcher, D1).  Two fingers from the top edge down (TOP2,
- * ws142-p009, BUG-224: a docked window floats again, a fullscreen one is
- * docked).  SWIPE2 is no gesture of its own: its end says that a touch of
+ * ws142-p009: App Home, ws181-p008; a fullscreen window is docked,
+ * BUG-228).  An edge's gesture needs one of the two fingers in its band
+ * (ws181-p008).  SWIPE2 is no gesture of its own: its end says that a touch of
  * two fingers that scrolled has lifted, so that one swipe can be one step
  * of Wiseview or the switcher (ws142-p009, BUG-215 and BUG-216).
  */
@@ -177,7 +178,7 @@ struct kwl_touchpad {
 	int32_t acceleration;
 	/*
 	 * The gestures (ws142-p003): the pad's size in units (0 while it is not
-	 * known: no edge then), the edges both fingers of a two-finger touch
+	 * known: no edge then), the edges a finger of a two-finger touch
 	 * started in (EDGE_* bits), whether the touch is decided (a scroll, or
 	 * none, or a gesture), the gesture under way and its fingers, the
 	 * fingers' mean travel since the decision began (micrometres), the

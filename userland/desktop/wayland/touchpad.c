@@ -31,14 +31,14 @@
  * The gestures (ws142-p003; the 2026-10-04 user requests and the decisions
  * D1, D3 and D10 of plan/ws142/phase001):
  *
- *   - two fingers that both touch within EDGE_UM of the bottom edge and
- *     move up, of the left edge and move right, or of the right edge and
- *     move left, are a gesture (BOTTOM2, LEFT2, RIGHT2) rather than a
- *     scroll: the first DECIDE_UM of their mean travel decides, and is held
- *     back meanwhile (a touch that turns out to be a scroll scrolls by it
- *     then);
- *   - two fingers that both touch within EDGE_UM of the top edge and move
- *     down are TOP2 (ws142-p009, BUG-224);
+ *   - two fingers of which one (or both) touches within EDGE_UM of the
+ *     bottom edge and that move up, of the left edge and move right, or of
+ *     the right edge and move left, are a gesture (BOTTOM2, LEFT2, RIGHT2)
+ *     rather than a scroll (one finger in the band is enough, ws181-p008):
+ *     the first DECIDE_UM of their mean travel decides, and is held back
+ *     meanwhile (a touch that turns out to be a scroll scrolls by it then);
+ *   - two fingers of which one touches within EDGE_UM of the top edge and
+ *     that move down are TOP2 (ws142-p009; App Home, ws181-p008);
  *   - the end of a touch of two fingers that scrolled (all of them lifted,
  *     or one of them) is told as SWIPE2's end, after its scrolling, so
  *     that the shell can make one swipe one step (ws142-p009);
@@ -92,7 +92,7 @@
 #define DECIDE_UM			4000
 #define DECIDE3_UM			8000
 
-/* The edges both fingers of a two-finger touch started in. */
+/* The edges a finger of a two-finger touch started in. */
 #define EDGE_BOTTOM			0x1U
 #define EDGE_LEFT			0x2U
 #define EDGE_RIGHT			0x4U
@@ -823,7 +823,12 @@ fingers_changed(
 		pad->edges = edges_of_fingers(pad);
 }
 
-/* Tells the edges every finger on the pad touches (EDGE_* bits; none while the pad's size is not known). */
+/*
+ * Tells the edges a finger on the pad touches (EDGE_* bits; none while the
+ * pad's size is not known).  One finger of the two in an edge's band is
+ * enough (ws181-p008, the 2026-10-07 UAT: fingers seldom land side by side
+ * along an edge).
+ */
 static uint32_t
 edges_of_fingers(
 	const struct kwl_touchpad *pad)
@@ -838,25 +843,25 @@ edges_of_fingers(
 	if (pad->x_max <= 0 || pad->y_max <= 0)
 		return 0;
 
-	/* The band in units, and every edge until a finger is outside it. */
+	/* The band in units, and no edge until a finger is inside its band. */
 	band_x = (int32_t)((int64_t)EDGE_UM * pad->resolution_x / 1000);
 	band_y = (int32_t)((int64_t)EDGE_UM * pad->resolution_y / 1000);
-	edges = EDGE_BOTTOM | EDGE_LEFT | EDGE_RIGHT | EDGE_TOP;
+	edges = 0;
 	for (index = 0; index < KWL_TOUCHPAD_SLOTS; index++) {
 		/* Each finger. */
 		finger = &pad->fingers[index];
 		if (finger->tracking < 0)
 			continue;
 
-		/* An edge it is not near is not the touch's. */
-		if (finger->y < pad->y_max - band_y)
-			edges &= ~EDGE_BOTTOM;
-		if (finger->x > band_x)
-			edges &= ~EDGE_LEFT;
-		if (finger->x < pad->x_max - band_x)
-			edges &= ~EDGE_RIGHT;
-		if (finger->y > band_y)
-			edges &= ~EDGE_TOP;
+		/* An edge it is near is the touch's. */
+		if (finger->y >= pad->y_max - band_y)
+			edges |= EDGE_BOTTOM;
+		if (finger->x <= band_x)
+			edges |= EDGE_LEFT;
+		if (finger->x >= pad->x_max - band_x)
+			edges |= EDGE_RIGHT;
+		if (finger->y <= band_y)
+			edges |= EDGE_TOP;
 	}
 
 	/* Succeeded: the edges. */

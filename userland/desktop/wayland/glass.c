@@ -1625,13 +1625,19 @@ glass_shape_draw(
 	float quad[4];
 	float box[4];
 	float radius;
+	float opacity;
 	float width;
 	float height;
 	VkDescriptorSet set;
 
+	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home, ws181-p008). */
+	if (server->layer_on && server->layer_opacity <= 0.0f)
+		return;
+
 	/*
-	 * The quad and the box, moved and scaled when the desktop layer is
-	 * pushed aside by App Home (home.c): x' = layer x + x * scale.
+	 * The quad and the box, moved and scaled with the layer (the desktop
+	 * going back into the distance behind App Home, Home's content coming
+	 * forward, the desktops sliding): x' = layer x + x * scale.
 	 */
 	compose = server->compose;
 	width = (float)server->width;
@@ -1639,6 +1645,7 @@ glass_shape_draw(
 	memcpy(quad, shape->quad, sizeof(quad));
 	memcpy(box, shape->box, sizeof(box));
 	radius = shape->radius;
+	opacity = shape->opacity;
 	if (server->layer_on) {
 		quad[0] = server->layer_x + quad[0] * server->layer_scale;
 		quad[1] = server->layer_y + quad[1] * server->layer_scale;
@@ -1649,6 +1656,7 @@ glass_shape_draw(
 		box[2] = box[2] * server->layer_scale;
 		box[3] = box[3] * server->layer_scale;
 		radius = radius * server->layer_scale;
+		opacity = opacity * server->layer_opacity;
 	}
 
 	/* The quad in normalized device coordinates. */
@@ -1670,7 +1678,7 @@ glass_shape_draw(
 	constants[20] = width;
 	constants[21] = height;
 	constants[22] = shape->edge;
-	constants[23] = shape->opacity;
+	constants[23] = opacity;
 
 	/*
 	 * In the dark appearance (ws089-p017) the glass, the solid colours, the

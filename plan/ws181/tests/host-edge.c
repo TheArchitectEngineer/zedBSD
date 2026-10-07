@@ -12,13 +12,15 @@
  * Checks: where a press is (the bottom strip for any pointer, the top band
  * for a touch only, not over the launcher or the top-right corner); what a
  * press held in the band is after a motion; what a drag on Home is; the
- * distance a docked title is pulled.
+ * distance a docked title is pulled; and (ws181-p008) how deep the desktop
+ * layer and Home's content are on Home's way in and out.
  *
  *   plan/ws181/tests/run-host-edge.sh
  */
 
 #include "edge.h"
 
+#include <math.h>
 #include <stdio.h>
 
 /* The output the cases are on. */
@@ -39,6 +41,20 @@ struct motion_case {
 	int32_t dx;
 	int32_t dy;
 	unsigned kind;
+	const char *what;
+};
+
+/*
+ * One case of Home's way in or out: how far Home is open, whether it is the
+ * desktop layer's depth (else the content's), and where the layer must be.
+ */
+struct depth_case {
+	float progress;
+	int desktop;
+	float x;
+	float y;
+	float scale;
+	float opacity;
 	const char *what;
 };
 
@@ -79,15 +95,35 @@ static const struct motion_case drag_cases[] = {
 };
 
 /* The number of checks that failed, and of those that ran. */
+/*
+ * The desktop shrinks about the middle to 0.75 and fades out from 0.2 to
+ * 0.9 of the way; the content grows about the middle from 0.85.
+ */
+static const struct depth_case depth_cases[] = {
+	{ 0.0f, 1, 0.0f, 0.0f, 1.0f, 1.0f, "the desktop, Home closed" },
+	{ 0.2f, 1, 32.0f, 20.0f, 0.95f, 1.0f, "the desktop at the fade's start" },
+	{ 0.55f, 1, 88.0f, 55.0f, 0.8625f, 0.5f, "the desktop half faded" },
+	{ 0.9f, 1, 144.0f, 90.0f, 0.775f, 0.0f, "the desktop at the fade's end" },
+	{ 1.0f, 1, 160.0f, 100.0f, 0.75f, 0.0f, "the desktop, Home open" },
+	{ -0.5f, 1, 0.0f, 0.0f, 1.0f, 1.0f, "the desktop, before the way" },
+	{ 1.5f, 1, 160.0f, 100.0f, 0.75f, 0.0f, "the desktop, past the way" },
+	{ 0.0f, 0, 96.0f, 60.0f, 0.85f, 1.0f, "the content, Home closed" },
+	{ 0.5f, 0, 48.0f, 30.0f, 0.925f, 1.0f, "the content half way" },
+	{ 1.0f, 0, 0.0f, 0.0f, 1.0f, 1.0f, "the content, Home open" },
+};
+
 static int failures;
 static int checks;
 
 static void check(int condition, const char *what, const char *rule);
+static int near(float value, float expected);
 
 /* Runs every table. */
 int
 main(void)
 {
+	struct kwl_edge_depth depth;
+	const struct depth_case *wanted;
 	unsigned index;
 	unsigned answer;
 	int32_t distance;
@@ -122,6 +158,20 @@ main(void)
 	distance = kwl_edge_distance(0, 0);
 	check(distance == 0, "not moved", "distance");
 
+	/* 5. Home's way in and out: the desktop's and the content's depths. */
+	for (index = 0U; index < sizeof(depth_cases) / sizeof(depth_cases[0]); index++) {
+		wanted = &depth_cases[index];
+		if (wanted->desktop) {
+			kwl_edge_home_desktop(wanted->progress, WIDTH, HEIGHT, &depth);
+		} else {
+			kwl_edge_home_content(wanted->progress, WIDTH, HEIGHT, &depth);
+		}
+		check(near(depth.x, wanted->x), wanted->what, "depth x");
+		check(near(depth.y, wanted->y), wanted->what, "depth y");
+		check(near(depth.scale, wanted->scale), wanted->what, "depth scale");
+		check(near(depth.opacity, wanted->opacity), wanted->what, "depth opacity");
+	}
+
 	/* The result. */
 	printf("WS181 host-edge checks=%d failures=%d\n", checks, failures);
 	if (failures != 0)
@@ -146,4 +196,18 @@ check(
 		failures++;
 		printf("FAIL %s: %s\n", rule, what);
 	}
+}
+
+/* Tells whether a value is the expected one, to a thousandth of a pixel or of the whole. */
+static int
+near(
+	float value,
+	float expected)
+{
+	/* Close enough. */
+	if (fabsf(value - expected) < 0.001f)
+		return 1;
+
+	/* Succeeded: the value is not the expected one. */
+	return 0;
 }
