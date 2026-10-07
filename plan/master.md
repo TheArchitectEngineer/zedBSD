@@ -9,6 +9,7 @@
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
 <!-- master:agents:start -->
+- 2026-10-07 18 時: **P3**（phase-runner high、worktree p3）を追加 → q846 [ws118-p006](ws118/phase006/phase.md)（5320 の TGL の DPLL・takeover・fallback、実機 10.0.30.5）。
 - 2026-10-07 夜（利用の上限の前のラップアップ、ユーザーの指示）。体制は N=2（P1・P2、phase-runner high）＋T1（test-runner、Sonnet 5.5 medium）。全担当は削除の command を実行しない（Q1 が消す、plan/agents/protocol.md 末尾）。
   - **P1**（q833・q836・q839）: 75d7e4b84 まで merge 済み。WS179 p001・p002（T1-335・337 待ち、Files の desktop の pill が青のまま → 直す）、ws090-p025 の User name は kl_field の scroll の直し（66dcf6edd、T1-338 待ち）。WS083 p001 設計の第 1 版と design-reviewer の結果（blocking 4、§13 に未反映、人の判断 H1〜H5・HD1〜HD6 は第 2 版の後にユーザーへ）→ WS178 libGL を GL だけ・libGLX.so を xserver に「完全に分ける」→ WS075 → WS052。ws090-p025 の Settings の User name の IME（T1-336 で key は欄に届くのに画面は n だけ、描画か ja の keysym を疑う）。
   - **P2**（q842 → q834）: WS181（窓の状態・App Home の独立のモード・gesture・整列、UAT 優先）p001 設計の途中 → p002〜p004 → ws051-p002b（TC の核）→ WS050 p005 → WS084（p003 は実機）。
@@ -509,6 +510,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー: 5320（10.0.30.5、zedBSD）で Keiland が立たない → Q1 の調査（TGL の takeover の停止の失敗、DPLL の管理が空）。「サブエージェントP3を立てて、5320のDPLLに対応してほしいです。できれば世代やバリエーションにかかわらず表示できるようにフォールバックも実装してほしいですが、難しければいいです。」→ WS118 のブロックを解き p006・q846 を P3 に。
 - 2026-10-07 ユーザーの UAT:「アレンジメントは完璧ですね。整列方法の選択ポップアップは、glassを適用してほしいのと、広がって大きくなるようなアニメーションとともに透明度が高くなる演出で表示してほしいです。」→ ws181-p007（q845、P2、優先）。
 - 2026-10-07 ユーザー:「5330を再起動しましたので進めてみてくれますか？」（WS084 の d1・d3 の質問への答え）。5330（chaos、10.0.30.3）は SSH の host key が変わっていた → ユーザー（クリック）「新しい鍵を受け入れてよい」で Q1 が known_hosts を更新（ED25519 SHA256:+Hex0MHFbPMAH2mBJ7CxP/qw0Likn7XvqM832CqpEA4）。保留の T1-284（WS139 E2）・T1-334（ws051-p002 の ktest）を解除。
 - 2026-10-07 ユーザー:「また、仮想デスクトップのアイコンは、猫、鳥、ウサギにします。真ん中が鳥です。シルエットのアイコンで、選択されると、アクセントカラーになります。」→ 左 猫・真ん中 鳥・右 ウサギのシルエット、今いる desktop は accent の色（ws181-p006）。
