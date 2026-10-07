@@ -58,6 +58,15 @@
 #endif
 
 /*
+ * Whether substitute font files are read at all: 0 in a program that may
+ * open no file (keiland-preview in its sandbox, ws168-p003), which then
+ * draws no font the document does not embed.
+ */
+#ifndef PDF_FONT_FILES
+#define PDF_FONT_FILES 1
+#endif
+
+/*
  * The file beside the substitutes that draws the letters and signs they
  * lack (ws090-p020): the desktop's monospaced fallback.
  */
@@ -1614,6 +1623,10 @@ read_font_file(
 	size_t got;
 	FILE *stream;
 	int failed;
+
+	/* A program that opens no file reads none. */
+	if (!PDF_FONT_FILES)
+		return ENOENT;
 
 	/* Opens the file. */
 	stream = fopen(path, "rb");

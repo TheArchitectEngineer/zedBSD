@@ -134,3 +134,6 @@
 | WS157 ws157-p003 | 開いている間に `~/Pictures` が変わる（file の削除・追加） | 見張って一覧を直す（今は F5・File > Refresh で読み直すだけ。消えた file は「This photo cannot be shown.」） | `main.c` の `ph_refresh` | 2026-10-07 |
 | WS165 ws165-p005（認識率） | 利用者が面の高さを Hershey の面と違う割合で書く（面いっぱい・とても小さく）、面の端に寄せて書く | 書き方に合わせて面の割合を学ぶ（直前の数文字の大きさの平均など）。今は「大文字・かなが面の 2/3」の前提で、外れると c/C・o/° の判定が崩れる | `hand-cloud.c` の `framed_penalty`、`keyboard-hand.c` の `kwl_hand_recognize_on` | 2026-10-07 |
 | WS165 ws165-p005 | ひらがなとカタカナで同じ形（へ/ヘ、ぺ/ペ、べ/ベ）、×/x・O/0・れ/わ 等の形の近い組 | 前後の文脈（直前の字の種類、辞書）で選ぶ（今は形と大きさ・位置だけ） | `keyboard-hand.c`（文脈は IME の側） | 2026-10-07 |
+| WS168 ws168-p003（keiland-preview） | PDF の埋め込まれていない font（標準 14 font など） | 代わりの font を image に埋め込み、libpdf に memory で渡す口を足して描く（今は `PDF_FONT_FILES=0` で描かない。Q1 の ACK で backlog） | `userland/base/libpdf/font.c` の `open_substitute`、`userland/desktop/preview/decode.c` | 2026-10-07 |
+| WS168 ws168-p003 | FreeBSD | Capsicum（`cap_enter`・`cap_rights_limit`）の `freebsd/confine.c` と Makefile.freebsd（Q1 の ACK で backlog） | `userland/desktop/preview/` | 2026-10-07 |
+| WS168 ws168-p003 | 時間・memory の上限に掛かる入力（巨大な PDF の頁、爆弾の PNG）、壊れた入力の fuzz | 上限（rlimit・親の時間切れ）で止まり status を返す。fuzz で crash しない（今は正常系と少数の壊れた file だけ） | `main.c`・`decode.c` | 2026-10-07 |
