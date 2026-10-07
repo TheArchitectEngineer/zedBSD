@@ -62,3 +62,6 @@ Queue: q850（p004a の後）
 - host 試験: 書いていない（判断は display.c・output.c の static で hotplug の道に依る。実機で確かめる）。
 - 未実施: 実機（5330、eDP と HDMI、ユーザーの UAT）: (1) 内蔵で起動 → HDMI を挿す → 蓋を閉じる → 画面が HDMI に移り（`i915: resident display: the output moves to connector N (HDMI, Keiland's claim)`、`KWL LID external`、`KWL OUTPUT switch name=...:hdmi:B`）、内蔵は消え、HDMI で普段どおり使える。(2) 蓋を開ける → 内蔵に戻る（`KWL LID internal`）。(3) 蓋を閉じたまま HDMI を抜く → 内蔵に戻って lock して眠る。(4) compositor を終えて 10 秒後に GOP の出力に戻る（`the firmware's output (eDP panel) is the output again`）。
 - 制限: 起動時の出力が HDMI だった時は backlight の device を登録しない（今までと同じ）ので、後で内蔵へ移っても明るさは変えられない。HDMI は DDI B だけ。resident の display の ID が 1 から connector の ID に変わった（libvulkan は identity で追うので影響しない）。
+- 2026-10-07 追記（P1、ws051-p004b の続き、Q1 の許可）: 付け替えた出力の run の失敗で `display_failed`（恒久）を立てていた点を直した。今は GOP の出力に戻し、
+  その lease の present だけ EIO、次の claim でまた点ける。`drv_i915_display_output_back` の worker の上の `mutex_lock` は `mutex_trylock` に（park・hold の
+  終わりの deadlock を避ける）。詳細は [ws051-p004b](../../ws051/phase004b/phase.md) の記録。

@@ -2882,6 +2882,7 @@ i915_display_claim(
 {
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
+	unsigned long irq;
 	int resident;
 	int connected;
 	int error;
@@ -2929,6 +2930,16 @@ i915_display_claim(
 	rd->next_lease++;
 	rd->sequence = 0U;
 	request->lease = rd->lease;
+
+	/*
+	 * A moved output that failed failed only the lease that lit it
+	 * (ws113-p011a): this lease's first frame lights an output again.
+	 */
+	irq = spin_lock_irqsave(&owner_device->irq_lock);
+
+	owner_device->display->window.lease_failed = 0;
+
+	spin_unlock_irqrestore(&owner_device->irq_lock, irq);
 
 	mutex_unlock(&rd->mutex);
 
@@ -2992,6 +3003,7 @@ drv_i915_display_output_back(
 	unsigned long irq;
 	void *owner;
 	int differ;
+	int locked;
 
 	/* The firmware's output already. */
 	display = device->display;
@@ -2999,11 +3011,19 @@ drv_i915_display_output_back(
 	if (!differ)
 		return;
 
-	/* A lease held keeps its output. */
+	/*
+	 * A lease held keeps its output.  The worker does not wait for the
+	 * lease mutex: a presentation or a release holds it while it waits for
+	 * the worker.  A mutex in use is a lease in use, and the output stays;
+	 * the next claim of the firmware's connector moves it back.
+	 */
 	rd = &display->rd;
 	drv_i915_present_lease_init(display);
-	mutex_lock(&rd->mutex);
+	locked = mutex_trylock(&rd->mutex);
+	if (!locked)
+		return;
 
+	/* The lease's holder, under the mutex taken. */
 	owner = rd->owner;
 
 	mutex_unlock(&rd->mutex);
@@ -3021,6 +3041,61 @@ drv_i915_display_output_back(
 
 	/* Succeeded: the firmware's output is the resident output again. */
 	kern_logf("i915: resident display: the firmware's output (%s) is the output again\n", drv_i915_display_output_name(display));
+}
+
+/*
+ * Brings the firmware's output back as the resident output after a moved
+ * output's run failed (ws113-p011a: a failed move gives the earlier output
+ * back), with a lease held or not.
+ *
+ * Runs on the worker after it left the display window.  The rest of the
+ * lease's presentations fail (lease_failed) instead of lighting the
+ * firmware's output for a session that claimed another one; the next
+ * claimed lease lights an output again.  The output is not lit here.
+ */
+void
+drv_i915_display_output_fail_back(
+	struct i915_device *device)
+{
+	struct i915_display *display;
+	unsigned long irq;
+
+	/* The display whose output comes back. */
+	display = device->display;
+
+	/*
+	 * The firmware's output, under the lock the worker's readers share;
+	 * lease_failed makes the presentations of the lease that failed fail
+	 * outside the window, so they do not run the failed output again.
+	 */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	display->output = display->gop_output;
+	display->window.lease_failed = 1;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the firmware's output is the resident output again. */
+	kern_logf("i915: resident display: the moved output failed; the firmware's output (%s) is the output again, and the lease's presentations fail until the next claim\n", drv_i915_display_output_name(display));
+}
+
+/*
+ * Reports whether the resident output is a moved one, not the output the
+ * firmware left lit (ws113-p011a).
+ */
+int
+drv_i915_display_output_moved(
+	const struct i915_display *display)
+{
+	int differ;
+
+	/* Another kind or connector than the firmware's output. */
+	differ = i915_display_outputs_differ(&display->output, &display->gop_output);
+	if (differ)
+		return 1;
+
+	/* Succeeded: the firmware's output. */
+	return 0;
 }
 
 /*

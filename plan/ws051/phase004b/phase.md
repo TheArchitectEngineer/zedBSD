@@ -221,6 +221,20 @@ p004a（cleared の後）、ws113-p011a の merge（R1〜R4）。p011（同時 2
 
 - 未実施: 実機（5330 の TC2 の DP monitor、T1 への依頼文を Q1 へ）。QEMU では TC の DP は無い。
 
+### 2026-10-07 present.c の display_failed（Q1 の許可、decisions-log (a)）
+
+- 直し（`present.c`・`display.c`・`display.h`・`internal.h`）: run の前に `drv_i915_display_output_moved`（今の出力が GOP の出力と違うか）を取り、
+  付け替えた出力の run が失敗したら `drv_i915_display_output_fail_back`（新）で resident を GOP の出力に戻し `window.lease_failed` を立てる
+  （その lease の残りの present は window に入らず EIO、点けない）。次の claim が lease を渡す時に `lease_failed` を消す（次の lease の最初の frame で
+  また点ける）。`display_failed`（恒久）は GOP の出力の run の失敗だけ。sleep の後の panel への fallback の run も同じ規則（最後の run の出力で判断）。
+- 同じ道の deadlock も直した: `drv_i915_display_output_back` は worker の上で `rd->mutex` を `mutex_lock` で待っていた。present・release は mutex を
+  持ったまま worker を待つので、park（sleep）や hold の終わりに付け替えた出力の時、presenter と worker が互いを待ちうる → `mutex_trylock`、取れなければ
+  lease が使われている扱いで出力を保つ（次に GOP の connector を claim すれば移る）。
+- 確認: vmunix（`config/ci/config-amd64.mk`、BUILD=build/p1-k）と `I915_TESTS=y I915_TEST_SET=display` の build（warning 0、include check・vmunix check
+  PASS）、ws051 の host 試験 6 本・ws113 の `host-output-switch.sh`・`host-gop.sh`・`host-display-events.sh` PASS、style-check は変えた file で増えない、
+  `git diff --check` 問題無し。window の失敗の道を通す host 試験は無い（worker と modeset に依る）→ 実機で: DP の run の失敗の後に
+  `the moved output failed; the firmware's output (eDP panel) is the output again`、その lease の present が EIO、release → eDP の claim・present で eDP に絵。
+
 ### 再開の情報
 
 - 残り: 実機（T1）。p005b（scanout 中の抜け、IRQ_HPD の retrain）、p004c（GOP が USB-C の時）は別の Phase。
