@@ -46,3 +46,8 @@ WS: [WS165](../ws.md)
 ## 積み残し
 
 [WS177 backlog-p2](../../ws177/backlog-p2.md) の WS165 の行。
+
+## T1 の image（2026-10-07 q834 P2）
+
+T1-303 の hand の段の image（pen＋settings）に ime-probe が無く（userland/tests/ime-probe に移った後）、第 1 候補の送り先が無かった。
+`plan/ws165/tests/config-amd64-hand.mk`（ws102 の inset の image ＋ ime-probe ＋ settings）を足した。BIN の build（`bin/ime-probe`・`bin/wayland`）warning 0。

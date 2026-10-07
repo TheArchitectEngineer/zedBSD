@@ -113,3 +113,8 @@ T1 への依頼の手順（2026-10-06 P2）: `plan/ws172/tests/build-fido2-image
 - 撮る絵: greeter.png・key.png・no-key.png・settings.png。
 - greeter の link の位置を試験が知るため、styles を受けた時に `KWL GREETER link x= y= width= height=` を出すようにした。
 
+
+## T1-278 の直し（2026-10-07 q834 P2）
+
+- `plan/ws172/tests/fido2-p003-guest.sh` の段 0 で kei の `~/.config/keiland/desktop.conf` に `welcome.done=1` を置く（他の行は保つ）。初回の session が Settings の Welcome を開くと、段 4 の `/bin/settings --page=users` がその窓へ行き `ZSETTINGS PAGE users` が出なかった。段 4 に `KWL WELCOME skip done=1 error=0` の確かめを足した。
+- 確認: `sh -n` のみ。QEMU は T1 の再試験待ち。
