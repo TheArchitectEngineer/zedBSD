@@ -48,3 +48,4 @@ Queue: q846
   `first frame 1366x768 ... shown on the 1366x768 panel`、flip が続く。DPLL の値は Linux と same。kei の session（IME・Files・Settings が READY）。
 - **ユーザーの目視（実機）: 「5320でKeilandデスクトップが表示されました！」（2026-10-07）**。
 - 残り: 5330 の回帰（T1）、世代に依らない fallback（範囲 4）、keyboard・touchpad の確認（ユーザー）。
+- 5330 の回帰: A = T1-352（passthrough）。B = 素の 5330 の UEFI の起動で ws084 の takeover の経路（`takeover: rc=0, crtcs stopped 1, still active 0x0`、reference error 無し、picture up、ユーザーの目視）。B は ws084 の reboot-loop.sh の 10 回の最初の 1 回にまとめる（ユーザーが 5330 を zedBSD で起動する時）。
