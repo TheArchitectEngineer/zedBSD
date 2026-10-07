@@ -69,11 +69,15 @@ shot() {
 }
 
 # The link's middle in the page at 900 wide, from the host's layout: "x y".
+# The host build it comes from (plan/ws074/tests/host-build.sh), made when the worktree has none.
+[ -x build/ws074-host/plain/browser ] || sh plan/ws074/tests/host-build.sh plain >/dev/null ||
+    { echo "FAIL: the host build of browser"; exit 1; }
 f=userland/desktop/fonts
 link=$(build/ws074-host/plain/browser --dump=layout --width=900 --height=640 --font=$f/Mahora-Regular.ttf \
     --mono-font=$f/JetBrainsMono-Regular.ttf --fallback-font=$f/DroidSansFallbackFull.ttf plan/ws074/tests/pages/first.html |
     awk '$1 == "line" { y = $3; h = $5 } $1 == "text" && $NF == "\"link\"" { printf "%d %d\n", $2 + $4 / 2, y + h / 2; exit }')
 echo "link: at $link in the page"
+[ -n "$link" ] || { echo "FAIL: the link's place in the page"; exit 1; }
 
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
