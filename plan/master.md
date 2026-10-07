@@ -508,6 +508,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザーの UAT（WS181 の撮影へのコメント、原文）:「App Home画面のとき、画面上部のドックバーを表示せず、でも右上の通知アイコン領域と時計領域を、背景色による塗りつぶしなしで、白い文字とアイコンで描画してほしいです。クリックされたときの動作は、App Home以外と同じでよいです。アレンジメニューのポップアップですが、アイコンだけにして、テキストは不要です。また、操作はcurrent virtual desktopに対して行われることにして、1,2,3,4のテキストは不要です。ポップアップにglassを適用してください。アレンジメント使用中に、virtual desktopのアイコンに、アレンジメントの選択が表示されていますが、これは不要です。また、仮想デスクトップの選択状態を表すカプセル領域は、半分の横幅でよく、それぞれのデスクトップを表すアイコンは、正円でいいです。」クリック: desktop の切り替えは「pill の tap は常にメニュー、切り替えは swipe・key だけ」。→ ws181-p005（q843、P2、優先）。
 - 2026-10-07 ユーザー（クリック、WS083 design.md §10）: H1 UAPI の差分（include/uapi/gpu-op.h に video の 14 opcode 0x10000〜0x1000d、GPU_OP_PROTOCOL_VERSION 2、plan/ws083/proposed/gpu-op-video.diff）を「承認する」。H2・HD6「1.0 のまま、sync2 を翻訳で足す」（規格に合わない点を記録して名乗る）。HD2「reset 無しで進め、既定では出さない」（i915.debug=video の時だけ、engine reset は p007 の後）。H3・H4・H5・HD1・HD3・HD4・HD5「全部このまま」。
 - 2026-10-07 ユーザー（クリック、WS181 の第 2 回の review の追加）: N1 docked の窓を閉じて他に窓が無い時も「docked mode を終える」（10-06 の「tablet mode は session の状態」を置き換え、次に開く app は floating）。N2 上端 10 px からの touch の下への drag は docked の title の上でも Wiseview「そうする」。N3 見えない desktop の docked の窓が裏で閉じた時は「何もしない」。
 - 2026-10-07 ユーザー（クリック、WS181 design.md §7）: D3 touchpad は「変えない」、D5 整列のメニューは「pill のどこでも」（中に desktop の切り替えも置く）、S6「整列モードを終える」（詰め直さない）、S8 上端の帯は「touch だけ」、D1・D2・D4・D6・D7・S9 は「全部このまま」（既定どおり）。
