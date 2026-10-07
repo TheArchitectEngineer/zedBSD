@@ -6,20 +6,24 @@
  */
 
 /*
- * Photos (WS157): Keiland's library of the pictures in ~/Pictures.
+ * Photos (WS157): Keiland's library of photos, kept under
+ * ~/Pictures/Library (plan/ws157/phase001/phase.md, the user's decision of
+ * 2026-10-07).
  *
- * The library (library.c) reads the folder four levels deep for JPEG, PNG
- * and GIF files; each photo's date is when it was taken (its EXIF,
- * exif.c) or else when its file was last written, and its album is the
- * folder of ~/Pictures it is in.  The photos are in the order of their
- * dates, the newest first.  The favourites and the turns the user gave
- * (the file itself is never written) are kept in a file of their own
- * (store.c).
+ * A photo enters the library only by being imported (import.c): its file
+ * is copied to img/YYYY/MM/DD/ under the day it was taken (its EXIF,
+ * exif.c, else when its file was last written), its name kept, and a line
+ * describes it in the database.  A photo whose content (SHA-256) is in
+ * the library already is not imported again; a photo's id is the first
+ * 32 hexadecimal digits of that hash.
  *
- * The view (view.c) draws a frame with libkeiland's canvas and widgets:
- * the lists at the left, the grid of the photos by month at the right, or
- * one photo over the whole window.  The thumbnails are made by a thread of
- * their own (thumbs.c).  The window (main.c) feeds the view the input.
+ * The database (db.c) is text split for a cloud to copy little at a time:
+ * db/photos/YYYY-MM.tsv holds the photos taken in a month, a line each;
+ * db/albums/<id>.album holds an album, its name and the ids of its photos.
+ * Only the files of the months and albums that changed are written.
+ *
+ * The library in memory (library.c) holds the photos in the order of their
+ * dates, the newest first, and the albums in the order of their names.
  */
 
 #ifndef PHOTOS_PHOTOS_H
@@ -34,10 +38,20 @@
 #define PH_PATH_MAX		1024U
 
 /* The most photos the library keeps. */
-#define PH_PHOTOS_MAX		20000U
+#define PH_PHOTOS_MAX		50000U
 
-/* A photo in no album (straight in ~/Pictures, or a file opened from elsewhere). */
-#define PH_NO_ALBUM		((size_t)-1)
+/* The longest album name, with its NUL. */
+#define PH_NAME_MAX		128U
+
+/* A photo's or an album's id (32 hexadecimal digits) and a SHA-256 in hexadecimal, with their NULs. */
+#define PH_ID_SIZE		33U
+#define PH_HASH_SIZE		65U
+
+/* The library's folder under the home, and its parts. */
+#define PH_LIBRARY		"Pictures/Library"
+#define PH_LIBRARY_IMAGES	"img"
+#define PH_LIBRARY_PHOTOS	"db/photos"
+#define PH_LIBRARY_ALBUMS	"db/albums"
 
 /*
  * A date and time as a count of seconds, the calendar's time read as if it
@@ -48,24 +62,50 @@
 typedef int64_t ph_time;
 
 /*
- * One photo: its file and name (the last part of the path), when it was
- * taken, its album (an index of the albums, or PH_NO_ALBUM), whether it
- * is a favourite, and the quarter turns clockwise the user gave it (0 to
- * 3).  The strings are the library's.
+ * One photo: its id and content's hash, its file (the full path, and the
+ * part under the library's folder), its name (the path's last part) and
+ * the name it had when imported, its size in bytes, when it was taken and
+ * imported, its picture's size (0 when not known), whether it is a
+ * favourite, the quarter turns clockwise the user gave it (0 to 3), and
+ * whether its line changed since its month's file was written.  The
+ * strings are the library's.
  */
 struct ph_photo {
+	char id[PH_ID_SIZE];
+	char hash[PH_HASH_SIZE];
 	char *path;
+	const char *relative;
 	const char *name;
+	char *original;
+	uint64_t size;
 	ph_time taken;
-	size_t album;
+	ph_time imported;
+	int width;
+	int height;
 	int favorite;
 	int turns;
+	int changed;
 };
 
-/* One album: its name (the folder's) and how many photos it holds. */
+/*
+ * One album: its id, its name, the ids of its photos (sorted, allocated:
+ * count of them in room) and whether it changed since its file was
+ * written.
+ */
 struct ph_album {
-	char *name;
+	char id[PH_ID_SIZE];
+	char name[PH_NAME_MAX];
+	char (*members)[PH_ID_SIZE];
 	size_t count;
+	size_t room;
+	int changed;
+};
+
+/* What an import did: the photos imported, those in the library already, and those that failed. */
+struct ph_import_result {
+	unsigned imported;
+	unsigned duplicates;
+	unsigned failed;
 };
 
 /* What a file's first bytes say it is. */
@@ -85,20 +125,31 @@ int ph_exif_file_date(const char *path, ph_time *taken);
 ph_time ph_time_make(int year, int month, int day, int hour, int minute, int second);
 void ph_time_split(ph_time when, int *year, int *month, int *day);
 
-/* The library (library.c). */
-int ph_library_scan(const char *folder);
-int ph_library_add_file(const char *path, long *photo);
+/* The library in memory (library.c). */
+int ph_library_add(const struct ph_photo *photo, const char *root, const char *relative, const char *original);
+void ph_library_sort(void);
 struct ph_photo *ph_photos(size_t *count);
-const struct ph_album *ph_albums(size_t *count);
+struct ph_album *ph_albums(size_t *count);
+long ph_library_find_hash(const char *hash);
+long ph_library_find_id(const char *id);
 size_t ph_library_list(int list, size_t album, size_t *indices, size_t capacity);
+int ph_album_new(const char *id, const char *name, size_t *album);
+int ph_album_create(const char *name, size_t *album);
+int ph_album_add(size_t album, const char *id);
+int ph_album_has(const struct ph_album *album, const char *id);
 void ph_library_release(void);
 int ph_picture_kind(const unsigned char *data, size_t size);
 
-/* The favourites and the turns kept (store.c). */
-int ph_store_path(char *path, size_t size);
-int ph_store_load(const char *path);
-int ph_store_save(const char *path);
-void ph_store_release(void);
+/* The database (db.c). */
+int ph_library_root(char *root, size_t size);
+int ph_db_load(const char *root);
+int ph_db_save(const char *root);
+int ph_db_folders(const char *path);
+void ph_time_text(ph_time when, char *text, size_t size);
+int ph_time_parse(const char *text, ph_time *when);
+
+/* The import (import.c). */
+int ph_import(const char *root, const char *source, struct ph_import_result *result);
 
 /* The log for the tests (main.c, and the host tests' own). */
 void ph_log(const char *format, ...) __attribute__((format(printf, 1, 2)));

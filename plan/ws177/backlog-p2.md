@@ -126,14 +126,15 @@
 | WS145 ws145-p003（backend・protocol） | 設定の file の writer の thread（今は compositor の thread で flock と rename）、compositor と libkeiland を通した host の protocol の試験（設計 §7 の host-system-printers.c）、job の title の UTF-8 の厳密な検め（compositor 側） | 作る | `libkeiland-backend/print/print.c`、`wayland/printers-shell.c`、`plan/ws145/tests/` | 2026-10-07 |
 | WS145 ws145-p004（Settings） | 頁の host の描画の試験、printer の名前の変更、IPP の path・LPD の queue の変更（今は足す時だけ） | 作る | `settings/page-printers.c` | 2026-10-07 |
 | WS145 ws145-p005・p007 | Linux・FreeBSD の guest での printd と printtest の確認、ipps（TLS）、PDF を受けない printer の filter（PWG raster）、mDNS の発見、PDF Viewer の printer の選択・部数・範囲 | p005 と別 WS（今は zedBSD だけ確認予定、既定の printer に全頁） | `printd/`、`pdfviewer/main.c` | 2026-10-07 |
-| WS157 ws157-p002（写真の library） | `~/Pictures` の 20000 枚超、album の folder 1024 超、深さ 4 より下、symlink の輪 | 上限を超えたことを知らせる、輪を辿らない（今は黙って打ち切る。symlink は stat で辿るので輪は深さ 4 で止まるだけ） | `library.c` の `library_walk`・`library_add` | 2026-10-07 |
-| WS157 ws157-p002 | `photos.conf` を複数の Photos が同時に書く、改行を含む path、書き込みの失敗の後 | 後から書いた方が前の印を消さない（flock か合わせ込み）。改行の path の印も残す | `store.c` の `ph_store_save`・`store_write` | 2026-10-07 |
-| WS157 ws157-p003（Photos の app） | 縮小画像の disk の cache、大きな library を開いた時の時間 | Files の `thumb-cache.c` の様に disk に持ち、起動を速くする（今は memory の 400 枚だけ、開くたびに decode） | `thumbs.c`・`view.c` の `view_keep` | 2026-10-07 |
-| WS157 ws157-p003 | 窓の幅が狭い（列 1）、HiDPI の縮小画像の粗さ、全面の表示の拡大・pan、指の swipe・pinch | 狭い窓で左の列を畳む、scale に合わせた縮小画像の大きさ、拡大・pan と指の操作（今は fit だけ） | `view.c` の `view_layout`・`view_whole` | 2026-10-07 |
-| WS157 ws157-p003 | 月の見出しを跨ぐ ↑↓、slideshow の写真の decode が 3 秒を超える | ↑↓ は grid の見た目の列で動く、slideshow は写真が出てから時間を数える（今は一覧の index で ±列数、時間は開いた時から） | `view.c` の `view_step`・`ph_view_tick` | 2026-10-07 |
-| WS157 ws157-p003 | 開いている間に `~/Pictures` が変わる（file の削除・追加） | 見張って一覧を直す（今は F5・File > Refresh で読み直すだけ。消えた file は「This photo cannot be shown.」） | `main.c` の `ph_refresh` | 2026-10-07 |
 | WS165 ws165-p005（認識率） | 利用者が面の高さを Hershey の面と違う割合で書く（面いっぱい・とても小さく）、面の端に寄せて書く | 書き方に合わせて面の割合を学ぶ（直前の数文字の大きさの平均など）。今は「大文字・かなが面の 2/3」の前提で、外れると c/C・o/° の判定が崩れる | `hand-cloud.c` の `framed_penalty`、`keyboard-hand.c` の `kwl_hand_recognize_on` | 2026-10-07 |
 | WS165 ws165-p005 | ひらがなとカタカナで同じ形（へ/ヘ、ぺ/ペ、べ/ベ）、×/x・O/0・れ/わ 等の形の近い組 | 前後の文脈（直前の字の種類、辞書）で選ぶ（今は形と大きさ・位置だけ） | `keyboard-hand.c`（文脈は IME の側） | 2026-10-07 |
 | WS168 ws168-p003（keiland-preview） | PDF の埋め込まれていない font（標準 14 font など） | 代わりの font を image に埋め込み、libpdf に memory で渡す口を足して描く（今は `PDF_FONT_FILES=0` で描かない。Q1 の ACK で backlog） | `userland/base/libpdf/font.c` の `open_substitute`、`userland/desktop/preview/decode.c` | 2026-10-07 |
 | WS168 ws168-p003 | FreeBSD | Capsicum（`cap_enter`・`cap_rights_limit`）の `freebsd/confine.c` と Makefile.freebsd（Q1 の ACK で backlog） | `userland/desktop/preview/` | 2026-10-07 |
 | WS168 ws168-p003 | 時間・memory の上限に掛かる入力（巨大な PDF の頁、爆弾の PNG）、壊れた入力の fuzz | 上限（rlimit・親の時間切れ）で止まり status を返す。fuzz で crash しない（今は正常系と少数の壊れた file だけ） | `main.c`・`decode.c` | 2026-10-07 |
+| WS157 ws157-p004（library・db・取り込み） | 2 台で同じ月・album の file を変えて cloud が両方を持ってくる（sync の衝突）、db の file が途中で切れた | 行ごとに合わせ込む（id で）、壊れた行を知らせる（今は後に読んだ方が勝ち、読めない行は黙って飛ばす） | `db.c` の `db_load_photos`・`db_load_album` | 2026-10-07 |
+| WS157 ws157-p004 | tab・改行を含む名前、同じ名前が 1000 を超える、取り込み中の disk の満杯・権限の無い file | 名前を直して取り込む、理由を数と一緒に出す（今は EINVAL・EEXIST で「失敗」に数えるだけ） | `import.c` の `import_one`・`import_place` | 2026-10-07 |
+| WS157 ws157-p004 | album からの除去・album の名前の変更と削除、写真の削除（img の file と行）、取り込みの「移動」 | 一覧と card から操作でき、db と img に反映する（今は作る・足すだけ） | `library.c`・`db.c`・`view.c` | 2026-10-07 |
+| WS157 ws157-p005（app） | 大量の取り込み（数千枚）、file chooser で folder を直に選ぶ | 背景の thread で取り込み、進みと取り消し、folder の chooser（今は main の loop で同期、folder は「その中の写真」を選ぶ） | `main.c` の `ph_import_path`・`ph_choose` | 2026-10-07 |
+| WS157 ws157-p005 | 縮小画像の cache の大きさの上限・古い物の掃除、写真の中身が変わった時、HiDPI | cache を刈る、id（中身の hash）が変われば作り直す（今は増えるだけ）、scale に合わせた大きさ | `thumbs.c` の `worker_cache_*` | 2026-10-07 |
+| WS157 ws157-p005 | 窓の幅が狭い（列 1）、全面の表示の拡大・pan、指の swipe・pinch、月の見出しを跨ぐ ↑↓、slideshow の decode が 3 秒を超える | 狭い窓で左の列を畳む、拡大・pan と指、grid の見た目の列で動く、写真が出てから時間を数える | `view.c` | 2026-10-07 |
+| WS157 ws157-p005 | album の card の下の grid・全面の表示が click を受ける | card が出ている間は下の widget に入力を渡さない（今は card の写真を開いた時に覚えるので結果は正しいが、下の選択が動く） | `view.c` の `ph_view_draw`・`view_card` | 2026-10-07 |

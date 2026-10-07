@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（クリック、WS031 p032）: dual source blend は「実装、実機で確かめるまで 0」（compiler・state は実装、dualSrcBlend・maxFragmentDualSrcAttachments は 5330 で確かめるまで 0）。logic op は有効に。
 - 2026-10-07 ユーザー（クリック、WS157）: データベースは「月ごとの TSV＋album ごと」（~/Pictures/Library/db/photos/YYYY-MM.tsv と db/albums/<id>.album）。取り込みは「複写、同じ中身は取込まない」（SHA-256 で重複を判定、同じ名前で中身が違えば 名前-1、縮小画像は ~/.cache で sync しない）。
 - 2026-10-07 ユーザー（WS157 写真の要件、P2 の既定案への回答）:「~/Pictures/Library 以下で管理します。取り込み機能ありです。データベースあり、サムネイル管理あり、フォルダ名は img/year/month/day で、ファイル名は維持。アルバムはデータベースのメタデータでリンクを管理。直接ファイルを置くのではなく、取り込みで管理。データベースはクラウドsyncしやすい形式（サイズが小さい、分割されてる）。」→ P2 の既定案（~/Pictures を読むだけ、album は folder、photos.conf）を置き換える。新しい Phase で作り直す（q835）。
 - 2026-10-07 ユーザー（クリック、WS120 音楽）: AAC は「今は libavcodec、独自は後」（videoplayer と同じ libavcodec の dlopen の add-in、decoder の口を分け、独自の AAC-LC は後の Phase で表の出典を決める）。既存の service（YouTube Music・Spotify・Apple Music）との連携は「その機能はベータ4へ。今は外部サービスのアイコンは権利の関係でいらないです。」→ Services の欄・外部の service の icon は作らない。

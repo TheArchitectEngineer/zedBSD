@@ -3,12 +3,12 @@
 # WS157: Keiland の app: 写真の管理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-07 q831 P2: p001 の既定案で p002・p003 を実装。p001 はユーザーの確認待ち）
+Status: incomplete（2026-10-07 q835 P2: ユーザーの要件（~/Pictures/Library・取り込み・db・縮小画像の管理）で作り直し。p004・p005 を実装、T1 待ち）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
-Queue: q831（2026-10-07、P2）
-Resume point: p003 の T1 の結果（`apps.photos.*`）。ユーザーが p001 の既定案を変えたら p002・p003 を直す。
+Queue: q835（2026-10-07、P2）
+Resume point: p005 の T1 の結果（`apps.photos.*`）。T1-307 は最初の既定案の AAT なので判定しない（Q1）。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -23,9 +23,11 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws157-p001](phase001/phase.md) | 要件の検討（下の観点）。既定案 P1〜P9 を記録、ユーザーの確認待ち | planning | — |
-| [ws157-p002](phase002/phase.md) | library（`~/Pictures`・EXIF の日付・album・お気に入りと回転の保存）と host の試験 | in-progress（host 済み、T1 待ち） | p001（既定案） |
-| [ws157-p003](phase003/phase.md) | Photos の app（grid・全面・slideshow・回転・お気に入り・App Home・AAT） | in-progress（T1 待ち） | p002 |
+| [ws157-p001](phase001/phase.md) | 要件と設計（2026-10-07 ユーザーの要件で書き直し、D1〜D7） | cleared | — |
+| [ws157-p002](phase002/phase.md) | 最初の既定案の library（~/Pictures を読む） | uncleared・canceled（置き換え） | — |
+| [ws157-p003](phase003/phase.md) | 最初の既定案の app | uncleared・canceled（置き換え） | — |
+| [ws157-p004](phase004/phase.md) | library・db（月ごとの TSV・album ごと）・取り込み（複写、重複は取り込まない）と host 試験 | in-progress（host PASS） | p001 |
+| [ws157-p005](phase005/phase.md) | app（取り込み・album の card・縮小画像の cache、AAT） | in-progress（host PASS、T1 待ち） | p004 |
 
 ## p001 の観点（要件の検討）
 

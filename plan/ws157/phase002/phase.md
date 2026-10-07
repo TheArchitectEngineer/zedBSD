@@ -2,8 +2,8 @@
 
 # ws157-p002: 写真の library（`~/Pictures`・EXIF の日付・album・お気に入りと回転の保存）
 
-Status: in-progress（host の試験まで、2026-10-07 P2。QEMU の確認は p003 の T1 の依頼に含む。判定は Q1）
-Disposition: normal
+Status: uncleared（2026-10-07 q835: ユーザーの要件（~/Pictures/Library・取り込み・db）で置き換え。code は p004・p005 で作り直した）
+Disposition: canceled（2026-10-07 ユーザーの要件で最初の既定案を置き換え。置き換え先 [p004](../phase004/phase.md)・[p005](../phase005/phase.md)）
 Parent: [WS157](../ws.md)
 Queue: q831（2026-10-07、P2）
 依存: [p001](../phase001/phase.md)（既定案）
