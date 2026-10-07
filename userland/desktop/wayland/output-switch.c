@@ -26,6 +26,12 @@
  * The machine's own display is the one whose name says it is built in (a
  * key "...:edp:..." of D-ID A2), or, when no name says so (a virtual
  * adapter), the display the compositor started on.
+ *
+ * The other connected displays are heads (heads.c, ws113-p004b), brought
+ * in line after each enumeration, after the output opens again (a move
+ * closes the heads with the output), and when a head loses its display.
+ * The display the output leaves for an external one under a closed lid is
+ * kept off (no head) until the output comes back to it.
  */
 
 #include "kwl.h"
@@ -59,7 +65,9 @@ kwl_output_tick(
 	VkResult status;
 	VkResult listed;
 	uint64_t now;
+	unsigned signalled;
 	int index;
+	int lost;
 
 	/* Only a device that follows the hotplug, while window mode runs. */
 	compose = server->compose;
@@ -72,16 +80,19 @@ kwl_output_tick(
 		return;
 	compose->hotplug_checked_ms = now;
 
-	/* The first look: a fence and the displays as they are. */
+	/* The first look: a fence, the displays as they are, and their heads. */
 	if (compose->hotplug == VK_NULL_HANDLE) {
 		output_hotplug_register(server);
 		output_enumerate(server);
+		kwl_heads_sync(server);
 		return;
 	}
 
 	/* A signal: a new fence first, so that a change during the enumeration is not missed. */
+	signalled = 0U;
 	status = vkGetFenceStatus(compose->device, compose->hotplug);
 	if (status == VK_SUCCESS) {
+		signalled = 1U;
 		previous = compose->hotplug;
 		compose->hotplug = VK_NULL_HANDLE;
 		output_hotplug_register(server);
@@ -114,6 +125,20 @@ kwl_output_tick(
 	/* The display under the output is gone: the output moves. */
 	if (compose->output_lost == 1U)
 		output_recover(server);
+
+	/*
+	 * The heads brought in line: after the hotplug's enumeration, after the
+	 * output opened again (the list is read again first), and when a head
+	 * lost its display.
+	 */
+	lost = kwl_heads_lost(server);
+	if (!signalled &&
+	    !compose->heads_stale &&
+	    !lost)
+		return;
+	if (!signalled)
+		(void)output_enumerate(server);
+	kwl_heads_sync(server);
 }
 
 /*
@@ -265,8 +290,10 @@ kwl_output_use_external(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
+	VkDisplayKHR previous;
 	unsigned index;
 	int internal;
+	int shown;
 	int error;
 
 	/* Without the hotplug there is no list. */
@@ -284,10 +311,20 @@ kwl_output_use_external(
 		if ((compose->limited & ((uint32_t)1U << index)) != 0U)
 			continue;
 
-		/* The move. */
+		/* The move; the machine's own display left (under the closed lid) is kept off, no head for it (ws113-p004b). */
+		previous = compose->kept_off;
+		shown = output_index(compose, compose->display);
+		if (shown >= 0) {
+			internal = output_internal(compose, (unsigned)shown);
+			if (internal)
+				compose->kept_off = compose->display;
+		}
+
+		/* The move itself; a refused one keeps off what was kept off before. */
 		error = kwl_output_switch(server, compose->displays[index]);
 		if (error == 0)
 			return 0;
+		compose->kept_off = previous;
 	}
 
 	/* No external display took the output. */
@@ -324,7 +361,8 @@ kwl_output_use_internal(
 	if (index == compose->display_count)
 		return ENOENT;
 
-	/* The move. */
+	/* The move; nothing is kept off from now on: the external display becomes a head again (ws113-p004b). */
+	compose->kept_off = VK_NULL_HANDLE;
 	error = kwl_output_switch(server, compose->displays[index]);
 	if (error != 0)
 		return error;

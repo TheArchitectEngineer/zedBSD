@@ -143,3 +143,24 @@ FAIL（QEMU Venus、VENUS_DISPLAY=dbus、2 出力）。列挙・2 つ目の swap
 ## T1-357b の判定（2026-10-07 Q1）
 
 PASS（QEMU Venus、VENUS_DISPLAY=dbus・2 出力、6e8e0bb94）: head 0 1280x800・head 1 1024x768、hotplug の fence、head 0 を抜くと display 1 へ 1024x768、挿し直しても display 1 に残る、head 1 を抜くと display 0 へ 1280x800、KWL FAILED 無し。p004a の QEMU の受け入れを満たす（実機は p011a の 5330 の UAT と一緒）。
+
+## p004b の実装（2026-10-07 q855、P1）
+
+範囲（Q1 への 3〜8 行の送付のとおり）: anchor（今の 1 出力、compose->output）を desktop の display に保ち、他の接続済みの display を head にして同時に出す。窓・bar・入力・`server->width/height` は anchor のまま（窓の画面間の移動は p007）。
+
+| 部分 | file |
+| --- | --- |
+| 配置・file の計算（Vulkan に依らない） | 新しい `displays.c`・`displays.h`: mirror の aspect-fit、拡張の wallpaper の cover（中央、比率保持）、拡張の位置の検査（大きさ・範囲 ±2^20、重なり無し EINVAL、辺の共有で全部が繋がる ENOTCONN、範囲外 ERANGE）、後から繋いだ display は一番右の右（D-HOTPLUG）、displays.conf の読み書き（`version=1`・`mode=`・`anchor=`・`place=KEY X Y`、key は空白を含めてよい（Venus の名前）、他の version は読まない、未知の key は飛ばす） |
+| head | 新しい `heads.c`: head ごとに surface・swapchain（COLOR_ATTACHMENT＋TRANSFER_DST、format は anchor と同じ）・view・framebuffer・semaphore・論理の位置・wl_output の global（1000 から）。`kwl_heads_sync`（列挙の後に足す・外す、anchor・kept_off・limited を除く、拒否は limited にして次の hotplug まで）、frame（anchor の acquire の後に head の acquire（timeout 0）、anchor の render pass と shot の後に head ごとに mirror は anchor の image を vkCmdBlitImage で aspect-fit＋黒帯の clear、拡張は anchor の pass で背景色＋wallpaper の cover、submit は全ての acquire を待ち全ての rendered を signal、present は anchor の後に head ごと。拡張の head は開いた時・wallpaper が変わった時・hotplug の後だけ描く）、OUT_OF_DATE・SURFACE_LOST は head を lost にして次の look で閉じる、`kwl_displays_apply`（mode と位置を検査してから適用、拒否なら何も変えない、適用した選択を displays.conf に tmp→fsync→rename、保存の失敗は適用と別に返す）、`kwl_displays_describe`、`kwl_output_view`（wl_output の geometry の x,y と mode を display ごとに） |
+| compose | `compose.c`: anchor の swapchain を常に TRANSFER_SRC で試す（mirror の元、無理なら今どおり無しで）、open で displays.conf を一度読み head を次の look で揃える、close で head を全て先に閉じる、`kwl_compose_image_quad`。`compose.h`: `struct kwl_head`、mode・anchor の位置・kept_off・config |
+| 追従 | `output-switch.c`: 最初の look・hotplug の後・anchor を開き直した後・head の lost の後に `kwl_heads_sync`。蓋で外部へ移す時は内蔵（だった anchor）を kept_off（head にしない）、内蔵へ戻す時は kept_off を外す（外部は拡張の head に戻る、N8） |
+| wl_output | `protocol.c`: head ごとの動的な global（registry への global・global_remove、後から bind する registry にも、閉じた head の binding は以後何も送らない、閉じた後の bind は不活性の object）、geometry に論理の位置、名前 DISPLAY-n、mode は display ごと。`kwl.h`: `output_head`、`struct kwl_output_view` |
+| その他 | `glass.c` の `kwl_glass_wallpaper`、`userland/tests/vkdemo/display.c` の `vkdemo_display_create_swapchain_usage`（`vkdemo_display_create_swapchain` はそれを呼ぶ、振る舞いは不変）、Makefile 3 つ |
+| 試験の口（test image だけ） | `shot.c`（ZEDBSD_TEST_SCREEN_CAPTURE=y の時だけ build）に `DISPLAYS`・`MODE extended|mirror`・`PLACE KEY X Y`、`userland/tests/keiland-shot` に `--request LINE`。製品の口は p005 の `kl_system_displays_v1` |
+| 試験 | 新しい `plan/ws113/tests/host-displays.c`・`.sh`、`host-output-switch.c` に head の stub と kept_off の確認、T1 用の `displays-p004b.sh` と `config-amd64-p004b.mk` |
+
+確認（2026-10-07）:
+- `sh plan/ws113/tests/host-displays.sh` PASS（plain・ASan/UBSan: fit・cover・validate（横並び・下・角だけ・隙間・1 列の重なり・3 つ・大きさ無し・範囲外）・place_right・conf の読み書き（CRLF、未知の key、壊れた place、空白入りの key、version 2・無しの拒否、16 の上限、長すぎる key））、`sh plan/ws113/tests/host-output-switch.sh` PASS。
+- build（warning 0）: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p003.mk [ZEDBSD_TEST_SCREEN_CAPTURE=y] build/p1-wl/bin/wayland`（shot.c と shot-none.c の両方）、`keiland-shot`、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-wl-linux all`。style-check: 新しい file 0 件、変えた file は増えない。`git diff --check` ok。
+- 未実施: QEMU（T1: `displays-p004b.sh` と p004a の回帰 `output-switch-p004a.sh`、1 出力の boot-test）、FreeBSD の build（guest の中、T1）、実機（i915 は p011 の前は head の swapchain が ENOSPC → limited で 1 出力のまま、p011 の後に 5330）。
+- 制限: 拡張の head には窓が出ない（p007）。mirror は anchor の大きさの desktop を各 head へ縮小・拡大（GPU の blit、linear）。head の format が anchor と違う display は使わない（ENOTSUP → limited）。画面の keyboard の panel は anchor だけ。

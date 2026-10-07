@@ -50,6 +50,10 @@ static int test_hotplug_signaled;
 static unsigned test_registered;
 static unsigned test_destroyed;
 
+/* How often the heads were brought in line, and whether a head lost its display (heads.c, ws113-p004b). */
+static unsigned test_syncs;
+static int test_heads_lost;
+
 /* What the output did: opens, closes, resizes, wl_output tellings. */
 static unsigned test_opens;
 static unsigned test_closes;
@@ -232,6 +236,26 @@ kwl_glass_output_resized(
 	(void)server;
 }
 
+/* Stands in for bringing the heads in line (heads.c). */
+void
+kwl_heads_sync(
+	struct kwl_server *server)
+{
+	/* Counted; the heads are in line. */
+	server->compose->heads_stale = 0U;
+	test_syncs++;
+}
+
+/* Stands in for a head's lost display (heads.c). */
+int
+kwl_heads_lost(
+	struct kwl_server *server)
+{
+	/* As the test says. */
+	(void)server;
+	return test_heads_lost;
+}
+
 /* Stands in for telling the clients. */
 void
 kwl_outputs_changed(
@@ -275,12 +299,14 @@ main(void)
 	test_now = 1000U;
 	kwl_output_tick(&server);
 	check(test_registered == 1U && compose.display_count == 2U, "the first look registers and lists");
+	check(test_syncs == 1U, "the first look brings the heads in line");
 	available = kwl_output_external_available(&server);
 	check(available, "the HDMI display is external and available");
 
 	/* The move to the external display: closed, opened at its size, resized, told. */
 	error = kwl_output_use_external(&server);
 	check(error == 0 && compose.display == (VkDisplayKHR)(uintptr_t)0x22U, "the output moves to HDMI");
+	check(compose.kept_off == (VkDisplayKHR)(uintptr_t)0x11U, "the panel left under the lid is kept off (no head)");
 	check(server.width == 1280U && server.height == 720U && test_resizes == 1U && test_told == 1U, "the desktop fits 1280x720 and the clients are told");
 	check(server.pointer_x == 1279 && server.pointer_y == 719, "the pointer stays inside");
 	available = kwl_output_external_available(&server);
@@ -289,12 +315,14 @@ main(void)
 	/* Back to the machine's own display. */
 	error = kwl_output_use_internal(&server);
 	check(error == 0 && compose.display == (VkDisplayKHR)(uintptr_t)0x11U && server.width == 1920U, "the output comes back to the panel");
+	check(compose.kept_off == VK_NULL_HANDLE, "nothing is kept off once the output is back on the panel");
 
 	/* A refused swapchain: limited, and the output back on the panel. */
 	test_displays[1].refuses = 1;
 	error = kwl_output_use_external(&server);
 	check(error == EAGAIN && compose.display == (VkDisplayKHR)(uintptr_t)0x11U && server.width == 1920U, "a refused move goes back");
 	check((compose.limited & 2U) != 0U, "the refused display is limited");
+	check(compose.kept_off == VK_NULL_HANDLE, "a refused move keeps nothing off");
 	available = kwl_output_external_available(&server);
 	check(!available, "a limited display is not offered");
 

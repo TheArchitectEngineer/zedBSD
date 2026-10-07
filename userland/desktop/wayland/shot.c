@@ -24,6 +24,13 @@
  *          "OK width height format" (a VkFormat number) and then
  *          width x height x 4 bytes of pixels, rows top to bottom, or
  *          "ERROR why"
+ *   DISPLAYS   the displays shown (ws113-p004b): "OK" and lines "mode=M",
+ *          "output name=N width=W height=H x=X y=Y", "head ..." for each
+ *          display shown besides the output
+ *   MODE extended|mirror   the mode applied, answered "OK saved=E" or
+ *          "ERROR errno=E"
+ *   PLACE KEY X Y   a display's place in the extended mode applied, the
+ *          same answers
  *
  * keiland-shot (userland/tests/keiland-shot) turns the pixels into a PNG.
  * One request is served at a time; the wait for the frame is at most
@@ -76,6 +83,8 @@ struct shot_state {
 static struct shot_state shot = { -1, { 0 }, -1, SHOT_IDLE, 0, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, 0, 0 };
 
 static void shot_answer(int connection, const char *line);
+static int shot_displays_request(const char *line);
+static void shot_displays(struct kwl_server *server, int connection, const char *line);
 static void shot_finish(struct kwl_server *server, const char *error);
 static int shot_buffer(struct kwl_compose *compose);
 static void shot_buffer_free(struct kwl_compose *compose);
@@ -166,12 +175,13 @@ kwl_shot_tick(
 	struct kwl_server *server)
 {
 	struct timeval timeout;
-	char line[16];
+	char line[128];
 	uint64_t now;
 	ssize_t count;
 	int connection;
 	int active;
 	int match;
+	int displays;
 	int error;
 
 	/* A request whose frame did not come. */
@@ -210,6 +220,14 @@ kwl_shot_tick(
 			shot_answer(connection, "ACTIVE\n");
 		else
 			shot_answer(connection, "INACTIVE\n");
+		(void)close(connection);
+		return;
+	}
+
+	/* The displays' requests of ws113-p004b (DISPLAYS, MODE, PLACE). */
+	displays = shot_displays_request(line);
+	if (displays) {
+		shot_displays(server, connection, line);
 		(void)close(connection);
 		return;
 	}
@@ -477,4 +495,110 @@ shot_buffer_free(
 	shot.memory = VK_NULL_HANDLE;
 	shot.width = 0U;
 	shot.height = 0U;
+}
+
+/* Tells whether a request is one of the displays' (DISPLAYS, MODE, PLACE). */
+static int
+shot_displays_request(
+	const char *line)
+{
+	int match;
+
+	/* Each of the three words. */
+	match = strncmp(line, "DISPLAYS", 8U);
+	if (match == 0)
+		return 1;
+	match = strncmp(line, "MODE ", 5U);
+	if (match == 0)
+		return 1;
+	match = strncmp(line, "PLACE ", 6U);
+	if (match == 0)
+		return 1;
+
+	/* Another request. */
+	return 0;
+}
+
+/*
+ * Answers a displays' request (ws113-p004b): the description, or a mode
+ * or a place applied through the choice the system extension applies.
+ */
+static void
+shot_displays(
+	struct kwl_server *server,
+	int connection,
+	const char *line)
+{
+	struct kwl_display_config wanted;
+	char text[2048];
+	char key[KWL_DISPLAYS_KEY];
+	char answer[64];
+	int32_t x;
+	int32_t y;
+	size_t length;
+	int match;
+	int saved;
+	int error;
+
+	/* Only window mode has displays. */
+	if (server->compose == NULL) {
+		shot_answer(connection, "ERROR inactive\n");
+		return;
+	}
+
+	/* DISPLAYS: the description after "OK". */
+	match = strncmp(line, "DISPLAYS", 8U);
+	if (match == 0) {
+		memcpy(text, "OK\n", 4U);
+		length = kwl_displays_describe(server, text + 3, sizeof(text) - 3U);
+		if (length == 0U) {
+			shot_answer(connection, "ERROR too-long\n");
+			return;
+		}
+
+		/* The description sent. */
+		shot_answer(connection, text);
+		return;
+	}
+
+	/* The choice now, changed as asked. */
+	wanted = server->compose->config;
+	wanted.mode = server->compose->display_mode;
+	match = strncmp(line, "MODE ", 5U);
+	if (match == 0) {
+		/* The mode named. */
+		match = strncmp(line + 5, "mirror", 6U);
+		if (match == 0) {
+			wanted.mode = KWL_DISPLAYS_MIRROR;
+		} else {
+			wanted.mode = KWL_DISPLAYS_EXTENDED;
+		}
+	} else {
+		/* A place: the key and the two coordinates. */
+		error = kwl_displays_parse_place(line + 6, key, sizeof(key), &x, &y);
+		if (error != 0) {
+			shot_answer(connection, "ERROR place\n");
+			return;
+		}
+
+		/* The place in the choice. */
+		error = kwl_displays_set(&wanted, key, x, y);
+		if (error != 0) {
+			(void)snprintf(answer, sizeof(answer), "ERROR errno=%d\n", error);
+			shot_answer(connection, answer);
+			return;
+		}
+	}
+
+	/* Applied, or refused with nothing changed. */
+	error = kwl_displays_apply(server, &wanted, &saved);
+	if (error != 0) {
+		(void)snprintf(answer, sizeof(answer), "ERROR errno=%d\n", error);
+		shot_answer(connection, answer);
+		return;
+	}
+
+	/* Succeeded: applied, and whether it was written. */
+	(void)snprintf(answer, sizeof(answer), "OK saved=%d\n", saved);
+	shot_answer(connection, answer);
 }

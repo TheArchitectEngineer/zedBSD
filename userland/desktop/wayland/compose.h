@@ -24,6 +24,7 @@
 #include <vulkan/vulkan.h>
 
 #include "../../tests/vkdemo/display.h"
+#include "displays.h"
 
 /* Bound the swapchain images and the buffers one frame may sample. */
 /* The most displays the compositor follows at once (ws113-p004a). */
@@ -103,6 +104,47 @@ struct kwl_backdrop {
 
 /* How many new client images wait at most for their move to the general layout in the next frame (ws099-p016). */
 #define KWL_LAYOUTS_MAX		32U
+
+/* The displays shown besides the output (heads.c, ws113-p004b): one for each display followed but the output's. */
+#define KWL_HEADS		(KWL_COMPOSE_DISPLAYS - 1U)
+
+/*
+ * A display shown besides the output (heads.c, ws113-p004b): the output
+ * is the desktop's display (the anchor), and each head shows the same
+ * desktop (mirror) or its own part of the logical plane (extended).
+ *
+ * A head has its own surface and swapchain on its display, a view, a
+ * framebuffer and a present semaphore for each swapchain image, and the
+ * semaphore of its acquire.  `x`, `y`, `width` and `height` are its
+ * rectangle of the plane; `refresh` its mode's refresh in mHz.  `dirty`
+ * asks an extended head to be drawn at the next frame (it shows the
+ * wallpaper, which does not change between frames), `wallpaper` the
+ * wallpaper image it shows.  `in_frame` and `image` say that it acquired
+ * an image for the frame being recorded.  `lost` marks a head whose
+ * display went (an acquire or a present said so): the next look closes
+ * it.  `global` is its wl_output global's name (0: none).
+ */
+struct kwl_head {
+	unsigned open;
+	unsigned lost;
+	VkDisplayKHR display;
+	char name[KWL_COMPOSE_NAME];
+	struct vkdemo_display output;
+	VkImageView views[KWL_SWAPCHAIN_MAX];
+	VkFramebuffer framebuffers[KWL_SWAPCHAIN_MAX];
+	VkSemaphore rendered[KWL_SWAPCHAIN_MAX];
+	VkSemaphore acquired;
+	int32_t x;
+	int32_t y;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+	unsigned dirty;
+	VkImage wallpaper;
+	unsigned in_frame;
+	uint32_t image;
+	uint32_t global;
+};
 
 /* How many frames' damage is kept, for images that missed that many frames. */
 #define KWL_DAMAGE_HISTORY	8U
@@ -234,6 +276,27 @@ struct kwl_compose {
 	 */
 	struct kwl_import *layouts[KWL_LAYOUTS_MAX];
 	unsigned layout_count;
+	/*
+	 * The displays shown at once (heads.c, ws113-p004b): the mode
+	 * (KWL_DISPLAYS_EXTENDED or _MIRROR), the output's place in the logical
+	 * plane, the heads, the choice displays.conf keeps (read once at the
+	 * start, written when a choice is applied), a display kept off by a
+	 * choice of its own (the built-in panel under a closed lid,
+	 * ws052-p012; VK_NULL_HANDLE: none), whether the heads are to be
+	 * brought in line with the displays at the next look (the output was
+	 * opened again), the next wl_output global name a head gets, and
+	 * whether the mirror's missing copy source was logged.
+	 */
+	unsigned display_mode;
+	int32_t output_x;
+	int32_t output_y;
+	struct kwl_head heads[KWL_HEADS];
+	struct kwl_display_config config;
+	unsigned config_loaded;
+	VkDisplayKHR kept_off;
+	unsigned heads_stale;
+	uint32_t next_global;
+	unsigned mirror_unsupported_logged;
 };
 
 /* Host-written images (shm.c), sampled with the given sampler. */
@@ -279,5 +342,26 @@ void kwl_os_display_release(struct kwl_server *server, VkPhysicalDevice physical
 
 /* The capture's copy of a frame's swapchain image (shot.c, ws173-p002). */
 void kwl_shot_record(struct kwl_server *server, VkCommandBuffer command, VkImage image);
+
+/* A part of an image drawn as a quad (uv: left, top, right, bottom) at a place and size of the desktop (compose.c). */
+void kwl_compose_image_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t width, uint32_t height, const float *uv);
+
+/* The glass look's wallpaper at the desktop's size, or NULL (glass.c). */
+const struct kwl_import *kwl_glass_wallpaper(struct kwl_server *server);
+
+/* The displays shown besides the output (heads.c, ws113-p004b). */
+void kwl_heads_config_load(struct kwl_server *server);
+void kwl_heads_sync(struct kwl_server *server);
+void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
+void kwl_heads_close_all(struct kwl_server *server);
+int kwl_heads_lost(struct kwl_server *server);
+void kwl_heads_acquire(struct kwl_server *server);
+void kwl_heads_record(struct kwl_server *server, VkCommandBuffer command, VkImage source);
+unsigned kwl_heads_waits(struct kwl_server *server, VkSemaphore *semaphores, VkPipelineStageFlags *stages, unsigned room);
+unsigned kwl_heads_signals(struct kwl_server *server, VkSemaphore *semaphores, unsigned room);
+void kwl_heads_present(struct kwl_server *server);
+void kwl_heads_frame_skipped(struct kwl_server *server);
+int kwl_displays_apply(struct kwl_server *server, const struct kwl_display_config *wanted, int *saved);
+size_t kwl_displays_describe(struct kwl_server *server, char *text, size_t size);
 
 #endif

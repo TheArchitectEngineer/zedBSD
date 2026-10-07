@@ -316,9 +316,13 @@ kwl_compose_output_open(
 		return EIO;
 	}
 
-	/* Its FIFO swapchain, in the format the pipelines were made for. */
+	/*
+	 * Its FIFO swapchain, in the format the pipelines were made for; its
+	 * images are a copy's source when the display allows it, for the
+	 * mirror's heads (ws113-p004b) and a test image's capture.
+	 */
 	started = kwl_milliseconds();
-	readback = kwl_shot_enabled();
+	readback = 1;
 	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
 	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
 		/* A display whose images cannot be read back still shows the desktop, without the capture (ws173-p002). */
@@ -354,6 +358,10 @@ kwl_compose_output_open(
 	printf("KWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	memset(compose->image_frames, 0, sizeof(compose->image_frames));
 
+	/* The displays' choice (read once), and the heads brought in line at the next look (ws113-p004b). */
+	kwl_heads_config_load(server);
+	compose->heads_stale = 1U;
+
 	/* Succeeded: window mode owns the display through the swapchain. */
 	compose->output_open = 1;
 	server->dirty = 1;
@@ -386,6 +394,9 @@ kwl_compose_output_close(
 
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
+
+	/* The heads go with the output (ws113-p004b). */
+	kwl_heads_close_all(server);
 
 	/* The backdrop, the targets, then the swapchain and surface. */
 	kwl_backdrop_destroy(compose);
@@ -472,6 +483,9 @@ kwl_compose_draw(
 	if (server->log_frames)
 		printf("KWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
+	/* The heads' images the frame draws too (ws113-p004b). */
+	kwl_heads_acquire(server);
+
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
 	partial = compose_region(server, image, &region);
 
@@ -482,6 +496,7 @@ kwl_compose_draw(
 	result = compose_record(server, image, windows, count, region_drawn);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
+		kwl_heads_frame_skipped(server);
 		return EIO;
 	}
 	if (server->log_frames)
@@ -1800,6 +1815,25 @@ kwl_compose_surface_quad(
 	compose_quad_part(server, command, import, x, y, width, height, uv);
 }
 
+/*
+ * Draws a part of an image (uv: left, top, right, bottom as fractions) as
+ * a quad at a place and size of the desktop, in the frame being recorded.
+ */
+void
+kwl_compose_image_quad(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	const struct kwl_import *import,
+	int32_t x,
+	int32_t y,
+	uint32_t width,
+	uint32_t height,
+	const float *uv)
+{
+	/* The quad. */
+	compose_quad_part(server, command, import, x, y, width, height, uv);
+}
+
 /* Draws an image as a quad at a place on the output, its own size, all of it. */
 static void
 compose_quad(
@@ -2042,6 +2076,9 @@ compose_record(
 	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
 	kwl_shot_record(server, compose->command, compose->output.images[image]);
 
+	/* The heads' pictures: the finished image copied (mirror), or the wallpaper (extended, ws113-p004b). */
+	kwl_heads_record(server, compose->command, compose->output.images[image]);
+
 	/* The recording is complete. */
 	return vkEndCommandBuffer(compose->command);
 }
@@ -2143,28 +2180,41 @@ compose_submit(
 	uint32_t image)
 {
 	struct kwl_compose *compose;
-	VkPipelineStageFlags stage;
+	VkSemaphore waits[1U + KWL_HEADS];
+	VkPipelineStageFlags stages[1U + KWL_HEADS];
+	VkSemaphore signals[1U + KWL_HEADS];
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
 	VkFenceGetFdInfoKHR fd_info;
+	unsigned wait_count;
+	unsigned signal_count;
 	VkResult result;
 	int fd;
 
-	/* The commands wait for the acquired image and signal its present semaphore. */
+	/*
+	 * The commands wait for the acquired images (the output's, then the
+	 * heads', ws113-p004b) and signal their present semaphores.
+	 */
 	compose = server->compose;
-	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	waits[0] = compose->acquired;
+	stages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	wait_count = 1U + kwl_heads_waits(server, waits + 1, stages + 1, KWL_HEADS);
+	signals[0] = compose->rendered[image];
+	signal_count = 1U + kwl_heads_signals(server, signals + 1, KWL_HEADS);
 	memset(&submit, 0, sizeof(submit));
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.waitSemaphoreCount = 1U;
-	submit.pWaitSemaphores = &compose->acquired;
-	submit.pWaitDstStageMask = &stage;
+	submit.waitSemaphoreCount = wait_count;
+	submit.pWaitSemaphores = waits;
+	submit.pWaitDstStageMask = stages;
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &compose->command;
-	submit.signalSemaphoreCount = 1U;
-	submit.pSignalSemaphores = &compose->rendered[image];
+	submit.signalSemaphoreCount = signal_count;
+	submit.pSignalSemaphores = signals;
 	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
-	if (result != VK_SUCCESS)
+	if (result != VK_SUCCESS) {
+		kwl_heads_frame_skipped(server);
 		return result;
+	}
 
 	/* The image goes to the display after the commands. */
 	memset(&present, 0, sizeof(present));
@@ -2183,6 +2233,9 @@ compose_submit(
 			compose->output_lost = 1U;
 		result = VK_SUCCESS;
 	}
+
+	/* The heads' images to their displays (ws113-p004b). */
+	kwl_heads_present(server);
 
 	/* Any other failure is the frame's. */
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
