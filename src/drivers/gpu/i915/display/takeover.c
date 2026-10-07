@@ -142,7 +142,14 @@
 #define I915_DPLL0_ENABLE			0x46010U
 #define I915_DPLL1_ENABLE			0x46014U
 #define I915_TBT_PLL_ENABLE			0x46020U
-#define I915_MG_PLL1_ENABLE			0x46030U
+/*
+ * ADL-P's Type-C PLL enable registers (ADLP_PORTTC_PLL_ENABLE: TC1 at
+ * 0x46038, TC2 at 0x46040, then every 8 bytes; Linux v6.8.12 i915_reg.h
+ * PORTTC1_PLL_ENABLE / PORTTC2_PLL_ENABLE, intel_tc_pll_enable_reg()).
+ * MG_PLL_ENABLE at 0x46030 is the ICL/TGL register, not ADL-P's.
+ */
+#define I915_PORTTC1_PLL_ENABLE			0x46038U
+#define I915_PORTTC_PLL_ENABLE_STRIDE		8U
 #define I915_PLL_ENABLE_BIT			(1U << 31)
 
 /* enum intel_dpll_id, ICL naming (values preserved). */
@@ -179,10 +186,10 @@
 /*
  * The VBT DVO_PORT_* codes the port mapping uses.
  *
- * XXX: the codes from port G on differ from Linux's intel_vbt_defs.h
- * (Linux: DPG 15, HDMIG 16, DPH 17, HDMIH 18, DPI 19, HDMII 20).  A VBT
- * child on port G or later is misread.  The Alder Lake-P ports A, B and
- * TC1..TC4 do not reach them.  Kept as found; the fix is a separate step.
+ * The values are Linux v6.8.12's intel_vbt_defs.h (the same as vbt.c's
+ * intel/vbt-defs.h, which is vbt.c's alone and not included here).  Before
+ * ws051-p002 the codes from port G on were wrong (HDMIG 15, DPG 16, HDMIH
+ * 16, HDMII 17, DPH 20, DPI 21), which misread a child on TC3 or TC4.
  */
 #define I915_DVO_PORT_HDMIA			0U
 #define I915_DVO_PORT_HDMIB			1U
@@ -190,18 +197,18 @@
 #define I915_DVO_PORT_HDMID			3U
 #define I915_DVO_PORT_HDMIE			12U
 #define I915_DVO_PORT_HDMIF			14U
-#define I915_DVO_PORT_HDMIG			15U
-#define I915_DVO_PORT_HDMIH			16U
-#define I915_DVO_PORT_HDMII			17U
+#define I915_DVO_PORT_HDMIG			16U
+#define I915_DVO_PORT_HDMIH			18U
+#define I915_DVO_PORT_HDMII			20U
 #define I915_DVO_PORT_DPA			10U
 #define I915_DVO_PORT_DPB			7U
 #define I915_DVO_PORT_DPC			8U
 #define I915_DVO_PORT_DPD			9U
 #define I915_DVO_PORT_DPE			11U
 #define I915_DVO_PORT_DPF			13U
-#define I915_DVO_PORT_DPG			16U
-#define I915_DVO_PORT_DPH			20U
-#define I915_DVO_PORT_DPI			21U
+#define I915_DVO_PORT_DPG			15U
+#define I915_DVO_PORT_DPH			17U
+#define I915_DVO_PORT_DPI			19U
 
 /* The VBT child device types the output setup decides on. */
 #define I915_DEVICE_TYPE_TMDS_DVI_SIGNALING	(1U << 4)
@@ -1268,10 +1275,10 @@ drv_i915_shared_dpll_init(
 		{ "DPLL 0",   I915_DPLL_ID_ICL_DPLL0,  I915_DPLL_FUNCS_COMBO, I915_DPLL0_ENABLE },
 		{ "DPLL 1",   I915_DPLL_ID_ICL_DPLL1,  I915_DPLL_FUNCS_COMBO, I915_DPLL1_ENABLE },
 		{ "TBT PLL",  I915_DPLL_ID_ICL_TBTPLL, I915_DPLL_FUNCS_TBT,   I915_TBT_PLL_ENABLE },
-		{ "TC PLL 1", I915_DPLL_ID_ICL_MGPLL1, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 0U },
-		{ "TC PLL 2", I915_DPLL_ID_ICL_MGPLL2, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 4U },
-		{ "TC PLL 3", I915_DPLL_ID_ICL_MGPLL3, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 8U },
-		{ "TC PLL 4", I915_DPLL_ID_ICL_MGPLL4, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 12U }
+		{ "TC PLL 1", I915_DPLL_ID_ICL_MGPLL1, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 0U * I915_PORTTC_PLL_ENABLE_STRIDE },
+		{ "TC PLL 2", I915_DPLL_ID_ICL_MGPLL2, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 1U * I915_PORTTC_PLL_ENABLE_STRIDE },
+		{ "TC PLL 3", I915_DPLL_ID_ICL_MGPLL3, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 2U * I915_PORTTC_PLL_ENABLE_STRIDE },
+		{ "TC PLL 4", I915_DPLL_ID_ICL_MGPLL4, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 3U * I915_PORTTC_PLL_ENABLE_STRIDE }
 	};
 	unsigned count;
 	unsigned index;
@@ -2280,6 +2287,16 @@ drv_i915_nogem_dpll_sanitize_state(
 		if (pll->readout_incomplete != 0) {
 			kern_logf("i915: %s enabled, active_mask 0 but the readout is incomplete (an active link's PLL is "
 				"unknown): NOT disabled\n", pll->name);
+			continue;
+		}
+
+		/*
+		 * A Type-C PLL is left on: the DKL PLL's disable (the lock's wait,
+		 * PLL_POWER_ENABLE) is not ported yet (ws051-p003), and clearing
+		 * PLL_ENABLE alone is not Linux's sequence.
+		 */
+		if (pll->funcs == I915_DPLL_FUNCS_DKL) {
+			kern_logf("i915: %s enabled but not in use: NOT disabled (the Type-C PLL's disable is not ported)\n", pll->name);
 			continue;
 		}
 

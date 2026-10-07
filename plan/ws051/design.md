@@ -279,17 +279,33 @@ GOP の出力先の引き継ぎと外部の優先の廃止は **WS113 p002 part 
 
 1. **TC PLL の enable の register**（H8）: ADL-P の TC PLL n（n = 1〜4）の enable は `ADLP_PORTTC_PLL_ENABLE`（TC1 0x46038、TC2 0x46040、間隔 8:
    0x46038 + 8 × (n − 1)。Linux v6.8.12 の `i915_reg.h` の `PORTTC1_PLL_ENABLE`・`PORTTC2_PLL_ENABLE` と `intel_tc_pll_enable_reg`）。`takeover.c` の
-   `adlp_plls` の表（0x46030 + 4n）と `diagnostics.c` の TC PLL の enable の dump の番地を直す。
-2. **VBT の DVO port の code**（L1）: `takeover.c` の自前の `I915_DVO_PORT_*`（HDMIG 15・DPG 16・HDMIH 16・HDMII 17・DPH 20・DPI 21 が Linux と違う）を
-   やめ、`vbt.c` と同じ `intel/vbt-defs.h` の `DVO_PORT_*` を使う（DPG 15・HDMIG 16・DPH 17・HDMIH 18・DPI 19・HDMII 20）。`ktest-display-probe.c` の
-   P5B-PORTMAP の期待値（code 17 が TC4）も Linux の値（17 は DPH = TC3、HDMII は 20 = TC4）に直す。
+   `adlp_plls` の表（今は 0x46030 + 4(n − 1)）と `diagnostics.c` の `i915_survey_pll_regs` を直す。表を使うのは nogem の P5c の readout と P5d の sanitize
+   （`drv_i915_nogem_dpll_sanitize_state`）だけ。ktest の P5A-DPLL（`ktest-display-probe.c` の `dplls[3..6].enable_reg`）の期待値も直す。
+   注: nogem の sanitize の disable は `PLL_ENABLE` を消すだけ（Linux の `icl_pll_disable` の lock の解除の待ち・`PLL_POWER_ENABLE` の消去が無い）。番地を
+   直すと TC の PLL がこの disable の対象に初めて入るので、p002 では TC PLL（DKL の funcs）を sanitize の対象から外し、readout が揃う p003 まで止めない
+   （レビュー 2026-10-07 の低）。
+2. **VBT の DVO port の code**（L1）: `takeover.c` の自前の `I915_DVO_PORT_*`（HDMIG 15・DPG 16・HDMIH 16・HDMII 17・DPH 20・DPI 21 が Linux と違う）の
+   値を Linux の値（DPG 15・HDMIG 16・DPH 17・HDMIH 18・DPI 19・HDMII 20、根拠は `intel/vbt-defs.h` の該当の行と Linux の `intel_vbt_defs.h`）に直す。
+   `intel/vbt-defs.h` は vbt.c 専用（`_INTEL_BIOS_PRIVATE`、Linux の型、static const の表）なので takeover.c から include しない（レビュー M-1）。
+   ktest の P5B-PORTMAP の期待値（code 17 が TC4）を Linux の値（17 は DPH = TC3、HDMII は 20 = TC4）に直す。HDMID・DPD・HDMIE・DPE（Linux の xelpd の
+   `PORT_D_XELPD`・`PORT_E_XELPD`）は ADL-P に無いので NONE のまま（P5B の `hdmid == NONE` も残す）。
 3. **GOP が USB-C に出していた時**: WS113 part A の判定は Type-C の DP を「点けられない interface」（`I915_GOP_OTHER`）として firmware の画面を保ち、
-   その場面は WS113 の host の試験（`plan/ws113/tests/host-gop.c` の「DP TC1」「HDMI TC2」）に既にある。p002 では足さない。TC の port の引き継ぎ
-   （init_mode・sanitize・TC PLL の readout、M5）は p002b・p003 で TC の核が入った後に、この判定を「引き継ぐ」に変える（p003 の受け入れに足し、その時
-   host-gop.c の期待値も直す）。
+   その場面は WS113 の host の試験（`plan/ws113/tests/host-gop.c` の「DP TC1」「HDMI TC2」）に既にある。p002 では足さない。制限: absent の時は
+   session に display が無い（蓋を閉じ USB-C の monitor だけで起動した時など）。
+   **TC の port の引き継ぎ（M5）は p004b の後**（レビュー H-2）: 判定を「引き継ぐ」に変えると `i915_resident_takeover` が firmware の crtc を全部止め、
+   TC の出力は p004b まで点けられないので、それより前に変えると firmware の USB-C の画面を消す（規則に反する）。p003 は TC PLL の readout
+   （`icl_ddi_tc_get_pll`）と init_mode・sanitize の readout だけを足し、判定は OTHER（absent）のまま。判定の変更と host-gop.c の期待値の直しは p004b の
+   後の Phase（p004c、下）で。
+4. **GOP が panel と USB-C を clone した時**（レビュー M-7、5330 の GOP が clone するかは未確認）: 今の判定は低い番号の pipe（panel）を出力にし、N1 の
+   takeover は active な crtc を全部止める。TC の pipe の停止の経路は stub（H4）なので、TC の核（p002b）の前は止める時に timeout・ownership の残りが
+   ありうる。p002 では clone を log に出すだけにし（`lit pipes` の mask に TC の pipe がある時）、止め方は p002b で TC の disable を移してから決める。
+   UAT の (4) に clone の有無の確かめを足す。
 
-受け入れ（p002）: host の試験（TC PLL の enable の番地の表、DVO の code の写像）、kernel の build warning 0、
-QEMU の boot test（T1、i915 の無い image の回帰）。実機は対象外（5330 が戻った後の UAT で、eDP の起動が変わらないこと）。
+受け入れ（p002、レビュー H-1）: (a) 新しい host の試験（`plan/ws051/tests/`、`host-gop.sh` と同じ形で `drv_i915_dvo_port_to_port` と TC PLL の表を sed で
+取り出し、code 0〜24 の写像が Linux の xelpd の表（ADL-P の port だけ）と一致すること、TC PLL 1〜4 の enable の番地が 0x46038・0x46040・0x46048・0x46050
+であることを確かめる）、(b) kernel の build warning 0 と `I915_TESTS=y` の build warning 0（ktest の期待値を直したもの。ktest を流すのは 5330 が戻った
+後の T1、それまで p002 は test-wait）。QEMU の boot test は p002 の確かめにならない（takeover.c を通らない）ので要らない。依存: ws113-p002（part A）の
+clearance（レビュー M-5）。
 
 ### 14.3 WS050 との口（WS050 p003・p004 の実装、2026-10-07）
 
@@ -299,12 +315,45 @@ QEMU の boot test（T1、i915 の無い image の回帰）。実機は対象外
   自分で DP mode に入らない時」の経路）。
 - `typec_display_report`（i915 → 層、HPD・pin・lane 数・向き）はまだ無い（WS050 p005、ws051-p002b の後）。i915 は `CONFIG_DRIVER_TYPEC` が無い build でも
   link できるよう、WS050 p005 で weak の口か config の分岐にする（L4、理由の comment を付ける）。
+- listener の登録の解除の口は無い（WS050 の層は登録だけ、表は 4 つ）。i915 は listener を display の寿命の外（driver の static な状態）に置き、
+  callback は work を積むだけで tc の lock を取らない（M8 の lock の順に足す）。fini で解除が要るなら WS050 に `drv_typec_listener_unregister` を
+  依頼する（レビュー M-6）。`CONFIG_DRIVER_TYPEC` は常に 0/1 で定義されるので、i915 が呼ぶ typec の関数（get・listener・enter_mode・report）の全部を
+  `#if CONFIG_DRIVER_TYPEC` で括る。
 - 対応付け（i915 の TC1・TC2 と UCSI の connector の番号）は未確認（WS050 の A9）。WS050 p005 で `_PLD` と実機で決めるまで、i915 は UCSI の値を画面の
   判断に使わない（§2 の「画面を出す判断は常に i915 の値」のまま）。
 
 ### 14.4 WS084 との関係（2026-10-07 Q1: WS084 を P2 に、WS051 p002 の後）
 
-WS084（素の 5330 の UEFI の起動で firmware の画面を引き継ぐ）は `modeset.c` の `i915_resident_takeover`（N1 の readout・takeover・release）で、WS113 p002 の
-GOP の出力先の判定（N0 の後）と WS051 p002 の TC PLL の番地（readout が読む PLL の表）に触れる。順は WS051 p002 → WS084 p004（parity の N1 との乖離の整理、
-patch の案）。WS084 p003（素の 5330 の 10 回の reboot）は実機の作業で、5330 が戻るまで止まる。WS051 p002 の TC PLL の表の修正は WS084 の readout の
-「DPLL の pool を空に」の手順にも効く（TC PLL の enable の bit を正しい番地で読む）ので、WS084 p004 の記録にこの修正を書く。
+WS084（素の 5330 の UEFI の起動で firmware の画面を引き継ぐ）は `modeset.c` の `i915_resident_takeover`（N1 の readout・takeover・release）。N1 の readout は
+lcd の world の PLL の pool（combo の 2 つ、`clock.c` の `drv_i915_lcd_dpll_pool_bind`）で、TC PLL を含まない（レビュー M-2）。WS051 p002 の TC PLL の表の
+修正が効くのは nogem の P5d の probe 時の sanitize（`drv_i915_nogem_dpll_sanitize_state`）で、これは WS084 p004 の乖離 2（`plan/ws084/phase004/phase.md`
+の表の 2 行目）にあたる。WS084 p004 は依存が p003（素の 5330 の 10 回の reboot、実機）なので 5330 が戻るまで始まらない。p002 で takeover.c の定義を
+直すと p004 の表の行の番号がずれるので、p004 の着手の時に読み直す。
+
+### 14.5 正解値の採取の手順（レビュー M-3、ユーザーに確かめる）
+
+§13 (1) の「host の設定は変えない」は、DKL PLL・PHY・link training の値が host の i915 が USB-C を駆動している時にしか出ないことと両立しない。5330 の
+iGPU は既定で vfio-pci（`plan/tools/hw5330/README.md` §1.3）なので、採取には次が要る（案、ユーザーの承認の後）:
+`/tmp/i915-hw.lock` を取る → `bigbang/igpu-mode.sh host`（iGPU を host の i915 へ。QEMU が動いていれば拒まれる）→ ユーザーが USB-C の DP の monitor を
+挿す → 読み取り（debugfs の `i915_shared_dplls_info`・`i915_display_info`、`intel_reg` での TCSS・FIA・DDI_BUF_CTL・DKL の register。`drm.debug=0x1e` は
+module の parameter の変更なので、使うなら別に承認）→ `igpu-mode.sh vfio` に戻す → lock を放す。host の Debian の kernel の版を記録する（Linux 6.8.12
+の参照の source と違う版なら、その差を注記）。§7 の「Linux（6.8.12）を起動し」はこの手順で置き換える。
+
+### 14.6 古い記述の置き換え（レビュー M-4）
+
+§7 の VFIO の「要確認」、§12 の H6 の VFIO を「実機」の試験とする記述、§8・§12 の M9 の向きの受け入れは §14.1 で置き換える。§9 の p002 の行（GOP の
+引き継ぎ・外部優先の廃止・実機の受け入れ）は §14.2、§9 の p002b の受け入れの「向きの記録の手順」は §14.1（記録だけ）、§9 の p003 は §14.2 の 3（readout
+だけ、判定は変えない）で置き換える。§3 の見出しの「VFIO の passthrough」は dump の採り方の記録として残す。§2 の末尾の「§9 の UAT」は §7 の UAT。
+
+### 14.7 Phase の表（第 4 版、ws.md と同じ）
+
+| Phase | 内容 | 依存 |
+| --- | --- | --- |
+| p002 | TC PLL の enable の番地（sanitize の対象から TC を外す）、DVO の code の値、clone の log、新しい host の試験、ktest の期待値 | p001、ws113-p002（part A）の clearance |
+| p002b | TC の核、TC の AUX の domain（H1）、AUX_USBC の well（H2）、DE の HPD（H5）、TC の disable、診断（向きは記録だけ） | p002 |
+| p003 | DKL PHY と TC PLL（`intel_tc_pll_enable_reg` の ADL-P の分岐を必ず移す: `mreg.h` には MG の番地しか無い）、DDI の TC の clock、buffer translation、DP_MODE、FIA の lane 数、TC PLL・init_mode・sanitize の readout（判定は変えない） | p002b、正解値（§14.5） |
+| p004a | TC の AUX・DPCD・EDID、外部 DP の object、同期の disconnect、branch と sink count | p003 |
+| p004b | display の UAPI での出力（claim・mode・present、training の fallback） | p004a、WS113 の契約、ws113-p011（出力ごとの資源） |
+| p004c | GOP が USB-C の時の引き継ぎ（M5: 判定を引き継ぐに、host-gop.c の期待値） | p004b |
+| p005 | 抜き差しの事象、retry・retrain、S0ix | p004b |
+| p006 | 規約の全文の確認と最終の確認 | p002、p002b、p003、p004a、p004b、p004c、p005 |

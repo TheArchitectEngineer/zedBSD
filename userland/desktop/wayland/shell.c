@@ -2879,6 +2879,9 @@ draw_body(
 	float scale_x;
 	float scale_y;
 	float raise;
+	int32_t shown_width;
+	int32_t shown_height;
+	int unscaled;
 
 	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
 	image = kwl_compose_surface_image(surface);
@@ -2891,6 +2894,29 @@ draw_body(
 	/* The body's scale from that size, for the panels and the sub-surfaces (in surface coordinates). */
 	scale_x = (float)body->width / (float)width;
 	scale_y = (float)body->height / (float)height;
+
+	/*
+	 * A docked window whose image is not the docked space's size (the
+	 * on-screen keyboard's panel came or went, and its client has not drawn
+	 * the size it was sent yet, or never does) is not stretched: its image
+	 * is drawn at its own size from the space's top-left corner and cut at
+	 * the space's edges (BUG-243: a full keyboard squeezed the window's
+	 * picture).  Its input is already taken at that scale (from the body's
+	 * origin).  Docking and pulling animations still stretch.
+	 */
+	shown_width = body->width;
+	shown_height = body->height;
+	unscaled = 0;
+	if (surface->maximized && server->anim != surface && server->pull != surface && (width != body->width || height != body->height))
+		unscaled = 1;
+	if (unscaled) {
+		scale_x = 1.0f;
+		scale_y = 1.0f;
+		if (width < shown_width)
+			shown_width = width;
+		if (height < shown_height)
+			shown_height = height;
+	}
 
 	/* A window with glass panels: their shadows and glass instead of the body's (panels.c). */
 	panels = kwl_panels_count(surface);
@@ -2969,11 +2995,18 @@ draw_body(
 	/* The sub-surfaces below the image, scaled with it from the window's size (subsurface.c). */
 	kwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 0U);
 
-	/* The image (its viewport's source), stretched to the rectangle while it changes, as opaque as asked. */
-	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
+	/* The image (its viewport's source), stretched to the rectangle while it changes (or cut, unscaled), as opaque as asked. */
+	glass_shape_init(&shape, (float)body->x, (float)body->y, (float)shown_width, (float)shown_height);
 	shape.box[1] -= raise;
 	shape.box[3] += raise;
 	kwl_viewport_source(surface, shape.uv);
+	if (unscaled) {
+		/* The part of the source the space shows, from its top-left corner. */
+		shape.uv[2] = shape.uv[0] + (shape.uv[2] - shape.uv[0]) * (float)shown_width / (float)width;
+		shape.uv[3] = shape.uv[1] + (shape.uv[3] - shape.uv[1]) * (float)shown_height / (float)height;
+	}
+
+	/* As opaque as asked; a whole window, and an opaque image, fully. */
 	shape.opacity = server->window_opacity;
 	if (whole)
 		shape.opacity = 1.0f;

@@ -143,3 +143,8 @@ pdf-edit-text・pdf-insert-text-font）。FreeBSD の Makefile は box.c を足�
 直し: `struct notes_box` に `again`（`kl_ui_end` の返り値）を足し、main の loop は `box_count != 0` か `box.open && box.again` で frame を描く（open・close で 0）。
 aat-input の shift の疑いは不要（full の中で " ZEBRA" の最後の字と Esc 2 回が落ちたのも同じ原因）。確認: zedBSD の build（`build/p2-ci/bin/notes`）warning 0。
 再試験は T1（Q1 に文面）。
+
+2026-10-07 T1-331 の続き（P2）: fail は消えたが zebra-typed の PNG は「…jugs ZE」。log（`build/t1-331b`）では box の bytes が 43 の時に撮影し、その後 44・45 と
+届いて最後は chars=45（全部の字が入った）。原因は helper の撮影が早いことと、box が 1 frame に 1 key しか取らず frame ごとに page の再描画が挟まって遅いこと。
+直し: helper（`plan/tools/aat/scenarios/helpers_notes_edit.py`）は `NOTES TEXT box reported=… bytes=45` を待ってから撮る。main の loop は box の frame の後、
+`box.again` の間 `MAIN_BOX_CATCH_UP`（32）回まで続けて box の frame を描き、窓を描く前に追い付く。zedBSD の build warning 0。

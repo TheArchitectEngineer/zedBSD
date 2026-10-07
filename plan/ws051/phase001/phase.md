@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p001`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-07 P2: [design.md](../design.md) 第 4 版（§14）、[レビュー](../design-review-2026-10-07.md)（高 2・中 7）の反映が残り。BUG-243 の UAT を先にした）
+Status: in-progress（2026-10-07 P2: [design.md](../design.md) 第 4 版（§14、[レビュー](../design-review-2026-10-07.md) の高 2・中 7・低を反映）。§14.5 の正解値の採取の手順はユーザーの判断待ち。設計としては p002 に進める）
 Phase disposition: normal
 Queue: q680 / q680-i01（P1）
 
@@ -70,3 +70,10 @@ design-reviewer の結果は [design-review-2026-10-07.md](../design-review-2026
 ## 再開点
 
 レビューの反映（§14 と §7・§8・§9・§12、ws.md、WS050 ws.md の p005 の依存は Q1 へ）、M-3 の採取の手順はユーザーへ（Q1 経由）。その後 p002。
+
+## レビューの反映（2026-10-07、P2）
+
+H-1 → §14.2 の受け入れを新しい host の試験と `I915_TESTS=y` の build に、ktest の P5A・P5B の期待値を直す。H-2 → M5 を p004c（p004b の後）に。M-1 → takeover.c の
+値を直し vbt-defs.h は include しない。M-2 → §14.4 を訂正。M-3 → §14.5 の手順（ユーザーの判断）。M-4 → §14.6。M-5 → p002 の依存に ws113-p002、p004b に
+ws113-p011。M-6 → §14.3 の listener と config の分岐。M-7 → §14.2 の 4（clone は log、止め方は p002b）。低 → sanitize の対象から TC を外す、p003 で ADL-P の
+番地の分岐を移す、QEMU の boot test は不要、absent の制限、P5B の HDMID、ws.md の記録の追従。
