@@ -100,6 +100,7 @@
  * Loops:                   the body runs between the loop's first instruction and a WHILE predicated on
  *                          the channels that go round again (brw_WHILE); a channel that stops waits after
  *                          the WHILE until the others stop too, so it no longer writes a register.
+ * Geometry shader:         compile-geometry.inc (ws075-p007a).
  */
 
 /* Vertex: the push data starts here. */
@@ -167,6 +168,16 @@
 
 /* Vertex: the point size is dword 3 of the VUE header (component 3 of slot 0). */
 #define COMPILE_VUE_POINT_SIZE	3U
+
+/* Geometry: the layer is dword 1 of the VUE header, the render target array index (ws075-p007a). */
+#define COMPILE_VUE_LAYER	1U
+
+/*
+ * Geometry: the registers right below the staged VUE that head each vertex
+ * write -- the output handles, then the per-slot offsets of the vertex
+ * (ws075-p007a, compile-geometry.inc).
+ */
+#define COMPILE_GS_WRITE_HEADER_REGS	2U
 
 /* The spilled values one instruction reads at most (three sources), and defines at most (a sample's four). */
 #define COMPILE_MAX_FILLS	(I915_IR_TEXTURE_MAX_PARAMS + 1U)
@@ -477,6 +488,29 @@ struct i915_compile_state {
 	 * same condition reuses the flag (ws075-p024).
 	 */
 	uint32_t select_flag;
+
+	/*
+	 * Geometry (ws075-p007a): the vertex kernel before it, whose VUE layout
+	 * places the per-vertex inputs (NULL when the caller gave none); it
+	 * lasts over the attempts.
+	 */
+	const struct i915_shader_binary *producer;
+
+	/*
+	 * Geometry: the first register of the input vertices' URB handles and
+	 * the register the push data starts at (the dispatch's first payload
+	 * register after the fixed ones); the two registers that count the
+	 * vertices emitted and gather the cut bits; and the layout of the output
+	 * URB entry -- one vertex and the control data header in 32-byte units,
+	 * the whole entry in 64-byte units.
+	 */
+	uint32_t gs_handle_grf;
+	uint32_t gs_push_grf;
+	uint32_t gs_count_grf;
+	uint32_t gs_cut_grf;
+	uint32_t gs_vertex_hwords;
+	uint32_t gs_control_hwords;
+	uint32_t gs_urb_entry_size;
 };
 
 static uint32_t i915_compile_sources(const struct i915_shader_ir_inst *inst);
@@ -570,17 +604,50 @@ static void i915_compile_atomic_shared(struct i915_compile_state *state, const s
 static void i915_compile_fence(struct i915_compile_state *state, uint32_t fences);
 static void i915_compile_barrier(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static int i915_compile_group_threads(const struct i915_compile_state *state);
+static void i915_compile_geometry_interface(struct i915_compile_state *state);
+static void i915_compile_geometry_prologue(struct i915_compile_state *state);
+static void i915_compile_load_vertex_input(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static int i915_compile_vertex_slot(const struct i915_compile_state *state, const struct i915_shader_ir_inst *inst, uint32_t *slot, uint32_t *component);
+static void i915_compile_geometry_system(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_terminate_geometry(struct i915_compile_state *state);
+static void i915_compile_describe_geometry(const struct i915_compile_state *state, struct i915_shader_binary *binary);
 
 /*
- * Compiles one shader IR into a Gen12 EU binary.
+ * Compiles one shader IR into a Gen12 EU binary, without a stage before it.
  *
- * Returns 0 and the binary in `*out`, ENOTSUP for IR this compiler cannot
- * lower (never approximated), EINVAL for inconsistent IR or an encoder
- * failure, or ENOMEM.  On a failure `*out` is NULL.
+ * As drv_i915_shader_compile_stage() with no producer: a geometry shader
+ * compiled this way may read gl_in's built-ins only.
  */
 int
 drv_i915_shader_compile(
 	const struct i915_shader_ir *ir,
+	struct i915_shader_binary **out)
+{
+	int error;
+
+	/* Compiles the stage on its own. */
+	error = drv_i915_shader_compile_stage(ir, NULL, out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the binary. */
+	return 0;
+}
+
+/*
+ * Compiles one shader IR into a Gen12 EU binary.
+ *
+ * `producer` is the binary of the stage before a geometry shader, the
+ * vertex kernel whose VUE the geometry shader reads its per-vertex inputs
+ * from; NULL for any other stage.  Returns 0 and the binary in `*out`,
+ * ENOTSUP for IR this compiler cannot lower (never approximated), EINVAL
+ * for inconsistent IR or an encoder failure, or ENOMEM.  On a failure
+ * `*out` is NULL.
+ */
+int
+drv_i915_shader_compile_stage(
+	const struct i915_shader_ir *ir,
+	const struct i915_shader_binary *producer,
 	struct i915_shader_binary **out)
 {
 	struct i915_compile_state state;
@@ -595,9 +662,11 @@ drv_i915_shader_compile(
 	/* The caller receives nothing unless the whole shader lowers. */
 	*out = NULL;
 
-	/* A geometry shader's code generation is not written yet (ws075-p007a, increment a2): refused, never approximated. */
-	if (ir->stage == I915_STAGE_GEOMETRY)
-		return ENOTSUP;
+	/* Only a geometry shader reads a stage before it, and that stage is a vertex shader. */
+	if (producer != NULL && ir->stage != I915_STAGE_GEOMETRY)
+		return EINVAL;
+	if (producer != NULL && producer->stage != I915_STAGE_VERTEX)
+		return EINVAL;
 
 	/* Allocates the binary and records what is known before lowering. */
 	binary = kern_calloc(1U, sizeof(*binary));
@@ -609,6 +678,7 @@ drv_i915_shader_compile(
 	/* Prepares what lasts over the attempts: every value in a register, the VUE staged. */
 	kern_memset(&state, 0, sizeof(state));
 	state.ir = ir;
+	state.producer = producer;
 	drv_i915_eu_init(&state.code);
 
 	/*
@@ -812,6 +882,7 @@ i915_compile_reset(
 	struct i915_compile_state *state)
 {
 	const struct i915_shader_ir *ir;
+	const struct i915_shader_binary *producer;
 	uint32_t *value_grf;
 	uint32_t *spill_slot;
 	uint32_t *skip_ok;
@@ -821,6 +892,7 @@ i915_compile_reset(
 
 	/* Remembers what lasts over the attempts. */
 	ir = state->ir;
+	producer = state->producer;
 	value_grf = state->value_grf;
 	spill_slot = state->spill_slot;
 	spill_count = state->spill_count;
@@ -834,6 +906,7 @@ i915_compile_reset(
 
 	/* Puts back what lasts. */
 	state->ir = ir;
+	state->producer = producer;
 	state->value_grf = value_grf;
 	state->last_use = value_grf + ir->value_count;
 	state->def_index = state->last_use + ir->value_count;
@@ -983,6 +1056,17 @@ i915_compile_operands(
 		/* The offset and the word, and the predicate of a predicated store. */
 		return 2U + inst->component;
 
+	case I915_IR_LOAD_VERTEX_INPUT:
+		/* The vertex's number when it is chosen at run time (ws075-p007a). */
+		if (inst->immediate == I915_IR_VERTEX_DYNAMIC)
+			return 1U;
+		return 0U;
+
+	case I915_IR_EMIT_VERTEX:
+	case I915_IR_END_PRIMITIVE:
+		/* The predicate of an emit or an end under one (ws075-p007a). */
+		return inst->component;
+
 	default:
 		break;
 	}
@@ -1040,6 +1124,8 @@ i915_compile_results(
 	case I915_IR_LOOP_END:
 	case I915_IR_SKIP_BEGIN:
 	case I915_IR_SKIP_END:
+	case I915_IR_EMIT_VERTEX:
+	case I915_IR_END_PRIMITIVE:
 		return 0U;
 
 	default:
@@ -1732,11 +1818,17 @@ i915_compile_instruction(
 	uint32_t payload_inputs;
 	uint32_t dst;
 
-	/* The inputs follow the fixed payload registers and the push data; a compute thread's push data starts at r1. */
+	/*
+	 * The inputs follow the fixed payload registers and the push data; a
+	 * compute thread's push data starts at r1, a geometry thread's after
+	 * the input vertices' handles.
+	 */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_inputs = COMPILE_PAYLOAD_GRF + state->push_regs;
 	} else if (state->ir->stage == I915_STAGE_COMPUTE) {
 		payload_inputs = COMPILE_CS_PUSH_GRF + state->push_regs;
+	} else if (state->ir->stage == I915_STAGE_GEOMETRY) {
+		payload_inputs = state->gs_push_grf + state->push_regs;
 	} else {
 		payload_inputs = state->fs_setup_grf + state->push_regs;
 	}
@@ -1759,7 +1851,22 @@ i915_compile_instruction(
 		break;
 
 	case I915_IR_LOAD_INPUT:
+		/* A geometry shader reads its inputs per vertex, never so. */
+		if (state->ir->stage == I915_STAGE_GEOMETRY) {
+			state->unsupported = 1;
+			break;
+		}
 		i915_compile_load_input(state, inst, payload_inputs);
+		break;
+
+	case I915_IR_LOAD_VERTEX_INPUT:
+		i915_compile_load_vertex_input(state, inst);
+		break;
+
+	case I915_IR_EMIT_VERTEX:
+	case I915_IR_END_PRIMITIVE:
+		/* XXX unimplemented path: the emit and the end of a geometry shader (ws075-p007a, increment a3). */
+		state->unsupported = 1;
 		break;
 
 	case I915_IR_LOAD_PUSH:
@@ -1776,6 +1883,11 @@ i915_compile_instruction(
 		break;
 
 	case I915_IR_LOAD_SYSTEM:
+		/* A geometry thread's built-in is in its own payload; a compute thread's in its. */
+		if (state->ir->stage == I915_STAGE_GEOMETRY) {
+			i915_compile_geometry_system(state, inst);
+			break;
+		}
 		i915_compile_load_system(state, inst, payload_inputs);
 		break;
 
@@ -2370,11 +2482,30 @@ i915_compile_store_output(
 	uint32_t source_grf;
 	uint32_t rank;
 	uint32_t grf;
+	int stages_vue;
 	int found;
 
 	/* A component beyond w is not lowered. */
 	if (inst->component > 3U) {
 		state->unsupported = 1;
+		return;
+	}
+
+	/* A vertex and a geometry shader stage a VUE; a fragment shader its colours. */
+	stages_vue = 0;
+	if (state->ir->stage == I915_STAGE_VERTEX)
+		stages_vue = 1;
+	if (state->ir->stage == I915_STAGE_GEOMETRY)
+		stages_vue = 1;
+
+	/* The layer is a geometry shader's only: the staged header's second dword, an integer moved bit for bit. */
+	if (inst->location == I915_IR_LOCATION_LAYER) {
+		if (state->ir->stage != I915_STAGE_GEOMETRY) {
+			state->unsupported = 1;
+			return;
+		}
+		source_grf = i915_compile_grf(state, inst->src[0]);
+		drv_i915_eu_mov(&state->code, drv_i915_eu_grf_ud(state->vue_grf + COMPILE_VUE_LAYER), drv_i915_eu_grf_ud(source_grf));
 		return;
 	}
 
@@ -2417,10 +2548,10 @@ i915_compile_store_output(
 	}
 
 	/* Finds the staging registers of the output. */
-	if (state->ir->stage == I915_STAGE_VERTEX && inst->location == I915_IR_LOCATION_POSITION) {
+	if (stages_vue != 0 && inst->location == I915_IR_LOCATION_POSITION) {
 		/* The position follows the VUE header. */
 		grf = state->vue_grf + 4U;
-	} else if (state->ir->stage == I915_STAGE_VERTEX) {
+	} else if (stages_vue != 0) {
 		/* A varying follows the position, in ascending location order. */
 		found = i915_compile_rank(state->varyings, state->varying_count, inst->location, &rank);
 		if (found != 0) {
@@ -3725,14 +3856,16 @@ i915_compile_skip_region(
 		inst = &ir->instructions[index];
 
 		/*
-		 * A loop, a loop move or an output write inside is not skipped
-		 * over; nor a workgroup barrier, which every thread of the group
-		 * must reach, nor a fence (ws101-p006).
+		 * A loop, a loop move, an output write or a geometry shader's emit
+		 * or end inside is not skipped over; nor a workgroup barrier, which
+		 * every thread of the group must reach, nor a fence (ws101-p006).
 		 */
 		if (inst->op == I915_IR_LOOP_BEGIN ||
 		    inst->op == I915_IR_LOOP_END ||
 		    inst->op == I915_IR_MOVE ||
 		    inst->op == I915_IR_STORE_OUTPUT ||
+		    inst->op == I915_IR_EMIT_VERTEX ||
+		    inst->op == I915_IR_END_PRIMITIVE ||
 		    inst->op == I915_IR_BARRIER ||
 		    inst->op == I915_IR_FENCE)
 			return 0;
@@ -3797,6 +3930,8 @@ i915_compile_skip_region(
 		/* Garbage that could be seen must not reach an effect or control. */
 		if (!clean &&
 		    (inst->op == I915_IR_STORE_OUTPUT ||
+		     inst->op == I915_IR_EMIT_VERTEX ||
+		     inst->op == I915_IR_END_PRIMITIVE ||
 		     inst->op == I915_IR_STORE_STORAGE ||
 		     inst->op == I915_IR_STORE_SHARED ||
 		     inst->op == I915_IR_ATOMIC ||
@@ -4313,8 +4448,11 @@ i915_compile_interface(
 		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_POINT_SIZE) {
 			/* The point size is in the VUE header, not a varying of its own. */
 			state->writes_point_size = 1;
+		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_LAYER) {
+			/* A geometry shader's layer is in the VUE header, not a varying of its own. */
+			continue;
 		} else if (inst->op == I915_IR_STORE_OUTPUT &&
-		    state->ir->stage == I915_STAGE_VERTEX &&
+		    (state->ir->stage == I915_STAGE_VERTEX || state->ir->stage == I915_STAGE_GEOMETRY) &&
 		    inst->location != I915_IR_LOCATION_POSITION) {
 			i915_compile_note(state, state->varyings, &state->varying_count, COMPILE_MAX_VARYINGS, inst->location);
 		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_SECOND_COLOR) {
@@ -4344,11 +4482,21 @@ i915_compile_interface(
 	if (state->ir->stage == I915_STAGE_COMPUTE)
 		i915_compile_compute_interface(state);
 
-	/* Finds where the payload ends: four registers to an attribute, two to an interpolated input, the IDs of a compute thread. */
+	/* A geometry thread's payload is its header, its handles and its push data; its output is a URB entry. */
+	if (state->ir->stage == I915_STAGE_GEOMETRY)
+		i915_compile_geometry_interface(state);
+
+	/*
+	 * Finds where the payload ends: four registers to an attribute, two to
+	 * an interpolated input, the IDs of a compute thread, nothing after a
+	 * geometry thread's push data (it reads its inputs from the URB).
+	 */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		payload_end = COMPILE_PAYLOAD_GRF + state->push_regs + 4U * state->input_count;
 	} else if (state->ir->stage == I915_STAGE_COMPUTE) {
 		payload_end = COMPILE_CS_PUSH_GRF + state->push_regs + I915_SHADER_PER_THREAD_REGS;
+	} else if (state->ir->stage == I915_STAGE_GEOMETRY) {
+		payload_end = state->gs_push_grf + state->push_regs;
 	} else {
 		payload_end = state->fs_setup_grf + state->push_regs + 2U * state->input_count;
 	}
@@ -4364,6 +4512,18 @@ i915_compile_interface(
 	}
 
 	/*
+	 * A geometry shader keeps the count of the vertices it emitted and its
+	 * cut bits in the first two value registers for its whole run: they are
+	 * not IR values, so no spill ever moves them.
+	 */
+	if (state->ir->stage == I915_STAGE_GEOMETRY) {
+		state->gs_count_grf = state->first_value_grf;
+		state->gs_cut_grf = state->first_value_grf + 1U;
+		state->first_value_grf += 2U;
+		state->grf_high = state->first_value_grf;
+	}
+
+	/*
 	 * A vertex shader stages its VUE below r127, and the values stay below
 	 * it; a gathered VUE keeps only the window of its writes from them.
 	 */
@@ -4372,6 +4532,16 @@ i915_compile_interface(
 		state->vue_grf = COMPILE_MAX_GRF - 4U * vue_slots;
 		if (state->vue_grf <= state->last_value_grf)
 			state->last_value_grf = state->vue_grf - 1U;
+	} else if (state->ir->stage == I915_STAGE_GEOMETRY) {
+		/*
+		 * A geometry shader stages its VUE as a vertex shader does, and keeps
+		 * the two registers below it for the header of its vertex writes: the
+		 * output handles, and the per-slot offsets of the vertex.
+		 */
+		vue_slots = 2U + state->varying_count;
+		state->vue_grf = COMPILE_MAX_GRF - 4U * vue_slots;
+		if (state->vue_grf - COMPILE_GS_WRITE_HEADER_REGS <= state->last_value_grf)
+			state->last_value_grf = state->vue_grf - COMPILE_GS_WRITE_HEADER_REGS - 1U;
 	} else if (state->ir->stage == I915_STAGE_VERTEX) {
 		if (COMPILE_GATHER_GRF <= state->last_value_grf)
 			state->last_value_grf = COMPILE_GATHER_GRF - 1U;
@@ -4507,8 +4677,12 @@ i915_compile_prologue(
 	if (state->ir->stage == I915_STAGE_COMPUTE)
 		return;
 
+	/* A geometry shader prepares its vertex writes, then stages its VUE as a vertex shader does. */
+	if (state->ir->stage == I915_STAGE_GEOMETRY)
+		i915_compile_geometry_prologue(state);
+
 	/* A fragment shader's colours start as zeros. */
-	if (state->ir->stage != I915_STAGE_VERTEX) {
+	if (state->ir->stage == I915_STAGE_FRAGMENT) {
 		outputs = i915_compile_fs_outputs(state);
 		if (state->uses_second_color != 0)
 			outputs |= 1U << 1;
@@ -4559,6 +4733,12 @@ i915_compile_terminate(
 	/* A compute thread only retires. */
 	if (state->ir->stage == I915_STAGE_COMPUTE) {
 		i915_compile_terminate_compute(state);
+		return;
+	}
+
+	/* A geometry thread writes how many vertices it emitted and retires. */
+	if (state->ir->stage == I915_STAGE_GEOMETRY) {
+		i915_compile_terminate_geometry(state);
 		return;
 	}
 
@@ -4942,6 +5122,8 @@ i915_compile_describe(
 		binary->dispatch_grf_start = COMPILE_PAYLOAD_GRF;
 	} else if (state->ir->stage == I915_STAGE_COMPUTE) {
 		i915_compile_describe_compute(state, binary);
+	} else if (state->ir->stage == I915_STAGE_GEOMETRY) {
+		i915_compile_describe_geometry(state, binary);
 	} else {
 		binary->varying_count = state->input_count;
 		binary->dispatch_grf_start = state->fs_setup_grf;
@@ -4958,3 +5140,6 @@ i915_compile_describe(
 
 /* The compute part of the code generator (ws101-p002). */
 #include "compile-compute.inc"
+
+/* The geometry part of the code generator (ws075-p007a). */
+#include "compile-geometry.inc"

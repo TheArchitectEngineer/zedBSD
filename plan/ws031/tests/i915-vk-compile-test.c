@@ -390,6 +390,10 @@ static unsigned eu_model_divergent_whiles;
 /* The URB writes of a vertex thread: VUE slot, component, channel. */
 #define EU_MODEL_VUE_SLOTS	34U
 
+/* The input vertex handles of a geometry thread: six vertices of eight channels' primitives, from this value on. */
+#define EU_MODEL_GS_HANDLE	0x1000U
+#define EU_MODEL_GS_HANDLES	48U
+
 static unsigned eu_model_scratch_writes;
 static unsigned eu_model_scratch_reads;
 static unsigned eu_model_scratch_partial;       /* block writes that ran on some channels only (a loop had stopped others) */
@@ -409,6 +413,14 @@ struct eu_model {
 	uint32_t scratch[EU_MODEL_SCRATCH_BYTES / 4U];
 	uint32_t vue[EU_MODEL_VUE_SLOTS][4][8];
 	uint64_t vue_written;           /* the VUE slots a URB write reached */
+
+	/*
+	 * A geometry thread (ws075-p007a): the input VUEs a URB read finds by handle (EU_MODEL_GS_HANDLE + 8 v + c is
+	 * vertex v of channel c's primitive), and the vertex count the thread's last write leaves (once written).
+	 */
+	uint32_t gs_input[EU_MODEL_GS_HANDLES][EU_MODEL_VUE_SLOTS][4];
+	uint32_t gs_count[8];
+	int gs_count_written;
 };
 
 static float
@@ -505,13 +517,46 @@ eu_model_scratch(struct eu_model *m, const struct i915_shader_binary *binary, co
 	eu_model_scratch_reads++;
 }
 
-/* A URB write: the slots of its second payload run, from the global offset in the descriptor on. */
+/*
+ * A URB message: a SIMD8 read of a geometry thread's input VUE (the handle per channel in src0, a register to a
+ * component in the reply), a geometry thread's vertex count (one data register at offset 0), or a vertex thread's
+ * slots from its second payload run, from the global offset in the descriptor on.
+ */
 static void
 eu_model_urb(struct eu_model *m, const uint32_t *inst, unsigned enabled)
 {
 	uint32_t descriptor = eu_model_descriptor(inst);
 	unsigned data = inst_field(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO);
 	unsigned slots = inst_field(inst, 103U, 99U) / 4U, first = (descriptor >> 4) & 0x7FFU, s, k, c;
+	unsigned src0 = inst_field(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO);
+	unsigned dst = inst_field(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO);
+
+	/* a read: mlen 1 (the handles as the header), the reply's length, the slot */
+	if ((descriptor & 0xFU) == COMPILE_URB_OPCODE_SIMD8_READ) {
+		unsigned length = (descriptor >> EU_DESC_RLEN_SHIFT) & 0x1FU, handle;
+
+		assert(((descriptor >> EU_DESC_MLEN_SHIFT) & 0xFU) == 1U && (descriptor & EU_DESC_HEADER_PRESENT) != 0U);
+		assert(length >= 1U && length <= 4U && first < EU_MODEL_VUE_SLOTS && (descriptor & (1U << 17)) == 0U);
+		for (c = 0U; c < 8U; c++) {
+			if (((enabled >> c) & 1U) == 0U)
+				continue;
+			handle = m->grf[src0][c] - EU_MODEL_GS_HANDLE;
+			assert(handle < EU_MODEL_GS_HANDLES && handle % 8U == c);
+			for (k = 0U; k < length; k++)
+				m->grf[dst + k][c] = m->gs_input[handle][first][k];
+		}
+		return;
+	}
+
+	/* a geometry thread's vertex count: one data register at the entry's start, which ends the thread */
+	if (inst_field(inst, 103U, 99U) == 1U) {
+		assert(descriptor == COMPILE_DESC_URB_WRITE(0U) && inst_bit(inst, EU_SEND_EOT_BIT) != 0U);
+		for (c = 0U; c < 8U; c++)
+			if ((enabled >> c) & 1U)
+				m->gs_count[c] = m->grf[data][c];
+		m->gs_count_written = 1;
+		return;
+	}
 
 	assert(slots >= 1U && slots <= 2U && first + slots <= EU_MODEL_VUE_SLOTS);
 	for (s = 0U; s < slots; s++) {
@@ -2248,6 +2293,172 @@ test_eu_generality_interfaces(void)
 	printf("  EU model: vary16.vert stages 16 varyings, vary16.frag / subset.frag (5 of 16) read them, vin16.vert reads 16 attributes, matrix.vert places its corners; a hand-made 16 attributes + 16 varyings gathers its VUE\n");
 }
 
+/* Parses one of the compiler test's geometry shaders and compiles it after `producer`; returns the compiler's error. */
+static int
+compile_geometry(const char *name, const struct i915_shader_binary *producer, struct i915_shader_binary **binary)
+{
+	char path[512];
+	FILE *file;
+	long size;
+	uint32_t *code;
+	struct i915_shader_ir *ir;
+	struct i915_compile_diagnostic diag;
+	int error;
+
+	snprintf(path, sizeof(path), "%s/%s/%s", VK_REPO, COMPILER_SHADERS, name);
+	file = fopen(path, "rb");
+	assert(file != NULL);
+	fseek(file, 0, SEEK_END);
+	size = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	code = malloc((size_t)size);
+	assert(fread(code, 1, (size_t)size, file) == (size_t)size);
+	fclose(file);
+	error = drv_i915_shader_parse(code, (size_t)size / 4U, I915_STAGE_GEOMETRY, &ir, &diag);
+	if (error != 0)
+		printf("  %s refused: opcode %u at word %u: %s\n", name, diag.opcode, diag.word_offset,
+			diag.reason != NULL ? diag.reason : "-");
+	assert(error == 0 && ir->stage == I915_STAGE_GEOMETRY);
+	*binary = NULL;
+	error = drv_i915_shader_compile_stage(ir, producer, binary);
+	drv_i915_shader_ir_free(ir);
+	free(code);
+	return error;
+}
+
+/* The value the model's input VUE of vertex v of channel c's primitive holds at a slot and component. */
+static float
+gs_input_value(unsigned v, unsigned c, unsigned slot, unsigned k)
+{
+	return (float)(1000U * v + 100U * slot + 10U * k + c);
+}
+
+/*
+ * ws075-p007a increment a2: a geometry shader that reads and writes but emits no vertex.  The binary carries what
+ * 3DSTATE_GS and the URB need; the inputs are pulled with SIMD8 URB reads of the producer's slots, a vertex chosen
+ * at run time by CMP and SEL over the handles; the thread ends by writing a vertex count of zero.  The EU model runs
+ * it over eight primitives and the staged VUE holds what the shader computed.
+ */
+static void
+test_geometry_reads(void)
+{
+	struct i915_shader_binary producer, *binary;
+	struct eu_model *m;
+	const uint32_t *inst, *last;
+	unsigned count, index, reads, cmps, sends_ending, rt_writes, v, c, k, slot, i, vue, sbc;
+	int error;
+
+	/* the vertex shader before it writes locations 0 and 2: slots 2 and 3 of its VUE */
+	memset(&producer, 0, sizeof(producer));
+	producer.stage = I915_STAGE_VERTEX;
+	producer.varying_count = 2U;
+	producer.varying_locations[0] = 0U;
+	producer.varying_locations[1] = 2U;
+
+	/* without the producer, or with one that does not write location 2, its located inputs have no place */
+	assert(compile_geometry("noemit.geom.spv", NULL, &binary) == ENOTSUP && binary == NULL);
+	producer.varying_locations[1] = 3U;
+	assert(compile_geometry("noemit.geom.spv", &producer, &binary) == ENOTSUP && binary == NULL);
+	producer.varying_locations[1] = 2U;
+
+	/* a producer that is not a vertex kernel, or a producer for another stage, is inconsistent */
+	producer.stage = I915_STAGE_FRAGMENT;
+	assert(compile_geometry("noemit.geom.spv", &producer, &binary) == EINVAL && binary == NULL);
+	producer.stage = I915_STAGE_VERTEX;
+
+	/* EmitVertex is increment a3's */
+	assert(compile_geometry("points.geom.spv", &producer, &binary) == ENOTSUP && binary == NULL);
+
+	error = compile_geometry("noemit.geom.spv", &producer, &binary);
+	assert(error == 0);
+
+	/* what the draw programs: r0, r1, the primitive's number in r2, three handles, the push data from r6 */
+	assert(binary->stage == I915_STAGE_GEOMETRY);
+	assert(binary->vertices_in == 3U && binary->output_topology == I915_IR_OUTPUT_TRIANGLE_STRIP);
+	assert(binary->uses_primitive_id == 1U && binary->writes_layer == 1U);
+	assert(binary->dispatch_grf_start == 6U && binary->push_regs == 0U);
+	assert(binary->varying_count == 2U);
+	assert(binary->varying_locations[0] == 0U && binary->varying_locations[1] == I915_SHADER_LOCATION_PRIMITIVE_ID);
+	assert(binary->input_count == 2U && binary->input_locations[0] == 0U && binary->input_locations[1] == 2U);
+
+	/* a vertex is four slots (two 32-byte units), no cut bits; the entry 32 + 3 x 64 bytes, four 64-byte units */
+	assert(binary->output_vertex_hwords == 2U);
+	assert(binary->control_data_hwords == 0U && binary->control_data_format == COMPILE_GS_CONTROL_CUT);
+	assert(binary->urb_entry_size == 4U);
+
+	/* the URB reads, the handle choices and the end; no render-target write */
+	count = binary->code_bytes / 16U;
+	reads = 0U;
+	cmps = 0U;
+	sends_ending = 0U;
+	rt_writes = 0U;
+	for (index = 0U; index < count; index++) {
+		inst = binary->code + index * 4U;
+		if (inst_field(inst, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_CMP)
+			cmps++;
+		if (inst_field(inst, EU_OPCODE_HI, EU_OPCODE_LO) == EU_OP_SENDC)
+			rt_writes++;
+		if (inst_field(inst, EU_OPCODE_HI, EU_OPCODE_LO) != EU_OP_SEND)
+			continue;
+		assert(inst_field(inst, EU_SEND_SFID_HI, EU_SEND_SFID_LO) == EU_SFID_URB);
+		if (inst_bit(inst, EU_SEND_EOT_BIT) != 0U) {
+			sends_ending++;
+			continue;
+		}
+		assert((eu_model_descriptor(inst) & 0xFU) == COMPILE_URB_OPCODE_SIMD8_READ);
+		reads++;
+	}
+
+	/* v_colour[i] 4, v_uv[1] 2, gl_in[2] 4, gl_in[i] 4 components; i chosen by two comparisons each of 8 (min's own aside) */
+	assert(reads == 14U);
+	assert(cmps >= 16U);
+	assert(sends_ending == 1U && rt_writes == 0U);
+	last = binary->code + (count - 1U) * 4U;
+	assert(inst_bit(last, EU_SEND_EOT_BIT) != 0U);
+	assert(eu_model_descriptor(last) == COMPILE_DESC_URB_WRITE(0U));
+	assert(inst_field(last, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_MAX_GRF);
+
+	/* the model: channel c's primitive is number c; its vertices' VUEs hold distinct values */
+	m = malloc(sizeof(*m));
+	assert(m != NULL);
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++) {
+		m->grf[COMPILE_GS_OUTPUT_HANDLES_GRF][c] = 0x08000000U | (0x40U + c);
+		m->grf[COMPILE_GS_PRIMITIVE_ID_GRF][c] = c;
+		for (v = 0U; v < 3U; v++)
+			m->grf[3U + v][c] = EU_MODEL_GS_HANDLE + 8U * v + c;
+	}
+	for (v = 0U; v < 6U; v++)
+		for (c = 0U; c < 8U; c++)
+			for (slot = 0U; slot < EU_MODEL_VUE_SLOTS; slot++)
+				for (k = 0U; k < 4U; k++)
+					m->gs_input[8U * v + c][slot][k] = float_bits(gs_input_value(v, c, slot, k));
+	sbc = eu_model_scoreboard_checks;
+	eu_model_run(m, binary);
+	assert(eu_model_scoreboard_checks == sbc + 1U);
+	assert(m->ended && m->gs_count_written);
+
+	/* no vertex emitted; the staged VUE: [header: 0, layer 1][position][location 0][location 69] */
+	vue = COMPILE_MAX_GRF - 4U * 4U;
+	for (c = 0U; c < 8U; c++) {
+		i = (c & 3U) < 2U ? (c & 3U) : 2U;
+		assert(m->gs_count[c] == 0U);
+		assert(m->grf[vue + COMPILE_VUE_LAYER][c] == 1U);
+		for (k = 0U; k < 4U; k++) {
+			float colour = gs_input_value(i, c, 2U, k) + (k < 2U ? gs_input_value(1U, c, 3U, k) : 0.0f) +
+				gs_input_value(2U, c, 1U, k);
+
+			assert(m->grf[vue + 4U + k][c] == float_bits(gs_input_value(i, c, 1U, k)));
+			assert(m->grf[vue + 8U + k][c] == float_bits(colour));
+		}
+		assert(m->grf[vue + 12U][c] == c);
+		assert(m->grf[COMPILE_MAX_GRF][c] == 0x40U + c);       /* the handle without the instance bits */
+	}
+	free(m);
+	drv_i915_shader_binary_free(binary);
+	printf("  geometry (ws075-p007a a2): noemit.geom pulls 14 slots from the producer's VUEs (a vertex chosen per channel), stages its VUE, ends with a count of 0\n");
+}
+
 int
 main(void)
 {
@@ -2269,6 +2480,7 @@ main(void)
 	test_eu_mview();
 	test_eu_generality_fragment();
 	test_eu_generality_interfaces();
+	test_geometry_reads();
 	assert(fixture_live == 0U);
 	printf("  scoreboard: %u kernels checked (ws075-p022)\n", eu_model_scoreboard_checks);
 	printf("  skippable regions and guards (ws075-p023): %u IFs run, %u jumped over\n", eu_model_ifs, eu_model_ifs_jumped);

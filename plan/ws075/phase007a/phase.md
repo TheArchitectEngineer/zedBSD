@@ -30,4 +30,19 @@ Q1（2026-10-07）: 判断 1〜8 を既定どおりで承認、Phase の ID は 
 | `git diff --check` | 問題無し |
 | `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
 
-残り: a2（compile-geometry.inc: interface・payload・prologue・pull の入力・PrimitiveID・Layer/PrimitiveId の staged・`drv_i915_shader_compile_stage`・「VERTEX でなければ FRAGMENT」の分岐の洗い出し・頂点数 0 の EOT）→ a3 → a4（a5 は後回し可）。
+- 2026-10-07 夜 増分 a2（GS の codegen の読みと payload、EmitVertex は a3 まで refuse）:
+  - 新 `compiler/compile-geometry.inc`（compile.c の末尾で include）: register の約束（r0、r1 出力 handle、r2 PrimitiveID、入力頂点の handle、push data、頂点数と cut bits は値の先頭 2 register、staged VUE と真下に書き込みの header 2 register）、interface（入力の頂点数の検査、located の per-vertex 入力の一覧、handle と push data の位置、出力頂点の 32 B 単位・control data（cut の時だけ max_vertices bit）・URB entry（32 KiB を越えれば refuse）の 64 B 単位）、prologue（`AND r(vue−2) = r1 & 0xFFFF`、頂点数・cut bits を 0）、`LOAD_VERTEX_INPUT`（producer の VUE の slot: Position 1、PointSize は header の dword 3、located は 2 + producer の varying の順位。定数の頂点はその handle の register、動的な頂点は vertex 0 の handle から CMP・SEL で channel ごとに選ぶ。SIMD8 URB read、rlen は読む component + 1、reply の register を bit のまま）、`LOAD_SYSTEM` PRIMITIVE_ID（r2）、terminate（`r127 = 書き込みの handle`、`r126 = 頂点数`、global 0・ex_mlen 1 の URB write + EOT）、describe（varying、`dispatch_grf_start`、GS の field）。
+  - `compiler/compile.c`: `drv_i915_shader_compile_stage(ir, producer, out)`（`drv_i915_shader_compile` は producer NULL の wrapper。producer は GS だけ、VS の binary だけ）、state に producer（attempt をまたいで保つ）と GS の register・URB の field、`i915_compile_operands`（LOAD_VERTEX_INPUT の動的、EMIT/END の predicate）・`i915_compile_results`（EMIT/END は 0）、skip の解析（EMIT/END は region の中なら skip しない、region の後で garbage を読めば skip しない）、「VERTEX でなければ FRAGMENT」の分岐（payload_inputs、payload_end、VUE の staging と last_value_grf、prologue、terminate、describe、store_output の Position・varying・LAYER（header の dword 1 に UD の MOV））、GS の LOAD_INPUT は unsupported、EMIT/END は a3 まで unsupported。
+  - `compiler/compiler.h`: binary に `vertices_in`・`output_topology`・`output_vertex_hwords`・`control_data_hwords`・`control_data_format`・`urb_entry_size`・`uses_primitive_id`・`writes_layer`、`drv_i915_shader_compile_stage` の宣言。
+  - 試験: `compiler-shaders/noemit.geom`（EmitVertex の無い GS: 動的・定数の頂点の located 入力と gl_in、PrimitiveIDIn、Layer・PrimitiveID の書き込み）、`plan/ws031/tests/i915-vk-compile-test.c` の `test_geometry_reads`（producer 無し・location の無い producer は ENOTSUP、VS でない producer は EINVAL、points.geom は a3 まで ENOTSUP、binary の field、URB read 14 本・CMP・SENDC 無し・最後は global 0 の write + EOT、EU model に URB read と頂点数の write を足して 8 primitive を走らせ staged VUE・layer・PrimitiveID・頂点数 0・handle の mask を確かめる、scoreboard の検査）。`plan/ws031/tests/i915-vk-eudump.c` に geometry（GS の読む location を書く producer を作る）、`plan/ws031/tests/run-vk-gentool-test.sh` に `*.geom`（refuse-* と EmitVertex の 4 本は a3 まで飛ばす）、script の `mktemp` + `trap rm -rf` を `fresh_out build/tmp/ws031-gentool` に替えた（削除の規則、2026-10-06）。
+  - design との差: `dispatch_grf_start` は push data の始まり（= 2 + PrimitiveID + vertices_in、Mesa の brw_compile_gs.cpp の `payload().num_regs` と VS の `COMPILE_PAYLOAD_GRF` と同じ）。design §4.4 の「+ push_regs」は誤り。URB read の rlen は design の 4 固定でなく読む component + 1（Mesa の emit_gs_input_load と同じ）。
+
+| コマンド（a2） | 結果 |
+| --- | --- |
+| `python3 src/drivers/gpu/i915/tests/render/compiler-shaders/regenerate.py` | 成功、既存の `.spv` と kernel の `.inc` は不変 |
+| `sh plan/ws031/tests/run-vk-host-tests.sh`（10 個） | plain・ASan/UBSan 全て PASS（scoreboard 5809 kernel） |
+| `BRW_TOOLS=build/mesa-tools/build-asm/src/intel/compiler sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS（noemit.geom: brw_disasm が `urb MsgDesc: offset N SIMD8 read mlen 1 rlen n` と最後の `SIMD8 write mlen 1 ex_mlen 1 EOT` を読み、再 assemble が一致） |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+| `git diff --check` | 問題無し |
+
+残り: a3（EMIT: per-slot offset の累計と write、predicate `P && vertex_count < max_vertices`、END: cut bits（>32 bit も）、terminate に control data の write、gentool の EmitVertex の 4 本、Mesa の disasm との突き合わせ）→ a4（a5 は後回し可）。
