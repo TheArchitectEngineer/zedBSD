@@ -391,8 +391,21 @@ typedef uint64_t __u64;
 #define I915_LCD_IS_ALDERLAKE_P(i915) (drv_i915_lcd_display_ver() >= 13)
 #define I915_LCD_IS_TIGERLAKE(i915) (drv_i915_lcd_display_ver() == 12)
 
-/* IS_DISPLAY_VER(): fixed to version 13, as this environment always answered. */
-#define I915_LCD_IS_DISPLAY_VER(i915, from, until) (13 >= (from) && 13 <= (until))
+/*
+ * IS_DISPLAY_VER(): whether the device's display version lies in [from,
+ * until].  It answered a fixed 13 until ws118-p006; on Tiger Lake (12) that
+ * made drv_i915_phy_is_combo() deny the combo PHYs, so the takeover's
+ * readout found no PLL and its sanitize turned off the PLL the firmware's
+ * pipe ran on.
+ */
+#define I915_LCD_IS_DISPLAY_VER(i915, from, until) \
+	(drv_i915_lcd_display_ver() >= (from) && drv_i915_lcd_display_ver() <= (until))
+
+/*
+ * The pipe scalers of each pipe (the Linux SKL_NUM_SCALERS, and
+ * DISPLAY_RUNTIME_INFO()->num_scalers of every pipe of display 11 and later).
+ */
+#define I915_LCD_SKL_NUM_SCALERS 2
 
 /* The display runtime information of the device (the Linux DISPLAY_RUNTIME_INFO()). */
 #define I915_LCD_DISPLAY_RUNTIME_INFO(i915) (&(i915)->display.runtime)
@@ -755,9 +768,13 @@ typedef uint64_t __u64;
 /* intel_dp_pcon_dsc_configure(): returns unless the sink is an HDMI 2.1 PCON. */
 #define intel_dp_pcon_dsc_configure(intel_dp, cs) I915_LCD_GUARD(!dp_is_branch((intel_dp)->dpcd), "intel_dp_pcon_dsc_configure (HDMI 2.1 PCON)")
 
-/* skl_pfit_enable() / skl_scaler_disable(): nothing without the pipe scaler. */
+/*
+ * skl_pfit_enable(): nothing without the pipe scaler (this path never
+ * scales).  skl_scaler_disable() is ported (pipe.c): it detaches every
+ * scaler of the pipe, so a scaler the firmware left on is stopped too.
+ */
 #define skl_pfit_enable(cs) I915_LCD_GUARD(!(cs)->pch_pfit.enabled, "skl_pfit_enable (panel fitter)")
-#define skl_scaler_disable(cs) I915_LCD_GUARD(!(cs)->pch_pfit.enabled, "skl_scaler_disable (panel fitter)")
+#define skl_scaler_disable(cs) drv_i915_skl_scaler_disable(cs)
 
 /* intel_audio_sdp_split_update(): a register write only with HAS_DP20. */
 #define intel_audio_sdp_split_update(cs) I915_LCD_GUARD(!HAS_DP20(I915_LCD_SEQ_I915_CRTC_STATE(cs)), "intel_audio_sdp_split_update (DP 2.0)")
@@ -1590,7 +1607,17 @@ struct intel_crtc_state {
 	u8 nv12_planes;
 	u8 enabled_planes;
 	bool wm_level_disabled;
+	/*
+	 * The pipe scalers (intel_crtc_scaler_state): which scaler the crtc
+	 * uses (-1 for none), which scalers are in use, and the users mask
+	 * (bit SKL_CRTC_INDEX is the crtc itself).  Only the readout of a
+	 * firmware's panel fitter fills them; this path never scales.
+	 */
 	struct {
+		struct {
+			bool in_use;
+		} scalers[I915_LCD_SKL_NUM_SCALERS];
+		unsigned scaler_users;
 		int scaler_id;
 	} scaler_state;
 	/* colour management: no LUT / CTM blobs in this path (all NULL), modes computed by the reference's check */

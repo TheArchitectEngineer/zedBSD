@@ -2012,7 +2012,7 @@ i915_probe_wm_adjust(
 	drv_i915_ktest_check(ktest, ok == 1, "p5a: P5A-WM adjust_wm_latency zero-truncation, read-latency add, DIMM WA");
 }
 
-/* P5A-DPLL: adlp_plls is 7 entries with the reference ids; display 14 has none. */
+/* P5A-DPLL: adlp_plls is 7 entries and tgl_plls 9 with the reference ids; display 14 has none. */
 static void
 i915_probe_dpll(
 	struct i915_ktest *ktest)
@@ -2044,6 +2044,23 @@ i915_probe_dpll(
 	    ng->dplls[6].funcs == I915_DPLL_FUNCS_DKL &&
 	    ng->dplls[0].funcs == I915_DPLL_FUNCS_COMBO,
 	    "p5a: P5A-DPLL adlp_plls = DPLL0/1 + TBT + TC1..4 with the reference ids");
+
+	/* Builds the Tiger Lake DPLL records (tgl_plls: MG_PLL_ENABLE every 4 bytes). */
+	kern_memset(t, 0, sizeof(*t));
+	drv_i915_shared_dpll_init(t, 12, 0);
+	drv_i915_ktest_check(ktest,
+	    t->dpll_mgr_present == 1 &&
+	    t->num_dplls == 9U &&
+	    t->dplls[0].enable_reg == 0x46010U &&
+	    t->dplls[0].funcs == I915_DPLL_FUNCS_COMBO &&
+	    t->dplls[1].enable_reg == 0x46014U &&
+	    t->dplls[2].enable_reg == 0x46020U &&
+	    t->dplls[2].funcs == I915_DPLL_FUNCS_TBT &&
+	    t->dplls[3].enable_reg == 0x46030U &&
+	    t->dplls[8].id == 8 &&
+	    t->dplls[8].enable_reg == 0x46044U &&
+	    t->dplls[8].funcs == I915_DPLL_FUNCS_DKL,
+	    "p5a: P5A-DPLL tgl_plls = DPLL0/1 + TBT + TC1..6 with the reference ids");
 
 	/* Display 14 gets no table invented. */
 	kern_memset(t, 0, sizeof(*t));

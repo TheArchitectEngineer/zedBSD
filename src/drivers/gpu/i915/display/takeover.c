@@ -150,6 +150,13 @@
  */
 #define I915_PORTTC1_PLL_ENABLE			0x46038U
 #define I915_PORTTC_PLL_ENABLE_STRIDE		8U
+/*
+ * Tiger Lake's Type-C PLL enable registers (MG_PLL_ENABLE: TC1 at 0x46030,
+ * then every 4 bytes; Linux v6.8.12 i915_reg.h _MG_PLL1_ENABLE /
+ * _MG_PLL2_ENABLE, intel_tc_pll_enable_reg()).
+ */
+#define I915_MG_PLL1_ENABLE			0x46030U
+#define I915_MG_PLL_ENABLE_STRIDE		4U
 #define I915_PLL_ENABLE_BIT			(1U << 31)
 
 /* enum intel_dpll_id, ICL naming (values preserved). */
@@ -160,6 +167,8 @@
 #define I915_DPLL_ID_ICL_MGPLL2			4
 #define I915_DPLL_ID_ICL_MGPLL3			5
 #define I915_DPLL_ID_ICL_MGPLL4			6
+#define I915_DPLL_ID_ICL_MGPLL5			7
+#define I915_DPLL_ID_ICL_MGPLL6			8
 
 /* The GMBUS pin indices (intel_gmbus.h). */
 #define I915_GMBUS_PIN_1_BXT			1U
@@ -289,7 +298,7 @@
 #define I915_VTD_WINDOW				0x1000U
 
 /*
- * One row of the Alder Lake-P shared DPLL table (adlp_plls[]).
+ * One row of a platform's shared DPLL table (adlp_plls[], tgl_plls[]).
  *
  * The rows are copied into the DPLL records when the manager is created.
  */
@@ -1262,8 +1271,9 @@ drv_i915_skl_setup_wm_latency(
 /*
  * Creates the shared DPLL manager (intel_shared_dpll_init()).
  *
- * Only Alder Lake-P's adlp_pll_mgr is ported; display 14, DG2 and every
- * other platform leave the manager absent rather than guess a table.
+ * Alder Lake-P's adlp_pll_mgr and Tiger Lake's tgl_pll_mgr are ported;
+ * display 14, DG2 and every other platform leave the manager absent rather
+ * than guess a table.
  */
 void
 drv_i915_shared_dpll_init(
@@ -1280,6 +1290,18 @@ drv_i915_shared_dpll_init(
 		{ "TC PLL 3", I915_DPLL_ID_ICL_MGPLL3, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 2U * I915_PORTTC_PLL_ENABLE_STRIDE },
 		{ "TC PLL 4", I915_DPLL_ID_ICL_MGPLL4, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 3U * I915_PORTTC_PLL_ENABLE_STRIDE }
 	};
+	static const struct i915_adlp_pll_desc tgl_plls[] = {
+		{ "DPLL 0",   I915_DPLL_ID_ICL_DPLL0,  I915_DPLL_FUNCS_COMBO, I915_DPLL0_ENABLE },
+		{ "DPLL 1",   I915_DPLL_ID_ICL_DPLL1,  I915_DPLL_FUNCS_COMBO, I915_DPLL1_ENABLE },
+		{ "TBT PLL",  I915_DPLL_ID_ICL_TBTPLL, I915_DPLL_FUNCS_TBT,   I915_TBT_PLL_ENABLE },
+		{ "TC PLL 1", I915_DPLL_ID_ICL_MGPLL1, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 0U * I915_MG_PLL_ENABLE_STRIDE },
+		{ "TC PLL 2", I915_DPLL_ID_ICL_MGPLL2, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 1U * I915_MG_PLL_ENABLE_STRIDE },
+		{ "TC PLL 3", I915_DPLL_ID_ICL_MGPLL3, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 2U * I915_MG_PLL_ENABLE_STRIDE },
+		{ "TC PLL 4", I915_DPLL_ID_ICL_MGPLL4, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 3U * I915_MG_PLL_ENABLE_STRIDE },
+		{ "TC PLL 5", I915_DPLL_ID_ICL_MGPLL5, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 4U * I915_MG_PLL_ENABLE_STRIDE },
+		{ "TC PLL 6", I915_DPLL_ID_ICL_MGPLL6, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 5U * I915_MG_PLL_ENABLE_STRIDE }
+	};
+	const struct i915_adlp_pll_desc *plls;
 	unsigned count;
 	unsigned index;
 
@@ -1288,27 +1310,43 @@ drv_i915_shared_dpll_init(
 
 	/*
 	 * DISPLAY_VER >= 14 / DG2 have no shared DPLLs (port PLLs live in the PHY);
-	 * ADL-P selects adlp_pll_mgr.  Anything else is out of scope for this port
-	 * and leaves the manager absent rather than guessing a table.
+	 * ADL-P selects adlp_pll_mgr and Tiger Lake (display 12 that is not
+	 * ADL-P) tgl_pll_mgr.  Anything else is out of scope for this port and
+	 * leaves the manager absent rather than guessing a table.
 	 */
-	if (display_ver >= 14 || is_alderlake_p == 0) {
+	if (display_ver >= 14) {
 		d->dpll_mgr_present = 0;
 		d->num_dplls = 0U;
 		return;
 	}
 
-	/* Copies adlp_plls[] (DPLL0, DPLL1, TBT PLL, TC PLL 1..4) into the records. */
-	count = sizeof(adlp_plls) / sizeof(adlp_plls[0]);
+	/* Picks the platform's table. */
+	if (is_alderlake_p != 0) {
+		/* adlp_plls[]: DPLL0, DPLL1, TBT PLL, TC PLL 1..4. */
+		plls = adlp_plls;
+		count = sizeof(adlp_plls) / sizeof(adlp_plls[0]);
+	} else if (display_ver == 12) {
+		/* tgl_plls[]: DPLL0, DPLL1, TBT PLL, TC PLL 1..6. */
+		plls = tgl_plls;
+		count = sizeof(tgl_plls) / sizeof(tgl_plls[0]);
+	} else {
+		/* No table of this platform is ported. */
+		d->dpll_mgr_present = 0;
+		d->num_dplls = 0U;
+		return;
+	}
+
+	/* Copies the table into the records. */
 	for (index = 0U; index < count; index++) {
 		/* Stops at the capacity of the records. */
 		if (index >= (unsigned)I915_NOGEM_MAX_DPLLS)
 			break;
 
 		/* Fills one DPLL record from its table row. */
-		d->dplls[index].name = adlp_plls[index].name;
-		d->dplls[index].id = adlp_plls[index].id;
-		d->dplls[index].funcs = adlp_plls[index].funcs;
-		d->dplls[index].enable_reg = adlp_plls[index].reg;
+		d->dplls[index].name = plls[index].name;
+		d->dplls[index].id = plls[index].id;
+		d->dplls[index].funcs = plls[index].funcs;
+		d->dplls[index].enable_reg = plls[index].reg;
 		d->dplls[index].index = index;
 	}
 
