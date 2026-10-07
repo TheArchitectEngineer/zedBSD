@@ -34,10 +34,27 @@
 /* The longest template line's part kept while it is read. */
 #define HAND_LINE_MAX		16384U
 
+/* The Hershey glyphs' area (the templates' units): its top and height. */
+#define HAND_TEMPLATE_TOP	(-16.0f)
+#define HAND_TEMPLATE_HEIGHT	32.0f
+
+/*
+ * The weight of the size (a factor of e between the ink's and the
+ * template's adds this much) and of the place (the middle a whole area's
+ * height away adds this much), and the least size counted (a dot's).
+ */
+#define HAND_SIZE_WEIGHT	1.0f
+#define HAND_PLACE_WEIGHT	3.0f
+#define HAND_SIZE_LEAST		0.04f
+
 static float cloud_match(const struct hand_cloud *from, const struct hand_cloud *to, unsigned start, float bound);
 static float cloud_distance(const struct hand_cloud *written, const struct hand_cloud *template_cloud, float bound);
 static float cloud_length(const struct hand_cloud_input *input);
 static int templates_line(struct hand_templates *templates, const char *line, size_t length);
+static void cloud_extent(const struct hand_cloud_input *input, struct hand_extent *extent);
+static float framed_penalty(const struct hand_extent *ink, const struct hand_frame *frame, const struct hand_extent *glyph);
+static size_t recognize_cloud(const struct hand_templates *templates, const struct hand_cloud *written, const struct hand_extent *ink, const struct hand_frame *frame, uint32_t *codes, float *distances, size_t capacity);
+static size_t recognize_strokes(const struct hand_templates *templates, const struct hand_cloud_input *input, const struct hand_frame *frame, uint32_t *codes, float *distances, size_t capacity);
 static unsigned strokes_mark(const struct hand_cloud_input *input, unsigned char *mark);
 static uint32_t strokes_voiced(uint32_t code, unsigned mark);
 static uint32_t strokes_unvoiced(uint32_t code);
@@ -240,12 +257,32 @@ hand_recognize(
 	float *distances,
 	size_t capacity)
 {
+	/* Without an area. */
+	return recognize_cloud(templates, written, NULL, NULL, codes, distances, capacity);
+}
+
+/*
+ * Gives the characters nearest to a written cloud as hand_recognize does;
+ * with an area (frame not NULL), each distance has how far the ink's box
+ * on the area is from the template's added (framed_penalty).
+ */
+static size_t
+recognize_cloud(
+	const struct hand_templates *templates,
+	const struct hand_cloud *written,
+	const struct hand_extent *ink,
+	const struct hand_frame *frame,
+	uint32_t *codes,
+	float *distances,
+	size_t capacity)
+{
 	size_t count;
 	size_t index;
 	size_t place;
 	size_t seen;
 	float distance;
 	float bound;
+	float penalty;
 	int duplicate;
 
 	/* Each template against the cloud, given up once it is farther than the farthest kept. */
@@ -254,7 +291,15 @@ hand_recognize(
 		bound = FLT_MAX;
 		if (count == capacity)
 			bound = distances[count - 1U];
-		distance = cloud_distance(written, &templates->items[index].cloud, bound);
+
+		/* The size and the place first: a template already too far is not matched. */
+		penalty = 0.0f;
+		if (frame != NULL)
+			penalty = framed_penalty(ink, frame, &templates->items[index].extent);
+		if (penalty >= bound)
+			continue;
+		distance = cloud_distance(written, &templates->items[index].cloud, bound - penalty);
+		distance += penalty;
 		if (distance >= bound)
 			continue;
 
@@ -311,6 +356,24 @@ hand_recognize_strokes(
 	float *distances,
 	size_t capacity)
 {
+	/* Without an area. */
+	return recognize_strokes(templates, input, NULL, codes, distances, capacity);
+}
+
+/*
+ * Recognizes a stroke list as hand_recognize_strokes does; with an area
+ * (frame not NULL), the size and the place of the ink (or of the rest
+ * without its mark) count too (recognize_cloud).
+ */
+static size_t
+recognize_strokes(
+	const struct hand_templates *templates,
+	const struct hand_cloud_input *input,
+	const struct hand_frame *frame,
+	uint32_t *codes,
+	float *distances,
+	size_t capacity)
+{
 	static float xs[HAND_CLOUD_INPUT_MAX];
 	static float ys[HAND_CLOUD_INPUT_MAX];
 	static unsigned char starts[HAND_CLOUD_INPUT_MAX];
@@ -321,6 +384,7 @@ hand_recognize_strokes(
 	float base_distances[8];
 	uint32_t plain[8];
 	float plain_distances[8];
+	struct hand_extent extent;
 	uint32_t voiced;
 	size_t base_count;
 	size_t plain_count;
@@ -336,9 +400,10 @@ hand_recognize_strokes(
 	if (capacity > 8U)
 		capacity = 8U;
 	plain_count = 0U;
+	cloud_extent(input, &extent);
 	error = hand_cloud_make(input, &cloud);
 	if (error == 0)
-		plain_count = hand_recognize(templates, &cloud, plain, plain_distances, capacity);
+		plain_count = recognize_cloud(templates, &cloud, &extent, frame, plain, plain_distances, capacity);
 
 	/* Without a mark, those: the characters without a mark first (a voiced one needs its mark). */
 	mark = HAND_MARK_NONE;
@@ -389,9 +454,10 @@ hand_recognize_strokes(
 	body.y = ys;
 	body.starts = starts;
 	base_count = 0U;
+	cloud_extent(&body, &extent);
 	error = hand_cloud_make(&body, &cloud);
 	if (error == 0)
-		base_count = hand_recognize(templates, &cloud, base, base_distances, 8U);
+		base_count = recognize_cloud(templates, &cloud, &extent, frame, base, base_distances, 8U);
 
 	/* The rest's candidates that take the mark, voiced, first. */
 	count = 0U;
@@ -422,6 +488,29 @@ hand_recognize_strokes(
 
 	/* The candidates. */
 	return count;
+}
+
+/*
+ * Recognizes a stroke list written on an area as hand_recognize_strokes
+ * does, each template's distance with how far the ink's size and place on
+ * the area are from the template's on the Hershey glyphs' area added: a
+ * small c before C, a dot low on the area before the middle dot.  An area
+ * of no height is recognized without it.  Returns how many candidates, at
+ * most capacity, the likeliest first.
+ */
+size_t
+hand_recognize_framed(
+	const struct hand_templates *templates,
+	const struct hand_cloud_input *input,
+	const struct hand_frame *frame,
+	uint32_t *codes,
+	float *distances,
+	size_t capacity)
+{
+	/* An area of no height is none. */
+	if (frame == NULL || frame->height <= 0.0f)
+		return recognize_strokes(templates, input, NULL, codes, distances, capacity);
+	return recognize_strokes(templates, input, frame, codes, distances, capacity);
 }
 
 /*
@@ -610,6 +699,7 @@ templates_line(
 	if (error != 0)
 		return error;
 	templates->items[templates->count].code = (uint32_t)code;
+	cloud_extent(&input, &templates->items[templates->count].extent);
 	templates->count++;
 
 	/* Succeeded: one more template. */
@@ -795,4 +885,61 @@ strokes_unvoiced(
 
 	/* Not a voiced kana. */
 	return 0U;
+}
+
+/* Finds the box all the points of a stroke list take (an empty list: all zero). */
+static void
+cloud_extent(
+	const struct hand_cloud_input *input,
+	struct hand_extent *extent)
+{
+	size_t index;
+
+	/* None. */
+	memset(extent, 0, sizeof(*extent));
+	if (input->count == 0U)
+		return;
+
+	/* Each point widens it. */
+	extent->left = input->x[0];
+	extent->right = input->x[0];
+	extent->top = input->y[0];
+	extent->bottom = input->y[0];
+	for (index = 1U; index < input->count; index++) {
+		extent->left = fminf(extent->left, input->x[index]);
+		extent->right = fmaxf(extent->right, input->x[index]);
+		extent->top = fminf(extent->top, input->y[index]);
+		extent->bottom = fmaxf(extent->bottom, input->y[index]);
+	}
+}
+
+/*
+ * Gives how far a written character's size and place on its area are from
+ * a template's on the Hershey glyphs' area: the size (the longer side, a
+ * share of the area's height) as the logarithm of their ratio, and the
+ * height of the middle, a share of the area's, each weighed.
+ */
+static float
+framed_penalty(
+	const struct hand_extent *ink,
+	const struct hand_frame *frame,
+	const struct hand_extent *glyph)
+{
+	float ink_size;
+	float glyph_size;
+	float ink_middle;
+	float glyph_middle;
+
+	/* The sizes, a dot's at least. */
+	ink_size = fmaxf(ink->right - ink->left, ink->bottom - ink->top) / frame->height;
+	glyph_size = fmaxf(glyph->right - glyph->left, glyph->bottom - glyph->top) / HAND_TEMPLATE_HEIGHT;
+	ink_size = fmaxf(ink_size, HAND_SIZE_LEAST);
+	glyph_size = fmaxf(glyph_size, HAND_SIZE_LEAST);
+
+	/* The middles' heights on their areas. */
+	ink_middle = ((ink->top + ink->bottom) * 0.5f - frame->top) / frame->height;
+	glyph_middle = ((glyph->top + glyph->bottom) * 0.5f - HAND_TEMPLATE_TOP) / HAND_TEMPLATE_HEIGHT;
+
+	/* Weighed. */
+	return HAND_SIZE_WEIGHT * fabsf(logf(ink_size / glyph_size)) + HAND_PLACE_WEIGHT * fabsf(ink_middle - glyph_middle);
 }

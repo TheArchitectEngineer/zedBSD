@@ -108,6 +108,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/bind/encoding.c \
 	$(LIBBROWSER_DIR)/bind/storage.c \
 	$(LIBBROWSER_DIR)/bind/markup.c \
+	$(LIBBROWSER_DIR)/bind/media.c \
 	$(LIBBROWSER_DIR)/bind/computed.c \
 	$(LIBBROWSER_DIR)/bind/exception.c \
 	$(LIBBROWSER_DIR)/bind/node.c \
@@ -149,6 +150,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/page/geometry.c \
 	$(LIBBROWSER_DIR)/page/storage.c \
 	$(LIBBROWSER_DIR)/page/images.c \
+	$(LIBBROWSER_DIR)/page/media.c \
 	$(LIBBROWSER_DIR)/page/sheets.c \
 	$(LIBBROWSER_DIR)/page/fonts.c \
 	$(LIBBROWSER_DIR)/page/network.c \
@@ -184,4 +186,4 @@ LIBBROWSER_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libbrowser.so=$(BUIL
 	/usr/share/licenses/browser/WHATWG-entities=userland/base/licenses/browser/WHATWG-entities \
 	/usr/share/licenses/browser/Unicode-License-V3=userland/base/licenses/browser/Unicode-License-V3
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libbrowser,Web browser engine library,amd64,n,library,$(LIBBROWSER_SOURCES),y,desktop,desktop/libbrowser,desktop/libtruetype desktop/libvulkan base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,,shared-library,$(LIBBROWSER_IMAGE_DATA),userland/desktop/include/browser/browser.h,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libbrowser,Web browser engine library,amd64,n,library,$(LIBBROWSER_SOURCES),y,desktop,desktop/libbrowser,desktop/libtruetype desktop/libvulkan desktop/libmedia base/libjpeg-compat base/libpng-compat base/libz-compat base/libgif-compat,,shared-library,$(LIBBROWSER_IMAGE_DATA),userland/desktop/include/browser/browser.h,lib))

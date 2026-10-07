@@ -77,6 +77,7 @@ APPS = {
 	"Image Viewer": ("image", "imageview", None),
 	"Video Player": ("video", "videoplayer", r"VIDEOPLAYER READY "),
 	"Music": ("music", "music", r"MUSIC READY "),
+	"Photos": ("photos", "photos", r"PHOTOS READY "),
 	"Phone": ("phone", "phone", r"PHONE READY "),
 	"Calendar": ("calendar", "calendar", r"CALENDAR READY "),
 	"Mail": ("mail", "mailer", r"MAIL READY "),
@@ -86,8 +87,8 @@ APPS = {
 }
 
 # The programs an item may leave running, stopped before and after each scenario.
-PROGRAMS = ("files", "notes", "settings", "terminal", "pdfviewer", "imageview", "videoplayer", "music", "phone",
-	"calendar", "mailer", "textedit", "monitor", "browser", "emacs")
+PROGRAMS = ("files", "notes", "settings", "terminal", "pdfviewer", "imageview", "videoplayer", "music", "photos",
+	"phone", "calendar", "mailer", "textedit", "monitor", "browser", "emacs")
 
 
 class ItemEnded(Exception):

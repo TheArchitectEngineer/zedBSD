@@ -1,0 +1,14 @@
+<!doctype html>
+<title>Script</title>
+<video id="v" src="sample.mp4" muted></video>
+<script>
+var v = document.getElementById("v");
+console.log("canplaytype " + v.canPlayType("video/mp4") + "|" + v.canPlayType("video/ogg") + " paused " + v.paused + " ready " + v.readyState);
+v.addEventListener("loadedmetadata", function () {
+	console.log("meta " + v.videoWidth + "x" + v.videoHeight + " duration " + Math.round(v.duration));
+	v.currentTime = 16;
+	v.play().then(function () { console.log("play resolved"); });
+});
+v.addEventListener("playing", function () { console.log("playing paused " + v.paused); });
+v.onended = function () { console.log("ended " + v.ended + " paused " + v.paused + " time " + Math.round(v.currentTime)); };
+</script>

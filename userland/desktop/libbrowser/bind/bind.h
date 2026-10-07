@@ -128,6 +128,30 @@ struct bind_storage_calls {
 	int (*clear)(void *context, int area);
 };
 
+/*
+ * A media element's state as the host reports it (ws121-p005): whether it
+ * has media, whether it is paused or ended, where it is and how long it is
+ * (seconds), how ready it is (HTMLMediaElement's HAVE_* number), the
+ * video's size, and whether it failed.
+ */
+struct bind_media {
+	int has;
+	int paused;
+	int ended;
+	double current_time;
+	double duration;
+	int ready_state;
+	int width;
+	int height;
+	int error;
+};
+
+/* What a script asks of a media element's host (bind_host.media). */
+#define BIND_MEDIA_STATE	0
+#define BIND_MEDIA_PLAY		1
+#define BIND_MEDIA_PAUSE	2
+#define BIND_MEDIA_SEEK		3
+
 /* Completion of a resource fetched for the Fetch API. */
 typedef void (*bind_fetch_done)(void *context, int error, int status,
 				const unsigned char *bytes, size_t length, const char *url);
@@ -180,6 +204,8 @@ struct bind_host {
 	struct dom_node *(*element_at)(void *context, double x, double y);
 	/* Inserts into the active parser; ENOTSUP when no insertion point exists. */
 	int (*document_write)(void *context, const uint16_t *units, size_t length);
+	/* A media element's state, play, pause or seek to a time (BIND_MEDIA_*, ws121-p005); fills state. */
+	int (*media)(void *context, struct dom_element *element, int request, double value, struct bind_media *state);
 };
 
 /*

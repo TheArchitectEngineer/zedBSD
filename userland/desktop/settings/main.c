@@ -493,6 +493,7 @@ main_loop(
 		se_look_poll(&main_app, now);
 		se_storage_poll(&main_app, now);
 		se_sharing_poll(&main_app);
+		se_printers_poll(&main_app);
 		se_sound_poll(&main_app, now);
 		if (main_app.dirty != 0)
 			inputs++;

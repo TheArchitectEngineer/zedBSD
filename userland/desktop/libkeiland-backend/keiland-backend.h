@@ -536,6 +536,116 @@ int kl_backend_volumes_eject(struct kl_backend_volumes *volumes, const char *id,
 int kl_backend_volumes_take_result(struct kl_backend_volumes *volumes, uint32_t *request, int *error, char *user, size_t size);
 
 /*
+ * The printers (ws145-p003, plan/ws145/design.md section 4): the user's
+ * printers, kept in a file of the user's (~/.config/keiland/printers.conf),
+ * and the jobs sent to them.  The jobs go to the user's printer daemon,
+ * keiland-printd, which this starts when there is something to do (with a
+ * socket on its descriptor 3) and which sends them by IPP or LPD.  The code
+ * is the same on every system.  Nothing here waits: kl_backend_print_update
+ * reads what the daemon said; additions, removals, prints and cancels are
+ * answered later as results.
+ */
+struct kl_backend_print;
+
+/* The most printers and jobs kept, and the lengths of their texts with their NULs. */
+#define KL_BACKEND_PRINTERS_MAX		16U
+#define KL_BACKEND_PRINT_JOBS_MAX	32U
+#define KL_BACKEND_PRINTER_HOST_MAX	64U
+#define KL_BACKEND_PRINTER_PATH_MAX	64U
+#define KL_BACKEND_PRINTER_NAME_MAX	128U
+#define KL_BACKEND_PRINT_TITLE_MAX	128U
+#define KL_BACKEND_PRINT_DETAIL_MAX	32U
+
+/* The protocols. */
+#define KL_BACKEND_PRINTER_IPP		1U
+#define KL_BACKEND_PRINTER_LPD		2U
+
+/* A job's states. */
+#define KL_BACKEND_PRINT_QUEUED		1U
+#define KL_BACKEND_PRINT_SENDING	2U
+#define KL_BACKEND_PRINT_WAITING	3U
+#define KL_BACKEND_PRINT_DONE		4U
+#define KL_BACKEND_PRINT_FAILED		5U
+#define KL_BACKEND_PRINT_CANCELLED	6U
+
+/*
+ * A printer: its number (kept in the file, never used again), protocol,
+ * host, port, IPP path or LPD queue, name, and whether it is the default.
+ */
+struct kl_backend_printer {
+	uint32_t id;
+	unsigned protocol;
+	char host[KL_BACKEND_PRINTER_HOST_MAX];
+	unsigned port;
+	char path[KL_BACKEND_PRINTER_PATH_MAX];
+	char name[KL_BACKEND_PRINTER_NAME_MAX];
+	unsigned is_default;
+};
+
+/* A job: its number, its printer, its state, its title and the word of its state ("" or a failure's). */
+struct kl_backend_print_job {
+	uint32_t job;
+	uint32_t printer;
+	unsigned state;
+	char title[KL_BACKEND_PRINT_TITLE_MAX];
+	char detail[KL_BACKEND_PRINT_DETAIL_MAX];
+};
+
+/* What kl_backend_print_update found changed. */
+#define KL_BACKEND_PRINT_CHANGED_LIST	1U	/* the printers or the jobs */
+#define KL_BACKEND_PRINT_CHANGED_RESULT	2U	/* a request was answered */
+
+/*
+ * Starts the printers: the settings file, the runtime directory the daemon
+ * spools in (NULL: $XDG_RUNTIME_DIR), and the daemon's program.  Returns
+ * NULL only without memory.
+ */
+struct kl_backend_print *kl_backend_print_open(const char *config_path, const char *runtime_dir, const char *program);
+
+/*
+ * Stops the printers: the daemon is told to end (its socket shut).
+ */
+void kl_backend_print_close(struct kl_backend_print *print);
+
+/*
+ * Tells whether printing can be offered: the daemon's program is there.
+ */
+int kl_backend_print_can(const struct kl_backend_print *print);
+
+/*
+ * Reads what the daemon said and the settings file changed by another
+ * session, without waiting.  *changed has the KL_BACKEND_PRINT_CHANGED_*
+ * bits.  Returns 0.
+ */
+int kl_backend_print_update(struct kl_backend_print *print, unsigned *changed);
+
+/*
+ * Copy up to capacity printers or jobs and return how many were copied.
+ */
+size_t kl_backend_print_printers(const struct kl_backend_print *print, struct kl_backend_printer *list, size_t capacity);
+size_t kl_backend_print_jobs(const struct kl_backend_print *print, struct kl_backend_print_job *list, size_t capacity);
+
+/*
+ * Ask for a printer to be added, removed or made the default, a document
+ * (a descriptor of a PDF, which the call takes whatever it returns) to be
+ * printed (printer 0: the default), or a job to be cancelled; *request
+ * numbers the answer, and a print's job is known at once.  Each returns 0
+ * when asked, or EINVAL, EBUSY.
+ */
+int kl_backend_print_add(struct kl_backend_print *print, unsigned protocol, const char *host, unsigned port, const char *path, uint32_t *request);
+int kl_backend_print_remove(struct kl_backend_print *print, uint32_t printer, uint32_t *request);
+int kl_backend_print_set_default(struct kl_backend_print *print, uint32_t printer, uint32_t *request);
+int kl_backend_print_submit(struct kl_backend_print *print, uint32_t printer, const char *title, int fd, uint32_t *request, uint32_t *job);
+int kl_backend_print_cancel(struct kl_backend_print *print, uint32_t job, uint32_t *request);
+
+/*
+ * Takes the oldest answer: its request, its errno value (0, EINVAL, EBUSY,
+ * EIO) and whether the settings file was written.  Returns 1 with one, 0
+ * when none is waiting.
+ */
+int kl_backend_print_take_result(struct kl_backend_print *print, uint32_t *request, int *error, unsigned *saved);
+
+/*
  * The machine's monitor (WS134 p008, plan/ws134/design.md section 1.3): what
  * the System Monitor shows, as counters that only grow (the CPUs' ticks,
  * the links' and the disks' bytes, the GPUs' busy time) and present values

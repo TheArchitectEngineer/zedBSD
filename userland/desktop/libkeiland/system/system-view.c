@@ -707,3 +707,110 @@ system_view_copy(
 	memcpy(to, from, length);
 	to[length] = '\0';
 }
+
+/*
+ * Adds a printer to the pending list (ws145-p003), starting a new list
+ * (of the printers and the jobs) after the last done.
+ */
+void
+system_view_printer(
+	struct system_view *view,
+	const struct kl_printer *printer)
+{
+	/* The first after a done starts the lists. */
+	if (!view->printers_open) {
+		view->printers_open = 1U;
+		view->printers_pending_count = 0U;
+		view->print_jobs_pending_count = 0U;
+	}
+
+	/* The printer, while there is room. */
+	if (view->printers_pending_count >= KL_PRINTERS_MAX)
+		return;
+	view->printers_pending[view->printers_pending_count] = *printer;
+	view->printers_pending_count++;
+}
+
+/*
+ * Adds a print job to the pending list (ws145-p003).
+ */
+void
+system_view_print_job(
+	struct system_view *view,
+	const struct kl_print_job *job)
+{
+	/* The first after a done starts the lists. */
+	if (!view->printers_open) {
+		view->printers_open = 1U;
+		view->printers_pending_count = 0U;
+		view->print_jobs_pending_count = 0U;
+	}
+
+	/* The job, while there is room. */
+	if (view->print_jobs_pending_count >= KL_PRINT_JOBS_MAX)
+		return;
+	view->print_jobs_pending[view->print_jobs_pending_count] = *job;
+	view->print_jobs_pending_count++;
+}
+
+/*
+ * Puts the pending printers and jobs into effect (a done after neither
+ * empties both).
+ */
+void
+system_view_printers_done(
+	struct system_view *view)
+{
+	/* A done after nothing: empty lists. */
+	if (!view->printers_open) {
+		view->printers_pending_count = 0U;
+		view->print_jobs_pending_count = 0U;
+	}
+
+	/* The lists, as one state. */
+	view->printers_open = 0U;
+	memcpy(view->printers, view->printers_pending, view->printers_pending_count * sizeof(view->printers[0]));
+	view->printer_count = view->printers_pending_count;
+	memcpy(view->print_jobs, view->print_jobs_pending, view->print_jobs_pending_count * sizeof(view->print_jobs[0]));
+	view->print_job_count = view->print_jobs_pending_count;
+	view->changed |= KL_SYSTEM_CHANGED_PRINTERS;
+}
+
+/*
+ * Keeps a print's job for its request (the oldest kept is replaced when
+ * the ring is full).
+ */
+void
+system_view_print_queued(
+	struct system_view *view,
+	uint32_t request,
+	uint32_t job)
+{
+	/* The next slot of the ring. */
+	view->queued[view->queued_next].request = request;
+	view->queued[view->queued_next].job = job;
+	view->queued_next = (view->queued_next + 1U) % SYSTEM_VIEW_PRINT_QUEUED;
+}
+
+/*
+ * Finds a print's job by its request: 1 with it, 0 when none is kept.
+ */
+int
+system_view_print_job_of(
+	const struct system_view *view,
+	uint32_t request,
+	uint32_t *job)
+{
+	unsigned index;
+
+	/* Each kept. */
+	for (index = 0; index < SYSTEM_VIEW_PRINT_QUEUED; index++) {
+		if (view->queued[index].request == request && view->queued[index].job != 0U) {
+			*job = view->queued[index].job;
+			return 1;
+		}
+	}
+
+	/* None. */
+	return 0;
+}

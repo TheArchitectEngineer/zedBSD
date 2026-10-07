@@ -3219,9 +3219,9 @@ keyboard_hand_recognize(
 	int32_t bounds[4];
 	int32_t area[4];
 
-	/* The answer, once for this ink, by its size on the writing area. */
+	/* The answer, once for this ink, by its shape, size and place on the writing area. */
 	keyboard_hand_area(area);
-	kwl_hand_recognize(&keyboard_ink, area[3], &keyboard.result);
+	kwl_hand_recognize_on(&keyboard_ink, area[1], area[3], &keyboard.result);
 	keyboard.recognized = 1;
 	server->dirty = 1;
 

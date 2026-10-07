@@ -1434,6 +1434,12 @@ node_prototype_index(
 		element = (const struct dom_element *)node;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IMG)
 			return BIND_HTML_IMAGE_ELEMENT;
+
+		/* Media elements play through the host (ws121-p005). */
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_VIDEO)
+			return BIND_HTML_VIDEO_ELEMENT;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_AUDIO)
+			return BIND_HTML_AUDIO_ELEMENT;
 		/* Inline style wrappers preserve exact local case in XML-owned HTML nodes. */
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_STYLE) {
 			form = vm_string_equal_ascii(element->local_name, "style");

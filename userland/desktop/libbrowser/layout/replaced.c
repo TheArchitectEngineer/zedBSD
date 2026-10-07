@@ -16,9 +16,14 @@
 
 #include "layout/layout.h"
 
+/* The size of a <video> without a picture (HTML's default object size). */
+#define REPLACED_VIDEO_WIDTH	300
+#define REPLACED_VIDEO_HEIGHT	150
+
 static int replaced_attribute(const struct layout_box *box, const char *name, layout_unit *value);
 static int replaced_length(const struct css_length *length, layout_unit containing, layout_unit *value);
 static layout_unit replaced_content_size(const struct layout_box *box, layout_unit size, int first, int second);
+static int replaced_is_video(const struct layout_box *box);
 
 /*
  * Sets a replaced box's content width and height within its containing block.
@@ -41,6 +46,7 @@ layout_replaced_size(
 	int width_given;
 	int height_given;
 	int limited;
+	int video;
 
 	/* The image's own size, which gives the ratio too. */
 	natural_width = 0;
@@ -50,6 +56,13 @@ layout_replaced_size(
 		natural_width = (layout_unit)box->image->width * LAYOUT_UNIT;
 		natural_height = (layout_unit)box->image->height * LAYOUT_UNIT;
 		has_ratio = 1;
+	}
+
+	/* A <video> without a picture yet has HTML's default object size (ws121-p004). */
+	video = replaced_is_video(box);
+	if (box->image == NULL && video) {
+		natural_width = (layout_unit)REPLACED_VIDEO_WIDTH * LAYOUT_UNIT;
+		natural_height = (layout_unit)REPLACED_VIDEO_HEIGHT * LAYOUT_UNIT;
 	}
 
 	/* A form control's natural size is its text's, and has no ratio. */
@@ -246,4 +259,18 @@ replaced_content_size(
 
 	/* Succeeded: reports the nonnegative used content dimension. */
 	return size;
+}
+
+/* Tells whether a box is an HTML <video>'s. */
+static int
+replaced_is_video(
+	const struct layout_box *box)
+{
+	const struct dom_element *element;
+
+	/* An element's box. */
+	if (box->node == NULL || box->node->type != DOM_ELEMENT)
+		return 0;
+	element = (const struct dom_element *)box->node;
+	return element->ns == DOM_NS_HTML && element->tag == DOM_TAG_VIDEO;
 }

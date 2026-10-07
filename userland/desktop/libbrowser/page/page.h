@@ -143,6 +143,10 @@ struct page {
 	int window_focused;
 	uint32_t focus_generation;
 	uint32_t painted_focus;
+	/* The media (media.c, ws121-p004): struct page_media *, the pictures that came, and their count when painted. */
+	struct wb_vector media;
+	uint32_t media_generation;
+	uint32_t painted_media;
 	struct css_engine *query_css;
 	const struct text_font_paths *font_paths;
 	int viewport_width;
@@ -282,6 +286,21 @@ const char *page_failure_reason(void);
 const struct img_bitmap *page_image_of(void *context, const struct dom_element *element);
 const struct img_bitmap *page_image_by_url(void *context, const struct vm_string *url);
 void page_images_release(struct page *page);
+
+/* The media of <video> and <audio> (media.c, ws121-p004). */
+struct media_status;
+void page_media_init(struct page *page);
+void page_media_release(struct page *page);
+int page_load_media(struct page *page);
+const struct img_bitmap *page_media_bitmap(const struct page *page, const struct dom_element *element);
+size_t page_media_poll_fds(const struct page *page, struct pollfd *fds, size_t capacity);
+int page_media_timeout(const struct page *page);
+void page_media_process(struct page *page);
+int page_media_play(struct page *page, const struct dom_element *element, int play);
+int page_media_status(const struct page *page, const struct dom_element *element, struct media_status *status);
+void page_media_seek(struct page *page, const struct dom_element *element, double seconds);
+int page_media_host(void *context, struct dom_element *element, int request, double value, struct bind_media *state);
+int page_media_click(struct page *page, struct dom_element *element, int x, int y);
 int page_fetch(const char *base, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 /* Fresh response storage receives owned metadata/body, or an empty response on failure. */
 int page_fetch_response(const char *base, const char *href, struct net_response *response);

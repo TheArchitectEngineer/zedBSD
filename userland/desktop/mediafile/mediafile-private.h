@@ -44,12 +44,13 @@ struct mf_format {
 };
 
 /*
- * An open file: its descriptor and size, its format and that format's
- * state, the tracks found, the length of the presentation, and the buffer
- * the last packet was read into.
+ * An open file: its descriptor (-1 for a source) or its source, its size,
+ * its format and that format's state, the tracks found, the length of the
+ * presentation, and the buffer the last packet was read into.
  */
 struct mf_file {
 	int fd;
+	struct mf_source source;
 	uint64_t size;
 	const struct mf_format *format;
 	void *state;

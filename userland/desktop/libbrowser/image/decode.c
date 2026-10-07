@@ -146,3 +146,16 @@ img_bitmap_create(
 	img_next_serial++;
 	return 0;
 }
+
+/*
+ * Gives a bitmap whose pixels were drawn again a new serial (a video's
+ * picture, ws121-p004), so that a GPU takes its pixels anew.
+ */
+void
+img_bitmap_renew(
+	struct img_bitmap *bitmap)
+{
+	/* A serial no other bitmap has. */
+	bitmap->serial = img_next_serial;
+	img_next_serial++;
+}

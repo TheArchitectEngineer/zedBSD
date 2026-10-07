@@ -108,8 +108,12 @@ page_image_of(
 	int found;
 	int error;
 
-	/* The element's source or data, resolved against the page's location. */
+	/* A <video>'s picture is its media's (ws121-p004). */
 	page = context;
+	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_VIDEO)
+		return page_media_bitmap(page, element);
+
+	/* The element's source or data, resolved against the page's location. */
 	source_name = "src";
 	if (element->tag == DOM_TAG_OBJECT)
 		source_name = "data";

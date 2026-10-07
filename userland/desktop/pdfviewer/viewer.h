@@ -120,6 +120,7 @@ enum pv_action {
 	PV_ACTION_CLOSE,
 	PV_ACTION_QUIT,
 	PV_ACTION_ANNOTATE,
+	PV_ACTION_PRINT,
 	PV_ACTION_MODE_SCROLL,
 	PV_ACTION_MODE_PAGE,
 	PV_ACTION_FIT_WIDTH,
@@ -304,6 +305,7 @@ struct pv_app {
 	char chooser_folder[PV_PATH_MAX];
 	int want_close;
 	int want_annotate;
+	int want_print;
 	int opened;
 	uint64_t now;
 	int dirty;

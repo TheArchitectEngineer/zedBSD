@@ -64,6 +64,7 @@ page_create(
 	/* Its stack ends where the caller says, and it has no images yet. */
 	vm_heap_set_stack_base(created->heap, stack_base);
 	page_images_init(created);
+	page_media_init(created);
 	page_sheets_init(created);
 	page_fonts_init(created);
 	page_scripts_init(created);
@@ -128,6 +129,7 @@ page_destroy(
 		layout_release(&page->previous_layout);
 	if (page->text_open)
 		text_system_close(&page->text);
+	page_media_release(page);
 	page_images_release(page);
 	css_engine_destroy(page->css);
 	css_engine_destroy(page->query_css);
@@ -481,6 +483,11 @@ page_layout(
 	if (error != 0)
 		goto cleanup;
 
+	/* The media the document names, started when they are new (ws121-p004). */
+	error = page_load_media(page);
+	if (error != 0)
+		goto cleanup;
+
 	/* Builds and lays out the box tree, the images found by their elements (the ones there are now). */
 	page->laid_out_images = page->images_generation;
 	css_engine_set_container_lookup(page->css, page_container_size, page);
@@ -570,6 +577,7 @@ page_paint(
 	if (error != 0)
 		return error;
 	page->painted = 1;
+	page->painted_media = page->media_generation;
 
 	/* The focus ring over it, when the keyboard put the focus somewhere. */
 	error = page_paint_focus(page);

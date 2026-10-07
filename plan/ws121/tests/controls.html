@@ -1,0 +1,8 @@
+<!doctype html>
+<title>Controls</title>
+<video id="c" src="sample.mp4" muted controls></video>
+<script>
+var c = document.getElementById("c");
+c.addEventListener("play", function () { console.log("controls play"); });
+c.addEventListener("pause", function () { console.log("controls pause at " + Math.round(c.currentTime)); });
+</script>

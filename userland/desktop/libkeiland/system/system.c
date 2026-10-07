@@ -27,10 +27,15 @@
 #include "userland/desktop/libkeiland/system/kl-system-protocol.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-/* Marks protocol callback arguments that this client does not inspect. */
+/* The largest document printed, and the bytes looked through for "%PDF-" (ws145-p003). */
+#define SYSTEM_PRINT_FILE_MAX	(256LL * 1024 * 1024)
+#define SYSTEM_PRINT_HEAD	1024U
 #define UNUSED_PARAMETER(name) ((void)(name))
 
 /*
@@ -53,6 +58,7 @@ struct kl_system {
 	struct wl_proxy *notify;
 	struct wl_proxy *mail;
 	struct wl_proxy *phone;
+	struct wl_proxy *printers;
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -135,6 +141,15 @@ struct system_phone_listener {
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
 };
 
+/* The listener of kl_system_printers_v1's events (ws145-p003), in their order. */
+struct system_printers_listener {
+	void (*printer)(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t protocol, const char *host, uint32_t port, const char *path, const char *name, uint32_t flags);
+	void (*job)(void *data, struct wl_proxy *proxy, uint32_t job, uint32_t printer, uint32_t state, const char *title, const char *detail);
+	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial);
+	void (*queued)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t job);
+	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+};
+
 /* The listener of kl_system_devices_v1's events, in their order. */
 struct system_devices_listener {
 	void (*device)(void *data, struct wl_proxy *proxy, const char *id, uint32_t kind, uint32_t state, const char *name, const char *location);
@@ -152,6 +167,11 @@ static void system_mail(void *data, struct wl_proxy *proxy, const char *from, co
 static void system_mail_cut(char *to, size_t size, const char *from);
 static void system_phone_received(void *data, struct wl_proxy *proxy, uint32_t channel, const char *from, const char *text, uint32_t time_high, uint32_t time_low);
 static void system_phone_status(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t state);
+static void system_printer(void *data, struct wl_proxy *proxy, uint32_t id, uint32_t protocol, const char *host, uint32_t port, const char *path, const char *name, uint32_t flags);
+static void system_print_job(void *data, struct wl_proxy *proxy, uint32_t job, uint32_t printer, uint32_t state, const char *title, const char *detail);
+static void system_printers_done(void *data, struct wl_proxy *proxy, uint32_t serial);
+static void system_print_queued(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t job);
+static int system_print_title(const char *title, char *out, size_t size);
 static void system_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void system_capabilities(void *data, struct wl_proxy *proxy, uint32_t bits);
 static void system_network_state(void *data, struct wl_proxy *proxy, uint32_t reachable, uint32_t connected, uint32_t kind, const char *interface, const char *wired, uint32_t wifi, const char *wifi_interface, const char *ssid);
@@ -262,6 +282,15 @@ static const struct system_phone_listener system_phone_listener = {
 	system_result
 };
 
+/* The printers object's callbacks (ws145-p003). */
+static const struct system_printers_listener system_printers_listener = {
+	system_printer,
+	system_print_job,
+	system_printers_done,
+	system_print_queued,
+	system_result
+};
+
 /* The devices object's callbacks. */
 static const struct system_devices_listener system_devices_listener = {
 	system_device,
@@ -335,6 +364,7 @@ kl_system_close(
 	system_destroy(system->notify, KL_SYSTEM_NOTIFY_DESTROY);
 	system_destroy(system->mail, KL_SYSTEM_MAIL_DESTROY);
 	system_destroy(system->phone, KL_SYSTEM_PHONE_DESTROY);
+	system_destroy(system->printers, KL_SYSTEM_PRINTERS_DESTROY);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -409,6 +439,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_MAIL;
 	if (system->phone != NULL)
 		bits |= KL_SYSTEM_HAS_PHONE;
+	if (system->printers != NULL)
+		bits |= KL_SYSTEM_HAS_PRINTERS;
 
 	/* The administration of the accounts, offered with the account to a manager bound at version 8 (ws089-p026). */
 	if (system->account != NULL && (system->view.capabilities & KL_SYSTEM_CAPABILITY_ADMINISTER) != 0U && system->manager_version >= KL_SYSTEM_SINCE_ADMINISTER)
@@ -891,6 +923,254 @@ kl_system_phone_call(
 	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_CALL, asked, (uint32_t)channel, number);
 
 	/* Succeeded: the answer comes as the request's result. */
+	return 0;
+}
+
+/*
+ * Copies the printers (ws145-p003).
+ */
+size_t
+kl_system_printers_get(
+	const struct kl_system *system,
+	struct kl_printer *printers,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as fit. */
+	if (system == NULL || printers == NULL)
+		return 0;
+	count = system->view.printer_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(printers, system->view.printers, count * sizeof(printers[0]));
+	return count;
+}
+
+/*
+ * Copies the print jobs, oldest first (ws145-p003).
+ */
+size_t
+kl_system_print_jobs_get(
+	const struct kl_system *system,
+	struct kl_print_job *jobs,
+	size_t capacity)
+{
+	size_t count;
+
+	/* As many as fit. */
+	if (system == NULL || jobs == NULL)
+		return 0;
+	count = system->view.print_job_count;
+	if (count > capacity)
+		count = capacity;
+	memcpy(jobs, system->view.print_jobs, count * sizeof(jobs[0]));
+	return count;
+}
+
+/*
+ * Adds a printer: its protocol, host, port and IPP path or LPD queue (""
+ * or NULL for the usual one).
+ */
+int
+kl_system_printers_add(
+	struct kl_system *system,
+	unsigned protocol,
+	const char *host,
+	unsigned port,
+	const char *path,
+	uint32_t *request)
+{
+	uint32_t asked;
+	size_t length;
+
+	/* A protocol, a host, a port. */
+	if (system == NULL || host == NULL)
+		return EINVAL;
+	if (protocol != KL_PRINTER_IPP && protocol != KL_PRINTER_LPD)
+		return EINVAL;
+	length = strlen(host);
+	if (length == 0U || length >= KL_PRINTER_HOST_MAX || port == 0U || port > 65535U)
+		return EINVAL;
+	if (path == NULL)
+		path = "";
+	length = strlen(path);
+	if (length >= KL_PRINTER_PATH_MAX)
+		return EINVAL;
+
+	/* The compositor's printers. */
+	if (system->printers == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->printers, KL_SYSTEM_PRINTERS_ADD, asked, (uint32_t)protocol, host, (uint32_t)port, path);
+	return 0;
+}
+
+/*
+ * Removes a printer.
+ */
+int
+kl_system_printers_remove(
+	struct kl_system *system,
+	uint32_t printer,
+	uint32_t *request)
+{
+	uint32_t asked;
+
+	/* The compositor's printers. */
+	if (system == NULL)
+		return EINVAL;
+	if (system->printers == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->printers, KL_SYSTEM_PRINTERS_REMOVE, asked, printer);
+	return 0;
+}
+
+/*
+ * Makes a printer the default.
+ */
+int
+kl_system_printers_set_default(
+	struct kl_system *system,
+	uint32_t printer,
+	uint32_t *request)
+{
+	uint32_t asked;
+
+	/* The compositor's printers. */
+	if (system == NULL)
+		return EINVAL;
+	if (system->printers == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->printers, KL_SYSTEM_PRINTERS_SET_DEFAULT, asked, printer);
+	return 0;
+}
+
+/*
+ * Prints a PDF file on a printer (0: the default) under a title: the file
+ * is opened and checked here, and its descriptor goes to the compositor
+ * (libwayland sends a copy; this one is closed after).  The title is made
+ * one line: control characters become spaces, and it is cut to 127 bytes
+ * at a character's boundary.
+ */
+int
+kl_system_printers_print(
+	struct kl_system *system,
+	uint32_t printer,
+	const char *path,
+	const char *title,
+	uint32_t *request)
+{
+	unsigned char head[SYSTEM_PRINT_HEAD];
+	char clean[KL_PRINT_TITLE_MAX];
+	struct stat status;
+	uint32_t asked;
+	ssize_t got;
+	size_t index;
+	int regular;
+	int found;
+	int error;
+	int fd;
+
+	/* A path, a title of UTF-8, and the compositor's printers. */
+	if (system == NULL || path == NULL)
+		return EINVAL;
+	if (title == NULL)
+		title = "";
+	error = system_print_title(title, clean, sizeof(clean));
+	if (error != 0)
+		return error;
+	if (system->printers == NULL || system->lost)
+		return ENOTSUP;
+
+	/* The file: a regular one, of a size printed. */
+	fd = open(path, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
+	if (fd < 0)
+		return errno;
+	error = fstat(fd, &status);
+	if (error != 0) {
+		error = errno;
+		(void)close(fd);
+		return error;
+	}
+
+	/*  S_ISREG(status.st_mode);=A regular file. */
+	regular = S_ISREG(status.st_mode);
+	if (!regular) {
+		(void)close(fd);
+		return EINVAL;
+	}
+
+	/*  0 ||=Not empty, not too large. */
+	if (status.st_size <= 0 || (long long)status.st_size > SYSTEM_PRINT_FILE_MAX) {
+		(void)close(fd);
+		return EFBIG;
+	}
+
+	/* A PDF: "%PDF-" in its first bytes. */
+	got = pread(fd, head, sizeof(head), 0);
+	found = 0;
+	for (index = 0; got > 0 && index + 5U <= (size_t)got && !found; index++)
+		found = memcmp(head + index, "%PDF-", 5U) == 0;
+	if (!found) {
+		(void)close(fd);
+		return EINVAL;
+	}
+
+	/* Sent with the application's next flush (a copy of the descriptor goes with it). */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->printers, KL_SYSTEM_PRINTERS_PRINT, asked, printer, clean, fd);
+	(void)close(fd);
+	return 0;
+}
+
+/*
+ * Finds the job a print's request made, once its result came: 1 with it,
+ * 0 when there is none (not answered yet, refused, or forgotten).
+ */
+int
+kl_system_print_job_of(
+	const struct kl_system *system,
+	uint32_t request,
+	uint32_t *job)
+{
+	int found;
+
+	/* The view's ring. */
+	if (system == NULL || job == NULL)
+		return 0;
+	found = system_view_print_job_of(&system->view, request, job);
+	return found;
+}
+
+/*
+ * Cancels a print job.
+ */
+int
+kl_system_print_cancel(
+	struct kl_system *system,
+	uint32_t job,
+	uint32_t *request)
+{
+	uint32_t asked;
+
+	/* The compositor's printers. */
+	if (system == NULL)
+		return EINVAL;
+	if (system->printers == NULL || system->lost)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->printers, KL_SYSTEM_PRINTERS_CANCEL, asked, job);
 	return 0;
 }
 
@@ -2462,6 +2742,10 @@ system_bind(
 	if (system->manager_version >= KL_SYSTEM_SINCE_PHONE)
 		system->phone = system_make(system, KL_SYSTEM_CAPABILITY_PHONE, KL_SYSTEM_MANAGER_GET_PHONE, &kl_system_phone_v1_interface, &system_phone_listener);
 
+	/* The printers, offered to a manager bound at version 17 where the compositor has its daemon (ws145-p003). */
+	if (system->manager_version >= KL_SYSTEM_SINCE_PRINTERS)
+		system->printers = system_make(system, KL_SYSTEM_CAPABILITY_PRINTERS, KL_SYSTEM_MANAGER_GET_PRINTERS, &kl_system_printers_v1_interface, &system_printers_listener);
+
 	/* Waits for their first state: each object's state and its done. */
 	status = wl_display_roundtrip_queue(system->display, system->queue);
 	if (status < 0)
@@ -2547,4 +2831,167 @@ system_key_secret_valid(
 
 	/* One line. */
 	return 1;
+}
+
+/* A printer of the list being sent (ws145-p003). */
+static void
+system_printer(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t id,
+	uint32_t protocol,
+	const char *host,
+	uint32_t port,
+	const char *path,
+	const char *name,
+	uint32_t flags)
+{
+	struct kl_system *system;
+	struct kl_printer printer;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The printer as the application's record. */
+	system = data;
+	memset(&printer, 0, sizeof(printer));
+	printer.id = id;
+	printer.protocol = protocol;
+	system_view_copy(printer.host, sizeof(printer.host), host);
+	printer.port = port;
+	system_view_copy(printer.path, sizeof(printer.path), path);
+	system_view_copy(printer.name, sizeof(printer.name), name);
+	printer.flags = flags;
+	system_view_printer(&system->view, &printer);
+}
+
+/* A print job of the list being sent (ws145-p003). */
+static void
+system_print_job(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t job,
+	uint32_t printer,
+	uint32_t state,
+	const char *title,
+	const char *detail)
+{
+	struct kl_system *system;
+	struct kl_print_job record;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* The job as the application's record. */
+	system = data;
+	memset(&record, 0, sizeof(record));
+	record.job = job;
+	record.printer = printer;
+	record.state = state;
+	system_view_copy(record.title, sizeof(record.title), title);
+	system_view_copy(record.detail, sizeof(record.detail), detail);
+	system_view_print_job(&system->view, &record);
+}
+
+/* Puts the printers and the jobs into effect (ws145-p003). */
+static void
+system_printers_done(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t serial)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(serial);
+
+	/* The lists, as one state. */
+	system = data;
+	system_view_printers_done(&system->view);
+}
+
+/* Keeps a print's job for kl_system_print_job_of (ws145-p003). */
+static void
+system_print_queued(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t request,
+	uint32_t job)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* In the view's ring. */
+	system = data;
+	system_view_print_queued(&system->view, request, job);
+}
+
+/*
+ * Makes a print's title one line of at most 127 bytes: EINVAL for one
+ * that is not UTF-8; control characters (C0, DEL, C1) become spaces; it is
+ * cut at a character's boundary.
+ */
+static int
+system_print_title(
+	const char *title,
+	char *out,
+	size_t size)
+{
+	const unsigned char *byte;
+	unsigned long code;
+	size_t length;
+	size_t extra;
+	size_t index;
+	size_t kept;
+
+	/* Each character. */
+	kept = 0;
+	byte = (const unsigned char *)title;
+	while (*byte != '\0') {
+		/* Its length from its first byte. */
+		if (*byte < 0x80U) {
+			extra = 0;
+			code = *byte;
+		} else if ((*byte & 0xe0U) == 0xc0U) {
+			extra = 1;
+			code = *byte & 0x1fU;
+		} else if ((*byte & 0xf0U) == 0xe0U) {
+			extra = 2;
+			code = *byte & 0x0fU;
+		} else if ((*byte & 0xf8U) == 0xf0U) {
+			extra = 3;
+			code = *byte & 0x07U;
+		} else {
+			return EINVAL;
+		}
+
+		/* Its continuation bytes. */
+		for (index = 1; index <= extra; index++) {
+			if ((byte[index] & 0xc0U) != 0x80U)
+				return EINVAL;
+			code = code << 6 | (byte[index] & 0x3fU);
+		}
+
+		/*  extra + 1U;=Its bytes. */
+		length = extra + 1U;
+
+		/* Cut where it would not fit. */
+		if (kept + length > size - 1U || kept + length > KL_PRINT_TITLE_MAX - 1U)
+			break;
+
+		/* A control character as a space, the others as they are. */
+		if (code < 0x20UL || code == 0x7fUL || (code >= 0x80UL && code <= 0x9fUL)) {
+			out[kept] = ' ';
+			kept++;
+		} else {
+			memcpy(out + kept, byte, length);
+			kept += length;
+		}
+
+		/*  length;=The next character. */
+		byte += length;
+	}
+
+	/* Ended. */
+	out[kept] = '\0';
+	return 0;
 }

@@ -7,8 +7,8 @@ Status: incomplete
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
-Queue: q754（p001、P2）
-Resume point: p001 の設計は第 3.1 版（[design.md](design.md)、3 回目の敵対的レビューで重大なし）。ユーザーの判断 D2〜D9（master に記録）を待って p001 を閉じ、p002 から。
+Queue: q831（P2）
+Resume point: p002〜p004・p007 を実装（host・build 済み）、T1 待ち。p005（Linux・FreeBSD の guest の確認）と p006（全文規約）は後。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -34,10 +34,10 @@ app が libkeiland に PDF の場所を渡して印刷を依頼すると、netwo
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws145-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | in-progress（第 3.1 版、ユーザーの判断待ち） | — |
-| ws145-p002 | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host の符号化・通し・寿命の試験 | planning | p001 |
-| ws145-p003 | backend の print（設定の file・printd の起動と通信・状態遷移）、compositor の printers の object、protocol version 10、libkeiland の口（KL_VERSION 34）、`printtest`、host の backend と protocol の試験 | planning | p002（D2 の判断） |
-| ws145-p004 | Settings の Printers の頁（IP address・port・protocol） | planning | p003 |
+| [ws145-p002](phase002/phase.md) | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host の符号化・通し・寿命の試験 | in-progress（2026-10-07 P2、host 済み） | p001 |
+| [ws145-p003](phase003/phase.md) | backend の print（設定の file・printd の起動と通信・状態遷移）、compositor の printers の object、protocol version 17、libkeiland の口（KL_VERSION 56 の案）、`printtest`、host の backend の試験 | in-progress（2026-10-07 P2、host 済み） | p002 |
+| [ws145-p004](phase004/phase.md) | Settings の Printers の頁（IP address・port・protocol、詳しい設定の path・queue） | in-progress（2026-10-07 P2） | p003 |
 | ws145-p005 | Linux・FreeBSD の build と install と Debian の QEMU+KVM・FreeBSD 15 の guest の確認 | planning | p003 |
 | ws145-p006 | 全文の規約の確認と回帰、T1 の QEMU の試験（最後） | planning | p002〜p005 |
 | （別の WS の案） | 変換の filter（PDF → PWG raster・PostScript・PCL）。単一目標の外。D4 の機種が PDF を受けなければ受け入れの前に | — | p002 |
-| （p007 案） | PDF Viewer の File > Print（D6 の判断次第） | — | p003 |
+| [ws145-p007](phase007/phase.md) | PDF Viewer の File > Print（D6: 含める） | in-progress（2026-10-07 P2） | p003 |

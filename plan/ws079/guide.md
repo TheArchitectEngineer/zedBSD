@@ -4,7 +4,7 @@
 
 WS079（Notes と PDF Viewer、右上の角の swipe）を、追加の調査なしで続けるための手引き。記録の正は [ws.md](ws.md) と各 phase.md で、
 この文書は 2026-10-01 の状態の要約と手順である（進捗が変わったら ws.md を直し、この文書は古くなったら日付を付けて直す）。
-command は全て repo の root（`/home/awe/zedBSD-claude1`、または worktree の root）から実行する。`<W>` は作業の名前（例 `ws079-p017`）に置き換える。
+command は全て repo の root（`/home/awe/zedBSD-claude1`、または worktree の root）から実行する。`<W>` は作業の名前（例 `ws079-p020`）に置き換える。
 
 ## 1. ゴール
 
@@ -48,7 +48,7 @@ L3 を Future Work に移すのは受け入れの縮小なので**人間の判�
 ### 2.2 残り
 
 1. 5330 の実機（mouse）と Windows の QEMU（touch）で S8・S9（ユーザー。手順は demo-s8-s9-manual.md）。
-2. 5330 の passthrough での S8・S9 の自動の確かめ（エージェントができる部分、p017 提案）。
+2. 5330 の passthrough での S8・S9 の自動の確かめ（エージェントができる部分、p020 提案。2026-10-07: 旧 p017 の案、p017 の番号は 2026-10-06 に text box に使った）。
 3. ~~Notes の Ctrl+O~~: ws128-p002 で済み（File > Open... と Save As... が libkeiland の file chooser、`app_choose`・`app_open_file`。2026-10-05 P2 が source で確かめた）。
 4. L3 の実機の pen（機材が無い）。
 5. ~~記録の不整合~~: [phase002](phase002/phase.md)・[phase003](phase003/phase.md) の頭の `Status:` を ws.md の表（cleared）に合わせた（2026-10-05 P2）。
@@ -71,11 +71,11 @@ master の優先（2026-09-30 夜）では WS079 はデモ critical の 2 番目
 | 順 | Phase | 誰 | 目的 | 依存・条件 |
 | --- | --- | --- | --- | --- |
 | 1 | （Phase なし） | ユーザー | 5330 の実機と Windows の QEMU で S8・S9（[demo-s8-s9-manual.md](demo-s8-s9-manual.md)）。結果は ws.md の Resume point に | デモの image（§5.5） |
-| 2 | **ws079-p017（提案）** | エージェント（Mid） | 5330 の passthrough で S8・S9 を自動で通し、画面と頁送りの時間を取る | WS075 の機械の lock（`/tmp/i915-hw.lock`）が空くこと |
-| 3 | **ws079-p018（提案、任意）** | エージェント（Mid） | Notes の Ctrl+O を libkeiui の file chooser に | 10/10 より前。ユーザーが要ると言ったときだけ |
+| 2 | **ws079-p020（提案、旧 p017 の案）** | エージェント（Mid） | 5330 の passthrough で S8・S9 を自動で通し、画面と頁送りの時間を取る | WS075 の機械の lock（`/tmp/i915-hw.lock`）が空くこと |
+| 3 | ~~ws079-p018（提案、任意）~~ | — | ~~Notes の Ctrl+O を libkeiui の file chooser に~~ ws128-p002 で済み（§2.2 の 3） | — |
 | 4 | **ws079-p019（提案）** | main | WS の完了の処理 | 1 の結果と L3 の扱いのユーザーの判断 |
 
-### 3.1 ws079-p017（提案）: 5330 の passthrough での S8・S9
+### 3.1 ws079-p020（提案、旧 p017 の案）: 5330 の passthrough での S8・S9
 
 - 目的: ユーザーの目視の前に、i915 の実 GPU で S8・S9 が動くこと（Notes の全画面・mouse の線・Esc、PDF Viewer の頁送り 10 回の時間・拡大）を
   エージェントが確かめる。Linux の QEMU（Venus）と違い、描画は i915 の実機の GPU（passthrough）。
@@ -103,7 +103,7 @@ master の優先（2026-09-30 夜）では WS079 はデモ critical の 2 番目
   「実機の単独の起動」と分ける（AGENTS.md「検証」）。
 - 未知: §4 の U1・U2。
 
-### 3.2 ws079-p018（提案、任意）: Notes の Ctrl+O
+### 3.2 ~~ws079-p018（提案、任意）: Notes の Ctrl+O~~（ws128-p002 で済み、下は経緯）
 
 - 目的: Notes の File の Open（Ctrl+O）で libkeiui の `kui_file_chooser` を開き、選んだ PDF を開く（今は `app_status(app, "Opening from Notes is not available yet")`、
   `userland/desktop/notes/main.c:990`）。Notes の窓は ws090-p011 で `kui_window` になったので、PDF Viewer（ws090-p008）と同じ型で足せる。
@@ -125,21 +125,21 @@ AGENTS.md「記録の置き場所」の完了の形: ws.md を Status: completed
   `truetype-outline-*`・`truetype-render-*`、`demo-s8-s9-manual.md`。
 - **WS104 の patch との衝突**: `plan/ws104/patches/p001-paths.patch` は `plan/ws079/tests/run-pdf-*.sh`・`run-pdfviewer-host.sh`・`truetype-*.sh` の
   path を直す。試験を移すのは ws104-p001 の適用の後にする（前に移すと patch が当たらない）。
-- 移管の候補: L3（実機の pen）、Notes の Ctrl+O（p018 をしなければ）、F-051（保存の圧縮）。
+- 移管の候補: L3（実機の pen）、F-051（保存の圧縮）。
 
 ## 4. 未知と調べ方
 
 | # | 未知 | なぜ要るか | 調べ方 |
 | --- | --- | --- | --- |
-| U1 | 5330 の passthrough の guest の画面の大きさと App Home の tile の座標 | p017 の pointer の座標 | `plan/ws075/tests/hdmi-h4-hw.sh ctl shot desk` → `fetch` → `OUTDIR/shots/desk-live.png` を見る。tile の並びは `plan/ws035/demo/apps.conf` の順（Files・Notes・Settings・Terminal・PDF Viewer・Image Viewer・Text Editor・Browser・Model viewer・Gears・X terminal）。c5-hw.sh:26 の座標は 1920x1080 の並び |
+| U1 | 5330 の passthrough の guest の画面の大きさと App Home の tile の座標 | p020 の pointer の座標 | `plan/ws075/tests/hdmi-h4-hw.sh ctl shot desk` → `fetch` → `OUTDIR/shots/desk-live.png` を見る。tile の並びは `plan/ws035/demo/apps.conf` の順（Files・Notes・Settings・Terminal・PDF Viewer・Image Viewer・Text Editor・Browser・Model viewer・Gears・X terminal）。c5-hw.sh:26 の座標は 1920x1080 の並び |
 | U2 | 角の swipe が passthrough の usb-tablet の drag で起きるか | S8 の入口 | `zdesktop-p010.sh` は QMP の pointer の drag で通っている（Venus）。passthrough でも `h4-ctl.py pointer drag` は同じ usb-tablet。session の log の `ZWL CORNER commit` で確かめる |
-| U3 | 5330 の実機の i915 での頁送りの時間 | L2 の 200 ms | p017 の `TURN done ... ms=`。QEMU の Venus の 142 ms と比べる。超えたら p016 の判断（先読みの cache を小さな Phase で）を見直す。描画の中身は `userland/desktop/pdfviewer/view.c` の prefetch |
+| U3 | 5330 の実機の i915 での頁送りの時間 | L2 の 200 ms | p020 の `TURN done ... ms=`。QEMU の Venus の 142 ms と比べる。超えたら p016 の判断（先読みの cache を小さな Phase で）を見直す。描画の中身は `userland/desktop/pdfviewer/view.c` の prefetch |
 | U4 | Notes の線の遅れ（全画面は ws099-p015 以後は常に合成） | S8 の「線が遅れなく付いてくる」 | ws099-p015 の計測（QEMU の pen の遅れ中央値 74 → 117 ms）は `plan/ws099/tests/p015-pen-latency.sh IMAGE OUTDIR`（Venus、§5.2 の demo の image、注入の pen）。5330 の passthrough には pen が無い（QEMU は usb-tablet と usb-kbd だけ、`plan/ws075/tests/hdmi/h4-qemu.sh:33`）ので、実機の線の遅れはユーザーの目視。数値の目標は台本に無いので、遅いと感じたらユーザーに報告して判断を待つ |
 | U5 | デモで開く PDF をどこに置くか（kei の home は sessiond が最初の login で空で作る、`userland/desktop/sessiond/session.c:511`） | S9 の素材 | WS091 の J8「デモの画像は main が選ぶ」と同じく **main（とユーザー）の判断**。今は USB メモリか Files の copy（demo-s8-s9-manual.md の「用意」）。image に入れるなら WS075 の `build-demo-image.sh` の変更を main に依頼する |
 | U6 | 外付けの touch LCD と AES pen の HID の descriptor（L3） | 完了の条件 2 の実機 | 機材が戻ったら `plan/ws075/tests/hdmi-h1-hw.sh`（5330 の host の USB を記録し、新しい device の report descriptor を取る）。kernel の解析は `src/drivers/usb/hid-digitizer.c`・`hid-touch.c`、host の試験 `run-hid-pen.sh`・`run-hid-touch.sh` に descriptor を足して確かめる |
 
 判定に QEMU の console・serial の log を使わない（AGENTS.md）。guest の中の program の log は SSH（`plan/tools/guest/guest.py run`）か、
-passthrough では image から読む（上の p017）。
+passthrough では image から読む（上の p020）。
 
 ## 5. コマンド
 
@@ -233,7 +233,7 @@ sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-hw > build/<W>/demo-hw-bui
 sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-pt passthrough > build/<W>/demo-pt-build.log 2>&1; echo "exit=$?"
 ```
 
-- 1 行目は USB に書く物（ユーザーの実機）、2 行目は 5330 の passthrough（p017）。どちらも Notes・PDF Viewer・libpdf を含む（`plan/ws075/demo/config-demo-hdmi.mk`）。
+- 1 行目は USB に書く物（ユーザーの実機）、2 行目は 5330 の passthrough（p020）。どちらも Notes・PDF Viewer・libpdf を含む（`plan/ws075/demo/config-demo-hdmi.mk`）。
   A4 の PDF は含まない（U5）。
 - **2 つを同時に走らせない**（image の build は 1 つずつ。commands.md §0）。
 
@@ -256,7 +256,7 @@ sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-pt passthrough > build/<W>
 | # | 確かめ | 手順 | 誰 |
 | --- | --- | --- | --- |
 | H1 | S8・S9 の台本 | [demo-s8-s9-manual.md](demo-s8-s9-manual.md) の表（mouse）。A4 の PDF は `sh plan/ws079/tests/make-a4-document.sh a4.pdf` で作り、USB メモリで kei の `Documents` へ | ユーザー |
-| H2 | 頁送りの時間 | 実機の単独の起動では SSH で `grep 'TURN done' /run/user/1000/session.log`（root の password は `root`、guest の鍵で入れる image。`build-demo-image.sh` の注記）。passthrough では p017 | ユーザー／エージェント |
+| H2 | 頁送りの時間 | 実機の単独の起動では SSH で `grep 'TURN done' /run/user/1000/session.log`（root の password は `root`、guest の鍵で入れる image。`build-demo-image.sh` の注記）。passthrough では p020 | ユーザー／エージェント |
 | H3 | Notes の線が mouse に遅れず付く、Esc で窓に戻り title bar が system bar に重ならない（BUG-114） | H1 の S8 の 2・3 行 | ユーザー |
 | H4 | key の repeat が 2 回効かない（BUG-111） | H1 の S9 の → を 9 回で「Page 10 of 10」に行き過ぎない | ユーザー |
 | H5 | USB の mouse（BUG-105） | Logi Bolt の受信機で pointer が動く | ユーザー |

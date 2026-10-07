@@ -12,7 +12,7 @@
  * compositor serves them and libkeiland speaks them; both include this
  * header and neither the other's code (WS131 D4 (c)).
  *
- * kl_system_manager_v1 (a global, version 16; its objects are made at its version)
+ * kl_system_manager_v1 (a global, version 17; its objects are made at its version)
  *   request 0 destroy
  *   request 1 get_settings(new_id kl_system_settings_v1)
  *   request 2 get_network(new_id kl_system_network_v1)    (WS131 p010)
@@ -25,6 +25,7 @@
  *   request 9 get_notify(new_id kl_system_notify_v1)      since version 13 (ws156-p002)
  *   request 10 get_mail(new_id kl_system_mail_v1)         since version 15 (ws169-p002)
  *   request 11 get_phone(new_id kl_system_phone_v1)       since version 16 (ws170-p004)
+ *   request 12 get_printers(new_id kl_system_printers_v1) since version 17 (ws145-p003)
  *   event   0 capabilities(uint bits)              sent when it is bound
  *
  * kl_system_settings_v1
@@ -224,7 +225,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION		16U
+#define KL_SYSTEM_MANAGER_VERSION		17U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -240,6 +241,7 @@
 #define KL_SYSTEM_MANAGER_GET_NOTIFY		9U
 #define KL_SYSTEM_MANAGER_GET_MAIL		10U
 #define KL_SYSTEM_MANAGER_GET_PHONE		11U
+#define KL_SYSTEM_MANAGER_GET_PRINTERS		12U
 #define KL_SYSTEM_MANAGER_EVENT_CAPABILITIES	0U
 
 /* The capabilities' bits. */
@@ -256,6 +258,7 @@
 #define KL_SYSTEM_CAPABILITY_NOTIFY		0x400U
 #define KL_SYSTEM_CAPABILITY_MAIL		0x800U
 #define KL_SYSTEM_CAPABILITY_PHONE		0x1000U
+#define KL_SYSTEM_CAPABILITY_PRINTERS		0x2000U
 
 /* Since when the manager has get_sharing (ws089-p025), and the account administer and refused (ws089-p026). */
 #define KL_SYSTEM_SINCE_SHARING			7U
@@ -277,6 +280,9 @@
 /* Since when the manager has get_phone (ws170-p004). */
 #define KL_SYSTEM_SINCE_PHONE			16U
 
+/* Since when the manager has get_printers (ws145-p003). */
+#define KL_SYSTEM_SINCE_PRINTERS		17U
+
 /* The interfaces' names (WS131 p010). */
 #define KL_SYSTEM_NETWORK_NAME			"kl_system_network_v1"
 #define KL_SYSTEM_AUDIO_NAME			"kl_system_audio_v1"
@@ -288,6 +294,7 @@
 #define KL_SYSTEM_NOTIFY_NAME			"kl_system_notify_v1"
 #define KL_SYSTEM_MAIL_NAME			"kl_system_mail_v1"
 #define KL_SYSTEM_PHONE_NAME			"kl_system_phone_v1"
+#define KL_SYSTEM_PRINTERS_NAME			"kl_system_printers_v1"
 
 /*
  * kl_system_notify_v1's requests and events (ws156-p002,
@@ -368,6 +375,47 @@
 #define KL_SYSTEM_PHONE_SETTING			"phone.backend"
 #define KL_SYSTEM_PHONE_BACKEND_NONE		0
 #define KL_SYSTEM_PHONE_BACKEND_LOOPBACK	1
+
+/*
+ * kl_system_printers_v1's requests and events (ws145-p003,
+ * plan/ws145/design.md section 3):
+ *   request 0 destroy
+ *   request 1 add(uint request, uint protocol, string host, uint port, string path)
+ *       path: the IPP path or the LPD queue ("" for the protocol's usual one)
+ *   request 2 remove(uint request, uint printer)
+ *   request 3 set_default(uint request, uint printer)
+ *   request 4 print(uint request, uint printer, string title, fd document)
+ *       printer 0: the default; the document is a PDF the client opened
+ *   request 5 cancel(uint request, uint job)
+ *   event   0 printer(uint id, uint protocol, string host, uint port, string path, string name, uint flags)
+ *   event   1 job(uint job, uint printer, uint state, string title, string detail)
+ *   event   2 done(uint serial)    the printers and jobs before it are the whole state
+ *   event   3 queued(uint request, uint job)    before print's result, when the job was taken
+ *   event   4 result(uint request, uint applied, uint saved)
+ * Sent whole when the object is made and each time something changed.
+ */
+#define KL_SYSTEM_PRINTERS_DESTROY		0U
+#define KL_SYSTEM_PRINTERS_ADD			1U
+#define KL_SYSTEM_PRINTERS_REMOVE		2U
+#define KL_SYSTEM_PRINTERS_SET_DEFAULT		3U
+#define KL_SYSTEM_PRINTERS_PRINT		4U
+#define KL_SYSTEM_PRINTERS_CANCEL		5U
+#define KL_SYSTEM_PRINTERS_EVENT_PRINTER	0U
+#define KL_SYSTEM_PRINTERS_EVENT_JOB		1U
+#define KL_SYSTEM_PRINTERS_EVENT_DONE		2U
+#define KL_SYSTEM_PRINTERS_EVENT_QUEUED		3U
+#define KL_SYSTEM_PRINTERS_EVENT_RESULT		4U
+
+/* The protocols, a printer's flags and a job's states (keiland.h's KL_PRINTER_* and KL_PRINT_*). */
+#define KL_SYSTEM_PRINTER_IPP			1U
+#define KL_SYSTEM_PRINTER_LPD			2U
+#define KL_SYSTEM_PRINTER_DEFAULT		0x1U
+#define KL_SYSTEM_PRINT_QUEUED			1U
+#define KL_SYSTEM_PRINT_SENDING			2U
+#define KL_SYSTEM_PRINT_WAITING			3U
+#define KL_SYSTEM_PRINT_DONE			4U
+#define KL_SYSTEM_PRINT_FAILED			5U
+#define KL_SYSTEM_PRINT_CANCELLED		6U
 
 /* kl_system_sharing_v1's requests and events (ws089-p025), and the longest fingerprint it carries. */
 #define KL_SYSTEM_SHARING_DESTROY		0U

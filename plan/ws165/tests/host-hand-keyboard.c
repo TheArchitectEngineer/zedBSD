@@ -10,9 +10,12 @@
  * (ws165-p003, userland/desktop/wayland/keyboard-hand.c): the templates
  * of hand-hershey read by kwl_hand_load, a character written as ink (a
  * template's strokes drawn at a size on a writing area of 300 pixels) and
- * kwl_hand_recognize's candidates: あ is あ; c written large is C first
- * and c next, written small c first; や written small offers ゃ first;
- * a voiced kana (が) keeps its mark.
+ * kwl_hand_recognize_on's candidates (the area's top 0; ws165-p005): あ is
+ * あ; c written large is C first and c next, written small c first; や
+ * written small offers ゃ first; a voiced kana (が) keeps its mark; a dot
+ * low on the area is a full stop and in its middle a middle dot; o written
+ * small and high is the degree sign.  kwl_hand_recognize (the area's
+ * height only, ws165-p003) still orders c and C by size.
  *
  *   host-hand-keyboard TEMPLATES
  */
@@ -34,7 +37,7 @@ static unsigned failures;
 static char test_text[1024U * 1024U];
 
 static void check(int condition, const char *what);
-static int write_glyph(const char *code, int size, struct kwl_hand_ink *ink);
+static int write_glyph(const char *code, int size, int top, struct kwl_hand_ink *ink);
 
 /*
  * Runs the checks; the exit status says whether they all held.
@@ -67,29 +70,48 @@ main(
 	test_text[length] = '\0';
 
 	/* あ written at two thirds of the area. */
-	error = write_glyph("U+3042", 200, &ink);
-	kwl_hand_recognize(&ink, TEST_AREA, &result);
+	error = write_glyph("U+3042", 200, 20, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
 	check(error == 0 && result.count > 0U && strcmp(result.candidates[0], "あ") == 0, "あ is あ");
 
 	/* c written large: C, then c. */
-	error = write_glyph("U+0063", 200, &ink);
-	kwl_hand_recognize(&ink, TEST_AREA, &result);
+	error = write_glyph("U+0063", 200, 20, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
 	check(error == 0 && result.count > 1U && strcmp(result.candidates[0], "C") == 0 && strcmp(result.candidates[1], "c") == 0, "c written large: C, then c");
 
-	/* c written small: c first. */
-	error = write_glyph("U+0063", 60, &ink);
-	kwl_hand_recognize(&ink, TEST_AREA, &result);
+	/* c written small where a small letter sits (its middle a little under the area's): c first. */
+	error = write_glyph("U+0063", 60, 150, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
 	check(error == 0 && result.count > 1U && strcmp(result.candidates[0], "c") == 0, "c written small: c first");
 
 	/* や written small: ゃ first. */
-	error = write_glyph("U+3084", 60, &ink);
-	kwl_hand_recognize(&ink, TEST_AREA, &result);
+	error = write_glyph("U+3084", 60, 20, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
 	check(error == 0 && result.count > 1U && strcmp(result.candidates[0], "ゃ") == 0 && strcmp(result.candidates[1], "や") == 0, "や written small: ゃ, then や");
 
 	/* が keeps its mark. */
-	error = write_glyph("U+304C", 200, &ink);
-	kwl_hand_recognize(&ink, TEST_AREA, &result);
+	error = write_glyph("U+304C", 200, 20, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
 	check(error == 0 && result.count > 0U && strcmp(result.candidates[0], "が") == 0, "が is が");
+
+	/* A dot low on the area, and in its middle. */
+	error = write_glyph("U+002E", 19, 216, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
+	check(error == 0 && result.count > 0U && strcmp(result.candidates[0], ".") == 0, "a dot low: .");
+	error = write_glyph("U+00B7", 19, 141, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
+	check(error == 0 && result.count > 0U && strcmp(result.candidates[0], "·") == 0, "a dot in the middle: ·");
+
+	/* o small and high: the degree sign. */
+	error = write_glyph("U+006F", 75, 10, &ink);
+	kwl_hand_recognize_on(&ink, 0, TEST_AREA, &result);
+	check(error == 0 && result.count > 0U && strcmp(result.candidates[0], "°") == 0, "o small and high: °");
+
+	/* The area's height only (ws165-p003): c large is C, then c. */
+	error = write_glyph("U+0063", 200, 20, &ink);
+	kwl_hand_recognize(&ink, TEST_AREA, &result);
+	check(error == 0 && result.count > 1U && strcmp(result.candidates[0], "C") == 0 && strcmp(result.candidates[1], "c") == 0,
+	    "without the area's top: c large is C, then c");
 
 	/* The verdict. */
 	if (failures != 0U) {
@@ -121,12 +143,14 @@ check(
 
 /*
  * Writes a template's strokes as ink, scaled so that its height is size
- * pixels, from (20, 20).  Returns 0, or -1 when the template is not there.
+ * pixels, its top at top and its left at 20.  Returns 0, or -1 when the
+ * template is not there.
  */
 static int
 write_glyph(
 	const char *code,
 	int size,
+	int top,
 	struct kwl_hand_ink *ink)
 {
 	char line[16384];
@@ -182,7 +206,7 @@ write_glyph(
 
 			/* Drawn at the size. */
 			x = 20.0f + (x - min_x) * scale;
-			y = 20.0f + (y - min_y) * scale;
+			y = (float)top + (y - min_y) * scale;
 			if (fresh)
 				(void)kwl_hand_begin(ink, (int32_t)x, (int32_t)y);
 			else

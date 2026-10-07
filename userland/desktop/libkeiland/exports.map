@@ -138,6 +138,14 @@
 		kl_system_phone_send;
 		kl_system_phone_call;
 		kl_system_take_phone_event;
+		kl_system_printers_get;
+		kl_system_print_jobs_get;
+		kl_system_printers_add;
+		kl_system_printers_remove;
+		kl_system_printers_set_default;
+		kl_system_printers_print;
+		kl_system_print_job_of;
+		kl_system_print_cancel;
 		kl_system_network_get_links;
 		kl_system_network_get_dns;
 		kl_system_network_get_saved;

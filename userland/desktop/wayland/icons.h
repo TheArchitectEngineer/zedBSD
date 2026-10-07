@@ -77,6 +77,8 @@ enum glass_icon {
 	GLASS_ICON_APP_MONITOR,
 	/* ws120-p009: Music. */
 	GLASS_ICON_APP_MUSIC,
+	/* ws157-p003: Photos. */
+	GLASS_ICON_APP_PHOTOS,
 	GLASS_ICON_COUNT
 };
 
