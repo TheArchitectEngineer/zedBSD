@@ -1,0 +1,47 @@
+--- a/include/uapi/gpu-op.h	2026-10-07 14:50:16.726480194 +0900
++++ b/include/uapi/gpu-op.h	2026-10-07 14:50:16.758480132 +0900
+@@ -22,8 +22,13 @@
+ #ifndef UAPI_GPU_OP_H
+ #define UAPI_GPU_OP_H
+ 
+-/* The protocol's version, and the first number of zedBSD's own commands. */
+-#define GPU_OP_PROTOCOL_VERSION	1U
++/*
++ * The protocol's version, and the first number of zedBSD's own commands.
++ * Version 2 adds the video commands (ws083); version 1's numbers are
++ * unchanged, and only a backend whose capset declares video is sent the
++ * new ones.
++ */
++#define GPU_OP_PROTOCOL_VERSION	2U
+ #define GPU_OP_OWN_FIRST	0x10000U
+ 
+ /* Each command, the Vulkan command it carries named beside it. */
+@@ -172,7 +177,27 @@
+ 	GPU_OP_GET_PHYSICAL_DEVICE_EXTERNAL_BUFFER_PROPERTIES = 161,	/* vkGetPhysicalDeviceExternalBufferProperties */
+ 	GPU_OP_SET_REPLY_STREAM = 178,	/* the stream's replies go to a resource */
+ 	GPU_OP_SEEK_REPLY_STREAM = 179,	/* moves the reply position */
+-	GPU_OP_EXECUTE_STREAMS = 180	/* runs command streams held in resources */
++	GPU_OP_EXECUTE_STREAMS = 180,	/* runs command streams held in resources */
++
++	/*
++	 * zedBSD's own commands (ws083): Vulkan Video, H.264 decode.  Only a
++	 * backend whose capset declares video takes them (the native i915);
++	 * they are never sent to a Venus host.
++	 */
++	GPU_OP_GET_PHYSICAL_DEVICE_VIDEO_CAPABILITIES = 0x10000,	/* vkGetPhysicalDeviceVideoCapabilitiesKHR */
++	GPU_OP_GET_PHYSICAL_DEVICE_VIDEO_FORMAT_PROPERTIES = 0x10001,	/* vkGetPhysicalDeviceVideoFormatPropertiesKHR */
++	GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_VIDEO_PROPERTIES = 0x10002,	/* the codec operations of each queue family */
++	GPU_OP_CREATE_VIDEO_SESSION = 0x10003,	/* vkCreateVideoSessionKHR */
++	GPU_OP_DESTROY_VIDEO_SESSION = 0x10004,	/* vkDestroyVideoSessionKHR */
++	GPU_OP_GET_VIDEO_SESSION_MEMORY_REQUIREMENTS = 0x10005,	/* vkGetVideoSessionMemoryRequirementsKHR */
++	GPU_OP_BIND_VIDEO_SESSION_MEMORY = 0x10006,	/* vkBindVideoSessionMemoryKHR */
++	GPU_OP_CREATE_VIDEO_SESSION_PARAMETERS = 0x10007,	/* vkCreateVideoSessionParametersKHR */
++	GPU_OP_UPDATE_VIDEO_SESSION_PARAMETERS = 0x10008,	/* vkUpdateVideoSessionParametersKHR */
++	GPU_OP_DESTROY_VIDEO_SESSION_PARAMETERS = 0x10009,	/* vkDestroyVideoSessionParametersKHR */
++	GPU_OP_CMD_BEGIN_VIDEO_CODING = 0x1000a,	/* vkCmdBeginVideoCodingKHR */
++	GPU_OP_CMD_END_VIDEO_CODING = 0x1000b,	/* vkCmdEndVideoCodingKHR */
++	GPU_OP_CMD_CONTROL_VIDEO_CODING = 0x1000c,	/* vkCmdControlVideoCodingKHR */
++	GPU_OP_CMD_DECODE_VIDEO = 0x1000d	/* vkCmdDecodeVideoKHR */
+ };
+ 
+ #endif

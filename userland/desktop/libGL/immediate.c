@@ -46,7 +46,7 @@ glBegin(
 		return;
 
 	/* A core profile has no immediate mode (desktop GL 3.2). */
-	profile = glx_profile();
+	profile = gl_context_profile();
 	if (profile == 0x1) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;

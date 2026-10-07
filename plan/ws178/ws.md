@@ -2,7 +2,7 @@
 
 # WS178: OpenGL を Desktop へ、GLX を X11 server（xserver）へ
 
-Status: planned（2026-10-07 追加、ベータ2、優先度は低い）
+Status: incomplete（2026-10-07 追加、ベータ2、優先度は低い。p001 を P1 が実装、T1 待ち）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -22,4 +22,4 @@ Primary Milestone: MG006
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 分割と移動（package・tree・link・menu・config）、build と menuconfig の試験、T1 で zgears・glxtest の回帰 | planned | — |
+| [p001](phase001/phase.md) | 分割と移動（package・tree・link・menu・config）、build と menuconfig の試験、T1 で zgears・glxtest の回帰 | in-progress（P1、実装と host 確認済み、T1 待ち） | — |
