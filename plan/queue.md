@@ -88,7 +88,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q840 / q840-i01 | P2（UAT、小さい・先に） | Music の icon の背景を山吹色に（2026-10-07 ユーザー「MusicのアイコンがAppleに似すぎているので、背景色を山吹色にしましょう。」） | App Home の GLASS_ICON_APP_MUSIC と bar の icon、app の中の All Songs の札（今は赤・ピンクの gradient）も山吹色（#F8B500 前後）に。host の PNG と T1 の撮影 | — | cleared（2026-10-07 T1-327、Q1 が PNG を目視: App Home・bar・titlebar・All Songs が山吹色） |
 | q841 / q841-i01 | P2（UAT、優先） | [BUG-243](bugs/BUG-243.md) full の OSK で窓が縮むと表示が縦に圧縮される | compositor が app に新しい大きさを送り app が描き直すように。host か QEMU の撮影で確かめる | — | cleared（2026-10-07 T1-332） |
 | q842 / q842-i01 | P2（UAT、優先、ws051-p002b より先） | [WS181](ws181/ws.md) 窓の状態・App Home の独立のモード・gesture・整列（2026-10-07 ユーザーの UAT） | p001 設計 → p002 状態 → p003 App Home と gesture → p004 整列 | — | cleared（2026-10-07 T1-342） |
-| q843 / q843-i01 | P2（UAT、優先、p002b より先） | ws181-p005 App Home の bar と整列のメニュー・pill の見た目（2026-10-07 ユーザーの UAT） | App Home では dock の bar を出さず右上の通知・時計を地の塗り無しの白い文字・icon で（click の動作は同じ）。整列のメニューは icon だけ・1〜4 無し・今の desktop に対して・glass。pill の整列の印は無し。pill の選択のカプセルは半分の幅、desktop の icon は正円。pill の tap は常にメニュー、desktop の切り替えは swipe・key だけ | — | pending |
+| q843 / q843-i01 | P2（UAT、優先、p002b より先） | ws181-p005 App Home の bar と整列のメニュー・pill の見た目（2026-10-07 ユーザーの UAT） | App Home では dock の bar を出さず右上の通知・時計を地の塗り無しの白い文字・icon で（click の動作は同じ）。整列のメニューは icon だけ・1〜4 無し・今の desktop に対して・glass。pill の整列の印は無し。pill の選択のカプセルは半分の幅、desktop の icon は正円。pill の tap は常にメニュー、desktop の切り替えは swipe・key だけ | — | cleared（2026-10-07 T1-345） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）

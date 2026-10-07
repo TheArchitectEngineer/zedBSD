@@ -4,7 +4,7 @@
 
 Phase ID: `ws181-p005`
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q843 P2: 実装・build・host の試験と host の PNG まで。QEMU は T1 へ）
+Status: cleared（2026-10-07 Q1 の判定: T1-345 で ws181-guest.sh status 0（arranged-size を含む）、Q1 が PNG を目視: App Home の上は bar 無しで status と時計だけ白、整列のメニューは 5 つの絵だけの glass、窓は枠を埋める、pill は capsule と丸い点）（旧: in-progress（2026-10-07 q843 P2: 実装・build・host の試験と host の PNG まで。QEMU は T1 へ））
 Phase disposition: normal
 Queue: q843（P2、Q1 の ACK 2026-10-07「範囲 1〜5 で ACK、c10 の窓が枠の大きさにならない件も p005 に」）
 
