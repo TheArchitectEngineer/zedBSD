@@ -85,6 +85,7 @@ static void test_connect(void);
 static void test_refusals(void);
 static void test_lanes_and_slots(void);
 static void test_legacy_and_connected(void);
+static void test_dp_sample(void);
 
 /*
  * Runs every test and reports the count.
@@ -99,6 +100,7 @@ main(void)
 	test_refusals();
 	test_lanes_and_slots();
 	test_legacy_and_connected();
+	test_dp_sample();
 
 	/* The summary the script reads. */
 	printf("ws051-p002b host-tc checks=%u failures=%u\n", checks, failures);
@@ -640,4 +642,33 @@ test_legacy_and_connected(void)
 	connected = drv_i915_tc_connected(&tc, 0u);
 	check(connected == 1, "connected: a DP-alt port counts its partner");
 	check(fake.lock_errors == 0 && power_balanced(), "connected: power and locks balanced");
+}
+
+/* What a port has of DisplayPort for the Type-C layer (ws050-p005). */
+static void
+test_dp_sample(void)
+{
+	struct i915_tc tc;
+	struct i915_tc_dp_sample sample;
+
+	/* TC2 held in DP-alt with its partner live: pin D on two lanes (lanes 2-3). */
+	fake_reset();
+	bind(&tc);
+	drv_i915_tc_declare(&tc, 1u, 0);
+	fake_set(REG_DE_HPD_ISR, 1u << 17);
+	fake_set(REG_FIA1_DPSP, 0xcu << 8);
+	fake_set(REG_FIA1_PA1, 0x4u << 4);
+	tc.port[1].mode = I915_TC_MODE_DP_ALT;
+	drv_i915_tc_dp_sample(&tc, 1u, &sample);
+	check(sample.hpd == 1 && sample.pin == 4u && sample.lanes == 2, "dp-sample: DP-alt pin D, two lanes");
+
+	/* Not held in DP-alt: the FIA is not read, only the live status counts. */
+	tc.port[1].mode = I915_TC_MODE_NONE;
+	drv_i915_tc_dp_sample(&tc, 1u, &sample);
+	check(sample.hpd == 1 && sample.pin == 0u && sample.lanes == 0, "dp-sample: no FIA read outside DP-alt");
+
+	/* An undeclared port has nothing; the lock and the power stay balanced. */
+	drv_i915_tc_dp_sample(&tc, 0u, &sample);
+	check(sample.hpd == 0 && sample.pin == 0u && sample.lanes == 0, "dp-sample: undeclared port");
+	check(fake.lock_errors == 0 && power_balanced(), "dp-sample: power and locks balanced");
 }

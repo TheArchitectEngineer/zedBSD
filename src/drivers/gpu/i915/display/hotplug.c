@@ -3283,6 +3283,11 @@ i915_hpd_tc_connected_step(
 	/* Asks the port's live status in the mode it is held in. */
 	connected = drv_i915_tc_connected(world->tc, (unsigned)tc_port);
 	kern_logf("i915: hpd TC%d connected=%d (%s)\n", tc_port + 1, connected, encoder->base.name);
+
+	/* Tells the Type-C layer what the port has of DisplayPort now (the hotplug work, outside the port's lock). */
+	drv_i915_tc_kern_report(world->tc, (unsigned)tc_port);
+
+	/* Nothing the display can use is plugged in. */
 	if (!connected)
 		return false;
 

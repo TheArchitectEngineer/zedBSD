@@ -171,6 +171,19 @@ struct i915_tc {
 	struct i915_tc_port port[I915_TC_PORTS];
 };
 
+/*
+ * What the display reads of DisplayPort on a Type-C port, for the Type-C
+ * connector layer: whether a DP-alt partner's hot plug detect is live,
+ * and, while the display holds the port in DP-alt, the pin assignment the
+ * FIA records (3 is pin C, 4 is D, 5 is E) and the lanes it assigned
+ * (both 0 otherwise: the FIA is not read in TC cold).
+ */
+struct i915_tc_dp_sample {
+	int hpd;
+	unsigned pin;
+	int lanes;
+};
+
 void drv_i915_tc_init(struct i915_tc *tc, const struct i915_tc_env *env, unsigned display_ver);
 void drv_i915_tc_declare(struct i915_tc *tc, unsigned port, int legacy);
 void drv_i915_tc_readout(struct i915_tc *tc);
@@ -183,6 +196,7 @@ void drv_i915_tc_put_link(struct i915_tc *tc, unsigned port);
 enum i915_tc_mode drv_i915_tc_mode(struct i915_tc *tc, unsigned port);
 int drv_i915_tc_max_lanes(struct i915_tc *tc, unsigned port);
 unsigned drv_i915_tc_pin_assignment(struct i915_tc *tc, unsigned port);
+void drv_i915_tc_dp_sample(struct i915_tc *tc, unsigned port, struct i915_tc_dp_sample *sample);
 void drv_i915_tc_log_state(struct i915_tc *tc, unsigned port, const char *why);
 const char *drv_i915_tc_mode_name(enum i915_tc_mode mode);
 

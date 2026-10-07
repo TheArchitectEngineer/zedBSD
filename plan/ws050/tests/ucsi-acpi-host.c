@@ -949,6 +949,13 @@ drv_typec_os_unlock(void)
 	typec_locked = false;
 }
 
+uint64_t
+drv_typec_os_now_ms(void)
+{
+	/* The host has no use for the time: the display comparison is the other test's. */
+	return 0;
+}
+
 void
 drv_typec_os_log(
 	const char *format,

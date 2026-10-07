@@ -30,6 +30,28 @@ struct typec_listener_entry {
 };
 
 /*
+ * What the display driver last reported of one of its Type-C ports, and
+ * the connector the port is wired to (bound is the connector's index plus
+ * one; 0 is none, which is what a port starts as).
+ */
+struct typec_display_entry {
+	uint64_t generation;
+	struct drv_typec_dp_state state;
+	unsigned bound;
+};
+
+/*
+ * How a bound connector's two DisplayPort reports compare: whether they
+ * differ, since when (milliseconds), and whether they have differed long
+ * enough to be a disagreement, which is logged once when it begins.
+ */
+struct typec_dp_watch {
+	bool differing;
+	uint64_t since_ms;
+	bool disagree;
+};
+
+/*
  * A text being written into a caller's buffer: what has been written, and
  * the room.  The text stays terminated; what does not fit is dropped.
  */
@@ -106,7 +128,36 @@ static uint32_t typec_request_serial;
 static void (*typec_kick)(void *argument);
 static void *typec_kick_argument;
 
+/*
+ * What the display driver reported of its Type-C ports, and their bindings.
+ *
+ * Written by drv_typec_display_report() and drv_typec_display_bind(),
+ * read when a connector record is copied, all under the layer's lock.  The
+ * zero entry is a port never reported and bound to nothing; the bindings
+ * outlive a reset of the connectors (they are how the board is wired).
+ */
+static struct typec_display_entry typec_displays[DRV_TYPEC_DISPLAY_PORT_MAX];
+
+/*
+ * The comparison of the two DisplayPort reports of each connector.
+ *
+ * Moved on whenever either report or a binding changes, and when a record
+ * is copied or drv_typec_display_check() runs, under the layer's lock.
+ * Emptied with the connector records.
+ */
+static struct typec_dp_watch typec_dp_watches[DRV_TYPEC_CONNECTOR_MAX];
+
 static int typec_request_put(struct drv_typec_request *request, uint32_t *serial);
+static unsigned typec_display_port_of(unsigned connector);
+static bool typec_dp_same(const struct drv_typec_dp_state *left, const struct drv_typec_dp_state *right);
+static bool typec_dp_differ(const struct drv_typec_dp_state *display, const struct drv_typec_dp_state *ucsi);
+static bool typec_dp_compare(unsigned connector, uint64_t now, uint32_t *remaining);
+static void typec_dp_fill(unsigned index, struct drv_typec_connector *connector);
+static void typec_dp_log(unsigned connector, uint64_t generation, const struct drv_typec_dp_state *display, const struct drv_typec_dp_state *ucsi);
+static void typec_listeners_tell(unsigned connector, uint64_t generation);
+static void typec_text_dp(struct typec_text *text, const struct drv_typec_connector *connector);
+static void typec_text_display(struct typec_text *text, unsigned port, const struct drv_typec_display *display);
+static char typec_text_pin(enum drv_typec_dp_pin pin);
 static void typec_text_line(struct typec_text *text, unsigned index, const struct drv_typec_connector *connector);
 static void typec_text_modes(struct typec_text *text, const char *name, const struct drv_typec_alt_mode_list *list);
 static const char *typec_text_partner(enum drv_typec_partner_type type);
@@ -175,7 +226,17 @@ drv_typec_connector_get(
 	unsigned index,
 	struct drv_typec_connector *connector)
 {
-	/* Copies the record of a connector that is there. */
+	uint32_t remaining;
+	uint64_t now;
+	bool began;
+
+	/* The time the two DisplayPort reports are compared at. */
+	now = drv_typec_os_now_ms();
+
+	/*
+	 * Copies the record of a connector that is there, with the display
+	 * driver's report of its bound port and how the two reports compare.
+	 */
 	drv_typec_os_lock();
 
 	if (index >= typec_count) {
@@ -183,10 +244,16 @@ drv_typec_connector_get(
 		return ENOENT;
 	}
 
-	/* The copy. */
+	/* The copy, and the layer's part of it. */
 	kern_memcpy(connector, &typec_connectors[index], sizeof(*connector));
+	began = typec_dp_compare(index, now, &remaining);
+	typec_dp_fill(index, connector);
 
 	drv_typec_os_unlock();
+
+	/* A disagreement this copy saw begin is logged once. */
+	if (began)
+		typec_dp_log(index, connector->generation, &connector->dp_display, &connector->dp_ucsi);
 
 	/* Succeeded: the caller holds a copy at its generation. */
 	return 0;
@@ -210,6 +277,7 @@ drv_typec_connectors_reset(
 	drv_typec_os_lock();
 
 	kern_memset(typec_connectors, 0, sizeof(typec_connectors));
+	kern_memset(typec_dp_watches, 0, sizeof(typec_dp_watches));
 	typec_count = count;
 
 	drv_typec_os_unlock();
@@ -226,14 +294,21 @@ drv_typec_connector_publish(
 	unsigned index,
 	const struct drv_typec_connector *connector)
 {
-	struct typec_listener_entry listeners[DRV_TYPEC_LISTENER_MAX];
-	unsigned listener_count;
-	unsigned listener;
+	struct drv_typec_dp_state display;
+	struct drv_typec_dp_state ucsi;
+	uint32_t remaining;
 	uint64_t generation;
+	uint64_t now;
+	unsigned port;
+	bool began;
+
+	/* The time the two DisplayPort reports are compared at. */
+	now = drv_typec_os_now_ms();
 
 	/*
-	 * Stores the record under a new generation and takes a copy of the
-	 * listeners, which are called after the lock is released.
+	 * Stores the record under a new generation and compares its
+	 * DisplayPort report with the display driver's; the listeners are
+	 * told after the lock is released.
 	 */
 	drv_typec_os_lock();
 
@@ -242,19 +317,28 @@ drv_typec_connector_publish(
 		return ENOENT;
 	}
 
-	/* The record under its generation, and the listeners as they are now. */
+	/* The record under its generation. */
 	typec_generation++;
 	generation = typec_generation;
 	kern_memcpy(&typec_connectors[index], connector, sizeof(typec_connectors[index]));
 	typec_connectors[index].generation = generation;
-	listener_count = typec_listener_count;
-	kern_memcpy(listeners, typec_listeners, sizeof(listeners));
+
+	/* The comparison with the bound port, and what a disagreement that began is logged with. */
+	began = typec_dp_compare(index, now, &remaining);
+	kern_memset(&display, 0, sizeof(display));
+	port = typec_display_port_of(index);
+	if (port != DRV_TYPEC_DISPLAY_PORT_NONE)
+		display = typec_displays[port].state;
+	ucsi = typec_connectors[index].dp_ucsi;
 
 	drv_typec_os_unlock();
 
+	/* A disagreement this record began is logged once. */
+	if (began)
+		typec_dp_log(index, generation, &display, &ucsi);
+
 	/* Tells each listener. */
-	for (listener = 0; listener < listener_count; listener++)
-		listeners[listener].listener(listeners[listener].argument, index, generation);
+	typec_listeners_tell(index, generation);
 
 	/* Succeeded: the record is current at its new generation. */
 	return 0;
@@ -499,6 +583,297 @@ drv_typec_request_finish(
 }
 
 /*
+ * Records what the display driver reads of DisplayPort on one of its
+ * Type-C ports (0-based): the report replaces the last one.  When the port
+ * is bound to a connector, that connector's record changes with it: it is
+ * stamped with the report's generation, the two reports are compared, and
+ * the listeners are told.  A difference that has to wait to become a
+ * disagreement wakes the connector driver's thread, which calls
+ * drv_typec_display_check() when the wait is over.
+ *
+ * Called from the display driver's thread (never from an interrupt), with
+ * none of its Type-C ports' locks held.  Returns 0, or EINVAL for a port
+ * beyond DRV_TYPEC_DISPLAY_PORT_MAX or no report.
+ */
+int
+drv_typec_display_report(
+	unsigned port,
+	const struct drv_typec_dp_state *state)
+{
+	struct drv_typec_dp_state display;
+	struct drv_typec_dp_state ucsi;
+	struct typec_display_entry *entry;
+	void (*kick)(void *argument);
+	void *argument;
+	uint32_t remaining;
+	uint64_t generation;
+	uint64_t now;
+	unsigned connector;
+	bool changed;
+	bool same;
+	bool began;
+
+	/* Refuses a port the layer has no room for, or no report. */
+	if (port >= DRV_TYPEC_DISPLAY_PORT_MAX)
+		return EINVAL;
+	if (state == NULL)
+		return EINVAL;
+
+	/* The report, as known, with a pin assignment that is not a letter read as none. */
+	display = *state;
+	display.known = true;
+	if ((unsigned)display.pin > (unsigned)DRV_TYPEC_DP_PIN_F)
+		display.pin = DRV_TYPEC_DP_PIN_NONE;
+
+	/* The time the two DisplayPort reports are compared at. */
+	now = drv_typec_os_now_ms();
+
+	/*
+	 * Stores a report that differs from the last one under a new
+	 * generation, which the bound connector's record takes; the bound
+	 * connector is compared with every report, the same one again too.
+	 */
+	drv_typec_os_lock();
+
+	/* A new report, or the same again (the display's hotplug work repeats one). */
+	entry = &typec_displays[port];
+	same = typec_dp_same(&entry->state, &display);
+	changed = true;
+	if (entry->generation != 0 && same)
+		changed = false;
+	generation = entry->generation;
+	if (changed) {
+		typec_generation++;
+		generation = typec_generation;
+		entry->generation = generation;
+		entry->state = display;
+	}
+
+	/* The bound connector, when the connector driver has it, changes with a new report. */
+	connector = DRV_TYPEC_CONNECTOR_NONE;
+	began = false;
+	remaining = 0;
+	kern_memset(&ucsi, 0, sizeof(ucsi));
+	if (entry->bound != 0U && entry->bound - 1U < typec_count) {
+		connector = entry->bound - 1U;
+		if (changed)
+			typec_connectors[connector].generation = generation;
+		began = typec_dp_compare(connector, now, &remaining);
+		ucsi = typec_connectors[connector].dp_ucsi;
+	}
+
+	/* The connector driver's wake-up, for a difference that waits. */
+	kick = typec_kick;
+	argument = typec_kick_argument;
+
+	drv_typec_os_unlock();
+
+	/* An unbound port's report is only kept. */
+	if (connector == DRV_TYPEC_CONNECTOR_NONE)
+		return 0;
+
+	/* A disagreement this report began is logged once. */
+	if (began)
+		typec_dp_log(connector, generation, &display, &ucsi);
+
+	/* A difference that waits to become a disagreement wakes the thread that checks it. */
+	if (remaining != 0 && kick != NULL)
+		kick(argument);
+
+	/* Tells each listener of the bound connector's change, when the report is new. */
+	if (changed)
+		typec_listeners_tell(connector, generation);
+
+	/* Succeeded: the report is the port's current one. */
+	return 0;
+}
+
+/*
+ * Copies what the display driver last reported of one of its Type-C ports
+ * (0-based), and the connector it is bound to.
+ *
+ * Returns 0, or EINVAL for a port beyond DRV_TYPEC_DISPLAY_PORT_MAX.
+ */
+int
+drv_typec_display_get(
+	unsigned port,
+	struct drv_typec_display *display)
+{
+	/* Refuses a port the layer has no room for. */
+	if (port >= DRV_TYPEC_DISPLAY_PORT_MAX)
+		return EINVAL;
+
+	/* Copies the entry, with its binding as a connector index. */
+	drv_typec_os_lock();
+
+	display->generation = typec_displays[port].generation;
+	display->state = typec_displays[port].state;
+	display->connector = DRV_TYPEC_CONNECTOR_NONE;
+	if (typec_displays[port].bound != 0U)
+		display->connector = typec_displays[port].bound - 1U;
+
+	drv_typec_os_unlock();
+
+	/* Succeeded: the caller holds a copy (generation 0: never reported). */
+	return 0;
+}
+
+/*
+ * Binds a display port (0-based) to the connector (0-based) it is wired
+ * to, or unbinds it with DRV_TYPEC_CONNECTOR_NONE.
+ *
+ * Until a port is bound its reports go into no connector's record: which
+ * display port drives which USB-C connector depends on the board and is
+ * only taken from where it has been found out.  A connector the connector
+ * driver has not found yet may be named; it takes the port's report once
+ * it is there.  The two connectors whose binding changed start their
+ * comparison afresh and are told to the listeners.
+ *
+ * Returns 0, EINVAL for a port or a connector beyond the layer's room, or
+ * EBUSY when another port is bound to the connector.
+ */
+int
+drv_typec_display_bind(
+	unsigned port,
+	unsigned connector)
+{
+	unsigned old_connector;
+	unsigned other;
+	uint64_t old_generation;
+	uint64_t new_generation;
+	bool old_present;
+	bool new_present;
+
+	/* Refuses a port or a connector the layer has no room for. */
+	if (port >= DRV_TYPEC_DISPLAY_PORT_MAX)
+		return EINVAL;
+	if (connector != DRV_TYPEC_CONNECTOR_NONE && connector >= DRV_TYPEC_CONNECTOR_MAX)
+		return EINVAL;
+
+	/* Changes the binding; each connector it moves off or onto changes. */
+	drv_typec_os_lock();
+
+	/* A connector takes the reports of one port only. */
+	if (connector != DRV_TYPEC_CONNECTOR_NONE) {
+		other = typec_display_port_of(connector);
+		if (other != DRV_TYPEC_DISPLAY_PORT_NONE && other != port) {
+			drv_typec_os_unlock();
+			return EBUSY;
+		}
+	}
+
+	/* The connector the port leaves, and the one it joins (a connector index plus one, 0 for none). */
+	old_connector = DRV_TYPEC_CONNECTOR_NONE;
+	if (typec_displays[port].bound != 0U)
+		old_connector = typec_displays[port].bound - 1U;
+	typec_displays[port].bound = 0U;
+	if (connector != DRV_TYPEC_CONNECTOR_NONE)
+		typec_displays[port].bound = connector + 1U;
+
+	/* Each of the two that the connector driver has starts its comparison afresh under a new generation. */
+	old_present = false;
+	old_generation = 0;
+	if (old_connector != DRV_TYPEC_CONNECTOR_NONE && old_connector != connector && old_connector < typec_count) {
+		typec_generation++;
+		old_generation = typec_generation;
+		typec_connectors[old_connector].generation = old_generation;
+		kern_memset(&typec_dp_watches[old_connector], 0, sizeof(typec_dp_watches[old_connector]));
+		old_present = true;
+	}
+
+	/* The connector joined, likewise. */
+	new_present = false;
+	new_generation = 0;
+	if (connector != DRV_TYPEC_CONNECTOR_NONE && connector < typec_count) {
+		typec_generation++;
+		new_generation = typec_generation;
+		typec_connectors[connector].generation = new_generation;
+		kern_memset(&typec_dp_watches[connector], 0, sizeof(typec_dp_watches[connector]));
+		new_present = true;
+	}
+
+	drv_typec_os_unlock();
+
+	/* Tells the listeners of each connector that changed. */
+	if (old_present)
+		typec_listeners_tell(old_connector, old_generation);
+	if (new_present)
+		typec_listeners_tell(connector, new_generation);
+
+	/* Succeeded: the port's reports go to the connector from now on. */
+	return 0;
+}
+
+/*
+ * Compares the display driver's and UCSI's DisplayPort state of every
+ * bound connector, logging each disagreement that begins, and reports how
+ * many milliseconds until the youngest difference seen now is old enough
+ * to be a disagreement (0: no difference waits).
+ *
+ * The connector driver's thread calls it each time it wakes and waits no
+ * longer than it says.
+ */
+uint32_t
+drv_typec_display_check(void)
+{
+	struct drv_typec_dp_state display;
+	struct drv_typec_dp_state ucsi;
+	uint32_t remaining;
+	uint32_t earliest;
+	uint64_t generation;
+	uint64_t now;
+	unsigned index;
+	unsigned port;
+	bool present;
+	bool began;
+
+	/* The time the reports are compared at. */
+	now = drv_typec_os_now_ms();
+
+	/* Compares each connector in its own critical section, logging outside it. */
+	earliest = 0;
+	for (index = 0; index < DRV_TYPEC_CONNECTOR_MAX; index++) {
+		/* Moves the connector's comparison on, when the connector is there. */
+		drv_typec_os_lock();
+
+		present = false;
+		began = false;
+		remaining = 0;
+		generation = 0;
+		kern_memset(&display, 0, sizeof(display));
+		kern_memset(&ucsi, 0, sizeof(ucsi));
+		if (index < typec_count) {
+			present = true;
+			began = typec_dp_compare(index, now, &remaining);
+			generation = typec_connectors[index].generation;
+			port = typec_display_port_of(index);
+			if (port != DRV_TYPEC_DISPLAY_PORT_NONE)
+				display = typec_displays[port].state;
+			ucsi = typec_connectors[index].dp_ucsi;
+		}
+
+		drv_typec_os_unlock();
+
+		/* The connectors end at the first one the driver did not find. */
+		if (!present)
+			break;
+
+		/* A disagreement that began now is logged once. */
+		if (began)
+			typec_dp_log(index, generation, &display, &ucsi);
+
+		/* The soonest a waiting difference is due. */
+		if (remaining != 0 &&
+		    (earliest == 0 ||
+		     remaining < earliest))
+			earliest = remaining;
+	}
+
+	/* Succeeded: the milliseconds until the next comparison is due. */
+	return earliest;
+}
+
+/*
  * Writes every connector record as text, one line each, for the diagnostic
  * /dev/typec: whether something is attached, the partner, the power, the
  * plug's orientation, the Alternate Modes and the partner's PDOs.
@@ -512,9 +887,11 @@ drv_typec_text(
 	size_t size)
 {
 	struct drv_typec_connector connector;
+	struct drv_typec_display display;
 	struct typec_text text;
 	unsigned count;
 	unsigned index;
+	unsigned port;
 	int error;
 
 	/* An empty text in the caller's buffer. */
@@ -534,6 +911,19 @@ drv_typec_text(
 
 		/* Its line. */
 		typec_text_line(&text, index, &connector);
+	}
+
+	/* One line for each display port the display driver reported. */
+	for (port = 0; port < DRV_TYPEC_DISPLAY_PORT_MAX; port++) {
+		/* A port never reported has no line. */
+		error = drv_typec_display_get(port, &display);
+		if (error != 0)
+			break;
+		if (display.generation == 0)
+			continue;
+
+		/* Its line. */
+		typec_text_display(&text, port, &display);
 	}
 
 	/* Succeeded: the length of what was written. */
@@ -587,6 +977,222 @@ typec_request_put(
 	if (serial != NULL)
 		*serial = request->serial;
 	return 0;
+}
+
+/*
+ * Names the display port bound to a connector, or
+ * DRV_TYPEC_DISPLAY_PORT_NONE.  The caller holds the layer's lock.
+ */
+static unsigned
+typec_display_port_of(
+	unsigned connector)
+{
+	unsigned port;
+
+	/* The first port whose binding names the connector. */
+	for (port = 0; port < DRV_TYPEC_DISPLAY_PORT_MAX; port++) {
+		if (typec_displays[port].bound == connector + 1U)
+			return port;
+	}
+
+	/* No port is bound to it. */
+	return DRV_TYPEC_DISPLAY_PORT_NONE;
+}
+
+/* Tells whether two reports of one source say the same. */
+static bool
+typec_dp_same(
+	const struct drv_typec_dp_state *left,
+	const struct drv_typec_dp_state *right)
+{
+	/* Each field of the report. */
+	if (left->known != right->known)
+		return false;
+	if (left->hpd != right->hpd)
+		return false;
+	if (left->pin != right->pin)
+		return false;
+	if (left->lanes != right->lanes)
+		return false;
+	if (left->orientation != right->orientation)
+		return false;
+
+	/* The two say the same. */
+	return true;
+}
+
+/*
+ * Tells whether the display driver's and UCSI's DisplayPort reports of one
+ * connector differ: in the hot plug detect, in the pin assignment when
+ * both name one, or in the orientation when both know it.  Two reports
+ * differ only when both are known.
+ */
+static bool
+typec_dp_differ(
+	const struct drv_typec_dp_state *display,
+	const struct drv_typec_dp_state *ucsi)
+{
+	/* Nothing to compare without both reports. */
+	if (!display->known)
+		return false;
+	if (!ucsi->known)
+		return false;
+
+	/* The hot plug detect. */
+	if (display->hpd != ucsi->hpd)
+		return true;
+
+	/* The pin assignment, when both name one. */
+	if (display->pin != DRV_TYPEC_DP_PIN_NONE &&
+	    ucsi->pin != DRV_TYPEC_DP_PIN_NONE &&
+	    display->pin != ucsi->pin)
+		return true;
+
+	/* The orientation, when both know it. */
+	if (display->orientation != DRV_TYPEC_ORIENTATION_UNKNOWN &&
+	    ucsi->orientation != DRV_TYPEC_ORIENTATION_UNKNOWN &&
+	    display->orientation != ucsi->orientation)
+		return true;
+
+	/* The reports agree. */
+	return false;
+}
+
+/*
+ * Moves a connector's comparison of its two DisplayPort reports on to the
+ * time now: a difference starts a wait, and one that lasts
+ * DRV_TYPEC_DISAGREE_MS is a disagreement; agreement ends either.  Sets
+ * *remaining to the milliseconds a difference still waits (0: none).
+ * Returns true when a disagreement begins now, which the caller logs after
+ * the lock is released.  The caller holds the layer's lock.
+ */
+static bool
+typec_dp_compare(
+	unsigned connector,
+	uint64_t now,
+	uint32_t *remaining)
+{
+	struct typec_dp_watch *watch;
+	uint64_t elapsed;
+	unsigned port;
+	bool differ;
+
+	/* The connector's two reports; an unbound connector has only UCSI's. */
+	watch = &typec_dp_watches[connector];
+	*remaining = 0;
+	differ = false;
+	port = typec_display_port_of(connector);
+	if (port != DRV_TYPEC_DISPLAY_PORT_NONE)
+		differ = typec_dp_differ(&typec_displays[port].state, &typec_connectors[connector].dp_ucsi);
+
+	/* Agreement ends a wait and a disagreement, so the next difference is logged again. */
+	if (!differ) {
+		watch->differing = false;
+		watch->disagree = false;
+		return false;
+	}
+
+	/* A new difference waits, since the two reports come in no fixed order. */
+	if (!watch->differing) {
+		watch->differing = true;
+		watch->since_ms = now;
+		*remaining = DRV_TYPEC_DISAGREE_MS;
+		return false;
+	}
+
+	/* A disagreement already begun is not logged again. */
+	if (watch->disagree)
+		return false;
+
+	/* A difference not old enough waits the rest of the time. */
+	elapsed = now - watch->since_ms;
+	if (elapsed < DRV_TYPEC_DISAGREE_MS) {
+		*remaining = DRV_TYPEC_DISAGREE_MS - (uint32_t)elapsed;
+		return false;
+	}
+
+	/*
+	 * The difference has lasted: the record shows the disagreement until
+	 * the reports agree again.
+	 */
+	watch->disagree = true;
+
+	/* Succeeded: a disagreement begins. */
+	return true;
+}
+
+/*
+ * Fills the layer's part of a copy of a connector record: the bound
+ * display port and its report, the DisplayPort state taken, its source
+ * and the disagreement.  The caller holds the layer's lock.
+ */
+static void
+typec_dp_fill(
+	unsigned index,
+	struct drv_typec_connector *connector)
+{
+	unsigned port;
+
+	/* The bound port and what the display driver reports of it. */
+	port = typec_display_port_of(index);
+	connector->display_port = port;
+	kern_memset(&connector->dp_display, 0, sizeof(connector->dp_display));
+	if (port != DRV_TYPEC_DISPLAY_PORT_NONE)
+		connector->dp_display = typec_displays[port].state;
+
+	/* The display driver's report lights the display, so it is taken over UCSI's. */
+	kern_memset(&connector->dp, 0, sizeof(connector->dp));
+	connector->dp_source = DRV_TYPEC_DP_SOURCE_NONE;
+	if (connector->dp_display.known) {
+		connector->dp = connector->dp_display;
+		connector->dp_source = DRV_TYPEC_DP_SOURCE_DISPLAY;
+	} else if (connector->dp_ucsi.known) {
+		connector->dp = connector->dp_ucsi;
+		connector->dp_source = DRV_TYPEC_DP_SOURCE_UCSI;
+	}
+
+	/* An orientation the source taken does not know comes from the connector's status. */
+	if (connector->dp_source != DRV_TYPEC_DP_SOURCE_NONE &&
+	    connector->dp.orientation == DRV_TYPEC_ORIENTATION_UNKNOWN)
+		connector->dp.orientation = connector->orientation;
+
+	/* Whether the two reports disagree. */
+	connector->dp_disagree = typec_dp_watches[index].disagree;
+}
+
+/* Logs a disagreement that began between a connector's two DisplayPort reports. */
+static void
+typec_dp_log(
+	unsigned connector,
+	uint64_t generation,
+	const struct drv_typec_dp_state *display,
+	const struct drv_typec_dp_state *ucsi)
+{
+	/* Both reports, and the generation they disagree at. */
+	drv_typec_os_log("typec: connector %u: DisplayPort disagree: display hpd=%d pin=%c, ucsi hpd=%d pin=%c (generation %llu)\n", connector + 1U, (int)display->hpd, typec_text_pin(display->pin), (int)ucsi->hpd, typec_text_pin(ucsi->pin), (unsigned long long)generation);
+}
+
+/* Tells each registered listener that a connector changed at a generation. */
+static void
+typec_listeners_tell(
+	unsigned connector,
+	uint64_t generation)
+{
+	struct typec_listener_entry listeners[DRV_TYPEC_LISTENER_MAX];
+	unsigned listener_count;
+	unsigned listener;
+
+	/* Takes a copy of the listeners, which are called without the lock. */
+	drv_typec_os_lock();
+
+	listener_count = typec_listener_count;
+	kern_memcpy(listeners, typec_listeners, sizeof(listeners));
+
+	drv_typec_os_unlock();
+
+	/* Tells each listener. */
+	for (listener = 0; listener < listener_count; listener++)
+		listeners[listener].listener(listeners[listener].argument, connector, generation);
 }
 
 /* Writes the line of one connector. */
@@ -668,12 +1274,109 @@ typec_text_line(
 		typec_text_append(text, " cable=%s speed=%llu current=%umA", cable, (unsigned long long)connector->cable.speed_bps, connector->cable.current_ma);
 	}
 
+	/* DisplayPort on the connector, from the display driver and from UCSI. */
+	typec_text_dp(text, connector);
+
 	/* The last operation carried out, and its outcome. */
 	if (connector->request_serial != 0)
 		typec_text_append(text, " request=%u error=%d", (unsigned)connector->request_serial, connector->request_error);
 
 	/* The generation the record was published at, which ends the line. */
 	typec_text_append(text, " generation=%llu\n", (unsigned long long)connector->generation);
+}
+
+/*
+ * Writes the DisplayPort state of a connector, nothing when neither source
+ * reports: the hot plug detect and the pin assignment as taken, each with
+ * its source and with UCSI's beside the display driver's, the lanes, the
+ * bound display port (from 1) and a disagreement.
+ */
+static void
+typec_text_dp(
+	struct typec_text *text,
+	const struct drv_typec_connector *connector)
+{
+	const char *source;
+	bool beside;
+
+	/* The bound display port, even before it reports. */
+	if (connector->display_port != DRV_TYPEC_DISPLAY_PORT_NONE)
+		typec_text_append(text, " display-port=%u", connector->display_port + 1U);
+
+	/* Neither source reports DisplayPort. */
+	if (connector->dp_source == DRV_TYPEC_DP_SOURCE_NONE)
+		return;
+
+	/* The source taken, and whether UCSI's report stands beside the display driver's. */
+	source = "ucsi";
+	beside = false;
+	if (connector->dp_source == DRV_TYPEC_DP_SOURCE_DISPLAY) {
+		source = "display";
+		if (connector->dp_ucsi.known)
+			beside = true;
+	}
+
+	/* The hot plug detect. */
+	typec_text_append(text, " hpd=%d(%s)", (int)connector->dp.hpd, source);
+	if (beside)
+		typec_text_append(text, " ucsi=%d", (int)connector->dp_ucsi.hpd);
+
+	/* The pin assignment, when one is named. */
+	if (connector->dp.pin != DRV_TYPEC_DP_PIN_NONE)
+		typec_text_append(text, " pin=%c(%s)", typec_text_pin(connector->dp.pin), source);
+	if (beside && connector->dp_ucsi.pin != DRV_TYPEC_DP_PIN_NONE)
+		typec_text_append(text, " ucsi=%c", typec_text_pin(connector->dp_ucsi.pin));
+
+	/* The lanes, when reported. */
+	if (connector->dp.lanes != 0)
+		typec_text_append(text, " lanes=%u", connector->dp.lanes);
+
+	/* A disagreement between the two. */
+	if (connector->dp_disagree)
+		typec_text_append(text, " disagree");
+}
+
+/* Writes the line of one display port the display driver reported. */
+static void
+typec_text_display(
+	struct typec_text *text,
+	unsigned port,
+	const struct drv_typec_display *display)
+{
+	/* The port as the display driver counts (from 1), and its report. */
+	typec_text_append(text, "display-port %u: hpd=%d pin=%c lanes=%u", port + 1U, (int)display->state.hpd, typec_text_pin(display->state.pin), display->state.lanes);
+
+	/* The orientation, when the display driver knows it. */
+	if (display->state.orientation == DRV_TYPEC_ORIENTATION_NORMAL) {
+		typec_text_append(text, " orientation=normal");
+	} else if (display->state.orientation == DRV_TYPEC_ORIENTATION_FLIPPED) {
+		typec_text_append(text, " orientation=flipped");
+	}
+
+	/* The connector it is bound to (from 1). */
+	if (display->connector == DRV_TYPEC_CONNECTOR_NONE) {
+		typec_text_append(text, " connector=none");
+	} else {
+		typec_text_append(text, " connector=%u", display->connector + 1U);
+	}
+
+	/* The generation of the report, which ends the line. */
+	typec_text_append(text, " generation=%llu\n", (unsigned long long)display->generation);
+}
+
+/* Names a pin assignment by its letter, '-' for none. */
+static char
+typec_text_pin(
+	enum drv_typec_dp_pin pin)
+{
+	/* No pin assignment, or one beyond F. */
+	if (pin == DRV_TYPEC_DP_PIN_NONE)
+		return '-';
+	if ((unsigned)pin > (unsigned)DRV_TYPEC_DP_PIN_F)
+		return '-';
+
+	/* Succeeded: A for 1. */
+	return (char)('A' + (int)pin - 1);
 }
 
 /* Writes a list of Alternate Modes as SVID/VDO pairs, nothing for an empty one. */

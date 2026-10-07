@@ -501,6 +501,62 @@ drv_i915_tc_pin_assignment(
 }
 
 /*
+ * Reads what a Type-C port has of DisplayPort for the Type-C connector
+ * layer, under the port's lock: the DP-alt live status, and the FIA's pin
+ * assignment and lanes when the display holds the port in DP-alt (TC cold
+ * is blocked then, so the FIA answers).  An undeclared port has nothing.
+ */
+void
+drv_i915_tc_dp_sample(
+	struct i915_tc *tc,
+	unsigned port,
+	struct i915_tc_dp_sample *sample)
+{
+	struct i915_tc_port *p;
+	uint32_t live;
+	unsigned lane_mask;
+	unsigned pins;
+	int held;
+
+	/* Nothing, until a declared port says otherwise. */
+	sample->hpd = 0;
+	sample->pin = 0u;
+	sample->lanes = 0;
+
+	/* An undeclared port has nothing plugged in. */
+	p = tc_port_of(tc, port);
+	if (p == NULL)
+		return;
+	if (!p->present)
+		return;
+
+	/* Reads the live status, and the FIA while the port is held in DP-alt. */
+	tc->env.lock(tc->env.ctx, port);
+
+	live = drv_i915_tc_live_status(tc, port);
+	held = 0;
+	pins = 0u;
+	lane_mask = 0u;
+	if (p->mode == I915_TC_MODE_DP_ALT) {
+		held = 1;
+		pins = drv_i915_tc_pin_assignment(tc, port);
+		lane_mask = tc_lane_mask(tc, p);
+	}
+
+	tc->env.unlock(tc->env.ctx, port);
+
+	/* A live DP-alt partner raises the hot plug detect. */
+	if ((live & I915_TC_LIVE_DP_ALT) != 0u)
+		sample->hpd = 1;
+
+	/* The FIA's pin assignment and lanes count only while the port was held in DP-alt. */
+	if (held) {
+		sample->pin = pins;
+		sample->lanes = tc_lanes_of_mask(lane_mask);
+	}
+}
+
+/*
  * Logs a Type-C port's state: its mode, links, live status, and the raw
  * registers a reader needs to tell what the Type-C subsystem and the FIA
  * reported.
