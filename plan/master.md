@@ -517,6 +517,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-08 ユーザーの UAT（5330 の実機、p011 の kernel・main の compositor・settings）:「HDMIに出力されました。extendもmirrorも動いています。マウスはまだextendに移動できません。extendのとき、個別のディスプレイをオフにできる設定を作ってください。そうすれば、タッチパネルのテストができるのではかどります！」→ ws113-p004b・p006・p011 は実機で動いた（mouse の移動は p007 で作業中）。[ws113-p014](ws113/phase014/phase.md)（拡張の時の display ごとの off、D-MODES を置き換え）を P1 の p007 の後に。
 - 2026-10-08 Q1: 5330 に kernel（P2 の ws113-p011、cksum 1836440229）・compositor（3117189562）・settings（1903582430）・libkeiland.so（459659771）を入れ（元は /esp/vmunix.prev・/bin/wayland.orig・/bin/settings.orig・/lib/libkeiland.so.orig）、SSH で reboot（効いた）。HDMI を挿した起動で `display head: lit (connector 1, HDMI, 1920x1280, pipe B)`・`first frame 1920x1280 shown`、`resident display: lit again for two pipes`。ユーザー: 動画の試験に ~/sample.mp4（HEVC Main 1920x1080 150 frame、AAC。WS083 は H.264 だけなので用途を確認中）。
 - 2026-10-08 ユーザー:「では、Alt+Shift+左右で仮想デスクトップ移動、ではどうですか？私はEmacsユーザなので、標準テキストエディタがどう使われているのか知りませんでした。」→ ws181-p010 の key を Alt+Shift+左右に。
 - 2026-10-08 ユーザー:「Super+Shift+左右、使いやすくてすばらしい設計ですね！…あとでいいので、Ctrl+Shift+左右で、Virtual Desktopを移動できるようにお願いします。」→ ws181-p010（後で）。Ctrl+Shift+左右は app の単語の選択と重なる点をユーザーに確認中。
