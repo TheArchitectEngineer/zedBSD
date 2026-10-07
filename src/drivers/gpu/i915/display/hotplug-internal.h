@@ -708,6 +708,26 @@ struct i915_hpd_edid_slot {
 	int have_stored;
 };
 
+struct i915_hpd_world;
+
+/*
+ * The delayed link reset of one Type-C port (the Linux
+ * intel_tc_port.link_reset_work).
+ *
+ * A pulse that finds an output's link on the port without its DP-alt
+ * partner arms it; it looks again two seconds later, so a partner that
+ * comes back meanwhile keeps the link.  It lives in the hotplug world;
+ * every start prepares it and the stop cancels it.
+ */
+struct i915_hpd_tc_reset {
+	/* The delayed work on the unordered queue. */
+	struct delayed_work work;
+
+	/* The world and the Type-C port the work looks at. */
+	struct i915_hpd_world *world;
+	unsigned tc_port;
+};
+
 /*
  * One running hotplug path: what it was started with, its liveness, its
  * counters and the records the tests read.
@@ -914,6 +934,9 @@ struct i915_hpd_world {
 	 * every start.
 	 */
 	struct i915_display *dp_display;
+
+	/* The delayed link resets of the Type-C ports, TC1 first. */
+	struct i915_hpd_tc_reset tc_reset[I915_TC_PORTS];
 
 	/* EDID reads attempted and failed since the start. */
 	unsigned hpd_edid_reads;

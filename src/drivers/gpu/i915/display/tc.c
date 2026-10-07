@@ -328,6 +328,47 @@ drv_i915_tc_connected_locked(
 }
 
 /*
+ * Tells whether the link of a Type-C port must be reset (the Linux
+ * intel_tc_port_link_needs_reset()): 1 when an output holds the port in
+ * DP-alt mode and what is plugged in now asks for another mode (the
+ * partner went, or came back as something else); 0 otherwise.
+ */
+int
+drv_i915_tc_link_needs_reset(
+	struct i915_tc *tc,
+	unsigned port)
+{
+	struct i915_tc_port *p;
+	uint32_t live;
+	enum i915_tc_mode target;
+	int needs;
+
+	/* An undeclared port has no link. */
+	p = tc_port_of(tc, port);
+	if (p == NULL)
+		return 0;
+	if (!p->present)
+		return 0;
+
+	/* Compares the mode the links hold with what is plugged in, under the port's lock. */
+	tc->env.lock(tc->env.ctx, port);
+
+	/* Only a link held in DP-alt mode can lose its partner; what is plugged in now asks for its own mode. */
+	needs = 0;
+	if (p->links != 0u && p->mode == I915_TC_MODE_DP_ALT) {
+		live = drv_i915_tc_live_status(tc, port);
+		target = tc_target_mode(p, live);
+		if (target != p->mode)
+			needs = 1;
+	}
+
+	tc->env.unlock(tc->env.ctx, port);
+
+	/* Succeeded: reports whether the link must be reset. */
+	return needs;
+}
+
+/*
  * Locks a Type-C port for a step that uses its PHY, and brings its mode up
  * to date first when no link fixes it.
  *

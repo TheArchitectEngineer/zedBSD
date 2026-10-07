@@ -86,6 +86,7 @@ static void test_adapter_with_hdmi(void);
 static void test_branch_without_hpd(void);
 static void test_rates(void);
 static void test_converter(void);
+static void test_short_pulse(void);
 
 /*
  * Runs every case; the monitor's EDID comes from the capture named on the
@@ -121,6 +122,7 @@ main(
 	test_branch_without_hpd();
 	test_rates();
 	test_converter();
+	test_short_pulse();
 
 	/* The verdict. */
 	printf("host-dpext: %d checks, %d failures\n", checks, failures);
@@ -780,4 +782,67 @@ test_converter(void)
 	sink.dpcd[0] = 0x14;
 	error = drv_i915_dp_ext_configure_converter(&env, &sink);
 	check(error == -FAKE_ETIMEDOUT, "converter: the first failed write is reported");
+}
+
+/*
+ * ws051-p005a: a short pulse (IRQ_HPD) of a connected sink: handled when
+ * nothing changed, the service interrupts acknowledged; a detection is
+ * asked for changed capabilities, a changed sink count, a failed read or a
+ * sink the last probe did not find.
+ */
+static void
+test_short_pulse(void)
+{
+	struct i915_dp_ext_env env;
+	struct i915_dp_ext_source source;
+	struct i915_dp_ext_sink sink;
+	int handled;
+
+	printf("short pulse\n");
+	env_init(&env);
+	source_5330(&source);
+
+	sink_monitor();
+	drv_i915_dp_ext_detect(&env, &source, &sink);
+	fake.writes = 0;
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 1 && fake.writes == 0, "short pulse: nothing changed, nothing raised: handled");
+
+	fake.dpcd[0x201] = 0x40;
+	fake.dpcd[0x2005] = 0x01;
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 1, "short pulse: service interrupts raised: handled");
+	check(fake.writes == 2 && fake.write_offset[0] == 0x201u && fake.write_value[0] == 0x40 && fake.write_offset[1] == 0x2005u && fake.write_value[1] == 0x01, "short pulse: both vectors acknowledged by writing them back");
+
+	fake.dpcd[0x001] = 0x0a;
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 0, "short pulse: changed capabilities ask for a detection");
+
+	sink_monitor();
+	drv_i915_dp_ext_detect(&env, &source, &sink);
+	fake.fail_all = 1;
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 0, "short pulse: a failed read asks for a detection");
+
+	fake_reset();
+	fake.dpcd[0x000] = 0x14;
+	fake.dpcd[0x001] = 0x14;
+	fake.dpcd[0x002] = 0x84;
+	fake.dpcd[0x005] = 0x11;
+	fake.dpcd[0x007] = 0x01;
+	fake.dpcd[0x080] = 0x0b;
+	fake.dpcd[0x200] = 0x01;
+	fake.edid_blocks = 1;
+	memcpy(fake.edid, monitor_edid, 128);
+	drv_i915_dp_ext_detect(&env, &source, &sink);
+	check(sink.status == I915_DP_EXT_CONNECTED, "short pulse: the adapter with a display is connected");
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 1, "short pulse: the adapter's count is the same: handled");
+	fake.dpcd[0x200] = 0x00;
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 0, "short pulse: the display behind the adapter went: a detection");
+
+	drv_i915_dp_ext_forget(&sink);
+	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
+	check(handled == 0, "short pulse: a sink not found by the last probe is detected afresh");
 }

@@ -9,7 +9,7 @@ Related Milestones: MG003
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-07 P1: p004b の設計（phase004b/phase.md、code は ws113-p011a の後）、次は p005a。p004a は merge 済み（c7ead0ec2）、実機は Q1 とユーザー。それ以前: p004a を実装（dp-ext.c・dp-ext-kern.c、host-dpext 73/0、build warning 0）、実機は T1 への依頼（Q1 経由）。次は p004b。それ以前: 2026-10-07 Q1: p002b cleared（T1-350）。次は p003（P1、q847、正解値は q848 で 5330 から採取）。それ以前: P2: p002b を実装（host 101/0、build warning 0、ktest・実機は 5330 の後）。次は p003（正解値の後）。それ以前: p001 の design.md 第 4 版（§14、[レビュー](design-review-2026-10-07.md) を反映）。p002 を実装（host PASS、ktest は 5330 の後）。次は p002b（TC の核）。§14.5 の正解値の採取の手順はユーザーの判断待ち（Q1 経由）。それ以前: 2026-10-04 の第 1〜3 版、§10・§13 の決定
+Resume point: 2026-10-07 P1: p005a を実装（HPD の長い pulse → detect → 事象、IRQ_HPD の sink の確かめ、TC の link reset の 2 秒の猶予）、実機は T1 への依頼。p004b は設計済み（code は ws113-p011a の後）。p004a は merge 済み（c7ead0ec2）、実機は Q1 とユーザー。それ以前: p004a を実装（dp-ext.c・dp-ext-kern.c、host-dpext 73/0、build warning 0）、実機は T1 への依頼（Q1 経由）。次は p004b。それ以前: 2026-10-07 Q1: p002b cleared（T1-350）。次は p003（P1、q847、正解値は q848 で 5330 から採取）。それ以前: P2: p002b を実装（host 101/0、build warning 0、ktest・実機は 5330 の後）。次は p003（正解値の後）。それ以前: p001 の design.md 第 4 版（§14、[レビュー](design-review-2026-10-07.md) を反映）。p002 を実装（host PASS、ktest は 5330 の後）。次は p002b（TC の核）。§14.5 の正解値の採取の手順はユーザーの判断待ち（Q1 経由）。それ以前: 2026-10-04 の第 1〜3 版、§10・§13 の決定
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -61,7 +61,7 @@ Keiland が決める）。i915 は GOP の出力先以外に自分の判断で s
 | [ws051-p004a](phase004a/phase.md) | TC の AUX・DPCD・EDID の診断、外部 DP の object（M6）、調べた後の同期の disconnect（M2）、branch device と sink count（H7） | in-progress（2026-10-07 P1: 実装、host PASS、build warning 0。実機は T1 への依頼） | p003 | 同上 |
 | [ws051-p004b](phase004b/phase.md) | display の UAPI での出力（claim・mode・present での link training（fallback、M3）・modeset・scanout、TC PLL・TBT PLL を pool へ、TC の encoder を N1 の registry へ） | planning（2026-10-07 P1: 設計だけ。code は ws113-p011a の merge の後、Q1） | p004a、ws113-p011a（付け替えの口、R1〜R4） | 同上 |
 | ws051-p004c | GOP が USB-C の時の引き継ぎ（M5: 判定を引き継ぐに、host-gop.c の期待値） | planned | p004b | 同上 |
-| ws051-p005a | 抜き差しの検出と事象: HPD の長い pulse → detect（外部 DP の probe）→ `GPU_DISPLAY_EVENT_CHANGE`、2 秒の猶予と 5 回の retry（M4 の前半） | planned | p004a（2026-10-07 Q1 の判断: p004b の依存を外し p005 を a・b に分けた） | hotplug.c・dp-ext |
+| [ws051-p005a](phase005a/phase.md) | 抜き差しの検出と事象: HPD の長い pulse → detect（外部 DP の probe）→ `GPU_DISPLAY_EVENT_CHANGE`、2 秒の猶予と 5 回の retry（M4 の前半） | in-progress（2026-10-07 P1: 実装、host PASS、build warning 0。実機は T1 への依頼） | p004a（2026-10-07 Q1 の判断: p004b の依存を外し p005 を a・b に分けた） | hotplug.c・dp-ext |
 | ws051-p005b | scanout 中の抜けの停止、IRQ_HPD の retrain（M4 の後半）、S0ix の口（M10） | planned | p004b、p005a | 同上 |
 | ws051-p006 | 規約の全文の確認と最終の確認 | planned | p002、p002b、p003、p004a、p004b、p004c、p005a、p005b | WS の全 source |
 

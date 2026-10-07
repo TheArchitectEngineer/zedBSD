@@ -18,6 +18,7 @@
 #include "dp-ext.h"
 
 void drv_i915_dp_ext_start(struct i915_display *display);
+int drv_i915_dp_ext_pulse(struct i915_display *display, int port);
 enum i915_dp_ext_status drv_i915_dp_ext_probe(struct i915_display *display, int port, uint8_t *edid, size_t edid_size, unsigned *edid_bytes);
 
 #endif
