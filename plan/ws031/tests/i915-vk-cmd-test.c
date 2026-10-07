@@ -96,6 +96,17 @@ drv_i915_worker_video_state(struct i915_device *device)
 	return fixture_video_state;
 }
 
+/* The video part is tested on its own (plan/ws083/tests); the router only reaches it. */
+int
+drv_i915_video_dispatch(struct i915_render_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct i915_wire_writer *reply)
+{
+	(void)session;
+	(void)opcode;
+	(void)reply;
+	reader->error = 1;
+	return ENOTSUP;
+}
+
 /*
  * The query pools' GPU objects and batch (ws075-p006), as in
  * i915-vk-render-stubs.inc: the host has no GPU, so creating a pool's

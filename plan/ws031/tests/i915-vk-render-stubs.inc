@@ -483,12 +483,27 @@ drv_i915_gfx_submit_end(
 	return 0;
 }
 
-/* The video decode engine (ws083-p003b): the host has none. */
+/*
+ * The video decode engine (ws083-p003b): none unless a test sets the state,
+ * and an attach that succeeds and is counted.
+ */
+int stub_video_state = ENODEV;
+unsigned stub_video_attaches;
+
 int
 drv_i915_worker_video_state(struct i915_device *device)
 {
 	(void)device;
-	return ENODEV;
+	return stub_video_state;
+}
+
+int
+drv_i915_worker_context_attach(struct i915_device *device, struct i915_context *context)
+{
+	(void)device;
+	(void)context;
+	stub_video_attaches++;
+	return 0;
 }
 
 /*

@@ -34,3 +34,9 @@ UAPI・HAL・toolchain・display/ は触らない。
 | `sh plan/ws083/tests/run-host-boot-video.sh` | 10 checks 0 failures |
 | `sh plan/ws118/tests/host-boot-i915-test.sh build/tmp/ws083-boot-host`（既存、不変の確認） | 19 checks 0 failures |
 | `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+
+- 2026-10-07 夜 単位 2（video の module の本体、往復の試験の前）:
+  - `render/video.c`・`video.h`（新）: 物理の問い合わせ 3 つ（caps は要求の形の順に入れ子で返す、format は NV12 の 1 件、family の codec ops）、session（profile・family 1・flags 0・NV12・4096・slot 17・参照 16・header の名と版を検べ、最初の session で `drv_i915_worker_context_attach` を device の mutex の下で、hang した engine では INITIALIZATION_FAILED）、memory requirements（row store 4 本と MV buffer slot ＋1 本、4 KiB）、bind（全部か無し、memory の identity で持つ）、parameters（SPS・PPS を 1 件ずつ確保、create は template を写して同じ key を置き換え、update は持っている key・update 内の重複・容量超え・順番違いを全体で拒む）、記録（op ごとに record を確保、溢れは oversize）、submit（模擬 → 実行の 2 回の walk。D18 は EBADMSG → `VK_ERROR_DEVICE_LOST`、D17 は理由を log して飛ばし slot は動かす）、session の close での解放（hang の時は batch を保持）。
+  - `command.c`: 記録の範囲に `0x1000a`〜`0x1000d`、op の record を begin・reset・free で解放（`i915_command_ops_clear`）、submit は queue の family で分け family 1 は `drv_i915_video_submit`（render の batch は query reset のために開く）、graphics の family の video の op は EIO（DEVICE_LOST）。`dispatch.c` の route（`0x10000`〜`0x10009`）、`objects.c` の close の解放、`gfx.h` の op kind 4 つと `u.video`、`internal.h` の object kind 2 つ、`platform/amd64/vmunix.mk` に video.c。
+  - 未: MFX の命令（p004）。p003b の decode は検べと遷移だけで batch を書かず、VCS0 で何も走らない。NV12 の image（p004）が無いので D17 の 3・6・7 の image の検べは今は必ず「NV12 でない」で飛ばす。
+  - 試験: `plan/ws031/tests/run-vk-host-tests.sh` の executor に video、stub に `drv_i915_worker_context_attach`、cmd の試験に `drv_i915_video_dispatch` の stub。全 10 個 PASS（plain・ASan/UBSan）。`make … vmunix` warning 0。

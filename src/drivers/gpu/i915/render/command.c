@@ -20,8 +20,10 @@
 #include "compute.h"
 #include "fence.h"
 #include "gfx.h"
+#include "instance.h"
 #include "internal.h"
 #include "object.h"
+#include "video.h"
 #include <kern/kcrt.h>
 
 #include <kern/klog.h>
@@ -153,6 +155,8 @@ static int i915_command_buffers_free(struct i915_render_session *session, struct
 static int i915_command_buffer_begin(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int i915_command_buffer_end(struct i915_render_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static struct i915_gfx_op *i915_command_op(struct i915_gfx_cmdbuf *cmdbuf, enum i915_gfx_op_kind kind);
+static void i915_command_ops_clear(struct i915_gfx_cmdbuf *cmdbuf);
+static int i915_record_video(struct i915_render_session *session, struct i915_gfx_cmdbuf *cmdbuf, uint32_t opcode, struct i915_wire_reader *reader);
 static uint32_t i915_command_op_mark(const struct i915_gfx_cmdbuf *cmdbuf);
 static struct i915_gfx_op *i915_command_op_at(struct i915_gfx_cmdbuf *cmdbuf, uint32_t place);
 static int i915_command_grow(struct i915_gfx_cmdbuf *cmdbuf);
@@ -282,8 +286,12 @@ drv_i915_gfx_rec_dispatch(
 		return 0;
 	}
 
-	/* Leaves an opcode outside the recording range to its own module. */
-	if (opcode < GPU_OP_RESET_COMMAND_BUFFER || opcode > GPU_OP_CMD_EXECUTE_COMMANDS) {
+	/*
+	 * Leaves an opcode outside the recording ranges to its own module: the
+	 * vkCmd* of the protocol, and zedBSD's video coding commands.
+	 */
+	if ((opcode < GPU_OP_RESET_COMMAND_BUFFER || opcode > GPU_OP_CMD_EXECUTE_COMMANDS) &&
+	    (opcode < GPU_OP_CMD_BEGIN_VIDEO_CODING || opcode > GPU_OP_CMD_DECODE_VIDEO)) {
 		*handled = 0;
 		return 0;
 	}
@@ -399,8 +407,9 @@ i915_command_buffer_release(
 		}
 	}
 
-	/* Withdraws the identity, then frees the operation list and the buffer. */
+	/* Withdraws the identity, then frees the operations' records, the operation list and the buffer. */
 	drv_i915_object_remove(session, I915_VK_OBJ_COMMAND_BUFFER, cmdbuf->identity);
+	i915_command_ops_clear(cmdbuf);
 	kern_free(cmdbuf->ops);
 	kern_free(cmdbuf);
 }
@@ -478,7 +487,7 @@ i915_command_pool_reset(
 	for (;
 	     cmdbuf != NULL;
 	     cmdbuf = cmdbuf->next) {
-		cmdbuf->op_count = 0U;
+		i915_command_ops_clear(cmdbuf);
 		cmdbuf->overflow = 0;
 	}
 
@@ -635,7 +644,7 @@ i915_command_buffer_begin(
 
 	/* Starts the recording afresh. */
 	if (cmdbuf != NULL) {
-		cmdbuf->op_count = 0U;
+		i915_command_ops_clear(cmdbuf);
 		cmdbuf->overflow = 0;
 	}
 
@@ -669,7 +678,7 @@ i915_command_buffer_reset(
 
 	/* Empties the recording, as a begin does. */
 	if (cmdbuf != NULL) {
-		cmdbuf->op_count = 0U;
+		i915_command_ops_clear(cmdbuf);
 		cmdbuf->overflow = 0;
 	}
 
@@ -761,6 +770,80 @@ i915_command_op(
 
 	/* Succeeded: the operation is the buffer's newest. */
 	return op;
+}
+
+/* Empties a command buffer's operation list, freeing the video records its operations hold. */
+static void
+i915_command_ops_clear(
+	struct i915_gfx_cmdbuf *cmdbuf)
+{
+	struct i915_gfx_op *op;
+	uint32_t index;
+
+	/* Frees the record of every video operation. */
+	for (index = 0U; index < cmdbuf->op_count; index++) {
+		op = &cmdbuf->ops[index];
+		if (op->kind == I915_GFX_OP_VIDEO_BEGIN ||
+		    op->kind == I915_GFX_OP_VIDEO_CONTROL ||
+		    op->kind == I915_GFX_OP_VIDEO_DECODE ||
+		    op->kind == I915_GFX_OP_VIDEO_END) {
+			drv_i915_video_command_free(op->u.video);
+			op->u.video = NULL;
+		}
+	}
+
+	/* The list is empty. */
+	cmdbuf->op_count = 0U;
+}
+
+/*
+ * Records a video coding command into an operation holding its record.
+ *
+ * A record that cannot be made overflows the recording, so its end fails;
+ * a recording with nowhere to go drops the record.
+ */
+static int
+i915_record_video(
+	struct i915_render_session *session,
+	struct i915_gfx_cmdbuf *cmdbuf,
+	uint32_t opcode,
+	struct i915_wire_reader *reader)
+{
+	struct i915_video_command *command;
+	enum i915_gfx_op_kind kind;
+	struct i915_gfx_op *op;
+	int error;
+
+	/* The operation kind of the command. */
+	kind = I915_GFX_OP_VIDEO_DECODE;
+	if (opcode == GPU_OP_CMD_BEGIN_VIDEO_CODING)
+		kind = I915_GFX_OP_VIDEO_BEGIN;
+	else if (opcode == GPU_OP_CMD_END_VIDEO_CODING)
+		kind = I915_GFX_OP_VIDEO_END;
+	else if (opcode == GPU_OP_CMD_CONTROL_VIDEO_CODING)
+		kind = I915_GFX_OP_VIDEO_CONTROL;
+
+	/* Decodes the command into its record. */
+	error = drv_i915_video_record(session, opcode, reader, &command);
+	if (error == ENOMEM) {
+		if (cmdbuf != NULL)
+			cmdbuf->overflow = 1;
+		return 0;
+	}
+	if (error != 0)
+		return error;
+
+	/* Hands the record to the operation; a discarded operation drops it. */
+	op = i915_command_op(cmdbuf, kind);
+	if (op == &i915_command_discard_op) {
+		drv_i915_video_command_free(command);
+		kern_memset(&i915_command_discard_op, 0, sizeof(i915_command_discard_op));
+		return 0;
+	}
+	op->u.video = command;
+
+	/* Succeeded: the command is recorded. */
+	return 0;
 }
 
 /*
@@ -1888,6 +1971,13 @@ i915_record_command(
 
 	/* Records the operation the opcode names. */
 	switch (opcode) {
+	case GPU_OP_CMD_BEGIN_VIDEO_CODING:
+	case GPU_OP_CMD_END_VIDEO_CODING:
+	case GPU_OP_CMD_CONTROL_VIDEO_CODING:
+	case GPU_OP_CMD_DECODE_VIDEO:
+		/* The video coding commands (video.c). */
+		error = i915_record_video(session, cmdbuf, opcode, reader);
+		return error;
 	case GPU_OP_CMD_BIND_PIPELINE:
 		/* vkCmdBindPipeline: [bind point][pipeline]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_PIPELINE);
@@ -3355,6 +3445,14 @@ i915_command_buffer_execute(
 		case I915_GFX_OP_DISPATCH_INDIRECT:
 			error = i915_execute_dispatch_indirect(session, &state, op);
 			break;
+		case I915_GFX_OP_VIDEO_BEGIN:
+		case I915_GFX_OP_VIDEO_CONTROL:
+		case I915_GFX_OP_VIDEO_DECODE:
+		case I915_GFX_OP_VIDEO_END:
+			/* A video command on the graphics family breaks the API's rules: the submission is lost (D18). */
+			kern_logf("i915: vk: video command submitted on the graphics queue family\n");
+			error = EIO;
+			break;
 		default:
 			error = EINVAL;
 			break;
@@ -3399,9 +3497,12 @@ i915_queue_submit(
 	struct i915_wire_writer *reply)
 {
 	struct i915_gfx_cmdbuf *cmdbufs[I915_GFX_MAX_SUBMITTED];
+	const struct i915_gfx_op *lists[I915_GFX_MAX_SUBMITTED];
+	uint32_t counts[I915_GFX_MAX_SUBMITTED];
 	struct i915_gfx_cmdbuf *cmdbuf;
 	struct i915_vk_fence *fence;
 	uint64_t identity;
+	uint32_t family;
 	uint64_t submits;
 	uint64_t submit;
 	uint64_t count;
@@ -3412,8 +3513,9 @@ i915_queue_submit(
 	int end_error;
 	int error;
 
-	/* Decodes the number of submissions, at most eight. */
-	(void)drv_i915_wire_read_u64(reader);
+	/* Decodes the queue, whose family decides where the submission runs, and the number of submissions, at most eight. */
+	identity = drv_i915_wire_read_u64(reader);
+	family = drv_i915_render_queue_family(session, identity);
 	(void)drv_i915_wire_read_u32(reader);
 	submits = drv_i915_wire_read_u64(reader);
 	if (reader->error != 0 || submits > I915_GFX_MAX_SUBMITS)
@@ -3465,6 +3567,28 @@ i915_queue_submit(
 	fence = drv_i915_object_lookup(session, I915_VK_OBJ_FENCE, identity);
 	if (reader->error != 0)
 		return EINVAL;
+
+	/*
+	 * A submission on the video decode family runs in the video part, with
+	 * the render batch open for its query resets (ws083-p003b).
+	 */
+	if (family == 1U) {
+		for (index = 0U; index < total; index++) {
+			lists[index] = cmdbufs[index]->ops;
+			counts[index] = cmdbufs[index]->op_count;
+		}
+		error = drv_i915_gfx_submit_begin(session);
+		result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		if (error == 0)
+			result = drv_i915_video_submit(session, lists, counts, total);
+		end_error = drv_i915_gfx_submit_end(session);
+		if (result == 0U && end_error != 0)
+			result = i915_command_result(end_error);
+		if (result == 0U && fence != NULL)
+			drv_i915_fence_signal(fence);
+		drv_i915_wire_reply_u32(reply, result);
+		return 0;
+	}
 
 	/* Opens the batch the command buffers are recorded into. */
 	error = drv_i915_gfx_submit_begin(session);

@@ -28,6 +28,7 @@
 #include "pipeline.h"
 #include "render-pass.h"
 #include "sync.h"
+#include "video.h"
 
 #include <kern/kmem.h>
 
@@ -348,6 +349,9 @@ drv_i915_gfx_objects_release(
 		/* Frees the one taken. */
 		drv_i915_gfx_query_pool_free(session, object);
 	}
+
+	/* The video sessions and parameters objects, after the command buffers that named them. */
+	drv_i915_video_objects_release(session);
 
 	/* The allocations, which leave the list the blob attach searches. */
 	for (;;) {
