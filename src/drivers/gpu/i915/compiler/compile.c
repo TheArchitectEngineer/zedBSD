@@ -670,6 +670,14 @@ drv_i915_shader_compile_stage(
 	/* The caller receives nothing unless the whole shader lowers. */
 	*out = NULL;
 
+	/*
+	 * A stage past the known ones is inconsistent IR: every choice below by
+	 * the stage names the vertex, compute and geometry stages and takes any
+	 * other for the fragment stage.
+	 */
+	if (ir->stage >= I915_STAGE_COUNT)
+		return EINVAL;
+
 	/* Only a geometry shader reads a stage before it, and that stage is a vertex shader. */
 	if (producer != NULL && ir->stage != I915_STAGE_GEOMETRY)
 		return EINVAL;
@@ -5125,7 +5133,11 @@ i915_compile_describe(
 	if (state->writes_point_size != 0)
 		binary->writes_point_size = 1U;
 
-	/* A vertex shader passes its varyings on; a fragment shader's varyings are its inputs; a compute shader has a workgroup. */
+	/*
+	 * A vertex shader passes its varyings on; a compute shader has a
+	 * workgroup; a geometry shader its URB entry and its varyings; a fragment
+	 * shader's varyings are its inputs.
+	 */
 	if (state->ir->stage == I915_STAGE_VERTEX) {
 		binary->varying_count = state->varying_count;
 		kern_memcpy(binary->varying_locations, state->varyings, sizeof(state->varyings));

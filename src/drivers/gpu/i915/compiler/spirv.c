@@ -1040,6 +1040,10 @@ drv_i915_shader_parse(
 	if (diagnostic != NULL)
 		kern_memset(diagnostic, 0, sizeof(*diagnostic));
 
+	/* The stage the caller expects must be one of the known ones (a module without an entry point keeps it). */
+	if (stage >= I915_STAGE_COUNT)
+		return EINVAL;
+
 	/* A module must have a header and a matching magic. */
 	if (word_count < SPIRV_HEADER_WORDS)
 		return EINVAL;
@@ -3707,7 +3711,7 @@ i915_spirv_lower_store_output(
 
 		/* An unlocated plain output is refused. */
 		if (is_builtin == 0)
-			return i915_spirv_refuse(parser, opcode, offset, "store to an output that is neither located nor the Position or PointSize builtin");
+			return i915_spirv_refuse(parser, opcode, offset, "store to an output that is neither located nor a built-in");
 
 		/* A geometry shader has builtins of its own; elsewhere any but Position and PointSize is refused. */
 		if (parser->ir->stage == I915_STAGE_GEOMETRY) {

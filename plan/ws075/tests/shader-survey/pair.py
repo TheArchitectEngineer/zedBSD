@@ -22,7 +22,7 @@ def link(tool, vertex, fragment, prefix, geometry=None):
 		shutil.copy(geometry, os.path.join(work, 'program.geom'))
 	result = subprocess.run([tool, 'link', os.path.join(work, 'program.vert'), fragment, prefix, '100'], capture_output=True,
 	                        text=True)
-	shutil.rmtree(work)
+	# The work directory stays in the run's new directory: nothing is removed here (deleting is Q1's step).
 	return result.returncode == 0 and os.path.exists(prefix + '.frag.spv')
 
 

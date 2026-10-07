@@ -2,7 +2,7 @@
 
 # ws075-p007a: GL 3.2 の stage の compiler（compiler/）: 増分 a1〜a5
 
-Status: in-progress（q833、P1。2026-10-07 夜 a1・a2・a3 を実装と host 試験。ユーザーの決定で UCSI・DP alt mode を優先し、a4 の前で止めた。再開は下の「再開の情報」）
+Status: in-progress（q833、P1。2026-10-07 夜 a1・a2・a3、同日 a4 を実装と host 試験。ユーザーの決定で UCSI・DP alt mode を優先、a4 は T1-354 の待ちの間に進めた。再開は下の「再開の情報」）
 Disposition: normal
 Parent: [WS075](../ws.md)
 設計: [phase007/design.md](../phase007/design.md)（§4・§14 が優先）、増分の表は [phase007/phase.md](../phase007/phase.md)。
@@ -60,9 +60,28 @@ Q1（2026-10-07）: 判断 1〜8 を既定どおりで承認、Phase の ID は 
 
 未実施: Mesa の compiler（brw_compile_gs）自身の GS の disasm との突き合わせ（Mesa の compiler を host で走らせる道具が無い。descriptor・offset・split の形は Mesa 25.0.7 の source（brw_fs_visitor.cpp の emit_urb_writes、brw_fs_nir.cpp の emit_gs_control_data_bits・emit_gs_vertex・emit_gs_end_primitive、brw_lower_logical_sends.cpp、brw_opt.cpp の split）で確かめた）。実機・QEMU は対象外（b5 で T1）。
 
-### 再開の情報（2026-10-07 夜、ユーザーの決定で UCSI・DP alt mode を優先して中断）
+- 2026-10-07 夜 増分 a4（整理: diagnostic、`I915_STAGE_COUNT`、spill との共存、survey と i915-shader-check の geometry）。P1 の新しい世代、base main 35893f4b4。着手の前に 10 個の host 試験を流し全て PASS。
+  - `I915_STAGE_COUNT` の網羅: compile.c・spirv.c・`.inc` の stage の分岐を全て読み、geometry の扱いの抜けは無かった（payload の入口、LOAD_INPUT の refuse、LOAD_SYSTEM、store_output の VUE、interface・payload の終わり・VUE の staging、prologue、terminate、describe）。「VERTEX・COMPUTE・GEOMETRY でなければ FRAGMENT」の else を安全にするため、`drv_i915_shader_compile_stage` は `ir->stage >= I915_STAGE_COUNT` を EINVAL、`drv_i915_shader_parse` は呼び手の stage の範囲外を EINVAL（entry point の無い module は呼び手の stage を保つため）。describe の comment に geometry を足した。
+  - diagnostic の文言: 位置も built-in も無い出力の store の理由を「neither located nor a built-in」に（geometry では Position・Layer・PrimitiveId が built-in で、旧い文言「Position or PointSize」は誤り）、OutputVertices の理由を「geometry OutputVertices of zero or more than 256 (maxGeometryOutputVertices)」に。他の GS の理由は読み直して変えず。compiler（compile.c）の refuse は理由の文字列を持たない（ENOTSUP だけ。log は「refused by the compiler: error 95」）: GS の compile の refuse（producer に location が無い、URB entry > 32 KiB、GS の LOAD_INPUT）の理由の log は b1 の prepare の検査で出す（下の残り）。
+  - spill: 新 `compiler-shaders/spill.geom`（三角形の入力から 96 個の値を読み、3 回の emit の全てで頂点ごとの重みで全部を足す。値は整数で和は順に依らず厳密）。`i915-vk-compile-test.c` の `test_geometry_spill`: scratch 2048 B/thread、EU model で scratch の write 33・read 384、8 primitive × 3 頂点の position と和が一致。GS は gathered VUE を使わず spill だけで続く（design のとおり）。gentool（brw_disasm）が 2410 命令を受け再 assemble が一致。
+  - 試験の道具: `plan/ws068/tests/i915-shader-check/main.c` に `geometry VERTEX.spv FILE.spv ...`（先に VS を producer として compile）、stage の違う module を driver と同じく refuse、binary を解放。`plan/ws068/tests/glsl-host/run.sh` は GS も libGLESv2 の gl_Position の書き換え（spirv-test）と spirv-val に通し、i915 の検査の組に `glsl150-geometry`（VS → GS → FS）を足した。`plan/ws075/tests/shader-survey/`: `run.sh` の `rm -rf` を `fresh_out` に（削除の規則）、`GLSL_HOST` で glsl-host の出力を選ぶ、glxtest の path を `userland/x11/glxtest` に（旧 `userland/retro`）、client の shader の名前の sed を今の tree に（旧い `userland/base/` の前提で app の 16 module が写されていなかった）、scene の GS も書き換え、first.txt の GS は program の VS を producer に。`pair.py` の `shutil.rmtree` を外した。`survey.py` に geometry の規則（execution model Geometry・GLCompute、GS の execution mode、Invocations、OutputVertices、gl_PrimitiveIDIn と fragment の gl_PrimitiveID、gl_in の member、GS の出力の built-in、OpEmitVertex・OpEndPrimitive）と、p006 で compiler が受けるようになった物の古い規則の直し（MRT は location 4 から、texel buffer と 2D の multisample の fetch、Sample の operand、multisample の query）。
+  - design との差: 無し（a4 の行のとおり）。
 
-- 済み: a1・a2・a3（host の試験は上）。a5（Invocations > 1）は後回し可のまま。
-- 次: a4（diagnostic の文言、`I915_STAGE_COUNT` の網羅、spill と GS の共存の fixture（値を 90 個生かす GS）、`plan/ws075/tests/shader-survey` と `plan/ws068/tests/i915-shader-check` に geometry、WS068 の glsl150-geometry が通ること）→ p007b の b1・b2・b4・b5。
+| コマンド（a4） | 結果 |
+| --- | --- |
+| `sh plan/ws031/tests/run-vk-host-tests.sh`（10 個、a4 の前と後） | 前・後とも plain・ASan/UBSan 全て PASS |
+| `python3 src/drivers/gpu/i915/tests/render/compiler-shaders/regenerate.py` | 成功、既存の `.spv` と kernel の `.inc` は不変、`spill.geom.spv` を追加 |
+| `BRW_TOOLS=build/mesa-tools/build-asm/src/intel/compiler sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS（GS 10 本、spill.geom 2410 命令） |
+| `sh plan/ws068/tests/glsl-host/run.sh build/tmp/p1-glsl-host2` | glsl-host PASS（i915: glsl150-geometry の VS 928 B・GS 3616 B・FS 416 B を受ける） |
+| `GLSL_HOST=… sh plan/ws075/tests/shader-survey/run.sh build/tmp/p1-survey` | 132 module、不足のある module 2（gaps.txt は `textureSize() of a samplerBuffer` 2 だけ、geometry の不足 0）。GS 4 本（glsl150-geometry と glxtest の gl32 の points・adjacent・layers）は compiler が受け survey も ok |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+| `git diff --check` | 問題無し |
+
+survey で見えた geometry の外の不足（a4 の範囲外、記録だけ）: `textureSize()` of a samplerBuffer を compiler が refuse（glxtest の gl31 の buffers の FS と WS068 の glsl140.vert。`i915_spirv_lower_query` は 1D・2D・3D・cube だけ）。WS075 の受け入れ 2 の `--gl31` に響く。もう 1 つは shape の不足で「array of elements that are not made of scalars」（es2-builtins.frag と egltest の es2_array_fragment）。`unpaired.txt` の glxtest の gl32 の colour の FS は GS の出力を読む FS で、VS とだけでは link しない（GS の組で link 済み、不足ではない）。
+
+### 再開の情報（2026-10-07 夜、ユーザーの決定で UCSI・DP alt mode を優先して中断。a4 の後に更新）
+
+- 済み: a1・a2・a3・a4（host の試験は上）。a5（Invocations > 1）は後回し可のまま。
+- 次: p007b の b1・b2・b4・b5。b1 で prepare に GS の検査（producer の location の照合、GS の push data、sampler）と、compiler の GS の refuse（URB entry > 32 KiB など）を理由付きの log に（compiler は理由の文字列を持たないので prepare で判る物は先に検査し、entry の大きさは binary の field の計算を prepare でも行うか、compile の口に diagnostic を足すかを b1 で決める）。
 - 再開の前に: main の今を merge、`sh plan/ws031/tests/run-vk-host-tests.sh`（10 個全部）を一度流す。
-- 未確認（実機で）: split send の vertex write、URB read の rlen < 4、f0.1 を predicate にした send（cut の write）、0 頂点の channel の扱い。
+- 未確認（実機で）: split send の vertex write、URB read の rlen < 4、f0.1 を predicate にした send（cut の write）、0 頂点の channel の扱い、GS の scratch（3DSTATE_GS dword 4〜5 は b4）。

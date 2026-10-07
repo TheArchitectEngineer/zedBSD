@@ -299,6 +299,19 @@ test_not_lowered_ir_is_refused(void)
 	error = drv_i915_shader_compile(hand_ir(insts, 1U), &binary);
 	assert(error == EINVAL && binary == NULL);
 
+	/* a stage past I915_STAGE_COUNT is inconsistent, not taken for a fragment shader (ws075-p007a a4) */
+	{
+		struct i915_shader_ir *ir;
+
+		memset(insts, 0, sizeof(insts));
+		insts[0].op = I915_IR_NOP;
+		ir = hand_ir(insts, 1U);
+		ir->stage = I915_STAGE_COUNT;
+		binary = (struct i915_shader_binary *)1;
+		error = drv_i915_shader_compile(ir, &binary);
+		assert(error == EINVAL && binary == NULL);
+	}
+
 	/* more varyings than a VUE carries (COMPILE_MAX_VARYINGS, sixteen) */
 	{
 		struct i915_shader_ir_inst many[18];
@@ -2785,6 +2798,75 @@ test_geometry_emits(void)
 	printf("  geometry (ws075-p007a a3): points / adjacency / layers / varyings / overflow / emitif / cut64 / cut160 emit the right vertices, counts and cut bits on 8 primitives\n");
 }
 
+/*
+ * ws075-p007a increment a4: a geometry shader that spills.  spill.geom keeps 96 values read from its input vertices
+ * live over three emits (each vertex sums all of them with weights of its own), more than the registers between the
+ * count and cut bits and the staged VUE hold, so some live in scratch memory.  The EU model runs it over eight
+ * primitives: the scratch is written and read, and every emitted vertex carries its exact sum (the values are
+ * integers, so the order of the additions does not matter).
+ */
+static void
+test_geometry_spill(void)
+{
+	struct i915_shader_binary producer;
+	struct i915_shader_binary *binary;
+	struct eu_model *m;
+	unsigned c;
+	unsigned v;
+	unsigned k;
+	float value;
+	float sum;
+	int error;
+
+	/* The vertex shader before it writes the position alone. */
+	memset(&producer, 0, sizeof(producer));
+	producer.stage = I915_STAGE_VERTEX;
+
+	/* Compiles the shader: a triangle in, one varying out, and scratch memory for what did not fit. */
+	error = compile_geometry("spill.geom.spv", &producer, &binary);
+	assert(error == 0);
+	assert(binary->vertices_in == 3U);
+	assert(binary->varying_count == 1U);
+	assert(binary->control_data_hwords == 0U);
+	assert(binary->scratch_bytes != 0U);
+
+	/* Runs the thread over eight primitives, counting the scratch traffic. */
+	m = malloc(sizeof(*m));
+	assert(m != NULL);
+	eu_model_scratch_writes = 0U;
+	eu_model_scratch_reads = 0U;
+	gs_model_start(m, binary);
+	gs_model_run(m, binary);
+	assert(eu_model_scratch_writes > 0U);
+	assert(eu_model_scratch_reads > 0U);
+
+	/* Every channel emitted the triangle's three vertices, each with its position and its own sum. */
+	for (c = 0U; c < 8U; c++) {
+		assert(gs_count(c) == 3U);
+		for (v = 0U; v < 3U; v++) {
+			/* The value k is component (k / 3) % 4 of vertex k % 3's position, plus k; vertex v weighs it (k + v) % 5 + 1. */
+			sum = 0.0f;
+			for (k = 0U; k < 96U; k++) {
+				value = gs_input_value(k % 3U, c, 1U, (k / 3U) % 4U) + (float)k;
+				sum += value * (float)((k + v) % 5U + 1U);
+			}
+
+			/* The vertex: gl_in[v]'s position, then the sum, its number, 0 and 1. */
+			for (k = 0U; k < 4U; k++)
+				assert(gs_vertex_word(binary, c, v, 1U, k) == float_bits(gs_input_value(v, c, 1U, k)));
+			assert(gs_vertex_word(binary, c, v, 2U, 0U) == float_bits(sum));
+			assert(gs_vertex_word(binary, c, v, 2U, 1U) == float_bits((float)v));
+			assert(gs_vertex_word(binary, c, v, 2U, 2U) == float_bits(0.0f));
+			assert(gs_vertex_word(binary, c, v, 2U, 3U) == float_bits(1.0f));
+		}
+	}
+
+	printf("  geometry (ws075-p007a a4): spill.geom keeps 96 values over three emits with %u bytes of scratch a thread (%u scratch writes, %u reads); all 24 vertices right\n",
+		binary->scratch_bytes, eu_model_scratch_writes, eu_model_scratch_reads);
+	free(m);
+	drv_i915_shader_binary_free(binary);
+}
+
 int
 main(void)
 {
@@ -2808,6 +2890,7 @@ main(void)
 	test_eu_generality_interfaces();
 	test_geometry_reads();
 	test_geometry_emits();
+	test_geometry_spill();
 	assert(fixture_live == 0U);
 	printf("  scoreboard: %u kernels checked (ws075-p022)\n", eu_model_scoreboard_checks);
 	printf("  skippable regions and guards (ws075-p023): %u IFs run, %u jumped over\n", eu_model_ifs, eu_model_ifs_jumped);

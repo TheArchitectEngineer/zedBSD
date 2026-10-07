@@ -12,6 +12,11 @@
  * reason and the refused opcode, or the compiler's error).
  *
  *   i915-shader-check vertex|fragment FILE.spv ...
+ *   i915-shader-check geometry VERTEX.spv FILE.spv ...
+ *
+ * A geometry shader reads its inputs from the VUE of the vertex shader
+ * before it (ws075-p007a), so the geometry mode first compiles VERTEX.spv
+ * and gives it to each geometry shader as its producer.
  */
 
 #include <stdint.h>
@@ -35,6 +40,9 @@ kern_free(void *pointer)
 #include "../../../../src/drivers/gpu/i915/compiler/spirv.c"
 #include "../../../../src/drivers/gpu/i915/compiler/eu.c"
 #include "../../../../src/drivers/gpu/i915/compiler/compile.c"
+
+static uint32_t *check_load(const char *path, size_t *words);
+static struct i915_shader_binary *check_compile(const char *path, enum i915_shader_stage stage, const struct i915_shader_binary *producer);
 
 /* Reads a file of words. */
 static uint32_t *
@@ -61,57 +69,115 @@ check_load(const char *path, size_t *words)
 	return code;
 }
 
+/*
+ * Parses and compiles one file as the stage given, after `producer` (the
+ * vertex kernel before a geometry shader, NULL otherwise).  Returns the
+ * binary, or NULL with the refusal printed.
+ */
+static struct i915_shader_binary *
+check_compile(
+	const char *path,
+	enum i915_shader_stage stage,
+	const struct i915_shader_binary *producer)
+{
+	struct i915_compile_diagnostic diagnostic;
+	struct i915_shader_ir *ir;
+	struct i915_shader_binary *binary;
+	const char *reason;
+	uint32_t *code;
+	size_t words;
+	int error;
+
+	/* Reads the module. */
+	code = check_load(path, &words);
+	if (code == NULL) {
+		printf("%s: cannot read\n", path);
+		return NULL;
+	}
+
+	/* Parses it into the compiler's IR, and says why when it is refused. */
+	memset(&diagnostic, 0, sizeof(diagnostic));
+	error = drv_i915_shader_parse(code, words, stage, &ir, &diagnostic);
+	free(code);
+	if (error != 0) {
+		reason = "?";
+		if (diagnostic.reason != NULL)
+			reason = diagnostic.reason;
+		printf("%s: REFUSED by the parser: error %d (%s; opcode %u at word %u)\n", path, error, reason,
+		       diagnostic.opcode, diagnostic.word_offset);
+		return NULL;
+	}
+
+	/* A module of another stage than the one asked for is refused as the driver refuses it. */
+	if (ir->stage != stage) {
+		printf("%s: REFUSED: a module of stage %d given as stage %d\n", path, (int)ir->stage, (int)stage);
+		drv_i915_shader_ir_free(ir);
+		return NULL;
+	}
+
+	/* Compiles the IR to EU code. */
+	binary = NULL;
+	error = drv_i915_shader_compile_stage(ir, producer, &binary);
+	drv_i915_shader_ir_free(ir);
+	if (error != 0) {
+		printf("%s: REFUSED by the compiler: error %d\n", path, error);
+		return NULL;
+	}
+
+	/* Succeeded: the module is accepted. */
+	return binary;
+}
+
 int
 main(
 	int argc,
 	char **argv)
 {
-	struct i915_compile_diagnostic diagnostic;
-	struct i915_shader_ir *ir;
+	struct i915_shader_binary *producer;
 	struct i915_shader_binary *binary;
 	enum i915_shader_stage stage;
-	uint32_t *code;
-	size_t words;
+	int first;
 	int index;
-	int error;
 	int status;
 
 	/* The stage, then the files. */
 	if (argc < 3) {
-		fprintf(stderr, "usage: i915-shader-check vertex|fragment FILE.spv ...\n");
+		fprintf(stderr, "usage: i915-shader-check vertex|fragment FILE.spv ... | geometry VERTEX.spv FILE.spv ...\n");
 		return 2;
 	}
 	stage = I915_STAGE_VERTEX;
 	if (strcmp(argv[1], "fragment") == 0)
 		stage = I915_STAGE_FRAGMENT;
+	if (strcmp(argv[1], "geometry") == 0)
+		stage = I915_STAGE_GEOMETRY;
+
+	/* A geometry shader reads the VUE of the vertex shader named first. */
+	producer = NULL;
+	first = 2;
+	if (stage == I915_STAGE_GEOMETRY) {
+		if (argc < 4) {
+			fprintf(stderr, "usage: i915-shader-check geometry VERTEX.spv FILE.spv ...\n");
+			return 2;
+		}
+		producer = check_compile(argv[2], I915_STAGE_VERTEX, NULL);
+		if (producer == NULL)
+			return 1;
+		first = 3;
+	}
 
 	/* Each file: parsed, then compiled. */
 	status = 0;
-	for (index = 2; index < argc; index++) {
-		code = check_load(argv[index], &words);
-		if (code == NULL) {
-			printf("%s: cannot read\n", argv[index]);
+	for (index = first; index < argc; index++) {
+		binary = check_compile(argv[index], stage, producer);
+		if (binary == NULL) {
 			status = 1;
 			continue;
 		}
-		memset(&diagnostic, 0, sizeof(diagnostic));
-		error = drv_i915_shader_parse(code, words, stage, &ir, &diagnostic);
-		if (error != 0) {
-			printf("%s: REFUSED by the parser: error %d (%s; opcode %u at word %u)\n", argv[index], error,
-			       diagnostic.reason != NULL ? diagnostic.reason : "?", diagnostic.opcode, diagnostic.word_offset);
-			free(code);
-			status = 1;
-			continue;
-		}
-		error = drv_i915_shader_compile(ir, &binary);
-		drv_i915_shader_ir_free(ir);
-		if (error != 0) {
-			printf("%s: REFUSED by the compiler: error %d\n", argv[index], error);
-			status = 1;
-		} else {
-			printf("%s: accepted (%u bytes)\n", argv[index], binary->code_bytes);
-		}
-		free(code);
+		printf("%s: accepted (%u bytes)\n", argv[index], binary->code_bytes);
+		drv_i915_shader_binary_free(binary);
 	}
+
+	/* The producer was only needed while compiling. */
+	drv_i915_shader_binary_free(producer);
 	return status;
 }

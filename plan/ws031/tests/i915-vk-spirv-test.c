@@ -477,6 +477,8 @@ static void
 test_rejects_garbage(void)
 {
 	uint32_t bad[8];
+	uint32_t *code;
+	size_t words;
 	struct i915_shader_ir *ir;
 	int error;
 
@@ -486,6 +488,13 @@ test_rejects_garbage(void)
 	error = drv_i915_shader_parse(bad, 8U, I915_STAGE_VERTEX, &ir, NULL);
 	assert(error != 0);
 	assert(ir == NULL);
+
+	/* A valid module expected as a stage past I915_STAGE_COUNT is refused as inconsistent (ws075-p007a a4). */
+	code = load_spv("cuboid.frag.spv", &words);
+	error = drv_i915_shader_parse(code, words, I915_STAGE_COUNT, &ir, NULL);
+	assert(error == EINVAL);
+	assert(ir == NULL);
+	free(code);
 }
 
 int

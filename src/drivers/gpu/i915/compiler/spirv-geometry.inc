@@ -120,7 +120,7 @@ i915_spirv_geometry_mode(
 		if (count < 4U)
 			return EINVAL;
 		if (word[3] == 0U || word[3] > I915_IR_MAX_OUTPUT_VERTICES) {
-			error = i915_spirv_refuse(parser, opcode, offset, "geometry shader emitting no vertex, or more vertices than supported");
+			error = i915_spirv_refuse(parser, opcode, offset, "geometry OutputVertices of zero or more than 256 (maxGeometryOutputVertices)");
 			return error;
 		}
 		parser->ir->max_vertices = word[3];

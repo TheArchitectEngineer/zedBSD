@@ -66,9 +66,11 @@ for vert in "$here"/pass/*.vert; do
 		"$out/spirv-test" "$out/$name.$stage.spv" "$out/$name.$stage.linked.spv" > "$out/$name.$stage.reflect.txt" 2>&1 || { cat "$out/$name.$stage.reflect.txt"; fail "reflect $name.$stage"; }
 		spirv-val --target-env vulkan1.0 "$out/$name.$stage.linked.spv" || fail "spirv-val linked $name.$stage"
 	done
-	# A geometry stage (WS068 p032), when the pair has one.
+	# A geometry stage (WS068 p032), when the pair has one; libGLESv2 rewrites its gl_Position before each EmitVertex.
 	if [ -f "$here/pass/$name.geom" ]; then
 		spirv-val --target-env vulkan1.0 "$out/$name.geom.spv" || fail "spirv-val $name.geom"
+		"$out/spirv-test" "$out/$name.geom.spv" "$out/$name.geom.linked.spv" > "$out/$name.geom.reflect.txt" 2>&1 || { cat "$out/$name.geom.reflect.txt"; fail "reflect $name.geom"; }
+		spirv-val --target-env vulkan1.0 "$out/$name.geom.linked.spv" || fail "spirv-val linked $name.geom"
 	fi
 done
 echo "link: done"
@@ -92,10 +94,13 @@ done
 grep -q "^uniform gl_DepthRange.near " "$out/es2-builtins.vert.reflect.txt" || fail "es2-builtins.vert reflection lacks gl_DepthRange.near"
 echo "es2: done"
 
-# 4. The i915 compiler takes the shaders that stay inside what it supports.
-I915_PAIRS=${I915_PAIRS:-scene fixed scene300}
+# 4. The i915 compiler takes the shaders that stay inside what it supports; a geometry stage after its vertex stage (ws075-p007a).
+I915_PAIRS=${I915_PAIRS:-scene fixed scene300 glsl150-geometry}
 for name in $I915_PAIRS; do
 	"$out/i915-check" vertex "$out/$name.vert.linked.spv" || fail "i915 $name.vert"
+	if [ -f "$out/$name.geom.linked.spv" ]; then
+		"$out/i915-check" geometry "$out/$name.vert.linked.spv" "$out/$name.geom.linked.spv" || fail "i915 $name.geom"
+	fi
 	"$out/i915-check" fragment "$out/$name.frag.linked.spv" || fail "i915 $name.frag"
 done
 echo "i915: done"
