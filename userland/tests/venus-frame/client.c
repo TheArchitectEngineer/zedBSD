@@ -21,20 +21,9 @@
 
 #include "client.h"
 
-#define VK_VERSION_1_1 0x00401000U
+#include <uapi/gpu-op.h>
 
-/* Bootstrap and reply-stream operations use stable public wire command IDs. */
-enum venus_command {
-	VENUS_CREATE_INSTANCE = 0,
-	VENUS_ENUMERATE_PHYSICAL_DEVICES = 2,
-	VENUS_GET_QUEUE_FAMILIES = 7,
-	VENUS_GET_MEMORY_PROPERTIES = 8,
-	VENUS_CREATE_DEVICE = 11,
-	VENUS_ENUMERATE_INSTANCE_VERSION = 137,
-	VENUS_GET_DEVICE_QUEUE2 = 155,
-	VENUS_SET_REPLY_STREAM = 178,
-	VENUS_SEEK_REPLY_STREAM = 179
-};
+#define VK_VERSION_1_1 0x00401000U
 
 /* Structure tags describe serialized Vulkan inputs without native padding. */
 enum venus_structure {
@@ -406,7 +395,7 @@ venus_client_command_begin(
 	client->active_command = command;
 
 	/* SetReply takes a pointer to resource ID, byte offset and byte length. */
-	venus_client_wire_u32(client, VENUS_SET_REPLY_STREAM);
+	venus_client_wire_u32(client, GPU_OP_SET_REPLY_STREAM);
 	venus_client_wire_u32(client, 0);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_u32(client, client->reply_resource);
@@ -542,10 +531,10 @@ venus_client_command_finish(
 	int status;
 
 	/* A final API-version store proves the renderer consumed this stream. */
-	venus_client_wire_u32(client, VENUS_SEEK_REPLY_STREAM);
+	venus_client_wire_u32(client, GPU_OP_SEEK_REPLY_STREAM);
 	venus_client_wire_u32(client, 0);
 	venus_client_wire_u64(client, VENUS_CLIENT_REPLY_BYTES - 20);
-	venus_client_wire_u32(client, VENUS_ENUMERATE_INSTANCE_VERSION);
+	venus_client_wire_u32(client, GPU_OP_ENUMERATE_INSTANCE_VERSION);
 	venus_client_wire_u32(client, 1);
 	venus_client_wire_u64(client, 1);
 
@@ -619,7 +608,7 @@ venus_client_command_finish(
 	result = (int32_t)load_u32(client->reply + VENUS_CLIENT_REPLY_BYTES - 16);
 	version = load_u32(client->reply + VENUS_CLIENT_REPLY_BYTES - 12);
 	poll = load_u32(client->reply + VENUS_CLIENT_REPLY_BYTES - 8);
-	if (type != VENUS_ENUMERATE_INSTANCE_VERSION ||
+	if (type != GPU_OP_ENUMERATE_INSTANCE_VERSION ||
 		result != 0 ||
 		version != 1 ||
 		poll != 0) {
@@ -705,7 +694,7 @@ create_instance(
 	int status;
 
 	/* Encode create instance. */
-	venus_client_command_begin(client, VENUS_CREATE_INSTANCE);
+	venus_client_command_begin(client, GPU_OP_CREATE_INSTANCE);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_structure(client, STRUCTURE_INSTANCE_CREATE_INFO);
 	venus_client_wire_u32(client, 0);
@@ -757,7 +746,7 @@ select_physical_device(
 	int status;
 
 	/* Encode enumerate physical devices. */
-	venus_client_command_begin(client, VENUS_ENUMERATE_PHYSICAL_DEVICES);
+	venus_client_command_begin(client, GPU_OP_ENUMERATE_PHYSICAL_DEVICES);
 	venus_client_wire_u64(client, VENUS_OBJECT_INSTANCE);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_u32(client, 1);
@@ -784,7 +773,7 @@ select_physical_device(
 	}
 
 	/* Sixteen families bound this diagnostic's output allocation. */
-	venus_client_command_begin(client, VENUS_GET_QUEUE_FAMILIES);
+	venus_client_command_begin(client, GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES);
 	venus_client_wire_u64(client, VENUS_OBJECT_PHYSICAL_DEVICE);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_u32(client, 16);
@@ -851,7 +840,7 @@ query_memory(
 	int status;
 
 	/* Encode get memory properties. */
-	venus_client_command_begin(client, VENUS_GET_MEMORY_PROPERTIES);
+	venus_client_command_begin(client, GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES);
 	venus_client_wire_u64(client, VENUS_OBJECT_PHYSICAL_DEVICE);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_u64(client, 32);
@@ -915,7 +904,7 @@ create_device(
 	int status;
 
 	/* Encode create device. */
-	venus_client_command_begin(client, VENUS_CREATE_DEVICE);
+	venus_client_command_begin(client, GPU_OP_CREATE_DEVICE);
 	venus_client_wire_u64(client, VENUS_OBJECT_PHYSICAL_DEVICE);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_structure(client, STRUCTURE_DEVICE_CREATE_INFO);
@@ -952,7 +941,7 @@ create_device(
 	}
 
 	/* Register the queue once through the renderer's required Queue2 operation. */
-	venus_client_command_begin(client, VENUS_GET_DEVICE_QUEUE2);
+	venus_client_command_begin(client, GPU_OP_GET_DEVICE_QUEUE2);
 	venus_client_wire_u64(client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(client, 1);
 	venus_client_wire_u32(client, STRUCTURE_DEVICE_QUEUE_INFO2);

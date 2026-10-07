@@ -17,7 +17,7 @@
 #include <pthread.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_wayland.h>
-#include "opcodes.h"
+#include <uapi/gpu-op.h>
 
 /* The pinned renderer reserves ring zero and owns at most sixty-three device timelines. */
 #define VULKAN_QUEUE_TIMELINE_COUNT 64U

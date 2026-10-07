@@ -323,7 +323,7 @@ vkGetPhysicalDeviceFormatProperties(
 	/* Requests this format's complete output without assuming an application scene. */
 	physical = vulkan_physical_device(physicalDevice);
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceFormatProperties);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u32(&writer, format);
 	vulkan_write_u64(&writer, 1);
@@ -373,7 +373,7 @@ vkGetPhysicalDeviceImageFormatProperties(
 	/* Forwards every standard image-format parameter in declared wire order. */
 	physical = vulkan_physical_device(physicalDevice);
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceImageFormatProperties);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u32(&writer, format);
 	vulkan_write_u32(&writer, type);
@@ -764,7 +764,7 @@ instance_create_remote(
 
 	/* Encodes real application fields and an independently reserved instance identity. */
 	vulkan_writer_init_for_object(&writer, &link->instance->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateInstance);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_INSTANCE);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkInstanceCreateInfo(&writer, &create);
 	vulkan_write_u64(&writer, 0);
@@ -815,7 +815,7 @@ instance_enumerate_remote(
 	/* Asks for the count before allocating a dynamically sized local identity array. */
 	instance = link->instance;
 	vulkan_writer_init_for_object(&writer, &instance->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkEnumeratePhysicalDevices);
+	vulkan_command_begin(&writer, GPU_OP_ENUMERATE_PHYSICAL_DEVICES);
 	vulkan_write_u64(&writer, link->wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_write_u32(&writer, 0);
@@ -874,7 +874,7 @@ instance_enumerate_remote(
 
 	/* Builds the array request only after every requested output identity exists. */
 	if (status == VK_SUCCESS) {
-		vulkan_command_begin(&writer, VULKAN_OPCODE_vkEnumeratePhysicalDevices);
+		vulkan_command_begin(&writer, GPU_OP_ENUMERATE_PHYSICAL_DEVICES);
 		vulkan_write_u64(&writer, link->wire_id);
 		vulkan_write_u64(&writer, 1);
 		vulkan_write_u32(&writer, count);
@@ -989,7 +989,7 @@ physical_load(
 	VkMemoryPropertyFlags *flags;
 
 	/* Retrieves renderer limits using their typed protocol fields rather than native layout. */
-	status = physical_query_begin(physical, VULKAN_OPCODE_vkGetPhysicalDeviceProperties, &reader);
+	status = physical_query_begin(physical, GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES, &reader);
 	if (status == VK_SUCCESS) {
 		present = vulkan_reply_pointer(&reader);
 		if (present)
@@ -1009,7 +1009,7 @@ physical_load(
 	physical->properties.apiVersion = VK_API_VERSION_1_0;
 	physical->properties.limits.minMemoryMapAlignment = 64;
 	physical->properties.deviceName[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 1] = '\0';
-	status = physical_query_begin(physical, VULKAN_OPCODE_vkGetPhysicalDeviceFeatures, &reader);
+	status = physical_query_begin(physical, GPU_OP_GET_PHYSICAL_DEVICE_FEATURES, &reader);
 	if (status == VK_SUCCESS) {
 		present = vulkan_reply_pointer(&reader);
 		if (present)
@@ -1022,7 +1022,7 @@ physical_load(
 		return status;
 
 	/* Retrieves original memory type indices before filtering unsupported cache behavior. */
-	status = physical_query_begin(physical, VULKAN_OPCODE_vkGetPhysicalDeviceMemoryProperties, &reader);
+	status = physical_query_begin(physical, GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES, &reader);
 	if (status == VK_SUCCESS) {
 		present = vulkan_reply_pointer(&reader);
 		if (present)
@@ -1113,7 +1113,7 @@ physical_query_begin(
 	vulkan_write_u64(&writer, 1);
 
 	/* Memory properties contain arrays of nested output structures on this protocol. */
-	if (opcode == VULKAN_OPCODE_vkGetPhysicalDeviceMemoryProperties) {
+	if (opcode == GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES) {
 		vulkan_write_u64(&writer, VK_MAX_MEMORY_TYPES);
 		vulkan_write_u64(&writer, VK_MAX_MEMORY_HEAPS);
 	}
@@ -1148,7 +1148,7 @@ physical_load_queues(
 
 	/* Queries the native family count without assuming a platform-specific queue topology. */
 	vulkan_writer_init_for_object(&writer, &physical->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceQueueFamilyProperties);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_write_u32(&writer, 0);
@@ -1192,7 +1192,7 @@ physical_load_queues(
 
 	/* An array of these primitive-only records has no input placeholder fields. */
 	memset(families, 0, bytes);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPhysicalDeviceQueueFamilyProperties);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES);
 	vulkan_write_u64(&writer, physical->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_write_u32(&writer, count);

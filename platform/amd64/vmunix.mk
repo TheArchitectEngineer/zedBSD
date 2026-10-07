@@ -830,19 +830,35 @@ $(foreach command,$(filter-out vkdemo wltest wlshm mview wayland terminal files 
 USER_STATIC_COMMANDS := $(foreach program,$(filter $(ZEDBSD_USER_PROGRAMS),$(USERLAND_PACKAGES)),\
 	$(if $(filter static,$(USERLAND_$(program)_CLASS)),$(program)))
 
+# A static program may link more objects than its package's (AMD64_USER_STATIC_EXTRA_<name>): keiland-preview
+# (ws168-p003) takes the C library's mathematics and its parsing of floating point numbers, which the static C
+# library does not have, compiled as the shared one's are (-mlong-double-64).
+AMD64_USER_FLOAT_DIR := $(BUILD)/user64-float
+AMD64_USER_FLOAT_OBJS := $(patsubst src/libc/%.c,$(AMD64_USER_FLOAT_DIR)/%.o,\
+	$(ZEDBSD_LIBM_SOURCES) src/libc/softfloat.c src/libc/float-parse.c)
+AMD64_USER_STATIC_EXTRA_keiland-preview := $(AMD64_USER_FLOAT_OBJS)
+
+$(AMD64_USER_FLOAT_OBJS): $(AMD64_USER_FLOAT_DIR)/%.o: src/libc/%.c $(ZEDBSD_LIBM_HEADERS) src/libc/softfloat.h \
+	$(ZEDBSD_SYSROOT_AMD64)/.zedbsd-sysroot-complete
+	@mkdir -p $(dir $@)
+	$(CC) -nostdinc -Iinclude/libc -Iinclude -I. -DHAL_ARCH_AMD64 -DKERN_USER_ABI_LP64 $(AMD64_USER_CFLAGS) \
+ -mlong-double-64 -c $< -o $@
+
 define AMD64_USER_STATIC_COMMAND
 $(BUILD)/bin/$(1): $(AMD64_USER_LIBC_OBJS) $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user64,$(1)) \
-	$(AMD64_PLATFORM)/user.ld $(AMD64_USER_ELF_CHECK)
+	$(AMD64_USER_STATIC_EXTRA_$(1)) $(AMD64_PLATFORM)/user.ld $(AMD64_USER_ELF_CHECK)
 	@mkdir -p $$(dir $$@)
 	$(LD) -m elf_x86_64 --gc-sections -nostdlib -static \
  -z max-page-size=4096 -z stack-size=0x100000 \
  -T $(AMD64_PLATFORM)/user.ld $(AMD64_USER_LIBC_OBJS) \
- $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user64,$(1)) -o $$@
+ $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user64,$(1)) $(AMD64_USER_STATIC_EXTRA_$(1)) -o $$@
 	@test -z "$$$$($(NM) -u $$@)" || { $(NM) -u $$@; exit 1; }
 	$(NOCT) --path=tools/build $(AMD64_USER_ELF_CHECK) --machine amd64 $$@
 endef
 $(foreach command,$(USER_STATIC_COMMANDS),\
 	$(eval $(call AMD64_USER_STATIC_COMMAND,$(command))))
+# keiland-preview (ws168-p003) opens no file in its sandbox: its libpdf reads no substitute font file.
+$(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user64,keiland-preview): AMD64_USER_CPPFLAGS += -DPDF_FONT_FILES=0
 # ELF64 runtime linker and shared libc.
 DYNAMIC_DIR := $(BUILD)/dynamic
 DYNAMIC_CPPFLAGS := -nostdinc -I. -Iinclude \

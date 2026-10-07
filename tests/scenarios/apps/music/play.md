@@ -13,7 +13,7 @@ since: ws120
 `~/Music` の m4a（AAC）が album ごとに一覧に出て、libavcodec の add-in で decode され audiod で鳴り（再生の位置が進む）、次の曲・一時停止・再開・曲の終わり（最後の曲の後で止まる）が動くことを確かめる（WS120 p008・p009）。音そのものは耳で聞かない（QEMU）。
 
 ## 準備
-host の ffmpeg で 8 秒の正弦波の m4a を 2 つ作る（440 Hz と 660 Hz、AAC、題 Tone A・Tone B、artist AAT、album AAT Tones、番号 1・2、Tone A に PNG の cover）。kei の `~/Music/AAT/` に置く。image に libavcodec の package と audiod。
+host の ffmpeg で 8 秒の正弦波の m4a を 2 つ作る（440 Hz と 660 Hz、AAC、題 Tone A・Tone B、artist AAT、album AAT Tones、番号 1・2、Tone A に PNG の cover）。kei の `~/Music/AAT/` に置く。image に libavcodec の package と audiod。QEMU では音の device が要る（無いと audiod が `ENODEV` で `MUSIC AUDIO error=13`、T1-301）: `plan/tools/guest/guest.sh start` に `--qemu-extra '-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0'`。
 
 ## 操作と確認
 1. 操作: App Home から Music を開く。

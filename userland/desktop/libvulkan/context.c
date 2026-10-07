@@ -916,7 +916,7 @@ vulkan_context_poll(
 			result = vulkan_load_word(trailer + 4);
 			present_low = vulkan_load_word(trailer + 8);
 			present_high = vulkan_load_word(trailer + 12);
-			if (opcode == VULKAN_OPCODE_vkEnumerateInstanceVersion &&
+			if (opcode == GPU_OP_ENUMERATE_INSTANCE_VERSION &&
 			    result == 0 && present_low == 1 && present_high == 0)
 				break;
 		}
@@ -1060,7 +1060,7 @@ vulkan_encode_reply_stream(
 	struct vulkan_context *context)
 {
 	/* Identifies the shared reply region in the renderer's resource namespace. */
-	vulkan_write_u32(writer, VULKAN_OPCODE_vkSetReplyCommandStreamMESA);
+	vulkan_write_u32(writer, GPU_OP_SET_REPLY_STREAM);
 	vulkan_write_u32(writer, 0);
 	vulkan_write_u64(writer, 1);
 	vulkan_write_u32(writer, context->reply_resource);
@@ -1078,12 +1078,12 @@ vulkan_encode_reply_trailer(
 	struct vulkan_context *context)
 {
 	/* Moves the response cursor beyond every caller-visible output byte. */
-	vulkan_write_u32(writer, VULKAN_OPCODE_vkSeekReplyCommandStreamMESA);
+	vulkan_write_u32(writer, GPU_OP_SEEK_REPLY_STREAM);
 	vulkan_write_u32(writer, 0);
 	vulkan_write_u64(writer, context->reply_capacity - VULKAN_REPLY_TRAILER_BYTES);
 
 	/* Requests an ordinary version response whose final store proves decoder progress. */
-	vulkan_write_u32(writer, VULKAN_OPCODE_vkEnumerateInstanceVersion);
+	vulkan_write_u32(writer, GPU_OP_ENUMERATE_INSTANCE_VERSION);
 	vulkan_write_u32(writer, 1);
 	vulkan_write_u64(writer, 1);
 
@@ -1099,7 +1099,7 @@ vulkan_encode_external_stream(
 	size_t bytes)
 {
 	/* Executes exactly one owned shared command stream without a wrapper reply. */
-	vulkan_write_u32(writer, VULKAN_OPCODE_vkExecuteCommandStreamsMESA);
+	vulkan_write_u32(writer, GPU_OP_EXECUTE_STREAMS);
 	vulkan_write_u32(writer, 0);
 	vulkan_write_u32(writer, 1);
 	vulkan_write_u64(writer, 1);

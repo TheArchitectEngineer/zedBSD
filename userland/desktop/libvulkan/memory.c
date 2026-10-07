@@ -565,7 +565,7 @@ vkGetDeviceMemoryCommitment(
 
 	/* Query commitment through the native allocation without changing its CPU view. */
 	vulkan_writer_init_for_object(&writer, &storage->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetDeviceMemoryCommitment);
+	vulkan_command_begin(&writer, GPU_OP_GET_DEVICE_MEMORY_COMMITMENT);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, storage->object.wire_id);
 	vulkan_write_pointer(&writer, pCommittedMemoryInBytes);
@@ -1127,7 +1127,7 @@ memory_allocate(
 
 	/* Only protocol values cross the wire; application allocator pointers stay local. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkAllocateMemory);
+	vulkan_command_begin(&writer, GPU_OP_ALLOCATE_MEMORY);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_pointer(&writer, pAllocateInfo);
 	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
@@ -1403,7 +1403,7 @@ memory_native_free(
 
 	/* Application allocator callbacks never cross the renderer boundary. */
 	vulkan_writer_init_for_object(&writer, &memory->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkFreeMemory);
+	vulkan_command_begin(&writer, GPU_OP_FREE_MEMORY);
 	vulkan_write_u64(&writer, device->object.wire_id);
 	vulkan_write_u64(&writer, memory->object.wire_id);
 	vulkan_write_pointer(&writer, NULL);

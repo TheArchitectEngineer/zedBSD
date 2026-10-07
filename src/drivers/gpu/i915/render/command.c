@@ -230,39 +230,39 @@ drv_i915_gfx_rec_dispatch(
 	routed = 1;
 	error = 0;
 	switch (opcode) {
-	case 18U:
+	case GPU_OP_QUEUE_SUBMIT:
 		/* vkQueueSubmit */
 		error = i915_queue_submit(session, reader, reply);
 		break;
-	case 85U:
+	case GPU_OP_CREATE_COMMAND_POOL:
 		/* vkCreateCommandPool */
 		error = i915_command_pool_create(session, reader, reply);
 		break;
-	case 86U:
+	case GPU_OP_DESTROY_COMMAND_POOL:
 		/* vkDestroyCommandPool */
 		error = i915_command_pool_destroy(session, reader);
 		break;
-	case 87U:
+	case GPU_OP_RESET_COMMAND_POOL:
 		/* vkResetCommandPool */
 		error = i915_command_pool_reset(session, reader, reply);
 		break;
-	case 88U:
+	case GPU_OP_ALLOCATE_COMMAND_BUFFERS:
 		/* vkAllocateCommandBuffers */
 		error = i915_command_buffers_allocate(session, reader, reply);
 		break;
-	case 89U:
+	case GPU_OP_FREE_COMMAND_BUFFERS:
 		/* vkFreeCommandBuffers */
 		error = i915_command_buffers_free(session, reader);
 		break;
-	case 90U:
+	case GPU_OP_BEGIN_COMMAND_BUFFER:
 		/* vkBeginCommandBuffer */
 		error = i915_command_buffer_begin(session, reader, reply);
 		break;
-	case 91U:
+	case GPU_OP_END_COMMAND_BUFFER:
 		/* vkEndCommandBuffer */
 		error = i915_command_buffer_end(session, reader, reply);
 		break;
-	case 92U:
+	case GPU_OP_RESET_COMMAND_BUFFER:
 		/* vkResetCommandBuffer */
 		error = i915_command_buffer_reset(session, reader, reply);
 		break;
@@ -283,7 +283,7 @@ drv_i915_gfx_rec_dispatch(
 	}
 
 	/* Leaves an opcode outside the recording range to its own module. */
-	if (opcode < 92U || opcode > 136U) {
+	if (opcode < GPU_OP_RESET_COMMAND_BUFFER || opcode > GPU_OP_CMD_EXECUTE_COMMANDS) {
 		*handled = 0;
 		return 0;
 	}
@@ -1157,9 +1157,9 @@ i915_record_query(
 	identity = drv_i915_wire_read_u64(reader);
 	first = drv_i915_wire_read_u32(reader);
 	count = 1U;
-	if (opcode == 127U || opcode == 129U)
+	if (opcode == GPU_OP_CMD_BEGIN_QUERY || opcode == GPU_OP_CMD_RESET_QUERY_POOL)
 		count = drv_i915_wire_read_u32(reader);
-	if (opcode == 127U)
+	if (opcode == GPU_OP_CMD_BEGIN_QUERY)
 		count = 1U;
 	if (reader->error != 0)
 		return EINVAL;
@@ -1170,9 +1170,9 @@ i915_record_query(
 		return EINVAL;
 
 	/* A begin or an end. */
-	if (opcode != 129U) {
+	if (opcode != GPU_OP_CMD_RESET_QUERY_POOL) {
 		op = i915_command_op(cmdbuf, I915_GFX_OP_QUERY_BEGIN);
-		if (opcode == 128U)
+		if (opcode == GPU_OP_CMD_END_QUERY)
 			op->kind = I915_GFX_OP_QUERY_END;
 		op->u.query.pool = pool;
 		op->u.query.first = first;
@@ -1636,9 +1636,9 @@ i915_record_set_unused(
 
 	/* The words each command carries (floats as their bits). */
 	words = 2U;
-	if (opcode == 96U)
+	if (opcode == GPU_OP_CMD_SET_LINE_WIDTH)
 		words = 1U;
-	if (opcode == 97U)
+	if (opcode == GPU_OP_CMD_SET_DEPTH_BIAS)
 		words = 3U;
 	first = drv_i915_wire_read_u32(reader);
 	for (index = 1U; index < words; index++)
@@ -1649,7 +1649,7 @@ i915_record_set_unused(
 		return EINVAL;
 
 	/* A line width other than 1.0 (0x3f800000) is not drawn as asked. */
-	if (opcode == 96U && first != 0x3f800000U && !wide_said) {
+	if (opcode == GPU_OP_CMD_SET_LINE_WIDTH && first != 0x3f800000U && !wide_said) {
 		kern_logf("i915: vk: XXX unimplemented path: lines of a width other than 1 (drawn one pixel wide)\n");
 		wide_said = 1;
 	}
@@ -1888,43 +1888,43 @@ i915_record_command(
 
 	/* Records the operation the opcode names. */
 	switch (opcode) {
-	case 93U:
+	case GPU_OP_CMD_BIND_PIPELINE:
 		/* vkCmdBindPipeline: [bind point][pipeline]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_BIND_PIPELINE);
 		(void)drv_i915_wire_read_u32(reader);
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.pipeline = drv_i915_object_lookup(session, I915_VK_OBJ_PIPELINE, identity);
 		break;
-	case 94U:
+	case GPU_OP_CMD_SET_VIEWPORT:
 		/* vkCmdSetViewport */
 		error = i915_record_set_viewport(session, cmdbuf, reader);
 		return error;
-	case 95U:
+	case GPU_OP_CMD_SET_SCISSOR:
 		/* vkCmdSetScissor */
 		error = i915_record_set_scissor(session, cmdbuf, reader);
 		return error;
-	case 96U:
-	case 97U:
+	case GPU_OP_CMD_SET_LINE_WIDTH:
+	case GPU_OP_CMD_SET_DEPTH_BIAS:
 		/* vkCmdSetLineWidth and vkCmdSetDepthBias, which the draws do not use. */
 		error = i915_record_set_unused(opcode, reader);
 		return error;
-	case 98U:
+	case GPU_OP_CMD_SET_BLEND_CONSTANTS:
 		/* vkCmdSetBlendConstants */
 		error = i915_record_set_blend_constants(cmdbuf, reader);
 		return error;
-	case 103U:
+	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 		/* vkCmdBindDescriptorSets */
 		error = i915_record_bind_descriptor_sets(session, cmdbuf, reader);
 		return error;
-	case 104U:
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
 		/* vkCmdBindIndexBuffer */
 		error = i915_record_bind_index(session, cmdbuf, reader);
 		return error;
-	case 105U:
+	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
 		/* vkCmdBindVertexBuffers */
 		error = i915_record_bind_vertex(session, cmdbuf, reader);
 		return error;
-	case 106U:
+	case GPU_OP_CMD_DRAW:
 		/* vkCmdDraw: [vertices][instances][first vertex][first instance]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DRAW);
 		op->u.draw.vertex_count = drv_i915_wire_read_u32(reader);
@@ -1932,21 +1932,21 @@ i915_record_command(
 		op->u.draw.first_vertex = drv_i915_wire_read_u32(reader);
 		op->u.draw.first_instance = drv_i915_wire_read_u32(reader);
 		break;
-	case 110U:
+	case GPU_OP_CMD_DISPATCH:
 		/* vkCmdDispatch: [groups x][groups y][groups z] (ws101-p003). */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DISPATCH);
 		op->u.dispatch.groups[0] = drv_i915_wire_read_u32(reader);
 		op->u.dispatch.groups[1] = drv_i915_wire_read_u32(reader);
 		op->u.dispatch.groups[2] = drv_i915_wire_read_u32(reader);
 		break;
-	case 111U:
+	case GPU_OP_CMD_DISPATCH_INDIRECT:
 		/* vkCmdDispatchIndirect: [buffer][offset] (ws101-p007). */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DISPATCH_INDIRECT);
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.dispatch_indirect.buffer = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER, identity);
 		op->u.dispatch_indirect.offset = drv_i915_wire_read_u64(reader);
 		break;
-	case 107U:
+	case GPU_OP_CMD_DRAW_INDEXED:
 		/* vkCmdDrawIndexed: [indices][instances][first index][vertex offset][first instance]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DRAW_INDEXED);
 		op->u.draw_indexed.index_count = drv_i915_wire_read_u32(reader);
@@ -1955,63 +1955,63 @@ i915_record_command(
 		op->u.draw_indexed.vertex_offset = (int32_t)drv_i915_wire_read_u32(reader);
 		op->u.draw_indexed.first_instance = drv_i915_wire_read_u32(reader);
 		break;
-	case 112U:
+	case GPU_OP_CMD_COPY_BUFFER:
 		/* vkCmdCopyBuffer */
 		error = i915_record_copy_buffer(session, cmdbuf, reader);
 		return error;
-	case 113U:
+	case GPU_OP_CMD_COPY_IMAGE:
 		/* vkCmdCopyImage */
 		error = i915_record_image_copy(session, cmdbuf, reader, I915_GFX_OP_COPY_IMAGE);
 		return error;
-	case 114U:
+	case GPU_OP_CMD_BLIT_IMAGE:
 		/* vkCmdBlitImage */
 		error = i915_record_image_copy(session, cmdbuf, reader, I915_GFX_OP_BLIT_IMAGE);
 		return error;
-	case 122U:
+	case GPU_OP_CMD_RESOLVE_IMAGE:
 		/* vkCmdResolveImage */
 		error = i915_record_image_copy(session, cmdbuf, reader, I915_GFX_OP_RESOLVE_IMAGE);
 		return error;
-	case 119U:
+	case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
 		/* vkCmdClearColorImage */
 		error = i915_record_clear_image(session, cmdbuf, reader);
 		return error;
-	case 121U:
+	case GPU_OP_CMD_CLEAR_ATTACHMENTS:
 		/* vkCmdClearAttachments */
 		error = i915_record_clear_attachments(session, cmdbuf, reader);
 		return error;
-	case 115U:
+	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
 		/* vkCmdCopyBufferToImage */
 		error = i915_record_buffer_image_copy(session, cmdbuf, reader, 1);
 		return error;
-	case 116U:
+	case GPU_OP_CMD_COPY_IMAGE_TO_BUFFER:
 		/* vkCmdCopyImageToBuffer */
 		error = i915_record_buffer_image_copy(session, cmdbuf, reader, 0);
 		return error;
-	case 100U:
-	case 101U:
-	case 102U:
+	case GPU_OP_CMD_SET_STENCIL_COMPARE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_WRITE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_REFERENCE:
 		/* vkCmdSetStencilCompareMask, vkCmdSetStencilWriteMask, vkCmdSetStencilReference */
 		error = i915_record_set_stencil(cmdbuf, reader, opcode - 100U);
 		return error;
-	case 126U:
+	case GPU_OP_CMD_PIPELINE_BARRIER:
 		/* vkCmdPipelineBarrier */
 		error = i915_record_barrier(session, reader);
 		return error;
-	case 127U:
-	case 128U:
-	case 129U:
+	case GPU_OP_CMD_BEGIN_QUERY:
+	case GPU_OP_CMD_END_QUERY:
+	case GPU_OP_CMD_RESET_QUERY_POOL:
 		/* vkCmdBeginQuery, vkCmdEndQuery, vkCmdResetQueryPool */
 		error = i915_record_query(session, cmdbuf, reader, opcode);
 		return error;
-	case 132U:
+	case GPU_OP_CMD_PUSH_CONSTANTS:
 		/* vkCmdPushConstants */
 		error = i915_record_push_constants(cmdbuf, reader);
 		return error;
-	case 133U:
+	case GPU_OP_CMD_BEGIN_RENDER_PASS:
 		/* vkCmdBeginRenderPass */
 		error = i915_record_begin_pass(session, cmdbuf, reader);
 		return error;
-	case 135U:
+	case GPU_OP_CMD_END_RENDER_PASS:
 		/* vkCmdEndRenderPass */
 		(void)i915_command_op(cmdbuf, I915_GFX_OP_END_PASS);
 		break;

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws167 -->
 # WS167: GPU の command の protocol の独自化
 
-Status: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 2 LW。p001 の設計の第 1 版あり）
+Status: incomplete（2026-10-07 p002 実装、T1 待ち。2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 2 LW。p001 の設計の第 1 版あり）
 Master: [master](../master.md)
 Primary Milestone: MG006
 
@@ -20,5 +20,5 @@ Primary Milestone: MG006
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [ws167-p001](phase001/phase.md) | 要件と設計 | planning（設計の第 1 版、2026-10-05 P1 q730。ユーザーの判断 H1〜H3（license・UAPI の置き場所・名前）待ち） | — |
-| ws167-p002 | header・3 か所の置き換え・license の記録・値の照合・T1 | planned | p001、H1〜H3 |
+| [ws167-p002](phase002/phase.md) | header・3 か所の置き換え・license の記録・値の照合・T1 | test-wait（2026-10-07 P1: 実装と host の確認、T1 待ち） | p001、H1〜H3 |
 | ws167-p003 | 全文規約の見直し | planned | p002 |

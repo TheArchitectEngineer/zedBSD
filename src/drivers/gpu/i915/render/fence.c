@@ -89,31 +89,31 @@ drv_i915_render_fence_dispatch(
 
 	/* Picks the handler of the command. */
 	switch (opcode) {
-	case 35U:
+	case GPU_OP_CREATE_FENCE:
 		/* vkCreateFence */
 		error = i915_fence_create(session, reader, reply);
 		break;
-	case 36U:
+	case GPU_OP_DESTROY_FENCE:
 		/* vkDestroyFence */
 		error = i915_fence_destroy(session, reader, reply);
 		break;
-	case 37U:
+	case GPU_OP_RESET_FENCES:
 		/* vkResetFences */
 		error = i915_fence_reset(session, reader, reply);
 		break;
-	case 38U:
+	case GPU_OP_GET_FENCE_STATUS:
 		/* vkGetFenceStatus */
 		error = i915_fence_status(session, reader, reply);
 		break;
-	case 47U:
+	case GPU_OP_CREATE_QUERY_POOL:
 		/* vkCreateQueryPool */
 		error = i915_query_pool_create(session, reader, reply);
 		break;
-	case 48U:
+	case GPU_OP_DESTROY_QUERY_POOL:
 		/* vkDestroyQueryPool */
 		error = i915_query_pool_destroy(session, reader, reply);
 		break;
-	case 49U:
+	case GPU_OP_GET_QUERY_POOL_RESULTS:
 		/* vkGetQueryPoolResults */
 		error = i915_query_pool_results(session, reader, reply);
 		break;

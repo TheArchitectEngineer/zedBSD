@@ -17,8 +17,6 @@ LIBVULKAN_SOURCES := userland/desktop/libvulkan/objects.c \
 	userland/desktop/libvulkan/wsi-image.c userland/desktop/libvulkan/wsi-display-nodes.c
 
 # The image metadata owns /lib placement; standalone installation honors PREFIX.
-# The Venus protocol's declarations (opcodes.h) are virglrenderer's, under MIT;
-# its notice goes with the library (ws129-p002).
-LIBVULKAN_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libvulkan.so=$(BUILD)/dynamic/libvulkan.so) \
-	/usr/share/licenses/libvulkan/LICENSE-PROTOCOL=userland/desktop/libvulkan/LICENSE-PROTOCOL
+# The command numbers are the Kei GPU command protocol's (uapi/gpu-op.h, ws167-p002): no third-party notice.
+LIBVULKAN_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libvulkan.so=$(BUILD)/dynamic/libvulkan.so)
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,libvulkan,Vulkan 1.0,amd64,y,library,$(LIBVULKAN_SOURCES),y,desktop,desktop/libvulkan,desktop/libwayland,,shared-library,$(LIBVULKAN_IMAGE_DATA),,lib))

@@ -5,6 +5,9 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     helpers_music.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
+On QEMU the guest needs a sound device for audiod (T1-301: MUSIC AUDIO error=13, ENODEV, without one): start it with
+plan/tools/guest/guest.sh start --qemu-extra '-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0'.
+
 The songs are two m4a files the host's ffmpeg makes (8 s of 440 Hz and 660 Hz, AAC, with their tags; the first with a
 PNG cover), put in kei's ~/Music/AAT and taken away after.  The places in Music's window are view.c's layout: the
 albums' column 0.28 of the window's width within 220 and 300, the songs' card 8 to its right on glass, its Play
@@ -59,7 +62,8 @@ def play(item):
 		item.step("opened", f"{library}; {audio}; {codec}; {glass}")
 		run.shot(item, "library")
 		item.check(library and library.endswith("songs=2 error=0"), "the two songs are not in the list")
-		item.check(audio and audio.endswith("error=0"), "no sound (audiod)")
+		item.check(audio and audio.endswith("error=0"), "no sound (audiod): on QEMU the guest needs a sound device, "
+			"--qemu-extra '-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0'")
 		item.check(codec and "error=0" in codec, "libavcodec did not load")
 		gap = 8 if glass and glass.endswith("=1") else 0
 		share = min(max(int(window.width * 0.28), 220), 300)
