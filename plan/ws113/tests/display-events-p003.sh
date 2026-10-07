@@ -4,7 +4,8 @@
 # output), no compositor: display-events --watch=5 --frames=60 --hold=4 (the pictures are taken
 # when the probe's lines say each step was reached).
 #  1. Both extensions are offered (surface-counter=1 display-control=1) and the displays are enumerated (count >= 1).
-#  2. The first display gets a swapchain (result=0) and 60 red frames are presented (result=0); first.png is red.
+#  2. The first display gets a swapchain (result=0) and 60 red frames are presented (result=0) and stay shown for the hold
+#     ("showing"); first.png is red.
 #     With two outputs, the second display gets a swapchain and blue frames, or the swapchain is refused for the
 #     limit of outputs shown at once (result=-3, VK_ERROR_INITIALIZATION_FAILED), which is not a failure.
 #  3. The first-pixel event fence of each presented display signals within a second (result=0).
@@ -60,13 +61,25 @@ wait_line() {
 	return 1
 }
 
+# The guest's ssh answers first (T1-355b: right after the boot the first commands were lost and the probe never ran).
+waited=0
+while [ "$waited" -lt 90 ]; do
+	answer=$(guest 'echo guest-ready')
+	case "$answer" in *guest-ready*) break ;; esac
+	sleep 2
+	waited=$((waited + 2))
+done
+
 # No compositor, no greeter: the probe has the displays.
 guest 'service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)" | awk "{print \$1}"); do kill $p; done; sleep 1' >/dev/null
-guest 'nohup /bin/display-events --watch=5 --frames=60 --hold=4 > /tmp/events.txt 2>&1 </dev/null & echo started' >/dev/null
+started=$(guest 'nohup /bin/display-events --watch=5 --frames=60 --hold=4 > /tmp/events.txt 2>&1 </dev/null & echo started')
+case "$started" in *started*) ;; *) echo "FAIL: the probe was not started ($started)"; status=1 ;; esac
 
 # The pictures follow the probe's own lines (T1-355: a frame takes 50 to 100 ms on the Venus guest, so fixed waits missed them):
-# the frames presented, a second into the 4 s off, and a second after power on.
-wait_line 'DISPLAY-EVENTS (present index=0|done)' 60
+# a second into the 4 s the frames stay shown (the probe's "showing" line), a second into the 4 s off, and a second
+# after power on.
+wait_line 'DISPLAY-EVENTS (showing index=0|done)' 60
+sleep 1
 check "$out/first.png" >/dev/null; first=$(centre "$out/first.png")
 wait_line 'DISPLAY-EVENTS (power index=0 state=off|done)' 30
 sleep 1
