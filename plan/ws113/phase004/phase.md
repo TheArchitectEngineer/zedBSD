@@ -119,3 +119,7 @@ Keiland の lease がどの出力にも無い時に、GOP の出力でない接�
 - build（warning 0）: zedBSD の `wayland`・`vkdemo`（`config-amd64-zdesktop.mk`）、`keiland-linux`（rc 0）。style-check は新規の違反 0。
 - 未実施: QEMU（T1: `VENUS_DISPLAY=dbus VENUS_OUTPUTS=2` で `output-switch-p004a.sh`。D-Bus display で VNC が絵を取れるかは未確認なので試験は guest の行で判定）、実機（p011a の後、ws052-p012 の R4 とまとめて 5330 の UAT）。
 - 制限: 画面の keyboard が開いている時の panel の座標は開き直すまで古い大きさ（p004b で）。
+
+## T1-357 の判定（2026-10-07 Q1）
+
+FAIL（QEMU Venus、VENUS_DISPLAY=dbus、2 出力）。列挙・2 つ目の swapchain・refresh・hotplug の fence・compositor が 2 を数える・KWL FAILED 無しは ok。1 回目は head 0 を抜いても 20 秒以内に display 1 へ移らず、retry では移ったが display 0 への戻りが無く `KWL OUTPUT displays count=1` で終わる（失敗の所が回ごとに違う）。証拠は /home/awe/zedBSD-worktrees/t1/build/t1-357-out/。
