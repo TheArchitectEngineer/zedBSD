@@ -63,8 +63,8 @@ vkCreatePipelineCache(
 	error = pipeline_single_create(
 		device,
 		VULKAN_OBJECT_PIPELINE_CACHE,
-		VULKAN_OPCODE_vkCreatePipelineCache,
-		VULKAN_OPCODE_vkDestroyPipelineCache,
+		GPU_OP_CREATE_PIPELINE_CACHE,
+		GPU_OP_DESTROY_PIPELINE_CACHE,
 		info,
 		allocator,
 		&handle);
@@ -97,7 +97,7 @@ vkDestroyPipelineCache(
 		device,
 		(uint64_t)cache,
 		VULKAN_OBJECT_PIPELINE_CACHE,
-		VULKAN_OPCODE_vkDestroyPipelineCache,
+		GPU_OP_DESTROY_PIPELINE_CACHE,
 		allocator);
 
 	/* Succeeded: the cache's local and renderer lifetimes have retired. */
@@ -143,7 +143,7 @@ vkGetPipelineCacheData(
 
 	/* A size-only request must not read the application's uninitialized size input. */
 	vulkan_writer_init_for_object(&writer, cache);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetPipelineCacheData);
+	vulkan_command_begin(&writer, GPU_OP_GET_PIPELINE_CACHE_DATA);
 	vulkan_write_u64(&writer, device->object.wire_id);
 	vulkan_write_u64(&writer, cache->wire_id);
 	vulkan_write_u64(&writer, 1U);
@@ -224,7 +224,7 @@ vkMergePipelineCaches(
 
 	/* Serializing the complete wire transaction also serializes native cache updates. */
 	vulkan_writer_init_for_object(&writer, cache);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkMergePipelineCaches);
+	vulkan_command_begin(&writer, GPU_OP_MERGE_PIPELINE_CACHES);
 	vulkan_write_u64(&writer, device->object.wire_id);
 	vulkan_write_u64(&writer, cache->wire_id);
 	vulkan_write_u32(&writer, count);
@@ -342,7 +342,7 @@ vkDestroyPipeline(
 		device,
 		(uint64_t)handle,
 		VULKAN_OBJECT_PIPELINE,
-		VULKAN_OPCODE_vkDestroyPipeline,
+		GPU_OP_DESTROY_PIPELINE,
 		allocator);
 
 	/* Succeeded: no batch, cache or derivative relationship retains this object. */
@@ -377,8 +377,8 @@ vkCreatePipelineLayout(
 	error = pipeline_single_create(
 		device,
 		VULKAN_OBJECT_PIPELINE_LAYOUT,
-		VULKAN_OPCODE_vkCreatePipelineLayout,
-		VULKAN_OPCODE_vkDestroyPipelineLayout,
+		GPU_OP_CREATE_PIPELINE_LAYOUT,
+		GPU_OP_DESTROY_PIPELINE_LAYOUT,
 		info,
 		allocator,
 		&handle);
@@ -411,7 +411,7 @@ vkDestroyPipelineLayout(
 		device,
 		(uint64_t)handle,
 		VULKAN_OBJECT_PIPELINE_LAYOUT,
-		VULKAN_OPCODE_vkDestroyPipelineLayout,
+		GPU_OP_DESTROY_PIPELINE_LAYOUT,
 		allocator);
 
 	/* Succeeded: the local and native layout objects have retired. */
@@ -624,9 +624,9 @@ pipeline_batch(
 	}
 
 	/* One native command preserves derivative indices within this exact batch. */
-	opcode = VULKAN_OPCODE_vkCreateGraphicsPipelines;
+	opcode = GPU_OP_CREATE_GRAPHICS_PIPELINES;
 	if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE)
-		opcode = VULKAN_OPCODE_vkCreateComputePipelines;
+		opcode = GPU_OP_CREATE_COMPUTE_PIPELINES;
 	vulkan_writer_init(&writer);
 	writer.allocator = policy;
 	vulkan_command_begin(&writer, opcode);
@@ -729,7 +729,7 @@ cleanup:
 
 		/* Destroys only native identities that this failed publication actually acquired. */
 		if (objects[index]->created != VK_FALSE)
-			vulkan_object_destroy_remote(device, &objects[index]->object, VULKAN_OPCODE_vkDestroyPipeline);
+			vulkan_object_destroy_remote(device, &objects[index]->object, GPU_OP_DESTROY_PIPELINE);
 		vulkan_object_free(&objects[index]->object);
 	}
 

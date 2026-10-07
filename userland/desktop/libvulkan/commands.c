@@ -79,11 +79,11 @@ vkCreateCommandPool(
 
 	/* Encodes the complete standard pool creation record with no scene-specific defaults. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateCommandPool);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_COMMAND_POOL);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkCommandPoolCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyCommandPool);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_COMMAND_POOL);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -125,7 +125,7 @@ vkDestroyCommandPool(
 	}
 
 	/* Native pool destruction consumes its native command buffers in the same operation. */
-	status = vulkan_object_destroy_remote(owner, &pool->object, VULKAN_OPCODE_vkDestroyCommandPool);
+	status = vulkan_object_destroy_remote(owner, &pool->object, GPU_OP_DESTROY_COMMAND_POOL);
 	if (status != VK_SUCCESS)
 		vulkan_context_error(pool->object.context, VK_ERROR_DEVICE_LOST);
 
@@ -163,7 +163,7 @@ vkResetCommandPool(
 	owner = vulkan_device(device);
 	pool = (struct vulkan_command_pool *)vulkan_nondispatchable_object((uint64_t)commandPool);
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetCommandPool);
+	vulkan_command_begin(&writer, GPU_OP_RESET_COMMAND_POOL);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, pool->object.wire_id);
 	vulkan_write_u32(&writer, flags);
@@ -259,7 +259,7 @@ vkAllocateCommandBuffers(
 
 	/* Sends the exact pool, level, and output identities for this dynamic batch. */
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkAllocateCommandBuffers);
+	vulkan_command_begin(&writer, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkCommandBufferAllocateInfo(&writer, pAllocateInfo);
@@ -338,7 +338,7 @@ vkFreeCommandBuffers(
 	owner = vulkan_device(device);
 	pool = (struct vulkan_command_pool *)vulkan_nondispatchable_object((uint64_t)commandPool);
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkFreeCommandBuffers);
+	vulkan_command_begin(&writer, GPU_OP_FREE_COMMAND_BUFFERS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, pool->object.wire_id);
 	vulkan_write_u32(&writer, commandBufferCount);
@@ -409,7 +409,7 @@ vkBeginCommandBuffer(
 
 	/* Native Begin applies the standard initial/re-recording transition and pool flags. */
 	vulkan_writer_init_for_object(&writer, &command->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkBeginCommandBuffer);
+	vulkan_command_begin(&writer, GPU_OP_BEGIN_COMMAND_BUFFER);
 	vulkan_write_u64(&writer, command->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkCommandBufferBeginInfo(&writer, &begin);
@@ -447,7 +447,7 @@ vkEndCommandBuffer(
 	command = (struct VkCommandBuffer_T *)commandBuffer;
 	prior = command->error;
 	vulkan_writer_init_for_object(&writer, &command->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkEndCommandBuffer);
+	vulkan_command_begin(&writer, GPU_OP_END_COMMAND_BUFFER);
 	vulkan_write_u64(&writer, command->object.wire_id);
 
 	/* Appends only a complete End record to an otherwise valid recording. */
@@ -465,7 +465,7 @@ vkEndCommandBuffer(
 		status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
 	} else {
 		/* Only End requested a reply, regardless of the stream's first opcode. */
-		command->recording.opcode = VULKAN_OPCODE_vkEndCommandBuffer;
+		command->recording.opcode = GPU_OP_END_COMMAND_BUFFER;
 		status = vulkan_command_execute(command->object.context, &command->recording, 8, &reader, VK_TRUE);
 	}
 
@@ -508,7 +508,7 @@ vkResetCommandBuffer(
 	/* Preserves the requested resource-release behavior in the actual native reset. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
 	vulkan_writer_init_for_object(&writer, &command->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetCommandBuffer);
+	vulkan_command_begin(&writer, GPU_OP_RESET_COMMAND_BUFFER);
 	vulkan_write_u64(&writer, command->object.wire_id);
 	vulkan_write_u32(&writer, flags);
 	status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);

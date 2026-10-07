@@ -79,7 +79,7 @@ vkCreateQueryPool(
 
 	/* Encode the entire core1.0 create record without host structure padding. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateQueryPool);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_QUERY_POOL);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO);
@@ -164,7 +164,7 @@ vkDestroyQueryPool(
 	}
 
 	/* Encode native destruction after selecting this call's command allocator. */
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkDestroyQueryPool);
+	vulkan_command_begin(&writer, GPU_OP_DESTROY_QUERY_POOL);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, pool->object.wire_id);
 	vulkan_write_u64(&writer, 0);
@@ -322,7 +322,7 @@ query_fetch(
 	/* The host output is tightly packed rather than inheriting application stride holes. */
 	bytes = count * packed_stride;
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetQueryPoolResults);
+	vulkan_command_begin(&writer, GPU_OP_GET_QUERY_POOL_RESULTS);
 	vulkan_write_u64(&writer, device->object.wire_id);
 	vulkan_write_u64(&writer, pool->object.wire_id);
 	vulkan_write_u32(&writer, first);

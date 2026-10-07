@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ws075-p001: the Vulkan commands each client calls that the i915 executor does not take (static).  A client's calls are
-# the vk*( names in its C sources; libvulkan's opcode table (userland/desktop/libvulkan/opcodes.h) numbers them; the
+# the vk*( names in its C sources; the Kei GPU command protocol (include/uapi/gpu-op.h) numbers them; the
 # executor's commands are the case labels of its opcode switches (src/drivers/gpu/i915/render/*.c: switch (opcode)),
 # less those whose body refuses (EOPNOTSUPP, ENOTSUP or "unported").  A call with no opcode stays in libvulkan (WSI,
 # queries of the loader) and is not counted.  Creation-time parameters (formats, samples, pipeline stages) are not seen.
@@ -22,13 +22,20 @@ CLIENTS = ['userland/desktop/wayland', 'userland/desktop/files', 'userland/deskt
            'userland/desktop/libglesv2']
 
 
+def protocol(root):
+	"""Returns the Kei GPU command protocol's numbers (include/uapi/gpu-op.h): by GPU_OP_ name, and by Vulkan name."""
+	text = open(os.path.join(root, 'include/uapi/gpu-op.h'), encoding='utf-8').read()
+	numbers = {}
+	commands = {}
+	for name, number, command in re.findall(r'(GPU_OP_\w+) = (\d+),?\t/\* (\S+)', text):
+		numbers[name] = number
+		commands[command] = int(number)
+	return numbers, commands
+
+
 def opcodes(root):
-	"""Returns libvulkan's opcode of each command name."""
-	table = {}
-	text = open(os.path.join(root, 'userland/desktop/libvulkan/opcodes.h'), encoding='utf-8').read()
-	for name, number in re.findall(r'VULKAN_OPCODE_(vk\w+)\s*=\s*(\d+)', text):
-		table[name] = int(number)
-	return table
+	"""Returns the command number of each Vulkan command name."""
+	return protocol(root)[1]
 
 
 def executor(root):
@@ -38,6 +45,7 @@ def executor(root):
 	for path in glob.glob(os.path.join(root, 'src/drivers/gpu/i915/render/*.c')):
 		text = open(path, encoding='utf-8').read()
 		names = {name: number for name, number in re.findall(r'#define\s+(\w+)\s+(\d+)U', text)}
+		names.update(protocol(root)[0])
 		lines = text.split('\n')
 		index = 0
 		while index < len(lines):

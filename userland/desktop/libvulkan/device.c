@@ -444,7 +444,7 @@ device_create_remote(
 
 	/* Preserves real caller feature bits, queue priorities, and family indices. */
 	vulkan_writer_init_for_object(&writer, &device->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateDevice);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_DEVICE);
 	vulkan_write_u64(&writer, device->physical->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkDeviceCreateInfo(&writer, &create);
@@ -486,7 +486,7 @@ device_queue_remote(
 
 	/* Uses the required private GetDeviceQueue2 path while the public API remains 1.0. */
 	vulkan_writer_init_for_object(&writer, &queue->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkGetDeviceQueue2);
+	vulkan_command_begin(&writer, GPU_OP_GET_DEVICE_QUEUE2);
 	vulkan_write_u64(&writer, queue->device->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_write_u32(&writer, 1000145003U);
@@ -532,7 +532,7 @@ device_destroy_remote(
 
 	/* Device destruction has one identity and one deliberately null native allocator. */
 	vulkan_writer_init_for_object(&writer, &device->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkDestroyDevice);
+	vulkan_command_begin(&writer, GPU_OP_DESTROY_DEVICE);
 	vulkan_write_u64(&writer, device->object.wire_id);
 	vulkan_write_u64(&writer, 0);
 	status = vulkan_command_execute(device->object.context, &writer, 4, &reader, VK_FALSE);
