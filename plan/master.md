@@ -508,6 +508,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（クリック、WS083 design.md §10）: H1 UAPI の差分（include/uapi/gpu-op.h に video の 14 opcode 0x10000〜0x1000d、GPU_OP_PROTOCOL_VERSION 2、plan/ws083/proposed/gpu-op-video.diff）を「承認する」。H2・HD6「1.0 のまま、sync2 を翻訳で足す」（規格に合わない点を記録して名乗る）。HD2「reset 無しで進め、既定では出さない」（i915.debug=video の時だけ、engine reset は p007 の後）。H3・H4・H5・HD1・HD3・HD4・HD5「全部このまま」。
 - 2026-10-07 ユーザー（クリック、WS181 の第 2 回の review の追加）: N1 docked の窓を閉じて他に窓が無い時も「docked mode を終える」（10-06 の「tablet mode は session の状態」を置き換え、次に開く app は floating）。N2 上端 10 px からの touch の下への drag は docked の title の上でも Wiseview「そうする」。N3 見えない desktop の docked の窓が裏で閉じた時は「何もしない」。
 - 2026-10-07 ユーザー（クリック、WS181 design.md §7）: D3 touchpad は「変えない」、D5 整列のメニューは「pill のどこでも」（中に desktop の切り替えも置く）、S6「整列モードを終える」（詰め直さない）、S8 上端の帯は「touch だけ」、D1・D2・D4・D6・D7・S9 は「全部このまま」（既定どおり）。
 - 2026-10-07 ユーザー（クリック、WS178）:「完全に分ける」（libGL.so は GL だけ、glX* は xserver の package の libGLX.so だけ、外から移植する X の GL の program は link の修正が要る）。T1 は再起動し、削除は全ての担当で禁止・Q1 が行う（plan/agents/protocol.md 末尾）。

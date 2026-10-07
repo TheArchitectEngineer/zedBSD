@@ -90,6 +90,7 @@
 #include "media.h"
 #include "layout.h"
 #include "edge.h"
+#include "arrange.h"
 
 #include <keiland/keiland.h>
 
@@ -697,6 +698,9 @@ kwl_glass_draw(
 	/* The network's menu, when open (network.c). */
 	kwl_network_draw_menu(server, command);
 
+	/* The arrangement menu, when open (arrange-shell.c). */
+	kwl_arrange_draw(server, command);
+
 	/* The volume's popup, when open (volume.c). */
 	kwl_volume_draw_popup(server, command);
 
@@ -855,6 +859,13 @@ kwl_glass_button(
 			return 1;
 	}
 
+	/* The arrangement menu takes a press on the desktops' pill, and every button while it is open (arrange-shell.c, WS181). */
+	if (cover == NULL) {
+		pressed = kwl_arrange_button(server, button, state);
+		if (pressed)
+			return 1;
+	}
+
 	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
 	pressed = kwl_menu_button(server, button, state);
 	if (pressed)
@@ -899,6 +910,11 @@ kwl_glass_button(
 			pull_back(server);
 			return 1;
 		}
+
+		/* A swap of arranged windows ends (arrange-shell.c). */
+		pressed = kwl_arrange_move_end(server);
+		if (pressed)
+			return 1;
 
 		/* Without a move the client has the release. */
 		if (server->drag == NULL)
@@ -1017,6 +1033,11 @@ kwl_glass_button(
 		window_lower(server, surface, "triple-click");
 		return 1;
 	}
+
+	/* An arranged window's move is a swap (arrange-shell.c, WS181). */
+	pressed = kwl_arrange_move_start(server, surface, server->pointer_x, server->pointer_y);
+	if (pressed)
+		return 1;
 
 	/* Otherwise a move starts, from a title bar out of the system bar. */
 	server->drag_left_bar = 1U;
@@ -1489,6 +1510,8 @@ kwl_glass_press_move(
 	int32_t x,
 	int32_t y)
 {
+	int swapping;
+
 	/* Only a shown window of the desktop shown, and no other move or pull. */
 	if (surface == NULL ||
 	    surface->dead ||
@@ -1511,8 +1534,11 @@ kwl_glass_press_move(
 		return;
 	}
 
-	/* A floating window keeps the pressed point under the pointer. */
+	/* A floating window keeps the pressed point under the pointer; an arranged one swaps (WS181). */
 	if (surface->maximized)
+		return;
+	swapping = kwl_arrange_move_start(server, surface, x, y);
+	if (swapping)
 		return;
 	server->drag_left_bar = 1U;
 	server->drag = surface;
@@ -1862,6 +1888,7 @@ kwl_glass_toplevel_request(
 	struct kwl_object *front;
 	int32_t x;
 	int32_t y;
+	int swapping;
 
 	/* Only a shown window of the desktop shown. */
 	if (surface->dead || !surface->mapped || surface->desktop != server->desktop)
@@ -1886,6 +1913,12 @@ kwl_glass_toplevel_request(
 		}
 
 		window_raise(server, surface);
+
+		/* An arranged window's move is a swap (WS181). */
+		swapping = kwl_arrange_move_start(server, surface, server->pointer_x, server->pointer_y);
+		if (swapping)
+			break;
+
 		server->drag_left_bar = 1U;
 		server->drag = surface;
 		server->drag_dx = server->pointer_x - surface->x;
@@ -2273,6 +2306,11 @@ kwl_glass_mapped(
 	/* Only the glass look animates, and only the window a launch waits for. */
 	if (!server->glass)
 		return;
+
+	/* A new window on an arranged desktop ends its arrangement (WS181). */
+	kwl_arrange_mapped(server, surface);
+
+	/* The launch it may be. */
 	launched = kwl_home_launched(server, from);
 	if (!launched)
 		return;
@@ -2317,6 +2355,129 @@ kwl_glass_forget(
 		server->dock_owner[desktop] = NULL;
 		server->dock_owner_gone[desktop] = 1U;
 	}
+
+	/* An arranged window that goes ends its desktop's arrangement (arrange-shell.c). */
+	kwl_arrange_forget(server, surface);
+}
+
+/* Gives where the system bar's desktops' pill is across, and its width (for the arrangement menu, arrange-shell.c). */
+void
+kwl_glass_desktops_pill(
+	struct kwl_server *server,
+	int32_t *x,
+	int32_t *width)
+{
+	struct shell_bar bar;
+
+	/* The bar's layout now. */
+	bar_layout(server, &bar);
+	*x = bar.desktops_x;
+	*width = bar.desktops_width;
+}
+
+/* Switches to a desktop, sliding (for the arrangement menu's pictures, arrange-shell.c). */
+void
+kwl_glass_desktop_turn(
+	struct kwl_server *server,
+	int desktop,
+	const char *via)
+{
+	/* The same slide as the bar's and the keys'. */
+	desktop_turn(server, desktop, via);
+}
+
+/*
+ * Gives the work area an arrangement fills (WS181): under the system bar,
+ * less the on-screen keyboard's settled column or row, and above the
+ * bottom edge's strip where the swipe to App Home starts (a window's frame
+ * there could not be pressed).
+ */
+void
+kwl_glass_work_area(
+	struct kwl_server *server,
+	struct kwl_arrange_rect *area)
+{
+	int32_t right;
+	int32_t bottom;
+
+	/* What the keyboard's panel takes when it has settled. */
+	kwl_keyboard_reserved(&right, &bottom);
+
+	/* The output under the bar, the arrangement's margin keeping the slots off the bottom strip. */
+	area->x = 0;
+	area->y = KWL_GLASS_BAR;
+	area->width = (int32_t)server->width - right;
+	area->height = (int32_t)server->height - KWL_GLASS_BAR - bottom - (KWL_EDGE_BOTTOM_HEIGHT - KWL_ARRANGE_MARGIN);
+}
+
+/* Ends the docked mode without any window's animation, when it is on (an arrangement starting, arrange-shell.c). */
+void
+kwl_glass_leave_quiet(
+	struct kwl_server *server,
+	const char *via)
+{
+	/* Only the docked mode ends. */
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+		return;
+
+	/* Every window floating at once. */
+	layout_leave(server, NULL, 0, 0, via);
+}
+
+/*
+ * Places a floating window's body at a place and size, and tells it the
+ * size (an arranged window, arrange-shell.c): it has a floating place of
+ * its own from now on.
+ */
+void
+kwl_glass_place_body(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height)
+{
+	/* Its place and size, its own. */
+	surface->x = x;
+	surface->y = y;
+	surface->window_width = (uint32_t)width;
+	surface->window_height = (uint32_t)height;
+	surface->placed = 1;
+	surface->restore_default = 0U;
+	server->dirty = 1;
+
+	/* The client draws that size; until it does, its image is drawn at it. */
+	window_configure(surface);
+	window_resized(surface);
+}
+
+/* Gives the rectangle a window's body is drawn in now (x, y, width, height). */
+void
+kwl_glass_body(
+	struct kwl_server *server,
+	const struct kwl_object *surface,
+	int32_t body[4])
+{
+	struct shell_rect rect;
+
+	/* As the frame draws it. */
+	body_rect(server, surface, &rect);
+	body[0] = rect.x;
+	body[1] = rect.y;
+	body[2] = rect.width;
+	body[3] = rect.height;
+}
+
+/* Docks a window where it floats (an arranged window let go in the system bar, arrange-shell.c). */
+void
+kwl_glass_dock_window(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	const char *via)
+{
+	/* Back to where its slot is when it floats again. */
+	window_dock(server, surface, surface->x, surface->y, via);
 }
 
 /*
@@ -2523,6 +2684,9 @@ kwl_glass_tick(
 	 * front otherwise docks (WS181).
 	 */
 	layout_follow(server);
+
+	/* The arrangements: a window gone, minimized, resized or fullscreen ends its desktop's (WS181). */
+	kwl_arrange_tick(server);
 
 	/* The previews of the bar's applications show and hide in time (apps-bar.c), and the switcher goes when it may not show. */
 	kwl_apps_bar_tick(server);
@@ -3793,6 +3957,7 @@ draw_desktops(
 	float progress;
 	int32_t x;
 	int desktop;
+	int marked;
 
 	/* The current desktop's colour: the accent the user chose, on the bar's ground. */
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, current);
@@ -3823,9 +3988,16 @@ draw_desktops(
 		printf("KWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
 	}
 
-	/* Each desktop's slot: a dot, or for the one shown an outlined pill as wide as the slot. */
+	/*
+	 * Each desktop's slot: a dot, or for the one shown an outlined pill as
+	 * wide as the slot; an arranged desktop's slot shows its layout's
+	 * drawing instead of the dot (WS181, arrange-shell.c).
+	 */
 	for (desktop = 0; desktop < DESKTOPS; desktop++) {
 		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
+		marked = kwl_arrange_draw_mark(server, command, (unsigned)desktop, x, KWL_GLASS_BAR_MIDDLE, colours->ink);
+		if (marked && desktop != (int)server->desktop)
+			continue;
 		if (desktop == (int)server->desktop) {
 			glass_shape_init(&shape, (float)x, (float)(KWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
 			shape.mode = MODE_RING;
@@ -4037,8 +4209,10 @@ body_rect(
 {
 	struct shell_rect from;
 	struct shell_rect to;
+	int32_t glide[4];
 	uint64_t held;
 	float t;
+	int gliding;
 
 	/* Between the two while animated. */
 	if (server->anim == surface) {
@@ -4058,6 +4232,16 @@ body_rect(
 	/* Docked: the docked space, or the middle of it for a window of one size (ws142-p008). */
 	if (surface->maximized) {
 		docked_body(server, surface, body);
+		return;
+	}
+
+	/* An arranged window gliding into its slot (arrange-shell.c, WS181). */
+	gliding = kwl_arrange_glide(server, surface, glide);
+	if (gliding) {
+		body->x = glide[0];
+		body->y = glide[1];
+		body->width = glide[2];
+		body->height = glide[3];
 		return;
 	}
 
@@ -4956,6 +5140,10 @@ layout_set(
 	server->layout_mode = mode;
 	server->dirty = 1;
 	printf("KWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
+
+	/* No desktop stays arranged in the docked mode (WS181 I3). */
+	if (mode == KWL_LAYOUT_DOCKED)
+		kwl_arrange_end_all(server, "dock");
 }
 
 /*
@@ -5869,16 +6057,10 @@ bar_press(
 	struct kwl_object *surface;
 	struct shell_bar bar;
 	unsigned second;
-	int32_t picture;
 	int pressed;
 
-	/* A desktop's picture switches to it. */
+	/* The desktops' pill is the arrangement menu's (arrange-shell.c, WS181: its pictures switch desktops there). */
 	bar_layout(server, &bar);
-	picture = server->pointer_x - (bar.desktops_x + DESKTOPS_PAD);
-	if (picture >= 0 && picture < DESKTOPS * (DESKTOP_WIDTH + DESKTOP_GAP)) {
-		desktop_turn(server, picture / (DESKTOP_WIDTH + DESKTOP_GAP), "bar");
-		return 1;
-	}
 
 	/* The clock opens Calendar (ws155-p004, the 2026-10-04 user request). */
 	if (server->pointer_x >= bar.clock_pill_x && server->pointer_x < bar.clock_pill_x + bar.clock_pill_width) {
@@ -8074,7 +8256,10 @@ window_to_desktop(
 	unsigned desktop,
 	const char *via)
 {
+	unsigned from;
+
 	/* The window's desktop; on top of it there. */
+	from = surface->desktop;
 	surface->desktop = desktop;
 	server->map_order++;
 	surface->map_order = server->map_order;
@@ -8084,6 +8269,9 @@ window_to_desktop(
 	kwl_seat_focus(server);
 	server->dirty = 1;
 	printf("KWL GLASS move-desktop surface=%u desktop=%u via=%s client=%llu\n", surface->id, desktop + 1U, via, (unsigned long long)surface->client->number);
+
+	/* The arrangements of the desktop it left and the one it came to end (WS181). */
+	kwl_arrange_moved(server, surface, from);
 }
 
 /* Returns the desktop whose picture in the system bar is under a point, or -1. */
@@ -8174,6 +8362,11 @@ glass_motion_take(
 
 	/* The network's open menu lights the row under the pointer (network.c). */
 	taken = kwl_network_motion(server);
+	if (taken)
+		return 1;
+
+	/* The arrangement menu lights its item, and a swap follows the pointer (arrange-shell.c). */
+	taken = kwl_arrange_motion(server);
 	if (taken)
 		return 1;
 

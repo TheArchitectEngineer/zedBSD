@@ -1699,6 +1699,25 @@ struct kwl_object *kwl_glass_title_at(struct kwl_server *server, int32_t x, int3
 void kwl_glass_lower(struct kwl_server *server, struct kwl_object *surface, const char *via);
 void kwl_glass_mapped(struct kwl_server *server, struct kwl_object *surface);
 void kwl_glass_forget(struct kwl_server *server, struct kwl_object *surface);
+struct kwl_arrange_rect;
+void kwl_glass_desktops_pill(struct kwl_server *server, int32_t *x, int32_t *width);
+void kwl_glass_desktop_turn(struct kwl_server *server, int desktop, const char *via);
+void kwl_glass_work_area(struct kwl_server *server, struct kwl_arrange_rect *area);
+void kwl_glass_leave_quiet(struct kwl_server *server, const char *via);
+void kwl_glass_place_body(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
+void kwl_glass_body(struct kwl_server *server, const struct kwl_object *surface, int32_t body[4]);
+void kwl_glass_dock_window(struct kwl_server *server, struct kwl_object *surface, const char *via);
+int kwl_arrange_button(struct kwl_server *server, uint32_t button, uint32_t state);
+int kwl_arrange_key(struct kwl_server *server, uint32_t key, uint32_t state);
+int kwl_arrange_motion(struct kwl_server *server);
+int kwl_arrange_move_start(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y);
+int kwl_arrange_move_end(struct kwl_server *server);
+int kwl_arrange_glide(struct kwl_server *server, const struct kwl_object *surface, int32_t body[4]);
+void kwl_arrange_tick(struct kwl_server *server);
+void kwl_arrange_forget(struct kwl_server *server, struct kwl_object *surface);
+void kwl_arrange_end_all(struct kwl_server *server, const char *reason);
+void kwl_arrange_mapped(struct kwl_server *server, struct kwl_object *surface);
+void kwl_arrange_moved(struct kwl_server *server, struct kwl_object *surface, unsigned from);
 void kwl_glass_committed(struct kwl_server *server, struct kwl_object *surface);
 int kwl_glass_key(struct kwl_server *server, uint32_t key, uint32_t state);
 

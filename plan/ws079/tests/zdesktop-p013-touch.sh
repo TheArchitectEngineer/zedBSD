@@ -12,13 +12,15 @@
 #     and the seat offers touch while the touch screen is there.  A client
 #     without wl_touch (tablet-probe --pointer) hears the first finger as the
 #     pointer's left button (press, motion, release).
-#  2. Cancel: a finger on the client, then a second one swiped up from the
-#     bottom edge: Wiseview opens and the client hears cancel, and nothing more
-#     of the first finger.  A tap closes Wiseview.
+#  2. Cancel: a finger on the client, then a second one swiped down from the
+#     top edge's band (WS181): Wiseview opens and the client hears cancel, and
+#     nothing more of the first finger.  A tap closes Wiseview.
 #  3. The edges by touch: the top-left corner opens App Home; on Home the
-#     bottom edge's swipe closes it; the top-right corner brings Notes (the
-#     stand-in, plan/ws079/tests/notes-standin.sh) with the source "touch";
-#     on the desktop the bottom edge opens Wiseview.
+#     bottom edge's swipe does nothing and a drag down closes it (WS181); the
+#     top-right corner brings Notes (the stand-in,
+#     plan/ws079/tests/notes-standin.sh) with the source "touch"; on the
+#     desktop the bottom edge opens App Home and the top band's swipe down
+#     opens Wiseview (WS181).
 #  4. The title bars, with three wltest windows a < b < c on a staircase (as
 #     zdesktop-p013.sh places them with the mouse):
 #     a. two fingers flicked up quickly on c's title bar: c goes to the back,
@@ -144,9 +146,10 @@ guest 'grep "TABLETPROBE" /tmp/pointerprobe.log' > "$out/${prefix}pointer-log.tx
 shot pointer --expect $((fx + 20)),$((fy + 20)),f0e0d0 --expect $((fx + 97)),$((fy + 100)),202020 || status=1
 guest 'kill $(cat /tmp/pointerprobe.pid); sleep 1.5' >/dev/null
 
-# 2. Cancel: a finger on the probe, then a swipe up from the bottom edge opens Wiseview.
-touches "down 1 $((px + 200)) $((py + 200))|hold 200|down 2 640 795|swipe 0 -200 8 30|hold 400|up 2|move 1 $((px + 220)) $((py + 220))|up 1"
-expect_log "TOUCH shell contact=1 x=640 y=795"
+# 2. Cancel: a finger on the probe, then a swipe down from the top edge's band opens Wiseview (WS181).
+touches "down 1 $((px + 200)) $((py + 200))|hold 200|down 2 640 4|swipe 0 200 8 30|hold 400|up 2|move 1 $((px + 220)) $((py + 220))|up 1"
+expect_log "TOUCH shell contact=1 x=640 y=4"
+expect_log 'WISEVIEW gesture via=top-edge'
 expect_log "TOUCH cancel client=${probe%:*} reason=shell"
 expect_log 'WISEVIEW opening'
 expect_count "probe cancels" "$(count 'TABLETPROBE touch cancel' /tmp/touchprobe.log)" 1
@@ -160,7 +163,7 @@ guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop-edges.log 2>&1 </dev/null & sleep 5; ln -sf /tmp/zdesktop-edges.log /tmp/zdesktop.log; echo started' >/dev/null
 
-# 3. The edges by touch: Home from the top-left corner, closed from its bottom edge.
+# 3. The edges by touch: Home from the top-left corner; its bottom edge does nothing, a drag down closes it (WS181).
 touches "down 1 8 8|swipe 200 200 8 30|up 1"
 sleep 1
 expect_log 'TOUCH shell contact=0 x=8 y=8'
@@ -168,9 +171,11 @@ expect_log 'HOME open via=drag'
 shot home >/dev/null
 touches "down 1 640 795|swipe 0 -150 6 30|up 1"
 sleep 1
-expect_log 'HOME bottom swipe'
-expect_log 'HOME close via=bottom'
+expect_count "Home closed by its bottom edge" "$(count 'HOME close via=')" 0
 expect_count "Wiseview from Home's bottom edge" "$(count 'WISEVIEW opening')" 0
+touches "down 1 640 300|swipe 0 300 10 30|up 1"
+sleep 1
+expect_log 'HOME close via=pull-down'
 
 # Notes from the top-right corner.
 touches "down 1 1272 6|swipe -160 160 8 30|up 1"
@@ -181,13 +186,20 @@ expect_log 'CORNER notes launch pid='
 shot notes --expect 640,400,fdf6e3 || status=1
 guest 'for p in $(cat /tmp/notes.pids 2>/dev/null); do kill $p 2>/dev/null; done; rm -f /tmp/notes.pids; sleep 2' >/dev/null
 
-# Wiseview from the bottom edge of the desktop.
-touches "down 1 640 795|swipe 0 -200 8 30|up 1"
+# App Home from the bottom edge of the desktop, closed by a drag down; Wiseview from the top edge's band (WS181).
+touches "down 1 640 795|swipe 0 -300 8 30|up 1"
 sleep 1
+expect_log 'HOME open via=edge'
+touches "down 1 640 300|swipe 0 300 10 30|up 1"
+sleep 1
+expect_count "Home closed by a drag down" "$(count 'HOME close via=pull-down')" 2
+touches "down 1 640 4|swipe 0 200 8 30|up 1"
+sleep 1
+expect_count "Wiseview from the top band" "$(count 'WISEVIEW gesture via=top-edge')" 1
 expect_log 'WISEVIEW opening'
 touches "down 1 60 120|hold 60|up 1"
 expect_log 'WISEVIEW closed'
-guest 'grep -E "KWL (TOUCH|HOME (open|close|bottom)|CORNER|WISEVIEW)" /tmp/zdesktop-edges.log' > "$out/${prefix}edges-log.txt"
+guest 'grep -E "KWL (TOUCH|EDGE|HOME (open|close|rise)|CORNER|WISEVIEW)" /tmp/zdesktop-edges.log' > "$out/${prefix}edges-log.txt"
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log; picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass $picture > /tmp/zdesktop.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
