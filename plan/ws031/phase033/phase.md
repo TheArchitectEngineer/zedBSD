@@ -3,7 +3,7 @@
 
 Phase ID: `ws031-p033`
 Parent: [WS031](../ws.md)
-Status: cleared 候補（q833、P1、2026-10-07: 実装と host の試験 PASS。実機は対象外）
+Status: cleared（2026-10-07 Q1 の判定: host の fixture（test_view_format_swizzle を含む）PASS と build。QEMU の Venus は i915 の実行器を通らないので T1 は無し、実機の確認は 5330 が戻ってから）（旧: cleared 候補（q833、P1、2026-10-07: 実装と host の試験 PASS。実機は対象外））
 設計: [p019](../phase019/phase.md) §2.3・§2.4・§7（B1・B2・M1〜M4）
 範囲の変更（2026-10-07、p019 §2.5・S9）: ws.md の「usage 照合」は変えない（input・transient attachment は executor に無く、今の答えが正しい。誤用の照合は backlog）。
 

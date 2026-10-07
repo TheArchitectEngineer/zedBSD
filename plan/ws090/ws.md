@@ -48,9 +48,10 @@ Resume point: p011（Terminal・Notes の窓、KUI_VERSION 11）uncleared（2026
 | [ws090-p019](phase019/phase.md) | 慣性 scroll を libkeiland に一本化する（全ての app） | cleared（詳細は phase.md） | — |
 | [ws090-p020](phase020/phase.md) | UI の font を Mahora へ（Regular・Mono・Bold） | test-wait（詳細は phase.md） | — |
 | [ws090-p021](phase021/phase.md) | 全ての app の窓の中身の padding を 0 に（title bar と同じ幅、title bar との間は compositor の定数） | planned（詳細は phase.md） | — |
-| [ws090-p022](phase022/phase.md) | 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ | in-progress（詳細は phase.md） | — |
+| [ws090-p022](phase022/phase.md) | 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ | cleared（2026-10-07、項目 6 は p025 へ） | — |
 | [ws090-p023](phase023/phase.md) | Files・Settings の残りの自前の UI 部品を libkeiland の部品へ | planned（詳細は phase.md） | — |
 | [ws090-p024](phase024/phase.md) | libkeiland に複数選択の list と icon の grid の部品を足し、Files の list・grid の view を置き換える | cleared（詳細は phase.md） | — |
+| [ws090-p025](phase025/phase.md) | Browser の web の form の欄で IME を受け付ける（p022 の項目 6 を分けた） | planned（2026-10-07） | — |
 
 p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。
 
