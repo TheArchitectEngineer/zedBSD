@@ -156,7 +156,7 @@ struct i915_shader_binary {
 	uint32_t block_count;
 	struct i915_shader_block blocks[I915_SHADER_MAX_BLOCKS];
 
-	/* Vertex: attributes; fragment: interpolated inputs. */
+	/* Vertex: attributes; fragment: interpolated inputs; geometry: the located per-vertex inputs it reads. */
 	uint32_t input_count;
 
 	/* The input locations in ascending order: the payload order. */
@@ -165,10 +165,10 @@ struct i915_shader_binary {
 	/* Fragment: bit n is set when input n (in payload order) is Flat, set up as the provoking vertex's value. */
 	uint32_t input_flat_mask;
 
-	/* Vertex: VUE slots after the position; fragment: equal to input_count. */
+	/* Vertex and geometry: VUE slots after the position; fragment: equal to input_count. */
 	uint32_t varying_count;
 
-	/* Vertex: the location each VUE slot after the position holds, ascending. */
+	/* Vertex and geometry: the location each VUE slot after the position holds, ascending. */
 	uint32_t varying_locations[I915_SHADER_MAX_INPUTS];
 
 	/*
@@ -230,11 +230,31 @@ struct i915_shader_binary {
 	 */
 	uint32_t shared_bytes;
 	uint32_t uses_barrier;
+
+	/*
+	 * Geometry (ws075-p007a): what the draw programs in 3DSTATE_GS and the
+	 * URB -- the vertices of one input primitive, the primitive emitted
+	 * (3D_Prim_Topo_Type, I915_IR_OUTPUT_*), one output vertex and the
+	 * control data header in 32-byte units, the header's format (0 cut
+	 * bits, 1 stream IDs), and the output URB entry in 64-byte units; and
+	 * nonzero when the kernel reads the input primitive's number (Include
+	 * Primitive ID) or writes the layer (the clipper then takes the render
+	 * target array index from the VUE).  Zero for another stage.
+	 */
+	uint32_t vertices_in;
+	uint32_t output_topology;
+	uint32_t output_vertex_hwords;
+	uint32_t control_data_hwords;
+	uint32_t control_data_format;
+	uint32_t urb_entry_size;
+	uint32_t uses_primitive_id;
+	uint32_t writes_layer;
 };
 
 int drv_i915_shader_parse(const uint32_t *words, size_t word_count, enum i915_shader_stage stage, struct i915_shader_ir **out, struct i915_compile_diagnostic *diagnostic);
 void drv_i915_shader_ir_free(struct i915_shader_ir *ir);
 int drv_i915_shader_compile(const struct i915_shader_ir *ir, struct i915_shader_binary **out);
+int drv_i915_shader_compile_stage(const struct i915_shader_ir *ir, const struct i915_shader_binary *producer, struct i915_shader_binary **out);
 void drv_i915_shader_binary_free(struct i915_shader_binary *binary);
 
 #endif /* DRIVERS_GPU_I915_COMPILER_COMPILER_H */

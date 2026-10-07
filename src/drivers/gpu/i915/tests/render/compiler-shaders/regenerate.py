@@ -47,6 +47,7 @@ GEOMETRY = (
     ('adjacency.geom', 'geometry'),
     ('layers.geom', 'geometry'),
     ('varyings.geom', 'geometry'),
+    ('noemit.geom', 'geometry'),
     ('refuse-invocations.geom', 'geometry'),
     ('refuse-invocation-id.geom', 'geometry'),
     ('refuse-viewport.geom', 'geometry'),
