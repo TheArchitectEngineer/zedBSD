@@ -2,7 +2,8 @@
 # ws035-p065: virtual desktops on the Venus guest (the zdesktop image).  zdesktop --glass runs; a red wl_shm window
 # maps on desktop 1 and a blue one on desktop 2.
 #  1. desk1.png: desktop 1 shows the red window only.
-#  2. desk2.png: a click on desktop 2's picture in the bar slides to it: the blue window only.
+#  2. desk2.png: a click on the bar's desktops' pill opens the arrangement menu (WS181, the 2026-10-07 user
+#     decision: anywhere on the pill), and a click on desktop 2's picture in it slides to it: the blue window only.
 #  3. swipe.png / back1.png: a swipe from the left edge follows the pointer (both windows in view), and
 #     switches back to desktop 1.
 #  4. Ctrl+Alt+Right switches to desktop 2 again; a short swipe from the right edge goes back to 2 (no
@@ -43,12 +44,15 @@ desk() { echo $((dx + ($1 - 1) * dstep + dwidth / 2)); }
 pointer move 1250 780 sleep 400
 check "$out/desk1.png" --expect 640,450,d04040 || status=1
 
-# 2. Desktop 2 from the bar, and the blue window there.
+# 2. Desktop 2 from the arrangement menu the pill opens (WS181), and the blue window there.
 pointer move $(desk 2) 17 sleep 300 down sleep 60 up sleep 800
+set -- $(guest "grep 'KWL ARRANGE menu item=desktop-2 ' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+pointer move ${1:-640} ${2:-80} sleep 300 down sleep 60 up sleep 800
 guest 'export XDG_RUNTIME_DIR=/tmp; /bin/wlshm --size=520x340 --color=ff4060d0 --frames=20000 --token=u > /tmp/u.log 2>&1 </dev/null & sleep 3; echo started' >/dev/null
 pointer move 1250 780 sleep 400
 check "$out/desk2.png" --expect 640,450,4060d0 || status=1
-expect_log 'KWL GLASS desktop=2 via=bar'
+expect_log 'KWL ARRANGE menu open'
+expect_log 'KWL GLASS desktop=2 via=menu'
 
 # 3. A swipe from the left edge: both windows in view half way, then desktop 1.
 pointer move 4 450 sleep 200 down sleep 100 move 150 450 sleep 80 move 350 450 sleep 80 move 640 450 sleep 400

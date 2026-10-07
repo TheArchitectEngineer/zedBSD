@@ -50,7 +50,7 @@ Queue: q469-i01
 
 確認:
 
-1. Venus（QEMU）: `plan/ws035/tests/zdesktop-p069.sh` PASS（`build/ws035-p069/run2/`、最終のコードで `venus-p069/`）:
+1. Venus（QEMU）: `plan/ws035/tests/zdesktop-p069.sh（2026-10-07 削除: WS181 で Home の覗きの角が無くなった）` PASS（`build/ws035-p069/run2/`、最終のコードで `venus-p069/`）:
    launcher で Home（`home.png`）、Terminal の icon で terminal の窓、角からの drag の途中（`gesture.png`: 明るい Home が左上から
    現れ desktop が右下へ）、`mod` の検索で Model viewer だけ（`search.png`）、Enter で mview（`mview.png`）、Esc と角で閉じる。
 2. i915 実機（5330、VFIO、capture）: `CAPTURE=zdesktop-home KEILAND_APP=home` で 4 検査 PASS（`build/ws035-p069/hw1/`:

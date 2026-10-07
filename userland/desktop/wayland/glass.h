@@ -152,6 +152,8 @@ void kwl_greeter_draw(struct kwl_server *server, VkCommandBuffer command);
 /* The network's icon in the system bar and its menu (network.c). */
 void kwl_network_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
 void kwl_network_draw_menu(struct kwl_server *server, VkCommandBuffer command);
+void kwl_arrange_draw(struct kwl_server *server, VkCommandBuffer command);
+int kwl_arrange_draw_mark(struct kwl_server *server, VkCommandBuffer command, unsigned desktop, int32_t x, int32_t middle, const float *ink);
 void kwl_volume_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
 void kwl_volume_draw_popup(struct kwl_server *server, VkCommandBuffer command);
 

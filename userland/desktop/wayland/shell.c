@@ -89,6 +89,8 @@
 #include "ime.h"
 #include "media.h"
 #include "layout.h"
+#include "edge.h"
+#include "arrange.h"
 
 #include <keiland/keiland.h>
 
@@ -188,9 +190,10 @@ static uint32_t fullscreen_leave_eaten;
 
 /*
  * The dock animation, a launched window's growing, a double click, and how
- * far a docked title is pulled down to come off (ws035-p064: the window
- * follows the pull on the way, shrinking from the docked space to its own
- * size under the pointer).  A double click shows the docked window within
+ * far a docked title is pulled to come off, in any direction (ws035-p064:
+ * the window follows the pull on the way, shrinking from the docked space
+ * to its own size under the pointer; WS181: a short pull, the touch and
+ * drag of the 2026-10-07 UAT).  A double click shows the docked window within
  * DOCK_MS of its second press (BUG-179, the 2026-10-04 user's 0.1 s, at
  * most 0.2 s).
  */
@@ -200,7 +203,7 @@ static uint32_t fullscreen_leave_eaten;
 /* The kind of the animation that is not a dock or an undock: a launched window growing from its icon (ws035-p071). */
 #define ANIM_LAUNCH		2U
 #define DOUBLE_CLICK_MS		400U
-#define PULL_DISTANCE		140
+#define PULL_DISTANCE		48
 
 /* How far from a double click's second press its third may be and still take the dock back (ws079-p013). */
 #define TRIPLE_CLICK_SLOP	8
@@ -430,8 +433,12 @@ static void layout_set(struct kwl_server *server, unsigned mode, const char *via
 static void layout_match(struct kwl_server *server, struct kwl_object *surface, const char *via);
 static int layout_hides(struct kwl_server *server, const struct kwl_object *surface);
 static int layout_takes_press(struct kwl_server *server);
-static int layout_press_switches(struct kwl_server *server, struct kwl_object *surface);
-static void layout_keep_front(struct kwl_server *server);
+static void layout_leave(struct kwl_server *server, struct kwl_object *front, int32_t x, int32_t y, const char *via);
+static void window_float_quiet(struct kwl_server *server, struct kwl_object *surface);
+static void layout_follow(struct kwl_server *server);
+static void layout_owner_describe(const struct kwl_object *owner, struct kwl_layout_owner *seen);
+static void layout_front_follow(struct kwl_server *server);
+static void layout_log_windows(struct kwl_server *server);
 static void docked_body(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
 static void dock_restore_default(struct kwl_server *server, struct kwl_object *surface);
 static int window_centred_over(struct kwl_server *server, const struct kwl_object *surface);
@@ -469,7 +476,10 @@ static void draw_wiseview(struct kwl_server *server, VkCommandBuffer command, st
 static void draw_tile(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct kwl_server *server);
-static int wiseview_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
+static int home_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
+static int band_button(struct kwl_server *server, uint32_t button, uint32_t state, int replays);
+static int band_motion(struct kwl_server *server, int replays);
+static void band_replay(struct kwl_server *server, int release);
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
@@ -688,6 +698,9 @@ kwl_glass_draw(
 	/* The network's menu, when open (network.c). */
 	kwl_network_draw_menu(server, command);
 
+	/* The arrangement menu, when open (arrange-shell.c). */
+	kwl_arrange_draw(server, command);
+
 	/* The volume's popup, when open (volume.c). */
 	kwl_volume_draw_popup(server, command);
 
@@ -789,6 +802,18 @@ kwl_glass_button(
 	 * corner as over a fullscreen window.
 	 */
 	cover = bar_cover(server);
+
+	/*
+	 * A touch's press in the top edge's band waits to be the swipe down to
+	 * Wiseview or a press of what is under it (WS181), before App Home and
+	 * the bar's widgets take it; only where the bar is drawn.
+	 */
+	if (cover == NULL || server->band_press) {
+		pressed = band_button(server, button, state, 1);
+		if (pressed)
+			return 1;
+	}
+
 	pressed = 0;
 	if (cover == NULL) {
 		/* App Home takes the launcher, the top-left corner, and every button while it shows. */
@@ -834,6 +859,13 @@ kwl_glass_button(
 			return 1;
 	}
 
+	/* The arrangement menu takes a press on the desktops' pill, and every button while it is open (arrange-shell.c, WS181). */
+	if (cover == NULL) {
+		pressed = kwl_arrange_button(server, button, state);
+		if (pressed)
+			return 1;
+	}
+
 	/* The menus take a press on a window's menu, and every button while one is open (menu-shell.c). */
 	pressed = kwl_menu_button(server, button, state);
 	if (pressed)
@@ -867,8 +899,8 @@ kwl_glass_button(
 		return 1;
 	}
 
-	/* A left press at the bottom edge starts opening Wiseview. */
-	pressed = wiseview_edge_press(server, button, state);
+	/* A left press at the bottom edge starts the swipe up that opens App Home (WS181; Wiseview is the top edge's). */
+	pressed = home_edge_press(server, button, state);
 	if (pressed)
 		return 1;
 
@@ -878,6 +910,11 @@ kwl_glass_button(
 			pull_back(server);
 			return 1;
 		}
+
+		/* A swap of arranged windows ends (arrange-shell.c). */
+		pressed = kwl_arrange_move_end(server);
+		if (pressed)
+			return 1;
 
 		/* Without a move the client has the release. */
 		if (server->drag == NULL)
@@ -936,17 +973,6 @@ kwl_glass_button(
 	/* A press on the desktop is zdesktop's. */
 	if (surface == NULL)
 		return 1;
-
-	/*
-	 * In the windowed mode a press on another application's window left
-	 * docked behind is a switch to it, which brings it back to floating
-	 * (ws142-p008); the press is not the client's, whose window moves.
-	 */
-	open = layout_press_switches(server, surface);
-	if (open) {
-		kwl_glass_switch_to(server, surface, "press");
-		return 1;
-	}
 
 	/* The window comes to the top and takes the focus. */
 	window_raise(server, surface);
@@ -1008,7 +1034,13 @@ kwl_glass_button(
 		return 1;
 	}
 
-	/* Otherwise a move starts. */
+	/* An arranged window's move is a swap (arrange-shell.c, WS181). */
+	pressed = kwl_arrange_move_start(server, surface, server->pointer_x, server->pointer_y);
+	if (pressed)
+		return 1;
+
+	/* Otherwise a move starts, from a title bar out of the system bar. */
+	server->drag_left_bar = 1U;
 	server->drag = surface;
 	server->drag_dx = server->pointer_x - surface->x;
 	server->drag_dy = server->pointer_y - surface->y;
@@ -1088,13 +1120,18 @@ kwl_glass_edge_button(
 	if (pressed)
 		return 1;
 
+	/* A touch's press in the top edge's band may be the swipe down to Wiseview (WS181); otherwise it is lost, not given to the window. */
+	pressed = band_button(server, button, state, 0);
+	if (pressed)
+		return 1;
+
 	/* App Home, when it shows or follows a press of its own, has the button as in window mode. */
 	home = kwl_home_progress(server);
 	if (home > 0.0f ||
 	    server->home_to > 0.0f ||
 	    server->home_press ||
 	    server->home_page_press ||
-	    server->home_bottom_press) {
+	    server->home_rise_press) {
 		pressed = kwl_home_button(server, button, state);
 		return pressed;
 	}
@@ -1136,6 +1173,11 @@ kwl_glass_edge_motion(
 
 	/* The bottom edge's swipe follows its contact. */
 	taken = unfullscreen_motion(server);
+	if (taken)
+		return 1;
+
+	/* A press held in the top edge's band (WS181). */
+	taken = band_motion(server, 0);
 	if (taken)
 		return 1;
 
@@ -1468,6 +1510,8 @@ kwl_glass_press_move(
 	int32_t x,
 	int32_t y)
 {
+	int swapping;
+
 	/* Only a shown window of the desktop shown, and no other move or pull. */
 	if (surface == NULL ||
 	    surface->dead ||
@@ -1483,15 +1527,20 @@ kwl_glass_press_move(
 		if (!surface->maximized)
 			return;
 		server->pull = surface;
+		server->pull_start_x = x;
 		server->pull_start_y = y;
 		server->pull_distance = 0;
 		printf("KWL GLASS press pull surface=%u\n", surface->id);
 		return;
 	}
 
-	/* A floating window keeps the pressed point under the pointer. */
+	/* A floating window keeps the pressed point under the pointer; an arranged one swaps (WS181). */
 	if (surface->maximized)
 		return;
+	swapping = kwl_arrange_move_start(server, surface, x, y);
+	if (swapping)
+		return;
+	server->drag_left_bar = 1U;
 	server->drag = surface;
 	server->drag_dx = x - surface->x;
 	server->drag_dy = y - surface->y;
@@ -1836,6 +1885,11 @@ kwl_glass_toplevel_request(
 	struct kwl_object *surface,
 	int request)
 {
+	struct kwl_object *front;
+	int32_t x;
+	int32_t y;
+	int swapping;
+
 	/* Only a shown window of the desktop shown. */
 	if (surface->dead || !surface->mapped || surface->desktop != server->desktop)
 		return;
@@ -1843,10 +1897,29 @@ kwl_glass_toplevel_request(
 	/* What was asked. */
 	switch (request) {
 	case KWL_TOPLEVEL_MOVE:
-		/* A move as a press on the title bar starts one, until the button is let go (a docked window stays). */
-		if (surface->maximized || server->drag != NULL)
+		/* A move as a press on the title bar starts one, until the button is let go; none while another goes on. */
+		if (server->drag != NULL || server->pull != NULL)
 			break;
+
+		/*
+		 * A docked window drawing its own title (no title of it in the
+		 * system bar to pull) comes off as a pull does (WS181): floating,
+		 * every other window too, its title's top under the pointer.
+		 */
+		if (surface->maximized) {
+			x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
+			y = server->pointer_y - KWL_GLASS_GAP;
+			layout_leave(server, surface, x, y, "request-move");
+		}
+
 		window_raise(server, surface);
+
+		/* An arranged window's move is a swap (WS181). */
+		swapping = kwl_arrange_move_start(server, surface, server->pointer_x, server->pointer_y);
+		if (swapping)
+			break;
+
+		server->drag_left_bar = 1U;
 		server->drag = surface;
 		server->drag_dx = server->pointer_x - surface->x;
 		server->drag_dy = server->pointer_y - surface->y;
@@ -1859,8 +1932,19 @@ kwl_glass_toplevel_request(
 		window_dock(server, surface, surface->x, surface->y, "request");
 		break;
 	case KWL_TOPLEVEL_UNMAXIMIZE:
-		/* Back to its place before it docked. */
-		window_undock(server, surface, surface->restore_x, surface->restore_y, "request");
+		/*
+		 * Back to its place before it docked: the docked window in front
+		 * ends the docked mode, another one hidden behind it only floats
+		 * again (WS181: an application behind does not end the mode).
+		 */
+		if (!surface->maximized)
+			break;
+		front = sheet_owner(kwl_top_window(server));
+		if (surface != front) {
+			window_float_quiet(server, surface);
+			break;
+		}
+		layout_leave(server, surface, surface->restore_x, surface->restore_y, "request");
 		break;
 	case KWL_TOPLEVEL_MINIMIZE:
 		/* Hidden until Wiseview brings it back. */
@@ -1885,7 +1969,7 @@ kwl_glass_toplevel_move_end(
 
 	/* Retires the moving identity before docking or emitting diagnostics. */
 	server->drag = NULL;
-	if (server->pointer_y < KWL_GLASS_BAR) {
+	if (server->pointer_y < KWL_GLASS_BAR && server->drag_left_bar) {
 		window_dock(server, surface, server->drag_start_x, server->drag_start_y, "drag");
 
 		/* The system bar keeps the previous position as the restore point. */
@@ -2222,6 +2306,11 @@ kwl_glass_mapped(
 	/* Only the glass look animates, and only the window a launch waits for. */
 	if (!server->glass)
 		return;
+
+	/* A new window on an arranged desktop ends its arrangement (WS181). */
+	kwl_arrange_mapped(server, surface);
+
+	/* The launch it may be. */
 	launched = kwl_home_launched(server, from);
 	if (!launched)
 		return;
@@ -2242,6 +2331,153 @@ kwl_glass_mapped(
 	server->anim_start_ms = kwl_milliseconds();
 	server->dirty = 1;
 	printf("KWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
+}
+
+/*
+ * Forgets a destroyed window as a desktop's docked owner (WS181): the
+ * desktop is marked, so that the next frame ends the docked mode when it
+ * is the desktop shown, and only forgets the owner otherwise
+ * (layout_follow).
+ */
+void
+kwl_glass_forget(
+	struct kwl_server *server,
+	struct kwl_object *surface)
+{
+	unsigned desktop;
+
+	/* Each desktop it owned. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		if (server->dock_owner[desktop] != surface)
+			continue;
+
+		/* The pointer goes before the storage; the mark stays until the next frame looks at it. */
+		server->dock_owner[desktop] = NULL;
+		server->dock_owner_gone[desktop] = 1U;
+	}
+
+	/* An arranged window that goes ends its desktop's arrangement (arrange-shell.c). */
+	kwl_arrange_forget(server, surface);
+}
+
+/* Gives where the system bar's desktops' pill is across, and its width (for the arrangement menu, arrange-shell.c). */
+void
+kwl_glass_desktops_pill(
+	struct kwl_server *server,
+	int32_t *x,
+	int32_t *width)
+{
+	struct shell_bar bar;
+
+	/* The bar's layout now. */
+	bar_layout(server, &bar);
+	*x = bar.desktops_x;
+	*width = bar.desktops_width;
+}
+
+/* Switches to a desktop, sliding (for the arrangement menu's pictures, arrange-shell.c). */
+void
+kwl_glass_desktop_turn(
+	struct kwl_server *server,
+	int desktop,
+	const char *via)
+{
+	/* The same slide as the bar's and the keys'. */
+	desktop_turn(server, desktop, via);
+}
+
+/*
+ * Gives the work area an arrangement fills (WS181): under the system bar,
+ * less the on-screen keyboard's settled column or row, and above the
+ * bottom edge's strip where the swipe to App Home starts (a window's frame
+ * there could not be pressed).
+ */
+void
+kwl_glass_work_area(
+	struct kwl_server *server,
+	struct kwl_arrange_rect *area)
+{
+	int32_t right;
+	int32_t bottom;
+
+	/* What the keyboard's panel takes when it has settled. */
+	kwl_keyboard_reserved(&right, &bottom);
+
+	/* The output under the bar, the arrangement's margin keeping the slots off the bottom strip. */
+	area->x = 0;
+	area->y = KWL_GLASS_BAR;
+	area->width = (int32_t)server->width - right;
+	area->height = (int32_t)server->height - KWL_GLASS_BAR - bottom - (KWL_EDGE_BOTTOM_HEIGHT - KWL_ARRANGE_MARGIN);
+}
+
+/* Ends the docked mode without any window's animation, when it is on (an arrangement starting, arrange-shell.c). */
+void
+kwl_glass_leave_quiet(
+	struct kwl_server *server,
+	const char *via)
+{
+	/* Only the docked mode ends. */
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+		return;
+
+	/* Every window floating at once. */
+	layout_leave(server, NULL, 0, 0, via);
+}
+
+/*
+ * Places a floating window's body at a place and size, and tells it the
+ * size (an arranged window, arrange-shell.c): it has a floating place of
+ * its own from now on.
+ */
+void
+kwl_glass_place_body(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height)
+{
+	/* Its place and size, its own. */
+	surface->x = x;
+	surface->y = y;
+	surface->window_width = (uint32_t)width;
+	surface->window_height = (uint32_t)height;
+	surface->placed = 1;
+	surface->restore_default = 0U;
+	server->dirty = 1;
+
+	/* The client draws that size; until it does, its image is drawn at it. */
+	window_configure(surface);
+	window_resized(surface);
+}
+
+/* Gives the rectangle a window's body is drawn in now (x, y, width, height). */
+void
+kwl_glass_body(
+	struct kwl_server *server,
+	const struct kwl_object *surface,
+	int32_t body[4])
+{
+	struct shell_rect rect;
+
+	/* As the frame draws it. */
+	body_rect(server, surface, &rect);
+	body[0] = rect.x;
+	body[1] = rect.y;
+	body[2] = rect.width;
+	body[3] = rect.height;
+}
+
+/* Docks a window where it floats (an arranged window let go in the system bar, arrange-shell.c). */
+void
+kwl_glass_dock_window(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	const char *via)
+{
+	/* Back to where its slot is when it floats again. */
+	window_dock(server, surface, surface->x, surface->y, via);
 }
 
 /*
@@ -2442,8 +2678,15 @@ kwl_glass_tick(
 	/* The bar's layout follows a docked window coming or going (ws099-p034b). */
 	bar_dock_follow(server);
 
-	/* In the docked mode the window that came to the front (the one before closed or was minimized) docks. */
-	layout_keep_front(server);
+	/*
+	 * In the docked mode a desktop's docked window that closed, was
+	 * minimized or was sent away ends the mode; a window that came to the
+	 * front otherwise docks (WS181).
+	 */
+	layout_follow(server);
+
+	/* The arrangements: a window gone, minimized, resized or fullscreen ends its desktop's (WS181). */
+	kwl_arrange_tick(server);
 
 	/* The previews of the bar's applications show and hide in time (apps-bar.c), and the switcher goes when it may not show. */
 	kwl_apps_bar_tick(server);
@@ -3714,6 +3957,7 @@ draw_desktops(
 	float progress;
 	int32_t x;
 	int desktop;
+	int marked;
 
 	/* The current desktop's colour: the accent the user chose, on the bar's ground. */
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, current);
@@ -3744,9 +3988,16 @@ draw_desktops(
 		printf("KWL GLASS desktops x=%d step=%d width=%d\n", bar->desktops_x + DESKTOPS_PAD, DESKTOP_WIDTH + DESKTOP_GAP, DESKTOP_WIDTH);
 	}
 
-	/* Each desktop's slot: a dot, or for the one shown an outlined pill as wide as the slot. */
+	/*
+	 * Each desktop's slot: a dot, or for the one shown an outlined pill as
+	 * wide as the slot; an arranged desktop's slot shows its layout's
+	 * drawing instead of the dot (WS181, arrange-shell.c).
+	 */
 	for (desktop = 0; desktop < DESKTOPS; desktop++) {
 		x = bar->desktops_x + DESKTOPS_PAD + desktop * (DESKTOP_WIDTH + DESKTOP_GAP);
+		marked = kwl_arrange_draw_mark(server, command, (unsigned)desktop, x, KWL_GLASS_BAR_MIDDLE, colours->ink);
+		if (marked && desktop != (int)server->desktop)
+			continue;
 		if (desktop == (int)server->desktop) {
 			glass_shape_init(&shape, (float)x, (float)(KWL_GLASS_BAR_MIDDLE - DESKTOP_SHOWN_HEIGHT / 2), (float)DESKTOP_WIDTH, (float)DESKTOP_SHOWN_HEIGHT);
 			shape.mode = MODE_RING;
@@ -3958,8 +4209,10 @@ body_rect(
 {
 	struct shell_rect from;
 	struct shell_rect to;
+	int32_t glide[4];
 	uint64_t held;
 	float t;
+	int gliding;
 
 	/* Between the two while animated. */
 	if (server->anim == surface) {
@@ -3979,6 +4232,16 @@ body_rect(
 	/* Docked: the docked space, or the middle of it for a window of one size (ws142-p008). */
 	if (surface->maximized) {
 		docked_body(server, surface, body);
+		return;
+	}
+
+	/* An arranged window gliding into its slot (arrange-shell.c, WS181). */
+	gliding = kwl_arrange_glide(server, surface, glide);
+	if (gliding) {
+		body->x = glide[0];
+		body->y = glide[1];
+		body->width = glide[2];
+		body->height = glide[3];
 		return;
 	}
 
@@ -4700,7 +4963,8 @@ window_dock(
 	if (surface->fullscreen)
 		return;
 
-	/* The place and size to come back to, and where the body is now. */
+	/* The place and size to come back to (its own, not a made-up one), and where the body is now. */
+	surface->restore_default = 0U;
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
 	kwl_decoration_geometry(surface, &geometry_width, &geometry_height);
@@ -4735,13 +4999,23 @@ window_dock(
 	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
 	window_resized(surface);
 
-	/* A window docked makes the session's mode docked (ws142-p008, BUG-217). */
+	/*
+	 * A shown window docked owns its desktop at once (WS181), so that it
+	 * closing before the next frame ends the docked mode too; one opened
+	 * docked is seen as the owner once it is mapped (layout_front_follow).
+	 */
+	if (surface->mapped && !surface->dead)
+		server->dock_owner[surface->desktop] = surface;
+
+	/* A window docked makes the session's mode docked (ws142-p008, BUG-217); the log says what every window is now (WS181). */
 	layout_set(server, KWL_LAYOUT_DOCKED, via);
+	layout_log_windows(server);
 }
 
 /*
  * Brings a docked window back: its body at (x, y) at the size it had, and
- * it is told that size.  The change is animated.
+ * it is told that size.  The change is animated.  The session's mode is
+ * not changed here: layout_leave ends the docked mode around it (WS181).
  */
 static void
 window_undock(
@@ -4790,11 +5064,8 @@ window_undock(
 	printf("KWL GLASS undock surface=%u via=%s x=%d y=%d client=%llu\n", surface->id, via, x, y, (unsigned long long)surface->client->number);
 	window_configure(surface);
 
-	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180). */
+	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180); the caller sets the mode (layout_leave). */
 	window_resized(surface);
-
-	/* A window brought back makes the session's mode windowed (ws142-p008, BUG-217). */
-	layout_set(server, KWL_LAYOUT_WINDOWED, via);
 }
 
 /* Tells a window its new size. */
@@ -4869,6 +5140,10 @@ layout_set(
 	server->layout_mode = mode;
 	server->dirty = 1;
 	printf("KWL LAYOUT mode=%s reason=%s at_ms=%llu\n", kwl_layout_name(mode), via, (unsigned long long)kwl_milliseconds());
+
+	/* No desktop stays arranged in the docked mode (WS181 I3). */
+	if (mode == KWL_LAYOUT_DOCKED)
+		kwl_arrange_end_all(server, "dock");
 }
 
 /*
@@ -4921,7 +5196,6 @@ layout_hides(
 	const struct kwl_object *surface)
 {
 	struct kwl_object *top;
-	float home;
 	int desktop_surface;
 	int same_application;
 	int overview;
@@ -4946,12 +5220,14 @@ layout_hides(
 	if (top == NULL || top->client == surface->client)
 		same_application = 1;
 
-	/* App Home, Wiseview and the switcher show every application. */
+	/*
+	 * Wiseview and the switcher show every application.  App Home does not
+	 * (WS181): it is a mode of its own, and the desktop going up off the
+	 * output as it opens is the desktop as it was, its hidden windows
+	 * hidden.
+	 */
 	overview = 0;
-	home = kwl_home_progress(server);
-	if (home > 0.0f) {
-		overview = 1;
-	} else if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
+	if (server->wiseview_gesture || server->wiseview > 0.0f || server->wiseview_moving) {
 		overview = 1;
 	} else if (server->switcher.on) {
 		overview = 1;
@@ -4999,49 +5275,229 @@ layout_takes_press(
 }
 
 /*
- * Tells whether a press on a window is a switch to it (ws142-p008, the
- * user's rule that a switch from a windowed application to a maximized
- * one brings it back to a window): in the windowed mode, a docked window
- * of another application than the one in front.  Returns 1 when it is.
+ * Ends the docked mode (WS181, the 2026-10-07 UAT): the window the person
+ * brings back (front; NULL when the docked window closed, was minimized or
+ * was sent away) floats again at (x, y) with its animation, every other
+ * docked window of every desktop -- minimized ones and ones not mapped yet
+ * too -- floats again at once, the desktops' owners are forgotten, and the
+ * session's mode becomes windowed.  So no window is left docked behind a
+ * floating one, and a window hidden by docking shows again while one the
+ * person minimized stays minimized.
  */
-static int
-layout_press_switches(
+static void
+layout_leave(
 	struct kwl_server *server,
-	struct kwl_object *surface)
+	struct kwl_object *front,
+	int32_t x,
+	int32_t y,
+	const char *via)
 {
-	struct kwl_object *owner;
-	struct kwl_object *top;
+	struct kwl_layout_window window;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	unsigned front_id;
+	unsigned action;
+	unsigned quiet;
+	unsigned desktop;
+	unsigned pass;
 
-	/* Only the windowed mode brings a docked window back by a press. */
-	if (server->layout_mode != KWL_LAYOUT_WINDOWED)
-		return 0;
+	/* The window brought back is seen coming back. */
+	front_id = 0U;
+	if (front != NULL) {
+		front_id = front->id;
+		window_undock(server, front, x, y, via);
+	}
 
-	/* A docked window (a sheet's parent for a sheet), not a fullscreen one. */
-	owner = sheet_owner(surface);
-	if (!owner->maximized || owner->fullscreen)
-		return 0;
+	/*
+	 * Every other docked window floats again at once (it was not shown):
+	 * first those with a place of their own, then those whose place was
+	 * made up, which are placed as new windows among the others already
+	 * floating (pass 0, then pass 1).
+	 */
+	quiet = 0U;
+	for (pass = 0U; pass < 2U; pass++) {
+		for (client = server->clients; client != NULL; client = client->next) {
+			if (client->fatal)
+				continue;
+			for (surface = client->objects; surface != NULL; surface = surface->next) {
+				/* Only live windows, of this pass. */
+				if (surface->kind != KWL_SURFACE ||
+				    surface->dead ||
+				    surface->role == NULL ||
+				    surface->cursor_role)
+					continue;
+				if (surface->restore_default != pass)
+					continue;
 
-	/* Of another application than the window in front. */
-	top = sheet_owner(kwl_top_window(server));
-	if (top == NULL || top == owner)
-		return 0;
-	if (top->client == owner->client)
-		return 0;
+				/* What the end of the mode does to it. */
+				layout_window(surface, &window);
+				action = kwl_layout_leave_action(&window, 0);
+				if (action != KWL_LAYOUT_QUIET)
+					continue;
 
-	/* Succeeded: the press switches to it. */
-	return 1;
+				/* Floating at its place before, told so. */
+				window_float_quiet(server, surface);
+				quiet++;
+			}
+		}
+	}
+
+	/* No desktop keeps a docked owner in the windowed mode. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		server->dock_owner[desktop] = NULL;
+		server->dock_owner_gone[desktop] = 0U;
+	}
+
+	/* The session's mode is windowed; the log says why, and what every window is now (the tests read it). */
+	layout_set(server, KWL_LAYOUT_WINDOWED, via);
+	printf("KWL LAYOUT leave via=%s front=%u quiet=%u\n", via, front_id, quiet);
+	layout_log_windows(server);
 }
 
 /*
- * Keeps the window in front docked in the docked mode (ws142-p008, the
- * 2026-10-06 user decision: the docked mode is the desktop's tablet mode,
- * not a window's state): a window that comes to the front because the one
- * before closed (its application's own close too) or was minimized docks
- * as a window switched to does.  Not while an overview shows, nor while a
- * window is moved or pulled.
+ * Brings a docked window that is not shown back to floating at once, as
+ * the docked mode ends (WS181): at its place and size before it docked, or
+ * placed as a new window is when it never floated (several windows opened
+ * docked are not left on one spot), and told its size.  Nothing of the
+ * shell's (an animation, a pull, a move, a double click's dock) goes on
+ * with it.
  */
 static void
-layout_keep_front(
+window_float_quiet(
+	struct kwl_server *server,
+	struct kwl_object *surface)
+{
+	/* Not docked; what the shell was doing with it ends. */
+	surface->maximized = 0;
+	if (server->anim == surface)
+		server->anim = NULL;
+	if (server->pull == surface) {
+		server->pull = NULL;
+		server->pull_distance = 0;
+	}
+	if (server->click_docked == surface)
+		server->click_docked = NULL;
+	if (server->drag == surface)
+		server->drag = NULL;
+
+	/* Its size before it docked. */
+	surface->window_width = surface->restore_width;
+	surface->window_height = surface->restore_height;
+
+	/* Its place before, or a new window's place when the place was made up; inside the space either way. */
+	if (surface->restore_default) {
+		kwl_glass_place(server, surface, (int32_t)surface->restore_width, (int32_t)surface->restore_height, 0);
+		surface->restore_default = 0U;
+	} else {
+		surface->x = surface->restore_x;
+		surface->y = surface->restore_y;
+		kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &surface->x, &surface->y);
+	}
+
+	/* The client draws that size; until it does, its docked image is drawn at it (BUG-180). */
+	server->dirty = 1;
+	printf("KWL LAYOUT float-quiet surface=%u x=%d y=%d w=%u h=%u client=%llu\n", surface->id, surface->x, surface->y,
+	       surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
+	window_configure(surface);
+	window_resized(surface);
+}
+
+/*
+ * Follows the docked mode every frame (WS181, replacing ws142-p008's rule
+ * that the next window docks): first each desktop's docked owner is
+ * checked -- one closed, minimized, floating or sent away from the desktop
+ * shown ends the docked mode, one gone on a desktop not shown is only
+ * forgotten, one carried along goes on owning the desktop shown -- and only
+ * then the window in front of the desktop shown is looked at
+ * (layout_front_follow).  The order matters: a closed owner ends the mode
+ * before the window that came forward could be docked.
+ */
+static void
+layout_follow(
+	struct kwl_server *server)
+{
+	struct kwl_layout_owner seen;
+	struct kwl_object *owner;
+	const char *reason;
+	unsigned desktop;
+	unsigned found;
+
+	/* Only the docked mode has owners. */
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+		return;
+
+	/* Each desktop's owner, checked. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		/* A desktop with no owner, and none gone since, has nothing to check. */
+		owner = server->dock_owner[desktop];
+		if (owner == NULL && !server->dock_owner_gone[desktop])
+			continue;
+
+		/* The owner as the rule sees it: destroyed, or as it is now. */
+		memset(&seen, 0, sizeof(seen));
+		seen.gone = server->dock_owner_gone[desktop];
+		if (owner != NULL)
+			layout_owner_describe(owner, &seen);
+		server->dock_owner_gone[desktop] = 0U;
+
+		/* What the rule finds (layout.c). */
+		found = kwl_layout_owner_check(&seen, desktop, server->desktop, &reason);
+
+		/* The docked mode ends, is forgotten on this desktop, or follows the owner to the desktop shown. */
+		switch (found) {
+		case KWL_LAYOUT_OWNER_LEAVE:
+			layout_leave(server, NULL, 0, 0, reason);
+			return;
+		case KWL_LAYOUT_OWNER_FORGET:
+			/* An owner gone between desktops not shown has no reason of its own. */
+			if (reason == NULL)
+				reason = "away";
+			server->dock_owner[desktop] = NULL;
+			printf("KWL LAYOUT owner desktop=%u surface=0 forgotten=%s\n", desktop + 1U, reason);
+			break;
+		case KWL_LAYOUT_OWNER_MOVED:
+			server->dock_owner[desktop] = NULL;
+			server->dock_owner[owner->desktop] = owner;
+			printf("KWL LAYOUT owner desktop=%u surface=%u carried\n", owner->desktop + 1U, owner->id);
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* The window in front of the desktop shown. */
+	layout_front_follow(server);
+}
+
+/* Describes a desktop's docked owner to the owner's rule (layout.c): mapped, minimized, docked, fullscreen, its desktop. */
+static void
+layout_owner_describe(
+	const struct kwl_object *owner,
+	struct kwl_layout_owner *seen)
+{
+	/* A window destroyed is marked dead before it goes (kwl_glass_forget clears the owner then). */
+	if (owner->dead)
+		seen->gone = 1U;
+
+	/* As the shell keeps it now. */
+	seen->mapped = owner->mapped;
+	seen->minimized = owner->minimized;
+	seen->docked = owner->maximized;
+	seen->fullscreen = owner->fullscreen;
+	seen->desktop = owner->desktop;
+}
+
+/*
+ * Looks at the window in front of the desktop shown in the docked mode
+ * (WS181): a docked one becomes the desktop's owner (one opened docked is
+ * seen here once it is mapped), a fullscreen one leaves the owner as it
+ * is, and a floating one that came forward without a switch (Super+Alt+P,
+ * the Notes corner, the docked window sent to the back, a desktop turned
+ * to) docks as a window switched to does.  Not while an overview shows,
+ * nor while a window is moved or pulled.
+ */
+static void
+layout_front_follow(
 	struct kwl_server *server)
 {
 	struct kwl_layout_window window;
@@ -5049,10 +5505,6 @@ layout_keep_front(
 	unsigned action;
 	float home;
 	int showing;
-
-	/* Only the docked mode has a front to keep. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
-		return;
 
 	/* App Home, Wiseview and the switcher show every window as it is. */
 	home = kwl_home_progress(server);
@@ -5073,15 +5525,97 @@ layout_keep_front(
 	if (top == NULL || top->dead || !top->mapped || top->current == NULL)
 		return;
 
+	/* A dialog in front stands for its shown parent when that is docked; a floating parent is left as it is. */
+	if (top->parent_window != NULL &&
+	    !top->parent_window->dead &&
+	    top->parent_window->mapped) {
+		top = top->parent_window;
+		if (!top->maximized)
+			return;
+	}
+
+	/* A docked window in front owns the desktop. */
+	if (top->maximized) {
+		if (server->dock_owner[server->desktop] == top)
+			return;
+		server->dock_owner[server->desktop] = top;
+		printf("KWL LAYOUT owner desktop=%u surface=%u client=%llu\n", server->desktop + 1U, top->id, (unsigned long long)top->client->number);
+		layout_log_windows(server);
+		return;
+	}
+
+	/* A fullscreen window in front leaves the owner under it. */
+	if (top->fullscreen)
+		return;
+
 	/* What a switch to it would do; only a floating window that docks changes. */
 	layout_window(top, &window);
 	action = kwl_layout_switch_action(server->layout_mode, &window);
 	if (action != KWL_LAYOUT_DOCK)
 		return;
 
-	/* Docked where it floats, and the log says why. */
+	/* Docked where it floats, owning the desktop, and the log says why. */
 	window_dock(server, top, top->x, top->y, "front");
+	server->dock_owner[server->desktop] = top;
 	printf("KWL LAYOUT front surface=%u action=dock client=%llu\n", top->id, (unsigned long long)top->client->number);
+}
+
+/*
+ * Logs what each window of the desktop shown is (WS181, for the tests): how
+ * many float, are docked, hidden by docking, minimized or fullscreen.
+ */
+static void
+layout_log_windows(
+	struct kwl_server *server)
+{
+	unsigned counts[KWL_LAYOUT_STATE_FULLSCREEN + 1U];
+	struct kwl_layout_window window;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
+	unsigned state;
+	int desktop_surface;
+	int front;
+
+	/* The application in front: the top window's (its minimized windows are not in front). */
+	memset(counts, 0, sizeof(counts));
+	top = kwl_top_window(server);
+
+	/* Each mapped window without a parent on the desktop shown, counted by its state. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only live mapped windows of the desktop shown, not a dialog or a sheet. */
+			if (surface->kind != KWL_SURFACE ||
+			    surface->dead ||
+			    !surface->mapped ||
+			    surface->role == NULL ||
+			    surface->cursor_role ||
+			    surface->parent_window != NULL ||
+			    surface->desktop != server->desktop)
+				continue;
+
+			/* Not the desktop's icons. */
+			desktop_surface = kwl_desktop_is(surface);
+			if (desktop_surface)
+				continue;
+
+			/* Its state. */
+			front = 0;
+			if (top == NULL || top->client == surface->client)
+				front = 1;
+			layout_window(surface, &window);
+			state = kwl_layout_state(server->layout_mode, &window, (int)surface->minimized, front);
+			counts[state]++;
+		}
+	}
+
+	/* The summary. */
+	printf("KWL LAYOUT windows desktop=%u mode=%s floating=%u docked=%u dock_hidden=%u minimized=%u fullscreen=%u\n",
+	       server->desktop + 1U, kwl_layout_name(server->layout_mode),
+	       counts[KWL_LAYOUT_STATE_FLOATING], counts[KWL_LAYOUT_STATE_DOCKED], counts[KWL_LAYOUT_STATE_DOCK_HIDDEN],
+	       counts[KWL_LAYOUT_STATE_MINIMIZED], counts[KWL_LAYOUT_STATE_FULLSCREEN]);
 }
 
 /*
@@ -5262,6 +5796,9 @@ dock_restore_default(
 	kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
+
+	/* A place made up: the end of the docked mode places the window as a new one instead (window_float_quiet). */
+	surface->restore_default = 1U;
 }
 
 /*
@@ -5371,7 +5908,7 @@ click_docked_third(
 		return 0;
 
 	/* The window floats where it was and goes to the back, the next one coming forward. */
-	window_undock(server, surface, surface->restore_x, surface->restore_y, "triple-click");
+	layout_leave(server, surface, surface->restore_x, surface->restore_y, "triple-click");
 	window_lower(server, surface, "triple-click");
 
 	/* Succeeded: the press was the triple click's. */
@@ -5520,16 +6057,10 @@ bar_press(
 	struct kwl_object *surface;
 	struct shell_bar bar;
 	unsigned second;
-	int32_t picture;
 	int pressed;
 
-	/* A desktop's picture switches to it. */
+	/* The desktops' pill is the arrangement menu's (arrange-shell.c, WS181: its pictures switch desktops there). */
 	bar_layout(server, &bar);
-	picture = server->pointer_x - (bar.desktops_x + DESKTOPS_PAD);
-	if (picture >= 0 && picture < DESKTOPS * (DESKTOP_WIDTH + DESKTOP_GAP)) {
-		desktop_turn(server, picture / (DESKTOP_WIDTH + DESKTOP_GAP), "bar");
-		return 1;
-	}
 
 	/* The clock opens Calendar (ws155-p004, the 2026-10-04 user request). */
 	if (server->pointer_x >= bar.clock_pill_x && server->pointer_x < bar.clock_pill_x + bar.clock_pill_width) {
@@ -5552,7 +6083,7 @@ bar_press(
 
 	/* Restore brings it back where it was. */
 	if (pressed == BUTTON_MAXIMIZE) {
-		window_undock(server, surface, surface->restore_x, surface->restore_y, "button");
+		layout_leave(server, surface, surface->restore_x, surface->restore_y, "button");
 		return 1;
 	}
 
@@ -5569,12 +6100,13 @@ bar_press(
 	/* A double click brings it back where it was. */
 	second = double_click(server, surface);
 	if (second) {
-		window_undock(server, surface, surface->restore_x, surface->restore_y, "double-click");
+		layout_leave(server, surface, surface->restore_x, surface->restore_y, "double-click");
 		return 1;
 	}
 
 	/* A single press may become a pull. */
 	server->pull = surface;
+	server->pull_start_x = server->pointer_x;
 	server->pull_start_y = server->pointer_y;
 	server->pull_distance = 0;
 	return 1;
@@ -5676,7 +6208,7 @@ home_without_bar(
 	uint32_t state)
 {
 	/* A press Home follows goes on being Home's. */
-	if (server->home_press || server->home_page_press || server->home_bottom_press)
+	if (server->home_press || server->home_page_press || server->home_rise_press)
 		return 1;
 
 	/* Only a left press starts one. */
@@ -5707,9 +6239,11 @@ wiseview_progress(
 	if (server->wiseview_gesture && server->wiseview_pad)
 		return server->wiseview_pad_progress;
 
-	/* The gesture: the distance moved up from where it started. */
+	/* The gesture: the distance moved up from where it started, or down for the top edge's (WS181). */
 	if (server->wiseview_gesture) {
 		value = (float)(server->wiseview_start_y - server->pointer_y) / WISEVIEW_DISTANCE;
+		if (server->wiseview_top)
+			value = -value;
 		if (value < 0.0f)
 			value = 0.0f;
 		if (value > 1.0f)
@@ -5730,28 +6264,154 @@ wiseview_progress(
 	return server->wiseview_from + (server->wiseview_to - server->wiseview_from) * t;
 }
 
-/* Starts the swipe up from the bottom edge that opens Wiseview, for a left press in that edge.  Returns 1 when it started. */
+/*
+ * Handles a button for the top edge's band (WS181, edge.c): a touch's left
+ * press in the band is held until its motion tells (band_motion); the
+ * release of a held press that never moved gives the press and the release
+ * again where it was pressed (replays: the bar is drawn), or is lost (over
+ * a fullscreen window, whose client never had the press).  Returns 1 when
+ * the button is the band's.
+ */
 static int
-wiseview_edge_press(
+band_button(
 	struct kwl_server *server,
 	uint32_t button,
-	uint32_t state)
+	uint32_t state,
+	int replays)
 {
+	unsigned edge;
+	int touch;
+
+	/* A press being given again goes past the band. */
+	if (server->band_replay)
+		return 0;
+
+	/* The release of a held press: a tap of what is under it, or nothing over a fullscreen window. */
+	if (state == 0 && server->band_press) {
+		server->band_press = 0;
+		if (replays)
+			band_replay(server, 1);
+		return 1;
+	}
+
 	/* Only a left press. */
 	if (state == 0 || button != KWL_BUTTON_LEFT)
 		return 0;
 
-	/* Only in the bottom edge: a stroke that starts above it is not the gesture. */
-	if (server->pointer_y < (int32_t)server->height - WISEVIEW_EDGE)
+	/* Only a touch's press in the band (edge.c; the 2026-10-07 user decision: a touch only). */
+	touch = 0;
+	if (server->shell_source == KWL_CONTACT_TOUCH)
+		touch = 1;
+	edge = kwl_edge_classify(server->pointer_x, server->pointer_y, (int32_t)server->width, (int32_t)server->height, touch);
+	if (edge != KWL_EDGE_TOP_BAND)
 		return 0;
 
-	/* The gesture starts; the window on top is the current tile. */
-	server->wiseview_gesture = 1;
-	server->wiseview_start_y = server->pointer_y;
-	server->wiseview_current = sheet_owner(kwl_top_window(server));
-	server->dirty = 1;
+	/* Held, where it was. */
+	server->band_press = 1;
+	server->band_start_x = server->pointer_x;
+	server->band_start_y = server->pointer_y;
+	printf("KWL EDGE band press x=%d y=%d\n", server->pointer_x, server->pointer_y);
 
-	/* Succeeded: the press is the gesture's. */
+	/* Succeeded: the press is the band's for now. */
+	return 1;
+}
+
+/*
+ * Follows a press held in the top edge's band (WS181): down far enough it
+ * becomes the swipe that opens Wiseview from the top (App Home, open,
+ * closes at once), across or up it is given again to what is under it
+ * (replays) or lost over a fullscreen window.  Returns 1 when the motion is
+ * the band's, 0 when it goes on to what the press was given to.
+ */
+static int
+band_motion(
+	struct kwl_server *server,
+	int replays)
+{
+	unsigned kind;
+
+	/* Only a held press. */
+	if (!server->band_press)
+		return 0;
+
+	/* What the press is after this motion (edge.c). */
+	kind = kwl_edge_band_motion(server->pointer_x - server->band_start_x, server->pointer_y - server->band_start_y);
+	if (kind == KWL_EDGE_BAND_WAIT)
+		return 1;
+	server->band_press = 0;
+
+	/* The swipe down: Wiseview opens from the top, following the pointer. */
+	if (kind == KWL_EDGE_BAND_WISEVIEW) {
+		kwl_home_close_now(server, "top-edge");
+		server->wiseview_gesture = 1;
+		server->wiseview_top = 1;
+		server->wiseview_start_y = server->band_start_y;
+		server->wiseview_current = sheet_owner(kwl_top_window(server));
+		server->dirty = 1;
+		printf("KWL WISEVIEW gesture via=top-edge\n");
+		return 1;
+	}
+
+	/* Over a fullscreen window the press is lost. */
+	if (!replays)
+		return 1;
+
+	/* Not the swipe: the press is given to what is under it, and this motion goes on to it. */
+	band_replay(server, 0);
+	return 0;
+}
+
+/*
+ * Gives a press held in the top edge's band again, at the point it was
+ * pressed, to what is under it (the bar's widgets, App Home), and its
+ * release too for a tap; the pointer is back where it is after.
+ */
+static void
+band_replay(
+	struct kwl_server *server,
+	int release)
+{
+	int32_t x;
+	int32_t y;
+
+	/* The pointer at the press's point while the press is given. */
+	x = server->pointer_x;
+	y = server->pointer_y;
+	server->pointer_x = server->band_start_x;
+	server->pointer_y = server->band_start_y;
+	server->band_replay = 1;
+	printf("KWL EDGE band replay release=%d\n", release);
+
+	/* The press, and for a tap its release, as the shell takes them. */
+	(void)kwl_glass_button(server, KWL_BUTTON_LEFT, 1U);
+	if (release)
+		(void)kwl_glass_button(server, KWL_BUTTON_LEFT, 0U);
+
+	/* The pointer back where it is. */
+	server->band_replay = 0;
+	server->pointer_x = x;
+	server->pointer_y = y;
+}
+
+/* Starts the swipe up from the bottom edge that opens App Home (WS181), for a left press in that edge.  Returns 1 when it started. */
+static int
+home_edge_press(
+	struct kwl_server *server,
+	uint32_t button,
+	uint32_t state)
+{
+	int taken;
+
+	/* Only a left press. */
+	if (state == 0 || button != KWL_BUTTON_LEFT)
+		return 0;
+
+	/* Home takes it when it is in the bottom edge (home.c). */
+	taken = kwl_home_edge_press(server);
+	if (!taken)
+		return 0;
+
+	/* Succeeded: the press is the swipe's. */
 	return 1;
 }
 
@@ -6377,6 +7037,7 @@ wiseview_button(
 			return 1;
 		progress = wiseview_progress(server);
 		server->wiseview_gesture = 0;
+		server->wiseview_top = 0;
 		if (progress > WISEVIEW_THRESHOLD) {
 			printf("KWL WISEVIEW opening from=%.2f\n", (double)progress);
 			wiseview_settle(server, progress, 1.0f);
@@ -6414,6 +7075,18 @@ wiseview_button(
 	/* Only a left press on the settled Wiseview acts. */
 	if (state == 0 || button != KWL_BUTTON_LEFT || server->wiseview_moving)
 		return 1;
+
+	/* A press at the bottom edge closes Wiseview at once and starts the swipe up to App Home (WS181). */
+	if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE) {
+		server->wiseview = 0.0f;
+		server->wiseview_moving = 0;
+		server->wiseview_press = NULL;
+		server->wiseview_dragging = 0;
+		server->dirty = 1;
+		printf("KWL WISEVIEW close via=bottom-edge\n");
+		(void)kwl_home_edge_press(server);
+		return 1;
+	}
 
 	/* The tile under the pointer. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);
@@ -7324,7 +7997,7 @@ gesture_undock(
 		return 0;
 
 	/* Floating where it was before it docked. */
-	window_undock(server, top, top->restore_x, top->restore_y, "top2");
+	layout_leave(server, top, top->restore_x, top->restore_y, "top2");
 
 	/* Succeeded: the window floats. */
 	return 1;
@@ -7570,6 +8243,9 @@ window_minimize(
 	kwl_seat_focus(server);
 	server->dirty = 1;
 	printf("KWL GLASS minimize surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+
+	/* A docked window minimized ends the docked mode now, not at the next frame (WS181). */
+	layout_follow(server);
 }
 
 /* Moves a window to another desktop (shown when that desktop is), and gives the focus to the top window of the desktop shown. */
@@ -7580,7 +8256,10 @@ window_to_desktop(
 	unsigned desktop,
 	const char *via)
 {
+	unsigned from;
+
 	/* The window's desktop; on top of it there. */
+	from = surface->desktop;
 	surface->desktop = desktop;
 	server->map_order++;
 	surface->map_order = server->map_order;
@@ -7590,6 +8269,9 @@ window_to_desktop(
 	kwl_seat_focus(server);
 	server->dirty = 1;
 	printf("KWL GLASS move-desktop surface=%u desktop=%u via=%s client=%llu\n", surface->id, desktop + 1U, via, (unsigned long long)surface->client->number);
+
+	/* The arrangements of the desktop it left and the one it came to end (WS181). */
+	kwl_arrange_moved(server, surface, from);
 }
 
 /* Returns the desktop whose picture in the system bar is under a point, or -1. */
@@ -7658,6 +8340,11 @@ glass_motion_take(
 		return 1;
 	}
 
+	/* A press held in the top edge's band: the swipe down to Wiseview, or given again to what is under it (WS181). */
+	taken = band_motion(server, 1);
+	if (taken)
+		return 1;
+
 	/* The top-right corner's swipe follows the pointer (corner.c). */
 	taken = kwl_corner_motion(server);
 	if (taken)
@@ -7675,6 +8362,11 @@ glass_motion_take(
 
 	/* The network's open menu lights the row under the pointer (network.c). */
 	taken = kwl_network_motion(server);
+	if (taken)
+		return 1;
+
+	/* The arrangement menu lights its item, and a swap follows the pointer (arrange-shell.c). */
+	taken = kwl_arrange_motion(server);
 	if (taken)
 		return 1;
 
@@ -7726,10 +8418,8 @@ glass_motion_take(
 			return 1;
 		}
 
-		/* Not far enough yet: the window follows the pull. */
-		server->pull_distance = server->pointer_y - server->pull_start_y;
-		if (server->pull_distance < 0)
-			server->pull_distance = 0;
+		/* Not far enough yet, in any direction (WS181): the window follows the pull. */
+		server->pull_distance = kwl_edge_distance(server->pointer_x - server->pull_start_x, server->pointer_y - server->pull_start_y);
 		if (server->pull_distance < PULL_DISTANCE)
 			return 1;
 
@@ -7741,10 +8431,11 @@ glass_motion_take(
 		 */
 		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
 		y = server->pointer_y + KWL_GLASS_GAP + KWL_GLASS_TITLE / 2;
-		window_undock(server, surface, x, y, "pull");
+		layout_leave(server, surface, x, y, "pull");
 		server->pull_distance = 0;
 		server->pull = NULL;
 		server->drag = surface;
+		server->drag_left_bar = 0U;
 		server->drag_dx = server->pointer_x - x;
 		server->drag_dy = server->pointer_y - y;
 		server->drag_start_x = surface->restore_x;
@@ -7762,6 +8453,10 @@ glass_motion_take(
 		server->drag = NULL;
 		return 1;
 	}
+
+	/* A move that has been out of the system bar may dock the window by a release back in it. */
+	if (server->pointer_y >= KWL_GLASS_BAR)
+		server->drag_left_bar = 1U;
 
 	/* The body follows the pointer; the title bar stays below the system bar. */
 	surface->x = server->pointer_x - server->drag_dx;

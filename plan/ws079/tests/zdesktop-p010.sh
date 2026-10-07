@@ -18,11 +18,15 @@
 #     and leaves Notes (already on top and fullscreen).
 #  6. Over fullscreen Notes the bottom edge's swipe takes it back to a window (ws099-p015), not Wiseview.
 #  7. App Home open without Notes: the top-right swipe closes Home and starts it.
-#  8. On App Home the bottom edge's swipe closes Home and does not open Wiseview.
-#  9. On the desktop the bottom edge's swipe opens Wiseview; a stroke that
-#     starts above the edge does not.
-# 10. App Home by its corner drag and by a click on the desktop's corner, and
-#     docking by a double click on a title bar, still work.
+#  8. On App Home the bottom edge's swipe does nothing (WS181: Home is a mode
+#     of its own; it stays open, Wiseview does not open); a drag down on Home
+#     closes it (HOME close via=pull-down).
+#  9. On the desktop the bottom edge's swipe opens App Home (WS181,
+#     HOME open via=edge), not Wiseview; a stroke that starts above the edge
+#     does not.
+# 10. App Home by its corner drag, closed by a drag down on it (there is no
+#     desktop corner left in view, WS181), and docking by a double click on a
+#     title bar, still work.
 #
 #   GUEST_RUNTIME=... plan/ws035/tests/zdesktop-guest.sh start IMAGE
 #   GUEST_RUNTIME=... plan/ws079/tests/zdesktop-p010.sh BUILD [OUTDIR [PREFIX]]
@@ -190,30 +194,37 @@ expect_count "launches from Home" "$(count 'CORNER notes launch pid=')" $((launc
 shot home-launch-notes --expect 640,400,fdf6e3 || status=1
 guest "$stop_notes" >/dev/null
 
-# 8. On App Home the bottom edge closes Home, and Wiseview does not open.
+# 8. On App Home the bottom edge's swipe does nothing; a drag down on Home closes it (WS181).
 pointer move 640 500 sleep 500
 open_home
 opening=$(count 'WISEVIEW opening')
+closes=$(count 'HOME close via=')
 pointer $(stroke 640 796 640 556 8 40) up sleep 1500
-expect_log 'HOME bottom swipe'
-expect_log 'HOME close via=bottom'
+expect_count "Home closed by the bottom edge on Home" "$(count 'HOME close via=')" "$closes"
 expect_count "Wiseview from the bottom edge on Home" "$(count 'WISEVIEW opening')" "$opening"
-shot home-bottom-closed >/dev/null
+pointer $(stroke 640 300 640 600 10 30) up sleep 1500
+expect_log 'HOME close drag'
+expect_log 'HOME close via=pull-down'
+shot home-pulled-down >/dev/null
 
-# 9. On the desktop the bottom edge opens Wiseview; a stroke from above the edge does not.
-pointer $(stroke 640 796 640 476 10 30) up sleep 1500
-expect_count "Wiseview from the bottom edge" "$(count 'WISEVIEW opening')" $((opening + 1))
-shot wiseview >/dev/null
-pointer move 20 700 sleep 200 down sleep 60 up sleep 1500
+# 9. On the desktop the bottom edge's swipe opens App Home, not Wiseview; a stroke from above the edge does not.
+edge_opens=$(count 'HOME open via=edge')
+pointer $(stroke 640 796 640 356 10 30) up sleep 1500
+expect_log 'HOME rise swipe'
+expect_count "Home from the bottom edge" "$(count 'HOME open via=edge')" $((edge_opens + 1))
+expect_count "Wiseview from the bottom edge" "$(count 'WISEVIEW opening')" "$opening"
+shot home-from-edge >/dev/null
+pointer $(stroke 640 300 640 600 10 30) up sleep 1500
 pointer $(stroke 640 770 640 450 10 30) up sleep 1500
-expect_count "Wiseview from above the edge" "$(count 'WISEVIEW opening')" $((opening + 1))
+expect_count "Home from above the edge" "$(count 'HOME open via=edge')" $((edge_opens + 1))
 
-# 10. App Home by its drag and its desktop corner, and docking, still work.
+# 10. App Home by its drag, closed by a drag down on it, and docking, still work.
 opens=$(count 'HOME open via=drag')
+pulls=$(count 'HOME close via=pull-down')
 open_home
 expect_count "Home opened by the drag" "$(count 'HOME open via=drag')" $((opens + 1))
-pointer move 1270 790 sleep 300 down sleep 60 up sleep 1500
-expect_log 'HOME close via=corner'
+pointer $(stroke 640 300 640 600 10 30) up sleep 1500
+expect_count "Home closed by a drag down" "$(count 'HOME close via=pull-down')" $((pulls + 1))
 surface=$b_surface
 pointer move $((bx + 150)) $((by - 30)) sleep 400 down sleep 60 up sleep 60 down sleep 60 up sleep 2500
 expect_log "GLASS dock surface=$surface via=double-click"
@@ -226,7 +237,7 @@ expect_log "GLASS undock surface=$surface via=double-click"
 # Nothing failed.
 guest 'grep -E "ERROR|FAILED" /tmp/zdesktop.log /tmp/a.log /tmp/b.log /tmp/notes.log' | tee "$out/${prefix}errors.txt"
 [ -s "$out/${prefix}errors.txt" ] && status=1
-guest 'grep -E "CORNER|HOME (open|close|bottom)|WISEVIEW (opening|cancel|close)|MODE|GLASS (dock|undock)|CONFIGURE" /tmp/zdesktop.log' > "$out/${prefix}log.txt"
+guest 'grep -E "CORNER|HOME (open|close|rise)|WISEVIEW (opening|cancel|close)|MODE|GLASS (dock|undock)|CONFIGURE" /tmp/zdesktop.log' > "$out/${prefix}log.txt"
 guest "$stop_all" >/dev/null
 [ $status -eq 0 ] && echo "p010: PASS" || echo "p010: FAIL"
 exit $status

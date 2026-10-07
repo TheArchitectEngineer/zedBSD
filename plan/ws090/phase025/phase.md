@@ -2,7 +2,7 @@
 
 # ws090-p025: Browser の web の form の欄で IME を受け付ける
 
-Status: in-progress（q833、P1。2026-10-07 browser の部分は T1-328 で期待どおり。Settings の User name は原因を決めて直した、T1 の確認待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-328 で Browser の form の IME、T1-338 で Settings の User name の欄に nihon が全部見え Full name の IME も動く）（旧: in-progress（q833、P1。2026-10-07 browser の部分は T1-328 で期待どおり。Settings の User name は原因を決めて直した、T1 の確認待ち））
 Disposition: normal
 Parent: [WS090](../ws.md)
 Queue: q833（P1、WS031 の後）

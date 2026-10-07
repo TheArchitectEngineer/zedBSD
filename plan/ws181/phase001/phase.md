@@ -2,7 +2,7 @@
 # ws181-p001: 設計 — 窓の状態の機械、App Home の独立のモード、画面の端の gesture、整列のメニューと整列モード
 
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q842-i01 P2: 設計の第 1 版と review の結果まで。指摘の反映は未、利用の上限でラップアップ）
+Status: cleared（2026-10-07 Q1 の判定: 設計の第 3 版、design-reviewer 2 回の指摘を §9・§10 に反映、ユーザーの回答を §7 に記録）（旧: in-progress（2026-10-07 q842-i01 P2: 第 3 版まで。受け入れの 4 項を満たした、clearance は Q1 の判定。N1〜N3 は未回答で既定の案で進める））
 Disposition: normal
 Queue: q842 / q842-i01
 
@@ -23,7 +23,9 @@ Queue: q842 / q842-i01
 - 2026-10-07 P2: 第 1 版を書いた。読んだ物: layout.c・layout.h、shell.c（dock・undock・layout_*・bar_press・pull・Wiseview の端・描画の層）、home.c（layer・button・motion）、touch.c の冒頭、objects.c の消滅、ws142-p007、tests/scenarios/desktop/windows/layout-mode-switch.md。
 - 2026-10-07 P2: design-reviewer の review を受けた（blocking 4・should-fix 12・minor 9、要約は design.md §9）。Q1 の指示（利用の上限）でラップアップ。
 
-## 再開の情報（2026-10-07 P2 のラップアップ）
+- 2026-10-07 P2（新しい世代）: §9 を本文に反映して第 2 版（aa14f1cda）、人の判断の一覧を Q1 に送った。design-reviewer の第 2 回（blocking 2・should-fix 9・minor 10）を §10 に反映して第 3 版（ec976c947）。ユーザーの回答（D3 変えない、D5 pill のどこでも、S6 終える、S8 touch だけ、他は全部このまま）を §7 に記録。第 2 回で足した N1〜N3 は Q1 に送った（未回答）。S10（ws142 の試験・記録の追従）は Q1 の許可。
+
+## 再開の情報（2026-10-07 P2 のラップアップ、第 1 版の時点。第 3 版で解消済み）
 
 - どこまで: design.md の §0〜§8 は第 1 版として書き終わっている。design-reviewer の review は**済み**で、その指摘は §9 に要約して残した。**本文への反映はまだ**。
 - 次の 1 手: §9 の B1〜B4 を本文に反映する（§1.4 の `dock_owner` は tick で観測する形にし、`layout_leave` で全部を消す。§3 の上端の帯は `kwl_glass_button` の先頭近くに置く）。続けて S1〜S12・M1〜M9 を反映し、版を第 2 版にする。その後 design-reviewer にもう一度通すかは、反映の量で決める（blocking を直したので、通すのが既定）。

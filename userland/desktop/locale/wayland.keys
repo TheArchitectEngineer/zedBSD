@@ -20,3 +20,9 @@ msg	MTU
 msg	Signal
 msg	Received
 msg	Sent
+# The arrangement menu's layouts (arrange-shell.c arrange_labels, WS181), drawn with kl_tr(label).
+msg	Side by Side
+msg	Stacked
+msg	One on the Right
+msg	One on the Left
+msg	Grid
