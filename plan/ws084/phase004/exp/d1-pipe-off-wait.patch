@@ -1,0 +1,60 @@
+diff --git a/src/drivers/gpu/i915/display/modeset.c b/src/drivers/gpu/i915/display/modeset.c
+index 7dbcd70ce..82f3d841c 100644
+--- a/src/drivers/gpu/i915/display/modeset.c
++++ b/src/drivers/gpu/i915/display/modeset.c
+@@ -123,6 +123,13 @@
+ #define I915_LCD_ENABLE_BIT		0x80000000U
+ #define I915_LCD_TRANSCONF_ON_MASK	0xc0000000U
+ 
++/*
++ * How long the takeover waits for the pipe it stopped to report its state
++ * off (TRANSCONF bit 30), as intel_wait_for_pipe_off() does, and the step.
++ */
++#define I915_TAKEOVER_PIPE_OFF_US	100000U
++#define I915_TAKEOVER_PIPE_OFF_STEP_US	1000U
++
+ /* The pipe A mask bits that must stay masked: vblank and FIFO underrun, plus the XE_LPD soft and hard underrun. */
+ #define I915_LCD_KEEP_MASKED_XELPD	0x80600001U
+ #define I915_LCD_KEEP_MASKED_GEN12	0x80000001U
+@@ -3680,6 +3687,10 @@ i915_resident_takeover(
+ 	const struct i915_lcd_kernel_deps *d;
+ 	struct i915_lcd_modeset_cfg cfg;
+ 	struct i915_n1_report report;
++	uint32_t transconf_reg;
++	uint32_t transconf;
++	unsigned waited_us;
++	int delay_error;
+ 	int error;
+ 
+ 	d = k->d;
+@@ -3734,6 +3745,30 @@ i915_resident_takeover(
+ 	if (error != 0)
+ 		return error;
+ 
++	/*
++	 * Waits for the stopped pipe to report its state off, so the preflight
++	 * that follows, which refuses a pipe whose TRANSCONF state bit is still
++	 * set, sees the idle display (ws084-p004, divergence 1: the parity run
++	 * checked before the takeover).  A pipe that does not report it within
++	 * the wait is left to the preflight to refuse.
++	 */
++	transconf_reg = drv_i915_lcd_reg_by_name(display->lcd_world, "TRANSCONF");
++	transconf = 0U;
++	for (waited_us = 0U; waited_us < I915_TAKEOVER_PIPE_OFF_US; waited_us += I915_TAKEOVER_PIPE_OFF_STEP_US) {
++		/* The pipe's state has gone off. */
++		transconf = drv_i915_read32(d->mmio, transconf_reg);
++		if ((transconf & I915_LCD_TRANSCONF_ON_MASK) == 0U)
++			break;
++
++		/* Waits a step; a failed time base ends the wait. */
++		delay_error = drv_i915_udelay(I915_TAKEOVER_PIPE_OFF_STEP_US);
++		if (delay_error != 0)
++			break;
++	}
++
++	/* Logs how the pipe was left and how long it took. */
++	kern_logf("i915: takeover: pipe state after the stop: TRANSCONF 0x%08x after %u us\n", transconf, waited_us);
++
+ 	/* The run's own commit starts from an empty PLL pool and DBUF state. */
+ 	drv_i915_lcd_dplls_reset(display->lcd_world);
+ 	drv_i915_lcd_dbuf_forget(display->wm_world);

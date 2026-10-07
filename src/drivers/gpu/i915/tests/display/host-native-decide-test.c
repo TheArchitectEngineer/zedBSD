@@ -119,10 +119,11 @@ main(void)
 	r.active_pipes = 1U;
 	r.vtd_gsts = 0x40000000U;
 	drv_i915_native_decide(&r);
-	i915_host_check(r.proceed == 0 &&
-			r.primary_stop == I915_N0_C_ACTIVE_PIPE &&
+	i915_host_check(r.proceed != 0 &&
+			r.takeover != 0 &&
+			r.primary_stop == 0U &&
 			r.conditions == (I915_N0_C_ACTIVE_PIPE | I915_N0_C_OPREGION_REGISTER),
-			"NATIVE-1: primary ACTIVE_PIPE; also observed: the later intel_opregion_register wall; RTPS alone is no condition");
+			"NATIVE-1: an active pipe is taken over, not a stop (2026-09-29); the OpRegion is recorded; RTPS alone is no condition");
 
 	/* An active pipe and translation together. */
 	i915_native_base(&r);
@@ -131,9 +132,10 @@ main(void)
 	r.vtd_gsts = 0x80000000U;
 	drv_i915_native_decide(&r);
 	i915_host_check(r.proceed == 0 &&
-			r.primary_stop == I915_N0_C_ACTIVE_PIPE &&
-			(r.conditions & I915_N0_C_VTD_TRANSLATION) != 0U,
-			"TWO-WALLS: active pipe AND translation: primary = ACTIVE_PIPE, the translation is recorded too (not found only later)");
+			r.takeover == 0 &&
+			r.primary_stop == I915_N0_C_VTD_TRANSLATION &&
+			(r.conditions & I915_N0_C_ACTIVE_PIPE) != 0U,
+			"TWO-WALLS: active pipe AND translation: the translation stops (the active pipe is no stop), the active pipe is recorded too");
 
 	/* Interrupt remapping alone. */
 	i915_native_base(&r);

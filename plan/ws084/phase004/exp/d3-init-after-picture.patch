@@ -1,0 +1,103 @@
+diff --git a/src/drivers/gpu/i915/display/modeset.c b/src/drivers/gpu/i915/display/modeset.c
+index 7dbcd70ce..49fffa158 100644
+--- a/src/drivers/gpu/i915/display/modeset.c
++++ b/src/drivers/gpu/i915/display/modeset.c
+@@ -175,6 +175,7 @@ static uint32_t i915_resident_verify(void *ctx, const struct i915_scanout *so);
+ static int i915_resident_buffers(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_lcd_state *lcd);
+ static void i915_resident_hdmi_params(struct i915_display *display, struct i915_lcd_run_params *params);
+ static int i915_resident_takeover(struct i915_display *display, struct i915_lcd_kernel *k);
++static void i915_resident_power_enable(struct i915_display *display, const char *when);
+ static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
+ static int i915_resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
+ static int i915_resident_passed(const struct i915_lcd_show_report *rep);
+@@ -1736,19 +1737,19 @@ drv_i915_lcd_kernel_resident_run(
+ 	if (display->n0.takeover) {
+ 		takeover_error = i915_resident_takeover(display, k);
+ 		if (takeover_error != 0) {
++			i915_resident_power_enable(display, "the takeover failed");
+ 			k->p = NULL;
+ 			return EIO;
+ 		}
+ 
+-		/* Taken over once: a later run starts from the driver's own display. */
++		/*
++		 * Taken over once: a later run starts from the driver's own
++		 * display.  The INIT reference the probe kept for the takeover
++		 * stays until this run's picture is up and its commit holds the
++		 * panel's own references (ws084-p004, divergence 3: the parity run
++		 * returned it after its re-light).
++		 */
+ 		display->n0.takeover = 0;
+-
+-		/* The INIT reference the probe kept for the takeover goes back now (intel_power_domains_enable()). */
+-		if (display->dprobe.power_domains_enable_deferred) {
+-			display->dprobe.power_domains_enable_deferred = 0;
+-			drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
+-			kern_logf("i915: takeover: power_domains_enable: wells_on %u -> %u\n", display->dprobe.wells_on_before, display->dprobe.wells_on_after);
+-		}
+ 	}
+ 
+ 	/*
+@@ -1773,6 +1774,7 @@ drv_i915_lcd_kernel_resident_run(
+ 		fill_error = drv_i915_lcd_kernel_fill_cfg(k, &env->cfg);
+ 	if (preflight_error != 0 || fill_error != 0) {
+ 		kern_logf("i915: resident display: not started (preflight: nothing was written)\n");
++		i915_resident_power_enable(display, "the run did not start");
+ 		k->p = NULL;
+ 		return EIO;
+ 	}
+@@ -1784,6 +1786,7 @@ drv_i915_lcd_kernel_resident_run(
+ 	/* Creates, pins, clears and publishes both buffers at the output's size. */
+ 	buffers_error = i915_resident_buffers(display, d, lcd);
+ 	if (buffers_error != 0) {
++		i915_resident_power_enable(display, "the run did not start");
+ 		k->p = NULL;
+ 		return EIO;
+ 	}
+@@ -1815,6 +1818,9 @@ drv_i915_lcd_kernel_resident_run(
+ 	/* Shows buffer A, serves in the window, and stops through the reference's path. */
+ 	show_result = drv_i915_lcd_show_prepared(display, env, &display->resident_buf[0], i915_resident_verify, NULL, rep);
+ 
++	/* A run that ended before its picture came up gives the kept INIT reference back now. */
++	i915_resident_power_enable(display, "the run ended");
++
+ 	/* Counts the power references the run still holds. */
+ 	held = 0;
+ 	for (domain = 0U; domain < I915_PW_DOMAIN_NUM; domain++)
+@@ -3472,6 +3478,9 @@ i915_resident_window(
+ 	display->resident_up = 1;
+ 	kern_logf("i915: resident display: picture up (buffer A surf 0x%08x); serving presentation\n", (uint32_t)display->resident_buf[0].surf);
+ 
++	/* The commit holds the panel's references now: the INIT reference kept for a takeover goes back. */
++	i915_resident_power_enable(display, "picture up");
++
+ 	/* Serves until the display is to be given back. */
+ 	(void)display->resident_serve(display->resident_serve_ctx);
+ 
+@@ -3742,6 +3751,26 @@ i915_resident_takeover(
+ 	return 0;
+ }
+ 
++/*
++ * Gives back, once, the INIT reference the probe kept for a takeover
++ * (intel_power_domains_enable()): every well nothing references then
++ * powers down.  when names the point in the run for the log.
++ */
++static void
++i915_resident_power_enable(
++	struct i915_display *display,
++	const char *when)
++{
++	/* Nothing was kept, or it went back already. */
++	if (!display->dprobe.power_domains_enable_deferred)
++		return;
++
++	/* The reference goes back, and the wells it kept on are counted before and after. */
++	display->dprobe.power_domains_enable_deferred = 0;
++	drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
++	kern_logf("i915: takeover: power_domains_enable (%s): wells_on %u -> %u\n", when, display->dprobe.wells_on_before, display->dprobe.wells_on_after);
++}
++
+ /*
+  * Fills the parameters of a resident run on the HDMI display: port B,
+  * pipe and transcoder B, DPLL 0 from an empty pool, the chosen mode.
