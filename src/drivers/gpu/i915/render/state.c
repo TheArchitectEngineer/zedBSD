@@ -2683,8 +2683,8 @@ i915_state_write_blend(
  * (genX_gfx_state.c): MIN and MAX use no factors, so theirs are ONE (the
  * hardware applies the factors whatever the function), and the alpha
  * blends independently when its factors or its function differ from the
- * colour's.  An equation that reads a second colour source is not blended,
- * as anv does when the shader writes no second source.
+ * colour's.  An equation that reads a second colour source is not blended
+ * unless the fragment kernel writes one, as anv does.
  */
 static void
 i915_blend_equation(
@@ -2732,8 +2732,8 @@ i915_blend_equation(
 		second = 1;
 	}
 
-	/* XXX: the shaders write no second source, so such an equation is not blended. */
-	if (second != 0) {
+	/* An equation of the second source blends only when the fragment kernel writes one (dual source, ws031-p032). */
+	if (second != 0 && pipeline->dual_source == 0U) {
 		kern_memset(equation, 0, sizeof(*equation));
 		return;
 	}

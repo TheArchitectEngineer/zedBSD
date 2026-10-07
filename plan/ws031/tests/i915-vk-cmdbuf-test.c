@@ -1717,7 +1717,18 @@ test_logic_op(void)
 	dynamic = fixture_blend_state(page, &pipeline, &target);
 	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] & GEN12_BLEND_ENABLE) != 0U);
 	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 2U] & GEN12_BLEND_LOGIC_OP_ENABLE) == 0U);
-	printf("  logic op: AND 8 and COPY 12 in entry dword 1 with no blending (BLEND_STATE, PS_BLEND), all 16 as anv, integer target yes, sRGB no\n");
+	/* An equation of the second source blends only when the fragment kernel writes dual source (ws031-p032). */
+	pipeline.blend_src_color = VK_BLEND_FACTOR_SRC1_COLOR;
+	pipeline.blend_dst_color = VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+	pipeline.dual_source = 0U;
+	dynamic = fixture_blend_state(page, &pipeline, &target);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] & GEN12_BLEND_ENABLE) == 0U);
+	pipeline.dual_source = 1U;
+	dynamic = fixture_blend_state(page, &pipeline, &target);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] & GEN12_BLEND_ENABLE) != 0U);
+	assert(((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] >> GEN12_BLEND_SRC_FACTOR_SHIFT) & 0x1fU) == GEN12_BLENDFACTOR_SRC1_COLOR);
+	assert(((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] >> GEN12_BLEND_DST_FACTOR_SHIFT) & 0x1fU) == GEN12_BLENDFACTOR_INV_SRC1_COLOR);
+	printf("  logic op: AND 8 and COPY 12 in entry dword 1 with no blending (BLEND_STATE, PS_BLEND), all 16 as anv, integer target yes, sRGB no; SRC1 factors blend only with a dual-source kernel\n");
 }
 
 /* Writes the draw state for one texture and returns its RENDER_SURFACE_STATE (ws031-p033). */

@@ -60,6 +60,7 @@ for spv in "$repo"/userland/tests/mview/shaders/*.spv "$repo"/src/drivers/gpu/i9
     "$repo"/src/drivers/gpu/i915/tests/render/feature-shaders/*.spv; do
 	name=$(basename "$spv" .spv)
 	case $name in
+	dual-alone.frag) continue ;;    # refused on purpose (ws031-p032: a second colour without the first)
 	*.vert) stage=vertex ;;
 	*) stage=fragment ;;
 	esac
