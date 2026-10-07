@@ -176,3 +176,7 @@ FAIL（QEMU Venus 2 出力、T1-366 と同じ guest で p005 の後）: `display
 - 同じ依頼の FreeBSD の backend-test: `plan/ws131/tests/host-session.sh`・`host-power.sh` の source の一覧に `libkeiland-backend-zedbsd/power-outcome.c`（ws052-p011 で session-zedbsd.c が呼ぶ）を足した（Q1 の許可）。Linux の host で `host-session: 63/63 passed`・`host-power: 6/6 passed`。
 - build（warning 0）: `make -j16 BUILD=build/p1-wl ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p005.mk build/p1-wl/bin/wayland`、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-wl-linux all`。style-check: heads.c 指摘 0。
 - 未実施: QEMU の再試験（T1: `displays-p004b.sh`、FreeBSD guest の backend-test の host-session・host-power）。
+
+## T1-367 の判定（2026-10-08 Q1）
+
+p004b: 新しく起動した guest で `displays-p004b: PASS`（QEMU Venus 2 出力）→ p004b の QEMU の受け入れを満たす。FreeBSD の backend-test 9 step PASS（host-session・host-power を含む）。

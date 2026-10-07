@@ -79,6 +79,9 @@ struct i915_worker_present {
 	i915_worker_blit_fn build;
 	void *build_ctx;
 	struct i915_context *context;
+
+	/* Nonzero: a frame or the release of the second output, the head, not of the resident output (ws113-p011). */
+	int head;
 };
 
 int drv_i915_worker_create(struct i915_device *device);

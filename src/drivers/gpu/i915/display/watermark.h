@@ -73,7 +73,7 @@ int drv_i915_lcd_ms_bw_min_cdclk(struct i915_lcd_modeset *ms);
 unsigned int drv_i915_lcd_ms_bw_data_rate(struct i915_lcd_modeset *ms);
 bool drv_i915_wm_plane_visible(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
 int drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
 void drv_i915_dbuf_pre_plane_update(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state);
 void drv_i915_dbuf_post_plane_update(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state);
 void drv_i915_mbus_dbox_update(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state);

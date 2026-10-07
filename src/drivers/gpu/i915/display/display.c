@@ -31,6 +31,7 @@
 #include "display.h"
 #include "dmc.h"
 #include "dp-sink.h"
+#include "head.h"
 #include "hotplug.h"
 #include "interrupts.h"
 #include "modeset.h"
@@ -2867,11 +2868,15 @@ i915_display_mode(
 }
 
 /*
- * Gives the display's lease to a session (the display claim operation).
+ * Gives a display's lease to a session (the display claim operation).
  *
- * One lease at a time.  Returns 0 with the lease, ENOENT or ESTALE for
- * another display, EINVAL for a plane other than 0, or EBUSY while another
- * session holds it.
+ * The resident output has one lease at a time; another connected connector
+ * becomes the second output while the resident lease is held (ws113-p011),
+ * or the resident output moves to it while none is (ws113-p011a).  Returns
+ * 0 with the lease, ENOENT or ESTALE for another display, EINVAL for a
+ * plane other than 0, EBUSY while another session holds the resident
+ * lease, ENOSPC for the limit of the outputs shown at once, or ENXIO for
+ * a connector with nothing connected.
  */
 static int
 i915_display_claim(
@@ -2882,6 +2887,8 @@ i915_display_claim(
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
 	unsigned long irq;
+	uint64_t head_lease;
+	unsigned connector;
 	int resident;
 	int connected;
 	int error;
@@ -2899,16 +2906,26 @@ i915_display_claim(
 		return EINVAL;
 
 	/*
-	 * Another connector: the node lights one output at a time until
-	 * ws113-p011.  With no lease held the output moves to it (Keiland's
-	 * explicit claim, ws113-p011a); with one, this is the limit of the
-	 * outputs shown at once, told as one (ENOSPC, the 2026-10-05 user
-	 * decision), not a failure.
+	 * Another connector.  With the resident output's lease held it becomes
+	 * the second output, the head (ws113-p011), or the claim is the limit
+	 * of the outputs shown at once, told as one (ENOSPC, the 2026-10-05
+	 * user decision), not a failure.  With no lease held the output moves
+	 * to it (Keiland's explicit claim, ws113-p011a).
 	 */
 	if (!resident) {
 		if (!connected)
 			return ENXIO;
-		error = i915_display_move(owner_device, request->display_id - I915_DISPLAY_OTHER_ID);
+		connector = request->display_id - I915_DISPLAY_OTHER_ID;
+		error = drv_i915_head_claim(owner_device, session, connector, request->generation, &head_lease);
+		if (error == 0) {
+			request->lease = head_lease;
+			return 0;
+		}
+
+		/* EAGAIN: no lease is held, and the resident output moves instead. */
+		if (error != EAGAIN)
+			return error;
+		error = i915_display_move(owner_device, connector);
 		if (error != 0)
 			return error;
 	}
@@ -3075,6 +3092,15 @@ drv_i915_display_output_back(
 
 	/* A lease is held: nothing comes back. */
 	if (owner != NULL)
+		return;
+
+	/*
+	 * A second output still claimed keeps the resident output where it is
+	 * (ws113-p011, review F4): the firmware's output may be the second
+	 * output's connector or pipe.  Its release ends that, and the next
+	 * claim of the firmware's connector moves the output back.
+	 */
+	if (display->head.claimed)
 		return;
 
 	/* The firmware's output, under the lock the worker's readers share. */
@@ -3305,6 +3331,9 @@ i915_display_other_query(
 	struct gpu_display_info *request)
 {
 	struct i915_hpd_output output;
+	int is_head;
+	int lit;
+	int limited;
 	int error;
 
 	/* The connector as the topology last took it (the panel connected, with its mode, while the node has it). */
@@ -3317,9 +3346,21 @@ i915_display_other_query(
 	request->generation = output.generation;
 	request->flags = GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
 
-	/* A connected one is not lit: the limit of outputs shown at once (D-LIMIT, its claim answers ENOSPC). */
-	if (output.connected)
-		request->flags |= GPU_DISPLAY_CONNECTED | GPU_DISPLAY_LIMITED;
+	/*
+	 * A connected one: the second output when it is the head, lit or not
+	 * (ws113-p011); otherwise the limit of outputs shown at once only when
+	 * its claim now answers ENOSPC (D-LIMIT).
+	 */
+	drv_i915_head_connector_state(device->display, connector, &is_head, &lit, &limited);
+	if (output.connected) {
+		request->flags |= GPU_DISPLAY_CONNECTED;
+		if (lit)
+			request->flags |= GPU_DISPLAY_ACTIVE;
+		if (limited)
+			request->flags |= GPU_DISPLAY_LIMITED;
+	}
+
+	/* One plane, the formats and the frame size of every output. */
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = I915_DISPLAY_MAX_FRAME_BYTES;
@@ -3406,6 +3447,9 @@ i915_display_power(
 	struct i915_display *display;
 	int resident;
 	int connected;
+	int is_head;
+	int lit;
+	int limited;
 	int off;
 	int error;
 
@@ -3418,10 +3462,16 @@ i915_display_power(
 	if (error != 0)
 		return error;
 
-	/* Another connector: nobody leases it while the resident output is lit. */
+	/*
+	 * Another connector: the second output has no light of ours to switch
+	 * (ws113-p011), and no other connector is leased.
+	 */
 	if (!resident) {
 		if (!connected)
 			return ENXIO;
+		drv_i915_head_connector_state(display, request->display_id - I915_DISPLAY_OTHER_ID, &is_head, &lit, &limited);
+		if (is_head)
+			return EOPNOTSUPP;
 		return EBUSY;
 	}
 

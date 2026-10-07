@@ -3,7 +3,7 @@
 # ws113-p007: 窓の出力所属と画面間移動
 
 Parent: [WS113](../ws.md)
-Status: in-progress（実装済み、T1 の QEMU 待ち）
+Status: test-wait（2026-10-08 T1-369 QEMU PASS、mouse の跨ぎ・drag は 5330 の実機の UAT）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q855（P1、2026-10-07〜08、Q1 の ACK「p007 の範囲 1)〜6) で進めてよい」）
@@ -75,3 +75,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 未実施:
 - QEMU（T1 `plan/ws113/tests/displays-p007.sh`、image は `config-amd64-p006.mk`）: keyboard での移動・抜去の退避・mirror の退避を render list の行で判定。QEMU の tablet は絶対なので pointer の越えと title bar の drag での移動は QEMU では見られない。
 - 実機（p008、5330）: mouse・touchpad で pointer が HDMI の画面へ越えること、title bar の drag で窓が移ること、HDMI の抜去。FreeBSD の build。
+
+## T1-369 の判定（2026-10-08 Q1）
+
+PASS（QEMU Venus 2 出力、`displays-p007: PASS`: 新しい窓は anchor、Super+Shift+Right で head 1・Left で戻る、head 1 を抜くと anchor、mirror で anchor、mirror の隣は none、KWL FAILED 無し、生存）。mouse の跨ぎと title bar の drag は QEMU の tablet が絶対座標なので実機（5330、ユーザー）で。

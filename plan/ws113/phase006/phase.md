@@ -3,7 +3,7 @@
 # ws113-p006: Settings Displayページ
 
 Parent: [WS113](../ws.md)
-Status: in-progress（実装済み、T1 の QEMU 待ち）
+Status: cleared（2026-10-08 Q1 の判定: T1-368 QEMU PASS、絵は 5330 の実機で）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q855（P1、2026-10-07、ユーザー「Settingsのディスプレイ設定を、拡張・ミラーありで実装する作業に切り替えてください。」）
@@ -97,3 +97,11 @@ Q1 の ACK:「p006 の範囲で進めてよい。頁の文は他の Settings の
 - 実機（p008、5330）: 明るさの slider と Fn の key の追従。
 - `plan/ws089/tests/host-build.sh`（settings-render）は p006 の前から link で落ちる（`kl_system_printers_*`・`kl_system_print_*`・`kl_system_power_get_state`・`preview_picture` の偽物が無い）。page-display.c・arrange.c の compile（gnu89、-Wall -Wextra -Werror）はそこで通ったが、Display の頁の host の絵は作れていない。settings-render を直すのは WS089 の範囲。
 - 「保存できなかった（saved=0）」の表示: p005 の結果は errno だけで saved を運ばないので出していない。
+
+## T1-367 の判定（2026-10-08 Q1）
+
+FAIL（試験の道具）: displays-p006.sh の pointer() が `--width 1280 --height 800` を qmp-pointer.py に渡し `unknown step --width`、zdesktop-check.py の shot が D-Bus display で無い vnc.sock に繋ぐ（ConnectionRefusedError）。頁の表示・card が control・KWL FAILED 無し・生存は ok。
+
+## T1-368 の判定（2026-10-08 Q1）
+
+PASS（QEMU Venus 2 出力、`displays-p006: PASS`、全 ok: 頁の表示、card が control、mirror・extend 各 5 回の apply と snapshot、card を左へ drag して apply・snapshot で display 1 が左、KWL FAILED 無し、生存）→ cleared。PNG は QMP の screendump が D-Bus display（gl=on）で `GenericError: no surface`（24 回）で 0 枚。絵の確かめは 5330 の実機（ユーザー）と、必要なら guest の keiland-shot で。

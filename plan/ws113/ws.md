@@ -64,6 +64,7 @@ zedBSD i915で外部ディスプレイの接続/切断をVulkan Display拡張か
 | [ws113-p011](phase011/phase.md) | i915 の 2 つ目の出力 | Keiland の claim・present の時だけ 2 つ目の pipe で同時に scanout、release で消灯 | planned（4〜6h、実機） | p002 |
 | [ws113-p012](phase012/phase.md) | native の power と refresh の境界 | `GPU_DISPLAY_POWER`・`GPU_DISPLAY_REFRESH`（i915・Venus）、EXT display_control の下層（C2 の許可） | planned（3h） | p002、C2 |
 | [ws113-p013](phase013/phase.md) | 内蔵の panel の明るさの下層 | kernel の backlight の device（FreeBSD の backlight(9) と同じ形）、i915 の provider、backend の口（C2 の許可） | planned（2〜3h） | C2 |
+| [ws113-p014](phase014/phase.md) | 拡張の時に個々の display を off（Settings、2026-10-08 ユーザーの UAT、D-MODES の出力ごとの off を置き換え） | planned（P1、p007 の後） | p006、p007 |
 | ws113-p010 | Linux・FreeBSD の KMS での互換の実装（libkeiland-backend-linux・-freebsd の出力の列挙・hotplug・出力の変更を zedBSD と同じ compositor の契約に） | 2026-10-04 ユーザー「KMSでのLinux・FreeBSD用互換実装は、あとまわしにしてよいです（別Phaseにする）」 | planning（後回し） | p004〜p006（zedBSD の経路） |
 
 Dependency graph（2026-10-05）: p001 → p002 → {p011, p012} → p003 → p004 → {p005 → p006, p007} → p008 → p009。C2 → p012・p013、p013 → p005。p010 は p004〜p006 の後。
